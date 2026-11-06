@@ -626,7 +626,7 @@ pub fn differs_only_where_the_plan_pads(
     encoding: &str,
     endian: &str,
 ) -> bool {
-    if mine.len() != theirs.len() || mine.len() % 2 != 0 {
+    if mine.len() != theirs.len() || !mine.len().is_multiple_of(2) {
         return false;
     }
     let Some(mask) = padding_mask(case, configuration, encoding, endian) else {
@@ -703,7 +703,7 @@ pub fn reads_back_as_the_sample(
 /// shorter: `corba-corpus.tsv` keeps refusals in the same column as the
 /// octets behind an `ERR1:` prefix.
 fn unhex(hex: &str) -> Result<Vec<u8>, ()> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(());
     }
     (0..hex.len() / 2)
@@ -749,37 +749,20 @@ mod tests {
         assert_eq!(orders, crate::ORDERS.to_vec());
     }
 
-    /// The twelve here are the twelve the gate measures.
-    ///
-    /// The gate's list, `tools/wireprobe/corpus-python.py`'s and
-    /// `wireprobe-c-matrix`'s are already held equal to each other by
-    /// the gate itself. This is the fourth copy, and it is the one the
-    /// mitigation column is derived from — a configuration the tables
-    /// know about and the columns do not would name a flag no column
-    /// was ever measured under.
+    /// The twelve here are the twelve the matrix measures, in its order:
+    /// `zerodds_wire_probe::matrix::CONFIGURATIONS`, which the Python
+    /// column's driver reads and `wireprobe-c-matrix`'s list is held to
+    /// (`tools/wireprobe/wireprobe-zerodds-c-gen/tests/configurations.rs`).
+    /// This copy is the one the mitigation column is derived from — a
+    /// configuration the tables know about and the columns do not would
+    /// name a flag no column was ever measured under.
     #[test]
-    fn the_configurations_are_the_gates() {
-        let gate = std::fs::read_to_string(
-            crate::repository_root()
-                .join("crates")
-                .join("wire-probe")
-                .join("tests")
-                .join("three_column_gate.rs"),
-        )
-        .expect("the three-column gate");
-        for configuration in &CONFIGURATIONS {
-            assert!(
-                gate.contains(&format!("name: \"{}\"", configuration.name)),
-                "`{}` is a configuration here and not in the three-column gate",
-                configuration.name
-            );
-        }
-        let in_gate = gate.matches("        name: \"").count();
-        assert_eq!(
-            in_gate,
-            CONFIGURATIONS.len(),
-            "the gate has {in_gate} configurations and this has {}",
-            CONFIGURATIONS.len()
-        );
+    fn the_configurations_are_the_matrix_s() {
+        let here: Vec<&str> = CONFIGURATIONS.iter().map(|entry| entry.name).collect();
+        let matrix: Vec<&str> = zerodds_wire_probe::matrix::CONFIGURATIONS
+            .iter()
+            .map(|entry| entry.name)
+            .collect();
+        assert_eq!(here, matrix);
     }
 }

@@ -58,7 +58,7 @@ fn in_order(ops: &[&str], wanted: &[&str]) -> bool {
 }
 
 #[test]
-fn the_key_material_of_two_endpoints_and_the_protected_data_follow_the_figures() {
+fn security_9_8_9_4_the_key_material_of_two_endpoints_and_the_protected_data_follow_the_figures() {
     let (alice, alice_log) = gate();
     let (bob, bob_log) = gate();
     let writer = alice.register_local_endpoint(true).expect("writer key");
@@ -181,7 +181,7 @@ fn the_key_material_of_two_endpoints_and_the_protected_data_follow_the_figures()
 /// `register_local_datareader`, with the kinds §10.4.1.2.5 gives it; the
 /// matched remote counterpart is registered, and the CryptoTokens are made.
 #[test]
-fn the_builtin_secure_endpoints_are_registered_and_matched() {
+fn security_9_8_9_3_the_builtin_secure_endpoints_are_registered_and_matched() {
     let (crypto, log) = recording_crypto::RecordingCrypto::new();
     let gate = SharedSecurityGate::new(
         0,

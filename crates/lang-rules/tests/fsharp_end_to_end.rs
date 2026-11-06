@@ -118,7 +118,7 @@ fn code_only(generated: &str) -> String {
 // -- the mapping ---------------------------------------------------------
 
 #[test]
-fn a_struct_of_primitives_becomes_an_fsharp_class() {
+fn xtypes_7_2_2_2_a_struct_of_primitives_becomes_an_fsharp_class() {
     let generated = generate("struct Pose { long x; double y; boolean active; };");
     assert!(generated.contains("type Pose() ="), "{generated}");
     assert!(
@@ -136,7 +136,7 @@ fn a_struct_of_primitives_becomes_an_fsharp_class() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_an_fsharp_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_an_fsharp_type() {
     let generated = generate(
         "struct P {
            boolean a; octet b; char c; wchar d;
@@ -170,13 +170,13 @@ fn every_idl_primitive_reaches_an_fsharp_type() {
 }
 
 #[test]
-fn a_long_double_holds_decimal_text_because_dotnet_has_no_binary128() {
+fn xtypes_7_2_2_2_a_long_double_holds_decimal_text_because_dotnet_has_no_binary128() {
     let generated = generate("struct S { long double big; };");
     assert!(generated.contains("big : string"), "{generated}");
 }
 
 #[test]
-fn an_optional_member_becomes_an_option_and_defaults_to_none() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_an_option_and_defaults_to_none() {
     let generated = generate("struct S { @optional octet b; long c; };");
     assert!(
         generated.contains("b : byte option = None with get, set"),
@@ -187,7 +187,7 @@ fn an_optional_member_becomes_an_option_and_defaults_to_none() {
 }
 
 #[test]
-fn an_external_member_stays_inline_because_a_class_is_a_reference_already() {
+fn xtypes_7_2_2_4_9_an_external_member_stays_inline_because_a_class_is_a_reference_already() {
     // `@external` says the member is stored outside the containing
     // object; an F# class already is a reference, so a self-recursive
     // type needs nothing extra. Found by the compiler and not by any
@@ -206,7 +206,7 @@ fn an_external_member_stays_inline_because_a_class_is_a_reference_already() {
 }
 
 #[test]
-fn a_member_named_after_an_fsharp_keyword_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_an_fsharp_keyword_is_escaped_and_keeps_its_idl_name() {
     let generated = generate("struct S { long type; long member; };");
     assert!(generated.contains("type_ : int32"), "{generated}");
     assert!(generated.contains("member_ : int32"), "{generated}");
@@ -215,26 +215,26 @@ fn a_member_named_after_an_fsharp_keyword_is_escaped_and_keeps_its_idl_name() {
 }
 
 #[test]
-fn a_declaration_named_after_a_primitive_is_escaped() {
+fn idl_7_2_3_a_declaration_named_after_a_primitive_is_escaped() {
     let generated = generate("struct byte { long x; };");
     assert!(generated.contains("type byte_() ="), "{generated}");
 }
 
 #[test]
-fn two_members_that_would_reach_one_fsharp_name_are_refused_by_name() {
+fn idl_7_2_3_two_members_that_would_reach_one_fsharp_name_are_refused_by_name() {
     let err = try_generate("struct S { long type; long type_; };", "t.idl").unwrap_err();
     assert!(err.contains("materialise:"), "{err}");
 }
 
 #[test]
-fn a_sequence_becomes_an_array_and_a_string_stays_a_string() {
+fn xtypes_7_2_2_4_3_a_sequence_becomes_an_array_and_a_string_stays_a_string() {
     let generated = generate("struct S { sequence<long> ids; string name; };");
     assert!(generated.contains("ids : int32 [] ="), "{generated}");
     assert!(generated.contains("name : string ="), "{generated}");
 }
 
 #[test]
-fn a_fixed_holds_its_decimal_as_text() {
+fn xtypes_7_2_2_2_a_fixed_holds_its_decimal_as_text() {
     let generated = generate("struct S { fixed<9,2> price; };");
     assert!(generated.contains("price : string ="), "{generated}");
 }
@@ -246,7 +246,7 @@ fn an_array_nests_outermost_dimension_first() {
 }
 
 #[test]
-fn a_map_becomes_an_array_of_entries_and_never_a_dictionary() {
+fn xtypes_7_2_2_4_3_a_map_becomes_an_array_of_entries_and_never_a_dictionary() {
     let generated = generate("struct S { map<long, string> t; };");
     assert!(
         generated.contains("type ZdMapEntry_long_string() ="),
@@ -268,7 +268,7 @@ fn a_typedef_becomes_a_type_abbreviation() {
 }
 
 #[test]
-fn an_enum_holds_its_cases_with_every_value_written_out() {
+fn xtypes_7_2_2_4_1_1_an_enum_holds_its_cases_with_every_value_written_out() {
     let generated = generate("enum Mode { IDLE, @value(4) ACTIVE, FAULT };");
     assert!(generated.contains("type Mode ="), "{generated}");
     assert!(generated.contains("| IDLE = 0"), "{generated}");
@@ -293,7 +293,7 @@ fn a_union_becomes_a_class_with_a_discriminator_and_one_field_per_branch() {
 }
 
 #[test]
-fn an_external_union_branch_stays_inline_too() {
+fn xtypes_7_2_2_4_9_an_external_union_branch_stays_inline_too() {
     // `Sel` and not `M`: IDL compares identifiers without regard to
     // case (§7.2.3), so an `enum M` inside `module m` would be the
     // scope's own name redeclared in its immediate scope, which IDL 4.2
@@ -310,7 +310,7 @@ fn an_external_union_branch_stays_inline_too() {
 }
 
 #[test]
-fn a_bitmask_becomes_a_type_abbreviation_and_one_constant_per_bit() {
+fn xtypes_7_2_2_4_1_1_a_bitmask_becomes_a_type_abbreviation_and_one_constant_per_bit() {
     let generated = generate("@bit_bound(16) bitmask Flags { READY, @position(4) MOVING };");
     assert!(generated.contains("type Flags = uint16"), "{generated}");
     // `uint16(1 <<< 0)` and not a bare `1 <<< 0`: F# gives `1` no width
@@ -437,7 +437,7 @@ fn a_native_declaration_becomes_obj() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_module_rec_does_not_nest_idl_modules() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_module_rec_does_not_nest_idl_modules() {
     let generated = generate("module m { struct S { long a; }; };");
     assert!(generated.contains("type m_S() ="), "{generated}");
 }
@@ -449,7 +449,7 @@ fn a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
 }
 
 #[test]
-fn the_module_line_always_carries_rec() {
+fn idl_7_5_2_the_module_line_always_carries_rec() {
     let generated = generate("struct S { long a; };");
     assert!(generated.starts_with("// Generated"), "{generated}");
     assert!(generated.contains("module rec ZdTypes"), "{generated}");
@@ -471,13 +471,13 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct S { long a; sequence<string> b; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_catalogue_covers_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_catalogue_covers_produces_output() {
     let sources = [
         ("struct S { long a; };", "type S()"),
         ("enum E { A };", "type E ="),
@@ -533,7 +533,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -597,6 +597,98 @@ fn scratch() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("zd-fsharp-check-{}-{serial}", std::process::id()))
 }
 
+/// The CPUs a `dotnet fsi` here sizes its threads by. The codegen jobs run
+/// eight checks side by side on a host that shows the runtime 32 CPUs; one
+/// `dotnet fsi` per case ran past a test's 25 s there (pipeline 8688, job
+/// 228192).
+const DOTNET_PROCESSOR_COUNT: &str = "2";
+
+/// The F# files of a share through one `dotnet fsi --exec`: every case in a
+/// file of its own, its module renamed from `ZdTypes` to `ZdTypes<n>` (the
+/// generated file opens with `module rec ZdTypes`, after the comment lines
+/// of a generated file's header, and nothing in it names the module), all
+/// `#load`ed after the runtime. When that fails, or a file does not open
+/// that way, every case is checked alone, so that a failure names its case.
+fn fsharp_checks_together(cases: &[(String, String)]) -> Vec<(String, String)> {
+    let alone = || -> Vec<(String, String)> {
+        cases
+            .iter()
+            .filter_map(|(name, source)| fsharp_checks(source).err().map(|why| (name.clone(), why)))
+            .collect()
+    };
+    let header = "module rec ZdTypes\n";
+    if cases.is_empty() {
+        return Vec::new();
+    }
+    // `fsharp_file` writes the header comment of a generated file before the
+    // module line; demanding the module line first sent every corpus case
+    // through a `dotnet fsi` of its own, about 4 s each (pipeline 8823).
+    let opens_with_the_module = |source: &str| {
+        source
+            .lines()
+            .find(|line| !line.starts_with("//"))
+            .is_some_and(|line| format!("{line}\n") == header)
+    };
+    if cases
+        .iter()
+        .any(|(_, source)| !opens_with_the_module(source))
+    {
+        return alone();
+    }
+    let dir = scratch();
+    let started = std::time::Instant::now();
+    let together = fsharp_load_together(&dir, cases, header);
+    let _ = std::fs::remove_dir_all(&dir);
+    // Said on the channel a passing test does not use: how long the one
+    // `dotnet fsi` took, and whether the cases go on alone.
+    eprintln!(
+        "FSHARP_TOGETHER cases={} ok={} seconds={:.1}",
+        cases.len(),
+        together.is_ok(),
+        started.elapsed().as_secs_f64()
+    );
+    if together.is_ok() {
+        Vec::new()
+    } else {
+        alone()
+    }
+}
+
+/// One `dotnet fsi --exec` that `#load`s the runtime and `cases`, each
+/// under a module of its own.
+fn fsharp_load_together(
+    dir: &std::path::Path,
+    cases: &[(String, String)],
+    header: &str,
+) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    let runtime =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../runtime/fsharp/ZdWire.fs");
+    std::fs::copy(&runtime, dir.join("ZdWire.fs")).map_err(|error| error.to_string())?;
+    let mut main = String::from("#load \"ZdWire.fs\"\n");
+    for (index, (_, source)) in cases.iter().enumerate() {
+        let renamed = source.replacen(header, &format!("module rec ZdTypes{index}\n"), 1);
+        std::fs::write(dir.join(format!("Types{index}.fs")), renamed)
+            .map_err(|error| error.to_string())?;
+        main.push_str(&format!("#load \"Types{index}.fs\"\n"));
+    }
+    let script = dir.join("Main.fsx");
+    std::fs::write(&script, main).map_err(|error| error.to_string())?;
+    let output = Command::new("dotnet")
+        .env("DOTNET_PROCESSOR_COUNT", DOTNET_PROCESSOR_COUNT)
+        .arg("fsi")
+        .arg("--exec")
+        .arg(&script)
+        .current_dir(dir)
+        .output()
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).into_owned())
+    }
+}
+
 /// One generated file through the real compiler: `dotnet fsi --exec`,
 /// with `ZdWire.fs` `#load`ed beside it so a fragment that names a
 /// runtime type — none of the tests above do, but the corpus-wide
@@ -622,6 +714,7 @@ fn fsharp_checks(source: &str) -> Result<(), String> {
     std::fs::write(&main, "#load \"ZdWire.fs\"\n#load \"Types.fs\"\n")
         .map_err(|error| error.to_string())?;
     let output = Command::new("dotnet")
+        .env("DOTNET_PROCESSOR_COUNT", DOTNET_PROCESSOR_COUNT)
         .arg("fsi")
         .arg("--exec")
         .arg(&main)
@@ -640,15 +733,19 @@ fn fsharp_checks(source: &str) -> Result<(), String> {
 
 /// Whether `dotnet fsi` is usable at all.
 fn fsharp_available() -> bool {
-    Command::new("dotnet")
-        .arg("fsi")
-        .arg("--help")
-        .output()
-        .is_ok_and(|output| output.status.success())
+    // A look at PATH and not a start of the tool: a JVM, .NET or BEAM
+    // start cost seconds of a test's 25 s with eight compilers side by side
+    // (pipeline 8678); a tool that cannot start fails the compile that follows.
+    on_path("dotnet")
+}
+
+fn on_path(tool: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
 }
 
 #[test]
-#[ignore = "one `dotnet fsi` start per case: 65s measured for a single test, over 2min for a set; run with --include-ignored"]
+#[ignore = "one `dotnet fsi` start; runs in integration-codegen-fsharp"]
 fn the_fsharp_check_reports_a_type_error_with_nothing_referencing_it() {
     // The check this gate depends on is not vacuous: unlike Zig's own
     // `build-obj`, `dotnet fsi --exec` type-checks a declaration that
@@ -665,10 +762,9 @@ fn the_fsharp_check_reports_a_type_error_with_nothing_referencing_it() {
     );
 }
 
-/// Every shape above, through the compiler.
-#[test]
-#[ignore = "one `dotnet fsi` start per case: 65s measured for a single test, over 2min for a set; run with --include-ignored"]
-fn the_generated_fsharp_compiles() {
+/// Every shape above, through the compiler: the sources of `share` (of
+/// `shares`), one `dotnet fsi` start each, about 4 s on the Linux test host.
+fn the_generated_fsharp_compiles(share: usize, shares: usize) {
     assert!(
         fsharp_available(),
         "the requested F# gate needs `dotnet fsi`"
@@ -704,12 +800,14 @@ fn the_generated_fsharp_compiles() {
         "struct Node { sequence<Node> children; };",
         "@annotation Sensitive { string reason; };",
     ];
-    for idl in sources {
-        let generated = generate(idl);
-        if let Err(why) = fsharp_checks(&generated) {
-            panic!("{idl}\n\n{generated}\n\n{why}");
-        }
-    }
+    let selected: Vec<(String, String)> = sources
+        .iter()
+        .enumerate()
+        .filter(|(position, _)| position % shares == share)
+        .map(|(_, idl)| ((*idl).to_owned(), generate(idl)))
+        .collect();
+    let failures = fsharp_checks_together(&selected);
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
 /// Every shape above, through the compiler, in the **read** direction —
@@ -727,91 +825,102 @@ fn the_generated_fsharp_compiles() {
 /// tolerance for a single long-lived child even though no individual
 /// `dotnet fsi` call hangs — the per-file budget in the project's own
 /// conventions ("Einzeltest ≤25s, Lauf ≤5min") is the same rule.
-fn run_decode_cases(sources: &[(&str, &str)]) {
+fn run_decode_cases(sources: &[(&str, &str)], share: usize, shares: usize) {
     assert!(
         fsharp_available(),
         "the requested F# gate needs `dotnet fsi`"
     );
-    for (idl, type_name) in sources {
-        let generated = generate_decode(idl, type_name).unwrap_or_else(|why| panic!("{why}"));
-        if let Err(why) = fsharp_checks(&generated) {
-            panic!("{idl}\n\n{generated}\n\n{why}");
-        }
-    }
+    let selected: Vec<(String, String)> = sources
+        .iter()
+        .enumerate()
+        .filter(|(position, _)| position % shares == share)
+        .map(|(_, (idl, type_name))| {
+            let generated = generate_decode(idl, type_name).unwrap_or_else(|why| panic!("{why}"));
+            ((*idl).to_owned(), generated)
+        })
+        .collect();
+    let failures = fsharp_checks_together(&selected);
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
-#[test]
-#[ignore = "one `dotnet fsi` start per case: 65s measured for a single test, over 2min for a set; run with --include-ignored"]
-fn the_generated_fsharp_decodes_primitives_and_collections() {
-    run_decode_cases(&[
-        ("struct Pose { long x; double y; boolean active; };", "Pose"),
-        (
-            "struct P { boolean a; octet b; char c; wchar d; int8 e; uint8 f; short g; \
+fn the_generated_fsharp_decodes_primitives_and_collections(share: usize, shares: usize) {
+    run_decode_cases(
+        &[
+            ("struct Pose { long x; double y; boolean active; };", "Pose"),
+            (
+                "struct P { boolean a; octet b; char c; wchar d; int8 e; uint8 f; short g; \
              unsigned short h; long i; unsigned long j; long long k; unsigned long long l; \
              float m; double n; long double o; };",
-            "P",
-        ),
-        (
-            "struct S { @optional octet b; long c; string name; wstring wide; \
+                "P",
+            ),
+            (
+                "struct S { @optional octet b; long c; string name; wstring wide; \
              sequence<long> ids; long grid[2][3]; map<long, string> table; fixed<9,2> price; };",
-            "S",
-        ),
-        (
-            "struct Inner { long v; }; struct Outer { sequence<Inner> items; \
+                "S",
+            ),
+            (
+                "struct Inner { long v; }; struct Outer { sequence<Inner> items; \
              map<long, Inner> table; };",
-            "Outer",
-        ),
-    ]);
+                "Outer",
+            ),
+        ],
+        share,
+        shares,
+    );
 }
 
-#[test]
-#[ignore = "one `dotnet fsi` start per case: 65s measured for a single test, over 2min for a set; run with --include-ignored"]
-fn the_generated_fsharp_decodes_enums_and_masks() {
-    run_decode_cases(&[
-        (
-            "enum Mode { IDLE, @value(4) ACTIVE, FAULT };
+fn the_generated_fsharp_decodes_enums_and_masks(share: usize, shares: usize) {
+    run_decode_cases(
+        &[
+            (
+                "enum Mode { IDLE, @value(4) ACTIVE, FAULT };
              union Payload switch (Mode) { case IDLE: long idle; case ACTIVE: double active; \
              default: string reason; };",
-            "Payload",
-        ),
-        (
-            "@bit_bound(16) bitmask Flags { READY, @position(4) MOVING };",
-            "Flags",
-        ),
-        ("@bit_bound(64) bitmask Wide { @position(63) TOP };", "Wide"),
-        (
-            "bitset Bits { bitfield<3> low; bitfield<12> high; };",
-            "Bits",
-        ),
-    ]);
+                "Payload",
+            ),
+            (
+                "@bit_bound(16) bitmask Flags { READY, @position(4) MOVING };",
+                "Flags",
+            ),
+            ("@bit_bound(64) bitmask Wide { @position(63) TOP };", "Wide"),
+            (
+                "bitset Bits { bitfield<3> low; bitfield<12> high; };",
+                "Bits",
+            ),
+        ],
+        share,
+        shares,
+    );
 }
 
-#[test]
-#[ignore = "one `dotnet fsi` start per case: 65s measured for a single test, over 2min for a set; run with --include-ignored"]
-fn the_generated_fsharp_decodes_classes_and_recursion() {
-    run_decode_cases(&[
-        (
-            "valuetype V { public long counter; private string secret; };",
-            "V",
-        ),
-        // No exception here, and not by omission: `decoder_from` takes an
-        // `Id<TypeNode>`, and `idl-lower` gives an exception a node of its
-        // own (`AnyId::Exception`), so `ast.types()` never answers with one.
-        // The declaration side does carry it —
-        // `the_generated_fsharp_compiles` renders the same source, and every
-        // other column asserts the same shape (zig_end_to_end.rs::
-        // an_exception_becomes_a_struct_of_its_members). Whether an
-        // exception needs a codec of its own, or reaches the wire only
-        // inside the reply type DDS-RPC 1.0 §7.5.1.1.5 builds for it, is a
-        // question about the RPC mapping and not about this column.
-        ("struct Node { sequence<Node> children; };", "Node"),
-    ]);
+fn the_generated_fsharp_decodes_classes_and_recursion(share: usize, shares: usize) {
+    run_decode_cases(
+        &[
+            (
+                "valuetype V { public long counter; private string secret; };",
+                "V",
+            ),
+            // No exception here, and not by omission: `decoder_from` takes an
+            // `Id<TypeNode>`, and `idl-lower` gives an exception a node of its
+            // own (`AnyId::Exception`), so `ast.types()` never answers with one.
+            // The declaration side does carry it —
+            // `the_generated_fsharp_compiles` renders the same source, and every
+            // other column asserts the same shape (zig_end_to_end.rs::
+            // an_exception_becomes_a_struct_of_its_members). Whether an
+            // exception needs a codec of its own, or reaches the wire only
+            // inside the reply type DDS-RPC 1.0 §7.5.1.1.5 builds for it, is a
+            // question about the RPC mapping and not about this column.
+            ("struct Node { sequence<Node> children; };", "Node"),
+        ],
+        share,
+        shares,
+    );
 }
 
-/// The whole corpus through the compiler, one file per case.
-#[test]
-#[ignore = "hundreds of `dotnet fsi` invocations; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through the compiler, one file per case: every case
+/// renders, and the cases of `share` (of `shares`) go through `dotnet fsi`,
+/// about 4.3 s a case on the Linux test host, 1725 s for the corpus.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         fsharp_available(),
         "the requested F# compiler gate needs `dotnet fsi`"
@@ -822,7 +931,9 @@ fn every_corpus_case_that_renders_also_compiles() {
     let mut backend_refused = Vec::new();
     let mut frontend_refused = 0_usize;
     let mut checked = 0_usize;
-    for (name, path) in cases {
+    let mut compiled = 0_usize;
+    let mut selected = Vec::new();
+    for (position, (name, path)) in cases.into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             frontend_refused += 1;
@@ -837,15 +948,20 @@ fn every_corpus_case_that_renders_also_compiles() {
             }
         };
         checked += 1;
-        if let Err(why) = fsharp_checks(&text) {
-            eprintln!("COMPILER_FAILED {name}: {why}");
-            failures.push(format!("{name}: {why}"));
+        if position % shares != share {
+            continue;
         }
+        compiled += 1;
+        selected.push((name, text));
+    }
+    for (name, why) in fsharp_checks_together(&selected) {
+        eprintln!("COMPILER_FAILED {name}: {why}");
+        failures.push(format!("{name}: {why}"));
     }
     eprintln!(
-        "CORPUS_SUMMARY total={total} frontend_refused={frontend_refused} backend_refused={} reached={checked} passed={} failed={}",
+        "CORPUS_SUMMARY total={total} frontend_refused={frontend_refused} backend_refused={} reached={checked} compiled={compiled} passed={} failed={}",
         backend_refused.len(),
-        checked - failures.len(),
+        compiled - failures.len(),
         failures.len(),
     );
     assert_eq!(total, frontend_refused + backend_refused.len() + checked);
@@ -893,7 +1009,7 @@ fn every_corpus_case_that_renders_also_compiles() {
 /// `sentinel-must-understand` and `7f02` where it is not. Measured, and
 /// `dotnet fsi --exec` exits 1.
 #[test]
-#[ignore = "one `dotnet fsi` start per case: 65s measured for a single test, over 2min for a set; run with --include-ignored"]
+#[ignore = "one `dotnet fsi` start; runs in integration-codegen-fsharp"]
 fn the_pid_flag_policy_answers_at_each_position() {
     assert!(
         fsharp_available(),
@@ -967,7 +1083,7 @@ expect ZdWire.ImplExtensionOnMembers \"01c0040007000000023f0000\"
 /// bits 28-30 writes `00000020` where `ffffffaf` belongs, discarding
 /// both the member id and `M_FLAG`.
 #[test]
-#[ignore = "one `dotnet fsi` start per case: 65s measured for a single test, over 2min for a set; run with --include-ignored"]
+#[ignore = "one `dotnet fsi` start; runs in integration-codegen-fsharp"]
 fn a_length_code_shortens_only_where_the_member_fits_one() {
     assert!(
         fsharp_available(),
@@ -1017,4 +1133,235 @@ expect \"id and must-understand survive\" (written ZdWire.LE true 0x0FFFFFFF tru
 expect \"eight octets, big endian\" (written ZdWire.BE true 1 false 8) \"300000010102030405060708\"
 ";
     fsharp_checks(source).expect("the length code shortened exactly where the member fits one");
+}
+
+/// zerodds-xcdr2-fsharp-1.0 §7.3.1: the generated F# of every shape compiles,
+/// in ten shares.
+/// `#[ignore]`: the crate tier has no .NET SDK; the weekly job runs these
+/// with it, eight shares at a time, each share within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier").
+mod xtypes_7_3_1_the_generated_fsharp_compiles {
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_01() {
+        super::the_generated_fsharp_compiles(0, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_02() {
+        super::the_generated_fsharp_compiles(1, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_03() {
+        super::the_generated_fsharp_compiles(2, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_04() {
+        super::the_generated_fsharp_compiles(3, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_05() {
+        super::the_generated_fsharp_compiles(4, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_06() {
+        super::the_generated_fsharp_compiles(5, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_07() {
+        super::the_generated_fsharp_compiles(6, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_08() {
+        super::the_generated_fsharp_compiles(7, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_09() {
+        super::the_generated_fsharp_compiles(8, 10);
+    }
+
+    #[test]
+    #[ignore = "a tenth of the shapes through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_10() {
+        super::the_generated_fsharp_compiles(9, 10);
+    }
+}
+
+/// zerodds-xcdr2-fsharp-1.0 §7.4.3: the generated F# decoders of primitives and collections
+/// compile, in two shares.
+/// `#[ignore]`: the crate tier has no .NET SDK; the weekly job runs these
+/// with it, eight shares at a time, each share within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier").
+mod xtypes_7_4_3_the_generated_fsharp_decodes_primitives_and_collections {
+    #[test]
+    #[ignore = "half of the primitives and collections decoders through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_01() {
+        super::the_generated_fsharp_decodes_primitives_and_collections(0, 2);
+    }
+
+    #[test]
+    #[ignore = "half of the primitives and collections decoders through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_02() {
+        super::the_generated_fsharp_decodes_primitives_and_collections(1, 2);
+    }
+}
+
+/// zerodds-xcdr2-fsharp-1.0 §7.4.3: the generated F# decoders of enumerations and masks
+/// compile, in two shares.
+/// `#[ignore]`: the crate tier has no .NET SDK; the weekly job runs these
+/// with it, eight shares at a time, each share within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier").
+mod xtypes_7_4_3_the_generated_fsharp_decodes_enums_and_masks {
+    #[test]
+    #[ignore = "half of the enumerations and masks decoders through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_01() {
+        super::the_generated_fsharp_decodes_enums_and_masks(0, 2);
+    }
+
+    #[test]
+    #[ignore = "half of the enumerations and masks decoders through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_02() {
+        super::the_generated_fsharp_decodes_enums_and_masks(1, 2);
+    }
+}
+
+/// zerodds-xcdr2-fsharp-1.0 §7.4.3: the generated F# decoders of classes and recursion
+/// compile, in two shares.
+/// `#[ignore]`: the crate tier has no .NET SDK; the weekly job runs these
+/// with it, eight shares at a time, each share within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier").
+mod xtypes_7_4_3_the_generated_fsharp_decodes_classes_and_recursion {
+    #[test]
+    #[ignore = "half of the classes and recursion decoders through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_01() {
+        super::the_generated_fsharp_decodes_classes_and_recursion(0, 2);
+    }
+
+    #[test]
+    #[ignore = "half of the classes and recursion decoders through `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_02() {
+        super::the_generated_fsharp_decodes_classes_and_recursion(1, 2);
+    }
+}
+
+/// Every corpus case that renders compiles under `dotnet fsi`, in 16
+/// shares, each one `dotnet fsi` over its 26 or 27 cases
+/// (`fsharp_checks_together`). One `dotnet fsi` costs about 4.5 s, and its
+/// cases little beyond that (pipeline 8956, job 229491: seven cases in 4.3
+/// to 4.8 s); until the cases of a share went through one `dotnet fsi`, the
+/// corpus was 256 shares in four jobs, one `dotnet fsi` per case.
+/// `#[ignore]`: the crate tier has no .NET SDK; the weekly job runs these
+/// with it, four shares at a time, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier").
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one `dotnet fsi`; runs in integration-codegen-fsharp"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 16);
+    }
 }

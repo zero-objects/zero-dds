@@ -150,7 +150,7 @@ fn spawn_daemon() -> (DaemonGuard, u16, PathBuf) {
         .stdout(Stdio::null())
         .spawn()
         .expect("spawn daemon");
-    std::thread::sleep(Duration::from_millis(800));
+    // `connect` waits until the daemon listens.
     (DaemonGuard { child }, port, dir)
 }
 

@@ -532,10 +532,9 @@ pub fn types_that_close_an_inadmissible_cycle(
     for (id, _) in ast.types() {
         let mut deps = DepCollector::new();
         if let Err(LayoutError::RecursionOutsideCollection { node }) = plan(ast, id, key, &mut deps)
+            && seen.insert(node)
         {
-            if seen.insert(node) {
-                found.push((id, node));
-            }
+            found.push((id, node));
         }
     }
     found

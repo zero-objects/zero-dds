@@ -127,10 +127,10 @@ impl InstanceClaim {
 
 impl Drop for InstanceClaim {
     fn drop(&mut self) {
-        if let Some(key) = self.key.take() {
-            if let Ok(mut reg) = instance_registry().lock() {
-                reg.remove(&key);
-            }
+        if let Some(key) = self.key.take()
+            && let Ok(mut reg) = instance_registry().lock()
+        {
+            reg.remove(&key);
         }
     }
 }
@@ -1106,7 +1106,7 @@ mod tests {
     }
 
     #[test]
-    fn send_request_async_assigns_unique_sample_ids() {
+    fn rpc_7_2_1_send_request_async_assigns_unique_sample_ids() {
         let p = participant(104);
         let q = RpcQos::default_basic();
         let r = Requester::<RawBytes, RawBytes>::new(&p, "Calc", &q).unwrap();
@@ -1165,7 +1165,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_instance_name_freed_after_drop() {
+    fn rpc_7_9_3_duplicate_instance_name_freed_after_drop() {
         let p = participant(109);
         let q = RpcQos::default_basic();
         {
@@ -1185,7 +1185,7 @@ mod tests {
     }
 
     #[test]
-    fn request_reply_style_drops_the_interface_segment() {
+    fn rpc_7_2_2_3_request_reply_style_drops_the_interface_segment() {
         // §7.4.1: "For the request-reply style language binding,
         // <interface_name> and the following underscore shall not be
         // captured automatically."
@@ -1204,7 +1204,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_correlates_reply_with_pending_slot() {
+    fn rpc_7_2_1_tick_correlates_reply_with_pending_slot() {
         let p = participant(111);
         let q = RpcQos::default_basic();
         let r = Requester::<RawBytes, RawBytes>::new(&p, "Calc", &q).unwrap();
@@ -1223,7 +1223,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_drops_reply_without_matching_request() {
+    fn rpc_7_2_1_tick_drops_reply_without_matching_request() {
         let p = participant(112);
         let q = RpcQos::default_basic();
         let r = Requester::<RawBytes, RawBytes>::new(&p, "Calc", &q).unwrap();
@@ -1332,7 +1332,7 @@ mod tests {
     /// §7.8.2: the reply is correlated by its related sample identity, and
     /// it names the identity of the request.
     #[test]
-    fn an_enhanced_reply_is_correlated_by_its_related_identity() {
+    fn rpc_7_8_2_an_enhanced_reply_is_correlated_by_its_related_identity() {
         let (_p, r) = enhanced_requester(162, ServiceMatching::Off);
         let (id, rx) = r.send_request_async(&RawBytes::new(alloc::vec![])).unwrap();
         // A reply to another client's request is not ours.
@@ -1349,7 +1349,7 @@ mod tests {
     /// A reply with no related identity cannot be handed to a request. It
     /// is counted, not dropped without a trace.
     #[test]
-    fn an_enhanced_reply_without_a_related_identity_is_counted() {
+    fn rpc_7_8_2_2_an_enhanced_reply_without_a_related_identity_is_counted() {
         let (_p, r) = enhanced_requester(163, ServiceMatching::Off);
         let (_id, rx) = r.send_request_async(&RawBytes::new(alloc::vec![])).unwrap();
         r.__push_reply_related(alloc::vec![1], None).unwrap();
@@ -1380,7 +1380,7 @@ mod tests {
     /// service is discovered; here none is, so the call waits for the
     /// timeout of the QoS and then fails without sending.
     #[test]
-    fn an_enhanced_request_waits_for_the_service_and_fails_without_sending() {
+    fn rpc_7_6_2_an_enhanced_request_waits_for_the_service_and_fails_without_sending() {
         let p = participant(165);
         let mut qos = RpcQos::default_enhanced();
         qos.request_timeout = Duration::from_millis(60);
@@ -1406,7 +1406,7 @@ mod tests {
     }
 
     #[test]
-    fn the_fail_setting_does_not_wait() {
+    fn rpc_7_6_2_the_fail_setting_does_not_wait() {
         let (_p, r) = enhanced_requester(166, ServiceMatching::Fail);
         let started = std::time::Instant::now();
         assert_eq!(
@@ -1418,7 +1418,7 @@ mod tests {
 
     /// The Basic mapping has no service-matching rule (§7.6.1).
     #[test]
-    fn the_basic_mapping_sends_without_a_service_match() {
+    fn rpc_7_6_1_the_basic_mapping_sends_without_a_service_match() {
         let p = participant(167);
         let r = Requester::<RawBytes, RawBytes>::new(&p, "Calc", &RpcQos::default_basic()).unwrap();
         assert!(r.service_matched());

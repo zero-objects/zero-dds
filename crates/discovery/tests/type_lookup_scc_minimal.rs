@@ -143,7 +143,7 @@ fn a_reply_with_a_member_missing_files_nothing() {
 /// its members name, in the form of the request; the component's own
 /// SCCIdentifier is not one of them (§7.6.3.2.1).
 #[test]
-fn the_dependencies_of_a_component_are_the_types_its_members_name() {
+fn xtypes_7_6_3_3_4_1_the_dependencies_of_a_component_are_the_types_its_members_name() {
     let enumeration = TypeObjectBuilder::enum_type("::Colour")
         .bit_bound(32)
         .literal("RED", 0)

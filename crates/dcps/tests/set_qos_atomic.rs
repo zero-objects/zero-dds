@@ -23,7 +23,7 @@ fn factory_off() -> EntityFactoryQosPolicy {
 /// at once is refused; ENTITY_FACTORY stays as it was, which a writer or
 /// reader created afterwards shows: it is enabled.
 #[test]
-fn a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber() {
+fn dcps_2_2_2_1_1_1_a_refused_set_qos_leaves_the_entity_factory_of_publisher_and_subscriber() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic = p

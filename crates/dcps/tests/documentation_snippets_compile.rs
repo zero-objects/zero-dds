@@ -20,9 +20,7 @@
 //! One function per fence, named `<page>_<anchor>_snippet`, doc-commented
 //! with the exact `documentation/**` path + line so drift is traceable back
 //! to the source. Add a function here whenever a new
-//! `zerodds-examples/` companion for `documentation/**` is built (see
-//! `internal/website-snippet-inventory.md` for the tracked-corpus twin of
-//! this list).
+//! `zerodds-examples/` companion for `documentation/**` is built.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
@@ -78,6 +76,7 @@ fn first_publisher_snippet() {
         topic_name: "HelloTopic".into(),
         type_name: "RawBytes".into(),
         type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
+        reliable: true,
         ..Default::default()
     };
     assert_eq!(reader_cfg.topic_name, writer_cfg.topic_name);
@@ -289,7 +288,7 @@ fn monitoring_metrics_gauge_snippet() {
 /// end_to_end.rs` is the same chain asserted at the source level. If its
 /// API or the generated code's shape drifts, this test breaks.
 ///
-/// **What this no longer asserts and `docs/OPEN-ITEMS.md` carries**: the
+/// **What this no longer asserts**: the
 /// old backend also emitted `impl zerodds_dcps::DdsType for Pose`, and
 /// the rebuilt one emits the declaration and not the codec, because the
 /// codec is a layout plan executed by `zerodds-wire-codec` rather than

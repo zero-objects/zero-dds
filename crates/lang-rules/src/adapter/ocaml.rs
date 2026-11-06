@@ -186,8 +186,8 @@
 //! ### An aggregate with no members is `unit`
 //!
 //! `type t = { }` is a syntax error — an OCaml record has at least one
-//! field. The C column refuses the case by name for a related reason
-//! (C23 §6.7.2.1p8). OCaml has an answer C does not: `unit` is the type
+//! field. The C column declares a member that stands in for none, for a
+//! related reason (C23 §6.7.2.1p8). OCaml has an answer C does not: `unit` is the type
 //! with exactly one value and no data, which is what an IDL aggregate
 //! with no members is. `type m_s = unit` is emitted, and
 //! `tests/interop-corpus/empty-struct` renders and compiles.
@@ -516,13 +516,13 @@ fn weave_group(ast: &Ast, ids: &[Id<TypeNode>], start: usize, out: &mut Vec<ocam
             continue;
         }
         let name = ocaml_type_name(ast, *id);
-        if let Some(ocaml::Decl::Types(group)) = out.get_mut(start) {
-            if let Some(record) = group.items.iter_mut().find(|item| {
+        if let Some(ocaml::Decl::Types(group)) = out.get_mut(start)
+            && let Some(record) = group.items.iter_mut().find(|item| {
                 item.name.as_str() == name && matches!(item.body, ocaml::TypeBody::Record(_))
-            }) {
-                record.body_text.begin.append(&mut slots.begin);
-                record.body_text.end.append(&mut slots.end);
-            }
+            })
+        {
+            record.body_text.begin.append(&mut slots.begin);
+            record.body_text.end.append(&mut slots.end);
         }
         merged.before.append(&mut slots.before);
         merged.begin.append(&mut slots.begin);
@@ -679,10 +679,10 @@ fn type_groups(ast: &Ast, declared: &[Id<TypeNode>]) -> Vec<Vec<usize>> {
             let mut targets = Vec::new();
             if let Some(id) = declared.get(index) {
                 for reference in body_references(ast, *id) {
-                    if let Some(other) = index_of(ast, declared, reference) {
-                        if !targets.contains(&other) {
-                            targets.push(other);
-                        }
+                    if let Some(other) = index_of(ast, declared, reference)
+                        && !targets.contains(&other)
+                    {
+                        targets.push(other);
                     }
                 }
             }
@@ -805,10 +805,10 @@ fn body_references(ast: &Ast, id: Id<TypeNode>) -> Vec<Id<TypeNode>> {
                 out.extend(value_references(ast, base, 0));
             }
             for member in ast.all_members_of(id) {
-                if let Ok(member_node) = ast.member(member) {
-                    if let Some(target) = member_node.type_.resolved() {
-                        out.extend(value_references(ast, target, 0));
-                    }
+                if let Ok(member_node) = ast.member(member)
+                    && let Some(target) = member_node.type_.resolved()
+                {
+                    out.extend(value_references(ast, target, 0));
                 }
             }
         }
@@ -817,12 +817,11 @@ fn body_references(ast: &Ast, id: Id<TypeNode>) -> Vec<Id<TypeNode>> {
                 out.extend(value_references(ast, target, 0));
             }
             for case in ast.cases_of(id) {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        if let Some(target) = member.type_.resolved() {
-                            out.extend(value_references(ast, target, 0));
-                        }
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                    && let Some(target) = member.type_.resolved()
+                {
+                    out.extend(value_references(ast, target, 0));
                 }
             }
         }
@@ -1267,10 +1266,10 @@ fn build_type(
             // two unreachable.
             let mut pairs = vec![(DISCRIMINATOR.to_string(), "<discriminator>".to_string())];
             for case in cases {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        pairs.push((ocaml::lower_ident(&member.name), member.name.clone()));
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                {
+                    pairs.push((ocaml::lower_ident(&member.name), member.name.clone()));
                 }
             }
             no_spelling_collision(as_pairs(&pairs), LANGUAGE, &name)?;
@@ -2068,22 +2067,22 @@ fn ocaml_constant(
         language: LANGUAGE,
         at: at.to_string(),
     };
-    if let Some(target) = declared {
-        if let Some(enumeration) = enumeration_behind(ast, target, 0) {
-            let ConstValue::Integer(number) = value else {
-                return Err(refuse(
-                    "a constant of an enumeration type whose value is not a number".to_string(),
-                ));
-            };
-            return enumerator_named(ast, enumeration, *number)
-                .map(|spelled| ocaml::Expr::construct(&spelled))
-                .ok_or_else(|| {
-                    refuse(format!(
-                        "a constant of an enumeration type whose value {number} names no \
+    if let Some(target) = declared
+        && let Some(enumeration) = enumeration_behind(ast, target, 0)
+    {
+        let ConstValue::Integer(number) = value else {
+            return Err(refuse(
+                "a constant of an enumeration type whose value is not a number".to_string(),
+            ));
+        };
+        return enumerator_named(ast, enumeration, *number)
+            .map(|spelled| ocaml::Expr::construct(&spelled))
+            .ok_or_else(|| {
+                refuse(format!(
+                    "a constant of an enumeration type whose value {number} names no \
                          enumerator, and an OCaml variant has no other spelling"
-                    ))
-                });
-        }
+                ))
+            });
     }
     let holder = declared
         .and_then(|target| literal_holder(ast, target, 0))

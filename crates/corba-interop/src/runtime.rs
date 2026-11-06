@@ -549,15 +549,14 @@ impl IiopCorbaConnection {
         }
         // SSLIOP: if the target IOR carries TAG_SSL_SEC_TRANS and we have a
         // client TLS config, the request runs over TLS to the advertised SSL port.
-        if self.client_tls.is_some() {
-            if let Some(ssl_port) = profile
+        if self.client_tls.is_some()
+            && let Some(ssl_port) = profile
                 .components
                 .iter()
                 .find(|c| c.tag == TAG_SSL_SEC_TRANS)
                 .and_then(|c| ssl_port_of(&c.component_data))
-            {
-                return self.send_tls(&profile, ssl_port, operation, flags, endianness, payload);
-            }
+        {
+            return self.send_tls(&profile, ssl_port, operation, flags, endianness, payload);
         }
         let mut pooled = self
             .connector
@@ -1084,10 +1083,10 @@ impl BiDirEndpoint {
     fn handle_request(&mut self, req: &Request, e: Endianness) -> Result<(), CorbaException> {
         // §15.8: remember the other side's listen points from the BiDir ServiceContext.
         for sc in &req.service_context.0 {
-            if sc.context_id == IIOP_BI_DIR_TAG {
-                if let Some(bd) = parse_bidir(sc) {
-                    self.peer_listen_points = bd.listen_points;
-                }
+            if sc.context_id == IIOP_BI_DIR_TAG
+                && let Some(bd) = parse_bidir(sc)
+            {
+                self.peer_listen_points = bd.listen_points;
             }
         }
         // §15.4.2: GIOP 1.2 callbacks address via KeyAddr/ProfileAddr/

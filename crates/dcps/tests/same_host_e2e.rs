@@ -88,6 +88,7 @@ fn make_reader_config(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
+        reliable: true,
         ..Default::default()
     }
 }
@@ -106,12 +107,12 @@ fn e2e_two_runtimes_udp_roundtrip() {
         p[..6].copy_from_slice(&prefix_a.to_bytes()[..6]);
         GuidPrefix::from_bytes(p)
     };
-    let rt_a = Arc::new(
+    let rt_a = Arc::new(common::ShutsDown(
         DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a start"),
-    );
-    let rt_b = Arc::new(
+    ));
+    let rt_b = Arc::new(common::ShutsDown(
         DcpsRuntime::start(domain, prefix_b, RuntimeConfig::default()).expect("rt_b start"),
-    );
+    ));
     assert!(
         wait_for_peers(&rt_a, 1, Duration::from_secs(10)),
         "rt_a did not see rt_b via SPDP"
@@ -216,7 +217,7 @@ fn alive_payload(sample: zerodds_dcps::runtime::UserSample) -> Vec<u8> {
 /// segment per writer/reader pair.
 #[cfg(feature = "same-host-shm")]
 #[test]
-fn e2e_two_runtimes_shm_roundtrip() {
+fn flatdata_10_3_e2e_two_runtimes_shm_roundtrip() {
     use zerodds_dcps::same_host_channel::Port;
     let domain = common::unique_domain();
     let prefix_a = GuidPrefix::from_bytes([0xA3; 12]);
@@ -437,9 +438,9 @@ fn spdp_works_after_runtime_drop() {
     let prefix = GuidPrefix::from_bytes([0xC5; 12]);
     // First runtime — start and drop immediately.
     {
-        let rt = Arc::new(
+        let rt = Arc::new(common::ShutsDown(
             DcpsRuntime::start(domain, prefix, RuntimeConfig::default()).expect("rt1 start"),
-        );
+        ));
         // Wait a bit so the SPDP beacon went out at least once.
         std::thread::sleep(Duration::from_millis(500));
         drop(rt);
@@ -448,16 +449,17 @@ fn spdp_works_after_runtime_drop() {
     std::thread::sleep(Duration::from_millis(500));
 
     // Second runtime with a peer partner → SPDP must work.
-    let rt_a =
-        Arc::new(DcpsRuntime::start(domain, prefix, RuntimeConfig::default()).expect("rt_a start"));
+    let rt_a = Arc::new(common::ShutsDown(
+        DcpsRuntime::start(domain, prefix, RuntimeConfig::default()).expect("rt_a start"),
+    ));
     let prefix_b = {
         let mut p = [0xD6; 12];
         p[..6].copy_from_slice(&prefix.to_bytes()[..6]);
         GuidPrefix::from_bytes(p)
     };
-    let rt_b = Arc::new(
+    let rt_b = Arc::new(common::ShutsDown(
         DcpsRuntime::start(domain, prefix_b, RuntimeConfig::default()).expect("rt_b start"),
-    );
+    ));
     assert!(
         wait_for_peers(&rt_a, 1, Duration::from_secs(15)),
         "rt_a did not see rt_b after a prior runtime drop — SPDP-Membership-Leak"
@@ -489,7 +491,7 @@ fn spdp_works_after_runtime_drop() {
 /// followup.
 #[cfg(feature = "same-host-shm")]
 #[test]
-fn e2e_cross_vendor_different_host_id_no_shm_bind() {
+fn flatdata_4_2_e2e_cross_vendor_different_host_id_no_shm_bind() {
     let domain = common::unique_domain();
     // host_id A: FNV1a("zerodds-host") — a ZeroDDS prefix.
     let prefix_a = GuidPrefix::zerodds(
@@ -507,12 +509,12 @@ fn e2e_cross_vendor_different_host_id_no_shm_bind() {
         "test precondition: prefixes must have different host_id"
     );
 
-    let rt_a = Arc::new(
+    let rt_a = Arc::new(common::ShutsDown(
         DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a start"),
-    );
-    let rt_b = Arc::new(
+    ));
+    let rt_b = Arc::new(common::ShutsDown(
         DcpsRuntime::start(domain, prefix_b, RuntimeConfig::default()).expect("rt_b start"),
-    );
+    ));
     assert!(wait_for_peers(&rt_a, 1, Duration::from_secs(10)));
     assert!(wait_for_peers(&rt_b, 1, Duration::from_secs(10)));
 

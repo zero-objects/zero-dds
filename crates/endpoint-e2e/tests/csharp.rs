@@ -292,22 +292,37 @@ fn endpoint_case(mode: &str) {
     ping_pong(&peer, child, &format!("csharp/{mode}"));
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the C# app sends its `Ping`
+/// through the endpoint SDK's sync API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn csharp_endpoint_sync() {
+#[ignore = "needs the C# toolchain; runs in integration-bindings-dotnet"]
+fn xrce_8_3_5_8_csharp_sync_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("sync");
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the C# app sends its `Ping`
+/// through the endpoint SDK's async API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn csharp_endpoint_async() {
+#[ignore = "needs the C# toolchain; runs in integration-bindings-dotnet"]
+fn xrce_8_3_5_8_csharp_async_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("async");
 }
 
 // ---- raw generated codec over a plain UDP socket (no SDK, no XRCE) ----
 
+/// zerodds-endpoint-csharp-1.0 §5 item 1: the C# app sends the `Ping` of the generated codec as a
+/// bare XCDR2 datagram, without the XRCE frame; the test reads it with the
+/// XCDR2 reader (DDS-XTypes 1.3 §7.4) and answers with a bare `Pong`, which
+/// the app decodes and prints.
 #[test]
-fn csharp_raw_udp() {
+#[ignore = "needs the C# toolchain; runs in integration-bindings-dotnet"]
+fn endpoint_csharp_5_1_the_generated_codec_pings_without_the_xrce_frame() {
     let Some(dotnet) = dotnet_bin() else {
-        eprintln!("SKIP csharp_raw_udp: `dotnet` not found");
+        eprintln!("SKIP csharp raw udp: `dotnet` not found");
         return;
     };
     use std::net::UdpSocket;

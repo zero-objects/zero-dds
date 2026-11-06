@@ -16,7 +16,7 @@
 //! narrower test: §11.4 puts the exception *descriptors* of chapter 8
 //! into the `raises` array, and those are the struct column's side
 //! tables. Compiling them here would measure that column and not this
-//! one; `tests/interface_bindings.rs::typescript_writes_the_service_descriptor_of_eleven_five`
+//! one; `tests/interface_bindings.rs::ddsts_11_4_typescript_writes_the_service_descriptor_of_eleven_five`
 //! holds the `raises` array itself.
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stdout)]
 
@@ -45,7 +45,7 @@ const SOURCE: &str = "
 ";
 
 #[test]
-fn the_generated_operations_profile_type_checks() {
+fn ddsts_2_3_the_generated_operations_profile_type_checks() {
     let Some(tsc) = compiler_or_note("the Operations Profile") else {
         return;
     };

@@ -21,7 +21,7 @@ use std::fs;
 use zerodds_build::{Config, DefaultExt};
 
 #[test]
-fn a_struct_becomes_a_type_with_a_codec() {
+fn dcps_2_2_2_3_6_a_struct_becomes_a_type_with_a_codec() {
     let dir = tempfile::tempdir().expect("tempdir");
     let idl = dir.path().join("Sample.idl");
     fs::write(&idl, "struct Sample { long id; string name; };").expect("write idl");

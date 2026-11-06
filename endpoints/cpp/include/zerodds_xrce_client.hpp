@@ -168,7 +168,7 @@ inline std::vector<unsigned char> frame_create_client(unsigned char session_id,
 // `has_parent`/`parent_object_id` are this kind's own trailing field in
 // the real, two-level ObjectVariant (spec §7.7.3) -- a parent id for a
 // Topic/Publisher/Subscriber/DataWriter/DataReader, absent for every
-// other kind (Topic's own participant_id: commit 31c62df2a63). See
+// other kind (Topic's own participant_id: commit bd30deaef0b). See
 // zerodds_xrce_client.h's zdwc_frame_create doc.
 inline std::vector<unsigned char> frame_create(unsigned char session_id,
                                                 const unsigned char client_key[4],

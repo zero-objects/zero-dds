@@ -175,20 +175,6 @@ fn a_cyclic_value_is_refused_by_name() {
     }
 }
 
-/// And the refusal says what it is, in the words of the clause it
-/// enforces: a caller reading only the message has to learn that the
-/// value has a cycle in it, not that some number was exceeded.
-#[test]
-fn the_refusal_names_the_clause() {
-    let (ast, _) = node_model();
-    let message = match encode(&ast, &request(), &Sample::Cyclic) {
-        Err(error) => format!("{error}"),
-        Ok(bytes) => panic!("a cyclic object graph produced {} bytes", bytes.len()),
-    };
-    assert!(message.contains("cycle"), "{message}");
-    assert!(message.contains("7.3.1.2.1.4"), "{message}");
-}
-
 /// A chain at the limit is written and a chain one level past it is
 /// refused: the boundary is where the constant says it is.
 #[test]

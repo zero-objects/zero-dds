@@ -46,7 +46,9 @@ fn real_main() -> i32 {
     use zerodds_rtps::wire_types::GuidPrefix;
 
     let role = std::env::args().nth(1).unwrap_or_default();
-    let domain = 140;
+    // The domain of the repository's examples; the two instances run in
+    // network namespaces of their own (`tests/interop/tsn_netns_e2e.sh`).
+    let domain = 42;
     let topic = "TsnPingPong";
     let payload = b"tsn-roundtrip-0123456789";
 
@@ -80,6 +82,7 @@ fn real_main() -> i32 {
     let reader_cfg = |topic: &str| UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
+        reliable: true,
         ..Default::default()
     };
 

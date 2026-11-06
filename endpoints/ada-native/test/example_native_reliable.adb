@@ -9,6 +9,7 @@
 --  endpoints/c (zerodds_reliable_async.c) and crates/xrce.
 --
 --  Usage:  example_native_reliable <peer_port>   -- reliable sender, 12 samples
+--          example_native_reliable bench         -- producer-latency micro-bench
 
 with Ada.Command_Line;    use Ada.Command_Line;
 with Ada.Text_IO;         use Ada.Text_IO;
@@ -18,6 +19,7 @@ with GNAT.Sockets;        use GNAT.Sockets;
 with Interfaces;          use Interfaces;
 with Zerodds_Native_Wire; use Zerodds_Native_Wire;
 with Native_Reliable;     use Native_Reliable;
+with Native_Reliable_Sample; use Native_Reliable_Sample;
 
 procedure Example_Native_Reliable is
 
@@ -38,18 +40,57 @@ procedure Example_Native_Reliable is
       return SEA;
    end To_SEA;
 
-   --  A telemetry sample carrying its index in the first u32 (so gap-free
-   --  delivery is observable on the peer side): { uint32 id; float value;
-   --  string label }.
-   function Sample (I : Natural) return Payload is
-      W : Writer;
+   -----------------------------------------------------------------
+   --  Latency micro-bench (reliable-endpoint 1.0 §5 point 4): the producer's
+   --  enqueue into the Send_Ring against the inline frame + sendto the
+   --  producer pays without decoupling. Only the enqueues are timed: each
+   --  round fills the ring once and empties it untimed, so no enqueue meets
+   --  backpressure.
+   -----------------------------------------------------------------
+   procedure Bench is
+      Rounds : constant := 80;
+      M      : constant := Rounds * (Ring_Cap - 1);
+      Ring   : Send_Ring;
+      P      : constant Payload := Sample (1);
+      Q      : Payload;
+      Ok, Got : Boolean;
+      Sock   : Socket_Type;
+      Peer   : Sock_Addr_Type;
+      Enqueued : Time_Span := Time_Span_Zero;
+      T0, T1 : Time;
+      Last   : Ada.Streams.Stream_Element_Offset;
+      Seq    : Native_Reliable.Seq_Type := 0;
    begin
-      Init (W, Little);
-      Put_U32 (W, Unsigned_32 (I));
-      Put_F32 (W, IEEE_Float_32 (Float (I) + 0.5));
-      Put_String (W, "reliable-native");
-      return Make_Payload (Bytes (W));
-   end Sample;
+      for R in 1 .. Rounds loop
+         T0 := Clock;
+         for I in 1 .. Ring_Cap - 1 loop
+            Ring.Enqueue (P, Ok);
+            if not Ok then
+               raise Program_Error with "enqueue met a full ring";
+            end if;
+         end loop;
+         Enqueued := Enqueued + (Clock - T0);
+         loop
+            Ring.Dequeue (Q, Got);
+            exit when not Got;
+         end loop;
+      end loop;
+
+      Create_Socket (Sock, Family_Inet, Socket_Datagram);
+      Peer := (Family_Inet, Inet_Addr ("127.0.0.1"), 9);  --  discard
+      T0 := Clock;
+      for I in 1 .. M loop
+         Send_Socket (Sock, To_SEA (Write_Frame (Seq, Writer_Id, P)), Last, Peer);
+         Seq := Seq + 1;
+      end loop;
+      T1 := Clock;
+      Close_Socket (Sock);
+
+      Put_Line ("LATENCY decoupled_ns=" &
+        Long_Integer'Image (Long_Integer (Float (To_Duration (Enqueued)) * 1.0e9 / Float (M))) &
+        " inline_ns=" &
+        Long_Integer'Image (Long_Integer (Float (To_Duration (T1 - T0)) * 1.0e9 / Float (M))));
+   end Bench;
 
    -----------------------------------------------------------------
    --  Reliable send against the peer on <Port>.
@@ -166,10 +207,12 @@ procedure Example_Native_Reliable is
    end Run;
 
 begin
-   if Argument_Count >= 1 then
+   if Argument_Count >= 1 and then Argument (1) = "bench" then
+      Bench;
+   elsif Argument_Count >= 1 then
       Run (Natural'Value (Argument (1)));
       Put_Line ("ADA NATIVE RELIABLE OK" & Natural'Image (N_Samples));
    else
-      Put_Line ("usage: example_native_reliable <peer_port>");
+      Put_Line ("usage: example_native_reliable <peer_port> | bench");
    end if;
 end Example_Native_Reliable;

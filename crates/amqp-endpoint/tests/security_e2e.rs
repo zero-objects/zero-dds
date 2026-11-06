@@ -236,18 +236,21 @@ fn tls_client_connector_handshakes_with_mock_broker() {
     broker.shutdown();
 }
 
+/// RFC 4616 §2: the PLAIN initial response is `[authzid] NUL authcid NUL
+/// passwd`; the client sends it without authzid, and the bridge's
+/// authenticator takes that message.
 #[test]
-fn sasl_plain_init_response_round_trip_with_authenticator() {
+fn amqpbridge_7_2_the_plain_response_is_nul_user_nul_password() {
     let mut sec = AmqpSecurityConfig::default();
     sec.auth_mode = "sasl_plain".into();
     sec.sasl_username = Some("alice".into());
     sec.sasl_password = Some("wonderland".into());
     let blob = sasl_plain_init_response(&sec).expect("sasl blob");
-    // Now confirm the bridge_security side accepts this payload.
+    assert_eq!(blob, b"\x00alice\x00wonderland");
     let mut sasl_users = std::collections::HashMap::new();
     sasl_users.insert("alice".to_string(), "wonderland".to_string());
     let auth = AuthMode::SaslPlain { users: sasl_users };
-    let s = authenticate_amqp_sasl(&auth, Some(&blob), None).unwrap();
+    let s = authenticate_amqp_sasl(&auth, Some(b"\x00alice\x00wonderland"), None).unwrap();
     assert_eq!(s.name, "alice");
 }
 

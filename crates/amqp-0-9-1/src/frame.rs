@@ -113,40 +113,56 @@ impl Frame {
 mod tests {
     use super::*;
 
+    /// AMQP 0-9-1 §4.2.3: `type:octet channel:short size:long`, the
+    /// payload, then the frame-end octet `%xCE`; frame type 1 is
+    /// METHOD (`frame-method` in the protocol's XML definitions).
     #[test]
-    fn frame_roundtrips() {
+    fn amqp091_4_2_3_a_method_frame_is_type_channel_size_payload_and_frame_end() {
+        let wire = [
+            0x01, // frame-method
+            0x00, 0x01, // channel 1
+            0x00, 0x00, 0x00, 0x04, // size
+            0x00, 0x0a, 0x00, 0x0b, // connection.start-ok (10/11)
+            0xce, // frame-end
+        ];
         let f = Frame {
             frame_type: FrameType::Method,
             channel: 1,
             payload: alloc::vec![0x00, 0x0a, 0x00, 0x0b],
         };
-        let wire = f.encode();
-        // type=1, channel=0x0001, size=4, ... , 0xCE.
-        assert_eq!(wire[0], 1);
-        assert_eq!(&wire[1..3], &[0x00, 0x01]);
-        assert_eq!(*wire.last().unwrap(), FRAME_END);
-        let (decoded, n) = Frame::decode(&wire).unwrap();
-        assert_eq!(decoded, f);
-        assert_eq!(n, wire.len());
+        assert_eq!(f.encode(), wire);
+        assert_eq!(Frame::decode(&wire).unwrap(), (f, wire.len()));
     }
 
+    /// §4.2.3: the four frame types of the XML definitions, by number.
     #[test]
-    fn decode_reports_truncation() {
-        let f = Frame {
-            frame_type: FrameType::Body,
-            channel: 1,
-            payload: alloc::vec![1, 2, 3, 4, 5],
-        };
-        let wire = f.encode();
-        assert_eq!(
-            Frame::decode(&wire[..wire.len() - 2]),
-            Err(WireError::Truncated)
-        );
+    fn amqp091_4_2_3_the_frame_types_are_one_two_three_and_eight() {
+        for (octet, kind) in [
+            (1, FrameType::Method),
+            (2, FrameType::Header),
+            (3, FrameType::Body),
+            (8, FrameType::Heartbeat),
+        ] {
+            assert_eq!(FrameType::from_u8(octet), Some(kind));
+            assert_eq!(kind as u8, octet);
+        }
+        assert_eq!(FrameType::from_u8(4), None);
     }
 
+    /// §4.2.3: a frame whose size runs past the octets read is not a
+    /// frame yet; one whose last octet is not `%xCE` is a frame error.
     #[test]
-    fn protocol_header_is_0_0_9_1() {
-        assert_eq!(&PROTOCOL_HEADER[..4], b"AMQP");
-        assert_eq!(&PROTOCOL_HEADER[4..], &[0, 0, 9, 1]);
+    fn amqp091_4_2_3_a_frame_cut_short_or_without_frame_end_is_refused() {
+        let wire = [0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02, 0xaa, 0xbb, 0xce];
+        assert_eq!(Frame::decode(&wire[..8]), Err(WireError::Truncated));
+        let mut bad = wire;
+        bad[9] = 0x00;
+        assert!(Frame::decode(&bad).is_err());
+    }
+
+    /// §4.2.2: the protocol header is `"AMQP" %d0 %d0 %d9 %d1`.
+    #[test]
+    fn amqp091_4_2_2_the_protocol_header_is_amqp_0_0_9_1() {
+        assert_eq!(PROTOCOL_HEADER, *b"AMQP\x00\x00\x09\x01");
     }
 }

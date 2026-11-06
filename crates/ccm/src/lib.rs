@@ -67,7 +67,8 @@ pub mod validate;
 pub use lightweight::{LightweightFilterError, filter_to_lightweight};
 pub use model::{Cookie, FailureReason, FeatureName, RepositoryId};
 pub use transform::{
-    ComponentEquivalent, EventTypeEquivalent, HomeEquivalent, TransformError, transform_component,
-    transform_event_type, transform_home,
+    ComponentEquivalent, EventTypeEquivalent, HomeEquivalent, TransformError,
+    expand_extended_ports, transform_component, transform_connector, transform_event_type,
+    transform_home,
 };
 pub use validate::{InitOp, PrimaryKeyError, apply_factory_finder_body, validate_primary_key};

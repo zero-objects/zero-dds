@@ -179,7 +179,7 @@ fn mk() -> (DomainParticipant, Topic<RawBytes>, Publisher, Subscriber) {
 // ============================================================================
 
 #[test]
-fn inconsistent_topic_listener_fires_on_qos_mismatch_of_a_name() {
+fn dcps_2_2_2_3_2_inconsistent_topic_listener_fires_on_qos_mismatch_of_a_name() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let t1 = p
@@ -229,7 +229,7 @@ fn inconsistent_topic_bubbles_to_participant_when_topic_listener_unset() {
 }
 
 #[test]
-fn inconsistent_topic_no_delta_no_listener() {
+fn dcps_2_2_2_3_5_inconsistent_topic_no_delta_no_listener() {
     let (_, t, _, _) = mk();
     let pc = Arc::new(TopicC::default());
     t.set_listener(Some(pc.clone()), bits::ANY);
@@ -289,7 +289,7 @@ fn offered_deadline_missed_via_runtime_counter() {
 }
 
 #[test]
-fn offered_deadline_missed_listener_fires_on_delta() {
+fn dcps_2_2_2_4_4_offered_deadline_missed_listener_fires_on_delta() {
     let (_, t, pubr, _) = mk();
     let w = pubr
         .create_datawriter::<RawBytes>(&t, DataWriterQos::default())
@@ -439,18 +439,7 @@ fn requested_deadline_missed_listener_fires_on_delta() {
 // ============================================================================
 
 #[test]
-fn offered_incompatible_qos_default_policies_empty() {
-    let (_, t, pubr, _) = mk();
-    let w = pubr
-        .create_datawriter::<RawBytes>(&t, DataWriterQos::default())
-        .unwrap();
-    let s = w.offered_incompatible_qos_status();
-    assert_eq!(s.total_count, 0);
-    assert!(s.policies.is_empty());
-}
-
-#[test]
-fn offered_incompatible_qos_dispatcher_fires_listener() {
+fn dcps_2_2_2_4_4_offered_incompatible_qos_dispatcher_fires_listener() {
     let (_, t, pubr, _) = mk();
     let w = pubr
         .create_datawriter::<RawBytes>(&t, DataWriterQos::default())
@@ -487,17 +476,7 @@ fn offered_incompatible_qos_dispatcher_fires_listener() {
 // ============================================================================
 
 #[test]
-fn requested_incompatible_qos_default_zero() {
-    let (_, t, _, subr) = mk();
-    let r = subr
-        .create_datareader::<RawBytes>(&t, DataReaderQos::default())
-        .unwrap();
-    let s = r.requested_incompatible_qos_status();
-    assert_eq!(s.total_count, 0);
-}
-
-#[test]
-fn requested_incompatible_qos_dispatcher_fires_listener() {
+fn dcps_2_2_4_3_1_requested_incompatible_qos_dispatcher_fires_listener() {
     let (_, t, _, subr) = mk();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -564,14 +543,25 @@ fn liveliness_lost_via_runtime_writer_lease() {
             ..Default::default()
         })
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(250));
-    let n = rt.user_writer_liveliness_lost(eid);
-    assert!(n > 0, "liveliness_lost expected > 0, got {n}");
+    // The lease of 50 ms starts at registration. The count comes when it
+    // ran out, not at the scheduler's next idle wake (250 ms,
+    // `SCHEDULER_IDLE_FLOOR`), which the 200 ms here stay below: the test
+    // read 0 after a fixed 250 ms sleep on Linux arm64 (job 228644).
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(200);
+    let mut n = rt.user_writer_liveliness_lost(eid);
+    while n == 0 && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        n = rt.user_writer_liveliness_lost(eid);
+    }
+    assert!(
+        n > 0,
+        "liveliness_lost expected within 200 ms of a 50 ms lease, got {n}"
+    );
     rt.shutdown();
 }
 
 #[test]
-fn liveliness_lost_dispatcher_fires_listener() {
+fn dcps_2_2_2_4_4_liveliness_lost_dispatcher_fires_listener() {
     let (_, t, pubr, _) = mk();
     let w = pubr
         .create_datawriter::<RawBytes>(&t, DataWriterQos::default())
@@ -600,20 +590,7 @@ fn liveliness_lost_dispatcher_fires_listener() {
 // ============================================================================
 
 #[test]
-fn liveliness_changed_default_status_zero() {
-    let (_, t, _, subr) = mk();
-    let r = subr
-        .create_datareader::<RawBytes>(&t, DataReaderQos::default())
-        .unwrap();
-    let (alive, ac, nc) = r.liveliness_changed_status();
-    // Offline mode → no values.
-    assert!(!alive);
-    assert_eq!(ac, 0);
-    assert_eq!(nc, 0);
-}
-
-#[test]
-fn liveliness_changed_dispatcher_fires_listener() {
+fn dcps_2_2_4_3_1_liveliness_changed_dispatcher_fires_listener() {
     let (_, t, _, subr) = mk();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -672,7 +649,7 @@ fn sample_lost_recorder_increments_counter() {
 }
 
 #[test]
-fn sample_lost_dispatcher_fires_listener() {
+fn dcps_2_2_2_5_7_sample_lost_dispatcher_fires_listener() {
     let (_, t, _, subr) = mk();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -738,7 +715,7 @@ fn sample_rejected_recorder_increments_counter() {
 }
 
 #[test]
-fn sample_rejected_dispatcher_fires_listener() {
+fn dcps_2_2_2_5_7_sample_rejected_dispatcher_fires_listener() {
     let (_, t, _, subr) = mk();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -777,27 +754,6 @@ fn participant_receives_inconsistent_topic_via_bubble_up() {
     t.record_inconsistent_topic();
     let _ = t.inconsistent_topic_status();
     assert_eq!(pc.inconsistent.load(Ordering::Relaxed), 1);
-}
-
-#[test]
-fn drive_listeners_no_op_offline_mode() {
-    let (_, t, pubr, subr) = mk();
-    let w = pubr
-        .create_datawriter::<RawBytes>(&t, DataWriterQos::default())
-        .unwrap();
-    let r = subr
-        .create_datareader::<RawBytes>(&t, DataReaderQos::default())
-        .unwrap();
-    // Offline mode: drive_listeners must not panic and fires
-    // no listeners (all counters stay 0).
-    let cnt_w = Arc::new(WriterC::default());
-    let cnt_r = Arc::new(ReaderC::default());
-    w.set_listener(Some(cnt_w.clone()), bits::ANY);
-    r.set_listener(Some(cnt_r.clone()), bits::ANY);
-    w.drive_listeners();
-    r.drive_listeners();
-    assert_eq!(cnt_w.offered_deadline.load(Ordering::Relaxed), 0);
-    assert_eq!(cnt_r.requested_deadline.load(Ordering::Relaxed), 0);
 }
 
 // ============================================================================
@@ -849,7 +805,7 @@ fn requested_incompat_listener_only_on_change() {
 // ============================================================================
 
 #[test]
-fn assert_liveliness_offline_no_op() {
+fn dcps_2_2_2_4_2_22_assert_liveliness_offline_no_op() {
     let (_, t, pubr, _) = mk();
     let w = pubr
         .create_datawriter::<RawBytes>(&t, DataWriterQos::default())

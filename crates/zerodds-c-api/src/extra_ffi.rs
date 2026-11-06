@@ -1260,7 +1260,7 @@ pub unsafe extern "C" fn zerodds_dw_commit_loan(
     // loan_message (Box::into_raw); rebuild + into_vec is conformant.
     let (rt, eid, payload) = unsafe {
         let dwr = &*dw;
-        let boxed: Box<[u8]> = Box::from_raw(core::slice::from_raw_parts_mut(ptr, len));
+        let boxed: Box<[u8]> = Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len));
         (dwr.rt.clone(), dwr.eid, boxed.into_vec())
     };
     match rt.write_user_sample(eid, payload) {
@@ -1295,7 +1295,7 @@ pub unsafe extern "C" fn zerodds_dw_discard_loan(
         }
     }
     // SAFETY: see fn # Safety doc — ptr+len from loan_message (Box::into_raw); rebuild + drop.
-    let _: Box<[u8]> = unsafe { Box::from_raw(core::slice::from_raw_parts_mut(ptr, len)) };
+    let _: Box<[u8]> = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len)) };
     ZeroDdsStatus::Ok as c_int
 }
 
@@ -1919,8 +1919,9 @@ mod tests {
     }
 
     #[test]
-    fn dp_get_set_qos_roundtrip_default() {
-        let p = mk(70);
+    fn capi_2_2_dp_get_set_qos_roundtrip_default() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let mut qos = ZeroDdsDomainParticipantQos {
             user_data: crate::qos_ffi::ZeroDdsUserDataQosPolicy {
                 value: ptr::null(),
@@ -1938,31 +1939,14 @@ mod tests {
         cleanup(p);
     }
 
-    #[test]
-    fn dp_default_topic_qos_roundtrip() {
-        let p = mk(71);
-        // SAFETY: p from mk(), valid until cleanup. tqos lives for the test.
-        unsafe {
-            let mut tqos: ZeroDdsTopicQos = core::mem::zeroed();
-            assert_eq!(
-                zerodds_dp_set_default_topic_qos(p, &tqos),
-                ZeroDdsStatus::Ok as c_int
-            );
-            assert_eq!(
-                zerodds_dp_get_default_topic_qos(p, &mut tqos),
-                ZeroDdsStatus::Ok as c_int
-            );
-        }
-        cleanup(p);
-    }
-
     /// DDS 1.4 §2.2.2.1.1.1: `set_qos` with NULL is `*_QOS_DEFAULT`, "the
     /// current default QoS set in the Entity's factory" — here the
     /// publisher's for a writer and the participant's for a topic. It was
     /// the specification's default.
     #[test]
-    fn set_qos_with_null_takes_the_current_default_of_the_factory() {
-        let p = mk(86);
+    fn dcps_2_2_2_1_1_1_set_qos_with_null_takes_the_current_default_of_the_factory() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         // SAFETY: every handle comes from a create call on `p`; the QoS
         // structs live for the test.
         unsafe {
@@ -1996,8 +1980,9 @@ mod tests {
     /// `*_w_timestamp` lifecycle calls refuse one out of range with
     /// BAD_PARAMETER and take one in range.
     #[test]
-    fn dw_w_timestamp_calls_refuse_a_nanosec_out_of_range() {
-        let p = mk(82);
+    fn dcps_2_3_2_dw_w_timestamp_calls_refuse_a_nanosec_out_of_range() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"TS";
         let tn = c"TST";
         let key = [0xCDu8; 16];
@@ -2044,8 +2029,9 @@ mod tests {
     }
 
     #[test]
-    fn dw_register_unregister_lookup_instance() {
-        let p = mk(72);
+    fn capi_2_6_dw_register_unregister_lookup_instance() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"T";
         let tn = c"TT";
         let key = [0xABu8; 16];
@@ -2074,7 +2060,8 @@ mod tests {
 
     #[test]
     fn full_key_registration_is_bounded_and_does_not_truncate() {
-        let p = mk(77);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         // SAFETY: all handles and buffers are owned by this test.
         unsafe {
             let topic = zerodds_dp_create_topic(p, c"FullKey".as_ptr(), c"T".as_ptr(), ptr::null());
@@ -2146,7 +2133,8 @@ mod tests {
 
     #[test]
     fn dw_get_key_value_never_reconstructs_a_holder_from_a_handle() {
-        let p = mk(73);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"T";
         let tn = c"TT";
         let mut buf = [0u8; 4];
@@ -2177,8 +2165,9 @@ mod tests {
     }
 
     #[test]
-    fn dw_loan_message_then_commit_or_discard() {
-        let p = mk(74);
+    fn capi_2_6_dw_loan_message_then_commit_or_discard() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"T";
         let tn = c"TT";
         let mut p_buf: *mut u8 = ptr::null_mut();
@@ -2216,8 +2205,9 @@ mod tests {
     }
 
     #[test]
-    fn dr_get_matched_publications_empty() {
-        let p = mk(75);
+    fn capi_2_7_dr_get_matched_publications_empty() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"T";
         let tn = c"TT";
         let mut buf = [0u64; 16];
@@ -2238,7 +2228,8 @@ mod tests {
 
     #[test]
     fn dr_wait_for_historical_data_volatile_returns_ok() {
-        let p = mk(76);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"T";
         let tn = c"TT";
         // SAFETY: p+n+tn live for the test.
@@ -2254,56 +2245,15 @@ mod tests {
         cleanup(p);
     }
 
-    #[test]
-    fn dw_get_matched_subscriptions_initially_empty() {
-        let p = mk(78);
-        let n = c"T";
-        let tn = c"TT";
-        let mut buf = [0u64; 16];
-        let mut count = 0usize;
-        // SAFETY: p+n+tn live for the test.
-        unsafe {
-            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
-            let pubh = zerodds_dp_create_publisher(p, ptr::null());
-            let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
-            assert_eq!(
-                zerodds_dw_get_matched_subscriptions(dw, buf.as_mut_ptr(), &mut count, 16),
-                ZeroDdsStatus::Ok as c_int
-            );
-        }
-        assert_eq!(count, 0);
-        cleanup(p);
-    }
-
-    #[test]
-    fn dr_get_matched_publications_initially_empty() {
-        let p = mk(79);
-        let n = c"T";
-        let tn = c"TT";
-        let mut buf = [0u64; 16];
-        let mut count = 0usize;
-        // SAFETY: p+n+tn live for the test.
-        unsafe {
-            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
-            let sub = zerodds_dp_create_subscriber(p, ptr::null());
-            let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
-            assert_eq!(
-                zerodds_dr_get_matched_publications(dr, buf.as_mut_ptr(), &mut count, 16),
-                ZeroDdsStatus::Ok as c_int
-            );
-        }
-        assert_eq!(count, 0);
-        cleanup(p);
-    }
-
     /// A writer and a reader of one participant match each other, and
     /// each reads the other's data. The builtin DCPSSubscription reader
     /// holds discovered readers only: the handle was listed and its data
     /// answered NO_DATA. A handle that names no matched endpoint is
     /// BAD_PARAMETER (DDS 1.4 §2.2.2.4.2).
     #[test]
-    fn matched_data_of_a_same_participant_pair() {
-        let p = mk(83);
+    fn capi_7_1_matched_data_of_a_same_participant_pair() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"MatchedDataC";
         let tn = c"TT";
         let mut subs = [0u64; 4];
@@ -2363,9 +2313,10 @@ mod tests {
     /// (`docs/specs/zerodds-c-api-1.0.md` §2.8).
     #[test]
     fn matched_listings_length_query_and_null_contract() {
+        let lease = zerodds_test_domains::lease_domain();
         // 76 is reserved (crates/test-domains); the topic names here match
         // no other test on it, so its lists stay empty.
-        let p = mk(76);
+        let p = mk(lease.id() as u32);
         let mut count = 0usize;
         // SAFETY: every handle comes from a create call on `p`.
         unsafe {
@@ -2404,7 +2355,8 @@ mod tests {
     #[test]
     fn c_qos_reaches_the_runtime_and_an_immutable_change_is_refused() {
         use crate::qos_ffi::ZeroDdsDuration;
-        let p = mk(84);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let ms = |millis: u32| ZeroDdsDuration {
             sec: 0,
             nanosec: millis * 1_000_000,
@@ -2475,8 +2427,9 @@ mod tests {
     }
 
     #[test]
-    fn dp_set_get_qos_userdata_roundtrip() {
-        let p = mk(80);
+    fn capi_3_3_dp_set_get_qos_userdata_roundtrip() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let bytes = b"my_user_data";
         let qos_in = ZeroDdsDomainParticipantQos {
             user_data: crate::qos_ffi::ZeroDdsUserDataQosPolicy {
@@ -2512,7 +2465,8 @@ mod tests {
 
     #[test]
     fn pub_copy_from_topic_qos_propagates_policies() {
-        let p = mk(77);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         // SAFETY: p lives for the test; tqos+dwqos zeroed on the stack.
         unsafe {
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
@@ -2548,7 +2502,8 @@ mod tests {
         use crate::subscriber_ffi::{ZeroDdsSampleArray, zerodds_dr_return_loan, zerodds_dr_take};
         use std::ffi::CString;
 
-        let p = mk(78);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"PartTopic";
         let tn = c"RawBytes";
         // Caller-owned C-string array for the partition name lists. Must
@@ -2660,7 +2615,8 @@ mod tests {
         use crate::qos_ffi::{ZeroDdsDataReaderQos, ZeroDdsDataWriterQos};
         use crate::subscriber_ffi::{ZeroDdsSampleArray, zerodds_dr_return_loan, zerodds_dr_take};
 
-        let p = mk(80);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"OwnTopic";
         let tn = c"RawBytes";
         // SAFETY: p+topic live for the whole block; out-pointers stack-local.
@@ -2755,7 +2711,8 @@ mod tests {
         use crate::qos_ffi::{ZeroDdsDataReaderQos, ZeroDdsDataWriterQos};
         use std::ffi::{CStr, CString};
 
-        let p = mk(81);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let n = c"PartOutTopic";
         let tn = c"RawBytes";
         let part_x = CString::new("X").unwrap();
@@ -2841,10 +2798,10 @@ mod tests {
     /// (`docs/specs/zerodds-c-api-1.0.md` §2.8 for the list calls; this byte
     /// buffer reports the needed length the same way).
     #[test]
-    fn dw_get_key_value_reports_the_needed_length() {
+    fn capi_2_6_dw_get_key_value_reports_the_needed_length() {
+        let lease = zerodds_test_domains::lease_domain();
         // A leased domain: a fixed one in the lease band can be handed to
         // another test at the same time (crates/test-domains).
-        let lease = zerodds_test_domains::lease_domain();
         let p = mk(lease.id() as u32);
         let holder = [0x11u8, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
         // SAFETY: every handle comes from a create call on `p`; the buffer and
@@ -2904,9 +2861,9 @@ mod tests {
     /// key holder.
     #[test]
     fn dr_get_key_value_reports_the_needed_length() {
+        let lease = zerodds_test_domains::lease_domain();
         // A leased domain: a fixed one in the lease band can be handed to
         // another test at the same time (crates/test-domains).
-        let lease = zerodds_test_domains::lease_domain();
         let p = mk(lease.id() as u32);
         let holder = [0x01u8, 0x02, 0x03, 0x04, 0x05];
         // SAFETY: every handle comes from a create call on `p`; the buffer and

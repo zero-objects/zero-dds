@@ -231,12 +231,12 @@ pub fn start_with_reload(
                                     // is what `reload()` re-reads. A config
                                     // that names *different* paths needs a
                                     // restart — logged, not applied silently.
-                                    if let Some(rot) = rotating_watch.as_ref() {
-                                        if let Err(e) = rot.reload() {
-                                            eprintln!(
-                                                "[zerodds-webdds-bridged] tls reload refused: {e}"
-                                            );
-                                        }
+                                    if let Some(rot) = rotating_watch.as_ref()
+                                        && let Err(e) = rot.reload()
+                                    {
+                                        eprintln!(
+                                            "[zerodds-webdds-bridged] tls reload refused: {e}"
+                                        );
                                     }
                                 }
                                 Err(e) => eprintln!("[zerodds-webdds-bridged] reload refused: {e}"),

@@ -1,8 +1,7 @@
 # Heterogeneous security — system-of-systems policy
 
 > **Status:** Draft v0.1 (2026-04-24)
-> **Dependencies:** `02_architecture.md`, `04_safety_by_architecture.md`,
-> `internal/plans/release-plan-v1.2-to-v2.0.md` §1.4 (v1.4 security track)
+> **Dependencies:** `02_architecture.md`, `04_safety_by_architecture.md`
 
 ## 1 Motivation
 

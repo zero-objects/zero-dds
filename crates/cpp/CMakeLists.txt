@@ -94,12 +94,68 @@ endif()
 
 # Tests — registered with CTest (root CMakeLists.txt `include(CTest)`), so
 # `ctest` / `cmake --build . --target test` run them, not just `BUILD_TESTS`
-# producing an executable nobody invokes.
+# producing an executable nobody invokes. The integration pillar's job
+# `integration-sdk` (tests/integration/sdk_cmake.sh) runs CTest with leased
+# DDS domains in `ZERODDS_TEST_DOMAINS` and 25 s per test.
 if(ZERODDS_BUILD_TESTS)
+    # The DDS-PSM-Cxx smoke program: every test `main()` calls, in one run.
     add_executable(smoke_dds_psm ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_dds_psm.cpp)
     target_link_libraries(smoke_dds_psm PRIVATE zerodds::zerodds-cpp)
+
+    # The same program as ISO C++ 2003 (DDS-PSM-Cxx 1.0 §3 [C++], §7.1): the headers need no
+    # C++11; the tests that do (threads, move semantics) are not compiled there.
+    add_executable(smoke_dds_psm_cxx03 ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_dds_psm.cpp)
+    target_link_libraries(smoke_dds_psm_cxx03 PRIVATE zerodds::zerodds-cpp)
+    set_target_properties(smoke_dds_psm_cxx03 PROPERTIES
+        CXX_STANDARD 98 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+    if(NOT MSVC)
+        # `long long` is a C99 and C++11 type the C API uses.
+        target_compile_options(smoke_dds_psm_cxx03 PRIVATE -pedantic -Wno-long-long)
+    endif()
+
+    # The DataWriter and DataReader classes and the TypeSupports of the four built-in types
+    # (DDS-XTypes 1.3 §7.6.5, Annex E).
+    add_executable(builtin_data_endpoints ${CMAKE_CURRENT_SOURCE_DIR}/tests/builtin_data_endpoints.cpp)
+    target_link_libraries(builtin_data_endpoints PRIVATE zerodds::zerodds-cpp)
+    add_executable(builtin_type_support ${CMAKE_CURRENT_SOURCE_DIR}/tests/builtin_type_support.cpp)
+    target_link_libraries(builtin_type_support PRIVATE zerodds::zerodds-cpp)
+    if(NOT MSVC)
+        target_compile_options(builtin_data_endpoints PRIVATE -Wall -Werror)
+        target_compile_options(builtin_type_support PRIVATE -Wall -Werror)
+    endif()
+
     if(BUILD_TESTING)
-        add_test(NAME zerodds_cpp_smoke_dds_psm COMMAND smoke_dds_psm)
+        add_test(NAME dds_psm_cxx_smoke COMMAND smoke_dds_psm)
+        add_test(NAME psmcxx_7_1_the_smoke_program_runs_as_cxx03 COMMAND smoke_dds_psm_cxx03)
+        add_test(NAME xtypes_7_6_5_the_data_writers_and_readers_of_the_built_in_types_write_and_take
+                 COMMAND builtin_data_endpoints)
+        add_test(NAME xtypes_7_6_5_the_type_supports_of_the_built_in_types_name_and_register_their_types
+                 COMMAND builtin_type_support)
+    endif()
+
+    # The smoke program under the sanitizers, where the compiler has them and no sanitizer is
+    # set for the whole build (ZERODDS_SANITIZER instruments every consumer already). The Rust
+    # library is not instrumented: the C++ headers and the tests are.
+    if(NOT MSVC AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+       AND (NOT DEFINED ZERODDS_SANITIZER OR ZERODDS_SANITIZER STREQUAL "none"))
+        # A use of a freed object or a write past a buffer in the C++ headers.
+        add_executable(smoke_dds_psm_asan ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_dds_psm.cpp)
+        target_link_libraries(smoke_dds_psm_asan PRIVATE zerodds::zerodds-cpp)
+        target_compile_options(smoke_dds_psm_asan PRIVATE -fsanitize=address -g -O1 -fno-omit-frame-pointer)
+        target_link_options(smoke_dds_psm_asan PRIVATE -fsanitize=address)
+        # The tests in which threads call the operations of the entities at once (DDS-PSM-Cxx
+        # 1.0 §7.3): a data race in the C++ headers fails; tests/tsan_verdict.py tells the
+        # reports in the uninstrumented library from the others.
+        add_executable(smoke_dds_psm_tsan ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_dds_psm.cpp)
+        target_link_libraries(smoke_dds_psm_tsan PRIVATE zerodds::zerodds-cpp)
+        target_compile_options(smoke_dds_psm_tsan PRIVATE -fsanitize=thread -g -O1 -fno-omit-frame-pointer)
+        target_link_options(smoke_dds_psm_tsan PRIVATE -fsanitize=thread)
+        if(BUILD_TESTING)
+            add_test(NAME dds_psm_cxx_smoke_under_address_sanitizer COMMAND smoke_dds_psm_asan)
+            add_test(NAME psmcxx_7_3_no_data_race_in_the_cpp_code_under_thread_sanitizer
+                     COMMAND python3 ${CMAKE_CURRENT_SOURCE_DIR}/tests/tsan_verdict.py
+                             $<TARGET_FILE:smoke_dds_psm_tsan> threads)
+        endif()
     endif()
 endif()
 

@@ -109,7 +109,7 @@ pub enum DdsError {
     /// and one of them is absent, unreadable or unsupported, creating the
     /// participant fails with this error rather than succeeding without a
     /// security bundle — a participant that comes up in plaintext because
-    /// a path was wrong is the failure class `docs/silent-drop-sweep.md`
+    /// a path was wrong is the failure class `0b2e8df9f6b:docs/silent-drop-sweep.md`
     /// names.
     ///
     /// The message names the offending property. It carries no key or
@@ -130,7 +130,7 @@ pub enum DdsError {
     /// thread has already been spawned; `start` then stops and joins every
     /// thread it started and returns this error rather than let the
     /// participant run with a requested real-time setting silently
-    /// unapplied — see `docs/silent-drop-sweep.md`. Without the `rt`
+    /// unapplied — see `0b2e8df9f6b:docs/silent-drop-sweep.md`. Without the `rt`
     /// build feature, or on a non-Linux target, every non-empty request
     /// fails this way too (never a quiet no-op).
     ThreadTuning {
@@ -262,7 +262,7 @@ mod tests {
     // ---- §2.2.1.1.x ReturnCode_t mapping ----
 
     #[test]
-    fn rc_error_maps_for_wire_and_transport_and_other() {
+    fn dcps_2_2_1_1_rc_error_maps_for_wire_and_transport_and_other() {
         // Spec §2.2.1.1.2 RC ERROR — generic error.
         assert_eq!(
             DdsError::WireError {
@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_unsupported_maps() {
+    fn dcps_2_2_1_1_rc_unsupported_maps() {
         assert_eq!(
             DdsError::Unsupported { feature: "f" }.as_return_code(),
             return_code::UNSUPPORTED
@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_bad_parameter_maps() {
+    fn dcps_2_2_1_1_rc_bad_parameter_maps() {
         assert_eq!(
             DdsError::BadParameter { what: "p" }.as_return_code(),
             return_code::BAD_PARAMETER
@@ -311,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_precondition_not_met_maps() {
+    fn dcps_2_2_1_1_rc_precondition_not_met_maps() {
         assert_eq!(
             DdsError::PreconditionNotMet { reason: "r" }.as_return_code(),
             return_code::PRECONDITION_NOT_MET
@@ -319,7 +319,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_out_of_resources_maps() {
+    fn dcps_2_2_1_1_rc_out_of_resources_maps() {
         assert_eq!(
             DdsError::OutOfResources { what: "samples" }.as_return_code(),
             return_code::OUT_OF_RESOURCES
@@ -327,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_not_enabled_maps() {
+    fn dcps_2_2_1_1_rc_not_enabled_maps() {
         assert_eq!(
             DdsError::NotEnabled.as_return_code(),
             return_code::NOT_ENABLED
@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_immutable_policy_maps() {
+    fn dcps_2_2_1_1_rc_immutable_policy_maps() {
         assert_eq!(
             DdsError::ImmutablePolicy {
                 policy: "Reliability"
@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_inconsistent_policy_maps() {
+    fn dcps_2_2_1_1_rc_inconsistent_policy_maps() {
         assert_eq!(
             DdsError::InconsistentPolicy { what: "x" }.as_return_code(),
             return_code::INCONSISTENT_POLICY
@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_already_deleted_maps() {
+    fn dcps_2_2_1_1_rc_already_deleted_maps() {
         assert_eq!(
             DdsError::AlreadyDeleted.as_return_code(),
             return_code::ALREADY_DELETED
@@ -362,17 +362,17 @@ mod tests {
     }
 
     #[test]
-    fn rc_timeout_maps() {
+    fn dcps_2_2_1_1_rc_timeout_maps() {
         assert_eq!(DdsError::Timeout.as_return_code(), return_code::TIMEOUT);
     }
 
     #[test]
-    fn rc_no_data_maps() {
+    fn dcps_2_2_1_1_rc_no_data_maps() {
         assert_eq!(DdsError::NoData.as_return_code(), return_code::NO_DATA);
     }
 
     #[test]
-    fn rc_illegal_operation_maps() {
+    fn dcps_2_2_1_1_rc_illegal_operation_maps() {
         assert_eq!(
             DdsError::IllegalOperation {
                 what: "write_on_reader"
@@ -383,7 +383,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_not_allowed_by_security_maps() {
+    fn security_7_3_25_rc_not_allowed_by_security_maps() {
         assert_eq!(
             DdsError::NotAllowedBySecurity { what: "topic" }.as_return_code(),
             return_code::NOT_ALLOWED_BY_SECURITY
@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn rc_constants_have_spec_values() {
+    fn dcps_2_2_1_1_rc_constants_have_spec_values() {
         // OMG DDS 1.4 §2.2.2.1.1 numeric spec values. A drift here
         // breaks every wire-mapping test in the C++/Java bridges.
         assert_eq!(return_code::OK, 0);

@@ -30,17 +30,30 @@ import {
   Subscriber,
   Topic,
 } from "./facade.js";
+import { type SampleKind } from "./transport.js";
 
 /// Builds a C.1.2 Sample from a buffered bridge sample (raw XCDR2 `bytes` +
 /// their wire byte order). Source info that the bridge JSON protocol does not
 /// carry (timestamps, sequence number, writer GUID) is filled with neutral
 /// defaults; `validData` is true for a real payload.
-export function sampleFromBytes(s: { bytes: Uint8Array; bigEndian: boolean }): Sample {
+export function sampleFromBytes(s: {
+  bytes: Uint8Array;
+  bigEndian: boolean;
+  kind?: SampleKind;
+}): Sample {
+  const kind = s.kind ?? "alive";
   const info: SampleInfo = {
-    validData: true,
+    // A dispose or an unregister carries the key holder, not data
+    // (zerodds-ws-bridge-1.0 §4.3).
+    validData: kind === "alive",
     sampleState: "not_read",
     viewState: "new",
-    instanceState: "alive",
+    instanceState:
+      kind === "alive"
+        ? "alive"
+        : kind === "unregistered"
+          ? "not_alive_no_writers"
+          : "not_alive_disposed",
     sourceTimestampNs: 0n,
     sequenceNumber: 0n,
     publicationHandle: nullGuid(),

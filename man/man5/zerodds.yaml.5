@@ -712,6 +712,9 @@ Additional receive workers, 0..=64. Default 0.
 Behaviour table for vendor differences:
 .BR cyclone ", " fastdds ", " opendds ", " maximally\-interoperable .
 Default maximally-interoperable.
+.BR cyclone ", " fastdds " and " opendds
+also set \fBxtypes.key_must_understand\fR to implied unless that setting is
+given.
 .RB [ ZERODDS_RTPS_DIALECT ]
 .TP
 .B wire.codec_dialect
@@ -722,6 +725,9 @@ The names \fBzerodds\-idlc generate \-\-dialect\fR takes:
 .BR specification ", " cyclone ", " rti ", " fastdds ", " opendds ", " omniorb ,
 .BR tao ", " jacorb ", " ros\-fastrtps ", " ros\-cyclone ", " opensplice .
 Set it to the dialect the types were generated in. Default specification.
+.BR cyclone ", " fastdds " and " opendds
+also set \fBxtypes.key_must_understand\fR to implied unless that setting is
+given.
 .RB [ ZERODDS_CODEC_DIALECT ]
 .TP
 .B wire.encapsulation_ids
@@ -856,6 +862,20 @@ member type that is not delimited: equivalence under the MINIMAL relation,
 member names included, or, with names_ignored, assignability in both
 directions without member names. Default equivalence.
 .RB [ ZERODDS_STRONG_ASSIGNABILITY ]
+.TP
+.B xtypes.key_must_understand
+.BR flagged " or " implied :
+how the IS_MUST_UNDERSTAND bit of a key member is read where two types are
+compared for MINIMAL equivalence (DISALLOW_TYPE_COERCION, strong
+assignability). flagged compares the bit as the TypeObject carries it
+(DDS\-XTypes 1.4 Beta 1 \(sc7.3.3.4, 1.3 \(sc7.2.2.4.4.4.8); implied takes it
+from IS_KEY, for a peer whose TypeObject leaves the bit off a key member and
+whose reader announces no TypeConsistencyEnforcement, as Cyclone DDS 11.0.1
+built with its type library, Fast DDS 3.6.1 with the type support of
+fastddsgen and OpenDDS 3.35 with that of opendds_idl do. Default flagged;
+unset, implied when \fBwire.rtps_dialect\fR or \fBwire.codec_dialect\fR names
+cyclone, fastdds or opendds.
+.RB [ ZERODDS_KEY_MUST_UNDERSTAND ]
 .TP
 .B xtypes.type_consistency_absent
 .BR disallow " or " allow :

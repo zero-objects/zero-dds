@@ -25,8 +25,8 @@ License:        Apache-2.0
 URL:            https://zerodds.org
 Source0:        https://github.com/zero-objects/zero-dds/archive/v%{zd_fullver}/zerodds-%{zd_fullver}.tar.gz
 
-# BuildRequires: cargo >= 1.88 (kommt via rustup im rpm-job)
-# BuildRequires: rust >= 1.88 (kommt via rustup im rpm-job)
+# BuildRequires: cargo >= 1.97 (kommt via rustup im rpm-job)
+# BuildRequires: rust >= 1.97 (kommt via rustup im rpm-job)
 BuildRequires:  pkgconfig
 BuildRequires:  openssl-devel
 BuildRequires:  systemd-rpm-macros
@@ -34,6 +34,8 @@ BuildRequires:  systemd-rpm-macros
 # with CMake.
 BuildRequires:  cmake
 BuildRequires:  gcc-c++
+# Sets the SONAME of libzerodds (install section).
+BuildRequires:  patchelf
 
 Requires(pre):  shadow-utils
 Requires(post): systemd
@@ -232,6 +234,12 @@ done
 
 # libzerodds — the versioned runtime shared object goes in -core.
 install -m 0755 target/release/libzerodds.so %{buildroot}%{_libdir}/libzerodds.so.1.0.0
+# cargo links the cdylib without DT_SONAME. rpm then provided
+# libzerodds.so.1.0.0()(64bit) for the file and required libzerodds.so()(64bit)
+# for the libzerodds.so symlink, which nothing provides: zerodds-core and every
+# package that needs it could not be installed (rc.7). With the SONAME of the
+# .so.1 link both are libzerodds.so.1()(64bit).
+patchelf --set-soname libzerodds.so.1 %{buildroot}%{_libdir}/libzerodds.so.1.0.0
 ln -sf libzerodds.so.1.0.0 %{buildroot}%{_libdir}/libzerodds.so.1
 ln -sf libzerodds.so.1     %{buildroot}%{_libdir}/libzerodds.so
 

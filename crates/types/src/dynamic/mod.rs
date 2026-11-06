@@ -53,7 +53,7 @@
 //! - **A recursive type's `TI_STRONGLY_CONNECTED_COMPONENT` rests on an
 //!   unsettled placeholder.** [`crate::from_ast`] computes the component
 //!   identifier and [`to_ast`] resolves one, but one input to the hash is
-//!   a decision the RTF has not made; the `docs/OPEN-ITEMS.md` entry
+//!   a decision the RTF has not made; `internal/release/OPEN-ITEMS.md`
 //!   carries it.
 //! - **Custom annotations do not reach the wire form.** The five builtin
 //!   member annotations of §7.3.4.5.4 are written and read back

@@ -24,7 +24,8 @@
 //!
 //! ## The one thing a row is allowed not to reproduce
 //!
-//! Padding content — `docs/wire-axes-followup.md` group G. It is the
+//! Padding content — group G of the axis model
+//! (`0b2e8df9f6b:docs/wire-axes-followup.md`). It is the
 //! one difference that reaches no reader, and it is not taken on trust:
 //! [`zerodds_interop_results::dialect_fit`] requires all three of the
 //! criteria that document sets before it will call a row padding, and
@@ -118,9 +119,7 @@ fn answers() -> Vec<Answer> {
 /// fails, and an entry that matches nothing fails too, so a closed
 /// axis cannot leave a stale exemption behind.
 ///
-/// Every entry is a finding of the 411-case five-vendor record and is
-/// carried in `docs/OPEN-ITEMS.md` under "the dialect axes the new
-/// corpus cases opened".
+/// Every entry is a finding of the 411-case five-vendor record.
 struct DialectGap {
     /// The `system/case` prefix of the rows this covers.
     prefix: &'static str,
@@ -151,6 +150,7 @@ struct DialectGap {
 const DIALECT_GAPS: &[DialectGap] = &[];
 
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn one_dialect_alone_reproduces_every_row_of_its_own_system() {
     let mut missed: Vec<String> = Vec::new();
     let mut registered: BTreeMap<&str, usize> = BTreeMap::new();
@@ -314,6 +314,7 @@ fn one_dialect_alone_reproduces_every_row_of_its_own_system() {
 /// project's writer zeroes unwritten, and every case's own sample reads
 /// back the same either way.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn the_padding_allowance_is_group_g_and_nothing_else() {
     let mut by_system: BTreeMap<&str, usize> = BTreeMap::new();
     for answer in answers() {
@@ -513,6 +514,7 @@ fn no_single_axis_separates_the_default_from_every_measured_system() {
 /// cannot be reached. Every one of the nine is reached by naming it,
 /// which is `one_dialect_alone_reproduces_every_row_of_its_own_system`.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn the_default_writes_octets_no_measured_system_wrote() {
     use zerodds_ast_layout::Dialect;
     let (slots, lonely) = unattested_slots(Dialect::default());
@@ -762,7 +764,7 @@ const SELECTED_BY_NO_DIALECT: &[(&str, &str, &str)] = &[
         "rule-15-omits",
         "rule (15) read as written, which is what OpenDDS's generated `operator<<` does — but \
          from its source and not from octets: its probe refuses a `map` before OpenDDS sees \
-         one, so no recorded row separates the two readings. docs/OPEN-ITEMS.md",
+         one, so no recorded row separates the two readings.",
     ),
     (
         "pl-cdr1-headers",

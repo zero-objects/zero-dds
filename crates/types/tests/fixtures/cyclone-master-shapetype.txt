@@ -1,0 +1,31 @@
+Provenance of the two lines below: a capture on the Linux test host of one
+OMG dds-rtps pair, ZeroDDS `shape_main` (main ce436e7098a) publishing
+`Square` and Cyclone DDS master 3a5526315e64ac1d2a52e6ac1ae7f3e861c593d3
+subscribing, its `shape_main` built by ci/build-cyclone-suite-clients.sh with
+SHAPE_TYPELIB=ON (Cyclone's default build, with the type library) from the
+dds-rtps harness at 863b86f97cef931a437c84c47c97a3deea38347e. The type is
+the suite's `ShapeType` (srcC/shape.idl: `@appendable`, `@key string<128>
+color`, three `int32`, `sequence<uint8>`).
+
+TYPE_INFORMATION: the value of PID_TYPE_INFORMATION (0x0075) in Cyclone's
+DATA(r), sent by ENTITYID_BUILTIN_SUBSCRIPTIONS_WRITER (0x000004c2). The same
+DATA(r) carries no PID_TYPE_CONSISTENCY_ENFORCEMENT (0x0074). The 100 octets
+are the TYPE_INFO_CDR_ShapeType array Cyclone's idlc wrote into shape.c but
+for the two typeobject_serialized_size fields (octets 36 and 84), which the
+array gives as 108 and 178 and the DATA(r) as 0.
+
+GET_TYPES_REPLY: the serialized payload (encapsulation header included) of
+the DATA Cyclone's TypeLookup reply writer (0x000301c3) sent to ZeroDDS in
+answer to its getTypes request for the minimal identifier of the
+TYPE_INFORMATION above. The minimal TypeObject in it is octet for octet the
+one in TYPE_MAP_CDR_ShapeType in shape.c.
+
+Measured in the same run: ZeroDDS' writer refused the reader with
+`type.inconsistent`, reason "DISALLOW_TYPE_COERCION: the types are not
+equivalent (XTypes 1.3 §7.6.3.4.2)", writer_type_id
+EK_COMPLETE:4d9a6d25f1eb434dbb3a601fb18a, reader_type_id
+EK_MINIMAL:1e426789957ce858cfdf3191a589; Cyclone's getTypes request named
+ZeroDDS' minimal identifier EK_MINIMAL:6b428aede6719842160c1ffcce9f.
+
+TYPE_INFORMATION=6000000001100040280000002400000014000000f11e426789957ce858cfdf3191a589000000000000000000040000000000000002100040280000002400000014000000f25c0a127987e5e2f3746b1f80a5b90000000000000000000400000000000000
+GET_TYPES_REPLY=0007000001f091839248d187ca1f5616000300c3000000000100000000000000a4000000d35282019c0000000000000094000000d14a80528000000001000000f11e426789957ce858cfdf3191a5890068000000f1510200010000000000000058000000050000000c000000000000002100708070dda5df0b000000010000000100049dd4e461000b0000000200000001000441529076000b00000003000000010004da907714001000000004000000010080f30100000d06f3042c77658e5b0400000000000000

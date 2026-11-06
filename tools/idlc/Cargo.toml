@@ -8,7 +8,7 @@ repository.workspace = true
 authors.workspace = true
 description = "The ZeroDDS IDL tool: check, lint, format, inspect and generate source from OMG IDL 4.2, and DDS 1.2 §8 DLRL object/home classes from the DLRL pragmas."
 homepage = "https://zerodds.org"
-documentation = "https://docs.rs/zerodds-idlc"
+documentation = "https://zerodds.org/docs/tools/idlc.html"
 readme = "README.md"
 keywords = ["dds", "idl", "lint", "format", "omg"]
 categories = ["development-tools", "command-line-utilities"]
@@ -57,3 +57,5 @@ zerodds-wire-probe = { path = "../../crates/wire-probe" }
 # `ProbeRequest::pl_cdr1_framing` returns rather than a copy of its names.
 zerodds-wire = { version = "1.0.0-rc.7", path = "../../crates/wire" }
 serde_json = "1.0"
+# `tests/contract_idl_compose.rs`: include directories on disk.
+tempfile = "3"

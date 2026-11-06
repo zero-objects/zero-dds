@@ -46,15 +46,11 @@ const ANY_STATE: u32 = 0;
 /// timeout, and not a fixed poll interval.
 #[test]
 fn waitset_readcondition_wakes_on_write_event_driven() {
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 26;
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic_name = CString::new("WsEventTopic").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
 
@@ -148,7 +144,7 @@ fn waitset_readcondition_wakes_on_write_event_driven() {
 /// Timeout (never blocks forever, never reads NULL), and the wait API is
 /// NULL-tolerant on all of its out-pointers / handle.
 #[test]
-fn waitset_wait_null_and_timeout_safe() {
+fn ffiloader_2_4_waitset_wait_null_and_timeout_safe() {
     // SAFETY: NULL handle + NULL out-pointers are explicit contracts (BadParameter).
     unsafe {
         let mut count: usize = 0;

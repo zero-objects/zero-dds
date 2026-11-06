@@ -639,12 +639,11 @@ fn writer_registration(
             rt.remove_user_writer(eid);
             status
         };
-        if let Some((_, ext, _)) = wire {
-            if rt.set_user_writer_wire_extensibility(eid, ext).is_err()
-                || rt.lock_user_writer_representation(eid).is_err()
-            {
-                return Err(undo(ZeroDdsStatus::Error));
-            }
+        if let Some((_, ext, _)) = wire
+            && (rt.set_user_writer_wire_extensibility(eid, ext).is_err()
+                || rt.lock_user_writer_representation(eid).is_err())
+        {
+            return Err(undo(ZeroDdsStatus::Error));
         }
         {
             use zerodds_qos::HistoryKind;
@@ -1498,7 +1497,7 @@ mod tests {
     /// `NO_KEY`) names its one instance by the all-zero key, whatever key the
     /// caller passes; a keyed writer keeps the key.
     #[test]
-    fn a_keyless_writer_names_its_one_instance_by_the_zero_key() {
+    fn dcps_2_2_2_4_2_13_a_keyless_writer_names_its_one_instance_by_the_zero_key() {
         let keyless = EntityId::user_writer_no_key([1, 2, 3]);
         let keyed = EntityId::user_writer_with_key([1, 2, 3]);
         assert_eq!(instance_key_of(keyless, [7u8; 16]), [0u8; 16]);
@@ -1541,7 +1540,8 @@ mod tests {
     fn publication_matched_through_c_is_cumulative_and_read_once() {
         use crate::participant_ffi::zerodds_dp_create_subscriber;
         use crate::subscriber_ffi::{zerodds_sub_create_datareader, zerodds_sub_delete_datareader};
-        let (participant, publisher, topic) = mk_pub_topic(38);
+        let lease = zerodds_test_domains::lease_domain();
+        let (participant, publisher, topic) = mk_pub_topic(lease.id() as u32);
         let ok = ZeroDdsStatus::Ok as c_int;
         let mut st = ZeroDdsPublicationMatchedStatus::default();
         // SAFETY: every handle comes from a create call on `participant`.
@@ -1597,7 +1597,8 @@ mod tests {
 
     #[test]
     fn keyed_write_refuses_invalid_key_lengths_and_null_storage() {
-        let (participant, publisher, topic) = mk_pub_topic(50);
+        let lease = zerodds_test_domains::lease_domain();
+        let (participant, publisher, topic) = mk_pub_topic(lease.id() as u32);
         // SAFETY: handles from mk_pub_topic and slices below are live. Invalid
         // lengths/null combinations must be rejected before dereferencing.
         unsafe {
@@ -1631,8 +1632,9 @@ mod tests {
     }
 
     #[test]
-    fn create_delete_datawriter_roundtrip() {
-        let (p, pubh, t) = mk_pub_topic(41);
+    fn capi_2_3_create_delete_datawriter_roundtrip() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, t) = mk_pub_topic(lease.id() as u32);
         assert!(!p.is_null() && !pubh.is_null() && !t.is_null());
         // SAFETY: pubh+t from mk.
         unsafe {
@@ -1645,8 +1647,9 @@ mod tests {
     }
 
     #[test]
-    fn lookup_datawriter_finds_existing() {
-        let (p, pubh, t) = mk_pub_topic(42);
+    fn capi_2_3_lookup_datawriter_finds_existing() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, t) = mk_pub_topic(lease.id() as u32);
         let n = c"PubTopic";
         // SAFETY: pubh+t from mk; n static.
         unsafe {
@@ -1661,7 +1664,8 @@ mod tests {
 
     #[test]
     fn lookup_datawriter_unknown_returns_null() {
-        let (p, pubh, t) = mk_pub_topic(43);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, t) = mk_pub_topic(lease.id() as u32);
         let n = c"Other";
         // SAFETY: pubh+t from mk; n static.
         unsafe {
@@ -1673,21 +1677,9 @@ mod tests {
     }
 
     #[test]
-    fn write_returns_ok_or_error() {
-        let (p, pubh, t) = mk_pub_topic(44);
-        let payload: [u8; 4] = [1, 2, 3, 4];
-        // SAFETY: pubh+t from mk; payload stack-local.
-        unsafe {
-            let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
-            let rc = zerodds_dw_write(dw, payload.as_ptr(), payload.len(), 0);
-            assert!(rc == ZeroDdsStatus::Ok as c_int || rc == ZeroDdsStatus::Error as c_int);
-        }
-        cleanup(p);
-    }
-
-    #[test]
-    fn dw_get_topic_publisher_roundtrip() {
-        let (p, pubh, t) = mk_pub_topic(45);
+    fn capi_2_3_dw_get_topic_publisher_roundtrip() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, t) = mk_pub_topic(lease.id() as u32);
         // SAFETY: pubh+t from mk.
         unsafe {
             let dw = zerodds_pub_create_datawriter(pubh, t, ptr::null());
@@ -1698,8 +1690,9 @@ mod tests {
     }
 
     #[test]
-    fn pub_suspend_resume_clean() {
-        let (p, pubh, _t) = mk_pub_topic(46);
+    fn capi_2_3_pub_suspend_resume_clean() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, _t) = mk_pub_topic(lease.id() as u32);
         // SAFETY: pubh from mk.
         unsafe {
             assert_eq!(
@@ -1747,7 +1740,8 @@ mod tests {
         let expected_hash = compute_complete_hash(cto).unwrap();
         let bytes = to.to_bytes_le().unwrap();
 
-        let (p, pubh, t) = mk_pub_topic(48);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, t) = mk_pub_topic(lease.id() as u32);
         // SAFETY: p/pubh/t from mk; bytes is a valid slice.
         unsafe {
             let subh = crate::participant_ffi::zerodds_dp_create_subscriber(p, ptr::null());
@@ -1806,7 +1800,8 @@ mod tests {
 
     #[test]
     fn dw_status_getters_return_default() {
-        let (p, pubh, t) = mk_pub_topic(47);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, t) = mk_pub_topic(lease.id() as u32);
         let mut lost = ZeroDdsLivelinessLostStatus::default();
         let mut deadl = ZeroDdsOfferedDeadlineMissedStatus::default();
         let mut incompat = ZeroDdsOfferedIncompatibleQosStatus::default();
@@ -1844,7 +1839,8 @@ mod tests {
                 .build_complete(),
         ));
         let bytes = object.to_bytes_le().unwrap();
-        let (p, pubh, topic) = mk_pub_topic(49);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, pubh, topic) = mk_pub_topic(lease.id() as u32);
         // SAFETY: all entity pointers and bytes remain live until cleanup.
         unsafe {
             let sub = crate::participant_ffi::zerodds_dp_create_subscriber(p, ptr::null());

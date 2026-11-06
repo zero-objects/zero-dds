@@ -72,7 +72,14 @@ ZeroDDS does not read Fast DDS profile files. The common settings in
 
 ## Mixed deployment
 
-Fast DDS and ZeroDDS discover each other with the defaults. ROS 2 services
+Fast DDS and ZeroDDS discover each other with the defaults. A Fast DDS reader
+whose type support fastddsgen generated announces its type with
+`IS_MUST_UNDERSTAND` off a `@key` member and no TypeConsistencyEnforcement, so
+by DDS-XTypes it requires the identical type, and a ZeroDDS writer of a keyed
+type that announces its TypeObject does not match it.
+`wire.rtps_dialect: fastdds` (or `xtypes.key_must_understand: implied`)
+matches the two; so does `@must_understand` on the key in the Fast DDS IDL.
+ROS 2 services
 with `rmw_fastrtps_cpp` need no setting: ZeroDDS writes the related sample
 identity both as `PID_RELATED_SAMPLE_IDENTITY` and as eProsima's `0x800f`,
 the only form Fast DDS 2.6 reads. DDS-Security with Fast DDS needs RSA identity

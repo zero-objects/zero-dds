@@ -129,10 +129,12 @@ fn object(name: &str) -> (TypeObject, zerodds_types::EquivalenceHash, Vec<u8>) {
     (TypeObject::Minimal(minimal), hash, w.finish())
 }
 
-fn runtime(domain: i32, prefix: u8) -> std::sync::Arc<DcpsRuntime> {
+fn runtime(domain: i32, prefix: u8) -> common::ShutsDown {
     let config = RuntimeConfig::default();
     assert_eq!(config.type_lookup_encoding, TypeLookupEncoding::Xcdr2);
-    DcpsRuntime::start(domain, GuidPrefix::from_bytes([prefix; 12]), config).expect("runtime")
+    common::ShutsDown(
+        DcpsRuntime::start(domain, GuidPrefix::from_bytes([prefix; 12]), config).expect("runtime"),
+    )
 }
 
 #[test]
@@ -253,3 +255,6 @@ fn the_rust_runtime_asks_java_for_a_type_in_xcdr2() {
         "the Rust runtime did not file the object the Java peer holds"
     );
 }
+
+#[path = "common/mod.rs"]
+mod common;

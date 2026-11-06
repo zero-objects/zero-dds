@@ -17,6 +17,13 @@ publish = true
 [lints]
 workspace = true
 
+# The crate tier runs the tests of this crate with its default features and
+# once more with each of these (internal/release/rc8-test-suite.md, "Crate
+# tier"): the DDS-Security plugin ABI and the iceoryx2 delivery path are
+# behind features no default build has.
+[package.metadata.crate-tier]
+feature-runs = ["security", "delivery-iceoryx"]
+
 [lib]
 name = "zerodds"
 crate-type = ["cdylib", "staticlib", "rlib"]
@@ -126,3 +133,24 @@ zerodds-lang-render = { path = "../lang-render" }
 zerodds-lang-rules = { path = "../lang-rules" }
 # ABI compat snapshot test (§8.2): JSON array of the exported symbols.
 serde = { version = "1", features = ["derive"] }
+
+# The contract with zerodds-security (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-security only with `security`.
+# The contract with zerodds-rpc (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-rpc only with `rpc`.
+[[test]]
+name = "contract_rpc"
+path = "tests/contract_rpc.rs"
+required-features = ["rpc"]
+
+[[test]]
+name = "contract_security"
+path = "tests/contract_security.rs"
+required-features = ["security"]
+
+# The contract with zerodds-security-runtime (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-security-runtime only with `security`.
+[[test]]
+name = "contract_security_runtime"
+path = "tests/contract_security_runtime.rs"
+required-features = ["security"]

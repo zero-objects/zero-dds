@@ -183,9 +183,15 @@ export interface PlCdr1Framing {
   readonly padAfterValue: boolean;
 }
 
-/** The framing every field of which is the specification's reading. */
+/**
+ * The framing a `Writer` and a `Reader` use where the caller names none:
+ * the answers `zerodds_wire::PlCdr1Framing::DEFAULT` gives, which every
+ * other runtime's default gives too. The must-understand bit on the
+ * extended marker is what `annotation-autoid-sequential` recorded from
+ * Cyclone DDS (`017f0800`).
+ */
 export const PL_CDR1_DEFAULT: PlCdr1Framing = {
-  pidFlags: PID_FLAGS_NONE,
+  pidFlags: PID_FLAGS_SENTINEL_MUST_UNDERSTAND,
   shortMaxId: PID_SHORT_MAX_ID,
   padsDeclaredLength: false,
   padsOptionalLength: false,
@@ -278,14 +284,7 @@ export class Writer {
   constructor(
     readonly order: Endianness,
     maxAlign = 8,
-    readonly plCdr1: PlCdr1Framing = {
-      pidFlags: PID_FLAGS_NONE,
-      shortMaxId: PID_SHORT_MAX_ID,
-      padsDeclaredLength: false,
-      padsOptionalLength: false,
-      memberMustUnderstand: true,
-      padAfterValue: true,
-    },
+    readonly plCdr1: PlCdr1Framing = PL_CDR1_DEFAULT,
     public shortLengthCodes = false,
   ) {
     this.maxAlignment = Math.max(1, maxAlign);

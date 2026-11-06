@@ -56,7 +56,7 @@ mod tests {
     }
 
     #[test]
-    fn rpc_hash_empty_string_is_md5_empty_first_4_bytes() {
+    fn rpc_7_5_1_1_2_hash_empty_string_is_md5_empty_first_4_bytes() {
         // MD5("") = d41d8cd98f00b204e9800998ecf8427e
         // First 4 bytes = d4 1d 8c d9; LE u32 = 0xd98c1dd4
         let h = rpc_member_hash("");
@@ -64,7 +64,7 @@ mod tests {
     }
 
     #[test]
-    fn rpc_hash_uses_first_4_bytes_not_last() {
+    fn rpc_7_5_1_1_2_hash_uses_first_4_bytes_not_last() {
         // Spec property: the first 4 bytes of the digest, not
         // random other ones. We verify via MD5("a") =
         // 0cc175b9c0f1b6a831c399e269772661 -> first 4 bytes

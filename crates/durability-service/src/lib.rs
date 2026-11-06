@@ -8,13 +8,19 @@
 //! From an RTPS point of view the service is just another participant. For
 //! each served topic it:
 //!
-//! 1. **Ingests** via a `RELIABLE / TRANSIENT_LOCAL / KEEP_ALL` reader — it
-//!    receives every sample the application writers publish (and, thanks to
-//!    `TRANSIENT_LOCAL`, the writer history if it joins late).
-//! 2. **Stores** each sample in a [`DurabilityStore`] (sqlite/file/in-memory).
-//! 3. **Replays** via a `TRANSIENT_LOCAL / KEEP_ALL` writer — a late-joining
-//!    reader matches it and the standard RTPS path delivers the history. This
-//!    keeps working after the original writer's process has died.
+//! 1. **Ingests** via a `RELIABLE / KEEP_ALL` reader — it receives every
+//!    sample the application writers publish. The reader of
+//!    [`serve`](DurabilityService::serve) is `TRANSIENT_LOCAL` and also takes
+//!    the history of a writer that published before it matched; the reader
+//!    of [`serve_typed`](DurabilityService::serve_typed) is `VOLATILE` and
+//!    matches writers of every durability kind.
+//! 2. **Stores** each sample in a [`DurabilityStore`] (sqlite/file/in-memory)
+//!    with the representation identifier of the header it came under
+//!    (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table 60).
+//! 3. **Replays** via a `PERSISTENT` writer — a late-joining reader matches
+//!    it and the standard RTPS path delivers the history, each sample under
+//!    the representation identifier it was stored with. This keeps working
+//!    after the original writer's process has died.
 //! 4. **Startup-sync**: on [`serve`](DurabilityService::serve) the replay
 //!    writer is primed from the store, so `PERSISTENT` history survives a full
 //!    service restart with no application writer present.
@@ -109,16 +115,12 @@ use std::time::{Duration, SystemTime};
 use zerodds_dcps::builtin_topics::PublicationBuiltinTopicData;
 use zerodds_dcps::runtime::{UserReaderConfig, UserSample, UserWriterConfig};
 use zerodds_dcps::{
-    DataReader, DataReaderQos, DataWriter, DataWriterQos, DdsType, DomainParticipant,
-    DomainParticipantFactory, DomainParticipantQos, InstanceStateKind, Publisher, PublisherQos,
-    RawBytes, Subscriber, SubscriberQos, Topic, TopicQos,
+    DdsType, DomainParticipant, DomainParticipantFactory, DomainParticipantQos, RawBytes,
 };
 use zerodds_durability_store::{Contract, DurabilitySample, DurabilityStore, TopicMeta};
 use zerodds_qos::policies::durability::DurabilityKind;
 use zerodds_qos::policies::durability_service::DurabilityServiceQosPolicy;
 use zerodds_qos::policies::history::HistoryKind;
-use zerodds_qos::policies::reliability::ReliabilityKind;
-use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
 use zerodds_qos::{
     DeadlineQosPolicy, LifespanQosPolicy, LivelinessKind, LivelinessQosPolicy, OwnershipKind,
 };
@@ -291,46 +293,6 @@ impl core::fmt::Display for ServiceEvent {
     }
 }
 
-/// Reader QoS for ingest: receive every sample reliably, **including a matched
-/// writer's TransientLocal history** (O2 P5). A service that starts after a
-/// writer published now back-fetches that writer's history. The history+live
-/// overlap — and a service restart that re-receives the same history — are
-/// deduped by the pump on `(writer_guid, source_sequence_number)`, which
-/// `UserSample::Alive` now carries and the store persists; without that dedup
-/// this had to be `VOLATILE` to avoid double-storing.
-fn ingest_reader_qos() -> DataReaderQos {
-    let mut q = DataReaderQos::default();
-    q.reliability.kind = ReliabilityKind::Reliable;
-    q.durability.kind = DurabilityKind::TransientLocal;
-    q.history.kind = HistoryKind::KeepAll;
-    q.resource_limits.max_samples = LENGTH_UNLIMITED;
-    q
-}
-
-/// Writer QoS for replay: deliver `contract`'s retained history to
-/// late-joiners. `serve()`'s scope is a single unkeyed instance, so a
-/// `KEEP_LAST(n)` contract here bounds that one instance's history — a
-/// hardcoded `KEEP_ALL` regardless of `contract` used to leave the replay
-/// writer's own cache unbounded even under a `KEEP_LAST` contract, so a late
-/// joiner still saw every historical sample, not the contracted depth.
-fn replay_writer_qos(contract: Contract) -> DataWriterQos {
-    let mut q = DataWriterQos::default();
-    q.reliability.kind = ReliabilityKind::Reliable;
-    q.durability.kind = DurabilityKind::TransientLocal;
-    q.history = match contract.history_kind {
-        HistoryKind::KeepAll => zerodds_qos::HistoryQosPolicy {
-            kind: HistoryKind::KeepAll,
-            depth: 0,
-        },
-        HistoryKind::KeepLast => zerodds_qos::HistoryQosPolicy {
-            kind: HistoryKind::KeepLast,
-            depth: contract.effective_depth() as i32,
-        },
-    };
-    q.resource_limits.max_samples = LENGTH_UNLIMITED;
-    q
-}
-
 /// Whether a discovered writer's endpoint GUID carries the RTPS
 /// `entityKind` octet for a keyed topic (DDSI-RTPS 2.5 §9.3.1.2:
 /// `UserWriterWithKey`/`BuiltinWriterWithKey` = `0x02`/`0xC2`). `false` for
@@ -386,8 +348,6 @@ struct Served {
 pub struct DurabilityService {
     ingest: DomainParticipant,
     replay: DomainParticipant,
-    publisher: Publisher,
-    subscriber: Subscriber,
     store: Arc<dyn DurabilityStore>,
     served: Mutex<Vec<Served>>,
     /// `Arc`-wrapped (not a bare `Mutex`) so a pump thread — spawned from
@@ -448,15 +408,11 @@ impl DurabilityService {
         // filter never sees).
         let _ = ingest.ignore_participant(replay.participant_handle());
         let _ = replay.ignore_participant(ingest.participant_handle());
-        let publisher = replay.create_publisher(PublisherQos::default());
-        let subscriber = ingest.create_subscriber(SubscriberQos::default());
         let cleanup_stop = Arc::new(AtomicBool::new(false));
         let cleanup_handle = spawn_cleanup_sweep(Arc::clone(&store), Arc::clone(&cleanup_stop))?;
         Ok(Self {
             ingest,
             replay,
-            publisher,
-            subscriber,
             store,
             served: Mutex::new(Vec::new()),
             events: Arc::new(Mutex::new(VecDeque::new())),
@@ -523,77 +479,27 @@ impl DurabilityService {
             .map(|s| (s.type_name.clone(), s.keyed, s.contract))
     }
 
-    /// Begins serving `topic_name` with the given retention `contract`. Creates
-    /// the ingest reader + replay writer, primes the writer from the store
+    /// Begins serving `topic_name` of the native type `zerodds::RawBytes`
+    /// (unkeyed) with the given retention `contract`. Creates the ingest
+    /// reader + replay writer, primes the writer from the store
     /// (startup-sync), and spawns the ingest pump.
+    ///
+    /// The ingest reader is TRANSIENT_LOCAL, so a writer that published
+    /// before the service matched it hands over its history; the pump keeps
+    /// each sample once by its writer and sequence number. It runs on the
+    /// runtime-level path of [`serve_typed`](Self::serve_typed), which keeps
+    /// the representation identifier each sample came under.
     ///
     /// # Errors
     /// Topic/reader/writer creation or the initial store/replay failed.
     pub fn serve(&self, topic_name: &str, contract: Contract) -> Result<()> {
-        // Persist what a restart needs to resume serving this topic without
-        // waiting for a writer/reader to be re-discovered (module docs,
-        // "Resuming a served topic after a restart"). `serve()`'s scope is a
-        // single unkeyed instance of the native `zerodds::RawBytes` type.
-        self.store.set_topic_meta(
+        self.serve_runtime(
             topic_name,
-            TopicMeta {
-                type_name: RawBytes::TYPE_NAME.to_string(),
-                keyed: false,
-                contract,
-            },
-        )?;
-
-        // Topics are per-participant: the reader's on the ingest participant,
-        // the writer's on the replay participant.
-        let rtopic: Topic<RawBytes> = self
-            .ingest
-            .create_topic::<RawBytes>(topic_name, TopicQos::default())?;
-        let wtopic: Topic<RawBytes> = self
-            .replay
-            .create_topic::<RawBytes>(topic_name, TopicQos::default())?;
-        let writer = self
-            .publisher
-            .create_datawriter::<RawBytes>(&wtopic, replay_writer_qos(contract))?;
-        let reader = self
-            .subscriber
-            .create_datareader::<RawBytes>(&rtopic, ingest_reader_qos())?;
-
-        // Startup-sync: prime the replay writer's history from durable storage.
-        for sample in self.store.replay_for_topic(topic_name)? {
-            writer.write(&RawBytes::new(sample.payload))?;
-        }
-
-        let stop = Arc::new(AtomicBool::new(false));
-        let pump_stop = Arc::clone(&stop);
-        let store = Arc::clone(&self.store);
-        let topic_owned = topic_name.to_string();
-        let own_pub = writer.instance_handle();
-        let seq = AtomicU64::new(self.store.stats(topic_name)?.samples as u64);
-
-        let handle = std::thread::Builder::new()
-            .name(format!("durability-pump-{topic_name}"))
-            .spawn(move || {
-                pump(
-                    &pump_stop,
-                    &reader,
-                    &writer,
-                    store.as_ref(),
-                    &topic_owned,
-                    own_pub,
-                    &seq,
-                );
-            })
-            .map_err(|_| ServiceError::Poisoned("spawn pump"))?;
-
-        self.served()?.push(Served {
-            name: topic_name.to_string(),
+            RawBytes::TYPE_NAME,
+            false,
             contract,
-            type_name: RawBytes::TYPE_NAME.to_string(),
-            keyed: false,
-            stop,
-            handle: Some(handle),
-        });
-        Ok(())
+            DurabilityKind::TransientLocal,
+        )
     }
 
     /// Like [`serve`](Self::serve) but for a topic whose application type-name
@@ -624,6 +530,25 @@ impl DurabilityService {
         keyed: bool,
         contract: Contract,
     ) -> Result<()> {
+        self.serve_runtime(
+            topic_name,
+            type_name,
+            keyed,
+            contract,
+            DurabilityKind::Volatile,
+        )
+    }
+
+    /// [`serve_typed`](Self::serve_typed) with the durability its ingest
+    /// reader requests.
+    fn serve_runtime(
+        &self,
+        topic_name: &str,
+        type_name: &str,
+        keyed: bool,
+        contract: Contract,
+        reader_durability: DurabilityKind,
+    ) -> Result<()> {
         // Persist what a restart needs to resume serving this topic without
         // waiting for a writer/reader to be re-discovered (module docs,
         // "Resuming a served topic after a restart").
@@ -647,11 +572,14 @@ impl DurabilityService {
             .ok_or(ServiceError::Poisoned("replay runtime"))?
             .clone();
 
-        let weid = rrt
-            .register_user_writer_kind(user_writer_cfg(topic_name, type_name), keyed)
-            .map_err(|_| ServiceError::Poisoned("register replay writer"))?;
         let (_reid, rx) = irt
-            .register_user_reader_kind(user_reader_cfg(topic_name, type_name), keyed)
+            .register_user_reader_kind(
+                UserReaderConfig {
+                    durability: reader_durability,
+                    ..user_reader_cfg(topic_name, type_name)
+                },
+                keyed,
+            )
             .map_err(|_| ServiceError::Poisoned("register ingest reader"))?;
         // `UserWriterConfig` (the runtime-level path this method uses) has no
         // HistoryQosPolicy field of its own — a fixed `KEEP_ALL` at
@@ -663,22 +591,49 @@ impl DurabilityService {
         // itself was already correctly enforcing (measured: KEEP_LAST(2)
         // with 3 writes to one instance replayed writes 1 and 2 — insertion
         // order, not depth — because the writer's cache still held all 3).
-        let _ = rrt.set_user_writer_history_depth(
-            weid,
-            match contract.history_kind {
+        let mut writer = ReplayWriter {
+            rt: Arc::clone(&rrt),
+            topic_name: topic_name.to_string(),
+            type_name: type_name.to_string(),
+            keyed,
+            depth: match contract.history_kind {
                 HistoryKind::KeepAll => usize::MAX,
                 HistoryKind::KeepLast => contract.effective_depth(),
             },
-        );
+            eid: None,
+        };
 
         // Startup-sync: prime the replay writer's history from durable storage.
-        // Each stored sample carries its own representation + byte order; set
-        // the writer overrides so the primed replay re-declares the original
-        // wire (a big-endian peer's persisted sample replays with a BE encap).
+        // Each stored sample goes out under the representation identifier it
+        // came under (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table 60): its XCDR
+        // version, its format — plain, delimited or parameter list, which
+        // follows the extensibility of the writer's type — and its byte order.
+        let mut last_identifier: Option<[u8; 2]> = None;
         for sample in self.store.replay_for_topic(topic_name)? {
-            let off: i16 = if sample.representation == 1 { 2 } else { 0 };
-            let _ = rrt.set_user_writer_data_rep_override(weid, Some(vec![off]));
-            let _ = rrt.set_user_writer_byte_order_override(weid, sample.big_endian);
+            let weid = match writer.for_identifier(sample.representation_identifier) {
+                Ok(weid) => weid,
+                Err(e) => {
+                    self.report(ServiceEvent::ReplayWriteFailed {
+                        topic: topic_name.to_string(),
+                        what: "startup-sync sample",
+                        error: e.to_string(),
+                    });
+                    continue;
+                }
+            };
+            if let Err(e) = set_form(
+                &rrt,
+                weid,
+                &mut last_identifier,
+                sample.representation_identifier,
+            ) {
+                self.report(ServiceEvent::ReplayWriteFailed {
+                    topic: topic_name.to_string(),
+                    what: "startup-sync sample",
+                    error: e.to_string(),
+                });
+                continue;
+            }
             // The stored `instance_key` (real for a keyed topic, all-zero for
             // an unkeyed one) — not the unkeyed convenience write, which
             // would fold every instance into the replay writer's single
@@ -711,17 +666,11 @@ impl DurabilityService {
             .name(format!("durability-pump-{topic_name}"))
             .spawn(move || {
                 // Representation-faithful replay: the ingested `payload` is the
-                // CDR body in the SOURCE writer's representation (a foreign
-                // FINAL-type writer emits XCDR1). The replay writer must declare
-                // an encap that matches that body, else a strict foreign reader
-                // misparses an alignment-sensitive type. We track the source
-                // representation and override the replay writer's encap when it
-                // changes (a topic is representation-consistent, so this is
-                // effectively a one-time set). 255 = "not yet observed".
-                let mut last_rep: u8 = 255;
-                // Tracks the last byte order pushed to the replay writer's encap
-                // override, so a BE peer's samples replay with a BE encap header.
-                let mut last_be = false;
+                // body in the SOURCE writer's form (a foreign FINAL-type writer
+                // emits XCDR1, an @appendable or @mutable type's writer
+                // D_CDR2 or PL_CDR2). The replay writer sends it under the
+                // header it came under; the identifier is set when it changes.
+                let mut last_identifier = last_identifier;
                 // Seed the source-identity dedup set from what is already
                 // durable, so a restart's re-received TransientLocal history is
                 // recognised and not re-stored.
@@ -744,8 +693,7 @@ impl DurabilityService {
                     };
                     let (
                         payload,
-                        representation,
-                        big_endian,
+                        representation_identifier,
                         writer_guid,
                         source_seq,
                         key_hash,
@@ -754,16 +702,14 @@ impl DurabilityService {
                         UserSample::Alive {
                             key_hash,
                             payload,
-                            representation,
-                            big_endian,
+                            representation_identifier,
                             writer_guid,
                             source_sequence_number,
                             source_timestamp,
                             ..
                         } => (
                             payload.to_vec(),
-                            representation,
-                            big_endian,
+                            representation_identifier,
                             writer_guid,
                             source_sequence_number,
                             // `None` for a NO_KEY topic — the single
@@ -791,13 +737,15 @@ impl DurabilityService {
                             ..
                         } => {
                             let _ = store.unregister(&topic_owned, &key_hash, SystemTime::now());
-                            if let Err(e) = pump_rrt.write_user_lifecycle(
-                                weid,
-                                key_hash,
-                                key_holder.as_deref(),
-                                lifecycle_status_bits(kind),
-                                source_timestamp,
-                            ) {
+                            if let Err(e) = writer.any().and_then(|weid| {
+                                pump_rrt.write_user_lifecycle(
+                                    weid,
+                                    key_hash,
+                                    key_holder.as_deref(),
+                                    lifecycle_status_bits(kind),
+                                    source_timestamp,
+                                )
+                            }) {
                                 report_event(
                                     &pump_events,
                                     ServiceEvent::ReplayWriteFailed {
@@ -822,27 +770,45 @@ impl DurabilityService {
                     if source_seq >= 0 && !seen.insert((writer_guid, source_seq)) {
                         continue;
                     }
-                    if representation != last_rep {
-                        // UserSample.representation: 0 = XCDR1, 1 = XCDR2 →
-                        // data_representation offer id 0 (XCDR) / 2 (XCDR2).
-                        let off: i16 = if representation == 1 { 2 } else { 0 };
-                        let _ = pump_rrt.set_user_writer_data_rep_override(weid, Some(vec![off]));
-                        last_rep = representation;
-                    }
-                    if big_endian != last_be {
-                        // The stored body bytes are big-endian for a BE peer, so
-                        // the replay writer must emit a matching `_BE` encap
-                        // header — otherwise the late-joiner mis-decodes.
-                        let _ = pump_rrt.set_user_writer_byte_order_override(weid, big_endian);
-                        last_be = big_endian;
+                    // A body under an identifier that names no CDR form
+                    // (XML, a vendor's range) cannot be replayed under it:
+                    // reported, not stored.
+                    let weid = match writer.for_identifier(representation_identifier) {
+                        Ok(weid) => weid,
+                        Err(e) => {
+                            report_event(
+                                &pump_events,
+                                ServiceEvent::ReplayWriteFailed {
+                                    topic: topic_owned.clone(),
+                                    what: "sample",
+                                    error: e.to_string(),
+                                },
+                            );
+                            continue;
+                        }
+                    };
+                    if let Err(e) = set_form(
+                        &pump_rrt,
+                        weid,
+                        &mut last_identifier,
+                        representation_identifier,
+                    ) {
+                        report_event(
+                            &pump_events,
+                            ServiceEvent::ReplayWriteFailed {
+                                topic: topic_owned.clone(),
+                                what: "sample",
+                                error: e.to_string(),
+                            },
+                        );
+                        continue;
                     }
                     let ds = DurabilitySample {
                         topic: topic_owned.clone(),
                         instance_key: key_hash,
                         sequence: seq.fetch_add(1, Ordering::Relaxed),
                         payload: payload.clone(),
-                        representation,
-                        big_endian,
+                        representation_identifier,
                         created_at: SystemTime::now(),
                         source_guid: writer_guid,
                         source_sequence: source_seq,
@@ -1114,10 +1080,10 @@ impl DurabilityService {
             let _ = h.join();
         }
         self.cleanup_stop.store(true, Ordering::Relaxed);
-        if let Ok(mut cleanup_handle) = self.cleanup_handle.lock() {
-            if let Some(h) = cleanup_handle.take() {
-                let _ = h.join();
-            }
+        if let Ok(mut cleanup_handle) = self.cleanup_handle.lock()
+            && let Some(h) = cleanup_handle.take()
+        {
+            let _ = h.join();
         }
     }
 }
@@ -1196,78 +1162,101 @@ fn spawn_cleanup_sweep(
         .map_err(|_| ServiceError::Poisoned("spawn cleanup sweep"))
 }
 
-/// Ingest pump: receive → store → replay-write, until `stop`.
-fn pump(
-    stop: &AtomicBool,
-    reader: &DataReader<RawBytes>,
-    writer: &DataWriter<RawBytes>,
-    store: &dyn DurabilityStore,
-    topic: &str,
-    own_pub: zerodds_dcps::InstanceHandle,
-    seq: &AtomicU64,
-) {
-    while !stop.load(Ordering::Relaxed) {
-        // Block until data or a short timeout (re-checks the stop flag).
-        let _ = reader.wait_for_data(Duration::from_millis(200));
-        let samples = match reader.take_with_info() {
-            Ok(s) => s,
-            Err(_) => continue,
+/// The replay writer of a served topic. It is registered with the first
+/// sample it replays, so that it announces that sample's data
+/// representation first: a reader matches a writer only when it accepts
+/// the writer's first offered representation (DDS-XTypes 1.3 §7.6.3.1.1),
+/// so a writer that announced XCDR first for samples that came under XCDR2
+/// never matched a reader that accepts XCDR2 alone. A lifecycle marker
+/// before any sample registers it with the runtime's default offer.
+struct ReplayWriter {
+    rt: Arc<zerodds_dcps::runtime::DcpsRuntime>,
+    topic_name: String,
+    type_name: String,
+    keyed: bool,
+    depth: usize,
+    eid: Option<zerodds_rtps::EntityId>,
+}
+
+impl ReplayWriter {
+    /// The writer for a sample under `identifier`, registered on the first
+    /// call.
+    fn for_identifier(
+        &mut self,
+        identifier: [u8; 2],
+    ) -> zerodds_dcps::Result<zerodds_rtps::EntityId> {
+        use zerodds_rtps::publication_data::data_representation as dr;
+        let first = representation_of(identifier).ok_or(zerodds_dcps::DdsError::BadParameter {
+            what: "representation identifier names no CDR form of XTypes 1.3 Table 60",
+        })?;
+        let other = if first == dr::XCDR {
+            dr::XCDR2
+        } else {
+            dr::XCDR
         };
-        for sample in samples {
-            if !sample.info.valid_data {
-                // Dispose / unregister marker, no payload (DDS 1.4
-                // §2.2.2.5.1.13). `serve()`'s scope is a single unkeyed
-                // instance, so mark IT unregistered — its samples become
-                // eligible for purge after `contract.cleanup_delay`. This
-                // was previously dropped unconditionally: nothing ever told
-                // the store an unkeyed topic's writer had gone away, so
-                // `cleanup_delay` had no event to measure from. Not
-                // forwarded to the replay writer (a `RawBytes` instance
-                // handle is local to whichever writer registered it, and
-                // this reader never has the replay writer's own handle for
-                // the same instance) — a late joiner still sees the
-                // contract-bounded retained history until `cleanup` purges
-                // it, which is the ADR 0009 retention guarantee; it just
-                // does not see the live state transition in real time.
-                if sample.info.instance_state != InstanceStateKind::Alive {
-                    let _ = store.unregister(topic, &[0u8; 16], SystemTime::now());
-                }
-                continue;
-            }
-            // Skip our own replay echo (defence in depth beyond ignore_publication).
-            if sample.info.publication_handle == own_pub {
-                continue;
-            }
-            let payload = sample.data.data;
-            let ds = DurabilitySample {
-                topic: topic.to_string(),
-                instance_key: [0u8; 16], // unkeyed (increment 1)
-                sequence: seq.fetch_add(1, Ordering::Relaxed),
-                payload: payload.clone(),
-                // The high-level `DataReader<RawBytes>` SampleInfo does not
-                // surface the wire representation / byte order, so this DDS-API
-                // ingest path assumes the canonical XCDR2 little-endian wire.
-                // For a big-endian peer use `serve_typed` (the runtime-level
-                // UserSample path), which captures both and replays them.
-                representation: 1,
-                big_endian: false,
-                created_at: SystemTime::now(),
-                // The high-level DataReader<RawBytes> path surfaces no source
-                // identity, so this path does not participate in P5 dedup.
-                source_guid: [0u8; 16],
-                source_sequence: -1,
-            };
-            if store.store(ds).is_ok() {
-                // Grow the replay writer's history so future late-joiners get it.
-                let _ = writer.write(&RawBytes::new(payload));
-            }
+        self.register(Some(vec![first, other]))
+    }
+
+    /// The writer, registered with the runtime's default offer when no
+    /// sample registered it.
+    fn any(&mut self) -> zerodds_dcps::Result<zerodds_rtps::EntityId> {
+        self.register(None)
+    }
+
+    fn register(
+        &mut self,
+        offer: Option<Vec<i16>>,
+    ) -> zerodds_dcps::Result<zerodds_rtps::EntityId> {
+        if let Some(eid) = self.eid {
+            return Ok(eid);
         }
+        let eid = self.rt.register_user_writer_kind(
+            UserWriterConfig {
+                data_representation_offer: offer,
+                ..user_writer_cfg(&self.topic_name, &self.type_name)
+            },
+            self.keyed,
+        )?;
+        // `UserWriterConfig` has no HistoryQosPolicy of its own: the depth
+        // of the contract (see `serve_runtime`).
+        let _ = self.rt.set_user_writer_history_depth(eid, self.depth);
+        self.eid = Some(eid);
+        Ok(eid)
     }
 }
 
-/// Runtime-level ingest-reader config mirroring [`ingest_reader_qos`]
-/// (RELIABLE + VOLATILE) but with an explicit `type_name` for cross-vendor
-/// matching. KEEP_ALL history is the reader default at the runtime level.
+/// The data representation (XCDR or XCDR2) a representation identifier
+/// names (DDS-XTypes 1.3 Table 60), as
+/// `DcpsRuntime::set_user_writer_representation_identifier` reads it.
+fn representation_of(identifier: [u8; 2]) -> Option<i16> {
+    use zerodds_rtps::publication_data::data_representation as dr;
+    if identifier[0] != 0x00 {
+        return None;
+    }
+    match identifier[1] & !0x01 {
+        0x00 | 0x02 => Some(dr::XCDR),
+        0x06 | 0x08 | 0x0a | 0x10 | 0x12 | 0x14 => Some(dr::XCDR2),
+        _ => None,
+    }
+}
+
+/// Frames the replay writer's next samples under `identifier` (the
+/// representation, the extensibility and the byte order it names,
+/// [`zerodds_dcps::runtime::DcpsRuntime::set_user_writer_representation_identifier`]),
+/// unless it already is.
+fn set_form(
+    rt: &zerodds_dcps::runtime::DcpsRuntime,
+    weid: zerodds_rtps::EntityId,
+    last: &mut Option<[u8; 2]>,
+    identifier: [u8; 2],
+) -> zerodds_dcps::Result<()> {
+    if *last != Some(identifier) {
+        rt.set_user_writer_representation_identifier(weid, identifier)?;
+        *last = Some(identifier);
+    }
+    Ok(())
+}
+
 /// `ChangeKind` → the `PID_STATUS_INFO` bits [`zerodds_dcps::runtime::DcpsRuntime::write_user_lifecycle`]
 /// takes (DDSI-RTPS 2.5 §9.6.3.9), for forwarding a discovered dispose/
 /// unregister marker to the replay writer.
@@ -1283,6 +1272,9 @@ fn lifecycle_status_bits(kind: zerodds_rtps::history_cache::ChangeKind) -> u32 {
     }
 }
 
+/// Runtime-level ingest-reader config: RELIABLE, VOLATILE (a caller sets
+/// another durability), with an explicit `type_name` for cross-vendor
+/// matching. KEEP_ALL history is the reader default at the runtime level.
 fn user_reader_cfg(topic_name: &str, type_name: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic_name.to_string(),
@@ -1299,18 +1291,30 @@ fn user_reader_cfg(topic_name: &str, type_name: &str) -> UserReaderConfig {
         // never matches it. A durability service must ingest whatever
         // representation the source emits, so it offers both.
         data_representation_offer: Some(vec![0, 2]),
+        reliable: true,
         ..Default::default()
     }
 }
 
-/// Runtime-level replay-writer config mirroring [`replay_writer_qos`]
-/// (RELIABLE + TRANSIENT_LOCAL/KEEP_ALL) with an explicit `type_name`.
+/// Runtime-level replay-writer config: RELIABLE, PERSISTENT, with an
+/// explicit `type_name`. The history depth follows the contract
+/// (`set_user_writer_history_depth` in `serve_runtime`).
+///
+/// The durability it offers is PERSISTENT, the strongest kind: a reader
+/// matches a writer only when the offered kind is at least the requested one
+/// (DDS 1.4 §2.2.3.4, requested/offered), and the late joiners this service
+/// exists for request TRANSIENT or PERSISTENT. Offering TRANSIENT_LOCAL, the
+/// replay writer matched neither, and a TRANSIENT or PERSISTENT reader got
+/// nothing once the original writer was gone (measured in the integration
+/// pillar, tests/integration/tests/services.rs).
 fn user_writer_cfg(topic_name: &str, type_name: &str) -> UserWriterConfig {
     UserWriterConfig {
         topic_name: topic_name.to_string(),
         type_name: type_name.to_string(),
         reliable: true,
-        durability: DurabilityKind::TransientLocal,
+        // The strongest kind, so that every late joiner matches whatever
+        // durability it requests (see above).
+        durability: DurabilityKind::Persistent,
         // The replay writer forwards on the original writer's behalf (module
         // doc), it is not that writer, so it announces the spec default here;
         // what matters is the CONTRACT this service enforces internally
@@ -1355,7 +1359,7 @@ mod tests {
     /// and its sequence number; one without a source goes out as the
     /// replay writer's own.
     #[test]
-    fn a_replayed_sample_goes_out_on_behalf_of_its_writer() {
+    fn rtps_8_7_9_a_replayed_sample_goes_out_on_behalf_of_its_writer() {
         use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig};
         let rt = DcpsRuntime::start(
             zerodds_test_domains::unique_domain(),
@@ -1370,6 +1374,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "Replay".into(),
                 type_name: "ReplayType".into(),
+                reliable: true,
                 ..Default::default()
             })
             .unwrap();
@@ -1391,17 +1396,10 @@ mod tests {
         rt.shutdown();
     }
 
-    /// The event mechanism itself: `report()` logs (stderr — not asserted
-    /// here, `events()` is) and records into the bounded ring
-    /// [`DurabilityService::events`] reads back. This does not force a real
-    /// `serve_typed` failure (no reachable one was found through the public
-    /// API — every registration path either succeeds or the failure mode
-    /// needs a resource this test cannot deny it, e.g. a full file
-    /// descriptor table); it proves the plumbing `consider_discovered_writer`
-    /// calls on a real failure is itself correct, which is the part that was
-    /// entirely missing (`let _ = me.serve_typed(...)`).
+    /// [`DurabilityService::events`] keeps the newest `MAX_EVENTS` events,
+    /// oldest first (its documentation).
     #[test]
-    fn report_records_and_bounds_events() {
+    fn the_event_ring_keeps_the_newest_max_events() {
         let domain = zerodds_test_domains::unique_domain();
         let store: Arc<dyn DurabilityStore> =
             Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
@@ -1435,51 +1433,37 @@ mod tests {
         service.shutdown();
     }
 
-    /// The three previously-silent replay-write drops (`serve_typed`'s
-    /// startup-sync priming loop, the pump's lifecycle-marker forward, and
-    /// the pump's per-sample replay write — module docs "let _ =") now go
-    /// through the same `report()`/`events()` plumbing
-    /// [`report_records_and_bounds_events`] already proves is correct for
-    /// `AutoServeFailed`. No publicly-reachable way was found to make a real
-    /// `write_user_sample_keyed`/`write_user_lifecycle` call fail either (the
-    /// runtime-level replay writer's `EntityId` is internal to
-    /// `serve_typed`, not returned to a caller); this proves the
-    /// `ReplayWriteFailed` variant + its `Display` + the ring plumbing are
-    /// themselves correct, which is the part that used to not exist at all.
-    #[test]
-    fn replay_write_failed_is_reported_not_dropped() {
-        let domain = zerodds_test_domains::unique_domain();
-        let store: Arc<dyn DurabilityStore> =
-            Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
-        let service = DurabilityService::start(domain, store).unwrap();
-
-        service.report(ServiceEvent::ReplayWriteFailed {
-            topic: "T".to_string(),
-            what: "sample",
-            error: "boom".to_string(),
-        });
-        let events = service.events().unwrap();
-        assert_eq!(events.len(), 1);
-        let ServiceEvent::ReplayWriteFailed { topic, what, error } = &events[0] else {
-            panic!("expected ReplayWriteFailed, got {:?}", events[0]);
-        };
-        assert_eq!(topic, "T");
-        assert_eq!(*what, "sample");
-        assert_eq!(error, "boom");
-        assert_eq!(
-            events[0].to_string(),
-            "topic=T: replay writer rejected a sample write: boom"
-        );
-
-        service.shutdown();
+    /// A discovered writer's announcement for `topic` with `type_name` and
+    /// `durability_service`.
+    fn announcement(
+        topic: &str,
+        type_name: &str,
+        durability_service: zerodds_qos::DurabilityServiceQosPolicy,
+    ) -> zerodds_dcps::builtin_topics::PublicationBuiltinTopicData {
+        zerodds_dcps::builtin_topics::PublicationBuiltinTopicData {
+            key: zerodds_rtps::wire_types::Guid::UNKNOWN,
+            participant_key: zerodds_rtps::wire_types::Guid::UNKNOWN,
+            topic_name: topic.to_string(),
+            type_name: type_name.to_string(),
+            durability: zerodds_qos::DurabilityQosPolicy {
+                kind: zerodds_qos::DurabilityKind::Transient,
+            },
+            durability_service,
+            reliability: zerodds_qos::ReliabilityQosPolicy {
+                kind: zerodds_qos::ReliabilityKind::Reliable,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
     }
 
-    /// `consider_discovered_writer` reports a conflict (not the discovered
-    /// writer's contract silently taking over) when a topic already served
-    /// under one contract sees a `PublicationBuiltinTopicData` announcing a
-    /// different one.
+    /// Two writers, one topic (module docs): the first writer's contract
+    /// keeps governing the topic. A second writer that announces another
+    /// `DurabilityServiceQosPolicy` (DDS 1.4 §2.2.3.5) is reported as a
+    /// conflict, one that announces another type name as a mismatch; neither
+    /// is applied.
     #[test]
-    fn conflicting_durability_service_is_reported_not_applied() {
+    fn a_second_writers_other_contract_or_type_is_reported_and_not_applied() {
         let domain = zerodds_test_domains::unique_domain();
         let store: Arc<dyn DurabilityStore> =
             Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
@@ -1490,32 +1474,22 @@ mod tests {
             .serve_typed(topic, "T", false, first_contract)
             .unwrap();
 
-        // != DDS default (1) -> Contract::from_qos wins.
-        let differing = zerodds_qos::DurabilityServiceQosPolicy {
+        // Not the DDS default (depth 1), so `Contract::from_qos` would apply.
+        let other_contract = zerodds_qos::DurabilityServiceQosPolicy {
             history_depth: 9,
             ..Default::default()
         };
-        let data = zerodds_dcps::builtin_topics::PublicationBuiltinTopicData {
-            key: zerodds_rtps::wire_types::Guid::UNKNOWN,
-            participant_key: zerodds_rtps::wire_types::Guid::UNKNOWN,
-            topic_name: topic.to_string(),
-            type_name: "T".to_string(),
-            durability: zerodds_qos::DurabilityQosPolicy {
-                kind: zerodds_qos::DurabilityKind::Transient,
-            },
-            durability_service: differing,
-            reliability: zerodds_qos::ReliabilityQosPolicy {
-                kind: zerodds_qos::ReliabilityKind::Reliable,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        service.consider_discovered_writer(&data, first_contract);
+        service
+            .consider_discovered_writer(&announcement(topic, "T", other_contract), first_contract);
+        service.consider_discovered_writer(
+            &announcement(topic, "SomeOtherType", Default::default()),
+            first_contract,
+        );
 
+        assert_eq!(service.contract_of(topic), Some(first_contract));
         assert_eq!(
-            service.contract_of(topic),
-            Some(first_contract),
-            "the first writer's contract must keep governing the topic"
+            service.served_meta_of(topic).map(|(t, ..)| t),
+            Some("T".to_string())
         );
         let events = service.events().unwrap();
         assert!(
@@ -1523,137 +1497,8 @@ mod tests {
                 e,
                 ServiceEvent::ConflictingDurabilityService { topic: t, .. } if t == topic
             )),
-            "the differing announcement must be reported: {events:?}"
+            "the other contract is reported: {events:?}"
         );
-
-        service.shutdown();
-    }
-
-    /// [`DurabilityService::serve_if_stored`] finds nothing for a topic no
-    /// one has ever served, and does not serve it.
-    #[test]
-    fn serve_if_stored_returns_false_without_metadata() {
-        let domain = zerodds_test_domains::unique_domain();
-        let store: Arc<dyn DurabilityStore> =
-            Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
-        let service = DurabilityService::start(domain, store).unwrap();
-
-        assert!(!service.serve_if_stored("NeverServed", None).unwrap());
-        assert!(
-            service
-                .served_topics()
-                .unwrap()
-                .iter()
-                .all(|t| t != "NeverServed")
-        );
-
-        service.shutdown();
-    }
-
-    /// This is the fix for the durability-restart bug: a topic's `TopicMeta`
-    /// persisted by an earlier `serve_typed` call (standing in for an
-    /// earlier daemon run) is enough for `serve_if_stored` to serve it again
-    /// — no writer, no reader, nothing but the store. Reports
-    /// `ServedFromStoredMeta`.
-    #[test]
-    fn serve_if_stored_serves_from_metadata_and_reports_event() {
-        let domain = zerodds_test_domains::unique_domain();
-        let store: Arc<dyn DurabilityStore> =
-            Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
-        let topic = "StoredMetaTopic";
-        let contract = Contract::keep_all();
-        {
-            // Simulates an earlier run: serve once, then "crash" (drop the
-            // service without a graceful shutdown — the store persisted the
-            // metadata already, at `serve_typed` time, not at shutdown).
-            let service = DurabilityService::start(domain, Arc::clone(&store)).unwrap();
-            service
-                .serve_typed(topic, "demo::Command", true, contract)
-                .unwrap();
-            service.shutdown();
-        }
-
-        let service2 = DurabilityService::start(domain, Arc::clone(&store)).unwrap();
-        assert!(
-            service2.serve_if_stored(topic, None).unwrap(),
-            "stored metadata must be found and served"
-        );
-        assert!(service2.served_topics().unwrap().iter().any(|t| t == topic));
-        assert_eq!(service2.contract_of(topic), Some(contract));
-        let events = service2.events().unwrap();
-        assert!(
-            events.iter().any(|e| matches!(
-                e,
-                ServiceEvent::ServedFromStoredMeta { topic: t, type_name, keyed }
-                    if t == topic && type_name == "demo::Command" && *keyed
-            )),
-            "serving from stored metadata must be reported: {events:?}"
-        );
-
-        service2.shutdown();
-    }
-
-    /// A config-pinned `contract_override` wins over the stored contract —
-    /// config always outranks a previously-resolved value (module docs, "The
-    /// retention contract").
-    #[test]
-    fn serve_if_stored_contract_override_wins_over_stored() {
-        let domain = zerodds_test_domains::unique_domain();
-        let store: Arc<dyn DurabilityStore> =
-            Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
-        let topic = "OverrideTopic";
-        {
-            let service = DurabilityService::start(domain, Arc::clone(&store)).unwrap();
-            service
-                .serve_typed(topic, "T", false, Contract::keep_all())
-                .unwrap();
-            service.shutdown();
-        }
-
-        let pinned = Contract {
-            history_depth: 42,
-            ..Contract::keep_all()
-        };
-        let service2 = DurabilityService::start(domain, Arc::clone(&store)).unwrap();
-        assert!(service2.serve_if_stored(topic, Some(pinned)).unwrap());
-        assert_eq!(service2.contract_of(topic), Some(pinned));
-
-        service2.shutdown();
-    }
-
-    /// `consider_discovered_writer` reports a `TopicMetaMismatch` (not a
-    /// `ConflictingDurabilityService`, and never a silent override) when a
-    /// topic already served under one type name/keyedness sees a writer
-    /// announce a DIFFERENT one — e.g. a topic served eagerly from stored
-    /// metadata whose type turns out to disagree with a real writer.
-    #[test]
-    fn topic_meta_mismatch_is_reported_not_applied() {
-        let domain = zerodds_test_domains::unique_domain();
-        let store: Arc<dyn DurabilityStore> =
-            Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
-        let service = Arc::new(DurabilityService::start(domain, store).unwrap());
-        let topic = "MismatchTopic";
-        let contract = Contract::keep_all();
-        service.serve_typed(topic, "T", false, contract).unwrap();
-
-        let data = zerodds_dcps::builtin_topics::PublicationBuiltinTopicData {
-            key: zerodds_rtps::wire_types::Guid::UNKNOWN,
-            participant_key: zerodds_rtps::wire_types::Guid::UNKNOWN,
-            topic_name: topic.to_string(),
-            type_name: "SomeOtherType".to_string(),
-            durability: zerodds_qos::DurabilityQosPolicy {
-                kind: zerodds_qos::DurabilityKind::Transient,
-            },
-            durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
-            reliability: zerodds_qos::ReliabilityQosPolicy {
-                kind: zerodds_qos::ReliabilityKind::Reliable,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        service.consider_discovered_writer(&data, contract);
-
-        let events = service.events().unwrap();
         assert!(
             events.iter().any(|e| matches!(
                 e,
@@ -1664,14 +1509,57 @@ mod tests {
                     ..
                 } if t == topic && served_type_name == "T" && announced_type_name == "SomeOtherType"
             )),
-            "the type-name disagreement must be reported: {events:?}"
+            "the other type name is reported: {events:?}"
         );
-        // Never applied: still served under the original type.
-        assert_eq!(
-            service.served_meta_of(topic).map(|(t, ..)| t),
-            Some("T".to_string())
-        );
+        service.shutdown();
+    }
 
+    /// Resuming a served topic after a restart (module docs): the type name,
+    /// keyedness and contract an earlier run persisted are enough for
+    /// [`DurabilityService::serve_if_stored`] to serve the topic again, with
+    /// no writer or reader present, and it reports that it did; a contract
+    /// the configuration pins wins over the stored one; a topic nobody served
+    /// is not found and not served.
+    #[test]
+    fn serve_if_stored_resumes_a_topic_from_its_stored_meta() {
+        let domain = zerodds_test_domains::unique_domain();
+        let store: Arc<dyn DurabilityStore> =
+            Arc::new(SqliteStore::open_in_memory(Contract::keep_all()).unwrap());
+        let contract = Contract::keep_all();
+        {
+            // An earlier run: serve, then stop. The store holds the metadata
+            // since `serve_typed`, not since the stop.
+            let service = DurabilityService::start(domain, Arc::clone(&store)).unwrap();
+            service
+                .serve_typed("Stored", "demo::Command", true, contract)
+                .unwrap();
+            service.serve_typed("Pinned", "T", false, contract).unwrap();
+            service.shutdown();
+        }
+
+        let service = DurabilityService::start(domain, Arc::clone(&store)).unwrap();
+        assert!(!service.serve_if_stored("NeverServed", None).unwrap());
+        assert!(service.serve_if_stored("Stored", None).unwrap());
+        let pinned = Contract {
+            history_depth: 42,
+            ..Contract::keep_all()
+        };
+        assert!(service.serve_if_stored("Pinned", Some(pinned)).unwrap());
+
+        let served = service.served_topics().unwrap();
+        assert!(served.iter().any(|t| t == "Stored"));
+        assert!(served.iter().all(|t| t != "NeverServed"));
+        assert_eq!(service.contract_of("Stored"), Some(contract));
+        assert_eq!(service.contract_of("Pinned"), Some(pinned));
+        let events = service.events().unwrap();
+        assert!(
+            events.iter().any(|e| matches!(
+                e,
+                ServiceEvent::ServedFromStoredMeta { topic: t, type_name, keyed }
+                    if t == "Stored" && type_name == "demo::Command" && *keyed
+            )),
+            "serving from stored metadata is reported: {events:?}"
+        );
         service.shutdown();
     }
 }

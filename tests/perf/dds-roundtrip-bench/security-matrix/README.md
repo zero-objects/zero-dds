@@ -30,8 +30,7 @@ The 15 profile definitions are in `run_deep_matrix.sh` (table) and in
 `internal/security/cross-vendor-secure-interop-matrix.md` §1. Generated assets
 (`profiles/`, certs, `*.p7s`, cyclone XMLs) are gitignored.
 
-## Hard lessons (otherwise SEC_FAIL with EVERY vendor) — see
-`internal/security/cross-vendor-matrix-findings.md`
+## Hard lessons (otherwise SEC_FAIL with EVERY vendor)
 - **CMS signer = permissions CA DIRECTLY** (`-signer permissions_ca.pem`), NOT
   an EE "authority" cert → otherwise cyclone `PKCS7_get0_signers: signer certificate
   not found`. (The `regen_certs.sh` used here signs WRONGLY with authority;
@@ -94,7 +93,7 @@ a received `dds.ca.sn` or `dds.perm_ca.sn`.
 is in `ProtectionKind` of the XSD). `data_protection_kind` is a
 `BasicProtectionKind` and stays `ENCRYPT`.
 
-Measured in round 14 (`b798333223b`, n=200 per cell, p50):
+Measured in round 14 (`dab5b115305`, n=200 per cell, p50):
 
 | Pair | oa-sign | oa-enc |
 |---|---|---|
@@ -130,7 +129,7 @@ as Table 80 describes it for `receiver_specific_key_id` 0. A
 key with a receiver-specific key remains bound to it. The
 default of ZeroDDS remains the rejection.
 
-Measured with the setting (`libzerodds.so` from `893d8ee7e71`, domain 229,
+Measured with the setting (`libzerodds.so` from `70f935c8442`, domain 229,
 n=200 per cell, p50; the other binaries from round 14):
 
 | Pair | oa-sign | oa-enc | common-subset | meta-sign-data |

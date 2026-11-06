@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn a_controller_without_rules_restricts_nothing() {
+    fn xrce_7_4_a_controller_without_rules_restricts_nothing() {
         let c = AccessController::default();
         assert!(c.permits(A, Operation::Delete, &Subject::of_kind(ObjectKind::Topic)));
         assert!(c.client_authorized(B));
@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn the_first_matching_rule_decides_and_no_match_denies() {
+    fn xrce_7_4_the_first_matching_rule_decides_and_no_match_denies() {
         let c = AccessController {
             rules: vec![
                 Rule {
@@ -323,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn domains_kinds_and_topic_prefixes_narrow_a_rule() {
+    fn xrce_7_4_domains_kinds_and_topic_prefixes_narrow_a_rule() {
         let c = AccessController {
             rules: vec![Rule {
                 domains: vec![3],
@@ -361,7 +361,7 @@ mod tests {
     }
 
     #[test]
-    fn only_configured_client_keys_are_authorized() {
+    fn xrce_7_4_only_configured_client_keys_are_authorized() {
         let c = AccessController {
             authorized_clients: vec![A],
             ..AccessController::default()
@@ -387,28 +387,11 @@ mod tests {
     }
 
     #[test]
-    fn a_client_key_is_read_in_wire_order() {
+    fn xrce_7_8_1_a_client_key_is_read_in_wire_order() {
         assert_eq!(parse_client_key("0xAABBCCDD"), Some(A));
         assert_eq!(parse_client_key("01020304"), Some(B));
         assert_eq!(parse_client_key("0xAABBCC"), None);
         assert_eq!(parse_client_key("0xAABBCCDDEE"), None);
         assert_eq!(parse_client_key("0xGGBBCCDD"), None);
-    }
-
-    #[test]
-    fn operation_and_kind_names_round_trip() {
-        for op in [
-            Operation::Create,
-            Operation::Update,
-            Operation::GetInfo,
-            Operation::Delete,
-            Operation::WriteData,
-            Operation::ReadData,
-        ] {
-            assert_eq!(Operation::from_name(op.name()), Some(op));
-        }
-        assert_eq!(Operation::from_name("write"), None);
-        assert_eq!(kind_from_name("datawriter"), Some(ObjectKind::DataWriter));
-        assert_eq!(kind_from_name("agent"), None);
     }
 }

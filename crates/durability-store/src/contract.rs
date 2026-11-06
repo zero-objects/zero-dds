@@ -153,29 +153,10 @@ fn cleanup_delay(qos: &DurabilityServiceQosPolicy) -> Duration {
 mod tests {
     use super::*;
 
+    /// A row whose history kind is neither KEEP_LAST nor KEEP_ALL (DDS 1.4
+    /// §2.2.3.18) is no contract.
     #[test]
-    fn row_round_trips_keep_last() {
-        let c = Contract {
-            history_kind: HistoryKind::KeepLast,
-            history_depth: 5,
-            max_samples: 100,
-            max_instances: 10,
-            max_samples_per_instance: 3,
-            cleanup_delay: Duration::new(7, 42),
-        };
-        let (a, b, cc, d, e, f, g) = c.to_row();
-        assert_eq!(Contract::from_row(a, b, cc, d, e, f, g), Some(c));
-    }
-
-    #[test]
-    fn row_round_trips_keep_all_unlimited() {
-        let c = Contract::keep_all();
-        let (a, b, cc, d, e, f, g) = c.to_row();
-        assert_eq!(Contract::from_row(a, b, cc, d, e, f, g), Some(c));
-    }
-
-    #[test]
-    fn from_row_rejects_unknown_history_kind() {
+    fn a_row_with_an_unknown_history_kind_is_no_contract() {
         assert_eq!(Contract::from_row(99, 0, -1, -1, -1, 0, 0), None);
     }
 }

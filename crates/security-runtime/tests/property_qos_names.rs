@@ -43,7 +43,7 @@ const PERMISSIONS_XML: &str = r#"
 /// Written out as literals so that renaming a constant cannot quietly
 /// rename the wire-visible configuration key.
 #[test]
-fn builtin_property_names_match_the_spec_strings() {
+fn security_7_3_2_builtin_property_names_match_the_spec_strings() {
     // §9.3.1 access control.
     assert_eq!(PROP_PERMISSIONS_XML, "dds.sec.access.permissions");
     assert_eq!(PROP_PERMISSIONS_CA, "dds.sec.access.permissions_ca");

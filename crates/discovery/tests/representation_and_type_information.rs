@@ -41,7 +41,7 @@ fn negotiation_takes_xcdr2_when_both_offer_both_versions() {
 }
 
 #[test]
-fn type_information_is_built_from_a_keyed_appendable_struct() {
+fn xtypes_7_6_3_2_1_type_information_is_built_from_a_keyed_appendable_struct() {
     let b = TypeObjectBuilder::struct_type("::chat::Chatter")
         .extensibility(Extensibility::Appendable)
         .member("id", TypeIdentifier::Primitive(PrimitiveKind::Int64), |m| {
@@ -58,7 +58,7 @@ fn type_information_is_built_from_a_keyed_appendable_struct() {
 }
 
 #[test]
-fn negotiation_matches_xcdr2_when_both_support() {
+fn xtypes_7_6_3_1_1_negotiation_matches_xcdr2_when_both_support() {
     // Happy path — a precondition for full interop is that both sides
     // offer XCDR2. This test works without Cyclone.
     let neg = negotiate_representation(&[2], &[2]);

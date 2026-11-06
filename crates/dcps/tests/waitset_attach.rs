@@ -18,7 +18,7 @@ use zerodds_dcps::{
 /// arrives. A guard condition attached with trigger_value TRUE while it
 /// waits wakes it, long before its timeout.
 #[test]
-fn attaching_a_triggered_condition_unblocks_a_waiting_waitset() {
+fn dcps_2_2_2_1_6_1_attaching_a_triggered_condition_unblocks_a_waiting_waitset() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic = p

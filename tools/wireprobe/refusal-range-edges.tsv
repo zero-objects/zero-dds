@@ -1,7 +1,7 @@
 # refusal-range-edges.tsv — the values every binding must answer the
 # same way, and that no corpus sample holds.
 #
-# `docs/OPEN-ITEMS.md` (Guards): the corpus sweep is the executable
+# The corpus sweep is the executable
 # contract for the wire answers — 3760 cells per language, octet by
 # octet — and it says nothing about the values a sample never holds.
 # Both defects the last pass through `endpoints/c` found were of that

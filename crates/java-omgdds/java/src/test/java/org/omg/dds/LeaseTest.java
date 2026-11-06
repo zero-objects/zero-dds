@@ -100,7 +100,7 @@ class LeaseTest {
     }
 
     @Test
-    void requestedDeadlineMissedFiresWithoutPolling() throws Exception {
+    void javapsm_2_requested_deadline_missed_fires_without_polling() throws Exception {
         DomainParticipant p =
                 Qos.factory().createParticipant(510);
         Topic<Reading> t = p.createTopic("DeadlineLease", Reading.class);
@@ -127,7 +127,7 @@ class LeaseTest {
     }
 
     @Test
-    void offeredDeadlineMissedFiresWithoutPolling() throws Exception {
+    void javapsm_2_offered_deadline_missed_fires_without_polling() throws Exception {
         DomainParticipant p =
                 Qos.factory().createParticipant(511);
         Topic<Reading> t = p.createTopic("OfferedDeadlineLease", Reading.class);
@@ -154,7 +154,7 @@ class LeaseTest {
     }
 
     @Test
-    void livelinessLostFiresWithoutPolling() throws Exception {
+    void javapsm_2_liveliness_lost_fires_without_polling() throws Exception {
         DomainParticipant p =
                 Qos.factory().createParticipant(512);
         Topic<Reading> t = p.createTopic("LivelinessLostLease", Reading.class);
@@ -183,7 +183,7 @@ class LeaseTest {
     }
 
     @Test
-    void livelinessChangedFiresWithoutPolling() throws Exception {
+    void javapsm_2_liveliness_changed_fires_without_polling() throws Exception {
         DomainParticipant p =
                 Qos.factory().createParticipant(513);
         Topic<Reading> t = p.createTopic("LivelinessChangedLease", Reading.class);

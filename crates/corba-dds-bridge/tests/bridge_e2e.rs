@@ -21,12 +21,13 @@
     missing_docs
 )]
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc as SyncArc;
-use std::time::Duration;
+use std::sync::mpsc;
+use std::time::{Duration, Instant};
 
 use zerodds_corba_giop::version::Version;
 use zerodds_corba_giop::{
@@ -39,11 +40,66 @@ fn daemon_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_zerodds-corba-bridged"))
 }
 
-struct DaemonGuard {
+/// A running `zerodds-corba-bridged` on a leased DDS domain, with the
+/// lines of its log (stderr).
+struct Daemon {
     child: Child,
+    lines: mpsc::Receiver<String>,
+    _lease: zerodds_test_domains::DomainLease,
 }
 
-impl Drop for DaemonGuard {
+impl Daemon {
+    fn spawn(args: &[&str]) -> Daemon {
+        let lease = zerodds_test_domains::lease_domain();
+        let mut child = Command::new(daemon_binary())
+            .args(args)
+            .args(["--domain", &lease.id().to_string()])
+            .stderr(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("spawn daemon");
+        let stderr = child.stderr.take().expect("the daemon's stderr");
+        let (tx, lines) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        Daemon {
+            child,
+            lines,
+            _lease: lease,
+        }
+    }
+
+    /// Waits for the log line of `event` and returns it.
+    fn event(&self, event: &str) -> String {
+        self.first_of(&[event])
+    }
+
+    /// Waits for the first log line of any of `events` and returns it.
+    fn first_of(&self, events: &[&str]) -> String {
+        let needles: Vec<String> = events
+            .iter()
+            .map(|e| format!("\"event\":\"{e}\""))
+            .collect();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            match self
+                .lines
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok(line) if needles.iter().any(|n| line.contains(n)) => return line,
+                Ok(_) => {}
+                Err(_) => panic!("the daemon logged none of {events:?}"),
+            }
+        }
+    }
+}
+
+impl Drop for Daemon {
     fn drop(&mut self) {
         terminate_child_gracefully(&mut self.child);
     }
@@ -55,6 +111,10 @@ impl Drop for DaemonGuard {
 /// under `cargo llvm-cov` → corrupt `.profraw` headers → `llvm-profdata
 /// merge` fails the entire pipeline.
 fn terminate_child_gracefully(child: &mut Child) {
+    // Already waited for: its pid may be another process's by now.
+    if let Ok(Some(_)) = child.try_wait() {
+        return;
+    }
     #[cfg(unix)]
     {
         let pid = child.id() as i32;
@@ -94,25 +154,18 @@ fn pick_port() -> u16 {
     p
 }
 
-fn spawn_daemon(port: u16) -> DaemonGuard {
+fn spawn_daemon(port: u16) -> Daemon {
     let bind = format!("127.0.0.1:{port}");
-    let child = Command::new(daemon_binary())
-        .args([
-            "--iiop-bind",
-            &bind,
-            "--orb-id",
-            "zerodds-test",
-            "--topic",
-            "IDL:Foo:1.0=Foo::Topic",
-            "--idle-timeout-ms",
-            "5000",
-        ])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn daemon");
-    std::thread::sleep(Duration::from_millis(300));
-    DaemonGuard { child }
+    Daemon::spawn(&[
+        "--iiop-bind",
+        &bind,
+        "--orb-id",
+        "zerodds-test",
+        "--topic",
+        "IDL:Foo:1.0=Foo::Topic",
+        "--idle-timeout-ms",
+        "5000",
+    ])
 }
 
 fn connect(port: u16) -> TcpStream {
@@ -131,7 +184,7 @@ fn connect(port: u16) -> TcpStream {
 /// `CORBA::OBJECT_NOT_EXIST`, not with an empty success (which the daemon
 /// used to send for every request).
 #[test]
-fn a_request_to_an_unknown_object_is_object_not_exist() {
+fn corbabridge_4_2_a_request_to_an_unknown_object_is_object_not_exist() {
     let port = pick_port();
     let _guard = spawn_daemon(port);
     let mut stream = connect(port);
@@ -188,6 +241,17 @@ fn a_request_to_an_unknown_object_is_object_not_exist() {
     }
 }
 
+/// §9.1: the IIOP port is bound (step 5) before the IORs are written and
+/// published (step 6), so that a client that reads an IOR finds the port
+/// accepting. The daemon logs `listening` at the bind and `ior` for each
+/// IOR it publishes, in the order it does both.
+#[test]
+fn corbabridge_9_1_the_port_is_bound_before_an_ior_is_published() {
+    let daemon = spawn_daemon(pick_port());
+    let first = daemon.first_of(&["listening", "ior"]);
+    assert!(first.contains("\"event\":\"listening\""), "{first}");
+}
+
 fn read_giop(stream: &mut TcpStream) -> Option<Message> {
     let mut hdr = [0u8; 12];
     stream.read_exact(&mut hdr).ok()?;
@@ -224,44 +288,29 @@ fn system_exception_of(msg: Message) -> (u32, String) {
 /// §9.2: at shutdown a request still pending gets its reply (here its
 /// `TIMEOUT`, no backend answers), a request arriving during the drain gets
 /// `TRANSIENT`, then the connection gets `CloseConnection` and is closed.
+#[cfg(unix)]
 #[test]
-fn the_shutdown_answers_pending_requests_then_closes_the_connection() {
-    use std::sync::Arc;
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use zerodds_corba_dds_bridge::bridge_daemon::{self, DaemonConfig};
-    use zerodds_corba_dds_bridge::daemon_runtime::BridgeMetrics;
-
+fn corbabridge_4_5_the_shutdown_answers_pending_requests_then_closes_the_connection() {
     let port = pick_port();
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("corba-shutdown");
+    std::fs::create_dir_all(&dir).unwrap();
     let yaml = format!(
-        "domain: {d}\n\
-         corba:\n  iiop:\n    bind: \"127.0.0.1:{port}\"\n\
+        "corba:\n  iiop:\n    bind: \"127.0.0.1:{port}\"\n\
          mappings:\n\
-         \x20 - repo_id: \"IDL:zerodds_test/Slow:1.0\"\n    operation: wait\n    timeout_ms: 1500\n",
-        d = 150 + (std::process::id() % 60)
+         \x20 - repo_id: \"IDL:zerodds_test/Slow:1.0\"\n    operation: wait\n    timeout_ms: 1500\n"
     );
+    let file = dir.join("bridge.yaml");
+    std::fs::write(&file, &yaml).unwrap();
     let mut c = zerodds_config::Config::default();
     c.push(
         zerodds_config::parse_str(&yaml, "<test>").unwrap(),
         "<test>".into(),
     )
     .unwrap();
-    let cfg = DaemonConfig::from_config(Some(&c)).unwrap();
-    let key = bridge_daemon::object_key(&cfg.mappings[0]);
+    let cfg = zerodds_corba_dds_bridge::bridge_daemon::DaemonConfig::from_config(Some(&c)).unwrap();
+    let key = zerodds_corba_dds_bridge::bridge_daemon::object_key(&cfg.mappings[0]);
 
-    let stop = Arc::new(AtomicBool::new(false));
-    let bridge = {
-        let stop = Arc::clone(&stop);
-        std::thread::spawn(move || {
-            let registry = zerodds_monitor::Registry::new();
-            let metrics = BridgeMetrics::register(&registry);
-            bridge_daemon::run(
-                &cfg,
-                zerodds_dcps::runtime::RuntimeConfig::default(),
-                &stop,
-                &metrics,
-            )
-        })
-    };
+    let mut daemon = Daemon::spawn(&["--config", file.to_str().unwrap(), "--log-level", "debug"]);
     let mut stream = connect(port);
     let request = |id: u32| {
         encode_message(
@@ -281,10 +330,15 @@ fn the_shutdown_answers_pending_requests_then_closes_the_connection() {
         .expect("encode")
     };
     stream.write_all(&request(1)).unwrap();
-    std::thread::sleep(Duration::from_millis(200));
-    let stopped = std::time::Instant::now();
-    stop.store(true, Ordering::SeqCst);
-    std::thread::sleep(Duration::from_millis(400));
+    // Request 1 is published and pending.
+    daemon.event("request");
+    let stopped = Instant::now();
+    // SAFETY: the pid is the live child's; SIGTERM is the shutdown of §9.2.
+    unsafe {
+        libc::kill(daemon.child.id() as i32, libc::SIGTERM);
+    }
+    let draining = daemon.event("draining");
+    assert!(draining.contains("\"pending\":\"1\""), "{draining}");
     stream.write_all(&request(2)).unwrap();
 
     let first = system_exception_of(read_giop(&mut stream).expect("reply to 2"));
@@ -299,16 +353,19 @@ fn the_shutdown_answers_pending_requests_then_closes_the_connection() {
         ),
     }
     assert!(read_giop(&mut stream).is_none(), "the connection is closed");
-    bridge.join().unwrap().expect("run");
+    daemon.event("shutdown");
+    let status = daemon.child.wait().unwrap();
     assert!(
         stopped.elapsed() < Duration::from_secs(4),
         "stopped after {:?}",
         stopped.elapsed()
     );
+    assert!(status.success(), "{status:?}");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
-fn dump_iors_writes_stringified_ior() {
+fn corbabridge_2_dump_iors_writes_stringified_ior() {
     let out = Command::new(daemon_binary())
         .args([
             "--dump-iors",
@@ -329,7 +386,7 @@ fn dump_iors_writes_stringified_ior() {
 }
 
 #[test]
-fn version_flag_emits_one_line() {
+fn corbabridge_2_version_flag_emits_one_line() {
     let out = Command::new(daemon_binary())
         .arg("--version")
         .output()
@@ -341,7 +398,7 @@ fn version_flag_emits_one_line() {
 }
 
 #[test]
-fn unknown_arg_yields_exit_1() {
+fn corbabridge_2_unknown_arg_yields_exit_1() {
     let mut child = Command::new(daemon_binary())
         .args(["--no-such-arg", "x"])
         .stderr(Stdio::null())
@@ -354,7 +411,7 @@ fn unknown_arg_yields_exit_1() {
 
 /// §2 exit code 4: an SSLIOP certificate that does not load.
 #[test]
-fn a_certificate_that_does_not_load_is_exit_4() {
+fn corbabridge_2_a_certificate_that_does_not_load_is_exit_4() {
     let dir = std::env::temp_dir().join(format!("corba-exit4-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let cert = dir.join("cert.pem");
@@ -378,11 +435,55 @@ fn a_certificate_that_does_not_load_is_exit_4() {
     assert_eq!(status.code(), Some(4));
 }
 
+/// §2 exit code 2: the IIOP port is in use.
+#[test]
+fn corbabridge_2_a_port_in_use_is_exit_2() {
+    let taken = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let bind = format!("127.0.0.1:{}", taken.local_addr().unwrap().port());
+    let lease = zerodds_test_domains::lease_domain();
+    let status = Command::new(daemon_binary())
+        .args(["--iiop-bind", &bind, "--topic", "IDL:Foo:1.0=Foo::Topic"])
+        .args(["--domain", &lease.id().to_string()])
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .status()
+        .expect("spawn");
+    assert_eq!(status.code(), Some(2));
+}
+
+/// §2 exit code 5: the NameService the IORs are to be bound in does not
+/// answer within `corba.ior.naming_retry_ms`.
+#[test]
+fn corbabridge_2_a_name_service_that_does_not_answer_is_exit_5() {
+    // A port nothing listens on: bound once, then released.
+    let closed = pick_port();
+    let lease = zerodds_test_domains::lease_domain();
+    let status = Command::new(daemon_binary())
+        .args([
+            "--iiop-bind",
+            &format!("127.0.0.1:{}", pick_port()),
+            "--topic",
+            "IDL:Foo:1.0=Foo::Topic",
+            "--set",
+            &format!("corba.ior.naming_service=corbaloc::127.0.0.1:{closed}/NameService"),
+            "--set",
+            "corba.ior.publish_to_naming=true",
+            "--set",
+            "corba.ior.naming_retry_ms=500",
+        ])
+        .args(["--domain", &lease.id().to_string()])
+        .stderr(Stdio::null())
+        .stdout(Stdio::null())
+        .status()
+        .expect("spawn");
+    assert_eq!(status.code(), Some(5));
+}
+
 /// §8.2: the families `zerodds_corba_bridge_*` on the admin endpoint,
 /// labelled with the configured operation and topics. One request without a
 /// backend ends in `TIMEOUT`, one LocateRequest is answered.
 #[test]
-fn the_metrics_of_section_8_2_count_a_timed_out_request() {
+fn corbabridge_8_2_the_metrics_of_section_8_2_count_a_timed_out_request() {
     let port = pick_port();
     let metrics_port = pick_port();
     let dir = std::env::temp_dir().join(format!("corba-metrics-{}", std::process::id()));
@@ -402,18 +503,12 @@ fn the_metrics_of_section_8_2_count_a_timed_out_request() {
     .unwrap();
     let cfg = zerodds_corba_dds_bridge::bridge_daemon::DaemonConfig::from_config(Some(&c)).unwrap();
     let key = zerodds_corba_dds_bridge::bridge_daemon::object_key(&cfg.mappings[0]);
-    let child = Command::new(daemon_binary())
-        .args([
-            "--config",
-            file.to_str().unwrap(),
-            "--idle-timeout-ms",
-            "8000",
-        ])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn daemon");
-    let _guard = DaemonGuard { child };
+    let _daemon = Daemon::spawn(&[
+        "--config",
+        file.to_str().unwrap(),
+        "--idle-timeout-ms",
+        "8000",
+    ]);
     let mut stream = connect(port);
     let req = encode_message(
         Version::V1_2,
@@ -512,7 +607,7 @@ fn sighup(child: &Child) {
 /// not load leaves the last one in place.
 #[cfg(unix)]
 #[test]
-fn a_sighup_applies_the_new_acl_and_a_broken_file_keeps_the_old_one() {
+fn corbabridge_9_2_a_sighup_applies_the_new_acl_and_a_broken_file_keeps_the_old_one() {
     let port = pick_port();
     let dir = std::env::temp_dir().join(format!("corba-reload-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -534,31 +629,24 @@ fn a_sighup_applies_the_new_acl_and_a_broken_file_keeps_the_old_one() {
     .unwrap();
     let cfg = zerodds_corba_dds_bridge::bridge_daemon::DaemonConfig::from_config(Some(&c)).unwrap();
     let key = zerodds_corba_dds_bridge::bridge_daemon::object_key(&cfg.mappings[0]);
-    let child = Command::new(daemon_binary())
-        .args([
-            "--config",
-            file.to_str().unwrap(),
-            "--idle-timeout-ms",
-            "10000",
-        ])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn daemon");
-    let guard = DaemonGuard { child };
-    std::thread::sleep(Duration::from_millis(300));
+    let daemon = Daemon::spawn(&[
+        "--config",
+        file.to_str().unwrap(),
+        "--idle-timeout-ms",
+        "10000",
+    ]);
     assert_eq!(call_wait(port, &key, 1), "NO_PERMISSION");
     std::fs::write(&file, &allow).unwrap();
-    sighup(&guard.child);
-    std::thread::sleep(Duration::from_millis(500));
+    sighup(&daemon.child);
+    daemon.event("reloaded");
     assert_eq!(
         call_wait(port, &key, 2),
         "TIMEOUT",
         "the rule of the reloaded file"
     );
     std::fs::write(&file, format!("{allow}  no_such_key: 1\n")).unwrap();
-    sighup(&guard.child);
-    std::thread::sleep(Duration::from_millis(500));
+    sighup(&daemon.child);
+    daemon.event("reload_refused");
     assert_eq!(
         call_wait(port, &key, 3),
         "TIMEOUT",
@@ -573,7 +661,7 @@ fn a_sighup_applies_the_new_acl_and_a_broken_file_keeps_the_old_one() {
 /// sent.
 #[cfg(unix)]
 #[test]
-fn a_sighup_serves_new_connections_with_the_new_certificate() {
+fn corbabridge_9_2_a_sighup_serves_new_connections_with_the_new_certificate() {
     use rcgen::{CertificateParams, DistinguishedName, DnType, IsCa, KeyPair, SanType};
     let mint = |ca_name: &str| {
         let mut ca_p = CertificateParams::new(vec![ca_name.to_string()]).unwrap();
@@ -611,19 +699,13 @@ fn a_sighup_serves_new_connections_with_the_new_certificate() {
         ),
     )
     .unwrap();
-    let child = Command::new(daemon_binary())
-        .args([
-            "--config",
-            file.to_str().unwrap(),
-            "--idle-timeout-ms",
-            "10000",
-        ])
-        .stderr(Stdio::null())
-        .stdout(Stdio::null())
-        .spawn()
-        .expect("spawn daemon");
-    let guard = DaemonGuard { child };
-    std::thread::sleep(Duration::from_millis(300));
+    let daemon = Daemon::spawn(&[
+        "--config",
+        file.to_str().unwrap(),
+        "--idle-timeout-ms",
+        "10000",
+    ]);
+    drop(connect(ssl_port));
     let handshake = || -> Result<(), String> {
         let mut roots = rustls::RootCertStore::empty();
         roots.add(ca2.clone()).unwrap();
@@ -650,8 +732,8 @@ fn a_sighup_serves_new_connections_with_the_new_certificate() {
     );
     std::fs::write(&cert_file, &cert2).unwrap();
     std::fs::write(&key_file, &key2).unwrap();
-    sighup(&guard.child);
-    std::thread::sleep(Duration::from_millis(500));
+    sighup(&daemon.child);
+    daemon.event("reloaded");
     handshake().expect("after SIGHUP the second CA's certificate");
     let _ = std::fs::remove_dir_all(&dir);
 }

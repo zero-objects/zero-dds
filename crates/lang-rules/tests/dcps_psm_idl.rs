@@ -67,7 +67,7 @@ fn model() -> Ast {
 }
 
 #[test]
-fn the_dcps_psm_idl_declares_the_types_the_clause_names() {
+fn xtypes_7_5_the_dcps_psm_idl_declares_the_types_the_clause_names() {
     let ast = model();
     let names: Vec<String> = ast
         .types()
@@ -84,7 +84,7 @@ fn the_dcps_psm_idl_declares_the_types_the_clause_names() {
 }
 
 #[test]
-fn every_language_declares_the_dcps_psm() {
+fn xtypes_7_5_every_language_declares_the_dcps_psm() {
     let ast = model();
     let mut refused = Vec::new();
     for language in Language::ALL {

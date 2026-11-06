@@ -15,7 +15,8 @@
 //! `OK` and exits 0.
 //!
 //! A host without the compiler of a language, or without `openssl`, prints
-//! `[skip]` and the test does not count as run.
+//! `SKIP plugin-<language>: …` (the form ci/check_skips.py reads), and the
+//! integration job that runs this file fails on a skip it has not declared.
 
 #![cfg(all(feature = "security", unix))]
 #![allow(
@@ -66,7 +67,21 @@ fn available(tool: &str, probe: &str) -> bool {
         .is_ok_and(|o| o.status.success())
 }
 
+/// The file name of the library the programs link.
+#[cfg(target_os = "macos")]
+const LIBRARY: &str = "libzerodds.dylib";
+/// The file name of the library the programs link.
+#[cfg(not(target_os = "macos"))]
+const LIBRARY: &str = "libzerodds.so";
+
 /// The directory with `libzerodds.so`, built with the `security` feature.
+///
+/// tests/integration/plugin_languages.sh builds it before the integration job
+/// runs these tests; a library found there is taken as it is, and a test
+/// builds only where there is none. With a cargo call in every test, the
+/// first two were cut off at 25 s in integration-sdk although the step before
+/// had built the library (pipeline 8650, job 227993); why that cargo call did
+/// not finish at once is not checked.
 fn library_dir() -> &'static Path {
     static DIR: OnceLock<PathBuf> = OnceLock::new();
     DIR.get_or_init(|| {
@@ -75,6 +90,10 @@ fn library_dir() -> &'static Path {
         let target = std::env::var_os("CARGO_TARGET_DIR")
             .map_or_else(|| workspace_root().join("target"), PathBuf::from)
             .join("plugin-languages");
+        let built = target.join("debug");
+        if built.join(LIBRARY).is_file() {
+            return built;
+        }
         let mut cargo = Command::new(env!("CARGO"));
         cargo
             .args(["build", "-p", "zerodds-c-api", "--features", "security"])
@@ -116,7 +135,7 @@ fn tempdir(prefix: &str) -> PathBuf {
 /// domain of its own; `None` where `openssl` is missing.
 fn fixtures() -> Option<Fixtures> {
     if !openssl_available() {
-        println!("[skip] openssl not on PATH");
+        println!("SKIP plugin-languages: openssl not on PATH");
         return None;
     }
     let lease = zerodds_test_domains::lease_domain();
@@ -228,9 +247,10 @@ fn run_program(mut command: Command, fixtures: &Fixtures, what: &str) {
 }
 
 #[test]
-fn a_plugin_in_c_is_placed_into_a_participant() {
+#[ignore = "integration pillar, integration-sdk: builds libzerodds with `security` first (tests/integration/plugin_languages.sh); the build does not fit the 25 s of a crate-tier test"]
+fn security_11_3_a_plugin_in_c_is_placed_into_a_participant() {
     if !available("cc", "--version") {
-        println!("[skip] cc not on PATH");
+        println!("SKIP plugin-c: cc not on PATH");
         return;
     }
     let Some(fixtures) = fixtures() else {
@@ -255,9 +275,10 @@ fn a_plugin_in_c_is_placed_into_a_participant() {
 }
 
 #[test]
-fn a_plugin_in_cpp_is_placed_into_a_participant() {
+#[ignore = "integration pillar, integration-sdk: builds libzerodds with `security` first (tests/integration/plugin_languages.sh); the build does not fit the 25 s of a crate-tier test"]
+fn security_11_4_a_plugin_in_cpp_is_placed_into_a_participant() {
     if !available("c++", "--version") {
-        println!("[skip] c++ not on PATH");
+        println!("SKIP plugin-cpp: c++ not on PATH");
         return;
     }
     let Some(fixtures) = fixtures() else {
@@ -297,9 +318,10 @@ fn javac_major() -> Option<u32> {
 /// The plugin interfaces in Java reach the native library through the foreign
 /// function interface of JDK 21 (a preview API there).
 #[test]
-fn a_plugin_in_java_is_placed_into_a_participant() {
+#[ignore = "integration pillar, integration-sdk: builds libzerodds with `security` first (tests/integration/plugin_languages.sh); the build does not fit the 25 s of a crate-tier test"]
+fn security_11_5_a_plugin_in_java_is_placed_into_a_participant() {
     if !available("java", "-version") || javac_major().is_none_or(|v| v < 21) {
-        println!("[skip] no JDK 21 (javac, java) on PATH");
+        println!("SKIP plugin-java: no JDK 21 (javac, java) on PATH");
         return;
     }
     let Some(fixtures) = fixtures() else {

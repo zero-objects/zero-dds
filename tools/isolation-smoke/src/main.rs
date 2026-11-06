@@ -197,7 +197,7 @@ fn parse_hex_id(s: &str) -> Result<[u8; 16], String> {
     if s.len() > 32 {
         return Err(format!("hex id too long ({} > 32)", s.len()));
     }
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err(format!(
             "hex id has odd length {} — wrap with leading 0 if this was intentional",
             s.len()

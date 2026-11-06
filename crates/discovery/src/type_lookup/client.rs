@@ -34,7 +34,7 @@ use zerodds_types::type_lookup::{
     GetTypesRequest,
 };
 use zerodds_types::{EquivalenceHash, TypeIdentifier};
-use zerodds_wire::{Endianness, WireError, Writer};
+use zerodds_wire::WireError;
 
 /// Unique request identifier (subset of the sample identity).
 ///
@@ -248,7 +248,9 @@ impl Default for TypeLookupClient {
     }
 }
 
-/// Serializes a `getTypes` request for the wire transport.
+/// Serializes a `getTypes` request for the wire transport: XCDR version 2,
+/// little endian, as DDS-XTypes 1.4 beta 1 §7.6.3.3.3 gives the TypeLookup
+/// service and [`super::TypeLookupStack::make_get_types_request`] writes it.
 ///
 /// # Errors
 /// `WireError` on buffer overflow.
@@ -256,12 +258,13 @@ pub fn request_types_payload(ids: &[TypeIdentifier]) -> Result<Vec<u8>, WireErro
     let req = GetTypesRequest {
         type_ids: ids.to_vec(),
     };
-    let mut w = Writer::new(Endianness::Little);
+    let mut w = zerodds_types::framing::xcdr2_writer();
     req.encode_into(&mut w)?;
     Ok(w.finish())
 }
 
-/// Serializes a `getTypeDependencies` request.
+/// Serializes a `getTypeDependencies` request, in the encoding of
+/// [`request_types_payload`].
 ///
 /// # Errors
 /// `WireError` on buffer overflow.
@@ -273,7 +276,7 @@ pub fn request_dependencies_payload(
         type_ids: ids.to_vec(),
         continuation_point,
     };
-    let mut w = Writer::new(Endianness::Little);
+    let mut w = zerodds_types::framing::xcdr2_writer();
     req.encode_into(&mut w)?;
     Ok(w.finish())
 }
@@ -291,7 +294,6 @@ pub fn hashes_to_minimal_ids(hashes: &[EquivalenceHash]) -> Vec<TypeIdentifier> 
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use core::cell::RefCell;
     extern crate std;
     use std::sync::Arc;
     use std::sync::Mutex;
@@ -314,25 +316,6 @@ mod tests {
             TypeLookupReply::Types(GetTypesReply::default()),
         );
         assert!(!consumed);
-    }
-
-    #[test]
-    fn handle_reply_invokes_callback() {
-        let calls = Arc::new(Mutex::new(0u32));
-        let calls_clone = Arc::clone(&calls);
-        let mut c = TypeLookupClient::new();
-        let id = c.request_types(
-            alloc::vec![],
-            Box::new(move |_| {
-                *calls_clone.lock().unwrap() += 1;
-            }),
-        );
-        assert_eq!(*calls.lock().unwrap(), 0);
-
-        let consumed = c.handle_reply(id, TypeLookupReply::Types(GetTypesReply::default()));
-        assert!(consumed);
-        assert_eq!(*calls.lock().unwrap(), 1);
-        assert_eq!(c.pending_count(), 0);
     }
 
     #[test]
@@ -372,46 +355,9 @@ mod tests {
         c.clear();
         assert_eq!(c.pending_count(), 0);
     }
-
-    #[test]
-    fn request_types_payload_roundtrips() {
-        let ids = alloc::vec![
-            TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash([0x55; 14])),
-            TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::Int32),
-        ];
-        let bytes = request_types_payload(&ids).unwrap();
-        // Sequence-Length-Prefix.
-        assert!(bytes.len() >= 4);
-    }
-
-    #[test]
-    fn dependencies_payload_carries_continuation() {
-        let ids = alloc::vec![TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash(
-            [0x77; 14]
-        ))];
-        let cp = ContinuationPoint(alloc::vec![1, 2, 3]);
-        let bytes = request_dependencies_payload(&ids, cp).unwrap();
-        assert!(!bytes.is_empty());
-    }
-
-    #[test]
-    fn hashes_to_minimal_ids_maps_each() {
-        let hashes = alloc::vec![EquivalenceHash([1; 14]), EquivalenceHash([2; 14])];
-        let ids = hashes_to_minimal_ids(&hashes);
-        assert_eq!(ids.len(), 2);
-        assert!(matches!(ids[0], TypeIdentifier::EquivalenceHashMinimal(_)));
-    }
-
-    // A local smoke test for a non-Send callback is not possible
-    // (ClientCallback is `Send`). The RefCell test ensures that
-    // we can use interior mutability locally in the callback.
-    #[test]
-    fn callback_can_mutate_via_arc_mutex() {
-        let _: RefCell<i32> = RefCell::new(0); // smoke
-    }
 }
 #[test]
-fn reply_correlation_requires_original_peer_and_operation() {
+fn xtypes_7_6_3_3_4_reply_correlation_requires_original_peer_and_operation() {
     let mut client = TypeLookupClient::new();
     let id = client.request_types(Vec::new(), Box::new(|_| {}));
     client.bind_peer(id, [1; 12]);

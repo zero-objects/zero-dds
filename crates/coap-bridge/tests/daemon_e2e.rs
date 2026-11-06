@@ -49,10 +49,13 @@ impl Drop for Reaped {
     }
 }
 
-fn make_test_config(bind: &str) -> DaemonConfig {
+/// The daemon's configuration on a leased DDS domain (the host's share of
+/// the band, `zerodds-test-domains`); the lease is held while the test runs.
+fn make_test_config(bind: &str) -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.bind = bind.to_string();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.topics.push(TopicConfig {
         dds_name: "Trade".to_string(),
         dds_type: "Trade".to_string(),
@@ -62,7 +65,7 @@ fn make_test_config(bind: &str) -> DaemonConfig {
         durability: "volatile".to_string(),
         history_depth: 10,
     });
-    cfg
+    (cfg, lease)
 }
 
 fn client_socket() -> UdpSocket {
@@ -79,8 +82,8 @@ fn recv_msg(socket: &UdpSocket) -> CoapMessage {
 }
 
 #[test]
-fn post_to_configured_path_returns_2_04_changed() {
-    let cfg = make_test_config("127.0.0.1:0");
+fn coapbridge_2_post_to_configured_path_returns_2_04_changed() {
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
 
@@ -104,8 +107,8 @@ fn post_to_configured_path_returns_2_04_changed() {
 }
 
 #[test]
-fn well_known_core_returns_link_format_catalog() {
-    let cfg = make_test_config("127.0.0.1:0");
+fn coapbridge_2_well_known_core_returns_link_format_catalog() {
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
 
@@ -131,8 +134,8 @@ fn well_known_core_returns_link_format_catalog() {
 }
 
 #[test]
-fn observe_register_returns_initial_content_with_observe_option() {
-    let cfg = make_test_config("127.0.0.1:0");
+fn coapbridge_2_observe_register_returns_initial_content_with_observe_option() {
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
 
@@ -163,8 +166,8 @@ fn observe_register_returns_initial_content_with_observe_option() {
 }
 
 #[test]
-fn unknown_path_returns_bad_request() {
-    let cfg = make_test_config("127.0.0.1:0");
+fn coapbridge_2_unknown_path_returns_bad_request() {
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
 
@@ -191,11 +194,11 @@ fn unknown_path_returns_bad_request() {
 }
 
 #[test]
-fn block1_chunked_post_completes_with_2_04_changed() {
+fn coapbridge_4_4_block1_chunked_post_completes_with_2_04_changed() {
     // RFC 7959 §2.5 — Block1 fragments the request body. We send 3
     // chunks of 16 bytes each (szx=0). The first two should receive
     // 2.31 Continue, the third 2.04 Changed.
-    let cfg = make_test_config("127.0.0.1:0");
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();
@@ -244,13 +247,13 @@ fn block1_chunked_post_completes_with_2_04_changed() {
 }
 
 #[test]
-fn block1_out_of_order_returns_2_31_continue_only_in_order() {
+fn coapbridge_4_4_block1_out_of_order_returns_2_31_continue_only_in_order() {
     // RFC 7959 §2.5 — sequence: chunk 0 (more=true), then directly
     // chunk 2 (more=false) without chunk 1. The second send attempt
     // triggers "block out of order" in our reassembler → non-fatal
     // path: the daemon sends no response. We therefore only test that
     // chunk 0 yields the 2.31 Continue.
-    let cfg = make_test_config("127.0.0.1:0");
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();
@@ -276,7 +279,7 @@ fn block1_out_of_order_returns_2_31_continue_only_in_order() {
 #[cfg(not(feature = "dtls"))]
 #[test]
 fn dtls_enabled_fails_closed_never_serves_plaintext() {
-    let mut cfg = make_test_config("127.0.0.1:0");
+    let (mut cfg, _lease) = make_test_config("127.0.0.1:0");
     cfg.dtls_enabled = true;
     let res = server::start(cfg);
     assert!(
@@ -295,8 +298,9 @@ fn dtls_enabled_fails_closed_never_serves_plaintext() {
 /// The binary parked forever and was still running 3 s after SIGTERM.
 #[cfg(unix)]
 #[test]
-fn the_binary_exits_0_on_sigterm() {
+fn coapbridge_9_2_the_binary_exits_0_on_sigterm() {
     use std::process::{Command, Stdio};
+    let lease = zerodds_test_domains::lease_domain();
     // sd_notify: the packaged units are Type=notify.
     let dir = std::env::temp_dir().join(format!("zd-notify-e2e-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -313,7 +317,8 @@ fn the_binary_exits_0_on_sigterm() {
     };
     let mut child = Reaped(
         Command::new(env!("CARGO_BIN_EXE_zerodds-coap-bridged"))
-            .args(["--set", "coap.bind=127.0.0.1:0", "--set", "domain=99"])
+            .args(["--set", "coap.bind=127.0.0.1:0", "--set"])
+            .arg(format!("domain={}", lease.id()))
             .env("NOTIFY_SOCKET", &sock_path)
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
@@ -358,8 +363,8 @@ fn the_binary_exits_0_on_sigterm() {
 /// token, which ends the observation on the client. Before, the registry
 /// was dropped and the client kept waiting.
 #[test]
-fn the_shutdown_ends_every_observation_with_5_03() {
-    let cfg = make_test_config("127.0.0.1:0");
+fn coapbridge_9_2_the_shutdown_ends_every_observation_with_5_03() {
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();

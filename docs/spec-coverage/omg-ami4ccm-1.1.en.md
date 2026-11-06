@@ -636,9 +636,12 @@ templated module are all modeled.
 
 ## Audit status
 
-23 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 blocked / 4 n/a (informative).
 
-Test run: `cargo test -p zerodds-ami4ccm` — 26 unit + 19 integration
-tests green, 0 failed.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document omg-ami4ccm-1.1.md`):
 
-No open items — all `done`.
+* `cargo nextest run --profile merge -p zerodds-ami4ccm --all-targets` (job `merge-rust-ami4ccm`) — 45 tests green.
+
+45 cited tests green, 0 not green.
+
+Open items: none.

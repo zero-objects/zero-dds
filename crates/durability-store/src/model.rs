@@ -19,16 +19,14 @@ pub struct DurabilitySample {
     pub sequence: u64,
     /// Encoded payload (XCDR2 serialized body).
     pub payload: Vec<u8>,
-    /// XCDR representation of `payload` from the encapsulation header (RTPS 2.5
-    /// §10.5): `0` = XCDR1 (CDR/PL_CDR), `1` = XCDR2 (CDR2/D_CDR2/PL_CDR2). The
-    /// replay writer re-declares it so a late-joiner reads the body with the
-    /// right alignment.
-    pub representation: u8,
-    /// Wire byte order of `payload`: `false` = little-endian, `true` =
-    /// big-endian. A big-endian peer's stored sample holds big-endian body
-    /// bytes; the replay writer must emit a matching `_BE` encap header
-    /// (otherwise a late-joiner mis-decodes). Defaults to little-endian.
-    pub big_endian: bool,
+    /// The representation identifier of the encapsulation header `payload`
+    /// came under (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 §7.6.3.1.2 Table 60):
+    /// the XCDR version, the format (plain, delimited, parameter list) and
+    /// the byte order of the body. The replay writer sends the body under
+    /// the same header, so that a late joiner reads it as it was written.
+    /// A store keeps the CDR forms of Table 60, whose first octet is `0x00`
+    /// (see [`identifier_columns`]).
+    pub representation_identifier: [u8; 2],
     /// Source/creation wall-clock timestamp.
     pub created_at: SystemTime,
     /// GUID of the writer that originally emitted this sample (16 bytes). With
@@ -86,36 +84,36 @@ impl Selector {
     /// `after`/`limit`, which are pagination, not predicate).
     #[must_use]
     pub fn matches(&self, sample: &DurabilitySample) -> bool {
-        if let Some(k) = self.instance_key {
-            if sample.instance_key != k {
-                return false;
-            }
+        if let Some(k) = self.instance_key
+            && sample.instance_key != k
+        {
+            return false;
         }
-        if let Some(lo) = self.seq_from {
-            if sample.sequence < lo {
-                return false;
-            }
+        if let Some(lo) = self.seq_from
+            && sample.sequence < lo
+        {
+            return false;
         }
-        if let Some(hi) = self.seq_to {
-            if sample.sequence > hi {
-                return false;
-            }
+        if let Some(hi) = self.seq_to
+            && sample.sequence > hi
+        {
+            return false;
         }
-        if let Some(t0) = self.time_from {
-            if sample.created_at < t0 {
-                return false;
-            }
+        if let Some(t0) = self.time_from
+            && sample.created_at < t0
+        {
+            return false;
         }
-        if let Some(t1) = self.time_to {
-            if sample.created_at > t1 {
-                return false;
-            }
+        if let Some(t1) = self.time_to
+            && sample.created_at > t1
+        {
+            return false;
         }
         // Pagination: strictly after `(instance_key, sequence)`.
-        if let Some((ck, cs)) = self.after {
-            if (sample.instance_key, sample.sequence) <= (ck, cs) {
-                return false;
-            }
+        if let Some((ck, cs)) = self.after
+            && (sample.instance_key, sample.sequence) <= (ck, cs)
+        {
+            return false;
         }
         true
     }
@@ -141,4 +139,61 @@ pub struct StoreStats {
     pub instances: usize,
     /// Total payload bytes stored for the topic.
     pub bytes: u64,
+}
+
+/// The two columns a store keeps a CDR representation identifier in: the
+/// second octet without its byte-order bit (`0x00` CDR, `0x02` PL_CDR, `0x06`
+/// CDR2, `0x08` D_CDR2, `0x0a` PL_CDR2; DDS-XTypes 1.3 Table 60) and whether
+/// the body is big endian (the bit clear). The first octet is `0x00` for
+/// every CDR form and is not kept.
+#[must_use]
+pub fn identifier_columns(identifier: [u8; 2]) -> (u8, bool) {
+    (identifier[1] & !0x01, identifier[1] & 0x01 == 0)
+}
+
+/// The representation identifier of [`identifier_columns`]. A store written
+/// before the identifier was kept holds `1` for any XCDR2 body and `0` for
+/// any XCDR1 body; `1` reads as CDR2 (`0x06`), `0` as CDR, which is how such
+/// a sample was replayed then.
+#[must_use]
+pub fn identifier_from_columns(representation: u8, big_endian: bool) -> [u8; 2] {
+    let kind = if representation == 1 {
+        0x06
+    } else {
+        representation & !0x01
+    };
+    [0x00, kind | u8::from(!big_endian)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{identifier_columns, identifier_from_columns};
+
+    /// Every CDR form of DDS-XTypes 1.3 Table 60 in both byte orders comes
+    /// back from its columns as it went in.
+    #[test]
+    fn xtypes_7_6_3_1_2_every_cdr_identifier_comes_back_from_its_columns() {
+        for kind in [0x00, 0x02, 0x06, 0x08, 0x0a] {
+            for identifier in [[0x00, kind], [0x00, kind | 0x01]] {
+                let (representation, big_endian) = identifier_columns(identifier);
+                assert_eq!(
+                    identifier_from_columns(representation, big_endian),
+                    identifier,
+                    "{identifier:02x?}"
+                );
+            }
+        }
+        // CDR_BE is big endian, D_CDR2_LE little endian.
+        assert_eq!(identifier_columns([0x00, 0x00]), (0x00, true));
+        assert_eq!(identifier_columns([0x00, 0x09]), (0x08, false));
+    }
+
+    /// A store written before kept `0` for XCDR1 and `1` for XCDR2: those
+    /// read as CDR and CDR2, in the byte order of their column.
+    #[test]
+    fn the_columns_of_an_earlier_store_read_as_cdr_and_cdr2() {
+        assert_eq!(identifier_from_columns(0, false), [0x00, 0x01]);
+        assert_eq!(identifier_from_columns(1, false), [0x00, 0x07]);
+        assert_eq!(identifier_from_columns(1, true), [0x00, 0x06]);
+    }
 }

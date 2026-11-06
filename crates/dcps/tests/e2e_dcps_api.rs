@@ -41,7 +41,7 @@ fn public_api_topic_reuse_same_type_returns_shared_handle() {
 }
 
 #[test]
-fn public_api_create_subscriber_and_reader_offline() {
+fn dcps_2_2_2_2_1_3_public_api_create_subscriber_and_reader_offline() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(22, DomainParticipantQos::default());
 
@@ -79,7 +79,7 @@ mod linux_e2e {
     use super::common::unique_domain;
 
     #[test]
-    fn two_participants_exchange_samples_via_public_api() {
+    fn dcps_2_2_2_4_2_11_two_participants_exchange_samples_via_public_api() {
         // Dedicated domain (20) + tight SPDP period (100 ms).
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),

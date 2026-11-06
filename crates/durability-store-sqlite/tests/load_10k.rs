@@ -37,16 +37,22 @@ fn sample(topic: &str, sensor: usize, seq: u64) -> DurabilitySample {
         instance_key: sensor_key(sensor),
         sequence: seq,
         payload: format!("sensor-{sensor}-reading-{seq}").into_bytes(),
-        representation: 1,
-        big_endian: false,
+        representation_identifier: [0x00, 0x07],
         created_at: SystemTime::UNIX_EPOCH + Duration::from_millis(seq),
         source_guid: sensor_key(sensor),
         source_sequence: seq as i64,
     }
 }
 
+/// A fresh database path; on Linux in `/dev/shm`, so that what is measured
+/// is the store and not the disk of the host.
 fn tmp_db() -> std::path::PathBuf {
-    let mut p = std::env::temp_dir();
+    let shm = std::path::Path::new("/dev/shm");
+    let mut p = if cfg!(target_os = "linux") && shm.is_dir() {
+        shm.to_path_buf()
+    } else {
+        std::env::temp_dir()
+    };
     let nonce = std::process::id();
     p.push(format!("zerodds-load-10k-{nonce}.db"));
     let _ = std::fs::remove_file(&p);
@@ -54,7 +60,7 @@ fn tmp_db() -> std::path::PathBuf {
 }
 
 #[test]
-fn fleet_of_10k_sensors_stays_hot_bounded_and_cold_complete() {
+fn adr_0009_2_ten_thousand_instances_stay_in_the_hot_budget_and_whole_in_sqlite() {
     let topic = "Sensors/Temperature";
     let db = tmp_db();
     let cold = SqliteStore::open(&db, Contract::keep_all()).unwrap();

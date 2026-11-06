@@ -80,6 +80,26 @@ fn decode_for_encap<T: DdsType>(
     codec.decode(body, representation, big_endian)
 }
 
+/// The KeyHash and key holder of a sample body, read from the body
+/// ([`crate::topic::TopicCodec::key_material_from_body`]): `None` where the
+/// codec has no such read.
+fn key_material_for_encap<T: DdsType>(
+    codec: &dyn crate::topic::TopicCodec<T>,
+    bytes: &[u8],
+    representation: u8,
+    big_endian: bool,
+) -> crate::dds_type::KeyMaterialRead {
+    let body = if representation == 0 {
+        bytes
+    } else {
+        match delimited_extent_for(bytes, big_endian, codec.extensibility()) {
+            Ok(body) => body,
+            Err(error) => return Some(Err(error)),
+        }
+    };
+    codec.key_material_from_body(body, representation, big_endian)
+}
+
 /// Narrows an XCDR2 sample body to the extent its DHEADER declares.
 ///
 /// XTypes 1.3 §7.4.3.4.2: a DELIMITED_CDR (`@appendable`) or PL_CDR2
@@ -434,10 +454,10 @@ impl Subscriber {
         if let Some(rt) = subscriber.inner.runtime.as_ref() {
             let weak = Arc::downgrade(&subscriber.inner);
             let hook: crate::runtime::StatusHook = Arc::new(move || {
-                if let Some(inner) = weak.upgrade() {
-                    if inner.group_order_active() {
-                        inner.release_group();
-                    }
+                if let Some(inner) = weak.upgrade()
+                    && inner.group_order_active()
+                {
+                    inner.release_group();
                 }
             });
             rt.add_group_hook(&hook);
@@ -546,15 +566,16 @@ impl Subscriber {
 
     /// DDS 1.4 §2.2.2.5.2.6 `delete_datareader`: deletes a DataReader this
     /// subscriber created. Every handle of it returns
-    /// [`DdsError::AlreadyDeleted`] from then on. A `DataReader` of this
-    /// API lends no samples (its read and take return owned values), so no
-    /// outstanding loan can stand in the way.
+    /// [`DdsError::AlreadyDeleted`] from then on. A reader with a loan of
+    /// [`DataReader::take_loan`] that was not returned is not deleted ("The
+    /// deletion of a DataReader is not allowed if it has any outstanding
+    /// loans"); `read` and `take` return owned values and lend nothing.
     ///
     /// # Errors
     /// `PreconditionNotMet`, with `reader` left as it was, if another
-    /// subscriber created it or it still holds a ReadCondition or
-    /// QueryCondition it created; `AlreadyDeleted` if `reader` or this
-    /// subscriber is deleted.
+    /// subscriber created it, it still holds a ReadCondition or
+    /// QueryCondition it created, or it has a loan that was not returned;
+    /// `AlreadyDeleted` if `reader` or this subscriber is deleted.
     #[cfg(feature = "std")]
     pub fn delete_datareader<T: DdsType + Send + 'static>(
         &self,
@@ -576,6 +597,11 @@ impl Subscriber {
         if reader.inner.has_conditions() {
             return Err(DdsError::PreconditionNotMet {
                 reason: "the DataReader holds ReadConditions or QueryConditions",
+            });
+        }
+        if reader.inner.has_outstanding_loans() {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "the DataReader has loans that were not returned",
             });
         }
         reader.inner.delete();
@@ -723,16 +749,42 @@ impl Subscriber {
     #[cfg(feature = "std")]
     pub fn delete_contained_entities(&self) -> Result<()> {
         self.inner.entity_state.check_not_deleted()?;
-        // A reader is not deleted while the application is inside a group
-        // access (§2.2.2.5.2.8): it is in a state where it cannot be.
+        self.check_readers_may_be_deleted()?;
+        for reader in self.inner.readers.live() {
+            reader.delete_conditions()?;
+            reader.delete()?;
+        }
+        Ok(())
+    }
+
+    /// Whether every DataReader of this subscriber can be deleted now,
+    /// asked before any is (§2.2.2.5.2.14, §2.2.2.2.1.18: "if any of the
+    /// contained entities is in a state where it cannot be deleted"): not
+    /// while the application is inside a group access (§2.2.2.5.2.8), and
+    /// not while a reader has a loan that was not returned ("a contained
+    /// DataReader cannot be deleted because the application has called a
+    /// read or take operation and has not called the corresponding
+    /// return_loan operation").
+    ///
+    /// # Errors
+    /// `PreconditionNotMet` naming which of the two stands in the way.
+    #[cfg(feature = "std")]
+    pub(crate) fn check_readers_may_be_deleted(&self) -> Result<()> {
         if self.inner.access_scope.is_active() {
             return Err(DdsError::PreconditionNotMet {
                 reason: "a group access (begin_access) is open on the subscriber",
             });
         }
-        for reader in self.inner.readers.live() {
-            reader.delete_conditions()?;
-            reader.delete()?;
+        if self
+            .inner
+            .readers
+            .live()
+            .iter()
+            .any(|reader| reader.has_outstanding_loans())
+        {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "a DataReader of the subscriber has loans that were not returned",
+            });
         }
         Ok(())
     }
@@ -1222,6 +1274,14 @@ impl Subscriber {
                 cache: Arc::clone(&dr.inner.cache),
                 pulled: Arc::clone(&dr.inner.pulled),
                 status: Arc::downgrade(&dr.inner.status),
+                drain: {
+                    let reader = Arc::downgrade(&dr.inner);
+                    Arc::new(move || {
+                        if let Some(inner) = reader.upgrade() {
+                            DataReader::from_inner_arc(inner).ingest_for_room();
+                        }
+                    })
+                },
             };
             dr.inner
                 .entity_state
@@ -1312,20 +1372,20 @@ impl crate::entity::Entity for Subscriber {
         // DDS 1.4 §2.2.2.1.1.1: "In all other cases, none of the policies is
         // modified." ENTITY_FACTORY changed before the PARTITION check, and
         // stayed changed when that refused.
-        if let Some(rt) = self.inner.runtime.as_ref() {
-            if current.partition != qos.partition || current.group_data != qos.group_data {
-                let readers = self
-                    .inner
-                    .reader_entity_ids
-                    .lock()
-                    .map(|ids| ids.clone())
-                    .unwrap_or_default();
-                for eid in &readers {
-                    rt.check_user_group_partition(*eid, &qos.partition.names)?;
-                }
-                for eid in readers {
-                    rt.update_user_group_qos(eid, &qos.partition.names, &qos.group_data.value)?;
-                }
+        if let Some(rt) = self.inner.runtime.as_ref()
+            && (current.partition != qos.partition || current.group_data != qos.group_data)
+        {
+            let readers = self
+                .inner
+                .reader_entity_ids
+                .lock()
+                .map(|ids| ids.clone())
+                .unwrap_or_default();
+            for eid in &readers {
+                rt.check_user_group_partition(*eid, &qos.partition.names)?;
+            }
+            for eid in readers {
+                rt.update_user_group_qos(eid, &qos.partition.names, &qos.group_data.value)?;
             }
         }
         self.inner
@@ -1490,6 +1550,17 @@ pub(crate) struct ReaderInner<T: DdsType> {
     /// it put on (`user_reader_channel_sent`).
     #[cfg(feature = "std")]
     pulled: Arc<std::sync::atomic::AtomicU64>,
+    /// Set by the first [`DataReader::take_loan`]: from then on this
+    /// reader admits by key where it can ([`AdmissionQos::key_members_only`]),
+    /// because what it lends is not decoded.
+    #[cfg(feature = "std")]
+    loaning: core::sync::atomic::AtomicBool,
+    /// The loans [`DataReader::take_loan`] handed out that were not
+    /// returned yet; each [`crate::loan::Loan`] holds this counter and
+    /// counts itself off when it is returned or dropped. A reader with an
+    /// outstanding loan is not deleted (DDS 1.4 §2.2.2.5.2.6).
+    #[cfg(feature = "std")]
+    loans: Arc<core::sync::atomic::AtomicUsize>,
     /// Optional content-filter closure. Applied to each sample in
     /// `take()` after decoding; returns `true` → sample is delivered,
     /// `false` → discarded.
@@ -1624,6 +1695,15 @@ impl Drop for CacheGuard<'_> {
     }
 }
 
+/// A sample left the cache: one fewer with data in the count
+/// [`DataReader::ingest_alive_filtered`] keeps, if it had data.
+#[cfg(feature = "std")]
+fn note_evicted(valid: &mut Option<usize>, had_data: bool) {
+    if had_data && let Some(n) = valid.as_mut() {
+        *n = n.saturating_sub(1);
+    }
+}
+
 /// Internal: a decoded sample in the reader cache.
 ///
 /// We carry the bytes (instead of `T`) so the reader cache is not bound
@@ -1716,6 +1796,12 @@ struct AdmissionQos {
     max_samples: i32,
     max_samples_per_instance: i32,
     max_instances: i32,
+    /// Admit without decoding the sample where nothing in the admission
+    /// needs its value: only its key members are read (`decode_key_members`),
+    /// or nothing of a keyless one, and the value is decoded when it is
+    /// taken. For a run whose samples are mostly discarded before anyone
+    /// takes them ([`DataReader::ingest_for_room`]).
+    key_members_only: bool,
 }
 
 /// One entry of `ingest_into_cache`'s ordered run: a data sample, or a
@@ -2620,13 +2706,12 @@ impl ReaderStatus {
         &self,
         mut status: crate::status::RequestedDeadlineMissedStatus,
     ) -> crate::status::RequestedDeadlineMissedStatus {
-        if let (Some(rt), Some(eid)) = (&self.runtime, self.entity_id) {
-            if let Some(handle) = rt
+        if let (Some(rt), Some(eid)) = (&self.runtime, self.entity_id)
+            && let Some(handle) = rt
                 .user_reader_missed_deadline_instance(eid)
                 .and_then(|key| self.instances.lookup(&key))
-            {
-                status.last_instance_handle = handle;
-            }
+        {
+            status.last_instance_handle = handle;
         }
         status
     }
@@ -2817,6 +2902,10 @@ impl<T: DdsType + Send + 'static> crate::contained::ContainedReader for ReaderIn
             .unwrap_or(true)
     }
 
+    fn has_outstanding_loans(&self) -> bool {
+        self.loans.load(core::sync::atomic::Ordering::Acquire) > 0
+    }
+
     fn take_sample_lost_status(&self) -> Result<crate::status::SampleLostStatus> {
         ReaderInner::take_sample_lost_status(self)
     }
@@ -2955,10 +3044,10 @@ impl<T: DdsType + Send + 'static> crate::contained::ContainedReader for ReaderIn
             }
         }
         drop(rx);
-        if !keep.is_empty() {
-            if let Ok(mut inbox) = self.inbox.lock() {
-                inbox.extend(keep);
-            }
+        if !keep.is_empty()
+            && let Ok(mut inbox) = self.inbox.lock()
+        {
+            inbox.extend(keep);
         }
     }
 }
@@ -3158,6 +3247,10 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             entity_id: None,
             rx: None,
             pulled,
+            #[cfg(feature = "std")]
+            loaning: core::sync::atomic::AtomicBool::new(T::BORROWS),
+            #[cfg(feature = "std")]
+            loans: Arc::new(core::sync::atomic::AtomicUsize::new(0)),
             filter: std::sync::RwLock::new(None),
             has_filter: core::sync::atomic::AtomicBool::new(false),
             instances,
@@ -3230,6 +3323,10 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             entity_id: Some(entity_id),
             rx: Some(Mutex::new(rx)),
             pulled,
+            #[cfg(feature = "std")]
+            loaning: core::sync::atomic::AtomicBool::new(T::BORROWS),
+            #[cfg(feature = "std")]
+            loans: Arc::new(core::sync::atomic::AtomicUsize::new(0)),
             filter: std::sync::RwLock::new(None),
             has_filter: core::sync::atomic::AtomicBool::new(false),
             instances,
@@ -3326,6 +3423,10 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             entity_id: None,
             rx: None,
             pulled,
+            #[cfg(feature = "std")]
+            loaning: core::sync::atomic::AtomicBool::new(T::BORROWS),
+            #[cfg(feature = "std")]
+            loans: Arc::new(core::sync::atomic::AtomicUsize::new(0)),
             filter: std::sync::RwLock::new(None),
             has_filter: core::sync::atomic::AtomicBool::new(false),
             instances,
@@ -3526,9 +3627,9 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
     /// long as they did: every rule added to `ingest_into_cache` needed a
     /// second, easy-to-forget copy in this function and in `read()`. One
     /// admission step, read from two different places, cannot drift
-    /// again. Measured, not assumed, to still be fast enough:
-    /// `tests/take_read_perf_probe.rs` (10k samples) — before this change,
-    /// ~370–580 ns/sample; after, ~410–650 ns/sample. The cache decodes
+    /// again. Measured, not assumed, to still be fast enough with a 10k-sample
+    /// take/read probe — before this change, ~370–580 ns/sample; after,
+    /// ~410–650 ns/sample. The cache decodes
     /// every sample once (to evaluate the content filter and compute the
     /// key); it keeps that `T` (`CachedSample::decoded`) and this hands
     /// it out, so a sample is decoded once on its way through `take`.
@@ -3773,21 +3874,21 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
 
     /// Removes the oldest not-yet-taken `CachedSample` of `handle` from
     /// `cache` (the entry closest to the front — `cache` is append-ordered,
-    /// oldest first) and drains the tracker's count for it. `false` if none
-    /// was found (defensive; `samples_in_cache(handle) > 0` should always
-    /// mean one exists).
+    /// oldest first) and drains the tracker's count for it: whether the
+    /// sample removed held data, or `None` if none was found (defensive;
+    /// `samples_in_cache(handle) > 0` should always mean one exists).
     #[cfg(feature = "std")]
     fn evict_oldest_of_instance(
         &self,
         cache: &mut alloc::collections::VecDeque<CachedSample>,
         handle: InstanceHandle,
-    ) -> bool {
-        let Some(pos) = cache.iter().position(|s| s.info.instance_handle == handle) else {
-            return false;
-        };
-        cache.remove(pos);
+    ) -> Option<bool> {
+        let pos = cache
+            .iter()
+            .position(|s| s.info.instance_handle == handle)?;
+        let removed = cache.remove(pos)?;
         self.inner.instances.drain_samples(handle, 1);
-        true
+        Some(removed.info.valid_data)
     }
 
     /// Removes the globally oldest not-yet-taken `CachedSample` in `cache`
@@ -3795,8 +3896,9 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
     /// RESOURCE_LIMITS.max_samples' BEST_EFFORT admission path: the newest
     /// sample is let in, and whichever sample has sat longest anywhere in
     /// the reader's cache is discarded (DDS 1.4 §2.2.3.18).
+    /// Whether it removed one.
     #[cfg(feature = "std")]
-    fn evict_oldest_overall(&self, cache: &mut alloc::collections::VecDeque<CachedSample>) {
+    fn evict_oldest_overall(&self, cache: &mut alloc::collections::VecDeque<CachedSample>) -> bool {
         // The oldest sample that holds data: a marker without data holds no room
         // (§2.2.2.5.3.8) and evicting it would free none.
         let Some(victim) = cache
@@ -3804,13 +3906,14 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             .position(|c| c.info.valid_data)
             .and_then(|at| cache.remove(at))
         else {
-            return;
+            return false;
         };
         if !victim.info.instance_handle.is_nil() {
             self.inner
                 .instances
                 .drain_samples(victim.info.instance_handle, 1);
         }
+        true
     }
 
     /// Records a RESOURCE_LIMITS rejection on the runtime's user-reader
@@ -3946,18 +4049,19 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 .map_err(|_| DdsError::PreconditionNotMet {
                     reason: "datareader cache poisoned",
                 })?;
+            let mut valid = None;
             for (_, raw) in due {
                 if let Some(back) =
-                    self.ingest_alive_filtered(&mut cache, now, raw, true, &aq, false)?
+                    self.ingest_alive_filtered(&mut cache, &mut valid, now, raw, true, &aq, false)?
                 {
                     refused.push(StagedIngest::Alive(back));
                 }
             }
         }
-        if !refused.is_empty() {
-            if let Ok(mut held) = self.inner.held_back.lock() {
-                held.extend(refused);
-            }
+        if !refused.is_empty()
+            && let Ok(mut held) = self.inner.held_back.lock()
+        {
+            held.extend(refused);
         }
         Ok(true)
     }
@@ -4285,10 +4389,10 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
     ) -> Result<crate::builtin_topics::PublicationBuiltinTopicData> {
         self.inner.entity_state.check_enabled()?;
         #[cfg(feature = "std")]
-        if let (Some(rt), Some(eid)) = (&self.inner.runtime, self.inner.entity_id) {
-            if let Some(data) = rt.user_reader_matched_publication_data(eid, handle) {
-                return Ok(crate::builtin_topics::PublicationBuiltinTopicData::from_wire(&data));
-            }
+        if let (Some(rt), Some(eid)) = (&self.inner.runtime, self.inner.entity_id)
+            && let Some(data) = rt.user_reader_matched_publication_data(eid, handle)
+        {
+            return Ok(crate::builtin_topics::PublicationBuiltinTopicData::from_wire(&data));
         }
         let _ = handle;
         Err(DdsError::BadParameter {
@@ -4808,6 +4912,10 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 writer_strength: 0,
                 representation,
                 big_endian,
+                representation_identifier: [
+                    0x00,
+                    if representation == 0 { 0x00 } else { 0x06 } | u8::from(!big_endian),
+                ],
                 source_timestamp: None,
                 reception_timestamp: None,
                 source_sequence_number: -1,
@@ -4851,6 +4959,7 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 // Test hook: raw-bytes injection, XCDR1 baseline, little-endian.
                 representation: 0,
                 big_endian: false,
+                representation_identifier: [0x00, 0x01],
                 source_timestamp: None,
                 reception_timestamp: None,
                 source_sequence_number: -1,
@@ -4894,6 +5003,7 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 writer_strength: 0,
                 representation: 0,
                 big_endian: false,
+                representation_identifier: [0x00, 0x01],
                 source_timestamp: None,
                 reception_timestamp: None,
                 source_sequence_number: sequence_number,
@@ -5080,6 +5190,28 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
         self.ingest_pending()
     }
 
+    /// Takes the channel into the cache for the room of a BEST_EFFORT
+    /// reader past its RESOURCE_LIMITS ([`crate::runtime::ReaderRoom`]), on
+    /// the thread that queued the sample. Not while another thread is at
+    /// the channel or the cache: that one takes the channel in already, and
+    /// the receive thread does not wait for an application's `take`.
+    #[cfg(feature = "std")]
+    fn ingest_for_room(&self) {
+        if self
+            .inner
+            .rx
+            .as_ref()
+            .is_some_and(|rx| rx.try_lock().is_err())
+            || self.inner.cache.samples.try_lock().is_err()
+        {
+            return;
+        }
+        // Most of what it takes in is discarded for the newer samples
+        // behind it before the application takes: their values are not
+        // decoded.
+        let _ = self.ingest_pending_with(true);
+    }
+
     /// DDS 1.4 §2.2.2.5.2.8: under a Subscriber with PRESENTATION
     /// `access_scope = GROUP`, "the operation begin_access must be called
     /// prior to calling any of the sample-accessing operations, namely:
@@ -5107,6 +5239,17 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
     /// What arrived since the last ingest, into the cache; without the
     /// read or take that [`Self::ingest_into_cache`] stands for.
     fn ingest_pending(&self) -> Result<()> {
+        self.ingest_pending_with(
+            self.inner
+                .loaning
+                .load(core::sync::atomic::Ordering::Relaxed),
+        )
+    }
+
+    /// [`Self::ingest_pending`]; `key_members_only` as
+    /// [`AdmissionQos::key_members_only`] says.
+    #[allow(clippy::too_many_lines)]
+    fn ingest_pending_with(&self, key_members_only: bool) -> Result<()> {
         // DDS 1.4 §2.2.2.1.1.7: read and take are not among the operations
         // a disabled entity takes; they return NOT_ENABLED.
         self.inner.entity_state.check_enabled()?;
@@ -5229,73 +5372,82 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
         let mut pending = staged.into_iter().peekable();
         let mut first_entry = true;
         let mut refused: Option<RawIngestSample> = None;
-        let aq = self.admission_qos();
-        let ran =
-            (|| -> Result<()> {
-                'run: while let Some(entry) = pending.next() {
-                    let count_rejection = !(first_entry && already_counted);
-                    first_entry = false;
-                    match entry {
-                        StagedIngest::Lifecycle(kh, holder, kind, writer, source_ts) => {
-                            let (kh, holder) = self.lifecycle_instance(kh, holder);
-                            let writer = (writer != [0u8; 16]).then_some(writer);
-                            if let (true, Some(w)) = (aq.exclusive_ownership, writer) {
-                                match kind {
-                                    // DDS 1.4 §2.2.2.5.1.3: under EXCLUSIVE
-                                    // the instance "becomes
-                                    // NOT_ALIVE_DISPOSED only if the
-                                    // DataWriter that 'owns' the instance
-                                    // explicitly disposes it".
-                                    InstanceStateKind::NotAliveDisposed
-                                        if self
-                                            .inner
-                                            .instances
-                                            .owner_of(&kh)
-                                            .is_some_and(|owner| owner != w) =>
-                                    {
-                                        continue;
-                                    }
-                                    // §2.2.3.23.3: "if the current owner of
-                                    // an instance unregisters it, then it
-                                    // will relinquish ownership".
-                                    InstanceStateKind::NotAliveNoWriters => {
-                                        self.inner.instances.release_owner_of(&kh, w);
-                                    }
-                                    _ => {}
+        let aq = AdmissionQos {
+            key_members_only,
+            ..self.admission_qos()
+        };
+        let ran = (|| -> Result<()> {
+            'run: while let Some(entry) = pending.next() {
+                let count_rejection = !(first_entry && already_counted);
+                first_entry = false;
+                match entry {
+                    StagedIngest::Lifecycle(kh, holder, kind, writer, source_ts) => {
+                        let (kh, holder) = self.lifecycle_instance(kh, holder);
+                        let writer = (writer != [0u8; 16]).then_some(writer);
+                        if let (true, Some(w)) = (aq.exclusive_ownership, writer) {
+                            match kind {
+                                // DDS 1.4 §2.2.2.5.1.3: under EXCLUSIVE
+                                // the instance "becomes
+                                // NOT_ALIVE_DISPOSED only if the
+                                // DataWriter that 'owns' the instance
+                                // explicitly disposes it".
+                                InstanceStateKind::NotAliveDisposed
+                                    if self
+                                        .inner
+                                        .instances
+                                        .owner_of(&kh)
+                                        .is_some_and(|owner| owner != w) =>
+                                {
+                                    continue;
                                 }
+                                // §2.2.3.23.3: "if the current owner of
+                                // an instance unregisters it, then it
+                                // will relinquish ownership".
+                                InstanceStateKind::NotAliveNoWriters => {
+                                    self.inner.instances.release_owner_of(&kh, w);
+                                }
+                                _ => {}
                             }
-                            // `push_lifecycle_with_holder` takes the cache lock itself.
-                            let source_ts = source_ts.map(crate::time::he_timestamp_to_time);
-                            self.push_lifecycle_from(kh, holder, kind, writer, source_ts)?;
                         }
-                        StagedIngest::Alive(first) => {
-                            // A run of data samples goes in under one lock.
-                            let mut cache = self.inner.cache.lock().map_err(|_| {
-                                DdsError::PreconditionNotMet {
+                        // `push_lifecycle_with_holder` takes the cache lock itself.
+                        let source_ts = source_ts.map(crate::time::he_timestamp_to_time);
+                        self.push_lifecycle_from(kh, holder, kind, writer, source_ts)?;
+                    }
+                    StagedIngest::Alive(first) => {
+                        // A run of data samples goes in under one lock.
+                        let mut cache =
+                            self.inner
+                                .cache
+                                .lock()
+                                .map_err(|_| DdsError::PreconditionNotMet {
                                     reason: "datareader cache poisoned",
-                                }
-                            })?;
-                            if let Some(sample) =
-                                self.ingest_alive(&mut cache, now, first, count_rejection, &aq)?
+                                })?;
+                        let mut valid = None;
+                        if let Some(sample) = self.ingest_alive(
+                            &mut cache,
+                            &mut valid,
+                            now,
+                            first,
+                            count_rejection,
+                            &aq,
+                        )? {
+                            refused = Some(sample);
+                            break 'run;
+                        }
+                        while let Some(StagedIngest::Alive(_)) = pending.peek() {
+                            if let Some(StagedIngest::Alive(next)) = pending.next()
+                                && let Some(sample) =
+                                    self.ingest_alive(&mut cache, &mut valid, now, next, true, &aq)?
                             {
                                 refused = Some(sample);
                                 break 'run;
                             }
-                            while let Some(StagedIngest::Alive(_)) = pending.peek() {
-                                if let Some(StagedIngest::Alive(next)) = pending.next() {
-                                    if let Some(sample) =
-                                        self.ingest_alive(&mut cache, now, next, true, &aq)?
-                                    {
-                                        refused = Some(sample);
-                                        break 'run;
-                                    }
-                                }
-                            }
                         }
                     }
                 }
-                Ok(())
-            })();
+            }
+            Ok(())
+        })();
         ran?;
         // A refused sample holds back what came after it, so that nothing
         // overtakes it: the next ingest starts there.
@@ -5375,6 +5527,7 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             max_samples: qos.resource_limits.max_samples,
             max_samples_per_instance: qos.resource_limits.max_samples_per_instance,
             max_instances: qos.resource_limits.max_instances,
+            key_members_only: false,
         }
     }
 
@@ -5384,20 +5537,30 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
     fn ingest_alive(
         &self,
         cache: &mut alloc::collections::VecDeque<CachedSample>,
+        valid: &mut Option<usize>,
         now: Time,
         raw: RawIngestSample,
         count_rejection: bool,
         aq: &AdmissionQos,
     ) -> Result<Option<RawIngestSample>> {
-        self.ingest_alive_filtered(cache, now, raw, count_rejection, aq, true)
+        self.ingest_alive_filtered(cache, valid, now, raw, count_rejection, aq, true)
     }
 
     /// [`Self::ingest_alive`]; `time_filter` off for a sample the
     /// TIME_BASED_FILTER held back and now delivers.
     #[cfg(feature = "std")]
+    ///
+    /// `valid` is the number of samples with data in `cache` (those
+    /// RESOURCE_LIMITS counts, §2.2.2.5.3.8), counted on first use and kept
+    /// up to date here for the rest of a run under one lock; `None` when
+    /// not known. Counting it for every sample took a reader with a full
+    /// cache of 100 000 samples 47 s for one `take` (Linux test host,
+    /// BEST_EFFORT KEEP_ALL, 600 kS/s written).
+    #[allow(clippy::too_many_arguments)]
     fn ingest_alive_filtered(
         &self,
         cache: &mut alloc::collections::VecDeque<CachedSample>,
+        valid: &mut Option<usize>,
         now: Time,
         raw: RawIngestSample,
         count_rejection: bool,
@@ -5427,30 +5590,68 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             return Ok(None);
         }
         // Decode T to (a) evaluate the filter and (b) compute the
-        // KeyHash.
+        // KeyHash. Where neither a filter nor EXCLUSIVE ownership asks for
+        // the value and the run admits by key alone
+        // (`AdmissionQos::key_members_only`), only the key members are
+        // read, or nothing of a keyless sample: `whole` is `false`, and the
+        // value is decoded when it is taken.
         // §7.2.4.1, as above.
-        let sample = match decode_for_encap::<T>(
-            self.inner.topic.codec(),
-            &bytes,
-            representation,
-            big_endian,
-        ) {
-            Ok(s) => s,
-            Err(e) if e.is_discarded() => {
-                record_discarded_sample::<T>(self.inner.runtime.as_ref(), &e);
+        let by_key = aq.key_members_only
+            && !aq.exclusive_ownership
+            && !self
+                .inner
+                .has_filter
+                .load(core::sync::atomic::Ordering::Acquire);
+        let keyed = self.inner.topic.is_keyed();
+        let key_read = (by_key && keyed)
+            .then(|| {
+                key_material_for_encap::<T>(
+                    self.inner.topic.codec(),
+                    &bytes,
+                    representation,
+                    big_endian,
+                )
+            })
+            .flatten();
+        // The value, whether it is the whole sample, and the key read from
+        // the body where the value is not read.
+        let (sample, whole, key_from_body) = if by_key && !keyed {
+            (None, false, None)
+        } else if let Some(read) = key_read {
+            match read {
+                Ok(material) => (None, false, Some(material)),
+                Err(e) if e.is_discarded() => {
+                    record_discarded_sample::<T>(self.inner.runtime.as_ref(), &e);
+                    return Ok(None);
+                }
+                Err(e) => return Err(decode_wire_error::<T>(&e, representation, big_endian)),
+            }
+        } else {
+            match decode_for_encap::<T>(
+                self.inner.topic.codec(),
+                &bytes,
+                representation,
+                big_endian,
+            ) {
+                Ok(s) => (Some(s), true, None),
+                Err(e) if e.is_discarded() => {
+                    record_discarded_sample::<T>(self.inner.runtime.as_ref(), &e);
+                    return Ok(None);
+                }
+                Err(e) => return Err(decode_wire_error::<T>(&e, representation, big_endian)),
+            }
+        };
+        if let Some(sample) = sample.as_ref().filter(|_| whole) {
+            if !self.sample_passes_filter(sample) {
                 return Ok(None);
             }
-            Err(e) => return Err(decode_wire_error::<T>(&e, representation, big_endian)),
-        };
-        if !self.sample_passes_filter(&sample) {
-            return Ok(None);
-        }
-        // §2.2.3.23 exclusive-ownership filter: reject samples from
-        // weaker writers before they enter the cache.
-        if aq.exclusive_ownership
-            && !self.passes_exclusive_ownership(&sample, writer_guid, writer_strength)
-        {
-            return Ok(None);
+            // §2.2.3.23 exclusive-ownership filter: reject samples from
+            // weaker writers before they enter the cache.
+            if aq.exclusive_ownership
+                && !self.passes_exclusive_ownership(sample, writer_guid, writer_strength)
+            {
+                return Ok(None);
+            }
         }
         let AdmissionQos {
             min_sep_nanos,
@@ -5466,7 +5667,11 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
         } = *aq;
         // DDS 1.4 §2.2.1.2.2: a topic without a key has one instance, so
         // every sample belongs to the instance `instance_key_hash` names.
-        let kh = self.instance_key_hash(&sample);
+        let kh = match (&key_from_body, &sample) {
+            (Some((hash, _)), _) => *hash,
+            (None, Some(sample)) => self.instance_key_hash(sample),
+            (None, None) => crate::topic::KEYLESS_INSTANCE_KEY,
+        };
         let info = {
             // QoS filter BEFORE observe_sample so discarded samples do
             // not affect the sample state.
@@ -5511,10 +5716,11 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 }
                 return Ok(None);
             }
-            if min_sep_nanos > 0 && reliable {
-                if let Ok(mut hold) = self.inner.tbf_hold.lock() {
-                    hold.supersede(&kh);
-                }
+            if min_sep_nanos > 0
+                && reliable
+                && let Ok(mut hold) = self.inner.tbf_hold.lock()
+            {
+                hold.supersede(&kh);
             }
             // Spec §2.2.3.18 DESTINATION_ORDER: under BY_SOURCE_TIMESTAMP
             // the ordering key is the writer's source timestamp (from
@@ -5534,21 +5740,29 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             // before it is ever created — unlike the per-instance/total
             // sample ceilings below, there is no existing instance here
             // to evict in its place. `in_cache` counts this sample.
-            let Some((handle, mut in_cache)) = self.inner.instances.observe_admitted(
-                kh,
-                || {
-                    self.inner.last_key.holder_of(kh).unwrap_or_else(|| {
-                        let codec = self.inner.topic.codec();
-                        codec
-                            .key_holder(&sample)
-                            .map(|(holder, _)| holder)
-                            .or_else(|| codec.key_material(&sample).map(|(_, holder)| holder))
-                            .unwrap_or_default()
-                    })
-                },
-                now,
-                max_instances,
-            ) else {
+            let Some((handle, mut in_cache)) =
+                self.inner.instances.observe_admitted(
+                    kh,
+                    || {
+                        self.inner.last_key.holder_of(kh).unwrap_or_else(|| {
+                            if let Some((_, holder)) = &key_from_body {
+                                return holder.clone();
+                            }
+                            let codec = self.inner.topic.codec();
+                            sample
+                                .as_ref()
+                                .and_then(|sample| {
+                                    codec.key_holder(sample).map(|(holder, _)| holder).or_else(
+                                        || codec.key_material(sample).map(|(_, holder)| holder),
+                                    )
+                                })
+                                .unwrap_or_default()
+                        })
+                    },
+                    now,
+                    max_instances,
+                )
+            else {
                 // DDS 1.4 §2.2.4.1: SAMPLE_REJECTED, "A (received) sample has
                 // been rejected", whatever the reliability. A BEST_EFFORT
                 // writer does not send it again: it is gone. It was
@@ -5582,9 +5796,10 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
             if history_kind == zerodds_qos::HistoryKind::KeepLast {
                 let depth = history_depth.max(0) as u32;
                 while in_cache > depth {
-                    if !self.evict_oldest_of_instance(cache, handle) {
+                    let Some(had_data) = self.evict_oldest_of_instance(cache, handle) else {
                         break;
-                    }
+                    };
+                    note_evicted(valid, had_data);
                     in_cache -= 1;
                 }
             }
@@ -5625,14 +5840,17 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 // KEEP_LAST's, so no status changes: the evicted sample was
                 // received (SAMPLE_LOST is a sample "never received") and
                 // was not refused (SAMPLE_REJECTED, §2.2.4.1).
-                self.evict_oldest_of_instance(cache, handle);
+                if let Some(had_data) = self.evict_oldest_of_instance(cache, handle) {
+                    note_evicted(valid, had_data);
+                }
             }
             // Spec §2.2.3.19 RESOURCE_LIMITS.max_samples (total, across
             // every instance).
             // Samples that contain no data (the NOT_ALIVE markers) "do not count towards
             // the limits imposed by the RESOURCE_LIMITS QoS policy" (§2.2.2.5.3.8).
             if max_samples >= 0
-                && cache.iter().filter(|c| c.info.valid_data).count() >= max_samples as usize
+                && *valid.get_or_insert_with(|| cache.iter().filter(|c| c.info.valid_data).count())
+                    >= max_samples as usize
             {
                 if reliable {
                     self.inner.instances.drain_samples(handle, 1);
@@ -5654,7 +5872,9 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                     )));
                 }
                 // BEST_EFFORT: as for max_samples_per_instance above.
-                self.evict_oldest_overall(cache);
+                if self.evict_oldest_overall(cache) {
+                    note_evicted(valid, true);
+                }
             }
             // Every check above passed (or made room): this sample is
             // really being delivered now, so — unlike the checks
@@ -5701,13 +5921,18 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 *last = Some((bytes.clone(), representation, big_endian));
             }
         }
+        if let Some(n) = valid.as_mut() {
+            *n += 1;
+        }
         cache.push_back(CachedSample {
             bytes: Some(bytes),
             info,
             representation,
             big_endian,
             expires_at,
-            decoded: Some(Box::new(sample)),
+            decoded: sample
+                .filter(|_| whole)
+                .map(|sample| Box::new(sample) as Box<dyn core::any::Any + Send>),
         });
         Ok(None)
     }
@@ -6395,13 +6620,12 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 s.info.instance_handle,
             )?;
             // A filter that cannot be evaluated rejects the sample.
-            if let Some(query) = query {
-                if !query
+            if let Some(query) = query
+                && !query
                     .evaluate(&crate::dds_type::DdsTypeRow::new(&decoded))
                     .unwrap_or(false)
-                {
-                    continue;
-                }
+            {
+                continue;
             }
             chosen.push((index, Sample::new(decoded, s.info)));
         }
@@ -6652,28 +6876,28 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
                 // markers for the next read or take (DDS 1.4
                 // §2.2.2.5.1.3); a query evaluates on the instance's key,
                 // as on a marker in the cache.
-                if im & crate::sample_info::instance_state_mask::NOT_ALIVE_NO_WRITERS != 0 {
-                    if let (Some(rt), Some(eid)) = (&runtime, eid) {
-                        let writerless = rt
-                            .reader_departures(eid)
-                            .map(|(_, gone)| instances.left_writerless(&gone, vm))
-                            .unwrap_or_default();
-                        let holds = writerless.iter().any(|handle| {
-                            let Some(query) = query.as_ref() else {
-                                return true;
-                            };
-                            instances
-                                .get_key_holder(*handle)
-                                .and_then(|holder| codec.decode_key_holder(&holder).ok())
-                                .is_some_and(|sample: T| {
-                                    query
-                                        .evaluate(&crate::dds_type::DdsTypeRow::new(&sample))
-                                        .unwrap_or(false)
-                                })
-                        });
-                        if holds {
+                if im & crate::sample_info::instance_state_mask::NOT_ALIVE_NO_WRITERS != 0
+                    && let (Some(rt), Some(eid)) = (&runtime, eid)
+                {
+                    let writerless = rt
+                        .reader_departures(eid)
+                        .map(|(_, gone)| instances.left_writerless(&gone, vm))
+                        .unwrap_or_default();
+                    let holds = writerless.iter().any(|handle| {
+                        let Some(query) = query.as_ref() else {
                             return true;
-                        }
+                        };
+                        instances
+                            .get_key_holder(*handle)
+                            .and_then(|holder| codec.decode_key_holder(&holder).ok())
+                            .is_some_and(|sample: T| {
+                                query
+                                    .evaluate(&crate::dds_type::DdsTypeRow::new(&sample))
+                                    .unwrap_or(false)
+                            })
+                    });
+                    if holds {
+                        return true;
                     }
                 }
             }
@@ -7033,6 +7257,116 @@ impl<T: DdsType + Send + 'static> DataReader<T> {
         Ok(handles)
     }
 
+    /// DDS 1.4 §2.2.2.5.3.5 `take`, with a loan: every sample leaves the
+    /// cache as the octets it arrived in, not decoded ([`crate::loan::Loan`]),
+    /// in the order and with the [`SampleInfo`] `take` gives. A type whose
+    /// fields borrow is read from [`crate::loan::LoanedSample::body`]
+    /// (`zerodds-codec`). From the first call on, the reader admits
+    /// samples by their key members where no filter or EXCLUSIVE ownership
+    /// needs the value, so a sample it lends was never decoded.
+    ///
+    /// # Errors
+    /// `NoData` when there is no sample; otherwise as [`Self::take`].
+    #[cfg(feature = "std")]
+    pub fn take_loan(&self) -> Result<crate::loan::Loan> {
+        self.inner
+            .loaning
+            .store(true, core::sync::atomic::Ordering::Relaxed);
+        self.ingest_into_cache()?;
+        let mut cache = self
+            .inner
+            .cache
+            .lock()
+            .map_err(|_| DdsError::PreconditionNotMet {
+                reason: "datareader cache poisoned",
+            })?;
+        self.refresh_states(&mut cache);
+        for s in cache.iter() {
+            self.require_known_lifecycle_holder(s)?;
+        }
+        // §2.2.2.5.3.8 rule 5: at most one sample under GROUP with
+        // `ordered_access`; what it does not take stays.
+        let limit = self.presentation_limit();
+        let mut out: Vec<crate::loan::LoanedSample> = Vec::with_capacity(cache.len().min(limit));
+        let mut keep = alloc::collections::VecDeque::new();
+        for s in cache.drain(..) {
+            if out.len() >= limit {
+                keep.push_back(s);
+                continue;
+            }
+            let handle = s.info.instance_handle;
+            self.inner.instances.mark_view_seen(handle);
+            if handle != HANDLE_NIL {
+                self.inner.instances.drain_samples(handle, 1);
+            }
+            out.push(crate::loan::LoanedSample {
+                info: s.info,
+                bytes: s.bytes,
+                representation: s.representation,
+                big_endian: s.big_endian,
+            });
+        }
+        *cache = keep;
+        drop(cache);
+        if out.is_empty() {
+            return Err(DdsError::NoData);
+        }
+        // §2.2.2.5.3.8: the samples of an instance consecutive; §2.2.2.5.1.6
+        // their ranks.
+        if self.presentation() == Presentation::Grouped {
+            group_by_instance(&mut out, |s| s.info.instance_handle);
+        }
+        let mut infos: Vec<SampleInfo> = out.iter().map(|s| s.info).collect();
+        crate::sample_info::compute_ranks(&mut infos, |h| {
+            self.inner
+                .instances
+                .get_by_handle(h)
+                .map(|st| (st.disposed_generation_count, st.no_writers_generation_count))
+                .unwrap_or((0, 0))
+        });
+        for (s, i) in out.iter_mut().zip(infos) {
+            s.info.sample_rank = i.sample_rank;
+            s.info.generation_rank = i.generation_rank;
+            s.info.absolute_generation_rank = i.absolute_generation_rank;
+        }
+        self.inner
+            .loans
+            .fetch_add(1, core::sync::atomic::Ordering::AcqRel);
+        Ok(crate::loan::Loan {
+            type_name: T::TYPE_NAME,
+            samples: out,
+            outstanding: Some(Arc::clone(&self.inner.loans)),
+        })
+    }
+
+    /// DDS 1.4 §2.2.2.5.3.20 `return_loan` of what [`Self::take_loan`]
+    /// lent: the octets are let go and `loan` is left empty, holding no
+    /// loan ("If the collections had a loan, upon return from return_loan
+    /// the collections will have max_len=0"). Returning a loan that holds
+    /// none "is safe and has no side effects". Dropping the loan returns it
+    /// as well.
+    ///
+    /// # Errors
+    /// `PreconditionNotMet`, with `loan` left as it was, if another
+    /// DataReader lent it ("must also have been obtained from the same
+    /// DataReader to which they are returned"); `AlreadyDeleted` if the
+    /// reader is deleted.
+    #[cfg(feature = "std")]
+    pub fn return_loan_of(&self, loan: &mut crate::loan::Loan) -> Result<()> {
+        self.inner.entity_state.check_not_deleted()?;
+        if loan
+            .outstanding
+            .as_ref()
+            .is_some_and(|lender| !Arc::ptr_eq(lender, &self.inner.loans))
+        {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "the loan was not taken from this DataReader",
+            });
+        }
+        loan.release();
+        Ok(())
+    }
+
     /// DDS 1.4 §2.2.2.5.3.20 `return_loan`. `read` and `take` of this API
     /// return the samples owned (`Vec<Sample<T>>`) and loan nothing from the
     /// reader, so there is no loan to return: "calling return_loan on a
@@ -7366,10 +7700,8 @@ impl<T: DdsType> crate::entity::Entity for DataReader<T> {
         qos.check_consistency()?;
         let enabled = self.inner.entity_state.is_enabled();
         if let Ok(mut current) = self.inner.qos.lock() {
-            if enabled {
-                if let Some(policy) = crate::qos::immutable_reader_change(&current, &qos) {
-                    return Err(crate::entity::immutable_if_enabled(policy));
-                }
+            if enabled && let Some(policy) = crate::qos::immutable_reader_change(&current, &qos) {
+                return Err(crate::entity::immutable_if_enabled(policy));
             }
             // See `DataWriter::set_qos`.
             if let (true, Some(rt), Some(eid)) =
@@ -7417,6 +7749,9 @@ struct ReaderRegistration {
     /// The reader's listener state, for the data signal [`Self::register`]
     /// installs once the reader's slot exists.
     status: alloc::sync::Weak<ReaderStatus>,
+    /// Takes the reader's channel into its cache, for the room of a
+    /// BEST_EFFORT reader ([`crate::runtime::ReaderRoom`]).
+    drain: Arc<dyn Fn() + Send + Sync>,
 }
 
 #[cfg(feature = "std")]
@@ -7503,7 +7838,9 @@ impl ReaderRegistration {
             self.sample_tx.clone(),
         )?;
         // DDS 1.4 §2.2.3.14: a RELIABLE KEEP_ALL reader whose
-        // RESOURCE_LIMITS bound it is handed no more than it has room for.
+        // RESOURCE_LIMITS bound it is handed no more than it has room for;
+        // a BEST_EFFORT reader with finite RESOURCE_LIMITS takes its channel
+        // into its cache when it holds more.
         if let Some(room) = crate::runtime::ReaderRoom::for_reader(
             qos.reliability.kind == ReliabilityKind::Reliable,
             qos.history.kind == crate::qos::HistoryKind::KeepAll,
@@ -7511,6 +7848,10 @@ impl ReaderRegistration {
             Arc::clone(&self.pulled),
             &self.runtime,
         ) {
+            if !room.holds_back() {
+                let drain = Arc::clone(&self.drain);
+                room.set_drain(Box::new(move || drain()));
+            }
             self.runtime
                 .set_user_reader_room(self.eid, Arc::clone(&room))?;
             let _ = self.cache.room.set(room);
@@ -7562,7 +7903,7 @@ mod tests {
     /// DATA_ON_READERS again when the release puts it into the inbox; a
     /// sample it did not cover does.
     #[test]
-    fn a_group_release_after_a_listener_call_is_no_news_for_what_it_covered() {
+    fn dcps_2_2_4_2_2_a_group_release_after_a_listener_call_is_no_news_for_what_it_covered() {
         use crate::contained::ContainedReader;
         let sub = offline_subscriber();
         let topic = {
@@ -7582,6 +7923,7 @@ mod tests {
             writer_strength: 0,
             representation: 0,
             big_endian: false,
+            representation_identifier: [0x00, 0x01],
             source_timestamp: None,
             reception_timestamp: None,
             source_sequence_number: -1,
@@ -7664,7 +8006,7 @@ mod tests {
 
     /// Every policy TopicQos and DataReaderQos both carry is copied.
     #[test]
-    fn copy_from_topic_qos_copies_every_policy_both_carry() {
+    fn dcps_2_2_2_5_2_17_copy_from_topic_qos_copies_every_policy_both_carry() {
         let mut topic = TopicQos::default();
         topic.durability.kind = crate::qos::DurabilityKind::TransientLocal;
         topic.deadline.period = zerodds_qos::Duration::from_millis(250);
@@ -7689,7 +8031,7 @@ mod tests {
     }
 
     #[test]
-    fn get_key_value_uses_holder_decoder_for_writer_and_reader() {
+    fn dcps_2_2_2_4_2_9_get_key_value_uses_holder_decoder_for_writer_and_reader() {
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(0, DomainParticipantQos::default());
         let topic = p
@@ -7877,6 +8219,7 @@ mod tests {
                 crate::runtime::UserReaderConfig {
                     topic_name: topic.name().into(),
                     type_name: ZeroKey::TYPE_NAME.into(),
+                    reliable: true,
                     ..crate::runtime::UserReaderConfig::default()
                 },
                 true,
@@ -7898,6 +8241,7 @@ mod tests {
                 crate::runtime::UserReaderConfig {
                     topic_name: topic.name().into(),
                     type_name: RawBytes::TYPE_NAME.into(),
+                    reliable: true,
                     ..crate::runtime::UserReaderConfig::default()
                 },
                 false,
@@ -7909,6 +8253,223 @@ mod tests {
                 .unwrap(),
             crate::runtime::UserSample::Alive { key_hash: None, .. }
         ));
+    }
+
+    /// DDS 1.4 §2.2.2.5.3.5 with a loan: `take_loan` hands out the samples
+    /// as the octets they arrived in, in order, with their SampleInfo, and
+    /// takes them out of the cache; a second call finds none.
+    #[test]
+    fn take_loan_lends_the_received_octets_and_takes_the_samples() {
+        let domain_lease = zerodds_test_domains::lease_domain();
+        let p = DomainParticipantFactory::instance()
+            .create_participant(domain_lease.id(), DomainParticipantQos::default())
+            .unwrap();
+        let topic = p
+            .create_topic::<RawBytes>("LoanTopic", TopicQos::default())
+            .unwrap();
+        let reader = p
+            .create_subscriber(crate::qos::SubscriberQos::default())
+            .create_datareader::<RawBytes>(
+                &topic,
+                crate::qos::DataReaderQos {
+                    history: crate::qos::HistoryQosPolicy {
+                        kind: crate::qos::HistoryKind::KeepLast,
+                        depth: 10,
+                    },
+                    ..crate::qos::DataReaderQos::default()
+                },
+            )
+            .unwrap();
+        let writer = p
+            .create_publisher(crate::qos::PublisherQos::default())
+            .create_datawriter(&topic, crate::qos::DataWriterQos::default())
+            .unwrap();
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(5);
+        while reader
+            .get_subscription_matched_status()
+            .unwrap()
+            .current_count
+            == 0
+        {
+            assert!(std::time::Instant::now() < deadline, "the writer matches");
+            std::thread::sleep(core::time::Duration::from_millis(10));
+        }
+        for n in 1..=3u8 {
+            writer.write(&RawBytes::new(alloc::vec![n, n, n])).unwrap();
+        }
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(5);
+        // The three samples arrive in one datagram train; wait until the
+        // last one is there before taking.
+        let deadline_wait = std::time::Instant::now() + core::time::Duration::from_secs(5);
+        while reader
+            .inner
+            .pulled
+            .load(core::sync::atomic::Ordering::Acquire)
+            < 3
+            && reader.inner.cache.lock().map_or(0, |c| c.len()) < 3
+        {
+            assert!(
+                std::time::Instant::now() < deadline_wait,
+                "the samples arrive"
+            );
+            let _ = reader.ingest_into_cache();
+            std::thread::sleep(core::time::Duration::from_millis(10));
+        }
+        let _ = deadline;
+        let mut loan = reader.take_loan().unwrap();
+        assert_eq!(loan.len(), 3, "all three at once");
+        assert_eq!(loan.type_name(), RawBytes::TYPE_NAME);
+        let bodies: Vec<&[u8]> = loan.iter().filter_map(|s| s.body()).collect();
+        assert_eq!(bodies, [&[1u8, 1, 1][..], &[2, 2, 2], &[3, 3, 3]]);
+        assert!(loan.iter().all(|s| s.info.valid_data));
+        reader.return_loan_of(&mut loan).unwrap();
+        assert!(loan.is_empty() && !loan.is_outstanding(), "max_len=0");
+        assert!(matches!(reader.take_loan(), Err(DdsError::NoData)));
+    }
+
+    /// DDS 1.4 §2.2.2.5.2.6, §2.2.2.5.2.14 and §2.2.2.2.1.18 with a loan
+    /// of `take_loan`: a reader with an outstanding loan is not deleted,
+    /// alone or with its subscriber or participant, and nothing else is
+    /// deleted either. §2.2.2.5.3.20: a loan goes back only to the reader
+    /// that lent it and is empty afterwards; dropping a loan returns it.
+    #[test]
+    fn dcps_2_2_2_5_2_6_a_reader_with_an_outstanding_loan_is_not_deleted() {
+        let domain_lease = zerodds_test_domains::lease_domain();
+        let p = DomainParticipantFactory::instance()
+            .create_participant(domain_lease.id(), DomainParticipantQos::default())
+            .unwrap();
+        let topic = p
+            .create_topic::<RawBytes>("LoanDeleteTopic", TopicQos::default())
+            .unwrap();
+        let sub = p.create_subscriber(crate::qos::SubscriberQos::default());
+        let first = sub
+            .create_datareader::<RawBytes>(&topic, crate::qos::DataReaderQos::default())
+            .unwrap();
+        let second = sub
+            .create_datareader::<RawBytes>(&topic, crate::qos::DataReaderQos::default())
+            .unwrap();
+        let writer = p
+            .create_publisher(crate::qos::PublisherQos::default())
+            .create_datawriter(&topic, crate::qos::DataWriterQos::default())
+            .unwrap();
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(5);
+        while [&first, &second]
+            .iter()
+            .any(|r| r.get_subscription_matched_status().unwrap().current_count == 0)
+        {
+            assert!(std::time::Instant::now() < deadline, "the writer matches");
+            std::thread::sleep(core::time::Duration::from_millis(10));
+        }
+        writer.write(&RawBytes::new(alloc::vec![7])).unwrap();
+        let take_one = |reader: &DataReader<RawBytes>| loop {
+            match reader.take_loan() {
+                Ok(loan) => break loan,
+                Err(e) => {
+                    assert!(matches!(e, DdsError::NoData), "{e:?}");
+                    assert!(std::time::Instant::now() < deadline, "the sample arrives");
+                    std::thread::sleep(core::time::Duration::from_millis(10));
+                }
+            }
+        };
+        let mut of_first = take_one(&first);
+        let of_second = take_one(&second);
+        let refused = |r: Result<()>| matches!(r, Err(DdsError::PreconditionNotMet { .. }));
+
+        assert!(refused(sub.delete_datareader(&first)));
+        assert!(refused(sub.delete_contained_entities()));
+        assert!(refused(p.delete_contained_entities()));
+        assert!(
+            matches!(first.take_loan(), Err(DdsError::NoData)),
+            "not deleted"
+        );
+        assert!(
+            writer.write(&RawBytes::new(alloc::vec![8])).is_ok(),
+            "not deleted"
+        );
+
+        assert!(refused(second.return_loan_of(&mut of_first)));
+        assert_eq!(of_first.len(), 1, "a refused return leaves the loan");
+        assert!(of_first.is_outstanding());
+        first.return_loan_of(&mut of_first).unwrap();
+        assert!(of_first.is_empty() && !of_first.is_outstanding());
+        // A loan that holds none goes back again without effect.
+        first.return_loan_of(&mut of_first).unwrap();
+        sub.delete_datareader(&first).unwrap();
+
+        assert!(refused(sub.delete_contained_entities()));
+        drop(of_second);
+        sub.delete_contained_entities().unwrap();
+    }
+
+    /// A BEST_EFFORT reader with finite RESOURCE_LIMITS that the
+    /// application does not take from holds no more than its limit: the
+    /// thread that queues a sample takes the channel into the cache when it
+    /// is past the limit, and the cache's admission discards the oldest
+    /// (DDS 1.4 §2.2.3.18). Before, the channel held every sample until the
+    /// application took.
+    #[test]
+    fn a_best_effort_reader_that_is_not_taken_from_holds_its_limit() {
+        let domain_lease = zerodds_test_domains::lease_domain();
+        let p = DomainParticipantFactory::instance()
+            .create_participant(domain_lease.id(), DomainParticipantQos::default())
+            .unwrap();
+        let topic = p
+            .create_topic::<RawBytes>("BestEffortRoom", TopicQos::default())
+            .unwrap();
+        let best_effort = crate::qos::ReliabilityQosPolicy {
+            kind: crate::qos::ReliabilityKind::BestEffort,
+            ..crate::qos::ReliabilityQosPolicy::default()
+        };
+        let keep_all = crate::qos::HistoryQosPolicy {
+            kind: crate::qos::HistoryKind::KeepAll,
+            ..crate::qos::HistoryQosPolicy::default()
+        };
+        let reader_qos = crate::qos::DataReaderQos {
+            reliability: best_effort,
+            history: keep_all,
+            resource_limits: crate::qos::ResourceLimitsQosPolicy {
+                max_samples: 5,
+                ..crate::qos::ResourceLimitsQosPolicy::default()
+            },
+            ..crate::qos::DataReaderQos::default()
+        };
+        let subscriber = p.create_subscriber(crate::qos::SubscriberQos::default());
+        let reader = subscriber
+            .create_datareader::<RawBytes>(&topic, reader_qos)
+            .unwrap();
+        let writer_qos = crate::qos::DataWriterQos {
+            reliability: best_effort,
+            history: keep_all,
+            ..crate::qos::DataWriterQos::default()
+        };
+        let writer = p
+            .create_publisher(crate::qos::PublisherQos::default())
+            .create_datawriter(&topic, writer_qos)
+            .unwrap();
+        let deadline = std::time::Instant::now() + core::time::Duration::from_secs(5);
+        while reader
+            .get_subscription_matched_status()
+            .unwrap()
+            .current_count
+            == 0
+        {
+            assert!(std::time::Instant::now() < deadline, "the writer matches");
+            std::thread::sleep(core::time::Duration::from_millis(10));
+        }
+        for n in 0..200u8 {
+            writer.write(&RawBytes::new(alloc::vec![n])).unwrap();
+        }
+        let room = reader.inner.cache.room().expect("a room");
+        let in_channel = room.in_flight();
+        assert!(in_channel <= 6, "{in_channel} samples wait on the channel");
+        assert!(reader.inner.cache.lock().unwrap().len() <= 5);
+        let taken = reader.take().unwrap();
+        assert_eq!(
+            taken.last().map(|s| s.data.clone()),
+            Some(alloc::vec![199]),
+            "the newest is kept"
+        );
+        assert!(taken.len() <= 5);
     }
 
     /// DDS 1.4 §2.2.4.1: a StatusChangedFlag is TRUE from the change on
@@ -7983,7 +8544,7 @@ mod tests {
     /// (CycloneDDS / legacy RTI default for `@final`) is decoded with the
     /// classic-CDR rule, not the XCDR2 rule. Regression for Bug DR1.
     #[test]
-    fn decode_for_encap_dispatches_on_representation_and_endianness() {
+    fn xtypes_7_6_3_1_1_decode_for_encap_dispatches_on_representation_and_endianness() {
         use crate::dds_type::{DecodeError, EncodeError};
 
         /// Marker whose four decode variants return a distinct value, so the
@@ -8211,7 +8772,7 @@ mod tests {
     }
 
     #[test]
-    fn subscriber_creates_datareader_for_matching_type() {
+    fn dcps_2_2_2_5_2_5_subscriber_creates_datareader_for_matching_type() {
         let s = offline_subscriber();
         let r = s
             .create_datareader::<RawBytes>(&mk_topic(), DataReaderQos::default())
@@ -8220,7 +8781,7 @@ mod tests {
     }
 
     #[test]
-    fn datareader_take_returns_decoded_samples() {
+    fn dcps_2_2_2_5_1_datareader_take_returns_decoded_samples() {
         let s = offline_subscriber();
         // KEEP_ALL: two samples on this keyless (single-instance) topic
         // must both survive — see `end_to_end_in_process_loopback`.
@@ -8254,7 +8815,7 @@ mod tests {
     /// `take_next_instance` and delivered zero samples even though the body
     /// decoded fine for the key. Covers XCDR1 little- and big-endian.
     #[test]
-    fn cache_materialize_honors_xcdr1_encapsulation_le_and_be() {
+    fn rtps_10_5_cache_materialize_honors_xcdr1_encapsulation_le_and_be() {
         use crate::factory::DomainParticipantFactory;
         use crate::instance_handle::HANDLE_NIL;
         use crate::interop::ShapeType;
@@ -8374,7 +8935,7 @@ mod tests {
     }
 
     #[test]
-    fn datareader_read_preserves_samples() {
+    fn dcps_2_2_2_5_1_datareader_read_preserves_samples() {
         let s = offline_subscriber();
         let r = s
             .create_datareader::<RawBytes>(&mk_topic(), DataReaderQos::default())
@@ -8391,7 +8952,7 @@ mod tests {
     use core::sync::atomic::{AtomicU32, Ordering};
 
     #[test]
-    fn datareader_set_listener_stores_arc_and_mask() {
+    fn dcps_2_2_2_5_3_1_datareader_set_listener_stores_arc_and_mask() {
         struct L;
         impl crate::listener::DataReaderListener for L {}
         let s = offline_subscriber();
@@ -8410,7 +8971,7 @@ mod tests {
     /// Offline there is no runtime: a poll reads nothing and calls no
     /// listener, and the getters answer the default status.
     #[test]
-    fn an_offline_reader_polls_nothing_and_reads_the_default_status() {
+    fn dcps_2_2_2_5_3_24_an_offline_reader_polls_nothing_and_reads_the_default_status() {
         struct Cnt(AtomicU32);
         impl crate::listener::DataReaderListener for Cnt {
             fn on_subscription_matched(
@@ -8467,7 +9028,7 @@ mod tests {
     // ---- §2.2.2.5.2.8/.9 begin/end_access ----
 
     #[test]
-    fn subscriber_begin_end_access_roundtrip() {
+    fn dcps_2_2_2_5_1_9_subscriber_begin_end_access_roundtrip() {
         let s = offline_subscriber();
         assert!(!s.is_access_open());
         s.begin_access().unwrap();
@@ -8477,18 +9038,7 @@ mod tests {
     }
 
     #[test]
-    fn subscriber_end_access_without_begin_returns_precondition_not_met() {
-        // Spec §2.2.2.5.2.9 — end without begin is a spec violation.
-        let s = offline_subscriber();
-        let res = s.end_access();
-        assert!(matches!(
-            res,
-            Err(crate::error::DdsError::PreconditionNotMet { .. })
-        ));
-    }
-
-    #[test]
-    fn subscriber_begin_access_is_nestable() {
+    fn dcps_2_2_2_5_2_8_subscriber_begin_access_is_nestable() {
         // Spec §2.2.2.5.2.8 — nesting allowed; each begin needs its own
         // end.
         let s = offline_subscriber();
@@ -8504,10 +9054,15 @@ mod tests {
     }
 
     #[test]
-    fn subscriber_too_many_ends_after_balanced_returns_error() {
-        // Negative: after a balanced begin/end, the next end is an
-        // underflow → PreconditionNotMet.
+    fn dcps_2_2_2_5_2_9_subscriber_too_many_ends_after_balanced_returns_error() {
+        // Spec §2.2.2.5.2.9: an end without its begin is
+        // PreconditionNotMet, on a fresh subscriber and after a balanced
+        // begin/end.
         let s = offline_subscriber();
+        assert!(matches!(
+            s.end_access(),
+            Err(crate::error::DdsError::PreconditionNotMet { .. })
+        ));
         s.begin_access().unwrap();
         s.end_access().unwrap();
         let res = s.end_access();
@@ -8526,7 +9081,7 @@ mod tests {
     /// The INFINITE default (encoded as `0` nanoseconds on the delivery path)
     /// yields no expiration time at all.
     #[test]
-    fn lifespan_expiry_adds_the_writer_duration_to_the_source_timestamp() {
+    fn dcps_2_2_3_16_lifespan_expiry_adds_the_writer_duration_to_the_source_timestamp() {
         let src = Time::new(1_700_000_000, 900_000_000);
         // 250 ms — the OMG `dds-rtps` Test_Lifespan_0 value. Crosses the
         // second boundary, so a naive "add the nanos" implementation is caught.
@@ -8548,7 +9103,7 @@ mod tests {
     /// from the cache; one that is still inside its lifespan stays, and so
     /// does a lifecycle marker (which carries no expiration time).
     #[test]
-    fn purge_expired_by_lifespan_drops_only_samples_past_their_expiration() {
+    fn dcps_2_2_3_16_purge_expired_by_lifespan_drops_only_samples_past_their_expiration() {
         let now = Time::new(1_700_000_010, 0);
         let mk = |expires_at: Option<Time>, handle_seed: u8| CachedSample {
             bytes: Some(crate::sample_bytes::SampleBytes::from_vec(alloc::vec![
@@ -8646,7 +9201,7 @@ mod tests {
     /// sequence number of its DATA, a reply by its related sample
     /// identity; `take_with_wire` hands both over with the sample.
     #[test]
-    fn take_with_wire_hands_over_the_identity_and_the_related_identity() {
+    fn rpc_7_8_2_take_with_wire_hands_over_the_identity_and_the_related_identity() {
         // KEEP_ALL: under the default KEEP_LAST(1) the second sample replaces
         // the first (DDS 1.4 §2.2.3.18).
         let mut qos = DataReaderQos::default();
@@ -8685,6 +9240,7 @@ mod tests {
             writer_strength: 0,
             representation: 0,
             big_endian: false,
+            representation_identifier: [0x00, 0x01],
             source_timestamp: None,
             reception_timestamp: None,
             source_sequence_number: sn,
@@ -8752,7 +9308,7 @@ mod tests {
     /// `SEQUENCENUMBER_UNKNOWN` (Examples 2 and 3), the set's last SN
     /// (HDDS 1.4.8), its first (Table 9.23).
     #[test]
-    fn every_end_of_coherent_set_form_releases_the_writers_set() {
+    fn dcps_2_2_3_6_every_end_of_coherent_set_form_releases_the_writers_set() {
         for value in [None, Some(3), Some(1)] {
             let r = coherent_reader();
             assert!(r.coherent_gate(alive(W1, 1, Some(1))).is_empty());
@@ -8768,7 +9324,7 @@ mod tests {
     /// coherent set in-line QoS parameter" ends the set; the set comes
     /// first, then that DATA.
     #[test]
-    fn a_sample_outside_any_set_releases_the_set_ahead_of_itself() {
+    fn rtps_8_7_6_a_sample_outside_any_set_releases_the_set_ahead_of_itself() {
         let r = coherent_reader();
         assert!(r.coherent_gate(alive(W1, 1, Some(1))).is_empty());
         assert!(r.coherent_gate(alive(W1, 2, Some(1))).is_empty());
@@ -8779,7 +9335,7 @@ mod tests {
     /// §8.7.6: "A Data Submessage from this Writer that belongs to a new
     /// coherent set" ends the earlier one; the new member is held.
     #[test]
-    fn a_member_of_a_new_set_releases_the_earlier_set() {
+    fn rtps_8_7_6_a_member_of_a_new_set_releases_the_earlier_set() {
         let r = coherent_reader();
         assert!(r.coherent_gate(alive(W1, 1, Some(1))).is_empty());
         let out = r.coherent_gate(alive(W1, 2, Some(2)));
@@ -8810,7 +9366,7 @@ mod tests {
     /// members show it: a reader made inside the set holds two of the
     /// three changes before the end at SN 4.
     #[test]
-    fn an_incomplete_set_is_discarded() {
+    fn dcps_2_2_2_4_1_10_an_incomplete_set_is_discarded() {
         let r = coherent_reader();
         assert!(r.coherent_gate(alive(W1, 1, Some(1))).is_empty());
         assert!(
@@ -8831,7 +9387,7 @@ mod tests {
 
     /// Each writer's set ends on that writer's DATA only.    /// Each writer's set ends on that writer's DATA only.
     #[test]
-    fn another_writers_end_leaves_a_set_held() {
+    fn dcps_2_2_3_6_another_writers_end_leaves_a_set_held() {
         let r = coherent_reader();
         assert!(r.coherent_gate(alive(W1, 1, Some(1))).is_empty());
         assert!(r.coherent_gate(alive(W2, 1, Some(1))).is_empty());

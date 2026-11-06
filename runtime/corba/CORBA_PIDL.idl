@@ -1,0 +1,213 @@
+// The pseudo IDL of the CORBA module that orb.idl leaves out: the
+// declarations CORBA 3.3 part 1 marks "PIDL" and the ORB implements
+// itself. Transcribed from CORBA 3.3 part 1 (formal/2012-11-12) for the
+// language mappings whose CORBA platform names these types — IDL4 to Java
+// 1.0, IDL4 to C# 1.0 and IDL4 to C++ 1.0, Annex A.1. It includes
+// `orb.idl`, which declares the rest of the module.
+//
+// Left out: `interface Object` (§8.3), whose name is a keyword in IDL and
+// whose mapping each language mapping's Annex A.1 states itself, and
+// `interface TypeCode`, which orb.idl declares.
+//
+// The pseudo objects are `local interface`s: CORBA 3.3 part 1 §8.1 has the
+// ORB implement them in the process that uses them, and OMG IDL 4.2
+// §7.4.6.4.4 admits a native parameter only on a local interface.
+// `Context` is written `_Context`, the escaped identifier, because it
+// differs from the keyword `context` only in case (OMG IDL 4.2 §7.2.3);
+// its name is `Context`.
+//
+// Transcription changes: `Identifie` in Context::get_values and
+// Context::delete_values (§8.6.2) is `Identifier`; `in ValueFactory_factory`
+// in ORB::register_value_factory (§8.2) is `in ValueFactory _factory`, the
+// escaped identifier, because `factory` is an IDL keyword;
+// ORB::create_sequence_tc's `in TypeCode element type` is
+// `in TypeCode element_type`.
+
+#include <orb.idl>
+
+module CORBA {
+
+    // §11.1, §11.1.1
+    exception WrongTransaction {};
+    typedef unsigned long Flags;
+    struct NamedValue {
+        Identifier name;
+        any argument;
+        long len;
+        Flags arg_modes;
+    };
+
+    // §11.2: "Each language mapping specifies what OpaqueValue maps to".
+    native OpaqueValue;
+
+    local interface NVList;
+    local interface _Context;
+    local interface Request;
+    local interface ORB;
+
+    // §11.2
+    local interface Request {
+        void add_arg(
+            in Identifier name,
+            in TypeCode arg_type,
+            in OpaqueValue value,
+            in long len,
+            in Flags arg_flags);
+        void invoke(in Flags invoke_flags);
+        void delete();
+        void send(in Flags invoke_flags);
+        void get_response() raises (WrongTransaction);
+        boolean poll_response();
+        Object sendp();
+        void prepare(in Object p);
+        void sendc(in Object handler);
+    };
+
+    // §11.5
+    local interface NVList {
+        void add_item(
+            in Identifier item_name,
+            in TypeCode item_type,
+            in OpaqueValue value,
+            in long value_len,
+            in Flags item_flags);
+        void free();
+        void free_memory();
+        void get_count(out long count);
+    };
+
+    // §8.6.2
+    local interface _Context {
+        void set_one_value(in Identifier prop_name, in string value);
+        void set_values(in NVList values);
+        void get_values(
+            in Identifier start_scope,
+            in Flags op_flags,
+            in Identifier prop_name,
+            out NVList values);
+        void delete_values(in Identifier prop_name);
+        void create_child(in Identifier ctx_name, out _Context child_ctx);
+        void delete(in Flags del_flags);
+    };
+
+    // §8.2
+    typedef sequence<Request> RequestSeq;
+    typedef unsigned short ServiceType;
+    typedef unsigned long ServiceOption;
+    typedef unsigned long ServiceDetailType;
+    typedef CORBA::OctetSeq ServiceDetailData;
+    typedef sequence<ServiceOption> ServiceOptionSeq;
+    const ServiceType Security = 1;
+    struct ServiceDetail {
+        ServiceDetailType service_detail_type;
+        ServiceDetailData service_detail;
+    };
+    typedef sequence<ServiceDetail> ServiceDetailSeq;
+    struct ServiceInformation {
+        ServiceOptionSeq service_options;
+        ServiceDetailSeq service_details;
+    };
+    native ValueFactory;
+    typedef string ORBid;
+
+    local interface ORB {
+        typedef string ObjectId;
+        typedef sequence<ObjectId> ObjectIdList;
+        exception InvalidName {};
+
+        ORBid id();
+        string object_to_string(in Object obj);
+        Object string_to_object(in string str);
+
+        // Dynamic Invocation related operations
+        void create_list(in long count, out NVList new_list);
+        void create_operation_list(in OperationDef oper, out NVList new_list);
+        void get_default_context(out _Context ctx);
+        void send_multiple_requests_oneway(in RequestSeq req);
+        void send_multiple_requests_deferred(in RequestSeq req);
+        boolean poll_next_response();
+        void get_next_response(out Request req) raises (WrongTransaction);
+
+        // Service information operations
+        boolean get_service_information(
+            in ServiceType service_type,
+            out ServiceInformation service_information);
+        ObjectIdList list_initial_services();
+
+        // Initial reference operation
+        Object resolve_initial_references(in ObjectId identifier)
+            raises (InvalidName);
+
+        // Type code creation operations
+        TypeCode create_struct_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in StructMemberSeq members);
+        TypeCode create_union_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in TypeCode discriminator_type,
+            in UnionMemberSeq members);
+        TypeCode create_enum_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in EnumMemberSeq members);
+        TypeCode create_alias_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in TypeCode original_type);
+        TypeCode create_exception_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in StructMemberSeq members);
+        TypeCode create_interface_tc(in RepositoryId id, in Identifier name);
+        TypeCode create_string_tc(in unsigned long bound);
+        TypeCode create_wstring_tc(in unsigned long bound);
+        TypeCode create_fixed_tc(in unsigned short digits, in short scale);
+        TypeCode create_sequence_tc(in unsigned long bound, in TypeCode element_type);
+        TypeCode create_recursive_sequence_tc(
+            in unsigned long bound,
+            in unsigned long offset);
+        TypeCode create_array_tc(in unsigned long length, in TypeCode element_type);
+        TypeCode create_value_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in ValueModifier type_modifier,
+            in TypeCode concrete_base,
+            in ValueMemberSeq members);
+        TypeCode create_value_box_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in TypeCode boxed_type);
+        TypeCode create_native_tc(in RepositoryId id, in Identifier name);
+        TypeCode create_recursive_tc(in RepositoryId id);
+        TypeCode create_abstract_interface_tc(in RepositoryId id, in Identifier name);
+        TypeCode create_local_interface_tc(in RepositoryId id, in Identifier name);
+        TypeCode create_component_tc(in RepositoryId id, in Identifier name);
+        TypeCode create_home_tc(in RepositoryId id, in Identifier name);
+        TypeCode create_event_tc(
+            in RepositoryId id,
+            in Identifier name,
+            in ValueModifier type_modifier,
+            in TypeCode concrete_base,
+            in ValueMemberSeq members);
+
+        // Thread related operations
+        boolean work_pending();
+        void perform_work();
+        void run();
+        void shutdown(in boolean wait_for_completion);
+        void destroy();
+
+        // Policy related operations
+        Policy create_policy(in PolicyType type, in any val) raises (PolicyError);
+
+        // Value factory operations
+        ValueFactory register_value_factory(in RepositoryId id, in ValueFactory _factory);
+        void unregister_value_factory(in RepositoryId id);
+        ValueFactory lookup_value_factory(in RepositoryId id);
+
+        void register_initial_reference(in ObjectId id, in Object obj)
+            raises (InvalidName);
+    };
+};

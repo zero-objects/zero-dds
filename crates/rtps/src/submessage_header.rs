@@ -162,27 +162,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn submessage_id_data_is_0x15() {
-        assert_eq!(SubmessageId::Data.as_u8(), 0x15);
-    }
-
-    #[test]
-    fn submessage_id_heartbeat_is_0x07() {
-        assert_eq!(SubmessageId::Heartbeat.as_u8(), 0x07);
-    }
-
-    #[test]
-    fn submessage_id_acknack_is_0x06() {
-        assert_eq!(SubmessageId::AckNack.as_u8(), 0x06);
-    }
-
-    #[test]
-    fn submessage_id_gap_is_0x08() {
-        assert_eq!(SubmessageId::Gap.as_u8(), 0x08);
-    }
-
-    #[test]
-    fn submessage_id_octets_match_spec_table_8_13() {
+    fn rtps_9_4_5_1_submessage_id_octets_match_table_8_13() {
         // DDSI-RTPS 2.5 §8.3.2 table 8.13 / PSM §9.4.5.1.1. Every
         // kind this crate names, with the octet the spec assigns it.
         for (id, octet) in [
@@ -207,27 +187,6 @@ mod tests {
         // unassigned in 2.5: they must not decode to a known kind.
         assert!(SubmessageId::from_u8(0x0A).is_err());
         assert!(SubmessageId::from_u8(0x0B).is_err());
-    }
-
-    #[test]
-    fn submessage_id_roundtrip_for_known_ids() {
-        for id in [
-            SubmessageId::Pad,
-            SubmessageId::AckNack,
-            SubmessageId::Heartbeat,
-            SubmessageId::Gap,
-            SubmessageId::InfoTs,
-            SubmessageId::InfoSrc,
-            SubmessageId::InfoReplyIp4,
-            SubmessageId::InfoDst,
-            SubmessageId::InfoReply,
-            SubmessageId::NackFrag,
-            SubmessageId::HeartbeatFrag,
-            SubmessageId::Data,
-            SubmessageId::DataFrag,
-        ] {
-            assert_eq!(SubmessageId::from_u8(id.as_u8()).unwrap(), id);
-        }
     }
 
     #[test]

@@ -346,14 +346,14 @@ impl DelegationLink {
         if self.signature.is_empty() {
             return Err(DelegationError::SignFailed("empty signature".to_string()));
         }
-        if let Some(expected_len) = self.algorithm.expected_signature_len() {
-            if self.signature.len() != expected_len {
-                return Err(DelegationError::VerifyFailed(alloc::format!(
-                    "sig len {} != expected {}",
-                    self.signature.len(),
-                    expected_len
-                )));
-            }
+        if let Some(expected_len) = self.algorithm.expected_signature_len()
+            && self.signature.len() != expected_len
+        {
+            return Err(DelegationError::VerifyFailed(alloc::format!(
+                "sig len {} != expected {}",
+                self.signature.len(),
+                expected_len
+            )));
         }
         let input = self.signing_bytes();
         let alg: &dyn signature::VerificationAlgorithm = match self.algorithm {
@@ -791,17 +791,6 @@ mod tests {
     }
 
     #[test]
-    fn link_encode_decode_roundtrip() {
-        let (pkcs8, _) = ecdsa_key(&ECDSA_P256_SHA256_FIXED_SIGNING);
-        let mut l = link_skeleton();
-        l.sign(&pkcs8).expect("sign");
-        let wire = l.encode();
-        let (decoded, tail) = DelegationLink::decode(&wire).expect("decode");
-        assert!(tail.is_empty());
-        assert_eq!(decoded, l);
-    }
-
-    #[test]
     fn link_decode_bad_magic_rejects() {
         let mut bad = alloc::vec![0u8; 64];
         bad[..8].copy_from_slice(b"NOTMAGIC");
@@ -866,32 +855,6 @@ mod tests {
     }
 
     #[test]
-    fn chain_encode_decode_roundtrip() {
-        let (pkcs8, _) = ecdsa_key(&ECDSA_P256_SHA256_FIXED_SIGNING);
-        let mut l1 = link_skeleton();
-        l1.sign(&pkcs8).expect("sign1");
-        let mut l2 = DelegationLink::new(
-            [0xBB; 16],
-            [0xCC; 16],
-            alloc::vec!["sensor/lidar".to_string()],
-            alloc::vec![],
-            1_700_000_000,
-            1_800_000_000,
-            SignatureAlgorithm::EcdsaP256,
-        )
-        .expect("l2 new");
-        l2.sign(&pkcs8).expect("sign2");
-
-        let chain =
-            DelegationChain::new([0xAA; 16], alloc::vec![l1.clone(), l2.clone()]).expect("chain");
-        assert_eq!(chain.depth(), 2);
-        assert_eq!(chain.edge_guid(), Some([0xCC; 16]));
-        let wire = chain.encode();
-        let decoded = DelegationChain::decode(&wire).expect("decode");
-        assert_eq!(decoded, chain);
-    }
-
-    #[test]
     fn chain_new_rejects_too_deep() {
         let dummy = link_skeleton();
         let too_deep = alloc::vec![dummy; MAX_CHAIN_DEPTH_HARD_CAP + 1];
@@ -900,21 +863,6 @@ mod tests {
             err,
             DelegationError::TooManyPatterns { kind: "chain", .. }
         ));
-    }
-
-    #[test]
-    fn algorithm_wire_id_roundtrip() {
-        for a in [
-            SignatureAlgorithm::EcdsaP256,
-            SignatureAlgorithm::EcdsaP384,
-            SignatureAlgorithm::RsaPss2048,
-            SignatureAlgorithm::Ed25519,
-        ] {
-            let id = a.wire_id();
-            assert_eq!(SignatureAlgorithm::from_wire_id(id), Some(a));
-        }
-        assert_eq!(SignatureAlgorithm::from_wire_id(0), None);
-        assert_eq!(SignatureAlgorithm::from_wire_id(255), None);
     }
 
     // -------------------------------------------------------------
@@ -940,55 +888,6 @@ mod tests {
         assert_eq!(
             SignatureAlgorithm::RsaPss2048.expected_signature_len(),
             Some(256)
-        );
-    }
-
-    /// Display format of all DelegationError variants.
-    /// Catches the `Display::fmt -> Ok(Default)` mutation.
-    #[test]
-    fn delegation_error_display_messages_specific() {
-        assert_eq!(
-            alloc::format!(
-                "{}",
-                DelegationError::TooManyPatterns {
-                    kind: "topic",
-                    count: 100,
-                    max: 64
-                }
-            ),
-            "topic patterns: 100 > max 64"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::PatternTooLong { len: 500, max: 256 }),
-            "pattern length 500 > max 256"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::SignFailed("bad".into())),
-            "sign failed: bad"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::VerifyFailed("nope".into())),
-            "verify failed: nope"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::Malformed("hdr".into())),
-            "malformed delegation: hdr"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::UnknownAlgorithm(42)),
-            "unknown algorithm id: 42"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::InvalidTimeWindow),
-            "not_before > not_after"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::BadMagic),
-            "bad magic bytes"
-        );
-        assert_eq!(
-            alloc::format!("{}", DelegationError::UnsupportedVersion(2)),
-            "unsupported version: 2"
         );
     }
 

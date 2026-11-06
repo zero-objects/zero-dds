@@ -14,7 +14,7 @@ use std::thread;
 use zerodds_xrce::transport_dtls::{DtlsLayer, WebrtcDtls, WebrtcDtlsServer};
 
 #[test]
-fn dtls_handshake_and_roundtrip() {
+fn xrce_11_2_dtls_handshake_and_roundtrip() {
     // Server binds with a fresh self-signed cert on an ephemeral port.
     let server = WebrtcDtlsServer::bind("127.0.0.1:0".parse().unwrap()).expect("bind");
     let addr = server.local_addr();

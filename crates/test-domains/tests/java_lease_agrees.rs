@@ -70,7 +70,63 @@ fn the_java_lease_writes_the_files_of_this_crate() {
         "\"takeover.lock\"",
         "\"pid \" + pid() + \" since \"",
         "System.getenv(\"TMPDIR\")",
+        "LEASE_DIR_VARIABLE = \"ZERODDS_TEST_DOMAIN_DIR\"",
+        "\" ns \" + ns",
+        "\"/proc/self/ns/pid\"",
+        "Files.setLastModifiedTime(path",
     ] {
         assert!(text.contains(needle), "TestDomains.java lacks {needle}");
     }
+}
+
+#[test]
+fn the_java_heartbeat_has_the_timing_of_this_crate() {
+    let text = java();
+    let millis = |name: &str| -> u64 {
+        let marker = format!("long {name} = ");
+        let at = text
+            .find(&marker)
+            .unwrap_or_else(|| panic!("`{name}` is not declared"));
+        let rest = &text[at + marker.len()..];
+        rest[..rest.find(';').expect("a `;`")]
+            .trim()
+            .replace('_', "")
+            .parse()
+            .unwrap_or_else(|why| panic!("`{name}`: {why}"))
+    };
+    assert_eq!(
+        millis("HEARTBEAT_MILLIS"),
+        zerodds_test_domains::HEARTBEAT_MILLIS
+    );
+    assert_eq!(
+        millis("HEARTBEAT_STALE_MILLIS"),
+        zerodds_test_domains::HEARTBEAT_STALE_MILLIS
+    );
+}
+
+#[test]
+fn the_java_share_is_the_share_of_this_crate() {
+    let text = java();
+    let marker = "FOREIGN_DOMAINS = {";
+    let start = text.find(marker).expect("FOREIGN_DOMAINS");
+    let body = &text[start + marker.len()..];
+    let foreign: Vec<i32> = body[..body.find('}').expect("the end of the array")]
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse().expect("a domain"))
+        .collect();
+    assert_eq!(foreign, zerodds_test_domains::FOREIGN_DOMAINS);
+    assert_eq!(
+        i32::try_from(constant(&text, "CI_SHARE_LOW")).unwrap(),
+        zerodds_test_domains::CI_SHARE_LOW
+    );
+    assert_eq!(
+        i32::try_from(constant(&text, "CI_SHARE_HIGH")).unwrap(),
+        zerodds_test_domains::CI_SHARE_HIGH
+    );
+    assert!(text.contains(&format!(
+        "BAND_VARIABLE = \"{}\"",
+        zerodds_test_domains::BAND_VARIABLE
+    )));
 }

@@ -495,7 +495,7 @@ mod tests {
     use core::cell::RefCell;
 
     #[test]
-    fn mqtt_topic_convention() {
+    fn uapubsub_7_3_4_mqtt_topic_convention() {
         assert_eq!(
             mqtt_topic("opcua/json", "pub1", "wg1"),
             "opcua/json/pub1/wg1"
@@ -520,15 +520,19 @@ mod tests {
         }
     }
 
+    /// §7.3.4.9: a NetworkMessage goes to the broker as the body of one
+    /// MQTT message on the configured topic, its octets unchanged.
     #[test]
-    fn mqtt_transport_round_trip() {
-        let t = MqttTransport::new(
-            MockMqtt {
-                inbox: RefCell::new(Vec::new()),
-            },
-            "opcua/uadp/pub1/wg1",
-        );
+    fn uapubsub_7_3_4_9_a_network_message_is_one_mqtt_message_on_the_configured_topic() {
+        let client = MockMqtt {
+            inbox: RefCell::new(Vec::new()),
+        };
+        let t = MqttTransport::new(client, "opcua/uadp/pub1/wg1");
         t.send(&[1, 2, 3, 4]).expect("send");
+        assert_eq!(
+            t.client.inbox.borrow().as_slice(),
+            &[(String::from("opcua/uadp/pub1/wg1"), alloc::vec![1, 2, 3, 4])]
+        );
         assert_eq!(t.receive().expect("recv"), alloc::vec![1, 2, 3, 4]);
         assert_eq!(t.receive(), Err(TransportError::Timeout));
     }
@@ -557,15 +561,20 @@ mod tests {
         }
     }
 
+    /// An AMQP transport (this module's broker binding; Part 14 1.05 maps
+    /// MQTT only) sends each NetworkMessage as one AMQP message to the
+    /// configured address, its octets unchanged.
     #[test]
-    fn amqp_transport_round_trip() {
-        let t = AmqpTransport::new(
-            MockAmqp {
-                inbox: RefCell::new(Vec::new()),
-            },
-            "/topic/pub1.wg1",
-        );
+    fn amqp_transport_sends_one_message_to_the_configured_address() {
+        let client = MockAmqp {
+            inbox: RefCell::new(Vec::new()),
+        };
+        let t = AmqpTransport::new(client, "/topic/pub1.wg1");
         t.send(&[9, 8, 7]).expect("send");
+        assert_eq!(
+            t.client.inbox.borrow().as_slice(),
+            &[(String::from("/topic/pub1.wg1"), alloc::vec![9, 8, 7])]
+        );
         assert_eq!(t.receive().expect("recv"), alloc::vec![9, 8, 7]);
         assert_eq!(t.receive(), Err(TransportError::Timeout));
     }
@@ -587,15 +596,19 @@ mod tests {
         }
     }
 
+    /// A Kafka transport (this module's broker binding) produces each
+    /// NetworkMessage as one record on the configured topic.
     #[test]
-    fn kafka_transport_round_trip() {
-        let t = KafkaTransport::new(
-            MockKafka {
-                log: RefCell::new(Vec::new()),
-            },
-            "opcua.uadp.wg1",
-        );
+    fn kafka_transport_produces_one_record_on_the_configured_topic() {
+        let client = MockKafka {
+            log: RefCell::new(Vec::new()),
+        };
+        let t = KafkaTransport::new(client, "opcua.uadp.wg1");
         t.send(&[4, 5, 6]).expect("send");
+        assert_eq!(
+            t.client.log.borrow().as_slice(),
+            &[(String::from("opcua.uadp.wg1"), alloc::vec![4, 5, 6])]
+        );
         assert_eq!(t.receive().expect("recv"), alloc::vec![4, 5, 6]);
         assert_eq!(t.receive(), Err(TransportError::Timeout));
     }
@@ -616,19 +629,25 @@ mod tests {
         }
     }
 
+    /// §7.3.3: a NetworkMessage is the payload of one Ethernet frame, its
+    /// octets unchanged (the interface writes the EtherType).
     #[test]
-    fn ethernet_transport_round_trip() {
+    fn uapubsub_7_3_3_a_network_message_is_the_payload_of_one_frame() {
         let t = EthernetTransport::new(MockEth {
             wire: RefCell::new(Vec::new()),
         });
-        t.send(&[0xB6, 0x2C]).expect("send");
-        assert_eq!(t.receive().expect("recv"), alloc::vec![0xB6, 0x2C]);
+        t.send(&[0x01, 0x02]).expect("send");
+        assert_eq!(
+            t.interface.wire.borrow().as_slice(),
+            &[alloc::vec![0x01, 0x02]]
+        );
+        assert_eq!(t.receive().expect("recv"), alloc::vec![0x01, 0x02]);
         assert_eq!(t.receive(), Err(TransportError::Timeout));
     }
 
     #[cfg(feature = "std")]
     #[test]
-    fn loopback_round_trip_across_clones() {
+    fn loopback_transport_delivers_in_order_to_its_clones() {
         let tx = LoopbackTransport::new();
         let rx = tx.clone();
         assert_eq!(tx.receive(), Err(TransportError::Timeout));
@@ -642,7 +661,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn udp_unicast_localhost_round_trip() {
+    fn uapubsub_7_3_2_a_network_message_is_one_udp_datagram() {
         use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4};
 
         // Bind the receiver first to learn its ephemeral port.

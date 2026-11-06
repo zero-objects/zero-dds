@@ -53,30 +53,28 @@ mod tests {
             @final struct F { long a; };
             @appendable struct A { long v; };
             @mutable struct M { long a; };
+            struct D { long a; };
         };
     ";
 
+    /// DDS-XTypes 1.3 §7.4.1.1 and §7.4.2: under XCDR1 a final or
+    /// appendable struct is PLAIN_CDR and a mutable one PL_CDR; under XCDR2
+    /// PLAIN_CDR2, DELIMITED_CDR and PL_CDR2. A struct without an
+    /// extensibility annotation is appendable (§7.3.1.2.1.8), so its XCDR2
+    /// form is delimited: a reader that assumed plain would be one delimiter
+    /// out on every sample.
     #[test]
-    fn the_table_is_the_one_in_the_spec() {
+    fn xtypes_7_4_2_the_encoding_follows_the_extensibility_and_the_xcdr_version() {
         let book = TypeBook::from_idl(IDL).expect("idl");
         for (name, xcdr1, xcdr2) in [
             ("demo::F", Encoding::PlainCdr1, Encoding::PlainCdr2),
             ("demo::A", Encoding::PlainCdr1, Encoding::DelimitedCdr),
             ("demo::M", Encoding::PlCdr1, Encoding::PlCdr2),
+            ("demo::D", Encoding::PlainCdr1, Encoding::DelimitedCdr),
         ] {
             let ty = book.resolve(name).expect(name);
             assert_eq!(encoding_of(&ty, false), xcdr1, "{name} under XCDR1");
             assert_eq!(encoding_of(&ty, true), xcdr2, "{name} under XCDR2");
         }
-    }
-
-    /// A struct with no extensibility annotation takes the model's answer,
-    /// which is `@appendable` — so its XCDR2 form is delimited. A reader that
-    /// assumed plain here would be one delimiter out on every sample.
-    #[test]
-    fn an_unannotated_struct_is_delimited_under_xcdr2() {
-        let book = TypeBook::from_idl("module demo { struct D { long a; }; };").expect("idl");
-        let ty = book.resolve("demo::D").expect("D");
-        assert_eq!(encoding_of(&ty, true), Encoding::DelimitedCdr);
     }
 }

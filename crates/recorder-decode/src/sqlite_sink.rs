@@ -49,6 +49,8 @@ use zerodds_types::dynamic::DynamicData;
 use zerodds_types::dynamic::descriptor::TypeKind;
 use zerodds_types::dynamic::type_::DynamicType;
 
+use crate::RawSample;
+
 /// SQLite sink error.
 #[derive(Debug)]
 pub enum SqliteError {
@@ -225,13 +227,26 @@ impl SqliteSink {
         let mut ddl = format!(
             "CREATE TABLE IF NOT EXISTS {main} (\n  \
              sample_id INTEGER PRIMARY KEY AUTOINCREMENT,\n  \
-             recv_ts_ns INTEGER,\n  writer TEXT,\n  raw_cdr BLOB"
+             recv_ts_ns INTEGER,\n  writer TEXT,\n  raw_cdr BLOB,\n  \
+             representation_identifier BLOB"
         );
         for c in &cols {
             ddl.push_str(&format!(",\n  {} {}", c.name, c.sql_ty));
         }
         ddl.push_str("\n);");
         self.conn.execute_batch(&ddl)?;
+        // A table a recording before the column existed made gets it.
+        let has_column = self
+            .conn
+            .prepare(&format!(
+                "SELECT 1 FROM pragma_table_info('{main}') WHERE name = 'representation_identifier'"
+            ))?
+            .exists([])?;
+        if !has_column {
+            self.conn.execute_batch(&format!(
+                "ALTER TABLE {main} ADD COLUMN representation_identifier BLOB;"
+            ))?;
+        }
 
         let mut skipped = Vec::new();
         for ch in children(ty, &mut skipped) {
@@ -280,7 +295,7 @@ impl SqliteSink {
         ty: &DynamicType,
         recv_ts_ns: i64,
         writer_hex: &str,
-        raw_cdr: &[u8],
+        raw: RawSample<'_>,
         data: &DynamicData,
     ) -> R<i64> {
         // One transaction for the whole sample. Without it every
@@ -294,7 +309,7 @@ impl SqliteSink {
         // halfway through used to leave the parent row behind with some
         // of its children missing.
         self.conn.execute_batch("BEGIN")?;
-        let result = self.insert_sample_committed(topic, ty, recv_ts_ns, writer_hex, raw_cdr, data);
+        let result = self.insert_sample_committed(topic, ty, recv_ts_ns, writer_hex, raw, data);
         if result.is_ok() {
             self.conn.execute_batch("COMMIT")?;
         } else {
@@ -312,7 +327,7 @@ impl SqliteSink {
         ty: &DynamicType,
         recv_ts_ns: i64,
         writer_hex: &str,
-        raw_cdr: &[u8],
+        raw: RawSample<'_>,
         data: &DynamicData,
     ) -> R<i64> {
         let main = main_table(topic);
@@ -322,11 +337,14 @@ impl SqliteSink {
             "recv_ts_ns".to_string(),
             "writer".to_string(),
             "raw_cdr".to_string(),
+            "representation_identifier".to_string(),
         ];
         let mut vals: Vec<SqlValue> = vec![
             SqlValue::Integer(recv_ts_ns),
             SqlValue::Text(writer_hex.to_string()),
-            SqlValue::Blob(raw_cdr.to_vec()),
+            SqlValue::Blob(raw.body.to_vec()),
+            raw.representation_identifier
+                .map_or(SqlValue::Null, |id| SqlValue::Blob(id.to_vec())),
         ];
         for c in &cols {
             names.push(c.name.clone());
@@ -608,8 +626,6 @@ fn scalar_param(v: &DynamicData) -> SqlValue {
 mod tests {
     use super::*;
     use crate::type_source::TypeBook;
-    use zerodds_ast_layout::key::{Encoding, Endianness};
-    use zerodds_wire_codec::{ProbeRequest, decode, encode};
 
     const IDL: &str = r"
         module cuas {
@@ -627,17 +643,13 @@ mod tests {
         DynamicData::Integer { kind: None, value }
     }
 
-    /// Build the value, put it on the wire, and read it back — the table is
-    /// filled from what a peer would have sent, not from the tree that was
-    /// constructed here.
-    fn decoded(book: &TypeBook, type_name: &str, value: &DynamicData) -> DynamicData {
-        let request = ProbeRequest::new(type_name, Encoding::DelimitedCdr, Endianness::Little);
-        let bytes = encode(book.ast(), &request, value).expect("encode");
-        decode(book.ast(), &request, &bytes).expect("decode")
-    }
-
+    /// `zerodds-record(1)`, `--out-sqlite`: per-topic SQLite. A topic is a
+    /// table `t_<topic>` with a column per member, a nested struct's
+    /// members flattened (`nested__a`), the body in `raw_cdr`, a sequence
+    /// in a child table by `sample_id` and `idx`, and the IDL in `_types`;
+    /// declaring the topic again changes nothing.
     #[test]
-    fn per_topic_schema_insert_and_query() {
+    fn a_topic_is_a_table_with_a_column_per_flattened_member() {
         let book = TypeBook::from_idl(IDL).expect("idl");
         let ty = book.resolve("cuas::Track").expect("type");
         let value = DynamicData::Aggregate(vec![
@@ -655,13 +667,23 @@ mod tests {
                 DynamicData::Collection(vec![int(10), int(20), int(30)]),
             ),
         ]);
-        let d = decoded(&book, "cuas::Track", &value);
+        let d = value;
 
         let mut sink = SqliteSink::open_in_memory().expect("db");
         sink.ensure_topic("Track", "cuas::Track", IDL, &ty)
             .expect("schema");
         let sid = sink
-            .insert_sample("Track", &ty, 1_700, "aabbccdd", &[0xde, 0xad], &d)
+            .insert_sample(
+                "Track",
+                &ty,
+                1_700,
+                "aabbccdd",
+                RawSample {
+                    body: &[0xde, 0xad],
+                    representation_identifier: Some([0x00, 0x07]),
+                },
+                &d,
+            )
             .expect("insert");
         assert_eq!(sid, 1);
 
@@ -706,20 +728,15 @@ mod tests {
         assert!(sink.skipped_members().is_empty());
     }
 
-    /// A `uint64` above `2^63` used to be written with `as i64` and landed as
-    /// a negative number. It is now the exact decimal.
+    /// A value is stored without losing digits: a `uint64` above 2^63 (that
+    /// `as i64` made negative) as its exact decimal text, what fits an
+    /// integer as an integer; a `long double` (113 bits of significand) as
+    /// TEXT, a `double` as REAL.
     #[test]
-    fn an_unsigned_64_bit_value_is_not_wrapped_into_a_negative() {
+    fn a_value_is_stored_without_losing_digits() {
         let big = i128::from(u64::MAX);
         assert_eq!(scalar_param(&int(big)), SqlValue::Text(big.to_string()));
-        // What still fits stays a number.
         assert_eq!(scalar_param(&int(9)), SqlValue::Integer(9));
-    }
-
-    /// `long double` was declared `REAL`, so 113 bits of significand were
-    /// written into 53.
-    #[test]
-    fn a_long_double_is_stored_as_text_not_as_a_double() {
         assert_eq!(sql_type(TypeKind::Float128), "TEXT");
         assert_eq!(sql_type(TypeKind::Float64), "REAL");
     }
@@ -755,9 +772,19 @@ mod tests {
                 DynamicData::Bits(vec![DynamicData::Text(String::from("FLAG_B"))]),
             ),
         ]);
-        let d = decoded(&book, "m::S", &value);
-        sink.insert_sample("S", &ty, 1, "00", &[], &d)
-            .expect("insert");
+        let d = value;
+        sink.insert_sample(
+            "S",
+            &ty,
+            1,
+            "00",
+            RawSample {
+                body: &[],
+                representation_identifier: Some([0x00, 0x07]),
+            },
+            &d,
+        )
+        .expect("insert");
 
         let (k, v): (String, i64) = sink
             .conn()

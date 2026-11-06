@@ -100,7 +100,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn heartbeat_le_roundtrip() {
+    fn xrce_8_3_5_12_heartbeat_le_roundtrip() {
         let p = HeartbeatPayload {
             first_unacked_seq_nr: 5,
             last_unacked_seq_nr: 100,
@@ -112,7 +112,7 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_be_roundtrip() {
+    fn xrce_8_3_4_2_heartbeat_be_roundtrip() {
         let p = HeartbeatPayload {
             first_unacked_seq_nr: 0x0102,
             last_unacked_seq_nr: 0x0304,
@@ -128,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn heartbeat_roundtrip_via_submessage() {
+    fn xrce_8_3_5_12_heartbeat_roundtrip_via_submessage() {
         let p = HeartbeatPayload {
             first_unacked_seq_nr: -10,
             last_unacked_seq_nr: 10,

@@ -171,9 +171,9 @@ fn compile(root: &Path, test: &str) -> PathBuf {
 
 /// §7.5.1.2: the generated codec writes and reads the octets of the clause.
 #[test]
-fn the_generated_java_codec_writes_the_octets_of_the_clause() {
+fn rpc_7_7_2_1_the_generated_java_codec_writes_the_octets_of_the_clause() {
     if !toolchain() {
-        println!("no JDK on this machine — the Java codec is not measured here");
+        println!("NOT RUN: no JDK (javac, java) on the path; the Java codec is not measured.");
         return;
     }
     let root = repository_root();
@@ -209,9 +209,11 @@ fn the_generated_java_codec_writes_the_octets_of_the_clause() {
 /// know as `REMOTE_EX_UNKNOWN_EXCEPTION`, and the generated `Support` names the
 /// interface.
 #[test]
-fn the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses() {
+fn rpc_7_5_1_2_1_1_the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses() {
     if !toolchain() {
-        println!("no JDK on this machine — the Java Enhanced run time is not measured here");
+        println!(
+            "NOT RUN: no JDK (javac, java) on the path; the Java Enhanced run time is not measured."
+        );
         return;
     }
     let root = repository_root();
@@ -246,7 +248,7 @@ fn the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses()
 #[test]
 fn two_generated_java_versions_of_an_interface_run_against_each_other() {
     if !toolchain() {
-        println!("no JDK on this machine — the Java evolution is not measured here");
+        println!("NOT RUN: no JDK (javac, java) on the path; the Java evolution is not measured.");
         return;
     }
     let root = repository_root();

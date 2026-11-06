@@ -22,12 +22,12 @@ ros2-shim.
 `crates/rmw-zerodds-shim/src/bin/zerodds-ros2-shim.rs`.
 
 **Tests:** Ein E2E-Test pro Daemon:
-`crates/websocket-bridge/tests/daemon_e2e.rs::handshake_roundtrip_succeeds`,
-`crates/mqtt-bridge/tests/daemon_e2e.rs::daemon_connects_and_subscribes`,
-`crates/coap-bridge/tests/daemon_e2e.rs::post_to_configured_path_returns_2_04_changed`,
-`crates/amqp-endpoint/tests/bridge_e2e.rs::version_flag_emits_one_line_and_exits_zero`,
-`crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`,
-`crates/corba-dds-bridge/tests/bridge_e2e.rs::a_request_to_an_unknown_object_is_object_not_exist`,
+`crates/websocket-bridge/tests/daemon_e2e.rs::wsbridge_2_handshake_roundtrip_succeeds`,
+`crates/mqtt-bridge/tests/daemon_e2e.rs::mqttbridge_2_daemon_connects_and_subscribes`,
+`crates/coap-bridge/tests/daemon_e2e.rs::coapbridge_2_post_to_configured_path_returns_2_04_changed`,
+`crates/amqp-endpoint/tests/bridge_e2e.rs::amqpbridge_2_version_flag_emits_one_line_and_exits_zero`,
+`crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`,
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_4_2_a_request_to_an_unknown_object_is_object_not_exist`,
 `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::selftest_succeeds`.
 
 **Status:** done
@@ -40,11 +40,11 @@ ros2-shim.
 **Repo:** `crates/zerodds-c-api/Cargo.toml` (cdylib),
 `crates/zerodds-c-api/include/zerodds.h`.
 
-**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs::ffi_pub_sub_roundtrip`,
-`::ffi_handles_null_safely`, `::ffi_pub_sub_roundtrip_via_loan`;
+**Tests:** `crates/zerodds-c-api/tests/smoke_ffi.rs::capi_11_1_ffi_pub_sub_roundtrip`,
+`::deployment_1_2_ffi_handles_null_safely`, `::deployment_1_2_ffi_pub_sub_roundtrip_via_loan`;
 the header itself
-`crates/zerodds-c-api/tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree`
-and `::abi_snapshot_matches`.
+`crates/zerodds-c-api/tests/abi_compat.rs::deployment_1_2_the_header_macro_and_the_exported_revision_agree`
+and `::capi_10_1_abi_snapshot_matches`.
 
 **Status:** done
 
@@ -63,10 +63,10 @@ coap-bridged,amqp-bridged,grpc-bridged,corba-bridged}.1`
 (cluster-C CLI coverage audit).
 
 **Tests:** One smoke test per tool, among them
-`tools/idlc/src/format.rs::tests::the_corpus_formats_idempotently_and_round_trips`,
-`tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/lint.rs::tests::a_clean_file_reports_nothing`,
-`tools/idlc/src/dump.rs::tests::the_tree_names_every_type_and_its_members`,
+`tools/idlc/src/format.rs::tests::deployment_1_3_the_corpus_formats_idempotently_and_round_trips`,
+`tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/lint.rs::tests::deployment_1_3_a_clean_file_reports_nothing`,
+`tools/idlc/src/dump.rs::tests::deployment_1_3_the_tree_names_every_type_and_its_members`,
 `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::version_emits_one_line`,
 `::validate_with_minimal_yaml_succeeds`, `::info_includes_rmw_compat_marker`,
 `::doctor_clean_ros_env_passes`.
@@ -171,7 +171,7 @@ brew-services integration.
 
 **Repo:** `packaging/macos/homebrew/{zerodds.rb,zerodds-ws-bridge.rb,zerodds-mqtt-bridge.rb,zerodds-coap-bridge.rb,zerodds-amqp-bridge.rb,zerodds-grpc-bridge.rb,zerodds-corba-bridge.rb,zerodds-ros2.rb}`,
 `packaging/github-actions/render-homebrew.sh`,
-`packaging/macos/bundle/build-bundle.sh`, `ci/full.yml` (`macos-bundle`).
+`packaging/macos/bundle/build-bundle.sh`, `ci/jobs/macos-bundle.yml` (`macos-bundle`).
 
 **Tests:** `tools/traceability/tests/deployment_layout.rs::every_homebrew_formula_declares_a_brew_service`,
 `tools/traceability/tests/deployment_layout.rs::the_bundle_packer_lays_out_what_the_formula_installs`,
@@ -332,7 +332,7 @@ per crate; rc.1/rc.2/final 1.0.0.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — list of references.
 
 ## §9 Versioning
 
@@ -346,25 +346,27 @@ distros (NixOS/Alpine/SUSE-OBS), major=layout change
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — rule for assigning the version number, not a property of the packages.
 
 ---
 
 ## Audit status
 
-23 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 blocked / 2 n/a (informative).
 
-Test run:
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-deployment-1.0.md`):
 
-* `cargo test -p zerodds-traceability --test deployment_layout` — 22 tests
-  green. One test per clause from §2 through §7; each opens the file the
-  clause names and checks its content (FHS paths, package split, systemd
-  hardening across all seven units, launchd keys across all seven plists,
-  MSI features, Scoop architectures, cargo-chef stages, cargo-dist
-  targets, workspace version across every member manifest).
-* `cargo test -p zerodds-traceability --test macos_bundle_ci_job` — 1 test
-  green: the `macos-bundle` job of `ci/full.yml`. The GitLab CI
-  configuration is not part of the public mirror, and neither is this test.
-* `cargo test -p zerodds-websocket-bridge -p zerodds-mqtt-bridge -p zerodds-coap-bridge -p zerodds-amqp-endpoint -p zerodds-grpc-bridge -p zerodds-corba-dds-bridge -p rmw-zerodds-shim -p zerodds-c-api` — tests green, 0 failed.
+* `cargo nextest run --profile merge -p zerodds-amqp-endpoint --all-targets` (job `merge-rust-amqp-endpoint`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (job `merge-rust-c-api`) — 5 tests green.
+* `cargo nextest run --profile merge -p zerodds-coap-bridge --all-targets` (job `merge-rust-coap-bridge`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-corba-dds-bridge --all-targets` (job `merge-rust-corba-dds-bridge`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-grpc-bridge --all-targets` (job `merge-rust-grpc-bridge`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 4 tests green.
+* `cargo nextest run --profile merge -p zerodds-mqtt-bridge --all-targets` (job `merge-rust-mqtt-bridge`) — 1 test green.
+* `cargo nextest run --profile merge -p rmw-zerodds-shim --all-targets` (job `merge-rust-rmw-zerodds-shim`) — 5 tests green.
+* `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (job `merge-rust-traceability`) — 22 tests green.
+* `cargo nextest run --profile merge -p zerodds-websocket-bridge --all-targets` (job `merge-rust-websocket-bridge`) — 1 test green.
 
-No open items or decision records — all items `done` / `n/a (informative)`.
+42 cited tests green, 0 not green.
+
+Open items: none.

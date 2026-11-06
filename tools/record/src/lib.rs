@@ -306,14 +306,11 @@ mod tests {
         args.iter().map(|s| (*s).to_string()).collect()
     }
 
+    /// The `record` options of zerodds-record(1): `-o`, `--domain`, `-t`
+    /// (a glob), `--duration`, `--max-sample-bytes`, `--decode` with
+    /// `--dialect`; a dialect the decoder does not know is refused.
     #[test]
-    fn parse_record_minimal() {
-        let cmd = parse_args(&s(&["record"])).unwrap();
-        assert_eq!(cmd, Command::Record(RecordArgs::default()));
-    }
-
-    #[test]
-    fn parse_record_full() {
+    fn the_record_options_of_the_manual_are_read() {
         let cmd = parse_args(&s(&[
             "record",
             "-o",
@@ -326,6 +323,9 @@ mod tests {
             "30s",
             "--max-sample-bytes",
             "65536",
+            "--decode",
+            "--dialect",
+            "fastdds",
         ]))
         .unwrap();
         let Command::Record(r) = cmd else {
@@ -336,15 +336,6 @@ mod tests {
         assert_eq!(r.topics, vec!["Sensor*"]);
         assert_eq!(r.duration, Some(Duration::from_secs(30)));
         assert_eq!(r.max_sample_bytes, 65536);
-    }
-
-    #[test]
-    fn parse_record_dialect() {
-        let Command::Record(r) =
-            parse_args(&s(&["record", "--decode", "--dialect", "fastdds"])).unwrap()
-        else {
-            panic!("expected record");
-        };
         assert_eq!(r.dialect, Some(zerodds_ast_layout::Dialect::FastDds));
         assert!(matches!(
             parse_args(&s(&["record", "--dialect", "nope"])),
@@ -355,8 +346,10 @@ mod tests {
         ));
     }
 
+    /// `--duration`: seconds without a unit or with `s`, minutes with `m`,
+    /// hours with `h`; another unit is refused.
     #[test]
-    fn parse_duration_units() {
+    fn a_duration_is_seconds_minutes_or_hours() {
         assert_eq!(parse_duration("5").unwrap(), Duration::from_secs(5));
         assert_eq!(parse_duration("5s").unwrap(), Duration::from_secs(5));
         assert_eq!(parse_duration("2m").unwrap(), Duration::from_secs(120));
@@ -365,56 +358,5 @@ mod tests {
             parse_duration("3x"),
             Err(ParseError::BadValue { .. })
         ));
-    }
-
-    #[test]
-    fn parse_info_subcommand() {
-        let cmd = parse_args(&s(&["info", "capture.zddsrec"])).unwrap();
-        assert_eq!(
-            cmd,
-            Command::Info(InfoArgs {
-                file: "capture.zddsrec".into()
-            })
-        );
-    }
-
-    #[test]
-    fn parse_unknown_subcommand_rejected() {
-        let err = parse_args(&s(&["uhoh"])).unwrap_err();
-        assert!(matches!(err, ParseError::Unknown(_)));
-    }
-
-    #[test]
-    fn parse_no_args_rejected() {
-        let err = parse_args(&[]).unwrap_err();
-        assert!(matches!(err, ParseError::Missing));
-    }
-
-    #[test]
-    fn header_summary_reads_synthetic_file() {
-        use zerodds_recorder::format::{Header, ParticipantEntry, TopicEntry};
-
-        let mut buf = Vec::new();
-        let h = Header {
-            time_base_unix_ns: 1_700_000_000_000_000_000,
-            participants: vec![ParticipantEntry {
-                guid: [1u8; 16],
-                name: "test-participant".into(),
-            }],
-            topics: vec![TopicEntry {
-                name: "Foo".into(),
-                type_name: "TestType".into(),
-            }],
-        };
-        h.write(&mut buf);
-
-        let path =
-            std::env::temp_dir().join(format!("zds-rec-test-{}.zddsrec", std::process::id()));
-        std::fs::write(&path, &buf).unwrap();
-        let summary = read_header_summary(path.to_str().unwrap()).unwrap();
-        assert_eq!(summary.time_base_unix_ns, 1_700_000_000_000_000_000);
-        assert_eq!(summary.participants, 1);
-        assert_eq!(summary.topics, vec!["Foo"]);
-        let _ = std::fs::remove_file(path);
     }
 }

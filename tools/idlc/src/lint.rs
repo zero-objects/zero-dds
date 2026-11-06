@@ -640,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn a_clean_file_reports_nothing() {
+    fn deployment_1_3_a_clean_file_reports_nothing() {
         let got = messages("module m { @appendable struct S { @key long id; string name; }; };");
         assert!(got.is_empty(), "{got:?}");
     }

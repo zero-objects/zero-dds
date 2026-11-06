@@ -100,10 +100,10 @@ impl<'a> AstTransaction<'a> {
 
 impl Drop for AstTransaction<'_> {
     fn drop(&mut self) {
-        if !self.finished {
-            if let Some(log) = self.ast.pending.take() {
-                self.ast.apply_rollback(&log);
-            }
+        if !self.finished
+            && let Some(log) = self.ast.pending.take()
+        {
+            self.ast.apply_rollback(&log);
         }
     }
 }
@@ -209,14 +209,14 @@ impl Ast {
                 let FieldValue::Bool(complete) = value else {
                     return;
                 };
-                if let Some(id) = any.as_type() {
-                    if let Ok(t) = self.types.get_mut(id) {
-                        t.completeness = if *complete {
-                            crate::Completeness::Complete
-                        } else {
-                            crate::Completeness::Forward
-                        };
-                    }
+                if let Some(id) = any.as_type()
+                    && let Ok(t) = self.types.get_mut(id)
+                {
+                    t.completeness = if *complete {
+                        crate::Completeness::Complete
+                    } else {
+                        crate::Completeness::Forward
+                    };
                 }
             }
             crate::field::NAME => {
@@ -261,10 +261,10 @@ impl Ast {
         let back = Ref::Pending(key.clone());
         match any {
             AnyId::Type(id, _) => {
-                if let Ok(t) = self.types.get_mut(id) {
-                    if let Some(reference) = t.kind.type_refs_mut().into_iter().nth(slot) {
-                        *reference = back;
-                    }
+                if let Ok(t) = self.types.get_mut(id)
+                    && let Some(reference) = t.kind.type_refs_mut().into_iter().nth(slot)
+                {
+                    *reference = back;
                 }
             }
             AnyId::Member(id, _) => {
@@ -302,16 +302,16 @@ impl Ast {
                     let any = AnyId::Member(id, node_id);
                     let _ = self.by_node_id.insert(node_id, any);
                     self.index_node(any);
-                    if let Some(type_id) = parent.as_type() {
-                        if let Ok(t) = self.types.get_mut(type_id) {
-                            match &mut t.kind {
-                                TypeKind::Structure { members, .. }
-                                | TypeKind::Valuetype { state: members, .. } => {
-                                    let at = position.min(members.len());
-                                    members.insert(at, id);
-                                }
-                                _ => {}
+                    if let Some(type_id) = parent.as_type()
+                        && let Ok(t) = self.types.get_mut(type_id)
+                    {
+                        match &mut t.kind {
+                            TypeKind::Structure { members, .. }
+                            | TypeKind::Valuetype { state: members, .. } => {
+                                let at = position.min(members.len());
+                                members.insert(at, id);
                             }
+                            _ => {}
                         }
                     }
                 }
@@ -469,10 +469,29 @@ impl Ast {
         };
         let mut out = Vec::new();
         match &node.kind {
-            TypeKind::Structure { members, .. } | TypeKind::Valuetype { state: members, .. } => {
+            TypeKind::Structure { members, .. } => {
                 for member in members {
                     if let Ok(m) = self.members.get(*member) {
                         out.push(AnyId::Member(*member, m.node_id));
+                    }
+                }
+            }
+            // A value type owns its state, its operations and its
+            // attributes (rule (105)); the last two name it as their parent.
+            TypeKind::Valuetype { state, .. } => {
+                for member in state {
+                    if let Ok(m) = self.members.get(*member) {
+                        out.push(AnyId::Member(*member, m.node_id));
+                    }
+                }
+                for operation in self.operations_of_value(id) {
+                    if let Ok(o) = self.operations.get(operation) {
+                        out.push(AnyId::Operation(operation, o.node_id));
+                    }
+                }
+                for attribute in self.attributes_of_value(id) {
+                    if let Ok(a) = self.attributes.get(attribute) {
+                        out.push(AnyId::Attribute(attribute, a.node_id));
                     }
                 }
             }
@@ -557,15 +576,15 @@ impl Ast {
             AnyId::Member(id, _) => {
                 if let Ok(node) = self.members.get(id) {
                     let parent = node.parent;
-                    if let Some(type_id) = parent.as_type() {
-                        if let Ok(t) = self.types.get_mut(type_id) {
-                            match &mut t.kind {
-                                TypeKind::Structure { members, .. }
-                                | TypeKind::Valuetype { state: members, .. } => {
-                                    members.retain(|m| *m != id);
-                                }
-                                _ => {}
+                    if let Some(type_id) = parent.as_type()
+                        && let Ok(t) = self.types.get_mut(type_id)
+                    {
+                        match &mut t.kind {
+                            TypeKind::Structure { members, .. }
+                            | TypeKind::Valuetype { state: members, .. } => {
+                                members.retain(|m| *m != id);
                             }
+                            _ => {}
                         }
                     }
                 }
@@ -574,17 +593,16 @@ impl Ast {
             AnyId::Case(id, _) => {
                 if let Ok(node) = self.cases.get(id) {
                     let parent = node.parent;
-                    if let Ok(t) = self.types.get_mut(parent) {
-                        if let TypeKind::Union {
+                    if let Ok(t) = self.types.get_mut(parent)
+                        && let TypeKind::Union {
                             cases,
                             default_case,
                             ..
                         } = &mut t.kind
-                        {
-                            cases.retain(|c| *c != id);
-                            if *default_case == Some(id) {
-                                *default_case = None;
-                            }
+                    {
+                        cases.retain(|c| *c != id);
+                        if *default_case == Some(id) {
+                            *default_case = None;
                         }
                     }
                 }
@@ -593,10 +611,10 @@ impl Ast {
             AnyId::Enumerator(id, _) => {
                 if let Ok(node) = self.enumerators.get(id) {
                     let parent = node.parent;
-                    if let Ok(t) = self.types.get_mut(parent) {
-                        if let TypeKind::Enumeration { enumerators } = &mut t.kind {
-                            enumerators.retain(|e| *e != id);
-                        }
+                    if let Ok(t) = self.types.get_mut(parent)
+                        && let TypeKind::Enumeration { enumerators } = &mut t.kind
+                    {
+                        enumerators.retain(|e| *e != id);
                     }
                 }
                 let _ = self.enumerators.remove(id);
@@ -604,10 +622,10 @@ impl Ast {
             AnyId::BitValue(id, _) => {
                 if let Ok(node) = self.bit_values.get(id) {
                     let parent = node.parent;
-                    if let Ok(t) = self.types.get_mut(parent) {
-                        if let TypeKind::Bitmask { bits } = &mut t.kind {
-                            bits.retain(|b| *b != id);
-                        }
+                    if let Ok(t) = self.types.get_mut(parent)
+                        && let TypeKind::Bitmask { bits } = &mut t.kind
+                    {
+                        bits.retain(|b| *b != id);
                     }
                 }
                 let _ = self.bit_values.remove(id);
@@ -615,21 +633,20 @@ impl Ast {
             AnyId::Bitfield(id, _) => {
                 if let Ok(node) = self.bitfields.get(id) {
                     let parent = node.parent;
-                    if let Ok(t) = self.types.get_mut(parent) {
-                        if let TypeKind::Bitset { fields, .. } = &mut t.kind {
-                            fields.retain(|f| *f != id);
-                        }
+                    if let Ok(t) = self.types.get_mut(parent)
+                        && let TypeKind::Bitset { fields, .. } = &mut t.kind
+                    {
+                        fields.retain(|f| *f != id);
                     }
                 }
                 let _ = self.bitfields.remove(id);
             }
             AnyId::Module(id, _) => {
-                if let Ok(node) = self.modules.get(id) {
-                    if let Some(parent) = node.parent {
-                        if let Ok(m) = self.modules.get_mut(parent) {
-                            m.children.retain(|c| c.node_id() != node_id);
-                        }
-                    }
+                if let Ok(node) = self.modules.get(id)
+                    && let Some(parent) = node.parent
+                    && let Ok(m) = self.modules.get_mut(parent)
+                {
+                    m.children.retain(|c| c.node_id() != node_id);
                 }
                 let _ = self.modules.remove(id);
             }
@@ -663,17 +680,16 @@ impl Ast {
             }
             AnyId::Operation(id, _) => {
                 if let Ok(node) = self.operations.get(id) {
-                    if let Some(interface) = node.parent.as_interface() {
-                        if let Ok(i) = self.interfaces.get_mut(interface) {
-                            i.operations.retain(|o| *o != id);
-                        }
+                    if let Some(interface) = node.parent.as_interface()
+                        && let Ok(i) = self.interfaces.get_mut(interface)
+                    {
+                        i.operations.retain(|o| *o != id);
                     }
-                    if let Some(type_id) = node.parent.as_type() {
-                        if let Ok(t) = self.types.get_mut(type_id) {
-                            if let TypeKind::Valuetype { initializers, .. } = &mut t.kind {
-                                initializers.retain(|o| *o != id);
-                            }
-                        }
+                    if let Some(type_id) = node.parent.as_type()
+                        && let Ok(t) = self.types.get_mut(type_id)
+                        && let TypeKind::Valuetype { initializers, .. } = &mut t.kind
+                    {
+                        initializers.retain(|o| *o != id);
                     }
                 }
                 let _ = self.operations.remove(id);
@@ -688,11 +704,11 @@ impl Ast {
                 let _ = self.params.remove(id);
             }
             AnyId::Attribute(id, _) => {
-                if let Ok(node) = self.attributes.get(id) {
-                    let parent = node.parent;
-                    if let Ok(i) = self.interfaces.get_mut(parent) {
-                        i.attributes.retain(|a| *a != id);
-                    }
+                if let Ok(node) = self.attributes.get(id)
+                    && let AnyId::Interface(parent, _) = node.parent
+                    && let Ok(i) = self.interfaces.get_mut(parent)
+                {
+                    i.attributes.retain(|a| *a != id);
                 }
                 let _ = self.attributes.remove(id);
             }

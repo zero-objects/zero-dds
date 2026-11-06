@@ -599,26 +599,26 @@ impl CodecTarget for TypeScript {
         // A slice pattern rather than a length check and two `next()`
         // calls: the pattern binds both arguments or neither, so no
         // branch is left over to claim it cannot be reached.
-        if callee == "strcmp" {
-            if let [left, right] = args.as_slice() {
-                return ts::Expr::Paren(Box::new(ts::Expr::Ternary {
+        if callee == "strcmp"
+            && let [left, right] = args.as_slice()
+        {
+            return ts::Expr::Paren(Box::new(ts::Expr::Ternary {
+                condition: Box::new(ts::Expr::Binary {
+                    op: "<",
+                    lhs: Box::new(left.clone()),
+                    rhs: Box::new(right.clone()),
+                }),
+                then: Box::new(Self::int(-1)),
+                otherwise: Box::new(ts::Expr::Ternary {
                     condition: Box::new(ts::Expr::Binary {
-                        op: "<",
+                        op: ">",
                         lhs: Box::new(left.clone()),
                         rhs: Box::new(right.clone()),
                     }),
-                    then: Box::new(Self::int(-1)),
-                    otherwise: Box::new(ts::Expr::Ternary {
-                        condition: Box::new(ts::Expr::Binary {
-                            op: ">",
-                            lhs: Box::new(left.clone()),
-                            rhs: Box::new(right.clone()),
-                        }),
-                        then: Box::new(Self::int(1)),
-                        otherwise: Box::new(Self::int(0)),
-                    }),
-                }));
-            }
+                    then: Box::new(Self::int(1)),
+                    otherwise: Box::new(Self::int(0)),
+                }),
+            }));
         }
         ts::Expr::Call {
             callee: Box::new(ts::Expr::Path(Self::path(callee))),
@@ -1024,10 +1024,10 @@ impl CodecTarget for TypeScript {
     /// than off the model — a third reading of that mapping is how the
     /// declaration and the comparison come to describe different arms.
     fn cast(type_: Self::Type, value: Self::Expr) -> Self::Expr {
-        if let ts::Expr::Literal(Literal::Int(text)) = &value {
-            if let Some(literal) = literal_as(&type_, text) {
-                return ts::Expr::Literal(literal);
-            }
+        if let ts::Expr::Literal(Literal::Int(text)) = &value
+            && let Some(literal) = literal_as(&type_, text)
+        {
+            return ts::Expr::Literal(literal);
         }
         // The walk's `signed char` — the C spelling of a map key's
         // signed order — has no type here: an IDL `char` is a

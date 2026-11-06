@@ -1620,7 +1620,7 @@ mod tests {
     /// messages of the RFC; the client-final and the server signature are
     /// the RFC's bytes.
     #[test]
-    fn scram_client_final_matches_the_rfc_7677_example() {
+    fn amqpbridge_7_2_scram_client_final_matches_the_rfc_7677_example() {
         let (fin, sig) = scram_client_final(
             "n=user,r=rOprNGfwEbeRWgbNEkqO",
             "rOprNGfwEbeRWgbNEkqO",
@@ -1641,21 +1641,38 @@ mod tests {
         assert!(scram_client_final("n=u,r=abc", "abc", "r=abcd,s=AAAA,i=1000", "p").is_err());
     }
 
+    /// AMQP 1.0 Part 3 §3.4: the outcomes are described lists, accepted
+    /// 0x24, rejected 0x25 with its error (Part 2 §2.8.14, 0x1d: condition
+    /// symbol, description string), released 0x26, modified 0x27 with
+    /// delivery-failed and undeliverable-here.
     #[test]
-    fn outcomes_round_trip_through_their_described_form() {
-        for o in [
-            Outcome::Accepted,
-            Outcome::Released,
-            Outcome::Rejected(Some(AmqpError {
-                condition: "amqp:decode-error".into(),
-                description: Some("bad body".into()),
-            })),
-            Outcome::Modified {
-                delivery_failed: true,
-                undeliverable_here: false,
-            },
+    fn amqp10_3_4_the_outcomes_are_their_described_lists() {
+        let mut rejected = vec![0x00, 0x53, 0x25, 0xc0, 0x24, 0x01];
+        rejected.extend_from_slice(&[0x00, 0x53, 0x1d, 0xc0, 0x1e, 0x02, 0xa3, 0x11]);
+        rejected.extend_from_slice(b"amqp:decode-error");
+        rejected.extend_from_slice(&[0xa1, 0x08]);
+        rejected.extend_from_slice(b"bad body");
+        for (o, octets) in [
+            (Outcome::Accepted, vec![0x00, 0x53, 0x24, 0x45]),
+            (Outcome::Released, vec![0x00, 0x53, 0x26, 0x45]),
+            (
+                Outcome::Rejected(Some(AmqpError {
+                    condition: "amqp:decode-error".into(),
+                    description: Some("bad body".into()),
+                })),
+                rejected,
+            ),
+            (
+                Outcome::Modified {
+                    delivery_failed: true,
+                    undeliverable_here: false,
+                },
+                vec![0x00, 0x53, 0x27, 0xc0, 0x03, 0x02, 0x41, 0x42],
+            ),
         ] {
-            assert_eq!(decode_outcome(Some(&encode_outcome(&o))), o);
+            assert_eq!(encode_outcome(&o).encode().unwrap(), octets, "{o:?}");
+            let (value, _) = AmqpExtValue::decode(&octets).unwrap();
+            assert_eq!(decode_outcome(Some(&value)), o);
         }
     }
 
@@ -1692,7 +1709,7 @@ mod tests {
     /// A transfer larger than one frame goes out in pieces that fit and
     /// comes back whole through the reader, on the session's channel.
     #[test]
-    fn a_message_above_the_frame_size_is_split_and_reassembled() {
+    fn amqpbridge_4_3_a_message_above_the_frame_size_is_split_and_reassembled() {
         let (client, server) = pair();
         let shared = Arc::new(Mutex::new(Shared::default()));
         {

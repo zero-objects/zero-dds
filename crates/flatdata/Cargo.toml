@@ -14,6 +14,11 @@ keywords = ["dds", "flatdata", "zero-copy", "shm", "mmap"]
 categories = ["network-programming", "memory-management"]
 publish = true
 
+# The feature runs of the crate tier (internal/release/rc8-test-suite.md, "Crate
+# tier"): the iceoryx2 bridge's tests are behind a feature no default build has.
+[package.metadata.crate-tier]
+feature-runs = ["iceoryx2-bridge"]
+
 [lints]
 workspace = true
 

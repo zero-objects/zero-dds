@@ -334,7 +334,7 @@ fn render_type_decl(w: &mut Writer, node: &TypeDecl) {
 /// `gofmt` aligns the cells of consecutive field lines, and a generated
 /// file that changes under `gofmt` is a diff nobody asked for, on a file
 /// nobody edited. So the renderer aligns them itself, and
-/// `the_generated_go_is_gofmt_stable` in `go_end_to_end.rs` is what says
+/// `xtypes_7_3_1_the_generated_go_is_gofmt_stable` in `go_end_to_end.rs` is what says
 /// it got the rule right rather than plausible.
 ///
 /// The rule, measured against `gofmt` over the whole corpus: pad the

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! e2e: `enable_auto_discovery` derives the retention [`Contract`] from the
+//! `enable_auto_discovery` takes the retention [`Contract`] from the
 //! discovered writer's own `DurabilityServiceQosPolicy` (`PID_DURABILITY_SERVICE`
-//! in its DATA(w), DDS 1.4 §2.2.3.5) — not the daemon's own default — whenever
-//! that policy differs from the DDS default. Previously the daemon always
-//! used its own `default_contract` and ignored the writer's announced policy
-//! entirely (the policy was not even decoded off the wire).
+//! in its DATA(w), DDS 1.4 §2.2.3.5: the policy configures the service that
+//! keeps the writer's data), not the daemon's own default, whenever that
+//! policy differs from the DDS default.
 //!
 //! Own test binary = isolated process (process-global DDS state).
 
@@ -43,7 +42,7 @@ fn writer_durability_service() -> DurabilityServiceQosPolicy {
 }
 
 #[test]
-fn auto_discovery_derives_contract_from_writer_durability_service_qos() {
+fn dcps_2_2_3_5_the_service_keeps_what_the_writers_durability_service_policy_says() {
     let domain = zerodds_test_domains::unique_domain();
     let topic = "QosDerivedContract";
     let store: Arc<dyn DurabilityStore> =
@@ -76,7 +75,16 @@ fn auto_discovery_derives_contract_from_writer_durability_service_qos() {
         (app, writer)
     };
 
-    let expected = Contract::from_qos(&writer_durability_service());
+    // KEEP_LAST(7), at most 42 instances, the rest unlimited, no cleanup
+    // delay: the writer's policy field by field.
+    let expected = Contract {
+        history_kind: HistoryKind::KeepLast,
+        history_depth: 7,
+        max_samples: LENGTH_UNLIMITED,
+        max_instances: 42,
+        max_samples_per_instance: LENGTH_UNLIMITED,
+        cleanup_delay: Duration::ZERO,
+    };
     let got = service
         .contract_of(topic)
         .expect("service should have resolved a contract for the discovered writer");

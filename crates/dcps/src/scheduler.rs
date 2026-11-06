@@ -26,8 +26,6 @@
 //!   worker (owns the heap):  ◀─────────────────────────┘
 //!     loop { drain channel → heap; dispatch all due; park recv_timeout(next) }
 //! ```
-//!
-//! Spec/anchor: `internal/perf/d5e-phase3-deadline-heap-followup.md`.
 
 use alloc::vec::Vec;
 use core::cmp::Ordering;

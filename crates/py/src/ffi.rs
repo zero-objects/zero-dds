@@ -821,7 +821,8 @@ impl PyBytesWriter {
     }
 
     /// §6.5 — attach a listener with all status kinds.
-    /// `mask` = StatusMask (u32, DDS 1.4 §2.2.4.1). 0 = all bits active.
+    /// `mask` = StatusMask (u32, DDS 1.4 §2.2.4.1): the listener is called for
+    /// the statuses whose bits are set; 0 calls it for none.
     fn set_listener(&self, listener: &crate::listener::PyDataWriterListener, mask: u32) {
         let bridge = crate::listener::PyDataWriterListenerBridge::from_pyclass(listener);
         self.inner.set_listener(Some(bridge), mask);

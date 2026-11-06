@@ -621,27 +621,49 @@ fn a_declaration_exported_from_a_valuetype_body_is_lowered() {
     );
 }
 
+/// OMG IDL 4.2 rule (105): `<export>` in a value type's body admits an
+/// attribute as it admits an operation, and the attribute belongs to the
+/// value type.
 #[test]
-fn an_attribute_in_a_valuetype_body_is_reported_rather_than_dropped() {
-    // `AttributeNode::parent` is an `Id<InterfaceNode>`, so the model
-    // has no place for an attribute declared in a valuetype body. A gap
-    // that reports is a gap; a gap that is silent is an acceptance
-    // claim.
+fn idl_7_4_5_3_an_attribute_in_a_value_type_body_is_an_attribute_of_it() {
     let parsed = parse(
         "valuetype V {
            public long counter;
            attribute long a;
+           readonly attribute string b, c;
          };",
     );
     let lowered = lower(&parsed.syntax(), "test.idl");
-    assert!(
-        lowered
-            .diagnostics
-            .iter()
-            .any(|d| d.message.contains("valuetype body")),
-        "the attribute was dropped without a diagnostic: {:?}",
-        lowered.diagnostics
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let ast = lowered.ast;
+    let (value, node) = ast
+        .types()
+        .find(|(_, node)| node.name == "V")
+        .expect("the value type");
+    let attributes: Vec<(String, bool)> = ast
+        .attributes_of_value(value)
+        .into_iter()
+        .map(|id| {
+            let attribute = ast.attribute(id).expect("an attribute");
+            assert_eq!(
+                attribute.parent,
+                zerodds_ast::AnyId::Type(value, node.node_id)
+            );
+            (attribute.name.clone(), attribute.readonly)
+        })
+        .collect();
+    assert_eq!(
+        attributes,
+        vec![
+            ("a".to_string(), false),
+            ("b".to_string(), true),
+            ("c".to_string(), true)
+        ]
     );
+    let zerodds_ast::TypeKind::Valuetype { state, .. } = &node.kind else {
+        panic!("a value type");
+    };
+    assert_eq!(state.len(), 1, "an attribute is no state member");
 }
 
 // -- pragmas -------------------------------------------------------------
@@ -1195,7 +1217,7 @@ fn the_inner_end_closes_the_inner_begin() {
 }
 
 /// §7.3.1.1.2 defines the directive in two forms. Anything else written
-/// after it — the form `docs/OPEN-ITEMS.md` reported, `#pragma
+/// after it — the form an earlier report showed, `#pragma
 /// dds_xtopics LegacyTopic`, among them — is neither, and used to be
 /// indistinguishable from both.
 #[test]
@@ -1676,5 +1698,61 @@ fn ros2_dialect_rejects_union_case_discriminator_collision() {
             .iter()
             .any(|e| e.contains("IDL0008") && e.contains("Kind") && e.contains("kind")),
         "ROS 2 dialect must reject union case/discriminator collision, got {errors:?}"
+    );
+}
+
+/// OMG IDL 4.2 §7.4.12.4.2: an actual parameter takes the place of its
+/// formal, and "the resulting module is exactly as a classical module".
+/// A `const` formal's binding has the formal's `<const_type>` (rule
+/// (188)), so it resolves, and the instance records it among its actual
+/// arguments by its expression — which tells a mapping that the binding
+/// is no declaration of the instance.
+#[test]
+fn idl_7_4_12_4_2_a_const_formal_has_its_type_and_is_an_actual_argument() {
+    let source = "module B<typename T, const long Capacity> { const long Size = Capacity; };\n\
+                  module B<short, 4> Four;";
+    let parsed = parse(source);
+    assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+    let mut lowered = lower(&parsed.syntax(), "test.idl");
+    assert!(lowered.diagnostics.is_empty(), "{:?}", lowered.diagnostics);
+    let report = lowered.ast.resolve_all_by_name().expect("resolve");
+    assert!(report.broken.is_empty(), "{:?}", report.broken);
+    let ast = &lowered.ast;
+    let (capacity_id, capacity) = ast
+        .constants()
+        .find(|(_, c)| c.name == "Capacity")
+        .expect("the binding of Capacity");
+    let capacity_type = capacity.type_.resolved().expect("Capacity has a type");
+    assert!(
+        matches!(
+            ast.type_(capacity_type).map(|t| &t.kind),
+            Ok(zerodds_ast::TypeKind::Primitive(
+                zerodds_ast::PrimitiveKind::Int32
+            ))
+        ),
+        "Capacity is a long"
+    );
+    let (_, size) = ast
+        .constants()
+        .find(|(_, c)| c.name == "Size")
+        .expect("Four::Size");
+    assert_eq!(
+        ast.eval_const(size.expr),
+        Ok(zerodds_ast::ConstValue::Integer(4))
+    );
+    let four = ast
+        .module_by_path(&scoped(&["Four"]))
+        .and_then(|id| ast.module(id).ok())
+        .expect("the instance");
+    let args = &four
+        .facets
+        .corba
+        .as_ref()
+        .expect("the instance's facet")
+        .template_args;
+    assert_eq!(args.len(), 2, "{args:?}");
+    assert!(matches!(args[0], zerodds_ast::TemplateArg::Type(_)));
+    assert!(
+        matches!(args[1], zerodds_ast::TemplateArg::Const(expr) if expr == ast.constant(capacity_id).unwrap().expr)
     );
 }

@@ -87,7 +87,7 @@ fn build(dir: &Path) {
 
 #[test]
 #[ignore = "needs omniidl, g++ and libomniORB4 (Linux test host)"]
-fn omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant() {
+fn corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant() {
     let dir = workdir("omniorb-e2e");
     build(&dir);
 
@@ -148,7 +148,7 @@ fn omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant() 
 /// stop the name is gone.
 #[test]
 #[ignore = "needs omniNames and nameclt (Linux test host)"]
-fn the_bridge_rebinds_into_omninames_and_unbinds_on_stop() {
+fn corbabridge_10_the_bridge_rebinds_into_omninames_and_unbinds_on_stop() {
     let dir = workdir("omniorb-omninames");
     let log = dir.join("omninames-log");
     std::fs::create_dir_all(&log).unwrap();
@@ -217,7 +217,7 @@ fn the_bridge_rebinds_into_omninames_and_unbinds_on_stop() {
 /// asks for `remove_context`.
 #[test]
 #[ignore = "needs nameclt (Linux test host)"]
-fn omniorb_nameclt_binds_lists_resolves_and_unbinds_on_zerodds_naming_svc() {
+fn corbabridge_10_omniorb_nameclt_binds_lists_resolves_and_unbinds_on_zerodds_naming_svc() {
     let port = common::free_port();
     let _ns = common::start_naming_svc(port);
     let nameclt = |args: &[&str]| {
@@ -254,7 +254,7 @@ fn omniorb_nameclt_binds_lists_resolves_and_unbinds_on_zerodds_naming_svc() {
 /// certificate.
 #[test]
 #[ignore = "needs omniidl, g++, libomniORB4 and libomnisslTP4 (Linux test host)"]
-fn omniorb_over_ssliop_passes_the_acl_with_the_allowed_certificate_only() {
+fn corbabridge_7_1_omniorb_over_ssliop_passes_the_acl_with_the_allowed_certificate_only() {
     use rcgen::{CertificateParams, IsCa, KeyPair, SanType};
     use sha2::{Digest, Sha256};
 

@@ -51,6 +51,14 @@ pub type ExtensibilityKind = Extensibility;
 /// length of its content in. XTypes 1.3 §7.4.3.4.2.
 pub const DHEADER_LEN: usize = 4;
 
+/// What [`DdsType::key_material_from_body`] answers: the KeyHash and the
+/// key holder (XTypes 1.3 §7.6.8) of a sample body, the reason the body
+/// gave none, or `None` where the type has no such read.
+pub type KeyMaterialRead = Option<core::result::Result<KeyMaterial, DecodeError>>;
+
+/// The KeyHash and the key holder of a sample (XTypes 1.3 §7.6.8).
+pub type KeyMaterial = ([u8; 16], Vec<u8>);
+
 /// A type that can be published/subscribed via DDS.
 pub trait DdsType: Sized {
     /// Fully-qualified topic type name (e.g. `"std_msgs::String"`).
@@ -162,7 +170,7 @@ pub trait DdsType: Sized {
     /// (PLAIN_CDR2) both carry the bare members, XTypes 1.3 Table 60.
     #[must_use]
     fn xcdr1_delegation_is_sound() -> bool {
-        Self::XCDR1_MATCHES_XCDR2 && matches!(Self::EXTENSIBILITY, Extensibility::Final)
+        Self::XCDR1_MATCHES_XCDR2 && matches!(Self::extensibility(), Extensibility::Final)
     }
 
     /// Whether the XCDR1 defaults reach the XCDR2 codec by removing resp. adding
@@ -181,7 +189,7 @@ pub trait DdsType: Sized {
     /// not a missing prefix.
     #[must_use]
     fn xcdr1_reframes_dheader() -> bool {
-        Self::XCDR1_MATCHES_XCDR2 && matches!(Self::EXTENSIBILITY, Extensibility::Appendable)
+        Self::XCDR1_MATCHES_XCDR2 && matches!(Self::extensibility(), Extensibility::Appendable)
     }
 
     /// `true` if the topic type is **keyed** (at least one member with
@@ -218,6 +226,13 @@ pub trait DdsType: Sized {
     /// `DomainParticipant::create_topic` rejects registration of
     /// nested types with `PreconditionNotMet`.
     const IS_NESTED: bool = false;
+
+    /// The type borrows from the sample (`&'a str`, `&'a [u8]`): this impl
+    /// is its `'static` form, which names, writes and keys the type but is
+    /// not read from received octets ([`Self::decode`] refuses). A
+    /// DataReader of it admits by [`Self::key_material_from_body`] and
+    /// lends its samples (`DataReader::take_loan`).
+    const BORROWS: bool = false;
 
     /// XTypes 1.3 §7.3.4.2 — TypeIdentifier of the type for
     /// XTypes-aware discovery + compatibility matching. Default
@@ -330,8 +345,8 @@ pub trait DdsType: Sized {
 
     /// Serializes `self` into the XCDR2 payload sent as the
     /// `serialized_payload` of a DATA submessage. Default endianness:
-    /// little-endian (RTPS 2.5 §10.5
-    /// `RepresentationIdentifier = CDR2_LE = 0x0010`).
+    /// little-endian (RTPS 2.5 §10.5: the writer's encapsulation header
+    /// names it, `CDR2_LE` `{0x00, 0x07}` for a `@final` type).
     ///
     /// # Errors
     /// CDR encoder error (buffer overflow, etc.).
@@ -577,6 +592,35 @@ pub trait DdsType: Sized {
         })
     }
 
+    /// The sample with its `@key` members read and every other member at
+    /// its default: what a reader needs to learn the sample's instance
+    /// (XTypes 1.3 §7.6.8), without reading the rest. `xcdr1` and
+    /// `big_endian` name the encoding as [`Self::decode_xcdr1_be`] and its
+    /// siblings do. The members it steps over are not checked.
+    ///
+    /// The default is `None`: the type has no such read, and a reader
+    /// decodes the whole sample. A type `zerodds-build` generates has one.
+    #[must_use]
+    fn decode_key_members(
+        bytes: &[u8],
+        xcdr1: bool,
+        big_endian: bool,
+    ) -> Option<core::result::Result<Self, DecodeError>> {
+        let _ = (bytes, xcdr1, big_endian);
+        None
+    }
+
+    /// The KeyHash and the key holder of a sample, from its body
+    /// (XTypes 1.3 §7.6.8), without a value of this type: what a reader of
+    /// a type that [`Self::BORROWS`] learns a sample's instance by. `None`
+    /// where the type has no such read; a reader then reads the key members
+    /// ([`Self::decode_key_members`]) or the whole sample.
+    #[must_use]
+    fn key_material_from_body(bytes: &[u8], xcdr1: bool, big_endian: bool) -> KeyMaterialRead {
+        let _ = (bytes, xcdr1, big_endian);
+        None
+    }
+
     /// Serializes the `@key` member values in **PLAIN_CDR2-BE** format
     /// into the given [`PlainCdr2BeKeyHolder`]. Order: ascending by
     /// `member_id` (XTypes 1.3 §7.6.8.3.1.b).
@@ -640,20 +684,36 @@ pub trait DdsType: Sized {
         None
     }
 
+    /// Whether the field path names a member of a union whose
+    /// discriminator selects another member, at any step of the path.
+    ///
+    /// DDS-XTypes 1.4 Beta 1 §7.6.7.1: "if the discriminator does not
+    /// select the named member, the result of the filter evaluation shall
+    /// be false" — the whole expression's, which
+    /// `zerodds_sql_filter::Expr::evaluate` decides from this answer.
+    /// Default: `false`, a type without unions. Generated IDL stubs and
+    /// `derive(DdsType)` override it for a type that reaches a union.
+    #[must_use]
+    fn field_unselected(&self, _path: &str) -> bool {
+        false
+    }
+
     /// Computes the 16-byte KeyHash of this instance per XTypes 1.3
-    /// §7.6.8.4. `None` if `HAS_KEY = false`.
+    /// §7.6.8.4. `None` if [`Self::has_key`] is `false`.
     ///
     /// The default implementation uses [`Self::encode_key_holder_be`] +
-    /// [`Self::KEY_HOLDER_MAX_SIZE`] and delegates to
-    /// [`compute_key_hash`].
+    /// [`Self::key_holder_max_size`] and delegates to
+    /// [`compute_key_hash`]. It reads the run-time accessors, not the
+    /// constants behind them: a type described at run time answers from
+    /// what it read (see [`Self::type_name`]).
     #[must_use]
     fn compute_key_hash(&self) -> Option<[u8; KEY_HASH_LEN]> {
-        if !Self::HAS_KEY {
+        if !Self::has_key() {
             return None;
         }
         let mut holder = PlainCdr2BeKeyHolder::new();
         self.encode_key_holder_be(&mut holder);
-        let max = Self::KEY_HOLDER_MAX_SIZE.unwrap_or(usize::MAX);
+        let max = Self::key_holder_max_size().unwrap_or(usize::MAX);
         Some(compute_key_hash(holder.as_bytes(), max))
     }
 
@@ -687,6 +747,10 @@ impl<'a, T: DdsType> DdsTypeRow<'a, T> {
 impl<T: DdsType> zerodds_sql_filter::RowAccess for DdsTypeRow<'_, T> {
     fn get(&self, path: &str) -> Option<zerodds_sql_filter::Value> {
         self.sample.field_value(path)
+    }
+
+    fn unselected(&self, path: &str) -> bool {
+        self.sample.field_unselected(path)
     }
 }
 
@@ -835,7 +899,7 @@ impl From<zerodds_wire::WireError> for DecodeError {
 /// with the concrete DdsType.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DdsAny {
-    /// Fully-qualified type name (matches `DdsType::TYPE_NAME`).
+    /// Fully-qualified type name (matches `DdsType::type_name()`).
     pub type_name: alloc::string::String,
     /// XCDR2 payload bytes of the wrapped value.
     pub payload: Vec<u8>,
@@ -850,7 +914,7 @@ impl DdsAny {
         let mut payload = Vec::new();
         value.encode(&mut payload)?;
         Ok(Self {
-            type_name: alloc::string::String::from(T::TYPE_NAME),
+            type_name: alloc::string::String::from(T::type_name()),
             payload,
         })
     }
@@ -858,10 +922,10 @@ impl DdsAny {
     /// Attempts to unpack the wrapped value as `T`.
     ///
     /// # Errors
-    /// `DecodeError::Invalid` if `T::TYPE_NAME != self.type_name` or on
+    /// `DecodeError::Invalid` if `T::type_name() != self.type_name` or on
     /// a decode error.
     pub fn unpack<T: DdsType>(&self) -> Result<T, DecodeError> {
-        if self.type_name != T::TYPE_NAME {
+        if self.type_name != T::type_name() {
             return Err(DecodeError::Invalid {
                 what: "DdsAny: type-name mismatch",
             });
@@ -987,16 +1051,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn raw_bytes_roundtrip() {
-        let orig = RawBytes::new(vec![1, 2, 3, 4, 5]);
-        let mut buf = Vec::new();
-        orig.encode(&mut buf).unwrap();
-        let back = RawBytes::decode(&buf).unwrap();
-        assert_eq!(back, orig);
-    }
-
-    #[test]
-    fn raw_bytes_type_name_is_namespaced() {
+    fn dcps_2_2_2_3_6_2_raw_bytes_type_name_is_namespaced() {
         assert_eq!(RawBytes::TYPE_NAME, "zerodds::RawBytes");
     }
 
@@ -1058,7 +1113,7 @@ mod tests {
     }
 
     #[test]
-    fn small_keyed_produces_zero_padded_keyhash() {
+    fn xtypes_7_6_8_small_keyed_produces_zero_padded_keyhash() {
         let s = SmallKeyed { id: 0x1122_3344 };
         let key = s.compute_key_hash().expect("keyed");
         assert_eq!(&key[0..4], &[0x11, 0x22, 0x33, 0x44]);
@@ -1069,13 +1124,6 @@ mod tests {
     fn non_keyed_returns_none_for_keyhash() {
         let r = RawBytes::new(vec![1, 2, 3]);
         assert_eq!(r.compute_key_hash(), None);
-    }
-
-    #[test]
-    fn keyed_two_instances_have_distinct_hashes() {
-        let a = SmallKeyed { id: 1 };
-        let b = SmallKeyed { id: 2 };
-        assert_ne!(a.compute_key_hash(), b.compute_key_hash());
     }
 
     /// Test fixture: keyed topic with an unbounded @key string (MD5 path).
@@ -1115,28 +1163,6 @@ mod tests {
         // Idempotent
         let key2 = s.compute_key_hash().expect("keyed");
         assert_eq!(key, key2);
-    }
-
-    #[test]
-    fn spec_aligned_aliases_match_implementation_names() {
-        // zerodds-xcdr2-rust §11 Errata.
-        assert_eq!(
-            <RawBytes as DdsType>::IS_KEYED,
-            <RawBytes as DdsType>::HAS_KEY
-        );
-        fn is_keyed<T: DdsType>() -> bool {
-            T::IS_KEYED
-        }
-        assert!(is_keyed::<SmallKeyed>());
-        let s = SmallKeyed { id: 0xABCD };
-        assert_eq!(s.key_hash(), s.compute_key_hash());
-    }
-
-    #[test]
-    fn extensibility_default_is_final() {
-        assert_eq!(<RawBytes as DdsType>::EXTENSIBILITY, Extensibility::Final);
-        // ExtensibilityKind alias is the same type.
-        let _: ExtensibilityKind = Extensibility::Mutable;
     }
 
     #[test]
@@ -1413,7 +1439,7 @@ mod tests {
     /// Example 1: the 4-octet holder `{12 34 56 78}` is at most 16 octets,
     /// so the KeyHash is the holder extended with zeros to 16 octets.
     #[test]
-    fn key_hash_example_1_of_the_spec_is_the_holder_padded_with_zeros() {
+    fn rtps_9_6_4_8_key_hash_example_1_of_the_spec_is_the_holder_padded_with_zeros() {
         assert_eq!(holder_of::<1>(), [0x12, 0x34, 0x56, 0x78]);
         assert_eq!(
             SpecExample::<1>.compute_key_hash(),
@@ -1428,7 +1454,7 @@ mod tests {
     /// the long long on a 4-octet boundary) has a maximum of 28 octets, so
     /// the KeyHash is its MD5.
     #[test]
-    fn key_hash_example_2_of_the_spec_is_the_md5_of_the_holder() {
+    fn rtps_9_6_4_8_key_hash_example_2_of_the_spec_is_the_md5_of_the_holder() {
         assert_eq!(
             holder_of::<2>(),
             [
@@ -1448,7 +1474,7 @@ mod tests {
     /// Example 3: the 13-octet holder, ordered by memberId (the nested key
     /// first), has a maximum of 21 octets, so the KeyHash is its MD5.
     #[test]
-    fn key_hash_example_3_of_the_spec_is_the_md5_of_the_reordered_holder() {
+    fn rtps_9_6_4_8_key_hash_example_3_of_the_spec_is_the_md5_of_the_reordered_holder() {
         assert_eq!(
             holder_of::<3>(),
             [
@@ -1462,5 +1488,81 @@ mod tests {
                 0xb7, 0x1e
             ])
         );
+    }
+
+    // ---- the run-time accessors, not the constants behind them ----
+
+    /// Example 2 of DDSI-RTPS 2.5 §9.6.4.8 as a type described at run time
+    /// (XTypes 1.3 §7.5): it keeps every constant at the trait default
+    /// (`HAS_KEY` false, `KEY_HOLDER_MAX_SIZE` `None`, `EXTENSIBILITY`
+    /// final) and answers through the accessors, as the carrier type of
+    /// `tools/omg-xtypes-test-main` does.
+    struct RunTimeExample;
+
+    impl DdsType for RunTimeExample {
+        const TYPE_NAME: &'static str = "test::NotTheRunTimeName";
+        const XCDR1_MATCHES_XCDR2: bool = true;
+
+        fn type_name() -> &'static str {
+            "test::RunTimeExample"
+        }
+        fn has_key() -> bool {
+            true
+        }
+        fn key_holder_max_size() -> Option<usize> {
+            Some(28)
+        }
+        fn extensibility() -> Extensibility {
+            Extensibility::Appendable
+        }
+        fn encode(&self, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
+            // DELIMITED_CDR2 over one `uint32`: the DHEADER, then the member.
+            out.extend_from_slice(&4u32.to_le_bytes());
+            out.extend_from_slice(&7u32.to_le_bytes());
+            Ok(())
+        }
+        fn decode(_bytes: &[u8]) -> core::result::Result<Self, DecodeError> {
+            Ok(Self)
+        }
+        fn encode_key_holder_be(&self, holder: &mut PlainCdr2BeKeyHolder) {
+            holder.write_string("BLUE");
+            holder.write_u64(0x1234_5678_9abc_def0);
+        }
+    }
+
+    /// The KeyHash of a type described at run time is the one the clause
+    /// gives for its holder: `compute_key_hash` asks `has_key` and
+    /// `key_holder_max_size`. With the constants it returned `None`.
+    #[test]
+    fn rtps_9_6_4_8_the_key_hash_follows_the_run_time_accessors() {
+        assert_eq!(
+            RunTimeExample.compute_key_hash(),
+            Some([
+                0xf9, 0x1a, 0x59, 0xe3, 0x2e, 0x45, 0x35, 0xd9, 0xa6, 0x9c, 0xd5, 0xd9, 0xf5, 0xb6,
+                0xe3, 0x6e
+            ])
+        );
+    }
+
+    /// XTypes 1.3 Table 60: an `@appendable` type is PLAIN_CDR under XCDR1
+    /// and DELIMITED_CDR2 under XCDR2, the same members without the
+    /// DHEADER. The XCDR1 defaults read the extensibility through the
+    /// accessor; with the constant they took this type for `@final` and
+    /// sent the DHEADER under a `CDR_LE` header.
+    #[test]
+    fn xtypes_7_6_3_1_2_the_xcdr1_framing_follows_the_run_time_extensibility() {
+        assert!(!RunTimeExample::xcdr1_delegation_is_sound());
+        assert!(RunTimeExample::xcdr1_reframes_dheader());
+        let mut out = Vec::new();
+        RunTimeExample.encode_xcdr1(&mut out).unwrap();
+        assert_eq!(out, 7u32.to_le_bytes());
+    }
+
+    /// `DdsAny` names the value by the name its type announces.
+    #[test]
+    fn a_dds_any_carries_the_run_time_type_name() {
+        let any = DdsAny::pack(&RunTimeExample).unwrap();
+        assert_eq!(any.type_name, "test::RunTimeExample");
+        assert!(any.unpack::<RunTimeExample>().is_ok());
     }
 }

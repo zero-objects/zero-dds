@@ -344,7 +344,7 @@ zerodds-lint check [--root <ROOT>] [--fail-on-warning]
 | `--fail-on-warning` | Warnungen führen ebenfalls zu Exit 1 | aus |
 | `-h`, `--help`, `-V`, `--version` | clap-Standard | |
 
-Exit-Codes: 0, 1 Fehler gefunden (oder Warnungen mit `--fail-on-warning`), 2 interner Fehler. In CI: `cargo run -p zerodds-lint -- check` (`ci/full.yml`).
+Exit-Codes: 0, 1 Fehler gefunden (oder Warnungen mit `--fail-on-warning`), 2 interner Fehler. In CI: `cargo run -p zerodds-lint -- check` (`ci/weekly-checks.yml`).
 
 ### zerodds-traceability
 
@@ -552,7 +552,7 @@ Beispielprogramme unter `examples/` und `crates/*/examples/` sind nicht aufgefü
 
 ## Abweichungen zwischen Hilfetext, Code und Manpage
 
-Keine offen. Gemessen mit den Binaries in `target/debug` nach `fe3b0ca185c`
+Keine offen. Gemessen mit den Binaries in `target/debug` nach `37db0ea6e07`
 und `tools/man-gate --list` (0 undocumented, 0 documented and gone, 0 with
 different exit codes): Die Manpages nennen `--config`, `--set` und
 `--check-config` und die Schreibweise `--opt VALUE`; die Bridges nennen ihre

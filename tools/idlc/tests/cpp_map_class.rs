@@ -180,7 +180,7 @@ fn compilers() -> Vec<&'static str> {
 }
 
 #[test]
-fn a_map_is_a_class_with_the_operations_of_table_47() {
+fn xtypes_7_5_1_3_3_a_map_is_a_class_with_the_operations_of_table_47() {
     let found = compilers();
     if found.is_empty() {
         eprintln!("SKIPPED: neither clang++ nor g++ on the path.");

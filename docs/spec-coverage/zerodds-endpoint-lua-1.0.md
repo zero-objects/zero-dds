@@ -9,8 +9,8 @@ Implementation:
   sync `Client`, coroutine-basierter `asyncReader`.
 - `endpoints/lua/reliable.lua` — reliable Sender/Receiver-State-Machine +
   HEARTBEAT/ACKNACK-Wire-Codec + kooperativer `AsyncWriter`.
-- `endpoints/lua/reliable_app.lua` — live UDP-Sender-App für das E2E
-  (Loss-Recovery + Latenz-Bench).
+- `endpoints/lua/reliable_app.lua` — UDP-Sender-App (Modus `run` gegen einen
+  Peer, Modus `bench` für den Latenz-Test).
 - `crates/endpoint-e2e/tests/lua.rs` — Ping-Pong-E2E;
   `crates/endpoint-e2e/tests/lua_reliable.rs` — reliable-Stream-E2E.
 - Gate: `lua5.4` + `luasocket` (das `socket`-Modul) auf PATH; beides fehlend
@@ -26,7 +26,7 @@ WRITE_DATA, flags `0x03`, len LE) + Body, byte-identisch zu `crates/xrce` +
 Konstanten `M.SESSION_NOKEY` (`0x80`) und `M.STREAM_BEST_EFFORT` (`0x01`).
 
 **Tests:** kein isolierter Framing-Unit-Test unabhängig vom vollen Stack;
-das Framing wird über `lua_endpoint_sync`/`lua_endpoint_async` (§4) live
+das Framing wird über `xrce_8_3_5_8_lua_sync_app_writes_the_ping_and_reads_the_pong`/`xrce_8_3_5_8_lua_async_app_writes_the_ping_and_reads_the_pong` (§4) live
 geübt (jedes Sample durchläuft `writeFrame`/`readFrame` auf dem Draht).
 
 **Status:** done.
@@ -44,7 +44,7 @@ Aufrufer-Sache.
 strukturelle Tabelle `{deliver, receive}` (kein Lua-Interface-Konstrukt).
 
 **Tests:** `endpoints/lua/test.lua` (sync-Loopback über `memTransport`, Teil
-der `zerodds-xcdr2-lua`-Coverage); Live-E2E `lua_endpoint_sync` (§4).
+der `zerodds-xcdr2-lua`-Coverage); Live-E2E `xrce_8_3_5_8_lua_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -60,7 +60,7 @@ einen History-Cache und ein periodisches HEARTBEAT trägt.
 **Repo:** `endpoints/lua/zerodds.lua::M.asyncReader`.
 
 **Tests:** `endpoints/lua/test.lua` (async-Loopback über `memTransport`);
-Live-E2E `lua_endpoint_async` (§4).
+Live-E2E `xrce_8_3_5_8_lua_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -81,14 +81,13 @@ CLI-Argument, 50ms Socket-Timeout für nicht-blockierendes `receive()`).
 **Tests:** `crates/endpoint-e2e/tests/lua.rs` — beide Fälle laufen live
 gegen den Rust-XRCE-Peer über einen echten UDP-Socket:
 
-- `lua_endpoint_sync` — voller Stack über `zerodds.Client`.
-- `lua_endpoint_async` — voller Stack über `zerodds.asyncReader`.
+- `xrce_8_3_5_8_lua_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über `zerodds.Client`.
+- `xrce_8_3_5_8_lua_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über `zerodds.asyncReader`.
 
-Lauf `cargo test -p zerodds-endpoint-e2e --test lua`; lokal (macOS, dieser
-Lauf) 2/2 grün. Der Harness sucht den Interpreter der Reihe nach als
-`lua5.4`, `lua`, `lua5.3` und überspringt hörbar (`SKIP lua endpoint …`),
-wenn keiner davon oder `luasocket` fehlt — hier griff der Fallback `lua` 5.5,
-und es kam keine SKIP-Zeile, der Lauf war also echt.
+Der Harness sucht den Interpreter der Reihe nach als `lua5.4`, `lua`,
+`lua5.3` und überspringt hörbar (`SKIP lua endpoint …`), wenn keiner davon
+oder `luasocket` fehlt; im Job `integration-bindings-gnat-beam` lässt eine
+solche Zeile den Job scheitern.
 
 **Status:** done.
 
@@ -107,12 +106,12 @@ Ehrlichkeits-Absatz; ausführlich in §6 dieser Coverage).
 `heartbeatFrame`/`parseHeartbeat`, `acknackFrame`/`parseAcknack`; `Sender`,
 `Receiver`; `AsyncWriter` (`push`/`drain`/`pending`/`isEmpty`);
 `endpoints/lua/example_reliable.lua` (lauffähige In-Process-Demo, kein
-Socket); `endpoints/lua/reliable_app.lua` (live UDP-Sender-App für das E2E,
-Modi `run`/`bench`).
+Socket); `endpoints/lua/reliable_app.lua` (UDP-Sender-App, Modi `run`/`bench`).
 
 **Tests:**
 
-- `lua_reliable_unit_and_golden` (`crates/endpoint-e2e/tests/lua_reliable.rs`)
+- `endpoints/lua/reliable_test.lua` in der Spalte `lua` von `tools/endpoints-gate`
+  (Job `integration-endpoints`)
   läuft `lua5.4 reliable_test.lua <golden_dir>` gegen die goldenen
   HEARTBEAT/ACKNACK-Bytes, die der Test selbst über `zerodds-xrce` erzeugt
   (dieselbe Bibliothek, die auch den Wire-Bruch anzeigen würde). Lokal
@@ -122,23 +121,19 @@ Modi `run`/`bench`).
   Heartbeat bei leerem Window, ACKNACK Teil-/Voll-Clear, Receiver
   Reorder/Dedup/Buffer-full, Pending-ACKNACK-Bitmap, Reset, End-to-End-
   Loss-Recovery im Speicher, `AsyncWriter` push/drain inkl. Window-Cap) plus
-  4 Byte-Golden-Checks (`byte_golden_heartbeat`, `byte_golden_acknack`,
-  `golden_heartbeat_parse`, `golden_acknack_parse`) — HEARTBEAT
+  4 Byte-Golden-Checks (`endpointlua_5_byte_golden_heartbeat`, `endpointlua_5_byte_golden_acknack`,
+  `endpointlua_5_golden_heartbeat_parse`, `endpointlua_5_golden_acknack_parse`) — HEARTBEAT
   `80 00 01 00 0B 01 05 00 01 00 03 00 80` und ACKNACK
   `80 00 01 00 0A 01 05 00 01 00 00 00 80`, identisch zu den
   Referenz-Goldens der anderen SDKs.
-- `lua_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig
-  (`bind_reliable_peer(Some(3))`); die App (`reliable_app.lua` Modus `run`)
-  retransmittet auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge
-  geliefert (assertiert per Wert- und Reihenfolge-Check im Test).
-- `lua_reliable_no_loss` — dieselbe App ohne Drop, lossless Baseline; 12/12.
-- `lua_reliable_example` — `example_reliable.lua` läuft und meldet
+- `reliable_5_3_lua_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig
+  (`bind_reliable_peer(Some(3))`); die App, die der Test aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und der
+  Schleife von `reliable_app.lua` baut, retransmittet auf ACKNACK; alle 12
+  Samples lückenlos in Reihenfolge geliefert, der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`).
+- `endpoints/lua/example_reliable.lua` in der Spalte `lua` von `tools/endpoints-gate`
+  (Job `integration-endpoints`) — `example_reliable.lua` läuft und meldet
   `RELIABLE OK: 12/12 delivered gap-free in 1 round(s), sequence 0..11
   verified in order`. Lokal reproduziert (`lua` 5.5): exakt diese Ausgabe.
-
-Lauf `cargo test -p zerodds-endpoint-e2e --test lua_reliable`; lokal
-(macOS, dieser Lauf) 5/5 grün ohne SKIP-Zeile, davon 4 in dieser Gruppe
-(Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -157,10 +152,10 @@ Iterationen inline `udp:send` vs. 20000 Iterationen `AsyncWriter`-Enqueue
 (reiner Tabellen-Insert, kein Drain in der Messschleife); Ausgabe
 `BENCH enqueue_ns=... inline_send_ns=... note=cooperative_single_os_thread_no_concurrent_drain`.
 
-**Tests:** `lua_reliable_producer_latency` — läuft `reliable_app.lua` Modus
-`bench`, assertiert nur, dass `BENCH` in der Ausgabe steht (bewusst **keine**
-`enqueue < inline`-Hartassertion — der Test selbst dokumentiert das als
-"honest note", siehe `lua_reliable.rs`-Kommentar).
+**Tests:** `reliable_5_4_lua_the_producer_enqueue_costs_less_than_the_inline_send` — läuft `reliable_app.lua` Modus
+`bench` und prüft, dass `enqueue_ns` der `BENCH`-Zeile unter
+`inline_send_ns` liegt: der Aufruf in die Tabelle des Writers gegen den
+inline Send auf demselben OS-Thread, keine nebenläufige Entkopplung.
 
 Gemessen in diesem Lauf (macOS, `lua` 5.5 über den Fallback):
 `BENCH enqueue_ns=13 inline_send_ns=2731
@@ -178,23 +173,17 @@ damit ist das Item erfüllt.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf, lokal (macOS, `lua` 5.5 + `luasocket`, dieser Lauf):
-`cargo test -p zerodds-endpoint-e2e --test lua` 2/2 (`lua_endpoint_sync`,
-`lua_endpoint_async`); `--test lua_reliable` 5/5
-(`lua_reliable_unit_and_golden` — 48 Lua-Checks inkl. Byte-Golden,
-`lua_reliable_loss_recovery`, `lua_reliable_no_loss`, `lua_reliable_example`,
-`lua_reliable_producer_latency`). Beide Läufe ohne SKIP-Zeile, also gegen den
-echten Rust-Peer und nicht übersprungen.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-lua-1.0.md`):
 
-Behoben in diesem Durchgang: `crates/endpoint-e2e/tests/lua_reliable.rs`
-band sich strikt an den Binary-Namen `lua5.4` und übersprang deshalb alle
-fünf Fälle auf einem Host, dessen Lua schlicht `lua` heißt — während die
-Ping-Pong-Fälle in `crates/endpoint-e2e/tests/lua.rs` nebenan liefen, weil
-die dort schon einen Fallback hatten. Dieselbe Laufzeit galt damit in der
-einen Datei als geprüft und in der anderen als ungemessen. `lua_reliable.rs`
-nimmt jetzt dieselbe Namensliste (`lua5.4`, `lua`, `lua5.3`) und meldet den
-Grund laut, wenn keiner davon oder `luasocket` fehlt.
+* `python3 ci/run_integration.py integration-bindings-gnat-beam` (Job `integration-bindings-gnat-beam`) — 4 Tests grün.
+* `python3 ci/run_integration.py integration-endpoints` (Job `integration-endpoints`) — 4 Tests grün.
+
+8 zitierte Tests grün, 0 nicht grün.
+
+`crates/endpoint-e2e/tests/lua_reliable.rs` nimmt dieselbe Namensliste wie
+`lua.rs` (`lua5.4`, `lua`, `lua5.3`) und meldet den Grund laut, wenn keiner
+davon oder `luasocket` fehlt.
 
 Offene Punkte: keine.

@@ -44,7 +44,7 @@ use zerodds_rtps::wire_types::{EntityId, Guid, VendorId};
 use crate::qos::{self, RmwZerodsQos, Side};
 use crate::{
     InboxEvent, NodeGraph, RMW_RET_ERROR, RMW_RET_INVALID_ARGUMENT, RMW_RET_OK, RMW_RET_TIMEOUT,
-    RmwEventCallback, RmwZerodsNode, WaitNotify, encapsulation_header, graph_register_endpoint,
+    RmwEventCallback, RmwZerodsNode, WaitNotify, graph_register_endpoint,
     graph_unregister_endpoint,
 };
 
@@ -191,15 +191,22 @@ fn body_of(stream: &[u8]) -> Option<&[u8]> {
 /// # Safety
 /// The out pointers must be valid.
 unsafe fn hand_out(
-    representation: u8,
+    representation_identifier: [u8; 2],
     big_endian: bool,
     body: &[u8],
     out_buf: *mut *mut u8,
     out_len: *mut usize,
     out_big_endian: *mut u8,
 ) {
+    // The header the sample came under (DDS-XTypes 1.3 §7.6.3.1.2, Table
+    // 60), not one rebuilt from the XCDR version and the byte order.
     let mut v = Vec::with_capacity(4 + body.len());
-    v.extend_from_slice(&encapsulation_header(representation, u8::from(big_endian)));
+    v.extend_from_slice(&[
+        representation_identifier[0],
+        representation_identifier[1],
+        0,
+        0,
+    ]);
     v.extend_from_slice(body);
     let boxed = v.into_boxed_slice();
     let len = boxed.len();
@@ -238,17 +245,16 @@ fn insert_bounded<K: Ord + Clone, V>(
     value: V,
     what: &str,
 ) {
-    if map.len() >= PENDING_CAP {
-        if let Some(oldest) = map
+    if map.len() >= PENDING_CAP
+        && let Some(oldest) = map
             .iter()
             .min_by_key(|(_, (t, _))| *t)
             .map(|(k, _)| k.clone())
+    {
+        map.remove(&oldest);
+        #[allow(clippy::print_stderr)]
         {
-            map.remove(&oldest);
-            #[allow(clippy::print_stderr)]
-            {
-                eprintln!("[rmw_zerodds] {what}: {PENDING_CAP} unanswered, dropping the oldest");
-            }
+            eprintln!("[rmw_zerodds] {what}: {PENDING_CAP} unanswered, dropping the oldest");
         }
     }
     map.insert(key, (Instant::now(), value));
@@ -612,7 +618,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_response(
     while let Some(s) = c.ep.inbox.pop() {
         let UserSample::Alive {
             payload,
-            representation,
+            representation_identifier,
             big_endian,
             related_sample_identity,
             ..
@@ -639,7 +645,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_response(
         // SAFETY: valid out pointers.
         unsafe {
             hand_out(
-                representation,
+                representation_identifier,
                 big_endian,
                 body,
                 out_buf,
@@ -877,7 +883,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_request(
         let UserSample::Alive {
             payload,
             writer_guid,
-            representation,
+            representation_identifier,
             big_endian,
             source_sequence_number,
             related_sample_identity,
@@ -931,7 +937,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_request(
         // SAFETY: valid out pointers; `out_writer_guid` holds 16 bytes.
         unsafe {
             hand_out(
-                representation,
+                representation_identifier,
                 big_endian,
                 body,
                 out_buf,

@@ -937,10 +937,10 @@ impl PkiAuthenticationPlugin {
         self.local_permissions_by_identity.remove(&handle);
         self.algorithm_limits.remove(&handle);
         self.status_seen.remove(&handle);
-        if let Some(listener) = self.listener.clone() {
-            if let Err(e) = listener.on_revoke_identity(handle) {
-                self.log_listener_failure(handle, &e);
-            }
+        if let Some(listener) = self.listener.clone()
+            && let Err(e) = listener.on_revoke_identity(handle)
+        {
+            self.log_listener_failure(handle, &e);
         }
     }
 
@@ -1017,13 +1017,13 @@ impl PkiAuthenticationPlugin {
         let Some(limits) = self.algorithm_limits.get(&local) else {
             return Ok(());
         };
-        if let Some(scheme) = scheme {
-            if limits.message_auth.0 & scheme_bit(scheme) == 0 {
-                return Err(SecurityError::new(
-                    SecurityErrorKind::AuthenticationFailed,
-                    "pki: the digital signature algorithm is not in message_auth.supported_mask",
-                ));
-            }
+        if let Some(scheme) = scheme
+            && limits.message_auth.0 & scheme_bit(scheme) == 0
+        {
+            return Err(SecurityError::new(
+                SecurityErrorKind::AuthenticationFailed,
+                "pki: the digital signature algorithm is not in message_auth.supported_mask",
+            ));
         }
         let bit = suite_bit(suite);
         if bit != 0 && limits.key_establishment.0 & bit == 0 {
@@ -1534,10 +1534,10 @@ fn cid_to_der(bytes: &[u8]) -> Vec<u8> {
             Some(last) => &pem[..=last],
             None => pem,
         };
-        if let Ok(cert) = Certificate::from_pem(pem) {
-            if let Ok(der) = cert.to_der() {
-                return der;
-            }
+        if let Ok(cert) = Certificate::from_pem(pem)
+            && let Ok(der) = cert.to_der()
+        {
+            return der;
         }
     }
     bytes.to_vec()
@@ -1616,13 +1616,13 @@ fn check_pdata(pdata: &[u8], cert_der: &[u8], discovered: Option<&[u8; 16]>) -> 
             "c.pdata: the participant GUID is not derived from the SubjectName of c.id",
         ));
     }
-    if let Some(discovered) = discovered {
-        if guid[..12] != discovered[..12] {
-            return Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "c.pdata: the participant GUID is not the one the participant was discovered with",
-            ));
-        }
+    if let Some(discovered) = discovered
+        && guid[..12] != discovered[..12]
+    {
+        return Err(SecurityError::new(
+            SecurityErrorKind::AuthenticationFailed,
+            "c.pdata: the participant GUID is not the one the participant was discovered with",
+        ));
     }
     Ok(())
 }
@@ -2213,13 +2213,13 @@ impl AuthenticationPlugin for PkiAuthenticationPlugin {
         //     from TokenNIL, the operation shall verify that the property
         //     named future_challenge found in that token is the same value as
         //     the property named challenge1 found in the handshake_message_in".
-        if let Some(future) = self.remote_futures.get(&initiator) {
-            if !ct_eq(future, &req.challenge1) {
-                return Err(SecurityError::new(
-                    SecurityErrorKind::AuthenticationFailed,
-                    "request: challenge1 is not the future_challenge of the AuthRequest",
-                ));
-            }
+        if let Some(future) = self.remote_futures.get(&initiator)
+            && !ct_eq(future, &req.challenge1)
+        {
+            return Err(SecurityError::new(
+                SecurityErrorKind::AuthenticationFailed,
+                "request: challenge1 is not the future_challenge of the AuthRequest",
+            ));
         }
 
         // 4) The initiator `c.dsign_algo` must match its cert public key.
@@ -2513,21 +2513,21 @@ impl PkiAuthenticationPlugin {
         // hash_c1 over the `c.*` properties in WIRE order — since ZeroDDS
         // emits the request in hash order (c.id, c.perm, c.pdata, c.dsign_algo,
         // c.kagree_algo), the echo matches st.hash_c1 again.
-        if let Some(reply_hash_c1) = reply.hash_c1 {
-            if !ct_eq(&reply_hash_c1, &st.hash_c1) {
-                return Err(SecurityError::new(
-                    SecurityErrorKind::AuthenticationFailed,
-                    "reply: hash_c1 echo mismatch (cert-bind broken)",
-                ));
-            }
+        if let Some(reply_hash_c1) = reply.hash_c1
+            && !ct_eq(&reply_hash_c1, &st.hash_c1)
+        {
+            return Err(SecurityError::new(
+                SecurityErrorKind::AuthenticationFailed,
+                "reply: hash_c1 echo mismatch (cert-bind broken)",
+            ));
         }
-        if let Some(reply_dh1) = &reply.dh1 {
-            if !ct_eq(reply_dh1, &st.dh1) {
-                return Err(SecurityError::new(
-                    SecurityErrorKind::AuthenticationFailed,
-                    "reply: dh1 echo mismatch",
-                ));
-            }
+        if let Some(reply_dh1) = &reply.dh1
+            && !ct_eq(reply_dh1, &st.dh1)
+        {
+            return Err(SecurityError::new(
+                SecurityErrorKind::AuthenticationFailed,
+                "reply: dh1 echo mismatch",
+            ));
         }
         if !ct_eq(&reply.challenge1, &st.challenge1) {
             return Err(SecurityError::new(
@@ -2538,13 +2538,13 @@ impl PkiAuthenticationPlugin {
         // Table 59 (process_handshake on the initiator): with a remote
         // AuthRequestMessageToken, its future_challenge "is the same value as
         // the property named challenge2 found in the handshake_message_in".
-        if let Some(future) = self.remote_futures.get(&st.remote) {
-            if !ct_eq(future, &reply.challenge2) {
-                return Err(SecurityError::new(
-                    SecurityErrorKind::AuthenticationFailed,
-                    "reply: challenge2 is not the future_challenge of the AuthRequest",
-                ));
-            }
+        if let Some(future) = self.remote_futures.get(&st.remote)
+            && !ct_eq(future, &reply.challenge2)
+        {
+            return Err(SecurityError::new(
+                SecurityErrorKind::AuthenticationFailed,
+                "reply: challenge2 is not the future_challenge of the AuthRequest",
+            ));
         }
         // Echo comparison NUL-tolerant: `st.kagree_algo` keeps the (OpenDDS)
         // NUL for hash_c1 consistency, `reply.kagree_algo` is already
@@ -3089,7 +3089,7 @@ mod tests {
     /// DDS-Security 1.2 §8.2 Table 25: `ECDSA+P384+SHA384` signs and verifies
     /// the handshake of a P-384 identity; the name is that of 1.2 only.
     #[test]
-    fn a_p384_identity_authenticates_with_ecdsa_p384() {
+    fn security_8_2_a_p384_identity_authenticates_with_ecdsa_p384() {
         let key = || rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P384_SHA384).unwrap();
         let (mut alice, mut bob, ah, ar, bh, br) = alice_bob_with_keys(key(), key());
         let (req, reply, a, b) = run_handshake_for(&mut alice, &mut bob, (ah, ar, bh, br));
@@ -3179,7 +3179,7 @@ mod tests {
     /// certificate; a signature over another message does not. `webpki`'s
     /// verifier takes 32 octets only.
     #[test]
-    fn an_rsa_pss_handshake_signature_of_any_salt_length_verifies() {
+    fn security_8_2_an_rsa_pss_handshake_signature_of_any_salt_length_verifies() {
         const CERT: &[u8] =
             include_bytes!("../../security-crypto/tests/fixtures/rsa_pss/cert2048.der");
         const MSG: &[u8] = include_bytes!("../../security-crypto/tests/fixtures/rsa_pss/msg.bin");
@@ -3227,7 +3227,7 @@ mod tests {
     /// `RSASSA-PKCS1-V1_5+2048+SHA256` when the peer announced that it
     /// verifies only that one (§7.3.11); the replier follows the initiator.
     #[test]
-    fn an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that() {
+    fn security_8_2_an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that() {
         let rsa = || {
             rcgen::KeyPair::try_from(
                 include_bytes!("../tests/fixtures/rsa_2048_test_pkcs8.der").as_slice(),
@@ -3263,7 +3263,7 @@ mod tests {
     /// `DH+MODP-2048-256`) to a peer of 1.0 (Cyclone DDS, Fast DDS, OpenDDS) with `auto`, and
     /// whichever the setting forces; the reply echoes the request.
     #[test]
-    fn the_algorithm_names_follow_the_version_of_the_peer_and_the_setting() {
+    fn security_8_the_algorithm_names_follow_the_version_of_the_peer_and_the_setting() {
         let names = |token: &[u8]| {
             let h = zerodds_security::token::DataHolder::from_cdr_le(token).unwrap();
             let get = |p: &str| {
@@ -3344,7 +3344,7 @@ mod tests {
     /// to the same SharedSecret on both sides; the request names it (in the
     /// name of 1.1, as the other vendors do), the replier echoes it.
     #[test]
-    fn the_handshake_runs_over_dhe_modp_2048_256() {
+    fn security_8_3_the_handshake_runs_over_dhe_modp_2048_256() {
         let (mut alice, mut bob, ah, ar, bh, br) = alice_bob();
         alice.set_preferred_kx_suite(KxSuite::DhModp2048_256);
         // Towards a peer that reads the names of 1.1.
@@ -3389,7 +3389,7 @@ mod tests {
     /// The scheme a `c.dsign_algo` names has to fit the key of the
     /// certificate that came with it.
     #[test]
-    fn a_dsign_algo_must_fit_the_certificate() {
+    fn security_8_2_a_dsign_algo_must_fit_the_certificate() {
         assert_eq!(
             check_dsign_matches("ECDSA+P384+SHA384", CertKeyAlgo::EcdsaP384Sha384).unwrap(),
             DsignScheme::EcdsaP384
@@ -3451,13 +3451,13 @@ mod tests {
     }
 
     #[test]
-    fn plugin_class_id_matches_spec() {
+    fn security_10_1_plugin_class_id_matches_spec() {
         let p = PkiAuthenticationPlugin::new();
         assert_eq!(p.plugin_class_id(), "DDS:Auth:PKI-DH:1.2");
     }
 
     #[test]
-    fn validate_local_identity_accepts_ca_signed_cert() {
+    fn security_9_3_2_3_validate_local_identity_accepts_ca_signed_cert() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let cfg = IdentityConfig {
@@ -3472,7 +3472,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_local_identity_rejects_wrong_ca() {
+    fn security_9_3_2_11_validate_local_identity_rejects_wrong_ca() {
         let (cert_pem, trusted_ca_pem, key_pem) = make_cert_with_wrong_ca();
         let mut plugin = PkiAuthenticationPlugin::new();
         let cfg = IdentityConfig {
@@ -3491,7 +3491,7 @@ mod tests {
     /// ECDSA P-256 CA requires ECDSA P-256 for the chain, the handshake
     /// signature and (as the default key agreement) ECDHE-CEUM P-256.
     #[test]
-    fn the_algorithm_masks_follow_the_identity_and_the_key_agreement() {
+    fn security_7_3_11_the_algorithm_masks_follow_the_identity_and_the_key_agreement() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let handle = plugin
@@ -3549,7 +3549,8 @@ mod tests {
     /// §7.3.11: `trust_chain.required_mask` holds the signature algorithm of
     /// the permissions document this participant sends as well.
     #[test]
-    fn the_required_trust_chain_mask_holds_the_algorithm_of_the_permissions_document() {
+    fn security_7_3_11_the_required_trust_chain_mask_holds_the_algorithm_of_the_permissions_document()
+     {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let handle = plugin
@@ -3726,7 +3727,7 @@ mod tests {
     // -------------------------------------------------------------
 
     #[test]
-    fn full_three_round_handshake_alice_bob() {
+    fn security_9_3_2_4_full_three_round_handshake_alice_bob() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
 
         // 1) Alice → REQUEST.
@@ -3804,7 +3805,7 @@ mod tests {
     /// hash of the SubjectName". A request whose `c.pdata` names a GUID not
     /// derived from its certificate is refused. It was accepted.
     #[test]
-    fn a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused() {
+    fn security_7_4_3_a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         alice.set_local_participant_data(pdata_of([0x01; 16]));
         let (_, out) = alice
@@ -3824,7 +3825,7 @@ mod tests {
     /// another GUID, is refused — the "squatter" announces a foreign GUID
     /// over SPDP.
     #[test]
-    fn a_request_from_a_participant_discovered_under_another_guid_is_refused() {
+    fn security_7_4_3_a_request_from_a_participant_discovered_under_another_guid_is_refused() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let mut squatted = pdata_participant_guid(&alice.local_pdata).unwrap();
         squatted[6] ^= 0xFF;
@@ -3845,7 +3846,7 @@ mod tests {
     /// The initiator checks the reply's `c.pdata` as the replier the
     /// request's (§7.4.3; Cyclone `validate_pdata` for both).
     #[test]
-    fn a_reply_with_a_pdata_guid_not_bound_to_its_certificate_is_refused() {
+    fn security_7_4_3_a_reply_with_a_pdata_guid_not_bound_to_its_certificate_is_refused() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -3868,7 +3869,7 @@ mod tests {
     /// (Cyclone, Fast DDS), and with ZeroDDS' encapsulation header in front;
     /// without PID_PARTICIPANT_GUID, or cut short, it is refused.
     #[test]
-    fn the_pdata_guid_is_read_from_the_parameter_list() {
+    fn security_10_3_3_the_pdata_guid_is_read_from_the_parameter_list() {
         let guid = [7u8; 16];
         // ZeroDDS: encapsulation header, then the list.
         assert_eq!(pdata_participant_guid(&pdata_of(guid)).unwrap(), guid);
@@ -3891,7 +3892,7 @@ mod tests {
     /// signature fails and leaves none. The replier gave its secret out
     /// when it sent the reply, and the caller took the handshake as done.
     #[test]
-    fn the_replier_has_no_shared_secret_before_a_verified_final() {
+    fn security_9_3_2_9_1_the_replier_has_no_shared_secret_before_a_verified_final() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -3950,7 +3951,7 @@ mod tests {
     /// one, the local token is TokenNIL. Neither was made, and challenge1 was
     /// a fresh NONCE.
     #[test]
-    fn the_auth_request_announces_the_challenge1_of_the_request() {
+    fn security_9_3_2_5_the_auth_request_announces_the_challenge1_of_the_request() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let bob_guid = alice.remote_guids[&alice_remote_bob];
         let validated = alice
@@ -3989,7 +3990,7 @@ mod tests {
     /// Table 59, begin_handshake_reply: with a remote AuthRequestMessageToken
     /// its future_challenge must be the request's challenge1.
     #[test]
-    fn a_request_whose_challenge1_is_not_the_announced_one_is_refused() {
+    fn security_10_3_2_4_a_request_whose_challenge1_is_not_the_announced_one_is_refused() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (_, out) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4033,7 +4034,7 @@ mod tests {
     /// extension, only where this side runs it. The names of 1.2 were
     /// refused, and `X25519` was taken from any initiator.
     #[test]
-    fn the_algorithm_names_of_1_2_and_1_1_are_taken() {
+    fn security_8_the_algorithm_names_of_1_2_and_1_1_are_taken() {
         for name in [
             "ECDH+prime256v1-CEUM",
             "ECDHE-CEUM+P256",
@@ -4072,7 +4073,7 @@ mod tests {
     /// A replier answers an initiator in its names: to a request with the
     /// names of 1.2 the reply's `c.dsign_algo` is one of 1.2.
     #[test]
-    fn a_replier_answers_in_the_names_of_the_request() {
+    fn security_10_3_2_5_2_a_replier_answers_in_the_names_of_the_request() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (_, out) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4110,7 +4111,7 @@ mod tests {
     /// DDS-Security 1.2 §9.3.2.11.18: a returned IdentityHandle is disposed
     /// of; its GUID binding goes with it, and a second return is refused.
     #[test]
-    fn a_returned_identity_handle_is_disposed_of() {
+    fn security_9_3_2_11_a_returned_identity_handle_is_disposed_of() {
         let (mut alice, _bob, _alice_h, alice_remote_bob, _bob_h, _bob_remote_alice) = alice_bob();
         assert!(alice.remote_guids.contains_key(&alice_remote_bob));
         alice.return_identity_handle(alice_remote_bob).unwrap();
@@ -4176,7 +4177,7 @@ mod tests {
     /// handshake. The forged reply removed the state, and the genuine one
     /// found none.
     #[test]
-    fn a_forged_reply_does_not_take_the_handshake_down() {
+    fn security_9_3_2_9_1_a_forged_reply_does_not_take_the_handshake_down() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4319,7 +4320,7 @@ mod tests {
     }
 
     #[test]
-    fn request_token_has_spec_class_id_and_properties() {
+    fn security_7_3_3_1_request_token_has_spec_class_id_and_properties() {
         let (mut alice, _bob, alice_h, alice_remote_bob, _, _) = alice_bob();
         let (_, out) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4353,7 +4354,7 @@ mod tests {
     }
 
     #[test]
-    fn cert_bind_replier_modifies_initiator_cert_in_reply_rejected() {
+    fn security_10_3_3_cert_bind_replier_modifies_initiator_cert_in_reply_rejected() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4382,7 +4383,7 @@ mod tests {
     }
 
     #[test]
-    fn signature_tamper_rejected_by_initiator() {
+    fn security_10_3_2_5_2_signature_tamper_rejected_by_initiator() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4410,7 +4411,7 @@ mod tests {
     }
 
     #[test]
-    fn dh_tamper_in_reply_breaks_final_signature() {
+    fn security_10_3_2_5_2_dh_tamper_in_reply_breaks_final_signature() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4442,7 +4443,7 @@ mod tests {
     }
 
     #[test]
-    fn wrong_ca_initiator_rejected_by_replier() {
+    fn security_10_3_3_wrong_ca_initiator_rejected_by_replier() {
         let (rogue_cert, _trusted_ca, rogue_key) = make_cert_with_wrong_ca();
         // Bob has the trusted CA, but Alice's cert is from a rogue CA.
         // We mount Bob with the trusted CA, Alice with her rogue CA.
@@ -4540,7 +4541,7 @@ mod tests {
     }
 
     #[test]
-    fn replay_initiator_request_rejected_second_time() {
+    fn security_10_3_3_replay_initiator_request_rejected_second_time() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (_alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4575,7 +4576,7 @@ mod tests {
     }
 
     #[test]
-    fn hash_c1_mismatch_in_request_rejected() {
+    fn security_10_3_2_5_1_hash_c1_mismatch_in_request_rejected() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (_, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4601,7 +4602,7 @@ mod tests {
     /// directions, alongside the two suites that were already there, and
     /// an unknown string still refused.
     #[test]
-    fn kagree_algo_string_round_trips_for_every_supported_suite() {
+    fn security_10_3_1_4_kagree_algo_string_round_trips_for_every_supported_suite() {
         for suite in [
             KxSuite::EcdhP256,
             KxSuite::EcdhP384,
@@ -4653,7 +4654,7 @@ mod tests {
     }
 
     #[test]
-    fn cross_algorithm_dsign_mismatch_rejected() {
+    fn security_10_3_3_cross_algorithm_dsign_mismatch_rejected() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (_alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4693,7 +4694,7 @@ mod tests {
     }
 
     #[test]
-    fn extra_unknown_properties_in_reply_accepted_forward_compat() {
+    fn security_10_3_2_extra_unknown_properties_in_reply_accepted_forward_compat() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, out1) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -4741,14 +4742,14 @@ mod tests {
     }
 
     #[test]
-    fn shared_secret_returns_bad_argument_for_unknown_handle() {
+    fn security_9_3_2_11_shared_secret_returns_bad_argument_for_unknown_handle() {
         let plugin = PkiAuthenticationPlugin::new();
         let err = plugin.shared_secret(HandshakeHandle(42)).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
 
     #[test]
-    fn permissions_token_announces_spec_class_id_when_permissions_set() {
+    fn security_9_4_2_1_permissions_token_announces_spec_class_id_when_permissions_set() {
         let mut p = PkiAuthenticationPlugin::new();
         // Without configured permissions: no token (AccessControl
         // inactive) — otherwise a secure remote would reject us with an empty
@@ -4780,7 +4781,7 @@ mod tests {
     /// only starts like it (`DDS:Auth:PKI-DHX:1.0`) are refused; they were
     /// taken (the last two by `starts_with`) or checked as a certificate.
     #[test]
-    fn validate_remote_identity_takes_only_a_pki_dh_identity_token() {
+    fn security_9_3_2_11_validate_remote_identity_takes_only_a_pki_dh_identity_token() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let local = plugin
@@ -4829,7 +4830,7 @@ mod tests {
     // -------------------------------------------------------------
 
     #[test]
-    fn get_identity_token_returns_decodable_spec_descriptor() {
+    fn security_9_3_2_1_get_identity_token_returns_decodable_spec_descriptor() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let local = plugin
@@ -4854,7 +4855,7 @@ mod tests {
     /// class_id "DDS:Auth:PKI-DH:1.0"; without an OCSP response it has no
     /// `ocsp_status`.
     #[test]
-    fn the_identity_status_token_has_the_class_of_table_53() {
+    fn security_7_5_1_6_the_identity_status_token_has_the_class_of_table_53() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let local = plugin
@@ -4969,7 +4970,7 @@ mod tests {
     /// Eviction happens at the CAP+1-th entry — test of the
     /// eviction path itself (FIFO: the oldest entry is evicted).
     #[test]
-    fn replay_cache_evicts_oldest_at_cap_plus_one() {
+    fn security_10_3_3_replay_cache_evicts_oldest_at_cap_plus_one() {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
         for i in 0..REPLAY_CACHE_CAP {
             let mut c = [0u8; 32];
@@ -5002,7 +5003,7 @@ mod tests {
     /// stored 32-byte secret, not None or a
     /// blanket value.
     #[test]
-    fn get_shared_secret_returns_stored_value() {
+    fn security_9_3_2_8_get_shared_secret_returns_stored_value() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
 
         let (alice_hs, out1) = alice
@@ -5102,7 +5103,7 @@ mod tests {
         run_handshake_tampered_final(|h| flip_first_byte(h, "hash_c1"));
     }
     #[test]
-    fn final_token_hash_c2_tamper_rejected() {
+    fn security_10_3_2_5_3_final_token_hash_c2_tamper_rejected() {
         run_handshake_tampered_final(|h| flip_first_byte(h, "hash_c2"));
     }
     #[test]
@@ -5110,15 +5111,15 @@ mod tests {
         run_handshake_tampered_final(|h| flip_first_byte(h, "dh1"));
     }
     #[test]
-    fn final_token_dh2_tamper_rejected() {
+    fn security_10_3_2_5_3_final_token_dh2_tamper_rejected() {
         run_handshake_tampered_final(|h| flip_first_byte(h, "dh2"));
     }
     #[test]
-    fn final_token_challenge1_tamper_rejected() {
+    fn security_10_3_2_5_3_final_token_challenge1_tamper_rejected() {
         run_handshake_tampered_final(|h| flip_first_byte(h, "challenge1"));
     }
     #[test]
-    fn final_token_challenge2_tamper_rejected() {
+    fn security_10_3_3_final_token_challenge2_tamper_rejected() {
         run_handshake_tampered_final(|h| flip_first_byte(h, "challenge2"));
     }
 
@@ -5153,7 +5154,7 @@ mod tests {
     /// candidate_participant_guid." The expected value is computed here from
     /// that text; `domain_id` is kept with the identity.
     #[test]
-    fn validate_local_identity_returns_the_adjusted_guid_of_table_59() {
+    fn security_9_3_2_11_validate_local_identity_returns_the_adjusted_guid_of_table_59() {
         use x509_cert::Certificate;
         use x509_cert::der::{Decode, Encode};
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
@@ -5190,7 +5191,7 @@ mod tests {
     /// Table 59: a certificate the configured CA did not issue is
     /// VALIDATION_FAILED, and no identity is made.
     #[test]
-    fn validate_local_identity_with_a_foreign_ca_fails_without_a_handle() {
+    fn security_9_3_2_11_validate_local_identity_with_a_foreign_ca_fails_without_a_handle() {
         let (cert_pem, ca_pem, key_pem) = make_cert_with_wrong_ca();
         let mut plugin = PkiAuthenticationPlugin::new();
         let err = plugin
@@ -5205,7 +5206,7 @@ mod tests {
     /// previous call to validate_local_identity. If the above condition is
     /// not met, the operation shall return the exception".
     #[test]
-    fn the_tokens_of_a_local_identity_need_a_local_identity_handle() {
+    fn security_9_3_2_11_the_tokens_of_a_local_identity_need_a_local_identity_handle() {
         let (mut alice, _bob, alice_h, alice_remote_bob, _bob_h, _) = alice_bob();
         assert!(alice.get_identity_token(alice_h).is_ok());
         assert!(alice.get_identity_status_token(alice_h).is_ok());
@@ -5237,7 +5238,7 @@ mod tests {
     /// and, when there is an OCSP response for the identity certificate, it
     /// as the binary property `ocsp_status` (DER).
     #[test]
-    fn the_identity_status_token_carries_the_ocsp_response() {
+    fn security_9_3_2_2_the_identity_status_token_carries_the_ocsp_response() {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
         let bare = alice.get_identity_status_token(alice_h).unwrap();
         let bare = ht::DataHolder::from_cdr_le(&bare).unwrap();
@@ -5254,7 +5255,7 @@ mod tests {
     /// §9.3.2.12.1, Table 32: a change of the IdentityStatusToken is
     /// reported to the listener as IDENTITY_STATUS.
     #[test]
-    fn a_changed_status_token_is_reported_as_identity_status() {
+    fn security_9_3_2_2_a_changed_status_token_is_reported_as_identity_status() {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
         let recorder = Arc::new(Recorder::default());
         alice.set_listener(Some(recorder.clone())).unwrap();
@@ -5292,7 +5293,8 @@ mod tests {
     /// Table 59, set_participant_security_config: the supported masks have to
     /// include an algorithm of the plugin, in each of the three kinds.
     #[test]
-    fn set_participant_security_config_fails_without_an_algorithm_of_the_plugin() {
+    fn security_9_3_2_11_set_participant_security_config_fails_without_an_algorithm_of_the_plugin()
+    {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
         let ok = ParticipantSecurityConfig::unrestricted();
         assert!(alice.set_participant_security_config(alice_h, &ok).is_ok());
@@ -5327,7 +5329,7 @@ mod tests {
     /// the ones it uses (the identity certificate's, the key's, the key
     /// agreement of the initiator) go into the required masks.
     #[test]
-    fn set_participant_security_config_adjusts_a_copy_of_the_given_info() {
+    fn security_9_3_2_11_set_participant_security_config_adjusts_a_copy_of_the_given_info() {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
         let (pss, pkcs1, p256, p384) = (1u32, 2u32, 4u32, 8u32);
         let config = ParticipantSecurityConfig {
@@ -5354,7 +5356,8 @@ mod tests {
     /// digital_signature.trust_chain.supported_mask, fail otherwise", as is
     /// the key agreement of the initiator in the shared_secret mask.
     #[test]
-    fn set_participant_security_config_fails_when_a_used_algorithm_is_not_supported() {
+    fn security_9_3_2_11_set_participant_security_config_fails_when_a_used_algorithm_is_not_supported()
+     {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
         // The key is ECDSA P-256 (bit 2); only P-384 (bit 3) is supported.
         let only_p384 = ParticipantSecurityConfig {
@@ -5388,7 +5391,7 @@ mod tests {
     /// ECDHE P-384 refuses a request that agrees with ECDHE P-256, and one
     /// restricted to P-256 takes it.
     #[test]
-    fn the_configured_algorithms_bind_the_handshake() {
+    fn security_9_3_2_11_the_configured_algorithms_bind_the_handshake() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (_, out) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -5441,7 +5444,7 @@ mod tests {
     /// that ends an ASCII value (§7.3.3.1), and the token is the one the
     /// plugin announces.
     #[test]
-    fn the_permissions_credential_is_what_the_handshake_sends_as_c_perm() {
+    fn security_9_3_2_11_the_permissions_credential_is_what_the_handshake_sends_as_c_perm() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         assert!(alice.get_permissions_token().is_empty());
         let (credential, token) = permissions_tokens("PERMISSIONS-OF-ALICE");
@@ -5478,7 +5481,7 @@ mod tests {
     /// Table 29: a credential that is not that of DDS:Access:Permissions, one
     /// without the document, and a token that is no DataHolder are refused.
     #[test]
-    fn a_permissions_credential_that_is_none_is_refused() {
+    fn security_9_3_2_11_a_permissions_credential_that_is_none_is_refused() {
         let (mut alice, _bob, alice_h, _, _, _) = alice_bob();
         let (credential, token) = permissions_tokens("DOC");
         let wrong_class = ht::DataHolder::new("DDS:Access:PSK:PermissionsCredential")
@@ -5515,7 +5518,7 @@ mod tests {
     /// VALIDATION_PENDING_HANDSHAKE_REQUEST. If [...] < [...],
     /// VALIDATION_PENDING_HANDSHAKE_MESSAGE."
     #[test]
-    fn validate_remote_identity_orders_the_guids_like_table_59() {
+    fn security_9_3_2_11_validate_remote_identity_orders_the_guids_like_table_59() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let local_guid = [0x50u8; 16];
@@ -5565,7 +5568,7 @@ mod tests {
     /// shall return VALIDATION_FAILED."; a different MinorVersion is not
     /// different.
     #[test]
-    fn validate_remote_identity_compares_the_plugin_name_and_the_major_version() {
+    fn security_9_3_2_11_validate_remote_identity_compares_the_plugin_name_and_the_major_version() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let local = plugin
@@ -5620,7 +5623,7 @@ mod tests {
     /// of the class `DDS:Auth:PKI-DH:1.0+AuthReq` and holds a 256-bit
     /// `future_challenge`.
     #[test]
-    fn the_local_auth_request_token_is_made_for_a_nil_remote_one_only() {
+    fn security_9_3_2_5_the_local_auth_request_token_is_made_for_a_nil_remote_one_only() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let local = plugin
@@ -5674,7 +5677,7 @@ mod tests {
     /// VALIDATION_PENDING_HANDSHAKE_MESSAGE (reply), the local identity being
     /// the one that call was made for; otherwise the PreconditionError.
     #[test]
-    fn the_handshake_operations_need_the_result_of_validate_remote_identity() {
+    fn security_9_3_2_11_the_handshake_operations_need_the_result_of_validate_remote_identity() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         // Alice has the smaller GUID: she begins, and cannot reply.
         assert!(
@@ -5711,7 +5714,7 @@ mod tests {
     /// begin_handshake_request and begin_handshake_reply return
     /// VALIDATION_PENDING_HANDSHAKE_MESSAGE.
     #[test]
-    fn the_handshake_returns_the_validation_results_of_table_59() {
+    fn security_9_3_2_11_the_handshake_returns_the_validation_results_of_table_59() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let (alice_hs, request) = alice
             .begin_handshake_request(alice_h, alice_remote_bob, &alice.test_pdata())
@@ -5782,7 +5785,7 @@ mod tests {
     /// there is none (§9.3.2.11.8: "after the last handshake operation [...]
     /// returns VALIDATION_OK or VALIDATION_OK_FINAL_MESSAGE").
     #[test]
-    fn the_authenticated_peer_credential_token_holds_c_id_and_c_perm() {
+    fn security_7_3_3_1_the_authenticated_peer_credential_token_holds_c_id_and_c_perm() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let alice_cert = der_to_pem(&alice.identities[&alice_h].cert_der);
         let bob_cert = der_to_pem(&bob.identities[&bob_h].cert_der);
@@ -5840,7 +5843,7 @@ mod tests {
     /// §9.3.2.11.14 to §9.3.2.11.19 and Table 59: the return operations take
     /// back what the plugin issued — once — and release the state behind it.
     #[test]
-    fn the_return_operations_take_back_what_was_issued() {
+    fn security_9_3_2_11_the_return_operations_take_back_what_was_issued() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let identity = alice.get_identity_token(alice_h).unwrap();
         let status = alice.get_identity_status_token(alice_h).unwrap();
@@ -5910,7 +5913,7 @@ mod tests {
     /// §9.3.2.12.2: revoking an identity invalidates its handle and tells the
     /// listener; what hangs on it (the handshake, its secret) goes with it.
     #[test]
-    fn revoking_an_identity_tells_the_listener_and_invalidates_the_handle() {
+    fn security_9_3_2_11_revoking_an_identity_tells_the_listener_and_invalidates_the_handle() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let recorder = Arc::new(Recorder::default());
         alice.set_listener(Some(recorder.clone())).unwrap();
@@ -5960,7 +5963,7 @@ mod tests {
     /// the DDS implementation that the identity of a specific
     /// DomainParticipant is being revoked."
     #[test]
-    fn an_expired_identity_certificate_is_revoked() {
+    fn security_9_3_2_11_an_expired_identity_certificate_is_revoked() {
         let (mut alice, mut bob, alice_h, alice_remote_bob, bob_h, bob_remote_alice) = alice_bob();
         let recorder = Arc::new(Recorder::default());
         alice.set_listener(Some(recorder.clone())).unwrap();
@@ -5985,7 +5988,7 @@ mod tests {
     /// §9.3.2.12.2: a CRL that lists the certificate of an authenticated peer
     /// revokes its identity (Table 59: "The operation shall check a CRL").
     #[test]
-    fn a_crl_that_lists_the_peer_revokes_its_identity() {
+    fn security_9_3_2_12_a_crl_that_lists_the_peer_revokes_its_identity() {
         use rcgen::{
             CertificateParams, CertificateRevocationListParams, KeyIdMethod, KeyPair,
             RevocationReason, RevokedCertParams, SerialNumber,
@@ -6086,7 +6089,7 @@ mod tests {
     /// names of Table 25 in `dds.cert.algo` and `dds.ca.algo`, and the names
     /// of 1.1 with the setting that OpenDDS needs.
     #[test]
-    fn the_identity_token_names_the_algorithms_of_table_25() {
+    fn security_10_3_2_1_the_identity_token_names_the_algorithms_of_table_25() {
         let (cert_pem, ca_pem, key_pem) = make_signed_cert_ca_key();
         let mut plugin = PkiAuthenticationPlugin::new();
         let handle = plugin
@@ -6119,7 +6122,8 @@ mod tests {
     /// `org.zerodds.sec.algorithm_names` says `1.1`; `1.2` (the default) keeps
     /// the names of 1.2 for every peer.
     #[test]
-    fn the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1() {
+    fn security_7_3_6_the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1()
+     {
         let names = |token: &[u8]| {
             let h = ht::DataHolder::from_cdr_le(token).unwrap();
             let text = |p: &str| {

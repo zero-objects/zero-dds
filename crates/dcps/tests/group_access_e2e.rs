@@ -305,7 +305,7 @@ fn a_reader_of_one_topic_gets_its_samples_without_the_others_numbers_same_runtim
 }
 
 #[test]
-fn a_reader_of_one_topic_gets_its_samples_without_the_others_numbers_over_udp() {
+fn rtps_8_7_5_a_reader_of_one_topic_gets_its_samples_without_the_others_numbers_over_udp() {
     reader_of_one_topic(true, "Udp");
 }
 
@@ -350,12 +350,12 @@ fn coherent_set_across_topics(two: bool, label: &str) {
 }
 
 #[test]
-fn a_group_coherent_set_across_two_topics_appears_after_its_end_same_runtime() {
+fn rtps_8_7_6_a_group_coherent_set_across_two_topics_appears_after_its_end_same_runtime() {
     coherent_set_across_topics(false, "Local");
 }
 
 #[test]
-fn a_group_coherent_set_across_two_topics_appears_after_its_end_over_udp() {
+fn rtps_8_7_6_a_group_coherent_set_across_two_topics_appears_after_its_end_over_udp() {
     coherent_set_across_topics(true, "Udp");
 }
 
@@ -421,7 +421,7 @@ fn two_readers_of_one_topic_each_get_every_sample_same_runtime() {
 }
 
 #[test]
-fn two_readers_of_one_topic_each_get_every_sample_over_udp() {
+fn rtps_8_7_5_two_readers_of_one_topic_each_get_every_sample_over_udp() {
     two_readers_of_one_topic(true, "Udp");
 }
 
@@ -452,7 +452,7 @@ fn dispose_in_group_order(two: bool, label: &str) {
 }
 
 #[test]
-fn a_dispose_takes_its_place_in_the_group_order_same_runtime() {
+fn dcps_2_2_3_6_a_dispose_takes_its_place_in_the_group_order_same_runtime() {
     dispose_in_group_order(false, "Local");
 }
 
@@ -502,12 +502,12 @@ fn a_dispose_in_a_topic_coherent_set_waits_for_its_end_over_udp() {
 }
 
 #[test]
-fn a_dispose_in_a_group_coherent_set_waits_for_its_end_same_runtime() {
+fn dcps_2_2_2_5_1_9_a_dispose_in_a_group_coherent_set_waits_for_its_end_same_runtime() {
     dispose_in_coherent_set(group(false, true), false, "GroupLocal");
 }
 
 #[test]
-fn a_dispose_in_a_group_coherent_set_waits_for_its_end_over_udp() {
+fn dcps_2_2_3_6_a_dispose_in_a_group_coherent_set_waits_for_its_end_over_udp() {
     dispose_in_coherent_set(group(false, true), true, "GroupUdp");
 }
 
@@ -545,7 +545,7 @@ fn reader_made_inside_a_set(two: bool, label: &str) -> Vec<u8> {
 }
 
 #[test]
-fn a_reader_made_inside_a_set_does_not_get_its_tail_same_runtime() {
+fn rtps_8_7_6_a_reader_made_inside_a_set_does_not_get_its_tail_same_runtime() {
     assert_eq!(reader_made_inside_a_set(false, "Local"), [3, 4]);
 }
 
@@ -557,7 +557,7 @@ fn a_reader_made_inside_a_set_gets_it_whole_over_udp() {
 /// §8.7.6: "Writers are not allowed to be added or removed from a Publisher/// §8.7.6: "Writers are not allowed to be added or removed from a Publisher
 /// from the time that a coherent set begins until after it ends."
 #[test]
-fn a_writer_is_not_created_or_deleted_while_a_group_coherent_set_is_open() {
+fn rtps_8_7_6_a_writer_is_not_created_or_deleted_while_a_group_coherent_set_is_open() {
     let sides = Sides::new(false);
     let (publisher, writers, _subscriber, _readers) =
         group_pair::<RawBytes>(&sides, group(false, true), &["GroupFixedA"], &[]);
@@ -590,7 +590,7 @@ fn a_writer_is_not_created_or_deleted_while_a_group_coherent_set_is_open() {
 /// leaves the sample; inside it the sample comes. Only get_datareaders
 /// asked for the bracket.
 #[test]
-fn a_take_under_group_scope_wants_begin_access() {
+fn dcps_2_2_2_5_1_9_a_take_under_group_scope_wants_begin_access() {
     let sides = Sides::new(false);
     let (_publisher, writers, subscriber, readers) = group_pair::<RawBytes>(
         &sides,

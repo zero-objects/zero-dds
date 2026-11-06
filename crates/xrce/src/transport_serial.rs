@@ -433,10 +433,10 @@ impl SerialFramer {
         let mut out = Vec::new();
         for &b in data {
             if b == FLAG_BYTE {
-                if let Some(current) = &self.current {
-                    if !current.raw.is_empty() || current.escaped {
-                        out.push(Err(SerialError::BeginFlagInFrame));
-                    }
+                if let Some(current) = &self.current
+                    && (!current.raw.is_empty() || current.escaped)
+                {
+                    out.push(Err(SerialError::BeginFlagInFrame));
                 }
                 self.current = Some(FrameAssembler::new(self.check));
                 continue;
@@ -497,7 +497,7 @@ mod tests {
     /// RFC 1662 FCS-16 (CRC-16/X-25): 0x906E for "123456789", the check
     /// value of RFC 1662 Appendix C; it was 0x29B1, CCITT-FALSE.
     #[test]
-    fn the_frame_check_is_the_fcs16_of_rfc_1662() {
+    fn xrce_annex_c_1_1_6_the_frame_check_is_the_fcs16_of_rfc_1662() {
         assert_eq!(fcs16(b"123456789"), 0x906E);
         assert_eq!(fcs16(&[]), 0x0000);
     }
@@ -505,7 +505,7 @@ mod tests {
     /// The CRC of Micro-XRCE-DDS: CRC-16/ARC, 0xBB3D for "123456789", over
     /// the payload alone; a frame of the one check is refused by the other.
     #[test]
-    fn the_frame_check_of_micro_xrce_dds_is_taken_when_chosen() {
+    fn xrce_annex_c_1_3_the_frame_check_of_micro_xrce_dds_is_taken_when_chosen() {
         assert_eq!(crc16_arc(b"123456789"), 0xBB3D);
         let payload = [0x10, 0x20, 0x30];
         let frame = encode_frame_with(FrameCheck::Crc16ArcPayload, 0, 1, &payload).unwrap();
@@ -529,7 +529,7 @@ mod tests {
     /// endian, payload, frameCheck little endian over the four header octets
     /// and the payload.
     #[test]
-    fn a_frame_carries_the_addresses_the_length_and_a_little_endian_check() {
+    fn xrce_annex_c_1_1_a_frame_carries_the_addresses_the_length_and_a_little_endian_check() {
         let frame = encode_frame(0x01, 0x02, &[0x10, 0x20, 0x30]).unwrap();
         let check = fcs16(&[0x01, 0x02, 0x03, 0x00, 0x10, 0x20, 0x30]).to_le_bytes();
         assert_eq!(
@@ -552,7 +552,7 @@ mod tests {
     /// Annex C.1.2: 0x7E and 0x7D after the flag are stuffed, also in the
     /// addresses, the length and the check.
     #[test]
-    fn flag_and_escape_octets_are_stuffed_everywhere_after_the_flag() {
+    fn xrce_annex_c_1_2_flag_and_escape_octets_are_stuffed_everywhere_after_the_flag() {
         let payload = alloc::vec![0x7E, 0x7D, 0x00, 0x7E];
         let frame = encode_frame(0x7E, 0x7D, &payload).unwrap();
         assert_eq!(&frame[..5], &[0x7E, 0x7D, 0x5E, 0x7D, 0x5D]);
@@ -567,7 +567,7 @@ mod tests {
     /// Annex C.1.3: a frame whose frameCheck is not the computed CRC is
     /// dropped.
     #[test]
-    fn a_frame_with_a_wrong_check_is_refused() {
+    fn xrce_annex_c_1_3_a_frame_with_a_wrong_check_is_refused() {
         let mut frame = encode_frame(1, 2, &[1, 2, 3, 4]).unwrap();
         let last = frame.len() - 1;
         frame[last] ^= 0x01;
@@ -580,7 +580,7 @@ mod tests {
     /// Annex C.1.3: a non-escaped BEGIN_FLAG before the payload is read
     /// drops the frame, and begins the next one.
     #[test]
-    fn a_begin_flag_inside_a_frame_drops_it_and_begins_the_next() {
+    fn xrce_annex_c_1_3_a_begin_flag_inside_a_frame_drops_it_and_begins_the_next() {
         let good = encode_message(&create_client(), 3, 0).unwrap();
         let mut bytes = good[..6].to_vec();
         bytes.extend_from_slice(&good);
@@ -594,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn the_framer_takes_frames_split_and_back_to_back_and_skips_noise() {
+    fn xrce_annex_c_1_the_framer_takes_frames_split_and_back_to_back_and_skips_noise() {
         let a = encode_message(&create_client(), 1, 0).unwrap();
         let hb = message_with(
             HeartbeatPayload {
@@ -621,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_frame_returns_the_rest_after_the_frame() {
+    fn xrce_annex_c_1_1_5_decode_frame_returns_the_rest_after_the_frame() {
         let mut bytes = encode_message(&create_client(), 5, 6).unwrap();
         bytes.extend_from_slice(&[0xAA, 0xBB]);
         let (frame, msg, rest) = decode_frame(&bytes).unwrap();
@@ -631,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn escape_errors_and_short_frames_are_refused() {
+    fn xrce_annex_c_1_2_escape_errors_and_short_frames_are_refused() {
         assert!(matches!(
             decode_frame_inner(&[0x01, ESCAPE_BYTE]),
             Err(SerialError::DanglingEscape)

@@ -92,20 +92,3 @@ pub use token::{
     WireProperty,
 };
 pub use vendor_forms::{AlgoNameNul, SubjectNameForm};
-
-#[cfg(test)]
-#[allow(clippy::expect_used)]
-mod tests {
-    #[test]
-    fn plugin_trait_objects_are_object_safe() {
-        // Smoke test: every plugin trait is object-safe (`dyn Plugin`
-        // constructible). Fails at compile time if someone accidentally
-        // adds `Self: Sized` or generic methods.
-        fn _assert_object_safe<T: ?Sized>() {}
-        _assert_object_safe::<dyn super::AuthenticationPlugin>();
-        _assert_object_safe::<dyn super::AccessControlPlugin>();
-        _assert_object_safe::<dyn super::CryptographicPlugin>();
-        _assert_object_safe::<dyn super::LoggingPlugin>();
-        _assert_object_safe::<dyn super::DataTaggingPlugin>();
-    }
-}

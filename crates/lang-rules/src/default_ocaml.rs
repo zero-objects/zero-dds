@@ -436,10 +436,9 @@ fn discriminant_literal(ast: &Ast, discriminator: Id<TypeNode>, value: i128) -> 
     if matches!(
         ast.type_(resolved).map(|node| node.kind.clone()),
         Ok(TypeKind::Enumeration { .. })
-    ) {
-        if let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved) {
-            return ocaml_enumerator_name(ast, resolved, &enumerator);
-        }
+    ) && let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved)
+    {
+        return ocaml_enumerator_name(ast, resolved, &enumerator);
     }
     literal_for_kind(value, &kind_of(ast, resolved, 0))
 }

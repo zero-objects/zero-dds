@@ -771,7 +771,7 @@ mod tests {
     /// returns TRUE, for topics a grant would deny too. The grants of the
     /// document were evaluated; an unknown handle is still an error.
     #[test]
-    fn every_check_returns_true() {
+    fn security_10_8_every_check_returns_true() {
         let mut ac = PskPermissionsAccessControl::new();
         let perms = parse_permissions_xml(CARL_XML).expect("CARL_XML parses");
         let h = ac.register("CN=carl".into(), perms, None);
@@ -806,7 +806,7 @@ mod tests {
     /// check_create_topic" and the checks of instances, remote topics and
     /// matches return TRUE, whatever the document of the handle says.
     #[test]
-    fn the_participant_topic_instance_and_match_checks_return_true() {
+    fn security_10_8_3_the_participant_topic_instance_and_match_checks_return_true() {
         let mut ac = PskPermissionsAccessControl::new();
         let perms = parse_permissions_xml(CARL_XML).unwrap();
         let h = ac.register("CN=carl".into(), perms, None);
@@ -884,7 +884,7 @@ mod tests {
     /// is refused. The attributes follow Table 85: `is_rtps_psk_protected`
     /// for SIGN and ENCRYPT, the encrypted flag for ENCRYPT only.
     #[test]
-    fn nothing_is_needed_and_the_rtps_psk_protection_is_read() {
+    fn security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read() {
         let mut ac = PskPermissionsAccessControl::new();
         let local = IdentityHandle(1);
         let none = PropertyList::new();
@@ -921,7 +921,7 @@ mod tests {
     /// and no other attribute is needed; the credential token is the same
     /// kind of token (Table 85).
     #[test]
-    fn permissions_token_class_id_matches_spec() {
+    fn security_10_8_permissions_token_class_id_matches_spec() {
         let mut ac = PskPermissionsAccessControl::new();
         let none = PropertyList::new();
         let h = ac
@@ -944,7 +944,7 @@ mod tests {
     /// Table 85: validate_remote_permissions "shall succeed", whatever
     /// token and credential the remote presents; every check then permits.
     #[test]
-    fn a_remote_is_accepted_whatever_it_presents() {
+    fn security_10_8_a_remote_is_accepted_whatever_it_presents() {
         let mut ac = PskPermissionsAccessControl::new();
         let credentials = [
             DataHolder::new(""),
@@ -977,7 +977,7 @@ mod tests {
 
     /// Table 85, `get_participant_security_config`: every field of the list.
     #[test]
-    fn the_participant_config_is_the_one_of_table_85() {
+    fn security_10_8_3_the_participant_config_is_the_one_of_table_85() {
         let mut ac = PskPermissionsAccessControl::new();
         for (value, protected, mask) in [
             (
@@ -1035,7 +1035,7 @@ mod tests {
     /// Table 85: the topic and endpoint configs are all FALSE and empty, the
     /// algorithm masks ALL and EMPTY.
     #[test]
-    fn the_topic_and_endpoint_configs_are_all_false() {
+    fn security_9_4_2_9_the_topic_and_endpoint_configs_are_all_false() {
         let (mut ac, h) = build_alice();
         let topic = ac.get_topic_security_config(h, "Chatter").unwrap();
         assert_eq!(topic, TopicSecurityConfig::default());
@@ -1080,7 +1080,7 @@ mod tests {
     /// §9.4.2.9.19 to §9.4.2.9.29: the listener is taken; only what was
     /// issued is returned, and once.
     #[test]
-    fn listener_and_return_operations() {
+    fn security_9_4_2_9_listener_and_return_operations() {
         let (mut ac, h) = build_alice();
         ac.set_listener(Arc::new(Quiet)).unwrap();
         let token = ac.get_permissions_token(h).unwrap();

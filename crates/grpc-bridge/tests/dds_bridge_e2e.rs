@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! E2E test for the bridge daemon's **real DDS side** (bridge spec §4.2).
-//! Proves the `FUTURE (L2)` stub is gone:
+//! E2E test of the bridge daemon's **real DDS side** (bridge spec §4.2 to
+//! §4.4):
 //!
-//!   gRPC `Publish(Sample{payload})`  →  DDS DataWriter  →  (loopback)
-//!   →  DDS DataReader  →  gRPC `Subscribe` returns the same `Sample`.
+//!   gRPC `Subscribe` opens a server stream with a DataReader of its own
+//!   (§4.3); gRPC `Publish(Sample{cdr_payload})` → DDS DataWriter → each
+//!   stream's DataReader → a message of each stream with the same
+//!   `cdr_payload` (§4.4: the encapsulation header and the CDR bytes).
 //!
-//! This is the Rust-side anchor for the F2b java-omgdds multi-process
-//! bridge: the daemon really moves opaque bytes through the DCPS runtime,
-//! not an echo. The Java client (`crates/java-omgdds/java`) speaks the
-//! identical gRPC wire against this daemon.
+//! Two streams on one topic each receive the sample: every `Subscribe` has
+//! its own reader. This is the Rust-side anchor for the java-omgdds client
+//! (`crates/java-omgdds/java`), which speaks the same gRPC wire against this
+//! daemon.
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -19,10 +21,11 @@
     clippy::uninlined_format_args
 )]
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use zerodds_grpc_bridge::{decode_message, encode_message};
@@ -38,28 +41,13 @@ fn daemon_binary() -> PathBuf {
 
 struct DaemonGuard {
     child: Child,
+    _domain: zerodds_test_domains::DomainLease,
 }
 
 impl Drop for DaemonGuard {
     fn drop(&mut self) {
-        #[cfg(unix)]
-        {
-            let pid = self.child.id() as i32;
-            // SAFETY: child still owned (Drop is exclusive); SIGTERM is call-safe.
-            unsafe {
-                libc::kill(pid, libc::SIGTERM);
-            }
-            let deadline = Instant::now() + Duration::from_secs(3);
-            loop {
-                match self.child.try_wait() {
-                    Ok(Some(_)) => return,
-                    Ok(None) if Instant::now() < deadline => {
-                        std::thread::sleep(Duration::from_millis(50));
-                    }
-                    _ => break,
-                }
-            }
-        }
+        // SIGKILL: the test is over, the daemon's shutdown path is not under
+        // test here (`daemon_security_e2e.rs` tests SIGTERM).
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
@@ -72,38 +60,57 @@ fn pick_port() -> u16 {
     p
 }
 
-fn spawn_daemon(port: u16, domain: i32) -> DaemonGuard {
+/// Starts the daemon on a leased DDS domain (the host's share of the band,
+/// `zerodds-test-domains`) and returns once it reports `listening`, after its
+/// DDS participant started (spec §9.1).
+fn spawn_daemon(port: u16) -> DaemonGuard {
+    let domain = zerodds_test_domains::lease_domain();
     let bind = format!("127.0.0.1:{port}");
-    let child = Command::new(daemon_binary())
+    let mut child = Command::new(daemon_binary())
         .args([
             "--bind",
             &bind,
             "--domain",
-            &domain.to_string(),
+            &domain.id().to_string(),
             "--topic",
             "Demo::Bytes=DemoStream",
             "--idle-timeout-ms",
             "20000",
         ])
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .stdout(Stdio::null())
         .spawn()
         .expect("spawn daemon");
-    // DDS participant startup (UDP sockets + writer/reader registration).
-    std::thread::sleep(Duration::from_millis(600));
-    DaemonGuard { child }
+    let stderr = child.stderr.take().expect("stderr");
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        // Reads to the end even after the test stopped listening: a daemon
+        // writing to a closed pipe would fail its `eprintln!`.
+        for line in BufReader::new(stderr).lines() {
+            let Ok(line) = line else { break };
+            let _ = tx.send(line);
+        }
+    });
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        match rx.recv_timeout(left) {
+            Ok(line) if line.contains("\"event\":\"listening\"") => break,
+            Ok(_) => {}
+            Err(e) => panic!("the daemon did not report listening: {e:?}"),
+        }
+    }
+    DaemonGuard {
+        child,
+        _domain: domain,
+    }
 }
 
 fn connect(port: u16) -> TcpStream {
-    for _ in 0..40 {
-        if let Ok(s) = TcpStream::connect(("127.0.0.1", port)) {
-            let _ = s.set_read_timeout(Some(Duration::from_secs(3)));
-            let _ = s.set_write_timeout(Some(Duration::from_secs(3)));
-            return s;
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
-    panic!("connect failed after retries");
+    let s = TcpStream::connect(("127.0.0.1", port)).expect("connect to the listening daemon");
+    s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    s.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+    s
 }
 
 fn write_frame(stream: &mut TcpStream, typ: FrameType, flags: u8, sid: u32, payload: &[u8]) {
@@ -195,17 +202,17 @@ fn read_response(stream: &mut TcpStream) -> (Option<Vec<u8>>, bool) {
             if let Ok((_, msg, _)) = decode_message(&p) {
                 data = Some(msg);
             }
-        } else if typ == FrameType::Headers as u8 {
-            if let Ok(fields) = dec.decode(&p) {
-                if saw_headers
-                    && fields
-                        .iter()
-                        .any(|f| f.name == "grpc-status" && f.value == "0")
-                {
-                    status_ok = true;
-                }
-                saw_headers = true;
+        } else if typ == FrameType::Headers as u8
+            && let Ok(fields) = dec.decode(&p)
+        {
+            if saw_headers
+                && fields
+                    .iter()
+                    .any(|f| f.name == "grpc-status" && f.value == "0")
+            {
+                status_ok = true;
             }
+            saw_headers = true;
         }
         if (flags & Flags::END_STREAM) != 0 && typ == FrameType::Headers as u8 && saw_headers {
             break;
@@ -265,8 +272,10 @@ fn publish(port: u16, payload: &[u8]) -> u64 {
     }
 }
 
-/// gRPC `Subscribe` — returns the next `Sample.payload`, if any.
-fn subscribe_once(port: u16) -> Option<Vec<u8>> {
+/// Opens a gRPC `Subscribe` stream (spec §4.3) and returns once the
+/// daemon answered with the response HEADERS: from then on the stream's
+/// DataReader exists.
+fn open_subscribe(port: u16) -> TcpStream {
     let mut stream = connect(port);
     handshake(&mut stream);
     let mut enc = HpackEncoder::new();
@@ -295,38 +304,96 @@ fn subscribe_once(port: u16) -> Option<Vec<u8>> {
         1,
         &h,
     );
-    let (data, _ok) = read_response(&mut stream);
-    data.and_then(|msg| proto_sample_payload(&msg))
+    let mut dec = HpackDecoder::new();
+    loop {
+        let (typ, flags, p) = read_frame(&mut stream);
+        if typ != FrameType::Headers as u8 {
+            continue;
+        }
+        let fields = dec.decode(&p).expect("hpack");
+        if let Some(status) = fields.iter().find(|f| f.name == "grpc-status") {
+            panic!(
+                "Subscribe answered grpc-status {} instead of a stream",
+                status.value
+            );
+        }
+        assert_eq!(flags & Flags::END_STREAM, 0, "Subscribe ended at once");
+        return stream;
+    }
+}
+
+fn read_frame(stream: &mut TcpStream) -> (u8, u8, Vec<u8>) {
+    let mut h = [0u8; 9];
+    stream.read_exact(&mut h).expect("a frame");
+    let len = ((h[0] as usize) << 16) | ((h[1] as usize) << 8) | h[2] as usize;
+    let mut p = vec![0u8; len];
+    stream.read_exact(&mut p).expect("the frame's payload");
+    (h[3], h[4], p)
+}
+
+/// The `Sample.cdr_payload` of the next message of an open stream.
+fn next_message(stream: &mut TcpStream) -> Vec<u8> {
+    loop {
+        let (typ, _, p) = read_frame(stream);
+        if typ == FrameType::Data as u8 && !p.is_empty() {
+            let (_, msg, _) = decode_message(&p).expect("a length-prefixed message");
+            return proto_sample_payload(&msg).expect("Sample.cdr_payload");
+        }
+        assert_ne!(
+            typ,
+            FrameType::RstStream as u8,
+            "the daemon reset the stream"
+        );
+    }
 }
 
 #[test]
-fn dds_publish_then_subscribe_roundtrip() {
+fn grpcbridge_4_3_dds_publish_reaches_every_subscribe_stream() {
     let port = pick_port();
-    // Domain derived from port → low collision risk on a shared host.
-    let domain = ((port % 200) as i32).max(1);
-    let _guard = spawn_daemon(port, domain);
+    let _daemon = spawn_daemon(port);
+    let mut first = open_subscribe(port);
+    let mut second = open_subscribe(port);
 
-    // Ingress: gRPC Publish → DDS DataWriter.
-    let accepted = publish(port, b"hello-zerodds");
+    // Ingress: gRPC Publish → DDS DataWriter. `cdr_payload` is the
+    // encapsulation header (XCDR1, little endian) and the CDR bytes (§4.4).
+    let cdr_payload = [&[0x00, 0x01, 0x00, 0x00][..], b"hello-zerodds"].concat();
     assert_eq!(
-        accepted, 1,
+        publish(port, &cdr_payload),
+        1,
         "PublishAck.accepted should be 1 (DDS write ok)"
     );
 
-    // Egress: DDS DataReader (loopback) → gRPC Subscribe. Retry until the
-    // sample has propagated through the runtime to the reader channel.
-    let deadline = Instant::now() + Duration::from_secs(8);
-    let mut got = None;
-    while Instant::now() < deadline {
-        if let Some(p) = subscribe_once(port) {
-            got = Some(p);
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(150));
-    }
-    assert_eq!(
-        got.as_deref(),
-        Some(&b"hello-zerodds"[..]),
-        "Subscribe should return the published payload through real DDS"
-    );
+    // Egress: each stream's own DataReader → a message of that stream.
+    assert_eq!(next_message(&mut first), cdr_payload, "first stream");
+    assert_eq!(next_message(&mut second), cdr_payload, "second stream");
+}
+
+/// Spec §4.4 with DDS-XTypes 1.3 §7.6.3.1.2, Table 60: a sample goes on
+/// under the encapsulation header it came under. A `Publish` with
+/// `PL_CDR2_BE` (`00 0a`) in front of the vendors' octets of
+/// `struct Sample { long a; double b; short c; }` (`@mutable`, XCDR2 big
+/// endian, `tests/interop-corpus/expected-bytes.tsv`) reaches each stream
+/// with `00 0a` again: the bridge's DataWriter frames the body as
+/// `@mutable` big endian, and the stream message carries the identifier
+/// its reader got. Before, both directions built the header from the
+/// XCDR version and the byte order alone (`CDR2_BE`, `00 06`).
+#[test]
+fn xtypes_7_6_3_1_2_a_stream_message_carries_the_header_the_sample_came_under() {
+    let port = pick_port();
+    let _daemon = spawn_daemon(port);
+    let mut stream = open_subscribe(port);
+    let octets: Vec<u8> = (0..30)
+        .map(|i| {
+            u8::from_str_radix(
+                &"0000001a20000000ffed297930000001400921fb54442d1810000002fffe"[2 * i..2 * i + 2],
+                16,
+            )
+            .unwrap()
+        })
+        .collect();
+    let cdr_payload = [&[0x00, 0x0a, 0x00, 0x00][..], &octets[..]].concat();
+    assert_eq!(publish(port, &cdr_payload), 1, "PublishAck.accepted");
+    let got = next_message(&mut stream);
+    assert_eq!(got[..4], [0x00, 0x0a, 0x00, 0x00], "PL_CDR2_BE");
+    assert_eq!(got[4..], octets[..]);
 }

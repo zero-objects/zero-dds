@@ -163,7 +163,7 @@ fn compilers() -> Vec<&'static str> {
 }
 
 #[test]
-fn the_classic_types_are_cpp03_and_the_codec_writes_the_native_bytes() {
+fn xtypes_7_5_1_the_classic_types_are_cpp03_and_the_codec_writes_the_native_bytes() {
     let found = compilers();
     if found.is_empty() {
         eprintln!("SKIPPED: neither clang++ nor g++ on the path.");

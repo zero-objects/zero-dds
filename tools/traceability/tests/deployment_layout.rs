@@ -403,14 +403,33 @@ fn every_homebrew_formula_declares_a_brew_service() {
     ];
     // Homebrew rejects a formula without a URL ("formula requires at least
     // a URL"), so every sub-formula names the meta formula's bundle: the
-    // same url lines, one download for all of them.
+    // same url line, one download for all of them. The formulae are for
+    // Apple silicon only: one URL, the arm64 bundle of the formula's
+    // version, and `depends_on arch: :arm64`.
     let meta = read("packaging/macos/homebrew/zerodds.rb");
     let meta_urls: Vec<&str> = meta
         .lines()
         .map(str::trim)
         .filter(|l| l.starts_with("url \""))
         .collect();
-    assert_eq!(meta_urls.len(), 2, "zerodds.rb: one bundle URL per CPU");
+    let version = meta
+        .lines()
+        .map(str::trim)
+        .find_map(|l| l.strip_prefix("version \""))
+        .and_then(|rest| rest.strip_suffix('"'))
+        .expect("zerodds.rb: version");
+    assert_eq!(
+        meta_urls,
+        [format!(
+            "url \"https://github.com/zero-objects/zero-dds/releases/download/v{version}/zerodds-{version}-aarch64-apple-darwin.tar.gz\""
+        )
+        .as_str()],
+        "zerodds.rb: the arm64 bundle of its version"
+    );
+    assert!(
+        meta.contains("depends_on arch: :arm64"),
+        "zerodds.rb: Apple silicon only"
+    );
     for f in formulae {
         let rb = read(&format!("packaging/macos/homebrew/{f}"));
         assert!(rb.contains("class "), "{f}: formula class");
@@ -431,9 +450,10 @@ fn every_homebrew_formula_declares_a_brew_service() {
         assert_eq!(urls, meta_urls, "{f}: must name the meta formula's bundle");
         assert_eq!(
             rb.matches("sha256 \"").count(),
-            2,
-            "{f}: one sha256 per bundle URL"
+            1,
+            "{f}: one sha256 for the bundle URL"
         );
+        assert!(!rb.contains("on_intel"), "{f}: Apple silicon only");
         assert!(
             rb.contains("unless (etc/\"zerodds\"/config).exist?"),
             "{f}: an existing configuration must survive an upgrade"
@@ -459,9 +479,10 @@ fn every_homebrew_formula_declares_a_brew_service() {
 }
 
 /// §3.2.1 delivered: the packer (release.yml macOS jobs, and the
-/// `macos-bundle` job of ci/full.yml) produces the archive layout the meta
-/// formula installs. The GitLab job is checked in `macos_bundle_ci_job.rs`;
-/// the public mirror carries neither `ci/full.yml` nor that file.
+/// `macos-bundle` job of ci/jobs/macos-bundle.yml) produces the archive
+/// layout the meta formula installs. The GitLab job is checked in
+/// `macos_bundle_ci_job.rs`; the public mirror carries neither `ci/` nor
+/// that file.
 #[test]
 fn the_bundle_packer_lays_out_what_the_formula_installs() {
     // The packer lays out exactly what zerodds.rb reads: bin/, lib/libzerodds.*,
@@ -780,8 +801,7 @@ fn every_daemon_image_is_cargo_chef_multi_stage_and_runs_non_root() {
         // final stage would ship the whole toolchain.
         let last_from = df
             .lines()
-            .filter(|l| l.starts_with("FROM "))
-            .next_back()
+            .rfind(|l| l.starts_with("FROM "))
             .unwrap_or_default();
         assert!(
             last_from.contains("debian:bookworm-slim"),

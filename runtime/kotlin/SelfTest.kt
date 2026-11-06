@@ -133,6 +133,70 @@ fun main() {
         impossible.readWstringUtf8Octets(WstringLengthPolicy.OCTETS_TERMINATED_2)
     }, "a wstring length past the buffer")
 
+    // -- the operations no corpus case reaches -------------------------------
+    //
+    // The five the generated code reaches only in a dialect or with a member
+    // no corpus case carries: writePidExtended, writeUnionOverlay,
+    // readerClearDiscard, readerSave and readerRestore
+    // (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+    // vectors, each against an oracle outside this code.
+
+    // The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+    // recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv).
+    val pid = Writer(Endianness.LITTLE, 8, PlCdr1Framing.specification(), false)
+    val pidHeader = pid.writePidExtended(0, ParameterRole.MEMBER, false)
+    pid.writeI32(-1234567)
+    pid.finishPid(pidHeader)
+    expect(hex(pid.finish()), "017f0800" + "00000000" + "04000000" + "7929edff",
+        "writePidExtended: Cyclone's recorded parameter")
+
+    // A `short` read through a four-octet and a one-octet `default:` branch:
+    // Cyclone DDS 11.0.1 writes the union's storage, the member's octets with
+    // zeros above (`combined-everything`, crates/wire-codec/src/encode.rs
+    // `write_selected_branch`).
+    val overlay = Writer(Endianness.LITTLE, 4, PlCdr1Framing.specification(), false)
+    val pattern = bitPatternInt(-2L, 2)
+    overlay.writeUnionOverlay(pattern, 4)
+    overlay.writeUnionOverlay(pattern, 1)
+    expect(hex(overlay.finish()), "feff0000" + "fe",
+        "writeUnionOverlay: the storage at the branch's width")
+
+    // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+    // Table 9's value, so the call site asks for DISCARD and takes it back.
+    // Any other refusal is not a narrowing and stays.
+    val four = byteArrayOf(1, 2, 3, 4)
+    val discarded = Reader(four, Endianness.LITTLE, 4, PlCdr1Framing.specification())
+    discarded.readerRefuse(Status.DISCARDED)
+    expect(discarded.readerClearDiscard().toString(), "true", "readerClearDiscard takes back a DISCARDED")
+    expect(discarded.readerStatus().text(), "ok", "the status after readerClearDiscard")
+    val refused = Reader(four, Endianness.LITTLE, 4, PlCdr1Framing.specification())
+    refused.readerRefuse(Status.OUT_OF_RANGE)
+    expect(refused.readerClearDiscard().toString(), "false", "readerClearDiscard leaves an OUT_OF_RANGE")
+    expect(refused.readerStatus().text(), "out-of-range", "an OUT_OF_RANGE stays")
+
+    // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+    // DHEADER and the pairs, without a count. The reader counts the pairs,
+    // goes back and reads them again; a refusal made while counting goes back
+    // with the cursor.
+    val map = byteArrayOf(0x10, 0, 0, 0, 1, 0, 0, 0, 0x0a, 0, 0, 0, 2, 0, 0, 0, 0x14, 0, 0, 0)
+    val reader = Reader(map, Endianness.LITTLE, 4, PlCdr1Framing.specification())
+    val extent = reader.readDheader()
+    val end = reader.readerPosition() + extent.toInt()
+    val mark = reader.readerSave()
+    var pairs = 0
+    while (reader.readerPosition() < end && reader.readerStatus() == Status.OK) {
+        reader.readI32()
+        reader.readI32()
+        pairs++
+    }
+    reader.readerRefuse(Status.OUT_OF_RANGE)
+    reader.readerRestore(mark)
+    expect(pairs.toString(), "2", "the counting pass finds two pairs")
+    expect(listOf(reader.readI32(), reader.readI32(), reader.readI32(), reader.readI32()).joinToString(","),
+        "1,10,2,20", "the pairs read again")
+    expect(reader.readerPosition().toString(), "20", "the end of the map")
+    expect(reader.readerStatus().text(), "ok", "readerRestore takes the refusal back")
+
     if (failures != 0) {
         println("$failures check(s) failed")
         exitProcess(1)

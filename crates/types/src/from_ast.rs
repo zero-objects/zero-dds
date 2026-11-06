@@ -199,10 +199,10 @@ fn reachable(ast: &Ast, type_: Id<TypeNode>) -> Vec<Id<TypeNode>> {
             }
         }
         for member in ast.all_members_of(type_) {
-            if let Ok(m) = ast.member(member) {
-                if let Some(target) = m.type_.resolved() {
-                    queue.push(target);
-                }
+            if let Ok(m) = ast.member(member)
+                && let Some(target) = m.type_.resolved()
+            {
+                queue.push(target);
             }
         }
     }
@@ -219,10 +219,10 @@ fn reachable(ast: &Ast, type_: Id<TypeNode>) -> Vec<Id<TypeNode>> {
             }
         }
         for member in ast.all_members_of(next) {
-            if let Ok(m) = ast.member(member) {
-                if let Some(target) = m.type_.resolved() {
-                    queue.push(target);
-                }
+            if let Ok(m) = ast.member(member)
+                && let Some(target) = m.type_.resolved()
+            {
+                queue.push(target);
             }
         }
     }
@@ -506,7 +506,7 @@ fn component_hash(
             what: qualified_name(ast, *member),
             kind: "a component member whose TypeObject would not serialise",
         })?;
-        while body.len() % 4 != 0 {
+        while !body.len().is_multiple_of(4) {
             body.push(0);
         }
         body.extend_from_slice(&bytes);
@@ -1030,10 +1030,10 @@ fn applied_annotation_declarations(
     let mut found: Vec<Id<AnnotationDefNode>> = Vec::new();
     let note = |annotations: &[zerodds_ast::AppliedAnnotation], found: &mut Vec<_>| {
         for applied in annotations {
-            if let Ref::Resolved(definition) = applied.definition {
-                if !found.contains(&definition) {
-                    found.push(definition);
-                }
+            if let Ref::Resolved(definition) = applied.definition
+                && !found.contains(&definition)
+            {
+                found.push(definition);
             }
         }
     };
@@ -1195,19 +1195,18 @@ pub fn register_all(
                 // type alone would leave that member unresolvable, and a
                 // reader would report the component as unknown rather
                 // than as recursive.
-                if let Some(component) = type_component(ast, id)? {
-                    if registry
+                if let Some(component) = type_component(ast, id)?
+                    && registry
                         .component_member(&component.complete_hash, 1)
                         .is_none()
-                    {
-                        // The MINIMAL component is a second whole, with
-                        // its own members and its own hash (§7.3.4.9.2
-                        // runs once per equivalence kind), and a
-                        // COMPLETE component cannot be projected onto it:
-                        // `to_minimal` does not follow a component
-                        // reference. TypeInformation names both.
-                        registry.insert_type_component(&component);
-                    }
+                {
+                    // The MINIMAL component is a second whole, with
+                    // its own members and its own hash (§7.3.4.9.2
+                    // runs once per equivalence kind), and a
+                    // COMPLETE component cannot be projected onto it:
+                    // `to_minimal` does not follow a component
+                    // reference. TypeInformation names both.
+                    registry.insert_type_component(&component);
                 }
             }
             (Err(e), _) | (_, Err(e)) => {
@@ -1416,16 +1415,16 @@ fn identifier(
     // component, so it holds none; without this it went down into `B`,
     // round through `A` and back into `B`, and refused a type §7.3.4.9
     // has an identifier for.
-    if !seen.in_component(type_) {
-        if let Some(members) = strongly_connected_component(ast, type_) {
-            return component_identifier(
-                ast,
-                type_,
-                form,
-                &members,
-                seen.minimal_member_trailing_octet,
-            );
-        }
+    if !seen.in_component(type_)
+        && let Some(members) = strongly_connected_component(ast, type_)
+    {
+        return component_identifier(
+            ast,
+            type_,
+            form,
+            &members,
+            seen.minimal_member_trailing_octet,
+        );
     }
     if seen.contains(&type_) {
         return Err(FromAstError::Recursive { what: name });
@@ -1472,7 +1471,7 @@ fn identifier_inner(
         TypeKind::Sequence { element, bound } if !annotated => {
             let element_id = target(ast, element, name)?;
             let element_ti = identifier(ast, element_id, form, seen)?;
-            let header = collection_header(ast, element_id, form, type_);
+            let header = collection_header(ast, &[&element_ti], form, type_);
             let bound = bound_of(ast, *bound, name)?;
             Ok(match u8::try_from(bound) {
                 Ok(small) => TypeIdentifier::PlainSequenceSmall {
@@ -1490,7 +1489,7 @@ fn identifier_inner(
         TypeKind::Array { element, dims } if !annotated => {
             let element_id = target(ast, element, name)?;
             let element_ti = identifier(ast, element_id, form, seen)?;
-            let header = collection_header(ast, element_id, form, type_);
+            let header = collection_header(ast, &[&element_ti], form, type_);
             let bounds = array_bounds(ast, dims, name)?;
             Ok(if bounds.iter().all(|d| u8::try_from(*d).is_ok()) {
                 TypeIdentifier::PlainArraySmall {
@@ -1512,7 +1511,7 @@ fn identifier_inner(
             let value_id = target(ast, value, name)?;
             let key_ti = identifier(ast, key_id, form, seen)?;
             let value_ti = identifier(ast, value_id, form, seen)?;
-            let header = collection_header(ast, value_id, form, type_);
+            let header = collection_header(ast, &[&key_ti, &value_ti], form, type_);
             let key_flags = element_flags(ast.key_try_construct(type_), ast.key_is_external(type_));
             let bound = bound_of(ast, *bound, name)?;
             Ok(match u8::try_from(bound) {
@@ -1550,18 +1549,23 @@ fn identifier_inner(
 
 /// The header a plain collection carries for its element. §7.3.4.6.
 ///
-/// `equiv_kind` is `EK_BOTH` when the element is itself fully
-/// descriptive — a `sequence<long>` has no hash on either side — and the
-/// form's own kind otherwise.
+/// `equiv_kind` is `EK_BOTH` when the element (and the key of a map) is
+/// itself fully descriptive — a `sequence<long>` has no hash on either
+/// side — and the form's own kind otherwise (§7.3.4.6.1). Not when the
+/// element is merely plain: `sequence<sequence<S>>` has the hash of `S` in
+/// its element, and its header said `EK_BOTH` here while CycloneDDS writes
+/// `EK_COMPLETE` (`tests/type_object_bridge.rs`).
 fn collection_header(
     ast: &Ast,
-    element: Id<TypeNode>,
+    elements: &[&TypeIdentifier],
     form: Form,
     collection: Id<TypeNode>,
 ) -> crate::type_identifier::PlainCollectionHeader {
-    let plain = is_plain_in(ast, element, form);
+    let fully_descriptive = elements
+        .iter()
+        .all(|element| element.is_fully_descriptive());
     crate::type_identifier::PlainCollectionHeader {
-        equiv_kind: if plain {
+        equiv_kind: if fully_descriptive {
             EK_BOTH
         } else {
             form.equivalence_kind()
@@ -1628,8 +1632,8 @@ fn primitive_kind(
         Ast::Float64 => PrimitiveKind::Float64,
         Ast::Float128 => {
             // TK_FLOAT128 exists in §7.3.4.2 and this project cannot
-            // produce a value of it — `docs/OPEN-ITEMS.md`, the `f128`
-            // item. The identifier is representable and is what a peer
+            // produce a value of it — `internal/release/OPEN-ITEMS.md`,
+            // the `long double` item. The identifier is representable and is what a peer
             // sending one would announce, so it is built rather than
             // refused; nothing here handles the value.
             let _ = at;
@@ -1749,10 +1753,10 @@ fn collection_type_name(ast: &Ast, collection: Id<TypeNode>) -> String {
         return qualified_name(ast, collection);
     }
     for (_, member) in ast.members() {
-        if member.type_.resolved() == Some(collection) {
-            if let Some(owner) = member.parent.as_type() {
-                return alloc::format!("{}.{}", qualified_name(ast, owner), member.name);
-            }
+        if member.type_.resolved() == Some(collection)
+            && let Some(owner) = member.parent.as_type()
+        {
+            return alloc::format!("{}.{}", qualified_name(ast, owner), member.name);
         }
     }
     for (id, node) in ast.types() {
@@ -2264,29 +2268,27 @@ fn builtin_member_annotations(
                 ..
             })
         )
-    }) {
-        if let Some(zerodds_ast::MemberIdAssignment {
-            origin: MemberIdOrigin::Hashed { source_name },
-            ..
-        }) = &facet.member_id
-        {
-            out.hash_id = Some(source_name.clone());
+    }) && let Some(zerodds_ast::MemberIdAssignment {
+        origin: MemberIdOrigin::Hashed { source_name },
+        ..
+    }) = &facet.member_id
+    {
+        out.hash_id = Some(source_name.clone());
+    }
+    if let Some(facet) = first(|f| f.range.is_some())
+        && let Some(range) = &facet.range
+    {
+        if let Some(expr) = range.min {
+            out.min = Some(annotation_value(ast, expr, member_type, at)?);
+        }
+        if let Some(expr) = range.max {
+            out.max = Some(annotation_value(ast, expr, member_type, at)?);
         }
     }
-    if let Some(facet) = first(|f| f.range.is_some()) {
-        if let Some(range) = &facet.range {
-            if let Some(expr) = range.min {
-                out.min = Some(annotation_value(ast, expr, member_type, at)?);
-            }
-            if let Some(expr) = range.max {
-                out.max = Some(annotation_value(ast, expr, member_type, at)?);
-            }
-        }
-    }
-    if let Some(facet) = first(|f| f.default_value.is_some()) {
-        if let Some(expr) = facet.default_value {
-            out.default_value = Some(default_text(ast, expr, at)?);
-        }
+    if let Some(facet) = first(|f| f.default_value.is_some())
+        && let Some(expr) = facet.default_value
+    {
+        out.default_value = Some(default_text(ast, expr, at)?);
     }
     Ok(out)
 }
@@ -2410,7 +2412,7 @@ fn applied_annotations(
     // from that same value. Two applications of one annotation keep the
     // order they were written in: a stable sort, and §7.3.4.5 says
     // nothing about a repeated key.
-    out.sort_by(|(left, _), (right, _)| left.cmp(right));
+    out.sort_by_key(|(left, _)| *left);
     if out.is_empty() {
         // Absent is a single octet — the `@optional` of §7.4.3.5.3 and
         // what `OptionalAppliedAnnotationSeq` writes for `None`.
@@ -2509,7 +2511,7 @@ fn applied_parameters(
     }
     // §7.3.4.5: "The elements in AnnotationParameterSeq shall be ordered
     // in increasing values of their paramname_hash."
-    parameters.sort_by(|left, right| left.paramname_hash.cmp(&right.paramname_hash));
+    parameters.sort_by_key(|left| left.paramname_hash);
     Ok(parameters)
 }
 
@@ -2942,6 +2944,10 @@ fn bitmask(ast: &Ast, type_: Id<TypeNode>, form: Form) -> Result<TypeObject, Fro
         .map_err(|_| FromAstError::Unresolved { at: name.clone() })?;
     let bit_bound = ast.effective_bit_bound(type_);
     let bits = ast.bits_of(type_).to_vec();
+    // The extensibility position, as for an enumeration (see `enumeration`
+    // and `BitmaskTypeFlag`): DDS-XTypes 1.4 Beta 1 gives the word "F, A",
+    // and CycloneDDS 11.0.1 refuses a bitmask that carries neither.
+    let bitmask_flags = BitmaskTypeFlag(extensibility_bits(ast.effective_extensibility(type_)));
 
     let mut minimal = Vec::with_capacity(bits.len());
     let mut complete = Vec::with_capacity(bits.len());
@@ -2985,13 +2991,13 @@ fn bitmask(ast: &Ast, type_: Id<TypeNode>, form: Form) -> Result<TypeObject, Fro
 
     Ok(match form {
         Form::Minimal => TypeObject::Minimal(MinimalTypeObject::Bitmask(MinimalBitmaskType {
-            bitmask_flags: BitmaskTypeFlag(0),
+            bitmask_flags,
             bit_bound,
             flag_seq: minimal,
         })),
         Form::Complete => TypeObject::Complete(CompleteTypeObject::Bitmask(
             crate::type_object::complete::CompleteBitmaskType {
-                bitmask_flags: BitmaskTypeFlag(0),
+                bitmask_flags,
                 bit_bound,
                 detail: CompleteTypeDetail {
                     type_name: qualified_name(ast, type_),
@@ -3188,7 +3194,7 @@ mod primitive_kind_tests {
     /// `struct_uint8_byte` and `struct_byte_uint8` expect
     /// `INCONSISTENT_TOPIC` and got a match.
     #[test]
-    fn octet_and_uint8_are_two_kinds() {
+    fn xtypes_7_2_2_2_octet_and_uint8_are_two_primitive_kinds() {
         use zerodds_ast::PrimitiveKind as Ast;
         let octet = primitive_kind(Ast::Octet, "::T::m").expect("octet lowers");
         let uint8 = primitive_kind(Ast::UInt8, "::T::m").expect("uint8 lowers");

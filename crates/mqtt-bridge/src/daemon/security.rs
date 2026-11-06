@@ -212,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn mqtt_sasl_plain_accepts_user_pass() {
+    fn mqttbridge_7_2_mqtt_sasl_plain_accepts_user_pass() {
         let mut users = HashMap::new();
         users.insert("alice".to_string(), "wonderland".to_string());
         let auth = AuthMode::SaslPlain { users };
@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn mqtt_sasl_plain_rejects_wrong_password() {
+    fn mqttbridge_7_2_mqtt_sasl_plain_rejects_wrong_password() {
         let mut users = HashMap::new();
         users.insert("alice".to_string(), "wonderland".to_string());
         let auth = AuthMode::SaslPlain { users };
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn mqtt_bearer_treats_password_as_token() {
+    fn mqttbridge_7_2_mqtt_bearer_treats_password_as_token() {
         let mut tokens = HashMap::new();
         tokens.insert("tok1".into(), AuthSubject::new("alice"));
         let auth = AuthMode::Bearer { tokens };
@@ -239,13 +239,13 @@ mod tests {
     }
 
     #[test]
-    fn mqtt_none_yields_anonymous_without_creds() {
+    fn mqttbridge_7_2_mqtt_none_yields_anonymous_without_creds() {
         let s = authenticate_mqtt(&AuthMode::None, None, None, None).unwrap();
         assert_eq!(s.name, "anonymous");
     }
 
     #[test]
-    fn mqtt_acl_publish_check() {
+    fn mqttbridge_7_3_mqtt_acl_publish_check() {
         let mut cfg = SecurityConfig::default();
         cfg.topic_acl.insert(
             "sensors/temp".into(),

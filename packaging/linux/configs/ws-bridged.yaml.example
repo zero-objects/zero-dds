@@ -42,6 +42,7 @@ topics:
   # DDS topic <-> WebSocket path. zerodds-ws-bridge-1.0 §5.
   - name: "Chat::Message"
     type: "Chat::Message"        # default: name
+    # idl_file: "/etc/zerodds/ws-bridged/chat.idl"  # declares `type`; JSON text frames (§4.3)
     direction: "bidir"           # in | out | bidir
     ws_path: "/chat"             # default: /topics/<slug-of-name>
     qos:

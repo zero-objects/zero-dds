@@ -32,12 +32,16 @@
 //!   vendors put *that* on the wire on x86 and a type that knows only
 //!   the conformant form cannot read what the field actually sends.
 //!
+//! - `+`, `-`, `*` and `/` on [`Float128`] (`core::ops`), correctly
+//!   rounded to nearest with ties to even (IEEE 754-2008 clause 5.4.1),
+//!   which the constant evaluation of an IDL `long double` (OMG IDL 4.2
+//!   §7.4.1.4.2) runs in. They are measured against GCC's `__float128`
+//!   in `tests/gcc_binary128_ops.rs`.
+//!
 //! ## What is not here
 //!
-//! Arithmetic. `Add`, `Sub`, `Mul`, `Div` and `sqrt` are not
-//! implemented; `docs/float128-column.md` §6 says what they would take.
-//! Nothing in the wire path needs them, and a half-correct `Add` is
-//! worse than none.
+//! `sqrt`, the remainder and the fused multiply-add; nothing asks for
+//! them.
 //!
 //! ## Spec
 //!
@@ -58,6 +62,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+mod arith;
 mod bigint;
 mod cmp;
 mod convert;

@@ -15,7 +15,7 @@
 //! is the negotiated version. It is **not** wired into the published no_std
 //! codec core and is **not** a production-hardened default. For constrained
 //! object security without a DTLS handshake, prefer OSCORE ([`crate::oscore`]).
-//! See `internal/dossiers/dtls-pure-rust-dossier.md` + ADR 0011.
+//! See ADR 0011 (`docs/adr/0011-coap-dtls-webrtc-accepted-experimental.md`).
 //!
 //! # Example
 //!

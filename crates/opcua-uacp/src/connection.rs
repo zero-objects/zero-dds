@@ -351,8 +351,29 @@ impl ReverseHelloMessage {
 mod tests {
     use super::*;
 
+    /// The octets of OPC 10000-6 §7.1.2: the message header (Table 73: MessageType,
+    /// 'F', MessageSize as a little-endian UInt32 over the whole
+    /// message), then the body fields in the order of the clause's table,
+    /// UInt32 little endian, a String as an Int32 length and its UTF-8
+    /// octets (§5.2.2.4).
+    fn message(kind: &[u8; 3], body: &[u8]) -> Vec<u8> {
+        let mut out = kind.to_vec();
+        out.push(b'F');
+        out.extend_from_slice(&u32::try_from(8 + body.len()).unwrap().to_le_bytes());
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn ua_string(s: &str) -> Vec<u8> {
+        let mut out = i32::try_from(s.len()).unwrap().to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    /// §7.1.2.3, Table 74: Hello is ProtocolVersion, ReceiveBufferSize,
+    /// SendBufferSize, MaxMessageSize, MaxChunkCount, EndpointUrl.
     #[test]
-    fn header_round_trips_and_sizes_match() {
+    fn uacs_7_1_2_3_a_hello_is_the_header_and_the_fields_of_table_74() {
         let hello = HelloMessage {
             protocol_version: 0,
             receive_buffer_size: 65_536,
@@ -361,20 +382,26 @@ mod tests {
             max_chunk_count: 0,
             endpoint_url: String::from("opc.tcp://host:4840"),
         };
-        let bytes = hello.encode().expect("encode");
-        // Header MessageSize equals the actual byte length.
-        let mut r = UaReader::new(&bytes);
+        let mut body = Vec::new();
+        for v in [0_u32, 65_536, 65_536, 0, 0] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(&ua_string("opc.tcp://host:4840"));
+        let expected = message(b"HEL", &body);
+        assert_eq!(hello.encode().expect("encode"), expected);
+        let mut r = UaReader::new(&expected);
         let h = MessageHeader::decode(&mut r).expect("header");
         assert_eq!(h.message_type, MessageType::Hello);
         assert_eq!(h.chunk_type, ChunkType::Final);
-        assert_eq!(h.message_size as usize, bytes.len());
-        let back = HelloMessage::decode_body(&mut r).expect("body");
-        assert_eq!(back, hello);
+        assert_eq!(h.message_size as usize, expected.len());
+        assert_eq!(HelloMessage::decode_body(&mut r).expect("body"), hello);
         assert!(r.is_empty());
     }
 
+    /// §7.1.2.4, Table 75: Acknowledge is ProtocolVersion,
+    /// ReceiveBufferSize, SendBufferSize, MaxMessageSize, MaxChunkCount.
     #[test]
-    fn acknowledge_round_trips() {
+    fn uacs_7_1_2_4_an_acknowledge_is_the_header_and_the_fields_of_table_75() {
         let ack = AcknowledgeMessage {
             protocol_version: 0,
             receive_buffer_size: 8192,
@@ -382,8 +409,13 @@ mod tests {
             max_message_size: 16_777_216,
             max_chunk_count: 5000,
         };
-        let bytes = ack.encode().expect("encode");
-        let mut r = UaReader::new(&bytes);
+        let mut body = Vec::new();
+        for v in [0_u32, 8192, 8192, 16_777_216, 5000] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        let expected = message(b"ACK", &body);
+        assert_eq!(ack.encode().expect("encode"), expected);
+        let mut r = UaReader::new(&expected);
         assert_eq!(
             MessageHeader::decode(&mut r).expect("h").message_type,
             MessageType::Acknowledge
@@ -391,14 +423,20 @@ mod tests {
         assert_eq!(AcknowledgeMessage::decode_body(&mut r).expect("b"), ack);
     }
 
+    /// §7.1.2.5, Table 76: Error is the StatusCode and a Reason String
+    /// (Bad_TcpEndpointUrlInvalid 0x80830000 of StatusCode.csv, the
+    /// UA-Nodeset).
     #[test]
-    fn error_round_trips() {
+    fn uacs_7_1_2_5_an_error_is_the_header_a_status_code_and_a_reason() {
         let err = ErrorMessage {
-            error: 0x8086_0000, // BadTcpEndpointUrlInvalid-ish
+            error: 0x8083_0000,
             reason: String::from("endpoint url rejected"),
         };
-        let bytes = err.encode().expect("encode");
-        let mut r = UaReader::new(&bytes);
+        let mut body = 0x8083_0000_u32.to_le_bytes().to_vec();
+        body.extend_from_slice(&ua_string("endpoint url rejected"));
+        let expected = message(b"ERR", &body);
+        assert_eq!(err.encode().expect("encode"), expected);
+        let mut r = UaReader::new(&expected);
         assert_eq!(
             MessageHeader::decode(&mut r).expect("h").message_type,
             MessageType::Error
@@ -406,14 +444,18 @@ mod tests {
         assert_eq!(ErrorMessage::decode_body(&mut r).expect("b"), err);
     }
 
+    /// §7.1.2.6, Table 77: ReverseHello is ServerUri and EndpointUrl.
     #[test]
-    fn reverse_hello_round_trips() {
+    fn uacs_7_1_2_6_a_reverse_hello_is_the_header_server_uri_and_endpoint_url() {
         let rhe = ReverseHelloMessage {
             server_uri: String::from("urn:host:server"),
             endpoint_url: String::from("opc.tcp://host:4840"),
         };
-        let bytes = rhe.encode().expect("encode");
-        let mut r = UaReader::new(&bytes);
+        let mut body = ua_string("urn:host:server");
+        body.extend_from_slice(&ua_string("opc.tcp://host:4840"));
+        let expected = message(b"RHE", &body);
+        assert_eq!(rhe.encode().expect("encode"), expected);
+        let mut r = UaReader::new(&expected);
         assert_eq!(
             MessageHeader::decode(&mut r).expect("h").message_type,
             MessageType::ReverseHello
@@ -422,7 +464,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_message_type_rejected() {
+    fn uacs_7_1_unknown_message_type_rejected() {
         let bytes = *b"XXXF\x08\x00\x00\x00";
         let mut r = UaReader::new(&bytes);
         assert!(matches!(
@@ -432,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn oversized_string_rejected() {
+    fn uacs_7_1_oversized_string_rejected() {
         // MessageSize is honest but the string length claims > 4096.
         let mut b = UaWriter::new();
         b.write_i32(5000);

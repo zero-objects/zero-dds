@@ -5,6 +5,46 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
+## §2 Conformance and Compliance
+
+**Status:** `open` — adherence to the standard is the sum of the items in this document; evidence of an OMG language mapping is missing. ZeroDDS maps CORBA IDL to Rust (`zerodds-corba-rust-1.1`, own spec, no OMG mapping); `crates/corba-codegen` produces stub and skeleton nodes for C++ and Java, without a coverage document against the OMG mappings for C++ or Java.
+
+## §7.6 Interoperable Object References (IOR)
+
+**Status:** `partial` — IOR, profiles, components, stringified IOR and `corbaloc`/`corbaname` are encoded and tested. Missing: an IPv6 host without a port, `rir` together with another protocol and the minor codes 7–10; own item.
+
+## §7.6.10 Object URLs — IPv6 without port, `rir` exclusion, minor codes
+
+**Status:** `open` — `parse_endpoint` in `crates/corba-ior/src/url.rs` splits the port off at the last colon; an IPv6 host without a port (`corbaloc::[::1]/key`) is cut apart and refused. A list with `rir` and `iiop` is accepted. Errors come as `IorError`, not as `BAD_PARAM` with a minor code.
+
+## §7.7 Service Context
+
+**Status:** `partial` — encoding of the list and the standard IDs are tested; no test checks the processing rules of §7.7.2 (pass unknown or foreign-version contexts on without an exception and make them available to interceptors).
+
+## §7.8 Coder/Decoder Interfaces
+
+**Status:** `open` — no `Codec` and no `CodecFactory` in the tree.
+
+## §7.9 Feature Support and GIOP Versions
+
+**Status:** `partial` — the dependencies of GIOP 1.0 to 1.2 are implemented and tested; GIOP 1.3 and 1.4 are missing, own item.
+
+## §7.9 GIOP 1.3 and 1.4
+
+**Status:** `open` — `crates/corba-giop/src/version.rs` knows only 1.0, 1.1 and 1.2.
+
+## §7.10 Code Set Conversion
+
+**Status:** `partial` — negotiation, service context and registry IDs are tested; conversion of character data into a negotiated code set other than UTF-8/UTF-16 is missing, own item.
+
+## §7.10 Conversion into a negotiated code set other than UTF-8/UTF-16
+
+**Status:** `open` — `crates/corba-giop/src/lib.rs` describes the ISO-Latin conversion as the caller's task; `crates/wire/` encodes only UTF-8 and UTF-16.
+
+## §2 Conformance and Compliance
+
+**Status:** `partial` — container, component model, EJB integration and the Lightweight profile are items §6–§17; the Basic Level lacks the CIDL parser (item "§8 OMG CIDL — remaining constructs", open).
+
 ## §8 OMG CIDL Syntax and Semantics
 
 **Status:** `partial` — composition, home executor and the persistence constructs (`storagetype`/`storagehome`) exist as an AST and are checked through the category rule. What is missing: a CIDL parser (the module says itself that the language is caller-layer), the segment definition (a `segment` executor per facet group), facet/feature delegation (`delegatesto`/`abstract storagehome`) and the proxy home. The remainder is carried as its own item in `corba-3.3.open.en.md`.

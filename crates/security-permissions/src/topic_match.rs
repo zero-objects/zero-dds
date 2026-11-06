@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn star_matches_all() {
+    fn security_10_4_1_2_6_1_star_matches_all() {
         assert!(topic_match("*", "anything"));
         assert!(topic_match("*", ""));
     }
@@ -188,14 +188,14 @@ mod tests {
     }
 
     #[test]
-    fn question_mark_exact_one() {
+    fn security_10_4_1_2_6_1_question_mark_exact_one() {
         assert!(topic_match("s?nsor", "sensor"));
         assert!(topic_match("s?nsor", "sansor"));
         assert!(!topic_match("s?nsor", "snsor"));
     }
 
     #[test]
-    fn combined_wildcards() {
+    fn security_10_4_1_2_6_1_combined_wildcards() {
         assert!(topic_match("*_?", "hello_1"));
         assert!(!topic_match("*_?", "hello_"));
         assert!(topic_match("a*b*c", "axxbyyc"));
@@ -205,7 +205,7 @@ mod tests {
     /// POSIX `fnmatch()` sets, ranges and negation (§B.6), which the
     /// matcher did not have.
     #[test]
-    fn sets_ranges_and_negation_match_one_character() {
+    fn security_10_4_1_2_6_1_sets_ranges_and_negation_match_one_character() {
         assert!(topic_match("Sq[ua]are", "Square"));
         assert!(topic_match("Sq[ua]are", "Sqaare"));
         assert!(!topic_match("Sq[ua]are", "Sqxare"));
@@ -219,7 +219,7 @@ mod tests {
 
     /// A backslash quotes the next character; with `noescape` it is one.
     #[test]
-    fn a_backslash_quotes_unless_noescape() {
+    fn security_10_4_1_2_6_1_a_backslash_quotes_unless_noescape() {
         assert!(topic_match(r"a\*", "a*"));
         assert!(!topic_match(r"a\*", "ab"));
         let noescape = FnmatchFlags {
@@ -231,7 +231,7 @@ mod tests {
 
     /// `FNM_PATHNAME` (§10.4.1.5.3.2.1): no wildcard matches `/`.
     #[test]
-    fn pathname_keeps_slashes_out_of_wildcards() {
+    fn security_10_4_1_2_6_1_pathname_keeps_slashes_out_of_wildcards() {
         let f = FnmatchFlags::SUBJECT_NAME;
         assert!(fnmatch("AGV/*", "AGV/agv1", f));
         assert!(!fnmatch("AGV*", "AGV/agv1", f));

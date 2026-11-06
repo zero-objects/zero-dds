@@ -19,7 +19,7 @@ fn participant() -> zerodds_dcps::DomainParticipant {
 }
 
 #[test]
-fn the_four_types_are_topic_types_with_a_string_writer() {
+fn xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer() {
     let p = participant();
     let publisher = p.create_publisher(PublisherQos::default());
     let topic = p
@@ -32,7 +32,7 @@ fn the_four_types_are_topic_types_with_a_string_writer() {
 }
 
 #[test]
-fn keyed_string_operations_work_on_the_key() {
+fn xtypes_7_6_5_keyed_string_operations_work_on_the_key() {
     let p = participant();
     let publisher = p.create_publisher(PublisherQos::default());
     let topic = p
@@ -66,7 +66,7 @@ fn keyed_string_operations_work_on_the_key() {
 }
 
 #[test]
-fn bytes_are_written_from_an_offset_and_a_length() {
+fn xtypes_7_6_5_bytes_are_written_from_an_offset_and_a_length() {
     let p = participant();
     let publisher = p.create_publisher(PublisherQos::default());
     let topic = p
@@ -89,7 +89,7 @@ fn bytes_are_written_from_an_offset_and_a_length() {
 }
 
 #[test]
-fn keyed_bytes_operations_work_on_the_key() {
+fn xtypes_7_6_5_keyed_bytes_operations_work_on_the_key() {
     let p = participant();
     let publisher = p.create_publisher(PublisherQos::default());
     let topic = p

@@ -684,10 +684,10 @@ fn declare(
             let cases = ast.cases_of(id);
             let mut pairs = vec![(DISCRIMINATOR.to_string(), "<discriminator>".to_string())];
             for case in cases {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        pairs.push((property_name(&member.name), member.name.clone()));
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                {
+                    pairs.push((property_name(&member.name), member.name.clone()));
                 }
             }
             no_spelling_collision(as_pairs(&pairs), LANGUAGE, &name)?;

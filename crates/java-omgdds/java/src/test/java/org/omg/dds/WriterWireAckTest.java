@@ -64,7 +64,7 @@ class WriterWireAckTest {
     }
 
     @Test
-    void aSampleTheRemoteReaderAcknowledgedEndsTheWait() throws Exception {
+    void javapsm_2_a_sample_the_remote_reader_acknowledged_ends_the_wait() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("WireAck", byte[].class);
         Publisher publisher = participant.createPublisher();
@@ -85,7 +85,7 @@ class WriterWireAckTest {
     }
 
     @Test
-    void aSampleNobodyAcknowledgesIsATimeoutException() throws Exception {
+    void javapsm_2_a_sample_nobody_acknowledges_is_a_timeout_exception() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("WireNoAck", byte[].class);
         Publisher publisher = participant.createPublisher();
@@ -110,7 +110,7 @@ class WriterWireAckTest {
     }
 
     @Test
-    void aWriteBeyondMaxSamplesWaitsForAcknowledgmentsAndTimesOut() throws Exception {
+    void javapsm_7_3_2_a_write_beyond_max_samples_waits_for_acknowledgments_and_times_out() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("WireLimit", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic,

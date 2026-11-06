@@ -201,7 +201,7 @@ Notes:
 
 - `c++`, `c#` and `f#` contain special characters. Quote them in the shell: `--lang 'c++'`, `--lang 'c#'`, `--lang 'f#'`.
 - A model without a codec (for example an empty module) gets no runtime import (test `a_model_without_a_codec_gets_no_runtime_preamble`).
-- Measured state per language (octet comparisons, known gaps in C, C++, F#, Kotlin; Ada, Ada 83, D not measured on macOS): `docs/thin-frontends.md`. History of the language columns: `docs/language-columns-status.md`.
+- What each language column reaches, and the history of the columns: `docs/language-columns-status.md`.
 - Codegen tests per language: `crates/lang-rules/tests/<lang>_end_to_end.rs`, `<lang>_codec.rs`, `<lang>_corpus_compiles.rs` (for `rust`, `cpp`, `java`, `csharp`, `python`, `typescript`).
 
 ---
@@ -296,7 +296,7 @@ CMake package: the root `CMakeLists.txt` builds `zerodds-c-api` via cargo and in
   - `include/dds/…`: DDS-PSM-Cxx form (`dds/domain/DomainParticipant.hpp`, `dds/pub/Publisher.hpp`, `dds/sub/Subscriber.hpp`, `dds/topic/Topic.hpp`, `ContentFilteredTopic.hpp`, `BuiltinTopic.hpp`, `dds/core/policy/CorePolicy.hpp`, conditions, listeners).
 - Links against `libzerodds` from `zerodds-c-api`.
 - Example: `crates/cpp/examples/cpp_smoke.cpp`, build with `crates/cpp/examples/build_cpp_smoke.sh` (`g++ -std=c++17 -I crates/zerodds-c-api/include -I crates/cpp/include … -lzerodds`).
-- Tests: `crates/cpp/tests/cpp_smoke_via_cargo.rs`, `crates/cpp/tests/smoke_dds_psm.cpp`; codegen side `crates/lang-rules/tests/cpp_corpus_compiles.rs`, `cpp_reader_generates.rs`; CMake consumers `cmake/tests/`.
+- Tests: `crates/cpp/tests/smoke_dds_psm.cpp` (CTest, `crates/cpp/CMakeLists.txt`), `crates/cpp/tests/public_headers.rs`; codegen side `crates/lang-rules/tests/cpp_corpus_compiles.rs`, `cpp_reader_generates.rs`; CMake consumers `cmake/tests/`.
 
 ### 7.3 `crates/py` (Python, PyO3)
 
@@ -332,9 +332,9 @@ CMake package: the root `CMakeLists.txt` builds `zerodds-c-api` via cargo and in
   - `ZeroDDS.Cdr` (PackageId `ZeroDDS.Cdr`): `Xcdr2Writer`, `Xcdr2Reader`, `IDdsTopicType<T>`, `IGeneratedWireTypeSupport`; includes `crates/idl-csharp/runtime/Omg.Types.cs`.
   - `ZeroDDS.Cdr.SourceGenerators` (`netstandard2.0`, analyzer).
 - Generated code: `<stem>.cs` needs only `ZeroDds.Wire` (`runtime/csharp`); `<stem>.TypeSupport.cs` additionally needs `ZeroDDS.Cdr` and, for DDS entities, `ZeroDDS` (per `tools/idlc/README.md`).
-- Build/run: `crates/cs/csharp/build_cs_smoke.sh` (builds `zerodds-c-api`, then `dotnet build ZeroDDS.Tests`, places `libzerodds` next to the DLL).
+- Build/run: `cargo build -p zerodds-c-api`, then `dotnet test crates/cs/csharp/ZeroDDS.Tests` with `libzerodds` on `LD_LIBRARY_PATH` and a leased domain (`tests/integration/with_domains.py`); in the merge job `merge-cs`.
 - Example: `crates/cs/Examples/TopicTypedSmoke.cs` (`dotnet run --project TopicTypedSmoke.csproj`).
-- Tests: `crates/cs/csharp/ZeroDDS.Tests/`, `crates/cs/csharp/ZeroDDS.Cdr.Tests/`, `tools/idlc/tests/csharp-support/`, `crates/lang-rules/tests/csharp_corpus_compiles.rs`, `csharp_consumer_assembly.rs`.
+- Tests: `crates/cs/csharp/ZeroDDS.Tests/` (xUnit), `tools/idlc/tests/csharp-support/`, `crates/lang-rules/tests/csharp_corpus_compiles.rs`, `csharp_consumer_assembly.rs`.
 - `crates/dotnet-build-lock` (`zerodds-dotnet-build-lock`, `publish = false`): for tests only. Cross-process lock that serialises parallel `dotnet build` runs on `ZeroDDS.Cdr` (error CS2012). Used by `crates/endpoint-e2e` and `crates/conformance`.
 
 ### 7.6 `crates/ts-node` (TypeScript, Node.js)

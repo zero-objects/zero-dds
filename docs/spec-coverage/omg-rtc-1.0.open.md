@@ -17,6 +17,10 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 **Status:** `open` — `LightweightRtObject` führt kein Register der Contexts, die es besitzt (nur der, an denen es teilnimmt), und hält keine Referenz auf den Context-Objekt-Typ. Die vier Operations setzen beides voraus. Rest-Item zu §5.2.2.2.
 
+## §6.1 UML-to-IDL Transformation
+
+**Status:** `open` — die Regeln erzeugen das IDL der PSMs Lightweight CCM (§6.4) und CORBA (§6.5), die beide fehlen; das Local PSM in Rust (`crates/rtc/`) braucht kein IDL.
+
 ## §6.4 Lightweight CCM PSM
 
 **Status:** `open` — es gibt keinen RTC→LwCCM-Adapter im Baum. `crates/ccm/src/lightweight.rs` filtert ein CCM-IDL-Modell auf das LwCCM-Profil und kennt kein RTC; `crates/rtc/` kennt kein CCM. Der Crate-Doc-Header von `crates/rtc/src/lib.rs` führt §6.4 selbst unter „What is not covered". Die Spec erlaubt Compliance über einen einzigen PSM (§2); umgesetzt ist der Local PSM (§6.3).

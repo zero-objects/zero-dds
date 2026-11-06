@@ -100,8 +100,17 @@ Punkt für den caller-seitigen Snapshot-Bridge; bewusst kein Dep auf
 
 **Tests:** `crates/observability-otlp/src/lib.rs::tests::metrics_json_roundtrip_shape`.
 
-**Status:** done — Histogramm-Export und die aufrufseitige Snapshot-Brücke,
-wie die Spec sie festlegt. Counter und Gauge lässt die Spec selbst weg.
+**Status:** partial — Histogramm-Export und die aufrufseitige Snapshot-Brücke sind gebaut und geprüft; Counter und Gauge gehen laut Designentscheidung nur über Prometheus, der OTLP-Export dafür fehlt (§5.1).
+
+## §5.1 Counter und Gauge über OTLP
+
+**Spec:** §5 — „counters/gauges are currently not exported via OTLP — they only go through Prometheus“ (Designentscheidung).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `OtlpExporter` nimmt nur `Histogram` an (`add_histogram`); OTLP-`Sum`- und `Gauge`-Datenpunkte fehlen.
 
 ## §6 Sicherheit
 
@@ -113,8 +122,7 @@ sind eine Major-additive Erweiterung.
 
 **Tests:** —
 
-**Status:** n/a (informative) — die Spec scoped TLS/Auth bewusst aus
-(Sidecar-Delegation); keine in-crate normative Anforderung.
+**Status:** open — der eingebaute HTTP/1.1-Export spricht kein TLS und setzt keine Authentifizierungs-Header; die Spec verweist TLS an einen Collector-Sidecar.
 
 ## §7 Stabilität
 
@@ -125,8 +133,17 @@ Schema-Änderung = Major-Bump.
 
 **Tests:** —
 
-**Status:** n/a (informative) — Stabilitäts-Policy, keine Implementierungs-
-Anforderung.
+**Status:** n/a (informative) — Stabilitätszusage, keine Eigenschaft des Exports.
+
+## Nicht-Ziel — OTLP/gRPC
+
+**Spec:** Nicht-Ziele — „gRPC encoding (OTLP/gRPC) — deliberately left out, because it requires a Protobuf codegen pipeline. An add-on `zerodds-observability-otlp-grpc` is possible in future“.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — es gibt nur OTLP/HTTP mit JSON; OTLP/gRPC fehlt.
 
 ## §8 Test-Pflicht
 
@@ -147,8 +164,12 @@ Panic.
 
 ## Audit-Status
 
-8 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+7 done / 1 partial / 3 open / 0 blocked / 1 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-observability-otlp` — 8 Tests grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-observability-otlp-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-observability-otlp --all-targets` (Job `merge-rust-observability-otlp`) — 8 Tests grün.
+
+8 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `zerodds-observability-otlp-1.0.open.md`.

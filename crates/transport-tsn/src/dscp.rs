@@ -81,7 +81,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dscp_well_known_constants_match_rfc() {
+    fn tsn_8_3_dscp_well_known_constants_match_rfc() {
         // RFC 2474/3246.
         assert_eq!(Dscp::DEFAULT.value(), 0);
         assert_eq!(Dscp::EXPEDITED_FORWARDING.value(), 46);
@@ -90,13 +90,13 @@ mod tests {
     }
 
     #[test]
-    fn dscp_above_63_rejected() {
+    fn tsn_8_3_dscp_above_63_rejected() {
         assert_eq!(Dscp::new(64), Err(DscpError::OutOfRange(64)));
         assert_eq!(Dscp::new(255), Err(DscpError::OutOfRange(255)));
     }
 
     #[test]
-    fn tos_octet_round_trip_preserves_dscp() {
+    fn tsn_8_3_tos_octet_round_trip_preserves_dscp() {
         for v in 0u8..=63 {
             let d = Dscp::new(v).expect("ok");
             let tos = d.to_tos_octet();
@@ -106,7 +106,7 @@ mod tests {
     }
 
     #[test]
-    fn from_tos_ignores_ecn_bits() {
+    fn tsn_8_3_from_tos_ignores_ecn_bits() {
         // EF (46) | ECN bits 11.
         let tos = (46u8 << 2) | 0x03;
         assert_eq!(Dscp::from_tos_octet(tos).value(), 46);

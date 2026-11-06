@@ -5,6 +5,13 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- A plain collection's identifier carries the header of DDS-XTypes 1.3 §7.3.4.6.1 (`EK_BOTH` for a fully
+  descriptive element, the element's own kind for a hashed one, `TRY_CONSTRUCT1`) and DISCARD key flags; a
+  type from XML hashed apart from the same type from IDL.
+- The minimal union comes from the builder of the complete one: member ids from zero, `TRY_CONSTRUCT1` on every
+  case, a must-understand discriminator; an explicit `id` is kept in both forms.
+
 ### Changed
 - The nesting scan before `roxmltree` is `zerodds_foundation::xml_depth::check_nesting`; the copy
   the parser carried is gone. Same limit (`MAX_TREE_DEPTH`) and the same `LimitExceeded` message.

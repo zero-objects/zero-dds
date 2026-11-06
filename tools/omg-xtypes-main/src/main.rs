@@ -164,11 +164,11 @@ fn publish(
             eprintln!("xtypes_main: write failed: {e}");
             return ExitStatus::Error;
         }
-        if let Some(samples) = options.samples {
-            if i64::from(count) + 1 >= samples {
-                eprintln!("reached {samples} samples, exiting");
-                break;
-            }
+        if let Some(samples) = options.samples
+            && i64::from(count) + 1 >= samples
+        {
+            eprintln!("reached {samples} samples, exiting");
+            break;
         }
         if let Some(seconds) = options.seconds {
             #[allow(clippy::cast_possible_wrap)]
@@ -235,11 +235,11 @@ fn subscribe(
         let count = reader.take_data();
         if count > 0 {
             total += i64::try_from(count).unwrap_or(i64::MAX);
-            if let Some(samples) = options.samples {
-                if total >= samples {
-                    eprintln!("reached {samples} samples, exiting");
-                    break;
-                }
+            if let Some(samples) = options.samples
+                && total >= samples
+            {
+                eprintln!("reached {samples} samples, exiting");
+                break;
             }
         }
         if let Some(seconds) = options.seconds {

@@ -39,7 +39,7 @@ class CloseCleanupTest {
     }
 
     @Test
-    void aClosedWriterAndReaderAreNotListedOrFoundAnyMore() {
+    void javapsm_2_a_closed_writer_and_reader_are_not_listed_or_found_any_more() {
         DomainParticipant participant = Qos.factory().createParticipant(970);
         Topic<byte[]> topic = participant.createTopic("Gone", byte[].class);
         Publisher publisher = participant.createPublisher();
@@ -58,7 +58,7 @@ class CloseCleanupTest {
     }
 
     @Test
-    void closeContainedEntitiesEmptiesPublisherAndSubscriber() {
+    void javapsm_2_close_contained_entities_empties_publisher_and_subscriber() {
         DomainParticipant participant = Qos.factory().createParticipant(971);
         Topic<byte[]> topic = participant.createTopic("Emptied", byte[].class);
         Publisher publisher = participant.createPublisher();
@@ -72,7 +72,7 @@ class CloseCleanupTest {
     }
 
     @Test
-    void aTopicInUseCannotBeClosedUntilItsWritersAndReadersAre() {
+    void javapsm_2_a_topic_in_use_cannot_be_closed_until_its_writers_and_readers_are() {
         DomainParticipant participant = Qos.factory().createParticipant(972);
         Topic<byte[]> topic = participant.createTopic("InUse", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
@@ -87,7 +87,7 @@ class CloseCleanupTest {
     }
 
     @Test
-    void aClosedPublisherAndSubscriberLeaveTheParticipant() {
+    void javapsm_2_a_closed_publisher_and_subscriber_leave_the_participant() {
         DomainParticipant participant = Qos.factory().createParticipant(973);
         Publisher publisher = participant.createPublisher();
         Subscriber subscriber = participant.createSubscriber();

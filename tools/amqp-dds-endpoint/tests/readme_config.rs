@@ -7,7 +7,7 @@
 use zerodds_amqp_endpoint::annex_a::SaslMechanism;
 
 #[test]
-fn the_readme_configuration_reads_as_it_says() {
+fn ddsamqp_9_2_the_readme_configuration_reads_as_it_says() {
     let readme = include_str!("../README.md");
     let start = readme.find("```xml\n").expect("an xml block") + "```xml\n".len();
     let end = start + readme[start..].find("```").expect("its end");

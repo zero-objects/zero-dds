@@ -49,7 +49,7 @@ fn errors(source: &str) -> Vec<String> {
 }
 
 #[test]
-fn an_unknown_annotation_is_ignored_whatever_it_is_given() {
+fn idl_7_4_15_4_2_an_unknown_annotation_is_ignored_whatever_it_is_given() {
     for source in [
         "@nosuchthing struct Sa { long m; };",
         "@nosuchthing(v = 1) struct Sa { long m; };",
@@ -75,7 +75,7 @@ fn an_unknown_annotation_is_ignored_whatever_it_is_given() {
 }
 
 #[test]
-fn a_name_outside_an_unknown_annotation_still_has_to_resolve() {
+fn idl_7_4_15_4_2_a_name_outside_an_unknown_annotation_still_has_to_resolve() {
     // The half that keeps the rule above from becoming "identifiers are
     // never resolved". Ignoring an unknown annotation is not licence to
     // stop reading the file, and a *declared* annotation's arguments are
@@ -96,7 +96,7 @@ fn a_name_outside_an_unknown_annotation_still_has_to_resolve() {
 }
 
 #[test]
-fn a_literal_argument_of_an_unknown_annotation_still_reaches_the_model() {
+fn idl_7_4_15_4_2_a_literal_argument_of_an_unknown_annotation_still_reaches_the_model() {
     // Only an *identifier* has nothing in the file to resolve to. A
     // literal is lowered either way, so an unknown annotation that
     // carries one keeps it — dropping every argument would have been a
@@ -126,7 +126,7 @@ fn a_literal_argument_of_an_unknown_annotation_still_reaches_the_model() {
 }
 
 #[test]
-fn a_builtin_with_an_enumerated_parameter_reads_it_without_resolving_it() {
+fn idl_7_4_15_2_a_builtin_with_an_enumerated_parameter_reads_it_without_resolving_it() {
     // An enumerator of the annotation's own type is in no scope of the
     // file, so it must not be lowered as an expression — and the
     // annotation must still be read.
@@ -147,7 +147,7 @@ fn a_builtin_with_an_enumerated_parameter_reads_it_without_resolving_it() {
 }
 
 #[test]
-fn a_verbatim_directive_still_reaches_the_model_whole() {
+fn idl_7_4_15_2_a_verbatim_directive_still_reaches_the_model_whole() {
     // Not resolving the enumerator must not mean losing it. All three
     // parameters are read out of the argument's text and identifier, so
     // the directive arrives complete.
@@ -182,7 +182,7 @@ fn a_verbatim_directive_still_reaches_the_model_whole() {
 }
 
 #[test]
-fn the_rti_fixture_that_carried_both_defects_now_passes() {
+fn idl_7_4_15_2_the_rti_fixture_that_carried_both_defects_now_passes() {
     // `crates/idl-parse/tests/fixtures/spec_features/rti_connext_pragmas.idl`
     // is real vendor IDL: `@verbatim(placement=BEFORE_DECLARATION)` and
     // `@RTI_topic_kind(NO_KEY)` in one file. It was refused over both
@@ -197,7 +197,7 @@ fn the_rti_fixture_that_carried_both_defects_now_passes() {
 // -- an annotation body is its own scope (rule 221) ----------------------
 
 #[test]
-fn an_annotation_body_may_declare_the_types_its_members_use() {
+fn idl_7_4_15_4_1_an_annotation_body_may_declare_the_types_its_members_use() {
     // Rule (221): `<annotation_body> ::= { <annotation_member> |
     // <enum_dcl> ";" | <const_dcl> ";" | <typedef_dcl> ";" }*`. The
     // enum, const and typedef were parsed and never lowered, which
@@ -225,7 +225,7 @@ fn an_annotation_body_may_declare_the_types_its_members_use() {
 }
 
 #[test]
-fn the_user_annotation_fixture_passes() {
+fn idl_7_4_15_4_1_the_user_annotation_fixture_passes() {
     // `crates/idl-parse/tests/fixtures/spec_features/user_annotations.idl`
     // is the file that exercises rules 218-221 whole. It carries all
     // three body declaration forms and applications of each.

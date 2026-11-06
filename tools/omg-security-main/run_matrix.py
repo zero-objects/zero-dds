@@ -9,7 +9,8 @@ harness. The expectation is ``compatibility_matrix.tsv`` beside this
 file, transcribed from that spreadsheet (see the header of the TSV).
 
 A cell *communicates* when the reader prints a sample line inside the
-window. Both spellings the suite's clients use are accepted: the
+window; the wait ends early once the reader or the writer has exited
+(``wait_for_sample``). Both spellings the suite's clients use are accepted: the
 ``%-10s %-10s %03d %03d [%d]`` line of the committed
 ``ShapeType_main.cxx`` and the ``Received sample...`` line of the
 README's older transcript.
@@ -142,17 +143,55 @@ def side_argv(profile: dict, role: str, topic: str, perm: str) -> list[str]:
     return argv
 
 
+# How often the wait looks at the two processes, in seconds.
+POLL = 0.05
+# How long the wait goes on after the writer exited, in seconds: what it sent
+# before is read on the loopback within milliseconds, and nothing comes after.
+WRITER_GONE_GRACE = 1.0
+
+
+def wait_for_sample(sub: Proc, pub: Proc, window: float) -> tuple[bool, str]:
+    """Whether the reader prints a sample within ``window`` seconds of the
+    writer's start, and why the wait ended.
+
+    The wait ends before the window when its answer can no longer change: the
+    reader exited (refused its permissions; its output is read to the end
+    first), or the writer exited (refused its permissions) and
+    ``WRITER_GONE_GRACE`` passed. A cell that expects no communication waited
+    the whole window before. Measured on the Linux test host (2026-11-01,
+    ZeroDDS against Connext 7.7 and CoreDX 6.14.1, both directions, 1100
+    cells): every such cell had a refused process, the reader gone within its
+    head start (400 cells) or the writer within 0.11 s of its start (256).
+    """
+    end = time.monotonic() + window
+    writer_gone = None
+    while not sub.got_sample.wait(timeout=POLL):
+        now = time.monotonic()
+        if now >= end:
+            return False, "window"
+        if sub.proc.poll() is not None:
+            sub.thread.join(timeout=3)
+            return sub.got_sample.is_set(), "reader exited"
+        if writer_gone is None and pub.proc.poll() is not None:
+            writer_gone = now
+        if writer_gone is not None and now - writer_gone >= WRITER_GONE_GRACE:
+            return sub.got_sample.is_set(), "writer exited"
+    return True, "sample"
+
+
 def run_cell(reader: dict, writer: dict, topic: str, rperm: str, wperm: str, args: argparse.Namespace) -> tuple[bool, str]:
     tag = f"{topic}__R-{rperm}__W-{wperm}"
     outdir = Path(args.outdir)
     sub = Proc(side_argv(reader, "sub", topic, rperm), reader["cwd"], reader["env"], outdir / f"{tag}.reader.log")
-    time.sleep(args.sub_lead)
+    # The reader's head start ends early only when the reader is gone.
+    lead_end = time.monotonic() + args.sub_lead
+    while time.monotonic() < lead_end and sub.proc.poll() is None:
+        time.sleep(POLL)
     pub = Proc(side_argv(writer, "pub", topic, wperm), writer["cwd"], writer["env"], outdir / f"{tag}.writer.log")
-    got = sub.got_sample.wait(timeout=args.window)
-    # A reader that exits early (refused permissions) ends the wait too.
+    got, ended = wait_for_sample(sub, pub, args.window)
     sub_rc = sub.stop()
     pub_rc = pub.stop()
-    return got, f"reader_rc={sub_rc} writer_rc={pub_rc}"
+    return got, f"reader_rc={sub_rc} writer_rc={pub_rc} ended={ended}"
 
 
 def main() -> int:

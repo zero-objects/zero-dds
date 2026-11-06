@@ -7,7 +7,7 @@ module RoundtripBench {
   struct Roundtrip {
     unsigned long sequence_id;
     unsigned long long t_send_ns;
-    sequence<octet, 8192> payload;
+    sequence<octet, 65536> payload;
   };
 #pragma keylist Roundtrip
 };

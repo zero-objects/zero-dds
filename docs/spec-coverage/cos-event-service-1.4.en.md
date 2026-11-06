@@ -37,7 +37,7 @@ Implementation:
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — overview and example scenario.
 
 ### §1.4 Design Principles / §1.5 Resolution of Technical Issues / §1.6 Quality of Service
 
@@ -47,7 +47,7 @@ Implementation:
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — design principles and discussion; §1.6 explicitly sets no quality of service ("the event interfaces do not dictate qualities of service").
 
 ### §1.7 Generic Event Communication
 
@@ -58,7 +58,7 @@ normative definitions follow in §2.1).
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — introduction; the normative definitions are in §2.1.
 
 ---
 
@@ -165,16 +165,15 @@ skipped silently);
 
 **Status:** done
 
-### §2.2 Event channels (architecture overview)
+### §2.2 Event channels
 
-**Spec:** §2.2, p. 2-4 — the event-channel concept, push/pull/mixed-style
-communication, multiple consumers, channel administration.
+**Spec:** §2.2, p. 2-4 — "The event channel is itself both a consumer and a supplier of the event data." Push style (supplier pushes into the channel, the channel pushes to the consumer), pull style (the channel pulls from the supplier, the consumer pulls from the channel), mixed styles, several consumers and suppliers per channel.
 
-**Repo:** architecture doc, the normative IDL follows in §2.3.
+**Repo:** `crates/corba-cos-event/src/channel.rs` (`EventChannel`, `ProxyPushConsumer`, `ProxyPullSupplier`, `ProxyPullConsumer`, `ProxyPushSupplier`).
 
-**Tests:** —
+**Tests:** `crates/corba-cos-event/src/channel.rs::tests::push_fan_out_to_multiple_consumers`, `crates/corba-cos-event/src/channel.rs::tests::pull_supplier_dequeues_events`, `crates/corba-cos-event/src/channel.rs::tests::proxy_pull_consumer_forwards_pulled_events_into_the_channel`.
 
-**Status:** n/a (informative) — implementation requirement in §2.3.
+**Status:** done
 
 ### §2.3 The CosEventChannelAdmin module
 
@@ -301,14 +300,23 @@ pulled from the supplier show up on the consumer side of the channel),
 
 ### §2.4 Typed event communication
 
-**Spec:** §2.4, p. 2-12 — the typed push/pull model description (informative;
-IDL in §2.5/§2.7).
+**Spec:** §2.4, pp. 2-12 to 2-13 — typed push: the supplier calls operations of the agreed interface I on the consumer. Typed pull: for every interface I, `Pull<I>` is defined, "For every operation o in I, Pull<I> contains two operations": `pull_o` (blocks, returns the event data as `out` parameters) and `boolean try_o`.
+
+**Repo:** `crates/corba-cos-event/src/typed.rs` (`TypedInvocation`, `TypedPushConsumer::invoke`, `TypedPullSupplier::pull`/`try_pull`).
+
+**Tests:** `crates/corba-cos-event/src/typed.rs::tests::typed_push_consumer_invoke_carries_operation_and_args`, `crates/corba-cos-event/src/typed.rs::tests::pull_supplier_try_pull_returns_queued_event`.
+
+**Status:** partial — typed push (operation name and arguments reach the consumer) and typed pull in generic form (`TypedInvocation`) are implemented; the derived interface `Pull<I>` is missing, own item.
+
+### §2.4.2 Derived interface Pull<I>
+
+**Spec:** §2.4.2, p. 2-13 — for every operation `o` of I, `Pull<I>` contains the operations `pull_o` (all `in` parameters become `out` parameters; blocks until an o-event is available) and `boolean try_o` (returns `false` when no o-event is available).
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** open — no code generates or represents `Pull<I>`; `TypedPullSupplier` returns every operation as a generic `TypedInvocation`.
 
 ### §2.5 The CosTypedEventComm module
 
@@ -357,15 +365,15 @@ pull_supplier_disconnect_returns_error}`.
 
 **Status:** done
 
-### §2.6 Typed event channels (architecture overview)
+### §2.6 Typed event channels
 
-**Spec:** §2.6, p. 2-16 — the typed-channel concept.
+**Spec:** §2.6, p. 2-16 — "Typed event channels [...] support both typed and generic event communication. These forms can be mixed at will. [...] An event supplied in typed form can be consumed in generic form, or vice versa."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** open — `TypedEventChannel` (`crates/corba-cos-event/src/typed.rs`) delivers only to typed consumers; a conversion between typed and generic form is missing.
 
 ### §2.7 The CosTypedEventChannelAdmin module
 
@@ -418,14 +426,13 @@ typed_supplier_admin_try_pull_returns_first_available}`.
 
 ### §2.8 Composing event channels and filtering
 
-**Spec:** §2.8, p. 2-20 — channel composition + filter pattern (informative;
-filtering is in its own spec, CosNotification).
+**Spec:** §2.8, p. 2-20 — "one event channel can consume events supplied by another"; the `ProxyPushSupplier` of a typed channel for I only pushes events of I and so acts as a type filter.
 
-**Repo:** —
+**Repo:** `crates/corba-cos-event/src/channel.rs` (proxies as `PushConsumer`/`PushSupplier`), `crates/corba-cos-event/src/typed.rs` (`TypedEventChannel::dispatch` by repository ID).
 
-**Tests:** —
+**Tests:** `crates/corba-cos-event/src/typed.rs::tests::unknown_repo_id_dispatches_to_zero`, `crates/corba-cos-event/src/typed.rs::tests::dispatch_reaches_registered_consumers`.
 
-**Status:** n/a (informative)
+**Status:** partial — the type filter by repository ID is tested; no test chains two channels.
 
 ### §2.9 Policies for finding event channels
 
@@ -436,7 +443,7 @@ discovery (informative).
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — "The Event Service does not establish a policy for finding event channels."
 
 ---
 
@@ -452,7 +459,7 @@ discovery (informative).
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — frame of the Lightweight profile; the mapping is in §3.1.2 and §3.1.3.
 
 #### §3.1.2 The CosLightweightEventComm package
 
@@ -496,7 +503,7 @@ separate ConsumerAdmin/SupplierAdmin sub-profile (a profile subset of
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — frame of the CORBA mapping; the IDL is in §3.2.2 and §3.2.3.
 
 #### §3.2.2 CosEventChannelAdmin module (PSM)
 
@@ -566,9 +573,12 @@ reaches the DDS topic write).
 
 ## Audit status
 
-25 done / 0 partial / 0 open / 10 n/a (informative) / 0 n/a (rejected).
+26 done / 2 partial / 2 open / 0 blocked / 6 n/a (informative).
 
-Open items: none. Decision records: none.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document cos-event-service-1.4.md`):
 
-Test run: `cargo test -p zerodds-corba-cos-event` — 54 lib tests + 1 doc
-test green, 0 failed.
+* `cargo nextest run --profile merge -p zerodds-corba-cos-event --all-targets` (job `merge-rust-corba-cos-event`) — 52 tests green.
+
+52 cited tests green, 0 not green.
+
+Open items: `cos-event-service-1.4.open.en.md`.

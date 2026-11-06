@@ -53,7 +53,7 @@ This document identifies strategic and technical risks of the project and docume
 
 **Impact:** The safe profile does not work on customer hardware or only with additional effort.
 
-**Current status:** In the bootstrap and proof eras we use stable Rust. Safe-subset crates are written safety-ready (see `04_safety_by_architecture.md`), but built without Ferrocene qualification. Ferrocene integration is a Track-B topic (see `06_roadmap.md` §8.1).
+**Current status:** In the bootstrap and proof eras we use stable Rust. Safe-subset crates are written safety-ready (see `04_safety_by_architecture.md`), but built without Ferrocene qualification. Ferrocene integration is a Track-B topic.
 
 **Mitigation for later:**
 - Early alignment with Ferrous Systems on target platforms at the start of Track B
@@ -163,7 +163,7 @@ This document identifies strategic and technical risks of the project and docume
 
 **Decision:** ZeroDDS is an internal core project of the sponsoring company. No external governance framework, no foundation donation planned. License is **Apache 2.0**. This choice preserves optionality — a later switch to a more open governance model remains possible without re-licensing friction, if strategic reasons arise. Conversely, no planning, staffing or attention is invested now.
 
-Community-related questions (open-source release, contributor license agreement, donation target) are expansion-era topics and are handled in `06_roadmap.md` §8.1 Track E, if they become relevant.
+Community-related questions (open-source release, contributor license agreement, donation target) are expansion-era topics.
 
 ## 4 Team and organization risks
 

@@ -26,7 +26,7 @@
 //! ```text
 //! +---------------------------------+
 //! | Magic "ZDDS" (4 bytes)          |
-//! | Version u32 (=1)                |
+//! | Version u32 (=3)                |
 //! | TimeBaseUnixNs i64              |
 //! | ParticipantCount u32            |
 //! | TopicCount u32                  |
@@ -38,6 +38,7 @@
 //! | ParticipantIdx u32              |
 //! | TopicIdx u32                    |
 //! | SampleKind u8 (0=Alive,1=Disposed,2=Unregistered)
+//! | ReprPresent u8, ReprId [2]      |  (version 3)
 //! | PayloadLen u32                  |
 //! | CdrPayload[PayloadLen]          |
 //! +---------------------------------+
@@ -47,8 +48,9 @@
 //!
 //! # Versioning
 //!
-//! Version = 1 ([`ZDDSREC_VERSION`]). Backward-incompatible changes
-//! bump the version; the reader rejects unknown versions.
+//! Version = 3 ([`ZDDSREC_VERSION`]). Backward-incompatible changes
+//! bump the version; the reader rejects versions above it and reads the
+//! older ones (a version 1 or 2 frame has no representation identifier).
 
 #![warn(unsafe_code)]
 #![warn(missing_docs)]
@@ -61,8 +63,8 @@ pub mod session;
 pub mod writer;
 
 pub use format::{
-    Frame, FrameView, Header, ParticipantEntry, SampleKind, TopicEntry, ZDDSREC_MAGIC,
-    ZDDSREC_VERSION,
+    FIRST_VERSION_WITH_REPRESENTATION, Frame, FrameView, Header, ParticipantEntry, SampleKind,
+    TopicEntry, ZDDSREC_MAGIC, ZDDSREC_VERSION,
 };
 pub use reader::{ReadError, RecordReader};
 pub use session::{RecordingSession, SessionError, SessionOptions, TopicKey};

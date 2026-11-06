@@ -53,7 +53,7 @@ class ParticipantIgnoreTest {
     }
 
     @Test
-    void ignoreParticipantBeforeTheWriterExistsKeepsItsDataAndItsMatchAway() {
+    void javapsm_2_ignore_participant_before_the_writer_exists_keeps_its_data_and_its_match_away() {
         int domain = 1230;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant ignored = Qos.factory().createParticipant(domain);
@@ -83,7 +83,7 @@ class ParticipantIgnoreTest {
     }
 
     @Test
-    void ignoreParticipantAfterTheMatchEndsItAndStopsTheData() {
+    void javapsm_2_ignore_participant_after_the_match_ends_it_and_stops_the_data() {
         int domain = 1231;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -103,7 +103,7 @@ class ParticipantIgnoreTest {
     }
 
     @Test
-    void anIgnoredParticipantDoesNotIgnoreTheOtherWay() {
+    void javapsm_2_an_ignored_participant_does_not_ignore_the_other_way() {
         int domain = 1232;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -115,7 +115,7 @@ class ParticipantIgnoreTest {
     }
 
     @Test
-    void ignoreTopicSeparatesTheTopicOfTheIgnoredHandleFromTheEndpointsOfTheParticipant() {
+    void javapsm_2_ignore_topic_separates_the_topic_of_the_ignored_handle_from_the_endpoints_of_the_participant() {
         int domain = 1233;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -147,7 +147,7 @@ class ParticipantIgnoreTest {
     }
 
     @Test
-    void ignorePublicationStopsTheDataOfOneWriterOnly() {
+    void javapsm_2_ignore_publication_stops_the_data_of_one_writer_only() {
         int domain = 1234;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -173,7 +173,7 @@ class ParticipantIgnoreTest {
     }
 
     @Test
-    void ignoreSubscriptionStopsTheDataToOneReaderOnly() {
+    void javapsm_2_ignore_subscription_stops_the_data_to_one_reader_only() {
         int domain = 1235;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -194,19 +194,7 @@ class ParticipantIgnoreTest {
     }
 
     @Test
-    void theIgnoreSetsOfAParticipantEndWithIt() {
-        int domain = 1236;
-        DomainParticipant mine = Qos.factory().createParticipant(domain);
-        DomainParticipant other = Qos.factory().createParticipant(domain);
-        mine.ignoreParticipant(other.getInstanceHandle());
-        assertTrue(Ignores.of(mine.getInstanceHandle()).ignoresParticipant(other.getInstanceHandle()));
-        mine.close();
-        // a participant that is gone takes its ignore sets with it
-        assertFalse(Ignores.of(mine.getInstanceHandle()).ignoresParticipant(other.getInstanceHandle()));
-    }
-
-    @Test
-    void theBuiltinReaderOfAParticipantGivesNoDataAboutItsOwnEntities() {
+    void javapsm_2_the_builtin_reader_of_a_participant_gives_no_data_about_its_own_entities() {
         int domain = 1237;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);

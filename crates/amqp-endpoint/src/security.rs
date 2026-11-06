@@ -213,13 +213,12 @@ impl StaticAllowList {
 
 impl AccessControlPlugin for StaticAllowList {
     fn check(&self, identity: &IdentityToken, address: &str, op: AccessOp) -> AccessDecision {
-        if let Some(entries) = self.allow.get(&identity.subject_name) {
-            if entries
+        if let Some(entries) = self.allow.get(&identity.subject_name)
+            && entries
                 .iter()
                 .any(|(addr, allowed_op)| addr == address && *allowed_op == op)
-            {
-                return AccessDecision::Allow;
-            }
+        {
+            return AccessDecision::Allow;
         }
         AccessDecision::Deny
     }
@@ -394,7 +393,7 @@ mod tests {
     // --- IdentityToken builder ---
 
     #[test]
-    fn plain_yields_sasl_username_class_id() {
+    fn ddsamqp_10_3_2_plain_yields_sasl_username_class_id() {
         let t = build_identity_token(&SaslSubject::Plain {
             authcid: "alice".into(),
         });
@@ -404,14 +403,14 @@ mod tests {
     }
 
     #[test]
-    fn anonymous_yields_anonymous_class_id() {
+    fn ddsamqp_10_3_2_anonymous_yields_anonymous_class_id() {
         let t = build_identity_token(&SaslSubject::Anonymous);
         assert_eq!(t.class_id, class_ids::ANONYMOUS);
         assert_eq!(t.subject_name, "CN=ANONYMOUS");
     }
 
     #[test]
-    fn external_yields_pki_dh_class_id_with_cert() {
+    fn ddsamqp_10_3_external_yields_pki_dh_class_id_with_cert() {
         let t = build_identity_token(&SaslSubject::External {
             certificate: alloc::vec![1, 2, 3],
             subject_dn: "CN=Bridge-1,O=ZeroDDS".to_string(),
@@ -422,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn scram_yields_scram_sha256_class_id() {
+    fn ddsamqp_10_2_scram_yields_scram_sha256_class_id() {
         let t = build_identity_token(&SaslSubject::ScramSha256 {
             authcid: "bob".into(),
         });
@@ -431,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn class_id_strings_match_spec_table() {
+    fn ddsamqp_10_3_class_id_strings_match_spec_table() {
         // Spec §10.3.2 table: concrete strings.
         assert_eq!(class_ids::SASL_USERNAME, "zerodds:Auth:SASL-Username:1.0");
         assert_eq!(class_ids::ANONYMOUS, "zerodds:Auth:Anonymous:1.0");
@@ -457,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn static_allow_list_per_op() {
+    fn ddsamqp_10_3_3_static_allow_list_per_op() {
         let mut p = StaticAllowList::new();
         let id = build_identity_token(&SaslSubject::Plain {
             authcid: "alice".into(),
@@ -545,7 +544,7 @@ mod tests {
     // --- LinkGovernance Cache (§10.7) ---
 
     #[test]
-    fn link_governance_caches_decision() {
+    fn ddsamqp_2_1_link_governance_caches_decision() {
         let id = build_identity_token(&SaslSubject::Plain {
             authcid: "alice".into(),
         });
@@ -579,7 +578,7 @@ mod tests {
     // --- Dual Identity (§10.6) ---
 
     #[test]
-    fn dual_identity_keeps_broker_and_dds_separate() {
+    fn ddsamqp_2_2_dual_identity_keeps_broker_and_dds_separate() {
         let broker = build_identity_token(&SaslSubject::Plain {
             authcid: "Alice".into(),
         });
@@ -596,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn dual_identity_for_dds_does_not_carry_broker_credential() {
+    fn ddsamqp_2_2_dual_identity_for_dds_does_not_carry_broker_credential() {
         // Annex C C.2.6 — the bridge presents CN=Bridge-1
         // (not Alice) to DDS AccessControl.
         let broker = build_identity_token(&SaslSubject::Plain {

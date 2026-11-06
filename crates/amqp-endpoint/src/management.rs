@@ -508,7 +508,7 @@ mod tests {
     // --- Address classification ---
 
     #[test]
-    fn classify_address_recognises_reserved() {
+    fn ddsamqp_2_2_classify_address_recognises_reserved() {
         assert_eq!(classify_address("$catalog"), AddressKind::Catalog);
         assert_eq!(classify_address("$metrics"), AddressKind::Metrics);
         assert_eq!(classify_address("$audit"), AddressKind::Audit);
@@ -518,7 +518,7 @@ mod tests {
     // --- Catalog ---
 
     #[test]
-    fn catalog_add_remove_balances_topics_exposed() {
+    fn ddsamqp_7_9_1_catalog_add_remove_balances_topics_exposed() {
         let metrics = MetricsHub::new();
         let mut cat = CatalogProducer::new();
         cat.add(entry("$T1", "T1"), &metrics);
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_snapshot_emits_map_per_entry() {
+    fn ddsamqp_2_1_catalog_snapshot_emits_map_per_entry() {
         let metrics = MetricsHub::new();
         let mut cat = CatalogProducer::new();
         cat.add(entry("AddrA", "TopicA"), &metrics);
@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_type_id_truncated_is_amqp_ulong() {
+    fn ddsamqp_7_9_1_catalog_type_id_truncated_is_amqp_ulong() {
         let metrics = MetricsHub::new();
         let mut cat = CatalogProducer::new();
         cat.add(entry("X", "T"), &metrics);
@@ -582,7 +582,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_type_id_full_is_amqp_symbol() {
+    fn ddsamqp_7_9_1_catalog_type_id_full_is_amqp_symbol() {
         let metrics = MetricsHub::new();
         let mut cat = CatalogProducer::new();
         let mut e = entry("X", "T");
@@ -602,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_partitions_emitted_when_set() {
+    fn ddsamqp_7_9_1_catalog_partitions_emitted_when_set() {
         let metrics = MetricsHub::new();
         let mut cat = CatalogProducer::new();
         let mut e = entry("X", "T");
@@ -625,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_direction_symbols_match_spec() {
+    fn ddsamqp_7_9_1_catalog_direction_symbols_match_spec() {
         assert_eq!(
             CatalogDirection::ProducerToDds.as_symbol(),
             "producer-to-dds"
@@ -640,7 +640,7 @@ mod tests {
     // --- Metrics ---
 
     #[test]
-    fn metrics_snapshot_emits_one_sample_per_mandatory_metric() {
+    fn ddsamqp_2_1_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
         let hub = MetricsHub::new();
         hub.on_connection_open();
         hub.on_dropped_loop();
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn metrics_snapshot_carries_value() {
+    fn ddsamqp_7_9_2_metrics_snapshot_carries_value() {
         let hub = MetricsHub::new();
         hub.on_connection_open();
         hub.on_connection_open();
@@ -691,7 +691,7 @@ mod tests {
     // --- Audit ---
 
     #[test]
-    fn audit_event_types_are_spec_symbols() {
+    fn ddsamqp_2_2_audit_event_types_are_spec_symbols() {
         // Spec §sec:audit-channel + §C.1.14.
         assert_eq!(
             AuditEvent::ConnectionOpened {
@@ -750,7 +750,7 @@ mod tests {
     }
 
     #[test]
-    fn audit_producer_ringbuffer_evicts_oldest() {
+    fn ddsamqp_2_1_audit_producer_ringbuffer_evicts_oldest() {
         let mut p = AuditProducer::new(2);
         p.push(
             AuditEvent::ConnectionOpened {
@@ -792,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn audit_producer_drain_empties_queue() {
+    fn ddsamqp_7_4_4_audit_producer_drain_empties_queue() {
         let mut p = AuditProducer::new(8);
         p.push(
             AuditEvent::SaslFailure {

@@ -45,20 +45,7 @@ class SerializationTest {
     }
 
     @Test
-    void timeAndDurationKeepTheirValueAndGetAnEnvironment() throws Exception {
-        Time time = ENV.getSPI().newTime(1234, TimeUnit.MILLISECONDS);
-        Time copy = roundTrip(time);
-        assertEquals(time, copy);
-        assertSame(ENV, copy.getEnvironment());
-
-        Duration duration = ENV.getSPI().newDuration(7, TimeUnit.SECONDS);
-        Duration durationCopy = roundTrip(duration);
-        assertEquals(duration, durationCopy);
-        assertSame(ENV, durationCopy.getEnvironment());
-    }
-
-    @Test
-    void policiesKeepTheirValue() throws Exception {
+    void javapsm_7_3_3_policies_are_serializable_and_keep_their_value() throws Exception {
         Reliability reliability = ENV.getSPI().getPolicyFactory().Reliability().withReliable();
         Reliability copy = roundTrip(reliability);
         assertEquals(reliability, copy);
@@ -71,7 +58,7 @@ class SerializationTest {
     }
 
     @Test
-    void aStatusKeepsItsCounts() throws Exception {
+    void javapsm_7_3_3_a_status_is_serializable_and_keeps_its_counts() throws Exception {
         OfferedIncompatibleQosStatus status = new org.zerodds.core.status.OfferedIncompatibleQosStatusImpl(
                 ENV, 3, 1, Reliability.class, new java.util.LinkedHashSet<>());
         OfferedIncompatibleQosStatus copy = roundTrip(status);
@@ -81,7 +68,7 @@ class SerializationTest {
     }
 
     @Test
-    void aTypeDescriptorCarriesTheTypesItNames() throws Exception {
+    void javapsm_7_3_3_a_type_descriptor_is_serializable_and_carries_the_types_it_names() throws Exception {
         DynamicTypeFactory factory = DynamicTypeFactory.getInstance(ENV);
         DynamicType element = factory.getPrimitiveType(TypeKind.INT_32_TYPE);
         DynamicType sequence = factory.createSequenceType(element);

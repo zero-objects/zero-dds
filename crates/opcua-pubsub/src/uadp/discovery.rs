@@ -44,6 +44,8 @@ use crate::uadp::network_message::{PublisherId, read_discovery_header, write_dis
 
 const NM_TYPE_DISCOVERY_REQUEST: u8 = 1;
 const NM_TYPE_DISCOVERY_RESPONSE: u8 = 2;
+/// Part 14 Table 178: ProbeType 1, a Publisher information probe.
+const PROBE_TYPE_PUBLISHER_INFORMATION: u8 = 1;
 
 /// The kind of information a discovery request asks for / a response carries
 /// (Part 14 §7.2.2.4.2.1, `InformationType`).
@@ -94,6 +96,9 @@ pub struct DiscoveryRequest {
 impl UaEncode for DiscoveryRequest {
     fn encode(&self, w: &mut UaWriter) -> Result<(), EncodeError> {
         write_discovery_header(w, NM_TYPE_DISCOVERY_REQUEST, self.publisher_id.as_ref())?;
+        // Part 14 Table 178: the ProbeType, 1 a Publisher information probe
+        // (Table 179), then its InformationType.
+        w.write_u8(PROBE_TYPE_PUBLISHER_INFORMATION);
         w.write_u8(self.information_type.to_u8());
         if self.information_type != InformationType::PublisherEndpoints {
             write_u16_array(w, &self.data_set_writer_ids)?;
@@ -108,6 +113,13 @@ impl UaDecode for DiscoveryRequest {
         if nm_type != NM_TYPE_DISCOVERY_REQUEST {
             return Err(DecodeError::MalformedMessage {
                 message: "NetworkMessage is not a DiscoveryRequest",
+            });
+        }
+        let probe_type = r.read_u8()?;
+        if probe_type != PROBE_TYPE_PUBLISHER_INFORMATION {
+            return Err(DecodeError::InvalidDiscriminant {
+                field: "discovery ProbeType",
+                value: u32::from(probe_type),
             });
         }
         let information_type = InformationType::from_u8(r.read_u8()?)?;
@@ -561,20 +573,68 @@ mod tests {
         m
     }
 
+    fn ua_string(s: &str) -> Vec<u8> {
+        let mut out = i32::try_from(s.len()).expect("len").to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    /// A FieldMetaData (Part 14 §6.2.3.2.4): Name, Description (an empty
+    /// LocalizedText), FieldFlags, BuiltInType, DataType (the built-in
+    /// type's NodeId, Two Byte form), ValueRank −1, ArrayDimensions (empty),
+    /// MaxStringLength, DataSetFieldId (a zero Guid), Properties (empty).
+    fn scalar_field(name: &str, builtin: u8) -> Vec<u8> {
+        let mut out = ua_string(name);
+        out.extend_from_slice(&[0x00, 0x00, 0x00, builtin, 0x00, builtin]);
+        out.extend_from_slice(&(-1_i32).to_le_bytes());
+        out.extend_from_slice(&[0; 4]);
+        out.extend_from_slice(&[0; 4]);
+        out.extend_from_slice(&[0; 16]);
+        out.extend_from_slice(&[0; 4]);
+        out
+    }
+
+    /// The DataSetMetaDataType of `sample_meta()` (Part 14 §6.2.3.2.3):
+    /// the DataTypeSchemaHeader (Namespaces, StructureDataTypes,
+    /// EnumDataTypes, SimpleDataTypes), then Name, Description, Fields,
+    /// DataSetClassId, ConfigurationVersion (MajorVersion, MinorVersion).
+    fn sample_meta_octets(structures: &[u8], enums: &[u8], simples: &[u8]) -> Vec<u8> {
+        let mut out = 1_i32.to_le_bytes().to_vec();
+        out.extend_from_slice(&ua_string("urn:example"));
+        out.extend_from_slice(structures);
+        out.extend_from_slice(enums);
+        out.extend_from_slice(simples);
+        out.extend_from_slice(&ua_string("ds1"));
+        out.push(0x00);
+        out.extend_from_slice(&2_i32.to_le_bytes());
+        out.extend_from_slice(&scalar_field("a", 6));
+        out.extend_from_slice(&scalar_field("temp", 11));
+        out.extend_from_slice(&[0; 16]);
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(&4_u32.to_le_bytes());
+        out
+    }
+
+    const NO_ITEMS: [u8; 4] = [0, 0, 0, 0];
+
     #[test]
-    fn data_set_metadata_round_trip() {
+    fn uapubsub_6_2_3_2_3_data_set_metadata_is_its_schema_header_then_its_fields() {
         let m = sample_meta();
-        let bytes = to_binary(&m).expect("encode");
-        let back: DataSetMetaData = from_binary(&bytes).expect("decode");
+        let expected = sample_meta_octets(&NO_ITEMS, &NO_ITEMS, &NO_ITEMS);
+        assert_eq!(to_binary(&m).expect("encode"), expected);
+        let back: DataSetMetaData = from_binary(&expected).expect("decode");
         assert_eq!(back, m);
     }
 
+    /// Part 14 §6.2.3.2.4: FieldFlags bit 0 is PromotedField; ValueRank,
+    /// ArrayDimensions and a Property (a KeyValuePair, QualifiedName and
+    /// Variant) in their places.
     #[test]
-    fn field_metadata_with_properties_round_trip() {
+    fn uapubsub_6_2_3_2_4_field_metadata_carries_flags_rank_dimensions_and_properties() {
         let mut f = FieldMetaData::scalar("pressure", BuiltinTypeKind::Float);
         f.value_rank = 1;
         f.array_dimensions = alloc::vec![3];
-        f.field_flags = 0x0001; // promoted
+        f.field_flags = 0x0001;
         f.properties = alloc::vec![KeyValuePair {
             key: QualifiedName {
                 namespace_index: 2,
@@ -582,36 +642,89 @@ mod tests {
             },
             value: Variant::scalar(VariantValue::String(String::from("bar"))),
         }];
-        let m = DataSetMetaData::new("ds", alloc::vec![f.clone()]);
-        let back: DataSetMetaData = from_binary(&to_binary(&m).expect("enc")).expect("dec");
-        assert_eq!(back.fields[0], f);
-        assert!(back.fields[0].is_promoted());
+        let mut expected = ua_string("pressure");
+        expected.extend_from_slice(&[0x00, 0x01, 0x00, 10, 0x00, 10]);
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&3_u32.to_le_bytes());
+        expected.extend_from_slice(&[0; 4]);
+        expected.extend_from_slice(&[0; 16]);
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&[0x02, 0x00]);
+        expected.extend_from_slice(&ua_string("EngineeringUnits"));
+        expected.push(12);
+        expected.extend_from_slice(&ua_string("bar"));
+        assert_eq!(to_binary(&f).expect("encode"), expected);
+        let back: FieldMetaData = from_binary(&expected).expect("decode");
+        assert_eq!(back, f);
+        assert!(back.is_promoted());
     }
 
+    /// Part 14 §7.2.4.6.12: a probe's header (UADPFlags with PublisherId
+    /// and ExtendedFlags1, ExtendedFlags1 with the SecurityHeader and
+    /// ExtendedFlags2 bits, ExtendedFlags2 with the probe type 001), the
+    /// PublisherId, the SecurityHeader of an unsecured message, ProbeType
+    /// 1 (Table 178), InformationType (Table 179) and, for DataSetMetaData,
+    /// the DataSetWriterIds (Table 180).
     #[test]
-    fn discovery_request_round_trip() {
+    fn uapubsub_7_2_4_6_12_a_publisher_information_probe_is_the_octets_of_tables_178_to_180() {
         let req = DiscoveryRequest {
             publisher_id: Some(PublisherId::UInt16(9)),
             information_type: InformationType::DataSetMetaData,
             data_set_writer_ids: alloc::vec![5, 6, 7],
         };
-        let back: DiscoveryRequest = from_binary(&to_binary(&req).expect("enc")).expect("dec");
-        assert_eq!(back, req);
-    }
+        let expected = [
+            0x91, 0x91, 0x04, 0x09, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x03,
+            0x00, 0x00, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x00,
+        ];
+        assert_eq!(to_binary(&req).expect("encode"), expected);
+        assert_eq!(
+            from_binary::<DiscoveryRequest>(&expected).expect("decode"),
+            req
+        );
 
-    #[test]
-    fn publisher_endpoints_request_has_no_writer_ids() {
+        // InformationType 1 (Publisher Server Endpoints) has no further field.
         let req = DiscoveryRequest {
             publisher_id: None,
             information_type: InformationType::PublisherEndpoints,
             data_set_writer_ids: Vec::new(),
         };
-        let back: DiscoveryRequest = from_binary(&to_binary(&req).expect("enc")).expect("dec");
-        assert_eq!(back, req);
+        let expected = [
+            0x81, 0x90, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01,
+        ];
+        assert_eq!(to_binary(&req).expect("encode"), expected);
+        assert_eq!(
+            from_binary::<DiscoveryRequest>(&expected).expect("decode"),
+            req
+        );
     }
 
+    /// The announcement header (§7.2.4.6.3: ExtendedFlags2 with the
+    /// announcement type 010, the SecurityHeader of an unsecured message)
+    /// with a String PublisherId, then AnnouncementType and SequenceNumber
+    /// (Table 168).
+    fn announcement(
+        announcement_type: u8,
+        sequence_number: u16,
+        publisher: Option<&str>,
+    ) -> Vec<u8> {
+        let mut out = match publisher {
+            Some(p) => {
+                let mut h = alloc::vec![0x91, 0x94, 0x08];
+                h.extend_from_slice(&ua_string(p));
+                h
+            }
+            None => alloc::vec![0x81, 0x90, 0x08],
+        };
+        out.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, announcement_type]);
+        out.extend_from_slice(&sequence_number.to_le_bytes());
+        out
+    }
+
+    /// Part 14 Table 170: a DataSetMetaData announcement is the header,
+    /// the DataSetWriterId, the DataSetMetaDataType and the statusCode.
     #[test]
-    fn discovery_response_metadata_round_trip() {
+    fn uapubsub_7_2_4_6_4_a_metadata_announcement_is_the_octets_of_table_170() {
         let resp = DiscoveryResponse {
             publisher_id: Some(PublisherId::String(String::from("pub-1"))),
             sequence_number: 42,
@@ -621,50 +734,71 @@ mod tests {
                 status_code: 0,
             }),
         };
-        let back: DiscoveryResponse = from_binary(&to_binary(&resp).expect("enc")).expect("dec");
-        assert_eq!(back, resp);
+        let mut expected = announcement(2, 42, Some("pub-1"));
+        expected.extend_from_slice(&[0x05, 0x00]);
+        expected.extend_from_slice(&sample_meta_octets(&NO_ITEMS, &NO_ITEMS, &NO_ITEMS));
+        expected.extend_from_slice(&[0; 4]);
+        assert_eq!(to_binary(&resp).expect("encode"), expected);
+        assert_eq!(
+            from_binary::<DiscoveryResponse>(&expected).expect("decode"),
+            resp
+        );
     }
 
+    /// Part 14 Table 172: a Publisher Endpoints announcement is the header,
+    /// the EndpointDescriptions as an array and the statusCode (the
+    /// EndpointDescription octets are checked in `uadp::datatypes`).
     #[test]
-    fn discovery_response_publisher_endpoints_round_trip() {
+    fn uapubsub_7_2_4_6_6_an_endpoints_announcement_is_the_octets_of_table_172() {
         use crate::uadp::datatypes::{
             ApplicationDescription, ApplicationType, EndpointDescription, MessageSecurityMode,
         };
 
+        let endpoint = EndpointDescription {
+            endpoint_url: String::from("opc.tcp://h:4840"),
+            server: ApplicationDescription {
+                application_uri: String::from("urn:h:app"),
+                product_uri: String::new(),
+                application_name: LocalizedText {
+                    locale: None,
+                    text: Some(String::from("App")),
+                },
+                application_type: ApplicationType::Server,
+                gateway_server_uri: String::new(),
+                discovery_profile_uri: String::new(),
+                discovery_urls: Vec::new(),
+            },
+            server_certificate: Vec::new(),
+            security_mode: MessageSecurityMode::None,
+            security_policy_uri: String::from("None"),
+            user_identity_tokens: Vec::new(),
+            transport_profile_uri: String::new(),
+            security_level: 0,
+        };
         let resp = DiscoveryResponse {
-            publisher_id: Some(PublisherId::Byte(1)),
+            publisher_id: None,
             sequence_number: 7,
             payload: DiscoveryResponsePayload::PublisherEndpoints(PublisherEndpointsResponse {
-                endpoints: alloc::vec![EndpointDescription {
-                    endpoint_url: String::from("opc.tcp://h:4840"),
-                    server: ApplicationDescription {
-                        application_uri: String::from("urn:h:app"),
-                        product_uri: String::new(),
-                        application_name: LocalizedText {
-                            locale: None,
-                            text: Some(String::from("App")),
-                        },
-                        application_type: ApplicationType::Server,
-                        gateway_server_uri: String::new(),
-                        discovery_profile_uri: String::new(),
-                        discovery_urls: Vec::new(),
-                    },
-                    server_certificate: Vec::new(),
-                    security_mode: MessageSecurityMode::None,
-                    security_policy_uri: String::from("None"),
-                    user_identity_tokens: Vec::new(),
-                    transport_profile_uri: String::new(),
-                    security_level: 0,
-                }],
+                endpoints: alloc::vec![endpoint.clone()],
                 status_code: 0,
             }),
         };
-        let back: DiscoveryResponse = from_binary(&to_binary(&resp).expect("enc")).expect("dec");
-        assert_eq!(back, resp);
+        let mut expected = announcement(1, 7, None);
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&to_binary(&endpoint).expect("endpoint"));
+        expected.extend_from_slice(&[0; 4]);
+        assert_eq!(to_binary(&resp).expect("encode"), expected);
+        assert_eq!(
+            from_binary::<DiscoveryResponse>(&expected).expect("decode"),
+            resp
+        );
     }
 
+    /// Part 14 Table 175: a DataSetWriter configuration announcement is the
+    /// header, the DataSetWriterIds, the WriterGroupDataType (its octets
+    /// are checked in `uadp::datatypes`) and one statusCode per writer.
     #[test]
-    fn discovery_response_writer_configuration_round_trip() {
+    fn uapubsub_7_2_4_6_9_a_writer_configuration_announcement_is_the_octets_of_table_175() {
         use crate::uadp::datatypes::{MessageSecurityMode, WriterGroupDataType};
         use zerodds_opcua_gateway::data_value::{ExtensionObject, ExtensionObjectBody};
         use zerodds_opcua_gateway::node_id::NodeId;
@@ -673,36 +807,45 @@ mod tests {
             type_id: NodeId::numeric(0, 0),
             body: ExtensionObjectBody::None,
         };
+        let config = WriterGroupDataType {
+            name: String::from("wg1"),
+            enabled: true,
+            security_mode: MessageSecurityMode::SignAndEncrypt,
+            security_group_id: String::from("sg1"),
+            security_key_services: Vec::new(),
+            max_network_message_size: 1500,
+            group_properties: Vec::new(),
+            writer_group_id: 1,
+            publishing_interval: 50.0,
+            keep_alive_time: 1000.0,
+            priority: 5,
+            locale_ids: Vec::new(),
+            header_layout_uri: String::new(),
+            transport_settings: ext.clone(),
+            message_settings: ext,
+            data_set_writers: Vec::new(),
+        };
         let resp = DiscoveryResponse {
             publisher_id: None,
             sequence_number: 3,
             payload: DiscoveryResponsePayload::DataSetWriterConfiguration(
                 DataSetWriterConfigurationResponse {
                     data_set_writer_ids: alloc::vec![5, 6],
-                    config: WriterGroupDataType {
-                        name: String::from("wg1"),
-                        enabled: true,
-                        security_mode: MessageSecurityMode::SignAndEncrypt,
-                        security_group_id: String::from("sg1"),
-                        security_key_services: Vec::new(),
-                        max_network_message_size: 1500,
-                        group_properties: Vec::new(),
-                        writer_group_id: 1,
-                        publishing_interval: 50.0,
-                        keep_alive_time: 1000.0,
-                        priority: 5,
-                        locale_ids: Vec::new(),
-                        header_layout_uri: String::new(),
-                        transport_settings: ext.clone(),
-                        message_settings: ext,
-                        data_set_writers: Vec::new(),
-                    },
+                    config: config.clone(),
                     statuses: alloc::vec![0, 0],
                 },
             ),
         };
-        let back: DiscoveryResponse = from_binary(&to_binary(&resp).expect("enc")).expect("dec");
-        assert_eq!(back, resp);
+        let mut expected = announcement(3, 3, None);
+        expected.extend_from_slice(&[0x02, 0x00, 0x00, 0x00, 0x05, 0x00, 0x06, 0x00]);
+        expected.extend_from_slice(&to_binary(&config).expect("config"));
+        expected.extend_from_slice(&[0x02, 0x00, 0x00, 0x00]);
+        expected.extend_from_slice(&[0; 8]);
+        assert_eq!(to_binary(&resp).expect("encode"), expected);
+        assert_eq!(
+            from_binary::<DiscoveryResponse>(&expected).expect("decode"),
+            resp
+        );
     }
 
     #[test]
@@ -725,7 +868,7 @@ mod tests {
     }
 
     #[test]
-    fn metadata_with_custom_datatypes_round_trips() {
+    fn uapubsub_6_2_3_2_3_the_schema_header_carries_structure_enum_and_simple_types() {
         use crate::config::{
             EnumDefinition, EnumDescription, EnumField, SimpleTypeDescription, StructureDefinition,
             StructureDescription, StructureField, StructureType,
@@ -789,7 +932,43 @@ mod tests {
             builtin_type: 11,
         }];
 
-        let back: DataSetMetaData = from_binary(&to_binary(&m).expect("enc")).expect("dec");
+        // OPC 10000-5: a StructureDescription is DataTypeId, Name and the
+        // StructureDefinition (DefaultEncodingId, BaseDataType,
+        // StructureType, Fields; a StructureField is Name, Description,
+        // DataType, ValueRank, ArrayDimensions, MaxStringLength,
+        // IsOptional); an EnumDescription DataTypeId, Name, the
+        // EnumDefinition (Fields; an EnumField Value Int64, DisplayName,
+        // Description, Name) and BuiltInType; a SimpleTypeDescription
+        // DataTypeId, Name, BaseDataType, BuiltInType.
+        let mut structures = 1_i32.to_le_bytes().to_vec();
+        structures.extend_from_slice(&[0x01, 0x02, 0xA0, 0x0F, 0x02, 0x00]);
+        structures.extend_from_slice(&ua_string("Point"));
+        structures.extend_from_slice(&[0x01, 0x02, 0xA1, 0x0F, 0x00, 22]);
+        structures.extend_from_slice(&1_i32.to_le_bytes());
+        structures.extend_from_slice(&1_i32.to_le_bytes());
+        structures.extend_from_slice(&ua_string("x"));
+        structures.extend_from_slice(&[0x00, 0x00, 11]);
+        structures.extend_from_slice(&(-1_i32).to_le_bytes());
+        structures.extend_from_slice(&[0; 4]);
+        structures.extend_from_slice(&[0; 4]);
+        structures.push(0x01);
+        let mut enums = 1_i32.to_le_bytes().to_vec();
+        enums.extend_from_slice(&[0x01, 0x02, 0x88, 0x13, 0x02, 0x00]);
+        enums.extend_from_slice(&ua_string("Color"));
+        enums.extend_from_slice(&1_i32.to_le_bytes());
+        enums.extend_from_slice(&1_i64.to_le_bytes());
+        enums.push(0x02);
+        enums.extend_from_slice(&ua_string("Red"));
+        enums.push(0x00);
+        enums.extend_from_slice(&ua_string("Red"));
+        enums.push(6);
+        let mut simples = 1_i32.to_le_bytes().to_vec();
+        simples.extend_from_slice(&[0x01, 0x02, 0x70, 0x17, 0x02, 0x00]);
+        simples.extend_from_slice(&ua_string("Celsius"));
+        simples.extend_from_slice(&[0x00, 11, 11]);
+        let expected = sample_meta_octets(&structures, &enums, &simples);
+        assert_eq!(to_binary(&m).expect("encode"), expected);
+        let back: DataSetMetaData = from_binary(&expected).expect("decode");
         assert_eq!(back, m);
     }
 }

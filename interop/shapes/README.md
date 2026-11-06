@@ -99,10 +99,10 @@ loud depends on the value.
 ## What each file backs
 
 `crates/dcps/src/interop.rs` holds a hand-written Rust `ShapeType`. It
-is the OMG five-member `@appendable` form, and it is what all six live
+is the OMG five-member `@appendable` form, and it is what the live
 interop tests publish and subscribe
-(`fastdds_live_pub`, `fastdds_live_sub`, `liveliness_qos`,
-`lifespan_qos`, `time_based_filter_qos`, `shapes_api_e2e`).
+(`liveliness_qos`, `lifespan_qos`, `time_based_filter_qos`,
+`shapes_api_e2e`).
 
 That hand-written type used to be a second source of truth beside the
 IDL front end: `crates/dcps/tests/shapes_type_wire.rs` checks it against

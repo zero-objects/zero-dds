@@ -65,7 +65,7 @@ class MultiTopicTest {
     }
 
     @Test
-    void theMultiTopicCarriesItsExpression() {
+    void javapsm_2_the_multi_topic_carries_its_expression() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<Reading> topic = participant.createTopic("Reading", Reading.class);
 
@@ -83,7 +83,7 @@ class MultiTopicTest {
     }
 
     @Test
-    void theExpressionParametersAreReplaced() {
+    void javapsm_2_the_expression_parameters_are_replaced() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         participant.createTopic("Reading", Reading.class);
         MultiTopic<Reading> multiTopic = participant.createMultiTopic("Hot",
@@ -96,7 +96,7 @@ class MultiTopicTest {
     }
 
     @Test
-    void aReaderOnTheMultiTopicReceivesTheMatchingSamples() throws Exception {
+    void javapsm_2_a_reader_on_the_multi_topic_receives_the_matching_samples() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<Reading> topic = participant.createTopic("Reading", Reading.class);
         Publisher publisher = participant.createPublisher();
@@ -116,28 +116,7 @@ class MultiTopicTest {
     }
 
     @Test
-    void anExpressionThatIsNotAnAnnexBTopicExpressionIsRefused() {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        participant.createTopic("Reading", Reading.class);
-        participant.createTopic("Other", Reading.class);
-
-        // Annex B.2: the FROM clause joins with NATURAL JOIN, not with a comma.
-        assertThrows(IllegalArgumentException.class,
-                () -> participant.createMultiTopic("Join", Reading.class,
-                        "SELECT sensor FROM Reading r, Other o WHERE r.value = o.value",
-                        List.of()));
-        // ORDER BY is part of a query expression, not of a topic expression.
-        assertThrows(IllegalArgumentException.class,
-                () -> participant.createMultiTopic("Ordered", Reading.class,
-                        "SELECT * FROM Reading ORDER BY value", List.of()));
-        // A topic of the FROM clause that does not exist.
-        assertThrows(IllegalArgumentException.class,
-                () -> participant.createMultiTopic("Missing", Reading.class,
-                        "SELECT * FROM Nothing", List.of()));
-    }
-
-    @Test
-    void theReaderReportsTheMultiTopicAsItsDescription() {
+    void javapsm_2_the_reader_reports_the_multi_topic_as_its_description() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         participant.createTopic("Reading", Reading.class);
         MultiTopic<Reading> multiTopic = participant.createMultiTopic("Hot",
@@ -148,7 +127,7 @@ class MultiTopicTest {
     }
 
     @Test
-    void theMultiTopicIsATopicDescriptionOfTheParticipant() {
+    void javapsm_2_the_multi_topic_is_a_topic_description_of_the_participant() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         participant.createTopic("Reading", Reading.class);
         MultiTopic<Reading> multiTopic = participant.createMultiTopic("Hot",

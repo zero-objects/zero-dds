@@ -22,8 +22,8 @@
 //! This was `zerodds_types::dynamic`, whose `DynamicType` was a third
 //! type representation beside the IDL AST and the XTypes `TypeObject`.
 //! The rebuild's answer is that a declared type **is**
-//! [`zerodds_ast::Ast`] — `docs/OPEN-ITEMS.md` states the same shape for
-//! the `DynamicType` that has still to come back: a view on the model
+//! [`zerodds_ast::Ast`] — the same shape as `zerodds_types::dynamic`'s
+//! `DynamicType`: a view on the model
 //! rather than a copy of it.
 //!
 //! So the four are declared into one `Ast` here, and [`BuiltinType`] and
@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn each_one_is_an_appendable_non_nested_struct_under_its_spec_name() {
+    fn xtypes_7_6_5_each_one_is_an_appendable_non_nested_struct_under_its_spec_name() {
         let s = set();
         for name in BUILTIN_TYPE_NAMES {
             let t = s.get(name).unwrap();

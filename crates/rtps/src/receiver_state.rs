@@ -37,12 +37,90 @@
 //! `decode_datagram` it is initialized to the default value plus `destGuidPrefix`.
 
 extern crate alloc;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::ops::Deref;
 
 use crate::header::RtpsHeader;
 use crate::header_extension::{ChecksumValue, HeTimestamp, HeaderExtension};
 use crate::parameter_list::ParameterList;
 use crate::wire_types::{GuidPrefix, Locator, ProtocolVersion, VendorId};
+
+/// A reply-locator list of the receiver state (§8.3.4, Table 8.16).
+///
+/// The receiver hands its state on with every submessage it walks. As a
+/// `Vec` each list cost an allocation per submessage and per datagram:
+/// on the Linux test host, 1 kB samples at 600 kS/s, the two lists were
+/// 58 % of the receive thread's allocations. A list holds the one locator
+/// Table 8.17 and INFO_REPLY_IP4 give it in place, and the list an
+/// INFO_REPLY carried shared.
+#[derive(Clone, Default)]
+pub struct ReplyLocators(ReplyRepr);
+
+#[derive(Clone, Default)]
+enum ReplyRepr {
+    /// The empty list: INFO_REPLY without the M flag (§8.3.8.9).
+    #[default]
+    Empty,
+    One(Locator),
+    Shared(Arc<[Locator]>),
+}
+
+impl ReplyLocators {
+    /// The list of the one locator `locator`.
+    #[must_use]
+    pub const fn one(locator: Locator) -> Self {
+        Self(ReplyRepr::One(locator))
+    }
+}
+
+impl Deref for ReplyLocators {
+    type Target = [Locator];
+
+    fn deref(&self) -> &[Locator] {
+        match &self.0 {
+            ReplyRepr::Empty => &[],
+            ReplyRepr::One(locator) => core::slice::from_ref(locator),
+            ReplyRepr::Shared(list) => list,
+        }
+    }
+}
+
+impl From<Vec<Locator>> for ReplyLocators {
+    fn from(list: Vec<Locator>) -> Self {
+        match list.as_slice() {
+            [] => Self(ReplyRepr::Empty),
+            [locator] => Self::one(*locator),
+            _ => Self(ReplyRepr::Shared(Arc::from(list))),
+        }
+    }
+}
+
+impl core::fmt::Debug for ReplyLocators {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl PartialEq for ReplyLocators {
+    fn eq(&self, other: &Self) -> bool {
+        **self == **other
+    }
+}
+
+impl Eq for ReplyLocators {}
+
+impl PartialEq<Vec<Locator>> for ReplyLocators {
+    fn eq(&self, other: &Vec<Locator>) -> bool {
+        **self == **other
+    }
+}
+
+impl<const N: usize> PartialEq<[Locator; N]> for ReplyLocators {
+    fn eq(&self, other: &[Locator; N]) -> bool {
+        **self == *other
+    }
+}
 
 /// Receiver state per spec table §8.3.4 and update rules
 /// in §8.3.7.4.
@@ -81,10 +159,10 @@ pub struct ReceiverState {
     pub parameters: ParameterList,
     /// Reply locator lists (default `LOCATOR_INVALID` lists, overridable
     /// by InfoReply).
-    pub unicast_reply_locator_list: Vec<Locator>,
+    pub unicast_reply_locator_list: ReplyLocators,
     /// Reply locator lists (default `LOCATOR_INVALID` lists, overridable
     /// by InfoReply).
-    pub multicast_reply_locator_list: Vec<Locator>,
+    pub multicast_reply_locator_list: ReplyLocators,
     /// Heuristic flag: `|rtpsSendTimestamp - now| > threshold`
     /// (§8.3.7.4 `CLOCK_SKEW_DETECTED`). Set by `note_clock_skew`; the
     /// decode module has no clock and provides only the input data.
@@ -110,8 +188,8 @@ impl ReceiverState {
             message_length: None,
             message_checksum: ChecksumValue::None,
             parameters: ParameterList::new(),
-            unicast_reply_locator_list: alloc::vec![Locator::INVALID],
-            multicast_reply_locator_list: alloc::vec![Locator::INVALID],
+            unicast_reply_locator_list: ReplyLocators::one(Locator::INVALID),
+            multicast_reply_locator_list: ReplyLocators::one(Locator::INVALID),
             clock_skew_detected: false,
         }
     }
@@ -128,16 +206,16 @@ impl ReceiverState {
         kind: crate::wire_types::LocatorKind,
         source_address: Option<[u8; 16]>,
     ) {
-        self.unicast_reply_locator_list = alloc::vec![Locator {
+        self.unicast_reply_locator_list = ReplyLocators::one(Locator {
             kind,
             port: Locator::PORT_INVALID,
             address: source_address.unwrap_or(Locator::ADDRESS_INVALID),
-        }];
-        self.multicast_reply_locator_list = alloc::vec![Locator {
+        });
+        self.multicast_reply_locator_list = ReplyLocators::one(Locator {
             kind,
             port: Locator::PORT_INVALID,
             address: Locator::ADDRESS_INVALID,
-        }];
+        });
     }
 
     /// Records the time of reception (`rtpsReceptionTimestamp`) and, with
@@ -160,8 +238,8 @@ impl ReceiverState {
         // Reset reply locator lists + haveTimestamp (Table 8.17). The
         // transport kind and source address are not in the header; the
         // caller that has them sets them with `set_initial_reply_locators`.
-        self.unicast_reply_locator_list = alloc::vec![Locator::INVALID];
-        self.multicast_reply_locator_list = alloc::vec![Locator::INVALID];
+        self.unicast_reply_locator_list = ReplyLocators::one(Locator::INVALID);
+        self.multicast_reply_locator_list = ReplyLocators::one(Locator::INVALID);
         self.have_timestamp = false;
         self.timestamp = HeTimestamp::TIME_INVALID;
         self.rtps_reception_timestamp = None;
@@ -193,8 +271,8 @@ impl ReceiverState {
         self.source_guid_prefix = guid_prefix;
         self.have_timestamp = false;
         self.timestamp = HeTimestamp::TIME_INVALID;
-        self.unicast_reply_locator_list = alloc::vec![Locator::INVALID];
-        self.multicast_reply_locator_list = alloc::vec![Locator::INVALID];
+        self.unicast_reply_locator_list = ReplyLocators::one(Locator::INVALID);
+        self.multicast_reply_locator_list = ReplyLocators::one(Locator::INVALID);
     }
 
     /// Update from InfoTimestamp (§8.3.8.5.4). `invalidate = true` (i.e.
@@ -209,22 +287,20 @@ impl ReceiverState {
             // §8.3.8.11: "if ( Receiver.clockSkewDetected ) {
             // Receiver.timestamp += Receiver.rtpsReceptionTime -
             // Receiver.rtpsSendTimestamp }".
-            if self.clock_skew_detected {
-                if let (Some(received), Some(sent)) =
+            if self.clock_skew_detected
+                && let (Some(received), Some(sent)) =
                     (self.rtps_reception_timestamp, self.rtps_send_timestamp)
-                {
-                    let ticks =
-                        |t: HeTimestamp| (i128::from(t.seconds) << 32) | i128::from(t.fraction);
-                    let corrected = ticks(ts) + ticks(received) - ticks(sent);
-                    self.timestamp = HeTimestamp {
-                        seconds: u32::try_from(corrected >> 32).unwrap_or(if corrected < 0 {
-                            0
-                        } else {
-                            u32::MAX
-                        }),
-                        fraction: u32::try_from(corrected & 0xFFFF_FFFF).unwrap_or(0),
-                    };
-                }
+            {
+                let ticks = |t: HeTimestamp| (i128::from(t.seconds) << 32) | i128::from(t.fraction);
+                let corrected = ticks(ts) + ticks(received) - ticks(sent);
+                self.timestamp = HeTimestamp {
+                    seconds: u32::try_from(corrected >> 32).unwrap_or(if corrected < 0 {
+                        0
+                    } else {
+                        u32::MAX
+                    }),
+                    fraction: u32::try_from(corrected & 0xFFFF_FFFF).unwrap_or(0),
+                };
             }
         }
     }
@@ -232,9 +308,9 @@ impl ReceiverState {
     /// Update from InfoReply (§8.3.8.10.4): sets the two reply
     /// locator lists.
     pub fn apply_info_reply(&mut self, unicast: Vec<Locator>, multicast: Option<Vec<Locator>>) {
-        self.unicast_reply_locator_list = unicast;
+        self.unicast_reply_locator_list = ReplyLocators::from(unicast);
         // Without the M flag the multicast list is empty (§8.3.8.9).
-        self.multicast_reply_locator_list = multicast.unwrap_or_default();
+        self.multicast_reply_locator_list = multicast.map(ReplyLocators::from).unwrap_or_default();
     }
 
     /// Update from HeaderExtension (§8.3.7.4): `messageLength`,
@@ -314,7 +390,7 @@ mod tests {
     fn apply_info_source_resets_reply_locators_and_timestamp() {
         let mut st = ReceiverState::new(dummy_prefix(0));
         st.have_timestamp = true;
-        st.unicast_reply_locator_list.push(Locator::INVALID);
+        st.unicast_reply_locator_list = ReplyLocators::from(vec![Locator::INVALID; 2]);
         st.apply_info_source(
             ProtocolVersion { major: 2, minor: 5 },
             VendorId([0x42, 0x42]),

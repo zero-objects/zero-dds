@@ -216,7 +216,7 @@ package Xrce_Client is
    --  Topic/Publisher/Subscriber/DataWriter/DataReader, absent for every
    --  other kind -- byte-oracled in crates/xrce/src/object_repr.rs
    --  against real eProsima Micro-XRCE-DDS Client 3.0.1 CREATE traffic
-   --  (Topic's own participant_id: commit 31c62df2a63). Reference is
+   --  (Topic's own participant_id: commit bd30deaef0b). Reference is
    --  the object_reference string (spec section 7.7.3.1.1). Request_Id is
    --  encoded big-endian (2 bytes), matching ObjectId's own wire byte
    --  order and the spec's own Annex B examples.

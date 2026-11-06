@@ -4,7 +4,8 @@
 //   reader DOMAIN TOPIC SECONDS SNAPSHOT_FILE STOP_FILE
 //
 // Prints READY once the reader exists, MATCHED once it has matched a
-// writer and SEEN id=<id> for the first valid sample of each instance.
+// writer, SEEN id=<id> for the first valid sample of each instance and
+// STATE id=<id> state=<state> for each change of an instance's state.
 // When SNAPSHOT_FILE appears it prints `SNAP id=<id> state=<state>`
 // per instance (the state of the last sample taken for it) and SNAPDONE;
 // when STOP_FILE appears, or after SECONDS, the same as FINAL lines.
@@ -114,7 +115,16 @@ int main(int argc, char** argv)
                 }
                 ids[h] = s.id();
             }
-            states[h] = state_name(info.instance_state);
+            const std::string state = state_name(info.instance_state);
+            auto known = states.find(h);
+            if (known == states.end() || known->second != state)
+            {
+                // STATE: each change of an instance's state, as it is taken.
+                auto id = ids.find(h);
+                std::cout << "STATE id=" << (id == ids.end() ? std::string("?") : std::to_string(id->second))
+                          << " state=" << state << std::endl;
+            }
+            states[h] = state;
         }
         if (!snapped && exists(snapshot))
         {

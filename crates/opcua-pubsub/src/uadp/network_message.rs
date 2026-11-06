@@ -137,9 +137,11 @@ pub(crate) fn write_discovery_header(
     nm_type: u8,
     publisher_id: Option<&PublisherId>,
 ) -> Result<(), EncodeError> {
-    // ExtendedFlags1 is always present because ExtendedFlags2 (the
-    // NetworkMessage type) is always needed for a discovery message.
-    let mut ext1 = EF1_EXTENDED_FLAGS2;
+    // Part 14 §7.2.4.6.3 and §7.2.4.6.12.1: ExtendedFlags1 with the
+    // SecurityHeader bit (4) and ExtendedFlags2 (7) set, the DataSetClassId,
+    // Timestamp and PicoSeconds bits clear; the NetworkMessage type in
+    // ExtendedFlags2.
+    let mut ext1 = EF1_EXTENDED_FLAGS2 | EF1_SECURITY;
     if let Some(p) = publisher_id {
         ext1 |= p.type_bits() & EF1_PUBLISHER_ID_TYPE_MASK;
     }
@@ -153,6 +155,11 @@ pub(crate) fn write_discovery_header(
     if let Some(p) = publisher_id {
         p.encode(w)?;
     }
+    // The SecurityHeader of an unsecured message (Table 154): no
+    // SecurityFlags, SecurityTokenId 0, NonceLength 0.
+    w.write_u8(0);
+    w.write_u32(0);
+    w.write_u8(0);
     Ok(())
 }
 
@@ -187,6 +194,22 @@ pub(crate) fn read_discovery_header(
     } else {
         None
     };
+    if ext1 & EF1_SECURITY != 0 {
+        // Table 154: SecurityFlags, SecurityTokenId, NonceLength, the
+        // MessageNonce and, with bit 2, the SecurityFooterSize.
+        let flags = r.read_u8()?;
+        let _token = r.read_u32()?;
+        let nonce_len = r.read_u8()?;
+        r.read_bytes(usize::from(nonce_len))?;
+        if flags & 0x04 != 0 {
+            r.read_u16()?;
+        }
+        if flags & 0x03 != 0 {
+            return Err(DecodeError::MalformedMessage {
+                message: "signed or encrypted discovery messages are not supported",
+            });
+        }
+    }
     Ok((nm_type, publisher_id))
 }
 
@@ -674,43 +697,36 @@ mod tests {
         )
     }
 
+    /// `nm` encodes to `expected` (OPC 10000-14 Table 154 and the
+    /// DataSetMessage of Tables 162 and 163) and `expected` decodes to `nm`.
+    fn octets(nm: &NetworkMessage, expected: &[u8]) {
+        assert_eq!(to_binary(nm).expect("encode"), expected);
+        let back: NetworkMessage = from_binary(expected).expect("decode");
+        assert_eq!(&back, nm);
+    }
+
+    /// Table 154: with nothing enabled the NetworkMessage is the
+    /// UADPVersion 1 in bits 0-3 and the one DataSetMessage: DataSetFlags1
+    /// valid with the Variant field encoding (Table 162), the FieldCount
+    /// and the Variant (Table 163).
     #[test]
-    fn minimal_single_message_no_payload_header() {
+    fn uapubsub_7_2_4_4_a_bare_network_message_is_the_version_and_the_dataset_message() {
         let mut nm = NetworkMessage::with_messages(alloc::vec![key_frame(0, 1)]);
         nm.payload_header = false;
-        let bytes = to_binary(&nm).expect("encode");
-        // UADPFlags only: version 1, no optional blocks.
-        assert_eq!(bytes[0] & UF_VERSION_MASK, UADP_VERSION);
-        assert_eq!(bytes[0] & UF_EXTENDED_FLAGS1, 0);
-        let back: NetworkMessage = from_binary(&bytes).expect("decode");
-        assert_eq!(back, nm);
+        octets(&nm, &[0x01, 0x01, 0x01, 0x00, 0x06, 0x01, 0x00, 0x00, 0x00]);
     }
 
+    /// Table 154 with every header field: UADPFlags 0xF1 (version 1,
+    /// PublisherId, GroupHeader, PayloadHeader, ExtendedFlags1),
+    /// ExtendedFlags1 0xEA (PublisherId type UInt32 010, DataSetClassId,
+    /// Timestamp, PicoSeconds, ExtendedFlags2), ExtendedFlags2 0x02
+    /// (PromotedFields), then PublisherId, DataSetClassId, the GroupHeader
+    /// (GroupFlags 0x0F, WriterGroupId, GroupVersion, NetworkMessageNumber,
+    /// SequenceNumber), the PayloadHeader (Count, DataSetWriterIds),
+    /// Timestamp, PicoSeconds, PromotedFields (Size, fields), and with two
+    /// DataSetMessages their Sizes before them (Table 160).
     #[test]
-    fn payload_header_single_message_roundtrip() {
-        let nm = NetworkMessage::with_messages(alloc::vec![key_frame(7, 42)]);
-        let bytes = to_binary(&nm).expect("encode");
-        let back: NetworkMessage = from_binary(&bytes).expect("decode");
-        assert_eq!(back, nm);
-        assert_eq!(back.messages[0].writer_id, 7);
-    }
-
-    #[test]
-    fn multiple_messages_use_size_array() {
-        let nm = NetworkMessage::with_messages(alloc::vec![
-            key_frame(1, 10),
-            key_frame(2, 20),
-            key_frame(3, 30),
-        ]);
-        let bytes = to_binary(&nm).expect("encode");
-        let back: NetworkMessage = from_binary(&bytes).expect("decode");
-        assert_eq!(back, nm);
-        let ids: Vec<u16> = back.messages.iter().map(|m| m.writer_id).collect();
-        assert_eq!(ids, alloc::vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn full_header_roundtrip() {
+    fn uapubsub_7_2_4_4_every_header_field_in_the_order_of_table_154() {
         let nm = NetworkMessage {
             publisher_id: Some(PublisherId::UInt32(0xDEAD_BEEF)),
             data_set_class_id: Some(Guid::from_bytes([
@@ -729,25 +745,56 @@ mod tests {
             payload_header: true,
             messages: alloc::vec![key_frame(11, 1), key_frame(22, 2)],
         };
-        let bytes = to_binary(&nm).expect("encode");
-        let back: NetworkMessage = from_binary(&bytes).expect("decode");
-        assert_eq!(back, nm);
+        let mut expected = alloc::vec![0xF1, 0xEA, 0x02, 0xEF, 0xBE, 0xAD, 0xDE];
+        // DataSetClassId, a Guid (OPC 10000-6 §5.2.2.6): Data1..Data3 little endian.
+        expected.extend_from_slice(&[
+            0x33, 0x22, 0x11, 0x00, 0x55, 0x44, 0x77, 0x66, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD,
+            0xEE, 0xFF,
+        ]);
+        expected.extend_from_slice(&[
+            0x0F, 0x02, 0x01, 0x0D, 0x0C, 0x0B, 0x0A, 0x05, 0x00, 0x63, 0x00,
+        ]);
+        expected.extend_from_slice(&[0x02, 0x0B, 0x00, 0x16, 0x00]);
+        expected.extend_from_slice(&132_000_000_000_000_000_i64.to_le_bytes());
+        expected.extend_from_slice(&[0xFA, 0x00]);
+        expected.extend_from_slice(&[0x05, 0x00, 0x06, 0x07, 0x00, 0x00, 0x00]);
+        expected.extend_from_slice(&[0x08, 0x00, 0x08, 0x00]);
+        expected.extend_from_slice(&[0x01, 0x01, 0x00, 0x06, 0x01, 0x00, 0x00, 0x00]);
+        expected.extend_from_slice(&[0x01, 0x01, 0x00, 0x06, 0x02, 0x00, 0x00, 0x00]);
+        octets(&nm, &expected);
     }
 
+    /// Table 154, ExtendedFlags1 bits 0-2: the PublisherId type, Byte 000
+    /// (no ExtendedFlags1 needed), UInt16 001, UInt32 010, UInt64 011,
+    /// String 100.
     #[test]
-    fn publisher_id_all_types_roundtrip() {
-        for pid in [
-            PublisherId::Byte(0x7F),
-            PublisherId::UInt16(0x1234),
-            PublisherId::UInt32(0x1234_5678),
-            PublisherId::UInt64(0x1234_5678_9ABC_DEF0),
-            PublisherId::String(String::from("publisher-A")),
+    fn uapubsub_7_2_4_4_the_publisher_id_types_of_extended_flags1() {
+        let body = [
+            0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00,
+        ];
+        let mut string_id = alloc::vec![0xD1, 0x04, 0x0B, 0x00, 0x00, 0x00];
+        string_id.extend_from_slice(b"publisher-A");
+        for (pid, header) in [
+            (PublisherId::Byte(0x7F), alloc::vec![0x51, 0x7F]),
+            (
+                PublisherId::UInt16(0x1234),
+                alloc::vec![0xD1, 0x01, 0x34, 0x12],
+            ),
+            (
+                PublisherId::UInt32(0x1234_5678),
+                alloc::vec![0xD1, 0x02, 0x78, 0x56, 0x34, 0x12],
+            ),
+            (
+                PublisherId::UInt64(0x1234_5678_9ABC_DEF0),
+                alloc::vec![0xD1, 0x03, 0xF0, 0xDE, 0xBC, 0x9A, 0x78, 0x56, 0x34, 0x12],
+            ),
+            (PublisherId::String(String::from("publisher-A")), string_id),
         ] {
             let mut nm = NetworkMessage::with_messages(alloc::vec![key_frame(1, 0)]);
-            nm.publisher_id = Some(pid.clone());
-            let bytes = to_binary(&nm).expect("encode");
-            let back: NetworkMessage = from_binary(&bytes).expect("decode");
-            assert_eq!(back.publisher_id, Some(pid));
+            nm.publisher_id = Some(pid);
+            let mut expected = header;
+            expected.extend_from_slice(&body);
+            octets(&nm, &expected);
         }
     }
 
@@ -763,7 +810,7 @@ mod tests {
     /// five vectors matched on the first run — UADP is not merely internally
     /// self-consistent, it conforms to the reference encoder.
     #[test]
-    fn uadp_byte_identical_to_open62541() {
+    fn uapubsub_7_2_4_4_the_network_messages_open62541_writes() {
         fn grp() -> GroupHeader {
             GroupHeader {
                 writer_group_id: Some(7),
@@ -777,6 +824,8 @@ mod tests {
             let hex: alloc::string::String =
                 bytes.iter().map(|b| alloc::format!("{b:02x}")).collect();
             assert_eq!(hex, golden, "UADP {label} diverges from open62541");
+            let back: NetworkMessage = from_binary(&bytes).expect("decode");
+            assert_eq!(&back, nm, "UADP {label}: open62541's octets decode");
         }
         // Backwards-compatible alias so the rest of the body reads as before.
         let dump = |label: &str, nm: &NetworkMessage| {
@@ -853,19 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn byte_publisher_id_needs_no_extended_flags() {
-        let mut nm = NetworkMessage::with_messages(alloc::vec![key_frame(1, 0)]);
-        nm.publisher_id = Some(PublisherId::Byte(9));
-        let bytes = to_binary(&nm).expect("encode");
-        // Byte PublisherId has type code 0, so no ExtendedFlags1 is emitted.
-        assert_eq!(bytes[0] & UF_EXTENDED_FLAGS1, 0);
-        assert_eq!(bytes[0] & UF_PUBLISHER_ID, UF_PUBLISHER_ID);
-        let back: NetworkMessage = from_binary(&bytes).expect("decode");
-        assert_eq!(back.publisher_id, Some(PublisherId::Byte(9)));
-    }
-
-    #[test]
-    fn raw_data_message_bounded_by_size_array() {
+    fn uapubsub_7_2_4_raw_data_message_bounded_by_size_array() {
         let raw = DataSetMessage {
             writer_id: 1,
             valid: true,
@@ -892,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn multiple_messages_without_payload_header_rejected() {
+    fn uapubsub_7_2_4_multiple_messages_without_payload_header_rejected() {
         let mut nm = NetworkMessage::with_messages(alloc::vec![key_frame(1, 0), key_frame(2, 0)]);
         nm.payload_header = false;
         let err = to_binary(&nm).expect_err("must reject");
@@ -925,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    fn bad_version_rejected_on_decode() {
+    fn uapubsub_7_2_4_bad_version_rejected_on_decode() {
         let bytes = [0x02]; // version 2
         let err = from_binary::<NetworkMessage>(&bytes).expect_err("must reject");
         assert_eq!(

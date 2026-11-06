@@ -97,7 +97,7 @@ fn through_the_wire(object: &CompleteTypeObject) -> CompleteTypeObject {
 }
 
 #[test]
-fn a_types_verbatim_is_in_its_complete_object_after_the_wire() {
+fn xtypes_7_3_4_3_a_types_verbatim_is_in_its_complete_object_after_the_wire() {
     let ast = model();
     let cases = [
         ("S", Wire::Before, "c++", "// before S"),
@@ -129,7 +129,7 @@ fn a_type_without_verbatim_has_none() {
 }
 
 #[test]
-fn the_verbatim_comes_back_into_the_rebuilt_model() {
+fn xtypes_7_3_4_3_the_verbatim_comes_back_into_the_rebuilt_model() {
     let ast = model();
     let mut registry = TypeRegistry::new();
     register_all(&ast, &mut registry).expect("the registry fills");
@@ -177,7 +177,7 @@ fn the_verbatim_comes_back_into_the_rebuilt_model() {
 }
 
 #[test]
-fn more_than_one_verbatim_on_a_type_is_refused_by_name() {
+fn xtypes_7_3_4_3_more_than_one_verbatim_on_a_type_is_refused_by_name() {
     let ast = model_of(TWICE);
     let error = complete_type_object(&ast, type_id(&ast, "Twice"))
         .expect_err("Annex B holds one @verbatim per type");

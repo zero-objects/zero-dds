@@ -399,7 +399,7 @@ impl<'a> Lexer<'a> {
     /// This read the source a byte at a time and kept the last one, so
     /// `case 'ä':` — C3 A4 in a UTF-8 file — became U+00A4 rather than
     /// U+00E4, silently. It was found by
-    /// `docs/corba-dialect-followup.md` item 4, printing the model back
+    /// `0b2e8df9f6b:docs/corba-dialect-followup.md` item 4, printing the model back
     /// as CORBA IDL, and the escaped form `'\xe4'` was right all along —
     /// only a raw character was affected, and no corpus case has one,
     /// because every `char` case label in the corpus is ASCII where the

@@ -22,11 +22,6 @@ use proptest::prelude::*;
 use zerodds_rtps::submessages::{FragmentNumberSet, SequenceNumberSet};
 use zerodds_rtps::wire_types::{FragmentNumber, SequenceNumber};
 
-fn arb_sn(base: i64) -> impl Strategy<Value = i64> {
-    // SN >= base, max 1024 above base (set size limited for test speed).
-    (0i64..1024).prop_map(move |i| base + i)
-}
-
 fn arb_seqnum_set() -> impl Strategy<Value = SequenceNumberSet> {
     (1i64..1_000_000, prop::collection::vec(0i64..256, 0..32)).prop_map(|(base, offsets)| {
         let base_sn = SequenceNumber(base);
@@ -120,9 +115,4 @@ proptest! {
         prop_assert_eq!(bytes.len(), set.encoded_size());
     }
 
-    #[test]
-    fn _arb_sn_in_range(base in 1i64..1_000_000, sn in arb_sn(0)) {
-        // Smoke test for arb_sn helper: just verifies it produces values.
-        let _ = (base, sn);
-    }
 }

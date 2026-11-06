@@ -154,7 +154,7 @@ fn build(compiler: &str, root: &Path, test: &str) -> PathBuf {
 
 /// §7.11.1.4.1 and §7.11.1.5: the whole binding, compiled and run.
 #[test]
-fn the_cpp_rpc_runtime_and_the_generated_header_run_together() {
+fn rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together() {
     let Some(compiler) = compiler() else {
         println!("no C++ compiler on this machine — the C++ binding is not measured here");
         return;
@@ -172,7 +172,7 @@ fn the_cpp_rpc_runtime_and_the_generated_header_run_together() {
 /// §7.5.1.1.1: the C++ header codec and `wire_codec.rs` write the same
 /// octets.
 #[test]
-fn the_two_headers_take_the_same_octets_in_both_columns() {
+fn rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns() {
     let Some(compiler) = compiler() else {
         println!("no C++ compiler on this machine — the header octets are not compared here");
         return;

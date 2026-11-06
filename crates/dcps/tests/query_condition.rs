@@ -107,7 +107,7 @@ fn encode(s: &Sample) -> Vec<u8> {
 }
 
 #[test]
-fn read_w_condition_filters_per_sample() {
+fn dcps_2_2_2_5_1_9_read_w_condition_filters_per_sample() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(190, DomainParticipantQos::default());
     let topic = p
@@ -138,7 +138,7 @@ fn read_w_condition_filters_per_sample() {
 }
 
 #[test]
-fn take_w_condition_consumes_only_matching_samples() {
+fn dcps_2_2_2_5_1_9_take_w_condition_consumes_only_matching_samples() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(191, DomainParticipantQos::default());
     let topic = p
@@ -202,7 +202,7 @@ fn read_w_condition_reads_a_parameter_as_its_literal() {
 }
 
 #[test]
-fn read_w_condition_preserves_cache_state() {
+fn dcps_2_2_2_5_1_read_w_condition_preserves_cache_state() {
     // read_w_condition must not remove samples.
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(193, DomainParticipantQos::default());
@@ -229,7 +229,7 @@ fn read_w_condition_preserves_cache_state() {
 }
 
 #[test]
-fn take_w_condition_empty_when_no_match() {
+fn dcps_2_2_2_5_3_11_take_w_condition_empty_when_no_match() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(194, DomainParticipantQos::default());
     let topic = p
@@ -254,7 +254,7 @@ fn take_w_condition_empty_when_no_match() {
 }
 
 #[test]
-fn read_w_condition_unknown_field_drops_sample() {
+fn dcps_2_2_2_5_3_10_read_w_condition_unknown_field_drops_sample() {
     // If a field is referenced that DdsType::field_value does not
     // know, the filter evaluates to Err(UnknownField) -> the sample
     // is rejected (no hard error propagated up).
@@ -281,7 +281,7 @@ fn read_w_condition_unknown_field_drops_sample() {
 /// the samples a read or take returns are ordered by the fields, ascending,
 /// the first field first; a condition before `ORDER BY` still selects.
 #[test]
-fn order_by_orders_what_a_read_or_take_returns() {
+fn dcps_b_2_order_by_orders_what_a_read_or_take_returns() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(191, DomainParticipantQos::default());
     let topic = p
@@ -335,7 +335,7 @@ fn an_order_by_without_a_field_is_refused() {
 /// max_samples. The limit comes after the `ORDER BY`, and only the samples
 /// returned become READ or are taken; none left is NO_DATA.
 #[test]
-fn max_samples_limits_what_a_condition_read_or_take_returns() {
+fn dcps_2_2_2_5_3_8_max_samples_limits_what_a_condition_read_or_take_returns() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(192, DomainParticipantQos::default());
     let topic = p

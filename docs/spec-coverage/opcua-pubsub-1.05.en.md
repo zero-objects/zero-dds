@@ -30,8 +30,8 @@ DataSetMetaData (name, field descriptions, ConfigurationVersion).
 `crates/opcua-pubsub/src/config.rs` (`DataSetMetaData`, `FieldMetaData`,
 `ConfigurationVersion`).
 
-**Tests:** `crates/opcua-pubsub/src/config.rs::tests::field_metadata_scalar_defaults`,
-`crates/opcua-pubsub/src/uadp/discovery.rs::tests::data_set_metadata_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/config.rs::tests::uapubsub_6_2_3_field_metadata_scalar_defaults`,
+`crates/opcua-pubsub/src/uadp/discovery.rs::tests::uapubsub_6_2_3_2_3_data_set_metadata_is_its_schema_header_then_its_fields`.
 
 **Status:** done
 
@@ -45,8 +45,8 @@ with status/timestamps).
 (`DataSetWriterConfig`, `DataSetFieldContentMask`),
 `crates/opcua-pubsub/src/writer.rs` (`DataSetWriter`).
 
-**Tests:** `crates/opcua-pubsub/src/config.rs::tests::content_mask_selects_field_encoding`,
-`crates/opcua-pubsub/src/writer.rs::tests::data_value_mask_projects_selected_members`.
+**Tests:** `crates/opcua-pubsub/src/config.rs::tests::uapubsub_6_2_4_content_mask_selects_field_encoding`,
+`crates/opcua-pubsub/src/writer.rs::tests::uapubsub_6_2_4_data_value_mask_projects_selected_members`.
 
 **Status:** done
 
@@ -59,8 +59,8 @@ PublishingInterval, KeepAliveTime, Priority, MessageSettings).
 (`WriterGroupConfig`, `NetworkMessageContentMask`),
 `crates/opcua-pubsub/src/writer.rs` (`WriterGroup`).
 
-**Tests:** `crates/opcua-pubsub/src/config.rs::tests::writer_group_default_mask_has_payload_and_group_header`,
-`crates/opcua-pubsub/src/writer.rs::tests::writer_group_frames_with_group_header_and_publisher`.
+**Tests:** `crates/opcua-pubsub/src/config.rs::tests::uapubsub_6_2_6_writer_group_default_mask_has_payload_and_group_header`,
+`crates/opcua-pubsub/src/writer.rs::tests::uapubsub_6_2_6_writer_group_frames_with_group_header_and_publisher`.
 
 **Status:** done
 
@@ -71,7 +71,7 @@ TransportProfileUri, Address).
 
 **Repo:** `crates/opcua-pubsub/src/config.rs` (`PubSubConnectionConfig`).
 
-**Tests:** cross-ref `infomodel::tests::builds_and_browses_hierarchy`.
+**Tests:** cross-ref `infomodel::tests::uapubsub_6_2_7_builds_and_browses_hierarchy`.
 
 **Status:** done
 
@@ -84,8 +84,8 @@ parameters (Publisher/WriterGroup/DataSetWriter filters).
 (`ReaderGroupConfig`, `DataSetReaderConfig`),
 `crates/opcua-pubsub/src/reader.rs` (`DataSetReader`, `ReaderGroup`).
 
-**Tests:** `crates/opcua-pubsub/src/reader.rs::tests::publisher_and_writer_filters`,
-`crates/opcua-pubsub/src/reader.rs::tests::reader_group_dispatches_to_matching_readers`.
+**Tests:** `crates/opcua-pubsub/src/reader.rs::tests::uapubsub_6_2_8_publisher_and_writer_filters`,
+`crates/opcua-pubsub/src/reader.rs::tests::uapubsub_6_2_8_reader_group_dispatches_to_matching_readers`.
 
 **Status:** done
 
@@ -99,8 +99,8 @@ DataTypes via Part 3 §8 (StructureDefinition/EnumDefinition).
 `SimpleTypeDescription`), wire codec in
 `crates/opcua-pubsub/src/uadp/discovery.rs`.
 
-**Tests:** `crates/opcua-pubsub/src/uadp/discovery.rs::tests::metadata_with_custom_datatypes_round_trips`,
-`crates/opcua-pubsub/src/uadp/discovery.rs::tests::field_metadata_with_properties_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/uadp/discovery.rs::tests::uapubsub_6_2_3_2_3_the_schema_header_carries_structure_enum_and_simple_types`,
+`crates/opcua-pubsub/src/uadp/discovery.rs::tests::uapubsub_6_2_3_2_4_field_metadata_carries_flags_rank_dimensions_and_properties`.
 
 **Status:** done
 
@@ -119,9 +119,9 @@ PicoSeconds, PromotedFields.
 (`NetworkMessage`, `GroupHeader`, `PublisherId`, `encode_header`,
 `decode_header`).
 
-**Tests:** `crates/opcua-pubsub/src/uadp/network_message.rs::tests::full_header_roundtrip`,
-`publisher_id_all_types_roundtrip`, `byte_publisher_id_needs_no_extended_flags`,
-`bad_version_rejected_on_decode`.
+**Tests:** `crates/opcua-pubsub/src/uadp/network_message.rs::tests::uapubsub_7_2_4_4_every_header_field_in_the_order_of_table_154`,
+`uapubsub_7_2_4_4_the_publisher_id_types_of_extended_flags1`,
+`uapubsub_7_2_4_bad_version_rejected_on_decode`.
 
 **Status:** done
 
@@ -134,8 +134,8 @@ fields, frame kinds KeyFrame/DeltaFrame/Event/KeepAlive.
 **Repo:** `crates/opcua-pubsub/src/uadp/dataset_message.rs`
 (`DataSetMessage`, `DataSetMessageKind`).
 
-**Tests:** `crates/opcua-pubsub/src/uadp/dataset_message.rs::tests::key_frame_with_header_fields`,
-`delta_frame_variant_roundtrip`, `keep_alive_has_no_data`.
+**Tests:** `crates/opcua-pubsub/src/uadp/dataset_message.rs::tests::uapubsub_7_2_4_5_4_every_header_field_in_the_order_of_table_162`,
+`uapubsub_7_2_4_5_6_a_delta_frame_is_field_index_and_value_per_field`, `uapubsub_7_2_4_5_8_a_keep_alive_is_the_header_alone`.
 
 **Status:** done
 
@@ -150,10 +150,10 @@ needs DataSetMetaData).
 RawData decode in `crates/opcua-pubsub/src/dynamic.rs` (`decode_raw_dataset` —
 struct/union/optional/enum/simple/array, recursive).
 
-**Tests:** `crates/opcua-pubsub/src/reader.rs::tests::raw_data_round_trip_uses_metadata_types`,
-`crates/opcua-pubsub/src/dynamic.rs::tests::decodes_plain_custom_struct`,
-`decodes_optional_fields_via_mask`, `decodes_union_switch`,
-`decodes_nested_struct_and_array`.
+**Tests:** `crates/opcua-pubsub/src/reader.rs::tests::uapubsub_7_2_4_5_11_raw_data_fields_are_the_values_of_their_metadata_types`,
+`crates/opcua-pubsub/src/dynamic.rs::tests::uapubsub_7_2_4_decodes_plain_custom_struct`,
+`uapubsub_7_2_4_decodes_optional_fields_via_mask`, `uapubsub_7_2_4_decodes_union_switch`,
+`uapubsub_7_2_4_decodes_nested_struct_and_array`.
 
 **Status:** done
 
@@ -166,9 +166,9 @@ decoding the payload.
 **Repo:** `crates/opcua-pubsub/src/uadp/network_message.rs`
 (`encode_payload`, `decode_payload`, PromotedFields in the header).
 
-**Tests:** `crates/opcua-pubsub/src/uadp/network_message.rs::tests::multiple_messages_use_size_array`,
-`raw_data_message_bounded_by_size_array`,
-`multiple_messages_without_payload_header_rejected`.
+**Tests:** `crates/opcua-pubsub/src/uadp/network_message.rs::tests::uapubsub_7_2_4_4_the_network_messages_open62541_writes`,
+`uapubsub_7_2_4_raw_data_message_bounded_by_size_array`,
+`uapubsub_7_2_4_multiple_messages_without_payload_header_rejected`.
 
 **Status:** done
 
@@ -186,10 +186,10 @@ DataSetWriterConfiguration[WriterGroupDataType]).
 `crates/opcua-pubsub/src/uadp/datatypes.rs`
 (`EndpointDescription`, `WriterGroupDataType`).
 
-**Tests:** `crates/opcua-pubsub/src/uadp/discovery.rs::tests::discovery_request_round_trip`,
-`discovery_response_metadata_round_trip`,
-`discovery_response_publisher_endpoints_round_trip`,
-`discovery_response_writer_configuration_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/uadp/discovery.rs::tests::uapubsub_7_2_4_6_12_a_publisher_information_probe_is_the_octets_of_tables_178_to_180`,
+`uapubsub_7_2_4_6_4_a_metadata_announcement_is_the_octets_of_table_170`,
+`uapubsub_7_2_4_6_6_an_endpoints_announcement_is_the_octets_of_table_172`,
+`uapubsub_7_2_4_6_9_a_writer_configuration_announcement_is_the_octets_of_table_175`.
 
 **Status:** done
 
@@ -206,8 +206,8 @@ PublisherId/DataSetClassId/Messages) + JSON DataSetMessage
 **Repo:** `crates/opcua-pubsub/src/json.rs`
 (`JsonNetworkMessage`, `JsonDataSetMessage`, feature `json`).
 
-**Tests:** `crates/opcua-pubsub/src/json.rs::tests::network_message_round_trips`,
-`rejects_non_ua_data`, `datavalue_payload_with_status_round_trips`.
+**Tests:** `crates/opcua-pubsub/src/json.rs::tests::uapubsub_7_2_5_a_network_message_carries_the_fields_of_7_2_5_3_and_7_2_5_4`,
+`uapubsub_7_2_5_rejects_non_ua_data`, `uacs_5_4_2_18_a_data_value_field_is_value_status_and_timestamps`.
 
 **Status:** done
 
@@ -221,9 +221,9 @@ LocalizedText/ExtensionObject objects).
 **Repo:** `crates/opcua-pubsub/src/json.rs`
 (`variant_to_json`, `scalar_to_json`, `ticks_to_iso8601`, `guid_to_string`).
 
-**Tests:** `crates/opcua-pubsub/src/json.rs::tests::variant_reversible_round_trips_many_types`,
-`special_floats_round_trip`, `datetime_round_trips_through_iso8601`,
-`guid_round_trips`.
+**Tests:** `crates/opcua-pubsub/src/json.rs::tests::uacs_h_8_a_reversible_variant_is_type_and_body`,
+`uacs_5_4_2_4_special_floats_are_the_strings_nan_infinity_and_minus_infinity`, `uacs_5_4_2_6_a_datetime_is_the_iso_8601_string_of_its_ticks`,
+`uacs_5_1_3_a_guid_is_the_string_of_the_example`.
 
 **Status:** done
 
@@ -239,7 +239,7 @@ LocalizedText/ExtensionObject objects).
 **Repo:** `crates/opcua-pubsub/src/transport.rs` (`UdpTransport`,
 `PubSubTransport`, `DEFAULT_UADP_PORT`).
 
-**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::udp_unicast_localhost_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::uapubsub_7_3_2_a_network_message_is_one_udp_datagram`.
 
 **Status:** done
 
@@ -250,8 +250,8 @@ LocalizedText/ExtensionObject objects).
 **Repo:** `crates/opcua-pubsub/src/transport.rs` (`MqttTransport`,
 `MqttClient`, `mqtt_topic`).
 
-**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::mqtt_transport_round_trip`,
-`mqtt_topic_convention`.
+**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::uapubsub_7_3_4_9_a_network_message_is_one_mqtt_message_on_the_configured_topic`,
+`uapubsub_7_3_4_mqtt_topic_convention`.
 
 **Status:** done
 
@@ -262,7 +262,7 @@ LocalizedText/ExtensionObject objects).
 **Repo:** `crates/opcua-pubsub/src/transport.rs` (`AmqpTransport`,
 `AmqpClient` — signature matching `zerodds-amqp-endpoint`).
 
-**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::amqp_transport_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::amqp_transport_sends_one_message_to_the_configured_address`.
 
 **Status:** done
 
@@ -278,7 +278,7 @@ the `EthernetInterface` trait (e.g. `zerodds-transport-tsn` `live`) — the crat
 stays `forbid(unsafe_code)`, exactly as the MQTT/AMQP clients keep the broker
 out.
 
-**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::ethernet_transport_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::uapubsub_7_3_3_a_network_message_is_the_payload_of_one_frame`.
 
 **Status:** done
 
@@ -290,7 +290,7 @@ Kafka.
 **Repo:** `crates/opcua-pubsub/src/transport.rs`
 (`KafkaTransport`, `KafkaClient`).
 
-**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::kafka_transport_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/transport.rs::tests::kafka_transport_produces_one_record_on_the_configured_topic`.
 
 **Status:** done
 
@@ -307,7 +307,7 @@ SecurityFooterSize.
 **Repo:** `crates/opcua-pubsub/src/security.rs` (`SecurityHeader`,
 feature `security`).
 
-**Tests:** `crates/opcua-pubsub/src/security.rs::tests::sign_only_round_trip`.
+**Tests:** `crates/opcua-pubsub/src/security.rs::tests::uapubsub_7_2_4_4_3_a_signed_network_message_is_header_payload_and_hmac`.
 
 **Status:** done
 
@@ -320,8 +320,7 @@ Part 7 (`opcua-part7-profiles-1.05.02.pdf`) — `PubSub-Aes128-CTR` /
 **Repo:** `crates/opcua-pubsub/src/security.rs`
 (`SecurityPolicy::Aes128Ctr|Aes256Ctr`, `protect`, `unprotect`).
 
-**Tests:** `crates/opcua-pubsub/src/security.rs::tests::encrypt_and_sign_round_trip_aes256`,
-`encrypt_and_sign_round_trip_aes128`, `tampered_payload_is_rejected`.
+**Tests:** `crates/opcua-pubsub/src/security.rs::tests::uapubsub_7_2_4_4_3_2_an_encrypted_network_message_is_aes_ctr_of_the_payload_then_the_hmac`, `uapubsub_5_3_5_tampered_payload_is_rejected`.
 
 **Status:** done
 
@@ -332,8 +331,8 @@ Part 7 (`opcua-part7-profiles-1.05.02.pdf`) — `PubSub-Aes128-CTR` /
 **Repo:** `crates/opcua-pubsub/src/security.rs`
 (`SecurityPolicy::Aes256Gcm`, `is_aead`).
 
-**Tests:** `crates/opcua-pubsub/src/security.rs::tests::aead_gcm_round_trip`,
-`aead_gcm_tag_detects_tampering`.
+**Tests:** `crates/opcua-pubsub/src/security.rs::tests::aes256_gcm_policy_seals_the_payload_with_the_header_as_aad`,
+`uapubsub_5_3_5_aead_gcm_tag_detects_tampering`.
 
 **Status:** done
 
@@ -350,8 +349,8 @@ binding point is implemented; the SecureChannel/Session transport carrying the
 call is provided by the OPC-UA server wire stack (`zerodds-opcua-uacp` +
 `zerodds-opcua-server`, coverage `opcua-client-server-1.05.en.md`).
 
-**Tests:** `crates/opcua-pubsub/src/security.rs::tests::get_security_keys_for_method_result`,
-`sks_rotation_and_lookup`, `get_security_keys_snapshot`.
+**Tests:** `crates/opcua-pubsub/src/security.rs::tests::uapubsub_8_3_2_get_security_keys_for_method_result`,
+`uapubsub_8_3_2_sks_rotation_and_lookup`, `uapubsub_8_3_2_get_security_keys_snapshot`.
 
 **Status:** done
 
@@ -368,7 +367,7 @@ browsable AddressSpace.
 **Repo:** `crates/opcua-pubsub/src/infomodel.rs`
 (`PubSubConfiguration`, `nodes`, NodeId constants).
 
-**Tests:** `crates/opcua-pubsub/src/infomodel.rs::tests::builds_and_browses_hierarchy`.
+**Tests:** `crates/opcua-pubsub/src/infomodel.rs::tests::uapubsub_6_2_7_builds_and_browses_hierarchy`.
 
 **Status:** done
 
@@ -385,8 +384,8 @@ the SecureChannel/Session transport carrying the call is provided by the OPC-UA
 server wire stack (`zerodds-opcua-uacp` + `zerodds-opcua-server`, coverage
 `opcua-client-server-1.05.en.md`).
 
-**Tests:** `crates/opcua-pubsub/src/infomodel.rs::tests::add_to_unknown_group_is_rejected`,
-`remove_prunes_subtree_entries`.
+**Tests:** `crates/opcua-pubsub/src/infomodel.rs::tests::uapubsub_9_1_5_add_to_unknown_group_is_rejected`,
+`uapubsub_9_1_5_remove_prunes_subtree_entries`.
 
 **Status:** done
 
@@ -403,9 +402,9 @@ ExtensionObject.
 
 **Repo:** `crates/opcua-pubsub/src/binary/` (`crates/opcua-pubsub/src/binary/io.rs`, `crates/opcua-pubsub/src/binary/builtin.rs`, `crates/opcua-pubsub/src/binary/mod.rs`).
 
-**Tests:** `crates/opcua-pubsub/src/binary/io.rs::tests::primitive_roundtrip_is_little_endian`,
-`crates/opcua-pubsub/src/binary/builtin.rs::tests::variant_1d_array`,
-`nodeid_two_byte_compact_form`, `qualified_name_roundtrip`.
+**Tests:** `crates/opcua-pubsub/src/binary/io.rs::tests::uacs_5_2_2_2_the_integer_of_figure_2_is_little_endian`,
+`crates/opcua-pubsub/src/binary/builtin.rs::tests::uacs_5_2_2_16_an_array_variant_has_its_length_and_its_dimensions_after_the_values`,
+`uacs_5_2_2_9_the_four_nodeid_forms_of_tables_17_to_20`, `uacs_5_2_2_13_a_qualified_name_is_namespace_index_and_name`.
 
 **Status:** done
 
@@ -417,8 +416,8 @@ MessageSecurityMode).
 
 **Repo:** `crates/opcua-pubsub/src/uadp/datatypes.rs`.
 
-**Tests:** `crates/opcua-pubsub/src/uadp/datatypes.rs::tests::endpoint_description_round_trip`,
-`security_mode_discriminant_rejected`.
+**Tests:** `crates/opcua-pubsub/src/uadp/datatypes.rs::tests::uacs_7_14_an_endpoint_description_is_its_fields_in_the_order_of_7_14`,
+`uapubsub_7_10_security_mode_discriminant_rejected`.
 
 **Status:** done
 
@@ -431,7 +430,7 @@ DataTypes.
 **Repo:** `crates/opcua-pubsub/src/config.rs` (model),
 `crates/opcua-pubsub/src/uadp/discovery.rs` (wire codec).
 
-**Tests:** `crates/opcua-pubsub/src/uadp/discovery.rs::tests::metadata_with_custom_datatypes_round_trips`.
+**Tests:** `crates/opcua-pubsub/src/uadp/discovery.rs::tests::uapubsub_6_2_3_2_3_the_schema_header_carries_structure_enum_and_simple_types`.
 
 **Status:** done
 
@@ -447,8 +446,8 @@ cycle / receive.
 **Repo:** `crates/opcua-pubsub/src/daemon.rs` (`Publisher`, `Subscriber`,
 `publish_cycle`, `poll`, secured variants).
 
-**Tests:** `crates/opcua-pubsub/src/daemon.rs::tests::end_to_end_publish_then_poll`,
-`end_to_end_secured`, `unknown_dataset_is_reported`.
+**Tests:** `crates/opcua-pubsub/src/daemon.rs::tests::uapubsub_5_4_1_end_to_end_publish_then_poll`,
+`uapubsub_5_4_1_end_to_end_secured`, `uapubsub_5_4_1_unknown_dataset_is_reported`.
 
 **Status:** done
 
@@ -469,15 +468,19 @@ DDS topics.
 
 ## Audit status
 
-29 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+29 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
+
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document opcua-pubsub-1.05.md`):
+
+* `cargo nextest run --profile merge -p zerodds-opcua-pubsub --all-targets` (job `merge-rust-opcua-pubsub`) — 47 tests green.
+* `cargo nextest run --profile merge -p zerodds-opcua-pubsub --all-targets --features json,security` (job `merge-rust-opcua-pubsub-features-json-security`) — 16 tests green.
+
+63 cited tests green, 0 not green.
 
 Note: the `Call`-service binding points (GetSecurityKeys,
 AddConnection/…/RemoveX) are implemented; the OPC-UA server wire stack
 (SecureChannel/Session/Read/Write/Call) that can host them remotely exists as
 `zerodds-opcua-uacp` + `zerodds-opcua-server` (coverage
 `opcua-client-server-1.05.en.md`).
-
-Test run: `cargo test -p zerodds-opcua-pubsub --features "json security"` —
-110 tests green, 0 failed.
 
 Open points: none. Decision records: none.

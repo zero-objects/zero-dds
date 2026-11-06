@@ -100,7 +100,6 @@ The following documents together form the architectural foundation:
 | 03 | `03_profiles_and_platforms.md` | Four profiles, platform matrix, binding matrix |
 | 04 | `04_safety_by_architecture.md` | Safe-subset contract and CI enforcement |
 | 05 | `05_observability_and_tooling.md` | Live insights, recording, replay, UI |
-| 06 | `06_roadmap.md` | Phase plan, milestones, resources |
 | 07 | `07_risks_and_strategy.md` | Patent, IP, community, competitive response |
 
 Each of these documents is independently readable and can be used in parallel by different stakeholder groups. On changes, cross-reference consistency is to be maintained.

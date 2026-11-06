@@ -21,7 +21,7 @@ const OK: i32 = 0;
 const BAD_PARAMETER: i32 = -6;
 
 #[test]
-fn a_type_from_idl_has_the_identity_of_a_compiled_one_and_a_value_round_trips() {
+fn capi_14_3_a_type_from_idl_has_the_identity_of_a_compiled_one_and_a_value_round_trips() {
     let idl = CString::new(IDL).unwrap();
     let name = CString::new("m::Track").unwrap();
     // SAFETY: strings are NUL-terminated; every handle and buffer is used once and released.
@@ -87,7 +87,7 @@ fn a_type_from_idl_has_the_identity_of_a_compiled_one_and_a_value_round_trips() 
 }
 
 #[test]
-fn idl_that_does_not_parse_or_a_name_it_does_not_declare_is_bad_parameter() {
+fn capi_14_3_idl_that_does_not_parse_or_a_name_it_does_not_declare_is_bad_parameter() {
     let bad = CString::new("struct {").unwrap();
     let good = CString::new(IDL).unwrap();
     let name = CString::new("m::Track").unwrap();

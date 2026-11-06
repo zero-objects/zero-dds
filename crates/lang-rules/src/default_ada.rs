@@ -471,10 +471,9 @@ fn discriminant_literal(ast: &Ast, discriminator: Id<TypeNode>, value: i128) -> 
     if matches!(
         ast.type_(resolved).map(|node| node.kind.clone()),
         Ok(TypeKind::Enumeration { .. })
-    ) {
-        if let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved) {
-            return ada::Expr::name(&component_name(&enumerator));
-        }
+    ) && let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved)
+    {
+        return ada::Expr::name(&component_name(&enumerator));
     }
     match resolved_primitive(ast, resolved) {
         Some(PrimitiveKind::Boolean) => ada::Expr::Literal(Literal::Bool(value != 0)),
@@ -706,12 +705,12 @@ fn calls_in_expr(expr: &ada::Expr, out: &mut Vec<String>) {
             // generated program itself, and this generator built every
             // call to one with `defaulter_name`; `Zd_Wire.…` is the
             // runtime's and never a defaulter.
-            if name.segments().len() == 1 {
-                if let Some(first) = name.segments().first() {
-                    let text = first.as_str();
-                    if text.starts_with("zd_def_") && !out.iter().any(|seen| seen == text) {
-                        out.push(text.to_string());
-                    }
+            if name.segments().len() == 1
+                && let Some(first) = name.segments().first()
+            {
+                let text = first.as_str();
+                if text.starts_with("zd_def_") && !out.iter().any(|seen| seen == text) {
+                    out.push(text.to_string());
                 }
             }
             for arg in args {

@@ -150,7 +150,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn encode_simple_link_format() {
+    fn coap_2_4_encode_simple_link_format() {
         let s = encode_links(&[CoreLink::new("/sensor")
             .attr("rt", "temperature")
             .attr("ct", "40")]);
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_multiple_links_comma_separated() {
+    fn coap_2_4_encode_multiple_links_comma_separated() {
         let s = encode_links(&[
             CoreLink::new("/a").attr("rt", "x"),
             CoreLink::new("/b").attr("rt", "y"),
@@ -167,19 +167,20 @@ mod tests {
     }
 
     #[test]
-    fn decode_round_trip_with_attrs() {
+    fn coap_2_4_a_link_with_attributes_is_the_rfc_6690_form() {
+        // RFC 6690 §2: `<URI>` and `;attr="value"` parameters.
+        let text = r#"</sensor/0>;rt="temperature";if="core.s""#;
         let links = vec![
             CoreLink::new("/sensor/0")
                 .attr("rt", "temperature")
                 .attr("if", "core.s"),
         ];
-        let s = encode_links(&links);
-        let back = decode_links(&s).unwrap();
-        assert_eq!(back, links);
+        assert_eq!(encode_links(&links), text);
+        assert_eq!(decode_links(text).unwrap(), links);
     }
 
     #[test]
-    fn decode_handles_numeric_attr() {
+    fn coap_2_4_decode_handles_numeric_attr() {
         let s = "</p>;ct=40";
         let links = decode_links(s).unwrap();
         assert_eq!(links[0].uri, "/p");
@@ -187,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_handles_quoted_string_with_comma() {
+    fn coap_2_4_decode_handles_quoted_string_with_comma() {
         let s = r#"</p>;title="hello, world""#;
         let links = decode_links(s).unwrap();
         assert_eq!(links.len(), 1);
@@ -195,20 +196,20 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_uri_without_brackets() {
+    fn coap_2_4_decode_rejects_uri_without_brackets() {
         let s = "/path;rt=x";
         assert!(decode_links(s).is_err());
     }
 
     #[test]
-    fn decode_attr_without_value_yields_empty() {
+    fn coap_2_4_decode_attr_without_value_yields_empty() {
         let s = "</p>;hidden";
         let links = decode_links(s).unwrap();
         assert_eq!(links[0].get("hidden"), Some(""));
     }
 
     #[test]
-    fn encode_escapes_inner_quotes() {
+    fn coap_2_4_encode_escapes_inner_quotes() {
         let s = encode_links(&[CoreLink::new("/p").attr("title", r#"a"b"#)]);
         assert!(s.contains(r#"\""#));
     }

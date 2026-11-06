@@ -873,10 +873,10 @@ impl CodecTarget for Ada83 {
                 vec![inner(value)],
             ));
         }
-        if type_.is_bool {
-            if let AExpr::Plain(ada83::Expr::Literal(Literal::Int(text))) = &value {
-                return plain(ada83::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_.is_bool
+            && let AExpr::Plain(ada83::Expr::Literal(Literal::Int(text))) = &value
+        {
+            return plain(ada83::Expr::Literal(Literal::Bool(text != "0")));
         }
         plain(ada83::Expr::Convert {
             mark: mark_path(&type_.mark),
@@ -1255,13 +1255,13 @@ impl CodecTarget for Ada83 {
                 mark: mark_path(&spec.sample.mark),
             });
         }
-        if let Some(array) = &spec.sample.own_array {
-            if names_mark(&body, OWN_ARRAY) {
-                statements.push(ada83::Stmt::Subtype {
-                    name: Ident::new(OWN_ARRAY),
-                    mark: Path::single(array),
-                });
-            }
+        if let Some(array) = &spec.sample.own_array
+            && names_mark(&body, OWN_ARRAY)
+        {
+            statements.push(ada83::Stmt::Subtype {
+                name: Ident::new(OWN_ARRAY),
+                mark: Path::single(array),
+            });
         }
         let defaulter = crate::default_ada83::defaulter_from_decoder(&spec.name);
         statements.push(ada83::Stmt::Var(ada83::VarDecl {

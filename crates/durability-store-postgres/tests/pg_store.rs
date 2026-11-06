@@ -1,50 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! PostgreSQL-adapter tests: contract enforcement, pagination, idempotent
-//! re-send, unregister/cleanup, and a 10k-sensor cold-tier load run.
+//! The PostgreSQL adapter against the retention of DDS 1.4 §2.2.3.5, the
+//! PERSISTENT guarantee of §2.2.3.4 (the data outlive the connection that
+//! stored them) and the invariants of ADR 0009, each test on a PostgreSQL
+//! server of its own (`support::Server`).
 //!
-//! These need a live PostgreSQL. Set `ZERODDS_PG_TEST_URL` to a libpq
-//! connection string (e.g. `postgres://zerodds@localhost/zerodds`) to run them;
-//! without it every test logs a skip and passes, so a PG-less CI is green.
-//! A throwaway database is expected — the tests create tables and use unique
-//! topic names per run to stay isolated on a shared server.
+//! Ignored in the crate tier, which has no PostgreSQL: the integration
+//! pillar's job `integration-services-vendor` runs them.
 
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::print_stderr
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+mod support;
 
 use std::time::{Duration, SystemTime};
 
 use zerodds_durability_store::{
-    Contract, DurabilitySample, DurabilityStore, Selector, TieredStore, TopicMeta,
+    Contract, DurabilitySample, DurabilityStore, Selector, StoreError, TieredStore, TopicMeta,
 };
 use zerodds_durability_store_postgres::PostgresStore;
 use zerodds_qos::policies::history::HistoryKind;
 use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
-
-/// Returns the store + a run-unique topic prefix, or `None` when no test DB is
-/// configured (caller then skips).
-fn store_or_skip(tag: &str) -> Option<(PostgresStore, String)> {
-    let Ok(url) = std::env::var("ZERODDS_PG_TEST_URL") else {
-        eprintln!("skip {tag}: ZERODDS_PG_TEST_URL not set");
-        return None;
-    };
-    let store = PostgresStore::connect(&url, Contract::keep_all()).expect("connect");
-    // Unique topic per run so parallel tests / repeated runs never collide.
-    let topic = format!("t/{}/{tag}/{}", std::process::id(), nanos());
-    Some((store, topic))
-}
-
-fn nanos() -> u128 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_nanos()
-}
 
 fn keep_all() -> Contract {
     Contract {
@@ -63,211 +39,191 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: format!("p-{inst}-{seq}").into_bytes(),
-        representation: 1,
-        big_endian: false,
+        representation_identifier: [0x00, 0x07],
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
         source_guid: [inst; 16],
         source_sequence: seq as i64,
     }
 }
 
-#[test]
-fn roundtrip_and_ordering() {
-    let Some((store, topic)) = store_or_skip("roundtrip") else {
-        return;
-    };
-    store.set_contract(&topic, keep_all()).unwrap();
-    // Two instances, interleaved sequences.
-    for seq in 0..3 {
-        store.store(sample(&topic, 1, seq)).unwrap();
-        store.store(sample(&topic, 2, seq)).unwrap();
-    }
-    let page = store.query(&topic, &Selector::default()).unwrap();
-    assert_eq!(page.samples.len(), 6);
-    // Ordered by (instance_key, sequence).
-    let keys: Vec<(u8, u64)> = page
-        .samples
+fn sequences(store: &dyn DurabilityStore, topic: &str) -> Vec<u64> {
+    store
+        .replay_for_topic(topic)
+        .unwrap()
         .iter()
-        .map(|s| (s.instance_key[0], s.sequence))
-        .collect();
-    assert_eq!(keys, vec![(1, 0), (1, 1), (1, 2), (2, 0), (2, 1), (2, 2)]);
-    // Payload + metadata survive the wire.
-    assert_eq!(page.samples[0].payload, b"p-1-0");
-    assert_eq!(page.samples[0].source_sequence, 0);
+        .map(|s| s.sequence)
+        .collect()
 }
 
+/// What one connection stored, a second connection reads back: every field
+/// of every sample, among them a `D_CDR2_BE` identifier, in
+/// `(instance, sequence)` order, and the topic metadata.
 #[test]
-fn idempotent_resend() {
-    let Some((store, topic)) = store_or_skip("resend") else {
-        return;
-    };
-    store.set_contract(&topic, keep_all()).unwrap();
-    store.store(sample(&topic, 7, 42)).unwrap();
-    // Same identity, twice more — must not grow the store.
-    store.store(sample(&topic, 7, 42)).unwrap();
-    store.store(sample(&topic, 7, 42)).unwrap();
-    assert_eq!(store.stats(&topic).unwrap().samples, 1);
-}
-
-#[test]
-fn pagination_cursor() {
-    let Some((store, topic)) = store_or_skip("paging") else {
-        return;
-    };
-    store.set_contract(&topic, keep_all()).unwrap();
-    for seq in 0..10 {
-        store.store(sample(&topic, 1, seq)).unwrap();
+#[ignore = "integration pillar, job integration-services-vendor: a PostgreSQL server of its own"]
+fn dcps_2_2_3_4_persistent_samples_and_topic_meta_outlive_the_connection() {
+    let server = support::Server::start();
+    let mut written = Vec::new();
+    for seq in 0..3 {
+        written.push(sample("T", 1, seq));
+        written.push(sample("T", 2, seq));
     }
+    written[4].representation_identifier = [0x00, 0x08];
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: keep_all(),
+    };
+    {
+        let store = PostgresStore::connect(&server.url(), keep_all()).unwrap();
+        assert_eq!(store.topic_meta("T").unwrap(), None);
+        store.set_topic_meta("T", meta.clone()).unwrap();
+        for s in &written {
+            store.store(s.clone()).unwrap();
+        }
+    }
+    written.sort_by_key(|s| (s.instance_key, s.sequence));
+    let reconnected = PostgresStore::connect(&server.url(), keep_all()).unwrap();
+    assert_eq!(reconnected.replay_for_topic("T").unwrap(), written);
+    assert_eq!(reconnected.topic_meta("T").unwrap(), Some(meta));
+}
+
+/// Under KEEP_ALL a sample past `max_samples` is refused (DDS 1.4 §2.2.3.5
+/// with §2.2.3.19: OUT_OF_RESOURCES); the same sample sent again is not a
+/// new one.
+#[test]
+#[ignore = "integration pillar, job integration-services-vendor: a PostgreSQL server of its own"]
+fn dcps_2_2_3_5_keep_all_refuses_a_sample_past_max_samples() {
+    let server = support::Server::start();
+    let store = PostgresStore::connect(&server.url(), keep_all()).unwrap();
+    let mut c = keep_all();
+    c.max_samples = 3;
+    store.set_contract("T", c).unwrap();
+    for seq in 0..3 {
+        store.store(sample("T", 1, seq)).unwrap();
+    }
+    assert!(matches!(
+        store.store(sample("T", 1, 99)),
+        Err(StoreError::OutOfResources("max_samples"))
+    ));
+    store.store(sample("T", 1, 0)).unwrap();
+    store.store(sample("T", 1, 0)).unwrap();
+    assert_eq!(sequences(&store, "T"), vec![0, 1, 2]);
+}
+
+#[test]
+#[ignore = "integration pillar, job integration-services-vendor: a PostgreSQL server of its own"]
+fn dcps_2_2_3_5_keep_last_keeps_the_newest_depth_samples_of_each_instance() {
+    let server = support::Server::start();
+    let store = PostgresStore::connect(&server.url(), keep_all()).unwrap();
+    let mut c = keep_all();
+    c.history_kind = HistoryKind::KeepLast;
+    c.history_depth = 2;
+    store.set_contract("T", c).unwrap();
+    for seq in 0..5 {
+        store.store(sample("T", 1, seq)).unwrap();
+        store.store(sample("T", 2, seq)).unwrap();
+    }
+    assert_eq!(sequences(&store, "T"), vec![3, 4, 3, 4]);
+}
+
+/// `service_cleanup_delay`: the samples of an instance without writers go
+/// once the delay has passed, not before; the delay of the topic metadata
+/// governs over an earlier plain `set_contract`.
+#[test]
+#[ignore = "integration pillar, job integration-services-vendor: a PostgreSQL server of its own"]
+fn dcps_2_2_3_5_an_unregistered_instance_is_purged_after_the_cleanup_delay() {
+    let server = support::Server::start();
+    let store = PostgresStore::connect(&server.url(), keep_all()).unwrap();
+    store.set_contract("T", keep_all()).unwrap();
+    store
+        .set_topic_meta(
+            "T",
+            TopicMeta {
+                type_name: "T".to_string(),
+                keyed: true,
+                contract: Contract {
+                    cleanup_delay: Duration::from_secs(10),
+                    ..keep_all()
+                },
+            },
+        )
+        .unwrap();
+    store.store(sample("T", 1, 0)).unwrap();
+    store.store(sample("T", 2, 0)).unwrap();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+    store.unregister("T", &[1u8; 16], t0).unwrap();
+    assert_eq!(store.cleanup(t0 + Duration::from_secs(5)).unwrap(), 0);
+    assert_eq!(store.cleanup(t0 + Duration::from_secs(11)).unwrap(), 1);
+    let left: Vec<u8> = store
+        .replay_for_topic("T")
+        .unwrap()
+        .iter()
+        .map(|s| s.instance_key[0])
+        .collect();
+    assert_eq!(left, vec![2]);
+}
+
+/// ADR 0009, invariant 3: a read is paginated, in `(instance, sequence)`
+/// order.
+#[test]
+#[ignore = "integration pillar, job integration-services-vendor: a PostgreSQL server of its own"]
+fn adr_0009_3_a_query_pages_through_the_history_in_order() {
+    let server = support::Server::start();
+    let store = PostgresStore::connect(&server.url(), keep_all()).unwrap();
+    store.set_contract("T", keep_all()).unwrap();
+    for inst in 1..=2u8 {
+        for seq in 0..5 {
+            store.store(sample("T", inst, seq)).unwrap();
+        }
+    }
+    let mut got = Vec::new();
     let mut sel = Selector {
         limit: Some(4),
         ..Selector::default()
     };
-    let mut seen = 0;
     loop {
-        let page = store.query(&topic, &sel).unwrap();
-        seen += page.samples.len();
+        let page = store.query("T", &sel).unwrap();
+        assert!(page.samples.len() <= 4);
+        got.extend(page.samples.iter().map(|s| (s.instance_key[0], s.sequence)));
         match page.next {
             Some(c) if !page.samples.is_empty() => sel = sel.after_cursor(c),
             _ => break,
         }
     }
-    assert_eq!(seen, 10);
-}
-
-#[test]
-fn keep_all_max_samples_cap() {
-    let Some((store, topic)) = store_or_skip("cap") else {
-        return;
-    };
-    let mut c = keep_all();
-    c.max_samples = 3;
-    store.set_contract(&topic, c).unwrap();
-    for seq in 0..3 {
-        store.store(sample(&topic, 1, seq)).unwrap();
-    }
-    // The 4th (new identity) breaches the cap.
-    let err = store.store(sample(&topic, 1, 99)).unwrap_err();
-    assert!(matches!(
-        err,
-        zerodds_durability_store::StoreError::OutOfResources("max_samples")
-    ));
-    // A re-send of an existing sample is still accepted (grows nothing).
-    store.store(sample(&topic, 1, 0)).unwrap();
-    assert_eq!(store.stats(&topic).unwrap().samples, 3);
-}
-
-#[test]
-fn keep_last_trims_per_instance() {
-    let Some((store, topic)) = store_or_skip("keeplast") else {
-        return;
-    };
-    let mut c = keep_all();
-    c.history_kind = HistoryKind::KeepLast;
-    c.history_depth = 2;
-    store.set_contract(&topic, c).unwrap();
-    for seq in 0..5 {
-        store.store(sample(&topic, 1, seq)).unwrap();
-    }
-    let page = store.query(&topic, &Selector::default()).unwrap();
-    let seqs: Vec<u64> = page.samples.iter().map(|s| s.sequence).collect();
-    assert_eq!(seqs, vec![3, 4], "only the newest 2 survive");
-}
-
-#[test]
-fn unregister_then_cleanup_purges() {
-    let Some((store, topic)) = store_or_skip("cleanup") else {
-        return;
-    };
-    store.set_contract(&topic, keep_all()).unwrap();
-    store.store(sample(&topic, 1, 0)).unwrap();
-    store.store(sample(&topic, 2, 0)).unwrap();
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
-    store.unregister(&topic, &[1u8; 16], now).unwrap();
-    // cleanup_delay is zero → instance 1's samples purge now.
-    let removed = store.cleanup(now).unwrap();
-    assert_eq!(removed, 1);
-    assert_eq!(store.stats(&topic).unwrap().instances, 1);
-}
-
-#[test]
-fn topic_meta_round_trips_and_governs_retention() {
-    let Some((store, topic)) = store_or_skip("topic-meta") else {
-        return;
-    };
-    assert_eq!(store.topic_meta(&topic).unwrap(), None);
-    let meta = TopicMeta {
-        type_name: "demo::Command".to_string(),
-        keyed: true,
-        contract: Contract {
-            history_kind: HistoryKind::KeepLast,
-            history_depth: 2,
-            ..keep_all()
-        },
-    };
-    store.set_topic_meta(&topic, meta.clone()).unwrap();
-    assert_eq!(store.topic_meta(&topic).unwrap(), Some(meta));
-    // The persisted contract must govern retention (also exercises
-    // `cleanup`'s and `store`'s path that reads it while already holding
-    // the client lock — the deadlock this fix closed).
-    for seq in 0..5 {
-        store.store(sample(&topic, 1, seq)).unwrap();
-    }
-    let seqs: Vec<u64> = store
-        .replay_for_topic(&topic)
-        .unwrap()
-        .iter()
-        .map(|s| s.sequence)
+    let want: Vec<(u8, u64)> = (1..=2u8)
+        .flat_map(|i| (0..5).map(move |s| (i, s)))
         .collect();
-    assert_eq!(seqs, vec![3, 4]);
-    let now = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
-    store.unregister(&topic, &[1u8; 16], now).unwrap();
-    assert_eq!(store.cleanup(now).unwrap(), 1);
+    assert_eq!(got, want);
 }
 
+/// ADR 0009, invariant 2, the PostgreSQL leg of the fleet: ten thousand
+/// instances through a RAM hot cache of 512 KiB over the database; the cache
+/// stays in its budget, the database holds every sample.
 #[test]
-fn stats_counts() {
-    let Some((store, topic)) = store_or_skip("stats") else {
-        return;
-    };
-    store.set_contract(&topic, keep_all()).unwrap();
-    store.store(sample(&topic, 1, 0)).unwrap();
-    store.store(sample(&topic, 1, 1)).unwrap();
-    store.store(sample(&topic, 2, 0)).unwrap();
-    let s = store.stats(&topic).unwrap();
-    assert_eq!(s.samples, 3);
-    assert_eq!(s.instances, 2);
-    assert!(s.bytes > 0);
-}
-
-/// The PostgreSQL leg of the O11 fleet load: 10k sensors through a RAM hot
-/// cache over the shared cold database.
-#[test]
-fn fleet_of_10k_sensors_postgres() {
-    let Some((cold, topic)) = store_or_skip("load10k") else {
-        return;
-    };
+#[ignore = "integration pillar, job integration-services-vendor: a PostgreSQL server of its own"]
+fn adr_0009_2_ten_thousand_instances_stay_in_the_hot_budget_and_whole_in_postgresql() {
     const SENSORS: usize = 10_000;
+    let server = support::Server::start();
+    let cold = PostgresStore::connect(&server.url(), keep_all()).unwrap();
     let store = TieredStore::new(cold, 512 * 1024);
-    store.set_contract(&topic, keep_all()).unwrap();
+    store.set_contract("T", keep_all()).unwrap();
     for sensor in 0..SENSORS {
         let mut k = [0u8; 16];
         k[..8].copy_from_slice(&(sensor as u64).to_le_bytes());
         store
             .store(DurabilitySample {
-                topic: topic.clone(),
+                topic: "T".to_string(),
                 instance_key: k,
                 sequence: 0,
                 payload: format!("sensor-{sensor}").into_bytes(),
-                representation: 1,
-                big_endian: false,
+                representation_identifier: [0x00, 0x07],
                 created_at: SystemTime::UNIX_EPOCH,
                 source_guid: k,
                 source_sequence: 0,
             })
             .unwrap();
     }
-    let stats = store.stats(&topic).unwrap();
-    assert_eq!(stats.instances, SENSORS);
-    assert_eq!(stats.samples, SENSORS);
-    assert!(store.hot_bytes(&topic).unwrap() <= 512 * 1024 + 256);
+    let stats = store.stats("T").unwrap();
+    assert_eq!((stats.instances, stats.samples), (SENSORS, SENSORS));
+    assert!(store.hot_bytes("T").unwrap() <= 512 * 1024 + 256);
 }

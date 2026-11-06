@@ -126,7 +126,8 @@ const OPTIONALS: &str =
     "@final struct S { long a; @optional long b; @optional string c; long d; };";
 
 #[test]
-fn an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer() {
+fn xtypes_7_5_1_2_4_2_an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer()
+ {
     let out = run(
         "optional",
         OPTIONALS,
@@ -173,7 +174,7 @@ fn an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer
 }
 
 #[test]
-fn an_optional_string_is_a_pointer_to_a_string() {
+fn xtypes_7_5_1_2_4_2_an_optional_string_is_a_pointer_to_a_string() {
     let out = run(
         "optional-string",
         OPTIONALS,
@@ -201,7 +202,7 @@ fn an_optional_string_is_a_pointer_to_a_string() {
 }
 
 #[test]
-fn an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers() {
+fn xtypes_7_5_1_2_4_4_an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers() {
     // §7.5.1.2.4.4: `@optional long array_member[10]` is
     // `int32_t (*array_member)[10]`. The array of this binding is
     // `std::array<std::int32_t, N>`, which has the layout of the C array,
@@ -237,7 +238,7 @@ fn an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers() {
 }
 
 #[test]
-fn a_copy_of_a_class_with_a_pointer_member_is_deep_and_the_destructor_deletes() {
+fn xtypes_7_5_1_2_3_2_a_copy_of_a_class_with_a_pointer_member_is_deep_and_the_destructor_deletes() {
     // §7.5.1.2.3.2: constructor, destructor and copy "the same as
     // specified for C": NULL, deleted, deep.
     let out = run(
@@ -274,7 +275,7 @@ fn a_copy_of_a_class_with_a_pointer_member_is_deep_and_the_destructor_deletes() 
 }
 
 #[test]
-fn an_external_member_that_is_not_optional_may_not_be_unset_at_a_write() {
+fn xtypes_7_5_1_2_3_2_1_an_external_member_that_is_not_optional_may_not_be_unset_at_a_write() {
     // §7.5.1.2.3.2.1.
     let out = run(
         "external-unset",

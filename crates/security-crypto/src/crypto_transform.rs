@@ -320,7 +320,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn kind_round_trip_all_variants() {
+    fn security_7_3_7_kind_round_trip_all_variants() {
         for k in [
             CryptoTransformKind::None,
             CryptoTransformKind::Aes128Gmac,
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_kind_rejected() {
+    fn security_7_3_7_unknown_kind_rejected() {
         assert!(CryptoTransformKind::from_be_bytes([0, 0, 0, 99]).is_err());
     }
 
@@ -368,7 +368,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_identifier_round_trip() {
+    fn security_7_3_19_transform_identifier_round_trip() {
         let id = CryptoTransformIdentifier::new(
             CryptoTransformKind::Aes256Gcm,
             [0xCA, 0xFE, 0xBA, 0xBE],
@@ -380,7 +380,7 @@ mod tests {
     }
 
     #[test]
-    fn header_round_trip_with_full_iv() {
+    fn security_7_3_20_header_round_trip_with_full_iv() {
         let h = CryptoHeader {
             transformation_id: CryptoTransformIdentifier::new(
                 CryptoTransformKind::Aes256Gcm,
@@ -405,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn footer_round_trip_no_receivers() {
+    fn security_7_4_7_4_footer_round_trip_no_receivers() {
         let f = CryptoFooter {
             common_mac: [0xAA; 16],
             receiver_specific_macs: alloc::vec![],
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn footer_round_trip_with_receivers() {
+    fn security_7_4_6_2_4_footer_round_trip_with_receivers() {
         let f = CryptoFooter {
             common_mac: [0xAA; 16],
             receiver_specific_macs: alloc::vec![
@@ -443,7 +443,7 @@ mod tests {
     // -------------------------------------------------------------
 
     #[test]
-    fn footer_rejects_oversized_receiver_count_cleanly() {
+    fn security_7_4_7_4_footer_rejects_oversized_receiver_count_cleanly() {
         let mut bytes = alloc::vec![0u8; 20];
         bytes[16..20].copy_from_slice(&1_000_000_000u32.to_be_bytes());
         // No receiver-specific MAC bytes follow.
@@ -484,7 +484,7 @@ mod tests {
     /// revision (three octets) and the algorithm id; both ways of reading it
     /// agree, and a revision is not an unknown algorithm.
     #[test]
-    fn the_key_revision_is_part_of_the_kind() {
+    fn security_7_3_17_the_key_revision_is_part_of_the_kind() {
         let id = CryptoTransformIdentifier::new(CryptoTransformKind::Aes256Gcm, [1, 2, 3, 4])
             .with_revision([0, 0, 22]);
         assert_eq!(id.to_bytes(), [0, 0, 22, 4, 1, 2, 3, 4]);

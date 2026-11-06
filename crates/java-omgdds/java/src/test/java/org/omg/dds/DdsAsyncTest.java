@@ -97,7 +97,7 @@ class DdsAsyncTest {
     }
 
     @Test
-    void writeAsyncThenTakeAsyncRoundTrip() throws Exception {
+    void async_2_1_a_sample_written_with_write_async_is_taken_with_take_async() throws Exception {
         DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(30);
         Topic<Reading> topic = participant.createTopic("AsyncReadings", Reading.class);
@@ -120,7 +120,7 @@ class DdsAsyncTest {
     }
 
     @Test
-    void waitForSamplesAsyncTrueWhenDataPresent() throws Exception {
+    void async_2_2_wait_for_samples_async_completes_true_when_data_is_present() throws Exception {
         DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(31);
         Topic<Reading> topic = participant.createTopic("AsyncWait", Reading.class);
@@ -135,7 +135,7 @@ class DdsAsyncTest {
     }
 
     @Test
-    void waitForSamplesAsyncFalseOnTimeout() throws Exception {
+    void async_2_2_wait_for_samples_async_completes_false_on_timeout() throws Exception {
         DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(32);
         Topic<Reading> topic = participant.createTopic("AsyncEmpty", Reading.class);

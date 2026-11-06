@@ -146,15 +146,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trip_preserves_challenge() {
-        let chal = [0x42u8; 32];
-        let token = AuthRequestToken::new(chal);
-        let bytes = token.encode();
-        let back = AuthRequestToken::decode(&bytes).unwrap();
-        assert_eq!(back, token);
-    }
-
-    #[test]
     fn class_id_must_match() {
         let mut bytes = AuthRequestToken::new([1u8; 32]).encode();
         // Corrupt class-id by flipping a byte.

@@ -11,7 +11,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §5.2 Evidence across a real container boundary
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — no test starts two containers with a mounted volume and different UID mappings.
 
 ## §6.2 Windows
 

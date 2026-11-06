@@ -169,7 +169,7 @@ fn csharp_output_compiles_against_a_stub_of_the_invented_mapping() {
     std::fs::write(
         out.join("project.csproj"),
         "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    \
-         <OutputType>Library</OutputType>\n    <TargetFramework>net9.0</TargetFramework>\n    \
+         <OutputType>Library</OutputType>\n    <TargetFramework>net8.0</TargetFramework>\n    \
          <Nullable>disable</Nullable>\n  </PropertyGroup>\n</Project>\n",
     )
     .unwrap();
@@ -356,7 +356,7 @@ fn csharp_structured_attributes_compile_against_the_generated_types() {
         out.join("project.csproj"),
         format!(
             "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    \
-             <OutputType>Library</OutputType>\n    <TargetFramework>net9.0</TargetFramework>\n    \
+             <OutputType>Library</OutputType>\n    <TargetFramework>net8.0</TargetFramework>\n    \
              <Nullable>disable</Nullable>\n    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>\n  \
              </PropertyGroup>\n  <ItemGroup>\n    \
              <Compile Include=\"trade.cs;trade_dlrl.cs;Stub.cs\" />\n    \

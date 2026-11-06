@@ -30,23 +30,43 @@ use zerodds_dcps::runtime::RuntimeConfig;
 use zerodds_dcps::{DomainParticipantFactory, DomainParticipantQos};
 
 /// A peer-less participant emits the fast initial-announcement burst, then stops
-/// (the long `spdp_period` keeps it quiet afterwards).
+/// (the long `spdp_period` keeps it quiet afterwards). With the burst disabled
+/// (`initial_announce_count = 0`) it falls back to the legacy behaviour: just
+/// the startup announce, then silence until the (long) `spdp_period`. Both
+/// participants run side by side on domains of their own, so the window is
+/// waited once.
 #[test]
 fn fresh_participant_bursts_then_slows() {
     let factory = DomainParticipantFactory::instance();
-    let dom = common::unique_domain();
     // 8 announces @ 100 ms (~700 ms of burst), then a 30 s period — so after the
     // burst nothing more fires inside the measurement window.
-    let cfg = RuntimeConfig {
+    let bursting = RuntimeConfig {
         spdp_period: Duration::from_secs(30),
         initial_announce_count: 8,
         initial_announce_period: Duration::from_millis(100),
         ..RuntimeConfig::default()
     };
+    let quiet = RuntimeConfig {
+        spdp_period: Duration::from_secs(30),
+        initial_announce_count: 0,
+        ..RuntimeConfig::default()
+    };
     let p = factory
-        .create_participant_with_config(dom, DomainParticipantQos::default(), cfg)
+        .create_participant_with_config(
+            common::unique_domain(),
+            DomainParticipantQos::default(),
+            bursting,
+        )
         .expect("participant");
+    let q = factory
+        .create_participant_with_config(
+            common::unique_domain(),
+            DomainParticipantQos::default(),
+            quiet,
+        )
+        .expect("participant without a burst");
     let rt = p.runtime().expect("runtime").clone();
+    let quiet_rt = q.runtime().expect("runtime").clone();
 
     // After ~1.2 s the 8-announce burst is complete and the 30 s period has not
     // re-fired. Allow scheduling jitter on both ends.
@@ -57,27 +77,7 @@ fn fresh_participant_bursts_then_slows() {
         (5..=9).contains(&n),
         "fast burst should emit ~8 announces in 1.2 s, saw {n}"
     );
-}
-
-/// With the burst disabled (`initial_announce_count = 0`) a peer-less
-/// participant falls back to the legacy behaviour: just the startup announce,
-/// then silence until the (long) `spdp_period`.
-#[test]
-fn burst_disabled_emits_few_announces() {
-    let factory = DomainParticipantFactory::instance();
-    let dom = common::unique_domain();
-    let cfg = RuntimeConfig {
-        spdp_period: Duration::from_secs(30),
-        initial_announce_count: 0,
-        ..RuntimeConfig::default()
-    };
-    let p = factory
-        .create_participant_with_config(dom, DomainParticipantQos::default(), cfg)
-        .expect("participant");
-    let rt = p.runtime().expect("runtime").clone();
-
-    std::thread::sleep(Duration::from_millis(1200));
-    let n = rt.spdp_announce_count();
+    let n = quiet_rt.spdp_announce_count();
     eprintln!("[burst] burst-disabled announces in 1.2 s = {n} (expected <=1)");
     assert!(
         n <= 1,

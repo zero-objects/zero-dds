@@ -24,7 +24,7 @@ pytestmark = pytest.mark.skipif(
 
 
 _PUBLISHER_SCRIPT = textwrap.dedent("""
-    import os, time
+    import os
     import zerodds
     domain = int(os.environ["TEST_DOMAIN"])
     topic_name = os.environ["TEST_TOPIC"]
@@ -36,7 +36,6 @@ _PUBLISHER_SCRIPT = textwrap.dedent("""
     writer.wait_for_matched_subscription(1, 5.0)
     for _ in range(5):
         writer.write(payload)
-        time.sleep(0.05)
     # A writer that goes away discards what is not acknowledged (DDS 1.4
     # §2.2.2.4.1.12). This writer may know the reader before the reader
     # knows it: the reader's SEDP repair comes heartbeatResponseDelay plus
@@ -83,11 +82,11 @@ _SUBSCRIBER_SCRIPT = textwrap.dedent("""
     sys.platform == "win32",
     reason="multi-proc loopback multicast needs a Linux/macOS setup",
 )
-def test_multiproc_python_python_roundtrip(tmp_path: object) -> None:
+def py_2_1_multiproc_python_python_roundtrip(tmp_path: object, leased_domain: int) -> None:
     """§5.2 — two subprocess Pythons, one BytesTopic, one payload."""
     env = {
         **os.environ,
-        "TEST_DOMAIN": "210",
+        "TEST_DOMAIN": str(leased_domain),
         "TEST_TOPIC": "MultiProcChatter",
         "TEST_PAYLOAD": "ping-from-subproc",
     }

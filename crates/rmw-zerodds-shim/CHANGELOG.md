@@ -7,6 +7,9 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
 ### Fixed
 
+- The XCDR2 codec of the spatial bridge's wrapper types caps alignment at
+  four (DDS-XTypes 1.3 §7.4.1.1.1): a `double` behind a four-octet field
+  sat four octets late.
 - Dynamic data of a bitmask (DDS-XTypes 1.3 §7.5.2.11.1, §7.5.2.11.3): the
   flags are Boolean values reached by bit (`zerodds_dyn_data_get_bool`,
   `zerodds_dyn_data_set_bool`, `zerodds_dyn_data_clear_value`), the id of a

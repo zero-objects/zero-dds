@@ -23,9 +23,9 @@ WRITE_DATA, flags, len LE) + Body, byte-identisch zu `crates/xrce` +
 `write_frame/4`/`read_frame/1`, Konstanten `session_nokey/0` (`0x80`) und
 `stream_best_effort/0` (`0x01`).
 
-**Tests:** `crates/endpoint-e2e/tests/elixir.rs::elixir_raw_udp` (rohes
+**Tests:** `crates/endpoint-e2e/tests/elixir.rs::endpoint_elixir_5_1_the_generated_codec_pings_without_the_xrce_frame` (rohes
 XCDR2 ohne XRCE-Frame — eigener Mini-Harness); Framing selbst wird über
-`elixir_endpoint_sync` und `elixir_endpoint_async` (§4) live geübt.
+`xrce_8_3_5_8_elixir_sync_app_writes_the_ping_and_reads_the_pong` und `xrce_8_3_5_8_elixir_async_app_writes_the_ping_and_reads_the_pong` (§4) live geübt.
 
 **Status:** done.
 
@@ -43,7 +43,7 @@ Tests/Beispiele.
 
 **Tests:** `endpoints/elixir/test.exs` — "sync loopback: 5 samples OK"
 (`ZeroDDS.Client.write`/`poll` über `MemTransport`, voller Roundtrip von 5
-Samples); Live-E2E `elixir_endpoint_sync` (§4).
+Samples); Live-E2E `xrce_8_3_5_8_elixir_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -59,7 +59,7 @@ spawnt den Empfangs-Prozess, `stop/1` per `:zerodds_stop`-Message).
 
 **Tests:** `endpoints/elixir/test.exs` — "async loopback: 5 samples OK"
 (`ZeroDDS.AsyncReader.start/2` über `MemTransport`, `receive`-Block im
-Consumer-Prozess für 5 Samples); Live-E2E `elixir_endpoint_async` (§4).
+Consumer-Prozess für 5 Samples); Live-E2E `xrce_8_3_5_8_elixir_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -79,13 +79,11 @@ UDP, kein XRCE-Frame, nutzt nur den generierten
 werden nebeneinander geladen).
 
 **Tests:** (Linux)
-- `elixir_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
+- `endpoint_elixir_5_1_the_generated_codec_pings_without_the_xrce_frame` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
   UDP-Socket, ohne XRCE-Framing.
-- `elixir_endpoint_sync` — voller Stack über `ZeroDDS.Client`.
-- `elixir_endpoint_async` — voller Stack über `ZeroDDS.AsyncReader` (Poll für
+- `xrce_8_3_5_8_elixir_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über `ZeroDDS.Client`.
+- `xrce_8_3_5_8_elixir_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über `ZeroDDS.AsyncReader` (Poll für
   den Write-Teil, Prozess/Mailbox für den Read-Teil).
-
-3/3 grün (Linux).
 
 **Status:** done.
 
@@ -113,45 +111,43 @@ ACKNACK-getriebenes Retransmit).
 FIFO-`drain_pending`-Kaskade, Socket-Ownership-Handoff
 `controlling_process` → `activate`); `endpoints/elixir/example_reliable.exs`
 (lauffähige In-Process-Demo, kein Socket); `endpoints/elixir/reliable_app.exs`
-(live UDP-Sender-App für das E2E, inkl. `bench`-Modus).
+(UDP-Sender-App, inkl. `bench`-Modus für den Latenz-Test).
 
 **Tests:** (Linux)
-- `elixir_reliable_unit_and_golden`
-  (`crates/endpoint-e2e/tests/elixir_reliable.rs`) läuft
+- `endpoints/elixir/reliable_test.exs` in der Spalte `elixir` von `tools/endpoints-gate`
+  (Job `integration-endpoints`) läuft
   `elixir -r lib/reliable.ex reliable_test.exs [golden_dir]` — 22
-  Unit-Checks: monotone seq (`submit_assigns_monotonic_seqnrs`,
-  `submit_two_in_flight`), Payload-zu-groß
-  (`submit_rejects_payload_too_large`), Window-full
-  (`submit_rejects_when_window_full`), Heartbeat first/body/t0/silence/danach/leer
-  (`pending_heartbeat_fires_first_time`/`_body_first_last_stream`/`_fires_at_t0`/
+  Unit-Checks: monotone seq (`endpointelixir_5_submit_assigns_monotonic_seqnrs`,
+  `endpointelixir_5_submit_two_in_flight`), Payload-zu-groß
+  (`endpointelixir_5_submit_rejects_payload_too_large`), Window-full
+  (`endpointelixir_5_submit_rejects_when_window_full`), Heartbeat first/body/t0/silence/danach/leer
+  (`endpointelixir_5_pending_heartbeat_fires_first_time`/`_body_first_last_stream`/`_fires_at_t0`/
   `_silenced_before_period`/`_fires_after_period`/`_none_when_window_empty`),
-  ACKNACK Teil-/Voll-Clear (`recv_acknack_clears_acked_keeps_missing`/
+  ACKNACK Teil-/Voll-Clear (`endpointelixir_5_recv_acknack_clears_acked_keeps_missing`/
   `_full_clear_when_no_bits_set`), Receiver In-Order/Reorder/Dedup/Buffer-full
-  (`recv_data_buffers_in_order`/`_reorder_blocks_on_gap`/`_reorder_delivers`/
+  (`endpointelixir_5_recv_data_buffers_in_order`/`_reorder_blocks_on_gap`/`_reorder_delivers`/
   `_drops_duplicates`/`_rejects_when_buffer_full`), Pending-ACKNACK-Bitmap
-  (`pending_acknack_marks_missing_slots`), Reset
-  (`reset_clears_state_completely`), End-to-End-Loss-Recovery in drei Schritten
-  (`e2e_drain_blocks_on_lost_middle_sample`/`e2e_missing_sample_retransmittable`/
-  `e2e_delivers_all_after_retransmit`). Dazu — wenn der Rust-Golden-Generator
+  (`endpointelixir_5_pending_acknack_marks_missing_slots`), Reset
+  (`endpointelixir_5_reset_clears_state_completely`), End-to-End-Loss-Recovery in drei Schritten
+  (`endpointelixir_5_e2e_drain_blocks_on_lost_middle_sample`/`endpointelixir_5_e2e_missing_sample_retransmittable`/
+  `endpointelixir_5_e2e_delivers_all_after_retransmit`). Dazu — wenn der Rust-Golden-Generator
   (`zerodds-endpoint-golden`) lief — 4 weitere Checks: Byte-Golden
-  (`byte_golden_heartbeat`/`byte_golden_acknack`:
+  (`endpointelixir_5_byte_golden_heartbeat`/`endpointelixir_5_byte_golden_acknack`:
   `heartbeat_frame(0x80,0x00,1,1,3,0x80)` ==
   `80 00 01 00 0B 01 05 00 01 00 03 00 80`,
   `acknack_frame(0x80,0x00,1,1,0,0x80)` ==
   `80 00 01 00 0A 01 05 00 01 00 00 00 80` — identisch zu den
   Referenz-Goldens) sowie Parse-Roundtrip
-  (`golden_heartbeat_parse`/`golden_acknack_parse`). Kein false-green: läuft
+  (`endpointelixir_5_golden_heartbeat_parse`/`endpointelixir_5_golden_acknack_parse`). Kein false-green: läuft
   der Golden-Generator nicht, wird das best-effort geloggt statt stumm
   übersprungen.
-- `elixir_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die
-  App (`reliable_app.exs`) retransmittet via `ZeroDDS.Reliable.Drain` auf
-  ACKNACK; alle 12 Samples lückenlos in Reihenfolge geliefert.
-- `elixir_reliable_no_loss` — lossless Baseline; 12/12.
-- `elixir_reliable_example` — `example_reliable.exs` läuft und meldet
+- `reliable_5_3_elixir_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig; die
+  App, die der Test aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und `ZeroDDS.Reliable.Drain` baut, retransmittet
+  auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge geliefert, der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`).
+- `endpoints/elixir/example_reliable.exs` in der Spalte `elixir` von `tools/endpoints-gate`
+  (Job `integration-endpoints`) — `example_reliable.exs` läuft und meldet
   `RELIABLE OK` (12 Samples, Drop-Simulation + ACKNACK-Recovery im
   In-Process-Modell).
-
-5/5 grün (Linux), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -170,7 +166,7 @@ Iterationen inline `:gen_udp.send` (verbundener Socket) vs. 20000 Iterationen
 `ZeroDDS.Reliable.Drain.submit/2`, kein Live-Peer nötig (ein beliebiger
 gebundener UDP-Port, nur lokale Dispatch-Kosten unter Messung).
 
-**Tests:** (Linux) `elixir_reliable_producer_latency`
+**Tests:** (Linux) `reliable_5_4_elixir_the_producer_enqueue_costs_less_than_the_inline_send`
 (`crates/endpoint-e2e/tests/elixir_reliable.rs`) — `submit`-Cast **452 ns**
 vs. inline `:gen_udp.send` **5618 ns** (~12×).
 
@@ -180,14 +176,13 @@ vs. inline `:gen_udp.send` **5618 ns** (~12×).
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test elixir`
-3/3 (Ping-Pong: `elixir_raw_udp`/`elixir_endpoint_sync`/`elixir_endpoint_async`);
-`--test elixir_reliable` 5/5 (`elixir_reliable_unit_and_golden` — 22
-Elixir-Unit-Checks inkl. Byte-Golden, `elixir_reliable_loss_recovery`,
-`elixir_reliable_no_loss`, `elixir_reliable_example`,
-`elixir_reliable_producer_latency`); Latenz-Bench `submit`-Cast 452 ns /
-inline `:gen_udp.send` 5618 ns (~12×).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-elixir-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings-gnat-beam` (Job `integration-bindings-gnat-beam`) — 5 Tests grün.
+* `python3 ci/run_integration.py integration-endpoints` (Job `integration-endpoints`) — 16 Tests grün.
+
+21 zitierte Tests grün, 0 nicht grün.
 
 Offene Punkte: keine.

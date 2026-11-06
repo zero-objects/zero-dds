@@ -243,12 +243,12 @@ pub(crate) fn verify_v1_chain(
 
     // (2) The subject the caller expects, when it names one.
     let subject = crate::identity_token::subject_oneline(&cert.tbs_certificate.subject);
-    if let Some(expected) = policy.expected_subject.as_deref() {
-        if !crate::identity_token::subject_match(&subject, expected) {
-            return Err(PkiError::CertInvalid(format!(
-                "x509v1: subject '{subject}' is not the expected '{expected}'"
-            )));
-        }
+    if let Some(expected) = policy.expected_subject.as_deref()
+        && !crate::identity_token::subject_match(&subject, expected)
+    {
+        return Err(PkiError::CertInvalid(format!(
+            "x509v1: subject '{subject}' is not the expected '{expected}'"
+        )));
     }
 
     // (3)+(4) Chain and signature. The certificate's `issuer` must be the
@@ -489,7 +489,7 @@ mod tests {
     /// The property name is a vendor extension under the vendor prefix
     /// and says in its own text that it accepts a certificate of version 1.
     #[test]
-    fn the_property_name_reads_as_a_deviation() {
+    fn security_7_3_2_the_property_name_reads_as_a_deviation() {
         assert_eq!(
             PROP_ACCEPT_X509V1_IDENTITY,
             "org.zerodds.sec.auth.accept_x509v1_identity_certificate"

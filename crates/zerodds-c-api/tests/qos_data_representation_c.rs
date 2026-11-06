@@ -45,7 +45,7 @@ fn list(ids: &[i16]) -> ZeroDdsDataRepresentationQosPolicy {
 /// An all-zero struct, which the tests of this crate build with `zeroed`, is
 /// the default: the policy is left unset and the runtime offers its own.
 #[test]
-fn a_zeroed_qos_leaves_the_representation_at_its_default() {
+fn xtypes_7_6_3_1_1_a_zeroed_qos_leaves_the_representation_at_its_default() {
     // SAFETY: plain data.
     unsafe {
         let topic: ZeroDdsTopicQos = std::mem::zeroed();
@@ -62,7 +62,7 @@ fn a_zeroed_qos_leaves_the_representation_at_its_default() {
 /// §7.6.3.1.1: the list of a policy that is set is the list, and an empty
 /// list is the single element XCDR.
 #[test]
-fn a_set_list_is_the_list_and_an_empty_one_is_kept_empty() {
+fn xtypes_7_6_3_1_1_a_set_list_is_the_list_and_an_empty_one_is_kept_empty() {
     // SAFETY: plain data.
     unsafe {
         let mut topic: ZeroDdsTopicQos = std::mem::zeroed();
@@ -86,7 +86,7 @@ fn a_set_list_is_the_list_and_an_empty_one_is_kept_empty() {
 /// Annex D's `TypeConsistencyEnforcementQosPolicy` reaches the reader's QoS,
 /// and a kind it does not define is refused.
 #[test]
-fn the_type_consistency_of_a_reader_is_read_and_a_wrong_kind_is_refused() {
+fn xtypes_annex_d_the_type_consistency_of_a_reader_is_read_and_a_wrong_kind_is_refused() {
     // SAFETY: plain data.
     unsafe {
         let mut reader: ZeroDdsDataReaderQos = std::mem::zeroed();
@@ -119,7 +119,7 @@ fn the_type_consistency_of_a_reader_is_read_and_a_wrong_kind_is_refused() {
 /// with, a writer and a reader too, and a reader created with a kind Annex D
 /// does not define is not created.
 #[test]
-fn the_entities_hand_the_representation_back() {
+fn xtypes_7_6_3_1_1_the_entities_hand_the_representation_back() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CRepresentation").unwrap();
     let type_name = CString::new("RawBytes").unwrap();

@@ -70,7 +70,7 @@ fn refusal(idl: &str, type_name: &str, values: &serde_json::Value) -> ProbeError
 /// The length is bytes and not characters, and no terminator follows —
 /// the two places a `wstring` differs from the `string` beside it.
 #[test]
-fn a_wstring_counts_bytes_and_writes_no_terminator() {
+fn xtypes_7_4_3_5_3_a_wstring_counts_bytes_and_writes_no_terminator() {
     let idl = "@final struct WStr { wstring w; long n; };";
 
     // Two BMP characters: four bytes of content, and the `long` lands
@@ -124,7 +124,7 @@ fn a_wstring_outside_the_bmp_is_four_bytes_for_one_character() {
 /// same thing. Only the trailing `long`'s alignment could differ, and
 /// at offset 8 it does not.
 #[test]
-fn a_wstring_is_the_same_under_both_encoding_versions() {
+fn xtypes_7_4_3_5_3_a_wstring_is_the_same_under_both_encoding_versions() {
     let idl = "@final struct WStr { wstring w; long n; };";
     let values = json!({ "w": "ab", "n": 7 });
     assert_eq!(
@@ -141,7 +141,7 @@ fn a_wstring_is_the_same_under_both_encoding_versions() {
 /// default bound of 32, and "Bit indexes are counted from zero starting
 /// at the least-significant bit".
 #[test]
-fn a_bitmask_is_the_integer_its_bit_bound_calls_for() {
+fn xtypes_7_4_3_5_3_a_bitmask_is_the_integer_its_bit_bound_calls_for() {
     let narrow = "\
 @bit_bound(8) bitmask Perm { READ, WRITE, EXEC };
 @final struct B8 { Perm p; };";
@@ -362,7 +362,7 @@ bitset B3 : B2 { bitfield<4> c; };
 /// is `O.length` and then the pairs, under both encoding versions and
 /// with no delimiter.
 #[test]
-fn a_map_of_primitives_is_a_length_and_the_pairs() {
+fn xtypes_7_4_3_5_3_a_map_of_primitives_is_a_length_and_the_pairs() {
     let idl = "@final struct MapLL { map<long, long> m; };";
     let values = json!({ "m": [[1, 2], [3, 4]] });
     assert_eq!(
@@ -383,7 +383,7 @@ fn a_map_of_primitives_is_a_length_and_the_pairs() {
 /// The four bytes of delimiter cover the length word and both pairs,
 /// twelve in all.
 #[test]
-fn a_map_with_a_structured_value_is_delimited_under_xcdr2() {
+fn xtypes_7_4_3_5_3_a_map_with_a_structured_value_is_delimited_under_xcdr2() {
     let idl = "\
 @final struct Cell { long a; };
 @final struct MapLS { map<long, Cell> m; };";
@@ -410,7 +410,7 @@ fn a_map_with_a_structured_value_is_delimited_under_xcdr2() {
 /// This test is the two shapes against the clause; the one at the end of
 /// the file is the same two against Fast DDS's and OpenDDS's bytes.
 #[test]
-fn the_two_readings_of_a_delimited_maps_length_differ_by_four_bytes() {
+fn xtypes_7_4_3_5_3_the_two_readings_of_a_delimited_maps_length_differ_by_four_bytes() {
     let idl = "\
 @final struct Cell { long a; };
 @final struct MapLS { map<long, Cell> m; };";
@@ -587,7 +587,7 @@ fn a_sequence_of_wstrings_is_delimited_and_each_element_counts_bytes() {
 /// A typedef is transparent, so a `fixed` behind one writes the same
 /// three bytes.
 #[test]
-fn a_typedef_of_a_fixed_writes_what_the_target_writes() {
+fn xtypes_7_4_3_5_3_a_typedef_of_a_fixed_writes_what_the_target_writes() {
     let direct = "@final struct Money { fixed<5,2> sum; };";
     let aliased = "\
 typedef fixed<5,2> Amount;
@@ -618,7 +618,7 @@ typedef fixed<5,2> Amount;
 /// whose front end parses the keyword:
 /// `crates/ast-layout/tests/fixtures/unspecified_constructs.md` §1.
 #[test]
-fn a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it() {
+fn xtypes_7_4_3_5_3_a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it() {
     let seq = "\
 bitset Packed { bitfield<3> low; bitfield<5> high; };
 @final struct Sample { sequence<Packed> many; long tail; };";
@@ -704,7 +704,7 @@ bitset Wide { bitfield<12> a; bitfield<12> b; };
 
 /// The `map` length contradiction, with an implementation on each side.
 ///
-/// `the_two_readings_of_a_delimited_maps_length_differ_by_four_bytes`
+/// `xtypes_7_4_3_5_3_the_two_readings_of_a_delimited_maps_length_differ_by_four_bytes`
 /// above pins the two shapes against the clause. This pins them against
 /// bytes: `MapLengthPolicy::SequenceEquivalent` is Fast DDS 3.6.1 and
 /// `Rule15Omits` is OpenDDS 3.34.0, for one IDL and one sample,
@@ -713,7 +713,7 @@ bitset Wide { bitfield<12> a; bitfield<12> b; };
 /// **DDSXTY14-72** and not a vendor defect —
 /// `docs/omg-xtypes-issues.md` §A1.
 #[test]
-fn each_reading_of_a_delimited_maps_length_is_the_bytes_of_one_implementation() {
+fn xtypes_7_4_3_5_3_each_reading_of_a_delimited_maps_length_is_the_bytes_of_one_implementation() {
     let idl = "\
 @final struct Cell { long a; long b; };
 @final struct Sample { map<long, Cell> m; octet tail; };";

@@ -6,6 +6,22 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- `encode_secured_submessage` and `encode_secured_rtps_message` write the frame
+  of DDS-Security 1.2: the SEC_PREFIX and the SRTPS_PREFIX carry the
+  CryptoHeader of the key (20 octets: transformation_kind,
+  transformation_key_id, session_id, initialization_vector_suffix,
+  §7.4.7.6.1, §10.5.2.3), the SEC_BODY the CryptoContent with its length,
+  the postfix the CryptoFooter; the RTPS message protection is the form of
+  §10.5.3.3.4.6.4 (the header as INFO_SOURCE in the protected body). They
+  wrote 16 zero octets (`transformation_kind` 0, NONE) and, for a message, a
+  SEC_BODY without length field, a layout §7.4.7 does not have. Only the
+  plugin that holds the key can write its CryptoHeader: the functions check
+  the frame and hand the transformation to the plugin
+  (`encode_data_datawriter_submessage`, `encode_rtps_message_cyclone`,
+  `encode_rtps_message_psk` and their decoders), the forms the runtime's
+  `SharedSecurityGate` sends. `decode_*` read with the key under `remote`.
+  New: `CRYPTO_HEADER_LEN`.
+
 - Removed: `encode_secured_submessage_multi`, `decode_secured_submessage_multi`
   and `MAX_RECEIVER_MACS` (HMAC-SHA256 receiver MACs, no mechanism of the
   specification, no caller in the runtime).

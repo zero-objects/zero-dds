@@ -86,10 +86,10 @@ impl DataSetReader {
     /// wildcard (`None` publisher / `0` group / `0` writer) matches anything.
     #[must_use]
     pub fn matches(&self, network: &NetworkMessage, message: &DataSetMessage) -> bool {
-        if let Some(expected) = &self.config.publisher_id {
-            if network.publisher_id.as_ref() != Some(expected) {
-                return false;
-            }
+        if let Some(expected) = &self.config.publisher_id
+            && network.publisher_id.as_ref() != Some(expected)
+        {
+            return false;
         }
         if self.config.writer_group_id != 0 {
             let group_id = network
@@ -374,33 +374,13 @@ mod tests {
         pds
     }
 
-    /// End-to-end: writer produces a Variant KeyFrame, group frames it, the
-    /// reader decodes it back into named fields.
+    /// The writer, the group and the reader against the octets of Part 14
+    /// Table 154 (UADPFlags 0xF1, ExtendedFlags1 0x01 for a UInt16
+    /// PublisherId, PublisherId 9, GroupFlags 0x01 with WriterGroupId 3,
+    /// PayloadHeader for writer 5) and Tables 162 and 163 (a Variant key
+    /// frame of two Int32 fields).
     #[test]
-    fn variant_round_trip_through_writer_and_reader() {
-        let mut writer = DataSetWriter::new(
-            DataSetWriterConfig::new("w1", 5, "ds1"),
-            ConfigurationVersion::default(),
-        );
-        let mut group = WriterGroup::new(WriterGroupConfig::new("g1", 1), PublisherId::UInt16(9));
-        let msg = writer.produce(&dataset(), None).expect("produce");
-        let nm = group.frame(alloc::vec![msg], None);
-
-        let reader = DataSetReader::new(DataSetReaderConfig::new("r1", meta()));
-        let received = reader.decode(&nm.messages[0]).expect("decode");
-        assert_eq!(received.writer_id, 5);
-        assert_eq!(received.kind, DataSetMessageKind::KeyFrame);
-        assert_eq!(received.fields.len(), 2);
-        assert_eq!(received.fields[0].name, "a");
-        assert_eq!(received.fields[0].value, dv_int(10));
-        assert_eq!(received.fields[1].name, "b");
-    }
-
-    /// The complete stack: produce → frame → serialise to bytes → decode
-    /// from bytes → dispatch to readers, proving the runtime ties into the
-    /// Part 6 binary codec end to end.
-    #[test]
-    fn full_wire_round_trip() {
+    fn uapubsub_7_2_4_4_a_published_dataset_is_the_octets_of_tables_154_and_163() {
         use crate::binary::{from_binary, to_binary};
 
         let mut writer = DataSetWriter::new(
@@ -415,43 +395,60 @@ mod tests {
                 | NetworkMessageContentMask::PAYLOAD_HEADER,
         );
         let mut group = WriterGroup::new(gcfg, PublisherId::UInt16(9));
-
         let msg = writer.produce(&dataset(), None).expect("produce");
         let nm = group.frame(alloc::vec![msg], None);
+        let expected = [
+            0xF1, 0x01, 0x09, 0x00, 0x01, 0x03, 0x00, 0x01, 0x05, 0x00, 0x01, 0x02, 0x00, 0x06,
+            0x0A, 0x00, 0x00, 0x00, 0x06, 0x14, 0x00, 0x00, 0x00,
+        ];
+        assert_eq!(to_binary(&nm).expect("encode"), expected);
 
-        let bytes = to_binary(&nm).expect("encode");
-        let decoded: NetworkMessage = from_binary(&bytes).expect("decode");
-
+        let decoded: NetworkMessage = from_binary(&expected).expect("decode");
         let mut rg = ReaderGroup::new();
         let mut cfg = DataSetReaderConfig::new("r1", meta());
         cfg.publisher_id = Some(PublisherId::UInt16(9));
         cfg.writer_group_id = 3;
         cfg.data_set_writer_id = 5;
         rg.add_reader(DataSetReader::new(cfg));
-
         let matched = rg.accept(&decoded).expect("accept");
         assert_eq!(matched.len(), 1);
+        assert_eq!(matched[0].data.writer_id, 5);
+        assert_eq!(matched[0].data.kind, DataSetMessageKind::KeyFrame);
         assert_eq!(matched[0].data.fields[0].name, "a");
         assert_eq!(matched[0].data.fields[0].value, dv_int(10));
+        assert_eq!(matched[0].data.fields[1].name, "b");
         assert_eq!(matched[0].data.fields[1].value, dv_int(20));
     }
 
+    /// Part 14 §7.2.4.5.11 and Table 163: with the RawData field encoding
+    /// (DataSetFlags1 0x03) the DataSetMessage carries no FieldCount and
+    /// each field as its DataType of the metadata, without a Variant.
     #[test]
-    fn raw_data_round_trip_uses_metadata_types() {
+    fn uapubsub_7_2_4_5_11_raw_data_fields_are_the_values_of_their_metadata_types() {
+        use crate::binary::{from_binary, to_binary};
+
         let mut wcfg = DataSetWriterConfig::new("w1", 5, "ds1");
         wcfg.field_content_mask = DataSetFieldContentMask::raw_data();
         let mut writer = DataSetWriter::new(wcfg, ConfigurationVersion::default());
         let msg = writer.produce(&dataset(), None).expect("produce");
-        assert!(matches!(msg.data, DataSetData::Raw(_)));
+        let expected = [0x03, 0x0A, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00];
+        assert_eq!(to_binary(&msg).expect("encode"), expected);
 
+        let mut back: DataSetMessage = from_binary(&expected).expect("decode");
+        back.writer_id = 5;
         let reader = DataSetReader::new(DataSetReaderConfig::new("r1", meta()));
-        let received = reader.decode(&msg).expect("decode");
+        let received = reader.decode(&back).expect("decode");
         assert_eq!(received.fields[0].value, dv_int(10));
         assert_eq!(received.fields[1].value, dv_int(20));
     }
 
+    /// Part 14 Table 162: a DataSetFieldContentMask with StatusCode makes
+    /// the fields DataValues (DataSetFlags1 0x05) that carry the value and
+    /// the status (OPC 10000-6 §5.2.2.17 mask 0x03).
     #[test]
-    fn data_value_round_trip_preserves_masked_members() {
+    fn uapubsub_7_2_4_5_4_a_status_in_the_field_mask_sends_data_values_with_it() {
+        use crate::binary::{from_binary, to_binary};
+
         let mut wcfg = DataSetWriterConfig::new("w1", 5, "ds1");
         wcfg.field_content_mask =
             DataSetFieldContentMask::from_bits(DataSetFieldContentMask::STATUS_CODE);
@@ -469,14 +466,23 @@ mod tests {
             },
         );
         let msg = writer.produce(&pds, None).expect("produce");
+        let expected = [
+            0x05, 0x01, 0x00, 0x03, 0x06, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40,
+        ];
+        assert_eq!(to_binary(&msg).expect("encode"), expected);
 
+        let back: DataSetMessage = from_binary(&expected).expect("decode");
         let reader = DataSetReader::new(DataSetReaderConfig::new("r1", meta()));
-        let received = reader.decode(&msg).expect("decode");
+        let received = reader.decode(&back).expect("decode");
         assert_eq!(received.fields[0].value.status, Some(0x4000_0000));
+        assert_eq!(
+            received.fields[0].value.value,
+            Some(Variant::scalar(VariantValue::Int32(7)))
+        );
     }
 
     #[test]
-    fn publisher_and_writer_filters() {
+    fn uapubsub_6_2_8_publisher_and_writer_filters() {
         let nm = NetworkMessage {
             publisher_id: Some(PublisherId::UInt16(9)),
             data_set_class_id: None,
@@ -509,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_group_dispatches_to_matching_readers() {
+    fn uapubsub_6_2_8_reader_group_dispatches_to_matching_readers() {
         let mut writer = DataSetWriter::new(
             DataSetWriterConfig::new("w1", 5, "ds1"),
             ConfigurationVersion::default(),

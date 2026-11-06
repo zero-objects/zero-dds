@@ -37,7 +37,7 @@ pub use annotation::verbatim_placement;
 pub use complete::hashed_member_id;
 pub use lower::{
     HashedIdCounter, HashedNameSpelling, KeyOnUnionDiscriminator, Lowered, NameOfTheEnclosingScope,
-    Options, lower, lower_into, lower_into_with, lower_with,
+    NativeInRemoteInterface, Options, lower, lower_into, lower_into_with, lower_with,
 };
 pub use scope::ScopeStack;
 pub use validate::rule_name;

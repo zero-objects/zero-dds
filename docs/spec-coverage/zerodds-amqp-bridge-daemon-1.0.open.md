@@ -33,6 +33,10 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 **Status:** `open` — der Emit-Teil von §8.3. Geprüft ist nur, dass die Endpoint-Konfiguration gelesen wird.
 
+## §9.1 Startup-Sequence
+
+**Status:** `partial` — jeder Fall von `bridge_rabbitmq_e2e.rs` startet die Bridge über `run` und überträgt Daten; kein Test prüft die Reihenfolge der Schritte.
+
 ## §9.2 Shutdown SIGTERM/SIGINT/SIGHUP
 
 **Status:** `partial` — kein Test für den Drain.

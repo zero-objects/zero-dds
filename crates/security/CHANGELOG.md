@@ -84,6 +84,27 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- `class_id::same_permissions_class_and_major_version` compares the class
+  ids of two PermissionsTokens and reads one without the versions as
+  MajorVersion 1, MinorVersion 0 (DDS-Security 1.2 §10.4.2.2): a remote
+  PermissionsToken of class `DDS:Access:Permissions` matches the local
+  `DDS:Access:Permissions:1.2`. Before, the last `:` was taken as the
+  version separator and the check of Table 70 refused the remote
+  participant. `zerodds-security-permissions`, `zerodds-security-runtime`
+  and the discovery check of `zerodds-dcps` use it for the PermissionsToken;
+  `same_class_and_major_version` stays as it was for the IdentityToken,
+  for which §10.3.2.1 has no such rule (`DDS:Auth:PKI-DH` matches none).
+
+- A DataHolder (token) refused a binary or string value above 8 KiB: a
+  signed permissions document above it in `c.perm` failed the decode of the
+  HandshakeRequestMessageToken with `BadArgument`, and the handshake with
+  it. DDS-Security 1.2 bounds neither (`OctetSeq`, `string`, §7.3.2.1,
+  §7.3.3.1, §7.3.4.1); a value is as long as the DataHolder leaves room for.
+  The DoS cap bounds the octets a DataHolder occupies, 256 KiB, the bound of
+  the `ParticipantGenericMessage` that carries it. Inside such a message the
+  cap was checked against the rest of the message instead: a DataHolder
+  followed by more than 64 KiB of message was refused.
+
 - `SecurityError::code` and `minor_code` (DDS-Security 1.2 §9.2.1 Table 28:
   message, code, minor_code); `SecurityErrorKind::code`.
 - Module `algorithm`: `CryptoAlgorithmId`, `CryptoAlgorithmBit`,

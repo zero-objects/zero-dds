@@ -238,7 +238,12 @@ fn bridge_and_delete(which: &str) -> BTreeMap<String, String> {
         rt.block_on(async { session.delete(key).await })
             .expect("zenoh delete");
     }
-    std::thread::sleep(Duration::from_millis(1500));
+    // The reader's STATE lines say when the two deletes arrived; the
+    // snapshot then has every instance, 8 among them.
+    let _ = reader.wait_states(
+        &[(7, "NOT_ALIVE_DISPOSED"), (20, "NOT_ALIVE_DISPOSED")],
+        Duration::from_secs(10),
+    );
     let states = reader.snapshot();
     daemon.shutdown();
     let _ = reader.finish();
@@ -262,14 +267,14 @@ fn assert_bridged_states(label: &str, states: &BTreeMap<String, String>) {
 }
 
 #[test]
-#[ignore = "live against Eclipse Cyclone DDS: needs python3 with the cyclonedds binding; run with --ignored"]
+#[ignore = "interop pillar, job vendor-live-dispose-bridges: live against Eclipse Cyclone DDS, needs python3 with the cyclonedds binding"]
 fn a_zenoh_delete_reaches_a_cyclone_reader() {
     let states = bridge_and_delete("cyclone");
     assert_bridged_states("cyclone", &states);
 }
 
 #[test]
-#[ignore = "live against another vendor: set ZERODDS_DISPOSE_READER (tools/dispose-reader/build.sh); run with --ignored"]
+#[ignore = "interop pillar, job vendor-live-dispose-bridges: live against Fast DDS, set ZERODDS_DISPOSE_READER (tools/dispose-reader/build.sh)"]
 fn a_zenoh_delete_reaches_a_foreign_reader() {
     let states = bridge_and_delete("env");
     assert_bridged_states("foreign", &states);

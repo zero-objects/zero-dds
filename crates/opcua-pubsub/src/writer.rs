@@ -182,7 +182,7 @@ impl DataSetWriter {
         let is_key = !self.has_baseline
             || encoding == FieldEncoding::RawData
             || field_count_changed
-            || self.publish_count % key_frame_count == 0;
+            || self.publish_count.is_multiple_of(key_frame_count);
 
         let data = if is_key {
             self.build_key_frame(dataset, encoding)?
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn data_value_mask_projects_selected_members() {
+    fn uapubsub_6_2_4_data_value_mask_projects_selected_members() {
         let mut cfg = DataSetWriterConfig::new("w1", 1, "ds1");
         cfg.field_content_mask = DataSetFieldContentMask::from_bits(
             DataSetFieldContentMask::STATUS_CODE | DataSetFieldContentMask::SOURCE_TIMESTAMP,
@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_group_frames_with_group_header_and_publisher() {
+    fn uapubsub_6_2_6_writer_group_frames_with_group_header_and_publisher() {
         let cfg = WriterGroupConfig::new("g1", 42);
         let mut group = WriterGroup::new(cfg, PublisherId::UInt16(7));
         let mut wcfg = WriterGroupConfig::new("g1", 42);

@@ -668,10 +668,10 @@ fn drain_loop(sock: &UdpSocket, ring: &SpscRing, running: &AtomicBool, writer_id
                 for i in 0u16..16 {
                     if (bitmap >> i) & 1 == 1 {
                         let seq = base.wrapping_add(i);
-                        if let Some(p) = sender.get_in_flight(seq) {
-                            if let Ok(frame) = write_frame(seq, writer_id, p) {
-                                let _ = sock.send(&frame);
-                            }
+                        if let Some(p) = sender.get_in_flight(seq)
+                            && let Ok(frame) = write_frame(seq, writer_id, p)
+                        {
+                            let _ = sock.send(&frame);
                         }
                     }
                 }

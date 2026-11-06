@@ -71,16 +71,14 @@ const MUST_RENDER: usize = 350;
 /// and not a filter, as in the C++ gate: a case here that starts
 /// rendering fails.
 ///
-/// ISO C has no structure without a member: the grammar of C99 §6.7.2.1
-/// asks for at least one struct-declaration, and C23 §6.7.2.1p8 leaves a
-/// structure with no named member undefined. The column answers
-/// `NoLanguageForm` for one (`ffbe848f6d3`) instead of emitting a member
-/// the IDL does not have.
-const REFUSED: &[(&str, &str)] = &[
-    ("empty-struct", "an aggregate with no members"),
-    ("empty-struct-as-base", "an aggregate with no members"),
-    ("empty-struct-in-sequence", "an aggregate with no members"),
-];
+/// None: the three cases with a structure without members
+/// (`empty-struct`, `empty-struct-as-base`, `empty-struct-in-sequence`)
+/// were refused until the column gave such a structure a member that
+/// stands in for none and is not serialized
+/// (`zerodds_lang_rules::adapter::c::EMPTY_PLACEHOLDER`; C23 §6.7.2.1p8
+/// leaves a structure with no named member undefined), and they compile
+/// under `-Wpedantic -Werror` here.
+const REFUSED: &[(&str, &str)] = &[];
 
 /// The cases whose generated C a C compiler rejects, each with the
 /// message it answers. A list and not a filter: a case here that starts
@@ -155,12 +153,10 @@ fn the_compiler_check_catches_a_deliberate_error() {
         .expect("the compiler rejected a good header");
 }
 
-/// The whole corpus through the C compiler, one invocation per case.
-/// `#[ignore]` by cost, like the six sibling gates; the CI job runs it
-/// with `--include-ignored`.
-#[test]
-#[ignore = "one C compiler invocation per corpus case; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through the C compiler, one invocation per case: every
+/// case renders or is refused as listed, and the cases of `share` (of
+/// `shares`) compile. 8.2 s for the corpus on the Linux test host.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     let Some(cc) = compiler() else {
         eprintln!("SKIPPED: no C compiler on the path.");
         return;
@@ -169,7 +165,8 @@ fn every_corpus_case_that_renders_also_compiles() {
     let mut unexpectedly_fine = Vec::new();
     let mut frontend = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus_harness::corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus_harness::corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
@@ -200,6 +197,10 @@ fn every_corpus_case_that_renders_also_compiles() {
                 continue;
             }
         };
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         let known = DOES_NOT_COMPILE.iter().find(|(case, _)| *case == name);
         match (c_compiles(&cc, &text, &name), known) {
@@ -227,8 +228,29 @@ fn every_corpus_case_that_renders_also_compiles() {
     );
     assert!(unexpectedly_fine.is_empty(), "{unexpectedly_fine:#?}");
     assert!(
-        checked >= MUST_RENDER,
-        "only {checked} corpus cases reached the compiler; the gate says nothing \
+        rendered >= MUST_RENDER,
+        "only {rendered} corpus cases rendered; the gate says nothing \
          below {MUST_RENDER}"
     );
+}
+
+/// Every corpus case that renders compiles under the C compiler.
+///
+/// The corpus in 2 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen` job runs them
+/// with the toolchain, eight shares at a time.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a half of the corpus through the C compiler; runs in integration-codegen"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 2);
+    }
+
+    #[test]
+    #[ignore = "a half of the corpus through the C compiler; runs in integration-codegen"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 2);
+    }
 }

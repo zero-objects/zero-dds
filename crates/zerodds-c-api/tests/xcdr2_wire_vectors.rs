@@ -171,7 +171,7 @@ unsafe extern "C" fn v1_decode(_buf: *const u8, _len: usize, _out_sample: *mut c
 }
 
 #[test]
-fn v1_empty_final_struct() {
+fn ffiloader_4_2_v1_empty_final_struct() {
     let mut ts = ts_template(b"Empty\0", 0);
     ts.encode = Some(v1_encode);
     ts.decode = Some(v1_decode);
@@ -224,7 +224,7 @@ unsafe extern "C" fn v2_decode(buf: *const u8, len: usize, out_sample: *mut c_vo
 }
 
 #[test]
-fn v2_plain_primitives_final() {
+fn ffiloader_4_2_v2_plain_primitives_final() {
     let mut ts = ts_template(b"Point\0", 0);
     ts.encode = Some(v2_encode);
     ts.decode = Some(v2_decode);
@@ -279,7 +279,7 @@ unsafe extern "C" fn v3_encode(
 }
 
 #[test]
-fn v3_mixed_primitives_final() {
+fn ffiloader_4_2_v3_mixed_primitives_final() {
     // Note on the spec-doc discrepancy:
     //
     // `zerodds-xcdr2-bindings-conformance-1.0.md` §6 V-3 shows a
@@ -351,7 +351,7 @@ unsafe extern "C" fn v4_encode(
 }
 
 #[test]
-fn v4_string_final() {
+fn ffiloader_4_2_v4_string_final() {
     let mut ts = ts_template(b"Greeting\0", 0);
     ts.encode = Some(v4_encode);
     let s = Greeting { text: "hello" };
@@ -390,7 +390,7 @@ unsafe extern "C" fn v5_encode(
 }
 
 #[test]
-fn v5_sequence_int32_final() {
+fn ffiloader_4_2_v5_sequence_int32_final() {
     let mut ts = ts_template(b"Bag\0", 0);
     ts.encode = Some(v5_encode);
     let ids = [1i32, 2, 3];
@@ -438,7 +438,7 @@ unsafe extern "C" fn v6_encode(
 }
 
 #[test]
-fn v6_sequence_string_final() {
+fn ffiloader_4_2_v6_sequence_string_final() {
     let mut ts = ts_template(b"Tags\0", 0);
     ts.encode = Some(v6_encode);
     let strs: [&str; 2] = ["a", "bc"];
@@ -479,7 +479,7 @@ unsafe extern "C" fn v7_encode(
 }
 
 #[test]
-fn v7_nested_modules_final() {
+fn ffiloader_4_2_v7_nested_modules_final() {
     let mut ts = ts_template(b"Outer::Inner::S\0", 0);
     ts.encode = Some(v7_encode);
     let s = OuterInnerS { x: 1234 };
@@ -539,7 +539,7 @@ unsafe extern "C" fn v8_key_hash(sample: *const c_void, out: *mut u8) -> c_int {
 }
 
 #[test]
-fn v8_keyed_struct_final() {
+fn ffiloader_4_2_v8_keyed_struct_final() {
     let mut ts = ts_template(b"Sensor\0", 0);
     ts.encode = Some(v8_encode);
     ts.is_keyed = 1;
@@ -597,7 +597,7 @@ unsafe extern "C" fn v9_encode(
 }
 
 #[test]
-fn v9_appendable_struct() {
+fn ffiloader_4_2_v9_appendable_struct() {
     let mut ts = ts_template(b"V\0", 1);
     ts.encode = Some(v9_encode);
     let s = Vab { a: 1, b: 2 };
@@ -663,7 +663,7 @@ unsafe extern "C" fn v10_encode(
 }
 
 #[test]
-fn v10_mutable_struct() {
+fn ffiloader_4_2_v10_mutable_struct() {
     let mut ts = ts_template(b"M\0", 2);
     ts.encode = Some(v10_encode);
     let s = Mab { a: 42, b: "hi" };
@@ -722,7 +722,7 @@ unsafe extern "C" fn v11_encode(
 }
 
 #[test]
-fn v11_optional_member_some() {
+fn ffiloader_4_2_v11_optional_member_some() {
     let mut ts = ts_template(b"O\0", 2);
     ts.encode = Some(v11_encode);
     let s = Omay {
@@ -741,7 +741,7 @@ fn v11_optional_member_some() {
 }
 
 #[test]
-fn v11_optional_member_none() {
+fn ffiloader_4_2_v11_optional_member_none() {
     let mut ts = ts_template(b"O\0", 2);
     ts.encode = Some(v11_encode);
     let s = Omay {
@@ -757,7 +757,7 @@ fn v11_optional_member_none() {
 // ============================================================================
 
 #[test]
-fn v12_mutable_no_explicit_sentinel() {
+fn ffiloader_4_2_v12_mutable_no_explicit_sentinel() {
     // Re-use V-10: after the last EMHEADER+NEXTINT+body NO
     // PID_LIST_END sentinel should be emitted. The wire byte length must
     // be exactly 4 + body_len, without a 4-byte trailer.

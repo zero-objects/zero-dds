@@ -12,8 +12,8 @@ The mechanism this column shares with the other twenty — the two walks, the fr
 
 **Repo:** `crates/lang-cst/src/ocaml/`, `crates/lang-render/src/ocaml.rs`
 
-**Tests:** `crates/lang-render/src/ocaml.rs::tests` (12 tests), among them `a_record_writes_one_field_per_line_with_a_trailing_semicolon`, `a_group_of_two_joins_them_with_and`, `a_postfix_type_needs_no_brackets_at_any_depth`, `a_tuple_is_always_bracketed_because_star_binds_loosest`, `a_variant_writes_a_leading_bar_per_constructor`;
-across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/ocaml.rs::tests` (12 tests), among them `xtypes_7_5_1_a_record_writes_one_field_per_line_with_a_trailing_semicolon`, `xtypes_7_5_1_a_group_of_two_joins_them_with_and`, `xtypes_7_5_1_a_postfix_type_needs_no_brackets_at_any_depth`, `xtypes_7_5_1_a_tuple_is_always_bracketed_because_star_binds_loosest`, `xtypes_7_5_1_a_variant_writes_a_leading_bar_per_constructor`;
+across all renderers `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/rule/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/ocaml`, endpoint SDK `endpoints/ocaml`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,8 +78,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::every_idl_primitive_reaches_an_ocaml_type`,
-`crates/lang-rules/tests/ocaml_end_to_end.rs::no_generated_type_is_platform_dependent_in_a_width_a_member_can_reach`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_2_every_idl_primitive_reaches_an_ocaml_type`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_2_no_generated_type_is_platform_dependent_in_a_width_a_member_can_reach`
 
 **Status:** done
 
@@ -89,7 +89,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_long_double_is_a_string_and_never_a_float`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_float`
 
 **Status:** done
 
@@ -99,8 +99,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_sequence_becomes_an_array_and_never_a_list`,
-`crates/lang-rules/tests/ocaml_end_to_end.rs::an_array_loses_its_bound_to_the_comment_because_ocaml_has_no_fixed_size_array`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_3_a_sequence_becomes_an_array_and_never_a_list`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_3_an_array_loses_its_bound_to_the_comment_because_ocaml_has_no_fixed_size_array`
 
 **Status:** done
 
@@ -110,7 +110,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_map_becomes_an_array_of_entry_records_and_never_a_hashtbl`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_3_a_map_becomes_an_array_of_entry_records_and_never_a_hashtbl`
 
 **Status:** done
 
@@ -120,7 +120,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_union_becomes_a_record_and_never_a_variant`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_4_3_a_union_becomes_a_record_and_never_a_variant`
 
 **Status:** done
 
@@ -130,8 +130,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::an_enum_becomes_a_variant_and_a_pair_of_conversions`,
-`crates/lang-rules/tests/ocaml_codec.rs::an_enumeration_crosses_through_its_conversions`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_becomes_a_variant_and_a_pair_of_conversions`,
+`crates/lang-rules/tests/ocaml_codec.rs::xtypes_7_2_2_4_1_1_an_enumeration_crosses_through_its_conversions`
 
 **Status:** done
 
@@ -141,9 +141,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_member_named_after_an_ocaml_keyword_is_escaped_and_keeps_its_idl_name`,
-`crates/lang-rules/tests/ocaml_end_to_end.rs::a_member_named_after_a_predefined_type_is_escaped_too`,
-`crates/lang-rules/tests/ocaml_end_to_end.rs::the_case_fold_adds_no_collision_the_frontend_does_not_already_report`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::idl_7_2_3_a_member_named_after_an_ocaml_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::idl_7_2_3_a_member_named_after_a_predefined_type_is_escaped_too`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::idl_7_2_3_the_case_fold_adds_no_collision_the_frontend_does_not_already_report`
 
 **Status:** done
 
@@ -153,7 +153,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_module_flattens_onto_the_name_because_a_recursive_group_cannot_cross_one`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::idl_7_5_2_a_module_flattens_onto_the_name_because_a_recursive_group_cannot_cross_one`
 
 **Status:** done
 
@@ -163,9 +163,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::a_self_recursive_type_is_one_declaration_that_names_itself`,
-`crates/lang-rules/tests/ocaml_end_to_end.rs::two_mutually_recursive_types_come_out_as_one_and_joined_group`,
-`crates/lang-rules/tests/ocaml_end_to_end.rs::a_recursive_group_compiles`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_9_a_self_recursive_type_is_one_declaration_that_names_itself`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_9_two_mutually_recursive_types_come_out_as_one_and_joined_group`,
+`crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_9_a_recursive_group_compiles`
 
 **Status:** done
 
@@ -175,9 +175,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_codec.rs::a_member_store_is_a_functional_record_update`,
-`crates/lang-rules/tests/ocaml_codec.rs::a_mutable_aggregate_compiles_with_its_seen_flags`,
-`crates/lang-rules/tests/ocaml_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+**Tests:** `crates/lang-rules/tests/ocaml_codec.rs::xtypes_7_4_3_a_member_store_is_a_functional_record_update`,
+`crates/lang-rules/tests/ocaml_codec.rs::xtypes_7_4_3_a_mutable_aggregate_compiles_with_its_seen_flags`,
+`crates/lang-rules/tests/ocaml_codec.rs::xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks`
 
 **Status:** done
 
@@ -189,7 +189,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -199,7 +199,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::the_generated_ocaml_compiles`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_3_1_the_generated_ocaml_compiles`
 
 **Status:** done
 
@@ -209,7 +209,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -219,7 +219,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/ocaml.rs`, `crates/lang-rules/src/adapter/ocaml.rs`
 
-**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::every_construct_the_table_claims_for_ocaml_produces_output`
+**Tests:** `crates/lang-rules/tests/ocaml_end_to_end.rs::xtypes_7_2_2_4_every_construct_the_table_claims_for_ocaml_produces_output`
 
 **Status:** done
 
@@ -229,9 +229,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/ocaml.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -243,8 +243,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -254,8 +254,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-ocaml-gen/`, `tools/wireprobe/wireprobe-zerodds-ocaml`, `tools/wireprobe/wireprobe-ocaml-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -263,8 +262,15 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ## Audit Status
 
-23 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-ocaml-1.0.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (job `merge-rust-lang-render`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 11 tests green.
+* `python3 ci/run_integration.py merge-codegen-ocaml` (job `merge-codegen-ocaml`) — 23 tests green.
+
+43 cited tests green, 0 not green.
+
+Open items: none.

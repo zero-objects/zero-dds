@@ -134,7 +134,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_basic_coap_uri() {
+    fn coap_6_1_parses_basic_coap_uri() {
         let u = parse_coap_uri("coap://example.com/.well-known/core").expect("ok");
         assert!(!u.secure);
         assert_eq!(u.host, "example.com");
@@ -146,42 +146,42 @@ mod tests {
     }
 
     #[test]
-    fn parses_coaps_default_port() {
+    fn coap_6_1_parses_coaps_default_port() {
         let u = parse_coap_uri("coaps://example.com/foo").expect("ok");
         assert!(u.secure);
         assert_eq!(u.port, 5684);
     }
 
     #[test]
-    fn parses_explicit_port() {
+    fn coap_6_1_parses_explicit_port() {
         let u = parse_coap_uri("coap://example.com:7777/foo").expect("ok");
         assert_eq!(u.port, 7777);
     }
 
     #[test]
-    fn parses_query_params() {
+    fn coap_6_1_parses_query_params() {
         let u = parse_coap_uri("coap://e.com/foo?a=1&b=2").expect("ok");
         assert_eq!(u.query_params, vec!["a=1".to_string(), "b=2".into()]);
     }
 
     #[test]
-    fn parses_empty_path_when_no_slash() {
+    fn coap_6_1_parses_empty_path_when_no_slash() {
         let u = parse_coap_uri("coap://e.com").expect("ok");
         assert!(u.path_segments.is_empty());
     }
 
     #[test]
-    fn rejects_unknown_scheme() {
+    fn coap_6_1_rejects_unknown_scheme() {
         assert_eq!(parse_coap_uri("http://e.com"), Err(UriError::InvalidScheme));
     }
 
     #[test]
-    fn rejects_missing_host() {
+    fn coap_6_1_rejects_missing_host() {
         assert_eq!(parse_coap_uri("coap://"), Err(UriError::MissingHost));
     }
 
     #[test]
-    fn rejects_invalid_port() {
+    fn coap_6_1_rejects_invalid_port() {
         assert_eq!(
             parse_coap_uri("coap://e.com:abc/"),
             Err(UriError::InvalidPort)
@@ -189,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_fragment() {
+    fn coap_6_1_rejects_fragment() {
         assert_eq!(
             parse_coap_uri("coap://e.com/#frag"),
             Err(UriError::FragmentNotAllowed)
@@ -197,13 +197,13 @@ mod tests {
     }
 
     #[test]
-    fn default_port_returns_5684_for_coaps() {
+    fn coap_1_1_default_port_returns_5684_for_coaps() {
         assert_eq!(default_port(true), 5684);
         assert_eq!(default_port(false), 5683);
     }
 
     #[test]
-    fn round_trip_path_filtering_strips_empty_segments() {
+    fn coap_6_1_round_trip_path_filtering_strips_empty_segments() {
         let u = parse_coap_uri("coap://e.com//foo//bar/").expect("ok");
         assert_eq!(u.path_segments, vec!["foo".to_string(), "bar".into()]);
     }

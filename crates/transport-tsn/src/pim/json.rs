@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn render_includes_six_top_level_arrays() {
+    fn tsn_7_3_2_render_includes_six_top_level_arrays() {
         let cfg = full_config();
         let s = render_dds_tsn_json(&cfg).unwrap();
         for k in [
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn render_qos_profile_emits_named_categories() {
+    fn tsn_7_3_2_render_qos_profile_emits_named_categories() {
         let cfg = full_config();
         let s = render_dds_tsn_json(&cfg).unwrap();
         assert!(s.contains(r#""name":"dp1""#));
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn render_node_emits_mac_in_canonical_form() {
+    fn tsn_7_3_2_render_node_emits_mac_in_canonical_form() {
         let cfg = full_config();
         let s = render_dds_tsn_json(&cfg).unwrap();
         assert!(s.contains("aa:bb:cc:dd:ee:ff"));
@@ -390,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn render_escapes_special_chars() {
+    fn tsn_7_3_2_render_escapes_special_chars() {
         let cfg = DdsTsnConfig {
             qos_libraries: alloc::vec![QosLibrary {
                 name: "lib\"with\\quotes".into(),

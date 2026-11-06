@@ -1,6 +1,6 @@
-//! No test may bind a DDS domain the kernel can take away from it.
+//! No test may bind a DDS domain another run can be on at the same time.
 //!
-//! # The defect this exists to catch
+//! # The defects this exists to catch
 //!
 //! A DDS domain number *is* a UDP port number: RTPS §9.6.1.4.1 puts a
 //! participant's SPDP multicast socket on `7400 + 250*domain` and its
@@ -21,19 +21,31 @@
 //! tests work at the same time": more binaries, more ephemeral sockets,
 //! more collisions, and none of it flaky in the usual sense.
 //!
-//! # The two rules
+//! A domain below the ephemeral range is not safe either when it is
+//! fixed. The same test runs at the same time in the other slot of the
+//! CI runner host, on the Linux test host and on the Windows runner, and
+//! SPDP multicast crosses the LAN between them (`crates/test-domains`,
+//! `BAND_VARIABLE`): two runs of one test on one fixed domain, with the
+//! fixed GUID prefixes most of these tests use, are one domain with two
+//! participants of each GUID. A lease is taken from the host's own share
+//! of the band, so no other host and no other job holds it.
 //!
-//! 1. A test that binds sockets on a **literal** domain may only use one
-//!    of [`common::RESERVED_DOMAINS`], so that
-//!    [`common::unique_domain`]'s lease band can never hand the same
-//!    number to a second test.
-//! 2. Every reserved domain's whole port window must end below `32768`,
+//! # The rules
+//!
+//! 1. Code that binds sockets leases its domain (`common::unique_domain`,
+//!    `common::lease_domain`) — tests, test modules and library code
+//!    alike. A literal domain is found at the binding call, in a `let`,
+//!    `const` or `static` it reaches the call through, and at the call
+//!    of a helper in the same file that forwards it.
+//! 2. A program a person starts by hand ([`PROGRAM_DIRECTORIES`]) and a
+//!    documentation comment show the documented domains: a literal there
+//!    is one of [`common::RESERVED_DOMAINS`], which the lease band never
+//!    hands out.
+//! 3. Every reserved domain's whole port window must end below `32768`,
 //!    the lower bound of the ephemeral range on both platforms this
 //!    workspace is tested on (Linux `32768..60999`, macOS
 //!    `49152..65535`). Domains above the range exist and the lease band
 //!    uses them, but a *fixed* domain has to be safe everywhere.
-//!
-//! Anything that needs neither is what [`common::unique_domain`] is for.
 
 #![allow(
     clippy::expect_used,
@@ -49,18 +61,39 @@ use std::path::{Path, PathBuf};
 /// matrix hands out. Linux starts at `32768`, macOS at `49152`.
 const LOWEST_EPHEMERAL_PORT: u32 = 32768;
 
-/// The calls that make a participant bind real UDP sockets.
+/// The calls that make a participant bind real UDP sockets, with the
+/// position of the domain among their arguments.
 ///
 /// `create_participant_offline` is deliberately absent: it opens no
 /// socket, so its domain argument is a label and not a port.
-const BINDING_CALLS: &[&str] = &[
-    "create_participant(",
-    "create_participant_with_config(",
-    "DcpsRuntime::start(",
+const BINDING_CALLS: &[(&str, usize)] = &[
+    ("create_participant(", 0),
+    ("create_participant_with_config(", 0),
+    ("DcpsRuntime::start(", 0),
+    // The builder: `.build()` goes through the online factory.
+    ("DomainParticipantFactory::create(", 0),
     // The C entry points go through the same online factory.
-    "zerodds_runtime_create(",
-    "zerodds_dpf_create_participant(",
+    ("zerodds_runtime_create(", 0),
+    ("zerodds_runtime_create_from_config(", 0),
+    ("zerodds_runtime_create_ros_defaults(", 0),
+    ("zerodds_runtime_create_secure(", 0),
+    ("zerodds_runtime_create_secure_from_env(", 0),
+    // The factory comes first: `(factory, domain, qos)`.
+    ("zerodds_dpf_create_participant(", 1),
 ];
+
+/// What every entry of [`BINDING_CALLS`] contains one of.
+const PREFILTER: &[&str] = &[
+    "create_participant",
+    "DcpsRuntime::start",
+    "DomainParticipantFactory::create",
+    "zerodds_runtime_create",
+];
+
+/// Directories whose programs a person starts by hand, on the domains the
+/// documentation names: `examples/` of a crate, and the `proofs/` programs
+/// that show one exchange with another vendor on its default domain.
+const PROGRAM_DIRECTORIES: &[&str] = &["examples", "proofs"];
 
 /// What a domain must never be computed from.
 ///
@@ -108,28 +141,47 @@ fn every_reserved_domain_stays_below_the_ephemeral_range() {
 }
 
 #[test]
-fn no_test_binds_a_literal_domain_the_lease_band_can_hand_out() {
+fn code_leases_the_domain_it_binds_and_an_example_names_a_reserved_one() {
     let root = workspace_root();
-    let mut offenders = Vec::new();
+    let mut literal = Vec::new();
+    let mut unreserved = Vec::new();
     let mut checked = 0usize;
-    for file in rust_sources(&root.join("crates")) {
-        let Ok(text) = std::fs::read_to_string(&file) else {
-            continue;
-        };
-        for (domain, line) in literal_domains(&text) {
+    for (call, _) in BINDING_CALLS {
+        assert!(
+            PREFILTER.iter().any(|stem| call.contains(stem)),
+            "`{call}` contains none of PREFILTER, so the files that use only \
+             it would be read past"
+        );
+    }
+    for (file, findings) in scan_in_parallel(rust_sources(&root.join("crates"))) {
+        let relative = file.strip_prefix(&root).unwrap_or(&file);
+        let program = relative.components().any(|component| {
+            component
+                .as_os_str()
+                .to_str()
+                .is_some_and(|name| PROGRAM_DIRECTORIES.contains(&name))
+        });
+        for found in findings {
             checked += 1;
-            // Above `MAX_DOMAIN` the lease band cannot produce the number
-            // at all, so there is nothing to collide with. The tests that
-            // sit there are the ones about the u16 port ceiling itself
-            // (`zerodds-c-api` on 232, 233 and 250).
-            if domain > common::MAX_DOMAIN {
+            // Above `MAX_DOMAIN` the port mapping refuses the number, so no
+            // socket is bound. The tests that sit there are the ones about
+            // the u16 port ceiling itself (`zerodds-c-api` on 232, 233 and
+            // 250).
+            if found.domain > common::MAX_DOMAIN {
                 continue;
             }
-            if !common::RESERVED_DOMAINS.contains(&domain) {
-                offenders.push(format!(
-                    "{}:{line} binds domain {domain}",
-                    file.strip_prefix(&root).unwrap_or(&file).display()
-                ));
+            let at = format!(
+                "{}:{} binds domain {}",
+                relative.display(),
+                found.line,
+                found.domain
+            );
+            if program || found.in_comment {
+                if !common::RESERVED_DOMAINS.contains(&found.domain) {
+                    unreserved.push(at);
+                }
+            } else {
+                literal.push(at);
             }
         }
     }
@@ -139,15 +191,26 @@ fn no_test_binds_a_literal_domain_the_lease_band_can_hand_out() {
          BINDING_CALLS no longer match the code they are supposed to watch"
     );
     assert!(
-        offenders.is_empty(),
-        "these bind a literal DDS domain that `common::unique_domain()` can \
-         lease to another test at the same time; two participants on one \
-         domain share a port, and a socket bound to 0.0.0.0:port receives \
-         every multicast group on that port, so they see each other's \
-         discovery:\n  {}\n\
-         Use `common::unique_domain()`, or add the number to \
-         `common::RESERVED_DOMAINS` if the domain has to stay fixed.",
-        offenders.join("\n  ")
+        literal.is_empty(),
+        "these bind a literal DDS domain. The same test runs at the same \
+         time in the other slot of the CI runner host, on the Linux test host \
+         and on the Windows runner, SPDP multicast crosses the LAN between \
+         them, and two runs on one fixed domain see each other's \
+         participants:\n  {}\n\
+         Lease the domain: `common::unique_domain()` in an integration test, \
+         `zerodds_test_domains::lease_domain()` held for as long as the \
+         participants live in a unit test.",
+        literal.join("\n  ")
+    );
+    assert!(
+        unreserved.is_empty(),
+        "these programs or documentation comments bind a literal DDS domain \
+         that `common::unique_domain()` can lease to a test at the same time; \
+         two participants on one domain share a port, and a socket bound to \
+         0.0.0.0:port receives every multicast group on that port, so they \
+         see each other's discovery:\n  {}\n\
+         Name one of `common::RESERVED_DOMAINS`.",
+        unreserved.join("\n  ")
     );
 }
 
@@ -198,23 +261,76 @@ fn no_domain_is_computed_from_a_process_id_or_a_counter() {
     );
 }
 
+/// [`literal_domains`] of every file but this one, which names the calls it
+/// looks for, on a thread per CPU (at most eight): the test is built without
+/// optimisation, and one thread through the 47 MB of the workspace's Rust
+/// took 3.2 s on the CI runner host (pipeline 9087).
+fn scan_in_parallel(files: Vec<PathBuf>) -> Vec<(PathBuf, Vec<LiteralDomain>)> {
+    let files: Vec<PathBuf> = files
+        .into_iter()
+        .filter(|file| !file.ends_with("domain_hygiene.rs"))
+        .collect();
+    let threads = std::thread::available_parallelism()
+        .map_or(4, std::num::NonZero::get)
+        .clamp(1, 8);
+    let share = files.len().div_ceil(threads).max(1);
+    std::thread::scope(|scope| {
+        let workers: Vec<_> = files
+            .chunks(share)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    chunk
+                        .iter()
+                        .filter_map(|file| {
+                            let text = std::fs::read_to_string(file).ok()?;
+                            Some((file.clone(), literal_domains(&text)))
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        workers
+            .into_iter()
+            .flat_map(|worker| worker.join().expect("a scan thread"))
+            .collect()
+    })
+}
+
+/// One literal domain at a socket-binding call.
+struct LiteralDomain {
+    domain: i32,
+    /// The line of the call, from 1.
+    line: usize,
+    /// The call is in a comment: documentation, not code.
+    in_comment: bool,
+}
+
 /// Every domain passed as a decimal literal to a socket-binding call or
-/// to a helper in the same file that forwards one, with its line.
+/// to a helper in the same file that forwards one, with its line: the
+/// literal at the call, or the literal a `let` of the same function or a
+/// `const` or `static` of the file binds the argument's name to.
 ///
-/// The argument may sit on the call's line or on the next one —
-/// `rustfmt` breaks the call as soon as it grows — so both are read.
+/// The argument may sit on the call's line or on the lines after it —
+/// `rustfmt` breaks the call as soon as it grows — so they are read.
 ///
 /// What this does **not** see: a domain that reaches a binding call
-/// through two hops, through a `const`, or through a helper whose
-/// parameter is named something else. The rule it enforces is a floor,
-/// not a proof.
-fn literal_domains(text: &str) -> Vec<(i32, usize)> {
+/// through two hops, through a struct field or a function's return value,
+/// or through a helper whose parameter is named something else. The rule
+/// it enforces is a floor, not a proof.
+fn literal_domains(text: &str) -> Vec<LiteralDomain> {
+    // A file that names no binding call has no helper that forwards to one
+    // either: most of the workspace, read past here. Four searches instead
+    // of one per call: every call contains one of these.
+    if !PREFILTER.iter().any(|stem| text.contains(stem)) {
+        return Vec::new();
+    }
     let mut calls: Vec<(String, usize)> = BINDING_CALLS
         .iter()
-        .map(|call| ((*call).to_string(), 0))
+        .map(|(call, position)| ((*call).to_string(), *position))
         .collect();
     calls.extend(domain_forwarding_helpers(text));
     let lines: Vec<&str> = text.lines().collect();
+    let items = item_bindings(&lines);
     let mut found = Vec::new();
     for index in 0..lines.len() {
         for (call, position) in &calls {
@@ -223,27 +339,38 @@ fn literal_domains(text: &str) -> Vec<(i32, usize)> {
             // matched on its own pass, so skip the short match here.
             if call == "create_participant(" {
                 let line = lines[index];
-                if let Some(at) = line.find(call.as_str()) {
-                    if line[..at + call.len()].ends_with("create_participant_with_config(") {
-                        continue;
-                    }
+                if let Some(at) = line.find(call.as_str())
+                    && line[..at + call.len()].ends_with("create_participant_with_config(")
+                {
+                    continue;
                 }
             }
-            if let Some(domain) = literal_at_position(&lines, index, call, *position) {
-                found.push((domain, index + 1));
+            if let Some(domain) = literal_at_position(&lines, &items, index, call, *position) {
+                found.push(LiteralDomain {
+                    domain,
+                    line: index + 1,
+                    in_comment: lines[index].trim_start().starts_with("//"),
+                });
             }
         }
     }
     found
 }
 
-/// The argument at `position` of `call`, if it is a decimal literal.
+/// The argument at `position` of `call`, if it is a decimal literal or a
+/// name bound to one (see [`bound_literal`]).
 ///
 /// Arguments are read from the call's own line and from the lines after
 /// it, because `rustfmt` puts each one on its own line as soon as the
 /// call grows. Nesting is tracked so that a comma inside a nested call
 /// does not count as an argument separator.
-fn literal_at_position(lines: &[&str], index: usize, call: &str, position: usize) -> Option<i32> {
+fn literal_at_position(
+    lines: &[&str],
+    items: &std::collections::HashMap<&str, Option<i32>>,
+    index: usize,
+    call: &str,
+    position: usize,
+) -> Option<i32> {
     let line = lines[index];
     let at = line.find(call)?;
     // A call is only a call if what precedes the name is not itself part
@@ -265,14 +392,135 @@ fn literal_at_position(lines: &[&str], index: usize, call: &str, position: usize
         rest.push_str(follower);
     }
     let argument = split_arguments(&rest).into_iter().nth(position)?;
-    let argument = argument.trim();
-    let digits: String = argument.chars().take_while(char::is_ascii_digit).collect();
-    if digits.is_empty() || digits.len() != argument.len() {
-        // A number with anything after it (`0xFF`, `1_000`, `12u8`) is
-        // not the plain domain literal this rule is about.
+    // `domain as u32` is the domain.
+    let argument = argument
+        .trim()
+        .split_once(" as ")
+        .map_or(argument.trim(), |(value, _)| value.trim());
+    if let Some(domain) = decimal(argument) {
+        return Some(domain);
+    }
+    if !argument.is_empty()
+        && argument
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return bound_literal(lines, items, index, argument);
+    }
+    None
+}
+
+/// `text` as a plain decimal literal. A number with anything after it
+/// (`0xFF`, `1_000`, `12u8`) is not the domain literal this rule is
+/// about.
+fn decimal(text: &str) -> Option<i32> {
+    if text.is_empty() || !text.chars().all(|c| c.is_ascii_digit()) {
         return None;
     }
-    digits.parse::<i32>().ok()
+    text.parse::<i32>().ok()
+}
+
+/// The literal `name` is bound to where it is used on line `index`: a
+/// `let` above it in the same function, or else a `const` or `static` of
+/// the file (`items`). `None` when the nearest binding is anything but a
+/// literal, or there is none.
+fn bound_literal(
+    lines: &[&str],
+    items: &std::collections::HashMap<&str, Option<i32>>,
+    index: usize,
+    name: &str,
+) -> Option<i32> {
+    for line in lines[..index].iter().rev() {
+        if let Some(value) = binding_of(line, name, &["let"]) {
+            return value;
+        }
+        if starts_a_function(line) {
+            break;
+        }
+    }
+    items.get(name).copied().flatten()
+}
+
+/// Every `const` and `static` of a file by name, with the literal it is
+/// bound to (`None` for anything else); the first of a name counts.
+fn item_bindings<'a>(lines: &[&'a str]) -> std::collections::HashMap<&'a str, Option<i32>> {
+    let mut items = std::collections::HashMap::new();
+    for &line in lines {
+        let mut rest = line.trim_start();
+        for visibility in ["pub(crate) ", "pub "] {
+            rest = rest.strip_prefix(visibility).unwrap_or(rest);
+        }
+        let Some(rest) = rest
+            .strip_prefix("const ")
+            .or_else(|| rest.strip_prefix("static "))
+        else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let rest = rest.strip_prefix("mut ").unwrap_or(rest).trim_start();
+        let end = rest
+            .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .unwrap_or(rest.len());
+        if end == 0 {
+            continue;
+        }
+        let name = &rest[..end];
+        if let Some(value) = binding_of(line, name, &["const", "static"]) {
+            items.entry(name).or_insert(value);
+        }
+    }
+    items
+}
+
+/// Whether `line` binds `name` with one of `keywords`: `Some(Some(n))`
+/// for a decimal literal on the same line, `Some(None)` for anything
+/// else, `None` when the line binds something else or nothing.
+#[allow(clippy::option_option)]
+fn binding_of(line: &str, name: &str, keywords: &[&str]) -> Option<Option<i32>> {
+    let mut rest = line.trim_start();
+    for visibility in ["pub(crate) ", "pub "] {
+        rest = rest.strip_prefix(visibility).unwrap_or(rest);
+    }
+    let rest = keywords
+        .iter()
+        .find_map(|keyword| rest.strip_prefix(keyword)?.strip_prefix(' '))?
+        .trim_start();
+    let rest = rest.strip_prefix("mut ").unwrap_or(rest).trim_start();
+    let rest = rest.strip_prefix(name)?;
+    if rest.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '_') {
+        return None;
+    }
+    // `let domain: u32 = 27;`
+    let (_, value) = rest.split_once('=')?;
+    Some(
+        value
+            .trim()
+            .strip_suffix(';')
+            .and_then(|value| decimal(value.trim())),
+    )
+}
+
+/// Whether `line` is the signature of a function: the boundary a `let`
+/// does not reach across.
+fn starts_a_function(line: &str) -> bool {
+    let mut rest = line.trim_start();
+    loop {
+        let before = rest;
+        for qualifier in [
+            "pub(crate) ",
+            "pub ",
+            "async ",
+            "unsafe ",
+            "const ",
+            "extern \"C\" ",
+        ] {
+            rest = rest.strip_prefix(qualifier).unwrap_or(rest);
+        }
+        if rest == before {
+            break;
+        }
+    }
+    rest.starts_with("fn ")
 }
 
 /// Splits an argument list at top-level commas, up to its closing paren.
@@ -308,7 +556,11 @@ fn split_arguments(text: &str) -> Vec<String> {
 /// `("name(", argument index)`.
 fn domain_forwarding_helpers(text: &str) -> Vec<(String, usize)> {
     let mut out = Vec::new();
-    for (index, line) in text.lines().enumerate() {
+    // The lines once: a window skipped to from the top for every `fn` read
+    // the file once per function. The test took 10.5 s on the Linux CI host
+    // (job 228489) and ran past its 25 s on Windows (job 228611).
+    let lines: Vec<&str> = text.lines().collect();
+    for (index, line) in lines.iter().enumerate() {
         let Some(rest) = line.trim_start().strip_prefix("fn ") else {
             continue;
         };
@@ -323,13 +575,8 @@ fn domain_forwarding_helpers(text: &str) -> Vec<(String, usize)> {
         // enough more to see whether the body binds anything. A helper
         // that ends in `create_participant_offline` forwards a label,
         // not a port, and is not this rule's business.
-        let window: String = text
-            .lines()
-            .skip(index)
-            .take(60)
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !BINDING_CALLS.iter().any(|call| {
+        let window: String = lines[index..lines.len().min(index + 60)].join("\n");
+        if !BINDING_CALLS.iter().any(|(call, _)| {
             window.match_indices(call).any(|(at, _)| {
                 *call != "create_participant("
                     || !window[..at + call.len()].ends_with("create_participant_with_config(")
@@ -337,12 +584,7 @@ fn domain_forwarding_helpers(text: &str) -> Vec<(String, usize)> {
         }) {
             continue;
         }
-        let signature: String = text
-            .lines()
-            .skip(index)
-            .take(12)
-            .collect::<Vec<_>>()
-            .join("\n");
+        let signature: String = lines[index..lines.len().min(index + 12)].join("\n");
         let Some(after) = signature.find('(') else {
             continue;
         };

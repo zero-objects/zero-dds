@@ -107,10 +107,10 @@ impl Drop for PooledConnection {
             if let Some(n) = pool.in_use_count.get_mut(&self.key) {
                 *n = n.saturating_sub(1);
             }
-            if self.return_to_pool {
-                if let Some(c) = conn {
-                    pool.idle.entry(self.key.clone()).or_default().push(c);
-                }
+            if self.return_to_pool
+                && let Some(c) = conn
+            {
+                pool.idle.entry(self.key.clone()).or_default().push(c);
             }
         }
     }
@@ -267,10 +267,10 @@ impl Connector {
         let conn = match make() {
             Ok(c) => c,
             Err(e) => {
-                if let Ok(mut pool) = self.pool.lock() {
-                    if let Some(n) = pool.in_use_count.get_mut(&key) {
-                        *n = n.saturating_sub(1);
-                    }
+                if let Ok(mut pool) = self.pool.lock()
+                    && let Some(n) = pool.in_use_count.get_mut(&key)
+                {
+                    *n = n.saturating_sub(1);
                 }
                 return Err(e);
             }

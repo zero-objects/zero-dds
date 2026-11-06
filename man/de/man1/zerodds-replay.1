@@ -1,0 +1,119 @@
+.TH ZERODDS-REPLAY 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-replay \- aufgezeichnete ZeroDDS-Mitschnitte auf die Standardausgabe oder in eine laufende Domäne abspielen
+.SH ÜBERSICHT
+.B zerodds-replay inspect
+.I DATEI
+.br
+.B zerodds-replay dump
+.I DATEI
+.br
+.B zerodds-replay replay
+.I DATEI
+[\fB\-\-time\-scale\fR \fIF\fR]
+[\fB\-\-topic\fR \fINAME\fR]...
+[\fB\-\-inject\fR [\fB\-\-inject\-domain\fR \fIN\fR]]
+[\fB\-\-representation\fR \fIH\fR]
+.SH BESCHREIBUNG
+.B zerodds-replay
+liest einen Mitschnitt und gibt seine Frames in der aufgezeichneten
+Reihenfolge wieder aus, mit den Zeitabständen zwischen den Frames aus der
+ursprünglichen Aufzeichnung.
+.PP
+Das Format der Eingabe
+.I DATEI
+wird an ihrer Endung erkannt:
+.B .zddsrec
+(binärer Mitschnitt),
+.B .ndjson
+/
+.B .json
+(dekodiertes NDJSON) oder
+.B .db
+/
+.B .sqlite
+(dekodiertes SQLite). Die NDJSON- und die SQLite-Form tragen die
+ursprünglichen
+.BR raw_cdr -Bytes,
+sodass ein einmal aufgezeichnetes Sample byteidentisch abgespielt wird, gleich
+welches Artefakt aufbewahrt wurde.
+.PP
+Standardmäßig werden die Frames auf
+.B stdout
+ausgegeben. Mit
+.B \-\-inject
+wird jedes Frame über einen zwischengespeicherten Writer je Topic erneut in
+eine laufende DDS-Domäne veröffentlicht, mit neu gestempelter aufgezeichneter
+Wire-Nutzlast.
+.SH BEFEHLE
+.TP
+.B inspect
+Der Kopf eines
+.BR .zddsrec -Mitschnitts:
+Formatversion, Zeitbasis, Teilnehmer mit ihren GUIDs, Topics mit ihren Typen
+und die Anzahl der Frames, Nutzlast-Bytes und die Zeitspanne.
+.TP
+.B dump
+Eine Zeile je Frame eines
+.BR .zddsrec -Mitschnitts:
+Zeitversatz, Teilnehmer, Topic, Art, Nutzlastlänge.
+.TP
+.B replay
+Gibt die Frames mit ihren aufgezeichneten Zeitabständen wieder aus, auf
+stdout oder, mit
+.BR \-\-inject ,
+in eine laufende Domäne.
+.SH OPTIONEN FÜR replay
+.TP
+.BR \-\-time\-scale " " \fIF\fR
+Abspielgeschwindigkeit relativ zur Uhrzeit.
+.I 1.0
+= Echtzeit;
+.I 60.0
+spielt eine einstündige Aufzeichnung in einer Minute ab;
+.I 0.5
+läuft mit halber Geschwindigkeit. Standard: \fI1.0\fR.
+.TP
+.BR \-\-topic " " \fINAME\fR
+Nur Frames mit diesem DDS-/ROS-Topic-Namen abspielen (wiederholbar). Standard:
+alle Topics im Mitschnitt.
+.TP
+.BR \-\-inject
+Frames erneut in eine laufende DDS-Domäne einspeisen, statt sie auf stdout
+auszugeben.
+.TP
+.BR \-\-inject\-domain " " \fIN\fR
+DCPS-Domain-ID für \fB\-\-inject\fR. Standard: 0.
+.TP
+.BR \-\-representation " " \fIH\fR
+Die Kennung der Darstellung (representation identifier), zwei Oktette
+hexadezimal (etwa \fI0007\fR für CDR2_LE), für Samples, deren Mitschnitt sie
+nicht enthält (Formatversion 2 oder ein dekodierter Mitschnitt von vor ihrer
+Aufnahme). Ohne sie werden solche Samples nicht eingespeist.
+.SH GLOBALE OPTIONEN
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Hilfe und beendet sich.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus und beendet sich.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg.
+.TP
+.B 1
+Der Mitschnitt konnte nicht gelesen werden, oder das Abspielen ist
+fehlgeschlagen.
+.TP
+.B 2
+Die Kommandozeile war falsch (kein oder ein unbekannter Befehl, eine fehlende
+Datei, eine ungültige Option).
+.SH SIEHE AUCH
+.BR zerodds-record (1),
+.BR zerodds-spy (1)
+.PP
+Spec:
+.I docs/specs/zddsrec-1.0.md
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

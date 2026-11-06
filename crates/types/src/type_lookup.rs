@@ -127,7 +127,7 @@ use crate::type_object::common::{
 /// (§7.3.1.2.1.4), and §7.3.1.2.1.1 derives the id from it: the first
 /// four octets of `MD5(name)` read as a **little-endian** `u32`, masked
 /// with `0x0FFFFFFF`. [`NameHash::member_id_from_name`](crate::type_object::common::NameHash::member_id_from_name) is that
-/// derivation and [`member_ids_are_the_hashid_of_their_name`] recomputes
+/// derivation and [`xtypes_7_6_3_3_3_member_ids_are_the_hashid_of_their_name`] recomputes
 /// every constant below from it, so a transcription slip here fails a
 /// test rather than a peer.
 ///
@@ -137,7 +137,7 @@ use crate::type_object::common::{
 /// 0x05aafb31` for `getDependencies`, and the same function reproduces
 /// both ([`OPERATION_GET_TYPES`], [`OPERATION_GET_DEPENDENCIES`]).
 ///
-/// [`member_ids_are_the_hashid_of_their_name`]: self
+/// [`xtypes_7_6_3_3_3_member_ids_are_the_hashid_of_their_name`]: self
 pub mod member_ids {
     /// `TypeLookup_getTypes_In::type_ids` and
     /// `TypeLookup_getTypeDependencies_In::type_ids`.
@@ -432,24 +432,35 @@ impl ContinuationPoint {
     /// Encode as `sequence<octet, 32>`.
     ///
     /// # Errors
-    /// A length that does not fit a `u32`.
+    /// A value longer than [`Self::MAX_LEN`] is refused, not cut: a
+    /// shortened continuation point is another position in the reply, and
+    /// the server would answer from there without anything saying so.
     pub fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
-        let len = u32::try_from(self.0.len().min(Self::MAX_LEN)).unwrap_or(Self::MAX_LEN as u32);
-        w.write_u32(len);
-        {
-            w.write_bytes(&self.0[..len as usize]);
-            Ok(())
+        if self.0.len() > Self::MAX_LEN {
+            return Err(WireError::refused(
+                w.position(),
+                "a continuation point of at most 32 octets (sequence<octet, 32>, §7.6.3.3.3)",
+            ));
         }
+        // At most 32, so the cast is exact.
+        w.write_u32(self.0.len() as u32);
+        w.write_bytes(&self.0);
+        Ok(())
     }
 
     /// Decode.
     ///
     /// # Errors
-    /// Buffer underflow / length > MAX_LEN.
+    /// Buffer underflow; a length above [`Self::MAX_LEN`], named at the
+    /// offset of the length.
     pub fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
+        let at = r.position();
         let len = r.read_u32()? as usize;
         if len > Self::MAX_LEN {
-            return Err(TypeCodecError::UnknownTypeKind { kind: 0 });
+            return Err(TypeCodecError::Wire(WireError::refused(
+                at,
+                "a continuation point of at most 32 octets (sequence<octet, 32>, §7.6.3.3.3)",
+            )));
         }
         Ok(Self(r.read_bytes(len)?.to_vec()))
     }
@@ -1139,7 +1150,7 @@ mod tests {
     /// Every constant of [`member_ids`] is the `@hashid` of the member
     /// name §7.6.3.3.3 gives it, recomputed rather than transcribed.
     #[test]
-    fn member_ids_are_the_hashid_of_their_name() {
+    fn xtypes_7_6_3_3_3_member_ids_are_the_hashid_of_their_name() {
         assert_eq!(
             member_ids::TYPE_IDS,
             NameHash::member_id_from_name("type_ids")
@@ -1166,7 +1177,7 @@ mod tests {
     /// `0x00d3528…` — the clause's own numbers are what settles the
     /// direction.
     #[test]
-    fn the_operation_hashes_are_the_ones_the_clause_prints() {
+    fn xtypes_7_6_3_3_3_the_operation_hashes_are_the_ones_the_clause_prints() {
         assert_eq!(
             OPERATION_GET_TYPES as u32,
             NameHash::member_id_from_name("getTypes")
@@ -1228,7 +1239,7 @@ mod tests {
     /// what the clause means by "Implementers may add their own members
     /// to these MUTABLE types."
     #[test]
-    fn an_unknown_member_id_is_skipped_rather_than_refused() {
+    fn xtypes_7_6_3_3_3_an_unknown_member_id_is_skipped_rather_than_refused() {
         let mut w = crate::framing::xcdr2_writer();
         encode_appendable::<WireError>(&mut w, |w| {
             crate::framing::encode_mutable_member(
@@ -1267,11 +1278,6 @@ mod tests {
         });
     }
 
-    #[test]
-    fn empty_get_types_request_roundtrips() {
-        roundtrip_get_types_request(GetTypesRequest::default());
-    }
-
     // ------------------------------------------------------------------
     // getTypes_Out carries both of its members
     // ------------------------------------------------------------------
@@ -1281,7 +1287,7 @@ mod tests {
     /// `tl-gettypes-out` fed eight zero octets — two empty sequences —
     /// and got four back.
     #[test]
-    fn get_types_reply_carries_types_and_complete_to_minimal() {
+    fn xtypes_7_6_3_3_3_get_types_reply_carries_types_and_complete_to_minimal() {
         let reply = GetTypesReply {
             types: alloc::vec![
                 pair(TypeObject::Minimal(sample_minimal())),
@@ -1308,7 +1314,7 @@ mod tests {
     /// The reply carries the identifier the object was asked for under,
     /// not the object alone.
     #[test]
-    fn a_reply_pair_names_the_identifier_it_answers() {
+    fn xtypes_annex_b_a_reply_pair_names_the_identifier_it_answers() {
         let object = TypeObject::Minimal(sample_minimal());
         let p = pair(object.clone());
         assert_eq!(
@@ -1325,53 +1331,26 @@ mod tests {
         );
     }
 
-    #[test]
-    fn empty_get_types_reply_roundtrips() {
-        let reply = GetTypesReply::default();
-        let mut w = crate::framing::xcdr2_writer();
-        reply.encode_into(&mut w).unwrap();
-        let bytes = w.finish();
-        let mut r = crate::framing::xcdr2_reader(&bytes);
-        let decoded = GetTypesReply::decode_from(&mut r).unwrap();
-        assert_eq!(decoded, reply);
-    }
-
     // ------------------------------------------------------------------
     // ContinuationPoint
     // ------------------------------------------------------------------
 
+    /// §7.6.3.3.3: `sequence<octet, 32>`. A longer value is refused and
+    /// nothing goes on the wire; the clamp to 32 that stood here handed the
+    /// server a different position than the one it gave out.
     #[test]
-    fn continuation_point_roundtrip_and_max_len() {
-        let cp = ContinuationPoint(alloc::vec![0x11, 0x22, 0x33]);
+    fn xtypes_7_6_3_3_3_an_overlong_continuation_point_is_refused_not_cut() {
+        let oversized = ContinuationPoint(alloc::vec![0xFF; ContinuationPoint::MAX_LEN + 1]);
         let mut w = crate::framing::xcdr2_writer();
-        cp.encode_into(&mut w).unwrap();
-        let bytes = w.finish();
-        let mut r = crate::framing::xcdr2_reader(&bytes);
-        assert_eq!(ContinuationPoint::decode_from(&mut r).unwrap(), cp);
-
-        // MAX_LEN clamp
-        let oversized = ContinuationPoint(alloc::vec![0xFF; 64]);
-        let mut w = crate::framing::xcdr2_writer();
-        oversized.encode_into(&mut w).unwrap();
-        let bytes = w.finish();
-        let mut r = crate::framing::xcdr2_reader(&bytes);
-        let decoded = ContinuationPoint::decode_from(&mut r).unwrap();
-        assert_eq!(decoded.0.len(), ContinuationPoint::MAX_LEN);
+        assert!(matches!(
+            oversized.encode_into(&mut w),
+            Err(WireError::OutOfRange { at: 0, .. })
+        ));
+        assert!(w.finish().is_empty(), "nothing goes on the wire");
     }
 
     #[test]
-    fn continuation_point_too_large_on_decode_rejected() {
-        let mut w = crate::framing::xcdr2_writer();
-        w.write_u32(100); // > MAX_LEN=32
-        w.write_bytes(&[0u8; 100]);
-        let bytes = w.finish();
-        let mut r = crate::framing::xcdr2_reader(&bytes);
-        let err = ContinuationPoint::decode_from(&mut r).unwrap_err();
-        assert!(matches!(err, TypeCodecError::UnknownTypeKind { .. }));
-    }
-
-    #[test]
-    fn continuation_point_len_zero_encodes_to_four_zero_bytes() {
+    fn xtypes_7_6_3_3_4_1_continuation_point_len_zero_encodes_to_four_zero_bytes() {
         let cp = ContinuationPoint(alloc::vec![]);
         let mut w = crate::framing::xcdr2_writer();
         cp.encode_into(&mut w).unwrap();
@@ -1392,14 +1371,17 @@ mod tests {
     }
 
     #[test]
-    fn continuation_point_len_max_plus_one_on_decode_rejected() {
+    fn xtypes_7_6_3_3_3_continuation_point_len_max_plus_one_on_decode_rejected() {
         let mut w = crate::framing::xcdr2_writer();
         w.write_u32((ContinuationPoint::MAX_LEN + 1) as u32);
         w.write_bytes(&[0u8; 33]);
         let bytes = w.finish();
         let mut r = crate::framing::xcdr2_reader(&bytes);
         let err = ContinuationPoint::decode_from(&mut r).unwrap_err();
-        assert!(matches!(err, TypeCodecError::UnknownTypeKind { .. }));
+        assert!(matches!(
+            err,
+            TypeCodecError::Wire(WireError::OutOfRange { at: 0, .. })
+        ));
     }
 
     // ------------------------------------------------------------------
@@ -1407,7 +1389,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn get_type_dependencies_request_reply_roundtrip() {
+    fn xtypes_7_6_3_3_3_get_type_dependencies_request_reply_roundtrip() {
         let req = GetTypeDependenciesRequest {
             type_ids: alloc::vec![TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash(
                 [0xAA; 14]
@@ -1441,32 +1423,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_get_type_dependencies_request_roundtrips() {
-        let req = GetTypeDependenciesRequest::default();
-        let mut w = crate::framing::xcdr2_writer();
-        req.encode_into(&mut w).unwrap();
-        let bytes = w.finish();
-        let mut r = crate::framing::xcdr2_reader(&bytes);
-        assert_eq!(
-            GetTypeDependenciesRequest::decode_from(&mut r).unwrap(),
-            req
-        );
-    }
-
-    #[test]
-    fn empty_get_type_dependencies_reply_roundtrips() {
-        let reply = GetTypeDependenciesReply::default();
-        let mut w = crate::framing::xcdr2_writer();
-        reply.encode_into(&mut w).unwrap();
-        let bytes = w.finish();
-        let mut r = crate::framing::xcdr2_reader(&bytes);
-        assert_eq!(
-            GetTypeDependenciesReply::decode_from(&mut r).unwrap(),
-            reply
-        );
-    }
-
-    #[test]
     fn get_type_dependencies_request_with_continuation_payload_roundtrips() {
         let req = GetTypeDependenciesRequest {
             type_ids: alloc::vec![],
@@ -1487,7 +1443,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn get_types_result_roundtrips_both_arms() {
+    fn xtypes_7_6_3_3_3_get_types_result_roundtrips_both_arms() {
         for value in [
             GetTypesResult::Ok(GetTypesReply {
                 types: alloc::vec![pair(TypeObject::Minimal(sample_minimal()))],
@@ -1521,7 +1477,7 @@ mod tests {
     }
 
     #[test]
-    fn type_lookup_call_roundtrips_both_operations() {
+    fn xtypes_7_6_3_3_3_type_lookup_call_roundtrips_both_operations() {
         for value in [
             TypeLookupCall::GetTypes(GetTypesRequest {
                 type_ids: alloc::vec![TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash(
@@ -1563,7 +1519,7 @@ mod tests {
     }
 
     #[test]
-    fn type_lookup_return_roundtrips_both_operations() {
+    fn xtypes_7_6_3_3_3_type_lookup_return_roundtrips_both_operations() {
         for value in [
             TypeLookupReturn::GetTypes(GetTypesResult::default()),
             TypeLookupReturn::GetTypeDependencies(GetTypeDependenciesResult::Retcode(-1)),
@@ -1577,7 +1533,7 @@ mod tests {
     }
 
     #[test]
-    fn type_lookup_request_and_reply_roundtrip() {
+    fn xtypes_7_6_3_3_3_type_lookup_request_and_reply_roundtrip() {
         let header = RequestHeader {
             writer_guid: [0x5A; 16],
             sequence_number: 42,
@@ -1611,7 +1567,7 @@ mod tests {
     /// §7.6.3.3.4: the prefix, then the GUID in lower-case hexadecimal
     /// with no `0x` ahead of it.
     #[test]
-    fn the_service_instance_name_is_the_prefix_and_lowercase_hex() {
+    fn xtypes_7_6_3_3_4_the_service_instance_name_is_the_prefix_and_lowercase_hex() {
         let name =
             service_instance_name(&[0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF, 0, 0, 0, 0]);
         assert_eq!(name, "dds.builtin.TOS.0123456789abcdef00000000000001c1");

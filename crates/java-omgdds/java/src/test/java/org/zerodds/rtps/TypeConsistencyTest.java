@@ -100,14 +100,14 @@ class TypeConsistencyTest {
     }
 
     @Test
-    void equalIdentifiersAreTheSameTypeWithoutAnObject() {
+    void xtypes_7_6_3_4_2_equal_type_identifiers_are_the_same_type_without_an_object() {
         XTypes.TypeIdentifier pose = struct("Pose", MUTABLE, member(1, "x", plain(XTypes.TK_INT32)));
         objects.clear();
         assertEquals(TypeConsistency.Kind.CONSISTENT, decide(pose, pose).kind);
     }
 
     @Test
-    void aMemberAppendedToAMutableStructureIsAssignableBothWays() {
+    void xtypes_7_2_4_4_a_member_appended_to_a_mutable_structure_is_assignable_both_ways() {
         XTypes.TypeIdentifier old = struct("Pose", MUTABLE, member(1, "x", plain(XTypes.TK_INT32)));
         XTypes.TypeIdentifier appended = struct("Pose", MUTABLE, member(1, "x", plain(XTypes.TK_INT32)),
                 member(2, "y", plain(XTypes.TK_INT32)));
@@ -116,7 +116,7 @@ class TypeConsistencyTest {
     }
 
     @Test
-    void aParameterOfAnotherTypeIsNotAssignable() {
+    void xtypes_7_2_4_4_a_member_of_another_type_is_not_assignable() {
         XTypes.TypeIdentifier byLong = struct("Svc_add_In", MUTABLE, member(7, "a", plain(XTypes.TK_INT32)));
         XTypes.TypeIdentifier byString = struct("Svc_add_In", MUTABLE, member(7, "a", string()));
         assertEquals(TypeConsistency.Kind.INCONSISTENT, decide(byLong, byString).kind);
@@ -124,7 +124,7 @@ class TypeConsistencyTest {
     }
 
     @Test
-    void aReturnTypeWidenedToLongLongIsNotAssignable() {
+    void xtypes_7_2_4_4_an_int32_member_widened_to_int64_is_not_assignable() {
         XTypes.TypeIdentifier byLong = struct("Svc_scale_Out", MUTABLE,
                 member(3, "return_", plain(XTypes.TK_INT32)));
         XTypes.TypeIdentifier byLongLong = struct("Svc_scale_Out", MUTABLE,
@@ -133,7 +133,7 @@ class TypeConsistencyTest {
     }
 
     @Test
-    void aRequestOfTheBaseInterfaceIsAssignableToTheDerivedOne() {
+    void rpc_7_5_1_2_a_request_of_the_base_interface_is_assignable_to_the_derived_one() {
         // The operations of an interface are the members of its @choice request type, the
         // parameters of each an empty or filled _In structure (DDS-RPC 1.0 7.5.1.2).
         XTypes.TypeIdentifier baseIn = struct("Base2_ident_In", MUTABLE);
@@ -147,14 +147,14 @@ class TypeConsistencyTest {
     }
 
     @Test
-    void anEmptyStructureIsNotAssignableFromOneWithMembers() {
+    void xtypes_7_2_4_4_an_empty_structure_is_not_assignable_from_one_with_members() {
         XTypes.TypeIdentifier empty = struct("E", APPENDABLE);
         XTypes.TypeIdentifier filled = struct("E", APPENDABLE, member(0, "x", plain(XTypes.TK_INT32)));
         assertEquals(TypeConsistency.Kind.INCONSISTENT, decide(filled, empty).kind);
     }
 
     @Test
-    void anInt8IsNotAnOctet() {
+    void xtypes_7_2_4_4_an_int8_is_not_an_octet_and_a_uint8_not_an_int8() {
         XTypes.TypeIdentifier int8 = struct("B", MUTABLE, member(1, "b", plain(XTypes.TK_INT8)));
         XTypes.TypeIdentifier octet = struct("B", MUTABLE, member(1, "b", plain(XTypes.TK_BYTE)));
         XTypes.TypeIdentifier uint8 = struct("B", MUTABLE, member(1, "b", plain(XTypes.TK_UINT8)));
@@ -163,7 +163,7 @@ class TypeConsistencyTest {
     }
 
     @Test
-    void anObjectNotAtHandIsTheOneToAskFor() {
+    void xtypes_7_6_3_4_2_a_type_object_not_at_hand_is_the_one_to_ask_for() {
         XTypes.TypeIdentifier inner = struct("Inner", MUTABLE, member(1, "x", plain(XTypes.TK_INT32)));
         XTypes.TypeIdentifier writer = struct("Outer", MUTABLE, member(5, "inner", inner));
         XTypes.TypeIdentifier reader = struct("Outer", MUTABLE, member(5, "inner", inner),
@@ -176,7 +176,7 @@ class TypeConsistencyTest {
     }
 
     @Test
-    void withoutTypeInformationTheTypeNamesDecide() {
+    void xtypes_7_6_3_4_2_without_type_information_the_type_names_decide() {
         XTypes.TypeIdentifier pose = struct("Pose", MUTABLE, member(1, "x", plain(XTypes.TK_INT32)));
         assertEquals(TypeConsistency.Kind.CONSISTENT,
                 TypeConsistency.decide(new byte[0], "Pose", information(pose), "Pose", lookup).kind);

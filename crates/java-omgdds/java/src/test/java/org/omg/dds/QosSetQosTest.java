@@ -55,7 +55,7 @@ class QosSetQosTest {
     // --- DataWriter ---------------------------------------------------------------
 
     @Test
-    void anEnabledWriterTakesNewValuesOfTheChangeablePolicies() throws Exception {
+    void javapsm_2_an_enabled_writer_takes_new_values_of_the_changeable_policies() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
             DataWriterQos changed = writer.getQos()
@@ -74,7 +74,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void anEnabledWriterRefusesAChangeOfAnImmutablePolicyAndKeepsItsQos() throws Exception {
+    void javapsm_2_an_enabled_writer_refuses_a_change_of_an_immutable_policy_and_keeps_its_qos() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
             DataWriterQos before = writer.getQos();
@@ -96,7 +96,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void settingTheSameValueOfAnImmutablePolicyIsNoChange() throws Exception {
+    void javapsm_2_setting_the_same_value_of_an_immutable_policy_is_no_change() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
             DataWriterQos same = writer.getQos()
@@ -108,7 +108,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void aWriterIsNotCreatedWithPoliciesThatContradictEachOther() throws Exception {
+    void javapsm_7_3_5_1_a_writer_is_not_created_with_policies_that_contradict_each_other() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             // HISTORY depth 5 > max_samples_per_instance 3 (§2.2.3.18)
             DataWriterQos depth = Qos.writer()
@@ -127,7 +127,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void theBoundariesOfTheConsistencyRulesAreConsistent() throws Exception {
+    void javapsm_7_3_5_1_the_boundaries_of_the_consistency_rules_are_consistent() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             // depth == max_samples_per_instance, max_samples == max_samples_per_instance
             DataWriterQos edge = Qos.writer()
@@ -149,7 +149,7 @@ class QosSetQosTest {
     // --- DataReader ---------------------------------------------------------------
 
     @Test
-    void anEnabledReaderTakesATimeBasedFilterAndRefusesAnotherHistory() throws Exception {
+    void javapsm_2_an_enabled_reader_takes_a_time_based_filter_and_refuses_another_history() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.reader());
             DataReaderQos before = reader.getQos();
@@ -169,7 +169,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void aDeadlineShorterThanTheMinimumSeparationIsInconsistent() throws Exception {
+    void javapsm_2_a_deadline_shorter_than_the_minimum_separation_is_inconsistent() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReaderQos inconsistent = Qos.reader()
                     .withPolicy(Qos.pf().Deadline().withPeriod(100, TimeUnit.MILLISECONDS))
@@ -194,7 +194,7 @@ class QosSetQosTest {
     // --- Topic, Publisher, Subscriber, DomainParticipant ---------------------------
 
     @Test
-    void anEnabledTopicTakesTopicDataAndRefusesAnotherReliability() throws Exception {
+    void javapsm_2_an_enabled_topic_takes_topic_data_and_refuses_another_reliability() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             Topic<QosFixtures.Item> topic = rig.topic;
             TopicQos before = topic.getQos();
@@ -216,7 +216,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void aTopicIsNotCreatedWithPoliciesThatContradictEachOther() throws Exception {
+    void javapsm_7_3_5_1_a_topic_is_not_created_with_policies_that_contradict_each_other() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             TopicQos inconsistent = Qos.topic()
                     .withPolicy(Qos.pf().History().withKeepLast(9))
@@ -230,7 +230,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void aPublisherTakesAPartitionAndGroupDataAndRefusesAnotherPresentation() throws Exception {
+    void javapsm_2_a_publisher_takes_a_partition_and_group_data_and_refuses_another_presentation() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             Publisher publisher = rig.publisher;
             PublisherQos before = publisher.getQos();
@@ -247,7 +247,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void aSubscriberTakesAPartitionAndRefusesAnotherPresentation() throws Exception {
+    void javapsm_2_a_subscriber_takes_a_partition_and_refuses_another_presentation() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             Subscriber subscriber = rig.subscriber;
             SubscriberQos changed = subscriber.getQos()
@@ -262,7 +262,7 @@ class QosSetQosTest {
     }
 
     @Test
-    void aParticipantAndTheFactoryTakeNewUserDataAndEntityFactory() throws Exception {
+    void javapsm_2_a_participant_and_the_factory_take_new_user_data_and_entity_factory() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DomainParticipant participant = rig.participant;
             DomainParticipantQos changed = participant.getQos()
@@ -280,7 +280,7 @@ class QosSetQosTest {
     // --- before enable -------------------------------------------------------------
 
     @Test
-    void beforeEnableAnyPolicyChangesAndAfterEnableTheImmutableOnesDoNot() throws Exception {
+    void javapsm_2_before_enable_any_policy_changes_and_after_enable_the_immutable_ones_do_not() throws Exception {
         DomainParticipantQos lazy = DomainParticipantQosImpl.defaults(Qos.env())
                 .withPolicy(Qos.pf().EntityFactory().withAutoEnableCreatedEntities(false));
         DomainParticipant participant = Qos.factory().createParticipant(

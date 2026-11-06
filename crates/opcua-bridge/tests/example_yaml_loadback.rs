@@ -10,7 +10,7 @@
 use zerodds_opcua_bridge::daemon::config::DaemonConfig;
 
 #[test]
-fn shipped_example_config_loads_back() {
+fn opcuabridge_3_shipped_example_config_loads_back() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../packaging/linux/configs/opcua-bridged.yaml.example");
     let cfg =

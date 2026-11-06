@@ -15,7 +15,7 @@ use std::sync::mpsc::Receiver;
 
 use zerodds_ast_layout::key::Endianness;
 use zerodds_cli_common::{
-    TypeFollower, install_signal_handler, raw_reader_config_typed, stable_prefix,
+    TypeFollower, WriterReliability, install_signal_handler, monitor_reader_configs, stable_prefix,
 };
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserSample};
 use zerodds_recorder_decode::json_sink::data_to_json;
@@ -102,16 +102,20 @@ fn run_subscribe(s: &SubscribeArgs, config: RuntimeConfig) -> ExitCode {
         s.max_samples.map_or("∞".to_string(), |n| n.to_string())
     );
 
-    // The set of attached readers (one per discovered writer type on the topic).
-    // Each entry keeps the announced type_name for the "attached" log line.
-    let mut readers: Vec<(String, Receiver<UserSample>)> = Vec::new();
+    // The set of attached readers (two per discovered writer type on the
+    // topic, RELIABLE and BEST_EFFORT: `monitor_reader_configs`). Each entry
+    // keeps the announced type_name for the "attached" log line.
+    let mut readers: Vec<(String, Receiver<UserSample>, bool)> = Vec::new();
+    // What a RELIABLE writer wrote reaches both readers; the RELIABLE one
+    // shows it.
+    let mut reliability = WriterReliability::new();
 
     // `--type` = direct attach (skip discovery, useful for silent/late writers).
     // Otherwise type-following: discover each writer's real type_name and attach.
     let mut follower = TypeFollower::new([s.topic.clone()]);
     if let Some(ty) = &s.type_name {
-        match attach_reader(&runtime, &s.topic, ty) {
-            Some(rx) => readers.push((ty.clone(), rx)),
+        match attach_readers(&runtime, &s.topic, ty) {
+            Some(pair) => readers.extend(pair.map(|(rx, reliable)| (ty.clone(), rx, reliable))),
             None => return ExitCode::from(3),
         }
     }
@@ -121,23 +125,23 @@ fn run_subscribe(s: &SubscribeArgs, config: RuntimeConfig) -> ExitCode {
     let mut received: u64 = 0;
 
     while !stop.load(Ordering::Relaxed) {
-        if let Some(end) = deadline {
-            if Instant::now() >= end {
-                break;
-            }
+        if let Some(end) = deadline
+            && Instant::now() >= end
+        {
+            break;
         }
-        if let Some(max) = s.max_samples {
-            if received >= max {
-                break;
-            }
+        if let Some(max) = s.max_samples
+            && received >= max
+        {
+            break;
         }
 
         // Type-following: attach a raw reader to every newly-discovered writer
         // type on the topic (incl. late joiners). No-op when `--type` was given.
         if s.type_name.is_none() {
             for (topic, ty) in follower.poll(&runtime) {
-                if let Some(rx) = attach_reader(&runtime, &topic, &ty) {
-                    readers.push((ty, rx));
+                if let Some(pair) = attach_readers(&runtime, &topic, &ty) {
+                    readers.extend(pair.map(|(rx, reliable)| (ty.clone(), rx, reliable)));
                 }
             }
         }
@@ -150,9 +154,12 @@ fn run_subscribe(s: &SubscribeArgs, config: RuntimeConfig) -> ExitCode {
         // between sweeps would then never run at all: `--duration` would not
         // expire and SIGINT would not be seen.
         let mut got_any = false;
-        'sweep: for (ty_name, rx) in &readers {
+        'sweep: for (ty_name, rx, reliable) in &readers {
             while let Ok(sample) = rx.try_recv() {
                 got_any = true;
+                if !reliability.keep(&runtime, *reliable, &sample) {
+                    continue;
+                }
                 match sample {
                     UserSample::Alive {
                         payload,
@@ -199,10 +206,10 @@ fn run_subscribe(s: &SubscribeArgs, config: RuntimeConfig) -> ExitCode {
                 if stop.load(Ordering::Relaxed) {
                     break 'sweep;
                 }
-                if let Some(end) = deadline {
-                    if Instant::now() >= end {
-                        break 'sweep;
-                    }
+                if let Some(end) = deadline
+                    && Instant::now() >= end
+                {
+                    break 'sweep;
                 }
             }
         }
@@ -214,7 +221,7 @@ fn run_subscribe(s: &SubscribeArgs, config: RuntimeConfig) -> ExitCode {
     let elapsed = started.elapsed().as_secs_f64();
     println!(
         "zerodds-spy: stopped after {elapsed:.1}s · attached-types={} received={received}",
-        readers.len()
+        readers.len() / 2
     );
     // The worker threads hold the runtime: a drop alone neither stops it
     // nor announces the departure nor closes the same-host channels.
@@ -315,24 +322,27 @@ impl SpyDecoder {
     }
 }
 
-/// Register a raw (opaque-payload) reader announcing `type_name` on `topic` so
-/// it matches the typed writer on both ends. Logs the attach; returns the
-/// sample receiver, or `None` on registration failure.
-fn attach_reader(
+/// Register the two raw (opaque-payload) readers announcing `type_name` on
+/// `topic`, RELIABLE and BEST_EFFORT (`monitor_reader_configs`), so that
+/// they match every typed writer. Logs the attach; returns the sample
+/// receivers with their reliability, or `None` on registration failure.
+fn attach_readers(
     runtime: &DcpsRuntime,
     topic: &str,
     type_name: &str,
-) -> Option<Receiver<UserSample>> {
-    match runtime.register_user_reader(raw_reader_config_typed(topic, type_name)) {
-        Ok((_eid, rx)) => {
-            println!("zerodds-spy: attached topic={topic} type={type_name}");
-            Some(rx)
-        }
+) -> Option<[(Receiver<UserSample>, bool); 2]> {
+    let [(reliable_cfg, _), (best_effort_cfg, _)] = monitor_reader_configs(topic, type_name);
+    let register = |cfg| match runtime.register_user_reader(cfg) {
+        Ok((_eid, rx)) => Some(rx),
         Err(e) => {
             eprintln!("error: register_user_reader({topic}, {type_name}): {e:?}");
             None
         }
-    }
+    };
+    let reliable = register(reliable_cfg)?;
+    let best_effort = register(best_effort_cfg)?;
+    println!("zerodds-spy: attached topic={topic} type={type_name}");
+    Some([(reliable, true), (best_effort, false)])
 }
 
 fn short_guid(guid: &[u8; 16]) -> String {

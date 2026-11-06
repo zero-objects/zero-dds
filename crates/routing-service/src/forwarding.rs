@@ -7,8 +7,9 @@
 //! Built on the runtime user-entity byte path (`register_user_reader_kind` →
 //! `mpsc::Receiver<UserSample>` → `write_user_sample_borrowed`), the same
 //! primitive the durability service uses. The engine adds: per-sample loop
-//! guard, representation-faithful encapsulation override, keyed-instance
-//! lifecycle propagation, and a pluggable [`SampleProcessor`] hook for content
+//! guard, the input's encapsulation on the output (XCDR version, format and
+//! byte order of the body, DDSI-RTPS 2.5 §10.5), keyed-instance lifecycle
+//! propagation, and a pluggable [`SampleProcessor`] hook for content
 //! filtering / field transformation (wired in v3).
 
 use std::sync::Arc;
@@ -19,21 +20,56 @@ use std::time::Duration;
 
 use zerodds_dcps::runtime::{DcpsRuntime, UserSample};
 use zerodds_rtps::EntityId;
+use zerodds_types::qos::ExtensibilityForRepr;
 
 use crate::metrics::RouteMetrics;
 
+/// What a [`SampleProcessor`] made of one sample.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Processed {
+    /// Forward this (possibly transformed) body under this representation
+    /// identifier (DDSI-RTPS 2.5 §10.5).
+    Forward(Vec<u8>, [u8; 2]),
+    /// The content filter does not pass the sample.
+    Filtered,
+    /// The body cannot be read as the route's type: it is not counted as
+    /// filtered but as an error.
+    Refused(String),
+}
+
 /// Per-sample processor: content filter and/or field transformation.
 ///
-/// `process` receives the input CDR body (no encapsulation header) and its
-/// representation (`0` = XCDR1, `1`/`2` = XCDR2). It returns:
-/// * `Some((payload, representation))` — forward this (possibly transformed)
-///   body with the given representation.
-/// * `None` — drop the sample (filtered out).
+/// `process` receives the input CDR body (no encapsulation header) and the
+/// representation identifier of the header it came under (DDSI-RTPS 2.5
+/// §10.5, e.g. `[0x00, 0x08]` for `D_CDR2_BE`): the XCDR version, the format
+/// and the byte order the body is read in.
 ///
 /// Byte pass-through routes use no processor (the body is forwarded verbatim).
 pub trait SampleProcessor: Send {
     /// Process one sample body.
-    fn process(&mut self, payload: &[u8], representation: u8) -> Option<(Vec<u8>, u8)>;
+    fn process(&mut self, payload: &[u8], representation_identifier: [u8; 2]) -> Processed;
+}
+
+/// How the output writer has to frame a body that came under
+/// `identifier`: its data representation (`XCDR` 0 or `XCDR2` 2), the
+/// extensibility the format belongs to and the byte order (DDSI-RTPS 2.5
+/// §10.5, DDS-XTypes 1.3 Table 60 and Table 39). `None` for an identifier
+/// that is no CDR format.
+#[must_use]
+pub fn writer_form(identifier: [u8; 2]) -> Option<(i16, ExtensibilityForRepr, bool)> {
+    use zerodds_rtps::publication_data::data_representation as dr;
+    if identifier[0] != 0x00 {
+        return None;
+    }
+    let (representation, extensibility) = match identifier[1] & !0x01 {
+        0x00 => (dr::XCDR, ExtensibilityForRepr::Final),
+        0x02 => (dr::XCDR, ExtensibilityForRepr::Mutable),
+        0x06 | 0x10 => (dr::XCDR2, ExtensibilityForRepr::Final),
+        0x08 | 0x14 => (dr::XCDR2, ExtensibilityForRepr::Appendable),
+        0x0a | 0x12 => (dr::XCDR2, ExtensibilityForRepr::Mutable),
+        _ => return None,
+    };
+    Some((representation, extensibility, identifier[1] & 0x01 == 0))
 }
 
 /// Inputs needed to build a [`ForwardingSession`]. The engine registers the
@@ -160,8 +196,11 @@ impl TokenBucket {
     }
 
     fn allow(&mut self) -> bool {
-        let now = std::time::Instant::now();
-        let elapsed = now.duration_since(self.last).as_secs_f64();
+        self.allow_at(std::time::Instant::now())
+    }
+
+    fn allow_at(&mut self, now: std::time::Instant) -> bool {
+        let elapsed = now.saturating_duration_since(self.last).as_secs_f64();
         self.last = now;
         // Refill, capped at a one-second budget (burst == rate).
         self.tokens = (self.tokens + elapsed * self.rate).min(self.rate);
@@ -175,9 +214,10 @@ impl TokenBucket {
 }
 
 fn pump(mut parts: SessionParts, stop: &AtomicBool) {
-    // Track the last representation written so the encapsulation override is
-    // set only on change (a topic is representation-consistent in practice).
-    let mut last_rep: u8 = 255;
+    // The identifier the output writer frames with, so its overrides are
+    // set only on a change (a topic is representation-consistent in
+    // practice).
+    let mut last_form: Option<[u8; 2]> = None;
     // O1 throttle: per-route forward rate limit (None = unlimited).
     let mut bucket = parts.max_samples_per_second.map(TokenBucket::new);
     while !stop.load(Ordering::Relaxed) {
@@ -193,16 +233,16 @@ fn pump(mut parts: SessionParts, stop: &AtomicBool) {
         match sample {
             UserSample::Alive {
                 payload,
-                representation,
+                representation_identifier,
                 source_timestamp,
                 ..
             } => {
                 // O1 throttle: drop alive samples over the route's rate limit.
-                if let Some(b) = bucket.as_mut() {
-                    if !b.allow() {
-                        parts.metrics.inc_dropped_throttle();
-                        continue;
-                    }
+                if let Some(b) = bucket.as_mut()
+                    && !b.allow()
+                {
+                    parts.metrics.inc_dropped_throttle();
+                    continue;
                 }
                 // O1: preserve the input's source timestamp on the output when
                 // the route asks for it; otherwise the writer stamps its own.
@@ -211,18 +251,24 @@ fn pump(mut parts: SessionParts, stop: &AtomicBool) {
                 } else {
                     None
                 };
-                // Filter / transform, or byte pass-through.
+                // Filter / transform, or byte pass-through under the
+                // input's identifier.
                 if let Some(p) = parts.processor.as_mut() {
-                    match p.process(payload.as_slice(), representation) {
-                        Some((out, rep)) => {
-                            set_rep(&parts, &mut last_rep, rep);
-                            write_alive(&parts, &out, fwd_ts);
+                    match p.process(payload.as_slice(), representation_identifier) {
+                        Processed::Forward(out, identifier) => {
+                            if set_form(&parts, &mut last_form, identifier) {
+                                write_alive(&parts, &out, fwd_ts);
+                            } else {
+                                parts.metrics.inc_errors();
+                            }
                         }
-                        None => parts.metrics.inc_dropped_filter(),
+                        Processed::Filtered => parts.metrics.inc_dropped_filter(),
+                        Processed::Refused(_) => parts.metrics.inc_errors(),
                     }
-                } else {
-                    set_rep(&parts, &mut last_rep, representation);
+                } else if set_form(&parts, &mut last_form, representation_identifier) {
                     write_alive(&parts, payload.as_slice(), fwd_ts);
+                } else {
+                    parts.metrics.inc_errors();
                 }
             }
             UserSample::Lifecycle {
@@ -290,26 +336,25 @@ fn relay(parts: &SessionParts, sample: UserSample, bucket: &mut Option<TokenBuck
             writer_guid,
             source_sequence_number,
             source_timestamp,
-            representation,
+            representation_identifier,
             crypto_content,
             ..
         } => {
-            if let Some(b) = bucket.as_mut() {
-                if !b.allow() {
-                    parts.metrics.inc_dropped_throttle();
-                    return;
-                }
+            if let Some(b) = bucket.as_mut()
+                && !b.allow()
+            {
+                parts.metrics.inc_dropped_throttle();
+                return;
             }
             if source_sequence_number < 0 {
                 parts.metrics.inc_errors();
                 return;
             }
-            if !crypto_content {
-                // The body goes out in the representation it came in.
-                let off: i16 = if representation == 0 { 0 } else { 2 };
-                let _ = parts
-                    .output_rt
-                    .set_user_writer_data_rep_override(parts.writer_eid, Some(vec![off]));
+            // The body goes out under the identifier it came in: the
+            // representation, the format and the byte order of the body.
+            if !crypto_content && !set_form(parts, &mut None, representation_identifier) {
+                parts.metrics.inc_errors();
+                return;
             }
             let res = parts.output_rt.write_user_sample_relayed(
                 parts.writer_eid,
@@ -364,15 +409,28 @@ fn relay(parts: &SessionParts, sample: UserSample, bucket: &mut Option<TokenBuck
     }
 }
 
-fn set_rep(parts: &SessionParts, last_rep: &mut u8, rep: u8) {
-    if rep != *last_rep {
-        // representation: 0 = XCDR1, 1/2 = XCDR2 → data_representation id 0 / 2.
-        let off: i16 = if rep == 0 { 0 } else { 2 };
-        let _ = parts
-            .output_rt
-            .set_user_writer_data_rep_override(parts.writer_eid, Some(vec![off]));
-        *last_rep = rep;
+/// Frames the output writer's next samples under `identifier`: the data
+/// representation, the extensibility its format belongs to and the byte
+/// order (see [`writer_form`]), so the writer's encapsulation header says
+/// what the body is. `false` when the identifier is no CDR format or the
+/// writer refuses the setting; the sample is not written then, since a
+/// header that does not describe its body would be read wrongly.
+fn set_form(parts: &SessionParts, last: &mut Option<[u8; 2]>, identifier: [u8; 2]) -> bool {
+    if *last == Some(identifier) {
+        return true;
     }
+    let Some((representation, extensibility, big_endian)) = writer_form(identifier) else {
+        return false;
+    };
+    let rt = &parts.output_rt;
+    let set = rt
+        .set_user_writer_data_rep_override(parts.writer_eid, Some(vec![representation]))
+        .and_then(|()| rt.set_user_writer_wire_extensibility(parts.writer_eid, extensibility))
+        .and_then(|()| rt.set_user_writer_byte_order_override(parts.writer_eid, big_endian));
+    if set.is_ok() {
+        *last = Some(identifier);
+    }
+    set.is_ok()
 }
 
 fn write_alive(
@@ -398,26 +456,21 @@ fn write_alive(
 #[cfg(test)]
 mod tests {
     use super::TokenBucket;
+    use std::time::Duration;
 
+    /// `max_samples_per_second` (the field's documentation): a burst of up
+    /// to one second's budget, then the rate.
     #[test]
-    fn token_bucket_allows_burst_then_throttles() {
-        let mut b = TokenBucket::new(2);
-        // A fresh bucket holds a one-second burst = `rate` tokens.
-        assert!(b.allow());
-        assert!(b.allow());
-        // The third within the same instant is over budget (~0 refill).
-        assert!(!b.allow());
-    }
-
-    #[test]
-    fn token_bucket_refills_over_time() {
+    fn max_samples_per_second_allows_a_one_second_burst_then_the_rate() {
         let mut b = TokenBucket::new(100);
-        for _ in 0..100 {
-            assert!(b.allow());
-        }
-        assert!(!b.allow());
-        std::thread::sleep(std::time::Duration::from_millis(50));
-        // ~50 ms at 100/s ≈ 5 tokens refilled.
-        assert!(b.allow());
+        let t0 = b.last;
+        assert!((0..100).all(|_| b.allow_at(t0)), "the burst");
+        assert!(!b.allow_at(t0), "past the burst");
+        // 50 ms at 100 per second: five more, not six.
+        let t1 = t0 + Duration::from_millis(50);
+        assert_eq!((0..6).filter(|_| b.allow_at(t1)).count(), 5);
+        // A long pause refills to the burst, not beyond it.
+        let t2 = t1 + Duration::from_secs(10);
+        assert_eq!((0..150).filter(|_| b.allow_at(t2)).count(), 100);
     }
 }

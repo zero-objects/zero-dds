@@ -85,7 +85,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn timestamp_reply_roundtrip_le() {
+    fn xrce_8_3_5_16_timestamp_reply_roundtrip_le() {
         let p = TimestampReplyPayload {
             transmit_timestamp: TimePoint {
                 seconds: 1,
@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_reply_roundtrip_via_submessage() {
+    fn xrce_8_3_5_16_timestamp_reply_roundtrip_via_submessage() {
         let p = TimestampReplyPayload::default();
         let sm = p.into_submessage().unwrap();
         let p2 = TimestampReplyPayload::try_from_submessage(&sm).unwrap();

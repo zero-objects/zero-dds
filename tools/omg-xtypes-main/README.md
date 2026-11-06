@@ -16,8 +16,7 @@ picked here.
 This is a CLI + protocol shim over ZeroDDS's **existing** DCPS API
 (`crates/dcps`) and type machinery (`crates/types`). No new
 wire/CDR/QoS/assignability code was written for this binary. The four
-findings it produced are in `docs/OPEN-ITEMS.md`, "Four findings the OMG
-`dds-xtypes` suite produced", and summarised below.
+findings it produced are summarised below.
 
 ## The other suite
 
@@ -78,7 +77,7 @@ being wrong. Those are the suite's words, not ours.
 holds the regression tests. Nothing here is hand-written as a type.
 
 `tools/omg-shape-main` took its `ShapeType` from a hand-written Rust
-struct until commit `98b4800bdc3`, and that was the wrong side of the
+struct until commit `1cddee56333`, and that was the wrong side of the
 measurement: a defect in the generator could then not fail the suite,
 and a defect in the hand form was charged to us. Both were real there —
 the hand form left `DdsType::type_object()` at its default `None` (a
@@ -114,7 +113,7 @@ generator, not here:
   Fixed in this commit — one name in one list. Nothing in the tree had
   put a `@mutable` type through the generator before this IDL.
 - The `@mutable` emitter trips five more clippy/rustc lints than the
-  four already recorded in `docs/OPEN-ITEMS.md`. They are allowed on the
+  four already recorded. They are allowed on the
   one module that wraps the `include!`, not spread through the crate.
 
 The suite's IDL uses only the **prefix** annotation form (`@key`,
@@ -196,9 +195,8 @@ Nothing in the two tables is marked `stub`. What is `partial` is
 
 ## What this suite measured
 
-Four findings, all four measured, none of them in this client. The full
-text is in `docs/OPEN-ITEMS.md`; this is what a reader of this crate
-needs. Findings 1 and 2 are fixed; 3 and 4 are open.
+Four findings, all four measured, none of them in this client; all four
+are fixed in the runtime.
 
 ### 1. A pair with two different type names never became a match candidate — FIXED
 
@@ -233,8 +231,8 @@ The filter is now the topic name alone, and the type is decided by
 One function for both steps, called from all three match sites (remote
 writer, remote reader, same-runtime pair). Pinned by
 `crates/dcps/src/runtime.rs::tests::{xtypes_step1_matches_a_differently_named_assignable_type,
-xtypes_step1_refuses_a_differently_named_non_assignable_type,
-xtypes_step2_falls_back_to_the_type_name_for_a_peer_without_type_information}`.
+dcps_2_2_4_1_xtypes_step1_refuses_a_differently_named_non_assignable_type,
+xtypes_7_6_1_step2_falls_back_to_the_type_name_for_a_peer_without_type_information}`.
 
 ### 2. An inherited type was compared without the members it inherits — FIXED
 
@@ -314,7 +312,7 @@ never meet, so a conflict found in discovery raises no
 `on_inconsistent_topic` — and for this suite that is the one line that
 tells a reviewer why a pair produced nothing.
 
-**Fixed in the runtime** (`b037bd5df22`): `Topic::inconsistent_topic_status`
+**Fixed in the runtime** (`f2685b2a07b`): `Topic::inconsistent_topic_status`
 adds `DcpsRuntime::inconsistent_topic_count_for` the topic's name to the
 `Topic`'s own count. The application-level `ConflictBridge` this client
 carried until then forwarded the same increments a second time, so with

@@ -78,12 +78,22 @@ fn endpoint_case(mode: &str) {
     ping_pong(&peer, child, &format!("kotlin/{mode}"));
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Kotlin app sends its `Ping`
+/// through the endpoint SDK's sync API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn kotlin_endpoint_sync() {
+#[ignore = "needs the Kotlin toolchain; runs in integration-bindings-jvm-julia"]
+fn xrce_8_3_5_8_kotlin_sync_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("sync");
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Kotlin app sends its `Ping`
+/// through the endpoint SDK's async API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn kotlin_endpoint_async() {
+#[ignore = "needs the Kotlin toolchain; runs in integration-bindings-jvm-julia"]
+fn xrce_8_3_5_8_kotlin_async_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("async");
 }

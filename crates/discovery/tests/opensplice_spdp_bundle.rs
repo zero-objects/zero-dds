@@ -67,7 +67,7 @@ fn parse_datagram_refuses_the_bundle() {
 }
 
 #[test]
-fn the_participant_with_the_detectors_gets_the_local_sedp_writers_proxies() {
+fn rtps_8_5_5_1_the_participant_with_the_detectors_gets_the_local_sedp_writers_proxies() {
     let local = GuidPrefix::from_bytes([
         0x91, 0x83, 0x92, 0x48, 0xfb, 0x11, 0x0c, 0x00, 0x32, 0x97, 0x32, 0x5e,
     ]);

@@ -48,7 +48,7 @@ class ListenerPropagationTest {
     }
 
     @Test
-    void aWriterWithoutListenerPassesTheMatchToThePublisherAndThenTheParticipant() {
+    void javapsm_2_a_writer_without_listener_passes_the_match_to_the_publisher_and_then_the_participant() {
         DomainParticipant participant = Qos.factory().createParticipant(960);
         Topic<byte[]> topic = participant.createTopic("UpWriter", byte[].class);
         AtomicInteger atParticipant = new AtomicInteger();
@@ -77,7 +77,7 @@ class ListenerPropagationTest {
     }
 
     @Test
-    void aWriterListenerSetAtCreationSeesTheMatchOfEnable() {
+    void javapsm_2_a_writer_listener_set_at_creation_sees_the_match_of_enable() {
         DomainParticipant participant = Qos.factory().createParticipant(961);
         Topic<byte[]> topic = participant.createTopic("AtCreation", byte[].class);
         participant.createSubscriber().createDataReader(topic);
@@ -93,7 +93,7 @@ class ListenerPropagationTest {
     }
 
     @Test
-    void aReaderListenerSetAtCreationSeesTheMatchOfEnableAndTheSubscriberGetsDataOnReaders() {
+    void javapsm_2_a_reader_listener_set_at_creation_sees_the_match_of_enable_and_the_subscriber_gets_data_on_readers() {
         DomainParticipant participant = Qos.factory().createParticipant(962);
         Topic<byte[]> topic = participant.createTopic("ReaderUp", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);

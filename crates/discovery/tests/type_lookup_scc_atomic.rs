@@ -43,7 +43,7 @@ fn server() -> TypeLookupServer {
 }
 
 #[test]
-fn an_scc_identifier_gets_every_member_of_the_component() {
+fn xtypes_7_6_3_3_4_2_an_scc_identifier_gets_every_member_of_the_component() {
     let reply = server().handle_get_types(&GetTypesRequest {
         type_ids: vec![scc(0, 2)],
     });
@@ -58,7 +58,7 @@ fn an_scc_identifier_gets_every_member_of_the_component() {
 }
 
 #[test]
-fn an_unknown_component_or_a_wrong_length_gets_none() {
+fn xtypes_7_6_3_3_4_2_an_unknown_component_or_a_wrong_length_gets_none() {
     let server = server();
     let wrong_length = server.handle_get_types(&GetTypesRequest {
         type_ids: vec![scc(0, 3)],

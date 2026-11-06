@@ -4,8 +4,7 @@
 # OpenDDS is excluded from quick_matrix.sh/iso_matrix.sh's default vendor list,
 # so this focused runner closes the OpenDDS interop axis: both cross-vendor
 # directions + both self-baselines, full payload sweep (within the
-# roundtrip.idl `sequence<octet, 8192>` bound). See
-# internal/interop/opendds-interop-closeout.md.
+# roundtrip.idl `sequence<octet, 8192>` bound).
 #
 # Prereq: zerodds-roundtrip + opendds-roundtrip built in ./build (see the
 # closeout doc's Reproduction section). OpenDDS needs RTPS discovery +

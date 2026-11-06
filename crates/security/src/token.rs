@@ -3,7 +3,7 @@
 
 //! DDS-Security 1.2 token structures (DataHolder + property records).
 //!
-//! Spec: §7.2.6 (Property_t / BinaryProperty_t), §7.2.7 (DataHolder),
+//! Spec: §7.3.2 (Property_t), §7.3.3 (BinaryProperty_t), §7.3.4 (DataHolder),
 //! §7.4.1.4 (IdentityToken in the SPDP announce).
 //!
 //! A **DataHolder** is the generic wire representation of all
@@ -21,7 +21,7 @@
 //! struct BinaryProperty_t  { string name; sequence<octet> value; };
 //! ```
 //!
-//! IMPORTANT: the wire `Property_t` (spec §7.2.6 Tab.5) has **no**
+//! IMPORTANT: the wire `Property_t` (spec §7.3.2 Table 1) has **no**
 //! `propagate` field — that is local filter state in the plug-configured
 //! `zerodds_security::PropertyList`.
 //!
@@ -46,7 +46,7 @@ use alloc::vec::Vec;
 
 use crate::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
-/// Spec §7.2.6 Tab.5 — wire `Property_t` (`name` + `value`, both
+/// Spec §7.3.2 Table 1 — wire `Property_t` (`name` + `value`, both
 /// CDR strings). Unlike [`crate::Property`], no `propagate`
 /// field; token properties are always propagated.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -68,7 +68,7 @@ impl WireProperty {
     }
 }
 
-/// Spec §7.2.6 Tab.6 — wire `BinaryProperty_t` (`name` + `value` as
+/// Spec §7.3.3 Table 2 — wire `BinaryProperty_t` (`name` + `value` as
 /// `sequence<octet>`).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BinaryProperty {
@@ -103,16 +103,16 @@ impl BinaryProperty {
     }
 }
 
-/// Spec §7.2.7 Tab.7 — generic `DataHolder_t` wire struct. All
+/// Spec §7.3.4 Table 3 — generic `DataHolder_t` wire struct. All
 /// security tokens are type aliases of `DataHolder` with a fixed
 /// `class_id` value.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct DataHolder {
     /// Plugin class id, e.g. `"DDS:Auth:PKI-DH:1.2"`.
     pub class_id: String,
-    /// String properties (spec §7.2.6 Tab.5).
+    /// String properties (spec §7.3.2 Table 1).
     pub properties: Vec<WireProperty>,
-    /// Binary properties (spec §7.2.6 Tab.6).
+    /// Binary properties (spec §7.3.3 Table 2).
     pub binary_properties: Vec<BinaryProperty>,
 }
 
@@ -148,7 +148,7 @@ impl DataHolder {
 
     /// Mut variant: sets a string property with replace-on-dup
     /// semantics (if the name already exists, the old value is
-    /// overwritten — spec §7.2.6: per token each property
+    /// overwritten — spec §7.3.2: per token each property
     /// name may appear only once).
     pub fn set_property(&mut self, name: impl Into<String>, value: impl Into<String>) {
         let n = name.into();
@@ -275,7 +275,7 @@ pub type AuthRequestMessageToken = DataHolder;
 /// HandshakeMessageToken — Request/Reply/Final (Spec §10.3.2 Tab.56-58).
 pub type HandshakeMessageToken = DataHolder;
 
-/// CryptoToken (Spec §10.5.2 Tab.72).
+/// CryptoToken (Spec §10.5.2.1 Table 72).
 pub type CryptoToken = DataHolder;
 
 // ---------------------------------------------------------------------
@@ -286,20 +286,21 @@ pub type CryptoToken = DataHolder;
 pub mod class_id {
     /// Builtin PKI authentication (§10.3.2.1 Tab.51).
     pub const AUTH_PKI_DH_V12: &str = "DDS:Auth:PKI-DH:1.2";
-    /// Builtin permissions access control (§10.4 Tab.69).
+    /// Builtin permissions access control (§10.4.2.2 Table 65).
     pub const ACCESS_PERMISSIONS_V12: &str = "DDS:Access:Permissions:1.2";
-    /// Builtin AES-GCM-GMAC crypto (§10.5 Tab.72).
+    /// Builtin AES-GCM-GMAC crypto (§10.5): the plugin class; the `class_id`
+    /// of its CryptoToken is `DDS:Crypto:AES_GCM_GMAC` (Table 72).
     pub const CRYPTO_AES_GCM_GMAC_V12: &str = "DDS:Crypto:AES-GCM-GMAC:1.2";
     /// Permissions credential (§10.4.2 Tab.64).
     pub const ACCESS_PERMISSIONS_CREDENTIAL: &str = "DDS:Access:PermissionsCredential";
 
     /// Whether the class ids `a` and `b`, each
     /// `<PluginClassName>:<MajorVersion>.<MinorVersion>` (DDS-Security 1.2
-    /// §9.3.2.1), have the same PluginClassName and MajorVersion: the
-    /// comparison of the local and the remote permissions_token that
-    /// Table 70 puts first in `check_remote_participant`,
-    /// `check_remote_datawriter`, `check_remote_datareader` and
-    /// `check_remote_topic`.
+    /// §10.3.2.1), have the same PluginClassName and MajorVersion: the
+    /// comparison of an IdentityToken in `validate_remote_identity`
+    /// (Table 59). A class id without the versions does not have that format
+    /// and matches none; for a PermissionsToken, §10.4.2.2 reads it as 1.0
+    /// ([`same_permissions_class_and_major_version`]).
     #[must_use]
     pub fn same_class_and_major_version(a: &str, b: &str) -> bool {
         fn split(id: &str) -> Option<(&str, &str)> {
@@ -308,6 +309,33 @@ pub mod class_id {
             (!name.is_empty() && !major.is_empty()).then_some((name, major))
         }
         matches!((split(a), split(b)), (Some(x), Some(y)) if x == y)
+    }
+
+    /// [`same_class_and_major_version`] for the class ids of two
+    /// PermissionsTokens: the comparison Table 70 puts first in
+    /// `check_remote_participant`, `check_remote_datawriter`,
+    /// `check_remote_datareader` and `check_remote_topic`. A class id
+    /// without the versions is read as MajorVersion 1 and MinorVersion 0
+    /// (§10.4.2.2: "If the MajorVersion and MinorVersion are missing from
+    /// the class_id, it shall be interpreted as being MajorVersion 1 and
+    /// MinorVersion 0"): `DDS:Access:Permissions` is
+    /// `DDS:Access:Permissions:1.0`. The versions are missing when what
+    /// follows the last `:` is no number. §10.3.2.1 (IdentityToken) and
+    /// §10.7.2.1 have no such rule.
+    #[must_use]
+    pub fn same_permissions_class_and_major_version(a: &str, b: &str) -> bool {
+        fn with_versions(id: &str) -> alloc::borrow::Cow<'_, str> {
+            let versioned = id.rsplit_once(':').is_some_and(|(_, version)| {
+                let major = version.split_once('.').map_or(version, |(major, _)| major);
+                !major.is_empty() && major.bytes().all(|b| b.is_ascii_digit())
+            });
+            if versioned {
+                alloc::borrow::Cow::Borrowed(id)
+            } else {
+                alloc::borrow::Cow::Owned(alloc::format!("{id}:1.0"))
+            }
+        }
+        same_class_and_major_version(&with_versions(a), &with_versions(b))
     }
 }
 
@@ -373,14 +401,18 @@ impl IdentityToken {
 // CDR string: uint32 length (incl. trailing \0) + UTF-8 bytes + \0 +
 // padding to 4 bytes. Length=0 is allowed (= empty string).
 
-/// Maximum counts/lengths we accept from the wire —
-/// DoS cap. 64 KiB per token, 256 properties, 256 binary properties,
-/// 8 KiB per property value.
-const MAX_TOKEN_BYTES: usize = 64 * 1024;
+/// The most octets one `DataHolder` occupies on the wire (DoS cap), the
+/// bound of the `ParticipantGenericMessage` that carries it
+/// (`generic_message.rs`). DDS-Security 1.2 bounds neither the `string`
+/// values nor the `OctetSeq` values of a DataHolder (§7.3.2.1, §7.3.3.1,
+/// §7.3.4.1): a property value is as long as the token leaves room for. A
+/// separate 8 KiB cap per value refused a signed permissions document above
+/// it (`c.perm` of the HandshakeRequestMessageToken, §10.3.2.5.1) and with
+/// it the handshake.
+const MAX_TOKEN_BYTES: usize = 256 * 1024;
+/// Most properties and binary properties per DataHolder (DoS cap).
 const MAX_PROPS: u32 = 256;
 const MAX_BIN_PROPS: u32 = 256;
-const MAX_STRING_LEN: u32 = 8 * 1024;
-const MAX_BINARY_LEN: u32 = 8 * 1024;
 
 fn encode(d: &DataHolder, le: bool) -> Vec<u8> {
     let mut out = Vec::with_capacity(64);
@@ -398,7 +430,17 @@ fn encode(d: &DataHolder, le: bool) -> Vec<u8> {
     out
 }
 
+fn exceeds_cap() -> SecurityError {
+    SecurityError::new(
+        SecurityErrorKind::BadArgument,
+        "token: payload exceeds DoS cap",
+    )
+}
+
 fn decode(bytes: &[u8], le: bool) -> SecurityResult<DataHolder> {
+    if bytes.len() > MAX_TOKEN_BYTES {
+        return Err(exceeds_cap());
+    }
     decode_consumed(bytes, le).map(|(dh, _)| dh)
 }
 
@@ -406,13 +448,24 @@ fn decode(bytes: &[u8], le: bool) -> SecurityResult<DataHolder> {
 /// needed for the inline decoding of `sequence<DataHolder>` (spec
 /// `GenericMessageData`), where the DataHolders lie one after another
 /// without a length prefix and the caller must advance the cursor.
+///
+/// `bytes` runs to the end of the message, so the cap bounds the octets the
+/// DataHolder occupies, not the octets offered: the DataHolder is read from
+/// the first [`MAX_TOKEN_BYTES`] of them, and one that does not end there
+/// exceeds the cap. A check of `bytes.len()` refused every DataHolder
+/// followed by more than the cap of message.
 fn decode_consumed(bytes: &[u8], le: bool) -> SecurityResult<(DataHolder, usize)> {
-    if bytes.len() > MAX_TOKEN_BYTES {
-        return Err(SecurityError::new(
-            SecurityErrorKind::BadArgument,
-            "token: payload exceeds DoS cap",
-        ));
-    }
+    let window = &bytes[..bytes.len().min(MAX_TOKEN_BYTES)];
+    decode_window(window, le).map_err(|e| {
+        if bytes.len() > MAX_TOKEN_BYTES {
+            exceeds_cap()
+        } else {
+            e
+        }
+    })
+}
+
+fn decode_window(bytes: &[u8], le: bool) -> SecurityResult<(DataHolder, usize)> {
     let mut cur = Cursor::new(bytes);
     let class_id = cur.read_string(le)?;
     let prop_count = cur.read_u32(le)?;
@@ -519,16 +572,10 @@ impl<'a> Cursor<'a> {
 
     fn read_string(&mut self, le: bool) -> SecurityResult<String> {
         let len = self.read_u32(le)?;
-        if len > MAX_STRING_LEN {
-            return Err(SecurityError::new(
-                SecurityErrorKind::BadArgument,
-                "token: string exceeds cap",
-            ));
-        }
         if len == 0 {
             return Ok(String::new());
         }
-        if self.pos + len as usize > self.buf.len() {
+        if len as usize > self.buf.len().saturating_sub(self.pos) {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
                 "token: truncated string",
@@ -558,13 +605,7 @@ impl<'a> Cursor<'a> {
 
     fn read_octet_seq(&mut self, le: bool) -> SecurityResult<Vec<u8>> {
         let len = self.read_u32(le)?;
-        if len > MAX_BINARY_LEN {
-            return Err(SecurityError::new(
-                SecurityErrorKind::BadArgument,
-                "token: binary value exceeds cap",
-            ));
-        }
-        if self.pos + len as usize > self.buf.len() {
+        if len as usize > self.buf.len().saturating_sub(self.pos) {
             return Err(SecurityError::new(
                 SecurityErrorKind::BadArgument,
                 "token: truncated binary",
@@ -582,7 +623,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_data_holder_roundtrip_le() {
+    fn security_7_3_5_3_empty_data_holder_roundtrip_le() {
         let dh = DataHolder::new("DDS:Auth:PKI-DH:1.2");
         let bytes = dh.to_cdr_le();
         let back = DataHolder::from_cdr_le(&bytes).unwrap();
@@ -590,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_data_holder_roundtrip_be() {
+    fn security_7_3_4_1_empty_data_holder_roundtrip_be() {
         let dh = DataHolder::new("DDS:Auth:PKI-DH:1.2");
         let bytes = dh.to_cdr_be();
         let back = DataHolder::from_cdr_be(&bytes).unwrap();
@@ -598,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn pki_dh_identity_token_roundtrip() {
+    fn security_7_3_4_pki_dh_identity_token_roundtrip() {
         let tok =
             IdentityToken::pki_dh_v12("01:23:45:67", "ECDSA-SHA256", "FA:CE:0B:01", "RSA-SHA256");
         let bytes = tok.to_cdr_le();
@@ -613,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn permissions_token_roundtrip() {
+    fn security_7_3_5_permissions_token_roundtrip() {
         let tok = IdentityToken::permissions_v12("DE:AD:BE:EF", "ECDSA-SHA256");
         let le = tok.to_cdr_le();
         let be = tok.to_cdr_be();
@@ -623,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn token_with_binary_property_roundtrip() {
+    fn security_7_3_3_1_token_with_binary_property_roundtrip() {
         let tok = DataHolder::new("DDS:Auth:PKI-DH:1.2")
             .with_property("dds.cert.sn", "01:23")
             .with_binary_property("dds.cert.bytes", vec![0xCA, 0xFE, 0xBA, 0xBE, 0xDE]);
@@ -637,7 +678,7 @@ mod tests {
     }
 
     #[test]
-    fn cdr_le_layout_class_id_only() {
+    fn security_7_3_1_2_cdr_le_layout_class_id_only() {
         // class_id="A" (1 char + NUL = len=2). Expected stream:
         //   uint32 len=2 LE: 02 00 00 00
         //   bytes        :  41 00
@@ -655,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn truncated_buffer_is_error() {
+    fn security_7_3_4_1_truncated_buffer_is_error() {
         let err = DataHolder::from_cdr_le(&[0x10, 0x00, 0x00]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
@@ -671,10 +712,62 @@ mod tests {
     }
 
     #[test]
-    fn missing_trailing_nul_rejected() {
+    fn security_7_3_4_1_missing_trailing_nul_rejected() {
         // Forge: class_id len=1 (no NUL).
         let bytes = vec![0x01, 0x00, 0x00, 0x00, b'A'];
         let err = DataHolder::from_cdr_le(&bytes).unwrap_err();
+        assert_eq!(err.kind, SecurityErrorKind::BadArgument);
+    }
+
+    /// A DataHolder written field by field after the IDL of §7.3.4.1
+    /// (XCDR1 little-endian, `@final`): `string class_id`, an empty
+    /// `PropertySeq`, a `BinaryPropertySeq` of one `c.perm` of `len` octets.
+    fn hand_written_holder(len: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        let class_id = b"DDS:Auth:PKI-DH:1.2+AuthReq\0";
+        out.extend_from_slice(&(class_id.len() as u32).to_le_bytes());
+        out.extend_from_slice(class_id);
+        while out.len() % 4 != 0 {
+            out.push(0);
+        }
+        out.extend_from_slice(&0u32.to_le_bytes()); // properties
+        out.extend_from_slice(&1u32.to_le_bytes()); // binary_properties
+        out.extend_from_slice(&7u32.to_le_bytes());
+        out.extend_from_slice(b"c.perm\0");
+        out.push(0); // to the 4-octet boundary of the length
+        out.extend_from_slice(&(len as u32).to_le_bytes());
+        out.extend((0..len).map(|i| (i % 251) as u8));
+        out
+    }
+
+    /// §7.3.3.1 types a binary value `OctetSeq`, unbounded: a signed
+    /// permissions document of 20 000 octets in `c.perm` is read.
+    #[test]
+    fn security_7_3_3_1_a_binary_value_above_8_kib_is_read() {
+        let bytes = hand_written_holder(20_000);
+        let holder = DataHolder::from_cdr_le(&bytes).expect("decode");
+        let perm = holder.binary_property("c.perm").expect("c.perm");
+        assert_eq!(perm.len(), 20_000);
+        assert!(perm.iter().enumerate().all(|(i, b)| *b == (i % 251) as u8));
+    }
+
+    /// Inside a `ParticipantGenericMessage` the DataHolder is read from the
+    /// rest of the message: what follows it does not count against its cap.
+    #[test]
+    fn security_7_3_4_1_a_data_holder_followed_by_more_message_than_its_cap_is_read() {
+        let mut bytes = hand_written_holder(100);
+        let own = bytes.len();
+        bytes.resize(own + MAX_TOKEN_BYTES, 0xEE);
+        let (holder, consumed) = DataHolder::from_cdr_le_consumed(&bytes).expect("decode");
+        assert_eq!(consumed, own);
+        assert_eq!(holder.binary_property("c.perm").map(<[u8]>::len), Some(100));
+    }
+
+    /// One that does not end within the cap is refused as above it.
+    #[test]
+    fn a_data_holder_beyond_its_cap_is_refused() {
+        let bytes = hand_written_holder(MAX_TOKEN_BYTES);
+        let err = DataHolder::from_cdr_le_consumed(&bytes).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
 
@@ -685,10 +778,43 @@ mod tests {
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }
 
+    /// §10.4.2.2: "If the MajorVersion and MinorVersion are missing from
+    /// the class_id, it shall be interpreted as being MajorVersion 1 and
+    /// MinorVersion 0."
+    /// The rule is that of the PermissionsToken; an IdentityToken without
+    /// the versions (§10.3.2.1 has no such rule) still matches none.
+    #[test]
+    fn security_10_4_2_2_a_class_id_without_versions_is_version_1_0() {
+        use class_id::{
+            ACCESS_PERMISSIONS_V12, AUTH_PKI_DH_V12, same_class_and_major_version,
+            same_permissions_class_and_major_version,
+        };
+        assert!(same_permissions_class_and_major_version(
+            "DDS:Access:Permissions",
+            ACCESS_PERMISSIONS_V12
+        ));
+        assert!(same_permissions_class_and_major_version(
+            ACCESS_PERMISSIONS_V12,
+            "DDS:Access:Permissions"
+        ));
+        assert!(!same_permissions_class_and_major_version(
+            "DDS:Access:Permissions",
+            "DDS:Access:Permissions:2.0"
+        ));
+        assert!(!same_permissions_class_and_major_version(
+            "DDS:Access",
+            ACCESS_PERMISSIONS_V12
+        ));
+        assert!(!same_class_and_major_version(
+            "DDS:Auth:PKI-DH",
+            AUTH_PKI_DH_V12
+        ));
+    }
+
     /// Table 70: PluginClassName and MajorVersion decide, the MinorVersion
     /// does not. Cyclone DDS and Fast DDS announce "...:1.0".
     #[test]
-    fn class_ids_compare_by_plugin_class_name_and_major_version() {
+    fn security_10_4_3_class_ids_compare_by_plugin_class_name_and_major_version() {
         use class_id::{ACCESS_PERMISSIONS_V12, same_class_and_major_version};
         assert!(same_class_and_major_version(
             "DDS:Access:Permissions:1.0",

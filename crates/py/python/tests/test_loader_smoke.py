@@ -32,17 +32,18 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_loader_resolves_library():
+def py_1_3_4_loader_resolves_library():
     """§1.3.4 — `load_library()` returns a CDLL object."""
     lib = loader.load_library()
     assert isinstance(lib, ctypes.CDLL)
 
 
-def test_loader_runtime_create_participant_offline():
+def py_1_3_4_loader_runtime_create_participant_offline(leased_domain):
     """§1.3.4 + §1.4 — `Runtime(domain_id=...)` can create a
-    participant offline via libzerodds and tear it down cleanly on GC.
+    participant via libzerodds and tear it down cleanly on GC; the runtime
+    announces itself, so its domain is leased (conftest.py).
     Spec: zerodds-ffi-loader-1.0 §3.1, zerodds-c-api §1."""
-    rt = loader.Runtime(domain_id=190)
+    rt = loader.Runtime(domain_id=leased_domain)
     # The runtime should hold a live handle — the attribute check
     # stays impl-stable (see loader.py: self._participant).
     assert rt is not None
@@ -53,14 +54,14 @@ def test_loader_runtime_create_participant_offline():
         close()
 
 
-def test_loader_factory_singleton():
+def py_1_2_1_loader_factory_singleton():
     """§1.3.4 — DomainParticipantFactory API also available in the ctypes
     path (zerodds-c-api §1.2)."""
     factory = loader.DomainParticipantFactory.instance()
     assert factory is not None
 
 
-def test_loader_zerodds_error_is_runtime_error_subclass():
+def py_1_3_4_loader_zerodds_error_is_runtime_error_subclass():
     """§1.3.4 — loader errors derive from RuntimeError (zerodds-c-api
     error mapping)."""
     assert issubclass(loader.ZeroDdsError, RuntimeError)

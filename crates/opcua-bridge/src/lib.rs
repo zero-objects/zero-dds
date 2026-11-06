@@ -36,7 +36,7 @@
 //!   DDS.
 //!
 //! Types are resolved through the reflective layer
-//! ([`zerodds-dcps::serialized_type::SerializedTypeSupport`], fed by a
+//! ([`zerodds_dcps::serialized_type::SerializedTypeSupport`], fed by a
 //! `CompleteTypeObject` this daemon builds from an operator-supplied `.idl`
 //! file — [`idl`]) rather than a compiled Rust type, the same primitive
 //! `crates/xrce-agent`'s daemon and `crates/routing-service` use for a topic
@@ -49,10 +49,10 @@
 //!   ([`zerodds_opcua_gateway::dds_to_ua::walker::DdsType`] /
 //!   [`zerodds_opcua_gateway::data_value::Variant`]).
 //! - [`idl`] — compiles an operator-supplied `.idl` file and builds the
-//!   [`zerodds-dcps::serialized_type::SerializedTypeSupport`] for a named
+//!   [`zerodds_dcps::serialized_type::SerializedTypeSupport`] for a named
 //!   type in it.
 //! - [`dds_bridge`] — the DDS-side port: participant/topic/reader/writer
-//!   registration against a real [`zerodds-dcps::runtime::DcpsRuntime`], plus
+//!   registration against a real [`zerodds_dcps::runtime::DcpsRuntime`], plus
 //!   SEDP-discovered topic enumeration.
 //! - [`address_space_build`] — Gateway 1.0 §9.3 AddressSpace materialization
 //!   (`DomainNode`/`TopicNode`/instance nodes) over a live DDS reader.

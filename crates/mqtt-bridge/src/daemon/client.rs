@@ -984,7 +984,7 @@ mod tests {
     }
 
     #[test]
-    fn backoff_connect_aborts_when_stop_set() {
+    fn mqttbridge_9_2_backoff_connect_aborts_when_stop_set() {
         let stop = AtomicBool::new(true);
         let cfg = DaemonConfig::default_for_dev();
         let b = BackoffConfig::default();

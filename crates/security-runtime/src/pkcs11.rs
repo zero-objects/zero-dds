@@ -184,30 +184,30 @@ pub fn parse(value: &str) -> Result<Pkcs11Uri, Pkcs11UriError> {
         }
     }
 
-    if let Some(query) = query {
-        if !query.is_empty() {
-            for attribute in query.split('&') {
-                let (name, raw) = attribute
-                    .split_once('=')
-                    .ok_or_else(|| Pkcs11UriError::MalformedAttribute(attribute.to_string()))?;
-                match name {
-                    "module-path" => {
-                        uri.module_path = Some(PathBuf::from(decode_string(name, raw)?));
-                    }
-                    "pin-value" => {
-                        if uri.pin.is_some() {
-                            return Err(Pkcs11UriError::DuplicatePin);
-                        }
-                        uri.pin = Some(Pkcs11Pin::Value(decode_string(name, raw)?));
-                    }
-                    "pin-source" => {
-                        if uri.pin.is_some() {
-                            return Err(Pkcs11UriError::DuplicatePin);
-                        }
-                        uri.pin = Some(Pkcs11Pin::Source(decode_string(name, raw)?));
-                    }
-                    other => return Err(Pkcs11UriError::UnknownQueryAttribute(other.to_string())),
+    if let Some(query) = query
+        && !query.is_empty()
+    {
+        for attribute in query.split('&') {
+            let (name, raw) = attribute
+                .split_once('=')
+                .ok_or_else(|| Pkcs11UriError::MalformedAttribute(attribute.to_string()))?;
+            match name {
+                "module-path" => {
+                    uri.module_path = Some(PathBuf::from(decode_string(name, raw)?));
                 }
+                "pin-value" => {
+                    if uri.pin.is_some() {
+                        return Err(Pkcs11UriError::DuplicatePin);
+                    }
+                    uri.pin = Some(Pkcs11Pin::Value(decode_string(name, raw)?));
+                }
+                "pin-source" => {
+                    if uri.pin.is_some() {
+                        return Err(Pkcs11UriError::DuplicatePin);
+                    }
+                    uri.pin = Some(Pkcs11Pin::Source(decode_string(name, raw)?));
+                }
+                other => return Err(Pkcs11UriError::UnknownQueryAttribute(other.to_string())),
             }
         }
     }
@@ -324,10 +324,10 @@ pub fn read_certificate_der(uri: &Pkcs11Uri) -> Result<Vec<u8>, Pkcs11Error> {
         .get_attributes(object, &[AttributeType::Value])
         .map_err(|e| Pkcs11Error::Module(format!("C_GetAttributeValue(CKA_VALUE): {e}")))?;
     for attribute in attributes {
-        if let Attribute::Value(value) = attribute {
-            if !value.is_empty() {
-                return Ok(value);
-            }
+        if let Attribute::Value(value) = attribute
+            && !value.is_empty()
+        {
+            return Ok(value);
         }
     }
     Err(Pkcs11Error::NoValue(describe(uri)))
@@ -495,10 +495,10 @@ fn select_slot(pkcs11: &Pkcs11, slots: &[Slot], uri: &Pkcs11Uri) -> Result<Slot,
         None => slots.first().copied().ok_or(Pkcs11Error::NoToken),
         Some(label) => {
             for slot in slots {
-                if let Ok(info) = pkcs11.get_token_info(*slot) {
-                    if info.label() == label {
-                        return Ok(*slot);
-                    }
+                if let Ok(info) = pkcs11.get_token_info(*slot)
+                    && info.label() == label
+                {
+                    return Ok(*slot);
                 }
             }
             Err(Pkcs11Error::TokenNotFound(label.clone()))
@@ -615,7 +615,7 @@ fn describe(uri: &Pkcs11Uri) -> String {
 /// ASN.1/DER `SEQUENCE { INTEGER r, INTEGER s }` the peer verifies.
 #[cfg(feature = "pkcs11")]
 fn ecdsa_raw_to_der(raw: &[u8]) -> Result<Vec<u8>, String> {
-    if raw.is_empty() || raw.len() % 2 != 0 {
+    if raw.is_empty() || !raw.len().is_multiple_of(2) {
         return Err(format!(
             "CKM_ECDSA returned {} bytes, not a raw r||s pair",
             raw.len()
@@ -696,7 +696,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_path_attribute_parses() {
+    fn security_10_3_1_every_path_attribute_parses() {
         let uri = parse("pkcs11:token=ZeroDDS;object=identity;id=%01%02;type=cert").unwrap();
         assert_eq!(uri.token.as_deref(), Some("ZeroDDS"));
         assert_eq!(uri.object.as_deref(), Some("identity"));
@@ -722,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn every_query_attribute_parses() {
+    fn security_10_3_1_every_query_attribute_parses() {
         let uri =
             parse("pkcs11:token=t?module-path=/usr/lib/softhsm/libsofthsm2.so&pin-value=1234")
                 .unwrap();

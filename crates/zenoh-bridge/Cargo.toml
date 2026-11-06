@@ -90,3 +90,18 @@ zerodds-test-vendor-reader = { path = "../test-vendor-reader" }
 name = "zerodds-zenoh-bridged"
 path = "src/bin/zerodds-zenoh-bridged.rs"
 required-features = ["daemon"]
+
+# The contract with zerodds-types (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-types only with `zenoh-runtime`.
+[[test]]
+name = "contract_types"
+path = "tests/contract_types.rs"
+required-features = ["zenoh-runtime"]
+
+# The contract with zerodds-dcps (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-dcps only with `zenoh-runtime`, and the
+# daemon configuration this target also checks only with `daemon`.
+[[test]]
+name = "contract_dcps"
+path = "tests/contract_dcps.rs"
+required-features = ["daemon"]

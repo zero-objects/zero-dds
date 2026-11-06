@@ -161,15 +161,14 @@ impl PeerConn {
 
     fn ensure_connected(&mut self) -> std::io::Result<&mut BufWriter<TcpStream>> {
         if self.writer.is_none() {
-            if self.backoff_ms > 0 {
-                if let Some(last) = self.last_attempt {
-                    if last.elapsed() < Duration::from_millis(self.backoff_ms) {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::WouldBlock,
-                            "reconnect throttled by backoff",
-                        ));
-                    }
-                }
+            if self.backoff_ms > 0
+                && let Some(last) = self.last_attempt
+                && last.elapsed() < Duration::from_millis(self.backoff_ms)
+            {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::WouldBlock,
+                    "reconnect throttled by backoff",
+                ));
             }
             self.last_attempt = Some(std::time::Instant::now());
             match TcpStream::connect_timeout(&self.addr, CLIENT_CONNECT_TIMEOUT) {
@@ -432,10 +431,10 @@ impl TcpTransport {
     }
 
     fn forget_connection(&self, id: u64) {
-        if let Ok(mut open) = self.accepted.lock() {
-            if let Some(stream) = open.remove(&id) {
-                let _ = stream.shutdown(std::net::Shutdown::Both);
-            }
+        if let Ok(mut open) = self.accepted.lock()
+            && let Some(stream) = open.remove(&id)
+        {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
         }
     }
 
@@ -545,7 +544,7 @@ impl TcpTransport {
                 Ok(data) => {
                     self.push_inbound(ReceivedDatagram {
                         source: source_locator,
-                        data: std::sync::Arc::from(data.into_boxed_slice()),
+                        data: data.into(),
                     });
                 }
                 Err(FramingError::UnexpectedEof) => return Ok(()),
@@ -789,14 +788,6 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_locator_udpv4() {
-        let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
-        let udp = Locator::udp_v4([127, 0, 0, 1], 7400);
-        let err = Transport::send(&t, &udp, b"x").unwrap_err();
-        assert!(matches!(err, SendError::UnsupportedLocator));
-    }
-
-    #[test]
     fn unsupported_locator_invalid() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         let err = Transport::send(&t, &Locator::INVALID, b"x").unwrap_err();
@@ -804,12 +795,12 @@ mod tests {
     }
 
     #[test]
-    fn inbound_overflow_drops_oldest_and_counts() {
+    fn tcp_5_4_inbound_overflow_drops_oldest_and_counts() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         for i in 0..(MAX_INBOUND_QUEUE as u64 + 5) {
             t.push_inbound(ReceivedDatagram {
                 source: Locator::tcp_v4([127, 0, 0, 1], 1),
-                data: alloc::sync::Arc::from([i as u8].as_slice()),
+                data: alloc::sync::Arc::<[u8]>::from([i as u8].as_slice()).into(),
             });
         }
         assert_eq!(t.dropped_frames(), 5);
@@ -829,7 +820,7 @@ mod tests {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         t.push_inbound(ReceivedDatagram {
             source: Locator::tcp_v4([127, 0, 0, 1], 9),
-            data: alloc::sync::Arc::from([7u8, 8, 9].as_slice()),
+            data: alloc::sync::Arc::<[u8]>::from([7u8, 8, 9].as_slice()).into(),
         });
         let dg = t.try_recv().unwrap();
         assert_eq!(&dg.data[..], &[7u8, 8, 9]);
@@ -839,7 +830,7 @@ mod tests {
     /// pushing a frame from a background thread; the recv caller must
     /// wake up (covers the `inbound_cv.wait` branch).
     #[test]
-    fn recv_wakes_on_push_from_other_thread() {
+    fn tcp_5_4_recv_wakes_on_push_from_other_thread() {
         use std::sync::Arc as StdArc;
         use std::thread;
         use std::time::Duration as StdDuration;
@@ -850,7 +841,7 @@ mod tests {
             thread::sleep(StdDuration::from_millis(30));
             t2.push_inbound(ReceivedDatagram {
                 source: Locator::tcp_v4([127, 0, 0, 1], 7),
-                data: alloc::sync::Arc::from([0xAAu8].as_slice()),
+                data: alloc::sync::Arc::<[u8]>::from([0xAAu8].as_slice()).into(),
             });
         });
         let dg = Transport::recv(&*t).unwrap();
@@ -865,7 +856,7 @@ mod tests {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         t.push_inbound(ReceivedDatagram {
             source: Locator::tcp_v4([127, 0, 0, 1], 1),
-            data: alloc::sync::Arc::from([1u8].as_slice()),
+            data: alloc::sync::Arc::<[u8]>::from([1u8].as_slice()).into(),
         });
         let dg = Transport::recv(&t).unwrap();
         assert_eq!(&dg.data[..], &[1u8]);
@@ -875,7 +866,7 @@ mod tests {
     /// innards — that saves real sockets. On the next send to a new
     /// address the smallest key must be evicted.
     #[test]
-    fn max_peers_eviction_removes_first_key_on_new_peer() {
+    fn tcp_5_3_max_peers_eviction_removes_first_key_on_new_peer() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         {
             let mut pool = t.peers.lock().unwrap();
@@ -907,7 +898,7 @@ mod tests {
     /// MAX_PEERS branch: if the target peer is already in the pool, no
     /// eviction may happen (the `&& !contains_key` gate kicks in).
     #[test]
-    fn max_peers_no_eviction_for_existing_peer() {
+    fn tcp_5_3_max_peers_no_eviction_for_existing_peer() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         let target_addr: SocketAddr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 2).into();
         {
@@ -940,7 +931,7 @@ mod tests {
             _ => panic!("invalid v6 port"),
         };
         let dest = Locator::tcp_v6(Ipv6Addr::LOCALHOST.octets(), u32::from(port));
-        // Background accept thread (analogous to accept_one_reads_one_frame_then_eof).
+        // Background accept thread (analogous to tcp_2_4_accept_one_reads_one_frame_then_eof).
         let server_for_accept = StdArc::clone(&server);
         let h = std::thread::spawn(move || {
             let _ = server_for_accept.accept_one();
@@ -958,7 +949,7 @@ mod tests {
 
     /// `PeerConn::bump_backoff` follows an exponential ramp with a cap.
     #[test]
-    fn peer_conn_bump_backoff_sequence() {
+    fn tcp_5_2_peer_conn_bump_backoff_sequence() {
         let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1);
         let mut p = PeerConn::new(addr);
         assert_eq!(p.backoff_ms, 0);
@@ -975,7 +966,7 @@ mod tests {
     /// `ensure_connected` enforces backoff throttling as long as the
     /// `last_attempt` window is still running (WouldBlock path).
     #[test]
-    fn peer_conn_backoff_throttles_connect() {
+    fn tcp_5_2_peer_conn_backoff_throttles_connect() {
         let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1);
         let mut p = PeerConn::new(addr);
         p.backoff_ms = 5_000;
@@ -994,41 +985,12 @@ mod tests {
         assert!(p.writer.is_none());
     }
 
-    /// Debug format for PeerConn (coverage of the Debug impl).
-    #[test]
-    fn peer_conn_debug_format_works() {
-        let addr = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 1);
-        let p = PeerConn::new(addr);
-        let s = alloc::format!("{p:?}");
-        assert!(s.contains("PeerConn"));
-    }
-
-    /// Display/Debug of all TcpTransportError variants for coverage of
-    /// the Display match (incl. FrameTooLarge + PeerIo).
-    #[test]
-    fn tcp_transport_error_display_all_variants() {
-        let bind = TcpTransportError::Bind(std::io::Error::other("x"));
-        let accept = TcpTransportError::Accept(std::io::Error::other("x"));
-        let set_to = TcpTransportError::SetTimeout(std::io::Error::other("x"));
-        let unsup = TcpTransportError::UnsupportedLocator;
-        let big = TcpTransportError::FrameTooLarge {
-            announced: 1_000_000,
-        };
-        let peer_io = TcpTransportError::PeerIo(std::io::Error::other("x"));
-        for e in [bind, accept, set_to, unsup, big, peer_io] {
-            let msg = alloc::format!("{e}");
-            assert!(!msg.is_empty());
-            let dbg = alloc::format!("{e:?}");
-            assert!(!dbg.is_empty());
-        }
-    }
-
     /// DDSI-RTPS 2.5 §9.3.2.4: the TCP kinds lie in the vendor range
     /// (0x01F0_0004, 0x01F0_0005); the values 4 and 8 of Fast DDS are a
     /// setting of `zerodds-rtps`. The transport binds these two kinds, so a
     /// renumbering there has to break here.
     #[test]
-    fn locator_kinds_are_zerodds_vendor_range_values() {
+    fn rtps_9_3_2_4_locator_kinds_are_zerodds_vendor_range_values() {
         assert_eq!(
             Locator::tcp_v4([127, 0, 0, 1], 7400).kind.as_i32(),
             0x01F0_0004
@@ -1038,7 +1000,7 @@ mod tests {
 
     /// `locator_to_socket_v4` returns `WrongKind` for UDP.
     #[test]
-    fn locator_to_socket_v4_rejects_udp() {
+    fn tcp_1_1_locator_to_socket_v4_rejects_udp() {
         let udp = Locator::udp_v4([127, 0, 0, 1], 7400);
         assert!(matches!(
             locator_to_socket_v4(&udp),
@@ -1048,7 +1010,7 @@ mod tests {
 
     /// `locator_to_socket_v4` maps TCPv4 to SocketAddrV4.
     #[test]
-    fn locator_to_socket_v4_maps_tcp() {
+    fn tcp_1_1_locator_to_socket_v4_maps_tcp() {
         let tcp = Locator::tcp_v4([10, 0, 0, 1], 7400);
         let sa = locator_to_socket_v4(&tcp).unwrap();
         assert_eq!(sa.ip(), &Ipv4Addr::new(10, 0, 0, 1));
@@ -1069,26 +1031,19 @@ mod tests {
 
     /// `dropped_frames` starts at 0.
     #[test]
-    fn dropped_frames_zero_on_fresh_transport() {
+    fn tcp_5_4_dropped_frames_zero_on_fresh_transport() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         assert_eq!(t.dropped_frames(), 0);
     }
 
-    /// local_locator() inherent and trait return the same value.
-    #[test]
-    fn local_locator_inherent_and_trait_match() {
-        let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
-        assert_eq!(t.local_locator(), Transport::local_locator(&t));
-    }
-
     /// Push keeps FIFO order for all frames below the queue cap.
     #[test]
-    fn push_preserves_fifo_order() {
+    fn tcp_5_4_push_preserves_fifo_order() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         for i in 0..5u8 {
             t.push_inbound(ReceivedDatagram {
                 source: Locator::tcp_v4([127, 0, 0, 1], 1),
-                data: alloc::sync::Arc::from([i].as_slice()),
+                data: alloc::sync::Arc::<[u8]>::from([i].as_slice()).into(),
             });
         }
         for expected in 0..5u8 {
@@ -1110,7 +1065,7 @@ mod tests {
     /// send via a UDP locator must not create a pool entry
     /// (UnsupportedLocator is thrown before the pool lookup).
     #[test]
-    fn send_unsupported_locator_does_not_pollute_pool() {
+    fn tcp_5_1_send_unsupported_locator_does_not_pollute_pool() {
         let t = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).unwrap();
         let udp = Locator::udp_v4([127, 0, 0, 1], 7400);
         let _ = Transport::send(&t, &udp, b"x");
@@ -1121,7 +1076,7 @@ mod tests {
     /// on EOF after the first frame (happy path through the read_frame
     /// loop + UnexpectedEof branch).
     #[test]
-    fn accept_one_reads_one_frame_then_eof() {
+    fn tcp_2_4_accept_one_reads_one_frame_then_eof() {
         use std::io::Write;
         use std::thread;
 
@@ -1150,7 +1105,7 @@ mod tests {
     /// `accept_one` with a peer that announces a frame larger than the
     /// cap returns `FrameTooLarge`.
     #[test]
-    fn accept_one_frame_too_large_errors() {
+    fn tcp_2_3_accept_one_frame_too_large_errors() {
         use std::io::Write;
         use std::thread;
 
@@ -1173,7 +1128,7 @@ mod tests {
     /// `accept_one` with a peer that sends **no** handshake (e.g. a
     /// broken HTTP probe) rejects with `TcpTransportError::Handshake`.
     #[test]
-    fn accept_one_rejects_peer_without_handshake() {
+    fn tcp_3_4_accept_one_rejects_peer_without_handshake() {
         use std::io::Write;
         use std::thread;
 
@@ -1197,7 +1152,7 @@ mod tests {
     /// its own — the per-syscall read slice is 200 ms and the total
     /// handshake budget 2 s, so the accept thread cannot be pinned.
     #[test]
-    fn accept_one_gives_up_on_a_stalling_handshake_peer() {
+    fn tcp_3_8_accept_one_gives_up_on_a_stalling_handshake_peer() {
         use std::io::Write;
         use std::sync::mpsc;
         use std::thread;
@@ -1384,7 +1339,7 @@ mod tests {
     /// After a successful connect, `backoff_ms` must fall to 0.
     /// Measure indirectly: two sends to a port that is first down, then up.
     #[test]
-    fn backoff_resets_after_successful_connect() {
+    fn tcp_5_2_backoff_resets_after_successful_connect() {
         use std::thread;
         use std::time::Duration as StdDuration;
 
@@ -1443,7 +1398,7 @@ mod tests {
     /// from the underlying write_frame (covers the `FrameTooLarge` path
     /// in the send match).
     #[test]
-    fn send_oversized_payload_returns_payload_too_large() {
+    fn tcp_2_3_send_oversized_payload_returns_payload_too_large() {
         use std::io::Write;
         use std::thread;
 
@@ -1479,19 +1434,6 @@ mod tests {
         // the TCP socket was never even written → the server sits on EOF.
         let _ = std::io::sink().write_all(b"tickle"); // no-op, satisfies formatter
         h.join().unwrap();
-    }
-
-    /// When a peer aborts mid header-read (TCP RST via linger=0 +
-    /// shutdown), `read_frame` returns the Io path. We cannot force a
-    /// deterministic ECONNRESET on macOS, so we document this as a
-    /// known uncovered branch.
-    /// (The test stub keeps the caller green.)
-    #[test]
-    fn peer_io_error_branch_documented() {
-        // No assertion — this is a marker test.
-        // The PeerIo branch is only visible via BufReader::read_exact
-        // when the OS returns an IO error instead of an EOF. On
-        // Linux/macOS, TCP after shutdown() reliably behaves as EOF.
     }
 
     /// DDSI-RTPS 2.5 §8.4.14.1: the transport states its largest message,

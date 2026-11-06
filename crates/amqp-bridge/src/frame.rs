@@ -165,50 +165,58 @@ pub fn decode_frame_header(bytes: &[u8]) -> Result<FrameHeader, FrameError> {
 mod tests {
     use super::*;
 
+    // OASIS AMQP 1.0 Part 2 (`amqp-1.0-transport`) §2.3.1, Figure 2.14:
+    // SIZE (4 octets), DOFF (1), TYPE (1), two type-specific octets (the
+    // channel of an AMQP frame), the extended header, the body.
+
+    /// §2.3.1: the frame type octet is 0x00 for AMQP and 0x01 for SASL.
     #[test]
-    fn frame_type_round_trip() {
-        for ft in [FrameType::Amqp, FrameType::Sasl, FrameType::Reserved(0xFE)] {
-            assert_eq!(FrameType::from_u8(ft.to_u8()), ft);
-        }
+    fn amqp10_2_3_1_the_type_octet_is_0x00_for_amqp_and_0x01_for_sasl() {
+        assert_eq!(FrameType::from_u8(0x00), FrameType::Amqp);
+        assert_eq!(FrameType::from_u8(0x01), FrameType::Sasl);
+        assert_eq!(FrameType::from_u8(0xfe), FrameType::Reserved(0xfe));
+        let sasl = FrameHeader {
+            size: 8,
+            doff: 2,
+            frame_type: FrameType::Sasl,
+            channel: 0,
+        };
+        assert_eq!(encode_frame_header(sasl), [0, 0, 0, 8, 2, 0x01, 0, 0]);
     }
 
+    /// §2.3.1: the smallest frame is its eight-octet header, DOFF 2.
     #[test]
-    fn header_round_trip_minimum_size() {
-        // Minimum: SIZE=8, DOFF=2 (no extended header), Type=AMQP,
-        // Channel=0.
+    fn amqp10_2_3_1_the_smallest_frame_is_its_eight_octet_header() {
         let h = FrameHeader::new_amqp(8, 2, 0);
-        let bytes = encode_frame_header(h);
-        assert_eq!(bytes, [0, 0, 0, 8, 2, 0, 0, 0]);
-        let parsed = decode_frame_header(&bytes).expect("decode");
-        assert_eq!(parsed, h);
+        assert_eq!(encode_frame_header(h), [0, 0, 0, 8, 2, 0, 0, 0]);
+        assert_eq!(decode_frame_header(&[0, 0, 0, 8, 2, 0, 0, 0]), Ok(h));
     }
 
+    /// §2.3.1: SIZE and the channel in network byte order.
     #[test]
-    fn header_with_channel_42_and_size_1024() {
+    fn amqp10_2_3_1_size_and_channel_are_in_network_byte_order() {
         let h = FrameHeader {
             size: 1024,
             doff: 2,
             frame_type: FrameType::Amqp,
             channel: 42,
         };
-        let bytes = encode_frame_header(h);
-        let parsed = decode_frame_header(&bytes).expect("decode");
-        assert_eq!(parsed, h);
-        assert_eq!(parsed.channel, 42);
-        assert_eq!(parsed.size, 1024);
+        let octets = [0x00, 0x00, 0x04, 0x00, 0x02, 0x00, 0x00, 0x2a];
+        assert_eq!(encode_frame_header(h), octets);
+        assert_eq!(decode_frame_header(&octets), Ok(h));
     }
 
+    /// §2.3.1.3 (DOFF): the body begins DOFF times four octets into the
+    /// frame.
     #[test]
-    fn body_offset_is_doff_times_4() {
-        // Spec §2.3.1.3.
-        let h = FrameHeader::new_amqp(20, 3, 0); // 3 words = 12 bytes.
-        assert_eq!(h.body_offset(), 12);
-        let h2 = FrameHeader::new_amqp(8, 2, 0); // 2 words = 8 bytes (no ext header).
-        assert_eq!(h2.body_offset(), 8);
+    fn amqp10_2_3_1_the_body_begins_doff_times_four_octets_in() {
+        assert_eq!(FrameHeader::new_amqp(20, 3, 0).body_offset(), 12);
+        assert_eq!(FrameHeader::new_amqp(8, 2, 0).body_offset(), 8);
     }
 
+    /// §2.3.1: fewer than eight octets are no header.
     #[test]
-    fn header_too_short_decode_fails() {
+    fn amqp10_2_3_1_fewer_than_eight_octets_are_no_header() {
         assert_eq!(decode_frame_header(&[]), Err(FrameError::HeaderTooShort));
         assert_eq!(
             decode_frame_header(&[0; 7]),
@@ -216,45 +224,31 @@ mod tests {
         );
     }
 
+    /// §2.3.1.3: DOFF "MUST be at least 2".
     #[test]
-    fn doff_below_2_rejected() {
-        // Spec §2.3.1.3 — DOFF MUST be >= 2.
-        let bytes = [0u8, 0, 0, 8, 1, 0, 0, 0];
+    fn amqp10_2_3_1_a_doff_below_2_is_refused() {
         assert_eq!(
-            decode_frame_header(&bytes),
+            decode_frame_header(&[0u8, 0, 0, 8, 1, 0, 0, 0]),
             Err(FrameError::InvalidDataOffset(1))
         );
     }
 
+    /// §2.3.1.2: SIZE counts the whole frame, at least its eight-octet
+    /// header.
     #[test]
-    fn size_below_8_rejected() {
-        // Spec §2.3.1.2 — SIZE incl. header (8 bytes minimum).
-        let bytes = [0u8, 0, 0, 4, 2, 0, 0, 0];
+    fn amqp10_2_3_1_a_size_below_8_is_refused() {
         assert_eq!(
-            decode_frame_header(&bytes),
+            decode_frame_header(&[0u8, 0, 0, 4, 2, 0, 0, 0]),
             Err(FrameError::SizeBelowMinimum(4))
         );
     }
 
+    /// §2.3.1: a body offset beyond SIZE is malformed.
     #[test]
-    fn body_offset_exceeding_size_rejected() {
-        // Doff*4 > SIZE → invalid.
-        let bytes = [0u8, 0, 0, 8, 4, 0, 0, 0];
+    fn amqp10_2_3_1_a_body_offset_beyond_size_is_refused() {
         assert_eq!(
-            decode_frame_header(&bytes),
+            decode_frame_header(&[0u8, 0, 0, 8, 4, 0, 0, 0]),
             Err(FrameError::BodyOffsetExceedsSize)
         );
-    }
-
-    #[test]
-    fn sasl_frame_type_byte_is_1() {
-        let h = FrameHeader {
-            size: 8,
-            doff: 2,
-            frame_type: FrameType::Sasl,
-            channel: 0,
-        };
-        let bytes = encode_frame_header(h);
-        assert_eq!(bytes[5], 0x01);
     }
 }

@@ -271,10 +271,10 @@ impl<'a> ModelFromTypeObjects<'a> {
                     depth,
                     &format!("{name} (body)"),
                 )?;
-                if !applied.is_empty() {
-                    if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                        facets.annotations.extend(applied);
-                    }
+                if !applied.is_empty()
+                    && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+                {
+                    facets.annotations.extend(applied);
                 }
                 Ok(id)
             }
@@ -328,10 +328,9 @@ impl<'a> ModelFromTypeObjects<'a> {
                     .map(alloc::string::ToString::to_string)
                     .collect::<Vec<_>>(),
             ))
+            && let Some(id) = existing.as_type()
         {
-            if let Some(id) = existing.as_type() {
-                return Ok((id, true));
-            }
+            return Ok((id, true));
         }
         self.ast
             .add_type(module, &name, kind)
@@ -832,10 +831,10 @@ impl<'a> ModelFromTypeObjects<'a> {
         if let Some(identifier) = announce {
             self.cache.push((identifier.clone(), id));
         }
-        if let Some(behaviour) = try_construct_of(node.discriminator.common.member_flags.0) {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                facets.xtypes_mut().discriminator_try_construct = Some(behaviour);
-            }
+        if let Some(behaviour) = try_construct_of(node.discriminator.common.member_flags.0)
+            && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+        {
+            facets.xtypes_mut().discriminator_try_construct = Some(behaviour);
         }
         // The union's own applications and the discriminator's. Annex B
         // has an `ann_custom` on both `CompleteUnionHeader::detail` and
@@ -845,10 +844,10 @@ impl<'a> ModelFromTypeObjects<'a> {
         // where `zerodds_idl_lower` reads `union U switch (@a K)`.
         let applied = self.apply_type_annotations(&node.header.detail, &name, depth)?;
         self.apply_type_verbatim(id, &node.header.detail)?;
-        if !applied.is_empty() {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                facets.annotations.extend(applied);
-            }
+        if !applied.is_empty()
+            && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+        {
+            facets.annotations.extend(applied);
         }
         let mut on_discriminator = Vec::new();
         self.apply_applied_annotations(
@@ -857,23 +856,23 @@ impl<'a> ModelFromTypeObjects<'a> {
             depth,
             &format!("{name} (discriminator)"),
         )?;
-        if !on_discriminator.is_empty() {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                facets
-                    .xtypes_mut()
-                    .discriminator_annotations
-                    .extend(on_discriminator);
-            }
+        if !on_discriminator.is_empty()
+            && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+        {
+            facets
+                .xtypes_mut()
+                .discriminator_annotations
+                .extend(on_discriminator);
         }
         // `@key` on the discriminator, Table 21's second position for
         // the annotation. Dropping it here would turn a keyed union that
         // arrived over TypeLookup into an unkeyed one, and the model
         // would then hash to a `TypeIdentifier` that is not the one it
         // came in under.
-        if node.discriminator.common.member_flags.0 & UnionDiscriminatorFlag::IS_KEY != 0 {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                facets.xtypes_mut().discriminator_is_key = true;
-            }
+        if node.discriminator.common.member_flags.0 & UnionDiscriminatorFlag::IS_KEY != 0
+            && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+        {
+            facets.xtypes_mut().discriminator_is_key = true;
         }
         for member in &node.member_seq {
             let at = format!("{name}::{}", member.detail.name);
@@ -927,10 +926,10 @@ impl<'a> ModelFromTypeObjects<'a> {
         }
         let applied = self.apply_type_annotations(&node.header.detail, &name, 0)?;
         self.apply_type_verbatim(id, &node.header.detail)?;
-        if !applied.is_empty() {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                facets.annotations.extend(applied);
-            }
+        if !applied.is_empty()
+            && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+        {
+            facets.annotations.extend(applied);
         }
         for literal in &node.literal_seq {
             // Written as an explicit `@value`, always: the wire form
@@ -980,10 +979,10 @@ impl<'a> ModelFromTypeObjects<'a> {
         }
         let applied = self.apply_type_annotations(&node.detail, &name, 0)?;
         self.apply_type_verbatim(id, &node.detail)?;
-        if !applied.is_empty() {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                facets.annotations.extend(applied);
-            }
+        if !applied.is_empty()
+            && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+        {
+            facets.annotations.extend(applied);
         }
         for flag in &node.flag_seq {
             // As with an enumerator's value: the position is explicit
@@ -1027,10 +1026,10 @@ impl<'a> ModelFromTypeObjects<'a> {
         )?;
         let applied = self.apply_type_annotations(&node.detail, &name, depth)?;
         self.apply_type_verbatim(id, &node.detail)?;
-        if !applied.is_empty() {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(id)?) {
-                facets.annotations.extend(applied);
-            }
+        if !applied.is_empty()
+            && let Some(facets) = self.ast.facets_mut(self.any_type(id)?)
+        {
+            facets.annotations.extend(applied);
         }
         let mut position: u16 = 0;
         for field in &node.field_seq {
@@ -1266,12 +1265,12 @@ impl<'a> ModelFromTypeObjects<'a> {
         if let Some(unit) = &detail.ann_builtin.unit {
             facet.unit = Some(unit.clone());
         }
-        if let Some(hash_id) = &detail.ann_builtin.hash_id {
-            if let Some(assignment) = facet.member_id.as_mut() {
-                assignment.origin = MemberIdOrigin::Hashed {
-                    source_name: hash_id.clone(),
-                };
-            }
+        if let Some(hash_id) = &detail.ann_builtin.hash_id
+            && let Some(assignment) = facet.member_id.as_mut()
+        {
+            assignment.origin = MemberIdOrigin::Hashed {
+                source_name: hash_id.clone(),
+            };
         }
         if detail.ann_builtin.min.is_some() || detail.ann_builtin.max.is_some() {
             let mut range = RangeConstraint {
@@ -1547,10 +1546,10 @@ impl<'a> ModelFromTypeObjects<'a> {
             Some(detail) => self.apply_type_annotations(detail, at, depth)?,
             None => Vec::new(),
         };
-        if !applied.is_empty() {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(collection)?) {
-                facets.annotations.extend(applied);
-            }
+        if !applied.is_empty()
+            && let Some(facets) = self.ast.facets_mut(self.any_type(collection)?)
+        {
+            facets.annotations.extend(applied);
         }
         let mut on_element = Vec::new();
         self.apply_applied_annotations(
@@ -1561,12 +1560,12 @@ impl<'a> ModelFromTypeObjects<'a> {
         )?;
         let mut on_key = Vec::new();
         self.apply_applied_annotations(key, &mut on_key, depth, &format!("{at} (key)"))?;
-        if !on_element.is_empty() || !on_key.is_empty() {
-            if let Some(facets) = self.ast.facets_mut(self.any_type(collection)?) {
-                let x = facets.xtypes_mut();
-                x.element_annotations.extend(on_element);
-                x.key_annotations.extend(on_key);
-            }
+        if (!on_element.is_empty() || !on_key.is_empty())
+            && let Some(facets) = self.ast.facets_mut(self.any_type(collection)?)
+        {
+            let x = facets.xtypes_mut();
+            x.element_annotations.extend(on_element);
+            x.key_annotations.extend(on_key);
         }
         Ok(())
     }
@@ -1729,7 +1728,7 @@ mod tests {
     /// was offered rather than producing a type with invented member
     /// names.
     #[test]
-    fn a_minimal_type_object_is_refused_by_name() {
+    fn xtypes_7_5_2_2_8_a_minimal_type_object_is_refused_by_name() {
         let registry = TypeRegistry::new();
         let mut builder = ModelFromTypeObjects::new(&registry);
         let minimal = TypeObject::Minimal(MinimalTypeObject::Struct(MinimalStructType {

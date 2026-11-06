@@ -66,7 +66,7 @@ fn participant_with_topics() -> DomainParticipant {
 /// Annex B.2: the subscription expression is a `TopicExpression`; a
 /// `Condition`, an `ORDER BY` and the rest are refused, never ignored.
 #[test]
-fn a_subscription_expression_must_be_a_topic_expression() {
+fn dcps_2_2_2_2_1_9_a_subscription_expression_must_be_a_topic_expression() {
     let p = participant_with_topics();
     for bad in [
         "id > 0",
@@ -105,7 +105,7 @@ fn a_subscription_expression_must_be_a_topic_expression() {
 /// any locally-created Topic, ContentFilteredTopic, and MultiTopic object";
 /// a deleted one is not found.
 #[test]
-fn lookup_topicdescription_finds_a_multitopic() {
+fn dcps_2_2_2_2_1_12_lookup_topicdescription_finds_a_multitopic() {
     let p = participant_with_topics();
     let mt = p
         .create_dynamic_multitopic(
@@ -135,7 +135,7 @@ fn lookup_topicdescription_finds_a_multitopic() {
 /// The topics of the `FROM` clause are topics of the participant, and their
 /// members are named by their `TypeObject`.
 #[test]
-fn the_topics_of_the_from_clause_must_exist_and_have_a_type_object() {
+fn dcps_2_2_2_2_1_9_the_topics_of_the_from_clause_must_exist_and_have_a_type_object() {
     let p = participant_with_topics();
     assert!(bad_parameter(p.create_dynamic_multitopic(
         "MT",
@@ -156,7 +156,7 @@ fn the_topics_of_the_from_clause_must_exist_and_have_a_type_object() {
 /// §2.2.2.3.4: "the type of the fields used for the NATURAL JOIN operation
 /// must be the same".
 #[test]
-fn topics_sharing_a_member_name_need_the_same_type() {
+fn dcps_2_2_2_2_1_9_topics_sharing_a_member_name_need_the_same_type() {
     let p = participant_with_topics();
     p.create_dynamic_topic(
         "Clash",
@@ -175,7 +175,7 @@ fn topics_sharing_a_member_name_need_the_same_type() {
 /// The result type holds the fields of the `SELECT` list: a member for each
 /// field, of its type, and nothing left without a field.
 #[test]
-fn the_result_type_must_hold_the_fields_of_the_select_list() {
+fn dcps_2_2_2_2_1_9_the_result_type_must_hold_the_fields_of_the_select_list() {
     let p = participant_with_topics();
     // OrderCopy has `amount`, which the list leaves out.
     assert!(bad_parameter(p.create_dynamic_multitopic(
@@ -247,7 +247,7 @@ fn where_names_columns_and_aliases_only() {
 /// the structure (Annex B.2 FIELDNAME refers to fields at any depth), in the
 /// row, in the join, in `SELECT` and `WHERE`.
 #[test]
-fn inherited_members_are_fields_of_the_structure() {
+fn dcps_2_2_2_3_4_inherited_members_are_fields_of_the_structure() {
     let p = participant_with_topics();
     p.create_dynamic_topic(
         "Derived",
@@ -288,7 +288,7 @@ fn inherited_members_are_fields_of_the_structure() {
 }
 
 #[test]
-fn the_expression_parameters_are_checked_and_can_be_set() {
+fn dcps_2_2_2_3_4_the_expression_parameters_are_checked_and_can_be_set() {
     let p = participant_with_topics();
     // %1 with one parameter.
     assert!(bad_parameter(p.create_dynamic_multitopic(
@@ -326,7 +326,7 @@ fn the_expression_parameters_are_checked_and_can_be_set() {
 }
 
 #[test]
-fn a_multitopic_of_a_foreign_participant_is_not_deleted() {
+fn dcps_2_2_2_2_1_10_a_multitopic_of_a_foreign_participant_is_not_deleted() {
     let p = participant_with_topics();
     let q = offline();
     let mt = p
@@ -565,7 +565,7 @@ mod live {
     /// order is joined with the customer of its `id`, as the customer and
     /// the order arrive; an order with no customer waits for one.
     #[test]
-    fn a_reader_delivers_the_natural_join_of_two_topics() {
+    fn dcps_2_2_2_3_4_a_reader_delivers_the_natural_join_of_two_topics() {
         let r = rig(
             "SELECT * FROM Order NATURAL JOIN Customer",
             ("Sale", common::SALE_IDL),
@@ -612,7 +612,7 @@ mod live {
     /// The `SELECT` list renames, `WHERE` reads a column that is not selected
     /// and an alias, and an expression parameter is a literal.
     #[test]
-    fn projection_alias_where_and_parameter() {
+    fn dcps_2_2_2_3_4_projection_alias_where_and_parameter() {
         let r = rig(
             "SELECT id, country AS origin FROM Order NATURAL JOIN Customer \
              WHERE amount > %0 AND origin = 'DE'",
@@ -654,7 +654,7 @@ mod live {
     /// §2.2.2.3.4: the `instance_state` of the result instance is
     /// NOT_ALIVE_DISPOSED once a constituting instance is disposed.
     #[test]
-    fn a_disposed_constituent_disposes_the_result_instance() {
+    fn dcps_2_2_2_3_4_a_disposed_constituent_disposes_the_result_instance() {
         let r = rig(
             "SELECT * FROM Order NATURAL JOIN Customer",
             ("Sale", common::SALE_IDL),
@@ -683,7 +683,7 @@ mod live {
     /// IDL 4.2 struct inheritance: `id` is a field of `DerivedOrder` that its
     /// base declares, and it is what the join with `Customer` runs over.
     #[test]
-    fn the_join_runs_over_an_inherited_member() {
+    fn dcps_2_2_2_3_4_the_join_runs_over_an_inherited_member() {
         let r = rig_full(
             "SELECT * FROM Order NATURAL JOIN Customer WHERE id = 1",
             ("Sale", common::SALE_IDL),
@@ -713,7 +713,7 @@ mod live {
     /// application has read is a NEW constituent, and makes the result
     /// instance NEW again; a new sample of a known one does not.
     #[test]
-    fn a_new_constituent_makes_the_result_instance_new() {
+    fn dcps_2_2_2_3_4_a_new_constituent_makes_the_result_instance_new() {
         let r = rig_full(
             "SELECT id, amount, country FROM Order NATURAL JOIN Customer",
             (
@@ -766,7 +766,7 @@ mod live {
     /// §2.2.2.3.4: NOT_ALIVE_NO_WRITERS when a constituting instance has no
     /// writers and none is disposed.
     #[test]
-    fn an_unregistered_constituent_leaves_the_result_instance_without_writers() {
+    fn dcps_2_2_2_3_4_an_unregistered_constituent_leaves_the_result_instance_without_writers() {
         let r = rig_with(
             "SELECT * FROM Order NATURAL JOIN Customer",
             ("Sale", common::SALE_IDL),
@@ -818,7 +818,7 @@ mod live {
     /// of them as DATA_ON_READERS of the subscriber or as a status at the
     /// participant, and they count as the users of the topics they are.
     #[test]
-    fn the_readers_of_the_topics_are_not_visible_to_the_application() {
+    fn dcps_2_2_2_3_4_the_readers_of_the_topics_are_not_visible_to_the_application() {
         let r = rig(
             "SELECT * FROM Order NATURAL JOIN Customer",
             ("Sale", common::SALE_IDL),
@@ -880,7 +880,8 @@ mod live {
     /// §2.2.2.2.1.10: a MultiTopic with a DataReader attached is not
     /// deleted; the readers of its topics end with the reader.
     #[test]
-    fn a_multitopic_with_a_reader_is_not_deleted_and_its_topic_readers_end_with_it() {
+    fn dcps_2_2_2_2_1_10_a_multitopic_with_a_reader_is_not_deleted_and_its_topic_readers_end_with_it()
+     {
         let r = rig(
             "SELECT * FROM Order NATURAL JOIN Customer",
             ("Sale", common::SALE_IDL),

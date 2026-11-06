@@ -73,7 +73,7 @@ fn text(buf: &[core::ffi::c_char]) -> String {
 }
 
 #[test]
-fn the_extension_is_announced_read_and_decides_the_matching() {
+fn rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching() {
     let lease = zerodds_test_domains::lease_domain();
     let request = CString::new("RpcDiscReq").unwrap();
     let reply = CString::new("RpcDiscRep").unwrap();

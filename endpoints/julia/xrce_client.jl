@@ -116,7 +116,7 @@ unaligned) for OBJK_TOPIC/OBJK_PUBLISHER/OBJK_SUBSCRIBER/OBJK_DATAWRITER/
 OBJK_DATAREADER, `nothing` for every other kind — byte-oracled in
 `crates/xrce/src/object_repr.rs` against real eProsima Micro-XRCE-DDS
 Client 3.0.1 CREATE traffic (OBJK_TOPIC's own participant_id: commit
-31c62df2a63). This — not `encode_variant` alone — is the only form a
+bd30deaef0b). This — not `encode_variant` alone — is the only form a
 real agent accepts."""
 function encode_variant_for_kind(object_id::ObjectId, v::ByReference;
                                   parent_object_id::Union{ObjectId, Nothing} = nothing)

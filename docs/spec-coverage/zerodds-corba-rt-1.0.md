@@ -94,7 +94,17 @@ Implementation:
 
 **Tests:** `crates/corba-rt/src/threadpool.rs::{dispatches_and_runs_all_jobs, routes_to_lane_by_priority, native_priority_hook_invoked_per_worker, rejects_when_buffering_off_and_no_worker, dynamic_worker_spawns_under_saturation}`.
 
-**Status:** done
+**Status:** partial — Lanes, statische und dynamische Worker und das Routing nach Priorität sind gebaut und geprüft; die native Scheduler-Priorität setzt nur ein Hook des Aufrufers, keine Implementierung im Repo (§5.7.1).
+
+### §5.7.1 Native Scheduler-Priorität pro Lane
+
+**Spec:** §5.7 — native Scheduler-Priorität pro Lane; Nicht-Ziele — „the actual spawning and `pthread_setschedparam` is a matter of the runtime integration“.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `NativePrioritySetter` ist ein Hook; kein Crate im Repo implementiert ihn (`pthread_setschedparam`/`SCHED_FIFO` oder Gegenstück auf anderen Plattformen).
 
 ### §5.6 `RTCORBA::Mutex` mit Priority-Inheritance
 
@@ -120,6 +130,12 @@ Implementation:
 
 ## Audit-Status
 
-10 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+9 done / 1 partial / 1 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-corba-rt` — 59 Tests grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-corba-rt-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-corba-rt --all-targets` (Job `merge-rust-corba-rt`) — 30 Tests grün.
+
+30 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `zerodds-corba-rt-1.0.open.md`.

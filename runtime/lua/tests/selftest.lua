@@ -100,6 +100,77 @@ check("a UTF-8 wstring reads back",
   zdw.read_wstring_utf8_octets(r, "octets/terminated/2")
     == "\xc3\xa4\xc3\xb6\xc3\xbc \xe1\x88\xb4 Z")
 
+-- -- the operations no corpus case reaches ----------------------------------
+--
+-- The five the generated code reaches only in a dialect or with a member no
+-- corpus case carries: write_pid_extended, write_union_overlay,
+-- reader_clear_discard, reader_save and reader_restore
+-- (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+-- vectors, each against an oracle outside this code.
+
+-- The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+-- recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv).
+do
+  local pid = zdw.writer_new({ endianness = "le", max_align = 8 })
+  local header = zdw.write_pid_extended(pid, 0, "member", false)
+  zdw.write_i32(pid, -1234567)
+  zdw.finish_pid(pid, header)
+  check("write_pid_extended writes Cyclone's recorded parameter",
+    hex(zdw.finish(pid)) == "017f0800" .. "00000000" .. "04000000" .. "7929edff")
+end
+
+-- A `short` read through a four-octet and a one-octet `default:` branch:
+-- Cyclone DDS 11.0.1 writes the union's storage, the member's octets with
+-- zeros above (`combined-everything`, crates/wire-codec/src/encode.rs
+-- `write_selected_branch`).
+do
+  local overlay = zdw.writer_new({ endianness = "le", max_align = 4 })
+  local pattern = zdw.bit_pattern_int(-2, 2)
+  zdw.write_union_overlay(overlay, pattern, 4)
+  zdw.write_union_overlay(overlay, pattern, 1)
+  check("write_union_overlay writes the storage at the branch's width",
+    hex(zdw.finish(overlay)) == "feff0000" .. "fe")
+end
+
+-- XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+-- Table 9's value, so the call site asks for DISCARD and takes it back. Any
+-- other refusal is not a narrowing and stays.
+do
+  local discarded = zdw.reader_new("\x01\x02\x03\x04", "le", 4)
+  zdw.reader_refuse(discarded, "discarded")
+  check("reader_clear_discard takes back a discarded",
+    zdw.reader_clear_discard(discarded) == true and zdw.reader_status(discarded) == "ok")
+  local refused = zdw.reader_new("\x01\x02\x03\x04", "le", 4)
+  zdw.reader_refuse(refused, "out-of-range")
+  check("reader_clear_discard leaves an out-of-range",
+    zdw.reader_clear_discard(refused) == false
+      and zdw.reader_status(refused) == "out-of-range")
+end
+
+-- XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+-- DHEADER and the pairs, without a count. The reader counts the pairs, goes
+-- back and reads them again; a refusal made while counting goes back with
+-- the cursor.
+do
+  local map = zdw.reader_new("\x10\x00\x00\x00\x01\x00\x00\x00\x0a\x00\x00\x00"
+    .. "\x02\x00\x00\x00\x14\x00\x00\x00", "le", 4)
+  local extent = zdw.read_dheader(map)
+  local end_at = zdw.reader_position(map) + extent
+  local mark = zdw.reader_save(map)
+  local pairs = 0
+  while zdw.reader_position(map) < end_at and zdw.reader_status(map) == "ok" do
+    zdw.read_i32(map)
+    zdw.read_i32(map)
+    pairs = pairs + 1
+  end
+  zdw.reader_refuse(map, "out-of-range")
+  zdw.reader_restore(map, mark)
+  local again = { zdw.read_i32(map), zdw.read_i32(map), zdw.read_i32(map), zdw.read_i32(map) }
+  check("reader_save and reader_restore count a delimited map and read it again",
+    pairs == 2 and again[1] == 1 and again[2] == 10 and again[3] == 2 and again[4] == 20
+      and zdw.reader_position(map) == 20 and zdw.reader_status(map) == "ok")
+end
+
 if failed then
   os.exit(1)
 end

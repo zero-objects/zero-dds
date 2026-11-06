@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_writer_listener_constructible():
+def py_6_5_writer_listener_constructible():
     """§6.5 — DataWriterListener accepts callbacks for all three slots."""
     listener = zerodds.DataWriterListener()
     listener.on_publication_matched(lambda handle, status: None)
@@ -24,7 +24,7 @@ def test_writer_listener_constructible():
     listener.on_offered_deadline_missed(lambda handle, status: None)
 
 
-def test_reader_listener_constructible():
+def py_6_5_reader_listener_constructible():
     """§6.5 — DataReaderListener accepts all six reader callbacks."""
     listener = zerodds.DataReaderListener()
     listener.on_data_available(lambda handle: None)
@@ -35,7 +35,7 @@ def test_reader_listener_constructible():
     listener.on_subscription_matched(lambda handle, status: None)
 
 
-def test_set_listener_on_bytes_writer_offline():
+def py_6_5_set_listener_on_bytes_writer_offline():
     """§6.5 — Publisher.create_bytes_writer().set_listener(listener, mask)
     stores the listener without raising (offline path)."""
     factory = zerodds.DomainParticipantFactory.instance()
@@ -45,11 +45,11 @@ def test_set_listener_on_bytes_writer_offline():
     writer = pub.create_bytes_writer(topic)
     listener = zerodds.DataWriterListener()
     listener.on_publication_matched(lambda handle, status: None)
-    writer.set_listener(listener, 0)  # mask=0 → all bits
+    writer.set_listener(listener, 0)  # mask=0: stored, called for no status
     writer.clear_listener()  # must likewise not raise
 
 
-def test_set_listener_on_bytes_reader_offline():
+def py_6_5_set_listener_on_bytes_reader_offline():
     """§6.5 — Subscriber.create_bytes_reader().set_listener(listener, mask)."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(331)
@@ -62,7 +62,7 @@ def test_set_listener_on_bytes_reader_offline():
     reader.clear_listener()
 
 
-def test_set_listener_on_shape_writer_offline():
+def py_6_5_set_listener_on_shape_writer_offline():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(332)
     topic = p.create_shape_topic("Square")
@@ -74,7 +74,7 @@ def test_set_listener_on_shape_writer_offline():
     writer.clear_listener()
 
 
-def test_set_listener_on_shape_reader_offline():
+def py_1_2_11_set_listener_on_shape_reader_offline():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(333)
     topic = p.create_shape_topic("Square")

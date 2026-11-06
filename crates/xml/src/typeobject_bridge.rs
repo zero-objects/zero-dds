@@ -42,14 +42,10 @@ use core::fmt;
 
 use zerodds_types::builder::{Extensibility as TypeExt, TypeObjectBuilder};
 use zerodds_types::hash::{compute_complete_hash, compute_minimal_hash};
-use zerodds_types::type_object::flags::{
-    EnumLiteralFlag, EnumTypeFlag, StructTypeFlag, UnionDiscriminatorFlag, UnionMemberFlag,
-    UnionTypeFlag,
-};
+use zerodds_types::type_object::flags::{EnumLiteralFlag, EnumTypeFlag, StructTypeFlag};
 use zerodds_types::type_object::minimal::{
-    CommonDiscriminatorMember, CommonEnumeratedHeader, CommonEnumeratedLiteral,
-    MinimalDiscriminatorMember, MinimalEnumeratedHeader, MinimalEnumeratedLiteral,
-    MinimalEnumeratedType, MinimalUnionMember, MinimalUnionType,
+    CommonEnumeratedHeader, CommonEnumeratedLiteral, MinimalEnumeratedHeader,
+    MinimalEnumeratedLiteral, MinimalEnumeratedType,
 };
 use zerodds_types::{
     CompleteTypeObject, EquivalenceHash, MinimalTypeObject, PrimitiveKind, TypeIdentifier,
@@ -621,38 +617,12 @@ fn refuse_enum_extras(e: &EnumType) -> Result<(), BridgeError> {
     Ok(())
 }
 
-/// Via [`TypeObjectBuilder::union_type`] rather than mirroring
-/// [`bridge_union`]'s hand-built [`MinimalUnionType`] literally: the
-/// builder additionally sets `UnionMemberFlag::TRY_CONSTRUCT1` on every
-/// case, which `crates/types/src/builder.rs` documents as byte-verified
-/// against Cyclone/FastDDS — a correction the Minimal hand-built path
-/// does not carry, not a behavior this function reproduces.
+/// The complete form of a union, from [`union_builder`].
 fn bridge_union_complete<R: NameResolver>(
     u: &UnionType,
     res: &R,
 ) -> Result<zerodds_types::type_object::complete::CompleteUnionType, BridgeError> {
-    check_union(u)?;
-    let disc_ti = type_ref_to_identifier(&u.discriminator, res);
-    let mut builder = TypeObjectBuilder::union_type(u.name.clone(), disc_ti)
-        .extensibility(map_extensibility(u.extensibility.unwrap_or_default()));
-    for case in &u.cases {
-        let m = &case.member;
-        let mut labels: Vec<i32> = Vec::with_capacity(case.discriminators.len());
-        let mut is_default = false;
-        for d in &case.discriminators {
-            match d {
-                UnionDiscriminator::Default => is_default = true,
-                UnionDiscriminator::Value(s) => labels.push(parse_label(s)?),
-            }
-        }
-        let ti = wrap_member_type(m, res)?;
-        builder = if is_default {
-            builder.default_case(m.name.clone(), ti)
-        } else {
-            builder.case(m.name.clone(), ti, labels)
-        };
-    }
-    Ok(builder.build_complete())
+    Ok(union_builder(u, res)?.build_complete())
 }
 
 /// Complete counterpart of [`bridge_typedef_alias`]. XTypes 1.3 §7.3.4.6:
@@ -1020,63 +990,48 @@ fn check_union(u: &UnionType) -> Result<(), BridgeError> {
     Ok(())
 }
 
+/// The minimal form of a union, from the same [`union_builder`] as the
+/// complete one: member ids from zero (§7.3.1.2.1.1) unless the case says
+/// `id`, `TRY_CONSTRUCT1` on every case and a must-understand
+/// discriminator (§7.2.2.4.4.4.6). Hand-built, the minimal form numbered
+/// from one and set neither flag, so its members did not match the complete
+/// form of the same union.
 fn bridge_union<R: NameResolver>(u: &UnionType, res: &R) -> Result<MinimalTypeObject, BridgeError> {
+    Ok(MinimalTypeObject::Union(
+        union_builder(u, res)?.build_minimal(),
+    ))
+}
+
+/// The builder both forms of a union come from.
+fn union_builder<R: NameResolver>(
+    u: &UnionType,
+    res: &R,
+) -> Result<zerodds_types::builder::UnionBuilder, BridgeError> {
     check_union(u)?;
     let disc_ti = type_ref_to_identifier(&u.discriminator, res);
-    let mut next_seq: u32 = 1;
-    let mut member_seq: Vec<MinimalUnionMember> = Vec::with_capacity(u.cases.len());
+    let mut builder = TypeObjectBuilder::union_type(u.name.clone(), disc_ti)
+        .extensibility(map_extensibility(u.extensibility.unwrap_or_default()));
     for case in &u.cases {
         let m = &case.member;
         let mut labels: Vec<i32> = Vec::with_capacity(case.discriminators.len());
         let mut is_default = false;
         for d in &case.discriminators {
             match d {
-                UnionDiscriminator::Default => {
-                    is_default = true;
-                }
-                UnionDiscriminator::Value(s) => {
-                    let v = parse_label(s)?;
-                    labels.push(v);
-                }
+                UnionDiscriminator::Default => is_default = true,
+                UnionDiscriminator::Value(s) => labels.push(parse_label(s)?),
             }
         }
-        let id = m.id.unwrap_or_else(|| {
-            let v = next_seq;
-            next_seq += 1;
-            v
-        });
         let ti = wrap_member_type(m, res)?;
-        let mut flags: u16 = 0;
-        if is_default {
-            flags |= UnionMemberFlag::IS_DEFAULT;
+        builder = if is_default {
+            builder.default_case(m.name.clone(), ti)
+        } else {
+            builder.case(m.name.clone(), ti, labels)
+        };
+        if let Some(id) = m.id {
+            builder = builder.case_id(id);
         }
-        member_seq.push(MinimalUnionMember {
-            common: zerodds_types::type_object::common::CommonUnionMember {
-                member_id: id,
-                member_flags: UnionMemberFlag(flags),
-                type_id: ti,
-                label_seq: labels,
-            },
-            detail: zerodds_types::type_object::common::NameHash::from_name(&m.name),
-        });
     }
-    // The extensibility of the union, appendable unless it says otherwise
-    // (Spec §7.2.2.4). The struct flag bit positions are the union's.
-    let union_flags_bits = match u.extensibility.unwrap_or_default() {
-        Extensibility::Final => StructTypeFlag::IS_FINAL,
-        Extensibility::Appendable => StructTypeFlag::IS_APPENDABLE,
-        Extensibility::Mutable => StructTypeFlag::IS_MUTABLE,
-    };
-    Ok(MinimalTypeObject::Union(MinimalUnionType {
-        union_flags: UnionTypeFlag(union_flags_bits),
-        discriminator: MinimalDiscriminatorMember {
-            common: CommonDiscriminatorMember {
-                member_flags: UnionDiscriminatorFlag::default(),
-                type_id: disc_ti,
-            },
-        },
-        member_seq,
-    }))
+    Ok(builder)
 }
 
 fn parse_label(s: &str) -> Result<i32, BridgeError> {
@@ -1292,23 +1247,40 @@ fn collection_identifier(
     id
 }
 
+/// The header of a plain collection (XTypes 1.3 §7.3.4.6.1): `EK_BOTH`
+/// for a fully descriptive element, the element's own equivalence kind for
+/// a hashed one, and `TRY_CONSTRUCT1` (DISCARD) in the element flags, as
+/// `zerodds_types::from_ast` writes it and Cyclone and Fast DDS do. With
+/// the default header (`0x00`, no flags) a type from XML hashed apart
+/// from the same type from IDL.
+fn collection_header(element: &TypeIdentifier) -> zerodds_types::PlainCollectionHeader {
+    use zerodds_types::type_identifier::kinds::{EK_BOTH, EK_COMPLETE, EK_MINIMAL};
+    let kind = match element {
+        TypeIdentifier::EquivalenceHashMinimal(_) => EK_MINIMAL,
+        TypeIdentifier::EquivalenceHashComplete(_) => EK_COMPLETE,
+        TypeIdentifier::StronglyConnectedComponent(scc) => scc.equivalence_kind,
+        _ => EK_BOTH,
+    };
+    zerodds_types::PlainCollectionHeader::for_element(kind)
+}
+
 /// `map<K, V, N>` (XTypes 1.3 §7.3.2.4.3). A bound of 0 is the unbounded
 /// map, as for sequences.
 fn wrap_map(element: TypeIdentifier, key: TypeIdentifier, bound: u32) -> TypeIdentifier {
     if bound <= 255 {
         TypeIdentifier::PlainMapSmall {
-            header: zerodds_types::PlainCollectionHeader::default(),
+            header: collection_header(&element),
             bound: bound as u8,
             element: alloc::boxed::Box::new(element),
-            key_flags: zerodds_types::type_identifier::CollectionElementFlag::default(),
+            key_flags: zerodds_types::type_identifier::CollectionElementFlag::discard(),
             key: alloc::boxed::Box::new(key),
         }
     } else {
         TypeIdentifier::PlainMapLarge {
-            header: zerodds_types::PlainCollectionHeader::default(),
+            header: collection_header(&element),
             bound,
             element: alloc::boxed::Box::new(element),
-            key_flags: zerodds_types::type_identifier::CollectionElementFlag::default(),
+            key_flags: zerodds_types::type_identifier::CollectionElementFlag::discard(),
             key: alloc::boxed::Box::new(key),
         }
     }
@@ -1317,13 +1289,13 @@ fn wrap_map(element: TypeIdentifier, key: TypeIdentifier, bound: u32) -> TypeIde
 fn wrap_sequence(element: TypeIdentifier, bound: u32) -> TypeIdentifier {
     if bound <= 255 {
         TypeIdentifier::PlainSequenceSmall {
-            header: zerodds_types::PlainCollectionHeader::default(),
+            header: collection_header(&element),
             bound: bound as u8,
             element: alloc::boxed::Box::new(element),
         }
     } else {
         TypeIdentifier::PlainSequenceLarge {
-            header: zerodds_types::PlainCollectionHeader::default(),
+            header: collection_header(&element),
             bound,
             element: alloc::boxed::Box::new(element),
         }
@@ -1334,13 +1306,13 @@ fn wrap_array(element: TypeIdentifier, dims: &[u32]) -> TypeIdentifier {
     let any_large = dims.iter().any(|d| *d > 255);
     if any_large {
         TypeIdentifier::PlainArrayLarge {
-            header: zerodds_types::PlainCollectionHeader::default(),
+            header: collection_header(&element),
             array_bounds: dims.to_vec(),
             element: alloc::boxed::Box::new(element),
         }
     } else {
         TypeIdentifier::PlainArraySmall {
-            header: zerodds_types::PlainCollectionHeader::default(),
+            header: collection_header(&element),
             array_bounds: dims.iter().map(|d| *d as u8).collect(),
             element: alloc::boxed::Box::new(element),
         }
@@ -1410,6 +1382,7 @@ mod tests {
         BitField, BitValue, BitmaskType, BitsetType, EnumLiteral, EnumType, ModuleEntry,
         StructMember, StructType, TypedefType, UnionCase, UnionType,
     };
+    use zerodds_types::type_object::flags::UnionMemberFlag;
 
     fn primitive(p: XmlPrimitive) -> TypeRef {
         TypeRef::Primitive(p)
@@ -1764,6 +1737,21 @@ mod tests {
             assert_eq!(un.member_seq.len(), 2);
             assert_eq!(un.member_seq[0].common.label_seq, alloc::vec![1_i32, 2]);
             assert!(un.member_seq[1].common.member_flags.0 & UnionMemberFlag::IS_DEFAULT != 0);
+            // XTypes 1.3 §7.3.1.2.1.1: the ids count from zero; every case
+            // carries TRY_CONSTRUCT1; §7.2.2.4.4.4.6: the discriminator is
+            // must-understand. The complete form numbers the same way.
+            let ids: Vec<u32> = un.member_seq.iter().map(|m| m.common.member_id).collect();
+            assert_eq!(ids, [0, 1]);
+            assert!(
+                un.member_seq
+                    .iter()
+                    .all(|m| m.common.member_flags.0 & UnionMemberFlag::TRY_CONSTRUCT1 != 0)
+            );
+            assert!(
+                un.discriminator.common.member_flags.0
+                    & zerodds_types::type_object::flags::UnionDiscriminatorFlag::IS_MUST_UNDERSTAND
+                    != 0
+            );
         } else {
             panic!();
         }
@@ -2569,7 +2557,8 @@ mod tests {
         assert_eq!(
             related("Ints"),
             TypeIdentifier::PlainSequenceSmall {
-                header: zerodds_types::PlainCollectionHeader::default(),
+                // EK_BOTH and DISCARD: a fully descriptive element (§7.3.4.6.1).
+                header: zerodds_types::PlainCollectionHeader::for_element(0xF3),
                 bound: 10,
                 element: alloc::boxed::Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
             }
@@ -2627,7 +2616,8 @@ mod tests {
         assert_eq!(
             related("Ints"),
             TypeIdentifier::PlainSequenceSmall {
-                header: zerodds_types::PlainCollectionHeader::default(),
+                // EK_BOTH and DISCARD: a fully descriptive element (§7.3.4.6.1).
+                header: zerodds_types::PlainCollectionHeader::for_element(0xF3),
                 bound: 10,
                 element: alloc::boxed::Box::new(i32_id.clone()),
             }

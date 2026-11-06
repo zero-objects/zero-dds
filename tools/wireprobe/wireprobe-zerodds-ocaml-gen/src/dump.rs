@@ -514,10 +514,10 @@ fn function(
 fn ocaml_label(ast: &Ast, discriminator: Id<TypeNode>, value: i128) -> String {
     if let Some(enumeration) = resolve_enum(ast, discriminator, 0) {
         for enumerator in ast.enumerators_of(enumeration) {
-            if ast.effective_enumerator_value(*enumerator) == Some(value) {
-                if let Ok(node) = ast.enumerator(*enumerator) {
-                    return ocaml_enumerator_name(ast, enumeration, &node.name);
-                }
+            if ast.effective_enumerator_value(*enumerator) == Some(value)
+                && let Ok(node) = ast.enumerator(*enumerator)
+            {
+                return ocaml_enumerator_name(ast, enumeration, &node.name);
             }
         }
     }

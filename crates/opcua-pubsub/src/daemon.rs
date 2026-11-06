@@ -303,7 +303,7 @@ mod tests {
     }
 
     #[test]
-    fn end_to_end_publish_then_poll() {
+    fn uapubsub_5_4_1_end_to_end_publish_then_poll() {
         let bus = LoopbackTransport::new();
         let mut pubr = publisher(bus.clone());
         let subr = subscriber(bus);
@@ -330,7 +330,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_dataset_is_reported() {
+    fn uapubsub_5_4_1_unknown_dataset_is_reported() {
         let bus = LoopbackTransport::new();
         let mut pubr = Publisher::new(
             bus,
@@ -349,7 +349,7 @@ mod tests {
 
     #[cfg(feature = "security")]
     #[test]
-    fn end_to_end_secured() {
+    fn uapubsub_5_4_1_end_to_end_secured() {
         use crate::security::{SecurityKey, SecurityKeyService, SecurityPolicy};
 
         let policy = SecurityPolicy::Aes256Ctr;

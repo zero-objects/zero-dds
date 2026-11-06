@@ -30,16 +30,21 @@ final class ReliableWriterState {
     static final class Sample {
         final long sequence;
         final byte[] payload;
-        final long timestampMillis = System.currentTimeMillis();
+        final long timestampMillis;
         final Map<String, Target> targets = new LinkedHashMap<>();
         /** The inline QoS the DATA of this sample carries, or null. */
         final ParameterList inlineQos;
         /** The group sequence number of this sample, 0 if its writer is not in a group. */
         long gsn;
         Sample(long sequence, byte[] payload, ParameterList inlineQos) {
+            this(sequence, payload, inlineQos, System.currentTimeMillis());
+        }
+
+        Sample(long sequence, byte[] payload, ParameterList inlineQos, long timestampMillis) {
             this.sequence = sequence;
             this.payload = payload.clone();
             this.inlineQos = inlineQos;
+            this.timestampMillis = timestampMillis;
         }
     }
     final byte[] writer;
@@ -76,6 +81,28 @@ final class ReliableWriterState {
             lastSequence = sequence;
         } else if (!Arrays.equals(sample.payload, payload)) {
             throw new IllegalArgumentException("Conflicting payload for RTPS writer sequence");
+        }
+        sample.targets.put(target.key(), target);
+        return sample;
+    }
+
+    /**
+     * A sample the writer keeps for readers that match later (DURABILITY TRANSIENT_LOCAL, DDS 1.4
+     * §2.2.3.4), entered again under its sequence number for {@code target}, with the time it was
+     * written: an older sequence number than the last one is no reuse here, it is the same sample.
+     */
+    synchronized Sample replay(long sequence, byte[] payload, long timestampMillis, Target target) {
+        if (sequence <= 0) throw new IllegalArgumentException("Positive RTPS sequence required");
+        Sample sample = history.get(sequence);
+        if (sample == null) {
+            if (history.size() >= MAX_SAMPLES || bytes + payload.length > MAX_BYTES || bytes + payload.length < 0)
+                throw new IllegalStateException("Reliable writer history exhausted before acknowledgement");
+            sample = new Sample(sequence, payload, null, timestampMillis);
+            history.put(sequence, sample);
+            bytes += payload.length;
+            if (sequence > lastSequence) {
+                lastSequence = sequence;
+            }
         }
         sample.targets.put(target.key(), target);
         return sample;

@@ -70,7 +70,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn transient_local_writer_delivers_history_to_late_joiner() {
+    fn dcps_2_2_3_4_transient_local_writer_delivers_history_to_late_joiner() {
         // Writer: TransientLocal. Writes 5 samples BEFORE the reader
         // joins. The reader joins late but must still receive all 5
         // samples.
@@ -146,7 +146,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn volatile_writer_does_not_deliver_history_to_late_joiner() {
+    fn dcps_2_2_3_4_volatile_writer_does_not_deliver_history_to_late_joiner() {
         // Volatile contrast: the late-joiner sees NO pre-match samples.
         let (pub_p, sub_p) = two_participants(unique_domain());
 
@@ -208,11 +208,11 @@ mod linux {
     /// TRANSIENT_LOCAL satisfies a requested VOLATILE (§2.2.3, table "QoS
     /// compatibility", DURABILITY "RxO: Yes"), so the pair still matches —
     /// it is the history alone that is declined. Contrast:
-    /// `transient_local_writer_delivers_history_to_late_joiner`, whose
+    /// `dcps_2_2_3_4_transient_local_writer_delivers_history_to_late_joiner`, whose
     /// reader asks for TRANSIENT_LOCAL and does receive all 5.
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn a_transient_local_writer_serves_a_volatile_late_joiner_nothing() {
+    fn dcps_2_2_3_4_a_transient_local_writer_serves_a_volatile_late_joiner_nothing() {
         let (pub_p, sub_p) = two_participants(unique_domain());
 
         let pub_topic = pub_p
@@ -285,7 +285,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn transient_local_reader_rejects_volatile_writer() {
+    fn dcps_2_2_3_4_transient_local_reader_rejects_volatile_writer() {
         // QoS compat: the reader requires TransientLocal, the writer
         // offers only Volatile → no match, wait_for_matched_publication
         // must time out.

@@ -173,7 +173,7 @@ pub fn cpp_name(ast: &Ast, type_: Id<TypeNode>) -> String {
 /// filled form is **empty** reaches its arm and emits no statement, the
 /// subscript is never written, the entry is never created, and the peer
 /// serialises a map one entry short of the sample. Measured at
-/// `b0bc71313`: `map-value-sequence`'s entry `(1, [])` and
+/// `8bf4c51ea`: `map-value-sequence`'s entry `(1, [])` and
 /// `map-nested`'s entry `(2, {})` had no statement, and the 16 Fast DDS
 /// rows that recorded were a defect in this emitter and not a
 /// measurement of Fast DDS.
@@ -199,13 +199,13 @@ fn emit(
 ) -> Result<(), ProbeError> {
     let before = out.source.len();
     emit_value(ast, type_, value, place, out, path)?;
-    if let Place::MapEntry(subscript) = place {
-        if out.source.len() == before {
-            // A discarded subscript, which is a call to `operator[]` and
-            // therefore the insertion. The cast is what keeps
-            // `-Wunused-value` quiet about the discarded reference.
-            let _ = writeln!(out.source, "(void){subscript};");
-        }
+    if let Place::MapEntry(subscript) = place
+        && out.source.len() == before
+    {
+        // A discarded subscript, which is a call to `operator[]` and
+        // therefore the insertion. The cast is what keeps
+        // `-Wunused-value` quiet about the discarded reference.
+        let _ = writeln!(out.source, "(void){subscript};");
     }
     Ok(())
 }

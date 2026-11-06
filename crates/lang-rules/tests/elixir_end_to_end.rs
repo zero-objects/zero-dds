@@ -80,7 +80,7 @@ fn a_struct_becomes_a_module_with_a_defstruct_and_a_type() {
 }
 
 #[test]
-fn every_width_and_signedness_is_written_into_the_attribute() {
+fn xtypes_7_2_2_2_every_width_and_signedness_is_written_into_the_attribute() {
     // The point of this column. Elixir's `integer()` is arbitrary
     // precision and says nothing about what the wire holds, so a member
     // typed only `integer()` with the width nowhere is the
@@ -117,7 +117,7 @@ fn every_width_and_signedness_is_written_into_the_attribute() {
 }
 
 #[test]
-fn every_attribute_the_output_writes_has_a_function_that_reads_it() {
+fn xtypes_7_2_2_2_every_attribute_the_output_writes_has_a_function_that_reads_it() {
     // A module attribute is a compile-time binding and is gone from the
     // compiled module, so a bare one is invisible to every other module
     // — and `elixirc` warns "module attribute @zd_members was set but
@@ -134,7 +134,7 @@ fn every_attribute_the_output_writes_has_a_function_that_reads_it() {
 }
 
 #[test]
-fn a_long_double_is_a_binary_and_never_a_float() {
+fn xtypes_7_2_2_2_a_long_double_is_a_binary_and_never_a_float() {
     // An Elixir `float()` is an IEEE binary64 with 53 bits of
     // significand; an IDL `long double` is a binary128 with 113. Writing
     // one into a `float()` loses sixty bits at the assignment, before
@@ -149,7 +149,7 @@ fn a_long_double_is_a_binary_and_never_a_float() {
 }
 
 #[test]
-fn a_string_a_wstring_and_a_fixed_are_all_binaries_with_their_facts_beside_them() {
+fn xtypes_7_2_2_3_a_string_a_wstring_and_a_fixed_are_all_binaries_with_their_facts_beside_them() {
     let generated = generate("struct S { string<7> a; wstring b; fixed<5,2> c; string d; };");
     assert!(generated.contains("a: binary(),"), "{generated}");
     assert!(generated.contains("b: binary(),"), "{generated}");
@@ -191,7 +191,7 @@ fn a_member_whose_type_has_no_default_is_enforced_instead() {
 }
 
 #[test]
-fn a_member_named_after_an_elixir_reserved_word_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_an_elixir_reserved_word_is_escaped_and_keeps_its_idl_name() {
     // Lowering runs before the escape: `End` lowers to `end`, which is
     // reserved, so escaping first would leave the escape nothing to do.
     let generated = generate("struct S { long end; long When; };");
@@ -200,7 +200,7 @@ fn a_member_named_after_an_elixir_reserved_word_is_escaped_and_keeps_its_idl_nam
 }
 
 #[test]
-fn an_idl_member_with_a_capital_becomes_a_lower_case_atom_that_records_its_spelling() {
+fn idl_7_2_3_an_idl_member_with_a_capital_becomes_a_lower_case_atom_that_records_its_spelling() {
     // The atom does not invert to the IDL name, and a member's ID under
     // @autoid(HASH) is the MD5 of the IDL name
     // (DDS-XTypes 1.3 §7.3.1.2.1.1).
@@ -210,7 +210,7 @@ fn an_idl_member_with_a_capital_becomes_a_lower_case_atom_that_records_its_spell
 }
 
 #[test]
-fn two_members_that_would_reach_one_atom_are_refused_by_name() {
+fn idl_7_2_3_two_members_that_would_reach_one_atom_are_refused_by_name() {
     // What the escape makes: `end` escapes to `end_`, and a member
     // already spelled `end_` takes the same atom. Elixir would take the
     // second silently — a struct key given twice is a rebinding — so a
@@ -223,7 +223,7 @@ fn two_members_that_would_reach_one_atom_are_refused_by_name() {
 }
 
 #[test]
-fn a_sequence_is_a_list_and_an_array_is_a_tuple() {
+fn xtypes_7_2_2_4_3_a_sequence_is_a_list_and_an_array_is_a_tuple() {
     // A tuple's arity is part of its type and Dialyzer checks it, which
     // makes the array's length the one IDL fact Elixir's own type system
     // enforces. A `list()` for both would give that up for nothing.
@@ -246,7 +246,7 @@ fn a_sequence_is_a_list_and_an_array_is_a_tuple() {
 }
 
 #[test]
-fn an_array_of_a_thousand_is_written_out_and_nothing_truncates_it() {
+fn xtypes_7_2_2_4_3_an_array_of_a_thousand_is_written_out_and_nothing_truncates_it() {
     // Stated rather than hidden: there is no size at which the spelling
     // changes, because a threshold would mean one IDL construct had two
     // Elixir forms depending on a number nobody chose.
@@ -263,7 +263,7 @@ fn an_array_of_a_thousand_is_written_out_and_nothing_truncates_it() {
 }
 
 #[test]
-fn a_map_is_a_list_of_pairs_and_never_an_elixir_map() {
+fn xtypes_7_2_2_4_3_a_map_is_a_list_of_pairs_and_never_an_elixir_map() {
     // An Elixir map's iteration order is not the sample's, and a
     // `map<K,V>` goes on the wire as an ordered sequence of pairs
     // (DDS-XTypes 1.3 §7.4.1.1.4). Two entries with one key would also
@@ -300,7 +300,7 @@ fn a_typedef_becomes_a_module_with_a_type_and_the_use_names_it() {
 }
 
 #[test]
-fn an_enum_becomes_a_module_of_atoms_with_its_numbering_written_out() {
+fn xtypes_7_2_2_4_1_1_an_enum_becomes_a_module_of_atoms_with_its_numbering_written_out() {
     // `@value` admits gaps, so a numbering this file inferred would
     // renumber the wire.
     let generated = generate("enum Mode { IDLE, @value(4) ACTIVE, FAULT };");
@@ -331,7 +331,7 @@ fn an_enum_becomes_a_module_of_atoms_with_its_numbering_written_out() {
 }
 
 #[test]
-fn a_member_of_an_enumeration_is_an_integer_and_not_the_enumeration() {
+fn xtypes_7_2_2_4_1_1_a_member_of_an_enumeration_is_an_integer_and_not_the_enumeration() {
     // An @appendable writer may send an enumerator the reader's IDL does
     // not list, and there is no atom for it. Which enumeration it is
     // stays readable, in the attribute.
@@ -345,7 +345,7 @@ fn a_member_of_an_enumeration_is_an_integer_and_not_the_enumeration() {
 }
 
 #[test]
-fn a_union_is_a_struct_with_a_discriminator_and_not_a_tagged_tuple() {
+fn xtypes_7_2_2_4_4_3_a_union_is_a_struct_with_a_discriminator_and_not_a_tagged_tuple() {
     // The load-bearing decision of this column. An IDL union's
     // discriminator may take a value no branch selects
     // (IDL 4.2 §7.4.1.4.4.1), and a tagged tuple has no tag for that
@@ -371,7 +371,7 @@ fn a_union_is_a_struct_with_a_discriminator_and_not_a_tagged_tuple() {
 }
 
 #[test]
-fn a_default_case_is_recorded_as_the_default_and_not_as_a_number() {
+fn xtypes_7_2_2_4_4_3_a_default_case_is_recorded_as_the_default_and_not_as_a_number() {
     let generated = generate("union U switch (long) { case 1: long a; default: double b; };");
     assert!(generated.contains("labels: [1]"), "{generated}");
     assert!(generated.contains("labels: [:default]"), "{generated}");
@@ -511,7 +511,7 @@ fn a_native_declaration_becomes_an_opaque_type() {
 }
 
 #[test]
-fn a_module_nests_because_elixir_module_names_nest() {
+fn idl_7_5_2_a_module_nests_because_elixir_module_names_nest() {
     // The C and Go columns have to flatten `::common::util::Location`
     // onto one identifier. Elixir's module names nest with `.`, and that
     // nesting is the language's own.
@@ -531,7 +531,7 @@ fn a_module_nests_because_elixir_module_names_nest() {
 }
 
 #[test]
-fn a_module_named_elixir_is_escaped_because_it_is_the_root_namespace() {
+fn idl_7_5_2_a_module_named_elixir_is_escaped_because_it_is_the_root_namespace() {
     // `defmodule S` and `defmodule Elixir.S` are one module: both write
     // `Elixir.S.beam` and the second replaces the first with no
     // diagnostic at all.
@@ -570,7 +570,7 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
@@ -587,7 +587,7 @@ fn an_aggregate_with_no_members_is_a_defstruct_with_an_empty_list() {
 }
 
 #[test]
-fn every_construct_the_column_claims_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_column_claims_produces_output() {
     let sources = [
         ("struct S { long a; };", "defmodule S do"),
         ("enum E { A };", "@type t :: :a"),
@@ -649,7 +649,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -741,6 +741,7 @@ fn elixir_compiles(source: &str) -> Result<(), String> {
     // in one run of this suite and a redefinition is not what is being
     // measured here.
     let output = Command::new("elixirc")
+        .env("ELIXIR_ERL_OPTIONS", ELIXIR_ERL_OPTIONS)
         .arg("--ignore-module-conflict")
         .arg("-o")
         .arg(&out)
@@ -778,7 +779,12 @@ fn elixir_compiles(source: &str) -> Result<(), String> {
             if output.status.success() && said.trim().is_empty() {
                 Ok(())
             } else {
-                Err(said)
+                // The status too: under eight tests side by side `elixirc`
+                // ended unsuccessfully with nothing on either stream
+                // (pipeline 8699, job 228253): the kernel killed its Erlang
+                // VM at the job's memory limit (CODEGEN_THREADS in
+                // ci/integration_scenarios.py).
+                Err(format!("{}\n{said}", output.status))
             }
         }
     };
@@ -786,13 +792,147 @@ fn elixir_compiles(source: &str) -> Result<(), String> {
     result
 }
 
+/// The Elixir side of `elixir_compiles_together`: compiles `case_0.ex` to
+/// `case_<n-1>.ex` of a directory one after another in one Erlang VM, each
+/// as `elixirc --ignore-module-conflict` does, and prints per case a line
+/// `ZD_CASE <n> OK`, or `ZD_CASE <n> FAIL` with what the compiler reported in
+/// base64; between two cases it unloads the modules the first defined, so
+/// that two cases may declare a module of the same name.
+const ELIXIR_TOGETHER_SCRIPT: &str = r#"# Compiles the files case_0.ex .. case_<n-1>.ex of a directory one after
+# another in this one Erlang VM, each as `elixirc` would, and says per case
+# OK or FAIL with what the compiler reported; between two cases it unloads
+# the modules the first one defined, so that two cases may declare a module
+# of the same name.
+[dir, count] = System.argv()
+Code.put_compiler_option(:ignore_module_conflict, true)
+for index <- 0..(String.to_integer(count) - 1) do
+  file = Path.join(dir, "case_#{index}.ex")
+  out = Path.join(dir, "ebin_#{index}")
+  File.mkdir_p!(out)
+  before = MapSet.new(:code.all_loaded(), fn {module, _} -> module end)
+  {result, diagnostics} =
+    Code.with_diagnostics([log: false], fn ->
+      try do
+        Kernel.ParallelCompiler.compile_to_path([file], out, return_diagnostics: true)
+      rescue
+        error -> {:raised, Exception.format(:error, error, __STACKTRACE__)}
+      catch
+        kind, reason -> {:raised, Exception.format(kind, reason, __STACKTRACE__)}
+      end
+    end)
+  reported =
+    case result do
+      {:ok, _modules, %{compile_warnings: compile, runtime_warnings: runtime}} -> compile ++ runtime
+      {:error, errors, %{compile_warnings: compile, runtime_warnings: runtime}} -> errors ++ compile ++ runtime
+      {:raised, text} -> [%{message: text}]
+    end
+  messages =
+    (reported ++ diagnostics)
+    |> Enum.map(fn d -> Map.get(d, :message, inspect(d)) end)
+    |> Enum.uniq()
+  ok = match?({:ok, _, _}, result) and messages == []
+  for {module, _} <- :code.all_loaded(), not MapSet.member?(before, module) do
+    :code.purge(module)
+    :code.delete(module)
+  end
+  if ok do
+    IO.puts("ZD_CASE #{index} OK")
+  else
+    IO.puts("ZD_CASE #{index} FAIL " <> Base.encode64(Enum.join(messages, "\n")))
+  end
+end"#;
+
+/// The generated files of a share through one Erlang VM
+/// (`ELIXIR_TOGETHER_SCRIPT`) instead of an `elixirc` each: a start of the VM
+/// was most of the 1.7 s a corpus case took on the CI runner host (pipeline 8823, 128
+/// shares in three jobs). Only a run in which every case reports `OK` and
+/// nothing else is said counts as passing; otherwise every case goes through
+/// `elixir_compiles` alone, so that a failure names its case with
+/// `elixirc`'s own words and the verdict is that check's.
+fn elixir_compiles_together(cases: &[(String, String)]) -> Vec<(String, String)> {
+    let alone = || -> Vec<(String, String)> {
+        cases
+            .iter()
+            .filter_map(|(name, source)| {
+                elixir_compiles(source).err().map(|why| (name.clone(), why))
+            })
+            .collect()
+    };
+    if cases.is_empty() {
+        return Vec::new();
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_nanos())
+        .unwrap_or_default();
+    let dir =
+        std::env::temp_dir().join(format!("zd-elixir-together-{}-{stamp}", std::process::id()));
+    let started = std::time::Instant::now();
+    let together = (|| -> Result<bool, String> {
+        std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+        for (index, (_, source)) in cases.iter().enumerate() {
+            std::fs::write(dir.join(format!("case_{index}.ex")), source)
+                .map_err(|error| error.to_string())?;
+        }
+        let script = dir.join("together.exs");
+        std::fs::write(&script, ELIXIR_TOGETHER_SCRIPT).map_err(|error| error.to_string())?;
+        let output = Command::new("elixir")
+            .env("ELIXIR_ERL_OPTIONS", ELIXIR_ERL_OPTIONS)
+            .arg(&script)
+            .arg(&dir)
+            .arg(cases.len().to_string())
+            .output()
+            .map_err(|error| error.to_string())?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let mut passed = 0_usize;
+        let mut else_said = false;
+        for line in stdout.lines().chain(stderr.lines()) {
+            if line.trim().is_empty()
+                || (line.starts_with("Compiling ") && line.contains("(it's taking more than "))
+            {
+                continue;
+            }
+            if line.starts_with("ZD_CASE ") && line.ends_with(" OK") {
+                passed += 1;
+            } else {
+                else_said = true;
+            }
+        }
+        Ok(output.status.success() && !else_said && passed == cases.len())
+    })();
+    let _ = std::fs::remove_dir_all(&dir);
+    let ok = together.is_ok_and(|ok| ok);
+    // Said on the channel a passing test does not use: how long the one VM
+    // took, and whether the cases go on alone.
+    eprintln!(
+        "ELIXIR_TOGETHER cases={} ok={ok} seconds={:.1}",
+        cases.len(),
+        started.elapsed().as_secs_f64()
+    );
+    if ok { Vec::new() } else { alone() }
+}
+
 /// Whether `elixirc` is on the path at all.
 fn elixirc_available() -> bool {
-    Command::new("elixirc")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
+    // A look at PATH and not a start of the tool: a JVM, .NET or BEAM
+    // start cost seconds of a test's 25 s with eight compilers side by side
+    // (pipeline 8678); a tool that cannot start fails the compile that follows.
+    on_path("elixirc")
 }
+
+fn on_path(tool: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
+}
+
+/// The Erlang VM options of every `elixirc` and `elixir` here
+/// (`ELIXIR_ERL_OPTIONS`). The codegen jobs run eight compilers side by side
+/// on a host that shows the VM 32 CPUs; a VM starts a scheduler per CPU and
+/// lets idle schedulers spin, so two schedulers without busy waiting is
+/// what one compile needs. Without them every share of the corpus ran past
+/// 25 s and `elixirc` exited without a word (pipeline 8693, job 228220).
+const ELIXIR_ERL_OPTIONS: &str = "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none";
 
 #[test]
 fn the_compiler_check_catches_a_deliberate_error() {
@@ -821,8 +961,7 @@ fn the_compiler_check_catches_a_deliberate_error() {
 /// One `elixirc` per source and not one for all of them: the sources
 /// declare modules of the same name (`S` appears in several), and
 /// concatenating them would measure the last definition rather than each.
-#[test]
-fn the_generated_elixir_compiles() {
+fn the_generated_elixir_compiles(share: usize, shares: usize) {
     if !elixirc_available() {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the compiler is exactly the failure this test
@@ -865,7 +1004,10 @@ fn the_generated_elixir_compiles() {
         "struct Inner { long a; }; struct Outer { Inner i; sequence<Inner> more; };",
         "struct Empty { };",
     ];
-    for idl in sources {
+    for (position, idl) in sources.iter().enumerate() {
+        if position % shares != share {
+            continue;
+        }
         let generated = generate(idl);
         if let Err(why) = elixir_compiles(&generated) {
             panic!("{idl}\n\n{generated}\n\nelixirc said:\n{why}");
@@ -873,32 +1015,63 @@ fn the_generated_elixir_compiles() {
     }
 }
 
-/// The whole corpus through `elixirc`, one file per case.
+/// zerodds-xcdr2-elixir-1.0 §7.3.1: the generated Elixir of every source above
+/// compiles under `elixirc`.
 ///
-/// `#[ignore]`, because `elixirc` starts in about a second and there are
-/// hundreds of cases. It is what proves the column rather than samples
-/// it, so it is run with `--include-ignored` on a host that has Elixir.
-#[test]
-#[ignore = "one `elixirc` per corpus case; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// In 4 shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"): as one test it took 21.6 s with two tests side by side
+/// (pipeline 8711, job 228332). The language's weekly job and its merge job
+/// run them.
+mod xtypes_7_3_1_the_generated_elixir_compiles {
+    #[test]
+    fn share_01() {
+        super::the_generated_elixir_compiles(0, 4);
+    }
+
+    #[test]
+    fn share_02() {
+        super::the_generated_elixir_compiles(1, 4);
+    }
+
+    #[test]
+    fn share_03() {
+        super::the_generated_elixir_compiles(2, 4);
+    }
+
+    #[test]
+    fn share_04() {
+        super::the_generated_elixir_compiles(3, 4);
+    }
+}
+
+/// The whole corpus through the Elixir compiler: every case renders, and the
+/// cases of `share` (of `shares`) compile, in one Erlang VM
+/// (`elixir_compiles_together`).
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         elixirc_available(),
         "the explicitly selected elixir gate requires its compiler"
     );
     let mut failures = Vec::new();
-    let mut compiled = 0_usize;
-    for (name, path) in corpus() {
+    let mut rendered = 0_usize;
+    let mut selected = Vec::new();
+    for (position, (name, path)) in corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
         }
         let text = try_generate(&source, &path.display().to_string())
             .unwrap_or_else(|why| panic!("accepted corpus case {name} failed generation: {why}"));
-        match elixir_compiles(&text) {
-            Ok(()) => compiled += 1,
-            Err(why) => failures.push(format!("{name}: {why}")),
+        rendered += 1;
+        if position % shares != share {
+            continue;
         }
+        selected.push((name, text));
     }
+    for (name, why) in elixir_compiles_together(&selected) {
+        failures.push(format!("{name}: {why}"));
+    }
+    let compiled = selected.len() - failures.len();
     eprintln!("{compiled} corpus case(s) compiled");
     assert!(
         failures.is_empty(),
@@ -906,7 +1079,111 @@ fn every_corpus_case_that_renders_also_compiles() {
         failures.len()
     );
     assert!(
-        compiled >= MUST_RENDER,
-        "too few corpus cases reached the selected gate: {compiled}"
+        rendered >= MUST_RENDER,
+        "too few corpus cases rendered: {rendered}"
     );
+}
+
+/// The corpus in 16 shares of 26 or 27 cases, each share one Erlang VM
+/// (`elixir_compiles_together`), each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares together
+/// are every case. Until the cases of a share went through one VM, the
+/// corpus was 128 shares in three jobs, an `elixirc` per case. `#[ignore]`:
+/// the crate tier has no toolchain for it.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through one Erlang VM; runs in integration-codegen-elixir"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 16);
+    }
 }

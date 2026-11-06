@@ -690,16 +690,16 @@ impl CodecTarget for Zig {
     /// sixty-four-bit holder.
     fn unary(op: &'static str, value: Self::Expr) -> Self::Expr {
         let operand = inner(value);
-        if op == "~" {
-            if let zig::Expr::Literal(Literal::Int(_)) = &operand {
-                return plain(zig::Expr::Unary {
-                    op: "~",
-                    value: Box::new(zig::Expr::as_(
-                        zig::Type::Primitive(zig::Primitive::U64),
-                        operand,
-                    )),
-                });
-            }
+        if op == "~"
+            && let zig::Expr::Literal(Literal::Int(_)) = &operand
+        {
+            return plain(zig::Expr::Unary {
+                op: "~",
+                value: Box::new(zig::Expr::as_(
+                    zig::Type::Primitive(zig::Primitive::U64),
+                    operand,
+                )),
+            });
         }
         plain(zig::Expr::Unary {
             op,
@@ -722,10 +722,10 @@ impl CodecTarget for Zig {
                 zig::Expr::call("@bitCast", vec![operand]),
             ));
         }
-        if type_.tree == zig::Type::Primitive(zig::Primitive::Bool) {
-            if let zig::Expr::Literal(Literal::Int(text)) = &operand {
-                return plain(zig::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_.tree == zig::Type::Primitive(zig::Primitive::Bool)
+            && let zig::Expr::Literal(Literal::Int(text)) = &operand
+        {
+            return plain(zig::Expr::Literal(Literal::Bool(text != "0")));
         }
         if type_.enum_like {
             return plain(zig::Expr::as_(
@@ -1107,7 +1107,7 @@ impl CodecTarget for Zig {
             // a Zig declaration without it is private to its file (Zig
             // language reference, "Keyword pub"), so
             // `@import("gen.zig").zd_enc_Max` was an error. Measured:
-            // `zig_endpoint_sync`/`_async` in `crates/endpoint-e2e`
+            // `xrce_8_3_5_8_zig_sync_app_writes_the_ping_and_reads_the_pong`/`_async` in `crates/endpoint-e2e`
             // build the generated module beside an app that calls
             // `gen.zd_enc_Ping`, and Zig answers `'zd_enc_Ping' is not
             // marked 'pub'`. Uniform over every routine rather than only
@@ -1198,10 +1198,10 @@ fn collect_assigned(body: &[zig::Stmt], out: &mut Vec<String>) {
     for statement in body {
         match statement {
             zig::Stmt::Assign { place, .. } => {
-                if let Some(root) = root_name(place) {
-                    if !out.contains(&root) {
-                        out.push(root);
-                    }
+                if let Some(root) = root_name(place)
+                    && !out.contains(&root)
+                {
+                    out.push(root);
                 }
             }
             zig::Stmt::If {

@@ -50,9 +50,7 @@ Go/Ada/Zig/Nim/D/Elixir/OCaml/Julia/Lua/Swift previously had no IDL *type*
 codegen: a user writing IDL could not emit typed structs for them, only the
 byte-identical hand-written wire core (the native endpoint SDKs). Each was a
 fresh emitter (no OMG IDL language mapping exists for any of them) rather than
-conformance work — see
-[`internal/roadmap/async-native-plan.md`](../../internal/roadmap/async-native-plan.md)
-for the per-backend build log. All ten have since shipped (`idl-go`, `idl-ada`,
+conformance work. All ten have since shipped (`idl-go`, `idl-ada`,
 `idl-zig`, `idl-nim`, `idl-d`, `idl-elixir`, `idl-ocaml`, `idl-julia`,
 `idl-lua`, `idl-swift`) and are reflected as complete in the table above —
 none remain open. Kotlin and F# are the only endpoint languages deliberately

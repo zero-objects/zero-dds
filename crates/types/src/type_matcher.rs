@@ -65,6 +65,7 @@ pub struct TypeMatcher<'a> {
     tce: &'a TypeConsistencyEnforcement,
     key_member_bounds: crate::assignability::KeyMemberBounds,
     strong_assignability: crate::assignability::StrongAssignability,
+    key_must_understand: crate::assignability::KeyMustUnderstand,
 }
 
 impl<'a> TypeMatcher<'a> {
@@ -75,6 +76,7 @@ impl<'a> TypeMatcher<'a> {
             tce,
             key_member_bounds: crate::assignability::KeyMemberBounds::Enforced,
             strong_assignability: crate::assignability::StrongAssignability::Equivalence,
+            key_must_understand: crate::assignability::KeyMustUnderstand::Flagged,
         }
     }
 
@@ -99,6 +101,18 @@ impl<'a> TypeMatcher<'a> {
         strong_assignability: crate::assignability::StrongAssignability,
     ) -> Self {
         self.strong_assignability = strong_assignability;
+        self
+    }
+
+    /// The reading of a key member's must-understand bit this matcher
+    /// compares types under, a setting of the runtime like
+    /// [`Self::with_key_member_bounds`].
+    #[must_use]
+    pub const fn with_key_must_understand(
+        mut self,
+        key_must_understand: crate::assignability::KeyMustUnderstand,
+    ) -> Self {
+        self.key_must_understand = key_must_understand;
         self
     }
 
@@ -157,6 +171,7 @@ impl<'a> TypeMatcher<'a> {
             key_member_bounds: self.key_member_bounds,
             appendable_is_delimited: true,
             strong_assignability: self.strong_assignability,
+            key_must_understand: self.key_must_understand,
         }
     }
 }
@@ -362,7 +377,7 @@ mod tests {
     /// and not under DISALLOW_TYPE_COERCION, and a type matches itself
     /// under both.
     #[test]
-    fn disallow_type_coercion_needs_equivalent_types() {
+    fn xtypes_7_6_3_4_1_disallow_type_coercion_needs_equivalent_types() {
         let mut reg = TypeRegistry::new();
         let reader = TypeObjectBuilder::struct_type("::evo::V1")
             .extensibility(Extensibility::Appendable)
@@ -397,7 +412,7 @@ mod tests {
     /// false". The flags are set the other way round than that reading, so
     /// a config that passed them on would show.
     #[test]
-    fn the_flags_apply_only_under_allow_type_coercion() {
+    fn xtypes_7_6_3_4_1_the_flags_apply_only_under_allow_type_coercion() {
         let mut tce = TypeConsistencyEnforcement::default();
         tce.prevent_type_widening = false;
         tce.ignore_sequence_bounds = true;
@@ -438,7 +453,7 @@ mod tests {
     /// sits at id 1 in the publication and at id 2 in the subscription
     /// (§7.2.4.4.4.5: one name at two ids is refused), `x5` at id 5 on both.
     #[test]
-    fn ignore_member_names_lets_only_the_member_ids_decide() {
+    fn xtypes_7_6_3_4_2_ignore_member_names_lets_only_the_member_ids_decide() {
         let mut reg = TypeRegistry::new();
         let writer = TypeObjectBuilder::struct_type("::X")
             .extensibility(Extensibility::Mutable)

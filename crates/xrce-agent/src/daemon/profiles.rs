@@ -183,10 +183,11 @@ impl AgentProfiles {
         // `base_name="MyQosLib:MyQosProfile"` with one colon (§7.7.3.2.1 says
         // `MyLibrary::MyProfile`): read as the qualified name.
         for profile in &mut library.profiles {
-            if let Some(base) = profile.base_name.as_mut() {
-                if base.contains(':') && !base.contains("::") {
-                    *base = base.replacen(':', "::", 1);
-                }
+            if let Some(base) = profile.base_name.as_mut()
+                && base.contains(':')
+                && !base.contains("::")
+            {
+                *base = base.replacen(':', "::", 1);
             }
         }
         // A library of the same name gets the profiles it lacks; a profile of
@@ -379,10 +380,10 @@ impl AgentProfiles {
         // against the libraries of the files.
         let mut libraries = self.qos_libraries.clone();
         let inline_name = "\u{0}inline".to_string();
-        if let Some(base) = profile.base_name.as_mut() {
-            if !base.contains("::") {
-                *base = format!("{inline_name}::{base}");
-            }
+        if let Some(base) = profile.base_name.as_mut()
+            && !base.contains("::")
+        {
+            *base = format!("{inline_name}::{base}");
         }
         libraries.push(QosLibrary {
             name: inline_name.clone(),
@@ -521,7 +522,7 @@ mod tests {
 </profiles>"#;
 
     #[test]
-    fn the_eprosima_refs_file_indexes_every_entity_profile() {
+    fn xrce_7_7_3_1_1_the_eprosima_refs_file_indexes_every_entity_profile() {
         let mut p = AgentProfiles::default();
         p.add_profiles(EPROSIMA_REFS).unwrap();
         assert!(
@@ -550,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn types_and_qos_libraries_in_a_dds_document_are_read() {
+    fn xrce_7_7_3_1_1_types_and_qos_libraries_in_a_dds_document_are_read() {
         let mut p = AgentProfiles::default();
         p.add_profiles(
             "<dds><types><struct name=\"ShapeType\">\
@@ -580,7 +581,7 @@ mod tests {
     /// "MyTriangleReader", the file "ShapesDemoApp" and "MyTriangleRdr";
     /// the rows are checked against the strings of the file.
     #[test]
-    fn the_example_file_of_the_spec_defines_the_objects_of_table_16() {
+    fn xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16() {
         let mut p = AgentProfiles::default();
         p.add_profiles(
             r#"<dds>
@@ -695,7 +696,7 @@ mod tests {
     /// both roots), and two top-level objects that derive one ObjectId are
     /// refused when the file is read.
     #[test]
-    fn a_library_can_be_the_root_and_a_clash_of_ids_is_refused() {
+    fn xrce_9_3_a_library_can_be_the_root_and_a_clash_of_ids_is_refused() {
         let mut p = AgentProfiles::default();
         p.add_profiles(
             r#"<domain_participant_library name="L">

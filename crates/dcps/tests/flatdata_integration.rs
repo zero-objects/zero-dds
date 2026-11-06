@@ -70,7 +70,7 @@ impl DdsType for Pose {
 }
 
 #[test]
-fn flat_writer_ext_writes_to_backend() {
+fn flatdata_8_1_flat_writer_ext_writes_to_backend() {
     // Setup: offline participant with Pose topic.
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
@@ -223,7 +223,7 @@ fn flat_reader_does_not_re_read_same_slot() {
 // ============================================================================
 
 #[test]
-fn datawriter_write_flat_uses_configured_backend() {
+fn flatdata_8_1_datawriter_write_flat_uses_configured_backend() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -255,7 +255,7 @@ fn datawriter_write_flat_uses_configured_backend() {
 }
 
 #[test]
-fn datawriter_write_flat_falls_back_to_udp_without_backend() {
+fn flatdata_6_1_datawriter_write_flat_falls_back_to_udp_without_backend() {
     // Without `set_flat_backend(Some(_))`, `write_flat` must be equivalent
     // to `write` (Spec §4.2: cross-host fallback is always active).
     let factory = DomainParticipantFactory::instance();
@@ -279,7 +279,7 @@ fn datawriter_write_flat_falls_back_to_udp_without_backend() {
 }
 
 #[test]
-fn datareader_read_flat_uses_configured_backend() {
+fn flatdata_9_1_datareader_read_flat_uses_configured_backend() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -312,7 +312,7 @@ fn datareader_read_flat_uses_configured_backend() {
 }
 
 #[test]
-fn datareader_read_flat_returns_none_without_backend() {
+fn flatdata_9_1_datareader_read_flat_returns_none_without_backend() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -330,7 +330,7 @@ fn datareader_read_flat_returns_none_without_backend() {
 }
 
 #[test]
-fn datareader_read_flat_rejects_type_hash_mismatch() {
+fn flatdata_6_1_datareader_read_flat_rejects_type_hash_mismatch() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -354,7 +354,7 @@ fn datareader_read_flat_rejects_type_hash_mismatch() {
 }
 
 #[test]
-fn datawriter_set_flat_backend_none_disables_shm_path() {
+fn flatdata_8_1_datawriter_set_flat_backend_none_disables_shm_path() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let topic = p

@@ -50,7 +50,7 @@ fn fast_cfg() -> RuntimeConfig {
 }
 
 #[test]
-fn deadline_default_is_infinite_so_counter_stays_zero() {
+fn dcps_2_2_3_7_deadline_default_is_infinite_so_counter_stays_zero() {
     // Default deadline = INFINITE. Even if the writer never writes, no
     // missed counter may go up. Otherwise the API shape would be broken.
     let factory = DomainParticipantFactory::instance();
@@ -86,7 +86,7 @@ mod linux {
     use zerodds_qos::Duration as QosDuration;
 
     #[test]
-    fn offered_deadline_increments_when_writer_misses_period() {
+    fn dcps_2_2_4_1_offered_deadline_increments_when_writer_misses_period() {
         // Writer with deadline=150ms, no writes → the counter must
         // go up several times within 1s (each 150-ms window
         // increments exactly once).
@@ -132,7 +132,7 @@ mod linux {
     /// reader that received nothing has no instance to miss. It counted
     /// misses from its creation, with or without an instance.
     #[test]
-    fn requested_deadline_is_missed_per_received_instance() {
+    fn dcps_2_2_2_5_3_22_requested_deadline_is_missed_per_received_instance() {
         let factory = DomainParticipantFactory::instance();
         let p = factory
             .create_participant_with_config(
@@ -206,7 +206,7 @@ mod linux {
     /// deadline, and names RED. It watched the writer as a whole: BLUE's
     /// writes hid RED.
     #[test]
-    fn offered_deadline_is_missed_per_instance() {
+    fn dcps_2_2_2_4_2_17_offered_deadline_is_missed_per_instance() {
         let factory = DomainParticipantFactory::instance();
         let p = factory
             .create_participant_with_config(
@@ -248,7 +248,7 @@ mod linux {
     }
 
     #[test]
-    fn writes_within_deadline_keep_counter_at_zero() {
+    fn dcps_2_2_3_7_writes_within_deadline_keep_counter_at_zero() {
         // Writer with deadline=500ms, writes every 100ms → counter stays 0.
         let factory = DomainParticipantFactory::instance();
         let p = factory

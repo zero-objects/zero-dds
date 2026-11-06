@@ -1,23 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::print_stderr
-)]
-//! Live bidirectional-GIOP cross-ORB (§15.8): as the **originator**, ZeroDDS
-//! opens a BiDir connection to a JacORB `Server`, registers a ZeroDDS callback
-//! object (as a marshalled IOR reference) and calls `callback_hello` — the
-//! JacORB server then calls `hello()` BACK to ZeroDDS' callback over the SAME
-//! connection. ZeroDDS' `BiDirEndpoint::collect_reply` serves the incoming
-//! callback reentrantly. Proves the full BiDir connection-reuse flow against a
-//! foreign ORB.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+//! Live bidirectional GIOP (CORBA §15.8, zerodds-corba-rust 1.1
+//! §7) against JacORB: as the **originator**, ZeroDDS opens a BiDir
+//! connection to JacORB's own bidir demo server (`demo/bidir`, a
+//! `BiDirPOA`), registers a ZeroDDS callback object (as a marshalled IOR)
+//! and calls `callback_hello`; the JacORB server calls `hello()` back over
+//! the same connection. `BiDirEndpoint::collect_reply` serves the incoming
+//! callback reentrantly.
 //!
-//! Runs only with a live JacORB bidir server (IOR via `BIDIR_SERVER_IOR`, on
-//! the Linux test host).
+//! The test builds and starts the JacORB server itself: JacORB 3.9 under
+//! `JACORB_HOME` (default `/opt/jacorb`) and a Java 8 JDK under
+//! `JACORB_JAVA_HOME` (default `/opt/jdk8`), as
+//! `crates/corba-dds-bridge/tests/jacorb_e2e.rs` uses them. It runs in
+//! the integration job `integration-bridges-vendor-corba`.
 
 use std::net::TcpStream;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use zerodds_corba_iiop::{Connection, IiopProfileBody};
@@ -34,10 +33,36 @@ fn cdr_string(s: &str) -> Vec<u8> {
     w.finish()
 }
 
+#[path = "support/jacorb.rs"]
+mod jacorb;
+
+/// JacORB's bidir demo (`demo/bidir`, a `BiDirPOA`), started with the
+/// BiDir initializer.
+fn bidir_server() -> (jacorb::Server, String) {
+    let demo = jacorb::jacorb_home().join("demo/bidir/src/main");
+    let mut idl: Vec<PathBuf> = std::fs::read_dir(demo.join("idl"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    idl.sort();
+    jacorb::start(&jacorb::Spec {
+        name: "jacorb-bidir",
+        idl,
+        java: vec![demo.join("java/org/jacorb/demo/bidir/ServerImpl.java")],
+        main: "org.jacorb.demo.bidir.ServerImpl",
+        props: &[
+            "org.omg.PortableInterceptor.ORBInitializerClass.bidir_init=\
+             org.jacorb.orb.giop.BiDirConnectionInitializer",
+        ],
+        ior_to_file: true,
+        stdout_prefix: "",
+    })
+}
+
 #[test]
-#[ignore = "needs live JacORB bidir Server via BIDIR_SERVER_IOR env (Linux test host)"]
-fn jacorb_server_callbacks_zerodds_over_shared_connection() {
-    let ior = std::env::var("BIDIR_SERVER_IOR").expect("BIDIR_SERVER_IOR env");
+#[ignore = "needs JacORB 3.9 and a Java 8 JDK (integration-bridges-vendor-corba)"]
+fn corbarust_7_a_jacorb_server_calls_back_over_the_connection_zerodds_opened() {
+    let (_server, ior) = bidir_server();
     let oref = object_reference_from_ior(ior.trim()).expect("parse IOR");
     let prof = IiopProfileBody::decode_encapsulation(&oref.iiop_profile).expect("iiop profile");
 
@@ -101,8 +126,5 @@ fn jacorb_server_callbacks_zerodds_over_shared_connection() {
         got.lock().unwrap().as_deref(),
         Some("Hi from ZeroDDS"),
         "JacORB server did not call ZeroDDS' callback over the shared connection"
-    );
-    eprintln!(
-        "cross-ORB BiDir OK: JacORB called the ZeroDDS callback hello() over the shared connection"
     );
 }

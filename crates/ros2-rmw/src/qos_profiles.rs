@@ -172,106 +172,73 @@ pub mod profiles {
 mod tests {
     use super::*;
 
-    #[test]
-    fn default_profile_is_reliable_volatile_keep_last_10() {
-        // RMW Default.
-        let p = profiles::DEFAULT;
-        assert_eq!(p.reliability, Reliability::Reliable);
-        assert_eq!(p.durability, Durability::Volatile);
-        assert_eq!(p.history, History::KeepLast(10));
+    fn concrete(reliability: Reliability, durability: Durability, depth: u32) -> QosProfile {
+        QosProfile {
+            reliability,
+            durability,
+            history: History::KeepLast(depth),
+            liveliness_lease_secs: None,
+            deadline_secs: None,
+        }
     }
 
+    /// REP-2003 §"Map Quality of Service": maps over a reliable
+    /// transient-local topic, a single map deep.
     #[test]
-    fn sensor_data_profile_matches_rep_2003_specification() {
-        // REP-2003 — BestEffort + Volatile + KeepLast(5).
-        let p = profiles::SENSOR_DATA;
-        assert_eq!(p.reliability, Reliability::BestEffort);
-        assert_eq!(p.durability, Durability::Volatile);
-        assert_eq!(p.history, History::KeepLast(5));
+    fn rep2003_map_qos_is_reliable_transient_local_keep_last_1() {
+        assert_eq!(
+            profiles::MAP,
+            concrete(Reliability::Reliable, Durability::TransientLocal, 1)
+        );
     }
 
+    /// REP-2003 §"Sensor Driver Quality of Service": consumers of sensor
+    /// data use `SensorDataQoS`, which is `rmw_qos_profile_sensor_data`
+    /// of rmw/qos_profiles.h: BEST_EFFORT, VOLATILE, KEEP_LAST 5.
     #[test]
-    fn map_profile_matches_rep_2003_specification() {
-        // REP-2003 — Reliable + TransientLocal + KeepLast(1).
-        let p = profiles::MAP;
-        assert_eq!(p.reliability, Reliability::Reliable);
-        assert_eq!(p.durability, Durability::TransientLocal);
-        assert_eq!(p.history, History::KeepLast(1));
+    fn rep2003_sensor_data_qos_is_best_effort_volatile_keep_last_5() {
+        assert_eq!(
+            profiles::SENSOR_DATA,
+            concrete(Reliability::BestEffort, Durability::Volatile, 5)
+        );
     }
 
+    /// rmw/qos_profiles.h: `rmw_qos_profile_default` and
+    /// `_services_default` RELIABLE, VOLATILE, KEEP_LAST 10;
+    /// `_parameters` and `_parameter_events` RELIABLE, VOLATILE, KEEP_LAST
+    /// 1000; deadline, lifespan and liveliness lease of all four
+    /// RMW_QOS_*_DEFAULT, which leaves them infinite.
     #[test]
-    fn parameters_profile_uses_keep_last_1000() {
-        let p = profiles::PARAMETERS;
-        assert_eq!(p.history, History::KeepLast(1000));
-        assert_eq!(p.reliability, Reliability::Reliable);
+    fn rmw_qos_profiles_h_the_concrete_profiles_have_the_header_values() {
+        let reliable = |depth| concrete(Reliability::Reliable, Durability::Volatile, depth);
+        assert_eq!(profiles::DEFAULT, reliable(10));
+        assert_eq!(profiles::SERVICES_DEFAULT, reliable(10));
+        assert_eq!(profiles::PARAMETERS, reliable(1000));
+        assert_eq!(profiles::PARAMETER_EVENTS, reliable(1000));
     }
 
+    /// rmw/qos_profiles.h: `rmw_qos_profile_system_default` has every
+    /// policy at its SYSTEM_DEFAULT value and `rmw_qos_profile_unknown`
+    /// every policy at UNKNOWN; neither is the other or the default.
     #[test]
-    fn services_default_matches_rmw_defaults() {
-        let p = profiles::SERVICES_DEFAULT;
-        assert_eq!(p.reliability, Reliability::Reliable);
-        assert_eq!(p.history, History::KeepLast(10));
-    }
-
-    #[test]
-    fn parameter_events_uses_keep_last_1000() {
-        let p = profiles::PARAMETER_EVENTS;
-        assert_eq!(p.history, History::KeepLast(1000));
-    }
-
-    #[test]
-    fn system_default_is_all_sentinels() {
-        // Spec-faithful: every field is the *_SYSTEM_DEFAULT sentinel, NOT
-        // an alias to the rmw DEFAULT values.
+    fn rmw_qos_profiles_h_system_default_and_unknown_are_all_sentinels() {
         let p = profiles::SYSTEM_DEFAULT;
         assert_eq!(p.reliability, Reliability::SystemDefault);
         assert_eq!(p.durability, Durability::SystemDefault);
         assert_eq!(p.history, History::SystemDefault);
         assert!(profiles::is_system_default(&p));
-        assert_ne!(p, profiles::DEFAULT);
-    }
+        assert!(!profiles::is_unknown(&p));
 
-    #[test]
-    fn history_keep_last_distinct_from_keep_all() {
-        assert_ne!(History::KeepLast(10), History::KeepAll);
-        assert_ne!(History::KeepLast(1), History::KeepLast(2));
-    }
-
-    #[test]
-    fn liveliness_and_deadline_default_to_infinite() {
-        assert_eq!(profiles::DEFAULT.liveliness_lease_secs, None);
-        assert_eq!(profiles::DEFAULT.deadline_secs, None);
-    }
-
-    #[test]
-    fn unknown_profile_is_distinct_from_default() {
-        assert_ne!(profiles::UNKNOWN, profiles::DEFAULT);
-    }
-
-    #[test]
-    fn unknown_profile_is_all_unknown() {
         let p = profiles::UNKNOWN;
         assert_eq!(p.reliability, Reliability::Unknown);
         assert_eq!(p.durability, Durability::Unknown);
         assert_eq!(p.history, History::Unknown);
-    }
+        assert!(profiles::is_unknown(&p));
+        assert!(!profiles::is_system_default(&p));
 
-    #[test]
-    fn is_unknown_recognizes_unknown_profile() {
-        assert!(profiles::is_unknown(&profiles::UNKNOWN));
-    }
-
-    #[test]
-    fn is_unknown_rejects_real_and_system_default_profiles() {
-        assert!(!profiles::is_unknown(&profiles::DEFAULT));
-        assert!(!profiles::is_unknown(&profiles::SENSOR_DATA));
-        assert!(!profiles::is_unknown(&profiles::SYSTEM_DEFAULT));
-    }
-
-    #[test]
-    fn system_default_and_unknown_are_distinct() {
-        assert_ne!(profiles::SYSTEM_DEFAULT, profiles::UNKNOWN);
-        assert!(!profiles::is_system_default(&profiles::UNKNOWN));
-        assert!(!profiles::is_unknown(&profiles::SYSTEM_DEFAULT));
+        for real in [profiles::DEFAULT, profiles::SENSOR_DATA, profiles::MAP] {
+            assert!(!profiles::is_unknown(&real), "{real:?}");
+            assert!(!profiles::is_system_default(&real), "{real:?}");
+        }
     }
 }

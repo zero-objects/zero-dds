@@ -12,10 +12,12 @@
 //! the token, then verifies the signature with the certificate's public
 //! key — the same check a peer runs.
 //!
-//! The test is skipped, with a printed reason, unless
-//! `ZERODDS_TEST_PKCS11_MODULE` names a PKCS#11 module. The reviewer's
-//! Linux host has SoftHSM 2.6.1 at
-//! `/usr/lib/softhsm/libsofthsm2.so` and OpenSC installed.
+//! `ZERODDS_TEST_PKCS11_MODULE` names the PKCS#11 module; without it the
+//! test fails rather than skips. It is `#[ignore]` in the crate tier, whose
+//! image has no SoftHSM, and runs in the integration job
+//! `integration-security`, whose provisioning installs SoftHSM and OpenSC
+//! and sets the variable (`tests/integration/provision.sh softhsm`). The
+//! Linux test host has SoftHSM 2.6.1 at `/usr/lib/softhsm/libsofthsm2.so`.
 
 #![cfg(feature = "pkcs11")]
 #![allow(
@@ -39,14 +41,14 @@ use zerodds_security_runtime::{
 /// The one test: everything SoftHSM is exercised here, so the token is
 /// built once.
 #[test]
-fn a_token_key_signs_a_handshake_message_the_certificate_verifies() {
-    let Some(module) = std::env::var_os("ZERODDS_TEST_PKCS11_MODULE") else {
-        eprintln!(
-            "skipping the pkcs11 SoftHSM test: ZERODDS_TEST_PKCS11_MODULE is not set (the Linux \
-             test host has SoftHSM at /usr/lib/softhsm/libsofthsm2.so)"
-        );
-        return;
-    };
+#[ignore = "integration-security: needs SoftHSM, OpenSC's pkcs11-tool and ZERODDS_TEST_PKCS11_MODULE; run with --run-ignored"]
+fn security_9_3_1_a_token_key_signs_a_handshake_message_the_certificate_verifies() {
+    let module = std::env::var_os("ZERODDS_TEST_PKCS11_MODULE").unwrap_or_else(|| {
+        panic!(
+            "ZERODDS_TEST_PKCS11_MODULE names no PKCS#11 module (the Linux test host has \
+             SoftHSM at /usr/lib/softhsm/libsofthsm2.so)"
+        )
+    });
 
     let (ca_uri, cert_uri, key_uri, conf) = run_fixture(&module);
 

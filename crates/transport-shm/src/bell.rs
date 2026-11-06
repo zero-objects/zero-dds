@@ -357,7 +357,7 @@ mod tests {
     /// A ring from another mapping wakes a parked receiver at once, and a
     /// ring that came before the park is not lost.
     #[test]
-    fn a_ring_wakes_the_parked_receiver_and_none_is_lost() {
+    fn shm_4_4_a_ring_wakes_the_parked_receiver_and_none_is_lost() {
         let dir = tempfile::tempdir().unwrap();
         let own = Arc::new(ShmDoorbell::open(id(1), true, dir.path()).unwrap());
         let sender = ShmDoorbell::open(id(1), false, dir.path()).unwrap();
@@ -388,7 +388,7 @@ mod tests {
     /// made a bell for a peer that never came leaves it.
     #[cfg(target_os = "linux")]
     #[test]
-    fn the_sweep_removes_orphaned_bells_and_keeps_held_ones() {
+    fn shm_5_5_the_sweep_removes_orphaned_bells_and_keeps_held_ones() {
         let dir = tempfile::tempdir().unwrap();
         let own = ShmDoorbell::open(id(4), true, dir.path()).unwrap();
         // A sender's bell for a peer that never opened it: no lock, and its
@@ -414,7 +414,7 @@ mod tests {
     /// takes the marker with it.
     #[cfg(all(unix, not(target_os = "linux")))]
     #[test]
-    fn the_flink_sweep_removes_orphaned_bells_and_keeps_held_ones() {
+    fn shm_5_5_the_flink_sweep_removes_orphaned_bells_and_keeps_held_ones() {
         let dir = tempfile::tempdir().unwrap();
         let own = ShmDoorbell::open(id(6), true, dir.path()).unwrap();
         drop(ShmDoorbell::open(id(7), false, dir.path()).unwrap());

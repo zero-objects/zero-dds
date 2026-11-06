@@ -38,17 +38,34 @@ def run_server() -> int:
     return 0
 
 
+def complete(servers, clients) -> bool:
+    """One server on the child's node, one client on this one, both of the
+    service's type."""
+    return (
+        len(servers) == 1
+        and len(clients) == 1
+        and servers[0].node_name == SERVER_NODE
+        and clients[0].node_name == CLIENT_NODE
+        and servers[0].service_type == SERVICE_TYPE
+        and clients[0].service_type == SERVICE_TYPE
+    )
+
+
 def run_check() -> int:
     server = subprocess.Popen([sys.executable, __file__, "server"])
     rclpy.init()
     node = rclpy.create_node(CLIENT_NODE)
     node.create_client(GetParameters, SERVICE)
     servers, clients = [], []
+    # The endpoints come with SEDP, the node behind each with the peer's
+    # ros_discovery_info sample, which can arrive later: an endpoint seen
+    # before it carries an empty node name (pipeline 8962, job 229527).
+    # Polled until the answer is complete or the deadline passes.
     deadline = time.monotonic() + DISCOVERY_S
     while time.monotonic() < deadline:
         servers = node.get_servers_info_by_service(SERVICE)
         clients = node.get_clients_info_by_service(SERVICE)
-        if servers and clients:
+        if complete(servers, clients):
             break
         time.sleep(0.2)
     server.kill()
@@ -58,14 +75,7 @@ def run_check() -> int:
             print(kind, info)
     node.destroy_node()
     rclpy.shutdown()
-    ok = (
-        len(servers) == 1
-        and len(clients) == 1
-        and servers[0].node_name == SERVER_NODE
-        and clients[0].node_name == CLIENT_NODE
-        and servers[0].service_type == SERVICE_TYPE
-        and clients[0].service_type == SERVICE_TYPE
-    )
+    ok = complete(servers, clients)
     print("service-info", "ok" if ok else "FAIL", len(servers), len(clients))
     return 0 if ok else 1
 

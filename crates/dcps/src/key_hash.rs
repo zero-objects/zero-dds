@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn a_holder_of_exactly_sixteen_is_the_hash() {
+    fn rtps_9_6_4_8_a_holder_of_exactly_sixteen_is_the_hash() {
         let mut bytes = [0u8; 16];
         for (i, b) in bytes.iter_mut().enumerate() {
             #[allow(clippy::cast_possible_truncation)]
@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn a_short_instance_of_a_bounded_type_still_pads() {
+    fn rtps_9_6_4_8_a_short_instance_of_a_bounded_type_still_pads() {
         // The maximum decides, not this instance's five octets.
         let h = compute_key_hash(&[1, 2, 3, 4, 5], 16);
         assert_eq!(&h[..5], &[1, 2, 3, 4, 5]);
@@ -277,7 +277,7 @@ mod tests {
     // -- step 5.2, the MD5 branch ----------------------------------------
 
     #[test]
-    fn a_holder_over_sixteen_is_hashed() {
+    fn rtps_8_7_10_a_holder_over_sixteen_is_hashed() {
         // MD5 of twenty zero octets.
         assert_eq!(
             compute_key_hash(&[0u8; 20], 20),
@@ -313,7 +313,7 @@ mod tests {
     // -- the holder ------------------------------------------------------
 
     #[test]
-    fn a_u32_goes_out_big_endian() {
+    fn rtps_8_7_10_a_u32_goes_out_big_endian() {
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u32(0x1234_5678);
         assert_eq!(h.into_bytes(), vec![0x12, 0x34, 0x56, 0x78]);
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn a_u64_is_aligned_to_four_and_not_to_eight() {
+    fn rtps_9_6_4_8_a_u64_is_aligned_to_four_and_not_to_eight() {
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_u8(1);
         h.write_u64(0x1122_3344_5566_7788);
@@ -348,7 +348,7 @@ mod tests {
     }
 
     #[test]
-    fn a_string_carries_its_terminator_in_its_length() {
+    fn rtps_9_6_4_8_a_string_carries_its_terminator_in_its_length() {
         let mut h = PlainCdr2BeKeyHolder::new();
         h.write_string("hi");
         assert_eq!(h.into_bytes(), vec![0x00, 0x00, 0x00, 0x03, b'h', b'i', 0]);
@@ -386,7 +386,7 @@ mod tests {
     // -- §7.6.8.3.1.b, the member order ----------------------------------
 
     #[test]
-    fn the_member_order_does_not_reach_the_hash() {
+    fn rtps_9_6_4_8_the_member_order_does_not_reach_the_hash() {
         let m_3 = (3u32, vec![0xAAu8, 0xBB, 0xCC, 0xDD]);
         let m_5 = (5u32, vec![0x11u8, 0x22, 0x33, 0x44]);
         let m_7 = (7u32, vec![0xDEu8, 0xAD, 0xBE, 0xEF]);

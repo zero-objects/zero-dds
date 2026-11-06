@@ -56,7 +56,7 @@ fn eventually(cond: impl Fn() -> bool) -> bool {
 }
 
 #[test]
-fn publication_matched_counts_every_reader_that_ever_matched() {
+fn dcps_2_2_2_4_2_19_publication_matched_counts_every_reader_that_ever_matched() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("StatusReadsMatched", TopicQos::default())
@@ -124,7 +124,7 @@ fn publication_matched_counts_every_reader_that_ever_matched() {
 }
 
 #[test]
-fn subscription_matched_names_the_writer() {
+fn dcps_2_2_2_5_3_26_subscription_matched_names_the_writer() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("StatusReadsSubscription", TopicQos::default())
@@ -160,7 +160,7 @@ fn subscription_matched_names_the_writer() {
 /// A listener that took the status read it: a `get_*_status` after it
 /// finds no change left. Without a listener the change waits for the read.
 #[test]
-fn a_listener_takes_the_changes_it_was_handed() {
+fn dcps_2_2_4_1_a_listener_takes_the_changes_it_was_handed() {
     #[derive(Default)]
     struct Seen(Mutex<Vec<PublicationMatchedStatus>>);
     impl zerodds_dcps::listener::DataWriterListener for Seen {
@@ -221,7 +221,7 @@ fn a_listener_takes_the_changes_it_was_handed() {
 /// pair: counted once, the change taken by the read. The change field
 /// stayed 0.
 #[test]
-fn incompatible_qos_is_counted_once_and_read_once() {
+fn dcps_2_2_2_4_2_18_incompatible_qos_is_counted_once_and_read_once() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("StatusReadsIncompatible", TopicQos::default())
@@ -258,7 +258,7 @@ fn incompatible_qos_is_counted_once_and_read_once() {
 /// entity: the status is untriggered. Operations it does not list, such as
 /// `matched_subscriptions`, return NOT_ENABLED.
 #[test]
-fn a_disabled_endpoint_has_an_untriggered_status() {
+fn dcps_2_2_2_1_1_7_a_disabled_endpoint_has_an_untriggered_status() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("StatusReadsDisabled", TopicQos::default())
@@ -289,7 +289,7 @@ fn a_disabled_endpoint_has_an_untriggered_status() {
 /// flag: `get_status_changes` answered 0 and a StatusCondition never
 /// triggered on a communication status.
 #[test]
-fn a_status_change_raises_the_flag_and_the_read_lowers_it() {
+fn dcps_2_2_2_1_1_5_a_status_change_raises_the_flag_and_the_read_lowers_it() {
     use zerodds_dcps::Entity;
     use zerodds_dcps::psm_constants::status::PUBLICATION_MATCHED;
 
@@ -326,7 +326,7 @@ fn a_status_change_raises_the_flag_and_the_read_lowers_it() {
 /// DDS 1.4 §2.2.2.4.2 `get_publisher`, §2.2.2.5.3 `get_subscriber`: the
 /// entity that created the endpoint.
 #[test]
-fn an_endpoint_names_the_entity_that_created_it() {
+fn dcps_2_2_2_4_2_an_endpoint_names_the_entity_that_created_it() {
     use zerodds_dcps::Entity;
 
     let p = participant();
@@ -356,7 +356,7 @@ fn an_endpoint_names_the_entity_that_created_it() {
 /// a StatusCondition triggers on them; a take brings both back. Neither
 /// flag was ever set.
 #[test]
-fn data_available_raises_the_readers_and_its_subscribers_flags() {
+fn dcps_2_2_2_1_1_6_data_available_raises_the_readers_and_its_subscribers_flags() {
     use zerodds_dcps::Entity;
     use zerodds_dcps::psm_constants::status::{DATA_AVAILABLE, DATA_ON_READERS};
 
@@ -401,7 +401,7 @@ fn data_available_raises_the_readers_and_its_subscribers_flags() {
 /// though the other instance's sample is unread; a later sample raises it
 /// again. It stayed up while any sample was NOT_READ.
 #[test]
-fn a_read_of_one_instance_lowers_data_available() {
+fn dcps_2_2_4_2_2_a_read_of_one_instance_lowers_data_available() {
     use zerodds_dcps::Entity;
     use zerodds_dcps::interop::ShapeType;
     use zerodds_dcps::psm_constants::status::{DATA_AVAILABLE, DATA_ON_READERS};
@@ -454,7 +454,7 @@ fn a_read_of_one_instance_lowers_data_available() {
 /// and the Subscriber's DATA_ON_READERS, whether the listener reads or not.
 /// They stayed up until the application read.
 #[test]
-fn an_on_data_available_call_lowers_data_available() {
+fn dcps_2_2_4_2_2_an_on_data_available_call_lowers_data_available() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     use zerodds_dcps::Entity;
     use zerodds_dcps::listener::DataReaderListener;
@@ -508,7 +508,7 @@ fn an_on_data_available_call_lowers_data_available() {
 /// up; a sample on that other reader raises it again. It stayed up while any
 /// reader had DATA_AVAILABLE.
 #[test]
-fn a_take_on_one_reader_lowers_data_on_readers() {
+fn dcps_2_2_4_2_2_a_take_on_one_reader_lowers_data_on_readers() {
     use zerodds_dcps::Entity;
     use zerodds_dcps::psm_constants::status::{DATA_AVAILABLE, DATA_ON_READERS};
 

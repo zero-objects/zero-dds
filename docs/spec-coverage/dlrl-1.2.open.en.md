@@ -11,7 +11,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §8.1.6.2 (rest) DLRL entity classes as standalone types
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — the 13 classes do not exist as types of their own in `crates/dlrl`.
 
 ## §8.1.6.3 Details on DLRL entities
 
@@ -19,7 +19,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §8.1.6.3 (rest) Method signatures of the entity tables
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — the attributes and operations of tables §8.1.6.3.1 to §8.1.6.3.17 are not implemented as signatures.
 
 ## §8.2.1 Run-time entities
 
@@ -27,4 +27,4 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §8.2.1 (rest) IDL PSM emission + DLRL_initialize
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — the IDL interfaces of the entities and `DLRL_initialize` are not generated.

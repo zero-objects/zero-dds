@@ -37,14 +37,13 @@ the task via `onTermination`.
 buffer start (cap 4). `f32`/`f64` go through `Float.bitPattern`/`Double.bitPattern`
 — byte-identical to the Rust core.
 
-## Tests (CI job `endpoints-swift`)
+## Tests (CI job `integration-bindings-swift`)
 
 - byte-identity: the `@final` sample LE + BE, byte-identical to the Rust goldens
 - sync loopback + async loopback (`swift test`)
-- the runnable example (`swift run ZeroddsExample`)
+- the three runnable examples (`ZeroddsExample`, `ZeroddsExampleSync`,
+  `ZeroddsExampleAsync`), started as the programs `swift build` built
 
-The CI job runs in the official `swift:6.0` image (the Rust CI image has no
-Swift). Since that image has no Rust to run `zerodds-endpoint-golden`, the
-canonical goldens are committed under `endpoints/swift/testdata/` (the 15 other
-endpoints still regenerate and verify them fresh each pipeline). Verified
-locally on macOS (Swift 6.3).
+The weekly job installs Swift 6.0.3 into the Rust CI image
+(`tests/integration/provision.sh`). The canonical goldens are committed under
+`endpoints/swift/testdata/`. Verified locally on macOS (Swift 6.3).

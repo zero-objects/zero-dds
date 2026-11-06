@@ -1,0 +1,107 @@
+.TH ZERODDS-SPY 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-spy \- ein DDS-Topic abonnieren und die Samples ausgeben
+.SH ÜBERSICHT
+.B zerodds-spy
+[\fBsubscribe\fR]
+\fB\-t\fR \fITOPIC\fR
+[\fB\-d\fR \fIDOMÄNE\fR]
+[\fB\-n\fR \fIANZAHL\fR]
+[\fB\-\-duration\fR \fIDAUER\fR]
+[\fB\-x\fR \fIBYTES\fR]
+[\fB\-\-type\fR \fINAME\fR]
+[\fB\-\-decode\fR \fB\-\-type\-file\fR \fIIDL\fR [\fB\-\-dialect\fR \fINAME\fR]]
+.SH BESCHREIBUNG
+.B zerodds-spy
+startet eine DCPS-Laufzeitumgebung, abonniert das angegebene
+.B \-\-topic
+als untypisierte rohe Bytes und gibt für jedes ankommende Sample Metadaten
+und optional einen Hex-Ausschnitt aus.
+.PP
+Der Unterbefehl
+.B subscribe
+gilt implizit, wenn das erste Argument eine Option ist \(em die beiden Formen
+unten sind gleichwertig:
+.PP
+.RS
+zerodds-spy subscribe -t Foo
+.br
+zerodds-spy -t Foo
+.RE
+.SH OPTIONEN
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Name des Topics, das abonniert wird (PFLICHT).
+.TP
+.BR \-\-type " " \fINAME\fR
+Diesen IDL-Typ direkt ankündigen. Standard: finden und folgen.
+.TP
+.BR \-n ", " \-\-count " " \fIN\fR
+Nach N Samples beenden. Standard: unbegrenzt.
+.TP
+.BR \-\-duration " " \fIDAUER\fR
+Nach dieser Dauer beenden: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR.
+.TP
+.BR \-x ", " \-\-hex " " \fIBYTES\fR
+Die ersten BYTES der Nutzlast als Hex (0 schaltet ab). Standard: 32.
+.TP
+.BR \-\-decode
+Samples in typisiertes JSON dekodieren. Braucht
+.BR \-\-type\-file .
+.TP
+.BR \-\-type\-file " " \fIIDL\fR
+IDL außerhalb der Daten, die die Typen zum Dekodieren liefert.
+.TP
+.BR \-\-dialect " " \fINAME\fR
+Der Wire-Dialekt, in dem dekodiert wird: \fIcyclone\fR, \fIrti\fR,
+\fIfastdds\fR, \fIopendds\fR und die anderen, die
+\fBzerodds\-idlc generate \-\-dialect\fR annimmt.
+Standard: \fBwire.codec_dialect\fR aus der Konfiguration, selbst
+\fIspecification\fR, solange nicht gesetzt. Der Decoder leitet den Dialekt
+nicht aus den Bytes ab; ein Sample, das in einem anderen Dialekt geschrieben
+ist, wird gemeldet, nicht angenommen.
+.TP
+.BR \-\-config " " \fIPFAD\fR
+Die Basis-Konfigurationsdatei; das danebenliegende
+.IR PFAD .d/
+enthält Drop-ins. Standard: das System-Konfigurationsverzeichnis
+.RI ( /etc/zerodds
+unter Linux,
+.I /usr/local/etc/zerodds
+unter macOS).
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH GLOBALE OPTIONEN
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Hilfe und beendet sich.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus und beendet sich.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg.
+.TP
+.B 2
+Fehler beim Parsen der Kommandozeile.
+.TP
+.B 3
+DDS- oder E/A-Fehler.
+.SH SIEHE AUCH
+.BR zerodds-record (1),
+.BR zerodds-snitch (1),
+.BR zerodds-pcap (1)
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

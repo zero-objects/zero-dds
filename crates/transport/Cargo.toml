@@ -21,10 +21,11 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+safety = []  # empty marker for safe-profile lints (docs/architecture/04_safety_by_architecture.md §3)
 default = ["std"]
 std = ["alloc"]
-alloc = []
+# `ReceivedDatagram::data` is a `zerodds_rtps::payload::Payload`.
+alloc = ["zerodds-rtps/alloc"]
 [dependencies]
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", default-features = false }
 

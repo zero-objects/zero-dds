@@ -1,8 +1,8 @@
 # ADR 0011 — CoAP DTLS 1.2 via webrtc-dtls (opt-in, experimental)
 
 - **Status:** Accepted (2026-06-12)
-- **Supersedes:** the "DTLS DEFER" recommendation in
-  `internal/dossiers/dtls-pure-rust-dossier.md` §5.2
+- **Supersedes:** the "DTLS DEFER" recommendation of the internal
+  pure-Rust DTLS dossier (§5.2)
 - **Related:** ADR 0010 (OSCORE accepted) — the object-security path
 
 ## Context

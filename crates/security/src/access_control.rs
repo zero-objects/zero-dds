@@ -105,10 +105,11 @@ pub struct ParticipantRequest<'a> {
     /// The `PropertyQosPolicy` of the participant: where a plugin finds its
     /// settings (`dds.sec.access.*`).
     pub properties: &'a PropertyList,
-    /// The algorithms of the identity certificate, from
-    /// `AuthenticationPlugin::algorithm_masks` of the plugin that validated
-    /// the identity: the `trust_chain.required_mask` of
-    /// `get_participant_security_config` (Table 70). `None` when the
+    /// The algorithms of the identity certificate, from the
+    /// `adjusted_algorithm_info` that
+    /// `AuthenticationPlugin::set_participant_security_config` of the plugin
+    /// that validated the identity returns (§9.3.2.11.11): its
+    /// `trust_chain.required_mask` (Table 70). `None` when the
     /// authentication plugin has none.
     pub identity_algorithms: Option<AlgorithmMasks>,
 }
@@ -913,7 +914,7 @@ mod tests {
 
     /// Table 34: the bits of the ParticipantSecurityAttributesMask.
     #[test]
-    fn the_participant_mask_has_the_bits_of_table_34() {
+    fn security_9_4_2_4_the_participant_mask_has_the_bits_of_table_34() {
         let all = ParticipantSecurityConfig {
             is_rtps_axk_protected: true,
             is_discovery_protected: true,
@@ -969,7 +970,7 @@ mod tests {
     /// Table 35: the optional attributes mask has both settings, in is_set
     /// and value.
     #[test]
-    fn the_optional_mask_has_the_bits_of_table_35() {
+    fn security_9_4_2_5_the_optional_mask_has_the_bits_of_table_35() {
         let config = ParticipantSecurityConfig {
             allow_unauthenticated_participants: true,
             is_access_protected: false,
@@ -986,7 +987,7 @@ mod tests {
 
     /// Table 38: the bits of the EndpointSecurityAttributesMask.
     #[test]
-    fn the_endpoint_mask_has_the_bits_of_table_38() {
+    fn security_9_4_2_7_the_endpoint_mask_has_the_bits_of_table_38() {
         let one = |f: fn(&mut EndpointSecurityConfig)| {
             let mut c = EndpointSecurityConfig::default();
             f(&mut c);
@@ -1007,7 +1008,7 @@ mod tests {
 
     /// Table 67 and Table 69: the bits of the plugin masks.
     #[test]
-    fn the_plugin_masks_have_the_bits_of_tables_67_and_69() {
+    fn security_10_4_2_4_the_plugin_masks_have_the_bits_of_tables_67_and_69() {
         use plugin_endpoint_attributes_mask as e;
         use plugin_participant_attributes_mask as p;
         assert_eq!(

@@ -479,12 +479,12 @@ impl DynamicTypeBuilder {
         name: &str,
         bit_bound: Option<u16>,
     ) -> Result<Id<TypeNode>, DynamicError> {
-        if let Some(bound) = bit_bound {
-            if !(1..=64).contains(&bound) {
-                return Err(DynamicError::inconsistent(format!(
-                    "`{name}`: a bitmask bound of {bound} is outside 1 to 64"
-                )));
-            }
+        if let Some(bound) = bit_bound
+            && !(1..=64).contains(&bound)
+        {
+            return Err(DynamicError::inconsistent(format!(
+                "`{name}`: a bitmask bound of {bound} is outside 1 to 64"
+            )));
         }
         let id = self.declare(name, AstKind::Bitmask { bits: Vec::new() })?;
         self.set_bit_bound(id, bit_bound)?;
@@ -956,7 +956,7 @@ mod tests {
     /// without `@nested`, with the member `value` (and `key` first for the
     /// keyed ones).
     #[test]
-    fn the_builtin_types_are_those_of_annex_e() {
+    fn xtypes_7_6_5_the_builtin_types_are_those_of_annex_e() {
         let ast = builtin_topic_types().expect("the model declares");
         for (name, members) in [
             ("String", &["value"][..]),
@@ -1098,7 +1098,7 @@ mod tests {
 
     /// §7.2.2.4.4.4.9: an `@optional` member may not carry a `@default`.
     #[test]
-    fn optional_with_a_default_is_refused() {
+    fn xtypes_7_2_2_4_4_4_9_optional_with_a_default_is_refused() {
         let mut builder = DynamicTypeBuilder::new();
         let int32 = builder.primitive(TypeKind::Int32).expect("int32");
         let sample = builder
@@ -1115,7 +1115,7 @@ mod tests {
 
     /// The same refusal on a union case member, through [`add_case`].
     #[test]
-    fn optional_with_a_default_is_refused_on_a_union_case() {
+    fn xtypes_7_2_2_4_4_4_9_optional_with_a_default_is_refused_on_a_union_case() {
         let mut builder = DynamicTypeBuilder::new();
         let int32 = builder.primitive(TypeKind::Int32).expect("int32");
         let choice = builder

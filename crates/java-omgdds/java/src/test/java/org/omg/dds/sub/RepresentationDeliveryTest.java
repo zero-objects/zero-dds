@@ -60,7 +60,7 @@ class RepresentationDeliveryTest {
         }
     }
 
-    @Test void keyedWireDeliveryDecodesOnceAndPreservesEndianAndRepresentation() {
+    @Test void xtypes_7_6_3_1_2_a_keyed_sample_is_decoded_with_the_byte_order_and_representation_of_its_encapsulation() {
         for (int rep : new int[] {0, 2}) for (EndianMode endian : EndianMode.values()) {
             Support support = new Support();
             AtomicInteger delivered = new AtomicInteger();

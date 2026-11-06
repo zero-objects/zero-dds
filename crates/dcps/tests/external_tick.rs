@@ -15,16 +15,19 @@ use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig};
 use zerodds_rtps::wire_types::GuidPrefix;
 
 #[test]
-fn external_tick_suppresses_thread_and_driver_advances() {
-    let rt = DcpsRuntime::start(
-        61,
-        GuidPrefix::from_bytes([0x65; 12]),
-        RuntimeConfig {
-            external_tick: true,
-            ..RuntimeConfig::default()
-        },
-    )
-    .expect("start runtime with external_tick");
+fn async_4_external_tick_suppresses_thread_and_driver_advances() {
+    let lease = zerodds_test_domains::lease_domain();
+    let rt = common::ShutsDown(
+        DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0x65; 12]),
+            RuntimeConfig {
+                external_tick: true,
+                ..RuntimeConfig::default()
+            },
+        )
+        .expect("start runtime with external_tick"),
+    );
 
     // No internal `zdds-tick` thread: the count must NOT advance on its own,
     // even after several tick periods elapse.
@@ -51,18 +54,21 @@ fn external_tick_suppresses_thread_and_driver_advances() {
 }
 
 #[test]
-fn internal_tick_thread_advances_on_its_own() {
+fn async_4_internal_tick_thread_advances_on_its_own() {
+    let lease = zerodds_test_domains::lease_domain();
     // Control case: the default (external_tick=false) keeps the dedicated
     // thread, so the count rises without any manual driving.
-    let rt = DcpsRuntime::start(
-        62,
-        GuidPrefix::from_bytes([0x66; 12]),
-        RuntimeConfig {
-            tick_period: Duration::from_millis(5),
-            ..RuntimeConfig::default()
-        },
-    )
-    .expect("start runtime with internal tick");
+    let rt = common::ShutsDown(
+        DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0x66; 12]),
+            RuntimeConfig {
+                tick_period: Duration::from_millis(5),
+                ..RuntimeConfig::default()
+            },
+        )
+        .expect("start runtime with internal tick"),
+    );
 
     // The scheduler ticks at once on start and then parks until the next
     // SPDP announce, at most `SCHEDULER_IDLE_FLOOR` (250 ms) without user
@@ -79,3 +85,6 @@ fn internal_tick_thread_advances_on_its_own() {
         std::thread::sleep(Duration::from_millis(5));
     }
 }
+
+#[path = "common/mod.rs"]
+mod common;

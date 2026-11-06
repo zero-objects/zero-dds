@@ -227,14 +227,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_acl_is_open() {
+    fn opcuabridge_7_2_empty_acl_is_open() {
         let acl = Acl::open();
         assert!(acl.allow_read("anyone", "AnyTopic"));
         assert!(acl.allow_write("anyone", "AnyTopic"));
     }
 
     #[test]
-    fn matching_rule_allows_named_topic_only() {
+    fn opcuabridge_7_2_matching_rule_allows_named_topic_only() {
         let acl = Acl::new(
             true,
             vec![(
@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn default_deny_with_rules_blocks_unnamed_subject() {
+    fn opcuabridge_7_2_default_deny_with_rules_blocks_unnamed_subject() {
         let acl = Acl::new(
             true,
             vec![("op1".to_string(), vec!["Telemetry".to_string()], vec![])],
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn default_deny_false_with_rules_still_opens_unmatched_topics() {
+    fn opcuabridge_7_2_default_deny_false_with_rules_still_opens_unmatched_topics() {
         let acl = Acl::new(
             false,
             vec![("op1".to_string(), vec!["Telemetry".to_string()], vec![])],
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn client_subject_renders_each_identity_kind() {
+    fn opcuabridge_7_2_client_subject_renders_each_identity_kind() {
         use zerodds_opcua_server::identity::ClientUserId;
         assert_eq!(client_subject(&ClientUserId::Anonymous), "anonymous");
         assert_eq!(
@@ -282,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_exposed_ignores_the_subject_dimension() {
+    fn opcuabridge_7_2_topic_exposed_ignores_the_subject_dimension() {
         let acl = Acl::new(
             true,
             vec![("op1".to_string(), vec!["Telemetry".to_string()], vec![])],

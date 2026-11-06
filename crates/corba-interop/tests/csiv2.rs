@@ -32,7 +32,7 @@ fn csiv2_gssup_authenticates_and_rejects() {
     let (body, _e) = good
         .invoke(&ior, "ping", Endianness::Big, &encode_string_body("hi"))
         .expect("authenticated call must succeed");
-    assert_eq!(decode_string_body(&body), "hi");
+    assert_eq!(decode_string_body(&body).unwrap(), "hi");
 
     // Wrong password → NO_PERMISSION (Err).
     let bad = IiopCorbaConnection::new().with_csiv2_credentials("alice", "wrong");
@@ -73,6 +73,6 @@ fn csiv2_is_opt_in_server_open_by_default() {
     let (body, _e) = plain
         .invoke(&ior, "ping", Endianness::Big, &encode_string_body("hi"))
         .expect("open server accepts unauthenticated call");
-    assert_eq!(decode_string_body(&body), "hi");
+    assert_eq!(decode_string_body(&body).unwrap(), "hi");
     acceptor.shutdown();
 }

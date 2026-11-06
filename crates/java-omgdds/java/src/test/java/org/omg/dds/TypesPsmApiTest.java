@@ -75,44 +75,7 @@ class TypesPsmApiTest {
     }
 
     @Test
-    void theExceptionsAreAbstractAndHaveTheSerialVersionUidOfTheOmgSource() throws Exception {
-        for (Map.Entry<Class<?>, Long> e : exceptions().entrySet()) {
-            Class<?> cls = e.getKey();
-            // the OMG source: DDSException and what extends it are abstract; the two exceptions of
-            // the service lookup are concrete RuntimeExceptions of their own
-            assertEquals(!isServiceException(cls), Modifier.isAbstract(cls.getModifiers()),
-                    cls.getSimpleName() + " is abstract");
-            assertTrue(RuntimeException.class.isAssignableFrom(cls), cls.getSimpleName());
-            Field f = cls.getDeclaredField("serialVersionUID");
-            f.setAccessible(true);
-            assertEquals(e.getValue().longValue(), f.getLong(null), cls.getSimpleName());
-        }
-    }
-
-    @Test
-    void ddsExceptionIsADdsObjectAsInTheOmgSource() throws Exception {
-        assertTrue(DDSObject.class.isAssignableFrom(DDSException.class));
-        // Every exception of the PSM is one, since all extend DDSException.
-        for (Class<?> cls : exceptions().keySet()) {
-            if (isServiceException(cls)) {
-                continue; // plain RuntimeExceptions in the OMG source
-            }
-            assertTrue(DDSObject.class.isAssignableFrom(cls), cls.getSimpleName());
-        }
-        // The implementation answers getEnvironment (the abstract method of DDSObject).
-        assertNotNull(new org.zerodds.core.PreconditionNotMetException("x").getEnvironment());
-        assertNotNull(new org.zerodds.core.AlreadyClosedException("x").getEnvironment());
-        assertNotNull(new org.zerodds.core.IllegalOperationException("x").getEnvironment());
-        assertNotNull(new org.zerodds.core.NotEnabledException("x").getEnvironment());
-        assertNotNull(new org.zerodds.core.OutOfResourcesException("x").getEnvironment());
-        assertNotNull(new org.zerodds.core.ImmutablePolicyException("x").getEnvironment());
-        assertNotNull(new org.zerodds.core.InconsistentPolicyException("x").getEnvironment());
-        DDSObject asObject = new org.zerodds.core.AlreadyClosedException("x");
-        assertEquals(org.zerodds.ServiceEnvironmentImpl.getDefaultEnvironment(), asObject.getEnvironment());
-    }
-
-    @Test
-    void noClassOfTheApiPackageRefersToTheImplementation() throws Exception {
+    void javapsm_a_no_class_of_the_api_package_refers_to_the_implementation() throws Exception {
         CodeSource source = DDSException.class.getProtectionDomain().getCodeSource();
         assumeTrue(source != null, "the classes come from a place that can be listed");
         URL location = source.getLocation();

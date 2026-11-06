@@ -28,7 +28,7 @@
 //!
 //! This module is **wire-only** — it knows no security semantics
 //! (propagate flag, plugin classes, etc.). The policy layer
-//! ([`zerodds-security-runtime`]) builds on this wire type.
+//! (`zerodds-security-runtime`) builds on this wire type.
 
 extern crate alloc;
 use alloc::string::{String, ToString};
@@ -358,7 +358,7 @@ fn check_len(s: &str) -> Result<(), WireError> {
 }
 
 fn align4(out: &mut Vec<u8>) {
-    while out.len() % 4 != 0 {
+    while !out.len().is_multiple_of(4) {
         out.push(0);
     }
 }

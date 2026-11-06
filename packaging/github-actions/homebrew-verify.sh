@@ -4,7 +4,8 @@
 # publish-distros.yml pushes them to zero-objects/homebrew-zerodds: the meta
 # formula with its `brew test`, then every sub-formula. Homebrew installs
 # formulae only from a tap, so the files go into a throwaway local tap.
-# The runner's CPU decides which of the two bundles is installed.
+# The formulae are for Apple silicon only (`depends_on arch: :arm64`); the
+# runner is arm64.
 # Spec: zerodds-deployment-1.0.md §3.2.1.
 #
 # Usage: homebrew-verify.sh <directory with the rendered *.rb>

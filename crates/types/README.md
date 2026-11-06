@@ -57,7 +57,7 @@ It refuses two things loudly rather than guessing. A **recursive type**, because
 
 ## Not yet back
 
-`dynamic` — `DynamicType`, `DynamicData` and the reflective codec, XTypes §7.5 and §7.6.3. `docs/rebuild-plan.md` step 3 has where it stands.
+`dynamic` — `DynamicType`, `DynamicData` and the reflective codec, XTypes §7.5 and §7.6.3.
 
 ## Wiring status
 
@@ -74,7 +74,7 @@ It refuses two things loudly rather than guessing. A **recursive type**, because
 
 `cargo test -p zerodds-types`: 232 unit tests, plus `compliance_typeobject`, `fuzz_smoke`, `proptest_assignability`, `type_lookup_service` and `evolution_assignability`.
 
-`evolution_assignability` is the one that measures rather than asserts: it asks §7.2.4 about the fifteen `tests/interop-corpus` cases that carry two IDL files, and compares each verdict with the `## Evolution` rows the probe produced from the same two declarations. Three defects in the ported rules came out of it and are named in `docs/rebuild-plan.md` step 3.
+`evolution_assignability` is the one that measures rather than asserts: it asks §7.2.4 about the fifteen `tests/interop-corpus` cases that carry two IDL files, and compares each verdict with the `## Evolution` rows the probe produced from the same two declarations. Three defects in the ported rules came out of it.
 
 ## Stability
 

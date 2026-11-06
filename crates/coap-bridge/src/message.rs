@@ -201,15 +201,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn message_type_round_trips_via_bits() {
-        // RFC 7252 §3.
-        for t in [
-            MessageType::Confirmable,
-            MessageType::NonConfirmable,
-            MessageType::Acknowledgement,
-            MessageType::Reset,
+    fn coap_1_1_the_message_types_are_the_numbers_of_section_3() {
+        // RFC 7252 §3: Confirmable (0), Non-confirmable (1),
+        // Acknowledgement (2), Reset (3).
+        for (t, bits) in [
+            (MessageType::Confirmable, 0),
+            (MessageType::NonConfirmable, 1),
+            (MessageType::Acknowledgement, 2),
+            (MessageType::Reset, 3),
         ] {
-            assert_eq!(MessageType::from_bits(t.to_bits()), Some(t));
+            assert_eq!(t.to_bits(), bits);
+            assert_eq!(MessageType::from_bits(bits), Some(t));
         }
     }
 
@@ -221,18 +223,19 @@ mod tests {
     }
 
     #[test]
-    fn code_byte_round_trip() {
-        // RFC 7252 §3 + §12.1.
-        for class in 0..8 {
-            for detail in 0..32 {
-                let c = CoapCode::new(class, detail);
-                assert_eq!(CoapCode::from_byte(c.to_byte()), c);
+    fn coapbridge_4_1_a_code_is_three_bits_class_and_five_bits_detail() {
+        // RFC 7252 §3: "c.dd", the class in the upper three bits.
+        for class in 0..8u8 {
+            for detail in 0..32u8 {
+                let byte = (class << 5) | detail;
+                assert_eq!(CoapCode::new(class, detail).to_byte(), byte);
+                assert_eq!(CoapCode::from_byte(byte), CoapCode::new(class, detail));
             }
         }
     }
 
     #[test]
-    fn well_known_codes_match_spec_values() {
+    fn coap_1_1_well_known_codes_match_spec_values() {
         // RFC 7252 §12.1.
         assert_eq!(CoapCode::GET.to_byte(), 0b000_00001);
         assert_eq!(CoapCode::POST.to_byte(), 0b000_00010);
@@ -247,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn code_display_uses_dotted_format() {
+    fn coapbridge_4_1_code_display_uses_dotted_format() {
         // Spec §3 — "documented as c.dd".
         assert_eq!(alloc::format!("{}", CoapCode::GET), "0.01");
         assert_eq!(alloc::format!("{}", CoapCode::CONTENT), "2.05");
@@ -259,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn code_classification_predicates() {
+    fn coap_2_2_code_classification_predicates() {
         assert!(CoapCode::GET.is_request());
         assert!(!CoapCode::GET.is_success());
         assert!(CoapCode::CONTENT.is_success());

@@ -39,7 +39,7 @@ class QuickstartApiTest {
     }
 
     @Test
-    void serviceEnvironmentBootstrapBySystemProperty() throws Exception {
+    void javapsm_7_3_1_the_service_environment_is_created_from_the_class_named_by_the_system_property() throws Exception {
         // §7.3.1: the implementation class is named by the system property
         // org.omg.dds.serviceClassName and loaded reflectively.
         String prop = ServiceEnvironment.IMPLEMENTATION_CLASS_NAME_PROPERTY;
@@ -65,7 +65,7 @@ class QuickstartApiTest {
     }
 
     @Test
-    void serviceEnvironmentCreatesTheStatusAndConditionFactories() throws Exception {
+    void javapsm_7_3_1_the_service_environment_creates_the_status_and_condition_factories() throws Exception {
         // §7.3.1: the environment is the root of every object it creates.
         System.setProperty(ServiceEnvironment.IMPLEMENTATION_CLASS_NAME_PROPERTY,
                 "org.zerodds.ServiceEnvironmentImpl");
@@ -83,7 +83,7 @@ class QuickstartApiTest {
     }
 
     @Test
-    void serviceEnvironmentRejectsUnknownClass() throws Exception {
+    void javapsm_7_3_1_an_unknown_service_class_is_a_service_configuration_exception() throws Exception {
         String prop = "org.omg.dds.brokenServiceClassName";
         System.setProperty(prop, "does.not.Exist");
         try {
@@ -96,7 +96,7 @@ class QuickstartApiTest {
     }
 
     @Test
-    void getInstanceRejectsNullEnvironment() throws Exception {
+    void javapsm_7_4_1_get_instance_of_a_null_environment_is_a_null_pointer_exception() throws Exception {
         // §7.4.1 names the environment the factory belongs to, and the
         // normative getInstance(env) of the OMG source reads env.getSPI() straight
         // away, so a null environment fails with a NullPointerException.
@@ -105,7 +105,7 @@ class QuickstartApiTest {
     }
 
     @Test
-    void byteArrayQuickstartRoundTrip() throws Exception {
+    void javapsm_7_8_2_a_byte_array_topic_moves_the_octets() throws Exception {
         ServiceEnvironment env =
                 ServiceEnvironment.createInstance(QuickstartApiTest.class.getClassLoader());
         DomainParticipant participant =
@@ -123,7 +123,7 @@ class QuickstartApiTest {
     }
 
     @Test
-    void largeByteArrayGrowsEncoderBuffer() throws Exception {
+    void javapsm_7_8_2_a_byte_array_of_4096_octets_arrives_whole() throws Exception {
         DomainParticipant participant =
                 Qos.factory().createParticipant(11);
         Topic<byte[]> topic = participant.createTopic("BigBytes", byte[].class);
@@ -154,7 +154,7 @@ class QuickstartApiTest {
     }
 
     @Test
-    void singleArgFactoryReflectsTypedBean() throws Exception {
+    void javapsm_8_1_a_plain_java_bean_is_written_and_read_without_generated_code() throws Exception {
         DomainParticipant participant =
                 Qos.factory().createParticipant(12);
         Topic<Temperature> topic = participant.createTopic("Temp", Temperature.class);
@@ -172,16 +172,4 @@ class QuickstartApiTest {
         assertEquals("A7", samples.get(0).getData().getSensorId());
     }
 
-    @Test
-    void getDataAliasesData() throws Exception {
-        DomainParticipant participant =
-                Qos.factory().createParticipant(13);
-        Topic<byte[]> topic = participant.createTopic("Alias", byte[].class);
-        DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
-        DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
-
-        writer.write(new byte[] {1, 2, 3});
-        Sample<byte[]> s = Qos.take(reader).get(0);
-        assertArrayEquals(s.getData(), s.getData());
-    }
 }

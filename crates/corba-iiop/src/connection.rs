@@ -112,8 +112,8 @@ impl Transport {
 /// IIOP connection — wraps a transport (buffered TCP or TLS) + GIOP I/O.
 ///
 /// `Connection` is not `Clone`. For plain TCP, [`Self::from_stream`] splits
-/// reader/writer halves via `try_clone`; TLS connections ([`Self::from_tls_stream`])
-/// use a single stream.
+/// reader/writer halves via `try_clone`; TLS connections
+/// (`Self::from_tls_stream`, feature `tls`) use a single stream.
 pub struct Connection {
     transport: Transport,
     peer: SocketAddr,

@@ -41,7 +41,7 @@ fn make_manual_participant() -> zerodds_dcps::DomainParticipant {
 /// comes back from `create_participant` already enabled and the explicit
 /// `enable()` is the idempotent no-op §2.2.2.1.1.7 promises.
 #[test]
-fn participant_is_enabled_by_the_factory_and_enable_is_idempotent() {
+fn dcps_2_2_2_1_1_7_participant_is_enabled_by_the_factory_and_enable_is_idempotent() {
     let p = make_participant();
     assert!(p.is_enabled());
     p.enable().unwrap();
@@ -49,7 +49,7 @@ fn participant_is_enabled_by_the_factory_and_enable_is_idempotent() {
 }
 
 #[test]
-fn participant_qos_get_set_roundtrip() {
+fn dcps_2_2_2_1_1_1_participant_qos_get_set_roundtrip() {
     let p = make_participant();
     let qos = p.get_qos();
     p.set_qos(qos.clone()).unwrap();
@@ -57,7 +57,7 @@ fn participant_qos_get_set_roundtrip() {
 }
 
 #[test]
-fn participant_get_instance_handle_unique() {
+fn dcps_2_2_2_1_1_8_participant_get_instance_handle_unique() {
     let p1 = make_participant();
     let p2 = make_participant();
     assert_ne!(p1.get_instance_handle(), p2.get_instance_handle());
@@ -68,7 +68,7 @@ fn participant_get_instance_handle_unique() {
 /// `autoenable_created_entities` is TRUE — and leaves it disabled when
 /// it is FALSE, until the application calls `enable()` itself.
 #[test]
-fn publisher_follows_the_participants_entity_factory_policy() {
+fn dcps_2_2_2_1_1_7_publisher_follows_the_participants_entity_factory_policy() {
     let p = make_participant();
     let pub_ = p.create_publisher(PublisherQos::default());
     assert!(pub_.is_enabled(), "autoenable defaults to TRUE");
@@ -81,7 +81,7 @@ fn publisher_follows_the_participants_entity_factory_policy() {
 }
 
 #[test]
-fn publisher_set_qos_pre_and_post_enable_works() {
+fn dcps_2_2_2_1_1_1_publisher_set_qos_pre_and_post_enable_works() {
     let p = make_participant();
     let pub_ = p.create_publisher(PublisherQos::default());
     pub_.set_qos(PublisherQos::default()).unwrap();
@@ -93,7 +93,7 @@ fn publisher_set_qos_pre_and_post_enable_works() {
 /// DDS 1.4 §2.2.3: PRESENTATION is Changeable=NO on the Publisher and the
 /// Subscriber; PARTITION and GROUP_DATA are changeable.
 #[test]
-fn publisher_and_subscriber_refuse_a_presentation_change_once_enabled() {
+fn dcps_2_2_2_1_1_1_publisher_and_subscriber_refuse_a_presentation_change_once_enabled() {
     use zerodds_qos::PresentationAccessScope;
     let p = make_participant();
     let pub_ = p.create_publisher(PublisherQos::default());
@@ -124,7 +124,7 @@ fn publisher_and_subscriber_refuse_a_presentation_change_once_enabled() {
 /// DDS 1.4 §2.2.3: DESTINATION_ORDER is Changeable=NO on a DataWriter and
 /// a DataReader; DEADLINE and LATENCY_BUDGET are changeable.
 #[test]
-fn endpoints_refuse_a_destination_order_change_once_enabled() {
+fn dcps_2_2_2_1_1_1_endpoints_refuse_a_destination_order_change_once_enabled() {
     use zerodds_qos::DestinationOrderKind;
     let p = make_participant();
     let topic = p
@@ -163,7 +163,7 @@ fn endpoints_refuse_a_destination_order_change_once_enabled() {
 /// DDS 1.4 §2.2.3 for the Topic: HISTORY is Changeable=NO, DEADLINE and
 /// TOPIC_DATA are changeable.
 #[test]
-fn topic_refuses_a_history_change_and_takes_a_deadline_change_once_enabled() {
+fn dcps_2_2_2_1_1_1_topic_refuses_a_history_change_and_takes_a_deadline_change_once_enabled() {
     let p = make_participant();
     let topic = p
         .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -182,7 +182,7 @@ fn topic_refuses_a_history_change_and_takes_a_deadline_change_once_enabled() {
 }
 
 #[test]
-fn subscriber_entity_lifecycle() {
+fn dcps_2_2_2_5_2_3_subscriber_entity_lifecycle() {
     let p = make_participant();
     let sub = p.create_subscriber(SubscriberQos::default());
     assert!(sub.is_enabled(), "autoenable defaults to TRUE");
@@ -197,7 +197,7 @@ fn subscriber_entity_lifecycle() {
 }
 
 #[test]
-fn topic_immutable_durability_post_enable() {
+fn dcps_2_2_2_1_1_1_topic_immutable_durability_post_enable() {
     use zerodds_qos::{DurabilityKind, DurabilityQosPolicy};
     let p = make_participant();
     let q = TopicQos {
@@ -223,7 +223,7 @@ fn topic_immutable_durability_post_enable() {
 }
 
 #[test]
-fn topic_set_qos_pre_enable_allows_durability_change() {
+fn dcps_2_2_2_1_1_1_topic_set_qos_pre_enable_allows_durability_change() {
     use zerodds_qos::{DurabilityKind, DurabilityQosPolicy};
     // Pre-enable is only reachable with auto-enable switched off
     // (§2.2.3.20); with the default TRUE the topic is enabled on
@@ -248,7 +248,7 @@ fn topic_set_qos_pre_enable_allows_durability_change() {
 /// governs its own writers and readers. With auto-enable off nothing in
 /// the chain comes back enabled.
 #[test]
-fn datawriter_and_datareader_follow_their_factories_entity_factory_policy() {
+fn dcps_2_2_2_1_1_7_datawriter_and_datareader_follow_their_factories_entity_factory_policy() {
     let p = make_participant();
     let topic = p
         .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -307,7 +307,7 @@ fn datawriter_and_datareader_follow_their_factories_entity_factory_policy() {
 /// ENTITY_FACTORY is set to TRUE, the enable operation on the factory will
 /// automatically enable all entities created from the factory."
 #[test]
-fn enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so() {
+fn dcps_2_2_2_1_1_7_enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so() {
     let manual = make_manual_participant();
     let topic = manual
         .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -338,7 +338,7 @@ fn enabling_a_factory_enables_what_it_created_when_its_entity_factory_says_so() 
 /// §2.2.2.1.1.7: operations a disabled entity is not listed for return
 /// NOT_ENABLED; get_qos and set_qos are listed.
 #[test]
-fn a_disabled_writer_and_reader_refuse_data_operations() {
+fn dcps_2_2_2_1_1_7_a_disabled_writer_and_reader_refuse_data_operations() {
     let manual = make_manual_participant();
     let topic = manual
         .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -363,7 +363,7 @@ fn a_disabled_writer_and_reader_refuse_data_operations() {
 }
 
 #[test]
-fn datawriter_immutable_reliability_post_enable() {
+fn dcps_2_2_2_1_1_1_datawriter_immutable_reliability_post_enable() {
     use zerodds_qos::{ReliabilityKind, ReliabilityQosPolicy};
     let p = make_participant();
     let topic = p
@@ -393,7 +393,7 @@ fn datawriter_immutable_reliability_post_enable() {
 }
 
 #[test]
-fn datareader_status_changes_track() {
+fn dcps_2_2_2_1_1_6_datareader_status_changes_track() {
     let p = make_participant();
     let topic = p
         .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -410,7 +410,7 @@ fn datareader_status_changes_track() {
 }
 
 #[test]
-fn status_condition_trigger_on_relevant_status() {
+fn dcps_2_2_2_1_1_5_status_condition_trigger_on_relevant_status() {
     let p = make_participant();
     let cond = p.get_status_condition();
     cond.set_enabled_statuses(0b0001);
@@ -420,7 +420,7 @@ fn status_condition_trigger_on_relevant_status() {
 }
 
 #[test]
-fn entity_handles_unique_across_types() {
+fn dcps_2_2_2_1_1_entity_handles_unique_across_types() {
     let p = make_participant();
     let pub_ = p.create_publisher(PublisherQos::default());
     let sub = p.create_subscriber(SubscriberQos::default());
@@ -439,7 +439,7 @@ fn entity_handles_unique_across_types() {
 }
 
 #[test]
-fn topic_qos_get_returns_clone() {
+fn dcps_2_2_2_1_1_2_topic_qos_get_returns_clone() {
     let p = make_participant();
     let topic = p
         .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -457,7 +457,7 @@ fn topic_qos_get_returns_clone() {
 /// it, and the same calls go through once the entities are enabled. They
 /// ran on the disabled entities.
 #[test]
-fn group_operations_of_a_disabled_publisher_or_subscriber_are_not_enabled() {
+fn dcps_2_2_2_1_1_7_group_operations_of_a_disabled_publisher_or_subscriber_are_not_enabled() {
     use zerodds_dcps::error::DdsError;
     let p = make_manual_participant();
     let publisher = p.create_publisher(PublisherQos::default());

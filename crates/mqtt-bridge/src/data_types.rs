@@ -125,12 +125,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn two_byte_int_round_trip() {
-        for v in [0u16, 1, 0xFF, 0x100, 0xABCD, 0xFFFF] {
-            let bytes = encode_two_byte_int(v);
-            let (decoded, consumed) = decode_two_byte_int(&bytes).expect("decode");
-            assert_eq!(decoded, v);
-            assert_eq!(consumed, 2);
+    fn mqtt5_1_5_2_a_two_byte_integer_is_big_endian() {
+        for (v, octets) in [
+            (0u16, [0x00, 0x00]),
+            (1, [0x00, 0x01]),
+            (0xFF, [0x00, 0xFF]),
+            (0x100, [0x01, 0x00]),
+            (0xABCD, [0xAB, 0xCD]),
+            (0xFFFF, [0xFF, 0xFF]),
+        ] {
+            assert_eq!(encode_two_byte_int(v), octets);
+            assert_eq!(decode_two_byte_int(&octets).expect("decode"), (v, 2));
         }
     }
 
@@ -141,49 +146,60 @@ mod tests {
     }
 
     #[test]
-    fn utf8_string_round_trip() {
-        // Spec §1.5.4.
-        for s in ["", "hello", "topic/foo/bar", "Käfer äöü"] {
-            let bytes = encode_utf8_string(s).expect("encode");
-            let (decoded, consumed) = decode_utf8_string(&bytes).expect("decode");
+    fn mqtt5_1_5_4_a_string_is_its_length_and_its_utf8_octets() {
+        // Spec §1.5.4, Figure 1-1: "A\u{2A6D4}" is 0x0005 0x41 0xF0 0xAA 0x9B 0x94.
+        for (s, octets) in [
+            ("", alloc::vec![0x00, 0x00]),
+            (
+                "A\u{2A6D4}",
+                alloc::vec![0x00, 0x05, 0x41, 0xF0, 0xAA, 0x9B, 0x94],
+            ),
+            (
+                "Käfer",
+                alloc::vec![0x00, 0x06, b'K', 0xC3, 0xA4, b'f', b'e', b'r'],
+            ),
+        ] {
+            assert_eq!(encode_utf8_string(s).expect("encode"), octets);
+            let (decoded, consumed) = decode_utf8_string(&octets).expect("decode");
             assert_eq!(decoded, s);
-            assert_eq!(consumed, bytes.len());
+            assert_eq!(consumed, octets.len());
         }
     }
 
     #[test]
-    fn utf8_string_starts_with_be_length() {
+    fn mqtt5_1_5_utf8_string_starts_with_be_length() {
         let bytes = encode_utf8_string("hi").expect("encode");
         assert_eq!(&bytes[..2], &[0x00, 0x02]);
         assert_eq!(&bytes[2..], b"hi");
     }
 
     #[test]
-    fn utf8_string_decode_invalid_utf8() {
+    fn mqtt5_1_5_utf8_string_decode_invalid_utf8() {
         // 2 bytes len + 1 byte 0xFF (invalid utf-8 starting byte).
         let bytes = [0x00u8, 0x01, 0xFF];
         assert_eq!(decode_utf8_string(&bytes), Err(DataTypeError::InvalidUtf8));
     }
 
     #[test]
-    fn utf8_string_decode_truncated() {
+    fn mqtt5_1_5_utf8_string_decode_truncated() {
         // Length=10 but only 3 bytes.
         let bytes = [0x00u8, 0x0A, b'a'];
         assert_eq!(decode_utf8_string(&bytes), Err(DataTypeError::Truncated));
     }
 
     #[test]
-    fn binary_data_round_trip() {
-        // Spec §1.5.6.
-        for data in [
-            alloc::vec![],
-            alloc::vec![0u8],
-            alloc::vec![0xDE, 0xAD, 0xBE, 0xEF],
-            alloc::vec![0xFFu8; 1000],
+    fn mqtt5_1_5_6_binary_data_is_its_length_and_its_octets() {
+        for (data, length) in [
+            (alloc::vec![], [0x00, 0x00]),
+            (alloc::vec![0xDE, 0xAD, 0xBE, 0xEF], [0x00, 0x04]),
+            (alloc::vec![0xFFu8; 1000], [0x03, 0xE8]),
         ] {
-            let bytes = encode_binary_data(&data).expect("encode");
-            let (decoded, _) = decode_binary_data(&bytes).expect("decode");
-            assert_eq!(decoded, data);
+            let octets = [&length[..], &data[..]].concat();
+            assert_eq!(encode_binary_data(&data).expect("encode"), octets);
+            assert_eq!(
+                decode_binary_data(&octets).expect("decode"),
+                (data, octets.len())
+            );
         }
     }
 }

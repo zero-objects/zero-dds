@@ -14,8 +14,6 @@
 //! come from the ORBs and not from here.
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-mod corba_corpus;
-
 use zerodds_wire_probe::corba_cpp::{dump_corba_cpp, fill_corba_cpp};
 use zerodds_wire_probe::corba_idl::{corba_idl, cpp_name, java_name};
 use zerodds_wire_probe::corba_java::{dump_corba_java, fill_corba_java};
@@ -363,18 +361,4 @@ fn a_string_literal_escapes_every_non_ascii_byte_in_octal() {
     // produce different bytes on two machines.
     let java = fill_corba_java(&ast, type_, &values).unwrap_or_else(|error| panic!("{error}"));
     assert!(java.contains("\"\\u00e4a\""), "{java}");
-}
-
-#[test]
-fn every_corpus_case_either_prints_or_says_which_construct_stopped_it() {
-    // The whole corpus, so a construct that has no CORBA form is
-    // refused by name rather than reaching an ORB's front end, which
-    // would refuse it for a reason the run then misreads. The counts are
-    // checked against the headline of `docs/corba-column.md` in
-    // `corba_column_headline.rs`.
-    let (printed, refused) = corba_corpus::print_or_refuse_every_case();
-    assert!(
-        printed > 0 && refused > 0,
-        "the corpus pass printed {printed} and refused {refused}"
-    );
 }

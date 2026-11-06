@@ -1,0 +1,125 @@
+.TH ZERODDS-ROS2-SHIM 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-ros2-shim \- ROS-2-RMW-Shim und Diagnose
+.SH ÜBERSICHT
+.B zerodds-ros2-shim
+.I UNTERBEFEHL
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-set\fR \fIPFAD\fR=\fIWERT\fR]...
+[\fB\-\-check\-config\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-ros2-shim
+ist das Diagnosewerkzeug von
+.BR rmw_zerodds_cpp ,
+der RMW-Implementierung, mit der ROS-2-Knoten ZeroDDS als Middleware
+verwenden. Es ist kein Daemon: rcl lädt die RMW-Bibliothek in jeden Knoten.
+Das Werkzeug liest, was die RMW liest \(em die Laufzeitkonfiguration
+.RI ( zerodds.yaml ,
+ihre Drop-ins,
+.IR include: ,
+die Umgebung) mit ihrem Abschnitt
+.BR ros2 ,
+siehe
+.BR zerodds-ros2.yaml (5)
+\(em und zeigt das Mangling, die QoS-Profile und Überschreibungen, Discovery
+und Security so, wie ein Knoten sie bekäme. Implementiert
+.IR docs/specs/zerodds-ros2-bridge-1.0.md .
+.SH UNTERBEFEHLE
+.TP
+.B info
+Zeigt den RMW-Compat-Level und das aktive Mangling.
+.TP
+.B topics
+Listet die konfigurierten Topic-Überschreibungen.
+.TP
+.BI topic " ROS_TOPIC"
+Zeigt das DDS-Topic zum angegebenen ROS-Topic unter dem konfigurierten
+Mangling und seine Überschreibung, falls es eine gibt.
+.TP
+.BI qos " PROFIL"
+Zeigt ein Profil aus
+.BR ros2.qos_profiles :
+.IR default ", " sensor_data ", " services ", " parameters ", " parameter_events
+oder eines, das die Konfiguration hinzufügt. Ein Feld, das das Profil
+auslässt, behält, was die Anwendung anfordert.
+.TP
+.B enclaves
+Zeigt die SROS2-Enclave, die die RMW verwendet
+.RB ( security.enclave_dir ,
+Umgebungsvariable
+.BR ZERODDS_SECURITY_DIR ).
+.TP
+.BI validate " DATEI"
+Prüft DATEI als Laufzeit-Basis mit ihrem danebenliegenden Verzeichnis
+DATEI.d, so wie die RMW sie aus dem Systemverzeichnis lesen würde.
+.TP
+.B selftest
+Rundlauftest (Mangling + QoS-Nachschlagen).
+.TP
+.B catalog
+Gibt den JSON-Katalog aus (Spec \(sc5.2).
+.TP
+.B metrics
+Gibt den Katalog der Prometheus-Metriknamen aus (\(sc8.2).
+.TP
+.B doctor
+Diagnostiziert RMW, Umgebung, Discovery und Security-Einrichtung.
+.TP
+.B graph
+Zeigt den lokalen Teilnehmer- und Topic-Graphen.
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Die Laufzeit-Basis, mit Drop-ins im danebenliegenden Verzeichnis DATEI.d.
+Ohne diese Option werden zerodds.yaml und zerodds.d im
+System-Konfigurationsverzeichnis (/etc/zerodds unter Linux) gelesen, so wie
+die RMW sie liest; fehlt die Datei dort, gelten die eingebauten Standardwerte.
+Die RMW selbst nimmt keine Option; diese Option prüft eine Datei, bevor sie
+installiert wird.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar: eine Laufzeit-Einstellung
+oder ein Schlüssel aus
+.BR ros2 .
+.TP
+.B \-\-check\-config
+Prüft die Laufzeitkonfiguration und ihren Abschnitt
+.BR ros2 ,
+gibt jeden Wert mit seiner Herkunft aus, dann Ende (0 gültig, 1 ungültig).
+.PP
+.BR \-\-runtime\-config ,
+.B \-\-log\-level
+und
+.B \-\-enclave
+werden abgelehnt, mit dem Ort, an den der Wert gehört:
+.BR \-\-config ,
+.IR "\-\-ros\-args \-\-log\-level" ,
+.BR security.enclave_dir .
+.TP
+.BR \-\-domain =\fIID\fR
+Überschreibt
+.BR ROS_DOMAIN_ID .
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B RMW_IMPLEMENTATION
+Auf
+.I rmw_zerodds_cpp
+setzen, um den rcl-Stack über ZeroDDS zu führen.
+.TP
+.B ROS_DOMAIN_ID
+Standard-Domain-ID von ROS 2; wird 1:1 auf die DDS-Domain-ID abgebildet.
+.SH DATEIEN
+.IR /etc/zerodds/zerodds.yaml ", " /etc/zerodds/zerodds.d/ .
+.SH SIEHE AUCH
+.BR zerodds-ros2.yaml (5),
+.BR ros2cli (1).
+.SH AUTOREN
+ZeroDDS Contributors.

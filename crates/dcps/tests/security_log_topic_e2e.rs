@@ -47,10 +47,10 @@ fn poll_one<T: zerodds_dcps::DdsType + Clone + Send + 'static>(
 ) -> Option<T> {
     let deadline = Instant::now() + match_timeout();
     while Instant::now() < deadline {
-        if let Ok(mut samples) = reader.take() {
-            if let Some(sample) = samples.pop() {
-                return Some(sample);
-            }
+        if let Ok(mut samples) = reader.take()
+            && let Some(sample) = samples.pop()
+        {
+            return Some(sample);
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -58,7 +58,7 @@ fn poll_one<T: zerodds_dcps::DdsType + Clone + Send + 'static>(
 }
 
 #[test]
-fn a_security_event_reaches_the_v2_log_topic() {
+fn security_9_6_2_1_3_a_security_event_reaches_the_v2_log_topic() {
     let factory = DomainParticipantFactory::instance();
     let domain = unique_domain();
     let participant = ParticipantGuard::new(
@@ -110,7 +110,7 @@ fn a_security_event_reaches_the_v2_log_topic() {
 }
 
 #[test]
-fn the_legacy_topic_is_published_when_configured() {
+fn security_10_6_the_legacy_topic_is_published_when_configured() {
     let factory = DomainParticipantFactory::instance();
     let domain = unique_domain();
     let qos = DomainParticipantQos::default();
@@ -145,7 +145,7 @@ fn the_legacy_topic_is_published_when_configured() {
 }
 
 #[test]
-fn the_topic_names_are_the_clause_names() {
+fn security_10_6_the_topic_names_are_the_clause_names() {
     // Guard against a rename: the two names are the spec's
     // (DDS-Security 1.2 §10.6).
     assert_eq!(TOPIC_LOG_TOPIC, "DDS:Security:LogTopic");

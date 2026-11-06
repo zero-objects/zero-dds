@@ -92,10 +92,10 @@ impl FileLoader for PathLoader {
     fn load(&self, path: &str, from: Option<&str>) -> Option<(String, String)> {
         let mut candidates: Vec<PathBuf> = Vec::new();
         // Beside the including file first.
-        if let Some(from) = from {
-            if let Some(parent) = Path::new(from).parent() {
-                candidates.push(parent.join(path));
-            }
+        if let Some(from) = from
+            && let Some(parent) = Path::new(from).parent()
+        {
+            candidates.push(parent.join(path));
         }
         candidates.extend(self.roots.iter().map(|root| root.join(path)));
         // A path that is already absolute, or that resolves from the
@@ -327,14 +327,7 @@ pub fn compose_source_with(
     // errors in it still registers the types that came out whole, which
     // is what lets a caller see how far a broken file got.
     let mut registry = TypeRegistry::new();
-    let without_type_objects = zerodds_types::from_ast::register_all(&ast, &mut registry)
-        .map(|skipped| {
-            skipped
-                .into_iter()
-                .map(|(name, error)| (name, format!("{error:?}")))
-                .collect()
-        })
-        .unwrap_or_default();
+    let without_type_objects = register(&ast, &mut registry);
 
     Composed {
         ast,
@@ -345,6 +338,50 @@ pub fn compose_source_with(
     }
 }
 
+/// Files the type objects of `ast` in `registry` and returns every type
+/// that has none, with the reason.
+///
+/// `register_all` skips a type DDS-XTypes 1.3 §7.3.4 cannot represent and
+/// goes on. Any other error stops it, and the types it had not reached by
+/// then are not filed: a union label outside the `long` of
+/// `UnionCaseLabelSeq` (Annex B) stops it at the union, and every type
+/// after that union is left without an object as well. Each of those is
+/// listed with the error, so that a caller that needs the objects learns
+/// which ones it will not have; a type that is plain by §7.3.4.6 has no
+/// object to miss.
+fn register(ast: &Ast, registry: &mut TypeRegistry) -> Vec<(String, String)> {
+    let stopped = match zerodds_types::from_ast::register_all(ast, registry) {
+        Ok(skipped) => {
+            return skipped
+                .into_iter()
+                .map(|(name, error)| (name, format!("{error:?}")))
+                .collect();
+        }
+        Err(stopped) => stopped,
+    };
+    ast.types()
+        .filter(|(_, node)| {
+            !matches!(
+                node.kind,
+                zerodds_ast::TypeKind::Primitive(_)
+                    | zerodds_ast::TypeKind::String { .. }
+                    | zerodds_ast::TypeKind::Sequence { .. }
+                    | zerodds_ast::TypeKind::Array { .. }
+                    | zerodds_ast::TypeKind::Map { .. }
+            )
+        })
+        .filter_map(
+            |(id, node)| match zerodds_types::from_ast::complete_type_object(ast, id) {
+                Ok(object) => match zerodds_types::hash::compute_complete_hash(&object) {
+                    Ok(hash) if registry.get_complete(&hash).is_some() => None,
+                    _ => Some((node.name.clone(), format!("{stopped:?}"))),
+                },
+                Err(own) => Some((node.name.clone(), format!("{own:?}"))),
+            },
+        )
+        .collect()
+}
+
 /// The source facet `any` holds now.
 fn ast_source(ast: &Ast, any: zerodds_ast::AnyId) -> Option<&zerodds_ast::SourceFacet> {
     ast.facets(any).map(|facets| &facets.source)
@@ -352,6 +389,33 @@ fn ast_source(ast: &Ast, any: zerodds_ast::AnyId) -> Option<&zerodds_ast::Source
 
 /// A diagnostic raised on the tree, moved to the expanded text the
 /// preprocessor's map reads ([`zerodds_idl_parse::Parse::source_span`]).
+/// The constructs of a file, and of the files it includes, that an OMG
+/// IDL 4.2 profile (clause 9) does not include, in file positions.
+///
+/// The file is preprocessed and parsed as [`compose_source_with`] does,
+/// with the same `defines` and `dialect`, and its tree is read by
+/// [`zerodds_idl_parse::outside_profile`]. Separate from composing because
+/// a profile is a check a caller asks for: §9.1 calls the profiles "not
+/// normative for the related middleware solutions".
+#[must_use]
+pub fn outside_idl_profile(
+    path: &str,
+    source: &str,
+    loader: &dyn FileLoader,
+    defines: &[(String, String)],
+    dialect: zerodds_idl_parse::Dialect,
+    profile: zerodds_idl_parse::IdlProfile,
+) -> Vec<Diagnostic> {
+    let preprocessed = zerodds_idl_parse::preprocess_with(path, source, loader, defines);
+    let parsed = zerodds_idl_parse::parse_preprocessed_with(&preprocessed, dialect);
+    let mut diagnostics = zerodds_idl_parse::outside_profile(&parsed.syntax(), profile);
+    for diagnostic in &mut diagnostics {
+        on_the_expanded_text(&parsed, diagnostic);
+        preprocessed.locate(diagnostic);
+    }
+    diagnostics
+}
+
 fn on_the_expanded_text(parsed: &zerodds_idl_parse::Parse, diagnostic: &mut Diagnostic) {
     diagnostic.primary = parsed.source_span(diagnostic.primary);
     for (span, _) in &mut diagnostic.labels {
@@ -426,6 +490,7 @@ impl ComposeOptions {
             hashed_name_spelling: self.hashed_name_spelling,
             key_on_union_discriminator: self.key_on_union_discriminator,
             name_of_the_enclosing_scope: self.name_of_the_enclosing_scope,
+            native_in_remote_interfaces: zerodds_idl_lower::NativeInRemoteInterface::default(),
             dialect: self.dialect,
         }
     }
@@ -682,14 +747,7 @@ pub fn compose_all_sources(
     diagnostics.extend(resolve(&mut ast, &path));
 
     let mut registry = TypeRegistry::new();
-    let without_type_objects = zerodds_types::from_ast::register_all(&ast, &mut registry)
-        .map(|skipped| {
-            skipped
-                .into_iter()
-                .map(|(name, error)| (name, format!("{error:?}")))
-                .collect()
-        })
-        .unwrap_or_default();
+    let without_type_objects = register(&ast, &mut registry);
 
     Composed {
         ast,
@@ -722,6 +780,45 @@ mod tests {
             composed.without_type_objects.is_empty(),
             "{:?}",
             composed.without_type_objects
+        );
+    }
+
+    /// DDS-XTypes 1.3 §7.3.4.5.3.2: a union case label goes on the wire
+    /// as a `long`, so the corpus case `union-discriminator-longlong`
+    /// (`case -987654321987`) has no TypeObject. The registration stops
+    /// there; the union and the struct after it are listed without an
+    /// object, the struct before it keeps its object, and nothing is
+    /// reported as a diagnostic, since the types still generate.
+    #[test]
+    fn xtypes_7_3_4_5_3_2_a_label_outside_long_lists_its_union_and_the_types_after_it() {
+        let composed = compose_source(
+            "test.idl",
+            "@final struct Before { long a; };
+             union Choice switch (long long) {
+                 case -987654321987: long whole;
+                 case 1: double fraction;
+             };
+             @final struct Sample { Choice picked; long tail; };",
+            &MemoryLoader::new(),
+        );
+        assert!(!composed.failed(), "{:?}", composed.diagnostics);
+        let listed: Vec<&str> = composed
+            .without_type_objects
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect();
+        assert!(listed.contains(&"Choice"), "{listed:?}");
+        assert!(listed.contains(&"Sample"), "{listed:?}");
+        assert!(!listed.contains(&"Before"), "{listed:?}");
+        let (_, why) = composed
+            .without_type_objects
+            .iter()
+            .find(|(name, _)| name == "Choice")
+            .expect("listed");
+        assert!(why.contains("OutOfRange"), "{why}");
+        assert!(
+            composed.registry.len().1 >= 1,
+            "Before keeps its COMPLETE object"
         );
     }
 

@@ -208,9 +208,8 @@ which is presented in Clause 9."
 **Repo:** `crates/transport-udp/src/udp_transport.rs` (`UdpTransport`);
 `crates/dcps/src/runtime.rs` (SPDP/SEDP and user data over UDP).
 
-**Tests:** `crates/transport-udp/tests/e2e.rs::e2e_write_udp_read_single_datagram`,
-`crates/transport-udp/tests/e2e.rs::e2e_write_udp_read_multiple_in_order`,
-`crates/transport-udp/src/udp_transport.rs::tests::send_recv_v6_loopback`
+**Tests:** `crates/transport-udp/tests/e2e.rs::rtps_7_5_e2e_write_udp_read_multiple_in_order`,
+`crates/transport-udp/src/udp_transport.rs::tests::rtps_7_5_send_recv_v6_loopback`
 
 **Status:** `done`
 
@@ -245,8 +244,8 @@ sequence of octets) to a specific address/port."
 **Repo:** `crates/transport/src/lib.rs` (`Transport::send`);
 `crates/transport-udp/src/udp_transport.rs` (`UdpTransport::send`)
 
-**Tests:** `crates/transport-udp/src/udp_transport.rs::tests::loopback_send_and_recv_delivers_datagram`,
-`crates/transport-udp/tests/e2e.rs::e2e_write_udp_read_single_datagram`
+**Tests:** `crates/transport-udp/src/udp_transport.rs::tests::rtps_7_6_loopback_send_and_recv_delivers_datagram`,
+`crates/transport-udp/tests/e2e.rs::rtps_7_5_e2e_write_udp_read_multiple_in_order`
 
 **Status:** `done`
 
@@ -259,8 +258,8 @@ address/port."
 `crates/transport-udp/src/udp_transport.rs` (`UdpTransport::recv`,
 `UdpTransport::bind_v4`)
 
-**Tests:** `crates/transport-udp/src/udp_transport.rs::tests::bind_v4_returns_local_locator_with_assigned_port`,
-`crates/transport-udp/src/udp_transport.rs::tests::loopback_multiple_datagrams_in_order`
+**Tests:** `crates/transport-udp/src/udp_transport.rs::tests::rtps_7_6_bind_v4_returns_local_locator_with_assigned_port`,
+`crates/transport-udp/src/udp_transport.rs::tests::rtps_7_6_loopback_multiple_datagrams_in_order`
 
 **Status:** `done`
 
@@ -350,8 +349,7 @@ protocol: GUIDPREFIX_UNKNOWN".
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`GuidPrefix`, `GuidPrefix::UNKNOWN`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::guid_prefix_unknown_is_zero`,
-`crates/rtps/src/wire_types.rs::tests::guid_prefix_roundtrip`
+**Tests:** `crates/rtps/src/wire_types.rs::tests::guid_prefix_unknown_is_zero`
 
 **Status:** `done`
 
@@ -470,7 +468,7 @@ protocol."
 **Repo:** `crates/rtps/src/history_cache.rs` (`CacheChange::key_hash`);
 `crates/dcps/src/instance_handle.rs` (`InstanceHandle`)
 
-**Tests:** `crates/dcps/src/instance_handle.rs::tests::from_guid_distinguishes_keys`,
+**Tests:** `crates/dcps/src/instance_handle.rs::tests::rtps_8_2_1_2_from_guid_distinguishes_keys`,
 `crates/rtps/src/history_cache.rs::tests::keep_last_per_instance_keeps_the_newest_of_each_instance`
 
 **Status:** `done` — at the RTPS level the KeyHash (§9.6.4.8) carries the
@@ -501,8 +499,7 @@ VENDORID_UNKNOWN".
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`VendorId`, `VendorId::UNKNOWN`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::vendor_id_unknown_is_two_zero_octets`,
-`crates/rtps/src/wire_types.rs::tests::vendor_id_roundtrip`
+**Tests:** `crates/rtps/src/wire_types.rs::tests::vendor_id_unknown_is_two_zero_octets`
 
 **Status:** `done` — the value ZeroDDS sends is listed under §8.3.3.1
 (vendorId).
@@ -589,9 +586,9 @@ the manner specified by the DDS specification."
 `crates/rtps/src/history_cache.rs` (`HistoryKind`,
 `HistoryCache::set_per_instance_depth`)
 
-**Tests:** `crates/dcps/tests/reader_history_resource_limits.rs::a_writer_refuses_an_instance_beyond_its_own_max_instances`,
-`crates/dcps/tests/reader_history_resource_limits.rs::keep_all_max_samples_total_rejects_when_reliable`,
-`crates/dcps/tests/reader_room_backpressure.rs::a_full_keep_all_reader_blocks_its_writer_and_loses_nothing`
+**Tests:** `crates/dcps/tests/reader_history_resource_limits.rs::dcps_2_2_3_19_a_writer_refuses_an_instance_beyond_its_own_max_instances`,
+`crates/dcps/tests/reader_history_resource_limits.rs::dcps_2_2_3_19_keep_all_max_samples_total_rejects_when_reliable`,
+`crates/dcps/tests/reader_room_backpressure.rs::dcps_2_2_3_14_a_full_keep_all_reader_blocks_its_writer_and_loses_nothing`
 
 **Status:** `done`
 
@@ -728,7 +725,7 @@ DDS BuiltinTopicKey_t".
 `crates/dcps/src/builtin_topics.rs` (key of the builtin topic data)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::guid_layout_is_prefix_then_entity_id`,
-`crates/dcps/src/instance_handle.rs::tests::from_guid_distinguishes_keys`
+`crates/dcps/src/instance_handle.rs::tests::rtps_8_2_1_2_from_guid_distinguishes_keys`
 
 **Status:** `done`
 
@@ -753,7 +750,7 @@ ENTITYID_PARTICIPANT>".
 `crates/dcps/src/participant.rs` (`random_guid_prefix`)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::entity_id_participant_constant`,
-`crates/dcps/src/participant.rs::tests::random_guid_prefixes_share_host_id_within_process`
+`crates/dcps/src/participant.rs::tests::rtps_8_2_4_2_random_guid_prefixes_share_host_id_within_process`
 
 **Status:** `done`
 
@@ -764,9 +761,9 @@ prefix, as long as every Participant in the Domain has a unique GUID."
 
 **Repo:** `crates/dcps/src/participant.rs` (`next_process_unique`, `namespaced_pid`, `process_unique`); `crates/dcps/src/runtime.rs` (`DcpsRuntime::prefix_collisions`)
 
-**Tests:** `crates/dcps/src/participant.rs::tests::the_prefixes_of_one_process_are_pairwise_different`,
-`crates/dcps/src/participant.rs::tests::two_pid_namespaces_with_the_same_pid_give_different_prefixes`,
-`crates/dcps/src/runtime.rs::tests::a_beacon_with_the_own_prefix_from_another_participant_is_counted`
+**Tests:** `crates/dcps/src/participant.rs::tests::rtps_8_2_4_2_the_prefixes_of_one_process_are_pairwise_different`,
+`crates/dcps/src/participant.rs::tests::rtps_8_2_4_2_two_pid_namespaces_with_the_same_pid_give_different_prefixes`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_2_4_2_a_beacon_with_the_own_prefix_from_another_participant_is_counted`
 
 **Status:** `done` — the prefixes of the participants of one process are pairwise different (counter of the process, 65536 per process, also for the C API and the bridges); across processes and hosts the construction prevents the collision (item "Prefix uniqueness across hosts and processes").
 
@@ -777,10 +774,9 @@ prefix, as long as every Participant in the Domain has a unique GUID."
 **Repo:** `crates/dcps/src/participant.rs` (`namespaced_pid`, `pid_namespace_inode`, `next_process_unique`, `process_unique`);
 `crates/dcps/src/runtime.rs` (`DcpsRuntime::prefix_collisions`, `same_process`)
 
-**Tests:** `crates/dcps/src/participant.rs::tests::two_pid_namespaces_with_the_same_pid_give_different_prefixes`,
-`crates/dcps/src/participant.rs::tests::the_prefixes_of_one_process_share_ten_octets_and_differ_in_the_tail`,
-`crates/dcps/src/participant.rs::tests::random_guid_prefixes_share_host_id_within_process`,
-`crates/dcps/src/runtime.rs::tests::a_beacon_with_the_own_prefix_from_another_participant_is_counted`
+**Tests:** `crates/dcps/src/participant.rs::tests::rtps_8_2_4_2_two_pid_namespaces_with_the_same_pid_give_different_prefixes`,
+`crates/dcps/src/participant.rs::tests::rtps_8_2_4_2_random_guid_prefixes_share_host_id_within_process`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_2_4_2_a_beacon_with_the_own_prefix_from_another_participant_is_counted`
 
 **Status:** `done` — the prefix consists of the VendorId, the host value (4 octets), the process id and a process part (a seed from the operating system's randomness plus a counter of the process). The process id carries the mark of the PID namespace (`namespaced_pid`: XOR with a mask from the inode of `/proc/self/ns/pid`, zero in the initial namespace, one-to-one within a namespace). Containers with the host's network (the same host value) and a PID namespace of their own whose first process has the number 1 therefore carry different prefixes. `same_process` (first ten octets) and `same_host` (host value) read as before. Remaining collision: two different host names with the same 32-bit hash, the same marked process id and the same process part; `DcpsRuntime::prefix_collisions` counts an SPDP beacon with the own prefix and foreign locators.
 
@@ -811,8 +807,8 @@ the Endpoint relative to the Participant."
 **Repo:** `crates/dcps/src/runtime.rs` (`next_entity_key`, `entity_key_in_use`, `held_entity_keys`, `release_entity_key`);
 `crates/dcps/src/publisher.rs`, `crates/dcps/src/subscriber.rs` (`Drop` of the inner types)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_wrapped_entity_key_counter_skips_the_key_of_a_live_writer`,
-`crates/dcps/src/runtime.rs::tests::a_wrapped_entity_key_counter_skips_reserved_and_group_keys_until_they_are_given_back`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_2_4_4_a_wrapped_entity_key_counter_skips_the_key_of_a_live_writer`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_2_4_4_a_wrapped_entity_key_counter_skips_reserved_and_group_keys_until_they_are_given_back`
 
 **Status:** `done` — the 3-octet key comes from a counter; after the 24 bits wrap, a key is skipped that a registered writer, reader, an announced topic, a reserved id that is not registered yet or a group id (publisher, subscriber) holds; a key that is given back is free again.
 
@@ -880,9 +876,9 @@ Subscriber."
 **Repo:** `crates/dcps/src/publisher.rs` (`Publisher::create_datawriter`);
 `crates/dcps/src/subscriber.rs` (`Subscriber::create_datareader`)
 
-**Tests:** `crates/dcps/tests/entity_deletion.rs::a_writer_of_another_publisher_is_left_as_it_was`,
-`crates/dcps/tests/entity_deletion.rs::a_reader_of_another_subscriber_is_left_as_it_was`,
-`crates/dcps/tests/entity_deletion.rs::publisher_delete_contained_entities_deletes_every_writer`
+**Tests:** `crates/dcps/tests/entity_deletion.rs::dcps_2_2_2_4_1_6_a_writer_of_another_publisher_is_left_as_it_was`,
+`crates/dcps/tests/entity_deletion.rs::dcps_2_2_2_5_2_6_a_reader_of_another_subscriber_is_left_as_it_was`,
+`crates/dcps/tests/entity_deletion.rs::dcps_2_2_2_4_1_14_publisher_delete_contained_entities_deletes_every_writer`
 
 **Status:** `done` — the GUID of the group is listed under §8.2.4.3.
 
@@ -942,7 +938,7 @@ operations (see 8.7.4)."
 `crates/dcps/src/publisher.rs` (choice of the `entityKind` from
 `DdsType::HAS_KEY`)
 
-**Tests:** `crates/dcps/src/publisher.rs::tests::live_datawriter_entity_kind_is_nokey_for_keyless_type`,
+**Tests:** `crates/dcps/src/publisher.rs::tests::rtps_8_2_7_live_datawriter_entity_kind_is_nokey_for_keyless_type`,
 `crates/rtps/src/wire_types.rs::tests::topic_kind_of_the_predefined_entity_ids`
 
 **Status:** `done`
@@ -969,7 +965,7 @@ Readers. An RTPS Writer belongs to an RTPS Group of type Publisher."
 **Repo:** `crates/dcps/src/publisher.rs` (`Publisher::create_datawriter`);
 `crates/rtps/src/reliable_writer.rs` (`ReliableWriter`)
 
-**Tests:** `crates/dcps/tests/entity_deletion.rs::delete_publisher_refuses_a_publisher_with_writers`,
+**Tests:** `crates/dcps/tests/entity_deletion.rs::dcps_2_2_2_2_1_2_delete_publisher_refuses_a_publisher_with_writers`,
 `crates/rtps/tests/reliable_e2e.rs::e2e_zero_loss_delivers_all_in_order`
 
 **Status:** `done`
@@ -984,7 +980,7 @@ Subscriber."
 **Repo:** `crates/dcps/src/subscriber.rs` (`Subscriber::create_datareader`);
 `crates/rtps/src/reliable_reader.rs` (`ReliableReader`)
 
-**Tests:** `crates/dcps/tests/entity_deletion.rs::a_reader_of_another_subscriber_is_left_as_it_was`,
+**Tests:** `crates/dcps/tests/entity_deletion.rs::dcps_2_2_2_5_2_6_a_reader_of_another_subscriber_is_left_as_it_was`,
 `crates/rtps/tests/reliable_e2e.rs::e2e_10_percent_loss_delivers_all_in_order`
 
 **Status:** `done`
@@ -1023,8 +1019,8 @@ RTPS::Writer; the_dds_writer.related_rtps_writer := the_rtps_writer;"
 **Repo:** `crates/dcps/src/publisher.rs` (`Publisher::create_datawriter`);
 `crates/dcps/src/runtime.rs` (`register_user_writer_as`)
 
-**Tests:** `crates/dcps/src/publisher.rs::tests::live_datawriter_entity_kind_is_nokey_for_keyless_type`,
-`crates/dcps/tests/entity_lifecycle.rs::datawriter_and_datareader_follow_their_factories_entity_factory_policy`
+**Tests:** `crates/dcps/src/publisher.rs::tests::rtps_8_2_7_live_datawriter_entity_kind_is_nokey_for_keyless_type`,
+`crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_datawriter_and_datareader_follow_their_factories_entity_factory_policy`
 
 **Status:** `done`
 
@@ -1053,7 +1049,7 @@ handle); the_rtps_writer.writer_cache.add_change(a_change); }"
 `crates/dcps/src/runtime.rs` (`write_user_lifecycle`);
 `crates/rtps/src/reliable_writer.rs` (`ReliableWriter::write_lifecycle`)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_propagates_over_wire_to_reader`,
+**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_13_dispose_propagates_over_wire_to_reader`,
 `crates/rtps/src/reliable_writer.rs::tests::lifecycle_with_a_key_sets_k_and_carries_it`
 
 **Status:** `done`
@@ -1068,7 +1064,7 @@ inlineQos, handle); the_rtps_writer.writer_cache.add_change(a_change); }"
 (`DataWriter::unregister_instance_w_timestamp`);
 `crates/dcps/src/runtime.rs` (`write_user_lifecycle`)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::unregister_with_autodispose_false_propagates_unregister_only`,
+**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_7_unregister_with_autodispose_false_propagates_unregister_only`,
 `crates/rtps/src/reliable_reader.rs::tests::unregister_data_yields_not_alive_unregistered`
 
 **Status:** `done`
@@ -1080,9 +1076,9 @@ no effect if the topicKind==NO_KEY."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`write_user_lifecycle_with`, `keyless_lifecycle_not_sent`); `writer.keyless_lifecycle_on_wire`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::dispose_and_unregister_of_a_no_key_writer_send_no_marker_unless_asked_for`,
-`crates/dcps/tests/runtime_config_layering.rs::the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`,
-`crates/dcps/tests/keyless_instance.rs::the_writer_disposes_the_one_instance_of_a_keyless_topic`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_2_10_1_dispose_and_unregister_of_a_no_key_writer_send_no_marker_unless_asked_for`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_2_10_1_the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`,
+`crates/dcps/tests/keyless_instance.rs::rtps_8_2_10_1_the_writer_disposes_the_one_instance_of_a_keyless_topic`
 
 **Status:** `done` — dispose and unregister of a writer without a key create no change and send no marker (counted in `DcpsRuntime::keyless_lifecycle_not_sent`); the writer's own instance state changes (DDS 1.4 §2.2.1.2.2: one instance). `writer.keyless_lifecycle_on_wire` (environment `ZERODDS_WRITER_KEYLESS_LIFECYCLE_ON_WIRE`) sends the marker (status bits only) for a peer that expects it. Expected from the vendors: readers of topics without a key no longer see NOT_ALIVE_DISPOSED from ZeroDDS writers; whether Cyclone DDS, Fast DDS or OpenDDS themselves send a marker for NO_KEY is not measured.
 
@@ -1092,8 +1088,8 @@ no effect if the topicKind==NO_KEY."
 
 **Repo:** `crates/dcps/src/publisher.rs` (`Publisher::delete_datawriter`)
 
-**Tests:** `crates/dcps/tests/entity_deletion.rs::delete_datawriter_deletes_the_writer_behind_every_handle`,
-`crates/dcps/tests/entity_deletion.rs::the_last_handle_deletes_the_writer`
+**Tests:** `crates/dcps/tests/entity_deletion.rs::dcps_2_2_1_1_delete_datawriter_deletes_the_writer_behind_every_handle`,
+`crates/dcps/tests/entity_deletion.rs::dcps_2_2_1_1_the_last_handle_deletes_the_writer`
 
 **Status:** `done`
 
@@ -1105,7 +1101,7 @@ the HistoryCache that pass all Reader specific filters, if any."
 **Repo:** `crates/dcps/src/subscriber.rs` (`DataReader::read`,
 `DataReader::take`)
 
-**Tests:** `crates/dcps/tests/sample_info_lifecycle.rs::reader_take_filtered_with_state_mask_filters`
+**Tests:** `crates/dcps/tests/sample_info_lifecycle.rs::dcps_2_2_2_5_1_9_reader_take_filtered_with_state_mask_filters`
 
 **Status:** `done`
 
@@ -1117,7 +1113,7 @@ RTPS::Reader; the_dds_reader.related_rtps_reader := the_rtps_reader;"
 **Repo:** `crates/dcps/src/subscriber.rs` (`Subscriber::create_datareader`);
 `crates/dcps/src/runtime.rs` (`register_user_reader`)
 
-**Tests:** `crates/dcps/tests/entity_lifecycle.rs::datawriter_and_datareader_follow_their_factories_entity_factory_policy`
+**Tests:** `crates/dcps/tests/entity_lifecycle.rs::dcps_2_2_2_1_1_7_datawriter_and_datareader_follow_their_factories_entity_factory_policy`
 
 **Status:** `done`
 
@@ -1130,8 +1126,8 @@ can find them again."
 **Repo:** `crates/dcps/src/subscriber.rs` (`DataReader::read`,
 `DataReader::read_with_info`)
 
-**Tests:** `crates/dcps/tests/sample_info_lifecycle.rs::reader_read_marks_sample_state_read`,
-`crates/dcps/tests/reader_history_resource_limits.rs::plain_read_keep_last_1_keeps_only_the_newest_per_instance_and_is_idempotent`
+**Tests:** `crates/dcps/tests/sample_info_lifecycle.rs::dcps_2_2_2_5_1_2_reader_read_marks_sample_state_read`,
+`crates/dcps/tests/reader_history_resource_limits.rs::rtps_8_2_10_2_plain_read_keep_last_1_keeps_only_the_newest_per_instance_and_is_idempotent`
 
 **Status:** `done`
 
@@ -1144,8 +1140,8 @@ operations do not find the same change."
 **Repo:** `crates/dcps/src/subscriber.rs` (`DataReader::take`,
 `DataReader::take_with_info`)
 
-**Tests:** `crates/dcps/tests/sample_info_lifecycle.rs::reader_take_next_instance_consumes`,
-`crates/dcps/tests/sample_info_lifecycle.rs::reader_view_state_transitions_to_not_new_on_second_sample`
+**Tests:** `crates/dcps/tests/sample_info_lifecycle.rs::dcps_2_2_2_5_3_15_reader_take_next_instance_consumes`,
+`crates/dcps/tests/sample_info_lifecycle.rs::dcps_2_2_2_5_1_8_reader_view_state_transitions_to_not_new_on_second_sample`
 
 **Status:** `done`
 
@@ -1155,8 +1151,8 @@ operations do not find the same change."
 
 **Repo:** `crates/dcps/src/subscriber.rs` (`Subscriber::delete_datareader`)
 
-**Tests:** `crates/dcps/tests/entity_deletion.rs::delete_datareader_refuses_a_reader_that_holds_conditions`,
-`crates/dcps/tests/entity_deletion.rs::lookup_datareader_hands_out_a_handle_to_the_same_reader`
+**Tests:** `crates/dcps/tests/entity_deletion.rs::dcps_2_2_2_5_2_6_delete_datareader_refuses_a_reader_that_holds_conditions`,
+`crates/dcps/tests/entity_deletion.rs::dcps_2_2_2_5_2_7_lookup_datareader_hands_out_a_handle_to_the_same_reader`
 
 **Status:** `done`
 
@@ -1212,7 +1208,7 @@ NACK_FRAG, HEARTBEAT_FRAG".
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId`);
 `crates/rtps/src/header_extension.rs` (`SUBMESSAGE_ID_HEADER_EXTENSION`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`,
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`,
 `crates/rtps/tests/cyclone_he_must_understand.rs::local_encoder_produces_must_understand_bit`,
 `crates/rtps/src/datagram.rs::tests::decode_data_after_header_extension`
 
@@ -1227,7 +1223,7 @@ the protocol: TIME_ZERO, TIME_INVALID, TIME_INFINITE".
 **Repo:** `crates/rtps/src/header_extension.rs` (`HeTimestamp`, `TIME_INVALID`, `TIME_INFINITE`); `crates/dcps/src/time.rs`
 
 **Tests:** `crates/rtps/src/submessages.rs::validity_tests::time_t_seconds_are_unsigned`,
-`crates/dcps/src/time.rs::tests::the_reserved_time_t_values_cross_the_wire_as_the_spec_gives_them`
+`crates/dcps/src/time.rs::tests::rtps_8_3_2_the_reserved_time_t_values_cross_the_wire_as_the_spec_gives_them`
 
 **Status:** `done` — `seconds` is unsigned (`u32`, §9.3.2.1), the three reserved values TIME_ZERO, TIME_INVALID and TIME_INFINITE are constants and go on the wire with the values of the spec. The DCPS `Time` counts seconds as a `long`; the octets are the same.
 
@@ -1420,7 +1416,7 @@ vendorId are assigned by the OMG."
 
 **Status:** `partial` — the field is sent and read; ZeroDDS sends `0x01F0`,
 according to the comment on `VendorId::ZERODDS` an interim value and not one
-assigned by the OMG (an `open` item of its own under §8.3.5.2). Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+assigned by the OMG (a `blocked` item of its own under §8.3.5.2).
 
 ### §8.3.3.1 Table 8.14 Header.guidPrefix
 
@@ -1652,7 +1648,7 @@ Identifies the kind of Submessage."
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageHeader::submessage_id`)
 
 **Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_header_layout_le`,
-`crates/rtps/src/submessage_header.rs::tests::submessage_id_roundtrip_for_known_ids`
+`crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -1785,7 +1781,7 @@ message … The port is set to LOCATOR_PORT_INVALID."
 **Tests:** `crates/rtps/src/receiver_state.rs::tests::the_initial_state_is_the_one_of_table_8_17`,
 `crates/rtps/src/datagram.rs::tests::receiver_walk_from_starts_the_reply_lists_at_the_transport_values`,
 `crates/rtps/src/datagram.rs::tests::receiver_walk_in_applies_the_source_and_the_clock_of_the_context`,
-`crates/dcps/src/runtime.rs::tests::a_reader_proxy_without_locators_takes_the_info_reply_of_its_acknack`
+`crates/dcps/src/runtime.rs::tests::rtps_8_3_4_a_reader_proxy_without_locators_takes_the_info_reply_of_its_acknack`
 
 **Status:** `done` — initial value per Table 8.17 (transport kind, source address, `LOCATOR_PORT_INVALID`). Every receive path goes through `receiver_walk_in` with the datagram's source and the reception clock: user data, SPDP, SEDP, WLP, TypeLookup and the security builtins. The reply side uses the list: a reader proxy with no locator of its own takes the entries of the unicast list that carry a port (which an InfoReply supplies; the initial values have `LOCATOR_PORT_INVALID`) and keeps them for later answers.
 
@@ -1805,7 +1801,7 @@ LOCATOR_ADDRESS_INVALID. The port is set to LOCATOR_PORT_INVALID."
 **Tests:** `crates/rtps/src/receiver_state.rs::tests::the_initial_state_is_the_one_of_table_8_17`,
 `crates/rtps/src/datagram.rs::tests::receiver_walk_from_starts_the_reply_lists_at_the_transport_values`,
 `crates/rtps/src/datagram.rs::tests::receiver_walk_in_applies_the_source_and_the_clock_of_the_context`,
-`crates/dcps/src/runtime.rs::tests::a_reader_proxy_without_locators_takes_the_info_reply_of_its_acknack`
+`crates/dcps/src/runtime.rs::tests::rtps_8_3_4_a_reader_proxy_without_locators_takes_the_info_reply_of_its_acknack`
 
 **Status:** `done` — initial value per Table 8.17 (transport kind, `LOCATOR_ADDRESS_INVALID`, `LOCATOR_PORT_INVALID`). Every receive path goes through `receiver_walk_in` with the datagram's source and the reception clock: user data, SPDP, SEDP, WLP, TypeLookup and the security builtins. The reply side uses the list: a reader proxy with no locator of its own takes the entries of the unicast list that carry a port (which an InfoReply supplies; the initial values have `LOCATOR_PORT_INVALID`) and keeps them for later answers.
 
@@ -2019,7 +2015,7 @@ under "Validity".
 `crates/rtps/src/submessages.rs::validity_tests::gap_and_sequence_number_set_validity_rules`,
 `crates/rtps/src/submessages.rs::validity_tests::fragment_submessages_validity_rules`,
 `crates/rtps/src/datagram.rs::tests::the_submessages_before_an_invalid_one_stand`,
-`crates/dcps/src/runtime.rs::tests::the_empty_acknack_setting_is_off_by_default`
+`crates/dcps/src/runtime.rs::tests::rtps_8_3_4_1_the_empty_acknack_setting_is_off_by_default`
 
 **Status:** `done` — the decoders of the submessages check the conditions of the “Validity”
 sections of §8.3.8; a violation is a decoder error and makes the rest of the
@@ -2104,9 +2100,7 @@ protocol: VENDORID_UNKNOWN. Other values must be assigned by the OMG."
 
 **Tests:** —
 
-**Status:** `open` — ZeroDDS sends `VendorId::ZERODDS = 0x01F0`
-(`crates/rtps/src/wire_types.rs`); the comment there calls the value an
-interim one until a VendorId has been applied for. Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+**Status:** blocked — assignment of a VendorId by the OMG (applied for); lifted once the OMG assigns the value and `VendorId::ZERODDS` carries it. Until then ZeroDDS sends `0x01F0` (`crates/rtps/src/wire_types.rs`, by its comment an interim value), a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
 
 ### §8.3.5.3 Table 8.21 ProtocolVersion element
 
@@ -2130,7 +2124,7 @@ that can take values in the range: -2^63 <= N <= 2^63-1."
 **Repo:** `crates/rtps/src/wire_types.rs` (`SequenceNumber(i64)`,
 `SequenceNumber::split`, `SequenceNumber::from_high_low`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::sequence_number_split_high_low`,
+**Tests:** `crates/rtps/src/wire_types.rs::tests::rtps_9_3_2_10_sequence_number_is_low_plus_high_times_2_to_the_32`,
 `crates/rtps/src/wire_types.rs::tests::sequence_number_roundtrip_be`
 
 **Status:** `done`
@@ -2664,7 +2658,7 @@ CLOCK_SKEW_DETECTED(receptionTime, Receiver.rtpsSendTimestamp) }".
 **Tests:** `crates/rtps/src/receiver_state.rs::tests::the_reception_time_is_kept_and_checked_against_the_send_time`,
 `crates/rtps/src/receiver_state.rs::tests::an_info_timestamp_is_corrected_by_the_clock_skew`,
 `crates/rtps/src/datagram.rs::tests::the_walk_with_a_reception_clock_detects_a_skew_and_corrects_the_timestamp`,
-`crates/dcps/tests/runtime_config_layering.rs::the_clock_skew_threshold_is_a_setting_and_off_by_default`
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_3_7_4_the_clock_skew_threshold_is_a_setting_and_off_by_default`
 
 **Status:** `done` — every receive path sets `rtpsReceptionTimestamp` (wall clock) for a HeaderExtension with a timestamp. The spec gives `CLOCK_SKEW_DETECTED` no threshold; it is the setting `wire.clock_skew_threshold_s` (seconds). Default 0 = off: `clockSkewDetected` then stays FALSE. There is no default threshold.
 
@@ -2754,7 +2748,7 @@ receiving participant clocks are not synchronized or have too large a skew."
 
 **Tests:** `crates/rtps/src/receiver_state.rs::tests::the_reception_time_is_kept_and_checked_against_the_send_time`,
 `crates/rtps/src/datagram.rs::tests::the_walk_with_a_reception_clock_detects_a_skew_and_corrects_the_timestamp`,
-`crates/dcps/tests/runtime_config_layering.rs::the_clock_skew_threshold_is_a_setting_and_off_by_default`
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_3_7_4_the_clock_skew_threshold_is_a_setting_and_off_by_default`
 
 **Status:** `done` — the spec calls the function implementation specific; ZeroDDS compares reception and send time against the threshold `wire.clock_skew_threshold_s` (default 0 = off, no default threshold).
 
@@ -2933,7 +2927,7 @@ AckNack.writerId }".
 **Repo:** `crates/dcps/src/runtime.rs` (`handle_user_datagram_from`: lookup
 by `ack.writer_id`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
 
 **Status:** `done`
 
@@ -3199,7 +3193,7 @@ parameters, see Table 8.85."
 `crates/dcps/src/runtime.rs` (`sample_strength`, `sample_lifespan_nanos`)
 
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::a_data_hands_on_the_in_line_strength_and_lifespan`,
-`crates/dcps/src/runtime.rs::tests::the_in_line_strength_and_lifespan_of_a_sample_override_the_writers`
+`crates/dcps/src/runtime.rs::tests::rtps_8_3_8_2_the_in_line_strength_and_lifespan_of_a_sample_override_the_writers`
 
 **Status:** `done` — OWNERSHIP_STRENGTH and LIFESPAN that a DATA carries in-line apply to that sample instead of the values the writer announced. The other policies of Table 8.85 do not act on a single sample (they enter the match: DURABILITY, RELIABILITY, PRESENTATION, PARTITION, DEADLINE, LATENCY_BUDGET, DESTINATION_ORDER, LIVELINESS), TRANSPORT_PRIORITY is the sender's.
 
@@ -3229,7 +3223,7 @@ Data.writerId }".
 `receiver_walk`)
 
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::same_entity_id_different_prefix_not_confused`,
-`crates/discovery/tests/opensplice_infosrc_regression.rs::opensplice_bundled_infosrc_datagrams_attribute_to_the_real_source`
+`crates/discovery/tests/opensplice_infosrc_regression.rs::rtps_8_3_8_2_opensplice_bundled_infosrc_datagrams_attribute_to_the_real_source`
 
 **Status:** `done`
 
@@ -3241,7 +3235,7 @@ Data.readerId }".
 **Repo:** `crates/dcps/src/runtime.rs` (`handle_user_datagram_from`:
 `rt.reader_slot(d.reader_id)`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
 
 **Status:** `done`
 
@@ -3556,7 +3550,7 @@ required."
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::write_under_fragment_size_produces_single_data`,
 `crates/rtps/src/reliable_writer.rs::tests::write_above_fragment_size_packs_the_fragments_a_message_carries`,
 `crates/rtps/src/reliable_writer.rs::tests::fragment_size_is_fixed_and_a_larger_path_gets_one_data`,
-`crates/dcps/src/runtime.rs::tests::a_writers_fragment_size_follows_the_message_size_of_its_transport`
+`crates/dcps/src/runtime.rs::tests::rtps_8_3_8_3_a_writers_fragment_size_follows_the_message_size_of_its_transport`
 
 **Status:** `done` — the fragment size of a writer follows the smallest message size of its transports (`Transport::max_message_size`, item under §8.4.14.1); several fragments go into one DATA_FRAG where the message carries them; a path that needs no fragmentation gets a DATA.
 
@@ -3804,7 +3798,7 @@ Gap.readerId }".
 
 **Repo:** `crates/dcps/src/runtime.rs` (`handle_user_datagram_from`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
 
 **Status:** `done`
 
@@ -3818,7 +3812,7 @@ past the Group Sequence Number that corresponds to gapList.bitmapBase".
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::a_gap_of_a_group_writer_carries_the_group_sequence_numbers`,
 `crates/rtps/src/submessages.rs::tests::gap_with_group_info_roundtrip_be`,
-`crates/dcps/src/group_order.rs::tests::a_gap_rules_the_number_out_for_its_writer`
+`crates/dcps/src/group_order.rs::tests::rtps_8_3_8_4_a_gap_rules_the_number_out_for_its_writer`
 
 **Status:** `done` — the writer of a GROUP publisher sends GAPs with the GroupInfoFlag set: `gapStartGSN` is the group sequence number of the change taken away, `gapEndGSN` the same (a range of one number; valid under §8.3.8.4); the number comes from the cache or from a bounded list (4096) for changes that left the cache. A writer outside a group sends no flag. The reader takes both numbers into the commit rule (`DcpsRuntime::note_writer_group_progress`).
 
@@ -3834,9 +3828,7 @@ no longer in the RTPS Writer HistoryCache".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — a conditional rule for a writer that sends
-`filteredCount`; ZeroDDS does not filter on the writer side and does not send
-the field (`append_gap` sets `filtered_count: None`).
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform. The Gap codec knows the field (`GAP_FLAG_FILTERED_COUNT`), `append_gap` sets `filtered_count: None`.
 
 ### §8.3.8.5 HeaderExtension
 
@@ -4031,8 +4023,8 @@ with currentGSN was written."
 
 **Tests:** `crates/rtps/src/submessages.rs::tests::the_group_digests_follow_last_gsn_and_are_optional_on_read`,
 `crates/rtps/src/reliable_writer.rs::tests::a_group_writers_heartbeat_carries_the_writer_sets_unless_the_peer_omits_them`,
-`crates/dcps/src/group_order.rs::tests::a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open`,
-`crates/dcps/tests/runtime_config_layering.rs::the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`
+`crates/dcps/src/group_order.rs::tests::rtps_8_3_8_6_a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_2_10_1_the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`
 
 **Status:** `done` — with G=1 the writer sends writerSet after lastGSN as a GroupDigest (four octets, §9.4.2.19; the first four octets of the MD5 over the EntityIdSet_t, sorted, §9.3.2.5; empty group: zero). The reader reads both when the submessageLength leaves room and accepts their absence (figure of §9.4.5.7); the commit rule of §8.7.5 compares them with the discovered writers. `wire.omit_heartbeat_group_digests` leaves them out on send. Contradiction PIM/PSM: see "Contradictions within the spec".
 
@@ -4045,8 +4037,8 @@ Reserved for use by the DDS-Security Specification."
 
 **Tests:** `crates/rtps/src/submessages.rs::tests::the_group_digests_follow_last_gsn_and_are_optional_on_read`,
 `crates/rtps/src/reliable_writer.rs::tests::a_group_writers_heartbeat_carries_the_writer_sets_unless_the_peer_omits_them`,
-`crates/dcps/src/group_order.rs::tests::a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open`,
-`crates/dcps/tests/runtime_config_layering.rs::the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`
+`crates/dcps/src/group_order.rs::tests::rtps_8_3_8_6_a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_2_10_1_the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`
 
 **Status:** `done` — with G=1 the writer sends secureWriterSet after lastGSN as a GroupDigest (four octets, §9.4.2.19; the first four octets of the MD5 over the EntityIdSet_t, sorted, §9.3.2.5; empty group: zero; secureWriterSet is reserved for DDS-Security and is sent as zero). The reader reads both when the submessageLength leaves room and accepts their absence (figure of §9.4.5.7); the commit rule of §8.7.5 compares them with the discovered writers. `wire.omit_heartbeat_group_digests` leaves them out on send. Contradiction PIM/PSM: see "Contradictions within the spec".
 
@@ -4190,7 +4182,7 @@ liveliness lease of the corresponding remote DDS DataWriter."
 **Repo:** `crates/dcps/src/runtime.rs` (`handle_user_datagram_from`:
 `liveliness.writer_asserted` on `h.liveliness_flag`)
 
-**Tests:** `crates/dcps/tests/liveliness_qos.rs::linux::assert_liveliness_keeps_a_manual_writer_alive_at_a_remote_reader`
+**Tests:** `crates/dcps/tests/liveliness_qos.rs::linux::dcps_2_2_2_4_2_22_assert_liveliness_keeps_a_manual_writer_alive_at_a_remote_reader`
 
 **Status:** `done`
 
@@ -4204,8 +4196,8 @@ elements."
 
 **Tests:** `crates/rtps/src/submessages.rs::tests::the_group_digests_follow_last_gsn_and_are_optional_on_read`,
 `crates/rtps/src/reliable_writer.rs::tests::a_group_writers_heartbeat_carries_the_writer_sets_unless_the_peer_omits_them`,
-`crates/dcps/src/group_order.rs::tests::a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open`,
-`crates/dcps/tests/runtime_config_layering.rs::the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`,
+`crates/dcps/src/group_order.rs::tests::rtps_8_3_8_6_a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_2_10_1_the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml`,
 `crates/rtps/src/submessages.rs::tests::heartbeat_with_group_info_roundtrip_le`,
 `crates/rtps/src/reliable_writer.rs::tests::a_group_writers_heartbeat_carries_the_groups_numbers`
 
@@ -4231,7 +4223,7 @@ Participant."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`handle_user_datagram_from`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
 
 **Status:** `done`
 
@@ -4452,7 +4444,7 @@ the Participant receiving the_message> }".
 **Repo:** `crates/rtps/src/datagram.rs` (`ReceiverWalk::next`,
 `InfoDestination`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
 
 **Status:** `done`
 
@@ -4467,7 +4459,7 @@ likewise §8.3.8.12, p. 69 (NackFrag).
 
 **Repo:** —
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
 
 **Status:** `done`
 
@@ -4647,7 +4639,7 @@ Receiver.sourceVendorId = InfoSource.vendorId".
 **Repo:** `crates/rtps/src/receiver_state.rs` (`ReceiverState::apply_info_source`)
 
 **Tests:** `crates/rtps/src/receiver_state.rs::tests::apply_info_source_resets_reply_locators_and_timestamp`,
-`crates/discovery/tests/opensplice_infosrc_regression.rs::opensplice_bundled_infosrc_datagrams_attribute_to_the_real_source`
+`crates/discovery/tests/opensplice_infosrc_regression.rs::rtps_8_3_8_2_opensplice_bundled_infosrc_datagrams_attribute_to_the_real_source`
 
 **Status:** `done`
 
@@ -4760,7 +4752,7 @@ Receiver.timestamp += Receiver.rtpsReceptionTime - Receiver.rtpsSendTimestamp
 **Tests:** `crates/rtps/src/receiver_state.rs::tests::the_reception_time_is_kept_and_checked_against_the_send_time`,
 `crates/rtps/src/receiver_state.rs::tests::an_info_timestamp_is_corrected_by_the_clock_skew`,
 `crates/rtps/src/datagram.rs::tests::the_walk_with_a_reception_clock_detects_a_skew_and_corrects_the_timestamp`,
-`crates/dcps/tests/runtime_config_layering.rs::the_clock_skew_threshold_is_a_setting_and_off_by_default`
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_3_7_4_the_clock_skew_threshold_is_a_setting_and_off_by_default`
 
 **Status:** `done` — with `clockSkewDetected`, `apply_info_timestamp` adds reception time minus send time; in every receive path this takes effect once `wire.clock_skew_threshold_s` is set (default off, see §8.3.7.4 TimestampFlag).
 
@@ -4903,7 +4895,7 @@ NackFrag.writerId }".
 **Repo:** `crates/dcps/src/runtime.rs` (`handle_user_datagram_from`:
 `rt.writer_slot(nf.writer_id)`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours`
 
 **Status:** `done`
 
@@ -4976,7 +4968,7 @@ KEEP_LAST eviction through `HistoryCache::insert_returning_evicted`);
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::keep_last_evicts_oldest_on_overflow`,
 `crates/rtps/src/history_cache.rs::tests::keep_last_per_instance_keeps_the_newest_of_each_instance`,
-`crates/dcps/tests/reader_room_backpressure.rs::a_full_keep_all_reader_blocks_its_writer_and_loses_nothing`
+`crates/dcps/tests/reader_room_backpressure.rs::dcps_2_2_3_14_a_full_keep_all_reader_blocks_its_writer_and_loses_nothing`
 
 **Status:** `done`
 
@@ -5045,7 +5037,7 @@ allow the end-user to tune those timing characteristics."
 `nack_suppression_duration`, `writer_heartbeat_period`, `reader_heartbeat_response_delay`,
 `reader_heartbeat_suppression_duration`, `spdp_period`, `wlp_period`)
 
-**Tests:** `crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`,
+**Tests:** `crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`,
 `crates/rtps/src/reliable_writer.rs::tests::a_repair_waits_for_the_nack_response_delay`,
 `crates/rtps/src/reliable_writer.rs::tests::a_nack_inside_the_suppression_duration_is_ignored`
 
@@ -5060,7 +5052,7 @@ allow the end-user to tune those timing characteristics."
 **Repo:** `crates/dcps/src/runtime.rs` (`writer_heartbeat_period`, `reader_heartbeat_response_delay`,
 `reader_heartbeat_suppression_duration`)
 
-**Tests:** `crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`
+**Tests:** `crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`
 
 **Status:** `done` — `writer.heartbeat_period_ms`, `reader.heartbeat_response_delay_ms`, `reader.heartbeat_suppression_duration_ms`.
 
@@ -5072,8 +5064,8 @@ Protocol and Simple Endpoint Discovery Protocol (see 8.5.1)."
 
 **Repo:** `crates/discovery/src/spdp.rs`; `crates/discovery/src/sedp/stack.rs`
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::beacon_serializes_to_decodable_datagram`,
-`crates/discovery/src/sedp/stack.rs::tests::end_to_end_discovery_between_two_stacks`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_4_2_1_beacon_serializes_to_decodable_datagram`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_4_2_1_end_to_end_discovery_between_two_stacks`
 
 **Status:** `done` — the individual obligations are under §8.5.
 
@@ -5268,7 +5260,7 @@ match path of `crates/dcps/src/runtime.rs`)
 
 **Tests:** `crates/qos/src/policies/reliability.rs::tests::best_effort_lt_reliable`,
 `crates/qos/src/policies/reliability.rs::tests::ordering_reliable_higher_than_besteffort`,
-`crates/dcps/tests/transient_local_durability.rs::linux::transient_local_writer_delivers_history_to_late_joiner`
+`crates/dcps/tests/transient_local_durability.rs::linux::dcps_2_2_3_4_transient_local_writer_delivers_history_to_late_joiner`
 
 **Status:** `done` — the comparison of offered and requested QoS is listed in
 the DCPS audit.
@@ -5304,7 +5296,7 @@ differences. Should have at least nano-second resolution."
 **Repo:** `crates/qos/src/duration.rs` (`Duration {seconds, fraction}`,
 2⁻³² s)
 
-**Tests:** `crates/dcps/src/time.rs::tests::duration_zero_and_infinite_sentinels`,
+**Tests:** `crates/dcps/src/time.rs::tests::dcps_2_3_3_duration_zero_and_infinite_sentinels`,
 `crates/rtps/src/participant_data.rs::tests::duration_roundtrip_le`
 
 **Status:** `done`
@@ -5492,7 +5484,7 @@ nackResponseDelay.nanosec = 200 * 1000 * 1000; //200 milliseconds".
 `crates/dcps/src/runtime.rs` (`RuntimeConfig::nack_response_delay`)
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::nack_response_delay_defaults_to_the_spec_200_ms_and_suppression_to_zero`,
-`crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`
 
 **Status:** `done` — `DEFAULT_NACK_RESPONSE_DELAY` and `RuntimeConfig::nack_response_delay` are 200 ms; a NACK is answered with the repair only after that time (test). `writer.nack_response_delay_ms: 0` answers on the next tick.
 
@@ -5505,7 +5497,7 @@ implementations."
 **Repo:** `crates/rtps/src/reliable_writer.rs` (`DEFAULT_NACK_RESPONSE_DELAY`, `DEFAULT_NACK_SUPPRESSION_DURATION`);
 `crates/dcps/src/runtime.rs`; `man/man5/zerodds.yaml.5`; `packaging/linux/configs/zerodds.yaml.example`
 
-**Tests:** `crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`,
+**Tests:** `crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`,
 `crates/rtps/src/reliable_writer.rs::tests::nack_response_delay_defaults_to_the_spec_200_ms_and_suppression_to_zero`
 
 **Status:** `done` — the values of the spec are the defaults: nackResponseDelay 200 ms, nackSuppressionDuration 0 (runtime, YAML default, man page, example configuration). The former 0 ms stay reachable through `writer.nack_response_delay_ms`; tests that drive a millisecond clock set 0 explicitly.
@@ -5696,7 +5688,7 @@ Identifies the group to which the matched Reader belongs".
 `crates/dcps/src/runtime.rs` (match path, `PID_GROUP_GUID` of the subscription)
 
 **Tests:** `crates/rtps/src/reader_proxy.rs::tests::the_remote_group_entity_id_is_kept`,
-`crates/dcps/src/runtime.rs::tests::the_proxies_of_a_match_carry_the_remote_group_entity_id`
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_7_5_the_proxies_of_a_match_carry_the_remote_group_entity_id`
 
 **Status:** `done` — the proxy holds `remoteGroupEntityId`; the match path fills it from `PID_GROUP_GUID` of the reader's SEDP announcement, `ENTITYID_UNKNOWN` without a group.
 
@@ -5791,8 +5783,8 @@ by the application that uses DDS."
 **Repo:** `crates/dcps/src/runtime.rs` (SEDP match, `add_reader_proxy`);
 `crates/dcps/src/participant.rs` (`ignore_subscription`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::end_to_end_discovery_between_two_stacks`,
-`crates/dcps/tests/xtypes_aware_match.rs::final_vs_appendable_mismatch_rejected_at_match_time`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_4_2_1_end_to_end_discovery_between_two_stacks`,
+`crates/dcps/tests/xtypes_aware_match.rs::rtps_8_4_7_5_final_vs_appendable_mismatch_rejected_at_match_time`
 
 **Status:** `done`
 
@@ -5900,8 +5892,8 @@ a_locator );"
 `crates/dcps/src/runtime.rs` (`RuntimeConfig::initial_peers`, the SPDP
 multicast locator)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::initial_peer_specs_expand_per_the_configured_participant_limit`,
-`crates/discovery/src/spdp.rs::tests::beacon_serializes_to_decodable_datagram`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_4_8_1_initial_peer_specs_expand_per_the_configured_participant_limit`,
+`crates/discovery/src/spdp.rs::tests::rtps_8_4_2_1_beacon_serializes_to_decodable_datagram`
 
 **Status:** `done` — the SPDP beacon is ZeroDDS' best-effort StatelessWriter;
 its target locators come from the configuration (§8.5.3.1).
@@ -5939,7 +5931,7 @@ the_reader_locator.locator, DATA;"
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpBeacon::serialize`: one DATA
 with a consecutive number per announcement)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::beacon_serializes_to_decodable_datagram`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_4_2_1_beacon_serializes_to_decodable_datagram`
 
 **Status:** `done` — the DATA carries `readerId =
 ENTITYID_SPDP_BUILTIN_PARTICIPANT_DETECTOR` instead of UNKNOWN (§8.3.8.2
@@ -6127,7 +6119,7 @@ multicastLocatorList); the_rtps_writer.matched_reader_add(a_reader_proxy);"
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::a_best_effort_reader_matched_late_gets_the_next_write`,
 `crates/rtps/src/reader_proxy.rs::tests::the_remote_group_entity_id_is_kept`,
-`crates/dcps/src/runtime.rs::tests::the_proxies_of_a_match_carry_the_remote_group_entity_id`
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_7_5_the_proxies_of_a_match_carry_the_remote_group_entity_id`
 
 **Status:** `done` — `matched_reader_add` takes `remoteGroupEntityId`, `expectsInlineQos` and both locator lists.
 
@@ -6224,7 +6216,7 @@ multicastLocatorList); the_rtps_writer.matched_reader_add(a_reader_proxy);"
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::heartbeat_after_add_reader_proxy_is_non_final`,
 `crates/rtps/src/reliable_writer.rs::tests::a_reader_matched_inside_an_open_coherent_set_gets_the_whole_set`,
 `crates/rtps/src/reader_proxy.rs::tests::the_remote_group_entity_id_is_kept`,
-`crates/dcps/src/runtime.rs::tests::the_proxies_of_a_match_carry_the_remote_group_entity_id`
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_7_5_the_proxies_of_a_match_carry_the_remote_group_entity_id`
 
 **Status:** `done` — `matched_reader_add` takes `remoteGroupEntityId`, `expectsInlineQos` and both locator lists.
 
@@ -6319,9 +6311,11 @@ ACKNACK.readerSNState.set);"
 **Repo:** `crates/rtps/src/reliable_writer.rs` (`handle_acknack_window`)
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::handle_acknack_updates_proxy_state`,
-`crates/rtps/src/reliable_writer.rs::tests::handle_acknack_with_lower_base_leaves_requested`
+`crates/rtps/src/reliable_writer.rs::tests::handle_acknack_with_lower_base_leaves_requested`,
+`crates/rtps/src/reliable_writer.rs::tests::rtps_8_4_9_2_an_acknack_with_an_empty_set_requests_no_change`
 
-**Status:** `done`
+**Status:** `done` — an empty set requests nothing; the changes still on
+their way behind the base do not go out again.
 
 ### §8.4.9.2 Table 8.66 reliable StatefulWriter T9
 
@@ -6481,7 +6475,7 @@ heartbeatResponseDelay.nanosec = 500 * 1000 * 1000; // 500 milliseconds".
 `crates/dcps/src/runtime.rs` (`RuntimeConfig::reader_heartbeat_response_delay`)
 
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::default_heartbeat_suppression_duration_is_the_spec_zero`,
-`crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`
 
 **Status:** `done` — `DEFAULT_HEARTBEAT_RESPONSE_DELAY` and `RuntimeConfig::reader_heartbeat_response_delay` are 500 ms; `reader.heartbeat_response_delay_ms: 0` answers on the next tick.
 
@@ -6494,7 +6488,7 @@ implementations."
 **Repo:** `crates/rtps/src/reliable_reader.rs` (`DEFAULT_HEARTBEAT_RESPONSE_DELAY`, `DEFAULT_HEARTBEAT_SUPPRESSION_DURATION`);
 `crates/dcps/src/runtime.rs`; `crates/dcps/src/type_lookup_transport.rs`; `man/man5/zerodds.yaml.5`; `packaging/linux/configs/zerodds.yaml.example`
 
-**Tests:** `crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`,
+**Tests:** `crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`,
 `crates/rtps/src/reliable_reader.rs::tests::default_heartbeat_suppression_duration_is_the_spec_zero`
 
 **Status:** `done` — the values of the spec are the defaults: heartbeatResponseDelay 500 ms, heartbeatSuppressionDuration 0 (runtime, man page, example configuration). The former 0 ms stay reachable through `reader.heartbeat_response_delay_ms`. §8.4.7.1 names no heartbeatPeriod; it stays 100 ms (`writer.heartbeat_period_ms`). The built-in readers of SEDP, secure volatile and TypeLookup use the same default.
@@ -6509,7 +6503,7 @@ heartbeatSuppressionDuration.nanosec = 0;".
 
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::default_heartbeat_suppression_duration_is_the_spec_zero`,
 `crates/rtps/src/reliable_reader.rs::tests::heartbeat_storm_from_a_writer_that_never_fulfils_a_nack_cannot_arise`,
-`crates/discovery/src/sedp/reader.rs::tests::sedp_reader_does_not_storm_against_a_writer_that_never_delivers`
+`crates/discovery/src/sedp/reader.rs::tests::rtps_8_4_10_1_sedp_reader_does_not_storm_against_a_writer_that_never_delivers`
 
 **Status:** `done` — every reader runs with 0, the built-in ones of SEDP and
 VolatileSecure too. A writer that re-announces the same range at short
@@ -6539,7 +6533,7 @@ matched RTPS Writer."
 `crates/discovery/src/spdp.rs` (`SpdpReader::new`)
 
 **Tests:** `crates/rtps/src/reader.rs::tests::reader_delivers_data_addressed_to_us`,
-`crates/discovery/src/spdp.rs::tests::reader_rejects_non_spdp_datagram`
+`crates/discovery/src/spdp.rs::tests::rtps_8_4_10_2_reader_rejects_non_spdp_datagram`
 
 **Status:** `done`
 
@@ -6609,8 +6603,8 @@ and not being explicitly ignored by the application that uses DDS."
 **Repo:** `crates/dcps/src/runtime.rs` (match path, `add_writer_proxy`);
 `crates/dcps/src/participant.rs` (`ignore_publication`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::partition_mismatch_blocks_match_without_any_incompatible_qos_event`,
-`crates/dcps/src/participant.rs::tests::ignore_publication_records_handle`
+**Tests:** `crates/dcps/src/runtime.rs::tests::dcps_2_2_3_13_partition_mismatch_blocks_match_without_any_incompatible_qos_event`,
+`crates/dcps/src/participant.rs::tests::dcps_2_2_2_2_1_16_ignore_publication_records_handle`
 
 **Status:** `done`
 
@@ -6662,7 +6656,7 @@ Writer."
 `crates/dcps/src/runtime.rs` (wiring when the writer proxy is created, `reader.honor_data_max_size_serialized`)
 
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::a_payload_beyond_the_announced_maximum_is_refused_and_counted`,
-`crates/dcps/tests/runtime_config_layering.rs::the_data_max_size_setting_is_on_by_default_and_read_from_yaml`
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_10_4_the_data_max_size_setting_is_on_by_default_and_read_from_yaml`
 
 **Status:** `done` — the reader takes the attribute from the announcement and refuses a SerializedPayload beyond it (after a protected payload is opened; the number counts as not available and the counter `oversize_payload_count` rises). A DATA_FRAG sample is checked once reassembled; `AssemblerCaps` still bounds the size of reassembled samples. The named setting `reader.honor_data_max_size_serialized=false` takes the payload anyway, for a writer that exceeds its own announcement (Fast DDS 3.6.1: 160 octets announced, 100 036 sent).
 
@@ -6687,7 +6681,7 @@ Identifies the group to which the matched Reader belongs".
 `crates/dcps/src/runtime.rs` (match path, `PID_GROUP_GUID` of the publication)
 
 **Tests:** `crates/rtps/src/writer_proxy.rs::tests::the_remote_group_entity_id_is_kept`,
-`crates/dcps/src/runtime.rs::tests::the_proxies_of_a_match_carry_the_remote_group_entity_id`
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_7_5_the_proxies_of_a_match_carry_the_remote_group_entity_id`
 
 **Status:** `done` — the proxy holds `remoteGroupEntityId`; the match path fills it from `PID_GROUP_GUID` of the writer's SEDP announcement, `ENTITYID_UNKNOWN` without a group.
 
@@ -6833,7 +6827,7 @@ the_rtps_reader.reader_cache.add_change(a_change);"
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpReader::samples`);
 `crates/rtps/src/reader.rs` (`BestEffortReader::recv_datagram`)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::samples_reads_every_participant_a_datagram_bundles`,
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_4_11_1_samples_reads_every_participant_a_datagram_bundles`,
 `crates/rtps/src/reader.rs::tests::reader_handles_multiple_data_in_one_datagram`
 
 **Status:** `done`
@@ -6872,7 +6866,7 @@ multicastLocatorList); the_rtps_reader.matched_writer_add(a_writer_proxy);"
 
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::best_effort_reader_skips_leading_gap`,
 `crates/rtps/src/writer_proxy.rs::tests::the_remote_group_entity_id_is_kept`,
-`crates/dcps/src/runtime.rs::tests::the_proxies_of_a_match_carry_the_remote_group_entity_id`
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_7_5_the_proxies_of_a_match_carry_the_remote_group_entity_id`
 
 **Status:** `done` — `matched_writer_add` takes `remoteGroupEntityId` and both locator lists.
 
@@ -6927,7 +6921,7 @@ multicastLocatorList); the_rtps_reader.matched_writer_add(a_writer_proxy);"
 **Tests:** `crates/rtps/src/reliable_reader.rs::tests::add_writer_proxy_increases_count`,
 `crates/rtps/src/reliable_reader.rs::tests::changes_a_writer_sent_before_the_match_are_requested_at_once`,
 `crates/rtps/src/writer_proxy.rs::tests::the_remote_group_entity_id_is_kept`,
-`crates/dcps/src/runtime.rs::tests::the_proxies_of_a_match_carry_the_remote_group_entity_id`
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_7_5_the_proxies_of_a_match_carry_the_remote_group_entity_id`
 
 **Status:** `done` — `matched_writer_add` takes `remoteGroupEntityId` and both locator lists.
 
@@ -7068,10 +7062,10 @@ Liveliness Protocol in order to be interoperable."
 **Repo:** `crates/dcps/src/wlp.rs` (`WlpEndpoint`); `crates/dcps/src/runtime.rs`
 (`DcpsRuntime::wlp`)
 
-**Tests:** `crates/dcps/tests/wlp_integration.rs::linux_only::two_participants_exchange_automatic_wlp_heartbeats`,
-`crates/dcps/src/runtime.rs::tests::two_runtimes_exchange_wlp_heartbeat`,
-`crates/dcps/src/wlp.rs::tests::a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`,
-`crates/dcps/src/wlp.rs::tests::the_reader_is_treated_as_builtin_endpoint_qos_says`
+**Tests:** `crates/dcps/tests/wlp_integration.rs::linux_only::rtps_8_4_13_two_participants_exchange_automatic_wlp_heartbeats`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_13_two_runtimes_exchange_wlp_heartbeat`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_the_reader_is_treated_as_builtin_endpoint_qos_says`
 
 **Status:** `done` — writer and reader of the protocol run in every participant; the writer has the QoS of §8.4.13.3 and treats the reader as `builtinEndpointQos` says. The writer's wire change is not measured against Cyclone, Fast DDS, OpenDDS and RTI.
 
@@ -7086,9 +7080,9 @@ the locally matching built-in Endpoints."
 `crates/dcps/src/runtime.rs` (`spdp_announced`, `wlp_unicast_targets`,
 `answer_wlp_heartbeats`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::wlp_unicast_targets_prefers_metatraffic_then_default`,
-`crates/dcps/src/runtime.rs::tests::two_runtimes_assert_liveliness_reaches_peer`,
-`crates/dcps/src/wlp.rs::tests::only_a_participant_with_a_message_reader_gets_a_proxy`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_4_13_1_wlp_unicast_targets_prefers_metatraffic_then_default`,
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_2_2_1_19_two_runtimes_assert_liveliness_reaches_peer`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_1_only_a_participant_with_a_message_reader_gets_a_proxy`
 
 **Status:** `done` — every SPDP announcement makes (unchanged: keeps) a reader proxy for the
 participant's BuiltinParticipantMessageReader when its `availableBuiltinEndpoints`
@@ -7103,8 +7097,8 @@ built-in Endpoints is the same as used for application-defined Endpoints."
 `handle_reader_messages`, `tick`); `crates/dcps/src/runtime.rs` (WLP-Tick,
 `spdp_announced`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`,
-`crates/dcps/src/wlp.rs::tests::the_writer_heartbeats_until_the_reader_has_acknowledged`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_1_the_writer_heartbeats_until_the_reader_has_acknowledged`
 
 **Status:** `done` — the WLP writer is a `ReliableWriter` with a reader proxy per participant:
 DATA with a piggyback HEARTBEAT, periodic HEARTBEATs until acknowledged, repair of
@@ -7123,8 +7117,8 @@ ENTITYID_P2P_BUILTIN_PARTICIPANT_MESSAGE_READER"
 `EntityId::BUILTIN_PARTICIPANT_MESSAGE_READER`); `crates/dcps/src/wlp.rs`
 (`WlpEndpoint::handle_datagram`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::wlp_handle_datagram_updates_peer_state`,
-`crates/dcps/src/wlp.rs::tests::wlp_handle_datagram_ignores_non_wlp_traffic`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_2_wlp_handle_datagram_updates_peer_state`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_2_wlp_handle_datagram_ignores_non_wlp_traffic`
 
 **Status:** `done` — the values are listed under §9.3.1.3.
 
@@ -7138,7 +7132,7 @@ durability.kind = TRANSIENT_LOCAL_DURABILITY".
 `handle_reader_messages`, `tick`); `crates/dcps/src/runtime.rs` (WLP-Tick,
 `spdp_announced`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`
 
 **Status:** `done` — a reader that comes later gets the held samples with the first tick, without asking (the history keeps one sample per kind, so a request would meet a newer sample), and a HEARTBEAT says what the history holds; asking again it gets them once more.
 
@@ -7151,7 +7145,7 @@ durability.kind = TRANSIENT_LOCAL_DURABILITY".
 `handle_reader_messages`, `tick`); `crates/dcps/src/runtime.rs` (WLP-Tick,
 `spdp_announced`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::the_history_holds_the_last_sample_of_each_kind`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_3_the_history_holds_the_last_sample_of_each_kind`
 
 **Status:** `done` — the history holds the last sample of each instance (participantGuidPrefix,
 kind; `PID_KEY_HASH` in the in-line QoS); superseded samples are not repeated.
@@ -7165,8 +7159,8 @@ durability.kind = TRANSIENT_LOCAL_DURABILITY".
 **Repo:** `crates/dcps/src/wlp.rs` (`WlpEndpoint::heartbeat_responses`: the
 request starts at the HEARTBEAT's firstSN, not at the match)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it`,
-`crates/dcps/tests/cyclone_live_wlp.rs::cyclone_live_wlp_handshake`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_3_a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it`,
+`crates/dcps/tests/cyclone_live_wlp.rs::rtps_8_4_13_3_cyclone_live_wlp_handshake`
 
 **Status:** `done`
 
@@ -7178,7 +7172,7 @@ request starts at the HEARTBEAT's firstSN, not at the match)
 **Repo:** `crates/dcps/src/wlp.rs` (`WlpEndpoint::peers`: per participant the
 state last received)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::wlp_handle_datagram_updates_peer_state`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_2_wlp_handle_datagram_updates_peer_state`
 
 **Status:** `done` — the reader keeps no samples; it hands every sample
 received at once to the DataReaders' liveliness bookkeeping and keeps
@@ -7193,8 +7187,8 @@ reliability.kind = RELIABLE_RELIABILITY_QOS."
 `handle_reader_messages`, `tick`); `crates/dcps/src/runtime.rs` (WLP-Tick,
 `spdp_announced`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::the_writer_heartbeats_until_the_reader_has_acknowledged`,
-`crates/dcps/src/wlp.rs::tests::a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_1_the_writer_heartbeats_until_the_reader_has_acknowledged`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request`
 
 **Status:** `done` — the writer keeps state per reader (reader proxy), sends HEARTBEATs until
 acknowledged and repairs on ACKNACK (`handle_reader_messages`).
@@ -7210,8 +7204,8 @@ ParticipantProxy::builtinEndpointQos shall be set."
 
 **Repo:** `crates/dcps/src/wlp.rs` (`WlpEndpoint::heartbeat_responses`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it`,
-`crates/dcps/src/wlp.rs::tests::once_the_pulse_arrived_a_final_heartbeat_gets_no_answer_and_a_plain_one_the_ack`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_3_a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_3_once_the_pulse_arrived_a_final_heartbeat_gets_no_answer_and_a_plain_one_the_ack`
 
 **Status:** `done` — the reader answers HEARTBEATs as a RELIABLE reader does;
 the flag does not apply, ZeroDDS sends no PID_BUILTIN_ENDPOINT_QOS.
@@ -7230,7 +7224,7 @@ RELIABLE_RELIABILITY_QOS."
 **Repo:** `crates/dcps/src/wlp.rs` (`WlpEndpoint::add_peer_reader`, `sync_proxy`);
 `crates/dcps/src/runtime.rs` (`spdp_announced`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::the_reader_is_treated_as_builtin_endpoint_qos_says`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_the_reader_is_treated_as_builtin_endpoint_qos_says`
 
 **Status:** `done` — with `builtinEndpointQos` and the flag the reader is a best-effort proxy (no HEARTBEATs), otherwise RELIABLE.
 
@@ -7261,9 +7255,9 @@ QoS."
 shortest finite lease of an AUTOMATIC writer, at most a third of the
 participant lease); `crates/dcps/src/wlp.rs` (`WlpEndpoint::tick`)
 
-**Tests:** `crates/dcps/tests/liveliness_qos.rs::linux::an_automatic_writer_that_never_writes_stays_alive_at_a_remote_reader`,
-`crates/dcps/src/wlp.rs::tests::wlp_tick_emits_again_after_period`,
-`crates/dcps/src/runtime.rs::tests::wlp_period_default_is_lease_over_three`
+**Tests:** `crates/dcps/tests/liveliness_qos.rs::linux::dcps_2_2_3_11_an_automatic_writer_that_never_writes_stays_alive_at_a_remote_reader`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_5_wlp_tick_emits_again_after_period`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_13_5_wlp_period_default_is_lease_over_three`
 
 **Status:** `done` — the AUTOMATIC sample also goes out without an AUTOMATIC
 writer.
@@ -7279,10 +7273,10 @@ duration among these Writers."
 `refresh_manual_by_participant`); `crates/dcps/src/wlp.rs`
 (`WlpEndpoint::assert_participant`, `refresh_participant`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::wlp_assert_participant_emits_manual_pulse`,
-`crates/dcps/src/wlp.rs::tests::refreshes_before_the_tick_share_one_manual_by_participant_sample`,
-`crates/dcps/tests/wlp_integration.rs::linux_only::manual_by_participant_pulse_arrives_at_peer`,
-`crates/dcps/src/runtime.rs::tests::a_manual_by_participant_writer_refreshes_the_participant_liveliness`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_5_wlp_assert_participant_emits_manual_pulse`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_5_refreshes_before_the_tick_share_one_manual_by_participant_sample`,
+`crates/dcps/tests/wlp_integration.rs::linux_only::rtps_8_4_13_5_manual_by_participant_pulse_arrives_at_peer`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_13_5_a_manual_by_participant_writer_refreshes_the_participant_liveliness`
 
 **Status:** `done` — the sample is written by `DomainParticipant::assert_liveliness` and by
 `write`, `assert_liveliness`, `dispose` and `unregister_instance` of a
@@ -7298,9 +7292,9 @@ HistoryCache."
 
 **Repo:** `crates/dcps/src/wlp.rs` (`WlpEndpoint::write_pulse`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::the_history_holds_the_last_sample_of_each_kind`,
-`crates/dcps/src/wlp.rs::tests::wlp_assert_participant_emits_manual_pulse`,
-`crates/dcps/src/wlp.rs::tests::wlp_handle_datagram_updates_peer_state`
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_3_the_history_holds_the_last_sample_of_each_kind`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_5_wlp_assert_participant_emits_manual_pulse`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_2_wlp_handle_datagram_updates_peer_state`
 
 **Status:** `done` — the instance is (participantGuidPrefix, kind); the KeyHash (12 octets of
 prefix, 4 octets of kind, big endian) is `PID_KEY_HASH` in the in-line QoS of every
@@ -7315,7 +7309,7 @@ is writing the data (and therefore asserting the liveliness of its Writers)."
 **Repo:** `crates/dcps/src/wlp.rs` (`WlpEndpoint::encode_pulse`:
 `ParticipantMessageData::automatic(self.own_prefix)`)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::wlp_handle_datagram_updates_peer_state`,
+**Tests:** `crates/dcps/src/wlp.rs::tests::rtps_8_4_13_2_wlp_handle_datagram_updates_peer_state`,
 `crates/rtps/src/participant_message_data.rs::tests::participant_message_data_automatic_default_data_empty`
 
 **Status:** `done`
@@ -7331,7 +7325,7 @@ discussed in 8.7.2.2.3."
 `DcpsRuntime::assert_writer_liveliness_eid`: HEARTBEAT with the
 LivelinessFlag)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::assert_liveliness_keeps_a_manual_writer_alive_without_writing`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::dcps_2_2_2_4_2_22_assert_liveliness_keeps_a_manual_writer_alive_without_writing`,
 `crates/rtps/src/reliable_writer.rs::tests::liveliness_heartbeat_is_a_final_heartbeat_with_the_liveliness_flag`
 
 **Status:** `done` — `DcpsRuntime::assert_writer_liveliness` also writes a
@@ -7380,10 +7374,10 @@ all currently known Readers."
 `crates/dcps/src/layered_transport.rs` (minimum of the legs); `crates/rtps/src/reliable_writer.rs`
 (`fragment_size_for_message_size`); `crates/dcps/src/runtime.rs` (writer creation)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_writers_fragment_size_follows_the_message_size_of_its_transport`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_3_8_3_a_writers_fragment_size_follows_the_message_size_of_its_transport`,
 `crates/rtps/src/reliable_writer.rs::tests::the_fragment_size_is_bounded_by_what_the_field_holds`,
-`crates/transport-udp/src/udp_transport.rs::tests::max_message_size_is_the_configured_one_up_to_the_datagram_limit`,
-`crates/dcps/tests/runtime_config_layering.rs::the_udp_message_size_is_a_setting`,
+`crates/transport-udp/src/udp_transport.rs::tests::rtps_8_4_14_1_max_message_size_is_the_configured_one_up_to_the_datagram_limit`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_14_1_the_udp_message_size_is_a_setting`,
 `crates/rtps/src/reliable_writer.rs::tests::fragment_size_is_fixed_and_a_larger_path_gets_one_data`
 
 **Status:** `done` — every transport states its largest message (`Transport::max_message_size`; for UDP it is a setting, `transport.udp.max_message_size`, default 1472; SHM and UDS their datagram limit, TCP the frame limit, TSN 1500; the layered transport the minimum of its legs). The fragment size of a writer is the message of the smallest transport less 128 octets, fixed for the life of the writer: 1344 at the default.
@@ -7514,7 +7508,7 @@ protocol behavior applies as for a regular Data Submessage."
 `received_change_set`, `store_received`, `collect_in_order_for`)
 
 **Tests:** `crates/rtps/tests/reliable_e2e.rs::e2e_frag_many_samples_3_fragments_each_10_percent_loss`,
-`crates/rtps/tests/reliable_e2e.rs::e2e_frag_large_sample_30_percent_loss`,
+`crates/rtps/tests/reliable_e2e.rs::e2e_frag_large_sample_10_percent_loss`,
 `crates/rtps/src/reliable_reader.rs::tests::a_reassembled_sample_with_the_filtered_flag_is_known_but_not_delivered`,
 `crates/rtps/src/reliable_reader.rs::tests::a_reassembled_key_is_a_dispose_or_a_registration_as_a_data_is`
 
@@ -7541,7 +7535,7 @@ sequence numbers for which all fragments are available."
 `stage_sample` puts the whole sample into the HistoryCache before any fragment
 is sent; the HEARTBEAT's `lastSN` is `last_written_sn`)
 
-**Tests:** `crates/rtps/tests/reliable_e2e.rs::e2e_frag_large_sample_30_percent_loss`
+**Tests:** `crates/rtps/tests/reliable_e2e.rs::e2e_frag_large_sample_10_percent_loss`
 
 **Status:** `done`
 
@@ -7555,7 +7549,7 @@ sequence number."
 `received_change_set` only when `FragmentAssembler::insert` returns the
 sample)
 
-**Tests:** `crates/rtps/tests/reliable_e2e.rs::e2e_frag_large_sample_30_percent_loss`,
+**Tests:** `crates/rtps/tests/reliable_e2e.rs::e2e_frag_large_sample_10_percent_loss`,
 `crates/rtps/tests/reliable_e2e.rs::e2e_frag_many_samples_3_fragments_each_10_percent_loss`
 
 **Status:** `done`
@@ -7720,9 +7714,9 @@ topics."
 **Repo:** `crates/dcps/src/builtin_subscriber.rs` (`BuiltinSubscriber`);
 `crates/dcps/src/runtime.rs` (`handle_spdp_datagram`, SEDP events)
 
-**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::spdp_receive_populates_dcps_participant_reader`,
-`crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::sedp_pub_sub_populates_dcps_publication_and_subscription_readers`,
-`crates/dcps/tests/endpoint_delete_unmatch_e2e.rs::linux_e2e::dropping_a_writer_unmatches_the_remote_reader`
+**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::rtps_8_5_spdp_receive_populates_dcps_participant_reader`,
+`crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::dcps_2_2_5_sedp_pub_sub_populates_dcps_publication_and_subscription_readers`,
+`crates/dcps/tests/endpoint_delete_unmatch_e2e.rs::linux_e2e::dcps_2_2_3_23_2_dropping_a_writer_unmatches_the_remote_reader`
 
 **Status:** `done`
 
@@ -7736,8 +7730,8 @@ Protocol (SEDP)". Likewise §8.5.3, p. 125, and §8.5.4, p. 130.
 **Repo:** `crates/discovery/src/spdp.rs`; `crates/discovery/src/sedp/stack.rs`
 (`SedpStack`)
 
-**Tests:** `crates/discovery/tests/spdp_loopback_e2e.rs::two_zerodds_participants_discover_each_other`,
-`crates/discovery/src/sedp/stack.rs::tests::end_to_end_discovery_between_two_stacks`
+**Tests:** `crates/discovery/tests/spdp_loopback_e2e.rs::rtps_8_5_1_two_zerodds_participants_discover_each_other`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_4_2_1_end_to_end_discovery_between_two_stacks`
 
 **Status:** `done`
 
@@ -7766,8 +7760,8 @@ DataWriter or DataReader to an associated built-in RTPS Endpoint."
 **Repo:** `crates/dcps/src/builtin_subscriber.rs` (four built-in DataReaders);
 `crates/discovery/src/spdp.rs`; `crates/discovery/src/sedp/stack.rs`
 
-**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::builtin_subscriber_has_all_four_readers_pre_created`,
-`crates/dcps/src/builtin_subscriber.rs::tests::sinks_push_topic_lands_in_reader`
+**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::dcps_2_2_2_2_1_13_builtin_subscriber_has_all_four_readers_pre_created`,
+`crates/dcps/src/builtin_subscriber.rs::tests::rtps_8_5_2_sinks_push_topic_lands_in_reader`
 
 **Status:** `done`
 
@@ -7780,8 +7774,8 @@ SPDPbuiltinParticipantReader."
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpBeacon`, `SpdpReader`);
 `crates/dcps/src/runtime.rs` (`DcpsRuntime::spdp_beacon`)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::beacon_serializes_to_decodable_datagram`,
-`crates/dcps/src/runtime.rs::tests::two_runtimes_discover_each_other_via_spdp`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_4_2_1_beacon_serializes_to_decodable_datagram`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_two_runtimes_discover_each_other_via_spdp`
 
 **Status:** `done`
 
@@ -7793,8 +7787,8 @@ Best-Effort StatelessWriter."
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpBeacon::serialize`: DATA without
 HEARTBEAT, no state per recipient)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::beacon_uses_spdp_builtin_writer_id`,
-`crates/discovery/src/spdp.rs::tests::beacon_serializes_to_decodable_datagram`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_5_3_1_beacon_uses_spdp_builtin_writer_id`,
+`crates/discovery/src/spdp.rs::tests::rtps_8_4_2_1_beacon_serializes_to_decodable_datagram`
 
 **Status:** `done`
 
@@ -7809,7 +7803,7 @@ replaced."
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpBeacon::data`);
 `crates/dcps/src/runtime.rs` (beacon update on a changed USER_DATA)
 
-**Tests:** `crates/dcps/tests/set_qos_after_enable.rs::a_user_data_change_reaches_the_peers_builtin_reader`
+**Tests:** `crates/dcps/tests/set_qos_after_enable.rs::dcps_2_2_3_1_a_user_data_change_reaches_the_peers_builtin_reader`
 
 **Status:** `done`
 
@@ -7822,8 +7816,7 @@ resend all changes present in its HistoryCache to all locators."
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpBeacon::serialize`, `set_new_sn_each_period`);
 `crates/dcps/src/runtime.rs` (`RuntimeConfig::spdp_new_sequence_per_period`)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::the_resent_beacon_keeps_its_sequence_number_until_the_data_changes`,
-`crates/discovery/src/spdp.rs::tests::beacon_increments_sequence_number`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_5_3_1_the_resent_beacon_keeps_its_sequence_number_until_the_data_changes`
 
 **Status:** `done` — the periodic announcement resends the one change with its sequence number; a change of the participant data is a new change. The form of Cyclone DDS and OpenDDS (a new number each period, measured in `tools/wire-capture/rtps-sessions`) is the setting `discovery.spdp_new_sequence_per_period`. Not measured: whether a Cyclone or OpenDDS reader keeps the participant alive on a repeated number.
 
@@ -7836,8 +7829,8 @@ leaseDuration specified in the SPDPdiscoveredParticipantData".
 
 **Repo:** `crates/dcps/src/runtime.rs` (`default_spdp_period_for`, `DEFAULT_SPDP_PERIOD`, key `discovery.spdp_period_ms`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_short_lease_without_a_period_beacons_three_times_a_lease`,
-`crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_a_short_lease_without_a_period_beacons_three_times_a_lease`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`
 
 **Status:** `done` — the default is the PSM's, 30 s; with a lease under 90 s at most a third of the lease, so that the period stays smaller than `leaseDuration`.
 
@@ -7849,8 +7842,8 @@ both unicast and multicast locators. Port numbers are defined by each PSM."
 **Repo:** `crates/dcps/src/runtime.rs` (`send_spdp_multicast`,
 `send_spdp_unicast`, `expand_initial_peer`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::multicast_free_discovery_via_initial_peers`,
-`crates/dcps/src/runtime.rs::tests::expand_initial_peer_ip_only_yields_well_known_port_range`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_multicast_free_discovery_via_initial_peers`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_expand_initial_peer_ip_only_yields_well_known_port_range`
 
 **Status:** `done`
 
@@ -7864,8 +7857,8 @@ remote Participant."
 **Repo:** `crates/discovery/src/sedp/stack.rs` (`on_participant_discovered`: by
 `builtin_endpoint_set`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::discovered_participant_wires_all_four_endpoints_when_present`,
-`crates/discovery/src/sedp/stack.rs::tests::partial_endpoint_set_wires_only_matching_sides`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_3_1_discovered_participant_wires_all_four_endpoints_when_present`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_3_1_partial_endpoint_set_wires_only_matching_sides`
 
 **Status:** `done`
 
@@ -7879,7 +7872,7 @@ behavior is optional."
 **Repo:** `crates/dcps/src/runtime.rs` (`directed_spdp_targets`,
 `SpdpResponseTargets`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_spdp_response_axis_decides_the_targets`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_the_spdp_response_axis_decides_the_targets`,
 `crates/rtps/src/dialect.rs::tests::the_spdp_response_default_answers_the_beacon_source`
 
 **Status:** `done`
@@ -7895,7 +7888,7 @@ features are optional and not required for the purpose of interoperability."
 announcement also goes to the metatraffic locators of discovered
 participants)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::an_initial_peer_a_discovered_participant_covers_is_left_to_the_fan_out`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_an_initial_peer_a_discovered_participant_covers_is_left_to_the_fan_out`
 
 **Status:** `done` — the extension cannot be switched off.
 
@@ -7923,7 +7916,7 @@ DDS domainId of the associated DDS DomainParticipant."
 **Repo:** `crates/rtps/src/participant_data.rs` (`domain_id`, PID_DOMAIN_ID);
 `crates/dcps/src/runtime.rs` (beacon with `domain_id: Some(domain_id)`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_participant_of_another_domain_id_is_not_discovered`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::dcps_2_2_2_2_1_a_participant_of_another_domain_id_is_not_discovered`,
 `crates/rtps/src/participant_data.rs::tests::participant_data_roundtrip_full`
 
 **Status:** `done`
@@ -7936,7 +7929,7 @@ DDS domainTag of the associated DDS DomainParticipant."
 **Repo:** `crates/rtps/src/participant_data.rs` (`domain_tag`, PID_DOMAIN_TAG)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::domain_tag_goes_out_when_set_and_reads_back`,
-`crates/dcps/src/runtime.rs::tests::a_participant_of_another_domain_tag_is_not_discovered`
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_2_2_1_a_participant_of_another_domain_tag_is_not_discovered`
 
 **Status:** `done`
 
@@ -7975,7 +7968,7 @@ vendor of the DDS middleware that contains the Participant."
 **Tests:** `crates/rtps/src/participant_data.rs::tests::participant_data_roundtrip_full`
 
 **Status:** `partial` — ZeroDDS sends `0x01F0`, not a value assigned by the OMG
-(`open` item under §8.3.5.2). Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+(`blocked` item under §8.3.5.2).
 
 ### §8.5.3.2 Table 8.78 expectsInlineQos
 
@@ -8000,7 +7993,7 @@ Endpoints contained in the Participant."
 (`metatraffic_unicast_locators`, PID_METATRAFFIC_UNICAST_LOCATOR)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::decode_retains_all_repeated_unicast_locators_in_order_le_and_be`,
-`crates/dcps/src/runtime.rs::tests::wlp_unicast_targets_prefers_metatraffic_then_default`
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_13_1_wlp_unicast_targets_prefers_metatraffic_then_default`
 
 **Status:** `done`
 
@@ -8028,7 +8021,7 @@ must be present."
 **Repo:** `crates/rtps/src/participant_data.rs` (`default_unicast_locators`);
 `crates/dcps/src/runtime.rs` (`announce_locators`: never empty)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::announce_locators_automatic_is_non_empty_and_includes_probe`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_announce_locators_automatic_is_non_empty_and_includes_probe`,
 `crates/rtps/src/participant_data.rs::tests::encode_dedups_exact_duplicate_locators`
 
 **Status:** `done`
@@ -8057,7 +8050,7 @@ available in the Participant."
 TOPICS_ANNOUNCER/TOPICS_DETECTOR)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_standard_bits_by_default`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_spdp_announces_standard_bits_by_default`
 
 **Status:** `done`
 
@@ -8088,9 +8081,9 @@ SPDPdiscoveredParticipantData is sent."
 `crates/dcps/src/wlp.rs` (`take_manual_participant_written`)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::manual_liveliness_count_and_builtin_endpoint_qos_go_out_and_read_back`,
-`crates/dcps/src/runtime.rs::tests::the_manual_liveliness_count_of_the_announcement_counts_up`,
-`crates/dcps/src/runtime.rs::tests::a_changed_manual_liveliness_count_renews_the_manual_writers_of_that_participant`,
-`crates/dcps/src/wlp.rs::tests::a_written_manual_sample_is_reported_once`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_the_manual_liveliness_count_of_the_announcement_counts_up`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_a_changed_manual_liveliness_count_renews_the_manual_writers_of_that_participant`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_5_3_2_a_written_manual_sample_is_reported_once`
 
 **Status:** `done` — when a MANUAL_BY_PARTICIPANT sample is written the count goes up (at most once per tick) and a new announcement goes out; a receiver that sees the count of a known participant change takes it as that participant's manual liveliness assertion (test: n, n + 1 renews the participant's MANUAL_BY_PARTICIPANT writers at the reader).
 
@@ -8104,7 +8097,7 @@ built-in Endpoints supported by the Participant."
 `crates/dcps/src/wlp.rs` (`WlpEndpoint::add_peer_reader`)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::manual_liveliness_count_and_builtin_endpoint_qos_go_out_and_read_back`,
-`crates/dcps/src/wlp.rs::tests::the_reader_is_treated_as_builtin_endpoint_qos_says`
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_the_reader_is_treated_as_builtin_endpoint_qos_says`
 
 **Status:** `done` — the field is read and written; the WLP writer treats the reader accordingly (§8.4.13.3). ZeroDDS announces none itself: its reader is RELIABLE.
 
@@ -8134,8 +8127,8 @@ builtin endpoints defined in other DDS specifications."
 `ALL_STANDARD`, `ALL_SECURE`)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_roundtrip_through_pl_cdr`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`,
-`crates/dcps/tests/type_lookup_e2e.rs::announces_type_lookup_endpoints_in_spdp`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`,
+`crates/dcps/tests/type_lookup_e2e.rs::rtps_8_5_3_2_1_announces_type_lookup_endpoints_in_spdp`
 
 **Status:** `done`
 
@@ -8165,8 +8158,8 @@ to a PSM-specified value that depends on the domainId."
 **Repo:** `crates/dcps/src/runtime.rs` (`announce_locators`,
 `spdp_unicast_port`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::spdp_unicast_port_follows_rtps_formula`,
-`crates/dcps/src/runtime.rs::tests::announce_locators_pins_to_single_interface`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_spdp_unicast_port_follows_rtps_formula`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_announce_locators_pins_to_single_interface`
 
 **Status:** `done`
 
@@ -8179,7 +8172,7 @@ the SPDP initialization> Defaults to a PSM-specified value."
 239.255.0.1); `crates/dcps/src/runtime.rs` (`spdp_multicast_group`)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::spdp_default_multicast_is_239_255_0_1`,
-`crates/rtps/src/wire_types.rs::tests::spdp_multicast_port_domain_0_is_7400`
+`crates/rtps/src/wire_types.rs::tests::rtps_9_6_1_4_1_spdp_multicast_port_is_7400_plus_250_per_domain`
 
 **Status:** `done`
 
@@ -8189,7 +8182,7 @@ the SPDP initialization> Defaults to a PSM-specified value."
 
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpBeacon`)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::beacon_serializes_to_decodable_datagram`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_4_2_1_beacon_serializes_to_decodable_datagram`
 
 **Status:** `done`
 
@@ -8211,8 +8204,8 @@ initialization> Defaults to a PSM-specified value."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`RuntimeConfig::spdp_period`, `ZERODDS_SPDP_PERIOD_MS`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_short_lease_without_a_period_beacons_three_times_a_lease`,
-`crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_a_short_lease_without_a_period_beacons_three_times_a_lease`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`
 
 **Status:** `done` — settable (`discovery.spdp_period_ms`); the default is 30 s, the PSM's.
 
@@ -8224,8 +8217,8 @@ SPDP initialization>".
 **Repo:** `crates/dcps/src/runtime.rs` (`RuntimeConfig::initial_peers`,
 `expand_initial_peer`, multicast target)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::initial_peer_specs_reach_the_runtime_without_touching_the_environment`,
-`crates/dcps/src/runtime.rs::tests::initial_peer_specs_expand_per_the_configured_participant_limit`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_initial_peer_specs_reach_the_runtime_without_touching_the_environment`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_4_8_1_initial_peer_specs_expand_per_the_configured_participant_limit`
 
 **Status:** `done`
 
@@ -8238,7 +8231,7 @@ PSM-specified value that depends on the domainId."
 **Repo:** `crates/dcps/src/runtime.rs` (`spdp_unicast` socket on
 `spdp_unicast_port`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::spdp_unicast_port_follows_rtps_formula`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_spdp_unicast_port_follows_rtps_formula`
 
 **Status:** `done`
 
@@ -8250,8 +8243,8 @@ the SPDP initialization>. Defaults to a PSM-specified value."
 **Repo:** `crates/dcps/src/runtime.rs` (`spdp_multicast_rx`,
 `spdp_multicast_group`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::start_refuses_spdp_group_outside_allowlist`,
-`crates/discovery/tests/spdp_loopback_e2e.rs::loopback_multicast_self_discovery`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_start_refuses_spdp_group_outside_allowlist`,
+`crates/discovery/tests/spdp_loopback_e2e.rs::rtps_8_5_3_3_loopback_multicast_self_discovery`
 
 **Status:** `done`
 
@@ -8262,7 +8255,7 @@ the SPDP initialization>. Defaults to a PSM-specified value."
 **Repo:** `crates/discovery/src/spdp.rs` (`SpdpReader`: stateless, no
 ACKNACK)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::samples_reads_every_participant_a_datagram_bundles`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_4_11_1_samples_reads_every_participant_a_datagram_bundles`
 
 **Status:** `done`
 
@@ -8288,8 +8281,8 @@ is added keyed by the GUID of the Participant."
 **Repo:** `crates/discovery/src/spdp.rs` (`DiscoveredParticipantsCache`: key
 `data.guid.prefix`)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::cache_insert_returns_true_for_new_participant`,
-`crates/discovery/src/spdp.rs::tests::cache_get_returns_inserted_participant`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_5_3_3_cache_insert_returns_true_for_new_participant`,
+`crates/discovery/src/spdp.rs::tests::rtps_8_5_3_3_cache_get_returns_inserted_participant`
 
 **Status:** `done`
 
@@ -8304,8 +8297,8 @@ leaseDuration. Stale entries are removed."
 (`DiscoveredParticipantsCache::drain_expired`); `crates/dcps/src/runtime.rs`
 (called per tick)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::participant_lease_lifecycle_observation_and_infinite`,
-`crates/dcps/src/runtime.rs::tests::participant_lease_lifecycle_hard_death_and_same_prefix`
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_8_5_3_3_participant_lease_lifecycle_observation_and_infinite`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_participant_lease_lifecycle_hard_death_and_same_prefix`
 
 **Status:** `done` — `drain_expired` already removes when the elapsed time
 equals leaseDuration.
@@ -8319,8 +8312,8 @@ SPDPbuiltinParticipantWriter.readerLocators".
 **Repo:** `crates/rtps/src/wire_types.rs` (`spdp_unicast_port`);
 `crates/dcps/src/runtime.rs` (`expand_initial_peer`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::spdp_unicast_port_follows_rtps_formula`,
-`crates/dcps/src/runtime.rs::tests::expand_initial_peer_ip_only_yields_well_known_port_range`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_spdp_unicast_port_follows_rtps_formula`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_expand_initial_peer_ip_only_yields_well_known_port_range`
 
 **Status:** `done`
 
@@ -8332,8 +8325,7 @@ in SPDPbuiltinParticipantWriter.readerLocators".
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`spdp_multicast_port`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::spdp_multicast_port_domain_1_is_7650`,
-`crates/rtps/src/wire_types.rs::tests::spdp_multicast_port_domain_5_is_8650`
+**Tests:** `crates/rtps/src/wire_types.rs::tests::rtps_9_6_1_4_1_spdp_multicast_port_is_7400_plus_250_per_domain`
 
 **Status:** `done`
 
@@ -8346,8 +8338,8 @@ the locally-matching built-in Endpoints."
 
 **Repo:** `crates/discovery/src/sedp/stack.rs` (`on_participant_discovered`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::discovered_participant_wires_all_four_endpoints_when_present`,
-`crates/discovery/src/sedp/stack.rs::tests::self_discovery_is_ignored`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_3_1_discovered_participant_wires_all_four_endpoints_when_present`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_1_self_discovery_is_ignored`
 
 **Status:** `done`
 
@@ -8359,8 +8351,8 @@ built-in Endpoints is the same as used for application-defined Endpoints."
 **Repo:** `crates/discovery/src/sedp/writer.rs` (`make_sedp_writer`:
 `ReliableWriter`); `crates/discovery/src/sedp/reader.rs` (`ReliableReader`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::end_to_end_discovery_between_two_stacks`,
-`crates/discovery/src/sedp/stack.rs::tests::a_heartbeat_past_a_hole_releases_the_buffered_subscription`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_4_2_1_end_to_end_discovery_between_two_stacks`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_1_a_heartbeat_past_a_hole_releases_the_buffered_subscription`
 
 **Status:** `done`
 
@@ -8375,8 +8367,8 @@ general requirements listed in 8.4.2."
 **Repo:** `crates/discovery/src/sedp/writer.rs` (`make_sedp_writer`);
 `crates/discovery/src/sedp/reader.rs`
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::a_heartbeat_past_a_hole_releases_the_buffered_subscription`,
-`crates/discovery/tests/cyclone_sedp_replay.rs::cyclone_sedp_publication_fixture_flows_through_stack`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_1_a_heartbeat_past_a_hole_releases_the_buffered_subscription`,
+`crates/discovery/tests/cyclone_sedp_replay.rs::rtps_8_5_4_2_cyclone_sedp_publication_fixture_flows_through_stack`
 
 **Status:** `done` — the deviations of the reliable writers and readers from
 §8.4.2 are listed there.
@@ -8406,8 +8398,8 @@ presence in remote Participants."
 **Repo:** `crates/discovery/src/sedp/stack.rs` (`on_participant_discovered`:
 topics proxies only when the bits are set)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::the_topics_bits_wire_the_topics_writer_and_reader`,
-`crates/discovery/src/sedp/stack.rs::tests::partial_endpoint_set_wires_only_matching_sides`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_3_the_topics_bits_wire_the_topics_writer_and_reader`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_3_1_partial_endpoint_set_wires_only_matching_sides`
 
 **Status:** `done`
 
@@ -8435,7 +8427,7 @@ ReaderProxy and WriterProxy."
 QoS, `key`, `unicast_locators`, `multicast_locators`, `group_guid`, `data_max_size_serialized`)
 
 **Tests:** `crates/rtps/tests/sedp_qos_roundtrip.rs::publication_data_roundtrip_preserves_all_new_qos_policies`,
-`crates/discovery/tests/vendor_discovery_frames.rs::cyclone_announcements_read_and_write_back`,
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_8_5_4_4_cyclone_announcements_read_and_write_back`,
 `crates/rtps/src/publication_data.rs::tests::the_max_payload_size_and_the_name_of_a_writer_travel`,
 `crates/rtps/src/publication_data.rs::tests::the_writers_group_travels_as_pid_group_guid`
 
@@ -8461,8 +8453,8 @@ DDS::TopicBuiltinTopicData."
 
 **Repo:** `crates/rtps/src/topic_data.rs` (`TopicBuiltinTopicData`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`,
-`crates/discovery/src/sedp/stack.rs::tests::a_cyclone_topic_and_its_dispose_are_read_by_cyclones_own_key`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_4_two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_4_a_cyclone_topic_and_its_dispose_are_read_by_cyclones_own_key`
 
 **Status:** `done`
 
@@ -8488,7 +8480,7 @@ values, as defined by the PSM."
 **Repo:** `crates/discovery/src/sedp/writer.rs` (`SedpPublicationsWriter::announce`:
 `PublicationBuiltinTopicData::to_pl_cdr_le`)
 
-**Tests:** `crates/discovery/tests/sedp_loopback.rs::publication_announce_then_reader_fills_cache`
+**Tests:** `crates/discovery/tests/sedp_loopback.rs::rtps_8_5_4_4_publication_announce_then_reader_fills_cache`
 
 **Status:** `done`
 
@@ -8504,7 +8496,7 @@ SEDPbuiltinPublicationsWriter."
 per instance, `SEDP_MAX_CHANGES`; `SedpPublicationsWriter::announce` keyed on
 the endpoint GUID)
 
-**Tests:** `crates/discovery/src/sedp/writer.rs::tests::every_endpoint_keeps_one_change_for_a_reader_that_matches_later`
+**Tests:** `crates/discovery/src/sedp/writer.rs::tests::rtps_8_5_4_4_every_endpoint_keeps_one_change_for_a_reader_that_matches_later`
 
 **Status:** `done`
 
@@ -8516,7 +8508,7 @@ DataWriter is created in the DomainParticipant."
 **Repo:** `crates/dcps/src/runtime.rs` (`announce_publication` when the writer
 is created)
 
-**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::sedp_pub_sub_populates_dcps_publication_and_subscription_readers`
+**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::dcps_2_2_5_sedp_pub_sub_populates_dcps_publication_and_subscription_readers`
 
 **Status:** `done`
 
@@ -8527,8 +8519,8 @@ the QoS of an existing DataWriter is modified."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`reannounce_publication`)
 
-**Tests:** `crates/dcps/tests/set_qos_after_enable.rs::a_topic_data_change_reaches_the_writers_announcement`,
-`crates/dcps/src/runtime.rs::tests::a_partition_change_unmatches_without_a_status_and_is_announced`
+**Tests:** `crates/dcps/tests/set_qos_after_enable.rs::dcps_2_2_2_4_2_3_a_topic_data_change_reaches_the_writers_announcement`,
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_3_13_a_partition_change_unmatches_without_a_status_and_is_announced`
 
 **Status:** `done`
 
@@ -8540,7 +8532,7 @@ existing DataWriter belonging to the DomainParticipant is deleted."
 **Repo:** `crates/discovery/src/sedp/writer.rs` (`SedpPublicationsWriter::dispose`);
 `crates/dcps/src/runtime.rs` (`dispose_publication` on deletion)
 
-**Tests:** `crates/dcps/tests/endpoint_delete_unmatch_e2e.rs::linux_e2e::dropping_a_writer_unmatches_the_remote_reader`
+**Tests:** `crates/dcps/tests/endpoint_delete_unmatch_e2e.rs::linux_e2e::dcps_2_2_3_23_2_dropping_a_writer_unmatches_the_remote_reader`
 
 **Status:** `done`
 
@@ -8550,7 +8542,7 @@ existing DataWriter belonging to the DomainParticipant is deleted."
 
 **Repo:** `crates/discovery/src/sedp/writer.rs` (`SedpSubscriptionsWriter::announce`)
 
-**Tests:** `crates/discovery/tests/sedp_loopback.rs::subscription_announce_then_reader_fills_cache`
+**Tests:** `crates/discovery/tests/sedp_loopback.rs::rtps_8_5_4_4_subscription_announce_then_reader_fills_cache`
 
 **Status:** `done`
 
@@ -8564,7 +8556,7 @@ SEDPbuiltinSubscriptionsWriter."
 
 **Repo:** —
 
-**Tests:** `crates/discovery/src/sedp/writer.rs::tests::every_endpoint_keeps_one_change_for_a_reader_that_matches_later`
+**Tests:** `crates/discovery/src/sedp/writer.rs::tests::rtps_8_5_4_4_every_endpoint_keeps_one_change_for_a_reader_that_matches_later`
 
 **Status:** `done` — the same writer setup (`make_sedp_writer`) as under Table
 8.82 Cardinality, announced keyed on the GUID.
@@ -8577,7 +8569,7 @@ DataReader is created in the DomainParticipant."
 **Repo:** `crates/dcps/src/runtime.rs` (`announce_subscription` when the reader
 is created)
 
-**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::sedp_pub_sub_populates_dcps_publication_and_subscription_readers`
+**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::dcps_2_2_5_sedp_pub_sub_populates_dcps_publication_and_subscription_readers`
 
 **Status:** `done`
 
@@ -8589,8 +8581,8 @@ the QoS of an existing DataReader is modified."
 **Repo:** `crates/dcps/src/runtime.rs` (`announce_subscription` after
 `set_qos`)
 
-**Tests:** `crates/dcps/tests/set_qos_after_enable.rs::a_reader_deadline_change_makes_the_pair_incompatible`,
-`crates/dcps/src/runtime.rs::tests::the_content_filter_travels_in_the_subscription_and_is_reannounced`
+**Tests:** `crates/dcps/tests/set_qos_after_enable.rs::dcps_2_2_2_5_3_3_a_reader_deadline_change_makes_the_pair_incompatible`,
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_2_3_3_4_the_content_filter_travels_in_the_subscription_and_is_reannounced`
 
 **Status:** `done`
 
@@ -8601,7 +8593,7 @@ existing DataReader belonging to the DomainParticipant is deleted."
 
 **Repo:** `crates/discovery/src/sedp/writer.rs` (`SedpSubscriptionsWriter::dispose`)
 
-**Tests:** `crates/dcps/tests/endpoint_delete_unmatch_e2e.rs::linux_e2e::dropping_a_reader_unmatches_the_remote_writer`
+**Tests:** `crates/dcps/tests/endpoint_delete_unmatch_e2e.rs::linux_e2e::rtps_8_5_4_4_dropping_a_reader_unmatches_the_remote_writer`
 
 **Status:** `done`
 
@@ -8611,7 +8603,7 @@ existing DataReader belonging to the DomainParticipant is deleted."
 
 **Repo:** `crates/discovery/src/sedp/writer.rs` (`SedpTopicsWriter::announce`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_4_two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
 
 **Status:** `done`
 
@@ -8624,7 +8616,7 @@ the Topic stored in the WriterHistoryCache for the builtinTopicsWriter."
 
 **Repo:** —
 
-**Tests:** `crates/discovery/src/sedp/writer.rs::tests::every_endpoint_keeps_one_change_for_a_reader_that_matches_later`
+**Tests:** `crates/discovery/src/sedp/writer.rs::tests::rtps_8_5_4_4_every_endpoint_keeps_one_change_for_a_reader_that_matches_later`
 
 **Status:** `done` — the same writer setup (`make_sedp_writer`) as under Table
 8.82 Cardinality, announced keyed on the GUID.
@@ -8637,7 +8629,7 @@ Topic is created in the DomainParticipant."
 **Repo:** `crates/dcps/src/participant.rs` (`announce_topic` on creation or
 enable)
 
-**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::a_created_topic_reaches_dcps_topic_with_every_member_and_its_deletion_disposes_it`
+**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::dcps_2_2_3_2_a_created_topic_reaches_dcps_topic_with_every_member_and_its_deletion_disposes_it`
 
 **Status:** `done`
 
@@ -8648,7 +8640,7 @@ the QoS of an existing Topic is modified."
 
 **Repo:** `crates/dcps/src/topic.rs` (`set_qos` → `announce_topic`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_4_two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
 
 **Status:** `done` — the test checks the SEDP stack, not the call from
 `Topic::set_qos`.
@@ -8660,7 +8652,7 @@ existing Topic belonging to the DomainParticipant is deleted."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`dispose_local_topic`)
 
-**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::delete_topic_disposes_the_announced_topic_and_a_writer_holds_it`
+**Tests:** `crates/dcps/tests/builtin_topic_readers.rs::linux_e2e::rtps_8_5_4_4_delete_topic_disposes_the_announced_topic_and_a_writer_holds_it`
 
 **Status:** `done`
 
@@ -8683,8 +8675,8 @@ local_participant.domainId ) THEN RETURN;"
 
 **Repo:** `crates/dcps/src/runtime.rs` (`spdp_announced`: PID_DOMAIN_ID)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_participant_of_another_domain_id_is_not_discovered`,
-`crates/dcps/src/runtime.rs::tests::a_beacon_of_another_domain_is_named_once_per_sender`
+**Tests:** `crates/dcps/src/runtime.rs::tests::dcps_2_2_2_2_1_a_participant_of_another_domain_id_is_not_discovered`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_5_1_a_beacon_of_another_domain_is_named_once_per_sender`
 
 **Status:** `done` — a missing PID_DOMAIN_ID counts as the own domain.
 
@@ -8695,7 +8687,7 @@ local_participant.domainTag) ) THEN RETURN;"
 
 **Repo:** `crates/dcps/src/runtime.rs` (`spdp_announced`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_participant_of_another_domain_tag_is_not_discovered`
+**Tests:** `crates/dcps/src/runtime.rs::tests::dcps_2_2_2_2_1_a_participant_of_another_domain_tag_is_not_discovered`
 
 **Status:** `done`
 
@@ -8708,9 +8700,9 @@ SUBSCRIPTIONS_ANNOUNCER, TOPICS_DETECTOR, TOPICS_ANNOUNCER.
 
 **Repo:** `crates/discovery/src/sedp/stack.rs` (`on_participant_discovered`)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::discovered_participant_wires_all_four_endpoints_when_present`,
-`crates/discovery/src/sedp/stack.rs::tests::the_topics_bits_wire_the_topics_writer_and_reader`,
-`crates/discovery/tests/opensplice_spdp_bundle.rs::the_participant_with_the_detectors_gets_the_local_sedp_writers_proxies`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_3_1_discovered_participant_wires_all_four_endpoints_when_present`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_3_the_topics_bits_wire_the_topics_writer_and_reader`,
+`crates/discovery/tests/opensplice_spdp_bundle.rs::rtps_8_5_5_1_the_participant_with_the_detectors_gets_the_local_sedp_writers_proxies`
 
 **Status:** `done` — the proxies get the metatraffic unicast locators (or else
 the default unicast locators), no multicast locators.
@@ -8726,9 +8718,9 @@ communicating with Endpoints in the Participant".
 **Repo:** `crates/discovery/src/sedp/stack.rs` (`on_participant_lost`);
 `crates/dcps/src/runtime.rs` (lease expiry and departure)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::on_participant_lost_clears_proxies_and_cache`,
-`crates/discovery/tests/cyclone_sedp_replay.rs::replay_after_participant_lost_stops_accepting_publications`,
-`crates/dcps/src/runtime.rs::tests::participant_lease_lifecycle_hard_death_and_same_prefix`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_5_2_on_participant_lost_clears_proxies_and_cache`,
+`crates/discovery/tests/cyclone_sedp_replay.rs::rtps_8_5_5_2_replay_after_participant_lost_stops_accepting_publications`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_participant_lease_lifecycle_hard_death_and_same_prefix`
 
 **Status:** `done`
 
@@ -8742,8 +8734,8 @@ uses the same RTPS implementation."
 **Repo:** `crates/dcps/src/runtime.rs` (SPDP runs in every participant; a
 shortcut within one process through `inproc_announce_publication`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::handle_spdp_registers_real_fastdds_participant`,
-`crates/discovery/tests/fastdds_spdp_repro.rs::zerodds_parses_real_fastdds_spdp`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_6_handle_spdp_registers_real_fastdds_participant`,
+`crates/discovery/tests/fastdds_spdp_repro.rs::rtps_8_5_6_zerodds_parses_real_fastdds_spdp`
 
 **Status:** `done`
 
@@ -8814,8 +8806,8 @@ added. An implementation should ignore any unknown built-in Endpoints."
 only); `crates/discovery/src/sedp/stack.rs` (`on_participant_discovered`: known
 bits only)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::routing_unknown_with_wrong_writer_does_not_match`,
-`crates/discovery/src/sedp/stack.rs::tests::partial_endpoint_set_wires_only_matching_sides`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_6_1_routing_unknown_with_wrong_writer_does_not_match`,
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_3_1_partial_endpoint_set_wires_only_matching_sides`
 
 **Status:** `done`
 
@@ -9237,7 +9229,7 @@ Writers."
 **Repo:** `crates/dcps/src/runtime.rs` (`refresh_wlp_period`);
 `crates/dcps/src/wlp.rs` (`WlpEndpoint::tick`)
 
-**Tests:** `crates/dcps/tests/liveliness_qos.rs::linux::an_automatic_writer_that_never_writes_stays_alive_at_a_remote_reader`
+**Tests:** `crates/dcps/tests/liveliness_qos.rs::linux::dcps_2_2_3_11_an_automatic_writer_that_never_writes_stays_alive_at_a_remote_reader`
 
 **Status:** `done`
 
@@ -9255,9 +9247,9 @@ see 8.4.13.5)."
 `write_user_sample_*`, `write_user_lifecycle_with`,
 `assert_writer_liveliness_eid`, `bump_manual_liveliness_count`); `crates/dcps/src/wlp.rs`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_manual_by_participant_writer_refreshes_the_participant_liveliness`,
-`crates/dcps/src/wlp.rs::tests::refreshes_before_the_tick_share_one_manual_by_participant_sample`,
-`crates/dcps/src/runtime.rs::tests::the_manual_liveliness_count_of_the_announcement_counts_up`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_4_13_5_a_manual_by_participant_writer_refreshes_the_participant_liveliness`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_5_refreshes_before_the_tick_share_one_manual_by_participant_sample`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_the_manual_liveliness_count_of_the_announcement_counts_up`
 
 **Status:** `done` — `write`, `assert_liveliness`, `dispose` and `unregister_instance` of a MANUAL_BY_PARTICIPANT writer cause a ParticipantMessageData with MANUAL_LIVELINESS_UPDATE at the next tick (instead of a check at the rate of the smallest lease) and raise the `manualLivelinessCount` of the SPDP announcement.
 
@@ -9273,8 +9265,8 @@ Heartbeat Message with final flag and liveliness flag set."
 `crates/dcps/src/runtime.rs` (`assert_writer_liveliness_eid`)
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::liveliness_heartbeat_is_a_final_heartbeat_with_the_liveliness_flag`,
-`crates/dcps/tests/liveliness_qos.rs::linux::assert_liveliness_keeps_a_manual_writer_alive_at_a_remote_reader`,
-`crates/dcps/src/runtime.rs::tests::a_manual_writer_goes_not_alive_when_silent_and_back_when_it_writes`
+`crates/dcps/tests/liveliness_qos.rs::linux::dcps_2_2_2_4_2_22_assert_liveliness_keeps_a_manual_writer_alive_at_a_remote_reader`,
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_2_4_2_11_a_manual_writer_goes_not_alive_when_silent_and_back_when_it_writes`
 
 **Status:** `done`
 
@@ -9290,8 +9282,7 @@ Submessage must be sent before the next update".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — the condition does not occur: ZeroDDS
-applies TIME_BASED_FILTER on the reader side only (`tbf_should_deliver`).
+**Status:** open — an optional function; ZeroDDS applies TIME_BASED_FILTER only on the reader side (`tbf_should_deliver`) and sends no GAP for time-filtered samples.
 
 ### §8.7.2.2.5 RELIABILITY
 
@@ -9329,8 +9320,8 @@ enabled, Data Messages that unregister an instance must also dispose it."
 **Repo:** `crates/dcps/src/publisher.rs` (`unregister_instance`: DISPOSED with
 UNREGISTERED under `autodispose_unregistered_instances`)
 
-**Tests:** `crates/dcps/tests/writer_data_lifecycle_qos.rs::autodispose_default_true_unregister_disposes`,
-`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::unregister_with_autodispose_false_propagates_unregister_only`
+**Tests:** `crates/dcps/tests/writer_data_lifecycle_qos.rs::dcps_2_2_3_21_autodispose_default_true_unregister_disposes`,
+`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_7_unregister_with_autodispose_false_propagates_unregister_only`
 
 **Status:** `done`
 
@@ -9342,8 +9333,8 @@ case, no further extensions to RTPS are needed."
 
 **Repo:** `crates/dcps/src/subscriber.rs` (filter of the ContentFilteredTopic)
 
-**Tests:** `crates/dcps/tests/content_filtered_reader.rs::a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`,
-`crates/dcps/tests/content_filter.rs::filter_drops_samples_that_return_false`
+**Tests:** `crates/dcps/tests/content_filtered_reader.rs::dcps_2_2_2_2_1_7_a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`,
+`crates/dcps/tests/content_filter.rs::dcps_2_2_2_3_3_filter_drops_samples_that_return_false`
 
 **Status:** `done`
 
@@ -9359,8 +9350,7 @@ optional".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — optional; ZeroDDS does not filter on the
-writer side. The reader's filter information in SEDP is listed under §8.7.3.1.
+**Status:** open — an optional function; ZeroDDS does not filter on the writer side. The filter information of the reader in SEDP is listed under §8.7.3.1.
 
 ### §8.7.3 Hints by the writer: ALIVE_FILTERED, ContentFilterInfo, omitted data
 
@@ -9375,8 +9365,7 @@ was already filtered for that Reader".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — applies only to filtering on the writer side,
-which ZeroDDS does not do.
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ### §8.7.3.1 ContentFilterProperty_t in DiscoveredReaderData
 
@@ -9387,7 +9376,7 @@ field to DiscoveredReaderData, defined in Table 8.86."
 (`SubscriptionBuiltinTopicData::content_filter`, `ContentFilterProperty`)
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::subscription_with_content_filter_roundtrip_le`,
-`crates/dcps/src/runtime.rs::tests::the_content_filter_travels_in_the_subscription_and_is_reannounced`
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_2_3_3_4_the_content_filter_travels_in_the_subscription_and_is_reannounced`
 
 **Status:** `done`
 
@@ -9403,7 +9392,7 @@ non-zero length."
 empty name)
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::content_filter_property_roundtrip_le`,
-`crates/dcps/src/participant.rs::tests::create_contentfilteredtopic_rejects_empty_name`
+`crates/dcps/src/participant.rs::tests::dcps_2_2_2_2_1_7_create_contentfilteredtopic_rejects_empty_name`
 
 **Status:** `done`
 
@@ -9431,8 +9420,8 @@ class name if none specified."
 registered class)
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::content_filter_property_roundtrip_le`,
-`crates/dcps/src/runtime.rs::tests::the_content_filter_travels_in_the_subscription_and_is_reannounced`,
-`crates/dcps/tests/custom_content_filter.rs::a_registered_filter_class_is_named_announced_and_applied`
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_2_3_3_4_the_content_filter_travels_in_the_subscription_and_is_reannounced`,
+`crates/dcps/tests/custom_content_filter.rs::rtps_8_7_3_1_a_registered_filter_class_is_named_announced_and_applied`
 
 **Status:** `done`
 
@@ -9447,13 +9436,13 @@ using filterClassName. Must have non-zero length."
 (`create_contentfilteredtopic` refuses an empty expression)
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::content_filter_property_roundtrip_le`,
-`crates/dcps/src/participant.rs::tests::create_contentfilteredtopic_rejects_empty_expression`
+`crates/dcps/src/participant.rs::tests::dcps_2_2_2_2_1_7_create_contentfilteredtopic_rejects_empty_expression`
 
 **Status:** `done`
 
-### §8.7.3.1 Table 8.86 expressionParameters
+### §8.7.3.1 Table 8.86 javapsm_2_the_filter_takes_its_parameters_by_position
 
-**Spec:** §8.7.3.1, p. 141, Table 8.86 — "expressionParameters: stringSequence
+**Spec:** §8.7.3.1, p. 141, Table 8.86 — "javapsm_2_the_filter_takes_its_parameters_by_position: stringSequence
 — Defines the value for each parameter in the filter expression. Can have zero
 length if the filter expression contains no parameters."
 
@@ -9461,7 +9450,7 @@ length if the filter expression contains no parameters."
 (`ContentFilterProperty::expression_parameters`)
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::content_filter_property_roundtrip_le`,
-`crates/dcps/src/runtime.rs::tests::the_content_filter_travels_in_the_subscription_and_is_reannounced`
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_2_3_3_4_the_content_filter_travels_in_the_subscription_and_is_reannounced`
 
 **Status:** `done`
 
@@ -9476,8 +9465,7 @@ data samples."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — applies only to filtering on the writer side,
-which ZeroDDS does not do.
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ### §8.7.3.1 Changed filter parameters through endpoint discovery
 
@@ -9486,7 +9474,7 @@ updated information is exchanged using the Endpoint discovery protocol."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`update_user_reader_content_filter`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_content_filter_travels_in_the_subscription_and_is_reannounced`
+**Tests:** `crates/dcps/src/runtime.rs::tests::dcps_2_2_2_3_3_4_the_content_filter_travels_in_the_subscription_and_is_reannounced`
 
 **Status:** `done`
 
@@ -9500,9 +9488,7 @@ FilteredFlag=1, see 8.3.8.2.2."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — applies only to filtering on the writer side,
-which ZeroDDS does not do. The Data submessage has no FilteredFlag; the
-FilteredFlag belongs to StatusInfo_t (§9.6.4.9).
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform. The Data submessage has no FilteredFlag; the FilteredFlag belongs to StatusInfo_t (§9.6.4.9).
 
 ### §8.7.3.3 GAP instead of DATA and filter results in the inline QoS
 
@@ -9516,8 +9502,7 @@ result."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — applies only to filtering on the writer side,
-which ZeroDDS does not do.
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ### §8.7.3.3 Table 8.87 filterResult
 
@@ -9529,8 +9514,7 @@ filter."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — PID_CONTENT_FILTER_INFO is sent only with
-filtering on the writer side; ZeroDDS readers always filter themselves.
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; PID_CONTENT_FILTER_INFO is not sent.
 
 ### §8.7.3.3 Table 8.87 filterSignatures
 
@@ -9541,8 +9525,7 @@ FilterSignature_t[] — A list of filters that were applied to the sample."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — PID_CONTENT_FILTER_INFO is sent only with
-filtering on the writer side; ZeroDDS readers always filter themselves.
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; PID_CONTENT_FILTER_INFO is not sent.
 
 ### §8.7.3.4 Readers filter when the writer does not
 
@@ -9553,8 +9536,8 @@ Writer side filtering".
 
 **Repo:** `crates/dcps/src/subscriber.rs` (filter per received sample)
 
-**Tests:** `crates/dcps/tests/content_filtered_reader.rs::a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`,
-`crates/dcps/tests/content_filter.rs::filter_applies_also_to_read_peek`
+**Tests:** `crates/dcps/tests/content_filtered_reader.rs::dcps_2_2_2_2_1_7_a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`,
+`crates/dcps/tests/content_filter.rs::rtps_8_7_3_4_filter_applies_also_to_read_peek`
 
 **Status:** `done`
 
@@ -9567,8 +9550,8 @@ the DDS specification."
 **Repo:** `crates/dcps/src/topic.rs` (`ContentFilteredTopic`, SQL filter);
 `crates/rtps/src/subscription_data.rs` (`filter_class::DDSSQL`)
 
-**Tests:** `crates/dcps/tests/content_filtered_reader.rs::a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`,
-`crates/dcps/tests/content_filtered_reader.rs::a_field_the_type_does_not_answer_delivers_nothing`
+**Tests:** `crates/dcps/tests/content_filtered_reader.rs::dcps_2_2_2_2_1_7_a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`,
+`crates/dcps/tests/content_filtered_reader.rs::dcps_2_2_2_3_3_a_field_the_type_does_not_answer_delivers_nothing`
 
 **Status:** `done`
 
@@ -9581,8 +9564,8 @@ implementations must allow the user to register the same custom filter class."
 `crates/dcps/src/participant.rs` (`DomainParticipant::register_contentfilter`,
 `lookup_contentfilter`, `unregister_contentfilter`, `create_contentfilteredtopic_with_class`)
 
-**Tests:** `crates/dcps/tests/custom_content_filter.rs::a_registered_filter_class_is_named_announced_and_applied`,
-`crates/dcps/tests/custom_content_filter.rs::the_registry_refuses_what_it_cannot_serve`
+**Tests:** `crates/dcps/tests/custom_content_filter.rs::rtps_8_7_3_1_a_registered_filter_class_is_named_announced_and_applied`,
+`crates/dcps/tests/custom_content_filter.rs::rtps_8_7_3_4_the_registry_refuses_what_it_cannot_serve`
 
 **Status:** `done` — the application registers a filter class per participant and type (`register_contentfilter::<T>(name, Arc<dyn ContentFilter<T>>)`; `DDSSQL` is the implementation's own class and cannot be registered; names up to 256 octets). `create_contentfilteredtopic_with_class` names the class; the class checks expression and parameters (`compile`, at creation and at `set_filter_parameters`) and filters the samples of a DataReader on the topic (`evaluate`). The class name goes out as `filterClassName` in the reader's `PID_CONTENT_FILTER_PROPERTY`. A class a peer has not registered is ignored by it per §8.7.3.4, and the samples are filtered on the reader side; ZeroDDS does not filter on the writer side.
 
@@ -9596,8 +9579,7 @@ correctly transition the instance state to ALIVE_FILTERED."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — applies only to filtering on the writer side,
-which ZeroDDS does not do; every sample goes to every matched reader.
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; every sample goes to every matched reader.
 
 ### §8.7.4 Instance state changes through Data and inline QoS
 
@@ -9608,8 +9590,8 @@ serialized information within the inline QoS contains the new InstanceState".
 **Repo:** `crates/dcps/src/runtime.rs` (`write_user_lifecycle`);
 `crates/rtps/src/reliable_writer.rs` (`write_lifecycle`: PID_STATUS_INFO)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_propagates_over_wire_to_reader`,
-`crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_disposed_sets_instance_state`
+**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_13_dispose_propagates_over_wire_to_reader`,
+`crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_disposed_sets_instance_state`
 
 **Status:** `done`
 
@@ -9622,7 +9604,7 @@ the SerializedPayload submessage element".
 **Repo:** `crates/dcps/src/runtime.rs` (`write_user_lifecycle`:
 `lifecycle_serialized_key`)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_marker_carries_the_key_fields_of_a_string_keyed_type`
+**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::rtps_8_7_4_dispose_marker_carries_the_key_fields_of_a_string_keyed_type`
 
 **Status:** `done`
 
@@ -9650,8 +9632,7 @@ omit sending the Data Submessage to the Reader."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — applies only to filtering on the writer side;
-ZeroDDS sends every value.
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; ZeroDDS sends every value.
 
 ### §8.7.4 Dispose and unregister message
 
@@ -9664,8 +9645,8 @@ EXCLUSIVE …"
 **Repo:** `crates/dcps/src/runtime.rs` (`write_user_lifecycle`: to every
 matched reader)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_propagates_over_wire_to_reader`,
-`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::instance_goes_no_writers_when_its_last_writer_disappears`
+**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_13_dispose_propagates_over_wire_to_reader`,
+`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_5_1_3_instance_goes_no_writers_when_its_last_writer_disappears`
 
 **Status:** `done` — ZeroDDS sends the message in every case.
 
@@ -9727,13 +9708,13 @@ DataReaders have GSN-1."
 **Repo:** `crates/dcps/src/group_order.rs` (`GroupOrder`),
 `crates/dcps/src/subscriber.rs` (`SubscriberInner::release_group`)
 
-**Tests:** `crates/dcps/src/group_order.rs::tests::samples_of_two_writers_go_out_in_group_sequence_order`,
-`crates/dcps/src/group_order.rs::tests::a_number_no_counted_writer_has_is_passed_once_a_heartbeat_announced_it`,
-`crates/dcps/src/group_order.rs::tests::a_counted_writer_whose_heartbeat_range_holds_the_number_is_waited_for`,
-`crates/dcps/src/group_order.rs::tests::a_gap_rules_the_number_out_for_its_writer`,
-`crates/dcps/src/group_order.rs::tests::a_number_waits_for_the_copy_of_every_reader_of_its_writer`,
-`crates/dcps/tests/group_access_e2e.rs::a_reader_of_one_topic_gets_its_samples_without_the_others_numbers_over_udp`,
-`crates/dcps/tests/group_access_e2e.rs::two_readers_of_one_topic_each_get_every_sample_over_udp`
+**Tests:** `crates/dcps/src/group_order.rs::tests::rtps_8_7_5_samples_of_two_writers_go_out_in_group_sequence_order`,
+`crates/dcps/src/group_order.rs::tests::rtps_8_7_5_a_number_no_counted_writer_has_is_passed_once_a_heartbeat_announced_it`,
+`crates/dcps/src/group_order.rs::tests::rtps_8_7_5_a_counted_writer_whose_heartbeat_range_holds_the_number_is_waited_for`,
+`crates/dcps/src/group_order.rs::tests::rtps_8_3_8_4_a_gap_rules_the_number_out_for_its_writer`,
+`crates/dcps/src/group_order.rs::tests::rtps_8_7_5_a_number_waits_for_the_copy_of_every_reader_of_its_writer`,
+`crates/dcps/tests/group_access_e2e.rs::rtps_8_7_5_a_reader_of_one_topic_gets_its_samples_without_the_others_numbers_over_udp`,
+`crates/dcps/tests/group_access_e2e.rs::rtps_8_7_5_two_readers_of_one_topic_each_get_every_sample_over_udp`
 
 **Status:** `done`
 
@@ -9745,7 +9726,7 @@ DataWriters that have not lost their liveliness, see 8.7.2.2.3."
 **Repo:** `crates/dcps/src/runtime.rs`
 (`DcpsRuntime::user_reader_counted_writers`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_writer_that_lost_its_liveliness_is_not_counted_for_the_group_order`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_7_5_a_writer_that_lost_its_liveliness_is_not_counted_for_the_group_order`
 
 **Status:** `done`
 
@@ -9759,9 +9740,9 @@ access_scope of the Subscriber".
 
 **Repo:** —
 
-**Tests:** `crates/dcps/tests/group_access_e2e.rs::a_group_coherent_set_across_two_topics_appears_after_its_end_over_udp`,
-`crates/dcps/tests/group_access_e2e.rs::a_group_coherent_set_across_two_topics_appears_after_its_end_same_runtime`,
-`crates/dcps/tests/coherent_changes_e2e.rs::group_coherent_reader_sees_the_set_only_after_end_coherent_changes`
+**Tests:** `crates/dcps/tests/group_access_e2e.rs::rtps_8_7_6_a_group_coherent_set_across_two_topics_appears_after_its_end_over_udp`,
+`crates/dcps/tests/group_access_e2e.rs::rtps_8_7_6_a_group_coherent_set_across_two_topics_appears_after_its_end_same_runtime`,
+`crates/dcps/tests/coherent_changes_e2e.rs::dcps_2_2_2_4_1_10_group_coherent_reader_sees_the_set_only_after_end_coherent_changes`
 
 **Status:** `done`
 
@@ -9773,11 +9754,11 @@ discarded by the Subscriber."
 
 **Repo:** —
 
-**Tests:** `crates/dcps/src/group_order.rs::tests::a_set_short_of_one_member_is_discarded_and_counted`,
+**Tests:** `crates/dcps/src/group_order.rs::tests::dcps_2_2_2_4_1_10_a_set_short_of_one_member_is_discarded_and_counted`,
 `crates/rtps/src/reliable_reader.rs::tests::a_set_short_of_a_change_ends_incomplete`,
 `crates/rtps/src/reliable_reader.rs::tests::a_set_ended_by_a_sample_is_reported_in_front_of_it_when_incomplete`,
-`crates/dcps/src/subscriber.rs::tests::an_incomplete_set_is_discarded`,
-`crates/dcps/tests/group_access_e2e.rs::a_reader_made_inside_a_set_does_not_get_its_tail_same_runtime`
+`crates/dcps/src/subscriber.rs::tests::dcps_2_2_2_4_1_10_an_incomplete_set_is_discarded`,
+`crates/dcps/tests/group_access_e2e.rs::rtps_8_7_6_a_reader_made_inside_a_set_does_not_get_its_tail_same_runtime`
 
 **Status:** `done`
 
@@ -9808,9 +9789,9 @@ coherent set in-line QoS parameter with value SEQUENCENUMBER_UNKNOWN."
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::end_coherent_set_emits_ecs_data_with_d_and_k_clear`,
 `crates/rtps/src/reliable_reader.rs::tests::end_of_coherent_set_data_is_delivered_as_a_terminator`,
-`crates/dcps/src/subscriber.rs::tests::every_end_of_coherent_set_form_releases_the_writers_set`,
-`crates/dcps/src/subscriber.rs::tests::a_sample_outside_any_set_releases_the_set_ahead_of_itself`,
-`crates/dcps/src/subscriber.rs::tests::a_member_of_a_new_set_releases_the_earlier_set`,
+`crates/dcps/src/subscriber.rs::tests::dcps_2_2_3_6_every_end_of_coherent_set_form_releases_the_writers_set`,
+`crates/dcps/src/subscriber.rs::tests::rtps_8_7_6_a_sample_outside_any_set_releases_the_set_ahead_of_itself`,
+`crates/dcps/src/subscriber.rs::tests::rtps_8_7_6_a_member_of_a_new_set_releases_the_earlier_set`,
 `crates/rtps/src/inline_qos.rs::tests::find_coherent_set_reads_sequencenumber_unknown_as_no_set`
 
 **Status:** `done`
@@ -9841,7 +9822,7 @@ QoS PID_GROUP_SEQ_NUM, PID_GROUP_COHERENT_SET, PID_WRITER_GROUP_INFO.
 **Repo:** —
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::a_group_coherent_set_carries_the_parameters_of_table_9_23`,
-`crates/dcps/src/group_order.rs::tests::a_set_waits_for_the_end_of_every_counted_writer`
+`crates/dcps/src/group_order.rs::tests::rtps_8_7_6_a_set_waits_for_the_end_of_every_counted_writer`
 
 **Status:** `done`
 
@@ -9853,7 +9834,7 @@ it ends."
 
 **Repo:** —
 
-**Tests:** `crates/dcps/tests/group_access_e2e.rs::a_writer_is_not_created_or_deleted_while_a_group_coherent_set_is_open`
+**Tests:** `crates/dcps/tests/group_access_e2e.rs::rtps_8_7_6_a_writer_is_not_created_or_deleted_while_a_group_coherent_set_is_open`
 
 **Status:** `done`
 
@@ -9868,9 +9849,9 @@ and if so, make it available to the application."
 
 **Repo:** —
 
-**Tests:** `crates/dcps/src/group_order.rs::tests::the_group_coherent_set_of_table_9_23_goes_out_whole_after_its_end`,
-`crates/dcps/src/group_order.rs::tests::a_set_is_complete_per_reader_of_each_writer`,
-`crates/dcps/tests/group_access_e2e.rs::a_dispose_in_a_group_coherent_set_waits_for_its_end_over_udp`
+**Tests:** `crates/dcps/src/group_order.rs::tests::dcps_2_2_3_6_the_group_coherent_set_of_table_9_23_goes_out_whole_after_its_end`,
+`crates/dcps/src/group_order.rs::tests::rtps_8_7_6_a_set_is_complete_per_reader_of_each_writer`,
+`crates/dcps/tests/group_access_e2e.rs::dcps_2_2_3_6_a_dispose_in_a_group_coherent_set_waits_for_its_end_over_udp`
 
 **Status:** `done`
 
@@ -9948,10 +9929,10 @@ writer, such that if the reader receives the same messages from another source
 `crates/durability-service/src/lib.rs` (`write_replay_sample`);
 `crates/routing-service/src/forwarding.rs` (relay mode)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_sample_written_on_behalf_of_another_writer_is_that_writers`,
-`crates/dcps/src/runtime.rs::tests::a_dispose_written_on_behalf_of_another_writer_is_that_writers`,
-`crates/durability-service/src/lib.rs::tests::a_replayed_sample_goes_out_on_behalf_of_its_writer`,
-`crates/routing-service/tests/relay_route.rs::a_relay_route_forwards_on_behalf_of_the_writer`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_7_9_a_sample_written_on_behalf_of_another_writer_is_that_writers`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_7_9_a_dispose_written_on_behalf_of_another_writer_is_that_writers`,
+`crates/durability-service/src/lib.rs::tests::rtps_8_7_9_a_replayed_sample_goes_out_on_behalf_of_its_writer`,
+`crates/routing-service/tests/relay_route.rs::rtps_8_7_9_a_relay_route_forwards_on_behalf_of_the_writer`,
 `crates/rtps/src/reliable_writer.rs::tests::a_lifecycle_marker_keeps_its_own_inline_qos_on_every_send`
 
 **Status:** `done` — a writer sends a sample, a dispose or an unregister on behalf of
@@ -10019,8 +10000,8 @@ DataReader."
 **Repo:** `crates/dcps/src/runtime.rs` (`reader_key_hash_context`);
 `crates/dcps/src/key_hash.rs`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::alive_sample_without_key_hash_gets_the_types_computed_hash`,
-`crates/dcps/src/runtime.rs::tests::lifecycle_marker_without_key_hash_gets_the_alive_instances_hash_and_holder`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_7_10_alive_sample_without_key_hash_gets_the_types_computed_hash`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_7_10_lifecycle_marker_without_key_hash_gets_the_alive_instances_hash_and_holder`
 
 **Status:** `done`
 
@@ -10031,8 +10012,8 @@ described in 9.6.4.3."
 
 **Repo:** `crates/dcps/src/key_hash.rs`
 
-**Tests:** `crates/dcps/src/key_hash.rs::tests::a_holder_over_sixteen_is_hashed`,
-`crates/dcps/src/key_hash.rs::tests::a_u32_goes_out_big_endian`
+**Tests:** `crates/dcps/src/key_hash.rs::tests::rtps_8_7_10_a_holder_over_sixteen_is_hashed`,
+`crates/dcps/src/key_hash.rs::tests::rtps_8_7_10_a_u32_goes_out_big_endian`
 
 **Status:** `done` — the reference to §9.6.4.3 is wrong in the spec; the
 computation is in §9.6.4.8.
@@ -10105,7 +10086,7 @@ capable of holding 4 bytes."
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`GuidPrefix`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::guid_prefix_roundtrip`
+**Tests:** `crates/rtps/src/header.rs::tests::header_guid_prefix_at_bytes_8_to_19`
 
 **Status:** `done`
 
@@ -10153,8 +10134,8 @@ Participant."
 **Repo:** `crates/dcps/src/runtime.rs` (`DcpsRuntime::next_entity_key`, `entity_key_in_use`,
 `pinned_entity_keys`, `new_group_entity_id`, `reserve_user_writer_id`, `reserve_user_reader_id`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::entity_keys_are_unique_across_groups_reserved_and_registered_endpoints`,
-`crates/dcps/src/runtime.rs::tests::a_wrapped_entity_key_counter_skips_the_key_of_a_live_writer`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_9_3_1_2_entity_keys_are_unique_across_groups_reserved_and_registered_endpoints`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_2_4_4_a_wrapped_entity_key_counter_skips_the_key_of_a_live_writer`
 
 **Status:** `done` — the counter (24 bit) hands out every key once; after the wrap it skips the keys of registered writers, readers and announced topics and those of Publishers, Subscribers and of reserved, not yet registered endpoints. The key of a deleted endpoint is handed out again; a reserved key that is never registered stays taken.
 
@@ -10337,7 +10318,7 @@ specification.
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`EntityId::SEDP_BUILTIN_SUBSCRIPTIONS_WRITER`)
 
-**Tests:** `crates/discovery/tests/vendor_discovery_frames.rs::fastdds_announcements_read_and_write_back`
+**Tests:** `crates/discovery/tests/vendor_discovery_frames.rs::rtps_9_3_1_3_fastdds_announcements_read_and_write_back`
 
 **Status:** `done` — the test sorts captured announcements by this EntityId.
 
@@ -10381,7 +10362,7 @@ specification.
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`EntityId::BUILTIN_PARTICIPANT_MESSAGE_WRITER`)
 
-**Tests:** `crates/dcps/tests/cyclone_live_wlp.rs::cyclone_live_wlp_handshake`
+**Tests:** `crates/dcps/tests/cyclone_live_wlp.rs::rtps_8_4_13_3_cyclone_live_wlp_handshake`
 
 **Status:** `done` — the test runs only with `--ignored` and a Cyclone
 `ddsperf`.
@@ -10393,7 +10374,7 @@ specification.
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`EntityId::BUILTIN_PARTICIPANT_MESSAGE_READER`)
 
-**Tests:** `crates/dcps/tests/cyclone_live_wlp.rs::cyclone_live_wlp_handshake`
+**Tests:** `crates/dcps/tests/cyclone_live_wlp.rs::rtps_8_4_13_3_cyclone_live_wlp_handshake`
 
 **Status:** `done` — the test runs only with `--ignored` and a Cyclone
 `ddsperf`.
@@ -10422,8 +10403,8 @@ c3} and {{00, 02, 01}, c4}".
 (`EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER`,
 `EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER`)
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::writer_has_expected_entity_id`,
-`crates/discovery/src/security/stateless.rs::tests::reader_has_expected_entity_id`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_writer_has_expected_entity_id`,
+`crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_reader_has_expected_entity_id`
 
 **Status:** `done`
 
@@ -10435,7 +10416,7 @@ c3} and {{00, 02, 01}, c4}".
 **Repo:** `crates/rtps/src/wire_types.rs` (`EntityId::TL_SVC_REQ_WRITER`,
 `TL_SVC_REQ_READER`, `TL_SVC_REPLY_WRITER`, `TL_SVC_REPLY_READER`)
 
-**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::entity_ids_match_spec_constants`
+**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::xtypes_7_6_3_3_3_entity_ids_match_spec_constants`
 
 **Status:** `done`
 
@@ -10575,13 +10556,13 @@ guidPrefix[0] = vendorId[0] guidPrefix[1] = vendorId[1]".
 **Tests:** `crates/rtps/src/wire_types.rs::tests::guid_prefix_host_id_follows_the_vendor_id`
 
 **Status:** `partial` — the first two octets are `01 F0`, not a value assigned
-by the OMG (`open` item under §8.3.5.2). `DcpsRuntime::start` also accepts a
+by the OMG (`blocked` item under §8.3.5.2). `DcpsRuntime::start` also accepts a
 freely chosen prefix; under DDS-Security the prefix derived from the identity
 replaces the one built. DDS-Security 1.2 §10.3.3 Table 59
 (`validate_local_identity`) sets its first 48 bits: the first bit 1, then 47
 bits of the SHA-256 of the SubjectName; by the more specific spec the vendorId
 is not in them (`crates/security-pki/src/guid_adjust.rs`, test
-`adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`). Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+`adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`).
 
 ### §9.3.1.5 GUID_UNKNOWN
 
@@ -10628,7 +10609,7 @@ seconds = 0xffffffff, fraction = 0xfffffffe".
 
 **Repo:** `crates/dcps/src/time.rs` (`time_to_he_timestamp`, `he_timestamp_to_time`); `crates/rtps/src/header_extension.rs` (`HeTimestamp`, `TIME_INVALID`)
 
-**Tests:** `crates/dcps/src/time.rs::tests::the_reserved_time_t_values_cross_the_wire_as_the_spec_gives_them`,
+**Tests:** `crates/dcps/src/time.rs::tests::rtps_8_3_2_the_reserved_time_t_values_cross_the_wire_as_the_spec_gives_them`,
 `crates/rtps/src/receiver_state.rs::tests::the_initial_state_is_the_one_of_table_8_17`,
 `crates/rtps/src/header_extension.rs::tests::roundtrip_all_fields_set_be`
 
@@ -10654,8 +10635,7 @@ VendorId_t[1] = 0; typedef octet VendorId_t[2];"
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`VendorId`, `VendorId::UNKNOWN`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::vendor_id_unknown_is_two_zero_octets`,
-`crates/rtps/src/wire_types.rs::tests::vendor_id_roundtrip`
+**Tests:** `crates/rtps/src/wire_types.rs::tests::vendor_id_unknown_is_two_zero_octets`
 
 **Status:** `done`
 
@@ -10768,7 +10748,7 @@ PID_STATUS_INFO with 4 octets); `crates/rtps/src/parameter_list.rs`
 (`Parameter::id: u16`)
 
 **Tests:** `crates/rtps/src/submessages.rs::tests::data_frag_key_hash_roundtrips_both_byte_orders`,
-`crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_disposed_sets_instance_state`
+`crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_disposed_sets_instance_state`
 
 **Status:** `done` — ParameterId_t is kept as `u16`; the bits 0x8000 and 0x4000
 are evaluated as bit fields (§9.4.2.11.2).
@@ -10778,7 +10758,7 @@ are evaluated as bit fields (§9.4.2.11.2).
 **Spec:** §9.3.2.1, p. 154 — "struct ContentFilterProperty_t { string<256>
 contentFilteredTopicName; string<256> relatedTopicName; string<256>
 filterClassName; string filterExpression; sequence<string>
-expressionParameters; };"
+javapsm_2_the_filter_takes_its_parameters_by_position; };"
 
 **Repo:** `crates/rtps/src/subscription_data.rs` (`ContentFilterProperty`)
 
@@ -10809,8 +10789,7 @@ filterResult; FilterSignatureSequence filterSignatures; };"
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — PID_CONTENT_FILTER_INFO belongs to filtering
-on the writer side, which ZeroDDS does not do (§8.7.3.4).
+**Status:** open — the types are missing in the code; part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ### §9.3.2.1 Property_t and EntityName_t
 
@@ -10871,7 +10850,7 @@ BEST_EFFORT_PARTICIPANT_MESSAGE_DATA_READER };"
 **Repo:** `crates/rtps/src/participant_data.rs` (`builtin_endpoint_qos::BEST_EFFORT_PARTICIPANT_MESSAGE_DATA_READER`)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::manual_liveliness_count_and_builtin_endpoint_qos_go_out_and_read_back`,
-`crates/dcps/src/wlp.rs::tests::the_reader_is_treated_as_builtin_endpoint_qos_says`
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_the_reader_is_treated_as_builtin_endpoint_qos_says`
 
 **Status:** `done` — bitmask with `@position(0)` BEST_EFFORT_PARTICIPANT_MESSAGE_DATA_READER.
 
@@ -10980,10 +10959,10 @@ third-party".
 **Tests:** `crates/rtps/src/wire_types.rs::tests::the_zerodds_locator_kinds_are_in_the_vendor_specific_range`,
 `crates/rtps/src/wire_types.rs::tests::the_tcp_kinds_are_vendor_range_by_default_and_fast_dds_by_setting`,
 `crates/rtps/src/wire_types.rs::tests::locator_kind_rejects_unknown`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::locator_kinds_are_zerodds_vendor_range_values`,
-`crates/dcps/tests/runtime_config_layering.rs::the_tcp_locator_kinds_are_a_setting`,
-`crates/transport-shm/src/posix.rs::tests::locator_kind_is_the_vendor_reserved_shm_value`,
-`crates/transport-uds/src/lib.rs::tests::locator_kind_is_the_vendor_reserved_uds_value`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::rtps_9_3_2_4_locator_kinds_are_zerodds_vendor_range_values`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_9_3_2_4_the_tcp_locator_kinds_are_a_setting`,
+`crates/transport-shm/src/posix.rs::tests::rtps_9_3_2_4_locator_kind_is_the_vendor_reserved_shm_value`,
+`crates/transport-uds/src/lib.rs::tests::rtps_9_3_2_4_locator_kind_is_the_vendor_reserved_uds_value`,
 `crates/rtps/src/submessages.rs::tests::info_reply_leaves_out_a_locator_of_a_kind_it_does_not_know`
 
 **Status:** `done` — all kinds besides UDPv4 (1) and UDPv6 (2) lie in the vendor range 3 to 0x01ffffff: `Shm`, `Uds`, `Tsn` (0x01F0_0001 to 0x01F0_0003) and now `Tcpv4` (0x01F0_0004) and `Tcpv6` (0x01F0_0005). ZeroDDS sends the values 4 and 8 of Fast DDS (and of the DDS-TCP-PSM) only with the named setting `transport.tcp_locator_kinds: fast-dds` (environment `ZERODDS_TCP_LOCATOR_KINDS`, man page, example configuration); both values are read. A kind the receiver does not know does not invalidate an INFO_REPLY, the locator is left out. Expected Fast DDS behaviour: with `fast-dds` it recognises the TCP locators of ZeroDDS (kinds 4 and 8); without the setting it ignores kinds in the vendor range and opens no TCP connection to ZeroDDS. Not measured.
@@ -11061,7 +11040,7 @@ long low; }; … sequence_number = low + high * 2^(32)".
 **Repo:** `crates/rtps/src/wire_types.rs` (`SequenceNumber::to_bytes_le`,
 `from_bytes_le`, `to_bytes_be`, `from_bytes_be`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::sequence_number_split_high_low`,
+**Tests:** `crates/rtps/src/wire_types.rs::tests::rtps_9_3_2_10_sequence_number_is_low_plus_high_times_2_to_the_32`,
 `crates/rtps/src/wire_types.rs::tests::sequence_number_roundtrip_be`
 
 **Status:** `done`
@@ -11103,7 +11082,7 @@ equal to or newer than the deprecated version".
 bits 6 to 9)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_all_standard_excludes_secure_bits`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_standard_bits_by_default`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_spdp_announces_standard_bits_by_default`
 
 **Status:** `done`
 
@@ -11128,8 +11107,8 @@ and its revisions thereof".
 **Repo:** `crates/rtps/src/participant_data.rs` (`endpoint_flag::TYPE_LOOKUP_REQUEST`,
 `TYPE_LOOKUP_REPLY`)
 
-**Tests:** `crates/dcps/tests/type_lookup_e2e.rs::announces_type_lookup_endpoints_in_spdp`,
-`crates/discovery/src/capabilities.rs::tests::type_lookup_capabilities_require_the_four_distinct_vendor_bits`
+**Tests:** `crates/dcps/tests/type_lookup_e2e.rs::rtps_8_5_3_2_1_announces_type_lookup_endpoints_in_spdp`,
+`crates/discovery/src/capabilities.rs::tests::xtypes_7_6_3_3_4_type_lookup_capabilities_require_the_four_distinct_vendor_bits`
 
 **Status:** `done`
 
@@ -11154,7 +11133,7 @@ DISC_BUILTIN_ENDPOINT_TOPICS_DETECTOR".
 `TOPICS_DETECTOR`)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/discovery/src/sedp/stack.rs::tests::the_topics_bits_wire_the_topics_writer_and_reader`
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_3_the_topics_bits_wire_the_topics_writer_and_reader`
 
 **Status:** `done`
 
@@ -11181,7 +11160,7 @@ the Message is the length of the UDP payload."
 datagram passed in)
 
 **Tests:** `crates/rtps/src/datagram.rs::tests::decode_handles_last_submessage_zero_length`,
-`crates/transport-udp/src/udp_transport.rs::tests::loopback_send_and_recv_delivers_datagram`
+`crates/transport-udp/src/udp_transport.rs::tests::rtps_7_6_loopback_send_and_recv_delivers_datagram`
 
 **Status:** `done`
 
@@ -11216,8 +11195,7 @@ value[4]`.
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`GuidPrefix::to_bytes`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::guid_prefix_roundtrip`,
-`crates/rtps/src/header.rs::tests::header_guid_prefix_at_bytes_8_to_19`
+**Tests:** `crates/rtps/src/header.rs::tests::header_guid_prefix_at_bytes_8_to_19`
 
 **Status:** `done`
 
@@ -11228,8 +11206,7 @@ vendorId[2]`.
 
 **Repo:** `crates/rtps/src/wire_types.rs` (`VendorId::to_bytes`)
 
-**Tests:** `crates/rtps/src/wire_types.rs::tests::vendor_id_roundtrip`,
-`crates/rtps/src/header.rs::tests::header_vendor_id_at_bytes_6_7`
+**Tests:** `crates/rtps/src/header.rs::tests::header_vendor_id_at_bytes_6_7`
 
 **Status:** `done`
 
@@ -11426,7 +11403,7 @@ purposes, the CDR stream is logically reset for each parameter value".
 `crates/rtps/src/participant_data.rs` (every value is encoded from offset 0)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::participant_data_roundtrip_full`,
-`crates/discovery/tests/vendor_discovery_frames.rs::cyclone_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_8_5_4_4_cyclone_announcements_read_and_write_back`
 
 **Status:** `done`
 
@@ -11492,7 +11469,7 @@ other vendors’ implementations."
 **Repo:** `crates/rtps/src/parameter_list.rs` (`VENDOR_SPECIFIC_BIT`);
 `crates/rtps/src/publication_data.rs` (vendor parameters by vendorId)
 
-**Tests:** `crates/discovery/tests/vendor_discovery_frames.rs::rti_announcements_read_and_write_back`,
+**Tests:** `crates/discovery/tests/vendor_discovery_frames.rs::rtps_9_4_2_11_rti_announcements_read_and_write_back`,
 `crates/rtps/src/parameter_list.rs::tests::a_vendor_specific_must_understand_pid_of_another_vendor_is_an_error`
 
 **Status:** `done`
@@ -11553,7 +11530,7 @@ there only the ZeroDDS PIDs (0x8001, 0x8002) from a ZeroDDS sender are recognize
 PID_DATA_REPRESENTATION, PID_TYPE_CONSISTENCY, PID_TYPE_INFORMATION)
 
 **Tests:** `crates/rtps/src/parameter_list.rs::tests::pid_ignore_skipped_in_pl_cdr_decode`,
-`crates/discovery/tests/vendor_discovery_frames.rs::cyclone_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_8_5_4_4_cyclone_announcements_read_and_write_back`
 
 **Status:** `done`
 
@@ -11819,8 +11796,7 @@ Specification a vendor must have a reserved Vendor ID and use it."
 
 **Tests:** —
 
-**Status:** `open` — `VendorId::ZERODDS = [0x01, 0xF0]`
-(`crates/rtps/src/wire_types.rs`), by its comment an interim value; as under §8.3.5.2. Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+**Status:** blocked — assignment of a VendorId by the OMG (applied for); lifted once the OMG assigns the value and `VendorId::ZERODDS` carries it. Until then ZeroDDS sends `0x01F0` (`crates/rtps/src/wire_types.rs`, by its comment an interim value), a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
 
 ### §9.4.5.1 SubmessageHeader
 
@@ -11854,7 +11830,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::Pad`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11864,7 +11840,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::AckNack`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_acknack_is_0x06`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11874,7 +11850,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::Heartbeat`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_heartbeat_is_0x07`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11884,7 +11860,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::Gap`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_gap_is_0x08`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11894,7 +11870,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::InfoTs`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11904,7 +11880,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::InfoSrc`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11914,7 +11890,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::InfoReplyIp4`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11924,7 +11900,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::InfoDst`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11934,7 +11910,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::InfoReply`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11944,7 +11920,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::NackFrag`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11954,7 +11930,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::HeartbeatFrag`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11964,7 +11940,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::Data`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_data_is_0x15`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -11974,7 +11950,7 @@ protocol."
 
 **Repo:** `crates/rtps/src/submessage_header.rs` (`SubmessageId::DataFrag`)
 
-**Tests:** `crates/rtps/src/submessage_header.rs::tests::submessage_id_octets_match_spec_table_8_13`
+**Tests:** `crates/rtps/src/submessage_header.rs::tests::rtps_9_4_5_1_submessage_id_octets_match_table_8_13`
 
 **Status:** `done`
 
@@ -12012,8 +11988,8 @@ when the Submessage is encountered."
 **Repo:** `crates/security-rtps/src/codec.rs` (`SEC_PREFIX = 0x31`, `SEC_BODY`,
 `SEC_POSTFIX`, `SRTPS_PREFIX`, `SRTPS_POSTFIX`)
 
-**Tests:** `crates/security-rtps/src/codec.rs::tests::constants_match_spec`,
-`crates/security-rtps/src/codec.rs::tests::three_submessages_carry_spec_ids_flags_and_lengths_in_order`
+**Tests:** `crates/security-rtps/src/codec.rs::tests::rtps_9_4_5_1_1_1_constants_match_spec`,
+`crates/security-rtps/src/codec.rs::tests::rtps_9_4_5_1_1_1_three_submessages_carry_spec_ids_flags_and_lengths_in_order`
 
 **Status:** `done`
 
@@ -12263,7 +12239,7 @@ octetsToInlineQos, readerId, writerId, writerSN, inlineQos [Q], serializedPayloa
 **Repo:** `crates/rtps/src/submessages.rs` (`DATA_FLAG_KEY = 0x08`)
 
 **Tests:** `crates/rtps/src/submessages.rs::tests::data_submessage_key_flag_roundtrip`,
-`crates/discovery/src/sedp/reader.rs::tests::handle_data_reports_a_cyclone_dispose_without_key_hash_as_removed`
+`crates/discovery/src/sedp/reader.rs::tests::rtps_9_4_5_4_handle_data_reports_a_cyclone_dispose_without_key_hash_as_removed`
 
 **Status:** `done`
 
@@ -12289,7 +12265,7 @@ Key."
 `crates/rtps/src/reliable_reader.rs` (`handle_data_into`)
 
 **Tests:** `crates/rtps/src/submessages.rs::tests::data_submessage_roundtrip_be_with_empty_payload`,
-`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_marker_carries_the_key_fields_of_a_string_keyed_type`
+`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::rtps_8_7_4_dispose_marker_carries_the_key_fields_of_a_string_keyed_type`
 
 **Status:** `done`
 
@@ -12620,8 +12596,8 @@ contents (payload) of exactly one UDP/IP Datagram."
 
 **Repo:** `crates/transport-udp/src/udp_transport.rs` (`UdpTransport`)
 
-**Tests:** `crates/transport-udp/tests/e2e.rs::e2e_write_udp_read_single_datagram`,
-`crates/transport-udp/src/udp_transport.rs::tests::without_the_cache_a_largest_datagram_arrives`
+**Tests:** `crates/transport-udp/tests/e2e.rs::rtps_7_5_e2e_write_udp_read_multiple_in_order`,
+`crates/transport-udp/src/udp_transport.rs::tests::rtps_9_5_without_the_cache_a_largest_datagram_arrives`
 
 **Status:** `done`
 
@@ -12654,7 +12630,7 @@ SPDP_WELL_KNOWN_MULTICAST_PORT — PB + DG * domainId + d0".
 **Repo:** `crates/rtps/src/wire_types.rs` (`spdp_multicast_port`)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::all_four_ports_follow_the_spec_formula`,
-`crates/rtps/src/wire_types.rs::tests::spdp_multicast_port_domain_0_is_7400`
+`crates/rtps/src/wire_types.rs::tests::rtps_9_6_1_4_1_spdp_multicast_port_is_7400_plus_250_per_domain`
 
 **Status:** `done`
 
@@ -12666,7 +12642,7 @@ PB + DG * domainId + d1 + PG * participantId".
 **Repo:** `crates/rtps/src/wire_types.rs` (`spdp_unicast_port`)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::domain_zero_ports_match_the_worked_spec_example`,
-`crates/dcps/src/runtime.rs::tests::spdp_unicast_port_follows_rtps_formula`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_3_spdp_unicast_port_follows_rtps_formula`
 
 **Status:** `done`
 
@@ -12680,8 +12656,8 @@ in the same domain."
 **Repo:** `crates/dcps/src/runtime.rs` (`DcpsRuntime::start`: participantId 0
 to 119, the first free SPDP unicast port; otherwise a free port)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::two_runtimes_discover_each_other_via_spdp`,
-`crates/dcps/src/runtime.rs::tests::expand_initial_peer_ip_only_yields_well_known_port_range`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_two_runtimes_discover_each_other_via_spdp`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_expand_initial_peer_ip_only_yields_well_known_port_range`
 
 **Status:** `done` — if none of the 120 ports is free, ZeroDDS binds any port
 and is reachable only through multicast.
@@ -12696,7 +12672,7 @@ information exchanged during the SPDP."
 **Repo:** `crates/dcps/src/runtime.rs` (metatraffic locators = the SPDP
 unicast socket and the SPDP multicast group)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::two_runtimes_discover_each_other_via_spdp`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_two_runtimes_discover_each_other_via_spdp`
 
 **Status:** `done`
 
@@ -12708,7 +12684,7 @@ unicast socket and the SPDP multicast group)
 **Repo:** `crates/rtps/src/wire_types.rs` (`user_traffic_multicast_port`); `crates/dcps/src/runtime.rs` (`transport.user_multicast`)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::all_four_ports_follow_the_spec_formula`,
-`crates/dcps/src/runtime.rs::tests::the_user_multicast_port_is_d2_and_announced_unless_turned_off`
+`crates/dcps/src/runtime.rs::tests::rtps_9_6_2_2_the_user_multicast_port_is_d2_and_announced_unless_turned_off`
 
 **Status:** `done` — ZeroDDS endpoints announce the multicast locator on `PB + DG * domainId + d2` (default; `transport.user_multicast: false` for a host without multicast). Expected: Cyclone DDS (announces 239.255.0.1 on d2), Fast DDS and OpenDDS accept an announced multicast locator or ignore it; ZeroDDS writers themselves send to unicast locators only.
 
@@ -12724,7 +12700,7 @@ Protocol."
 the default unicast locator)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::the_four_ports_of_one_participant_are_distinct`,
-`crates/dcps/src/runtime.rs::tests::announce_locators_automatic_is_non_empty_and_includes_probe`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_announce_locators_automatic_is_non_empty_and_includes_probe`
 
 **Status:** `done` — ZeroDDS does not use the default port but announces the
 port bound, as the subclause permits.
@@ -12751,11 +12727,11 @@ they can be customized by the user."
 `man/man5/zerodds.yaml.5`
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::the_port_mapping_formulas_use_the_given_parameters`,
-`crates/dcps/tests/runtime_config_layering.rs::the_port_mapping_parameters_are_settings`,
-`crates/dcps/src/runtime.rs::tests::the_spdp_unicast_port_follows_the_configured_port_mapping`,
-`crates/dcps/src/runtime.rs::tests::the_user_unicast_socket_takes_the_d3_port_of_its_participant_id`,
-`crates/dcps/src/runtime.rs::tests::a_taken_user_port_is_counted_and_the_socket_takes_an_ephemeral_one`,
-`crates/dcps/src/runtime.rs::tests::the_user_multicast_port_is_d2_and_announced_unless_turned_off`
+`crates/dcps/tests/runtime_config_layering.rs::rtps_9_6_2_3_the_port_mapping_parameters_are_settings`,
+`crates/dcps/src/runtime.rs::tests::rtps_9_6_2_3_the_spdp_unicast_port_follows_the_configured_port_mapping`,
+`crates/dcps/src/runtime.rs::tests::rtps_9_6_2_3_the_user_unicast_socket_takes_the_d3_port_of_its_participant_id`,
+`crates/dcps/src/runtime.rs::tests::rtps_9_6_2_3_a_taken_user_port_is_counted_and_the_socket_takes_an_ephemeral_one`,
+`crates/dcps/src/runtime.rs::tests::rtps_9_6_2_2_the_user_multicast_port_is_d2_and_announced_unless_turned_off`
 
 **Status:** `done` — PB, DG, PG and d0 to d3 are settings (file and environment, 0..=65535, default the spec's values). The runtime binds the discovery ports (d0, d1) and the user unicast socket to `PB + DG * domainId + d3 + PG * participantId`, with the participantId of the SPDP unicast socket; if the port is taken the socket takes an ephemeral port, which is counted (`user_port_fallbacks`) and logged as the event `transport.user_unicast.port_taken`. The user multicast port d2 is bound with `transport.user_multicast` (join of the SPDP group, reception, announcement as the default multicast locator); default on (the default locators of §9.6.2.3 include d2), `false` for a host without multicast. A peer otherwise reaches it at its unicast locators. Measured in `tools/wire-capture/rtps-sessions` (locators of the SPDP announcements): Fast DDS 2.6.10 and RTI 7.7.0 bind d1/d3 + PG * participantId (Fast DDS 23160/23161, 23162/23163; RTI 22910/22911, 22912/22913); Cyclone 11.0.1 takes ephemeral ports for metatraffic and user data (the same port) and announces default multicast 239.255.0.1 on d2; OpenDDS 3.34.0 takes an ephemeral metatraffic port and announces 127.0.0.1:12345 as user locator (no d3 port). Not measured: a run against the vendors with the port change, and the behaviour of ZeroDDS writers towards announced multicast locators (they send to unicast locators only).
 
@@ -12769,7 +12745,7 @@ listen on this multicast address."
 `crates/dcps/src/runtime.rs` (`spdp_multicast_group`, joining and announcing)
 
 **Tests:** `crates/rtps/src/wire_types.rs::tests::spdp_default_multicast_is_239_255_0_1`,
-`crates/discovery/tests/spdp_loopback_e2e.rs::loopback_multicast_self_discovery`
+`crates/discovery/tests/spdp_loopback_e2e.rs::rtps_8_5_3_3_loopback_multicast_self_discovery`
 
 **Status:** `done` — the group is configurable; without multicast ZeroDDS
 works with initial peers.
@@ -12782,8 +12758,8 @@ resendPeriod = {30, 0};"
 
 **Repo:** `crates/dcps/src/runtime.rs` (`DEFAULT_SPDP_PERIOD`, `default_spdp_period_for`); `man/man5/zerodds.yaml.5`; `packaging/linux/configs/zerodds.yaml.example`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_short_lease_without_a_period_beacons_three_times_a_lease`,
-`crates/dcps/tests/runtime_config_layering.rs::the_protocol_timing_parameters_are_settings`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_5_3_1_a_short_lease_without_a_period_beacons_three_times_a_lease`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_8_4_2_1_the_protocol_timing_parameters_are_settings`
 
 **Status:** `done` — `DEFAULT_SPDP_PERIOD` = 30 s (YAML default, man page, example configuration); the former 5 s stay reachable through `discovery.spdp_period_ms: 5000`. A lease under 90 s shortens the default to a third (§8.5.3.1).
 
@@ -12862,7 +12838,7 @@ using CDR."
 (`to_pl_cdr_le`)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::participant_data_first_4_bytes_are_pl_cdr_le_encapsulation`,
-`crates/discovery/tests/vendor_discovery_frames.rs::opendds_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_9_6_3_2_opendds_announcements_read_and_write_back`
 
 **Status:** `done`
 
@@ -12943,7 +12919,7 @@ PID_ENDPOINT_GUID."
 `sedp_endpoint_key_pl_cdr_le`); `crates/discovery/src/spdp.rs`
 (`serialize_departure`)
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::a_departure_reads_back_as_departed_with_key_and_status`,
+**Tests:** `crates/discovery/src/spdp.rs::tests::rtps_9_6_3_2_a_departure_reads_back_as_departed_with_key_and_status`,
 `crates/rtps/src/parameter_list.rs::tests::sedp_endpoint_key_matches_the_measured_cyclone_octets`
 
 **Status:** `done`
@@ -13028,7 +13004,7 @@ PID_DOMAIN_TAG: "string<256>".
 
 **Tests:** `crates/rtps/src/publication_data.rs::tests::topic_and_type_names_are_bounded_by_string_256`,
 `crates/rtps/src/participant_data.rs::tests::a_domain_tag_longer_than_string_256_is_refused`,
-`crates/dcps/src/participant.rs::tests::create_topic_rejects_a_name_longer_than_string_256`
+`crates/dcps/src/participant.rs::tests::rtps_9_6_3_2_create_topic_rejects_a_name_longer_than_string_256`
 
 **Status:** `done` — topic, type and domain-tag names are bounded to 256 octets: encoding and decoding refuse more (an announcement of a peer with a longer name is refused and counted), `create_topic` and `DcpsRuntime::start` refuse them.
 
@@ -13123,7 +13099,7 @@ LivelinessQosPolicy"; Table 9.19, p. 188 — Topic, Publication, Subscription
 **Repo:** `crates/qos/src/pid.rs` (`Pid::LIVELINESS`)
 
 **Tests:** `crates/rtps/tests/sedp_qos_roundtrip.rs::publication_data_roundtrip_preserves_all_new_qos_policies`,
-`crates/discovery/tests/vendor_discovery_frames.rs::cyclone_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_8_5_4_4_cyclone_announcements_read_and_write_back`
 
 **Status:** `done`
 
@@ -13173,7 +13149,7 @@ Table 9.19, p. 188 — TopicBuiltinTopicData::history.
 
 **Repo:** `crates/qos/src/pid.rs` (`Pid::HISTORY`); `crates/rtps/src/topic_data.rs`
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_4_two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
 
 **Status:** `done`
 
@@ -13185,7 +13161,7 @@ ResourceLimitsQosPolicy"; Table 9.19, p. 188 — TopicBuiltinTopicData::resource
 **Repo:** `crates/qos/src/pid.rs` (`Pid::RESOURCE_LIMITS`);
 `crates/rtps/src/topic_data.rs`
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_4_two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
 
 **Status:** `done`
 
@@ -13234,7 +13210,7 @@ PartitionQosPolicy"; Table 9.19, p. 188 — Publication, Subscription `partition
 **Repo:** `crates/qos/src/pid.rs` (`Pid::PARTITION`)
 
 **Tests:** `crates/rtps/tests/sedp_qos_roundtrip.rs::publication_data_roundtrip_preserves_all_new_qos_policies`,
-`crates/dcps/src/runtime.rs::tests::a_partition_change_unmatches_without_a_status_and_is_announced`
+`crates/dcps/src/runtime.rs::tests::dcps_2_2_3_13_a_partition_change_unmatches_without_a_status_and_is_announced`
 
 **Status:** `done`
 
@@ -13273,7 +13249,7 @@ participant receiving the SPDPdiscoveredParticipantData".
 **Repo:** `crates/rtps/src/parameter_list.rs` (`pid::DOMAIN_ID`);
 `crates/dcps/src/runtime.rs` (`spdp_announced`: missing = own domain)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_participant_of_another_domain_id_is_not_discovered`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::dcps_2_2_2_2_1_a_participant_of_another_domain_id_is_not_discovered`,
 `crates/rtps/src/participant_data.rs::tests::participant_data_roundtrip_full`
 
 **Status:** `done`
@@ -13423,7 +13399,7 @@ Table 9.19, p. 189 — ParticipantProxy::expectsInlineQos, default FALSE.
 `crates/rtps/src/participant_data.rs`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::manual_liveliness_count_and_builtin_endpoint_qos_go_out_and_read_back`,
-`crates/discovery/tests/vendor_discovery_frames.rs::opendds_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_9_6_3_2_opendds_announcements_read_and_write_back`
 
 **Status:** `done` — read, written and in `is_standard_pid`; OpenDDS sends 0 and gets 0 back.
 
@@ -13523,7 +13499,7 @@ BuiltinEndpointQos_t"; Table 9.19, p. 189 — ParticipantProxy::builtinEndpointQ
 `crates/rtps/src/participant_data.rs`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::manual_liveliness_count_and_builtin_endpoint_qos_go_out_and_read_back`,
-`crates/discovery/tests/vendor_discovery_frames.rs::opendds_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_9_6_3_2_opendds_announcements_read_and_write_back`
 
 **Status:** `done` — read, written and in `is_standard_pid`.
 
@@ -13581,7 +13557,7 @@ Table 9.19 has no row for it.
 `crates/rtps/src/publication_data.rs`, `crates/rtps/src/topic_data.rs`
 
 **Tests:** `crates/rtps/src/publication_data.rs::tests::decode_rejects_missing_endpoint_guid`,
-`crates/discovery/src/sedp/stack.rs::tests::two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
+`crates/discovery/src/sedp/stack.rs::tests::rtps_8_5_4_4_two_stacks_exchange_a_topic_its_new_qos_and_its_dispose`
 
 **Status:** `done`
 
@@ -13781,9 +13757,7 @@ ContentFilterInfo_t".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — belongs to filtering on the writer side,
-which ZeroDDS does not do (§8.7.3.4); a received parameter is passed over as
-an unknown PID without the must-understand bit.
+**Status:** open — ZeroDDS does not know the PID; a received parameter is skipped as an unknown PID without the must-understand bit. Part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ### §9.6.4 Table 9.20 PID_COHERENT_SET (0x0056)
 
@@ -13893,7 +13867,7 @@ WriterGroupInfo_t".
 `crates/rtps/src/inline_qos.rs` (`find_key_hash`)
 
 **Tests:** `crates/rtps/src/submessages.rs::tests::data_frag_key_hash_roundtrips_both_byte_orders`,
-`crates/dcps/src/runtime.rs::tests::alive_sample_without_key_hash_gets_the_types_computed_hash`
+`crates/dcps/src/runtime.rs::tests::rtps_8_7_10_alive_sample_without_key_hash_gets_the_types_computed_hash`
 
 **Status:** `done`
 
@@ -13905,8 +13879,8 @@ StatusInfo_t".
 **Repo:** `crates/rtps/src/parameter_list.rs` (`pid::STATUS_INFO`);
 `crates/rtps/src/inline_qos.rs` (`status_info_param`, `find_status_info`)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_disposed_sets_instance_state`,
-`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_propagates_over_wire_to_reader`
+**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_disposed_sets_instance_state`,
+`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_13_dispose_propagates_over_wire_to_reader`
 
 **Status:** `done`
 
@@ -13922,8 +13896,7 @@ filter's ContentFilterProperty_t."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — belongs to filtering on the writer side,
-which ZeroDDS does not do (§8.7.3.4).
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ### §9.6.4.1 Table 9.21 filterResult
 
@@ -13935,8 +13908,7 @@ corresponding filter and passed."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — belongs to filtering on the writer side,
-which ZeroDDS does not do (§8.7.3.4).
+**Status:** open — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ### §9.6.4.2 PID_COHERENT_SET: encoding and value
 
@@ -14069,7 +14041,7 @@ Bytes."
 **Repo:** `crates/dcps/src/key_hash.rs` (`KEY_HASH_LEN`);
 `crates/rtps/src/inline_qos.rs` (`find_key_hash`)
 
-**Tests:** `crates/dcps/src/key_hash.rs::tests::a_holder_of_exactly_sixteen_is_the_hash`,
+**Tests:** `crates/dcps/src/key_hash.rs::tests::rtps_9_6_4_8_a_holder_of_exactly_sixteen_is_the_hash`,
 `crates/rtps/src/submessages.rs::tests::data_frag_key_hash_roundtrips_both_byte_orders`
 
 **Status:** `done`
@@ -14083,7 +14055,7 @@ Reorder the members in ascending order of their memberId values."
 **Repo:** `crates/dcps/src/key_hash.rs` (`keyhash_cdr2_be`: sorting by
 `member_id`)
 
-**Tests:** `crates/dcps/src/key_hash.rs::tests::the_member_order_does_not_reach_the_hash`
+**Tests:** `crates/dcps/src/key_hash.rs::tests::rtps_9_6_4_8_the_member_order_does_not_reach_the_hash`
 
 **Status:** `done`
 
@@ -14097,8 +14069,8 @@ FooKeyHolder if they are themselves Aggregated types".
 **Repo:** `crates/dcps/src/key_hash.rs` (`PlainCdr2BeKeyHolder`);
 `crates/dcps/src/runtime.rs` (`reader_key_hash_context`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::alive_sample_without_key_hash_gets_the_types_computed_hash`,
-`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_marker_carries_the_key_fields_of_a_string_keyed_type`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_8_7_10_alive_sample_without_key_hash_gets_the_types_computed_hash`,
+`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::rtps_8_7_4_dispose_marker_carries_the_key_fields_of_a_string_keyed_type`
 
 **Status:** `done`
 
@@ -14111,9 +14083,9 @@ bytes added due to alignment rules shall be set to zero."
 
 **Repo:** `crates/dcps/src/key_hash.rs` (`PlainCdr2BeKeyHolder`)
 
-**Tests:** `crates/dcps/src/key_hash.rs::tests::a_u32_goes_out_big_endian`,
-`crates/dcps/src/key_hash.rs::tests::a_u64_is_aligned_to_four_and_not_to_eight`,
-`crates/dcps/src/key_hash.rs::tests::a_string_carries_its_terminator_in_its_length`
+**Tests:** `crates/dcps/src/key_hash.rs::tests::rtps_8_7_10_a_u32_goes_out_big_endian`,
+`crates/dcps/src/key_hash.rs::tests::rtps_9_6_4_8_a_u64_is_aligned_to_four_and_not_to_eight`,
+`crates/dcps/src/key_hash.rs::tests::rtps_9_6_4_8_a_string_carries_its_terminator_in_its_length`
 
 **Status:** `done`
 
@@ -14128,8 +14100,8 @@ bytes, then the KeyHash_t of FooObject shall be set to the MD5 Hash".
 **Repo:** `crates/dcps/src/key_hash.rs` (`compute_key_hash`:
 `key_holder_max_size`)
 
-**Tests:** `crates/dcps/src/key_hash.rs::tests::a_short_instance_of_a_bounded_type_still_pads`,
-`crates/dcps/src/key_hash.rs::tests::a_holder_over_sixteen_is_hashed`
+**Tests:** `crates/dcps/src/key_hash.rs::tests::rtps_9_6_4_8_a_short_instance_of_a_bounded_type_still_pads`,
+`crates/dcps/src/key_hash.rs::tests::rtps_8_7_10_a_holder_over_sixteen_is_hashed`
 
 **Status:** `done`
 
@@ -14141,9 +14113,9 @@ with the expected octets.
 **Repo:** `crates/dcps/src/key_hash.rs` (`PlainCdr2BeKeyHolder`, `compute_key_hash`);
 `crates/dcps/src/dds_type.rs` (`DdsType::compute_key_hash`)
 
-**Tests:** `crates/dcps/src/dds_type.rs::tests::key_hash_example_1_of_the_spec_is_the_holder_padded_with_zeros`,
-`crates/dcps/src/dds_type.rs::tests::key_hash_example_2_of_the_spec_is_the_md5_of_the_holder`,
-`crates/dcps/src/dds_type.rs::tests::key_hash_example_3_of_the_spec_is_the_md5_of_the_reordered_holder`
+**Tests:** `crates/dcps/src/dds_type.rs::tests::rtps_9_6_4_8_key_hash_example_1_of_the_spec_is_the_holder_padded_with_zeros`,
+`crates/dcps/src/dds_type.rs::tests::rtps_9_6_4_8_key_hash_example_2_of_the_spec_is_the_md5_of_the_holder`,
+`crates/dcps/src/dds_type.rs::tests::rtps_9_6_4_8_key_hash_example_3_of_the_spec_is_the_md5_of_the_reordered_holder`
 
 **Status:** `done` — the three examples give the octets of the spec: Example 1 the holder extended with zeros to 16 octets, Examples 2 and 3 the MD5 of the 20-octet and the 13-octet holder (`f91a59e3…`, `374b96e2…`).
 
@@ -14156,8 +14128,8 @@ array (see 9.3.2) therefore the status info inline parameter just copies those
 **Repo:** `crates/rtps/src/inline_qos.rs` (`status_info_param`: network order;
 `find_status_info`)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_unregistered_sets_instance_state`,
-`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::unregister_with_autodispose_false_propagates_unregister_only`
+**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_unregistered_sets_instance_state`,
+`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_7_unregister_with_autodispose_false_propagates_unregister_only`
 
 **Status:** `done`
 
@@ -14169,7 +14141,7 @@ or in the DataFrag submessages."
 **Repo:** `crates/rtps/src/reliable_reader.rs` (`classify_change_kind` for
 DATA, `handle_data_frag_opening` for DATA_FRAG)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_disposed_sets_instance_state`,
+**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_disposed_sets_instance_state`,
 `crates/rtps/src/reliable_reader.rs::tests::a_reassembled_key_is_a_dispose_or_a_registration_as_a_data_is`,
 `crates/rtps/src/reliable_reader.rs::tests::a_reassembled_sample_with_the_filtered_flag_is_known_but_not_delivered`
 
@@ -14184,7 +14156,7 @@ and not interpreted by the reader".
 **Repo:** `crates/rtps/src/inline_qos.rs` (`status_info`);
 `crates/rtps/src/reliable_reader.rs` (`classify_change_kind`: D and U only)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_disposed_sets_instance_state`
+**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_disposed_sets_instance_state`
 
 **Status:** `done`
 
@@ -14195,8 +14167,8 @@ disposed the instance of the data-object whose Key appears in the submessage."
 
 **Repo:** `crates/rtps/src/inline_qos.rs` (`status_info::DISPOSED = 0x1`)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dispose_propagates_over_wire_to_reader`,
-`crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_disposed_sets_instance_state`
+**Tests:** `crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_4_2_13_dispose_propagates_over_wire_to_reader`,
+`crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_disposed_sets_instance_state`
 
 **Status:** `done`
 
@@ -14208,8 +14180,8 @@ submessage."
 
 **Repo:** `crates/rtps/src/inline_qos.rs` (`status_info::UNREGISTERED = 0x2`)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::reader_push_lifecycle_unregistered_sets_instance_state`,
-`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::instance_goes_no_writers_when_its_last_writer_disappears`
+**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::dcps_2_2_2_5_1_3_reader_push_lifecycle_unregistered_sets_instance_state`,
+`crates/dcps/tests/lifecycle_wire_e2e.rs::linux::dcps_2_2_2_5_1_3_instance_goes_no_writers_when_its_last_writer_disappears`
 
 **Status:** `done`
 
@@ -14250,7 +14222,7 @@ DDS DataWriter propagates the "register" operation."
 `TYPE_CONSISTENCY_ENFORCEMENT`, `TYPE_INFORMATION`)
 
 **Tests:** `crates/rtps/src/publication_data.rs::tests::issue30_type_identifier_from_standard_type_information`,
-`crates/discovery/tests/vendor_discovery_frames.rs::cyclone_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_8_5_4_4_cyclone_announcements_read_and_write_back`
 
 **Status:** `done`
 
@@ -14432,10 +14404,10 @@ the first four octets of the SerializedPayload".
 (`to_pl_cdr_le`); `crates/rtps/src/participant_message_data.rs` (`to_cdr`);
 `crates/security/src/generic_message.rs` (`encode_generic_message`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
 `crates/rtps/src/participant_data.rs::tests::participant_data_first_4_bytes_are_pl_cdr_le_encapsulation`,
 `crates/rtps/src/participant_message_data.rs::tests::participant_message_data_roundtrip_le`,
-`crates/security-runtime/src/builtin_topics.rs::tests::encode_starts_with_cdr_le_encapsulation`
+`crates/security-runtime/src/builtin_topics.rs::tests::rtps_10_2_encode_starts_with_cdr_le_encapsulation`
 
 **Status:** `done`
 
@@ -14449,9 +14421,9 @@ representation_options; };"
 **Repo:** `crates/dcps/src/runtime.rs` (`user_encap_body`,
 `encap_representation`, `encap_big_endian`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::strip_user_encap_xcdr1_le`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_xcdr2_le`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_rejects_short`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_xcdr1_le`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_xcdr2_le`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_rejects_short`
 
 **Status:** `done`
 
@@ -14465,8 +14437,8 @@ requires."
 **Repo:** `crates/dcps/src/runtime.rs` (`user_encap_body`: the low two bits as
 the count of appended padding octets per DDS-XTypes 1.3 §7.6.3.1.2)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::strip_user_encap_drops_the_padding_the_options_name`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_refuses_padding_the_body_cannot_hold`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_drops_the_padding_the_options_name`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_refuses_padding_the_body_cannot_hold`
 
 **Status:** `done`
 
@@ -14480,8 +14452,8 @@ CDR stream."
 **Repo:** `crates/dcps/src/runtime.rs` (`write_user_sample_pooled`: header and
 a separately encoded body; `user_encap_body`: body from octet 4)
 
-**Tests:** `crates/dcps/src/interop.rs::tests::u64_type_xcdr1_and_xcdr2_alignment_differs`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_xcdr1_le`
+**Tests:** `crates/dcps/src/interop.rs::tests::rtps_10_2_u64_type_xcdr1_and_xcdr2_alignment_differs`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_xcdr1_le`
 
 **Status:** `done`
 
@@ -14539,7 +14511,7 @@ OMG CDR Little Endian."
 `to_pl_cdr_le`)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::participant_data_first_4_bytes_are_pl_cdr_le_encapsulation`,
-`crates/discovery/tests/vendor_discovery_frames.rs::cyclone_announcements_read_and_write_back`
+`crates/discovery/tests/vendor_discovery_frames.rs::rtps_8_5_4_4_cyclone_announcements_read_and_write_back`
 
 **Status:** `done`
 
@@ -14580,7 +14552,7 @@ Table 10.2 below."
 CDR_BE); `crates/security/src/generic_message.rs` (CDR_LE)
 
 **Tests:** `crates/rtps/src/participant_message_data.rs::tests::participant_message_data_roundtrip_le`,
-`crates/security-runtime/src/builtin_topics.rs::tests::encode_starts_with_cdr_le_encapsulation`
+`crates/security-runtime/src/builtin_topics.rs::tests::rtps_10_2_encode_starts_with_cdr_le_encapsulation`
 
 **Status:** `done` — ParticipantMessageData and the messages of the
 DDS-Security endpoints use CDR_LE. The TypeLookup endpoints use CDR2_LE, the
@@ -14604,12 +14576,12 @@ PL_CDR_BE and PL_CDR_LE.
 (`Encoding`, `Encapsulation`), `.../generated/ZdCodec.java` (`ZdCodec.Xcdr1`)
 
 **Tests:** `crates/types/tests/type_lookup_xcdr1.rs` (eight tests, among them
-`a_get_types_request_is_cdr_le_with_its_parameters_as_a_parameter_list` and
-`a_get_types_reply_carries_its_object_in_the_encoding_version_1`),
-`crates/dcps/tests/type_lookup_e2e.rs::{server_handles_inbound_get_types_request_via_dispatch,
-a_get_types_request_in_cdr_le_is_answered, the_setting_xcdr1_answers_in_cdr_le,
-a_request_is_written_in_the_configured_encoding}`,
-`crates/dcps/tests/typelookup_resolution_e2e.rs::a_complete_object_crosses_between_an_xcdr1_and_an_xcdr2_participant`,
+`rtps_10_4_a_get_types_request_is_cdr_le_with_its_parameters_as_a_parameter_list` and
+`rtps_10_4_a_get_types_reply_carries_its_object_in_the_encoding_version_1`),
+`crates/dcps/tests/type_lookup_e2e.rs::{rtps_10_4_server_handles_inbound_get_types_request_via_dispatch,
+rtps_10_4_a_get_types_request_in_cdr_le_is_answered, rtps_10_4_the_setting_xcdr1_answers_in_cdr_le,
+rtps_10_4_a_request_is_written_in_the_configured_encoding}`,
+`crates/dcps/tests/typelookup_resolution_e2e.rs::rtps_10_4_a_complete_object_crosses_between_an_xcdr1_and_an_xcdr2_participant`,
 `crates/java-omgdds/java/src/test/java/org/zerodds/typelookup/TypeLookupEncodingTest.java`
 (five tests), `crates/dcps/tests/java_typelookup_live.rs` (Java asks the Rust
 runtime and the Rust runtime asks Java, over RTPS between two processes, both
@@ -14638,15 +14610,15 @@ sample is read in the encoding its identifier names (CDR_BE/CDR_LE → XCDR1,
 CDR2_BE/CDR2_LE → XCDR2) under either setting; any other identifier is
 dropped and reported as `typelookup.sample.rejected`. The sample ends on a
 four-octet boundary and the options count the padding (XTypes 1.3 §7.6.3.1.2,
-`5e31120999e`). The Java runtime (`crates/java-omgdds`) has the same default
+`38d06cac567`). The Java runtime (`crates/java-omgdds`) has the same default
 and the same setting (property `zerodds.wire.type_lookup_encoding` or the
-same environment variable, `48555aad95f`); its XCDR1 codec is generated from
+same environment variable, `21bbd369efa`); its XCDR1 codec is generated from
 the same unmodified IDL and writes the octets the Rust runtime writes
-(`TypeLookupEncodingTest::aGetTypesRequestIsWrittenInTheEncodingVersion1`,
-`theRustReplyReadsAndIsWrittenBackOctetForOctet`). The expected XCDR1 octets
+(`TypeLookupEncodingTest::xtypes_7_6_3_3_4_a_get_types_request_is_written_in_xcdr1`,
+`xtypes_7_6_3_3_4_a_get_types_reply_in_xcdr1_is_read_and_written_octet_for_octet`). The expected XCDR1 octets
 of the tests are derived from the clauses, not a vendor capture: no measured
 vendor sends this form. Measured (Linux test host,
-`internal/release/evidence/rc7-typelookup-encapsulation`, `ce232e91245`), in
+`internal/release/evidence/rc7-typelookup-encapsulation`, `e954fd7cfe8`), in
 each direction with a type the peer does not know:
 
 | Vendor | sends | reads a CDR_LE request | reads a CDR_LE reply |
@@ -14664,7 +14636,7 @@ ZeroDDS reads it without a guess: the envelope's structure says where it
 ends, and zero octets up to the next four-octet offset are the padding behind
 a submessage (DDSI-RTPS 2.5 §9.4.1), with and without them
 (`runtime::tests::an_opendds_get_types_request_without_its_padding_count_is_read`
-with the captured request, `0e77cf5e96b`). The
+with the captured request, `6224b8ceab5`). The
 runners set nothing for it; every pair runs the default. With CDR2_LE the
 Cyclone cell with the appended member delivers its samples
 (`cyc-answers-x2`: 38), with CDR_LE none (`cyc-answers-x1`).
@@ -14691,7 +14663,7 @@ representation with Little Endian encoding."
 (`ENCAPSULATION_CDR_LE`)
 
 **Tests:** `crates/rtps/src/participant_message_data.rs::tests::participant_message_data_roundtrip_le`,
-`crates/security-runtime/src/builtin_topics.rs::tests::encode_starts_with_cdr_le_encapsulation`
+`crates/security-runtime/src/builtin_topics.rs::tests::rtps_10_2_encode_starts_with_cdr_le_encapsulation`
 
 **Status:** `done`
 
@@ -14741,11 +14713,11 @@ defined in Table 10.3."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — XCDR1, XCDR2 and XML are implemented. Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14757,8 +14729,8 @@ representation with Big Endian encoding."
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap` with
 `big_endian`, `encap_big_endian`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/src/subscriber.rs::tests::cache_materialize_honors_xcdr1_encapsulation_le_and_be`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/src/subscriber.rs::tests::rtps_10_5_cache_materialize_honors_xcdr1_encapsulation_le_and_be`
 
 **Status:** `done`
 
@@ -14770,8 +14742,8 @@ representation with Little Endian encoding."
 **Repo:** `crates/dcps/src/runtime.rs` (`USER_PAYLOAD_ENCAP`,
 `user_payload_encap`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_is_cdr_le`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_xcdr1_le`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_user_payload_encap_is_cdr_le`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_xcdr1_le`
 
 **Status:** `done`
 
@@ -14783,7 +14755,7 @@ representation with Little Endian encoding."
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`: XCDR1 and
 MUTABLE)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** `done`
 
@@ -14795,7 +14767,7 @@ MUTABLE)
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`: XCDR1 and
 MUTABLE)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** `done`
 
@@ -14806,11 +14778,11 @@ representation (version2) with Big Endian encoding."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — CDR2_BE: big endian, even identifier. Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14821,11 +14793,11 @@ representation (version2) with Little Endian encoding."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — CDR2_LE. Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14836,11 +14808,11 @@ CDR representation (version2) for MUTABLE types with Big Endian encoding."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — PL_CDR2_BE. Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14851,11 +14823,11 @@ CDR representation (version2) for MUTABLE types with Little Endian encoding."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — PL_CDR2_LE. Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14866,11 +14838,11 @@ representation (version2) for APPENDABLE types with Big Endian encoding."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — D_CDR_BE. Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14881,11 +14853,11 @@ representation (version2) for APPENDABLE types with Little Endian encoding."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — D_CDR_LE. Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14897,11 +14869,11 @@ representation (version2) for APPENDABLE types with Little Endian encoding."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `encap_in_table`, `user_encap_body`); `wire.encapsulation_ids`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/runtime_config_layering.rs::the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/runtime_config_layering.rs::rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment`
 
 **Status:** `done` — The six identifiers 0x0010 to 0x0015 (even big endian, odd little endian). Both sets of values are read. The default sent is DDS-XTypes 1.3 Table 60, to which the header of Table 10.3 refers and which Cyclone DDS 11.0.1, Fast DDS, OpenDDS 3.34.0 and RTI 7.7.0 send (measured in `tools/wire-capture/frames/*/*.xcdr2.frames`). With `wire.encapsulation_ids: table-39` (environment `ZERODDS_WIRE_ENCAPSULATION_IDS`) ZeroDDS sends the identifiers of Table 39 (§7.4.3.4), whose XCDR2 values are those of Table 10.3 (XML: {0x01, 0x00}). Expected from the vendors: a peer that reads Table 60 only cannot read data with 0x0010 to 0x0015; the setting is for peers that send and expect Table 10.3. Not measured: a run against the vendors with the setting.
 
@@ -14913,11 +14885,11 @@ clause 7.4.4."
 **Repo:** `crates/dcps/src/runtime.rs` (`XML_ENCAP`, `user_payload_encap`, `xml_wire_body`, `xml_sample_as_cdr`);
 `crates/dcps/src/xml_data.rs`; `crates/dcps/src/publisher.rs`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::an_xml_sample_reaches_the_reader_as_its_cdr_body`,
-`crates/dcps/src/runtime.rs::tests::an_xml_sample_that_is_no_document_of_the_type_is_refused`,
-`crates/dcps/src/runtime.rs::tests::an_xml_dispose_carries_the_instance_key`,
-`crates/dcps/src/runtime.rs::tests::an_xml_writer_sends_the_document_of_the_sample`,
-`crates/dcps/src/runtime.rs::tests::a_writer_registered_with_xml_first_is_accepted`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_sample_reaches_the_reader_as_its_cdr_body`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_sample_that_is_no_document_of_the_type_is_refused`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_dispose_carries_the_instance_key`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_writer_sends_the_document_of_the_sample`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_registered_with_xml_first_is_accepted`
 
 **Status:** `done` — a writer whose first DataRepresentation is XML sends the document of the sample under {0x00, 0x04}; a reader reads the sample against its registered type and hands on the XCDR2 body. Not measured: a vendor that sends or reads XML.
 
@@ -14955,7 +14927,7 @@ by an application DataWriter to send Data on the Topic “Square” with type
 
 **Repo:** `crates/dcps/src/runtime.rs` (`user_payload_encap`, `strip_user_encap`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_example_of_10_7_has_the_header_and_body_of_the_spec`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_7_the_example_of_10_7_has_the_header_and_body_of_the_spec`
 
 **Status:** `done` — the CDR_LE header ({0x00, 0x01}, options 0) and the 24-octet body of the example ("BLUE", 34, 100, 24) are read as the spec prints them; the header for an XCDR1 final writer is the one of the spec.
 
@@ -14976,8 +14948,25 @@ https://www.omg.org/spec/DDS-SECURITY".
 
 ## Audit-Status
 
-978 done / 3 partial / 2 open / 142 n/a (informative) / 0 n/a (rejected).
+978 done / 3 partial / 15 open / 2 blocked / 127 n/a (informative).
 
-Test run: to be added on the Linux test host.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document ddsi-rtps-2.5.md`):
 
-Open items and decision records: `ddsi-rtps-2.5.open.en.md`.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 189 tests green.
+* `cargo nextest run --profile merge -p zerodds-discovery --all-targets` (job `merge-rust-discovery`) — 39 tests green.
+* `cargo nextest run --profile merge -p zerodds-durability-service --all-targets` (job `merge-rust-durability-service`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-qos --all-targets` (job `merge-rust-qos`) — 10 tests green.
+* `cargo nextest run --profile merge -p zerodds-routing-service --all-targets` (job `merge-rust-routing-service`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 617 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-rtps --all-targets` (job `merge-rust-security-rtps`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-runtime --all-targets` (job `merge-rust-security-runtime`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-transport-shm --all-targets` (job `merge-rust-transport-shm`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-transport-tcp --all-targets` (job `merge-rust-transport-tcp`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-transport-udp --all-targets` (job `merge-rust-transport-udp`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-transport-uds --all-targets` (job `merge-rust-transport-uds`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-types --all-targets` (job `merge-rust-types`) — 12 tests green.
+* job `vendor-live-dcps` — 1 test green.
+
+883 cited tests green, 0 not green.
+
+Open items: `ddsi-rtps-2.5.open.en.md`.

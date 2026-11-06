@@ -189,15 +189,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn opcode_round_trip_via_bits() {
-        for v in 0..16u8 {
-            let op = Opcode::from_bits(v);
+    fn ws_5_2_the_opcodes_are_the_numbers_of_the_rfc() {
+        for (op, v) in [
+            (Opcode::Continuation, 0x0),
+            (Opcode::Text, 0x1),
+            (Opcode::Binary, 0x2),
+            (Opcode::Close, 0x8),
+            (Opcode::Ping, 0x9),
+            (Opcode::Pong, 0xA),
+        ] {
             assert_eq!(op.to_bits(), v);
+            assert_eq!(Opcode::from_bits(v), op);
+        }
+        // 0x3-0x7 and 0xB-0xF are reserved and kept as they came.
+        for v in [0x3, 0x7, 0xB, 0xF] {
+            assert_eq!(Opcode::from_bits(v), Opcode::Reserved(v));
+            assert_eq!(Opcode::Reserved(v).to_bits(), v);
         }
     }
 
     #[test]
-    fn opcode_well_known_values_match_spec() {
+    fn ws_5_2_opcode_well_known_values_match_spec() {
         // RFC 6455 §5.2.
         assert_eq!(Opcode::Continuation.to_bits(), 0x0);
         assert_eq!(Opcode::Text.to_bits(), 0x1);
@@ -208,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn opcode_is_control_predicate() {
+    fn ws_5_2_opcode_is_control_predicate() {
         // Spec §5.5 — control opcodes 0x8-0xF.
         assert!(Opcode::Close.is_control());
         assert!(Opcode::Ping.is_control());
@@ -223,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn text_frame_constructor_sets_fin_and_opcode() {
+    fn ws_5_6_text_frame_constructor_sets_fin_and_opcode() {
         let f = Frame::text("hello");
         assert!(f.fin);
         assert_eq!(f.opcode, Opcode::Text);
@@ -232,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn data_frame_opcodes_have_msb_zero_per_spec_5_6() {
+    fn ws_5_6_data_frame_opcodes_have_msb_zero_per_spec_5_6() {
         // Spec §5.6: "Data frames (e.g., non-control frames) are
         // identified by opcodes where the most significant bit of the
         // opcode is 0." Text is 0x1, Binary is 0x2.
@@ -246,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn text_and_binary_data_frames_carry_their_payload_unchanged() {
+    fn ws_5_6_text_and_binary_data_frames_carry_their_payload_unchanged() {
         // Spec §5.6: a text frame's payload is UTF-8 text, a binary
         // frame's payload is arbitrary binary data. Both travel as
         // the frame payload with no transformation.
@@ -266,14 +278,14 @@ mod tests {
     }
 
     #[test]
-    fn close_frame_includes_status_code_in_be_payload() {
+    fn ws_5_5_1_close_frame_includes_status_code_in_be_payload() {
         // Spec §7.4 — status code as 16-bit BE.
         let f = Frame::close(1000, "");
         assert_eq!(&f.payload[..2], &1000u16.to_be_bytes());
     }
 
     #[test]
-    fn close_frame_with_reason_carries_utf8_bytes() {
+    fn ws_5_5_1_close_frame_with_reason_carries_utf8_bytes() {
         let f = Frame::close(1001, "Going Away");
         assert_eq!(&f.payload[..2], &1001u16.to_be_bytes());
         assert_eq!(&f.payload[2..], b"Going Away");

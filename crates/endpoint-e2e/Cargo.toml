@@ -16,7 +16,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # The wire codec. `crates/cdr` was demolished with the IDL transplant
-# (d045e43ea86); `BufferReader`/`BufferWriter` are `Reader`/`Writer` here.
+# (fa2ed8b0a9c); `BufferReader`/`BufferWriter` are `Reader`/`Writer` here.
 zerodds-wire = { path = "../wire" }
 zerodds-xrce = { path = "../xrce" }
 # The IDL frontend and the one code generator. The fifteen per-language

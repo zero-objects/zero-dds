@@ -60,7 +60,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void uint32HeldInALongKeepsTheLogicalValue() {
+    void javapsm_8_4_a_uint32_held_in_a_long_keeps_the_logical_value() {
         Unsigned32 v = new Unsigned32();
         v.value = 4_000_000_000L; // 0xEE6B2800
         assertArrayEquals(bytes(0x00, 0x28, 0x6b, 0xee), encode(v));
@@ -77,7 +77,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void uint32HeldInAnIntKeepsTheBitPattern() {
+    void javapsm_8_4_a_uint32_held_in_an_int_keeps_the_bit_pattern() {
         Unsigned32Pattern v = new Unsigned32Pattern();
         v.value = -1;
         assertArrayEquals(bytes(0xff, 0xff, 0xff, 0xff), encode(v));
@@ -92,7 +92,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void uint16IntKeepsTheValueAndShortTheBitPattern() {
+    void javapsm_8_4_a_uint16_in_an_int_keeps_the_value_and_in_a_short_the_bit_pattern() {
         Unsigned16 v = new Unsigned16();
         v.wide = 65535;
         v.narrow = -2;
@@ -112,7 +112,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void uint64TakesABigIntegerOrALong() {
+    void javapsm_8_4_a_uint64_takes_a_big_integer_or_a_long() {
         Unsigned64 v = new Unsigned64();
         v.big = new BigInteger("18446744073709551615");
         v.pattern = -1L;
@@ -132,7 +132,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void float128HeldInADouble() {
+    void javapsm_8_4_a_float128_held_in_a_double_is_binary128() {
         Quad v = new Quad();
         v.value = 1.0;
         // binary128 1.0: sign 0, exponent 0x3fff, fraction 0 -- little-endian.
@@ -149,7 +149,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void char32IsAFourOctetCodePoint() {
+    void javapsm_8_4_a_char32_is_a_four_octet_code_point() {
         Wide32 v = new Wide32();
         v.codePoint = 0x1F600;
         assertArrayEquals(bytes(0x00, 0xf6, 0x01, 0x00), encode(v));
@@ -162,7 +162,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aKindTable82DoesNotListForTheTypeIsRefused() {
+    void javapsm_8_4_a_kind_table_8_2_does_not_list_for_the_type_is_refused() {
         XcdrException e = assertThrows(XcdrException.class,
                 () -> ReflectionTypeSupport.of(WrongKind.class));
         assertEquals(true, e.getMessage().contains("INT_32_TYPE"));
@@ -175,7 +175,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aNarrowStringIsTruncatedToItsLowOctetByDefault() {
+    void javapsm_8_5_1_a_narrow_string_is_truncated_to_its_low_octet_by_default() {
         // DDS-Java-PSM 1.0 8.5.1: "each Java character shall be truncated to its
         // least-significant byte"
         Text t = new Text();
@@ -188,7 +188,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void theUtf8SettingWritesTheFormOfXTypes13() {
+    void xtypes_7_4_1_1_2_the_utf8_setting_writes_a_string_as_utf8() {
         System.setProperty(NarrowStrings.PROPERTY, "utf8");
         Text t = new Text();
         t.value = "été";
@@ -204,22 +204,13 @@ class SerializeAsTest {
         assertThrows(XcdrException.class, () -> encode(t));
     }
 
-    @Test
-    void theTwoFormsAgreeOnTheCharactersBelowU0080() {
-        Text t = new Text();
-        t.value = "plain ASCII";
-        byte[] truncated = encode(t);
-        System.setProperty(NarrowStrings.PROPERTY, "utf8");
-        assertArrayEquals(truncated, encode(t));
-    }
-
     public static final class WideText {
         @SerializeAs(value = TypeKind.STRING_TYPE, collectionElementKind = TypeKind.CHAR_32_TYPE)
         public String value;
     }
 
     @Test
-    void aWideStringIsMarkedWithSerializeAs() {
+    void javapsm_8_5_1_a_wide_string_is_marked_with_serialize_as() {
         WideText t = new WideText();
         t.value = "été";
         // DDS-Java-PSM 1.0 8.5.1: one 32-bit character per code point
@@ -241,7 +232,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aBoundedStringRefusesALongerValue() {
+    void javapsm_8_2_a_bounded_string_refuses_a_longer_value() {
         BoundedText t = new BoundedText();
         t.value = "abc";
         assertEquals("abc", roundTrip(t).value);
@@ -260,7 +251,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void anArrayHasNoLengthAndASequenceMayNameItsElementKind() {
+    void javapsm_8_5_3_an_array_has_no_length_and_a_sequence_may_name_its_element_kind() {
         Collections c = new Collections();
         c.fixed = new int[] {1, 2, 3};
         c.narrow.add(1);
@@ -287,7 +278,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void anArrayOfSeveralDimensionsIsWrittenRowMajor() {
+    void javapsm_8_5_3_an_array_of_several_dimensions_is_written_row_major() {
         Matrix m = new Matrix();
         m.cells = new int[][] {{1, 2, 3}, {4, 5, 6}};
         assertArrayEquals(bytes(1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0, 5, 0, 0, 0,
@@ -308,7 +299,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aUnionIsItsDiscriminatorAndTheSelectedMember() {
+    void javapsm_8_6_2_a_union_is_its_discriminator_and_the_selected_member() {
         Choice c = new Choice();
         c.kind = 2;
         c.text = "hi";
@@ -326,7 +317,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aDiscriminatorThatSelectsNoMemberIsWrittenAlone() {
+    void javapsm_8_6_2_a_discriminator_that_selects_no_member_is_written_alone() {
         Choice c = new Choice();
         c.kind = 9;
         c.number = 5; // not selected, not written
@@ -349,11 +340,19 @@ class SerializeAsTest {
     }
 
     @Test
-    void aMutableUnionCarriesItsDiscriminatorAsMemberZero() {
+    void xtypes_7_4_3_5_3_a_mutable_union_carries_its_discriminator_as_member_zero_and_the_cases_from_one() {
         MutableChoice c = new MutableChoice();
         c.kind = 2;
         c.text = "x";
-        MutableChoice back = roundTrip(c);
+        // The DHEADER 26; the discriminator with the member ID 0 and the must-understand flag
+        // (0xC0000000), LC 4, NEXTINT 4, the value 2; the case text, the second case, with the
+        // member ID 2 (the cases follow the discriminator from 1, XTypes 1.3 §7.3.1.2.1.1),
+        // NEXTINT 6, the string "x".
+        byte[] expected = bytes(0x1A, 0, 0, 0,
+                0, 0, 0, 0xC0, 4, 0, 0, 0, 2, 0, 0, 0,
+                2, 0, 0, 0x40, 6, 0, 0, 0, 2, 0, 0, 0, 'x', 0);
+        assertArrayEquals(expected, encode(c));
+        MutableChoice back = ReflectionTypeSupport.of(MutableChoice.class).decode(expected);
         assertEquals(2, back.kind);
         assertEquals("x", back.text);
     }
@@ -395,7 +394,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aMisplacedUnionAnnotationIsRefused() {
+    void javapsm_8_6_2_a_misplaced_union_annotation_is_refused() {
         for (Class<?> bad : new Class<?>[] {NotAUnion.class, NoDiscriminator.class,
                 TwoDiscriminators.class, UnmarkedMember.class, DuplicateLabel.class}) {
             assertThrows(XcdrException.class, () -> ReflectionTypeSupport.of(bad), bad.getName());
@@ -419,7 +418,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void anEnumSetMarkedBitSetIsAMaskWithTheBitBoundOfItsEnumeration() {
+    void javapsm_8_7_an_enum_set_marked_bit_set_is_a_mask_with_the_bit_bound_of_its_enumeration() {
         Flags v = new Flags();
         v.set.add(Flag.READ);
         v.set.add(Flag.EXEC);
@@ -439,7 +438,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void theDefaultBitBoundIs32AndABitSetFieldNamesItsEnumeration() {
+    void javapsm_8_7_the_default_bit_bound_is_32_and_a_bit_set_field_names_its_enumeration() {
         WideFlags v = new WideFlags();
         v.bits.set(1);
         v.bits.set(3);
@@ -470,15 +469,15 @@ class SerializeAsTest {
     }
 
     @Test
-    void aMisplacedBitSetAnnotationIsRefused() {
+    void javapsm_8_7_a_misplaced_bit_set_annotation_is_refused() {
         for (Class<?> bad : new Class<?>[] {UnannotatedBitSetMember.class, NotABitSetEnum.class,
-                BitSetOnString.class, UnnamedBitSet.class}) {
+                BitSetOnString.class, UnnamedBitSet.class, PlainList.class}) {
             assertThrows(XcdrException.class, () -> ReflectionTypeSupport.of(bad), bad.getName());
         }
     }
 
     @Test
-    void aBitWithoutAConstantIsRefusedOnDecode() {
+    void javapsm_8_7_a_bit_without_a_constant_is_refused_on_decode() {
         ReflectionTypeSupport<Flags> ts = ReflectionTypeSupport.of(Flags.class);
         assertThrows(XcdrException.class, () -> ts.decode(bytes(0x08)));
     }
@@ -496,7 +495,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aliasAndAnnotationAreNotKindsOfAMemberAndTheMessageSaysWhy() {
+    void javapsm_8_9_alias_and_annotation_are_not_kinds_of_a_member() {
         XcdrException alias = assertThrows(XcdrException.class,
                 () -> ReflectionTypeSupport.of(AliasMember.class));
         assertTrue(alias.getMessage().contains("ALIAS_TYPE"));
@@ -513,7 +512,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aCollectionOfBitSetValuesIsASequenceOfBitSets() {
+    void javapsm_8_7_a_collection_of_bit_set_values_is_a_sequence_of_bit_sets() {
         FlagList v = new FlagList();
         v.flags.add(Flag.READ);
         v.flags.add(Flag.EXEC);
@@ -531,11 +530,6 @@ class SerializeAsTest {
         public List<Plain> flags;
     }
 
-    @Test
-    void aCollectionOfNonBitSetValuesMarkedBitSetIsRefused() {
-        assertThrows(XcdrException.class, () -> ReflectionTypeSupport.of(PlainList.class));
-    }
-
     @Extensibility(Extensibility.Kind.MUTABLE_EXTENSIBILITY)
     public static final class WithMemberId {
         @org.omg.dds.type.ID(5)
@@ -543,7 +537,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void theIdAnnotationOfThePsmGivesTheMemberIdOfAMutableMember() {
+    void javapsm_8_3_the_id_annotation_gives_the_member_id_of_a_mutable_member() {
         // DHEADER 12; EMHEADER LC=4 (NEXTINT) and member id 5; NEXTINT 4; the value
         assertArrayEquals(bytes(12, 0, 0, 0, 5, 0, 0, 0x40, 4, 0, 0, 0, 1, 0, 0, 0),
                 encode(new WithMemberId()));
@@ -556,7 +550,7 @@ class SerializeAsTest {
     }
 
     @Test
-    void aKeyOfUnboundedSizeHashesWithMd5EvenWhenTheHolderIsShort() {
+    void rtps_9_6_3_8_a_key_of_unbounded_size_hashes_with_md5_even_when_the_holder_is_short() {
         // RTPS 2.5 §9.6.3.8 step 5: the maximum serialized size of the key holder decides.
         // The holder is the big-endian string: length 3 (with the NUL), 'a', 'b', NUL.
         byte[] hash = ReflectionTypeSupport.of(StringKeyed.class).keyHash(new StringKeyed());

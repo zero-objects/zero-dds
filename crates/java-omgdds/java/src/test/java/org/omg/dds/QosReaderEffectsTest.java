@@ -65,7 +65,7 @@ class QosReaderEffectsTest {
     // --- LIFESPAN ----------------------------------------------------------------------
 
     @Test
-    void aSampleWhoseLifespanHasPassedWhenItArrivesIsNotDelivered() throws Exception {
+    void javapsm_7_3_5_1_a_sample_whose_lifespan_has_passed_when_it_arrives_is_not_delivered() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer()
@@ -79,7 +79,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void aStoredSampleDisappearsWhenItsLifespanPasses() throws Exception {
+    void javapsm_7_3_5_1_a_stored_sample_disappears_when_its_lifespan_passes() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer()
@@ -91,7 +91,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void anInfiniteLifespanNeverExpires() throws Exception {
+    void javapsm_7_3_5_1_an_infinite_lifespan_never_expires() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -101,7 +101,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void aLateJoinerIsNotReplayedAnExpiredSampleOfATransientLocalWriter() throws Exception {
+    void javapsm_7_3_5_1_a_late_joiner_is_not_replayed_an_expired_sample_of_a_transient_local_writer() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer()
                     .withPolicy(Qos.pf().Durability().withTransientLocal())
@@ -124,7 +124,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void aReaderWithMinimumSeparationTakesOneSamplePerInstanceInThatTime() throws Exception {
+    void javapsm_7_3_5_1_a_reader_with_minimum_separation_takes_one_sample_per_instance_in_that_time() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(separated(3_600_000L));
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -144,7 +144,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void theNewestSampleHeldBackIsDeliveredWhenTheSeparationHasPassed() throws Exception {
+    void javapsm_7_3_5_1_the_newest_sample_held_back_is_delivered_when_the_separation_has_passed() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(separated(500L));
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -164,7 +164,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void withoutMinimumSeparationEverySampleIsDelivered() throws Exception {
+    void javapsm_7_3_5_1_without_minimum_separation_every_sample_is_delivered() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -178,7 +178,7 @@ class QosReaderEffectsTest {
     // --- DESTINATION_ORDER -------------------------------------------------------------
 
     @Test
-    void bySourceTimestampASampleOlderThanTheNewestOfTheInstanceIsOrderedBeforeIt() throws Exception {
+    void javapsm_7_3_5_1_by_source_timestamp_a_sample_older_than_the_newest_of_the_instance_is_ordered_before_it() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll()
                     .withPolicy(Qos.pf().DestinationOrder().withSourceTimestamp()));
@@ -197,7 +197,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void byReceptionTimestampTheSourceTimestampDoesNotDecide() throws Exception {
+    void javapsm_7_3_5_1_by_reception_timestamp_the_source_timestamp_does_not_decide() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -217,20 +217,20 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void byDefaultAnInstanceWithoutWritersKeepsItsSamplesUntilTheyAreTaken() throws Exception {
+    void javapsm_7_3_5_1_by_default_an_instance_without_writers_keeps_its_samples_until_they_are_taken() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(autodispose(false));
             writer.write(new QosFixtures.Item(1, 1));
             Qos.unregister(writer, new QosFixtures.Item(1, 0));
-            Thread.sleep(100);
-            // the sample and the notice of the state change
+            // a purge runs at the unregister (a zero delay purges here, see below); the
+            // default delay is infinite: the sample and the notice of the state change stay
             assertEquals(2, Qos.take(reader).size());
         }
     }
 
     @Test
-    void aZeroDelayPurgesTheInstanceWithoutWritersWithItsUntakenSamples() throws Exception {
+    void javapsm_7_3_5_1_a_zero_delay_purges_the_instance_without_writers_with_its_untaken_samples() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(purging(0, 100_000));
             DataWriter<QosFixtures.Item> writer = rig.writer(autodispose(false));
@@ -241,7 +241,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void aZeroDelayPurgesTheSamplesOfADisposedInstance() throws Exception {
+    void javapsm_7_3_5_1_a_zero_delay_purges_the_samples_of_a_disposed_instance() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(purging(100_000, 0));
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -252,7 +252,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void theDelayOfTheOtherStateDoesNotPurge() throws Exception {
+    void javapsm_7_3_5_1_the_delay_of_the_other_state_does_not_purge() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             // only the no-writers delay is short: a disposed instance keeps its samples
             DataReader<QosFixtures.Item> reader = rig.reader(purging(0, 100_000));
@@ -264,7 +264,7 @@ class QosReaderEffectsTest {
     }
 
     @Test
-    void aFiniteDelayPurgesWhenItHasPassedWithoutAnyAccess() throws Exception {
+    void javapsm_7_3_5_1_a_finite_delay_purges_when_it_has_passed_without_any_access() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(purging(2, 100_000));
             DataWriter<QosFixtures.Item> writer = rig.writer(autodispose(false));

@@ -112,12 +112,50 @@ Implementation:
 
 **Tests:** `crates/corba-cos-transactions/src/recovery.rs::{durable_commit_logs_decision_then_completion, durable_rollback_decision_logged, recovery_completes_in_doubt_commit, recovery_completes_in_doubt_rollback, replay_completion_returns_logged_decision, replay_completion_presumed_abort_for_unknown, preparing_state_is_presumed_abort, single_resource_durable_one_phase}`.
 
-**Status:** done
+**Status:** partial — Force-Write der Entscheidung, Recovery und presumed-abort sind gebaut und gegen `InMemoryLog` geprüft; ein Log, das einen Prozessabsturz übersteht, fehlt (A.2.1).
+
+### A.2.1 Persistentes Transaktions- und Heuristik-Log
+
+**Spec:** Nicht-Ziele — „Recoverable 2PC with a persistent log (recovery after a crash)“; Annex A — „Persistent heuristic logging is a non-goal“.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `TransactionLog` hat nur die Implementierung `InMemoryLog` (`crates/corba-cos-transactions/src/recovery.rs`); nach einem Absturz ist das Log leer.
+
+## Nicht-Ziele der Spec
+
+### Nicht-Ziel — verschachtelte Transaktionen
+
+**Spec:** Nicht-Ziele — „Nested transactions with sub-coordinator federation — the `PropagationContext` carries `parents`, but the sub-transaction semantics (§OTS 10.4) are only structural in v1.0“.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `PropagationContext.parents` wird kodiert und dekodiert (`crates/corba-cos-transactions/src/propagation.rs`); Sub-Coordinator, Sub-Transaktions-Commit und -Rollback fehlen.
+
+### Nicht-Ziel — Coordinator/Terminator-Aufruf über GIOP
+
+**Spec:** Nicht-Ziele — „Live coordinator/terminator object ref callback over GIOP (distributed 2PC over real IORs) — the `*_ior` fields are carried (nil for a flat tx)“.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — die `*_ior`-Felder werden übertragen und sind bei einer flachen Transaktion nil; ein entfernter Teilnehmer kann Coordinator und Terminator nicht über GIOP aufrufen.
 
 ---
 
 ## Audit-Status
 
-10 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+9 done / 1 partial / 3 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-corba-cos-transactions` — 30 Unit + 3 `ots_distributed` + 3 `jacorb_live_capture` grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-corba-cos-transactions-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-corba-cos-transactions --all-targets` (Job `merge-rust-corba-cos-transactions`) — 31 Tests grün.
+
+31 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `zerodds-corba-cos-transactions-1.0.open.md`.

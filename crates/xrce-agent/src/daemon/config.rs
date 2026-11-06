@@ -846,7 +846,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_config_has_one_udp_listener_on_2018() {
+    fn xrce_11_2_2_default_config_has_one_udp_listener_on_2018() {
         let cfg = DaemonConfig::default();
         assert_eq!(
             cfg.listeners,
@@ -928,7 +928,7 @@ mod tests {
     }
 
     #[test]
-    fn a_listener_can_be_written_as_one_string() {
+    fn xrce_11_2_2_a_listener_can_be_written_as_one_string() {
         let cfg = DaemonConfig::load_from_str(
             "listeners:\n  - udp:127.0.0.1:2019\n  - tcp:0.0.0.0:2020\n  - serial:/dev/ttyUSB0\n",
         )
@@ -992,7 +992,7 @@ mod tests {
     }
 
     #[test]
-    fn a_create_client_for_the_same_session_can_restart_the_streams() {
+    fn xrce_7_8_2_1_a_create_client_for_the_same_session_can_restart_the_streams() {
         assert!(!DaemonConfig::default().restart_on_same_session);
         let cfg = DaemonConfig::load_from_str("same_session_create_client: restart\n").unwrap();
         assert!(cfg.restart_on_same_session);
@@ -1002,7 +1002,7 @@ mod tests {
     }
 
     #[test]
-    fn the_discovery_group_can_be_set() {
+    fn xrce_11_2_4_the_discovery_group_can_be_set() {
         let default = DaemonConfig::default();
         assert_eq!(
             default.discovery_address,
@@ -1021,7 +1021,7 @@ mod tests {
     }
 
     #[test]
-    fn the_no_client_threshold_can_be_set() {
+    fn xrce_7_8_1_the_no_client_threshold_can_be_set() {
         assert_eq!(DaemonConfig::default().no_client_threshold, 16);
         let cfg = DaemonConfig::load_from_str("no_client_threshold: 3\n").unwrap();
         assert_eq!(cfg.no_client_threshold, 3);
@@ -1029,7 +1029,7 @@ mod tests {
     }
 
     #[test]
-    fn the_reply_to_delete_client_can_be_set() {
+    fn xrce_8_5_the_reply_to_delete_client_can_be_set() {
         assert!(!DaemonConfig::default().delete_client_reply_is_status_agent);
         let cfg = DaemonConfig::load_from_str("delete_client_reply: status_agent\n").unwrap();
         assert!(cfg.delete_client_reply_is_status_agent);
@@ -1039,7 +1039,7 @@ mod tests {
     }
 
     #[test]
-    fn the_payload_of_status_agent_can_be_set() {
+    fn xrce_8_3_5_5_the_payload_of_status_agent_can_be_set() {
         assert!(!DaemonConfig::default().status_agent_with_result_status);
         let cfg = DaemonConfig::load_from_str("status_agent: with_result_status\n").unwrap();
         assert!(cfg.status_agent_with_result_status);
@@ -1049,7 +1049,7 @@ mod tests {
     }
 
     #[test]
-    fn the_unit_of_max_elapsed_time_can_be_set() {
+    fn xrce_7_8_5_1_the_unit_of_max_elapsed_time_can_be_set() {
         assert!(!DaemonConfig::default().max_elapsed_time_in_milliseconds);
         let cfg = DaemonConfig::load_from_str("max_elapsed_time_unit: milliseconds\n").unwrap();
         assert!(cfg.max_elapsed_time_in_milliseconds);
@@ -1059,7 +1059,7 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_qos_is_refused_unless_ignoring_is_named() {
+    fn xrce_7_1_unsupported_qos_is_refused_unless_ignoring_is_named() {
         assert!(!DaemonConfig::default().ignore_unsupported_qos);
         let cfg = DaemonConfig::load_from_str("unsupported_qos: ignore\n").unwrap();
         assert!(cfg.ignore_unsupported_qos);
@@ -1083,7 +1083,7 @@ mod tests {
     }
 
     #[test]
-    fn the_representation_formats_can_be_widened() {
+    fn xrce_7_7_3_1_the_representation_formats_can_be_widened() {
         assert!(!DaemonConfig::default().allow_any_representation_format);
         let cfg = DaemonConfig::load_from_str("representation_formats: any\n").unwrap();
         assert!(cfg.allow_any_representation_format);
@@ -1093,7 +1093,7 @@ mod tests {
     }
 
     #[test]
-    fn the_form_of_the_representations_can_be_set() {
+    fn xrce_7_8_2_1_the_form_of_the_representations_can_be_set() {
         use zerodds_xrce::encoding::RepresentationTimestamps;
         assert_eq!(
             DaemonConfig::default().representation_timestamps,
@@ -1123,7 +1123,7 @@ mod tests {
     }
 
     #[test]
-    fn the_extensibility_of_unannotated_types_can_be_set() {
+    fn xrce_annex_a_the_extensibility_of_unannotated_types_can_be_set() {
         use zerodds_xrce::encoding::UnannotatedTypes;
         assert_eq!(
             DaemonConfig::default().unannotated_types,
@@ -1137,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn client_applications_are_read() {
+    fn xrce_8_4_2_client_applications_are_read() {
         let cfg = DaemonConfig::load_from_str(
             "client_applications:\n  - client: 0xAABBCCDD\n    application: \"Apps::App\"\n",
         )
@@ -1157,7 +1157,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_topic_types_are_refused_unless_forwarding_is_named() {
+    fn xrce_7_7_3_7_3_unknown_topic_types_are_refused_unless_forwarding_is_named() {
         assert!(!DaemonConfig::default().forward_unknown_topic_types);
         let cfg = DaemonConfig::load_from_str("unknown_topic_types: forward\n").unwrap();
         assert!(cfg.forward_unknown_topic_types);

@@ -7,22 +7,6 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FastReliability {
-    BestEffort,
-    Reliable,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum FastDurability {
-    Volatile,
-    TransientLocal,
-}
-#[derive(Debug, Clone, Copy)]
-pub struct FastQos {
-    pub reliability: FastReliability,
-    pub durability: FastDurability,
-}
-
 pub fn require_or_skip(label: &str) -> bool {
     if std::env::var("INTEROP_REQUIRE").as_deref() == Ok("1")
         || std::env::var("INTEROP_HOST_AVAILABLE").as_deref() == Ok("1")
@@ -78,35 +62,6 @@ impl Drop for VendorChild {
     }
 }
 
-fn start_fastdds(mode: &str, topic: &str, domain: u32, qos: &FastQos) -> io::Result<VendorChild> {
-    let binary = std::env::var_os("FASTDDS_SHAPES").ok_or_else(|| {
-        io::Error::new(
-            io::ErrorKind::NotFound,
-            "FASTDDS_SHAPES must name the built local vendor client",
-        )
-    })?;
-    let mut command = Command::new(binary);
-    command.args([
-        mode,
-        topic,
-        &domain.to_string(),
-        match qos.reliability {
-            FastReliability::BestEffort => "besteffort",
-            FastReliability::Reliable => "reliable",
-        },
-        match qos.durability {
-            FastDurability::Volatile => "volatile",
-            FastDurability::TransientLocal => "transient_local",
-        },
-    ]);
-    VendorChild::spawn(&format!("fastdds-{mode}-{domain}-{topic}"), &mut command)
-}
-pub fn start_fastdds_pub(topic: &str, domain: u32, qos: &FastQos) -> io::Result<VendorChild> {
-    start_fastdds("pub", topic, domain, qos)
-}
-pub fn start_fastdds_sub(topic: &str, domain: u32, qos: &FastQos) -> io::Result<VendorChild> {
-    start_fastdds("sub", topic, domain, qos)
-}
 /// A Cyclone reader through the `cyclonedds` Python binding: `script` is
 /// run with `python3` (or `PYTHON`) and the given arguments; what it
 /// prints goes to the child's log.

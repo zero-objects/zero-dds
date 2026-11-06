@@ -116,11 +116,11 @@ fn retarget(members: &mut Vec<java::Member>, in_spec_scope: &[&str], depth: usiz
 /// The runtime's class in place of the declaration of one of the two
 /// headers.
 fn runtime_header(type_: &mut java::Type) {
-    if let java::Type::Named { path, .. } = type_ {
-        if let Some(leaf) = header_leaf(path) {
-            let runtime = Path::new(&["org", "omg", "dds", "rpc", leaf]);
-            *type_ = java::Type::named(runtime);
-        }
+    if let java::Type::Named { path, .. } = type_
+        && let Some(leaf) = header_leaf(path)
+    {
+        let runtime = Path::new(&["org", "omg", "dds", "rpc", leaf]);
+        *type_ = java::Type::named(runtime);
     }
 }
 

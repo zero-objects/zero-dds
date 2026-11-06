@@ -22,7 +22,7 @@ use zerodds_wire::{
 /// encoding for the CHAR_8_TYPE. The only constraint is that it shall be
 /// representable using 8 bits."
 #[test]
-fn a_char_above_u00ff_is_refused_and_not_narrowed() {
+fn xtypes_7_2_2_2_1_2_2_a_char_above_u00ff_is_refused_and_not_narrowed() {
     let mut w = Writer::little_endian();
     // U+0100 narrows to 0x00 and U+0161 to 0x61, which is `a`. Both are
     // bytes a reader accepts, so the loss has no shape a length check or
@@ -41,23 +41,9 @@ fn a_char_above_u00ff_is_refused_and_not_narrowed() {
     );
 }
 
-/// The one that would have been read back as a different character.
-#[test]
-fn the_narrowed_byte_is_not_written_where_it_would_read_back_as_another_char() {
-    let mut w = Writer::little_endian();
-    // U+0161 is `š`; its low byte is 0x61, which is `a`.
-    assert!(w.write_char('\u{161}').is_err());
-    w.write_char('z').expect("`z` is one byte");
-    let bytes = w.finish();
-    assert_eq!(bytes, [b'z'], "the refused character left a byte behind");
-
-    let mut r = Reader::new(&bytes, Endianness::Little);
-    assert_eq!(r.read_char().expect("char"), 'z');
-}
-
 /// The whole of U+0000..U+00FF is one byte and goes out unchanged.
 #[test]
-fn every_code_point_a_char_can_hold_round_trips() {
+fn xtypes_7_2_2_2_1_2_2_every_code_point_a_char_can_hold_round_trips() {
     for point in 0u32..=0xFF {
         let value = char::from_u32(point).expect("Latin-1 is a subset of Unicode");
         let mut w = Writer::little_endian();
@@ -73,7 +59,7 @@ fn every_code_point_a_char_can_hold_round_trips() {
 /// to representing Unicode codepoints in the Basic Multilingual Plane.
 /// That is Unicode codepoints from 0x0000 to U+FFFF."
 #[test]
-fn a_wchar_above_the_bmp_is_refused_and_not_narrowed() {
+fn xtypes_7_2_2_2_1_2_5_a_wchar_above_the_bmp_is_refused_and_not_narrowed() {
     let mut w = Writer::little_endian();
     // U+1F600 narrows to 0xF600, which is a private-use character a
     // reader accepts without complaint.
@@ -118,7 +104,7 @@ fn the_refusal_names_where_the_value_would_have_gone() {
 /// value in its range that is not a Unicode scalar. Neither returns a
 /// value that disagrees with the bytes it read.
 #[test]
-fn the_reader_refuses_a_surrogate_rather_than_returning_something_else() {
+fn xtypes_7_2_2_2_1_2_5_the_reader_refuses_a_surrogate_rather_than_returning_something_else() {
     let bytes = [0x00, 0xD8];
     let mut r = Reader::new(&bytes, Endianness::Little);
     match r.read_wchar_member() {

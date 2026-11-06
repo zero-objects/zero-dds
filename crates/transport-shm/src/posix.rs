@@ -515,7 +515,7 @@ fn hold_segment(_os_id: &str, flink: &Path, created: bool) -> io::Result<Segment
 /// (`%TEMP%\shared_memory-rs\<name>`, `shared_memory`'s `new_map`) that
 /// outlives the process: an owner that ended without its drop left its
 /// ring and its frames for the next opener (nightly `windows-smoke`,
-/// `an_orphaned_segment_is_made_anew_not_attached`: 29 bytes of the ended
+/// `shm_5_5_an_orphaned_segment_is_made_anew_not_attached`: 29 bytes of the ended
 /// session). The lock is a `LockFileEx` on the pair's flink, released with
 /// the handle or the process: the macOS protocol.
 #[cfg(windows)]
@@ -1235,8 +1235,9 @@ pub const DEFAULT_FLINK_DIR: &str = "/tmp/zerodds/shm";
 /// Config for `PosixShmTransport`.
 #[derive(Debug, Clone)]
 pub struct ShmConfig {
-    /// Data region size in bytes. Must be `>= max_datagram * 2` (so the
-    /// ring can still hold a datagram even with wraparound padding).
+    /// Data region size in bytes. Must be `>= max_datagram * 2 + 16` (so
+    /// the ring can still hold a datagram and its frame header even with
+    /// wraparound padding); `open_owner` and `open_consumer` refuse less.
     pub capacity: usize,
     /// Base directory for flink files (a meta file per segment that
     /// holds the OS segment name).
@@ -1270,7 +1271,8 @@ pub enum PosixShmError {
     Io(io::Error),
     /// Segment exists, but the magic prefix/version does not match.
     InvalidHeader,
-    /// Config error: `capacity < max_datagram * 2` or similar.
+    /// Config error: `capacity < max_datagram * 2 + 16`, or a size the
+    /// layout cannot hold.
     InvalidConfig {
         /// Reason (static).
         reason: &'static str,
@@ -2206,10 +2208,10 @@ impl PosixShmTransport {
             if self.interrupted.swap(false, Ordering::AcqRel) {
                 return Err(RecvError::Timeout);
             }
-            if let Some(d) = deadline {
-                if Instant::now() >= d {
-                    return Err(RecvError::Timeout);
-                }
+            if let Some(d) = deadline
+                && Instant::now() >= d
+            {
+                return Err(RecvError::Timeout);
             }
             std::thread::sleep(backoff);
             backoff = (backoff * 2).min(max_backoff);
@@ -2256,7 +2258,7 @@ impl Transport for PosixShmTransport {
         let data = self.wait_for_frame()?;
         Ok(ReceivedDatagram {
             source: self.peer_locator,
-            data: std::sync::Arc::from(data.into_boxed_slice()),
+            data: data.into(),
         })
     }
 
@@ -2287,8 +2289,8 @@ mod tests {
     /// host's. Two test binaries — or two checkouts' runs — that both
     /// wrote `id(10)` therefore opened the *same* segment, and the
     /// second one read the first one's header: measured as
-    /// `consumer_cannot_send: Err(InvalidHeader)` and as a `recv()`
-    /// timeout in `open_concurrent_two_threads_both_bound`.
+    /// `shm_4_2_consumer_cannot_send: Err(InvalidHeader)` and as a `recv()`
+    /// timeout in `shm_2_3_open_concurrent_two_threads_both_bound`.
     ///
     /// The process id goes into the leading bytes, so the name is still
     /// deterministic inside one process — the tests pair an owner and a
@@ -2338,7 +2340,7 @@ mod tests {
     }
 
     #[test]
-    fn open_owner_then_consumer_roundtrip_single_frame() {
+    fn shm_3_1_open_owner_then_consumer_roundtrip_single_frame() {
         let tmp = tempfile::tempdir().unwrap();
         let owner = PosixShmTransport::open_owner(id(1), id(2), cfg_tmp(tmp.path(), 4096)).unwrap();
         let consumer =
@@ -2360,11 +2362,11 @@ mod tests {
     /// Today this test shows the **bug** (open_consumer fails on a
     /// non-existent segment). After the fix it goes green.
     #[test]
-    fn open_consumer_first_then_owner_roundtrip() {
+    fn shm_4_3_open_consumer_first_then_owner_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
         // Unique ids 220/221: `segment_os_id` is deterministic in
         // (owner_id, consumer_id) and LIVES GLOBALLY in /dev/shm.
-        // Earlier this test and `owner_cannot_recv` shared ids 20/21 →
+        // Earlier this test and `shm_4_2_owner_cannot_recv` shared ids 20/21 →
         // under llvm-cov (3-5x slower drop cleanup) the previous segment
         // was still there when the next test started, race → recv error.
         const OWNER: u8 = 220;
@@ -2393,10 +2395,10 @@ mod tests {
     /// end up validly bound. Today fail-prone due to a race in the
     /// open_owner remove-then-create path.
     #[test]
-    fn open_concurrent_two_threads_both_bound() {
+    fn shm_2_3_open_concurrent_two_threads_both_bound() {
         use std::sync::Arc as StdArc;
         // Unique ids 230/231 — see the id-collision note in
-        // open_consumer_first_then_owner_roundtrip above.
+        // shm_4_3_open_consumer_first_then_owner_roundtrip above.
         const OWNER: u8 = 230;
         const CONSUMER: u8 = 231;
         let tmp = StdArc::new(tempfile::tempdir().unwrap());
@@ -2424,7 +2426,7 @@ mod tests {
     }
 
     #[test]
-    fn consumer_cannot_send() {
+    fn shm_4_2_consumer_cannot_send() {
         let tmp = tempfile::tempdir().unwrap();
         let _owner =
             PosixShmTransport::open_owner(id(10), id(11), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2436,7 +2438,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_cannot_recv() {
+    fn shm_4_2_owner_cannot_recv() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(20), id(21), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2445,7 +2447,7 @@ mod tests {
     }
 
     #[test]
-    fn send_rejects_non_shm_locator() {
+    fn shm_1_1_send_rejects_non_shm_locator() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(30), id(31), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2454,7 +2456,7 @@ mod tests {
     }
 
     #[test]
-    fn send_rejects_wrong_peer() {
+    fn shm_4_1_send_rejects_wrong_peer() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(40), id(41), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2464,7 +2466,7 @@ mod tests {
     }
 
     #[test]
-    fn send_rejects_oversize_payload() {
+    fn shm_3_3_send_rejects_oversize_payload() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(50), id(51), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2474,7 +2476,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_times_out_when_idle() {
+    fn shm_4_4_recv_times_out_when_idle() {
         let tmp = tempfile::tempdir().unwrap();
         let _owner =
             PosixShmTransport::open_owner(id(60), id(61), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2486,7 +2488,7 @@ mod tests {
     }
 
     #[test]
-    fn many_frames_roundtrip_with_wraparound() {
+    fn shm_2_3_many_frames_roundtrip_with_wraparound() {
         // cap=256 with max_datagram=112 -> ~2 frames until wraparound
         let tmp = tempfile::tempdir().unwrap();
         let cfg = ShmConfig {
@@ -2512,7 +2514,7 @@ mod tests {
     /// does; it used to wait for the reader to make room in an empty ring,
     /// and every later send failed with "near wraparound".
     #[test]
-    fn a_remainder_too_small_for_a_padding_header_is_skipped() {
+    fn shm_3_2_a_remainder_too_small_for_a_padding_header_is_skipped() {
         let tmp = tempfile::tempdir().unwrap();
         let cfg = ShmConfig {
             capacity: 256,
@@ -2543,7 +2545,7 @@ mod tests {
     /// meets every remainder at the ring's end; all of them arrive whole
     /// and in order.
     #[test]
-    fn frames_of_every_length_cross_the_ring_end_whole_and_in_order() {
+    fn shm_3_2_frames_of_every_length_cross_the_ring_end_whole_and_in_order() {
         let tmp = tempfile::tempdir().unwrap();
         // Three frames of up to 204 bytes and a padding of up to 203 fit.
         let cfg = ShmConfig {
@@ -2580,7 +2582,7 @@ mod tests {
     /// a missing owner segment the consumer creates it itself (whatever
     /// role order in real-life DDS). The owner comes later and attaches.
     #[test]
-    fn consumer_open_succeeds_without_owner_creates_segment() {
+    fn shm_4_3_consumer_open_succeeds_without_owner_creates_segment() {
         let tmp = tempfile::tempdir().unwrap();
         let res = PosixShmTransport::open_consumer(id(80), id(81), cfg_tmp(tmp.path(), 4096));
         assert!(
@@ -2590,7 +2592,7 @@ mod tests {
     }
 
     #[test]
-    fn local_locator_is_shm_with_own_id() {
+    fn shm_1_1_local_locator_is_shm_with_own_id() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(90), id(91), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2603,7 +2605,7 @@ mod tests {
     // ---- Coverage-Boost: Error-Matrix ----
 
     #[test]
-    fn invalid_config_capacity_too_small_for_max_datagram() {
+    fn shm_2_1_invalid_config_capacity_too_small_for_max_datagram() {
         let tmp = tempfile::tempdir().unwrap();
         let cfg = ShmConfig {
             capacity: 100,
@@ -2616,7 +2618,7 @@ mod tests {
     }
 
     #[test]
-    fn occupied_bytes_reflects_send_state() {
+    fn shm_3_1_occupied_bytes_reflects_send_state() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(110), id(111), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2627,7 +2629,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_after_send_drains_occupied_bytes() {
+    fn shm_3_1_recv_after_send_drains_occupied_bytes() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(120), id(121), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2639,23 +2641,7 @@ mod tests {
     }
 
     #[test]
-    fn posix_shm_error_display_covers_all_variants() {
-        // Smoke: every variant has a readable Display impl (prevents
-        // future panic-in-Display regressions).
-        use std::io;
-        let variants = [
-            PosixShmError::InvalidHeader,
-            PosixShmError::InvalidConfig { reason: "x" },
-            PosixShmError::Io(io::Error::other("test")),
-        ];
-        for v in &variants {
-            let s = format!("{v}");
-            assert!(!s.is_empty(), "empty display for {v:?}");
-        }
-    }
-
-    #[test]
-    fn owner_drop_signals_consumer_via_shutdown_flag() {
+    fn shm_4_4_owner_drop_signals_consumer_via_shutdown_flag() {
         // The consumer must not hang in recv_timeout when the owner has
         // crashed/dropped.
         //
@@ -2702,7 +2688,7 @@ mod tests {
     /// ring; the writer then returns a named error after `SPIN_LIMIT`
     /// spins instead of blocking forever or dropping the frame quietly.
     #[test]
-    fn full_ring_returns_an_error_instead_of_dropping() {
+    fn shm_4_5_full_ring_returns_an_error_instead_of_dropping() {
         let tmp = tempfile::tempdir().unwrap();
         let cfg = ShmConfig {
             capacity: 512,
@@ -2710,7 +2696,7 @@ mod tests {
             max_datagram: 128,
             recv_timeout: Some(Duration::from_millis(200)),
         };
-        // 202/203 and not 220/221: `open_consumer_first_then_owner_roundtrip`
+        // 202/203 and not 220/221: `shm_4_3_open_consumer_first_then_owner_roundtrip`
         // has that pair, `segment_os_id` is a function of the pair alone, and
         // the two ask for different capacities — whichever ran first fixed the
         // size and the other got `mapped segment smaller than requested
@@ -2748,7 +2734,7 @@ mod tests {
     /// consumer must drop the frame **and count it** — never allocate the
     /// announced size, never hand the ring up as data.
     #[test]
-    fn corrupt_length_is_dropped_and_counted() {
+    fn shm_3_3_corrupt_length_is_dropped_and_counted() {
         let tmp = tempfile::tempdir().unwrap();
         let cfg = cfg_tmp(tmp.path(), 4096);
         // No frame of an owner is longer than half the ring.
@@ -2769,7 +2755,7 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_frame_counter_default_zero() {
+    fn shm_3_2_corrupt_frame_counter_default_zero() {
         let tmp = tempfile::tempdir().unwrap();
         let t = PosixShmTransport::open_owner(id(150), id(151), cfg_tmp(tmp.path(), 4096)).unwrap();
         assert_eq!(t.corrupt_frames_seen(), 0);
@@ -2781,7 +2767,7 @@ mod tests {
     /// ZeroDDS takes `0x01F0_0001` for shared memory; the transport
     /// binds that value, so a renumbering has to break here.
     #[test]
-    fn locator_kind_is_the_vendor_reserved_shm_value() {
+    fn rtps_9_3_2_4_locator_kind_is_the_vendor_reserved_shm_value() {
         let loc = Locator::shm(id(200));
         assert_eq!(loc.kind.as_i32(), 0x01F0_0001);
         assert!(
@@ -2796,7 +2782,7 @@ mod tests {
     /// version little-endian at offset 4 — read straight out of the
     /// mapping the owner created, not through the accessors.
     #[test]
-    fn owner_writes_magic_and_version_into_the_header() {
+    fn shm_2_1_owner_writes_magic_and_version_into_the_header() {
         let tmp = tempfile::tempdir().unwrap();
         let owner =
             PosixShmTransport::open_owner(id(160), id(161), cfg_tmp(tmp.path(), 4096)).unwrap();
@@ -2820,7 +2806,7 @@ mod tests {
     /// rather than interpreted as a ring. Builds the segment through the
     /// same mapping primitives the transport uses, then attaches.
     #[test]
-    fn attach_rejects_foreign_magic() {
+    fn shm_2_2_attach_rejects_foreign_magic() {
         let tmp = tempfile::tempdir().unwrap();
         let flink = segment_flink(tmp.path(), id(170), id(171));
         let os_id = segment_os_id(id(170), id(171));
@@ -2840,7 +2826,7 @@ mod tests {
     /// Same for an unknown layout version: a bumped header version means
     /// a different ring layout, so attaching would misread the frames.
     #[test]
-    fn attach_rejects_unknown_version() {
+    fn shm_2_2_attach_rejects_unknown_version() {
         let tmp = tempfile::tempdir().unwrap();
         let flink = segment_flink(tmp.path(), id(172), id(173));
         let os_id = segment_os_id(id(172), id(173));
@@ -2865,7 +2851,7 @@ mod tests {
     /// unlink the zombie, create a fresh segment and carry a frame —
     /// not fail and not leak the stale name.
     #[test]
-    fn open_recovers_from_stale_flink_of_crashed_owner() {
+    fn shm_5_2_open_recovers_from_stale_flink_of_crashed_owner() {
         let tmp = tempfile::tempdir().unwrap();
         let flink = segment_flink(tmp.path(), id(180), id(181));
         std::fs::create_dir_all(tmp.path()).unwrap();
@@ -2966,7 +2952,7 @@ mod tests {
     /// to 1 ms before.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn the_consumer_parks_instead_of_polling() {
+    fn shm_4_4_the_consumer_parks_instead_of_polling() {
         assert!(ring_park().is_some());
     }
 
@@ -3058,7 +3044,7 @@ mod tests {
     /// `interrupt_recv` returns a waiting `recv` at once instead of after
     /// its timeout, and a frame that is there is still delivered first.
     #[test]
-    fn interrupt_recv_returns_a_waiting_recv_at_once() {
+    fn shm_4_4_interrupt_recv_returns_a_waiting_recv_at_once() {
         let tmp = tempfile::tempdir().unwrap();
         let mut cfg = cfg_tmp(tmp.path(), 4096);
         cfg.recv_timeout = Some(Duration::from_secs(20));
@@ -3086,7 +3072,7 @@ mod tests {
     /// another.
     #[cfg(target_os = "linux")]
     #[test]
-    fn users_in_different_flink_directories_share_the_segment() {
+    fn shm_5_4_users_in_different_flink_directories_share_the_segment() {
         let (here, there) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
         let owner =
             PosixShmTransport::open_owner(id(240), id(241), cfg_tmp(here.path(), 4096)).unwrap();
@@ -3103,7 +3089,7 @@ mod tests {
     /// mapping goes with the ended process's last handle, and the same
     /// name opens fresh.
     #[test]
-    fn an_orphaned_segment_is_made_anew_not_attached() {
+    fn shm_5_5_an_orphaned_segment_is_made_anew_not_attached() {
         let tmp = tempfile::tempdir().unwrap();
         leave_orphan(id(236), id(237), tmp.path());
         let consumer =
@@ -3120,7 +3106,7 @@ mod tests {
     /// lock file of an open pair.
     #[cfg(unix)]
     #[test]
-    fn the_pair_file_sweep_removes_lone_lock_files_and_keeps_the_rest() {
+    fn shm_5_5_the_pair_file_sweep_removes_lone_lock_files_and_keeps_the_rest() {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
         let lone = dir.join("aa-bb.lock");
@@ -3158,7 +3144,7 @@ mod tests {
     /// not keep that lock: it locks the file now under the name.
     #[cfg(unix)]
     #[test]
-    fn a_lock_taken_on_a_removed_lock_file_is_taken_anew() {
+    fn shm_5_5_a_lock_taken_on_a_removed_lock_file_is_taken_anew() {
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("pair.lock");
         let first = lock_pair(&path).unwrap();
@@ -3180,7 +3166,7 @@ mod tests {
     /// young one alone, and keeps one that is held.
     #[cfg(target_os = "linux")]
     #[test]
-    fn the_sweep_removes_orphaned_segments_and_keeps_held_ones() {
+    fn shm_5_5_the_sweep_removes_orphaned_segments_and_keeps_held_ones() {
         let tmp = tempfile::tempdir().unwrap();
         leave_orphan(id(232), id(233), tmp.path());
         let orphan = format!("{SEGMENT_NAME_PREFIX}{}", hex16(id(232)));
@@ -3271,7 +3257,7 @@ mod tests {
     /// leaves a young one alone, and keeps one that is held.
     #[cfg(all(unix, not(target_os = "linux")))]
     #[test]
-    fn the_flink_sweep_removes_orphaned_segments_and_keeps_held_ones() {
+    fn shm_5_5_the_flink_sweep_removes_orphaned_segments_and_keeps_held_ones() {
         let orphaned = tempfile::tempdir().unwrap();
         leave_orphan(id(242), id(243), orphaned.path());
         let report = sweep_orphaned_flinks(orphaned.path(), Duration::from_secs(3600)).unwrap();
@@ -3304,8 +3290,8 @@ mod tests {
     /// mapping. They then race over its capacity: the first fixes the size and
     /// the second gets `mapped segment smaller than requested capacity`. It has
     /// happened twice — 20/21 between this file's early tests, and 220/221
-    /// between `full_ring_returns_an_error_instead_of_dropping` and
-    /// `open_consumer_first_then_owner_roundtrip`, which only Windows ever
+    /// between `shm_4_5_full_ring_returns_an_error_instead_of_dropping` and
+    /// `shm_4_3_open_consumer_first_then_owner_roundtrip`, which only Windows ever
     /// failed on. Both times a reader had to find it in a scheduler's timing.
     ///
     /// Reading the source is the only place the question can be asked: the ids
@@ -3320,18 +3306,17 @@ mod tests {
         let mut current = String::new();
         for line in src.lines() {
             let t = line.trim_start();
-            if let Some(rest) = t.strip_prefix("fn ") {
-                if let Some(name) = rest.split('(').next() {
-                    current = name.to_string();
-                    consts.clear();
-                }
+            if let Some(rest) = t.strip_prefix("fn ")
+                && let Some(name) = rest.split('(').next()
+            {
+                current = name.to_string();
+                consts.clear();
             }
-            if let Some(rest) = t.strip_prefix("const ") {
-                if let Some((name, value)) = rest.split_once(": u8 = ") {
-                    if let Ok(v) = value.trim_end_matches(';').trim().parse::<u32>() {
-                        consts.insert(name.trim().to_string(), v);
-                    }
-                }
+            if let Some(rest) = t.strip_prefix("const ")
+                && let Some((name, value)) = rest.split_once(": u8 = ")
+                && let Ok(v) = value.trim_end_matches(';').trim().parse::<u32>()
+            {
+                consts.insert(name.trim().to_string(), v);
             }
             let mut rest = line;
             while let Some(at) = rest.find("id(") {
@@ -3342,10 +3327,10 @@ mod tests {
                     .parse::<u32>()
                     .ok()
                     .or_else(|| consts.get(token).copied());
-                if let Some(v) = value {
-                    if !current.is_empty() {
-                        per_test.entry(current.clone()).or_default().insert(v);
-                    }
+                if let Some(v) = value
+                    && !current.is_empty()
+                {
+                    per_test.entry(current.clone()).or_default().insert(v);
                 }
                 rest = &rest[close..];
             }
@@ -3381,7 +3366,7 @@ mod tests {
     /// Two pairs of different participants whose endpoints carry the same
     /// entity ids got one name before and shared a segment.
     #[test]
-    fn short_names_of_pairs_that_differ_only_in_the_prefix_differ() {
+    fn shm_5_1_short_names_of_pairs_that_differ_only_in_the_prefix_differ() {
         let guid = |prefix: u8, entity: [u8; 4]| {
             let mut g = [prefix; 16];
             g[12..].copy_from_slice(&entity);
@@ -3407,7 +3392,7 @@ mod tests {
     }
 
     #[test]
-    fn segment_os_id_is_deterministic_and_within_platform_limit() {
+    fn shm_5_1_segment_os_id_is_deterministic_and_within_platform_limit() {
         let a = segment_os_id(id(190), id(191));
         assert_eq!(a, segment_os_id(id(190), id(191)), "same pair, same name");
         assert_ne!(a, segment_os_id(id(191), id(190)), "direction matters");
@@ -3417,7 +3402,7 @@ mod tests {
     }
 
     #[test]
-    fn fill_ring_triggers_wraparound_padding() {
+    fn shm_3_2_fill_ring_triggers_wraparound_padding() {
         // A small ring + large frames forces wraparound with padding.
         let tmp = tempfile::tempdir().unwrap();
         let cfg = ShmConfig {

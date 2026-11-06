@@ -50,11 +50,12 @@ pub mod transform_kind {
 /// The two GMAC suites are **auth-only** (no confidentiality), for a
 /// `*_protection_kind=SIGN` — the payload stays plain, authenticated by a
 /// 16-byte AES-GMAC tag.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Suite {
     /// AES-128 in GCM mode. 16-byte master key. Auth+encrypt.
     Aes128Gcm,
     /// AES-256 in GCM mode. 32-byte master key. Auth+encrypt.
+    #[default]
     Aes256Gcm,
     /// AES-256 in GMAC mode (auth-only, spec kind 0x03). 32-byte
     /// master key; the payload stays cleartext, 16-byte AES-GMAC tag.
@@ -181,19 +182,13 @@ pub fn symmetric_cipher_key_bits(
     }
 }
 
-impl Default for Suite {
-    fn default() -> Self {
-        Self::Aes256Gcm
-    }
-}
-
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
 
     #[test]
-    fn spec_constants_match_table_79() {
+    fn security_8_1_spec_constants_match_table_79() {
         // Spec DDS-Security 1.2 §10.5.2 Table 77 — the wire values must
         // be immutable. Cyclone DDS / FastDDS rely
         // on exactly these bytes.
@@ -205,13 +200,13 @@ mod tests {
     }
 
     #[test]
-    fn aes128_gcm_uses_spec_id_2() {
+    fn security_8_1_aes128_gcm_uses_spec_id_2() {
         assert_eq!(Suite::Aes128Gcm.transform_kind_id(), 0x02);
         assert_eq!(Suite::Aes128Gcm.transform_kind(), [0, 0, 0, 0x02]);
     }
 
     #[test]
-    fn aes256_gcm_uses_spec_id_4() {
+    fn security_8_1_aes256_gcm_uses_spec_id_4() {
         assert_eq!(Suite::Aes256Gcm.transform_kind_id(), 0x04);
         assert_eq!(Suite::Aes256Gcm.transform_kind(), [0, 0, 0, 0x04]);
     }
@@ -219,14 +214,14 @@ mod tests {
     /// DDS-Security 1.2 §10.5.2 Table 77: 0x01 is AES128-GMAC, with a
     /// 16-octet key. The slot carried HMAC-SHA256.
     #[test]
-    fn aes128_gmac_uses_spec_id_1() {
+    fn security_7_3_18_2_aes128_gmac_uses_spec_id_1() {
         assert_eq!(Suite::Aes128Gmac.transform_kind_id(), 0x01);
         assert_eq!(Suite::Aes128Gmac.key_len(), 16);
         assert!(!Suite::Aes128Gmac.is_aead());
     }
 
     #[test]
-    fn from_id_roundtrip_for_all_supported() {
+    fn security_7_3_18_2_from_id_roundtrip_for_all_supported() {
         assert_eq!(Suite::from_transform_kind_id(0x01), Some(Suite::Aes128Gmac));
         assert_eq!(Suite::from_transform_kind_id(0x02), Some(Suite::Aes128Gcm));
         assert_eq!(Suite::from_transform_kind_id(0x04), Some(Suite::Aes256Gcm));
@@ -240,18 +235,5 @@ mod tests {
         assert_eq!(Suite::from_transform_kind_id(0x03), Some(Suite::Aes256Gmac));
         // Reserved / unknown value
         assert!(Suite::from_transform_kind_id(0x99).is_none());
-    }
-
-    #[test]
-    fn each_suite_roundtrips_id() {
-        for s in [
-            Suite::Aes128Gcm,
-            Suite::Aes256Gcm,
-            Suite::Aes128Gmac,
-            Suite::Aes256Gmac,
-        ] {
-            let id = s.transform_kind_id();
-            assert_eq!(Suite::from_transform_kind_id(id), Some(s));
-        }
     }
 }

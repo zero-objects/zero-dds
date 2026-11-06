@@ -185,6 +185,10 @@ pub struct AssignabilityConfig {
     /// Which equivalence strong assignability (§7.2.4.3) asks of a
     /// writer's type that is not delimited. See [`StrongAssignability`].
     pub strong_assignability: StrongAssignability,
+    /// Whether a key member's `IS_MUST_UNDERSTAND` bit is read from the
+    /// `TypeObject` or implied by `IS_KEY` when two types are compared
+    /// for equivalence. See [`KeyMustUnderstand`].
+    pub key_must_understand: KeyMustUnderstand,
 }
 
 impl Default for AssignabilityConfig {
@@ -200,6 +204,7 @@ impl Default for AssignabilityConfig {
             key_member_bounds: KeyMemberBounds::Enforced,
             appendable_is_delimited: true,
             strong_assignability: StrongAssignability::Equivalence,
+            key_must_understand: KeyMustUnderstand::Flagged,
         }
     }
 }
@@ -303,6 +308,71 @@ impl StrongAssignability {
         match self {
             Self::Equivalence => "equivalence",
             Self::NamesIgnored => "names_ignored",
+        }
+    }
+}
+
+/// An axis over the must-understand attribute of a key member as a
+/// `TypeObject` carries it, read where two types are compared for MINIMAL
+/// equivalence (DDS-XTypes 1.3 §7.3.4.7, 1.4 Beta 1 §7.3.3.8): the
+/// DISALLOW_TYPE_COERCION verdict of §7.6.3.4.2 and strong assignability
+/// (§7.2.4.3).
+///
+/// The clause: a key member "shall always have \[its\] 'must understand'
+/// attribute set to true" (1.3 §7.2.2.4.4.4.8, 1.4 Beta 1
+/// §7.2.3.2.4.4.8), and 1.4 Beta 1 §7.3.3.4, the resolution of
+/// DDSXTY14-64 ("Should the TypeObject mark key members as must
+/// understand"), encodes the attribute in the member's
+/// `IS_MUST_UNDERSTAND` bit. `MemberFlagMinimalMask` (`0x003f`, Annex B of
+/// 1.3 and `dds-xtypes_typeobject.idl` of 1.4 Beta 1) keeps the bit in
+/// the minimal object, so it is part of the minimal hash, and two
+/// objects that differ in it are two minimal identifiers. The rules of
+/// assignability under ALLOW_TYPE_COERCION (1.3 Table 19) compare no
+/// member flag for equality, so the axis does not reach them.
+///
+/// Cyclone DDS's `idlc` writes a key member without the bit unless the
+/// member is also annotated `@must_understand` ("Key and must-understand
+/// are independent member flags", `descriptor_type_meta.c` at `master`
+/// `3a5526315e6`). Measured on the suite's `ShapeType.color`: member flags
+/// `0x21` from the `idlc` of 11.0.1 and of `master`, `0x31` from that of
+/// 0.10.5. A Cyclone reader that announces such a type and no
+/// `TypeConsistencyEnforcement` (PID `0x0074`, read as
+/// DISALLOW_TYPE_COERCION by §7.6.3.4.1) is then not equivalent to the
+/// same IDL lowered by the clause.
+///
+/// - [`Flagged`](Self::Flagged), the default: the bit is compared as the
+///   object carries it.
+/// - [`ImpliedByKey`](Self::ImpliedByKey): the attribute of a key member
+///   is taken from `IS_KEY`, as §7.2.2.4.4.4.8 states it, whatever the bit
+///   says: every key member counts as carrying the bit, in both types and
+///   in every type they name, before the minimal identifiers are compared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum KeyMustUnderstand {
+    /// The bit as the `TypeObject` carries it (1.4 Beta 1 §7.3.3.4).
+    #[default]
+    Flagged,
+    /// `IS_KEY` implies `IS_MUST_UNDERSTAND`, whether the bit is written
+    /// or not.
+    ImpliedByKey,
+}
+
+impl KeyMustUnderstand {
+    /// The spelling a configuration file or command line uses.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "flagged" => Some(Self::Flagged),
+            "implied" => Some(Self::ImpliedByKey),
+            _ => None,
+        }
+    }
+
+    /// The spelling [`Self::parse`] reads.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Flagged => "flagged",
+            Self::ImpliedByKey => "implied",
         }
     }
 }
@@ -824,6 +894,10 @@ fn resolved_minimal_object(
 /// A COMPLETE hash is taken to the MINIMAL hash of the same type through
 /// the registry before the two are compared; a type the registry cannot
 /// project is not equivalent to anything but an identical identifier.
+///
+/// Under [`KeyMustUnderstand::ImpliedByKey`] two minimal identifiers that
+/// differ are compared once more with every key member marked
+/// must-understand ([`crate::type_object::to_minimal::key_must_understand_identifier`]).
 pub(crate) fn minimal_equivalent(
     w: &TypeIdentifier,
     r: &TypeIdentifier,
@@ -846,7 +920,17 @@ pub(crate) fn minimal_equivalent(
         crate::type_object::to_minimal::minimal_identifier(&w, registry, 0),
         crate::type_object::to_minimal::minimal_identifier(&r, registry, 0),
     ) {
-        (Ok(wm), Ok(rm)) => wm == rm,
+        (Ok(wm), Ok(rm)) if wm == rm => true,
+        (Ok(wm), Ok(rm)) if cfg.key_must_understand == KeyMustUnderstand::ImpliedByKey => {
+            use crate::type_object::to_minimal::key_must_understand_identifier;
+            matches!(
+                (
+                    key_must_understand_identifier(&wm, registry, 0),
+                    key_must_understand_identifier(&rm, registry, 0),
+                ),
+                (Ok(wk), Ok(rk)) if wk == rk
+            )
+        }
         _ => false,
     }
 }
@@ -2461,7 +2545,7 @@ mod tests {
     }
 
     #[test]
-    fn appendable_struct_with_extra_writer_field_is_assignable() {
+    fn xtypes_7_2_3_appendable_struct_with_extra_writer_field_is_assignable() {
         let mut reg = TypeRegistry::new();
         let writer = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::X")
@@ -2493,7 +2577,7 @@ mod tests {
     }
 
     #[test]
-    fn final_struct_with_extra_writer_field_is_not_assignable() {
+    fn xtypes_7_2_3_final_struct_with_extra_writer_field_is_not_assignable() {
         let mut reg = TypeRegistry::new();
         let writer = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::X")
@@ -2525,7 +2609,7 @@ mod tests {
     }
 
     #[test]
-    fn mutable_struct_member_id_matching() {
+    fn xtypes_7_2_3_mutable_struct_member_id_matching() {
         let mut reg = TypeRegistry::new();
         // Reader has @id(1) and @id(2) — writer has @id(2) and @id(3).
         // Reader @id(1) is missing in the writer, but we mark it as optional.
@@ -2637,7 +2721,7 @@ mod tests {
     /// extensibility kinds differ), and that verdict must survive the
     /// minimal/complete projection unchanged.
     #[test]
-    fn minimal_and_complete_hash_still_reject_an_extensibility_mismatch() {
+    fn xtypes_7_2_4_4_8_minimal_and_complete_hash_still_reject_an_extensibility_mismatch() {
         let mut reg = TypeRegistry::new();
         let writer = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::Robot")
@@ -2677,7 +2761,7 @@ mod tests {
     }
 
     #[test]
-    fn extensibility_mismatch_fails() {
+    fn xtypes_7_2_4_4_8_extensibility_mismatch_fails() {
         let mut reg = TypeRegistry::new();
         let writer = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::X")
@@ -2704,7 +2788,7 @@ mod tests {
     }
 
     #[test]
-    fn string_small_and_large_interchangeable() {
+    fn xtypes_7_2_2_3_string_small_and_large_interchangeable() {
         let reg = TypeRegistry::new();
         assert!(
             is_assignable(
@@ -2735,7 +2819,7 @@ mod tests {
     }
 
     #[test]
-    fn string8_vs_string16_not_assignable() {
+    fn xtypes_7_2_2_3_string8_vs_string16_not_assignable() {
         let a = is_assignable(
             &TypeIdentifier::String8Small { bound: 16 },
             &TypeIdentifier::String16Small { bound: 16 },
@@ -2747,7 +2831,7 @@ mod tests {
     }
 
     #[test]
-    fn string16_small_and_large_interchangeable() {
+    fn xtypes_7_2_4_4_5_string16_small_and_large_interchangeable() {
         let a = is_assignable(
             &TypeIdentifier::String16Small { bound: 32 },
             &TypeIdentifier::String16Large { bound: 10_000 },
@@ -2757,16 +2841,51 @@ mod tests {
         assert!(a.is_yes());
     }
 
+    /// A type is assignable from itself: identical identifiers answer yes
+    /// on the exact-equality path (`w == r`) of `check_direct`, for a
+    /// primitive and for a minimal hash, whether or not the registry holds
+    /// the hash's object.
     #[test]
-    fn identical_type_identifiers_short_circuit_yes() {
-        // Exact equality path (`w == r`) in check_direct.
+    fn xtypes_7_2_4_4_1_identical_type_identifiers_short_circuit_yes() {
         let ti = TypeIdentifier::Primitive(PrimitiveKind::UInt32);
-        let a = is_assignable(&ti, &ti, &reg(), &AssignabilityConfig::default());
-        assert!(a.is_yes());
+        assert!(is_assignable(&ti, &ti, &reg(), &AssignabilityConfig::default()).is_yes());
+
+        let unregistered = TypeIdentifier::EquivalenceHashMinimal(
+            crate::type_identifier::EquivalenceHash([0x4D; 14]),
+        );
+        assert!(
+            is_assignable(
+                &unregistered,
+                &unregistered,
+                &TypeRegistry::new(),
+                &AssignabilityConfig::default()
+            )
+            .is_yes()
+        );
+
+        let mut registry = reg();
+        let to = MinimalTypeObject::Struct(
+            TypeObjectBuilder::struct_type("::T")
+                .extensibility(Extensibility::Appendable)
+                .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+                .build_minimal(),
+        );
+        let h = compute_minimal_hash(&to).unwrap();
+        registry.insert_minimal(h, to);
+        let registered = TypeIdentifier::EquivalenceHashMinimal(h);
+        assert!(
+            is_assignable(
+                &registered,
+                &registered,
+                &registry,
+                &AssignabilityConfig::default()
+            )
+            .is_yes()
+        );
     }
 
     #[test]
-    fn sequence_writer_bound_exceeds_reader_bound_is_no() {
+    fn xtypes_7_6_3_4_1_sequence_writer_bound_exceeds_reader_bound_is_no() {
         let w = TypeIdentifier::PlainSequenceSmall {
             header: PlainCollectionHeader::default(),
             bound: 20,
@@ -2790,7 +2909,7 @@ mod tests {
     /// With `ignore_sequence_bounds=true` (TCE default) we accept
     /// the sequence even though the writer bound > reader bound.
     #[test]
-    fn sequence_bounds_ignored_when_policy_allows() {
+    fn xtypes_7_2_4_1_sequence_bounds_ignored_when_policy_allows() {
         let w = TypeIdentifier::PlainSequenceSmall {
             header: PlainCollectionHeader::default(),
             bound: 20,
@@ -2882,7 +3001,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_array_diff_bounds_is_no() {
+    fn xtypes_7_2_2_4_3_plain_array_diff_bounds_is_no() {
         let b = is_assignable(
             &TypeIdentifier::PlainArraySmall {
                 header: PlainCollectionHeader::default(),
@@ -2899,30 +3018,6 @@ mod tests {
         );
         assert!(!b.is_yes());
         assert!(matches!(b, Assignable::No(msg) if msg.contains("array bounds")));
-    }
-
-    #[test]
-    fn equivalence_hash_identical_short_circuits_to_yes() {
-        // For identical hashes, `check_direct` takes the early exit
-        // `wh == rh → Yes` (see the match arm). The only precondition is
-        // that `resolve_alias_chain` succeeds — for that the
-        // hash must point to a non-alias in the registry.
-        let mut reg = reg();
-        let to = MinimalTypeObject::Struct(
-            TypeObjectBuilder::struct_type("::T")
-                .extensibility(Extensibility::Appendable)
-                .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
-                .build_minimal(),
-        );
-        let h = compute_minimal_hash(&to).unwrap();
-        reg.insert_minimal(h, to);
-        let a = is_assignable(
-            &TypeIdentifier::EquivalenceHashMinimal(h),
-            &TypeIdentifier::EquivalenceHashMinimal(h),
-            &reg,
-            &AssignabilityConfig::default(),
-        );
-        assert!(a.is_yes());
     }
 
     #[test]
@@ -2991,7 +3086,7 @@ mod tests {
     /// it. Seven of the suite's cases are that shape, `tryc_enum_1`
     /// through `struct_key_enum_2`.
     #[test]
-    fn an_enum_that_grew_a_literal_is_still_assignable() {
+    fn xtypes_7_2_3_an_enum_that_grew_a_literal_is_still_assignable() {
         let mut reg = reg();
         let w = MinimalTypeObject::Enumerated(
             TypeObjectBuilder::enum_type("::E")
@@ -3028,7 +3123,7 @@ mod tests {
     /// The two halves of the rule, each on its own, and the `@final`
     /// exception where containment *is* the rule.
     #[test]
-    fn enum_literals_that_disagree_are_not_assignable() {
+    fn xtypes_7_2_4_4_7_enum_literals_that_disagree_are_not_assignable() {
         // Same value, different name.
         let mut reg = TypeRegistry::new();
         let (w, r) = pair(
@@ -3070,7 +3165,7 @@ mod tests {
 
     /// A `@final` enumeration admits no extra literal on either side.
     #[test]
-    fn a_final_enum_has_the_same_literals_on_both_sides() {
+    fn xtypes_7_2_3_a_final_enum_has_the_same_literals_on_both_sides() {
         use crate::type_object::flags::{EnumTypeFlag, StructTypeFlag};
         let build = |extra: bool| {
             let mut e = TypeObjectBuilder::enum_type("::E")
@@ -3171,7 +3266,7 @@ mod tests {
     }
 
     #[test]
-    fn flatten_inheritance_two_levels_concatenates_base_first() {
+    fn xtypes_7_2_2_4_4_4_3_flatten_inheritance_two_levels_concatenates_base_first() {
         // Root → Mid → Derived. Result member order: [Root, Mid, Derived].
         let mut reg = reg();
         let root = TypeObjectBuilder::struct_type("::Root")
@@ -3209,7 +3304,7 @@ mod tests {
     }
 
     #[test]
-    fn inheritance_conflict_same_id() {
+    fn xtypes_7_2_2_4_5_inheritance_conflict_same_id() {
         let mut reg = reg();
         let base = TypeObjectBuilder::struct_type("::B")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
@@ -3234,7 +3329,7 @@ mod tests {
     }
 
     #[test]
-    fn inheritance_conflict_same_name() {
+    fn xtypes_7_2_2_4_5_inheritance_conflict_same_name() {
         let mut reg = reg();
         let base = TypeObjectBuilder::struct_type("::B")
             .member(
@@ -3265,7 +3360,7 @@ mod tests {
     }
 
     #[test]
-    fn flat_type_construction_two_levels() {
+    fn xtypes_7_2_4_4_8_flat_type_construction_two_levels() {
         // §7.2.2.4.5 — the hypothetical flat representation of a
         // 2-level inheritance construct has members in base-derived
         // order.
@@ -3296,7 +3391,7 @@ mod tests {
     }
 
     #[test]
-    fn two_level_inheritance_assignability_chain() {
+    fn xtypes_7_2_2_4_5_two_level_inheritance_assignability_chain() {
         // Writer and reader each have 2-level inheritance, both
         // produce the same flat member sequence → assignable.
         let mut reg = reg();
@@ -3435,7 +3530,7 @@ mod tests {
     /// just like the config flag" — which let a writer annotate its own
     /// enum and be assignable to a reader that had said nothing.
     #[test]
-    fn one_sided_ignore_literal_names_does_not_drop_the_name_rule() {
+    fn xtypes_7_3_1_2_1_11_one_sided_ignore_literal_names_does_not_drop_the_name_rule() {
         for (on_writer, on_reader) in [(true, false), (false, true)] {
             let mut reg = reg();
             let flag = crate::type_object::flags::EnumTypeFlag(
@@ -3478,7 +3573,7 @@ mod tests {
     /// The clause's own example: both types carry the annotation, the
     /// literal names differ, and the two are assignable.
     #[test]
-    fn ignore_literal_names_on_both_sides_drops_the_name_rule() {
+    fn xtypes_7_2_4_4_7_ignore_literal_names_on_both_sides_drops_the_name_rule() {
         let mut reg = reg();
         let flag = crate::type_object::flags::EnumTypeFlag(
             crate::type_object::flags::EnumTypeFlag::IGNORE_LITERAL_NAMES,
@@ -3539,7 +3634,7 @@ mod tests {
     }
 
     #[test]
-    fn appendable_struct_reader_longer_than_writer_is_yes() {
+    fn xtypes_7_2_4_4_8_appendable_struct_reader_longer_than_writer_is_yes() {
         // This test read `..._is_no` and asserted the opposite until the
         // corpus contradicted it. §7.2.4.4.4.4 compares the shorter
         // member sequence as a prefix of the longer, either way round,
@@ -3579,7 +3674,7 @@ mod tests {
     }
 
     #[test]
-    fn an_appendable_tail_member_that_must_be_understood_is_no() {
+    fn xtypes_7_2_4_4_8_an_appendable_tail_member_that_must_be_understood_is_no() {
         // The one thing that does stop an appendable pair past the
         // prefix. Without it the rule above would let a reader declare a
         // member it must understand and then never be sent one.
@@ -3616,7 +3711,8 @@ mod tests {
     }
 
     #[test]
-    fn a_mutable_reader_member_the_writer_lacks_is_yes_unless_it_must_be_understood() {
+    fn xtypes_7_2_4_4_8_a_mutable_reader_member_the_writer_lacks_is_yes_unless_it_must_be_understood()
+     {
         // This test read `mutable_reader_member_missing_in_writer_non_
         // optional_is_no` and turned on `@optional`, which is not what
         // §7.2.4.4.4.4 turns on. `@optional` says a member may be absent
@@ -3695,7 +3791,7 @@ mod tests {
     }
 
     #[test]
-    fn a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no() {
+    fn xtypes_7_2_3_a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no() {
         // The direction the `cdr` version did not check at all: a writer
         // that marks a member `@must_understand` and a reader that does
         // not declare it were called assignable, and §7.2.4.4.4.4 makes
@@ -3736,7 +3832,7 @@ mod tests {
     }
 
     #[test]
-    fn final_struct_member_count_mismatch_is_no() {
+    fn xtypes_7_2_4_4_8_final_struct_member_count_mismatch_is_no() {
         let mut reg = reg();
         let writer = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::X")
@@ -3767,30 +3863,14 @@ mod tests {
         );
     }
 
-    /// The three widenings the removed coercion matrix used to accept —
-    /// signed, unsigned-into-signed and float — are each rejected. The
-    /// suite's `struct_uint16_int8` states the same rule in its own
-    /// description: "Primitive types must match exactly for
-    /// assignability."
-    #[test]
-    fn primitive_widening_is_rejected_per_table_15() {
-        assert!(!primitive_compatible(PrimitiveKind::Int16, PrimitiveKind::Int64).is_yes());
-        assert!(!primitive_compatible(PrimitiveKind::Byte, PrimitiveKind::Int32).is_yes());
-        assert!(!primitive_compatible(PrimitiveKind::UInt16, PrimitiveKind::Int32).is_yes());
-        assert!(!primitive_compatible(PrimitiveKind::Float32, PrimitiveKind::Float64).is_yes());
-    }
-
-    #[test]
-    fn primitive_narrowing_and_cross_family_are_rejected() {
-        assert!(!primitive_compatible(PrimitiveKind::Float64, PrimitiveKind::Int32).is_yes());
-        assert!(!primitive_compatible(PrimitiveKind::Int64, PrimitiveKind::Int32).is_yes());
-        assert!(!primitive_compatible(PrimitiveKind::UInt8, PrimitiveKind::Int8).is_yes());
-    }
-
     /// The single row Table 15 does have, checked over every
-    /// `PrimitiveKind`: each is assignable from itself and from no other.
+    /// `PrimitiveKind`: each is assignable from itself and from no other —
+    /// no widening (signed, unsigned into signed, float), no narrowing, no
+    /// crossing of families. The suite's `struct_uint16_int8` states the
+    /// same rule in its own description: "Primitive types must match
+    /// exactly for assignability."
     #[test]
-    fn only_the_identical_primitive_kind_is_assignable() {
+    fn xtypes_7_2_4_4_4_only_the_identical_primitive_kind_is_assignable() {
         use PrimitiveKind::*;
         let all = [
             Boolean, Byte, Int8, Int16, Int32, Int64, UInt8, UInt16, UInt32, UInt64, Float32,
@@ -3820,7 +3900,7 @@ mod tests {
     // hash, BEFORE the identity short-circuit — so a writer + reader of the
     // SAME complete type failed to match.
     #[test]
-    fn equal_complete_hash_is_assignable_with_empty_registry() {
+    fn xtypes_7_3_4_7_equal_complete_hash_is_assignable_with_empty_registry() {
         let reg = TypeRegistry::new();
         let h = crate::type_identifier::EquivalenceHash([0xCE; 14]);
         let ti = TypeIdentifier::EquivalenceHashComplete(h);
@@ -3828,14 +3908,6 @@ mod tests {
             is_assignable(&ti, &ti, &reg, &AssignabilityConfig::default()).is_yes(),
             "identical complete TypeIdentifiers must be assignable even with an empty registry"
         );
-    }
-
-    #[test]
-    fn equal_minimal_hash_is_assignable_with_empty_registry() {
-        let reg = TypeRegistry::new();
-        let h = crate::type_identifier::EquivalenceHash([0x4D; 14]);
-        let ti = TypeIdentifier::EquivalenceHashMinimal(h);
-        assert!(is_assignable(&ti, &ti, &reg, &AssignabilityConfig::default()).is_yes());
     }
 
     /// Two endpoints announcing *different* complete `TypeIdentifier`s
@@ -3912,7 +3984,7 @@ mod tests {
     /// `dds/DCPS/XTypes/TypeAssignability.cpp` (`assignable_bitmask`,
     /// `assignable_primitive`), which carries the same four.
     #[test]
-    fn bitmask_is_assignable_to_the_uint_of_its_bound() {
+    fn xtypes_7_2_4_4_4_bitmask_is_assignable_to_the_uint_of_its_bound() {
         for (bit_bound, holder) in [
             (1_u16, PrimitiveKind::UInt8),
             (8, PrimitiveKind::UInt8),
@@ -3943,7 +4015,7 @@ mod tests {
     /// reader must not have to parse the sample differently depending
     /// on which writer sent it (§7.2.4.4.4).
     #[test]
-    fn bitmask_is_not_assignable_to_a_wider_uint() {
+    fn xtypes_7_2_4_4_4_bitmask_is_not_assignable_to_a_wider_uint() {
         let (reg, mask) = bitmask_registry(16);
         let cfg = AssignabilityConfig::default();
         for other in [
@@ -3968,7 +4040,7 @@ mod tests {
     /// The arms are reached by *bitmask*, not by "hash on one side".
     /// A struct against a primitive stays what it was — no row.
     #[test]
-    fn a_struct_against_a_uint_is_still_no_row() {
+    fn xtypes_7_2_4_4_7_a_struct_against_a_uint_is_still_no_row() {
         let mut reg = TypeRegistry::new();
         let obj = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::S")
@@ -4035,7 +4107,7 @@ mod tests {
     /// against `x1` at id 2, with `x5` at id 5 on both sides so that the
     /// id walk finds a clean match and never looks at `x1`.
     #[test]
-    fn a_member_name_at_two_different_ids_is_refused() {
+    fn xtypes_7_2_4_4_8_a_member_name_at_two_different_ids_is_refused() {
         let mut reg = reg();
         let writer = MinimalTypeObject::Struct(
             TypeObjectBuilder::struct_type("::X")
@@ -4085,7 +4157,7 @@ mod tests {
     /// same label. §7.2.4.4.4.5 asks about the *types* a shared label
     /// selects, not about the ids. The suite's `union_1`/`union_2`.
     #[test]
-    fn a_shared_union_label_may_carry_different_member_ids() {
+    fn xtypes_7_2_4_4_8_a_shared_union_label_may_carry_different_member_ids() {
         let mut reg = reg();
         let i16t = TypeIdentifier::Primitive(PrimitiveKind::Int16);
         let i32t = TypeIdentifier::Primitive(PrimitiveKind::Int32);
@@ -4128,7 +4200,7 @@ mod tests {
     /// tail is read as its default and the pair matches — the suite's
     /// `tc_prevent_type_widening_4` against `_5`.
     #[test]
-    fn prevent_type_widening_refuses_a_reader_that_grew_a_member() {
+    fn xtypes_7_6_3_4_1_prevent_type_widening_refuses_a_reader_that_grew_a_member() {
         for ext in [Extensibility::Appendable, Extensibility::Mutable] {
             let mut reg = reg();
             let writer = MinimalTypeObject::Struct(
@@ -4194,7 +4266,7 @@ mod tests {
     /// shared. The suite's `union_appendable_one_common_1` against
     /// `union_appendable_no_common_1`.
     #[test]
-    fn two_unions_need_a_case_label_in_common() {
+    fn xtypes_7_2_4_4_8_two_unions_need_a_case_label_in_common() {
         let i32t = TypeIdentifier::Primitive(PrimitiveKind::Int32);
         for ext in [Extensibility::Appendable, Extensibility::Mutable] {
             let mut reg = TypeRegistry::new();
@@ -4248,7 +4320,7 @@ mod tests {
     /// whose only agreement is that each has a default agree on no
     /// value at all. The suite's `union_appendable_no_common_w_default`.
     #[test]
-    fn a_default_case_is_not_a_case_label_in_common() {
+    fn xtypes_7_2_4_4_8_a_default_case_is_not_a_case_label_in_common() {
         let u32t = TypeIdentifier::Primitive(PrimitiveKind::UInt32);
         let mut reg = TypeRegistry::new();
         let (w, r) = pair(
@@ -4278,7 +4350,7 @@ mod tests {
     /// member. The suite runs both directions,
     /// `union_final_one_default_1` and `_2`.
     #[test]
-    fn a_final_union_has_a_default_member_on_both_sides_or_neither() {
+    fn xtypes_7_2_4_4_8_a_final_union_has_a_default_member_on_both_sides_or_neither() {
         let i32t = TypeIdentifier::Primitive(PrimitiveKind::Int32);
         let plain = || {
             MinimalTypeObject::Union(
@@ -4332,7 +4404,7 @@ mod tests {
     /// `union_int16_int32_default` against `union_int32_int32_default`,
     /// and `union_int32_default_int16` for the mirror.
     #[test]
-    fn a_label_the_other_side_lacks_is_checked_against_its_default_member() {
+    fn xtypes_7_2_4_4_8_a_label_the_other_side_lacks_is_checked_against_its_default_member() {
         let i16t = TypeIdentifier::Primitive(PrimitiveKind::Int16);
         let i32t = TypeIdentifier::Primitive(PrimitiveKind::Int32);
         let explicit = |ty: TypeIdentifier| {
@@ -4394,7 +4466,7 @@ mod tests {
     /// corresponding member m2 of T2 such that m1.id == m2.id." The
     /// suite's `struct_no_common_ids`.
     #[test]
-    fn two_mutable_structs_need_a_member_id_in_common() {
+    fn xtypes_7_2_4_4_8_two_mutable_structs_need_a_member_id_in_common() {
         let i32t = TypeIdentifier::Primitive(PrimitiveKind::Int32);
         let mut reg = TypeRegistry::new();
         let (w, r) = pair(

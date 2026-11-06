@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! File-adapter tests: contract enforcement on disk + the PERSISTENT
-//! restart-survival guarantee.
+//! The file adapter against the retention of DDS 1.4 §2.2.3.5, the
+//! PERSISTENT guarantee of §2.2.3.4 (the data outlive the process that
+//! stored them) and the paginated read of ADR 0009.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -30,35 +31,11 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: format!("payload-{inst}-{seq}").into_bytes(),
-        representation: 1,
-        big_endian: false,
+        representation_identifier: [0x00, 0x07],
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
         source_guid: [inst; 16],
         source_sequence: seq as i64,
     }
-}
-
-#[test]
-fn representation_and_byte_order_survive_reopen() {
-    // A big-endian XCDR1 peer's stored sample must replay with its original
-    // representation + byte order (the on-disk header carries both).
-    let root = tmp("byteorder");
-    {
-        let store = FileStore::open(&root, keep_all()).unwrap();
-        store.set_contract("BeTopic", keep_all()).unwrap();
-        let mut s = sample("BeTopic", 1, 0);
-        s.representation = 0; // XCDR1
-        s.big_endian = true;
-        store.store(s).unwrap();
-    }
-    // Reopen from disk: the header round-trips both fields.
-    let store = FileStore::open(&root, keep_all()).unwrap();
-    let page = store
-        .query("BeTopic", &zerodds_durability_store::Selector::default())
-        .unwrap();
-    assert_eq!(page.samples.len(), 1);
-    assert_eq!(page.samples[0].representation, 0);
-    assert!(page.samples[0].big_endian);
 }
 
 /// Unique temp dir per test (no cross-test contamination).
@@ -75,34 +52,39 @@ fn tmp(tag: &str) -> std::path::PathBuf {
     p
 }
 
+/// What a store held comes back from the directory after the process that
+/// wrote it is gone: every field of every sample, among them a big-endian
+/// XCDR1 parameter-list identifier (`PL_CDR_BE`), and the topic metadata.
 #[test]
-fn persistent_survives_reopen() {
+fn dcps_2_2_3_4_persistent_samples_and_topic_meta_outlive_the_store() {
     let root = tmp("reopen");
+    let mut written: Vec<DurabilitySample> = (0..5).map(|seq| sample("Sensor", 1, seq)).collect();
+    written[3].representation_identifier = [0x00, 0x02];
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: Contract {
+            history_kind: HistoryKind::KeepLast,
+            history_depth: 5,
+            ..keep_all()
+        },
+    };
     {
         let store = FileStore::open(&root, keep_all()).unwrap();
-        store.set_contract("Sensor", keep_all()).unwrap();
-        for seq in 0..5 {
-            store.store(sample("Sensor", 1, seq)).unwrap();
+        assert_eq!(store.topic_meta("Sensor").unwrap(), None);
+        store.set_topic_meta("Sensor", meta.clone()).unwrap();
+        for s in &written {
+            store.store(s.clone()).unwrap();
         }
     } // store dropped — simulates process exit
-    // Fresh store on the same root = a restart. Full history survives.
     let reopened = FileStore::open(&root, keep_all()).unwrap();
-    let all = reopened.replay_for_topic("Sensor").unwrap();
-    assert_eq!(all.len(), 5);
-    assert_eq!(all[0].sequence, 0);
-    assert_eq!(all[4].sequence, 4);
-    // created_at survived the round-trip via the per-sample header.
-    assert_eq!(
-        all[3].created_at,
-        SystemTime::UNIX_EPOCH + Duration::from_secs(3)
-    );
-    // payload integrity.
-    assert_eq!(all[2].payload, b"payload-1-2");
+    assert_eq!(reopened.replay_for_topic("Sensor").unwrap(), written);
+    assert_eq!(reopened.topic_meta("Sensor").unwrap(), Some(meta));
     let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
-fn keep_last_drops_oldest_on_disk() {
+fn dcps_2_2_3_5_keep_last_keeps_the_newest_depth_samples_on_disk() {
     let root = tmp("keeplast");
     let store = FileStore::open(&root, keep_all()).unwrap();
     let c = Contract {
@@ -124,9 +106,11 @@ fn keep_last_drops_oldest_on_disk() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// The topic and instance names are hex-encoded into the directory names
+/// (module docs): two topics a sanitizer would map to one directory stay
+/// apart.
 #[test]
-fn topic_names_are_lossless() {
-    // Topics with special chars must not collide (hex-encoded dirs).
+fn two_topic_names_a_sanitizer_would_join_stay_apart() {
     let root = tmp("lossless");
     let store = FileStore::open(&root, keep_all()).unwrap();
     store.store(sample("a/b:c", 1, 0)).unwrap();
@@ -137,7 +121,7 @@ fn topic_names_are_lossless() {
 }
 
 #[test]
-fn unregister_cleanup_purges_instance_dir() {
+fn dcps_2_2_3_5_an_unregistered_instance_is_purged_after_the_cleanup_delay() {
     let root = tmp("cleanup");
     let store = FileStore::open(&root, keep_all()).unwrap();
     let c = Contract {
@@ -154,34 +138,10 @@ fn unregister_cleanup_purges_instance_dir() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// A topic directory from before the `.meta` sidecar existed opens, and has
+/// no metadata (module docs, `META_FILE`).
 #[test]
-fn topic_meta_round_trips_across_reopen() {
-    let root = tmp("meta-roundtrip");
-    let meta = TopicMeta {
-        type_name: "demo::Command".to_string(),
-        keyed: true,
-        contract: Contract {
-            history_kind: HistoryKind::KeepLast,
-            history_depth: 5,
-            ..keep_all()
-        },
-    };
-    {
-        let store = FileStore::open(&root, keep_all()).unwrap();
-        assert_eq!(store.topic_meta("Commands").unwrap(), None);
-        store.set_topic_meta("Commands", meta.clone()).unwrap();
-    }
-    // Reopen from disk = a restart: the sidecar survives.
-    let reopened = FileStore::open(&root, keep_all()).unwrap();
-    assert_eq!(reopened.topic_meta("Commands").unwrap(), Some(meta));
-    let _ = std::fs::remove_dir_all(&root);
-}
-
-#[test]
-fn topic_meta_absent_on_a_pre_existing_store_directory() {
-    // Simulates the on-disk format from before `.meta` sidecars existed: a
-    // topic directory with samples but no sidecar must still open, and
-    // `topic_meta` must return `None` (not an error) for it.
+fn a_topic_directory_without_its_sidecar_opens_without_meta() {
     let root = tmp("old-format");
     {
         let store = FileStore::open(&root, keep_all()).unwrap();
@@ -194,7 +154,7 @@ fn topic_meta_absent_on_a_pre_existing_store_directory() {
 }
 
 #[test]
-fn topic_meta_contract_governs_retention_over_set_contract() {
+fn the_topic_meta_contract_governs_retention_over_set_contract() {
     let root = tmp("meta-governs");
     let store = FileStore::open(&root, keep_all()).unwrap();
     store
@@ -234,8 +194,9 @@ fn topic_meta_contract_governs_retention_over_set_contract() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// ADR 0009, invariant 3: a read is paginated from the selector.
 #[test]
-fn query_selector_and_pagination() {
+fn adr_0009_3_a_query_pages_from_the_selector() {
     let root = tmp("query");
     let store = FileStore::open(&root, keep_all()).unwrap();
     for seq in 0..10 {

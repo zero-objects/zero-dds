@@ -195,12 +195,12 @@ impl DiscoveredEndpointsCache {
         // Cap check + LRU eviction via secondary index — O(log n) instead
         // of the earlier O(N) (F3 fix).
         let set = self.pub_index.entry(prefix).or_default();
-        if set.len() >= self.caps.max_publications_per_participant {
-            if let Some(&oldest) = set.iter().next() {
-                set.remove(&oldest);
-                self.publications.remove(&oldest.1);
-                self.evicted = self.evicted.saturating_add(1);
-            }
+        if set.len() >= self.caps.max_publications_per_participant
+            && let Some(&oldest) = set.iter().next()
+        {
+            set.remove(&oldest);
+            self.publications.remove(&oldest.1);
+            self.evicted = self.evicted.saturating_add(1);
         }
         set.insert((now, key));
         self.publications.insert(
@@ -234,12 +234,12 @@ impl DiscoveredEndpointsCache {
             return false;
         }
         let set = self.sub_index.entry(prefix).or_default();
-        if set.len() >= self.caps.max_subscriptions_per_participant {
-            if let Some(&oldest) = set.iter().next() {
-                set.remove(&oldest);
-                self.subscriptions.remove(&oldest.1);
-                self.evicted = self.evicted.saturating_add(1);
-            }
+        if set.len() >= self.caps.max_subscriptions_per_participant
+            && let Some(&oldest) = set.iter().next()
+        {
+            set.remove(&oldest);
+            self.subscriptions.remove(&oldest.1);
+            self.evicted = self.evicted.saturating_add(1);
         }
         set.insert((now, key));
         self.subscriptions.insert(
@@ -603,14 +603,6 @@ mod tests {
         assert!(c.topic_name_conflicts("X", "U"));
         // Different topic → no conflict regardless of type.
         assert!(!c.topic_name_conflicts("Y", "U"));
-    }
-
-    #[test]
-    fn fresh_cache_is_empty() {
-        let c = DiscoveredEndpointsCache::default();
-        assert_eq!(c.publications_len(), 0);
-        assert_eq!(c.subscriptions_len(), 0);
-        assert_eq!(c.evicted_count(), 0);
     }
 
     #[test]

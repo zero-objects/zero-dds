@@ -495,16 +495,15 @@ struct Accessor {
 /// `model_from_idl` is finite.
 fn rust_members(ast: &Ast, type_: Id<TypeNode>, expr: &str) -> Result<Vec<Accessor>, ProbeError> {
     let mut out = Vec::new();
-    if let Ok(node) = ast.type_(type_) {
-        if let TypeKind::Structure {
+    if let Ok(node) = ast.type_(type_)
+        && let TypeKind::Structure {
             base: Some(base), ..
         } = &node.kind
-        {
-            let base = base.resolved().ok_or_else(|| ProbeError::NoLayout {
-                detail: format!("{expr}: the base type is unresolved"),
-            })?;
-            out.extend(rust_members(ast, base, &format!("{expr}.base"))?);
-        }
+    {
+        let base = base.resolved().ok_or_else(|| ProbeError::NoLayout {
+            detail: format!("{expr}: the base type is unresolved"),
+        })?;
+        out.extend(rust_members(ast, base, &format!("{expr}.base"))?);
     }
     for id in ast.members_of(type_) {
         let member = ast.member(*id).map_err(|_| ProbeError::NoLayout {

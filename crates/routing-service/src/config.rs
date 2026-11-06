@@ -476,221 +476,185 @@ fn strip_comments(v: &mut serde_json::Value) {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
+    //! The oracle of these tests is the configuration as the crate's README
+    //! documents it ("Config — JSON", "Config — validation") and the DDS
+    //! 1.4 kinds the QoS keys name (§2.2.3).
+    use super::*;
+
+    /// A route `a` from `in_dom` to `out_dom` on topic `T`, as JSON members.
+    fn route_json(extra: &str, in_dom: i32, out_dom: i32) -> String {
+        format!(
+            r#"{{ "name": "a", {extra}
+                 "input":  {{ "domain": {in_dom}, "topic": "T" }},
+                 "output": {{ "domain": {out_dom}, "topic": "T" }} }}"#
+        )
+    }
+
+    fn refused(json: &str, why: &str) {
+        let err = RouterConfig::from_json(json).unwrap_err().to_string();
+        assert!(err.contains(why), "{why}: {err}");
+    }
 
     /// An unknown key is refused; a `_`-key is a comment.
     #[test]
-    fn json_refuses_unknown_keys_and_skips_comments() {
+    fn an_unknown_key_is_refused_and_an_underscore_key_is_a_comment() {
         let good = r#"{"_comment": "x", "name": "r", "routes": [{"_note": "y", "name": "a",
             "input": {"domain": 0, "topic": "T"}, "output": {"domain": 1, "topic": "T"}}]}"#;
         assert!(RouterConfig::from_json(good).is_ok());
-        let bad = good.replace("\"_note\"", "\"loop_gard\"");
-        let err = RouterConfig::from_json(&bad).unwrap_err().to_string();
-        assert!(err.contains("loop_gard"), "{err}");
+        refused(&good.replace("\"_note\"", "\"loop_gard\""), "loop_gard");
     }
-    use super::*;
 
-    fn route(name: &str, in_dom: i32, out_dom: i32) -> Route {
-        Route {
-            name: name.into(),
-            input: Endpoint {
-                domain: in_dom,
-                topic: "T".into(),
-                type_name: "*".into(),
-                keyed: false,
-                partition: vec![],
-                qos: QosSpec::default(),
-                type_file: String::new(),
-            },
-            output: Endpoint {
-                domain: out_dom,
-                topic: "T".into(),
-                type_name: "*".into(),
-                keyed: false,
-                partition: vec![],
-                qos: QosSpec::default(),
-                type_file: String::new(),
-            },
-            filter: None,
-            transform: None,
-            loop_guard: true,
-            preserve_source_timestamp: false,
-            max_samples_per_second: None,
-            tenant: None,
-            relay: false,
+    /// The QoS keys of an endpoint name the DDS 1.4 policies and kinds
+    /// (§2.2.3.4 DURABILITY, §2.2.3.14 RELIABILITY, §2.2.3.23 OWNERSHIP):
+    /// each spelling reads as its kind.
+    #[test]
+    fn the_qos_keys_read_as_the_dds_kinds_they_name() {
+        for (spelling, kind) in [
+            ("volatile", zerodds_qos::DurabilityKind::Volatile),
+            (
+                "transient_local",
+                zerodds_qos::DurabilityKind::TransientLocal,
+            ),
+            ("transient", zerodds_qos::DurabilityKind::Transient),
+            ("persistent", zerodds_qos::DurabilityKind::Persistent),
+        ] {
+            let json = format!(
+                r#"{{ "routes": [ {{ "name": "a", "input": {{ "domain": 0, "topic": "T" }},
+                     "output": {{ "domain": 1, "topic": "T", "qos": {{ "durability": "{spelling}",
+                     "reliable": false, "ownership": "exclusive", "ownership_strength": 7 }} }} }} ] }}"#
+            );
+            let cfg = RouterConfig::from_json(&json).unwrap();
+            let qos = &cfg.routes[0].output.qos;
+            assert_eq!(
+                zerodds_qos::DurabilityKind::from(qos.durability),
+                kind,
+                "{spelling}"
+            );
+            assert!(!qos.reliable);
+            assert_eq!(
+                zerodds_qos::OwnershipKind::from(qos.ownership),
+                zerodds_qos::OwnershipKind::Exclusive
+            );
+            assert_eq!(qos.ownership_strength, 7);
+            // Left out: RELIABLE, SHARED (README, "Config — JSON").
+            let input = &cfg.routes[0].input.qos;
+            assert!(input.reliable);
+            assert_eq!(
+                zerodds_qos::OwnershipKind::from(input.ownership),
+                zerodds_qos::OwnershipKind::Shared
+            );
         }
     }
 
+    /// The configurations `validate` refuses, each with the reason it
+    /// names: a duplicate route name, disagreeing keyedness, a route onto
+    /// its own endpoint without the loop guard, a `type_file` on the input
+    /// or on an unkeyed route.
     #[test]
-    fn validate_accepts_distinct_domains() {
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![route("a", 0, 1)],
-            access_control: None,
-        };
-        assert!(c.validate().is_ok());
+    fn validate_refuses_what_cannot_be_routed() {
+        refused(
+            &format!(
+                r#"{{ "routes": [ {}, {} ] }}"#,
+                route_json("", 0, 1),
+                route_json("", 1, 2)
+            ),
+            "duplicate route name 'a'",
+        );
+        refused(
+            r#"{ "routes": [ { "name": "a", "input": { "domain": 0, "topic": "T", "keyed": true },
+                 "output": { "domain": 1, "topic": "T" } } ] }"#,
+            "keyedness disagree",
+        );
+        refused(
+            &format!(
+                r#"{{ "routes": [ {} ] }}"#,
+                route_json(r#""loop_guard": false,"#, 7, 7)
+            ),
+            "would forward to itself",
+        );
+        refused(
+            r#"{ "routes": [ { "name": "a", "input": { "domain": 0, "topic": "T", "type_file": "x" },
+                 "output": { "domain": 1, "topic": "T" } } ] }"#,
+            "type_file is read on the output endpoint",
+        );
+        refused(
+            r#"{ "routes": [ { "name": "a", "input": { "domain": 0, "topic": "T" },
+                 "output": { "domain": 1, "topic": "T", "type_file": "x" } } ] }"#,
+            "nothing to key",
+        );
+        // The same route on its own endpoint with the guard is accepted.
+        assert!(
+            RouterConfig::from_json(&format!(r#"{{ "routes": [ {} ] }}"#, route_json("", 7, 7)))
+                .is_ok()
+        );
     }
 
     /// A relay route forwards unchanged on the writer's behalf: the same
     /// domain, topic and type, no filter and no transform.
     #[test]
     fn a_relay_route_stays_on_its_domain_topic_and_type() {
-        let check = |r: Route| {
-            RouterConfig {
-                name: "r".into(),
-                routes: vec![r],
-                access_control: None,
-            }
-            .validate()
+        let relay = |extra: &str, out_dom: i32, out_topic: &str, out_type: &str| {
+            format!(
+                r#"{{ "routes": [ {{ "name": "a", "relay": true, {extra}
+                     "input":  {{ "domain": 3, "topic": "T", "type_name": "A" }},
+                     "output": {{ "domain": {out_dom}, "topic": "{out_topic}", "type_name": "{out_type}" }} }} ] }}"#
+            )
         };
-        let relay = |in_dom, out_dom| Route {
-            relay: true,
-            ..route("a", in_dom, out_dom)
-        };
-        assert!(check(relay(3, 3)).is_ok());
-        let refused = |r: Route, why: &str| {
-            let err = check(r).unwrap_err().to_string();
-            assert!(err.contains(why), "{err}");
-        };
-        refused(relay(3, 4), "another domain");
-        let mut r = relay(3, 3);
-        r.output.topic = "U".into();
-        refused(r, "another topic");
-        let mut r = relay(3, 3);
-        r.input.type_name = "A".into();
-        r.output.type_name = "B".into();
-        refused(r, "another type");
-        let mut r = relay(3, 3);
-        r.filter = Some(ContentFilter {
-            expression: "x > 1".into(),
-            parameters: vec![],
-        });
-        refused(r, "a filter");
+        assert!(RouterConfig::from_json(&relay("", 3, "T", "A")).is_ok());
+        refused(&relay("", 4, "T", "A"), "another domain");
+        refused(&relay("", 3, "U", "A"), "another topic");
+        refused(&relay("", 3, "T", "B"), "another type");
+        refused(
+            &relay(r#""filter": { "expression": "x > 1" },"#, 3, "T", "A"),
+            "a filter",
+        );
     }
 
+    /// With an access-control list a route needs a rule for each of its
+    /// endpoints: the rule's tenant (none: any), its domain, and one of its
+    /// topic globs, where `*` matches any run of characters and `?` one.
     #[test]
-    fn glob_match_star_and_question() {
-        assert!(glob_match("*", "anything"));
-        assert!(glob_match("Sensor*", "SensorTemp"));
-        assert!(glob_match("Sensor?", "SensorA"));
-        assert!(!glob_match("Sensor?", "SensorAB"));
-        assert!(glob_match("A*C", "ABC"));
-        assert!(!glob_match("A*C", "ABD"));
-    }
-
-    #[test]
-    fn acl_rejects_endpoint_outside_allowlist() {
-        // route a: input domain 0, output domain 1 (topic "T").
-        let acl = AccessControl {
-            allow: vec![AclRule {
-                tenant: None,
-                domain: 0,
-                topics: vec!["*".into()],
-            }],
+    fn the_access_control_list_needs_a_rule_for_each_endpoint() {
+        let config = |tenant: &str, rules: &str| {
+            format!(
+                r#"{{ "routes": [ {{ "name": "a", {tenant}
+                     "input":  {{ "domain": 0, "topic": "SensorA" }},
+                     "output": {{ "domain": 1, "topic": "SensorAB" }} }} ],
+                     "access_control": {{ "allow": [ {rules} ] }} }}"#
+            )
         };
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![route("a", 0, 1)],
-            access_control: Some(acl),
+        let rule = |tenant: &str, domain: i32, glob: &str| {
+            format!(r#"{{ {tenant} "domain": {domain}, "topics": ["{glob}"] }}"#)
         };
-        // output domain 1 is not in the ACL → rejected.
-        assert!(c.validate().is_err());
-    }
-
-    #[test]
-    fn acl_accepts_when_both_endpoints_permitted() {
-        let acl = AccessControl {
-            allow: vec![
-                AclRule {
-                    tenant: None,
-                    domain: 0,
-                    topics: vec!["*".into()],
-                },
-                AclRule {
-                    tenant: None,
-                    domain: 1,
-                    topics: vec!["T".into()],
-                },
-            ],
-        };
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![route("a", 0, 1)],
-            access_control: Some(acl),
-        };
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn acl_scopes_rules_by_tenant() {
-        let mut r = route("a", 0, 1);
-        r.tenant = Some("acme".into());
-        let acl = AccessControl {
-            allow: vec![AclRule {
-                tenant: Some("other".into()),
-                domain: 0,
-                topics: vec!["*".into()],
-            }],
-        };
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![r],
-            access_control: Some(acl),
-        };
-        // The rule is for tenant "other"; the route is tenant "acme" → rejected.
-        assert!(c.validate().is_err());
-    }
-
-    #[test]
-    fn validate_rejects_duplicate_names() {
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![route("a", 0, 1), route("a", 1, 2)],
-            access_control: None,
-        };
-        assert!(c.validate().is_err());
-    }
-
-    #[test]
-    fn validate_rejects_self_loop_without_guard() {
-        let mut r = route("a", 7, 7);
-        r.loop_guard = false;
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![r],
-            access_control: None,
-        };
-        assert!(c.validate().is_err());
-    }
-
-    #[test]
-    fn validate_rejects_keyedness_mismatch() {
-        let mut r = route("a", 0, 1);
-        r.input.keyed = true;
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![r],
-            access_control: None,
-        };
-        assert!(c.validate().is_err());
-    }
-
-    #[test]
-    fn json_roundtrip() {
-        let c = RouterConfig {
-            name: "r".into(),
-            routes: vec![route("a", 0, 1)],
-            access_control: None,
-        };
-        let js = c.to_json().unwrap();
-        let back = RouterConfig::from_json(&js).unwrap();
-        assert_eq!(c, back);
-    }
-
-    #[test]
-    fn durability_maps_to_qos() {
-        assert_eq!(
-            zerodds_qos::DurabilityKind::from(Durability::Transient),
-            zerodds_qos::DurabilityKind::Transient
+        // Both endpoints permitted, by `?` and by `*`.
+        assert!(
+            RouterConfig::from_json(&config(
+                "",
+                &format!("{}, {}", rule("", 0, "Sensor?"), rule("", 1, "S*B"))
+            ))
+            .is_ok()
+        );
+        // `?` is one character: `SensorAB` on domain 1 is not `Sensor?`.
+        refused(
+            &config(
+                "",
+                &format!("{}, {}", rule("", 0, "Sensor?"), rule("", 1, "Sensor?")),
+            ),
+            "output endpoint",
+        );
+        // No rule for domain 1.
+        refused(&config("", &rule("", 0, "*")), "output endpoint");
+        // A rule of another tenant does not apply.
+        refused(
+            &config(
+                r#""tenant": "acme","#,
+                &format!(
+                    "{}, {}",
+                    rule(r#""tenant": "other","#, 0, "*"),
+                    rule(r#""tenant": "other","#, 1, "*")
+                ),
+            ),
+            "input endpoint",
         );
     }
 }

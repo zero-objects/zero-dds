@@ -285,7 +285,7 @@ Not read. Mapping (vendor keys per vendor documentation, not checked in the repo
 
 ### 6.5 Mixed operation
 
-- Standard discovery; evidence `crates/discovery/tests/fastdds_live_spdp.rs`, `crates/dcps/tests/fastdds_live_pub.rs`, `fastdds_live_sub.rs`, `fastdds_qos_matrix.rs`, CI gate `tests/interop/ci/`. An SPDP handshake with a running Fast DDS Discovery Server exists as an `#[ignore]` test (`fastdds_live_spdp.rs:131`).
+- Standard discovery; evidence `crates/discovery/tests/fastdds_live_spdp.rs` and the OMG dds-rtps cases against Fast DDS in both directions (`tests/interop/omg/chunks.tsv`, `rtps-vendor-1`). A Fast DDS discovery server does not answer ZeroDDS' `DATA(p)`: ZeroDDS is no client of a discovery server (`docs/spec-coverage/cross-vendor-validation.md`, CV-1).
 - ROS 2 services with `rmw_fastrtps`: ZeroDDS writes `PID_RELATED_SAMPLE_IDENTITY` twice, as 0x0083 and as eProsima PID 0x800f (`crates/dcps/src/runtime.rs:17939–17947`, `crates/rtps/src/inline_qos.rs:119–127`). No setting needed.
 - DDS Security with Fast DDS needs RSA identity certificates (per docs, `docs/spec-coverage/cross-vendor-validation.md`, section "DDS-Security, cross-vendor").
 
@@ -302,7 +302,7 @@ OpenDDS uses TAO's IDL-to-C++ mapping (`DDS::DomainParticipantFactory_var dpf = 
 
 ### 7.2 IDL
 
-`#pragma DCPS_DATA_TYPE` and `#pragma DCPS_DATA_KEY` are read; `DCPS_DATA_KEY` makes the member the key (2.2). A key path into a member (`p.x`, `a[0]`) is rejected and must be written as `@key` on the inner type. OpenDDS ignores `@value` on enumerators and `@bit_bound` (`docs/wire-axes-followup.md`, table "What moved into a dialect", rows `EnumeratorValue::Ordinal`, `EnumHolderWidth`).
+`#pragma DCPS_DATA_TYPE` and `#pragma DCPS_DATA_KEY` are read; `DCPS_DATA_KEY` makes the member the key (2.2). A key path into a member (`p.x`, `a[0]`) is rejected and must be written as `@key` on the inner type. OpenDDS ignores `@value` on enumerators and `@bit_bound` (`0b2e8df9f6b:docs/wire-axes-followup.md`, table "What moved into a dialect", rows `EnumeratorValue::Ordinal`, `EnumHolderWidth`).
 
 ### 7.3 QoS
 

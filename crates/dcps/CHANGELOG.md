@@ -4,7 +4,94 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
 
 ## [Unreleased]
 
+### Added
+
+- `RuntimeConfig::key_must_understand`, the setting
+  `xtypes.key_must_understand` (`flagged` or `implied`, environment
+  `ZERODDS_KEY_MUST_UNDERSTAND`), passed to the type-consistency decision
+  of remote and same-runtime pairs. Unset, `wire.rtps_dialect` or
+  `wire.codec_dialect` set to `cyclone`, `fastdds` or `opendds` selects
+  `implied`.
+
+- `DcpsRuntime::set_user_writer_representation_identifier(eid, [u8; 2])`:
+  the XCDR version, extensibility and byte order of a writer's samples from
+  the representation identifier of an encapsulation header (DDS-XTypes 1.3
+  Table 60), for a service that sends a body under the header it came with.
+
+- `runtime::without_waiting_for_room(f)`: the writes, disposes and
+  unregisters `f` makes on the calling thread do not wait for room in the
+  RESOURCE_LIMITS; where one would wait up to `max_blocking_time` (DDS 1.4
+  §2.2.2.4.2.11), it returns as the wait would have ended at once (`TIMEOUT`,
+  or the write goes out when only the flow-control window is full). For a
+  caller that waits elsewhere, such as an async executor.
+
+- `UserSample::Alive::representation_identifier`: the representation identifier
+  of the sample's encapsulation header as the writer sent it (DDSI-RTPS 2.5
+  §10.5). `representation` and `big_endian` are read from it; it also names the
+  format of the body (plain, delimited, parameter list), which a service that
+  forwards the body unchanged needs for its own header.
+
+### Fixed
+
+- The SHM user transport (`transport.user_transport = SHM`) receives from a
+  participant on this host before it has sent that participant anything. Its
+  adapter opened the ring it reads a peer from at its own first send to the
+  peer, and a participant whose readers are best-effort sends nothing first
+  (DDSI-RTPS 2.5 §8.4.2.3): between two processes it received nothing (the SHM
+  cells of `bench-regression`, 0 of 30 000 echoes). The runtime now hands the
+  default unicast locators of every ZeroDDS participant SPDP reports to the
+  user transport (`Transport::add_destination`), and the adapter opens the
+  pair then; it closes the pair and joins its receive thread when the
+  participant leaves (`forget_destination`). Two threads opening the pair of
+  one peer at once open it once. Test:
+  `tests/shm_user_transport.rs::shm_4_3_a_best_effort_reader_takes_what_a_process_it_never_sent_to_writes`.
+
+- LIVELINESS_LOST of a new user writer comes when its lease runs out
+  (DDS 1.4 §2.2.4.1). The lease starts at registration, but registering the
+  writer did not wake the scheduler's housekeeping pass; with nothing pending
+  before, the pass parked until its idle wake (250 ms), so a silent
+  MANUAL_BY_TOPIC writer was counted up to 250 ms late. Registration now
+  raises the tick wake, as a write does.
+
+- `DdsType::compute_key_hash`, `xcdr1_delegation_is_sound` and
+  `xcdr1_reframes_dheader` read the run-time accessors (`has_key`,
+  `key_holder_max_size`, `extensibility`), not the constants behind them; a
+  type described at run time (XTypes 1.3 §7.5) that answers only through the
+  accessors got no KeyHash (`None`) and, as `@appendable`, an XCDR1 stream
+  with the DHEADER under `CDR_LE` (Table 60). `DdsAny::pack`/`unpack` name
+  the value by `type_name()`.
+
+- A reader in the writer's own runtime got a big-endian writer's live samples
+  (`set_user_writer_byte_order_override`) marked little-endian: the same-runtime
+  path set `big_endian` to `false`. It now takes the byte order, like the
+  version, from the writer's header.
+
+- A RELIABLE DataWriter without a runtime and without room waited too long
+  before TIMEOUT: the fraction of `max_blocking_time`, which counts 2^-32 s
+  (DDSI-RTPS 2.5 §9.3.2), was read as nanoseconds, so the default 100 ms
+  became 429.5 ms (DDS 1.4 §2.2.2.4.2.11). An INFINITE time waits.
+
+- The feature `same-host-uds` on a target that is not Unix: the UDS paths of
+  the runtime (`UserTransportKind::Uds`, `transport.user_transport = UDS`)
+  hang on `cfg(all(feature = "same-host-uds", unix))`, since
+  `zerodds-transport-uds` is empty off Unix. Before, such a build named a
+  crate item that does not exist there.
+
 ### Changed
+
+- `UserReaderConfig::default()` has `reliable: false`, the BEST_EFFORT that
+  DDS 1.4 §2.2.3.14 gives a DataReader ("This is the default value for
+  DataReaders and Topics"); it was `true`. A caller that fills the rest with
+  `..Default::default()` and needs RELIABLE sets `reliable: true`; the readers
+  of this workspace that relied on the old default do (the durability
+  service's ingest reader, `zerodds-record`, `zerodds-spy` through
+  `zerodds-cli-common`, the examples and the tests).
+
+- `examples/zerodds_perf`: `pub` and `sub` print the process CPU time over
+  their measurement window (`# pub-cpu:`, `# sub-cpu:`), `sub` stops
+  `ZERODDS_PERF_SUB_IDLE_EXIT_MS` after the last sample, and `pub` waits
+  500 ms after the match before it writes (the speed setup,
+  `tests/perf/speed`).
 
 - The listener traits declare each callback group once: `PublisherListener`,
   `SubscriberListener` and `DomainParticipantListener` repeat the callbacks of
@@ -192,7 +279,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), ver
   §9.8.1, §7.3.25); `DdsError::SecurityConfiguration` mapped to
   PRECONDITION_NOT_MET.
 - `zerodds.sec.kx_key_fallback=accept`: a submessage or encrypted payload that
-  no key of its sender opens is tried with the Kx key as well. `0b772e7e6ef`
+  no key of its sender opens is tried with the Kx key as well. `6387b7b5a3c`
   removed that unconditional fallback (DDS-Security 1.2 §10.5.2.1.2: the Kx key
   protects the volatile channel only); the setting is the vendor form.
 - Compatibility of configurations (DDS-Security 1.2 §7.3.10 to §7.3.24): the

@@ -24,7 +24,7 @@ def _writer_for(color: str = "BLUE", domain: int = 130):
     return pub.create_shape_writer(topic), p
 
 
-def test_register_instance_returns_nonzero_handle():
+def py_1_2_10_register_instance_returns_nonzero_handle():
     """§2.4 — register_instance returns a positive InstanceHandle
     (DDS 1.4 §2.2.2.4.2.5)."""
     writer, _p = _writer_for()
@@ -33,7 +33,7 @@ def test_register_instance_returns_nonzero_handle():
     assert handle != 0  # HANDLE_NIL is 0; register returns a real handle
 
 
-def test_register_instance_is_idempotent_for_same_key():
+def py_1_2_10_register_instance_is_idempotent_for_same_key():
     """§2.4 — register_instance for the same key (color) returns
     the same handle (DDS 1.4 §2.2.2.4.2.5: "If the instance was
     already registered ... an InstanceHandle_t is returned")."""
@@ -50,7 +50,7 @@ def test_register_different_keys_yield_different_handles():
     assert h_red != h_blue
 
 
-def test_dispose_does_not_raise():
+def py_2_4_dispose_does_not_raise():
     """§2.4 — dispose marks the instance as not-alive_disposed
     (DDS 1.4 §2.2.2.5.1.7); no error on the offline path."""
     writer, _p = _writer_for(domain=133)
@@ -59,7 +59,7 @@ def test_dispose_does_not_raise():
     writer.dispose(shape)  # must not raise
 
 
-def test_unregister_instance_does_not_raise():
+def py_2_4_unregister_instance_does_not_raise():
     """§2.4 — unregister_instance removes the instance from the
     writer cache (DDS 1.4 §2.2.2.4.2.7)."""
     writer, _p = _writer_for(domain=134)
@@ -68,7 +68,7 @@ def test_unregister_instance_does_not_raise():
     writer.unregister_instance(shape)  # must not raise
 
 
-def test_lifecycle_full_sequence():
+def py_1_2_10_lifecycle_full_sequence():
     """§2.4 — register → write → dispose → unregister sequence without raising."""
     writer, _p = _writer_for(domain=135)
     shape = zerodds.Shape("CYAN", 7, 8, 30)

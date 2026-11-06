@@ -497,21 +497,21 @@ pub(crate) fn parse_entity_qos(ctx: &mut Ctx, el: &XmlElement) -> Result<EntityQ
     let allowed = allowed_policies(&el.name);
     let mut seen: alloc::collections::BTreeSet<&str> = alloc::collections::BTreeSet::new();
     for child in &el.children {
-        if let Some(allowed) = allowed {
-            if !allowed.contains(&child.name.as_str()) {
-                // §7.2: the IDL structure is mapped 1:1. A policy that is
-                // not a field of this container would be read and then
-                // dropped by materialization without a word.
-                if ALL_POLICIES.contains(&child.name.as_str()) {
-                    ctx.misplaced_child(
-                        child,
-                        &format!("not a field of the {} (DDS 1.4 §2.2.3)", el.name),
-                    )?;
-                } else {
-                    ctx.unknown_child(child)?;
-                }
-                continue;
+        if let Some(allowed) = allowed
+            && !allowed.contains(&child.name.as_str())
+        {
+            // §7.2: the IDL structure is mapped 1:1. A policy that is
+            // not a field of this container would be read and then
+            // dropped by materialization without a word.
+            if ALL_POLICIES.contains(&child.name.as_str()) {
+                ctx.misplaced_child(
+                    child,
+                    &format!("not a field of the {} (DDS 1.4 §2.2.3)", el.name),
+                )?;
+            } else {
+                ctx.unknown_child(child)?;
             }
+            continue;
         }
         if !seen.insert(child.name.as_str()) {
             return Err(XmlError::InvalidXml(format!(
@@ -1246,7 +1246,7 @@ fn parse_group_data(ctx: &mut Ctx, el: &XmlElement) -> Result<GroupDataQosPolicy
 fn base64_decode(input: &str) -> Option<Vec<u8>> {
     let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
     let bytes = cleaned.as_bytes();
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return None;
     }
     let mut out = Vec::with_capacity(bytes.len() / 4 * 3);

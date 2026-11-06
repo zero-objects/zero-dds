@@ -99,6 +99,7 @@ auth:
 topics:
   - name: "Chat::Message"
     type: "Chat::Message"
+    idl_file: "/etc/zerodds/chat.idl"  # declares `type`; needed for the JSON text frames (§4.3)
     direction: "bidir"         # in|out|bidir
     qos:
       reliability: "reliable"
@@ -127,8 +128,9 @@ ENV substitution: `${VAR}` and `${VAR:-default}` are resolved before the config 
 ### §4.1 Handshake
 
 Standard RFC 6455 upgrade handshake. The daemon answers with
-`Sec-WebSocket-Protocol: zerodds-ws-bridge/1.0` if the client sends this
-subprotocol header (optional).
+`Sec-WebSocket-Protocol: zerodds-ws-bridge-1.0` if the client sends this
+subprotocol header (optional). Each subprotocol name is a token (RFC 6455
+§4.1, the `token` of RFC 7230 §3.2.6), so it carries no `/`.
 
 Auth header (bearer mode): `Authorization: Bearer <token>` → 401 on
 failed auth, 403 on missing scope.
@@ -154,11 +156,20 @@ Every WS frame transports one sample:
 +--------+--------+--------------------+--------------------+
 ```
 - Magic `0x5A 0x44 0x42 0x31` = "ZDB1" (ZeroDDS Binary v1)
-- Flags: bit0 = `dispose`, bit1 = `coherent_set_member`, bit2-7 reserved
-- Encap header: `[0x00, 0x07, 0x00, 0x00]` (XCDR2-LE) per `zerodds-xcdr2-bindings-conformance-1.0` §3
-- CDR payload: according to the topic type, byte-exact as over RTPS
+- Flags: bit0 = `dispose`, bit1 = `coherent_set_member`, bit2 = `unregister`, bit3-7 reserved
+- Encap header: the encapsulation header the sample came under (DDSI-RTPS 2.5
+  §10.5), e.g. `[0x00, 0x07, 0x00, 0x00]` (XCDR2-LE) per
+  `zerodds-xcdr2-bindings-conformance-1.0` §3, `[0x00, 0x09, 0x00, 0x00]`
+  (D_CDR2-LE) for an `@appendable` type
+- CDR payload: according to the topic type, byte-exact as over RTPS. For a
+  dispose or an unregister: the instance's key holder (DDS-XTypes 1.3 §7.6.8)
+  under `[0x00, 0x06, 0x00, 0x00]` (PLAIN_CDR2 big endian), empty when the
+  marker carried only the key hash
+- A client sends samples in binary frames (flags 0); it disposes and
+  unregisters with JSON sample frames. A binary frame from a client with bit0
+  or bit2 set is answered with an error (§4.4)
 
-**Text frames** (optional, if the client requests `Sec-WebSocket-Protocol: zerodds-ws-bridge/1.0+json`):
+**Text frames** (optional, if the client requests `Sec-WebSocket-Protocol: zerodds-ws-bridge-1.0+json`):
 ```json
 {
   "topic": "Chat::Message",
@@ -168,6 +179,27 @@ Every WS frame transports one sample:
   "timestamp_ns": 1730000000000000000
 }
 ```
+
+- `key_hash`: the instance's KeyHash (DDSI-RTPS 2.5 §9.6.4.8) as 32 lowercase
+  hexadecimal digits; left out for a topic without key.
+- `data`: the sample as JSON (the representation of `zerodds_wire_codec::json`:
+  a struct is an object by member name, a sequence an array, an enumerator its
+  name). The daemon needs the topic's type for it, from `idl_file` (§3): it
+  decodes a DDS sample in the format its encapsulation header names, and
+  encodes a client's `data` under XCDR2 little endian in the format of the
+  type's extensibility (DDS-XTypes 1.3 §7.4.2: PLAIN_CDR2, DELIMITED_CDR or
+  PL_CDR2). Present for `publish`; left out for `dispose` and `unregister`
+  from the daemon.
+- `timestamp_ns`: the source time in nanoseconds since the Unix epoch; left
+  out when the sample carried none. A client's value is the source time of the
+  sample it writes.
+- From the daemon: `publish` per sample, `dispose` and `unregister` per marker
+  (both for a marker that is both). From a client: `publish` writes `data`;
+  `dispose` and `unregister` name the instance by `key_hash` or by the key
+  members in `data`; `register` has no message on the wire (DDS 1.4
+  §2.2.2.4.2.5) and writes nothing.
+- A JSON-mode client of a topic without `idl_file`, on its path or by
+  `subscribe`, gets an error 415 and no samples of it.
 
 JSON mode reduces throughput by ~3-5x — only for debug/browser dev.
 
@@ -186,6 +218,13 @@ Daemon → client:
 { "op": "error", "code": 403, "message": "scope dds.write required for Chat::Message" }
 { "op": "pong" }
 ```
+
+`subscribed` names the topics of the request the connection now receives; a
+topic it does not receive gets an error. The control messages are text frames
+in both modes. Error codes: 400 a message of another form, 403 the ACL (§7.3)
+does not grant it, 404 a topic not bridged in that direction (`direction`),
+415 a topic without `idl_file` in JSON mode, 422 a sample that is no sample
+of the topic's type, 500 the DDS write failed.
 
 Standard RFC 6455 PING/PONG frames are supported in addition.
 
@@ -305,7 +344,7 @@ frame.
 1. Config parse + validation (fail-fast on faulty YAML).
 2. TLS cert load if activated.
 3. DCPS DomainParticipant init on `domain`.
-4. Per topic: register reader+writer (according to `direction`: `in` = WebSocket clients → DDS, one DataWriter; `out` = DDS → WebSocket clients, one DataReader; `bidir` = both). The daemon answers a `publish` on a topic without a DataWriter and a `subscribe` on one without a DataReader with an error frame (`code` 404, `reason` `not-bridged-into-dds` or `not-bridged-out-of-dds`).
+4. Per topic: register reader+writer (according to `direction`: `in` = WebSocket clients → DDS, one DataWriter; `out` = DDS → WebSocket clients, one DataReader; `bidir` = both). The daemon answers a `publish` on a topic without a DataWriter and a `subscribe` on one without a DataReader with an error frame (§4.4, `code` 404, the `message` naming the topic and the direction).
 5. WS server bind + listen.
 6. SIGHUP/SIGTERM/SIGINT handler.
 

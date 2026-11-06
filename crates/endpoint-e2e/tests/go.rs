@@ -128,10 +128,15 @@ fn build_go_raw(port: u16) -> Child {
     spawn_go("go_raw", &src, false, &[port.to_string()])
 }
 
+/// zerodds-endpoint-go-1.0 §5 item 1: the Go app sends the `Ping` of the generated codec as a
+/// bare XCDR2 datagram, without the XRCE frame; the test reads it with the
+/// XCDR2 reader (DDS-XTypes 1.3 §7.4) and answers with a bare `Pong`, which
+/// the app decodes and prints.
 #[test]
-fn go_raw_udp() {
+#[ignore = "needs the Go toolchain; runs in integration-bindings"]
+fn endpoint_go_5_1_the_generated_codec_pings_without_the_xrce_frame() {
     if !go_available() {
-        eprintln!("SKIP go_raw_udp: `go` not on PATH");
+        eprintln!("SKIP go raw udp: `go` not on PATH");
         return;
     }
     // The raw app sends a bare XCDR2 Ping (no XRCE frame), so the peer's
@@ -255,12 +260,22 @@ fn endpoint_case(mode: &str) {
     ping_pong(&peer, child, &format!("go/{mode}"));
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Go app sends its `Ping`
+/// through the endpoint SDK's sync API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn go_endpoint_sync() {
+#[ignore = "needs the Go toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_go_sync_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("sync");
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Go app sends its `Ping`
+/// through the endpoint SDK's async API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn go_endpoint_async() {
+#[ignore = "needs the Go toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_go_async_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("async");
 }

@@ -381,13 +381,14 @@ The libraries are measured against **open62541 1.5.4** (`/root/o62-ex`,
 `/root/o62-ex2` on the Linux measurement host, built by
 `crates/opcua-pubsub/proofs/build-open62541.sh`) — see the crate README for
 the exact commands. At the daemon level,
-`crates/opcua-bridge/tests/open62541_interop.rs` (gated on
-`OPCUA_OPEN62541=1`; see `crates/opcua-bridge/tests/foreign/README.md` for
-prerequisites) drives a real running `zerodds-opcua-bridged` from a tiny C
+the scenario `bridge-opcua` of the integration pillar
+(`tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`, job
+`integration-bridges`; see `crates/opcua-bridge/tests/foreign/README.md`)
+drives a real running `zerodds-opcua-bridged` from a tiny C
 client built against `libopen62541`'s own public API — Browse the
 `Objects` folder, Read a `dds_to_ua_connection` leaf, Write a
-`ua_to_dds_connection` leaf and confirm the write reached DDS. Not run in
-this daemon's own CI; a generic OPC-UA client (UaExpert or any
+`ua_to_dds_connection` leaf and confirm the write reached DDS. A generic
+OPC-UA client (UaExpert or any
 GetEndpoints/Browse/Read/Subscribe-capable tool) can drive the `opc.tcp`
 server the same way.
 
@@ -457,10 +458,9 @@ multicast group's own port.
 
 ### §12.3 Multi-vendor
 
-`crates/opcua-bridge/tests/open62541_interop.rs` (§10) drives a real
-running daemon from a tiny C client against `libopen62541`; gated on
-`OPCUA_OPEN62541=1` and not automated in CI (same gap the review noted for
-the other five bridges' cross-vendor tests). `crates/opcua-server/proofs/
+The scenario `bridge-opcua` of the integration pillar (§10) drives a real
+running daemon from a tiny C client against `libopen62541` in the job
+`integration-bridges`. `crates/opcua-server/proofs/
 open62541.sh` and `crates/opcua-pubsub/proofs/open62541_uadp.sh` are the
 library-level open62541 measurements this daemon's own README points at.
 

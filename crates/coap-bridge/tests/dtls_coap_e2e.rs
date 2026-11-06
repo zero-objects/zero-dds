@@ -16,7 +16,7 @@ use zerodds_coap_bridge::dtls_transport::{DtlsCoapClient, DtlsCoapServer};
 use zerodds_coap_bridge::message::{CoapCode, CoapMessage, MessageType};
 
 #[tokio::test]
-async fn dtls_coap_get_content_roundtrip() {
+async fn coap_9_dtls_coap_get_content_roundtrip() {
     // Server binds an ephemeral port + generates a self-signed cert.
     let server = DtlsCoapServer::bind("127.0.0.1:0".parse().unwrap())
         .await
@@ -65,7 +65,7 @@ async fn dtls_coap_get_content_roundtrip() {
 /// Bridge-Spec §7.1 PSK mode: `TLS_PSK_WITH_AES_128_CCM_8` with the
 /// `coap.dtls.psk` identities, no certificate anywhere in the handshake.
 #[tokio::test]
-async fn dtls_psk_handshake_carries_coap() {
+async fn coap_9_dtls_psk_handshake_carries_coap() {
     use zerodds_coap_bridge::dtls::{DtlsCredentials, PskStore, parse_secret_hex};
 
     let secret = parse_secret_hex("000102030405060708090a0b0c0d0e0f").expect("hex secret");
@@ -112,7 +112,7 @@ async fn dtls_psk_handshake_carries_coap() {
 /// An identity the `coap.dtls.psk` list does not hold cannot complete the
 /// handshake — the PSK callback has no secret to answer with.
 #[tokio::test]
-async fn dtls_psk_unknown_identity_is_refused() {
+async fn coap_9_dtls_psk_unknown_identity_is_refused() {
     use zerodds_coap_bridge::dtls::{DtlsCredentials, PskStore};
 
     let mut psk = PskStore::new();
@@ -146,7 +146,7 @@ async fn dtls_psk_unknown_identity_is_refused() {
 /// rotation: `rotate` swaps the credentials the next handshake uses while the
 /// session established before it keeps working ("Sessions halten").
 #[tokio::test]
-async fn dtls_certificate_files_and_rotation_keep_sessions_alive() {
+async fn coap_9_dtls_certificate_files_and_rotation_keep_sessions_alive() {
     use std::io::Write;
     use zerodds_coap_bridge::dtls::DtlsCredentials;
 
@@ -257,7 +257,7 @@ async fn dtls_certificate_files_and_rotation_keep_sessions_alive() {
 /// A key file that is not PKCS#8 is refused by name instead of failing inside
 /// the handshake.
 #[test]
-fn dtls_rejects_a_non_pkcs8_key_file() {
+fn coapbridge_7_1_dtls_rejects_a_non_pkcs8_key_file() {
     use std::io::Write;
     let dir = std::env::temp_dir().join(format!("zerodds-dtls-bad-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("temp dir");

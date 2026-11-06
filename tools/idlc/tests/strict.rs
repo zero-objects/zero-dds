@@ -83,7 +83,7 @@ fn vendor_extensions() -> [(&'static str, &'static str); 4] {
 }
 
 #[test]
-fn every_subcommand_refuses_every_vendor_extension_under_strict() {
+fn idl_8_2_2_every_subcommand_refuses_every_vendor_extension_under_strict() {
     let dir = tempdir("refuses");
     for (name, source) in vendor_extensions() {
         let file = dir.join(format!("{name}.idl"));
@@ -122,7 +122,7 @@ fn every_subcommand_accepts_the_same_files_without_strict() {
 /// `@RTPS_*` are unknown annotations the front end does not act on, so
 /// `--strict` refusing them would break conforming IDL to gate nothing.
 #[test]
-fn strict_does_not_refuse_an_unknown_annotation() {
+fn idl_7_4_15_4_2_strict_does_not_refuse_an_unknown_annotation() {
     let dir = tempdir("unknown-annotation");
     for (name, source) in [
         ("fastdds-key-capital", "struct Sa { @Key long m; };\n"),

@@ -2137,7 +2137,7 @@ mod tests {
     /// the check — a module that does not compile or does not
     /// type-check is a materialiser defect, not a corpus defect.
     #[test]
-    fn every_corpus_case_renders_or_names_its_failure() {
+    fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
         let cases = corpus();
         assert!(
             cases.len() > 300,
@@ -2164,7 +2164,7 @@ mod tests {
     }
 
     #[test]
-    fn every_idl_primitive_reaches_an_annotation_that_states_its_width() {
+    fn xtypes_7_2_2_2_every_idl_primitive_reaches_an_annotation_that_states_its_width() {
         // The decision this column turns on: a Python `int` is
         // arbitrary precision, so the width has to be somewhere, and
         // `x: int` is never written.
@@ -2216,7 +2216,7 @@ mod tests {
     }
 
     #[test]
-    fn every_width_alias_states_its_bits_and_its_signedness() {
+    fn xtypes_7_2_2_2_every_width_alias_states_its_bits_and_its_signedness() {
         let generated = declarations("@final struct P { long x; };");
         assert!(
             generated.contains("_Int32 = typing.Annotated[int, _IdlInt(bits=32, signed=True)]"),
@@ -2229,7 +2229,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_double_is_the_decimal_text_and_never_a_python_float() {
+    fn xtypes_7_2_2_2_a_long_double_is_the_decimal_text_and_never_a_python_float() {
         // A Python float is a binary64. Writing a binary128 into one
         // drops sixty bits of the significand at the assignment, before
         // any codec runs.
@@ -2242,7 +2242,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sequence_is_a_list_and_an_array_is_a_tuple_of_its_length() {
+    fn xtypes_7_2_2_4_3_a_sequence_is_a_list_and_an_array_is_a_tuple_of_its_length() {
         let generated = declarations(
             "@final struct P { sequence<long> s; long a[3]; long g[2][3]; sequence<string> t; };",
         );
@@ -2264,7 +2264,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bound_reaches_the_annotation_and_an_unbounded_one_leaves_it_alone() {
+    fn xtypes_7_2_2_4_3_a_bound_reaches_the_annotation_and_an_unbounded_one_leaves_it_alone() {
         let generated = declarations(
             "@final struct P { sequence<long, 5> s; sequence<long> u; string<7> t; };",
         );
@@ -2280,7 +2280,7 @@ mod tests {
     }
 
     #[test]
-    fn a_map_is_a_list_of_pairs_and_never_a_dict() {
+    fn xtypes_7_2_2_4_3_a_map_is_a_list_of_pairs_and_never_a_dict() {
         // A generated struct is an `eq=True` dataclass, so its
         // `__hash__` is None and `dict[Point, int]` is a type that
         // cannot hold anything. And the entry order is what the
@@ -2291,7 +2291,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_member_is_optional_and_defaults_to_none() {
+    fn xtypes_7_2_2_4_4_4_7_an_optional_member_is_optional_and_defaults_to_none() {
         // XTypes 1.3 7.4.1.2.3 makes absence the value, not a zero.
         let generated =
             declarations("@mutable struct P { @optional long a; @optional string b; long c; };");
@@ -2322,7 +2322,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_is_an_intenum_and_a_member_of_it_is_an_int() {
+    fn xtypes_7_2_2_4_1_1_an_enumeration_is_an_intenum_and_a_member_of_it_is_an_int() {
         let generated = declarations(
             "enum Colour { RED, GREEN, BLUE };
              @final struct P { Colour c; };",
@@ -2351,7 +2351,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bitmask_is_an_intflag_and_a_wide_shift_needs_no_suffix() {
+    fn xtypes_7_2_2_4_1_1_a_bitmask_is_an_intflag_and_a_wide_shift_needs_no_suffix() {
         let generated =
             declarations("@bit_bound(64) bitmask Big { @position(0) A, @position(40) B };");
         assert!(
@@ -2440,7 +2440,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_is_a_nested_class_and_a_reference_is_written_from_the_root() {
+    fn idl_7_5_2_a_module_is_a_nested_class_and_a_reference_is_written_from_the_root() {
         let generated = declarations(
             "module a { @final struct P { long x; }; };
              module b { @final struct P { double y; }; };
@@ -2453,7 +2453,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_reopened_beside_a_nested_one_is_one_class() {
+    fn idl_7_5_2_a_module_reopened_beside_a_nested_one_is_one_class() {
         // `module common { struct Robot; module util { … } }` — the
         // arrangement that produced two classes of one name when the
         // grouping was by module id rather than by path. Python binds a
@@ -2473,7 +2473,7 @@ mod tests {
     }
 
     #[test]
-    fn an_identifier_that_is_a_python_keyword_is_escaped_and_the_idl_name_is_kept() {
+    fn idl_7_2_3_an_identifier_that_is_a_python_keyword_is_escaped_and_the_idl_name_is_kept() {
         let generated = declarations(
             "module class {
                enum type { match, lambda, virtual };
@@ -2500,7 +2500,7 @@ mod tests {
     }
 
     #[test]
-    fn a_member_named_after_a_builtin_the_annotations_use_is_escaped_too() {
+    fn idl_7_2_3_a_member_named_after_a_builtin_the_annotations_use_is_escaped_too() {
         // The case the parser does not catch. `int: typing.Optional[…] =
         // None` sets a class attribute called `int`, and
         // `typing.get_type_hints` resolves the class namespace before
@@ -2512,7 +2512,7 @@ mod tests {
     }
 
     #[test]
-    fn two_names_that_would_escape_onto_one_are_refused() {
+    fn idl_7_2_3_two_names_that_would_escape_onto_one_are_refused() {
         // Python binds a name; it does not declare one. The second
         // `class_` would silently replace the first.
         let failure = render("@final struct P { long class; long class_; };", "test.idl")
@@ -2521,7 +2521,7 @@ mod tests {
     }
 
     #[test]
-    fn a_construct_with_no_python_data_form_is_named_and_not_left_out() {
+    fn xtypes_7_4_a_construct_with_no_python_data_form_is_named_and_not_left_out() {
         // `object` would type-check for all of these, which is exactly
         // why it is not written: a member typed `object` is a field no
         // codec can write, from a generator that reported success.
@@ -2536,7 +2536,7 @@ mod tests {
     }
 
     #[test]
-    fn a_constant_outside_its_idl_range_is_refused_although_python_would_hold_it() {
+    fn idl_7_4_1_4_a_constant_outside_its_idl_range_is_refused_although_python_would_hold_it() {
         // A Python `int` holds 300 perfectly well and the wire holds one
         // byte. Nothing in the language would notice.
         let failure = render("const octet X = 300;", "test.idl")
@@ -2546,7 +2546,7 @@ mod tests {
     }
 
     #[test]
-    fn a_constant_is_final_and_carries_its_idl_type() {
+    fn idl_7_4_1_4_a_constant_is_final_and_carries_its_idl_type() {
         let generated = declarations("const long MAX = 5; const string NAME = \"z\";");
         assert!(
             generated.contains("MAX: typing.Final[_Int32] = 5"),

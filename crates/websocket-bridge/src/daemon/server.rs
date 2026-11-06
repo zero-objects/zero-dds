@@ -28,7 +28,8 @@ use crate::frame::{Frame, Opcode};
 use crate::handshake::{build_server_response, parse_client_request, render_server_response};
 
 use super::config::{DaemonConfig, TopicConfig};
-use super::router::{Router, RouterMsg};
+use super::json_frames::{self, ClientMessage, SampleFrame, SampleOp, TopicType};
+use super::router::{DdsSample, Router, RouterMsg, SampleKind};
 #[cfg(feature = "daemon")]
 use super::runtime_common::{
     BridgeMetrics, CatalogSnapshot, SERVICE_NAME, install_signal_watcher, otlp_config_from_env,
@@ -272,14 +273,31 @@ pub fn start_with_reload(
         .map_err(|e| ServerError::Dds(alloc_format(format_args!("{e:?}"))))?;
     let healthy = Arc::new(AtomicBool::new(true));
 
-    // 2. Register a reader+writer per topic.
+    // 2. The types of the topics with an `idl_file` (§3), which the JSON
+    //    text frames (§4.3) read and write the samples with. A file that
+    //    does not load stops the start.
+    let mut types: std::collections::BTreeMap<String, TopicType> =
+        std::collections::BTreeMap::new();
+    for topic in &cfg.topics {
+        if topic.idl_file.is_empty() {
+            continue;
+        }
+        let ty = TopicType::load(&topic.idl_file, &topic.type_name).map_err(|e| {
+            ServerError::Config(alloc_format(format_args!("topic {}: {e}", topic.name)))
+        })?;
+        types.insert(topic.name.clone(), ty);
+    }
+    let types = Arc::new(types);
+
+    // Register a reader+writer per topic.
     let mut writers: std::collections::BTreeMap<String, EntityId> =
         std::collections::BTreeMap::new();
     let mut reader_eids: std::collections::BTreeMap<String, EntityId> =
         std::collections::BTreeMap::new();
     let mut readers: Vec<(String, std::sync::mpsc::Receiver<UserSample>)> = Vec::new();
     for topic in &cfg.topics {
-        let (reader_eid, writer_eid) = register_topic_endpoints(&runtime, topic)?;
+        let keyed = types.get(&topic.name).is_some_and(TopicType::keyed);
+        let (reader_eid, writer_eid) = register_topic_endpoints(&runtime, topic, keyed)?;
         if let Some((eid, rx)) = reader_eid {
             reader_eids.insert(topic.name.clone(), eid);
             readers.push((topic.name.clone(), rx));
@@ -318,17 +336,55 @@ pub fn start_with_reload(
                 match rx.recv_timeout(Duration::from_millis(200)) {
                     Ok(UserSample::Alive {
                         payload,
-                        big_endian,
+                        representation_identifier,
+                        key_hash,
+                        source_timestamp,
                         ..
                     }) => {
                         dds_out.inc();
+                        let sample = DdsSample {
+                            payload: payload.to_vec(),
+                            representation_identifier,
+                            kind: SampleKind::Alive,
+                            key_hash,
+                            timestamp_ns: source_timestamp
+                                .map(|t| json_frames::nanos_of(t.seconds, t.fraction)),
+                        };
                         if let Ok(mut r) = router_c.lock() {
-                            r.dispatch(&topic_name_c, payload.to_vec(), big_endian);
+                            r.dispatch(&topic_name_c, sample);
                         }
                     }
-                    Ok(UserSample::Lifecycle { .. }) => {
-                        // Lifecycle events: we could push dispose frames —
-                        // for the L1-L4 wireup the alive path is enough.
+                    // A dispose or an unregister goes to the clients too
+                    // (§4.3: the dispose flag, the JSON ops), with the key
+                    // holder where the marker carried it.
+                    Ok(UserSample::Lifecycle {
+                        key_hash,
+                        kind,
+                        key_holder,
+                        source_timestamp,
+                        ..
+                    }) => {
+                        use zerodds_rtps::history_cache::ChangeKind;
+                        let kind = match kind {
+                            ChangeKind::NotAliveDisposed => SampleKind::Disposed,
+                            ChangeKind::NotAliveUnregistered => SampleKind::Unregistered,
+                            ChangeKind::NotAliveDisposedUnregistered => {
+                                SampleKind::DisposedUnregistered
+                            }
+                            ChangeKind::Alive | ChangeKind::AliveFiltered => continue,
+                        };
+                        dds_out.inc();
+                        let sample = DdsSample {
+                            payload: key_holder.unwrap_or_default(),
+                            representation_identifier: KEY_HOLDER_IDENTIFIER,
+                            kind,
+                            key_hash: Some(key_hash),
+                            timestamp_ns: source_timestamp
+                                .map(|t| json_frames::nanos_of(t.seconds, t.fraction)),
+                        };
+                        if let Ok(mut r) = router_c.lock() {
+                            r.dispatch(&topic_name_c, sample);
+                        }
                     }
                     // The end-of-coherent-set marker (DDSI-RTPS 2.5 §8.7.6)
                     // carries no user data — nothing to forward.
@@ -351,6 +407,7 @@ pub fn start_with_reload(
     let writers_arc = Arc::new(writers);
     let runtime_acc = Arc::clone(&runtime);
     let topics_arc = Arc::new(cfg.topics.clone());
+    let types_acc = Arc::clone(&types);
     let metrics_acc = metrics.clone();
     let security_acc = Arc::clone(&security_ctx);
     let rotating_acc = rotating_tls.clone();
@@ -368,6 +425,7 @@ pub fn start_with_reload(
                     let runtime_h = Arc::clone(&runtime_acc);
                     let stop_h = Arc::clone(&stop_acc);
                     let topics_h = Arc::clone(&topics_arc);
+                    let types_h = Arc::clone(&types_acc);
                     let metrics_h = metrics_acc.clone();
                     let security_h = Arc::clone(&security_acc);
                     let rot_h = rotating_acc.clone();
@@ -392,7 +450,7 @@ pub fn start_with_reload(
                         };
                         let _ = serve_connection(
                             conn_id, stream, mtls_subj, router_h, writers_h, runtime_h, stop_h,
-                            topics_h, metrics_h, security_h,
+                            topics_h, types_h, metrics_h, security_h,
                         );
                     });
                 }
@@ -511,6 +569,7 @@ type TopicEndpoints = (Option<ReaderEndpoint>, Option<EntityId>);
 fn register_topic_endpoints(
     rt: &Arc<DcpsRuntime>,
     topic: &TopicConfig,
+    keyed: bool,
 ) -> Result<TopicEndpoints, ServerError> {
     use zerodds_qos::DurabilityKind;
     let durability = match topic.durability.as_str() {
@@ -528,17 +587,20 @@ fn register_topic_endpoints(
 
     let reader = if want_reader {
         let (eid, rx) = rt
-            .register_user_reader(UserReaderConfig {
-                topic_name: topic.name.clone(),
-                type_name: if topic.type_name.is_empty() {
-                    topic.name.clone()
-                } else {
-                    topic.type_name.clone()
+            .register_user_reader_kind(
+                UserReaderConfig {
+                    topic_name: topic.name.clone(),
+                    type_name: if topic.type_name.is_empty() {
+                        topic.name.clone()
+                    } else {
+                        topic.type_name.clone()
+                    },
+                    reliable,
+                    durability,
+                    ..Default::default()
                 },
-                reliable,
-                durability,
-                ..Default::default()
-            })
+                keyed,
+            )
             .map_err(|e| ServerError::Dds(alloc_format(format_args!("reader: {e:?}"))))?;
         Some((eid, rx))
     } else {
@@ -547,17 +609,20 @@ fn register_topic_endpoints(
 
     let writer = if want_writer {
         let eid = rt
-            .register_user_writer(UserWriterConfig {
-                topic_name: topic.name.clone(),
-                type_name: if topic.type_name.is_empty() {
-                    topic.name.clone()
-                } else {
-                    topic.type_name.clone()
+            .register_user_writer_kind(
+                UserWriterConfig {
+                    topic_name: topic.name.clone(),
+                    type_name: if topic.type_name.is_empty() {
+                        topic.name.clone()
+                    } else {
+                        topic.type_name.clone()
+                    },
+                    reliable,
+                    durability,
+                    ..Default::default()
                 },
-                reliable,
-                durability,
-                ..Default::default()
-            })
+                keyed,
+            )
             .map_err(|e| ServerError::Dds(alloc_format(format_args!("writer: {e:?}"))))?;
         Some(eid)
     } else {
@@ -578,6 +643,7 @@ fn serve_connection(
     runtime: Arc<DcpsRuntime>,
     stop: Arc<AtomicBool>,
     topics: Arc<Vec<TopicConfig>>,
+    types: Arc<std::collections::BTreeMap<String, TopicType>>,
     metrics: BridgeMetrics,
     security: Arc<zerodds_bridge_security::LiveSecurity>,
 ) -> Result<(), ServerError> {
@@ -679,11 +745,34 @@ fn serve_connection(
         }
     }
 
-    let resp = build_server_response(&req);
+    // §4.1, §4.3: binary frames unless the client asks for the JSON text
+    // frames with the `+json` subprotocol; the chosen subprotocol is named
+    // back (RFC 6455 §4.2.2 item 8).
+    let json_mode = req.protocols.iter().any(|p| p == SUBPROTOCOL_JSON);
+    let mut resp = build_server_response(&req);
+    if json_mode {
+        resp.protocol = Some(SUBPROTOCOL_JSON.to_string());
+    } else if req.protocols.iter().any(|p| p == SUBPROTOCOL_BINARY) {
+        resp.protocol = Some(SUBPROTOCOL_BINARY.to_string());
+    }
     let resp_bytes = render_server_response(&resp);
     stream
         .write_all(resp_bytes.as_bytes())
         .map_err(|e| ServerError::Io(e.to_string()))?;
+
+    // A JSON-mode client of a topic path gets the topic's samples as JSON
+    // (§4.3), which needs the topic's type; without one the client is told
+    // so, and the connection carries no samples of it.
+    if json_mode
+        && let Some(topic) = auto_topic.as_deref()
+        && !types.contains_key(topic)
+    {
+        metrics.errors_total.inc();
+        if let Ok(b) = encode(&Frame::text(no_type_error(topic))) {
+            let _ = stream.write_all(&b);
+        }
+        auto_topic = None;
+    }
 
     // 2. Register the connection with the router.
     let (tx, rx) = std::sync::mpsc::channel::<RouterMsg>();
@@ -714,31 +803,39 @@ fn serve_connection(
     // have the subject + ACL via closure move.
     let security_w = Arc::clone(&security);
     let subject_w = subject.clone();
+    let types_w = Arc::clone(&types);
     let writer_thread = thread::spawn(move || {
-        while !stop_w.load(Ordering::SeqCst) {
+        'samples: while !stop_w.load(Ordering::SeqCst) {
             match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(RouterMsg::Sample {
-                    topic,
-                    payload,
-                    big_endian,
-                }) => {
+                Ok(RouterMsg::Sample { topic, sample }) => {
                     // §7.3 — read ACL (post-subscribe gate): if the
                     // ACL for this subject + topic is deny,
                     // drop the sample (no disclosure).
                     if !authorize(&security_w.current().acl, &subject_w, AclOp::Read, &topic) {
                         continue;
                     }
-                    let json = render_notify_json(&topic, &payload, big_endian);
-                    let frame = Frame::text(json);
-                    if let Ok(bytes) = encode(&frame) {
-                        bytes_out.add(bytes.len() as u64);
-                        if writer_w.write_all(&bytes).is_err() {
-                            errors_out.inc();
-                            break;
+                    let frames: Vec<Frame> = if json_mode {
+                        match json_sample_frames(&topic, &sample, types_w.get(&topic)) {
+                            Ok(texts) => texts.into_iter().map(Frame::text).collect(),
+                            Err(error) => {
+                                errors_out.inc();
+                                vec![Frame::text(error)]
+                            }
                         }
-                        frames_out.inc();
                     } else {
-                        errors_out.inc();
+                        vec![Frame::binary(binary_sample_frame(&sample))]
+                    };
+                    for frame in frames {
+                        if let Ok(bytes) = encode(&frame) {
+                            bytes_out.add(bytes.len() as u64);
+                            if writer_w.write_all(&bytes).is_err() {
+                                errors_out.inc();
+                                break 'samples;
+                            }
+                            frames_out.inc();
+                        } else {
+                            errors_out.inc();
+                        }
                     }
                 }
                 Ok(RouterMsg::Shutdown) => {
@@ -768,22 +865,30 @@ fn serve_connection(
                 while let Ok((frame, used)) = decode(&frame_buf) {
                     frame_buf.drain(..used);
                     match frame.opcode {
+                        Opcode::Binary if frame.payload.starts_with(&BINARY_MAGIC) => {
+                            metrics.frames_in_total.inc();
+                            metrics.bytes_in_total.add(frame.payload.len() as u64);
+                            if let Err(e) = handle_binary_sample(
+                                &frame.payload,
+                                auto_topic.as_deref(),
+                                &writers,
+                                &runtime,
+                                &metrics,
+                                &security,
+                                &subject,
+                                &writer,
+                            ) {
+                                metrics.errors_total.inc();
+                                eprintln!("[zerodds-ws-bridged] inbound err conn={conn_id}: {e}");
+                            }
+                        }
                         Opcode::Text | Opcode::Binary => {
                             let payload = frame.payload;
                             metrics.frames_in_total.inc();
                             metrics.bytes_in_total.add(payload.len() as u64);
                             let result = handle_inbound_frame(
-                                &payload,
-                                conn_id,
-                                &router,
-                                &writers,
-                                &topics,
-                                &runtime,
-                                auto_topic.as_deref(),
-                                &metrics,
-                                &security,
-                                &subject,
-                                &writer,
+                                &payload, conn_id, json_mode, &router, &writers, &topics, &types,
+                                &runtime, &metrics, &security, &subject, &writer,
                             );
                             if let Err(e) = result {
                                 metrics.errors_total.inc();
@@ -1009,122 +1114,259 @@ impl Drop for ConnectionLifetime {
     }
 }
 
+/// A text frame from the client: a control message of §4.4 or a sample
+/// frame of §4.3. What the daemon cannot do with it is answered with an
+/// error frame (§4.4), never dropped.
 #[cfg(feature = "daemon")]
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_inbound_frame(
     payload: &[u8],
     conn_id: u64,
+    json_mode: bool,
     router: &Arc<Mutex<Router>>,
     writers: &Arc<std::collections::BTreeMap<String, EntityId>>,
     topics: &[TopicConfig],
+    types: &std::collections::BTreeMap<String, TopicType>,
     runtime: &Arc<DcpsRuntime>,
-    auto_topic: Option<&str>,
     metrics: &BridgeMetrics,
     security: &Arc<zerodds_bridge_security::LiveSecurity>,
     subject: &AuthSubject,
     writer: &WsWriter,
 ) -> Result<(), String> {
-    use crate::dds_bridge::{BridgeOp, parse_op};
-    // Try to parse a JSON op.
-    let text =
-        core::str::from_utf8(payload).map_err(|e| alloc_format(format_args!("utf8: {e}")))?;
-    if let Ok(op) = parse_op(text) {
-        match op {
-            BridgeOp::Subscribe { topic, .. } => {
+    let refuse = |code: u16, message: String| {
+        metrics.errors_total.inc();
+        send_text_frame(writer, &json_frames::error(code, &message));
+        Err(message)
+    };
+    let text = match core::str::from_utf8(payload) {
+        Ok(t) => t,
+        Err(e) => {
+            return refuse(
+                400,
+                alloc_format(format_args!("a text frame is UTF-8: {e}")),
+            );
+        }
+    };
+    let message = match json_frames::parse_client(text) {
+        Ok(m) => m,
+        Err(e) => return refuse(400, e),
+    };
+    match message {
+        ClientMessage::Ping => {
+            send_text_frame(writer, &json_frames::pong());
+            Ok(())
+        }
+        ClientMessage::Unsubscribe(names) => {
+            if let Ok(mut r) = router.lock() {
+                for topic in &names {
+                    r.unsubscribe(conn_id, topic);
+                }
+            }
+            Ok(())
+        }
+        ClientMessage::Subscribe(names) => {
+            let mut taken = Vec::new();
+            for topic in names {
                 if !authorize(&security.current().acl, subject, AclOp::Read, &topic) {
-                    metrics.errors_total.inc();
-                    let err = format!(
-                        "{{\"op\":\"error\",\"code\":403,\"topic\":\"{topic}\",\"reason\":\"acl-deny-read\"}}"
+                    let _ = refuse(
+                        403,
+                        alloc_format(format_args!(
+                            "{}: read on {topic} is not granted",
+                            subject.name
+                        )),
                     );
-                    send_text_frame(writer, &err);
-                    eprintln!(
-                        "[zerodds-ws-bridged] acl-deny conn={conn_id} subject={} read {topic}",
-                        subject.name
-                    );
-                    return Ok(());
+                    continue;
                 }
                 let bridged_out = topics
                     .iter()
                     .any(|t| t.name == topic && matches!(t.direction.as_str(), "out" | "bidir"));
                 if !bridged_out {
-                    refuse_unbridged(writer, metrics, conn_id, &topic, "not-bridged-out-of-dds");
-                    return Ok(());
+                    let _ = refuse(
+                        404,
+                        alloc_format(format_args!("{topic} is not bridged out of DDS")),
+                    );
+                    continue;
                 }
-                if let Ok(mut r) = router.lock() {
-                    r.subscribe(conn_id, topic);
-                }
-                return Ok(());
-            }
-            BridgeOp::Unsubscribe { topic, .. } => {
-                if let Ok(mut r) = router.lock() {
-                    r.unsubscribe(conn_id, &topic);
-                }
-                return Ok(());
-            }
-            BridgeOp::Publish { topic, data } => {
-                if !authorize(&security.current().acl, subject, AclOp::Write, &topic) {
+                if json_mode && !types.contains_key(&topic) {
                     metrics.errors_total.inc();
-                    let err = format!(
-                        "{{\"op\":\"error\",\"code\":403,\"topic\":\"{topic}\",\"reason\":\"acl-deny-write\"}}"
-                    );
-                    send_text_frame(writer, &err);
-                    eprintln!(
-                        "[zerodds-ws-bridged] acl-deny conn={conn_id} subject={} write {topic}",
-                        subject.name
-                    );
-                    return Ok(());
+                    send_text_frame(writer, &no_type_error(&topic));
+                    continue;
                 }
-                let Some(eid) = writers.get(&topic) else {
-                    refuse_unbridged(writer, metrics, conn_id, &topic, "not-bridged-into-dds");
-                    return Ok(());
-                };
-                runtime
-                    .write_user_sample(*eid, data.into_bytes())
-                    .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
-                metrics.dds_samples_in_total.inc();
-                return Ok(());
+                taken.push(topic);
+            }
+            if let Ok(mut r) = router.lock() {
+                for topic in &taken {
+                    r.subscribe(conn_id, topic.clone());
+                }
+            }
+            send_text_frame(writer, &json_frames::subscribed(&taken));
+            Ok(())
+        }
+        ClientMessage::Sample(frame) => {
+            let topic = frame.topic.clone();
+            if !authorize(&security.current().acl, subject, AclOp::Write, &topic) {
+                return refuse(
+                    403,
+                    alloc_format(format_args!(
+                        "{}: write on {topic} is not granted",
+                        subject.name
+                    )),
+                );
+            }
+            let Some(eid) = writers.get(&topic).copied() else {
+                return refuse(
+                    404,
+                    alloc_format(format_args!("{topic} is not bridged into DDS")),
+                );
+            };
+            let Some(ty) = types.get(&topic) else {
+                metrics.errors_total.inc();
+                send_text_frame(writer, &no_type_error(&topic));
+                return Err(alloc_format(format_args!("{topic} has no type")));
+            };
+            let source_ts = match frame.timestamp_ns {
+                None => None,
+                Some(ns) => match json_frames::time_of(ns) {
+                    Some((seconds, fraction)) => {
+                        Some(zerodds_rtps::header_extension::HeTimestamp { seconds, fraction })
+                    }
+                    None => {
+                        return refuse(
+                            400,
+                            alloc_format(format_args!(
+                                "timestamp_ns {ns} is no time of DDSI-RTPS 2.5 §9.3.2"
+                            )),
+                        );
+                    }
+                },
+            };
+            match write_sample_frame(runtime, eid, ty, &frame, source_ts) {
+                Ok(()) => {
+                    if frame.op != SampleOp::Register {
+                        metrics.dds_samples_in_total.inc();
+                    }
+                    Ok(())
+                }
+                Err((code, message)) => {
+                    refuse(code, alloc_format(format_args!("{topic}: {message}")))
+                }
             }
         }
     }
-    // Fallback: if the connection is bound to a single topic path,
-    // treat the whole frame as an opaque payload publish.
-    if let Some(topic) = auto_topic {
-        if !authorize(&security.current().acl, subject, AclOp::Write, topic) {
-            metrics.errors_total.inc();
-            let err = format!(
-                "{{\"op\":\"error\",\"code\":403,\"topic\":\"{topic}\",\"reason\":\"acl-deny-write\"}}"
-            );
-            send_text_frame(writer, &err);
-            return Ok(());
-        }
-        let Some(eid) = writers.get(topic) else {
-            refuse_unbridged(writer, metrics, conn_id, topic, "not-bridged-into-dds");
-            return Ok(());
-        };
-        runtime
-            .write_user_sample(*eid, payload.to_vec())
-            .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
-        metrics.dds_samples_in_total.inc();
-    }
-    Ok(())
 }
 
-/// A publish to a topic the daemon does not carry into DDS, or a subscribe
-/// to one it does not carry out of DDS (`direction`, or not configured):
-/// the client gets an error frame instead of a frame that goes nowhere.
+/// Writes a client's sample frame (§4.3) into DDS: a `publish` as a sample
+/// of the topic's type, under XCDR2 little endian in the format of its
+/// extensibility, keyed by its KeyHash for a keyed type; a `dispose` or an
+/// `unregister` as the marker of the instance its `key_hash` (or the key
+/// members of its `data`) names; a `register` has no message on the wire
+/// (DDS 1.4 §2.2.2.4.2.5) and writes nothing.
 #[cfg(feature = "daemon")]
-fn refuse_unbridged(
-    writer: &WsWriter,
-    metrics: &BridgeMetrics,
-    conn_id: u64,
+fn write_sample_frame(
+    runtime: &Arc<DcpsRuntime>,
+    eid: EntityId,
+    ty: &TopicType,
+    frame: &SampleFrame,
+    source_ts: Option<zerodds_rtps::header_extension::HeTimestamp>,
+) -> Result<(), (u16, String)> {
+    use zerodds_rtps::inline_qos::status_info::{DISPOSED, UNREGISTERED};
+    let write_err =
+        |e: zerodds_dcps::DdsError| (500, alloc_format(format_args!("dds-write: {e:?}")));
+    match frame.op {
+        SampleOp::Register => Ok(()),
+        SampleOp::Publish => {
+            let data = frame
+                .data
+                .as_ref()
+                .ok_or((400, "publish carries data".to_string()))?;
+            let encoded = ty.encode(data).map_err(|e| (422, e))?;
+            runtime
+                .set_user_writer_representation_identifier(eid, encoded.identifier)
+                .map_err(write_err)?;
+            match (encoded.key_hash, source_ts) {
+                (Some(hash), ts) => runtime.write_user_sample_keyed(eid, &encoded.body, hash, ts),
+                (None, Some(ts)) => runtime.write_user_sample_stamped(eid, &encoded.body, ts),
+                (None, None) => runtime.write_user_sample_borrowed(eid, &encoded.body),
+            }
+            .map_err(write_err)
+        }
+        SampleOp::Dispose | SampleOp::Unregister => {
+            if !ty.keyed() {
+                return Err((
+                    400,
+                    "a topic without key has no instance to dispose or unregister".into(),
+                ));
+            }
+            let key_hash = match (frame.key_hash, &frame.data) {
+                (Some(hash), _) => hash,
+                (None, Some(data)) => ty.key_hash(data).map_err(|e| (422, e))?,
+                (None, None) => return Err((400, "names its instance by key_hash or data".into())),
+            };
+            let bits = if frame.op == SampleOp::Dispose {
+                DISPOSED
+            } else {
+                UNREGISTERED
+            };
+            runtime
+                .write_user_lifecycle(eid, key_hash, None, bits, source_ts)
+                .map_err(write_err)
+        }
+    }
+}
+
+/// The error frame for a JSON-mode client of a topic without `idl_file`
+/// (§3): its samples cannot be JSON without the type.
+#[cfg(feature = "daemon")]
+fn no_type_error(topic: &str) -> String {
+    json_frames::error(
+        415,
+        &alloc_format(format_args!(
+            "{topic} has no idl_file: the JSON text frames need the topic's type"
+        )),
+    )
+}
+
+/// The text frames of a DDS sample for a JSON-mode client (§4.3): a
+/// `publish` with the sample as JSON, a `dispose`, an `unregister` (both
+/// for a marker that is both).
+///
+/// # Errors
+/// The error frame (§4.4) for a topic without type or a sample that does
+/// not decode as its type.
+#[cfg(feature = "daemon")]
+fn json_sample_frames(
     topic: &str,
-    reason: &str,
-) {
-    metrics.errors_total.inc();
-    let err =
-        format!("{{\"op\":\"error\",\"code\":404,\"topic\":\"{topic}\",\"reason\":\"{reason}\"}}");
-    send_text_frame(writer, &err);
-    eprintln!("[zerodds-ws-bridged] {reason} conn={conn_id} {topic}");
+    sample: &DdsSample,
+    ty: Option<&TopicType>,
+) -> Result<Vec<String>, String> {
+    let frame = |op: SampleOp, data: Option<serde_json::Value>| SampleFrame {
+        topic: topic.to_string(),
+        op,
+        key_hash: sample.key_hash,
+        data,
+        timestamp_ns: sample.timestamp_ns,
+    };
+    let frames = match sample.kind {
+        SampleKind::Alive => {
+            let ty = ty.ok_or_else(|| no_type_error(topic))?;
+            let data = ty
+                .decode(&sample.payload, sample.representation_identifier)
+                .map_err(|e| {
+                    json_frames::error(
+                        422,
+                        &alloc_format(format_args!("a sample of {topic} does not decode: {e}")),
+                    )
+                })?;
+            vec![frame(SampleOp::Publish, Some(data))]
+        }
+        SampleKind::Disposed => vec![frame(SampleOp::Dispose, None)],
+        SampleKind::Unregistered => vec![frame(SampleOp::Unregister, None)],
+        SampleKind::DisposedUnregistered => vec![
+            frame(SampleOp::Dispose, None),
+            frame(SampleOp::Unregister, None),
+        ],
+    };
+    Ok(frames.iter().map(SampleFrame::render).collect())
 }
 
 #[cfg(feature = "daemon")]
@@ -1135,49 +1377,148 @@ fn send_text_frame(writer: &WsWriter, text: &str) {
     }
 }
 
-fn render_notify_json(topic: &str, payload: &[u8], big_endian: bool) -> String {
-    let payload_text = match core::str::from_utf8(payload) {
-        Ok(s) => s.to_string(),
-        Err(_) => format_bytes_array(payload),
+/// The subprotocol of the binary frames (zerodds-ws-bridge-1.0 §4.1). A
+/// subprotocol is a token (RFC 6455 §4.1, the `token` of RFC 7230 §3.2.6):
+/// a `/` is a separator and no character of one.
+const SUBPROTOCOL_BINARY: &str = "zerodds-ws-bridge-1.0";
+/// The subprotocol of the JSON text frames (§4.3).
+const SUBPROTOCOL_JSON: &str = "zerodds-ws-bridge-1.0+json";
+/// `ZDB1`, the magic of a binary frame (§4.3).
+const BINARY_MAGIC: [u8; 4] = *b"ZDB1";
+/// Flag bit 0 of a binary frame: a dispose (§4.3).
+const FLAG_DISPOSE: u8 = 0x01;
+/// Flag bit 2 of a binary frame: an unregister (§4.3).
+const FLAG_UNREGISTER: u8 = 0x04;
+/// The representation identifier of a key holder, PLAIN_CDR2 big endian
+/// (DDS-XTypes 1.3 §7.6.8): the payload of a dispose or an unregister.
+const KEY_HOLDER_IDENTIFIER: [u8; 2] = [0x00, 0x06];
+
+/// A binary frame of §4.3: `ZDB1`, the flags octet (bit 0 a dispose, bit 2
+/// an unregister), the encapsulation header the payload came under
+/// (DDSI-RTPS 2.5 §10.5: its representation identifier, which names
+/// version, format and byte order, and options), the CDR bytes as they
+/// travelled over RTPS; for a dispose or an unregister the key holder.
+fn binary_sample_frame(sample: &DdsSample) -> Vec<u8> {
+    let flags = match sample.kind {
+        SampleKind::Alive => 0,
+        SampleKind::Disposed => FLAG_DISPOSE,
+        SampleKind::Unregistered => FLAG_UNREGISTER,
+        SampleKind::DisposedUnregistered => FLAG_DISPOSE | FLAG_UNREGISTER,
     };
-    let payload_json = if payload_text.starts_with('{') || payload_text.starts_with('[') {
-        payload_text
-    } else {
-        let mut buf = String::from("\"");
-        for c in payload_text.chars() {
-            match c {
-                '"' => buf.push_str("\\\""),
-                '\\' => buf.push_str("\\\\"),
-                '\n' => buf.push_str("\\n"),
-                '\r' => buf.push_str("\\r"),
-                '\t' => buf.push_str("\\t"),
-                c if (c as u32) < 0x20 => {
-                    buf.push_str(&alloc_format(format_args!("\\u{:04x}", c as u32)));
-                }
-                c => buf.push(c),
-            }
-        }
-        buf.push('"');
-        buf
-    };
-    // `"be":true` only for a big-endian payload; the LE default omits it so
-    // the common-case frame bytes are unchanged (older clients ignore it).
-    let be_field = if big_endian { ",\"be\":true" } else { "" };
-    alloc_format(format_args!(
-        "{{\"op\":\"notify\",\"topic\":\"{topic}\",\"data\":{payload_json}{be_field}}}"
-    ))
+    let identifier = sample.representation_identifier;
+    let mut out = Vec::with_capacity(sample.payload.len() + 9);
+    out.extend_from_slice(&BINARY_MAGIC);
+    out.push(flags);
+    out.extend_from_slice(&[identifier[0], identifier[1], 0, 0]);
+    out.extend_from_slice(&sample.payload);
+    out
 }
 
-fn format_bytes_array(b: &[u8]) -> String {
-    let mut out = String::from("[");
-    for (i, byte) in b.iter().enumerate() {
-        if i > 0 {
-            out.push(',');
-        }
-        out.push_str(&alloc_format(format_args!("{byte}")));
+/// The flags, the representation identifier and the CDR bytes of a binary
+/// frame of §4.3.
+///
+/// # Errors
+/// A frame shorter than magic, flags and header, or a header that names no
+/// CDR representation (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table 60).
+fn split_binary_sample(frame: &[u8]) -> Result<(u8, [u8; 2], &[u8]), String> {
+    if frame.len() < 9 || frame[..4] != BINARY_MAGIC {
+        return Err("a binary frame shorter than ZDB1, flags and encapsulation header".into());
     }
-    out.push(']');
-    out
+    let identifier = [frame[5], frame[6]];
+    match u16::from_be_bytes(identifier) {
+        0x0000..=0x0003 | 0x0006..=0x000b => Ok((frame[4], identifier, &frame[9..])),
+        other => Err(alloc_format(format_args!(
+            "encapsulation {other:#06x} is not a CDR representation"
+        ))),
+    }
+}
+
+/// How the DDS writer frames a body that came under `identifier` (DDS-XTypes
+/// 1.3 Table 60): its data representation (`CDR`, `PL_CDR` are XCDR1, the
+/// others XCDR2), the extensibility the format belongs to (a parameter list
+/// is `@mutable`, a delimited body `@appendable`, anything else `@final`) and
+/// whether it is big-endian (the even identifiers).
+#[cfg(feature = "daemon")]
+fn writer_form(identifier: [u8; 2]) -> (i16, zerodds_types::qos::ExtensibilityForRepr, bool) {
+    use zerodds_rtps::publication_data::data_representation as dr;
+    use zerodds_types::qos::ExtensibilityForRepr as Ext;
+    let representation = if identifier[1] <= 0x03 {
+        dr::XCDR
+    } else {
+        dr::XCDR2
+    };
+    let extensibility = match identifier[1] & !0x01 {
+        0x02 | 0x0a => Ext::Mutable,
+        0x08 => Ext::Appendable,
+        _ => Ext::Final,
+    };
+    (representation, extensibility, identifier[1] & 0x01 == 0)
+}
+
+/// A binary frame from the client (§4.3) on a connection whose path names
+/// a topic (§4.2): the sample is written into DDS with the representation
+/// and byte order its header names. A client disposes or unregisters with a
+/// JSON sample frame; a binary frame with those flags is refused with an
+/// error frame, not dropped.
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_arguments)]
+fn handle_binary_sample(
+    frame: &[u8],
+    auto_topic: Option<&str>,
+    writers: &Arc<std::collections::BTreeMap<String, EntityId>>,
+    runtime: &Arc<DcpsRuntime>,
+    metrics: &BridgeMetrics,
+    security: &Arc<zerodds_bridge_security::LiveSecurity>,
+    subject: &AuthSubject,
+    writer: &WsWriter,
+) -> Result<(), String> {
+    let refuse = |code: u16, message: String| {
+        send_text_frame(writer, &json_frames::error(code, &message));
+        Err(message)
+    };
+    let Some(topic) = auto_topic else {
+        return refuse(
+            400,
+            "a binary frame needs a connection whose path names a topic".into(),
+        );
+    };
+    if !authorize(&security.current().acl, subject, AclOp::Write, topic) {
+        return refuse(
+            403,
+            alloc_format(format_args!(
+                "{}: write on {topic} is not granted",
+                subject.name
+            )),
+        );
+    }
+    let Some(eid) = writers.get(topic) else {
+        return refuse(
+            404,
+            alloc_format(format_args!("{topic} is not bridged into DDS")),
+        );
+    };
+    let (flags, identifier, body) = match split_binary_sample(frame) {
+        Ok(parts) => parts,
+        Err(e) => return refuse(400, e),
+    };
+    if flags & (FLAG_DISPOSE | FLAG_UNREGISTER) != 0 {
+        return refuse(
+            400,
+            alloc_format(format_args!(
+                "{topic}: a client disposes or unregisters with a JSON sample frame"
+            )),
+        );
+    }
+    // The writer's header names what the frame's header named.
+    let (offer, extensibility, big_endian) = writer_form(identifier);
+    let _ = runtime.set_user_writer_data_rep_override(*eid, Some(vec![offer]));
+    let _ = runtime.set_user_writer_byte_order_override(*eid, big_endian);
+    let _ = runtime.set_user_writer_wire_extensibility(*eid, extensibility);
+    runtime
+        .write_user_sample(*eid, body.to_vec())
+        .map_err(|e| alloc_format(format_args!("dds-write: {e:?}")))?;
+    metrics.dds_samples_in_total.inc();
+    Ok(())
 }
 
 fn alloc_format(args: core::fmt::Arguments<'_>) -> String {
@@ -1255,35 +1596,74 @@ fn reload(
 mod tests {
     use super::*;
 
+    /// zerodds-ws-bridge-1.0 §4.1 with RFC 6455 §4.1: each subprotocol a
+    /// client names is a token, characters of RFC 7230 §3.2.6 `tchar`
+    /// (letters, digits and ``!#$%&'*+-.^_`|~``); a client library refuses
+    /// any other (Python `websockets` raises "invalid subprotocol" for a `/`).
     #[test]
-    fn render_notify_json_with_text_payload() {
-        let s = render_notify_json("Trade", b"hello", false);
-        assert!(s.contains("\"op\":\"notify\""));
-        assert!(s.contains("\"topic\":\"Trade\""));
-        assert!(s.contains("\"hello\""));
-        // LE default omits the byte-order field — wire unchanged.
-        assert!(!s.contains("\"be\""));
+    fn rfc_6455_4_1_the_subprotocols_are_tokens() {
+        for name in [SUBPROTOCOL_BINARY, SUBPROTOCOL_JSON] {
+            assert!(
+                !name.is_empty()
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "!#$%&'*+-.^_`|~".contains(c)),
+                "{name} is no token"
+            );
+        }
     }
 
+    /// zerodds-ws-bridge-1.0 §4.3 with DDS-XTypes 1.3 §7.6.3.1.2, Table 60:
+    /// a binary frame carries the encapsulation header the sample came
+    /// under. Before, it was built from the version and the byte order
+    /// alone, so a `PL_CDR2` or `D_CDR2` sample went out as `CDR2`
+    /// (OPEN-ITEMS 60).
     #[test]
-    fn render_notify_json_with_object_payload() {
-        let s = render_notify_json("X", b"{\"a\":1}", false);
-        assert!(s.contains("\"data\":{\"a\":1}"));
+    fn xtypes_7_6_3_1_2_a_binary_frame_carries_the_identifier_the_sample_came_under() {
+        for identifier in [[0x00, 0x01], [0x00, 0x03], [0x00, 0x08], [0x00, 0x0b]] {
+            let frame = binary_sample_frame(&DdsSample::alive(vec![1, 2, 3, 4], identifier));
+            assert_eq!(
+                frame[..9],
+                [
+                    b'Z',
+                    b'D',
+                    b'B',
+                    b'1',
+                    0,
+                    identifier[0],
+                    identifier[1],
+                    0,
+                    0
+                ]
+            );
+            let (flags, back, body) = split_binary_sample(&frame).unwrap();
+            assert_eq!((flags, back, body), (0, identifier, &[1u8, 2, 3, 4][..]));
+        }
+        // XML (`00 04`) is no CDR representation.
+        assert!(split_binary_sample(b"ZDB1\x00\x00\x04\x00\x00").is_err());
     }
 
+    /// DDS-XTypes 1.3 Table 60: the identifier of a client's frame names the
+    /// data representation, the extensibility and the byte order the DDS
+    /// writer gives the body.
+    #[cfg(feature = "daemon")]
     #[test]
-    fn render_notify_json_escapes_quotes() {
-        let s = render_notify_json("X", b"a\"b", false);
-        assert!(s.contains("\\\""));
-    }
-
-    #[test]
-    fn render_notify_json_big_endian_sets_be_field() {
-        let s = render_notify_json("Trade", b"hello", true);
-        // A big-endian payload carries "be":true so the browser dispatches
-        // the big-endian decoder.
-        assert!(s.contains("\"be\":true"));
-        assert!(s.contains("\"topic\":\"Trade\""));
+    fn xtypes_7_6_3_1_2_the_identifier_names_the_form_of_the_dds_writer() {
+        use zerodds_types::qos::ExtensibilityForRepr as Ext;
+        for (identifier, form) in [
+            ([0x00, 0x00], (0, Ext::Final, true)),
+            ([0x00, 0x01], (0, Ext::Final, false)),
+            ([0x00, 0x02], (0, Ext::Mutable, true)),
+            ([0x00, 0x03], (0, Ext::Mutable, false)),
+            ([0x00, 0x06], (2, Ext::Final, true)),
+            ([0x00, 0x07], (2, Ext::Final, false)),
+            ([0x00, 0x08], (2, Ext::Appendable, true)),
+            ([0x00, 0x09], (2, Ext::Appendable, false)),
+            ([0x00, 0x0a], (2, Ext::Mutable, true)),
+            ([0x00, 0x0b], (2, Ext::Mutable, false)),
+        ] {
+            assert_eq!(writer_form(identifier), form, "{identifier:02x?}");
+        }
     }
 }
 

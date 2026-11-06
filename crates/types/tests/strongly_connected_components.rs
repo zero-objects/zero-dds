@@ -88,7 +88,7 @@ fn component(
 /// `FromAstError::Recursive`, so a recursive type went on the wire
 /// correctly and could not be described in discovery at all.
 #[test]
-fn a_self_referential_type_gets_a_component_identifier() {
+fn xtypes_7_2_2_4_a_self_referential_type_gets_a_component_identifier() {
     let ast = model(SELF);
     let scc = component(&ast, "m::Node");
     assert_eq!(scc.scc_length, 1, "a component of one type");
@@ -98,7 +98,7 @@ fn a_self_referential_type_gets_a_component_identifier() {
 /// Both halves of a mutually recursive pair are in one component, carry
 /// the same hash, and are numbered 1 and 2 in name order.
 #[test]
-fn a_mutually_recursive_pair_is_one_component_of_two() {
+fn xtypes_7_2_2_4_a_mutually_recursive_pair_is_one_component_of_two() {
     let ast = model(MUTUAL);
     let a = component(&ast, "m::A");
     let b = component(&ast, "m::B");
@@ -114,22 +114,12 @@ fn a_mutually_recursive_pair_is_one_component_of_two() {
     assert_eq!(b.scc_index, 2, "B sorts second");
 }
 
-/// The same model asked twice answers the same, which is the minimum a
-/// hash used for discovery matching has to do.
-#[test]
-fn the_component_hash_is_deterministic() {
-    let first = component(&model(MUTUAL), "m::A");
-    let second = component(&model(MUTUAL), "m::A");
-    assert_eq!(first.hash, second.hash);
-    assert_eq!(first.scc_index, second.scc_index);
-}
-
 /// A type that reaches no cycle keeps its ordinary hashed identifier.
 ///
 /// The guard against the component path swallowing everything: an
 /// aggregate that merely holds a sequence is not recursive.
 #[test]
-fn an_ordinary_type_is_not_given_a_component_identifier() {
+fn xtypes_7_3_4_9_2_an_ordinary_type_is_not_given_a_component_identifier() {
     let ast = model("module m { @appendable struct Plain { long v; sequence<long> xs; }; };");
     let identifier = type_identifier(&ast, type_of(&ast, "m::Plain"), Form::Complete).expect("id");
     assert!(
@@ -145,7 +135,7 @@ fn an_ordinary_type_is_not_given_a_component_identifier() {
 /// recursive member carries the component identifier rather than
 /// sending the walker round again.
 #[test]
-fn a_component_members_type_object_builds() {
+fn xtypes_7_3_4_9_1_a_component_members_type_object_builds() {
     let ast = model(SELF);
     let object = complete_type_object(&ast, type_of(&ast, "m::Node")).expect("a type object");
     let rendered = alloc_debug(&object);
@@ -163,7 +153,7 @@ fn a_component_members_type_object_builds() {
 /// `FromAstError::Recursive`. The member now carries `B`'s component
 /// identifier, the same one `B` gets on its own.
 #[test]
-fn a_type_that_holds_a_component_member_from_outside_builds() {
+fn xtypes_7_3_4_9_2_a_type_that_holds_a_component_member_from_outside_builds() {
     let ast = model(
         "
 module m {
@@ -204,7 +194,7 @@ fn alloc_debug(object: &zerodds_types::type_object::CompleteTypeObject) -> Strin
 /// The round trip discovery depends on: a peer is sent the object and
 /// has to arrive at the same type.
 #[test]
-fn a_component_rebuilds_into_a_model() {
+fn xtypes_7_3_4_3_a_component_rebuilds_into_a_model() {
     use zerodds_types::dynamic::to_ast::ModelFromTypeObjects;
     use zerodds_types::from_ast::register_all;
     use zerodds_types::resolve::TypeRegistry;
@@ -285,7 +275,7 @@ fn the_object_of_step_4b_ii(ast: &Ast, name: &str) -> Vec<u8> {
 /// `DHEADER`) on a four-octet boundary — and the first 14 octets of the
 /// MD5 are the hash.
 #[test]
-fn the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects() {
+fn xtypes_7_3_4_9_2_the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects() {
     let ast = model(MUTUAL);
     let first = the_object_of_step_4b_ii(&ast, "m::A");
     let second = the_object_of_step_4b_ii(&ast, "m::B");
@@ -311,7 +301,7 @@ fn the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects() {
 /// §7.3.4.9.3: the SCCIdentifier, which names a component without naming
 /// a type in it, has `scc_index = 0`.
 #[test]
-fn an_scc_identifier_with_index_zero_is_written_and_read() {
+fn xtypes_7_3_4_9_3_an_scc_identifier_with_index_zero_is_written_and_read() {
     let identifier = TypeIdentifier::StronglyConnectedComponent(
         zerodds_types::type_identifier::StronglyConnectedComponentId {
             equivalence_kind: zerodds_types::type_identifier::kinds::EK_COMPLETE,

@@ -142,10 +142,10 @@ impl<A: Clone> AgentDiscovery<A> {
         if self.done {
             return None;
         }
-        if let Some(last) = self.last_sent {
-            if now.saturating_sub(last) < self.period {
-                return None;
-            }
+        if let Some(last) = self.last_sent
+            && now.saturating_sub(last) < self.period
+        {
+            return None;
         }
         let bytes = self.request().ok()?;
         self.last_sent = Some(now);

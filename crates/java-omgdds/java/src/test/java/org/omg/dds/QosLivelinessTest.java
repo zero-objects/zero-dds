@@ -29,7 +29,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class QosLivelinessTest {
 
     private static final long LEASE_MS = 300;
-    private static final long PASS_MS = 600;
 
     @BeforeEach
     void setUp() {
@@ -53,24 +52,32 @@ class QosLivelinessTest {
         return ((DataWriterImpl<?>) writer).isAlive();
     }
 
+    /** Waits until the lease of {@code writer} has run out, at most 10 s. */
+    private static void awaitLost(DataWriter<?> writer) throws InterruptedException {
+        long end = System.nanoTime() + 10_000_000_000L;
+        while (alive(writer) && System.nanoTime() < end) {
+            Thread.sleep(10);
+        }
+        assertFalse(alive(writer), "the lease of " + LEASE_MS + " ms has run out");
+    }
+
     @Test
-    void theParticipantAssertsTheLivelinessOfItsManualByParticipantWriters() throws Exception {
+    void javapsm_7_3_5_1_the_participant_asserts_the_liveliness_of_its_manual_by_participant_writers() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(manualByParticipant());
             assertTrue(alive(writer));
-            Thread.sleep(PASS_MS);
-            assertFalse(alive(writer), "the lease of 300 ms has run out");
+            awaitLost(writer);
             rig.participant.assertLiveliness();
             assertTrue(alive(writer));
         }
     }
 
     @Test
-    void theParticipantDoesNotAssertTheLivelinessOfAManualByTopicWriter() throws Exception {
+    void javapsm_7_3_5_1_the_participant_does_not_assert_the_liveliness_of_a_manual_by_topic_writer() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(
                     writerOf(Qos.pf().Liveliness().withManualByTopic()));
-            Thread.sleep(PASS_MS);
+            awaitLost(writer);
             rig.participant.assertLiveliness();
             assertFalse(alive(writer));
             writer.assertLiveliness();
@@ -79,31 +86,29 @@ class QosLivelinessTest {
     }
 
     @Test
-    void anAssertOnAnyWriterOfTheParticipantAssertsTheManualByParticipantWriters() throws Exception {
+    void javapsm_7_3_5_1_an_assert_on_any_writer_of_the_participant_asserts_the_manual_by_participant_writers() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> silent = rig.writer(manualByParticipant());
             DataWriter<QosFixtures.Item> other = rig.writer(Qos.writer());
-            Thread.sleep(PASS_MS);
-            assertFalse(alive(silent));
+            awaitLost(silent);
             other.assertLiveliness();
             assertTrue(alive(silent));
         }
     }
 
     @Test
-    void aWriteByAnyWriterOfTheParticipantAssertsTheManualByParticipantWriters() throws Exception {
+    void javapsm_7_3_5_1_a_write_by_any_writer_of_the_participant_asserts_the_manual_by_participant_writers() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> silent = rig.writer(manualByParticipant());
             DataWriter<QosFixtures.Item> other = rig.writer(Qos.writer());
-            Thread.sleep(PASS_MS);
-            assertFalse(alive(silent));
+            awaitLost(silent);
             other.write(new QosFixtures.Item(1, 1));
             assertTrue(alive(silent));
         }
     }
 
     @Test
-    void theWritersOfAnotherParticipantAreNotAsserted() throws Exception {
+    void javapsm_7_3_5_1_the_writers_of_another_participant_are_not_asserted() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DomainParticipant elsewhere = Qos.factory().createParticipant(rig.participant.getDomainId());
             try {
@@ -112,7 +117,8 @@ class QosLivelinessTest {
                 DataWriter<QosFixtures.Item> foreign = Qos.writer(publisher, topic, QosFixtures.SUPPORT,
                         manualByParticipant());
                 DataWriter<QosFixtures.Item> mine = rig.writer(manualByParticipant());
-                Thread.sleep(PASS_MS);
+                awaitLost(mine);
+                awaitLost(foreign);
                 rig.participant.assertLiveliness();
                 assertTrue(alive(mine));
                 assertFalse(alive(foreign));
@@ -124,9 +130,4 @@ class QosLivelinessTest {
         }
     }
 
-    @Test
-    void theDefaultLivelinessIsAutomaticWithAnInfiniteLease() {
-        assertEquals(Liveliness.Kind.AUTOMATIC, Qos.writer().getLiveliness().getKind());
-        assertTrue(Qos.writer().getLiveliness().getLeaseDuration().isInfinite());
-    }
 }

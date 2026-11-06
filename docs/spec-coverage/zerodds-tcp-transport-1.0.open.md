@@ -15,28 +15,28 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §3.5 Reserved `flags` — Empfänger-Prüfung
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — `crates/transport-tcp/src/handshake.rs` dekodiert `flags` und gibt es weiter; weder Server noch Client lehnen gesetzte Bits ab.
 
 ## §3.6 Logical-Port-Claim
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — `server_handshake` prüft `logical_port` nicht und ordnet die Verbindung keinem Port zu; `LogicalPortConflict` wird nur kodiert und dekodiert.
 
 ## §3.7 ResourceLimit-Reject bei erreichtem Peer-Limit
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — `TcpTransport::serve` schließt die Verbindung über `MAX_PEERS` nach dem Accept und zählt sie (`refused_connections`); ein Handshake mit `ResourceLimit` geht nicht auf die Leitung.
 
 ## §4.1 Handshake-Skip-Mode
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — ein Peer ohne Handshake wird mit `HandshakeError::BadMagic` abgewiesen (`crates/transport-tcp/src/handshake.rs`); eine Client- und Server-Betriebsart ohne §3 fehlt.
 
 ## §4.2 Auto-Detect am ersten Frame-Byte
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — der Server erwartet immer den ZeroDDS-Handshake; eine Unterscheidung von `'Z'` und `'R'` am ersten Byte fehlt.
 
 ## §6.1 FastDDS-BindConnection (Submessages 0x71/0x72)
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — kein Handshake-Dialekt mit den Submessages `0x71`/`0x72`; `set_tcp_kinds_fast_dds` betrifft nur die Locator-Kinds (§1.1).
 
 ## §6.2 RTI-TLS-orientierter Handshake
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — keine Betriebsart mit dem TLS-orientierten Bring-up von RTI.

@@ -46,7 +46,7 @@ class ZeroDdsParticipantTest {
     }
 
     @Test
-    void aWriteReturnsItsIdentityAndTheReaderSeesItWithTheRelatedOne() {
+    void rpc_7_8_2_a_write_returns_its_identity_and_the_reader_sees_it_with_the_related_one() {
         ZeroDdsParticipant rpc = new ZeroDdsParticipant(Qos.factory().createParticipant(910));
         RpcQos qos = RpcQos.defaults();
         DataReader reader = rpc.createReader("Calc_Request", "Calc_Request", qos, null);
@@ -75,7 +75,7 @@ class ZeroDdsParticipantTest {
     }
 
     @Test
-    void theIdentityIsTwentyFourOctetsOnTheWire() {
+    void rpc_7_8_2_the_sample_identity_is_twenty_four_octets_on_the_wire() {
         byte[] guid = new byte[16];
         guid[0] = 7;
         guid[15] = 9;

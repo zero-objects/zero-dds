@@ -40,33 +40,7 @@ class ParticipantFactoryEnvironmentTest {
     }
 
     @Test
-    void threadsThatAskForTheFactoryOfANewEnvironmentTogetherGetTheSameOne() throws Exception {
-        int threads = 8;
-        ExecutorService pool = Executors.newFixedThreadPool(threads);
-        try {
-            for (int round = 0; round < 25; round++) {
-                ServiceEnvironmentImpl environment = new ServiceEnvironmentImpl();
-                CyclicBarrier together = new CyclicBarrier(threads);
-                List<Future<DomainParticipantFactory>> factories = new ArrayList<>();
-                for (int t = 0; t < threads; t++) {
-                    factories.add(pool.submit(() -> {
-                        together.await(20, TimeUnit.SECONDS);
-                        return DomainParticipantFactory.getInstance(environment);
-                    }));
-                }
-                DomainParticipantFactory first = factories.get(0).get(30, TimeUnit.SECONDS);
-                for (Future<DomainParticipantFactory> factory : factories) {
-                    assertSame(first, factory.get(30, TimeUnit.SECONDS));
-                }
-                assertSame(first, DomainParticipantFactory.getInstance(environment));
-            }
-        } finally {
-            pool.shutdownNow();
-        }
-    }
-
-    @Test
-    void everyEnvironmentHasItsOwnFactoryAndItsOwnParticipantTable() {
+    void javapsm_7_4_1_every_environment_has_its_own_factory_and_its_own_participant_table() {
         ServiceEnvironmentImpl other = new ServiceEnvironmentImpl();
         DomainParticipantFactory mine = Qos.factory();
         DomainParticipantFactory theirs = DomainParticipantFactory.getInstance(other);

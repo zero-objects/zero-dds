@@ -12,8 +12,8 @@ Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden W
 
 **Repo:** `crates/lang-cst/src/julia/`, `crates/lang-render/src/julia.rs`
 
-**Tests:** `crates/lang-render/src/julia.rs::tests` (19 Tests), darunter `a_struct_writes_its_fields_with_a_double_colon`, `an_empty_struct_is_still_a_struct`, `a_struct_with_a_supertype_writes_the_subtype_operator`, `an_abstract_type_is_one_line`, `an_enum_writes_its_base_and_every_value`;
-querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/julia.rs::tests` (19 Tests), darunter `xtypes_7_5_1_a_struct_writes_its_fields_with_a_double_colon`, `xtypes_7_5_1_an_empty_struct_is_still_a_struct`, `xtypes_7_5_1_a_struct_with_a_supertype_writes_the_subtype_operator`, `xtypes_7_5_1_an_abstract_type_is_one_line`, `xtypes_7_5_1_an_enum_writes_its_base_and_every_value`;
+querschnittlich `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/rule/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_julia.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/julia`, Endpoint-SDK `endpoints/julia`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,8 +78,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::every_idl_primitive_reaches_a_julia_type`,
-`crates/lang-rules/tests/julia_end_to_end.rs::no_generated_type_has_a_platform_defined_width`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_2_every_idl_primitive_reaches_a_julia_type`,
+`crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_2_no_generated_type_has_a_platform_defined_width`
 
 **Status:** done
 
@@ -89,7 +89,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::a_long_double_is_a_string_and_never_a_float`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_float`
 
 **Status:** done
 
@@ -99,7 +99,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::an_optional_member_becomes_a_union_with_nothing_and_the_others_do_not`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_union_with_nothing_and_the_others_do_not`
 
 **Status:** done
 
@@ -109,8 +109,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::an_array_becomes_an_ntuple_and_the_outermost_dimension_is_outermost`,
-`crates/lang-rules/tests/julia_end_to_end.rs::an_array_of_a_thousand_writes_its_length_and_nothing_truncates_it`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_3_an_array_becomes_an_ntuple_and_the_outermost_dimension_is_outermost`,
+`crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_3_an_array_of_a_thousand_writes_its_length_and_nothing_truncates_it`
 
 **Status:** done
 
@@ -120,7 +120,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::a_map_becomes_a_vector_of_entries_and_never_a_dict`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_3_a_map_becomes_a_vector_of_entries_and_never_a_dict`
 
 **Status:** done
 
@@ -130,8 +130,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::a_constant_is_written_as_a_conversion_and_never_as_a_bare_literal`,
-`crates/lang-rules/tests/julia_end_to_end.rs::a_string_constant_escapes_julias_interpolation_marker`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::idl_7_4_1_4_a_constant_is_written_as_a_conversion_and_never_as_a_bare_literal`,
+`crates/lang-rules/tests/julia_end_to_end.rs::idl_7_4_1_4_a_string_constant_escapes_julias_interpolation_marker`
 
 **Status:** done
 
@@ -141,9 +141,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::a_member_named_after_a_julia_keyword_is_escaped_and_keeps_its_idl_name`,
-`crates/lang-rules/tests/julia_end_to_end.rs::a_field_named_after_a_base_type_is_left_alone_because_a_field_shadows_nothing`,
-`crates/lang-rules/tests/julia_end_to_end.rs::two_declarations_that_would_reach_one_julia_name_are_refused_by_name`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::idl_7_2_3_a_member_named_after_a_julia_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/julia_end_to_end.rs::idl_7_2_3_a_field_named_after_a_base_type_is_left_alone_because_a_field_shadows_nothing`,
+`crates/lang-rules/tests/julia_end_to_end.rs::idl_7_2_3_two_declarations_that_would_reach_one_julia_name_are_refused_by_name`
 
 **Status:** done
 
@@ -153,8 +153,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::a_module_flattens_onto_the_name_because_a_module_cannot_be_reopened`,
-`crates/lang-rules/tests/julia_end_to_end.rs::two_modules_that_flatten_onto_one_name_are_refused_by_name`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::idl_7_5_2_a_module_flattens_onto_the_name_because_a_module_cannot_be_reopened`,
+`crates/lang-rules/tests/julia_end_to_end.rs::idl_7_5_2_two_modules_that_flatten_onto_one_name_are_refused_by_name`
 
 **Status:** done
 
@@ -164,9 +164,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::the_output_is_in_dependency_order_and_not_source_order`,
-`crates/lang-rules/tests/julia_end_to_end.rs::a_self_recursive_type_needs_no_forward_declaration`,
-`crates/lang-rules/tests/julia_end_to_end.rs::a_mutually_recursive_pair_gets_an_abstract_forward_declaration`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_9_the_output_is_in_dependency_order_and_not_source_order`,
+`crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_9_a_self_recursive_type_needs_no_forward_declaration`,
+`crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_9_a_mutually_recursive_pair_gets_an_abstract_forward_declaration`
 
 **Status:** done
 
@@ -178,7 +178,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/julia.rs`, `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -188,7 +188,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/julia.rs`, `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::the_generated_julia_loads`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_3_1_the_generated_julia_loads`
 
 **Status:** done
 
@@ -198,7 +198,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/julia.rs`, `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -208,7 +208,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/julia.rs`, `crates/lang-rules/src/adapter/julia.rs`
 
-**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::every_construct_the_table_claims_for_julia_produces_output`
+**Tests:** `crates/lang-rules/tests/julia_end_to_end.rs::xtypes_7_2_2_4_every_construct_the_table_claims_for_julia_produces_output`
 
 **Status:** done
 
@@ -218,9 +218,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/julia.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -232,8 +232,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -243,8 +243,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-julia-gen/`, `tools/wireprobe/wireprobe-zerodds-julia`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -252,8 +251,15 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 ## Audit-Status
 
-22 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+22 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-julia-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (Job `merge-rust-lang-render`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 11 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-julia` (Job `merge-codegen-julia`) — 21 Tests grün.
+
+41 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

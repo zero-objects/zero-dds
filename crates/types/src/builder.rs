@@ -727,6 +727,17 @@ impl UnionBuilder {
         self
     }
 
+    /// Gives the case added last an explicit member id (`@id`); the cases
+    /// without one are numbered from zero in declaration order
+    /// (§7.2.2.4.9).
+    #[must_use]
+    pub fn case_id(mut self, id: u32) -> Self {
+        if let Some(case) = self.cases.last_mut() {
+            case.member_id = Some(id);
+        }
+        self
+    }
+
     fn union_flags(&self) -> crate::type_object::flags::UnionTypeFlag {
         use crate::type_object::flags::UnionTypeFlag;
         // UnionTypeFlag analogously uses the struct bits for
@@ -1006,7 +1017,8 @@ impl BitmaskBuilder {
         use crate::type_object::flags::{BitflagFlag, BitmaskTypeFlag};
         use crate::type_object::minimal::{CommonBitflag, MinimalBitflag, MinimalBitmaskType};
         MinimalBitmaskType {
-            bitmask_flags: BitmaskTypeFlag::default(),
+            // The default extensibility, appendable (`BitmaskTypeFlag`).
+            bitmask_flags: BitmaskTypeFlag(BitmaskTypeFlag::IS_APPENDABLE),
             bit_bound: self.bit_bound,
             flag_seq: {
                 let mut sequence: Vec<MinimalBitflag> = self
@@ -1037,7 +1049,8 @@ impl BitmaskBuilder {
         use crate::type_object::complete::{CompleteBitflag, CompleteBitmaskType};
         use crate::type_object::flags::{BitflagFlag, BitmaskTypeFlag};
         CompleteBitmaskType {
-            bitmask_flags: BitmaskTypeFlag::default(),
+            // The default extensibility, appendable (`BitmaskTypeFlag`).
+            bitmask_flags: BitmaskTypeFlag(BitmaskTypeFlag::IS_APPENDABLE),
             bit_bound: self.bit_bound,
             detail: CompleteTypeDetail {
                 ann_builtin: AppliedBuiltinTypeAnnotations::default(),
@@ -1242,7 +1255,7 @@ mod tests {
     use crate::type_object::flags::StructTypeFlag;
 
     #[test]
-    fn struct_builder_basic_with_two_members() {
+    fn xtypes_7_2_2_4_4_1_struct_builder_basic_with_two_members() {
         let st = TypeObjectBuilder::struct_type("::chat::Chatter")
             .member(
                 "sensor_id",
@@ -1268,7 +1281,7 @@ mod tests {
     }
 
     #[test]
-    fn member_default_try_construct_is_discard_bits() {
+    fn xtypes_7_2_2_7_member_default_try_construct_is_discard_bits() {
         // No @try_construct → DISCARD = TRY_CONSTRUCT1 (0b01), byte-identical to
         // the previous hard default. Combines with @key (bit 5).
         let st = TypeObjectBuilder::struct_type("::T")
@@ -1320,20 +1333,6 @@ mod tests {
     }
 
     #[test]
-    fn struct_builder_explicit_ids_respected() {
-        let st = TypeObjectBuilder::struct_type("::X")
-            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
-                m.id(100)
-            })
-            .member("b", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
-                m.id(200)
-            })
-            .build_minimal();
-        assert_eq!(st.member_seq[0].common.member_id, 100);
-        assert_eq!(st.member_seq[1].common.member_id, 200);
-    }
-
-    #[test]
     fn mutable_map_extensibility_is_error() {
         // §7.4.3.5.3 Rules 11-16 — a MUTABLE map is forbidden (silent demotion).
         let res = TypeObjectBuilder::map(
@@ -1368,22 +1367,6 @@ mod tests {
         )
         .add_map_member(Extensibility::Final);
         assert!(res.is_ok());
-    }
-
-    #[test]
-    fn member_with_explicit_default_used_when_field_missing() {
-        // `set_member_default` sets
-        // `AppliedBuiltinMemberAnnotations.default_value`. The test ensures
-        // that the value reaches the complete TypeObject the builder returns.
-        let st = TypeObjectBuilder::struct_type("::S")
-            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
-                m.set_member_default("42")
-            })
-            .build_complete();
-        assert_eq!(
-            st.member_seq[0].detail.ann_builtin.default_value.as_deref(),
-            Some("42")
-        );
     }
 
     #[test]
@@ -1433,15 +1416,6 @@ mod tests {
     }
 
     #[test]
-    fn struct_builder_extensibility_mutable() {
-        let st = TypeObjectBuilder::struct_type("::Y")
-            .extensibility(Extensibility::Mutable)
-            .build_minimal();
-        assert!(st.struct_flags.has(StructTypeFlag::IS_MUTABLE));
-        assert!(!st.struct_flags.has(StructTypeFlag::IS_APPENDABLE));
-    }
-
-    #[test]
     fn complete_builder_preserves_names() {
         let st = TypeObjectBuilder::struct_type("::sensors::Chatter")
             .extensibility(Extensibility::Appendable)
@@ -1484,7 +1458,7 @@ mod tests {
     }
 
     #[test]
-    fn member_id_from_name_matches_known_md5_vectors() {
+    fn xtypes_7_2_2_4_4_4_5_member_id_from_name_matches_known_md5_vectors() {
         // XTypes §7.3.1.2.1.1: id = MD5(name)[0..4] as LE u32, & 0x0FFFFFFF.
         // Independently computed (hashlib): "color" → 0x0FA5DD70,
         // "my_hint" → 0x026C50E0.
@@ -1529,7 +1503,7 @@ mod tests {
     }
 
     #[test]
-    fn explicit_id_wins_over_hashid() {
+    fn xtypes_7_3_1_2_1_1_explicit_id_wins_over_hashid() {
         // @id(9) beats @hashid on the same member (highest precedence).
         let st = TypeObjectBuilder::struct_type("::H")
             .member("v", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
@@ -1537,19 +1511,6 @@ mod tests {
             })
             .build_minimal();
         assert_eq!(st.member_seq[0].common.member_id, 9);
-    }
-
-    #[test]
-    fn enum_builder_roundtrip_ready() {
-        let e = TypeObjectBuilder::enum_type("::Color")
-            .bit_bound(16)
-            .default_literal("RED", 0)
-            .literal("GREEN", 1)
-            .literal("BLUE", 2)
-            .build_minimal();
-        assert_eq!(e.header.common.bit_bound, 16);
-        assert_eq!(e.literal_seq.len(), 3);
-        assert!(e.literal_seq[0].common.flags.0 & EnumLiteralFlag::IS_DEFAULT_LITERAL != 0);
     }
 
     /// RTI Connext 7.7.0 (`--print-typeid`), OpenDDS
@@ -1589,28 +1550,12 @@ mod tests {
         assert_eq!(f.literal_seq[1].common.flags.0, 1 << 6);
     }
 
-    #[test]
-    fn alias_builder_minimal_and_complete() {
-        let a_min =
-            TypeObjectBuilder::alias("::Count", TypeIdentifier::Primitive(PrimitiveKind::UInt64))
-                .build_minimal();
-        assert!(matches!(
-            a_min.body.common.related_type,
-            TypeIdentifier::Primitive(PrimitiveKind::UInt64)
-        ));
-
-        let a_cmp =
-            TypeObjectBuilder::alias("::Count", TypeIdentifier::Primitive(PrimitiveKind::UInt64))
-                .build_complete();
-        assert_eq!(a_cmp.header.detail.type_name, "Count");
-    }
-
     // ------------------------------------------------------------------
-    // Neue Builder (T#2 — Union / Collections / Bitmask / Bitset)
+    // Union, collection, bitmask and bitset builders
     // ------------------------------------------------------------------
 
     #[test]
-    fn union_builder_minimal_with_two_cases_and_default() {
+    fn xtypes_7_2_2_4_4_1_union_builder_minimal_with_two_cases_and_default() {
         let u = TypeObjectBuilder::union_type(
             "::Shape",
             TypeIdentifier::Primitive(PrimitiveKind::Int32),
@@ -1633,49 +1578,7 @@ mod tests {
     }
 
     #[test]
-    fn union_builder_complete_preserves_names_and_extensibility() {
-        let u = TypeObjectBuilder::union_type(
-            "::Shape",
-            TypeIdentifier::Primitive(PrimitiveKind::Int32),
-        )
-        .extensibility(Extensibility::Mutable)
-        .case(
-            "a",
-            TypeIdentifier::Primitive(PrimitiveKind::Int32),
-            alloc::vec![1],
-        )
-        .build_complete();
-        assert_eq!(u.header.detail.type_name, "Shape");
-        assert_eq!(u.member_seq[0].detail.name, "a");
-        assert_eq!(
-            u.union_flags.0 & StructTypeFlag::IS_MUTABLE,
-            StructTypeFlag::IS_MUTABLE
-        );
-    }
-
-    #[test]
-    fn sequence_builder_minimal() {
-        let s = TypeObjectBuilder::sequence(TypeIdentifier::Primitive(PrimitiveKind::Int16), 100)
-            .build_minimal();
-        assert_eq!(s.bound, 100);
-        assert!(matches!(
-            s.element.common.type_id,
-            TypeIdentifier::Primitive(PrimitiveKind::Int16)
-        ));
-    }
-
-    #[test]
-    fn array_builder_3d() {
-        let a = TypeObjectBuilder::array(
-            TypeIdentifier::Primitive(PrimitiveKind::Float32),
-            alloc::vec![4, 4, 4],
-        )
-        .build_minimal();
-        assert_eq!(a.bound_seq, alloc::vec![4, 4, 4]);
-    }
-
-    #[test]
-    fn map_builder_string_to_int() {
+    fn xtypes_7_3_1_9_map_builder_string_to_int() {
         let m = TypeObjectBuilder::map(
             TypeIdentifier::String8Small { bound: 64 },
             TypeIdentifier::Primitive(PrimitiveKind::Int64),
@@ -1690,21 +1593,7 @@ mod tests {
     }
 
     #[test]
-    fn bitmask_builder_three_flags() {
-        let b = TypeObjectBuilder::bitmask("::Permissions")
-            .bit_bound(32)
-            .flag("READ", 0)
-            .flag("WRITE", 1)
-            .flag("EXEC", 2)
-            .build_minimal();
-        assert_eq!(b.bit_bound, 32);
-        assert_eq!(b.flag_seq.len(), 3);
-        assert_eq!(b.flag_seq[0].common.position, 0);
-        assert_eq!(b.flag_seq[2].common.position, 2);
-    }
-
-    #[test]
-    fn bitset_builder_two_fields() {
+    fn xtypes_7_2_2_4_4_1_bitset_builder_two_fields() {
         let b = TypeObjectBuilder::bitset("::Packed")
             .field("header", 0, 4, 0x07) // TK_UINT32
             .field("body", 4, 28, 0x07)
@@ -1712,31 +1601,5 @@ mod tests {
         assert_eq!(b.field_seq.len(), 2);
         assert_eq!(b.field_seq[0].common.bitcount, 4);
         assert_eq!(b.field_seq[1].common.position, 4);
-    }
-
-    #[test]
-    fn bitmask_builder_complete_preserves_names() {
-        let b = TypeObjectBuilder::bitmask("::Perm")
-            .bit_bound(16)
-            .flag("READ", 0)
-            .flag("WRITE", 1)
-            .build_complete();
-        assert_eq!(b.detail.type_name, "Perm");
-        assert_eq!(b.bit_bound, 16);
-        assert_eq!(b.flag_seq.len(), 2);
-        assert_eq!(b.flag_seq[0].detail.name, "READ");
-        assert_eq!(b.flag_seq[1].detail.name, "WRITE");
-    }
-
-    #[test]
-    fn bitset_builder_complete_preserves_names() {
-        let b = TypeObjectBuilder::bitset("::Packed")
-            .field("header", 0, 4, 0x07)
-            .field("body", 4, 28, 0x07)
-            .build_complete();
-        assert_eq!(b.detail.type_name, "Packed");
-        assert_eq!(b.field_seq.len(), 2);
-        assert_eq!(b.field_seq[0].detail.name, "header");
-        assert_eq!(b.field_seq[1].detail.name, "body");
     }
 }

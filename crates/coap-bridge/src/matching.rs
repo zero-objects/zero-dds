@@ -145,7 +145,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_empty_token_rejected() {
+    fn coap_5_3_submit_empty_token_rejected() {
         let p = PendingRequests::new(10);
         assert_eq!(
             p.submit(req_with_token(alloc::vec![]), Duration::from_secs(60)),
@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_then_complete_round_trip() {
+    fn coap_5_3_submit_then_complete_round_trip() {
         let p = PendingRequests::new(10);
         p.submit(
             req_with_token(alloc::vec![1, 2, 3]),
@@ -168,13 +168,13 @@ mod tests {
     }
 
     #[test]
-    fn complete_unknown_token_returns_none() {
+    fn coap_5_3_complete_unknown_token_returns_none() {
         let p = PendingRequests::new(10);
         assert!(p.complete(&[9, 9]).is_none());
     }
 
     #[test]
-    fn submit_above_cap_rejected() {
+    fn coap_5_3_submit_above_cap_rejected() {
         let p = PendingRequests::new(2);
         p.submit(req_with_token(alloc::vec![1]), Duration::from_secs(60))
             .expect("ok");
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_duplicate_token_rejected() {
+    fn coap_5_3_submit_duplicate_token_rejected() {
         let p = PendingRequests::new(10);
         p.submit(req_with_token(alloc::vec![1, 2]), Duration::from_secs(60))
             .expect("ok");
@@ -198,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn evict_expired_removes_overdue_pendings() {
+    fn coap_5_3_evict_expired_removes_overdue_pendings() {
         let p = PendingRequests::new(10);
         p.submit(req_with_token(alloc::vec![1]), Duration::from_millis(1))
             .expect("ok");
@@ -209,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn evict_keeps_fresh_pendings() {
+    fn coap_5_3_evict_keeps_fresh_pendings() {
         let p = PendingRequests::new(10);
         p.submit(req_with_token(alloc::vec![1]), Duration::from_secs(60))
             .expect("ok");

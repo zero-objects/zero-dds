@@ -16,6 +16,51 @@ use std::string::String;
 use std::sync::mpsc;
 use std::vec::Vec;
 
+/// What happened to an instance with a sample (DDS 1.4 §2.2.2.5.1.11).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SampleKind {
+    /// A sample of the instance.
+    Alive,
+    /// The instance is disposed.
+    Disposed,
+    /// Its writer unregistered it.
+    Unregistered,
+    /// Both at once.
+    DisposedUnregistered,
+}
+
+/// A DDS sample for the clients of a topic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DdsSample {
+    /// The CDR body without the encapsulation header; for a dispose or an
+    /// unregister the key holder (DDS-XTypes 1.3 §7.6.8), when known.
+    pub payload: Vec<u8>,
+    /// The representation identifier of the header `payload` came under
+    /// (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table 60): version, format and
+    /// byte order; `00 06` (CDR2_BE) for a key holder.
+    pub representation_identifier: [u8; 2],
+    /// What the sample does to its instance.
+    pub kind: SampleKind,
+    /// The instance's KeyHash (DDSI-RTPS 2.5 §9.6.4.8), when known.
+    pub key_hash: Option<[u8; 16]>,
+    /// The source time in nanoseconds since the Unix epoch, when known.
+    pub timestamp_ns: Option<i64>,
+}
+
+impl DdsSample {
+    /// A sample of a topic without key, under `representation_identifier`.
+    #[must_use]
+    pub fn alive(payload: Vec<u8>, representation_identifier: [u8; 2]) -> Self {
+        Self {
+            payload,
+            representation_identifier,
+            kind: SampleKind::Alive,
+            key_hash: None,
+            timestamp_ns: None,
+        }
+    }
+}
+
 /// Message to a connection writer thread.
 #[derive(Debug, Clone)]
 pub enum RouterMsg {
@@ -23,14 +68,8 @@ pub enum RouterMsg {
     Sample {
         /// DDS topic name.
         topic: String,
-        /// CDR payload (without the encap header) or JSON representation.
-        payload: Vec<u8>,
-        /// Wire byte order of `payload` from the encapsulation header
-        /// (RTPS 2.5 §10.5): `false` = little-endian, `true` = big-endian.
-        /// The browser needs it because the forwarded bytes carry no encap
-        /// header to recover the order from. Surfaced to the client as
-        /// `"be":true` on the notify frame (omitted for the LE default).
-        big_endian: bool,
+        /// The sample.
+        sample: DdsSample,
     },
     /// Daemon shutdown — close the connection with code 1001.
     Shutdown,
@@ -83,7 +122,7 @@ impl Router {
     /// Pushes a sample to all subscribers.
     /// Connections whose channel is `disconnected` are automatically
     /// removed (lazy cleanup).
-    pub fn dispatch(&mut self, topic: &str, payload: Vec<u8>, big_endian: bool) -> usize {
+    pub fn dispatch(&mut self, topic: &str, sample: DdsSample) -> usize {
         let Some(subs) = self.subs.get(topic).cloned() else {
             return 0;
         };
@@ -92,8 +131,7 @@ impl Router {
             if let Some(sender) = self.conns.get(&conn_id) {
                 let msg = RouterMsg::Sample {
                     topic: topic.to_string(),
-                    payload: payload.clone(),
-                    big_endian,
+                    sample: sample.clone(),
                 };
                 if sender.send(msg).is_ok() {
                     delivered += 1;
@@ -127,22 +165,18 @@ mod tests {
     use std::sync::mpsc::channel;
 
     #[test]
-    fn dispatch_to_subscribed_connection() {
+    fn wsbridge_5_1_dispatch_to_subscribed_connection() {
         let mut router = Router::new();
         let (tx, rx) = channel();
         router.register_connection(1, tx);
         router.subscribe(1, "Trade".to_string());
-        let n = router.dispatch("Trade", b"PAYLOAD".to_vec(), false);
+        let sample = DdsSample::alive(b"PAYLOAD".to_vec(), [0x00, 0x07]);
+        let n = router.dispatch("Trade", sample.clone());
         assert_eq!(n, 1);
         match rx.recv().unwrap() {
-            RouterMsg::Sample {
-                topic,
-                payload,
-                big_endian,
-            } => {
+            RouterMsg::Sample { topic, sample: got } => {
                 assert_eq!(topic, "Trade");
-                assert_eq!(payload, b"PAYLOAD");
-                assert!(!big_endian);
+                assert_eq!(got, sample);
             }
             other => panic!("unexpected msg {other:?}"),
         }
@@ -151,7 +185,7 @@ mod tests {
     #[test]
     fn dispatch_to_no_subscribers_is_zero() {
         let mut router = Router::new();
-        let n = router.dispatch("Empty", b"x".to_vec(), false);
+        let n = router.dispatch("Empty", DdsSample::alive(b"x".to_vec(), [0x00, 0x07]));
         assert_eq!(n, 0);
     }
 
@@ -162,7 +196,7 @@ mod tests {
         router.register_connection(2, tx);
         router.subscribe(2, "T".to_string());
         router.unsubscribe(2, "T");
-        let n = router.dispatch("T", b"x".to_vec(), false);
+        let n = router.dispatch("T", DdsSample::alive(b"x".to_vec(), [0x00, 0x07]));
         assert_eq!(n, 0);
         assert!(rx.try_recv().is_err());
     }
@@ -178,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn shutdown_broadcasts_to_all() {
+    fn wsbridge_9_2_shutdown_broadcasts_to_all() {
         let mut router = Router::new();
         let (tx, rx) = channel();
         router.register_connection(7, tx);

@@ -155,9 +155,9 @@ impl WaitNotify {
 /// the listener the subscription's sole delivery path: the callback (fired in
 /// the receive thread the instant a sample lands) copies the CDR body here and
 /// wakes the context condvar; `take` / `has_data` drain this queue.
-/// One parked sample awaiting `take`: `(CDR body, representation byte,
-/// big_endian flag)` from the encapsulation header (RTPS 2.5 §10.5).
-type InboxEntry = (alloc::boxed::Box<[u8]>, u8, u8, RmwZerodsSampleOrigin);
+/// One parked sample awaiting `take`: `(CDR body, the representation
+/// identifier of its encapsulation header (RTPS 2.5 §10.5), origin)`.
+type InboxEntry = (alloc::boxed::Box<[u8]>, [u8; 2], RmwZerodsSampleOrigin);
 
 /// Where a taken sample came from, for `rmw_message_info_t`: the writer's
 /// GUID (the publisher GID), its source timestamp in nanoseconds (`-1`
@@ -174,11 +174,11 @@ pub struct RmwZerodsSampleOrigin {
 }
 
 struct SubInbox {
-    // (CDR body, representation, big_endian). `representation`/`big_endian` are
-    // the wire byte order from the encapsulation header (RTPS 2.5 §10.5),
-    // carried for completeness; the C introspection deserializer is currently
-    // CDR_LE-only (REP-2007), so a big-endian remote sample is a known
-    // pre-existing limitation rather than honored here.
+    // (CDR body, representation identifier, origin). The identifier is the
+    // one the sample came under (RTPS 2.5 §10.5), handed on in the stream
+    // `take` builds; the C introspection deserializer is CDR_LE-only
+    // (REP-2007), so a big-endian remote sample is a known limitation of
+    // that layer, not of this queue.
     queue: Mutex<alloc::collections::VecDeque<InboxEntry>>,
     notify: Arc<WaitNotify>,
     /// Optional rmw event callback (EventsExecutor `on_new_message/request/
@@ -249,23 +249,34 @@ extern "C" fn subscription_on_data(
         // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
         unsafe { core::slice::from_raw_parts(payload, len) }.into()
     };
-    let origin = if origin.is_null() {
-        RmwZerodsSampleOrigin {
-            source_timestamp_ns: -1,
-            sequence_number: -1,
-            ..RmwZerodsSampleOrigin::default()
-        }
+    // The header the sample came under (DDS-XTypes 1.3 §7.6.3.1.2, Table
+    // 60): a PL_CDR2 or D_CDR2 sample keeps its identifier instead of the
+    // one of a @final type; without an origin, the one the version and the
+    // byte order name.
+    let (origin, identifier) = if origin.is_null() {
+        let h = encapsulation_header(repr, big_endian);
+        (
+            RmwZerodsSampleOrigin {
+                source_timestamp_ns: -1,
+                sequence_number: -1,
+                ..RmwZerodsSampleOrigin::default()
+            },
+            [h[0], h[1]],
+        )
     } else {
         // SAFETY: valid for the call per the callback contract.
         let o = unsafe { &*origin };
-        RmwZerodsSampleOrigin {
-            writer_guid: o.writer_guid,
-            source_timestamp_ns: o.source_timestamp_ns,
-            sequence_number: o.sequence_number,
-        }
+        (
+            RmwZerodsSampleOrigin {
+                writer_guid: o.writer_guid,
+                source_timestamp_ns: o.source_timestamp_ns,
+                sequence_number: o.sequence_number,
+            },
+            o.representation_identifier,
+        )
     };
     if let Ok(mut q) = inbox.queue.lock() {
-        q.push_back((bytes, repr, big_endian, origin));
+        q.push_back((bytes, identifier, origin));
         if let Some(depth) = inbox.keep_last {
             while q.len() > depth.max(1) {
                 q.pop_front();
@@ -345,7 +356,7 @@ unsafe impl Sync for NodeGraph {}
 // -- minimal XCDR1-LE writer/reader (origin after the 4-byte encap header) ----
 
 fn cdr_align(buf: &mut alloc::vec::Vec<u8>, a: usize) {
-    while (buf.len() - 4) % a != 0 {
+    while !(buf.len() - 4).is_multiple_of(a) {
         buf.push(0);
     }
 }
@@ -410,7 +421,7 @@ struct CdrReader<'a> {
 }
 impl<'a> CdrReader<'a> {
     fn align(&mut self, a: usize) {
-        while (self.pos - 4) % a != 0 {
+        while !(self.pos - 4).is_multiple_of(a) {
             self.pos += 1;
         }
     }
@@ -540,11 +551,11 @@ fn graph_publish(graph: &NodeGraph) {
     let stream = encode_participant_info(&graph.gid, &nodes, &eps);
     // The writer stamps its own encapsulation header over the body.
     let body = &stream[4..];
-    if let Ok(w) = graph.writer.lock() {
-        if !w.is_null() {
-            // SAFETY: writer from zerodds_writer_create_qos; body lives for the call.
-            unsafe { zerodds::zerodds_writer_write(*w, body.as_ptr(), body.len()) };
-        }
+    if let Ok(w) = graph.writer.lock()
+        && !w.is_null()
+    {
+        // SAFETY: writer from zerodds_writer_create_qos; body lives for the call.
+        unsafe { zerodds::zerodds_writer_write(*w, body.as_ptr(), body.len()) };
     }
 }
 
@@ -641,11 +652,11 @@ impl Drop for RmwZerodsContext {
             unsafe { zerodds::zerodds_reader_destroy(self.discovery_reader) };
             self.discovery_reader = ptr::null_mut();
         }
-        if let Ok(w) = self.graph.writer.lock() {
-            if !w.is_null() {
-                // SAFETY: writer from zerodds_writer_create.
-                unsafe { zerodds::zerodds_writer_destroy(*w) };
-            }
+        if let Ok(w) = self.graph.writer.lock()
+            && !w.is_null()
+        {
+            // SAFETY: writer from zerodds_writer_create.
+            unsafe { zerodds::zerodds_writer_destroy(*w) };
         }
         if !self.discovery_cb_ud.is_null() {
             // SAFETY: discovery_cb_ud is the Arc::into_raw pointer from init.
@@ -853,10 +864,10 @@ pub unsafe extern "C" fn rmw_zerodds_init_with_security(
     let dwriter = unsafe {
         zerodds::zerodds_writer_create_qos(rt, topic_c.as_ptr(), type_c.as_ptr(), 0, &discovery_qos)
     };
-    if !dwriter.is_null() {
-        if let Ok(mut w) = graph.writer.lock() {
-            *w = dwriter;
-        }
+    if !dwriter.is_null()
+        && let Ok(mut w) = graph.writer.lock()
+    {
+        *w = dwriter;
     }
     // KEEP_ALL on the reader: the data callback sees every announcement.
     let reader_qos = zerodds::ZeroDdsEndpointQos {
@@ -990,10 +1001,10 @@ pub unsafe extern "C" fn rmw_zerodds_node_add(
     };
     // SAFETY: ctx valid.
     let graph = &unsafe { &*ctx }.graph;
-    if let Ok(mut g) = graph.local.lock() {
-        if !g.iter().any(|(a, b)| *a == ns && *b == nm) {
-            g.push((ns, nm));
-        }
+    if let Ok(mut g) = graph.local.lock()
+        && !g.iter().any(|(a, b)| *a == ns && *b == nm)
+    {
+        g.push((ns, nm));
     }
     graph_publish(graph);
     RMW_RET_OK
@@ -1102,10 +1113,10 @@ pub unsafe extern "C" fn rmw_zerodds_create_node(
         Err(_) => return ptr::null_mut(),
     };
     // Register the node in the graph + announce it on ros_discovery_info.
-    if let Ok(mut g) = cref.graph.local.lock() {
-        if !g.iter().any(|(a, b)| *a == ns && *b == n) {
-            g.push((ns.clone(), n.clone()));
-        }
+    if let Ok(mut g) = cref.graph.local.lock()
+        && !g.iter().any(|(a, b)| *a == ns && *b == n)
+    {
+        g.push((ns.clone(), n.clone()));
     }
     graph_publish(&cref.graph);
     Box::into_raw(Box::new(RmwZerodsNode {
@@ -2047,12 +2058,12 @@ pub unsafe extern "C" fn rmw_zerodds_destroy_subscription(sub: *mut RmwZerodsSub
     }
     // Stop + join the raw-mode doorbell FIRST — it holds the reader pointer and
     // must not outlive the reader.
-    if let Ok(mut g) = s.doorbell.lock() {
-        if let Some(mut db) = g.take() {
-            db.stop.store(true, core::sync::atomic::Ordering::Relaxed);
-            if let Some(j) = db.join.take() {
-                let _ = j.join();
-            }
+    if let Ok(mut g) = s.doorbell.lock()
+        && let Some(mut db) = g.take()
+    {
+        db.stop.store(true, core::sync::atomic::Ordering::Relaxed);
+        if let Some(j) = db.join.take() {
+            let _ = j.join();
         }
     }
     // The event thread stops reading this reader before it goes.
@@ -2488,7 +2499,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_with_origin(
     let s = unsafe { &*sub };
     let popped = s.inbox.queue.lock().ok().and_then(|mut q| q.pop_front());
     match popped {
-        Some((body, repr, be, origin)) if !body.is_empty() => {
+        Some((body, identifier, origin)) if !body.is_empty() => {
             if !out_origin.is_null() {
                 // SAFETY: writable per the caller.
                 unsafe { *out_origin = origin };
@@ -2496,8 +2507,10 @@ pub unsafe extern "C" fn rmw_zerodds_take_with_origin(
             // A CDR stream with its encapsulation header, as the C layer and
             // ROS serialized messages read it; the runtime delivers the body.
             let mut stream = Vec::with_capacity(body.len() + 4);
-            stream.extend_from_slice(&encapsulation_header(repr, be));
+            stream.extend_from_slice(&[identifier[0], identifier[1], 0x00, 0x00]);
             stream.extend_from_slice(&body);
+            // The `_BE` identifiers are even (RTPS 2.5 §10.5).
+            let be = u8::from(identifier[1] & 0x01 == 0);
             let bytes = stream.into_boxed_slice();
             let len = bytes.len();
             let ptr = alloc::boxed::Box::into_raw(bytes).cast::<u8>();
@@ -3233,8 +3246,18 @@ mod tests {
         }
     }
 
+    /// A DDS domain of the host's share of the band, leased for this test
+    /// process (`zerodds-test-domains`), for the tests whose participants
+    /// meet.
+    fn leased_domain() -> u32 {
+        u32::try_from(zerodds_test_domains::unique_domain()).unwrap()
+    }
+
+    /// rmw/ret_types.h: RMW_RET_OK 0, RMW_RET_ERROR 1, RMW_RET_TIMEOUT 2,
+    /// RMW_RET_UNSUPPORTED 3, RMW_RET_BAD_ALLOC 10,
+    /// RMW_RET_INVALID_ARGUMENT 11, RMW_RET_INCORRECT_RMW_IMPLEMENTATION 12.
     #[test]
-    fn rmw_codes_match_rep_2007() {
+    fn rmw_ret_types_h_the_shim_returns_the_header_codes() {
         assert_eq!(RMW_RET_OK, 0);
         assert_eq!(RMW_RET_ERROR, 1);
         assert_eq!(RMW_RET_TIMEOUT, 2);
@@ -3244,19 +3267,29 @@ mod tests {
         assert_eq!(RMW_RET_INCORRECT_RMW_IMPLEMENTATION, 12);
     }
 
+    /// rmw/rmw.h `rmw_get_implementation_identifier` and
+    /// `rmw_get_serialization_format`: the name ament registers the
+    /// implementation under, and "cdr", as the other RMWs answer.
     #[test]
-    fn impl_identifier_is_static_cstring() {
-        let p = rmw_zerodds_get_implementation_identifier();
-        assert!(!p.is_null());
-        // SAFETY: static byte-array, CStr-checked.
-        let s = unsafe { CStr::from_ptr(p) }.to_str().unwrap();
-        assert_eq!(s, "rmw_zerodds_cpp");
+    fn rmw_h_the_identifier_is_rmw_zerodds_cpp_and_the_format_cdr() {
+        // SAFETY: both return pointers to static NUL-terminated arrays.
+        let (id, format) = unsafe {
+            (
+                CStr::from_ptr(rmw_zerodds_get_implementation_identifier()),
+                CStr::from_ptr(rmw_zerodds_get_serialization_format()),
+            )
+        };
+        assert_eq!(id.to_str().unwrap(), "rmw_zerodds_cpp");
+        assert_eq!(format.to_str().unwrap(), "cdr");
     }
 
-    /// ParticipantEntitiesInfo with per-node reader/writer gid sequences must
-    /// round-trip: node names AND the endpoint→node map (REP-2009 endpoint-info).
+    /// rmw_dds_common/msg/ParticipantEntitiesInfo.msg (`Gid gid`,
+    /// `NodeEntitiesInfo[] node_entities_info_seq`; NodeEntitiesInfo:
+    /// `string node_namespace`, `string node_name`, `Gid[] reader_gid_seq`,
+    /// `Gid[] writer_gid_seq`; Gid: `char[24] data`) in plain CDR, little
+    /// endian (DDS-XTypes 1.3 §7.4.3), the octets written out by hand.
     #[test]
-    fn participant_info_roundtrips_endpoint_gids() {
+    fn rmw_dds_common_participant_entities_info_is_plain_cdr_of_the_msg_definition() {
         let gid = [7u8; 24];
         let nodes: NodeList = alloc::vec![
             ("/".to_string(), "talker".to_string()),
@@ -3276,191 +3309,170 @@ mod tests {
                 gid: r_gid
             },
         ];
-        let body = encode_participant_info(&gid, &nodes, &eps);
-        let (dgid, dnodes, deps) = decode_participant_info(&body).unwrap();
-        assert_eq!(dgid, gid);
-        assert_eq!(dnodes, nodes); // node-names path unchanged
-        // Endpoint→node map: writer gid -> talker, reader gid -> listener.
-        let map: alloc::collections::BTreeMap<Gid16, NodeId> = deps.into_iter().collect();
-        assert_eq!(
-            map.get(&w_gid),
-            Some(&("/".to_string(), "talker".to_string()))
-        );
-        assert_eq!(
-            map.get(&r_gid),
-            Some(&("/ns".to_string(), "listener".to_string()))
-        );
-    }
+        let mut expected = alloc::vec![0x00, 0x01, 0x00, 0x00];
+        expected.extend_from_slice(&[7; 24]); // gid.data
+        expected.extend_from_slice(&[2, 0, 0, 0]); // two nodes
+        expected.extend_from_slice(&[2, 0, 0, 0, b'/', 0, 0, 0]); // "/" + 2 padding
+        expected.extend_from_slice(&[7, 0, 0, 0]);
+        expected.extend_from_slice(b"talker\0\0"); // "talker" + 1 padding
+        expected.extend_from_slice(&[0, 0, 0, 0]); // no readers
+        expected.extend_from_slice(&[1, 0, 0, 0]); // one writer
+        expected.extend_from_slice(&[0xAA; 16]);
+        expected.extend_from_slice(&[0; 8]); // the 16-octet GUID in char[24]
+        expected.extend_from_slice(&[4, 0, 0, 0]);
+        expected.extend_from_slice(b"/ns\0");
+        expected.extend_from_slice(&[9, 0, 0, 0]);
+        expected.extend_from_slice(b"listener\0\0\0\0"); // + 3 padding
+        expected.extend_from_slice(&[1, 0, 0, 0]); // one reader
+        expected.extend_from_slice(&[0xBB; 16]);
+        expected.extend_from_slice(&[0; 8]);
+        expected.extend_from_slice(&[0, 0, 0, 0]); // no writers
+        assert_eq!(encode_participant_info(&gid, &nodes, &eps), expected);
 
-    /// Empty endpoint sequences (a node with no pub/sub) must still decode the
-    /// node names — guards the node-names regression path.
-    #[test]
-    fn participant_info_roundtrips_without_endpoints() {
-        let gid = [3u8; 24];
-        let nodes: NodeList = alloc::vec![("/".to_string(), "solo".to_string())];
-        let body = encode_participant_info(&gid, &nodes, &[]);
-        let (_, dnodes, deps) = decode_participant_info(&body).unwrap();
+        let (dgid, dnodes, deps) = decode_participant_info(&expected).unwrap();
+        assert_eq!(dgid, gid);
         assert_eq!(dnodes, nodes);
+        let map: alloc::collections::BTreeMap<Gid16, NodeId> = deps.into_iter().collect();
+        assert_eq!(map.get(&w_gid), Some(&nodes[0]));
+        assert_eq!(map.get(&r_gid), Some(&nodes[1]));
+
+        // A node without endpoints: both sequences empty.
+        let solo: NodeList = alloc::vec![("/".to_string(), "solo".to_string())];
+        let mut expected = alloc::vec![0x00, 0x01, 0x00, 0x00];
+        expected.extend_from_slice(&[3; 24]);
+        expected.extend_from_slice(&[1, 0, 0, 0, 2, 0, 0, 0, b'/', 0, 0, 0, 5, 0, 0, 0]);
+        expected.extend_from_slice(b"solo\0\0\0\0");
+        expected.extend_from_slice(&[0; 8]);
+        assert_eq!(encode_participant_info(&[3; 24], &solo, &[]), expected);
+        let (_, dnodes, deps) = decode_participant_info(&expected).unwrap();
+        assert_eq!(dnodes, solo);
         assert!(deps.is_empty());
     }
 
+    /// rmw/rmw.h: a NULL handle or a NULL output argument is
+    /// RMW_RET_INVALID_ARGUMENT, not a crash.
     #[test]
-    fn serialization_format_is_cdr() {
-        let p = rmw_zerodds_get_serialization_format();
-        // SAFETY: static array.
-        let s = unsafe { CStr::from_ptr(p) }.to_str().unwrap();
-        assert_eq!(s, "cdr");
-    }
-
-    #[test]
-    fn shutdown_null_returns_invalid_argument() {
-        // SAFETY: NULL-tolerant behavior is part of the contract.
-        let r = unsafe { rmw_zerodds_shutdown(ptr::null_mut()) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn destroy_node_null_returns_invalid_argument() {
-        // SAFETY: NULL-tolerant.
-        let r = unsafe { rmw_zerodds_destroy_node(ptr::null_mut()) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn context_fini_null_returns_invalid_argument() {
-        // SAFETY: NULL-tolerant.
-        let r = unsafe { rmw_zerodds_context_fini(ptr::null_mut()) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    /// Regression: `rmw_shutdown` must NOT free the context — destroying a node
-    /// AFTER shutdown (the `rclcpp::shutdown()`-then-node-out-of-scope order)
-    /// reaches back into the context (`destroy_node` → `graph_publish`). Before
-    /// the fix this was a use-after-free (segfault). The actual free happens in
-    /// `context_fini`, which is called last.
-    #[test]
-    fn destroy_node_after_shutdown_is_safe() {
-        // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        unsafe {
-            let ctx = rmw_zerodds_init(0);
-            assert!(!ctx.is_null());
-            let name = std::ffi::CString::new("n").unwrap();
-            let ns = std::ffi::CString::new("/").unwrap();
-            let node = rmw_zerodds_create_node(ctx, name.as_ptr(), ns.as_ptr());
-            assert!(!node.is_null());
-            // Logical shutdown while the node is still alive …
-            assert_eq!(rmw_zerodds_shutdown(ctx), RMW_RET_OK);
-            // … then the node teardown must still reach a live context.
-            assert_eq!(rmw_zerodds_destroy_node(node), RMW_RET_OK);
-            // Only now the context is freed.
-            assert_eq!(rmw_zerodds_context_fini(ctx), RMW_RET_OK);
-        }
-    }
-
-    #[test]
-    fn loaning_null_args_rejected() {
+    fn rmw_h_a_null_argument_is_rmw_ret_invalid_argument() {
         let mut p: *mut u8 = ptr::null_mut();
         let mut l: usize = 0;
-        // SAFETY: NULL-tolerant.
-        let r = unsafe { rmw_zerodds_borrow_loaned_message(ptr::null_mut(), 64, &mut p, &mut l) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn return_loan_null_args_rejected() {
-        // SAFETY: NULL-tolerant.
-        let r = unsafe { rmw_zerodds_return_loaned_message(ptr::null_mut(), ptr::null_mut(), 0) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn destroy_client_null_returns_invalid_argument() {
-        // SAFETY: NULL-tolerant.
-        let r = unsafe { services::rmw_zerodds_destroy_client(ptr::null_mut()) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn destroy_service_null_returns_invalid_argument() {
-        // SAFETY: NULL-tolerant.
-        let r = unsafe { services::rmw_zerodds_destroy_service(ptr::null_mut()) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn wait_set_create_destroy_smoke() {
-        let ws = rmw_zerodds_create_wait_set();
-        assert!(!ws.is_null());
-        // SAFETY: ws from create_wait_set.
-        let r = unsafe { rmw_zerodds_destroy_wait_set(ws) };
-        assert_eq!(r, RMW_RET_OK);
-    }
-
-    #[test]
-    fn wait_returns_invalid_for_null() {
-        // SAFETY: NULL-tolerant.
-        let r = unsafe { rmw_zerodds_wait(ptr::null_mut(), 100) };
-        assert_eq!(r, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn type_hash_sha256_is_deterministic() {
-        let s = std::ffi::CString::new("std_msgs/msg/String").unwrap();
-        let mut h1 = [0u8; 32];
-        let mut h2 = [0u8; 32];
-        // SAFETY: NUL-Strings + 32-byte buffers.
-        let rc1 = unsafe { rmw_zerodds_compute_type_hash(s.as_ptr(), h1.as_mut_ptr()) };
-        // SAFETY: NUL strings + 32-byte buffers (same contract).
-        let rc2 = unsafe { rmw_zerodds_compute_type_hash(s.as_ptr(), h2.as_mut_ptr()) };
-        assert_eq!(rc1, RMW_RET_OK);
-        assert_eq!(rc2, RMW_RET_OK);
-        assert_eq!(h1, h2);
-        // First bytes != 0 (hash non-empty).
-        assert_ne!(h1, [0u8; 32]);
-    }
-
-    #[test]
-    fn type_hash_differs_for_different_types() {
-        let a = std::ffi::CString::new("std_msgs/msg/String").unwrap();
-        let b = std::ffi::CString::new("std_msgs/msg/Int32").unwrap();
-        let mut ha = [0u8; 32];
-        let mut hb = [0u8; 32];
-        // SAFETY: NUL-Strings + Buffer.
-        let _ = unsafe { rmw_zerodds_compute_type_hash(a.as_ptr(), ha.as_mut_ptr()) };
-        // SAFETY: NUL strings + buffer (same contract).
-        let _ = unsafe { rmw_zerodds_compute_type_hash(b.as_ptr(), hb.as_mut_ptr()) };
-        assert_ne!(ha, hb);
-    }
-
-    #[test]
-    fn type_hash_null_args_rejected() {
         let mut h = [0u8; 32];
-        // SAFETY: check for a null arg.
-        let r1 = unsafe { rmw_zerodds_compute_type_hash(ptr::null(), h.as_mut_ptr()) };
-        assert_eq!(r1, RMW_RET_INVALID_ARGUMENT);
         let s = std::ffi::CString::new("x").unwrap();
-        // SAFETY: out_hash NULL.
-        let r2 = unsafe { rmw_zerodds_compute_type_hash(s.as_ptr(), ptr::null_mut()) };
-        assert_eq!(r2, RMW_RET_INVALID_ARGUMENT);
-    }
-
-    #[test]
-    fn has_data_and_context_block_null_safe() {
-        // SAFETY: NULL-tolerant contract.
-        assert_eq!(
-            unsafe { rmw_zerodds_subscription_has_data(ptr::null_mut()) },
-            RMW_RET_INVALID_ARGUMENT
-        );
-        // SAFETY: NULL-tolerant.
-        assert_eq!(
-            unsafe { rmw_zerodds_context_wait_block(ptr::null_mut(), 0, 10) },
-            RMW_RET_INVALID_ARGUMENT
-        );
+        // SAFETY: every call is documented to answer NULL without reading it.
+        let answers = unsafe {
+            [
+                rmw_zerodds_shutdown(ptr::null_mut()),
+                rmw_zerodds_destroy_node(ptr::null_mut()),
+                rmw_zerodds_context_fini(ptr::null_mut()),
+                rmw_zerodds_borrow_loaned_message(ptr::null_mut(), 64, &mut p, &mut l),
+                rmw_zerodds_return_loaned_message(ptr::null_mut(), ptr::null_mut(), 0),
+                services::rmw_zerodds_destroy_client(ptr::null_mut()),
+                services::rmw_zerodds_destroy_service(ptr::null_mut()),
+                rmw_zerodds_wait(ptr::null_mut(), 100),
+                rmw_zerodds_subscription_has_data(ptr::null_mut()),
+                rmw_zerodds_context_wait_block(ptr::null_mut(), 0, 10),
+                rmw_zerodds_compute_type_hash(ptr::null(), h.as_mut_ptr()),
+                rmw_zerodds_compute_type_hash(s.as_ptr(), ptr::null_mut()),
+            ]
+        };
+        for (i, rc) in answers.iter().enumerate() {
+            assert_eq!(*rc, RMW_RET_INVALID_ARGUMENT, "call {i}");
+        }
         // SAFETY: NULL-tolerant.
         assert_eq!(
             unsafe { rmw_zerodds_context_wait_generation(ptr::null_mut()) },
             0
         );
+    }
+
+    /// rmw/rmw.h `rmw_shutdown` and `rmw_context_fini` (rcl's order:
+    /// `rclcpp::shutdown()`, then the node goes out of scope): a node
+    /// destroyed after shutdown still reaches its context; only
+    /// `rmw_context_fini` frees it.
+    #[test]
+    fn rmw_h_a_node_destroyed_after_shutdown_reaches_its_context() {
+        // SAFETY: handles from the calls before, destroyed in rcl's order.
+        unsafe {
+            let ctx = rmw_zerodds_init(leased_domain());
+            assert!(!ctx.is_null());
+            let name = std::ffi::CString::new("n").unwrap();
+            let ns = std::ffi::CString::new("/").unwrap();
+            let node = rmw_zerodds_create_node(ctx, name.as_ptr(), ns.as_ptr());
+            assert!(!node.is_null());
+            assert_eq!(rmw_zerodds_shutdown(ctx), RMW_RET_OK);
+            assert_eq!(rmw_zerodds_destroy_node(node), RMW_RET_OK);
+            assert_eq!(rmw_zerodds_context_fini(ctx), RMW_RET_OK);
+        }
+    }
+
+    /// rmw/types.h `rmw_node_t`: the node carries the implementation
+    /// identifier, its name and its namespace as `rmw_create_node` got
+    /// them, and the domain of its context.
+    #[test]
+    fn rmw_types_h_a_node_carries_the_identifier_its_name_and_namespace() {
+        let domain = leased_domain();
+        // SAFETY: handles from the calls before, destroyed in rcl's order.
+        unsafe {
+            let ctx = rmw_zerodds_init(domain);
+            assert!(!ctx.is_null());
+            let name = std::ffi::CString::new("talker").unwrap();
+            let ns = std::ffi::CString::new("/robot1").unwrap();
+            let node = rmw_zerodds_create_node(ctx, name.as_ptr(), ns.as_ptr());
+            assert!(!node.is_null());
+            let identity = &(*node).identity;
+            assert_eq!(identity.implementation_identifier, "rmw_zerodds_cpp");
+            assert_eq!(identity.name, "talker");
+            assert_eq!(identity.namespace, "/robot1");
+            assert_eq!(identity.domain_id, domain);
+            assert_eq!(rmw_zerodds_destroy_node(node), RMW_RET_OK);
+            assert_eq!(rmw_zerodds_shutdown(ctx), RMW_RET_OK);
+            assert_eq!(rmw_zerodds_context_fini(ctx), RMW_RET_OK);
+        }
+    }
+
+    /// `rmw_zerodds_compute_type_hash` is SHA-256 of the type name (not the
+    /// RIHS01 hash of REP-2011, which rosidl hands the C layer): the FIPS
+    /// 180-4 example "abc" gives the digest of Appendix B.1.
+    #[test]
+    fn fips180_4_b_1_the_type_name_hash_is_sha_256() {
+        let s = std::ffi::CString::new("abc").unwrap();
+        let mut h = [0u8; 32];
+        // SAFETY: NUL-terminated string and a 32-octet buffer.
+        assert_eq!(
+            unsafe { rmw_zerodds_compute_type_hash(s.as_ptr(), h.as_mut_ptr()) },
+            RMW_RET_OK
+        );
+        assert_eq!(
+            h,
+            [
+                0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae,
+                0x22, 0x23, 0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61,
+                0xf2, 0x00, 0x15, 0xad
+            ]
+        );
+    }
+
+    /// rmw_dds_common `encode_type_hash_for_user_data_qos`: an endpoint
+    /// announces the RIHS01 hash rosidl gives it in USER_DATA as
+    /// `typehash=<hash>;`; without a hash (before Iron) USER_DATA stays
+    /// empty.
+    #[test]
+    fn rmw_dds_common_the_type_hash_goes_into_user_data_as_typehash() {
+        let hash = std::ffi::CString::new(
+            "RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18",
+        )
+        .unwrap();
+        // SAFETY: NUL-terminated, or NULL.
+        let (with, without) = unsafe {
+            (
+                type_hash_user_data(hash.as_ptr()),
+                type_hash_user_data(ptr::null()),
+            )
+        };
+        assert_eq!(
+            with.unwrap(),
+            b"typehash=RIHS01_df668c740482bbd48fb39d76a70dfd4bd59db1288021743503259e948f6b1a18;"
+        );
+        assert_eq!(without.unwrap(), b"");
     }
 
     #[test]
@@ -3494,7 +3506,7 @@ mod tests {
     /// `has_data` is true and `take` returns the bytes; then an empty `wait`
     /// times out cleanly instead of hanging.
     #[test]
-    fn event_driven_wait_roundtrip_inprocess() {
+    fn rmw_h_rmw_wait_wakes_on_arrival_and_times_out_when_empty() {
         let topic = std::ffi::CString::new("rmw_wait_it").unwrap();
         let typ = std::ffi::CString::new("test::T").unwrap();
         let name = std::ffi::CString::new("n").unwrap();
@@ -3503,10 +3515,11 @@ mod tests {
         // Two participants (publisher node + subscriber node) on one domain —
         // the real cross-node rmw shape; a single runtime does not loop a
         // sample back to its own reader.
-        // SAFETY: FFI bring-up with valid C strings on a private domain.
-        let ctx_pub = unsafe { rmw_zerodds_init(91) };
+        let domain = leased_domain();
+        // SAFETY: FFI bring-up with valid C strings on a leased domain.
+        let ctx_pub = unsafe { rmw_zerodds_init(domain) };
         // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        let ctx_sub = unsafe { rmw_zerodds_init(91) };
+        let ctx_sub = unsafe { rmw_zerodds_init(domain) };
         assert!(!ctx_pub.is_null() && !ctx_sub.is_null());
         // SPDP discovery must complete BEFORE endpoints are created, otherwise
         // they wire up against an empty locator list (see the c-api smoke test).
@@ -3590,6 +3603,89 @@ mod tests {
 
         // SAFETY: all handles valid + owned.
         unsafe {
+            let _ = rmw_zerodds_destroy_wait_set(ws);
+            let _ = rmw_zerodds_destroy_subscription(sub);
+            let _ = rmw_zerodds_destroy_publisher(publ);
+            let _ = rmw_zerodds_destroy_node(node_pub);
+            let _ = rmw_zerodds_destroy_node(node_sub);
+            let _ = rmw_zerodds_shutdown(ctx_pub);
+            let _ = rmw_zerodds_shutdown(ctx_sub);
+            let _ = rmw_zerodds_context_fini(ctx_pub);
+            let _ = rmw_zerodds_context_fini(ctx_sub);
+        }
+    }
+
+    /// DDS-XTypes 1.3 §7.6.3.1.2, Table 60, with DDSI-RTPS 2.5 §10.5: a
+    /// sample a subscription takes is handed on under the header it came
+    /// under — D_CDR2_LE (0x0009) from an XCDR2 writer of an `@appendable`
+    /// type — not under the CDR2 header of a `@final` type.
+    #[test]
+    fn xtypes_7_6_3_1_2_a_taken_sample_keeps_the_header_it_came_under() {
+        let topic = std::ffi::CString::new("rmw_header_it").unwrap();
+        let typ = std::ffi::CString::new("test::T").unwrap();
+        let name = std::ffi::CString::new("n").unwrap();
+        let ns = std::ffi::CString::new("/").unwrap();
+        let domain = leased_domain();
+        // SAFETY: FFI bring-up with valid C strings on a leased domain.
+        let (ctx_pub, ctx_sub) = unsafe { (rmw_zerodds_init(domain), rmw_zerodds_init(domain)) };
+        assert!(!ctx_pub.is_null() && !ctx_sub.is_null());
+        // SAFETY: runtime pointers from rmw_zerodds_init; discovery before
+        // the endpoints, handles destroyed at the end.
+        unsafe {
+            let rp = (*ctx_pub).runtime as *mut zerodds::ZeroDdsRuntime;
+            let rs = (*ctx_sub).runtime as *mut zerodds::ZeroDdsRuntime;
+            assert_eq!(zerodds::zerodds_runtime_wait_for_peers(rp, 1, 5_000), 0);
+            assert_eq!(zerodds::zerodds_runtime_wait_for_peers(rs, 1, 5_000), 0);
+            let node_pub = rmw_zerodds_create_node(ctx_pub, name.as_ptr(), ns.as_ptr());
+            let node_sub = rmw_zerodds_create_node(ctx_sub, name.as_ptr(), ns.as_ptr());
+            let publ = rmw_zerodds_create_publisher(
+                node_pub,
+                typ.as_ptr(),
+                topic.as_ptr(),
+                &test_qos(),
+                ptr::null_mut(),
+            );
+            let sub = rmw_zerodds_create_subscription(
+                node_sub,
+                typ.as_ptr(),
+                topic.as_ptr(),
+                &test_qos(),
+                ptr::null_mut(),
+            );
+            assert!(!publ.is_null() && !sub.is_null());
+            let writer = *(*publ).inner.lock().unwrap();
+            assert_eq!(
+                zerodds::rpc_qos_ffi::zerodds_writer_set_data_representation(writer, 2),
+                0
+            );
+            assert_eq!(zerodds::zerodds_writer_set_wire_extensibility(writer, 1), 0);
+
+            let ws = rmw_zerodds_create_wait_set();
+            assert_eq!(rmw_zerodds_wait_set_add_subscription(ws, sub), RMW_RET_OK);
+            // A DHEADER of 4 octets and an Int32 7, behind the CDR_LE header
+            // the C layer hands `rmw_publish`.
+            let payload: [u8; 12] = [0x00, 0x01, 0x00, 0x00, 4, 0, 0, 0, 7, 0, 0, 0];
+            let mut woke = false;
+            for _ in 0..50 {
+                let _ = rmw_zerodds_publish(publ, payload.as_ptr(), payload.len());
+                if rmw_zerodds_wait(ws, 200) == RMW_RET_OK {
+                    woke = true;
+                    break;
+                }
+            }
+            assert!(woke, "the sample arrives");
+            let (mut buf, mut len, mut be) = (ptr::null_mut(), 0usize, 0xFFu8);
+            assert_eq!(
+                rmw_zerodds_take(sub, &mut buf, &mut len, &mut be),
+                RMW_RET_OK
+            );
+            assert!(!buf.is_null() && len == 12);
+            let stream = core::slice::from_raw_parts(buf, len).to_vec();
+            rmw_zerodds_buffer_free(buf, len);
+            assert_eq!(stream[..4], [0x00, 0x09, 0x00, 0x00]);
+            assert_eq!(stream[4..], payload[4..]);
+            assert_eq!(be, 0);
+
             let _ = rmw_zerodds_destroy_wait_set(ws);
             let _ = rmw_zerodds_destroy_subscription(sub);
             let _ = rmw_zerodds_destroy_publisher(publ);
@@ -3718,7 +3814,7 @@ mod tests {
     /// encapsulation, the reply the client with the sequence id of the last
     /// request it sent, and the service topics are the `rq`/`rr` names.
     #[test]
-    fn a_service_call_between_two_runtimes_correlates_by_the_related_identity() {
+    fn ros2bridge_4_2_a_service_call_between_two_runtimes_correlates_by_the_related_identity() {
         let svc = std::ffi::CString::new("/rmw_srv_it").unwrap();
         let req_t = std::ffi::CString::new("test::srv::dds_::Srv_Request_").unwrap();
         let rep_t = std::ffi::CString::new("test::srv::dds_::Srv_Response_").unwrap();
@@ -3727,8 +3823,9 @@ mod tests {
         let q = services_qos();
         // SAFETY: FFI bring-up on a private domain with valid C strings.
         unsafe {
-            let ctx_cli = rmw_zerodds_init(92);
-            let ctx_srv = rmw_zerodds_init(92);
+            let domain = leased_domain();
+            let ctx_cli = rmw_zerodds_init(domain);
+            let ctx_srv = rmw_zerodds_init(domain);
             assert!(!ctx_cli.is_null() && !ctx_srv.is_null());
             let rc = (*ctx_cli).runtime as *mut zerodds::ZeroDdsRuntime;
             let rs = (*ctx_srv).runtime as *mut zerodds::ZeroDdsRuntime;
@@ -3789,7 +3886,7 @@ mod tests {
     /// its own request (the same-runtime path carries the sequence number and
     /// the related identity as the wire does).
     #[test]
-    fn two_clients_in_one_runtime_each_get_their_own_reply() {
+    fn ros2bridge_4_2_two_clients_in_one_runtime_each_get_their_own_reply() {
         let svc = std::ffi::CString::new("/rmw_srv_same").unwrap();
         let req_t = std::ffi::CString::new("test::srv::dds_::Srv_Request_").unwrap();
         let rep_t = std::ffi::CString::new("test::srv::dds_::Srv_Response_").unwrap();
@@ -3798,7 +3895,7 @@ mod tests {
         let q = services_qos();
         // SAFETY: FFI bring-up with valid C strings.
         unsafe {
-            let ctx = rmw_zerodds_init(93);
+            let ctx = rmw_zerodds_init(leased_domain());
             assert!(!ctx.is_null());
             let node = rmw_zerodds_create_node(ctx, name.as_ptr(), ns.as_ptr());
             let mk_client = || {
@@ -3848,7 +3945,7 @@ mod tests {
 
     /// O1: the on_new_message event callback fires on arrival.
     #[test]
-    fn event_callback_fires_on_arrival() {
+    fn rmw_h_the_on_new_message_callback_fires_on_arrival() {
         use core::sync::atomic::{AtomicUsize, Ordering};
         let counter = AtomicUsize::new(0);
         let topic = std::ffi::CString::new("rmw_evcb_it").unwrap();
@@ -3856,10 +3953,11 @@ mod tests {
         let name = std::ffi::CString::new("n").unwrap();
         let ns = std::ffi::CString::new("/").unwrap();
 
+        let domain = leased_domain();
         // SAFETY: FFI bring-up.
-        let ctx_pub = unsafe { rmw_zerodds_init(93) };
+        let ctx_pub = unsafe { rmw_zerodds_init(domain) };
         // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-        let ctx_sub = unsafe { rmw_zerodds_init(93) };
+        let ctx_sub = unsafe { rmw_zerodds_init(domain) };
         assert!(!ctx_pub.is_null() && !ctx_sub.is_null());
         // SAFETY: discovery before endpoints.
         unsafe {

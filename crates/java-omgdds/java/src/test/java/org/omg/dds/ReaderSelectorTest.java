@@ -95,7 +95,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void theDefaultSelectorSelectsEverything() throws Exception {
+    void javapsm_7_7_3_the_default_selector_selects_everything() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = threeInstances(rig);
         DataReader.Selector<Keyed> selector = reader.select();
@@ -114,7 +114,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void maxSamplesLimitsReadAndTakeAndUnlimitedIsAcceptedAsAValue() throws Exception {
+    void javapsm_7_7_3_max_samples_limits_read_and_take_and_unlimited_is_accepted_as_a_value() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = threeInstances(rig);
         assertEquals(4, reader.select().maxSamples(4).read(new ArrayList<>()).size());
@@ -139,7 +139,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void anInstanceHandleLimitsReadAndTakeToThatInstance() throws Exception {
+    void javapsm_7_7_3_an_instance_handle_limits_read_and_take_to_that_instance() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = threeInstances(rig);
         InstanceHandle two = handleOf(reader, 2);
@@ -157,7 +157,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void nextInstanceWalksTheInstancesInTheOrderOfTheirHandles() throws Exception {
+    void javapsm_2_next_instance_walks_the_instances_in_the_order_of_their_handles() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = threeInstances(rig);
         // the handles of the keys 1, 2, 3 are ordered like the keys (big-endian key octets)
@@ -186,7 +186,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void nextInstanceSkipsInstancesWithoutSamplesInTheSelectedStates() throws Exception {
+    void javapsm_2_next_instance_skips_instances_without_samples_in_the_selected_states() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = threeInstances(rig);
         // the samples of instance 2 are read
@@ -198,7 +198,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void theDataStateSelectsOnSampleViewAndInstanceStates() throws Exception {
+    void javapsm_2_the_data_state_selects_on_sample_view_and_instance_states() throws Exception {
         // every query reads, and a read changes the sample and view states, so each query has a
         // reader of its own that was brought into the same state
         ReaderRig rig = new ReaderRig(nextDom());
@@ -254,7 +254,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void readNextSampleReturnsTheNextSampleNotYetReadAndTakeNextSampleRemovesIt() throws Exception {
+    void javapsm_2_read_next_sample_returns_the_next_sample_not_yet_read_and_take_next_sample_removes_it() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         org.omg.dds.pub.DataWriter<Keyed> writer = rig.writer();
@@ -285,7 +285,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void aReadConditionOfTheReaderSelectsItsStatesWithTheSelector() throws Exception {
+    void javapsm_2_a_read_condition_of_the_reader_selects_its_states_with_the_selector() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = threeInstances(rig);
         ReadCondition<Keyed> notRead =
@@ -309,7 +309,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void aQueryConditionOfTheReaderSelectsByItsExpressionAndTheNextInstanceKeepsIt() throws Exception {
+    void javapsm_2_a_query_condition_of_the_reader_selects_by_its_expression_and_the_next_instance_keeps_it() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = threeInstances(rig);
         QueryCondition<Keyed> later = reader.createQueryCondition("seq > %0", List.of("0"));
@@ -336,7 +336,7 @@ class ReaderSelectorTest {
     }
 
     @Test
-    void theCopyFlavourReplacesWhatTheListHeldAndAllocatesAListForNull() throws Exception {
+    void javapsm_7_7_3_the_copy_flavour_replaces_what_the_list_held_and_allocates_a_list_for_null() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         org.omg.dds.pub.DataWriter<Keyed> writer = rig.writer();

@@ -65,7 +65,7 @@ fn complete_names(
 }
 
 #[test]
-fn the_parameters_follow_member_index_and_the_annex_b_comment_is_a_setting() {
+fn xtypes_7_3_4_5_the_parameters_follow_member_index_and_the_annex_b_comment_is_a_setting() {
     let (ast, id) = declaration();
 
     // The default is §7.3.4.5: the declaration order.
@@ -91,7 +91,7 @@ fn the_parameters_follow_member_index_and_the_annex_b_comment_is_a_setting() {
 }
 
 #[test]
-fn the_minimal_form_is_ordered_by_the_hash_of_the_name_in_both_readings() {
+fn xtypes_7_3_4_5_the_minimal_form_is_ordered_by_the_hash_of_the_name_in_both_readings() {
     let (ast, id) = declaration();
     let TypeObject::Minimal(MinimalTypeObject::Annotation(annotation)) =
         annotation_type_object(&ast, id, Form::Minimal).expect("minimal")
@@ -109,7 +109,7 @@ fn the_minimal_form_is_ordered_by_the_hash_of_the_name_in_both_readings() {
 }
 
 #[test]
-fn the_setting_has_a_spelling_that_reads_back() {
+fn xtypes_7_3_4_5_the_setting_has_a_spelling_that_reads_back() {
     for order in [
         AnnotationParameterOrder::MemberIndex,
         AnnotationParameterOrder::Name,

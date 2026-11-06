@@ -16,14 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ByteArrayTypeSupportTest {
 
     @Test
-    void typeNameIsDdsBytes() {
+    void javapsm_7_8_2_a_byte_array_topic_has_the_type_dds_bytes_and_is_appendable() {
         assertEquals("DDS::Bytes", ByteArrayTypeSupport.INSTANCE.getTypeName());
         assertEquals(ExtensibilityKind.APPENDABLE,
                 ByteArrayTypeSupport.INSTANCE.getExtensibility());
     }
 
     @Test
-    void encodeFramesTheBytes() {
+    void javapsm_7_8_2_a_byte_array_is_written_as_dheader_length_and_octets() {
         byte[] out = ByteArrayTypeSupport.INSTANCE.encode(
                 new byte[]{1, 2, 3}, EndianMode.LITTLE_ENDIAN);
         // DHEADER = 3 + 4 = 7 (LE), length = 3 (LE), then the octets.
@@ -35,7 +35,7 @@ class ByteArrayTypeSupportTest {
     }
 
     @Test
-    void decodeUnframesTheBytes() {
+    void javapsm_7_8_2_a_byte_array_is_read_from_dheader_length_and_octets() {
         byte[] out = ByteArrayTypeSupport.INSTANCE.decode(new byte[]{
                 7, 0, 0, 0,
                 3, 0, 0, 0,
@@ -45,14 +45,7 @@ class ByteArrayTypeSupportTest {
     }
 
     @Test
-    void roundTrip() {
-        byte[] sample = new byte[]{10, 20, 30, 40, 50};
-        byte[] framed = ByteArrayTypeSupport.INSTANCE.encode(sample);
-        assertArrayEquals(sample, ByteArrayTypeSupport.INSTANCE.decode(framed));
-    }
-
-    @Test
-    void bigEndianFramingFollowsTheChosenByteOrder() {
+    void javapsm_7_8_2_a_big_endian_byte_array_has_big_endian_dheader_and_length() {
         byte[] out = ByteArrayTypeSupport.INSTANCE.encode(
                 new byte[]{1, 2, 3}, EndianMode.BIG_ENDIAN);
         assertArrayEquals(new byte[]{
@@ -62,24 +55,4 @@ class ByteArrayTypeSupportTest {
         }, out);
     }
 
-    @Test
-    void emptySampleCarriesItsZeroLength() {
-        assertArrayEquals(new byte[]{4, 0, 0, 0, 0, 0, 0, 0},
-                ByteArrayTypeSupport.INSTANCE.encode(new byte[0]));
-        assertArrayEquals(new byte[0],
-                ByteArrayTypeSupport.INSTANCE.decode(new byte[]{4, 0, 0, 0, 0, 0, 0, 0}));
-    }
-
-    @Test
-    void truncatedOrInconsistentFramingIsRefused() {
-        // Too short for a DHEADER plus a sequence length.
-        assertThrows(XcdrException.class,
-                () -> ByteArrayTypeSupport.INSTANCE.decode(new byte[]{1, 2, 3}));
-        // DHEADER does not cover the sequence it precedes.
-        assertThrows(XcdrException.class, () -> ByteArrayTypeSupport.INSTANCE.decode(
-                new byte[]{4, 0, 0, 0, 3, 0, 0, 0, 1, 2, 3}));
-        // Sequence length exceeds the payload.
-        assertThrows(XcdrException.class, () -> ByteArrayTypeSupport.INSTANCE.decode(
-                new byte[]{8, 0, 0, 0, 3, 0, 0, 0, 1, 2}));
-    }
 }

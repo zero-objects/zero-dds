@@ -415,3 +415,82 @@ func TestAnElementLengthFramesTheElementItPrecedes(t *testing.T) {
 		t.Fatalf("the element ended at %d, its length said %d", r.ReaderPosition(), end)
 	}
 }
+
+// The five operations the generated code reaches only in a dialect or with
+// a member no corpus case carries: WritePidExtended, WriteUnionOverlay,
+// ReaderClearDiscard, ReaderSave and ReaderRestore
+// (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+// vectors, each against an oracle outside this code.
+
+func TestWritePidExtendedWritesCyclonesRecordedParameter(t *testing.T) {
+	// The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+	// recorded it, XCDR1 little endian
+	// (tests/interop-corpus/expected-bytes.tsv).
+	w := NewWriter(LittleEndian, 8, SpecificationFraming(), false)
+	header := w.WritePidExtended(0, ParameterMember, false)
+	w.WriteI32(-1234567)
+	w.FinishPid(header)
+	want := []byte{0x01, 0x7f, 0x08, 0x00, 0, 0, 0, 0, 0x04, 0, 0, 0, 0x79, 0x29, 0xed, 0xff}
+	if got := w.Finish(); !bytes.Equal(got, want) {
+		t.Fatalf("got % x, want % x", got, want)
+	}
+}
+
+func TestWriteUnionOverlayWritesTheStorageAtTheBranchsWidth(t *testing.T) {
+	// A `short` read through a four-octet and a one-octet `default:`
+	// branch: Cyclone DDS 11.0.1 writes the union's storage, the member's
+	// octets with zeros above (`combined-everything`,
+	// crates/wire-codec/src/encode.rs `write_selected_branch`).
+	w := NewWriter(LittleEndian, 4, SpecificationFraming(), false)
+	pattern := BitPatternInt(-2, 2)
+	w.WriteUnionOverlay(pattern, 4)
+	w.WriteUnionOverlay(pattern, 1)
+	want := []byte{0xfe, 0xff, 0x00, 0x00, 0xfe}
+	if got := w.Finish(); !bytes.Equal(got, want) {
+		t.Fatalf("got % x, want % x", got, want)
+	}
+}
+
+func TestReaderClearDiscardTakesBackADiscardAndNothingElse(t *testing.T) {
+	// XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+	// Table 9's value, so the call site asks for DISCARD and takes it back.
+	// Any other refusal is not a narrowing and stays.
+	data := []byte{1, 2, 3, 4}
+	discarded := NewReader(data, LittleEndian, 4, "sentinel-must-understand", PidShortMaxID)
+	discarded.ReaderRefuse(StatusDiscarded)
+	if !discarded.ReaderClearDiscard() || discarded.ReaderStatus() != StatusOk {
+		t.Fatalf("a Discarded was not taken back: %v", discarded.ReaderStatus())
+	}
+	refused := NewReader(data, LittleEndian, 4, "sentinel-must-understand", PidShortMaxID)
+	refused.ReaderRefuse(StatusOutOfRange)
+	if refused.ReaderClearDiscard() || refused.ReaderStatus() != StatusOutOfRange {
+		t.Fatalf("an OutOfRange was taken back: %v", refused.ReaderStatus())
+	}
+}
+
+func TestReaderSaveAndRestoreCountADelimitedMapAndReadItAgain(t *testing.T) {
+	// XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+	// DHEADER and the pairs, without a count. The reader counts the pairs,
+	// goes back and reads them again; a refusal made while counting goes
+	// back with the cursor.
+	data := []byte{0x10, 0, 0, 0, 1, 0, 0, 0, 0x0a, 0, 0, 0, 2, 0, 0, 0, 0x14, 0, 0, 0}
+	r := NewReader(data, LittleEndian, 4, "sentinel-must-understand", PidShortMaxID)
+	extent := r.ReadDheader()
+	end := r.ReaderPosition() + int(extent)
+	mark := r.ReaderSave()
+	pairs := 0
+	for r.ReaderPosition() < end && r.ReaderStatus() == StatusOk {
+		r.ReadI32()
+		r.ReadI32()
+		pairs++
+	}
+	r.ReaderRefuse(StatusOutOfRange)
+	r.ReaderRestore(mark)
+	got := []int32{r.ReadI32(), r.ReadI32(), r.ReadI32(), r.ReadI32()}
+	if pairs != 2 || got[0] != 1 || got[1] != 10 || got[2] != 2 || got[3] != 20 {
+		t.Fatalf("%d pairs, read again %v", pairs, got)
+	}
+	if r.ReaderPosition() != 20 || r.ReaderStatus() != StatusOk {
+		t.Fatalf("at %d with %v", r.ReaderPosition(), r.ReaderStatus())
+	}
+}

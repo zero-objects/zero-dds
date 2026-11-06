@@ -1121,7 +1121,7 @@ mod tests {
     }
 
     #[test]
-    fn a_class_opens_its_brace_on_a_line_of_its_own() {
+    fn xtypes_7_5_1_a_class_opens_its_brace_on_a_line_of_its_own() {
         // The .NET convention, and the one difference in shape from the
         // Java renderer beside it.
         let text = type_decl(&class("Pose", alloc::vec![]));
@@ -1129,7 +1129,7 @@ mod tests {
     }
 
     #[test]
-    fn a_rooted_path_renders_with_global() {
+    fn xtypes_7_5_1_a_rooted_path_renders_with_global() {
         let type_ = Type::named(Path::rooted(&["a", "b", "Point"]));
         assert_eq!(type_text(&type_), "global::a.b.Point");
         let relative = Type::named(Path::new(&["a", "b", "Point"]));
@@ -1137,7 +1137,7 @@ mod tests {
     }
 
     #[test]
-    fn an_array_renders_one_pair_of_brackets_per_level() {
+    fn xtypes_7_5_1_an_array_renders_one_pair_of_brackets_per_level() {
         let jagged = Type::array(Type::array(Type::Predefined(Predefined::Int)));
         assert_eq!(type_text(&jagged), "int[][]");
         let rectangular = Type::Array {
@@ -1148,13 +1148,13 @@ mod tests {
     }
 
     #[test]
-    fn a_nullable_value_type_renders_with_a_question_mark() {
+    fn xtypes_7_5_1_a_nullable_value_type_renders_with_a_question_mark() {
         let type_ = Type::Nullable(alloc::boxed::Box::new(Type::Predefined(Predefined::Int)));
         assert_eq!(type_text(&type_), "int?");
     }
 
     #[test]
-    fn a_namespace_nests_and_its_members_are_indented() {
+    fn xtypes_7_5_1_a_namespace_nests_and_its_members_are_indented() {
         let text = file(&File {
             doc: Doc::none(),
             usings: Vec::new(),

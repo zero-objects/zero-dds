@@ -77,7 +77,7 @@ consulting `DdsType::HAS_KEY`. Now `register_user_writer_kind`/
 `_reader_kind` with `T::HAS_KEY`. A keyless type ⇒ NoKey endpoint ⇒ matches
 Cyclone's keyless endpoints. Regression: `runtime::tests::
 user_endpoint_entity_kind_follows_keyedness` +
-`publisher::tests::live_datawriter_entity_kind_is_nokey_for_keyless_type`.
+`publisher::tests::rtps_8_2_7_live_datawriter_entity_kind_is_nokey_for_keyless_type`.
 
 ### Diagnostic method (reproducible)
 1. `discovery,traffic` trace: the reader SEDP arrives, `match_proxy_reader_with_

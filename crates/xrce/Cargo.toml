@@ -20,6 +20,12 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+# The crate tier runs the tests of this package once more with these
+# features (internal/release/rc8-test-suite.md, "Crate tier"): the DTLS
+# transport of §11.2 and the TLS transport of §11.3 are opt-in.
+[package.metadata.crate-tier]
+feature-runs = ["dtls,tls"]
+
 [features]
 default = ["std"]
 # `zerodds-xml` needs roxmltree (std-only); we split it out as

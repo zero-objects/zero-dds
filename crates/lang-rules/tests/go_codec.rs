@@ -186,7 +186,7 @@ fn a_sequence_counts_in_the_wire_width_and_loops() {
 }
 
 #[test]
-fn the_read_direction_opens_with_table_9_and_returns_the_sample() {
+fn xtypes_7_4_3_the_read_direction_opens_with_table_9_and_returns_the_sample() {
     let text = decoder("@final struct S { long a; string b; };", "S");
     assert!(
         text.contains("v := Zd_def_S()"),
@@ -204,7 +204,7 @@ fn the_read_direction_opens_with_table_9_and_returns_the_sample() {
 }
 
 #[test]
-fn an_optional_member_reads_through_a_pointer() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_reads_through_a_pointer() {
     let text = decoder("@final struct S { @optional long a; };", "S");
     assert!(
         text.contains("zdwire.Ptr(Zd_dec_p_long(r, "),
@@ -218,7 +218,7 @@ fn an_optional_member_reads_through_a_pointer() {
 }
 
 #[test]
-fn a_bitmask_mask_is_gos_own_and_typed() {
+fn xtypes_7_2_2_4_1_2_a_bitmask_mask_is_gos_own_and_typed() {
     let text = decoder(
         "@bit_bound(16) bitmask Flags { @position(0) A, @position(3) B }; \
          @final struct S { Flags set; };",
@@ -233,7 +233,7 @@ fn a_bitmask_mask_is_gos_own_and_typed() {
 }
 
 #[test]
-fn a_mutable_aggregate_compiles_with_its_seen_flags() {
+fn xtypes_7_4_3_a_mutable_aggregate_compiles_with_its_seen_flags() {
     // `zd_sent` and the seen-flags are the locals Go's "declared and
     // not used" error watches; the walk reads every one of them, and
     // this is the shape that proves it.
@@ -265,7 +265,7 @@ fn a_union_compares_its_discriminator_as_a_number() {
 /// of the walk. The write half of each is also compiled; the read half
 /// of each is compiled with its defaulters.
 #[test]
-fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
+fn xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
     for (idl, root) in [
         ("@final struct S { long a; };", "S"),
         ("@appendable struct S { long a; string b; };", "S"),

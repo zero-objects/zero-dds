@@ -307,29 +307,29 @@ fn publish_beats_a_fifth_of_udp_publish(pair: &impl Pair, backend: &str) {
 }
 
 #[test]
-fn same_host_p99_latency_meets_target() {
+fn flatdata_10_2_same_host_p99_latency_meets_target() {
     p99_latency_meets_target(&InMemory::new(), "in-memory");
 }
 
 #[test]
-fn write_throughput_meets_target() {
+fn flatdata_11_2_write_throughput_meets_target() {
     throughput_meets_target(&InMemory::new(), "in-memory");
 }
 
 #[test]
-fn same_host_publish_beats_a_fifth_of_udp_publish() {
+fn flatdata_11_4_same_host_publish_beats_a_fifth_of_udp_publish() {
     publish_beats_a_fifth_of_udp_publish(&InMemory::new(), "in-memory");
 }
 
 #[cfg(all(unix, feature = "posix-mmap"))]
 #[test]
-fn posix_same_host_p99_latency_meets_target() {
+fn flatdata_11_1_posix_same_host_p99_latency_meets_target() {
     p99_latency_meets_target(&Posix::new("p99"), "posix");
 }
 
 #[cfg(all(unix, feature = "posix-mmap"))]
 #[test]
-fn posix_write_throughput_meets_target() {
+fn flatdata_11_2_posix_write_throughput_meets_target() {
     throughput_meets_target(&Posix::new("throughput"), "posix");
 }
 

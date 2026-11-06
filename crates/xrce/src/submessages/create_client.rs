@@ -107,7 +107,7 @@ mod tests {
     }
 
     #[test]
-    fn create_client_roundtrip_via_submessage() {
+    fn xrce_8_3_5_1_create_client_roundtrip_via_submessage() {
         let p = CreateClientPayload {
             representation: representation(),
         };
@@ -128,7 +128,7 @@ mod tests {
     /// CREATE_CLIENT has no flag bits, and a length 26 that its own bytes
     /// contradict; the bytes of the CLIENT_Representation are what it fixes.)
     #[test]
-    fn annex_b_1_create_client_example_bytes() {
+    fn xrce_8_3_5_1_annex_b_1_create_client_example_bytes() {
         use crate::header::{MessageHeader, SessionId, StreamId};
         use crate::serial_number::SerialNumber16;
         use crate::submessages::Message;
@@ -173,7 +173,7 @@ mod tests {
 
     /// §8.3.4.2: the E flag decides how the payload is read.
     #[test]
-    fn create_client_follows_the_e_flag() {
+    fn xrce_8_3_4_2_create_client_follows_the_e_flag() {
         let mut rep = representation();
         rep.properties = Some(alloc::vec![crate::handshake::Property {
             name: "auth".into(),
@@ -202,7 +202,7 @@ mod tests {
     /// `zerodds_xrce_client::XrceClient::connect` — decodes member by
     /// member and writes back the exact same octets.
     #[test]
-    fn decodes_the_committed_fixture_member_by_member() {
+    fn xrce_8_3_5_1_decodes_the_committed_fixture_member_by_member() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../endpoints/testdata/xrce-client/xrce_client_create_client.bin");
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
@@ -247,7 +247,7 @@ mod tests {
 
     /// §7.8.2.1: "Check the xrce_cookie to ensure it matches XRCE_COOKIE."
     #[test]
-    fn refuses_a_payload_whose_cookie_is_not_xrce() {
+    fn xrce_7_8_2_1_refuses_a_payload_whose_cookie_is_not_xrce() {
         let mut body = representation().encode().unwrap();
         body[0..4].copy_from_slice(b"NOPE");
         let sm = Submessage::new(SubmessageId::CreateClient, FLAG_E_LITTLE_ENDIAN, body).unwrap();

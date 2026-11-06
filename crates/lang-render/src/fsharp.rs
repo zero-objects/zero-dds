@@ -629,7 +629,7 @@ mod tests {
     }
 
     #[test]
-    fn a_class_declaration_indents_by_four_and_writes_member_val() {
+    fn xtypes_7_5_1_a_class_declaration_indents_by_four_and_writes_member_val() {
         let text = decl(&class_decl(alloc::vec![
             field("X", Type::Primitive(Primitive::Int32), Expr::int(0)),
             field(
@@ -646,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_class_writes_class_end() {
+    fn xtypes_7_5_1_an_empty_class_writes_class_end() {
         assert_eq!(
             decl(&class_decl(Vec::new())),
             "type Pose() =\n    class end\n"
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn a_type_reads_left_to_right_with_no_declarator_to_split() {
+    fn xtypes_7_5_1_a_type_reads_left_to_right_with_no_declarator_to_split() {
         assert_eq!(
             type_(&Type::array(Type::array(Type::Primitive(Primitive::Int32)))),
             "int32 [] []"
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enum_writes_its_backing_type_once_and_every_value() {
+    fn xtypes_7_5_1_an_enum_writes_its_backing_type_once_and_every_value() {
         let text = decl(&Decl::Type(TypeDecl {
             body_text: zerodds_lang_cst::common::BodyText::none(),
             doc: Doc::none(),
@@ -693,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn a_constant_writes_its_ascription_before_its_value() {
+    fn xtypes_7_5_1_a_constant_writes_its_ascription_before_its_value() {
         let text = decl(&Decl::Let(LetDecl {
             doc: Doc::none(),
             name: Ident::new("LIMIT"),

@@ -373,10 +373,10 @@ impl SameHostChannels {
         if let Ok(mut routes) = self.routes.write() {
             routes.retain(|_, p| *p != peer);
         }
-        if let Ok(mut peers) = self.peers.write() {
-            if peers.remove(&peer).is_some() {
-                self.generation.fetch_add(1, Ordering::AcqRel);
-            }
+        if let Ok(mut peers) = self.peers.write()
+            && peers.remove(&peer).is_some()
+        {
+            self.generation.fetch_add(1, Ordering::AcqRel);
         }
     }
 
@@ -717,6 +717,10 @@ impl Transport for RoutedUserTransport {
         self.inner.recv()
     }
 
+    fn add_destination(&self, dest: &Locator) {
+        self.inner.add_destination(dest);
+    }
+
     fn forget_destination(&self, dest: &Locator) {
         self.inner.forget_destination(dest);
     }
@@ -768,7 +772,7 @@ mod tests {
     /// opened it, framed with the port byte; a send to any other locator,
     /// or before the peer is there, or after the channel closed, does not.
     #[test]
-    fn a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not() {
+    fn flatdata_3_2_a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not() {
         let domain = private_domain(1);
         let host = [0x61, 0x62, 0x63, 0x64];
         let (pa, pb) = (prefix(host, 0xA1), prefix(host, 0xB2));
@@ -816,7 +820,7 @@ mod tests {
     /// A frame the ring refuses (larger than `max_datagram`) is not sent
     /// and is counted, so the caller sends it over UDP.
     #[test]
-    fn a_frame_the_ring_refuses_is_counted_and_left_to_udp() {
+    fn flatdata_4_2_a_frame_the_ring_refuses_is_counted_and_left_to_udp() {
         let domain = private_domain(2);
         let host = [0x71, 0x72, 0x73, 0x74];
         let (pa, pb) = (prefix(host, 0xA3), prefix(host, 0xB4));

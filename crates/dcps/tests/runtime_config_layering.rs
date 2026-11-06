@@ -71,7 +71,9 @@ fn a_nested_directory_include_reaches_the_runtime_and_retains_its_origin() {
         "reader:\n  max_samples_per_proxy: 4096\n",
     )
     .expect("default");
-    let final_path = dir.join("site.d/90-project.yaml");
+    // Component by component: the loader names the file it found with the
+    // platform's separator (`site.d\\90-project.yaml` on Windows).
+    let final_path = dir.join("site.d").join("90-project.yaml");
     std::fs::write(&final_path, "reader:\n  max_samples_per_proxy: 8192\n")
         .expect("project override");
     let files = zerodds_config::Loader::new()
@@ -260,7 +262,7 @@ fn the_check_report_lists_origins_and_fails_on_unknown_keys_and_bad_values() {
 /// One `zerodds.yaml` serves every program on a host; the RMW's `ros2.*`
 /// section does not make a bridge's check fail. The RMW checks it.
 #[test]
-fn the_rmw_section_is_not_an_unknown_key_for_other_programs() {
+fn ros2bridge_3_the_rmw_section_is_not_an_unknown_key_for_other_programs() {
     let dir = workdir("rmw-section");
     let source = source_from(
         &dir,
@@ -367,7 +369,7 @@ fn the_codec_dialect_reaches_the_typed_runtime() {
 /// clauses' readings that the measured vendors write, a file and the
 /// environment set each, and a misspelling is refused.
 #[test]
-fn the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment()
+fn rtps_10_5_the_encapsulation_and_pl_cdr1_settings_default_to_the_vendors_and_are_set_by_file_and_environment()
  {
     use zerodds_ast_layout::{PlCdr1HeaderPolicy, PlCdr1Reading};
     use zerodds_wire_codec::value::EncapsulationIds;
@@ -872,7 +874,7 @@ fn the_shipped_example_and_the_man_page_name_every_setting() {
 /// DDS-XTypes 1.3 §7.6.3.1.1 and §7.6.3.4.1: both defaults are the clause's,
 /// and a peer that needs the older behaviour has a named setting for each.
 #[test]
-fn the_xtypes_defaults_are_the_clauses_and_each_has_a_named_way_back() {
+fn xtypes_7_6_3_4_1_the_xtypes_defaults_are_the_clauses_and_each_has_a_named_way_back() {
     use zerodds_dcps::runtime::AbsentTypeConsistency;
     use zerodds_rtps::publication_data::data_representation::DataRepMatchMode;
     let defaults = RuntimeConfig::default();
@@ -898,7 +900,7 @@ fn the_xtypes_defaults_are_the_clauses_and_each_has_a_named_way_back() {
 /// heartbeatResponseDelay and the SPDP period are settings, in a file, by
 /// environment variable, and the built-in values hold without them.
 #[test]
-fn the_protocol_timing_parameters_are_settings() {
+fn rtps_8_4_2_1_the_protocol_timing_parameters_are_settings() {
     use std::time::Duration;
     let defaults = RuntimeConfig::default();
     // The spec's values are the defaults (DDSI-RTPS 2.5 §8.4.7.1, §8.4.10.1,
@@ -951,7 +953,7 @@ fn the_protocol_timing_parameters_are_settings() {
 /// setting, in a file and by environment variable; a size a datagram cannot
 /// have is refused.
 #[test]
-fn the_udp_message_size_is_a_setting() {
+fn rtps_8_4_14_1_the_udp_message_size_is_a_setting() {
     assert_eq!(RuntimeConfig::default().udp.max_message_size, 1472);
     let dir = workdir("udp-message-size");
     let source = source_from(
@@ -971,7 +973,7 @@ fn the_udp_message_size_is_a_setting() {
 /// DDSI-RTPS 2.5 §9.3.2.4: the TCP locator kinds are ZeroDDS's own by
 /// default; `transport.tcp_locator_kinds: fast-dds` selects 4 and 8.
 #[test]
-fn the_tcp_locator_kinds_are_a_setting() {
+fn rtps_9_3_2_4_the_tcp_locator_kinds_are_a_setting() {
     assert!(!RuntimeConfig::default().tcp_locator_kinds_fast_dds);
     let dir = workdir("tcp-kinds");
     let source = source_from(&dir, "transport:\n  tcp_locator_kinds: fast-dds\n", None);
@@ -993,7 +995,7 @@ fn the_tcp_locator_kinds_are_a_setting() {
 /// DDSI-RTPS 2.5 §9.6.2.3: PB, DG, PG and d0 to d3 are settings, in a file
 /// and by environment variable; the defaults are the spec's values.
 #[test]
-fn the_port_mapping_parameters_are_settings() {
+fn rtps_9_6_2_3_the_port_mapping_parameters_are_settings() {
     use zerodds_rtps::wire_types::PortMapping;
     assert_eq!(RuntimeConfig::default().port_mapping, PortMapping::SPEC);
     let dir = workdir("ports");
@@ -1023,7 +1025,7 @@ fn the_port_mapping_parameters_are_settings() {
 /// DDSI-RTPS 2.5 §8.3.7.4 gives no threshold for CLOCK_SKEW_DETECTED: the
 /// detection is a setting and off by default.
 #[test]
-fn the_clock_skew_threshold_is_a_setting_and_off_by_default() {
+fn rtps_8_3_7_4_the_clock_skew_threshold_is_a_setting_and_off_by_default() {
     assert_eq!(RuntimeConfig::default().clock_skew_threshold_s, 0);
     let dir = workdir("skew");
     let source = source_from(&dir, "wire:\n  clock_skew_threshold_s: 5\n", None);
@@ -1040,7 +1042,7 @@ fn the_clock_skew_threshold_is_a_setting_and_off_by_default() {
 /// `dcps.presentation_instance_coherence`: `per_instance` (the default) and
 /// `none` are taken from a file, anything else is refused.
 #[test]
-fn the_presentation_instance_coherence_setting_takes_both_values_and_refuses_others() {
+fn dcps_2_2_3_6_the_presentation_instance_coherence_setting_takes_both_values_and_refuses_others() {
     use zerodds_dcps::runtime::PresentationInstanceCoherence;
 
     let dir = workdir("presentation-instance-coherence");
@@ -1115,7 +1117,7 @@ fn the_default_offer_is_the_spec_default_and_the_readers_request_xcdr2_and_xcdr(
 /// `wire.omit_heartbeat_group_digests` and `writer.keyless_lifecycle_on_wire`
 /// are off by default, taken from a file, and a non-boolean is refused.
 #[test]
-fn the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml() {
+fn rtps_8_2_10_1_the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml() {
     let d = RuntimeConfig::default();
     assert!(!d.omit_heartbeat_group_digests);
     assert!(!d.keyless_lifecycle_on_wire);
@@ -1141,7 +1143,7 @@ fn the_heartbeat_digest_and_keyless_lifecycle_settings_are_read_from_yaml() {
 /// `dataMaxSizeSerialized` its writer announced (DDSI-RTPS 2.5 §8.4.10.4)
 /// unless it is off; a value that is no boolean is refused.
 #[test]
-fn the_data_max_size_setting_is_on_by_default_and_read_from_yaml() {
+fn rtps_8_4_10_4_the_data_max_size_setting_is_on_by_default_and_read_from_yaml() {
     assert!(RuntimeConfig::default().reader_honor_data_max_size_serialized);
     let dir = workdir("data-max-size");
     let source = source_from(

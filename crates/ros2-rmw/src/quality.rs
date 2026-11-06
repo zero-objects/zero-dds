@@ -58,29 +58,22 @@ impl QualityLevel {
 mod tests {
     use super::*;
 
+    /// REP-2004 §"Package Quality Categories": Quality Level 1 to 5,
+    /// level 1 the highest; no other level.
     #[test]
-    fn quality_level_numeric_round_trip() {
-        for q in [
-            QualityLevel::Q1,
-            QualityLevel::Q2,
-            QualityLevel::Q3,
-            QualityLevel::Q4,
-            QualityLevel::Q5,
+    fn rep2004_the_quality_levels_are_1_to_5_with_1_the_highest() {
+        for (level, number) in [
+            (QualityLevel::Q1, 1),
+            (QualityLevel::Q2, 2),
+            (QualityLevel::Q3, 3),
+            (QualityLevel::Q4, 4),
+            (QualityLevel::Q5, 5),
         ] {
-            assert_eq!(QualityLevel::from_numeric(q.numeric()), Some(q));
+            assert_eq!(level.numeric(), number, "{level:?}");
+            assert_eq!(QualityLevel::from_numeric(number), Some(level));
         }
-    }
-
-    #[test]
-    fn quality_level_ordering_q1_is_highest() {
-        // Q1 < Q5 in the enum ordering is wrong, because we
-        // order the lower level to the higher one. But numerically
-        // Q1=1 < Q5=5.
-        assert!(QualityLevel::Q1.numeric() < QualityLevel::Q5.numeric());
-    }
-
-    #[test]
-    fn quality_level_from_numeric_rejects_out_of_range() {
+        assert!(QualityLevel::Q1 > QualityLevel::Q2);
+        assert!(QualityLevel::Q4 > QualityLevel::Q5);
         assert_eq!(QualityLevel::from_numeric(0), None);
         assert_eq!(QualityLevel::from_numeric(6), None);
     }

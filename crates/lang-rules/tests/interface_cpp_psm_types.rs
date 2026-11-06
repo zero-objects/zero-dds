@@ -92,7 +92,7 @@ fn class_of<'a>(text: &'a str, name: &str) -> &'a str {
 
 /// DDS-PSM-Cxx 1.0 Table 7.1, in the abstract interface.
 #[test]
-fn the_interface_spells_the_types_of_table_7_1() {
+fn rpc_7_11_1_1_2_the_interface_spells_the_types_of_table_7_1() {
     let text = psm(ServiceMapping::Basic);
     let interface = class_of(&text, "Probe");
     // wstring -> std::wstring.
@@ -124,7 +124,7 @@ fn the_interface_spells_the_types_of_table_7_1() {
 
 /// The same interface under the native mapping keeps its spelling.
 #[test]
-fn the_native_mapping_keeps_the_native_spelling() {
+fn rpc_7_11_1_1_2_the_native_mapping_keeps_the_native_spelling() {
     let _native = zerodds_lang_rules::adapter::cpp::CppMappingScope::enter(
         zerodds_lang_rules::adapter::cpp::CppMapping::Native,
     );
@@ -160,7 +160,7 @@ fn the_native_mapping_keeps_the_native_spelling() {
 /// The client packs the topic structure from the PSM's values and unpacks
 /// the reply into them; the service does the same the other way round.
 #[test]
-fn the_bodies_convert_between_the_psm_types_and_the_topic_structures() {
+fn rpc_7_11_1_1_2_the_bodies_convert_between_the_psm_types_and_the_topic_structures() {
     let text = psm(ServiceMapping::Basic);
     let client = class_of(&text, "ProbeClient");
     assert!(
@@ -207,7 +207,7 @@ fn the_bodies_convert_between_the_psm_types_and_the_topic_structures() {
 /// the IDL's namespace whose members have Table 7.1's spellings, built from the
 /// native one the reply holds.
 #[test]
-fn the_futures_hold_the_applications_types() {
+fn rpc_7_11_1_1_2_the_futures_hold_the_applications_types() {
     let text = psm(ServiceMapping::Basic);
     let asynchronous = class_of(&text, "ProbeAsync");
     assert!(
@@ -266,7 +266,7 @@ fn the_futures_hold_the_applications_types() {
 /// operation with `out` parameters holds the application's `Out` structure,
 /// built from the topic structure of §7.5.1.2.3, as for the Basic mapping.
 #[test]
-fn the_enhanced_futures_hold_the_applications_types() {
+fn rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types() {
     let text = psm(ServiceMapping::Enhanced);
     let asynchronous = class_of(&text, "ProbeAsync");
     assert!(
@@ -361,7 +361,7 @@ fn compile(text: &str, name: &str) -> Option<String> {
 /// The header, with the PSM classes, the topic types and the function-call
 /// classes in it, is C++ that compiles — under both service mappings.
 #[test]
-fn the_header_compiles() {
+fn rpc_7_11_1_1_2_the_header_compiles() {
     for (mapping, name) in [
         (ServiceMapping::Basic, "basic"),
         (ServiceMapping::Enhanced, "enhanced"),

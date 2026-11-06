@@ -190,6 +190,11 @@ internal static class Native
     [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader")]
     public static extern IntPtr SubCreateDatareader(IntPtr sub, IntPtr topic, IntPtr qos);
 
+    // A reader of a keyless type: `is_keyed = 0` gives the endpoint the
+    // NO_KEY kind (DDSI-RTPS 2.5 §9.3.1.2 Table 9.1).
+    [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader_kind")]
+    public static extern IntPtr SubCreateDatareaderKind(IntPtr sub, IntPtr topic, IntPtr qos, int isKeyed);
+
     // F-TYPES-3 / #24: reader-side typed create — mirror of
     // PubCreateDatawriterTyped.
     [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader_typed")]

@@ -9,5 +9,5 @@ cargo +nightly fuzz run parse_dds_xml
 cargo +nightly fuzz run parse_qos_libraries
 ```
 
-Known finding 3: stack overflow on deep tag nesting
-(siehe `internal/test-harness/plan.md`).
+Known finding 3: stack overflow on deep tag nesting, fixed by the depth
+cap in `crates/xml/src/parser.rs`.

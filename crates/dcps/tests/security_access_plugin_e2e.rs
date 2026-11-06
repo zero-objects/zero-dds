@@ -30,13 +30,21 @@ use zerodds_security::mock::{MockAccessCall, MockAccessControlPlugin};
 use zerodds_security_crypto::AesGcmCryptoPlugin;
 use zerodds_security_runtime::SharedSecurityGate;
 
-const DOMAIN: i32 = 72;
+/// The domain of every participant in this file, leased for the process
+/// (`crates/test-domains`): a fixed one is shared with every other run of
+/// this test on the LAN.
+fn domain() -> i32 {
+    static DOMAIN: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *DOMAIN.get_or_init(zerodds_test_domains::unique_domain)
+}
 
 /// A governance that access-controls everything: only a plugin of the
 /// application can let a topic or an endpoint through here.
-const GOVERNANCE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+fn governance() -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds><domain_access_rules><domain_rule>
-  <domains><id>72</id></domains>
+  <domains><id>{domain}</id></domains>
   <allow_unauthenticated_participants>FALSE</allow_unauthenticated_participants>
   <enable_join_access_control>TRUE</enable_join_access_control>
   <discovery_protection_kind>NONE</discovery_protection_kind>
@@ -49,7 +57,10 @@ const GOVERNANCE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     <metadata_protection_kind>NONE</metadata_protection_kind>
     <data_protection_kind>NONE</data_protection_kind>
   </topic_rule></topic_access_rules>
-</domain_rule></domain_access_rules></dds>"#;
+</domain_rule></domain_access_rules></dds>"#,
+        domain = domain()
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 struct Rec {
@@ -107,8 +118,8 @@ fn participant(
     decide: impl Fn(&MockAccessCall) -> bool + Send + Sync + 'static,
 ) -> (DomainParticipant, Calls) {
     let gate = Arc::new(SharedSecurityGate::new(
-        DOMAIN as u32,
-        zerodds_security_permissions::parse_governance_xml(GOVERNANCE).expect("governance"),
+        domain() as u32,
+        zerodds_security_permissions::parse_governance_xml(&governance()).expect("governance"),
         Box::new(AesGcmCryptoPlugin::new()),
     ));
     let (plugin, calls) = MockAccessControlPlugin::deciding(decide);
@@ -121,7 +132,7 @@ fn participant(
         ..RuntimeConfig::default()
     };
     let participant = DomainParticipantFactory::instance()
-        .create_participant_with_config(DOMAIN, DomainParticipantQos::default(), cfg)
+        .create_participant_with_config(domain(), DomainParticipantQos::default(), cfg)
         .expect("participant");
     (participant, calls)
 }
@@ -147,7 +158,7 @@ fn assert_denied<T>(result: Result<T, DdsError>, case: &str) {
 /// §9.4.2.9.6 `check_create_topic`: the plugin sees the topic and its QoS,
 /// and a topic it refuses is not created (NOT_ALLOWED_BY_SECURITY).
 #[test]
-fn create_topic_is_asked_of_the_plugin() {
+fn security_2_3_create_topic_is_asked_of_the_plugin() {
     let (p, calls) = participant(0x81, |call| call.topic.as_deref() != Some("Forbidden"));
     p.create_topic::<Rec>("Allowed", TopicQos::default())
         .expect("the plugin permits the topic");
@@ -158,7 +169,7 @@ fn create_topic_is_asked_of_the_plugin() {
     let topics = asked(&calls, "check_create_topic");
     assert_eq!(topics.len(), 2, "{topics:?}");
     assert_eq!(topics[0].topic.as_deref(), Some("Allowed"));
-    assert_eq!(topics[0].domain_id, Some(DOMAIN as u32));
+    assert_eq!(topics[0].domain_id, Some(domain() as u32));
     assert!(
         topics[0].qos.iter().any(|(name, _)| name == "reliability"),
         "the TopicQos reaches the plugin: {:?}",
@@ -169,7 +180,7 @@ fn create_topic_is_asked_of_the_plugin() {
 /// §9.4.2.9.3: `set_qos` of the participant is checked with the new QoS; a
 /// QoS the plugin refuses makes `set_qos` fail with NOT_ALLOWED_BY_SECURITY.
 #[test]
-fn participant_set_qos_is_asked_of_the_plugin() {
+fn security_2_3_participant_set_qos_is_asked_of_the_plugin() {
     let (p, calls) = participant(0x82, |call| {
         !call
             .properties
@@ -189,7 +200,7 @@ fn participant_set_qos_is_asked_of_the_plugin() {
 /// §9.4.2.9.4: the plugin gets the partitions, the data tags and the QoS of
 /// the DataWriter, and refuses by them; a `set_qos` of the writer asks again.
 #[test]
-fn a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands() {
+fn security_2_3_a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands() {
     let (p, calls) = participant(0x83, |call| {
         !call
             .data_tags
@@ -249,7 +260,7 @@ fn a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands() {
 /// §9.4.2.9.7, §9.4.2.9.8: `register_instance` and `dispose` ask the plugin
 /// with the serialized key; an instance it refuses is not registered.
 #[test]
-fn instance_operations_are_asked_of_the_plugin() {
+fn security_2_3_instance_operations_are_asked_of_the_plugin() {
     let (p, calls) = participant(0x84, |call| {
         // The key holder is the instance id as 4 octets big endian.
         call.key.as_deref() != Some(&[0, 0, 0, 13][..])

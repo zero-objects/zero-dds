@@ -42,14 +42,15 @@ fn repository_root() -> PathBuf {
 }
 
 fn javac_available() -> bool {
-    Command::new("javac")
-        .arg("-version")
-        .output()
-        .is_ok_and(|output| output.status.success())
-        && Command::new("java")
-            .arg("-version")
-            .output()
-            .is_ok_and(|output| output.status.success())
+    // A look at PATH and not a start of the tool: a JVM, .NET or BEAM
+    // start cost seconds of a test's 25 s with eight compilers side by side
+    // (pipeline 8678); a tool that cannot start fails the compile that follows.
+    on_path("javac") && on_path("java")
+}
+
+fn on_path(tool: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
 }
 
 fn generated(idl: &str) -> String {
@@ -245,7 +246,7 @@ fn build_and_run(tag: &str, idl: &str, main: &str) {
 }
 
 #[test]
-fn a_map_is_a_java_util_map_with_the_operations_of_table_47() {
+fn xtypes_7_5_1_a_map_is_a_java_util_map_with_the_operations_of_table_47() {
     build_and_run("map", IDL, MAIN);
 }
 
@@ -300,7 +301,7 @@ public final class Main {
 "#;
 
 #[test]
-fn a_derived_class_extends_its_base_class() {
+fn xtypes_7_5_1_4_1_2_a_derived_class_extends_its_base_class() {
     build_and_run("inheritance", INHERITANCE_IDL, INHERITANCE_MAIN);
 }
 
@@ -393,7 +394,7 @@ public final class Main {
 "#;
 
 #[test]
-fn a_structure_or_union_is_a_key_of_a_java_util_map() {
+fn xtypes_7_5_1_3_5_a_structure_or_union_is_a_key_of_a_java_util_map() {
     build_and_run("keys", KEYS_IDL, KEYS_MAIN);
 }
 
@@ -529,6 +530,6 @@ public final class Main {
 "#;
 
 #[test]
-fn an_enumeration_is_a_class_of_instances_with_value_and_from_int() {
+fn idl4java_7_2_4_3_3_an_enumeration_is_a_class_of_instances_with_value_and_from_int() {
     build_and_run("enum", ENUM_IDL, ENUM_MAIN);
 }

@@ -371,7 +371,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metrics_register_idempotent() {
+    fn corbabridge_8_2_metrics_register_idempotent() {
         let r = Registry::new();
         let m1 = BridgeMetrics::register(&r);
         let m2 = BridgeMetrics::register(&r);
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_endpoint_serves_metrics_path() {
+    fn corbabridge_8_2_admin_endpoint_serves_metrics_path() {
         use std::io::{Read, Write};
         use std::net::TcpStream;
         let snap = Arc::new(CatalogSnapshot::new(Vec::new()));
@@ -421,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn otlp_config_parses_endpoint() {
+    fn corbabridge_8_3_otlp_config_parses_endpoint() {
         let c = otlp_config_from_endpoint("svc", "http://collector:4318");
         assert_eq!(c.host, "collector");
         assert_eq!(c.port, 4318);

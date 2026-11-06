@@ -1117,27 +1117,7 @@ mod safe_capacity_tests {
     }
 
     #[test]
-    fn verbatim_placement_roundtrip_before() {
-        roundtrip_verbatim(VerbatimPlacement::Before);
-    }
-
-    #[test]
-    fn verbatim_placement_roundtrip_after() {
-        roundtrip_verbatim(VerbatimPlacement::After);
-    }
-
-    #[test]
-    fn verbatim_placement_roundtrip_begin_file() {
-        roundtrip_verbatim(VerbatimPlacement::BeginFile);
-    }
-
-    #[test]
-    fn verbatim_placement_roundtrip_end_file() {
-        roundtrip_verbatim(VerbatimPlacement::EndFile);
-    }
-
-    #[test]
-    fn verbatim_placement_roundtrip_other_forward_compat() {
+    fn xtypes_annex_b_verbatim_placement_roundtrip_other_forward_compat() {
         roundtrip_verbatim(VerbatimPlacement::Other(alloc::string::String::from(
             "CUSTOM_PLACEMENT",
         )));

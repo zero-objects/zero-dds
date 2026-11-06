@@ -169,7 +169,7 @@ fn the_java_binding_names_the_descriptions_of_its_topic_types() {
 /// objects its description holds, so the minimal object of the root and of
 /// every minimal dependency is delivered, with references among them.
 #[test]
-fn every_minimal_identifier_the_information_announces_has_its_object() {
+fn rpc_7_5_1_2_6_every_minimal_identifier_the_information_announces_has_its_object() {
     use zerodds_types::type_information::TypeInformation;
     let objects = objects();
     for topic in [&objects.request, &objects.reply] {

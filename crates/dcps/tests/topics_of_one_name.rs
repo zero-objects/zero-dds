@@ -33,7 +33,7 @@ fn participant() -> zerodds_dcps::DomainParticipant {
 }
 
 #[test]
-fn a_second_type_under_one_name_is_a_second_topic() {
+fn dcps_2_2_2_3_2_a_second_type_under_one_name_is_a_second_topic() {
     let p = participant();
     let first = p
         .create_topic::<RawBytes>("Shared", TopicQos::default())
@@ -47,7 +47,7 @@ fn a_second_type_under_one_name_is_a_second_topic() {
 }
 
 #[test]
-fn lookup_iterates_over_the_topics_of_a_name() {
+fn dcps_2_2_2_2_1_12_lookup_iterates_over_the_topics_of_a_name() {
     let p = participant();
     p.create_topic::<RawBytes>("Shared", TopicQos::default())
         .unwrap();
@@ -68,7 +68,7 @@ fn lookup_iterates_over_the_topics_of_a_name() {
 }
 
 #[test]
-fn an_inconsistent_qos_is_refused_and_counted() {
+fn dcps_2_2_2_3_2_an_inconsistent_qos_is_refused_and_counted() {
     let p = participant();
     p.create_topic::<RawBytes>("Shared", TopicQos::default())
         .unwrap();
@@ -83,7 +83,7 @@ fn an_inconsistent_qos_is_refused_and_counted() {
 }
 
 #[test]
-fn deleting_one_topic_leaves_the_other_of_its_name() {
+fn xtypes_7_6_4_1_deleting_one_topic_leaves_the_other_of_its_name() {
     let p = participant();
     let first = p
         .create_topic::<RawBytes>("Shared", TopicQos::default())
@@ -105,7 +105,7 @@ fn deleting_one_topic_leaves_the_other_of_its_name() {
 /// on the second one is a user of the second one: the first is deleted
 /// without it, the second not before it is gone.
 #[test]
-fn a_topic_waits_for_its_own_endpoints_and_not_for_those_of_the_other_of_its_name() {
+fn xtypes_7_6_4_1_a_topic_waits_for_its_own_endpoints_and_not_for_those_of_the_other_of_its_name() {
     use zerodds_dcps::{DataWriterQos, PublisherQos};
     let p = participant();
     let first = p

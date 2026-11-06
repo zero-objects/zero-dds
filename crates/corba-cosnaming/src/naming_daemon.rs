@@ -416,11 +416,11 @@ fn sas_service_context(
     endianness: Endianness,
 ) -> ServiceContextList {
     let mut list = ServiceContextList::default();
-    if let Some(sas) = sas {
-        if let Ok(bytes) = sas.encode_encapsulation(endianness) {
-            list.0
-                .push(ServiceContext::new(security_context_id(), bytes));
-        }
+    if let Some(sas) = sas
+        && let Ok(bytes) = sas.encode_encapsulation(endianness)
+    {
+        list.0
+            .push(ServiceContext::new(security_context_id(), bytes));
     }
     list
 }

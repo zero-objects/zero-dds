@@ -1167,7 +1167,7 @@ mod tests {
     }
 
     #[test]
-    fn replier_new_creates_endpoints() {
+    fn rpc_7_9_1_replier_new_creates_endpoints() {
         let p = participant(201);
         let q = RpcQos::default_basic();
         let r = Replier::<RawBytes, RawBytes>::new(&p, "Calc", &q, echo_handler()).unwrap();
@@ -1207,7 +1207,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_processes_request_and_writes_reply() {
+    fn rpc_7_2_1_tick_processes_request_and_writes_reply() {
         let p = participant(205);
         let q = RpcQos::default_basic();
         let r = Replier::<RawBytes, RawBytes>::new(&p, "Calc", &q, echo_handler()).unwrap();
@@ -1226,7 +1226,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_propagates_handler_error_into_reply() {
+    fn rpc_7_5_2_tick_propagates_handler_error_into_reply() {
         let p = participant(206);
         let q = RpcQos::default_basic();
         let r = Replier::<RawBytes, RawBytes>::new(
@@ -1279,7 +1279,7 @@ mod tests {
     /// passed has an illegal value". A payload the request type cannot
     /// decode is answered with that code; the handler is not called.
     #[test]
-    fn tick_answers_an_undecodable_payload_with_invalid_argument() {
+    fn rpc_7_5_2_tick_answers_an_undecodable_payload_with_invalid_argument() {
         let r = refusing_replier(214);
         let id = SampleIdentity::new([8u8; 16], 11);
         let frame = encode_request_frame(&RequestHeader::new(id, ""), &[1, 2, 3]).unwrap();
@@ -1297,7 +1297,7 @@ mod tests {
     /// The polling API answers the same way instead of dropping the
     /// request without a word.
     #[test]
-    fn receive_requests_answers_an_undecodable_payload_with_invalid_argument() {
+    fn rpc_7_5_2_receive_requests_answers_an_undecodable_payload_with_invalid_argument() {
         let r = refusing_replier(215);
         let id = SampleIdentity::new([9u8; 16], 12);
         let frame = encode_request_frame(&RequestHeader::new(id, ""), &[4]).unwrap();
@@ -1314,7 +1314,7 @@ mod tests {
     /// answered with that code and the default case of the `Return`
     /// union.
     #[test]
-    fn tick_answers_out_of_resources() {
+    fn rpc_7_5_2_tick_answers_out_of_resources() {
         let p = participant(216);
         let q = RpcQos::default_basic();
         let r = Replier::<RawBytes, RawBytes>::new(
@@ -1348,7 +1348,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_filters_requests_for_other_instance_name() {
+    fn rpc_7_11_1_4_3_tick_filters_requests_for_other_instance_name() {
         let p = participant(208);
         let q = RpcQos::default_basic();
         let r =
@@ -1363,7 +1363,7 @@ mod tests {
     }
 
     #[test]
-    fn a_named_replier_does_not_answer_a_request_without_an_instance() {
+    fn rpc_7_11_1_4_3_a_named_replier_does_not_answer_a_request_without_an_instance() {
         // §7.11.1.4.3: the request is bound to an instance. The empty name is
         // the default instance; a replier of "calc-A" is not it and must not
         // answer.
@@ -1405,7 +1405,7 @@ mod tests {
     }
 
     #[test]
-    fn receive_requests_and_send_reply_expose_the_identity() {
+    fn rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity() {
         // §7.9.2.2 way 3 and §7.8.2.1: the application polls the
         // requests and answers them, and it can read the request
         // identity.
@@ -1429,7 +1429,7 @@ mod tests {
     }
 
     #[test]
-    fn send_exception_answers_with_the_code() {
+    fn rpc_7_5_2_send_exception_answers_with_the_code() {
         let p = participant(212);
         let q = RpcQos::default_basic();
         let r = Replier::<RawBytes, RawBytes>::new(&p, "Calc", &q, echo_handler()).unwrap();
@@ -1448,7 +1448,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_async_hands_the_replier_and_the_identity_to_the_listener() {
+    fn rpc_7_2_3_dispatch_async_hands_the_replier_and_the_identity_to_the_listener() {
         // §7.9.2.2 way 2: the asynchronous listener receives the replier
         // handle and answers through the Replier API.
         struct Listener {
@@ -1496,7 +1496,7 @@ mod tests {
     /// captured automatically." The replier's endpoints carry the same
     /// names as the requester's.
     #[test]
-    fn request_reply_style_drops_the_interface_segment() {
+    fn rpc_7_4_1_request_reply_style_drops_the_interface_segment() {
         let p = participant(232);
         let q = RpcQos::default_basic();
         let r = Replier::<RawBytes, RawBytes>::with_instance_style(
@@ -1580,7 +1580,7 @@ mod tests {
     /// alone, identified by the writer GUID and sequence number of its
     /// DATA.
     #[test]
-    fn an_enhanced_request_is_identified_by_its_data() {
+    fn rpc_7_8_2_an_enhanced_request_is_identified_by_its_data() {
         let (_p, r) = enhanced_replier(232, &enhanced(ClientMatching::Off, false));
         r.__push_request_from(alloc::vec![5, 6, 7], [9; 16], 44)
             .unwrap();
@@ -1601,7 +1601,7 @@ mod tests {
     /// §7.6.2.2.1: the service "shall reject requests" of a client it has
     /// not discovered completely. The request is held, not lost.
     #[test]
-    fn an_enhanced_request_of_an_undiscovered_client_is_held() {
+    fn rpc_7_6_2_an_enhanced_request_of_an_undiscovered_client_is_held() {
         let (_p, r) = enhanced_replier(233, &enhanced(ClientMatching::Hold, false));
         r.__push_request_from(alloc::vec![1], [9; 16], 1).unwrap();
         r.__push_request_from(alloc::vec![2], [9; 16], 2).unwrap();
@@ -1612,7 +1612,7 @@ mod tests {
     }
 
     #[test]
-    fn the_named_alternatives_release_a_request_of_an_undiscovered_client() {
+    fn rpc_7_6_2_the_named_alternatives_release_a_request_of_an_undiscovered_client() {
         for (domain, options) in [
             (234, enhanced(ClientMatching::Off, false)),
             (235, enhanced(ClientMatching::Hold, true)),

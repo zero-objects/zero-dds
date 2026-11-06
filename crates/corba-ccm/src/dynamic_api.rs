@@ -194,9 +194,9 @@ impl Request {
     /// Server-side `UserException`/`SystemException` come back as `Err`.
     ///
     /// Out/inout args with their own reply position require a
-    /// TypeCode-driven split of the reply body (DynAny walk) — see
-    /// `internal/corba-extra-mile-plan-2026-06-07.md` (DII refinement); the
-    /// canonical §7 case (in-args + return value) is fully wire-capable here.
+    /// TypeCode-driven split of the reply body (DynAny walk), which is not
+    /// built (`internal/release/OPEN-ITEMS.md`); the canonical §7 case
+    /// (in-args + return value) is fully wire-capable here.
     ///
     /// # Errors
     /// Wire error or server-side exception (`CorbaException`).

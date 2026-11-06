@@ -20,6 +20,12 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+# The crate tier runs the tests of this package once more with these
+# features (internal/release/rc8-test-suite.md, "Crate tier"): the secured opc.tcp session and the secured
+# Part-14 UADP messages are opt-in.
+[package.metadata.crate-tier]
+feature-runs = ["crypto,pubsub-security"]
+
 [features]
 default = ["std", "daemon", "ring-backend"]
 std = ["alloc", "zerodds-opcua-gateway/std", "zerodds-opcua-uacp/std", "zerodds-opcua-server/std", "zerodds-opcua-pubsub/std"]
@@ -83,7 +89,10 @@ zerodds-qos = { version = "1.0.0-rc.7", path = "../qos", optional = true, defaul
 # The reflective type layer: an operator-supplied IDL file compiles to a
 # `DynamicType`/`CompleteTypeObject`, which is what lets this daemon decode
 # and encode a DDS topic's samples without a codegen'd Rust type.
-zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+# `dynamic`: `src/dynamic_type.rs` walks `zerodds_types::dynamic`; without
+# the feature this crate built only because another workspace member turned
+# it on (feature unification).
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc", "dynamic"] }
 zerodds-ast = { version = "1.0.0-rc.7", path = "../ast", optional = true }
 zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout", optional = true }
 zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../idl-compose", optional = true }
@@ -131,4 +140,46 @@ zerodds-wire-probe = { path = "../wire-probe" }
 [[bin]]
 name = "zerodds-opcua-bridged"
 path = "src/bin/zerodds-opcua-bridged.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-types (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-types only with `daemon`.
+[[test]]
+name = "contract_types"
+path = "tests/contract_types.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-wire-codec (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-wire-codec only with `daemon`.
+[[test]]
+name = "contract_wire_codec"
+path = "tests/contract_wire_codec.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-discovery (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-discovery only with `daemon`.
+[[test]]
+name = "contract_discovery"
+path = "tests/contract_discovery.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-dcps (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-dcps only with `daemon`.
+[[test]]
+name = "contract_dcps"
+path = "tests/contract_dcps.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-idl-compose (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-idl-compose only with `daemon`.
+[[test]]
+name = "contract_idl_compose"
+path = "tests/contract_idl_compose.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-bridge-security (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-bridge-security only with `daemon`.
+[[test]]
+name = "contract_bridge_security"
+path = "tests/contract_bridge_security.rs"
 required-features = ["daemon"]

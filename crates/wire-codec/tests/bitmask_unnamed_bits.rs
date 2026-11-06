@@ -57,13 +57,13 @@ fn read(byte: u8) -> Value {
 }
 
 #[test]
-fn a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read() {
+fn xtypes_7_2_4_4_7_a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read() {
     // Bits 0 and 1 are `A` and `B`; bit 2 has no name.
     assert_eq!(read(0b0000_0101), json!({"f": ["A"]}));
     assert_eq!(read(0b0000_0100), json!({"f": []}));
 }
 
 #[test]
-fn the_declared_bits_beside_an_unnamed_one_are_kept() {
+fn xtypes_7_2_4_4_7_the_declared_bits_beside_an_unnamed_one_are_kept() {
     assert_eq!(read(0b1000_0011), json!({"f": ["A", "B"]}));
 }

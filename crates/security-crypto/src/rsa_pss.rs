@@ -249,7 +249,7 @@ mod tests {
     /// 20, 32, 64 and the largest, 222, octets all verify, and the length
     /// that is returned is the one it signed with.
     #[test]
-    fn the_salt_length_is_read_from_the_signature() {
+    fn security_8_2_the_salt_length_is_read_from_the_signature() {
         for salt in [0usize, 8, 20, 32, 64, 222] {
             let got = verify_rsassa_pss_sha256(PUB2048, MSG, sig2048(salt)).unwrap();
             assert_eq!(got, salt, "salt {salt}");
@@ -258,7 +258,7 @@ mod tests {
 
     /// The same for a key of 3072 bits.
     #[test]
-    fn a_3072_bit_key_verifies_signatures_of_any_salt_length() {
+    fn security_8_2_a_3072_bit_key_verifies_signatures_of_any_salt_length() {
         for (salt, sig) in [
             (
                 0usize,
@@ -284,7 +284,7 @@ mod tests {
     /// A signature over another message, a signature with a changed octet,
     /// one of the wrong length, and a key of another signer do not verify.
     #[test]
-    fn what_does_not_verify_is_refused() {
+    fn security_8_2_what_does_not_verify_is_refused() {
         let sig = sig2048(20);
         assert!(verify_rsassa_pss_sha256(PUB2048, b"another message", sig).is_err());
         for at in [0usize, 100, 255] {

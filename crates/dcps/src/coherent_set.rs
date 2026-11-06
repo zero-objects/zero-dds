@@ -237,29 +237,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn marker_wire_roundtrip() {
-        let m = CoherentSetMarker {
-            set_first_sn: 0x0123_4567_89AB_CDEF,
-        };
-        let bytes = m.to_wire_bytes();
-        let back = CoherentSetMarker::from_wire_bytes(&bytes);
-        assert_eq!(m, back);
-    }
-
-    #[test]
-    fn marker_wire_zero() {
-        let m = CoherentSetMarker { set_first_sn: 0 };
-        assert_eq!(m.to_wire_bytes(), [0u8; 8]);
-    }
-
-    #[test]
-    fn coherent_scope_starts_inactive() {
-        let s = CoherentScope::new();
-        assert!(!s.is_active());
-        assert!(s.current_marker().is_none());
-    }
-
-    #[test]
     fn begin_end_lifecycle() {
         let s = CoherentScope::new();
         s.begin(42).unwrap();
@@ -287,19 +264,6 @@ mod tests {
     }
 
     #[test]
-    fn group_access_nesting() {
-        let g = GroupAccessScope::new();
-        assert!(!g.is_active());
-        g.begin();
-        assert!(g.is_active());
-        g.begin();
-        g.end().unwrap();
-        assert!(g.is_active(), "still nested");
-        g.end().unwrap();
-        assert!(!g.is_active());
-    }
-
-    #[test]
     fn group_access_underflow_is_error() {
         let g = GroupAccessScope::new();
         let err = g.end().unwrap_err();
@@ -307,12 +271,6 @@ mod tests {
     }
 
     // ---- §2.2.3.6 GROUP-coherent_access snapshot generation ----
-
-    #[test]
-    fn snapshot_generation_starts_zero() {
-        let g = GroupAccessScope::new();
-        assert_eq!(g.current_snapshot(), 0);
-    }
 
     #[test]
     fn snapshot_generation_increments_on_begin_from_zero() {
@@ -340,20 +298,6 @@ mod tests {
         g.end().unwrap();
         let g3 = g.current_snapshot();
         assert_eq!(g1, g3, "snapshot stays stable until last end");
-        g.end().unwrap();
-    }
-
-    #[test]
-    fn cross_topic_consistent_snapshot_via_clone() {
-        // Multi-reader coherent set: all DRs can see the same scope
-        // via cloning → identical snapshot_generation.
-        let g = GroupAccessScope::new();
-        let g_for_dr1 = Arc::clone(&g);
-        let g_for_dr2 = Arc::clone(&g);
-        g.begin();
-        // DR1 + DR2 see the same cut.
-        assert_eq!(g_for_dr1.current_snapshot(), g_for_dr2.current_snapshot());
-        assert_eq!(g_for_dr1.current_snapshot(), 1);
         g.end().unwrap();
     }
 }

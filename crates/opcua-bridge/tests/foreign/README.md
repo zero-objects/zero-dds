@@ -16,8 +16,10 @@ pre-built example binary). It:
    and reads it back.
 
 Every step prints one `<STEP>_OK ...` or `<STEP>_FAIL status=0x...` line to
-stdout — the harness (`../../tests/open62541_interop.rs`) parses these, it
-does not parse open62541's own diagnostic output.
+stdout — the scenario `bridge-opcua` of the integration pillar
+(`tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`)
+parses these, it does not parse open62541's own diagnostic output.
+`tests/integration/peers/build_peers.sh` builds the client.
 
 ## Prerequisites (Linux; not run on macOS/by this agent)
 
@@ -38,14 +40,7 @@ does not parse open62541's own diagnostic output.
 
 ## Running it
 
-```
-OPCUA_OPEN62541=1 cargo test -p zerodds-opcua-bridge --test open62541_interop \
-    --features daemon -- --ignored --nocapture
-```
-
-The test is `#[ignore]`d by default and short-circuits with a clear skip
-message when `OPCUA_OPEN62541` is unset or `pkg-config`/`cc` cannot find
-open62541 — set the env var to actually run it. It has not been run by the
-agent that wrote it (no open62541 install, and this repo's own convention
-for foreign-vendor interop is "Linux, not macOS" — see
-`tests/interop/shapes_cyclone_interop.sh`'s own header comment).
+The job `integration-bridges` of the integration pillar
+(`ci/integration_scenarios.py`) provisions open62541, builds the client with
+`tests/integration/peers/build_peers.sh` and runs the scenario; a missing
+open62541 fails it.

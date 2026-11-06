@@ -241,6 +241,40 @@ fn the_callers_default_extensibility_does_not_override_a_bases() {
     );
 }
 
+/// DDS-XTypes 1.3 §7.3.1.2.1.8: an IDL compiler may let the user say
+/// which extensibility a type of unspecified extensibility has. The
+/// enumerations and bitmasks carry one too (Annex B `EnumTypeFlag`,
+/// `BitmaskTypeFlag`), and the caller's default reaches them as it reaches
+/// the aggregates; an annotated one keeps its own. CycloneDDS's `idlc`
+/// writes `IS_FINAL` into the flags of every unannotated type under its
+/// default, enumerations and bitmasks included
+/// (`tests/interop-corpus/cyclone-type-objects.tsv`).
+#[test]
+fn xtypes_7_3_1_2_1_8_the_callers_default_extensibility_reaches_enumerations_and_bitmasks() {
+    let parsed = parse(
+        "enum Silent { A, B }; @appendable enum Said { C, D }; \
+         bitmask SilentFlags { X, Y }; struct S { Silent s; };",
+    );
+    assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
+    let options = Options {
+        default_extensibility: Some(Extensibility::Final),
+        ..Options::default()
+    };
+    let ast = lower_with(&parsed.syntax(), "test.idl", options).ast;
+    for (name, expected) in [
+        ("Silent", Extensibility::Final),
+        ("SilentFlags", Extensibility::Final),
+        ("S", Extensibility::Final),
+        ("Said", Extensibility::Appendable),
+    ] {
+        assert_eq!(
+            ast.effective_extensibility(type_of(&ast, name)),
+            expected,
+            "{name}"
+        );
+    }
+}
+
 // -- §5 rows 3 and 4: enumerator values and bit positions ---------------
 
 #[test]

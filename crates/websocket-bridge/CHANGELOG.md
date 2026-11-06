@@ -2,6 +2,43 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- The subprotocols are `zerodds-ws-bridge-1.0` and `zerodds-ws-bridge-1.0+json`
+  (zerodds-ws-bridge-1.0 §4.1). Their names were `zerodds-ws-bridge/1.0` and
+  `zerodds-ws-bridge/1.0+json`, which are no tokens of RFC 6455 §4.1 (`/` is a
+  separator): Python's `websockets` refused to connect with them, and the
+  `WebSocket` constructor of the WHATWG standard throws for such a name
+  (read in the standard, not measured).
+- The JSON text frames follow zerodds-ws-bridge-1.0 §4.3 and §4.4. A client
+  that asks for `zerodds-ws-bridge-1.0+json` gets a sample frame per DDS
+  sample, `{"topic","op":"publish","key_hash","data","timestamp_ns"}` with
+  the sample as JSON in `data`, and a `dispose` or `unregister` frame per
+  marker; it publishes with `data` and disposes or unregisters by
+  `key_hash` or the key members of `data`. The control messages are
+  `subscribe` and `unsubscribe` with a list of `topics`, `ping`, answered
+  with `subscribed`, `pong` and `{"op":"error","code","message"}`. Before,
+  the daemon sent `{"op":"notify","topic","data"}` with the body's bytes as
+  text or as an array of numbers, took `subscribe` with one `topic`, and
+  wrote a text frame it could not read into DDS as it was.
+- `topics[].idl_file`: the IDL file that declares the topic's type. The
+  daemon reads and writes the JSON samples with it and keys the topic's
+  reader and writer when the type has a key member; a JSON-mode client of a
+  topic without it gets an error 415.
+- A dispose or an unregister reaches the clients: as the binary frame's
+  flag bit 0 or bit 2 (bit 2 is new in the spec) with the key holder, or as
+  the JSON op. Before, the daemon dropped them.
+- Every error frame is `{"op":"error","code","message"}` (§4.4); the
+  `reason` and `topic` fields are gone.
+
+### Removed
+
+- The module `dds_bridge` (`BridgeOp`, `parse_op`, `Notification`,
+  `render_notification`, `SubscriptionRegistry`, `BridgeError`): the JSON
+  form it read and wrote was not the spec's.
+
 ## [1.0.0-rc.2] — 2026-05-15
 
 Hotfix for two bugs that made `zerodds-ws-bridged` unusable in

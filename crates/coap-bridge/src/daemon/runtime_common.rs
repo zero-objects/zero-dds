@@ -335,7 +335,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metrics_register_idempotent() {
+    fn coapbridge_8_2_metrics_register_idempotent() {
         let r = Registry::new();
         let m1 = BridgeMetrics::register(&r);
         let m2 = BridgeMetrics::register(&r);
@@ -344,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_render_contains_topic_fields() {
+    fn coapbridge_8_2_catalog_render_contains_topic_fields() {
         let mut cfg = DaemonConfig::default_for_dev();
         cfg.topics.push(TopicConfig {
             dds_name: "Sensor".into(),
@@ -362,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_endpoint_serves_metrics() {
+    fn coapbridge_8_2_admin_endpoint_serves_metrics() {
         use std::io::{Read, Write};
         use std::net::TcpStream;
         let cfg = DaemonConfig::default_for_dev();

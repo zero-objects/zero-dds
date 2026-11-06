@@ -3,6 +3,7 @@ package org.zerodds.rtps;
 
 import org.junit.jupiter.api.Test;
 import org.zerodds.testing.TestDomains;
+import org.zerodds.testing.Waits;
 
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -17,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * ignore_participant, ignore_publication, ignore_subscription and ignore_topic on the RTPS
  * stack (DDS 1.4 §2.2.2.2.1.14 to §2.2.2.2.1.17): a writer does not match, and sends nothing
  * to, a reader that is ignored, though SEDP announces it again. Three participants of a domain
- * meet over UDP, as in {@code RtpsWireTest}. Each test leases its domain from the band of the Rust tests
+ * meet over UDP. Each test leases its domain from the band of the Rust tests
  * ({@code org.zerodds.testing.TestDomains}) and gives it back with no participant left in it.
  */
 class WriterWireIgnoreTest {
@@ -60,6 +61,38 @@ class WriterWireIgnoreTest {
         }
     }
 
+    /**
+     * Has the participant of the ignored reader announce its endpoints again (a new endpoint
+     * makes it announce all of them, RtpsParticipant.announceAllToPeers) and returns once the
+     * publishing participant has discovered the new one, which it does after the announcement
+     * of the ignored reader that precedes it on the same SEDP writer.
+     */
+    private static void announceAgain(Rig rig, String topic) {
+        java.util.Set<String> seen = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        rig.publisher.addDiscoveryListener(new RtpsParticipant.DiscoveryListener() {
+            @Override
+            public void participantDiscovered(DiscoveryData.Participant participant) {
+            }
+
+            @Override
+            public void participantLost(DiscoveryData.Participant participant) {
+            }
+
+            @Override
+            public void endpointDiscovered(DiscoveryData.Endpoint endpoint) {
+                seen.add(java.util.HexFormat.of().formatHex(endpoint.endpointGuid));
+            }
+
+            @Override
+            public void endpointLost(DiscoveryData.Endpoint endpoint) {
+            }
+        });
+        RtpsParticipant.WireReader fresh = rig.first.createReader(topic + "Again", "zerodds::RawBytes",
+                false, body -> { });
+        String key = java.util.HexFormat.of().formatHex(fresh.guid);
+        Waits.until(() -> seen.contains(key), "the publisher discovers the endpoint announced after the ignored one");
+    }
+
     private static void expectOnlySecond(Rig rig) throws Exception {
         byte[] message = "after the ignore".getBytes(StandardCharsets.UTF_8);
         byte[] received = null;
@@ -70,35 +103,37 @@ class WriterWireIgnoreTest {
         assertNotNull(received, "the reader that is not ignored still gets the samples");
         assertNull(rig.firstGot.poll(500, TimeUnit.MILLISECONDS),
                 "the ignored reader gets nothing");
-        // SEDP announces the reader again and again; the ignore holds
-        Thread.sleep(2_000);
-        assertEquals(1, rig.writer.matchedCount());
     }
 
     @Test
-    void ignoreParticipantEndsTheMatchWithItsReadersAndKeepsItEnded() throws Exception {
+    void javapsm_2_ignore_participant_ends_the_match_with_its_readers_and_keeps_it_ended() throws Exception {
         try (Rig rig = new Rig("IgnoreWireParticipant")) {
             rig.publisher.ignoreParticipant(rig.first.guidPrefix());
             assertEquals(1, rig.writer.matchedCount());
             expectOnlySecond(rig);
+            // SEDP announces the reader again; the ignore holds
+            announceAgain(rig, "IgnoreWireParticipant");
+            assertEquals(1, rig.writer.matchedCount());
         }
     }
 
     @Test
-    void ignoreEndpointEndsTheMatchWithOneReader() throws Exception {
+    void javapsm_2_ignore_subscription_ends_the_match_with_one_reader() throws Exception {
         try (Rig rig = new Rig("IgnoreWireEndpoint")) {
             rig.publisher.ignoreEndpoint(rig.firstReader.guid);
             assertEquals(1, rig.writer.matchedCount());
             expectOnlySecond(rig);
+            announceAgain(rig, "IgnoreWireEndpoint");
+            assertEquals(1, rig.writer.matchedCount());
         }
     }
 
     @Test
-    void ignoreTopicEndsTheMatchWithTheReadersOfTheTopic() throws Exception {
+    void javapsm_2_ignore_topic_ends_the_match_with_the_readers_of_the_topic() throws Exception {
         try (Rig rig = new Rig("IgnoreWireTopic")) {
             rig.publisher.ignoreTopic("IgnoreWireTopic");
             assertEquals(0, rig.writer.matchedCount());
-            Thread.sleep(2_000);
+            announceAgain(rig, "IgnoreWireTopic");
             assertEquals(0, rig.writer.matchedCount());
         }
     }

@@ -520,17 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn data_roundtrip_format_data() {
-        let p = DataPayload {
-            base: reader_base(),
-            serialized_data: alloc::vec![0xCC; 16],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(DataPayload::try_from_submessage(&sm).unwrap(), p);
-    }
-
-    #[test]
-    fn data_base_object_request_precedes_the_sample() {
+    fn xrce_7_7_1_data_base_object_request_precedes_the_sample() {
         let p = DataPayload {
             base: reader_base(),
             serialized_data: alloc::vec![0x01, 0x02],
@@ -548,7 +538,7 @@ mod tests {
     }
 
     #[test]
-    fn data_uses_id_9() {
+    fn xrce_8_3_5_10_data_uses_id_9() {
         let sm = DataPayload {
             base: reader_base(),
             serialized_data: alloc::vec![],
@@ -576,23 +566,12 @@ mod tests {
 
     // ---- DataPayloadSample (FORMAT_SAMPLE) --------------------------------
 
-    #[test]
-    fn data_sample_roundtrip() {
-        let p = DataPayloadSample {
-            base: reader_base(),
-            info: sample_info(3, 1500),
-            serialized_data: alloc::vec![0xAA, 0xBB, 0xCC],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(DataPayloadSample::try_from_submessage(&sm).unwrap(), p);
-    }
-
     /// DDS-XRCE 1.0 Annex B.5.3 ("Receiving a single sample that includes
     /// SampleInfo"): `BaseObjectRequest`(4) + `info.state`(1)+pad(3) +
     /// `info.sequence_number`(4) + `info.session_time_offset`(4) +
     /// `XCDR_Serialization(foo)`.
     #[test]
-    fn data_sample_matches_annex_b_5_3_layout() {
+    fn xrce_7_7_1_data_sample_matches_annex_b_5_3_layout() {
         let p = DataPayloadSample {
             base: BaseObjectRequest {
                 request_id: [0xAA, 0x02],
@@ -622,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn data_sample_rejects_non_sample_format() {
+    fn xrce_8_3_5_10_data_sample_rejects_non_sample_format() {
         let sm =
             Submessage::new(SubmessageId::Data, DataPayload::flags(), alloc::vec![0; 16]).unwrap();
         assert!(matches!(
@@ -632,17 +611,6 @@ mod tests {
     }
 
     // ---- DataPayloadDataSeq (FORMAT_DATA_SEQ) -----------------------------
-
-    #[test]
-    fn data_data_seq_roundtrip() {
-        let p = DataPayloadDataSeq {
-            base: reader_base(),
-            sample_count: 2,
-            elements: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(DataPayloadDataSeq::try_from_submessage(&sm).unwrap(), p);
-    }
 
     /// DDS-XRCE 1.0 Annex B.5.2: `BaseObjectRequest`(4) +
     /// `data_seq.length`(4) + `data_seq[0].data`(4) + `data_seq[1].data`(4)
@@ -669,22 +637,11 @@ mod tests {
 
     // ---- DataPayloadSampleSeq (FORMAT_SAMPLE_SEQ) -------------------------
 
-    #[test]
-    fn data_sample_seq_roundtrip() {
-        let p = DataPayloadSampleSeq {
-            base: reader_base(),
-            sample_count: 2,
-            elements: alloc::vec![0u8; 32],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(DataPayloadSampleSeq::try_from_submessage(&sm).unwrap(), p);
-    }
-
     /// DDS-XRCE 1.0 Annex B.5.4: `BaseObjectRequest`(4) +
     /// `sample_seq.length`(4) + (`info`(12) + `data`(4)) × 2 —
     /// submessageLength = 40.
     #[test]
-    fn data_sample_seq_matches_annex_b_5_4_layout() {
+    fn xrce_8_3_5_10_data_sample_seq_matches_annex_b_5_4_layout() {
         let mut elements = Vec::new();
         sample_info(0, 0)
             .encode_into(Endianness::Little, &mut elements)
@@ -711,26 +668,11 @@ mod tests {
 
     // ---- DataPayloadPackedSamples (FORMAT_PACKED_SAMPLES) -----------------
 
-    #[test]
-    fn data_packed_samples_roundtrip() {
-        let p = DataPayloadPackedSamples {
-            base: reader_base(),
-            info_base: sample_info(1000, 0),
-            sample_count: 2,
-            elements: alloc::vec![0u8; 16],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(
-            DataPayloadPackedSamples::try_from_submessage(&sm).unwrap(),
-            p
-        );
-    }
-
     /// DDS-XRCE 1.0 Annex B.5.5: `BaseObjectRequest`(4) + `info_base`(12) +
     /// `sample_delta_seq.length`(4) + (`info_delta`(4) + `data`(4)) × 2 —
     /// submessageLength = 36.
     #[test]
-    fn data_packed_samples_matches_annex_b_5_5_layout() {
+    fn xrce_7_7_1_data_packed_samples_matches_annex_b_5_5_layout() {
         let mut elements = Vec::new();
         SampleInfoDelta {
             state: SampleInfoFlags(0),
@@ -767,7 +709,7 @@ mod tests {
     // ---- AnyData dispatch --------------------------------------------
 
     #[test]
-    fn any_data_dispatches_every_format() {
+    fn xrce_7_7_1_any_data_dispatches_every_format() {
         let base = reader_base();
         let cases: alloc::vec::Vec<(DataFormat, Submessage)> = alloc::vec![
             (

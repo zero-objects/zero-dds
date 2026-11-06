@@ -31,17 +31,16 @@ Zwei getrennte Läufe, beide in diesem Audit gefahren:
    `make -C endpoints/c test GOLDEN_DIR=<dir>` und
    `make -C endpoints/c examples`, wobei `<dir>` die Byte-Goldens aus
    `cargo run -p zerodds-endpoint-golden -- <dir>` enthält. In der Pipeline
-   fährt der Job `endpoints-native` in `.gitlab-ci.yml` genau diese beiden
-   Kommandos.
+   fährt der Job `integration-endpoints` (`ci/integration_scenarios.py`, Spalte `c` von
+   `tools/endpoints-gate`) genau diese beiden Kommandos.
 2. **Rust-Seite.** `crates/endpoint-e2e/tests/c.rs` und
-   `crates/endpoint-e2e/tests/c_reliable.rs` laufen im Default-Lauf von
-   `cargo test -p zerodds-endpoint-e2e` — kein Feature-Gate. Jeder Fall prüft
-   aber zuerst, ob ein C-Compiler auf dem `PATH` liegt, und kehrt sonst mit
-   einer `SKIP`-Zeile auf stderr zurück; der Fall zählt dann als bestanden,
-   ohne etwas geprüft zu haben. Der Pipeline-Job `endpoint-e2e` in
-   `.gitlab-ci.yml` greppt nach diesen Zeilen und lässt den Job scheitern,
-   wenn eine andere Sprache als Swift skippt. Auf diesem Host lag `cc` bzw.
-   `gcc` vor; keiner der sechs Fälle hat geskippt.
+   `crates/endpoint-e2e/tests/c_reliable.rs` sind in der Krate-Ebene
+   `#[ignore]` (der Grund nennt den Job) und laufen im Job
+   `integration-bindings` der Integrations-Säule
+   (`ci/integration_scenarios.py`, `--run-ignored all`). Jeder Fall prüft
+   zuerst, ob ein C-Compiler auf dem `PATH` liegt, und kehrt sonst mit einer
+   `SKIP`-Zeile zurück; `ci/check_skips.py` lässt den Job an einer solchen
+   Zeile scheitern, solange `ci/declared-skips.tsv` sie nicht deklariert.
 
 Jedes Item nennt unten, welcher der beiden Läufe seinen Beleg trägt.
 
@@ -67,12 +66,12 @@ Makefile-Lauf (`make -C endpoints/c test`); baut den Frame und vergleicht ihn by
 gegen `golden_xrce_le.bin`, dann Round-Trip durch den Frame-Hook (encode,
 Frame, Transport, receive, unwrap, decode). Gemessene Ausgabe dieses Audits:
 XRCE WRITE_DATA frame 48 bytes byte-identical to crates/xrce.
-Rust-Seite — `crates/endpoint-e2e/tests/c.rs::c_endpoint_sync` (der
+Rust-Seite — `crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_sync_app_writes_the_ping_and_reads_the_pong` (der
 Rust-Peer entrahmt den vom C-Programm gesendeten WRITE_DATA-Frame live über
 UDP und prüft die 23 Oktetts des `Ping`). Die Referenz, aus der das Golden
-entsteht: `crates/xrce/src/submessages/write_data.rs::tests::write_data_flags_are_e_le_and_format_data`,
-`crates/xrce/src/submessages/write_data.rs::tests::write_data_base_object_request_precedes_the_sample`,
-`crates/xrce/src/submessages/write_data.rs::tests::write_data_matches_the_annex_b_example`.
+entsteht: `crates/xrce/src/submessages/write_data.rs::tests::xrce_8_2_3_write_data_flags_are_e_le_and_format_data`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_8_3_5_8_write_data_base_object_request_precedes_the_sample`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_write_data_matches_the_annex_b_example`.
 
 **Status:** done
 
@@ -88,11 +87,11 @@ gemeinsame Unwrap-Funktion für WRITE_DATA und DATA).
 **Tests:** C-Seite — `endpoints/c/test/test_receive.c` gegen
 `golden_data_le.bin` (Makefile-Lauf `make -C endpoints/c test`). Gemessene
 Ausgabe dieses Audits: received DATA frame, 40-byte sample body / agent DATA
-decoded. Rust-Seite — `crates/endpoint-e2e/tests/c.rs::c_endpoint_sync` und
-`crates/endpoint-e2e/tests/c.rs::c_endpoint_async`: der Peer antwortet
+decoded. Rust-Seite — `crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_sync_app_writes_the_ping_and_reads_the_pong` und
+`crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_async_app_writes_the_ping_and_reads_the_pong`: der Peer antwortet
 ausschließlich mit id = 9, das C-Programm muss den Pong daraus lesen. Die
-Referenz für das Golden: `crates/xrce/src/submessages/data.rs::tests::data_uses_id_9`,
-`crates/xrce/src/submessages/data.rs::tests::data_base_object_request_precedes_the_sample`.
+Referenz für das Golden: `crates/xrce/src/submessages/data.rs::tests::xrce_8_3_5_10_data_uses_id_9`,
+`crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_data_base_object_request_precedes_the_sample`.
 
 **Status:** done
 
@@ -109,16 +108,16 @@ falschem `frameCheck` und bei `0x7E` vor dem Rahmenende (C.1.3).
 
 **Tests:** C-Seite — `endpoints/c/test/test_serial_frame.c` gegen
 `golden_serial_le.bin` (`tools/endpoints-gate`, Lauf auf dem Linux-Testhost am
-Stand `2fa0800f55a`). Gemessene Ausgabe: byte-stuffing ok / fcs16 0x906E,
+Stand `8bcb1d00161`). Gemessene Ausgabe: byte-stuffing ok / fcs16 0x906E,
 check and flag refusals ok / XRCE serial frame 59 bytes byte-identical to
 crates/xrce / serial round-trip ok. Für diese Klausel gibt es keinen Live-E2E-Fall:
 der Rust-Peer spricht UDP, keinen seriellen Link. Die Referenz, gegen die das
 Golden byte-genau steht:
-`crates/xrce/src/transport_serial.rs::tests::the_frame_check_is_the_fcs16_of_rfc_1662`,
-`crates/xrce/src/transport_serial.rs::tests::a_frame_carries_the_addresses_the_length_and_a_little_endian_check`,
-`crates/xrce/src/transport_serial.rs::tests::flag_and_escape_octets_are_stuffed_everywhere_after_the_flag`,
-`crates/xrce/src/transport_serial.rs::tests::a_frame_with_a_wrong_check_is_refused`,
-`crates/xrce/src/transport_serial.rs::tests::a_begin_flag_inside_a_frame_drops_it_and_begins_the_next`;
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_6_the_frame_check_is_the_fcs16_of_rfc_1662`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_a_frame_carries_the_addresses_the_length_and_a_little_endian_check`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_2_flag_and_escape_octets_are_stuffed_everywhere_after_the_flag`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_3_a_frame_with_a_wrong_check_is_refused`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_3_a_begin_flag_inside_a_frame_drops_it_and_begins_the_next`;
 `endpoints/golden-gen/src/main.rs` erzeugt `golden_serial_le.bin` mit
 `encode_frame(1, 0, …)` aus dieser Implementierung.
 
@@ -141,7 +140,7 @@ zurück. Der Endpoint öffnet selbst keinen Socket.
 In-Memory-Loopback-Transport (Encode, Send, Receive, Decode, Feldvergleich;
 Makefile-Lauf `make -C endpoints/c test`). Gemessene Ausgabe dieses Audits:
 frame-hook 40-byte frame delivered + received + decoded ok. Rust-Seite —
-`crates/endpoint-e2e/tests/c.rs::c_endpoint_sync` steckt in denselben
+`crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_sync_app_writes_the_ping_and_reads_the_pong` steckt in denselben
 Frame-Hook einen echten POSIX-UDP-Socket und belegt damit, dass der Vertrag
 nicht nur gegen den Test-Stub trägt.
 
@@ -160,7 +159,7 @@ Transport, übersetzt mit `-std=c89 -pedantic -Wall -Wextra`).
 **Tests:** C-Seite — der Beispiel-Lauf (`make -C endpoints/c examples`, Ziel `example_sync`).
 Gemessene Ausgabe dieses Audits: fünf dekodierte `Reading`-Samples
 (id 0x1000 bis 0x1004) und ALL OK, 0 Compiler-Warnungen. Rust-Seite —
-`crates/endpoint-e2e/tests/c.rs::c_endpoint_sync` fährt dasselbe Idiom in
+`crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_sync_app_writes_the_ping_and_reads_the_pong` fährt dasselbe Idiom in
 einem eigens gebauten Programm live gegen den Rust-Peer.
 
 **Status:** done
@@ -176,12 +175,12 @@ Poll-Loop (C11, kein `malloc`).
 **Repo:** `endpoints/c/include/zerodds_async.h` /
 `endpoints/c/src/zerodds_async.c` (`zdw_async_reader_init` bindet einen
 `on_sample`-Callback, `zdw_async_run` drained den Transport und dispatcht
-jedes dekodierte Sample; dazu `zdw_async_writer_init` und `zdw_async_write`).
+jedes dekodierte Sample; dazu `zdw_async_writer_init`, `zdw_async_write` und `zdw_async_poll`).
 
 **Tests:** C-Seite — `endpoints/c/test/test_async_loopback.c` über einen
 In-Memory-FIFO-Transport (Makefile-Lauf `make -C endpoints/c test`). Gemessene
 Ausgabe dieses Audits: async loopback 5 samples dispatched + decoded in
-order. Rust-Seite — `crates/endpoint-e2e/tests/c.rs::c_endpoint_async`
+order. Rust-Seite — `crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_async_app_writes_the_ping_and_reads_the_pong`
 (`zdw_async_write` rahmt und liefert, `zdw_async_poll` entpackt und ruft den
 Callback, live über UDP).
 
@@ -198,9 +197,9 @@ angebunden an einen nicht-blockierenden POSIX-UDP-Socket in
 
 **Tests:** C-Seite — `endpoints/c/test/test_async_udp.c` (Makefile-Lauf `make -C endpoints/c test`). Gemessene Ausgabe dieses Audits: async UDP 5/5
 samples received + decoded via reactor. Rust-Seite —
-`crates/endpoint-e2e/tests/c.rs::c_endpoint_async` (derselbe Reactor gegen
+`crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_async_app_writes_the_ping_and_reads_the_pong` (derselbe Reactor gegen
 einen fremden Prozess statt gegen einen zweiten Socket im selben Programm),
-`crates/endpoint-e2e/tests/c.rs::c_raw_udp` (die Gegenprobe ohne
+`crates/endpoint-e2e/tests/c.rs::endpoint_c_3_4_the_generated_codec_pings_without_the_xrce_frame` (die Gegenprobe ohne
 XRCE-Hülle).
 
 **Status:** done
@@ -216,7 +215,7 @@ Beispiel für den Reactor, kein Stub.
 **Tests:** C-Seite — der Beispiel-Lauf (`make -C endpoints/c examples`, Ziel `example_async`).
 Gemessene Ausgabe dieses Audits: fünf dekodierte Readings (id 0x2000 bis
 0x2004) und ALL OK, 0 Compiler-Warnungen. Rust-Seite —
-`crates/endpoint-e2e/tests/c.rs::c_endpoint_async` belegt denselben
+`crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_async_app_writes_the_ping_and_reads_the_pong` belegt denselben
 Callback-Pfad gegen einen echten Peer.
 
 **Status:** done
@@ -240,14 +239,11 @@ gebaut, weil dessen `CFLAGS` Voraussetzung sind; der Include-Pfad führt
 `runtime/c/include` vor `endpoints/c/include`, weil `runtime/c/include/zerodds_wire.h` und
 `endpoints/c/include/zerodds_wire.h` denselben Include-Guard führen.
 
-**Tests:** Rust-Seite, Default-Lauf — `crates/endpoint-e2e/tests/c.rs::c_raw_udp`,
-`crates/endpoint-e2e/tests/c.rs::c_endpoint_sync`,
-`crates/endpoint-e2e/tests/c.rs::c_endpoint_async`. Gemessen (Kommando
-`cargo test -p zerodds-endpoint-e2e --test c`): 3 passed, 0 failed, keine
-SKIP-Zeile. Die drei Fälle stehen hinter keinem Feature-Gate, kehren aber
-ohne C-Compiler auf dem `PATH` mit einer `SKIP`-Zeile zurück und zählen dann
-als bestanden, ohne etwas geprüft zu haben; der Pipeline-Job `endpoint-e2e`
-lässt den Job bei einer solchen Zeile scheitern. Der Rust-Peer prüft die
+**Tests:** Rust-Seite, Job `integration-bindings` — `crates/endpoint-e2e/tests/c.rs::endpoint_c_3_4_the_generated_codec_pings_without_the_xrce_frame`,
+`crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_sync_app_writes_the_ping_and_reads_the_pong`,
+`crates/endpoint-e2e/tests/c.rs::xrce_8_3_5_8_c_async_app_writes_the_ping_and_reads_the_pong`.
+Ohne C-Compiler auf dem `PATH` kehren die drei Fälle mit einer `SKIP`-Zeile
+zurück, an der der Job scheitert. Der Rust-Peer prüft die
 exakten 23 Oktetts des `Ping` und das Programm die Antwortzeile mit
 `reply=pong:hello from app`.
 
@@ -272,19 +268,19 @@ Receiver, gespiegelt von `crates/xrce/src/reliable.rs`; fester Storage, kein
 **Tests:** C-Seite — `endpoints/c/test/test_reliable_sm.c`, (Makefile-Lauf `make -C endpoints/c test`): 14 Prüf-Funktionen, davon 13 als Spiegel der
 Referenztests und eine als Byte-Golden-Check. Gemessene Ausgabe dieses
 Audits: test_reliable_sm ALL OK. Die gespiegelte Referenz ist
-`crates/xrce/src/reliable.rs::tests::submit_assigns_monotonic_seqnrs`,
-`crates/xrce/src/reliable.rs::tests::submit_rejects_when_window_full`,
-`crates/xrce/src/reliable.rs::tests::pending_heartbeat_fires_first_time`,
-`crates/xrce/src/reliable.rs::tests::pending_heartbeat_silenced_until_period_elapsed`,
-`crates/xrce/src/reliable.rs::tests::recv_acknack_clears_acked_seqnrs`,
-`crates/xrce/src/reliable.rs::tests::recv_acknack_full_clear_when_no_bits_set`,
-`crates/xrce/src/reliable.rs::tests::recv_data_buffers_in_order`,
-`crates/xrce/src/reliable.rs::tests::recv_data_reorders_out_of_order`,
-`crates/xrce/src/reliable.rs::tests::recv_data_drops_duplicates`,
-`crates/xrce/src/reliable.rs::tests::recv_data_rejects_when_buffer_full`,
-`crates/xrce/src/reliable.rs::tests::pending_acknack_marks_missing_slots`,
-`crates/xrce/src/reliable.rs::tests::reset_clears_state_completely`,
-`crates/xrce/src/reliable.rs::tests::end_to_end_sender_receiver_with_loss_recovery`.
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_1_submit_assigns_monotonic_seqnrs`,
+`crates/xrce/src/reliable.rs::tests::reliable_3_1_submit_rejects_when_window_full`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_12_pending_heartbeat_fires_first_time`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_1_pending_heartbeat_silenced_until_period_elapsed`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_recv_acknack_clears_acked_seqnrs`,
+`crates/xrce/src/reliable.rs::tests::reliable_3_2_recv_acknack_full_clear_when_no_bits_set`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_2_recv_data_buffers_in_order`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_2_3_recv_data_reorders_out_of_order`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_2_3_recv_data_drops_duplicates`,
+`crates/xrce/src/reliable.rs::tests::reliable_3_1_recv_data_rejects_when_buffer_full`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_pending_acknack_marks_missing_slots`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_13_reset_clears_state_completely`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_end_to_end_sender_receiver_with_loss_recovery`.
 
 **Status:** done
 
@@ -306,10 +302,10 @@ reinen Wire-Test `endpoints/c/test/test_reliable.c`.
 `golden_acknack_le.bin` (Makefile-Lauf `make -C endpoints/c test`). Gemessene
 Ausgabe dieses Audits: HEARTBEAT parsed first=1 last=3 stream=0x80 / ACKNACK
 13 bytes byte-identical to crates/xrce. Die Referenz, aus der beide Goldens
-entstehen: `crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_le_roundtrip`,
-`crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_roundtrip_via_submessage`,
-`crates/xrce/src/submessages/acknack.rs::tests::acknack_le_roundtrip`,
-`crates/xrce/src/submessages/acknack.rs::tests::acknack_roundtrip_via_submessage`.
+entstehen: `crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_5_12_heartbeat_le_roundtrip`,
+`crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_5_12_heartbeat_roundtrip_via_submessage`,
+`crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_5_11_acknack_le_roundtrip`,
+`crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_5_11_acknack_roundtrip_via_submessage`.
 
 **Status:** done
 
@@ -331,8 +327,8 @@ Sende-Fenster und dass der Drain-Thread sich nicht selbst bestätigt.
 Gemessene Ausgabe dieses Audits: ALL OK, delivered 24/24, no self-ack, no
 hang. Dazu `endpoints/c/test/bench_reliable_async.c` als Latenzvergleich
 (siehe §4.6). Rust-Seite —
-`crates/endpoint-e2e/tests/c_reliable.rs::c_reliable_latency_bench` baut und
-fährt denselben Ring aus dem Default-Lauf heraus.
+`crates/endpoint-e2e/tests/c_reliable.rs::reliable_5_4_c_the_producer_enqueue_costs_less_than_the_inline_send` baut und
+fährt denselben Ring im Job `integration-bindings`.
 
 **Status:** done
 
@@ -351,7 +347,7 @@ der Folge 0 bis 11 angekommen sind.
 `example_reliable`; zusätzlich im Makefile-Ziel `test`). Gemessene Ausgabe dieses Audits: 3/12 delivered
 before recovery, delivered contiguous 0..11 expected=12, ALL 12 samples
 recovered gap-free. Rust-Seite —
-`crates/endpoint-e2e/tests/c_reliable.rs::c_reliable_loss_recovery` belegt
+`crates/endpoint-e2e/tests/c_reliable.rs::reliable_5_3_c_samples_arrive_in_order_despite_dropped_datagrams` belegt
 denselben Ablauf live über UDP gegen einen fremden Prozess statt in-process.
 
 **Status:** done
@@ -363,22 +359,17 @@ denselben Ablauf live über UDP gegen einen fremden Prozess statt in-process.
 Rust reliable Peer, `stream_id >= 128`, mit injiziertem Drop; Assert: alle
 Samples lückenlos und in Reihenfolge zugestellt trotz Verlust.
 
-**Repo:** `endpoints/c/test/reliable_udp_app.c` — die C-App spielt den
-reliablen Sender (submit, WRITE_DATA, HEARTBEAT, ACKNACK-getriebener
-Retransmit) gegen den geteilten Rust-Peer aus
-`crates/endpoint-e2e/src/lib.rs`, der den Verlust injiziert. Die Datei
-deklariert `_POSIX_C_SOURCE 200809L` und zusätzlich `_DARWIN_C_SOURCE 1`,
-weil `INADDR_LOOPBACK` unter Apples libc eine BSD-Socket-Erweiterung ist und
-sonst nicht sichtbar wäre; unter glibc gilt die Einschränkung nicht.
+**Repo:** `endpoints/c/include/zerodds_reliable_async.h` (`zdw_async_ring`) —
+der Test baut die C-App aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und dem entkoppelten Writer: der Producer
+reiht die kodierten Samples ein, der Drain-Thread sendet WRITE_DATA und
+HEARTBEAT und retransmittiert auf ACKNACK, gegen den geteilten Rust-Peer aus
+`crates/endpoint-e2e/src/lib.rs`, der den Verlust injiziert.
 
-**Tests:** Rust-Seite, Default-Lauf —
-`crates/endpoint-e2e/tests/c_reliable.rs::c_reliable_loss_recovery`
-(12 Samples, injizierter Drop, Assert auf Lückenlosigkeit) und
-`crates/endpoint-e2e/tests/c_reliable.rs::c_reliable_no_loss` (12 Samples
-ohne Drop). Gemessen (Kommando `cargo test -p zerodds-endpoint-e2e --test
-c_reliable`): 3 passed, 0 failed, keine SKIP-Zeile. Auch hier gilt die
-Compiler-Vorprüfung aus dem Kopf dieses Dokuments — ohne Compiler auf dem
-Suchpfad skippen die Fälle laut und der Pipeline-Job scheitert daran.
+**Tests:** Rust-Seite, Job `integration-bindings` —
+`crates/endpoint-e2e/tests/c_reliable.rs::reliable_5_3_c_samples_arrive_in_order_despite_dropped_datagrams`
+(12 Samples, injizierter Drop, Assert auf Lückenlosigkeit; der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`); die
+Samples, die nicht verworfen werden, sind der Lauf ohne Verlust). Auch hier gilt die
+Compiler-Vorprüfung aus dem Kopf dieses Dokuments.
 
 **Status:** done
 
@@ -396,8 +387,8 @@ gebundenen, aber ungelesenen Loopback-Socket) gegen
 Datei trug dieselbe `INADDR_LOOPBACK`-Ursache wie §4.5 und deklariert
 deshalb ebenfalls `_DARWIN_C_SOURCE 1`.
 
-**Tests:** Rust-Seite, Default-Lauf —
-`crates/endpoint-e2e/tests/c_reliable.rs::c_reliable_latency_bench` (baut das
+**Tests:** Rust-Seite, Job `integration-bindings` —
+`crates/endpoint-e2e/tests/c_reliable.rs::reliable_5_4_c_the_producer_enqueue_costs_less_than_the_inline_send` (baut das
 Bench-Programm mit `gcc -O2 -std=c11`, fährt es und lässt den Fall
 scheitern, wenn die Latenzzeile fehlt oder das entkoppelte Enqueue nicht
 unter dem inline Send liegt). C-Seite — dasselbe Programm im Makefile-Ziel
@@ -412,18 +403,13 @@ Host-Last; der Assert prüft die Ordnung, nicht den Betrag.
 
 ## Audit-Status
 
-15 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+15 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf, C-Seite: `cargo run -p zerodds-endpoint-golden -- <dir>` gefolgt
-von `make -C endpoints/c test GOLDEN_DIR=<dir>` und
-`make -C endpoints/c examples` — alle 20 Binaries bauen mit
-`-std=c89 -pedantic -Wall -Wextra` beziehungsweise
-`-std=c11 -pedantic -Wall -Wextra` ohne Warnung und laufen durch, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-c-1.0.md`):
 
-Test-Lauf, Rust-Seite: `cargo test -p zerodds-endpoint-e2e --test c` — 3
-passed, 0 failed; `cargo test -p zerodds-endpoint-e2e --test c_reliable` — 3
-passed, 0 failed. Keiner der sechs Fälle hat geskippt.
+* `cargo nextest run --profile merge -p zerodds-xrce --all-targets` (Job `merge-rust-xrce`) — 27 Tests grün.
+* `python3 ci/run_integration.py integration-bindings` (Job `integration-bindings`) — 5 Tests grün.
 
-Beide Läufe gemessen auf macOS 15, `cc` und `gcc` sind dort Apple-Clang.
+32 zitierte Tests grün, 0 nicht grün.
 
-Offene Punkte: keine. Decision-Records: keine.
+Offene Punkte: keine.

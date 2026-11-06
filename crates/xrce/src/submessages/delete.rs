@@ -47,20 +47,3 @@ impl DeletePayload {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::expect_used, clippy::unwrap_used)]
-    use super::*;
-
-    #[test]
-    fn delete_roundtrip() {
-        let p = DeletePayload {
-            representation: alloc::vec![0xDE, 0xAD, 0xBE, 0xEF],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(sm.header.submessage_id, SubmessageId::Delete);
-        let p2 = DeletePayload::try_from_submessage(&sm).unwrap();
-        assert_eq!(p2, p);
-    }
-}

@@ -215,7 +215,7 @@ fn a_value_longer_than_the_short_length_field_needs_the_extended_header() {
 /// whole type where an always-extended plan produced 32.
 ///
 /// The fallback is `Writer::finish_pid`'s, tested in
-/// `crates/wire/tests/wire.rs::a_short_parameter_header_becomes_extended_when_the_value_overruns_it`
+/// `crates/wire/tests/wire.rs::xtypes_7_4_1_2_2_a_short_parameter_header_becomes_extended_when_the_value_overruns_it`
 /// and end to end in `wire-probe/tests/vendor_bytes.rs`.
 #[test]
 fn an_unbounded_member_takes_the_short_header_and_the_writer_falls_back() {

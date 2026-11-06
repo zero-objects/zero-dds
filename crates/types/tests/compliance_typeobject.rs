@@ -44,7 +44,7 @@ fn load_hex(path: &std::path::Path) -> Vec<u8> {
 }
 
 #[test]
-fn md5_empty_string_first_14_bytes_golden_vector() {
+fn xtypes_7_2_2_4_4_4_5_md5_empty_string_first_14_bytes_golden_vector() {
     let p = compliance_root()
         .join("typeobject")
         .join("md5_empty_string.hex");
@@ -93,7 +93,7 @@ fn fixed_hash_complete() -> EquivalenceHash {
 }
 
 #[test]
-fn indirect_hash_plain_sequence_small_minimal_wire_vector() {
+fn xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector() {
     // sequence<X, 5> where X = EK_MINIMAL hash[14]={0xA0..0xAD}.
     // Wire (XCDR2 LE):
     //   0x80                         -- TI_PLAIN_SEQUENCE_SMALL
@@ -129,7 +129,7 @@ fn indirect_hash_plain_sequence_small_minimal_wire_vector() {
 }
 
 #[test]
-fn indirect_hash_plain_sequence_large_complete_wire_vector() {
+fn xtypes_7_3_4_6_2_indirect_hash_plain_sequence_large_complete_wire_vector() {
     // sequence<X, 1000> where X = EK_COMPLETE hash[14]={0xC0..0xCD}.
     let ti = TypeIdentifier::PlainSequenceLarge {
         header: PlainCollectionHeader {
@@ -160,7 +160,7 @@ fn indirect_hash_plain_sequence_large_complete_wire_vector() {
 }
 
 #[test]
-fn indirect_hash_plain_array_small_minimal_wire_vector() {
+fn xtypes_7_3_4_6_4_indirect_hash_plain_array_small_minimal_wire_vector() {
     // T[3,4] where T = EK_MINIMAL hash. array_bounds = octet seq.
     let ti = TypeIdentifier::PlainArraySmall {
         header: PlainCollectionHeader {
@@ -191,7 +191,7 @@ fn indirect_hash_plain_array_small_minimal_wire_vector() {
 }
 
 #[test]
-fn indirect_hash_plain_array_large_complete_wire_vector() {
+fn xtypes_7_3_4_6_4_indirect_hash_plain_array_large_complete_wire_vector() {
     // T[300, 400] where T = EK_COMPLETE hash. array_bounds = uint32 seq.
     let ti = TypeIdentifier::PlainArrayLarge {
         header: PlainCollectionHeader {
@@ -230,7 +230,7 @@ fn indirect_hash_plain_array_large_complete_wire_vector() {
 }
 
 #[test]
-fn indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector() {
+fn xtypes_7_3_4_6_2_indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector() {
     // map<K, V, 10> where K = EK_MINIMAL, V = EK_COMPLETE, bound=10.
     let ti = TypeIdentifier::PlainMapSmall {
         header: PlainCollectionHeader {
@@ -302,7 +302,7 @@ fn indirect_hash_plain_map_large_complete_keys_minimal_values_wire_vector() {
 }
 
 #[test]
-fn indirect_hash_nested_sequence_of_sequence_minimal_wire_roundtrip() {
+fn xtypes_7_3_4_6_1_indirect_hash_nested_sequence_of_sequence_minimal_wire_roundtrip() {
     // sequence<sequence<X,3>,5> with X = EK_MINIMAL — nested
     // PlainCollections. The test verifies that the Box-recursive encoder/
     // decoder is byte-exact for indirect hash element types.
@@ -323,12 +323,30 @@ fn indirect_hash_nested_sequence_of_sequence_minimal_wire_roundtrip() {
         element: Box::new(inner.clone()),
     };
     let bytes = outer.to_bytes_le().unwrap();
+    // The inner header's `element_flags` align to 2 counted from the
+    // outer identifier's first octet: a padding octet at 7.
+    let mut expected = vec![
+        TI_PLAIN_SEQUENCE_SMALL,
+        EK_MINIMAL,
+        0x00,
+        0x00,
+        0x05,
+        TI_PLAIN_SEQUENCE_SMALL,
+        EK_MINIMAL,
+        0x00,
+        0x00,
+        0x00,
+        0x03,
+        EK_MINIMAL,
+    ];
+    expected.extend_from_slice(&fixed_hash_minimal().0);
+    assert_eq!(bytes, expected);
     let decoded = TypeIdentifier::from_bytes_le(&bytes).unwrap();
     assert_eq!(decoded, outer);
 }
 
 #[test]
-fn indirect_hash_invalid_equiv_kind_in_header_decodes_as_unknown_ek_byte() {
+fn xtypes_7_3_4_6_indirect_hash_invalid_equiv_kind_in_header_decodes_as_unknown_ek_byte() {
     // If equiv_kind is none of EK_MINIMAL/EK_COMPLETE/EK_BOTH, the decoder
     // must not silently misinterpret it as EK_MINIMAL —
     // header.equiv_kind stores the wire byte 1:1.

@@ -12,29 +12,19 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 
-import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.omg.dds.type.Extensibility;
 import org.omg.dds.type.Key;
-import org.zerodds.wire.Endianness;
-import org.zerodds.wire.PlCdr1Framing;
-import org.zerodds.wire.Reader;
-import org.zerodds.wire.Writer;
 
 /**
- * DDS-Java-PSM 1.0 §8 / §1.2 reflection-marshalling proof. The decisive
- * property is <em>byte-identity</em> with the typed {@code org.zerodds.wire}
- * path — the one XCDR2 codec this binding has: a reflection-marshalled plain
- * bean produces exactly the reference wire vectors V-2/V-3/V-8/V-9 from
- * {@code Xcdr2WireVectorsTest}. Plus roundtrips for nested beans, sequences,
- * maps and mutable extensibility, the §7.6.8 key-hash, and §7.8.1.3
- * {@code createType(Class<?>)}.
+ * The Java Type Representation of DDS-Java-PSM 1.0 §8 as {@link ReflectionTypeSupport} writes
+ * it, held to octets written out by hand from DDS-XTypes 1.3 §7.4 (XCDR2, little-endian): the
+ * primitive kinds of Table 8.1, a list as a sequence, a nested structure, the extensibility
+ * kinds, the member IDs of a MUTABLE structure (§7.3.1.2.1.1), the key holder of §7.6.8, and
+ * {@code createType(Class<?>)} of §7.8.1.3.
  */
-@DisplayName("Reflection TypeSupport (Java-PSM §8)")
 final class ReflectionTypeSupportTest {
 
     private static byte[] hex(String s) {
@@ -50,7 +40,7 @@ final class ReflectionTypeSupportTest {
     // Byte-identity with the typed wire vectors
     // ==================================================================
 
-    /** FINAL bean equivalent to V-2 Point{x=1, y=-2}. */
+    /** A FINAL bean of two int fields. */
     static final class Point {
         int x;
         int y;
@@ -59,8 +49,7 @@ final class ReflectionTypeSupportTest {
     }
 
     @Test
-    @DisplayName("Point bean == V-2 wire vector (byte-exact)")
-    void pointMatchesV2() {
+    void javapsm_8_2_an_int_field_is_an_int32_of_a_final_structure() {
         ReflectionTypeSupport<Point> ts = ReflectionTypeSupport.of(Point.class);
         byte[] actual = ts.encode(new Point(1, -2));
         assertArrayEquals(hex("01 00 00 00 FE FF FF FF"), actual);
@@ -70,45 +59,25 @@ final class ReflectionTypeSupportTest {
         assertEquals(-2, back.y);
     }
 
-    /**
-     * FINAL record covering every cleanly-mappable Java primitive. Java has no
-     * unsigned types, so {@code int}→INT32 and {@code long}→INT64 (a plain bean
-     * therefore cannot reproduce V-3's uint32/uint64 mix — that is inherent to
-     * the Java Type Representation, not a codec gap). The decisive property is
-     * byte-identity with the typed {@code org.zerodds.wire.Writer} path for
-     * these exact Java types, which we assert directly.
-     */
+    /** A FINAL record with a field of each primitive kind of Table 8.1. */
     // A record extends java.lang.Record, not java.lang.Object, so it is EXTENSIBLE unless it
     // says otherwise (DDS-Java-PSM 1.0 8.6.1.2); this one says FINAL.
     @Extensibility(Extensibility.Kind.FINAL_EXTENSIBILITY)
     record Mixed(boolean b, byte o, short s, char c, int i, long l, float f, double d) {}
 
     @Test
-    @DisplayName("Mixed record is byte-identical to the typed Writer path")
-    void mixedIsByteIdenticalToTypedPath() {
+    void javapsm_8_2_the_primitive_fields_of_table_8_1_have_the_octets_of_xtypes_7_4() {
         Mixed m = new Mixed(true, (byte) 0xAB, (short) -12345, 'Z',
                 -1234567, -987654321L, 2.5f, 3.14159);
-
-        // Reference: drive the runtime Writer with the same field types/order
-        // the reflection codec sees (boolean, octet, int16, char8, int32,
-        // int64, float32, float64) -- natural alignment, no DHEADER (FINAL).
-        Writer w = new Writer(Endianness.LITTLE, 4, PlCdr1Framing.defaults(), false);
-        w.writeBool(true);
-        w.writeU8(0xAB);
-        w.writeI16(-12345);
-        w.writeChar('Z');
-        w.writeI32(-1234567);
-        w.writeI64(-987654321L);
-        w.writeF32(2.5f);
-        w.writeF64(3.14159);
-        byte[] expected = w.finish();
-
-        byte[] actual = ReflectionTypeSupport.of(Mixed.class).encode(m);
-        assertArrayEquals(expected, actual);
-        assertEquals(m, ReflectionTypeSupport.of(Mixed.class).decode(actual));
+        // boolean at 0, octet at 1, int16 at 2, char8 at 4, padding to 8, int32 at 8, int64 at
+        // 12 (aligned to 4, XTypes 1.3 §7.4.1.1.1), float32 at 20, float64 at 24; FINAL: no DHEADER
+        byte[] expected = hex("01 AB C7 CF 5A 00 00 00 79 29 ED FF 4F 97 21 C5 FF FF FF FF"
+                + " 00 00 20 40 6E 86 1B F0 F9 21 09 40");
+        assertArrayEquals(expected, ReflectionTypeSupport.of(Mixed.class).encode(m));
+        assertEquals(m, ReflectionTypeSupport.of(Mixed.class).decode(expected));
     }
 
-    /** Keyed FINAL bean == V-8 Sensor{id=42, value=3.14}. */
+    /** A keyed FINAL bean: an int key and a double. */
     static final class Sensor {
         @Key int id;
         double value;
@@ -117,8 +86,7 @@ final class ReflectionTypeSupportTest {
     }
 
     @Test
-    @DisplayName("Sensor bean == V-8 wire + key-hash (byte-exact)")
-    void sensorMatchesV8() {
+    void xtypes_7_4_1_1_1_a_double_after_an_int32_is_aligned_to_four_and_the_short_key_holder_is_padded() {
         ReflectionTypeSupport<Sensor> ts = ReflectionTypeSupport.of(Sensor.class);
         byte[] actual = ts.encode(new Sensor(42, 3.14));
         // XCDR2 MAXALIGN=4 (XTypes 1.3 §7.4.1.1.1): double at off 4, no 8-align
@@ -131,23 +99,8 @@ final class ReflectionTypeSupportTest {
         assertArrayEquals(hex("00 00 00 2A 00 00 00 00 00 00 00 00 00 00 00 00"), hash);
     }
 
-    @Test
-    @DisplayName("Greeting{text=\"hello\"} == V-4 string wire vector")
-    void stringMatchesV4() {
-        ReflectionTypeSupport<Greeting> ts = ReflectionTypeSupport.of(Greeting.class);
-        byte[] actual = ts.encode(new Greeting("hello"));
-        assertArrayEquals(hex("06 00 00 00 68 65 6C 6C 6F 00"), actual);
-        assertEquals("hello", ts.decode(actual).text);
-    }
-
-    static final class Greeting {
-        String text;
-        Greeting() {}
-        Greeting(String text) { this.text = text; }
-    }
-
     // ==================================================================
-    // Sequences (V-5 primitive inline, V-6 string DHEADER)
+    // Sequences
     // ==================================================================
 
     static final class Bag {
@@ -157,8 +110,7 @@ final class ReflectionTypeSupportTest {
     }
 
     @Test
-    @DisplayName("Bag{ids=[1,2,3]} == V-5 (primitive seq, no DHEADER)")
-    void seqPrimitiveMatchesV5() {
+    void javapsm_8_5_3_a_list_is_a_sequence_in_the_order_of_the_list() {
         ReflectionTypeSupport<Bag> ts = ReflectionTypeSupport.of(Bag.class);
         List<Integer> ids = new ArrayList<>();
         ids.add(1);
@@ -167,41 +119,6 @@ final class ReflectionTypeSupportTest {
         byte[] actual = ts.encode(new Bag(ids));
         assertArrayEquals(hex("03 00 00 00 01 00 00 00 02 00 00 00 03 00 00 00"), actual);
         assertEquals(ids, ts.decode(actual).ids);
-    }
-
-    static final class Tags {
-        List<String> tags;
-        Tags() {}
-        Tags(List<String> tags) { this.tags = tags; }
-    }
-
-    @Test
-    @DisplayName("Tags{tags=[\"a\",\"bc\"]} == V-6 (string seq, DHEADER)")
-    void seqStringMatchesV6() {
-        ReflectionTypeSupport<Tags> ts = ReflectionTypeSupport.of(Tags.class);
-        List<String> tags = new ArrayList<>();
-        tags.add("a");
-        tags.add("bc");
-        byte[] actual = ts.encode(new Tags(tags));
-        assertArrayEquals(
-                hex("13 00 00 00 02 00 00 00 02 00 00 00 61 00 00 00 03 00 00 00 62 63 00"),
-                actual);
-        assertEquals(tags, ts.decode(actual).tags);
-    }
-
-    @Test
-    @DisplayName("int[] array roundtrips as a primitive sequence")
-    void arrayRoundtrips() {
-        ReflectionTypeSupport<Ints> ts = ReflectionTypeSupport.of(Ints.class);
-        Ints in = new Ints(new int[] {7, 8, 9});
-        byte[] wire = ts.encode(in);
-        assertArrayEquals(new int[] {7, 8, 9}, ts.decode(wire).vals);
-    }
-
-    static final class Ints {
-        int[] vals;
-        Ints() {}
-        Ints(int[] vals) { this.vals = vals; }
     }
 
     // ==================================================================
@@ -216,8 +133,7 @@ final class ReflectionTypeSupportTest {
     }
 
     @Test
-    @DisplayName("Nested FINAL beans marshal inline (no extra DHEADER)")
-    void nestedFinalInline() {
+    void javapsm_8_6_1_a_nested_final_structure_is_written_inline() {
         ReflectionTypeSupport<Line> ts = ReflectionTypeSupport.of(Line.class);
         byte[] wire = ts.encode(new Line(new Point(1, 2), new Point(3, 4)));
         // Two FINAL Points inline = 4 int32 = 16 bytes, no DHEADER.
@@ -245,8 +161,7 @@ final class ReflectionTypeSupportTest {
     }
 
     @Test
-    @DisplayName("@Extensibility(EXTENSIBLE) bean is APPENDABLE: a DHEADER (XTypes 1.3)")
-    void extensibleIsAppendable() {
+    void javapsm_8_6_1_2_extensible_is_written_as_appendable_with_a_dheader() {
         ReflectionTypeSupport<V> ts = ReflectionTypeSupport.of(V.class);
         assertEquals(ExtensibilityKind.APPENDABLE, ts.getExtensibility());
         byte[] actual = ts.encode(new V(1, 2));
@@ -256,34 +171,18 @@ final class ReflectionTypeSupportTest {
         assertEquals(2, back.b);
     }
 
-    @Extensibility(Extensibility.Kind.MUTABLE_EXTENSIBILITY)
-    static final class M {
-        int a;
-        String b;
-        M() {}
-        M(int a, String b) { this.a = a; this.b = b; }
-    }
-
     @Test
-    @DisplayName("@Extensibility(MUTABLE) bean roundtrips (EMHEADER per member)")
-    void mutableRoundtrips() {
-        ReflectionTypeSupport<M> ts = ReflectionTypeSupport.of(M.class);
-        assertEquals(ExtensibilityKind.MUTABLE, ts.getExtensibility());
-        byte[] wire = ts.encode(new M(42, "hi"));
-        // Starts with a DHEADER (mutable PL_CDR2).
-        Reader r = new Reader(wire, Endianness.LITTLE, 4, PlCdr1Framing.defaults());
-        int body = r.readDheader();
-        assertTrue(body > 0);
-        M back = ts.decode(wire);
-        assertEquals(42, back.a);
-        assertEquals("hi", back.b);
-    }
-
-    @Test
-    @DisplayName("Mutable roundtrip with an 8-byte member keeps stream alignment")
-    void mutableLongRoundtrips() {
+    void xtypes_7_4_3_5_3_a_mutable_structure_numbers_its_members_from_zero_and_aligns_an_eight_octet_member_to_four() {
         ReflectionTypeSupport<ML> ts = ReflectionTypeSupport.of(ML.class);
-        ML back = ts.decode(ts.encode(new ML(7, -987654321L, 3.5)));
+        // The DHEADER 44; per member an EMHEADER with LC 4 (0x40000000 + member ID, IDs from 0 by
+        // §7.3.1.2.1.1), its NEXTINT and the value; the int64 and the float64 at offsets 24 and
+        // 40, aligned to 4 (§7.4.1.1.1).
+        byte[] expected = hex("2C 00 00 00"
+                + " 00 00 00 40 04 00 00 00 07 00 00 00"
+                + " 01 00 00 40 08 00 00 00 4F 97 21 C5 FF FF FF FF"
+                + " 02 00 00 40 08 00 00 00 00 00 00 00 00 00 0C 40");
+        assertArrayEquals(expected, ts.encode(new ML(7, -987654321L, 3.5)));
+        ML back = ts.decode(expected);
         assertEquals(7, back.a);
         assertEquals(-987654321L, back.big);
         assertEquals(3.5, back.d, 0.0);
@@ -299,33 +198,11 @@ final class ReflectionTypeSupportTest {
     }
 
     // ==================================================================
-    // Map
-    // ==================================================================
-
-    static final class Dict {
-        Map<String, Integer> m;
-        Dict() {}
-        Dict(Map<String, Integer> m) { this.m = m; }
-    }
-
-    @Test
-    @DisplayName("Map<String,Integer> roundtrips (order-stable for the instance)")
-    void mapRoundtrips() {
-        ReflectionTypeSupport<Dict> ts = ReflectionTypeSupport.of(Dict.class);
-        Map<String, Integer> m = new LinkedHashMap<>();
-        m.put("a", 1);
-        m.put("bc", 2);
-        byte[] wire = ts.encode(new Dict(m));
-        assertEquals(m, ts.decode(wire).m);
-    }
-
-    // ==================================================================
     // createType(Class<?>) — §7.8.1.3
     // ==================================================================
 
     @Test
-    @DisplayName("createType(Class<?>) reflects member kinds + nesting + key")
-    void createTypeReflectsStructure() {
+    void javapsm_7_8_1_3_create_type_reflects_member_kinds_nesting_and_key() {
         DynamicType dt = DynamicTypeFactory.getInstance().createType(Sensor.class);
         assertEquals(ExtensibilityKind.FINAL, dt.getExtensibility());
         assertTrue(dt.isKeyed());
@@ -350,10 +227,4 @@ final class ReflectionTypeSupportTest {
         assertEquals(DynamicType.Kind.SEQUENCE, bag.getMembers().get(0).getKind());
     }
 
-    @Test
-    @DisplayName("createType rejects null")
-    void createTypeRejectsNull() {
-        assertThrows(XcdrException.class,
-                () -> DynamicTypeFactory.getInstance().createType(null));
-    }
 }

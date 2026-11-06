@@ -1462,7 +1462,7 @@ pub enum WirePosition {
     /// ```
     ///
     /// Two forms answer alike and two forms answer differently, which is
-    /// judgement 3 of `docs/wire-axes-followup.md`: a field two forms
+    /// judgement 3 of `0b2e8df9f6b:docs/wire-axes-followup.md`: a field two forms
     /// answer differently and two forms answer alike is not a field of
     /// the form. The three [`PidFlagPolicy`] values answer all four
     /// implementations here with no fourth value.
@@ -1554,7 +1554,7 @@ impl WirePosition {
 /// The name the position axis shipped under, when it reached only
 /// `wchar`.
 ///
-/// Judgement 1 of `docs/wire-axes-followup.md` makes the position first
+/// Judgement 1 of `0b2e8df9f6b:docs/wire-axes-followup.md` makes the position first
 /// class on every axis, so the type is [`WirePosition`] now. The alias
 /// stays because the argument for the rename is in the rename, not in
 /// breaking every caller in one commit.
@@ -1680,7 +1680,7 @@ pub enum WstringUnitOrder {
     /// it is on this axis because it is a byte order. It arrived as
     /// `WstringLengthPolicy::UnswappedUnits` — a byte order wearing a
     /// length policy's name — and judgement 2 of
-    /// `docs/wire-axes-followup.md` moved it here, which also retired
+    /// `0b2e8df9f6b:docs/wire-axes-followup.md` moved it here, which also retired
     /// the `(UnswappedUnits, non-Stream)` conflict rule: two settings
     /// that both decide one byte order, with a precedence between them,
     /// is the shape that produces a wrong character and no error. One
@@ -2165,7 +2165,7 @@ impl PlCdr1Reading {
 /// positions, from Fast DDS at the member only, and agrees with Fast DDS
 /// at the sentinel. Two independent implementations agreeing at the
 /// sentinel while differing at the member is judgement 3 of
-/// `docs/wire-axes-followup.md`, and it is what makes
+/// `0b2e8df9f6b:docs/wire-axes-followup.md`, and it is what makes
 /// [`WirePosition::Sentinel`] a measured position rather than a
 /// property of the list.
 ///
@@ -2489,7 +2489,7 @@ impl MustUnderstandPolicy {
 ///
 /// # The measurement, which is about the front ends and not the octets
 ///
-/// M1 of `docs/wire-axes-followup.md`, taken over
+/// M1 of `0b2e8df9f6b:docs/wire-axes-followup.md`, taken over
 /// `@bit_bound(8) enum Colour` and its 16-bit twin:
 ///
 /// | front end | what it does with the annotation |
@@ -2869,7 +2869,7 @@ impl UnionLabelMatch {
 /// threshold of two implementations is met on the *position*.
 ///
 /// It stays a compatibility setting all the same, and that is what
-/// judgement 3's addendum in `docs/wire-axes-followup.md` says: the
+/// judgement 3's addendum in `0b2e8df9f6b:docs/wire-axes-followup.md` says: the
 /// order is a property of the ordered container each code generator
 /// chose and not of a serialisation rule either product could have
 /// written differently. §7.4.3.5.3 rules (14) to (16) give a map as a
@@ -3409,7 +3409,7 @@ impl MapEntryOrder {
 ///
 /// # It is decodable, and the estimate said it was not
 ///
-/// `docs/open-rows-breakdown.md` cause K states that "the declared count
+/// `0b2e8df9f6b:docs/open-rows-breakdown.md` cause K states that "the declared count
 /// is the only decodable half: a reader must know the octet count from
 /// the type before it reads the value". That is wrong, and the clause
 /// says why: a digit nibble is `0` to `9` and a sign nibble is `0xA` to
@@ -3548,7 +3548,7 @@ impl FixedDigitCount {
                 // the total nibble count even (whole octets).
                 if string_digits == 0 {
                     1
-                } else if string_digits % 2 == 0 {
+                } else if string_digits.is_multiple_of(2) {
                     string_digits + 1
                 } else {
                     string_digits
@@ -4562,7 +4562,7 @@ impl DefaultedDiscriminatorMember {
 /// box. What that argument left out is which behaviour it hands to a
 /// caller who names nothing: once the products' defects moved into the
 /// dialects that name those products — the pass
-/// `docs/wire-axes-followup.md` records — the default started writing
+/// `0b2e8df9f6b:docs/wire-axes-followup.md` records — the default started writing
 /// **Cyclone's defects**. A `wstring`'s code units in the host's order
 /// rather than the stream's, and no branch at all for a negative case
 /// label on a narrow signed discriminator.
@@ -5276,7 +5276,7 @@ impl Dialect {
     /// [`EnumHolderWidth::BitBoundDroppedByFrontEnd`] is **Fast DDS's
     /// and OpenDDS's**, and it is in both of their dialects. It is a
     /// front-end defect and not a reading of §7.4.3.5.3 — M1 of
-    /// `docs/wire-axes-followup.md` has `fastddsgen` 4.3.0 emitting
+    /// `0b2e8df9f6b:docs/wire-axes-followup.md` has `fastddsgen` 4.3.0 emitting
     /// `enum class Colour : int32_t` and `BitBound = 32` for an
     /// `@bit_bound(8)` enumeration, and `opendds_idl` not knowing the
     /// symbol at all — and that is exactly why a dialect has to carry
@@ -6779,7 +6779,7 @@ impl LayoutKey {
     /// It answered the pair `(WstringLengthPolicy::UnswappedUnits,
     /// non-Stream)`, which existed only because a byte order was living
     /// in the length enumeration under a length's name. Judgement 2 of
-    /// `docs/wire-axes-followup.md` moved it to
+    /// `0b2e8df9f6b:docs/wire-axes-followup.md` moved it to
     /// [`WstringUnitOrder::HostUnswapped`], and one axis cannot conflict
     /// with itself: the four orders are four points of one setting and
     /// any of them can be combined with any cell of C1 × C2 × C3.
@@ -7355,7 +7355,7 @@ mod tests {
     /// **Counter-check.** RTI under XCDR1 is CORBA §9.3.1.6's GIOP 1.1
     /// `wstring` and needs no RTI-specific line.
     ///
-    /// Judgement 2 of `docs/wire-axes-followup.md` required this to be
+    /// Judgement 2 of `0b2e8df9f6b:docs/wire-axes-followup.md` required this to be
     /// checked explicitly after the split: if RTI's XCDR1 form were not
     /// exactly a cell of the product, an axis would still be missing.
     /// It is the cell — characters, terminated, four-octet units — and

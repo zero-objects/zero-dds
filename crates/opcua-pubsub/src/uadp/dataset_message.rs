@@ -427,8 +427,19 @@ mod tests {
     use crate::binary::{from_binary, to_binary};
     use zerodds_opcua_gateway::data_value::VariantValue;
 
+    /// `msg` encodes to `expected` and `expected` decodes to `msg` (the
+    /// writer id is the NetworkMessage's, OPC 10000-14 Table 160).
+    fn octets(msg: &DataSetMessage, expected: &[u8]) {
+        assert_eq!(to_binary(msg).expect("encode"), expected);
+        let mut back: DataSetMessage = from_binary(expected).expect("decode");
+        back.writer_id = msg.writer_id;
+        assert_eq!(&back, msg);
+    }
+
+    /// Tables 162 and 163: DataSetFlags1 0x01 (valid, Variant field
+    /// encoding, no DataSetFlags2: a key frame), FieldCount, the Variants.
     #[test]
-    fn key_frame_variant_roundtrip() {
+    fn uapubsub_7_2_4_5_5_a_key_frame_is_its_flags_the_field_count_and_the_variants() {
         let msg = DataSetMessage::key_frame_variant(
             7,
             alloc::vec![
@@ -436,17 +447,21 @@ mod tests {
                 Variant::scalar(VariantValue::Boolean(true)),
             ],
         );
-        let bytes = to_binary(&msg).expect("encode");
-        let back: DataSetMessage = from_binary(&bytes).expect("decode");
-        // writer_id is assigned by the NetworkMessage layer, not the
-        // DataSetMessage body — compare the rest.
-        assert_eq!(back.data, msg.data);
-        assert!(back.valid);
-        assert_eq!(back.kind, DataSetMessageKind::KeyFrame);
+        octets(
+            &msg,
+            &[0x01, 0x02, 0x00, 0x06, 0x2A, 0x00, 0x00, 0x00, 0x01, 0x01],
+        );
     }
 
+    /// Table 162 with every header field: DataSetFlags1 0xFD (valid,
+    /// DataValue field encoding 10, SequenceNumber, Status,
+    /// MajorVersion, MinorVersion, DataSetFlags2), DataSetFlags2 0x30
+    /// (key frame, Timestamp, PicoSeconds), then SequenceNumber,
+    /// Timestamp, PicoSeconds, Status (the high 16 bits of the
+    /// StatusCode), MajorVersion, MinorVersion; the field a DataValue
+    /// (OPC 10000-6 §5.2.2.17).
     #[test]
-    fn key_frame_with_header_fields() {
+    fn uapubsub_7_2_4_5_4_every_header_field_in_the_order_of_table_162() {
         let msg = DataSetMessage {
             writer_id: 1,
             valid: true,
@@ -457,20 +472,28 @@ mod tests {
             status: Some(0x8000),
             config_major_version: Some(2),
             config_minor_version: Some(7),
-            data: DataSetData::DataValue(alloc::vec![DataValue::new_value(
-                Variant::scalar(VariantValue::Double(1.5)),
-                0,
-                0,
-            )]),
+            data: DataSetData::DataValue(alloc::vec![DataValue {
+                value: Some(Variant::scalar(VariantValue::Double(1.5))),
+                status: None,
+                source_timestamp: None,
+                server_timestamp: None,
+                source_pico_sec: None,
+                server_pico_sec: None,
+            }]),
         };
-        let bytes = to_binary(&msg).expect("encode");
-        let mut back: DataSetMessage = from_binary(&bytes).expect("decode");
-        back.writer_id = 1;
-        assert_eq!(back, msg);
+        let mut expected = alloc::vec![0xFD, 0x30, 0x63, 0x00];
+        expected.extend_from_slice(&132_000_000_000_000_000_i64.to_le_bytes());
+        expected.extend_from_slice(&[0x05, 0x00, 0x00, 0x80]);
+        expected.extend_from_slice(&[0x02, 0x00, 0x00, 0x00, 0x07, 0x00, 0x00, 0x00]);
+        expected.extend_from_slice(&[0x01, 0x00, 0x01, 0x0B]);
+        expected.extend_from_slice(&1.5_f64.to_le_bytes());
+        octets(&msg, &expected);
     }
 
+    /// Table 164: a delta frame (DataSetFlags2 type 0001) carries the
+    /// FieldCount and, per field, its FieldIndex (UInt16) and value.
     #[test]
-    fn delta_frame_variant_roundtrip() {
+    fn uapubsub_7_2_4_5_6_a_delta_frame_is_field_index_and_value_per_field() {
         let msg = DataSetMessage {
             writer_id: 0,
             valid: true,
@@ -486,14 +509,19 @@ mod tests {
                 (5, Variant::scalar(VariantValue::Int32(20))),
             ]),
         };
-        let bytes = to_binary(&msg).expect("encode");
-        let back: DataSetMessage = from_binary(&bytes).expect("decode");
-        assert_eq!(back.data, msg.data);
-        assert_eq!(back.kind, DataSetMessageKind::DeltaFrame);
+        octets(
+            &msg,
+            &[
+                0x81, 0x01, 0x02, 0x00, 0x02, 0x00, 0x06, 0x0A, 0x00, 0x00, 0x00, 0x05, 0x00, 0x06,
+                0x14, 0x00, 0x00, 0x00,
+            ],
+        );
     }
 
+    /// Table 162, DataSetFlags2 type 0011: a keep alive is the header
+    /// alone, here with its SequenceNumber.
     #[test]
-    fn keep_alive_has_no_data() {
+    fn uapubsub_7_2_4_5_8_a_keep_alive_is_the_header_alone() {
         let msg = DataSetMessage {
             writer_id: 0,
             valid: true,
@@ -506,11 +534,7 @@ mod tests {
             config_minor_version: None,
             data: DataSetData::None,
         };
-        let bytes = to_binary(&msg).expect("encode");
-        let back: DataSetMessage = from_binary(&bytes).expect("decode");
-        assert_eq!(back.kind, DataSetMessageKind::KeepAlive);
-        assert_eq!(back.data, DataSetData::None);
-        assert_eq!(back.sequence_number, Some(3));
+        octets(&msg, &[0x89, 0x03, 0x03, 0x00]);
     }
 
     #[test]

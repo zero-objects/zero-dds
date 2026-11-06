@@ -44,7 +44,7 @@ fn main() {
     // Warmup (JIT TCP path, fill caches).
     for i in 0..2000u32 {
         let r = invoke_on(conn, i, key, "ping", encode_string_body(&payload)).unwrap();
-        assert_eq!(decode_string_body(&r), payload);
+        assert_eq!(decode_string_body(&r).expect("a string body"), payload);
     }
 
     let mut samples: Vec<u64> = Vec::with_capacity(n);
@@ -53,7 +53,7 @@ fn main() {
         let t0 = Instant::now();
         let r = invoke_on(conn, i as u32, key, "ping", body).unwrap();
         samples.push(t0.elapsed().as_nanos() as u64);
-        debug_assert_eq!(decode_string_body(&r), payload);
+        debug_assert_eq!(decode_string_body(&r).expect("a string body"), payload);
     }
     samples.sort_unstable();
     let us = |q: f64| samples[((n as f64 * q) as usize).min(n - 1)] as f64 / 1000.0;

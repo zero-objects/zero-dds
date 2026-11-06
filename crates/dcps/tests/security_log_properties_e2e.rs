@@ -94,7 +94,7 @@ fn live_participant_accepts_log_properties_on_qos() {
 /// `DDS:Logging:DDS_LogTopic` sink creates no DataWriter, so it needs no
 /// publisher and logs only to its `log_file`.
 #[test]
-fn builtin_sink_with_distribute_off_is_file_only() {
+fn security_10_6_1_builtin_sink_with_distribute_off_is_file_only() {
     let dir = std::env::temp_dir().join(format!("zerodds-builtin-off-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("security.log");

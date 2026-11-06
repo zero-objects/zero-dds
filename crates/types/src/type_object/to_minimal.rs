@@ -191,7 +191,7 @@ pub(crate) fn minimal_identifier(
             let element = minimal_identifier(element, registry, depth + 1)?;
             TypeIdentifier::PlainSequenceSmall {
                 header: crate::type_identifier::PlainCollectionHeader {
-                    equiv_kind: element_equiv_kind(header.equiv_kind, &element),
+                    equiv_kind: element_equiv_kind(&[&element]),
                     element_flags: header.element_flags,
                 },
                 bound: *bound,
@@ -206,7 +206,7 @@ pub(crate) fn minimal_identifier(
             let element = minimal_identifier(element, registry, depth + 1)?;
             TypeIdentifier::PlainSequenceLarge {
                 header: crate::type_identifier::PlainCollectionHeader {
-                    equiv_kind: element_equiv_kind(header.equiv_kind, &element),
+                    equiv_kind: element_equiv_kind(&[&element]),
                     element_flags: header.element_flags,
                 },
                 bound: *bound,
@@ -221,7 +221,7 @@ pub(crate) fn minimal_identifier(
             let element = minimal_identifier(element, registry, depth + 1)?;
             TypeIdentifier::PlainArraySmall {
                 header: crate::type_identifier::PlainCollectionHeader {
-                    equiv_kind: element_equiv_kind(header.equiv_kind, &element),
+                    equiv_kind: element_equiv_kind(&[&element]),
                     element_flags: header.element_flags,
                 },
                 array_bounds: array_bounds.clone(),
@@ -236,7 +236,7 @@ pub(crate) fn minimal_identifier(
             let element = minimal_identifier(element, registry, depth + 1)?;
             TypeIdentifier::PlainArrayLarge {
                 header: crate::type_identifier::PlainCollectionHeader {
-                    equiv_kind: element_equiv_kind(header.equiv_kind, &element),
+                    equiv_kind: element_equiv_kind(&[&element]),
                     element_flags: header.element_flags,
                 },
                 array_bounds: array_bounds.clone(),
@@ -254,7 +254,7 @@ pub(crate) fn minimal_identifier(
             let key = minimal_identifier(key, registry, depth + 1)?;
             TypeIdentifier::PlainMapSmall {
                 header: crate::type_identifier::PlainCollectionHeader {
-                    equiv_kind: element_equiv_kind(header.equiv_kind, &element),
+                    equiv_kind: element_equiv_kind(&[&key, &element]),
                     element_flags: header.element_flags,
                 },
                 bound: *bound,
@@ -274,7 +274,7 @@ pub(crate) fn minimal_identifier(
             let key = minimal_identifier(key, registry, depth + 1)?;
             TypeIdentifier::PlainMapLarge {
                 header: crate::type_identifier::PlainCollectionHeader {
-                    equiv_kind: element_equiv_kind(header.equiv_kind, &element),
+                    equiv_kind: element_equiv_kind(&[&key, &element]),
                     element_flags: header.element_flags,
                 },
                 bound: *bound,
@@ -354,14 +354,14 @@ fn plain_collection(
     let flags = |written: crate::type_object::flags::CollectionElementFlag| {
         CollectionElementFlag(written.0)
     };
-    let header = |element: &TypeIdentifier, written| PlainCollectionHeader {
-        equiv_kind: element_equiv_kind(EK_COMPLETE, element),
+    let header = |elements: &[&TypeIdentifier], written| PlainCollectionHeader {
+        equiv_kind: element_equiv_kind(elements),
         element_flags: flags(written),
     };
     Ok(Some(match object {
         CompleteTypeObject::Sequence(s) => {
             let element = minimal_identifier(&s.element.common.type_id, registry, depth + 1)?;
-            let header = header(&element, s.element.common.element_flags);
+            let header = header(&[&element], s.element.common.element_flags);
             match u8::try_from(s.bound) {
                 Ok(small) => TypeIdentifier::PlainSequenceSmall {
                     header,
@@ -377,7 +377,7 @@ fn plain_collection(
         }
         CompleteTypeObject::Array(a) => {
             let element = minimal_identifier(&a.element.common.type_id, registry, depth + 1)?;
-            let header = header(&element, a.element.common.element_flags);
+            let header = header(&[&element], a.element.common.element_flags);
             let small: Option<Vec<u8>> = a
                 .bound_seq
                 .iter()
@@ -399,7 +399,7 @@ fn plain_collection(
         CompleteTypeObject::Map(m) => {
             let element = minimal_identifier(&m.element.common.type_id, registry, depth + 1)?;
             let key = minimal_identifier(&m.key.common.type_id, registry, depth + 1)?;
-            let header = header(&element, m.element.common.element_flags);
+            let header = header(&[&key, &element], m.element.common.element_flags);
             let key_flags = flags(m.key.common.element_flags);
             match u8::try_from(m.bound) {
                 Ok(small) => TypeIdentifier::PlainMapSmall {
@@ -422,20 +422,22 @@ fn plain_collection(
     }))
 }
 
-/// The `equiv_kind` a plain collection header carries once its element has
-/// been projected.
+/// The `equiv_kind` a plain collection header carries once its element
+/// (and the key of a map) has been projected.
 ///
-/// §7.3.4.6.2 lets the header say `EK_BOTH` when the element identifier is
-/// the same in both forms, and names the element's own equivalence kind
-/// otherwise. A complete element becomes a minimal one under this
-/// projection, so an `EK_COMPLETE` header becomes `EK_MINIMAL`; a header
-/// that already said `EK_BOTH` is left alone, because a fully descriptive
-/// element is unchanged.
-fn element_equiv_kind(source: u8, projected: &TypeIdentifier) -> u8 {
-    match projected {
-        TypeIdentifier::EquivalenceHashMinimal(_) => EK_MINIMAL,
-        _ if source == EK_COMPLETE => EK_BOTH,
-        _ => source,
+/// §7.3.4.6.1: `EK_BOTH` when every one of them is fully descriptive, the
+/// same in both forms; the minimal form's own kind otherwise. A projected
+/// element that is itself a plain collection of a hashed type is not fully
+/// descriptive: the header said `EK_BOTH` for it while CycloneDDS writes
+/// `EK_MINIMAL`.
+fn element_equiv_kind(projected: &[&TypeIdentifier]) -> u8 {
+    if projected
+        .iter()
+        .all(|element| element.is_fully_descriptive())
+    {
+        EK_BOTH
+    } else {
+        EK_MINIMAL
     }
 }
 
@@ -632,6 +634,199 @@ fn bitmask(b: &CompleteBitmaskType) -> MinimalBitmaskType {
             })
             .collect(),
     }
+}
+
+/// The minimal `TypeIdentifier` of `id` with every key member of every
+/// structure it reaches marked `IS_MUST_UNDERSTAND`.
+///
+/// DDS-XTypes 1.3 §7.2.2.4.4.4.8 (1.4 Beta 1 §7.2.3.2.4.4.8) gives a key
+/// member the "must understand" attribute always, and 1.4 Beta 1 §7.3.3.4
+/// (the resolution of DDSXTY14-64) encodes the attribute in the member's
+/// `IS_MUST_UNDERSTAND` bit, which `MemberFlagMinimalMask` keeps in the
+/// minimal object and so in the minimal hash. A `TypeObject` that leaves
+/// the bit off a key member — Cyclone DDS's `idlc` of 11.0.1 and of
+/// `master`, measured with member flags `0x21` on `ShapeType.color` —
+/// therefore names another minimal identifier than the same IDL lowered by
+/// the clause. This function is the reading under which `IS_KEY` implies
+/// the attribute, as §7.2.2.4.4.4.8 states it: it sets the bit
+/// on every key member, rewrites every type the object names in the same
+/// way and hashes the result, so two objects that differ only in that bit
+/// come out as the same identifier. It is what
+/// [`crate::assignability::KeyMustUnderstand::ImpliedByKey`] compares.
+///
+/// The identifier is first projected onto its minimal form
+/// ([`minimal_identifier`]). A strongly connected component is not
+/// rewritten (its hash covers the whole component) and is reported as
+/// [`ToMinimalError::StronglyConnectedComponent`]; an object the registry
+/// does not hold as [`ToMinimalError::UnresolvedDependency`].
+///
+/// zerodds-lint: recursion-depth 64 (plain-collection element nesting
+/// and registered dependencies; bounded by [`MAX_DEPENDENCY_DEPTH`],
+/// which returns [`ToMinimalError::TooDeep`])
+pub(crate) fn key_must_understand_identifier(
+    id: &TypeIdentifier,
+    registry: &TypeRegistry,
+    depth: u32,
+) -> Result<TypeIdentifier, ToMinimalError> {
+    if depth > MAX_DEPENDENCY_DEPTH {
+        return Err(ToMinimalError::TooDeep);
+    }
+    let id = minimal_identifier(id, registry, depth)?;
+    let rewrite =
+        |element: &TypeIdentifier| key_must_understand_identifier(element, registry, depth + 1);
+    Ok(match &id {
+        TypeIdentifier::None
+        | TypeIdentifier::Primitive(_)
+        | TypeIdentifier::String8Small { .. }
+        | TypeIdentifier::String8Large { .. }
+        | TypeIdentifier::String16Small { .. }
+        | TypeIdentifier::String16Large { .. } => id.clone(),
+        TypeIdentifier::PlainSequenceSmall {
+            header,
+            bound,
+            element,
+        } => TypeIdentifier::PlainSequenceSmall {
+            header: *header,
+            bound: *bound,
+            element: alloc::boxed::Box::new(rewrite(element)?),
+        },
+        TypeIdentifier::PlainSequenceLarge {
+            header,
+            bound,
+            element,
+        } => TypeIdentifier::PlainSequenceLarge {
+            header: *header,
+            bound: *bound,
+            element: alloc::boxed::Box::new(rewrite(element)?),
+        },
+        TypeIdentifier::PlainArraySmall {
+            header,
+            array_bounds,
+            element,
+        } => TypeIdentifier::PlainArraySmall {
+            header: *header,
+            array_bounds: array_bounds.clone(),
+            element: alloc::boxed::Box::new(rewrite(element)?),
+        },
+        TypeIdentifier::PlainArrayLarge {
+            header,
+            array_bounds,
+            element,
+        } => TypeIdentifier::PlainArrayLarge {
+            header: *header,
+            array_bounds: array_bounds.clone(),
+            element: alloc::boxed::Box::new(rewrite(element)?),
+        },
+        TypeIdentifier::PlainMapSmall {
+            header,
+            bound,
+            element,
+            key_flags,
+            key,
+        } => TypeIdentifier::PlainMapSmall {
+            header: *header,
+            bound: *bound,
+            element: alloc::boxed::Box::new(rewrite(element)?),
+            key_flags: *key_flags,
+            key: alloc::boxed::Box::new(rewrite(key)?),
+        },
+        TypeIdentifier::PlainMapLarge {
+            header,
+            bound,
+            element,
+            key_flags,
+            key,
+        } => TypeIdentifier::PlainMapLarge {
+            header: *header,
+            bound: *bound,
+            element: alloc::boxed::Box::new(rewrite(element)?),
+            key_flags: *key_flags,
+            key: alloc::boxed::Box::new(rewrite(key)?),
+        },
+        TypeIdentifier::EquivalenceHashMinimal(hash) => {
+            let object = registry
+                .get_minimal(hash)
+                .ok_or(ToMinimalError::UnresolvedDependency { hash: *hash })?;
+            let rewritten = key_must_understand_object(object, &rewrite)?;
+            let rewritten_hash =
+                compute_minimal_hash_with(&rewritten, registry.minimal_member_trailing_octet())
+                    .map_err(|_| ToMinimalError::Hash)?;
+            TypeIdentifier::EquivalenceHashMinimal(rewritten_hash)
+        }
+        TypeIdentifier::StronglyConnectedComponent(_) => {
+            return Err(ToMinimalError::StronglyConnectedComponent);
+        }
+        // `minimal_identifier` leaves no complete hash behind and refuses
+        // an extended identifier; both arms are here for the match alone.
+        TypeIdentifier::EquivalenceHashComplete(hash) => {
+            return Err(ToMinimalError::UnresolvedDependency { hash: *hash });
+        }
+        TypeIdentifier::Extended { discriminator, .. } => {
+            return Err(ToMinimalError::UnknownIdentifier {
+                discriminator: *discriminator,
+            });
+        }
+    })
+}
+
+/// One minimal object as [`key_must_understand_identifier`] reads it: the
+/// key members of a structure with `IS_MUST_UNDERSTAND` set, and every
+/// type identifier the object names passed through `rewrite`.
+fn key_must_understand_object<F>(
+    object: &MinimalTypeObject,
+    rewrite: &F,
+) -> Result<MinimalTypeObject, ToMinimalError>
+where
+    F: Fn(&TypeIdentifier) -> Result<TypeIdentifier, ToMinimalError>,
+{
+    let mut object = object.clone();
+    match &mut object {
+        MinimalTypeObject::Alias(a) => {
+            a.body.common.related_type = rewrite(&a.body.common.related_type)?;
+        }
+        MinimalTypeObject::Struct(s) => {
+            if s.header.base_type != TypeIdentifier::None {
+                s.header.base_type = rewrite(&s.header.base_type)?;
+            }
+            for member in &mut s.member_seq {
+                member.common.member_type_id = rewrite(&member.common.member_type_id)?;
+                if member.common.member_flags.has(StructMemberFlag::IS_KEY) {
+                    member.common.member_flags = StructMemberFlag(
+                        member.common.member_flags.0 | StructMemberFlag::IS_MUST_UNDERSTAND,
+                    );
+                }
+            }
+        }
+        MinimalTypeObject::Union(u) => {
+            u.discriminator.common.type_id = rewrite(&u.discriminator.common.type_id)?;
+            for member in &mut u.member_seq {
+                member.common.type_id = rewrite(&member.common.type_id)?;
+            }
+        }
+        MinimalTypeObject::Sequence(c) => {
+            c.element.common.type_id = rewrite(&c.element.common.type_id)?;
+        }
+        MinimalTypeObject::Array(c) => {
+            c.element.common.type_id = rewrite(&c.element.common.type_id)?;
+        }
+        MinimalTypeObject::Map(c) => {
+            c.key.common.type_id = rewrite(&c.key.common.type_id)?;
+            c.element.common.type_id = rewrite(&c.element.common.type_id)?;
+        }
+        // No type of these names a member type a key could sit in: an
+        // annotation is no data type, the rest hold values and bit
+        // positions.
+        MinimalTypeObject::Annotation(_)
+        | MinimalTypeObject::Bitset(_)
+        | MinimalTypeObject::Enumerated(_)
+        | MinimalTypeObject::Bitmask(_) => {}
+        MinimalTypeObject::Extended { type_kind, .. } => {
+            return Err(ToMinimalError::ExtendedTypeKind {
+                type_kind: *type_kind,
+            });
+        }
+    }
+    Ok(object)
 }
 
 #[cfg(test)]

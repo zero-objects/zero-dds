@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 //! The Kotlin column over a bounded collection whose elements are
-//! references, read from the octets the Rust column recorded.
+//! references, read from the octets another implementation wrote.
 //!
 //! # What this measures
 //!
@@ -45,7 +45,7 @@
 //! an `IntArray`, `IntArray.copyOf` answers an `IntArray`, and that
 //! shape compiled throughout. It would measure nothing.
 //!
-//! # Why the read direction and against a recorded file
+//! # Why the read direction and against the expected-bytes table
 //!
 //! The write direction never reached the decoder and so never reached
 //! the defect — the matrix records `wrote NB` beside a `.jsn.err` for
@@ -54,9 +54,12 @@
 //! corpus sample, so a column that compiles but mis-reads is a failure
 //! here too and not a pass.
 //!
-//! The octets are `tests/interop-results/<case>/zerodds-rust/`, which is
-//! what every other column in the ledger is held against. A constant
-//! here would be a third opinion about the wire.
+//! The octets are a vendor's, from `tests/interop-corpus/expected-bytes.tsv`
+//! (decision 3 of `internal/release/rc8-test-suite.md`), read under that
+//! vendor's dialect: Cyclone's for the two sequences, Fast DDS's for the
+//! map. No column of this project is read. One test per case, each under
+//! the 25 s of a test with `kotlinc`; they run in the Kotlin codegen jobs
+//! (`ci/integration_scenarios.py`, `CODEGEN["kotlin"]`).
 //!
 //! # Cost
 //!
@@ -65,25 +68,13 @@
 //! `matrix/gen-zerodds-kotlin.sh` is the full sweep.
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stdout)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use zerodds_wire_probe::canonical::{canonicalise, difference, text};
 use zerodds_wire_probe::encode::model_from_idl;
+use zerodds_wire_probe::expected::{row_of, table};
 
-/// The cases, and the element storage each one is here for.
-const CASES: [(&str, &str); 3] = [
-    ("sequence-string", "a bounded sequence of a boxed String"),
-    (
-        "sequence-wstring",
-        "the same through the wide character width",
-    ),
-    (
-        "map-bounded",
-        "a bounded map, whose entries are a holder class",
-    ),
-];
-
-/// The encoding the octets were recorded in.
+/// The encoding the octets are read in.
 const ENCODING: &str = "plain-cdr2";
 
 fn repository_root() -> PathBuf {
@@ -107,140 +98,128 @@ fn kotlin_is_here() -> bool {
     }
 }
 
-#[test]
-fn the_kotlin_column_reads_a_bounded_collection_of_references() {
+/// The Kotlin probe reads the table's `xcdr2` little-endian octets of
+/// `case`, under the dialect of their first writer, back to the sample.
+fn reads_the_octets_of_the_table(case: &str, purpose: &str) {
     if !kotlin_is_here() {
         return;
     }
+    if let Err(failure) = read(case) {
+        panic!("the Kotlin column does not read {case} ({purpose}): {failure}");
+    }
+}
+
+fn read(case: &str) -> Result<(), String> {
     let root = repository_root();
     let probe = root.join("tools/wireprobe/wireprobe-zerodds-kotlin");
-    let scratch = std::env::temp_dir().join("zd-kotlin-bounded-collections");
+    let scratch = Path::new(env!("CARGO_TARGET_TMPDIR")).join("kotlin-bounded-collections");
     std::fs::create_dir_all(&scratch).expect("a directory for the values");
+    let table = table(&root).expect("tests/interop-corpus/expected-bytes.tsv");
+    let directory = root.join("tests/interop-corpus").join(case);
+    let (row, dialect) =
+        row_of(&table, case, "xcdr2", "le").ok_or("the table has no xcdr2 le row")?;
+    let octets_file = scratch.join(format!("{case}.{dialect}.bin"));
+    let octets: Vec<u8> = (0..row.hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&row.hex[i..i + 2], 16).expect("hex"))
+        .collect();
+    std::fs::write(&octets_file, octets).expect("the vendor's octets");
+    // The corpus names its root in `type`; reading it off the IDL takes the
+    // last declaration, which is the wrong root wherever a case declares
+    // two.
+    let type_name = std::fs::read_to_string(directory.join("type"))
+        .expect("the corpus case names its root")
+        .trim()
+        .to_string();
+    let values = scratch.join(format!("{case}.jsn"));
 
-    let mut checked = 0;
-    let mut failures = Vec::new();
-
-    for (case, purpose) in CASES {
-        let directory = root.join("tests/interop-corpus").join(case);
-        let recorded = root
-            .join("tests/interop-results")
-            .join(case)
-            .join("zerodds-rust")
-            .join(format!("{ENCODING}.le.bin"));
-        if !recorded.exists() {
-            failures.push(format!(
-                "{case} ({purpose}): the Rust column records no octets at {}",
-                recorded.display()
-            ));
-            continue;
-        }
-        // The corpus names its root in `type`; reading it off the IDL
-        // takes the last declaration, which is the wrong root wherever a
-        // case declares two.
-        let type_name = std::fs::read_to_string(directory.join("type"))
-            .expect("the corpus case names its root")
-            .trim()
-            .to_string();
-        let values = scratch.join(format!("{case}.jsn"));
-
-        let read = Command::new(&probe)
-            .current_dir(&root)
-            .args(["--idl", &directory.join("type.idl").to_string_lossy()])
-            .args(["--type", &type_name])
-            .args(["--in", &recorded.to_string_lossy()])
-            .args(["--encoding", ENCODING, "--endian", "le"])
-            .args(["--values-out", &values.to_string_lossy()])
-            .output();
-        let output = match read {
-            Ok(output) => output,
-            Err(error) => {
-                failures.push(format!("{case}: the probe did not start ({error})"));
-                continue;
-            }
-        };
-        if !output.status.success() {
-            // The exit code is the verdict —
-            // `docs/specs/zerodds-verdicts-1.0.md`. Exit 7 is this
-            // generator's own defect, which is what a file that does not
-            // compile is, so it is reported beside the message rather
-            // than folded into "refused".
-            failures.push(format!(
-                "{case} ({purpose}): exit {} — {}",
-                output.status.code().unwrap_or(-1),
-                String::from_utf8_lossy(&output.stderr)
-                    .lines()
-                    .take(2)
-                    .collect::<Vec<_>>()
-                    .join(" / ")
-            ));
-            continue;
-        }
-
-        // Both sides through `canonical.rs`, and not a text comparison:
-        // the spelling of a float and the escape of a character are the
-        // printer's, and the one form two implementations' values can be
-        // compared in is the canonical one.
-        let source = std::fs::read_to_string(directory.join("type.idl")).expect("the IDL");
-        let ast = match model_from_idl(&source, &directory.join("type.idl").to_string_lossy()) {
-            Ok(ast) => ast,
-            Err(error) => {
-                failures.push(format!("{case}: the model does not build ({error:?})"));
-                continue;
-            }
-        };
-        let Some(root_type) = ast
-            .types()
-            .find(|(_, node)| node.name.as_str() == type_name.rsplit("::").next().unwrap_or(""))
-            .map(|(id, _)| id)
-        else {
-            failures.push(format!("{case}: `{type_name}` is not a type in this model"));
-            continue;
-        };
-
-        let produced: serde_json::Value = match std::fs::read_to_string(&values)
-            .map_err(|error| error.to_string())
-            .and_then(|text| serde_json::from_str(&text).map_err(|error| error.to_string()))
-        {
-            Ok(value) => value,
-            Err(error) => {
-                failures.push(format!("{case}: the values are not JSON ({error})"));
-                continue;
-            }
-        };
-        let expected: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(directory.join("values.json")).expect("the sample"),
-        )
-        .expect("the corpus sample is JSON");
-
-        let (produced, expected) = match (
-            canonicalise(&ast, root_type, &produced, "read"),
-            canonicalise(&ast, root_type, &expected, "sample"),
-        ) {
-            (Ok(produced), Ok(expected)) => (produced, expected),
-            (Err(error), _) | (_, Err(error)) => {
-                failures.push(format!("{case}: the values are not canonical ({error:?})"));
-                continue;
-            }
-        };
-        if let Some(where_) = difference(&expected, &produced, case) {
-            failures.push(format!(
-                "{case} ({purpose}): {where_:?}\n    sample {}\n    read   {}",
-                text(&expected),
-                text(&produced)
-            ));
-            continue;
-        }
-        checked += 1;
+    let output = Command::new(&probe)
+        .current_dir(&root)
+        .args(["--idl", &directory.join("type.idl").to_string_lossy()])
+        .args(["--type", &type_name])
+        .args(["--in", &octets_file.to_string_lossy()])
+        .args([
+            "--encoding",
+            ENCODING,
+            "--endian",
+            "le",
+            "--dialect",
+            dialect,
+        ])
+        .args(["--values-out", &values.to_string_lossy()])
+        .output()
+        .map_err(|error| format!("the probe did not start ({error})"))?;
+    if !output.status.success() {
+        // The exit code is the verdict — `docs/specs/zerodds-verdicts-1.0.md`.
+        // Exit 7 is this generator's own defect, which is what a file that
+        // does not compile is, so it is reported beside the message rather
+        // than folded into "refused".
+        return Err(format!(
+            "exit {} — {}",
+            output
+                .status
+                .code()
+                .map_or_else(|| "by a signal".to_string(), |code| code.to_string()),
+            String::from_utf8_lossy(&output.stderr)
+                .lines()
+                .take(2)
+                .collect::<Vec<_>>()
+                .join(" / ")
+        ));
     }
 
-    assert!(
-        failures.is_empty(),
-        "the Kotlin column does not read a bounded collection of references:\n  {}",
-        failures.join("\n  ")
+    // Both sides through `canonical.rs`, and not a text comparison: the
+    // spelling of a float and the escape of a character are the printer's,
+    // and the one form two implementations' values can be compared in is
+    // the canonical one.
+    let source = std::fs::read_to_string(directory.join("type.idl")).expect("the IDL");
+    let ast = model_from_idl(&source, &directory.join("type.idl").to_string_lossy())
+        .map_err(|error| format!("the model does not build ({error:?})"))?;
+    let short_name = type_name.rsplit("::").next().ok_or("an empty type name")?;
+    let root_type = ast
+        .types()
+        .find(|(_, node)| node.name.as_str() == short_name)
+        .map(|(id, _)| id)
+        .ok_or_else(|| format!("`{type_name}` is not a type in this model"))?;
+    let produced: serde_json::Value = std::fs::read_to_string(&values)
+        .map_err(|error| error.to_string())
+        .and_then(|text| serde_json::from_str(&text).map_err(|error| error.to_string()))
+        .map_err(|error| format!("the values are not JSON ({error})"))?;
+    let expected: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(directory.join("values.json")).expect("the sample"),
+    )
+    .expect("the corpus sample is JSON");
+    let produced = canonicalise(&ast, root_type, &produced, "read")
+        .map_err(|error| format!("the values are not canonical ({error:?})"))?;
+    let expected = canonicalise(&ast, root_type, &expected, "sample")
+        .map_err(|error| format!("the sample is not canonical ({error:?})"))?;
+    if let Some(where_) = difference(&expected, &produced, case) {
+        return Err(format!(
+            "{where_:?}\n    sample {}\n    read   {}",
+            text(&expected),
+            text(&produced)
+        ));
+    }
+    Ok(())
+}
+
+#[test]
+fn xtypes_7_3_1_2_1_12_3_a_bounded_sequence_of_a_boxed_string_is_read() {
+    reads_the_octets_of_the_table("sequence-string", "a bounded sequence of a boxed String");
+}
+
+#[test]
+fn xtypes_7_3_1_2_1_12_3_a_bounded_sequence_of_a_wide_string_is_read() {
+    reads_the_octets_of_the_table(
+        "sequence-wstring",
+        "the same through the wide character width",
     );
-    assert_eq!(
-        checked,
-        CASES.len(),
-        "every case has to be measured, not skipped into a pass"
+}
+
+#[test]
+fn xtypes_7_3_1_2_1_12_3_a_bounded_map_of_holder_entries_is_read() {
+    reads_the_octets_of_the_table(
+        "map-bounded",
+        "a bounded map, whose entries are a holder class",
     );
 }

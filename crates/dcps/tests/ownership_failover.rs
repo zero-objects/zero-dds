@@ -26,7 +26,7 @@ use zerodds_dcps::{
 };
 
 #[test]
-fn notify_writer_liveliness_lost_clears_owner() {
+fn dcps_2_2_3_9_2_notify_writer_liveliness_lost_clears_owner() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(220, DomainParticipantQos::default());
     let topic = p
@@ -54,7 +54,7 @@ fn notify_writer_liveliness_lost_clears_owner() {
 }
 
 #[test]
-fn notify_participant_liveliness_lost_clears_all_writers_with_prefix() {
+fn dcps_2_2_3_9_2_notify_participant_liveliness_lost_clears_all_writers_with_prefix() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(221, DomainParticipantQos::default());
     let topic = p

@@ -12,8 +12,8 @@ Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden W
 
 **Repo:** `crates/lang-cst/src/python/`, `crates/lang-render/src/python.rs`
 
-**Tests:** `crates/lang-render/src/python.rs::tests` (24 Tests), darunter `a_class_body_is_indented_by_four_and_closed_by_the_dedent_alone`, `a_class_with_a_docstring_and_no_members_is_still_legal_python`, `an_empty_body_takes_the_pass_the_tree_carries`, `an_import_carries_its_alias_and_its_from_form`, `a_call_takes_positional_and_keyword_arguments_in_written_order`;
-querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/python.rs::tests` (24 Tests), darunter `xtypes_7_5_1_a_class_body_is_indented_by_four_and_closed_by_the_dedent_alone`, `xtypes_7_5_1_a_class_with_a_docstring_and_no_members_is_still_legal_python`, `xtypes_7_5_1_an_empty_body_takes_the_pass_the_tree_carries`, `xtypes_7_5_1_an_import_carries_its_alias_and_its_from_form`, `xtypes_7_5_1_a_call_takes_positional_and_keyword_arguments_in_written_order`;
+querschnittlich `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/rule/python.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/python.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_python.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/python`, Endpoint-SDK `endpoints/python`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,8 +78,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::every_idl_primitive_reaches_an_annotation_that_states_its_width`,
-`crates/lang-rules/src/adapter/python.rs::tests::every_width_alias_states_its_bits_and_its_signedness`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_2_every_idl_primitive_reaches_an_annotation_that_states_its_width`,
+`crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_2_every_width_alias_states_its_bits_and_its_signedness`
 
 **Status:** done
 
@@ -89,8 +89,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::a_long_double_is_the_decimal_text_and_never_a_python_float`,
-`crates/lang-rules/src/default_python.rs::tests::a_long_double_is_a_float128_and_never_a_float`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_2_a_long_double_is_the_decimal_text_and_never_a_python_float`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_long_double_is_a_float128_and_never_a_float`
 
 **Status:** done
 
@@ -100,8 +100,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::a_sequence_is_a_list_and_an_array_is_a_tuple_of_its_length`,
-`crates/lang-rules/src/adapter/python.rs::tests::a_bound_reaches_the_annotation_and_an_unbounded_one_leaves_it_alone`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_4_3_a_sequence_is_a_list_and_an_array_is_a_tuple_of_its_length`,
+`crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_4_3_a_bound_reaches_the_annotation_and_an_unbounded_one_leaves_it_alone`
 
 **Status:** done
 
@@ -111,8 +111,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::a_map_is_a_list_of_pairs_and_never_a_dict`,
-`crates/lang-rules/tests/python_codec.rs::a_map_entry_is_written_into_as_a_list_and_answered_as_a_tuple`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_4_3_a_map_is_a_list_of_pairs_and_never_a_dict`,
+`crates/lang-rules/tests/python_codec.rs::xtypes_7_2_2_4_3_a_map_entry_is_written_into_as_a_list_and_answered_as_a_tuple`
 
 **Status:** done
 
@@ -122,8 +122,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::an_optional_member_is_optional_and_defaults_to_none`,
-`crates/lang-rules/tests/python_codec.rs::an_optional_member_is_tested_against_none_by_identity`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_4_4_4_7_an_optional_member_is_optional_and_defaults_to_none`,
+`crates/lang-rules/tests/python_codec.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_is_tested_against_none_by_identity`
 
 **Status:** done
 
@@ -133,8 +133,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::an_enumeration_is_an_intenum_and_a_member_of_it_is_an_int`,
-`crates/lang-rules/src/adapter/python.rs::tests::a_bitmask_is_an_intflag_and_a_wide_shift_needs_no_suffix`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_4_1_1_an_enumeration_is_an_intenum_and_a_member_of_it_is_an_int`,
+`crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_2_2_4_1_1_a_bitmask_is_an_intflag_and_a_wide_shift_needs_no_suffix`
 
 **Status:** done
 
@@ -144,8 +144,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::a_constant_outside_its_idl_range_is_refused_although_python_would_hold_it`,
-`crates/lang-rules/src/adapter/python.rs::tests::a_constant_is_final_and_carries_its_idl_type`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::idl_7_4_1_4_a_constant_outside_its_idl_range_is_refused_although_python_would_hold_it`,
+`crates/lang-rules/src/adapter/python.rs::tests::idl_7_4_1_4_a_constant_is_final_and_carries_its_idl_type`
 
 **Status:** done
 
@@ -155,9 +155,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::an_identifier_that_is_a_python_keyword_is_escaped_and_the_idl_name_is_kept`,
-`crates/lang-rules/src/adapter/python.rs::tests::a_member_named_after_a_builtin_the_annotations_use_is_escaped_too`,
-`crates/lang-rules/src/adapter/python.rs::tests::two_names_that_would_escape_onto_one_are_refused`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::idl_7_2_3_an_identifier_that_is_a_python_keyword_is_escaped_and_the_idl_name_is_kept`,
+`crates/lang-rules/src/adapter/python.rs::tests::idl_7_2_3_a_member_named_after_a_builtin_the_annotations_use_is_escaped_too`,
+`crates/lang-rules/src/adapter/python.rs::tests::idl_7_2_3_two_names_that_would_escape_onto_one_are_refused`
 
 **Status:** done
 
@@ -167,8 +167,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::a_module_is_a_nested_class_and_a_reference_is_written_from_the_root`,
-`crates/lang-rules/src/adapter/python.rs::tests::a_module_reopened_beside_a_nested_one_is_one_class`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::idl_7_5_2_a_module_is_a_nested_class_and_a_reference_is_written_from_the_root`,
+`crates/lang-rules/src/adapter/python.rs::tests::idl_7_5_2_a_module_reopened_beside_a_nested_one_is_one_class`
 
 **Status:** done
 
@@ -178,9 +178,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/python`
 
-**Tests:** `crates/lang-rules/tests/python_names_its_runtime.rs::the_generated_module_names_nothing_the_runtime_does_not_have`,
-`crates/lang-rules/tests/python_names_its_runtime.rs::every_policy_the_backend_writes_is_one_the_runtime_accepts`,
-`crates/lang-rules/tests/python_names_its_runtime.rs::every_operation_the_walks_ask_for_is_one_the_runtime_answers_to`
+**Tests:** `crates/lang-rules/tests/python_names_its_runtime.rs::xtypes_7_4_the_generated_module_names_nothing_the_runtime_does_not_have`,
+`crates/lang-rules/tests/python_names_its_runtime.rs::xtypes_7_4_every_policy_the_backend_writes_is_one_the_runtime_accepts`,
+`crates/lang-rules/tests/python_names_its_runtime.rs::xtypes_7_4_every_operation_the_walks_ask_for_is_one_the_runtime_answers_to`
 
 **Status:** done
 
@@ -190,9 +190,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_python.rs`
 
-**Tests:** `crates/lang-rules/src/default_python.rs::tests::a_structure_of_primitives_names_every_required_field`,
-`crates/lang-rules/src/default_python.rs::tests::the_closure_reaches_every_defaulter_a_batch_calls`,
-`crates/lang-rules/src/default_python.rs::tests::a_typedef_and_its_target_are_one_function_and_it_does_not_call_itself`
+**Tests:** `crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_structure_of_primitives_names_every_required_field`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_9_the_closure_reaches_every_defaulter_a_batch_calls`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_typedef_and_its_target_are_one_function_and_it_does_not_call_itself`
 
 **Status:** done
 
@@ -204,7 +204,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/python.rs`, `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -214,7 +214,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/python.rs`, `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::a_construct_with_no_python_data_form_is_named_and_not_left_out`
+**Tests:** `crates/lang-rules/src/adapter/python.rs::tests::xtypes_7_4_a_construct_with_no_python_data_form_is_named_and_not_left_out`
 
 **Status:** done
 
@@ -224,17 +224,17 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/python.rs`, `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/lang-rules/tests/python_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+**Tests:** `crates/lang-rules/tests/python_codec.rs::xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks`
 
 **Status:** done
 
 ### §7.4 Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten
 
-**Spec:** §7.4 — Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten. Gemessen gegen `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`, nicht neben den anderen Spalten: drei Spalten, die sich gemeinsam bewegt haben, ähneln einander weiterhin.
+**Spec:** §7.4 — Die Oktette der Spalte werden gegen eine feste Aufzeichnung gehalten: `tests/interop-corpus/expected-bytes.tsv`, die Oktette der Hersteller, nicht die anderen Spalten: drei Spalten, die sich gemeinsam bewegt haben, ähneln einander weiterhin.
 
 **Repo:** `crates/lang-rules/src/emit/python.rs`, `crates/lang-rules/src/adapter/python.rs`
 
-**Tests:** `crates/wire-probe/tests/three_column_gate.rs::the_three_columns_agree`
+**Tests:** `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::specification`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::cyclone`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::rti`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::fastdds`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::omniorb`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::tao`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::jacorb`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::opendds`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::ros_fastrtps`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::ros_cyclone`
 
 **Status:** done
 
@@ -244,9 +244,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/python.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -258,8 +258,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -269,8 +269,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-python-gen/`, `tools/wireprobe/wireprobe-zerodds-python-walk`, `tools/wireprobe/wireprobe-python-walk-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -278,8 +277,16 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 ## Audit-Status
 
-24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-python-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (Job `merge-rust-lang-render`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 33 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-wireprobe-python-gen --all-targets` (Job `merge-rust-wireprobe-python-gen`) — 10 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-python` (Job `merge-codegen-python`) — 6 Tests grün.
+
+58 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

@@ -10,6 +10,8 @@ Three files:
 | `patterns.txt` | 518 bit patterns and what this crate printed for each. Generated. |
 | `quad_oracle.c` | the oracle program. Reads `patterns.txt`, writes the comparison. |
 | `x86_64-gcc-14.2.txt` | what the oracle answered, measured on the Linux test host. |
+| `quad_ops.c` | the arithmetic oracle. Reads `patterns.txt`, writes `a b a+b a-b a*b a/b` per operand pair. |
+| `x86_64-gcc-14.2-ops.txt` | what it answered for 6072 pairs; `tests/gcc_binary128_ops.rs` compares `src/arith.rs` against it. |
 
 `x86_64-gcc-14.2.txt` holds three columns per row: the pattern, what
 libquadmath printed for it at 37 significant digits, and what
@@ -32,6 +34,17 @@ ssh <host> 'cd /tmp/oracle && gcc -O2 -o quad_oracle quad_oracle.c -lquadmath \
 ```
 
 Measured against `gcc (Debian 14.2.0-19) 14.2.0`, `Linux x86_64`.
+
+The arithmetic oracle is run the same way:
+
+```sh
+scp crates/float128/tests/oracle/{quad_ops.c,patterns.txt} <host>:/tmp/oracle/
+ssh <host> 'cd /tmp/oracle && gcc -O2 -o quad_ops quad_ops.c \
+    && ./quad_ops < patterns.txt' > crates/float128/tests/oracle/x86_64-gcc-14.2-ops.txt
+```
+
+Its pairs come from `patterns.txt` and a fixed seed, so re-running it
+gives the same file; the rows are GCC's answers, not this crate's.
 
 ## When a test here fails
 

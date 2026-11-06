@@ -1,0 +1,111 @@
+.TH ZERODDS-GRPC-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-grpc-bridged \- Bridge-Daemon von DDS nach gRPC
+.SH ÜBERSICHT
+.B zerodds-grpc-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-bind\fR \fIADR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-reflection\fR]
+[\fB\-\-topic\fR \fIDDS:SVC\fR]...
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-grpc-bridged
+stellt jedes zugeordnete DDS-Topic als gRPC-Dienst bereit:
+.B Publish
+schreibt die Nutzlast von
+.I Sample
+in das Topic,
+.B Subscribe
+gibt das nächste Sample zurück (eines je Aufruf). Die Nutzlast sind opake
+Bytes, die DDS-Nutzdaten unverändert. TLS mit ALPN
+.IR h2 ,
+mTLS, Bearer- und JWT-Authentifizierung, eine Topic-ACL und der
+Reflection-Dienst werden bedient; der Header
+.I grpc-timeout
+wird nicht angewendet. Implementiert
+.IR docs/specs/zerodds-grpc-bridge-1.0.md .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+YAML-Konfiguration (Spec \(sc3). Siehe
+.BR zerodds-grpc-bridged.yaml (5).
+.TP
+.BR \-\-bind =\fIADR\fR
+HTTP/2-Bind-Adresse. Standard:
+.IR 0.0.0.0:50051 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-tls\-cert =\fIDATEI\fR
+TLS-Zertifikat, PEM.
+.TP
+.BR \-\-tls\-key =\fIDATEI\fR
+TLS-Schlüssel, PEM.
+.TP
+.BR \-\-tls\-client\-ca =\fIDATEI\fR
+CA-PEM für Client-Zertifikate (mTLS).
+.TP
+.BR \-\-reflection
+Schaltet den gRPC-Reflection-Dienst ein.
+.TP
+.BR \-\-topic =\fIDDS:SVC\fR
+Topic-Zuordnung auf der Kommandozeile, überschreibt die Konfiguration.
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listen-Adresse für Prometheus.
+.PP
+Test-Hooks. Echte Optionen, dokumentiert, weil das Programm sie annimmt und
+eine Option, die niemand findet, auch niemand pflegt.
+.TP
+.BR \-\-once
+Einen Request bedienen, dann beenden.
+.TP
+.BR \-\-idle\-timeout\-ms =\fIN\fR
+Nach \fIN\fR Millisekunden ohne Request beenden.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+SIGTERM und SIGINT beenden den Daemon.
+SIGHUP liest die Konfiguration neu: TLS-Zertifikat und -Schlüssel, die
+Authentifizierungs-Einstellungen und die Topic-ACL gelten ab dann (das
+Zertifikat für neue Verbindungen). Geänderte Binds, Domäne,
+Topic-Zuordnungen, Reflection oder TLS an oder aus brauchen einen Neustart
+und werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.SH EXIT-STATUS
+0 normales Ende, 1 Konfiguration (auch ein Authentifizierungsmodus, der sich
+nicht bedienen lässt, etwa
+.B jwt
+ohne
+.BR auth.jwt.public_key ),
+2 Bind, 3 DDS, 4 TLS.
+.SH DATEIEN
+.I /etc/zerodds/grpc-bridged.yaml .
+.SH SIEHE AUCH
+.BR zerodds-grpc-bridged.yaml (5),
+.BR grpcurl (1).
+.SH AUTOREN
+ZeroDDS Contributors.

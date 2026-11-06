@@ -351,9 +351,14 @@ mod tests {
     }
 
     #[test]
-    fn qos_round_trip() {
-        for q in [QoS::AtMostOnce, QoS::AtLeastOnce, QoS::ExactlyOnce] {
-            assert_eq!(QoS::from_u8(q.to_u8()).unwrap(), q);
+    fn mqtt5_4_1_the_qos_levels_are_0_1_and_2() {
+        for (q, v) in [
+            (QoS::AtMostOnce, 0),
+            (QoS::AtLeastOnce, 1),
+            (QoS::ExactlyOnce, 2),
+        ] {
+            assert_eq!(q.to_u8(), v);
+            assert_eq!(QoS::from_u8(v).unwrap(), q);
         }
         assert!(QoS::from_u8(3).is_err());
     }

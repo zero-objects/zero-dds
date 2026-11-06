@@ -8,40 +8,1447 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **A loaned take, and a type whose fields borrow through a DataReader and
+  a DataWriter** (GitHub #33; `zerodds-dcps` `DataReader::take_loan`,
+  `return_loan_of`, `loan::Loan`, `WriteAs`, `DataWriter::write_as`,
+  `DdsType::BORROWS`, `DdsType::key_material_from_body`; `zerodds-codec`
+  `LoanExt::read_as`, `write`, `Borrowed`; `zerodds-derive`; DDS 1.4
+  §2.2.2.5.3.5, §2.2.2.5.3.20). `take_loan` takes the samples out of the
+  cache as the octets they arrived in, with their `SampleInfo`; from the
+  first call on the reader admits by key members, so what it lends was not
+  decoded. `return_loan_of(&mut loan)` refuses a loan of another reader and
+  leaves a returned loan empty; a reader with a loan that was not returned
+  or dropped is not deleted, alone or with its subscriber or participant
+  (§2.2.2.5.2.6, §2.2.2.5.2.14). `read_as::<Lent<'_>>(i)` reads a derived
+  type with a lifetime lent out of the received datagram; `zerodds_codec::write(&writer, &value)`
+  writes one with borrows of any lifetime through the writer of its
+  `'static` form, whose `decode` refuses. Test
+  `issue_33_a_borrowing_type_is_written_and_read_lent_through_dcps`: the
+  text and the octets read are inside the received body. OPEN-ITEMS 56 is
+  closed.
+- **`derive(DdsType)`: an enum with data as an IDL union, generic types,
+  borrowed fields** (GitHub #33, `rc8-rust-newtype.md`, "Derive route",
+  maintainer's decision of 2026-11-05). An enum whose variants carry data
+  is a `union`: `#[dds(discriminator = "…")]` (an integer, `bool`, `char` or
+  a derived field-less enum, default `i32`), `case` labels written or
+  counted, `default`, `no_member` for a discriminator no case takes, branch
+  `id`/`hashid`/`name`/`bound`, every extensibility; a case with several
+  labels and the `default:` case are `V(D, T)` and go out under the
+  discriminator they were read with. The codec API types a union too:
+  `serialize_union::<T>()` and `branch::<B1>(&d, &value)` with a type-level
+  index, so a value of another branch type does not compile. A generic type
+  is one IDL type per instantiation, its name a template (`Pair_{T}`,
+  `Pair<u32>` → `Pair_unsigned_long`), each with its own `TypeObject` and
+  `TypeIdentifier`; `const` parameters too. A field may be `&'a str`,
+  `&'a [u8]`, `Cow<'a, str>` or `Cow<'a, [u8]>`, which `zerodds_codec::
+  decode` lends out of the received bytes; such a type has no
+  `zerodds_dcps::DdsType` impl, because the loaned take of
+  `rc8-zero-copy.md` is not built (OPEN-ITEMS 56). `DdsMember` no longer
+  reads: `DdsMemberRead<'de>` does, and the derive builds a member's default
+  from its fields. Tests: `crates/zerodds-build/tests/dds_type.rs::
+  xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type` (now
+  also unions as roots, members, in a sequence and as a key, `@mutable`
+  framing, an enumeration discriminator, no member, `Pair<i32>`,
+  `Pair<Inner>`, `Grid<3>`, a borrowed struct; all four encodings against
+  the generated codec), `xtypes_7_4_issue_33_a_c_peer_reads_a_derived_union_
+  and_generic_type`, `issue_33_a_hand_written_union_codec_of_another_branch_
+  type_does_not_compile` (integration-codegen-build);
+  `crates/codec/tests/derive_union_generic_borrowed.rs`. Example:
+  `examples/rust-derive/` with a union, a generic pair and a borrowed view.
+
+- **A union keyed by its discriminator** (DDS-XTypes 1.3 §7.2.2.4.4.4.8,
+  `switch (@key D)`): `#[dds(key)]` on a derived union, and `zerodds-build`
+  carries the annotation (`KeyOnUnionDiscriminator::Carried`, before
+  `Refused`). The union is a keyed topic type whose key holder is the
+  discriminator alone (§7.6.8 step 1); as a key member of a struct only
+  its discriminator is part of that key, and a union without a key
+  discriminator is whole and `@final` there. Tests:
+  `crates/zerodds-build/tests/dds_type.rs::xtypes_7_6_8_a_nested_key_member_is_its_own_final_key_holder`
+  (octets worked by hand from §7.6.8), `…::xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type`
+  (`a_union_keyed_by_its_discriminator`),
+  `crates/codec/tests/derive_union_generic_borrowed.rs::xtypes_7_6_8_the_key_holder_of_a_union_keyed_by_its_discriminator`.
+- **Content filters reach union members** (DDS-XTypes 1.4 Beta 1
+  §7.6.7.1, DDSXTY14-1): a branch by its member's name, the discriminator
+  as `#discriminator`; an expression that names a branch the
+  discriminator does not select is `false` as a whole
+  (`RowAccess::unselected`, `DdsType::field_unselected`). For
+  `derive(DdsType)`, the types `zerodds-build` generates and samples with
+  a run-time type. An enumerated member compares with its enumerator's
+  name in the types `zerodds-build` generates and in `derive(DdsType)`
+  (DDS 1.4 Annex B.2 ENUMERATEDVALUE); before, it had no filter value.
+  Tests: `crates/sql-filter/src/evaluator.rs::tests::xtypes_1_4_7_6_7_1_a_member_the_discriminator_does_not_select_makes_the_filter_false`,
+  `crates/dcps/src/serialized_type.rs::tests::xtypes_1_4_7_6_7_1_a_dynamic_union_branch_the_discriminator_does_not_select`,
+  `crates/codec/tests/derive_union_generic_borrowed.rs::xtypes_1_4_7_6_7_1_a_filter_reads_the_selected_branch_and_the_discriminator`,
+  `crates/zerodds-build/tests/dds_type.rs::xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type`
+  (`a_filter_reads_union_branches_and_the_discriminator`).
+
+- **`long double` constant expressions are evaluated in IEEE binary128**
+  (`zerodds-float128`: the `core::ops` operators `+`, `-`, `*` and `/`,
+  each rounded once to nearest, ties to even; `zerodds-ast`
+  evaluates a `long double` constant, and a `double` or `float` one with
+  a `long double` operand, in them, IDL 4.2 §7.4.1.4.2). Before, such an
+  expression was refused with `EvalError::LongDouble`. A sub-expression
+  beyond the range of binary128, and a floating literal that does not
+  fit the type of the constant it is the value of, is
+  `EvalError::Overflow`. The four operations give the bits GCC's
+  `__float128` gives for 6072 operand pairs (oracle
+  `crates/float128/tests/oracle/quad_ops.c`, test
+  `crates/float128/tests/gcc_binary128_ops.rs`). OPEN-ITEMS 35 is closed.
+- **`#include <orb.idl>` and `#include <TypeCode.idl>` bring the CORBA
+  module** (OMG IDL 4.2 §7.4.6.4.7): the IDL of the CORBA module as the
+  OMG publishes it with CORBA 3.3 is built into the preprocessor
+  (`crates/idl-parse/src/preprocess/corba/`, two transcription changes
+  named in its README) and is read when the caller's loader has no file
+  of that name. Test:
+  `crates/idl-compose/tests/corba_module.rs`.
+- **`zerodds-corba-rust`: a `custom valuetype` is marshaled by the
+  application** (OMG IDL 4.2 §7.4.7.4.4, CORBA 3.3 part 1 §9.5.1). The
+  generated code declares `<Name>CustomMarshal` with `marshal` and
+  `unmarshal`; the generated `ValueMarshal` and the registered factory
+  call it. Test:
+  `crates/corba-rust/tests/compile_check.rs::idl_7_4_7_4_4_a_custom_valuetype_is_marshaled_by_the_application`.
+
+- **The IDL front end checks the scoping, inheritance, component-model
+  and profile rules of OMG IDL 4.2** (`crates/idl-lower`,
+  `crates/idl-parse/src/building_block.rs`). Names resolve as §7.5
+  gives it: a name used in a scope is introduced there and may not be
+  declared again in it (§7.5.2), an inherited name is found through the
+  bases and an ambiguous one is reported with every candidate (§7.5.1).
+  Refused now, with the clause in the message: a base interface named
+  twice, an abstract interface with a concrete base, an inherited
+  operation or attribute redefined (§7.4.3.4.3.2.1); the value
+  inheritance combinations of §7.4.7.4.3 and Table 7-19, `truncatable`
+  on a custom value type (§7.4.7.4.5); a constant outside the range of
+  its type (Table 7-26); a bit position taken twice (§7.4.13.4.3.3);
+  `@range` with max below min and a `@default` or `@range` value that
+  does not fit the element (§8.3.3); a `oneway` operation with a result,
+  an `out` parameter or a `raises` clause (§7.4.6.4.5, §8.3.6.2); a
+  native parameter in a remote interface (§7.4.6.4.4; the setting
+  `native_in_remote_interfaces: Admitted` keeps the TAO and JacORB
+  reading); a malformed `context` string (§7.4.6.4.6); `#pragma ID` or
+  `#pragma prefix` disagreeing with `typeid` or `typeprefix`
+  (§7.4.6.4.1.3); a `\u` escape in a narrow literal (§7.2.6.2.2); an
+  operation named like its interface (§7.5.2); facets, receptacles,
+  homes, port types and connectors that do not name what §7.4.8 to
+  §7.4.11 require. `@oneway(FALSE)` and `@ami(FALSE)` are honoured.
+  IDL that the front end accepted before can be refused by these rules.
+  `zerodds-idlc --idl-profile <P>` reports every construct outside one
+  of the seven profiles of clause 9 (`IDL0023`). Tests:
+  `crates/idl-lower/tests/idl_4_2_rules.rs`,
+  `crates/idl-parse/tests/building_blocks.rs`,
+  `tools/idlc/tests/idl_4_2_gaps.rs` (every probe of the gap scan
+  against the specification's answer).
+
+- **`zerodds-codec` and `zerodds-derive`: a DDS topic type defined in Rust**
+  (GitHub #33, `rc8-rust-newtype.md`, "Derive route" and "Codec API").
+  `#[derive(DdsType)]` on a struct with named fields writes the type's
+  description (`zerodds_wire::codec::DdsTypeInfo`: the members' Rust types
+  as a type list, the declaration as a constant), its codec
+  (`DdsSerialize`, `DdsDeserialize<'de>`), its `DdsMember` impl and the
+  `zerodds_dcps::DdsType` impl, and `T::idl()` exports the IDL for C, C++
+  and other vendors. Attributes after the IDL annotations: `name`,
+  `extensibility`, `autoid`, `nested`, `codec = "manual"` on the struct;
+  `key`, `id`, `hashid`, `bound`, `name`, `optional`, `with` on a field;
+  `name`, `bit_bound` on a field-less enum and `name`, `value` on a
+  variant. `#[derive(WireRepr)]` with `#[wire(idl = "string")]` reads
+  through `TryFrom<&str>` and writes through `Display`, with an IDL
+  primitive through `TryFrom`/`Into`; such a type works as a member and as
+  the target of `rust_type`. The description becomes IDL and goes through
+  `zerodds-idl-compose`, `zerodds-types` and `zerodds-ast-layout` as a
+  `.idl` file does; the plans drive the serializer of `zerodds-wire`, one
+  per encapsulation. A hand-written codec is checked at compile time:
+  `serialize_struct::<T>()` is typed by `T::Members`, `member` takes the
+  head's type and `end` exists only on the empty list; `@mutable` decoding
+  fills one typed slot per member id. `core::time::Duration` is
+  `DDS::Duration_t`, `std::time::SystemTime` (feature `std` of
+  `zerodds-wire`) `DDS::Time_t`. Tests:
+  `crates/zerodds-build/tests/dds_type.rs::xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type`
+  (integration-codegen-build: per construct the same `TypeIdentifier`,
+  `TypeObject`, dependencies, octets in all four encodings and key holder
+  as the type generated from the equivalent IDL),
+  `xtypes_7_4_issue_33_a_c_peer_reads_what_a_derived_type_wrote`, the two
+  `issue_33_a_hand_written_codec_*_does_not_compile`;
+  `crates/codec/tests/derive_behaviour.rs` and the contract targets of
+  `zerodds-codec`. Example: `examples/rust-derive/`, both routes and a C
+  peer generated by `zerodds-idlc` from the exported IDL. Not in this
+  version: data-carrying enums, generic types, borrowed fields.
+- **The annotations of the IDL4 language mappings reach the model**:
+  `@java_mapping` (IDL4 to Java 1.0 §8.1), `@csharp_mapping` (IDL4 to
+  C# 1.0 §8.1) and `@cpp_mapping` (IDL4 to C++ 1.0 §8.1) are built-in
+  annotations, checked against the declaration their clause gives —
+  an unknown parameter, an enumerator the enumeration does not have, a
+  value of the wrong kind and the positional form are `IDL0007` — and
+  held as `Facets::mappings` (`zerodds_ast::MappingSetting`). The
+  snapshot carries them (`SNAPSHOT_VERSION` 5; a version-4 snapshot is
+  refused as before for an unknown version). Test:
+  `crates/idl-lower/tests/mapping_annotations.rs`.
+- **An attribute in a value type body is an attribute of the value type**
+  (OMG IDL 4.2 §7.4.5.3, rule (105)). It was refused with
+  `Unsupported`; `AttributeNode::parent` is now an `AnyId`, and
+  `zerodds-corba-rust` declares its getter and, unless it is `readonly`,
+  its setter on the value type's trait. Tests:
+  `crates/idl-lower/tests/dialects.rs::idl_7_4_5_3_an_attribute_in_a_value_type_body_is_an_attribute_of_it`,
+  `crates/corba-rust/tests/compile_check.rs::idl_7_4_5_3_a_value_types_attributes_are_methods_of_its_trait`.
+- **An annotation prefixing the type of a typedef annotates the typedef**
+  (OMG IDL 4.2 §7.4.15.4.2): `typedef @max(100) long Length;`, the
+  form IDL4 to Java 1.0 §7.2.4.6 uses, was a parse error; the annotation
+  now annotates each declared alias. Test:
+  `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_15_4_2_an_annotation_prefixing_a_typedefs_type_annotates_the_typedef`.
+- **`zerodds-ccm` maps extended ports and connectors** (OMG IDL 4.2
+  §7.4.11, DDS4CCM 1.1 §7.2): `expand_extended_ports` turns a `port` into
+  the basic ports of its port type, named `<port>_<port feature>`, with
+  `mirrorport` swapping provides and uses, nested ports expanded and the
+  port type's attributes declared on the component;
+  `transform_connector` maps a connector through its ports as a
+  component. A multiple receptacle declares `<name>Connection` and
+  `<name>Connections` in the component's scope (CCM 4.0 §6.5.1), and
+  the `<home>Explicit`, `<home>Implicit` and `<event type>Consumer`
+  references name the scope of the declaration they derive from; they
+  named the root scope, which only reached them when the component was
+  declared there. A port's `<event type>Consumer` is the object reference
+  to the consumer interface the event type's transform declared, and that
+  interface is declared once. The operations and attributes of a home
+  body move to `<home>Explicit` (CCM 4.0 §6.7.2): a `factory` returns the
+  managed component and raises `Components::CreateFailure` besides its own
+  exceptions, a `finder` raises `Components::FinderFailure`; they stayed
+  on the equivalent interface, a `factory` returning nothing. The front end
+  marks the two (`CorbaFacet::home_operation`, in the snapshot), and
+  `Ast::set_return_type`, `Ast::move_operation` and
+  `Ast::move_attribute` make the move. Tests:
+  `crates/ccm/tests/equivalent_idl.rs`.
+- **A template module's `const` formal parameter has its type** (OMG IDL
+  4.2 §7.4.12.4.2): the binding of `const long Capacity` in an instance
+  was a constant without a type, which no resolve pass could resolve; it
+  has the formal's `<const_type>` now, and the instance records its actual
+  arguments (`CorbaFacet::template_args`), so a mapping can tell the
+  binding from a declaration of the instance. Test:
+  `crates/idl-lower/tests/dialects.rs::idl_7_4_12_4_2_a_const_formal_has_its_type_and_is_an_actual_argument`.
+- **`zerodds-idlc generate --lang java --java-mapping idl4`: the IDL4 to
+  Java Language Mapping 1.0** (`crates/lang-rules/src/emit/idl4_java/`).
+  A package per module and a file per class; structures with private
+  fields, accessors, modifiers and the default and all-values
+  constructors; unions with `__discriminator`; Java enums with
+  `valueOf(int)`; bit sets, bit masks (`<Name>Flags` and
+  `java.util.BitSet`), maps (`java.util.Map`), the sequence classes of
+  Table 7.4 and `org.omg.type.Holder<E>` (`runtime/java/.../org/omg/type`);
+  interfaces with `throws`, value types as `<Name>Abstract` and `<Name>`,
+  user annotations as annotation types; the IDL and Java naming schemes
+  (`--java-naming`) and `@java_mapping`; components, homes, ports,
+  connectors and template module instances through their intermediate IDL
+  (`crates/lang-rules/src/emit/intermediate_idl.rs`); the CORBA platform of
+  Annex A (`--java-platform corba`) with `org.omg.CORBA.UserException`,
+  `TypeCode`, `Object` and `Any` in `runtime/java/corba/org/omg/CORBA` and
+  `--java-corba-module` for the Java of the CORBA module, whose pseudo IDL
+  is transcribed in `runtime/corba/CORBA_PIDL.idl`. The default of `--lang
+  java` stays the DDS-Java-PSM binding. Tests:
+  `crates/lang-rules/tests/java_idl4_mapping.rs`,
+  `java_idl4_corba.rs`, `java_idl4_components.rs` (each compiled with
+  `javac --release 8 -Xlint:all -Werror` and run).
+- **`zerodds-idlc generate --lang csharp --csharp-mapping idl4`: the IDL4
+  to C# Language Mapping 1.0** (`crates/lang-rules/src/emit/idl4_csharp/`).
+  A namespace per module; constants as static classes or a `Constants`
+  container; structures as classes (or, with `@csharp_mapping(struct_type =
+  "struct")`, structs) with properties, the default, copy and all-values
+  constructors and `IEquatable<T>`; unions with `Discriminator`; enums
+  with the underlying type of `@bit_bound`; `I<Name>` interfaces with
+  `ref` and `out`, `I<Name>Operations` and a class for embedded
+  declarations (§7.5); exceptions on `System.Exception`; value types as
+  abstract classes with `[Omg.Types.Factory]`; bit sets as structs; bit
+  masks as `[Flags]` enums and `BitArray`; maps as `IDictionary`;
+  `@optional`, `@key`, `@unit`, `@range` and `@external` as Tables 7.5 to
+  7.8 say; user annotations as attribute classes; the IDL and .NET naming
+  schemes (`--csharp-naming`); components through their intermediate IDL;
+  the CORBA platform (`--csharp-platform corba`, `--csharp-corba-module`)
+  with `Corba.UserException`, `TypeCode`, `IObject`, `Object` and `Any`
+  (`crates/idl-csharp/runtime/Corba.cs`). `Omg.Types`
+  (`crates/idl-csharp/runtime/Omg.Types.cs`) carries `ISequence<T>` with
+  the methods of §7.2.4.2.1, its bounded and unbounded implementations, a
+  bounded dictionary, `Any` and the attributes. The default of `--lang
+  csharp` stays the XCDR2 binding. Tests:
+  `crates/lang-rules/tests/csharp_idl4_mapping.rs`, `csharp_idl4_corba.rs`
+  (each compiled with Roslyn, `-warnaserror+`, and run).
+- **A snapshot's modules are children of their parents again after
+  loading**: `Ast::from_snapshot` left `ModuleNode::children` empty, so a
+  walk down from the root found no nested module. Test:
+  `crates/ast/tests/snapshot_sections.rs::a_loaded_module_is_a_child_of_its_parent`.
+
+- **`zerodds_build::Config::rust_type` and `rust_type_with`: an IDL
+  typedef, struct member or union branch held as a Rust type of one's
+  own** (GitHub #33, `rc8-rust-newtype.md`). `rust_type("app::Dtg",
+  "crate::Dtg")` makes every use of the typedef — a member, a sequence,
+  array or map element, a union branch, `@optional`, `@external` — hold
+  the Rust type; `rust_type("app::Track.id", "core::num::NonZeroU32")`
+  does it for one member, ahead of a typedef mapping. The generated codec
+  writes the IDL value through `zerodds_wire::WireRepr::to_wire` and reads
+  it — a `string` lent out of the sample — through `from_wire`; a value
+  the Rust type refuses rejects the sample with that reason. The
+  `TypeObject`, the `TypeIdentifier`, assignability and the key hash stay
+  the IDL's. `rust_type_with` goes through an adapter
+  (`zerodds_wire::DisplayFromStr` for `Display + FromStr` types). A path
+  that names no typedef, member or branch of the compiled units, an IDL
+  type no Rust type can stand for (a collection, `wstring`, `wchar`,
+  `long double`) and a Rust type that is no type path fail the build
+  (`Error::RustType`); a Rust type of another IDL type fails to compile
+  at `zerodds_wire::repr::idl_type_is`, which the generated file states
+  per mapping. A type whose member refuses its IDL default (`NonZeroU32`
+  and the default zero) has no `impl Default`, and a sample without that
+  member — an older `@appendable` writer, a key-only sample — is rejected.
+  `field_value` compares the IDL value. Tests:
+  `crates/zerodds-build/tests/rust_type.rs` (the refused paths; the
+  `TypeObject`s and `TypeIdentifier`s of a mapped unit equal the IDL's),
+  `crates/zerodds-build/tests/dds_type.rs::xtypes_7_4_issue_33_*` and
+  `issue_33_a_rust_type_of_another_idl_type_fails_the_build`
+  (integration-codegen-build: the octets equal the unmapped types' in all
+  four encodings, rejected samples, the key hash over the IDL value,
+  Table 19 defaults, and a C peer generated from the same IDL reading the
+  samples). Example: `examples/rust-type/`.
+
+- **`zerodds_wire::WireRepr`: a Rust type that stands for an IDL primitive
+  or `string`** (GitHub #33, `rc8-rust-newtype.md`). `type Idl` names the
+  IDL type (`str`, `u32`, …); `to_wire` writes through an `IdlOut` for
+  exactly that type and returns the `Written` only an `IdlOut` makes;
+  `from_wire` reads `&Self::Idl`, a `string` lent out of the received
+  sample. `IdlOut::display` formats a `Display` value straight into the
+  sample's buffer and patches the length in afterwards, with the bound
+  and NUL checks on the written text; `Reader::read_str` and
+  `Reader::fit_str` read and narrow a `string` without allocating
+  (`read_string` is `read_str` copied). Impls for `core::num::NonZero*`,
+  `String`, `Cow<'_, str>` and the primitives; `WireReprWith` with the
+  `DisplayFromStr` adapter for `Display + FromStr` types;
+  `WireError::invalid_value` for a refusal. Tests:
+  `crates/wire/tests/repr.rs` (the octets of XTypes 1.3 §7.4.1.1.2 for a
+  displayed string, the refusals that leave the buffer as it was, the
+  lent text, a zero refused for `NonZeroU32`, `DisplayFromStr`).
+
+- **The vendor dialects bring `xtypes.key_must_understand: implied`.**
+  `wire.rtps_dialect` or `wire.codec_dialect` set to `cyclone`, `fastdds`
+  or `opendds` selects `implied` when `xtypes.key_must_understand` is not
+  set; the setting, where given, wins. Measured besides Cyclone `master`:
+  the Fast DDS 3.6.1 and OpenDDS 3.35 readers of `tools/dispose-reader`
+  without `@must_understand` announce the key member without
+  IS_MUST_UNDERSTAND and no PID 0x0074, and a ZeroDDS writer refused both
+  with the default and matched both with `implied`. The readers of Connext
+  7.7.0, CoreDX 6.15.3, Dust 0.16.1, HDDS 1.4.9 and InterCOM 4.3.1 announce
+  PID 0x0074 and match with the default.
+
+- **`xtypes.key_must_understand`** (`flagged`, the default, or `implied`;
+  environment `ZERODDS_KEY_MUST_UNDERSTAND`). A Cyclone DDS reader built
+  with its type library announces a `TypeObject` whose key member lacks
+  `IS_MUST_UNDERSTAND` (the `idlc` of 11.0.1 and of `master`) and no
+  TypeConsistencyEnforcement; DDS-XTypes 1.3 §7.6.3.4.1 holds it to
+  DISALLOW_TYPE_COERCION, the minimal identifiers differ in that bit
+  (1.4 Beta 1 §7.3.3.4), and a ZeroDDS writer does not match it. The
+  default keeps the clause; `implied` compares with `IS_KEY` implying the
+  bit. The dds-rtps `shape_main` of Cyclone `master` in the ci-omg image
+  is built with Cyclone's type library again, and the weekly group
+  `rtps-cyclone-master` runs with `implied` (`rtps-vendor-1`: 15 of 15
+  cases with ZeroDDS publishing red without the setting, passed with it).
+
+- **The IDL 4.2 gap scan is a gate.** `tools/idl-4.2-gap-scan/scan.sh` ran
+  in no CI job, and its record had drifted from `main` by 58 cells. It runs
+  now in the push lane as `merge-idl-gap-scan` for a change to
+  `zerodds-idlc`, a package it depends on directly or the scan's own files
+  (`ci/merge_lane.py`, `gap_scan`), and weekly as `idl-gap-scan`
+  (`ci/weekly-checks.yml`). The direction of a changed cell is judged
+  against the probe's `expect` column (OMG IDL 4.2), not against the
+  record; each changed cell prints the subcommand's first lines; the
+  probes run in parallel (7 s on the CI runner, job 230868).
+
+- **`integration-dds-chat`**: every port of the dds-chat tutorial reads
+  the ten fixtures of `shared/fixtures/` to their values and writes them
+  back to their octets (C++ three, Python two, TypeScript three, Java two,
+  C# two, Rust: the tutorial crate and the `no_std` codec; the five bridges
+  carry a fixture; `tests/integration/dds_chat.sh`, weekly).
+  `vendor-live-dcps` serializes the same samples with Cyclone DDS's Python
+  binding (`fixtures.py --cyclone`).
+
+- **The Java PSM, the WASM build and the Flutter binding exchange samples
+  with a Rust process** (zerodds-ffi-loader-1.0 §5, OPEN-ITEMS 30): a
+  DataReader of the Java PSM on its RTPS path (job `integration-java-psm`),
+  the DCPS client of `zerodds-ts-wasm` through the daemon
+  `zerodds-ws-bridged` with the crate's WebAssembly codec decoding every
+  body, in Node without a browser (job `integration-ts-wasm`), and a Dart
+  subscriber over the dart:ffi loader of the dds-chat tutorial (job
+  `integration-flutter`) each take the 16 samples of a Rust publisher in
+  another process, held to the bodies DDS-XTypes 1.3 §7.4.3.5 gives.
+
+- **HDDS in the speed pillar**: the row `hdds` of `tests/perf/speed/speed.py`,
+  a Rust app over the HDDS API (`tests/perf/dds-roundtrip-bench/hdds`, HDDS
+  v1.1.5 and hddsgen 1.2.0 from git.hdds.io, the type generated from
+  `roundtrip.idl`), built by `build.sh` and measured by `speed-vendors-4`
+  in the setup of every other vendor (UDPv4, the same sizes and QoS,
+  rate at the reader, loss, latency quantiles). Its values are in
+  `tests/perf/baseline/speed.json` under the label `vendors`.
+
+- **Cyclone DDS `master` beside its release in the interop pillar** (GitHub
+  #60). The ci-omg image builds Cyclone at `CYCLONEDDS_MASTER_COMMIT`
+  (`ci/Dockerfile.omg`, stage `cyclone-master`) and the dds-rtps and
+  dds-xtypes clients of the pinned harnesses against it,
+  statically (`ci/build-cyclone-suite-clients.sh`); the weekly groups
+  `rtps-cyclone-master` (`rtps-vendor-1`) and `xtypes-cyclone-master`
+  (`xtypes-master-1`, 99 cases of the union, try-construct, extensibility,
+  struct, widening and enumeration families) run against them. Against
+  the release column, measured on the Linux test host: every case run
+  against both gave the same verdict (dds-xtypes 328 per direction,
+  dds-rtps 68 and 70), master fails the same cases against itself, and the
+  seven deviations of OPEN-ITEMS 55 stay. The released
+  `eclipse_cyclone-11.0.1` executables are master builds of mid-2026, not
+  the tag (`rc8-test-suite.md`, "Interop").
+
+- **The weekly run without the duplicate dds-xtypes group**: `xtypes-cyclone-master`
+  runs on a release candidate and when the Cyclone `master` pin moves
+  (release playbook, "Vendor pins", step 3), not every week: in pipelines
+  9097, 9170 and 9186 its 99 cases gave the results of the same cases
+  against 11.0.1 (4.0 minutes of the CI runner host in 9186). `rtps-cyclone-master`
+  stays weekly; it is the one group that runs
+  `xtypes.key_must_understand: implied` against a live peer.
+
+- **JacORB and its Java 8 JDK in the integration hosts' tool cache**
+  (`tests/integration/provision.sh`): `integration-bridges-vendor-corba`
+  downloaded both in every job, and the download of JacORB 3.9 stalled
+  until the job's 5 minutes ran out (pipeline 9186, job 231150, 296.6 s
+  provisioning; OPEN-ITEMS 41). A download that stays below 1 KiB/s for
+  30 s is retried, and each download prints its duration.
+
+- **The speed pillar measures ZeroDDS against HDDS of the same run** (`tests/perf/speed/speed.py`): the row `zerodds-hdds-timing` runs ZeroDDS with the reliability timing HDDS 1.1.5 uses (its reader answers a HEARTBEAT at once and at most every 10 ms, its writer a NACK at once), the job `speed-zerodds-hdds-timing` measures it next to HDDS, and the report lists every ZeroDDS row against HDDS cell by cell (the targets of `rc8-plan.md` D3: equal or better). ZeroDDS' defaults stay the specification's.
+
+- **One weekly run of the core crates' tests**: the coverage jobs of
+  `zerodds-wire`, `-types`, `-rtps`, `-discovery`, `-transport-udp` and
+  `-dcps` decide the week's result for these packages (a failing test fails
+  the run, 60 s per test under instrumentation), and the weekly crate tier
+  leaves out their default-feature jobs, which ran the same tests a second
+  time (294 s in pipelines 9186 and 9187; maintainer's decision,
+  2026-11-04). Feature runs stay in the crate tier; the merge lane is
+  unchanged.
+
+- **ci-interop on the pinned toolchain**: the image of the vendor jobs is
+  rebuilt on ci-rust with rustc 1.97.1 (pipeline 9198); built on 1.88, every
+  `vendor-live` job downloaded the toolchain of `rust-toolchain.toml` first,
+  6.0 minutes of the CI runner host in the weekly run 9186. `.vendor-live` and the byte
+  gate take the new digest.
+
+- **Vendor pins and when they move** (`internal/release/release-playbook.md`,
+  "Vendor pins"): every vendor version is pinned in one place per artifact
+  and moves before a release candidate run (Cyclone `master`), on a new
+  release of the vendor, or by hand for a fix, with the result of every
+  case recorded against the pin before (`tests/interop/omg/compare_runs.py`).
+  The weekly job `omg-vendor-pins` (`ci/vendor_pins.py`) prints how far
+  each pin lies behind its vendor and turns nothing red.
+
+- **Tests without a CI job have one.** The Flutter app of the dds-chat
+  tutorial: the weekly job `integration-flutter`
+  (`tests/integration/flutter_chat.sh`, the Flutter SDK from
+  `tests/integration/provision.sh flutter`, JUnit from
+  `ci/flutter_junit.py`) runs its dart:ffi loader between two Dart processes
+  on a leased domain and its codec against octets spelled out from DDS-XTypes
+  1.3. The TypeLookup service and the non-assignable type pairs against
+  Cyclone DDS: `crates/dcps/tests/cyclone_live_type_lookup.rs` in
+  `vendor-live-dcps` (a type with a member appended fetched and assignable in
+  both directions, `label` as a string and a `@final` writer under XCDR1 and
+  XCDR2 refused with INCONSISTENT_TOPIC). The cross-ORB cells of the former
+  `competitors/run_interop.sh` of `zerodds-corba-interop` as tests against
+  omniORB and JacORB (`integration-bridges-vendor-corba`) and TAO
+  (`vendor-live-corba-tao`), built by `competitors/build_peers.sh`, with the
+  AMI client against omniORB, JacORB's OTS context and the Features and
+  Shapes operations against omniORB's stubs and skeletons.
+  `website/_tools/gen_navmap.py --check` runs in `merge-docs` for a change
+  under `website/` or `man/man1/`; without the zerodds-examples checkout it
+  reads `website/_data/navmap-examples.json`, which it holds to the checkout
+  where one exists.
+
+- **The bindings over `libzerodds` exchange samples with a Rust process**
+  (zerodds-ffi-loader-1.0 §5 and §8.3, OPEN-ITEMS 46). A subscriber in C,
+  C++, Python (the ctypes loader), TypeScript (the koffi binding) and C#
+  (`DllImport`), each in a process of its own, takes the 16 samples of a Rust
+  publisher in another process on a leased domain and prints their bodies;
+  `tests/integration/tests/bindings_ffi.rs` compares them with the XCDR2
+  bodies DDS-XTypes 1.3 §7.4.3.5 gives, stated before the run: count,
+  content, order. New weekly job `integration-bindings-ffi`
+  (`tests/integration/ffi_peers.sh` builds the subscribers).
+
+- **reliable-endpoint-1.0 §5 point 4 for Ada, Ada 83, native Ada, Kotlin,
+  Node and Rust** (OPEN-ITEMS 44): `reliable_5_4_<lang>_the_producer_enqueue_costs_less_than_the_inline_send`
+  runs each SDK's bench mode and checks that the decoupled enqueue is below
+  the inline send. Ada 83 has a decoupled writer now
+  (`endpoints/ada-83/src/zerodds_ada83_async_writer`, an Ada 83 task
+  draining the SPSC ring `zerodds_ada83_ring`).
+
+- **The five runtime operations no corpus case reaches are checked in all 20
+  runtimes** (OPEN-ITEMS 30): `write_pid_extended` against Cyclone DDS's
+  recording of `annotation-autoid-sequential`, `write_union_overlay` against
+  Cyclone DDS 11.0.1's union storage, `reader_clear_discard`, and
+  `reader_save`/`reader_restore` over the counting pass of a delimited map.
+  `crates/lang-rules/tests/codec_backend_prerequisites.rs` generates four
+  declarations that reach the five in every column and holds every runtime
+  to publishing them.
+
+- **`ci/coverage_results.py`: every test the coverage documents cite,
+  against its result in CI.** It reads the job logs and JUnit reports of the
+  pipelines of `main` from the GitLab API (nextest's and libtest's status
+  lines, CTest, the steps of `ci/run_integration.py`, the summary of
+  `tools/endpoints-gate`, node's test runner) and reports per document the
+  items whose cited tests are green, red or skipped, or ran in no job of the
+  new suite; `--test-run` prints a document's Test-Lauf block. The 15
+  coverage documents without a Test-Lauf line have it now, and `merge-docs`
+  declares no finding (OPEN-ITEMS 34). A pipeline started by hand with
+  `MERGE_PACKAGES="<package> ..."` runs the crate tier of the named packages
+  (`ci/merge_lane.py`): 45 packages whose crate tier had run in no pipeline
+  since the merge lane began ran in pipeline 8996, all 45 crate-tier jobs
+  green. `ts-node-test` runs `runtime/typescript/run-tests.sh`, which no job
+  ran and `dds-ts-1.0.md` cites.
+
+- **The C#, Java and Kotlin column tests of `zerodds-wire-probe` read and
+  write the octets of `tests/interop-corpus/expected-bytes.tsv`** (OPEN-ITEMS
+  83). They held the columns against the Rust column's recordings, and the
+  Java round trip read back only what the Java column wrote. Now
+  `csharp_column_gate` and `java_column_gate` run the probe under the
+  dialect of the table's row and compare with its octets, `java_reads_the_table`
+  (the round trip before) and `kotlin_bounded_collections` read a vendor's
+  octets back to the case's sample; one test per case. They need `dotnet`, a
+  JDK or `kotlinc` and run in the codegen jobs of their language
+  (`ci/integration_scenarios.py`, `CODEGEN`), not in the crate tier, where
+  they said SKIPPED. On the Linux test host: Java 1.4 to 7.5 s, Kotlin 17.8 s
+  per test. `primitive-longdouble` has no row in the table and left both
+  write checks.
+
+- **`integration-ts-wasm`: the JavaScript tests of `zerodds-ts-wasm` in
+  CI.** `tests/integration/ts_wasm.sh` builds the crate for
+  `wasm32-unknown-unknown`, generates the glue for Node and the web with the
+  wasm-bindgen CLI (the version of `Cargo.lock`; target and CLI from
+  `tests/integration/provision.sh wasm`, the archive pinned by its sha256)
+  and runs `npm test`: the codec through the binding and the
+  DCPS-over-WebSocket facade of DDS-TS Annex C, 7 tests in 14.4 s
+  (pipeline 8879). Weekly and on a change to the crate. The glue for Node
+  is CommonJS and gets a `package.json` that says so, as wasm-pack writes
+  it; under the crate's `"type": "module"` Node read it as an ES module
+  without exports.
+
+- **The C and the Python column hold their octets against
+  `tests/interop-corpus/expected-bytes.tsv`** (decision 3 of
+  `internal/release/rc8-test-suite.md`; OPEN-ITEMS 82).
+  `tools/wireprobe/wireprobe-zerodds-{c,python}-gen/tests/expected_bytes.rs`
+  run each column's matrix driver per configuration (new option
+  `--encoding`) and hold the payloads to the vendors' octets and the
+  column's read of them to the case's sample, through
+  `zerodds_wire_probe::expected`; one test per configuration, 2 to 8 s each.
+  `crates/wire-probe/tests/three_column_gate.rs`, which compared the three
+  columns with each other in no tier, goes with its record;
+  `tools/wireprobe/three-column-gate` only writes the two columns for
+  `tools/interop-results`. Found and fixed: the Python generator lowered
+  the IDL without the dialect's answer on a declaration named like its
+  enclosing scope, and the C driver read the C column's octets back
+  against a model lowered the same way, so `resolve-module-named-as-type`
+  was refused under Fast DDS, RTI and the ROS middlewares, which write it.
+
+- **The tiers of the Java PSM, the C# binding and the Gradle plugin
+  (`rc8-test-suite.md`, "Crate tier" point 3).** A change to
+  `crates/java-omgdds` (or to the Java sources its POM compiles in) runs
+  `merge-java-omgdds`, the JUnit tests under Maven; a change to `crates/cs`
+  or `zerodds-c-api` runs `merge-cs`, the C# binding's xUnit tests against
+  `libzerodds`; a change to `build-integration/java-gradle` runs
+  `merge-java-gradle`, which builds the Gradle plugin and runs its sample.
+  `ci/foreign_tests.py` lists the tests a Maven or `dotnet` step runs by
+  name, `ci/run_integration.py` holds the Surefire reports and the TRX log
+  to that list, and `ci/cutover_gate.py` counts them as run. Weekly:
+  `integration-java-psm` (the round trip of `GrpcBridgeClientTest` against
+  the gRPC bridge daemon, a declared skip before),
+  `integration-java-typelookup` and `integration-java-gradle`.
+  The cutover list of the three is empty; `endpoints-java-async` and
+  `cs-smoke` left `ci/full.yml`.
+
+- **The platform jobs (`rc8-test-suite.md`, decision 6).** The core crates
+  (`zerodds-wire`, `-types`, `-rtps`, `-discovery`, `-transport-udp`,
+  `-dcps`) run as the crate tier runs them on Linux arm64 (the macOS runner,
+  in colima's VM) and on Windows, weekly, on a release candidate and
+  alone with `PLATFORMS=1`; `zerodds-transport-shm` runs on macOS on merge
+  and weekly, so its two flink-sweep tests of `zerodds-shm-transport-1.0`
+  §5.5 run in a tier and the crate left the `test` job.
+  `ci/platform_jobs.py` holds the table, `ci/cutover_gate.py` counts a
+  platform job's tests under that platform's `cfg`. The first runs found a
+  late LIVELINESS_LOST (below) and two tests of `zerodds-dcps` that did not
+  hold on Windows (a path built with a slash, a scan that read each file
+  once per function and ran past its 25 s).
+
+- **The integration pillar (`rc8-test-suite.md`, "Pillars → Integration").**
+  `tests/integration` runs ZeroDDS end to end in processes of its own,
+  each scenario on a leased DDS domain, waiting on events instead of
+  sleeping, against an oracle outside the code under test: DCPS over UDPv4,
+  TCPv4, Unix domain sockets, the same-host shared memory channel and TSN
+  on a veth pair, with the kernel's view of the sockets and frames; writer
+  restarts (killed, deleted, best effort, four generations, two live
+  writers); DDS-Security 1.2 with key material made by `openssl` and the
+  sent bytes recorded by `strace`; the durability and routing services as
+  daemons; the MQTT, CoAP, WebSocket, gRPC, AMQP, OPC UA and CORBA bridges
+  against Mosquitto, libcoap, `websockets`, grpcio, RabbitMQ with pika,
+  open62541 and omniORB; the endpoint SDKs of all 21 languages at runtime;
+  the C and C++ SDK through CMake, CTest and an installed-package consumer;
+  the safe-profile gates of `docs/architecture/04_safety_by_architecture.md`
+  §3. `ci/integration_scenarios.py` places each job (weekly, release
+  candidate; on merge where the merge pipeline stays within its budget),
+  `ci/run_integration.py` runs one.
+
+- **The speed setup and its baseline (`rc8-plan.md` D1, D2).**
+  `tests/perf/speed/speed.py` measures ZeroDDS, Cyclone DDS, Fast DDS, RTI
+  Connext, OpenDDS and OpenSplice the same way on one host: each stack's
+  self pair over UDPv4, 64 B, 1 KiB and 64 KiB, BEST_EFFORT and RELIABLE
+  with KEEP_ALL, throughput, share received, CPU per sample on both ends,
+  latency p50/p99/p99.9. The apps of `tests/perf/dds-roundtrip-bench` got
+  the throughput modes `tput-pub`/`tput-sub` and take their QoS from the
+  environment; the sequence bound of `roundtrip.idl` is 65 536.
+  `tests/perf/baseline/speed.json` holds ten runs per value of rc.7 and
+  `main` and five per vendor; `ci/jobs/speed-pillar.yml` measures weekly and
+  on a release candidate on the exclusive host and reports against it.
+
+- **Expected wire bytes from the matrix (`rc8-test-suite.md` decision 3).**
+  `tests/interop-corpus/expected-bytes.tsv`, written by
+  `tools/expected-bytes/generate.py` from one `zerodds-matrix` commit, holds
+  the octets other implementations wrote for 417 corpus cases per ZeroDDS
+  dialect; the oracles are the vendors' columns and, for `specification`,
+  the octets the DDS implementations agree on. `cargo test -p
+  zerodds-wire-probe --test expected_bytes` checks the reflective codec
+  against it in both directions.
+
+- **The OMG interoperability suites in CI.** The merge lane runs the
+  dds-rtps suite against Cyclone DDS in both directions when `wire`, `types`,
+  `rtps`, `discovery` or `security-*` change (`ci/interop_scenarios.py`);
+  `ci/interop-omg-weekly.yml` runs dds-rtps, dds-xtypes and dds-security
+  against the vendors in jobs of at most 120 s of cases, in groups picked
+  with `OMG_GROUPS`. The image `ci-omg` carries the suites and the vendors'
+  released executables; `tests/interop/omg/omg_suite.py` leases the DDS
+  domains by the protocol of `crates/test-domains`.
+
 ### Fixed
+
+- **`zerodds-lint check` reports no error**
+  (`docs/architecture/04_safety_by_architecture.md` §3.4): of the 40, 24 were a method named `expect` in `zerodds-wire`'s
+  codec that returns a `Result` (now `require`); a `dyn` became a generic
+  in `zerodds-wire`, `zerodds-sql-filter`, `zerodds-lang-rules` and
+  `zerodds-derive`; six recursive functions state their depth. Two files
+  carry an exception marker with the reason: the key holder's held
+  members in `zerodds-wire` (`dyn`, XTypes 1.3 §7.6.8), and
+  `encode_key_holder_be` of `zerodds-codec` (`panic!`, OPEN-ITEMS 35).
+- **A BEST_EFFORT DataReader with finite RESOURCE_LIMITS holds no more
+  than them while the application does not take** (`zerodds-dcps`,
+  `ReaderRoom`, DDS 1.4 §2.2.3.18, §2.2.3.19): past the limit, the thread
+  that queued the sample takes the reader's channel into its cache, whose
+  admission discards the oldest. Before, the channel kept every sample with
+  its datagram until the application took. Measured on the Linux test host
+  (`zerodds_perf`, BEST_EFFORT KEEP_ALL, `max_samples` 100 000, 1 KiB,
+  15 s, the subscriber taking every 3 s): peak 310 MB instead of 6.88 GB;
+  the receive thread admits each sample past the limit itself and no longer
+  keeps up, 791 374 datagrams dropped by the kernel instead of 5 523
+  (OPEN-ITEMS 50). A RELIABLE reader is unchanged.
+- **A DataReader with a full cache counted it again for every sample it
+  admitted** (`zerodds-dcps`, `DataReader` admission, DDS 1.4 §2.2.3.19
+  RESOURCE_LIMITS `max_samples`): the count of samples with data is now
+  taken once per run under the cache lock and kept up to date. Measured on
+  the Linux test host (`zerodds_perf`, BEST_EFFORT KEEP_ALL, `max_samples`
+  100 000, 1 KiB, 4 s at 600 kS/s): before, 1 199 631 of 1 500 473 samples
+  taken, a 22 s stall and 80.7 % of the subscriber's CPU in the admission;
+  after, 2 395 136 of 2 395 136, the admission 3.4 %. Over 15 s the
+  subscriber had run into an 8 GB limit; now 9 148 976 of 9 149 184 samples
+  arrive. OPEN-ITEMS 50 (a `take` of the full cache took 47 s) is closed.
+- **A RELIABLE writer sent changes again that no reader had asked for.**
+  An ACKNACK whose SequenceNumberSet was empty requested every change past
+  its base (`ReliableWriter::handle_acknack_window`), also the changes still
+  on their way to the reader; DDSI-RTPS 2.5 Table 8.66 T8 requests what the
+  set names and nothing else. Each ACKNACK that answered a HEARTBEAT while
+  samples were in flight sent them all again, with a HEARTBEAT that drew the
+  next ACKNACK. Measured on the Linux test host with `zerodds-roundtrip`
+  (`tput-pub`/`tput-sub`, RELIABLE, KEEP_ALL, 64 KiB, 5 s,
+  `reader.heartbeat_response_delay_ms` and `writer.nack_response_delay_ms`
+  0), loopback capture: before, 816 samples (0.158 kS/s), 239 998
+  datagrams, 6.98 GB of UDP payload, each DATA_FRAG sent 130 times on
+  average and at most 234 times, 4.67 ms of CPU per sample at the reader;
+  after, 76 240 samples (15.2 kS/s), 287 590 datagrams, 5.72 GB, each
+  DATA_FRAG 1.23 times on average and at most 3 times, the repeats asked for
+  by NACK or NACK_FRAG, 74 µs per sample. Test:
+  `crates/rtps/src/reliable_writer.rs::tests::rtps_8_4_9_2_an_acknack_with_an_empty_set_requests_no_change`.
+
+- **A nested key member's KeyHash in the Rust code of `zerodds-build` and
+  in `derive(DdsType)`** (DDS-XTypes 1.3 §7.6.8 step 3). A struct or union
+  inside a key holder was written by its data codec, with its DHEADER, its
+  EMHEADERs and its non-key members: `@key Inner who` over an
+  `@appendable Inner { long x; string<8> tag; }` gave the holder
+  `00 00 00 0a 00 00 00 03 …` where the specification and
+  `zerodds-wire-codec` give `00 00 00 03 …`; over a `@mutable` nested
+  type with its own key the holder carried every member. Each aggregate
+  inside a key holder is now its own holder: `@final`, its key members
+  alone when it declares any (`encode_key_holder`/`decode_key_holder` in
+  the generated code, `HolderPlan` in `zerodds-codec`). The KeyHash of
+  such a type changes; a type whose nested key members are `@final`
+  structs without own keys keeps it. Test:
+  `crates/zerodds-build/tests/dds_type.rs::xtypes_7_6_8_a_nested_key_member_is_its_own_final_key_holder`.
+
+- **The generated key-holder reader of a type with a struct-typed key
+  member refused every holder.** `key_members_with` names the key members
+  of the nested struct too; the reader looked each of them up as a member
+  of the outer type, found none and generated a reader that refuses
+  (`a key holder with a member this emitter cannot read`). It reads only
+  the type's own members now, the nested ones with their struct
+  (`crates/lang-rules/src/encode.rs`). Found by the equivalence tests of
+  `derive(DdsType)`, which read a struct-typed key back on both routes.
+  Test: `crates/zerodds-build/tests/dds_type.rs::xtypes_7_6_8_a_struct_typed_key_member_is_read_back_from_the_key_holder`
+  (integration-codegen-build).
+
+- **One simple type name in two IDL modules compiles through `zerodds-build`**
+  (OPEN-ITEMS 56). The constants of `type_objects_<unit>` and
+  `type_identifiers_<unit>` were named after the type's simple name in one
+  flat module, so `module v1 { struct Part … }; module v2 { struct Part … };`
+  gave `pub const Part` twice and `error[E0428]`. Each constant now sits in
+  one `pub mod` per IDL module, as the type does
+  (`type_objects_<unit>::v1::Part`); a constant of a type at file scope
+  keeps its path. Tests:
+  `crates/zerodds-build/tests/reported_issues.rs::idl_4_2_7_5_2_one_simple_name_in_two_modules_is_two_constants`,
+  and `crates/zerodds-build/tests/dds_type.rs::xtypes_7_2_3_a_nested_appendable_type_reads_a_newer_and_an_older_writer`,
+  which now builds a crate around `v1::Part` and `v2::Part`.
+
+- **The generated Rust decoder of an `@appendable` struct steps over the members a newer writer appended** (`crates/lang-rules/src/encode.rs`, `decode_in_plan_order`). Under XCDR2 it stopped after its own last member; a type nested in another then read the enclosing type's next member out of the unknown ones, with no error. Measured with `EvoOld { PartOld piece; long tail; }` reading the bytes of `EvoNew`, whose `PartNew` has a third member `short c = -3`: `tail` came back as 65533 instead of 42. The reader now moves to the DHEADER's end, which also refuses a reader that read past it, as the other columns do (`emit/decode.rs`, `close_delimiter`). Tests: `crates/zerodds-build/tests/dds_type.rs::xtypes_7_2_3_a_nested_appendable_type_reads_a_newer_and_an_older_writer` (both directions), `crates/lang-rules/tests/codec.rs::xtypes_7_2_3_an_appendable_reader_steps_over_the_members_a_newer_writer_appended`.
+
+- **`speed-async-write` measured a tree no pipeline had built for it**:
+  after a failed `speed-build` it ran `perf_targets` in the speed store's
+  checkout of an earlier pipeline and passed (weekly run 9186, job 231135);
+  it refuses now without this pipeline's build, as the measuring steps do.
+
+- **`runtime_drop_threads` (zerodds-dcps) counted the lease heartbeat
+  thread as one of the runtime's**: the thread names itself once it runs,
+  and under load it still carried the process's name in the test's
+  snapshot (job 231306). Threads are told apart by task id.
+
+- **`zerodds-lint` and `rustdoc` on `zerodds-types`**: a `&dyn Fn` in a
+  SAFE crate and an intra-doc link read from "[its]" in a quotation, both
+  red in weekly run 9186 (jobs 231200, 231202).
+
+- **A TypeLookup reply reaches the Cyclone DDS reader that asked for it.**
+  The TypeLookup service of `zerodds-dcps` sent a written request or reply
+  and the HEARTBEATs of its tick after it had released the transport, so a
+  HEARTBEAT could announce a reply before its DATA left. Cyclone DDS 11.0.1
+  starts a VOLATILE reader at a writer's first HEARTBEAT and dropped the
+  reply; the match it had deferred on the writer's type never came
+  (`vendor-live-dispose-bridges` red in pipeline 9149; the Cyclone test of
+  `zerodds-zenoh-bridge`'s `dispose_reaches_a_foreign_reader` failed 8 of
+  300 times with Cyclone's trace, pipeline 9171). Both now send while the
+  transport is held: 0 of 490 runs with the trace and 0 of 469 without
+  (pipelines 9176 and 9177), and the five TypeLookup tests against Cyclone
+  of `cyclone_live_type_lookup` pass.
+
+- **The Java PSM counts the endpoints of other processes in
+  SUBSCRIPTION_MATCHED and PUBLICATION_MATCHED** (DDS 1.4 §2.2.4.1,
+  OPEN-ITEMS 30). Both statuses counted the endpoints of their own process
+  only: a writer or reader matched over SEDP was in
+  `getMatchedPublications`/`getMatchedSubscriptions` and not in
+  `current_count`, `total_count` or the change counts, and no listener was
+  told of it. The RTPS participant reports every match and its end
+  (`RtpsParticipant.MatchListener`: SEDP match, lease expiry, ignore, no
+  common representation) in order on a thread of its own, and
+  `DataReaderImpl`/`DataWriterImpl` count and report them as they do the
+  endpoints of their own process. `tests/integration/tests/bindings_ffi.rs`
+  checks both sides against a Rust writer and a Rust reader, the match and
+  its end by `ignore_publication`/`ignore_subscription` (job
+  `integration-java-psm`); the Java subscriber of zerodds-ffi-loader-1.0 §5
+  waits on SUBSCRIPTION_MATCHED again.
+
+- **The dds-chat tutorial writes XCDR2 as DDS-XTypes 1.3 gives it.** Its
+  three `@appendable` types were written with `unsigned long long` aligned
+  to eight under the header CDR2_LE, beside a non-standard "XCDR1-Compact"
+  form, and the fixtures came from the Rust port's own codec. Every port
+  (Rust, C++, C#, Java, Python, TypeScript, Dart) now writes D_CDR2_LE with
+  the padding count in the options, the DHEADER, members aligned to at most
+  four and the `<is_present>` octet of an optional member;
+  `shared/fixtures/fixtures.py` derives the fixtures from the rules. Over
+  DDS the writers are declared appendable and offer XCDR2, and hand the
+  runtime the stream after the header (the C-API ports put the tutorial's
+  own header into the payload before, so the wire carried two). The Flutter
+  loader declares the fourth parameter of `zerodds_reader_take`. Chapter 10
+  implements the current `AccessControlPlugin`, which the tutorial crate
+  had not compiled against; its lock files are current.
+
+- **idl-lower: the two readings of an omitted annotation member, and an
+  `any` member.** An annotation applied without a value for a member that
+  declares no default is refused under `--strict`, as OMG IDL 4.2
+  §7.4.15.4.2 requires, and read with a warning otherwise, as DDS-XTypes 1.3
+  §7.3.1.2.5 gives it (it was accepted silently in every mode). An
+  annotation member of type `any` (IDL 4.2 rules 223, 224) is read with a
+  warning, as DDS-XTypes 1.3 §7.3.1.1.1 asks for a construct outside its
+  profile; it was refused.
+
+- **`zerodds-ts-wasm` speaks the binary frames of zerodds-ws-bridge-1.0**
+  (OPEN-ITEMS 40). Its WebSocket transport sent JSON messages
+  (`{"op":"subscribe","topic"…}`, `publish` with base64 data) the daemon
+  `zerodds-ws-bridged` does not have, and waited for a `notify` it never
+  sends, so the browser DCPS client exchanged no sample with a bridge. It
+  opens a connection per topic on the topic's path (§4.2, the slug of
+  §5.1), sends and reads the frames of §4.3 (`ZDB1`, flags, encapsulation
+  header, payload), takes the byte order from the header and the instance
+  state from the flags, and keeps the daemon's `error` messages (§4.4). The
+  base64 helpers are gone from the package's exports.
+
+- **Every test that binds a socket leases its DDS domain** (OPEN-ITEMS 63).
+  `simulation_clock_e2e` ran on domain 93 with fixed GUID prefixes,
+  `participant_config_user_data` on 173, and about 230 call sites in
+  `zerodds-dcps`, `zerodds-c-api` and `zerodds-dcps-async` on literal
+  domains, which the same test on another host of the LAN shares at the same
+  time. `domain_hygiene` follows a literal through a `let`, a `const` or
+  `static` and a helper that forwards it, for the factory,
+  `DcpsRuntime::start` and the six C entry points, and takes 0.75 s instead
+  of 2.6 s on the CI runner host (pipelines 9094 and 9051).
+
+- **The tests of `zerodds-dcps` that start a `DcpsRuntime` shut it down on
+  their own thread** (OPEN-ITEMS 39). 27 of its 1583 test processes ended
+  with threads of a runtime still running; none does now (pipelines 9094
+  and 9113), and the five weekly coverage jobs had no negative line count in
+  three runs (pipelines 9114, 9117, 9124).
+
+- **The destroy test of `zerodds-c-api` checks what destroy promises since
+  the runtime's threads hold it weakly**: the caller's clone is the only
+  strong reference left and the threads end. It asserted more than two
+  strong references and failed since `6c018d1662a` (job 230640).
+
+- **The Node and TypeScript runtimes wrote PID_EXTENDED without the
+  must-understand bit by default.** Their `PL_CDR1_DEFAULT` used no PID flags;
+  `zerodds_wire::PlCdr1Framing::DEFAULT` and the other 18 runtimes set the
+  bit on the extended marker and on the sentinel, which is what Cyclone DDS
+  recorded (`017f0800`). Found by the new self-test vector of
+  `write_pid_extended`. A generated codec passes its framing and was not
+  affected.
+
+- **F#: `ReaderSave`/`ReaderRestore` did not carry the reader's status**, so
+  a refusal inside a counting pass outlived the restore. `ReaderMark` carries
+  it now, and `ReaderClearDiscard` returns whether it cleared.
+
+- **The reliable end-to-end tests of the endpoint SDKs use generated code**
+  (OPEN-ITEMS 31). All 21 `crates/endpoint-e2e/tests/*_reliable.rs` build
+  their app from the `Ping` the language's generator writes from the IDL of
+  `crates/endpoint-e2e/src/codegen.rs` and the SDK's reliable writer, and
+  `assert_reliable_pings` reads every delivered body by the IDL's XCDR2
+  layout. The Rust app's generated codec is committed
+  (`crates/endpoint-e2e/tests/generated/pingpong_rust.rs`) and held to the
+  generator's output.
+  `endpoints/c/test/reliable_udp_app.c` and `endpoints/ocaml/reliable_app.ml`,
+  the former senders that nothing builds any more, are removed.
+
+- **The test `transient_backend_restore_keys_and_times_history_and_serves_every_late_joiner_once`
+  of `zerodds-dcps` raced the runtime's own tick** (OPEN-ITEMS 60). It
+  ticks the writer itself and looks at a reader proxy between a match and
+  its own tick; a tick of the runtime's scheduler in between pushed the
+  history to the new reader, and the proxy's `highest_sent_sn` read 4
+  instead of 0. Red on Windows in the weekly run 9037 (job 230275). On the
+  Linux test host 7 of 300 runs failed on `b1999073f5b` and 4 of 300 on
+  `3be7f0f9a81`, before `6c018d1662a`; with a pause of 300 ms after the
+  second match every run failed on both. The test starts its runtime with
+  `external_tick` now, so no tick but its own runs: 300 of 300 runs pass,
+  with the pause 5 of 5.
+
+- **The integration pillar's nextest steps reach GitLab's test report.**
+  nextest writes its JUnit file below the workspace's `target/nextest`, not
+  below `CARGO_TARGET_DIR`, where `ci/run_integration.py` looked; no job of
+  the pillar had a JUnit report (pipeline 8967).
+
+- **`zerodds-types`: a plain collection of a plain collection of a hashed
+  type said `EK_BOTH` in its header.** XTypes 1.3 §7.3.4.6.1 gives
+  `EK_BOTH` to a collection whose element (and key) identifier is fully
+  descriptive; `from_ast`, the minimal projection and the TypeObject v1
+  conversion gave it to every element that was a plain collection, so
+  `sequence<sequence<S>>` had a TypeIdentifier no other implementation
+  computes (CycloneDDS writes `EK_COMPLETE`, case `sequence-nested-struct`).
+  `TypeIdentifier::is_fully_descriptive` decides it in all three.
+
+- **`zerodds-dcps`: a participant that sends no multicast stops without
+  waiting a second** (OPEN-ITEMS 39). `DcpsRuntime::shutdown` woke its
+  receive threads with a datagram to their own sockets, and the one to the
+  SPDP multicast group went out only where the participant sends multicast:
+  with `discovery.no_multicast`, or not yet enabled, the thread of the SPDP
+  multicast socket waited out its 1 s read timeout, and so did every
+  deletion of such a participant. The shutdown now also closes the receive
+  sockets: `UdpTransport` implements `Transport::close`, which shuts the
+  read side down and on Linux wakes a thread waiting in it at once (sending
+  stays possible, the SPDP departure still goes out). A layered user
+  transport ends a waiting receive on `close` as well. On the Linux test
+  host the 145 tests of `zerodds-dcps --features security` took 118.0 s, 49
+  of them 1.0 to 1.1 s each, and take 57.8 s now, none of them in that
+  range.
+
+- **`zerodds-dcps`: `delete_participant` returned while a listener of the
+  participant was still running.** The thread that calls the status
+  listeners was told to stop and not waited for; it is joined now, so a
+  listener call in progress has returned when the deletion returns and none
+  follows. A thread of the runtime that ends up deleting its own
+  participant (a listener that deletes it) joins every thread but itself.
+  `participant_deletion_threads.rs` checks it, and on Linux that every
+  thread the participant started has ended.
+
+- **`vendor-live-corba-tao` is back.** The TAO 2.5.24 clients of
+  `zerodds-corba-dds-bridge`'s `tao_e2e` ended with `SIGSEGV` in the interop
+  image: its open-file limit is 1073741816, TAO sizes its tables by it and
+  the client's transport cache was not allocated (gdb: `bind_i` of
+  `TAO::Transport_Cache_Manager_T`, pipeline 8912, job 229335). With
+  `ulimit -n 1024` both tests pass (pipeline 8916); the test now starts the
+  TAO programs that way, the job runs them weekly again (pipeline 8917, job
+  229347: 2 tests in 18.3 s), `zerodds-corba-bridge-1.0` §10 and §12.3 cite
+  them (OPEN-ITEMS 101).
+
+- **`bench-regression` passed a cell that measured nothing.** A ping
+  without an echo ends at its maximum runtime with an empty histogram whose
+  quantiles read 0; the SHM cells stood at 0.00 µs as OK (pipeline 8827).
+  The gate counts the samples now and fails a cell with fewer than half of
+  them (SETUP_FAIL): the SHM cells get 0 of 30 000 (pipeline 8888,
+  OPEN-ITEMS 41).
+
+- **The Gradle plugin of `build-integration/java-gradle` did not compile.**
+  Its Kotlin used `it` in `Action` lambdas, which `kotlin-dsl` gives their
+  argument as the receiver; it had never been built (its README said so).
+  Built with Gradle 8.10.2 in `merge-java-gradle`, and the sample holds the
+  octets of its generated type to DDS-XTypes 1.3 §7.4 instead of round-tripping
+  it; the sample compiles for Java 17 with the JDK Gradle runs on instead of a
+  toolchain of a fixed version.
+
+- **`zerodds-dcps`: LIVELINESS_LOST of a new writer comes when its lease
+  runs out.** Registering a user writer did not wake the scheduler's
+  housekeeping pass; with nothing pending before, a silent MANUAL_BY_TOPIC
+  writer was counted up to 250 ms (the pass's idle park) after its lease ran
+  out (DDS 1.4 §2.2.4.1). Found by the first run on Linux arm64.
+
+- **`rmw-zerodds-shim` and `zerodds-opcua-bridge` keep the header of a
+  sample's type.** The shim handed every taken sample (and every service
+  request and reply) on under a header rebuilt from the XCDR version and
+  the byte order, PLAIN_CDR2 also for a sample that came as D_CDR2 or
+  PL_CDR2; the OPC UA bridge wrote its XCDR2 bodies without an XCDR2
+  offer and under the header of a `@final` type whatever the topic type
+  was (DDS-XTypes 1.3 §7.6.3.1.2, Table 60). `zerodds-dcps`'s
+  `SampleOrigin` and the C API's `ZeroDdsSampleOrigin` carry the
+  representation identifier of the header for that; the shim takes it from
+  there, the bridge sets the writer's offer and extensibility from the
+  topic type.
+
+- **`zerodds-opcua-pubsub`: a DataValue writes each timestamp followed by
+  its picoseconds.** OPC 10000-6 Table 27 orders the fields Value, Status,
+  SourceTimestamp, SourcePicoseconds, ServerTimestamp, ServerPicoseconds;
+  the encoder and the decoder put both timestamps before both picosecond
+  fields, so a DataValue with picoseconds and a server timestamp went out
+  and was read with the fields swapped. Found by
+  `uacs_5_2_2_17_a_data_value_is_its_mask_and_the_fields_in_the_order_of_table_27`.
+
+- **`zerodds-opcua-pubsub`: the AES-CTR counter block starts at 1.** The
+  BlockCounter of the counter block KeyNonce ‖ MessageNonce ‖ BlockCounter
+  was 0 for the first block; OPC 10000-14 §7.2.4.4.3.2, Table 157, and
+  RFC 3686 §4 start it at 1, so every encrypted payload of PubSub-Aes128-CTR
+  and PubSub-Aes256-CTR used the keystream of another implementation shifted
+  by one block. Found by the RFC 3686 test vectors #1 and #7.
+
+- **`zerodds-opcua-pubsub`: UADP discovery messages carry the SecurityHeader
+  and the ProbeType.** OPC 10000-14 §7.2.4.6.3 and §7.2.4.6.12.1 set the
+  SecurityHeader bit of ExtendedFlags1 for discovery announcements and
+  probes; the header was missing, and a probe went out without its
+  ProbeType (Table 178) before the InformationType. Both now follow Tables
+  168 and 178 to 180; a signed or encrypted discovery message is refused on
+  decode.
+
+- **`zerodds-opcua-bridge`: a PubSub publisher sends the connection's
+  `publisher_id`.** The WriterGroup took the default
+  NetworkMessageContentMask, which does not name the PublisherId, and the
+  configured `opcua.pubsub.connections[].publisher_id` never went out
+  (OPC 10000-14 §7.2.4.4.2 Table 154); a Subscriber that filters by
+  PublisherId (§6.2.9.1) did not match the bridge. Found by the contract
+  test with `zerodds-opcua-pubsub`.
+
+- **`zerodds-webdds-bridge`: a type a peer answers at once is no longer
+  missed.** `TypeRegistry::resolve_named` read the generation of the
+  TypeLookup registry after it sent `getTypes`; a reply that landed in
+  between was counted already, the generation did not move again, and
+  `create_topic` of an unconfigured type ended in "never resolved via
+  TypeLookup within the bound" with the type in the registry (merge
+  pipeline 8660, `create_topic_resolves_an_unconfigured_type_via_type_lookup`).
+  The generation is read before the first look into the registry, and the
+  request, one datagram, is sent again every 500 ms until the reply is in.
+
+- `zerodds-record` records a dispose with unregister of one instance
+  (DDSI-RTPS 2.5 §9.6.4.9, the D and U bits of a status info) as two
+  entries, `NotAliveDisposed` and then `NotAliveUnregistered`; it recorded
+  the unregister alone and the dispose was lost (OPEN-ITEMS 46).
+
+- **What the integration pillar found in the services and bridges.**
+  `zerodds-durability-service`'s replay writer offered TRANSIENT_LOCAL, so
+  a late TRANSIENT or PERSISTENT reader never matched it (DDS 1.4
+  §2.2.3.4); it offers PERSISTENT. `zerodds-mqtt-bridge` published the CDR
+  bytes without the encapsulation header and wrote a received header into
+  the sample (zerodds-mqtt-bridge-1.0 §4.2). `zerodds-websocket-bridge`
+  sent JSON text frames to every client and read binary frames as text; it
+  sends binary `ZDB1` frames unless the client asks for
+  `zerodds-ws-bridge-1.0+json` (§4.1, §4.3). `zerodds-grpc-bridged` refused
+  the §3 keys `dds_type`, `grpc_package` and `qos`, answered `Subscribe`
+  with one sample instead of a server stream, let two streams of one topic
+  split its samples, and carried `cdr_payload` without its header (§3,
+  §4.3, §4.4); every `Subscribe` stream now has a DataReader of its own.
+  `zeroddsConfig.cmake` refused every consumer of an SDK built without
+  idlc. The Nim reliable endpoint dropped ACKNACKs and ended at its 20 s
+  safety valve.
+
+- **`zerodds-routing-service` reads and forwards a sample in the format and
+  byte order of its encapsulation header (DDSI-RTPS 2.5 §10.5).** The filter
+  and the transform read every body little-endian, so a filter over a
+  `CDR_BE` sample compared swapped values, and the output writer framed a
+  forwarded body by its XCDR version alone: a `D_CDR2_BE` or `PL_CDR2_BE`
+  body went out under `CDR2_LE`. A route, a relay route included, now gives
+  its output the input's representation identifier (XCDR version, plain,
+  delimited or parameter list, byte order); a transformed body is written
+  in the input's byte order. A body a flat shape does not describe (a
+  parameter list, or a DHEADER the shape does not expect, DDS-XTypes 1.3
+  §7.4.3.4) is refused and counted as an error instead of read at wrong
+  offsets. `SampleProcessor::process` takes the identifier and returns a
+  `Processed`.
+
+- **What the contract tests with `zerodds-dcps` found in its consumers.**
+  `zerodds-durability-service` told its own replay samples apart by the
+  writer's entity handle, which no `SampleInfo` carries; it takes
+  `publication_handle()` (DDS 1.4 §2.2.2.5.5). `zerodds-mq` and
+  `zerodds-monitor` end their participants with `shutdown()`, so the peers
+  get the SPDP departure instead of waiting for the lease. The Python
+  binding documented a listener mask of 0 as every status; it is none, as
+  in `zerodds-dcps`.
+
+- **What the contract tests of the core crates found in their consumers
+  (`rc8-test-suite.md`, "Crate tier").** `zerodds-opcua-bridge` gave an
+  unbounded sequence or map the bound 4294967295 (`LENGTH_UNLIMITED`,
+  DDS-XTypes 1.3 §7.5.2.4.2), so the gateway announced ArrayDimensions
+  `[4294967295]` instead of `[0]`, and it now enables the `dynamic` feature
+  of `zerodds-types` it uses (as do `zerodds-record`, `zerodds-spy` and
+  `zerodds-webdds-bridge`); `zerodds-corba-cos-transactions` wrote a
+  non-nil IOR after another one without the alignment of CORBA 3.3 part 2
+  §9.3.1.1; `zerodds-corba-interop`'s `decode_string_body` returns the
+  error of a body that is no string instead of an empty one. Dependencies
+  nothing in a crate's shipped code used are gone or moved to the
+  dev-dependencies (`zerodds-wire` of `zerodds-wire-probe`,
+  `zerodds-discovery` of `zerodds-admin`, `zerodds-types` of the CoAP, MQTT,
+  WebSocket and CORBA bridges and of `zerodds-cli-common`,
+  `zerodds-wire-codec` of `zerodds-recorder-decode`).
 
 - **`chaos-clock-skew` drifts from elapsed time.** `CHAOS_CLOCK_DRIFT_PPM`
   used the time since the epoch scaled by 1e-9: 100 ppm was a fixed jump of
   about 176 s. The drift now accumulates from the first intercepted call
   (`elapsed_ns * ppm / 1e6`) in both `clock_gettime` and `gettimeofday`
-  (`c14c8a8504a`).
+  (`302e6aad1d0`).
 
 - **The arm64 `zerodds-dev` package carried x86-64 static libraries.**
   `assemble-debs.sh` built the SDK for the host; it now cross-builds for
   `--target` and checks every `.a` against the package architecture
-  (`a5931ccce4d`).
+  (`de738d7e0c1`).
+
+- **docs.rs could not build `zerodds-c-api` and `zerodds-bench-suite`.**
+  The build script of `zerodds-c-api` rewrote `include/zerodds.h` on every
+  build; docs.rs builds in a read-only source directory and the write
+  failed (os error 30). The build scripts of `zerodds-c-api` and
+  `rmw-zerodds-shim` skip the header under `DOCS_RS` and write it only when
+  it changed. The binary-only tools (`zerodds-idlc`, `-replay`, `-admin`,
+  `-recorder-bridge`, `-xmlc`) link their documentation to zerodds.org
+  (`8dec7db570c`).
+
+- **No `.rpm` for aarch64.** `publish-rpm.yml` built x86_64 only; aarch64
+  is built natively on an arm64 runner (`01cee6e5cfe`).
+
+- **No `zerodds-core` RPM could be installed.** `libzerodds.so` has no
+  SONAME, so the package required `libzerodds.so()(64bit)` (from the
+  `libzerodds.so` link) and provided only `libzerodds.so.1.0.0()(64bit)`.
+  The spec sets the SONAME `libzerodds.so.1` (`4e52e463515`).
+
+### Removed
+
+- **`zerodds-corba-interop`: `tests/codegen_roundtrip.rs` and
+  `tests/valuetype_wire.rs`**, which checked the generated stub against the
+  generated skeleton and the value codec against itself (the cross-ORB tests
+  and the octets of `value_wire` check the same against omniORB, TAO and
+  JacORB), and `competitors/run_interop.sh`, `run_suite.sh` and
+  `build_tao_naming_service.sh`.
+
+- **`tests/cross_lang_live` and the step `cross-lang-live` of
+  `tools/interop-gate`** (OPEN-ITEMS 46). The six scripts printed `PASS`
+  without starting a publisher or reading a sample. A subscriber of a
+  binding over `libzerodds` against a Rust publisher in another process is
+  still missing; the binding jobs of `crates/endpoint-e2e` check the
+  endpoint SDKs over DDS-XRCE, not these bindings.
+
+- **`zerodds-corba-dds-bridge`: the six library modules no code used**
+  (`locate`, `notify`, `qos_translation`, `servant`, `sync`, `wire`;
+  OPEN-ITEMS 98). The daemon implements LocateRequest, the request, reply
+  and notify mappings and the QoS of `zerodds-corba-bridge-1.0` §4.3, §4.4,
+  §4.7 and §6 in `bridge_daemon`; the modules described designs the spec
+  does not have. Their 24 tests and the 6 of `mapping` checked the code
+  against itself; `mapping` stays, the dds-chat tutorial and the
+  dds-warehouse demo describe their mappings with it.
 
 ### Changed
+
+- **A generated type reads its key members alone** (`zerodds-lang-rules`
+  `decode_keys…`, `zerodds-build`, `zerodds-dcps`
+  `DdsType::decode_key_members`, `zerodds-wire` `Reader::skip_*`, XTypes 1.3
+  §7.6.8): a `@final` or `@appendable` structure with a `@key` member gets
+  a read of the key members that steps over every other member — a
+  primitive, a `string`, a sequence or array of primitives, anything a
+  DHEADER delimits — or reads and drops it, and leaves it at its default.
+  Test `xtypes_7_6_8_decode_key_members_gives_the_key_of_the_whole_sample`
+  (a consumer build): the KeyHash is the whole sample's in XCDR2 and XCDR1,
+  both byte orders. `interop::ShapeType` reads its `color` alone.
+- **A BEST_EFFORT DataReader past its RESOURCE_LIMITS takes its channel
+  in by the eighth of its limit, by key alone** (`zerodds-dcps`,
+  `ReaderRoom`, `DataReader::ingest_for_room`): a take-in run walks the
+  whole cache, and one run per sample past the limit kept the receive
+  thread busy; the run now admits by the key members where no filter and
+  no EXCLUSIVE ownership needs the value, which is decoded when it is
+  taken. Linux test host, BEST_EFFORT KEEP_ALL, `max_samples` 100 000,
+  1 KiB, the subscriber taking every 3 s: 65 040 instead of 785 293
+  datagrams dropped by the kernel in 15 s, peak 330 MB. Admitting by key
+  alone made no difference measured on its own (785 293 either way).
+- **The runtime computes a KeyHash from the key members alone**
+  (`zerodds-wire-codec` `key_of_sample`, `decode_with`, `DecodePlans`;
+  `zerodds-dcps` `SerializedTypeSupport::key_material_from_body`, XTypes 1.3
+  §7.6.8): for a sample whose writer sent no `PID_KEY_HASH`, the runtime
+  read the whole body dynamically to hash its key; it now reads the key
+  members and steps over the others (a primitive, a `string`, a sequence or
+  array of primitives, anything behind a DHEADER or an EMHEADER). Linux
+  test host, release build, a kilobyte of octets before the key: 3.3 µs
+  instead of 92 µs per sample. Keeping the decoder's layout plans per type
+  (`DecodePlans`) made the whole read 1 % faster (92.8 → 91.5 µs). Test:
+  `xtypes_7_6_8_the_key_from_the_body_is_the_key_of_the_whole_sample`
+  (seven types, XCDR1 and XCDR2, both byte orders).
+- **A derived type that owns its fields reads its key from a body by the
+  plan** (`zerodds-wire` `codec::key_holder_from_body`; `zerodds-codec`
+  `key_material_by_plan`; `zerodds-derive`; XTypes 1.3 §7.6.8): its
+  `DdsType::key_material_from_body` reads the key members into the key
+  holder and steps over every other member by the plan, without building
+  a value, so a reader that admits by key — after `take_loan`, or past a
+  BEST_EFFORT reader's limit — decodes no sample for its instance. A shape
+  the read does not take (a final union on the way, an `@optional` key
+  member, a key member a writer left out, a PL_CDR1 parameter list) answers
+  `None`, and the reader reads the whole sample as before. Test
+  `xtypes_7_6_8_the_key_read_by_the_plan_is_the_key_of_the_whole_sample`:
+  final, appendable and mutable types with a nested key struct, strings,
+  sequences, an array and an `@optional` member, under XCDR1 and XCDR2 in
+  both byte orders, give the KeyHash and holder of the whole sample.
+  Measured on the Linux test host (release build, 2 408 octets): 1.13 µs
+  per sample against 3.47 µs to decode the sample and key the value.
+- **A DATA's in-line QoS of only PID_KEY_HASH and PID_STATUS_INFO is read
+  in place** (`zerodds-rtps`, `DataSubmessage::inline_qos` is an
+  `inline_qos::InlineQos`; DDSI-RTPS 2.5 §9.4.5.3.2): such a list, the
+  in-line QoS of almost every sample, is held without an allocation, as
+  Cyclone DDS's `ddsi_plist_quickscan` reads it; any other list is parsed
+  into a `ParameterList` as before. `InlineQos::key_hash` and
+  `status_info` answer for both forms, `parsed` gives the list for the
+  other parameters, `to_list`/`into_list` the whole list, and a list built
+  for a DATA goes in with `.into()`. Test
+  `ddsi_9_4_5_3_2_inline_qos_read_in_place_is_what_the_parser_reads`: the
+  same parameters, octets taken and refusals as the parser, for both
+  orders, both byte orders, both list ends, PAD, IGNORE, a duplicate, the
+  must-understand bit, a wrong length and a cut-off list. Measured on the
+  Linux test host (1 kB samples, BEST_EFFORT, six pairs in alternating
+  order): 0.26 instead of 1.26 allocations per sample on the receive
+  thread, 6.8–7.0 % fewer user-space instructions per sample in the
+  subscriber; the writer is unchanged.
+- **An in-line QoS value of up to 24 octets no longer has an allocation of
+  its own** (`zerodds-rtps`, `Parameter::value` is a `ParameterValue`,
+  `INLINE_VALUE`; DDSI-RTPS 2.5 §9.4.2.11): PID_KEY_HASH, PID_STATUS_INFO
+  and the other short values lie in the `Parameter`, a longer one in a
+  `Vec<u8>`. `ParameterValue` dereferences to `[u8]`, compares with
+  `[u8]`, `Vec<u8>` and arrays, and is built with `.into()` from them.
+  Measured on the Linux test host (1 kB samples, BEST_EFFORT, three pairs
+  in alternating order): 1.25 instead of 2.26–2.30 allocations per sample
+  on the receive thread, 1.7 % fewer user-space instructions per sample in
+  the subscriber; the writer is unchanged.
+- **A received datagram is a `Payload`** (`zerodds-transport`,
+  `ReceivedDatagram::data`; `zerodds-rtps` `Payload`; `zerodds-dcps`
+  `SampleBytes`): a payload is a range of an `Arc<[u8]>` or of a shared
+  `Vec<u8>`, which it takes over without a copy. A transport builds `data`
+  with `.into()` from a `Vec<u8>`, an `Arc<[u8]>` or a `&[u8]`. Measured on
+  the Linux test host (1 kB samples, BEST_EFFORT): the receive thread's CPU
+  time per sample is unchanged (1.15–1.17 µs).
+- **A writer no longer copies its QoS for every sample to learn the
+  in-line QoS length** (`zerodds-rtps`, `ReliableWriter`, DDSI-RTPS 2.5
+  §8.4.9.2.4, §8.4.14.1): the length the fragment size is made of is
+  counted from the parts. Measured on the Linux test host (1 kB samples,
+  BEST_EFFORT, two runs each): 707–712 instead of 596–610 kS/s written,
+  4.1 instead of 14.1 allocations per sample on the writing thread.
+- **The receiver state no longer allocates per submessage** (`zerodds-rtps`,
+  `ReceiverState`, DDSI-RTPS 2.5 §8.3.4): its reply-locator lists are a
+  `ReplyLocators` that holds one locator in place. Measured on the Linux
+  test host (1 kB samples, BEST_EFFORT, 600 kS/s for 15 s): 20.2 instead
+  of 59.7 million allocations on the receive thread; the CPU time per
+  sample is unchanged within the spread of the measurement.
+- **The Windows platform jobs of the weekly run and of a release candidate
+  start after every job on the CI runner host** (the stage `windows`;
+  `internal/release/rc8-test-suite.md`, decision 12): the Windows runner shares the
+  virtualization host's disk with the CI runner host, and its tests ran into
+  their 25 s beside the CI runner host's builds. `crate-tier-record` moved to the stage `record`
+  after them. Weekly run 9186: the Windows jobs started 3 s after the last
+  job of the CI runner host, 11 of 11 green, the slowest of 3868 test results 4.3 s.
+
+- **The speed pillar's clones fetch with the CI job's token** instead of
+  the speed host's git credential store, which had dropped its credential
+  after a rejection (weekly run 9186, job 231127).
+
+- **The weekly coverage jobs name a negative line count and fail** instead
+  of counting the line again from the regions of `cargo llvm-cov report
+  --json` (`ci/coverage_jobs.py`): such a count is a test that ends with
+  threads of its own still running.
+
+- **`wireprobe-c-matrix` hands the units of a run to the compiler in
+  groups**, one compiler call and one program for up to 48 units, where it
+  compiled and linked each unit alone (OPEN-ITEMS 61): a configuration with
+  an empty cache 8.4 to 9.7 s on the CI runner host (pipelines 9068 and 9075). Its
+  `expected_bytes` test runs a configuration per encoding, and the CORBA and
+  ROS 2 configurations, whose rows in the table are `xcdr1` only, no longer
+  compile `xcdr2`: at most 4.0 s per test with an empty cache on the Linux
+  test host (two runs).
+
+- **`ros-rmw-deb` takes rustup's toolchain and the crates.io registry from
+  the cache volume of the runner host** (OPEN-ITEMS 97): 1.4 GiB written by
+  a job instead of 4.3 to 4.4 GiB (jobs 230660, 229526, 229706).
+
+- **`integration-bindings-ffi` runs on merge** for every change to
+  `zerodds-c-api`, `zerodds-cpp`, `zerodds-py`, `crates/cs` or
+  `crates/ts-node`, beside the job of the touched area: the merge lane runs
+  at most one job per area and, new, the jobs a specification has run on
+  every push of what it covers (`merge_beside` in
+  `ci/integration_scenarios.py`). zerodds-ffi-loader-1.0 §5 says so now
+  in place of a `cross-lang-matrix` job on every push.
+
+- **The C column gives a structure without members one member,
+  `uint8_t zd_no_members`, that is not serialized** (C23 §6.7.2.1p8 leaves a
+  structure with no named member undefined; IDL 4.2 allows one). It refused
+  the structure before; the 32 cells of `empty-struct`,
+  `empty-struct-as-base` and `empty-struct-in-sequence` that the C column's
+  gaps file declared as a language limit now match
+  `tests/interop-corpus/expected-bytes.tsv`. Cyclone DDS's idlc 11.0.1 puts
+  such a structure under `#if 0` and a type using it does not compile; RTI's
+  rtiddsgen 4.7.0 writes an empty structure, a GNU C extension.
+- **The Flutter app of the dds-chat tutorial writes and reads XCDR2**: a
+  DHEADER and members aligned to at most four octets, where it wrote neither.
+- **The round trip gate compares with the last release in the same
+  window** (OPEN-ITEMS 41, the maintainer's decision). `speed-regression-1`
+  and `-2` measure `roundtrip-1us` of the release tag (v1.0.0-rc.7, built
+  by `speed-build-reference` with the checked tree's `roundtrip_1us.rs`)
+  and of the checked tree in turn, five repetitions per side and cell; a
+  cell is red when the median p50 of the checked tree lies more than 25 %
+  above the release's. The tolerance comes from one binary measured
+  against itself on the speed host: 24 cell-runs, differences -10.4 to
+  +17.0 %, standard deviation 5.6 %. The stored baselines
+  (`tests/perf/internal-bench/baselines.txt`, `--update`,
+  `RUN_BENCH_REGRESSION_UPDATE`) are gone. rc.7 cannot measure the SHM
+  cells (its SHM user transport, fixed in `9ba7af8cf3a`); the gate declares
+  that per tag and measures the checked tree alone there.
+
+- **The round trip gate measures on the exclusive speed host.** The
+  release job `bench-regression` ran on a shared CI runner, where its SHM
+  and SameHost cells measured above the +20 % tolerance while other jobs
+  ran beside it (pipeline 8962). It is now `speed-regression`, a step of
+  the speed pillar (`ci/jobs/speed-pillar.yml`, `tests/perf/speed/pillar.sh
+  regression`): the same eight cells and the same gate, built by
+  `speed-build` and run on the host the pillar reserves exclusively through
+  the board. It blocks a release candidate and reports in the weekly run;
+  `SPEED_PILLAR=regression` runs it alone, `RUN_BENCH_REGRESSION_UPDATE=true`
+  keeps new baselines as an artifact.
+
+- **`zerodds-dcps`: the last handle of a `DcpsRuntime` stops it.** Its
+  worker threads, and the tick driver of an external executor, hold the
+  runtime weakly and only for one datagram or one tick, not while they
+  wait; when the last `Arc<DcpsRuntime>` its owner holds drops, `Drop`
+  stops the threads and joins them, as `shutdown` does. Before, each
+  thread held its own strong reference, and a dropped handle stopped
+  nothing: the five threads of a runtime ran on until the process ended
+  (measured on the Linux test host). `runtime_drop_threads.rs` checks it
+  without a participant and without `shutdown`.
+
+- **`zerodds-idl-lower`: the caller's `default_extensibility` reaches
+  enumerations and bitmasks**, every type that carries an extensibility
+  (XTypes 1.3 §7.3.1.2.1.8, Annex B `EnumTypeFlag`, `BitmaskTypeFlag`), as
+  CycloneDDS's `idlc` applies its default; it filled structures and unions
+  only, and an unannotated enumeration under a `@final` default kept the
+  appendable position in its TypeObject flags.
+
+- **A coverage item whose cited test runs in no CI job is `partial`**
+  (`internal/spec-coverage/PROCESS.md`: `done` needs a test that is green in
+  CI), and the missing run is an `open` item of its own beside it:
+  `ros2-rmw.md` 17 items and `zerodds-py-1.0.md` §6.4 (the ROS 2 tests and
+  check programs, OPEN-ITEMS 42), `zerodds-ffi-loader-1.0.md` §3.6 (the
+  Flutter tests, 59), `cross-vendor-validation.md` CV-18b and CV-21b (62). A
+  test of `ci/manual-tests.tsv` with a green last run counts as green
+  (decision 11 of `rc8-test-suite.md`), shown apart: `dds-tsn-1.0.md` Annex A
+  stays `done`; so does a test only the speed pillar's `speed-async-write`
+  runs, by that job's status (three items of `zerodds-async-1.0.md`). CV-3 cites the OMG cases by their
+  names in the JUnit report of `omg-rtps-fastdds`. Every coverage document's
+  Test-Lauf line names the CI jobs that ran its cited tests green
+  (`coverage_results.py --test-run`), not a run on a host.
+
+- **The weekly run runs the crate tier of the packages a change of the week
+  reaches** (`ci/weekly-crate-tier.yml`, `ci/weekly_crate_tier.py`): every
+  package one of whose transitive dependencies, or which itself, changed
+  since the last green weekly run, the first time every package. The merge
+  lane runs a package's own tests only when the package changes. Its first
+  run (pipeline 9041): 200 jobs, 74.2 minutes of job time, two red, one a
+  test of `zerodds-routing-service` that dropped its sink runtime (fixed),
+  one a C column case past 25 s under load (OPEN-ITEMS 61). The
+  `security-pki` contract with `zerodds-security` holds that a class id
+  without versions is not PKI-DH 1.x.
+
+- **The TypeObjects of the interop corpus are held to CycloneDDS's**
+  (`crates/types/tests/type_object_bridge.rs`). The test compared this
+  project's TypeObjects with its own decoder. Now
+  `tests/interop-corpus/cyclone-type-objects.tsv` holds the TypeObjects
+  Cyclone's `idlc` wrote for 333 corpus cases (generated from the matrix by
+  `tools/expected-bytes/type_objects.py`, MD5 of each object checked
+  against its identifier): the model rebuilt from Cyclone's COMPLETE object
+  writes the sample as Cyclone does (`expected-bytes.tsv`, XCDR2 and XCDR1
+  little endian, 630 cells), and the identifiers computed
+  from the IDL, read with Cyclone's default extensibility (`@final`), are
+  Cyclone's in 263 COMPLETE and 266 MINIMAL cases; the others part where
+  XTypes 1.3 and Cyclone do: the must-understand bit of a union
+  discriminator (§7.2.2.4.4.4.6) and of a key member (§7.2.2.4.4.4.8), the
+  `hash_id` of a `@hashid` member, and Annex B's minimal type-flag mask.
+
+- **`zerodds-float128` reads a long decimal from its first forty
+  significant digits** when the two values they bound the decimal by round
+  to the same binary128; only a value that close to a rounding boundary
+  reads every digit
+  (IEEE 754-2019 §5.12.2 still holds, checked at the tie between one and
+  its successor written out to 200 digits). The exact form of the smallest
+  normal value, 11 458 digits, which the JSON column writes, took 49.3 ms
+  to read in a test build and takes 5.5 ms. The `dynamic_corpus` test of
+  XTypes 7.5.2, which reads it 16 times, took 1.69 to 1.73 s on the Linux
+  test host and takes 0.98 to 0.99 s.
+
+- **`zerodds_dcps::runtime::setting_path` looks a name up in a table** built
+  once out of `SETTINGS`, the first row of a name winning as before; it
+  walked the rows per lookup, and every configuration read looks up each of
+  its settings.
+
+- **The Elixir corpus check compiles a share's cases in one Erlang VM**
+  (`elixir_compiles_together` in `crates/lang-rules/tests/elixir_end_to_end.rs`)
+  and unloads a case's modules before the next; a share that does not pass
+  cleanly goes through `elixirc` case by case as before. All Elixir codegen
+  tests are one job, `integration-codegen-elixir`: 107.0 s on the CI runner host (pipeline
+  8976) instead of three jobs of 497.0 s together (pipeline 8967).
+
+- **The weekly run checks each property once** (internal/release/rc8-test-suite.md,
+  "Interop" and "The weekly run measured"). The OMG dds-rtps suite runs
+  every case against Cyclone and the cases that carry a vendor's dialect
+  (one per family) against Fast DDS and Connext, Connext with the
+  presentation families only it runs; dds-security the permission
+  combinations and protection kinds against Connext (83 of 275 cells) and
+  every protection kind against CoreDX: 14 jobs instead of 26. The
+  `vendor-live` jobs are four (one build of the vendor programs per job);
+  the three against the Fast DDS shapes client went, the dds-rtps cases
+  against Fast DDS check the same exchanges. The byte gate
+  (`ci/vendor-bytes.yml`) runs when the pinned interop image, its cases or
+  the recorded rows change and on a release candidate, not weekly. The
+  three SwiftPM examples run in `integration-bindings-swift` as the
+  programs `swift build` built: under `swift run` each ended about two
+  minutes after its last line. The F# corpus is one job: the cases of a
+  share go through one `dotnet fsi` (the header comment of a generated file
+  had sent each case through one of its own), 16 shares instead of 256.
+  `provision.sh` keeps the SDK archives once per runner host and the
+  Debian packages per slot (`integration-codegen-swift` wrote 142 instead of
+  3407 MiB, pipelines 8952 and 8956). `cutover-owners` went with the empty
+  cutover list (B5). `ci/job_io.sh` (`JOB_IO_SCAN=1`) reports what a job
+  wrote.
+
+- **The speed pillar starts with the weekly run.** Its jobs belong to the
+  pipeline itself, in its first stage (`ci/jobs/speed-pillar.yml`), and no
+  longer to a child pipeline in the last stage: GitLab gives a runner the
+  pending job with the lowest id, and a child pipeline's jobs are created
+  after every job of its parent (the `cutover-owners` child of pipeline
+  8823 was created at 04:24 and started at 05:28). Every job may fail; a
+  job without a reservation or without the pipeline's build stops at once
+  and says so (`tests/perf/speed/board.py`, `pillar.sh measure`), pipeline
+  8863.
+
+- **`integration-sdk` without the C++ programs of DDS-RPC.** They run in
+  `integration-rpc-cpp` (`tests/integration/rpc_cpp.sh`, `zerodds-rpc`
+  `cpp_*`), on a change to `zerodds-rpc` and weekly. `integration-sdk` took
+  292.3 s of its 300 with them (pipeline 8791) and 163.9 s without
+  (pipeline 8856); `integration-rpc-cpp` 40.8 s.
+
+- **`bench-regression` leases its DDS domains** through
+  `tests/integration/with_domains.py` (`ZERODDS_TEST_DOMAINS`) from the
+  runner host's share of the band, instead of domains 140 to 175 it
+  computed itself, whose RTPS ports lie in the kernel's ephemeral range.
+
+- **The whole-corpus tests of `zerodds-interop-results` run weekly.** The
+  job `interop-results` runs `--verify` and the 12 tests in the cargo
+  profile `corpus`, a test build with `opt-level = 2`: 4.0 to 16.4 s each
+  instead of 22.5 to 75.3 s, the job 113 s (pipelines 8854, 8877). Four tests went: they compared
+  the committed tree, ledger, tables, generated documents and page with a
+  fresh run, which `--verify` does.
+
+- **The first job of each coverage chain fetches no artifacts** of the
+  jobs before it; it uses none (17.5 and 17.3 s in pipeline 8823).
+
+- **`ci/full.yml` is deleted.** No pipeline included it; its last job,
+  `test`, only carried the `--exclude` list of the packages cut over to the
+  crate tier. That list is `ci/cutover-packages.txt` now, one package per
+  line, and `ci/cutover_gate.py --check` also fails on a name there that is
+  no package of the workspace. `ci/select_merge.py` loses the child
+  configuration that included the file (no job called it; the merge lane is
+  `ci/merge_lane.py`).
+
+- **`macos-bundle` runs by hand in the release packaging check**
+  (`RELEASE_PACKAGING_CHECK=true`, `RELEASE_PACKAGING_JOB=macos-bundle`;
+  `ci/jobs/macos-bundle.yml`, which `ci/full.yml` includes for release
+  tags). Its manual rule on a push to `main` never fired, because a push
+  pipeline does not include `ci/full.yml`. The job does not let `brew
+  style` install gems into the runner's Homebrew.
+
+- **Rust toolchain 1.97.1 (Ferrocene 26.08).** `rust-toolchain.toml` pins
+  1.97.1, the workspace declares `rust-version = "1.97"`; the CI image
+  (`ci/Dockerfile.rust`, base `rust:1.97.1-slim-trixie`), the tool pins, the
+  GitHub workflows, the `.deb`/`.rpm` builds and the Docker images under
+  `packaging/docker/` follow. `rust-toolchain.toml` lists the Ferrocene 26.08
+  targets; `aarch64-unknown-linux-gnu` is not one of them. The code follows
+  the lints of clippy and rustdoc 1.97: nested `if let` as let chains,
+  `is_multiple_of`, derived `Default`, `ptr::slice_from_raw_parts_mut`
+  instead of a reference cast, and intra-doc links that name a crate by its
+  Rust name.
 
 - **Release files.** `source.tar.gz` comes from `git archive` with one top
   directory `zerodds-<version>/`; one `SHA512SUMS` over all release files is
   signed with minisign (`SHA512SUMS.minisig`) and keyless with cosign
   (`SHA512SUMS.cosign.bundle`); the per-file signatures of the Linux builds,
-  never published, are gone (`a5931ccce4d`).
+  never published, are gone (`de738d7e0c1`).
 
 - **Homebrew.** The macOS release jobs build the bundle the formulae
   install; `publish-distros.yml` renders the formulae from the release,
   installs them on macOS and pushes the tap. Formulae point to
-  `zero-objects/zero-dds` (`a5931ccce4d`).
+  `zero-objects/zero-dds` (`de738d7e0c1`).
+
+- **RPM repository.** The pull deploy of `packages.zerodds.org` is in the
+  repository (`packaging/linux/repo-server/sync-zerodds-packages`). It
+  verifies `SHA512SUMS.minisig` and every package against `SHA512SUMS`,
+  signs every `.rpm` with the repository key and publishes it only after
+  the signature verifies against `zerodds.gpg`, and writes one `.repo` file
+  per distribution (`zerodds-fedora.repo`, `zerodds-rhel-9.repo`,
+  `zerodds-opensuse-leap-15.6.repo`). The release workflow installs every
+  `.rpm` from a signed local repository with `gpgcheck=1` before
+  publishing (`01cee6e5cfe`, `4e52e463515`).
 
 - **Crate docs follow the code** in `durability-store-file`, `cli-common`,
   `corba-rt`, `corba-rust`, `corba-cos-notify`, `opcua-pubsub`,
-  `recorder-decode` and `opcua-server` (`46a873089ad`).
+  `recorder-decode` and `opcua-server` (`e398c0db084`).
+
+## [1.0.0-rc.7.1] — 2026-10-31
+
+Three crates on crates.io only; no other channel.
+
+### Fixed
+
+- crates.io had the rc.7 crates from `a13c80b07`, before three fixes in
+  the tag. Published alone as `1.0.0-rc.7.1`: `zerodds-transport-udp`
+  builds for musl, `zerodds-webdds-bridge` for Windows, `zerodds-lang-rules`
+  writes Javadoc that doclint accepts. Dependents ask for `^1.0.0-rc.7` and
+  take rc.7.1. With the next release the three return to the workspace
+  version.
 
 ## [1.0.0-rc.7] — 2026-10-28
 
 The workspace was taken apart and rebuilt. `f225e12ef5e` reduced `members`
-from 141 entries to three, `d045e43ea86` deleted the old code — 1321 files,
+from 141 entries to three, `fa2ed8b0a9c` deleted the old code — 1321 files,
 367,739 lines, 37 `Cargo.toml` — and everything since is a crate re-entering
 on the new foundation. That single fact explains most of what follows.
 
@@ -57,7 +1464,7 @@ on the new foundation. That single fact explains most of what follows.
   `zerodds-idl-java`, `zerodds-idl-python`, `zerodds-idl-ts`,
   `zerodds-idl-csharp`, `zerodds-cs`, `zerodds-java-omgdds` and
   `tools/dds-roundtrip-codegen` were members at rc.6 and are neither members
-  nor on disk at rc.7 (`d045e43ea86`).
+  nor on disk at rc.7 (`fa2ed8b0a9c`).
 
   **Migration:** `zerodds-cdr` → `zerodds-wire`. `zerodds-idl` →
   `zerodds-idl-cst` / `-parse` / `-lower` over `zerodds-ast`. The
@@ -66,7 +1473,7 @@ on the new foundation. That single fact explains most of what follows.
   `zerodds_build::Config::new().compile(&["types.idl"])`. The C# source
   tree came back under `crates/cs/csharp/` on the C FFI, the Java source
   tree under `crates/java-omgdds/java/` as a pure-Java implementation with
-  its own RTPS stack and no JNI (`1dba39799e3`); neither has a Rust crate of
+  its own RTPS stack and no JNI (`043616494b3`); neither has a Rust crate of
   its own.
 
 - **`zerodds-idlc` keeps its name and loses its whole flag surface.** Gone:
@@ -82,22 +1489,22 @@ on the new foundation. That single fact explains most of what follows.
   **The loss of `-D` binds every build system** that passed preprocessor
   defines on the command line; `zerodds-build` carries it (`Config::define`)
   and is the supported path. `--default-extensibility` was removed with the
-  rest and put back in `9a364ce5db2`, this time on all six subcommands.
-  `-I`/`--include` came back in `92a4f851476`, with `generate --stamp`,
+  rest and put back in `926bfa9d184`, this time on all six subcommands.
+  `-I`/`--include` came back in `998acfd871c`, with `generate --stamp`,
   `--depfile` and `--output-manifest`: the build contract the CMake function
   `zerodds_idlc_generate` drives.
 
-- **Python: `zerodds.idl` and `zerodds.cdr` are gone** (`4939b42a95c`). Their
+- **Python: `zerodds.idl` and `zerodds.cdr` are gone** (`8ae310a6e6f`). Their
   callers use the code `zerodds-idlc generate --lang python` writes and the
   separately versioned wire runtime (`runtime/python`, `zerodds_wire`).
 
-- **The `interop.rti_group_coherent` setting is gone** (`cf85f666c78`), with
-  the RTI group-coherent virtual-GUID emulation it switched (`7acda62edc1`):
+- **The `interop.rti_group_coherent` setting is gone** (`af9b246601e`), with
+  the RTI group-coherent virtual-GUID emulation it switched (`f95383939ba`):
   RTI reassembles a group-coherent set by a proprietary rule that the
   emulation did not reach.
 
 - **DDS-RPC 1.0: names the specification does not define are gone from
-  `zerodds-rpc`** (`03b9867ea4d`, `3d4c42cad19`, `099e1d0fd59`).
+  `zerodds-rpc`** (`1e28b13546c`, `e305669e2c4`, `2fe2b7cdea1`).
   `RpcAnnotation::RpcRequest` and `RpcReply` (`@RPCRequest`, `@RPCReply`);
   `codegen::build_enhanced_pair`, `build_enhanced_all` and `MethodPair`,
   which described one topic pair per operation with a header, where
@@ -112,7 +1519,7 @@ on the new foundation. That single fact explains most of what follows.
   `client_matching_complete` for matching (§7.6.2).
 
 - **DDS Java PSM: `org.omg.dds.topic.TopicType` is gone**
-  (`f863e054b33`). DDS-Java-PSM 1.0 §7.2.6 forbids an implementation's
+  (`81d3f84b59b`). DDS-Java-PSM 1.0 §7.2.6 forbids an implementation's
   extensions in `org.omg.dds` or any package with that prefix, and nothing
   referenced the type. The annotation bridge of the IDL-Java runtime is in
   `org.zerodds.types` and `org.zerodds.rpc`.
@@ -531,7 +1938,7 @@ on the new foundation. That single fact explains most of what follows.
 ### Changed
 
 - **BREAKING (generated Rust): an IDL `map` is a `Vec<MapEntry<K, V>>`**
-  (`2e6e454418b`, `ab55a59d1d1`). XTypes 1.3 §7.5.1.3.6 binds a map to the
+  (`9ea4944e251`, `06ca537fe49`). XTypes 1.3 §7.5.1.3.6 binds a map to the
   sequence of `MapEntry` where a language has no map of its own; rc.6
   generated a `BTreeMap<K, V>`, whose entries come out in ascending key
   order rather than in the order they were put in. The entry is
@@ -549,7 +1956,7 @@ on the new foundation. That single fact explains most of what follows.
   `destination_order`, `presentation`, `content_filter`, `relay`,
   `property`, `data_tags`. A struct literal that names every field does
   not compile. **Migration:** both have a `Default` (`UserWriterConfig`
-  since `b31d44d0fd3`); `..Default::default()` keeps a literal to the
+  since `f2b52d2cd1e`); `..Default::default()` keeps a literal to the
   fields that differ.
 
 - **BREAKING (`zerodds-rtps`): `ParticipantBuiltinTopicData` grew six
@@ -559,7 +1966,7 @@ on the new foundation. That single fact explains most of what follows.
   struct has no `Default`; a struct literal names them.
 
 - **BREAKING (`zerodds-security`): `LoggingPlugin` has the operations of
-  DDS-Security 1.2 Table 46** (`17359dfef99`): `set_log_options`,
+  DDS-Security 1.2 Table 46** (`889ebc4488b`): `set_log_options`,
   `enable_logging` and `set_listener` (§9.6.2.2.1, .3, .4) are required
   methods. An implementation outside the workspace implements them; `log`
   logs according to the options only after `enable_logging`.
@@ -1008,13 +2415,13 @@ on the new foundation. That single fact explains most of what follows.
   the same-host path carried every transport's payload.
 
 - **`bench-regression` measures each transport and the same-host channel
-  apart.** Since `6bbed212a93` the same-host channel carries datagrams to
+  apart.** Since `c996fd7a076` the same-host channel carries datagrams to
   UDP locators only, so the `UDPv4` cell measured the channel; before it,
   the older same-host path carried user data for every transport and the
   `TCPv4` and `SHM` cells measured that path too. The jump the nightly of
   2026-10-06 reported (TCPv4/64 p50 90.1 µs against a baseline of 64.5) is
   that change and not a slower transport: on the Linux test host without the channel,
-  TCPv4/64 is 50.8 µs at `39a5a0e1c5d` and 58.6 µs now, SHM/64 31.8 and
+  TCPv4/64 is 50.8 µs at `8f94dbd7d6e` and 58.6 µs now, SHM/64 31.8 and
   32.7, UDPv4/64 34.7 and 36.8. The transport cells now run with
   `ZERODDS_SAME_HOST_SHM=0` and a `SameHost` cell measures the channel.
 - **The Homebrew channel has a build.** A `macos-bundle` job on a runner
@@ -1029,7 +2436,7 @@ on the new foundation. That single fact explains most of what follows.
   messages through the installed package. Only the Jazzy build has run so
   far (nightly 7117), before the matrix and the exchange were added.
 
-- **A ZeroDDS GUID prefix opens with the vendor id** (`b2ada810fbf`).
+- **A ZeroDDS GUID prefix opens with the vendor id** (`06ee6f30fe9`).
   DDSI-RTPS 2.5 §9.3.1.5 puts `vendorId` in octets 0..2 of `guidPrefix`
   ("shall"); ZeroDDS put a host id there. `GuidPrefix::zerodds` writes
   `0x01F0`, the host id in octets 2..6 (`GuidPrefix::host_id` reads it
@@ -1039,30 +2446,30 @@ on the new foundation. That single fact explains most of what follows.
   host id.
 
 - **BREAKING: a `DdsType` without a big-endian codec refuses big-endian**
-  (`b9dc47e5b1a`). `encode_be`/`decode_be` defaulted to the
+  (`0df940ec023`). `encode_be`/`decode_be` defaulted to the
   little-endian codec and wrote little-endian octets under a big-endian
   encapsulation. They refuse now unless the type sets
   `BYTE_ORDER_AGNOSTIC`.
 
 - **BREAKING: `ReconnectExhausted` carries the last error**
-  (`b2ada810fbf`). `amqp-dds-endpoint`'s
+  (`06ee6f30fe9`). `amqp-dds-endpoint`'s
   `ClientError::ReconnectExhausted { attempts, last }` keeps the error of
   the last attempt; it was a count alone.
 
 - **BREAKING: `zerodds_idl_parse::Diagnostic` has a `file` field**
-  (`9e17d17c27b`), `None` for the unit itself. A struct literal adds
+  (`70ac19a8b05`), `None` for the unit itself. A struct literal adds
   `file: None`.
 
-- **Model snapshots are version 3** (`53d5cc47aaa`). A version 2
+- **Model snapshots are version 3** (`c5910638396`). A version 2
   snapshot is refused rather than misread.
 
-- **Status listeners run when a status changes** (`4eac63eecd4`,
-  `1335c510807`). DDS 1.4 §2.2.4.1: a reader's, writer's and topic's
+- **Status listeners run when a status changes** (`18d4f22089b`,
+  `54d289e7d3f`). DDS 1.4 §2.2.4.1: a reader's, writer's and topic's
   communication statuses were dispatched only inside the status getters
   and `drive_listeners()`. A dispatcher thread per runtime runs them on
   the runtime's status hook; a first poll at zero dispatches nothing.
 
-- **21 crates no longer claim `no_std`** (`7be1afa963e`). They did not
+- **21 crates no longer claim `no_std`** (`e57af154bcd`). They did not
   build for `thumbv7em-none-eabihf`; the category, the keyword and the
   documentation line went. The remaining 23 are built by
   `tools/no-std-claims-gate.sh` in the CI job `no-std`.
@@ -1086,7 +2493,7 @@ on the new foundation. That single fact explains most of what follows.
   reads the attribute as well as the manifest: 58 crates, 0 failures.
 
 - **BREAKING: the default dialect is the specification, not Cyclone**
-  (`324e99d9865`). Four axes change what goes on the wire when a caller names
+  (`b1560e5ec68`). Four axes change what goes on the wire when a caller names
   no dialect: `default_extensibility` `Final` → `Appendable` (XTypes 1.3
   §7.3.1.2.1.8), `pl_cdr1_headers` `AlwaysExtended` → the short header wherever
   §7.4.1.2.2 allows it, `must_understand` `Declared` → `DeclaredAndKey`, plus
@@ -1102,7 +2509,7 @@ on the new foundation. That single fact explains most of what follows.
   `build.rs`.
 
 - **BREAKING (generated code): a bounded collection's helper names carry
-  the bound in front of the element** (`31574259c75`). `sequence<string, 4>` and
+  the bound in front of the element** (`2e8f74034fe`). `sequence<string, 4>` and
   `sequence<string<4> >` used to get one name, `seq_string_b4`, and so one
   codec body — the member declared first decided whether the length or the
   string was checked. Same for nested sequences and for a map's bound against
@@ -1112,23 +2519,23 @@ on the new foundation. That single fact explains most of what follows.
   has to follow.
 
 - **BREAKING (`zerodds-security-runtime`): `SecurityProfileConfig` carries
-  a `Material` per entry and the key's password** (`64dcdf61067`,
-  `92ac6bbef3e`). The six paths are `Material::File` or `Material::Inline`
+  a `Material` per entry and the key's password** (`f44e6061f25`,
+  `e29a7520cb7`). The six paths are `Material::File` or `Material::Inline`
   — a `data:` URI is content, not a path — and `identity_key_password`
-  is new; so are `max_blocks_per_session` (`8b33e023321`) and
-  `identity_crl` (`9ec4dd02452`). **Migration:** `.into()` on a `PathBuf`,
+  is new; so are `max_blocks_per_session` (`7f684a325da`) and
+  `identity_crl` (`011b8e183b8`). **Migration:** `.into()` on a `PathBuf`,
   `identity_key_password: None` where the key is not encrypted, and
   `max_blocks_per_session: None, identity_crl: None` for the defaults.
 
 - **BREAKING (`zerodds-lang-rules`, `zerodds-lang-cst`): `@verbatim`
-  nodes in every column** (`ca9b66e5d43`). Seventeen target CSTs gained a
+  nodes in every column** (`a7c29ac5be5`). Seventeen target CSTs gained a
   `Verbatim` variant, several structs a `BodyText` field, and
   `adapter::elixir::elixir_modules` returns `elixir::TopLevel` entries.
   A `match` over one of those enums, or a struct literal of one, has to
   name the new parts.
 
 - **BREAKING: annotations in a `CompleteTypeObject` take the form of
-  DDS-XTypes 1.3 Annex B** (`74a1dfec525`). A member with `@min`, `@max`,
+  DDS-XTypes 1.3 Annex B** (`45eb03d1048`). A member with `@min`, `@max`,
   `@unit` or `@hashid`, or a type with `@verbatim`, got a `COMPLETE` hash no
   vendor computes: `AppliedBuiltinMemberAnnotations` had no `DHEADER`, every
   `AnnotationParameterValue` sat behind a length of its own instead of being
@@ -1139,14 +2546,14 @@ on the new foundation. That single fact explains most of what follows.
   slot for it. `AppliedAnnotationParameter::value` is an
   `AnnotationParameterValue`, not bytes.
 
-- **BREAKING: `long double` goes on the wire as binary128** (`c626972d47d`).
+- **BREAKING: `long double` goes on the wire as binary128** (`a3dc668fff5`).
   It used to be a `double` followed by eight zero bytes — right length, wrong
   value, reported as success. Now sixteen octets per CORBA 3.3 part 2
   §9.3.1.3 and XTypes 1.3 table 31, all sixteen reversed on big-endian. An
   rc.6 peer that sends or reads `long double` is not compatible with rc.7.
 
 - **BREAKING: the encapsulation options carry the padding count**
-  (`0d871d98196`), the low two bits of the second options byte per XTypes 1.3
+  (`16884c5e117`), the low two bits of the second options byte per XTypes 1.3
   §7.6.3.1.2. ZeroDDS neither wrote nor read the field. Measured with tshark:
   Cyclone and RTI write `options 0x0003` for a one-octet payload — a peer that
   evaluated the field took every ZeroDDS payload of non-multiple-of-four
@@ -1177,17 +2584,17 @@ on the new foundation. That single fact explains most of what follows.
 
 - **BREAKING: two builtin-topic structs and one config struct grew a field.**
   `PublicationBuiltinTopicData` and `SubscriptionBuiltinTopicData` carry
-  `vendor_id` (`27c9f613573`); `UserReaderConfig` carries `resource_limits`
-  (`619a3b60c18`). `UserReaderConfig` has a `Default` since `09075ba580b`, so
+  `vendor_id` (`52128b12557`); `UserReaderConfig` carries `resource_limits`
+  (`8e3688b6fdf`). `UserReaderConfig` has a `Default` since `71b9ff4d8cc`, so
   `..Default::default()` makes the next field a change to one file rather
   than to seventy.
 
 - **The reliable receive cache holds 65,536 samples per writer proxy, not 256**
-  (`81049ccfa69`). Measured on a quiet host at 114.7 kS/s: the same cell lost
+  (`6f4d4a569b2`). Measured on a quiet host at 114.7 kS/s: the same cell lost
   between 1.78 and 6.69 percent with 256 and 0.00 with 65,536. It is a cap and
   not a reservation — the cache is a `BTreeMap` — so the memory appears only
   while an earlier sequence number is genuinely missing. A reader's own
-  RESOURCE_LIMITS now reaches it (`619a3b60c18`); where memory is the tighter
+  RESOURCE_LIMITS now reaches it (`8e3688b6fdf`); where memory is the tighter
   constraint, `ZERODDS_MAX_SAMPLES_PER_PROXY` lowers it per participant.
 
 - **BREAKING (CMake): the option names carry a prefix** (`ae548d63f22`).
@@ -1197,46 +2604,46 @@ on the new foundation. That single fact explains most of what follows.
   forced to `Release` unconditionally.
 
 - **BREAKING (Rust API): `CacheChange` carries `inline_qos`, DATA_FRAG has no
-  key-hash flag** (`57f4d99f545`). A struct literal of `CacheChange` outside
+  key-hash flag** (`5536e2abcac`). A struct literal of `CacheChange` outside
   this workspace needs the new field (constructor callers are unchanged). The
   non-standard DATA_FRAG `hash_key_flag`, its H-bit constant and its decoder
   argument were removed; a key hash travels as `PID_KEY_HASH` in the inline
   QoS, as for DATA.
 
 - **Same-host traffic between ZeroDDS participants runs over one shared-memory
-  channel per participant pair** (`6bbed212a93`, `32475b10b34`,
-  `e37ddf0ad92`), not over a segment per writer/reader pair. The channel
+  channel per participant pair** (`c996fd7a076`, `51274f0cb96`,
+  `5ab1427ddd0`), not over a segment per writer/reader pair. The channel
   carries every unicast datagram, user data, SEDP and WLP alike; SPDP stays
   on multicast. `transport.same_host_shm: false` turns it off at run time
-  (`8d6f16b43a7`). Its lifetime is the participant's: a lock on each
+  (`f2f9d22cc20`). Its lifetime is the participant's: a lock on each
   segment and doorbell marks it in use, orphans are swept at start, on Linux,
-  macOS and Windows (`9d662831cbf`, `f62b48e13ef`, `409e41ad922`), and a
-  mapping keeps no file descriptor (`7b3b66d8500`).
+  macOS and Windows (`8a7cde41e7d`, `6b3be68cbcf`, `1b56fde6644`), and a
+  mapping keeps no file descriptor (`3e714db8c59`).
 
-- **`zerodds_runtime_destroy` shuts the runtime down** (`e6eb5fee589`). It
+- **`zerodds_runtime_destroy` shuts the runtime down** (`7489df77b9e`). It
   stops the threads, announces the participant's departure and closes its
   channels and sockets; freeing the handle alone left the participant on the
   wire until the process ended. `DcpsRuntime::shutdown` wakes its receive
-  threads and closes the user transport (`e367cc6149c`, `d0eb53eac93`); a
+  threads and closes the user transport (`4b96317ab0a`, `f04d083ed2f`); a
   new `Transport::close` (default: nothing) is what a transport ends there.
 
 - **`DataReaderQos` and `DataWriterQos` default `RESOURCE_LIMITS` to
-  `LENGTH_UNLIMITED`** (`30d7d54037e`, `76b85232090`), as DDS 1.4 specifies;
+  `LENGTH_UNLIMITED`** (`a2c35049f2e`, `2932c24cd05`), as DDS 1.4 specifies;
   a live writer holds its limits and a write without room waits, then
-  returns `TIMEOUT` (`809d976aecb`).
+  returns `TIMEOUT` (`fc3b5ae4ba3`).
 
 - **Without a configured SPDP period a participant beacons at least three
-  times a lease** (`902caa4de7a`): the period is the lesser of 5 s and a
+  times a lease** (`f1b40400dfa`): the period is the lesser of 5 s and a
   third of the lease, at least 100 ms.
 
 - **The bridge daemons read their command line through
-  `zerodds_config::cli`** (`9a0e34246c6`). The webdds and websocket daemons
+  `zerodds_config::cli`** (`492a70ad206`). The webdds and websocket daemons
   now say `flag X needs a value` and `bad value for X: V` like the others.
 
 - **BREAKING: the DDS-RPC Basic mapping writes classic CDR samples, announces
   the interface's topic types and places the `Call` union after the header**
-  (DDS-RPC 1.0 §7.5.1.1, §7.5.1.1.6/7; `33d1d98b1f9`, `3d4c42cad19`,
-  `43c170c7bca`, `24e3443ce81`, `e8351d29f5b`). `Requester` and `Replier`
+  (DDS-RPC 1.0 §7.5.1.1, §7.5.1.1.6/7; `c5285c57fad`, `e305669e2c4`,
+  `80df19b642f`, `ec3707125a9`, `3a6ff8b0a50`). `Requester` and `Replier`
   announced `zerodds::RawBytes` as the type name, wrote XCDR2, put the
   payload unaligned behind the header and answered an error with a reply
   that had no `data`. They now announce `${interfaceName}_Request` and
@@ -1260,8 +2667,8 @@ on the new foundation. That single fact explains most of what follows.
 - **BREAKING: a `Replier` answers requests for its own instance only, a
   `Requester` drops replies to other clients, and the request identity is
   the identity of the sample** (DDS-RPC 1.0 §7.2.1, §7.6.2, §7.8.1,
-  §7.8.2, §7.11.1.4.3; `867cd9abd02`, `d6f6b5e975c`, `8202f8c6744`,
-  `10ba007046a`, `099e1d0fd59`). A named replier answered requests that
+  §7.8.2, §7.11.1.4.3; `4432cc165c6`, `35aa702e490`, `58634aa2702`,
+  `2314c1c5fb5`, `2fe2b7cdea1`). A named replier answered requests that
   carried no instance name; it ignores them now, and a request whose
   `instanceName` differs from the replier's is ignored in Rust, C++ and
   Java, also when one of the names is empty. A requester on a shared reply
@@ -1286,8 +2693,8 @@ on the new foundation. That single fact explains most of what follows.
 - **BREAKING: operation opcodes are the HASH of the operation name, an
   attribute implies two operations, and the dispatcher's error codes follow
   §7.5.2** (DDS-RPC 1.0 §7.5.1.1.3, §7.5.1.1.6 rule 5a, §7.5.2, §7.7.1.1;
-  `1944de30d46`, `fb1b6a402a9`, `fbc219a6b73`, `099e1d0fd59`,
-  `2a1fd4a2d51`). `function_call` numbered the operations sequentially; the
+  `c4a68d07800`, `259cf675efd`, `b527a9f5802`, `2fe2b7cdea1`,
+  `b7f5da73ca2`). `function_call` numbered the operations sequentially; the
   opcode is now the HASH that the case labels of the `Call` and `Return`
   unions carry. `ServiceDef::all_methods` implies
   `get_attribute_<name>` and `set_attribute_<name>` for an interface
@@ -1301,7 +2708,7 @@ on the new foundation. That single fact explains most of what follows.
   the interface name. A caller that built case labels or topic names
   itself recomputes them.
 
-- **`evolution_rules::is_compatible` follows DDS-RPC 1.0 §7.7** (`b0468d6ed0f`).
+- **`evolution_rules::is_compatible` follows DDS-RPC 1.0 §7.7** (`17fe2de3f32`).
   The Basic mapping treats added, removed and reordered operations as
   compatible and a signature change as breaking. The Enhanced mapping treats
   added, removed and reordered parameters and return values as breaking
@@ -1311,7 +2718,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **BREAKING (`zerodds-rpc`): the default QoS keeps all samples, and
   `instance_name` is limited to 255 octets** (DDS-RPC 1.0 §7.10.2,
-  §7.5.1.1.1; `4e526346c54`, `c0cd73188af`).
+  §7.5.1.1.1; `ff6353d0ef2`, `e5f4e895ad1`).
   `RpcQos::default_basic` and `default_enhanced` used KEEP_LAST with depth
   10 and 64; they use KEEP_ALL, and `DEFAULT_HISTORY_QOS` replaces
   `DEFAULT_BASIC_HISTORY_DEPTH` and `DEFAULT_ENHANCED_HISTORY_DEPTH`.
@@ -1321,7 +2728,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **BREAKING (C++ and Java runtimes of DDS-RPC): the classes take the form
   the specification gives them** (DDS-RPC 1.0 §7.11.1.3–.5, §7.11.2.2;
-  `e143bb6bfa0`, `eb4b24caa47`, `97c20505e85`). C++: `RequesterParams`,
+  `2ea2abb7d84`, `208e7e0b25c`, `771f1284680`). C++: `RequesterParams`,
   `ReplierParams`, `ServiceParams` and `ClientParams` carry participant,
   publisher, subscriber, service name, instance name, topic name suffixes,
   interface name, binding style and QoS; the service name names the topic
@@ -1347,7 +2754,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **`zerodds_writer_set_qos` and `zerodds_reader_set_qos` refuse a change of
   HISTORY, RESOURCE_LIMITS and the `max_blocking_time` of RELIABILITY**
-  (DDS 1.4 §2.2.3; `731994c71c5`). They returned success for these; the
+  (DDS 1.4 §2.2.3; `19814c9f2e9`). They returned success for these; the
   result is `ImmutablePolicy`, as for RELIABILITY and DURABILITY. Of the
   policies the DDS-RPC QoS carries (§7.10.2), only DEADLINE and LIFESPAN
   (writers) are changeable. **Migration (C):** set these policies at the
@@ -1355,7 +2762,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **`RpcQos::from_xml_profile` and `from_qos_url` follow `base_name` and refuse
   what `RpcQos` cannot carry** (DDS-XML 1.0 §7.3.2.4.2, §7.3.2.4.3;
-  `f1a7a3ea573`). The named profile was read without its base chain, so
+  `9b74a81b0a9`). The named profile was read without its base chain, so
   the policies of a base profile were missing. The chain is resolved through
   `zerodds_xml::resolve_profile`. A policy beyond reliability, durability,
   history, resource limits, lifespan and deadline, the container of an entity
@@ -1373,7 +2780,7 @@ on the new foundation. That single fact explains most of what follows.
   `a_policy_the_endpoints_cannot_carry_is_refused_by_name`.
 
 - **`service_mapping::lower_service` refuses the IDL that the DDS-RPC service
-  grammar leaves out** (DDS-RPC 1.0 §7.3.1.1; `d2a0e370a1e`). `import`,
+  grammar leaves out** (DDS-RPC 1.0 §7.3.1.1; `1627b386b56`). `import`,
   `typeid`/`typeprefix`, CCM and non-plain interface forms, declarations of
   types, constants and exceptions inside an interface body, `oneway` (and
   `@oneway`) and `context` clauses are `RpcError::OutsideServiceGrammar`,
@@ -1384,15 +2791,15 @@ on the new foundation. That single fact explains most of what follows.
   `the_oneway_keyword_is_outside_the_service_grammar`.
 
 - **`zerodds-idlc generate --lang java` writes `ZdServices` to a file of its
-  own** (`6ecba3bc2f2`). The Java text holds `ZdTypes`, `ZdServices` and
+  own** (`25aa4020218`). The Java text holds `ZdTypes`, `ZdServices` and
   `ZdCodec` as public top-level classes, and JLS §7.6 allows one per file;
   `ZdServices` stayed in `ZdTypes.java`, which does not compile. The output
   is one file per public class (`generate::java_units`). Test:
   `crates/lang-rules/tests/java_units.rs`.
 
 - **BREAKING (C++ API): the `dds::` value, QoS, status and sample classes are
-  the ones DDS-PSM-Cxx 1.0 §7.5 and §7.6 define** (`fcaa050e9ac`,
-  `44ae0df7945`, `d39bc47b4a8`, `6920f76d0dc`, `b78de966f0d`, `b221bbd356b`).
+  the ones DDS-PSM-Cxx 1.0 §7.5 and §7.6 define** (`036e7235a9e`,
+  `8e2afae80f4`, `b5df4c0dc8e`, `9feb13103aa`, `cd7f594cdff`, `124b33e4dee`).
   `Duration::from_millis` and `to_millis` are `from_millisecs` and
   `to_millisecs`; `Duration::is_infinite()` is gone (compare with
   `Duration::infinite()`, which is `{0x7fffffff, 0x7fffffff}` as DDS 1.2
@@ -1422,7 +2829,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **BREAKING (C++ generated types): `zerodds-idlc generate --lang c++`
   writes the DDS-PSM-Cxx 1.0 §7.4 and §8.1 mapping by default**
-  (`f5c1b25b3a5`). A structure is a class with accessor functions
+  (`13777502ceb`). A structure is a class with accessor functions
   (`t.celsius()` reads, `t.celsius(21.5)` writes) instead of public fields,
   a union has `_d()` and one accessor per case, `@optional` is
   `dds::core::optional`, an array `dds::core::array` and a `map`
@@ -1434,7 +2841,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **BREAKING (C++ API): vendor interfaces left the namespaces that
   DDS-PSM-Cxx 1.0 §2.2 reserves, and entity classes carry no vendor
-  members** (`1a1fa83d000`, `169915a0401`, `def4ff43f03`).
+  members** (`4dbadb87eda`, `34dd648fbb7`, `71ff4943db2`).
   `check_status`, `DataRepresentationKind`, `cdr_lite` and `Fixed` are in
   `zerodds::psm` (`zerodds/psm/check_status.hpp`, `type_support.hpp`,
   `Fixed.hpp`); `dds/core/Fixed.hpp` is gone and `dds::topic::core` no longer
@@ -1451,7 +2858,7 @@ on the new foundation. That single fact explains most of what follows.
   `default_participant_qos` stays on `DomainParticipant`.
 
 - **The `dds::` reference and value types are `T…<DELEGATE>` templates**
-  (DDS-PSM-Cxx 1.0 §7.5; `ee3c3473721`, `0c023caded7`). `Publisher`,
+  (DDS-PSM-Cxx 1.0 §7.5; `429cdde1978`, `4a96017d92a`). `Publisher`,
   `Subscriber`, `DomainParticipant`, `Topic<T>`, `ContentFilteredTopic<T>`,
   `DataReader<T>`, `GuardCondition`, `StatusCondition` and `WaitSet` derive
   from `TPublisher`, `TSubscriber`, … over ZeroDDS's delegates, and the 22
@@ -1463,7 +2870,7 @@ on the new foundation. That single fact explains most of what follows.
   `TWaitSet::dispatch`, `conditions` and `detach_condition` return `bool`.
 
 - **BREAKING (Java PSM): errors are exceptions, not `ReturnCode` values**
-  (DDS-Java-PSM 1.0 §7.3.2, Table 7.1; `2930862439a`). The binding had its
+  (DDS-Java-PSM 1.0 §7.3.2, Table 7.1; `7f18142b5e1`). The binding had its
   own `org.omg.dds.core.ReturnCode` enum. A `write()` on a closed or not yet
   enabled writer returned a code, and the sample was lost if the caller did
   not check it; `read()`/`take()` on a closed reader returned an empty list
@@ -1483,7 +2890,7 @@ on the new foundation. That single fact explains most of what follows.
 - **BREAKING (Java PSM): the participant factory takes a `ServiceEnvironment`,
   and `createParticipant` returns a new participant per call**
   (DDS-Java-PSM 1.0 §7.3.1, §7.4.1, §7.2.3; DDS 1.2 §7.1.2.2.2.1;
-  `8bdac843874`, `2601f4bf35a`, `77e5cb04c83`, `df58849cb76`).
+  `0840f9ed436`, `5041698cee3`, `9e7c893dd93`, `b6d007ac00a`).
   `DomainParticipantFactory.getInstance()` without an argument is gone;
   `getInstance(null)` throws `NullPointerException`; the factory's
   `deleteParticipant` is gone, `close()` deletes (§7.2.3). The factory had
@@ -1498,8 +2905,8 @@ on the new foundation. That single fact explains most of what follows.
 
 - **BREAKING (Java PSM): the types of `org.omg.dds` are the interfaces and
   abstract classes of the specification** (DDS-Java-PSM 1.0 §7.2.1, §7.3–§7.7;
-  `2601f4bf35a`, `e72453fce1f`, `5e1603d1c72`, `426005cc641`, `db1b9a760ba`,
-  `8bdac843874`). `Time`, `Duration`, `InstanceHandle`, the 21 QoS policies
+  `5041698cee3`, `d23eff980f3`, `9267b77a38a`, `a91e0f632bb`, `5eb3cb8ca5b`,
+  `0840f9ed436`). `Time`, `Duration`, `InstanceHandle`, the 21 QoS policies
   (immutable, with a `with*` DSL), the 13 communication statuses,
   `Entity` (generic and `Closeable`), `DomainEntity`, `StatusCondition`, the
   fourteen `org.omg.dds.core.event` types, `ReadCondition`,
@@ -1523,7 +2930,7 @@ on the new foundation. That single fact explains most of what follows.
   in place of `toMillis`.
 
 - **BREAKING (Java PSM wire): a narrow `String` is written as UTF-8**
-  (DDS-XTypes 1.3 §7.2.2.2.1.2.4, §7.4.1.1.2; `147b1128115`). Reflection
+  (DDS-XTypes 1.3 §7.2.2.2.1.2.4, §7.4.1.1.2; `8950dc6c224`). Reflection
   type support and `DynamicDataTypeSupport` truncated each Java character to
   its least-significant byte (DDS-Java-PSM 1.0 §8.5.1, which predates
   XTypes 1.3); `été` was `e9 74 e9` and is `c3 a9 74 c3 a9`, the form of
@@ -1534,8 +2941,8 @@ on the new foundation. That single fact explains most of what follows.
 
 - **Java PSM entity behaviour follows DDS 1.2: defaults, matching, states
   and closing** (DDS 1.2 §7.1.2.4.2.7, §7.1.2.5.1, §7.1.3; DDS-Java-PSM 1.0
-  §7.2.3; `7bfab93e27c`, `6d17aa0d8cc`, `e5b79de859c`, `a0c0638f8dc`,
-  `1774486f525`). The default RELIABILITY of a reader and a topic is
+  §7.2.3; `04d956d2b1d`, `4cef53c6cc0`, `096be70d055`, `c1612b69777`,
+  `dadfce7b8f6`). The default RELIABILITY of a reader and a topic is
   BEST_EFFORT with HISTORY KEEP_LAST and depth 1 (`DataReaderQosImpl.defaults`,
   `TopicQosImpl.defaults`); a single default of RELIABLE with depth 10 had
   served every entity. The writer default is RELIABLE. A writer and a reader match
@@ -1554,7 +2961,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **BREAKING (`zerodds-xml`): QoS numbers take the types the OMG's XSD
   gives them, and `-1` is written `LENGTH_UNLIMITED`** (DDS-XML 1.0
-  §7.2.2.1; `2120724498f`). `max_samples`, `max_instances` and
+  §7.2.2.1; `7fbca3f5f05`). `max_samples`, `max_instances` and
   `max_samples_per_instance` of `resource_limits` and
   `durability_service` are `positiveInteger_UNLIMITED`: 1 or more, or the
   name `LENGTH_UNLIMITED`. The history `depth`, `history_depth`,
@@ -1571,7 +2978,7 @@ on the new foundation. That single fact explains most of what follows.
 - **BREAKING (`zerodds-xml`): a `register_type` refers to a type defined before
   its domain library, and an application's participant inherits only from
   libraries defined before the application** (DDS-XML 1.0 §7.3.4.4.1,
-  §7.3.6.4.2; `43146783064`, `a45564ecb6b`). `resolve_participant` searched
+  §7.3.6.4.2; `a83476cb034`, `5e03ee5e374`). `resolve_participant` searched
   every `<types>` block of the document, so a block after the domain library
   satisfied the reference; the registrations of the referenced domain,
   including those inherited through `base_name`, now resolve in the
@@ -1785,7 +3192,7 @@ on the new foundation. That single fact explains most of what follows.
   after; Cyclone's `ddsperf` in the same cell 846–895 kS/s.
 
 - **A keyed writer no longer hashes the same key on every write.** Since
-  `c7c78181479` every write of a keyed sample computed its KeyHash, which
+  `2e9ce2e2f9a` every write of a keyed sample computed its KeyHash, which
   for a key holder that can exceed sixteen octets is an MD5 over it (XTypes
   1.3 §7.6.8). `zerodds_perf` carries its 1 kB payload in `ShapeType`'s
   `@key` string, and its write rate fell from 396.8 to 173.9 kS/s at that
@@ -1922,7 +3329,7 @@ on the new foundation. That single fact explains most of what follows.
   `crates/wire-probe/tests/reference_columns.rs`: 176,400 slots, 0
   disagreements — 101,000 with the same octets, 49,900 read back as the
   sample, 60 read back as the Rust column read them, 25,440 refused where
-  the Rust column refused (Linux test host, `7219c98c7bc`).
+  the Rust column refused (Linux test host, `eba97aa9ea2`).
 - **`wireprobe-java-matrix`, the Java column over the whole matrix.**
   176,400 slots, 0 disagreements against the Rust column: 100,920 with
   the same octets, 49,860 read back as the sample, 60 read back as the
@@ -1930,7 +3337,7 @@ on the new foundation. That single fact explains most of what follows.
   and 420 refused in `resolve-module-named-as-type`, which has no Java
   form (JLS 8.1: a nested class may not share the simple name of an
   enclosing one) and is named as such in the test (Linux test host,
-  `6f11c7f0319`). On the way the generated PL_CDR1 per-sample `Pid`
+  `c08eeb989a6`). On the way the generated PL_CDR1 per-sample `Pid`
   handle became a declaration, since `runtime/java`'s constructor is
   package-private and javac refused 21 cells under `rti`.
 
@@ -2067,7 +3474,7 @@ on the new foundation. That single fact explains most of what follows.
   admitted; every other one stays an error. `crates/spatial-ros2` reads its
   ROS message IDL under it.
 
-- **A C DDS TypeSupport per topic type** (`9699eb8604e`).
+- **A C DDS TypeSupport per topic type** (`9575bf2b4d8`).
   `zerodds-idlc generate --lang c` writes `<stem>_typesupport.h` beside
   the codec header: one `zerodds_typesupport_t` with the type name,
   extensibility, keyedness, the EquivalenceHash of the CompleteTypeObject,
@@ -2078,52 +3485,52 @@ on the new foundation. That single fact explains most of what follows.
   releases them. Include the companion instead of the codec header.
 
 - **The C preprocessor of ISO/IEC 14882:2003 §16**, which IDL 4.2 §7.3
-  adopts (`f05fd8b6991`): function-like macros, `#` and `##`, the rescan
+  adopts (`9303a2a33cf`): function-like macros, `#` and `##`, the rescan
   with hide sets, `#if` over a full constant expression, `__LINE__`,
   `__FILE__`, `#line`, backslash continuation. New code `IDL0022`.
 
-- **IDL 4.2 grammar** (`5cd950c38f2`): adjacent string literals
+- **IDL 4.2 grammar** (`811b31a6685`): adjacent string literals
   (§7.2.6.3), a constructed type defined inside a `typedef` (rule 64),
   and `typeid`/`typeprefix`/`import` in interface and valuetype bodies
   (rule 112).
 
-- **`expectsInlineQos` is read and answered** (`b277f86ad5e`).
+- **`expectsInlineQos` is read and answered** (`493eb7e3b5e`).
   `PID_EXPECTS_INLINE_QOS` (0x0043) in SEDP and SPDP; a reader that
   expects in-line QoS gets the topic name and the writer's Table 8.85
   policies in every DATA (DDSI-RTPS 2.5 §8.4.9.2.4).
 
-- **Floating-point constant expressions** (`42c5b16619a`). IDL 4.2
+- **Floating-point constant expressions** (`46fa40c9b8c`). IDL 4.2
   §7.4.1.4.2: evaluated in `double`; `long double` arithmetic, mixed
   integer operands and operators other than `+ - * /` are refused by
   name.
 
 - **`nackResponseDelay` and `nackSuppressionDuration` are settable**
-  (`5d9750c236b`). DDSI-RTPS 2.5 §8.4.7.1, per writer
+  (`35a2dcf9608`). DDSI-RTPS 2.5 §8.4.7.1, per writer
   (`ReliableWriter::set_nack_response_delay`,
   `set_nack_suppression_duration`) and for every user writer through
   `writer.nack_response_delay_ms` / `writer.nack_suppression_duration_ms`.
   Defaults stay 0 and 0.
 
-- **`Subscriber::copy_from_topic_qos`** (`3a4c943ee6c`), the reader half
+- **`Subscriber::copy_from_topic_qos`** (`591e3e38505`), the reader half
   of `Publisher::copy_from_topic_qos`.
 
-- **`AmqpClient::send_to_accepted`** (`c8f2f765126`): returns once the
+- **`AmqpClient::send_to_accepted`** (`e04ef1d2646`): returns once the
   broker settled the delivery as `accepted` (AMQP 1.0 §3.4.2).
 
-- **A C++ header reads both XCDR versions** (`5f52238d1c6`): the other
+- **A C++ header reads both XCDR versions** (`eae15a59d7f`): the other
   version's decoders in a nested namespace; `topic_type_support<T>::decode`
   threw for the version `--encoding` did not name.
 
 - **The C++, Java, C# and TypeScript wireprobe columns write a KeyHash**
-  (`58d96f78923`).
+  (`d9c8eddc559`).
 
 - **Gates**: the C column compiles the whole corpus
-  (`cea88303c7d`, job `idl-c-corpus`); every coverage citation must
-  resolve (`fdc20d70858`, job `coverage-evidence`); every `no_std` claim
-  is built (`7be1afa963e`); `interop-results --verify` compares every
-  file `--regenerate` writes (`a77f86f08ee`).
+  (`d06d88bf0a2`, job `idl-c-corpus`); every coverage citation must
+  resolve (`3dcc6cb9540`, job `coverage-evidence`); every `no_std` claim
+  is built (`e57af154bcd`); `interop-results --verify` compares every
+  file `--regenerate` writes (`12c41058497`).
 
-- **`@verbatim` in every column** (`ca9b66e5d43`). OMG IDL 4.2 §8.3.5.1:
+- **`@verbatim` in every column** (`a7c29ac5be5`). OMG IDL 4.2 §8.3.5.1:
   the C, C++, C# and Java columns wove the text; the other seventeen
   dropped it. All twenty-one place the six placements now, with
   `BEGIN_DECLARATION`/`END_DECLARATION` inside the declaration's body
@@ -2133,19 +3540,19 @@ on the new foundation. That single fact explains most of what follows.
   column. `crates/lang-rules/tests/verbatim_every_column.rs`.
 
 - **`dds.sec.auth.password` opens an encrypted private key**
-  (`92ac6bbef3e`). It was refused. PKCS#8 `ENCRYPTED PRIVATE KEY` opens
+  (`e29a7520cb7`). It was refused. PKCS#8 `ENCRYPTED PRIVATE KEY` opens
   with it as the passphrase; the OpenSSL form (`Proc-Type: 4,ENCRYPTED`,
   AES-CBC) with it first as the base64 AES-128 key DDS-Security 1.2
   §10.3.1 Table 50 names and then as the OpenSSL passphrase Cyclone DDS
   and Fast DDS read it as.
 
-- **`data:` URIs in the `dds.sec.*` properties** (`64dcdf61067`,
-  `a1a4d723ea7`). Table 50 allows them by RFC 2397; they were refused.
+- **`data:` URIs in the `dds.sec.*` properties** (`f44e6061f25`,
+  `679ed2ee75c`). Table 50 allows them by RFC 2397; they were refused.
   `data:,<content>` is read as Cyclone DDS reads it, the `;base64` and
   percent-encoded forms decode. `pkcs11:` is still refused by name.
 
 - **The Nim endpoint's decoupled send path is a lock-free ring**
-  (`2ade37cdfb1`). `spsc_ring.nim` replaces the stdlib `Channel`;
+  (`631dfc08708`). `spsc_ring.nim` replaces the stdlib `Channel`;
   `spsc_ring_test.nim` runs in `endpoints-gate`, and ThreadSanitizer
   reports nothing on it.
 
@@ -2177,13 +3584,13 @@ on the new foundation. That single fact explains most of what follows.
   Rust caller expects: one module per `.idl`, with `#include` dependency
   tracking so Cargo re-runs when a header changes.
 
-- **`zerodds-config`** (`2aa3be26362`) — layered configuration with a
+- **`zerodds-config`** (`c2238816875`) — layered configuration with a
   traceable origin: a typed base file, drop-in directories read in order and
   sorted by name inside each, nested `include:` with cycle detection, `+key`
   to append where `key` replaces, and `origin_of` to answer where a value came
   from. It replaces three copies of the same YAML-subset parser in the CoAP,
   MQTT and WebSocket bridges. `RuntimeConfig` reads files underneath the
-  environment since `b649327a7a1`, instead of 23 `ZERODDS_*` variables inline
+  environment since `4bb89b627b9`, instead of 23 `ZERODDS_*` variables inline
   in `default()`.
 
 - **`zerodds-proto`** (`6b86783e613` and predecessors) — Protobuf type reuse:
@@ -2191,7 +3598,7 @@ on the new foundation. That single fact explains most of what follows.
   model rides the DDS-native XCDR wire. `no_std` + `alloc`, covering
   `map<K,V>`, repeated message and enum, and `oneof` as a union.
 
-- **`zerodds-float128`** (`c626972d47d`) — IEEE-754 binary128 in software, the
+- **`zerodds-float128`** (`a3dc668fff5`) — IEEE-754 binary128 in software, the
   value type behind the sixteen octets CDR gives a `long double`.
 
 - **Native endpoint SDKs in twenty languages** and XRCE endpoint clients
@@ -2200,17 +3607,17 @@ on the new foundation. That single fact explains most of what follows.
   (`2276f8f5a71`) and the live cross-language ping-pong that exercises them
   (`f619eded8f0`).
 
-- **Dialects as a mechanism** (`d045e43ea86`): one flag picks a whole
+- **Dialects as a mechanism** (`fa2ed8b0a9c`): one flag picks a whole
   implementation's answers, over ten axes — map entry order, union label
   matching, enum holder width, fixed digit count, RTI's member-id counter
   after `@hashid`, OpenDDS's map and PID behaviour, and more. Each axis was
   derived from recorded octets, not from plausibility.
 
-- **Coherent sets** (`eca3099be0c`, `f9d7bf9e018`) — `begin_coherent_changes`
+- **Coherent sets** (`640808cf1ea`, `05ab9f969dd`) — `begin_coherent_changes`
   and `end_coherent_changes` on the Publisher, `PID_COHERENT_SET` on every
   DATA of the set, and a reader that holds an open set back.
 
-- **`PID_TYPE_INFORMATION` is announced** (`f61595c6812`, #42). Before this a
+- **`PID_TYPE_INFORMATION` is announced** (`4427eeeb777`, #42). Before this a
   ZeroDDS endpoint wrote its type identity only into its own vendor PID,
   which no other vendor reads.
 
@@ -2219,29 +3626,29 @@ on the new foundation. That single fact explains most of what follows.
   the declaration's own span.
 
 - **Four OMG reference clients**, built and validated locally: dds-rtps
-  (`743798b03cc`), dds-security (`2b0eda0b542`) and dds-xtypes in both suite
-  versions (`d728d00600d`, `b037bd5df22`).
+  (`743798b03cc`), dds-security (`892536e1b10`) and dds-xtypes in both suite
+  versions (`a33f13ef853`, `f2685b2a07b`).
 
-- **A participant that shuts down announces its departure** (`ddb21f5dab5`),
+- **A participant that shuts down announces its departure** (`a0f5b69b9ad`),
   the key-only SPDP DATA of DDSI-RTPS 2.5 §8.5.3.3. A peer dropped a
   ZeroDDS participant only when its lease ran out (100 s by default).
 
 - **DataReaders on a `ContentFilteredTopic`, with the filter announced in
-  SEDP** (`ab57e1802c9`).
+  SEDP** (`28cded5af6b`).
 
-- **`zerodds-idlc dlrl`**, DDS 1.2 §8 object and home classes (`ddf3e1c11fb`);
-  **`generate --dialect`** and every wire-axis flag (`09d195a1030`).
+- **`zerodds-idlc dlrl`**, DDS 1.2 §8 object and home classes (`eaea9467ab3`);
+  **`generate --dialect`** and every wire-axis flag (`3af36dd60ec`).
 
 - **`threads.*` real-time scheduling** through `zerodds-rt-linux` behind the
-  `rt` feature (`16dbe5c4f13`), and a pluggable time source for
-  `SOURCE_TIMESTAMP` and `DESTINATION_ORDER` (`54cbc5885ba`).
+  `rt` feature (`f46eb132c85`), and a pluggable time source for
+  `SOURCE_TIMESTAMP` and `DESTINATION_ORDER` (`c7ed10e56cf`).
 
-- **`DurabilityServiceQosPolicy` travels in SEDP** (`fe3c5bc875f`,
-  `4a7e602c0ea`).
+- **`DurabilityServiceQosPolicy` travels in SEDP** (`012ec81b230`,
+  `d0b3271b581`).
 
 - **DDS-RPC 1.0: the Enhanced Service Mapping, in `zerodds-rpc` and in the
-  generated Rust, C++ and Java bindings** (§7.5.1.2, §7.8.2; `60dbad781c5`,
-  `3d4c42cad19`, `076900132ad`, `99bda16e455`, `9ab3b695e13`).
+  generated Rust, C++ and Java bindings** (§7.5.1.2, §7.8.2; `0edbbcf1132`,
+  `e305669e2c4`, `41b3b02f7a2`, `45ead22cc2b`, `2ea77f7dad8`).
   `codegen::build_enhanced_service` maps an interface to one `@Choice
   @Autoid` `Request` and one `Reply` structure over all operations with a
   `remoteEx` member, an `In`, `Out` and `Result` structure per operation,
@@ -2261,7 +3668,7 @@ on the new foundation. That single fact explains most of what follows.
   `an_enhanced_request_has_no_header`.
 
 - **`zerodds-idlc generate --rpc-mapping basic|enhanced|enhanced-empty`**
-  (DDS-RPC 1.0 §7.2.4, §7.5.1; `f3a2d2137b4`). The option selects the
+  (DDS-RPC 1.0 §7.2.4, §7.5.1; `c17fbe91ffe`). The option selects the
   service mapping an `interface` is written for. The specification names
   no default; `basic` needs no extension of DDS and is used when the
   option is absent. `enhanced-empty` writes an operation without
@@ -2269,12 +3676,12 @@ on the new foundation. That single fact explains most of what follows.
   annotations `@DDSRequestTopic`, `@DDSReplyTopic`, `@RPCRequestType`,
   `@RPCReplyType`, `@Qos`, `@Choice`, `@Autoid`, `@Empty` and `@Mutable`
   are predefined, so a file uses them without declaring them
-  (`3c21f462c6e`). Test:
+  (`6c7f585a36e`). Test:
   `the_rpc_mapping_selects_what_an_interface_is_written_as`.
 
 - **DDS-RPC 1.0 discovery extension and topic aliases** (§7.4.3, §7.6.2.1,
-  §7.6.2.2; `0e62f93df13`, `928df3c39a4`, `95f5e661703`, `daf40ded82e`,
-  `84416dc1319`). Endpoints announce `PID_SERVICE_INSTANCE_NAME` (0x0080),
+  §7.6.2.2; `211d416cdda`, `bdf9ab1e6ca`, `17a3aef7436`, `5a472acf053`,
+  `8385434c232`). Endpoints announce `PID_SERVICE_INSTANCE_NAME` (0x0080),
   `PID_RELATED_ENTITY_GUID` (0x0081) and `PID_TOPIC_ALIASES` (0x0082) and
   read them from matched peers: `DataWriter::set_rpc_discovery`,
   `DataReader::set_rpc_discovery`, `matched_rpc_readers`,
@@ -2295,7 +3702,7 @@ on the new foundation. That single fact explains most of what follows.
   `an_enhanced_request_of_an_undiscovered_client_is_held`.
 
 - **Related sample identity on write and take** (DDS-RPC 1.0 §7.8.2;
-  `84416dc1319`, `daf40ded82e`, `97c20505e85`). `DataWriter::write_related`
+  `8385434c232`, `5a472acf053`, `771f1284680`). `DataWriter::write_related`
   and `zerodds_writer_write_related` write a sample with
   `PID_RELATED_SAMPLE_IDENTITY` in its inline QoS; `DataReader::take_with_wire`
   and `zerodds_reader_take_wire` return the writer GUID, the RTPS sequence
@@ -2311,8 +3718,8 @@ on the new foundation. That single fact explains most of what follows.
   `the_zerodds_binding_sends_and_reads_the_related_sample_identity`.
 
 - **DDS-RPC 1.0: listeners run when the sample arrives, and the three request
-  processing ways** (§7.9.2.2, §7.9.3; `c6c468fbbe4`, `2933b7d28a8`,
-  `e530fc03ed8`). `Replier::activate`, `activate_async` and
+  processing ways** (§7.9.2.2, §7.9.3; `cd07b2221f0`, `c5af5c7c138`,
+  `05c799d7e04`). `Replier::activate`, `activate_async` and
   `Requester::activate` call the synchronous listener, the asynchronous
   listener or the reply delivery as the request or reply arrives, and
   `deactivate_listener` returns to pumping; `close` deletes the DataReader
@@ -2333,8 +3740,8 @@ on the new foundation. That single fact explains most of what follows.
   `the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`.
 
 - **DDS-RPC 1.0 `@Qos` profiles and run-time QoS changes** (§7.10.1,
-  §7.10.2; `1f980bd7b22`, `6e3bbd2758f`, `fe093179764`, `cee4ca1b418`,
-  `97c20505e85`). `RpcQos::from_qos_url` resolves
+  §7.10.2; `152906e062f`, `5e31aafecaa`, `e0eb1bf9c60`, `7253f822258`,
+  `771f1284680`). `RpcQos::from_qos_url` resolves
   `[file://]path[#library]` (`file` is the only protocol);
   `RpcQos::from_service_profiles(request_url, reply_url)` resolves
   `@Qos(RequestProfile, ReplyProfile)`, and the reply endpoints are built
@@ -2351,8 +3758,8 @@ on the new foundation. That single fact explains most of what follows.
   `the_zerodds_binding_carries_the_rpc_qos_to_the_c_api`.
 
 - **DDS-RPC 1.0: a service defined by a pair of types** (§7.3.1.4, §7.4.2.2;
-  `03b9867ea4d`, `ca7c0cb2c78`, `e4ca8f81ff8`, `e98ae2f5ff6`, `343837b6120`,
-  `a0f9fe09671`). `type_pair::lower_type_pairs` reads two struct types marked
+  `1e28b13546c`, `d9446301d9b`, `f641beefbe7`, `217bc385a33`, `80894d01a97`,
+  `35156b3406a`). `type_pair::lower_type_pairs` reads two struct types marked
   `@RPCRequestType` and `@RPCReplyType`: a `header` member of
   `dds::rpc::RequestHeader` and `dds::rpc::ReplyHeader` in both types
   (Basic) or in neither (Enhanced), topic names from `@DDSRequestTopic` and
@@ -2367,8 +3774,8 @@ on the new foundation. That single fact explains most of what follows.
   `a_marked_pair_with_headers_is_a_basic_service`.
 
 - **DDS-RPC 1.0: generated clients and services in C++ and Java, and the
-  Rust XCDR1 forms** (§7.2.2.3, §7.9.1, §7.11.1.1.2; `24e3443ce81`,
-  `c4a249bd251`, `2d3ebbfa06d`, `97c20505e85`). In C++, `${I}Client` and
+  Rust XCDR1 forms** (§7.2.2.3, §7.9.1, §7.11.1.1.2; `ec3707125a9`,
+  `c512ee36551`, `cdb7355e374`, `771f1284680`). In C++, `${I}Client` and
   `${I}Service` pack and unpack the `Call`, `Return` and `Result` unions,
   throw a declared exception or the exception of a remote exception code,
   and return a future from `${op}_async`; `${I}Service` derives from
@@ -2385,7 +3792,7 @@ on the new foundation. That single fact explains most of what follows.
   `crates/rpc-rust-e2e/tests/xcdr1_nested.rs`.
 
 - **`zerodds-c-api`: the RPC calls are behind the `rpc` feature, which is in
-  the default set** (`c6d883cd6e1`, `90f76244a47`, `e114526d06b`). The
+  the default set** (`a0d1af7efd7`, `50c8e93c2c5`, `5001d179667`). The
   discovery calls and the profile-URL loader need it; `set_qos` does not. A
   build with `--no-default-features --features std` does not link
   `zerodds-rpc`; `zerodds-xml` is linked either way. `zerodds.h` lists the symbols either
@@ -2396,7 +3803,7 @@ on the new foundation. That single fact explains most of what follows.
   `writer_matched_rpc_readers_bounds`, `reader_matched_rpc_writers_bounds`.
 
 - **`zerodds-idlc generate --lang c++ --cpp-mapping native|psm|classic`**
-  (DDS-PSM-Cxx 1.0 §8.1; `56ff5b5f25f`, `f5c1b25b3a5`, `f0f79f0b517`).
+  (DDS-PSM-Cxx 1.0 §8.1; `1db807cbf0f`, `13777502ceb`, `f5fde275918`).
   `psm` is the default; `native` is the mapping that existed; `classic` is
   the OMG IDL to C++ 1.3 mapping in C++03, over the native codec (test:
   `tools/idlc/tests/cpp_classic.rs`). `psm` writes a structure as a class with the
@@ -2414,13 +3821,13 @@ on the new foundation. That single fact explains most of what follows.
   `@Shared` are not recognised, because IDL 4.2 §8.2 makes annotation names
   case-sensitive. Under `native`, generated structures have a member
   `swap(T&)` and an `inline swap(T&, T&)` in the type's namespace
-  (DDS-PSM-Cxx 1.0 §7.12; `90ab34acfef`); a structure with a member spelled
+  (DDS-PSM-Cxx 1.0 §7.12; `fcc81cc5e24`); a structure with a member spelled
   `swap` gets neither. Test:
   `a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
   (`generated_psm_roundtrip.cpp` from `tests/generated/psm_probe.idl`).
 
 - **`dds::core::QosProvider` and `zerodds_qosprovider_*`** (DDS-PSM-Cxx 1.0
-  §7.6.2.1; `7ebbfe24d4d`, `5061c168b7f`, `9629b1b5a34`, `3f6b97b33d8`).
+  §7.6.2.1; `ebaa3c4e2e6`, `4ef7021a8ed`, `4ed2678ac5b`, `0e91cffd853`).
   The provider loads the DDS-XML QoS profiles of a URI and answers
   `participant_qos`, `topic_qos`, `publisher_qos`, `subscriber_qos`,
   `datawriter_qos` and `datareader_qos` by profile id (`Library::Profile`,
@@ -2442,7 +3849,7 @@ on the new foundation. That single fact explains most of what follows.
   `test_qos_provider`.
 
 - **DDS-XTypes dynamic types in C++ and the C API** (DDS-PSM-Cxx 1.0 §7.5;
-  `869802b57a6`, `1c10c2b3b74`, `6e1c3aebfb8`, `43f069409ca`).
+  `6909f5fe2aa`, `854cd8fabfa`, `ae11c055ad2`, `7d5ea3d45b3`).
   `zerodds_dyntype_from_idl` builds a dynamic type from IDL text, with the
   name, key, extensibility, TypeObject, TypeObject dependencies and default
   value as JSON, and `zerodds_dyntype_encode_json`/`decode_json` between a
@@ -2465,7 +3872,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **C API: `enable`, `get_status_changes` and `get_instance_handle` for every
   entity, and ENTITY_FACTORY `autoenable_created_entities`** (DDS 1.4
-  §2.2.2.1.1.6–8, §2.2.3.20; `613141ae219`, `b2a7df76fa7`).
+  §2.2.2.1.1.6–8, §2.2.3.20; `789ac482d54`, `5d6bf43ff4b`).
   `zerodds_{dp,topic,pub,sub,dw,dr}_enable`, `_get_status_changes` and
   `_get_instance_handle` are new. An entity created from a disabled factory,
   or from one that does not autoenable, is created disabled; a DataWriter or
@@ -2477,8 +3884,8 @@ on the new foundation. That single fact explains most of what follows.
   `a_writer_of_a_publisher_that_does_not_autoenable_is_not_announced_until_enabled`.
 
 - **C API and C++: QueryCondition setters, instance reads with a condition,
-  key hash, incompatible-QoS counts** (`eb8bfdd601e`, `8733e3630a0`,
-  `bd6558f058f`, `d39bc47b4a8`). `zerodds_querycondition_set_expression` and
+  key hash, incompatible-QoS counts** (`267fcd18f01`, `d7324a52745`,
+  `b2ef9044822`, `b5df4c0dc8e`). `zerodds_querycondition_set_expression` and
   `_set_parameters` change a query condition (DDS 1.4 §2.2.2.5.9), and
   `zerodds_dr_{read,take}_instance_w_condition` and
   `_next_instance_w_condition` read the samples of an instance that a
@@ -2497,8 +3904,8 @@ on the new foundation. That single fact explains most of what follows.
   `both_sides_report_the_incompatible_policy_with_its_count`.
 
 - **The headers and functions DDS-PSM-Cxx 1.0 §7.2 lists and the library
-  lacked** (`ea5f1ef12d1`, `1a1fa83d000`, `c330719dc9d`, `6920f76d0dc`,
-  `b78de966f0d`). `dds/core/macros.hpp`, `conformance.hpp`
+  lacked** (`f1a07de5ec2`, `4dbadb87eda`, `49df7a275e3`, `9feb13103aa`,
+  `cd7f594cdff`). `dds/core/macros.hpp`, `conformance.hpp`
   (`OMG_DDS_*_SUPPORT`), `Optional.hpp`, `array.hpp`, `dds/pub/CoherentSet.hpp`,
   `SuspendedPublication.hpp`, `sub/CoherentAccess.hpp`,
   `topic/BuiltinTopicKey.hpp`, `dds/{pub,sub,topic}/find.hpp`;
@@ -2515,7 +3922,7 @@ on the new foundation. That single fact explains most of what follows.
   `test_topic_any_topic_and_listener`, `test_publisher_subscriber_datawriter_api`.
 
 - **`zerodds-idlc generate --lang java --java-mapping omg|psm`**
-  (DDS-Java-PSM 1.0 §9.1.1, §9.1.2; `f8b91f3fdc1`). `omg`, the IDL-to-Java
+  (DDS-Java-PSM 1.0 §9.1.1, §9.1.2; `5e078003c16`). `omg`, the IDL-to-Java
   mapping, stays the default and its output is unchanged. `psm` is Clause 9:
   a structure, union, bit set or exception is a final class with private
   state, a no-argument constructor and Bean accessors (`isX()` too for a
@@ -2531,8 +3938,8 @@ on the new foundation. That single fact explains most of what follows.
   (`crates/lang-rules/tests/java_psm_mapping.rs`), `SequencesTest`.
 
 - **Java Type Representation of DDS-Java-PSM 1.0 §8 in the reflective type
-  support and in `createType(Class)`** (`d82d34bab7b`, `74eb250de33`,
-  `61e73dbbbbc`). `@SerializeAs` (§8.2) gives the DDS kind of a field in
+  support and in `createType(Class)`** (`30a9d32dfc7`, `36094b9d871`,
+  `cb60331dfa9`). `@SerializeAs` (§8.2) gives the DDS kind of a field in
   place of the default of Table 8.1 (`UINT_16`, `UINT_32`, `UINT_64`,
   `FLOAT_128`, `CHAR_32`, wide and bounded strings, bounded sequences and
   maps, arrays with their dimensions, bit sets); a combination Table 8.2
@@ -2550,7 +3957,7 @@ on the new foundation. That single fact explains most of what follows.
   `SerializeAsTest`, `ReflectionTypeSupportTest`, `DynamicTypeReflectionTest`.
 
 - **`createTopic(String, DynamicType)` works** (DDS-Java-PSM 1.0 §7.5.1;
-  `ad26d2a5345`, `f28c3077839`). Both forms threw
+  `d2ca428c7b8`, `3cfc4060517`). Both forms threw
   `UnsupportedOperationException`. PSM 1.0 types the result
   `Topic<DynamicType>` while its samples are `DynamicData`;
   `DynamicTopics.dataTopic(topic)` gives the `Topic<DynamicData>` that
@@ -2565,8 +3972,8 @@ on the new foundation. That single fact explains most of what follows.
   `aWriterAndAReaderOnTheTopicOfADynamicTypeMoveDynamicData`.
 
 - **Content filters and `MultiTopic`** (DDS 1.4 §2.2.2.3.4, §2.2.2.5.3.8,
-  Annex B; DDSI-RTPS 2.5 §9.4.1.1; `eb5b280dab3`, `798176dd2e8`,
-  `7c1ccf824a8`). `createContentFilteredTopic`, the trigger value of
+  Annex B; DDSI-RTPS 2.5 §9.4.1.1; `926a94382a1`, `2ded60e772b`,
+  `fd437c122cf`). `createContentFilteredTopic`, the trigger value of
   `createQueryCondition` and the query expression of a read/take
   `Selector` raised `UnsupportedOperationException`. `org.zerodds.sub.ContentFilter`
   evaluates the comparison operators, `AND`, `OR`, `NOT`, parentheses,
@@ -2584,8 +3991,8 @@ on the new foundation. That single fact explains most of what follows.
   error. Tests: `ContentFilterTest`, `MultiTopicTest`, `MultiTopicJoinTest`.
 
 - **Built-in topics with their QoS** (DDS 1.2 §2.2.1.3.1, DDS 1.4 §2.2.5,
-  DDSI-RTPS 2.5 §9.3.1.2, §9.6.2; `c3e35f71622`, `b0847c5016d`,
-  `e6bf12cfa78`). A `DomainParticipant` creates `DCPSParticipant`,
+  DDSI-RTPS 2.5 §9.3.1.2, §9.6.2; `4b11df9eaaf`, `f7567dbd513`,
+  `62d0de660ef`). A `DomainParticipant` creates `DCPSParticipant`,
   `DCPSPublication`, `DCPSSubscription` and `DCPSTopic` and announces itself,
   its topics, writers and readers on them, so `getBuiltinSubscriber()` sees
   the domain; `createTopic` with a built-in name returns that topic. The data
@@ -2950,7 +4357,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **A RELIABLE reader of Cyclone DDS matched after a ZeroDDS writer had
   emptied its cache received nothing.** A VOLATILE writer removes what
-  every reader acknowledged (since `099676d11da`), and a HEARTBEAT took
+  every reader acknowledged (since `93d61c1adcd`), and a HEARTBEAT took
   lastSN from the cache: 0 once it was empty, first 32 and last 0 after
   SN 31. DDSI-RTPS 2.5 §8.3.7.5 requires lastSN >= firstSN - 1; Cyclone
   11.0.1 drops such a message as malformed with the DATA in it. lastSN
@@ -2958,7 +4365,7 @@ on the new foundation. That single fact explains most of what follows.
   the Linux test host, ZeroDDS publisher to Cyclone subscriber:
   `Test_DataRepresentation_0`/`_3`, `Test_Reliability_3`,
   `Test_History_0`, `Test_Ownership_0` and `Test_FinalInstanceState_0`/
-  `_1` failed with DATA_NOT_RECEIVED on `78c7e8e7eda` and pass now;
+  `_1` failed with DATA_NOT_RECEIVED on `aae4a255f82` and pass now;
   BEST_EFFORT was not affected. Test:
   `a_heartbeat_after_the_cache_emptied_announces_the_last_sn_written`.
 
@@ -3195,7 +4602,7 @@ on the new foundation. That single fact explains most of what follows.
   flagged.** The twelve `get_*_status` getters cleared the
   StatusChangedFlag and then took the status; the listener thread's look
   could see the status unread before the take and set the flag after the
-  clear (DDS 1.4 §2.2.4.1 resets it on the read). Since `2701e6595ea`
+  clear (DDS 1.4 §2.2.4.1 resets it on the read). Since `7aff265c730`
   `status_reads::a_status_change_raises_the_flag_and_the_read_lowers_it`
   failed in 6 of 80 runs on the Linux test host and failed the nightly of 2026-10-07;
   0 of 80 before. The getters now take and then clear, and a look checks
@@ -3268,7 +4675,7 @@ on the new foundation. That single fact explains most of what follows.
   generated Rust under `--encoding pl-cdr1`.
 - **Rust's codec under `--dialect rti` frames a nested `@mutable` type by
   the sample it is in**, as the 20 languages on the shared walk do since
-  `813c2aa430d`: each encoder body takes the sample's decision and the
+  `9243765fe90`: each encoder body takes the sample's decision and the
   public `encode` resolves it from its root (`LayoutKey::for_sample`). Over
   the 421-file corpus the generated Rust is byte-identical under
   `--dialect cyclone` and `fastdds`; under `rti` with `pl-cdr1` 420 files
@@ -3368,7 +4775,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **A RELIABLE writer with RESOURCE_LIMITS walked its whole history on
   every write.** `HistoryCache::instance_len`, asked by the RESOURCE_LIMITS
-  check since 809d976aecb, and the KEEP_LAST per-instance eviction counted
+  check since fc3b5ae4ba3, and the KEEP_LAST per-instance eviction counted
   an instance by scanning every change. The cache keeps an index per
   instance now. Bisected and measured on the Linux test host with
   `zerodds_perf`, RELIABLE KEEP_ALL, 1 kB: 72 kS/s before that commit, 42
@@ -3453,7 +4860,7 @@ on the new foundation. That single fact explains most of what follows.
   SDKs did so already.
 
 - **`--dialect rti` writes RTI's PL_CDR1 header form in a large sample**
-  (`8c9a1f0d511`). RTI Connext 7.7 gives `PID_EXTENDED` to every member
+  (`08ae1d7161f`). RTI Connext 7.7 gives `PID_EXTENDED` to every member
   whose type is not a primitive or an enumeration once the sample's type
   can exceed what a short parameter header states — nested types and
   `@optional` members included, a recursive type always. Measured on
@@ -3477,7 +4884,7 @@ on the new foundation. That single fact explains most of what follows.
   asking.** An OpenDDS reader stayed unmatched for 25 s in 2 of 30 runs:
   the writer's one handshake HEARTBEAT reached it before it held the
   writer, and its preemptive ACKNACK closed the handshake. An ACKNACK a
-  heartbeat period after the last HEARTBEAT reopens it (`ffd7c649df8`);
+  heartbeat period after the last HEARTBEAT reopens it (`9c1d99a0a42`);
   60 of 60 runs matched.
 
 - **The merge pipeline checks what a long push changed.** A push of more
@@ -3503,23 +4910,23 @@ on the new foundation. That single fact explains most of what follows.
   that discovery made before `set_listener` was consumed by the listener
   path with no listener attached and reached none; a change stays unread
   until a listener or a `get_*_status` takes it, and `set_listener` runs
-  the listeners once (`4055398acf7`, `18cb6f1aa63`). An acknowledgement no
+  the listeners once (`01565bd5896`, `19f87ff5151`). An acknowledgement no
   longer resets the StatusChangedFlag over a change made after the
   listener's look.
 
 - **An older SEDP announcement no longer overwrites a newer one from a
-  peer in the same process** (`d348216f368`, `a29e2957220`). A reader's
+  peer in the same process** (`4553fd2598c`, `5cc7b7483a6`). A reader's
   changed QoS came back as the old one under load, and its writer matched
   it again.
 
 - **A model node's source range is a range of its file**
-  (`634c26a8c15`). A node lowered from a preprocessed file held an offset
+  (`3f20f7a41d2`). A node lowered from a preprocessed file held an offset
   into the parser's tree, which omits the expanded text's token
   separators; lint findings and diagnostics raised on the model pointed
   at the wrong declaration. `Parse::source_span` is new.
 
 - **A Rust union's enumeration discriminator crosses the wire through
-  the `EnumeratorValue` axis** (`c282828a0a3`); it wrote and read the
+  the `EnumeratorValue` axis** (`941c83666e3`); it wrote and read the
   declared value under every setting.
 
 - **TRANSPORT_PRIORITY reaches the wire** (DDS 1.4 §2.2.3.15). A
@@ -3627,7 +5034,7 @@ on the new foundation. That single fact explains most of what follows.
   variant.
 
 - **An entity created disabled is not discovered before its `enable`**
-  (`c6b7a969a4a`, `d6b3d9475dc`). DDS 1.4 §2.2.2.1.1.7: a DataWriter or
+  (`a72a554f2a5`, `312e9a97949`). DDS 1.4 §2.2.2.1.1.7: a DataWriter or
   DataReader is registered with the runtime and announced at its first
   `enable`, with the QoS it has then; a participant its factory created
   disabled sends no SPDP before. `enable` with a disabled factory returns
@@ -3637,7 +5044,7 @@ on the new foundation. That single fact explains most of what follows.
   the SPDP beacon.
 
 - **The DCPSPublication and DCPSSubscription samples carry every policy**
-  (`6404fb27966`, `08a1fdafd76`). DDS 1.4 §2.2.5: each member as its QoS
+  (`fe3fa5c5a4e`, `c34d466e5db`). DDS 1.4 §2.2.5: each member as its QoS
   policy, in Rust and in the C API's matched publication and subscription
   data; they held four kinds and three durations in whole seconds, and no
   USER_DATA, TOPIC_DATA, GROUP_DATA, LATENCY_BUDGET, DESTINATION_ORDER or
@@ -3646,15 +5053,15 @@ on the new foundation. That single fact explains most of what follows.
   `zerodds_subscription_builtin_topic_data_free`, which frees the names
   as well.
 
-- **A subscription announces its TIME_BASED_FILTER** (`580189a347c`),
+- **A subscription announces its TIME_BASED_FILTER** (`e1041b4e842`),
   `PID_TIME_BASED_FILTER` in SEDP (DDS 1.4 §2.2.5).
 
-- **`ros2 topic info -v` shows durations as set** (`ed2c5c292f1`). The
+- **`ros2 topic info -v` shows durations as set** (`2017519c67f`). The
   endpoint info carried whole seconds: a 150 ms deadline read as 0 s and
   a remote INFINITE as 2147483647 s.
 
 - **A `set_qos` once enabled is announced and decides the pairs again**
-  (`3a4c943ee6c`). DataWriter, DataReader, Publisher, Subscriber and
+  (`591e3e38505`). DataWriter, DataReader, Publisher, Subscriber and
   Topic hand the changeable policies (DDS 1.4 §2.2.3) to the runtime;
   the endpoint announces again, and a matched pair is held to the
   latest announcement of either side by the rules of a first match. A
@@ -3667,7 +5074,7 @@ on the new foundation. That single fact explains most of what follows.
   DESTINATION_ORDER or PRESENTATION on an enabled endpoint, PRESENTATION
   on an enabled group and the Changeable=NO topic policies is refused.
 
-- **A diagnostic is placed in the file it points at** (`9e17d17c27b`).
+- **A diagnostic is placed in the file it points at** (`70ac19a8b05`).
   Spans were offsets into the preprocessor's output and were read as
   line and column of the unit as written; comments above an error moved
   it, and an error in an included file was printed against the unit.
@@ -3675,23 +5082,23 @@ on the new foundation. That single fact explains most of what follows.
   `zerodds-build` prefixes each message with `file:line:column`.
 
 - **A `@mutable` type on an `@optional` cycle over two types is planned**
-  (`64159547c8d`). The EMHEADER's length code planned the member's type
+  (`e3ef9a95346`). The EMHEADER's length code planned the member's type
   outside the `@optional` barrier and reported IDL0014.
 
 - **A snapshot keeps a constant's type and an unresolved reference's
-  key** (`53d5cc47aaa`). The constant's type was not written at all.
+  key** (`c5910638396`). The constant's type was not written at all.
 
 - **A member on a type cycle is held behind an indirection**
-  (`bfc6a12410e`) in the C++, Rust, D, Zig, Nim and Swift columns, as an
+  (`7ed0d6c547e`) in the C++, Rust, D, Zig, Nim and Swift columns, as an
   `@external` one is; a C default that needs storage takes the reader.
 
 - **A `ParticipantGenericMessage` under `CDR_BE` is read**
-  (`e0a3fd58a16`); it was refused.
+  (`3918f83dbed`); it was refused.
 
-- **`cargo deny` duplicate `md-5`** (`7f8b2f82a24`): `security-pki` uses
+- **`cargo deny` duplicate `md-5`** (`65145a60731`): `security-pki` uses
   0.11, the version the rest of the tree has.
 
-- **Generated Rust passes clippy without allowances** (`89666d073e3`).
+- **Generated Rust passes clippy without allowances** (`b620eed7ac1`).
   `unit_arg`, `derivable_impls`, and on a `@mutable` decode
   `collapsible_else_if`, `manual_unwrap_or` and
   `manual_unwrap_or_default` fired in every crate that included the
@@ -3699,18 +5106,18 @@ on the new foundation. That single fact explains most of what follows.
   allowances.
 
 - **`tools/wireprobe/endpoint-number-surface` measured nothing for seven
-  columns and exited 0** (`48e37a425aa`). Writer constructors had grown
+  columns and exited 0** (`baaee669ff7`). Writer constructors had grown
   an argument, two columns had no emitter, the Ada `use type` clause was
   never written. A control `put_u16(1)` per binding now fails the run when
   the probe's own program breaks, and `endpoints-gate` runs it. Measured:
   all seventeen bindings refuse `put_u16(70000)`.
 
-- **The Java RPC PSM test ran nowhere with a JDK** (`7bdc086ed02`). It
+- **The Java RPC PSM test ran nowhere with a JDK** (`7736a7947fe`). It
   passed in `test:` without measuring; `endpoints-java-async` runs it with
   `ZERODDS_REQUIRE_JDK=1`.
 
 - **Kotlin: generated code that did not compile, and `long double` values
-  written wrong** (`dfbc0d9b0e7`, `b46eb5766a0`, `7edb7f353af`). Measured on
+  written wrong** (`98b68a603ae`, `85f5dff960c`, `51f1611c18d`). Measured on
   the Kotlin column of the matrix, recorded but never reported because the
   matrix's defect reader did not list the column: 1965 cells whose generated
   program did not compile in one direction or both (3237 defect rows), and 176 `long double` cells that wrote other
@@ -3724,7 +5131,7 @@ on the new foundation. That single fact explains most of what follows.
   zero, and the runtime's constants are written with their package where an
   IDL type of the same name shadows them.
 - **F#: every bounded string and wstring was a compile error**
-  (`3997832168c`). The codec writes bounds as `uint32` literals and
+  (`35af67f88ae`). The codec writes bounds as `uint32` literals and
   `WriteStringBounded`/`WriteWstringBounded` took an `int`.
 
 - **A durability-service restart never served a `--topic NAME` entry with no
@@ -3744,25 +5151,25 @@ on the new foundation. That single fact explains most of what follows.
   from inside that loop; `contract_for_conn`/`topic_meta_row_conn` now take
   an already-locked connection instead of re-locking it.
 
-- **`zerodds-spy` did not build** (`99db9e30376`). The coherent-set-end
+- **`zerodds-spy` did not build** (`427a342d9b5`). The coherent-set-end
   line formatted `Option<i64>` with `{}`, which `Option` does not
   implement; formatted with `{:?}` like the neighbouring lifecycle arm.
 
 - **A RELIABLE stream lost samples permanently and without a trace**
-  (`f4e001fb838`). `ReliableReader::handle_data` marked the sequence number
+  (`924342d75c0`). `ReliableReader::handle_data` marked the sequence number
   received and discarded the cache insert's result with `let _ =`. With a full
   proxy cache the number counted as received with no sample behind it, and the
   reader never asked again — one lost datagram could take several hundred
   later samples with it.
 
 - **Every sample taken through the C API created an instance with a full
-  payload copy that never went away** (`5ceed6b4c69`). Measured externally:
+  payload copy that never went away** (`f5faadc9cbe`). Measured externally:
   258.4 MB in 545,265 live allocations after 613 s, 69 % of the process image,
   24.7 MiB/min. `payload_key_hash` hashes the whole payload, so on a keyless
   topic every sample was its own instance.
 
 - **A reader received nothing after a writer restart** (#32, `fc86c9d2f4c`,
-  `90edf41cd3c`, `99b3fda37cb`). A restarted writer inherits its dead
+  `31d0cebe210`, `ba56dad5c96`). A restarted writer inherits its dead
   predecessor's unicast port; the reader keeps the dead proxy for the SPDP
   lease and sends both proxies' HEARTBEATs to that one port — 632 for the dead
   one announcing an empty range, 2 for the live one. Without `INFO_DST` the
@@ -3772,19 +5179,19 @@ on the new foundation. That single fact explains most of what follows.
   DATA, single DATA and the DATA_FRAG paths were opening their datagram
   without it.
 
-- **Every sample went to the same process twice** (`e06c7a60ab0`) on a host
+- **Every sample went to the same process twice** (`cb17648c134`) on a host
   with two IPv4 addresses. Measured with `strace -c`: 2.011 `sendto` per
   sample.
 
 - **A reliable ZeroDDS reader rejected a Cyclone writer by RxO**
-  (`ba04cb4a289`). Both SEDP parsers ended the RELIABILITY parameter with
+  (`71c8286ee95`). Both SEDP parsers ended the RELIABILITY parameter with
   `.unwrap_or_default()`, and the policy's default is the reader's
   (BEST_EFFORT) — while DDS 1.4 table 12 gives a DataWriter RELIABLE. Cyclone
   omits the parameter because it is the default.
 
 - **A foreign vendor id was read, discarded and replaced with our own**
-  (`27c9f613573`) in three of four rewritten captures. **A vendor PID was read
-  as ours** (`228761fcf53`): `PID_ZERODDS_TYPE_ID` is 0x8002, and DDSI-RTPS
+  (`52128b12557`) in three of four rewritten captures. **A vendor PID was read
+  as ours** (`78b0b317d8b`): `PID_ZERODDS_TYPE_ID` is 0x8002, and DDSI-RTPS
   2.5 §9.6.2.2.1 gives that range to every vendor — RTI's announcement carries
   an 0x8002 with a different meaning, and both `ci-rti` cells matched nothing.
 
@@ -3794,18 +5201,18 @@ on the new foundation. That single fact explains most of what follows.
   guard never ran: a `@final`-against-`@appendable` conflict produced a match
   followed by a decode error, instead of a refusal at match time.
 
-- **LIFESPAN expired only in the writer cache** (`50ea8e40119`) and **instance
-  end states never reached the reader** (`52544a31899`) — the OMG dds-rtps
+- **LIFESPAN expired only in the writer cache** (`6ef38c4250d`) and **instance
+  end states never reached the reader** (`d586f258dc8`) — the OMG dds-rtps
   suite's `Test_Lifespan_0..7` and `Test_FinalInstanceState_0..2` were red.
 
 - **Wildcard partitions never matched** (`1f61814288c`): partition names were
   compared for exact string equality, so a writer in `p1` never matched a
   reader in `p*`.
 
-- **A WaitSet of ReadConditions ticked while idle** (`9a4db18553d`) — measured
+- **A WaitSet of ReadConditions ticked while idle** (`08caf769173`) — measured
   by a user at 226 trigger evaluations per 300 ms and reader with nothing
   arriving — and **`get_trigger_value` drained the channel on every
-  evaluation** (`44783dce1d9`).
+  evaluation** (`440416d3325`).
 
 - **Multi-homed discovery (#27).** On a host with more than one interface (VPN,
   Docker, second NIC) ZeroDDS announced a single discovery locator resolved from
@@ -3817,9 +5224,8 @@ on the new foundation. That single fact explains most of what follows.
   peer on any shared segment finds a reachable locator. Metatraffic is fanned out
   to every de-duplicated usable peer locator (UDP cannot detect a dead
   destination). `ZERODDS_INTERFACE` keeps its deterministic single-interface
-  behaviour. Multi-interface multicast join/TX is intentionally deferred (see
-  `docs/OPEN-ITEMS.md`) — packet capture proved multicast was never the failing
-  operation.
+  behaviour. Multi-interface multicast join/TX is intentionally deferred —
+  packet capture proved multicast was never the failing operation.
 
 - **Wire-supplied lengths are capped before allocation** (`ac00e4cb8c8`) — a
   network-reachable denial of service in the OPC UA PubSub and AMQP paths.
@@ -3842,7 +5248,7 @@ on the new foundation. That single fact explains most of what follows.
   samples); a final after completion and an ACKNACK past the one sample
   now get no answer.
 
-- **TCP user transport** (`4f8ace2763d`, `eb62431ef8c`). The listener read
+- **TCP user transport** (`f3b06241837`, `87c830bbedd`). The listener read
   one connection until it closed: a second peer's frames stayed unread and
   its send waited for ever on the handshake. Each connection is now read in
   a thread of its own; connect, handshake and a stalled write are bounded;
@@ -3850,43 +5256,43 @@ on the new foundation. That single fact explains most of what follows.
   disconnect. With several user transports, every TCP leg gets its accept
   worker.
 
-- **Reliability** (`8f50814429d`, `ca4fb05a22c`, `98dc96b2032`, `cd43e7917ba`):
+- **Reliability** (`cd32ebf67b8`, `e9ca5bfdd9f`, `3de606317e1`, `084ae7aa499`):
   a reliable reader requests what a writer sent before the match, a writer
   with nothing written heartbeats a reliable reader until it answers, a GAP
   lets the next DATA through before any HEARTBEAT, and what a HEARTBEAT
   releases is delivered. `LIVELINESS` counts each matched writer
-  (`025ea023d20`).
+  (`ad1c1b43bd2`).
 
 - **DataReader QoS on `take`/`read`**: `HISTORY`, `RESOURCE_LIMITS`,
   `TIME_BASED_FILTER` and `DESTINATION_ORDER` hold on every read path
-  (`44723842029`, `5b4f54d64c6`, `d93431e5743`); a `TRANSIENT_LOCAL` late
-  joiner gets what the writer's `HISTORY` keeps (`bf8cd705cc1`).
+  (`26f2c6b0c53`, `ae3e1e8de4d`, `729c7e33a96`); a `TRANSIENT_LOCAL` late
+  joiner gets what the writer's `HISTORY` keeps (`f55afcdcd74`).
 
 - **DDS-Security payloads**: a protected payload is padded to four bytes
   before encryption and a received one loses the padding its options word
-  names (`bdbd9107f93`, `0d1ab9ee954`); remote endpoint permissions are
-  enforced (DDS-Security 8.4.2.9.9/10, `22998197b4f`).
+  names (`2c32030d7b6`, `1b3b2c744f3`); remote endpoint permissions are
+  enforced (DDS-Security 8.4.2.9.9/10, `7ccbbc23eed`).
 
 - **Discovery**: every participant an SPDP datagram announces is
-  discovered (`8fd25647d36`); submessages are attributed by the receiver
-  state in force, not the datagram header (`86631d2bcd3`, `8cac84944eb`),
+  discovered (`ddfe5702dde`); submessages are attributed by the receiver
+  state in force, not the datagram header (`d4a4489dd0a`, `7cf44ef40cc`),
   which OpenSplice's bundled SEDP needs; `discovery.no_multicast` sends no
-  multicast packet (`2989d6c1ee0`).
+  multicast packet (`c5aa6d5ad6a`).
 
 - **UDP**: a departed participant's connected sockets are closed
-  (`f6c0dbdbe60`), and a bound socket gets a send buffer that holds the
-  largest datagram (`93a292ebd63`; macOS limits a datagram to 9216 bytes
+  (`ee3ec6ea4eb`), and a bound socket gets a send buffer that holds the
+  largest datagram (`b59ae01f433`; macOS limits a datagram to 9216 bytes
   otherwise).
 
 - **A vendor-specific parameter 0x8083 is not read as
   `PID_RELATED_SAMPLE_IDENTITY`** (DDS-RPC 1.0 §7.8.2, DDSI-RTPS 2.5
-  §9.6.2.2.1; `dfaa3df22ad`). `inline_qos::find_related_sample_identity`
+  §9.6.2.2.1; `1a30e3dd368`). `inline_qos::find_related_sample_identity`
   cleared the vendor bit as well as the must-understand bit, so
   `0x8083` read as DDS-RPC's `0x0083`. It masks the must-understand bit
   only.
 
 - **C++ DDS-RPC: a reply with a remote exception code no longer hides the
-  replies behind it** (DDS-RPC 1.0 §7.11.1.4.13; `e530fc03ed8`). A reply
+  replies behind it** (DDS-RPC 1.0 §7.11.1.4.13; `05c799d7e04`). A reply
   that carries a remote exception code is the exception of the future or
   callback that waits for it. One nobody waits for stays for
   `receive_reply` and `receive_replies` to raise; the samples behind it were
@@ -3894,7 +5300,7 @@ on the new foundation. That single fact explains most of what follows.
   threw (§7.5.2), else `REMOTE_EX_UNKNOWN_EXCEPTION`.
 
 - **`read`/`take` with a QueryCondition apply its expression** (DDS 1.4
-  §2.2.2.5.9; `8733e3630a0`, `8fe6e6329a4`). `zerodds_dr_read_w_condition`,
+  §2.2.2.5.9; `d7324a52745`, `0ab5db250d6`). `zerodds_dr_read_w_condition`,
   `zerodds_dr_take_w_condition` and the `*_next_instance_w_condition` reads
   ignored the expression and returned every sample the state masks let
   through; the trigger value evaluated the expression against a row without
@@ -3908,7 +5314,7 @@ on the new foundation. That single fact explains most of what follows.
 
 - **C++: entity operations called the C API instead of returning defaults,
   and `DataWriter::enable` compiled** (DDS 1.4 §2.2.2.1.1.6–8;
-  `b2a7df76fa7`). `enable`, `status_changes` and `instance_handle` returned
+  `5d6bf43ff4b`). `enable`, `status_changes` and `instance_handle` returned
   `0` or a nil handle, and `DataWriter::enable` called a C function that
   does not exist, so the header did not compile. `Topic::qos(q)`,
   `Topic::inconsistent_topic_status()`, `Topic::qos()` and
@@ -3917,8 +5323,8 @@ on the new foundation. That single fact explains most of what follows.
 
 - **C++: `DataReader::read` kept the samples it read, a throwing decode
   returned the loan, listeners saw the real entity** (DDS 1.2 §7.1.2.5.3.8,
-  §7.1.2.4.4, DDS-PSM-Cxx 1.0 §7.3; `903a16b85f0`, `409a44a86e9`,
-  `24f7d012de2`, `fa26fc22a7a`, `862d498771f`). `read` called `take`, so
+  §7.1.2.4.4, DDS-PSM-Cxx 1.0 §7.3; `56661152a10`, `68c83d552ba`,
+  `0482f3b2af3`, `9918966832b`, `41c2384a98c`). `read` called `take`, so
   the samples were consumed and `sample_state` READ never appeared. A decode
   that threw after `zerodds_dr_take` left the loan open. A listener callback
   received a default-constructed entity without a handle and an all-zero
@@ -3936,7 +5342,7 @@ on the new foundation. That single fact explains most of what follows.
   `test_listener_table_is_per_entity_and_deregisters_on_destroy`,
   `test_duration_sentinel_conversion_and_overflow`.
 
-- **Java PSM: durations and times keep their units** (`8a5744821fd`).
+- **Java PSM: durations and times keep their units** (`819bfcb46cb`).
   `Duration` and `Time` `split()` left the sub-second part in the unit it was
   given, so 50 ms was 50 ns and every deadline and lease was zero, and a
   duration of any whole number of seconds was infinite. `String` and the
@@ -3946,7 +5352,7 @@ on the new foundation. That single fact explains most of what follows.
   shorter period as the greater service.
 
 - **Java PSM: the reflective type support follows DDS-Java-PSM 1.0 §8, and
-  `byte[]` is `DDS::Bytes`** (`61e73dbbbbc`, `8ea6ae2d711`). The
+  `byte[]` is `DDS::Bytes`** (`cb60331dfa9`, `62ca1705ea3`). The
   extensibility was FINAL for every class; it is FINAL for a final class
   that extends `Object` directly (§8.6.1.2) and EXTENSIBLE otherwise
   (`ExtensibilityKind.EXTENSIBLE`, PLAIN_CDR2 like FINAL). The fields of a
@@ -3965,8 +5371,8 @@ on the new foundation. That single fact explains most of what follows.
 
 - **Java PSM: `read()`/`take()` return copies, durability TRANSIENT and
   PERSISTENT survive the writer, and deadline and liveliness listeners
-  fire** (DDS-Java-PSM 1.0 §7.7.3; DDS 1.2 §7.1.3.4, §7.1.4.2; `023e074b7cc`,
-  `088562a49c7`, `0f11815698c`). A reader returned its own decoded objects,
+  fire** (DDS-Java-PSM 1.0 §7.7.3; DDS 1.2 §7.1.3.4, §7.1.4.2; `ec59b455ee5`,
+  `1d30c852d96`, `68b82f541e0`). A reader returned its own decoded objects,
   so changing a returned sample changed the next `read()`; it deep-copies
   through the `TypeSupport`. TRANSIENT and PERSISTENT were treated as
   TRANSIENT_LOCAL; `org.zerodds.internal.DurabilityService` retains the
@@ -3986,7 +5392,7 @@ on the new foundation. That single fact explains most of what follows.
   `aCallbackDoesNotHoldTheReaderMonitor` (`ReentrancyTest`).
 
 - **Java PSM: the shipped main sources compile with `--release 8` again**
-  (`cf0d29f7efb`, `96bccc52ca9`). `mvn -Pjava8` builds the main artifact for
+  (`2e0b194caf5`, `7d991374fd4`). `mvn -Pjava8` builds the main artifact for
   Java 8 (class file version 52); `instanceof` patterns, a `record` and
   Java 9+ library calls (`List.of`, `Set.of`, `String.isBlank`, `Path.of`,
   `Arrays.compareUnsigned`, `AccessibleObject.canAccess`) were used in about
@@ -3996,7 +5402,7 @@ on the new foundation. That single fact explains most of what follows.
   `System.loadLibrary`; over RTPS it talks to the Rust stack on the wire.
 
 - **The Data Samples root elements `<data>` and `<sample>` are declared in
-  the namespaced schema file** (DDS-XML 1.0 §7.3.1; `a45564ecb6b`). A
+  the namespaced schema file** (DDS-XML 1.0 §7.3.1; `5e03ee5e374`). A
   `_nonamespace.xsd` file "specifies neither a targetNamespace nor a root
   element"; the Data Samples chameleon file declared both. They are in
   `dds-xml_data_samples_definitions.xsd` now, and no chameleon file declares
@@ -4283,8 +5689,8 @@ keeps versions consistent across all 90 crates.
 
 ## [1.0.0-rc.1] — 2026-05-07
 
-Initial Release Candidate. 90/91 crates RC1-ready under
-`internal/release/RC1_GUARDRAILS.md` Definition of Done.
+Initial Release Candidate. 90/91 crates RC1-ready under the RC1
+guardrails' Definition of Done.
 
 ### Added — Layer 0 Foundation
 

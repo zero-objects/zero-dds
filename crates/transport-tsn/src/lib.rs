@@ -84,9 +84,10 @@ pub mod vlan_tag;
 #[cfg(feature = "std")]
 pub mod config;
 
-/// Platform-independent frame helpers for the live transport
-/// (feature `live`). Testable on every platform.
-#[cfg(feature = "live")]
+/// Platform-independent frame helpers for the live transport. They need
+/// no socket and no `live` feature, so the crate tier runs their tests
+/// with the default features (`rc8-test-suite.md`, "Crate tier").
+#[cfg(feature = "alloc")]
 pub mod live_frame;
 
 /// Live AF_PACKET transport (Linux-only, feature `live`). Empty on

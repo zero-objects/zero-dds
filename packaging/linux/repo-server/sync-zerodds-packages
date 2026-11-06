@@ -1,0 +1,360 @@
+#!/usr/bin/env bash
+# sync-zerodds-packages: pull deploy of the APT and RPM repositories of
+# packages.zerodds.org. Installed on the package server as
+# /usr/local/bin/sync-zerodds-packages and started by cron every 5 minutes
+# as root (/etc/cron.d/zerodds-sync). This file is the source; the copy on
+# the server is replaced from here.
+#
+# A run takes the newest release of zero-objects/zero-dds from the public
+# GitHub API (no token) and publishes its .deb and .rpm files only after
+#   1. SHA512SUMS verifies against SHA512SUMS.minisig with the release key
+#      (/etc/zerodds-signing/minisign.pub, the same as
+#      packaging/keys/minisign.pub),
+#   2. every package matches its line in SHA512SUMS,
+#   3. every .rpm is signed with the server's GPG key (rpmsign) and the
+#      signature checks out with rpmkeys against the published key
+#      zerodds.gpg in an otherwise empty keyring, the check dnf and zypper
+#      make with gpgcheck=1.
+# Nothing is published before all three hold for every file of the release.
+# Then reprepro adds the .debs (and signs the Release files), the .rpms are
+# linked into every rpm/<dist>/<arch> directory that exists, createrepo_c
+# updates the metadata and gpg signs each repomd.xml. The .repo files in
+# rpm/ (one per distribution) are written by every run that publishes;
+# gpgcheck in a file is 1 only when every .rpm it serves is signed.
+#
+# Usage:
+#   sync-zerodds-packages                newest release, once (cron)
+#   sync-zerodds-packages --tag vX.Y.Z   this release, also if done before
+#   sync-zerodds-packages --resign       sign the .rpms already published,
+#                                        update and sign the RPM metadata,
+#                                        write the .repo files
+#   sync-zerodds-packages --repo-files   write the .repo files only
+#   --local DIR (with --tag): the release files come from DIR (tests)
+#
+# Needs: curl, jq, flock, minisign, gpg, sha512sum, reprepro, createrepo_c,
+# rpmsign and rpmkeys (Debian package rpm). The ZDS_* variables below
+# override the defaults (tests).
+#
+# Installing on the server (root, in the package server's container):
+#   apt-get install --no-install-recommends rpm
+#   install -m 0755 sync-zerodds-packages /usr/local/bin/sync-zerodds-packages
+#   sync-zerodds-packages --resign      once: signs the .rpms published so far
+
+set -euo pipefail
+shopt -s nullglob
+
+REPO="${ZDS_REPO:-zero-objects/zero-dds}"
+PKG_ROOT="${ZDS_PKG_ROOT:-/var/www/packages}"
+STATE_DIR="${ZDS_STATE_DIR:-/var/cache/zerodds-sync}"
+MINISIGN_PUB="${ZDS_MINISIGN_PUB:-/etc/zerodds-signing/minisign.pub}"
+GPG_FP="${ZDS_GPG_FP:-9F3AEC474E830EAA0283C02C2AF06C86EF4D2BCD}"
+LOG="${ZDS_LOG:-/var/log/zerodds-sync.log}"
+BASE_URL="${ZDS_BASE_URL:-https://packages.zerodds.org}"
+WEB_OWNER="${ZDS_WEB_OWNER:-www-data:www-data}"
+read -r -a DEB_CODENAMES <<< "${ZDS_DEB_CODENAMES:-bookworm trixie jammy noble}"
+read -r -a RPM_DISTS <<< "${ZDS_RPM_DISTS:-fedora/40 fedora/41 rhel/9 opensuse/leap-15.5 opensuse/leap-15.6}"
+SPACE_MARGIN_MB="${ZDS_SPACE_MARGIN_MB:-50}"
+
+# One .repo file per distribution:
+#   file | name | path below rpm/ | directory below rpm/ whose .rpms it serves | dnf or zypper
+# shellcheck disable=SC2016  # $releasever and $basearch are for dnf/zypper
+REPO_FILES=(
+  'zerodds-fedora.repo|ZeroDDS for Fedora $releasever|fedora/$releasever/$basearch|fedora|dnf'
+  'zerodds-rhel-9.repo|ZeroDDS for RHEL 9|rhel/9/$basearch|rhel/9|dnf'
+  'zerodds-opensuse-leap-15.6.repo|ZeroDDS for openSUSE Leap 15.6|opensuse/leap-15.6/$basearch|opensuse/leap-15.6|zypper'
+)
+
+MODE=release
+TAG=""
+LOCAL_DIR=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tag) TAG="${2:?--tag needs a tag}"; shift 2 ;;
+    --local) LOCAL_DIR="${2:?--local needs a directory}"; shift 2 ;;
+    --resign) MODE=resign; shift ;;
+    --repo-files) MODE=repo-files; shift ;;
+    -h|--help) sed -n '2,/^$/s/^# \{0,1\}//p' "$0"; exit 0 ;;
+    *) echo "unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+if [ -n "$LOCAL_DIR" ] && [ -z "$TAG" ]; then
+  echo "--local needs --tag" >&2
+  exit 2
+fi
+
+mkdir -p "$STATE_DIR"
+if [ "$LOG" != "-" ]; then
+  exec >> "$LOG" 2>&1
+fi
+# Messages go to stderr: functions whose stdout is captured log as well.
+log() { echo "[$(date -Iseconds)] $*" >&2; }
+
+exec 9> "$STATE_DIR/lock"
+if ! flock -n 9; then
+  log "another run holds $STATE_DIR/lock, nothing to do"
+  exit 0
+fi
+
+WORK=$(mktemp -d "$STATE_DIR/work.XXXXXX")
+trap 'rm -rf "$WORK"' EXIT
+
+need_tools() {
+  local t missing=()
+  for t in "$@"; do
+    command -v "$t" > /dev/null || missing+=("$t")
+  done
+  if [ ${#missing[@]} -gt 0 ]; then
+    log "missing tools: ${missing[*]} (rpmsign and rpmkeys: Debian package rpm)"
+    exit 1
+  fi
+}
+
+# --- RPM signatures ---------------------------------------------------------
+
+# Keyring holding only the published key: a package passes only if its
+# signature verifies against what users import with gpgkey=.
+KEYDB=""
+keydb() {
+  if [ -z "$KEYDB" ]; then
+    KEYDB="$WORK/rpmkeys"
+    mkdir -p "$KEYDB"
+    rpmkeys --dbpath "$KEYDB" --define '_keyring rpmdb' --import "$PKG_ROOT/zerodds.gpg"
+  fi
+}
+
+signed_ok() {
+  local out
+  keydb
+  out=$(rpmkeys --dbpath "$KEYDB" --define '_keyring rpmdb' --checksig "$1" 2>&1) || return 1
+  [[ "$out" == *": digests signatures OK" ]]
+}
+
+# Signs a copy of $1 in $WORK and checks it; prints the path of the copy.
+sign_copy() {
+  local src="$1" copy
+  copy="$WORK/sign/$(basename "$src")"
+  mkdir -p "$WORK/sign"
+  cp -f "$src" "$copy"
+  # GPG_TTY set: rpmsign otherwise warns on every package without a tty.
+  # __gpg named explicitly: rpm 4.18 on Debian 12 defaults it to
+  # /usr/bin/gpg2, which gnupg there does not install.
+  GPG_TTY=/dev/null rpmsign --addsign \
+    --define "__gpg $(command -v gpg)" \
+    --define "_gpg_name $GPG_FP" \
+    --define '_gpg_sign_cmd_extra_args --batch --pinentry-mode error' \
+    "$copy" > /dev/null
+  if ! signed_ok "$copy"; then
+    log "SIGNATURE CHECK FAILED: $(basename "$src") does not verify against $PKG_ROOT/zerodds.gpg"
+    rpmkeys --dbpath "$KEYDB" --define '_keyring rpmdb' --checksig -v "$copy" >&2 || true
+    exit 1
+  fi
+  echo "$copy"
+}
+
+update_rpm_metadata() {
+  local dir="$1"
+  createrepo_c --update "$dir" > /dev/null
+  gpg --batch --yes --detach-sign --armor --local-user "$GPG_FP" \
+    --output "$dir/repodata/repomd.xml.asc" "$dir/repodata/repomd.xml"
+}
+
+# --- .repo files ------------------------------------------------------------
+
+all_signed() {
+  local dir="$1" f
+  command -v rpmkeys > /dev/null || return 1
+  while IFS= read -r -d '' f; do
+    signed_ok "$f" || return 1
+  done < <(find "$PKG_ROOT/rpm/$dir" -name '*.rpm' -print0 2> /dev/null)
+}
+
+write_repo_files() {
+  local entry file name path dir kind check out
+  for entry in "${REPO_FILES[@]}"; do
+    IFS='|' read -r file name path dir kind <<< "$entry"
+    if all_signed "$dir"; then check=1; else check=0; fi
+    out="$WORK/$file"
+    {
+      echo "[zerodds]"
+      echo "name=$name"
+      echo "baseurl=$BASE_URL/rpm/$path"
+      [ "$kind" = zypper ] && echo "type=rpm-md"
+      echo "enabled=1"
+      [ "$kind" = zypper ] && echo "autorefresh=1"
+      if [ "$kind" = zypper ]; then
+        echo "gpgcheck=1"
+        echo "repo_gpgcheck=1"
+        echo "pkg_gpgcheck=$check"
+      else
+        echo "gpgcheck=$check"
+        echo "repo_gpgcheck=1"
+      fi
+      echo "gpgkey=$BASE_URL/zerodds.gpg"
+    } > "$out"
+    install -m 0644 "$out" "$PKG_ROOT/rpm/$file"
+    chown "$WEB_OWNER" "$PKG_ROOT/rpm/$file"
+    log "wrote rpm/$file (package signatures checked: $check)"
+  done
+}
+
+# --- modes ------------------------------------------------------------------
+
+resign_published() {
+  need_tools rpmsign rpmkeys createrepo_c gpg
+  keydb
+  local dist arch dir f copy changed
+  for dist in "${RPM_DISTS[@]}"; do
+    for arch in x86_64 aarch64; do
+      dir="$PKG_ROOT/rpm/$dist/$arch"
+      [ -d "$dir" ] || continue
+      changed=0
+      for f in "$dir"/*.rpm; do
+        signed_ok "$f" && continue
+        copy=$(sign_copy "$f")
+        mv -f "$copy" "$f"
+        changed=1
+      done
+      if [ "$changed" = 1 ]; then
+        update_rpm_metadata "$dir"
+        log "signed the packages in rpm/$dist/$arch"
+      fi
+    done
+  done
+  write_repo_files
+}
+
+# Prints "name<TAB>size<TAB>url" per release file.
+release_files() {
+  if [ -n "$LOCAL_DIR" ]; then
+    local f
+    for f in "$LOCAL_DIR"/*; do
+      [ -f "$f" ] || continue
+      printf '%s\t%s\tfile://%s\n' "$(basename "$f")" "$(stat -c %s "$f")" "$(realpath "$f")"
+    done
+    return
+  fi
+  local api="https://api.github.com/repos/$REPO" json
+  if [ -n "$TAG" ]; then
+    json=$(curl -sSf -H "Accept: application/vnd.github+json" "$api/releases/tags/$TAG")
+  else
+    # releases/latest skips pre-releases; without a final release take the
+    # newest one.
+    json=$(curl -sf -H "Accept: application/vnd.github+json" "$api/releases/latest") ||
+      json=$(curl -sSf -H "Accept: application/vnd.github+json" "$api/releases?per_page=1" | jq '.[0]')
+  fi
+  TAG=$(jq -r '.tag_name // empty' <<< "$json")
+  jq -r '.assets[] | "\(.name)\t\(.size)\t\(.browser_download_url)"' <<< "$json"
+}
+
+publish_release() {
+  need_tools curl jq minisign gpg sha512sum reprepro createrepo_c rpmsign rpmkeys
+  local explicit_tag="$TAG"
+  release_files > "$WORK/files.tsv"
+  if [ -z "$TAG" ]; then
+    log "no release found"
+    exit 0
+  fi
+  if [ -z "$explicit_tag" ]; then
+    if [ "$TAG" = "$(cat "$STATE_DIR/last-tag" 2> /dev/null || true)" ]; then
+      exit 0
+    fi
+    if [ "$TAG" = "$(cat "$STATE_DIR/rejected-tag" 2> /dev/null || true)" ]; then
+      exit 0
+    fi
+  fi
+  log "release $TAG"
+
+  local selected
+  selected=$(awk -F'\t' '$1=="SHA512SUMS" || $1=="SHA512SUMS.minisig" || $1 ~ /\.(deb|rpm)$/' "$WORK/files.tsv")
+  if ! grep -q $'^SHA512SUMS\t' <<< "$selected" || ! grep -q $'^SHA512SUMS.minisig\t' <<< "$selected"; then
+    log "REJECTED $TAG: no SHA512SUMS with SHA512SUMS.minisig, nothing published"
+    echo "$TAG" > "$STATE_DIR/rejected-tag"
+    exit 1
+  fi
+
+  # Room for the downloads and the copies reprepro puts into its pool; the
+  # .rpms are hard links of the downloads.
+  local need_mb have_mb
+  need_mb=$(awk -F'\t' '{t+=$2} $1 ~ /\.deb$/ {t+=$2} END {printf "%d", t/1048576}' <<< "$selected")
+  need_mb=$((need_mb + SPACE_MARGIN_MB))
+  have_mb=$(df -Pm "$STATE_DIR" | awk 'NR==2 {print $4}')
+  if [ "$have_mb" -lt "$need_mb" ]; then
+    log "NOT ENOUGH SPACE for $TAG: need $need_mb MB in $STATE_DIR, $have_mb MB free; nothing downloaded"
+    exit 1
+  fi
+
+  local dl="$WORK/release" name url
+  mkdir -p "$dl"
+  while IFS=$'\t' read -r name _ url; do
+    curl -sSLf --retry 3 -o "$dl/$name" "$url"
+  done <<< "$selected"
+
+  if ! minisign -Vq -p "$MINISIGN_PUB" -m "$dl/SHA512SUMS" -x "$dl/SHA512SUMS.minisig"; then
+    log "REJECTED $TAG: SHA512SUMS.minisig does not verify against $MINISIGN_PUB"
+    echo "$TAG" > "$STATE_DIR/rejected-tag"
+    exit 1
+  fi
+  local f
+  for f in "$dl"/*.deb "$dl"/*.rpm; do
+    name=$(basename "$f")
+    if ! awk -v n="$name" '{f=$2; sub(/^\*/, "", f)} f==n {print; found=1} END {exit !found}' \
+        "$dl/SHA512SUMS" > "$WORK/one.sha512" ||
+       ! (cd "$dl" && sha512sum --status -c "$WORK/one.sha512"); then
+      log "REJECTED $TAG: $name is not in SHA512SUMS or does not match it"
+      echo "$TAG" > "$STATE_DIR/rejected-tag"
+      exit 1
+    fi
+  done
+  log "SHA512SUMS signature and $(find "$dl" -name '*.deb' -o -name '*.rpm' | wc -l) package checksums verified"
+
+  keydb
+  local copy
+  for f in "$dl"/*.rpm; do
+    copy=$(sign_copy "$f")
+    mv -f "$copy" "$f"
+  done
+  log "packages signed and checked against $PKG_ROOT/zerodds.gpg"
+
+  # Publish.
+  local codename out
+  for f in "$dl"/*.deb; do
+    for codename in "${DEB_CODENAMES[@]}"; do
+      if ! out=$(reprepro -b "$PKG_ROOT/deb" --ignore=undefinedtarget,wrongdistribution \
+          includedeb "$codename" "$f" 2>&1); then
+        log "reprepro includedeb $codename $(basename "$f") failed:"
+        echo "$out"
+        exit 1
+      fi
+    done
+  done
+
+  local dist arch dir
+  declare -A touched=()
+  for f in "$dl"/*.rpm; do
+    case "$f" in
+      *.x86_64.rpm | *.noarch.rpm) arch=x86_64 ;;
+      *.aarch64.rpm) arch=aarch64 ;;
+      *) continue ;;
+    esac
+    for dist in "${RPM_DISTS[@]}"; do
+      dir="$PKG_ROOT/rpm/$dist/$arch"
+      [ -d "$dir" ] || continue
+      ln -f "$f" "$dir/" 2> /dev/null || cp -f "$f" "$dir/"
+      touched["$dir"]=1
+    done
+  done
+  for dir in "${!touched[@]}"; do
+    update_rpm_metadata "$dir"
+  done
+
+  write_repo_files
+  chown -R "$WEB_OWNER" "$PKG_ROOT"
+  echo "$TAG" > "$STATE_DIR/last-tag"
+  log "published $TAG"
+}
+
+case "$MODE" in
+  release) publish_release ;;
+  resign) resign_published ;;
+  repo-files) write_repo_files ;;
+esac

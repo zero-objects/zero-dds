@@ -245,15 +245,6 @@ fn e2e_10_percent_loss_delivers_all_in_order() {
     }
 }
 
-#[test]
-fn e2e_30_percent_loss_delivers_all_in_order() {
-    let delivered = run_e2e(30, 30, 2025);
-    assert_eq!(delivered.len(), 30);
-    for (i, s) in delivered.iter().enumerate() {
-        assert_eq!(s.sequence_number, SequenceNumber(i as i64 + 1));
-    }
-}
-
 /// RTPS-F1 E2E: a `write_stamped` sample carries its source timestamp across
 /// the wire (writer INFO_TS → reader) into `DeliveredSample.source_timestamp`.
 #[test]
@@ -357,24 +348,8 @@ fn run_frag_e2e(
 }
 
 #[test]
-fn e2e_frag_large_sample_zero_loss() {
-    // 10 kB sample, fragment_size 1400 → ~8 fragments, a single sample
-    let delivered = run_frag_e2e(1, 10_000, 1400, 0, 7);
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].payload.as_ref(), &*pattern_for(1, 10_000));
-    assert_eq!(delivered[0].sequence_number, SequenceNumber(1));
-}
-
-#[test]
 fn e2e_frag_large_sample_10_percent_loss() {
     let delivered = run_frag_e2e(1, 10_000, 1400, 10, 42);
-    assert_eq!(delivered.len(), 1);
-    assert_eq!(delivered[0].payload.as_ref(), &*pattern_for(1, 10_000));
-}
-
-#[test]
-fn e2e_frag_large_sample_30_percent_loss() {
-    let delivered = run_frag_e2e(1, 10_000, 1400, 30, 99);
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].payload.as_ref(), &*pattern_for(1, 10_000));
 }

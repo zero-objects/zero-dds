@@ -61,7 +61,9 @@ use zerodds_types::dynamic::{DynamicData, DynamicType, DynamicTypeMember, TypeKi
 use crate::error::{DdsError, Result};
 use crate::instance_handle::InstanceHandle;
 use crate::sample_info::InstanceStateKind;
-use crate::serialized_type::{SerializedSample, SerializedTypeSupport, dynamic_field_value};
+use crate::serialized_type::{
+    SerializedSample, SerializedTypeSupport, dynamic_field_value, dynamic_unselected,
+};
 use crate::subscriber::DataReader;
 
 /// Why a plan was refused: a static category for the error code, and the
@@ -156,10 +158,10 @@ const MAX_BASE_DEPTH: usize = 64;
 /// zerodds-lint: recursion-depth 64 (`MAX_BASE_DEPTH`, checked on entry)
 fn all_members(type_: &DynamicType, depth: usize) -> Vec<DynamicTypeMember> {
     let mut out = Vec::new();
-    if depth < MAX_BASE_DEPTH {
-        if let Some(base) = type_.base_type().and_then(|b| b.resolve_alias().ok()) {
-            out = all_members(&base, depth + 1);
-        }
+    if depth < MAX_BASE_DEPTH
+        && let Some(base) = type_.base_type().and_then(|b| b.resolve_alias().ok())
+    {
+        out = all_members(&base, depth + 1);
     }
     out.extend(type_.members());
     out
@@ -410,6 +412,10 @@ struct JoinedRow<'a>(&'a DynamicData);
 impl RowAccess for JoinedRow<'_> {
     fn get(&self, path: &str) -> Option<Value> {
         dynamic_field_value(self.0, None, path)
+    }
+
+    fn unselected(&self, path: &str) -> bool {
+        dynamic_unselected(self.0, None, path)
     }
 }
 
@@ -774,6 +780,7 @@ impl MultiTopicEngine {
                 // XCDR2, little-endian: the body `from_dynamic_data` made.
                 representation: 1,
                 big_endian: false,
+                representation_identifier: [0x00, 0x07],
                 source_timestamp: Some(crate::time::time_to_he_timestamp(stamp)),
                 reception_timestamp: None,
                 source_sequence_number: -1,

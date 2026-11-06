@@ -171,10 +171,10 @@ pub fn check_union_derivation(
     };
     // "either the extensibility kind unspecified, or else the same
     // extensibility kind as the base type".
-    if let Some(kind) = named_extensibility(derived) {
-        if named_extensibility(base) != Some(kind) {
-            return Err(UnionInheritanceError::ExtensibilityDiffers);
-        }
+    if let Some(kind) = named_extensibility(derived)
+        && named_extensibility(base) != Some(kind)
+    {
+        return Err(UnionInheritanceError::ExtensibilityDiffers);
     }
     // "the same discriminator type as the base Union".
     if derived.discriminator.common.type_id != base.discriminator.common.type_id {
@@ -285,7 +285,7 @@ mod tests {
     }
 
     #[test]
-    fn a_derived_union_that_meets_the_five_conditions_is_accepted() {
+    fn xtypes_7_2_2_4_5_a_derived_union_that_meets_the_five_conditions_is_accepted() {
         let derived = union(
             APPENDABLE,
             long(),
@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn a_derived_union_of_another_extensibility_kind_is_refused() {
+    fn xtypes_7_2_2_4_5_a_derived_union_of_another_extensibility_kind_is_refused() {
         let derived = union(FINAL, long(), false, vec![member(2, "b", &[2], false)]);
         assert_eq!(
             check_union_derivation(&[base()], &derived),
@@ -310,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn a_derived_union_with_another_discriminator_type_is_refused() {
+    fn xtypes_7_2_2_4_5_a_derived_union_with_another_discriminator_type_is_refused() {
         let derived = union(
             APPENDABLE,
             short(),
@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn the_discriminator_of_a_derived_union_is_not_a_key() {
+    fn xtypes_7_2_2_4_5_the_discriminator_of_a_derived_union_is_not_a_key() {
         let derived = union(APPENDABLE, long(), true, vec![member(2, "b", &[2], false)]);
         assert_eq!(
             check_union_derivation(&[base()], &derived),
@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn no_ancestor_defines_a_default_member() {
+    fn xtypes_7_2_2_4_5_no_ancestor_defines_a_default_member() {
         let with_default = union(
             APPENDABLE,
             long(),
@@ -342,7 +342,7 @@ mod tests {
         );
         let derived = union(APPENDABLE, long(), false, vec![member(2, "b", &[2], false)]);
         assert_eq!(
-            check_union_derivation(&[with_default.clone()], &derived),
+            check_union_derivation(core::slice::from_ref(&with_default), &derived),
             Err(UnionInheritanceError::AncestorHasDefaultMember { ancestor: 0 })
         );
         // Also the root of a longer chain.
@@ -354,7 +354,8 @@ mod tests {
     }
 
     #[test]
-    fn a_discriminator_value_selects_at_most_one_member_of_the_hypothetical_union() {
+    fn xtypes_7_2_2_4_5_a_discriminator_value_selects_at_most_one_member_of_the_hypothetical_union()
+    {
         let derived = union(
             APPENDABLE,
             long(),
@@ -375,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn the_hypothetical_union_has_unique_member_ids_and_names() {
+    fn xtypes_7_2_2_4_5_the_hypothetical_union_has_unique_member_ids_and_names() {
         let same_id = union(APPENDABLE, long(), false, vec![member(1, "b", &[2], false)]);
         assert_eq!(
             check_union_derivation(&[base()], &same_id),
@@ -389,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn the_members_of_the_ancestors_are_expanded_ahead_of_the_derived_ones() {
+    fn xtypes_7_2_2_4_5_the_members_of_the_ancestors_are_expanded_ahead_of_the_derived_ones() {
         let middle = union(APPENDABLE, long(), false, vec![member(3, "m", &[3], false)]);
         let derived = union(APPENDABLE, long(), false, vec![member(4, "d", &[4], false)]);
         let expanded = expand_union(&[base(), middle], &derived);

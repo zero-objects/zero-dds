@@ -156,7 +156,7 @@ und `Ast::annotation_defs` ist das Gegenstück zu `Ast::types` für die
 andere Deklarationsart, die ein TypeObject hat. Ein `TypeNode` wird
 dafür *nicht* angelegt: `@Name` soll auf die Deklaration auflösen und
 nicht auf einen Typ. Test:
-`crates/types/tests/type_object_annotations.rs::an_annotation_declaration_has_a_type_object`.
+`crates/types/tests/type_object_annotations.rs::xtypes_7_2_2_4_4_1_an_annotation_declaration_has_a_type_object`.
 
 ### A.2 Sechs der zehn TypeLookup-Typen aus §7.6.3.3.3 gibt es nicht
 
@@ -183,10 +183,10 @@ Extensibility: die vier Parameter-Typen `MUTABLE`, die sechs übrigen
 appendable, weil §7.3.1.2.1.8 sagt, dass ein Typ ohne
 `@extensibility`-Angabe appendable ist. `RequestHeader` ist dort lokal
 erklärt und nicht aus `zerodds-rpc` genommen, weil jene Kiste von dieser
-abhängt. Tests: `type_lookup_call_roundtrips_both_operations`,
-`type_lookup_return_roundtrips_both_operations`,
-`type_lookup_request_and_reply_roundtrip`,
-`get_types_result_roundtrips_both_arms`,
+abhängt. Tests: `xtypes_7_6_3_3_3_type_lookup_call_roundtrips_both_operations`,
+`xtypes_7_6_3_3_3_type_lookup_return_roundtrips_both_operations`,
+`xtypes_7_6_3_3_3_type_lookup_request_and_reply_roundtrip`,
+`xtypes_7_6_3_3_3_get_types_result_roundtrips_both_arms`,
 `get_type_dependencies_result_roundtrips_both_arms`.
 
 ### A.3 Der `default:`-Arm von `MinimalTypeObject` wird abgewiesen
@@ -205,8 +205,8 @@ diese Fassung nicht kennt.
 `Extended`-Variante, die den TypeKind und die Member-Liste wörtlich hält
 — den DHEADER ausgenommen, weil das eine Länge ist, die der Encoder
 schreibt, und eine Byte-Reihenfolge, die der Wert nicht trägt. Tests:
-`a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`an_extended_type_kind_keeps_the_member_list_it_arrived_with`.
+`xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`xtypes_annex_b_an_extended_type_kind_keeps_the_member_list_it_arrived_with`.
 
 ### A.4 `@non_serialized`-Member zählen bei der Kompatibilitätsprüfung mit
 
@@ -228,7 +228,7 @@ beides auf einmal ist: er ist nicht auf der Leitung, und die Regeln, die
 nur das TypeObject lesen, können ihn nicht sehen. Der Member-*Index*
 läuft trotzdem weiter, weil eine `@non_serialized`-Deklaration eine
 Position besetzt. Test:
-`crates/types/tests/table19_key_members.rs::a_non_serialized_member_does_not_enter_the_comparison`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_2_a_non_serialized_member_does_not_enter_the_comparison`.
 
 ### A.5 `@ignore_literal_names` wirkt nicht
 
@@ -258,7 +258,7 @@ Namen der anderen entscheiden ließ. Damit wird ein Bit eines
 Flag-Wortes geschrieben, das Annex B `// Unused` nennt — die
 Extensibility-Bits desselben Wortes werden weiterhin **nicht**
 geschrieben, siehe B.8/B.9 und `omg-xtypes-issues.md` §B8. Test:
-`crates/types/tests/table19_key_members.rs::ignore_literal_names_needs_the_annotation_on_both_types`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_ignore_literal_names_needs_the_annotation_on_both_types`.
 
 ### A.6 Tabelle 18 stellt keine Bedingung an die Bitmask-Flags, der Baum schon
 
@@ -280,7 +280,7 @@ Wire-Breite ist. Die Spalte "Object construction" ist das Argument
 dafür, nicht nur das Fehlen einer Bedingung: "for all bits identified in
 both T1 and T2" rechnet ausdrücklich mit Bits, die nur eine Seite kennt,
 und sagt, was mit ihnen geschieht. Test:
-`crates/types/tests/table19_key_members.rs::two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags`.
 
 ### A.7 Die leere DataRepresentation-Liste
 
@@ -301,7 +301,7 @@ Funktion nicht zusammen.
 die Einzelliste `[XCDR]` ein, auf beiden Seiten. Die Ersetzung ist
 `XCDR` und nicht "irgendetwas": ein leeres Angebot gegen einen Leser,
 der nur XCDR2 nimmt, findet weiterhin nichts. Test:
-`crates/types/src/qos.rs::an_empty_list_of_preferences_is_the_single_element_xcdr`.
+`crates/types/src/qos.rs::xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr`.
 
 ### A.8 XCDR1 mit `APPENDABLE` wird abgewiesen, und Tabelle 60 führt es
 
@@ -352,7 +352,7 @@ weist `TK_NONE` auf beiden Seiten ab, vor der Identitätsabkürzung.
 Decodieren und Encodieren bleiben erlaubt: `TypeInformation` schreibt
 `TK_NONE` für eine Äquivalenzform, die der Sender ausgelassen hat
 (§7.6.3.2.1), und ein Strom, der das trägt, ist nicht malformed. Test:
-`crates/types/tests/table19_key_members.rs::tk_none_is_not_assignable_from_itself`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_3_4_2_tk_none_is_not_assignable_from_itself`.
 
 ### B.2 `EK_BOTH` geht als TypeIdentifier-Diskriminator durch
 
@@ -372,7 +372,7 @@ ein Oktett übrig, die vierzehn Hash-Oktette sind weg.
 **Geschlossen.** `EK_BOTH` am TypeIdentifier-Diskriminator wird
 abgewiesen. Im `PlainCollectionHeader`, wo es hingehört, ändert sich
 nichts — das ist ein Oktett-Feld und kein Union-Diskriminator. Test:
-`ek_both_is_not_a_type_identifier_discriminator`.
+`xtypes_7_3_4_6_1_ek_both_is_not_a_type_identifier_discriminator`.
 
 ### B.3 Die SCC-Form des Baums lässt zwei Felder aus, und liest sie auch nicht
 
@@ -410,9 +410,9 @@ vollständige SCC-Identifier sind im Baum nicht unterscheidbar.
 **Geschlossen.** `StronglyConnectedComponentId` hat jetzt das Feld
 `equivalence_kind` und die APPENDABLE-Rahmung; die 24-Oktett-Form des
 Baums wird abgewiesen. Tests:
-`a_component_identifier_is_the_thirty_two_octets_of_annex_b`,
+`xtypes_7_3_4_2_a_component_identifier_is_the_thirty_two_octets_of_annex_b`,
 `a_minimal_and_a_complete_component_identifier_differ`,
-`a_component_identifier_takes_only_the_two_equivalence_kinds`.
+`xtypes_annex_b_a_component_identifier_takes_only_the_two_equivalence_kinds`.
 
 ### B.4 Der `@key` am Union-Diskriminator erreicht das TypeObject nicht
 
@@ -436,12 +436,13 @@ Seiten (`as-union-disc-key-both`) ergibt ebenfalls `Yes`, wie sie soll.
 `XTypesFacet::discriminator_is_key`, `from_ast` in
 `UnionDiscriminatorFlag::IS_KEY`, und `check_unions` vergleicht die
 beiden. Welche Lesart gilt, entscheidet eine Achse und nicht dieses
-Frontend: `KeyOnUnionDiscriminator::Refused` ist der Default und meldet
-die Annotation — die gemessene Ablehnung durch Cyclone, RTI und Fast DDS
-(2026-08-10, `/root/n11-keyunion/`) ist der Grund —, und `Carried` ist
-die Bitte darum, bis hin zu einem KeyHash über den Diskriminator allein
-(`keyhash::union_key_discriminator`). Tests:
-`crates/types/tests/table19_key_members.rs::one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`,
+Frontend: `KeyOnUnionDiscriminator::Carried` ist der Default (Tabelle
+21, §7.2.2.4.4.4.8), bis hin zu einem KeyHash über den Diskriminator
+allein (`keyhash::union_key_discriminator`), auch in `zerodds-build` und
+`derive(DdsType)`; `Refused` meldet die Annotation — die gemessene
+Ablehnung durch Cyclone, RTI und Fast DDS (2026-08-10) ist der Grund für
+diese Einstellung. Tests:
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`,
 `crates/idl-lower/tests/annotations.rs::a_key_on_a_union_discriminator_is_refused_with_the_clause_that_permits_it`
 und `…::a_key_on_a_union_discriminator_reaches_the_facet_when_carried`.
 
@@ -467,10 +468,10 @@ Regeln, und zwar nur für Member mit `IS_KEY`: ein `string<8>`-Leser
 kein Schlüssel ist — dann entscheidet `@try_construct`, und erst der
 Schlüssel macht den Verlust unzulässig. Die Gegenrichtung ist
 mitgeprüft. Tests in `crates/types/tests/table19_key_members.rs`:
-`a_shorter_string_key_in_the_reader_is_not_assignable`,
-`a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
-`a_shorter_sequence_key_in_the_reader_is_not_assignable`,
-`a_shorter_string_member_that_is_not_a_key_is_still_assignable`.
+`xtypes_7_2_4_4_8_a_shorter_string_key_in_the_reader_is_not_assignable`,
+`xtypes_7_2_2_4_4_4_8_a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
+`xtypes_7_2_4_4_8_a_shorter_sequence_key_in_the_reader_is_not_assignable`,
+`xtypes_7_2_4_4_8_a_shorter_string_member_that_is_not_a_key_is_still_assignable`.
 
 ### B.8/B.9 Die Extensibility einer Aufzählung wird nicht verglichen
 
@@ -584,9 +585,9 @@ folgende Feld des Stroms, ohne dass irgendwo ein Fehler entsteht.
 
 **Geschlossen.** `TypeIdentifier::Extended` hält Diskriminator und
 Member-Liste; die Rahmung wird gelesen und geschrieben. Tests:
-`the_extended_arm_carries_its_body`,
-`an_extended_arm_with_a_member_list_round_trips_verbatim`,
-`the_extended_arm_encodes_its_dheader_too`.
+`xtypes_annex_b_the_extended_arm_carries_its_body`,
+`xtypes_7_3_4_2_an_extended_arm_with_a_member_list_round_trips_verbatim`,
+`extended_arms_cover_multiple_discriminators`.
 
 ### C.4 `TK_ANNOTATION` als TypeIdentifier verliert seinen Hash
 
@@ -670,9 +671,9 @@ Ableitung hat ihre eigene Gegenprobe: die Klausel druckt
 reproduziert beide. `04000000 00000000` wird jetzt abgewiesen. Tests:
 `a_dheader_of_four_is_not_a_sequence_length_of_four`,
 `an_empty_get_types_request_carries_its_member_header`,
-`get_types_reply_carries_types_and_complete_to_minimal`,
-`member_ids_are_the_hashid_of_their_name`,
-`the_operation_hashes_are_the_ones_the_clause_prints`.
+`xtypes_7_6_3_3_3_get_types_reply_carries_types_and_complete_to_minimal`,
+`xtypes_7_6_3_3_3_member_ids_are_the_hashid_of_their_name`,
+`xtypes_7_6_3_3_3_the_operation_hashes_are_the_ones_the_clause_prints`.
 
 ---
 
@@ -879,9 +880,9 @@ sie stehen an Ort und Stelle im Quelltext, nicht hier:
    `discriminator_is_key`, und `zerodds_idl_lower::KeyOnUnionDiscriminator`.
    Tabelle 19 braucht das Bit im TypeObject; drei gemessene Vendoren
    weisen eine keyed-Diskriminator-IDL ab, also wäre ein KeyHash darüber
-   einer, den niemand nachrechnet. `Refused` ist der Default und meldet
-   die Annotation mit der Klausel, die sie zulässt; `Carried` trägt sie,
-   und der KeyHash folgt.
+   einer, den niemand nachrechnet. `Carried` ist der Default, wie die
+   Klausel es vorsieht, und der KeyHash folgt; `Refused` meldet die
+   Annotation mit der Klausel, die sie zulässt.
 2. **`EnumTypeFlag` trägt die Extensibility-Bits und
    `IGNORE_LITERAL_NAMES` an Bit 5.** `crates/types/src/from_ast.rs`,
    `enumeration`. Die Extensibility-Bits folgen der Messung in E.3;

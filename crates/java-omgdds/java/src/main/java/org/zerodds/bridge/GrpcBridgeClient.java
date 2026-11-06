@@ -84,10 +84,11 @@ public final class GrpcBridgeClient {
     }
 
     /**
-     * gRPC {@code Subscribe} on the topic service. Returns the next
-     * {@code Sample.payload} the bridge has, or {@code null} when the DDS
-     * reader currently has no data (the gRPC stream carries one message per
-     * sample; there is no subscription state on the wire).
+     * gRPC {@code Subscribe} on the topic service, a server stream with one
+     * message per DDS sample (zerodds-grpc-bridge-1.0 §4.3). Returns the
+     * {@code Sample.cdr_payload} of the stream's first message and ends the
+     * call by closing the connection, or {@code null} when no message came
+     * within the client's timeout or the stream ended without one.
      */
     public byte[] subscribe(String servicePath) throws IOException {
         try (Socket sock = openAndHandshake()) {
@@ -98,7 +99,7 @@ public final class GrpcBridgeClient {
             writeFrame(out, FT_HEADERS, FL_END_HEADERS | FL_END_STREAM, 1, hdrs);
             out.flush();
 
-            byte[] body = readResponseData(in);
+            byte[] body = readFirstMessage(in);
             return body == null ? null : decodeSamplePayload(body);
         }
     }
@@ -214,6 +215,31 @@ public final class GrpcBridgeClient {
             }
         }
         return data;
+    }
+
+    /**
+     * The first message of a server stream: the LPM-stripped body of the
+     * first DATA frame, or {@code null} when the stream ends (trailers with
+     * END_STREAM) or the socket times out before one.
+     */
+    private static byte[] readFirstMessage(InputStream in) throws IOException {
+        while (true) {
+            Frame f;
+            try {
+                f = readOneFrame(in);
+            } catch (IOException e) {
+                return null;
+            }
+            if (f == null) {
+                return null;
+            }
+            if (f.type == FT_DATA && f.payload.length > 0) {
+                return stripLpm(f.payload);
+            }
+            if ((f.flags & FL_END_STREAM) != 0 && f.type == FT_HEADERS) {
+                return null;
+            }
+        }
     }
 
     private static byte[] readExact(InputStream in, int n) throws IOException {

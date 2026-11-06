@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! sqlite-adapter tests: contract enforcement, pagination, ACID restart.
+//! The sqlite adapter against the retention of DDS 1.4 §2.2.3.5, the
+//! PERSISTENT guarantee of §2.2.3.4 (the data outlive the process that
+//! stored them) and the paginated read of ADR 0009.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -29,16 +31,22 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: format!("p-{inst}-{seq}").into_bytes(),
-        representation: 1,
-        big_endian: false,
+        representation_identifier: [0x00, 0x07],
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
         source_guid: [inst; 16],
         source_sequence: seq as i64,
     }
 }
 
+/// A fresh database path; on Linux in `/dev/shm`, so that what is measured
+/// is the store and not the disk of the host.
 fn tmp_db(tag: &str) -> std::path::PathBuf {
-    let mut p = std::env::temp_dir();
+    let shm = std::path::Path::new("/dev/shm");
+    let mut p = if cfg!(target_os = "linux") && shm.is_dir() {
+        shm.to_path_buf()
+    } else {
+        std::env::temp_dir()
+    };
     let nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
@@ -51,20 +59,7 @@ fn tmp_db(tag: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn source_identity_persists_through_sqlite() {
-    // O2 P5: the durable backend must round-trip the writer GUID + source
-    // sequence so a restarted service dedups its re-received history.
-    let store = SqliteStore::open_in_memory(keep_all()).unwrap();
-    store.set_contract("T", keep_all()).unwrap();
-    store.store(sample("T", 5, 99)).unwrap();
-    let got = store.replay_for_topic("T").unwrap();
-    assert_eq!(got.len(), 1);
-    assert_eq!(got[0].source_guid, [5u8; 16]);
-    assert_eq!(got[0].source_sequence, 99);
-}
-
-#[test]
-fn keep_last_trims_to_depth() {
+fn dcps_2_2_3_5_keep_last_keeps_the_newest_depth_samples() {
     let store = SqliteStore::open_in_memory(keep_all()).unwrap();
     let c = Contract {
         history_kind: HistoryKind::KeepLast,
@@ -84,8 +79,11 @@ fn keep_last_trims_to_depth() {
     assert_eq!(seqs, vec![7, 8, 9]);
 }
 
+/// Under KEEP_ALL a sample past `max_samples_per_instance` is refused
+/// (DDS 1.4 §2.2.3.5 with §2.2.3.19: OUT_OF_RESOURCES); the same sample sent
+/// again is not a new one.
 #[test]
-fn keep_all_caps_reject() {
+fn dcps_2_2_3_5_keep_all_refuses_a_sample_past_max_samples_per_instance() {
     let store = SqliteStore::open_in_memory(keep_all()).unwrap();
     let c = Contract {
         max_samples_per_instance: 2,
@@ -103,17 +101,10 @@ fn keep_all_caps_reject() {
     assert_eq!(store.stats("T").unwrap().samples, 2);
 }
 
+/// ADR 0009, invariant 3: a read is paginated, in `(instance, sequence)`
+/// order, and a selector narrows it.
 #[test]
-fn idempotent_resend() {
-    let store = SqliteStore::open_in_memory(keep_all()).unwrap();
-    store.set_contract("T", keep_all()).unwrap();
-    store.store(sample("T", 1, 5)).unwrap();
-    store.store(sample("T", 1, 5)).unwrap(); // re-send same seq
-    assert_eq!(store.stats("T").unwrap().samples, 1);
-}
-
-#[test]
-fn pagination_and_selector() {
+fn adr_0009_3_a_query_pages_through_the_history_in_order() {
     let store = SqliteStore::open_in_memory(keep_all()).unwrap();
     store.set_contract("T", keep_all()).unwrap();
     for inst in 1..=2u8 {
@@ -151,34 +142,44 @@ fn pagination_and_selector() {
     assert_eq!(only2.samples.len(), 5);
 }
 
+/// What a store held comes back from the database file after the process
+/// that wrote it is gone: every field of every sample, among them the
+/// writer and sequence number it came from and a `D_CDR2_BE` identifier,
+/// and the topic metadata.
 #[test]
-fn acid_survives_reopen() {
+fn dcps_2_2_3_4_persistent_samples_and_topic_meta_outlive_the_store() {
     let path = tmp_db("reopen");
+    let mut written: Vec<DurabilitySample> = (0..7).map(|seq| sample("Sensor", 1, seq)).collect();
+    written[3].representation_identifier = [0x00, 0x08];
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: Contract {
+            history_kind: HistoryKind::KeepLast,
+            history_depth: 7,
+            ..keep_all()
+        },
+    };
     {
         let store = SqliteStore::open(&path, keep_all()).unwrap();
-        store.set_contract("Sensor", keep_all()).unwrap();
-        for seq in 0..7 {
-            store.store(sample("Sensor", 1, seq)).unwrap();
+        assert_eq!(store.topic_meta("Sensor").unwrap(), None);
+        store.set_topic_meta("Sensor", meta.clone()).unwrap();
+        for s in &written {
+            store.store(s.clone()).unwrap();
         }
     } // connection closed → WAL checkpoint on drop
     let reopened = SqliteStore::open(&path, keep_all()).unwrap();
-    let all = reopened.replay_for_topic("Sensor").unwrap();
-    assert_eq!(all.len(), 7);
-    assert_eq!(all[6].sequence, 6);
-    assert_eq!(all[3].payload, b"p-1-3");
-    assert_eq!(
-        all[3].created_at,
-        SystemTime::UNIX_EPOCH + Duration::from_secs(3)
-    );
+    assert_eq!(reopened.replay_for_topic("Sensor").unwrap(), written);
+    assert_eq!(reopened.topic_meta("Sensor").unwrap(), Some(meta));
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(format!("{}-wal", path.display()));
     let _ = std::fs::remove_file(format!("{}-shm", path.display()));
 }
 
+/// A database whose header is destroyed is an error on open or read, not a
+/// panic and not an empty store.
 #[test]
-fn corrupt_db_surfaces_gracefully() {
-    // P4 scenario 5 (disk corruption): a corrupt store must yield a graceful
-    // error, never a panic / UB.
+fn a_corrupt_database_is_an_error() {
     let path = tmp_db("corrupt");
     {
         let store = SqliteStore::open(&path, keep_all()).unwrap();
@@ -205,33 +206,7 @@ fn corrupt_db_surfaces_gracefully() {
 }
 
 #[test]
-fn topic_meta_round_trips_across_reopen() {
-    let path = tmp_db("meta-roundtrip");
-    let meta = TopicMeta {
-        type_name: "demo::Command".to_string(),
-        keyed: true,
-        contract: Contract {
-            history_kind: HistoryKind::KeepLast,
-            history_depth: 5,
-            ..keep_all()
-        },
-    };
-    {
-        let store = SqliteStore::open(&path, keep_all()).unwrap();
-        assert_eq!(store.topic_meta("Commands").unwrap(), None);
-        store.set_topic_meta("Commands", meta.clone()).unwrap();
-    }
-    // Reopen from disk = a restart: the row survives (this is the fix for
-    // the durability-restart bug: `contracts` used to be in-memory-only).
-    let reopened = SqliteStore::open(&path, keep_all()).unwrap();
-    assert_eq!(reopened.topic_meta("Commands").unwrap(), Some(meta));
-    let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(format!("{}-wal", path.display()));
-    let _ = std::fs::remove_file(format!("{}-shm", path.display()));
-}
-
-#[test]
-fn topic_meta_contract_governs_retention_over_set_contract() {
+fn the_topic_meta_contract_governs_retention_over_set_contract() {
     let store = SqliteStore::open_in_memory(keep_all()).unwrap();
     store
         .set_contract(
@@ -270,10 +245,12 @@ fn topic_meta_contract_governs_retention_over_set_contract() {
 }
 
 /// A database written before the `topic_meta` table existed (only `samples`
-/// and `unregistered`) must still open — the schema change is additive
-/// (`CREATE TABLE IF NOT EXISTS`), never a silent-empty or refused open.
+/// and `unregistered`) still opens — the schema change is additive
+/// (`CREATE TABLE IF NOT EXISTS`), never a silent-empty or refused open —
+/// and its sample, stored with the column defaults of then
+/// (`representation` 1 for XCDR2, little endian), reads as CDR2_LE.
 #[test]
-fn old_schema_database_without_topic_meta_table_opens() {
+fn a_database_from_before_the_topic_meta_table_opens() {
     let path = tmp_db("old-schema");
     {
         // Hand-build the pre-topic_meta schema directly (no `topic_meta`
@@ -310,13 +287,14 @@ fn old_schema_database_without_topic_meta_table_opens() {
     let all = store.replay_for_topic("T").unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].payload, vec![0x2a]);
+    assert_eq!(all[0].representation_identifier, [0x00, 0x07]);
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_file(format!("{}-wal", path.display()));
     let _ = std::fs::remove_file(format!("{}-shm", path.display()));
 }
 
 #[test]
-fn cleanup_after_delay() {
+fn dcps_2_2_3_5_an_unregistered_instance_is_purged_after_the_cleanup_delay() {
     let store = SqliteStore::open_in_memory(keep_all()).unwrap();
     let c = Contract {
         cleanup_delay: Duration::from_secs(10),

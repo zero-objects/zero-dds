@@ -52,7 +52,7 @@ procedure Main is
    --
    --  Without it: `error: "Pong" is not visible / non-visible
    --  declaration at line 33`. This file said "no package around them"
-   --  until now; that stopped being true with `5c003778003`, and
+   --  until now; that stopped being true with `d851ed9ce31`, and
    --  nothing here noticed, because this target had not run in a
    --  pipeline since 2026-08-05.
 __GENERATED__
@@ -313,12 +313,22 @@ fn endpoint_case(mode: &str) {
     ping_pong(&peer, child, &format!("ada/{mode}"));
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Ada app sends its `Ping`
+/// through the endpoint SDK's sync API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn ada_endpoint_sync() {
+#[ignore = "needs the Ada toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_ada_sync_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("sync");
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Ada app sends its `Ping`
+/// through the endpoint SDK's async API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn ada_endpoint_async() {
+#[ignore = "needs the Ada toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_ada_async_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("async");
 }

@@ -12,7 +12,7 @@ Implementation: `crates/transport-uds/src/lib.rs` — `SOCK_DGRAM` over
 filesystem sockets; `crates/transport-uds/src/abstract_dgram.rs` — the
 Linux abstract namespace, `#[cfg(target_os = "linux")]`.
 
-Open items and decision records: [`zerodds-uds-transport-1.0.open.en.md`](zerodds-uds-transport-1.0.open.en.md).
+Open items: `zerodds-uds-transport-1.0.open.en.md`.
 
 ## §1 Scope and spec status
 
@@ -27,11 +27,11 @@ endpoint id.
 `Locator::uds`); bound in `crates/transport-uds/src/lib.rs`
 (`UdsTransport::local_locator`, the kind check in `Transport::send`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::locator_kind_is_the_vendor_reserved_uds_value`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::rtps_9_3_2_4_locator_kind_is_the_vendor_reserved_uds_value`
 (asserts the numeric value `0x01F0_0002`, the position in the range `0x00000003` to `0x01ffffff` and
 `port == 0`),
-`crates/transport-uds/src/lib.rs::tests::local_locator_reflects_bind_id`,
-`crates/transport-uds/src/lib.rs::tests::send_rejects_non_uds_locator`,
+`crates/transport-uds/src/lib.rs::tests::uds_1_1_local_locator_reflects_bind_id`,
+`crates/transport-uds/src/lib.rs::tests::uds_1_1_send_rejects_non_uds_locator`,
 `crates/rtps/src/wire_types.rs::tests::locator_uds_layout`,
 `crates/rtps/src/wire_types.rs::tests::locator_kind_roundtrip`.
 
@@ -48,7 +48,7 @@ records the scope and states no implementation requirement.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — scope statement; the requirements are the items from §2 on.
 
 ## §2 Path resolution
 
@@ -63,11 +63,11 @@ characters, without separators.
 `DEFAULT_BASE_DIR`, `parse_hex_id`, `source_locator` as the reverse
 direction).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::socket_path_is_hex_under_base_dir`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_2_1_socket_path_is_hex_under_base_dir`
 (checks prefix and `.sock` suffix on an address with edge bytes set),
-`crates/transport-uds/src/lib.rs::tests::parse_hex_id_roundtrip`,
-`crates/transport-uds/src/lib.rs::tests::parse_hex_id_rejects_wrong_length`,
-`crates/transport-uds/src/lib.rs::tests::parse_hex_id_rejects_non_hex`.
+`crates/transport-uds/src/lib.rs::tests::uds_2_1_parse_hex_id_roundtrip`,
+`crates/transport-uds/src/lib.rs::tests::uds_2_1_parse_hex_id_rejects_wrong_length`,
+`crates/transport-uds/src/lib.rs::tests::uds_2_1_parse_hex_id_rejects_non_hex`.
 
 **Status:** done
 
@@ -84,11 +84,11 @@ foreign directory.
 non-directory, `create_dir_all` plus `set_permissions(0o700)` with a
 re-check).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::ensure_base_dir_creates_dir_with_mode_0700`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_2_2_ensure_base_dir_creates_dir_with_mode_0700`
 (reads the mode back and compares it against `0o700`),
-`crates/transport-uds/src/lib.rs::tests::ensure_base_dir_rejects_symlink`,
-`crates/transport-uds/src/lib.rs::tests::ensure_base_dir_rejects_file_path`,
-`crates/transport-uds/src/lib.rs::tests::ensure_base_dir_creates_missing_dir`.
+`crates/transport-uds/src/lib.rs::tests::uds_2_2_ensure_base_dir_rejects_symlink`,
+`crates/transport-uds/src/lib.rs::tests::uds_2_2_ensure_base_dir_rejects_file_path`,
+`crates/transport-uds/src/lib.rs::tests::uds_2_2_ensure_base_dir_creates_missing_dir`.
 
 **Status:** done
 
@@ -106,10 +106,10 @@ the null prefix).
 declared in `crates/transport-uds/src/lib.rs` under
 `#[cfg(target_os = "linux")]`.
 
-**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::abstract_bind_does_not_create_file`,
-`crates/transport-uds/src/abstract_dgram.rs::tests::abstract_send_recv_roundtrip`,
-`crates/transport-uds/src/abstract_dgram.rs::tests::abstract_preserves_message_boundaries`,
-`crates/transport-uds/src/abstract_dgram.rs::tests::local_locator_reflects_bind_id`.
+**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_3_abstract_bind_does_not_create_file`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_3_abstract_send_recv_roundtrip`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_3_abstract_preserves_message_boundaries`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_3_local_locator_reflects_bind_id`.
 These tests run **0 cases** on macOS: the module sits behind
 `#[cfg(target_os = "linux")]` and is not compiled there. They were
 measured on the Linux test host against the same, unchanged
@@ -127,9 +127,9 @@ identical socket code. The difference is one config line.
 **Repo:** `crates/transport-uds/src/abstract_dgram.rs`
 (`UdsAddress::Filesystem`, `UdsAddress::filesystem_default`, `fs_path`).
 
-**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::filesystem_bind_creates_socket_file`
+**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_4_filesystem_bind_creates_socket_file`
 (the socket file appears on bind and is gone after drop),
-`crates/transport-uds/src/abstract_dgram.rs::tests::filesystem_send_recv_roundtrip`.
+`crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_4_filesystem_send_recv_roundtrip`.
 These tests too are `#[cfg(target_os = "linux")]`-gated and run 0 cases
 on macOS; measured on the Linux test host in the same run as §2.3.
 
@@ -147,11 +147,11 @@ needed. Two sends MUST arrive as two receives with the original lengths.
 `std::os::unix::net::UnixDatagram`, `Transport::send` with `send_to`,
 `Transport::recv` with `recv_from`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::preserves_message_boundaries_two_datagrams`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_3_1_preserves_message_boundaries_two_datagrams`
 (two sends of different lengths, two receives with exactly those
 lengths),
-`crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`,
-`crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`
+`crates/transport-uds/src/lib.rs::tests::uds_3_1_send_and_recv_roundtrip_same_process`,
+`crates/transport-uds/tests/l1_cross_process.rs::uds_3_1_l1_datagram_crosses_process_boundary`
 (the same delivery across a real process boundary).
 
 **Status:** done
@@ -166,10 +166,10 @@ returned — not a guess.
 **Repo:** `crates/transport-uds/src/lib.rs` (`source_locator`,
 `parse_hex_id`, `Locator::INVALID`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_3_1_send_and_recv_roundtrip_same_process`
 (checks `got.source` against the sender's locator),
-`crates/transport-uds/src/lib.rs::tests::preserves_message_boundaries_two_datagrams`,
-`crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`.
+`crates/transport-uds/src/lib.rs::tests::uds_3_1_preserves_message_boundaries_two_datagrams`,
+`crates/transport-uds/tests/l1_cross_process.rs::uds_3_1_l1_datagram_crosses_process_boundary`.
 
 **Status:** done
 
@@ -183,10 +183,10 @@ the RTPS level it would be indistinguishable from a short message.
 **Repo:** `crates/transport-uds/src/lib.rs` (`DEFAULT_MAX_DATAGRAM`, the
 length check in `Transport::send`, the buffer size in `Transport::recv`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::send_rejects_oversize_payload`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_3_3_send_rejects_oversize_payload`
 (a payload above the configured limit is refused with
 `PayloadTooLarge`),
-`crates/transport-uds/src/lib.rs::tests::oversized_for_the_kernel_fails_loudly_and_never_truncates`
+`crates/transport-uds/src/lib.rs::tests::uds_3_3_oversized_for_the_kernel_fails_loudly_and_never_truncates`
 (1 KiB arrives untruncated; at `max_datagram` either the delivery is
 whole or the error names EMSGSIZE — and then nothing partial is in the
 queue).
@@ -206,10 +206,10 @@ only at runtime.
 buffer at twice, receive buffer at eight times `max_datagram`, called in
 `UdsTransport::bind` and `UdsAbstractDgramTransport::bind`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::a_datagram_near_the_configured_limit_arrives_whole`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_3_4_a_datagram_near_the_configured_limit_arrives_whole`
 (four datagrams of `max_datagram` − 512 bytes arrive whole; measured on
 macOS 26, where anything above 2048 bytes failed with EMSGSIZE before),
-`crates/transport-uds/src/lib.rs::tests::oversized_for_the_kernel_fails_loudly_and_never_truncates`.
+`crates/transport-uds/src/lib.rs::tests::uds_3_3_oversized_for_the_kernel_fails_loudly_and_never_truncates`.
 
 **Status:** done
 
@@ -226,9 +226,9 @@ otherwise reports `EADDRINUSE`.
 **Repo:** `crates/transport-uds/src/lib.rs` (`UdsTransport::bind` with
 `remove_file` on an existing path, `Drop for UdsTransport`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::bind_creates_socket_file`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_4_1_bind_creates_socket_file`
 (the file exists after bind and is gone after drop),
-`crates/transport-uds/src/lib.rs::tests::bind_reuses_path_after_stale_leftover`
+`crates/transport-uds/src/lib.rs::tests::uds_4_1_bind_reuses_path_after_stale_leftover`
 (a leftover file with foreign content does not block the bind).
 
 **Status:** done
@@ -243,8 +243,8 @@ therefore not required, and a bind must not create a file.
 (`UdsAbstractDgramTransport::bind` in the `Abstract` branch without
 filesystem access, `Drop` removing only in the `Filesystem` branch).
 
-**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::abstract_bind_does_not_create_file`,
-`crates/transport-uds/src/abstract_dgram.rs::tests::filesystem_bind_creates_socket_file`
+**Tests:** `crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_3_abstract_bind_does_not_create_file`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_4_filesystem_bind_creates_socket_file`
 (the counter-check: in the filesystem branch the file appears and
 disappears). Both `#[cfg(target_os = "linux")]`-gated, 0 cases on macOS;
 measured on the Linux test host as in §2.3.
@@ -262,10 +262,10 @@ catch-all `Io` makes them indistinguishable.
 `NotFound`, `PermissionDenied`, `WouldBlock`, `ConnectionRefused`,
 `EMSGSIZE` via `raw_os_error`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::classify_send_error_maps_kinds`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_4_3_classify_send_error_maps_kinds`
 (every named `io::ErrorKind` value against its message),
-`crates/transport-uds/src/lib.rs::tests::send_to_missing_peer_is_io_error`,
-`crates/transport-uds/src/lib.rs::tests::oversized_for_the_kernel_fails_loudly_and_never_truncates`
+`crates/transport-uds/src/lib.rs::tests::uds_4_3_send_to_missing_peer_is_io_error`,
+`crates/transport-uds/src/lib.rs::tests::uds_3_3_oversized_for_the_kernel_fails_loudly_and_never_truncates`
 (the EMSGSIZE branch, where the kernel refuses the message).
 
 **Status:** done
@@ -280,8 +280,8 @@ catch-all `Io` makes them indistinguishable.
 `set_read_timeout` in bind, the `WouldBlock`/`TimedOut` branch in
 `Transport::recv`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::recv_times_out_when_idle`,
-`crates/transport-uds/src/abstract_dgram.rs::tests::recv_times_out_when_idle`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_4_4_recv_times_out_when_idle`,
+`crates/transport-uds/src/abstract_dgram.rs::tests::uds_4_4_an_abstract_socket_recv_times_out_when_idle`
 (the same evidence in the abstract transport, Linux-gated).
 
 **Status:** done
@@ -301,10 +301,10 @@ visibility, SELinux profiles).
 free path, `socket_path` below it; the drop cleanup is best-effort so an
 unmounted volume does not make the drop fail).
 
-**Tests:** `crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`
+**Tests:** `crates/transport-uds/tests/l1_cross_process.rs::uds_3_1_l1_datagram_crosses_process_boundary`
 (two OS processes over a shared directory — the same topology as two
 containers over a shared volume, without the container-runtime part),
-`crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`.
+`crates/transport-uds/src/lib.rs::tests::uds_3_1_send_and_recv_roundtrip_same_process`.
 
 **Status:** partial — the process boundary is shown, the container
 boundary is not: no test starts two containers with a mounted volume and
@@ -322,7 +322,7 @@ datagram in each direction.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — no test starts two containers with a mounted volume and different UID mappings.
 
 ## §6 Platform support
 
@@ -335,10 +335,10 @@ a whole is `#[cfg(unix)]`.
 **Repo:** `crates/transport-uds/src/lib.rs` (`#![cfg(unix)]`,
 `#[cfg(target_os = "linux")] pub mod abstract_dgram`).
 
-**Tests:** `crates/transport-uds/src/lib.rs::tests::send_and_recv_roundtrip_same_process`
-and `crates/transport-uds/tests/l1_cross_process.rs::l1_datagram_crosses_process_boundary`
+**Tests:** `crates/transport-uds/src/lib.rs::tests::uds_3_1_send_and_recv_roundtrip_same_process`
+and `crates/transport-uds/tests/l1_cross_process.rs::uds_3_1_l1_datagram_crosses_process_boundary`
 (measured on both platforms: macOS in this audit, Linux on the Linux test host),
-`crates/transport-uds/src/abstract_dgram.rs::tests::abstract_send_recv_roundtrip`
+`crates/transport-uds/src/abstract_dgram.rs::tests::uds_2_3_abstract_send_recv_roundtrip`
 (Linux only).
 
 **Status:** done
@@ -371,20 +371,19 @@ requirement.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — neither Cyclone DDS nor FastDDS has a UDS transport against which a wire comparison would be possible.
 
 ---
 
 ## Audit-Status
 
-14 done / 1 partial / 2 open / 2 n/a (informative) / 0 n/a (rejected).
+14 done / 1 partial / 2 open / 0 blocked / 2 n/a (informative).
 
-Test run: `cargo test -p zerodds-transport-uds` — on macOS 15 (Rust host
-`aarch64-apple-darwin`) 20 tests (lib) + 1 test
-(`tests/l1_cross_process.rs`) green, 0 failed. The
-`#[cfg(target_os = "linux")]`-gated `abstract_dgram` module runs 0 cases
-there; the same command on the Linux test host against the unchanged
-`abstract_dgram.rs` — 11 cases from `abstract_dgram::tests` green, 0
-failed.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-uds-transport-1.0.md`):
 
-Open items and decision records: [`zerodds-uds-transport-1.0.open.en.md`](zerodds-uds-transport-1.0.open.en.md).
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-transport-uds --all-targets` (job `merge-rust-transport-uds`) — 29 tests green.
+
+31 cited tests green, 0 not green.
+
+Open items: `zerodds-uds-transport-1.0.open.en.md`.

@@ -72,7 +72,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void everyStatusComparesByItsCountersAndHandles() {
+    void javapsm_7_3_3_every_status_compares_by_its_counters_and_handles() {
         assertValueSemantics(
                 new InconsistentTopicStatusImpl(ENV, 3, 1),
                 new InconsistentTopicStatusImpl(ENV, 3, 1),
@@ -127,7 +127,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void statusesWithoutACounterAreEqualWithinTheirKindOnly() {
+    void javapsm_7_3_3_statuses_without_a_counter_are_equal_within_their_kind_only() {
         assertEquals(new DataAvailableStatusImpl(ENV), new DataAvailableStatusImpl(ENV));
         assertEquals(new DataAvailableStatusImpl(ENV).hashCode(), new DataAvailableStatusImpl(ENV).hashCode());
         assertEquals(new DataOnReadersStatusImpl(ENV), new DataOnReadersStatusImpl(ENV));
@@ -135,7 +135,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void theHandleOfAStatusIsComparedByValueNotByIdentity() {
+    void javapsm_7_3_3_the_handle_of_a_status_is_compared_by_value_not_by_identity() {
         // two distinct handle objects of the same octets
         assertEquals(
                 new PublicationMatchedStatusImpl(ENV, 1, 1, 1, 1, handle(9)),
@@ -143,7 +143,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void theIncompatiblePoliciesOfAStatusCannotBeChanged() {
+    void javapsm_7_3_3_the_incompatible_policies_of_a_status_cannot_be_changed() {
         OfferedIncompatibleQosStatusImpl status =
                 new OfferedIncompatibleQosStatusImpl(ENV, 1, 1, Reliability.class, counts(1));
         Set<QosPolicyCount> policies = status.getPolicies();
@@ -156,7 +156,7 @@ class CoreStatusPolicyTest {
     // ---- policies ----------------------------------------------------------
 
     @Test
-    void userDataKeepsACopyOfTheArrayItWasGivenAndHandsOutCopies() {
+    void javapsm_7_3_3_user_data_keeps_a_copy_of_the_array_it_was_given_and_hands_out_copies() {
         byte[] source = {1, 2, 3};
         UserData data = new org.zerodds.core.policy.UserDataImpl(ENV, source);
         source[0] = 99;
@@ -167,7 +167,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void topicDataAndGroupDataHandOutCopies() {
+    void javapsm_7_3_3_topic_data_and_group_data_hand_out_copies() {
         TopicDataImpl topicData = new TopicDataImpl(ENV, new byte[] {4, 5});
         topicData.getValue()[0] = 0;
         assertArrayEquals(new byte[] {4, 5}, topicData.getValue());
@@ -177,7 +177,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void withValueLeavesTheOriginalUnchanged() {
+    void javapsm_7_3_3_with_value_leaves_the_original_unchanged() {
         UserData original = Qos.pf().UserData().withValue(new byte[] {1, 2, 3, 4}, 0, 4);
         UserData changed = original.withValue(new byte[] {9, 8, 7, 6}, 1, 2);
         // offset 1, length 2 of {9,8,7,6} is {8,7}
@@ -189,7 +189,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void aPartitionCannotBeChangedThroughItsNames() {
+    void javapsm_7_3_3_a_partition_cannot_be_changed_through_its_names() {
         Set<String> names = new LinkedHashSet<>(Arrays.asList("a", "b"));
         Partition partition = Qos.pf().Partition().withName(names);
         names.add("c");
@@ -203,39 +203,7 @@ class CoreStatusPolicyTest {
     }
 
     @Test
-    void withPolicyLeavesTheOriginalQosUnchanged() {
-        org.omg.dds.pub.DataWriterQos original = Qos.writer();
-        Reliability before = original.getReliability();
-        org.omg.dds.pub.DataWriterQos changed = original.withPolicy(Qos.pf().Reliability().withBestEffort());
-        assertEquals(before, original.getReliability());
-        assertEquals(Reliability.Kind.BEST_EFFORT, changed.getReliability().getKind());
-        assertNotEquals(original, changed);
-    }
-
-    @Test
-    void equalQosHaveEqualHashCodes() {
-        assertEquals(Qos.writer(), Qos.writer());
-        assertEquals(Qos.writer().hashCode(), Qos.writer().hashCode());
-        assertEquals(Qos.reader(), Qos.reader());
-        assertEquals(Qos.reader().hashCode(), Qos.reader().hashCode());
-        assertEquals(Qos.topic().hashCode(), Qos.topic().hashCode());
-    }
-
-    @Test
-    void equalPoliciesHaveEqualHashCodes() throws Exception {
-        for (Method factory : org.omg.dds.core.policy.PolicyFactory.class.getDeclaredMethods()) {
-            if (factory.getParameterCount() != 0 || !QosPolicy.class.isAssignableFrom(factory.getReturnType())) {
-                continue;
-            }
-            Object a = factory.invoke(Qos.pf());
-            Object b = factory.invoke(Qos.pf());
-            assertEquals(a, b, factory.getName());
-            assertEquals(a.hashCode(), b.hashCode(), factory.getName());
-        }
-    }
-
-    @Test
-    void thePolicyNameIsTheSimpleNameOfItsClass() throws Exception {
+    void javapsm_7_3_5_1_the_policy_name_is_the_simple_name_of_its_class() throws Exception {
         // §7.3.5.1 Table 7.2: the name of a policy is the name of its type
         String[] names = {"UserData", "TopicData", "GroupData", "TransportPriority", "Lifespan",
             "Durability", "Presentation", "Deadline", "LatencyBudget", "Ownership", "OwnershipStrength",

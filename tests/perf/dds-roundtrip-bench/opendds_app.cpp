@@ -36,6 +36,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -104,12 +105,25 @@ void populate(Sample& m, size_t payload_size) {
 }
 #endif
 
+// Reliability, history and RESOURCE_LIMITS of both sides from
+// bench::qos_from_env(); unset: RELIABLE, KEEP_LAST(64), OpenDDS's
+// RESOURCE_LIMITS.
+template <class Qos>
+void apply_bench_qos(Qos& qos, const bench::QosSpec& q) {
+    qos.reliability.kind = q.reliable ? DDS::RELIABLE_RELIABILITY_QOS : DDS::BEST_EFFORT_RELIABILITY_QOS;
+    qos.history.kind = q.keep_all ? DDS::KEEP_ALL_HISTORY_QOS : DDS::KEEP_LAST_HISTORY_QOS;
+    qos.history.depth = q.keep_all ? 1 : q.depth;
+    if (q.has_limits()) {
+        qos.resource_limits.max_samples = q.max_samples;
+        qos.resource_limits.max_instances = 1;
+        qos.resource_limits.max_samples_per_instance = q.max_samples;
+    }
+}
+
 DDS::DataWriterQos reliable_dw_qos(DDS::Publisher_var& pub) {
     DDS::DataWriterQos qos;
     pub->get_default_datawriter_qos(qos);
-    qos.reliability.kind = DDS::RELIABLE_RELIABILITY_QOS;
-    qos.history.kind = DDS::KEEP_LAST_HISTORY_QOS;
-    qos.history.depth = 64;
+    apply_bench_qos(qos, bench::qos_from_env());
     // Force XCDR2. RTI is matching-strict: if writer advertises
     // "XCDR, XCDR2" → RTI-reader (XCDR2-only) sagt "incompatible".
     // Force all apps to XCDR2-only so cross-vendor everyone with
@@ -122,9 +136,7 @@ DDS::DataWriterQos reliable_dw_qos(DDS::Publisher_var& pub) {
 DDS::DataReaderQos reliable_dr_qos(DDS::Subscriber_var& sub) {
     DDS::DataReaderQos qos;
     sub->get_default_datareader_qos(qos);
-    qos.reliability.kind = DDS::RELIABLE_RELIABILITY_QOS;
-    qos.history.kind = DDS::KEEP_LAST_HISTORY_QOS;
-    qos.history.depth = 64;
+    apply_bench_qos(qos, bench::qos_from_env());
     // ALLOW_TYPE_COERCION — the match falls back to the (cross-vendor byte-
     // identical) COMPLETE TypeObject when a vendor like RTI
     // emits a diverging MINIMAL TypeObject (XTypes 1.3 §7.6.3).
@@ -232,6 +244,59 @@ private:
 };
 
 // --- Pong: receive request, echo immediately (event-driven) ---
+// A reader listener with the callbacks the benches do not use left empty.
+class BenchListener : public virtual OpenDDS::DCPS::LocalObject<DDS::DataReaderListener> {
+public:
+    void on_requested_deadline_missed(
+        DDS::DataReader_ptr, const DDS::RequestedDeadlineMissedStatus&) override {}
+    void on_requested_incompatible_qos(
+        DDS::DataReader_ptr, const DDS::RequestedIncompatibleQosStatus&) override {}
+    void on_sample_rejected(
+        DDS::DataReader_ptr, const DDS::SampleRejectedStatus&) override {}
+    void on_liveliness_changed(
+        DDS::DataReader_ptr, const DDS::LivelinessChangedStatus&) override {}
+    void on_subscription_matched(
+        DDS::DataReader_ptr, const DDS::SubscriptionMatchedStatus&) override {}
+    void on_sample_lost(
+        DDS::DataReader_ptr, const DDS::SampleLostStatus&) override {}
+};
+
+class PingListener : public BenchListener {
+public:
+    explicit PingListener(bench::PingState& st) : st_(st) {}
+
+    void on_data_available(DDS::DataReader_ptr reader) override {
+        SampleDataReader_var dr = SampleDataReader::_narrow(reader);
+        if (!dr) return;
+        Sample sample;
+        DDS::SampleInfo info;
+        while (dr->take_next_sample(sample, info) == DDS::RETCODE_OK) {
+            if (info.valid_data) st_.record(sample.t_send_ns);
+        }
+    }
+
+private:
+    bench::PingState& st_;
+};
+
+class TputListener : public BenchListener {
+public:
+    explicit TputListener(bench::TputSub& st) : st_(st) {}
+
+    void on_data_available(DDS::DataReader_ptr reader) override {
+        SampleDataReader_var dr = SampleDataReader::_narrow(reader);
+        if (!dr) return;
+        DDS::SampleInfo info;
+        while (dr->take_next_sample(sample_, info) == DDS::RETCODE_OK) {
+            if (info.valid_data) st_.on_sample(sample_.sequence_id, sample_.payload.length());
+        }
+    }
+
+private:
+    bench::TputSub& st_;
+    Sample sample_;
+};
+
 int run_pong(uint64_t max_runtime_s) {
     DDS::DomainParticipantFactory_var dpf = TheServiceParticipant->get_domain_participant_factory();
     DDS::DomainParticipant_var dp = make_participant(dpf);
@@ -286,10 +351,16 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     DDS::Subscriber_var sub = dp->create_subscriber(SUBSCRIBER_QOS_DEFAULT, 0,
         OpenDDS::DCPS::DEFAULT_STATUS_MASK);
 
+    bench::PingState st;
+    st.warmup = warmup;
+    st.rtts.reserve(samples);
+    PingListener* ping_impl = new PingListener(st);
+    DDS::DataReaderListener_var listener = ping_impl;
+
     DDS::DataWriter_var dw_base = pub->create_datawriter(t_req, reliable_dw_qos(pub), 0,
         OpenDDS::DCPS::DEFAULT_STATUS_MASK);
-    DDS::DataReader_var dr_base = sub->create_datareader(t_echo, reliable_dr_qos(sub), 0,
-        OpenDDS::DCPS::DEFAULT_STATUS_MASK);
+    DDS::DataReader_var dr_base = sub->create_datareader(t_echo, reliable_dr_qos(sub),
+        listener.in(), DDS::DATA_AVAILABLE_STATUS);
     SampleDataWriter_var dw =
         SampleDataWriter::_narrow(dw_base);
     SampleDataReader_var dr =
@@ -309,35 +380,109 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    std::vector<uint64_t> rtts;
-    rtts.reserve(samples);
     Sample msg;
     populate(msg, payload_size);
 
+    // The echo is taken in the listener, as in the other stacks' apps (the
+    // loop used to poll take_next_sample with a yield in between).
     uint64_t total = warmup + samples;
-    for (uint64_t seq = 0; seq < total; ++seq) {
+    uint64_t sent = 0;
+    const uint64_t ping_deadline = bench::ping_deadline();
+    for (uint64_t seq = 0; seq < total && !bench::ping_past(ping_deadline); ++seq, ++sent) {
         msg.sequence_id = static_cast<CORBA::ULong>(seq);
         msg.t_send_ns = now_ns();
         dw->write(msg, DDS::HANDLE_NIL);
 
-        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(50);
-        bool got = false;
-        while (!got && std::chrono::steady_clock::now() < deadline) {
-            Sample echo;
-            DDS::SampleInfo info;
-            if (dr->take_next_sample(echo, info) == DDS::RETCODE_OK && info.valid_data) {
-                uint64_t now = now_ns();
-                uint64_t rtt = now > echo.t_send_ns ? now - echo.t_send_ns : 1;
-                if (seq >= warmup) rtts.push_back(rtt);
-                got = true;
-            } else {
-                std::this_thread::yield();
-            }
-        }
+        std::unique_lock<std::mutex> lk(st.mu);
+        st.cv.wait_for(lk, std::chrono::milliseconds(50),
+                       [&] { return st.received > seq; });
     }
-    print_quantiles(rtts, payload_size);
+    dr->set_listener(0, 0);
+    {
+        std::lock_guard<std::mutex> lk(st.mu);
+        bench::print_ping_sent(sent);
+        print_quantiles(st.rtts, payload_size);
+    }
     dp->delete_contained_entities();
     dpf->delete_participant(dp);
+    return 0;
+}
+
+// --- Throughput (tests/perf/speed): one writer, one reader, own processes ---
+
+struct TputEndpoints {
+    DDS::DomainParticipantFactory_var dpf;
+    DDS::DomainParticipant_var dp;
+    DDS::Topic_var topic;
+    DDS::Publisher_var pub;
+    DDS::Subscriber_var sub;
+
+    bool create() {
+        dpf = TheServiceParticipant->get_domain_participant_factory();
+        dp = make_participant(dpf);
+        if (!dp) { std::cerr << "participant create failed\n"; return false; }
+        register_type(dp);
+        CORBA::String_var tn = type_name();
+        topic = dp->create_topic(kReqTopic, tn, TOPIC_QOS_DEFAULT, 0,
+            OpenDDS::DCPS::DEFAULT_STATUS_MASK);
+        pub = dp->create_publisher(PUBLISHER_QOS_DEFAULT, 0, OpenDDS::DCPS::DEFAULT_STATUS_MASK);
+        sub = dp->create_subscriber(SUBSCRIBER_QOS_DEFAULT, 0, OpenDDS::DCPS::DEFAULT_STATUS_MASK);
+        return topic && pub && sub;
+    }
+
+    ~TputEndpoints() {
+        if (!dp) return;
+        dp->delete_contained_entities();
+        dpf->delete_participant(dp);
+    }
+};
+
+int run_tput_sub(uint64_t max_s) {
+    TputEndpoints e;
+    if (!e.create()) return 1;
+    bench::print_qos("tput-sub", bench::qos_from_env());
+    bench::TputSub st;
+    TputListener* impl = new TputListener(st);
+    DDS::DataReaderListener_var listener = impl;
+    DDS::DataReader_var dr = e.sub->create_datareader(e.topic, reliable_dr_qos(e.sub),
+        listener.in(), DDS::DATA_AVAILABLE_STATUS);
+    if (!dr) { std::cerr << "datareader create failed\n"; return 1; }
+    bench::tput_sub_wait_and_report(st, max_s);
+    dr->set_listener(0, 0);
+    return 0;
+}
+
+int run_tput_pub(size_t payload_size, uint64_t seconds) {
+    TputEndpoints e;
+    if (!e.create()) return 1;
+    bench::QosSpec q = bench::qos_from_env();
+    bench::print_qos("tput-pub", q);
+    DDS::DataWriter_var dw_base = e.pub->create_datawriter(e.topic, reliable_dw_qos(e.pub), 0,
+        OpenDDS::DCPS::DEFAULT_STATUS_MASK);
+    SampleDataWriter_var dw = SampleDataWriter::_narrow(dw_base);
+    if (!dw) { std::cerr << "datawriter create failed\n"; return 1; }
+    bench::tput_wait_matched([&] {
+        DDS::PublicationMatchedStatus pm;
+        dw->get_publication_matched_status(pm);
+        return pm.current_count >= 1;
+    });
+
+    Sample msg;
+    populate(msg, payload_size);
+    auto r = bench::tput_pub_run(seconds, [&](uint32_t seq) {
+        msg.sequence_id = static_cast<CORBA::ULong>(seq);
+        return dw->write(msg, DDS::HANDLE_NIL) == DDS::RETCODE_OK;
+    });
+    int acked = -1;
+    uint64_t ack_ns = 0;
+    if (q.reliable) {
+        uint64_t t = now_ns();
+        DDS::Duration_t max_wait = {30, 0};
+        acked = dw->wait_for_acknowledgments(max_wait) == DDS::RETCODE_OK ? 1 : 0;
+        ack_ns = now_ns() - t;
+    }
+    bench::print_tput_pub(r, payload_size, acked, ack_ns);
+    bench::tput_linger();
     return 0;
 }
 
@@ -348,7 +493,7 @@ int main(int argc, char** argv) {
     DDS::DomainParticipantFactory_var dpf =
         TheParticipantFactoryWithArgs(argc, argv);
     if (argc < 2) {
-        std::cerr << "Usage: " << kProgram << " pong|ping [opts] -DCPSConfigFile <ini>\n";
+        std::cerr << "Usage: " << kProgram << " pong|ping|tput-sub|tput-pub [opts] -DCPSConfigFile <ini>\n";
         return 2;
     }
     std::string mode = argv[1];
@@ -359,6 +504,11 @@ int main(int argc, char** argv) {
     } else if (mode == "ping") {
         bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
         rc = run_ping(a.payload, a.warmup, a.samples);
+    } else if (mode == "tput-sub") {
+        rc = run_tput_sub(bench::parse_tput_args(argc, argv, 2).seconds);
+    } else if (mode == "tput-pub") {
+        bench::TputArgs a = bench::parse_tput_args(argc, argv, 2);
+        rc = run_tput_pub(a.payload, a.seconds);
     } else {
         std::cerr << "unknown mode: " << mode << "\n";
         rc = 2;

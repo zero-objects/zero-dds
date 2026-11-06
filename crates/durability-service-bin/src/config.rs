@@ -271,56 +271,42 @@ fn read_contract(path: &str, node: &zerodds_config::Node) -> Result<Contract, Co
 mod tests {
     use super::*;
 
+    /// What `zerodds-durability-svc.yaml(5)` requires and the parser
+    /// refuses: `keyed` only together with `type`; at least one of `auto`
+    /// and a `durability.topics` entry; no unknown key in the `durability`
+    /// section or in a topic entry (that stops the start).
     #[test]
-    fn minimal_auto_config_parses() {
-        let cfg = DaemonConfig::load_from_str("domain: 3\nauto: true\n").unwrap();
-        assert_eq!(cfg.domain, Some(3));
-        assert!(cfg.auto);
-        assert_eq!(cfg.store, "sqlite");
+    fn what_the_manual_requires_is_refused_when_missing() {
+        for (yaml, setting) in [
+            (
+                "domain: 0\ndurability:\n  topics:\n    - name: Robots\n      keyed: true\n",
+                None,
+            ),
+            ("domain: 0\n", None),
+            (
+                "domain: 0\nauto: true\ndurability:\n  bogus: 1\n",
+                Some("durability.bogus"),
+            ),
+            (
+                "domain: 0\nauto: true\ndurability:\n  topics:\n    - name: Sensors\n      bogus: 1\n",
+                None,
+            ),
+        ] {
+            let err = DaemonConfig::load_from_str(yaml).unwrap_err();
+            match setting {
+                Some(want) => assert!(
+                    matches!(&err, ConfigError::Invalid { setting, .. } if setting == want),
+                    "{yaml}: {err}"
+                ),
+                None => assert!(matches!(err, ConfigError::Invalid { .. }), "{yaml}: {err}"),
+            }
+        }
     }
 
+    /// `zerodds-durability-svc.yaml(5)`, `contract`: a field left out keeps
+    /// `keep_all`'s unlimited value, not the DDS policy default.
     #[test]
-    fn bare_topic_name_is_a_shorthand_entry() {
-        let cfg = DaemonConfig::load_from_str("domain: 0\ndurability:\n  topics:\n    - Sensors\n")
-            .unwrap();
-        assert_eq!(cfg.topics.len(), 1);
-        assert_eq!(cfg.topics[0].name, "Sensors");
-        assert!(cfg.topics[0].type_name.is_none());
-    }
-
-    #[test]
-    fn topic_map_entry_with_type_and_keyed() {
-        let yaml = "\
-domain: 0
-durability:
-  topics:
-    - name: Robots
-      type: robot_msgs::Pose
-      keyed: true
-";
-        let cfg = DaemonConfig::load_from_str(yaml).unwrap();
-        assert_eq!(cfg.topics[0].name, "Robots");
-        assert_eq!(cfg.topics[0].type_name.as_deref(), Some("robot_msgs::Pose"));
-        assert_eq!(cfg.topics[0].keyed, Some(true));
-    }
-
-    #[test]
-    fn keyed_without_type_is_refused() {
-        let yaml = "\
-domain: 0
-durability:
-  topics:
-    - name: Robots
-      keyed: true
-";
-        assert!(matches!(
-            DaemonConfig::load_from_str(yaml).unwrap_err(),
-            ConfigError::Invalid { .. }
-        ));
-    }
-
-    #[test]
-    fn topic_contract_override_parses() {
+    fn a_contract_field_left_out_keeps_keep_alls_unlimited_value() {
         let yaml = "\
 domain: 0
 durability:
@@ -342,31 +328,13 @@ durability:
         assert_eq!(c.max_samples, -1);
     }
 
+    /// The packaged example (`packaging/linux/configs/`) reads under this
+    /// daemon's strict key check as what it spells: a bare topic name and a
+    /// map entry with `type`, `keyed` and a `contract`. This bin crate has
+    /// no `[lib]` target, so an external `tests/` target cannot see
+    /// `config::DaemonConfig`; the check runs as a unit test.
     #[test]
-    fn neither_auto_nor_topic_is_refused() {
-        assert!(matches!(
-            DaemonConfig::load_from_str("domain: 0\n").unwrap_err(),
-            ConfigError::Invalid { .. }
-        ));
-    }
-
-    #[test]
-    fn unknown_key_in_durability_section_is_refused() {
-        let err = DaemonConfig::load_from_str("domain: 0\nauto: true\ndurability:\n  bogus: 1\n")
-            .unwrap_err();
-        assert!(
-            matches!(&err, ConfigError::Invalid { setting, .. } if setting == "durability.bogus"),
-            "{err}"
-        );
-    }
-
-    /// The shipped example config must parse under this daemon's own strict
-    /// key check — the same contract the other bridges' `example_yaml_*`
-    /// tests hold their packaged YAML to. This bin crate has no `[lib]`
-    /// target, so an external `tests/` integration test cannot see
-    /// `config::DaemonConfig`; the check runs as a unit test instead.
-    #[test]
-    fn shipped_example_config_loads_back() {
+    fn the_packaged_example_reads_as_what_it_spells() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../packaging/linux/configs/durability-svc.yaml.example");
         let cfg = DaemonConfig::load_from_file(&path)
@@ -387,21 +355,5 @@ durability:
         assert_eq!(contract.history_depth, 5);
         assert_eq!(contract.max_instances, 1000);
         assert_eq!(contract.cleanup_delay, core::time::Duration::from_secs(300));
-    }
-
-    #[test]
-    fn unknown_key_in_topic_entry_is_refused() {
-        let yaml = "\
-domain: 0
-auto: true
-durability:
-  topics:
-    - name: Sensors
-      bogus: 1
-";
-        assert!(matches!(
-            DaemonConfig::load_from_str(yaml).unwrap_err(),
-            ConfigError::Invalid { .. }
-        ));
     }
 }

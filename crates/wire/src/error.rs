@@ -116,6 +116,67 @@ impl WireError {
         }
     }
 
+    /// A value of the IDL type that a [`crate::WireRepr`] type does not
+    /// accept: `expected` says what it does accept.
+    ///
+    /// The refusal a `from_wire` returns, where nothing knows an offset:
+    /// the generated decoder hands the value over through
+    /// [`crate::repr::from_wire`], which puts the offset the value was
+    /// read from into the error. The sample is not delivered and the
+    /// error says why (a [`WireError::OutOfRange`], which every
+    /// subscriber reports and none takes for an absence).
+    #[must_use]
+    pub fn invalid_value(expected: impl Into<String>) -> Self {
+        Self::OutOfRange {
+            at: 0,
+            expected: expected.into(),
+        }
+    }
+
+    /// The same error, naming `at` as the offset it happened at.
+    ///
+    /// For an error raised where no offset was known — a `from_wire` —
+    /// and handed back to a reader that knows where the value began.
+    #[must_use]
+    pub(crate) fn located(self, at: usize) -> Self {
+        match self {
+            Self::Truncated {
+                needed, available, ..
+            } => Self::Truncated {
+                at,
+                needed,
+                available,
+            },
+            Self::ImpossibleLength {
+                claimed, available, ..
+            } => Self::ImpossibleLength {
+                at,
+                claimed,
+                available,
+            },
+            Self::NotUtf8 { .. } => Self::NotUtf8 { at },
+            Self::OutOfRange { expected, .. } => Self::OutOfRange { at, expected },
+            Self::Discarded {
+                expected, found, ..
+            } => Self::Discarded {
+                at,
+                expected,
+                found,
+            },
+            Self::WrongFraming {
+                expected,
+                found,
+                fits,
+                ..
+            } => Self::WrongFraming {
+                at,
+                expected,
+                found,
+                fits,
+            },
+        }
+    }
+
     /// Whether this is the absence [`WireError::Discarded`] describes
     /// rather than a statement that the stream is malformed.
     ///

@@ -4,7 +4,7 @@
 //! The suite's 25 shape types, generated from the suite's own IDL.
 //!
 //! `tools/omg-shape-main` took its `ShapeType` from a hand-written Rust
-//! struct before commit `98b4800bdc3`, and that was the wrong side of
+//! struct before commit `1cddee56333`, and that was the wrong side of
 //! the measurement: a defect in the generator could then not fail the
 //! suite, and a defect in the hand form was charged to us. Both
 //! directions were real there — the hand-written type left

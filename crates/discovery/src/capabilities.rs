@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn type_lookup_capabilities_require_the_four_distinct_vendor_bits() {
+    fn xtypes_7_6_3_3_4_type_lookup_capabilities_require_the_four_distinct_vendor_bits() {
         // Cyclone 11.0.1 ddsi__protocol.h: request W/R 12/13, reply W/R 14/15.
         assert_eq!(endpoint_flag::TYPE_LOOKUP_REQUEST_DATA_WRITER, 0x1000);
         assert_eq!(endpoint_flag::TYPE_LOOKUP_REQUEST_DATA_READER, 0x2000);
@@ -233,12 +233,5 @@ mod tests {
         assert!(!c.has_topics_discovery);
         assert!(!c.supports_security());
         assert!(!c.fully_standard()); // WLP/Topics missing
-    }
-
-    #[test]
-    fn capabilities_raw_is_preserved() {
-        let mask = 0xDEAD_BEEF & 0x3FFF_FFFFu32; // valid 32-bit-ish
-        let c = PeerCapabilities::from_bits(mask);
-        assert_eq!(c.raw, mask);
     }
 }

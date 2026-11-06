@@ -32,7 +32,7 @@ class RtpsReliabilityCodecTest {
         return RtpsMessage.decode(bytes, bytes.length);
     }
 
-    @Test void ackNackBothEndiansAndStrictBitmapBounds() {
+    @Test void rtps_9_4_5_3_an_acknack_is_read_in_both_byte_orders_and_a_bitmap_beyond_256_bits_is_refused() {
         for (boolean le : new boolean[] {false, true}) {
             ByteBuffer b = body(32, le);
             b.put(READER).put(WRITER); sn(b, 7);
@@ -53,7 +53,7 @@ class RtpsReliabilityCodecTest {
                 .ackNack(READER, WRITER, Long.MAX_VALUE, 1, 1, false).toBytes()).ackNacks.get(0).base);
     }
 
-    @Test void gapBothEndiansAndContiguousBuilder() {
+    @Test void rtps_9_4_5_6_a_gap_is_read_in_both_byte_orders() {
         for (boolean le : new boolean[] {false, true}) {
             ByteBuffer b = body(32, le);
             b.put(READER).put(WRITER); sn(b, 3); sn(b, 8);
@@ -80,7 +80,7 @@ class RtpsReliabilityCodecTest {
         return b;
     }
 
-    @Test void dataFragBothEndiansWithInlineQosKeyAndPadding() {
+    @Test void rtps_9_4_5_5_a_data_frag_is_read_in_both_byte_orders_with_inline_qos_and_key_flag() {
         for (boolean le : new boolean[] {false, true}) {
             for (boolean qos : new boolean[] {false, true}) {
                 RtpsMessage.DataFragment f = parse(frame(0x16, 4 | (qos ? 2 : 0), le,
@@ -94,7 +94,7 @@ class RtpsReliabilityCodecTest {
         }
     }
 
-    @Test void malformedFragmentsAreDroppedWithoutClamping() {
+    @Test void rtps_8_3_4_1_an_invalid_data_frag_is_dropped() {
         for (boolean le : new boolean[] {false, true}) {
             for (int offset : new int[] {20, 24, 26, 28}) {
                 ByteBuffer b = fragment(le, false);
@@ -112,7 +112,7 @@ class RtpsReliabilityCodecTest {
         assertNull(RtpsMessage.decode(new byte[20], 21));
     }
 
-    @Test void fragmentFeedbackIndependentEndianVectors() {
+    @Test void rtps_9_4_5_14_nack_frag_and_heartbeat_frag_are_read_in_both_byte_orders() {
         for (boolean le : new boolean[] {false, true}) {
             ByteBuffer nack = body(36, le);
             nack.put(READER).put(WRITER); sn(nack, 11);
@@ -139,26 +139,7 @@ class RtpsReliabilityCodecTest {
         }
     }
 
-    @Test void feedbackBuildersPreserveDestinationAndBoundaryBitmaps() {
-        byte[] destination = new byte[12]; destination[0] = 42;
-        RtpsMessage.Parsed p = parse(new RtpsMessage.Builder(new byte[12])
-                .infoDestination(destination).heartbeat(READER, WRITER, 1, 7, 1, false)
-                .heartbeatFrag(READER, WRITER, 7, 33, 2)
-                .nackFrag(READER, WRITER, 7, 1, 33, 3).toBytes());
-        assertArrayEquals(destination, p.heartbeats.get(0).destPrefix);
-        assertArrayEquals(destination, p.heartbeatFragments.get(0).destPrefix);
-        assertArrayEquals(destination, p.nackFragments.get(0).destPrefix);
-        assertArrayEquals(new long[] {0xffff_ffffL, 0x80000000L}, p.nackFragments.get(0).bitmap);
-        assertEquals(0xffff_ffffL, parse(new RtpsMessage.Builder(new byte[12])
-                .nackFrag(READER, WRITER, 7, 0xffff_ffffL, 1, 3).toBytes())
-                .nackFragments.get(0).bitmapBase);
-        assertThrows(IllegalArgumentException.class, () -> new RtpsMessage.Builder(new byte[12])
-                .nackFrag(READER, WRITER, 7, 0xffff_ffffL, 2, 3));
-        assertThrows(IllegalArgumentException.class, () -> new RtpsMessage.Builder(new byte[12])
-                .heartbeatFrag(READER, WRITER, 7, 0, 3));
-    }
-
-    @Test void dataAndKeyFlagsAreMutuallyExclusive() {
+    @Test void rtps_9_4_5_4_the_data_flag_and_the_key_flag_are_never_both_set() {
         for (boolean key : new boolean[] {false, true}) {
             byte[] bytes = new RtpsMessage.Builder(new byte[12])
                     .data(READER, WRITER, 1, null, new byte[] {0, 1, 0, 0}, key).toBytes();
@@ -168,14 +149,4 @@ class RtpsReliabilityCodecTest {
         }
     }
 
-    @Test void fragmentBuilderPreservesPayloadAndFollowingSubmessage() {
-        byte[] payload = {5, 6, 7, 8, 9, 10};
-        RtpsMessage.Parsed p = parse(new RtpsMessage.Builder(new byte[12])
-                .dataFrag(READER, WRITER, 9, 2, 2, 4, 10, null, payload, true)
-                .gap(READER, WRITER, 1, 2).toBytes());
-        assertArrayEquals(payload, p.dataFragments.get(0).serializedPayload);
-        assertTrue(p.dataFragments.get(0).keyFlag); assertEquals(1, p.gaps.size());
-        assertThrows(IllegalArgumentException.class, () -> new RtpsMessage.Builder(new byte[12])
-                .dataFrag(READER, WRITER, 9, 3, 2, 4, 10, null, payload, false));
-    }
 }

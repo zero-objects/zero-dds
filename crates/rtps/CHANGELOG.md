@@ -7,6 +7,9 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `Payload` holds either an `Arc<[u8]>` or a shared `Vec<u8>` (`Payload::of_shared_vec`, `From<Vec<u8>>` takes the vector over without copying it); `Payload::sub` narrows a payload, `shares_buffer_with` and `is_range_of` replace `buffer()`, which is gone with `range()`. `DataSubmessage::read_body_in` and `datagram::decode_datagram_payload_into` decode a datagram that is a `Payload`; the `Arc<[u8]>` functions stay.
+- `ReliableWriter` counts the length of a sample's in-line QoS from its parts (the writer's QoS, the change's own parameters, the coherent-set and group parameters, the key hash) instead of building the list and measuring it. For the largest list, which the fragment size is made of, that copied every parameter of the writer's QoS for each sample written: 53 % of the writing thread's allocations. Linux test host, 1 kB samples, BEST_EFFORT: 4.1 instead of 14.1 allocations per sample, 707–712 instead of 596–610 kS/s written. Test: `the_counted_inline_qos_length_is_the_built_lists`.
+- `ReceiverState::unicast_reply_locator_list` and `multicast_reply_locator_list` are a `ReplyLocators` (derefs to `[Locator]`) instead of a `Vec<Locator>`: one locator in place, an INFO_REPLY's list shared. The receiver state is cloned with every submessage it walks; the two `Vec`s were 58 % of the receive thread's allocations (Linux test host, 1 kB samples, BEST_EFFORT, 600 kS/s), now 20.2 instead of 59.7 million in 15 s. CPU time per sample is unchanged within the measurement's spread (1.23–1.33 µs).
 - The GAPs of a `ReliableWriter` in a group (GROUP-scope Publisher) carry `gapStartGSN` and `gapEndGSN` with the GroupInfoFlag (DDSI-RTPS 2.5 §8.3.8.4); the writer keeps the group sequence number of up to 4096 changes past their removal from the cache.
 
 ### Added (DDS-Security 1.2, §7 package)

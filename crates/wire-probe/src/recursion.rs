@@ -162,10 +162,10 @@ fn collect_aggregates(
                 collect_aggregates(ast, target, found, open);
             }
         }
-        TypeKind::Structure { .. } | TypeKind::Valuetype { .. } | TypeKind::Union { .. } => {
-            if !found.contains(&type_) {
-                found.push(type_);
-            }
+        TypeKind::Structure { .. } | TypeKind::Valuetype { .. } | TypeKind::Union { .. }
+            if !found.contains(&type_) =>
+        {
+            found.push(type_);
         }
         _ => {}
     }

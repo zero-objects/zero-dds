@@ -31,8 +31,8 @@
 //!
 //! | mutation in `Writer::write_wstring` | red |
 //! |---|---|
-//! | C1's two arms swapped — an octet count where a character count belongs | `an_octet_count_and_a_character_count_are_different_numbers`, and every table row of a `Characters` cell |
-//! | C2's `units.push(0)` removed — the terminator dropped | `a_terminator_is_written_and_counted`, and `rti_xcdr1_is_a_character_count_over_four_octet_units_with_a_terminator` |
+//! | C1's two arms swapped — an octet count where a character count belongs | `cyclone_and_opendds_are_an_octet_count_over_two_octet_units`, `fastdds_is_a_character_count_over_two_octet_units`, and every table row of a `Characters` cell |
+//! | C2's `units.push(0)` removed — the terminator dropped | `rti_xcdr1_is_a_character_count_over_four_octet_units_with_a_terminator`, `an_empty_wstring_carries_no_byte_order_mark` |
 //! | C3 read as two octets where the cell says four | `the_unit_width_reaches_both_the_length_and_the_octets`, and `tao_is_an_octet_count_over_four_octet_units` |
 //! | the BMP refusal removed, Fast CDR's truncation emitted instead | `a_character_count_over_two_octet_units_refuses_a_code_point_outside_the_bmp` |
 //! | C4's mark not counted in the length | `omniorb_writes_a_counted_byte_order_mark` |
@@ -164,7 +164,7 @@ fn every_cell_of_the_product_puts_its_own_octets_on_the_wire() {
 /// `wstring-unbounded-utf8` one so that a cell losing a character shows
 /// up as a shorter string rather than as a length nobody checks.
 #[test]
-fn every_cell_round_trips_under_every_unit_order() {
+fn xtypes_7_2_2_2_1_2_7_every_cell_round_trips_under_every_unit_order() {
     for policy in WstringLengthPolicy::ALL_CELLS {
         for order in [
             WstringUnitOrder::Stream,
@@ -466,43 +466,6 @@ fn jacorb_reads_big_endian_units_out_of_either_stream() {
 
 // -- the axes, one mutation each ----------------------------------------
 
-/// C1: the length counts octets or code units, and for this value the
-/// two are different numbers.
-///
-/// Swapping the two arms of C1 in the writer makes this red. Fourteen
-/// against seven for the same seven characters is Cyclone against Fast
-/// DDS, byte for byte.
-#[test]
-fn an_octet_count_and_a_character_count_are_different_numbers() {
-    let octets = wrote_stream(UNBOUNDED, WstringLengthPolicy::SPECIFICATION);
-    let characters = wrote_stream(UNBOUNDED, WstringLengthPolicy::CHARACTER_COUNT);
-    assert_eq!(&octets[..8], "0e000000", "fourteen octets");
-    assert_eq!(&characters[..8], "07000000", "seven characters");
-    // The content is the same; only the count parts.
-    assert_eq!(octets[8..], characters[8..]);
-}
-
-/// C2: the terminator is written **and** counted, or neither.
-///
-/// Dropping `units.push(0)` makes this red twice: the count falls by
-/// one and the trailing NUL unit goes missing. The two cells here
-/// differ in C2 alone.
-#[test]
-fn a_terminator_is_written_and_counted() {
-    let without = wrote_stream(UNBOUNDED, WstringLengthPolicy::ROS_TYPE_SUPPORT);
-    let with = wrote_stream(UNBOUNDED, WstringLengthPolicy::CHARACTER_COUNT_TERMINATED);
-    assert_eq!(&without[..8], "07000000", "seven characters");
-    assert_eq!(&with[..8], "08000000", "seven characters and the NUL");
-    // The content is the same run with one NUL unit behind it, and the
-    // count went up by exactly that unit.
-    assert_eq!(with[8..], format!("{}00000000", &without[8..]));
-    assert_eq!(
-        with.len(),
-        without.len() + 8,
-        "one four-octet unit longer on the wire"
-    );
-}
-
 /// C3: the unit width reaches both the length field and the octets.
 ///
 /// Reading C3 as two where the cell says four makes this red in the
@@ -723,7 +686,7 @@ fn a_length_the_stream_cannot_hold_is_refused_before_allocating() {
 /// An unpaired surrogate is refused rather than replaced: U+FFFD in its
 /// place would be a character the sender never had.
 #[test]
-fn an_unpaired_surrogate_is_refused_and_not_replaced() {
+fn xtypes_7_2_2_2_1_2_7_an_unpaired_surrogate_is_refused_and_not_replaced() {
     let bytes = [0x02, 0x00, 0x00, 0x00, 0x34, 0xd8, 0x61, 0x00];
     let mut r = Reader::new(&bytes, Endianness::Little);
     match r.read_wstring(

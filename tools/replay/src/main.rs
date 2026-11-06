@@ -24,8 +24,14 @@ use std::process::ExitCode;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use zerodds_recorder::{RecordReader, ZDDSREC_VERSION};
+use std::collections::HashMap;
+use std::sync::Arc;
+
+use zerodds_cli_common::{reliable_raw_writer_config, stable_prefix};
+use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig};
+use zerodds_recorder::{RecordReader, SampleKind, ZDDSREC_VERSION};
 use zerodds_recorder_decode::replay_source::{RecordedSample, from_ndjson, from_sqlite};
+use zerodds_rtps::wire_types::EntityId;
 
 fn print_help() {
     println!(
@@ -47,8 +53,15 @@ OPTIONS:
                       Repeatable; an empty list = all topics.
   --inject            Re-injection into a live domain.
                       Caches one ZeroDDS writer per topic and
-                      publishes the sample stream byte-for-byte.
+                      publishes the sample stream byte-for-byte, each
+                      sample under the representation identifier of
+                      its encapsulation header as recorded.
   --inject-domain N   DCPS domain id for inject (default 0).
+  --representation H  The representation identifier (two octets in hex,
+                      e.g. 0007 for CDR2_LE) for samples whose capture
+                      does not record it (format version 2, or a decoded
+                      capture made before it was kept). Without it such
+                      samples are not injected.
 "
     );
 }
@@ -75,7 +88,10 @@ fn cmd_inspect(path: &PathBuf) -> Result<(), String> {
         }
     }
     println!("file: {path:?}");
-    println!("version       = {ZDDSREC_VERSION} (file claims compatible)");
+    println!(
+        "version       = {} (this tool reads up to {ZDDSREC_VERSION})",
+        r.version()
+    );
     println!("time_base_ns  = {}", h.time_base_unix_ns);
     println!("participants  = {}", h.participants.len());
     for p in &h.participants {
@@ -132,6 +148,8 @@ struct ReplayOptions {
     inject_dcps: bool,
     /// DCPS domain id for re-injection.
     inject_domain: u32,
+    /// `--representation`: the identifier for samples recorded without one.
+    representation: Option<[u8; 2]>,
 }
 
 /// Input capture format, detected from the file extension.
@@ -189,7 +207,7 @@ fn replay_decoded(samples: &[RecordedSample], opts: &ReplayOptions) -> Result<()
         1.0
     };
     let mut inject_state = if opts.inject_dcps {
-        Some(InjectState::new(opts.inject_domain)?)
+        Some(InjectState::new(opts.inject_domain, opts.representation)?)
     } else {
         None
     };
@@ -208,18 +226,27 @@ fn replay_decoded(samples: &[RecordedSample], opts: &ReplayOptions) -> Result<()
             thread::sleep(target - now);
         }
         match &mut inject_state {
-            Some(st) => st.publish(&s.topic, &s.type_name, &s.raw_cdr)?,
+            Some(st) => st.publish(
+                &s.topic,
+                &s.type_name,
+                s.representation_identifier,
+                &s.raw_cdr,
+            )?,
             None => println!(
-                "REPLAY t={} topic={} type={} bytes={}",
+                "REPLAY t={} topic={} type={} repr={} bytes={}",
                 s.recv_ts_ns,
                 s.topic,
                 s.type_name,
+                identifier_text(s.representation_identifier),
                 s.raw_cdr.len()
             ),
         }
         emitted += 1;
     }
     eprintln!("replay: {emitted} samples emitted");
+    if let Some(st) = inject_state {
+        st.finish()?;
+    }
     Ok(())
 }
 
@@ -234,13 +261,14 @@ fn cmd_replay_zddsrec(path: &PathBuf, opts: &ReplayOptions) -> Result<(), String
     };
     // ---- Inject mode: cache one writer per topic ----
     let mut inject_state = if opts.inject_dcps {
-        Some(InjectState::new(opts.inject_domain)?)
+        Some(InjectState::new(opts.inject_domain, opts.representation)?)
     } else {
         None
     };
     let start_wall = Instant::now();
     let mut first_ts: Option<i64> = None;
     let mut emitted = 0u64;
+    let mut lifecycle_not_injected = 0u64;
     while let Some(f) = r
         .next_frame_view()
         .map_err(|e| format!("read frame: {e}"))?
@@ -262,19 +290,29 @@ fn cmd_replay_zddsrec(path: &PathBuf, opts: &ReplayOptions) -> Result<(), String
         if target > now {
             thread::sleep(target - now);
         }
-        let topic_entry = h.topics.get(f.topic_idx as usize);
+        // A topic a `TopicAdd` put into the index continues the header's list.
+        let topic_entry = h.topics.get(f.topic_idx as usize).or_else(|| {
+            r.added_topics()
+                .get((f.topic_idx as usize).checked_sub(h.topics.len())?)
+        });
         let topic = topic_entry.map(|t| t.name.as_str()).unwrap_or("<oor>");
         let type_name = topic_entry.map(|t| t.type_name.as_str()).unwrap_or("<oor>");
         match &mut inject_state {
+            // A dispose or unregister carries no body; it is no sample to write.
+            Some(_) if f.sample_kind != SampleKind::Alive => {
+                lifecycle_not_injected += 1;
+                continue;
+            }
             Some(st) => {
-                st.publish(topic, type_name, f.payload)?;
+                st.publish(topic, type_name, f.representation_identifier, f.payload)?;
             }
             None => {
                 println!(
-                    "REPLAY t_delta={} topic={} kind={:?} bytes={}",
+                    "REPLAY t_delta={} topic={} kind={:?} repr={} bytes={}",
                     f.timestamp_delta_ns,
                     topic,
                     f.sample_kind,
+                    identifier_text(f.representation_identifier),
                     f.payload.len()
                 );
             }
@@ -282,79 +320,148 @@ fn cmd_replay_zddsrec(path: &PathBuf, opts: &ReplayOptions) -> Result<(), String
         emitted += 1;
     }
     eprintln!("replay: {emitted} frames emitted");
+    if lifecycle_not_injected > 0 {
+        eprintln!(
+            "replay: {lifecycle_not_injected} dispose/unregister frames not injected \
+             (no body to write)"
+        );
+    }
+    if let Some(st) = inject_state {
+        st.finish()?;
+    }
     Ok(())
 }
 
-/// Helper state for inject mode: holds a DCPS runtime handle
-/// + cache of topic writers.
+/// The identifier as the help text names it (`0007`), or `unknown`.
+fn identifier_text(id: Option<[u8; 2]>) -> String {
+    id.map_or_else(
+        || "unknown".to_string(),
+        |id| format!("{:02x}{:02x}", id[0], id[1]),
+    )
+}
+
+/// `--representation`: two octets in hex.
+fn parse_identifier(s: &str) -> Result<[u8; 2], String> {
+    let s = s.trim_start_matches("0x");
+    if s.len() != 4 {
+        return Err(format!(
+            "--representation {s}: two octets in hex, e.g. 0007"
+        ));
+    }
+    let v = u16::from_str_radix(s, 16)
+        .map_err(|_| format!("--representation {s}: two octets in hex, e.g. 0007"))?;
+    Ok(v.to_be_bytes())
+}
+
+/// Helper state for inject mode: a DCPS runtime and one writer per topic,
+/// with the representation identifier it sends under now.
 struct InjectState {
-    runtime: *mut zerodds::ZeroDdsRuntime,
-    writers: std::collections::HashMap<String, *mut zerodds::ZeroDdsWriter>,
+    runtime: Arc<DcpsRuntime>,
+    writers: HashMap<String, (EntityId, Option<[u8; 2]>)>,
+    /// `--representation`: for samples recorded without an identifier.
+    representation: Option<[u8; 2]>,
 }
 
 impl InjectState {
-    fn new(domain: u32) -> Result<Self, String> {
-        // SAFETY: zerodds_runtime_create is heap-allocated + NULL on error.
-        let rt = unsafe { zerodds::zerodds_runtime_create(domain) };
-        if rt.is_null() {
-            return Err("dcps runtime create failed".into());
-        }
-        // SAFETY: rt from zerodds_runtime_create.
-        unsafe {
-            let _ = zerodds::zerodds_runtime_wait_for_peers(rt, 1, 5_000);
+    fn new(domain: u32, representation: Option<[u8; 2]>) -> Result<Self, String> {
+        let domain =
+            i32::try_from(domain).map_err(|_| format!("domain {domain} does not fit i32"))?;
+        let config =
+            RuntimeConfig::from_standard_paths().map_err(|e| format!("runtime config: {e}"))?;
+        let runtime = DcpsRuntime::start(domain, stable_prefix(0xF9), config)
+            .map_err(|e| format!("dcps runtime start: {e:?}"))?;
+        // A peer to replay to, for at most 5 s, as before.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while runtime.discovered_participants().is_empty() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(50));
         }
         Ok(Self {
-            runtime: rt,
-            writers: std::collections::HashMap::new(),
+            runtime,
+            writers: HashMap::new(),
+            representation,
         })
     }
-    fn publish(&mut self, topic: &str, type_name: &str, payload: &[u8]) -> Result<(), String> {
-        let writer = match self.writers.get(topic) {
-            Some(w) => *w,
+
+    /// Writes `payload` on `topic` under `identifier`, the representation
+    /// identifier it was recorded with (DDSI-RTPS 2.5 §10.5): the writer
+    /// offers that XCDR version and declares that extensibility and byte
+    /// order. Writing it under the writer's own header (XCDR2 little endian,
+    /// final) told a reader to read an XCDR1, big-endian, `@appendable` or
+    /// `@mutable` body as something it is not.
+    fn publish(
+        &mut self,
+        topic: &str,
+        type_name: &str,
+        identifier: Option<[u8; 2]>,
+        payload: &[u8],
+    ) -> Result<(), String> {
+        let identifier = identifier.or(self.representation).ok_or_else(|| {
+            format!(
+                "{topic}: the capture does not record the representation identifier of its \
+                 samples (format version 2, or a decoded capture made before it was kept); \
+                 --representation names it"
+            )
+        })?;
+        let (eid, current) = match self.writers.get(topic) {
+            Some(entry) => *entry,
             None => {
-                let topic_c = std::ffi::CString::new(topic).map_err(|e| format!("topic: {e}"))?;
-                let type_c = std::ffi::CString::new(type_name).map_err(|e| format!("type: {e}"))?;
-                // SAFETY: zerodds_writer_create accepts NULL-checked
-                // C strings + heap runtime from zerodds_runtime_create.
-                let w = unsafe {
-                    zerodds::zerodds_writer_create(
-                        self.runtime,
-                        topic_c.as_ptr(),
-                        type_c.as_ptr(),
-                        0,
-                    )
-                };
-                if w.is_null() {
-                    return Err(format!("writer_create failed for {topic}"));
+                let eid = self
+                    .runtime
+                    .register_user_writer(reliable_raw_writer_config(topic, type_name))
+                    .map_err(|e| format!("writer for {topic}: {e:?}"))?;
+                // A matched reader, for at most 2 s, as before.
+                let deadline = Instant::now() + Duration::from_secs(2);
+                while self.runtime.user_writer_matched_count(eid) == 0 && Instant::now() < deadline
+                {
+                    thread::sleep(Duration::from_millis(20));
                 }
-                // SAFETY: w from zerodds_writer_create above.
-                unsafe {
-                    let _ = zerodds::zerodds_writer_wait_for_matched(w, 1, 2_000);
-                }
-                self.writers.insert(topic.into(), w);
-                w
+                self.writers.insert(topic.to_string(), (eid, None));
+                (eid, None)
             }
         };
-        // SAFETY: writer cached from above or just created;
-        // payload + len from caller (frame.payload).
-        let rc = unsafe { zerodds::zerodds_writer_write(writer, payload.as_ptr(), payload.len()) };
-        if rc != 0 {
-            return Err(format!("writer_write rc={rc}"));
+        if current != Some(identifier) {
+            self.runtime
+                .set_user_writer_representation_identifier(eid, identifier)
+                .map_err(|e| {
+                    format!("{topic}: representation identifier {identifier:02x?}: {e:?}")
+                })?;
+            self.writers
+                .insert(topic.to_string(), (eid, Some(identifier)));
         }
-        Ok(())
+        self.runtime
+            .write_user_sample(eid, payload.to_vec())
+            .map_err(|e| format!("write on {topic}: {e:?}"))
+    }
+}
+
+impl InjectState {
+    /// Waits until the reliable readers of every writer have acknowledged
+    /// what it wrote, at most 5 s for all of them (DDS 1.4 §2.2.2.4.2.15
+    /// `wait_for_acknowledgments`). The runtime ends with the process: a
+    /// sample a reader has not received yet, because it matched the writer
+    /// after the write, would go with it unrepaired.
+    fn finish(self) -> Result<(), String> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut missing: Vec<&str> = self
+            .writers
+            .iter()
+            .filter(|(_, (eid, _))| !self.runtime.await_user_writer_acknowledged(*eid, deadline))
+            .map(|(topic, _)| topic.as_str())
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        missing.sort_unstable();
+        Err(format!(
+            "not acknowledged by every reader within 5 s: {}",
+            missing.join(", ")
+        ))
     }
 }
 
 impl Drop for InjectState {
     fn drop(&mut self) {
-        for (_, w) in self.writers.drain() {
-            // SAFETY: w from zerodds_writer_create.
-            unsafe { zerodds::zerodds_writer_destroy(w) };
-        }
-        if !self.runtime.is_null() {
-            // SAFETY: runtime from zerodds_runtime_create.
-            unsafe { zerodds::zerodds_runtime_destroy(self.runtime) };
-        }
+        self.runtime.shutdown();
     }
 }
 
@@ -364,6 +471,7 @@ fn parse_replay_opts(argv: &[String]) -> Result<(PathBuf, ReplayOptions), String
     let mut topics = HashSet::new();
     let mut inject_dcps = false;
     let mut inject_domain: u32 = 0;
+    let mut representation: Option<[u8; 2]> = None;
     let mut i = 0;
     while i < argv.len() {
         let a = &argv[i];
@@ -376,6 +484,11 @@ fn parse_replay_opts(argv: &[String]) -> Result<(PathBuf, ReplayOptions), String
                 let v = argv.get(i + 1).ok_or("--inject-domain needs value")?;
                 inject_domain = v.parse().map_err(|e| format!("inject-domain: {e}"))?;
                 inject_dcps = true;
+                i += 2;
+            }
+            "--representation" => {
+                let v = argv.get(i + 1).ok_or("--representation needs value")?;
+                representation = Some(parse_identifier(v)?);
                 i += 2;
             }
             "--time-scale" => {
@@ -406,6 +519,7 @@ fn parse_replay_opts(argv: &[String]) -> Result<(PathBuf, ReplayOptions), String
             topic_filter: topics,
             inject_dcps,
             inject_domain,
+            representation,
         },
     ))
 }

@@ -471,10 +471,10 @@ fn scan_order_by(input: &str) -> Result<Option<(usize, usize)>, ParseError> {
                 if word.eq_ignore_ascii_case("ORDER") {
                     last_word = Some((start, i));
                 } else if word.eq_ignore_ascii_case("BY") {
-                    if let Some((order_start, order_end)) = last_word {
-                        if input[order_end..start].chars().all(char::is_whitespace) {
-                            return Ok(Some((i, order_start)));
-                        }
+                    if let Some((order_start, order_end)) = last_word
+                        && input[order_end..start].chars().all(char::is_whitespace)
+                    {
+                        return Ok(Some((i, order_start)));
                     }
                     last_word = None;
                 } else {

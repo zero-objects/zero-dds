@@ -29,10 +29,8 @@
 //! `<Type>_typesupport` with `.extensibility`, `.is_keyed`, the
 //! `<Type>_key_hash` function and the literal EMHEADERs; the rebuilt
 //! backend arc emits the C shape of a type and no DDS binding around it,
-//! so those six assertions have no producer in this tree. They are
-//! carried in `docs/OPEN-ITEMS.md` under the C TypeSupport backend, with
-//! the snippets and the expected values, rather than restated here
-//! against something that cannot answer them.
+//! so those six assertions have no producer here; the C column's
+//! TypeSupport is `tools/idlc/src/c_support.rs` (`<stem>_typesupport.h`).
 
 #![allow(
     clippy::expect_used,
@@ -125,22 +123,17 @@ pub fn gen_c(src: &str) -> String {
 
 #[test]
 fn v1_codegen_empty_final() {
-    // This test asserted `struct Empty {` for years and never compiled
-    // it. C23 §6.7.2.1p8 leaves a structure with no named member
-    // undefined; gcc and clang take it only as an extension and the
-    // probes build with `-pedantic-errors`, where it is an error. What
-    // the assertion held open was a header nothing could build.
-    //
-    // The refusal is the correct answer and is what is asserted now. C++
-    // has no such rule and carries the case; the octets the Rust and
-    // Python columns write for it — a DHEADER of zero under XCDR2 — are
-    // in the corpus as `empty-struct`.
-    let refused = render_c("@final struct Empty {};");
-    let message = format!("{}", refused.expect_err("C has no empty aggregate"));
-    assert!(
-        message.contains("no members"),
-        "the refusal names the construct: {message}"
-    );
+    // IDL 4.2 7.4.13.4.1 allows a structure without members, and C23
+    // §6.7.2.1p8 leaves a structure with no named member undefined: gcc
+    // and clang take `struct Empty { };` only as an extension, an error
+    // under `-pedantic-errors`. The C form carries one octet that stands
+    // in for the members and is not serialized; the octets the columns
+    // write for the type, a DHEADER of zero under XCDR2, are in the
+    // corpus as `empty-struct`.
+    let h = render_c("@final struct Empty {};").expect("an empty structure has a C form");
+    assert!(h.contains("typedef struct Empty Empty;"), "{h}");
+    assert!(h.contains("struct Empty {\n"), "{h}");
+    assert!(h.contains("uint8_t zd_no_members;"), "{h}");
 }
 
 #[test]

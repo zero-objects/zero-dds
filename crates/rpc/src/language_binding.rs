@@ -236,7 +236,7 @@ mod tests {
     /// §7.11.1.3's table: `REMOTE_EX_OK` is "No exception" and the five
     /// others each name one class.
     #[test]
-    fn the_table_of_seven_eleven_one_three_is_the_published_one() {
+    fn rpc_7_5_1_1_1_the_table_of_seven_eleven_one_three_is_the_published_one() {
         assert_eq!(
             cpp_exception_class(RemoteExceptionCode::Ok),
             RemoteExceptionClass::NoException
@@ -273,7 +273,7 @@ mod tests {
     /// Every code of §7.5.1.1.1's six has a row; `from_u32` rejects a
     /// seventh before it can reach the table.
     #[test]
-    fn the_exception_table_covers_the_six_spec_codes() {
+    fn rpc_7_5_1_1_1_the_exception_table_covers_the_six_spec_codes() {
         assert!(RemoteExceptionCode::from_u32(6).is_err());
     }
 
@@ -303,7 +303,7 @@ mod tests {
     /// §7.11.2.3: the Java function-call binding defines the same
     /// entities as C++'s.
     #[test]
-    fn the_java_function_call_types_are_the_cpp_ones() {
+    fn rpc_7_11_2_3_the_java_function_call_types_are_the_cpp_ones() {
         assert_eq!(JAVA_FUNCTION_CALL_TYPES, CPP_FUNCTION_CALL_CLASSES);
     }
 

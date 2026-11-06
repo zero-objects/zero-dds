@@ -33,7 +33,7 @@ fn transport_tuning_snippet() {
 /// carry a Cargo feature hint, and this test compiles them only when both
 /// features are on, matching that hint. The transport lists are the exact
 /// published recipes (verbatim, verified against zerodds-examples/rust-transport-tuning).
-#[cfg(all(feature = "same-host-shm", feature = "same-host-uds"))]
+#[cfg(all(feature = "same-host-shm", feature = "same-host-uds", unix))]
 #[test]
 fn transport_tuning_shm_uds_snippets() {
     use zerodds_dcps::runtime::{RuntimeConfig, UserTransportKind};

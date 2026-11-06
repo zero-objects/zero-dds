@@ -239,7 +239,7 @@ impl MessageBuilder {
     /// [`AddError::Unaligned`] when the datagram so far does not end on a
     /// 32-bit boundary — its last submessage has to stay the last.
     fn check_aligned(&self) -> Result<(), AddError> {
-        if self.bytes.len() % 4 == 0 {
+        if self.bytes.len().is_multiple_of(4) {
             Ok(())
         } else {
             Err(AddError::Unaligned)

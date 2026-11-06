@@ -63,7 +63,7 @@ fn request(type_name: &str) -> ProbeRequest {
 }
 
 #[test]
-fn the_options_count_the_padding_of_the_three_objects() {
+fn xtypes_7_6_3_1_2_the_options_count_the_padding_of_the_three_objects() {
     let ast = types();
     let cases = [
         (

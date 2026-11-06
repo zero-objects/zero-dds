@@ -42,3 +42,10 @@ zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true }
 [[example]]
 name = "tsn_latency"
 required-features = ["live"]
+
+# The contract with zerodds-rtps (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-rtps only with `live`.
+[[test]]
+name = "contract_rtps"
+path = "tests/contract_rtps.rs"
+required-features = ["live"]

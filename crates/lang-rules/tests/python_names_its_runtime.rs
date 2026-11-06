@@ -86,10 +86,11 @@ fn names_the_backend_writes() -> (BTreeSet<String>, BTreeSet<String>) {
                 policies.insert(name);
             }
         }
-        if let Some(name) = between(line, "Self::path(\"", '"') {
-            if name.contains('.') && name.chars().next().is_some_and(char::is_uppercase) {
-                members.insert(name);
-            }
+        if let Some(name) = between(line, "Self::path(\"", '"')
+            && name.contains('.')
+            && name.chars().next().is_some_and(char::is_uppercase)
+        {
+            members.insert(name);
         }
     }
     (policies, members)
@@ -194,10 +195,10 @@ fn what_the_runtime_answers_to() -> BTreeSet<String> {
     ] {
         for line in read(file).lines() {
             let trimmed = line.trim_start();
-            if let Some(rest) = trimmed.strip_prefix("def ") {
-                if let Some((name, _)) = rest.split_once('(') {
-                    out.insert(name.to_string());
-                }
+            if let Some(rest) = trimmed.strip_prefix("def ")
+                && let Some((name, _)) = rest.split_once('(')
+            {
+                out.insert(name.to_string());
             }
         }
     }
@@ -240,7 +241,7 @@ fn operations_the_walks_ask_for() -> BTreeSet<String> {
 }
 
 #[test]
-fn every_policy_the_backend_writes_is_one_the_runtime_accepts() {
+fn xtypes_7_4_every_policy_the_backend_writes_is_one_the_runtime_accepts() {
     let (policies, _) = names_the_backend_writes();
     assert!(
         policies.len() > 12,
@@ -279,7 +280,7 @@ fn every_enum_member_the_backend_names_is_one_the_runtime_declares() {
 
 /// The check the other columns get from their compiler.
 #[test]
-fn every_operation_the_walks_ask_for_is_one_the_runtime_answers_to() {
+fn xtypes_7_4_every_operation_the_walks_ask_for_is_one_the_runtime_answers_to() {
     let asked = operations_the_walks_ask_for();
     assert!(
         asked.len() > 40,
@@ -330,7 +331,7 @@ fn what_the_runtime_carries_and_the_backend_has_not_reached() {
 /// and would go unchecked, which is exactly the Java column's
 /// `Reader.Mark`.
 #[test]
-fn the_generated_module_names_nothing_the_runtime_does_not_have() {
+fn xtypes_7_4_the_generated_module_names_nothing_the_runtime_does_not_have() {
     let answered = what_the_runtime_answers_to();
     let mut called: BTreeSet<String> = BTreeSet::new();
     for (idl, root) in [

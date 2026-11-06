@@ -461,7 +461,7 @@ mod tests {
     /// different topics — which is why both sides have to name the same
     /// style (§7.4.2).
     #[test]
-    fn the_binding_style_decides_the_topic_name() {
+    fn rpc_7_4_1_the_binding_style_decides_the_topic_name() {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid())
             .unwrap()
@@ -473,7 +473,7 @@ mod tests {
 
     /// §7.4.2.3: the run-time layer beats the default.
     #[test]
-    fn the_run_time_service_name_reaches_the_endpoints() {
+    fn rpc_7_4_2_3_the_run_time_service_name_reaches_the_endpoints() {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid())
             .unwrap()
@@ -483,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn requester_related_entity_guids_cross_link() {
+    fn rpc_7_6_2_1_1_requester_related_entity_guids_cross_link() {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap();
         let r = b.build_requester().unwrap();
@@ -513,7 +513,7 @@ mod tests {
     /// 7.4.1 for each parent interface. Topic aliases are announced
     /// during the endpoint discovery protocol."
     #[test]
-    fn the_parent_interfaces_are_announced_as_topic_aliases() {
+    fn rpc_7_4_3_the_parent_interfaces_are_announced_as_topic_aliases() {
         let ast = model(
             "interface Adder { void a(); };
              interface Subtractor { void s(); };
@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn replier_related_entity_guids_cross_link() {
+    fn rpc_7_6_2_1_1_replier_related_entity_guids_cross_link() {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap();
         let r = b.build_replier().unwrap();
@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn instance_name_propagated_to_both_sides() {
+    fn rpc_7_6_2_1_1_instance_name_propagated_to_both_sides() {
         // Named for the audit item that had it propagate to both sides;
         // §7.6.2.1.1/2 corrects it to the service side only: "the
         // client-side DataWriter [DataReader] shall not include
@@ -619,7 +619,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_aliases_propagated_to_both_sides() {
+    fn rpc_7_6_2_1_2_topic_aliases_propagated_to_both_sides() {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid())
             .unwrap()
@@ -632,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_aliases_empty_yields_none() {
+    fn rpc_7_6_2_1_1_topic_aliases_empty_yields_none() {
         let svc = calc_service();
         let b = RpcEndpointBuilder::new(svc, pp(), req_eid(), rep_eid()).unwrap();
         let r = b.build_requester().unwrap();

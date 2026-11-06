@@ -1272,10 +1272,10 @@ impl Server {
     }
 
     fn write_one(&mut self, wv: &crate::services::WriteValue, user: &ClientUserId) -> u32 {
-        if let Some(hook) = self.write_hook.as_mut() {
-            if let Some(status) = hook(wv, user) {
-                return status;
-            }
+        if let Some(hook) = self.write_hook.as_mut()
+            && let Some(status) = hook(wv, user)
+        {
+            return status;
         }
         let range = match NumericRange::parse(&wv.index_range) {
             Ok(r) => r,
@@ -1830,9 +1830,7 @@ impl Server {
             ));
         };
         let mut results = Vec::with_capacity(r.items_to_create.len());
-        for (it, (node_id, attribute_id, resolvable)) in
-            r.items_to_create.iter().zip(known_nodes.into_iter())
-        {
+        for (it, (node_id, attribute_id, resolvable)) in r.items_to_create.iter().zip(known_nodes) {
             let mode = match MonitoringMode::from_i32(it.monitoring_mode) {
                 Ok(m) => m,
                 Err(code) => {

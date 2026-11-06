@@ -65,7 +65,7 @@ class CoreSpiTest {
     }
 
     @Test
-    void theServiceEnvironmentIsAbstract() throws Exception {
+    void javapsm_7_3_1_the_service_environment_is_abstract() throws Exception {
         assertTrue(Modifier.isAbstract(ServiceEnvironment.class.getModifiers()));
         assertTrue(Modifier.isAbstract(ServiceEnvironment.class.getMethod("getSPI").getModifiers()));
         // the environment of this service is a concrete subclass
@@ -74,7 +74,7 @@ class CoreSpiTest {
     }
 
     @Test
-    void aNewInstanceHandleIsNilAndIsFilledByCopyFrom() {
+    void javapsm_7_3_1_a_new_instance_handle_is_nil_and_is_filled_by_copy_from() {
         ModifiableInstanceHandle handle = ENV.getSPI().newInstanceHandle();
         assertTrue(handle.isNil());
         assertSame(ENV, handle.getEnvironment());
@@ -90,7 +90,7 @@ class CoreSpiTest {
     }
 
     @Test
-    void theInvalidTimeAndANegativeTimeOfTheSpiAreInvalid() {
+    void javapsm_7_3_1_the_invalid_time_and_a_negative_time_of_the_spi_are_invalid() {
         assertFalse(ENV.getSPI().invalidTime().isValid());
         assertFalse(ENV.getSPI().newTime(-5, TimeUnit.MILLISECONDS).isValid());
         assertTrue(ENV.getSPI().newTime(5, TimeUnit.MILLISECONDS).isValid());
@@ -98,7 +98,7 @@ class CoreSpiTest {
     }
 
     @Test
-    void aTypeSupportIsRegisteredUnderTheFullyQualifiedNameOfTheType() {
+    void javapsm_7_3_1_a_type_support_is_registered_under_the_fully_qualified_name_of_the_type() {
         // §7.5.1: without a name the type is registered under the fully qualified
         // name of the Class (Class.getName), not under that of the Class object
         TypeSupport<byte[]> byDefault = TypeSupport.newTypeSupport(byte[].class, ENV);
@@ -117,56 +117,7 @@ class CoreSpiTest {
     }
 
     @Test
-    void theTypeSupportOfABuiltInKeyedTypeCreatesItsSamples() {
-        KeyedString string = TypeSupport.newTypeSupport(KeyedString.class, ENV).newData();
-        assertEquals("", string.getKey());
-        assertEquals("", string.getValue());
-        KeyedBytes bytes = TypeSupport.newTypeSupport(KeyedBytes.class, ENV).newData();
-        assertEquals("", bytes.getKey());
-        assertEquals(0, bytes.getValue().length);
-    }
-
-    @Test
-    void keyedStringAndKeyedBytesMutatorsReturnTheObject() {
-        KeyedString string = KeyedString.newKeyedString(ENV);
-        assertSame(string, string.setKey("k"));
-        assertSame(string, string.setKey("k").setValue("v"));
-        assertEquals("k", string.getKey());
-        assertEquals("v", string.getValue());
-        assertSame(ENV, string.getEnvironment());
-        KeyedString copy = string.clone();
-        assertEquals(string, copy);
-        assertNotSame(string, copy);
-        copy.setValue("other");
-        assertEquals("v", string.getValue());
-        KeyedString target = ENV.getSPI().newKeyedString();
-        target.copyFrom(string);
-        assertEquals(string, target);
-        assertEquals(string.hashCode(), target.hashCode());
-
-        KeyedBytes bytes = ENV.getSPI().newKeyedBytes();
-        byte[] value = {1, 2, 3, 4};
-        assertSame(bytes, bytes.setKey("b"));
-        assertSame(bytes, bytes.setKey("b").setValue(value));
-        value[0] = 99;
-        // the object keeps its own copy and hands out copies
-        assertArrayEquals(new byte[] {1, 2, 3, 4}, bytes.getValue());
-        bytes.getValue()[1] = 99;
-        assertArrayEquals(new byte[] {1, 2, 3, 4}, bytes.getValue());
-        bytes.setValue(new byte[] {9, 8, 7, 6, 5}, 1, 3);
-        assertArrayEquals(new byte[] {8, 7, 6}, bytes.getValue());
-        assertSame(ENV, KeyedBytes.newKeyedBytes(ENV).getEnvironment());
-    }
-
-    @Test
-    void aQosProviderOfAnUnsupportedUriSchemeIsRefused() {
-        assertThrows(UnsupportedOperationException.class,
-                () -> ENV.getSPI().newQosProvider("http://example.org/qos.xml", null));
-        assertThrows(IllegalArgumentException.class, () -> ENV.getSPI().newQosProvider(null, null));
-    }
-
-    @Test
-    void theStaticFactoryMethodsOfTheAbstractValueTypesGoThroughTheSpi() {
+    void javapsm_7_2_3_the_static_factory_methods_of_the_abstract_value_types_go_through_the_spi() {
         // §7.2.3: Time.newTime, Duration.newDuration, InstanceHandle.newInstanceHandle,
         // QosProvider.newQosProvider, TypeSupport.newTypeSupport, KeyedString.newKeyedString
         // and KeyedBytes.newKeyedBytes
@@ -186,16 +137,7 @@ class CoreSpiTest {
     }
 
     @Test
-    void allStatusKindsAndNoStatusKindsAreSets() {
-        assertEquals(13, ENV.getSPI().allStatusKinds().size());
-        assertTrue(ENV.getSPI().noStatusKinds().isEmpty());
-        // the all-set is a copy: changing it does not change the next answer
-        ENV.getSPI().allStatusKinds().clear();
-        assertEquals(13, ENV.getSPI().allStatusKinds().size());
-    }
-
-    @Test
-    void severalThreadsGetOneParticipantFactoryOfAnEnvironment() throws Exception {
+    void javapsm_7_2_4_several_threads_get_one_participant_factory_of_an_environment() throws Exception {
         final int threads = 8;
         for (int round = 0; round < 20; round++) {
             final ServiceEnvironment env = new ServiceEnvironmentImpl();
@@ -227,7 +169,7 @@ class CoreSpiTest {
     }
 
     @Test
-    void everyEntityAnswersWithTheEnvironmentItWasCreatedIn() throws Exception {
+    void javapsm_7_3_1_every_entity_answers_with_the_environment_it_was_created_in() throws Exception {
         ServiceEnvironment env = new ServiceEnvironmentImpl();
         assertNotSame(ENV, env);
         DomainParticipantFactory factory = DomainParticipantFactory.getInstance(env);

@@ -819,10 +819,10 @@ impl CodecTarget for Kotlin {
         // IDL evaluator gives — 0 and 1 — and this is the only position
         // `cast` is ever asked to reach `Boolean` from; the label *is*
         // the value it stands for.
-        if type_ == kotlin::Type::Primitive(kotlin::Primitive::Boolean) {
-            if let kotlin::Expr::Literal(Literal::Int(text)) = &value {
-                return kotlin::Expr::Literal(Literal::Bool(text.trim_end_matches('L') != "0"));
-            }
+        if type_ == kotlin::Type::Primitive(kotlin::Primitive::Boolean)
+            && let kotlin::Expr::Literal(Literal::Int(text)) = &value
+        {
+            return kotlin::Expr::Literal(Literal::Bool(text.trim_end_matches('L') != "0"));
         }
         // `kotlinc -Werror` fails a build over "redundant call of
         // conversion method" wherever the value's own static type

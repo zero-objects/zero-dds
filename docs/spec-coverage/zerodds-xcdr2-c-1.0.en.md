@@ -12,8 +12,8 @@ The mechanism this column shares with the other twenty — the two walks, the fr
 
 **Repo:** `crates/lang-cst/src/c/`, `crates/lang-render/src/c.rs`
 
-**Tests:** `crates/lang-render/tests/rendering.rs`: `a_c_else_holding_one_if_renders_as_else_if`, `a_c_else_holding_anything_else_keeps_its_block`, `a_c_struct_renders_with_its_members`, `a_c_prototype_with_no_parameters_writes_void`, `a_c_pointer_type_binds_to_the_declarator`, `a_c_file_writes_its_include_guard_at_both_ends`;
-across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/tests/rendering.rs`: `xtypes_7_5_1_a_c_else_holding_one_if_renders_as_else_if`, `xtypes_7_5_1_a_c_else_holding_anything_else_keeps_its_block`, `xtypes_7_5_1_a_c_struct_renders_with_its_members`, `xtypes_7_5_1_a_c_prototype_with_no_parameters_writes_void`, `xtypes_7_5_1_a_c_pointer_type_binds_to_the_declarator`, `xtypes_7_5_1_a_c_file_writes_its_include_guard_at_both_ends`;
+across all renderers `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/rule/c.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/c.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_c.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/c`, endpoint SDK `endpoints/c`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,8 +78,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::every_idl_primitive_reaches_a_c_type`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_struct_of_primitives_becomes_a_c_struct`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_1_1_every_idl_primitive_reaches_a_c_type`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_2_a_struct_of_primitives_becomes_a_c_struct`
 
 **Status:** done
 
@@ -89,7 +89,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_long_double_is_one_c_type_in_the_declaration_and_in_both_codecs`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_2_a_long_double_is_one_c_type_in_the_declaration_and_in_both_codecs`
 
 **Status:** done
 
@@ -99,8 +99,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_sequence_becomes_a_length_and_a_buffer`,
-`crates/lang-rules/tests/c_end_to_end.rs::two_collections_of_the_same_shape_are_one_declaration`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_a_sequence_becomes_a_length_and_a_buffer`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_3_two_collections_of_the_same_shape_are_one_declaration`
 
 **Status:** done
 
@@ -111,8 +111,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::an_optional_member_is_a_pointer_and_null_is_the_absent_one`,
-`crates/lang-rules/tests/c_end_to_end.rs::an_optional_member_is_written_only_when_it_is_there`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_2_4_1_an_optional_member_is_a_pointer_and_null_is_the_absent_one`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_is_written_only_when_it_is_there`
 
 **Status:** done
 
@@ -122,8 +122,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::an_enumeration_becomes_an_integer_and_constants_not_a_c_enum`,
-`crates/lang-rules/tests/c_end_to_end.rs::an_unknown_enumerator_is_refused_rather_than_handed_back_as_a_number`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_2_1_1_an_enumeration_becomes_an_integer_and_constants_not_a_c_enum`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_1_1_an_unknown_enumerator_is_refused_rather_than_handed_back_as_a_number`
 
 **Status:** done
 
@@ -133,8 +133,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_bitset_becomes_separate_integers_not_c_bitfields`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_bitset_that_inherits_packs_the_base_at_the_low_positions`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::idl_7_4_13_a_bitset_becomes_separate_integers_not_c_bitfields`,
+`crates/lang-rules/tests/c_end_to_end.rs::idl_7_4_13_a_bitset_that_inherits_packs_the_base_at_the_low_positions`
 
 **Status:** done
 
@@ -144,8 +144,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_union_becomes_a_discriminator_beside_a_union`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_union_selects_its_branch_by_the_discriminator`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_4_a_union_becomes_a_discriminator_beside_a_union`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_3_a_union_selects_its_branch_by_the_discriminator`
 
 **Status:** done
 
@@ -155,7 +155,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_module_becomes_a_prefix_because_c_has_no_namespaces`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::idl_7_5_2_a_module_becomes_a_prefix_because_c_has_no_namespaces`
 
 **Status:** done
 
@@ -165,9 +165,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::every_table_nine_row_has_a_c_default`,
-`crates/lang-rules/tests/c_end_to_end.rs::every_defaulter_the_decoder_calls_is_also_defined`,
-`crates/lang-rules/tests/c_end_to_end.rs::an_explicit_default_beats_table_nine`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_every_table_nine_row_has_a_c_default`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_9_every_defaulter_the_decoder_calls_is_also_defined`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_9_an_explicit_default_beats_table_nine`
 
 **Status:** done
 
@@ -177,9 +177,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::the_encoder_and_the_decoder_do_not_share_a_name`,
-`crates/lang-rules/tests/c_end_to_end.rs::the_data_and_key_encoders_do_not_share_a_name`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_decoder_reads_a_primitive_through_the_runtime_and_not_by_hand`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_4_3_the_encoder_and_the_decoder_do_not_share_a_name`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_4_3_the_data_and_key_encoders_do_not_share_a_name`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_4_3_a_decoder_reads_a_primitive_through_the_runtime_and_not_by_hand`
 
 **Status:** done
 
@@ -191,7 +191,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_member_of_type_any_is_refused_by_name_rather_than_emitted`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_3_1_a_member_of_type_any_is_refused_by_name_rather_than_emitted`
 
 **Status:** done
 
@@ -201,7 +201,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_type_is_declared_before_it_is_used`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_2_a_type_is_declared_before_it_is_used`
 
 **Status:** done
 
@@ -211,7 +211,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -227,11 +227,11 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ### §7.4 The column's octets are held against a fixed recording
 
-**Spec:** §7.4 — The column's octets are held against a fixed recording. Measured against `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`, not beside the other columns: three columns that moved together still resemble each other.
+**Spec:** §7.4 — The column's octets are held against a fixed recording: `tests/interop-corpus/expected-bytes.tsv`, the vendors' octets, not the other columns: three columns that moved together still resemble each other.
 
 **Repo:** `crates/lang-rules/src/emit/c.rs`, `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `crates/wire-probe/tests/three_column_gate.rs::the_three_columns_agree`
+**Tests:** `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::specification`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::cyclone`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::rti`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::fastdds`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::omniorb`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::tao`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::jacorb`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::opendds`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::ros_fastrtps`, `tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::ros_cyclone`
 
 **Status:** done
 
@@ -241,10 +241,10 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`,
-`crates/lang-rules/tests/verbatim_end_to_end.rs::c_places_the_file_slots_and_the_declaration_text_inside_the_struct`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::xtypes_7_2_2_4_8_c_places_the_file_slots_and_the_declaration_text_inside_the_struct`
 
 **Status:** done
 
@@ -256,8 +256,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -267,8 +267,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-c-gen/`, `tools/wireprobe/wireprobe-zerodds-c`, `tools/wireprobe/wireprobe-zerodds-c-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -276,8 +275,17 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ## Audit Status
 
-24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-c-1.0.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (job `merge-rust-lang-render`) — 28 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 12 tests green.
+* `cargo nextest run --profile merge -p zerodds-wire-probe --all-targets` (job `merge-rust-wire-probe`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-wireprobe-c-gen --all-targets` (job `merge-rust-wireprobe-c-gen`) — 10 tests green.
+* `python3 ci/run_integration.py merge-codegen-c` (job `merge-codegen-c`) — 23 tests green.
+
+76 cited tests green, 0 not green.
+
+Open items: none.

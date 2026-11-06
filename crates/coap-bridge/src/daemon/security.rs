@@ -120,7 +120,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn coap_bearer_in_option_accepted() {
+    fn coapbridge_7_3_coap_bearer_in_option_accepted() {
         let mut tokens = HashMap::new();
         tokens.insert("tok".into(), AuthSubject::new("alice"));
         let auth = AuthMode::Bearer { tokens };
@@ -129,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn coap_missing_option_with_bearer_rejected() {
+    fn coapbridge_7_3_coap_missing_option_with_bearer_rejected() {
         let auth = AuthMode::Bearer {
             tokens: HashMap::new(),
         };
@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn coap_acl_subscribe_check() {
+    fn coapbridge_7_3_coap_acl_subscribe_check() {
         let mut cfg = SecurityConfig::default();
         cfg.topic_acl.insert(
             "rd/temp".into(),
@@ -162,7 +162,7 @@ mod tests {
     /// `auth.mode: jwt` reads `auth.jwt.public_key`; without it the setting
     /// cannot be served and the context is refused as a configuration error.
     #[test]
-    fn jwt_without_a_public_key_is_a_config_error() {
+    fn coapbridge_7_3_jwt_without_a_public_key_is_a_config_error() {
         let mut cfg = crate::daemon::config::DaemonConfig::default_for_dev();
         cfg.auth_mode = "jwt".into();
         let err = ctx_from_daemon_config(&cfg).unwrap_err();

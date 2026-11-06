@@ -5,6 +5,28 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- A reader of a topic whose `ITopicTraits` declare no key (`IsKeyed`, new, default `true`) is
+  created through `zerodds_sub_create_datareader_kind` without a key; before, every untyped reader
+  was keyed and matched no writer of an unkeyed topic (DDSI-RTPS 2.5 §9.3.1.2, Table 9.1).
+- The QoS records default to DDS 1.4 §2.2.3: DEADLINE, LIFESPAN, the LIVELINESS lease and the two
+  READER_DATA_LIFECYCLE delays infinite, RELIABILITY's `max_blocking_time` 100 ms,
+  RESOURCE_LIMITS unlimited. A reader that requested a DEADLINE of zero matched no writer with the
+  defaults.
+
+### Changed
+
+- `ZeroDDS.Tests` is an xUnit project: the checks of the former smoke program, sorted by B3
+  (`rc8-test-suite.md`), as ten tests named after their clause, each in the DDS domain
+  `tests/integration/with_domains.py` leases; the merge job `merge-cs` runs them by name against
+  `libzerodds`. `build_cs_smoke.sh` and the nightly job `cs-smoke` are gone.
+
+### Removed
+
+- `ZeroDDS.Cdr.Tests`: its wire vectors called `ZeroDds.Wire`, the C# runtime whose self-test
+  (`runtime/csharp/run-tests.sh`, job `integration-bindings-dotnet`) checks the same octets.
+
 ### Changed
 
 - `QosBridge`: one conversion per policy (`R`, `DS`, `L`, `Pres`, `H`, `RL`, `EF`, `Bytes`) in place

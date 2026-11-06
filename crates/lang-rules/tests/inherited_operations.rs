@@ -85,7 +85,7 @@ fn after<'a>(out: &'a str, anchor: &str) -> &'a str {
 /// inherited operation is reached through the supertype and the derived
 /// interface declares only `f`.
 #[test]
-fn the_java_interface_reaches_the_bases_operation_through_extends() {
+fn idl_7_4_3_4_3_2_the_java_interface_reaches_the_bases_operation_through_extends() {
     let out = generate(DERIVED, Language::Java);
     assert!(
         out.contains("public interface Derived extends Base"),
@@ -100,7 +100,7 @@ fn the_java_interface_reaches_the_bases_operation_through_extends() {
 /// C++'s binding writes `class Derived : public Base`, for the same
 /// reason and with the same consequence.
 #[test]
-fn the_cpp_class_reaches_the_bases_operation_through_its_base_clause() {
+fn idl_7_4_3_4_3_2_the_cpp_class_reaches_the_bases_operation_through_its_base_clause() {
     let out = generate(DERIVED, Language::Cpp);
     assert!(out.contains("class Derived : public Base {"), "{out}");
     let base = after(&out, "class Base {");
@@ -256,7 +256,7 @@ fn the_ocaml_class_type_carries_the_bases_operation_flattened_in() {
 /// is actually *called*, through the composed base client field and not
 /// through the trait alone.
 #[test]
-fn the_rust_trait_reaches_the_bases_operation_through_a_supertrait() {
+fn idl_7_4_3_4_3_2_the_rust_trait_reaches_the_bases_operation_through_a_supertrait() {
     let ast = model(DERIVED);
     let key = LayoutKey::data(Encoding::PlainCdr2, Endianness::Little);
     let out = zerodds_lang_rules::generate::source(&ast, Language::Rust, key)
@@ -339,7 +339,7 @@ fn declarations_alone_refuses_ada_for_the_same_model_source_answers() {
 /// The message names the interface, its position, and which languages
 /// do have a binding.
 #[test]
-fn every_incomplete_language_refuses_rather_than_flattens_or_drops() {
+fn idl_7_4_3_4_3_2_every_incomplete_language_refuses_rather_than_flattens_or_drops() {
     let ast = model(DERIVED);
     let mut refused = Vec::new();
     for language in Language::ALL {
@@ -375,7 +375,7 @@ fn every_incomplete_language_refuses_rather_than_flattens_or_drops() {
 /// project already knew had no mapping at all, and a regression back to
 /// the silent, exit-0 answer must fail loudly here.
 #[test]
-fn c_python_and_node_now_refuse_instead_of_silently_answering_empty() {
+fn idl_9_3_3_c_python_and_node_now_refuse_instead_of_silently_answering_empty() {
     let ast = model(DERIVED);
     for language in [Language::C, Language::Python, Language::Node] {
         let error = zerodds_lang_rules::generate::declarations(&ast, language)

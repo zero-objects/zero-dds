@@ -41,8 +41,8 @@ Both Zig framings satisfy this: `xrceWriteFrame` writes
 `writeDataFrame` writes `WRITE_FLAGS` (`0x01`), and both put the
 `BaseObjectRequest` before the sample. Measured by
 `crates/endpoint-e2e/tests/xrce_write_framing.rs` — the columns
-`zig_endpoint_frames_conformant_write_data` and
-`zig_reliable_frames_conformant_write_data` pass the built frame to
+`xrce_8_3_5_8_zig_endpoint_frames_a_conformant_write_data` and
+`xrce_8_3_5_8_zig_reliable_frames_a_conformant_write_data` pass the built frame to
 `zerodds_xrce::WriteDataPayload::try_from_submessage`.
 
 ## §2 sync client

@@ -26,7 +26,7 @@ Conformance-Requirements.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Editorial-Hintergrund + Goals; ohne Code-Mapping.
+**Status:** n/a (informative) — jeder Abschnitt §1.1 bis §1.9 trägt in der RFC "_This section is non-normative._"
 
 ---
 
@@ -40,7 +40,7 @@ Conformance-Requirements.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Verweis auf RFC-2119-Schlüsselwörter; Sprach-Konvention.
+**Status:** n/a (informative) — Lesart der Schlüsselwörter und Konformitätsregeln für Algorithmen; keine eigene Anforderung an das Protokollverhalten.
 
 ---
 
@@ -57,13 +57,13 @@ explizit rejected (Spec §3); Query-String wird abgespalten;
 IPv4-Hostnames + DNS-Names; IPv6-Literale [::1] sind
 Caller-Layer (RFC 6874).
 
-**Tests:** `crates/websocket-bridge/src/uri.rs::tests::{parses_basic_ws_uri,
-parses_basic_wss_uri, parses_explicit_port, parses_query_string,
-parses_default_path_when_missing, rejects_unknown_scheme,
-rejects_missing_host, rejects_missing_host_before_port,
-rejects_invalid_port, rejects_fragment, default_port_returns_443_for_wss,
-resource_name_combines_path_and_query, resource_name_without_query_is_path,
-is_local_loopback_recognizes_localhost}` (14).
+**Tests:** `crates/websocket-bridge/src/uri.rs::tests::{ws_3_parses_basic_ws_uri,
+ws_3_parses_basic_wss_uri, ws_3_parses_explicit_port, ws_3_parses_query_string,
+ws_3_parses_default_path_when_missing, ws_3_rejects_unknown_scheme,
+ws_3_rejects_missing_host, ws_3_rejects_missing_host_before_port,
+ws_3_rejects_invalid_port, ws_3_rejects_fragment, ws_3_default_port_returns_443_for_wss,
+ws_3_resource_name_combines_path_and_query, ws_3_resource_name_without_query_is_path,
+ws_3_is_local_loopback_recognizes_localhost}` (14).
 
 **Status:** done — URI-Scheme-Parser live.
 
@@ -81,15 +81,15 @@ Sec-WebSocket-Accept = SHA-1(key + MAGIC) base64, etc.).
 parse_client_request, build_server_response,
 render_server_response}`.
 
-**Tests:** `crates/websocket-bridge/src/handshake.rs::tests::{rfc6455_section_1_3_accept_test_vector,
-parses_minimal_client_handshake, parses_protocols_and_extensions,
-rejects_missing_upgrade, rejects_wrong_version, rejects_missing_key,
-server_response_includes_accept,
-server_agrees_to_no_extension_it_cannot_perform,
-server_selects_no_subprotocol_it_does_not_support,
-render_server_response_format, base64_round_trip_known_vectors,
-sha1_known_vector_abc, connection_header_with_keep_alive_still_detects_upgrade}`
-— `rfc6455_section_1_3_accept_test_vector` prüft den Sec-WebSocket-Accept-
+**Tests:** `crates/websocket-bridge/src/handshake.rs::tests::{ws_4_1_rfc6455_section_1_3_accept_test_vector,
+ws_4_1_parses_minimal_client_handshake, ws_4_1_parses_protocols_and_extensions,
+ws_4_1_rejects_missing_upgrade, ws_4_1_rejects_wrong_version, ws_4_1_rejects_missing_key,
+ws_4_1_server_response_includes_accept,
+ws_4_1_server_agrees_to_no_extension_it_cannot_perform,
+ws_4_1_server_selects_no_subprotocol_it_does_not_support,
+ws_4_1_render_server_response_format, ws_4_1_base64_round_trip_known_vectors,
+ws_4_1_sha1_known_vector_abc, ws_4_1_connection_header_with_keep_alive_still_detects_upgrade}`
+— `ws_4_1_rfc6455_section_1_3_accept_test_vector` prüft den Sec-WebSocket-Accept-
 Testvektor der Spec (SHA-1 aus Key + GUID, base64).
 
 **Status:** done
@@ -111,8 +111,8 @@ MaskingViolation, validate_masking}` — prüft ein empfangenes Frame
 gegen die Richtungsregel und liefert für den Verstoß den Close-Code
 1002 (`MaskingViolation::close_code`).
 
-**Tests:** `crates/websocket-bridge/src/masking.rs::tests::client_masks_and_server_does_not_per_spec_5_1`,
-`crates/websocket-bridge/src/masking.rs::tests::masking_violation_fails_the_connection_with_1002`.
+**Tests:** `crates/websocket-bridge/src/masking.rs::tests::ws_5_1_client_masks_and_server_does_not_per_spec_5_1`,
+`crates/websocket-bridge/src/masking.rs::tests::ws_5_1_masking_violation_fails_the_connection_with_1002`.
 
 **Status:** done
 
@@ -124,9 +124,9 @@ Payload-Length.
 **Repo:** `crates/websocket-bridge/src/frame.rs::Frame` +
 `crates/websocket-bridge/src/codec.rs::encode/decode`.
 
-**Tests:** `codec::tests::smallest_text_frame_encodes_to_2_byte_header_plus_payload`,
-`round_trip_unmasked_text`, `rsv_bits_propagate_to_decoded_frame`,
-`fin_zero_text_frame_round_trip`.
+**Tests:** `codec::tests::ws_5_2_smallest_text_frame_encodes_to_2_byte_header_plus_payload`,
+`ws_5_7_a_single_frame_text_message_unmasked_and_masked`, `ws_5_2_rsv_bits_propagate_to_decoded_frame`,
+`ws_5_7_a_fragmented_text_message`.
 
 **Status:** done
 
@@ -138,8 +138,8 @@ Payload-Length.
 
 **Repo:** `crates/websocket-bridge/src/frame.rs::Opcode`.
 
-**Tests:** `frame::tests::opcode_round_trip_via_bits`,
-`opcode_well_known_values_match_spec`, `opcode_is_control_predicate`.
+**Tests:** `frame::tests::ws_5_2_the_opcodes_are_the_numbers_of_the_rfc`,
+`ws_5_2_opcode_well_known_values_match_spec`, `ws_5_2_opcode_is_control_predicate`.
 
 **Status:** done
 
@@ -153,13 +153,13 @@ Payload-Length.
 **Repo:** `crates/websocket-bridge/src/codec.rs::encode_payload_length`
 + Decode-Validation (NonMinimalLength + PayloadLengthMsbSet).
 
-**Tests:** `codec::tests::medium_payload_uses_extended_16_bit_length`,
-`large_payload_uses_extended_64_bit_length`,
-`extended_64_bit_length_msb_set_rejected`,
-`non_minimal_16_bit_length_rejected`,
-`non_minimal_64_bit_length_rejected`,
-`extended_16_bit_length_truncated_fails`,
-`round_trip_medium_and_large_payloads`.
+**Tests:** `codec::tests::ws_5_2_medium_payload_uses_extended_16_bit_length`,
+`ws_5_2_large_payload_uses_extended_64_bit_length`,
+`ws_5_2_extended_64_bit_length_msb_set_rejected`,
+`ws_5_2_non_minimal_16_bit_length_rejected`,
+`ws_5_2_non_minimal_64_bit_length_rejected`,
+`ws_5_2_extended_16_bit_length_truncated_fails`,
+`ws_5_7_a_256_and_a_65536_octet_binary_frame`.
 
 **Status:** done
 
@@ -174,14 +174,14 @@ octet at index i modulo 4 of the masking key". Spec §5.3 verlangt
 (symmetrisch); `generate_masking_key` (Splitmix64-based,
 **explicitly not for security** — Anwender MUSS eigenen RNG einsetzen).
 
-**Tests:** `masking::tests::apply_mask_is_symmetric`,
-`apply_mask_xors_with_key_modulo_4`,
-`apply_mask_handles_partial_key_alignment`, `empty_payload_is_unchanged`,
-`generate_masking_key_returns_4_bytes`,
-`generate_masking_key_returns_distinct_values_across_calls`,
-`insecure_splitmix_provider_implements_trait`,
-`closure_provider_calls_user_supplied_fn`,
-`codec::tests::round_trip_masked_payload_unmasked_on_decode`.
+**Tests:** `masking::tests::ws_5_3_apply_mask_is_symmetric`,
+`ws_5_3_apply_mask_xors_with_key_modulo_4`,
+`ws_5_3_apply_mask_handles_partial_key_alignment`, `ws_5_3_empty_payload_is_unchanged`,
+`ws_5_3_generate_masking_key_returns_4_bytes`,
+`ws_5_3_generate_masking_key_returns_distinct_values_across_calls`,
+`ws_5_3_insecure_splitmix_provider_implements_trait`,
+`ws_5_3_closure_provider_calls_user_supplied_fn`,
+`codec::tests::ws_5_7_a_single_frame_text_message_unmasked_and_masked`.
 
 **Status:** done — XOR-Logik + `MaskingKeyProvider`-Trait für
 caller-supplied secure RNGs (OsRng/getrandom/Hardware-RNG) live;
@@ -197,7 +197,7 @@ Continuation-Frames mit Opcode 0x0 + FIN=1 für letzten.
 **Repo:** Codec liefert FIN-Bit + Opcode 1:1 durch; Re-Assembly ist
 Caller-Aufgabe.
 
-**Tests:** `codec::tests::fin_zero_text_frame_round_trip`.
+**Tests:** `codec::tests::ws_5_7_a_fragmented_text_message`.
 
 **Status:** done — Frame-level support; Caller-side reassembly out
 of codec scope.
@@ -210,8 +210,8 @@ payload <= 125 bytes UND MUST NOT be fragmented (FIN=1).
 **Repo:** `crates/websocket-bridge/src/codec.rs` enforced beim Encode +
 Decode (ControlFrameTooLong / FragmentedControlFrame Errors).
 
-**Tests:** `codec::tests::control_frame_with_long_payload_rejected_on_encode`,
-`fragmented_control_frame_rejected_on_encode`.
+**Tests:** `codec::tests::ws_5_5_control_frame_with_long_payload_rejected_on_encode`,
+`ws_5_5_fragmented_control_frame_rejected_on_encode`.
 
 **Status:** done
 
@@ -222,9 +222,9 @@ Decode (ControlFrameTooLong / FragmentedControlFrame Errors).
 
 **Repo:** `crates/websocket-bridge/src/frame.rs::Frame::close`.
 
-**Tests:** `frame::tests::close_frame_includes_status_code_in_be_payload`,
-`close_frame_with_reason_carries_utf8_bytes`,
-`codec::tests::close_frame_carries_status_code`.
+**Tests:** `frame::tests::ws_5_5_1_close_frame_includes_status_code_in_be_payload`,
+`ws_5_5_1_close_frame_with_reason_carries_utf8_bytes`,
+`codec::tests::ws_5_5_1_close_frame_carries_status_code`.
 
 **Status:** done — Status-Code-Semantik (1000=Normal, 1001=Going-Away,
 etc.) ist Caller-Validierungs-Aufgabe.
@@ -239,7 +239,7 @@ response, unless it already received a Close frame."
 **Repo:** `crates/websocket-bridge/src/frame.rs::Frame::ping`
 (opcode 0x9, FIN=1, masking gemäß §5.3).
 
-**Tests:** `codec::tests::ping_frame_round_trip`.
+**Tests:** `codec::tests::ws_5_7_an_unmasked_ping_and_the_masked_pong_with_its_body`.
 
 **Status:** done — Echo-Logik (Pong-Reply mit Ping-Payload) ist
 Caller-Aufgabe (Connection-State-Machine, siehe §6.1).
@@ -254,8 +254,7 @@ Ping frame being replied to."
 **Repo:** `crates/websocket-bridge/src/frame.rs::Frame::pong`
 (opcode 0xA).
 
-**Tests:** `crates/websocket-bridge/src/codec.rs::tests::pong_frame_round_trip`,
-`crates/websocket-bridge/src/codec.rs::tests::pong_carries_the_application_data_of_the_ping_it_answers`.
+**Tests:** `crates/websocket-bridge/src/codec.rs::tests::ws_5_7_an_unmasked_ping_and_the_masked_pong_with_its_body`.
 
 **Status:** done — Wire-Format + Payload-Identität Ping→Pong belegt;
 wann ein Pong gesendet wird, entscheidet die Connection-State-Machine
@@ -272,11 +271,11 @@ Payload ist beliebige Binärdaten.
 `Frame::text`/`Frame::binary`; `Opcode::is_control` trennt Daten- von
 Control-Frames über das MSB.
 
-**Tests:** `crates/websocket-bridge/src/frame.rs::tests::{data_frame_opcodes_have_msb_zero_per_spec_5_6,
-text_and_binary_data_frames_carry_their_payload_unchanged,
-text_frame_constructor_sets_fin_and_opcode}`;
-`crates/websocket-bridge/src/codec.rs::tests::{round_trip_unmasked_text,
-round_trip_medium_and_large_payloads}`.
+**Tests:** `crates/websocket-bridge/src/frame.rs::tests::{ws_5_6_data_frame_opcodes_have_msb_zero_per_spec_5_6,
+ws_5_6_text_and_binary_data_frames_carry_their_payload_unchanged,
+ws_5_6_text_frame_constructor_sets_fin_and_opcode}`;
+`crates/websocket-bridge/src/codec.rs::tests::{ws_5_7_a_single_frame_text_message_unmasked_and_masked,
+ws_5_7_a_256_and_a_65536_octet_binary_frame}`.
 
 **Status:** done — UTF-8-Validierung von Text-Frames ist
 Caller-Aufgabe (Codec-API ist `Vec<u8>`-basiert, keine UTF-8-Pflicht).
@@ -287,7 +286,7 @@ Caller-Aufgabe (Codec-API ist `Vec<u8>`-basiert, keine UTF-8-Pflicht).
 
 **Repo:** RSV1/RSV2/RSV3 als public Felder im `Frame`-Struct.
 
-**Tests:** `codec::tests::rsv_bits_propagate_to_decoded_frame`.
+**Tests:** `codec::tests::ws_5_2_rsv_bits_propagate_to_decoded_frame`.
 
 **Status:** done
 
@@ -308,11 +307,11 @@ Frames, letztes Frame mit FIN=1); UTF-8-Validation auf Text-Payload
 vor Splitting; Mask-Field wird gesetzt wenn Caller einen non-Null
 Mask-Key übergibt (Client-Pfad).
 
-**Tests:** `message::tests::{fragment_empty_message_yields_one_frame,
-fragment_message_within_limit_single_frame,
-fragment_message_splits_into_text_plus_continuations,
-fragment_text_rejects_invalid_utf8, fragment_zero_limit_rejected,
-fragment_with_mask_sets_mask_field}`.
+**Tests:** `message::tests::{ws_6_1_fragment_empty_message_yields_one_frame,
+ws_6_1_fragment_message_within_limit_single_frame,
+ws_6_1_fragment_message_splits_into_text_plus_continuations,
+ws_6_1_fragment_text_rejects_invalid_utf8, ws_6_1_fragment_zero_limit_rejected,
+ws_6_1_fragment_with_mask_sets_mask_field}`.
 
 **Status:** done — Send-Algorithmus + Frame-Sequencing live.
 
@@ -329,15 +328,15 @@ Validation pro Frame; DoS-Cap via `max_message_size`. Control-Frames
 (Close/Ping/Pong) werden direkt durchgereicht (Spec §5.5: nicht
 fragmentierbar). Reserved-Opcodes triggern Fail.
 
-**Tests:** `message::tests::{reassembler_single_frame_message_complete,
-reassembler_continuation_sequence_reassembles,
-reassembler_continuation_without_preceding_text_rejected,
-reassembler_interleaved_text_during_pending_rejected,
-reassembler_rejects_invalid_utf8_in_text,
-reassembler_rejects_message_above_limit,
-reassembler_passes_through_control_frames,
-reassembler_has_pending_during_continuation,
-fragment_send_then_reassemble_round_trip}`.
+**Tests:** `message::tests::{ws_6_2_reassembler_single_frame_message_complete,
+ws_6_2_reassembler_continuation_sequence_reassembles,
+ws_6_2_reassembler_continuation_without_preceding_text_rejected,
+ws_6_2_reassembler_interleaved_text_during_pending_rejected,
+ws_6_2_reassembler_rejects_invalid_utf8_in_text,
+ws_6_2_reassembler_rejects_message_above_limit,
+ws_6_2_reassembler_passes_through_control_frames,
+ws_6_2_reassembler_has_pending_during_continuation,
+ws_6_2_fragment_send_then_reassemble_round_trip}`.
 
 **Status:** done — Receive-Algorithmus + Reassembly + UTF-8-Streaming
 + DoS-Cap live; Round-Trip Fragment→Reassemble verifiziert.
@@ -359,13 +358,13 @@ ClosingInitiator/ClosingResponder → Closed/Failed Transitions.
 Operations: `initiator_send_close`, `recv_close_response`,
 `responder_recv_close`, `responder_send_close_response`, `fail`.
 
-**Tests:** `close::tests::{handshake_starts_in_open_state,
-initiator_send_close_transitions_to_closing,
-initiator_recv_close_response_transitions_to_closed,
-responder_recv_close_transitions_to_closing_responder,
-responder_send_close_response_completes_normally,
-second_close_send_in_closing_is_rejected,
-recv_close_in_open_state_is_responder_path}`.
+**Tests:** `close::tests::{ws_7_1_handshake_starts_in_open_state,
+ws_7_1_initiator_send_close_transitions_to_closing,
+ws_7_1_initiator_recv_close_response_transitions_to_closed,
+ws_7_1_responder_recv_close_transitions_to_closing_responder,
+ws_7_1_responder_send_close_response_completes_normally,
+ws_7_1_second_close_send_in_closing_is_rejected,
+ws_7_1_recv_close_in_open_state_is_responder_path}`.
 
 **Status:** done — Wire-Format + Close-Handshake-State-Machine live.
 
@@ -377,7 +376,7 @@ Failure-zu-Client, Client-Failure-zu-Server, recoverable Conditions).
 **Repo:** `close.rs::CloseHandshake::fail(reason)` + `CloseState::
 Failed` mit `failure_reason`-Tracking.
 
-**Tests:** `close::tests::fail_marks_abnormal_closure`.
+**Tests:** `close::tests::ws_7_2_fail_marks_abnormal_closure`.
 
 **Status:** done — Failure-State + Recovery-Reason-Tracking live.
 
@@ -388,8 +387,8 @@ Failed` mit `failure_reason`-Tracking.
 **Repo:** `close.rs::CloseState::Closed` als Final-State; `is_closed()`
 unterscheidet Closed vs. Failed.
 
-**Tests:** `crates/websocket-bridge/src/close.rs::tests::initiator_recv_close_response_transitions_to_closed`,
-`crates/websocket-bridge/src/close.rs::tests::responder_send_close_response_completes_normally`.
+**Tests:** `crates/websocket-bridge/src/close.rs::tests::ws_7_1_initiator_recv_close_response_transitions_to_closed`,
+`crates/websocket-bridge/src/close.rs::tests::ws_7_1_responder_send_close_response_completes_normally`.
 
 **Status:** done — Normal-Closure-State-Tracking ausgewiesen.
 
@@ -407,15 +406,15 @@ Registry-Ranges (Invalid <1000, ProtocolReserved 1000-2999,
 LibraryDefined 3000-3999, ApplicationDefined 4000-4999) +
 Forbidden-on-Wire-Set (1004/1005/1006/1015).
 
-**Tests:** `close::tests::{classify_status_code_recognizes_protocol_range,
-classify_status_code_recognizes_library_range,
-classify_status_code_recognizes_app_range,
-classify_status_code_recognizes_invalid_below_1000,
-classify_status_code_recognizes_out_of_range_above_5000,
-is_forbidden_on_wire_covers_all_four,
-validate_wire_status_code_accepts_normal,
-validate_wire_status_code_rejects_forbidden,
-validate_wire_status_code_rejects_out_of_range}`.
+**Tests:** `close::tests::{ws_7_4_classify_status_code_recognizes_protocol_range,
+ws_7_4_classify_status_code_recognizes_library_range,
+ws_7_4_classify_status_code_recognizes_app_range,
+ws_7_4_classify_status_code_recognizes_invalid_below_1000,
+ws_7_4_classify_status_code_recognizes_out_of_range_above_5000,
+ws_7_4_is_forbidden_on_wire_covers_all_four,
+ws_7_4_validate_wire_status_code_accepts_normal,
+ws_7_4_validate_wire_status_code_rejects_forbidden,
+ws_7_4_validate_wire_status_code_rejects_out_of_range}`.
 
 **Status:** done — Wire-Format + Range-Validation +
 §7.4.2-Restrictions (alle vier Forbidden-Codes) live.
@@ -437,17 +436,17 @@ Codepoints (U+D800..=U+DFFF), Overlong-Encoding, Codepoints
 4-Byte-Puffer für fragmentierte Text-Frames (Spec §6.2 — FIN=0
 Continuation-Frames).
 
-**Tests:** `crates/websocket-bridge/src/utf8.rs::tests::{empty_is_valid,
-ascii_is_valid, valid_2_byte_codepoint, valid_3_byte_codepoint,
-valid_4_byte_codepoint, rejects_overlong_2_byte_for_ascii,
-rejects_unexpected_continuation_byte, rejects_invalid_lead_byte,
-rejects_truncated_2_byte, rejects_truncated_3_byte,
-rejects_invalid_continuation, rejects_surrogate_codepoint,
-rejects_codepoint_above_max, streaming_handles_split_codepoint,
-streaming_finalize_with_pending_is_truncated,
-streaming_complete_codepoint_in_one_chunk}` (16); der Fail-the-Connection-
+**Tests:** `crates/websocket-bridge/src/utf8.rs::tests::{ws_8_1_empty_is_valid,
+ws_8_1_ascii_is_valid, ws_8_1_valid_2_byte_codepoint, ws_8_1_valid_3_byte_codepoint,
+ws_8_1_valid_4_byte_codepoint, ws_8_1_rejects_overlong_2_byte_for_ascii,
+ws_8_1_rejects_unexpected_continuation_byte, ws_8_1_rejects_invalid_lead_byte,
+ws_8_1_rejects_truncated_2_byte, ws_8_1_rejects_truncated_3_byte,
+ws_8_1_rejects_invalid_continuation, ws_8_1_rejects_surrogate_codepoint,
+ws_8_1_rejects_codepoint_above_max, ws_8_1_streaming_handles_split_codepoint,
+ws_8_1_streaming_finalize_with_pending_is_truncated,
+ws_8_1_streaming_complete_codepoint_in_one_chunk}` (16); der Fail-the-Connection-
 Pfad mit Close-Code 1007:
-`crates/websocket-bridge/src/message.rs::tests::client_fails_connection_with_1007_on_malformed_utf8_from_server`.
+`crates/websocket-bridge/src/message.rs::tests::ws_8_1_client_fails_connection_with_1007_on_malformed_utf8_from_server`.
 
 **Status:** done — Strict-UTF-8-Validation + Streaming-Variante +
 Close-Code-1007-Pfad live.
@@ -464,9 +463,9 @@ für beide Richtungen; das Fail-the-Connection-Verhalten in
 close_frame}` bildet den UTF-8-Fehler auf Close-Code 1007
 (`CloseCode::InvalidPayloadData`, Spec §7.4.1) ab.
 
-**Tests:** `crates/websocket-bridge/src/message.rs::tests::{server_fails_connection_with_1007_on_malformed_utf8_from_client,
-malformed_utf8_split_across_continuation_frames_still_yields_1007,
-receive_error_close_codes_match_spec_7_4_1}`.
+**Tests:** `crates/websocket-bridge/src/message.rs::tests::{ws_8_2_server_fails_connection_with_1007_on_malformed_utf8_from_client,
+ws_8_2_malformed_utf8_split_across_continuation_frames_still_yields_1007,
+ws_8_2_receive_error_close_codes_match_spec_7_4_1}`.
 
 **Status:** done — maskiertes Client-Text-Frame mit defektem UTF-8
 schließt die Verbindung mit 1007, auch über Continuation-Frames
@@ -486,19 +485,19 @@ parse_extensions, parse_subprotocols, select_subprotocol,
 SUBPROTOCOL_HEADER, EXTENSIONS_HEADER}` (generic Extension- +
 Subprotocol-Negotiation-Framework).
 
-**Tests:** `crates/websocket-bridge/src/negotiation.rs::tests::{parse_extensions_single,
-parse_extensions_with_param, parse_extensions_with_value_param,
-parse_extensions_strips_quoted_value, parse_extensions_multiple_offers,
-parse_extensions_empty_returns_empty, parse_subprotocols_basic,
-parse_subprotocols_empty_returns_empty, select_subprotocol_picks_first_match,
-select_subprotocol_returns_none_when_no_match,
-select_subprotocol_is_case_insensitive, header_constants_match_spec}` (12);
-`crates/websocket-bridge/src/permessage_deflate.rs::tests::{parse_no_params_yields_defaults,
-parse_no_takeover_flags, parse_window_bits, rejects_invalid_window_bits,
-rejects_unknown_param, rejects_boolean_with_value,
-render_default_is_bare_extension_name, render_includes_params,
-tail_round_trip, strip_tail_no_op_when_absent,
-parameterless_client_max_window_bits_accepted}` (11).
+**Tests:** `crates/websocket-bridge/src/negotiation.rs::tests::{ws_9_parse_extensions_single,
+ws_9_parse_extensions_with_param, ws_9_parse_extensions_with_value_param,
+ws_9_parse_extensions_strips_quoted_value, ws_9_parse_extensions_multiple_offers,
+ws_9_parse_extensions_empty_returns_empty, ws_9_parse_subprotocols_basic,
+ws_9_parse_subprotocols_empty_returns_empty, ws_9_select_subprotocol_picks_first_match,
+ws_9_select_subprotocol_returns_none_when_no_match,
+ws_9_select_subprotocol_is_case_insensitive, ws_9_header_constants_match_spec}` (12);
+`crates/websocket-bridge/src/permessage_deflate.rs::tests::{ws_9_parse_no_params_yields_defaults,
+ws_9_parse_no_takeover_flags, ws_9_parse_window_bits, ws_9_rejects_invalid_window_bits,
+ws_9_rejects_unknown_param, ws_9_rejects_boolean_with_value,
+ws_9_render_default_is_bare_extension_name, ws_9_render_includes_params,
+ws_9_tail_round_trip, ws_9_strip_tail_no_op_when_absent,
+ws_9_parameterless_client_max_window_bits_accepted}` (11).
 
 **Status:** done — permessage-deflate + generic Extension-Listen-
 Parser + Subprotocol-Negotiation live.
@@ -507,25 +506,106 @@ Parser + Subprotocol-Negotiation live.
 
 ## §10-§14 Security + IANA + Misc
 
-### §10 Security Considerations + §11 IANA + §12-§14 Misc
+### §10.1, §10.5, §10.8 Nicht-Browser-Clients, Client-Authentifizierung, SHA-1
 
-**Spec:** §10-§14, S. 49-71 — Security-Hinweise, IANA-Tables,
-Acknowledgements.
+**Spec:** §10.1, §10.5, §10.8, S. 50–54 (RFC) — Hinweise zu Clients außerhalb eines Browsers, zur Authentifizierung über HTTP-Mechanismen und dazu, dass SHA-1 im Handshake keine Sicherheitsfunktion hat.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Security-Considerations/Acknowledgments/IANA-Tabellen sind als Konstanten in Frame/Code-Modulen reflektiert.
+**Status:** n/a (informative) — Erläuterungen ohne eigene Anforderung.
+
+### §10.2 Origin prüfen
+
+**Spec:** §10.2, S. 50 (RFC) — "Servers that are not intended to process input from any web page but only for certain sites SHOULD verify the |Origin| field is an origin they expect. If the origin indicated is unacceptable to the server, then it SHOULD respond to the WebSocket handshake with a reply containing HTTP 403 Forbidden status code."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — der Handshake (`crates/websocket-bridge/src/handshake.rs`) und der Daemon prüfen das Feld `Origin` nicht.
+
+### §10.3 Neuer, nicht vorhersagbarer Masking-Key je Frame
+
+**Spec:** §10.3, S. 51 (RFC) — "Clients MUST choose a new masking key for each frame, using an algorithm that cannot be predicted by end applications that provide data."
+
+**Repo:** `crates/websocket-bridge/src/masking.rs` (`generate_masking_key`)
+
+**Tests:** `crates/websocket-bridge/src/masking.rs::tests::ws_5_3_generate_masking_key_returns_distinct_values_across_calls`, `crates/websocket-bridge/src/masking.rs::tests::ws_5_1_client_masks_and_server_does_not_per_spec_5_1`
+
+**Status:** partial — je Frame entsteht ein neuer Schlüssel; der Test prüft, dass aufeinanderfolgende Schlüssel verschieden sind. Kein Test prüft die Quelle der Zufallszahlen; das Modul bietet mit `ws_5_3_insecure_splitmix_provider_implements_trait` auch einen vorhersagbaren Provider an.
+
+### §10.4 Grenzen für Frame- und Nachrichtengröße
+
+**Spec:** §10.4, S. 52 (RFC) — "Implementations that have implementation- and/or platform-specific limitations regarding the frame size or total message size after reassembly from multiple frames MUST protect themselves against exceeding those limits. [...] Such an implementation SHOULD impose a limit on frame sizes and the total message size after reassembly from multiple frames."
+
+**Repo:** `crates/websocket-bridge/src/message.rs` (`Reassembler::with_limit`, `max_message_size`)
+
+**Tests:** `crates/websocket-bridge/src/message.rs::tests::ws_6_2_reassembler_rejects_message_above_limit`
+
+**Status:** partial — die Gesamtgröße nach dem Zusammensetzen ist begrenzt und getestet; kein Test prüft eine Grenze für die Größe eines einzelnen Frames (z. B. eine angekündigte Länge von 2^60).
+
+### §10.6 TLS unterstützen
+
+**Spec:** §10.6, S. 53 (RFC) — "WebSocket implementations MUST support TLS and SHOULD employ it when communicating with their peers."
+
+**Repo:** `crates/websocket-bridge/src/daemon/security.rs`, `crates/websocket-bridge/src/daemon/server.rs`
+
+**Tests:** `crates/websocket-bridge/tests/security_e2e.rs::ws_10_6_tls_plain_handshake_succeeds_then_data_flows`, `crates/websocket-bridge/src/daemon/security.rs::tests::ws_10_6_ctx_from_config_tls_enabled_without_paths_rejected`
+
+**Status:** done
+
+### §10.7 Ungültige Daten
+
+**Spec:** §10.7, S. 53 (RFC) — "Incoming data MUST always be validated by both clients and servers." Nach dem Handshake "the endpoint SHOULD send a Close frame with an appropriate status code (Section 7.4)"; während des Handshakes "the server SHOULD return an appropriate HTTP [RFC2616] status code."
+
+**Repo:** `crates/websocket-bridge/src/codec.rs`, `crates/websocket-bridge/src/masking.rs`, `crates/websocket-bridge/src/utf8.rs`, `crates/websocket-bridge/src/daemon/server.rs`
+
+**Tests:** `crates/websocket-bridge/src/masking.rs::tests::ws_5_1_masking_violation_fails_the_connection_with_1002`, `crates/websocket-bridge/tests/security_e2e.rs::ws_10_7_auth_invalid_bearer_yields_401`
+
+**Status:** partial — ein Masking-Verstoß schließt mit 1002, eine ungültige Anmeldung im Handshake bekommt HTTP 401. Nicht einzeln geprüft: der Close-Code für jede andere Art ungültiger Daten nach dem Handshake.
+
+### §11 IANA Considerations
+
+**Spec:** §11, S. 54–66 (RFC) — Registrierung der URI-Schemes `ws` und `wss`, des Upgrade-Tokens, der Header-Felder und der Registries für Extensions, Subprotokolle, Versionen, Close-Codes und Opcodes.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative) — Anweisungen an die IANA; die Werte selbst sind als Items zu §3, §4, §5.2 und §7.4 geführt.
+
+### §12 Using the WebSocket Protocol from Other Specifications
+
+**Spec:** §12, S. 66 (RFC) — wie eine andere Spezifikation eine WebSocket-Verbindung aufbaut und nutzt.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative) — richtet sich an andere Spezifikationen.
+
+### §13, §14 Acknowledgements und References
+
+**Spec:** §13–§14, S. 67–71 (RFC) — Danksagung, Verweise.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** n/a (informative) — Danksagung und Verweislisten.
 
 ---
 
 ## Audit-Status
 
-23 done / 0 partial / 0 open / 3 n/a (informative) / 0 n/a (rejected).
+24 done / 3 partial / 1 open / 0 blocked / 6 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-websocket-bridge` — 213 lib-Inline +
-29 Integration = 242 Tests grün, 0 failed, 2 ignored (Interop-Tests gegen
-externe `websockets`-Python-Binaries). Module mit Tests: `close`, `codec`,
-`daemon`, `dds_bridge`, `frame`, `handshake`, `masking`, `message`,
-`negotiation`, `permessage_deflate`, `uri`, `utf8`.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document websocket-rfc-6455.md`):
+
+* `cargo nextest run --profile merge -p zerodds-websocket-bridge --all-targets` (Job `merge-rust-websocket-bridge`) — 138 Tests grün.
+
+138 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `websocket-rfc-6455.open.md`.

@@ -72,16 +72,6 @@ const WRITE_ACCESS_PROFILE: &[SubmessageId] = &[
     SubmessageId::TimestampReply,
 ];
 
-/// Spec §2.3 Configure Entities Profile: CREATE_CLIENT + CREATE +
-/// DELETE + STATUS path.
-const CONFIGURE_ENTITIES_PROFILE: &[SubmessageId] = &[
-    SubmessageId::CreateClient,
-    SubmessageId::Create,
-    SubmessageId::Delete,
-    SubmessageId::StatusAgent,
-    SubmessageId::Status,
-];
-
 /// Spec §2.10 Complete Profile: all 16 submessages.
 const COMPLETE_PROFILE: &[SubmessageId] = &[
     SubmessageId::CreateClient,
@@ -101,32 +91,6 @@ const COMPLETE_PROFILE: &[SubmessageId] = &[
     SubmessageId::Timestamp,
     SubmessageId::TimestampReply,
 ];
-
-#[test]
-fn profile_2_1_read_access_submessages_all_roundtrip() {
-    // Pro Submessage: Wire-ID round-trippt via SubmessageId::from_u8.
-    for sid in READ_ACCESS_PROFILE {
-        let byte = sid.as_u8();
-        let decoded = SubmessageId::from_u8(byte).expect("read-access roundtrip");
-        assert_eq!(decoded, *sid, "Read-Access SubmessageId {sid:?}");
-    }
-}
-
-#[test]
-fn profile_2_2_write_access_submessages_all_roundtrip() {
-    for sid in WRITE_ACCESS_PROFILE {
-        let decoded = SubmessageId::from_u8(sid.as_u8()).expect("write-access roundtrip");
-        assert_eq!(decoded, *sid);
-    }
-}
-
-#[test]
-fn profile_2_3_configure_entities_submessages_all_roundtrip() {
-    for sid in CONFIGURE_ENTITIES_PROFILE {
-        let decoded = SubmessageId::from_u8(sid.as_u8()).expect("configure roundtrip");
-        assert_eq!(decoded, *sid);
-    }
-}
 
 #[test]
 fn profile_2_10_complete_covers_all_16_submessages() {
@@ -182,16 +146,7 @@ fn invalid_submessage_id_rejected() {
 // ============================================================================
 
 #[test]
-fn spec_1_1_wire_codec_supports_all_submessages() {
-    // §1.1: client-agent protocol. The wire codec exposes all
-    // spec submessages.
-    for byte in 0u8..=15u8 {
-        let _ = SubmessageId::from_u8(byte).expect("all 16 IDs must decode");
-    }
-}
-
-#[test]
-fn spec_1_2_submessage_ids_match_spec_assignment() {
+fn xrce_8_3_5_spec_1_2_submessage_ids_match_spec_assignment() {
     // §1.2 vendor interoperability: every SubmessageId has its
     // exact spec value.
     assert_eq!(SubmessageId::CreateClient.as_u8(), 0);

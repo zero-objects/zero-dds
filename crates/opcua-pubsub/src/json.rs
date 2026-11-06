@@ -589,25 +589,25 @@ fn payload_value_to_json(dv: &DataValue) -> Value {
 
 fn payload_value_from_json(v: &Value) -> Result<DataValue, DecodeError> {
     // A DataValue object has a "Value" member; a reversible Variant has "Type".
-    if let Some(obj) = v.as_object() {
-        if let Some(value_node) = obj.get("Value") {
-            return Ok(DataValue {
-                value: Some(variant_from_json(value_node)?),
-                status: obj.get("Status").and_then(Value::as_u64).map(|s| s as u32),
-                source_timestamp: obj
-                    .get("SourceTimestamp")
-                    .and_then(Value::as_str)
-                    .map(iso8601_to_ticks)
-                    .transpose()?,
-                server_timestamp: obj
-                    .get("ServerTimestamp")
-                    .and_then(Value::as_str)
-                    .map(iso8601_to_ticks)
-                    .transpose()?,
-                source_pico_sec: None,
-                server_pico_sec: None,
-            });
-        }
+    if let Some(obj) = v.as_object()
+        && let Some(value_node) = obj.get("Value")
+    {
+        return Ok(DataValue {
+            value: Some(variant_from_json(value_node)?),
+            status: obj.get("Status").and_then(Value::as_u64).map(|s| s as u32),
+            source_timestamp: obj
+                .get("SourceTimestamp")
+                .and_then(Value::as_str)
+                .map(iso8601_to_ticks)
+                .transpose()?,
+            server_timestamp: obj
+                .get("ServerTimestamp")
+                .and_then(Value::as_str)
+                .map(iso8601_to_ticks)
+                .transpose()?,
+            source_pico_sec: None,
+            server_pico_sec: None,
+        });
     }
     Ok(DataValue {
         value: Some(variant_from_json(v)?),
@@ -797,58 +797,97 @@ fn parse_dataset_message(v: &Value) -> Result<JsonDataSetMessage, DecodeError> {
 mod tests {
     use super::*;
 
+    /// OPC 10000-6 §5.4.2.6 and §5.2.2.5: a DateTime is the ISO 8601
+    /// string of the 100 ns ticks since 1601-01-01T00:00:00Z.
     #[test]
-    fn datetime_round_trips_through_iso8601() {
-        // 2026-06-14T12:34:56.7654321Z (ticks since 1601).
-        let ticks = days_from_civil(2026, 6, 14).wrapping_add(EPOCH_DELTA_DAYS)
-            * SECS_PER_DAY
-            * TICKS_PER_SEC
-            + (12 * 3600 + 34 * 60 + 56) * TICKS_PER_SEC
-            + 7_654_321;
-        let s = ticks_to_iso8601(ticks);
-        assert_eq!(s, "2026-06-14T12:34:56.7654321Z");
-        assert_eq!(iso8601_to_ticks(&s).expect("parse"), ticks);
+    fn uacs_5_4_2_6_a_datetime_is_the_iso_8601_string_of_its_ticks() {
+        // (2026-06-14T12:34:56Z − 1601-01-01T00:00:00Z) × 10^7 + 7 654 321.
+        let ticks = 134_259_140_967_654_321;
+        assert_eq!(ticks_to_iso8601(ticks), "2026-06-14T12:34:56.7654321Z");
+        assert_eq!(
+            iso8601_to_ticks("2026-06-14T12:34:56.7654321Z").expect("parse"),
+            ticks
+        );
     }
 
+    /// OPC 10000-6 §5.4.2.7 and §5.1.3: a Guid is
+    /// `<Data1>-<Data2>-<Data3>-<Data4[0:1]>-<Data4[2:7]>` in hexadecimal,
+    /// the example of §5.1.3.
     #[test]
-    fn guid_round_trips() {
-        let g = Guid::from_bytes([
-            0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC, 0xDD,
-            0xEE, 0xFF,
-        ]);
-        assert_eq!(guid_from_string(&guid_to_string(&g)).expect("guid"), g);
+    fn uacs_5_1_3_a_guid_is_the_string_of_the_example() {
+        let g = Guid {
+            data1: 0xC496_578A,
+            data2: 0x0DFE,
+            data3: 0x4B8F,
+            data4: [0x87, 0x0A, 0x74, 0x52, 0x38, 0xC6, 0xAE, 0xAE],
+        };
+        assert_eq!(guid_to_string(&g), "C496578A-0DFE-4B8F-870A-745238C6AEAE");
+        assert_eq!(
+            guid_from_string("C496578A-0DFE-4B8F-870A-745238C6AEAE").expect("guid"),
+            g
+        );
     }
 
+    /// OPC 10000-6 Annex H.8, Table H.7 (the ReversibleEncoding, which
+    /// OPC 10000-14 Table 112 keeps as the deprecated
+    /// ReversibleFieldEncoding): `{"Type": <built-in type id>, "Body":
+    /// <value>}`, the value by §5.4.2: Boolean a literal, Int32 and Double
+    /// numbers, UInt64 a decimal string, String a string, ByteString
+    /// Base64, DateTime ISO 8601.
     #[test]
-    fn variant_reversible_round_trips_many_types() {
-        for v in [
-            VariantValue::Boolean(true),
-            VariantValue::Int32(-42),
-            VariantValue::UInt64(18_000_000_000_000_000_000),
-            VariantValue::Double(1.5),
-            VariantValue::String(String::from("héllo")),
-            VariantValue::ByteString(alloc::vec![1, 2, 3, 250]),
-            VariantValue::DateTime(132_000_000_000_000_000),
+    fn uacs_h_8_a_reversible_variant_is_type_and_body() {
+        for (v, expected) in [
+            (
+                VariantValue::Boolean(true),
+                serde_json::json!({"Type": 1, "Body": true}),
+            ),
+            (
+                VariantValue::Int32(-42),
+                serde_json::json!({"Type": 6, "Body": -42}),
+            ),
+            (
+                VariantValue::UInt64(18_000_000_000_000_000_000),
+                serde_json::json!({"Type": 9, "Body": "18000000000000000000"}),
+            ),
+            (
+                VariantValue::Double(1.5),
+                serde_json::json!({"Type": 11, "Body": 1.5}),
+            ),
+            (
+                VariantValue::String(String::from("héllo")),
+                serde_json::json!({"Type": 12, "Body": "héllo"}),
+            ),
+            (
+                VariantValue::ByteString(alloc::vec![1, 2, 3, 250]),
+                serde_json::json!({"Type": 15, "Body": "AQID+g=="}),
+            ),
+            (
+                VariantValue::DateTime(134_259_140_967_654_321),
+                serde_json::json!({"Type": 13, "Body": "2026-06-14T12:34:56.7654321Z"}),
+            ),
         ] {
             let variant = Variant::scalar(v.clone());
-            let json = variant_to_json(&variant);
-            let back = variant_from_json(&json).expect("variant");
-            assert_eq!(back, variant, "round trip failed for {v:?}");
+            assert_eq!(variant_to_json(&variant), expected, "{v:?}");
+            assert_eq!(variant_from_json(&expected).expect("variant"), variant);
         }
     }
 
+    /// OPC 10000-6 §5.4.2.4: NaN and the infinities are the JSON strings
+    /// "NaN", "Infinity" and "-Infinity".
     #[test]
-    fn special_floats_round_trip() {
-        for f in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+    fn uacs_5_4_2_4_special_floats_are_the_strings_nan_infinity_and_minus_infinity() {
+        for (f, word) in [
+            (f64::NAN, "NaN"),
+            (f64::INFINITY, "Infinity"),
+            (f64::NEG_INFINITY, "-Infinity"),
+        ] {
+            let expected = serde_json::json!({"Type": 11, "Body": word});
             let v = Variant::scalar(VariantValue::Double(f));
-            let back = variant_from_json(&variant_to_json(&v)).expect("f");
-            let VariantValue::Double(d) = back.value[0] else {
+            assert_eq!(variant_to_json(&v), expected);
+            let VariantValue::Double(d) = variant_from_json(&expected).expect("f").value[0] else {
                 panic!("double");
             };
-            assert_eq!(d.is_nan(), f.is_nan());
-            if !f.is_nan() {
-                assert_eq!(d, f);
-            }
+            assert_eq!(d.to_bits(), f.to_bits(), "{word}");
         }
     }
 
@@ -863,8 +902,13 @@ mod tests {
         }
     }
 
+    /// OPC 10000-14 §7.2.5.3 and §7.2.5.4: a NetworkMessage of
+    /// MessageType "ua-data" with MessageId, PublisherId and Messages; a
+    /// DataSetMessage with DataSetWriterId, SequenceNumber,
+    /// MetaDataVersion, Timestamp, MessageType "ua-keyframe" and the
+    /// Payload, its fields in the ReversibleFieldEncoding.
     #[test]
-    fn network_message_round_trips() {
+    fn uapubsub_7_2_5_a_network_message_carries_the_fields_of_7_2_5_3_and_7_2_5_4() {
         let nm = JsonNetworkMessage {
             message_id: String::from("msg-1"),
             publisher_id: Some(String::from("pub-1")),
@@ -876,7 +920,7 @@ mod tests {
                     major_version: 1,
                     minor_version: 0,
                 }),
-                timestamp: Some(132_000_000_000_000_000),
+                timestamp: Some(134_259_140_967_654_321),
                 status: None,
                 kind: DataSetMessageKind::KeyFrame,
                 payload: alloc::vec![
@@ -888,25 +932,51 @@ mod tests {
                 ],
             }],
         };
+        let expected = serde_json::json!({
+            "MessageId": "msg-1",
+            "MessageType": "ua-data",
+            "PublisherId": "pub-1",
+            "Messages": [{
+                "DataSetWriterId": 5,
+                "SequenceNumber": 7,
+                "MetaDataVersion": {"MajorVersion": 1, "MinorVersion": 0},
+                "Timestamp": "2026-06-14T12:34:56.7654321Z",
+                "MessageType": "ua-keyframe",
+                "Payload": {
+                    "temp": {"Type": 11, "Body": 21.5},
+                    "name": {"Type": 12, "Body": "sensor"}
+                }
+            }]
+        });
         let s = nm.to_json_string().expect("encode");
-        let back = JsonNetworkMessage::from_json_str(&s).expect("decode");
-        assert_eq!(back, nm);
+        let written: Value = serde_json::from_str(&s).expect("json");
+        assert_eq!(written, expected);
+        assert_eq!(
+            JsonNetworkMessage::from_json_str(&expected.to_string()).expect("decode"),
+            nm
+        );
     }
 
+    /// OPC 10000-6 Annex H (ReversibleEncoding) with §5.4.2.18: a field
+    /// with a status or timestamps is a DataValue object, the Variant
+    /// under "Value", the StatusCode a number (H.4), the timestamps ISO
+    /// 8601.
     #[test]
-    fn datavalue_payload_with_status_round_trips() {
+    fn uacs_5_4_2_18_a_data_value_field_is_value_status_and_timestamps() {
         let mut d = dv(VariantValue::Int32(7));
         d.status = Some(0x8000_0000);
-        d.source_timestamp = Some(132_000_000_000_000_000);
-        let v = payload_value_to_json(&d);
-        assert!(v.as_object().is_some_and(|o| o.contains_key("Value")));
-        let back = payload_value_from_json(&v).expect("dv");
-        assert_eq!(back.status, Some(0x8000_0000));
-        assert_eq!(back.source_timestamp, Some(132_000_000_000_000_000));
+        d.source_timestamp = Some(134_259_140_967_654_321);
+        let expected = serde_json::json!({
+            "Value": {"Type": 6, "Body": 7},
+            "Status": 2_147_483_648_u32,
+            "SourceTimestamp": "2026-06-14T12:34:56.7654321Z"
+        });
+        assert_eq!(payload_value_to_json(&d), expected);
+        assert_eq!(payload_value_from_json(&expected).expect("dv"), d);
     }
 
     #[test]
-    fn rejects_non_ua_data() {
+    fn uapubsub_7_2_5_rejects_non_ua_data() {
         let s = r#"{"MessageType":"ua-metadata","MessageId":"x"}"#;
         assert!(JsonNetworkMessage::from_json_str(s).is_err());
     }

@@ -106,7 +106,7 @@ cargo test -p zerodds-opcua-bridge --test daemon_e2e # 3 in-process e2e tests
 cargo test -p zerodds-opcua-bridge --test example_yaml_loadback
 ```
 
-The Part-14 e2e test (`dds_publish_reaches_an_in_tree_pubsub_subscriber`)
+The Part-14 e2e test (`opcuabridge_1_dds_publish_reaches_an_in_tree_pubsub_subscriber`)
 uses real UDP multicast; macOS loopback multicast is measured to be
 unreliable on this host family — the test reports plainly
 instead of asserting on a race if nothing arrives within its deadline.

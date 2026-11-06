@@ -46,7 +46,7 @@ fn sample(byte: u8) -> RawBytes {
 /// the topic gets the store the first one filled, not an empty one, and its
 /// samples take the places after the first writer's.
 #[test]
-fn the_store_outlives_the_writer_that_filled_it() {
+fn dcps_2_2_3_4_the_store_outlives_the_writer_that_filled_it() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("TransientAcrossWriters", TopicQos::default())
@@ -87,7 +87,7 @@ fn the_store_outlives_the_writer_that_filled_it() {
 /// more leaves the store once `service_cleanup_delay` has run out; before
 /// that it stays. With a delay of an hour it stays.
 #[test]
-fn a_disposed_unregistered_instance_stays_for_the_service_cleanup_delay() {
+fn dcps_2_2_3_4_a_disposed_unregistered_instance_stays_for_the_service_cleanup_delay() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("CleanupDelay", TopicQos::default())
@@ -146,7 +146,7 @@ fn a_disposed_unregistered_instance_stays_for_the_service_cleanup_delay() {
 /// (`autodispose_unregistered_instances` false) is not disposed, so the
 /// store keeps it.
 #[test]
-fn an_instance_that_is_not_disposed_stays() {
+fn dcps_2_2_3_4_an_instance_that_is_not_disposed_stays() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("NotDisposed", TopicQos::default())
@@ -174,7 +174,7 @@ fn an_instance_that_is_not_disposed_stays() {
 /// §2.2.3.16: a sample whose LIFESPAN has expired is removed from the
 /// transient information cache.
 #[test]
-fn an_expired_sample_leaves_the_store() {
+fn dcps_2_2_3_16_an_expired_sample_leaves_the_store() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("StoreLifespan", TopicQos::default())
@@ -200,7 +200,7 @@ fn an_expired_sample_leaves_the_store() {
 /// to dispose and unregister it does not start `service_cleanup_delay`; the
 /// last one does.
 #[test]
-fn the_cleanup_delay_waits_for_the_last_writer_of_the_instance() {
+fn dcps_2_2_3_4_the_cleanup_delay_waits_for_the_last_writer_of_the_instance() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("CleanupTwoWriters", TopicQos::default())
@@ -232,7 +232,7 @@ fn the_cleanup_delay_waits_for_the_last_writer_of_the_instance() {
 
 /// The same with a writer that is deleted instead of unregistering.
 #[test]
-fn a_deleted_writer_is_no_live_writer() {
+fn dcps_2_2_3_4_a_deleted_writer_is_no_live_writer() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("CleanupDeletedWriter", TopicQos::default())
@@ -307,7 +307,7 @@ fn kept_of_five(
 /// from the Topic QoS; the store of the topic follows the Topic's
 /// DURABILITY_SERVICE.
 #[test]
-fn the_store_follows_the_topics_durability_service() {
+fn dcps_2_2_3_4_the_store_follows_the_topics_durability_service() {
     // The Topic says KEEP_LAST(3); the writer leaves the default KEEP_LAST(1).
     assert_eq!(
         kept_of_five(
@@ -322,7 +322,7 @@ fn the_store_follows_the_topics_durability_service() {
 /// A Topic that leaves DURABILITY_SERVICE at the default leaves the setting
 /// to the writer: its value is the topic's in effect.
 #[test]
-fn a_default_topic_leaves_the_setting_to_the_writer() {
+fn dcps_2_2_3_4_a_default_topic_leaves_the_setting_to_the_writer() {
     assert_eq!(
         kept_of_five(
             "StoreWriterDepth",
@@ -337,7 +337,7 @@ fn a_default_topic_leaves_the_setting_to_the_writer() {
 /// overridden: the Topic's applies (§2.2.3.4: "has its QoS configured from
 /// the Topic QoS of the corresponding Topic").
 #[test]
-fn a_writer_that_differs_from_the_topic_is_overridden() {
+fn dcps_2_2_3_4_a_writer_that_differs_from_the_topic_is_overridden() {
     assert_eq!(
         kept_of_five("StoreOverridden", keep_last(4), keep_last(2)),
         4

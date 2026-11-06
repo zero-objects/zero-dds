@@ -47,7 +47,10 @@ fn capture_root() -> PathBuf {
 }
 
 fn hex_to_bytes(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "a hex datagram has an even length");
+    assert!(
+        s.len().is_multiple_of(2),
+        "a hex datagram has an even length"
+    );
     (0..s.len() / 2)
         .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())
         .collect()
@@ -239,7 +242,7 @@ fn hex(b: &[u8]) -> String {
 }
 
 #[test]
-fn every_client_datagram_decodes_and_writes_back() {
+fn xrce_7_7_every_client_datagram_decodes_and_writes_back() {
     let t = walk("client-to-agent.hex");
     assert_eq!(t.datagrams, 886, "the capture lost datagrams");
     assert_eq!(t.identical + t.padded, t.datagrams);
@@ -250,7 +253,7 @@ fn every_client_datagram_decodes_and_writes_back() {
 }
 
 #[test]
-fn every_agent_datagram_decodes_and_writes_back() {
+fn xrce_7_7_every_agent_datagram_decodes_and_writes_back() {
     let t = walk("agent-to-client.hex");
     assert_eq!(t.datagrams, 886, "the capture lost datagrams");
     assert_eq!(t.identical + t.padded, t.datagrams);

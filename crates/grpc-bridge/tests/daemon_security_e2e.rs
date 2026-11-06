@@ -51,14 +51,28 @@ struct Daemon {
     child: Child,
     port: u16,
     log: PathBuf,
+    /// The daemon's DDS domain, leased: the daemons of the tests run side
+    /// by side, and on one domain each reader of `T::Open` received what
+    /// every other test's daemon wrote (measured: ten Subscribe messages
+    /// for the one sample this test's Publish wrote).
+    domain: zerodds_test_domains::DomainLease,
+}
+
+/// `config` with the leased DDS domain in front and the listener port in.
+fn with_domain_and_port(config: &str, domain: i32, port: u16) -> String {
+    format!(
+        "domain: {domain}\n{}",
+        config.replace("PORT", &port.to_string())
+    )
 }
 
 impl Daemon {
     /// Starts the binary on `config` and waits for the listener.
     fn start(dir: &Path, config: &str) -> Self {
         let port = pick_port();
+        let domain = zerodds_test_domains::lease_domain();
         let path = dir.join("grpc-bridged.yaml");
-        std::fs::write(&path, config.replace("PORT", &port.to_string())).unwrap();
+        std::fs::write(&path, with_domain_and_port(config, domain.id(), port)).unwrap();
         let log = dir.join("daemon.log");
         let child = Command::new(env!("CARGO_BIN_EXE_zerodds-grpc-bridged"))
             .args(["--config", path.to_str().unwrap()])
@@ -66,7 +80,12 @@ impl Daemon {
             .stderr(std::fs::File::create(&log).unwrap())
             .spawn()
             .unwrap();
-        let d = Self { child, port, log };
+        let d = Self {
+            child,
+            port,
+            log,
+            domain,
+        };
         let deadline = Instant::now() + Duration::from_secs(10);
         while TcpStream::connect(("127.0.0.1", port)).is_err() {
             assert!(Instant::now() < deadline, "no listener: {}", d.log_text());
@@ -82,7 +101,7 @@ impl Daemon {
     fn rewrite(&self, dir: &Path, config: &str) {
         std::fs::write(
             dir.join("grpc-bridged.yaml"),
-            config.replace("PORT", &self.port.to_string()),
+            with_domain_and_port(config, self.domain.id(), self.port),
         )
         .unwrap();
     }
@@ -185,13 +204,15 @@ fn call<S: Read + Write>(
     let block = c.enc.encode(&fields);
     let s = &mut c.s;
     frame(s, FrameType::Headers, Flags::END_HEADERS, sid, &block);
-    // Sample { payload = "hi" } as one Length-Prefixed-Message.
+    // Sample { cdr_payload = 00 01 00 00 "hi" } as one Length-Prefixed-
+    // Message: the encapsulation header (XCDR1, little endian) and the CDR
+    // bytes (spec §4.4).
     frame(
         s,
         FrameType::Data,
         Flags::END_STREAM,
         sid,
-        &[0, 0, 0, 0, 4, 0x0a, 2, b'h', b'i'],
+        &[0, 0, 0, 0, 8, 0x0a, 6, 0, 1, 0, 0, b'h', b'i'],
     );
     let dec = &mut c.dec;
     let mut data = 0usize;
@@ -211,6 +232,84 @@ fn call<S: Read + Write>(
             }
         }
     }
+}
+
+/// Opens a `Subscribe` stream on `service` (spec §4.3, a server stream) and
+/// returns once the daemon answered with the response HEADERS: from then on
+/// the stream's own DataReader exists.
+fn subscribe_open<S: Read + Write>(
+    c: &mut H2<S>,
+    sid: u32,
+    service: &str,
+    authorization: Option<&str>,
+) {
+    let mut headers = vec![
+        (":method", "POST".to_string()),
+        (":scheme", "http".to_string()),
+        (":path", format!("/zerodds.t.v1.{service}/Subscribe")),
+        ("content-type", "application/grpc+proto".to_string()),
+    ];
+    if let Some(a) = authorization {
+        headers.push(("authorization", a.to_string()));
+    }
+    let fields: Vec<HeaderField> = headers
+        .into_iter()
+        .map(|(n, v)| HeaderField {
+            name: n.into(),
+            value: v,
+        })
+        .collect();
+    let block = c.enc.encode(&fields);
+    frame(
+        &mut c.s,
+        FrameType::Headers,
+        Flags::END_HEADERS | Flags::END_STREAM,
+        sid,
+        &block,
+    );
+    loop {
+        let (typ, p) = read_frame(&mut c.s);
+        if typ == FrameType::Headers as u8 {
+            let fields = c.dec.decode(&p).unwrap();
+            if let Some(st) = fields.iter().find(|f| f.name == "grpc-status") {
+                panic!(
+                    "Subscribe answered grpc-status {} instead of a stream",
+                    st.value
+                );
+            }
+            return;
+        }
+    }
+}
+
+/// The length of the first message frame of the open stream `sid`; then
+/// the client cancels the stream with RST_STREAM(CANCEL).
+fn first_message<S: Read + Write>(c: &mut H2<S>, sid: u32) -> usize {
+    loop {
+        let (typ, p) = read_frame(&mut c.s);
+        if typ == FrameType::Data as u8 {
+            frame(&mut c.s, FrameType::RstStream, 0, sid, &8u32.to_be_bytes());
+            return p.len();
+        }
+        if typ == FrameType::Headers as u8 {
+            let fields = c.dec.decode(&p).unwrap();
+            if let Some(st) = fields.iter().find(|f| f.name == "grpc-status") {
+                panic!(
+                    "Subscribe ended with grpc-status {} before a message",
+                    st.value
+                );
+            }
+        }
+    }
+}
+
+fn read_frame(s: &mut impl Read) -> (u8, Vec<u8>) {
+    let mut h = [0u8; 9];
+    s.read_exact(&mut h).expect("a response frame");
+    let len = (usize::from(h[0]) << 16) | (usize::from(h[1]) << 8) | usize::from(h[2]);
+    let mut p = vec![0u8; len];
+    s.read_exact(&mut p).unwrap();
+    (h[3], p)
 }
 
 /// One unary call `Publish` on `service`: the `grpc-status` of the
@@ -254,7 +353,7 @@ fn bearer_config(token: &str) -> String {
 /// the right one passes on the topic alice may publish and is
 /// PERMISSION_DENIED on the one only bob may.
 #[test]
-fn bearer_and_acl_are_checked_per_call() {
+fn grpcbridge_7_2_bearer_and_acl_are_checked_per_call() {
     let dir = temp_dir("bearer");
     let d = Daemon::start(&dir, &bearer_config("tk-1"));
     assert_eq!(tcp_publish(&d, "OpenStream", None), UNAUTHENTICATED);
@@ -271,7 +370,7 @@ fn bearer_and_acl_are_checked_per_call() {
 
 /// §9.2: SIGHUP applies a new token; a file that does not load keeps it.
 #[test]
-fn a_sighup_applies_the_new_token_and_a_broken_file_keeps_it() {
+fn grpcbridge_9_2_a_sighup_applies_the_new_token_and_a_broken_file_keeps_it() {
     let dir = temp_dir("reload");
     let d = Daemon::start(&dir, &bearer_config("tk-1"));
     assert_eq!(tcp_publish(&d, "OpenStream", Some("Bearer tk-1")), OK);
@@ -290,7 +389,7 @@ fn a_sighup_applies_the_new_token_and_a_broken_file_keeps_it() {
 /// A setting that cannot be served stops the start instead of being
 /// ignored.
 #[test]
-fn jwt_without_a_key_and_mtls_without_tls_do_not_start() {
+fn grpcbridge_7_2_jwt_without_a_key_and_mtls_without_tls_do_not_start() {
     for (config, expect) in [
         ("auth:\n  mode: jwt\n", "auth.jwt.public_key"),
         ("auth:\n  mode: mtls\n", "grpc.tls.client_ca_file"),
@@ -390,7 +489,7 @@ fn tls_client(
 /// is authenticated and PERMISSION_DENIED; without a certificate the
 /// handshake fails (`require_client_cert: true`).
 #[test]
-fn mtls_serves_h2_and_the_certificate_is_the_subject() {
+fn grpcbridge_7_1_mtls_serves_h2_and_the_certificate_is_the_subject() {
     let dir = temp_dir("mtls");
     let pki = Pki::new();
     let (_, server_pem, server_key, _) = pki.leaf("localhost", &["localhost"]);
@@ -431,7 +530,7 @@ auth:\n  mode: mtls\ntopics:\n  - dds_name: \"T::Open\"\n    grpc_service: OpenS
 
 /// §7.1 SIGHUP: a new server certificate serves the next connection.
 #[test]
-fn a_sighup_serves_the_next_connection_with_the_new_certificate() {
+fn grpcbridge_7_1_a_sighup_serves_the_next_connection_with_the_new_certificate() {
     let dir = temp_dir("rotate");
     let old = Pki::new();
     let new = Pki::new();
@@ -517,7 +616,7 @@ fn jwt(pkcs8: &[u8], payload: &str) -> String {
 /// claim is the subject for the ACL; an expired token, a foreign audience
 /// or a missing scope is UNAUTHENTICATED.
 #[test]
-fn jwt_checks_signature_time_audience_and_scope() {
+fn grpcbridge_7_2_jwt_checks_signature_time_audience_and_scope() {
     let dir = temp_dir("jwt");
     let (pkcs8, pem) = rsa_key(&dir);
     std::fs::write(dir.join("jwt.pub"), pem).unwrap();
@@ -575,7 +674,7 @@ fn metric(body: &str, series: &str) -> Option<f64> {
 /// calls did — status per call, auth failures by reason, a RST_STREAM by
 /// its error code, and (with the DDS side) the samples of a topic.
 #[test]
-fn the_metrics_of_section_8_2_count_calls_failures_and_resets() {
+fn grpcbridge_8_2_the_metrics_of_section_8_2_count_calls_failures_and_resets() {
     let dir = temp_dir("metrics");
     let admin = pick_port();
     let config = format!(
@@ -583,6 +682,10 @@ fn the_metrics_of_section_8_2_count_calls_failures_and_resets() {
         bearer_config("tk-m")
     );
     let d = Daemon::start(&dir, &config);
+    // A Subscribe stream (spec §4.3), open before anything is published: its
+    // own DataReader receives what the Publish below writes.
+    let mut sub = open(d.tcp());
+    subscribe_open(&mut sub, 1, "OpenStream", Some("Bearer tk-m"));
     let mut s = open(d.tcp());
     assert_eq!(
         call(&mut s, 1, "OpenStream", "Publish", Some("Bearer tk-m")).0,
@@ -607,16 +710,15 @@ fn the_metrics_of_section_8_2_count_calls_failures_and_resets() {
         call(&mut s, 11, "NoSuchStream", "Publish", Some("Bearer tk-m")).0,
         5
     );
-    // With the DDS side, a Subscribe takes what Publish wrote.
-    let mut received = 0usize;
-    let mut sid = 13;
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while received == 0 && Instant::now() < deadline {
-        received = call(&mut s, sid, "OpenStream", "Subscribe", Some("Bearer tk-m")).1;
-        sid += 2;
-        std::thread::sleep(Duration::from_millis(50));
-    }
+    // The Subscribe stream carries what Publish wrote; the client cancels it
+    // after the first message, and a call behind the reset on the same
+    // connection answers once the reset has been read.
+    let received = first_message(&mut sub, 1);
     assert!(received > 0, "no sample reached Subscribe");
+    assert_eq!(
+        call(&mut sub, 3, "NoSuchStream", "Publish", Some("Bearer tk-m")).0,
+        5
+    );
     let body = scrape(admin);
     let v = |series: &str| metric(&body, series).unwrap_or_else(|| panic!("{series}\n{body}"));
     assert_eq!(
@@ -639,7 +741,7 @@ fn the_metrics_of_section_8_2_count_calls_failures_and_resets() {
         v(
             r#"zerodds_grpc_bridge_rpcs_total{method="Publish",service="unknown",status="NOT_FOUND"}"#
         ),
-        1.0
+        2.0
     );
     assert_eq!(
         v(r#"zerodds_grpc_bridge_auth_failures_total{reason="missing"}"#),
@@ -649,9 +751,10 @@ fn the_metrics_of_section_8_2_count_calls_failures_and_resets() {
         v(r#"zerodds_grpc_bridge_auth_failures_total{reason="rejected"}"#),
         1.0
     );
+    // The reset above and the cancel of the Subscribe stream.
     assert_eq!(
         v(r#"zerodds_grpc_bridge_h2_resets_total{error_code="CANCEL"}"#),
-        1.0
+        2.0
     );
     assert_eq!(
         v(r#"zerodds_grpc_bridge_messages_in_total{dds_topic="T::Open"}"#),
@@ -659,7 +762,7 @@ fn the_metrics_of_section_8_2_count_calls_failures_and_resets() {
     );
     assert_eq!(
         v(r#"zerodds_grpc_bridge_bytes_in_total{dds_topic="T::Open"}"#),
-        9.0
+        13.0
     );
     assert_eq!(
         v(r#"zerodds_grpc_bridge_streams_active{service="OpenStream"}"#),
@@ -686,7 +789,7 @@ fn the_metrics_of_section_8_2_count_calls_failures_and_resets() {
 /// exits 0. Before, the connection thread sat in a 5 s read and the client
 /// saw a plain EOF.
 #[test]
-fn sigterm_sends_goaway_with_the_last_stream_and_exits_0() {
+fn grpcbridge_9_2_sigterm_sends_goaway_with_the_last_stream_and_exits_0() {
     let dir = temp_dir("goaway");
     let mut d = Daemon::start(&dir, &bearer_config("tk-g"));
     let mut c = open(d.tcp());

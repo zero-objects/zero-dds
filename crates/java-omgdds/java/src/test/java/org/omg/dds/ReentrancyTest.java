@@ -142,7 +142,7 @@ class ReentrancyTest {
     }
 
     @Test
-    void aCallbackDoesNotHoldTheReaderMonitor() throws Exception {
+    void javapsm_7_2_4_a_callback_does_not_hold_the_reader_monitor() throws Exception {
         DataWriter<Reading> writer = Qos.writer(participant.createPublisher(), topic, SUPPORT);
         DataReader<Reading> reader = Qos.reader(participant.createSubscriber(), topic, SUPPORT);
         BlockingReaderListener listener = new BlockingReaderListener();
@@ -170,7 +170,7 @@ class ReentrancyTest {
     }
 
     @Test
-    void aCallbackDoesNotHoldTheWriterMonitor() throws Exception {
+    void javapsm_7_2_4_a_callback_does_not_hold_the_writer_monitor() throws Exception {
         DataWriter<Reading> writer = Qos.writer(participant.createPublisher(), topic, SUPPORT);
         DataReader<Reading> reader = Qos.reader(participant.createSubscriber(), topic, SUPPORT, Qos.readerKeepAll());
         BlockingReaderListener listener = new BlockingReaderListener();
@@ -204,7 +204,7 @@ class ReentrancyTest {
     }
 
     @Test
-    void concurrentEnableRegistersTheEndpointOnce() throws Exception {
+    void javapsm_7_2_4_concurrent_enable_registers_the_endpoint_once() throws Exception {
         DataWriterImpl<Reading> writer = new DataWriterImpl<>(DOMAIN, null, topic, SUPPORT,
                 Qos.writer(), java.util.Set.of());
         int threads = 8;

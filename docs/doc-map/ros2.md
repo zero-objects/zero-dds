@@ -204,7 +204,7 @@ Exit-Codes: 0 bei Erfolg, 1 bei Aufruf- oder Konfigurationsfehlern, 5 bei `docto
 
 Verteilung: deb-Paket `zerodds-ros2` mit `/usr/bin/zerodds-ros2-shim`, `/usr/share/zerodds/configs/ros2.yaml.example`, `man 1 zerodds-ros2-shim` und `man 5 zerodds-ros2.yaml` (`packaging/linux/deb/assemble-debs.sh:152-163`). Außerdem im Docker-Image `packaging/docker/ros2-shim/Dockerfile` (Default-Kommando `doctor`) und in `packaging/docker/cli/Dockerfile`. Es gibt keine systemd-Unit und keine launchd-Plist (`tools/traceability/tests/deployment_layout.rs::the_ros2_diagnostics_cli_is_not_installed_as_a_service`).
 
-RMW-Paket: `ros-<distro>-rmw-zerodds-cpp` (`packaging/linux/deb/build-rmw-deb.sh`, `--distro`, Standard jazzy) installiert in `/opt/ros/<distro>`: `lib/librmw_zerodds_cpp.so`, die beiden von ihm per DT_NEEDED und RPATH `$ORIGIN` aufgelösten Bibliotheken `lib/librmw_zerodds.so` und `lib/libzerodds.so`, `include/rmw_zerodds_cpp/*.h`, die ament-Index-Einträge unter `share/ament_index/resource_index/{packages,rmw_typesupport}/rmw_zerodds_cpp` und `share/rmw_zerodds_cpp/package.xml` samt CMake-Dateien. Die Dateiliste erzeugt allein `cmake --install` des ament-Projekts (wie `zerodds-dev` in `assemble-debs.sh`); Maintainer-Skripte gibt es nicht, denn es ist eine Bibliothek und kein Daemon. Unterstützte Distros sind `humble jazzy kilted rolling`; der wöchentliche Job `ci/full.yml::ros-rmw-deb` läuft als Matrix einmal pro Distro (Images `ros:humble-ros-base-jammy`, `ros:jazzy-ros-base-noble`, `ros:kilted-ros-base-noble`, `ros:rolling-ros-base`), prüft die Dateiliste des `.deb`, installiert es mit `dpkg -i`, lässt rcl es über `RMW_IMPLEMENTATION` laden und tauscht danach mit `packaging/linux/deb/rmw-pubsub-check.py` in zwei Prozessen `std_msgs/String` „0“…„19“. Danach prüft `packaging/linux/deb/rmw-type-hash-check.py` den Typ-Hash (`typehash=RIHS01_…;` in USER_DATA), den ein zweiter Prozess liest, gegen das Paket selbst und in beiden Richtungen gegen `rmw_fastrtps_cpp` (nicht auf Humble, das keine Typ-Hashes kennt), und auf Rolling `packaging/linux/deb/rmw-service-info-check.py` Server und Clients eines Service.
+RMW-Paket: `ros-<distro>-rmw-zerodds-cpp` (`packaging/linux/deb/build-rmw-deb.sh`, `--distro`, Standard jazzy) installiert in `/opt/ros/<distro>`: `lib/librmw_zerodds_cpp.so`, die beiden von ihm per DT_NEEDED und RPATH `$ORIGIN` aufgelösten Bibliotheken `lib/librmw_zerodds.so` und `lib/libzerodds.so`, `include/rmw_zerodds_cpp/*.h`, die ament-Index-Einträge unter `share/ament_index/resource_index/{packages,rmw_typesupport}/rmw_zerodds_cpp` und `share/rmw_zerodds_cpp/package.xml` samt CMake-Dateien. Die Dateiliste erzeugt allein `cmake --install` des ament-Projekts (wie `zerodds-dev` in `assemble-debs.sh`); Maintainer-Skripte gibt es nicht, denn es ist eine Bibliothek und kein Daemon. Unterstützte Distros sind `humble jazzy kilted rolling`; der Release-Kandidaten-Job `ci/release-candidate.yml::ros-rmw-deb` läuft als Matrix einmal pro Distro (Images `ros:humble-ros-base-jammy`, `ros:jazzy-ros-base-noble`, `ros:kilted-ros-base-noble`, `ros:rolling-ros-base`), prüft die Dateiliste des `.deb`, installiert es mit `dpkg -i`, lässt rcl es über `RMW_IMPLEMENTATION` laden und tauscht danach mit `packaging/linux/deb/rmw-pubsub-check.py` in zwei Prozessen `std_msgs/String` „0“…„19“. Danach prüft `packaging/linux/deb/rmw-type-hash-check.py` den Typ-Hash (`typehash=RIHS01_…;` in USER_DATA), den ein zweiter Prozess liest, gegen das Paket selbst und in beiden Richtungen gegen `rmw_fastrtps_cpp` (nicht auf Humble, das keine Typ-Hashes kennt), und auf Rolling `packaging/linux/deb/rmw-service-info-check.py` Server und Clients eines Service.
 
 ## Gemessene Interop
 
@@ -233,8 +233,8 @@ Serialisierung von ROS-Typen im Byte-Vergleich mit `rosidl_typesupport_fastrtps_
 
 Rust-Tests (Anzahl der `#[test]`-Attribute gezählt, nicht ausgeführt):
 
-- `rmw-zerodds-shim`: `src/lib.rs` 24, `src/ros2_config.rs` 7, `src/qos.rs` 4, `src/services.rs` 3, `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs` 16, `crates/rmw-zerodds-shim/tests/ros2_ext_surface.rs` 4.
-- `zerodds-ros2-rmw`: 81 in `src/`, dazu 4 in `tests/cross_vendor.rs`. Davon sind die Tests mit ROS-Installation `#[ignore]`.
+- `rmw-zerodds-shim`: `src/lib.rs` 13, `src/dynamic.rs` 20, `src/dynamic/collection_default.rs` 18, `src/spatial_bridge.rs` 11, `src/ros2_config.rs` 8, `src/qos.rs` 4, `src/services.rs` 3, `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs` 16, `crates/rmw-zerodds-shim/tests/ros2_ext_surface.rs` 4, die Verträge `tests/contract_*.rs` 47, `tests/spatial_bridge_*.rs` 5.
+- `zerodds-ros2-rmw`: 32 in `src/`; keiner braucht eine ROS-Installation.
 - `zerodds-spatial-ros2`: 7 in `crates/spatial-ros2/tests/mapping.rs`.
 
 ## Funktion | Stand | Beleg
@@ -256,7 +256,7 @@ Rust-Tests (Anzahl der `#[test]`-Attribute gezählt, nicht ausgeführt):
 | REP-2007/2008/2009-Erweiterungen | umgesetzt; Runner vorhanden, Ergebnis nicht notiert | `rmw_zerodds_ros2_ext.h`; `crates/rmw-zerodds-shim/tests/ros2_ext_surface.rs` |
 | Diagnose-CLI | umgesetzt, 16 CLI-Tests | `src/bin/zerodds-ros2-shim.rs`; `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs` |
 | Prometheus-Metriken, OTLP-Spans im rmw-Pfad | offen (laut Doku) | `docs/spec-coverage/zerodds-ros2-bridge-1.0.open.md` |
-| Paket `ros-<distro>-rmw-zerodds-cpp`, Image mit RMW | umgesetzt, nicht gelaufen | `packaging/linux/deb/build-rmw-deb.sh`; `ci/full.yml::ros-rmw-deb`; `packaging/docker/ros2-shim/Dockerfile`; Tests in `crates/rmw-zerodds-shim/tests/ros2_deb_package.rs` |
+| Paket `ros-<distro>-rmw-zerodds-cpp`, Image mit RMW | Paket umgesetzt und auf `main` gelaufen (Pipeline 8827, vier Distros grün), Image nicht gebaut | `packaging/linux/deb/build-rmw-deb.sh`; `ci/release-candidate.yml::ros-rmw-deb`; `packaging/docker/ros2-shim/Dockerfile` |
 | Konfigurationsdatei pro Node oder ohne root | `--config`/`--set` auf der Kommandozeile des Knotens | `rmw_c/run_ros2_config_test.sh` 5e–5g, Linux-Testhost Humble gegen rmw_cyclonedds_cpp |
 | CI für Humble/Iron/Jazzy | Job definiert, nicht eingebunden | `ci/jobs/rmw-distro-build.yml`; `git grep rmw-distro` |
 | SpatialDDS↔ROS-2-Konvertierung | umgesetzt, nur Unit-Tests; keine Live-Kommunikation belegt | `crates/spatial-ros2/src/convert.rs`; `crates/spatial-ros2/tests/mapping.rs` |
@@ -265,7 +265,7 @@ Rust-Tests (Anzahl der `#[test]`-Attribute gezählt, nicht ausgeführt):
 
 Aus `internal/release/OPEN-ITEMS.md` und dem Code:
 
-- Kein rpm-Paket führt `librmw_zerodds_cpp.so`; das deb-Paket `ros-<distro>-rmw-zerodds-cpp` und das Image, das es installiert, sind gebaut, aber nicht gelaufen: der wöchentliche Job `ci/full.yml::ros-rmw-deb` ist nie gelaufen, das Image ist nicht gebaut (A18).
+- Kein rpm-Paket führt `librmw_zerodds_cpp.so`; das Image, das das deb-Paket `ros-<distro>-rmw-zerodds-cpp` installiert, ist nicht gebaut (A18).
 - SROS2 fehlt im Standard-Build (Feature `security`).
 - Kein belegter Lauf für Iron, Jazzy und Rolling; macOS und Windows werden vom Build-Skript nicht abgedeckt.
 - Prometheus-Zähler und OTLP-Spans im rmw-Pfad fehlen (laut Doku).

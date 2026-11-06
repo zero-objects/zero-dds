@@ -26,11 +26,3 @@
 
 #![deny(unsafe_code)]
 #![warn(missing_docs)]
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles() {
-        // Smoke test: crate compiles and the test harness runs.
-    }
-}

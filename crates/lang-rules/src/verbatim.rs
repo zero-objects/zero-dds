@@ -42,7 +42,8 @@
 //!   `begin` slot (`BEGIN_FILE`/`END_FILE` keep their file meaning):
 //!   the four columns declare an aggregate's body as one node, and the
 //!   inside of that body is the position the tree can express today.
-//!   `docs/OPEN-ITEMS.md` records exact member positioning as open.
+//!   `internal/release/OPEN-ITEMS.md` records exact member positioning as
+//!   open.
 
 use zerodds_ast::{Ast, TypeKind, TypeNode, VerbatimPlacement};
 use zerodds_ast_core::Id;
@@ -405,7 +406,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_wildcard_concerns_every_backend_and_names_compare_caselessly() {
+    fn ddsts_9_1_the_wildcard_concerns_every_backend_and_names_compare_caselessly() {
         assert!(language_matches("*", aliases::C));
         assert!(language_matches("C++", aliases::CPP));
         assert!(language_matches("CPP", aliases::CPP));
@@ -440,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn every_placement_lands_in_its_own_slot() {
+    fn ddsts_9_2_every_placement_lands_in_its_own_slot() {
         let ast = model(
             "@verbatim(language = \"c\", placement = BEGIN_FILE, text = \"#include <a.h>\")
              @verbatim(language = \"c\", placement = BEFORE_DECLARATION, text = \"/* b */\")
@@ -466,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn a_directive_for_another_language_is_left_to_that_backend() {
+    fn xtypes_7_2_2_4_8_1_a_directive_for_another_language_is_left_to_that_backend() {
         let ast = model(
             "@verbatim(language = \"java\", text = \"// java only\")
              @verbatim(text = \"// everyone\")
@@ -479,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn a_member_directive_is_hoisted_into_the_aggregate_and_taken_once() {
+    fn xtypes_7_3_1_2_2_a_member_directive_is_hoisted_into_the_aggregate_and_taken_once() {
         let ast = model(
             "struct S {
                  @verbatim(language = \"c++\", placement = BEFORE_DECLARATION, text = \"// m\")

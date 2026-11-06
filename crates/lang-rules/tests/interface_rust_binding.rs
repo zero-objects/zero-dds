@@ -32,7 +32,7 @@ fn rust(idl: &str) -> String {
 /// §7.10.1: `@Qos(RequestProfile, ReplyProfile)` is read from the
 /// interface and the binding offers the constructors that apply it.
 #[test]
-fn the_qos_the_interface_declares_is_applied_by_a_constructor() {
+fn rpc_7_10_1_the_qos_the_interface_declares_is_applied_by_a_constructor() {
     let out = rust(
         r#"module demo {
              @Qos(RequestProfile = "file:///etc/rpc/qos.xml#Calc", ReplyProfile = "file:///etc/rpc/reply.xml#Calc")

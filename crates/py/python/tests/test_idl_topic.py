@@ -29,7 +29,7 @@ def descriptors():
     return mod.ZD_TOPIC_DESCRIPTORS
 
 
-def test_idl_topic_rejects_a_non_topic_descriptor():
+def py_1_3_2_idl_topic_rejects_a_non_topic_descriptor():
     """§6.1 — IdlTopic requires a generated TopicDescriptor."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(260)
@@ -37,7 +37,7 @@ def test_idl_topic_rejects_a_non_topic_descriptor():
         IdlTopic(p, "BadTopic", object())
 
 
-def test_idl_topic_exposes_type_name_from_the_descriptor(descriptors):
+def py_1_3_2_idl_topic_exposes_type_name_from_the_descriptor(descriptors):
     """§6.1 — the topic type name comes from the generated descriptor."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(261)
@@ -48,7 +48,7 @@ def test_idl_topic_exposes_type_name_from_the_descriptor(descriptors):
     assert topic.cls is descriptor.cls
 
 
-def test_idl_writer_encodes_and_reader_decodes_roundtrip(descriptors):
+def py_1_3_2_idl_writer_encodes_and_reader_decodes_roundtrip(descriptors):
     """§6.1 + §3.3 — IdlWriter.write → BytesWriter; IdlReader.take()
     decodes byte-exactly into a new instance."""
     factory = zerodds.DomainParticipantFactory.instance()
@@ -62,7 +62,7 @@ def test_idl_writer_encodes_and_reader_decodes_roundtrip(descriptors):
     assert reader.take() == []
 
 
-def test_idl_writer_rejects_wrong_type(descriptors):
+def py_1_3_2_idl_writer_rejects_wrong_type(descriptors):
     """§6.1 — the generated descriptor's own sample check rejects the wrong type."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(263)
@@ -73,7 +73,7 @@ def test_idl_writer_rejects_wrong_type(descriptors):
         writer.write(Temperature(celsius=0, sensor_id="X"))
 
 
-def test_idl_writer_passthrough_status(descriptors):
+def py_1_3_2_idl_writer_passthrough_status(descriptors):
     """§6.1 — status getters are passed through (DDS 1.4 §2.2.4)."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(264)

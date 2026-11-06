@@ -400,7 +400,7 @@ mod tests {
     /// built by hand: DELIMITED_CDR, little-endian, `MAXALIGN` four.
     fn hand_built_v2(event: &sec_log::BuiltinLoggingTypeV2) -> Vec<u8> {
         fn align4(b: &mut Vec<u8>) {
-            while b.len() % 4 != 0 {
+            while !b.len().is_multiple_of(4) {
                 b.push(0);
             }
         }
@@ -458,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn the_v2_codec_writes_the_idl_octets() {
+    fn security_10_6_the_v2_codec_writes_the_idl_octets() {
         let event = sample();
         let expected = hand_built_v2(&event);
         let mut got = Vec::new();
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn the_v2_codec_round_trips() {
+    fn security_10_6_the_v2_codec_round_trips() {
         let event = sample();
         let mut bytes = Vec::new();
         event.encode(&mut bytes).unwrap();
@@ -481,7 +481,7 @@ mod tests {
     }
 
     #[test]
-    fn the_type_names_are_the_idl_names() {
+    fn security_10_6_the_type_names_are_the_idl_names() {
         assert_eq!(
             <sec_log::BuiltinLoggingTypeV2 as DdsType>::TYPE_NAME,
             "BuiltinLoggingTypeV2"
@@ -501,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_severity_is_refused_not_guessed() {
+    fn security_10_6_an_unknown_severity_is_refused_not_guessed() {
         let event = sample();
         let mut bytes = Vec::new();
         event.encode(&mut bytes).unwrap();
@@ -513,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn the_publisher_inserts_the_domain_id_pair() {
+    fn security_9_6_2_2_2_the_publisher_inserts_the_domain_id_pair() {
         let mut event = sample();
         add_domain_id(&mut event.structured_data, 7);
         let dds = event.structured_data.get("DDS").expect("DDS");
@@ -526,7 +526,7 @@ mod tests {
     }
 
     #[test]
-    fn the_legacy_codec_round_trips_with_a_32_bit_second() {
+    fn security_10_6_the_legacy_codec_round_trips_with_a_32_bit_second() {
         let event = sec_log::BuiltinLoggingType {
             facility: sec_log::FACILITY_SEC_AUTH,
             severity: LoggingLevel::Warning,
@@ -548,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reader_skips_unknown_trailing_member_octets() {
+    fn security_10_6_a_reader_skips_unknown_trailing_member_octets() {
         // An `@appendable` writer one version ahead put four extra octets
         // inside the record; the reader must step over them rather than read
         // them as the next member.

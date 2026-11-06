@@ -372,10 +372,10 @@ impl ReliableStreamState {
             let seq = base.next().0.wrapping_sub(1).wrapping_add(i);
             let s = SerialNumber16::new(seq);
             // skip if > hint_last_seen
-            if let Some(h) = hint_last_seen {
-                if s.wrapping_gt(h) {
-                    continue;
-                }
+            if let Some(h) = hint_last_seen
+                && s.wrapping_gt(h)
+            {
+                continue;
             }
             // missing if not in the received buffer
             if !self.received.contains_key(&seq) {
@@ -410,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_assigns_monotonic_seqnrs() {
+    fn xrce_8_4_14_1_submit_assigns_monotonic_seqnrs() {
         let mut s = rs();
         let s0 = s.submit(alloc::vec![1, 2]).unwrap();
         let s1 = s.submit(alloc::vec![3, 4]).unwrap();
@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_rejects_payload_too_large() {
+    fn reliable_3_1_submit_rejects_payload_too_large() {
         let mut s = rs();
         let huge = alloc::vec![0u8; RELIABLE_MAX_PAYLOAD + 1];
         assert!(matches!(
@@ -430,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn submit_rejects_when_window_full() {
+    fn reliable_3_1_submit_rejects_when_window_full() {
         let mut s = rs();
         for _ in 0..SENDER_WINDOW_CAP {
             s.submit(alloc::vec![0]).unwrap();
@@ -439,7 +439,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_heartbeat_fires_first_time() {
+    fn xrce_8_3_5_12_pending_heartbeat_fires_first_time() {
         let mut s = rs();
         s.submit(alloc::vec![1]).unwrap();
         let hb = s.pending_heartbeat(Duration::from_secs(0));
@@ -451,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_heartbeat_silenced_until_period_elapsed() {
+    fn xrce_8_4_14_1_pending_heartbeat_silenced_until_period_elapsed() {
         let mut s = rs();
         s.submit(alloc::vec![1]).unwrap();
         assert!(s.pending_heartbeat(Duration::from_millis(0)).is_some());
@@ -462,13 +462,13 @@ mod tests {
     }
 
     #[test]
-    fn pending_heartbeat_none_when_window_empty() {
+    fn xrce_8_4_14_1_pending_heartbeat_none_when_window_empty() {
         let mut s = rs();
         assert!(s.pending_heartbeat(Duration::from_secs(0)).is_none());
     }
 
     #[test]
-    fn recv_acknack_clears_acked_seqnrs() {
+    fn xrce_8_3_5_11_recv_acknack_clears_acked_seqnrs() {
         let mut s = rs();
         s.submit(alloc::vec![0xA0]).unwrap(); // seq 0
         s.submit(alloc::vec![0xA1]).unwrap(); // seq 1
@@ -487,7 +487,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_acknack_full_clear_when_no_bits_set() {
+    fn reliable_3_2_recv_acknack_full_clear_when_no_bits_set() {
         let mut s = rs();
         for _ in 0..5 {
             s.submit(alloc::vec![0]).unwrap();
@@ -503,7 +503,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_data_buffers_in_order() {
+    fn xrce_8_4_14_2_recv_data_buffers_in_order() {
         let mut s = rs();
         s.recv_data(SerialNumber16::new(0), alloc::vec![10])
             .unwrap();
@@ -517,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_data_reorders_out_of_order() {
+    fn xrce_8_3_2_3_recv_data_reorders_out_of_order() {
         let mut s = rs();
         s.recv_data(SerialNumber16::new(2), alloc::vec![22])
             .unwrap();
@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_data_drops_duplicates() {
+    fn xrce_8_3_2_3_recv_data_drops_duplicates() {
         let mut s = rs();
         s.recv_data(SerialNumber16::new(0), alloc::vec![1]).unwrap();
         s.drain_in_order();
@@ -548,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_data_rejects_when_buffer_full() {
+    fn reliable_3_1_recv_data_rejects_when_buffer_full() {
         let mut s = rs();
         // Buffer with 64 OOO samples (seq 1..=64 → expected is 0)
         for i in 1..=RECEIVER_BUFFER_CAP as u16 {
@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn pending_acknack_marks_missing_slots() {
+    fn xrce_8_3_5_11_pending_acknack_marks_missing_slots() {
         let mut s = rs();
         // expected=0; we get seq 1 + 3 → 0 and 2 missing
         s.recv_data(SerialNumber16::new(1), alloc::vec![1]).unwrap();
@@ -614,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_clears_state_completely() {
+    fn xrce_8_3_5_13_reset_clears_state_completely() {
         let mut s = rs();
         s.submit(alloc::vec![1, 2]).unwrap();
         s.recv_data(SerialNumber16::new(0), alloc::vec![3]).unwrap();
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "reliable stream id")]
-    fn constructor_panics_on_best_effort_stream() {
+    fn xrce_8_4_14_constructor_panics_on_best_effort_stream() {
         let _ = ReliableStreamState::new(StreamId(1), ReliableConfig::default());
     }
 
@@ -643,7 +643,7 @@ mod tests {
     /// 5. Sender resends seq=1, receiver can
     ///    deliver all 3 samples via drain_in_order.
     #[test]
-    fn end_to_end_sender_receiver_with_loss_recovery() {
+    fn xrce_8_3_5_11_end_to_end_sender_receiver_with_loss_recovery() {
         let mut sender = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
         let mut receiver = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
 
@@ -694,7 +694,7 @@ mod tests {
     /// reported `first=0x0000, last=0xFFFF` (asserted here as the *wrong*
     /// reference values, so the regression stays visible).
     #[test]
-    fn heartbeat_window_across_wrap_reports_rfc1982_order() {
+    fn xrce_8_4_14_heartbeat_window_across_wrap_reports_rfc1982_order() {
         let mut s = rs();
         // Seed the sender just below the wrap.
         s.next_seq = SerialNumber16::new(0xFFFE);
@@ -730,7 +730,7 @@ mod tests {
     /// retransmittable, and after retransmit all samples deliver in
     /// RFC-1982 order.
     #[test]
-    fn acknack_retransmit_of_lost_sample_across_wrap() {
+    fn xrce_8_4_14_acknack_retransmit_of_lost_sample_across_wrap() {
         let mut sender = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
         let mut receiver = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
         // Seed both just below the wrap.
@@ -787,7 +787,7 @@ mod tests {
     /// (seq 1 acked in the middle) → HEARTBEAT `first=0, last=3`, while
     /// `base + count-1 = 2` would be wrong.
     #[test]
-    fn heartbeat_window_end_with_hole_is_serial_max_not_count() {
+    fn xrce_8_3_5_12_heartbeat_window_end_with_hole_is_serial_max_not_count() {
         let mut s = rs();
         for _ in 0..4 {
             s.submit(alloc::vec![0]).unwrap(); // 0,1,2,3
@@ -813,7 +813,7 @@ mod tests {
     /// uses the same reliable stream path for at-most-once
     /// delivery of the config submessages.
     #[test]
-    fn config_submessages_delivered_in_order_via_reliable_stream() {
+    fn reliable_1_config_submessages_delivered_in_order_via_reliable_stream() {
         // Demonstrates that the reliable-Stream is suitable for
         // CREATE/DELETE/UPDATE-Submessages (§9.2): in-order delivery
         // even when ACKNACK recovery is required.

@@ -630,11 +630,11 @@ fn the_fast_cases_are_byte_identical() {
 
 /// The literal reading of the task: every one of the seven axis cases,
 /// every one of the eleven dialects, both byte orders — seventy-seven `rustc`
-/// invocations. `#[ignore]`: `cargo test -p zerodds-idlc --include-ignored`
-/// runs it; the default `cargo test` does not, on the
+/// invocations. `#[ignore]`: the weekly `integration-codegen` job runs it
+/// with the ignored tests; the crate tier does not, on the
 /// `rust_corpus_compiles.rs` precedent for the same reason.
 #[test]
-#[ignore = "seventy-seven rustc invocations; run with --include-ignored"]
+#[ignore = "seventy-seven rustc invocations; runs in integration-codegen"]
 fn every_case_under_every_dialect_is_byte_identical() {
     if !rustc_available() {
         eprintln!("SKIPPED: `rustc` is not usable.");

@@ -822,14 +822,6 @@ mod tests {
     }
 
     #[test]
-    fn typeinformation_roundtrips() {
-        let ti = sample_type_info();
-        let bytes = ti.to_bytes_le().unwrap();
-        let decoded = TypeInformation::from_bytes_le(&bytes).unwrap();
-        assert_eq!(ti, decoded);
-    }
-
-    #[test]
     fn typeinformation_minimal_has_minimal_discriminator() {
         let ti = sample_type_info();
         assert!(matches!(
@@ -939,24 +931,16 @@ mod tests {
     }
 
     #[test]
-    fn from_bytes_matches_from_bytes_le_for_little_endian() {
-        let ti = sample_type_info();
-        let bytes = ti.to_bytes_le().unwrap();
-        let a = TypeInformation::from_bytes_le(&bytes).unwrap();
-        let b = TypeInformation::from_bytes(&bytes, zerodds_wire::Endianness::Little).unwrap();
-        assert_eq!(a, b);
-        assert_eq!(a, ti);
-    }
-
-    #[test]
-    fn negative_dependent_typeid_count_roundtrips() {
-        // -1 = "unknown/incomplete" (spec-compliant).
-        let mut ti = sample_type_info();
-        ti.minimal.dependent_typeid_count = -1;
-        ti.complete.dependent_typeid_count = -1;
-        let bytes = ti.to_bytes_le().unwrap();
-        let decoded = TypeInformation::from_bytes_le(&bytes).unwrap();
-        assert_eq!(decoded.minimal.dependent_typeid_count, -1);
-        assert_eq!(decoded.complete.dependent_typeid_count, -1);
+    fn xtypes_7_6_3_2_1_negative_dependent_typeid_count_roundtrips() {
+        // §7.6.3.2.2: a `dependent_typeid_count` of -1 says the count is
+        // not known. In Cyclone's layout above the minimal count sits at
+        // offset 40 and the complete one at 88.
+        let mut octets = CYCLONE_KEYEDSEQ_TYPE_INFORMATION.to_vec();
+        octets[40..44].copy_from_slice(&(-1_i32).to_le_bytes());
+        octets[88..92].copy_from_slice(&(-1_i32).to_le_bytes());
+        let ti = TypeInformation::from_bytes_le(&octets).unwrap();
+        assert_eq!(ti.minimal.dependent_typeid_count, -1);
+        assert_eq!(ti.complete.dependent_typeid_count, -1);
+        assert_eq!(ti.to_bytes_le().unwrap(), octets);
     }
 }

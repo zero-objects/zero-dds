@@ -573,12 +573,12 @@ impl CodecTarget for CSharp {
     /// conversion from `1` to `true`; the label is the value it stands
     /// for.
     fn cast(type_: Self::Type, value: Self::Expr) -> Self::Expr {
-        if type_ == csharp::Type::Predefined(csharp::Predefined::Bool) {
-            if let csharp::Expr::Literal(Literal::Int(text)) = &value {
-                return csharp::Expr::Literal(Literal::Bool(
-                    text.trim_end_matches(['L', 'U', 'l', 'u']) != "0",
-                ));
-            }
+        if type_ == csharp::Type::Predefined(csharp::Predefined::Bool)
+            && let csharp::Expr::Literal(Literal::Int(text)) = &value
+        {
+            return csharp::Expr::Literal(Literal::Bool(
+                text.trim_end_matches(['L', 'U', 'l', 'u']) != "0",
+            ));
         }
         // The walk's `signed char` — the C spelling of a map key's
         // signed order — is `sbyte` here: the cast keeps the low octet

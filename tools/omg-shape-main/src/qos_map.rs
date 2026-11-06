@@ -20,7 +20,7 @@ use crate::cli::{AccessScopeArg, DurabilityArg, FinalInstanceStateArg, Options};
 /// `1` = XCDR (id `0`), `2` = XCDR2 (id `2`) — matches the
 /// `[XCDR1, XCDR2]` / `Some(vec![0_i16, 2])` convention already used
 /// across the dcps crate (see `crates/dcps/src/qos.rs`
-/// `data_representation_defaults_none_and_settable`).
+/// `xtypes_7_6_3_1_data_representation_defaults_none_and_settable`).
 fn data_representation_list(opt: Option<u8>) -> Option<Vec<i16>> {
     match opt {
         Some(1) => Some(vec![0_i16]),

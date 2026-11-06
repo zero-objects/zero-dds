@@ -100,7 +100,7 @@ macro_rules! typed {
 /// Every operation of the IDL has a binding, and every binding is an
 /// operation of the IDL.
 #[test]
-fn every_operation_of_annex_c_has_its_counterpart() {
+fn xtypes_7_5_2_every_operation_of_annex_c_has_its_counterpart() {
     let ast = model();
     let wanted = idl_operations(&ast);
     assert!(wanted.len() > 120, "{} operations parsed", wanted.len());
@@ -275,7 +275,7 @@ fn the_implied_type_support_and_the_attributes_have_theirs() {
 /// The constants of the IDL are the `TK_*` of `zerodds_types::dynamic` with
 /// the same numbers.
 #[test]
-fn the_type_kind_constants_of_the_idl_are_the_rust_constants() {
+fn xtypes_annex_c_the_type_kind_constants_of_the_idl_are_the_rust_constants() {
     use zerodds_types::dynamic as d;
     let ast = model();
     let rust: &[(&str, u8)] = &[
@@ -333,7 +333,7 @@ fn the_type_kind_constants_of_the_idl_are_the_rust_constants() {
 
 /// The state members of the valuetypes are the fields of the Rust records.
 #[test]
-fn the_state_of_the_valuetypes_is_in_the_records() {
+fn xtypes_annex_c_the_state_of_the_valuetypes_is_in_the_records() {
     let ast = model();
     let state = idl_state(&ast);
 

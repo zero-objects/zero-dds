@@ -5,6 +5,10 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
+## Non-goal — cross-host zero-copy (RDMA, DPDK)
+
+**Status:** `open` — the spec points to a separate spec that does not exist in `docs/specs/`; cross-host zero-copy over RDMA or DPDK has neither a spec nor code.
+
 ## §4.1 The backend signals the same-host reader
 
 **Status:** `partial` — event-driven for the in-memory backend (condvar) and the POSIX backend on Linux and macOS. On the BSDs and Windows the reader still polls; see "§4.1 cross-process notify on non-Linux POSIX".

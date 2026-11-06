@@ -123,39 +123,31 @@ pub fn decode_timeout(header: &str) -> Result<(u32, TimeoutUnit), TimeoutError> 
 mod tests {
     use super::*;
 
+    /// §"Requests": TimeoutUnit → Hour "H" / Minute "M" / Second "S" /
+    /// Millisecond "m" / Microsecond "u" / Nanosecond "n", both ways.
     #[test]
-    fn timeout_unit_round_trip_for_all() {
-        for u in [
-            TimeoutUnit::Hour,
-            TimeoutUnit::Minute,
-            TimeoutUnit::Second,
-            TimeoutUnit::Millisecond,
-            TimeoutUnit::Microsecond,
-            TimeoutUnit::Nanosecond,
+    fn grpc_requests_the_timeout_units_are_h_m_s_m_u_n() {
+        for (u, c) in [
+            (TimeoutUnit::Hour, 'H'),
+            (TimeoutUnit::Minute, 'M'),
+            (TimeoutUnit::Second, 'S'),
+            (TimeoutUnit::Millisecond, 'm'),
+            (TimeoutUnit::Microsecond, 'u'),
+            (TimeoutUnit::Nanosecond, 'n'),
         ] {
-            assert_eq!(TimeoutUnit::from_char(u.to_char()), Some(u));
+            assert_eq!(u.to_char(), c);
+            assert_eq!(TimeoutUnit::from_char(c), Some(u));
         }
     }
 
     #[test]
-    fn well_known_unit_chars_match_spec() {
-        // Spec §"TimeoutUnit".
-        assert_eq!(TimeoutUnit::Hour.to_char(), 'H');
-        assert_eq!(TimeoutUnit::Minute.to_char(), 'M');
-        assert_eq!(TimeoutUnit::Second.to_char(), 'S');
-        assert_eq!(TimeoutUnit::Millisecond.to_char(), 'm');
-        assert_eq!(TimeoutUnit::Microsecond.to_char(), 'u');
-        assert_eq!(TimeoutUnit::Nanosecond.to_char(), 'n');
-    }
-
-    #[test]
-    fn encodes_30_seconds() {
+    fn grpc_requests_encodes_30_seconds() {
         // Spec §"Timeout" example.
         assert_eq!(encode_timeout(30, TimeoutUnit::Second).expect("ok"), "30S");
     }
 
     #[test]
-    fn encodes_500_milliseconds() {
+    fn grpc_requests_encodes_500_milliseconds() {
         assert_eq!(
             encode_timeout(500, TimeoutUnit::Millisecond).expect("ok"),
             "500m"
@@ -163,7 +155,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_value_above_8_digits_on_encode() {
+    fn grpc_requests_rejects_value_above_8_digits_on_encode() {
         // Spec §"TimeoutValue" — at most 8 digits.
         assert_eq!(
             encode_timeout(100_000_000, TimeoutUnit::Second),
@@ -171,37 +163,35 @@ mod tests {
         );
     }
 
+    /// §"Requests": Timeout → TimeoutValue TimeoutUnit, the value a
+    /// positive integer of at most 8 digits; the header values are read.
     #[test]
-    fn round_trip_decode_encode() {
-        for v in [1u32, 30, 500, 99_999_999] {
-            for u in [
-                TimeoutUnit::Hour,
-                TimeoutUnit::Minute,
-                TimeoutUnit::Second,
-                TimeoutUnit::Millisecond,
-                TimeoutUnit::Microsecond,
-                TimeoutUnit::Nanosecond,
-            ] {
-                let s = encode_timeout(v, u).expect("encode");
-                let (dv, du) = decode_timeout(&s).expect("decode");
-                assert_eq!(dv, v);
-                assert_eq!(du, u);
-            }
+    fn grpc_requests_a_timeout_header_is_read_as_value_and_unit() {
+        for (text, value, unit) in [
+            ("1H", 1, TimeoutUnit::Hour),
+            ("30S", 30, TimeoutUnit::Second),
+            ("500m", 500, TimeoutUnit::Millisecond),
+            ("99999999n", 99_999_999, TimeoutUnit::Nanosecond),
+            ("7u", 7, TimeoutUnit::Microsecond),
+            ("2M", 2, TimeoutUnit::Minute),
+        ] {
+            assert_eq!(decode_timeout(text).expect("decode"), (value, unit));
+            assert_eq!(encode_timeout(value, unit).expect("encode"), text);
         }
     }
 
     #[test]
-    fn decode_rejects_empty() {
+    fn grpc_requests_decode_rejects_empty() {
         assert_eq!(decode_timeout(""), Err(TimeoutError::Empty));
     }
 
     #[test]
-    fn decode_rejects_unknown_unit() {
+    fn grpc_requests_decode_rejects_unknown_unit() {
         assert_eq!(decode_timeout("100x"), Err(TimeoutError::InvalidUnit('x')));
     }
 
     #[test]
-    fn decode_rejects_non_digit_value() {
+    fn grpc_requests_decode_rejects_non_digit_value() {
         assert_eq!(decode_timeout("abcS"), Err(TimeoutError::InvalidValue));
     }
 
@@ -215,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_only_unit_no_value() {
+    fn grpc_requests_decode_rejects_only_unit_no_value() {
         assert_eq!(decode_timeout("S"), Err(TimeoutError::ValueTooLong));
     }
 }

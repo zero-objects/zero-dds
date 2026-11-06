@@ -21,7 +21,8 @@
 //! not installed makes this test fail, not pass: a cross-implementation test
 //! whose foreign half can silently not run is not a cross-implementation test.
 //!
-//! Gated on `WS_PYTHON=1`; `#[ignore]` by default.
+//! `#[ignore]`d; running them (`--run-ignored`, the weekly job
+//! `integration-bridges-vendor`) measures.
 
 #![cfg(feature = "std")]
 #![allow(
@@ -43,10 +44,6 @@ use zerodds_websocket_bridge::frame::{Frame, Opcode};
 use zerodds_websocket_bridge::handshake::{
     build_server_response, parse_client_request, render_server_response,
 };
-
-fn enabled() -> bool {
-    std::env::var("WS_PYTHON").is_ok()
-}
 
 /// A one-connection RFC 6455 echo server over this crate's library half.
 struct EchoServer {
@@ -190,12 +187,8 @@ fn run_python(script: &str) -> String {
 }
 
 #[test]
-#[ignore = "needs python3 + the `websockets` module; set WS_PYTHON=1"]
+#[ignore = "needs python3 with the `websockets` module; runs in integration-bridges-vendor"]
 fn python_websockets_client_round_trips_a_text_frame() {
-    if !enabled() {
-        eprintln!("[skip] WS_PYTHON not set");
-        return;
-    }
     let srv = EchoServer::start();
     let script = format!(
         r#"
@@ -215,12 +208,8 @@ with connect("{url}") as ws:
 }
 
 #[test]
-#[ignore = "needs python3 + the `websockets` module; set WS_PYTHON=1"]
+#[ignore = "needs python3 with the `websockets` module; runs in integration-bridges-vendor"]
 fn python_websockets_client_round_trips_binary_and_ping() {
-    if !enabled() {
-        eprintln!("[skip] WS_PYTHON not set");
-        return;
-    }
     let srv = EchoServer::start();
     // A payload of 200 bytes crosses RFC 6455 §5.2's 7-bit length boundary
     // (126 selects the 16-bit extended form), so the length encoding is

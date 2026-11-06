@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! D7 follow-up: a dispose forwarded through `ForwardingSession` carries its
+//! A dispose forwarded through `ForwardingSession` carries its
 //! `key_holder` onto the output writer's wire `serializedKey` — the form
 //! Cyclone 11.0.1, Fast DDS 3.6.1 and OpenDDS 3.35 were measured to act on
 //! (0/4 disposed for a hash-only marker, 4/4 once it carries the key) —
@@ -30,11 +30,24 @@ use std::time::{Duration, Instant};
 use zerodds_dcps::runtime::{
     DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample, UserWriterConfig,
 };
-use zerodds_dcps::serialized_type::SerializedTypeSupport;
 use zerodds_routing_service::forwarding::{ForwardingSession, SessionParts};
 use zerodds_routing_service::metrics::RouteMetrics;
 use zerodds_rtps::EntityId;
 use zerodds_rtps::wire_types::GuidPrefix;
+
+/// The key holder of `KeyedFinal` with `id`: the key member alone as
+/// PLAIN_CDR2 big endian (DDS-XTypes 1.3 §7.6.8), four octets.
+fn holder(id: u8) -> Vec<u8> {
+    vec![0, 0, 0, id]
+}
+
+/// The key hash of `KeyedFinal` with `id`: a holder of at most 16 octets,
+/// padded with zeros to 16 (DDSI-RTPS 2.5 §9.6.4.8).
+fn hash(id: u8) -> [u8; 16] {
+    let mut h = [0u8; 16];
+    h[3] = id;
+    h
+}
 
 /// `@final struct KeyedFinal { @key long id; long value; };`'s
 /// `CompleteTypeObject` — the same one-liner
@@ -54,22 +67,13 @@ fn keyed_final_type_object() -> zerodds_types::TypeObject {
     )
 }
 
-/// Registers `KeyedFinal` on `rt` and returns its resolved
-/// `SerializedTypeSupport` (to compute the canonical key holder the test
-/// injects) plus the `TypeIdentifier` a reader/writer config needs to
-/// resolve the same registration.
-fn register_keyed_final(
-    rt: &Arc<DcpsRuntime>,
-) -> (Arc<SerializedTypeSupport>, zerodds_types::TypeIdentifier) {
-    let object = keyed_final_type_object();
-    let bytes = object.to_bytes_le().expect("encode object");
-    let support =
-        SerializedTypeSupport::from_type_object("KeyedFinal", &bytes, true, 0).expect("support");
-    let hash = rt.register_type_object(object).expect("register");
-    (
-        support,
-        zerodds_types::TypeIdentifier::EquivalenceHashComplete(hash),
-    )
+/// Registers `KeyedFinal` on `rt` and returns the `TypeIdentifier` a
+/// reader/writer config needs to resolve the same registration.
+fn register_keyed_final(rt: &Arc<DcpsRuntime>) -> zerodds_types::TypeIdentifier {
+    let hash = rt
+        .register_type_object(keyed_final_type_object())
+        .expect("register");
+    zerodds_types::TypeIdentifier::EquivalenceHashComplete(hash)
 }
 
 fn wait_until(mut cond: impl FnMut() -> bool, what: &str) {
@@ -83,13 +87,14 @@ fn wait_until(mut cond: impl FnMut() -> bool, what: &str) {
 /// Builds `bridge_rt` (hosts the forwarding session's output writer) and
 /// `sink_rt` (a plain keyed reader matched to it), both on the same fresh
 /// domain, both with `KeyedFinal` registered. Returns the writer's
-/// `EntityId` on `bridge_rt`, the sink's sample channel, and the
-/// `SerializedTypeSupport` used to compute the injected `key_holder`.
+/// `EntityId` on `bridge_rt`, the sink's sample channel and `sink_rt`
+/// itself: the last handle of a runtime stops it when it drops, and its
+/// reader's channel with it.
 fn setup() -> (
     Arc<DcpsRuntime>,
     EntityId,
     mpsc::Receiver<UserSample>,
-    Arc<SerializedTypeSupport>,
+    Arc<DcpsRuntime>,
 ) {
     let domain = zerodds_test_domains::unique_domain();
     let bridge_rt = DcpsRuntime::start(
@@ -105,8 +110,8 @@ fn setup() -> (
     )
     .expect("sink_rt");
 
-    let (support, type_id) = register_keyed_final(&bridge_rt);
-    let (_sink_support, sink_type_id) = register_keyed_final(&sink_rt);
+    let type_id = register_keyed_final(&bridge_rt);
+    let sink_type_id = register_keyed_final(&sink_rt);
 
     let writer_eid = bridge_rt
         .register_user_writer_kind(
@@ -137,16 +142,17 @@ fn setup() -> (
         "the sink reader to match the bridge writer",
     );
     let _ = reader_eid;
-    (bridge_rt, writer_eid, rx, support)
+    (bridge_rt, writer_eid, rx, sink_rt)
 }
 
+/// With the same type on both sides the forwarded holder goes out as the
+/// marker's `serializedKey`: a DATA with KeyFlag and without DataFlag
+/// carries the key (DDSI-RTPS 2.5 §8.3.8.2), in the holder's octets
+/// (DDS-XTypes 1.3 §7.6.8).
 #[test]
-fn dispose_with_matching_type_forwards_the_serialized_key() {
-    let (bridge_rt, writer_eid, sink_rx, support) = setup();
-    let sample = support
-        .read_body(&[0, 0, 0, 7, 0, 0, 0, 42], 2, true)
-        .expect("decode a synthetic id=7 body (PLAIN_CDR2-BE, no encap header)");
-    let (key_hash, key_holder) = support.key_material(&sample).expect("keyed");
+fn rtps_8_3_8_2_a_dispose_of_the_same_type_goes_out_with_its_key_holder() {
+    let (bridge_rt, writer_eid, sink_rx, _sink_rt) = setup();
+    let (key_hash, key_holder) = (hash(7), holder(7));
 
     let (tx, rx) = mpsc::channel();
     tx.send(UserSample::Lifecycle {
@@ -214,16 +220,10 @@ fn dispose_with_matching_type_forwards_the_serialized_key() {
 /// 10 and the hash instance 9: the sink seeing 9's holder shows the
 /// forwarded one was not used and the marker still carries a key.
 #[test]
-fn dispose_with_same_type_false_withholds_the_forwarded_holder() {
-    let (bridge_rt, writer_eid, sink_rx, support) = setup();
-    let nine = support
-        .read_body(&[0, 0, 0, 9, 0, 0, 0, 1], 2, true)
-        .expect("decode a synthetic id=9 body");
-    let (key_hash, key_holder) = support.key_material(&nine).expect("keyed");
-    let ten = support
-        .read_body(&[0, 0, 0, 10, 0, 0, 0, 1], 2, true)
-        .expect("decode a synthetic id=10 body");
-    let (_, other_holder) = support.key_material(&ten).expect("keyed");
+fn rtps_9_6_4_8_without_the_same_type_the_key_comes_from_the_key_hash() {
+    let (bridge_rt, writer_eid, sink_rx, _sink_rt) = setup();
+    let (key_hash, key_holder) = (hash(9), holder(9));
+    let other_holder = holder(10);
 
     let (tx, rx) = mpsc::channel();
     tx.send(UserSample::Lifecycle {

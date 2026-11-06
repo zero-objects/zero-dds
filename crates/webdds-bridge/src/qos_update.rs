@@ -21,8 +21,9 @@
 //! reading of Spec §8.3.3 Tab 5 ("the same format as when the object
 //! was created"): `zerodds_qos`'s own policy defaults
 //! (`ResourceLimitsQosPolicy::default()` = `LENGTH_UNLIMITED` fields)
-//! differ from `zerodds_dcps::DataWriterQos::default()`'s
-//! (`max_samples=1000`, …) — a real, measured mismatch (this module's
+//! differed from `zerodds_dcps::DataWriterQos::default()`'s
+//! (`max_samples=1000`, …, before DCPS took `LENGTH_UNLIMITED`,
+//! DDS 1.4 §2.2.3.19) — a real, measured mismatch (this module's
 //! own `writer_qos_from`/`reader_qos_from` hit it building on
 //! `<Entity>Qos::default()` in an earlier version of this file: a
 //! `<qos>` naming only `<deadline>` still tripped `ImmutablePolicy` on

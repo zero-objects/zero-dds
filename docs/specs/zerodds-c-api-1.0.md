@@ -580,7 +580,8 @@ returns `ZERODDS_BAD_PARAMETER` (DDS 1.4 §2.2.2.4.2,
 
 `zerodds_dp_get_discovered_topic_data` returns, for a handle that
 `zerodds_dp_get_discovered_topics` has not returned,
-`ZERODDS_BAD_PARAMETER` and fills in nothing.
+`ZERODDS_PRECONDITION_NOT_MET` (DDS 1.4 §2.2.2.2.1.30) and fills in
+nothing.
 
 ## §8 Status codes
 

@@ -1,11 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <!-- xUnit tests of the C# binding over libzerodds (the C API, DllImport).
+       `dotnet test` with libzerodds on LD_LIBRARY_PATH and a leased DDS domain in
+       ZERODDS_TEST_DOMAINS (tests/integration/with_domains.py): the jobs merge-cs and
+       its runner ci/run_integration.py do both. -->
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <RollForward>LatestMajor</RollForward>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <OutputType>Exe</OutputType>
+    <IsTestProject>true</IsTestProject>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.10.0" />
+    <PackageReference Include="xunit" Version="2.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ZeroDDS\ZeroDDS.csproj" />
   </ItemGroup>

@@ -137,28 +137,3 @@ impl TypeRegistry {
         Ok(reg)
     }
 }
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn align_rules() {
-        assert_eq!(ScalarKind::U64.natural_align(), 8);
-        assert_eq!(ScalarKind::U64.xcdr2_align(), 4);
-        assert_eq!(ScalarKind::U16.xcdr2_align(), 2);
-        assert_eq!(ScalarKind::String.natural_align(), 4);
-    }
-
-    #[test]
-    fn registry_json() {
-        let js =
-            r#"[{"name":"T","members":[{"name":"a","kind":"u32"},{"name":"b","kind":"string"}]}]"#;
-        let reg = TypeRegistry::from_json(js).unwrap();
-        let sh = reg.get("T").unwrap();
-        assert_eq!(sh.members.len(), 2);
-        assert_eq!(sh.index_of("b"), Some(1));
-        assert!(!sh.appendable);
-    }
-}

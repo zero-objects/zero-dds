@@ -297,6 +297,15 @@ impl FromStr for Float128 {
     }
 }
 
+/// Decimal digits per pass over the limbs: `10^9` is the largest power of
+/// ten below `2^32`, the width of a limb.
+const GROUP_DIGITS: u32 = 9;
+/// `10^GROUP_DIGITS`.
+const GROUP_FACTOR: u32 = 1_000_000_000;
+/// The significant digits the parser reads first. Forty bound a value to
+/// within `10^-39` of itself, past the `10^-34` a binary128 step is.
+const KEPT_DIGITS: u32 = 40;
+
 /// The parser behind `FromStr`.
 fn parse(text: &str) -> Result<Float128, ParseFloat128Error> {
     let trimmed = text.trim();
@@ -331,7 +340,22 @@ fn parse(text: &str) -> Result<Float128, ParseFloat128Error> {
             .map_err(|_| ParseFloat128Error::BadExponent)?,
     };
 
-    let mut significand = BigUint::zero();
+    // A long digit string (the exact form of a binary128 runs to 11 458
+    // digits) is read in two steps. Its first `KEPT_DIGITS` significant
+    // digits `k` put the value strictly between `k * 10^e` and
+    // `(k + 1) * 10^e` when a digit after them is not zero. Rounding is
+    // monotone, so when both bounds round to the same binary128, so does
+    // the value (IEEE 754-2019 §5.12.2, correctly rounded), and the
+    // remaining digits only had to be looked at. A value that close to a
+    // rounding boundary reads every digit. Read digit by digit, with one
+    // pass over the limbs per digit, the exact form of the smallest normal
+    // value took 49 ms in a test build.
+    let mut kept = BigUint::zero();
+    let mut group: u32 = 0;
+    let mut group_digits: u32 = 0;
+    let mut significant: u32 = 0;
+    let mut dropped: i64 = 0;
+    let mut dropped_nonzero = false;
     let mut seen_digit = false;
     let mut seen_point = false;
     let mut fraction_digits: i64 = 0;
@@ -339,9 +363,24 @@ fn parse(text: &str) -> Result<Float128, ParseFloat128Error> {
         match character {
             '0'..='9' => {
                 seen_digit = true;
-                significand.mul_add_small(10, u32::from(character as u8 - b'0'));
                 if seen_point {
                     fraction_digits += 1;
+                }
+                let digit = u32::from(character as u8 - b'0');
+                if significant == 0 && digit == 0 {
+                    // A leading zero: no significant digit yet.
+                } else if significant < KEPT_DIGITS {
+                    significant += 1;
+                    group = group * 10 + digit;
+                    group_digits += 1;
+                    if group_digits == GROUP_DIGITS {
+                        kept.mul_add_small(GROUP_FACTOR, group);
+                        group = 0;
+                        group_digits = 0;
+                    }
+                } else {
+                    dropped += 1;
+                    dropped_nonzero |= digit != 0;
                 }
             }
             '.' if !seen_point => seen_point = true,
@@ -359,16 +398,61 @@ fn parse(text: &str) -> Result<Float128, ParseFloat128Error> {
     if !seen_digit {
         return Err(ParseFloat128Error::Empty);
     }
+    if group_digits != 0 {
+        kept.mul_add_small(10u32.pow(group_digits), group);
+    }
     exponent -= fraction_digits;
 
-    if significand.is_zero() {
+    if kept.is_zero() {
         return Ok(if negative {
             Float128::NEG_ZERO
         } else {
             Float128::ZERO
         });
     }
+    if !dropped_nonzero {
+        return Ok(round_decimal(negative, kept, exponent + dropped, false));
+    }
+    let mut above = kept.clone();
+    above.mul_add_small(1, 1);
+    let low = round_decimal(negative, kept, exponent + dropped, true);
+    let high = round_decimal(negative, above, exponent + dropped, false);
+    if low.to_bits() == high.to_bits() {
+        return Ok(low);
+    }
+    Ok(round_decimal(
+        negative,
+        every_digit(mantissa),
+        exponent,
+        false,
+    ))
+}
 
+/// The digits of a mantissa the parser has already walked, as one
+/// integer, nine at a time.
+fn every_digit(mantissa: &str) -> BigUint {
+    let mut value = BigUint::zero();
+    let mut group: u32 = 0;
+    let mut group_digits: u32 = 0;
+    for byte in mantissa.bytes().filter(u8::is_ascii_digit) {
+        group = group * 10 + u32::from(byte - b'0');
+        group_digits += 1;
+        if group_digits == GROUP_DIGITS {
+            value.mul_add_small(GROUP_FACTOR, group);
+            group = 0;
+            group_digits = 0;
+        }
+    }
+    if group_digits != 0 {
+        value.mul_add_small(10u32.pow(group_digits), group);
+    }
+    value
+}
+
+/// `significand * 10^exponent`, not zero, rounded to nearest with ties to
+/// even. With `above`, a value a little larger than that is rounded, by
+/// less than any rounding step can see.
+fn round_decimal(negative: bool, significand: BigUint, exponent: i64, above: bool) -> Float128 {
     // Reject the magnitudes whose exact expansion would be megabytes of
     // limbs, but only from the safe side of the estimate. A digit count
     // derived from the bit length is off by a digit or two either way,
@@ -381,50 +465,57 @@ fn parse(text: &str) -> Result<Float128, ParseFloat128Error> {
     let digits_low = bits * 30103 / 100_000;
     let digits_high = digits_low + 2;
     if exponent + digits_low > DECIMAL_LIMIT {
-        return Ok(if negative {
+        return if negative {
             Float128::NEG_INFINITY
         } else {
             Float128::INFINITY
-        });
+        };
     }
     if exponent + digits_high < -DECIMAL_LIMIT {
-        return Ok(if negative {
+        return if negative {
             Float128::NEG_ZERO
         } else {
             Float128::ZERO
-        });
+        };
     }
 
-    if exponent >= 0 {
+    let (value, shift) = if exponent >= 0 {
         // Non-negative by the branch, and bounded by `DECIMAL_LIMIT`
         // above, so the width is not in question and there is no fallback
         // for a caller to be wrong about.
         let mut scaled = significand;
         scaled.mul_pow10(exponent.unsigned_abs() as usize);
-        let (value, shift) = significand_with_sticky(scaled);
-        return Ok(Float128::from_parts_rounded(negative, value, shift).0);
-    }
-
-    // value = significand / 10^scale. Shift the numerator up far enough
-    // that the quotient carries more bits than binary128 needs, divide,
-    // and fold every discarded remainder into one sticky bit — which is
-    // what makes the single rounding at the end the correct one.
-    // Positive by the branch, and bounded by `DECIMAL_LIMIT`. A fallback
-    // of zero here would divide by 10^0 and answer with a value a
-    // thousand orders of magnitude out.
-    let scale = exponent.unsigned_abs() as usize;
-    let wanted = 130 + scale * 10 / 3;
-    let have = significand.bit_length();
-    let shift = wanted.saturating_sub(have);
-    let mut numerator = significand;
-    numerator.shl(shift);
-    let sticky = divide_by_pow10(&mut numerator, scale);
-    let (mut value, extra) = significand_with_sticky(numerator);
-    if sticky {
-        value |= 1;
-    }
-    let exponent = extra - decimal_point(shift, 0);
-    Ok(Float128::from_parts_rounded(negative, value, exponent).0)
+        significand_with_sticky(scaled)
+    } else {
+        // value = significand / 10^scale. Shift the numerator up far enough
+        // that the quotient carries more bits than binary128 needs, divide,
+        // and fold every discarded remainder into one sticky bit — which is
+        // what makes the single rounding at the end the correct one.
+        // Positive by the branch, and bounded by `DECIMAL_LIMIT`. A fallback
+        // of zero here would divide by 10^0 and answer with a value a
+        // thousand orders of magnitude out.
+        let scale = exponent.unsigned_abs() as usize;
+        let wanted = 130 + scale * 10 / 3;
+        let have = significand.bit_length();
+        let shift = wanted.saturating_sub(have);
+        let mut numerator = significand;
+        numerator.shl(shift);
+        let sticky = divide_by_pow10(&mut numerator, scale);
+        let (mut value, extra) = significand_with_sticky(numerator);
+        if sticky {
+            value |= 1;
+        }
+        (value, extra - decimal_point(shift, 0))
+    };
+    let (value, shift) = if above {
+        // Moved up to the top of the `u128`, so the set low bit lies below
+        // the guard and round positions of the 113 a binary128 keeps.
+        let up = value.leading_zeros();
+        ((value << up) | 1, shift - up as i32)
+    } else {
+        (value, shift)
+    };
+    Float128::from_parts_rounded(negative, value, shift).0
 }
 
 /// Divide by `10^power` in nine-digit steps, returning whether anything

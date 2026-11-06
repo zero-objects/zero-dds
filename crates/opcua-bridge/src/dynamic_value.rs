@@ -774,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn flatten_and_unflatten_a_flat_struct_round_trips() {
+    fn opcuabridge_5_3_a_flat_struct_is_one_variable_per_member_and_back() {
         let ast = ast_of("struct P { long x; long y; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let data = DynamicData::Aggregate(vec![
@@ -798,13 +798,16 @@ mod tests {
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].path, "x");
         assert_eq!(fields[0].value, Variant::scalar(VariantValue::Int32(3)));
+        assert_eq!(fields[1].path, "y");
+        assert_eq!(fields[1].value, Variant::scalar(VariantValue::Int32(4)));
 
+        // The other way: the two variables written back become the struct.
         let rebuilt = unflatten(&ty, &fields, &data).expect("unflatten");
         assert_eq!(rebuilt, data);
     }
 
     #[test]
-    fn a_value_nested_past_the_bound_is_refused_not_walked() {
+    fn opcuabridge_5_3_a_value_nested_past_the_bound_is_refused_not_walked() {
         // S0 { long v; }, S1 { S0 m; }, …: one struct level per step.
         let levels = MAX_DEPTH + 2;
         let mut idl = "struct S0 { long v; };".to_string();
@@ -834,7 +837,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_struct_flattens_with_dotted_paths() {
+    fn opcuabridge_5_3_nested_struct_flattens_with_dotted_paths() {
         let ast = ast_of("struct Inner { long v; }; struct Outer { Inner i; };");
         let ty = DynamicType::find(&ast, "Outer").expect("type");
         let data = DynamicData::Aggregate(vec![(
@@ -854,7 +857,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_unflatten_keeps_the_rest_of_the_default() {
+    fn opcuabridge_5_3_partial_unflatten_keeps_the_rest_of_the_default() {
         let ast = ast_of("struct P { long x; long y; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let default = DynamicData::Aggregate(vec![
@@ -898,7 +901,7 @@ mod tests {
     }
 
     #[test]
-    fn enum_flattens_to_its_ordinal_and_back() {
+    fn opcuabridge_5_3_enum_flattens_to_its_ordinal_and_back() {
         let ast = ast_of("enum Color { RED, GREEN, BLUE }; struct P { Color c; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let data = DynamicData::Aggregate(vec![(
@@ -913,7 +916,7 @@ mod tests {
     }
 
     #[test]
-    fn sequence_of_primitives_is_one_variant() {
+    fn opcuabridge_5_3_sequence_of_primitives_is_one_variant() {
         let ast = ast_of("struct P { sequence<long, 4> items; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let data = DynamicData::Aggregate(vec![(
@@ -937,7 +940,7 @@ mod tests {
     }
 
     #[test]
-    fn sequence_of_struct_is_reported_skipped_not_dropped_silently() {
+    fn opcuabridge_5_3_sequence_of_struct_is_reported_skipped_not_dropped_silently() {
         let ast = ast_of("struct E { long v; }; struct P { sequence<E, 2> items; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let data =
@@ -949,7 +952,7 @@ mod tests {
     }
 
     #[test]
-    fn wide_char_maps_to_uint16_and_back() {
+    fn opcuabridge_5_3_wide_char_maps_to_uint16_and_back() {
         let ast = ast_of("struct P { wchar c; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         // A `DynamicData::Character` with kind `WChar` — built the same way
@@ -970,7 +973,7 @@ mod tests {
     }
 
     #[test]
-    fn wide_string_maps_to_string_and_back() {
+    fn opcuabridge_5_3_wide_string_maps_to_string_and_back() {
         let ast = ast_of("struct P { wstring s; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let data = DynamicData::Aggregate(vec![(
@@ -988,7 +991,7 @@ mod tests {
     }
 
     #[test]
-    fn map_of_primitives_decomposes_to_one_leaf_per_key_and_back() {
+    fn opcuabridge_5_3_map_of_primitives_decomposes_to_one_leaf_per_key_and_back() {
         let ast = ast_of("struct P { map<string, long> m; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let data = DynamicData::Aggregate(vec![(
@@ -1017,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn map_partial_write_keeps_the_untouched_key() {
+    fn opcuabridge_5_3_map_partial_write_keeps_the_untouched_key() {
         let ast = ast_of("struct P { map<string, long> m; };");
         let ty = DynamicType::find(&ast, "P").expect("type");
         let data = DynamicData::Aggregate(vec![(

@@ -23,28 +23,31 @@ defaults:
 jobs:
   build-rpm:
     name: Build .rpm (${{ matrix.target }})
-    runs-on: ubuntu-22.04
+    # Each architecture builds natively on a runner of its own: Fedora's
+    # aarch64 cross gcc has no glibc to link against, and ring-0.17 passed
+    # -mbranch-protection to the x86_64 gcc.
+    runs-on: ${{ matrix.runner }}
     container: fedora:40
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64
-          # aarch64 rpm build needs a cross-compile setup in the Fedora container
-          # (ring-0.17 -mbranch-protection flag not recognized by gcc).
-          # ARM RPMs for RC2; users on aarch64 use .tar.gz or .deb.
+        include:
+          - target: x86_64
+            runner: ubuntu-22.04
+          - target: aarch64
+            runner: ubuntu-22.04-arm
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.source_ref || github.sha }}
       - name: Install build deps
-        # Fedora 40 ships rust 1.78; ZeroDDS needs 1.88+ → rustup.
+        # Fedora 40 ships rust 1.78; ZeroDDS needs 1.97+ → rustup.
         run: |
           dnf install -y rpm-build rpmdevtools pkgconfig \
               openssl-devel systemd-rpm-macros gnupg2 \
-              gcc gcc-c++ make cmake curl
+              gcc gcc-c++ make cmake curl patchelf
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-              sh -s -- --default-toolchain 1.88.0 -y
+              sh -s -- --default-toolchain 1.97.1 -y
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           ln -sf "$HOME/.cargo/bin/cargo" /usr/local/bin/cargo
           ln -sf "$HOME/.cargo/bin/rustc" /usr/local/bin/rustc
@@ -106,11 +109,42 @@ jobs:
           rpmbuild -ba --target ${{ matrix.target }} \
                    "${DEFS[@]}" \
                    ~/rpmbuild/SPECS/zerodds.spec
-      # The YUM repo is built on packages.zerodds.org via pull-deploy
-      # (the server host's cron, every 5 min), not pushed from CI. Here we
-      # only upload the .rpm files as GH release assets — the pull-
-      # deploy fetches them, verifies minisign + signs them locally with
-      # the server GPG key.
+      # The RPM repositories are built on packages.zerodds.org by a pull
+      # deploy (packaging/linux/repo-server/sync-zerodds-packages, cron every
+      # 5 min), not pushed from CI. It takes the .rpm files from the release,
+      # checks them against the minisign-signed SHA512SUMS, signs them with
+      # the repository key and publishes them only when the signature
+      # verifies against zerodds.gpg. This step runs the same signing with a
+      # throwaway key and installs every package with gpgcheck=1 and
+      # repo_gpgcheck=1 from a local repository before the release is made.
+      - name: Install test (signed packages, gpgcheck=1)
+        run: |
+          set -euo pipefail
+          dnf install -y createrepo_c rpm-sign
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          install -d -m 700 "$GNUPGHOME"
+          uid=ci-install-test@zerodds.invalid
+          gpg --batch --passphrase '' --quick-gen-key "ZeroDDS CI install test <$uid>" rsa3072 sign 1d
+          gpg --batch --export --armor "$uid" > "$RUNNER_TEMP/ci-key.asc"
+          repo="$RUNNER_TEMP/ci-repo"
+          mkdir -p "$repo"
+          cp ~/rpmbuild/RPMS/${{ matrix.target }}/*.rpm "$repo/"
+          rpmsign --addsign --define "_gpg_name $uid" \
+            --define '_gpg_sign_cmd_extra_args --batch --pinentry-mode error' "$repo"/*.rpm
+          createrepo_c "$repo"
+          gpg --batch --yes --detach-sign --armor --local-user "$uid" \
+            --output "$repo/repodata/repomd.xml.asc" "$repo/repodata/repomd.xml"
+          printf '%s\n' '[zerodds-ci]' 'name=ZeroDDS CI install test' \
+            "baseurl=file://$repo" 'enabled=1' 'gpgcheck=1' 'repo_gpgcheck=1' \
+            "gpgkey=file://$RUNNER_TEMP/ci-key.asc" > /etc/yum.repos.d/zerodds-ci.repo
+          mapfile -t names < <(rpm -qp --qf '%{NAME}\n' "$repo"/*.rpm | sort -u)
+          dnf install -y "${names[@]}"
+          # Every installed package carries a signature by the throwaway key.
+          rpm -K "$repo"/*.rpm | tee "$RUNNER_TEMP/checksig.txt"
+          if grep -v ': digests signatures OK$' "$RUNNER_TEMP/checksig.txt"; then
+            echo "::error::package without a valid signature"; exit 1
+          fi
+          zerodds-admin --version
       - name: Upload artifacts (release attachments)
         uses: actions/upload-artifact@v7
         with:

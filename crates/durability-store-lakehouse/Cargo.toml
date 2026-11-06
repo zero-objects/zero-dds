@@ -26,6 +26,12 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+# The adapter is behind `duckdb` (the system libduckdb, which the CI image
+# carries): the crate tier runs its tests with it
+# (internal/release/rc8-test-suite.md, "Crate tier").
+[package.metadata.crate-tier]
+feature-runs = ["duckdb"]
+
 [features]
 # DuckDB is an OPTIONAL backend (default OFF) so the whole workspace builds
 # without the system `libduckdb` present. The entire crate is gated behind

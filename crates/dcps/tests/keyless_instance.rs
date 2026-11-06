@@ -85,7 +85,7 @@ fn pump(w: &zerodds_dcps::DataWriter<Plain>, r: &zerodds_dcps::DataReader<Plain>
 /// The writer's one instance can be registered, found and disposed; before,
 /// `lookup_instance` answered HANDLE_NIL and `dispose` was BAD_PARAMETER.
 #[test]
-fn the_writer_disposes_the_one_instance_of_a_keyless_topic() {
+fn rtps_8_2_10_1_the_writer_disposes_the_one_instance_of_a_keyless_topic() {
     let (w, _) = pair();
     let sample = Plain { value: 1 };
     assert_eq!(w.lookup_instance(&sample), HANDLE_NIL, "not registered yet");
@@ -202,7 +202,7 @@ fn an_unregister_reaches_the_reader_as_not_alive_no_writers() {
 /// of a valid handle; the one instance of a topic without a key has no key
 /// fields, so it answers with a value of the type, not with UNSUPPORTED.
 #[test]
-fn get_key_value_answers_for_the_one_instance_of_a_keyless_topic() {
+fn dcps_2_2_2_4_2_9_get_key_value_answers_for_the_one_instance_of_a_keyless_topic() {
     let (w, r) = pair();
     let handle = w.register_instance(&Plain { value: 7 }).unwrap();
     assert_eq!(w.get_key_value(handle).unwrap(), Plain { value: 7 });

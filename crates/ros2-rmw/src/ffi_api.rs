@@ -92,61 +92,48 @@ pub fn map_to_rmw_ret<E>(r: Result<(), E>) -> RmwRet {
 mod tests {
     use super::*;
 
+    /// rmw/ret_types.h: RMW_RET_OK 0, RMW_RET_ERROR 1, RMW_RET_TIMEOUT 2,
+    /// RMW_RET_UNSUPPORTED 3, RMW_RET_BAD_ALLOC 10,
+    /// RMW_RET_INVALID_ARGUMENT 11, RMW_RET_INCORRECT_RMW_IMPLEMENTATION 12.
     #[test]
-    fn ok_is_zero() {
-        assert_eq!(RmwRet::Ok.to_i32(), 0);
-        assert!(RmwRet::Ok.is_ok());
+    fn rmw_ret_types_h_the_return_codes_have_the_header_values() {
+        for (ret, value) in [
+            (RmwRet::Ok, 0),
+            (RmwRet::Error, 1),
+            (RmwRet::Timeout, 2),
+            (RmwRet::Unsupported, 3),
+            (RmwRet::BadAlloc, 10),
+            (RmwRet::InvalidArgument, 11),
+            (RmwRet::IncorrectRmwImplementation, 12),
+        ] {
+            assert_eq!(ret.to_i32(), value, "{ret:?}");
+            assert_eq!(ret.is_ok(), value == 0, "{ret:?}");
+        }
     }
 
+    /// rmw/rmw.h: a function that succeeds returns RMW_RET_OK, one that
+    /// fails without a more specific code RMW_RET_ERROR.
     #[test]
-    fn error_codes_match_rmw_h() {
-        assert_eq!(RmwRet::Error.to_i32(), 1);
-        assert_eq!(RmwRet::Timeout.to_i32(), 2);
-        assert_eq!(RmwRet::Unsupported.to_i32(), 3);
-        assert_eq!(RmwRet::BadAlloc.to_i32(), 10);
-        assert_eq!(RmwRet::InvalidArgument.to_i32(), 11);
-        assert_eq!(RmwRet::IncorrectRmwImplementation.to_i32(), 12);
+    fn rmw_h_success_is_rmw_ret_ok_and_a_plain_failure_rmw_ret_error() {
+        assert_eq!(map_to_rmw_ret::<&str>(Ok(())), RmwRet::Ok);
+        assert_eq!(map_to_rmw_ret(Err("boom")), RmwRet::Error);
     }
 
+    /// rmw/rmw.h `rmw_get_implementation_identifier` and
+    /// rmw/check_type_identifiers_match.h: the identifier is the name
+    /// under which ament registers the implementation (`rmw_zerodds_cpp`),
+    /// and a handle of another implementation is refused with
+    /// RMW_RET_INCORRECT_RMW_IMPLEMENTATION.
     #[test]
-    fn implementation_identifier_matches_convention() {
-        assert!(RMW_IMPLEMENTATION_IDENTIFIER.starts_with("rmw_"));
-        assert!(RMW_IMPLEMENTATION_IDENTIFIER.ends_with("_cpp"));
-    }
-
-    #[test]
-    fn check_rmw_identifier_accepts_correct() {
-        check_rmw_identifier(RMW_IMPLEMENTATION_IDENTIFIER).unwrap();
-    }
-
-    #[test]
-    fn check_rmw_identifier_rejects_other_vendor() {
-        assert_eq!(
-            check_rmw_identifier("rmw_cyclonedds_cpp"),
-            Err(RmwRet::IncorrectRmwImplementation)
-        );
-    }
-
-    #[test]
-    fn map_to_rmw_ret_ok() {
-        let r: Result<(), &str> = Ok(());
-        assert_eq!(map_to_rmw_ret(r), RmwRet::Ok);
-    }
-
-    #[test]
-    fn map_to_rmw_ret_err() {
-        let r: Result<(), &str> = Err("boom");
-        assert_eq!(map_to_rmw_ret(r), RmwRet::Error);
-    }
-
-    #[test]
-    fn rmw_node_construction() {
-        let n = RmwNode {
-            implementation_identifier: RMW_IMPLEMENTATION_IDENTIFIER.into(),
-            name: "talker".into(),
-            namespace: "/".into(),
-            domain_id: 42,
-        };
-        assert_eq!(n.domain_id, 42);
+    fn rmw_h_the_identifier_is_rmw_zerodds_cpp_and_another_implementation_is_refused() {
+        assert_eq!(RMW_IMPLEMENTATION_IDENTIFIER, "rmw_zerodds_cpp");
+        check_rmw_identifier("rmw_zerodds_cpp").unwrap();
+        for other in ["rmw_cyclonedds_cpp", "rmw_fastrtps_cpp", ""] {
+            assert_eq!(
+                check_rmw_identifier(other),
+                Err(RmwRet::IncorrectRmwImplementation),
+                "{other}"
+            );
+        }
     }
 }

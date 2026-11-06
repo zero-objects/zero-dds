@@ -73,7 +73,7 @@ class QosDurabilityServiceTest {
     // --- the history of the store -------------------------------------------------------
 
     @Test
-    void theHistoryDepthOfThePolicyDecidesWhatALateJoinerGets() throws Exception {
+    void javapsm_7_3_5_1_the_history_depth_of_the_policy_decides_what_a_late_joiner_gets() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             // the HISTORY of the writer is 1; the policy of the store says 3
             DataWriter<QosFixtures.Item> writer = rig.writer(transientWriter(
@@ -89,7 +89,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void keepAllInTheStoreKeepsEverySampleUpToTheLimit() throws Exception {
+    void javapsm_7_3_5_1_keep_all_in_the_store_keeps_every_sample_up_to_the_limit() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(transientWriter(
                     Qos.pf().DurabilityService().withHistoryKind(
@@ -106,7 +106,7 @@ class QosDurabilityServiceTest {
     // --- the limits of the store --------------------------------------------------------
 
     @Test
-    void aSampleBeyondMaxSamplesPerInstanceIsRefusedAndNotDelivered() throws Exception {
+    void javapsm_7_3_5_1_a_sample_beyond_max_samples_per_instance_is_refused_and_not_delivered() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> live = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(transientWriter(
@@ -128,7 +128,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void aNewInstanceBeyondMaxInstancesIsRefused() throws Exception {
+    void javapsm_7_3_5_1_a_new_instance_beyond_max_instances_is_refused() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(transientWriter(
                     Qos.pf().DurabilityService().withMaxInstances(1)));
@@ -139,7 +139,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void maxSamplesBoundsTheSamplesOfAllInstancesTogether() throws Exception {
+    void javapsm_7_3_5_1_max_samples_bounds_the_samples_of_all_instances_together() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(transientWriter(
                     Qos.pf().DurabilityService().withMaxSamples(2)));
@@ -162,7 +162,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void aDisposedInstanceStaysInTheStoreForTheCleanupDelayAndIsToldDisposed() throws Exception {
+    void javapsm_7_3_5_1_a_disposed_instance_stays_in_the_store_for_the_cleanup_delay_and_is_told_disposed() throws Exception {
         AtomicLong now = new AtomicLong(1_000_000L);
         STORE.useClock(now::get);
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
@@ -189,7 +189,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void withNoCleanupDelayADisposedInstanceWithoutWritersIsForgottenAtOnce() throws Exception {
+    void javapsm_7_3_5_1_with_no_cleanup_delay_a_disposed_instance_without_writers_is_forgotten_at_once() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(disposingTransientWriter(0));
             writer.write(new QosFixtures.Item(1, 7));
@@ -200,7 +200,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void anInstanceDisposedWhileAWriterStillWritesItIsKeptDisposed() throws Exception {
+    void javapsm_7_3_5_1_an_instance_disposed_while_a_writer_still_writes_it_is_kept_disposed() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(disposingTransientWriter(0));
             writer.write(new QosFixtures.Item(1, 7));
@@ -216,7 +216,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void aWriteAfterTheDisposeMakesTheInstanceAliveInTheStore() throws Exception {
+    void javapsm_7_3_5_1_a_write_after_the_dispose_makes_the_instance_alive_in_the_store() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(disposingTransientWriter(100));
             writer.write(new QosFixtures.Item(1, 7));
@@ -230,7 +230,7 @@ class QosDurabilityServiceTest {
     }
 
     @Test
-    void durableSamplesKeepTheirSourceTimestampAndReachTheReaderWithItsLifespan() throws Exception {
+    void javapsm_7_3_5_1_durable_samples_keep_their_source_timestamp_and_reach_the_reader_with_its_lifespan() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(transientWriter(Qos.pf().DurabilityService())
                     .withPolicy(Qos.pf().Lifespan().withDuration(60, TimeUnit.SECONDS)));

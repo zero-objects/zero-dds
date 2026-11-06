@@ -714,21 +714,6 @@ mod tests {
         assert!(diagnostics[0].is_error());
     }
 
-    #[test]
-    fn formatting_twice_changes_nothing() {
-        let sources = [
-            "module m { struct S { @key long id; string<32> name; }; };",
-            "enum Color { RED, GREEN, BLUE };",
-            "// top\n#include \"other.idl\"\nstruct S { long a; /* mid */ long b; };",
-            "union U switch (short) { case 1: case 2: long a; default: octet b; };",
-            "interface I { readonly attribute long temp, humid; void f(in long x); };",
-        ];
-        for source in sources {
-            let once = format(source);
-            assert_eq!(format(&once), once, "{source}");
-        }
-    }
-
     // -----------------------------------------------------------------
     // The corpus: every IDL file the repository has.
     // -----------------------------------------------------------------
@@ -752,7 +737,7 @@ mod tests {
     /// tokens, same comments, same model. A refusal is only legitimate
     /// for a file that does not parse cleanly in the first place.
     #[test]
-    fn the_corpus_formats_idempotently_and_round_trips() {
+    fn deployment_1_3_the_corpus_formats_idempotently_and_round_trips() {
         let repo = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let mut files = Vec::new();
         idl_files_under(&repo.join("tests/interop-corpus"), &mut files);

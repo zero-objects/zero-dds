@@ -90,12 +90,12 @@ fi
 # layout is `nested` for a column that writes `<dir>/<case>/<file>` and
 # `flat` for one that writes `<dir>/<case>.<ext>`.
 in_process=(
-    "ZD_RUST_OUT|--test end_to_end|every_corpus_case_renders_or_names_its_failure|zerodds-rust|nested"
-    "ZD_PYTHON_OUT|--lib|adapter::python::tests::every_corpus_case_renders_or_names_its_failure|zerodds-python|nested"
-    "ZD_JAVA_OUT|--lib|adapter::java::tests::every_corpus_case_renders_or_names_its_failure|zerodds-java|nested"
-    "ZD_CSHARP_OUT|--lib|adapter::csharp::tests::every_corpus_case_renders_or_names_its_failure|zerodds-csharp|nested"
-    "ZD_TS_OUT|--lib|adapter::typescript::tests::every_corpus_case_renders_or_names_its_failure|zerodds-typescript|nested"
-    "ZERODDS_CPP_OUT|--lib|adapter::cpp::tests::every_corpus_case_renders_or_names_its_refusal|zerodds-cpp|flat"
+    "ZD_RUST_OUT|--test end_to_end|xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure|zerodds-rust|nested"
+    "ZD_PYTHON_OUT|--lib|adapter::python::tests::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure|zerodds-python|nested"
+    "ZD_JAVA_OUT|--lib|adapter::java::tests::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure|zerodds-java|nested"
+    "ZD_CSHARP_OUT|--lib|adapter::csharp::tests::idl4csharp_7_2_4_2_3_every_corpus_case_renders_or_names_its_failure|zerodds-csharp|nested"
+    "ZD_TS_OUT|--lib|adapter::typescript::tests::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure|zerodds-typescript|nested"
+    "ZERODDS_CPP_OUT|--lib|adapter::cpp::tests::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal|zerodds-cpp|flat"
 )
 
 for entry in "${in_process[@]}"; do

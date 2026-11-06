@@ -1172,8 +1172,16 @@ fn every_component_model_forward_keeps_its_own_form() {
     for (source, expected) in [
         ("component C; component C { };", InterfaceKind::Component),
         ("home H; home H { };", InterfaceKind::Home),
-        ("connector K; connector K { };", InterfaceKind::Connector),
-        ("porttype P; porttype P { };", InterfaceKind::PortType),
+        // A connector and a port type hold at least one port (IDL 4.2
+        // §7.4.11.4.1.1, §7.4.11.4.3).
+        (
+            "interface I { }; connector K; connector K { provides I p; };",
+            InterfaceKind::Connector,
+        ),
+        (
+            "interface I { }; porttype P; porttype P { uses I r; };",
+            InterfaceKind::PortType,
+        ),
     ] {
         let parsed = parse(source);
         assert!(
@@ -1190,7 +1198,7 @@ fn every_component_model_forward_keeps_its_own_form() {
         let (_, node) = lowered
             .ast
             .interfaces()
-            .find(|(_, node)| node.completeness == Completeness::Complete)
+            .find(|(_, node)| node.completeness == Completeness::Complete && node.name != "I")
             .expect("the definition");
         assert_eq!(node.kind, expected, "{source:?}");
     }

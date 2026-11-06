@@ -9,7 +9,7 @@
 //! about twenty minutes for a fifth of the matrix, which is why the C
 //! column was measured once and quoted afterwards.
 //!
-//! This does the same work with five costs removed:
+//! This does the same work with six costs removed:
 //!
 //! 1. **The runtime is compiled once.** `runtime/c`'s five sources
 //!    become one archive at start-up instead of being recompiled for
@@ -32,6 +32,11 @@
 //!    dialect — so the sources are hashed and only the distinct ones
 //!    reach the compiler. Measured over the whole corpus: 11,690 units,
 //!    5,459 distinct.
+//! 6. **A group of units is one compiler call and one program.** The
+//!    units a run has to compile go to the compiler in groups, each unit
+//!    behind a wrapper that renames its `main`, and are linked once per
+//!    group with a dispatcher; the cache holds the program under every
+//!    unit's name (`build_groups`).
 //!
 //! ## What it measures
 //!
@@ -55,9 +60,10 @@
 //! ## Output
 //!
 //! One JSON object, `case → slot → verdict`, in the shape
-//! `tools/wireprobe/corpus-python.py --matrix` produces, so that
-//! `crates/wire-probe/tests/three_column_gate.rs` can compare the two
-//! without a translation layer in between.
+//! `zerodds_wire_probe::matrix::row` answers for the Rust column.
+//! `tests/expected_bytes.rs` holds it to `tests/interop-corpus/expected-bytes.tsv`
+//! (`zerodds_wire_probe::expected`); `tools/interop-results` reads the
+//! whole of it from `tools/wireprobe/three-column-gate --full`.
 #![forbid(unsafe_code)]
 #![allow(clippy::print_stderr, clippy::print_stdout, clippy::exit)]
 
@@ -85,6 +91,8 @@ wireprobe-c-matrix — the C column of the interop corpus, whole
     --cache <dir>       where compiled probes are kept between runs
                         (default: target/wireprobe-c-cache)
     --config <name>     only this configuration, repeatable
+    --encoding <name>   only this encoding (plain-cdr1, pl-cdr1,
+                        plain-cdr2, delimited-cdr, pl-cdr2), repeatable
     --keep              leave the build directory behind, for a look at
                         the C a failing case produced
 ";
@@ -446,6 +454,8 @@ struct Options {
     out: PathBuf,
     only: Vec<String>,
     configurations: Vec<String>,
+    /// Only these encodings, by their slot names; all when empty.
+    encodings: Vec<String>,
     jobs: usize,
     keep: bool,
     /// Where compiled probes are kept between runs.
@@ -476,7 +486,7 @@ fn run(options: &Options) -> Result<(), String> {
         &runtime_directory(&root),
     )?;
 
-    let slots = plan(&cases, &options.configurations);
+    let slots = plan(&cases, &options.configurations, &options.encodings);
     // One translation unit per case, configuration and encoding: a fifth
     // of the slots, because the byte order and the emit form are the
     // compiled program's arguments.
@@ -530,6 +540,15 @@ fn run(options: &Options) -> Result<(), String> {
         started.elapsed().as_secs_f64()
     );
 
+    // Pass two, first half: the units no earlier run compiled go through
+    // the compiler a group at a time, one program per group
+    // (`build_groups`).
+    build_groups(options.jobs, &cases, &units, &distinct, &archive, &cache)?;
+    eprintln!(
+        "wireprobe-c-matrix: compiled after {:.0}s",
+        started.elapsed().as_secs_f64()
+    );
+
     // Pass two: compile and run one probe per distinct translation unit,
     // once for each byte order and emit form. Two configurations that
     // produced the same C produce the same bytes, which is what makes
@@ -540,7 +559,7 @@ fn run(options: &Options) -> Result<(), String> {
         let (case, unit) = units[unit_index];
         let outcome = measure(&cases[case], unit, &archive, &cache, &build);
         let seen = done.fetch_add(1, Ordering::Relaxed) + 1;
-        if seen % 500 == 0 {
+        if seen.is_multiple_of(500) {
             eprintln!(
                 "wireprobe-c-matrix: {seen}/{} unit(s) after {:.0}s",
                 distinct.len(),
@@ -630,7 +649,7 @@ fn unit_index_of(unit: Unit) -> usize {
 }
 
 /// Every measurement the matrix holds, in a stable order.
-fn plan(cases: &[Case], wanted: &[String]) -> Vec<Slot> {
+fn plan(cases: &[Case], wanted: &[String], encodings: &[String]) -> Vec<Slot> {
     let mut slots = Vec::new();
     for case in 0..cases.len() {
         for (configuration, settings) in CONFIGURATIONS.iter().enumerate() {
@@ -638,6 +657,9 @@ fn plan(cases: &[Case], wanted: &[String]) -> Vec<Slot> {
                 continue;
             }
             for (encoding_name, encoding) in ENCODINGS {
+                if !encodings.is_empty() && !encodings.iter().any(|name| name == encoding_name) {
+                    continue;
+                }
                 let unit = Unit {
                     configuration,
                     encoding,
@@ -899,7 +921,14 @@ fn measure(
             format!("{order_name}/read"),
             match (&read_failure, &payload) {
                 (Some(message), _) => message.clone(),
-                (None, Ok(bytes)) => read_back(case, probe, order, bytes, work)?,
+                (None, Ok(bytes)) => read_back(
+                    case,
+                    CONFIGURATIONS[unit.configuration].dialect,
+                    probe,
+                    order,
+                    bytes,
+                    work,
+                )?,
                 // Nothing was written, so there is nothing to read. Told
                 // apart from a reader that failed: the two are different
                 // findings.
@@ -980,6 +1009,188 @@ fn build(
     }
 }
 
+/// How many translation units one compiler call takes at most.
+const GROUP_SIZE: usize = 48;
+
+/// Compiles the distinct units that are not in the cache yet: a group of
+/// them per compiler call, linked into one program per group, which the
+/// cache holds under the name of each of its units (a hard link). The
+/// program runs the unit its own name starts with.
+///
+/// With one call per unit every unit paid a compiler start, an
+/// assembler, a link against the runtime archive and a freshly linked
+/// binary, and `tests/expected_bytes.rs` ran past a test's 25 s under load
+/// on the CI runner host (job 230529).
+///
+/// A unit whose C does not compile leaves no object behind; it stays out
+/// of its group's program and goes through [`build`] alone, the way every
+/// unit went before, so its report names its own diagnostic in the same
+/// words.
+fn build_groups(
+    jobs: usize,
+    cases: &[Case],
+    units: &[(usize, Unit)],
+    distinct: &[(u128, usize)],
+    archive: &Path,
+    cache: &Cache,
+) -> Result<(), String> {
+    let pending: Vec<(u128, usize)> = distinct
+        .iter()
+        .copied()
+        .filter(|(digest, _)| {
+            !cache.path(*digest, "full", ".bin").is_file()
+                && !cache.path(*digest, "full", ".err").is_file()
+        })
+        .collect();
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let size = pending.len().div_ceil(jobs.max(1)).clamp(1, GROUP_SIZE);
+    let groups: Vec<&[(u128, usize)]> = pending.chunks(size).collect();
+    for outcome in each(jobs, groups.len(), |index| {
+        build_group(groups[index], cases, units, archive, cache)
+    }) {
+        outcome?;
+    }
+    Ok(())
+}
+
+/// One group of [`build_groups`]: each unit in a directory of its own
+/// behind a wrapper that renames its `main`, one compiler call for the
+/// wrappers, one link of the objects with a dispatcher.
+fn build_group(
+    group: &[(u128, usize)],
+    cases: &[Case],
+    units: &[(usize, Unit)],
+    archive: &Path,
+    cache: &Cache,
+) -> Result<(), String> {
+    let first = group.first().map_or(0, |(digest, _)| *digest);
+    // Beside the cache, as `build` does, so that the hard links into it
+    // stay on one filesystem.
+    let directory = cache
+        .root
+        .join(format!("group-{}-{first:032x}", std::process::id()));
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("{}: {error}", directory.display()))?;
+    let mut wrappers = Vec::new();
+    let mut members = Vec::new();
+    for (position, (digest, unit_index)) in group.iter().enumerate() {
+        let (case, unit) = units[*unit_index];
+        // A unit the generator refuses has no probe; `measure` files the
+        // refusal.
+        let Ok(sources) = source_for(&cases[case], unit) else {
+            continue;
+        };
+        let unit_directory = directory.join(format!("u{position}"));
+        std::fs::create_dir_all(&unit_directory)
+            .map_err(|error| format!("{}: {error}", unit_directory.display()))?;
+        std::fs::write(unit_directory.join("gen.h"), &sources.header)
+            .map_err(|error| format!("{error}"))?;
+        std::fs::write(unit_directory.join("probe.c"), &sources.probe)
+            .map_err(|error| format!("{error}"))?;
+        // `probe.c` includes `gen.h` with quotes, which the compiler looks
+        // for beside `probe.c` first: each unit finds its own.
+        let wrapper = format!("u{position}.c");
+        std::fs::write(
+            directory.join(&wrapper),
+            format!("#define main zd_unit_{position}\n#include \"u{position}/probe.c\"\n"),
+        )
+        .map_err(|error| format!("{error}"))?;
+        wrappers.push(wrapper);
+        members.push((*digest, position));
+    }
+    let root = repository_root();
+    let runtime = runtime_directory(&root);
+    let here = root.join("tools").join("wireprobe");
+    let cc = std::env::var("CC").unwrap_or_else(|_| "cc".to_string());
+    if !wrappers.is_empty() {
+        // The status says only that some unit failed; which ones is told by
+        // the objects that are missing.
+        let _ = Command::new(&cc)
+            .args(cflags())
+            .arg("-c")
+            .args(&wrappers)
+            .arg("-I")
+            .arg(&here)
+            .arg("-I")
+            .arg(runtime.join("include"))
+            .current_dir(&directory)
+            .output()
+            .map_err(|error| format!("the C compiler could not be started: {error}"))?;
+    }
+    let compiled: Vec<(u128, usize)> = members
+        .into_iter()
+        .filter(|(_, position)| directory.join(format!("u{position}.o")).is_file())
+        .collect();
+    if !compiled.is_empty() {
+        std::fs::write(directory.join("dispatch.c"), dispatcher(&compiled))
+            .map_err(|error| format!("{error}"))?;
+        let program = directory.join("group");
+        let linked = Command::new(&cc)
+            .args(cflags())
+            .arg("-o")
+            .arg(&program)
+            .arg("dispatch.c")
+            .args(
+                compiled
+                    .iter()
+                    .map(|(_, position)| format!("u{position}.o")),
+            )
+            .arg(archive)
+            .arg("-lm")
+            .current_dir(&directory)
+            .output()
+            .map_err(|error| format!("the C compiler could not be started: {error}"))?;
+        if linked.status.success() {
+            for (digest, _) in &compiled {
+                let target = cache.path(*digest, "full", ".bin");
+                // Another run that filed the same unit first filed the same
+                // program for it: the key says so.
+                if std::fs::hard_link(&program, &target).is_err() && !target.is_file() {
+                    let _ = std::fs::copy(&program, &target);
+                }
+            }
+        }
+    }
+    let _ = std::fs::remove_dir_all(&directory);
+    Ok(())
+}
+
+/// The `main` of a group's program: the unit whose digest the program's
+/// own file name starts with, which is the cache's name for that unit.
+fn dispatcher(members: &[(u128, usize)]) -> String {
+    let mut out = String::from("#include <stdio.h>\n#include <string.h>\n\n");
+    for (_, position) in members {
+        out.push_str(&format!("int zd_unit_{position}(int argc, char **argv);\n"));
+    }
+    out.push_str(
+        "\nstatic const struct {\n\
+         \x20   const char *digest;\n\
+         \x20   int (*run)(int argc, char **argv);\n\
+         } zd_units[] = {\n",
+    );
+    for (digest, position) in members {
+        out.push_str(&format!("    {{\"{digest:032x}\", zd_unit_{position}}},\n"));
+    }
+    out.push_str(
+        "};\n\n\
+         int main(int argc, char **argv) {\n\
+         \x20   const char *name = strrchr(argv[0], '/');\n\
+         \x20   size_t index;\n\
+         \x20   name = name != NULL ? name + 1 : argv[0];\n\
+         \x20   for (index = 0; index < sizeof zd_units / sizeof zd_units[0]; index++) {\n\
+         \x20       if (strncmp(name, zd_units[index].digest, 32) == 0) {\n\
+         \x20           return zd_units[index].run(argc, argv);\n\
+         \x20       }\n\
+         \x20   }\n\
+         \x20   fprintf(stderr, \"wireprobe-c-matrix: no unit is named %s\\n\", name);\n\
+         \x20   return 2;\n\
+         }\n",
+    );
+    out
+}
+
 /// Every slot of one unit, filled with one refusal.
 ///
 /// The read slots say `unwritten` rather than repeating the reason,
@@ -1018,6 +1229,7 @@ fn run_probe(probe: &Path, form: Form, order: &str) -> Result<Vec<u8>, String> {
 /// with each other and disagree with the sample.
 fn read_back(
     case: &Case,
+    dialect: Dialect,
     probe: &Path,
     order: &str,
     payload: &[u8],
@@ -1046,7 +1258,7 @@ fn read_back(
         Ok(value) => value,
         Err(error) => return Ok(format!("!the probe's JSON does not parse: {error}")),
     };
-    Ok(compare(case, &found))
+    Ok(compare(case, dialect, &found))
 }
 
 /// `cc` over the probe and the prebuilt runtime archive.
@@ -1133,9 +1345,14 @@ fn cflags() -> Vec<String> {
 /// Both through `crates/wire-probe/src/canonical.rs`, which is the one
 /// form two implementations' values can be compared in: `2.0` and
 /// `2.0e0` are the same value and a text comparison would call them a
-/// wire divergence.
-fn compare(case: &Case, found: &serde_json::Value) -> String {
-    let Ok(ast) = zerodds_wire_probe::encode::model_from_idl(&case.idl, "type.idl") else {
+/// wire divergence. The model is the dialect's reading of the IDL, as
+/// the generator lowered it: Fast DDS, RTI and the ROS middlewares admit
+/// a declaration named like its enclosing scope
+/// (`resolve-module-named-as-type`), the clause does not.
+fn compare(case: &Case, dialect: Dialect, found: &serde_json::Value) -> String {
+    let Ok(ast) =
+        zerodds_wire_probe::encode::model_from_idl_in_dialect(&case.idl, "type.idl", dialect)
+    else {
         return "!the IDL does not lower".to_string();
     };
     let Some(type_) = ast
@@ -1319,6 +1536,7 @@ fn parse(argv: Vec<String>) -> Result<Options, String> {
     let mut out = None;
     let mut only = Vec::new();
     let mut configurations = Vec::new();
+    let mut encodings = Vec::new();
     let mut jobs = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
     let mut keep = false;
     let mut cache = None;
@@ -1346,6 +1564,13 @@ fn parse(argv: Vec<String>) -> Result<Options, String> {
                 }
                 configurations.push(name);
             }
+            "--encoding" => {
+                let name = next()?;
+                if !ENCODINGS.iter().any(|(entry, _)| *entry == name) {
+                    return Err(format!("`{name}` is not an encoding"));
+                }
+                encodings.push(name);
+            }
             "--jobs" => {
                 jobs = next()?
                     .parse()
@@ -1364,6 +1589,7 @@ fn parse(argv: Vec<String>) -> Result<Options, String> {
         out: out.ok_or("--out is required")?,
         only,
         configurations,
+        encodings,
         jobs,
         keep,
         cache,

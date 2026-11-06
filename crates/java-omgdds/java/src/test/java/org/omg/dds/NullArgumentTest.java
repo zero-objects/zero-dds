@@ -132,7 +132,7 @@ class NullArgumentTest {
     }
 
     @Test
-    void aNullArgumentIsIllegalArgumentExceptionAndNeverNullPointerException() throws Exception {
+    void javapsm_7_3_2_a_null_argument_is_illegal_argument_exception_and_never_null_pointer_exception() throws Exception {
         TreeSet<String> failures = new TreeSet<>();
         int calls = 0;
         Class<?>[] interfaces = {DomainParticipant.class, Publisher.class, Subscriber.class,

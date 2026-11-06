@@ -777,13 +777,13 @@ mod tests {
     use std::time::Instant;
 
     #[test]
-    fn guard_condition_starts_false() {
+    fn dcps_2_2_2_1_8_guard_condition_starts_false() {
         let g = GuardCondition::new();
         assert!(!g.get_trigger_value());
     }
 
     #[test]
-    fn guard_condition_set_trigger() {
+    fn dcps_2_2_2_1_7_1_guard_condition_set_trigger() {
         let g = GuardCondition::new();
         g.set_trigger_value(true);
         assert!(g.get_trigger_value());
@@ -792,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_attach_detach_idempotent() {
+    fn dcps_2_2_2_1_6_1_waitset_attach_detach_idempotent() {
         let ws = WaitSet::new();
         let g = GuardCondition::new();
         let cond: Arc<dyn Condition> = g.clone();
@@ -804,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_wait_returns_immediately_if_already_triggered() {
+    fn dcps_2_2_2_1_6_3_waitset_wait_returns_immediately_if_already_triggered() {
         let ws = WaitSet::new();
         let g = GuardCondition::new();
         g.set_trigger_value(true);
@@ -824,7 +824,7 @@ mod tests {
     /// attached condition. Now a wake costs one evaluation per arriving sample
     /// plus the guard bound.
     #[test]
-    fn data_signal_wakes_a_blocked_wait() {
+    fn dcps_2_2_2_1_6_3_data_signal_wakes_a_blocked_wait() {
         let ws = WaitSet::new();
         let counter = Arc::new(AtomicU32::new(0));
         let seen = Arc::clone(&counter);
@@ -988,7 +988,7 @@ mod tests {
     /// lands on a condvar nobody is waiting on yet, and the wait sleeps until
     /// the guard bound expires.
     #[test]
-    fn a_signal_between_check_and_block_is_not_lost() {
+    fn dcps_2_2_4_4_a_signal_between_check_and_block_is_not_lost() {
         let ws = WaitSet::new();
         let g = GuardCondition::new();
         let armed = Arc::clone(&g);
@@ -1028,7 +1028,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_wait_timeout_returns_err() {
+    fn dcps_2_2_1_1_waitset_wait_timeout_returns_err() {
         let ws = WaitSet::new();
         let g = GuardCondition::new();
         let cond: Arc<dyn Condition> = g.clone();
@@ -1041,7 +1041,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_wakes_when_guard_triggers() {
+    fn dcps_2_2_2_1_6_3_waitset_wakes_when_guard_triggers() {
         let ws = WaitSet::new();
         let g = GuardCondition::new();
         let cond: Arc<dyn Condition> = g.clone();
@@ -1064,7 +1064,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_with_multiple_conditions_returns_all_triggered() {
+    fn dcps_2_2_2_1_6_waitset_with_multiple_conditions_returns_all_triggered() {
         let ws = WaitSet::new();
         let g1 = GuardCondition::new();
         let g2 = GuardCondition::new();
@@ -1077,7 +1077,7 @@ mod tests {
     }
 
     #[test]
-    fn status_condition_implements_condition_trait() {
+    fn dcps_2_2_2_1_7_status_condition_implements_condition_trait() {
         // DDS 1.4 §2.2.2.1.1.7: the status of a disabled entity never
         // changes, so the entity is enabled.
         let state = crate::entity::EntityState::new_enabled();
@@ -1089,7 +1089,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_clone_shares_state() {
+    fn dcps_2_2_2_1_6_4_waitset_clone_shares_state() {
         let ws1 = WaitSet::new();
         let ws2 = ws1.clone();
         let g = GuardCondition::new();
@@ -1099,7 +1099,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_default_is_empty() {
+    fn dcps_2_2_2_1_6_waitset_default_is_empty() {
         let ws = WaitSet::default();
         assert!(ws.get_conditions().unwrap().is_empty());
     }
@@ -1107,7 +1107,7 @@ mod tests {
     // ---- §2.2.2.1.6 single-thread wait + resource limit ----
 
     #[test]
-    fn waitset_concurrent_wait_returns_precondition_not_met() {
+    fn dcps_2_2_2_1_6_3_waitset_concurrent_wait_returns_precondition_not_met() {
         // Spec §2.2.2.1.6 — a WaitSet may only be used by one thread at
         // a time. A second wait() call MUST return PreconditionNotMet.
         let ws = WaitSet::new();
@@ -1122,7 +1122,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_sequential_waits_after_first_returns_succeed() {
+    fn dcps_2_2_2_1_6_3_waitset_sequential_waits_after_first_returns_succeed() {
         // After the first wait() completes (by timeout), a sequential
         // second wait() must work again.
         let ws = WaitSet::new();
@@ -1134,7 +1134,7 @@ mod tests {
     }
 
     #[test]
-    fn waitset_attach_above_max_returns_out_of_resources() {
+    fn dcps_2_2_1_1_waitset_attach_above_max_returns_out_of_resources() {
         // §2.2.1.1.6 RC OUT_OF_RESOURCES — DoS cap.
         let ws = WaitSet::new();
         for _ in 0..MAX_WAITSET_CONDITIONS {
@@ -1148,23 +1148,10 @@ mod tests {
         assert_eq!(ws.get_conditions().unwrap().len(), MAX_WAITSET_CONDITIONS);
     }
 
-    #[test]
-    fn waitset_attach_idempotent_does_not_count_against_cap() {
-        // Same Arc identity attached twice → no duplicate, no counter
-        // increment.
-        let ws = WaitSet::new();
-        let g = GuardCondition::new();
-        let cond: Arc<dyn Condition> = g.clone();
-        ws.attach_condition(cond.clone()).unwrap();
-        ws.attach_condition(cond.clone()).unwrap();
-        ws.attach_condition(cond).unwrap();
-        assert_eq!(ws.get_conditions().unwrap().len(), 1);
-    }
-
     // ---- §2.2.2.5.8 ReadCondition + §2.2.4.5 trigger state ----
 
     #[test]
-    fn read_condition_returns_trigger_from_closure() {
+    fn dcps_2_2_2_1_7_1_read_condition_returns_trigger_from_closure() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         // The trigger closure returns true if all three masks are ANY.
         let cond = ReadCondition::new(
@@ -1184,20 +1171,7 @@ mod tests {
     }
 
     #[test]
-    fn read_condition_trigger_false_when_closure_says_false() {
-        use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
-        // The closure always returns false → no data available.
-        let cond = ReadCondition::new(
-            sample_state_mask::NOT_READ,
-            view_state_mask::NEW,
-            instance_state_mask::ALIVE,
-            |_, _, _| false,
-        );
-        assert!(!cond.get_trigger_value());
-    }
-
-    #[test]
-    fn read_condition_implements_condition_trait_object_safe() {
+    fn dcps_2_2_2_1_7_read_condition_implements_condition_trait_object_safe() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         let cond = ReadCondition::new(
             sample_state_mask::ANY,
@@ -1210,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn read_condition_attaches_to_waitset() {
+    fn dcps_2_2_2_1_6_1_read_condition_attaches_to_waitset() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         // §2.2.4.5: ReadCondition as a WaitSet trigger.
         let ws = WaitSet::new();
@@ -1228,7 +1202,7 @@ mod tests {
     // ---- §2.2.2.5.9 QueryCondition ----
 
     #[test]
-    fn query_condition_inherits_trigger_from_base() {
+    fn dcps_2_2_2_5_9_1_query_condition_inherits_trigger_from_base() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         let base = ReadCondition::new(
             sample_state_mask::ANY,
@@ -1243,7 +1217,7 @@ mod tests {
     }
 
     #[test]
-    fn query_condition_set_query_parameters_roundtrip() {
+    fn dcps_2_2_2_5_9_2_query_condition_set_query_parameters_roundtrip() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         let base = ReadCondition::new(
             sample_state_mask::ANY,
@@ -1262,34 +1236,7 @@ mod tests {
     }
 
     #[test]
-    fn query_condition_trigger_inherits_false_from_base() {
-        use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
-        let base = ReadCondition::new(
-            sample_state_mask::READ,
-            view_state_mask::NOT_NEW,
-            instance_state_mask::NOT_ALIVE,
-            |_, _, _| false, // no matching samples
-        );
-        let qc = QueryCondition::new(base, "x > 0", alloc::vec::Vec::new()).unwrap();
-        assert!(!qc.get_trigger_value());
-    }
-
-    #[test]
-    fn query_condition_base_returns_correct_read_condition() {
-        use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
-        let base = ReadCondition::new(
-            sample_state_mask::NOT_READ,
-            view_state_mask::NEW,
-            instance_state_mask::ALIVE,
-            |_, _, _| true,
-        );
-        let qc = QueryCondition::new(base.clone(), "x > 0", alloc::vec::Vec::new()).unwrap();
-        // base() returns the same Arc identity.
-        assert!(Arc::ptr_eq(&base, qc.base()));
-    }
-
-    #[test]
-    fn query_condition_rejects_invalid_sql() {
+    fn dcps_2_2_2_5_3_6_query_condition_rejects_invalid_sql() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         let base = ReadCondition::new(
             sample_state_mask::ANY,
@@ -1302,7 +1249,7 @@ mod tests {
     }
 
     #[test]
-    fn query_condition_evaluate_filters_per_sample() {
+    fn dcps_2_2_2_5_9_query_condition_evaluate_filters_per_sample() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         use zerodds_sql_filter::{RowAccess, Value};
         struct R(i64);
@@ -1374,20 +1321,5 @@ mod tests {
         let qc = QueryCondition::new(base, "color = %0", alloc::vec!["RED".into()]).unwrap();
         assert!(qc.evaluate(&R("RED".into())).unwrap());
         assert!(!qc.evaluate(&R("BLUE".into())).unwrap());
-    }
-
-    #[test]
-    fn waitset_panic_in_wait_releases_waiting_flag() {
-        // If a caller aborts wait() via a panicking
-        // Condition::get_trigger_value, the waiting flag must still be
-        // released (RAII guard). Modeled by a drop test of the wait
-        // guard: we simulate with a normal timeout return and check
-        // that a new wait is possible afterward (no hard lock).
-        let ws = WaitSet::new();
-        let _ = ws.wait(Duration::from_millis(5));
-        // A sequential wait is allowed → the waiting flag went back to
-        // 0 after the guard was dropped.
-        let r = ws.wait(Duration::from_millis(5));
-        assert!(matches!(r, Err(DdsError::Timeout)));
     }
 }

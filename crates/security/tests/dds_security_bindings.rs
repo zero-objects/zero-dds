@@ -83,7 +83,7 @@ fn run_output(mut cmd: Command, what: &str) -> String {
 /// operations of the Logging interface (Table 46) with the generated
 /// prototypes links and runs.
 #[test]
-fn c_representation_compiles_and_the_logging_operations_link() {
+fn security_11_1_c_representation_compiles_and_the_logging_operations_link() {
     if !available("cc", "--version") {
         println!("[skip] no C compiler");
         return;
@@ -222,7 +222,7 @@ int main() {{
 }
 
 #[test]
-fn cpp_classic_representation_compiles_and_the_logging_interface_is_implementable() {
+fn security_11_1_cpp_classic_representation_compiles_and_the_logging_interface_is_implementable() {
     if !available("c++", "--version") {
         println!("[skip] no C++ compiler");
         return;
@@ -251,7 +251,7 @@ fn cpp_classic_representation_compiles_and_the_logging_interface_is_implementabl
 }
 
 #[test]
-fn cpp11_representation_compiles_without_a_cpp11_only_feature() {
+fn security_11_1_cpp11_representation_compiles_without_a_cpp11_only_feature() {
     if !available("c++", "--version") {
         println!("[skip] no C++ compiler");
         return;
@@ -434,7 +434,7 @@ public class Main {{
 }
 
 #[test]
-fn java_classic_representation_compiles_and_the_logging_interface_is_implementable() {
+fn security_11_1_java_classic_representation_compiles_and_the_logging_interface_is_implementable() {
     if !java_available() {
         println!("[skip] no JDK");
         return;
@@ -454,7 +454,7 @@ fn java_classic_representation_compiles_and_the_logging_interface_is_implementab
 }
 
 #[test]
-fn java_modern_representation_maps_module_dds_to_org_omg_dds() {
+fn security_11_1_java_modern_representation_maps_module_dds_to_org_omg_dds() {
     if !java_available() {
         println!("[skip] no JDK");
         return;

@@ -156,7 +156,7 @@ fn rig() -> Rig {
 /// The reader, the subscriber, the writer and the topic arrive as objects,
 /// at the level of the entity and at the levels the status bubbles up to.
 #[test]
-fn a_shared_listener_is_called_with_the_entity() {
+fn dcps_2_2_4_3_a_shared_listener_is_called_with_the_entity() {
     let r = rig();
     let shared = Arc::new(Shared::default());
 
@@ -236,7 +236,7 @@ fn a_shared_listener_is_called_with_the_entity() {
 /// The participant's listener, where a status bubbles up to, gets the entity
 /// of the reader too.
 #[test]
-fn the_bubbled_up_call_gets_the_entity() {
+fn dcps_2_2_4_3_the_bubbled_up_call_gets_the_entity() {
     struct Top(Mutex<Vec<String>>);
     impl DomainParticipantListener for Top {
         fn on_data_available_entity(&self, reader: &AnyDataReader) {
@@ -260,7 +260,7 @@ fn the_bubbled_up_call_gets_the_entity() {
 /// A listener that implements the handle form is called as before: with
 /// the handle of the entity, and with a handle that names no entity.
 #[test]
-fn a_listener_of_the_handle_form_is_still_called() {
+fn dcps_2_2_4_3_a_listener_of_the_handle_form_is_still_called() {
     let r = rig();
     let legacy = Arc::new(Legacy::default());
     let chain = ReaderListenerChain {

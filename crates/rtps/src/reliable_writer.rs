@@ -992,28 +992,41 @@ impl ReliableWriter {
     }
 
     /// Octets of the in-line QoS [`Self::sample_inline_qos`] gives `sn`
-    /// for `peer` (the largest list for `None`), without building it where
-    /// only a key hash is there.
+    /// for `peer` (the largest list for `None`), counted from its parts.
+    ///
+    /// It used to build the list and measure it: for the largest list that
+    /// copied every parameter of the writer's QoS for each sample written,
+    /// 53 % of the writing thread's allocations (Linux test host, 1 kB
+    /// samples, BEST_EFFORT, 570 kS/s).
     fn sample_inline_qos_len(&self, sn: SequenceNumber, peer: Option<Guid>) -> usize {
         let Some(change) = self.cache.get(sn) else {
             return 0;
         };
+        let writer_qos = self
+            .inline_writer_qos
+            .as_ref()
+            .filter(|_| self.writer_qos_inline_for(peer));
         let more = change.inline_qos.is_some()
             || change.coherent_set_sn.is_some()
             || change.coherent_set_end
             || change.group.is_some()
-            || (self.inline_writer_qos.is_some()
-                && peer.is_none_or(|peer| {
-                    self.inline_qos_readers > 0
-                        && self
-                            .reader_proxies
-                            .iter()
-                            .any(|p| p.remote_reader_guid == peer && p.expects_inline_qos())
-                }));
+            || writer_qos.is_some();
         if more {
-            return self
-                .sample_inline_qos_for(sn, peer)
-                .map_or(0, |pl| pl.wire_len());
+            // The parameters of a list, without its sentinel.
+            let params = |list: &crate::parameter_list::ParameterList| list.wire_len() - 4;
+            let mut set = None;
+            self.push_set_params(change, peer, &mut set);
+            let parts = [
+                writer_qos.map(params),
+                change.inline_qos.as_ref().map(params),
+                set.as_ref().map(params),
+                change.key_hash.map(|_| 4 + 16),
+            ];
+            return if parts.iter().any(Option::is_some) {
+                parts.iter().flatten().sum::<usize>() + 4
+            } else {
+                0
+            };
         }
         // PID_KEY_HASH and the sentinel.
         change.key_hash.map_or(0, |_| 4 + 16 + 4)
@@ -1380,7 +1393,7 @@ impl ReliableWriter {
                 // `RawBytes` readers (zerodds-self tests see the
                 // pad as trailing bytes). Currently: 2 datagrams for
                 // odd payloads — wire conformance before perf.
-                let coframe = builder.len() % 4 == 0;
+                let coframe = builder.len().is_multiple_of(4);
                 if coframe && reliable {
                     self.append_heartbeat(
                         &mut builder,
@@ -1529,12 +1542,12 @@ impl ReliableWriter {
                     message: "history cache full or duplicate",
                 }
             })?;
-        if let Some(evicted_change) = evicted {
-            if self.payload_pool.len() < self.payload_pool_cap {
-                self.payload_pool.push(evicted_change.payload);
-            }
-            // otherwise drop (pool full — typically not in steady state).
+        if let Some(evicted_change) = evicted
+            && self.payload_pool.len() < self.payload_pool_cap
+        {
+            self.payload_pool.push(evicted_change.payload);
         }
+        // otherwise drop (pool full — typically not in steady state).
         if self.unacked_window > 0 && self.reader_proxies.iter().any(|p| p.is_reliable) {
             self.unacked.push_back((sn, payload.len()));
             self.unacked_bytes = self.unacked_bytes.saturating_add(payload.len());
@@ -1612,12 +1625,11 @@ impl ReliableWriter {
                 while let Some((sn, frag)) = self.reader_proxies[idx].next_requested_fragment() {
                     let more = fits(self, sn).saturating_sub(1);
                     let mut count = 1u16;
-                    if more > 0 {
-                        if let Some((_, _, extra)) = self.reader_proxies[idx]
+                    if more > 0
+                        && let Some((_, _, extra)) = self.reader_proxies[idx]
                             .next_requested_fragment_run_after(sn, frag, more)
-                        {
-                            count += extra;
-                        }
+                    {
+                        count += extra;
                     }
                     match self.cache.get(sn) {
                         Some(change) => {
@@ -1673,15 +1685,15 @@ impl ReliableWriter {
             // writer that replaced that change within the nackResponseDelay
             // (HDDS 1.4.8 behind a TRANSIENT writer: HEARTBEAT and GAP, no
             // DATA, OMG dds-rtps Test_Durability_9).
-            if !self.reader_proxies[idx].is_reliable || self.push_mode {
-                if let Some(cache_max) = self.cache.max_sn() {
-                    while let Some(sn) = self.reader_proxies[idx].next_unsent_change(cache_max) {
-                        if repaired_ahead.contains(&sn) {
-                            continue;
-                        }
-                        self.append_change(&mut builder, sn, peer_guid, &mut out, &targets)?;
-                        self.note_sent(sn, now);
+            if (!self.reader_proxies[idx].is_reliable || self.push_mode)
+                && let Some(cache_max) = self.cache.max_sn()
+            {
+                while let Some(sn) = self.reader_proxies[idx].next_unsent_change(cache_max) {
+                    if repaired_ahead.contains(&sn) {
+                        continue;
                     }
+                    self.append_change(&mut builder, sn, peer_guid, &mut out, &targets)?;
+                    self.note_sent(sn, now);
                 }
             }
             // A reader that asked for a full SequenceNumberSet may be missing
@@ -1898,7 +1910,6 @@ impl ReliableWriter {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
             return;
         };
-        let bitmap_empty = requested.is_empty();
         // Counted before nackSuppressionDuration takes anything out: the
         // question is what the reader could name, not what goes out again.
         let full_window =
@@ -1916,27 +1927,16 @@ impl ReliableWriter {
         self.reader_proxies[idx].acked_changes_set(base);
         self.release_acknowledged_window();
         self.reader_proxies[idx].requested_changes_set(requested);
-        // Cross-vendor reliability: a reader that lags behind the writer cache
-        // via a **pure ACK** (base, empty NACK bitmap) requests no
-        // concrete SNs — but relies on the writer pushing the
-        // unacknowledged tail (RTPS §8.4.2.3.3: non-acked changes are
-        // to be delivered reliably). cyclone sends exactly such a "1/0" ACKNACK after
-        // an early security decode drop; without this tail request
-        // the race-discarded VolatileSecure samples would remain permanently
-        // undelivered. With a non-empty bitmap (ZeroDDS reader) unchanged.
-        if bitmap_empty {
-            if let Some(max_sn) = self.cache.max_sn() {
-                let proxy = &mut self.reader_proxies[idx];
-                if proxy.unacked_changes(max_sn) {
-                    let from = proxy.highest_acked_sn().0 + 1;
-                    let tail: alloc::vec::Vec<SequenceNumber> = (from..=max_sn.0)
-                        .map(SequenceNumber)
-                        .filter(|sn| !self.too_soon(*sn, now))
-                        .collect();
-                    self.reader_proxies[idx].requested_changes_set(tail);
-                }
-            }
-        }
+        // DDSI-RTPS 2.5 Table 8.66 T8 ends here: what the set names is
+        // requested, nothing else. An empty set names no missing change, and
+        // the changes behind its base that are still on their way are not
+        // sent again; one the reader misses it asks for after the next
+        // HEARTBEAT (§8.4.2.3), which goes out while a change is not
+        // acknowledged (T7). An empty set used to request every change past
+        // the base: each ACKNACK that answered a HEARTBEAT while changes were
+        // in flight sent them again, with a HEARTBEAT that drew the next
+        // ACKNACK (64 KiB samples on loopback, `zerodds-roundtrip`: each
+        // fragment went out 128 times on average).
         self.reader_proxies[idx].note_nack(now);
         self.reader_proxies[idx].note_window(full_window);
         // Cache GC **removed** in the per-destination-queue model (T3
@@ -2075,7 +2075,7 @@ impl ReliableWriter {
                 reader_id,
                 writer_id: self.guid.entity_id,
                 writer_sn: sn,
-                inline_qos: self.sample_inline_qos(sn, peer),
+                inline_qos: self.sample_inline_qos(sn, peer).map(Into::into),
                 data_flag: !is_ecs,
                 key_flag: false,
                 non_standard_flag: self.cache.get(sn).is_some_and(|c| c.non_standard_payload),
@@ -2492,7 +2492,7 @@ impl ReliableWriter {
             writer_id: self.guid.entity_id,
             writer_sn: sn,
             // WP 2.0a: Arc::clone instead of to_vec — zero-copy into the wire path.
-            inline_qos,
+            inline_qos: inline_qos.map(Into::into),
             data_flag: !is_ecs,
             key_flag: false,
             non_standard_flag: self.cache.get(sn).is_some_and(|c| c.non_standard_payload),
@@ -2592,7 +2592,7 @@ impl ReliableWriter {
             reader_id: peer.entity_id,
             writer_id: self.guid.entity_id,
             writer_sn: sn,
-            inline_qos: qos,
+            inline_qos: qos.map(Into::into),
             data_flag: false,
             key_flag: marker.form.sets_key_flag(),
             non_standard_flag: false,
@@ -2829,10 +2829,7 @@ impl ReliableWriter {
             // delivery cursor-independent: cached ALIVE changes go out as DATA,
             // lifecycle markers as a lifecycle DATA, and KeepLast-evicted SNs as
             // GAP so the reader can still advance to and deliver the marker.
-            loop {
-                let Some(next) = self.reader_proxies[idx].next_unsent_change(sn) else {
-                    break;
-                };
+            while let Some(next) = self.reader_proxies[idx].next_unsent_change(sn) {
                 match self.cache.get(next) {
                     Some(change) => match change.kind {
                         ChangeKind::Alive | ChangeKind::AliveFiltered => {
@@ -3045,10 +3042,7 @@ impl ReliableWriter {
             // `write_lifecycle`: a proxy whose cursor lags would otherwise
             // never see the marker directly, and the set would stay open on
             // the reader until an unrelated later sample closed it.
-            loop {
-                let Some(next) = self.reader_proxies[idx].next_unsent_change(sn) else {
-                    break;
-                };
+            while let Some(next) = self.reader_proxies[idx].next_unsent_change(sn) {
                 match self.cache.get(next) {
                     Some(change) => match change.kind {
                         ChangeKind::Alive | ChangeKind::AliveFiltered => {
@@ -3184,6 +3178,18 @@ impl ReliableWriter {
         }
     }
 
+    /// Whether the writer's QoS goes in-line to `peer`: a reader that
+    /// expects it (§8.4.9.2.4); for `None` as for one that does.
+    fn writer_qos_inline_for(&self, peer: Option<Guid>) -> bool {
+        peer.is_none_or(|peer| {
+            self.inline_qos_readers > 0
+                && self
+                    .reader_proxies
+                    .iter()
+                    .any(|p| p.remote_reader_guid == peer && p.expects_inline_qos())
+        })
+    }
+
     fn sample_inline_qos(
         &self,
         sn: SequenceNumber,
@@ -3206,15 +3212,11 @@ impl ReliableWriter {
         // DDSI-RTPS 2.5 §8.4.9.2.4: `IF (the_reader_proxy.expectsInlineQos)
         // { DATA.inlineQos := the_rtps_writer.related_dds_writer.qos;
         // DATA.inlineQos += a_change.inlineQos; }` — the writer's first.
-        if let Some(writer_qos) = self.inline_writer_qos.as_ref().filter(|_| {
-            peer.is_none_or(|peer| {
-                self.inline_qos_readers > 0
-                    && self
-                        .reader_proxies
-                        .iter()
-                        .any(|p| p.remote_reader_guid == peer && p.expects_inline_qos())
-            })
-        }) {
+        if let Some(writer_qos) = self
+            .inline_writer_qos
+            .as_ref()
+            .filter(|_| self.writer_qos_inline_for(peer))
+        {
             let mut list = writer_qos.clone();
             if let Some(own) = qos.take() {
                 list.parameters.extend(own.parameters);
@@ -3226,7 +3228,7 @@ impl ReliableWriter {
             qos.get_or_insert_with(crate::parameter_list::ParameterList::new)
                 .push(crate::parameter_list::Parameter::new(
                     crate::parameter_list::pid::KEY_HASH,
-                    key.to_vec(),
+                    key,
                 ));
         }
         qos
@@ -3640,6 +3642,7 @@ mod tests {
                 .find(|d| d.reader_id == reader.entity_id)
                 .unwrap_or_else(|| panic!("no DATA to {reader:?}"))
                 .inline_qos
+                .map(crate::inline_qos::InlineQos::into_list)
         };
         let ids = |qos: Option<ParameterList>| {
             qos.map(|l| l.parameters.iter().map(|p| p.id).collect::<Vec<_>>())
@@ -3663,6 +3666,51 @@ mod tests {
             .write_keyed_stamped(&[5, 6, 7, 8], None, Some(key))
             .expect("write");
         assert_eq!(ids(inline_qos_to(reader_guid(), &out)), [pid::KEY_HASH]);
+    }
+
+    /// The in-line QoS length the fragment size is made of is counted from
+    /// the parts, not from a built list: it is the length of the list
+    /// [`ReliableWriter::sample_inline_qos_for`] builds, for the largest
+    /// list, for a reader that expects the writer's QoS and for one that does
+    /// not, with the writer's QoS, a key hash and a coherent set.
+    #[test]
+    fn the_counted_inline_qos_length_is_the_built_lists() {
+        use crate::parameter_list::{Parameter, ParameterList, pid};
+        let mut w = make_writer(10, Duration::from_secs(1));
+        let expecting = Guid::new(
+            GuidPrefix::from_bytes([3; 12]),
+            EntityId::user_reader_with_key([0x01, 0x02, 0x03]),
+        );
+        let mut proxy = ReaderProxy::new(
+            expecting,
+            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
+            alloc::vec![],
+            true,
+        );
+        proxy.set_expects_inline_qos(true);
+        w.add_reader_proxy(proxy);
+        let mut writer_qos = ParameterList::new();
+        writer_qos.push(Parameter::new(
+            pid::TOPIC_NAME,
+            alloc::vec![2, 0, 0, 0, b'T', 0, 0, 0],
+        ));
+        writer_qos.push(Parameter::new(pid::TOPIC_NAME, alloc::vec![0u8; 5]));
+        w.set_inline_writer_qos(Some(writer_qos));
+        w.write_keyed_stamped(&[1, 2, 3, 4], None, Some([0x5A; 16]))
+            .expect("write");
+        w.begin_coherent_set();
+        w.write_keyed_stamped(&[5, 6, 7, 8], None, None)
+            .expect("write");
+        for sn in [SequenceNumber(1), SequenceNumber(2)] {
+            for peer in [None, Some(expecting), Some(reader_guid())] {
+                assert_eq!(
+                    w.sample_inline_qos_len(sn, peer),
+                    w.sample_inline_qos_for(sn, peer)
+                        .map_or(0, |l| l.wire_len()),
+                    "{sn:?} for {peer:?}"
+                );
+            }
+        }
     }
 
     /// DDSI-RTPS 2.5 §8.4.14.1: the fragment size "is identical for all
@@ -3807,7 +3855,11 @@ mod tests {
     fn data_inline_qos(bytes: &[u8]) -> Option<crate::parameter_list::ParameterList> {
         let parsed = decode_datagram(bytes).expect("decode");
         parsed.contents().find_map(|s| match s {
-            ParsedSubmessage::Data(d) => Some(d.inline_qos.clone()),
+            ParsedSubmessage::Data(d) => Some(
+                d.inline_qos
+                    .clone()
+                    .map(crate::inline_qos::InlineQos::into_list),
+            ),
             _ => None,
         })?
     }
@@ -4127,7 +4179,11 @@ mod tests {
         for dg in dgs {
             for sub in decode_datagram(&dg.bytes).unwrap().contents() {
                 if let ParsedSubmessage::Data(d) = sub {
-                    let pl = d.inline_qos.clone().unwrap_or_default();
+                    let pl = d
+                        .inline_qos
+                        .as_ref()
+                        .map(crate::inline_qos::InlineQos::to_list)
+                        .unwrap_or_default();
                     let le = pl.little_endian;
                     out.push((
                         d.writer_sn.0,
@@ -4295,14 +4351,14 @@ mod tests {
         let qos_pids = |w: &mut ReliableWriter| -> alloc::vec::Vec<(u16, alloc::vec::Vec<u8>)> {
             let dgs = w.write(&[1]).unwrap();
             let data = only_data(&dgs[0].bytes).unwrap();
-            let qos = data.inline_qos.unwrap();
+            let qos = data.inline_qos.unwrap().into_list();
             qos.parameters
                 .iter()
                 .filter(|p| {
                     p.id == crate::parameter_list::pid::WRITER_GROUP_INFO
                         || p.id == crate::parameter_list::pid::SECURE_WRITER_GROUP_INFO
                 })
-                .map(|p| (p.id, p.value.clone()))
+                .map(|p| (p.id, p.value.to_vec()))
                 .collect()
         };
         let plain = qos_pids(&mut w);
@@ -4901,6 +4957,49 @@ mod tests {
         assert_eq!(first_proxy(&w).pending_requested_count(), 0);
     }
 
+    /// DDSI-RTPS 2.5 §8.4.9.2, Table 8.66 T8: an ACKNACK acknowledges what
+    /// lies below `readerSNState.base` and requests what `readerSNState.set`
+    /// names, nothing more; §8.4.2.2 has the writer repair what an ACKNACK
+    /// indicates as missing. Changes pushed once and still on their way
+    /// when the reader answers a HEARTBEAT are named by neither, and do not
+    /// go out again, whether the ACKNACK is the reader's latest or an
+    /// earlier one that arrives late. Fragmented, as 64 KiB samples are on
+    /// loopback.
+    #[test]
+    fn rtps_8_4_9_2_an_acknack_with_an_empty_set_requests_no_change() {
+        let mut w = make_writer_with_frag_size(16, Duration::from_secs(10), 4);
+        let payload: alloc::vec::Vec<u8> = (0..10).collect();
+        let fragments_of = |out: &[OutboundDatagram]| -> alloc::vec::Vec<i64> {
+            out.iter()
+                .flat_map(|dg| {
+                    decode_datagram(&dg.bytes)
+                        .unwrap()
+                        .contents()
+                        .filter_map(|s| match s {
+                            ParsedSubmessage::DataFrag(df) => Some(df.writer_sn.0),
+                            ParsedSubmessage::Data(d) => Some(d.writer_sn.0),
+                            _ => None,
+                        })
+                        .collect::<alloc::vec::Vec<_>>()
+                })
+                .collect()
+        };
+        for n in 1..=8 {
+            let pushed = fragments_of(&w.write(&payload).unwrap());
+            assert!(!pushed.is_empty() && pushed.iter().all(|sn| *sn == n));
+        }
+        // The reader holds 1 to 4; 5 to 8 are on their way.
+        w.handle_acknack_at(Duration::from_millis(1), reader_guid(), sn(5), []);
+        w.handle_acknack_at(Duration::from_millis(2), reader_guid(), sn(3), []);
+        let after = w.tick(Duration::from_millis(3)).unwrap();
+        assert_eq!(fragments_of(&after), alloc::vec::Vec::<i64>::new());
+        assert_eq!(first_proxy(&w).highest_acked_sn(), sn(4));
+        // What the reader names is repaired, and only that.
+        w.handle_acknack_at(Duration::from_millis(4), reader_guid(), sn(6), [sn(6)]);
+        let repair = fragments_of(&w.tick(Duration::from_millis(5)).unwrap());
+        assert!(!repair.is_empty() && repair.iter().all(|sn| *sn == 6));
+    }
+
     /// A reader that NACKed a full SequenceNumberSet gets a HEARTBEAT with
     /// the repair, so it can ask for the next window a round trip later; it
     /// may ask only in response to one (DDSI-RTPS 2.5 §8.4.2.3). A NACK of
@@ -5479,7 +5578,7 @@ mod tests {
                             let qos = match sub.submessage {
                                 ParsedSubmessage::Data(data) => {
                                     assert!(data.data_flag);
-                                    data.inline_qos
+                                    data.inline_qos.map(crate::inline_qos::InlineQos::into_list)
                                 }
                                 ParsedSubmessage::DataFrag(data) => data.inline_qos,
                                 _ => continue,
@@ -5877,7 +5976,10 @@ mod tests {
                         .expect("decode")
                         .contents()
                         .filter_map(|sm| match sm {
-                            ParsedSubmessage::Data(d) if !d.data_flag => d.inline_qos.clone(),
+                            ParsedSubmessage::Data(d) if !d.data_flag => d
+                                .inline_qos
+                                .as_ref()
+                                .map(crate::inline_qos::InlineQos::to_list),
                             _ => None,
                         })
                         .collect::<alloc::vec::Vec<_>>()
@@ -6884,14 +6986,11 @@ mod tests {
         );
         let qos = d.inline_qos.as_ref().expect("inline QoS");
         assert_eq!(
-            crate::inline_qos::find_key_hash(qos),
+            qos.key_hash(),
             Some(endpoint.to_bytes()),
             "PID_KEY_HASH names the same instance as the key"
         );
-        assert_eq!(
-            crate::inline_qos::find_status_info(qos),
-            Some(DISPOSED | UNREGISTERED)
-        );
+        assert_eq!(qos.status_info(), Some(DISPOSED | UNREGISTERED));
     }
 
     /// The other measured form: Fast DDS 3.6.1 sends the SEDP dispose with
@@ -6913,7 +7012,7 @@ mod tests {
         assert!(!d.data_flag);
         assert!(d.serialized_payload.is_empty());
         assert_eq!(
-            crate::inline_qos::find_key_hash(d.inline_qos.as_ref().expect("inline QoS")),
+            d.inline_qos.as_ref().expect("inline QoS").key_hash(),
             Some(key_hash),
             "with no payload the key hash is the only instance identity"
         );
@@ -6946,12 +7045,12 @@ mod tests {
             assert!(!d.data_flag, "{dialect:?}: D is clear on every marker");
             let qos = d.inline_qos.as_ref().expect("inline QoS");
             assert_eq!(
-                crate::inline_qos::find_key_hash(qos).is_some(),
+                qos.key_hash().is_some(),
                 hash,
                 "{dialect:?}: PID_KEY_HASH presence"
             );
             assert_eq!(
-                crate::inline_qos::find_status_info(qos),
+                qos.status_info(),
                 Some(DISPOSED | UNREGISTERED),
                 "{dialect:?}: PID_STATUS_INFO is on every form"
             );
@@ -6969,7 +7068,7 @@ mod tests {
             }
             // Whichever form: the instance is named somewhere.
             assert!(
-                crate::inline_qos::find_key_hash(qos).is_some() || !d.serialized_payload.is_empty(),
+                qos.key_hash().is_some() || !d.serialized_payload.is_empty(),
                 "{dialect:?}: a marker must name its instance"
             );
         }
@@ -7009,7 +7108,7 @@ mod tests {
                     d.key_flag,
                     d.inline_qos
                         .as_ref()
-                        .and_then(crate::inline_qos::find_key_hash)
+                        .and_then(crate::inline_qos::InlineQos::key_hash)
                         .is_some(),
                 )
             })
@@ -7039,7 +7138,7 @@ mod tests {
         assert!(!d.key_flag, "no key means K stays clear");
         assert!(d.serialized_payload.is_empty());
         assert_eq!(
-            crate::inline_qos::find_key_hash(d.inline_qos.as_ref().expect("inline QoS")),
+            d.inline_qos.as_ref().expect("inline QoS").key_hash(),
             Some(key_hash),
             "the form degraded to the one that still carries an identity"
         );
@@ -7301,16 +7400,16 @@ mod tests {
         for dg in &dgs {
             let parsed = decode_datagram(&dg.bytes).unwrap();
             for s in parsed.contents() {
-                if let ParsedSubmessage::Data(d) = s {
-                    if d.writer_sn == sn(4) {
-                        let bits = d
-                            .inline_qos
-                            .as_ref()
-                            .and_then(crate::inline_qos::find_status_info)
-                            .unwrap_or(0);
-                        assert!(bits & DISPOSED != 0, "SN 4 must carry a DISPOSED marker");
-                        saw_dispose = true;
-                    }
+                if let ParsedSubmessage::Data(d) = s
+                    && d.writer_sn == sn(4)
+                {
+                    let bits = d
+                        .inline_qos
+                        .as_ref()
+                        .and_then(crate::inline_qos::InlineQos::status_info)
+                        .unwrap_or(0);
+                    assert!(bits & DISPOSED != 0, "SN 4 must carry a DISPOSED marker");
+                    saw_dispose = true;
                 }
             }
         }
@@ -7355,7 +7454,7 @@ mod tests {
                 let mut pl = crate::parameter_list::ParameterList::new();
                 pl.push(crate::parameter_list::Parameter::new(
                     crate::parameter_list::pid::KEY_HASH,
-                    k.to_vec(),
+                    k,
                 ));
                 pl
             });
@@ -7364,7 +7463,7 @@ mod tests {
                 reader_id: reader_guid().entity_id,
                 writer_id: EntityId::user_writer_with_key([0x10, 0x20, 0x30]),
                 writer_sn: sn(sn_),
-                inline_qos,
+                inline_qos: inline_qos.map(Into::into),
                 data_flag: true,
                 key_flag: false,
                 non_standard_flag: false,

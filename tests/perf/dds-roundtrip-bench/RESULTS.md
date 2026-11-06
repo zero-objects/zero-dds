@@ -20,7 +20,8 @@ DataReader → decode path.
 
 Two bench types:
 - **basis** — `Roundtrip` = `{ uint32 sequence_id; uint64 t_send_ns;
-  sequence<octet,8192> payload; }` (`@final`). Simple type, full CDR path.
+  sequence<octet,65536> payload; }` (`@final`; the results below ran with a
+  bound of 8192). Simple type, full CDR path.
 - **rich** — `RoundtripRich` adds `string<64> name`, `double transform[16]`,
   `sequence<Waypoint,32>` (each `Waypoint` = 2 nested `Vec3` + `string` +
   scalars), keeping the payload sweep. Maximises the XCDR2 **member-codec**
@@ -48,14 +49,14 @@ the pairs between Cyclone, Fast DDS and RTI 41–52 µs. A capture showed
 ZeroDDS sending an 8 KB sample to Cyclone as six datagrams, one 1344-B
 DATA_FRAG each, where Cyclone sends one DATA: ZeroDDS took the loopback
 fragment size only for a reader that is a ZeroDDS participant of this
-host. Since `005af7362b1` a reader whose unicast locators all stay on this
+host. Since `7e7eb7e2952` a reader whose unicast locators all stay on this
 host (127/8, ::1, an address of this host's interfaces) gets it too. After
 the fix ZeroDDS ↔ Cyclone, Fast DDS and RTI are 37–50 µs at 8192 B.
 
 RTI ↔ OpenSplice could not be measured: RTI rejected the OpenSplice pong's
 DataReaders beyond its licence limit of 12, the bench's two among them.
 `rti_app.cpp` also set XCDR2 for that pair; it now takes XCDR1-only like
-the other apps (`86a7c616991`).
+the other apps (`5721e50dd8b`).
 
 ## Six stacks, 2026-09-30 — and the octet runs of the generated C++ codec
 

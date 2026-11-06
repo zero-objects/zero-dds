@@ -851,7 +851,7 @@ pub const XRCE_WRITE_FLAGS: u8 = 0x01;
 // the message that names the DataWriter, so a body without it cannot be
 // routed by any XRCE agent, and `crates/xrce`'s `WriteDataPayload` — the
 // decoder `zerodds-endpoint-e2e`'s peer uses — refuses a body shorter
-// than four octets. Measured: `zig_endpoint_sync` and `zig_endpoint_async`
+// than four octets. Measured: `xrce_8_3_5_8_zig_sync_app_writes_the_ping_and_reads_the_pong` and `xrce_8_3_5_8_zig_async_app_writes_the_ping_and_reads_the_pong`
 // reported `not an XRCE frame` while the datagram was on the wire.
 //
 // Octet for octet `zdw_xrce_write_frame` in

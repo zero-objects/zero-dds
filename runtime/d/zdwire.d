@@ -2652,4 +2652,91 @@ version (unittest)
         assert(r.ReadI16() == -2);
         assert(r.ReaderPosition() == endAt);
     }
+
+    // -- the operations no corpus case reaches ------------------------------
+    //
+    // The five the generated code reaches only in a dialect or with a member
+    // no corpus case carries: WritePidExtended, WriteUnionOverlay,
+    // ReaderClearDiscard, ReaderSave and ReaderRestore
+    // (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+    // vectors, each against an oracle outside this code.
+    private PlCdr1Framing operationsFraming()
+    {
+        return PlCdr1Framing("sentinel-must-understand", 0x3F00, false, false, true, true);
+    }
+
+    @("WritePidExtended writes Cyclone's recorded parameter")
+    unittest
+    {
+        // The first parameter of `annotation-autoid-sequential` as Cyclone
+        // DDS recorded it, XCDR1 little endian
+        // (tests/interop-corpus/expected-bytes.tsv).
+        auto w = new Writer(Endianness.little, 8, operationsFraming(), false);
+        const header = w.WritePidExtended(0, ParameterRole.member, false);
+        w.WriteI32(-1234567);
+        w.FinishPid(header);
+        assert(w.Finish() == cast(ubyte[])[0x01, 0x7F, 0x08, 0x00, 0, 0, 0, 0,
+                                           0x04, 0, 0, 0, 0x79, 0x29, 0xED, 0xFF]);
+    }
+
+    @("WriteUnionOverlay writes the storage at the branch's width")
+    unittest
+    {
+        // A `short` read through a four-octet and a one-octet `default:`
+        // branch: Cyclone DDS 11.0.1 writes the union's storage, the member's
+        // octets with zeros above (`combined-everything`,
+        // crates/wire-codec/src/encode.rs `write_selected_branch`).
+        auto w = new Writer(Endianness.little, 4, operationsFraming(), false);
+        const pattern = BitPatternInt(-2, 2);
+        w.WriteUnionOverlay(pattern, 4);
+        w.WriteUnionOverlay(pattern, 1);
+        assert(w.Finish() == cast(ubyte[])[0xFE, 0xFF, 0, 0, 0xFE]);
+    }
+
+    @("ReaderClearDiscard takes back a discard and nothing else")
+    unittest
+    {
+        // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+        // Table 9's value, so the call site asks for DISCARD and takes it
+        // back. Any other refusal is not a narrowing and stays.
+        const ubyte[] four = [1, 2, 3, 4];
+        auto discarded = new Reader(four, Endianness.little, 4, "sentinel-must-understand", 0x3F00);
+        discarded.ReaderRefuse(Status.discarded);
+        assert(discarded.ReaderClearDiscard());
+        assert(discarded.ReaderStatus() == Status.ok);
+        auto refused = new Reader(four, Endianness.little, 4, "sentinel-must-understand", 0x3F00);
+        refused.ReaderRefuse(Status.outOfRange);
+        assert(!refused.ReaderClearDiscard());
+        assert(refused.ReaderStatus() == Status.outOfRange);
+    }
+
+    @("ReaderSave and ReaderRestore count a delimited map and read it again")
+    unittest
+    {
+        // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+        // DHEADER and the pairs, without a count. The reader counts the
+        // pairs, goes back and reads them again; a refusal made while
+        // counting goes back with the cursor.
+        const ubyte[] map = [0x10, 0, 0, 0, 1, 0, 0, 0, 0x0A, 0, 0, 0, 2, 0, 0, 0, 0x14, 0, 0, 0];
+        auto r = new Reader(map, Endianness.little, 4, "sentinel-must-understand", 0x3F00);
+        const extent = cast(int) r.ReadDheader();
+        const endAt = r.ReaderPosition() + extent;
+        const mark = r.ReaderSave();
+        int pairs = 0;
+        while (r.ReaderPosition() < endAt && r.ReaderStatus() == Status.ok)
+        {
+            r.ReadI32();
+            r.ReadI32();
+            pairs++;
+        }
+        r.ReaderRefuse(Status.outOfRange);
+        r.ReaderRestore(mark);
+        assert(pairs == 2);
+        assert(r.ReadI32() == 1);
+        assert(r.ReadI32() == 10);
+        assert(r.ReadI32() == 2);
+        assert(r.ReadI32() == 20);
+        assert(r.ReaderPosition() == 20);
+        assert(r.ReaderStatus() == Status.ok);
+    }
 }

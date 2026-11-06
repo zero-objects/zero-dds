@@ -334,8 +334,7 @@ element_name}`.
 **Tests:** `crates/web/src/representation.rs::tests::element_names_match_spec_tab_6`,
 `crates/web/src/representation.rs::tests::types_representation_uses_dds_xtypes_root`.
 
-**Status:** done — element-tag registry. XML body serialization is
-caller-layer.
+**Status:** done — element tag registry in `crates/web/src/representation.rs`; the XML bodies (`application/dds-web+xml`) are written by `crates/webdds-bridge` (`gateway.rs`, `contained_entities.rs`).
 
 ### §8.3.1 Mapping to resource URIs
 
@@ -549,42 +548,14 @@ Java-enterprise estate, fully covered.
 
 ## Audit status
 
-16 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+16 done / 0 partial / 0 open / 0 blocked / 2 n/a (informative).
 
-Test run:
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-web-1.0.md`):
 
-* `cargo test -p zerodds-web` — 81 tests green, 0 failed.
-  Modules: `access_control`, `bridge`, `headers`, `model`,
-  `representation`, `rest`, `sample_selector`, `session`, `status`, plus
-  `scope_tests` (§1) and the Table-5 tests in `rest` (§8.3.3).
-* `cargo test -p zerodds-soap --lib` — 37 tests green. Modules:
-  `addressing`, `envelope`, `fault`, `mtom`, `security`, `wsdl`.
-* `cargo test -p zerodds-webdds-bridge` — 110 unit + 9 e2e tests green
-  (the daemon that combines the two libraries and actually serves
-  them; see `crates/webdds-bridge/README.md`).
+* `cargo nextest run --profile merge -p zerodds-soap --all-targets` (job `merge-rust-soap`) — 29 tests green.
+* `cargo nextest run --profile merge -p zerodds-web --all-targets` (job `merge-rust-web`) — 81 tests green.
+* `cargo nextest run --profile merge -p zerodds-webdds-bridge --all-targets` (job `merge-rust-webdds-bridge`) — 14 tests green.
 
-`zerodds-web` covers §7-§8.3, `zerodds-soap` covers §8.4, both as
-bridge-agnostic libraries. `zerodds-webdds-bridge` is the caller-layer
-realization (HTTP server, `DdsBackend` impl, XML body codec) — the
-`zerodds-webdds-bridged` daemon. DDS-XTYPES XML type files as a type
-source, business-interface SOAP dispatch (a real DDS-RPC request/reply
-over `zerodds-rpc`'s `Requester`/`Replier`, `crate::rpc_dispatch`), an
-automatic TypeLookup poll, and an admin `/catalog`+`/healthz` beside
-`/metrics` have since been built. This round closes the three
-previously documented open points, measured (not merely claimed):
+124 cited tests green, 0 not green.
 
-- DDS-RPC topic granularity is now one topic pair per interface
-  (§7.5.1.1), checked against a real `zerodds-idlc`-generated `Replier`
-  (`tests/soap_rpc_e2e.rs`), no longer one pair per operation.
-- `update_*`'s `<qos_profile>` reference resolves against the
-  `QosLibrary`/`QosProfile` metadata, and `create_*`/`update_*` of
-  Participant/Publisher/Subscriber read and reconcile contained
-  entities (§7.4.3.1/§7.4.3.2/§7.4.4.7/§7.4.4.8/§7.4.4.11/§7.4.4.12).
-- Content negotiation is enforced: DDS-WEB 1.0 defines no second
-  representation beside `application/dds-web+xml` (full-text checked,
-  §8.2/§8.3.5) — what was open was not a missing format but a
-  misspelled constant value (six files) and a library function the
-  daemon never called; both are now measurably closed.
-
-See `crates/webdds-bridge/README.md` "Open points, closed" for the
-evidence behind each one.
+Open items: none.

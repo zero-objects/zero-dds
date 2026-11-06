@@ -2,6 +2,22 @@
 
 The format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Added
+
+- A `custom valuetype` gets `<Name>CustomMarshal` (`marshal`, `unmarshal`
+  over the CDR stream, CORBA 3.3 part 1 §9.5.1); the generated
+  `ValueMarshal::marshal_state` and the registered factory call the
+  application's implementation instead of the declared state.
+
+### Fixed
+
+- `write_chunked_value_tag` writes `0x7FFFFF0E` (chunked, a list of
+  repository ids, CORBA 3.3 part 2 §9.3.4.1); `0x7FFFFF0A` announces a
+  single id without a count. `read_value_tag_full` reads `0x7FFFFF0A` as one
+  id and `0x7FFFFF0E` as the counted list.
+
 ## [1.0.0-rc.1]
 
 Initial release materialization of the `zerodds-corba-rust` crate.

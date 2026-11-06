@@ -9,14 +9,14 @@ Implementation:
 - `crates/dcps/` — Waker-Slot im `UserReaderSlot` und dessen Wecken im
   Empfangspfad.
 
-Offene Punkte und Decision-Records: `zerodds-async-1.0.open.md`.
+Offene Punkte: `zerodds-async-1.0.open.md`.
 
 ## Ziele und Nicht-Ziele
 
 ### Ziel — runtime-agnostische Public-API
 
 **Spec:** „Ziele" — „**Runtime-agnostisch** als Public-API: `impl
-Future`/`impl Stream`-Returns ohne harte Tokio-Abhaengigkeit."
+Future`/`impl Stream`-Returns ohne harte Tokio-Abhängigkeit."
 
 **Repo:** `crates/dcps-async/src/lib.rs` (`yield_for` weckt ohne
 `tokio-glue` über einen abgekoppelten Thread und den Waker des Callers;
@@ -24,8 +24,8 @@ Future`/`impl Stream`-Returns ohne harte Tokio-Abhaengigkeit."
 `crates/dcps-async/src/reader.rs` (die Streams implementieren
 `futures_core::Stream`, nicht ein Tokio-Trait).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::futures_complete_on_a_non_tokio_executor`
-— treibt `write`, `take` und `wait_for_matched_subscription` auf einem im
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_3_futures_complete_on_a_non_tokio_executor`
+— treibt write, take und wait_for_matched_subscription auf einem im
 Test selbst gebauten Park-Executor ohne jede Tokio-Beteiligung.
 
 **Status:** done
@@ -43,15 +43,15 @@ Methoden-Namen, identische QoS-Semantik."
 jeweils dieselben Namen wie auf `DataWriter`/`DataReader`, plus
 `as_sync()` auf jedem Newtype.
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::participant_creates_topic_publisher_and_subscriber`,
-`crates/dcps-async/tests/smoke.rs::matched_subscription_count_is_a_synchronous_snapshot`,
-`crates/dcps-async/tests/smoke.rs::matched_publication_count_is_a_synchronous_snapshot`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_participant_creates_topic_publisher_and_subscriber`,
+`crates/dcps-async/tests/smoke.rs::async_1_matched_subscription_count_is_a_synchronous_snapshot`,
+`crates/dcps-async/tests/smoke.rs::async_1_matched_publication_count_is_a_synchronous_snapshot`
 
 **Status:** done
 
 ### Ziel — kein zusätzlicher Allokations-Overhead pro Aufruf
 
-**Spec:** „Ziele" — „**Performance**: kein zusaetzlicher
+**Spec:** „Ziele" — „**Performance**: kein zusätzlicher
 Allokations-Overhead pro Call".
 
 **Repo:** `crates/dcps-async/src/writer.rs` (`AsyncDataWriter::write`
@@ -59,9 +59,9 @@ ruft auf dem unbelasteten Pfad nur `DataWriter::write`; die
 Reliability-Budget-Abfrage `DataWriter::qos()` — die den ganzen
 QoS-Satz klont — läuft erst im Backpressure-Zweig).
 
-**Tests:** `crates/dcps-async/tests/alloc.rs::async_write_adds_no_extra_heap_vs_sync`
+**Tests:** `crates/dcps-async/tests/alloc.rs::async_9_write_adds_no_extra_heap_vs_sync`
 (dhat als globaler Allocator, Vergleich sync gegen async),
-`crates/dcps-async/tests/perf_targets.rs::async_write_is_within_five_percent_of_sync_write`
+`crates/dcps-async/tests/perf_targets.rs::async_9_write_is_within_five_percent_of_sync_write`
 
 **Status:** done
 
@@ -75,8 +75,8 @@ Convenience."
 (`spawn_in_tokio`, `spawn_in_tokio_with_qos` hinter `#[cfg(feature =
 "tokio-glue")]`).
 
-**Tests:** `crates/dcps-async/tests/default_build.rs::default_feature_set_is_std_only`,
-`crates/dcps-async/tests/spawn_in_tokio.rs::spawn_in_tokio_drives_tick_on_tokio_runtime`
+**Tests:** `crates/dcps-async/tests/default_build.rs::async_4_default_feature_set_is_std_only`,
+`crates/dcps-async/tests/spawn_in_tokio.rs::async_4_spawn_in_tokio_drives_tick_on_tokio_runtime`
 
 **Status:** done
 
@@ -88,7 +88,7 @@ Convenience."
 `zerodds-dcps`, `zerodds-qos` und `futures-core`; `futures-core` liefert
 nur den `Stream`-Trait, keinen Executor).
 
-**Tests:** `crates/dcps-async/tests/default_build.rs::no_async_runtime_is_a_hard_dependency`
+**Tests:** `crates/dcps-async/tests/default_build.rs::async_3_no_async_runtime_is_a_hard_dependency`
 
 **Status:** done
 
@@ -104,25 +104,23 @@ erste-Klasse."
 jeder Newtype hält den Sync-Typ und gibt ihn über `as_sync()` heraus;
 `crates/dcps/` bleibt unverändert benutzbar.
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::async_newtypes_are_clone_send_sync_and_share_state`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_newtypes_are_clone_send_sync_and_share_state`
 — derselbe Reader wird über den Newtype und über `as_sync()` bedient,
 und beide sehen denselben Zustand.
 
 **Status:** done
 
-### Nicht-Ziel — WaitSet bleibt synchron
+### Nicht-Ziel — async-Gegenstück zu WaitSet
 
 **Spec:** „Nicht-Ziele" — „`WaitSet` async-konvertieren — `WaitSet` ist
-Spec-DCPS-Konstrukt; async-Version waere `Stream<Item =
+Spec-DCPS-Konstrukt; async-Version wäre `Stream<Item =
 ConditionEvent>` als separate API."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative) — die Spec nimmt den Punkt selbst aus ihrem
-Geltungsbereich; `WaitSet` bleibt in `crates/dcps/` und wird von
-`crates/dcps-async/` nicht angefasst.
+**Status:** open — die Spec schließt die async-Fassung von `WaitSet` aus und beschreibt sie zugleich als `Stream<Item = ConditionEvent>`; dieser Stream fehlt in `crates/dcps-async/`. `WaitSet` selbst bleibt synchron in `crates/dcps/`.
 
 ## Module-Layout
 
@@ -134,8 +132,8 @@ Geltungsbereich; `WaitSet` bleibt in `crates/dcps/` und wird von
 **Repo:** `crates/dcps-async/Cargo.toml` (`default = ["std"]`, `std =
 []`, `tokio-glue = ["dep:tokio"]`).
 
-**Tests:** `crates/dcps-async/tests/default_build.rs::default_feature_set_is_std_only`,
-`crates/dcps-async/tests/default_build.rs::no_async_runtime_is_a_hard_dependency`
+**Tests:** `crates/dcps-async/tests/default_build.rs::async_4_default_feature_set_is_std_only`,
+`crates/dcps-async/tests/default_build.rs::async_3_no_async_runtime_is_a_hard_dependency`
 
 **Status:** done
 
@@ -172,7 +170,7 @@ derselben Sektion (Feature-Satz) stehen als eigenes Item darüber.
 `&'static DomainParticipantFactory`; `create_participant_offline`,
 `create_participant`, `create_participant_with_qos`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::factory_singleton_offline_participant`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_factory_singleton_offline_participant`
 
 **Status:** done
 
@@ -186,7 +184,7 @@ derselben Sektion (Feature-Satz) stehen als eigenes Item darüber.
 `domain_id`, `create_topic`, `create_publisher`, `create_subscriber`,
 `as_sync`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::participant_creates_topic_publisher_and_subscriber`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_participant_creates_topic_publisher_and_subscriber`
 
 **Status:** done
 
@@ -200,7 +198,7 @@ Daten-Modell, nicht I/O".
 unverändert zurück), `crates/dcps-async/src/lib.rs` (`Topic` wird aus
 `zerodds_dcps` re-exportiert, kein eigener Typ).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::participant_creates_topic_publisher_and_subscriber`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_participant_creates_topic_publisher_and_subscriber`
 — derselbe `Topic`-Wert baut Async-Writer und Async-Reader.
 
 **Status:** done
@@ -215,9 +213,9 @@ unverändert zurück), `crates/dcps-async/src/lib.rs` (`Topic` wird aus
 (`AsyncSubscriber` mit `create_datareader`,
 `create_datareader_filtered`, `create_datareader_cft`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::participant_creates_topic_publisher_and_subscriber`,
-`crates/dcps-async/tests/smoke.rs::writer_write_async_offline`,
-`crates/dcps-async/tests/smoke.rs::reader_take_returns_empty_after_timeout`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_participant_creates_topic_publisher_and_subscriber`,
+`crates/dcps-async/tests/smoke.rs::async_1_writer_write_async_offline`,
+`crates/dcps-async/tests/smoke.rs::async_1_reader_take_returns_empty_after_timeout`
 
 **Status:** done
 
@@ -230,8 +228,8 @@ unverändert zurück), `crates/dcps-async/src/lib.rs` (`Topic` wird aus
 `Arc<DataWriter<T>>`), `crates/dcps-async/src/reader.rs`
 (`AsyncDataReader<T>` hält `Arc<DataReader<T>>`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::writer_register_dispose_unregister_async`,
-`crates/dcps-async/tests/smoke.rs::take_stream_yields_pushed_samples`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_writer_register_dispose_unregister_async`,
+`crates/dcps-async/tests/smoke.rs::async_1_take_stream_yields_pushed_samples`
 
 **Status:** done
 
@@ -247,7 +245,7 @@ AsyncDataWriter` klont den `Arc`), `crates/dcps-async/src/reader.rs`
 `crates/dcps-async/src/subscriber.rs`,
 `crates/dcps-async/src/participant.rs` (`#[derive(Clone)]`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::async_newtypes_are_clone_send_sync_and_share_state`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_newtypes_are_clone_send_sync_and_share_state`
 — statische `Send + Sync`-Prüfung plus der Nachweis, dass ein Klon das
 Sample konsumiert, das über das Original eingespeist wurde.
 
@@ -266,8 +264,8 @@ Drain-Notify."
 Direktversuch, danach im Backpressure-Zweig `yield_for`-Retry bis
 `reliability.max_blocking_time`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::writer_write_async_offline`,
-`crates/dcps-async/tests/smoke.rs::write_returns_timeout_after_max_blocking_when_queue_full`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_writer_write_async_offline`,
+`crates/dcps-async/tests/smoke.rs::async_2_1_write_returns_timeout_after_max_blocking_when_queue_full`
 
 **Status:** done
 
@@ -279,7 +277,7 @@ Result<InstanceHandle>`. Spec §2.2.2.4.2.6."
 **Repo:** `crates/dcps-async/src/writer.rs`
 (`AsyncDataWriter::register_instance`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::writer_register_dispose_unregister_async`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_writer_register_dispose_unregister_async`
 
 **Status:** done
 
@@ -292,7 +290,7 @@ Wire-Lifecycle-Marker mit DISPOSED-Bit."
 **Repo:** `crates/dcps-async/src/writer.rs` (`AsyncDataWriter::dispose`
 delegiert an `DataWriter::dispose`, das den DISPOSED-Marker schreibt).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::writer_register_dispose_unregister_async`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_writer_register_dispose_unregister_async`
 
 **Status:** done
 
@@ -304,7 +302,7 @@ handle: InstanceHandle) -> Result<()>`. Spec §2.2.2.4.2.7."
 **Repo:** `crates/dcps-async/src/writer.rs`
 (`AsyncDataWriter::unregister_instance`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::writer_register_dispose_unregister_async`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_writer_register_dispose_unregister_async`
 
 **Status:** done
 
@@ -318,8 +316,8 @@ Subscribers gematcht haben; Err(Timeout) bei timeout."
 `matched_subscription_count`, `yield_for`-Takt, `DdsError::Timeout` bei
 Deadline).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::wait_for_matched_subscription_times_out_when_no_reader`,
-`crates/dcps-async/tests/waker.rs::reader_slot_waker_is_woken_on_sample_arrival`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_2_1_wait_for_matched_subscription_times_out_when_no_reader`,
+`crates/dcps-async/tests/waker.rs::async_2_1_reader_slot_waker_is_woken_on_sample_arrival`
 (der Ok-Zweig, sobald der Reader gematcht hat)
 
 **Status:** done
@@ -332,7 +330,7 @@ matched_subscription_count(&self) -> usize`."
 **Repo:** `crates/dcps-async/src/writer.rs`
 (`AsyncDataWriter::matched_subscription_count`, kein `async fn`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::matched_subscription_count_is_a_synchronous_snapshot`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_matched_subscription_count_is_a_synchronous_snapshot`
 
 **Status:** done
 
@@ -347,9 +345,9 @@ Ankunft. Stream endet wenn der Reader gedroppt wird."
 T`; `AsyncDataReader::take_stream_with_info` liefert `SampleInfoStream<T>`
 mit `Item = Sample<T>` — dem Wortlaut der Spec).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::take_stream_yields_pushed_samples`,
-`crates/dcps-async/tests/smoke.rs::take_stream_with_info_yields_sample_info`,
-`crates/dcps-async/tests/throughput.rs::take_stream_delivers_all_samples_no_loss`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_take_stream_yields_pushed_samples`,
+`crates/dcps-async/tests/smoke.rs::async_2_2_take_stream_with_info_yields_sample_info`,
+`crates/dcps-async/tests/throughput.rs::async_2_2_take_stream_delivers_all_samples_no_loss`
 
 **Status:** done
 
@@ -364,9 +362,9 @@ liefert `Vec<T>`; `take_with_info` und `read_with_info` liefern
 `Vec<Sample<T>>` mit voller `SampleInfo`; `read` ist die nicht
 konsumierende Variante).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::reader_take_returns_empty_after_timeout`,
-`crates/dcps-async/tests/smoke.rs::take_with_info_carries_sample_info`,
-`crates/dcps-async/tests/smoke.rs::read_is_non_consuming`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_reader_take_returns_empty_after_timeout`,
+`crates/dcps-async/tests/smoke.rs::async_2_2_take_with_info_carries_sample_info`,
+`crates/dcps-async/tests/smoke.rs::async_2_2_read_is_non_consuming`
 
 **Status:** done
 
@@ -378,8 +376,8 @@ min_count: usize, timeout: Duration) -> Result<()>`. Spec §2.2.4.2.4."
 **Repo:** `crates/dcps-async/src/reader.rs`
 (`AsyncDataReader::wait_for_matched_publication`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::wait_for_matched_publication_times_out_without_writer`,
-`crates/dcps-async/tests/waker.rs::take_stream_poll_next_registers_the_callers_waker`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_2_2_wait_for_matched_publication_times_out_without_writer`,
+`crates/dcps-async/tests/waker.rs::async_2_2_take_stream_poll_next_registers_the_callers_waker`
 (der Ok-Zweig gegen einen live gematchten Writer)
 
 **Status:** done
@@ -392,7 +390,7 @@ matched_publication_count(&self) -> usize`."
 **Repo:** `crates/dcps-async/src/reader.rs`
 (`AsyncDataReader::matched_publication_count`, kein `async fn`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::matched_publication_count_is_a_synchronous_snapshot`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_matched_publication_count_is_a_synchronous_snapshot`
 
 **Status:** done
 
@@ -408,8 +406,8 @@ inhaltlich folgt sie DDS 1.4 §2.2.2.3.5 ContentFilteredTopic.
 `ContentFilteredTopic`), `crates/dcps-async/src/participant.rs`
 (`AsyncDomainParticipant::create_contentfilteredtopic`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::filtered_reader_delivers_only_matching`,
-`crates/dcps-async/tests/smoke.rs::sql_content_filtered_reader_delivers_only_matching`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_2_2_filtered_reader_delivers_only_matching`,
+`crates/dcps-async/tests/smoke.rs::async_2_2_sql_content_filtered_reader_delivers_only_matching`
 
 **Status:** done
 
@@ -426,7 +424,7 @@ inhaltlich folgt sie DDS 1.4 §2.2.2.3.5 ContentFilteredTopic.
 `crates/dcps/src/subscriber.rs` (`DataReader::runtime_handle` gibt
 Runtime und `EntityId` heraus, über die der Slot adressiert wird).
 
-**Tests:** `crates/dcps-async/tests/waker.rs::reader_slot_waker_is_woken_on_sample_arrival`
+**Tests:** `crates/dcps-async/tests/waker.rs::async_2_1_reader_slot_waker_is_woken_on_sample_arrival`
 
 **Status:** done
 
@@ -440,10 +438,10 @@ Some(waker) = slot.async_waker.lock().unwrap().take() { waker.wake(); }`"
 Waker aus dem Slot und weckt ihn; aufgerufen an jeder Stelle des
 Empfangspfads, die auf `sample_tx` sendet).
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::wake_async_waker_takes_the_waker_and_wakes_once`
+**Tests:** `crates/dcps/src/runtime.rs::tests::async_3_wake_async_waker_takes_the_waker_and_wakes_once`
 — belegt das `take` und dass ohne Neu-Registrierung kein zweites Wecken
 erfolgt,
-`crates/dcps-async/tests/waker.rs::reader_slot_waker_is_woken_on_sample_arrival`
+`crates/dcps-async/tests/waker.rs::async_2_1_reader_slot_waker_is_woken_on_sample_arrival`
 — belegt das Wecken durch eine echte Sample-Ankunft.
 
 **Status:** done
@@ -460,7 +458,7 @@ im Pending-Zweig `register_user_reader_waker(eid,
 Some(cx.waker().clone()))`, sobald der Reader ein `runtime_handle()`
 hat).
 
-**Tests:** `crates/dcps-async/tests/waker.rs::take_stream_poll_next_registers_the_callers_waker`
+**Tests:** `crates/dcps-async/tests/waker.rs::async_2_2_take_stream_poll_next_registers_the_callers_waker`
 — der über `Context` hereingereichte Waker ist der, den die
 Sample-Ankunft weckt.
 
@@ -479,9 +477,9 @@ Tokio-Runtime statt einer dedizierten `std::thread`."
 `spawn_in_tokio_with_qos` setzen `RuntimeConfig::external_tick` und
 treiben `DcpsRuntime::tick_driver()` als Tokio-Task).
 
-**Tests:** `crates/dcps-async/tests/spawn_in_tokio.rs::spawn_in_tokio_drives_tick_on_tokio_runtime`,
-`crates/dcps-async/tests/spawn_in_tokio.rs::spawn_in_tokio_task_terminates_on_shutdown`,
-`crates/dcps/tests/external_tick.rs::external_tick_suppresses_thread_and_driver_advances`
+**Tests:** `crates/dcps-async/tests/spawn_in_tokio.rs::async_4_spawn_in_tokio_drives_tick_on_tokio_runtime`,
+`crates/dcps-async/tests/spawn_in_tokio.rs::async_4_spawn_in_tokio_task_terminates_on_shutdown`,
+`crates/dcps/tests/external_tick.rs::async_4_external_tick_suppresses_thread_and_driver_advances`
 
 **Status:** done
 
@@ -495,7 +493,7 @@ ist standardmässig `false`; die Runtime startet dann ihren eigenen
 Tick-Thread), `crates/dcps-async/src/factory.rs` (`create_participant`
 ohne Feature-Pfad).
 
-**Tests:** `crates/dcps/tests/external_tick.rs::internal_tick_thread_advances_on_its_own`
+**Tests:** `crates/dcps/tests/external_tick.rs::async_4_internal_tick_thread_advances_on_its_own`
 
 **Status:** done
 
@@ -507,14 +505,17 @@ ohne Feature-Pfad).
 vollem Writer-Cache **suspendiert** der `write`-Future, bis Drain-Notify.
 Im Sync-API blockt der Thread mit `Condvar`."
 
-**Repo:** `crates/dcps-async/src/writer.rs` (`AsyncDataWriter::write`:
-bei `DdsError::OutOfResources` wird die Reliability-Deadline einmal
-gelesen, danach `yield_for(2 ms).await` und erneut versucht, bis
-entweder ein Drain stattfindet oder `max_blocking_time` abläuft und
-`DdsError::Timeout` zurückkommt — der Caller-Thread bleibt frei).
+**Repo:** `crates/dcps-async/src/writer.rs` (`AsyncDataWriter::write`,
+`dispose`, `unregister_instance`: der Sync-Aufruf läuft unter
+`zerodds_dcps::runtime::without_waiting_for_room`, der das Warten auf
+Platz durch ein sofortiges `DdsError::Timeout` ersetzt; dann wird die
+Reliability-Deadline einmal gelesen, danach `yield_for(2 ms).await` und
+erneut versucht, bis der Aufruf durchgeht oder `max_blocking_time` abläuft
+und `DdsError::Timeout` zurückkommt — der Thread des Executors bleibt frei).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::write_returns_timeout_after_max_blocking_when_queue_full`,
-`crates/dcps-async/tests/proptest_backpressure.rs::write_take_sequence_holds_invariants`
+**Tests:** `crates/dcps-async/tests/smoke.rs::dcps_2_2_2_4_2_11_a_waiting_write_leaves_the_executor_thread_free`,
+`crates/dcps-async/tests/smoke.rs::async_2_1_write_returns_timeout_after_max_blocking_when_queue_full`,
+`crates/dcps-async/tests/proptest_backpressure.rs::async_5_write_take_sequence_holds_invariants`
 
 **Status:** done
 
@@ -530,7 +531,7 @@ entweder ein Drain stattfindet oder `max_blocking_time` abläuft und
 `DataReader::read`, so dass der Konsument die Samples danach noch per
 `take` holen kann).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::data_available_stream_signals_without_consuming`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_6_data_available_stream_signals_without_consuming`
 
 **Status:** done
 
@@ -547,8 +548,8 @@ DDS 1.4 §2.2.4.1 PUBLICATION_MATCHED), `crates/dcps-async/src/reader.rs`
 (`AsyncDataReader::subscription_matched_stream` als reader-seitiges
 Gegenstück mit `SubscriptionMatchedStatus`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::writer_publication_matched_stream_yields_status`,
-`crates/dcps-async/tests/smoke.rs::subscription_matched_stream_yields_initial_count`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_6_writer_publication_matched_stream_yields_status`,
+`crates/dcps-async/tests/smoke.rs::async_6_subscription_matched_stream_yields_initial_count`
 
 **Status:** done
 
@@ -556,7 +557,7 @@ Gegenstück mit `SubscriptionMatchedStatus`).
 
 ### §7 DdsError bleibt unverändert
 
-**Spec:** §7 — „`DdsError` wird unveraendert weitergereicht.
+**Spec:** §7 — „`DdsError` wird unverändert weitergereicht.
 `Future::Output`-Type ist immer `Result<T, DdsError>`."
 
 **Repo:** `crates/dcps-async/src/lib.rs` (`DdsError` und `Result` werden
@@ -564,8 +565,8 @@ aus `zerodds_dcps` re-exportiert, kein eigener Fehlertyp),
 `crates/dcps-async/src/writer.rs`, `crates/dcps-async/src/reader.rs`
 (jede fehlbare Methode gibt `zerodds_dcps::Result<_>` zurück).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::wait_for_matched_subscription_times_out_when_no_reader`,
-`crates/dcps-async/tests/smoke.rs::write_returns_timeout_after_max_blocking_when_queue_full`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_2_1_wait_for_matched_subscription_times_out_when_no_reader`,
+`crates/dcps-async/tests/smoke.rs::async_2_1_write_returns_timeout_after_max_blocking_when_queue_full`
 — beide matchen auf `DdsError::Timeout` aus dem Async-Pfad.
 
 **Status:** done
@@ -587,9 +588,9 @@ in `crates/dcps-async/tests/`."
 `crates/dcps-async/tests/spawn_in_tokio.rs`,
 `crates/dcps-async/tests/cyclone_live_async_e2e.rs`.
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::writer_write_async_offline`,
-`crates/dcps-async/tests/smoke.rs::take_stream_yields_pushed_samples`,
-`crates/dcps-async/tests/smoke.rs::read_is_non_consuming`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_writer_write_async_offline`,
+`crates/dcps-async/tests/smoke.rs::async_1_take_stream_yields_pushed_samples`,
+`crates/dcps-async/tests/smoke.rs::async_2_2_read_is_non_consuming`
 
 **Status:** partial — die Async-Oberfläche ist item-für-item belegt, aber
 `crates/dcps/tests/` hat rund sechzig Test-Files (QoS-Matrix,
@@ -606,8 +607,8 @@ eigenes `open`-Item „§8 1:1-Async-Pendant pro Sync-Test".
 `rt-multi-thread` und `macros`), `crates/dcps-async/tests/smoke.rs`
 (jeder Async-Test ist `#[tokio::test(flavor = "multi_thread")]`).
 
-**Tests:** `crates/dcps-async/tests/smoke.rs::factory_singleton_offline_participant`,
-`crates/dcps-async/tests/smoke.rs::futures_complete_on_a_non_tokio_executor`
+**Tests:** `crates/dcps-async/tests/smoke.rs::async_1_factory_singleton_offline_participant`,
+`crates/dcps-async/tests/smoke.rs::async_3_futures_complete_on_a_non_tokio_executor`
 
 **Status:** partial — der Default-Runner ist tokio, und die
 Runtime-Unabhängigkeit ist über einen im Test gebauten Park-Executor
@@ -617,14 +618,14 @@ smol-Test-Variante".
 
 ### §8 proptest über Channel-Backpressure
 
-**Spec:** §8 — „`proptest` ueber Channel-Backpressure (zufaellige
+**Spec:** §8 — „`proptest` über Channel-Backpressure (zufällige
 write/take-Sequenzen)."
 
 **Repo:** `crates/dcps-async/tests/proptest_backpressure.rs` (zufällige
 Kapazität und zufällige Operationsfolgen gegen die Invariante: bei voller
 Queue liefert `write` einen Timeout, bei freier Queue ein `Ok`).
 
-**Tests:** `crates/dcps-async/tests/proptest_backpressure.rs::write_take_sequence_holds_invariants`
+**Tests:** `crates/dcps-async/tests/proptest_backpressure.rs::async_5_write_take_sequence_holds_invariants`
 
 **Status:** done
 
@@ -633,20 +634,19 @@ Queue liefert `write` einen Timeout, bei freier Queue ein `Ok`).
 **Spec:** §8 — „E2E gegen Cyclone-Live wie Sync, plus Latenz-Vergleich
 (sync vs. async)."
 
-**Repo:** `crates/dcps-async/tests/cyclone_live_async_e2e.rs`
-(`#[ignore]`-gated, braucht SSH-Zugang zum Cyclone-Labor),
-`crates/dcps-async/benches/write_async_vs_sync.rs` (criterion),
-`crates/dcps-async/tests/perf_targets.rs` (derselbe Vergleich als
-Assertion).
+**Repo:** `crates/dcps-async/tests/cyclone_live_async_e2e.rs` (Cyclones `ddsperf -T OU`
+schreibt, ein `AsyncDataReader` nimmt; `#[ignore]`, Job
+`vendor-live-dcps`), `crates/dcps-async/benches/write_async_vs_sync.rs`
+(criterion), `crates/dcps-async/tests/perf_targets.rs` (derselbe Vergleich als Assertion im
+Release-Build, Job `speed-async-write` der Speed-Säule).
 
-**Tests:** `crates/dcps-async/tests/perf_targets.rs::async_write_is_within_five_percent_of_sync_write`,
-`crates/dcps-async/tests/cyclone_live_async_e2e.rs::async_reader_does_not_panic_against_live_cyclone_pub`
-(`#[ignore]`, in diesem Lauf nicht ausgeführt)
+**Tests:** `crates/dcps-async/tests/perf_targets.rs::async_9_write_is_within_five_percent_of_sync_write`
+(Linux-Testhost, Release-Build: Verhältnis 1,011),
+`crates/dcps-async/tests/cyclone_live_async_e2e.rs::async_8_an_async_reader_takes_the_samples_of_a_cyclone_writer`
+(Linux-Testhost gegen `ddsperf` aus Cyclone unter `/opt/cyclone`: fünf
+Samples, die Sequenznummern steigend)
 
-**Status:** partial — der Latenz-Vergleich sync gegen async läuft als
-Assertion im Release-Build, im CI-Job `perf-gate`. Der Cyclone-Live-Teil ist `#[ignore]` und
-lief in diesem Audit nicht. Der Rest steht als eigenes `open`-Item „§8
-Cyclone-Live-E2E ohne Lab-Gate".
+**Status:** done
 
 ## §9 Performance-Targets
 
@@ -663,10 +663,10 @@ Wiederholschleife ist eine eigene Future, nur bei `OutOfResources`
 betreten), `crates/dcps-async/benches/write_async_vs_sync.rs`,
 `crates/dcps-async/tests/perf_targets.rs` (ein Writer eines
 Live-Participants ohne Reader, synchron und mit `.await`, im Release-Build;
-im Debug-Build `#[ignore]`, der CI-Job `perf-gate` führt ihn mit
-`--release` aus).
+im Debug-Build `#[ignore]`; der Job `speed-async-write` der Speed-Säule
+führt ihn mit `--release` auf dem Messhost aus).
 
-**Tests:** `crates/dcps-async/tests/perf_targets.rs::async_write_is_within_five_percent_of_sync_write`
+**Tests:** `crates/dcps-async/tests/perf_targets.rs::async_9_write_is_within_five_percent_of_sync_write`
 — gemessen auf dem Linux-Testhost im Release-Build: Verhältnis
 async/sync 1,003–1,029 in sechs Läufen, synchron rund 511 ns je Write,
 Grenze 1,05.
@@ -675,14 +675,14 @@ Grenze 1,05.
 
 ### §9 take_stream verliert kein Sample
 
-**Spec:** §9 — „`take_stream()` haelt 100 % der Sample-Rate, kein Verlust
+**Spec:** §9 — „`take_stream()` hält 100 % der Sample-Rate, kein Verlust
 durch Polling-Latenz."
 
 **Repo:** `crates/dcps-async/src/reader.rs` (`SampleStream` puffert die
 Restmenge eines `take` und reicht sie Element für Element heraus, statt
 sie zu verwerfen).
 
-**Tests:** `crates/dcps-async/tests/throughput.rs::take_stream_delivers_all_samples_no_loss`
+**Tests:** `crates/dcps-async/tests/throughput.rs::async_2_2_take_stream_delivers_all_samples_no_loss`
 — ein Reliable-KeepAll-Writer publiziert 500 Samples, der Stream muss
 alle 500 herausgeben.
 
@@ -696,7 +696,7 @@ ist stack-allocated wenn `async fn` inlined)."
 **Repo:** `crates/dcps-async/src/writer.rs` (`AsyncDataWriter::write`
 reicht `&T` durch, ohne das Sample zu klonen).
 
-**Tests:** `crates/dcps-async/tests/alloc.rs::async_write_adds_no_extra_heap_vs_sync`
+**Tests:** `crates/dcps-async/tests/alloc.rs::async_9_write_adds_no_extra_heap_vs_sync`
 (dhat als globaler Allocator, Vergleich der Blöcke pro Write)
 
 **Status:** done
@@ -728,7 +728,7 @@ async-Pendant in `crates/dcps-async/tests/`."
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — `crates/dcps-async/tests/` hat 9 Testdateien, `crates/dcps/tests/` 150; eine Zuordnung Sync-Test → async-Pendant fehlt.
 
 ### §8 smol-Test-Variante
 
@@ -738,17 +738,19 @@ async-Pendant in `crates/dcps-async/tests/`."
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — kein Test läuft unter `smol::test`; `smol` kommt nur in der Liste der Runtimes vor, die `crates/dcps-async/tests/default_build.rs` als Abhängigkeit ausschließt.
 
 ### §8 Cyclone-Live-E2E ohne Lab-Gate
 
 **Spec:** §8 — „E2E gegen Cyclone-Live wie Sync."
 
-**Repo:** —
+**Repo:** `crates/dcps-async/tests/cyclone_live_async_e2e.rs` (startet `ddsperf` auf demselben
+Host, kein Laborhost).
 
-**Tests:** —
+**Tests:** `crates/dcps-async/tests/cyclone_live_async_e2e.rs::async_8_an_async_reader_takes_the_samples_of_a_cyclone_writer`
+(Job `vendor-live-dcps`)
 
-**Status:** open
+**Status:** done
 
 ## Entscheidungen
 
@@ -790,18 +792,16 @@ liefert `PublicationMatchedStatus` — der Wortlaut von §6.
 
 ## Audit-Status
 
-37 done / 3 partial / 3 open / 3 n/a (informative) / 0 n/a (rejected).
+39 done / 2 partial / 3 open / 0 blocked / 2 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-dcps-async` — 29 Tests grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-async-1.0.md`):
 
-Test-Lauf: `cargo test -p zerodds-dcps-async --features tokio-glue` — 30 Tests grün, 0 failed.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (Job `merge-rust-dcps`) — 3 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-dcps-async --all-targets` (Job `merge-rust-dcps-async`) — 29 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-dcps-async --all-targets --features tokio-glue` (Job `merge-rust-dcps-async-features-tokio-glue`) — 2 Tests grün.
+* Job `speed-async-write` — 1 Test grün.
+* Job `vendor-live-dcps` — 1 Test grün.
 
-Test-Lauf: `cargo test -p zerodds-dcps --test external_tick` — 2 Tests grün, 0 failed.
+36 zitierte Tests grün, 0 nicht grün.
 
-Test-Lauf: `cargo test -p zerodds-dcps --lib runtime::tests::wake_async_waker` — 1 Test grün, 0 failed.
-
-Nicht ausgeführt: der `#[ignore]`-Test
-`async_reader_does_not_panic_against_live_cyclone_pub` (braucht
-Cyclone-Labor-Zugang).
-
-Offene Punkte und Decision-Records: `zerodds-async-1.0.open.md`.
+Offene Punkte: `zerodds-async-1.0.open.md`.

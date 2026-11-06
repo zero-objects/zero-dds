@@ -375,10 +375,10 @@ impl ValueRegistry {
         if let Some(c) = self.ctors.get(repo_id) {
             return Some(CtorRef::Borrowed(c));
         }
-        if let (Some(cb), Some(res)) = (codebase, self.codebase_resolver.as_ref()) {
-            if let Some(c) = res(cb, repo_id) {
-                return Some(CtorRef::Owned(c));
-            }
+        if let (Some(cb), Some(res)) = (codebase, self.codebase_resolver.as_ref())
+            && let Some(c) = res(cb, repo_id)
+        {
+            return Some(CtorRef::Owned(c));
         }
         None
     }
@@ -625,10 +625,29 @@ fn skip_chunked_body(r: &mut Reader<'_>, depth: u32) -> Result<u32, WireError> {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
+    //! The expected octets are written out by hand from the value encoding
+    //! of CORBA §15.3.4 (`value_tag`, codebase URL, type information,
+    //! state, chunks, end tags, indirections) or are JacORB 3.9 captures;
+    //! none of them comes from this encoder.
     use super::*;
     use zerodds_wire::Endianness;
 
-    // Test valuetype: `valuetype Point { public long x; public long y; };`
+    /// Octets from a hex string; blanks separate the fields.
+    fn octets(hex: &str) -> alloc::vec::Vec<u8> {
+        let digits: alloc::string::String = hex.chars().filter(|c| !c.is_whitespace()).collect();
+        (0..digits.len() / 2)
+            .map(|i| u8::from_str_radix(&digits[2 * i..2 * i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn encoded(e: Endianness, write: impl FnOnce(&mut Writer)) -> alloc::vec::Vec<u8> {
+        let mut w = Writer::new(e);
+        write(&mut w);
+        w.finish()
+    }
+
+    // `valuetype Point { public long x; public long y; };`, repository id
+    // `IDL:Geo/Point:1.0` (17 characters, a CDR string of 18 octets).
     #[derive(Debug, PartialEq, Eq)]
     struct Point {
         x: i32,
@@ -646,18 +665,21 @@ mod tests {
             Ok(())
         }
     }
+    fn point_ctor() -> ValueCtor {
+        Box::new(|r: &mut Reader<'_>| {
+            let x = r.read_i32()?;
+            let y = r.read_i32()?;
+            Ok(Rc::new(Point { x, y }) as Rc<dyn Any>)
+        })
+    }
     fn point_registry() -> ValueRegistry {
         let mut reg = ValueRegistry::new();
-        reg.register(
-            "IDL:Geo/Point:1.0",
-            Box::new(|r: &mut Reader<'_>| {
-                let x = r.read_i32()?;
-                let y = r.read_i32()?;
-                Ok(Rc::new(Point { x, y }) as Rc<dyn Any>)
-            }),
-        );
+        reg.register("IDL:Geo/Point:1.0", point_ctor());
         reg
     }
+
+    /// `IDL:Geo/Point:1.0` with its terminating NUL.
+    const GEO_POINT: &str = "49444c3a47656f2f506f696e743a312e3000";
 
     // valuetype with JacORB RepositoryId for the cross-ORB capture comparison.
     #[derive(Debug, PartialEq, Eq)]
@@ -678,22 +700,132 @@ mod tests {
         }
     }
 
-    /// Cross-ORB conformance: ZeroDDS must marshal byte-identically to JacORB 3.9
-    /// (the reference ORB). Golden vector from a real
-    /// `org.omg.CORBA_2_3.portable.OutputStream.write_value` capture on the Linux test host:
-    /// `Point(42,-7)`, big-endian. value_tag 0x7fffff02 + CDR string "IDL:Point:1.0\0"
-    /// + align(4) pad + long(42) + long(-7).
+    /// §15.3.4.1: a value is its `value_tag` (`0x7fffff02`: one repository
+    /// id follows), the repository id and the state; a null value is the
+    /// tag `0`. The repository id ends at octet 26, the state is aligned
+    /// to 28.
     #[test]
-    fn jacorb_capture_byte_identical() {
-        let mut w = Writer::new(Endianness::Big);
-        let mut vw = ValueWriter::new();
+    fn corbarust_4_2_a_value_and_a_null_are_the_octets_of_15_3_4_1() {
+        for (e, hex) in [
+            (
+                Endianness::Big,
+                alloc::format!("7fffff02 00000012 {GEO_POINT} 0000 00000003 00000007 00000000"),
+            ),
+            (
+                Endianness::Little,
+                alloc::format!("02ffff7f 12000000 {GEO_POINT} 0000 03000000 07000000 00000000"),
+            ),
+        ] {
+            let expected = octets(&hex);
+            let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 3, y: 7 });
+            let written = encoded(e, |w| {
+                let mut vw = ValueWriter::new();
+                vw.write(w, Some(&p)).unwrap();
+                vw.write(w, None).unwrap();
+            });
+            assert_eq!(written, expected, "{e:?}");
+
+            let reg = point_registry();
+            let mut r = Reader::new(&expected, e);
+            let mut vr = ValueReader::new();
+            let v = vr.read(&mut r, 0, &reg).unwrap().expect("a value");
+            assert_eq!(*v.downcast_ref::<Point>().unwrap(), Point { x: 3, y: 7 });
+            assert!(vr.read(&mut r, 0, &reg).unwrap().is_none(), "the null");
+        }
+    }
+
+    /// §15.3.4.1: a value written a second time is the indirection tag
+    /// `0xffffffff` and a long offset from that long back to the first
+    /// `value_tag` (octet 0 − octet 40 = −40, `0xffffffd8`). Read back,
+    /// both references are one instance.
+    #[test]
+    fn corbarust_4_2_a_shared_value_is_an_indirection_back_to_its_tag() {
+        for (e, hex) in [
+            (
+                Endianness::Big,
+                alloc::format!(
+                    "7fffff02 00000012 {GEO_POINT} 0000 00000001 00000002 ffffffff ffffffd8"
+                ),
+            ),
+            (
+                Endianness::Little,
+                alloc::format!(
+                    "02ffff7f 12000000 {GEO_POINT} 0000 01000000 02000000 ffffffff d8ffffff"
+                ),
+            ),
+        ] {
+            let expected = octets(&hex);
+            let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 2 });
+            let written = encoded(e, |w| {
+                let mut vw = ValueWriter::new();
+                vw.write(w, Some(&p)).unwrap();
+                vw.write(w, Some(&p)).unwrap();
+            });
+            assert_eq!(written, expected, "{e:?}");
+
+            let reg = point_registry();
+            let mut r = Reader::new(&expected, e);
+            let mut vr = ValueReader::new();
+            let a = vr.read(&mut r, 0, &reg).unwrap().unwrap();
+            let b = vr.read(&mut r, 0, &reg).unwrap().unwrap();
+            assert!(Rc::ptr_eq(&a, &b), "both references are one instance");
+            assert_eq!(*a.downcast_ref::<Point>().unwrap(), Point { x: 1, y: 2 });
+        }
+    }
+
+    /// Two instances with equal state are two values, each with its own
+    /// `value_tag`, and read back as two instances.
+    #[test]
+    fn corbarust_4_2_two_instances_are_two_values() {
+        let expected = octets(&alloc::format!(
+            "7fffff02 00000012 {GEO_POINT} 0000 00000001 00000001 \
+             7fffff02 00000012 {GEO_POINT} 0000 00000001 00000001"
+        ));
+        let p1: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 1 });
+        let p2: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 1 });
+        let written = encoded(Endianness::Big, |w| {
+            let mut vw = ValueWriter::new();
+            vw.write(w, Some(&p1)).unwrap();
+            vw.write(w, Some(&p2)).unwrap();
+        });
+        assert_eq!(written, expected);
+
+        let reg = point_registry();
+        let mut r = Reader::new(&expected, Endianness::Big);
+        let mut vr = ValueReader::new();
+        let a = vr.read(&mut r, 0, &reg).unwrap().unwrap();
+        let b = vr.read(&mut r, 0, &reg).unwrap().unwrap();
+        assert!(!Rc::ptr_eq(&a, &b));
+    }
+
+    /// §15.3.4.1: an indirection points back; a positive offset is refused.
+    #[test]
+    fn corbarust_4_2_a_forward_indirection_is_refused() {
+        let bytes = octets("ffffffff 00000004");
+        let mut r = Reader::new(&bytes, Endianness::Big);
+        assert!(
+            ValueReader::new()
+                .read(&mut r, 0, &ValueRegistry::new())
+                .is_err()
+        );
+    }
+
+    /// A value is what JacORB 3.9 writes for it.
+    ///
+    /// Golden vector from a real
+    /// `org.omg.CORBA_2_3.portable.OutputStream.write_value` capture on the
+    /// Linux test host: `Point(42,-7)`, big-endian. value_tag 0x7fffff02 +
+    /// CDR string "IDL:Point:1.0\0" + align(4) pad + long(42) + long(-7).
+    #[test]
+    fn corbarust_4_2_a_value_is_the_octets_jacorb_writes() {
         let p: Rc<dyn ValueMarshal> = Rc::new(JPoint { x: 42, y: -7 });
-        vw.write(&mut w, Some(&p)).unwrap();
-        let bytes = w.finish();
-        let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+        let written = encoded(Endianness::Big, |w| {
+            ValueWriter::new().write(w, Some(&p)).unwrap();
+        });
         assert_eq!(
-            hex, "7fffff020000000e49444c3a506f696e743a312e300000000000002afffffff9",
-            "ZeroDDS-Valuetype-Wire weicht von JacORB-Capture ab"
+            written,
+            octets("7fffff020000000e49444c3a506f696e743a312e300000000000002afffffff9"),
+            "the octets of the JacORB capture"
         );
     }
 
@@ -752,73 +884,42 @@ mod tests {
     // truncatable → chunked + repo-id list (capture from the Linux test host, 68 bytes, BE).
     const JACORB_CHUNKED: &str = "7fffff0e000000020000001049444c3a446572697665643a312e30000000000d49444c3a426173653a312e30000000000000000b0000002a0000000368690000ffffffff";
 
-    #[test]
-    fn chunked_encode_byte_identical_to_jacorb() {
-        let mut w = Writer::new(Endianness::Big);
-        let mut vw = ValueWriter::new();
-        let d: Rc<dyn ValueMarshal> = Rc::new(Derived {
+    /// The JacORB capture field by field in little-endian (§15.3.4.1 and
+    /// §15.3.4.3: every long in the stream's byte order, the chunk size
+    /// `11` = long 42 + string length + `hi\0`).
+    const CHUNKED_LE: &str = "0effff7f 02000000 10000000 49444c3a446572697665643a312e3000 \
+                              0d000000 49444c3a426173653a312e3000 000000 \
+                              0b000000 2a000000 03000000 686900 00 ffffffff";
+
+    fn derived_42_hi() -> Rc<dyn ValueMarshal> {
+        Rc::new(Derived {
             id: 42,
             extra: "hi".into(),
-        });
-        vw.write_chunked(&mut w, Some(&d), &["IDL:Base:1.0"])
-            .unwrap();
-        let hex: alloc::string::String = w
-            .finish()
-            .iter()
-            .map(|b| alloc::format!("{b:02x}"))
-            .collect();
-        assert_eq!(
-            hex, JACORB_CHUNKED,
-            "chunked-Wire weicht von JacORB-Capture ab"
-        );
-    }
-
-    fn jacorb_chunked_bytes() -> alloc::vec::Vec<u8> {
-        (0..JACORB_CHUNKED.len() / 2)
-            .map(|i| u8::from_str_radix(&JACORB_CHUNKED[2 * i..2 * i + 2], 16).unwrap())
-            .collect()
+        })
     }
 
     #[test]
-    fn chunked_decode_full_when_derived_known() {
-        let bytes = jacorb_chunked_bytes();
-        let mut reg = ValueRegistry::new();
-        derived_ctor(&mut reg);
-        base_ctor(&mut reg);
-        let mut r = Reader::new(&bytes, Endianness::Big);
-        let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
-        assert_eq!(
-            *v.downcast_ref::<Derived>().unwrap(),
-            Derived {
-                id: 42,
-                extra: "hi".into()
-            }
-        );
-    }
-
-    #[test]
-    fn chunked_decode_truncates_to_base() {
-        // Only Base known → most-derived (Derived) is skipped, truncation.
-        let bytes = jacorb_chunked_bytes();
-        let mut reg = ValueRegistry::new();
-        base_ctor(&mut reg);
-        let mut r = Reader::new(&bytes, Endianness::Big);
-        let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
-        assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 });
-    }
-
-    #[test]
-    fn chunked_roundtrip_zerodds_to_zerodds() {
-        for e in [Endianness::Big, Endianness::Little] {
-            let mut w = Writer::new(e);
-            let d: Rc<dyn ValueMarshal> = Rc::new(Derived {
-                id: 7,
-                extra: "xyz".into(),
+    fn corbarust_4_3_a_chunked_value_is_the_octets_jacorb_writes() {
+        let d = derived_42_hi();
+        for (e, expected) in [
+            (Endianness::Big, octets(JACORB_CHUNKED)),
+            (Endianness::Little, octets(CHUNKED_LE)),
+        ] {
+            let written = encoded(e, |w| {
+                ValueWriter::new()
+                    .write_chunked(w, Some(&d), &["IDL:Base:1.0"])
+                    .unwrap();
             });
-            ValueWriter::new()
-                .write_chunked(&mut w, Some(&d), &["IDL:Base:1.0"])
-                .unwrap();
-            let bytes = w.finish();
+            assert_eq!(written, expected, "{e:?}");
+        }
+    }
+
+    #[test]
+    fn corbarust_4_3_a_known_most_derived_type_reads_the_whole_value() {
+        for (e, bytes) in [
+            (Endianness::Big, octets(JACORB_CHUNKED)),
+            (Endianness::Little, octets(CHUNKED_LE)),
+        ] {
             let mut reg = ValueRegistry::new();
             derived_ctor(&mut reg);
             base_ctor(&mut reg);
@@ -827,149 +928,68 @@ mod tests {
             assert_eq!(
                 *v.downcast_ref::<Derived>().unwrap(),
                 Derived {
-                    id: 7,
-                    extra: "xyz".into()
-                }
+                    id: 42,
+                    extra: "hi".into()
+                },
+                "{e:?}"
             );
         }
     }
 
     #[test]
-    fn single_value_and_null_roundtrip() {
-        for e in [Endianness::Big, Endianness::Little] {
-            let mut w = Writer::new(e);
-            let mut vw = ValueWriter::new();
-            let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 3, y: 7 });
-            vw.write(&mut w, Some(&p)).unwrap();
-            vw.write(&mut w, None).unwrap(); // null
-            let bytes = w.finish();
-            // value_tag = 0x7fffff02 (single repo-id).
-            let mut r = Reader::new(&bytes, e);
-            let mut vr = ValueReader::new();
-            let reg = point_registry();
-            let v = vr.read(&mut r, 0, &reg).unwrap().expect("non-null");
-            let pt = v.downcast_ref::<Point>().expect("Point");
-            assert_eq!(*pt, Point { x: 3, y: 7 });
-            assert!(vr.read(&mut r, 0, &reg).unwrap().is_none()); // null
-        }
-    }
-
-    #[test]
-    fn value_sharing_indirection() {
-        // The same Rc instance written twice → the second is an indirection.
-        // On reading, both must resolve to the SAME Rc instance.
-        for e in [Endianness::Big, Endianness::Little] {
-            let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 2 });
-            let mut w = Writer::new(e);
-            let mut vw = ValueWriter::new();
-            vw.write(&mut w, Some(&p)).unwrap();
-            vw.write(&mut w, Some(&p)).unwrap(); // same instance → indirection
-            let bytes = w.finish();
-
-            let mut r = Reader::new(&bytes, e);
-            let mut vr = ValueReader::new();
-            let reg = point_registry();
-            let a = vr.read(&mut r, 0, &reg).unwrap().unwrap();
-            let b = vr.read(&mut r, 0, &reg).unwrap().unwrap();
-            assert!(
-                Rc::ptr_eq(&a, &b),
-                "value sharing: both refs = one instance"
-            );
-            assert_eq!(*a.downcast_ref::<Point>().unwrap(), Point { x: 1, y: 2 });
-        }
-    }
-
-    #[test]
-    fn distinct_values_are_not_shared() {
-        let p1: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 1 });
-        let p2: Rc<dyn ValueMarshal> = Rc::new(Point { x: 2, y: 2 });
-        let mut w = Writer::new(Endianness::Big);
-        let mut vw = ValueWriter::new();
-        vw.write(&mut w, Some(&p1)).unwrap();
-        vw.write(&mut w, Some(&p2)).unwrap();
-        let bytes = w.finish();
+    fn corbarust_4_3_an_unknown_most_derived_type_truncates_to_its_base() {
+        let bytes = octets(JACORB_CHUNKED);
+        let mut reg = ValueRegistry::new();
+        base_ctor(&mut reg);
         let mut r = Reader::new(&bytes, Endianness::Big);
-        let mut vr = ValueReader::new();
-        let reg = point_registry();
-        let a = vr.read(&mut r, 0, &reg).unwrap().unwrap();
-        let b = vr.read(&mut r, 0, &reg).unwrap().unwrap();
-        assert!(!Rc::ptr_eq(&a, &b));
-        assert_eq!(*a.downcast_ref::<Point>().unwrap(), Point { x: 1, y: 1 });
-        assert_eq!(*b.downcast_ref::<Point>().unwrap(), Point { x: 2, y: 2 });
-    }
-
-    #[test]
-    fn value_tag_is_single_repo_id_on_wire() {
-        let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 0, y: 0 });
-        let mut w = Writer::new(Endianness::Big);
-        ValueWriter::new().write(&mut w, Some(&p)).unwrap();
-        let bytes = w.finish();
-        // First 4 bytes = value_tag 0x7fffff02 (BE).
-        assert_eq!(&bytes[0..4], &[0x7f, 0xff, 0xff, 0x02]);
-    }
-
-    #[test]
-    fn forward_indirection_rejected() {
-        let mut w = Writer::new(Endianness::Big);
-        w.write_u32(VALUE_INDIRECTION);
-        w.write_u32(4); // positive offset
-        let bytes = w.finish();
-        let mut r = Reader::new(&bytes, Endianness::Big);
-        assert!(
-            ValueReader::new()
-                .read(&mut r, 0, &ValueRegistry::new())
-                .is_err()
+        let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
+        assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 });
+        assert_eq!(
+            r.position(),
+            bytes.len(),
+            "the rest of the value is skipped"
         );
     }
 
-    // ---- §4.4 codebase-URL ----------------------------------------------------
+    // ---- §4.4 codebase URL --------------------------------------------------
+
+    /// §15.3.4.1: tag `0x7fffff03` (codebase URL and one repository id),
+    /// then the URL, then the repository id, then the state.
+    const CODEBASE_BE: &str = "7fffff03 00000012 66696c653a2f2f2f73747562732e6a617200 0000 \
+                               00000012 49444c3a47656f2f506f696e743a312e3000 0000 \
+                               00000005 00000009";
 
     #[test]
-    fn codebase_value_tag_and_roundtrip() {
-        let mut w = Writer::new(Endianness::Big);
+    fn corbarust_4_4_the_codebase_url_comes_ahead_of_the_repository_id() {
+        let expected = octets(CODEBASE_BE);
         let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 5, y: 9 });
-        ValueWriter::new()
-            .write_with_codebase(&mut w, Some(&p), "file:///stubs.jar")
+        let written = encoded(Endianness::Big, |w| {
+            ValueWriter::new()
+                .write_with_codebase(w, Some(&p), "file:///stubs.jar")
+                .unwrap();
+        });
+        assert_eq!(written, expected);
+
+        let mut r = Reader::new(&expected, Endianness::Big);
+        let v = ValueReader::new()
+            .read(&mut r, 0, &point_registry())
+            .unwrap()
             .unwrap();
-        let bytes = w.finish();
-        // value_tag 0x7fffff03 (single repo-id + codebase flag).
-        assert_eq!(&bytes[0..4], &[0x7f, 0xff, 0xff, 0x03]);
-        // Reads back correctly with a normal registry (RepositoryId known).
-        let mut r = Reader::new(&bytes, Endianness::Big);
-        let reg = point_registry();
-        let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
         assert_eq!(*v.downcast_ref::<Point>().unwrap(), Point { x: 5, y: 9 });
     }
 
     #[test]
-    fn codebase_resolver_supplies_missing_factory() {
-        let mut w = Writer::new(Endianness::Big);
-        let p: Rc<dyn ValueMarshal> = Rc::new(Point { x: 1, y: 2 });
-        ValueWriter::new()
-            .write_with_codebase(&mut w, Some(&p), "ior://factory-host/Point")
-            .unwrap();
-        let bytes = w.finish();
-
-        // Registry WITHOUT a Point factory, but WITH a codebase resolver that
-        // supplies it based on the codebase URL.
+    fn corbarust_4_4_the_codebase_resolver_supplies_a_missing_factory() {
+        let bytes = octets(CODEBASE_BE);
         let mut reg = ValueRegistry::new();
         reg.set_codebase_resolver(Box::new(|codebase: &str, repo_id: &str| {
-            if codebase.contains("factory-host") && repo_id == "IDL:Geo/Point:1.0" {
-                Some(Box::new(|r: &mut Reader<'_>| {
-                    let x = r.read_i32()?;
-                    let y = r.read_i32()?;
-                    Ok(Rc::new(Point { x, y }) as Rc<dyn Any>)
-                }) as ValueCtor)
-            } else {
-                None
-            }
+            (codebase == "file:///stubs.jar" && repo_id == "IDL:Geo/Point:1.0").then(point_ctor)
         }));
-
         let mut r = Reader::new(&bytes, Endianness::Big);
         let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
-        assert_eq!(*v.downcast_ref::<Point>().unwrap(), Point { x: 1, y: 2 });
+        assert_eq!(*v.downcast_ref::<Point>().unwrap(), Point { x: 5, y: 9 });
 
-        // Without a resolver: the same bytes → error (no factory).
+        // Without a resolver: no factory for the repository id.
         let mut r2 = Reader::new(&bytes, Endianness::Big);
         assert!(
             ValueReader::new()
@@ -980,78 +1000,50 @@ mod tests {
 
     // ---- §4.4 nested chunked values + multi-level end-tags ------------
 
-    /// Builds a chunked `Derived` value (repo-ids [Derived, Base]) whose
-    /// derived tail contains a **nested chunked value** (`IDL:Inner:1.0`),
-    /// terminated with its own end-tag (-2), then the outer end-tag (-1).
-    fn chunked_with_nested_tail(e: Endianness) -> alloc::vec::Vec<u8> {
-        let mut w = Writer::new(e);
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST); // 0x7fffff0e
-        w.write_u32(2);
-        w.write_string("IDL:Derived:1.0");
-        w.write_string("IDL:Base:1.0");
-        // Data chunk 1: Base state (long id = 42).
-        w.align_to(4);
-        w.write_u32(4);
-        w.write_u32(42);
-        // Nested chunked value in the derived tail.
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
-        w.write_u32(1);
-        w.write_string("IDL:Inner:1.0");
-        w.align_to(4);
-        w.write_u32(4); // nested chunk size
-        w.write_u32(0x0bad_cafe); // nested state
-        w.align_to(4);
-        w.write_u32((-2i32) as u32); // nested end-tag (depth 2)
-        // Outer end-tag (depth 1).
-        w.align_to(4);
-        w.write_u32((-1i32) as u32);
-        w.finish()
-    }
+    /// A chunked `Derived` (repository ids Derived, Base) whose first chunk
+    /// holds the base state (long 42), followed by a nested chunked value
+    /// `IDL:Inner:1.0` with one chunk (`0x0badcafe`), its end tag −2 and the
+    /// outer end tag −1 (§15.3.4.3).
+    const NESTED_BE: &str = "7fffff0e 00000002 00000010 49444c3a446572697665643a312e3000 \
+                             0000000d 49444c3a426173653a312e3000 000000 \
+                             00000004 0000002a \
+                             7fffff0e 00000001 0000000e 49444c3a496e6e65723a312e3000 0000 \
+                             00000004 0badcafe fffffffe ffffffff";
+    const NESTED_LE: &str = "0effff7f 02000000 10000000 49444c3a446572697665643a312e3000 \
+                             0d000000 49444c3a426173653a312e3000 000000 \
+                             04000000 2a000000 \
+                             0effff7f 01000000 0e000000 49444c3a496e6e65723a312e3000 0000 \
+                             04000000 fecaad0b feffffff ffffffff";
 
     #[test]
-    fn nested_chunked_value_in_tail_is_consumed_on_truncation() {
-        for e in [Endianness::Big, Endianness::Little] {
-            let bytes = chunked_with_nested_tail(e);
-            // Only Base known → truncation to Base; the nested value in the
-            // tail must be consumed correctly (no error).
+    fn corbarust_4_4_a_nested_value_in_the_skipped_tail_is_consumed() {
+        for (e, bytes) in [
+            (Endianness::Big, octets(NESTED_BE)),
+            (Endianness::Little, octets(NESTED_LE)),
+        ] {
             let mut reg = ValueRegistry::new();
             base_ctor(&mut reg);
             let mut r = Reader::new(&bytes, e);
             let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
-            assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 });
-            // Entire value stream consumed (position at the end).
-            assert_eq!(r.position(), bytes.len());
+            assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 }, "{e:?}");
+            assert_eq!(r.position(), bytes.len(), "{e:?}");
         }
     }
 
+    /// §15.3.4.3: one end tag −1 closes the nested value (level 2) and the
+    /// outer one (level 1) together.
     #[test]
-    fn shared_end_tag_closes_nested_and_outer() {
-        // Multi-level end-tag: ONE end-tag -1 closes the nested value
-        // (depth 2) AND the outer one (depth 1) together (§15.3.4.3).
-        let e = Endianness::Big;
-        let mut w = Writer::new(e);
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
-        w.write_u32(2);
-        w.write_string("IDL:Derived:1.0");
-        w.write_string("IDL:Base:1.0");
-        w.align_to(4);
-        w.write_u32(4);
-        w.write_u32(42); // Base.id
-        // Nested value …
-        w.write_u32(VALUE_TAG_BASE | VT_FLAG_CHUNKED | VT_REPO_LIST);
-        w.write_u32(1);
-        w.write_string("IDL:Inner:1.0");
-        w.align_to(4);
-        w.write_u32(4);
-        w.write_u32(0x0bad_cafe);
-        // … shared end-tag -1 closes nested (2) AND outer (1).
-        w.align_to(4);
-        w.write_u32((-1i32) as u32);
-        let bytes = w.finish();
-
+    fn corbarust_4_4_one_end_tag_closes_the_nested_and_the_outer_value() {
+        let bytes = octets(
+            "7fffff0e 00000002 00000010 49444c3a446572697665643a312e3000 \
+             0000000d 49444c3a426173653a312e3000 000000 \
+             00000004 0000002a \
+             7fffff0e 00000001 0000000e 49444c3a496e6e65723a312e3000 0000 \
+             00000004 0badcafe ffffffff",
+        );
         let mut reg = ValueRegistry::new();
         base_ctor(&mut reg);
-        let mut r = Reader::new(&bytes, e);
+        let mut r = Reader::new(&bytes, Endianness::Big);
         let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
         assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 42 });
         assert_eq!(r.position(), bytes.len());
@@ -1061,7 +1053,7 @@ mod tests {
 
     /// A value whose `value_tag` lists `IDL:Derived:1.0` + a base, but whose
     /// leading state is just the 4-byte base `id` (the derived tail lives in
-    /// nested chunks). Mirrors the `chunked_with_nested_tail` hand-built wire.
+    /// nested chunks).
     #[derive(Debug)]
     struct OuterBaseState {
         id: i32,
@@ -1096,41 +1088,30 @@ mod tests {
     }
 
     #[test]
-    fn chunked_tree_leaf_is_byte_identical_to_write_chunked() {
-        // A node with no nested children must produce exactly the same wire as
-        // the single-chunk write_chunked (regression guard for the shared path).
-        for e in [Endianness::Big, Endianness::Little] {
-            let d: Rc<dyn ValueMarshal> = Rc::new(Derived {
-                id: 42,
-                extra: "hi".into(),
-            });
-
-            let mut w1 = Writer::new(e);
-            ValueWriter::new()
-                .write_chunked(&mut w1, Some(&d), &["IDL:Base:1.0"])
-                .unwrap();
-
-            let mut w2 = Writer::new(e);
+    fn corbarust_4_4_a_chunk_tree_without_nested_values_is_the_jacorb_layout() {
+        let d = derived_42_hi();
+        for (e, expected) in [
+            (Endianness::Big, octets(JACORB_CHUNKED)),
+            (Endianness::Little, octets(CHUNKED_LE)),
+        ] {
             let node = ChunkedNode {
                 value: &d,
                 base_ids: &["IDL:Base:1.0"],
                 nested: &[],
             };
-            ValueWriter::new()
-                .write_chunked_tree(&mut w2, &node)
-                .unwrap();
-
-            assert_eq!(w1.finish(), w2.finish(), "leaf tree != write_chunked");
+            let written = encoded(e, |w| {
+                ValueWriter::new().write_chunked_tree(w, &node).unwrap();
+            });
+            assert_eq!(written, expected, "{e:?}");
         }
     }
 
     #[test]
-    fn chunked_tree_with_nested_matches_handbuilt_wire() {
-        // The encoder reproduces the exact multi-chunk wire that the
-        // nested-chunk DECODE tests validate (chunked_with_nested_tail):
-        // outer [Derived,Base] data chunk(42) + nested Inner chunk(0x0badcafe)
-        // + nested end-tag -2 + outer end-tag -1.
-        for e in [Endianness::Big, Endianness::Little] {
+    fn corbarust_4_4_a_chunk_tree_writes_the_nested_value_and_both_end_tags() {
+        for (e, expected) in [
+            (Endianness::Big, octets(NESTED_BE)),
+            (Endianness::Little, octets(NESTED_LE)),
+        ] {
             let inner: Rc<dyn ValueMarshal> = Rc::new(InnerVal { word: 0x0bad_cafe });
             let outer: Rc<dyn ValueMarshal> = Rc::new(OuterBaseState { id: 42 });
             let inner_node = ChunkedNode {
@@ -1143,47 +1124,12 @@ mod tests {
                 base_ids: &["IDL:Base:1.0"],
                 nested: core::slice::from_ref(&inner_node),
             };
-            let mut w = Writer::new(e);
-            ValueWriter::new()
-                .write_chunked_tree(&mut w, &outer_node)
-                .unwrap();
-            assert_eq!(
-                w.finish(),
-                chunked_with_nested_tail(e),
-                "multi-chunk encode != hand-built nested-tail wire"
-            );
-        }
-    }
-
-    #[test]
-    fn chunked_tree_roundtrips_with_base_truncation() {
-        // Encoder output decodes: a base-only reader truncates to the outer
-        // base value and consumes the entire nested tail.
-        for e in [Endianness::Big, Endianness::Little] {
-            let inner: Rc<dyn ValueMarshal> = Rc::new(InnerVal { word: 0x0bad_cafe });
-            let outer: Rc<dyn ValueMarshal> = Rc::new(OuterBaseState { id: 99 });
-            let inner_node = ChunkedNode {
-                value: &inner,
-                base_ids: &[],
-                nested: &[],
-            };
-            let outer_node = ChunkedNode {
-                value: &outer,
-                base_ids: &["IDL:Base:1.0"],
-                nested: core::slice::from_ref(&inner_node),
-            };
-            let mut w = Writer::new(e);
-            ValueWriter::new()
-                .write_chunked_tree(&mut w, &outer_node)
-                .unwrap();
-            let bytes = w.finish();
-
-            let mut reg = ValueRegistry::new();
-            base_ctor(&mut reg);
-            let mut r = Reader::new(&bytes, e);
-            let v = ValueReader::new().read(&mut r, 0, &reg).unwrap().unwrap();
-            assert_eq!(*v.downcast_ref::<Base>().unwrap(), Base { id: 99 });
-            assert_eq!(r.position(), bytes.len(), "nested tail not fully consumed");
+            let written = encoded(e, |w| {
+                ValueWriter::new()
+                    .write_chunked_tree(w, &outer_node)
+                    .unwrap();
+            });
+            assert_eq!(written, expected, "{e:?}");
         }
     }
 }

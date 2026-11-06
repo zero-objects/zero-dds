@@ -216,7 +216,7 @@ fn round_trip(client: &mut MqttClient, plain_port: u16, dir: &Path, payload: &[u
 
 #[test]
 #[ignore = "needs mosquitto; run with --features cross-vendor-tests -- --ignored"]
-fn ws_broker_url_carries_mqtt_both_ways_through_mosquitto() {
+fn mqtt5_6_ws_broker_url_carries_mqtt_both_ways_through_mosquitto() {
     require_mosquitto();
     let dir = workdir("ws");
     let (plain, ws) = (21901, 21902);
@@ -239,7 +239,7 @@ fn ws_broker_url_carries_mqtt_both_ways_through_mosquitto() {
 
 #[test]
 #[ignore = "needs mosquitto; run with --features cross-vendor-tests -- --ignored"]
-fn wss_broker_url_carries_mqtt_through_mosquitto_and_checks_the_certificate() {
+fn mqtt5_6_wss_broker_url_carries_mqtt_through_mosquitto_and_checks_the_certificate() {
     require_mosquitto();
     let dir = workdir("wss");
     // Started as root, mosquitto switches to its own user and must still
@@ -285,7 +285,7 @@ fn wss_broker_url_carries_mqtt_through_mosquitto_and_checks_the_certificate() {
 /// with a message, instead of reading the broker's bytes as frames.
 #[test]
 #[ignore = "needs mosquitto; run with --features cross-vendor-tests -- --ignored"]
-fn a_ws_url_on_a_plain_listener_fails_the_handshake() {
+fn mqtt5_6_a_ws_url_on_a_plain_listener_fails_the_handshake() {
     require_mosquitto();
     let dir = workdir("ws-on-plain");
     let plain = 21905;

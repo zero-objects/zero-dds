@@ -2249,3 +2249,93 @@ test "a sequence element length frames the element it precedes" {
     try std.testing.expectEqual(@as(i16, -2), try r.readI16());
     try std.testing.expectEqual(end, r.readerPosition());
 }
+
+// -- the operations no corpus case reaches -----------------------------------
+//
+// The five the generated code reaches only in a dialect or with a member no
+// corpus case carries: writePidExtended, writeUnionOverlay,
+// readerClearDiscard, readerSave and readerRestore
+// (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+// vectors, each against an oracle outside this code.
+
+fn operationsFraming() PlCdr1Framing {
+    return .{
+        .pid_flags = "sentinel-must-understand",
+        .highest_short_id = 0x3F00,
+        .pad_declared_length = false,
+        .pad_declared_optional_length = false,
+        .member_must_understand = true,
+        .pad_after_value = true,
+    };
+}
+
+test "writePidExtended writes Cyclone's recorded parameter" {
+    // The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+    // recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv).
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var w = Writer.init(arena.allocator(), .little, 8, operationsFraming(), false);
+    const header = try w.writePidExtended(0, .member, false);
+    try w.writeI32(-1234567);
+    try w.finishPid(header);
+    try std.testing.expectEqualSlices(u8, &[_]u8{
+        0x01, 0x7f, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x04, 0x00, 0x00, 0x00, 0x79, 0x29, 0xed, 0xff,
+    }, w.finish());
+}
+
+test "writeUnionOverlay writes the storage at the branch's width" {
+    // A `short` read through a four-octet and a one-octet `default:` branch:
+    // Cyclone DDS 11.0.1 writes the union's storage, the member's octets with
+    // zeros above (`combined-everything`, crates/wire-codec/src/encode.rs
+    // `write_selected_branch`).
+    var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena.deinit();
+    var w = Writer.init(arena.allocator(), .little, 4, operationsFraming(), false);
+    const pattern = bitPatternInt(-2, 2);
+    try w.writeUnionOverlay(pattern, 4);
+    try w.writeUnionOverlay(pattern, 1);
+    try std.testing.expectEqualSlices(u8, &[_]u8{ 0xfe, 0xff, 0x00, 0x00, 0xfe }, w.finish());
+}
+
+test "readerClearDiscard takes back a discard and nothing else" {
+    // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+    // Table 9's value, so the call site asks for DISCARD and takes it back.
+    // Any other refusal is not a narrowing and stays.
+    const four = [_]u8{ 1, 2, 3, 4 };
+    var discarded = Reader.init(std.testing.allocator, &four, .little, 4, "sentinel-must-understand", 0x3F00);
+    discarded.readerRefuse(.discarded);
+    try std.testing.expect(discarded.readerClearDiscard());
+    try std.testing.expectEqual(Status.ok, discarded.readerStatus());
+    var refused = Reader.init(std.testing.allocator, &four, .little, 4, "sentinel-must-understand", 0x3F00);
+    refused.readerRefuse(.out_of_range);
+    try std.testing.expect(!refused.readerClearDiscard());
+    try std.testing.expectEqual(Status.out_of_range, refused.readerStatus());
+}
+
+test "readerSave and readerRestore count a delimited map and read it again" {
+    // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+    // DHEADER and the pairs, without a count. The reader counts the pairs,
+    // goes back and reads them again; a refusal made while counting goes
+    // back with the cursor.
+    const map = [_]u8{ 0x10, 0, 0, 0, 1, 0, 0, 0, 0x0a, 0, 0, 0, 2, 0, 0, 0, 0x14, 0, 0, 0 };
+    var r = Reader.init(std.testing.allocator, &map, .little, 4, "sentinel-must-understand", 0x3F00);
+    const extent = try r.readDheader();
+    const end = r.readerPosition() + @as(usize, extent);
+    const mark = r.readerSave();
+    var pairs: usize = 0;
+    while (r.readerPosition() < end and r.readerStatus() == .ok) {
+        _ = try r.readI32();
+        _ = try r.readI32();
+        pairs += 1;
+    }
+    r.readerRefuse(.out_of_range);
+    r.readerRestore(mark);
+    try std.testing.expectEqual(@as(usize, 2), pairs);
+    try std.testing.expectEqual(@as(i32, 1), try r.readI32());
+    try std.testing.expectEqual(@as(i32, 10), try r.readI32());
+    try std.testing.expectEqual(@as(i32, 2), try r.readI32());
+    try std.testing.expectEqual(@as(i32, 20), try r.readI32());
+    try std.testing.expectEqual(@as(usize, 20), r.readerPosition());
+    try std.testing.expectEqual(Status.ok, r.readerStatus());
+}

@@ -422,10 +422,10 @@ fn emit(
             let items = value
                 .as_array()
                 .ok_or_else(|| gap!("{path}: expected an array"))?;
-            if let Some(limit) = bound.expr().and_then(|expr| ast.eval_integral(expr).ok()) {
-                if items.len() as i128 > limit {
-                    return Err(gap!("{path}: at most {limit} elements"));
-                }
+            if let Some(limit) = bound.expr().and_then(|expr| ast.eval_integral(expr).ok())
+                && items.len() as i128 > limit
+            {
+                return Err(gap!("{path}: at most {limit} elements"));
             }
             let buffer = out.temporary("seq");
             let element_type = c_type_name(ast, element);
@@ -475,10 +475,10 @@ fn emit(
             let entries = value
                 .as_array()
                 .ok_or_else(|| gap!("{path}: expected an array of [key, value] pairs"))?;
-            if let Some(limit) = bound.expr().and_then(|expr| ast.eval_integral(expr).ok()) {
-                if entries.len() as i128 > limit {
-                    return Err(gap!("{path}: at most {limit} entries"));
-                }
+            if let Some(limit) = bound.expr().and_then(|expr| ast.eval_integral(expr).ok())
+                && entries.len() as i128 > limit
+            {
+                return Err(gap!("{path}: at most {limit} entries"));
             }
             let buffer = out.temporary("map");
             if entries.is_empty() {

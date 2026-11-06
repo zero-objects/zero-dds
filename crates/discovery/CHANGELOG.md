@@ -5,6 +5,13 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `request_types_payload` and `request_dependencies_payload` write XCDR
+  version 2 (DHEADER, EMHEADER), as `TypeLookupStack::make_get_types_request`
+  does and DDS-XTypes 1.4 beta 1 §7.6.3.3.3 has it; they wrote a PL_CDR1
+  parameter list.
+
 ### Added (DDS-Security 1.2 §9.8)
 
 - Test `figure_23_calls_the_operations_of_both_plugins_in_order`: the

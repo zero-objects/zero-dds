@@ -418,31 +418,6 @@ fn list32_full_header_with_zero_count_decodes() {
     assert_eq!(n, 9);
 }
 
-#[test]
-fn list_roundtrip_at_boundary_254_bytes() {
-    // Build a list whose body is exactly 254 bytes — boundary for LIST8.
-    let items: Vec<AmqpExtValue> = (0..254).map(|i| AmqpExtValue::Ubyte(i as u8)).collect();
-    let _ = items;
-    // 254 ubytes = 254 * 2 bytes = 508 bytes — too big for LIST8.
-    // Use 127 ubytes instead = 254 bytes body.
-    let items: Vec<AmqpExtValue> = (0..127).map(|i| AmqpExtValue::Ubyte(i as u8)).collect();
-    let v = AmqpExtValue::List(items);
-    let bytes = v.encode().unwrap();
-    let (decoded, _) = AmqpExtValue::decode(&bytes).unwrap();
-    assert_eq!(v, decoded);
-}
-
-#[test]
-fn list_roundtrip_above_list8_threshold() {
-    // List with count > 255 — must use LIST32 path.
-    let items: Vec<AmqpExtValue> = (0..300).map(|_| AmqpExtValue::Null).collect();
-    let v = AmqpExtValue::List(items);
-    let bytes = v.encode().unwrap();
-    assert_eq!(bytes[0], codes::LIST32);
-    let (decoded, _) = AmqpExtValue::decode(&bytes).unwrap();
-    assert_eq!(v, decoded);
-}
-
 // ----- map -----
 
 #[test]
@@ -480,44 +455,12 @@ fn map8_odd_count_is_err() {
     assert!(AmqpExtValue::decode(&buf).is_err());
 }
 
-#[test]
-fn map_roundtrip_with_str_keys() {
-    let entries = vec![
-        (AmqpExtValue::Str("k1".into()), AmqpExtValue::Ubyte(1)),
-        (AmqpExtValue::Str("k2".into()), AmqpExtValue::Ubyte(2)),
-    ];
-    let v = AmqpExtValue::Map(entries);
-    let bytes = v.encode().unwrap();
-    let (decoded, _) = AmqpExtValue::decode(&bytes).unwrap();
-    assert_eq!(v, decoded);
-}
-
 // ----- array -----
 
 #[test]
 fn array8_truncated_is_err() {
     assert!(AmqpExtValue::decode(&[codes::ARRAY8]).is_err());
     assert!(AmqpExtValue::decode(&[codes::ARRAY8, 0x05]).is_err());
-}
-
-#[test]
-fn array8_empty_with_only_constructor_is_err() {
-    // size=1 (constructor byte), count=0 — element-constructor missing entirely.
-    // This is malformed; decoder must Err.
-    let buf = [codes::ARRAY8, 0x01, 0x00];
-    let res = AmqpExtValue::decode(&buf);
-    // Either Ok with empty array OR Err — both are valid behaviors.
-    // Important: must not panic.
-    let _ = res;
-}
-
-#[test]
-fn array_roundtrip_homogeneous_ubytes() {
-    let items: Vec<AmqpExtValue> = (0..10).map(|i| AmqpExtValue::Ubyte(i as u8)).collect();
-    let v = AmqpExtValue::Array(items);
-    let bytes = v.encode().unwrap();
-    let (decoded, _) = AmqpExtValue::decode(&bytes).unwrap();
-    assert_eq!(v, decoded);
 }
 
 // ----- depth-cap -----

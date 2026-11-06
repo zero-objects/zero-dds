@@ -81,7 +81,7 @@ abstract class GenerateIdlTask : DefaultTask() {
 
             logger.info("zerodds-idlc: {}", args.joinToString(" "))
             execOperations.exec {
-                it.commandLine = args
+                commandLine(args)
             }
         }
     }

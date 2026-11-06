@@ -92,52 +92,43 @@ impl PendingRequests {
 mod tests {
     use super::*;
 
+    /// zerodds-ros2-bridge-1.0 §4.2 and §5.1: the request and reply
+    /// topics of a service are `rq/<service>Request` and
+    /// `rr/<service>Reply`, as rmw_cyclonedds_cpp and rmw_fastrtps_cpp
+    /// name them.
     #[test]
-    fn topic_names_for_simple_service() {
-        let s = ServiceTopics::from_service("/foo/bar");
-        assert_eq!(s.request, "rq/foo/barRequest");
-        assert_eq!(s.reply, "rr/foo/barReply");
+    fn ros2bridge_4_2_a_service_is_the_topics_rq_request_and_rr_reply() {
+        for name in ["/foo/bar", "foo/bar"] {
+            let s = ServiceTopics::from_service(name);
+            assert_eq!(s.request, "rq/foo/barRequest", "{name}");
+            assert_eq!(s.reply, "rr/foo/barReply", "{name}");
+        }
+        let s = ServiceTopics::from_service("/add_two_ints");
+        assert_eq!(s.request, "rq/add_two_intsRequest");
+        assert_eq!(s.reply, "rr/add_two_intsReply");
     }
 
+    /// §4.2: a reply belongs to the request of the same client GUID and
+    /// sequence number, once; a second request under the same identity
+    /// is refused, a reply nobody asked for finds nothing.
     #[test]
-    fn topic_names_handle_no_leading_slash() {
-        let s = ServiceTopics::from_service("foo/bar");
-        assert_eq!(s.request, "rq/foo/barRequest");
-        assert_eq!(s.reply, "rr/foo/barReply");
-    }
-
-    #[test]
-    fn pending_register_and_match_round_trips() {
+    fn ros2bridge_4_2_a_reply_correlates_once_by_client_guid_and_sequence_number() {
         let mut p = PendingRequests::new();
         let id = ServiceRequestId {
             client_guid: [0xab; 16],
             sequence_number: 7,
         };
+        let other = ServiceRequestId {
+            client_guid: [0xab; 16],
+            sequence_number: 8,
+        };
+        assert!(p.match_reply(other).is_none());
         assert!(p.register(id, b"req".to_vec()));
+        assert!(!p.register(id, b"again".to_vec()));
         assert_eq!(p.outstanding(), 1);
-        let body = p.match_reply(id).expect("match");
-        assert_eq!(body, b"req");
+        assert!(p.match_reply(other).is_none());
+        assert_eq!(p.match_reply(id).expect("match"), b"req");
         assert_eq!(p.outstanding(), 0);
-    }
-
-    #[test]
-    fn duplicate_register_rejected() {
-        let mut p = PendingRequests::new();
-        let id = ServiceRequestId {
-            client_guid: [0; 16],
-            sequence_number: 1,
-        };
-        assert!(p.register(id, b"x".to_vec()));
-        assert!(!p.register(id, b"y".to_vec()));
-    }
-
-    #[test]
-    fn unmatched_reply_returns_none() {
-        let mut p = PendingRequests::new();
-        let id = ServiceRequestId {
-            client_guid: [0; 16],
-            sequence_number: 1,
-        };
         assert!(p.match_reply(id).is_none());
     }
 }

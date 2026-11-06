@@ -39,7 +39,7 @@ fn datagrams(file: &str) -> Vec<Vec<u8>> {
 }
 
 #[test]
-fn the_reference_implementations_octets_are_read_in_the_default_setting() {
+fn xrce_annex_a_the_reference_implementations_octets_are_read_in_the_default_setting() {
     let mut statuses = 0;
     let mut acknacks = 0;
     for file in ["agent-to-client.hex", "client-to-agent.hex"] {
@@ -67,7 +67,7 @@ fn the_reference_implementations_octets_are_read_in_the_default_setting() {
 }
 
 #[test]
-fn the_default_is_appendable_with_a_dheader() {
+fn xrce_7_7_the_default_is_appendable_with_a_dheader() {
     assert_eq!(
         zerodds_xrce::encoding::unannotated_types(),
         UnannotatedTypes::Appendable
@@ -99,7 +99,7 @@ fn the_default_is_appendable_with_a_dheader() {
 }
 
 #[test]
-fn the_final_setting_writes_the_reference_implementations_octets() {
+fn xrce_7_7_7_the_final_setting_writes_the_reference_implementations_octets() {
     with_unannotated_types(UnannotatedTypes::Final, || {
         assert_eq!(ResultStatus::ok().encode().len(), 2);
         let reply = BaseObjectReply {
@@ -127,7 +127,7 @@ fn the_final_setting_writes_the_reference_implementations_octets() {
 }
 
 #[test]
-fn both_forms_are_read_in_either_setting() {
+fn xrce_7_7_both_forms_are_read_in_either_setting() {
     let reply = BaseObjectReply {
         related_request: BaseObjectRequest::default(),
         result: ResultStatus::ok(),

@@ -123,7 +123,12 @@ fn announced_type(rt: &DcpsRuntime, topic: &str) -> Option<Announced> {
 }
 
 fn run(args: &Args) -> Result<(), String> {
-    let prefix = GuidPrefix::from_bytes(*b"zdftoprobe00");
+    // DDSI-RTPS 2.5 §9.3.1.5: the first two octets of a prefix are the
+    // vendor id. The fixed `b"zdftoprobe00"` put `zd` there.
+    let prefix = GuidPrefix::zerodds(
+        zerodds_dcps::participant::host_id_bytes(),
+        zerodds_dcps::participant::next_process_unique(),
+    );
     let rt = DcpsRuntime::start(args.domain, prefix, RuntimeConfig::default())
         .map_err(|e| format!("runtime: {e}"))?;
     let deadline = Instant::now() + args.timeout;

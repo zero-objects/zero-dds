@@ -399,6 +399,12 @@ pub fn rust_item_pairs(
                 if node.name.is_empty() {
                     continue;
                 }
+                // A typedef named in `zerodds_build::Config::rust_type` is an
+                // alias of the Rust type that stands for it.
+                let type_ = match rust_type_mapping(node.node_id) {
+                    Some(mapping) => mapping.rust_type,
+                    None => rust_type_of(ast, from, aliased.resolved())?,
+                };
                 items.push((
                     node.module,
                     rust::Item::TypeAlias(rust::TypeAlias {
@@ -407,7 +413,7 @@ pub fn rust_item_pairs(
                         visibility: Visibility::Public,
                         name: Ident::new(&rust::escape_keyword(&node.name)),
                         generics: Vec::new(),
-                        type_: rust_type_of(ast, from, aliased.resolved())?,
+                        type_,
                     }),
                 ));
                 continue;
@@ -765,7 +771,9 @@ pub fn rust_item_pairs(
                 construct: "constant's value".to_string(),
                 at: node.name.clone(),
             })?;
-        let declared = rust_type_of(ast, from, node.type_.resolved())?;
+        // The IDL type and not a `rust_type` mapping over it: a constant is
+        // a literal, and `const N: NonZeroU32 = 5;` is no Rust.
+        let declared = type_of_at(ast, from, node.type_.resolved(), 0, Mapping::Ignored)?;
         let (type_, literal) = rust_constant(&value, declared, &node.name)?;
         items.push((
             node.module,
@@ -1185,7 +1193,12 @@ fn field_type(
     from: Id<zerodds_ast::ModuleNode>,
     member: &zerodds_ast::MemberNode,
 ) -> Result<rust::Type, MaterialiseError> {
-    let mut inner = rust_type_of(ast, from, member.type_.resolved())?;
+    // A member named in `zerodds_build::Config::rust_type` holds the Rust
+    // type it was given, ahead of whatever its declared type maps to.
+    let mut inner = match rust_type_mapping(member.node_id) {
+        Some(mapping) => mapping.rust_type,
+        None => rust_type_of(ast, from, member.type_.resolved())?,
+    };
     if is_external(ast, member) {
         inner = rust::Type::generic(Path::single("Box"), vec![inner]);
     }
@@ -1242,6 +1255,107 @@ impl Drop for RustMapFormScope {
 #[must_use]
 pub fn rust_map_form() -> RustMapForm {
     MAP_FORM.with(std::cell::Cell::get)
+}
+
+/// One IDL declaration — a typedef, a struct member or a union branch —
+/// that the generated Rust holds as another Rust type
+/// (`zerodds_build::Config::rust_type`).
+///
+/// The wire does not change: the codec writes and reads the IDL type and
+/// converts through `zerodds_wire::WireRepr` (or the adapter's
+/// `zerodds_wire::WireReprWith`), and the `TypeObject`, the
+/// `TypeIdentifier` and the key hash are the IDL's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RustTypeMapping {
+    /// The Rust type the field holds.
+    pub rust_type: rust::Type,
+    /// The adapter value the conversion goes through, or `None` where the
+    /// Rust type implements `zerodds_wire::WireRepr` itself.
+    pub adapter: Option<Path>,
+}
+
+thread_local! {
+    static RUST_TYPES: core::cell::RefCell<Vec<(NodeId, RustTypeMapping)>> =
+        const { core::cell::RefCell::new(Vec::new()) };
+}
+
+/// Selects the Rust types that stand for IDL declarations, by the
+/// declaration's node, on the current thread until dropped.
+///
+/// A scope and not a parameter for the reason [`RustMapFormScope`] is one:
+/// every walk of this column spells types, and a parameter would have to
+/// reach each of them.
+#[derive(Debug)]
+pub struct RustTypeScope {
+    previous: Vec<(NodeId, RustTypeMapping)>,
+}
+
+impl RustTypeScope {
+    /// Selects `mappings` on this thread: each typedef or member node to
+    /// the Rust type that stands for it.
+    #[must_use]
+    pub fn enter(mappings: Vec<(NodeId, RustTypeMapping)>) -> Self {
+        let previous = RUST_TYPES.with(|cell| cell.replace(mappings));
+        Self { previous }
+    }
+}
+
+impl Drop for RustTypeScope {
+    fn drop(&mut self) {
+        let previous = core::mem::take(&mut self.previous);
+        RUST_TYPES.with(|cell| {
+            cell.replace(previous);
+        });
+    }
+}
+
+/// The Rust type that stands for the typedef or member `node`, in force on
+/// this thread.
+#[must_use]
+pub fn rust_type_mapping(node: NodeId) -> Option<RustTypeMapping> {
+    RUST_TYPES.with(|cell| {
+        cell.borrow()
+            .iter()
+            .find(|(mapped, _)| *mapped == node)
+            .map(|(_, mapping)| mapping.clone())
+    })
+}
+
+/// The Rust type that stands for a member's value: the member's own
+/// mapping, or else the first typedef with one on the way from the
+/// member's declared type to the type it aliases. A member mapping wins
+/// over a typedef mapping.
+#[must_use]
+pub fn member_rust_type_mapping(
+    ast: &Ast,
+    member: &zerodds_ast::MemberNode,
+) -> Option<RustTypeMapping> {
+    rust_type_mapping(member.node_id).or_else(|| {
+        member
+            .type_
+            .resolved()
+            .and_then(|type_| alias_rust_type_mapping(ast, type_))
+    })
+}
+
+/// The first typedef with a Rust type of its own on the way from `type_`
+/// to the type it aliases, if any.
+#[must_use]
+pub fn alias_rust_type_mapping(
+    ast: &Ast,
+    mut type_: Id<zerodds_ast::TypeNode>,
+) -> Option<RustTypeMapping> {
+    for _ in 0..MAX_TYPE_DEPTH {
+        let node = ast.type_(type_).ok()?;
+        let TypeKind::Alias { aliased } = &node.kind else {
+            return None;
+        };
+        if let Some(mapping) = rust_type_mapping(node.node_id) {
+            return Some(mapping);
+        }
+        type_ = aliased.resolved()?;
+    }
+    None
 }
 
 /// The name of the member that holds the base of a derived structure (XTypes 1.3 §7.5.1.4.1.3).
@@ -1362,7 +1476,17 @@ pub(crate) fn rust_type_of(
     from: Id<zerodds_ast::ModuleNode>,
     target: Option<zerodds_ast_core::Id<zerodds_ast::TypeNode>>,
 ) -> Result<rust::Type, MaterialiseError> {
-    type_of_at(ast, from, target, 0)
+    type_of_at(ast, from, target, 0, Mapping::Applied)
+}
+
+/// Whether a typedef named in `zerodds_build::Config::rust_type` is
+/// spelled as its Rust type or as the IDL type it aliases.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Mapping {
+    /// As the Rust type: a field, an element, an alias.
+    Applied,
+    /// As the IDL type: a constant, whose value is a literal of it.
+    Ignored,
 }
 
 /// [`rust_type_of`], carrying how many connector steps the walk has
@@ -1384,6 +1508,7 @@ fn type_of_at(
     from: Id<zerodds_ast::ModuleNode>,
     target: Option<zerodds_ast_core::Id<zerodds_ast::TypeNode>>,
     depth: usize,
+    mapping: Mapping,
 ) -> Result<rust::Type, MaterialiseError> {
     if depth > MAX_TYPE_DEPTH {
         return Err(MaterialiseError::Unevaluated {
@@ -1413,10 +1538,16 @@ fn type_of_at(
         TypeKind::String { .. } => rust::Type::Primitive(rust::Primitive::String),
         TypeKind::Sequence { element, .. } => rust::Type::generic(
             Path::new(&["Vec"]),
-            vec![type_of_at(ast, from, element.resolved(), depth + 1)?],
+            vec![type_of_at(
+                ast,
+                from,
+                element.resolved(),
+                depth + 1,
+                mapping,
+            )?],
         ),
         TypeKind::Array { element, dims } => {
-            let mut out = type_of_at(ast, from, element.resolved(), depth + 1)?;
+            let mut out = type_of_at(ast, from, element.resolved(), depth + 1, mapping)?;
             // Innermost dimension first, so `long a[2][3]` becomes
             // `[[i32; 3]; 2]` — the outer dimension outermost.
             for dim in dims.iter().rev() {
@@ -1436,8 +1567,8 @@ fn type_of_at(
             out
         }
         TypeKind::Map { key, value, .. } => {
-            let key = type_of_at(ast, from, key.resolved(), depth + 1)?;
-            let value = type_of_at(ast, from, value.resolved(), depth + 1)?;
+            let key = type_of_at(ast, from, key.resolved(), depth + 1, mapping)?;
+            let value = type_of_at(ast, from, value.resolved(), depth + 1, mapping)?;
             match rust_map_form() {
                 RustMapForm::BTreeMap => {
                     rust::Type::generic(Path::new(&["BTreeMap"]), vec![key, value])
@@ -1452,7 +1583,13 @@ fn type_of_at(
                 ),
             }
         }
-        TypeKind::Alias { aliased } => type_of_at(ast, from, aliased.resolved(), depth + 1)?,
+        // A typedef named in `zerodds_build::Config::rust_type` is the Rust
+        // type that stands for it, wherever it is used: a member, an
+        // element, a map's key or value, a union branch.
+        TypeKind::Alias { aliased } => match (mapping, rust_type_mapping(node.node_id)) {
+            (Mapping::Applied, Some(mapped)) => mapped.rust_type,
+            _ => type_of_at(ast, from, aliased.resolved(), depth + 1, mapping)?,
+        },
         TypeKind::Structure { .. }
         | TypeKind::Union { .. }
         | TypeKind::Enumeration { .. }
@@ -1463,7 +1600,7 @@ fn type_of_at(
         | TypeKind::AnnotationType { .. } => rust::Type::named(relative_path(ast, from, node)?),
         TypeKind::ValueBox { boxed } => rust::Type::generic(
             Path::new(&["Box"]),
-            vec![type_of_at(ast, from, boxed.resolved(), depth + 1)?],
+            vec![type_of_at(ast, from, boxed.resolved(), depth + 1, mapping)?],
         ),
         // `fixed<P,S>` becomes the decimal's text, which is what every
         // other column does with it — C++ `std::string`, F# and OCaml and

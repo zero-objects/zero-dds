@@ -399,8 +399,12 @@ fn only(n: Node, attrs: &[&str], children: &[&str]) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// The native schema spells the configuration the JSON form spells
+    /// (README, "Config — XML"): a route with partition, QoS, keyedness and
+    /// the loop guard, a relay route and a filter on the input read as the
+    /// configuration of the same JSON.
     #[test]
-    fn native_basic() {
+    fn the_native_schema_reads_as_the_json_configuration_it_spells() {
         let xml = r#"
         <zerodds_routing name="r1">
           <route name="a" loop_guard="true">
@@ -412,49 +416,40 @@ mod tests {
               <qos reliable="true" durability="transient_local" ownership="exclusive" ownership_strength="5"/>
             </output>
           </route>
-        </zerodds_routing>"#;
-        let c = parse_router_xml(xml).unwrap();
-        assert_eq!(c.name, "r1");
-        assert_eq!(c.routes.len(), 1);
-        let r = &c.routes[0];
-        assert_eq!(r.input.domain, 0);
-        assert_eq!(r.output.domain, 1);
-        assert_eq!(r.output.topic, "Dst");
-        assert!(r.input.keyed && r.output.keyed);
-        assert_eq!(r.input.partition, vec!["p".to_string()]);
-        assert_eq!(r.output.qos.ownership_strength, 5);
-        assert_eq!(r.output.qos.durability, Durability::TransientLocal);
-    }
-
-    #[test]
-    fn native_relay() {
-        let xml = r#"
-        <zerodds_routing>
-          <route name="a" relay="true">
+          <route name="b" relay="true">
             <input domain="3" topic="T" type_name="X"/>
             <output domain="3" topic="T" type_name="X"/>
           </route>
-        </zerodds_routing>"#;
-        let c = parse_router_xml(xml).unwrap();
-        assert!(c.routes[0].relay);
-        assert!(c.validate().is_ok());
-    }
-
-    #[test]
-    fn native_filter() {
-        let xml = r#"
-        <zerodds_routing>
-          <route name="a">
+          <route name="c">
             <input domain="0" topic="S"><filter>temp &gt; 50</filter></input>
             <output domain="1" topic="S"/>
           </route>
         </zerodds_routing>"#;
-        let c = parse_router_xml(xml).unwrap();
-        assert_eq!(c.routes[0].filter.as_ref().unwrap().expression, "temp > 50");
+        let json = r#"{ "name": "r1", "routes": [
+          { "name": "a", "loop_guard": true,
+            "input":  { "domain": 0, "topic": "Src", "type_name": "T", "keyed": true,
+                        "partition": ["p"], "qos": { "reliable": true, "durability": "volatile" } },
+            "output": { "domain": 1, "topic": "Dst", "type_name": "T", "keyed": true,
+                        "qos": { "reliable": true, "durability": "transient_local",
+                                 "ownership": "exclusive", "ownership_strength": 5 } } },
+          { "name": "b", "relay": true,
+            "input":  { "domain": 3, "topic": "T", "type_name": "X" },
+            "output": { "domain": 3, "topic": "T", "type_name": "X" } },
+          { "name": "c", "filter": { "expression": "temp > 50" },
+            "input":  { "domain": 0, "topic": "S" },
+            "output": { "domain": 1, "topic": "S" } } ] }"#;
+        assert_eq!(
+            RouterConfig::from_xml(xml).unwrap(),
+            RouterConfig::from_json(json).unwrap()
+        );
     }
 
+    /// The RTI Routing Service form (`<routing_service>`, `<domain_route>`
+    /// with a participant per domain, `<session>`, `<topic_route>` with
+    /// `<input>`/`<output>` naming their participant, registered type and
+    /// topic) becomes one route per topic route.
     #[test]
-    fn rti_subset() {
+    fn an_rti_topic_route_becomes_a_route_between_its_participants_domains() {
         let xml = r#"
         <dds>
           <routing_service name="svc">
@@ -488,7 +483,7 @@ mod tests {
     }
 
     /// What the parser does not read is refused with its line, and an
-    /// unreadable boolean or count no longer becomes the default.
+    /// unreadable boolean or count does not become the default.
     #[test]
     fn unknown_elements_attributes_and_bad_values_are_refused() {
         let native = |route_attrs: &str, input_inner: &str| {
@@ -515,11 +510,7 @@ mod tests {
             parse_router_xml(out_filter).is_err(),
             "a filter on the output"
         );
-    }
-
-    #[test]
-    fn rejects_unknown_root() {
-        assert!(parse_router_xml("<foo/>").is_err());
+        assert!(parse_router_xml("<foo/>").is_err(), "an unknown root");
     }
 }
 

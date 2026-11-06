@@ -23,12 +23,13 @@ interface ISource {
     long produce();
 };
 
-interface IExt {
-    void ext();
+// `port` and `mirrorport` name a port type (IDL 4.2 §7.4.11.4.2).
+porttype IExt {
+    provides IService ext_service;
 };
 
-interface IMirror {
-    void mirror();
+porttype IMirror {
+    uses ISource mirror_source;
 };
 
 eventtype Reading {

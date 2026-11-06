@@ -524,10 +524,10 @@ pub fn responder_urls(cert_der: &[u8]) -> Vec<String> {
             continue;
         };
         for access in aia.0 {
-            if access.access_method.to_string() == "1.3.6.1.5.5.7.48.1" {
-                if let GeneralName::UniformResourceIdentifier(uri) = access.access_location {
-                    out.push(uri.to_string());
-                }
+            if access.access_method.to_string() == "1.3.6.1.5.5.7.48.1"
+                && let GeneralName::UniformResourceIdentifier(uri) = access.access_location
+            {
+                out.push(uri.to_string());
             }
         }
     }
@@ -972,7 +972,7 @@ mod tests {
     /// response for this certificate, in its interval, signed by its CA:
     /// `good` is good (either hash of the `CertID`), `revoked` is revoked.
     #[test]
-    fn a_signed_response_for_the_certificate_gives_its_status() {
+    fn security_10_3_3_a_signed_response_for_the_certificate_gives_its_status() {
         let pki = pki();
         let cert = leaf(&pki, None);
         for hash in [OID_SHA1, OID_SHA256] {
@@ -1032,7 +1032,7 @@ mod tests {
     /// the CA or an authorised responder says nothing, a forged `revoked`
     /// included.
     #[test]
-    fn a_response_that_does_not_hold_says_nothing() {
+    fn security_10_3_3_a_response_that_does_not_hold_says_nothing() {
         let pki = pki();
         let cert = leaf(&pki, None);
         let other = leaf(&pki, None);
@@ -1102,7 +1102,7 @@ mod tests {
     /// signing, carried in the response, may sign it; one without that
     /// purpose may not.
     #[test]
-    fn a_delegated_responder_signs_only_with_the_ocsp_signing_purpose() {
+    fn security_10_3_3_a_delegated_responder_signs_only_with_the_ocsp_signing_purpose() {
         let pki = pki();
         let cert = leaf(&pki, None);
         let (good_cert, good_key) = responder_cert(&pki, true);
@@ -1163,14 +1163,21 @@ mod tests {
         staple: Option<&[u8]>,
         policy: &OcspPolicy,
     ) -> Result<OcspOutcome, String> {
-        check_identity(cert, &[pki.ca_der.clone()], staple, false, policy, NOW)
+        check_identity(
+            cert,
+            std::slice::from_ref(&pki.ca_der),
+            staple,
+            false,
+            policy,
+            NOW,
+        )
     }
 
     /// DDS-Security 1.2 §10.3.3 Table 59: a stapled `revoked` fails the
     /// operation, a stapled `good` is the proof, a staple that says nothing is
     /// as none; with nothing to ask, nothing is checked.
     #[test]
-    fn a_stapled_status_decides_and_a_useless_one_is_none() {
+    fn security_10_3_3_a_stapled_status_decides_and_a_useless_one_is_none() {
         let pki = pki();
         let cert = leaf(&pki, None);
         let policy = OcspPolicy::default();
@@ -1194,7 +1201,7 @@ mod tests {
     /// The responder the certificate names is asked when no staple decides.
     /// `good` passes and is kept to be stapled, `revoked` fails.
     #[test]
-    fn the_responder_in_the_certificate_is_asked() {
+    fn security_10_3_3_the_responder_in_the_certificate_is_asked() {
         let pki = pki();
         for (tag, passes) in [(0x80u8, true), (0xA1, false)] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1221,7 +1228,7 @@ mod tests {
     /// A responder that cannot be reached: refused by default, passed with
     /// the named setting and said so, and a CRL that was checked settles it.
     #[test]
-    fn an_unreachable_responder_fails_unless_the_setting_says_accept() {
+    fn security_10_3_3_an_unreachable_responder_fails_unless_the_setting_says_accept() {
         let pki = pki();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let url = alloc::format!(
@@ -1242,7 +1249,14 @@ mod tests {
             check(&cert, &pki, None, &policy),
             Ok(OcspOutcome::AcceptedUndetermined(_))
         ));
-        let with_crl = check_identity(&cert, &[pki.ca_der.clone()], None, true, &policy, NOW);
+        let with_crl = check_identity(
+            &cert,
+            std::slice::from_ref(&pki.ca_der),
+            None,
+            true,
+            &policy,
+            NOW,
+        );
         assert_eq!(with_crl, Ok(OcspOutcome::NotChecked));
     }
 
@@ -1317,7 +1331,7 @@ mod tests {
     /// OCSP responder is checked on a thread; the call does not wait for the
     /// responder.
     #[test]
-    fn a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in() {
+    fn security_9_3_2_9_a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in() {
         use crate::PkiAuthenticationPlugin;
         use zerodds_security::authentication::{AuthenticationPlugin, ValidationResult};
         use zerodds_security::properties::{Property, PropertyList};
@@ -1393,7 +1407,7 @@ mod tests {
     /// The same, with a responder that says `revoked`: the call that finds the
     /// answer fails, and no identity was made.
     #[test]
-    fn a_revoked_answer_ends_the_pending_validation_with_a_failure() {
+    fn security_9_3_2_11_a_revoked_answer_ends_the_pending_validation_with_a_failure() {
         use crate::PkiAuthenticationPlugin;
         use zerodds_security::authentication::{AuthenticationPlugin, ValidationResult};
         use zerodds_security::properties::{Property, PropertyList};
@@ -1515,7 +1529,7 @@ mod tests {
     /// kept to be stapled, `revoked` fails.
     #[cfg(feature = "ocsp-https")]
     #[test]
-    fn an_https_responder_is_asked_over_tls() {
+    fn security_10_3_3_an_https_responder_is_asked_over_tls() {
         let pki = pki();
         for (tag, passes) in [(0x80u8, true), (0xA1, false)] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1547,7 +1561,7 @@ mod tests {
     /// believed: the status is not determined, and the policy says what then.
     #[cfg(feature = "ocsp-https")]
     #[test]
-    fn an_https_responder_with_a_foreign_certificate_is_not_believed() {
+    fn security_10_3_3_an_https_responder_with_a_foreign_certificate_is_not_believed() {
         let pki = pki();
         let stranger = self::pki();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1574,7 +1588,7 @@ mod tests {
 
     /// The scheme is http or https.
     #[test]
-    fn a_responder_url_of_another_scheme_is_refused() {
+    fn security_10_3_3_a_responder_url_of_another_scheme_is_refused() {
         let error = query_responder(
             "ftp://127.0.0.1/ocsp",
             b"x",

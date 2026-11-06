@@ -194,7 +194,7 @@ fn run(decide: impl Fn(&MockAccessCall) -> bool + Send + Sync + 'static) -> Outc
 /// the disposal marker. Without this the tests below could pass on a path
 /// that delivers nothing.
 #[test]
-fn a_remote_writer_that_the_plugin_permits_registers_and_disposes() {
+fn security_9_8_8_2_a_remote_writer_that_the_plugin_permits_registers_and_disposes() {
     let outcome = run(|_| true);
     assert!(outcome.asked_register > 0, "register asked");
     assert!(outcome.asked_dispose > 0, "dispose asked");
@@ -212,7 +212,7 @@ fn a_remote_writer_that_the_plugin_permits_registers_and_disposes() {
 /// Figure 27 step 4: the plugin refuses `check_remote_datawriter_register_instance`;
 /// the sample is ignored.
 #[test]
-fn a_sample_of_an_instance_the_plugin_refuses_to_register_is_ignored() {
+fn security_9_8_8_2_a_sample_of_an_instance_the_plugin_refuses_to_register_is_ignored() {
     let outcome = run(|call| call.operation != "check_remote_datawriter_register_instance");
     assert!(outcome.asked_register > 0, "register asked");
     assert!(
@@ -225,7 +225,7 @@ fn a_sample_of_an_instance_the_plugin_refuses_to_register_is_ignored() {
 /// Figure 27 step 6: the plugin refuses `check_remote_datawriter_dispose_instance`;
 /// the disposal is ignored.
 #[test]
-fn a_disposal_the_plugin_refuses_is_ignored() {
+fn security_9_8_8_2_a_disposal_the_plugin_refuses_is_ignored() {
     let outcome = run(|call| call.operation != "check_remote_datawriter_dispose_instance");
     assert!(outcome.asked_dispose > 0, "dispose asked");
     assert_eq!(

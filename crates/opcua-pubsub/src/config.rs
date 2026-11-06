@@ -599,7 +599,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn content_mask_selects_field_encoding() {
+    fn uapubsub_6_2_4_content_mask_selects_field_encoding() {
         assert_eq!(
             DataSetFieldContentMask::variant().field_encoding(),
             FieldEncoding::Variant
@@ -624,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn field_metadata_scalar_defaults() {
+    fn uapubsub_6_2_3_field_metadata_scalar_defaults() {
         let f = FieldMetaData::scalar("temperature", BuiltinTypeKind::Double);
         assert_eq!(f.value_rank, -1);
         assert_eq!(f.builtin_type, BuiltinTypeKind::Double);
@@ -632,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_group_default_mask_has_payload_and_group_header() {
+    fn uapubsub_6_2_6_writer_group_default_mask_has_payload_and_group_header() {
         let g = WriterGroupConfig::new("g1", 7);
         let m = g.network_message_content_mask;
         assert!(m.contains(NetworkMessageContentMask::PAYLOAD_HEADER));

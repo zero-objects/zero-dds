@@ -251,10 +251,10 @@ impl Fsharp {
                     let bound = ast.effective_bit_bound(current);
                     return Some(crate::adapter::fsharp::fsharp_holder(bound));
                 }
-                Ok(TypeKind::Alias { aliased }) => match aliased.resolved() {
-                    Some(target) => current = target,
-                    None => return None,
-                },
+                Ok(TypeKind::Alias { aliased }) => {
+                    let target = aliased.resolved()?;
+                    current = target
+                }
                 _ => return None,
             }
         }
@@ -790,10 +790,10 @@ impl CodecTarget for Fsharp {
         if type_.tree == fsharp::Type::named(SIGNED_CHAR) {
             return plain(fsharp::Expr::call("sbyte", vec![operand]));
         }
-        if type_.tree == fsharp::Type::Primitive(fsharp::Primitive::Bool) {
-            if let fsharp::Expr::Literal(Literal::Int(text)) = &operand {
-                return plain(fsharp::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_.tree == fsharp::Type::Primitive(fsharp::Primitive::Bool)
+            && let fsharp::Expr::Literal(Literal::Int(text)) = &operand
+        {
+            return plain(fsharp::Expr::Literal(Literal::Bool(text != "0")));
         }
         if type_.enum_like {
             let fsharp::Type::Named(name) = &type_.tree else {
@@ -1118,29 +1118,27 @@ impl CodecTarget for Fsharp {
                 count: Box::new(fsharp::Expr::call("int", vec![inner(count)])),
             },
         }];
-        if !assigned_whole {
-            if let fsharp::Type::Named(name) = &element.tree {
-                out.push(Self::count_up(
-                    "zd_e",
-                    Self::count_of(base, None),
-                    vec![fsharp::Stmt::Assign {
-                        place: fsharp::Expr::Index {
-                            value: Box::new(fsharp::Expr::Name(Ident::new(base))),
-                            // `int zd_e`: [`Self::count_up`] gives its
-                            // counter the width the walk reads a count
-                            // at, and a .NET array indexes by `int`.
-                            index: Box::new(fsharp::Expr::call(
-                                "int",
-                                vec![fsharp::Expr::Name(Ident::new("zd_e"))],
-                            )),
-                        },
-                        value: fsharp::Expr::New {
-                            type_: name.clone(),
-                            args: Vec::new(),
-                        },
-                    }],
-                ));
-            }
+        if !assigned_whole && let fsharp::Type::Named(name) = &element.tree {
+            out.push(Self::count_up(
+                "zd_e",
+                Self::count_of(base, None),
+                vec![fsharp::Stmt::Assign {
+                    place: fsharp::Expr::Index {
+                        value: Box::new(fsharp::Expr::Name(Ident::new(base))),
+                        // `int zd_e`: [`Self::count_up`] gives its
+                        // counter the width the walk reads a count
+                        // at, and a .NET array indexes by `int`.
+                        index: Box::new(fsharp::Expr::call(
+                            "int",
+                            vec![fsharp::Expr::Name(Ident::new("zd_e"))],
+                        )),
+                    },
+                    value: fsharp::Expr::New {
+                        type_: name.clone(),
+                        args: Vec::new(),
+                    },
+                }],
+            ));
         }
         out.extend(fill);
         out
@@ -1617,10 +1615,10 @@ fn collect_assigned(body: &[fsharp::Stmt], out: &mut Vec<String>) {
     for statement in body {
         match statement {
             fsharp::Stmt::Assign { place, .. } => {
-                if let Some(root) = root_name(place) {
-                    if !out.contains(&root) {
-                        out.push(root);
-                    }
+                if let Some(root) = root_name(place)
+                    && !out.contains(&root)
+                {
+                    out.push(root);
                 }
             }
             fsharp::Stmt::If {

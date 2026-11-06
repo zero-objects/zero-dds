@@ -106,7 +106,7 @@ fn foo(count: u32) -> [u8; 4] {
 /// * Table 26 is titled "READ_DATA (single sample) example bytes"; it is
 ///   the table of B.3.2.
 #[test]
-fn b_3_2_write_data_with_a_sequence_without_sample_info() {
+fn xrce_annex_b_3_2_b_3_2_write_data_with_a_sequence_without_sample_info() {
     let header = message_header(0x80, [0x01, 0x00]);
     let body: [u8; 16] = [
         0xAA, 0x01, 0x44, 0x05, // request_id, object_id
@@ -182,7 +182,7 @@ fn b_3_2_write_data_with_a_sequence_without_sample_info() {
 ///   `content_filter?` and `delivery_contro?`. Both are the `@optional`
 ///   presence octets, as the crate reads them.
 #[test]
-fn b_4_1_read_data_for_a_sample() {
+fn xrce_annex_b_4_1_b_4_1_read_data_for_a_sample() {
     let header = message_header(0x80, [0x01, 0x00]);
     let body: [u8; 8] = [
         0xAA, 0x01, 0x44, 0x06, // request_id, object_id
@@ -257,7 +257,7 @@ fn b_4_1_read_data_for_a_sample() {
 /// `DataPayload` is the opaque serialization, which the codec does not
 /// byte-swap.
 #[test]
-fn b_5_1_data_with_one_sample() {
+fn xrce_annex_b_5_1_b_5_1_data_with_one_sample() {
     let header = message_header(0x01, [0x01, 0x00]);
     let body: [u8; 8] = [
         0xAA, 0x01, 0x44, 0x06, // request_id, object_id
@@ -327,7 +327,7 @@ fn b_5_1_data_with_one_sample() {
 /// * Table 32 lists the payload as bytes 8 to 23 (16 octets) and
 ///   `submessageLength` = 16: they agree.
 #[test]
-fn b_5_2_data_with_a_sequence_without_sample_info() {
+fn xrce_annex_b_5_2_b_5_2_data_with_a_sequence_without_sample_info() {
     let header = message_header(0x01, [0x0A, 0x00]);
     let body: [u8; 16] = [
         0xAA, 0x01, 0x44, 0x06, // request_id, object_id
@@ -420,7 +420,7 @@ fn b_5_2_data_with_a_sequence_without_sample_info() {
 ///   per `SampleInfo` of Table 33 (bytes 16 to 27) fit the figure, and
 ///   the length 40 fits only the figure. The test reads the figure.
 #[test]
-fn b_5_4_data_with_a_sequence_with_sample_info() {
+fn xrce_annex_b_5_4_b_5_4_data_with_a_sequence_with_sample_info() {
     with_sample_info_form(
         SampleInfoForm::Flat,
         b_5_4_data_with_a_sequence_with_sample_info_flat,
@@ -558,7 +558,7 @@ fn b_5_4_data_with_a_sequence_with_sample_info_flat() {
 /// * The text sets "foo1.count is set to 1 and foo2.count is set to 1";
 ///   the figure labels the second as "foo1.count = 2".
 #[test]
-fn b_5_5_data_with_packed_samples() {
+fn xrce_annex_b_5_5_b_5_5_data_with_packed_samples() {
     with_sample_info_form(SampleInfoForm::Flat, b_5_5_data_with_packed_samples_flat);
 }
 

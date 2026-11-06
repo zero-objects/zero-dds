@@ -95,7 +95,7 @@ fn writer_with_qos(qos: DataWriterQos) -> zerodds_dcps::DataWriter<KeyedRecord> 
 }
 
 #[test]
-fn autodispose_default_true_unregister_disposes() {
+fn dcps_2_2_3_21_autodispose_default_true_unregister_disposes() {
     let writer = writer_with_qos(DataWriterQos::default());
 
     let s = KeyedRecord { id: 7, value: 100 };
@@ -113,7 +113,7 @@ fn autodispose_default_true_unregister_disposes() {
 }
 
 #[test]
-fn autodispose_false_unregister_only_decrements_writer_count() {
+fn dcps_2_2_3_21_autodispose_false_unregister_only_decrements_writer_count() {
     let qos = DataWriterQos {
         writer_data_lifecycle: WriterDataLifecycleQosPolicy {
             autodispose_unregistered_instances: false,

@@ -94,6 +94,7 @@ pub mod dump_cpp;
 pub mod dump_ros;
 pub mod dump_rust;
 pub mod encode;
+pub mod expected;
 pub mod fill;
 pub mod fill_cpp;
 pub mod fill_ros;

@@ -62,7 +62,7 @@ fn main() -> ExitCode {
 }
 
 fn run_snapshot(s: &SnapshotArgs, config: &RuntimeConfig) -> ExitCode {
-    let _runtime = match start_runtime(s.domain, config) {
+    let runtime = match start_runtime(s.domain, config) {
         Ok(rt) => rt,
         Err(e) => return e,
     };
@@ -88,6 +88,9 @@ fn run_snapshot(s: &SnapshotArgs, config: &RuntimeConfig) -> ExitCode {
         SnapshotFormat::Text => render_text(&snap),
         SnapshotFormat::Prometheus => println!("{}", render_prometheus(&snap)),
     }
+    // The participant leaves its peers with the SPDP departure (DDSI-RTPS
+    // 2.5 §8.5.3) rather than by lease expiry.
+    runtime.shutdown();
     ExitCode::SUCCESS
 }
 
@@ -123,7 +126,7 @@ fn format_labels(labels: &zerodds_monitor_lib::Labels) -> String {
 }
 
 fn run_serve(s: &ServeArgs, config: &RuntimeConfig) -> ExitCode {
-    let _runtime = match start_runtime(s.domain, config) {
+    let runtime = match start_runtime(s.domain, config) {
         Ok(rt) => rt,
         Err(e) => return e,
     };
@@ -154,14 +157,15 @@ fn run_serve(s: &ServeArgs, config: &RuntimeConfig) -> ExitCode {
 
     let deadline = s.duration.map(|d| Instant::now() + d);
     while !stop.load(Ordering::Relaxed) {
-        if let Some(end) = deadline {
-            if Instant::now() >= end {
-                break;
-            }
+        if let Some(end) = deadline
+            && Instant::now() >= end
+        {
+            break;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     println!("zerodds-monitor: shutting down");
+    runtime.shutdown();
     ExitCode::SUCCESS
 }
 

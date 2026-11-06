@@ -74,7 +74,10 @@ fn parse_frames(text: &str) -> Vec<Vec<u8>> {
 }
 
 fn hex_to_bytes(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "odd-length hex string in fixture");
+    assert!(
+        s.len().is_multiple_of(2),
+        "odd-length hex string in fixture"
+    );
     (0..s.len() / 2)
         .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).expect("valid hex"))
         .collect()
@@ -124,7 +127,7 @@ fn internal_participant(prefix: GuidPrefix) -> DiscoveredParticipant {
 }
 
 #[test]
-fn opensplice_bundled_infosrc_datagrams_attribute_to_the_real_source() {
+fn rtps_8_3_8_2_opensplice_bundled_infosrc_datagrams_attribute_to_the_real_source() {
     let frames = parse_frames(FIXTURE);
     assert_eq!(
         frames.len(),

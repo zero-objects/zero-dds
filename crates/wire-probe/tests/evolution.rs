@@ -19,9 +19,10 @@
 //! ## Three columns, one record
 //!
 //! The table in each README was the Rust column's answer and nothing
-//! else's. It is all three columns' now: `the_c_and_python_columns_read
-//! _the_old_bytes_too` runs the same fourteen pairs through the C and
-//! Python generators and holds them to the same rows. Three columns
+//! else's. It is all three columns' now: the
+//! `the_c_and_python_columns_read_<case>` tests run the same pairs, one test
+//! per pair, through the C and Python generators and hold them to the same
+//! rows. Three columns
 //! against one record is what makes the record a claim about the format
 //! rather than about one implementation of it.
 //!
@@ -183,7 +184,7 @@ fn check(trouble: &mut String, where_: &str, recorded: &str, produced: &str) {
 /// this proves the table itself, including the rows no vendor was asked
 /// about because no vendor's IDL has the construct.
 #[test]
-fn table_nine_gives_every_kind_the_value_the_clause_names() {
+fn xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names() {
     let ast = model_from_idl(
         "enum Colour { @value(7) AMBER, @value(0) RED };
          @bit_bound(8) bitmask Flags { @position(0) LOW, @position(7) HIGH };
@@ -236,7 +237,7 @@ fn table_nine_gives_every_kind_the_value_the_clause_names() {
 /// for that member is implicit." RTI and Fast DDS both honour it;
 /// Cyclone's `idlc` does not implement the annotation at all.
 #[test]
-fn an_explicit_default_beats_table_nine() {
+fn xtypes_7_2_2_4_4_4_9_an_explicit_default_beats_table_nine() {
     let ast = model_from_idl(
         "enum Colour { RED, GREEN, BLUE };
          @final struct S {
@@ -441,7 +442,7 @@ fn first_line(stderr: &[u8]) -> String {
         .to_string()
 }
 
-/// The C and Python columns over the same fourteen pairs.
+/// The C and Python columns over one pair, in all four modes.
 ///
 /// `every_evolution_case_reads_what_its_readme_records` is the Rust
 /// column against the same table. Three columns against one record is
@@ -454,98 +455,142 @@ fn first_line(stderr: &[u8]) -> String {
 /// `cargo test --workspace` should not spend on every run. What the fast
 /// tier therefore leaves unmeasured is said here and in the case
 /// READMEs rather than left to be discovered.
-#[test]
-fn the_c_and_python_columns_read_the_old_bytes_too() {
+///
+/// One test per case (`columns!` below): the Python half starts two
+/// interpreters per case and mode; all fifteen cases in one test ran into
+/// the 25 s of a single test on the merge runner (job 227552), and so did
+/// one test per mode on the Linux test host (the XCDR1 modes).
+fn the_c_and_python_columns_read_the_old_bytes_of(name: &str) {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
         .expect("the repository root")
         .to_path_buf();
     let full = matches!(std::env::var("ZERODDS_GATE_TIER").as_deref(), Ok("full"));
-    let directory = root.join("target").join("evolution-columns");
+    let directory = root.join("target").join("evolution-columns").join(name);
     std::fs::create_dir_all(&directory).expect("a scratch directory");
 
-    let corpus = corpus_root();
-    let mut cases: Vec<PathBuf> = std::fs::read_dir(&corpus)
-        .unwrap_or_else(|error| panic!("{}: {error}", corpus.display()))
-        .map(|entry| entry.expect("a directory entry").path())
-        .filter(|path| path.join("old.idl").is_file())
-        .collect();
-    cases.sort();
-    assert_eq!(cases.len(), EVOLUTION_CASES);
+    let dir = corpus_root().join(name);
+    assert!(dir.join("old.idl").is_file(), "{name} is no evolution case");
+    let readme = std::fs::read_to_string(dir.join("README.md"))
+        .unwrap_or_else(|error| panic!("{name}/README.md: {error}"));
+    let recorded = evolution_rows(&readme, name);
+    let type_name = std::fs::read_to_string(dir.join("type"))
+        .unwrap_or_else(|error| panic!("{name}/type: {error}"))
+        .trim()
+        .to_owned();
 
     let mut trouble = String::new();
     let (mut c_slots, mut python_slots) = (0usize, 0usize);
-    for dir in &cases {
-        let name = dir
-            .file_name()
-            .expect("a case directory has a name")
-            .to_string_lossy()
-            .into_owned();
-        let readme = std::fs::read_to_string(dir.join("README.md"))
-            .unwrap_or_else(|error| panic!("{name}/README.md: {error}"));
-        let recorded = evolution_rows(&readme, &name);
-        let type_name = std::fs::read_to_string(dir.join("type"))
-            .unwrap_or_else(|error| panic!("{name}/type: {error}"))
-            .trim()
-            .to_owned();
+    for (flag, _, _) in &MODES {
+        let cell = recorded
+            .get(*flag)
+            .unwrap_or_else(|| panic!("{name}: no evolution row for `{flag}`"));
 
-        for (flag, _, _) in &MODES {
-            let cell = recorded
-                .get(*flag)
-                .unwrap_or_else(|| panic!("{name}: no evolution row for `{flag}`"));
-
-            python_slots += 1;
-            match python_evolution(&root, dir, &type_name, flag, &directory) {
-                // A refusal is compared by the fact of it and not by its
-                // sentence: the Python column writes its own English and
-                // the README carries the Rust column's.
-                Ok(produced)
-                    if produced == *cell
-                        || (produced.starts_with("**no**") && cell.starts_with("**no**")) => {}
-                Ok(produced) => {
-                    let _ = writeln!(
-                        trouble,
-                        "{name} {flag}: python\n  the README records {cell}\n  \
-                         the Python column read {produced}"
-                    );
-                }
-                Err(error) => {
-                    let _ = writeln!(trouble, "{name} {flag}: python — {error}");
-                }
+        python_slots += 1;
+        match python_evolution(&root, &dir, &type_name, flag, &directory) {
+            // A refusal is compared by the fact of it and not by its
+            // sentence: the Python column writes its own English and
+            // the README carries the Rust column's.
+            Ok(produced)
+                if produced == *cell
+                    || (produced.starts_with("**no**") && cell.starts_with("**no**")) => {}
+            Ok(produced) => {
+                let _ = writeln!(
+                    trouble,
+                    "{name} {flag}: python\n  the README records {cell}\n  \
+                     the Python column read {produced}"
+                );
             }
-
-            if !full {
-                continue;
+            Err(error) => {
+                let _ = writeln!(trouble, "{name} {flag}: python — {error}");
             }
-            c_slots += 1;
-            match c_evolution(&root, dir, &type_name, flag, &directory) {
-                // A refusal is compared by the fact of it and not by its
-                // sentence: the C column writes its own English and the
-                // README carries the Rust column's.
-                Ok(produced)
-                    if produced == *cell
-                        || (produced.starts_with("**no**") && cell.starts_with("**no**")) => {}
-                Ok(produced) => {
-                    let _ = writeln!(
-                        trouble,
-                        "{name} {flag}: c\n  the README records {cell}\n  the C column read {produced}"
-                    );
-                }
-                Err(error) => {
-                    let _ = writeln!(trouble, "{name} {flag}: c — {error}");
-                }
+        }
+
+        if !full {
+            continue;
+        }
+        c_slots += 1;
+        match c_evolution(&root, &dir, &type_name, flag, &directory) {
+            // A refusal is compared by the fact of it and not by its
+            // sentence: the C column writes its own English and the
+            // README carries the Rust column's.
+            Ok(produced)
+                if produced == *cell
+                    || (produced.starts_with("**no**") && cell.starts_with("**no**")) => {}
+            Ok(produced) => {
+                let _ = writeln!(
+                    trouble,
+                    "{name} {flag}: c\n  the README records {cell}\n  the C column read {produced}"
+                );
+            }
+            Err(error) => {
+                let _ = writeln!(trouble, "{name} {flag}: c — {error}");
             }
         }
     }
 
-    println!("evolution: {python_slots} Python slot(s), {c_slots} C slot(s)");
+    println!("evolution {name}: {python_slots} Python slot(s), {c_slots} C slot(s)");
     if !full {
         println!(
             "the C column is measured by `ZERODDS_GATE_TIER=full`; it compiles \
              {} translation unit(s) under -Werror",
-            cases.len() * MODES.len() * 2
+            MODES.len() * 2
         );
     }
+    assert_eq!(python_slots, MODES.len(), "one Python slot per mode");
     assert!(trouble.is_empty(), "\n{trouble}");
+}
+
+/// One test per evolution case of the corpus, named after it.
+macro_rules! columns {
+    ($($test:ident => $case:literal),* $(,)?) => {
+        /// The cases the tests below name, which have to be the corpus's.
+        const COLUMN_CASES: &[&str] = &[$($case),*];
+        $(
+            #[test]
+            fn $test() {
+                the_c_and_python_columns_read_the_old_bytes_of($case);
+            }
+        )*
+    };
+}
+
+columns! {
+    the_c_and_python_columns_read_evolution_appendable_nested => "evolution-appendable-nested",
+    the_c_and_python_columns_read_evolution_appendable_tail => "evolution-appendable-tail",
+    the_c_and_python_columns_read_evolution_final_tail => "evolution-final-tail",
+    the_c_and_python_columns_read_evolution_final_to_appendable => "evolution-final-to-appendable",
+    the_c_and_python_columns_read_evolution_mutable_default_annotation => "evolution-mutable-default-annotation",
+    the_c_and_python_columns_read_evolution_mutable_defaults => "evolution-mutable-defaults",
+    the_c_and_python_columns_read_evolution_mutable_key => "evolution-mutable-key",
+    the_c_and_python_columns_read_evolution_mutable_map => "evolution-mutable-map",
+    the_c_and_python_columns_read_evolution_mutable_middle => "evolution-mutable-middle",
+    the_c_and_python_columns_read_evolution_mutable_mustunderstand => "evolution-mutable-mustunderstand",
+    the_c_and_python_columns_read_evolution_mutable_optional => "evolution-mutable-optional",
+    the_c_and_python_columns_read_evolution_mutable_reordered => "evolution-mutable-reordered",
+    the_c_and_python_columns_read_evolution_mutable_tail => "evolution-mutable-tail",
+    the_c_and_python_columns_read_evolution_mutable_union => "evolution-mutable-union",
+    the_c_and_python_columns_read_evolution_union_unselected => "evolution-union-unselected",
+}
+
+/// Every evolution case of the corpus has its test above, so a case added
+/// to the corpus is not left out of the C and Python columns.
+#[test]
+fn every_evolution_case_has_its_column_test() {
+    let corpus = corpus_root();
+    let mut cases: Vec<String> = std::fs::read_dir(&corpus)
+        .unwrap_or_else(|error| panic!("{}: {error}", corpus.display()))
+        .map(|entry| entry.expect("a directory entry").path())
+        .filter(|path| path.join("old.idl").is_file())
+        .map(|path| {
+            path.file_name()
+                .expect("a name")
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    cases.sort();
+    assert_eq!(cases.len(), EVOLUTION_CASES);
+    assert_eq!(cases, COLUMN_CASES);
 }

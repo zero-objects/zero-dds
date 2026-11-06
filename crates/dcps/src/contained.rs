@@ -61,6 +61,10 @@ pub(crate) trait ContainedReader: Contained {
     /// created; `delete_datareader` refuses such a reader (DDS 1.4
     /// §2.2.2.5.2.6).
     fn has_conditions(&self) -> bool;
+    /// `true` while a loan of `take_loan` was not returned;
+    /// `delete_datareader` and `delete_contained_entities` refuse such a
+    /// reader (DDS 1.4 §2.2.2.5.2.6, §2.2.2.5.2.14).
+    fn has_outstanding_loans(&self) -> bool;
     /// Deletes the reader's ReadConditions and QueryConditions
     /// (§2.2.2.5.3, `delete_contained_entities`).
     fn delete_conditions(&self) -> Result<()>;

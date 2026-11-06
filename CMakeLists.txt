@@ -433,3 +433,18 @@ install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
+
+# ---------------------------------------------------------------------------
+# Tests beside the SDK (ZERODDS_BUILD_TESTS, CTest): the C wire runtime's
+# self-test (runtime/c, the codec idlc's C output calls; its Makefile stays the
+# way to build it without CMake), and the DDS-PSM-Cxx classes over types
+# zerodds-idlc generates (crates/cpp/tests/generated, through
+# zerodds_idlc_generate above, which builds the generator if ZERODDS_BUILD_IDLC
+# did not). Nothing here is installed.
+# ---------------------------------------------------------------------------
+if(ZERODDS_BUILD_TESTS)
+  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/runtime/c")
+  if(ZERODDS_BUILD_CPP)
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/crates/cpp/tests/generated")
+  endif()
+endif()

@@ -18,7 +18,10 @@
 //!   Discovery-based auto-subscribe would be an optional
 //!   follow mode, as soon as `zerodds-c-api` provides a built-in-topics
 //!   reader API path.
-//! * One participant per bridge process (zerodds_runtime_create).
+//! * One participant per bridge process (`DcpsRuntime`), one reader per
+//!   topic; each sample is recorded with the representation identifier of
+//!   its encapsulation header (DDSI-RTPS 2.5 §10.5), which a replay sends
+//!   it under.
 
 #![warn(missing_docs)]
 #![allow(clippy::expect_used, clippy::print_stdout, clippy::print_stderr)]
@@ -28,9 +31,19 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::sync::mpsc::Receiver;
+use std::time::{Duration, Instant};
 
+use zerodds_cli_common::{
+    WriterReliability, install_signal_handler, monitor_reader_configs, participant_guid,
+    stable_prefix, unix_ns_now,
+};
+use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserSample};
 use zerodds_recorder::{ParticipantEntry, RecordingSession, SampleKind, SessionOptions, TopicKey};
+use zerodds_rtps::history_cache::ChangeKind;
+
+/// Samples taken from one reader's queue per turn after its wait.
+const DRAIN: usize = 1024;
 
 /// CLI configuration.
 struct Args {
@@ -131,27 +144,6 @@ fn parse_args() -> Result<Args, String> {
     })
 }
 
-/// Helper wrapper so the `unsafe` block pattern stays clean per call
-/// gets its own `// SAFETY:` comment (zerodds-lint requirement).
-///
-/// # Safety
-/// `rt`, `topic`, `type_name` must be NUL-terminated + valid.
-unsafe fn create_reader(
-    rt: *mut zerodds::ZeroDdsRuntime,
-    topic: &std::ffi::CString,
-    type_name: &std::ffi::CString,
-) -> *mut zerodds::ZeroDdsReader {
-    // SAFETY: caller contract from doc block.
-    unsafe { zerodds::zerodds_reader_create(rt, topic.as_ptr(), type_name.as_ptr(), 1) }
-}
-
-fn now_unix_ns() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos() as i64)
-        .unwrap_or(0)
-}
-
 fn main() -> ExitCode {
     let args = match parse_args() {
         Ok(a) => a,
@@ -167,6 +159,10 @@ fn main() -> ExitCode {
         args.topics.len(),
         args.output
     );
+    let Ok(domain) = i32::try_from(args.domain) else {
+        eprintln!("error: domain {} does not fit i32", args.domain);
+        return ExitCode::from(2);
+    };
     // Open the output file.
     let file = match File::create(&args.output) {
         Ok(f) => f,
@@ -175,95 +171,82 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let time_base = now_unix_ns();
+    let prefix = stable_prefix(0xF8);
+    let part_guid = participant_guid(prefix);
     let opts = SessionOptions {
-        time_base_unix_ns: time_base,
-        // Phase-C: participant is the bridge itself — we track
-        // it as guid=zeros with name "recorder-bridge". Real
-        // per-sample source GUID needs a DcpsRuntime built-in
-        // Topic-Hook (Phase-D).
+        time_base_unix_ns: unix_ns_now(),
         participants: vec![ParticipantEntry {
-            guid: [0u8; 16],
+            guid: part_guid,
             name: "recorder-bridge".into(),
         }],
         topics: args.topics.clone(),
     };
-    let session = Arc::new(RecordingSession::new(file, opts));
+    let session = RecordingSession::new(file, opts);
     let stop_flag = Arc::new(AtomicBool::new(false));
-    // SIGINT handler — Phase C uses simple polling.
-    let stop_for_signal = Arc::clone(&stop_flag);
-    ctrl_c_install(move || {
-        stop_for_signal.store(true, Ordering::Relaxed);
-    });
-    // SAFETY: zerodds_runtime_create returns a heap-allocated handle.
-    let rt = unsafe { zerodds::zerodds_runtime_create(args.domain) };
-    if rt.is_null() {
-        eprintln!("zerodds_runtime_create failed");
-        return ExitCode::from(1);
-    }
-    // Wait for peers, then create readers.
-    // SAFETY: rt from create.
-    unsafe {
-        let _ = zerodds::zerodds_runtime_wait_for_peers(rt, 1, 5_000);
-    }
-    // One reader per topic.
-    let mut readers: Vec<(*mut zerodds::ZeroDdsReader, TopicKey)> = Vec::new();
-    for tk in &args.topics {
-        let topic_c = std::ffi::CString::new(tk.topic.clone()).expect("static");
-        let type_c = std::ffi::CString::new(tk.type_name.clone()).expect("static");
-        // SAFETY: NUL-terminated C strings; rt from zerodds_runtime_create.
-        let reader = unsafe { create_reader(rt, &topic_c, &type_c) };
-        if reader.is_null() {
-            eprintln!("reader_create failed for {}", tk.topic);
-            // SAFETY: rt from create, cleanup.
-            unsafe { zerodds::zerodds_runtime_destroy(rt) };
+    install_signal_handler(Arc::clone(&stop_flag));
+    let config = match RuntimeConfig::from_standard_paths() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("error: runtime config: {e}");
             return ExitCode::from(1);
         }
-        readers.push((reader, tk.clone()));
+    };
+    let runtime = match DcpsRuntime::start(domain, prefix, config) {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("error: DcpsRuntime::start failed: {e:?}");
+            return ExitCode::from(1);
+        }
+    };
+    // Two readers per topic, RELIABLE and BEST_EFFORT, so that every writer
+    // is recorded (`monitor_reader_configs`). A failure leaves nothing
+    // behind: the runtime owns the readers and is shut down on every way out.
+    let mut readers: Vec<(Receiver<UserSample>, TopicKey, bool)> = Vec::new();
+    for tk in &args.topics {
+        for (cfg, reliable) in monitor_reader_configs(&tk.topic, &tk.type_name) {
+            match runtime.register_user_reader(cfg) {
+                Ok((_eid, rx)) => readers.push((rx, tk.clone(), reliable)),
+                Err(e) => {
+                    eprintln!("reader for {} failed: {e:?}", tk.topic);
+                    runtime.shutdown();
+                    return ExitCode::from(1);
+                }
+            }
+        }
     }
+    // What a RELIABLE writer wrote reaches both readers; the RELIABLE one
+    // records it.
+    let mut reliability = WriterReliability::new();
     println!("recording... (Ctrl-C to stop)");
     let start = Instant::now();
     let mut last_log = start;
     loop {
         if stop_flag.load(Ordering::Relaxed) {
-            println!("recorder-bridge: SIGINT received, draining...");
+            println!("recorder-bridge: signal received, draining...");
             break;
         }
-        if let Some(max) = args.duration {
-            if start.elapsed() >= max {
-                println!("recorder-bridge: duration reached");
-                break;
-            }
+        if let Some(max) = args.duration
+            && start.elapsed() >= max
+        {
+            println!("recorder-bridge: duration reached");
+            break;
         }
-        // Pro Reader take + write.
-        let mut got_any = false;
-        for (reader, tk) in &readers {
-            let mut buf: *mut u8 = std::ptr::null_mut();
-            let mut len: usize = 0;
-            // SAFETY: reader from create.
-            let rc = unsafe {
-                zerodds::zerodds_reader_take(*reader, &mut buf, &mut len, std::ptr::null_mut())
-            };
-            if rc != 0 {
-                continue;
-            }
-            if !buf.is_null() && len > 0 {
-                // SAFETY: buf+len from take.
-                let slice = unsafe { std::slice::from_raw_parts(buf, len) };
-                let payload = slice.to_vec();
-                // SAFETY: caller contract: free before next take.
-                unsafe { zerodds::zerodds_buffer_free(buf, len) };
-                let now_ns = now_unix_ns();
-                if let Err(e) =
-                    session.record_sample(now_ns, [0u8; 16], tk, SampleKind::Alive, payload)
-                {
-                    eprintln!("session error: {e}");
+        // Every reader in turn: one wait for a sample, then at most
+        // `DRAIN` of those already queued, so a busy topic holds up neither
+        // the other readers nor the stop. With one topic (its two readers)
+        // the waits are the channels'.
+        let wait = Duration::from_millis(if readers.len() == 2 { 25 } else { 5 });
+        for (rx, tk, reliable) in &readers {
+            if let Ok(sample) = rx.recv_timeout(wait) {
+                if reliability.keep(&runtime, *reliable, &sample) {
+                    record(&session, part_guid, tk, sample);
                 }
-                got_any = true;
+                for sample in rx.try_iter().take(DRAIN) {
+                    if reliability.keep(&runtime, *reliable, &sample) {
+                        record(&session, part_guid, tk, sample);
+                    }
+                }
             }
-        }
-        if !got_any {
-            std::thread::sleep(Duration::from_millis(5));
         }
         // Periodic status log every 5s.
         if last_log.elapsed() >= Duration::from_secs(5) {
@@ -275,13 +258,15 @@ fn main() -> ExitCode {
             last_log = Instant::now();
         }
     }
-    // Cleanup.
-    for (reader, _) in readers {
-        // SAFETY: reader from create.
-        unsafe { zerodds::zerodds_reader_destroy(reader) };
+    // What arrived before the stop is recorded too.
+    for (rx, tk, reliable) in &readers {
+        while let Ok(sample) = rx.try_recv() {
+            if reliability.keep(&runtime, *reliable, &sample) {
+                record(&session, part_guid, tk, sample);
+            }
+        }
     }
-    // SAFETY: rt from create.
-    unsafe { zerodds::zerodds_runtime_destroy(rt) };
+    runtime.shutdown();
     let final_stats = session.stats();
     println!(
         "recorder-bridge done: samples={} dropped={} bytes={} elapsed={:.1}s",
@@ -293,51 +278,78 @@ fn main() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Platform-independent SIGINT handler, in a background
-/// Thread implementation. On Unix: signal(SIGINT, ...). On Windows:
-/// console-control-handler. Phase-C uses a simple spawn loop
-/// that polls on SIGINT — no libc crate dep needed.
-fn ctrl_c_install<F: Fn() + Send + Sync + 'static>(handler: F) {
-    let h = std::sync::Arc::new(handler);
-    #[cfg(unix)]
-    {
-        let h2 = std::sync::Arc::clone(&h);
-        std::thread::spawn(move || {
-            // SAFETY: signal handling via raw libc FFI; SIGINT (=2)
-            // is signal-safe if the handler only sets an atomic
-            // variable — we set it via `handler()` which
-            // guaranteed to only do AtomicBool::store (caller contract).
-            unsafe extern "C" {
-                fn signal(sig: i32, handler: extern "C" fn(i32)) -> *mut core::ffi::c_void;
-            }
-            // Local variable, because the C function needs a static
-            // function pointer.
-            type HandlerSlot = std::sync::Mutex<Option<Box<dyn Fn() + Send + Sync>>>;
-            static GLOBAL_HANDLER: std::sync::OnceLock<HandlerSlot> = std::sync::OnceLock::new();
-            let cell = GLOBAL_HANDLER.get_or_init(|| std::sync::Mutex::new(None));
-            let h_inner = std::sync::Arc::clone(&h2);
-            *cell.lock().expect("static") = Some(Box::new(move || {
-                h_inner();
-            }));
-            extern "C" fn raw_handler(_sig: i32) {
-                if let Some(cell) = GLOBAL_HANDLER.get() {
-                    if let Ok(g) = cell.lock() {
-                        if let Some(h) = g.as_ref() {
-                            h();
-                        }
-                    }
-                }
-            }
-            // SAFETY: signal() FFI-Call.
-            unsafe {
-                signal(2, raw_handler); // SIGINT
-            }
-        });
+/// Records one sample: a live one with the representation identifier of its
+/// encapsulation header, a dispose or unregister without body.
+fn record(
+    session: &RecordingSession<File>,
+    part_guid: [u8; 16],
+    topic: &TopicKey,
+    sample: UserSample,
+) {
+    let res = match sample {
+        UserSample::Alive {
+            payload,
+            writer_guid,
+            representation_identifier,
+            ..
+        } => session.record_sample(
+            unix_ns_now(),
+            writer_guid,
+            topic,
+            SampleKind::Alive,
+            Some(representation_identifier),
+            payload.to_vec(),
+        ),
+        UserSample::Lifecycle { kind, .. } => {
+            let ts = unix_ns_now();
+            lifecycle_kinds(kind).iter().try_for_each(|kind| {
+                session.record_sample(ts, part_guid, topic, *kind, None, Vec::new())
+            })
+        }
+        // DDSI-RTPS 2.5 §8.7.6: the end of a coherent set carries no data.
+        UserSample::CoherentSetEnd { .. } => Ok(()),
+    };
+    if let Err(e) = res {
+        eprintln!("session error: {e}");
     }
-    #[cfg(not(unix))]
-    {
-        // Phase-C stub on non-Unix: the caller must set --duration.
-        let _ = h;
-        eprintln!("(non-unix) SIGINT handler is Phase D; use --duration");
+}
+
+/// The entries a lifecycle change becomes. DDSI-RTPS 2.5 §9.6.4.9: a status
+/// info with the D and U bits is a dispose and an unregister of the
+/// instance; `.zddsrec` has a kind for each, so both are recorded, the
+/// dispose first.
+fn lifecycle_kinds(kind: ChangeKind) -> &'static [SampleKind] {
+    match kind {
+        ChangeKind::NotAliveDisposed => &[SampleKind::NotAliveDisposed],
+        ChangeKind::NotAliveUnregistered => &[SampleKind::NotAliveUnregistered],
+        ChangeKind::NotAliveDisposedUnregistered => &[
+            SampleKind::NotAliveDisposed,
+            SampleKind::NotAliveUnregistered,
+        ],
+        ChangeKind::Alive | ChangeKind::AliveFiltered => &[],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rtps_9_6_4_9_a_dispose_with_unregister_is_recorded_as_both() {
+        assert_eq!(
+            lifecycle_kinds(ChangeKind::NotAliveDisposedUnregistered),
+            [
+                SampleKind::NotAliveDisposed,
+                SampleKind::NotAliveUnregistered
+            ]
+        );
+        assert_eq!(
+            lifecycle_kinds(ChangeKind::NotAliveDisposed),
+            [SampleKind::NotAliveDisposed]
+        );
+        assert_eq!(
+            lifecycle_kinds(ChangeKind::NotAliveUnregistered),
+            [SampleKind::NotAliveUnregistered]
+        );
     }
 }

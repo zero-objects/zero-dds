@@ -78,7 +78,7 @@ public final class Check {
 "#;
 
 #[test]
-fn generated_type_supports_extend_the_psm_type_support() {
+fn javapsm_7_5_1_generated_type_supports_extend_the_psm_type_support() {
     if !usable("javac") || !usable("java") {
         eprintln!("NOT RUN: no JDK (javac, java) on the path.");
         return;

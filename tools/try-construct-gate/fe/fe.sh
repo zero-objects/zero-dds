@@ -10,7 +10,7 @@
 # one step earlier: DDS-XTypes 1.3 §7.3.1.2.1.12 lists the positions the
 # annotation may appear in, the list is incomplete, and the four front
 # ends disagree about the rest. Two refusals against two silences is not
-# a reading — §4.3 of `docs/interop-evidence.md` — and this is what
+# a reading — §4.3 of `0b2e8df9f6b:docs/interop-evidence.md` — and this is what
 # produced that sentence.
 #
 # The eight files vary exactly one thing each: on a member, bare with no

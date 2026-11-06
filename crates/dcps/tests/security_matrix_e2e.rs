@@ -185,7 +185,7 @@ fn start_secured(
     prefix: GuidPrefix,
     gov: &str,
     suite: Suite,
-) -> (Arc<DcpsRuntime>, Arc<SharedSecurityGate>) {
+) -> (common::ShutsDown, Arc<SharedSecurityGate>) {
     let domain = gov_domain(gov);
     let (gate, auth_plugin, local) = match auth {
         Auth::Pki => {
@@ -221,18 +221,20 @@ fn start_secured(
             (gate, auth_plugin, local)
         }
     };
-    let rt = DcpsRuntime::start(
-        domain as i32,
-        prefix,
-        RuntimeConfig {
-            security: Some(gate.clone()),
-            // #11 §9.3.3 guard: security_guid_prefix must equal the prefix passed
-            // to start(), else DcpsRuntime::start rejects the secured runtime.
-            security_guid_prefix: Some(prefix),
-            ..RuntimeConfig::default()
-        },
-    )
-    .expect("start");
+    let rt = common::ShutsDown(
+        DcpsRuntime::start(
+            domain as i32,
+            prefix,
+            RuntimeConfig {
+                security: Some(gate.clone()),
+                // #11 §9.3.3 guard: security_guid_prefix must equal the prefix passed
+                // to start(), else DcpsRuntime::start rejects the secured runtime.
+                security_guid_prefix: Some(prefix),
+                ..RuntimeConfig::default()
+            },
+        )
+        .expect("start"),
+    );
     rt.enable_security_builtins_with_auth(VendorId::ZERODDS, auth_plugin, local);
     (rt, gate)
 }
@@ -270,6 +272,7 @@ fn reader_cfg(topic: &str, repr: Option<i16>) -> UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
         data_representation_offer: repr.map(|r| vec![r]),
+        reliable: true,
         ..Default::default()
     }
 }
@@ -388,7 +391,7 @@ fn matrix_all_crypto_suites() {
 // =====================================================================
 #[serial_test::file_serial(security_live)]
 #[test]
-fn matrix_data_protection_all_kinds() {
+fn security_8_1_matrix_data_protection_all_kinds() {
     let mut fails = Vec::new();
     // §10.4.1.2.4: data_protection_kind is a BasicProtectionKind; the origin
     // authentication kinds are not in the XSD and the parser refuses them.
@@ -445,7 +448,7 @@ fn matrix_fragmented_samples_all_payload_kinds() {
 // =====================================================================
 #[serial_test::file_serial(security_live)]
 #[test]
-fn matrix_metadata_protection_all_kinds() {
+fn security_8_1_1_matrix_metadata_protection_all_kinds() {
     let mut fails = Vec::new();
     // §10.4.1.2.4: data_protection_kind is a BasicProtectionKind; the origin
     // authentication kinds are not in the XSD and the parser refuses them.
@@ -475,7 +478,7 @@ fn matrix_metadata_protection_all_kinds() {
 // =====================================================================
 #[serial_test::file_serial(security_live)]
 #[test]
-fn matrix_discovery_protection() {
+fn security_7_5_13_matrix_discovery_protection() {
     // discovery × data, each axis NONE/ENCRYPT — all four combinations.
     let mut fails = Vec::new();
     for disc in [K::None, K::Encrypt] {
@@ -501,7 +504,7 @@ fn matrix_discovery_protection() {
 /// Participant-Fallback key_id=0) absichert.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn matrix_full_secure_profile() {
+fn security_9_8_11_matrix_full_secure_profile() {
     let mut fails = Vec::new();
     let cases = [
         ("discovery+metadata+data=ENCRYPT", K::Encrypt, K::Encrypt),
@@ -554,7 +557,7 @@ fn matrix_origin_authentication_kinds() {
 // =====================================================================
 #[serial_test::file_serial(security_live)]
 #[test]
-fn matrix_liveliness_protection() {
+fn security_7_5_13_matrix_liveliness_protection() {
     let mut fails = Vec::new();
     for kind in [K::None, K::Sign, K::Encrypt] {
         let d = next_domain();

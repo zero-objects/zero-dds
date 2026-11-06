@@ -29,7 +29,7 @@ class CoherentSetWireTest {
      * (crates/rtps/src/inline_qos.rs): the two halves in the byte order of the submessage.
      */
     @Test
-    void theParameterValueIsASequenceNumberInTheByteOrderOfTheSubmessage() {
+    void rtps_9_6_4_2_the_coherent_set_parameter_is_a_sequence_number_in_the_byte_order_of_the_submessage() {
         assertArrayEquals(hex("0000000003000000"), CoherentSetParameter.encode(3L));
         assertArrayEquals(hex("0100000000000000"), CoherentSetParameter.encode(1L << 32));
         assertEquals(3L, CoherentSetParameter.decode(hex("0000000003000000")));
@@ -38,21 +38,21 @@ class CoherentSetWireTest {
 
     /** SEQUENCENUMBER_UNKNOWN (high -1, low 0) says the sample is in no set (Table 9.22, Example 2). */
     @Test
-    void anUnknownSequenceNumberMeansNoSet() {
+    void rtps_9_6_4_2_an_unknown_sequence_number_means_no_coherent_set() {
         assertEquals(CoherentHold.NO_SET, CoherentSetParameter.decode(hex("ffffffff00000000")));
         assertEquals(CoherentHold.NO_SET, CoherentSetParameter.decode(hex("0000")));
         assertEquals(CoherentHold.NO_SET, CoherentSetParameter.decode(null));
     }
 
     @Test
-    void theInlineQosParameterHasTheIdOfTable914() {
+    void rtps_9_6_4_2_the_coherent_set_inline_qos_has_the_parameter_id_0x0056() {
         ParameterList list = new ParameterList().add(Rtps.PID_COHERENT_SET, CoherentSetParameter.encode(3L));
         assertArrayEquals(hex("56000800" + "0000000003000000" + "01000000"), list.toBytesLe());
     }
 
     /** Example 3 of Table 9.22: no DataFlag, no InlineQosFlag, only the sequence number. */
     @Test
-    void theEndOfASetIsADataWithoutSerializedDataAndWithoutInlineQos() {
+    void rtps_8_7_6_the_end_of_a_coherent_set_is_a_data_without_serialized_data_and_without_inline_qos() {
         byte[] message = new RtpsMessage.Builder(new byte[12])
                 .data(new byte[] {0, 0, 0, 0}, new byte[] {0, 0, 1, 3}, 7L, null, new byte[0], false)
                 .toBytes();
@@ -90,12 +90,12 @@ class CoherentSetWireTest {
     }
 
     @Test
-    void aSampleOutsideASetPassesAtOnce() {
+    void rtps_8_7_6_a_sample_outside_a_coherent_set_passes_at_once() {
         assertEquals(List.of(9), values(hold().accept("w", CoherentHold.NO_SET, 1L, sample(9))));
     }
 
     @Test
-    void theSamplesOfASetAreHeldAndReleasedByTheFirstSampleOutsideIt() {
+    void rtps_8_7_6_the_samples_of_a_coherent_set_are_held_until_the_first_sample_outside_it() {
         CoherentHold hold = hold();
         assertTrue(hold.accept("w", 3L, 3L, sample(1)).isEmpty());
         assertTrue(hold.accept("w", 3L, 4L, sample(2)).isEmpty());
@@ -105,7 +105,7 @@ class CoherentSetWireTest {
     }
 
     @Test
-    void aNewSetEndsTheOpenOne() {
+    void rtps_8_7_6_a_new_coherent_set_ends_the_open_one() {
         CoherentHold hold = hold();
         hold.accept("w", 3L, 3L, sample(1));
         hold.accept("w", 3L, 4L, sample(2));
@@ -114,7 +114,7 @@ class CoherentSetWireTest {
     }
 
     @Test
-    void theMarkerReleasesTheSetWithoutAnotherSample() {
+    void rtps_8_7_6_the_end_marker_releases_the_coherent_set_without_another_sample() {
         CoherentHold hold = hold();
         hold.accept("w", 3L, 3L, sample(1));
         assertEquals(List.of(1), values(hold.end("w")));
@@ -122,7 +122,7 @@ class CoherentSetWireTest {
     }
 
     @Test
-    void aSetWithAMissingSampleIsNotReleasedAndSaysSo() {
+    void rtps_8_7_6_a_coherent_set_with_a_missing_sample_is_not_released() {
         CoherentHold hold = hold();
         hold.accept("w", 3L, 3L, sample(1));
         hold.accept("w", 3L, 5L, sample(3)); // 4 did not arrive
@@ -132,7 +132,7 @@ class CoherentSetWireTest {
     }
 
     @Test
-    void aSetWhoseFirstSampleDidNotArriveIsNotReleased() {
+    void rtps_8_7_6_a_coherent_set_whose_first_sample_did_not_arrive_is_not_released() {
         CoherentHold hold = hold();
         hold.accept("w", 3L, 4L, sample(2));
         assertTrue(hold.end("w").isEmpty());
@@ -140,7 +140,7 @@ class CoherentSetWireTest {
     }
 
     @Test
-    void theSetsOfTwoWritersAreIndependent() {
+    void rtps_8_7_6_the_coherent_sets_of_two_writers_are_independent() {
         CoherentHold hold = hold();
         hold.accept("a", 1L, 1L, sample(1));
         hold.accept("b", 1L, 1L, sample(2));

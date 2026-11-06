@@ -373,10 +373,18 @@ fn emit_aggregate(
 ) -> Result<(), String> {
     out.open("{");
     out.line("int zd_first = 1;");
+    let members = zerodds_lang_rules::adapter::c::c_members(ast, type_);
+    if members.is_empty() {
+        // A structure without IDL members prints `{}`: its one member
+        // stands in for none and is not printed
+        // (`zerodds_lang_rules::adapter::c::EMPTY_PLACEHOLDER`), so no key
+        // reads the flag, and an unread variable fails `-Werror`.
+        out.line("(void)zd_first;");
+    }
     out.raw("{");
     // A base is the member `parent` of the derived struct (XTypes 1.3
     // §7.5.1.4.1.3), so an inherited member is `parent.m`.
-    for c_member in zerodds_lang_rules::adapter::c::c_members(ast, type_) {
+    for c_member in members {
         let via = c_member.path;
         let owner = c_member.owner;
         let Ok(member_node) = ast.member(c_member.handle) else {

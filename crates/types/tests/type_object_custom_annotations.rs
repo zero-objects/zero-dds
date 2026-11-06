@@ -43,7 +43,7 @@
 //! `@Unit(symbol = "m")` identically — both are one
 //! `AppliedAnnotationParameter` under one `paramname_hash` — so the
 //! rebuilt model writes the named form, which is the only one a reader
-//! can tell. `the_short_form_comes_back_as_the_named_one` says so.
+//! can tell. `xtypes_7_3_1_2_5_the_short_form_comes_back_as_the_named_one` says so.
 
 #![allow(
     clippy::expect_used,
@@ -132,7 +132,7 @@ f24a8db6765e6c5e7d8773c740dd8c0116000000010000000e00000097bff268\
 6e000000";
 
 fn unhex(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "an odd number of hex digits");
+    assert!(s.len().is_multiple_of(2), "an odd number of hex digits");
     (0..s.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
@@ -226,7 +226,7 @@ fn through_the_wire(ast: &Ast) -> CompleteTypeObject {
 /// Both halves are checked against `annotation_type_object` and
 /// `compute_hash` rather than against a literal, so this says the
 /// identifier is *that* declaration's hash and not merely some hash. The
-/// literal is [`SAMPLE`], and `the_applied_annotation_octets_are_annex_b`
+/// literal is [`SAMPLE`], and `xtypes_annex_b_the_applied_annotation_octets_are_annex_b`
 /// checks the encoding itself.
 #[test]
 fn an_applied_annotation_names_its_declaration_by_hash() {
@@ -264,7 +264,7 @@ fn an_applied_annotation_names_its_declaration_by_hash() {
 /// fourteen hash octets of the annotation's identifier replaced by
 /// something another reader would resolve differently.
 #[test]
-fn the_applied_annotation_octets_are_annex_b() {
+fn xtypes_annex_b_the_applied_annotation_octets_are_annex_b() {
     let ast = model(IDL);
     let object = complete_type_object(&ast, type_of(&ast, "Sample")).expect("the object builds");
     let bytes = TypeObject::Complete(object)
@@ -397,7 +397,7 @@ fn the_applied_annotation_is_where_annex_b_puts_it() {
 /// non-plain type, applied to an annotation declaration by §7.3.4.2's
 /// Table 29 row for `TK_ANNOTATION`.
 #[test]
-fn the_typeid_carries_the_hash_of_the_declarations_own_object() {
+fn xtypes_7_3_4_2_the_typeid_carries_the_hash_of_the_declarations_own_object() {
     let ast = model(IDL);
     let octets = unhex(SAMPLE);
     let in_the_wire = &octets[77..91];
@@ -420,7 +420,7 @@ fn the_typeid_carries_the_hash_of_the_declarations_own_object() {
 /// own kind — Annex B's union, not a length-prefixed string of its
 /// own and not the parameter's declared default.
 #[test]
-fn the_parameter_value_is_the_value_that_was_applied() {
+fn xtypes_7_2_2_6_the_parameter_value_is_the_value_that_was_applied() {
     let ast = model(IDL);
     let object = through_the_wire(&ast);
     for (name, symbol) in [("distance", "m"), ("elapsed", "s")] {
@@ -449,7 +449,7 @@ fn the_parameter_value_is_the_value_that_was_applied() {
 /// first whatever order they are written in — the two names
 /// `typeobject_annotation_annexb.rs` uses, whose hashes are recorded there.
 #[test]
-fn the_parameters_are_ordered_by_name_hash() {
+fn xtypes_7_3_4_5_the_parameters_are_ordered_by_name_hash() {
     let ast = model(
         r#"
 @annotation Verbosity {
@@ -487,7 +487,7 @@ fn the_parameters_are_ordered_by_name_hash() {
 /// larger of the two, so a writer that kept the written order would put
 /// `Aa` last and fail the first assertion.
 #[test]
-fn the_applications_are_ordered_by_annotation_typeid() {
+fn xtypes_7_3_4_5_the_applications_are_ordered_by_annotation_typeid() {
     let ast = model(
         r#"
 @annotation Aa { long a default 0; };
@@ -538,7 +538,7 @@ fn the_applications_are_ordered_by_annotation_typeid() {
 /// and a member that applies one writes the presence octet. A writer that
 /// wrote an empty sequence instead would move every octet after it.
 #[test]
-fn an_unapplied_member_writes_ann_custom_absent() {
+fn xtypes_7_2_2_6_an_unapplied_member_writes_ann_custom_absent() {
     let ast = model(IDL);
     let object = through_the_wire(&ast);
     assert!(
@@ -554,7 +554,7 @@ fn an_unapplied_member_writes_ann_custom_absent() {
 /// `CompleteAnnotationParameter` carries them on the declaration itself —
 /// which is what `annotation_typeid` points at.
 #[test]
-fn a_parameterless_annotation_is_written_without_a_param_seq() {
+fn xtypes_7_3_1_2_5_a_parameterless_annotation_is_written_without_a_param_seq() {
     let ast = model(
         r#"
 @annotation Marker {};
@@ -582,7 +582,7 @@ fn a_parameterless_annotation_is_written_without_a_param_seq() {
 /// applied annotation would hash differently from every peer's, because
 /// no peer writes one.
 #[test]
-fn the_minimal_form_leaves_the_applied_annotation_out() {
+fn xtypes_7_3_4_4_the_minimal_form_leaves_the_applied_annotation_out() {
     let ast = model(IDL);
     let with = minimal_type_object(&ast, type_of(&ast, "Sample")).expect("minimal");
     let plain = model(
@@ -681,7 +681,7 @@ fn an_applied_annotation_comes_back_into_the_rebuilt_model() {
 /// names it by the hash of the parameter's name, which both forms write
 /// the same.
 #[test]
-fn the_short_form_comes_back_as_the_named_one() {
+fn xtypes_7_3_1_2_5_the_short_form_comes_back_as_the_named_one() {
     let ast = model(IDL);
     let object = through_the_wire(&ast);
     let mut registry = TypeRegistry::new();
@@ -704,7 +704,7 @@ fn the_short_form_comes_back_as_the_named_one() {
 /// not the same declaration, which is what
 /// `Ast::find_by_scoped_name` reports as ambiguous.
 #[test]
-fn one_declaration_applied_twice_is_one_node() {
+fn xtypes_7_3_1_2_5_one_declaration_applied_twice_is_one_node() {
     let ast = model(IDL);
     let object = through_the_wire(&ast);
     let mut registry = TypeRegistry::new();
@@ -736,7 +736,7 @@ fn one_declaration_applied_twice_is_one_node() {
 /// of `@final struct Sample` is one `AppliedAnnotation` in the
 /// `CompleteTypeDetail`, and it comes back on the type node.
 #[test]
-fn an_annotation_applied_to_the_type_itself_reaches_the_object() {
+fn xtypes_7_2_2_6_an_annotation_applied_to_the_type_itself_reaches_the_object() {
     let ast = model(
         r#"
 @annotation Unit { string symbol; };
@@ -789,7 +789,7 @@ fn an_annotation_applied_to_the_type_itself_reaches_the_object() {
 /// branch, an enumeration literal, a bitmask flag, a bitfield. Each is
 /// written from its own node's facets and each is read back onto it.
 #[test]
-fn every_position_with_a_complete_member_detail_is_read() {
+fn xtypes_7_2_2_6_every_position_with_a_complete_member_detail_is_read() {
     // The declaration forms are the ones this project's IDL front end
     // accepts: `case 1: @Mark(1) long a;` rather than `@Mark(1) case 1:`
     // (IDL 4.2 §7.4.15 rule 218 puts the annotation before the
@@ -1077,7 +1077,7 @@ fn the_annotation_declaration_is_in_the_dependency_closure() {
 /// hash, and a hash the endpoint cannot serve is a dependency it cannot
 /// answer for.
 #[test]
-fn an_enumerated_annotation_parameter_is_in_the_closure() {
+fn xtypes_7_2_2_6_an_enumerated_annotation_parameter_is_in_the_closure() {
     let ast = model(
         r#"
 @annotation Mode {
@@ -1113,7 +1113,7 @@ fn an_enumerated_annotation_parameter_is_in_the_closure() {
 /// alias type." An application on a `typedef` is one `AppliedAnnotation` in
 /// the `CompleteTypeDetail` of the alias header, with the value it was given.
 #[test]
-fn an_annotation_on_a_typedef_reaches_the_alias_object() {
+fn xtypes_7_2_2_6_an_annotation_on_a_typedef_reaches_the_alias_object() {
     let ast = model(
         r#"
 @annotation Unit { string symbol; };

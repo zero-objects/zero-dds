@@ -680,6 +680,16 @@ impl CodecTarget for C {
         block.statements
     }
 
+    /// `(void)w; (void)v;` (or `r`): a structure with no IDL members has
+    /// only the member that stands in for none, which is not serialized,
+    /// so its codec reads neither parameter — under XCDR1 an
+    /// `@appendable` one writes no octet at all.
+    fn no_members(writing: bool) -> Vec<Self::Stmt> {
+        let mut statements = Self::mark_used(if writing { "w" } else { "r" });
+        statements.extend(Self::mark_used("v"));
+        statements
+    }
+
     /// `static void zd_enc_T(zdw_writer *w, const T *v)`.
     ///
     /// `static` because a probe's translation unit is one file and an

@@ -208,7 +208,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn qos_profile_holds_six_qos_categories_per_spec_tab_72() {
+    fn tsn_7_2_1_qos_profile_holds_six_qos_categories_per_spec_tab_72() {
         let p = QosProfile {
             name: "default".into(),
             domain_participant_qos: alloc::vec![DomainParticipantQosRef::default()],
@@ -227,7 +227,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_carries_registered_types_and_topics() {
+    fn tsn_7_2_1_domain_carries_registered_types_and_topics() {
         let d = Domain {
             name: "PerimeterDomain".into(),
             registered_types: alloc::vec![RegisteredType {
@@ -244,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_participant_inheritance_chain_is_optional() {
+    fn tsn_7_2_1_domain_participant_inheritance_chain_is_optional() {
         // Spec Tab 7.7: base_name + domain_ref are optional (Mult 0..1).
         let dp = DomainParticipant {
             name: "MainDP".into(),
@@ -256,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn application_holds_multiple_dp_refs() {
+    fn tsn_7_2_1_application_holds_multiple_dp_refs() {
         // Spec Tab 7.9: domain_participant is Mult 0..* (not 1..*).
         let a = Application {
             name: "PerimeterApp".into(),

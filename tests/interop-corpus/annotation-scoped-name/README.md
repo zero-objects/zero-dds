@@ -19,7 +19,7 @@ keyword, GitHub issue #6's `@default` — is held by
 the whole name and resumed parsing at the `::` inside what it then believed
 was a member declaration, which produced *expected a declarator name* and
 eleven cascading diagnostics, none of which named an annotation.
-`docs/annotation-scoped-name-followup.md` is the measurement.
+`0b2e8df9f6b:docs/annotation-scoped-name-followup.md` is the measurement.
 
 The two spellings say different things and both have to reach the model.
 `@::key` is the builtin `@key` named from the global scope, so `a` is the

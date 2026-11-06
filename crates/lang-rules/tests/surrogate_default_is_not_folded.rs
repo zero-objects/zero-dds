@@ -103,11 +103,44 @@ fn member_c(ast: &Ast, root: Id<TypeNode>) -> (MemberNode, Id<TypeNode>) {
     panic!("the structure declares `c`");
 }
 
+/// The model of `idl`, which the frontend refuses with `IDL0007` alone:
+/// the columns' own refusal is the second line of defence and is
+/// measured on the model the frontend built before it refused.
+fn model_the_frontend_refuses(idl: &str) -> (Ast, Id<TypeNode>) {
+    let parsed = zerodds_idl_parse::parse(idl);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "the source does not parse: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "test.idl");
+    assert!(
+        !lowered.diagnostics.is_empty()
+            && lowered
+                .diagnostics
+                .iter()
+                .all(|d| d.code.as_str() == "IDL0007"),
+        "the frontend refuses the value with IDL0007 and nothing else: {:?}",
+        lowered.diagnostics
+    );
+    let ast: Ast = lowered.ast;
+    let root = ast
+        .types()
+        .find(|(_, node)| node.name.as_str() == "S")
+        .map(|(id, _)| id)
+        .expect("the root type");
+    (ast, root)
+}
+
 /// What each column makes of `@default(<value>) wchar c`, as the debug
 /// form of the statements its defaulter emits.
 fn emitted_for(default_value: &str) -> Vec<(&'static str, Result<String, String>)> {
     let idl = source(default_value);
-    let (ast, root) = model(&idl);
+    emitted_on(model(&idl))
+}
+
+/// What each column makes of the member `c` of the model.
+fn emitted_on((ast, root): (Ast, Id<TypeNode>)) -> Vec<(&'static str, Result<String, String>)> {
     let (member, type_) = member_c(&ast, root);
 
     vec![
@@ -161,17 +194,17 @@ fn emitted_for(default_value: &str) -> Vec<(&'static str, Result<String, String>
 
 #[test]
 fn a_lone_surrogate_default_reaches_every_column() {
-    for (column, answer) in emitted_for("0xD800") {
+    for (column, answer) in emitted_for("L'\\uD800'") {
         let emitted = answer.unwrap_or_else(|error| {
             panic!(
-                "the {column} column refused `@default(0xD800)` with {error}; \
+                "the {column} column refused `@default(L'\\uD800')` with {error}; \
                  U+D800 is one UTF-16 code unit and every column here has a \
                  type that holds it"
             )
         });
         assert!(
             emitted.contains("55296") || emitted.contains("0xD800"),
-            "the {column} column emitted {emitted} for `@default(0xD800)`, \
+            "the {column} column emitted {emitted} for `@default(L'\\uD800')`, \
              which names neither 55296 nor 0xD800 — the declared value was \
              replaced by another with no diagnostic"
         );
@@ -182,7 +215,7 @@ fn a_lone_surrogate_default_reaches_every_column() {
 /// as itself rather than as "the number is missing".
 #[test]
 fn no_column_answers_a_surrogate_with_nul() {
-    for (column, answer) in emitted_for("0xD800") {
+    for (column, answer) in emitted_for("L'\\uD800'") {
         let Ok(emitted) = answer else { continue };
         assert!(
             !emitted.contains("Char('\\0')"),
@@ -199,9 +232,14 @@ fn no_column_answers_a_surrogate_with_nul() {
 /// Only the three columns whose character type **is** one code unit are
 /// asserted. C stores a `uint16_t` and Java's own answer is its to make;
 /// this test is about the fold, not about who refuses.
+///
+/// No literal of a `wchar` names such a point (`\u` takes four
+/// hexadecimal digits), and the frontend refuses the integer `0x10000`
+/// as the value of a `wchar` (OMG IDL 4.2 §8.3.3.1); the columns are
+/// measured on the model it built before refusing.
 #[test]
 fn a_default_above_the_bmp_is_refused_rather_than_folded() {
-    for (column, answer) in emitted_for("0x10000") {
+    for (column, answer) in emitted_on(model_the_frontend_refuses(&source("0x10000"))) {
         if !matches!(column, "csharp" | "typescript" | "python") {
             continue;
         }

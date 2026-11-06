@@ -1,0 +1,66 @@
+.TH ZERODDS-SNITCH 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-snitch \- DDS-Discovery-Probe (Schnappschuss von SPDP / SEDP)
+.SH ÜBERSICHT
+.B zerodds-snitch
+[\fBprobe\fR]
+[\fB\-d\fR \fIDOMÄNE\fR]
+[\fB\-\-duration\fR \fIDAUER\fR]
+[\fB\-f\fR \fIFORMAT\fR]
+.SH BESCHREIBUNG
+.B zerodds-snitch
+tritt einer DDS-Domäne bei, hört für die Dauer von
+.B \-\-duration
+(Standard 5s) auf SPDP- und SEDP-Verkehr und gibt dann alle gefundenen
+Teilnehmer und die Anzahl der Publication- und Subscription-Endpunkte aus.
+.PP
+Der Unterbefehl
+.B probe
+gilt implizit, wenn das erste Argument eine Option ist.
+.SH OPTIONEN
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-duration " " \fIDAUER\fR
+Dauer der Probe: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR. Standard: 5s.
+.TP
+.BR \-f ", " \-\-format " " \fIFORMAT\fR
+Ausgabeformat:
+.I text
+(Standard) oder
+.IR json .
+.TP
+.BR \-\-config " " \fIPFAD\fR
+Die Basis-Konfigurationsdatei; das danebenliegende
+.IR PFAD .d/
+enthält Drop-ins. Standard: das System-Konfigurationsverzeichnis
+.RI ( /etc/zerodds
+unter Linux,
+.I /usr/local/etc/zerodds
+unter macOS).
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg.
+.TP
+.B 2
+Fehler beim Parsen der Kommandozeile.
+.TP
+.B 3
+DDS- oder E/A-Fehler.
+.SH SIEHE AUCH
+.BR zerodds-spy (1),
+.BR zerodds-monitor (1)
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

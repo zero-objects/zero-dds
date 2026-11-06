@@ -429,7 +429,9 @@ jobs:
           for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
             require_artifact "dist/zerodds-deb-$target" '*.deb'
           done
-          require_artifact dist/zerodds-rpm-x86_64 '*.rpm'
+          for arch in x86_64 aarch64; do
+            require_artifact "dist/zerodds-rpm-$arch" '*.rpm'
+          done
           require_artifact dist/zerodds-msi '*.msi'
       - name: Build the Scoop bundles
         shell: bash
@@ -567,6 +569,7 @@ jobs:
         if: success() && steps.gh_release.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: bash
         run: |
           set -e
           # Idempotent: sets draft=false and prerelease according to the tag.

@@ -228,11 +228,7 @@ impl Histogram {
     /// Mean in nanoseconds, or 0 if count=0.
     #[must_use]
     pub fn mean_ns(&self) -> u64 {
-        if self.count == 0 {
-            0
-        } else {
-            self.sum_ns / self.count
-        }
+        self.sum_ns.checked_div(self.count).unwrap_or(0)
     }
 
     /// Bucket boundaries as an array — for OTLP export.

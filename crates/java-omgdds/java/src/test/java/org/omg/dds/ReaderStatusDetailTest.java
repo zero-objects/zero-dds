@@ -57,7 +57,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void subscriptionMatchedNamesTheWriterThatConnectedOrLeftLast() throws Exception {
+    void javapsm_2_subscription_matched_names_the_writer_that_connected_or_left_last() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> first = rig.writer();
@@ -92,7 +92,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void aWriterInAnotherPartitionOrWithLessQosThanRequestedIsNotMatched() throws Exception {
+    void javapsm_2_a_writer_in_another_partition_or_with_less_qos_than_requested_is_not_matched() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll()
                 .withPolicy(Qos.pf().Reliability().withReliable()));
@@ -108,7 +108,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void livelinessChangedNamesTheWriterWhoseLivelinessChangedAndCountsTheChanges()
+    void javapsm_2_liveliness_changed_names_the_writer_whose_liveliness_changed_and_counts_the_changes()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll().withPolicy(
@@ -140,7 +140,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void anIncompatibleWriterIsNotCountedAsAliveOrNotAlive() throws Exception {
+    void javapsm_2_an_incompatible_writer_is_not_counted_as_alive_or_not_alive() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll()
                 .withPolicy(Qos.pf().Reliability().withReliable()));
@@ -152,7 +152,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void requestedDeadlineMissedNamesTheInstanceThatMissedLast() throws Exception {
+    void javapsm_2_requested_deadline_missed_names_the_instance_that_missed_last() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll().withPolicy(
                 Qos.policies().Deadline().withPeriod(100, TimeUnit.MILLISECONDS)));
@@ -180,7 +180,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void theChangeOfRequestedDeadlineMissedStartsAgainWhenTheStatusIsRead() throws Exception {
+    void javapsm_2_the_change_of_requested_deadline_missed_starts_again_when_the_status_is_read() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         // a long period: the status read twice in a row does not see a second miss in between
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll().withPolicy(
@@ -204,7 +204,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void requestedIncompatibleQosCountsTheRefusingPolicyAndResetsItsChange() throws Exception {
+    void javapsm_2_requested_incompatible_qos_counts_the_refusing_policy_and_resets_its_change() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll()
                 .withPolicy(Qos.pf().Reliability().withReliable()));
@@ -224,7 +224,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void everyPolicyThatRefusesTheConnectionIsCountedAndOneConnectionIsOneInTotal()
+    void javapsm_2_every_policy_that_refuses_the_connection_is_counted_and_one_connection_is_one_in_total()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll()
@@ -247,7 +247,7 @@ class ReaderStatusDetailTest {
     }
 
     @Test
-    void thePresentationOfTheSubscriberMustBeOfferedByThePublisher() throws Exception {
+    void javapsm_2_the_presentation_of_the_subscriber_must_be_offered_by_the_publisher() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         // the subscriber asks for access scope TOPIC with ordered access
         Subscriber asking = rig.participant.createSubscriber(Qos.subscriber().withPolicy(

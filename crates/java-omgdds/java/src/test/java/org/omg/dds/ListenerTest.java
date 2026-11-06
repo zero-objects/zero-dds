@@ -145,7 +145,7 @@ class ListenerTest {
     }
 
     @Test
-    void readerListenerFiresOnMatchAndOnEverySample() throws Exception {
+    void javapsm_2_reader_listener_fires_on_match_and_on_every_sample() throws Exception {
         DomainParticipant participant =
                 Qos.factory().createParticipant(30);
         Topic<Reading> topic = participant.createTopic("ListenerTopic", Reading.class);
@@ -182,7 +182,7 @@ class ListenerTest {
     }
 
     @Test
-    void writerListenerFiresOnPublicationMatched() throws Exception {
+    void javapsm_2_writer_listener_fires_on_publication_matched() throws Exception {
         DomainParticipant participant =
                 Qos.factory().createParticipant(31);
         Topic<Reading> topic = participant.createTopic("WriterListenerTopic", Reading.class);
@@ -208,7 +208,7 @@ class ListenerTest {
     }
 
     @Test
-    void clearingTheListenerStopsDelivery() throws Exception {
+    void javapsm_2_clearing_the_listener_stops_delivery() throws Exception {
         DomainParticipant participant =
                 Qos.factory().createParticipant(32);
         Topic<Reading> topic = participant.createTopic("ClearTopic", Reading.class);
@@ -232,7 +232,7 @@ class ListenerTest {
     }
 
     @Test
-    void nonOverlappingPartitionIsNotAMatch() throws Exception {
+    void javapsm_7_3_5_1_non_overlapping_partition_is_not_a_match() throws Exception {
         // §2.2.3.13 — a writer the reader cannot communicate with is not a
         // SUBSCRIPTION_MATCHED event either.
         DomainParticipant participant =
@@ -258,7 +258,7 @@ class ListenerTest {
     }
 
     @Test
-    void statusIsReadableWithoutAListener() throws Exception {
+    void javapsm_2_status_is_readable_without_a_listener() throws Exception {
         // DDS 1.4 §2.2.4.1: the change counters reset when the status is read
         // OR when it reaches a listener. With no listener bound, the
         // application's own read must still see the change.

@@ -41,9 +41,10 @@ validator (§8.1), and a WebSocket↔DDS topic bridge. `no_std + alloc`,
   validator (rejects surrogates / overlong encodings).
 - **`WebSocketUri` / `parse_websocket_uri`** — `ws://` and `wss://`
   URI parser per §3.
-- **`SubscriptionRegistry` / `parse_op` / `render_notification`** —
-  WebSocket↔DDS topic bridge (subscribe/unsubscribe via text
-  frames, notifications as text-frame JSON).
+- **`zerodds-ws-bridged`** (`daemon` module, feature `daemon`) —
+  WebSocket↔DDS topic bridge per `docs/specs/zerodds-ws-bridge-1.0.md`
+  (binary frames, and JSON text frames to a client that asks for them,
+  §4.3).
 
 ## Layer position
 

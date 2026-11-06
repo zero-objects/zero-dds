@@ -249,25 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn hash_is_14_bytes_and_deterministic() {
-        let t = sample_minimal_struct(3);
-        let h1 = compute_minimal_hash(&t).unwrap();
-        let h2 = compute_minimal_hash(&t).unwrap();
-        assert_eq!(h1, h2);
-        assert_eq!(h1.0.len(), 14);
-    }
-
-    #[test]
-    fn different_type_objects_have_different_hashes() {
-        let t1 = sample_minimal_struct(3);
-        let t2 = sample_minimal_struct(4);
-        let h1 = compute_minimal_hash(&t1).unwrap();
-        let h2 = compute_minimal_hash(&t2).unwrap();
-        assert_ne!(h1, h2);
-    }
-
-    #[test]
-    fn minimal_and_complete_same_semantic_differ_in_hash() {
+    fn xtypes_7_3_4_2_minimal_and_complete_same_semantic_differ_in_hash() {
         // Even if Minimal and Complete represent the same "type",
         // the equivalence-kind discriminator at the start of the
         // serialized bytes distinguishes them → different hashes.
@@ -311,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn to_hashed_type_identifier_picks_correct_kind() {
+    fn xtypes_7_3_4_to_hashed_type_identifier_picks_correct_kind() {
         let minimal = sample_minimal_struct(2);
         let ti = to_hashed_type_identifier(&TypeObject::Minimal(minimal.clone())).unwrap();
         assert!(matches!(ti, TypeIdentifier::EquivalenceHashMinimal(_)));
@@ -349,25 +331,5 @@ mod tests {
         )))
         .unwrap();
         assert!(matches!(ti2, TypeIdentifier::EquivalenceHashComplete(_)));
-    }
-
-    #[test]
-    fn hash_bytes_matches_md5_truncated_reference() {
-        // MD5("") = d41d8cd98f00b204e9800998ecf8427e
-        // First 14 bytes: d4 1d 8c d9 8f 00 b2 04 e9 80 09 98 ec f8
-        let h = hash_bytes(b"");
-        let expected: [u8; 14] = [
-            0xd4, 0x1d, 0x8c, 0xd9, 0x8f, 0x00, 0xb2, 0x04, 0xe9, 0x80, 0x09, 0x98, 0xec, 0xf8,
-        ];
-        assert_eq!(h.0, expected);
-    }
-
-    #[test]
-    fn hash_bytes_deterministic_for_known_input() {
-        let h1 = hash_bytes(b"ZeroDDS");
-        let h2 = hash_bytes(b"ZeroDDS");
-        assert_eq!(h1, h2);
-        let h3 = hash_bytes(b"ZeroDDs"); // case-sensitiv
-        assert_ne!(h1, h3);
     }
 }

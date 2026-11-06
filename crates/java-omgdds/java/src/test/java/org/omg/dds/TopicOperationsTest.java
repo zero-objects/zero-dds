@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.omg.dds;
 
+import org.zerodds.testing.Waits;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -100,7 +101,7 @@ class TopicOperationsTest {
     // --- INCONSISTENT_TOPIC (§2.2.4.1) and the TopicListener (§2.2.4.3) ----------------
 
     @Test
-    void aTopicOfTheSameNameAndAnotherTypeInTheDomainIsInconsistentAndTellsTheTopicListener() {
+    void javapsm_2_a_topic_of_the_same_name_and_another_type_in_the_domain_is_inconsistent_and_tells_the_topic_listener() {
         int domain = 1290;
         DomainParticipant first = Qos.factory().createParticipant(domain);
         DomainParticipant second = Qos.factory().createParticipant(domain);
@@ -134,7 +135,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void aTopicWithoutListenerPassesInconsistentTopicToTheParticipantListener() {
+    void javapsm_2_a_topic_without_listener_passes_inconsistent_topic_to_the_participant_listener() {
         int domain = 1291;
         AtomicReference<InconsistentTopicEvent<?>> seen = new AtomicReference<>();
         DomainParticipant first = Qos.factory().createParticipant(domain,
@@ -152,7 +153,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void anInconsistentTopicTriggersItsStatusCondition() {
+    void javapsm_2_an_inconsistent_topic_triggers_its_status_condition() {
         int domain = 1292;
         DomainParticipant first = Qos.factory().createParticipant(domain);
         Topic<String> topic = first.createTopic("InconsistentCondition", String.class);
@@ -165,7 +166,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void topicsOfTheSameTypeOrInAnotherDomainAreConsistent() {
+    void javapsm_2_topics_of_the_same_type_or_in_another_domain_are_consistent() {
         DomainParticipant first = Qos.factory().createParticipant(1293);
         Topic<String> topic = first.createTopic("Consistent", String.class);
         Qos.factory().createParticipant(1293).createTopic("Consistent", String.class);
@@ -178,7 +179,7 @@ class TopicOperationsTest {
     // --- TopicDescription: name, type name, participant (§2.2.2.3.1) ------------------------
 
     @Test
-    void aTopicAndAContentFilteredTopicKnowTheirNameTypeAndParticipant() {
+    void javapsm_2_a_topic_and_a_content_filtered_topic_know_their_name_type_and_participant() {
         DomainParticipant participant = Qos.factory().createParticipant(1295);
         Topic<Foo> topic = participant.createTopic("Described", Foo.class);
         ContentFilteredTopic<Foo> filtered = participant.createContentFilteredTopic(
@@ -196,7 +197,7 @@ class TopicOperationsTest {
     // --- ContentFilteredTopic (§2.2.2.3.3) ----------------------------------------------
 
     @Test
-    void setExpressionParametersFiltersWithTheNewParametersFromThenOn() throws Exception {
+    void javapsm_2_set_expression_parameters_filters_with_the_new_parameters_from_then_on() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1296);
         Topic<Foo> topic = participant.createTopic("Parameters", Foo.class);
         DataWriter<Foo> writer = participant.createPublisher().createDataWriter(topic);
@@ -229,7 +230,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void aContentFilteredTopicOfASupertypeFiltersTheSamplesOfTheSubtypeByTheSupertypeFields()
+    void javapsm_7_5_3_a_content_filtered_topic_of_a_supertype_filters_the_samples_of_the_subtype_by_the_supertype_fields()
             throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1297);
         Topic<Bar> topic = participant.createTopic("Supertype", Bar.class);
@@ -249,7 +250,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void closingAContentFilteredTopicNeedsItsReadersGoneAndRemovesItFromTheParticipant() {
+    void javapsm_2_closing_a_content_filtered_topic_needs_its_readers_gone_and_removes_it_from_the_participant() {
         DomainParticipant participant = Qos.factory().createParticipant(1298);
         Topic<Foo> topic = participant.createTopic("Closing", Foo.class);
         ContentFilteredTopic<Foo> filtered = participant.createContentFilteredTopic(
@@ -273,7 +274,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void aTopicDescriptionIsCloseableAndLeavesTheParticipantWhenTheResourceEnds() {
+    void javapsm_7_5_2_a_topic_description_is_closeable_and_leaves_the_participant_when_the_resource_ends() {
         DomainParticipant participant = Qos.factory().createParticipant(1299);
         Topic<Foo> topic = participant.createTopic("Resource", Foo.class);
         try (ContentFilteredTopic<Foo> filtered = participant.createContentFilteredTopic(
@@ -292,7 +293,7 @@ class TopicOperationsTest {
     // --- MultiTopic (§2.2.2.3.4) ---------------------------------------------------------
 
     @Test
-    void closingAMultiTopicNeedsItsReadersGoneAndFreesTheTopicsOfItsFromClause() {
+    void javapsm_2_closing_a_multi_topic_needs_its_readers_gone_and_frees_the_topics_of_its_from_clause() {
         DomainParticipant participant = Qos.factory().createParticipant(1300);
         Topic<Foo> source = participant.createTopic("Gauges", Foo.class);
         MultiTopic<Foo> multi = participant.createMultiTopic("HotGauges", Foo.class,
@@ -317,7 +318,7 @@ class TopicOperationsTest {
     // --- delete_topic (§2.2.2.2.1.7) and delete_contained_entities ---------------------------
 
     @Test
-    void aClosedTopicIsGoneFromLookupFindAndDiscovery() {
+    void javapsm_2_a_closed_topic_is_gone_from_lookup_find_and_discovery() {
         int domain = 1301;
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -336,7 +337,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void deleteContainedEntitiesRemovesEveryTopicDescriptionFromTheLookups() {
+    void javapsm_2_delete_contained_entities_removes_every_topic_description_from_the_lookups() {
         DomainParticipant participant = Qos.factory().createParticipant(1302);
         Topic<Foo> topic = participant.createTopic("Contained", Foo.class);
         participant.createContentFilteredTopic("ContainedView", topic, "level > 1", new ArrayList<>());
@@ -354,7 +355,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void closingAParticipantWithFilteredTopicsMultiTopicsAndReadersDoesNotFail() {
+    void javapsm_2_closing_a_participant_with_filtered_topics_multi_topics_and_readers_does_not_fail() {
         DomainParticipant participant = Qos.factory().createParticipant(1303);
         Topic<Foo> topic = participant.createTopic("CloseAll", Foo.class);
         Subscriber subscriber = participant.createSubscriber();
@@ -371,14 +372,11 @@ class TopicOperationsTest {
     // --- find_topic (§2.2.2.2.1.11) -------------------------------------------------------------
 
     @Test
-    void findTopicWaitsForATopicAnotherThreadCreatesAndTimesOutOtherwise() throws Exception {
+    void javapsm_2_find_topic_waits_for_a_topic_another_thread_creates_and_times_out_otherwise() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1304);
+        Thread finder = Thread.currentThread();
         Thread creator = new Thread(() -> {
-            try {
-                Thread.sleep(200);
-            } catch (InterruptedException e) {
-                return;
-            }
+            Waits.untilWaitingIn(finder, "findTopic");
             participant.createTopic("Late", byte[].class);
         });
         creator.start();
@@ -397,7 +395,7 @@ class TopicOperationsTest {
     // --- TypeSupport (DDS-Java-PSM 1.0 §7.5.1) ----------------------------------------------------
 
     @Test
-    void aTopicMadeFromAClassHasATypeSupportOfThatClass() {
+    void javapsm_7_5_1_a_topic_made_from_a_class_has_a_type_support_of_that_class() {
         DomainParticipant participant = Qos.factory().createParticipant(1307);
         Topic<Bar> topic = participant.createTopic("ClassTypeSupport", Bar.class);
         TypeSupport<Bar> support = topic.getTypeSupport();
@@ -409,7 +407,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void newTypeSupportWithoutANameRegistersUnderTheNameOfTheClass() throws Exception {
+    void javapsm_7_5_1_new_type_support_without_a_name_registers_under_the_name_of_the_class() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1305);
         TypeSupport<String> support = TypeSupport.newTypeSupport(String.class, Qos.env());
         assertEquals(String.class, support.getType());
@@ -429,7 +427,7 @@ class TopicOperationsTest {
     }
 
     @Test
-    void aTypeSupportRegisteredUnderANameGivesTheTopicItsWritersAndItsAnnouncementThatName()
+    void javapsm_7_5_1_a_type_support_registered_under_a_name_gives_the_topic_its_writers_and_its_announcement_that_name()
             throws Exception {
         int domain = 1306;
         DomainParticipant observer = Qos.factory().createParticipant(domain);

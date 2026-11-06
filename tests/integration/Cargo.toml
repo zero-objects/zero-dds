@@ -1,0 +1,80 @@
+[package]
+name = "zerodds-integration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "The integration pillar of the test suite: ZeroDDS end to end, each scenario against an oracle outside its own code."
+# Test scaffolding for this workspace, not a product.
+publish = false
+
+[lints]
+workspace = true
+
+# A pillar crate (internal/release/rc8-test-suite.md, "Crate tier"): it
+# tests the crates it uses end to end through its scenarios and keeps no
+# contract target with them; ci/dependency_graph.py does not count it as a
+# direct consumer, and the merge lane runs the pillar's job of the touched
+# area (ci/integration_scenarios.py).
+[package.metadata.crate-tier]
+pillar = "integration"
+
+[lib]
+path = "src/lib.rs"
+
+# One feature per scenario group, so a job builds what its scenarios use and
+# nothing else (ci/integration_scenarios.py names the feature of each job).
+# `cargo nextest run -p zerodds-integration --features dcps --test dcps_transports`.
+[features]
+dcps = [
+    "dep:zerodds-dcps",
+    "zerodds-dcps/same-host-shm",
+    "zerodds-dcps/same-host-uds",
+    "dep:zerodds-transport-uds",
+]
+tsn = ["dcps", "zerodds-dcps/tsn-live"]
+security = ["dcps", "zerodds-dcps/security"]
+# The daemons themselves are built by ci/run_integration.py and named by
+# ZERODDS_DURABILITY_SVC and ZERODDS_ROUTER.
+services = ["dcps"]
+# The bridge daemons are built by ci/run_integration.py and named by
+# ZERODDS_<X>_BRIDGED.
+bridges = ["dcps"]
+# The bindings over libzerodds against a Rust publisher; libzerodds and the
+# subscriber programs are built by tests/integration/ffi_peers.sh and named by
+# ZERODDS_LIB and ZERODDS_FFI_PEERS.
+bindings = ["dcps"]
+
+[dependencies]
+zerodds-test-domains = { path = "../../crates/test-domains" }
+zerodds-dcps = { path = "../../crates/dcps", optional = true }
+zerodds-transport-uds = { path = "../../crates/transport-uds", optional = true }
+
+[[test]]
+name = "dcps_transports"
+required-features = ["dcps"]
+
+[[test]]
+name = "security"
+required-features = ["security"]
+
+[[test]]
+name = "services"
+required-features = ["services"]
+
+[[test]]
+name = "dcps_restart"
+required-features = ["dcps"]
+
+[[test]]
+name = "dcps_tsn"
+required-features = ["tsn"]
+
+[[test]]
+name = "bridges"
+required-features = ["bridges"]
+
+[[test]]
+name = "bindings_ffi"
+required-features = ["bindings"]

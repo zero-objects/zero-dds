@@ -98,16 +98,16 @@ fn ctrlc_setter<F: Fn() + Send + Sync + 'static>(f: F) {
         *g = Some(Box::new(f));
     }
     extern "C" fn handler(_: i32) {
-        if let Ok(g) = HOOK.lock() {
-            if let Some(h) = g.as_ref() {
-                h();
-            }
+        if let Ok(g) = HOOK.lock()
+            && let Some(h) = g.as_ref()
+        {
+            h();
         }
     }
     // SAFETY: libc::signal takes a C-ABI function pointer; `handler` is
     // `extern "C"` and has exactly the expected signature (i32).
     unsafe {
-        libc::signal(libc::SIGINT, handler as usize);
+        libc::signal(libc::SIGINT, handler as *const () as usize);
     }
 }
 

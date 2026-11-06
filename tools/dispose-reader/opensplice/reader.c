@@ -8,7 +8,8 @@
  * The domain comes from $OSPL_URI: the wrapper build.sh writes points it
  * at a configuration with <Id>DOMAIN</Id>, since OpenSplice takes the
  * domain from its configuration. Prints READY once the reader exists,
- * MATCHED once it has matched a writer and SEEN id=<id> for the first
+ * MATCHED once it has matched a writer, STATE id=<id> state=<state> for
+ * each change of an instance's state, and SEEN id=<id> for the first
  * valid sample of each instance. When SNAPSHOT_FILE appears it prints `SNAP id=<id>
  * state=<state>` per instance (the state of the last sample taken for it)
  * and SNAPDONE; when STOP_FILE appears, or after SECONDS, the same as
@@ -141,7 +142,15 @@ int main(int argc, char **argv) {
           entry->has_id = 1;
           entry->id = samples->_buffer[i].id;
         }
-        entry->state = state_name(info->instance_state);
+        {
+          /* STATE: each change of an instance's state, as it is taken. */
+          const char *state = state_name(info->instance_state);
+          if (entry->state == NULL || strcmp(entry->state, state) != 0) {
+            if (entry->has_id) printf("STATE id=%d state=%s\n", (int) entry->id, state);
+            else printf("STATE id=? state=%s\n", state);
+          }
+          entry->state = state;
+        }
       }
       KeyedPointADataReader_return_loan(rd, samples, infos);
     }

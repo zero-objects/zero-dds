@@ -410,13 +410,13 @@ fn declare_descriptor(
         .map_err(|error| DynamicError::model(&error))?;
     if let Some(facets) = b.ast.facets_mut(any) {
         let x = facets.xtypes_mut();
-        if let Some(extensibility) = descriptor.extensibility_kind {
-            if matches!(
+        if let Some(extensibility) = descriptor.extensibility_kind
+            && matches!(
                 descriptor.kind,
                 TypeKind::Structure | TypeKind::Union | TypeKind::Enumeration | TypeKind::Bitmask
-            ) {
-                x.extensibility = Some(Extensibility::from(extensibility));
-            }
+            )
+        {
+            x.extensibility = Some(Extensibility::from(extensibility));
         }
         if descriptor.is_nested {
             x.is_nested = true;
@@ -425,10 +425,10 @@ fn declare_descriptor(
         if let Some(bit_bound) = descriptor.bit_bound {
             x.bit_bound = Some(bit_bound);
         }
-        if matches!(descriptor.kind, TypeKind::Bitmask) {
-            if let Some(bound) = descriptor.bound.first() {
-                x.bit_bound = u16::try_from(*bound).ok();
-            }
+        if matches!(descriptor.kind, TypeKind::Bitmask)
+            && let Some(bound) = descriptor.bound.first()
+        {
+            x.bit_bound = u16::try_from(*bound).ok();
         }
     }
     Ok(id)

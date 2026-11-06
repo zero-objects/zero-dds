@@ -212,7 +212,7 @@ fn candidate_guid(seed: u8) -> [u8; 16] {
 /// `DomainParticipant::new_with_runtime` reads instead of falling back to
 /// `random_guid_prefix()`.
 #[test]
-fn with_security_bundle_wires_the_identity_adjusted_prefix_not_random() {
+fn security_7_4_3_with_security_bundle_wires_the_identity_adjusted_prefix_not_random() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — security GUID-wiring test cannot run");
         return;
@@ -266,7 +266,8 @@ fn with_security_bundle_wires_the_identity_adjusted_prefix_not_random() {
 ///    holds under live secured discovery, not just in a config struct.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_discover() {
+fn security_9_1_2_secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_discover()
+{
     if !openssl_available() {
         println!("[skip] openssl not on PATH — secured public-API discovery test cannot run");
         return;

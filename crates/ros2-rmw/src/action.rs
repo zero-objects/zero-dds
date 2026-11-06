@@ -69,52 +69,40 @@ impl ActionTopics {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    //! zerodds-ros2-bridge-1.0 §4.3: an action is three services under
+    //! `<action>/_action/` (send_goal, cancel_goal, get_result) and two
+    //! topics (feedback, status), the names rcl_action gives them.
     use super::*;
 
     #[test]
-    fn topic_set_has_exactly_5_topics() {
-        let a = ActionTopics::from_action("/turtle1/rotate_absolute");
-        assert_eq!(a.count(), 5);
-        assert_eq!(a.all_topics().len(), 5);
-    }
-
-    #[test]
-    fn goal_topic_uses_rq_prefix_and_send_goal_suffix() {
-        let a = ActionTopics::from_action("/turtle1/rotate_absolute");
-        assert_eq!(
-            a.goal,
-            "rq/turtle1/rotate_absolute/_action/send_goalRequest"
-        );
-    }
-
-    #[test]
-    fn cancel_topic_uses_rq_prefix_and_cancel_suffix() {
-        let a = ActionTopics::from_action("/turtle1/rotate_absolute");
-        assert_eq!(
-            a.cancel,
-            "rq/turtle1/rotate_absolute/_action/cancel_goalRequest"
-        );
-    }
-
-    #[test]
-    fn result_topic_uses_rr_prefix_and_reply_suffix() {
-        let a = ActionTopics::from_action("/turtle1/rotate_absolute");
-        assert_eq!(
-            a.result,
-            "rr/turtle1/rotate_absolute/_action/get_resultReply"
-        );
-    }
-
-    #[test]
-    fn feedback_and_status_use_rt_prefix() {
-        let a = ActionTopics::from_action("/x");
-        assert!(a.feedback.starts_with("rt/"));
-        assert!(a.status.starts_with("rt/"));
-    }
-
-    #[test]
-    fn handles_action_name_without_leading_slash() {
-        let a = ActionTopics::from_action("turtle1/rotate_absolute");
-        assert!(a.goal.starts_with("rq/turtle1/"));
+    fn ros2bridge_4_3_an_action_names_its_five_endpoints_under_action() {
+        for name in ["/turtle1/rotate_absolute", "turtle1/rotate_absolute"] {
+            let a = ActionTopics::from_action(name);
+            assert_eq!(
+                a.goal,
+                "rq/turtle1/rotate_absolute/_action/send_goalRequest"
+            );
+            assert_eq!(
+                a.cancel,
+                "rq/turtle1/rotate_absolute/_action/cancel_goalRequest"
+            );
+            assert_eq!(
+                a.result,
+                "rr/turtle1/rotate_absolute/_action/get_resultReply"
+            );
+            assert_eq!(a.feedback, "rt/turtle1/rotate_absolute/_action/feedback");
+            assert_eq!(a.status, "rt/turtle1/rotate_absolute/_action/status");
+            assert_eq!(a.count(), 5);
+            assert_eq!(
+                a.all_topics(),
+                [
+                    a.goal.as_str(),
+                    a.cancel.as_str(),
+                    a.result.as_str(),
+                    a.feedback.as_str(),
+                    a.status.as_str()
+                ]
+            );
+        }
     }
 }

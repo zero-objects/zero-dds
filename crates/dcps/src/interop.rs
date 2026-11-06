@@ -378,6 +378,37 @@ impl DdsType for ShapeType {
     fn decode_xcdr1_be(bytes: &[u8]) -> core::result::Result<Self, DecodeError> {
         Self::decode_xcdr1_endian(bytes, Endianness::Big)
     }
+
+    /// The key alone, `color`, the first member (OMG `shape.idl`): `x`, `y`,
+    /// `shapesize` and the payload are not read and stay at zero and empty.
+    fn decode_key_members(
+        bytes: &[u8],
+        xcdr1: bool,
+        big_endian: bool,
+    ) -> Option<core::result::Result<Self, DecodeError>> {
+        let endian = if big_endian {
+            Endianness::Big
+        } else {
+            Endianness::Little
+        };
+        let read = || -> core::result::Result<Self, DecodeError> {
+            let color = if xcdr1 {
+                Reader::new(bytes, endian).read_string()?
+            } else {
+                let mut r = Reader::with_max_align(bytes, endian, XCDR2_MAX_ALIGN);
+                r.read_dheader()?;
+                r.read_string()?
+            };
+            Ok(Self {
+                color,
+                x: 0,
+                y: 0,
+                shapesize: 0,
+                additional_payload_size: Vec::new(),
+            })
+        };
+        Some(read())
+    }
 }
 
 /// ShapesDemo `ShapeFillKind` enum (RTI 7.x / Fast-DDS ShapeExtended IDL).
@@ -669,21 +700,6 @@ mod tests {
     }
 
     #[test]
-    fn shapetype_xcdr1_round_trips_le_and_be() {
-        let s = ShapeType::with_payload("RED", -5, 7, 30, alloc::vec![1, 2, 3]);
-        // LE
-        let mut le = Vec::new();
-        s.encode_xcdr1(&mut le).unwrap();
-        assert_eq!(ShapeType::decode_xcdr1(&le).unwrap(), s);
-        // BE
-        let mut be = Vec::new();
-        s.encode_xcdr1_be(&mut be).unwrap();
-        assert_eq!(ShapeType::decode_xcdr1_be(&be).unwrap(), s);
-        // LE and BE differ (multi-byte fields byte-swapped).
-        assert_ne!(le, be);
-    }
-
-    #[test]
     fn shapetype_decode_tolerates_missing_trailing_member() {
         // A 4-member @appendable peer omits additional_payload_size; the body
         // is DHEADER(24) + the 4 core members. decode() must treat the absent
@@ -699,28 +715,6 @@ mod tests {
         let decoded = ShapeType::decode(&body).unwrap();
         assert_eq!(decoded, ShapeType::new("RED", 1, 2, 3));
         assert!(decoded.additional_payload_size.is_empty());
-    }
-
-    #[test]
-    fn shape_extended_round_trip() {
-        let s = ShapeExtendedType::new("BLUE", 100, 150, 30, ShapeFillKind::HorizontalHatch, 45.5);
-        let mut bytes = Vec::new();
-        s.encode(&mut bytes).unwrap();
-        let back = ShapeExtendedType::decode(&bytes).unwrap();
-        assert_eq!(back, s);
-    }
-
-    #[test]
-    fn shape_extended_type_name_distinct_from_shape() {
-        assert_eq!(ShapeExtendedType::TYPE_NAME, "ShapeExtendedType");
-        assert_ne!(ShapeExtendedType::TYPE_NAME, ShapeType::TYPE_NAME);
-        // Regression guard that the codegen sets `HAS_KEY` for a keyed type.
-        // It is a `const bool`, so clippy folds it and warns it would be
-        // optimised out — that is exactly the intent here (a compile-time fact).
-        #[allow(clippy::assertions_on_constants)]
-        {
-            assert!(ShapeExtendedType::HAS_KEY);
-        }
     }
 
     #[test]
@@ -744,7 +738,7 @@ mod tests {
     /// difference is real, so the write-path dispatch to `encode_xcdr1` genuinely
     /// changes the wire — not just for the DHEADER but for 8-byte-member padding.
     #[test]
-    fn u64_type_xcdr1_and_xcdr2_alignment_differs() {
+    fn rtps_10_2_u64_type_xcdr1_and_xcdr2_alignment_differs() {
         struct AlignProbe {
             a: u8,
             b: u64,

@@ -30,7 +30,7 @@ fn random_bytes(rng: &mut XorShift32, len: usize) -> Vec<u8> {
 }
 
 #[test]
-fn fuzz_websocket_decode_no_panic() {
+fn wsbridge_12_1_fuzz_websocket_decode_no_panic() {
     let mut rng = XorShift32::new(0x5753_4B54);
     for i in 0..3_000 {
         let len = match i % 8 {
@@ -49,12 +49,12 @@ fn fuzz_websocket_decode_no_panic() {
 }
 
 #[test]
-fn empty_input_no_panic() {
+fn wsbridge_12_1_empty_input_no_panic() {
     let _ = decode(&[]);
 }
 
 #[test]
-fn single_byte_inputs_no_panic() {
+fn wsbridge_12_1_single_byte_inputs_no_panic() {
     for b in 0u8..=255 {
         let _ = decode(&[b]);
     }
@@ -64,7 +64,7 @@ fn single_byte_inputs_no_panic() {
 /// and a max u64 length field — the decoder must return `Err`, not
 /// call `Vec::with_capacity(u64::MAX)`.
 #[test]
-fn extended_length_overflow_no_oom() {
+fn wsbridge_12_1_extended_length_overflow_no_oom() {
     let buf = [
         0x82, // FIN=1, opcode=Binary
         0xFF, // MASK=1, len_kind=0x7F (8-byte ext length)

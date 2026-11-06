@@ -14,7 +14,7 @@ Implementation:
   `module Writer` (async-entkoppelter reliable Writer mit Drain-`Thread`).
 - `crates/endpoint-e2e/tests/ocaml.rs` — Ping-Pong-E2E;
   `crates/endpoint-e2e/tests/ocaml_reliable.rs` — reliable-Stream-E2E +
-  Unit/Golden + Example + Latenz-Bench.
+  Latenz-Vergleich.
 
 Beide E2E-Testdateien sind auf `ocamlfind` (per `ocamlfind printconf`)
 gegated: fehlt die Toolchain, wird laut geskippt (`eprintln!("SKIP ...")`),
@@ -30,8 +30,8 @@ WRITE_DATA, flags, len LE) + Body, byte-identisch zu `crates/xrce` +
 Konstanten `session_nokey` (`0x80`) und `stream_best_effort` (`0x01`).
 
 **Tests:** kein isolierter Framing-Unit-Test (anders als Go's
-`go_raw_udp`); das Framing wird über `ocaml_endpoint_sync`/
-`ocaml_endpoint_async` (§4) live geübt — die App framet dort explizit über
+`endpoint_go_5_1_the_generated_codec_pings_without_the_xrce_frame`); das Framing wird über `xrce_8_3_5_8_ocaml_sync_app_writes_the_ping_and_reads_the_pong`/
+`xrce_8_3_5_8_ocaml_async_app_writes_the_ping_and_reads_the_pong` (§4) live geübt — die App framet dort explizit über
 `Zerodds.Endpoint.write_frame`, bevor der `AsyncReader`/`Client` übernimmt.
 
 **Status:** done.
@@ -47,7 +47,7 @@ Konstanten `session_nokey` (`0x80`) und `stream_best_effort` (`0x01`).
 `seq`-Zähler mit 16-Bit-Wraparound, Default-Session
 `session_nokey`/`stream_best_effort`).
 
-**Tests:** Live-E2E `ocaml_endpoint_sync`
+**Tests:** Live-E2E `xrce_8_3_5_8_ocaml_sync_app_writes_the_ping_and_reads_the_pong`
 (`crates/endpoint-e2e/tests/ocaml.rs`) — die eingebettete OCaml-App
 (`OCAML_MAIN`) baut ein `Gen.Ping`-Sample über den generierten
 `zerodds-idlc generate --lang ocaml`-Codec, sendet es über `Zerodds.Client.write` an den
@@ -68,7 +68,7 @@ Mutex/Condition-FIFO); `endpoints/ocaml/zerodds.ml::AsyncReader`
 (`start` spawnt den Empfangs-`Thread` via `Thread.create loop ()`,
 `recv`/`stop`).
 
-**Tests:** Live-E2E `ocaml_endpoint_async`
+**Tests:** Live-E2E `xrce_8_3_5_8_ocaml_async_app_writes_the_ping_and_reads_the_pong`
 (`crates/endpoint-e2e/tests/ocaml.rs`) — die App startet
 `Zerodds.AsyncReader.start`, liefert das geframeте `Gen.Ping`-Sample direkt
 über `transport.deliver`, blockiert in `AsyncReader.recv` bis zum
@@ -93,10 +93,8 @@ Wire-Module bleiben getrennte Kompiliereinheiten, sodass keine
 Namenskollision entsteht (Kommentar im Test dokumentiert das explizit).
 
 **Tests:** (Linux)
-- `ocaml_endpoint_sync` — voller Stack über `Zerodds.Client`.
-- `ocaml_endpoint_async` — voller Stack über `Zerodds.AsyncReader`.
-
-2/2 grün (Linux).
+- `xrce_8_3_5_8_ocaml_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über `Zerodds.Client`.
+- `xrce_8_3_5_8_ocaml_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über `Zerodds.AsyncReader`.
 
 **Status:** done.
 
@@ -123,11 +121,11 @@ Kernel.
 `module Writer` (`create` spawnt den Drain-`Thread`,
 `enqueue`/`wait_drained`/`stop`/`in_flight_count`);
 `endpoints/ocaml/example_reliable.ml` (lauffähige In-Process-Demo, kein
-Socket); `endpoints/ocaml/reliable_app.ml` (live UDP-Sender-App für das E2E,
-argv = `<peer-port> <N>`).
+Socket).
 
 **Tests:** (Linux)
-- `ocaml_reliable_unit_and_golden` (`crates/endpoint-e2e/tests/ocaml_reliable.rs`)
+- `endpoints/ocaml/reliable_test.ml` in der Spalte `ocaml` von `tools/endpoints-gate`
+  (Job `integration-endpoints`)
   kompiliert und läuft `endpoints/ocaml/reliable_test.ml` — ein einzelnes
   Script (keine benannten `Test*`-Funktionen wie bei Go, sondern ~34
   sequenzielle `check`-Assertions in einem `let () = ...`-Block), das
@@ -150,14 +148,13 @@ argv = `<peer-port> <N>`).
   `zerodds-endpoint-golden` frisch generierten `.bin`-Dateien, wenn das
   Rust-Golden-Tool erfolgreich lief). Druckt `ALL OK` und Exit-Code 0 bei
   Erfolg.
-- `ocaml_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die
-  App (`reliable_app`) retransmittiert auf ACKNACK; alle 12 Samples
-  lückenlos in Reihenfolge geliefert.
-- `ocaml_reliable_no_loss` — lossless Baseline; 12/12.
-- `ocaml_reliable_example` — `example_reliable` läuft und meldet
+- `reliable_5_3_ocaml_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig; die
+  App, die der Test aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und dem `Writer` von `reliable.ml` baut,
+  retransmittiert auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge
+  geliefert, der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`).
+- `endpoints/ocaml/example_reliable.ml` in der Spalte `ocaml` von `tools/endpoints-gate`
+  (Job `integration-endpoints`) — `example_reliable` läuft und meldet
   `delivered: 0 1 2 ... 11` + `RELIABLE OK`.
-
-5/5 grün (Linux), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -174,12 +171,12 @@ Batch-Timing) von inline `Unix.sendto` (echter Kernelübergang) vs.
 `Mailbox.put` (Mutex sperren, Cons, Signal, entsperren, kein Syscall), kein
 Live-Peer nötig (Loopback-Socket, nur lokale Dispatch-Kosten unter Messung).
 
-**Tests:** (Linux) `ocaml_reliable_latency_bench`
+**Tests:** (Linux) `reliable_5_4_ocaml_the_producer_enqueue_costs_less_than_the_inline_send`
 (`crates/endpoint-e2e/tests/ocaml_reliable.rs`) — Mailbox-Enqueue-Median
 **~30 ns** vs. inline `sendto`-Median **~4,1 µs** (~130–140×). Genauer
-Messwert schwankt pro Lauf (Batch-Median über `Unix.gettimeofday`); Test
-prüft nur, dass die Ausgabe die Zeile `producer latency: ...` enthält, nicht
-den konkreten Faktor.
+Messwert schwankt pro Lauf (Batch-Median über `Unix.gettimeofday`); der Test
+prüft, dass der Enqueue-Median der Zeile `producer latency: ...` unter dem
+inline-Median liegt, nicht den konkreten Faktor.
 
 **Status:** done.
 
@@ -187,14 +184,13 @@ den konkreten Faktor.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test ocaml`
-2/2 (Ping-Pong: `ocaml_endpoint_sync`/`ocaml_endpoint_async`);
-`--test ocaml_reliable` 5/5 (`ocaml_reliable_unit_and_golden` — ~34
-sequenzielle Checks inkl. Byte-Golden, `ocaml_reliable_loss_recovery`,
-`ocaml_reliable_no_loss`, `ocaml_reliable_example`,
-`ocaml_reliable_latency_bench`); Latenz-Bench Mailbox-Enqueue ~30 ns / inline
-`sendto` ~4,1 µs (~130–140×).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-ocaml-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings` (Job `integration-bindings`) — 1 Test grün.
+* `python3 ci/run_integration.py integration-bindings-gnat-beam` (Job `integration-bindings-gnat-beam`) — 4 Tests grün.
+
+5 zitierte Tests grün, 0 nicht grün.
 
 Offene Punkte: keine.

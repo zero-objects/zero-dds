@@ -254,7 +254,7 @@ mod linux {
     /// one sample: a writer that keeps sending would otherwise mask a missing
     /// purge with fresh data.
     #[test]
-    fn lifespan_removes_expired_samples_from_the_reader_cache() {
+    fn dcps_2_2_3_16_lifespan_removes_expired_samples_from_the_reader_cache() {
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain();
         let pub_p = factory

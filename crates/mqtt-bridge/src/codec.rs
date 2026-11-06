@@ -252,62 +252,71 @@ pub fn decode_publish_v(
 mod tests {
     use super::*;
 
-    #[test]
-    fn publish_qos0_no_packet_id_round_trip() {
-        // Spec §3.3.2.2 — QoS=0 → no packet identifier.
-        let p = PublishPacket {
-            dup: false,
-            qos: 0,
-            retain: false,
-            topic: String::from("sensors/temp"),
-            packet_id: None,
+    fn publish(
+        dup: bool,
+        qos: u8,
+        retain: bool,
+        topic: &str,
+        packet_id: Option<u16>,
+    ) -> PublishPacket {
+        PublishPacket {
+            dup,
+            qos,
+            retain,
+            topic: String::from(topic),
+            packet_id,
             properties: Vec::new(),
-            payload: alloc::vec![0xDE, 0xAD],
+            payload: Vec::new(),
+        }
+    }
+
+    /// §3.3.2, Figure 3-9: Topic Name "a/b", Packet Identifier 10, no
+    /// properties; behind a fixed header of type 3 with QoS 1 (§3.3.1)
+    /// and the Remaining Length (§2.1.4), and before the payload (§3.3.3).
+    #[test]
+    fn mqtt5_3_3_2_the_publish_of_figure_3_9() {
+        let p = PublishPacket {
+            payload: b"hi".to_vec(),
+            ..publish(false, 1, false, "a/b", Some(10))
         };
-        let bytes = encode_publish(&p).expect("encode");
-        let (hdr, parsed) = decode_publish(&bytes).expect("decode");
+        let expected = [
+            0x32, 0x0A, 0x00, 0x03, b'a', b'/', b'b', 0x00, 0x0A, 0x00, b'h', b'i',
+        ];
+        assert_eq!(encode_publish(&p).expect("encode"), expected);
+        let (hdr, parsed) = decode_publish(&expected).expect("decode");
         assert_eq!(parsed, p);
         assert_eq!(hdr.packet_type, ControlPacketType::Publish);
+        assert_eq!(hdr.qos(), 1);
         assert!(!hdr.dup_flag());
-        assert_eq!(hdr.qos(), 0);
     }
 
+    /// §3.3.2.2: at QoS 0 the variable header has no Packet Identifier; at
+    /// QoS 2 it has one, and the fixed header carries QoS 2 in bits 2-1.
     #[test]
-    fn publish_qos1_includes_packet_id_round_trip() {
-        // Spec §3.3.2.2.
+    fn mqtt5_3_3_2_2_a_packet_identifier_only_above_qos_0() {
         let p = PublishPacket {
-            dup: true,
-            qos: 1,
-            retain: true,
-            topic: String::from("foo"),
-            packet_id: Some(0x1234),
-            properties: Vec::new(),
-            payload: b"hello".to_vec(),
+            payload: alloc::vec![0xDE, 0xAD],
+            ..publish(false, 0, false, "sensors/temp", None)
         };
-        let bytes = encode_publish(&p).expect("encode");
-        let (_, parsed) = decode_publish(&bytes).expect("decode");
-        assert_eq!(parsed, p);
-    }
+        let mut expected = alloc::vec![0x30, 0x11, 0x00, 0x0C];
+        expected.extend_from_slice(b"sensors/temp");
+        expected.extend_from_slice(&[0x00, 0xDE, 0xAD]);
+        assert_eq!(encode_publish(&p).expect("encode"), expected);
+        assert_eq!(decode_publish(&expected).expect("decode").1, p);
 
-    #[test]
-    fn publish_qos2_round_trip() {
         let p = PublishPacket {
-            dup: false,
-            qos: 2,
-            retain: false,
-            topic: String::from("a/b/c"),
-            packet_id: Some(42),
-            properties: Vec::new(),
             payload: alloc::vec![1, 2, 3, 4, 5],
+            ..publish(false, 2, false, "a/b/c", Some(42))
         };
-        let bytes = encode_publish(&p).expect("encode");
-        let (_, parsed) = decode_publish(&bytes).expect("decode");
-        assert_eq!(parsed.packet_id, Some(42));
-        assert_eq!(parsed.qos, 2);
+        let expected = [
+            0x34, 0x0F, 0x00, 0x05, b'a', b'/', b'b', b'/', b'c', 0x00, 0x2A, 0x00, 1, 2, 3, 4, 5,
+        ];
+        assert_eq!(encode_publish(&p).expect("encode"), expected);
+        assert_eq!(decode_publish(&expected).expect("decode").1, p);
     }
 
     #[test]
-    fn invalid_qos_3_rejected_on_encode() {
+    fn mqtt5_3_3_invalid_qos_3_rejected_on_encode() {
         // Spec §3.3.1.2 — QoS=3 is a Malformed Packet.
         let mut p = PublishPacket {
             dup: false,
@@ -325,7 +334,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_packet_id_at_qos1_rejected() {
+    fn mqtt5_3_3_missing_packet_id_at_qos1_rejected() {
         // Spec §3.3.2.2.
         let p = PublishPacket {
             dup: false,
@@ -340,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn wrong_packet_type_rejected_on_decode() {
+    fn mqtt5_3_3_wrong_packet_type_rejected_on_decode() {
         // Byte 0 = CONNECT (1) → decode_publish lehnt ab.
         let bytes = [0x10u8, 0x02, 0, 0];
         match decode_publish(&bytes) {
@@ -350,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn fixed_header_first_byte_layout_for_publish() {
+    fn mqtt5_2_1_fixed_header_first_byte_layout_for_publish() {
         // Spec §2.1 — Type-Nibble 3 + Flags-Nibble.
         let p = PublishPacket {
             dup: true,
@@ -366,45 +375,24 @@ mod tests {
         assert_eq!(bytes[0], 0x3D);
     }
 
+    /// §3.3.2.3 and §2.2.2: the Property Length as a Variable Byte
+    /// Integer, then the properties (Payload Format Indicator 1, Message
+    /// Expiry Interval 60, §3.3.2.3.2 and §3.3.2.3.3).
     #[test]
-    fn empty_properties_round_trips_as_empty_vec() {
-        // Decoder normalisiert empty-property-block → empty Vec.
+    fn mqtt5_3_3_2_3_the_properties_follow_their_length() {
         let p = PublishPacket {
-            dup: false,
-            qos: 0,
-            retain: false,
-            topic: String::from("t"),
-            packet_id: None,
-            properties: Vec::new(),
-            payload: alloc::vec![1],
+            properties: alloc::vec![0x01, 0x01, 0x02, 0x00, 0x00, 0x00, 0x3C],
+            ..publish(false, 0, false, "t", None)
         };
-        let bytes = encode_publish(&p).expect("encode");
-        let (_, parsed) = decode_publish(&bytes).expect("decode");
-        assert!(parsed.properties.is_empty());
+        let expected = [
+            0x30, 0x0B, 0x00, 0x01, b't', 0x07, 0x01, 0x01, 0x02, 0x00, 0x00, 0x00, 0x3C,
+        ];
+        assert_eq!(encode_publish(&p).expect("encode"), expected);
+        assert_eq!(decode_publish(&expected).expect("decode").1, p);
     }
 
     #[test]
-    fn non_empty_properties_round_trip_preserves_bytes() {
-        // The caller supplies a raw property-block body (no VBI prefix).
-        // Example block: PayloadFormatIndicator(0x01)=0x01 +
-        // ReceiveMaximum(0x21)=0x000A.
-        let raw_props_payload = alloc::vec![0x01u8, 0x01, 0x21, 0x00, 0x0A];
-        let p = PublishPacket {
-            dup: false,
-            qos: 0,
-            retain: false,
-            topic: String::from("t"),
-            packet_id: None,
-            properties: raw_props_payload.clone(),
-            payload: alloc::vec![],
-        };
-        let bytes = encode_publish(&p).expect("encode");
-        let (_, parsed) = decode_publish(&bytes).expect("decode");
-        assert_eq!(parsed.properties, raw_props_payload);
-    }
-
-    #[test]
-    fn truncated_remaining_length_decode_fails() {
+    fn mqtt5_2_1_4_truncated_remaining_length_decode_fails() {
         // Header says Remaining=10 but only 4 body bytes.
         let bytes = [0x30u8, 0x0A, 0, 1, b'x'];
         assert_eq!(
@@ -414,55 +402,54 @@ mod tests {
     }
 
     #[test]
-    fn empty_input_decode_fails() {
+    fn mqtt5_3_3_empty_input_decode_fails() {
         assert_eq!(decode_publish(&[]), Err(CodecError::HeaderTooShort));
     }
 
+    /// MQTT 3.1.1 §3.3.2, Figure 3.11: Topic Name "a/b", Packet Identifier
+    /// 10, and no property block before the payload; RETAIN in bit 0
+    /// (§3.3.1.3).
     #[test]
-    fn v311_publish_has_no_property_block() {
-        // A 3.1.1 PUBLISH omits the property-length VBI between the variable
-        // header and the payload.
+    fn mqtt311_3_3_2_the_publish_of_figure_3_11_has_no_property_block() {
         let p = PublishPacket {
-            dup: false,
-            qos: 1,
-            retain: false,
-            topic: String::from("t"),
-            packet_id: Some(9),
-            properties: Vec::new(),
-            payload: b"body".to_vec(),
+            payload: b"hi".to_vec(),
+            ..publish(false, 1, false, "a/b", Some(10))
         };
-        let v5 = encode_publish_v(&p, ProtocolVersion::V5).expect("v5");
-        let v311 = encode_publish_v(&p, ProtocolVersion::V311).expect("v311");
+        let expected = [
+            0x32, 0x09, 0x00, 0x03, b'a', b'/', b'b', 0x00, 0x0A, b'h', b'i',
+        ];
         assert_eq!(
-            v5.len(),
-            v311.len() + 1,
-            "v311 drops the property-length byte"
+            encode_publish_v(&p, ProtocolVersion::V311).expect("encode"),
+            expected
         );
-        let (_, back) = decode_publish_v(&v311, ProtocolVersion::V311).expect("decode v311");
-        assert_eq!(back.topic, "t");
-        assert_eq!(back.packet_id, Some(9));
-        assert_eq!(back.payload, b"body");
-        assert!(back.properties.is_empty());
-    }
+        assert_eq!(
+            decode_publish_v(&expected, ProtocolVersion::V311)
+                .expect("decode")
+                .1,
+            p
+        );
 
-    #[test]
-    fn v311_publish_qos0_round_trip() {
         let p = PublishPacket {
-            dup: false,
-            qos: 0,
-            retain: true,
-            topic: String::from("sensors/x"),
-            packet_id: None,
-            properties: Vec::new(),
             payload: alloc::vec![0xFF],
+            ..publish(false, 0, true, "sensors/x", None)
         };
-        let bytes = encode_publish_v(&p, ProtocolVersion::V311).expect("encode");
-        let (_, parsed) = decode_publish_v(&bytes, ProtocolVersion::V311).expect("decode");
-        assert_eq!(parsed, p);
+        let mut expected = alloc::vec![0x31, 0x0C, 0x00, 0x09];
+        expected.extend_from_slice(b"sensors/x");
+        expected.push(0xFF);
+        assert_eq!(
+            encode_publish_v(&p, ProtocolVersion::V311).expect("encode"),
+            expected
+        );
+        assert_eq!(
+            decode_publish_v(&expected, ProtocolVersion::V311)
+                .expect("decode")
+                .1,
+            p
+        );
     }
 
     #[test]
-    fn large_payload_encodes_multibyte_remaining_length() {
+    fn mqtt5_2_1_4_large_payload_encodes_multibyte_remaining_length() {
         // Spec §2.1.4 — VBI Remaining-Length, 200 → 1 byte (200 < 128
         // nein → 200 >= 128 → 2 bytes).
         let p = PublishPacket {

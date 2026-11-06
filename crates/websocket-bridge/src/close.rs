@@ -195,22 +195,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn standard_codes_round_trip() {
-        for c in [
-            CloseCode::Normal,
-            CloseCode::GoingAway,
-            CloseCode::ProtocolError,
-            CloseCode::UnsupportedData,
-            CloseCode::InvalidPayloadData,
-            CloseCode::PolicyViolation,
-            CloseCode::MessageTooBig,
-            CloseCode::MandatoryExtension,
-            CloseCode::InternalError,
-            CloseCode::ServiceRestart,
-            CloseCode::TryAgainLater,
-            CloseCode::BadGateway,
+    fn ws_7_4_1_the_status_codes_are_the_numbers_of_the_rfc_and_the_registry() {
+        // RFC 6455 §7.4.1; 1012 to 1014 from the IANA WebSocket Close Code
+        // Number Registry (§11.7).
+        for (c, number) in [
+            (CloseCode::Normal, 1000),
+            (CloseCode::GoingAway, 1001),
+            (CloseCode::ProtocolError, 1002),
+            (CloseCode::UnsupportedData, 1003),
+            (CloseCode::InvalidPayloadData, 1007),
+            (CloseCode::PolicyViolation, 1008),
+            (CloseCode::MessageTooBig, 1009),
+            (CloseCode::MandatoryExtension, 1010),
+            (CloseCode::InternalError, 1011),
+            (CloseCode::ServiceRestart, 1012),
+            (CloseCode::TryAgainLater, 1013),
+            (CloseCode::BadGateway, 1014),
         ] {
-            assert_eq!(CloseCode::from_u16(c.to_u16()).unwrap(), c);
+            assert_eq!(c.to_u16(), number);
+            assert_eq!(CloseCode::from_u16(number).unwrap(), c);
         }
     }
 
@@ -240,14 +243,13 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_payload_no_reason() {
+    fn ws_5_5_1_a_close_body_without_reason_is_the_code_alone() {
         let p = ClosePayload {
             code: CloseCode::GoingAway,
             reason: String::new(),
         };
-        let buf = encode_close_payload(&p);
-        let back = decode_close_payload(&buf).unwrap();
-        assert_eq!(back, p);
+        assert_eq!(encode_close_payload(&p), [0x03, 0xe9]); // 1001 BE
+        assert_eq!(decode_close_payload(&[0x03, 0xe9]).unwrap(), p);
     }
 
     #[test]
@@ -274,7 +276,7 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
-    fn classify_status_code_recognizes_protocol_range() {
+    fn ws_7_4_classify_status_code_recognizes_protocol_range() {
         assert_eq!(
             classify_status_code(1000),
             StatusCodeRange::ProtocolReserved
@@ -286,13 +288,13 @@ mod tests {
     }
 
     #[test]
-    fn classify_status_code_recognizes_library_range() {
+    fn ws_7_4_classify_status_code_recognizes_library_range() {
         assert_eq!(classify_status_code(3000), StatusCodeRange::LibraryDefined);
         assert_eq!(classify_status_code(3999), StatusCodeRange::LibraryDefined);
     }
 
     #[test]
-    fn classify_status_code_recognizes_app_range() {
+    fn ws_7_4_classify_status_code_recognizes_app_range() {
         assert_eq!(
             classify_status_code(4000),
             StatusCodeRange::ApplicationDefined
@@ -304,18 +306,18 @@ mod tests {
     }
 
     #[test]
-    fn classify_status_code_recognizes_invalid_below_1000() {
+    fn ws_7_4_classify_status_code_recognizes_invalid_below_1000() {
         assert_eq!(classify_status_code(0), StatusCodeRange::Invalid);
         assert_eq!(classify_status_code(999), StatusCodeRange::Invalid);
     }
 
     #[test]
-    fn classify_status_code_recognizes_out_of_range_above_5000() {
+    fn ws_7_4_classify_status_code_recognizes_out_of_range_above_5000() {
         assert_eq!(classify_status_code(5000), StatusCodeRange::OutOfRange);
     }
 
     #[test]
-    fn is_forbidden_on_wire_covers_all_four() {
+    fn ws_7_4_is_forbidden_on_wire_covers_all_four() {
         assert!(is_forbidden_on_wire(1004));
         assert!(is_forbidden_on_wire(1005));
         assert!(is_forbidden_on_wire(1006));
@@ -324,14 +326,14 @@ mod tests {
     }
 
     #[test]
-    fn validate_wire_status_code_accepts_normal() {
+    fn ws_7_4_validate_wire_status_code_accepts_normal() {
         assert!(validate_wire_status_code(1000).is_ok());
         assert!(validate_wire_status_code(3000).is_ok());
         assert!(validate_wire_status_code(4500).is_ok());
     }
 
     #[test]
-    fn validate_wire_status_code_rejects_forbidden() {
+    fn ws_7_4_validate_wire_status_code_rejects_forbidden() {
         assert!(validate_wire_status_code(1004).is_err());
         assert!(validate_wire_status_code(1005).is_err());
         assert!(validate_wire_status_code(1006).is_err());
@@ -339,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_wire_status_code_rejects_out_of_range() {
+    fn ws_7_4_validate_wire_status_code_rejects_out_of_range() {
         assert!(validate_wire_status_code(0).is_err());
         assert!(validate_wire_status_code(999).is_err());
         assert!(validate_wire_status_code(5000).is_err());
@@ -350,21 +352,21 @@ mod tests {
     // ---------------------------------------------------------------
 
     #[test]
-    fn handshake_starts_in_open_state() {
+    fn ws_7_1_handshake_starts_in_open_state() {
         let h = CloseHandshake::new();
         assert_eq!(h.state(), CloseState::Open);
         assert!(!h.is_closed());
     }
 
     #[test]
-    fn initiator_send_close_transitions_to_closing() {
+    fn ws_7_1_initiator_send_close_transitions_to_closing() {
         let mut h = CloseHandshake::new();
         h.initiator_send_close(CloseCode::Normal).expect("ok");
         assert_eq!(h.state(), CloseState::ClosingInitiator);
     }
 
     #[test]
-    fn initiator_recv_close_response_transitions_to_closed() {
+    fn ws_7_1_initiator_recv_close_response_transitions_to_closed() {
         let mut h = CloseHandshake::new();
         h.initiator_send_close(CloseCode::Normal).expect("ok");
         h.recv_close_response(CloseCode::Normal).expect("ok");
@@ -373,14 +375,14 @@ mod tests {
     }
 
     #[test]
-    fn responder_recv_close_transitions_to_closing_responder() {
+    fn ws_7_1_responder_recv_close_transitions_to_closing_responder() {
         let mut h = CloseHandshake::new();
         h.responder_recv_close(CloseCode::Normal).expect("ok");
         assert_eq!(h.state(), CloseState::ClosingResponder);
     }
 
     #[test]
-    fn responder_send_close_response_completes_normally() {
+    fn ws_7_1_responder_send_close_response_completes_normally() {
         let mut h = CloseHandshake::new();
         h.responder_recv_close(CloseCode::GoingAway).expect("ok");
         h.responder_send_close_response().expect("ok");
@@ -388,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn fail_marks_abnormal_closure() {
+    fn ws_7_2_fail_marks_abnormal_closure() {
         let mut h = CloseHandshake::new();
         h.fail("transport error");
         assert_eq!(h.state(), CloseState::Failed);
@@ -397,14 +399,14 @@ mod tests {
     }
 
     #[test]
-    fn second_close_send_in_closing_is_rejected() {
+    fn ws_7_1_second_close_send_in_closing_is_rejected() {
         let mut h = CloseHandshake::new();
         h.initiator_send_close(CloseCode::Normal).expect("ok");
         assert!(h.initiator_send_close(CloseCode::Normal).is_err());
     }
 
     #[test]
-    fn recv_close_in_open_state_is_responder_path() {
+    fn ws_7_1_recv_close_in_open_state_is_responder_path() {
         let mut h = CloseHandshake::new();
         // No initiator_send_close happened first
         assert!(h.recv_close_response(CloseCode::Normal).is_err());

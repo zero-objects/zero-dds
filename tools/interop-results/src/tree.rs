@@ -70,7 +70,7 @@ pub fn warnings_path(case: &str, system: &str) -> String {
 }
 
 fn unhex(hex: &str) -> Result<Vec<u8>, String> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(format!("`{hex}` has an odd number of hex digits"));
     }
     (0..hex.len())

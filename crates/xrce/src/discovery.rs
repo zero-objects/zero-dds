@@ -143,7 +143,7 @@ mod tests {
     /// domain-0 SPDP socket share 7400. An ephemeral port stands in for 7400
     /// so the test meets no DDS participant of the host.
     #[test]
-    fn the_discovery_port_is_bound_shared() {
+    fn xrce_11_2_4_the_discovery_port_is_bound_shared() {
         let first = bind_shared_udp(0).unwrap();
         let port = first.local_addr().unwrap().port();
         let second = bind_shared_udp(port).unwrap();
@@ -171,13 +171,13 @@ mod tests {
     }
 
     #[test]
-    fn discovery_constants_match_spec() {
+    fn xrce_11_2_4_discovery_constants_match_spec() {
         assert_eq!(XRCE_DISCOVERY_GROUP, Ipv4Addr::new(239, 255, 0, 2));
         assert_eq!(XRCE_DISCOVERY_PORT, 7400);
     }
 
     #[test]
-    fn loopback_send_recv_roundtrip() {
+    fn xrce_8_4_4_loopback_send_recv_roundtrip() {
         // Both endpoints bound to loopback — no real multicast,
         // only test the XRCE wire layer.
         let listener = MulticastDiscovery::start_on("127.0.0.1:0".parse().unwrap()).unwrap();

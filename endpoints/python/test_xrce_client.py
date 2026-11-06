@@ -207,7 +207,7 @@ def test_wire_fixtures():
 
     # A second CREATE, appended to the same session: OBJK_TOPIC's own
     # representation carries its participant's ObjectId (commit
-    # 31c62df2a63, `xrce: OBJK_TOPIC_Representation carries its
+    # bd30deaef0b, `xrce: OBJK_TOPIC_Representation carries its
     # participant's ObjectId`), the same trailing field OBJK_PUBLISHER's
     # representation carries above -- xrce_client_create_topic.bin is a
     # sixth fixture generated the same way (endpoints/golden-gen), not a

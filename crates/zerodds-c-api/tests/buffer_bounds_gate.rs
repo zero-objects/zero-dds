@@ -54,7 +54,7 @@ const BOUNDARY_TESTS: &[(&str, &str)] = &[
     ("zerodds_waitset_wait", "waitset_wait_reports_the_total"),
     (
         "zerodds_dw_get_key_value",
-        "dw_get_key_value_reports_the_needed_length",
+        "capi_2_6_dw_get_key_value_reports_the_needed_length",
     ),
     (
         "zerodds_dr_get_key_value",

@@ -135,7 +135,7 @@ failures.
 
 ## Coding Standards
 
-- **MSRV** — Rust 1.88.0, Edition 2024 (`rust-toolchain.toml` pins it).
+- **MSRV** — Rust 1.97.1, Edition 2024 (`rust-toolchain.toml` pins it).
 - **`unsafe`** — every `unsafe` block needs a `// SAFETY:` comment that
   states the invariants you rely on. `dds-lint` enforces this.
 - **Panics** — production code should not panic. Use `Result` everywhere
@@ -172,17 +172,14 @@ marker and left untouched.
 
 Non-trivial design decisions go under `docs/adr/` as numbered ADRs
 following the [Nygard format](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions).
-Larger technical proposals live as RFCs under `internal/rfcs/`.
 
 ## Documentation Build
 
 ```bash
 make -C documentation pdfs       # all stations + vendor specs as PDF
-make -C documentation api        # API reference per language
 ```
 
-Prerequisites: `tectonic` + `pandoc` (PDFs); `doxygen`, `javadoc`, etc.
-(API reference) — see `documentation/api/README.md`.
+Prerequisites: `tectonic` + `pandoc`.
 
 ## Project Layout
 
@@ -195,7 +192,6 @@ Prerequisites: `tectonic` + `pandoc` (PDFs); `doxygen`, `javadoc`, etc.
 | `examples/` | Tutorials and demos |
 | `packaging/` | Linux/macOS/Windows native packages |
 | `tests/` | Workspace-level cross-crate and interop tests |
-| `xtests/` | Workspace-level integration harnesses |
 | `.github/workflows/` | CI pipelines |
 
 ## Getting Help

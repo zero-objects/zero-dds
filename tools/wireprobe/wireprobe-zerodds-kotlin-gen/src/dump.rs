@@ -359,10 +359,10 @@ fn function(ast: &Ast, id: Id<TypeNode>, union_label: UnionLabelMatch) -> Result
             let members = ast.all_members_of(id);
             let mut any_optional = false;
             for member in &members {
-                if let Ok(member) = ast.member(*member) {
-                    if member.facets.is_optional() {
-                        any_optional = true;
-                    }
+                if let Ok(member) = ast.member(*member)
+                    && member.facets.is_optional()
+                {
+                    any_optional = true;
                 }
             }
             if any_optional && !members.is_empty() {

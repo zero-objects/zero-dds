@@ -39,7 +39,7 @@ fn inconsistent<T: core::fmt::Debug>(r: Result<T, DdsError>) -> bool {
 /// §2.2.3.18: "depth <= max_samples_per_instance"; §2.2.3.19: "max_samples
 /// >= max_samples_per_instance".
 #[test]
-fn an_inconsistent_history_or_resource_limit_refuses_the_entity() {
+fn dcps_2_2_2_1_3_an_inconsistent_history_or_resource_limit_refuses_the_entity() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let deep = TopicQos {
@@ -76,7 +76,7 @@ fn an_inconsistent_history_or_resource_limit_refuses_the_entity() {
 /// §2.2.3.12: "period >= minimum_separation" for DEADLINE and
 /// TIME_BASED_FILTER of a DataReader.
 #[test]
-fn a_time_based_filter_longer_than_the_deadline_refuses_the_reader() {
+fn dcps_2_2_3_7_a_time_based_filter_longer_than_the_deadline_refuses_the_reader() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -100,7 +100,7 @@ fn a_time_based_filter_longer_than_the_deadline_refuses_the_reader() {
 /// §2.2.3: an inconsistent `set_qos` "fails and the previous values are
 /// retained".
 #[test]
-fn an_inconsistent_set_qos_keeps_the_previous_values() {
+fn dcps_2_2_2_1_1_1_an_inconsistent_set_qos_keeps_the_previous_values() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic = p

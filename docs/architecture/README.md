@@ -29,7 +29,6 @@ ZeroDDS is developed as an **internal core project** (Apache 2.0-licensed, optio
 2. `02_architecture.md`
 3. `04_safety_by_architecture.md` — safe-subset contract (primary document)
 4. `03_profiles_and_platforms.md` — safe-profile details
-5. `06_roadmap.md` §8 — Phase-5 audit path
 
 ### For product engineers (per sub-system)
 1. `02_architecture.md` — identify your own crate responsibility
@@ -40,7 +39,6 @@ ZeroDDS is developed as an **internal core project** (Apache 2.0-licensed, optio
 ### For platform/DevOps
 1. `03_profiles_and_platforms.md` — build matrix
 2. `05_observability_and_tooling.md` — monitoring design
-3. `06_roadmap.md` — release plan
 
 ## Document overview
 
@@ -52,7 +50,6 @@ ZeroDDS is developed as an **internal core project** (Apache 2.0-licensed, optio
 | `03_profiles_and_platforms.md` | Profiles and platform matrix | Per release |
 | `04_safety_by_architecture.md` | Safety contract | Per phase or on rule changes |
 | `05_observability_and_tooling.md` | Observability and tooling | Quarterly |
-| `06_roadmap.md` | Phases and milestones | Monthly |
 | `07_risks_and_strategy.md` | Risks and strategic options | Monthly |
 | `08_heterogeneous_security.md` | Per-peer/per-interface security for systems-of-systems (WP 4.9) | Per release |
 | `09_delegation.md` | Gateway/bridge delegation for vehicle mesh + edge peers without their own cert (WP 4H-j) | Per release |
@@ -70,7 +67,6 @@ All architecture documents live in the main repository under `docs/architecture/
 - Requirements tracker (Polarion, DOORS, or GitHub Issues with `REQ-...` labels)
 - ADR directory under `docs/adr/` for Architecture Decision Records
 - Safety-waiver register under `internal/safety-waivers/`
-- Design RFCs under `internal/rfcs/` for larger technical proposals
 - Security advisories under `internal/security/advisories/`
 
 ## Conventions

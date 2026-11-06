@@ -28,6 +28,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use zerodds_ast::Ast;
 use zerodds_ast_layout::key::{Encoding, Endianness, LayoutKey};
@@ -157,7 +158,7 @@ fn the_idl_to_java_mapping_is_what_it_was() {
 
 /// §9.1.1.
 #[test]
-fn an_aggregate_is_a_final_class_with_private_state_and_bean_accessors() {
+fn javapsm_9_1_1_an_aggregate_is_a_final_class_with_private_state_and_bean_accessors() {
     let text = psm();
     for expected in [
         "public static final class Point {",
@@ -184,7 +185,7 @@ fn an_aggregate_is_a_final_class_with_private_state_and_bean_accessors() {
 
 /// §9.1.2.
 #[test]
-fn an_unbounded_sequence_is_a_collection_and_a_bounded_one_an_array() {
+fn javapsm_9_1_2_an_unbounded_sequence_is_a_collection_and_a_bounded_one_an_array() {
     let text = psm();
     for expected in [
         "private java.util.Collection<java.lang.Integer> samples;",
@@ -205,7 +206,7 @@ fn an_unbounded_sequence_is_a_collection_and_a_bounded_one_an_array() {
 }
 
 #[test]
-fn a_union_keeps_its_discriminator_as_the_property_discriminator() {
+fn javapsm_9_1_1_a_union_keeps_its_discriminator_as_the_property_discriminator() {
     let text = psm();
     assert!(text.contains("private int _d;"), "the state is private");
     assert!(text.contains("public int getDiscriminator() {"));
@@ -215,7 +216,7 @@ fn a_union_keeps_its_discriminator_as_the_property_discriminator() {
 }
 
 #[test]
-fn the_codec_reads_and_writes_through_the_accessors() {
+fn javapsm_9_1_1_the_codec_reads_and_writes_through_the_accessors() {
     let text = psm();
     for expected in [
         "zd_enc_p_long(w, v.getX());",
@@ -380,7 +381,7 @@ fn rpc_compiles(text: &str, tag: &str) -> Result<(), String> {
 /// encapsulated classes of Clause 9, and the codec reaches them through
 /// their accessors.
 #[test]
-fn an_interface_is_generated_under_the_psm_mapping() {
+fn rpc_7_11_2_an_interface_is_generated_under_the_psm_mapping() {
     for service in [ServiceMapping::Basic, ServiceMapping::Enhanced] {
         let psm = generated_service(RICH, JavaMapping::Psm, service)
             .expect("the Psm mapping takes an interface");
@@ -426,7 +427,7 @@ fn an_interface_is_generated_under_the_psm_mapping() {
 /// The Clause 9 interface is Java: it compiles with `-Xlint:all -Werror`
 /// against the RPC runtime, Basic and Enhanced.
 #[test]
-fn an_interface_under_the_psm_mapping_compiles() {
+fn javapsm_7_2_6_an_interface_under_the_psm_mapping_compiles() {
     if !javac_available() {
         eprintln!("SKIPPED: `javac` is not usable.");
         return;
@@ -444,7 +445,7 @@ fn an_interface_under_the_psm_mapping_compiles() {
 /// `header` member is the runtime's class and is reached through its
 /// accessors.
 #[test]
-fn a_type_pair_under_the_psm_mapping_compiles() {
+fn rpc_7_11_2_a_type_pair_under_the_psm_mapping_compiles() {
     let idl = "
 module dds {
   typedef octet GuidPrefix_t[12];
@@ -512,10 +513,15 @@ fn the_psm_mapping_changes_nothing_but_the_shape() {
 // -- the compiler --------------------------------------------------------
 
 fn javac_available() -> bool {
-    Command::new("javac")
-        .arg("-version")
-        .output()
-        .is_ok_and(|output| output.status.success())
+    // A look at PATH and not a start of the tool: a JVM, .NET or BEAM
+    // start cost seconds of a test's 25 s with eight compilers side by side
+    // (pipeline 8678); a tool that cannot start fails the compile that follows.
+    on_path("javac")
+}
+
+fn on_path(tool: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
 }
 
 /// The compiled wire runtime, built once: `Sequences` is part of what the
@@ -532,6 +538,9 @@ static RUNTIME: LazyLock<Result<PathBuf, String>> = LazyLock::new(|| {
         .filter(|path| path.extension().is_some_and(|ext| ext == "java"))
         .collect();
     sources.sort();
+    if let Some(classes) = corpus_harness::precompiled_java_runtime(&sources) {
+        return Ok(classes);
+    }
     let output = Command::new("javac")
         .args(["-encoding", "UTF-8"])
         .arg("-d")
@@ -568,30 +577,112 @@ fn compiles(runtime: &Path, text: &str, tag: &str) -> Result<(), String> {
     let (types, codec) = halves(text);
     std::fs::write(dir.join("ZdTypes.java"), types).map_err(|error| error.to_string())?;
     std::fs::write(dir.join("ZdCodec.java"), codec).map_err(|error| error.to_string())?;
+    let result = javac_without_a_warning(
+        runtime,
+        &classes,
+        &[dir.join("ZdTypes.java"), dir.join("ZdCodec.java")],
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    result
+}
+
+/// `javac` over `files` into `classes`, with the warnings generics bring
+/// switched on; an error or any of those warnings is a failure.
+fn javac_without_a_warning(
+    runtime: &Path,
+    classes: &Path,
+    files: &[PathBuf],
+) -> Result<(), String> {
     let output = Command::new("javac")
         .args(["-encoding", "UTF-8", "-Xlint:unchecked,rawtypes,cast"])
         .arg("-cp")
         .arg(runtime)
         .arg("-d")
-        .arg(&classes)
-        .arg(dir.join("ZdTypes.java"))
-        .arg(dir.join("ZdCodec.java"))
+        .arg(classes)
+        .args(files)
         .output()
         .map_err(|error| error.to_string())?;
-    let result = if output.status.success() && output.stderr.is_empty() {
+    // Everything on standard error is a warning, except the notice the JVM
+    // launcher prints for JAVA_TOOL_OPTIONS, which the merge jobs set
+    // (ci/merge-jobs.yml): "Picked up JAVA_TOOL_OPTIONS: ...".
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let warnings: Vec<&str> = stderr
+        .lines()
+        .filter(|line| !line.starts_with("Picked up JAVA_TOOL_OPTIONS:"))
+        .collect();
+    if output.status.success() && warnings.is_empty() {
         Ok(())
     } else {
-        Err(String::from_utf8_lossy(&output.stderr).into_owned())
-    };
+        Err(stderr.into_owned())
+    }
+}
+
+/// A counter, so two batches of one test process do not share a directory.
+static SERIAL: AtomicU32 = AtomicU32::new(0);
+
+/// The cases of one share through one `javac`, each case's two units in a
+/// directory and a package of their own (`zd_case_<n>`; the generated text
+/// declares no package, and every case declares a public `ZdTypes` and
+/// `ZdCodec`): one JVM for the share instead of one per case. A `javac` per
+/// case was most of the 7.8 s a share of nine cases took on the CI runner host (pipeline
+/// 8967, job 229628). When the batch fails or warns, every case is compiled
+/// alone ([`compiles`]), so that a failure names its case in the compiler's
+/// words. The cases that did not compile, with `javac`'s message.
+fn compiles_together(runtime: &Path, cases: &[(String, String)]) -> Vec<(String, String)> {
+    if cases.is_empty() {
+        return Vec::new();
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "zd-java-psm-together-{}-{}",
+        std::process::id(),
+        SERIAL.fetch_add(1, Ordering::Relaxed)
+    ));
+    let started = std::time::Instant::now();
+    let together = (|| {
+        let classes = dir.join("classes");
+        std::fs::create_dir_all(&classes).map_err(|error| error.to_string())?;
+        let mut files = Vec::new();
+        for (index, (_, text)) in cases.iter().enumerate() {
+            let package = format!("zd_case_{index}");
+            let case = dir.join(&package);
+            std::fs::create_dir_all(&case).map_err(|error| error.to_string())?;
+            let (types, codec) = halves(text);
+            for (class, unit) in [("ZdTypes", types), ("ZdCodec", codec)] {
+                let file = case.join(format!("{class}.java"));
+                std::fs::write(&file, format!("package {package};\n\n{unit}"))
+                    .map_err(|error| error.to_string())?;
+                files.push(file);
+            }
+        }
+        javac_without_a_warning(runtime, &classes, &files)
+    })();
     let _ = std::fs::remove_dir_all(&dir);
-    result
+    // Said on the channel a passing test does not use: how long the one
+    // `javac` took, and whether the cases go on alone.
+    eprintln!(
+        "JAVA_PSM_TOGETHER cases={} ok={} seconds={:.1}",
+        cases.len(),
+        together.is_ok(),
+        started.elapsed().as_secs_f64()
+    );
+    if together.is_ok() {
+        return Vec::new();
+    }
+    cases
+        .iter()
+        .filter_map(|(name, text)| {
+            compiles(runtime, text, name)
+                .err()
+                .map(|why| (name.clone(), why))
+        })
+        .collect()
 }
 
 /// The Clause 9 types and their codec are Java: `javac` takes them with
 /// no error and no warning of the kinds generics bring (unchecked, raw
 /// type, redundant cast).
 #[test]
-fn the_psm_types_and_codec_compile_without_a_warning() {
+fn javapsm_9_1_1_the_psm_types_and_codec_compile_without_a_warning() {
     if !javac_available() {
         eprintln!("SKIPPED: `javac` is not usable.");
         return;
@@ -599,6 +690,26 @@ fn the_psm_types_and_codec_compile_without_a_warning() {
     let runtime = RUNTIME.clone().expect("runtime/java compiles");
     compiles(&runtime, &psm(), "unit").unwrap_or_else(|why| panic!("{why}"));
     compiles(&runtime, &omg(), "unit-omg").unwrap_or_else(|why| panic!("{why}"));
+    // The batch the corpus goes through: both cases compile together, and
+    // a case with a raw type among them is named alone, by its warning.
+    let cases = [("psm".to_string(), psm()), ("omg".to_string(), omg())];
+    let failures = compiles_together(&runtime, &cases);
+    assert!(failures.is_empty(), "{failures:#?}");
+    let raw = psm().replacen(
+        "public class ZdCodec {",
+        "public class ZdCodec {\n    static java.util.List raw = new java.util.ArrayList();",
+        1,
+    );
+    let failures = compiles_together(&runtime, &[cases[0].clone(), ("raw".to_string(), raw)]);
+    assert_eq!(
+        failures
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["raw"],
+        "{failures:#?}"
+    );
+    assert!(failures[0].1.contains("[rawtypes]"), "{failures:#?}");
 }
 
 /// The cases the Java column itself refuses, as `java_corpus_compiles`
@@ -609,20 +720,19 @@ const REFUSED: &[&str] = &["resolve-module-named-as-type"];
 /// anything. 416 render today.
 const MUST_RENDER: usize = 350;
 
-/// The whole corpus under the Clause 9 mapping, through `javac`.
-///
-/// `#[ignore]`, as `java_corpus_compiles` is: one compiler start per case.
-#[test]
-#[ignore = "one `javac` start per corpus case; run with --include-ignored"]
-fn every_corpus_case_compiles_under_the_psm_mapping() {
+/// The whole corpus under the Clause 9 mapping, through `javac`: the cases
+/// of `share` (of `shares`) compile, in one `javac` ([`compiles_together`]),
+/// and every case renders.
+fn every_corpus_case_compiles_under_the_psm_mapping(share: usize, shares: usize) {
     if !javac_available() {
         eprintln!("SKIPPED: `javac` is not usable.");
         return;
     }
     let runtime = RUNTIME.clone().expect("runtime/java compiles");
     let mut failures = Vec::new();
-    let mut checked = 0_usize;
-    for (name, path) in corpus_harness::corpus() {
+    let mut selected = Vec::new();
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus_harness::corpus().into_iter().enumerate() {
         if REFUSED.contains(&name.as_str()) {
             continue;
         }
@@ -637,10 +747,14 @@ fn every_corpus_case_compiles_under_the_psm_mapping() {
                 continue;
             }
         };
-        checked += 1;
-        if let Err(why) = compiles(&runtime, &text, &name) {
-            failures.push(format!("{name}: {why}"));
+        rendered += 1;
+        if position % shares == share {
+            selected.push((name, text));
         }
+    }
+    let checked = selected.len();
+    for (name, why) in compiles_together(&runtime, &selected) {
+        failures.push(format!("{name}: {why}"));
     }
     assert!(
         failures.is_empty(),
@@ -648,8 +762,8 @@ fn every_corpus_case_compiles_under_the_psm_mapping() {
         failures.len()
     );
     assert!(
-        checked >= MUST_RENDER,
-        "only {checked} corpus cases reached `javac`"
+        rendered >= MUST_RENDER,
+        "only {rendered} corpus cases reached `javac`"
     );
 }
 
@@ -682,5 +796,111 @@ module M {
             text.contains("public static final byte SMALL = (byte) 16;"),
             "{mapping:?}: {text}"
         );
+    }
+}
+
+/// Every corpus case compiles under the Clause 9 mapping through `javac`.
+///
+/// The corpus in 16 shares of 26 or 27 cases, each share one `javac`
+/// ([`compiles_together`]) within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares together
+/// are every case. `#[ignore]`: the crate tier has no toolchain for it; the
+/// weekly `integration-codegen-java-psm-d` job runs them with the toolchain,
+/// four at a time.
+mod every_corpus_case_compiles_under_the_psm_mapping_shares {
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_01() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(0, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_02() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(1, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_03() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(2, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_04() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(3, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_05() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(4, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_06() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(5, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_07() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(6, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_08() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(7, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_09() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(8, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_10() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(9, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_11() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(10, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_12() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(11, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_13() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(12, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_14() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(13, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_15() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(14, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus under the PSM mapping through one javac; runs in integration-codegen-java-psm-d"]
+    fn share_16() {
+        super::every_corpus_case_compiles_under_the_psm_mapping(15, 16);
     }
 }

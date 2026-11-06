@@ -255,11 +255,12 @@ pub enum EvalError {
         /// The expression node performing the operation.
         at: NodeId,
     },
-    /// The arithmetic would have to run in `long double`: the constant
-    /// is one, an operand is one, or a literal is too large for `double`
-    /// and so is one (IDL 4.2 §7.4.1.4.2). This build has no IEEE
-    /// double-extended or binary128 arithmetic to run it in, and doing it
-    /// in `double` instead would round where the clause says not to.
+    /// `double` arithmetic met a `long double`: an operand of that type or
+    /// a literal too large for a `double` (IDL 4.2 §7.4.1.4.2). The
+    /// constant evaluation routes such an expression to binary128 before
+    /// it gets here; a caller that asks for the `double` value of one
+    /// directly is told so rather than handed a value rounded where the
+    /// clause says not to.
     LongDouble {
         /// The expression node that needs it.
         at: NodeId,
@@ -290,7 +291,7 @@ impl fmt::Display for EvalError {
             ),
             Self::LongDouble { at } => write!(
                 f,
-                "expression {at:?} needs long double arithmetic, which this build does not have"
+                "expression {at:?} needs long double arithmetic and was asked for a double"
             ),
         }
     }

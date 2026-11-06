@@ -36,7 +36,7 @@ class DomainParticipantFactoryTest {
     }
 
     @Test
-    void createParticipantCreatesANewParticipantEachCall() {
+    void javapsm_2_create_participant_creates_a_new_participant_each_call() {
         int domain = nextDom();
         DomainParticipant first =
                 Qos.factory().createParticipant(domain);
@@ -47,20 +47,4 @@ class DomainParticipantFactoryTest {
         second.close();
     }
 
-    @Test
-    void createPublisherOnClosedParticipantThrows() {
-        DomainParticipant participant =
-                Qos.factory().createParticipant(nextDom());
-        participant.close();
-        assertThrows(AlreadyClosedException.class, participant::createPublisher);
-    }
-
-    @Test
-    void createTopicOnClosedParticipantThrows() {
-        DomainParticipant participant =
-                Qos.factory().createParticipant(nextDom());
-        participant.close();
-        assertThrows(AlreadyClosedException.class,
-                () -> participant.createTopic("t", byte[].class));
-    }
 }

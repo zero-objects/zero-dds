@@ -143,7 +143,7 @@ fn compiles(cxx: &str, header: &str, tag: &str) -> Result<(), String> {
 }
 
 #[test]
-fn the_enhanced_header_compiles() {
+fn rpc_7_11_1_2_the_enhanced_header_compiles() {
     let Some(cxx) = compiler() else {
         eprintln!("SKIPPED: no C++ compiler on the path.");
         return;
@@ -161,7 +161,7 @@ fn the_enhanced_header_compiles() {
 /// writes, so the member ids and the length codes are the ones the model
 /// names: 4 for a member written with a `NEXTINT`, 2 for a 32-bit member.
 #[test]
-fn the_codec_writes_the_member_ids_and_length_codes_of_the_clause() {
+fn rpc_7_5_1_2_1_1_the_codec_writes_the_member_ids_and_length_codes_of_the_clause() {
     use zerodds_lang_rules::adapter::interface::member_id;
     let header = generate(ENHANCED, ServiceMapping::Enhanced);
     // The `Request` holds `add` with a NEXTINT; `remoteEx` is a 32-bit
@@ -200,7 +200,7 @@ fn the_codec_writes_the_member_ids_and_length_codes_of_the_clause() {
 }
 
 #[test]
-fn the_function_call_classes_are_written_over_the_choice_structures() {
+fn rpc_7_11_1_2_the_function_call_classes_are_written_over_the_choice_structures() {
     let header = generate(ENHANCED, ServiceMapping::Enhanced);
     assert!(header.contains("class CalcClient"), "the client");
     assert!(header.contains("class CalcService"), "the service");
@@ -227,7 +227,7 @@ fn the_function_call_classes_are_written_over_the_choice_structures() {
 /// answer them on the derived topics, and the structures of a base in
 /// another module are reached through that module.
 #[test]
-fn a_derived_interface_answers_the_inherited_operation_itself() {
+fn rpc_7_11_1_2_a_derived_interface_answers_the_inherited_operation_itself() {
     let header = generate(ENHANCED, ServiceMapping::Enhanced);
     assert!(header.contains("class Derived2Client"));
     assert!(

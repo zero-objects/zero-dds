@@ -696,4 +696,84 @@ defmodule ZeroddsWire.WriterReaderTest do
     {text, _r} = Reader.read_wstring_utf8_octets(Reader.new(bytes, :le), :"octets/terminated/2")
     assert text == "äöü ሴ Z"
   end
+
+  # -- the operations no corpus case reaches -------------------------------
+  #
+  # The five the generated code reaches only in a dialect or with a member
+  # no corpus case carries: write_pid_extended, write_union_overlay,
+  # reader_clear_discard, reader_save and reader_restore
+  # (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+  # vectors, each against an oracle outside this code.
+
+  test "write_pid_extended writes Cyclone's recorded parameter" do
+    # The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+    # recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv).
+    w = Writer.new(:le, 8)
+    {header, w} = Writer.write_pid_extended(w, 0, :member, false)
+    w = Writer.write_i32(w, -1_234_567)
+    w = Writer.finish_pid(w, header)
+
+    assert Writer.finish(w) ==
+             <<0x01, 0x7F, 0x08, 0x00, 0, 0, 0, 0, 0x04, 0, 0, 0, 0x79, 0x29, 0xED, 0xFF>>
+  end
+
+  test "write_union_overlay writes the storage at the branch's width" do
+    # A `short` read through a four-octet and a one-octet `default:` branch:
+    # Cyclone DDS 11.0.1 writes the union's storage, the member's octets
+    # with zeros above (`combined-everything`, crates/wire-codec/src/encode.rs
+    # `write_selected_branch`).
+    pattern = ZeroddsWire.bit_pattern_int(-2, 2)
+
+    bytes =
+      Writer.new(:le, 4)
+      |> Writer.write_union_overlay(pattern, 4)
+      |> Writer.write_union_overlay(pattern, 1)
+      |> Writer.finish()
+
+    assert bytes == <<0xFE, 0xFF, 0, 0, 0xFE>>
+  end
+
+  test "reader_clear_discard takes back a discard and nothing else" do
+    # XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+    # Table 9's value, so the call site asks for DISCARD and takes it back.
+    # Any other refusal is not a narrowing and stays.
+    discarded = Reader.reader_refuse(Reader.new(<<1, 2, 3, 4>>, :le, 4), :discarded)
+    {true, discarded} = Reader.reader_clear_discard(discarded)
+    assert Reader.reader_status(discarded) == :ok
+    refused = Reader.reader_refuse(Reader.new(<<1, 2, 3, 4>>, :le, 4), :out_of_range)
+    {false, refused} = Reader.reader_clear_discard(refused)
+    assert Reader.reader_status(refused) == :out_of_range
+  end
+
+  test "reader_save and reader_restore count a delimited map and read it again" do
+    # XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+    # DHEADER and the pairs, without a count. The reader counts the pairs,
+    # goes back and reads them again; a refusal made while counting goes
+    # back with the cursor.
+    r = Reader.new(<<0x10, 0, 0, 0, 1, 0, 0, 0, 0x0A, 0, 0, 0, 2, 0, 0, 0, 0x14, 0, 0, 0>>, :le, 4)
+    {extent, r} = Reader.read_dheader(r)
+    end_at = Reader.reader_position(r) + extent
+    mark = Reader.reader_save(r)
+
+    count = fn count, reader, pairs ->
+      if Reader.reader_position(reader) < end_at and Reader.reader_status(reader) == :ok do
+        {_, reader} = Reader.read_i32(reader)
+        {_, reader} = Reader.read_i32(reader)
+        count.(count, reader, pairs + 1)
+      else
+        {reader, pairs}
+      end
+    end
+
+    {r, pairs} = count.(count, r, 0)
+    r = r |> Reader.reader_refuse(:out_of_range) |> Reader.reader_restore(mark)
+    assert pairs == 2
+    {k1, r} = Reader.read_i32(r)
+    {v1, r} = Reader.read_i32(r)
+    {k2, r} = Reader.read_i32(r)
+    {v2, r} = Reader.read_i32(r)
+    assert [k1, v1, k2, v2] == [1, 10, 2, 20]
+    assert Reader.reader_position(r) == 20
+    assert Reader.reader_status(r) == :ok
+  end
 end

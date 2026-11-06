@@ -12,8 +12,8 @@ The mechanism this column shares with the other twenty — the two walks, the fr
 
 **Repo:** `crates/lang-cst/src/nim/`, `crates/lang-render/src/nim.rs`
 
-**Tests:** `crates/lang-render/src/nim.rs::tests` (17 tests), among them `an_object_indents_its_fields_by_two_under_the_type_section`, `an_object_with_no_fields_is_a_bare_object`, `an_enumeration_writes_one_field_per_line_with_no_export_marker`, `an_empty_section_writes_nothing_because_the_keyword_alone_is_a_syntax_error`, `a_const_carries_its_declared_type_before_the_value`;
-across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/nim.rs::tests` (17 tests), among them `xtypes_7_5_1_an_object_indents_its_fields_by_two_under_the_type_section`, `xtypes_7_5_1_an_object_with_no_fields_is_a_bare_object`, `xtypes_7_5_1_an_enumeration_writes_one_field_per_line_with_no_export_marker`, `xtypes_7_5_1_an_empty_section_writes_nothing_because_the_keyword_alone_is_a_syntax_error`, `xtypes_7_5_1_a_const_carries_its_declared_type_before_the_value`;
+across all renderers `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/rule/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_nim.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/nim`, endpoint SDK `endpoints/nim`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,8 +78,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::every_idl_primitive_reaches_a_nim_type`,
-`crates/lang-rules/tests/nim_end_to_end.rs::no_generated_type_has_an_implementation_defined_width`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_2_every_idl_primitive_reaches_a_nim_type`,
+`crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_2_no_generated_type_has_an_implementation_defined_width`
 
 **Status:** done
 
@@ -89,8 +89,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::an_idl_char_is_a_uint8_and_never_a_nim_char`,
-`crates/lang-rules/tests/nim_end_to_end.rs::a_long_double_is_a_string_and_never_a_float64`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_2_1_2_an_idl_char_is_a_uint8_and_never_a_nim_char`,
+`crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_2_1_2_a_long_double_is_a_string_and_never_a_float64`
 
 **Status:** done
 
@@ -100,8 +100,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::an_optional_member_becomes_an_option_and_the_others_do_not`,
-`crates/lang-rules/tests/nim_end_to_end.rs::the_options_import_appears_exactly_when_an_option_does`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_an_option_and_the_others_do_not`,
+`crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_4_4_7_the_options_import_appears_exactly_when_an_option_does`
 
 **Status:** done
 
@@ -111,9 +111,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::an_external_member_is_held_by_reference_whether_or_not_it_recurses`,
-`crates/lang-rules/tests/nim_end_to_end.rs::a_recursive_optional_external_member_is_finite`,
-`crates/lang-rules/tests/nim_codec.rs::an_external_member_reads_through_zd_ref_and_writes_the_dereference`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_9_an_external_member_is_held_by_reference_whether_or_not_it_recurses`,
+`crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_9_a_recursive_optional_external_member_is_finite`,
+`crates/lang-rules/tests/nim_codec.rs::xtypes_7_2_2_4_9_an_external_member_reads_through_zd_ref_and_writes_the_dereference`
 
 **Status:** done
 
@@ -123,9 +123,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::a_member_named_after_a_nim_keyword_is_stropped_and_keeps_its_spelling`,
-`crates/lang-rules/tests/nim_end_to_end.rs::a_name_that_only_normalises_onto_a_keyword_is_stropped_too`,
-`crates/lang-rules/tests/nim_end_to_end.rs::two_members_nim_cannot_tell_apart_are_refused_by_name`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::idl_7_2_3_a_member_named_after_a_nim_keyword_is_stropped_and_keeps_its_spelling`,
+`crates/lang-rules/tests/nim_end_to_end.rs::idl_7_2_3_a_name_that_only_normalises_onto_a_keyword_is_stropped_too`,
+`crates/lang-rules/tests/nim_end_to_end.rs::idl_7_2_3_two_members_nim_cannot_tell_apart_are_refused_by_name`
 
 **Status:** done
 
@@ -135,8 +135,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::a_map_becomes_a_seq_of_entries_and_never_a_table`,
-`crates/lang-rules/tests/nim_end_to_end.rs::a_sequence_becomes_a_seq_and_a_string_a_string`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_3_a_map_becomes_a_seq_of_entries_and_never_a_table`,
+`crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_3_a_sequence_becomes_a_seq_and_a_string_a_string`
 
 **Status:** done
 
@@ -146,8 +146,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::an_enum_becomes_one_enum_with_every_ordinal_written_out`,
-`crates/lang-rules/tests/nim_end_to_end.rs::an_enumerator_that_does_not_ascend_is_refused_by_name`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_becomes_one_enum_with_every_ordinal_written_out`,
+`crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enumerator_that_does_not_ascend_is_refused_by_name`
 
 **Status:** done
 
@@ -157,9 +157,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::a_module_flattens_onto_the_name_because_a_nim_module_is_a_file`,
-`crates/lang-rules/tests/nim_end_to_end.rs::one_type_section_holds_every_declaration`,
-`crates/lang-rules/tests/nim_end_to_end.rs::a_type_may_name_itself_inside_the_one_section`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::idl_7_5_2_a_module_flattens_onto_the_name_because_a_nim_module_is_a_file`,
+`crates/lang-rules/tests/nim_end_to_end.rs::idl_7_5_2_one_type_section_holds_every_declaration`,
+`crates/lang-rules/tests/nim_end_to_end.rs::idl_7_5_2_a_type_may_name_itself_inside_the_one_section`
 
 **Status:** done
 
@@ -169,9 +169,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_codec.rs::a_forward_declaration_precedes_every_body`,
-`crates/lang-rules/tests/nim_codec.rs::the_operators_are_nims_and_not_cs`,
-`crates/lang-rules/tests/nim_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+**Tests:** `crates/lang-rules/tests/nim_codec.rs::xtypes_7_4_3_a_forward_declaration_precedes_every_body`,
+`crates/lang-rules/tests/nim_codec.rs::xtypes_7_4_3_the_operators_are_nims_and_not_cs`,
+`crates/lang-rules/tests/nim_codec.rs::xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks`
 
 **Status:** done
 
@@ -183,7 +183,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/nim.rs`, `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -193,7 +193,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/nim.rs`, `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::the_generated_nim_compiles`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_3_1_the_generated_nim_compiles`
 
 **Status:** done
 
@@ -203,7 +203,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/nim.rs`, `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -213,7 +213,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/nim.rs`, `crates/lang-rules/src/adapter/nim.rs`
 
-**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::every_construct_the_table_claims_for_nim_produces_output`
+**Tests:** `crates/lang-rules/tests/nim_end_to_end.rs::xtypes_7_2_2_4_every_construct_the_table_claims_for_nim_produces_output`
 
 **Status:** done
 
@@ -223,9 +223,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/nim.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -237,8 +237,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -248,8 +248,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-nim-gen/`, `tools/wireprobe/wireprobe-zerodds-nim`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -257,8 +256,15 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ## Audit Status
 
-22 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+22 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-nim-1.0.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (job `merge-rust-lang-render`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 11 tests green.
+* `python3 ci/run_integration.py merge-codegen-nim` (job `merge-codegen-nim`) — 33 tests green.
+
+53 cited tests green, 0 not green.
+
+Open items: none.

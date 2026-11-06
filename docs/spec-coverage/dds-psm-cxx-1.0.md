@@ -33,10 +33,12 @@ geprüft ist.
   `dds::pub`, `dds::sub`), das CMake-Ziel `zerodds-cpp` in
   `crates/cpp/CMakeLists.txt` (nur Header; C++03 und später) und die Tests:
   `crates/cpp/tests/smoke_dds_psm.cpp` (übersetzt und ausgeführt von
-  `crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke`, in CMake das
+  `crates/cpp/CMakeLists.txt::dds_psm_cxx_smoke`, in CMake das
   Ziel `smoke_dds_psm`), `crates/cpp/tests/generated_type_roundtrip.cpp` und
   `crates/cpp/tests/generated_psm_roundtrip.cpp` (übersetzt und ausgeführt von
-  `crates/cpp/tests/generated_type_via_cargo.rs`, die zweite mit `--cpp-mapping psm`).
+  `crates/cpp/tests/generated/CMakeLists.txt` über `zerodds_idlc_generate`, die zweite mit
+  `--cpp-mapping psm`). CTest führt sie im Job `integration-sdk` der Integrations-Säule aus
+  (`tests/integration/sdk_cmake.sh`).
 - `crates/zerodds-c-api/` (`libzerodds`, `include/zerodds.h`) — jede
   Operation der Header ruft eine Funktion des C-API auf; die C++-Klassen halten
   als Zustand nur Zeiger auf die Objekte des C-API.
@@ -143,7 +145,7 @@ prevail."
 
 **Tests:** `crates/cpp/tests/public_headers.rs::every_public_header_compiles_on_its_own`,
 `crates/cpp/tests/public_headers.rs::every_name_of_the_omg_headers_is_reachable_through_its_header`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_signatures_follow_the_normative_headers`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_signatures_follow_the_normative_headers`
 
 **Status:** `done` — Die Header der OMG liegen im Cache
 (`internal/standards/cache/omg/dds-psm-cxx-1.0-sources/`, 196 Dateien). Verglichen sind
@@ -176,7 +178,7 @@ that conformance level must be implemented in this PSM."
 **Repo:** `crates/cpp/include/dds/core/detail/conformance.hpp`,
 `crates/cpp/include/dds/dds.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — Alle Operationen der Klassen von DCPS sind in den Headern
 vorhanden; die Items der folgenden Abschnitte nennen je Operation Code und Test.
@@ -214,12 +216,12 @@ Topic Types for DDS specification."
 `crates/cpp/include/dds/core/policy/CorePolicy.hpp::DataRepresentation`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_dynamic_types_dynamic_data_and_type_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_bit_masks_union_defaults_and_enum_discriminators`,
-`crates/zerodds-c-api/tests/types_load.rs::bitmasks_unions_with_a_default_and_enum_discriminators_are_described`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_11_dynamic_types_dynamic_data_and_type_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_11_bit_masks_union_defaults_and_enum_discriminators`,
+`crates/zerodds-c-api/tests/types_load.rs::psmcxx_2_1_bitmasks_unions_with_a_default_and_enum_discriminators_are_described`
 
-**Status:** `done` — `dds::core::xtypes` ist vorhanden (commits `1c10c2b3b74`, `6e1c3aebfb8`): DynamicType, die primitiven, String-, Sequenz-, Map-, Array-, Struktur-, Union-, Enumerations-, Alias-, Bitset- und Bitmask-Typen, Member, Annotationen, DynamicData und TypeProvider; dazu die Policy-Klassen `DataRepresentation` und `TypeConsistencyEnforcement` und die Built-in-Topic-Typen. Einzelheiten und `fixed` im Item „§7.11“.
+**Status:** `done` — `dds::core::xtypes` ist vorhanden (commits `854cd8fabfa`, `ae11c055ad2`): DynamicType, die primitiven, String-, Sequenz-, Map-, Array-, Struktur-, Union-, Enumerations-, Alias-, Bitset- und Bitmask-Typen, Member, Annotationen, DynamicData und TypeProvider; dazu die Policy-Klassen `DataRepresentation` und `TypeConsistencyEnforcement` und die Built-in-Topic-Typen. Einzelheiten und `fixed` im Item „§7.11“.
 
 ### §2.1 Erzeugen und QoS aus XML-QoS-Profilen, sonst UNSUPPORTED
 
@@ -232,14 +234,14 @@ indicate failure with the DDS-standard UNSUPPORTED error."
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp`,
 `crates/cpp/include/dds/core/detail/QosProviderDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `dds::core::QosProvider` liest die QoS-Profile eines
 DDS-XML-Dokuments von einem `file:`-, `data:`-, `http:`- oder `https:`-URI (commits
-`5061c168b7f`, `9629b1b5a34`). Ein Schema ohne Client ist `UnsupportedError`
-(`gopher://…` in `test_qos_provider`). Die QoS erzeugen Entitäten (ein DataWriter mit
-der QoS des Providers in `test_qos_provider`).
+`4ef7021a8ed`, `4ed2678ac5b`). Ein Schema ohne Client ist `UnsupportedError`
+(`gopher://…` in `psmcxx_7_6_2_1_qos_provider`). Die QoS erzeugen Entitäten (ein DataWriter mit
+der QoS des Providers in `psmcxx_7_6_2_1_qos_provider`).
 
 ### §2.1 Plain Language Binding als optionaler Konformitätspunkt
 
@@ -252,7 +254,7 @@ for C++ defined in [DDS-XTypes]."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Erlaubnis zur Wahl. Der Codegen erzeugt in der Vorgabe (`--cpp-mapping psm`) das Binding von §8 (`zerodds-idlc`, commit `56ff5b5f25f`; Items zu
+**Status:** `n/a (informative)` — Erlaubnis zur Wahl. Der Codegen erzeugt in der Vorgabe (`--cpp-mapping psm`) das Binding von §8 (`zerodds-idlc`, commit `1db807cbf0f`; Items zu
 §8); das Binding von [DDS-XTypes] 1.0 Beta 1 (ptc/2010-05-12) liegt nicht im Cache und
 ist nicht verglichen.
 
@@ -275,15 +277,15 @@ get_qos (out: qos_list: QosPolicy []): ReturnCode_t"
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`
 
 **Status:** `done` — `qos()` liest, `qos(const Qos&)` setzt die QoS von
-DomainParticipant, Publisher, Subscriber, Topic, DataWriter und DataReader; ausserdem
+DomainParticipant, Publisher, Subscriber, Topic, DataWriter und DataReader; außerdem
 `<<` und `>>` an Publisher, Subscriber, DataWriter und DataReader. Eine veränderbare
 Policy ändert sich, eine unveränderbare ist `ImmutablePolicyError`
-(`test_qos_of_a_running_entity_is_set_and_read`).
+(`psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`).
 
 ### §2.1 Entity: set_listener und get_listener, Listener beim Erzeugen
 
@@ -300,20 +302,20 @@ ReturnCode_t; abstract get_listener: Listener"
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::listener`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_attach_detach`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_table_is_per_entity_and_deregisters_on_destroy`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_domain_participant_listener`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_attach_detach`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_bridge_dispatches_to_virtual`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_table_is_per_entity_and_deregisters_on_destroy`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_domain_participant_listener`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — `listener(l, mask)` setzt, `listener()` liest den Listener jeder
 Entitätsart; jeder Konstruktor nimmt Listener und Maske an
-(`test_entities_are_created_with_qos_listener_and_mask`). Die Tabelle des C-API ist je
+(`psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`). Die Tabelle des C-API ist je
 Entität und wird beim Zerstören abgemeldet; jeder Rückruf der Writer-, Reader- und
 Participant-Tabellen erreicht seine virtuelle Methode mit der auslösenden Entität
-(`test_every_listener_callback_reaches_its_virtual_method`).
+(`psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`).
 
 ### §2.1 Entity: enable
 
@@ -322,10 +324,10 @@ Entity — "enable: ReturnCode_t"
 
 **Repo:** `crates/cpp/include/dds/core/TEntity.hpp::TEntity::enable`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`
 
 **Status:** `done` — `enable()` aller Entitätsarten ruft die Funktionen
-`zerodds_*_enable` des C-API; `test_entity_operations` ruft es für Participant, Topic,
+`zerodds_*_enable` des C-API; `psmcxx_2_1_entity_operations` ruft es für Participant, Topic,
 Publisher, Subscriber, DataWriter (zweimal) und DataReader auf.
 
 ### §2.1 Entity: get_statuscondition
@@ -335,9 +337,9 @@ Entity — "get_statuscondition: StatusCondition"
 
 **Repo:** `crates/cpp/include/dds/core/cond/TStatusCondition.hpp::TStatusCondition`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_find_ignore_status_condition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_find_ignore_status_condition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — Die PSM hat keine Operation `get_statuscondition`:
 `StatusCondition(entity)` erzeugt die Bedingung der Entität (`TStatusCondition`,
@@ -351,10 +353,10 @@ Entity — "get_status_changes: StatusKind []"
 
 **Repo:** `crates/cpp/include/dds/core/TEntity.hpp::TEntity::status_changes`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`
 
 **Status:** `done` — `status_changes()` liefert die ausgelösten Status;
-`test_entity_operations` prüft PUBLICATION_MATCHED, SUBSCRIPTION_MATCHED und
+`psmcxx_2_1_entity_operations` prüft PUBLICATION_MATCHED, SUBSCRIPTION_MATCHED und
 DATA_AVAILABLE und dass das Lesen des Status ihn löscht.
 
 ### §2.1 Entity: get_instance_handle
@@ -364,9 +366,9 @@ Entity — "get_instance_handle: InstanceHandle_t"
 
 **Repo:** `crates/cpp/include/dds/core/TEntity.hpp::TEntity::instance_handle`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`
 
-**Status:** `done` — `instance_handle()`; `test_entity_operations` prüft, dass sechs
+**Status:** `done` — `instance_handle()`; `psmcxx_2_1_entity_operations` prüft, dass sechs
 Entitäten sechs verschiedene, nicht-nil Handles haben und dass der Participant sie
 kennt.
 
@@ -385,8 +387,8 @@ DomainParticipant"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::TDomainParticipant`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_lifecycle`
 
 **Status:** `done` — Die Header der OMG haben keine DomainParticipantFactory:
 `DomainParticipant(domain_id[, qos[, listener, mask]]))` erzeugt den Participant
@@ -402,11 +404,11 @@ DomainParticipant): ReturnCode_t"
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — Die Header der OMG haben keine Factory: `close()` oder die
 Zerstörung der letzten Referenz löscht den Participant
-(`test_entities_and_statuses_without_other_coverage`: ein Participant ohne `retain()`
+(`psmcxx_2_1_entities_and_statuses_without_other_coverage`: ein Participant ohne `retain()`
 verschwindet mit seiner letzten Referenz).
 
 ### §2.1 DomainParticipantFactory: get_instance
@@ -430,8 +432,8 @@ DomainParticipant"
 
 **Repo:** `crates/cpp/include/dds/domain/DomainParticipant.hpp::dds::domain::find`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_find_ignore_status_condition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_find_ignore_status_condition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `dds::domain::find(domain_id)` gibt den Participant der Domain oder
 einen Null-Participant zurück; ein `retain()`-ter Participant wird gefunden, auch wenn
@@ -448,11 +450,11 @@ ReturnCode_t"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::default_participant_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — Die statische Funktion
 `DomainParticipant::default_participant_qos()` liest, `default_participant_qos(qos)`
-setzt die Vorgabe der Factory (`test_entities_and_statuses_without_other_coverage` setzt
+setzt die Vorgabe der Factory (`psmcxx_2_1_entities_and_statuses_without_other_coverage` setzt
 und stellt sie wieder her).
 
 ### §2.1 DomainParticipantFactory: get_qos und set_qos
@@ -483,13 +485,13 @@ PublisherListener, mask: StatusKind []): Publisher; delete_publisher
 **Repo:** `crates/cpp/include/dds/pub/TPublisher.hpp::TPublisher::TPublisher`,
 `crates/cpp/include/dds/pub/detail/PublisherDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `Publisher(dp[, qos[, listener, mask]])` erzeugt, `close()` oder
 die Zerstörung löscht; `delete_contained_entities()` des Participant schließt die
-erzeugten Publisher (`test_participant_operations_without_other_coverage`).
+erzeugten Publisher (`psmcxx_2_1_participant_operations_without_other_coverage`).
 
 ### §2.1 DomainParticipant: create_subscriber und delete_subscriber
 
@@ -501,9 +503,9 @@ SubscriberListener, mask: StatusKind []): Subscriber; delete_subscriber
 **Repo:** `crates/cpp/include/dds/sub/TSubscriber.hpp::TSubscriber::TSubscriber`,
 `crates/cpp/include/dds/sub/detail/SubscriberDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `Subscriber(dp[, qos[, listener, mask]])` erzeugt, `close()` oder
 die Zerstörung löscht; `delete_contained_entities()` des Participant schließt die
@@ -519,10 +521,10 @@ delete_topic (a_topic: Topic): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/topic/TTopic.hpp::TTopic::TTopic`,
 `crates/cpp/include/dds/topic/detail/TopicDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `Topic<T>(dp, name[, type_name][, qos[, listener, mask]])` erzeugt,
 `close()` oder die Zerstörung löscht. Der Name des Typs ist der von
@@ -539,8 +541,8 @@ ContentFilteredTopic): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/topic/TContentFilteredTopic.hpp`,
 `crates/cpp/include/dds/topic/detail/ContentFilteredTopicDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_contentfilteredtopic_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_contentfilteredtopic_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `ContentFilteredTopic<T>(topic, name, Filter)` erzeugt, `close()`
 oder die Zerstörung löscht; der Name ist der eigene, `filter_expression()` und
@@ -558,8 +560,8 @@ delete_multitopic (a_multitopic: MultiTopic): ReturnCode_t"
 `crates/cpp/include/dds/topic/detail/MultiTopicDelegate.hpp`,
 `crates/zerodds-c-api/src/multitopic_ffi.rs`
 
-**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_multitopic_joins_two_generated_topics_for_a_data_reader`,
-`crates/zerodds-c-api/tests/multitopic_c.rs::a_multitopic_joins_two_topics_and_is_not_deleted_while_a_reader_exists`
+**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::dcps_b_2_a_multitopic_joins_two_generated_topics_for_a_data_reader`,
+`crates/zerodds-c-api/tests/multitopic_c.rs::psmcxx_2_1_a_multitopic_joins_two_topics_and_is_not_deleted_while_a_reader_exists`
 
 **Status:** `done` — `MultiTopic<T>(dp, name, expression, params_begin, params_end)` legt die MultiTopic an (`zerodds_dp_create_multitopic`): die Themen der FROM-Klausel sind die Topics des Participant, die ihr Typobjekt kennen; Ausdruck, Themen und Ergebnistyp, die nicht zusammenpassen, ergeben einen Fehler. `close()` löscht sie (`zerodds_dp_delete_multitopic`) und gibt `PreconditionNotMetError`, solange ein Reader auf ihr besteht. Der Test verbindet `Order` und `Customer` zu `Sale` mit `WHERE amount > %0`, ein Sample kommt an.
 
@@ -573,8 +575,8 @@ Topic"
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::DomainParticipantDelegate::find_topic`,
 `crates/cpp/include/dds/topic/find.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `find_topic(name)` gibt den `AnyTopic` des Namens, für einen
 unbekannten Namen einen Null-`AnyTopic`; `dds::topic::find` sucht Topics des Participant
@@ -589,7 +591,7 @@ DomainParticipant — "lookup_topicdescription (name: string): TopicDescription"
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::DomainParticipantDelegate::lookup_topicdescription`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `lookup_topicdescription(name)` gibt den `AnyTopic` des Namens oder
 einen Null-`AnyTopic`.
@@ -604,11 +606,11 @@ DomainParticipant — "get_builtin_subscriber: Subscriber"
 `crates/cpp/include/dds/sub/find.hpp::dds::sub::builtin_subscriber`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_readers`,
-`crates/zerodds-c-api/tests/builtin_reader.rs::the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_readers`,
+`crates/zerodds-c-api/tests/builtin_reader.rs::psmcxx_2_1_the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
 
-**Status:** `done` — `dds::sub::builtin_subscriber(dp)` gibt das `BuiltinSubscriber` zurück; `dds::sub::find<DataReader<…BuiltinTopicData>>(builtin, "DCPSParticipant" | "DCPSTopic" | "DCPSPublication" | "DCPSSubscription", it)` liefert die Reader der vier eingebauten Topics (`zerodds_builtin_subscriber_lookup_datareader`); `read()` und `take()` geben ihre Samples mit SampleInfo (`test_builtin_topic_readers`; C-API-Test `builtin_reader`).
+**Status:** `done` — `dds::sub::builtin_subscriber(dp)` gibt das `BuiltinSubscriber` zurück; `dds::sub::find<DataReader<…BuiltinTopicData>>(builtin, "DCPSParticipant" | "DCPSTopic" | "DCPSPublication" | "DCPSSubscription", it)` liefert die Reader der vier eingebauten Topics (`zerodds_builtin_subscriber_lookup_datareader`); `read()` und `take()` geben ihre Samples mit SampleInfo (`psmcxx_2_1_builtin_topic_readers`; C-API-Test `builtin_reader`).
 
 ### §2.1 DomainParticipant: ignore_participant
 
@@ -621,12 +623,12 @@ ReturnCode_t"
 `crates/cpp/include/dds/pub/discovery.hpp`, `crates/cpp/include/dds/sub/discovery.hpp`,
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_find_ignore_status_condition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_ignore_ends_a_match`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_find_ignore_status_condition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_ignore_ends_a_match`
 
 **Status:** `done` — `dds::domain::ignore(dp, handle)` und die Form mit Iteratorpaar
 rufen `ignore_participant` des C-API (`zerodds_dp_ignore_participant`);
-`test_ignore_ends_a_match` prüft, dass der Aufruf mit dem Handle einer entdeckten
+`psmcxx_2_1_ignore_ends_a_match` prüft, dass der Aufruf mit dem Handle einer entdeckten
 Entität das Match mit ihr beendet.
 
 ### §2.1 DomainParticipant: ignore_topic
@@ -639,11 +641,11 @@ DomainParticipant — "ignore_topic (handle: InstanceHandle_t): ReturnCode_t"
 `crates/cpp/include/dds/pub/discovery.hpp`, `crates/cpp/include/dds/sub/discovery.hpp`,
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_find_ignore_status_condition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_ignore_ends_a_match`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_find_ignore_status_condition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_ignore_ends_a_match`
 
 **Status:** `done` — `dds::topic::ignore(dp, handle)` und die Form mit Iteratorpaar
-rufen `ignore_topic` des C-API (`zerodds_dp_ignore_topic`); `test_ignore_ends_a_match`
+rufen `ignore_topic` des C-API (`zerodds_dp_ignore_topic`); `psmcxx_2_1_ignore_ends_a_match`
 prüft, dass der Aufruf mit dem Handle einer entdeckten Entität das Match mit ihr
 beendet.
 
@@ -658,10 +660,10 @@ ReturnCode_t"
 `crates/cpp/include/dds/pub/discovery.hpp`, `crates/cpp/include/dds/sub/discovery.hpp`,
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_find_ignore_status_condition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_ignore_ends_a_match`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_find_ignore_status_condition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_ignore_ends_a_match`
 
-**Status:** `done` — `dds::pub::ignore(dp, handle)` und die Form mit Iteratorpaar rufen `ignore_publication` des C-API (`zerodds_dp_ignore_publication`) am Participant des Reader mit dem Handle der entfernten Publication (Handle aus `matched_publications`); `test_ignore_ends_a_match` prüft, dass die Liste der Matches danach leer ist.
+**Status:** `done` — `dds::pub::ignore(dp, handle)` und die Form mit Iteratorpaar rufen `ignore_publication` des C-API (`zerodds_dp_ignore_publication`) am Participant des Reader mit dem Handle der entfernten Publication (Handle aus `matched_publications`); `psmcxx_2_1_ignore_ends_a_match` prüft, dass die Liste der Matches danach leer ist.
 
 ### §2.1 DomainParticipant: ignore_subscription
 
@@ -674,10 +676,10 @@ ReturnCode_t"
 `crates/cpp/include/dds/pub/discovery.hpp`, `crates/cpp/include/dds/sub/discovery.hpp`,
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_find_ignore_status_condition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_ignore_ends_a_match`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_find_ignore_status_condition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_ignore_ends_a_match`
 
-**Status:** `done` — `dds::sub::ignore(dp, handle)` und die Form mit Iteratorpaar rufen `ignore_subscription` des C-API (`zerodds_dp_ignore_subscription`) am Participant des Writer mit dem Handle der entfernten Subscription (Handle aus `matched_subscriptions`); `test_ignore_ends_a_match` prüft, dass die Liste der Matches danach leer ist.
+**Status:** `done` — `dds::sub::ignore(dp, handle)` und die Form mit Iteratorpaar rufen `ignore_subscription` des C-API (`zerodds_dp_ignore_subscription`) am Participant des Writer mit dem Handle der entfernten Subscription (Handle aus `matched_subscriptions`); `psmcxx_2_1_ignore_ends_a_match` prüft, dass die Liste der Matches danach leer ist.
 
 ### §2.1 DomainParticipant: get_domain_id
 
@@ -687,8 +689,8 @@ DomainParticipant — "get_domain_id: DomainId_t"
 **Repo:**
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::domain_id`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — `domain_id()`.
 
@@ -702,7 +704,7 @@ DomainParticipant — "delete_contained_entities: ReturnCode_t"
 `crates/cpp/include/dds/core/detail/ChildTracker.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `delete_contained_entities()` schließt die Publisher, Subscriber,
 Topics und ContentFilteredTopics, die mit dem Participant erzeugt wurden und die die
@@ -720,7 +722,7 @@ DomainParticipant — "assert_liveliness: ReturnCode_t"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::assert_liveliness`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `assert_liveliness()` ruft `zerodds_dp_assert_liveliness`; der Test
 prüft den Aufruf ohne Fehler.
@@ -736,7 +738,7 @@ ReturnCode_t"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::default_publisher_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `default_publisher_qos()` liest, `default_publisher_qos(qos)` setzt
 (Rückgabe: der Participant).
@@ -752,7 +754,7 @@ ReturnCode_t"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::default_subscriber_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `default_subscriber_qos()` liest, `default_subscriber_qos(qos)`
 setzt.
@@ -767,7 +769,7 @@ ReturnCode_t; get_default_topic_qos (out: qos_list: QosPolicy []): ReturnCode_t"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::default_topic_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `default_topic_qos()` liest, `default_topic_qos(qos)` setzt.
 
@@ -781,12 +783,12 @@ InstanceHandle_t []): ReturnCode_t"
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::DomainParticipantDelegate::get_discovered_participants`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_ignore_ends_a_match`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_ignore_ends_a_match`
 
 **Status:** `done` — `dp->get_discovered_participants()` gibt die Handles der entdeckten
 Participants zurück; der Participant des Readers entdeckt den des Writers
-(`test_ignore_ends_a_match`).
+(`psmcxx_2_1_ignore_ends_a_match`).
 
 ### §2.1 DomainParticipant: get_discovered_participant_data
 
@@ -799,8 +801,8 @@ ReturnCode_t"
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::DomainParticipantDelegate::get_discovered_participant_data`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_ignore_ends_a_match`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_ignore_ends_a_match`
 
 **Status:** `done` — `dp->get_discovered_participant_data(handle)` gibt
 `ParticipantBuiltinTopicData` zurück (Test mit dem Handle eines entdeckten Participant);
@@ -816,7 +818,7 @@ InstanceHandle_t []): ReturnCode_t"
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::DomainParticipantDelegate::get_discovered_topics`,
 `crates/cpp/include/dds/topic/discovery.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_discovered_topics_empty_initially`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_discovered_topics_empty_initially`
 
 **Status:** `done` — `get_discovered_topics()` gibt die Handles zurück; ohne entdeckte
 Topics ist die Liste leer.
@@ -831,12 +833,12 @@ TopicBuiltinTopicData, topic_handle: InstanceHandle_t): ReturnCode_t"
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::DomainParticipantDelegate::get_discovered_topic_data`,
 `crates/cpp/include/dds/topic/BuiltinTopic.hpp::TopicBuiltinTopicData`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_data_carries_every_member`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_discovered_topic_data_unknown_handle_throws`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_data_carries_every_member`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_discovered_topic_data_unknown_handle_throws`
 
 **Status:** `done` — `get_discovered_topic_data(handle)` gibt `TopicBuiltinTopicData`
 zurück; die Klasse trägt jedes Mitglied von DCPSTopic als Policy-Klasse
-(`test_topic_data_carries_every_member`, commit `e0b3af9f2c7`).
+(`psmcxx_2_1_topic_data_carries_every_member`, commit `8a4fbbd8d38`).
 
 ### §2.1 DomainParticipant: Daten eines entdeckten Topic
 
@@ -846,7 +848,7 @@ network."
 
 **Repo:** `crates/cpp/include/dds/topic/BuiltinTopic.hpp::TopicBuiltinTopicData`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_data_carries_every_member`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_data_carries_every_member`
 
 **Status:** `done` — Die Mitglieder von `TopicBuiltinTopicData` (Name, Typname,
 Durability, DurabilityService, Deadline, LatencyBudget, Liveliness, Reliability,
@@ -864,10 +866,10 @@ operation will fail and return PRECONDITION_NOT_MET."
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::DomainParticipantDelegate::get_discovered_topic_data`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_discovered_topic_data_unknown_handle_throws`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_discovered_topic_data_unknown_handle_throws`
 
 **Status:** `done` — Ein Handle ohne entdecktes Topic ist `PreconditionNotMetError`
-(commit `44aa2082361`).
+(commit `224694cac28`).
 
 ### §2.1 DomainParticipant: contains_entity
 
@@ -877,8 +879,8 @@ DomainParticipant — "contains_entity (a_handle: InstanceHandle_t): boolean"
 **Repo:**
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::contains_entity`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `contains_entity(handle)`; wahr für die sechs Entitäten des Tests,
 falsch für sie nach `delete_contained_entities()`.
@@ -893,7 +895,7 @@ ReturnCode_t"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::current_time`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `current_time()` gibt die Zeit des Participant als `Time` zurück;
 der Test prüft, dass es Wanduhrzeit ist.
@@ -907,8 +909,8 @@ listeners."
 
 **Repo:** `crates/cpp/include/dds/domain/DomainParticipantListener.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_domain_participant_listener`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_domain_participant_listener`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — `DomainParticipantListener` erbt `PublisherListener`,
 `SubscriberListener` und `AnyTopicListener` (Mehrfachvererbung) und hat keine eigene
@@ -928,7 +930,7 @@ TopicDescription — "get_participant: DomainParticipant"
 **Repo:**
 `crates/cpp/include/dds/topic/TTopicDescription.hpp::TTopicDescription::domain_participant`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — `domain_participant()` gibt den Participant des Topic zurück; der
 Test prüft die Domain-ID.
@@ -941,8 +943,8 @@ TopicDescription — "readonly: type_name string; get_type_name: string"
 **Repo:**
 `crates/cpp/include/dds/topic/TTopicDescription.hpp::TTopicDescription::type_name`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — `type_name()`; der Name ist der von
 `topic_type_support<T>::type_name()` oder der beim Erzeugen angegebene.
@@ -954,9 +956,9 @@ TopicDescription — "readonly: name string; get_name: string"
 
 **Repo:** `crates/cpp/include/dds/topic/TTopicDescription.hpp::TTopicDescription::name`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_contentfilteredtopic_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_contentfilteredtopic_lifecycle`
 
 **Status:** `done` — `name()` für `Topic<T>` und `ContentFilteredTopic<T>`;
 `AnyTopicDescription` (`topic/AnyTopicDescription.hpp`) nennt den Namen jeder
@@ -970,10 +972,10 @@ used to create the TopicDescription."
 **Repo:**
 `crates/cpp/include/dds/topic/TContentFilteredTopic.hpp::TContentFilteredTopic::name`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_contentfilteredtopic_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_contentfilteredtopic_lifecycle`
 
 **Status:** `done` — `name()` einer ContentFilteredTopic ist der Name, mit dem sie
-erzeugt wurde, nicht der des zugehörigen Topic (commit `fa26fc22a7a`).
+erzeugt wurde, nicht der des zugehörigen Topic (commit `9918966832b`).
 
 ### §2.1 Topic: get_inconsistent_topic_status
 
@@ -985,8 +987,8 @@ ReturnCode_t"
 `crates/cpp/include/dds/topic/AnyTopic.hpp::AnyTopic::inconsistent_topic_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — `inconsistent_topic_status()` von `Topic<T>` und `AnyTopic`; ohne
 Inkonsistenz ist `total_count()` null.
@@ -1000,7 +1002,7 @@ ContentFilteredTopic — "readonly: filter_expression string"
 `crates/cpp/include/dds/topic/TContentFilteredTopic.hpp::TContentFilteredTopic::filter_expression`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `filter_expression()` gibt den Ausdruck des Filters zurück, mit dem
 die ContentFilteredTopic erzeugt wurde.
@@ -1014,8 +1016,8 @@ ContentFilteredTopic — "get_related_topic: Topic"
 `crates/cpp/include/dds/topic/TContentFilteredTopic.hpp::TContentFilteredTopic::topic`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — `topic()` gibt das verbundene Topic zurück.
 
@@ -1029,7 +1031,7 @@ string []): ReturnCode_t"
 **Repo:**
 `crates/cpp/include/dds/topic/TContentFilteredTopic.hpp::TContentFilteredTopic::filter_parameters`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_contentfilteredtopic_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_contentfilteredtopic_lifecycle`
 
 **Status:** `done` — `filter_parameters()` liest, `filter_parameters(begin, end)` setzt;
 ein leerer Bereich bei einem Ausdruck mit Parametern ist ein Fehler.
@@ -1046,8 +1048,8 @@ set_expression_parameters (expression_parameters: string []): ReturnCode_t"
 `crates/cpp/include/dds/topic/detail/MultiTopicDelegate.hpp`,
 `crates/zerodds-c-api/src/multitopic_ffi.rs`
 
-**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_multitopic_joins_two_generated_topics_for_a_data_reader`,
-`crates/zerodds-c-api/tests/multitopic_c.rs::a_multitopic_joins_two_topics_and_is_not_deleted_while_a_reader_exists`
+**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::dcps_b_2_a_multitopic_joins_two_generated_topics_for_a_data_reader`,
+`crates/zerodds-c-api/tests/multitopic_c.rs::psmcxx_2_1_a_multitopic_joins_two_topics_and_is_not_deleted_while_a_reader_exists`
 
 **Status:** `done` — `MultiTopic::expression()` gibt den Ausdruck, `expression_parameters()` die Parameter, `expression_parameters(begin, end)` ersetzt sie (`zerodds_multitopic_set_parameters`); der Test liest sie, ersetzt sie und stellt sie zurück.
 
@@ -1060,8 +1062,8 @@ InconsistentTopicStatus): void"
 **Repo:** `crates/cpp/include/dds/topic/TopicListener.hpp`,
 `crates/cpp/include/dds/topic/AnyTopicListener.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — `TopicListener<T>::on_inconsistent_topic(Topic<T>&, status)` und
 `NoOpTopicListener<T>`; der Eintrag der Tabelle des Topic (`zerodds_topic_get_listener`)
@@ -1077,8 +1079,8 @@ type_name: string): ReturnCode_t; get_type_name: string"
 **Repo:** `crates/cpp/include/dds/topic/TopicTraits.hpp::topic_type_support`,
 `crates/cpp/include/dds/topic/TTopic.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — Die PSM hat keine Klasse TypeSupport: `Topic<T>` registriert den
 Typ beim Erzeugen (`topic_type_support<T>`), `type_name()` nennt ihn;
@@ -1098,9 +1100,9 @@ DataWriterListener, mask: StatusKind []): DataWriter; delete_datawriter
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::DataWriter`,
 `crates/cpp/include/dds/pub/detail/DataWriterDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_writer_reader_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_writer_reader_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `DataWriter<T>(pub, topic[, qos[, listener, mask]])` erzeugt,
 `close()` oder die Zerstörung löscht.
@@ -1112,7 +1114,7 @@ Publisher — "lookup_datawriter (topic_name: string): DataWriter"
 
 **Repo:** `crates/cpp/include/dds/pub/find.hpp::dds::pub::find`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `dds::pub::find<DataWriter<T>>(pub, topic_name, …)` gibt die Writer
 des Publisher zum Topic-Namen zurück (Iterator-Form und Form mit Höchstzahl), auch als
@@ -1128,7 +1130,7 @@ ReturnCode_t"
 `crates/cpp/include/dds/pub/detail/PublisherDelegate.hpp::PublisherDelegate::suspend_publications`,
 `crates/cpp/include/dds/pub/SuspendedPublication.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `suspend_publications()`, `resume_publications()` und die
 RAII-Klasse `SuspendedPublication`; der Test ruft die Klasse auf (Anfang und Ende ohne
@@ -1144,7 +1146,7 @@ ReturnCode_t"
 `crates/cpp/include/dds/pub/detail/PublisherDelegate.hpp::PublisherDelegate::begin_coherent_changes`,
 `crates/cpp/include/dds/pub/CoherentSet.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `begin_coherent_changes()`, `end_coherent_changes()` und die
 RAII-Klasse `CoherentSet`; der Test ruft die Klasse auf. Die Wirkung beim Reader
@@ -1159,7 +1161,7 @@ Publisher — "wait_for_acknowledgments (max_wait: Duration_t): ReturnCode_t"
 `crates/cpp/include/dds/pub/TPublisher.hpp::TPublisher::wait_for_acknowledgments`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `wait_for_acknowledgments(timeout)` wartet auf die Bestätigung der
 Samples eines Writers mit passendem Reader und gibt bei Zeitüberschreitung
@@ -1173,7 +1175,7 @@ Publisher — "get_participant: DomainParticipant"
 **Repo:** `crates/cpp/include/dds/pub/TPublisher.hpp::TPublisher::participant`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `participant()` gibt den Participant des Publisher zurück.
 
@@ -1200,7 +1202,7 @@ get_default_datawriter_qos (out: qos_list: QosPolicy []): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/TPublisher.hpp::TPublisher::default_writer_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `default_writer_qos()` liest, `default_writer_qos(qos)` setzt die
 Vorgabe der Writer des Publisher.
@@ -1214,10 +1216,10 @@ a_topic_qos: QosPolicy []): ReturnCode_t"
 **Repo:**
 `crates/cpp/include/dds/pub/qos/DataWriterQos.hpp::DataWriterQos::DataWriterQos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — `DataWriterQos(topic_qos)` baut die Writer-QoS aus der Topic-QoS
-(Konstruktor aus einer anderen QoS-Art); `test_qos_composition` prüft die Übernahme.
+(Konstruktor aus einer anderen QoS-Art); `psmcxx_7_6_1_qos_composition` prüft die Übernahme.
 
 ### §2.1 PublisherListener
 
@@ -1228,8 +1230,8 @@ DataWriterListener)"
 **Repo:** `crates/cpp/include/dds/pub/PublisherListener.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_bridge_dispatches_to_virtual`
 
 **Status:** `done` — `PublisherListener` erbt `AnyDataWriterListener` und hat keine
 eigene Operation; `NoOpPublisherListener` ist die Vorgabe. Jeder der vier Einträge der
@@ -1250,14 +1252,14 @@ InstanceHandle_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::register_instance`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `register_instance(sample)` und `register_instance(sample, time)`
 geben das Handle der Instanz des Schlüssels; dieselbe Instanz bei wiederholter
-Registrierung. Getestet mit einem erzeugten Typ (`generated_type_roundtrip.cpp`, über
-`generated_type_via_cargo`) und mit einem eingebauten Typ mit Schlüssel
-(`test_instance_operations_with_a_time_stamp`).
+Registrierung. Getestet mit einem erzeugten Typ (`generated_type_roundtrip.cpp`, CTest
+`psmcxx_7_12_a_generated_type_round_trips_through_the_dds_psm_writer_and_reader`) und mit einem eingebauten Typ mit Schlüssel
+(`psmcxx_2_1_instance_operations_with_a_time_stamp`).
 
 ### §2.1 DataWriter: unregister_instance und unregister_instance_w_timestamp
 
@@ -1269,8 +1271,8 @@ InstanceHandle_t, timestamp: Time_t): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::unregister_instance`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `unregister_instance(handle[, time])`.
 
@@ -1283,8 +1285,8 @@ ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::key_value`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `key_value(sample, handle)` und `key_value(TopicInstance, handle)`
 geben den Schlüssel einer registrierten Instanz; ein Handle ohne Instanz des Writers ist
@@ -1298,8 +1300,8 @@ DataWriter — "lookup_instance (instance: Data): InstanceHandle_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::lookup_instance`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `lookup_instance(sample)` gibt das Handle der Instanz des
 Schlüssels.
@@ -1314,9 +1316,9 @@ Time_t): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::write`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_read_keeps_samples_take_removes_them`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_read_keeps_samples_take_removes_them`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`
 
 **Status:** `done` — `write(sample)`, `write(sample, time)`, `operator<<`,
 Iteratorbereiche mit und ohne Zeit und `write(TopicInstance)`; der Test prüft, dass jede
@@ -1332,8 +1334,8 @@ the instance_data (by means of the key)."
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::write`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `write(sample, handle[, time])` schreibt in die benannte Instanz;
 ein Handle, das nicht die Instanz des Samples ist, ist `InvalidArgumentError`.
@@ -1348,8 +1350,8 @@ ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::dispose_instance`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `dispose_instance(handle[, time])`; der Reader sieht die Instanz
 als NOT_ALIVE_DISPOSED (`generated_type_roundtrip.cpp`).
@@ -1362,8 +1364,8 @@ DataWriter — "dispose (data: Data, handle: InstanceHandle_t): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::dispose_instance`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `dispose_instance(handle[, time])` nimmt das Handle der Instanz.
 
@@ -1377,7 +1379,7 @@ DataWriter — "wait_for_acknowledgments (max_wait: Duration_t): ReturnCode_t"
 `crates/cpp/include/dds/pub/AnyDataWriter.hpp::AnyDataWriter::wait_for_acknowledgments`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `wait_for_acknowledgments(timeout)` am DataWriter und am
 AnyDataWriter.
@@ -1392,7 +1394,7 @@ ReturnCode_t"
 `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::liveliness_lost_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `liveliness_lost_status()`; ein Writer ohne Liveliness-Verlust hat
 `total_count() == 0`.
@@ -1407,7 +1409,7 @@ OfferedDeadlineMissedStatus): ReturnCode_t"
 `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::offered_deadline_missed_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `offered_deadline_missed_status()` und, unter dem Namen der Header
 der OMG, `offered_deadlined_missed_status()`.
@@ -1422,7 +1424,7 @@ OfferedIncompatibleQosStatus): ReturnCode_t"
 `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::offered_incompatible_qos_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `offered_incompatible_qos_status()` und, unter dem Namen der Header
 der OMG, `offered_incompatible_qos_staus()`.
@@ -1436,8 +1438,8 @@ PublicationMatchedStatus): ReturnCode_t"
 **Repo:**
 `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::publication_matched_status`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_status_getters`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_status_getters`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `publication_matched_status()`; der Test prüft `total_count == 1`
 und `current_count == 1` für einen Writer und einen Reader.
@@ -1450,7 +1452,7 @@ DataWriter — "get_topic: Topic"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::topic`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `topic()` gibt das Topic des Writers zurück.
 
@@ -1462,7 +1464,7 @@ DataWriter — "get_publisher: Publisher"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::publisher`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `publisher()` gibt den Publisher des Writers zurück.
 
@@ -1474,7 +1476,7 @@ DataWriter — "assert_liveliness: ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::assert_liveliness`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `assert_liveliness()`.
 
@@ -1489,7 +1491,7 @@ InstanceHandle_t): ReturnCode_t"
 `crates/cpp/include/dds/pub/discovery.hpp::dds::pub::matched_subscription_data`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`
 
 **Status:** `done` — `matched_subscription_data(writer, handle)` gibt die
 `SubscriptionBuiltinTopicData` des Readers; ein Handle ohne Reader ist
@@ -1504,8 +1506,8 @@ InstanceHandle_t []): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/pub/discovery.hpp::dds::pub::matched_subscriptions`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `matched_subscriptions(writer)` und die Iterator-Form geben die
 Handles der passenden Reader.
@@ -1524,7 +1526,7 @@ LivelinessLostStatus): void"
 `crates/cpp/include/dds/pub/DataWriterListener.hpp::DataWriterListener::on_liveliness_lost`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_bridge_dispatches_to_virtual`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft `on_liveliness_lost(writer,
 status)` mit dem Writer, der ihn auslöst.
@@ -1539,7 +1541,7 @@ status: OfferedDeadlineMissedStatus): void"
 `crates/cpp/include/dds/pub/DataWriterListener.hpp::DataWriterListener::on_offered_deadline_missed`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft
 `on_offered_deadline_missed(writer, status)` mit dem auslösenden Writer.
@@ -1554,7 +1556,7 @@ status: OfferedIncompatibleQosStatus): void"
 `crates/cpp/include/dds/pub/DataWriterListener.hpp::DataWriterListener::on_offered_incompatible_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft
 `on_offered_incompatible_qos(writer, status)` mit dem auslösenden Writer.
@@ -1569,8 +1571,8 @@ PublicationMatchedStatus): void"
 `crates/cpp/include/dds/pub/DataWriterListener.hpp::DataWriterListener::on_publication_matched`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_table_is_per_entity_and_deregisters_on_destroy`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_bridge_dispatches_to_virtual`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_table_is_per_entity_and_deregisters_on_destroy`
 
 **Status:** `done` — Der Eintrag der Tabelle ruft `on_publication_matched(writer,
 status)` mit dem Writer und seinem `PublicationMatchedStatus`.
@@ -1586,12 +1588,12 @@ status: PublicationMatchedStatus): void"
 `crates/cpp/include/dds/domain/DomainParticipantListener.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_table_is_per_entity_and_deregisters_on_destroy`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_bridge_dispatches_to_virtual`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_table_is_per_entity_and_deregisters_on_destroy`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Jeder Rückruf bekommt die Entität, die ihn auslöst, nicht ein
-Ersatzobjekt, und ihren Status (commit `24f7d012de2`); die Tabelle ist je Entität und
+Ersatzobjekt, und ihren Status (commit `0482f3b2af3`); die Tabelle ist je Entität und
 wird beim Zerstören abgemeldet.
 
 ---
@@ -1608,10 +1610,10 @@ delete_datareader (a_datareader: DataReader): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/DataReader.hpp::DataReader::DataReader`,
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_writer_reader_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_contentfilteredtopic_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_writer_reader_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_contentfilteredtopic_lifecycle`
 
 **Status:** `done` — `DataReader<T>(sub, topic_description[, qos[, listener, mask]])`
 erzeugt, `close()` oder die Zerstörung löscht. Eine ContentFilteredTopic als
@@ -1625,7 +1627,7 @@ Subscriber — "lookup_datareader (topic_name: string): DataReader"
 
 **Repo:** `crates/cpp/include/dds/sub/find.hpp::dds::sub::find`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `dds::sub::find<DataReader<T>>(sub, topic_name, …)` gibt die Reader
 des Subscriber zum Topic-Namen zurück (auch als `AnyDataReader`).
@@ -1638,7 +1640,7 @@ Subscriber — "begin_access: ReturnCode_t; end_access: ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/CoherentAccess.hpp`,
 `crates/cpp/include/dds/sub/detail/SubscriberDelegate.hpp::SubscriberDelegate::begin_access`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — Die RAII-Klasse `CoherentAccess(sub)` ruft `begin_access`, `end()`
 oder die Zerstörung `end_access`; der Test ruft die Klasse auf.
@@ -1652,11 +1654,11 @@ InstanceStateKind []): ReturnCode_t"
 
 **Repo:** `crates/cpp/include/dds/sub/find.hpp::dds::sub::find`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `dds::sub::find<…>(sub, DataState)` wählt die Reader nach den
 Masken der Samples (Sample-, View- und Instance-State), `find` nach Beschreibung und
-Name; commit `ea5f1ef12d1`.
+Name; commit `f1a07de5ec2`.
 
 ### §2.1 Subscriber: notify_datareaders
 
@@ -1666,7 +1668,7 @@ Subscriber — "notify_datareaders: ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/TSubscriber.hpp::TSubscriber::notify_datareaders`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `notify_datareaders()`; der Test ruft die Operation auf.
 
@@ -1678,7 +1680,7 @@ Subscriber — "get_participant: DomainParticipant"
 **Repo:** `crates/cpp/include/dds/sub/TSubscriber.hpp::TSubscriber::participant`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `participant()`.
 
@@ -1705,7 +1707,7 @@ get_default_datareader_qos (out: qos_list: QosPolicy []): ReturnCode_t"
 `crates/cpp/include/dds/sub/TSubscriber.hpp::TSubscriber::default_datareader_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `default_datareader_qos()` liest, `default_datareader_qos(qos)`
 setzt.
@@ -1719,7 +1721,7 @@ a_topic_qos: QosPolicy []): ReturnCode_t"
 **Repo:**
 `crates/cpp/include/dds/sub/qos/DataReaderQos.hpp::DataReaderQos::DataReaderQos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — `DataReaderQos(topic_qos)` baut die Reader-QoS aus der Topic-QoS.
 
@@ -1731,8 +1733,8 @@ SubscriberListener — "on_data_on_readers (the_subscriber: Subscriber): void"
 **Repo:** `crates/cpp/include/dds/sub/SubscriberListener.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — `SubscriberListener::on_data_on_readers(Subscriber&)` und
 `NoOpSubscriberListener`; jeder Eintrag der Tabelle des Subscriber
@@ -1754,11 +1756,11 @@ ViewStateKind [], instance_states: InstanceStateKind []): ReturnCode_t"
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_read_keeps_samples_take_removes_them`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_read_keeps_samples_take_removes_them`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — `read()` und `select()….read()` lassen die Samples im Reader
-(commit `903a16b85f0`); Formen mit Vorwärts- und Back-Insert-Iterator, `max_samples`,
+(commit `56661152a10`); Formen mit Vorwärts- und Back-Insert-Iterator, `max_samples`,
 der Strom `dr >> read >> samples`.
 
 ### §2.1 DataReader: take
@@ -1772,14 +1774,14 @@ ViewStateKind [], instance_states: InstanceStateKind []): ReturnCode_t"
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_read_keeps_samples_take_removes_them`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_take_on_empty_returns_empty`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_take_returns_the_loan_when_decode_throws`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_read_keeps_samples_take_removes_them`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_take_on_empty_returns_empty`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_take_returns_the_loan_when_decode_throws`
 
 **Status:** `done` — `take()` nimmt die Samples aus dem Reader; ein leerer Reader gibt
 eine leere Folge; wirft die Dekodierung, wird der Loan zurückgegeben (commit
-`409a44a86e9`).
+`68c83d552ba`).
 
 ### §2.1 DataReader: Zustandsmasken bei read und take
 
@@ -1790,9 +1792,9 @@ instance_states: InstanceStateKind []"
 **Repo:** `crates/cpp/include/dds/sub/status/DataState.hpp`,
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::default_filter_state`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `select().state(DataState)` und `default_filter_state(DataState)`
 wählen nach Sample-, View- und Instance-State; die Maskenwerte sind die von DDS 1.4
@@ -1810,12 +1812,12 @@ ReturnCode_t; take_w_condition (...): ReturnCode_t"
 `crates/cpp/include/dds/sub/cond/QueryCondition.hpp`,
 `crates/cpp/include/dds/sub/cond/ReadCondition.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`,
-`crates/zerodds-c-api/tests/query_condition_read.rs::read_and_take_with_a_query_condition_return_only_the_samples_the_expression_selects`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`,
+`crates/zerodds-c-api/tests/query_condition_read.rs::psmcxx_2_1_read_and_take_with_a_query_condition_return_only_the_samples_the_expression_selects`
 
 **Status:** `done` — Die PSM hat kein `read_w_condition`: `select().state(…)` entspricht
-der ReadCondition, `select().content(query)` der QueryCondition (commit `8733e3630a0`).
+der ReadCondition, `select().content(query)` der QueryCondition (commit `d7324a52745`).
 Ein Ausdruck auf Feldern wählt nur die passenden Samples
 (`generated_type_roundtrip.cpp`: `value > 50`; C-API: `query_condition_read.rs`).
 
@@ -1829,11 +1831,11 @@ sample_info: SampleInfo): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::Selector`,
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — Die PSM hat keine Operation `read_next_sample`: `read(iterator, 1)`
 und `select().max_samples(1)` liefern das nächste Sample; `dr >> max_samples(1) >> take
->> samples` nimmt eines (`test_samples_api`).
+>> samples` nimmt eines (`psmcxx_2_1_samples_api`).
 
 ### §2.1 DataReader: read_instance und take_instance
 
@@ -1845,11 +1847,11 @@ view_states, instance_states): ReturnCode_t; take_instance (...): ReturnCode_t"
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `select().instance(handle).read()` und `.take()` wählen die Samples
-einer Instanz (`test_instance_operations_with_a_time_stamp`; mit einem Filter zusammen
+einer Instanz (`psmcxx_2_1_instance_operations_with_a_time_stamp`; mit einem Filter zusammen
 in `generated_type_roundtrip.cpp`).
 
 ### §2.1 DataReader: read_next_instance und take_next_instance
@@ -1863,8 +1865,8 @@ sample_states, view_states, instance_states): ReturnCode_t; take_next_instance
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `select().next_instance(handle).read()` und `.take()` wählen die
 Samples der Instanz nach dem Handle (Handle nil: die erste).
@@ -1879,10 +1881,10 @@ take_next_instance_w_condition (...): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::Selector`,
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `select().next_instance(handle).content(query)` verbindet beides
-(commit `eb8bfdd601e`); auf einem leeren Reader liefert es nichts.
+(commit `267fcd18f01`); auf einem leeren Reader liefert es nichts.
 
 ### §2.1 DataReader: return_loan
 
@@ -1894,8 +1896,8 @@ SampleInfo []): ReturnCode_t"
 `crates/cpp/include/dds/sub/detail/SampleDetail.hpp::LoanGuard`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_take_returns_the_loan_when_decode_throws`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_take_returns_the_loan_when_decode_throws`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — Der Loan wird mit `LoanedSamples` zurückgegeben, auch wenn die
 Dekodierung wirft (`LoanGuard`); `return_loan` ist keine Operation der PSM.
@@ -1909,8 +1911,8 @@ ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::key_value`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `key_value(sample, handle)` und `key_value(handle)` (als
 `TopicInstance`) geben den Schlüssel einer Instanz des Readers.
@@ -1923,7 +1925,7 @@ DataReader — "lookup_instance (instance: Data): InstanceHandle_t"
 **Repo:** `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::lookup_instance`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`
 
 **Status:** `done` — `lookup_instance(sample)` gibt das Handle der Instanz des
 Schlüssels im Reader.
@@ -1938,10 +1940,10 @@ ReadCondition"
 **Repo:** `crates/cpp/include/dds/sub/cond/ReadCondition.hpp`,
 `crates/cpp/include/dds/sub/cond/TReadCondition.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `ReadCondition(reader, DataState[, functor])`; `state_filter()` und
-`data_reader()` geben Maske und Reader zurück (commit `b221bbd356b`).
+`data_reader()` geben Maske und Reader zurück (commit `124b33e4dee`).
 
 ### §2.1 DataReader: create_querycondition
 
@@ -1953,12 +1955,12 @@ query_expression: string, query_parameters: string []): QueryCondition"
 **Repo:** `crates/cpp/include/dds/sub/cond/QueryCondition.hpp`,
 `crates/cpp/include/dds/sub/Query.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `QueryCondition(query, DataState)`; Ausdruck und Parameter werden
 gelesen, ersetzt und ergänzt (`expression`, `parameters`, `add_parameter`; commit
-`eb8bfdd601e`).
+`267fcd18f01`).
 
 ### §2.1 DataReader: delete_readcondition
 
@@ -1968,7 +1970,7 @@ DataReader — "delete_readcondition (a_condition: ReadCondition): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/cond/ReadCondition.hpp`,
 `crates/cpp/include/dds/sub/cond/detail/`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — Die Bedingung wird mit ihrer letzten Referenz gelöscht (kein
 `delete_readcondition` in der PSM); der Test erzeugt und zerstört sie.
@@ -1983,7 +1985,7 @@ LivelinessChangedStatus): ReturnCode_t"
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::liveliness_changed_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `liveliness_changed_status()`.
 
@@ -1997,7 +1999,7 @@ RequestedDeadlineMissedStatus): ReturnCode_t"
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::requested_deadline_missed_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `requested_deadline_missed_status()`.
 
@@ -2011,7 +2013,7 @@ RequestedIncompatibleQosStatus): ReturnCode_t"
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::requested_incompatible_qos_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `requested_incompatible_qos_status()`.
 
@@ -2023,7 +2025,7 @@ ReturnCode_t"
 
 **Repo:** `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::sample_lost_status`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_status_getters`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_status_getters`
 
 **Status:** `done` — `sample_lost_status()`; ohne Verlust ist `total_count() == 0`.
 
@@ -2037,7 +2039,7 @@ ReturnCode_t"
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::sample_rejected_status`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `sample_rejected_status()`.
 
@@ -2050,8 +2052,8 @@ SubscriptionMatchedStatus): ReturnCode_t"
 **Repo:**
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::subscription_matched_status`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_status_getters`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_status_getters`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `subscription_matched_status()`.
 
@@ -2063,7 +2065,7 @@ DataReader — "get_topicdescription: TopicDescription"
 **Repo:** `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::topic_description`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `topic_description()`.
 
@@ -2075,7 +2077,7 @@ DataReader — "get_subscriber: Subscriber"
 **Repo:** `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::subscriber`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `subscriber()`.
 
@@ -2101,7 +2103,7 @@ DataReader — "wait_for_historical_data (max_wait: Duration_t): ReturnCode_t"
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::wait_for_historical_data`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `wait_for_historical_data(timeout)`; bei Zeitüberschreitung
 `TimeoutError`.
@@ -2116,7 +2118,7 @@ InstanceHandle_t): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/discovery.hpp::dds::sub::matched_publication_data`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`
 
 **Status:** `done` — `matched_publication_data(reader, handle)` und, unter dem Namen der
 Header der OMG, `matched_publications_data`.
@@ -2130,8 +2132,8 @@ InstanceHandle_t []): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/sub/discovery.hpp::dds::sub::matched_publications`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `matched_publications(reader)` und die Iterator-Form.
 
@@ -2148,12 +2150,12 @@ SampleInfo — "sample_state: SampleStateKind"
 `crates/cpp/include/dds/sub/status/DataState.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — `info.state().sample_state()` gibt den Zustand; die Zustände kommen
 aus den Bits des C-API (`SampleDetail.hpp::make_sample_info`); `SampleInfo` ist ein
-Werttyp, dessen Teile `test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+Werttyp, dessen Teile `psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 aus Werten aufbaut und liest.
 
 ### §2.1 SampleInfo: view_state
@@ -2165,12 +2167,12 @@ SampleInfo — "view_state: ViewStateKind"
 `crates/cpp/include/dds/sub/status/DataState.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — `info.state().view_state()` gibt den Zustand; die Zustände kommen
 aus den Bits des C-API (`SampleDetail.hpp::make_sample_info`); `SampleInfo` ist ein
-Werttyp, dessen Teile `test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+Werttyp, dessen Teile `psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 aus Werten aufbaut und liest.
 
 ### §2.1 SampleInfo: instance_state
@@ -2181,9 +2183,9 @@ SampleInfo — "instance_state: InstanceStateKind"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::state`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `info.state().instance_state()`; ALIVE im Test der Samples,
 NOT_ALIVE_DISPOSED nach `dispose_instance` (`generated_type_roundtrip.cpp`).
@@ -2196,7 +2198,7 @@ SampleInfo — "disposed_generation_count: long"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::generation_count`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.generation_count().disposed()`; die Werte setzt
 `make_sample_info` aus der Struktur des C-API, die Zählung selbst prüft
@@ -2210,7 +2212,7 @@ SampleInfo — "no_writers_generation_count: long"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::generation_count`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.generation_count().no_writers()`; der Wert kommt aus der
 Struktur des C-API (Rust-Test: `instance_state_unregister_reports_not_alive_no_writers`
@@ -2224,7 +2226,7 @@ SampleInfo — "sample_rank: long"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::rank`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.rank().sample()`; Rust-Test der Zählung:
 `sample_rank_counts_down_within_one_batch` in `sample_info_fields.rs`.
@@ -2237,7 +2239,7 @@ SampleInfo — "generation_rank: long"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::rank`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.rank().generation()`.
 
@@ -2249,7 +2251,7 @@ SampleInfo — "absolute_generation_rank: long"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::rank`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.rank().absolute_generation()`.
 
@@ -2261,7 +2263,7 @@ SampleInfo — "source_timestamp: Time_t"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::timestamp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.timestamp()`; der Zeitstempel eines Writers (`write(sample,
 time)`) erreicht die SampleInfo über die Struktur des C-API (Rust-Test:
@@ -2275,8 +2277,8 @@ SampleInfo — "instance_handle: InstanceHandle_t"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::instance_handle`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_roundtrip.cpp::main`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`,
+`crates/cpp/tests/generated_type_roundtrip.cpp::main`
 
 **Status:** `done` — `info.instance_handle()`; zwei Samples desselben Schlüssels haben
 dasselbe Handle (`generated_type_roundtrip.cpp`).
@@ -2289,7 +2291,7 @@ SampleInfo — "publication_handle: InstanceHandle_t"
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::publication_handle`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.publication_handle()`; der Wert kommt aus der Struktur des
 C-API.
@@ -2301,8 +2303,8 @@ SampleInfo — "valid_data: boolean"
 
 **Repo:** `crates/cpp/include/dds/sub/SampleInfo.hpp::SampleInfo::valid`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `info.valid()`; wahr für ein Sample mit Daten.
 
@@ -2319,7 +2321,7 @@ DataReaderListener — "on_data_available (the_reader: DataReader): void"
 `crates/cpp/include/dds/sub/DataReaderListener.hpp::DataReaderListener::on_data_available`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_bridge_dispatches_to_virtual`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft `on_data_available(reader)`
 mit dem auslösenden Reader.
@@ -2334,7 +2336,7 @@ SampleRejectedStatus): void"
 `crates/cpp/include/dds/sub/DataReaderListener.hpp::DataReaderListener::on_sample_rejected`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft `on_sample_rejected(reader,
 status)` mit dem auslösenden Reader.
@@ -2349,7 +2351,7 @@ LivelinessChangedStatus): void"
 `crates/cpp/include/dds/sub/DataReaderListener.hpp::DataReaderListener::on_liveliness_changed`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft
 `on_liveliness_changed(reader, status)` mit dem auslösenden Reader.
@@ -2364,7 +2366,7 @@ status: RequestedDeadlineMissedStatus): void"
 `crates/cpp/include/dds/sub/DataReaderListener.hpp::DataReaderListener::on_requested_deadline_missed`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft
 `on_requested_deadline_missed(reader, status)` mit dem auslösenden Reader.
@@ -2379,7 +2381,7 @@ status: RequestedIncompatibleQosStatus): void"
 `crates/cpp/include/dds/sub/DataReaderListener.hpp::DataReaderListener::on_requested_incompatible_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft
 `on_requested_incompatible_qos(reader, status)` mit dem auslösenden Reader.
@@ -2394,7 +2396,7 @@ SubscriptionMatchedStatus): void"
 `crates/cpp/include/dds/sub/DataReaderListener.hpp::DataReaderListener::on_subscription_matched`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft
 `on_subscription_matched(reader, status)` mit dem auslösenden Reader.
@@ -2409,7 +2411,7 @@ SampleLostStatus): void"
 `crates/cpp/include/dds/sub/DataReaderListener.hpp::DataReaderListener::on_sample_lost`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_listener_callback_reaches_its_virtual_method`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_every_listener_callback_reaches_its_virtual_method`
 
 **Status:** `done` — Der Eintrag der Tabelle des C-API ruft `on_sample_lost(reader,
 status)` mit dem auslösenden Reader.
@@ -2425,8 +2427,8 @@ Condition — "get_trigger_value: boolean"
 
 **Repo:** `crates/cpp/include/dds/core/cond/TCondition.hpp::TCondition::trigger_value`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `trigger_value()` der GuardCondition, ReadCondition und
 StatusCondition; der Test prüft den Anfangswert FALSE der GuardCondition und das Setzen.
@@ -2439,7 +2441,7 @@ language binding (e.g., using “new” in C++ or Java)."
 
 **Repo:** `crates/cpp/include/dds/core/cond/TWaitSet.hpp::TWaitSet::TWaitSet`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`
 
 **Status:** `done` — `WaitSet()` erzeugt ein WaitSet ohne Factory (Standardkonstruktor).
 
@@ -2451,8 +2453,8 @@ WaitSet — "attach_condition (a_condition: Condition): ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/core/cond/TWaitSet.hpp::TWaitSet::attach_condition`,
 `crates/cpp/include/dds/core/cond/TWaitSet.hpp::TWaitSet::operator+=`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `attach_condition(cond)` und `ws += cond` hängen eine Bedingung an.
 
@@ -2463,8 +2465,8 @@ WaitSet — "detach_condition (a_condition: Condition): ReturnCode_t"
 
 **Repo:** `crates/cpp/include/dds/core/cond/TWaitSet.hpp::TWaitSet::detach_condition`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `detach_condition(cond)` gibt wahr für eine angehängte, falsch für
 eine nicht angehängte Bedingung.
@@ -2478,8 +2480,8 @@ ReturnCode_t"
 **Repo:** `crates/cpp/include/dds/core/cond/TWaitSet.hpp::TWaitSet::wait`,
 `crates/cpp/include/dds/core/cond/detail/WaitSetDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `wait(timeout)`, `wait()` (unbegrenzt) und die Formen mit
 `ConditionSeq&` blockieren bis eine Bedingung gilt; ohne gültige Bedingung endet
@@ -2493,8 +2495,8 @@ WaitSet — "inout: active_conditions: Condition []"
 
 **Repo:** `crates/cpp/include/dds/core/cond/TWaitSet.hpp::TWaitSet::wait`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `wait` gibt die Bedingungen zurück, die gelten (`ConditionSeq`);
 der Test prüft die Zahl.
@@ -2507,8 +2509,8 @@ ReturnCode_t"
 
 **Repo:** `crates/cpp/include/dds/core/cond/TWaitSet.hpp::TWaitSet::conditions`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `conditions()` gibt die angehängten Bedingungen zurück.
 
@@ -2522,7 +2524,7 @@ first created the trigger_value is set to FALSE."
 **Repo:**
 `crates/cpp/include/dds/core/cond/TGuardCondition.hpp::TGuardCondition::TGuardCondition`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`
 
 **Status:** `done` — `GuardCondition()`; `trigger_value()` ist anfangs falsch.
 
@@ -2534,7 +2536,7 @@ GuardCondition — "set_trigger_value (value: boolean): ReturnCode_t"
 **Repo:**
 `crates/cpp/include/dds/core/cond/TGuardCondition.hpp::TGuardCondition::trigger_value`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`
 
 **Status:** `done` — `trigger_value(bool)` setzt den Wert; ein angehängtes WaitSet sieht
 ihn.
@@ -2549,7 +2551,7 @@ get_enabled_statuses: StatusKind []"
 `crates/cpp/include/dds/core/cond/TStatusCondition.hpp::TStatusCondition::enabled_statuses`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `enabled_statuses(mask)` setzt, `enabled_statuses()` liest die
 Maske.
@@ -2562,10 +2564,10 @@ StatusCondition — "get_entity: Entity"
 **Repo:**
 `crates/cpp/include/dds/core/cond/TStatusCondition.hpp::TStatusCondition::entity`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `entity()` gibt die Entität der Bedingung zurück (commit
-`eb8bfdd601e`).
+`267fcd18f01`).
 
 ### §2.1 ReadCondition: get_datareader
 
@@ -2575,7 +2577,7 @@ ReadCondition — "get_datareader: DataReader"
 **Repo:**
 `crates/cpp/include/dds/sub/cond/TReadCondition.hpp::TReadCondition::data_reader`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `data_reader()` gibt den Reader der Bedingung zurück.
 
@@ -2588,7 +2590,7 @@ ViewStateKind []; get_instance_state_mask: InstanceStateKind []"
 **Repo:**
 `crates/cpp/include/dds/sub/cond/TReadCondition.hpp::TReadCondition::state_filter`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `state_filter()` gibt die `DataState` mit Sample-, View- und
 Instance-State zurück.
@@ -2601,7 +2603,7 @@ QueryCondition — "get_query_expression: string"
 **Repo:**
 `crates/cpp/include/dds/sub/cond/ReadCondition.hpp::QueryCondition::expression`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — `expression()` liest, `expression(text)` ersetzt den Ausdruck.
 
@@ -2615,11 +2617,11 @@ ReturnCode_t; set_query_parameters (query_parameters: string []): ReturnCode_t"
 `crates/cpp/include/dds/sub/cond/ReadCondition.hpp::QueryCondition::parameters`,
 `crates/cpp/include/dds/sub/cond/ReadCondition.hpp::QueryCondition::add_parameter`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/zerodds-c-api/tests/query_condition_update.rs::a_query_condition_takes_a_new_expression_and_new_parameters`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`,
+`crates/zerodds-c-api/tests/query_condition_update.rs::capi_14_4_a_query_condition_takes_a_new_expression_and_new_parameters`
 
 **Status:** `done` — `parameters_length()`, `begin()`, `end()` lesen, `parameters(begin,
-end)` ersetzt, `add_parameter` ergänzt (commit `eb8bfdd601e`).
+end)` ersetzt, `add_parameter` ergänzt (commit `267fcd18f01`).
 
 ---
 
@@ -2633,12 +2635,12 @@ end)` ersetzt, `add_parameter` ergänzt (commit `eb8bfdd601e`).
 **Repo:** `crates/cpp/include/dds/topic/BuiltinTopic.hpp::ParticipantBuiltinTopicData`,
 `crates/cpp/include/dds/topic/TBuiltinTopic.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_data_carries_every_member`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_readers`,
-`crates/zerodds-c-api/tests/builtin_reader.rs::the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_data_carries_every_member`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_readers`,
+`crates/zerodds-c-api/tests/builtin_reader.rs::psmcxx_2_1_the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
 
-**Status:** `done` — `ParticipantBuiltinTopicData` trägt `key()` und `user_data()` (auch als `ParticipantTopicData`); `get_discovered_participant_data(handle)` füllt sie, und der Reader `DataReader<ParticipantBuiltinTopicData>` des Built-in-Subscriber liefert die Samples des Topic DCPSParticipant mit `read()`/`take()` (`test_builtin_topic_readers`: ein Participant erscheint, `take` entfernt ihn).
+**Status:** `done` — `ParticipantBuiltinTopicData` trägt `key()` und `user_data()` (auch als `ParticipantTopicData`); `get_discovered_participant_data(handle)` füllt sie, und der Reader `DataReader<ParticipantBuiltinTopicData>` des Built-in-Subscriber liefert die Samples des Topic DCPSParticipant mit `read()`/`take()` (`psmcxx_2_1_builtin_topic_readers`: ein Participant erscheint, `take` entfernt ihn).
 
 ### §2.1 Eingebaute Topics: DCPSTopic
 
@@ -2649,12 +2651,12 @@ history, resource_limits, ownership, topic_data"
 
 **Repo:** `crates/cpp/include/dds/topic/BuiltinTopic.hpp::TopicBuiltinTopicData`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_data_carries_every_member`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_discovered_topic_data_unknown_handle_throws`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_readers`,
-`crates/zerodds-c-api/tests/builtin_reader.rs::the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_data_carries_every_member`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_discovered_topic_data_unknown_handle_throws`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_readers`,
+`crates/zerodds-c-api/tests/builtin_reader.rs::psmcxx_2_1_the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
 
-**Status:** `done` — `TopicBuiltinTopicData` trägt jedes Mitglied von DCPSTopic als Policy-Klasse (commit `e0b3af9f2c7`); `get_discovered_topic_data(handle)` liefert die Daten, und der Reader `DataReader<TopicBuiltinTopicData>` liefert die Samples des Topic DCPSTopic (`test_builtin_topic_readers`: das Topic „BuiltinReaders“ erscheint mit seinem Namen).
+**Status:** `done` — `TopicBuiltinTopicData` trägt jedes Mitglied von DCPSTopic als Policy-Klasse (commit `8a4fbbd8d38`); `get_discovered_topic_data(handle)` liefert die Daten, und der Reader `DataReader<TopicBuiltinTopicData>` liefert die Samples des Topic DCPSTopic (`psmcxx_2_1_builtin_topic_readers`: das Topic „BuiltinReaders“ erscheint mit seinem Namen).
 
 ### §2.1 Eingebaute Topics: DCPSPublication
 
@@ -2669,11 +2671,11 @@ partition, topic_data, group_data"
 `crates/cpp/include/dds/sub/discovery.hpp::dds::sub::matched_publication_data`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_readers`,
-`crates/zerodds-c-api/tests/builtin_reader.rs::the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_readers`,
+`crates/zerodds-c-api/tests/builtin_reader.rs::psmcxx_2_1_the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
 
-**Status:** `done` — `PublicationBuiltinTopicData` trägt die Mitglieder von DCPSPublication (Schlüssel, `participant_key()`, Topic- und Typname, Durability, Deadline, LatencyBudget, Liveliness, Reliability, UserData, Ownership, DestinationOrder, Presentation, Partition, TopicData, GroupData, DurabilityService, Lifespan, OwnershipStrength); `matched_publication_data(reader, handle)` füllt sie, und der Reader `DataReader<PublicationBuiltinTopicData>` liefert die Samples des Topic DCPSPublication (`test_builtin_topic_readers`: die Publication des Writers der anderen Participant erscheint mit ihrem Topic-Namen). Die Werte der übrigen Mitglieder liest kein Test (siehe das folgende Item).
+**Status:** `done` — `PublicationBuiltinTopicData` trägt die Mitglieder von DCPSPublication (Schlüssel, `participant_key()`, Topic- und Typname, Durability, Deadline, LatencyBudget, Liveliness, Reliability, UserData, Ownership, DestinationOrder, Presentation, Partition, TopicData, GroupData, DurabilityService, Lifespan, OwnershipStrength); `matched_publication_data(reader, handle)` füllt sie, und der Reader `DataReader<PublicationBuiltinTopicData>` liefert die Samples des Topic DCPSPublication (`psmcxx_2_1_builtin_topic_readers`: die Publication des Writers der anderen Participant erscheint mit ihrem Topic-Namen). Die Werte der übrigen Mitglieder liest kein Test (siehe das folgende Item).
 
 ### §2.1 Eingebaute Topics: übrige Felder von DCPSPublication
 
@@ -2687,10 +2689,10 @@ topic_data, group_data"
 `crates/cpp/include/dds/topic/TBuiltinTopic.hpp::TPublicationBuiltinTopicData`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_values_arrive`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_values_arrive`
 
-**Status:** `done` — Alle Mitglieder kommen mit dem Wert an, mit dem der Writer angelegt wurde: `test_builtin_topic_values_arrive` liest die Publication aus dem Built-in-Reader der anderen Participant und prüft Typname, DURABILITY, DEADLINE, LATENCY_BUDGET, LIVELINESS, RELIABILITY, DESTINATION_ORDER, USER_DATA, OWNERSHIP, OWNERSHIP_STRENGTH, LIFESPAN, PARTITION, GROUP_DATA, TOPIC_DATA, PRESENTATION, DURABILITY_SERVICE, Schlüssel und Participant-Schlüssel. Der Test fand, dass TOPIC_DATA des Topic nicht ankam; ein Writer und ein Reader melden jetzt das TOPIC_DATA ihres Topic.
+**Status:** `done` — Alle Mitglieder kommen mit dem Wert an, mit dem der Writer angelegt wurde: `psmcxx_2_1_builtin_topic_values_arrive` liest die Publication aus dem Built-in-Reader der anderen Participant und prüft Typname, DURABILITY, DEADLINE, LATENCY_BUDGET, LIVELINESS, RELIABILITY, DESTINATION_ORDER, USER_DATA, OWNERSHIP, OWNERSHIP_STRENGTH, LIFESPAN, PARTITION, GROUP_DATA, TOPIC_DATA, PRESENTATION, DURABILITY_SERVICE, Schlüssel und Participant-Schlüssel. Der Test fand, dass TOPIC_DATA des Topic nicht ankam; ein Writer und ein Reader melden jetzt das TOPIC_DATA ihres Topic.
 
 ### §2.1 Eingebaute Topics: DCPSSubscription
 
@@ -2703,11 +2705,11 @@ user_data, time_based_filter, presentation, partition, topic_data, group_data"
 `crates/cpp/include/dds/pub/discovery.hpp::dds::pub::matched_subscription_data`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_readers`,
-`crates/zerodds-c-api/tests/builtin_reader.rs::the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_readers`,
+`crates/zerodds-c-api/tests/builtin_reader.rs::psmcxx_2_1_the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found`
 
-**Status:** `done` — `SubscriptionBuiltinTopicData` trägt die Mitglieder von DCPSSubscription einschließlich `time_based_filter()`; `matched_subscription_data(writer, handle)` füllt sie, und der Reader `DataReader<SubscriptionBuiltinTopicData>` liefert die Samples des Topic DCPSSubscription (`test_builtin_topic_readers`: das Subscription des Readers der anderen Participant erscheint mit seinem Topic-Namen, gesehen von der Seite des Writers).
+**Status:** `done` — `SubscriptionBuiltinTopicData` trägt die Mitglieder von DCPSSubscription einschließlich `time_based_filter()`; `matched_subscription_data(writer, handle)` füllt sie, und der Reader `DataReader<SubscriptionBuiltinTopicData>` liefert die Samples des Topic DCPSSubscription (`psmcxx_2_1_builtin_topic_readers`: das Subscription des Readers der anderen Participant erscheint mit seinem Topic-Namen, gesehen von der Seite des Writers).
 
 ### §2.1 Eingebaute Topics: übrige Felder von DCPSSubscription
 
@@ -2720,10 +2722,10 @@ partition, topic_data, group_data"
 `crates/cpp/include/dds/topic/TBuiltinTopic.hpp::TSubscriptionBuiltinTopicData`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_values_arrive`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_values_arrive`
 
-**Status:** `done` — Die Mitglieder kommen mit dem Wert an, mit dem der Reader angelegt wurde: `test_builtin_topic_values_arrive` prüft DURABILITY, DEADLINE, LATENCY_BUDGET, RELIABILITY, OWNERSHIP, USER_DATA, PARTITION, TIME_BASED_FILTER und TOPIC_DATA der Subscription aus dem Built-in-Reader der Writer-Seite.
+**Status:** `done` — Die Mitglieder kommen mit dem Wert an, mit dem der Reader angelegt wurde: `psmcxx_2_1_builtin_topic_values_arrive` prüft DURABILITY, DEADLINE, LATENCY_BUDGET, RELIABILITY, OWNERSHIP, USER_DATA, PARTITION, TIME_BASED_FILTER und TOPIC_DATA der Subscription aus dem Built-in-Reader der Writer-Seite.
 
 ---
 
@@ -2737,7 +2739,7 @@ subdirectories are excepted; they are not normative."
 
 **Repo:** `crates/cpp/include/dds/.`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — Von den 196 Dateien der OMG außerhalb von `detail/` (153 öffentliche) liegen alle an demselben Ort unter `crates/cpp/include/dds/`. Verglichen mit einem Skript über die Dateilisten (Cache `dds-psm-cxx-1.0-sources/hpp/dds`).
 
@@ -2750,10 +2752,10 @@ namespaces by means of typedef declarations, are normative. Those names within
 
 **Repo:** `crates/cpp/include/dds/.`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_reference_type_macros`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_2_reference_type_macros`
 
-**Status:** `done` — Alle Bezeichner der öffentlichen Header der OMG (Klassen, Typedefs, Funktionen, Makros) sind vorhanden, auch `OMG_DDS_REF_TYPE_BASE`, `OMG_DDS_REF_TYPE_BASE_T`, `OMG_DDS_REF_TYPE_DELEGATE_T` und `DDS_PTR_CTOR_REF_TYPE` in `dds/core/refmacros.hpp` (Test `test_reference_type_macros`). Wo die OMG-Header einen Namen falsch schreiben (`offered_deadlined_missed_status`, `offered_incompatible_qos_staus`), gibt es beide Schreibweisen.
+**Status:** `done` — Alle Bezeichner der öffentlichen Header der OMG (Klassen, Typedefs, Funktionen, Makros) sind vorhanden, auch `OMG_DDS_REF_TYPE_BASE`, `OMG_DDS_REF_TYPE_BASE_T`, `OMG_DDS_REF_TYPE_DELEGATE_T` und `DDS_PTR_CTOR_REF_TYPE` in `dds/core/refmacros.hpp` (Test `psmcxx_2_2_reference_type_macros`). Wo die OMG-Header einen Namen falsch schreiben (`offered_deadlined_missed_status`, `offered_incompatible_qos_staus`), gibt es beide Schreibweisen.
 
 ### §2.2 Verteilung der Namen auf die Header normativ
 
@@ -2802,7 +2804,7 @@ specification."
 `crates/cpp/tests/vendor_names.txt`
 
 **Tests:** `crates/cpp/tests/public_headers.rs::no_vendor_name_in_the_normative_namespaces`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_builtin_topic_readers`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_builtin_topic_readers`
 
 **Status:** `done` — `tools/psm-omg-names.py` listet die Namen auf Namespace-Ebene aus unseren
 öffentlichen Headern außerhalb von `detail`. Jeder Name kommt als Bezeichner in den
@@ -2835,7 +2837,7 @@ deklariert.
 
 **Status:** `n/a (informative)` — Verweis; nach §7.4.2 für die Ganzzahltypen von
 `stdint.h`. Die Header binden `<stdint.h>` ein, wo sie die Typen global nennen (commit
-`def4ff43f03`); siehe die Items zu §7.4.2.
+`71ff4943db2`); siehe die Items zu §7.4.2.
 
 ### §3 [C++] ISO/IEC 14882:2003
 
@@ -2845,7 +2847,7 @@ deklariert.
 
 **Tests:**
 `crates/cpp/tests/public_headers.rs::every_public_header_compiles_on_its_own_as_cxx03`,
-`crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke_as_cxx03`
+`crates/cpp/CMakeLists.txt::psmcxx_7_1_the_smoke_program_runs_as_cxx03`
 
 **Status:** `done` — Alle 144 öffentlichen Header unter `crates/cpp/include/dds` übersetzen
 einzeln mit `-std=c++03 -pedantic`. Geprüft mit g++ 12.2 (`tools/psm-cxx03-check.py --cxx g++` auf dem Linux-Testhost) und
@@ -3038,8 +3040,7 @@ PrismTech Corporation, Ltd. • Real-Time Innovations, Inc. (RTI)"
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Begriffsbestimmung oder Notation der Spec; keine
-Anforderung.
+**Status:** n/a (informative) — Danksagung.
 
 ---
 
@@ -3084,7 +3085,7 @@ match the different modules defined by the DDS v1.2 PIM (see Figure 7.1)."
 `crates/cpp/include/dds/pub/`, `crates/cpp/include/dds/sub/`,
 `crates/cpp/include/dds/core/`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `dds::core`, `dds::domain`, `dds::topic`, `dds::pub`, `dds::sub`
 mit den Verzeichnissen und Namensräumen der OMG-Header.
@@ -3101,8 +3102,8 @@ Topic: qos, detail; pub: qos, detail; sub: qos, cond, status, detail
 `crates/cpp/include/dds/pub/qos/`, `crates/cpp/include/dds/sub/qos/`,
 `crates/cpp/include/dds/sub/cond/`, `crates/cpp/include/dds/sub/status/`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_readcondition_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_readcondition_lifecycle`
 
 **Status:** `done` — Die Namensräume `core::{xtypes, policy, cond, status}`,
 `domain::qos`, `topic::qos`, `pub::qos`, `sub::{qos, cond, status}` und jeweils `detail`
@@ -3115,7 +3116,7 @@ detail"; ".data(dds::sub::status::DataState::new_data())"
 
 **Repo:** `crates/cpp/include/dds/sub/status/DataState.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — `dds::sub::status::DataState` mit `SampleState`, `ViewState`,
 `InstanceState` und `DataState::new_data()`, `::any()`.
@@ -3132,8 +3133,8 @@ the Policies, and the definition of reference and value types."
 `crates/cpp/include/dds/core/Reference.hpp`, `crates/cpp/include/dds/core/Value.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `dds::core` enthält `Time`, `Duration`, die Policies,
 `Reference<D>`, `WeakReference<T>` und `Value<D>`.
@@ -3152,11 +3153,11 @@ these type constructors with implementation provided delegates."
 `crates/cpp/include/dds/sub/TDataReader.hpp`,
 `crates/cpp/include/dds/core/cond/TWaitSet.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — Die Klassen sind Templates über einen Delegate
-(`TDomainParticipant<DELEGATE>`, `TPublisher<DELEGATE>`, …, commits `ee3c3473721`,
-`0c023caded7`); die Delegates liegen in `detail/`.
+(`TDomainParticipant<DELEGATE>`, `TPublisher<DELEGATE>`, …, commits `429cdde1978`,
+`4a96017d92a`); die Delegates liegen in `detail/`.
 
 ### §7.2 Unterpakete `detail` sind keine Konformitätspunkte
 
@@ -3197,8 +3198,8 @@ TInstanceHandle ; } }"
 **Repo:** `crates/cpp/include/dds/core/TInstanceHandle.hpp::TInstanceHandle`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`
 
 **Status:** `done` — `dds::core::TInstanceHandle<DELEGATE>` in
 `dds/core/TInstanceHandle.hpp`; `nil()`, `is_nil()`, `value()`.
@@ -3230,7 +3231,7 @@ namespace dds { namespace core { typedef detail::InstanceHandle InstanceHandle;
 **Repo:** `crates/cpp/include/dds/core/InstanceHandle.hpp::InstanceHandle`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `dds::core::InstanceHandle` ist die Instanz von `TInstanceHandle`
 in `dds/core/InstanceHandle.hpp`.
@@ -3243,7 +3244,7 @@ API defined by this specification."
 **Repo:** `crates/cpp/include/dds/.`
 
 **Tests:** `crates/cpp/tests/public_headers.rs::every_name_of_the_omg_headers_is_reachable_through_its_header`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_signatures_follow_the_normative_headers`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_signatures_follow_the_normative_headers`,
 `crates/cpp/tests/public_headers.rs::no_vendor_name_in_the_normative_namespaces`
 
 **Status:** `done` — Namen und Verteilung entsprechen den OMG-Headern (siehe §2.2), die Member-Signaturen
@@ -3262,7 +3263,7 @@ vendor extensions."
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — Die Typkonstruktoren rufen den Delegate; die Erweiterungen liegen
 im Delegate und sind über `operator->` erreichbar (`dp->find_topic(…)`,
@@ -3278,8 +3279,8 @@ accessing vendor specific extensions."
 `crates/cpp/include/dds/core/Reference.hpp::Reference::delegate`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `operator->` und `delegate()` geben den Delegate (§7.6, S. 25);
 `dp->delete_contained_entities()`, `dw->wait_for_matched(…)`.
@@ -3292,7 +3293,7 @@ accessing vendor specific extensions."
 **Repo:** `crates/cpp/include/dds/dds.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`
 
 **Status:** `done` — `#include <dds/dds.hpp>` bindet die ganze API; der Test bindet nur
 diesen Header (und die Header der Zusatzfunktionen) ein.
@@ -3308,7 +3309,7 @@ headers have the form dds/module/ddsmodule.hpp. For example: • #include
 `crates/cpp/include/dds/topic/ddstopic.hpp`, `crates/cpp/include/dds/pub/ddspub.hpp`,
 `crates/cpp/include/dds/sub/ddssub.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — Die Modul-Header `dds/core/ddscore.hpp`,
 `dds/domain/ddsdomain.hpp`, `dds/topic/ddstopic.hpp`, `dds/pub/ddspub.hpp`,
@@ -3324,7 +3325,7 @@ the form dds/module/ClassName.hpp. For example: • #include
 `crates/cpp/include/dds/sub/DataReader.hpp`,
 `crates/cpp/include/dds/domain/DomainParticipant.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — Jede Klasse hat ihren Header (`dds/pub/DataWriter.hpp`, …), und
 jeder öffentliche Header übersetzt allein (CMake-Ziel `zerodds_psm_standalone_headers`).
@@ -3342,9 +3343,9 @@ reentrant."
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_operations_are_called_from_several_threads`,
-`crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke_under_thread_sanitizer`,
-`crates/cpp/tests/cpp_smoke_via_cargo.rs::the_threaded_smoke_tests_pass_without_the_sanitizer`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_3_operations_are_called_from_several_threads`,
+`crates/cpp/CMakeLists.txt::psmcxx_7_3_no_data_race_in_the_cpp_code_under_thread_sanitizer`,
+`crates/cpp/CMakeLists.txt::dds_psm_cxx_smoke`
 
 **Status:** `done` — Vier Schreiber-Threads auf einem DataWriter, ein Thread, der Status und QoS liest, und ein Leser, der nimmt: alle 200 Samples kommen an, keine Operation wirft. Der Test läuft auch mit `-fsanitize=thread` (`dds_psm_cxx_smoke_under_thread_sanitizer`): 249 Berichte, alle im Modul `libzerodds` (Rust, vom Prüfer nicht instrumentiert, seine Sperren und Kanäle sind ihm unsichtbar), keiner im C++-Code; die Prüfung schlägt fehl, sobald ein Bericht außerhalb der Bibliothek liegt. Die Berichte in der Bibliothek sind damit weder bestätigt noch widerlegt.
 
@@ -3356,10 +3357,10 @@ safe."
 **Repo:** `crates/cpp/include/dds/sub/detail/SampleDetail.hpp::LoanGuard`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_take_returns_the_loan_when_decode_throws`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_take_returns_the_loan_when_decode_throws`
 
 **Status:** `done` — `LoanGuard` gibt den Loan zurück, auch wenn die Dekodierung wirft
-(commit `409a44a86e9`); der Reader bleibt benutzbar.
+(commit `68c83d552ba`); der Reader bleibt benutzbar.
 
 ### §7.3 Konstruktoren und Kopierzuweisung von Werttypen ausnahmesicher
 
@@ -3368,14 +3369,11 @@ classes that inherit from Value<D> and the Value<D> template itself shall
 preferably be exception safe. Deviation from this norm should be carefully noted
 on vendor documentation."
 
-**Repo:** `crates/cpp/include/dds/core/Value.hpp`
+**Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Eine Empfehlung („preferably“). `Value<D>` kopiert den
-Delegate mit seiner Kopierzuweisung; die Policy-Klassen halten `std::vector`,
-`std::string` und Zahlen. Kein Test lässt eine Kopie scheitern, und die Dokumentation
-von `crates/cpp` nennt keine Abweichung.
+**Status:** open — eine Empfehlung („preferably“), die das Produkt erfüllen kann. `Value<D>` (`crates/cpp/include/dds/core/Value.hpp`) kopiert den Delegate mit seiner Kopierzuweisung; die Policy-Klassen halten `std::vector`, `std::string` und Zahlen. Kein Test lässt eine Kopie scheitern, und die Dokumentation von `crates/cpp` nennt keine Abweichung.
 
 ### §7.3 Operationen von Topic, Publisher, Subscriber und DomainParticipant reentrant
 
@@ -3389,11 +3387,11 @@ contained object."
 `crates/cpp/include/dds/core/detail/ChildTracker.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_operations_are_called_from_several_threads`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_from_several_threads`,
-`crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke_under_thread_sanitizer`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_3_operations_are_called_from_several_threads`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_3_entities_are_created_from_several_threads`,
+`crates/cpp/CMakeLists.txt::psmcxx_7_3_no_data_race_in_the_cpp_code_under_thread_sanitizer`
 
-**Status:** `done` — Der Test ruft `qos()` von Publisher, Subscriber und Topic, `current_time()` und `contains_entity()` des Participant aus einem Thread auf, während Writer schreiben; `test_entities_are_created_from_several_threads` legt aus vier Threads je zehn Topics, Publisher, Subscriber, Writer und Reader an einem Participant an und schließt sie. Die Verzeichnisse der Delegates (`ParticipantRegistry`, `EntityTracker`, `ChildTracker`, `RetainedEntities`) sind durch Mutexe geschützt. `close()` nebenläufig aufzurufen schließt die Spec aus. Der Test läuft auch mit `-fsanitize=thread` (`dds_psm_cxx_smoke_under_thread_sanitizer`): 249 Berichte, alle im Modul `libzerodds` (Rust, vom Prüfer nicht instrumentiert, seine Sperren und Kanäle sind ihm unsichtbar), keiner im C++-Code; die Prüfung schlägt fehl, sobald ein Bericht außerhalb der Bibliothek liegt. Die Berichte in der Bibliothek sind damit weder bestätigt noch widerlegt.
+**Status:** `done` — Der Test ruft `qos()` von Publisher, Subscriber und Topic, `current_time()` und `contains_entity()` des Participant aus einem Thread auf, während Writer schreiben; `psmcxx_7_3_entities_are_created_from_several_threads` legt aus vier Threads je zehn Topics, Publisher, Subscriber, Writer und Reader an einem Participant an und schließt sie. Die Verzeichnisse der Delegates (`ParticipantRegistry`, `EntityTracker`, `ChildTracker`, `RetainedEntities`) sind durch Mutexe geschützt. `close()` nebenläufig aufzurufen schließt die Spec aus. Der Test läuft auch mit `-fsanitize=thread` (`dds_psm_cxx_smoke_under_thread_sanitizer`): 249 Berichte, alle im Modul `libzerodds` (Rust, vom Prüfer nicht instrumentiert, seine Sperren und Kanäle sind ihm unsichtbar), keiner im C++-Code; die Prüfung schlägt fehl, sobald ein Bericht außerhalb der Bibliothek liegt. Die Berichte in der Bibliothek sind damit weder bestätigt noch widerlegt.
 
 ### §7.3 Operationen der DomainParticipantFactory reentrant
 
@@ -3419,11 +3417,11 @@ on the same object."
 
 **Repo:** `crates/cpp/include/dds/core/cond/detail/WaitSetDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_guardcondition_and_waitset`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_conditions_are_used_from_several_threads`,
-`crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke_under_thread_sanitizer`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_guardcondition_and_waitset`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_3_conditions_are_used_from_several_threads`,
+`crates/cpp/CMakeLists.txt::psmcxx_7_3_no_data_race_in_the_cpp_code_under_thread_sanitizer`
 
-**Status:** `done` — `test_conditions_are_used_from_several_threads`: vier Threads setzen und lesen GuardConditions, ein Thread wartet in einem WaitSet, ein Thread hängt eine Condition an und ab und liest `conditions()`; 25 Runden, keine Operation wirft. Der Test fand einen Fehler: die Liste der angehängten Conditions in `WaitSetDelegate` und der Handler in `GuardConditionDelegate` hatten keine Sperre, das Programm stürzte unter gleichzeitigem Anhängen, Abhängen und Warten ab (SIGSEGV); beide sind jetzt durch einen Mutex geschützt. Der Test läuft auch mit `-fsanitize=thread` (`dds_psm_cxx_smoke_under_thread_sanitizer`): 249 Berichte, alle im Modul `libzerodds` (Rust, vom Prüfer nicht instrumentiert, seine Sperren und Kanäle sind ihm unsichtbar), keiner im C++-Code; die Prüfung schlägt fehl, sobald ein Bericht außerhalb der Bibliothek liegt. Die Berichte in der Bibliothek sind damit weder bestätigt noch widerlegt.
+**Status:** `done` — `psmcxx_7_3_conditions_are_used_from_several_threads`: vier Threads setzen und lesen GuardConditions, ein Thread wartet in einem WaitSet, ein Thread hängt eine Condition an und ab und liest `conditions()`; 25 Runden, keine Operation wirft. Der Test fand einen Fehler: die Liste der angehängten Conditions in `WaitSetDelegate` und der Handler in `GuardConditionDelegate` hatten keine Sperre, das Programm stürzte unter gleichzeitigem Anhängen, Abhängen und Warten ab (SIGSEGV); beide sind jetzt durch einen Mutex geschützt. Der Test läuft auch mit `-fsanitize=thread` (`dds_psm_cxx_smoke_under_thread_sanitizer`): 249 Berichte, alle im Modul `libzerodds` (Rust, vom Prüfer nicht instrumentiert, seine Sperren und Kanäle sind ihm unsichtbar), keiner im C++-Code; die Prüfung schlägt fehl, sobald ein Bericht außerhalb der Bibliothek liegt. Die Berichte in der Bibliothek sind damit weder bestätigt noch widerlegt.
 
 ### §7.3 Im Listener nur die auslösende Entität aufrufen
 
@@ -3485,11 +3483,11 @@ whether the DDS PIM element has reference or value semantics."
 **Repo:** `crates/cpp/include/dds/core/Reference.hpp`,
 `crates/cpp/include/dds/core/Value.hpp`, `crates/cpp/include/dds/core/TEntity.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Entitäten, Bedingungen und `Any*`-Klassen sind Referenztypen
-(`Reference<DELEGATE>`, commits `ee3c3473721`, `0c023caded7`); Status, QoS, Policies,
+(`Reference<DELEGATE>`, commits `429cdde1978`, `4a96017d92a`); Status, QoS, Policies,
 Zeiten und Samples sind Werttypen (`Value<D>`). Alle sind Klassen.
 
 ### §7.4.1 Keine Klasse des PIM wird ein `struct`
@@ -3517,12 +3515,12 @@ und `BitField`.
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `bool`. Der Test `check_table_7_1` prüft
 mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen Typ
-hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`); die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `std::vector<std::pair<K, V>>`,
+hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`); die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `std::vector<std::pair<K, V>>`,
 `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Char8 → `char`
@@ -3532,12 +3530,12 @@ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `char`. Der Test `check_table_7_1` prüft
 mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen Typ
-hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`); die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `std::vector<std::pair<K, V>>`,
+hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`); die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `std::vector<std::pair<K, V>>`,
 `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Char32 → `wchar_t`
@@ -3547,12 +3545,12 @@ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `wchar_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Byte → `uint8_t`
@@ -3562,12 +3560,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `uint8_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Int16 → `int16_t`
@@ -3577,12 +3575,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `int16_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: UInt16 → `uint16_t`
@@ -3592,12 +3590,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `uint16_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Int32 → `int32_t`
@@ -3607,12 +3605,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `int32_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: UInt32 → `uint32_t`
@@ -3622,12 +3620,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `uint32_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Int64 → `int64_t`
@@ -3637,12 +3635,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `int64_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: UInt64 → `uint64_t`
@@ -3652,12 +3650,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `uint64_t`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Float64 → `double`
@@ -3667,12 +3665,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `double`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Float128 → `long double`
@@ -3682,12 +3680,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `long double`. Der Test `check_table_7_1`
 prüft mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen
-Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`);
+Typ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`);
 die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: Float32 → `float`
@@ -3697,12 +3695,12 @@ die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `zerodd
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Zeile der Tabelle ist `float`. Der Test `check_table_7_1` prüft
 mit `static_assert`, dass der Zugriff auf das Mitglied eines erzeugten Typs diesen Typ
-hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `56ff5b5f25f`); die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `std::vector<std::pair<K, V>>`,
+hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit `1db807cbf0f`); die Option `--cpp-mapping native` behält die Typen des Codec (`map` als `std::vector<std::pair<K, V>>`,
 `long double` als `::zerodds::wire::Float128`).
 
 ### §7.4.2 Table 7.1: string<Char8> → `std::string`
@@ -3711,8 +3709,8 @@ hat. Der Codegen erzeugt diese Typen in der Vorgabe (`--cpp-mapping psm`, commit
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — `std::string` (`static_assert` in `check_table_7_1`; `std::string`
 ist auch der Typ der Namen in den Headern).
@@ -3723,8 +3721,8 @@ ist auch der Typ der Namen in den Headern).
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — `std::wstring` in der Vorgabe (`--cpp-mapping psm`; `static_assert`); der Wert
 läuft als UTF-8 durch den Codec (`back.wlabel() == r.wlabel()`).
@@ -3736,9 +3734,9 @@ läuft als UTF-8 durch den Codec (`back.wlabel() == r.wlabel()`).
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
-`crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`
 
 **Status:** `done` — `std::vector<T>` in beiden Abbildungen (`static_assert`; Rust-Test
 des Codegen).
@@ -3749,12 +3747,12 @@ des Codegen).
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — `std::map<K, V>` in der Vorgabe (`--cpp-mapping psm`; `static_assert`,
 Roundtrip mit zwei Einträgen). Die Option `--cpp-mapping native` bleibt bei `zerodds::Map<K, V>` (ein `std::vector<std::pair<K, V>>`), weil die Reihenfolge der Einträge eine Achse des Codec ist
-(`a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`).
+(`psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`).
 
 ### §7.4.2 Table 7.1: T[N] → `dds::core::array<T, N>`
 
@@ -3763,10 +3761,10 @@ Roundtrip mit zwei Einträgen). Die Option `--cpp-mapping native` bleibt bei `ze
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`,
 `crates/cpp/include/dds/core/array.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
-`test_layout_headers_and_find`,
-`test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
+`psmcxx_7_2_layout_headers_and_find`,
+`psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `dds::core::array<T, N>` in der Vorgabe (`--cpp-mapping psm`; `static_assert`,
 mehrdimensional `cells()[1][2]`); die Option `--cpp-mapping native` benutzt `std::array`.
@@ -3780,11 +3778,11 @@ the types of the same names as defined by [C99] in the header stdint.h."
 
 **Repo:** `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`test_layout_headers_and_find`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — Die Header binden `<stdint.h>` ein, wo sie die Typen global nennen
-(commit `def4ff43f03`); der `static_assert` in `check_table_7_1` prüft die globalen
+(commit `71ff4943db2`); der `static_assert` in `check_table_7_1` prüft die globalen
 Namen.
 
 ### §7.4.2 Plattformen ohne [C99] liefern eigene Typen
@@ -3821,7 +3819,7 @@ namespace, not in the std namespace."
 
 **Repo:** `crates/cpp/include/dds/core/types.hpp`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`
 
 **Status:** `done` — Die Typen `int32_t` u. a. stehen im globalen Namensraum
 (`static_assert(std::is_same<::int32_t, int32_t>…)`).
@@ -3833,8 +3831,8 @@ unbounded sequence types map to the same C++ types."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::check_table_7_1`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_2_every_row_of_table_7_1_round_trips`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Eine `sequence<long, 4>` und eine `sequence<long>` sind beide
 `std::vector<int32_t>` (`static_assert`).
@@ -3847,8 +3845,8 @@ C++11, exception made for the move operators."
 
 **Repo:** `crates/cpp/include/dds/core/array.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `dds::core::array` hat die Typen, Iteratoren, `fill`, `swap`, `at`,
 `front`, `back`, `data`, die Vergleiche und das Tupel-Interface von `std::array`;
@@ -3869,12 +3867,12 @@ enumeration to C++11 enumeration classes."
 `crates/cpp/include/dds/core/policy/PolicyKind.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — Die Kinds der Policies sind `safe_enum<…_def>`; die erzeugten
 Aufzählungen sind `enum class` (C++11 erlaubt,
-`an_enumeration_takes_an_underlying_type_from_its_bit_bound`).
+`xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound`).
 
 ### §7.4.3 `safe_enum`: Template und Basisklasse
 
@@ -3885,7 +3883,7 @@ typename def::type type; inner val; [...]"
 **Repo:** `crates/cpp/include/dds/core/SafeEnumeration.hpp::safe_enum`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `safe_enum<def, inner>` erbt von `def`, so dass die Enumeratoren
 als `Color::GREEN` erreichbar sind; ohne Umwandlung von und nach `int`.
@@ -3897,7 +3895,7 @@ als `Color::GREEN` erreichbar sind; ohne Umwandlung von und nach `int`.
 **Repo:** `crates/cpp/include/dds/core/SafeEnumeration.hpp::safe_enum::safe_enum`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `safe_enum(type v)`.
 
@@ -3908,7 +3906,7 @@ als `Color::GREEN` erreichbar sind; ohne Umwandlung von und nach `int`.
 **Repo:** `crates/cpp/include/dds/core/SafeEnumeration.hpp::safe_enum::underlying`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `underlying()`.
 
@@ -3920,8 +3918,8 @@ operator != (const safe_enum & s) const;"
 **Repo:** `crates/cpp/include/dds/core/SafeEnumeration.hpp::safe_enum::operator==`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — `operator==` und `operator!=`.
 
@@ -3934,7 +3932,7 @@ const; bool operator >= (const safe_enum & s) const;"
 **Repo:** `crates/cpp/include/dds/core/SafeEnumeration.hpp::safe_enum::operator<`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `operator<`, `<=`, `>`, `>=`.
 
@@ -3950,7 +3948,7 @@ Color;"
 **Tests:** —
 
 **Status:** `n/a (informative)` — Beispiel der Spec;
-`test_value_and_reference_classes_without_other_coverage` benutzt es.
+`psmcxx_7_5_4_value_and_reference_classes_without_other_coverage` benutzt es.
 
 ---
 
@@ -3965,9 +3963,9 @@ types to that of IDL."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`, `crates/lang-rules/src/emit/cpp.rs`
 
-**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
-`crates/cpp/tests/generated_psm_roundtrip.cpp::check_union_mapping`,
-`crates/lang-rules/src/adapter/cpp.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
+**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
+`crates/cpp/tests/generated_psm_roundtrip.cpp::psmcxx_7_4_4_a_union_has_the_idl2cpp11_accessors`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_4_a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
 
 **Status:** `done` — In der Vorgabe (`--cpp-mapping psm`) ist eine Union eine Klasse mit `_d()` und je Zweig
 Zugriffs- und Änderungsmethode (`c.text("hello")` setzt Zweig und Diskriminator,
@@ -3989,8 +3987,8 @@ Parameter: IN T | T"
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`,
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_lifecycle`
 
 **Status:** `done` — Einfache Parameter gehen als Wert (`uint32_t domain_id`,
 `History::KeepLast(uint32_t)`, `int32_t`-Setter).
@@ -4001,7 +3999,7 @@ Parameter: IN T | T"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — Ein einfacher Rückgabewert über `T&` ist der Zugriff `int32_t&
 depth()` der Policies; die Operationen der Header haben keinen OUT-Parameter einfachen
@@ -4013,7 +4011,7 @@ Typs (die Ergebnisse sind Rückgabewerte).
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — Wie bei OUT: `T&`-Zugriffe der Policies; keine Operation mit
 INOUT-Parameter einfachen Typs.
@@ -4026,8 +4024,8 @@ Type: T | T"
 **Repo:** `crates/cpp/include/dds/core/TEntity.hpp::TEntity::status_changes`,
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::domain_id`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`
 
 **Status:** `done` — Einfache Rückgaben gehen als Wert (`domain_id()`,
 `trigger_value()`, `contains_entity()`).
@@ -4042,9 +4040,9 @@ Type: T | T"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`
 
 **Status:** `done` — Samples, Namen, Handles, QoS und Dauern gehen als `const T&`; die
 Konstruktoren und Setter der Policies nehmen `const Duration&`, `const ByteSeq&`, `const
@@ -4056,8 +4054,8 @@ StringSeq&`.
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Die Policies nehmen zusammengesetzte Typen als `const T&`
 (`Reliability(kind, const Duration&)`, `Deadline(const Duration&)`, `UserData(const
@@ -4072,8 +4070,8 @@ den Wert.
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::key_value`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — OUT-Parameter zusammengesetzten Typs sind `T&` (`wait(ConditionSeq&
 triggered, timeout)`, `read(iterator, max)` in einen Container).
@@ -4086,7 +4084,7 @@ triggered, timeout)`, `read(iterator, max)` in einen Container).
 `crates/cpp/include/dds/sub/TDataReader.hpp::TDataReader::key_value`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`
 
 **Status:** `done` — INOUT-Parameter sind `T&` (`key_value(T& sample, handle)`).
 
@@ -4101,8 +4099,8 @@ attribute or not. • T • const T&"
 `crates/cpp/include/dds/topic/TTopic.hpp::TTopic::qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`
 
 **Status:** `done` — Zusammengesetzte Rückgaben sind `T` oder `const T&` (`qos()` als
 `const Qos&`, `default_writer_qos()` als Wert, Statuswerte als `const Status`).
@@ -4123,9 +4121,9 @@ attribute."
 `crates/cpp/include/dds/sub/SampleInfo.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_data_carries_every_member`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_data_carries_every_member`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — Policies, Status, `SampleInfo`, `Time`, `Duration` und die Daten
 der eingebauten Topics halten ihren Zustand privat, haben Getter und Setter mit dem
@@ -4140,8 +4138,8 @@ in the following table."
 `crates/cpp/include/dds/topic/TBuiltinTopic.hpp`,
 `crates/cpp/include/dds/core/TEntityQos.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_data_carries_every_member`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_data_carries_every_member`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — Die Statusklassen, `SampleInfo`, die QoS-Mengen (`policy<P>()`) und
 die Daten der eingebauten Topics haben keine öffentlichen Felder, sondern
@@ -4158,8 +4156,8 @@ void attribute(NT attrib);"
 `crates/cpp/include/dds/core/Time.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `NT attribute() const`, `NT& attribute()` und der Setter
 `attribute(NT)`; die Policies geben mit dem Setter sich selbst zurück (verkettbar),
@@ -4174,8 +4172,8 @@ attrib);"
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`,
 `crates/cpp/include/dds/topic/TBuiltinTopic.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_data_carries_every_member`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_data_carries_every_member`
 
 **Status:** `done` — `CT& attribute()`, `const CT& attribute() const` und der Setter mit
 `const CT&` (Policies: `Reliability::max_blocking_time(const Duration&)`,
@@ -4189,8 +4187,8 @@ const; void attribute(const ST& attrib);"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`
 
 **Status:** `done` — Folgen (`Partition::name`, `UserData::value`, `TopicData::value`)
 haben `ST&`, `const ST&` und den Setter mit `const ST&`.
@@ -4225,8 +4223,8 @@ reference-types and value-types."
 **Repo:** `crates/cpp/include/dds/core/Reference.hpp`,
 `crates/cpp/include/dds/core/Value.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Referenztypen leiten von `Reference<DELEGATE>` ab, Werttypen von
 `Value<D>`.
@@ -4243,10 +4241,10 @@ value of the reference."
 
 **Repo:** `crates/cpp/include/dds/core/Reference.hpp::Reference::operator=`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — Kopie und Zuweisung einer Referenz teilen den Delegate
-(`shared_ptr`); `test_reference_types` prüft, dass eine kopierte Referenz dasselbe
+(`shared_ptr`); `psmcxx_7_5_1_1_reference_types` prüft, dass eine kopierte Referenz dasselbe
 Objekt ist und dass die Zuweisung von `null` nur diese Referenz löst.
 
 ### §7.5.1.1 Referenzen sind sicher: null oder gültig
@@ -4258,7 +4256,7 @@ object."
 
 **Repo:** `crates/cpp/include/dds/core/Reference.hpp::Reference::require_delegate`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — Eine Referenz ist null oder gültig; ein Aufruf über eine
 Null-Referenz (`delegate()`, `operator->`, jede Operation der Klassen) ist
@@ -4274,10 +4272,10 @@ implementing this semantics."
 
 **Repo:** `crates/cpp/include/dds/core/Reference.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `dds::core::Reference<DELEGATE>` legt die Semantik fest; alle
-Referenztypen der Table 7.2 leiten davon ab (`static_assert` in `test_reference_types`).
+Referenztypen der Table 7.2 leiten davon ab (`static_assert` in `psmcxx_7_5_1_1_reference_types`).
 
 ### §7.5.1.1 Referenztypen als Templates über den Delegate
 
@@ -4291,10 +4289,10 @@ providing a file that instantiates the DDS-PSM-Cxx API with its own delegates."
 `crates/cpp/include/dds/pub/TPublisher.hpp`,
 `crates/cpp/include/dds/sub/TSubscriber.hpp`, `crates/cpp/include/dds/topic/TTopic.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — Die Referenztypen sind Templates über den Delegate
-(`TDomainParticipant<DELEGATE>` usw., commits `ee3c3473721`, `0c023caded7`); `Any*`
+(`TDomainParticipant<DELEGATE>` usw., commits `429cdde1978`, `4a96017d92a`); `Any*`
 halten einen Holder.
 
 ### §7.5.1.1 Schwache Referenzen
@@ -4304,7 +4302,7 @@ halten einen Holder.
 **Repo:** `crates/cpp/include/dds/core/WeakReference.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `WeakReference<T>` mit `lock()` und `expired()`; `lock()` baut für
 `DomainParticipant` und `DataWriter<T>` aus der Delegate-Referenz (Konstruktoren
@@ -4316,10 +4314,10 @@ halten einen Holder.
 
 **Repo:** `crates/cpp/include/dds/core/Entity.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `core::Entity` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::core` Condition
@@ -4328,10 +4326,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/core/cond/Condition.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `core::cond::Condition` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::core` GuardCondition
@@ -4340,10 +4338,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/core/cond/GuardCondition.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `core::cond::GuardCondition` ist ein Referenztyp: `static_assert`
-in `test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung,
+in `psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung,
 Vergleich und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::core` ReadCondition
@@ -4352,10 +4350,10 @@ Vergleich und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/sub/cond/ReadCondition.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `sub::cond::ReadCondition` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::core` QueryCondition
@@ -4364,10 +4362,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/sub/cond/ReadCondition.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `sub::cond::QueryCondition` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::core` Waitset
@@ -4376,10 +4374,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/core/cond/WaitSet.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `core::cond::WaitSet` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::domain` DomainParticipant
@@ -4388,10 +4386,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/domain/DomainParticipant.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `domain::DomainParticipant` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::pub` AnyDataWriter
@@ -4400,10 +4398,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/pub/AnyDataWriter.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `pub::AnyDataWriter` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::pub` Publisher
@@ -4412,10 +4410,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/pub/Publisher.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `pub::Publisher` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::pub` DataWriter
@@ -4424,10 +4422,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `pub::DataWriter` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::sub` AnyDataReader
@@ -4436,10 +4434,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/sub/AnyDataReader.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `sub::AnyDataReader` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::sub` Subscriber
@@ -4448,10 +4446,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/sub/Subscriber.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `sub::Subscriber` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::sub` DataReader
@@ -4460,10 +4458,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/sub/DataReader.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `sub::DataReader` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::sub` SharedSamples
@@ -4472,10 +4470,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/sub/SharedSamples.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `sub::SharedSamples` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::topic` AnyTopic
@@ -4484,10 +4482,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/topic/AnyTopic.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `topic::AnyTopic` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ### §7.5.1.1 Table 7.2: `dds::topic` Topic
@@ -4496,10 +4494,10 @@ und Konstruktion mit `dds::core::null`.
 
 **Repo:** `crates/cpp/include/dds/topic/Topic.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `topic::Topic` ist ein Referenztyp: `static_assert` in
-`test_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
+`psmcxx_7_5_1_1_reference_types`, dass er von `Reference<DELEGATE>` ableitet; Zuweisung, Vergleich
 und Konstruktion mit `dds::core::null`.
 
 ---
@@ -4515,8 +4513,8 @@ constructors."
 `crates/cpp/include/dds/pub/Publisher.hpp`, `crates/cpp/include/dds/sub/Subscriber.hpp`,
 `crates/cpp/include/dds/topic/Topic.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`
 
 **Status:** `done` — Referenzen entstehen über Konstruktoren (`DomainParticipant(id)`,
 `Publisher(dp)`, `Topic<T>(dp, name)` …).
@@ -4529,9 +4527,9 @@ initialize it to a null reference by assigning dds::core::null."
 
 **Repo:** `crates/cpp/include/dds/core/Reference.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
-**Status:** `done` — `DomainParticipant`, `Topic`, `AnyTopic`, `ContentFilteredTopic`, `MultiTopic`, `Publisher`, `DataWriter`, `Subscriber` und `DataReader` (und ihre `T`-Basen) haben keinen öffentlichen Standardkonstruktor; die Null-Referenz entsteht aus `dds::core::null` (`static_assert` in `test_reference_types`). `WaitSet` und `GuardCondition` erzeugen beim Standardkonstruktor ein neues Objekt, wie die OMG-Header.
+**Status:** `done` — `DomainParticipant`, `Topic`, `AnyTopic`, `ContentFilteredTopic`, `MultiTopic`, `Publisher`, `DataWriter`, `Subscriber` und `DataReader` (und ihre `T`-Basen) haben keinen öffentlichen Standardkonstruktor; die Null-Referenz entsteht aus `dds::core::null` (`static_assert` in `psmcxx_7_5_1_1_reference_types`). `WaitSet` und `GuardCondition` erzeugen beim Standardkonstruktor ein neues Objekt, wie die OMG-Header.
 
 ### §7.5.1.2 Null-Referenz über `dds::core::null`
 
@@ -4541,7 +4539,7 @@ reference is to initialize it to a null reference by assigning dds::core::null."
 **Repo:** `crates/cpp/include/dds/core/types.hpp::null`,
 `crates/cpp/include/dds/core/Reference.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — Jeder Referenztyp lässt sich aus `dds::core::null` konstruieren,
 ihr zuweisen und mit ihr vergleichen (`==`, `!=`).
@@ -4555,8 +4553,8 @@ any appropriate operating-system resources."
 **Repo:** `crates/cpp/include/dds/core/TEntity.hpp::TEntity::close`,
 `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::close`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `close()` löscht den Writer: der Reader sieht ihn gehen
 (`subscription_matched_status().current_count()` wird 0), ein späterer Aufruf ist
@@ -4584,11 +4582,11 @@ including a WeakRefer- ence) is still in use."
 **Repo:** `crates/cpp/include/dds/pub/detail/DataWriterDelegate.hpp`,
 `crates/cpp/include/dds/topic/detail/TopicDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_objects_in_use_stay_open`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_2_objects_in_use_stay_open`
 
 **Status:** `done` — Ein Writer und ein Reader, die die Anwendung hält, bleiben
 benutzbar, nachdem Participant, Topic, Publisher und Subscriber ihren Gültigkeitsbereich
-verlassen haben: Kinder halten ihre Eltern (`shared_ptr`, commit `9de21b2827b`). Der
+verlassen haben: Kinder halten ihre Eltern (`shared_ptr`, commit `6610f94b853`). Der
 Test schickt danach ein Sample.
 
 ### §7.5.1.2 Entität mit Listener bleibt in Gebrauch
@@ -4599,8 +4597,8 @@ use."
 **Repo:** `crates/cpp/include/dds/core/detail/Retain.hpp::retain_for_listener`,
 `crates/cpp/include/dds/core/TEntity.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_objects_in_use_stay_open`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_table_is_per_entity_and_deregisters_on_destroy`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_2_objects_in_use_stay_open`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_table_is_per_entity_and_deregisters_on_destroy`
 
 **Status:** `done` — `listener(l, mask)` mit einem Listener hält die Entität
 (Participant, Topic, Publisher, Subscriber, DataWriter, DataReader) über die letzte
@@ -4615,7 +4613,7 @@ still in use"
 `crates/cpp/include/dds/core/TEntity.hpp::TEntity::retain`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`
 
 **Status:** `done` — `retain()` hält die Entität bis `close()`; ein `retain()`-ter
 Participant wird mit `dds::domain::find` gefunden, auch ohne Referenz der Anwendung.
@@ -4629,11 +4627,11 @@ itself still in use."
 `crates/cpp/include/dds/sub/detail/DataReaderDelegate.hpp`,
 `crates/cpp/include/dds/topic/detail/TopicDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_objects_in_use_stay_open`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_2_objects_in_use_stay_open`
 
 **Status:** `done` — Writer und Reader halten Publisher, Subscriber und Topic, diese
 halten das Handle des Participant (`shared_ptr` mit dem Deleter des C-API): das Handle
-wird mit dem letzten Kind freigegeben (commit `9de21b2827b`).
+wird mit dem letzten Kind freigegeben (commit `6610f94b853`).
 
 ---
 
@@ -4648,7 +4646,7 @@ assignment and copy construction semantics."
 `crates/cpp/include/dds/core/TEntityQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Kopie und Zuweisung einer QoS-Menge, einer Policy, eines Status und
 von `Time` und `Duration` sind tief; der Test ändert die Kopie und prüft das Original.
@@ -4663,10 +4661,10 @@ von `Time` und `Duration` sind tief; der Test ändert die Kopie und prüft das O
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `TSampleLostStatus<D>`, `THistory<D>` usw. leiten von `Value<D>` ab
-(commit `0c023caded7`).
+(commit `4a96017d92a`).
 
 ### §7.5.2 Werttypen sind änderbar
 
@@ -4679,8 +4677,8 @@ value-type"
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`,
 `crates/cpp/include/dds/core/status/TStatus.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Setter ändern Policies und Status.
 
@@ -4694,9 +4692,9 @@ Statuses, and Topic samples are all modeled as value-types."
 `crates/cpp/include/dds/sub/SampleInfo.hpp`, `crates/cpp/include/dds/sub/Sample.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_matched_data_names_the_other_endpoint`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_matched_data_names_the_other_endpoint`
 
 **Status:** `done` — QoS, Policies, Status, `SampleInfo`, `Sample<T>`, `Time`,
 `Duration`, `InstanceHandle` und die erzeugten Topic-Typen sind kopierbar. Für die
@@ -4711,8 +4709,8 @@ all DDS PIM classes beyond what is listed in Table 7.2 as value- types."
 **Repo:** `crates/cpp/include/dds/topic/TContentFilteredTopic.hpp`,
 `crates/cpp/include/dds/core/cond/TStatusCondition.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_contentfilteredtopic_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_find_ignore_status_condition`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_contentfilteredtopic_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_find_ignore_status_condition`
 
 **Status:** `done` — Table 7.2 nennt `ContentFilteredTopic`, `StatusCondition` und
 `TopicDescription` nicht; die OMG-Header (die nach §2 vorgehen) leiten sie von
@@ -4753,9 +4751,9 @@ exposing some type-independent operations."
 `crates/cpp/include/dds/topic/AnyTopicDescription.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `AnyDataWriter`, `AnyDataReader`, `AnyTopic` und
 `AnyTopicDescription` halten eine Entität beliebigen Typs; `get<T>()` gibt sie zurück,
@@ -4776,7 +4774,7 @@ root status class has been ignored."
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Die Statusklassen haben keine gemeinsame Basisklasse; jede ist
 `TXStatus<D> : Value<D>`.
@@ -4789,7 +4787,7 @@ namespace."
 **Repo:** `crates/cpp/include/dds/core/status/Status.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Die Statusklassen stehen in `dds::core::status`.
 
@@ -4801,7 +4799,7 @@ template <typename D> class SampleLostStatus : public dds::core::Value<D>{"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TSampleLostStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `TSampleLostStatus<D> : Value<D>`;
 `dds::core::status::SampleLostStatus` ist `TSampleLostStatus<detail::SampleLostStatus>`.
@@ -4814,7 +4812,7 @@ total_count, uint32_t total_count_change);"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TSampleLostStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Der Standardkonstruktor und `SampleLostStatus(total_count,
 total_count_change)`. Die PDF schreibt `uint32_t`, die OMG-Header `int32_t`; ZeroDDS
@@ -4829,7 +4827,7 @@ total_count(); void total_count(uint32_t total_count);"
 `crates/cpp/include/dds/core/status/TStatus.hpp::TSampleLostStatus::total_count`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `total_count() const`, `total_count()` als Referenz und
 `total_count(value)`.
@@ -4842,7 +4840,7 @@ mandatory standard headers in the file dds/core/status/Status.hpp."
 **Repo:** `crates/cpp/include/dds/core/status/Status.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Alle elf Statusklassen stehen in `dds/core/status/Status.hpp`.
 
@@ -4856,8 +4854,8 @@ SUBSCRIPTION_MATCHED_STATUS = 0x0001 << 14;"
 **Repo:** `crates/cpp/include/dds/core/status/State.hpp::StatusMask`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`
 
 **Status:** `done` — `StatusMask` mit den Bitwerten der IDL von DDS 1.2
 (`data_available() == 1 << 10` usw.), `all()`, `none()` und `get_status<STATUS>()` je
@@ -4871,7 +4869,7 @@ InconsistentTopicStatus { long total_count; long total_count_change; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TInconsistentTopicStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `InconsistentTopicStatus` hat die Mitglieder der IDL (total_count,
 total_count_change) als Zugriffsfunktionen; der Test baut sie aus Werten und liest sie.
@@ -4884,8 +4882,8 @@ SampleLostStatus { long total_count; long total_count_change; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TSampleLostStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_status_getters`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_status_getters`
 
 **Status:** `done` — `SampleLostStatus` hat die Mitglieder der IDL (total_count,
 total_count_change) als Zugriffsfunktionen; der Test baut sie aus Werten und liest sie.
@@ -4901,7 +4899,7 @@ SampleRejectedStatusKind last_reason; InstanceHandle_t last_instance_handle; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TSampleRejectedStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `SampleRejectedStatus` hat die Mitglieder der IDL (total_count,
 total_count_change, last_reason, last_instance_handle) als Zugriffsfunktionen; der Test
@@ -4915,7 +4913,7 @@ LivelinessLostStatus { long total_count; long total_count_change; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TLivelinessLostStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `LivelinessLostStatus` hat die Mitglieder der IDL (total_count,
 total_count_change) als Zugriffsfunktionen; der Test baut sie aus Werten und liest sie.
@@ -4930,7 +4928,7 @@ last_publication_handle; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TLivelinessChangedStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `LivelinessChangedStatus` hat die Mitglieder der IDL (alive_count,
 not_alive_count, alive_count_change, not_alive_count_change, last_publication_handle)
@@ -4945,7 +4943,7 @@ InstanceHandle_t last_instance_handle; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TOfferedDeadlineMissedStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `OfferedDeadlineMissedStatus` hat die Mitglieder der IDL
 (total_count, total_count_change, last_instance_handle) als Zugriffsfunktionen; der Test
@@ -4961,7 +4959,7 @@ InstanceHandle_t last_instance_handle; };"
 `crates/cpp/include/dds/core/status/TStatus.hpp::TRequestedDeadlineMissedStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `RequestedDeadlineMissedStatus` hat die Mitglieder der IDL
 (total_count, total_count_change, last_instance_handle) als Zugriffsfunktionen; der Test
@@ -4978,7 +4976,7 @@ QosPolicyId_t last_policy_id; QosPolicyCountSeq policies; };"
 `crates/cpp/include/dds/core/status/TStatus.hpp::TOfferedIncompatibleQosStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `OfferedIncompatibleQosStatus` hat die Mitglieder der IDL
 (total_count, total_count_change, last_policy_id, policies) als Zugriffsfunktionen; der
@@ -4994,7 +4992,7 @@ QosPolicyId_t last_policy_id; QosPolicyCountSeq policies; };"
 `crates/cpp/include/dds/core/status/TStatus.hpp::TRequestedIncompatibleQosStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `RequestedIncompatibleQosStatus` hat die Mitglieder der IDL
 (total_count, total_count_change, last_policy_id, policies) als Zugriffsfunktionen; der
@@ -5010,8 +5008,8 @@ last_subscription_handle; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TPublicationMatchedStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_status_getters`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_status_getters`
 
 **Status:** `done` — `PublicationMatchedStatus` hat die Mitglieder der IDL (total_count,
 total_count_change, current_count, current_count_change, last_subscription_handle) als
@@ -5027,8 +5025,8 @@ last_publication_handle; };"
 **Repo:** `crates/cpp/include/dds/core/status/TStatus.hpp::TSubscriptionMatchedStatus`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_status_getters`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_status_getters`
 
 **Status:** `done` — `SubscriptionMatchedStatus` hat die Mitglieder der IDL
 (total_count, total_count_change, current_count, current_count_change,
@@ -5045,7 +5043,7 @@ sie.
 
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_OK` ist keine Ausnahme: `check_status` wirft nichts;
 `NO_DATA` ist eine leere Folge beim Lesen.
@@ -5057,7 +5055,7 @@ attached to a normal return; no exception"
 
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_NO_DATA` ist keine Ausnahme: `check_status` wirft nichts;
 `NO_DATA` ist eine leere Folge beim Lesen.
@@ -5069,11 +5067,11 @@ attached to a normal return; no exception"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::Error`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_ERROR` wird `dds::core::Error`, abgeleitet von
 `dds::core::Exception` und `std::exception` (`static_assert` und Wurf in
-`test_return_codes_map_to_exceptions`). Die PDF nennt `std::logic_error` als
+`psmcxx_7_5_5_return_codes_map_to_exceptions`). Die PDF nennt `std::logic_error` als
 Elternklasse von `Error`, die OMG-Header `std::exception`; ZeroDDS folgt den Headern.
 
 ### §7.5.5 Table 7.3: RETCODE_BAD_PARAMETER
@@ -5084,11 +5082,11 @@ InvalidArgumentError | std::invalid_argument"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::InvalidArgumentError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_BAD_PARAMETER` wird `dds::core::InvalidArgumentError`,
 abgeleitet von `dds::core::Exception` und `std::invalid_argument` (`static_assert` und
-Wurf in `test_return_codes_map_to_exceptions`).
+Wurf in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_TIMEOUT
 
@@ -5098,11 +5096,11 @@ std::runtime_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::TimeoutError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_TIMEOUT` wird `dds::core::TimeoutError`, abgeleitet von
 `dds::core::Exception` und `std::runtime_error` (`static_assert` und Wurf in
-`test_return_codes_map_to_exceptions`).
+`psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_UNSUPPORTED
 
@@ -5112,11 +5110,11 @@ std::logic_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::UnsupportedError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_UNSUPPORTED` wird `dds::core::UnsupportedError`,
 abgeleitet von `dds::core::Exception` und `std::logic_error` (`static_assert` und Wurf
-in `test_return_codes_map_to_exceptions`).
+in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_ALREADY_DELETED
 
@@ -5126,11 +5124,11 @@ AlreadyClosedError | std::logic_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::AlreadyClosedError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_ALREADY_DELETED` wird `dds::core::AlreadyClosedError`,
 abgeleitet von `dds::core::Exception` und `std::logic_error` (`static_assert` und Wurf
-in `test_return_codes_map_to_exceptions`).
+in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_ILLEGAL_OPERATION
 
@@ -5140,11 +5138,11 @@ IllegalOperationError | std::logic_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::IllegalOperationError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_ILLEGAL_OPERATION` wird
 `dds::core::IllegalOperationError`, abgeleitet von `dds::core::Exception` und
-`std::logic_error` (`static_assert` und Wurf in `test_return_codes_map_to_exceptions`).
+`std::logic_error` (`static_assert` und Wurf in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_NOT_ENABLED
 
@@ -5154,11 +5152,11 @@ std::logic_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::NotEnabledError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_NOT_ENABLED` wird `dds::core::NotEnabledError`, abgeleitet
 von `dds::core::Exception` und `std::logic_error` (`static_assert` und Wurf in
-`test_return_codes_map_to_exceptions`).
+`psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_PRECONDITION_NOT_MET
 
@@ -5168,11 +5166,11 @@ PreconditionNotMetError | std::logic_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::PreconditionNotMetError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_PRECONDITION_NOT_MET` wird
 `dds::core::PreconditionNotMetError`, abgeleitet von `dds::core::Exception` und
-`std::logic_error` (`static_assert` und Wurf in `test_return_codes_map_to_exceptions`).
+`std::logic_error` (`static_assert` und Wurf in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_IMMUTABLE_POLICY
 
@@ -5182,11 +5180,11 @@ ImmutablePolicyError | std::logic_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::ImmutablePolicyError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_IMMUTABLE_POLICY` wird `dds::core::ImmutablePolicyError`,
 abgeleitet von `dds::core::Exception` und `std::logic_error` (`static_assert` und Wurf
-in `test_return_codes_map_to_exceptions`).
+in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_INCONSISTENT_POLICY
 
@@ -5196,11 +5194,11 @@ InconsistentPolicyError | std::logic_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::InconsistentPolicyError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_INCONSISTENT_POLICY` wird
 `dds::core::InconsistentPolicyError`, abgeleitet von `dds::core::Exception` und
-`std::logic_error` (`static_assert` und Wurf in `test_return_codes_map_to_exceptions`).
+`std::logic_error` (`static_assert` und Wurf in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: RETCODE_OUT_OF_RESOURCES
 
@@ -5210,11 +5208,11 @@ OutOfResourcesError | std::runtime_error"
 **Repo:** `crates/cpp/include/zerodds/psm/check_status.hpp::check_status`,
 `crates/cpp/include/dds/core/Exception.hpp::OutOfResourcesError`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — `RETCODE_OUT_OF_RESOURCES` wird `dds::core::OutOfResourcesError`,
 abgeleitet von `dds::core::Exception` und `std::runtime_error` (`static_assert` und Wurf
-in `test_return_codes_map_to_exceptions`).
+in `psmcxx_7_5_5_return_codes_map_to_exceptions`).
 
 ### §7.5.5 Table 7.3: Elternklassen der Ausnahmen
 
@@ -5226,7 +5224,7 @@ OUT_OF_RESOURCES)"
 
 **Repo:** `crates/cpp/include/dds/core/Exception.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — Die Elternklassen stimmen mit der Tabelle überein
 (`static_assert`), mit der Ausnahme von `Error` (siehe RETCODE_ERROR).
@@ -5239,7 +5237,7 @@ and the appropriate standard C++ exception."
 
 **Repo:** `crates/cpp/include/dds/core/Exception.hpp::Exception`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — Jede Ausnahme steht in `dds::core`, leitet von
 `dds::core::Exception` und von der Standardausnahme ab.
@@ -5251,7 +5249,7 @@ always have deep copy semantics."
 
 **Repo:** `crates/cpp/include/dds/core/Exception.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — Kopierkonstruktor und Zuweisung kopieren die Nachricht tief; die
 Kopie überlebt das Original.
@@ -5263,7 +5261,7 @@ dds/core/Exceptions.hpp."
 
 **Repo:** `crates/cpp/include/dds/core/Exception.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_return_codes_map_to_exceptions`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_5_return_codes_map_to_exceptions`
 
 **Status:** `done` — Alle Ausnahmen stehen in einer Datei. Die PDF nennt sie
 `dds/core/Exceptions.hpp`, die OMG-Header `dds/core/Exception.hpp`; ZeroDDS folgt den
@@ -5282,7 +5280,7 @@ into the value types Time and Duration respectively."
 `crates/cpp/include/dds/core/Duration.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `dds::core::Time` und `dds::core::Duration`.
 
@@ -5296,7 +5294,7 @@ small number of convenience operations:"
 `crates/cpp/include/dds/core/Duration.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `sec()`, `nanosec()` als Getter und Setter; ein Setter für
 `nanosec` über 999 999 999 normalisiert in die Sekunden.
@@ -5310,7 +5308,7 @@ accessor and mutator methods"
 `crates/cpp/include/dds/core/Duration.hpp::Duration::nanosec`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `Time::sec(int64_t)`, `Time::nanosec(uint32_t)`,
 `Duration::sec(int32_t)`, `Duration::nanosec(uint32_t)`; der Test prüft die
@@ -5324,7 +5322,7 @@ expressed as seconds, nanoseconds, milliseconds, or Duration objects."
 **Repo:** `crates/cpp/include/dds/core/Time.hpp::Time::operator+=`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `Time += Duration`, `Time + Duration`, `Time - Duration`.
 
@@ -5337,7 +5335,7 @@ expressed in milliseconds (or other units) as integer types."
 `crates/cpp/include/dds/core/Time.hpp::Time::to_millisecs`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `Time::from_millisecs`, `from_microsecs`, `from_secs` und
 `to_millisecs`, `to_microsecs`, `to_secs`.
@@ -5350,7 +5348,7 @@ expressed as seconds, nanoseconds, milliseconds, or Duration objects."
 **Repo:** `crates/cpp/include/dds/core/Duration.hpp::Duration::operator+=`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `Duration += Duration`, `+`, `-`, `*`, `/`; ein unendlicher Operand
 macht die Summe unendlich.
@@ -5364,7 +5362,7 @@ durations expressed in milliseconds(or other units) as integer types."
 `crates/cpp/include/dds/core/Duration.hpp::Duration::to_millisecs`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `Duration::from_millisecs` (ein Wert über `int32_t`-Sekunden ist
 `std::overflow_error`), `from_microsecs`, `from_secs` und `to_millisecs`,
@@ -5378,7 +5376,7 @@ milliseconds(or other units) as integer types"
 **Repo:** `crates/cpp/include/dds/core/Duration.hpp::Duration::to_millisecs`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_duration_sentinel_conversion_and_overflow`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_6_duration_sentinel_conversion_and_overflow`
 
 **Status:** `done` — `to_millisecs()` und `to_microsecs()` liefern die Dauer als ganze
 Zahl (`Duration(2, 500000000).to_millisecs() == 2500`); `wait_for_acknowledgments` und
@@ -5399,7 +5397,7 @@ policies to Qos. All of this without requiring changes in the public API."
 `crates/cpp/include/dds/core/TEntityQos.hpp`, `crates/cpp/include/dds/core/Value.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — Policies sind Templates über einen Delegate (`THistory<D>` …),
 QoS-Klassen Mengen von Policies (`TEntityQos<PolicySet<…>>`); Erweiterungen liegen im
@@ -5414,8 +5412,8 @@ equivalently the “delegate()” method to access vendor-specific extensions."
 `crates/cpp/include/dds/core/Reference.hpp::Reference::operator->`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `operator->` und `delegate()` an Werttypen (`history->depth()`) und
 an Referenztypen (`dp->find_topic(…)`).
@@ -5431,8 +5429,8 @@ dds::pub::qos::PublisherQos [...] dds::pub::qos::DataWriterQos"
 `crates/cpp/include/dds/pub/qos/`, `crates/cpp/include/dds/sub/qos/`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`
 
 **Status:** `done` — `dds::domain::qos::DomainParticipantQos`,
 `dds::topic::qos::TopicQos`, `dds::pub::qos::{PublisherQos, DataWriterQos}`,
@@ -5461,8 +5459,8 @@ entity_factory; };"
 **Repo:** `crates/cpp/include/dds/domain/qos/DomainParticipantQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`
 
 **Status:** `done` — `DomainParticipantQos` enthält `UserData` und `EntityFactory`, wie
 die IDL.
@@ -5477,9 +5475,9 @@ transport_priority; lifespan; ownership; };"
 **Repo:** `crates/cpp/include/dds/topic/qos/TopicQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`
 
 **Status:** `done` — `TopicQos` enthält die 13 Policies der IDL; der Test prüft die
 Vorgaben von RELIABILITY und RESOURCE_LIMITS.
@@ -5493,8 +5491,8 @@ GroupDataQosPolicy group_data; EntityFactoryQosPolicy entity_factory; };"
 **Repo:** `crates/cpp/include/dds/pub/qos/PublisherQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`
 
 **Status:** `done` — `PublisherQos` enthält Presentation, Partition, GroupData und
 EntityFactory, wie die IDL.
@@ -5509,8 +5507,8 @@ partition; GroupDataQosPolicy group_data; EntityFactoryQosPolicy entity_factory;
 **Repo:** `crates/cpp/include/dds/sub/qos/SubscriberQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`
 
 **Status:** `done` — `SubscriberQos` enthält Presentation, Partition, GroupData und
 EntityFactory, wie die IDL.
@@ -5526,9 +5524,9 @@ writer_data_lifecycle; };"
 **Repo:** `crates/cpp/include/dds/pub/qos/DataWriterQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`
 
 **Status:** `done` — `DataWriterQos` enthält die 15 Policies der IDL, RELIABILITY steht
 auf RELIABLE; eine QoS ändert sich mit `qos(q)` am laufenden Writer.
@@ -5543,9 +5541,9 @@ time_based_filter; reader_data_lifecycle; };"
 **Repo:** `crates/cpp/include/dds/sub/qos/DataReaderQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_of_a_running_entity_is_set_and_read`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_qos_of_a_running_entity_is_set_and_read`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`
 
 **Status:** `done` — `DataReaderQos` enthält die 12 Policies der IDL, RELIABILITY steht
 auf BEST_EFFORT, HISTORY auf `KEEP_LAST` mit `depth` 1.
@@ -5564,7 +5562,7 @@ from the root Policy class has been ignored"
 **Repo:** `crates/cpp/include/dds/core/policy/CorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — Die Policy-Klassen haben keine gemeinsame Basisklasse.
 
@@ -5576,7 +5574,7 @@ the name as redundant."
 **Repo:** `crates/cpp/include/dds/core/policy/CorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — Die Namen sind `UserData`, `History`, … ohne `QosPolicy`.
 
@@ -5591,9 +5589,9 @@ methods to construct the possible variants."
 **Repo:** `crates/cpp/include/dds/core/policy/PolicyKind.hpp`,
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — Jede Art ist ein `safe_enum` (`HistoryKind`, `ReliabilityKind`, …)
 mit einer statischen Hilfsfunktion je Variante (`History::KeepAll()`,
@@ -5608,8 +5606,8 @@ Reliability::Reliable() << Ownership::Exclusive();"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::TReliability::Reliable`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `tqos << Reliability::Reliable() << Ownership::Exclusive()`
 (Beispiel der Spec) übersetzt und wirkt; `Reliable()` hat einen Parameter für die
@@ -5621,7 +5619,7 @@ maximale Blockierzeit.
 
 **Repo:** `crates/cpp/include/dds/core/policy/CorePolicy.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — Die PDF nennt `dds::qos`, die OMG-Header `dds::core::policy`;
 ZeroDDS folgt den Headern (`dds::core::policy`).
@@ -5634,7 +5632,7 @@ specialization of the following trait classes:"
 **Repo:** `crates/cpp/include/dds/core/policy/CorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `policy_id<P>::value` und `policy_name<P>::name()` sind für alle 22
 Policies definiert (ID nach DDS 1.2); `OMG_DDS_POLICY_TRAITS` und
@@ -5648,7 +5646,7 @@ Policy> class policy_id { public: enum { id = -1 }; };"
 **Repo:** `crates/cpp/include/dds/core/policy/CorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `policy_id` ist ein Klassen-Template, spezialisiert je Policy mit
 `value`. Die PDF schreibt `enum { id = -1 }` im Primärtemplate, die OMG-Header ein
@@ -5662,7 +5660,7 @@ leeres Template mit `value` in den Spezialisierungen; ZeroDDS folgt den Headern.
 **Repo:** `crates/cpp/include/dds/core/policy/CorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `policy_name<P>::name()` gibt den Namen der Policy.
 
@@ -5674,8 +5672,8 @@ dds::core::safe_enum<HistoryKind_def> HistoryKind; }}"
 
 **Repo:** `crates/cpp/include/dds/core/policy/PolicyKind.hpp::HistoryKind_def`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `HistoryKind_def { enum type { KEEP_LAST, KEEP_ALL }; }` und
 `safe_enum<HistoryKind_def> HistoryKind`; sie stehen in `dds::core::policy`.
@@ -5688,7 +5686,7 @@ class THistory : public dds::core::Value<D> {"
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `THistory<D> : Value<D>`.
 
@@ -5699,8 +5697,8 @@ depth);"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory::THistory`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `THistory()` und `THistory(kind, depth)`.
 
@@ -5711,8 +5709,8 @@ kind(); THistory& kind(HistoryKind kind);"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory::kind`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `kind() const`, `kind()` als Referenz und `kind(value)` mit
 Rückgabe der Policy.
@@ -5724,9 +5722,9 @@ depth(int32_t depth);"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory::depth`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `depth() const`, `depth()` als Referenz und `depth(value)` mit
 Rückgabe der Policy.
@@ -5738,8 +5736,8 @@ kind); int32_t& depth(); THistory& depth(int32_t depth);"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Die Getter als Referenz (`kind()`, `depth()`) und die Setter mit
 Rückgabe der Policy (verkettbar).
@@ -5752,8 +5750,8 @@ KeepLast(uint32_t depth);"
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory::KeepAll`,
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory::KeepLast`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `History::KeepAll()` und `History::KeepLast(depth)`.
 
@@ -5763,8 +5761,8 @@ KeepLast(uint32_t depth);"
 
 **Repo:** `crates/cpp/include/dds/core/policy/TCorePolicy.hpp::THistory::KeepLast`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `KeepLast(uint32_t depth)`, wie in der Spec; die OMG-Header geben
 keinen Vorgabewert an.
@@ -5777,7 +5775,7 @@ standard headers in the file dds/qos/Policy.hpp."
 **Repo:** `crates/cpp/include/dds/core/policy/CorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — Die PDF nennt `dds/qos/Policy.hpp`, die OMG-Header
 `dds/core/policy/CorePolicy.hpp`; ZeroDDS folgt den Headern.
@@ -5796,10 +5794,10 @@ sequence."
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `UserData` mit den Attributen value; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 TOPIC_DATA → `TopicData`
 
@@ -5811,10 +5809,10 @@ DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attr
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `TopicData` mit den Attributen value; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 GROUP_DATA → `GroupData`
 
@@ -5826,10 +5824,10 @@ DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attr
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `GroupData` mit den Attributen value; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 DURABILITY → `Durability`
 
@@ -5840,10 +5838,10 @@ DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attr
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `Durability` mit den Attributen kind; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 DURABILITY_SERVICE → `DurabilityService`
 
@@ -5856,12 +5854,12 @@ max_samples_per_instance"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `DurabilityService` mit den Attributen service_cleanup_delay,
 history_kind, history_depth, max_samples, max_instances, max_samples_per_instance; die
 Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 PRESENTATION → `Presentation`
 
@@ -5873,11 +5871,11 @@ Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `Presentation` mit den Attributen access_scope, coherent_access,
 ordered_access; die Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 DEADLINE → `Deadline`
 
@@ -5888,10 +5886,10 @@ A duration “period”"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `Deadline` mit den Attributen period; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 LATENCY_BUDGET → `LatencyBudget`
 
@@ -5903,11 +5901,11 @@ duration is zero"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `LatencyBudget` mit den Attributen duration; die Vorgabe der
 Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 OWNERSHIP → `Ownership`
 
@@ -5918,10 +5916,10 @@ A “kind” SHARED EXCLUSIVE"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `Ownership` mit den Attributen kind; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 OWNERSHIP_STRENGTH → `OwnershipStrength`
 
@@ -5932,11 +5930,11 @@ STRENGTH | An integer “value”"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `OwnershipStrength` mit den Attributen value; die Vorgabe der
 Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 LIVELINESS → `Liveliness`
 
@@ -5948,11 +5946,11 @@ Tabelle von DDS 1.2 und die Attribute prüft
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `Liveliness` mit den Attributen kind, lease_duration; die Vorgabe
 der Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 TIME_BASED_FILTER → `TimeBasedFilter`
 
@@ -5963,11 +5961,11 @@ FILTER | A duration "minimum_ separation" | [...] default minimum_separation=0"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `TimeBasedFilter` mit den Attributen minimum_separation; die
 Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 PARTITION → `Partition`
 
@@ -5978,10 +5976,10 @@ A list of strings “name”"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `Partition` mit den Attributen name; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 RELIABILITY → `Reliability`
 
@@ -5995,12 +5993,12 @@ DataReaders and Topics. [...] RELIABLE [...] the default value for DataWriters.
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`
 
 **Status:** `done` — `Reliability` mit den Attributen kind, max_blocking_time; die
 Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 TRANSPORT_PRIORITY → `TransportPriority`
 
@@ -6011,11 +6009,11 @@ PRIORITY | An integer “value”"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `TransportPriority` mit den Attributen value; die Vorgabe der
 Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 LIFESPAN → `Lifespan`
 
@@ -6026,10 +6024,10 @@ A duration “duration”"
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `Lifespan` mit den Attributen duration; die Vorgabe der Tabelle von
-DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+DDS 1.2 und die Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 DESTINATION_ORDER → `DestinationOrder`
 
@@ -6040,11 +6038,11 @@ DDS 1.2 und die Attribute prüft `test_every_policy_has_its_default_and_its_attr
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `DestinationOrder` mit den Attributen kind; die Vorgabe der Tabelle
 von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 HISTORY → `History`
 
@@ -6056,11 +6054,11 @@ KEEP_LAST is the default kind. The default value of depth is 1."
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `History` mit den Attributen kind, depth; die Vorgabe der Tabelle
 von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 RESOURCE_LIMITS → `ResourceLimits`
 
@@ -6072,12 +6070,12 @@ max_samples_per_instance | [...] By default, LENGTH_UNLIMITED."
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_default_qos_matches_the_specification`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_default_qos_matches_the_specification`
 
 **Status:** `done` — `ResourceLimits` mit den Attributen max_samples, max_instances,
 max_samples_per_instance; die Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 ENTITY_FACTORY → `EntityFactory`
 
@@ -6088,11 +6086,11 @@ FACTORY | A boolean: “autoenable_ created_ entities” | [...] By default, TRU
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `EntityFactory` mit den Attributen autoenable_created_entities; die
 Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 WRITER_DATA_LIFECYCLE → `WriterDataLifecycle`
 
@@ -6104,11 +6102,11 @@ Vorgabe der Tabelle von DDS 1.2 und die Attribute prüft
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `WriterDataLifecycle` mit den Attributen
 autodispose_unregistered_instances; die Vorgabe der Tabelle von DDS 1.2 und die
-Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
+Attribute prüft `psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ### §7.6.1 READER_DATA_LIFECYCLE → `ReaderDataLifecycle`
 
@@ -6120,12 +6118,12 @@ Attribute prüft `test_every_policy_has_its_default_and_its_attributes`.
 `crates/cpp/include/dds/core/policy/TCorePolicy.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_every_policy_has_its_default_and_its_attributes`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`
 
 **Status:** `done` — `ReaderDataLifecycle` mit den Attributen
 autopurge_nowriter_samples_delay, autopurge_disposed_samples_delay; die Vorgabe der
 Tabelle von DDS 1.2 und die Attribute prüft
-`test_every_policy_has_its_default_and_its_attributes`.
+`psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes`.
 
 ---
 
@@ -6139,8 +6137,8 @@ specified in the DDS v1.2 specification."
 **Repo:** `crates/cpp/include/dds/core/TEntity.hpp`,
 `crates/cpp/include/dds/core/Entity.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_entity_operations`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_reference_types`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entity_operations`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_1_reference_types`
 
 **Status:** `done` — `dds::core::Entity` (`TEntity<detail::Entity>`) ist die Wurzel;
 Participant, Topic, Publisher, Subscriber, DataWriter, DataReader haben `enable`,
@@ -6158,8 +6156,8 @@ user explicitly invokes the method close."
 `crates/cpp/include/dds/core/detail/Retain.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_objects_in_use_stay_open`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_1_2_objects_in_use_stay_open`
 
 **Status:** `done` — Die Ressourcen einer Entität werden freigegeben, wenn die letzte
 Referenz verschwindet (und kein Listener gesetzt und kein `retain()` aktiv ist) oder
@@ -6179,12 +6177,12 @@ format in which it is expressed."
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp`,
 `crates/cpp/include/dds/core/detail/QosProviderDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — Aus der URI folgen Protokoll und Format: `file:`, `data:` (RFC
 2397), `http:`, `https:`; das Format ist DDS-XML
-(`crates/zerodds-c-api/src/qos_provider_ffi.rs`, commits `5061c168b7f`, `9629b1b5a34`).
+(`crates/zerodds-c-api/src/qos_provider_ffi.rs`, commits `4ef7021a8ed`, `4ed2678ac5b`).
 
 ### §7.6.2.1 Mindestens URIs `file` und XML nach [DDS-CCM]
 
@@ -6194,8 +6192,8 @@ the DDS for Lightweight CCM specification [DDS-CCM]."
 
 **Repo:** `crates/cpp/include/dds/core/detail/QosProviderDelegate.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/zerodds-c-api/tests/qos_provider.rs::a_provider_answers_the_qos_of_every_entity_kind_with_inheritance`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/zerodds-c-api/tests/qos_provider.rs::capi_14_1_a_provider_answers_the_qos_of_every_entity_kind_with_inheritance`
 
 **Status:** `done` — `file:`-URIs mit XML-QoS-Profilen werden gelesen, mit Vererbung
 (`base_name`); das Dokument folgt DDS-XML 1.0 (Elemente `domain_participant_qos`,
@@ -6209,7 +6207,7 @@ dds::core::qos::TQosProvider : public dds::core::Reference<DELEGATE> {"
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider`,
 `crates/cpp/include/dds/core/QosProvider.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`
 
 **Status:** `done` — `TQosProvider<DELEGATE> : Reference<DELEGATE>`; die PDF nennt den
 Namensraum `dds::core::qos`, die OMG-Header `dds::core`; ZeroDDS folgt den Headern.
@@ -6221,7 +6219,7 @@ std::string& profile); explicit TQosProvider(const std::string& uri);"
 
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider::TQosProvider`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`
 
 **Status:** `done` — `QosProvider(uri, profile)` und `QosProvider(uri)`; ein Profil, das
 das Dokument nicht hat, ist ein Fehler bei der Erzeugung.
@@ -6234,8 +6232,8 @@ std::string& id);"
 
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider::participant_qos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `participant_qos()` (Vorgabeprofil) und `participant_qos(id)`
 (Profil `Bibliothek::Profil`) geben `DomainParticipantQos` zurück.
@@ -6247,8 +6245,8 @@ dds::topic::qos::TopicQos topic_qos(const std::string& id);"
 
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider::topic_qos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `topic_qos()` (Vorgabeprofil) und `topic_qos(id)` (Profil
 `Bibliothek::Profil`) geben `TopicQos` zurück.
@@ -6260,8 +6258,8 @@ dds::sub::qos::SubscriberQos subscriber_qos(const std::string& id);"
 
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider::subscriber_qos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `subscriber_qos()` (Vorgabeprofil) und `subscriber_qos(id)` (Profil
 `Bibliothek::Profil`) geben `SubscriberQos` zurück.
@@ -6273,8 +6271,8 @@ dds::sub::qos::DataReaderQos datareader_qos(const std::string& id);"
 
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider::datareader_qos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `datareader_qos()` (Vorgabeprofil) und `datareader_qos(id)` (Profil
 `Bibliothek::Profil`) geben `DataReaderQos` zurück.
@@ -6286,8 +6284,8 @@ dds::pub::qos::PublisherQos publisher_qos(const std::string& id);"
 
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider::publisher_qos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `publisher_qos()` (Vorgabeprofil) und `publisher_qos(id)` (Profil
 `Bibliothek::Profil`) geben `PublisherQos` zurück.
@@ -6299,8 +6297,8 @@ dds::pub::qos::DataWriterQos datawriter_qos(const std::string& id);"
 
 **Repo:** `crates/cpp/include/dds/core/TQosProvider.hpp::TQosProvider::datawriter_qos`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_qos_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_sample_info_parts_qos_provider_kinds_and_filter_expression`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_2_1_qos_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression`
 
 **Status:** `done` — `datawriter_qos()` (Vorgabeprofil) und `datawriter_qos(id)` (Profil
 `Bibliothek::Profil`) geben `DataWriterQos` zurück.
@@ -6316,7 +6314,7 @@ DataReader<ShapeType> dr(sub, topic, qos_provider.datareader_qos());"
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Beispiel der Spec; `test_qos_provider` macht daraus
+**Status:** `n/a (informative)` — Beispiel der Spec; `psmcxx_7_6_2_1_qos_provider` macht daraus
 einen Writer mit der QoS des Providers.
 
 ---
@@ -6331,8 +6329,8 @@ DomainParticipantFactory, DomainParticipant, and DomainParticipantListener."
 **Repo:** `crates/cpp/include/dds/domain/DomainParticipant.hpp`,
 `crates/cpp/include/dds/domain/DomainParticipantListener.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_participant_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_domain_participant_listener`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_domain_participant_listener`
 
 **Status:** `done` — `DomainParticipant` und `DomainParticipantListener` stehen in
 `dds::domain`. Eine `DomainParticipantFactory` haben die OMG-Header nicht (siehe
@@ -6366,10 +6364,10 @@ ContentFilteredTopic, MultiTopic, and the TopicListener."
 `crates/cpp/include/dds/topic/MultiTopic.hpp`,
 `crates/cpp/include/dds/topic/TopicListener.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_contentfilteredtopic_lifecycle`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_multitopic_joins_two_generated_topics_for_a_data_reader`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_contentfilteredtopic_lifecycle`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`,
+`crates/cpp/tests/generated/CMakeLists.txt::dcps_b_2_a_multitopic_joins_two_generated_topics_for_a_data_reader`
 
 **Status:** `done` — `Topic`, `TopicDescription`, `ContentFilteredTopic`, `MultiTopic` und `TopicListener` stehen in `dds::topic`.
 
@@ -6381,8 +6379,8 @@ transparently performs the registration of type support."
 **Repo:** `crates/cpp/include/dds/topic/Topic.hpp::Topic`,
 `crates/cpp/include/dds/topic/TopicTraits.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_topic_any_topic_and_listener`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_any_topic_and_listener`
 
 **Status:** `done` — `Topic<T>` registriert den Typ beim Erzeugen über
 `topic_type_support<T>`.
@@ -6394,8 +6392,8 @@ dds::topic::Topic<RadarTrack> topic(dp, "RadarTrackTopic");"
 
 **Repo:** `crates/cpp/include/dds/topic/Topic.hpp::Topic`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_topic_creation`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_topic_creation`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`
 
 **Status:** `done` — `DomainParticipant dp(domainId); Topic<RadarTrack> topic(dp,
 "RadarTrackTopic");` übersetzt und läuft (`generated_psm_roundtrip.cpp` mit dem Typ
@@ -6411,9 +6409,9 @@ dds::topic::Topic<RadarTrack> topic(dp, "RadarTrackTopic", tqos);"
 `crates/cpp/include/dds/domain/TDomainParticipant.hpp::TDomainParticipant::default_topic_qos`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_are_created_with_qos_listener_and_mask`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_entities_and_statuses_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_qos_composition`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_are_created_with_qos_listener_and_mask`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_entities_and_statuses_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_6_1_qos_composition`
 
 **Status:** `done` — `TopicQos tqos = dp.default_topic_qos(); tqos <<
 Reliability::Reliable() << Ownership::Exclusive(); Topic<…> topic(dp, name, tqos);`
@@ -6436,7 +6434,7 @@ DataWriter and their associated listeners as well as any types."
 `crates/cpp/include/dds/pub/PublisherListener.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
 **Status:** `done` — `Publisher`, `DataWriter`, `AnyDataWriter` und ihre Listener stehen
 in `dds::pub`.
@@ -6460,9 +6458,9 @@ the delegate and the topic type that it writes."
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`
 
-**Status:** `done` — `DataWriter<T, DELEGATE>` hat wie die OMG-Header `template <typename T, template <typename Q> class DELEGATE = detail::DataWriterDelegate>` (und `DataReader<T, DELEGATE>` ebenso); `DataWriter<T>` ist `DataWriter<T, detail::DataWriterDelegate>` und `DELEGATE_T` ist `DELEGATE<T>` (`static_assert` in `test_reference_types`).
+**Status:** `done` — `DataWriter<T, DELEGATE>` hat wie die OMG-Header `template <typename T, template <typename Q> class DELEGATE = detail::DataWriterDelegate>` (und `DataReader<T, DELEGATE>` ebenso); `DataWriter<T>` ist `DataWriter<T, detail::DataWriterDelegate>` und `DELEGATE_T` ist `DELEGATE<T>` (`static_assert` in `psmcxx_7_5_1_1_reference_types`).
 
 ### §7.9.1 Überladene Operationen `write` für einzelne Samples
 
@@ -6472,8 +6470,8 @@ methods for writing data by providing single samples"
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::write`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`
 
 **Status:** `done` — `write(sample)`, `write(sample, time)`, `write(sample, handle[,
 time])`, `write(TopicInstance[, time])` und `operator<<` (Sample, Sample mit Zeit,
@@ -6487,8 +6485,8 @@ methods for writing data by providing single samples or iterators over samples."
 **Repo:** `crates/cpp/include/dds/pub/DataWriter.hpp::DataWriter::write`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_instance_operations_with_a_time_stamp`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_instance_operations_with_a_time_stamp`
 
 **Status:** `done` — `write(begin, end[, time])` und `write(samples_begin, samples_end,
 handles_begin, handles_end[, time])`.
@@ -6509,8 +6507,8 @@ DataReader and their associated listeners as well as any types."
 `crates/cpp/include/dds/sub/SubscriberListener.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_publisher_subscriber_datawriter_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_publisher_subscriber_datawriter_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — `Subscriber`, `DataReader`, `AnyDataReader` und ihre Listener
 stehen in `dds::sub`.
@@ -6541,7 +6539,7 @@ types."
 `crates/cpp/include/dds/core/xtypes/TAnnotation.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_dynamic_types_dynamic_data_and_type_provider`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_11_dynamic_types_dynamic_data_and_type_provider`
 
 **Status:** `done` — Die Annotationen der OMG-Header: `Key`, `Optional`, `Shared`,
 `Nested`, `Id`, `Final`, `Extensible`, `Mutable`, `Extensibility`, `MustUnderstand`,
@@ -6561,9 +6559,9 @@ them."
 `crates/cpp/include/dds/core/xtypes/detail/TypeProvider.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_dynamic_types_dynamic_data_and_type_provider`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_bit_masks_union_defaults_and_enum_discriminators`,
-`crates/zerodds-c-api/tests/types_load.rs::bitmasks_unions_with_a_default_and_enum_discriminators_are_described`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_11_dynamic_types_dynamic_data_and_type_provider`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_11_bit_masks_union_defaults_and_enum_discriminators`,
+`crates/zerodds-c-api/tests/types_load.rs::psmcxx_2_1_bitmasks_unions_with_a_default_and_enum_discriminators_are_described`
 
 **Status:** `done` — Typen werden aus Klassen gebaut (primitive, String, Sequenz, Map, Array, Struktur, Union, Enumeration, Alias, Bitset, `BitMaskType`), annotiert (`add_annotation`) und geändert (`add_member`, `remove_member`); eine Union hat einen `default`-Zweig (`UnionCase(member)`, `is_default()`) und kann auf eine Enumeration schalten (`UnionType<uint32_t>(name, EnumerationType, cases)`); ein Bitmask-Wert in `DynamicData` ist die Menge der Namen der gesetzten Flags. `DynamicData` liest und schreibt Member nach Namen und Id, kodiert und dekodiert (XCDR1/2, Little/Big Endian) und geht durch JSON; `TypeProvider` lädt Typen aus IDL oder einer DDS-XML-Typbibliothek, auch Bitmask, Union mit `default` und Union auf Enumeration; `Topic<DynamicData>` trägt Samples zwischen Writer und Reader und beantwortet eine Abfrage auf einem Feld. `fixed` hat im XTypes-Typsystem keinen Wert (`TypeKind` hat keinen, das C-API meldet `Unrepresentable`, DDSXTY14-28); eine Struktur mit `fixed`-Member wird nicht als DynamicType geladen. `DynamicData::value<T>` nimmt keine Folge und kein Array; sie gehen über `from_json_text`. `DataRepresentation` und `TypeConsistencyEnforcement` stehen wie in den OMG-Headern in keinem QoS-Satz.
 
@@ -6591,7 +6589,7 @@ in the same namespace as LoanedSamples<T> that behaves identical to std::move."
 
 **Repo:** `crates/cpp/include/dds/sub/LoanedSamples.hpp::move`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — `dds::sub::move(LoanedSamples<T>&)` gibt die Samples verschoben
 zurück; der Test prüft, dass die Quelle danach leer ist.
@@ -6605,8 +6603,8 @@ of the constness of the object."
 **Repo:** `crates/cpp/include/dds/sub/LoanedSamples.hpp::LoanedSamples::cbegin`,
 `crates/cpp/include/dds/sub/SharedSamples.hpp::SharedSamples::cbegin`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `cbegin()` und `cend()` als Members und als Funktionen im
 Namensraum; sie geben `const_iterator`.
@@ -6620,8 +6618,8 @@ std::uniqe_ptr."
 **Repo:** `crates/cpp/include/dds/sub/LoanedSamples.hpp::LoanedSamples`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — Kopieren ist gelöscht, Verschieben vorhanden (`static_assert` im
 Test).
@@ -6636,8 +6634,8 @@ loop."
 `crates/cpp/include/dds/sub/LoanedSamples.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_samples_api`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_samples_api`
 
 **Status:** `done` — `dds::core::begin`/`end` und die Members für die bereichsbasierte
 Schleife; der Test benutzt sie für `SharedSamples` und `LoanedSamples`.
@@ -6650,8 +6648,8 @@ std::array."
 **Repo:** `crates/cpp/include/dds/core/array.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_layout_headers_and_find`
+`crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `template <typename T, std::size_t N> using array = std::array<T,
 N>;`.
@@ -6664,10 +6662,10 @@ enumerations with enum class syntax."
 **Repo:** `crates/cpp/include/dds/core/SafeEnumeration.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — Die erzeugten Aufzählungen sind `enum class`
-(`an_enumeration_takes_an_underlying_type_from_its_bit_bound` in
+(`xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound` in
 `crates/lang-rules/src/adapter/cpp.rs`); die Arten der Policies sind `safe_enum` nach
 §7.4.3.
 
@@ -6682,7 +6680,7 @@ shall be provided for all Value<DELEGATE> types."
 `crates/cpp/include/dds/core/TEntityQos.hpp`
 
 **Tests:**
-`crates/cpp/tests/smoke_dds_psm.cpp::test_value_and_reference_classes_without_other_coverage`
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_7_5_4_value_and_reference_classes_without_other_coverage`
 
 **Status:** `done` — `Value<D>` und die Werttypen (Policies, QoS-Mengen, Samples,
 `SampleInfo`, Status) haben Verschiebekonstruktor und -zuweisung; der Test prüft, dass
@@ -6697,7 +6695,7 @@ move-constructor) as defined in idl2cpp11 (ptc/2012-04-03) struct type mapping."
 **Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die erzeugten Klassen (Vorgabe, `--cpp-mapping psm`) haben die implizit
 erzeugten Verschiebeoperationen (`static_assert` und Verschieben im Roundtrip).
@@ -6711,7 +6709,7 @@ const-reference parameter for arrays as opposed to pass-by-value."
 **Repo:** `tools/idlc/src/generate.rs`, `crates/lang-rules/src/adapter/cpp_psm.rs`
 
 **Tests:**
-`tools/idlc/src/generate.rs::tests::the_psm_mapping_spells_the_types_of_table_7_1`
+`tools/idlc/src/generate.rs::tests::psmcxx_7_12_the_psm_mapping_spells_the_types_of_table_7_1`
 
 **Status:** `done` — Der Konstruktor der erzeugten Klasse nimmt ein Array als `const
 ::dds::core::array<…>&` (Rust-Test des Codegen).
@@ -6725,7 +6723,7 @@ be provided for each generated class."
 `crates/lang-rules/src/adapter/cpp.rs`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/lang-rules/src/adapter/cpp.rs::tests::a_structure_has_swap_as_a_member_and_in_its_namespace`
+`crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_12_a_structure_has_swap_as_a_member_and_in_its_namespace`
 
 **Status:** `done` — Jede erzeugte Klasse hat `swap` als Member und im Namensraum
 (Roundtrip und Rust-Test des Codegen).
@@ -6755,7 +6753,7 @@ application writing and reading RadarTracks topics."
 `crates/cpp/tests/generated/psm_probe.idl`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Anwendung aus §7.13.1 (Partition, Reliable, Transient,
 KeepLast(10), TransportPriority(14), `DataWriterQos dwqos(tqos)`, `write`, `<<`, Lesen
@@ -6773,7 +6771,7 @@ interesting C++11 features."
 **Repo:** `crates/cpp/tests/generated_psm_roundtrip.cpp`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — Die Auswahl
 `dr.select().max_samples(100).state(DataState::…).take()` mit bereichsbasierter Schleife
@@ -6808,7 +6806,7 @@ class."
 **Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs`, `tools/idlc/src/generate.rs`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** `done` — In der Vorgabe (`--cpp-mapping psm`) ist jede Struktur eine Klasse (`class
 Reading`) mit privaten Mitgliedern und Zugriffsfunktionen.
@@ -6854,8 +6852,8 @@ topic type shall be mapped to C++ following the rules listed in Table 7.1."
 **Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
-`tools/idlc/src/generate.rs::tests::the_psm_mapping_spells_the_types_of_table_7_1`
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
+`tools/idlc/src/generate.rs::tests::psmcxx_7_12_the_psm_mapping_spells_the_types_of_table_7_1`
 
 **Status:** `done` — Alle Zeilen von Table 7.1 in der Vorgabe (`--cpp-mapping psm`; `static_assert`
 je Zeile); die Option `--cpp-mapping native` weicht bei `map` und `long double` ab (siehe die Items
@@ -6883,7 +6881,7 @@ above."
 **Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`tools/idlc/src/generate.rs::tests::the_psm_mapping_spells_the_types_of_table_7_1`
+`tools/idlc/src/generate.rs::tests::psmcxx_7_12_the_psm_mapping_spells_the_types_of_table_7_1`
 
 **Status:** `done` — Ein `@optional`-Attribut ist `dds::core::optional<T>` (`maybe()`,
 `z()` in `RadarTrack`); die Anwesenheit geht durch den Codec.
@@ -6896,7 +6894,7 @@ dds::core::optional<T>"
 **Repo:** `crates/cpp/include/dds/core/Optional.hpp`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`test_layout_headers_and_find`
+`psmcxx_7_2_layout_headers_and_find`
 
 **Status:** `done` — `dds::core::optional<T>` mit `is_set()`, `get()`, `set(v)`,
 `reset()`.
@@ -6911,8 +6909,8 @@ specified above."
 `crates/idl-lower/src/annotation.rs`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
-`tools/idlc/src/generate.rs::tests::the_psm_mapping_spells_the_types_of_table_7_1`
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
+`tools/idlc/src/generate.rs::tests::psmcxx_7_12_the_psm_mapping_spells_the_types_of_table_7_1`
 
 **Status:** `done` — Ein Attribut mit `@Shared` (XTypes 1.0 Beta 1, in XTypes 1.3
 `@external`) ist `std::shared_ptr<T>` (`plot()` in `RadarTrack`); `@Shared` wird zu
@@ -6926,7 +6924,7 @@ Konstruktor und `plot_ref_t` im Zugriff; das ist untereinander verschieden.
 **Repo:** `crates/idl-lower/src/annotation.rs`
 
 **Tests:** `crates/cpp/tests/generated_psm_roundtrip.cpp::main`,
-`tools/idlc/src/generate.rs::tests::the_psm_mapping_spells_the_types_of_table_7_1`
+`tools/idlc/src/generate.rs::tests::psmcxx_7_12_the_psm_mapping_spells_the_types_of_table_7_1`
 
 **Status:** `done` — Der Name `@Shared` (ohne Beachtung der Groß- und Kleinschreibung)
 ist als Annotation bekannt und wird nicht als unbekannte Annotation übergangen.
@@ -6951,7 +6949,16 @@ example demonstrating the ISO/IEC mapping for DDS types."
 
 ## Audit-Status
 
-396 done / 0 partial / 0 open / 54 n/a (informative) / 0 n/a (rejected).
+396 done / 0 partial / 1 open / 0 blocked / 53 n/a (informative).
 
-Test-Lauf: die Ergebnisse der zitierten Tests kommen vom Linux-Testhost.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document dds-psm-cxx-1.0.md`):
 
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (Job `merge-rust-c-api`) — 6 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-cpp --all-targets` (Job `merge-rust-cpp`) — 4 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 3 Tests grün.
+* `python3 ci/run_integration.py integration-sdk` (Job `integration-sdk`) — 60 Tests grün.
+
+74 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `dds-psm-cxx-1.0.open.md`.

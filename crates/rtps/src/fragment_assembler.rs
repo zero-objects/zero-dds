@@ -313,8 +313,7 @@ impl FragmentAssembler {
         let last_frag = df
             .fragment_starting_num
             .0
-            .checked_add(u32::from(df.fragments_in_submessage) - 1)
-            .unwrap_or(u32::MAX);
+            .saturating_add(u32::from(df.fragments_in_submessage) - 1);
         if last_frag > total_fragments {
             self.record_drop(DropReason::FragmentIndexOutOfRange);
             return None;
@@ -395,10 +394,10 @@ impl FragmentAssembler {
             }
             buffer.key_hash = Some(key);
         }
-        if let Some(qos) = &df.inline_qos {
-            if df.fragment_starting_num.0 == 1 || buffer.inline_qos.is_none() {
-                buffer.inline_qos = Some(qos.clone());
-            }
+        if let Some(qos) = &df.inline_qos
+            && (df.fragment_starting_num.0 == 1 || buffer.inline_qos.is_none())
+        {
+            buffer.inline_qos = Some(qos.clone());
         }
         buffer.key_flag |= df.key_flag;
         // Write — only the `expected_len` sample bytes (trailing padding of

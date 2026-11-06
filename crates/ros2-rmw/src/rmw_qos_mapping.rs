@@ -198,129 +198,147 @@ pub fn dds_to_rmw(profile: &QosProfile) -> RmwQosProfile {
 mod tests {
     use super::*;
 
-    #[test]
-    fn default_profile_matches_rmw_spec() {
-        // REP-2009 §4 default: KEEP_LAST(10) + RELIABLE + VOLATILE.
-        let p = RmwQosProfile::default_profile();
-        assert_eq!(p.history, RmwHistory::KeepLast);
-        assert_eq!(p.depth, 10);
-        assert_eq!(p.reliability, RmwReliability::Reliable);
-        assert_eq!(p.durability, RmwDurability::Volatile);
-    }
-
-    #[test]
-    fn sensor_data_is_best_effort() {
-        let p = RmwQosProfile::sensor_data();
-        assert_eq!(p.reliability, RmwReliability::BestEffort);
-        assert_eq!(p.depth, 5);
-    }
-
-    #[test]
-    fn parameters_uses_keep_last_1000() {
-        let p = RmwQosProfile::parameters();
-        assert_eq!(p.depth, 1000);
-        assert_eq!(p.reliability, RmwReliability::Reliable);
-    }
-
-    #[test]
-    fn rmw_to_dds_round_trip_default() {
-        let rmw = RmwQosProfile::default_profile();
-        let dds = rmw_to_dds(&rmw);
-        let rmw2 = dds_to_rmw(&dds);
-        assert_eq!(rmw.reliability, rmw2.reliability);
-        assert_eq!(rmw.durability, rmw2.durability);
-        assert_eq!(rmw.depth, rmw2.depth);
-    }
-
-    #[test]
-    fn rmw_to_dds_keep_all_passes_through() {
-        let rmw = RmwQosProfile {
-            history: RmwHistory::KeepAll,
-            depth: 0,
-            reliability: RmwReliability::Reliable,
-            durability: RmwDurability::Volatile,
+    fn profile(
+        history: RmwHistory,
+        depth: usize,
+        reliability: RmwReliability,
+        durability: RmwDurability,
+    ) -> RmwQosProfile {
+        RmwQosProfile {
+            history,
+            depth,
+            reliability,
+            durability,
             avoid_ros_namespace_conventions: false,
-        };
-        let dds = rmw_to_dds(&rmw);
-        assert!(matches!(dds.history, History::KeepAll));
+        }
     }
 
+    /// rmw/types.h: `rmw_qos_history_policy_e` SYSTEM_DEFAULT 0,
+    /// KEEP_LAST 1, KEEP_ALL 2, UNKNOWN 3; `rmw_qos_reliability_policy_e`
+    /// SYSTEM_DEFAULT 0, RELIABLE 1, BEST_EFFORT 2, UNKNOWN 3,
+    /// BEST_AVAILABLE 4; `rmw_qos_durability_policy_e` SYSTEM_DEFAULT 0,
+    /// TRANSIENT_LOCAL 1, VOLATILE 2, UNKNOWN 3, BEST_AVAILABLE 4.
     #[test]
-    fn rmw_best_available_maps_to_best_effort_on_sender() {
-        let rmw = RmwQosProfile {
-            history: RmwHistory::KeepLast,
-            depth: 5,
-            reliability: RmwReliability::BestAvailable,
-            durability: RmwDurability::Volatile,
-            avoid_ros_namespace_conventions: false,
-        };
-        let dds = rmw_to_dds(&rmw);
+    fn rmw_types_h_the_policy_enums_have_the_header_values() {
+        assert_eq!(RmwHistory::SystemDefault as u32, 0);
+        assert_eq!(RmwHistory::KeepLast as u32, 1);
+        assert_eq!(RmwHistory::KeepAll as u32, 2);
+        assert_eq!(RmwHistory::Unknown as u32, 3);
+        assert_eq!(RmwReliability::SystemDefault as u32, 0);
+        assert_eq!(RmwReliability::Reliable as u32, 1);
+        assert_eq!(RmwReliability::BestEffort as u32, 2);
+        assert_eq!(RmwReliability::Unknown as u32, 3);
+        assert_eq!(RmwReliability::BestAvailable as u32, 4);
+        assert_eq!(RmwDurability::SystemDefault as u32, 0);
+        assert_eq!(RmwDurability::TransientLocal as u32, 1);
+        assert_eq!(RmwDurability::Volatile as u32, 2);
+        assert_eq!(RmwDurability::Unknown as u32, 3);
+        assert_eq!(RmwDurability::BestAvailable as u32, 4);
+    }
+
+    /// rmw/qos_profiles.h: `rmw_qos_profile_default` and
+    /// `rmw_qos_profile_services_default` KEEP_LAST 10, RELIABLE,
+    /// VOLATILE; `rmw_qos_profile_sensor_data` KEEP_LAST 5, BEST_EFFORT,
+    /// VOLATILE; `rmw_qos_profile_parameters` KEEP_LAST 1000, RELIABLE,
+    /// VOLATILE.
+    #[test]
+    fn rmw_qos_profiles_h_the_rmw_side_profiles_have_the_header_values() {
+        use RmwDurability::Volatile;
+        use RmwHistory::KeepLast;
+        use RmwReliability::{BestEffort, Reliable};
+        assert_eq!(
+            RmwQosProfile::default_profile(),
+            profile(KeepLast, 10, Reliable, Volatile)
+        );
+        assert_eq!(
+            RmwQosProfile::services_default(),
+            profile(KeepLast, 10, Reliable, Volatile)
+        );
+        assert_eq!(
+            RmwQosProfile::sensor_data(),
+            profile(KeepLast, 5, BestEffort, Volatile)
+        );
+        assert_eq!(
+            RmwQosProfile::parameters(),
+            profile(KeepLast, 1000, Reliable, Volatile)
+        );
+    }
+
+    /// rmw/types.h: each concrete policy value is the DDS policy of the
+    /// same name, KEEP_LAST with its depth, in both directions.
+    #[test]
+    fn rmw_types_h_a_concrete_policy_maps_to_the_dds_policy_of_its_name() {
+        use RmwDurability::{TransientLocal, Volatile};
+        use RmwHistory::{KeepAll, KeepLast};
+        use RmwReliability::{BestEffort, Reliable};
+        for (rmw, history, reliability, durability) in [
+            (
+                profile(KeepLast, 10, Reliable, Volatile),
+                History::KeepLast(10),
+                Reliability::Reliable,
+                Durability::Volatile,
+            ),
+            (
+                profile(KeepLast, 1, Reliable, TransientLocal),
+                History::KeepLast(1),
+                Reliability::Reliable,
+                Durability::TransientLocal,
+            ),
+            (
+                profile(KeepAll, 0, BestEffort, Volatile),
+                History::KeepAll,
+                Reliability::BestEffort,
+                Durability::Volatile,
+            ),
+        ] {
+            let dds = rmw_to_dds(&rmw);
+            assert_eq!(dds.history, history, "{rmw:?}");
+            assert_eq!(dds.reliability, reliability, "{rmw:?}");
+            assert_eq!(dds.durability, durability, "{rmw:?}");
+            assert_eq!(dds_to_rmw(&dds), rmw);
+        }
+    }
+
+    /// rmw/types.h: BEST_AVAILABLE (since Iron) takes the policy that
+    /// matches every remote endpoint; on the sending side that is
+    /// BEST_EFFORT and VOLATILE.
+    #[test]
+    fn rmw_types_h_best_available_is_best_effort_and_volatile_on_the_sending_side() {
+        let dds = rmw_to_dds(&profile(
+            RmwHistory::KeepLast,
+            5,
+            RmwReliability::BestAvailable,
+            RmwDurability::BestAvailable,
+        ));
         assert_eq!(dds.reliability, Reliability::BestEffort);
+        assert_eq!(dds.durability, Durability::Volatile);
     }
 
+    /// rmw/types.h: SYSTEM_DEFAULT and UNKNOWN are values of their own
+    /// and pass the mapping as such in both directions; the middleware
+    /// resolves SYSTEM_DEFAULT when it creates the entity.
     #[test]
-    fn rmw_system_default_passes_through_as_sentinel() {
-        // Spec-faithful: SYSTEM_DEFAULT is NOT resolved hard to Reliable/Volatile
-        // but passed through as a sentinel (resolution only at
-        // DDS-entity creation).
-        let rmw = RmwQosProfile {
-            history: RmwHistory::SystemDefault,
-            depth: 0,
-            reliability: RmwReliability::SystemDefault,
-            durability: RmwDurability::SystemDefault,
-            avoid_ros_namespace_conventions: false,
-        };
+    fn rmw_types_h_system_default_and_unknown_pass_through_as_sentinels() {
+        let rmw = profile(
+            RmwHistory::SystemDefault,
+            0,
+            RmwReliability::SystemDefault,
+            RmwDurability::SystemDefault,
+        );
         let dds = rmw_to_dds(&rmw);
         assert_eq!(dds.reliability, Reliability::SystemDefault);
         assert_eq!(dds.durability, Durability::SystemDefault);
         assert_eq!(dds.history, History::SystemDefault);
-        // Round-trip preserves the sentinel.
-        let back = dds_to_rmw(&dds);
-        assert_eq!(back.reliability, RmwReliability::SystemDefault);
-        assert_eq!(back.durability, RmwDurability::SystemDefault);
-        assert_eq!(back.history, RmwHistory::SystemDefault);
-    }
+        assert_eq!(dds_to_rmw(&dds), rmw);
 
-    #[test]
-    fn rmw_unknown_passes_through_as_sentinel() {
-        let rmw = RmwQosProfile {
-            history: RmwHistory::Unknown,
-            depth: 0,
-            reliability: RmwReliability::Unknown,
-            durability: RmwDurability::Unknown,
-            avoid_ros_namespace_conventions: false,
-        };
+        let rmw = profile(
+            RmwHistory::Unknown,
+            0,
+            RmwReliability::Unknown,
+            RmwDurability::Unknown,
+        );
         let dds = rmw_to_dds(&rmw);
         assert!(crate::qos_profiles::profiles::is_unknown(&dds));
-    }
-
-    #[test]
-    fn transient_local_round_trips() {
-        let rmw = RmwQosProfile {
-            history: RmwHistory::KeepLast,
-            depth: 1,
-            reliability: RmwReliability::Reliable,
-            durability: RmwDurability::TransientLocal,
-            avoid_ros_namespace_conventions: false,
-        };
-        let dds = rmw_to_dds(&rmw);
-        assert_eq!(dds.durability, Durability::TransientLocal);
-    }
-
-    #[test]
-    fn services_default_uses_keep_last_10() {
-        let p = RmwQosProfile::services_default();
-        assert_eq!(p.depth, 10);
-        assert_eq!(p.reliability, RmwReliability::Reliable);
-    }
-
-    #[test]
-    fn enum_repr_is_c_compatible() {
-        // Spec REP-2009 §3.x: enum values must match rmw C-API.
-        assert_eq!(RmwHistory::SystemDefault as u32, 0);
-        assert_eq!(RmwHistory::KeepLast as u32, 1);
-        assert_eq!(RmwHistory::KeepAll as u32, 2);
-        assert_eq!(RmwReliability::Reliable as u32, 1);
-        assert_eq!(RmwReliability::BestEffort as u32, 2);
+        assert_eq!(dds_to_rmw(&dds), rmw);
     }
 }

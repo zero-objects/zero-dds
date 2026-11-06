@@ -562,10 +562,10 @@ impl CodecTarget for D {
                 value: Box::new(inner(value)),
             });
         }
-        if type_ == d::Type::Primitive(d::Primitive::Bool) {
-            if let DExpr::Plain(d::Expr::Literal(Literal::Int(text))) = &value {
-                return plain(d::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_ == d::Type::Primitive(d::Primitive::Bool)
+            && let DExpr::Plain(d::Expr::Literal(Literal::Int(text))) = &value
+        {
+            return plain(d::Expr::Literal(Literal::Bool(text != "0")));
         }
         plain(d::Expr::Cast {
             type_: Box::new(type_),

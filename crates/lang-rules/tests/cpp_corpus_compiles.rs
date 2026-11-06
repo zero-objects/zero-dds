@@ -4,7 +4,7 @@
 //!
 //! The counterpart of the `every_corpus_case_that_renders_also_compiles`
 //! that `swift_end_to_end.rs`, `go_end_to_end.rs` and eight more carry.
-//! The C++ column had none: `docs/OPEN-ITEMS.md` records that the six
+//! The C++ column had none: the six
 //! oldest columns lost theirs when `zerodds-idl-<lang>` was removed, and
 //! that the pipeline job which would have caught it calls a package that
 //! no longer exists.
@@ -113,8 +113,8 @@ const REFUSED: &[(&str, &str)] = &[];
 /// message it answers.
 ///
 /// The same list-and-not-a-filter rule: a case here that starts
-/// compiling fails, so the entry cannot outlive the defect. Every one is
-/// in `docs/OPEN-ITEMS.md` with the compiler's own text.
+/// compiling fails, so the entry cannot outlive the defect. Every one
+/// names the compiler's own text.
 ///
 /// A by-value array cycle is now rejected by the production frontend
 /// before this compiler gate, through `corpus_frontend`.
@@ -185,7 +185,7 @@ fn cpp_compiles(cxx: &str, source: &str, tag: &str) -> Result<(), String> {
 }
 
 #[test]
-fn the_compiler_check_catches_a_deliberate_error() {
+fn idl4cpp_2_1_the_compiler_check_catches_a_deliberate_error() {
     // Without this, a green result below could come from a compiler that
     // accepts anything — or from a harness that never ran one.
     let Some(cxx) = compiler() else {
@@ -201,16 +201,12 @@ fn the_compiler_check_catches_a_deliberate_error() {
         .expect("the compiler rejected a good header");
 }
 
-/// The whole corpus through the C++ compiler, one invocation per case.
-///
-/// `#[ignore]`, because it is one invocation of a compiler per corpus
-/// case and each costs about one and a half seconds — eleven minutes for
-/// the corpus as it stands. It is what proves the column rather than
-/// samples it, so it is run with `--include-ignored` and its result is
-/// what the `idl-cpp-corpus` job records.
-#[test]
-#[ignore = "one C++ compiler invocation per corpus case, ~11 minutes; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through the C++ compiler, one invocation per case:
+/// every case renders or is refused as listed, and the cases of `share`
+/// (of `shares`) compile. One invocation costs about 0.4 s on the Linux test
+/// host, 162 s for the corpus; the shares below keep a test within its
+/// 25 s.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     let Some(cxx) = compiler() else {
         eprintln!("SKIPPED: no C++ compiler on the path.");
         return;
@@ -219,7 +215,8 @@ fn every_corpus_case_that_renders_also_compiles() {
     let mut unexpectedly_fine = Vec::new();
     let mut frontend = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus_harness::corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus_harness::corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
@@ -244,6 +241,10 @@ fn every_corpus_case_that_renders_also_compiles() {
             }
             (Err(_), Some(_)) => continue,
         };
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         let known = DOES_NOT_COMPILE.iter().find(|(case, _)| *case == name);
         match (cpp_compiles(&cxx, &text, &name), known) {
@@ -271,9 +272,8 @@ fn every_corpus_case_that_renders_also_compiles() {
     );
     assert!(unexpectedly_fine.is_empty(), "{unexpectedly_fine:#?}");
     assert!(
-        checked >= MUST_RENDER,
-        "only {checked} corpus cases reached the compiler; the gate says nothing \
-         below {MUST_RENDER}"
+        rendered >= MUST_RENDER,
+        "only {rendered} corpus cases rendered; the gate says nothing below {MUST_RENDER}"
     );
 }
 
@@ -307,4 +307,157 @@ fn every_rpc_corpus_case_compiles() {
         }
     }
     assert!(failures.is_empty(), "{failures:#?}");
+}
+
+/// IDL4 to C++ 1.0 §7.1.3: every corpus case that renders compiles under C++17.
+///
+/// The corpus in 24 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen` job runs them
+/// with the toolchain, eight shares at a time.
+mod idl4cpp_7_1_3_every_corpus_case_that_renders_also_compiles {
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_17() {
+        super::every_corpus_case_that_renders_also_compiles(16, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_18() {
+        super::every_corpus_case_that_renders_also_compiles(17, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_19() {
+        super::every_corpus_case_that_renders_also_compiles(18, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_20() {
+        super::every_corpus_case_that_renders_also_compiles(19, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_21() {
+        super::every_corpus_case_that_renders_also_compiles(20, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_22() {
+        super::every_corpus_case_that_renders_also_compiles(21, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_23() {
+        super::every_corpus_case_that_renders_also_compiles(22, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through the C++ compiler; runs in integration-codegen"]
+    fn share_24() {
+        super::every_corpus_case_that_renders_also_compiles(23, 24);
+    }
 }

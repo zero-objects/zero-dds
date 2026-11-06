@@ -573,12 +573,12 @@ impl CodecTarget for Lua {
                 rhs: Box::new(Expr::int(128)),
             }));
         }
-        if type_.0 == "boolean" {
-            if let Expr::Literal(Literal::Int(text)) = &value {
-                if text.chars().all(|c| c.is_ascii_digit() || c == '-') && !text.is_empty() {
-                    return Expr::bool(text != "0");
-                }
-            }
+        if type_.0 == "boolean"
+            && let Expr::Literal(Literal::Int(text)) = &value
+            && text.chars().all(|c| c.is_ascii_digit() || c == '-')
+            && !text.is_empty()
+        {
+            return Expr::bool(text != "0");
         }
         value
     }

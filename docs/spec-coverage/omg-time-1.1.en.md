@@ -673,14 +673,13 @@ covered.
 
 ### App. A — Secure time-source criteria
 
-**Spec:** Appendix A — implementation notes for a secure time source.
+**Spec:** App. A, p. A-1 (PDF) — "Appropriate documented handling of the criteria presented here is mandatory for conformance to the Basic Time Service conformance point." A.1: "If these criteria are not satisfactorily addressed in an ORB, then it must return the TimeUnavailable exception upon invocation of the secure_universal_time operation".
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Appendix A explicitly declared an
-implementation guideline (non-normative).
+**Status:** open — a documented handling of the criteria is missing; `TimeService::secure_universal_time` (`crates/time-service/src/service.rs`) returns the time when the caller marks the source as secure via `secure_source`.
 
 ---
 
@@ -688,13 +687,13 @@ implementation guideline (non-normative).
 
 ### App. B — Administration
 
-**Spec:** App. B (PDF) — administration of the Time Service (non-normative).
+**Spec:** App. B, p. B-1 (PDF) — "Only administrators authorized by the system security policy may set the time and specify the source of time"; operations that set the time, designate a source as authoritative or change the accuracy "must be protected against unauthorized invocation. They must also be mandatorily audited"; "Time Service implementors must state whether or not their implementation is secure."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** open — `TimeService::with_source` and the field `secure_source` (`crates/time-service/src/service.rs`) are reachable without an authorization check and without an audit; a statement on the security of the implementation is missing.
 
 ### App. C — IDL listing
 
@@ -706,7 +705,7 @@ implementation guideline (non-normative).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — consolidation of the IDL of §1.3 and §2; the definitions are items there.
 
 ### App. D — Notes
 
@@ -716,7 +715,7 @@ implementation guideline (non-normative).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — notes for users.
 
 ### App. E — Examples
 
@@ -726,7 +725,7 @@ implementation guideline (non-normative).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — extension examples.
 
 ### App. F — References
 
@@ -736,18 +735,19 @@ implementation guideline (non-normative).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — reference list.
 
 ---
 
 ## Audit status
 
-43 done / 0 partial / 0 open / 6 n/a (informative) / 0 n/a (rejected).
+43 done / 0 partial / 2 open / 0 blocked / 4 n/a (informative).
 
-Test run: `cargo test -p zerodds-time-service -p zerodds-corba-ccm` — 35 + 36
-tests green (Basic Time Service in `time-service`: modules `service`,
-`time_base`, `tio`, `uto`; Timer Event Service lifecycle in
-`corba-ccm/timer.rs`: `crates/corba-ccm/src/timer.rs::tests::one_shot_fires_once`,
-`crates/corba-ccm/src/timer.rs::tests::periodic_fires_multiple_times`,
-`crates/corba-ccm/src/timer.rs::tests::cancel_stops_periodic`,
-`crates/corba-ccm/src/timer.rs::tests::cancel_unknown_returns_false`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document omg-time-1.1.md`):
+
+* `cargo nextest run --profile merge -p zerodds-corba-ccm --all-targets` (job `merge-rust-corba-ccm`) — 17 tests green.
+* `cargo nextest run --profile merge -p zerodds-time-service --all-targets` (job `merge-rust-time-service`) — 35 tests green.
+
+52 cited tests green, 0 not green.
+
+Open items: `omg-time-1.1.open.en.md`.

@@ -38,7 +38,7 @@ const SAMPLE: &str = "module m { struct Inner { long a; }; \
                       @final struct Sample { @external Inner nested; @external long a; long b; }; };";
 
 #[test]
-fn an_aggregate_with_an_external_member_gets_the_four_functions() {
+fn xtypes_7_5_1_2_3_1_an_aggregate_with_an_external_member_gets_the_four_functions() {
     let generated = declarations(SAMPLE);
     for function in [
         "zd_init_m_Sample",
@@ -53,14 +53,14 @@ fn an_aggregate_with_an_external_member_gets_the_four_functions() {
 }
 
 #[test]
-fn the_initialiser_sets_the_external_pointers_to_null() {
+fn xtypes_7_5_1_2_3_1_the_initialiser_sets_the_external_pointers_to_null() {
     let generated = declarations(SAMPLE);
     assert!(generated.contains("v->nested = NULL;"), "{generated}");
     assert!(generated.contains("v->a = NULL;"), "{generated}");
 }
 
 #[test]
-fn the_destructor_deletes_what_a_non_null_pointer_references() {
+fn xtypes_7_5_1_2_3_1_the_destructor_deletes_what_a_non_null_pointer_references() {
     let generated = declarations(SAMPLE);
     assert!(
         generated.contains("if (v->nested != NULL) {"),
@@ -71,7 +71,7 @@ fn the_destructor_deletes_what_a_non_null_pointer_references() {
 }
 
 #[test]
-fn the_copy_allocates_a_null_destination_and_fills_it() {
+fn xtypes_7_5_1_2_3_1_the_copy_allocates_a_null_destination_and_fills_it() {
     let generated = declarations(SAMPLE);
     assert!(
         generated.contains("dst->nested = (m_Inner *)malloc(sizeof(m_Inner));"),
@@ -86,7 +86,7 @@ fn the_copy_allocates_a_null_destination_and_fills_it() {
 }
 
 #[test]
-fn the_copy_has_the_modes_of_table_45() {
+fn xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45() {
     let generated = declarations(SAMPLE);
     for name in [
         "ZD_COPY_SHALLOW",
@@ -122,7 +122,7 @@ fn an_aggregate_that_holds_one_inline_calls_the_functions_of_it() {
 }
 
 #[test]
-fn an_external_branch_of_a_union_is_released_by_the_live_discriminator() {
+fn xtypes_7_5_1_2_3_1_an_external_branch_of_a_union_is_released_by_the_live_discriminator() {
     let generated = declarations(
         "module m { struct Inner { long a; }; \
          union Choice switch (long) { case 1: @external Inner nested; case 2: long plain; }; };",

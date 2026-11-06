@@ -1,16 +1,15 @@
-# documentation/Makefile — build PDFs and API references.
+# documentation/Makefile — build PDFs.
 #
 # Two backends:
 # * Markdown → PDF via pandoc + tectonic (each station)
-# * Direct LaTeX → PDF via tectonic (architecture, vendor specs)
+# * Direct LaTeX → PDF via tectonic (vendor specs)
 #
 # Usage:
 #   make pdfs            # all station PDFs
-#   make pdf-arch        # the LaTeX-authored architecture PDF
+#   make pdf-arch        # the architecture station
 #   make pdf-getting-started, pdf-config, pdf-idl, pdf-integration,
 #   pdf-operations, pdf-migration
 #   make pdf-specs       # the vendor specs (DDS-AMQP 1.0, DDS-TS 1.0)
-#   make api             # generate API reference for all bindings
 #   make clean
 
 DIST     := dist
@@ -29,24 +28,19 @@ PANDOC_OPTS := \
 # a single PDF.
 STATIONS := getting-started config idl integration operations migration
 
-.PHONY: pdfs pdf-arch pdf-specs api clean help \
-        $(addprefix pdf-,$(STATIONS)) \
-        $(addprefix api-,rust c cpp java python typescript csharp)
+.PHONY: pdfs pdf-arch pdf-specs clean help \
+        $(addprefix pdf-,$(STATIONS))
 
 help:
 	@echo "ZeroDDS documentation Makefile."
 	@echo ""
 	@echo "PDF targets:"
 	@echo "  pdfs                 — every station PDF + architecture + vendor specs"
-	@echo "  pdf-arch             — architecture (LaTeX-authored)"
+	@echo "  pdf-arch             — architecture station"
 	@for s in $(STATIONS); do \
 	  echo "  pdf-$$s$$(printf '%*s' $$((20-$${#s})) '') — $$s station"; \
 	done
 	@echo "  pdf-specs            — DDS-AMQP 1.0 + DDS-TS 1.0 vendor specs"
-	@echo ""
-	@echo "API reference:"
-	@echo "  api                  — every language"
-	@echo "  api-{rust,c,cpp,java,python,typescript,csharp}"
 	@echo ""
 	@echo "  clean                — remove dist/"
 
@@ -93,23 +87,14 @@ $(DIST)/config.pdf: 03-configuration/README.md \
 pdf-config: $(DIST)/config.pdf
 
 $(DIST)/idl.pdf: 04-idl/README.md \
-                  04-idl/language.md \
-                  04-idl/annotations.md \
-                  04-idl/codegen.md | $(DIST)
+                  04-idl/cdr-wire-format.md \
+                  04-idl/idlc-handbook.md | $(DIST)
 	$(PANDOC) $(PANDOC_OPTS) "IDL Reference" $^ -o $@
 
 pdf-idl: $(DIST)/idl.pdf
 
-$(DIST)/integration.pdf: 05-integration/README.md \
-                          05-integration/rust.md \
-                          05-integration/c.md \
-                          05-integration/cpp.md \
-                          05-integration/csharp.md \
-                          05-integration/java.md \
-                          05-integration/python.md \
-                          05-integration/typescript-node.md \
-                          05-integration/typescript-wasm.md \
-                          05-integration/ros2.md | $(DIST)
+$(DIST)/integration.pdf: 05-integration/java.md \
+                          05-integration/typescript-wasm.md | $(DIST)
 	$(PANDOC) $(PANDOC_OPTS) "Integration per Language" $^ -o $@
 
 pdf-integration: $(DIST)/integration.pdf
@@ -131,14 +116,11 @@ $(DIST)/migration.pdf: 07-migration/README.md \
 
 pdf-migration: $(DIST)/migration.pdf
 
-# ---------------------------------------------------------------------
-# Architecture (LaTeX-authored, bypasses pandoc).
-# ---------------------------------------------------------------------
-
 pdf-arch: $(DIST)/architecture.pdf
 
-$(DIST)/architecture.pdf: 02-architecture/architecture.tex | $(DIST)
-	$(TEX) $(TEXOPTS) --outdir=$(DIST) $<
+$(DIST)/architecture.pdf: 02-architecture/components.md \
+                           02-architecture/data-flow.md | $(DIST)
+	$(PANDOC) $(PANDOC_OPTS) "Architecture" $^ -o $@
 
 # ---------------------------------------------------------------------
 # Vendor-spec PDFs (LaTeX projects under specs/).
@@ -155,29 +137,6 @@ $(DIST)/dds-ts-1.0.pdf: specs/dds-ts-1.0/main.tex | $(DIST)
 	@if [ -f $(DIST)/main.pdf ]; then mv $(DIST)/main.pdf $@; fi
 
 # ---------------------------------------------------------------------
-# API reference (per language).
-# ---------------------------------------------------------------------
-
-api:
-	./api/gen.sh
-
-api-rust:
-	./api/gen.sh rust
-api-c:
-	./api/gen.sh c
-api-cpp:
-	./api/gen.sh cpp
-api-java:
-	./api/gen.sh java
-api-python:
-	./api/gen.sh python
-api-typescript:
-	./api/gen.sh typescript
-api-csharp:
-	./api/gen.sh csharp
-
-# ---------------------------------------------------------------------
 
 clean:
 	rm -rf $(DIST)
-	rm -rf api/rust api/c api/cpp api/java api/python api/typescript api/csharp

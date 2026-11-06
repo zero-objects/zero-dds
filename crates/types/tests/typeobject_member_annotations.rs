@@ -100,7 +100,7 @@ fn ranged() -> (
 }
 
 #[test]
-fn the_complete_object_is_cyclones_octet_for_octet() {
+fn xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet() {
     let (ast, id) = ranged();
     let complete = TypeObject::Complete(complete_type_object(&ast, id).expect("complete"));
     assert_eq!(
@@ -110,7 +110,7 @@ fn the_complete_object_is_cyclones_octet_for_octet() {
 }
 
 #[test]
-fn the_minimal_object_is_cyclones_octet_for_octet() {
+fn xtypes_7_3_4_2_the_minimal_object_is_cyclones_octet_for_octet() {
     let (ast, id) = ranged();
     let minimal = TypeObject::Minimal(minimal_type_object(&ast, id).expect("minimal"));
     assert_eq!(

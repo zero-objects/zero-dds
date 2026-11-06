@@ -41,7 +41,8 @@ module RoundtripBench {
     ///   echo sender copies the value unchanged into the echo, the
     ///   receiver computes `now - t_send_ns`.
     /// * `payload` -- variable-size `sequence<octet>` for the sweep over
-    ///   sizes (0 … 8192 bytes in 10% steps).
+    ///   sizes (0 … 8192 bytes in 10% steps) and for the speed setup
+    ///   (tests/perf/speed: 64 B, 1 KiB, 64 KiB).
     // @topic — marks the struct as a DDS topic type. OpenDDS'
     // opendds_idl generates the TypeSupport (DataWriter/DataReader/
     // TypeSupportImpl) ONLY for @topic-annotated structs. Cyclone
@@ -63,12 +64,12 @@ module RoundtripBench {
     struct Roundtrip {
         @id(0) unsigned long           sequence_id;
         @id(1) unsigned long long      t_send_ns;
-        // Bounded sequence — 8192 is larger than our maximum
-        // sweep payload size. An explicit bound, so that RTI/FastDDS/
-        // Cyclone do not take different defaults (RTI default
-        // 100, FastDDS unbounded). With the same bound all of them generate
-        // the same wire layout.
-        @id(2) sequence<octet, 8192>   payload;
+        // Bounded sequence — 65536 is the largest sample of the speed
+        // setup (64 KiB, fragmented over UDP); the roundtrip sweep goes up
+        // to 8192. An explicit bound, so that RTI/FastDDS/Cyclone do not
+        // take different defaults (RTI default 100, FastDDS unbounded).
+        // With the same bound all of them generate the same wire layout.
+        @id(2) sequence<octet, 65536>  payload;
     };
 
 };

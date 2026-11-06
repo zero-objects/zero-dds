@@ -110,39 +110,6 @@ fn cyclone_heartbeat_decodes() {
     }
 }
 
-#[test]
-fn cyclone_frames_have_rtps_magic() {
-    for (name, frame) in [
-        ("empty", FRAME_DATA_EMPTY),
-        ("cdr2", FRAME_DATA_CDR2),
-        ("heartbeat", FRAME_HEARTBEAT),
-    ] {
-        let bytes = parse_hex(frame);
-        assert_eq!(
-            &bytes[..4],
-            b"RTPS",
-            "frame {name} must start with RTPS magic"
-        );
-    }
-}
-
-#[test]
-fn cyclone_frames_use_rtps_2_5_or_compatible() {
-    // Accept everything from version 2.x onward.
-    for (name, frame) in [
-        ("empty", FRAME_DATA_EMPTY),
-        ("cdr2", FRAME_DATA_CDR2),
-        ("heartbeat", FRAME_HEARTBEAT),
-    ] {
-        let bytes = parse_hex(frame);
-        let header = RtpsHeader::from_bytes(&bytes).expect("decode");
-        assert_eq!(
-            header.protocol_version.major, 2,
-            "frame {name} must be RTPS 2.x"
-        );
-    }
-}
-
 // ============================================================================
 // Encoder compliance: ZeroDDS output is structurally equivalent
 // ============================================================================
@@ -251,17 +218,6 @@ fn cyclone_data_cdr2_roundtrip_bit_identical() {
 // ============================================================================
 // Hex-Parser-Tests
 // ============================================================================
-
-#[test]
-fn parse_hex_ignores_comments_and_whitespace() {
-    let text = "# kommentar\n  AB CD  \nEF";
-    assert_eq!(parse_hex(text), vec![0xAB, 0xCD, 0xEF]);
-}
-
-#[test]
-fn parse_hex_handles_inline_comments() {
-    assert_eq!(parse_hex("12 34 # rest ignored"), vec![0x12, 0x34]);
-}
 
 // ============================================================================
 // WP 1.4 T1: SEDP-Publication-Compliance

@@ -20,7 +20,7 @@
 //! - E2E-Latenz (Send→Recv Roundtrip).
 //! - Multi-producer/consumer contention.
 //! - Cross-vendor comparison against Cyclone/FastDDS — that is the job of the
-//!   Live-Interop-Harness in `internal/interop/`.
+//!   Live-Interop-Harness in `tests/interop/`.
 //!
 //! # Run
 //!
@@ -63,9 +63,16 @@ use zerodds_transport_uds::{UdsConfig, UdsTransport};
 /// Maximum DGRAM-Payload (UDP + UDS): 64 KiB - Header-Overhead.
 const DGRAM_MAX: usize = 60 * 1024;
 
+/// A 16-byte id of this process: the names of the SHM segments derive
+/// from the ids alone (`/zd-<owner>-<consumer>`), and nextest lists a
+/// bench binary twice at the same time (`--list` and `--list --ignored`),
+/// each run executing the group functions. With fixed ids the second
+/// process took the first one's segment, which then refused to attach
+/// (`InvalidHeader`, merge pipeline 8896, job 229253).
 fn id(n: u8) -> [u8; 16] {
     let mut a = [0u8; 16];
     a[0] = 0xE0;
+    a[1..5].copy_from_slice(&std::process::id().to_be_bytes());
     a[15] = n;
     a
 }

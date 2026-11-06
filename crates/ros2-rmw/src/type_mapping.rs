@@ -215,94 +215,78 @@ impl RosBuiltinType {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
+    //! The oracle: the design article "Interface definition and language
+    //! mapping" (design.ros2.org/articles/idl_interface_definition.html)
+    //! and the type names rosidl_typesupport_fastrtps_cpp and
+    //! rmw_cyclonedds_cpp put on the wire, `<package>::<msg|srv|action>::
+    //! dds_::<Type>_`.
     use super::*;
 
     #[test]
-    fn ros_form_round_trip() {
-        let t = RosTypeRef::new("geometry_msgs", RosNamespace::Msg, "Twist");
-        assert_eq!(t.to_ros_form(), "geometry_msgs/msg/Twist");
-        let back = RosTypeRef::from_ros_form("geometry_msgs/msg/Twist").unwrap();
-        assert_eq!(back, t);
-    }
-
-    #[test]
-    fn dds_wire_form_uses_dds_dunder() {
-        let t = RosTypeRef::new("std_msgs", RosNamespace::Msg, "String");
-        assert_eq!(t.to_dds_type_name(), "std_msgs::msg::dds_::String_");
-    }
-
-    #[test]
-    fn srv_namespace_mapped_correctly() {
-        let t = RosTypeRef::new("example_interfaces", RosNamespace::Srv, "AddTwoInts");
-        assert_eq!(
-            t.to_dds_type_name(),
-            "example_interfaces::srv::dds_::AddTwoInts_"
-        );
-    }
-
-    #[test]
-    fn action_namespace_mapped_correctly() {
-        let t = RosTypeRef::new("action_msgs", RosNamespace::Action, "GoalStatus");
-        assert_eq!(
-            t.to_dds_type_name(),
-            "action_msgs::action::dds_::GoalStatus_"
-        );
-    }
-
-    #[test]
-    fn from_ros_form_rejects_wrong_segment_count() {
-        assert!(RosTypeRef::from_ros_form("only_two/parts").is_err());
-        assert!(RosTypeRef::from_ros_form("a/b/c/d").is_err());
-    }
-
-    #[test]
-    fn from_ros_form_rejects_unknown_namespace() {
-        assert!(RosTypeRef::from_ros_form("pkg/topic/Type").is_err());
-    }
-
-    #[test]
-    fn builtin_idl_names_match_omg_idl() {
-        // rosidl builtin → OMG IDL 4.2 primitive spellings (DDS-XTypes 1.3
-        // §7.2.2.4.1.1 primitive kinds): the `.idl` names DDS sees on the wire.
-        assert_eq!(RosBuiltinType::Bool.idl_name(), "boolean");
-        assert_eq!(RosBuiltinType::Byte.idl_name(), "octet");
-        assert_eq!(RosBuiltinType::Float32.idl_name(), "float");
-        assert_eq!(RosBuiltinType::Int64.idl_name(), "int64");
-        // REP-2008 §4.4: ROS `char` is a 1-byte unsigned int (uint8), NOT a
-        // 2-byte wchar — verified byte-exact against native rclpy.
-        assert_eq!(RosBuiltinType::Char.idl_name(), "uint8");
-    }
-
-    #[test]
-    fn cdr_size_matches_omg_cdr2() {
-        assert_eq!(RosBuiltinType::Bool.cdr_size(), Some(1));
-        assert_eq!(RosBuiltinType::Int16.cdr_size(), Some(2));
-        assert_eq!(RosBuiltinType::Float64.cdr_size(), Some(8));
-        assert!(RosBuiltinType::String.cdr_size().is_none());
-    }
-
-    #[test]
-    fn from_ros_token_round_trip() {
-        for (t, token) in [
-            (RosBuiltinType::Bool, "bool"),
-            (RosBuiltinType::Byte, "byte"),
-            (RosBuiltinType::Float32, "float32"),
-            (RosBuiltinType::Int64, "int64"),
-            (RosBuiltinType::String, "string"),
+    fn ros2_idl_a_type_is_package_namespace_name_and_dds_names_it_dds_underscore() {
+        for (ns, word, ros, dds) in [
+            (
+                RosNamespace::Msg,
+                "msg",
+                "std_msgs/msg/String",
+                "std_msgs::msg::dds_::String_",
+            ),
+            (
+                RosNamespace::Srv,
+                "srv",
+                "example_interfaces/srv/AddTwoInts",
+                "example_interfaces::srv::dds_::AddTwoInts_",
+            ),
+            (
+                RosNamespace::Action,
+                "action",
+                "action_msgs/action/GoalStatus",
+                "action_msgs::action::dds_::GoalStatus_",
+            ),
         ] {
-            assert_eq!(RosBuiltinType::from_ros_token(token).unwrap(), t);
+            let (package, rest) = ros.split_once('/').unwrap();
+            let name = rest.rsplit('/').next().unwrap();
+            let t = RosTypeRef::new(package, ns, name);
+            assert_eq!(ns.as_str(), word);
+            assert_eq!(t.to_ros_form(), ros);
+            assert_eq!(t.to_dds_type_name(), dds);
+            assert_eq!(RosTypeRef::from_ros_form(ros).unwrap(), t);
         }
     }
 
     #[test]
-    fn from_ros_token_rejects_unknown() {
-        assert!(RosBuiltinType::from_ros_token("complex").is_err());
+    fn ros2_idl_a_name_without_three_parts_or_with_another_namespace_is_refused() {
+        assert!(RosTypeRef::from_ros_form("only_two/parts").is_err());
+        assert!(RosTypeRef::from_ros_form("a/b/c/d").is_err());
+        assert!(RosTypeRef::from_ros_form("pkg/topic/Type").is_err());
     }
 
+    /// The design article's table of the built-in types and the IDL types
+    /// they map to; `char` is the 8-bit unsigned type (REP-2008-era
+    /// rosidl, measured against rclpy's octets).
     #[test]
-    fn namespace_str_repr() {
-        assert_eq!(RosNamespace::Msg.as_str(), "msg");
-        assert_eq!(RosNamespace::Srv.as_str(), "srv");
-        assert_eq!(RosNamespace::Action.as_str(), "action");
+    fn ros2_idl_the_builtin_types_map_to_their_idl_types() {
+        for (token, t, idl, size) in [
+            ("bool", RosBuiltinType::Bool, "boolean", Some(1)),
+            ("byte", RosBuiltinType::Byte, "octet", Some(1)),
+            ("char", RosBuiltinType::Char, "uint8", Some(1)),
+            ("float32", RosBuiltinType::Float32, "float", Some(4)),
+            ("float64", RosBuiltinType::Float64, "double", Some(8)),
+            ("int8", RosBuiltinType::Int8, "int8", Some(1)),
+            ("uint8", RosBuiltinType::Uint8, "uint8", Some(1)),
+            ("int16", RosBuiltinType::Int16, "int16", Some(2)),
+            ("uint16", RosBuiltinType::Uint16, "uint16", Some(2)),
+            ("int32", RosBuiltinType::Int32, "int32", Some(4)),
+            ("uint32", RosBuiltinType::Uint32, "uint32", Some(4)),
+            ("int64", RosBuiltinType::Int64, "int64", Some(8)),
+            ("uint64", RosBuiltinType::Uint64, "uint64", Some(8)),
+            ("string", RosBuiltinType::String, "string", None),
+            ("wstring", RosBuiltinType::WString, "wstring", None),
+        ] {
+            assert_eq!(RosBuiltinType::from_ros_token(token).unwrap(), t);
+            assert_eq!(t.idl_name(), idl, "{token}");
+            assert_eq!(t.cdr_size(), size, "{token}");
+        }
+        assert!(RosBuiltinType::from_ros_token("complex").is_err());
     }
 }

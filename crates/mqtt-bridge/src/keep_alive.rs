@@ -76,7 +76,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keep_alive_zero_is_disabled() {
+    fn mqtt5_4_1_keep_alive_zero_is_disabled() {
         let t = KeepAliveTracker::new(0);
         assert!(!t.is_enabled());
         assert!(!t.is_expired());
@@ -84,14 +84,14 @@ mod tests {
     }
 
     #[test]
-    fn fresh_tracker_not_expired() {
+    fn mqtt5_4_1_fresh_tracker_not_expired() {
         let t = KeepAliveTracker::new(60);
         assert!(t.is_enabled());
         assert!(!t.is_expired());
     }
 
     #[test]
-    fn record_packet_resets_timer() {
+    fn mqtt5_4_1_record_packet_resets_timer() {
         let mut t = KeepAliveTracker::new(10);
         std::thread::sleep(Duration::from_millis(20));
         t.record_packet();
@@ -99,7 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn small_keep_alive_expires_after_1_5x() {
+    fn mqtt5_4_1_small_keep_alive_expires_after_1_5x() {
         // 1 second keep alive → expires after >1.5s
         let mut t = KeepAliveTracker::new(1);
         std::thread::sleep(Duration::from_millis(1600));
@@ -110,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn remaining_decreases_over_time() {
+    fn mqtt5_4_1_remaining_decreases_over_time() {
         let t = KeepAliveTracker::new(60);
         let r1 = t.remaining().expect("enabled");
         std::thread::sleep(Duration::from_millis(50));

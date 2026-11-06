@@ -117,7 +117,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_spec_kinds_roundtrip() {
+    fn xrce_7_7_5_all_spec_kinds_roundtrip() {
         for k in [
             ObjectKind::Invalid,
             ObjectKind::Participant,
@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_byte_rejected() {
+    fn xrce_7_7_5_unknown_byte_rejected() {
         // 0x07 is in the 4-bit range but not in the spec
         assert!(ObjectKind::from_u8(0x07).is_err());
         // > 0x0F → out of 4-bit-range
@@ -164,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_const_values_match_spec() {
+    fn xrce_7_7_5_raw_const_values_match_spec() {
         // DDS-XRCE 1.0 §7.7.5 and Annex A
         assert_eq!(OBJK_PARTICIPANT, 0x01);
         assert_eq!(OBJK_TOPIC, 0x02);

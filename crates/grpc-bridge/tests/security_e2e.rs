@@ -55,7 +55,7 @@ fn gen_self_signed() -> (String, String) {
 }
 
 #[test]
-fn build_grpc_tls_config_sets_alpn_h2() {
+fn grpcbridge_7_1_build_grpc_tls_config_sets_alpn_h2() {
     let (cert, key) = gen_self_signed();
     let c = write_temp("grpc_cert.pem", cert.as_bytes());
     let k = write_temp("grpc_key.pem", key.as_bytes());
@@ -66,7 +66,7 @@ fn build_grpc_tls_config_sets_alpn_h2() {
 }
 
 #[test]
-fn build_grpc_tls_config_with_client_ca_for_mtls() {
+fn grpcbridge_7_1_build_grpc_tls_config_with_client_ca_for_mtls() {
     let (cert, key) = gen_self_signed();
     let c = write_temp("grpc_cert2.pem", cert.as_bytes());
     let k = write_temp("grpc_key2.pem", key.as_bytes());
@@ -76,7 +76,7 @@ fn build_grpc_tls_config_with_client_ca_for_mtls() {
 }
 
 #[test]
-fn build_grpc_tls_config_rejects_missing_cert() {
+fn grpcbridge_7_1_build_grpc_tls_config_rejects_missing_cert() {
     let bad = PathBuf::from("/tmp/zerodds-nonexistent-cert.pem");
     let bad_key = PathBuf::from("/tmp/zerodds-nonexistent-key.pem");
     let err = build_grpc_tls_config(bad, bad_key, None).unwrap_err();

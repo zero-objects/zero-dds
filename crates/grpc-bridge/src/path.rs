@@ -54,7 +54,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_standard_grpc_path() {
+    fn grpc_requests_parses_standard_grpc_path() {
         // Spec §"Path" example.
         let (s, m) = parse_path("/helloworld.Greeter/SayHello").expect("ok");
         assert_eq!(s, "helloworld.Greeter");
@@ -62,7 +62,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_relative_path() {
+    fn grpc_requests_rejects_relative_path() {
         assert_eq!(
             parse_path("helloworld.Greeter/SayHello"),
             Err(PathError::NotAbsolute)
@@ -70,7 +70,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_path_without_method() {
+    fn grpc_requests_rejects_path_without_method() {
         assert_eq!(
             parse_path("/helloworld.Greeter"),
             Err(PathError::MalformedPath)
@@ -78,17 +78,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_empty_service() {
+    fn grpc_requests_rejects_empty_service() {
         assert_eq!(parse_path("//SayHello"), Err(PathError::MalformedPath));
     }
 
     #[test]
-    fn rejects_empty_method() {
+    fn grpc_requests_rejects_empty_method() {
         assert_eq!(parse_path("/Service/"), Err(PathError::MalformedPath));
     }
 
     #[test]
-    fn rejects_method_with_slash() {
+    fn grpc_requests_rejects_method_with_slash() {
         // Spec — method is a single segment.
         assert_eq!(
             parse_path("/Service/Method/Sub"),
@@ -97,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_dotted_service_name() {
+    fn grpc_requests_parses_dotted_service_name() {
         // Spec — the service name can be fully qualified.
         let (s, m) = parse_path("/google.api.something.LongServiceName/MyMethod").expect("ok");
         assert_eq!(s, "google.api.something.LongServiceName");

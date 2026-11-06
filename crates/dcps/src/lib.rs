@@ -119,6 +119,8 @@ pub(crate) mod listener_dispatcher;
 /// Per-writer liveliness at a DataReader — `LIVELINESS_CHANGED` (DDS 1.4 §2.2.4.1).
 #[cfg(feature = "std")]
 pub mod liveliness_tracker;
+#[cfg(feature = "std")]
+pub mod loan;
 #[cfg(feature = "metrics")]
 pub mod metrics;
 #[cfg(feature = "std")]
@@ -214,7 +216,7 @@ pub use psm_constants::{
     DATAWRITER_QOS_USE_TOPIC_QOS, PARTICIPANT_QOS_DEFAULT, PUBLISHER_QOS_DEFAULT,
     SUBSCRIBER_QOS_DEFAULT, TOPIC_QOS_DEFAULT,
 };
-pub use publisher::{DataWriter, Publisher};
+pub use publisher::{DataWriter, Publisher, WriteAs};
 pub use qos::{
     DataReaderQos, DataWriterQos, DomainParticipantQos, EndpointQosArg, PublisherQos, QosArg,
     SubscriberQos, TopicQos,

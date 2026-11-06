@@ -876,14 +876,81 @@ fn the_bit_forms_the_specification_admits_still_get_through() {
 
 // -- §7.4.15.4.2: applying a declared annotation -------------------------
 
+/// The diagnostics of `source` read under `dialect`, parser and lowering.
+fn diagnostics_under(source: &str, dialect: zerodds_idl_parse::Dialect) -> Vec<Diagnostic> {
+    let parsed = zerodds_idl_parse::parse_with(source, dialect);
+    let lowered = zerodds_idl_lower::lower_with(
+        &parsed.syntax(),
+        "test.idl",
+        zerodds_idl_lower::Options {
+            dialect,
+            ..zerodds_idl_lower::Options::default()
+        },
+    );
+    parsed
+        .diagnostics()
+        .iter()
+        .cloned()
+        .chain(lowered.diagnostics)
+        .collect()
+}
+
+#[test]
+fn an_annotation_member_with_no_default_needs_a_value_under_omg_idl() {
+    // OMG IDL 4.2 §7.4.15.4.2: "Members with no default value must be
+    // given a value." `Dialect::STRICT` is OMG IDL 4.2 and nothing else.
+    let strict = zerodds_idl_parse::Dialect::STRICT;
+    for source in [
+        "@annotation Aa { long v; };\n@Aa struct Sa { long m; };",
+        "@annotation Aa { long v; string s; };\n@Aa(v = 1) struct Sa { long m; };",
+    ] {
+        let found = diagnostics_under(source, strict);
+        assert!(
+            found
+                .iter()
+                .any(|d| d.is_error() && d.code == DiagnosticCode::InvalidAnnotation),
+            "{source:?} under STRICT: {found:?}"
+        );
+    }
+    // A value for every member without a default, by name or in the
+    // short form, and a member with a default left out.
+    for source in [
+        "@annotation Aa { long v; };\n@Aa(v = 1) struct Sa { long m; };",
+        "@annotation Aa { long v; };\n@Aa(1) struct Sa { long m; };",
+        "@annotation Aa { long v default 0; };\n@Aa struct Sa { long m; };",
+        "@annotation Aa { long v; string s default \"x\"; };\n@Aa(V = 1) struct Sa { long m; };",
+    ] {
+        let found = diagnostics_under(source, strict);
+        assert!(
+            found.iter().all(|d| !d.is_error()),
+            "{source:?} under STRICT: {found:?}"
+        );
+    }
+}
+
 #[test]
 fn an_annotation_member_with_no_default_takes_the_default_of_its_type() {
     // DDS-XTypes 1.3 §7.3.1.2.5: "If an omitted member does not have a
     // specified default, it will take the default value specified for its
-    // type in Clause 7.2.2.4.4.4.7." (IDL 4.2 §7.4.15.4.2 reads the other
-    // way; the front end of this specification follows its own.)
-    assert_clean("@annotation Aa { long v; };\n@Aa struct Sa { long m; };");
-    assert_clean("@annotation Aa { long v; string s; };\n@Aa(v = 1) struct Sa { long m; };");
+    // type in Clause 7.2.2.4.4.4.7." The vendor dialects read IDL for DDS:
+    // the application stands, and the warning says it is not OMG IDL 4.2.
+    for source in [
+        "@annotation Aa { long v; };\n@Aa struct Sa { long m; };",
+        "@annotation Aa { long v; string s; };\n@Aa(v = 1) struct Sa { long m; };",
+    ] {
+        let found = diagnostics(source);
+        assert!(
+            found.iter().all(|d| !d.is_error()),
+            "{source:?} refused: {found:?}"
+        );
+        assert!(
+            found
+                .iter()
+                .any(|d| d.code == DiagnosticCode::InvalidAnnotation
+                    && d.message.contains("OMG IDL 4.2 requires one")),
+            "{source:?} not warned about: {found:?}"
+        );
+    }
     assert_clean("@annotation Aa { long v; };\n@Aa(v = 1) struct Sa { long m; };");
     assert_clean("@annotation Aa { long v; };\n@Aa(1) struct Sa { long m; };");
     assert_clean("@annotation Aa { long v default 0; };\n@Aa struct Sa { long m; };");
@@ -1172,4 +1239,33 @@ fn an_annotation_member_is_a_primitive_a_string_or_an_enum() {
          @annotation A { long a; boolean b; string s; wstring w; wchar c; \
          long double d; E mode; L count; };",
     );
+}
+
+/// OMG IDL 4.2 rules (223) and (224): `<annotation_member_type>` may be
+/// `<any_const_type>`, `any`. DDS-XTypes 1.3 §7.3.1.1.1 keeps a construct
+/// outside its profile legal and has the compiler "ignore them or issue a
+/// warning rather than halting with an error".
+#[test]
+fn an_annotation_member_of_type_any_is_read_and_warned_about() {
+    for source in [
+        "@annotation Aa { any v; };",
+        "typedef any Anything;\n@annotation Aa { Anything v; };",
+    ] {
+        for found in [
+            diagnostics(source),
+            diagnostics_under(source, zerodds_idl_parse::Dialect::STRICT),
+        ] {
+            assert!(
+                found.iter().all(|d| !d.is_error()),
+                "{source:?} refused: {found:?}"
+            );
+            assert!(
+                found
+                    .iter()
+                    .any(|d| d.code == DiagnosticCode::InvalidAnnotation
+                        && d.spec_reference.contains("7.3.1.1.1")),
+                "{source:?} not warned about: {found:?}"
+            );
+        }
+    }
 }

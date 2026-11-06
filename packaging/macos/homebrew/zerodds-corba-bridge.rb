@@ -8,18 +8,13 @@
 class ZeroddsCorbaBridge < Formula
   desc "ZeroDDS DDS to CORBA GIOP/IIOP bridge daemon"
   homepage "https://zerodds.org"
+  url "https://github.com/zero-objects/zero-dds/releases/download/v1.0.0-rc.7/zerodds-1.0.0-rc.7-aarch64-apple-darwin.tar.gz"
   version "1.0.0-rc.7"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "Apache-2.0"
 
-  on_arm do
-    url "https://github.com/zero-objects/zero-dds/releases/download/v#{version}/zerodds-#{version}-aarch64-apple-darwin.tar.gz"
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  end
-  on_intel do
-    url "https://github.com/zero-objects/zero-dds/releases/download/v#{version}/zerodds-#{version}-x86_64-apple-darwin.tar.gz"
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  end
-
+  depends_on arch: :arm64
+  depends_on :macos
   depends_on "zerodds"
 
   def install

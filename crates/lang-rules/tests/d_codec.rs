@@ -197,7 +197,7 @@ fn compiles(text: &str) {
 }
 
 #[test]
-fn a_structure_of_primitives_becomes_a_d_encoder() {
+fn xtypes_7_4_3_a_structure_of_primitives_becomes_a_d_encoder() {
     let text = encoder(
         "@final struct Pose { long x; double y; boolean active; };",
         "Pose",
@@ -218,7 +218,7 @@ fn a_structure_of_primitives_becomes_a_d_encoder() {
 }
 
 #[test]
-fn the_read_direction_opens_with_table_9_and_returns_the_sample() {
+fn xtypes_7_4_3_the_read_direction_opens_with_table_9_and_returns_the_sample() {
     let text = decoder("@final struct S { long a; string b; };", "S");
     assert!(
         text.contains("auto v = zd_def_S()"),
@@ -246,7 +246,7 @@ fn an_optional_member_reads_through_zd_nullable() {
 }
 
 #[test]
-fn an_external_member_reads_through_zd_ptr_and_writes_the_dereference() {
+fn xtypes_7_2_2_4_9_an_external_member_reads_through_zd_ptr_and_writes_the_dereference() {
     let read = decoder(
         "@final struct Inner { long a; }; @final struct S { @external Inner i; };",
         "S",
@@ -294,7 +294,7 @@ fn an_external_union_branch_reads_through_zd_ptr_and_writes_the_dereference() {
 }
 
 #[test]
-fn a_union_assigns_through_the_anonymous_union() {
+fn xtypes_7_2_2_4_4_3_a_union_assigns_through_the_anonymous_union() {
     let text = decoder(
         "@final union U switch (long) { case 1: long one; default: string other; }; \
          @final struct S { U pick; };",
@@ -308,10 +308,10 @@ fn a_union_assigns_through_the_anonymous_union() {
 }
 
 /// Every aggregate the corpus has, through both directions, to the end
-/// of the walk, each compiled against the real runtime.
-#[test]
-fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
-    for (idl, root) in [
+/// of the walk, each checked against the real runtime: the shapes of
+/// `share` (of `shares`). 14 s for all of them on the Linux test host.
+fn the_shapes_the_corpus_has_reach_the_end_of_both_walks(share: usize, shares: usize) {
+    for (position, (idl, root)) in [
         ("@final struct S { long a; };", "S"),
         ("@appendable struct S { long a; string b; };", "S"),
         (
@@ -360,7 +360,13 @@ fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
             "typedef long Distance; @final struct S { Distance d; };",
             "S",
         ),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if position % shares != share {
+            continue;
+        }
         let written = encoder(idl, root);
         assert!(!written.is_empty(), "no encoder for {idl}");
         compiles(&written);
@@ -387,7 +393,7 @@ fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
 /// terminating (exit 137, no message), OpenDDS's `tao_idl` by not
 /// knowing `mutable`.
 #[test]
-fn the_recursive_external_shape_is_carried() {
+fn xtypes_7_2_2_4_9_the_recursive_external_shape_is_carried() {
     let idl = "@final struct Node { @optional @external Node next; long v; };";
     let written = encoder(idl, "Node");
     assert!(!written.is_empty(), "no encoder for the recursive shape");
@@ -400,7 +406,7 @@ fn the_recursive_external_shape_is_carried() {
 /// The same shape without `@optional` has no terminator on the cycle
 /// and is still refused by name, with the clause in the sentence.
 #[test]
-fn a_cycle_with_no_terminator_is_refused_by_name() {
+fn xtypes_7_2_2_4_9_a_cycle_with_no_terminator_is_refused_by_name() {
     let idl = "@final struct Node { @external Node next; long v; };";
     let error = try_encoder(idl, "Node").expect_err("the planner refuses this shape");
     let text = format!("{error:?}");
@@ -453,4 +459,20 @@ fn take_and_remove(ast: &mut Ast) -> zerodds_ast_core::Id<zerodds_ast::TypeNode>
     ast.remove(any).expect("remove Point");
     assert!(ast.type_(id).is_err(), "the handle is still answered");
     id
+}
+
+/// zerodds-xcdr2-d-1.0 §7.4.3: every aggregate shape the corpus has reaches the end of both walks.
+///
+/// In 2 shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"); `integration-codegen-java-psm-d` and the language's merge job run them.
+mod xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks {
+    #[test]
+    fn share_01() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(0, 2);
+    }
+
+    #[test]
+    fn share_02() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(1, 2);
+    }
 }

@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <thread>
 #include <type_traits>
@@ -109,8 +110,14 @@ class CalcImpl : public robot::Calculator {
 
 }  // namespace
 
-int main() {
-  const std::uint32_t domain = 88;
+int main(int argc, char** argv) {
+  // The domain the test leased for this run (crates/test-domains): the
+  // domain number is the UDP port, a resource of the whole host.
+  if (argc != 2) {
+    std::fprintf(stderr, "usage: %s <domain>\n", argv[0]);
+    return 2;
+  }
+  const std::uint32_t domain = static_cast<std::uint32_t>(std::strtoul(argv[1], nullptr, 10));
   auto requester_side = dds::rpc::zerodds::participant_on(domain);
   auto replier_side = dds::rpc::zerodds::participant_on(domain);
 

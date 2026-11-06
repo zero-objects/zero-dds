@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Mapping configuration between CORBA objects and DDS topics.
+//! Mapping configuration between CORBA objects and DDS topics, as code.
 //!
 //! A `BridgeMapping` aggregates several `BridgeRoute` entries. Each
 //! route binds a CORBA object (by `repository_id` + `object_key`)
-//! bidirectionally to one or more DDS topics.
+//! bidirectionally to one or more DDS topics. The daemon reads its
+//! mappings from its configuration (`bridge_daemon`, spec §3); the
+//! examples `examples/tutorials/dds-chat/integrations/corba` and
+//! `examples/demos/dds-warehouse/stations/09-erp-corba` describe theirs
+//! with these types.
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
@@ -123,83 +127,5 @@ impl BridgeMapping {
     #[must_use]
     pub fn all_routes(&self) -> Vec<&BridgeRoute> {
         self.routes.values().collect()
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    fn echo_route() -> BridgeRoute {
-        BridgeRoute {
-            repository_id: "IDL:demo/Echo:1.0".into(),
-            object_key: alloc::vec![0xab],
-            direction: Direction::Bidirectional,
-            operations: alloc::vec![OperationMapping {
-                operation: "ping".into(),
-                request_topic: "demo/Echo/ping/Request".into(),
-                reply_topic: "demo/Echo/ping/Reply".into(),
-                qos: TopicQosRef {
-                    reliability: Some("RELIABLE".into()),
-                    durability: Some("VOLATILE".into()),
-                    profile_name: None,
-                },
-            }],
-        }
-    }
-
-    #[test]
-    fn add_and_lookup_route() {
-        let mut m = BridgeMapping::new();
-        m.add_route(echo_route());
-        let r = m.lookup("IDL:demo/Echo:1.0", &[0xab]).unwrap();
-        assert_eq!(r.direction, Direction::Bidirectional);
-        assert_eq!(m.len(), 1);
-    }
-
-    #[test]
-    fn lookup_unknown_yields_none() {
-        let m = BridgeMapping::new();
-        assert!(m.lookup("IDL:demo/Echo:1.0", &[0xff]).is_none());
-    }
-
-    #[test]
-    fn operation_mapping_by_name() {
-        let r = echo_route();
-        let op = r.operation("ping").unwrap();
-        assert_eq!(op.request_topic, "demo/Echo/ping/Request");
-        assert_eq!(op.reply_topic, "demo/Echo/ping/Reply");
-        assert!(r.operation("nope").is_none());
-    }
-
-    #[test]
-    fn add_route_replaces_existing() {
-        let mut m = BridgeMapping::new();
-        m.add_route(echo_route());
-        let mut r2 = echo_route();
-        r2.direction = Direction::CorbaToDds;
-        m.add_route(r2);
-        assert_eq!(m.len(), 1);
-        assert_eq!(
-            m.lookup("IDL:demo/Echo:1.0", &[0xab]).unwrap().direction,
-            Direction::CorbaToDds
-        );
-    }
-
-    #[test]
-    fn all_routes_listing() {
-        let mut m = BridgeMapping::new();
-        m.add_route(echo_route());
-        let mut other = echo_route();
-        other.repository_id = "IDL:demo/Other:1.0".into();
-        m.add_route(other);
-        assert_eq!(m.all_routes().len(), 2);
-    }
-
-    #[test]
-    fn direction_variants_distinct() {
-        assert_ne!(Direction::CorbaToDds, Direction::DdsToCorba);
-        assert_ne!(Direction::CorbaToDds, Direction::Bidirectional);
     }
 }

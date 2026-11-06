@@ -61,7 +61,7 @@ fn parse_function_name(line: &str) -> Option<&str> {
 }
 
 #[test]
-fn abi_snapshot_matches() {
+fn capi_10_1_abi_snapshot_matches() {
     let root = crate_root();
     let header = fs::read_to_string(root.join(HEADER_REL)).expect("zerodds.h header readable");
     let current = extract_symbols(&header);
@@ -107,7 +107,7 @@ fn abi_snapshot_matches() {
 /// carry the same number, so the header macro and the exported function
 /// are checked against each other here.
 #[test]
-fn the_header_macro_and_the_exported_revision_agree() {
+fn deployment_1_2_the_header_macro_and_the_exported_revision_agree() {
     let header = fs::read_to_string(crate_root().join(HEADER_REL)).expect("zerodds.h present");
     let line = header
         .lines()
@@ -141,7 +141,7 @@ fn the_header_macro_and_the_exported_revision_agree() {
 }
 
 #[test]
-fn extract_symbols_finds_known_functions() {
+fn ffiloader_2_1_extract_symbols_finds_known_functions() {
     let header = "\
 struct zerodds_ZeroDdsRuntime *zerodds_runtime_create(uint32_t domain_id);\n\
 void zerodds_runtime_destroy(struct zerodds_ZeroDdsRuntime *runtime);\n\

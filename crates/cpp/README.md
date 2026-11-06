@@ -41,14 +41,22 @@ the top-level project) — configure `../../runtime/cpp` first, or via the root
 
 ## Tests
 
+The test programs are CTest tests of the root CMake project with the tests on
+(`ZERODDS_BUILD_TESTS=ON`, `BUILD_TESTING=ON`): `tests/smoke_dds_psm.cpp` as it is, as
+ISO C++ 2003 and under the address and the thread sanitizer (`tests/tsan_verdict.py`
+tells the reports in the uninstrumented Rust library from the others), the DataWriter
+and DataReader classes and TypeSupports of the built-in types, and in
+`tests/generated/` three programs over types `zerodds_idlc_generate` generates from the
+IDL there. The integration pillar's job `integration-sdk` runs them
+(`tests/integration/sdk_cmake.sh`):
+
 ```bash
-cargo test -p zerodds-cpp          # compiles tests/smoke_dds_psm.cpp against libzerodds; needs clang++ or c++
-crates/cpp/examples/build_cpp_smoke.sh
+python3 tests/integration/with_domains.py 4 -- ctest --test-dir <build> --timeout 25
 ```
 
-`cargo test -p zerodds-cpp` also runs `generated_type_via_cargo`, which needs `make` and `runtime/cpp`
-besides the compiler, and the smoke program under the thread and the address sanitizer. A smoke run
-started by hand (`./smoke_dds_psm`) uses the domains 0 to 49; `cargo test` leases them
-(`ZERODDS_TEST_DOMAINS`, one domain per position `D(n)` of the program) so that no other process of the
-test host hears it. A missing C++ compiler is a failure of the tests that build C++ when
-`ZERODDS_REQUIRE_CXX=1` is set (`tools/idlc/tests/cpp_headers_together.rs`).
+`with_domains.py` leases four DDS domains and hands them over in `ZERODDS_TEST_DOMAINS`;
+the smoke program takes its positions `D(n)` from them in turn, the other programs the
+first. A smoke run started by hand (`./smoke_dds_psm`) without the variable uses the
+domains 0 to 49. `cargo test -p zerodds-cpp` runs `tests/public_headers.rs`: every public
+header compiles on its own (C++17 and C++03), every name of the OMG headers is reachable
+through its header, and the normative namespaces hold no vendor name.

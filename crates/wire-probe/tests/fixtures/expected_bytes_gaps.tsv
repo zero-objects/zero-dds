@@ -1,0 +1,57 @@
+# Cells of tests/interop-corpus/expected-bytes.tsv the reflective codec does
+# not reproduce yet, each with its OPEN-ITEMS.md entry. Read by
+# tests/expected_bytes.rs: a cell listed here that passes fails the test.
+# dialect	case/sample	encoding	endian	open-item	reason
+hdds	array-1d-bitset-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	array-1d-bitset-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	array-1d-bitset/values	xcdr1	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	array-1d-bitset/values	xcdr2	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	array-1d-union-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	array-1d-union-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	array-1d-union/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	array-1d-union/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	bitset-basic-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	bitset-basic-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	bitset-basic/values	xcdr1	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	bitset-basic/values	xcdr2	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	map-bounded/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-long-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-long-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-long/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-long/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-string-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-string-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-string/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-string/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-ulonglong-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-ulonglong-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-ulonglong/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-ulonglong/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-wstring/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-key-wstring/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-string-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-string-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-string/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-string/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-struct-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-struct-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-struct/values	xcdr1	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	map-value-struct/values	xcdr2	le	54	hddsgen 1.2.0 writes map entries in the sample's order and the pair members unaligned; the hdds dialect writes them ascending by key and aligned
+hdds	recursive-union-branch/values	xcdr1	le	54	hddsgen 1.2.0 writes no DHEADER before the sequence in a recursive union branch under XCDR2; the hdds dialect does
+hdds	recursive-union-branch/values	xcdr2	le	54	hddsgen 1.2.0 writes no DHEADER before the sequence in a recursive union branch under XCDR2; the hdds dialect does
+hdds	sequence-bitset-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	sequence-bitset-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	sequence-bitset/values	xcdr1	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	sequence-bitset/values	xcdr2	le	54	hddsgen 1.2.0 writes a bitset as eight octets (bitset-basic: 8 bits); the hdds dialect writes one
+hdds	sequence-union-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	sequence-union-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	sequence-union/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	sequence-union/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-multiple-labels-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-multiple-labels-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-multiple-labels/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-multiple-labels/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-with-default-unannotated/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-with-default-unannotated/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-with-default/values	xcdr1	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's
+hdds	union-with-default/values	xcdr2	le	54	hddsgen 1.2.0 writes the first label of the selected case (0 for default) as the discriminator, not the sample's value; the hdds dialect writes the sample's

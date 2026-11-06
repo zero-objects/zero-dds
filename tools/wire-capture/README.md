@@ -82,7 +82,7 @@ the whole answer:
 
 | commit | `cases.tsv` | `wire-goldens.tsv` |
 |---|---|---|
-| `950c48af9` | 23 cases | 299 rows |
+| `9d14cb5b4` | 23 cases | 299 rows |
 | `419e496f4` | **107 cases** | **299 rows — unchanged** |
 
 So the cut was widened to 107 and the table was not: the sweep that
@@ -549,8 +549,7 @@ It also has something this run does not: **`frag/` exercises
 
 **`crates/corba-interop/competitors/`, deleted by the rebuild and still
 in the history** (`git log --diff-filter=D --name-only --all`) — servers
-and clients for omniORB, TAO and JacORB over a fixed `interop.idl`,
-with the result written up in `docs/perf/corba-cross-orb-interop-2026-06-06.md`.
+and clients for omniORB, TAO and JacORB over a fixed `interop.idl`.
 The reusable part is the ORB plumbing — `ORB.init`, the root POA, the
 IOR to a file — and `corba-wire-template.cpp` and `CorbaWire.java` are
 that plumbing again, about thirty lines each. The part that could not

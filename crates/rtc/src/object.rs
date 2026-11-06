@@ -436,11 +436,11 @@ impl LightweightRtObject {
     /// Spec §5.2.2.4.7 — `on_aborting` is invoked once,
     /// after which `on_error` takes over (see the periodic-tick loop).
     pub fn transition_to_error(&mut self, handle: ExecutionContextHandle) {
-        if let Some(entry) = self.contexts.iter_mut().find(|c| c.handle == handle) {
-            if entry.state == LifeCycleState::Active {
-                entry.state = LifeCycleState::Error;
-                self.callbacks.on_aborting(handle);
-            }
+        if let Some(entry) = self.contexts.iter_mut().find(|c| c.handle == handle)
+            && entry.state == LifeCycleState::Active
+        {
+            entry.state = LifeCycleState::Error;
+            self.callbacks.on_aborting(handle);
         }
     }
 

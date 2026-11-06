@@ -338,7 +338,7 @@ mod tests {
     /// §7.3.1.4 Basic: a request type and a reply type, each with a
     /// `header`, form a service.
     #[test]
-    fn a_marked_pair_with_headers_is_a_basic_service() {
+    fn rpc_7_3_1_4_a_marked_pair_with_headers_is_a_basic_service() {
         let ast = with_headers(
             "module robot {
                @RPCRequestType struct Req { dds::rpc::RequestHeader header; long a; };
@@ -358,7 +358,7 @@ mod tests {
 
     /// "A pair of types, which may be the same."
     #[test]
-    fn one_type_may_be_both_halves() {
+    fn rpc_7_3_1_4_one_type_may_be_both_halves() {
         let ast = with_headers(
             "@RPCRequestType @RPCReplyType struct Both { dds::rpc::RequestHeader header; long a; };",
         );
@@ -376,7 +376,7 @@ mod tests {
     /// §7.3.1.4 Enhanced: "the annotations are not necessary and the
     /// special data members must not be defined."
     #[test]
-    fn a_marked_pair_without_headers_is_an_enhanced_service() {
+    fn rpc_7_3_1_4_a_marked_pair_without_headers_is_an_enhanced_service() {
         let ast = model(
             "@RPCRequestType struct Req { long a; };
              @RPCReplyType struct Rep { long r; };",
@@ -386,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn a_header_in_only_one_type_is_refused() {
+    fn rpc_7_3_1_4_a_header_in_only_one_type_is_refused() {
         let ast = with_headers(
             "@RPCRequestType struct Req { dds::rpc::RequestHeader header; long a; };
              @RPCReplyType struct Rep { long r; };",
@@ -396,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn a_header_of_the_wrong_type_is_refused() {
+    fn rpc_7_3_1_4_a_header_of_the_wrong_type_is_refused() {
         let ast = with_headers(
             "@RPCRequestType struct Req { dds::rpc::ReplyHeader header; long a; };
              @RPCReplyType struct Rep { dds::rpc::ReplyHeader header; long r; };",
@@ -411,7 +411,7 @@ mod tests {
     /// The sentence of §7.3.1.4 that prints `RequestHeader` for the reply
     /// is the named alternative.
     #[test]
-    fn the_reply_header_type_is_a_setting() {
+    fn rpc_7_3_1_4_the_reply_header_type_is_a_setting() {
         let ast = with_headers(
             "@RPCRequestType struct Req { dds::rpc::RequestHeader header; long a; };
              @RPCReplyType struct Rep { dds::rpc::RequestHeader header; long r; };",
@@ -426,7 +426,7 @@ mod tests {
 
     /// "Only struct types shall be marked as request/reply types."
     #[test]
-    fn a_marked_type_that_is_not_a_struct_is_refused() {
+    fn rpc_7_3_1_4_a_marked_type_that_is_not_a_struct_is_refused() {
         let ast = model("@RPCRequestType enum E { A, B };");
         let err = lower_type_pairs(&ast, &TypePairOptions::default()).unwrap_err();
         assert!(
@@ -443,7 +443,7 @@ mod tests {
 
     /// §7.4.2.2: the topic annotations may stand on the types.
     #[test]
-    fn the_topic_annotations_on_the_types_name_the_topics() {
+    fn rpc_7_4_2_2_the_topic_annotations_on_the_types_name_the_topics() {
         let ast = model(
             r#"@RPCRequestType @DDSRequestTopic(name="RobotRequestTopic") struct Req { long a; };
                @RPCReplyType @DDSReplyTopic(name="RobotReplyTopic") struct Rep { long r; };"#,
@@ -466,7 +466,7 @@ mod tests {
     /// §7.4.1: `<service_name>` is user-supplied; `@service(name=…)` and the
     /// `@DDSService(name=…)` of the specification's examples both give it.
     #[test]
-    fn the_service_name_comes_from_either_annotation_on_either_type() {
+    fn rpc_7_3_1_4_the_service_name_comes_from_either_annotation_on_either_type() {
         for (request, reply) in [
             ("@service(name=\"Move\")", ""),
             ("@DDSService(name=\"Move\")", ""),

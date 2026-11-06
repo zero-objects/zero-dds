@@ -67,7 +67,7 @@ The workspace comprises the following crates. Each row marks the safety classifi
 | `zerodds-cdr` | Safe | Yes | XCDR1/XCDR2 encoder/decoder, endianness, alignment |
 | `zerodds-types` | Safe | Yes | XTypes type system, TypeObject, TypeIdentifier, compatibility |
 | `zerodds-qos` | Safe | Yes | QoS policies, request/offered compatibility matrix, typestate compatibility |
-| `zerodds-idl` | Safe | No (std-only) | IDL4 parser, AST, semantic model (OMG IDL 4.2). Grammar-driven (Earley engine), build-time tool — no embedded use case. Consumed by `zerodds-idlc`. See `internal/rfcs/0001-idl-parser-architecture.md` |
+| `zerodds-idl` | Safe | No (std-only) | IDL4 parser, AST, semantic model (OMG IDL 4.2). Grammar-driven (Earley engine), build-time tool — no embedded use case. Consumed by `zerodds-idlc`. |
 | `zerodds-rtps` | Safe | Yes | Writer/reader state machines, Heartbeat/Acknack/Gap/Data submessages, fragmentation |
 | `zerodds-discovery` | Safe | Yes | SPDP, SEDP, TypeLookup service |
 
@@ -292,7 +292,7 @@ Every crate has three test levels:
 
 1. **Unit tests in `src/`:** private implementation tests, `#[cfg(test)]` modules.
 2. **Integration tests in `tests/`:** public-API tests, also compliance tests against OMG spec vectors.
-3. **Workspace level `xtests/`:** cross-crate integration, interop tests against real DDS peers (CycloneDDS, Fast DDS, RTI), end-to-end scenarios.
+3. **Workspace level `tests/`:** cross-crate integration, interop tests against real DDS peers (CycloneDDS, Fast DDS, RTI), end-to-end scenarios.
 
 Test categories:
 

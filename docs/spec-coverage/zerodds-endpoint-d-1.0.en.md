@@ -23,8 +23,8 @@ stream `0x01`.
 **Repo:** `zerodds.d` — `writeFrame`/`readFrame` (line 136–151), constants
 `SessionNoKey = 0x80`, `StreamBestEffort = 0x01` (line 133–134).
 
-**Tests:** exercised indirectly via the Ping-Pong E2E (§4) — `d_endpoint_sync`
-and `d_endpoint_async` frame/deframe every sample through this code path.
+**Tests:** exercised indirectly via the Ping-Pong E2E (§4) — `xrce_8_3_5_8_d_sync_app_writes_the_ping_and_reads_the_pong`
+and `xrce_8_3_5_8_d_async_app_writes_the_ping_and_reads_the_pong` frame/deframe every sample through this code path.
 
 **Status:** done.
 
@@ -37,7 +37,7 @@ modulo 0x10000.
 **Repo:** `zerodds.d` — `class Client` (line 162–182), `struct Transport`
 (line 155–158), `memTransport()` as an in-memory FIFO for tests/examples.
 
-**Tests:** (Linux) `d_endpoint_sync` (Ping-Pong E2E, §4).
+**Tests:** (Linux) `xrce_8_3_5_8_d_sync_app_writes_the_ping_and_reads_the_pong` (Ping-Pong E2E, §4).
 
 **Status:** done.
 
@@ -53,7 +53,7 @@ the sync `Client` sends inline.
 **Repo:** `zerodds.d` — `class AsyncReader` (line 214–222), `readerLoop`
 (line 201–212).
 
-**Tests:** (Linux) `d_endpoint_async` (Ping-Pong E2E, §4).
+**Tests:** (Linux) `xrce_8_3_5_8_d_async_app_writes_the_ping_and_reads_the_pong` (Ping-Pong E2E, §4).
 
 **Status:** done.
 
@@ -66,8 +66,8 @@ the sync `Client` (§2), full stack via the async `AsyncReader` (§3).
 
 **Repo:** `crates/endpoint-e2e/tests/d.rs`.
 
-**Tests:** (Linux) `d_raw_udp` + `d_endpoint_sync` + `d_endpoint_async` —
-3/3 passed.
+**Tests:** (Linux) `endpoint_c_3_4_d_generated_codec_pings_without_the_xrce_frame` + `xrce_8_3_5_8_d_sync_app_writes_the_ping_and_reads_the_pong` + `xrce_8_3_5_8_d_async_app_writes_the_ping_and_reads_the_pong`
+(`crates/endpoint-e2e/tests/d.rs`, job `integration-bindings`).
 
 **Status:** done.
 
@@ -85,27 +85,25 @@ just a slot store plus one release-store of `head`, no lock, no syscall; a
 separate drain thread owns the socket and the sender state.
 
 **Repo:** `endpoints/d/reliable.d` (Sender/Receiver/`SpscRing`/wire codec),
-`endpoints/d/reliable_app.d` (E2E sender app: initial burst + heartbeat/
+`endpoints/d/reliable_app.d` (sender app: initial burst + heartbeat/
 ACKNACK-driven retransmit loop), `endpoints/d/example_reliable.d` (in-process
 demo), `endpoints/d/reliable_test.d` (unit + byte-golden suite).
 
 **Tests:** (Linux)
-- `d_reliable_unit_and_golden` — `reliable_test.d` asserts monotone seq,
+- `endpoints/d/reliable_test.d` in the `d` column of `tools/endpoints-gate`
+  (job `integration-endpoints`) — `reliable_test.d` asserts monotone seq,
   payload-too-large, window-full, heartbeat first/silenced-&lt;500ms/
   after-500ms/empty, ACKNACK clear/full-clear, in-order drain, reorder,
   duplicate-drop, buffer-full, pending-ACKNACK bitmap, reset, plus 2
   hardcoded byte-goldens (HEARTBEAT/ACKNACK) — and, when the Rust goldens
   are generated, an additional byte-identical check against
   `golden_heartbeat_le.bin`/`golden_acknack_le.bin`. Prints "ALL OK".
-- `d_reliable_loss_recovery` — peer drops every 3rd datagram (12 samples);
-  `reliable_app.d` retransmits on ACKNACK; all 12 delivered gap-free
-  in order.
-- `d_reliable_no_loss` — same app, lossless baseline, 12/12.
-- `d_reliable_example` — `example_reliable.d`, in-process Sender/Receiver
+- `reliable_5_3_d_samples_arrive_in_order_despite_dropped_datagrams` — peer drops every 3rd datagram (12 samples);
+  the app the test builds from the `Ping` the language's generator writes from the IDL of `crates/endpoint-e2e/src/codegen.rs`, and the loop of `reliable_app.d`
+  retransmits on ACKNACK; all 12 delivered gap-free in order, the test reads every sample by the IDL's XCDR2 layout (`assert_reliable_pings`).
+- `endpoints/d/example_reliable.d` in the `d` column of `tools/endpoints-gate`
+  (job `integration-endpoints`) — `example_reliable.d`, in-process Sender/Receiver
   loss-recovery demo, N=12, prints "RELIABLE OK".
-
-4/4 passed (`d_reliable_latency_bench` covered separately in §6; all 5
-tests in `d_reliable.rs` together 5/5, see Audit Status).
 
 **Status:** done.
 
@@ -119,7 +117,7 @@ decoupled writer removes from the producer's hot path.
 **Repo:** `endpoints/d/reliable_bench.d` — `ITERS = 20000`, `MonoTime`
 timestamps around `sendto` and `ring.enqueue`, sorted, median taken.
 
-**Tests:** (Linux) `d_reliable_latency_bench` — inline-sendto median
+**Tests:** (Linux) `reliable_5_4_d_the_producer_enqueue_costs_less_than_the_inline_send` — inline-sendto median
 3600 ns; ring-enqueue median 0 ns.
 
 **HONEST NOTE:** the ring enqueue falls below this machine's `MonoTime`
@@ -132,13 +130,12 @@ limit belongs to the instrument, not to the implementation.
 
 ## Audit Status
 
-6 done / 0 partial / 0 open / 0 n/a (informational) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test d`
-3/3 (`d_raw_udp`, `d_endpoint_sync`, `d_endpoint_async`); `--test d_reliable`
-5/5 (`d_reliable_loss_recovery`, `d_reliable_no_loss`,
-`d_reliable_unit_and_golden`, `d_reliable_example`,
-`d_reliable_latency_bench`); latency bench inline-sendto 3600 ns /
-ring-enqueue 0 ns (bench-granularity limit, see §6).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-d-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings` (job `integration-bindings`) — 5 tests green.
+
+5 cited tests green, 0 not green.
 
 Open items: none.

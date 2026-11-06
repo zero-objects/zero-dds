@@ -16,7 +16,9 @@
 //! geometry_msgs/Point center
 //! ```
 //!
-//! Mapping rules (REP-2008 Tab 1):
+//! Mapping rules: the "DDS type" column of the table under "Field Types"
+//! in the design article "Interface definition using .msg / .srv /
+//! .action files" (design.ros2.org/articles/legacy_interface_definition.html):
 //!
 //! | ROS-Typ      | IDL-Typ     |
 //! |-------------|-------------|
@@ -130,7 +132,8 @@ fn parse_type(typ: &str) -> Result<(String, Option<Option<usize>>), ParseError> 
     }
 }
 
-/// Mapping ROS-Typ → IDL-Typ. REP-2008 Tab 1.
+/// Mapping ROS type → IDL type, the "DDS type" column of the design
+/// article's "Field Types" table.
 #[must_use]
 pub fn ros_to_idl_type(ros: &str) -> String {
     match ros {
@@ -188,73 +191,78 @@ fn split_pkg(fq: &str) -> (String, String) {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
+    //! The oracle: the design article "Interface definition using .msg /
+    //! .srv / .action files" (design.ros2.org/articles/
+    //! legacy_interface_definition.html), §"Message description
+    //! specification" and its "Field Types" table.
     use super::*;
 
+    /// A field is `<type> <name>`; `#` starts a comment, a line with `=`
+    /// after the name is a constant, not a field.
     #[test]
-    fn parse_simple_msg_three_fields() {
-        let src = "string name\nint32 age\nbool active\n";
+    fn ros2_msg_fields_are_type_and_name_without_comments_and_constants() {
+        let src = "# top comment\n\nstring name  # trailing comment\nint32 age\nuint32 PI=3\nbool active\n";
         let s = parse_msg("test/Person", src).expect("parse");
-        assert_eq!(s.fields.len(), 3);
-        assert_eq!(s.fields[0].ros_type, "string");
-        assert_eq!(s.fields[0].name, "name");
-        assert_eq!(s.fields[1].ros_type, "int32");
-        assert_eq!(s.fields[2].ros_type, "bool");
+        let fields: Vec<(&str, &str)> = s
+            .fields
+            .iter()
+            .map(|f| (f.ros_type.as_str(), f.name.as_str()))
+            .collect();
+        assert_eq!(
+            fields,
+            [("string", "name"), ("int32", "age"), ("bool", "active")]
+        );
+        assert!(s.fields.iter().all(|f| f.array.is_none()));
     }
 
+    /// `float64[3]` is a static array of three, `int32[]` an unbounded
+    /// one.
     #[test]
-    fn parse_skips_comments_and_blank_lines() {
-        let src = "# top comment\n\nstring x  # trailing comment\n";
-        let s = parse_msg("X/Y", src).expect("parse");
-        assert_eq!(s.fields.len(), 1);
-        assert_eq!(s.fields[0].name, "x");
-    }
-
-    #[test]
-    fn parse_array_spec() {
-        let src = "float64[3] position\nint32[] dynamic\n";
-        let s = parse_msg("X/Y", src).expect("parse");
+    fn ros2_msg_arrays_are_static_or_unbounded() {
+        let s = parse_msg("X/Y", "float64[3] position\nint32[] dynamic\n").expect("parse");
+        assert_eq!(s.fields[0].ros_type, "float64");
         assert_eq!(s.fields[0].array, Some(Some(3)));
+        assert_eq!(s.fields[1].ros_type, "int32");
         assert_eq!(s.fields[1].array, Some(None));
     }
 
+    /// "Field Types": the DDS type of each built-in type.
     #[test]
-    fn parse_constants_are_ignored() {
-        let src = "uint32 PI=3\nstring name\n";
-        let s = parse_msg("X/Y", src).expect("parse");
-        // Constant lines (with `=`) skipped → 1 field "name".
-        assert_eq!(s.fields.len(), 1);
-        assert_eq!(s.fields[0].name, "name");
+    fn ros2_msg_field_types_take_the_dds_type_of_the_table() {
+        for (ros, dds) in [
+            ("bool", "boolean"),
+            ("byte", "octet"),
+            ("char", "char"),
+            ("float32", "float"),
+            ("float64", "double"),
+            ("int8", "octet"),
+            ("uint8", "octet"),
+            ("int16", "short"),
+            ("uint16", "unsigned short"),
+            ("int32", "long"),
+            ("uint32", "unsigned long"),
+            ("int64", "long long"),
+            ("uint64", "unsigned long long"),
+            ("string", "string"),
+            ("wstring", "wstring"),
+        ] {
+            assert_eq!(ros_to_idl_type(ros), dds, "{ros}");
+        }
     }
 
+    /// zerodds-ros2-bridge-1.0 §5.2: a message renders as a struct in the
+    /// module of its package, a static array as an IDL array declarator,
+    /// an unbounded one as a sequence (IDL 4.2 §7.4.1.4.4.4.2).
     #[test]
-    fn idl_mapping_primitives() {
-        assert_eq!(ros_to_idl_type("bool"), "boolean");
-        assert_eq!(ros_to_idl_type("int32"), "long");
-        assert_eq!(ros_to_idl_type("uint32"), "unsigned long");
-        assert_eq!(ros_to_idl_type("float64"), "double");
-        assert_eq!(ros_to_idl_type("string"), "string");
-    }
-
-    #[test]
-    fn idl_mapping_qualified_type() {
-        assert_eq!(
-            ros_to_idl_type("geometry_msgs/Point"),
-            "geometry_msgs::Point"
-        );
-    }
-
-    #[test]
-    fn render_idl_produces_module_and_struct() {
+    fn ros2bridge_5_2_a_message_renders_as_a_struct_in_its_package_module() {
         let s = parse_msg(
             "test/Person",
-            "string name\nint32 age\nfloat64[3] position\n",
+            "string name\nint32 age\nfloat64[3] position\nint32[] samples\n",
         )
         .expect("parse");
-        let idl = render_idl(&s);
-        assert!(idl.contains("module test {"));
-        assert!(idl.contains("struct Person"));
-        assert!(idl.contains("string name;"));
-        assert!(idl.contains("long age;"));
-        assert!(idl.contains("double position[3];"));
+        assert_eq!(
+            render_idl(&s),
+            "module test {\n  struct Person {\n    string name;\n    long age;\n    double position[3];\n    sequence<long> samples;\n  };\n};\n"
+        );
     }
 }

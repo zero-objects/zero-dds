@@ -26,3 +26,16 @@ pub mod replay_source;
 pub mod sqlite_sink;
 pub mod type_source;
 pub mod wire;
+
+/// The serialized body of a sample and the representation identifier of the
+/// encapsulation header it came with (DDSI-RTPS 2.5 §10.5): both sinks keep
+/// the two together, so a replay sends the body under the header that
+/// describes it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RawSample<'a> {
+    /// The body, without the four octets of the encapsulation header.
+    pub body: &'a [u8],
+    /// The first two octets of that header; `None` where the capture did not
+    /// keep them (`.zddsrec` before version 3).
+    pub representation_identifier: Option<[u8; 2]>,
+}

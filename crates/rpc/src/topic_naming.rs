@@ -470,7 +470,7 @@ mod tests {
     /// §7.4.3's non-normative table, "Everything Default" row: the
     /// request topic of a `Calculator` is `Calculator_Service_Request`.
     #[test]
-    fn the_default_name_carries_the_service_segment() {
+    fn rpc_7_4_1_the_default_name_carries_the_service_segment() {
         assert_eq!(
             request_topic_name("Calculator").unwrap(),
             "Calculator_Service_Request"
@@ -485,7 +485,7 @@ mod tests {
     /// of module names separates by underscores followed by the name of
     /// the interface."
     #[test]
-    fn the_interface_segment_is_the_fully_qualified_name() {
+    fn rpc_7_4_1_the_interface_segment_is_the_fully_qualified_name() {
         assert_eq!(
             qualified_interface_name(&["robot"], "Calculator"),
             "robot_Calculator"
@@ -502,7 +502,7 @@ mod tests {
     /// `<interface_name>` and the following underscore shall not be
     /// captured automatically."
     #[test]
-    fn the_request_reply_style_drops_the_interface_segment() {
+    fn rpc_7_4_1_the_request_reply_style_drops_the_interface_segment() {
         let names = ServiceTopicNames::synthesize(
             BindingStyle::RequestReply,
             "robot_Calculator",
@@ -524,7 +524,7 @@ mod tests {
     /// annexed, so there are none, and the topic names stay the bare
     /// `Service_Request` and `Service_Reply` whatever the bases are.
     #[test]
-    fn the_request_reply_style_has_no_aliases_for_the_bases_either() {
+    fn rpc_7_4_3_the_request_reply_style_has_no_aliases_for_the_bases_either() {
         let names = ServiceTopicNames::synthesize(
             BindingStyle::RequestReply,
             "robot_Calculator",
@@ -589,7 +589,7 @@ mod tests {
 
     /// §7.4.3's table, "User-defined service name" row.
     #[test]
-    fn a_user_supplied_service_name_replaces_only_that_segment() {
+    fn rpc_7_4_1_a_user_supplied_service_name_replaces_only_that_segment() {
         let names = ServiceTopicNames::synthesize(
             BindingStyle::FunctionCall,
             "Calculator",
@@ -608,7 +608,7 @@ mod tests {
     /// §7.4.3's table, "User-defined topic suffixes" row:
     /// `Calculator_${topic-suffix-request}`.
     #[test]
-    fn a_user_supplied_suffix_replaces_the_whole_tail() {
+    fn rpc_7_4_2_3_a_user_supplied_suffix_replaces_the_whole_tail() {
         let names = ServiceTopicNames::synthesize(
             BindingStyle::FunctionCall,
             "Calculator",
@@ -632,7 +632,7 @@ mod tests {
     /// §7.4.3's table, alias column of the "Everything Default" row:
     /// `Adder_Service_Request`, `Subtractor_Service_Request`.
     #[test]
-    fn every_parent_interface_contributes_one_alias() {
+    fn rpc_7_4_3_every_parent_interface_contributes_one_alias() {
         let names = ServiceTopicNames::synthesize(
             BindingStyle::FunctionCall,
             "Calculator",
@@ -657,7 +657,7 @@ mod tests {
     /// §7.4.2.2: the annotation gives a whole topic name — §7.4.1's
     /// second alternative `<topic_name> ::= <user_def_alpha_num>`.
     #[test]
-    fn an_annotation_gives_the_whole_name_and_no_alias() {
+    fn rpc_7_4_1_an_annotation_gives_the_whole_name_and_no_alias() {
         let names = ServiceTopicNames::synthesize(
             BindingStyle::FunctionCall,
             "Calculator",
@@ -677,7 +677,7 @@ mod tests {
     /// §7.4.2.3: "the run-time specification shall take precedence over
     /// the IDL annotations and the default mechanism in that order."
     #[test]
-    fn the_run_time_specification_beats_the_annotation() {
+    fn rpc_7_4_1_the_run_time_specification_beats_the_annotation() {
         let names = ServiceTopicNames::synthesize(
             BindingStyle::FunctionCall,
             "Calculator",
@@ -713,7 +713,7 @@ mod tests {
     /// §7.4.1's `<user_def_alpha_num>` is `^[[:alnum:]_ ]+$` — the
     /// clause names the space in words directly under the grammar.
     #[test]
-    fn the_published_character_set_admits_a_space_and_a_leading_digit() {
+    fn rpc_7_4_1_the_published_character_set_admits_a_space_and_a_leading_digit() {
         assert!(validate_user_def_alpha_num("My Service").is_ok());
         assert!(validate_user_def_alpha_num("9calc").is_ok());
         assert!(validate_user_def_alpha_num("_foo").is_ok());
@@ -721,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn everything_outside_the_set_is_refused() {
+    fn rpc_7_4_1_everything_outside_the_set_is_refused() {
         for name in ["", "my-service", "Rechnerü", "a.b", "a\tb"] {
             assert!(
                 validate_user_def_alpha_num(name).is_err(),
@@ -735,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn service_topic_names_pair() {
+    fn rpc_7_4_1_service_topic_names_pair() {
         let names = ServiceTopicNames::new("Calc").unwrap();
         assert_eq!(names.service, "Service");
         assert_eq!(names.request, "Calc_Service_Request");

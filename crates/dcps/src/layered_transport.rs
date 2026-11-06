@@ -112,9 +112,15 @@ impl LayeredUserTransport {
         self.legs.iter().any(|l| l.kind == kind)
     }
 
-    /// Stop all recv threads (idempotent).
+    /// Stop all recv threads (idempotent). A `recv` waiting for a datagram
+    /// returns at once instead of after its second.
     pub fn shutdown(&self) {
         self.stop.store(true, Ordering::Relaxed);
+        let (lock, cv) = &*self.inbound;
+        // Under the lock: a `recv` between its stop check and its wait
+        // would otherwise miss the notification.
+        let _guard = lock.lock();
+        cv.notify_all();
     }
 }
 
@@ -133,6 +139,14 @@ impl Transport for LayeredUserTransport {
         self.shutdown();
         for leg in &self.legs {
             leg.transport.close();
+        }
+    }
+
+    fn add_destination(&self, dest: &Locator) {
+        for leg in &self.legs {
+            if leg.kind == dest.kind {
+                leg.transport.add_destination(dest);
+            }
         }
     }
 
@@ -312,6 +326,34 @@ mod tests {
         );
     }
 
+    /// `close`, which `DcpsRuntime::shutdown` calls on its user transport,
+    /// ends a `recv` that waits for a datagram at once: the runtime joins
+    /// the receive thread waiting in it, and the join took up to the
+    /// second the wait has.
+    #[test]
+    fn close_ends_a_waiting_recv_at_once() {
+        let (udp, _) = MockTransport::new(LocatorKind::Reserved, 0x34);
+        let layered = Arc::new(LayeredUserTransport::new(alloc::vec![udp]));
+        let waiting = Arc::clone(&layered);
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let receiver = std::thread::spawn(move || {
+            let _ = started_tx.send(());
+            waiting.recv()
+        });
+        started_rx.recv().expect("the receiver runs");
+        // Into its wait: the second a waiting `recv` has is far longer.
+        std::thread::sleep(Duration::from_millis(50));
+        let closed = std::time::Instant::now();
+        layered.close();
+        let result = receiver.join().expect("the receiver returns");
+        assert!(matches!(result, Err(RecvError::Timeout)), "{result:?}");
+        assert!(
+            closed.elapsed() < Duration::from_millis(500),
+            "recv returned {:?} after close",
+            closed.elapsed()
+        );
+    }
+
     #[test]
     fn advertises_every_leg_locator() {
         let (shm, _) = MockTransport::new(LocatorKind::Shm, 0x11);
@@ -358,11 +400,11 @@ mod tests {
         let (shm, _) = MockTransport::new(LocatorKind::Shm, 0x11);
         let (udp, _) = MockTransport::new(LocatorKind::Reserved, 0x22);
         shm.seed_inbound(ReceivedDatagram {
-            data: Arc::from(&b"from-shm"[..]),
+            data: Arc::<[u8]>::from(&b"from-shm"[..]).into(),
             source: loc(LocatorKind::Shm, 0xAA),
         });
         udp.seed_inbound(ReceivedDatagram {
-            data: Arc::from(&b"from-udp"[..]),
+            data: Arc::<[u8]>::from(&b"from-udp"[..]).into(),
             source: loc(LocatorKind::Reserved, 0xBB),
         });
         let layered = LayeredUserTransport::new(alloc::vec![shm, udp]);

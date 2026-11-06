@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[test]
-    fn default_for_topic_uses_writer_defaults() {
+    fn wsbridge_12_1_default_for_topic_uses_writer_defaults() {
         let b = WsBehavior::default_for_topic();
         // The writer default is Reliable.
         assert_eq!(b.backpressure, BackpressureMode::Block);

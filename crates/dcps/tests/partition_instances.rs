@@ -74,7 +74,7 @@ fn partitioned(name: &str) -> zerodds_qos::PartitionQosPolicy {
 /// from a writer in B. Both samples are of one instance: one InstanceHandle,
 /// and the second is not a NEW instance.
 #[test]
-fn one_key_in_two_partitions_is_one_instance() {
+fn dcps_2_2_3_13_one_key_in_two_partitions_is_one_instance() {
     let lease = common::lease_domain();
     let p = common::ParticipantGuard::new(
         DomainParticipantFactory::instance()

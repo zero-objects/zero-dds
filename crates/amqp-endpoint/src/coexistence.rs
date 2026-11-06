@@ -81,10 +81,10 @@ pub enum InboundDecision {
 #[must_use]
 pub fn inspect_inbound(cfg: &CoexistenceConfig, app_props: &AmqpExtValue) -> InboundDecision {
     // Hop cap first — fast path.
-    if let Some(hop) = read_uint_key(app_props, app_keys::BRIDGE_HOP) {
-        if hop > cfg.hop_cap {
-            return InboundDecision::DropHopCap;
-        }
+    if let Some(hop) = read_uint_key(app_props, app_keys::BRIDGE_HOP)
+        && hop > cfg.hop_cap
+    {
+        return InboundDecision::DropHopCap;
     }
     // Self-tag drop: is our own bridge_id in the bridge-id list?
     if has_self_tag(app_props, &cfg.bridge_id) {
@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn forward_when_no_bridge_metadata() {
+    fn ddsamqp_7_11_forward_when_no_bridge_metadata() {
         let p = props_with(alloc::vec![]);
         assert_eq!(
             inspect_inbound(&cfg("self-uuid"), &p),
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn drop_loop_on_self_tag_string() {
+    fn ddsamqp_2_1_drop_loop_on_self_tag_string() {
         let p = props_with(alloc::vec![(
             app_keys::BRIDGE_ID,
             AmqpExtValue::Str("other,self-uuid,third".into()),
@@ -236,7 +236,7 @@ mod tests {
     }
 
     #[test]
-    fn drop_loop_on_self_tag_list() {
+    fn ddsamqp_2_2_drop_loop_on_self_tag_list() {
         let p = props_with(alloc::vec![(
             app_keys::BRIDGE_ID,
             AmqpExtValue::List(alloc::vec![
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn drop_hop_cap_when_exceeded() {
+    fn ddsamqp_2_1_drop_hop_cap_when_exceeded() {
         let p = props_with(alloc::vec![(app_keys::BRIDGE_HOP, AmqpExtValue::Uint(9))]);
         let mut c = cfg("self-uuid");
         c.hop_cap = 8;
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn forward_at_hop_cap_limit() {
+    fn ddsamqp_7_11_forward_at_hop_cap_limit() {
         // Hop = cap (=) is still allowed, > cap drops.
         let p = props_with(alloc::vec![(app_keys::BRIDGE_HOP, AmqpExtValue::Uint(8))]);
         let mut c = cfg("self-uuid");
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn stamp_outbound_creates_initial_entries() {
+    fn ddsamqp_7_11_stamp_outbound_creates_initial_entries() {
         let mut p = AmqpExtValue::Map(Vec::new());
         stamp_outbound(&cfg("my-id"), &mut p);
         let entries = match &p {
@@ -288,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn stamp_outbound_appends_to_existing_string_list() {
+    fn ddsamqp_7_11_stamp_outbound_appends_to_existing_string_list() {
         let mut p = props_with(alloc::vec![
             (app_keys::BRIDGE_ID, AmqpExtValue::Str("first-id".into()),),
             (app_keys::BRIDGE_HOP, AmqpExtValue::Uint(2)),
@@ -311,7 +311,7 @@ mod tests {
     }
 
     #[test]
-    fn stamp_outbound_appends_to_list_form() {
+    fn ddsamqp_7_11_stamp_outbound_appends_to_list_form() {
         let mut p = props_with(alloc::vec![
             (
                 app_keys::BRIDGE_ID,
@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_stamp_then_inspect_drops_loop() {
+    fn ddsamqp_2_1_round_trip_stamp_then_inspect_drops_loop() {
         // If I stamp and then inspect myself — my own tag must
         // lead to DropLoop.
         let mut p = AmqpExtValue::Map(Vec::new());
@@ -349,7 +349,7 @@ mod tests {
     }
 
     #[test]
-    fn other_bridges_tag_does_not_drop() {
+    fn ddsamqp_2_2_other_bridges_tag_does_not_drop() {
         let mut p = AmqpExtValue::Map(Vec::new());
         stamp_outbound(&cfg("other-bridge"), &mut p);
         assert_eq!(
@@ -359,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn config_defaults_match_spec() {
+    fn ddsamqp_2_5_2_config_defaults_match_spec() {
         let c = CoexistenceConfig::new("x".to_string());
         assert_eq!(c.hop_cap, DEFAULT_HOP_CAP);
         assert_eq!(DEFAULT_HOP_CAP, 8);

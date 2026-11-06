@@ -74,12 +74,12 @@ fn gen_c(src: &str) -> String {
 
 fn cc_path() -> Option<PathBuf> {
     for c in ["cc", "gcc", "clang"] {
-        if let Ok(out) = Command::new("which").arg(c).output() {
-            if out.status.success() {
-                let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                if !p.is_empty() {
-                    return Some(PathBuf::from(p));
-                }
+        if let Ok(out) = Command::new("which").arg(c).output()
+            && out.status.success()
+        {
+            let p = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !p.is_empty() {
+                return Some(PathBuf::from(p));
             }
         }
     }
@@ -132,27 +132,10 @@ fn try_compile(name: &str, idl: &str) -> bool {
 
 #[test]
 fn v1_compiles() {
-    // An empty aggregate has no C form and the materialiser refuses it,
-    // so there is nothing here to compile.
-    //
-    // This test *was* green, and that is the part worth recording: it
-    // builds with `-std=c99 -Wall -Werror` and **not** `-Wpedantic`, and
-    // gcc and clang both accept `struct Empty { };` as an extension.
-    // C23 §6.7.2.1p8 leaves it undefined. The wire probe that produces
-    // the measured C column builds with `-Wpedantic -Werror`
-    // (`tools/wireprobe/wireprobe-zerodds-c`), where the same header is
-    // an error — so the case compiled here and could never be measured.
-    //
-    // A header that builds only under a compiler extension is not a C
-    // form an interop project can offer. The refusal is asserted
-    // instead, and `xcdr2_c_codegen.rs::v1_codegen_empty_final` holds
-    // the same line one layer up.
-    let refused = std::panic::catch_unwind(|| try_compile("v1", "@final struct Empty {};"));
-    assert!(
-        refused.is_err(),
-        "C has no empty aggregate; the materialiser has to refuse before a \
-         compiler is asked"
-    );
+    // The empty structure's C form: one octet stands in for the members
+    // (C23 §6.7.2.1p8 has no structure without a named member), and the
+    // header builds like the other cases.
+    assert!(try_compile("v1", "@final struct Empty {};"));
 }
 
 #[test]

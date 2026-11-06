@@ -15,7 +15,7 @@ mod common;
 use zerodds_amqp_endpoint::routing::{AddressResolution, AddressRouter};
 
 #[test]
-fn c1_7_prefix_wildcard_matches_multiple_topics() {
+fn ddsamqp_c_1_7_prefix_wildcard_matches_multiple_topics() {
     let mut router = AddressRouter::new();
     router.add_route(
         "sensor.*",
@@ -39,7 +39,7 @@ fn c1_7_prefix_wildcard_matches_multiple_topics() {
 }
 
 #[test]
-fn c1_7_suffix_wildcard_matches() {
+fn ddsamqp_c_1_7_suffix_wildcard_matches() {
     let mut router = AddressRouter::new();
     router.add_route(
         "*.cmd",
@@ -54,7 +54,7 @@ fn c1_7_suffix_wildcard_matches() {
 }
 
 #[test]
-fn c1_7_global_wildcard_matches_anything() {
+fn ddsamqp_c_1_7_global_wildcard_matches_anything() {
     let mut router = AddressRouter::new();
     router.add_route(
         "*",
@@ -69,7 +69,7 @@ fn c1_7_global_wildcard_matches_anything() {
 }
 
 #[test]
-fn c1_7_static_alias_takes_precedence_over_wildcard() {
+fn ddsamqp_c_1_7_static_alias_takes_precedence_over_wildcard() {
     // Spec §7.3: static aliases are tried first.
     let mut router = AddressRouter::new();
     router.add_route(

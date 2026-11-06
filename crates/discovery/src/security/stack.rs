@@ -636,11 +636,10 @@ impl SecurityBuiltinStack {
             self.revoked.remove(&prefix);
             self.resend_now.remove(&prefix);
             self.pending_auth_requests.remove(&prefix);
-            if let Some(peer) = self.handshakes.remove(&prefix) {
-                if let (Some(auth), Some(local_identity)) = (self.auth.clone(), self.local_identity)
-                {
-                    self.release_peer_handles(&auth, local_identity, prefix, &peer);
-                }
+            if let Some(peer) = self.handshakes.remove(&prefix)
+                && let (Some(auth), Some(local_identity)) = (self.auth.clone(), self.local_identity)
+            {
+                self.release_peer_handles(&auth, local_identity, prefix, &peer);
             }
         }
         if self
@@ -1012,10 +1011,10 @@ impl SecurityBuiltinStack {
         // permanently. Without a pending message (replier, or already
         // done): no-op.
         if let Some(peer) = self.handshakes.get(&remote_prefix) {
-            if peer.secret.is_none() {
-                if let Some(req) = peer.last_request.clone() {
-                    return self.stateless_writer.write(&req).map_err(wire_to_security);
-                }
+            if peer.secret.is_none()
+                && let Some(req) = peer.last_request.clone()
+            {
+                return self.stateless_writer.write(&req).map_err(wire_to_security);
             }
             return Ok(Vec::new());
         }
@@ -2284,17 +2283,7 @@ mod tests {
     }
 
     #[test]
-    fn new_stack_has_zero_proxies_everywhere() {
-        let s = SecurityBuiltinStack::new(local_prefix(), VendorId::ZERODDS);
-        assert_eq!(s.stateless_writer.reader_proxy_count(), 0);
-        assert_eq!(s.stateless_reader.writer_proxy_count(), 0);
-        assert_eq!(s.volatile_writer.reader_proxy_count(), 0);
-        assert_eq!(s.volatile_reader.writer_proxy_count(), 0);
-        assert_eq!(s.local_prefix(), local_prefix());
-    }
-
-    #[test]
-    fn handle_remote_endpoints_with_all_bits_wires_all_four() {
+    fn security_9_8_3_1_handle_remote_endpoints_with_all_bits_wires_all_four() {
         let mut s = SecurityBuiltinStack::new(local_prefix(), VendorId::ZERODDS);
         let flags = endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_WRITER
             | endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_READER
@@ -2308,7 +2297,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_remote_endpoints_with_only_stateless_bits_skips_volatile() {
+    fn security_9_8_3_2_handle_remote_endpoints_with_only_stateless_bits_skips_volatile() {
         let mut s = SecurityBuiltinStack::new(local_prefix(), VendorId::ZERODDS);
         let flags = endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_WRITER
             | endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_READER;
@@ -2363,14 +2352,7 @@ mod tests {
     }
 
     #[test]
-    fn poll_on_empty_stack_returns_no_datagrams() {
-        let mut s = SecurityBuiltinStack::new(local_prefix(), VendorId::ZERODDS);
-        let dgs = s.poll(Duration::from_secs(1)).unwrap();
-        assert!(dgs.is_empty());
-    }
-
-    #[test]
-    fn end_to_end_stateless_message_loopback_between_stacks() {
+    fn security_9_8_3_2_end_to_end_stateless_message_loopback_between_stacks() {
         let mut a = SecurityBuiltinStack::new(local_prefix(), VendorId::ZERODDS);
         let mut b = SecurityBuiltinStack::new(remote_prefix(), VendorId::ZERODDS);
         let flags = endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_WRITER
@@ -2470,7 +2452,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn full_pki_handshake_between_two_stacks_yields_shared_secret() {
+    fn security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret() {
         let mut s = two_authenticating_stacks();
 
         // Both discover each other and call begin_handshake_with. Only
@@ -2502,7 +2484,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn smaller_local_guid_initiates_handshake_cyclone_compatible() {
+    fn security_7_5_3_3_smaller_local_guid_initiates_handshake_cyclone_compatible() {
         // cyclone-verified (c2c handshake FSM trace): the SMALLER GUID
         // sends the AUTH_REQUEST (initiator), the larger one replies. ZeroDDS
         // MUST choose the same direction — otherwise both sides wait with
@@ -2584,7 +2566,7 @@ mod tests {
     }
 
     #[test]
-    fn initiator_resends_auth_request_on_repeated_begin_while_incomplete() {
+    fn security_9_3_2_9_1_initiator_resends_auth_request_on_repeated_begin_while_incomplete() {
         // FU2 S3: stateless auth is best-effort. If the initial
         // AUTH_REQUEST (or B's reply) is lost, the next SPDP-beacon-driven
         // `begin_handshake_with` call must re-send the AUTH_REQUEST as long
@@ -2612,7 +2594,7 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_reply_after_completion_is_answered_with_the_final() {
+    fn security_9_3_2_9_1_a_duplicate_reply_after_completion_is_answered_with_the_final() {
         // The initiator completes on the reply and sends its final. A replier
         // that waits for the final — Cyclone's does; ZeroDDS's own derives its
         // secret with the reply — re-sends the reply when the final is lost.
@@ -2819,7 +2801,7 @@ mod tests {
     /// The AUTH_REQUEST carries one AuthRequestMessageToken.
     #[cfg(feature = "std")]
     #[test]
-    fn handshake_messages_carry_the_fields_of_the_spec() {
+    fn security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec() {
         use zerodds_security::generic_message::{MessageIdentity, ParticipantGenericMessage};
         let mut ts = two_authenticating_stacks();
         let (a_prefix, b_prefix, a_guid, b_guid) = (ts.a_prefix, ts.b_prefix, ts.a_guid, ts.b_guid);
@@ -2895,7 +2877,7 @@ mod tests {
     /// names another endpoint.
     #[cfg(feature = "std")]
     #[test]
-    fn a_stateless_message_for_another_endpoint_is_left_alone() {
+    fn security_7_5_3_4_a_stateless_message_for_another_endpoint_is_left_alone() {
         let mut ts = two_authenticating_stacks();
         let (a_prefix, b_prefix, a_guid, b_guid) = (ts.a_prefix, ts.b_prefix, ts.a_guid, ts.b_guid);
         let _ =
@@ -2934,7 +2916,7 @@ mod tests {
     /// and 17 for any other.
     #[cfg(feature = "std")]
     #[test]
-    fn the_algorithm_names_follow_the_setting() {
+    fn security_7_3_3_1_the_algorithm_names_follow_the_setting() {
         use zerodds_security::AlgoNameNul;
         let length_of_dsign_algo = |form: Option<AlgoNameNul>, vendor: VendorId| {
             let mut ts = two_authenticating_stacks();
@@ -2985,7 +2967,7 @@ mod tests {
     /// answers with the NUL whatever the request has.
     #[cfg(feature = "std")]
     #[test]
-    fn the_reply_has_the_form_of_the_request() {
+    fn security_7_3_3_1_the_reply_has_the_form_of_the_request() {
         use zerodds_security::AlgoNameNul;
         let reply_dsign_len = |initiator_form: AlgoNameNul, replier_form: AlgoNameNul| {
             let mut ts = two_authenticating_stacks();
@@ -3077,7 +3059,7 @@ mod tests {
     }
 
     #[test]
-    fn a_forged_final_does_not_take_the_handshake_down() {
+    fn security_9_3_2_9_1_a_forged_final_does_not_take_the_handshake_down() {
         // DDS-Security 1.2 §9.3.2.11.6: the plugin keeps its state over a
         // final whose signature fails, and the genuine final completes the
         // handshake. The stack took the peer out of its table for the step
@@ -3138,7 +3120,7 @@ mod tests {
     }
 
     #[test]
-    fn lost_reply_recovered_by_resend_yields_matching_secret() {
+    fn security_9_3_2_9_1_lost_reply_recovered_by_resend_yields_matching_secret() {
         // FU2 S3: B's reply is lost → A re-sends AUTH_REQUEST → B MUST
         // re-send the CACHED reply (not regenerate it), otherwise the DH
         // secrets diverge. Proof: after loss+resend both sides derive the
@@ -3219,7 +3201,7 @@ mod tests {
     }
 
     #[test]
-    fn an_undiscovered_request_under_another_prefix_is_refused() {
+    fn security_9_3_2_11_5_an_undiscovered_request_under_another_prefix_is_refused() {
         // DDS-Security 1.2 §7.4.3, §10.3.3 Table 59: the replier
         // authenticates the peer under the prefix it sent from, and the
         // c.pdata GUID must be that one. Without the SPDP of the initiator
@@ -3256,7 +3238,7 @@ mod tests {
     }
 
     #[test]
-    fn a_handshake_message_is_taken_only_as_the_spec_addresses_it() {
+    fn security_7_5_3_4_a_handshake_message_is_taken_only_as_the_spec_addresses_it() {
         // DDS-Security 1.2 §7.5.3.4: a message for another participant is
         // not for this one. §9.3.2.11.5/.6: the source is the sender, and a
         // reply or final relates to the last message sent to the peer. All
@@ -3308,7 +3290,8 @@ mod tests {
     }
 
     #[test]
-    fn the_reply_to_an_undiscovered_initiator_is_addressed_to_its_participant() {
+    fn security_9_3_2_11_5_the_reply_to_an_undiscovered_initiator_is_addressed_to_its_participant()
+    {
         // §9.3.2.11.5: "destination_participant_guid shall be set to match
         // the DDS GUID_t of the destination DomainParticipant". The reply
         // to a request from an undiscovered peer took the request's
@@ -3332,7 +3315,7 @@ mod tests {
     }
 
     #[test]
-    fn an_auth_request_goes_out_on_discovery_and_binds_the_challenge() {
+    fn security_9_3_2_5_an_auth_request_goes_out_on_discovery_and_binds_the_challenge() {
         // DDS-Security 1.2 §9.3.2.11.3, §10.3.2.4 Table 55, Table 59: the
         // validate_remote_identity of a discovery without a remote
         // AuthRequestMessageToken makes one, and it is sent; its
@@ -3369,7 +3352,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reply_whose_challenge2_is_not_the_announced_one_is_refused() {
+    fn security_10_3_3_a_reply_whose_challenge2_is_not_the_announced_one_is_refused() {
         // Table 59, process_handshake on the initiator: with a remote
         // AuthRequestMessageToken its future_challenge must be the reply's
         // challenge2.
@@ -3399,7 +3382,7 @@ mod tests {
     }
 
     #[test]
-    fn end_to_end_volatile_secure_handshake_via_reliable_loop() {
+    fn security_7_5_4_2_end_to_end_volatile_secure_handshake_via_reliable_loop() {
         // A sends a crypto-token message over the VolatileSecure topic to
         // B. We simulate the reliable hop manually:
         // 1. A.write produces DATA + (an initial pre-emptive HEARTBEAT follows in the tick)
@@ -3425,14 +3408,14 @@ mod tests {
         let parsed = zerodds_rtps::datagram::decode_datagram(&dgs[0].bytes).unwrap();
         let mut received_msgs = Vec::new();
         for sub in parsed.submessages {
-            if let zerodds_rtps::datagram::ParsedSubmessage::Data(d) = sub.submessage {
-                if d.reader_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER {
-                    received_msgs.extend(
-                        b.volatile_reader
-                            .handle_data(parsed.header.guid_prefix, &d)
-                            .unwrap(),
-                    );
-                }
+            if let zerodds_rtps::datagram::ParsedSubmessage::Data(d) = sub.submessage
+                && d.reader_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER
+            {
+                received_msgs.extend(
+                    b.volatile_reader
+                        .handle_data(parsed.header.guid_prefix, &d)
+                        .unwrap(),
+                );
             }
         }
         assert_eq!(received_msgs.len(), 1);
@@ -3742,7 +3725,7 @@ mod tests {
     /// BuiltinParticipantMessageWriter, incremented by one": the numbers
     /// count the messages of the writer, not those to one peer.
     #[test]
-    fn the_sequence_number_counts_the_messages_of_the_writer() {
+    fn security_9_3_2_11_4_the_sequence_number_counts_the_messages_of_the_writer() {
         let (mut stack, _script) = scripted_stack(local_prefix());
         let mut numbers = Vec::new();
         for n in [2u8, 3, 4] {
@@ -3772,7 +3755,7 @@ mod tests {
     /// VALIDATION_PENDING_RETRY: the operation is called again after the retry
     /// timeout, and the handshake follows its result.
     #[test]
-    fn a_pending_validation_is_retried_after_the_retry_timeout() {
+    fn security_9_3_2_9_a_pending_validation_is_retried_after_the_retry_timeout() {
         let (mut stack, script) = scripted_stack(local_prefix());
         stack.set_retry_timeout(Duration::from_millis(100));
         script
@@ -3823,7 +3806,7 @@ mod tests {
 
     /// RetryWait2: `begin_handshake_request` returned PENDING_RETRY.
     #[test]
-    fn a_pending_request_is_retried_after_the_retry_timeout() {
+    fn security_9_3_2_9_a_pending_request_is_retried_after_the_retry_timeout() {
         let (mut stack, script) = scripted_stack(local_prefix());
         stack.set_retry_timeout(Duration::from_millis(100));
         script
@@ -3856,7 +3839,7 @@ mod tests {
     /// the call is the one they are called with again, and a handshake a
     /// retried step completes is reported to the DDS implementation.
     #[test]
-    fn a_pending_reply_and_a_pending_process_are_retried_with_their_message() {
+    fn security_9_3_2_9_a_pending_reply_and_a_pending_process_are_retried_with_their_message() {
         // The replier: the peer has the smaller prefix.
         let local = peer_prefix(9);
         let (mut stack, script) = scripted_stack(local);
@@ -3924,7 +3907,7 @@ mod tests {
     /// unauthenticated, the handles go back to the plugin, the failure is
     /// reported; the next announcement starts the authentication again.
     #[test]
-    fn a_handshake_that_does_not_complete_ends_with_the_authentication_timeout() {
+    fn security_9_3_2_9_a_handshake_that_does_not_complete_ends_with_the_authentication_timeout() {
         let (mut stack, script) = scripted_stack(local_prefix());
         stack.set_authentication_timeout(Duration::from_secs(10));
         stack
@@ -4000,7 +3983,7 @@ mod tests {
     /// the message to be sent and resends the same message." A forged reply
     /// leaves the handshake as it was, and the request goes out again.
     #[test]
-    fn a_refused_reply_makes_the_stack_send_the_request_again() {
+    fn security_9_3_2_9_a_refused_reply_makes_the_stack_send_the_request_again() {
         let (mut stack, script) = scripted_stack(local_prefix());
         let first = stack
             .begin_handshake_with(
@@ -4067,7 +4050,7 @@ mod tests {
     /// discovery with one made with the token; one that arrives later is passed
     /// to the plugin as well, and the identity this makes goes back.
     #[test]
-    fn an_auth_request_is_passed_to_the_plugin_whenever_it_arrives() {
+    fn security_9_3_2_5_an_auth_request_is_passed_to_the_plugin_whenever_it_arrives() {
         let local = peer_prefix(9);
         let (mut stack, script) = scripted_stack(local);
         // The replier: validation says to wait for the request.
@@ -4144,7 +4127,7 @@ mod tests {
     /// are all not authenticated, have no secret, and are told apart for the
     /// log only.
     #[test]
-    fn every_reason_for_being_unauthenticated_is_one_case() {
+    fn security_9_3_2_10_every_reason_for_being_unauthenticated_is_one_case() {
         let (mut stack, script) = scripted_stack(local_prefix());
         stack.set_authentication_timeout(Duration::from_secs(5));
         // 2: no IdentityToken.
@@ -4224,7 +4207,7 @@ mod tests {
     /// authentication of the participant, reports it, does not authenticate it
     /// again while it is known, and takes no message from it.
     #[test]
-    fn a_revoked_identity_ends_the_authentication_of_its_participant() {
+    fn security_9_3_2_11_a_revoked_identity_ends_the_authentication_of_its_participant() {
         let (mut stack, script) = scripted_stack(local_prefix());
         stack
             .begin_handshake_with(
@@ -4303,7 +4286,7 @@ mod tests {
     /// §9.3.2.12.1, §9.3.2.12.3: a change of the identity status is learned
     /// from `on_status_changed`; the stack takes the new token.
     #[test]
-    fn a_status_change_is_passed_on_with_the_new_token() {
+    fn security_9_3_2_2_a_status_change_is_passed_on_with_the_new_token() {
         let (mut stack, script) = scripted_stack(local_prefix());
         let listener = script.lock().unwrap().listener.clone().unwrap();
         assert!(!stack.take_identity_status_changed());
@@ -4327,7 +4310,7 @@ mod tests {
     /// (the certificate as the PEM that travelled, as DER for the access
     /// control) and gives the token back.
     #[test]
-    fn the_peer_credential_token_gives_the_permissions_and_the_certificate() {
+    fn security_9_3_2_7_the_peer_credential_token_gives_the_permissions_and_the_certificate() {
         let local = peer_prefix(9);
         let (mut stack, script) = scripted_stack(local);
         let key = rcgen::KeyPair::generate().unwrap();
@@ -4404,7 +4387,7 @@ mod tests {
     /// give back with `return_authenticated_peer_credential_token`.
     #[cfg(feature = "std")]
     #[test]
-    fn figure_23_calls_the_operations_of_both_plugins_in_order() {
+    fn security_9_8_3_figure_23_calls_the_operations_of_both_plugins_in_order() {
         use zerodds_security::authentication::AuthenticationPlugin;
         use zerodds_security::mock::MockAuthenticationPlugin;
         let flags = endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_WRITER

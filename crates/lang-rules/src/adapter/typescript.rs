@@ -5012,7 +5012,7 @@ mod tests {
     /// that does not typecheck is a materialiser defect, not a corpus
     /// defect.
     #[test]
-    fn every_corpus_case_renders_or_names_its_failure() {
+    fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
         let cases = corpus();
         assert!(
             cases.len() > 300,
@@ -5048,7 +5048,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sixty_four_bit_integer_is_a_bigint_and_everything_narrower_is_a_number() {
+    fn xtypes_7_2_2_2_a_sixty_four_bit_integer_is_a_bigint_and_everything_narrower_is_a_number() {
         // The decision this column turns on. A `number` is a binary64,
         // so 2^53 is where it stops holding integers as themselves.
         let generated = declarations(
@@ -5084,7 +5084,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bigint_field_starts_from_a_bigint_literal() {
+    fn xtypes_7_2_2_2_a_bigint_field_starts_from_a_bigint_literal() {
         // `k: bigint = 0` does not typecheck; the `n` is what makes the
         // value one of the member's type.
         let generated = declarations("@final struct P { long long k; long i; };");
@@ -5096,7 +5096,7 @@ mod tests {
     /// generator output for any IDL data type. What produced a value is
     /// a factory function instead.
     #[test]
-    fn a_struct_is_an_interface_and_a_factory_and_never_a_class() {
+    fn ddsts_7_4_a_struct_is_an_interface_and_a_factory_and_never_a_class() {
         let generated = declarations(
             "@final struct P { long x; }; \
              bitset Packed { bitfield<3> low; }; \
@@ -5141,7 +5141,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sequence_and_an_array_are_both_typescript_arrays() {
+    fn ddsts_7_9_a_sequence_and_an_array_are_both_typescript_arrays() {
         let generated = declarations(
             "@final struct P { sequence<long> s; long a[3]; long g[2][3]; sequence<string> t; };",
         );
@@ -5174,7 +5174,7 @@ mod tests {
     }
 
     #[test]
-    fn a_map_member_is_a_readonly_map_over_a_staged_entry_type() {
+    fn ddsts_7_9_1_a_map_member_is_a_readonly_map_over_a_staged_entry_type() {
         let generated = declarations("@final struct P { map<long, string> m; };");
         // DDS-TS 1.0 §7.9.1: the member is a `ReadonlyMap`, and never a
         // `Record`, which loses key uniqueness.
@@ -5197,7 +5197,7 @@ mod tests {
     }
 
     #[test]
-    fn two_maps_of_one_typescript_shape_and_two_idl_shapes_are_two_entry_types() {
+    fn xtypes_7_2_2_4_3_two_maps_of_one_typescript_shape_and_two_idl_shapes_are_two_entry_types() {
         // `octet` and `unsigned short` are both a `number` and one and
         // two bytes on the wire.
         let generated =
@@ -5222,7 +5222,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_member_is_a_question_mark_and_not_a_null() {
+    fn ddsts_7_11_an_optional_member_is_a_question_mark_and_not_a_null() {
         let generated =
             declarations("@mutable struct P { @optional long a; @optional string b; long c; };");
         // Both halves of §7.11: the `?:` suffix and the `| undefined`
@@ -5238,7 +5238,7 @@ mod tests {
     }
 
     #[test]
-    fn a_union_is_a_discriminated_union_narrowed_on_a_literal() {
+    fn ddsts_7_5_a_union_is_a_discriminated_union_narrowed_on_a_literal() {
         let generated = declarations(
             "union Choice switch (long) {
                case 1: long whole;
@@ -5266,7 +5266,7 @@ mod tests {
     }
 
     #[test]
-    fn a_union_discriminant_takes_the_discriminators_own_literal_form() {
+    fn ddsts_7_5_a_union_discriminant_takes_the_discriminators_own_literal_form() {
         // `2` and `2n` are two types, and `1` is not `true`.
         // IDL has one namespace per scope and compares identifiers
         // without regard to case, so the member cannot be named after
@@ -5287,7 +5287,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_is_an_as_const_object_beside_a_string_literal_union() {
+    fn ddsts_7_6_an_enumeration_is_an_as_const_object_beside_a_string_literal_union() {
         let generated = declarations(
             "enum Colour { RED, GREEN, BLUE };
              @final struct P { Colour c; };",
@@ -5332,7 +5332,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bitmask_writes_its_bit_as_the_number_and_not_as_a_shift() {
+    fn ddsts_7_8_a_bitmask_writes_its_bit_as_the_number_and_not_as_a_shift() {
         // `1 << 31` is -2147483648 in JavaScript: `<<` is a signed
         // 32-bit operation.
         let narrow =
@@ -5391,7 +5391,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_is_a_namespace_and_two_modules_do_not_collide() {
+    fn idl_7_5_2_a_module_is_a_namespace_and_two_modules_do_not_collide() {
         let generated = declarations(
             "module a { @final struct P { long x; }; };
              module b { @final struct P { double y; }; };
@@ -5404,7 +5404,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_reopened_beside_a_nested_one_is_one_namespace() {
+    fn idl_7_5_2_a_module_reopened_beside_a_nested_one_is_one_namespace() {
         // Two namespaces of one name merge in TypeScript rather than
         // being reported, so grouping by module id would be invisible.
         let generated = declarations(
@@ -5450,7 +5450,7 @@ mod tests {
     }
 
     #[test]
-    fn a_construct_with_no_typescript_data_form_is_named_and_not_left_out() {
+    fn xtypes_7_4_a_construct_with_no_typescript_data_form_is_named_and_not_left_out() {
         // The member is not dropped and no `unknown` is substituted: an
         // interface missing a field that reports success is the defect
         // this materialiser is arranged against.
@@ -5464,7 +5464,7 @@ mod tests {
     /// boxed form, and neither TypeScript `any` nor `unknown` may stand
     /// in for it.
     #[test]
-    fn an_any_member_takes_the_box_and_not_a_typescript_keyword() {
+    fn ddsts_7_3_4_an_any_member_takes_the_box_and_not_a_typescript_keyword() {
         let generated = declarations("@final struct P { any a; long tail; };");
         assert!(generated.contains("a: DdsAny;"), "{generated}");
         assert!(!generated.contains("a: any;"), "{generated}");
@@ -5473,7 +5473,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nested_name_that_would_capture_a_root_reference_is_refused() {
+    fn idl_7_5_2_a_nested_name_that_would_capture_a_root_reference_is_refused() {
         // Every reference is written from the file root and TypeScript
         // has no root operator; the inner `c` would capture `c.Q`.
         let failure = render(
@@ -5496,7 +5496,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unevaluated_array_length_is_named_and_not_substituted() {
+    fn idl_7_4_1_4_an_unevaluated_array_length_is_named_and_not_substituted() {
         // The C and Java columns fail on the same input; the three
         // columns' failure sets stay comparable.
         let failure = render("@final struct P { long a[UNKNOWN]; };", "test.idl")
@@ -5505,7 +5505,7 @@ mod tests {
     }
 
     #[test]
-    fn a_constant_past_the_safe_integer_range_is_refused_rather_than_rounded() {
+    fn idl_7_4_1_4_a_constant_past_the_safe_integer_range_is_refused_rather_than_rounded() {
         // 2^53 + 1 is not a `number`; 2^53 is. A `long long` constant
         // is a `bigint` and holds it either way.
         let ok = declarations("const long long BIG = 9007199254740993;");

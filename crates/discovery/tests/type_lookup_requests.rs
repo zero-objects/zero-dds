@@ -31,7 +31,7 @@ use zerodds_types::builder::TypeObjectBuilder;
 use zerodds_types::{EquivalenceHash, MinimalTypeObject, PrimitiveKind, TypeIdentifier};
 
 #[test]
-fn a_get_types_request_and_its_reply_round_trip_between_two_stacks() {
+fn xtypes_7_6_3_3_4_2_a_get_types_request_and_its_reply_round_trip_between_two_stacks() {
     // Setup: requester + responder with identical registry.
     let mut responder = TypeLookupStack::new(GuidPrefix::from_bytes([0xAA; 12]));
     let m = MinimalTypeObject::Struct(

@@ -731,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn a_struct_declaration_indents_by_four_and_ends_every_field_in_a_comma() {
+    fn xtypes_7_5_1_a_struct_declaration_indents_by_four_and_ends_every_field_in_a_comma() {
         let text = decl(&struct_decl(alloc::vec![
             field("x", Type::Primitive(Primitive::I32)),
             field("y", Type::Primitive(Primitive::F64)),
@@ -743,12 +743,12 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_struct_stays_on_one_line() {
+    fn xtypes_7_5_1_an_empty_struct_stays_on_one_line() {
         assert_eq!(decl(&struct_decl(Vec::new())), "pub const S = struct {};\n");
     }
 
     #[test]
-    fn a_type_reads_left_to_right_with_no_declarator_to_split() {
+    fn xtypes_7_5_1_a_type_reads_left_to_right_with_no_declarator_to_split() {
         assert_eq!(
             type_(&Type::array(
                 2,
@@ -769,7 +769,7 @@ mod tests {
     }
 
     #[test]
-    fn a_function_pointer_carries_its_parameter_names() {
+    fn xtypes_7_5_1_a_function_pointer_carries_its_parameter_names() {
         let type_ = Type::const_pointer(Type::Fn {
             params: alloc::vec![Param {
                 name: Some(Ident::new("target")),
@@ -781,7 +781,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_field_writes_its_absence_as_the_default() {
+    fn xtypes_7_5_1_an_optional_field_writes_its_absence_as_the_default() {
         let mut optional = field("b", Type::optional(Type::Primitive(Primitive::U8)));
         optional.default = Some(Expr::Literal(Literal::Null));
         let text = decl(&struct_decl(alloc::vec![optional]));

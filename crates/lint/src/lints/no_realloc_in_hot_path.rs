@@ -23,7 +23,8 @@
 //! `no_alloc_in_hot_path` lint covers them for fully-realtime-
 //! critical loops.
 //!
-//! Spec: WP 5.D.1c (`internal/PHASE5_PLAN.md`).
+//! Custom lint of `crates/lint`; the rules are in
+//! `docs/architecture/04_safety_by_architecture.md` §3.4.
 //!
 //! # Marking
 //!

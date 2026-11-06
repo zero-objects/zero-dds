@@ -254,7 +254,7 @@ fn the_pair_is_reported_in_declaration_order() {
 /// `<TypeName>Bits`. A user type of that name, declared before or after
 /// the bitmask, is one C identifier twice: the refusal names both.
 #[test]
-fn the_c_column_refuses_a_type_named_like_the_flag_type_of_a_bitmask() {
+fn xtypes_7_5_1_2_2_the_c_column_refuses_a_type_named_like_the_flag_type_of_a_bitmask() {
     for source in [
         "bitmask Flags { A, B }; @final struct FlagsBits { long x; };",
         "@final struct FlagsBits { long x; }; bitmask Flags { A, B };",
@@ -283,7 +283,7 @@ fn the_c_column_refuses_a_type_named_like_the_flag_type_of_a_bitmask() {
 
 /// A bitmask whose flag type has no namesake is untouched.
 #[test]
-fn the_c_column_accepts_a_bitmask_and_a_type_with_another_name() {
+fn xtypes_7_5_1_2_2_the_c_column_accepts_a_bitmask_and_a_type_with_another_name() {
     let ast = prepared("bitmask Flags { A, B }; @final struct FlagsX { long x; };");
     let model = ModelGraph::of(&ast);
     let applied = apply(&model, &zerodds_lang_rules::rule::c::catalogue()).expect("apply");

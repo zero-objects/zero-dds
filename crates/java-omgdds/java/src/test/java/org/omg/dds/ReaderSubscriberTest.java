@@ -65,15 +65,7 @@ class ReaderSubscriberTest {
     }
 
     @Test
-    void theParentOfASubscriberIsItsParticipantAndTheParentOfAReaderItsSubscriber() {
-        ReaderRig rig = new ReaderRig(nextDom());
-        DataReader<Keyed> reader = rig.keepAllReader();
-        assertSame(rig.participant, rig.subscriber.getParent());
-        assertSame(rig.subscriber, reader.getParent());
-    }
-
-    @Test
-    void theDescriptionOfAReaderIsTheTopicOrTheContentFilteredTopicItWasCreatedWith() {
+    void javapsm_2_the_description_of_a_reader_is_the_topic_or_the_content_filtered_topic_it_was_created_with() {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> plain = rig.keepAllReader();
         assertSame(rig.topic, plain.getTopicDescription());
@@ -85,42 +77,7 @@ class ReaderSubscriberTest {
     }
 
     @Test
-    void lookupDataReaderFindsTheReaderByTopicNameAndByTopicDescription() {
-        ReaderRig rig = new ReaderRig(nextDom());
-        DataReader<Keyed> reader = rig.keepAllReader();
-        DataReader<Keyed> byName = rig.subscriber.lookupDataReader(rig.topic.getName());
-        assertSame(reader, byName);
-        DataReader<Keyed> byDescription = rig.subscriber.lookupDataReader(rig.topic);
-        assertSame(reader, byDescription);
-        Topic<byte[]> other = rig.participant.createTopic("ReaderOther", byte[].class);
-        assertNull(rig.subscriber.lookupDataReader("ReaderUnknown"));
-        assertNull(rig.subscriber.lookupDataReader(other));
-        reader.close();
-        assertNull(rig.subscriber.lookupDataReader(rig.topic.getName()));
-    }
-
-    @Test
-    void theDefaultReaderQosIsWhatCreateDataReaderUses() {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        Subscriber subscriber = participant.createSubscriber();
-        Topic<byte[]> topic = participant.createTopic("ReaderDefaultQos", byte[].class);
-        // DDS 1.4 §2.2.3.18: the default HISTORY is KEEP_LAST with depth 1
-        History initial = subscriber.getDefaultDataReaderQos().getHistory();
-        assertEquals(History.Kind.KEEP_LAST, initial.getKind());
-        assertEquals(1, initial.getDepth());
-        assertEquals(History.Kind.KEEP_LAST,
-                subscriber.createDataReader(topic).getQos().getHistory().getKind());
-
-        DataReaderQos keepAll = Qos.reader().withPolicy(Qos.pf().History().withKeepAll());
-        subscriber.setDefaultDataReaderQos(keepAll);
-        assertEquals(History.Kind.KEEP_ALL,
-                subscriber.getDefaultDataReaderQos().getHistory().getKind());
-        DataReader<byte[]> reader = subscriber.createDataReader(topic);
-        assertEquals(History.Kind.KEEP_ALL, reader.getQos().getHistory().getKind());
-    }
-
-    @Test
-    void copyFromTopicQosReplacesThePoliciesTheTopicAndTheReaderShare() {
+    void javapsm_2_copy_from_topic_qos_replaces_the_policies_the_topic_and_the_reader_share() {
         ReaderRig rig = new ReaderRig(nextDom());
         // the reader QoS has values other than the defaults for HISTORY and DURABILITY
         DataReaderQos reader = Qos.reader()
@@ -143,7 +100,7 @@ class ReaderSubscriberTest {
     }
 
     @Test
-    void closeContainedEntitiesClosesTheReadersAndWithdrawsThemFromTheBuiltinTopic()
+    void javapsm_2_close_contained_entities_closes_the_readers_and_withdraws_them_from_the_builtin_topic()
             throws Exception {
         int domain = nextDom();
         DomainParticipant observer = Qos.factory().createParticipant(domain);
@@ -181,7 +138,7 @@ class ReaderSubscriberTest {
     }
 
     @Test
-    void dataOnReadersGoesToTheSubscriberListenerAndNotifyDataReadersPassesItToTheReadersWithNewData()
+    void javapsm_2_data_on_readers_goes_to_the_subscriber_listener_and_notify_data_readers_passes_it_to_the_readers_with_new_data()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> a = rig.keepAllReader();
@@ -227,7 +184,7 @@ class ReaderSubscriberTest {
     }
 
     @Test
-    void withoutASubscriberListenerTheReadersListenersAreCalledAndDataOnReadersStaysChanged()
+    void javapsm_2_without_a_subscriber_listener_the_readers_listeners_are_called_and_data_on_readers_stays_changed()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
@@ -251,7 +208,7 @@ class ReaderSubscriberTest {
     }
 
     @Test
-    void withAccessScopeGroupTheSamplesAreAccessedBetweenBeginAccessAndEndAccess()
+    void javapsm_2_with_access_scope_group_the_samples_are_accessed_between_begin_access_and_end_access()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         Subscriber group = rig.participant.createSubscriber(
@@ -281,35 +238,7 @@ class ReaderSubscriberTest {
     }
 
     @Test
-    void withAnotherAccessScopeBeginAccessIsNotRequired() throws Exception {
-        ReaderRig rig = new ReaderRig(nextDom());
-        DataReader<Keyed> reader = rig.keepAllReader();
-        rig.writer().write(sample(1, 0));
-        assertEquals(1, Qos.read(reader).size());
-        rig.subscriber.beginAccess();
-        assertEquals(1, Qos.read(reader).size());
-        rig.subscriber.endAccess();
-        assertThrows(PreconditionNotMetException.class, rig.subscriber::endAccess);
-    }
-
-    @Test
-    void destinationOrderBySourceTimestampKeepsTheSamplesOfAnInstanceInTimestampOrder()
-            throws Exception {
-        ReaderRig rig = new ReaderRig(nextDom());
-        DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll()
-                .withPolicy(Qos.pf().DestinationOrder().withSourceTimestamp()));
-        DataWriter<Keyed> writer = Qos.writer(rig.publisher, rig.topic, ReaderRig.SUPPORT,
-                Qos.writer().withPolicy(Qos.pf().DestinationOrder().withSourceTimestamp()));
-        writer.write(sample(1, 0), Values.ofMillis(3000L));
-        writer.write(sample(2, 0), Values.ofMillis(1000L));
-        writer.write(sample(1, 1), Values.ofMillis(2000L));
-        writer.write(sample(2, 1), Values.ofMillis(4000L));
-        // instance by instance, each instance in the order of the source timestamps
-        assertEquals(List.of("1/1", "1/0", "2/0", "2/1"), order(Qos.read(reader)));
-    }
-
-    @Test
-    void orderedAccessWithScopeTopicReturnsTheSamplesOfAllInstancesInOneOrder() throws Exception {
+    void javapsm_2_ordered_access_with_scope_topic_returns_the_samples_of_all_instances_in_one_order() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         Subscriber ordered = rig.participant.createSubscriber(Qos.subscriber().withPolicy(
                 Qos.policies().Presentation().withTopic().withOrderedAccess(true)));

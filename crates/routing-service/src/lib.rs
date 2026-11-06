@@ -21,8 +21,11 @@
 //! * **QoS mapping** — per-endpoint reliability / durability / ownership /
 //!   partition / data-representation.
 //! * **Type-agnostic byte forwarding** — the CDR body is forwarded verbatim
-//!   (representation-faithful: XCDR1/XCDR2 encapsulation preserved); no type
-//!   recompilation, cross-vendor.
+//!   under the representation identifier of its input (XCDR version, plain,
+//!   delimited or parameter list, byte order; DDSI-RTPS 2.5 §10.5); no type
+//!   recompilation, cross-vendor. An input under DDS-XTypes 1.3 Table 39's
+//!   identifiers goes out under Table 60's, or under whichever table the
+//!   output runtime's `wire.encapsulation_ids` names: the same format.
 //! * **Keyed-instance lifecycle propagation** — dispose / unregister events are
 //!   forwarded for keyed topics.
 //! * **Loop guard** — on any domain that is both an input and an output
@@ -58,9 +61,12 @@
 //!   the router cannot reproduce it. Wiring `source_timestamp` through
 //!   `UserSample` + a timestamped write is the prerequisite follow-up.
 //! * **Filter / transform** operate on flat `@final` / `@appendable` structs of
-//!   scalar and string members (the common routing case), decoded
-//!   little-endian. Nested structs, sequences, unions and `@mutable` member
-//!   headers are a documented extension; byte pass-through routing has no such
+//!   scalar and string members (the common routing case), read and written
+//!   in the byte order the sample's encapsulation header names. Nested
+//!   structs, sequences, unions and `@mutable` types are not described by a
+//!   shape: a parameter-list body (`PL_CDR`, `PL_CDR2`), or a body whose
+//!   DHEADER the shape does not expect, is refused and counted as an error,
+//!   not read at wrong offsets. Byte pass-through routing has no such
 //!   restriction.
 //! * **Loop guard** covers router-*internal* loops (within one process). Loops
 //!   spanning two separate `zerodds-router` processes need a discovery

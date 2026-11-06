@@ -134,7 +134,7 @@ fn three_samples_at_once(reliability: u32, topic: &str) -> (Vec<Vec<u8>>, Vec<Ve
 }
 
 #[test]
-fn a_reliable_c_reader_gets_the_last_filtered_sample_once_the_writer_is_quiet() {
+fn dcps_2_2_3_12_a_reliable_c_reader_gets_the_last_filtered_sample_once_the_writer_is_quiet() {
     let (first, after) = three_samples_at_once(RELIABLE, "CTbfLastSample");
     assert_eq!(first, vec![vec![1u8]]);
     assert_eq!(

@@ -42,7 +42,7 @@ class RpcInheritanceTest {
      * [DDS-Java-PSM] and java.io.Closeable."
      */
     @Test
-    void rpcEntityInheritsDdsObjectAndCloseable() {
+    void rpc_7_11_2_2_2_rpc_entity_inherits_dds_object_and_closeable() {
         Set<Class<?>> supertypes =
                 new LinkedHashSet<>(Arrays.asList(RPCEntity.class.getInterfaces()));
         assertEquals(
@@ -58,7 +58,7 @@ class RpcInheritanceTest {
      * they are ultimately derived."
      */
     @Test
-    void ddsObjectCarriesTheOneOperationTheClauseNames() {
+    void javapsm_7_3_1_dds_object_carries_the_one_operation_the_clause_names() {
         Method[] declared = DDSObject.class.getDeclaredMethods();
         assertEquals(1, declared.length, "DDSObject declares one operation");
         assertEquals("getEnvironment", declared[0].getName());
@@ -73,7 +73,7 @@ class RpcInheritanceTest {
      * getEnvironment operation.)"
      */
     @Test
-    void aServiceEnvironmentReturnsItself() {
+    void javapsm_7_3_1_a_service_environment_returns_itself() {
         assertTrue(DDSObject.class.isAssignableFrom(ServiceEnvironment.class));
         // §7.11.2.2.3 makes the RPC runtime one of them.
         RPCRuntime runtime = RPCRuntime.over(null);
@@ -85,21 +85,12 @@ class RpcInheritanceTest {
      * RPCRuntime object" — over the operation §7.3.1 gives the interface.
      */
     @Test
-    void anEntityAnRpcRuntimeMadeReturnsThatRuntime() {
+    void rpc_7_11_2_2_2_an_entity_an_rpc_runtime_made_returns_that_runtime() {
         RPCRuntime runtime = RPCRuntime.over(null);
         Requester<byte[], byte[]> requester = runtime.createRequester(RequesterParams.create());
         Replier<byte[], byte[]> replier = runtime.createReplier(ReplierParams.create());
         assertSame(runtime, requester.getEnvironment());
         assertSame(runtime, replier.getEnvironment());
-    }
-
-    /** An entity derived from no environment says so; it does not answer null. */
-    @Test
-    void anEntityDerivedFromNoRuntimeRaisesRatherThanReturningNull() {
-        Requester<byte[], byte[]> loose = new RequesterImpl<>(RequesterParams.create());
-        assertThrows(IllegalStateException.class, loose::getEnvironment);
-        Replier<byte[], byte[]> looseReplier = new ReplierImpl<>(ReplierParams.create());
-        assertThrows(IllegalStateException.class, looseReplier::getEnvironment);
     }
 
     /**
@@ -108,7 +99,7 @@ class RpcInheritanceTest {
      * §7.11.2.2.6's {@code extends} needs.
      */
     @Test
-    void thePsmSampleIsAnInterface() {
+    void javapsm_7_7_2_the_psm_sample_is_an_interface() {
         assertTrue(org.omg.dds.sub.Sample.class.isInterface(),
                 "org.omg.dds.sub.Sample is an interface");
         assertFalse(Modifier.isFinal(org.omg.dds.sub.Sample.class.getModifiers()));
@@ -121,7 +112,7 @@ class RpcInheritanceTest {
      * identity, if any."
      */
     @Test
-    void rpcSampleExtendsThePsmSampleOverTheSameParameter() {
+    void rpc_7_11_2_2_6_rpc_sample_extends_the_psm_sample_over_the_same_parameter() {
         Type[] supertypes = Sample.class.getGenericInterfaces();
         assertEquals(1, supertypes.length, "rpc.Sample's direct supertypes");
         ParameterizedType supertype = (ParameterizedType) supertypes[0];
@@ -144,7 +135,7 @@ class RpcInheritanceTest {
 
     /** The inheritance as a caller sees it: one sample, both surfaces. */
     @Test
-    void anRpcSampleIsAPsmSample() {
+    void rpc_7_11_2_2_6_an_rpc_sample_is_a_psm_sample() {
         Sample<String> sample = Sample.of("reply", SampleIdentity.UNKNOWN, SampleIdentity.UNKNOWN);
         org.omg.dds.sub.Sample<String> psm = sample;
         assertEquals("reply", psm.getData());

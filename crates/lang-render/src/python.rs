@@ -578,7 +578,7 @@ mod tests {
     }
 
     #[test]
-    fn a_class_body_is_indented_by_four_and_closed_by_the_dedent_alone() {
+    fn xtypes_7_5_1_a_class_body_is_indented_by_four_and_closed_by_the_dedent_alone() {
         // Python has no closing delimiter, so the dedent *is* the end of
         // the block; a renderer that lost it would emit a different
         // program rather than untidy output.
@@ -596,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn a_class_with_a_docstring_and_no_members_is_still_legal_python() {
+    fn xtypes_7_5_1_a_class_with_a_docstring_and_no_members_is_still_legal_python() {
         let text = statement(&Statement::Class(Class {
             doc: Doc::line("An IDL module."),
             decorators: Vec::new(),
@@ -608,7 +608,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_body_takes_the_pass_the_tree_carries() {
+    fn xtypes_7_5_1_an_empty_body_takes_the_pass_the_tree_carries() {
         let text = statement(&Statement::Class(Class {
             doc: Doc::none(),
             decorators: Vec::new(),
@@ -620,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn an_import_carries_its_alias_and_its_from_form() {
+    fn xtypes_7_5_1_an_import_carries_its_alias_and_its_from_form() {
         assert_eq!(
             import_text(&Import::Module {
                 path: Path::new(&["a", "b"]),
@@ -647,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn a_call_takes_positional_and_keyword_arguments_in_written_order() {
+    fn xtypes_7_5_1_a_call_takes_positional_and_keyword_arguments_in_written_order() {
         assert_eq!(
             expr(&Expr::Call {
                 func: Path::single("f"),

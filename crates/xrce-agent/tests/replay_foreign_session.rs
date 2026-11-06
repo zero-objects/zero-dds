@@ -203,7 +203,7 @@ fn expected_status_agent_code(segment: &[Message]) -> Option<ResultStatusCode> {
 }
 
 #[test]
-fn replay_matches_the_real_agents_create_client_create_and_delete_replies() {
+fn xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies() {
     let client_to_agent = load_hex("client-to-agent.hex");
     let agent_to_client = load_hex("agent-to-client.hex");
     assert_eq!(
@@ -263,10 +263,10 @@ fn replay_matches_the_real_agents_create_client_create_and_delete_replies() {
 
         for msg in client_seg {
             for sm in &msg.submessages {
-                if sm.header.submessage_id == SubmessageId::CreateClient {
-                    if let Ok(p) = CreateClientPayload::try_from_submessage(sm) {
-                        current_client = Some(p.representation.client_key.0);
-                    }
+                if sm.header.submessage_id == SubmessageId::CreateClient
+                    && let Ok(p) = CreateClientPayload::try_from_submessage(sm)
+                {
+                    current_client = Some(p.representation.client_key.0);
                 }
             }
             let resolved = msg.header.client_key.map(|k| k.0).or(current_client);
@@ -277,25 +277,24 @@ fn replay_matches_the_real_agents_create_client_create_and_delete_replies() {
                 for sm in &ob.submessages {
                     match sm.header.submessage_id {
                         SubmessageId::StatusAgent => {
-                            if let Ok(p) = StatusAgentPayload::try_from_submessage(sm) {
-                                if let Ok((result, _)) = p
+                            if let Ok(p) = StatusAgentPayload::try_from_submessage(sm)
+                                && let Ok((result, _)) = p
                                     .result_and_position(zerodds_xrce::encoding::Endianness::Little)
-                                {
-                                    actual_hs = Some(result.status_code);
-                                }
+                            {
+                                actual_hs = Some(result.status_code);
                             }
                         }
                         SubmessageId::Status => {
-                            if let Ok(p) = StatusPayload::try_from_submessage(sm) {
-                                if let Ok((reply, _)) = BaseObjectReply::decode(&p.representation) {
-                                    actual.insert(
-                                        reply.related_request.request_id,
-                                        StatusSummary {
-                                            code: reply.result.status_code,
-                                            object_id: reply.related_request.object_id,
-                                        },
-                                    );
-                                }
+                            if let Ok(p) = StatusPayload::try_from_submessage(sm)
+                                && let Ok((reply, _)) = BaseObjectReply::decode(&p.representation)
+                            {
+                                actual.insert(
+                                    reply.related_request.request_id,
+                                    StatusSummary {
+                                        code: reply.result.status_code,
+                                        object_id: reply.related_request.object_id,
+                                    },
+                                );
                             }
                         }
                         _ => {}
@@ -482,7 +481,7 @@ impl DdsPort for RecordingDdsPort {
 /// topic and type name; an agent that reads neither creates topics no
 /// peer ever matches.
 #[test]
-fn replay_creates_the_dds_entities_the_real_clients_describe() {
+fn xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe() {
     let client_to_agent = load_hex("client-to-agent.hex");
     let seen = std::sync::Arc::new(std::sync::Mutex::new(Recorded::default()));
     let port = RecordingDdsPort {
@@ -510,10 +509,10 @@ fn replay_creates_the_dds_entities_the_real_clients_describe() {
             continue;
         };
         for sm in &msg.submessages {
-            if sm.header.submessage_id == SubmessageId::CreateClient {
-                if let Ok(p) = CreateClientPayload::try_from_submessage(sm) {
-                    current_client = Some(p.representation.client_key.0);
-                }
+            if sm.header.submessage_id == SubmessageId::CreateClient
+                && let Ok(p) = CreateClientPayload::try_from_submessage(sm)
+            {
+                current_client = Some(p.representation.client_key.0);
             }
         }
         let resolved = msg.header.client_key.map(|k| k.0).or(current_client);

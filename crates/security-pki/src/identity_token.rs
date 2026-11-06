@@ -431,7 +431,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trip_full_token() {
+    fn security_10_3_2_1_round_trip_full_token() {
         let t = IdentityToken::new(
             "CN=alice,O=Example,C=DE".into(),
             "ecdsa-with-SHA256".into(),
@@ -459,7 +459,7 @@ mod tests {
         );
         let mut bytes = t.encode();
         // Pad to the next 4-byte multiple (like RTPS).
-        while bytes.len() % 4 != 0 {
+        while !bytes.len().is_multiple_of(4) {
             bytes.push(0);
         }
         bytes.push(0);
@@ -482,7 +482,7 @@ mod tests {
 
     /// Table 51: "The presence of each of properties is optional".
     #[test]
-    fn a_token_without_the_optional_properties_decodes() {
+    fn security_10_3_2_1_a_token_without_the_optional_properties_decodes() {
         use zerodds_security::token::DataHolder;
         let bytes = DataHolder::new(IDENTITY_TOKEN_CLASS_ID)
             .with_property(KEY_CERT_SN, "CN = x")
@@ -499,7 +499,7 @@ mod tests {
 
     /// A property without a value is not written.
     #[test]
-    fn an_empty_property_is_left_out_of_the_token() {
+    fn security_10_3_2_1_an_empty_property_is_left_out_of_the_token() {
         use zerodds_security::token::DataHolder;
         let token = IdentityToken::new(
             "CN = a".into(),
@@ -514,7 +514,7 @@ mod tests {
 
     /// Table 51: `dds.cert.algo` and `dds.ca.algo` are names of Table 25.
     #[test]
-    fn the_algorithms_are_the_names_of_table_25() {
+    fn security_7_3_6_the_algorithms_are_the_names_of_table_25() {
         let cases = [
             ("1.2.840.10045.4.3.2", "ECDSA+P256+SHA256"),
             ("1.2.840.10045.4.3.3", "ECDSA+P384+SHA384"),
@@ -530,7 +530,7 @@ mod tests {
 
     /// The names of 1.1 are the opt-in for OpenDDS.
     #[test]
-    fn the_names_of_1_1_are_the_opt_in() {
+    fn security_10_3_2_1_the_names_of_1_1_are_the_opt_in() {
         let params = rcgen::CertificateParams::new(alloc::vec!["alice.example".to_string()])
             .expect("rcgen params");
         let key = rcgen::KeyPair::generate().unwrap();
@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_property_skipped_in_decode() {
+    fn security_10_3_2_unknown_property_skipped_in_decode() {
         let mut bytes = IdentityToken::new("a".into(), "b".into(), "c".into(), "d".into()).encode();
         // Appending an unknown property — should skip silently.
         let unk_key = b"future_field";

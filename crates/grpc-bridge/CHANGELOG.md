@@ -2,6 +2,25 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- `Sample.cdr_payload` keeps the encapsulation header the sample came under
+  (spec §4.4; DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 §7.6.3.1.2, Table 60). The
+  daemon built it from the XCDR version and the byte order, so a
+  `@mutable` (`PL_CDR2`) or `@appendable` (`D_CDR2`) sample went to a stream
+  as `CDR2`; the DataWriter of a `Publish` takes the representation, the
+  extensibility and the byte order from the header in front of the body
+  (OPEN-ITEMS 60). The daemon depends on `zerodds-types` (feature `std`).
+
+### Removed
+
+- The feature `cross-vendor-tests`: `tests/cross_vendor.rs` builds with
+  `std`; its grpcurl tests are `#[ignore]` in the crate tier and run in the
+  integration pillar's job `integration-bridges-vendor`, without the
+  `GRPC_GRPCURL` gate that let them pass without running.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-grpc-bridge` crate.

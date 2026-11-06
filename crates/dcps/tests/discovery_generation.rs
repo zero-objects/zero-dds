@@ -20,13 +20,15 @@ use zerodds_rtps::wire_types::GuidPrefix;
 
 const TOPIC: &str = "DiscoveryGeneration";
 
-fn start(domain: i32, prefix: u8) -> std::sync::Arc<DcpsRuntime> {
-    DcpsRuntime::start(
-        domain,
-        GuidPrefix::from_bytes([prefix; 12]),
-        RuntimeConfig::default(),
+fn start(domain: i32, prefix: u8) -> common::ShutsDown {
+    common::ShutsDown(
+        DcpsRuntime::start(
+            domain,
+            GuidPrefix::from_bytes([prefix; 12]),
+            RuntimeConfig::default(),
+        )
+        .unwrap(),
     )
-    .unwrap()
 }
 
 fn discovered(rt: &DcpsRuntime) -> bool {

@@ -1,0 +1,93 @@
+.TH ZERODDS-BENCH 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-bench \- Ende-zu-Ende-Messung von Latenz und Durchsatz auf der ZeroDDS-DCPS-Pipeline
+.SH ÜBERSICHT
+.B zerodds-bench latency
+[\fB\-d\fR \fIDOMÄNE\fR]
+[\fB\-t\fR \fITOPIC\fR]
+[\fB\-p\fR \fINUTZLAST\fR]
+[\fB\-\-duration\fR \fIDAUER\fR]
+.PP
+.B zerodds-bench throughput
+[\fB\-d\fR \fIDOMÄNE\fR]
+[\fB\-t\fR \fITOPIC\fR]
+[\fB\-p\fR \fINUTZLAST\fR]
+[\fB\-\-duration\fR \fIDAUER\fR]
+.PP
+.B zerodds-bench info
+.SH BESCHREIBUNG
+.B zerodds-bench
+führt Mikro-Benchmarks gegen die vollständige ZeroDDS-DCPS-Pipeline aus, über
+eine Loopback-Verbindung in einem Prozess (ein Writer und ein Reader auf
+demselben Topic in derselben Laufzeitumgebung). Die vollständige
+XCDR2-Kodierung, der HistoryCache, das Wire-Protokoll RTPS 2.5 und der
+UDP-Transport werden durchlaufen; es ist keine Einrichtung außerhalb nötig.
+.PP
+Der Unterbefehl
+.B latency
+misst die Umlaufzeit je Sample und meldet Minimum / p50 / p99 / Maximum in
+Mikrosekunden.
+.PP
+Der Unterbefehl
+.B throughput
+schreibt für die Dauer von
+.B \-\-duration
+so schnell wie möglich und meldet Nachrichten/s und MiB/s.
+.PP
+.B info
+gibt die Fähigkeiten des Backends aus (Transporte, Kodierungen, Modi).
+.SH OPTIONEN
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Topic-Name. Standard: \fIzerodds/bench/loopback\fR.
+.TP
+.BR \-p ", " \-\-payload " " \fIN\fR
+Größe der Nutzlast in Byte. Standard: 64.
+.TP
+.BR \-\-duration " " \fIDAUER\fR
+Laufzeit: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR. Standard: 5s.
+.TP
+.BR \-\-config " " \fIPFAD\fR
+Die Basis-Konfigurationsdatei; das danebenliegende
+.IR PFAD .d/
+enthält Drop-ins. Standard: das System-Konfigurationsverzeichnis
+.RI ( /etc/zerodds
+unter Linux,
+.I /usr/local/etc/zerodds
+unter macOS).
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH GLOBALE OPTIONEN
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Hilfe und beendet sich.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus und beendet sich.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg.
+.TP
+.B 2
+Fehler beim Parsen der Kommandozeile.
+.TP
+.B 3
+DDS- oder E/A-Fehler.
+.SH SIEHE AUCH
+.BR zerodds-record (1),
+.BR zerodds-spy (1),
+.BR zerodds-monitor (1)
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

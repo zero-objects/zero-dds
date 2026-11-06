@@ -50,7 +50,7 @@ impl Drop for RestoreFactory {
 }
 
 #[test]
-fn a_participant_of_a_factory_that_does_not_autoenable_is_created_disabled() {
+fn capi_14_6_a_participant_of_a_factory_that_does_not_autoenable_is_created_disabled() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CEntityEnableFactory").unwrap();
     let type_name = CString::new("RawBytes").unwrap();

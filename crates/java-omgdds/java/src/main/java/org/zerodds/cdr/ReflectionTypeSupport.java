@@ -739,7 +739,10 @@ public final class ReflectionTypeSupport<T> implements TopicTypeSupport<T> {
             }
         }
         List<MemberInfo> members = new ArrayList<>();
-        int nextId = 1;
+        // XTypes 1.3 §7.3.1.2.1.1: without @Id the member IDs are sequential, the first member
+        // of a type without a base type has the ID 0, and the members of a base class come
+        // first (fieldsOf), so a derived class continues after the last member of its base.
+        int nextId = 0;
         boolean anyKey = false;
         for (Field f : fieldsOf(cls)) {
             MemberInfo m = new MemberInfo();
@@ -763,6 +766,7 @@ public final class ReflectionTypeSupport<T> implements TopicTypeSupport<T> {
                             + f.getName() + " has no numeric value: " + idv);
                 }
                 m.memberId = ((Number) idv).intValue();
+                m.explicitId = true;
             } else {
                 m.memberId = nextId;
             }
@@ -916,6 +920,19 @@ public final class ReflectionTypeSupport<T> implements TopicTypeSupport<T> {
         }
         ti.union = true;
         ti.unionDiscriminator = discriminator;
+        // XTypes 1.3 §7.2.2.4.4.3: the discriminator is the first member of a union, with the
+        // member ID 0; the members of the cases follow it, sequentially from 1 (§7.3.1.2.1.1).
+        int next = 1;
+        for (MemberInfo m : members) {
+            if (m.discriminator) {
+                m.memberId = 0;
+                continue;
+            }
+            if (!m.explicitId) {
+                m.memberId = next;
+            }
+            next = m.memberId + 1;
+        }
     }
 
     /** The discriminator value of a Java value: its integer, character, boolean or enum ordinal. */
@@ -1423,6 +1440,8 @@ public final class ReflectionTypeSupport<T> implements TopicTypeSupport<T> {
         boolean isOptional;
         boolean mustUnderstand;
         int memberId;
+        /** The member ID was given by {@code @Id}, not assigned in sequence. */
+        boolean explicitId;
         /** What @SerializeAs states for the member (§8.2), or null for the defaults of Table 8.1. */
         JavaRepresentation rep;
         /** The field is the discriminator of a union (§8.6.2). */

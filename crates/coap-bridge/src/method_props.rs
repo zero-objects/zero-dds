@@ -45,31 +45,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn get_is_safe() {
+    fn coap_5_8_get_is_safe() {
         assert!(is_safe(CoapCode::GET));
     }
 
     #[test]
-    fn post_put_delete_not_safe() {
+    fn coap_5_8_post_put_delete_not_safe() {
         assert!(!is_safe(CoapCode::POST));
         assert!(!is_safe(CoapCode::PUT));
         assert!(!is_safe(CoapCode::DELETE));
     }
 
     #[test]
-    fn get_put_delete_idempotent() {
+    fn coap_5_8_get_put_delete_idempotent() {
         assert!(is_idempotent(CoapCode::GET));
         assert!(is_idempotent(CoapCode::PUT));
         assert!(is_idempotent(CoapCode::DELETE));
     }
 
     #[test]
-    fn post_not_idempotent() {
+    fn coap_5_8_post_not_idempotent() {
         assert!(!is_idempotent(CoapCode::POST));
     }
 
     #[test]
-    fn method_predicate_recognizes_all_four() {
+    fn coap_5_8_method_predicate_recognizes_all_four() {
         assert!(is_method(CoapCode::GET));
         assert!(is_method(CoapCode::POST));
         assert!(is_method(CoapCode::PUT));

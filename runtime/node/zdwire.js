@@ -303,7 +303,7 @@ function wstringOrderIsFixedLittle(order) {
   );
 }
 
-/** The framing every field of which is the specification's reading. */
+/** No flags anywhere, which is Fast DDS's framing. */
 const PID_FLAGS_NONE = Object.freeze({ member: 0, sentinel: 0, extendedMarker: 0 });
 
 /** The name `PidFlagPolicy::Bare` gives {@link PID_FLAGS_NONE}. */
@@ -397,9 +397,15 @@ const BYTE_ORDER_MARK = 0xfeff;
 /** The byte-swapped mark. `U+FFFE` is not a character. */
 const SWAPPED_BYTE_ORDER_MARK = 0xfffe;
 
-/** The framing a `Writer` and a `Reader` use where the caller names none. */
+/**
+ * The framing a `Writer` and a `Reader` use where the caller names none:
+ * the answers `zerodds_wire::PlCdr1Framing::DEFAULT` gives, which every
+ * other runtime's default gives too. The must-understand bit on the
+ * extended marker is what `annotation-autoid-sequential` recorded from
+ * Cyclone DDS (`017f0800`).
+ */
 const PL_CDR1_DEFAULT = Object.freeze({
-  pidFlags: PID_FLAGS_NONE,
+  pidFlags: PID_FLAGS_SENTINEL_MUST_UNDERSTAND,
   shortMaxId: PID_SHORT_MAX_ID,
   padsDeclaredLength: false,
   padsOptionalLength: false,

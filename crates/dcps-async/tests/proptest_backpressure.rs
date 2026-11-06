@@ -153,7 +153,7 @@ proptest! {
     })]
 
     #[test]
-    fn write_take_sequence_holds_invariants(
+    fn async_5_write_take_sequence_holds_invariants(
         capacity in capacity_strategy(),
         ops in ops_strategy(),
     ) {

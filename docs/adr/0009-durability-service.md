@@ -23,9 +23,9 @@ after a reboot nobody re-announces the PERSISTENT files. The
 vendor feature matrix accordingly shows "Transient/Persistent (Service)" as a
 deficit (cross-vendor wire replay is missing entirely).
 
-Two existing planning docs contradicted each other:
-`internal/plans/milestone-v1.2.md` WP 2.2c wanted a fresh daemon backed by sqlite WAL;
-`internal/roadmap/track-dds-persistence-service.md` (RC3-C)
+Two internal planning documents of the time contradicted each other:
+the v1.2 milestone plan (WP 2.2c) wanted a fresh daemon backed by sqlite WAL;
+the RC3-C persistence-service track
 wanted to wrap a non-existent "RC2-A-Datalake-Engine" stack in a spec-conformant
 way. This ADR resolves the contradiction.
 
@@ -166,7 +166,5 @@ assumption.
 ## References
 
 - DDS 1.4 §2.2.3.4 (Durability), §2.2.3.5 (DurabilityService)
-- `internal/plans/milestone-v1.2.md` §WP 2.2c (made concrete by this ADR)
-- `internal/roadmap/track-dds-persistence-service.md` (replaced by this ADR)
 - `crates/dcps/src/durability_service.rs` (writer-embedded predecessor)
 - `crates/qos/src/policies/durability_service.rs` (contract QoS)

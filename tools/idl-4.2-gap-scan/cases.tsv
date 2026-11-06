@@ -141,7 +141,7 @@ bb7-127-value-abs	grammar	125,127	accept	\babstract[ \t]+valuetype\b	abstract va
 bb7-128-custom-valuetype	grammar	128	accept	\bcustom[ \t]+valuetype\b	custom valuetype Va { public long m; };
 bb7-129-abstract-interface	grammar	129	accept	\babstract[ \t]+interface\b	abstract interface Ia { };
 bb7-130-truncatable	grammar	130	accept	\btruncatable\b	valuetype Vb { public long m; };<NL>valuetype Va : truncatable Vb { public long n; };
-bb7-130-multi-supports	grammar	130	accept	-	interface Ia { };<NL>interface Ib { };<NL>valuetype Vb { public long m; };<NL>valuetype Va : Vb supports Ia, Ib { public long n; };
+bb7-130-multi-supports	grammar	130	accept	-	abstract interface Ia { };<NL>abstract interface Ib { };<NL>valuetype Vb { public long m; };<NL>valuetype Va : Vb supports Ia, Ib { public long n; };
 bb7-132-valuebase	grammar	131,132	accept	\bValueBase\b	struct Sa { ValueBase vb; };
 bb8-136-component-def	grammar	133,134,136,137,139	accept	\bcomponent\b	component Ca { };
 bb8-135-component-forward	grammar	134,135	accept	\bcomponent[ \t]+[A-Za-z_][A-Za-z_0-9]*[ \t]*;	component Ca;<NL>component Ca { };

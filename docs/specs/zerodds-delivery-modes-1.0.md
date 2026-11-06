@@ -247,7 +247,7 @@ Responsibilities:
 - [x] `RawSameHost` commit behaviour: commit finalizes the slot and does **not**
       publish over RTPS (same-host only, no wire, no double delivery); the
       same-host reader takes via `take_shm` — implemented and tested
-      (`shm_loan_e2e::raw_same_host_mode_writer_to_reader`). `TYPE_HASH` layout
+      (`shm_loan_e2e::capi_13_2_raw_same_host_mode_writer_to_reader`). `TYPE_HASH` layout
       gating lives at the typed `FlatStruct`/RMW layer, not the byte FFI.
 - [ ] Reader-side delivery-mode setter (`zerodds_dr_set_delivery_mode` /
       `zerodds_reader_set_delivery_mode`) — deferred until negotiation exists

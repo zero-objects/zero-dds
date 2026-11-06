@@ -12,13 +12,13 @@ use zerodds_dcps::{DataWriter, DataWriterQos, DdsType, InstanceHandle, Result};
 
 /// Async wrapper around `DataWriter<T>`.
 ///
-/// Hot path: `write()` is a future form over the sync path with
-/// a yield-based retry loop for
-/// `OutOfResources` backpressure (Spec §5.1
-/// `zerodds-async-1.0`). Instead of a thread-blocking `Condvar::wait_timeout`,
-/// caller tasks yield out of the executor via `yield_for` and stay
-/// cancelable. Other DCPS methods delegate synchronously — they are
-/// non-blocking anyway.
+/// Hot path: `write()`, `dispose()` and `unregister_instance()` are future
+/// forms over the sync path with a yield-based retry loop where the sync
+/// call would wait for room in the RESOURCE_LIMITS (Spec §5
+/// `zerodds-async-1.0`). Instead of a thread-blocking
+/// `Condvar::wait_timeout`, caller tasks yield out of the executor via
+/// `yield_for` and stay cancelable. The other DCPS methods delegate
+/// synchronously; they do not wait.
 pub struct AsyncDataWriter<T: DdsType + Send + Sync + 'static> {
     inner: Arc<DataWriter<T>>,
 }
@@ -41,37 +41,43 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
     /// Writes a sample. Spec §2.1.1.
     ///
     /// # Errors
-    /// Same as `DataWriter::write` — `OutOfResources` after the
-    /// `max_blocking_time` timeout, otherwise all other errors are
-    /// passed through transparently.
+    /// Same as `DataWriter::write`: `Timeout` once
+    /// `reliability.max_blocking_time` has passed without room in the
+    /// RESOURCE_LIMITS (DDS 1.4 §2.2.2.4.2.11), every other error passed
+    /// through unchanged.
     ///
-    /// Spec §5.1 zerodds-async-1.0: on `OutOfResources` the future
-    /// suspends via `yield_for` and retries until either a drain
-    /// happens or `reliability.max_blocking_time` has elapsed.
-    /// In the sync path a `Condvar::wait_timeout` would block here —
-    /// the async path uses a yield-retry loop without a
-    /// thread block.
+    /// Spec §5 zerodds-async-1.0: where the sync write would wait for room,
+    /// the future suspends via `yield_for` and tries again until the write
+    /// goes through or `max_blocking_time` has passed; the thread of the
+    /// executor is not blocked. The sync write is called under
+    /// [`zerodds_dcps::runtime::without_waiting_for_room`], which turns its
+    /// wait into an immediate `Timeout`; before, the sync write waited on
+    /// its condition variable with the executor's thread, up to
+    /// `max_blocking_time` and without end for an INFINITE one.
     pub async fn write(&self, sample: &T) -> Result<()> {
+        self.without_blocking(|w| w.write(sample)).await
+    }
+
+    /// Runs `op` under `without_waiting_for_room` and, where it would
+    /// have waited (`Timeout` at once), suspends and runs it again until it
+    /// goes through or `reliability.max_blocking_time` has passed.
+    async fn without_blocking<R>(&self, op: impl Fn(&DataWriter<T>) -> Result<R>) -> Result<R> {
         // Uncontended path — spec §9.1 budgets no more than 5 % over the
         // sync write, so nothing may happen here beyond the sync call
         // itself. In particular the reliability budget is *not* read: on
         // this path it is never used, and `DataWriter::qos()` clones the
         // whole QoS set, which alone cost about 13 % per write. The retry
-        // loop is a future of its own, entered only on `OutOfResources`:
-        // inline, its state made every write's future larger, 10 ns per
-        // write against 3.5 ns with it apart (an offline write on the Linux
-        // test host, release build).
-        match self.inner.write(sample) {
-            Err(zerodds_dcps::DdsError::OutOfResources { .. }) => {
-                self.write_under_backpressure(sample).await
-            }
+        // loop is a future of its own, entered only when the write would
+        // have waited.
+        match zerodds_dcps::runtime::without_waiting_for_room(|| op(&self.inner)) {
+            Err(zerodds_dcps::DdsError::Timeout) => self.retry_until_room(op).await,
             done => done,
         }
     }
 
-    /// Spec §5.1 zerodds-async-1.0: the retry loop of [`Self::write`]
-    /// after a write met `OutOfResources`.
-    async fn write_under_backpressure(&self, sample: &T) -> Result<()> {
+    /// Spec §5 zerodds-async-1.0: the retry loop of [`Self::without_blocking`]
+    /// after the operation found no room.
+    async fn retry_until_room<R>(&self, op: impl Fn(&DataWriter<T>) -> Result<R>) -> Result<R> {
         // Now the blocking budget matters, so it is read once, here.
         let max_block_nanos = self.inner.qos().reliability.max_blocking_time.to_nanos();
         // INFINITE → no deadline; the future then retries until the
@@ -83,21 +89,20 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
             let secs = (max_block_nanos / 1_000_000_000) as u64;
             #[allow(clippy::cast_possible_truncation)]
             let nanos = (max_block_nanos % 1_000_000_000) as u32;
-            Some(std::time::Instant::now() + core::time::Duration::new(secs, nanos))
+            std::time::Instant::now().checked_add(core::time::Duration::new(secs, nanos))
         };
 
         loop {
-            if let Some(d) = deadline {
-                if std::time::Instant::now() >= d {
-                    return Err(zerodds_dcps::DdsError::Timeout);
-                }
+            if let Some(d) = deadline
+                && std::time::Instant::now() >= d
+            {
+                return Err(zerodds_dcps::DdsError::Timeout);
             }
             // Suspend rather than block the caller thread, then retry.
             crate::yield_for(core::time::Duration::from_millis(2)).await;
-            match self.inner.write(sample) {
-                Ok(()) => return Ok(()),
-                Err(zerodds_dcps::DdsError::OutOfResources { .. }) => {}
-                Err(other) => return Err(other),
+            match zerodds_dcps::runtime::without_waiting_for_room(|| op(&self.inner)) {
+                Err(zerodds_dcps::DdsError::Timeout) => {}
+                done => return done,
             }
         }
     }
@@ -115,7 +120,8 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
     /// # Errors
     /// Same as sync.
     pub async fn dispose(&self, sample: &T, handle: InstanceHandle) -> Result<()> {
-        self.inner.dispose(sample, handle)
+        // A dispose waits for room as a write does (§2.2.2.4.2.11).
+        self.without_blocking(|w| w.dispose(sample, handle)).await
     }
 
     /// Spec §2.1.4 unregister_instance.
@@ -123,7 +129,9 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
     /// # Errors
     /// Same as sync.
     pub async fn unregister_instance(&self, sample: &T, handle: InstanceHandle) -> Result<()> {
-        self.inner.unregister_instance(sample, handle)
+        // An unregister waits for room as a write does (§2.2.2.4.2.11).
+        self.without_blocking(|w| w.unregister_instance(sample, handle))
+            .await
     }
 
     /// Spec §2.1.5 wait_for_matched_subscription. Async polling

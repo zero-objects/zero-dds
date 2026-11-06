@@ -287,6 +287,24 @@ impl<'a> Reader<'a> {
         crate::try_construct::fit_string(self.at, value, bound, behaviour)
     }
 
+    /// A string this reader has just lent out ([`Self::read_str`]),
+    /// against the bound of the member it is going into.
+    ///
+    /// [`Self::fit_string`] over a borrowed string: a trim is a shorter
+    /// slice of the same octets. The narrowing itself is
+    /// [`crate::try_construct::fit_str`].
+    ///
+    /// # Errors
+    /// As [`crate::try_construct::fit_string`].
+    pub fn fit_str(
+        &self,
+        value: &'a str,
+        bound: usize,
+        behaviour: crate::TryConstruct,
+    ) -> Result<crate::Narrowed<&'a str>, WireError> {
+        crate::try_construct::fit_str(self.at, value, bound, behaviour)
+    }
+
     /// A `wstring` this reader has just taken off the wire, against the
     /// bound of the member it is going into.
     ///
@@ -953,11 +971,30 @@ impl<'a> Reader<'a> {
 
     /// A string: a length including the terminator, the bytes, the NUL.
     ///
+    /// [`Self::read_str`] into a `String` of its own.
+    ///
+    /// # Errors
+    /// As [`Self::read_str`].
+    pub fn read_string(&mut self) -> Result<String, WireError> {
+        self.read_str().map(ToString::to_string)
+    }
+
+    /// A string, lent out of the sample's bytes: a length including the
+    /// terminator, the bytes, the NUL.
+    ///
+    /// The same octets and the same checks as [`Self::read_string`], and
+    /// no allocation: the text is the run of octets between the length
+    /// and the terminator, and it lives as long as the bytes this reader
+    /// was given. A `WireRepr` type that stands for an IDL `string` reads
+    /// from it (`crate::repr::from_wire`).
+    ///
     /// # Errors
     /// [`WireError::ImpossibleLength`] for a length the stream cannot
     /// hold — allocating for it is how a reader turns a bad message into
     /// an out-of-memory. [`WireError::NotUtf8`] for bytes that are not.
-    pub fn read_string(&mut self) -> Result<String, WireError> {
+    /// [`WireError::OutOfRange`] for a last octet that is not a NUL, and
+    /// for a NUL inside the text.
+    pub fn read_str(&mut self) -> Result<&'a str, WireError> {
         // Aligned before the offset is taken, so `at` names the length
         // field and not the padding in front of it. An error whose
         // offset points at padding cannot be matched to a length field
@@ -975,9 +1012,7 @@ impl<'a> Reader<'a> {
         // The length counts the terminator; the text is one byte less.
         let text_at = self.at;
         let text = self.take(length - 1)?;
-        let out = core::str::from_utf8(text)
-            .map_err(|_| WireError::NotUtf8 { at })?
-            .to_string();
+        let out = core::str::from_utf8(text).map_err(|_| WireError::NotUtf8 { at })?;
         // §7.4.1.1.2 puts a NUL at the end and the length counts it. A
         // last byte that is not one is a frame that disagrees with
         // itself, and reading past it takes the next member's first
@@ -1077,7 +1112,7 @@ impl<'a> Reader<'a> {
         let count = match policy.counts_at(position) {
             WstringLengthCounts::Characters => declared,
             WstringLengthCounts::Octets => {
-                if declared % width != 0 {
+                if !declared.is_multiple_of(width) {
                     return Err(wstring_form_mismatch(policy, declared, at));
                 }
                 declared / width
@@ -1195,7 +1230,7 @@ impl<'a> Reader<'a> {
         order: WstringUnitOrder,
         at: usize,
     ) -> Result<Vec<u16>, WireError> {
-        let octets = count.checked_mul(width).unwrap_or(usize::MAX);
+        let octets = count.saturating_mul(width);
         if octets > self.remaining() {
             return Err(WireError::ImpossibleLength {
                 at,
@@ -1238,6 +1273,92 @@ impl<'a> Reader<'a> {
     }
 
     // -- framing ---------------------------------------------------------
+
+    /// Steps over a primitive of `width` octets, aligned as the
+    /// `read_*` of that width aligns it: what a key-only read does with a
+    /// member it does not need (XTypes 1.3 §7.6.8).
+    ///
+    /// # Errors
+    /// [`WireError::Truncated`] for a stream shorter than the value.
+    pub fn skip_primitive(&mut self, width: usize) -> Result<(), WireError> {
+        self.align_to(width)?;
+        self.take(width).map(|_| ())
+    }
+
+    /// Steps over a `string`: [`Self::read_str`], the text not kept.
+    ///
+    /// # Errors
+    /// As [`Self::read_str`].
+    pub fn skip_string(&mut self) -> Result<(), WireError> {
+        self.read_str().map(|_| ())
+    }
+
+    /// Steps over what a DHEADER delimits, the DHEADER with it.
+    ///
+    /// # Errors
+    /// As [`Self::read_dheader`].
+    pub fn skip_delimited(&mut self) -> Result<(), WireError> {
+        let length = self.read_dheader()?;
+        self.take(length).map(|_| ())
+    }
+
+    /// Steps over a sequence of primitives of `width` octets: the count,
+    /// then the elements, the first aligned to `width` unless each element
+    /// is its own alignment block (`packed`).
+    ///
+    /// # Errors
+    /// [`WireError::ImpossibleLength`] for a count whose elements the
+    /// stream cannot hold.
+    pub fn skip_sequence(&mut self, width: usize, packed: bool) -> Result<(), WireError> {
+        let at = self.at;
+        let count = self.read_u32()? as usize;
+        self.skip_elements(at, count, width, packed)
+    }
+
+    /// Steps over an array of `count` primitives of `width` octets, the
+    /// first aligned as [`Self::skip_sequence`] aligns it.
+    ///
+    /// # Errors
+    /// As [`Self::skip_sequence`].
+    pub fn skip_array(
+        &mut self,
+        count: usize,
+        width: usize,
+        packed: bool,
+    ) -> Result<(), WireError> {
+        let at = self.at;
+        self.skip_elements(at, count, width, packed)
+    }
+
+    fn skip_elements(
+        &mut self,
+        at: usize,
+        count: usize,
+        width: usize,
+        packed: bool,
+    ) -> Result<(), WireError> {
+        if count == 0 {
+            return Ok(());
+        }
+        if !packed {
+            self.align_to(width)?;
+        }
+        let length = count
+            .checked_mul(width)
+            .ok_or(WireError::ImpossibleLength {
+                at,
+                claimed: count,
+                available: self.remaining(),
+            })?;
+        if length > self.remaining() {
+            return Err(WireError::ImpossibleLength {
+                at,
+                claimed: count,
+                available: self.remaining(),
+            });
+        }
+        self.take(length).map(|_| ())
+    }
 
     /// A DHEADER: the length the members that follow occupy.
     ///

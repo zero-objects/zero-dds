@@ -30,8 +30,8 @@ all optional (NULL = ignored).
 `ZeroDdsSubscriberListener`, `ZeroDdsTopicListener`,
 `ZeroDdsDataWriterListener`, `ZeroDdsDataReaderListener`.
 
-**Tests:** `listener_ffi::tests::dp_set_get_listener_roundtrip`,
-`dw_set_listener_clear_via_null`.
+**Tests:** `listener_ffi::tests::capi_14_5_dp_set_get_listener_roundtrip`,
+`ffiloader_2_6_dw_set_listener_clear_via_null`.
 
 **Status:** done
 
@@ -44,7 +44,7 @@ every callback.
 field; `fire_writer_vtable` / `fire_reader_vtable` pass it to each
 callback.
 
-**Tests:** `listener_ffi::tests::dp_set_get_listener_roundtrip`.
+**Tests:** `listener_ffi::tests::capi_14_5_dp_set_get_listener_roundtrip`.
 
 **Status:** done
 
@@ -57,8 +57,8 @@ type; NULL clears.
 `zerodds_{dp,dw,dr}_get_listener`. `set_listener(NULL)` removes the
 registry entry and the cached counters.
 
-**Tests:** `listener_ffi::tests::dp_set_get_listener_roundtrip`,
-`dw_set_listener_clear_via_null`.
+**Tests:** `listener_ffi::tests::capi_14_5_dp_set_get_listener_roundtrip`,
+`ffiloader_2_6_dw_set_listener_clear_via_null`.
 
 **Status:** done
 
@@ -73,8 +73,8 @@ registry entry and the cached counters.
 **Repo:** `ZeroDdsDomainParticipantListener`; both callbacks fired by the
 DP aggregator in `zerodds_poll_listeners` (§6.3, §6.4).
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`,
-`poll_fires_inconsistent_topic_for_topic_and_participant`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`,
+`ffiloader_2_6_poll_fires_inconsistent_topic_for_topic_and_participant`.
 
 **Status:** done
 
@@ -86,8 +86,8 @@ DataWriters.
 **Repo:** `ZeroDdsPublisherListener`; the Publisher aggregator walks
 `publisher.datawriters` and fires via `fire_writer_vtable`.
 
-**Tests:** `listener_ffi::tests::poll_listeners_returns_count_and_clears_state`
-(poll path), `dp_set_get_listener_roundtrip` (registry).
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_listeners_returns_count_and_clears_state`
+(poll path), `capi_14_5_dp_set_get_listener_roundtrip` (registry).
 
 **Status:** done
 
@@ -99,7 +99,7 @@ DataWriters.
 `subscriber.datareaders`, fires the 7 reader callbacks via
 `fire_reader_vtable` and `on_data_on_readers` with set semantics.
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`.
 
 **Status:** done
 
@@ -110,7 +110,7 @@ DataWriters.
 **Repo:** `ZeroDdsTopicListener`; fired by the Topic-level pass on an
 inconsistent-topic counter delta.
 
-**Tests:** `listener_ffi::tests::poll_fires_inconsistent_topic_for_topic_and_participant`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_inconsistent_topic_for_topic_and_participant`.
 
 **Status:** done
 
@@ -122,7 +122,7 @@ inconsistent-topic counter delta.
 **Repo:** `ZeroDdsDataWriterListener`; fired by the DataWriter level via
 `fire_writer_vtable`.
 
-**Tests:** `listener_ffi::tests::poll_listeners_returns_count_and_clears_state`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_listeners_returns_count_and_clears_state`.
 
 **Status:** done
 
@@ -133,7 +133,7 @@ inconsistent-topic counter delta.
 **Repo:** `ZeroDdsDataReaderListener`; fired by the DataReader level via
 `fire_reader_vtable`.
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`.
 
 **Status:** done
 
@@ -149,7 +149,7 @@ site checks `mask & STATUS_*` before invoking. Bit constants
 `STATUS_INCONSISTENT_TOPIC` … `STATUS_SUBSCRIPTION_MATCHED` match the DDS
 PSM values.
 
-**Tests:** `listener_ffi::tests::poll_listeners_returns_count_and_clears_state`
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_listeners_returns_count_and_clears_state`
 (mask `0xFFFFFFFF`).
 
 **Status:** done
@@ -166,7 +166,7 @@ synchronously inside a `set_listener`/`write`/`take` call.
 **Repo:** `zerodds_poll_listeners` is the only fire site; the registry
 holds raw pointers and `set_listener` never invokes callbacks.
 
-**Tests:** `listener_ffi::tests::poll_listeners_returns_count_and_clears_state`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_listeners_returns_count_and_clears_state`.
 
 **Status:** done
 
@@ -178,7 +178,7 @@ listener/entity.
 **Repo:** registry snapshots are taken and all locks released before any
 callback runs, so a callback may re-enter read APIs without deadlock.
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`
 (callbacks run outside the registry locks).
 
 **Status:** done
@@ -190,7 +190,7 @@ callback runs, so a callback may re-enter read APIs without deadlock.
 **Repo:** `static OnceLock<ListenerRegistry>` stores raw pointers;
 `set_listener(NULL)` clears.
 
-**Tests:** `listener_ffi::tests::dw_set_listener_clear_via_null`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_dw_set_listener_clear_via_null`.
 
 **Status:** done
 
@@ -207,7 +207,7 @@ fires the DataWriter/DataReader level and each bound aggregator level
 independently via `collect_publisher_writers` /
 `collect_subscriber_readers` / `collect_participant_subscriber_readers`.
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`
 (DataReader + Subscriber both fire for one sample).
 
 **Status:** done
@@ -224,7 +224,7 @@ DataWriter and Publisher levels.
 **Repo:** `read_writer_counters` + `writer_delta` + `fire_writer_vtable`;
 counters from `DcpsRuntime::user_writer_*`.
 
-**Tests:** `listener_ffi::tests::poll_listeners_returns_count_and_clears_state`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_listeners_returns_count_and_clears_state`.
 
 **Status:** done
 
@@ -237,7 +237,7 @@ reader-counter delta at the DataReader and Subscriber levels.
 **Repo:** `read_reader_counters` (incl. `user_reader_liveliness_status`,
 `user_reader_sample_rejected`) + `reader_delta` + `fire_reader_vtable`.
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`.
 
 **Status:** done
 
@@ -251,7 +251,7 @@ user-delivery sites) exposed via `DcpsRuntime::user_reader_samples_delivered`;
 the Subscriber/DP aggregators fire `on_data_on_readers` once per
 subscriber with a data delta.
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`.
 
 **Status:** done
 
@@ -268,7 +268,7 @@ on Topic and DomainParticipant listeners.
 `inconsistent_topic_count`; poll fires on the Topic/DP levels.
 
 **Tests:** `sedp::cache::tests::topic_name_conflicts_detects_type_mismatch`,
-`listener_ffi::tests::poll_fires_inconsistent_topic_for_topic_and_participant`.
+`listener_ffi::tests::ffiloader_2_6_poll_fires_inconsistent_topic_for_topic_and_participant`.
 
 **Status:** done
 
@@ -285,18 +285,20 @@ on Topic and DomainParticipant listeners.
 `_DataWriterListenerBridge`/`_DataReaderListenerBridge` each, with static
 `extern "C"` shims; `user_data` points at the C++ listener subclass.
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_listener_bridge_dispatches_to_virtual`
-— reads back the vtable the bridge installed, via `zerodds_dw_get_listener`/
-`zerodds_dr_get_listener`, and invokes its entries exactly as
-`zerodds_poll_listeners()` does (`fn(vt->user_data, handle)`): `user_data` is
+The callbacks `on_publication_matched`, `on_liveliness_lost` (writer) and
+`on_data_available` (reader) are virtual methods of the listener classes.
+
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_bridge_dispatches_to_virtual`
+— reads back the vtable the bridge installed, via the getters of the
+C API (zerodds_dw_get_listener, zerodds_dr_get_listener), and invokes its entries exactly as
+the poll function of the C API (zerodds_poll_listeners) does (`fn(vt->user_data, handle)`): `user_data` is
 the C++ subclass itself, `on_publication_matched` and `on_liveliness_lost`
 each reach their own virtual method on the writer, `on_data_available`
 reaches the reader's, a NULL `user_data` fires nothing, and
 `attach(..., nullptr, 0)` unregisters again.
-`crates/cpp/tests/smoke_dds_psm.cpp::test_listener_attach_detach` covers the
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_listener_attach_detach` covers the
 no-poll case beside it. Driven through
-`crates/cpp/tests/cpp_smoke_via_cargo.rs::dds_psm_cxx_smoke`; locally (macOS,
-this run) 1/1 green, `OK — all DDS-PSM-Cxx smoke tests passed`.
+`crates/cpp/CMakeLists.txt::dds_psm_cxx_smoke`; locally (macOS) 1/1 green, `OK — all DDS-PSM-Cxx smoke tests passed`.
 
 **Status:** done
 
@@ -316,14 +318,16 @@ this run) 1/1 green, `OK — all DDS-PSM-Cxx smoke tests passed`.
 `crates/cs/csharp/ZeroDDS/src/Native.cs`
 (`DwSetListenerRaw`/`DrSetListenerRaw`, `PollListeners`).
 
-**Tests:** `crates/cs/csharp/ZeroDDS.Tests/Program.cs`, the "Listener attach +
-active firing" block: no callback before the first poll (§4.1), one
+The callbacks `on_publication_matched`, `on_subscription_matched` and
+`on_data_available` are methods of `IDataWriterListener<T>`/`IDataReaderListener<T>`.
+
+**Tests:** `crates/cs/csharp/ZeroDDS.Tests/BindingTests.cs::listenercallbacks_7_2_the_csharp_listener_bridge_fires_once_per_change_and_not_after_dispose`:
+no callback before the first poll (§4.1), one
 `on_publication_matched` and one `on_subscription_matched` on the first poll
 with the status read back (§6.1/§6.2), no second callback without a delta (§6),
 `on_data_available` after a `Write` (§6.3), and no callback at all once the
-registration is disposed (§1.3/§9). Run through
-`crates/cs/csharp/build_cs_smoke.sh`:
-`OK — all C# DDS-PSM-Cxx smoke tests passed`.
+registration is disposed (§1.3/§9). Runs in the job `merge-cs` (xUnit over
+`libzerodds`).
 
 **Status:** done
 
@@ -343,8 +347,11 @@ Status types
 `org/omg/dds/core/status/{SubscriptionMatchedStatus,PublicationMatchedStatus}.java`.
 Multi-process through `org/zerodds/bridge/GrpcBridgeClient.java`.
 
-**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/ListenerTest.java`
-(5 cases: the match plus one callback per sample, the writer-side
+The callback `on_publication_matched` is `onPublicationMatched` of the Java interface.
+
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/ListenerTest.java::javapsm_2_reader_listener_fires_on_match_and_on_every_sample`,
+`::javapsm_2_writer_listener_fires_on_publication_matched`, `::javapsm_2_clearing_the_listener_stops_delivery`
+(of 5 cases: the match plus one callback per sample, the writer-side
 `on_publication_matched` including the un-match, `setListener(null)` delivering
 nothing further while the samples still arrive, a non-overlapping PARTITION not
 being a match, and the status staying readable with no listener bound),
@@ -365,7 +372,10 @@ listener-equivalent under the GIL.
 operations release the GIL via `py.detach`), `crates/py/src/listener.rs`
 (`DataWriterListener`/`DataReaderListener` as callback holders).
 
-**Tests:** `crates/py/python/tests/test_listener.py` (6 cases over listener
+`set_listener` on `DataWriter` and `DataReader` attaches the holder.
+
+**Tests:** `crates/py/python/tests/test_listener.py::py_6_5_set_listener_on_bytes_writer_offline`,
+`::py_6_5_set_listener_on_bytes_reader_offline` (of 6 cases over listener
 construction and `set_listener` on the reader and the writer),
 `crates/py/python/tests/test_smoke.py`.
 
@@ -405,17 +415,16 @@ nothing without delta, aggregator firing, inconsistent-topic firing.
 
 **Tests:** `crates/zerodds-c-api/src/listener_ffi.rs` — five tests, one per
 obligation in the clause:
-- Obligation 1 (identity round-trip): `listener_ffi::tests::dp_set_get_listener_roundtrip`.
-- Obligation 2 (NULL clear): `listener_ffi::tests::dw_set_listener_clear_via_null`.
+- Obligation 1 (identity round-trip): `listener_ffi::tests::capi_14_5_dp_set_get_listener_roundtrip`.
+- Obligation 2 (NULL clear): `listener_ffi::tests::ffiloader_2_6_dw_set_listener_clear_via_null`.
 - Obligation 3 (poll fires on a delta, nothing without one):
-  `listener_ffi::tests::poll_listeners_returns_count_and_clears_state`.
+  `listener_ffi::tests::ffiloader_2_6_poll_listeners_returns_count_and_clears_state`.
 - Obligation 4 (aggregator firing incl. `on_data_on_readers` set semantics):
-  `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`.
+  `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`.
 - Obligation 5 (inconsistent topic on the Topic and the DomainParticipant):
-  `listener_ffi::tests::poll_fires_inconsistent_topic_for_topic_and_participant`.
+  `listener_ffi::tests::ffiloader_2_6_poll_fires_inconsistent_topic_for_topic_and_participant`.
 
-Run with `cargo test -p zerodds-c-api --lib listener_ffi`; locally (macOS,
-this run) 5/5 green, 0 failures.
+Run with `cargo test -p zerodds-c-api --lib listener_ffi`; locally (macOS) 5/5 green, 0 failures.
 
 **Status:** done
 
@@ -430,7 +439,7 @@ caller must clear before freeing.
 listeners before entity teardown so no dangling pointer survives a later
 poll.
 
-**Tests:** `listener_ffi::tests::dw_set_listener_clear_via_null`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_dw_set_listener_clear_via_null`.
 
 **Status:** done
 
@@ -458,9 +467,9 @@ actively fired; `user_data` is a vendor detail.
 **Repo:** all 17 callbacks across the 6 structs are exposed and fired
 (§6); `user_data` threaded through every fire site.
 
-**Tests:** `listener_ffi::tests::poll_fires_data_available_and_data_on_readers`,
-`poll_fires_inconsistent_topic_for_topic_and_participant`,
-`poll_listeners_returns_count_and_clears_state`.
+**Tests:** `listener_ffi::tests::ffiloader_2_6_poll_fires_data_available_and_data_on_readers`,
+`ffiloader_2_6_poll_fires_inconsistent_topic_for_topic_and_participant`,
+`ffiloader_2_6_poll_listeners_returns_count_and_clears_state`.
 
 **Status:** done
 
@@ -468,18 +477,18 @@ actively fired; `user_data` is a vendor detail.
 
 ## Audit-Status
 
-26 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+26 done / 0 partial / 0 open / 0 blocked / 1 n/a (informative).
 
-Test run: `cargo test -p zerodds-c-api -p zerodds-discovery -p zerodds-dcps --lib`
-— 791 tests green, 0 failed, 1 ignored.
-Language sides: `crates/cs/csharp/build_cs_smoke.sh` with no failure;
-`mvn test` in `crates/java-omgdds/java/` 95 tests, 0 failures, `ListenerTest`
-5/5 among them; `run_grpc_bridge_e2e.sh` 3/3;
-`pytest crates/py/python/tests/test_listener.py`;
-`cargo test -p zerodds-cpp --test cpp_smoke_via_cargo` 1/1 (§7.1, locally
-macOS, this run); `npm test` in `crates/ts-node` — `smoke.test.ts` 8/8
-(§7.5, locally macOS, this run);
-`cargo test -p zerodds-c-api --lib listener_ffi` 5/5 (§8, locally macOS,
-this run).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-listener-callbacks-1.1.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (job `merge-rust-c-api`) — 5 tests green.
+* `cargo nextest run --profile merge -p zerodds-discovery --all-targets` (job `merge-rust-discovery`) — 1 test green.
+* `python3 ci/run_integration.py merge-cs` (job `merge-cs`) — 1 test green.
+* `python3 ci/run_integration.py merge-java-omgdds` (job `merge-java-omgdds`) — 3 tests green.
+* `python3 ci/run_integration.py integration-python` (job `integration-python`) — 2 tests green.
+* `python3 ci/run_integration.py integration-sdk` (job `integration-sdk`) — 3 tests green.
+* job `ts-node-test` — 5 tests green.
+
+20 cited tests green, 0 not green.
+
+Open items: none.

@@ -42,9 +42,10 @@ export interface SampleInfo {
   readonly sequenceNumber: bigint;
   readonly publicationHandle: DdsGuid;
   readonly instanceHandle: bigint;
-  /// Wire byte order of `bytes` (the bridge reports it out-of-band because the
-  /// forwarded payload has no encapsulation header): `false` = little-endian,
-  /// `true` = big-endian. The typed decoder dispatches its byte order on it.
+  /// Byte order of `bytes`, from the encapsulation header of the bridge's
+  /// frame (zerodds-ws-bridge-1.0 §4.3, DDSI-RTPS 2.5 §10.5): `false` =
+  /// little-endian, `true` = big-endian. The typed decoder dispatches its
+  /// byte order on it.
   readonly bigEndian: boolean;
 }
 

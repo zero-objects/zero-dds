@@ -439,6 +439,9 @@ fn build_iv(key_nonce: &[u8], message_nonce: &[u8]) -> [u8; AES_IV_LEN] {
     let mut iv = [0u8; AES_IV_LEN];
     iv[..KEY_NONCE_LEN].copy_from_slice(key_nonce);
     iv[KEY_NONCE_LEN..KEY_NONCE_LEN + MESSAGE_NONCE_LEN].copy_from_slice(message_nonce);
+    // Part 14 Table 157: the BlockCounter, a big-endian UInt32, starts with
+    // 1 at the first block (as in RFC 3686 §4).
+    iv[KEY_NONCE_LEN + MESSAGE_NONCE_LEN..].copy_from_slice(&1_u32.to_be_bytes());
     iv
 }
 
@@ -642,42 +645,154 @@ mod tests {
 
     const NONCE: [u8; MESSAGE_NONCE_LEN] = [1, 2, 3, 4, 5, 6, 7, 8];
 
-    #[test]
-    fn sign_only_round_trip() {
-        let policy = SecurityPolicy::Aes256Ctr;
-        let svc = sks(policy);
-        let nm = sample_nm();
-        let bytes = protect(&nm, policy, svc.current_key(), &NONCE, false).expect("protect");
-        let back = unprotect(&bytes, policy, &svc).expect("unprotect");
-        assert_eq!(back, nm);
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
+            .collect()
     }
 
+    /// Part 14 §7.2.4.4.3.2, Table 157: the AES-CTR counter block is
+    /// KeyNonce ‖ MessageNonce ‖ a big-endian BlockCounter starting at 1,
+    /// the counter block of RFC 3686 §4; its test vectors #1 (AES-128) and
+    /// #7 (AES-256), "Single block msg".
     #[test]
-    fn encrypt_and_sign_round_trip_aes256() {
-        let policy = SecurityPolicy::Aes256Ctr;
-        let svc = sks(policy);
-        let nm = sample_nm();
-        let bytes = protect(&nm, policy, svc.current_key(), &NONCE, true).expect("protect");
-        // The Int32 payload must not appear in the clear.
-        assert!(!bytes.windows(4).any(|w| w == 1234i32.to_le_bytes()));
-        let back = unprotect(&bytes, policy, &svc).expect("unprotect");
-        assert_eq!(back, nm);
+    fn uapubsub_7_2_4_4_3_2_aes_ctr_uses_the_counter_block_of_table_157() {
+        for (policy, key, key_nonce, message_nonce, cipher) in [
+            (
+                SecurityPolicy::Aes128Ctr,
+                "ae6852f8121067cc4bf7a5765577f39e",
+                "00000030",
+                "0000000000000000",
+                "e4095d4fb7a7b3792d6175a3261311b8",
+            ),
+            (
+                SecurityPolicy::Aes256Ctr,
+                "776beff2851db06f4c8a0542c8696f6c6a81af1eec96b4d37fc1d689e6c1c104",
+                "00000060",
+                "db5672c97aa8f0b2",
+                "145ad01dbf824ec7560863dc71e3e0c0",
+            ),
+        ] {
+            let k = SecurityKey {
+                token_id: 1,
+                signing_key: alloc::vec![0; 32],
+                encrypting_key: hex(key),
+                key_nonce: hex(key_nonce),
+            };
+            let mut buf = b"Single block msg".to_vec();
+            aes_ctr_xor(policy, &k, &hex(message_nonce), &mut buf);
+            assert_eq!(buf, hex(cipher), "{policy:?}");
+        }
     }
 
+    /// The octets of `sample_nm()` with the Security bit (Part 14 Table
+    /// 154: UADPFlags 0xD1, ExtendedFlags1 0x11 for a UInt16 PublisherId
+    /// and the SecurityHeader, PublisherId 9, PayloadHeader for writer 5),
+    /// the SecurityHeader (SecurityFlags, SecurityTokenId 7, NonceLength
+    /// 8, the MessageNonce), then the payload (one DataSetMessage, Int32
+    /// 1234).
+    fn secured_prefix(flags: u8) -> (Vec<u8>, Vec<u8>) {
+        let mut head = alloc::vec![0xD1, 0x11, 0x09, 0x00, 0x01, 0x05, 0x00, flags];
+        head.extend_from_slice(&7_u32.to_le_bytes());
+        head.push(8);
+        head.extend_from_slice(&NONCE);
+        (
+            head,
+            alloc::vec![0x01, 0x01, 0x00, 0x06, 0xD2, 0x04, 0x00, 0x00],
+        )
+    }
+
+    fn signed(mut bytes: Vec<u8>, key: &SecurityKey) -> Vec<u8> {
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(&key.signing_key).expect("key");
+        mac.update(&bytes);
+        bytes.extend_from_slice(&mac.finalize().into_bytes());
+        bytes
+    }
+
+    /// Part 14 Table 154 and §7.2.4.4.3.2: a signed NetworkMessage is the
+    /// header with the Security bit, the SecurityHeader (SecurityFlags 0x01
+    /// signed), the payload in the clear and the HMAC-SHA256 under the
+    /// SigningKey of everything before it.
     #[test]
-    fn aead_gcm_round_trip() {
+    fn uapubsub_7_2_4_4_3_a_signed_network_message_is_header_payload_and_hmac() {
+        let policy = SecurityPolicy::Aes256Ctr;
+        let svc = sks(policy);
+        let (mut expected, payload) = secured_prefix(0x01);
+        expected.extend_from_slice(&payload);
+        let expected = signed(expected, svc.current_key());
+        let nm = sample_nm();
+        assert_eq!(
+            protect(&nm, policy, svc.current_key(), &NONCE, false).expect("protect"),
+            expected
+        );
+        assert_eq!(unprotect(&expected, policy, &svc).expect("unprotect"), nm);
+    }
+
+    /// Part 14 §7.2.4.4.3.2: encrypted and signed (SecurityFlags 0x03), the
+    /// payload under AES-CTR with the counter block of Table 157, the
+    /// signature over the encrypted message; PubSub-Aes128-CTR and
+    /// PubSub-Aes256-CTR.
+    #[test]
+    fn uapubsub_7_2_4_4_3_2_an_encrypted_network_message_is_aes_ctr_of_the_payload_then_the_hmac() {
+        for policy in [SecurityPolicy::Aes128Ctr, SecurityPolicy::Aes256Ctr] {
+            let svc = sks(policy);
+            let key = svc.current_key();
+            let (mut expected, mut payload) = secured_prefix(0x03);
+            aes_ctr_xor(policy, key, &NONCE, &mut payload);
+            expected.extend_from_slice(&payload);
+            let expected = signed(expected, key);
+            let nm = sample_nm();
+            assert_eq!(
+                protect(&nm, policy, key, &NONCE, true).expect("protect"),
+                expected,
+                "{policy:?}"
+            );
+            assert_eq!(unprotect(&expected, policy, &svc).expect("unprotect"), nm);
+        }
+    }
+
+    /// PubSub-Aes256-GCM (this module's AEAD policy): the header and the
+    /// SecurityHeader are the additional authenticated data, the nonce is
+    /// KeyNonce ‖ MessageNonce, the AES-256-GCM output (ciphertext ‖ tag)
+    /// follows. The AES-GCM primitive against test case 14 of McGrew and
+    /// Viega (key and IV zero, one zero block).
+    #[test]
+    fn aes256_gcm_policy_seals_the_payload_with_the_header_as_aad() {
+        let zero = <Aes256Gcm as KeyInit>::new_from_slice(&[0; 32]).expect("key");
+        assert_eq!(
+            zero.encrypt(Nonce::from_slice(&[0; 12]), [0_u8; 16].as_slice())
+                .expect("seal"),
+            hex("cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919")
+        );
+
         let policy = SecurityPolicy::Aes256Gcm;
         let svc = sks(policy);
+        let key = svc.current_key();
+        let (mut expected, payload) = secured_prefix(0x03);
+        let mut nonce = key.key_nonce.clone();
+        nonce.extend_from_slice(&NONCE);
+        let cipher = <Aes256Gcm as KeyInit>::new_from_slice(&key.encrypting_key).expect("key");
+        let sealed = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: &payload,
+                    aad: &expected,
+                },
+            )
+            .expect("seal");
+        expected.extend_from_slice(&sealed);
         let nm = sample_nm();
-        let bytes = protect(&nm, policy, svc.current_key(), &NONCE, true).expect("protect");
-        // AEAD: the Int32 payload must not appear in the clear.
-        assert!(!bytes.windows(4).any(|w| w == 1234i32.to_le_bytes()));
-        let back = unprotect(&bytes, policy, &svc).expect("unprotect");
-        assert_eq!(back, nm);
+        assert_eq!(
+            protect(&nm, policy, key, &NONCE, true).expect("protect"),
+            expected
+        );
+        assert_eq!(unprotect(&expected, policy, &svc).expect("unprotect"), nm);
     }
 
     #[test]
-    fn aead_gcm_tag_detects_tampering() {
+    fn uapubsub_5_3_5_aead_gcm_tag_detects_tampering() {
         let policy = SecurityPolicy::Aes256Gcm;
         let svc = sks(policy);
         let mut bytes = protect(&sample_nm(), policy, svc.current_key(), &NONCE, true).expect("p");
@@ -699,17 +814,7 @@ mod tests {
     }
 
     #[test]
-    fn encrypt_and_sign_round_trip_aes128() {
-        let policy = SecurityPolicy::Aes128Ctr;
-        let svc = sks(policy);
-        let nm = sample_nm();
-        let bytes = protect(&nm, policy, svc.current_key(), &NONCE, true).expect("protect");
-        let back = unprotect(&bytes, policy, &svc).expect("unprotect");
-        assert_eq!(back, nm);
-    }
-
-    #[test]
-    fn tampered_payload_is_rejected() {
+    fn uapubsub_5_3_5_tampered_payload_is_rejected() {
         let policy = SecurityPolicy::Aes256Ctr;
         let svc = sks(policy);
         let mut bytes = protect(&sample_nm(), policy, svc.current_key(), &NONCE, true).expect("p");
@@ -749,7 +854,7 @@ mod tests {
     }
 
     #[test]
-    fn sks_rotation_and_lookup() {
+    fn uapubsub_8_3_2_sks_rotation_and_lookup() {
         let policy = SecurityPolicy::Aes128Ctr;
         let mut svc = sks(policy);
         let future =
@@ -764,7 +869,7 @@ mod tests {
     }
 
     #[test]
-    fn get_security_keys_snapshot() {
+    fn uapubsub_8_3_2_get_security_keys_snapshot() {
         let policy = SecurityPolicy::Aes256Ctr;
         let svc = sks(policy);
         let keys = svc.get_security_keys();
@@ -774,7 +879,7 @@ mod tests {
     }
 
     #[test]
-    fn get_security_keys_for_method_result() {
+    fn uapubsub_8_3_2_get_security_keys_for_method_result() {
         let policy = SecurityPolicy::Aes128Ctr;
         let mut svc = sks(policy); // current token 7
         svc.push_future_key(

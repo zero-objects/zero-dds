@@ -17,6 +17,17 @@ publish = true
 [lints]
 workspace = true
 
+# The crate tier runs the tests of this crate with its default features and
+# once more with each of these (internal/release/rc8-test-suite.md, "Crate
+# tier"): the runtime's DDS-Security paths, the same-host SHM channel and the
+# FlatData dual stack are behind features no default build has.
+[package.metadata.crate-tier]
+feature-runs = ["security", "same-host-shm", "flatdata-integration"]
+# The 145 tests of `security` took 225 s of a 5-minute job on an idle
+# runner (job 227931) and passed the limit under load (jobs 228203, 228232):
+# two jobs, each half of them (nextest `--partition count:k/2`).
+feature-run-partitions = { security = 2 }
+
 [lib]
 path = "src/lib.rs"
 
@@ -225,3 +236,52 @@ zerodds-wire-probe = { path = "../wire-probe" }
 serde_json = "1"
 # documentation/06-operations/monitoring.md metrics::gauge! fragment.
 metrics = "0.24"
+
+# The contract with zerodds-flatdata (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-flatdata only with `flatdata-integration`.
+[[test]]
+name = "contract_flatdata"
+path = "tests/contract_flatdata.rs"
+required-features = ["flatdata-integration"]
+
+# The contract with zerodds-transport-shm (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-transport-shm only with `same-host-shm`.
+[[test]]
+name = "contract_transport_shm"
+path = "tests/contract_transport_shm.rs"
+required-features = ["same-host-shm"]
+
+# The contract with zerodds-transport-uds (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-transport-uds only with `same-host-uds`.
+[[test]]
+name = "contract_transport_uds"
+path = "tests/contract_transport_uds.rs"
+required-features = ["same-host-uds"]
+
+# The contract with zerodds-transport-tsn (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-transport-tsn only with `tsn-live`.
+[[test]]
+name = "contract_transport_tsn"
+path = "tests/contract_transport_tsn.rs"
+required-features = ["tsn-live"]
+
+# The contract with zerodds-security (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-security only with `security`.
+[[test]]
+name = "contract_security"
+path = "tests/contract_security.rs"
+required-features = ["security"]
+
+# The contract with zerodds-security-logging (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-security-logging only with `security`.
+[[test]]
+name = "contract_security_logging"
+path = "tests/contract_security_logging.rs"
+required-features = ["security"]
+
+# The contract with zerodds-security-runtime (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-security-runtime only with `security`.
+[[test]]
+name = "contract_security_runtime"
+path = "tests/contract_security_runtime.rs"
+required-features = ["security"]

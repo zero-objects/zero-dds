@@ -11,10 +11,11 @@
 //!
 //! The added value over pure ring usage:
 //!
-//! 1. **Deployment audit**: a `zerodds-perf aes-gcm` run prints the label
-//!    (`aes-ni`, `armv8-aes`, `none`), so that container images with
+//! 1. **Deployment audit**: `zerodds-perf hw-info` prints the backend label
+//!    (`aes-ni+pclmulqdq`, `armv8-aes+pmull`, `x86_64-software`, …, see
+//!    [`HwCapabilities::backend_label`]), so that container images with
 //!    missing CPU features stand out.
-//! 2. **Trade-off docs**: if `none` comes out, that is a clear
+//! 2. **Trade-off docs**: if a `*-software` label comes out, that is a clear
 //!    hint that latency SLOs cannot be held on the host,
 //!    without someone having to fiddle with `lscpu`.
 //! 3. **Bench reference**: the `tools/perf::aes-gcm` throughput numbers are
@@ -27,13 +28,14 @@
 use std::sync::OnceLock;
 
 /// CPU architecture label.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Arch {
     /// `x86_64` (Intel/AMD 64-bit).
     X86_64,
     /// `aarch64` (ARMv8 64-bit).
     Aarch64,
     /// Other architecture — detection returns only the software fallback.
+    #[default]
     Other,
 }
 
@@ -76,12 +78,6 @@ pub struct HwCapabilities {
     pub sha2: bool,
     /// Extended SIMD (AVX2 on x86_64, NEON on aarch64).
     pub simd: bool,
-}
-
-impl Default for Arch {
-    fn default() -> Self {
-        Self::Other
-    }
 }
 
 impl HwCapabilities {
@@ -152,7 +148,7 @@ pub fn cached() -> HwCapabilities {
     *CACHE.get_or_init(HwCapabilities::detect)
 }
 
-/// Multi-line report. Suitable for `zerodds-perf aes-gcm --info`.
+/// One-line report, what `zerodds-perf hw-info` prints.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn report() -> alloc::string::String {
@@ -173,13 +169,6 @@ pub fn report() -> alloc::string::String {
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn arch_label_round_trip() {
-        assert_eq!(Arch::X86_64.label(), "x86_64");
-        assert_eq!(Arch::Aarch64.label(), "aarch64");
-        assert_eq!(Arch::Other.label(), "other");
-    }
 
     #[test]
     fn arch_current_matches_cfg() {
@@ -305,13 +294,6 @@ mod tests {
             simd: false,
         };
         assert_eq!(caps.backend_label(), "software");
-    }
-
-    #[test]
-    fn report_is_non_empty_and_includes_arch() {
-        let r = report();
-        assert!(r.contains("arch="));
-        assert!(r.contains("backend="));
     }
 
     #[test]

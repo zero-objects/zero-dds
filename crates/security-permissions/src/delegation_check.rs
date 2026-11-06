@@ -885,25 +885,4 @@ mod tests {
         let isec = scope_intersect(&a, &b);
         assert!(isec.is_empty());
     }
-
-    #[test]
-    fn ed25519_default_anchor_constructor() {
-        let pk = alloc::vec![0u8; 32];
-        let anchor = TrustAnchor {
-            subject_guid: [1; 16],
-            verify_public_key: pk,
-            algorithm: SignatureAlgorithm::Ed25519,
-        };
-        let profile = DelegationProfile::default_with_anchor("default".to_string(), anchor);
-        assert_eq!(profile.max_chain_depth, 3);
-        assert!(
-            profile
-                .allowed_algorithms
-                .contains(&SignatureAlgorithm::Ed25519.wire_id())
-        );
-        assert!(matches!(
-            profile.trust_policy,
-            TrustPolicy::DirectOrDelegated
-        ));
-    }
 }

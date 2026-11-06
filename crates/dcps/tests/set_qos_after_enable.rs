@@ -58,7 +58,7 @@ fn eventually(cond: impl Fn() -> bool) -> bool {
 /// The publisher moves to a partition the subscriber is not in: both sides
 /// drop the pair. The subscriber follows: both sides match it again.
 #[test]
-fn a_group_partition_change_unmatches_and_matches_again() {
+fn dcps_2_2_2_4_1_3_a_group_partition_change_unmatches_and_matches_again() {
     let (a, b) = pair();
     let topic_a = a
         .create_topic::<RawBytes>("SetQosPartition", TopicQos::default())
@@ -119,7 +119,7 @@ fn a_group_partition_change_unmatches_and_matches_again() {
 /// is RxO-incompatible now, and each side counts the other once
 /// (DDS 1.4 §2.2.3.7, §2.2.4.1).
 #[test]
-fn a_reader_deadline_change_makes_the_pair_incompatible() {
+fn dcps_2_2_2_5_3_3_a_reader_deadline_change_makes_the_pair_incompatible() {
     let (a, b) = pair();
     let topic_a = a
         .create_topic::<RawBytes>("SetQosDeadline", TopicQos::default())
@@ -162,7 +162,7 @@ fn a_reader_deadline_change_makes_the_pair_incompatible() {
 /// TOPIC_DATA set on the Topic reaches the announcement of a writer that
 /// sets none of its own; a writer's own value stays (DDS 1.4 §2.2.3.2).
 #[test]
-fn a_topic_data_change_reaches_the_writers_announcement() {
+fn dcps_2_2_2_4_2_3_a_topic_data_change_reaches_the_writers_announcement() {
     let (a, _b) = pair();
     let topic = a
         .create_topic::<RawBytes>("SetQosTopicData", TopicQos::default())
@@ -195,7 +195,7 @@ fn a_topic_data_change_reaches_the_writers_announcement() {
 /// participant (DDS 1.4 §2.2.5), and a `set_qos` of it arrives there as a
 /// new sample.
 #[test]
-fn a_user_data_change_reaches_the_peers_builtin_reader() {
+fn dcps_2_2_3_1_a_user_data_change_reaches_the_peers_builtin_reader() {
     let (a, b) = pair();
     let topic = a
         .create_topic::<RawBytes>("SetQosUserData", TopicQos::default())
@@ -232,7 +232,7 @@ fn a_user_data_change_reaches_the_peers_builtin_reader() {
 /// reads the other's announced data, and a reader's `set_qos` reaches
 /// the writer's copy.
 #[test]
-fn matched_data_across_participants_follows_a_set_qos() {
+fn dcps_2_2_2_4_2_3_matched_data_across_participants_follows_a_set_qos() {
     let (a, b) = pair();
     let topic_a = a
         .create_topic::<RawBytes>("SetQosMatchedData", TopicQos::default())

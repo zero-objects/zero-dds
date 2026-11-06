@@ -1,8 +1,18 @@
 # Delegation — gateway/bridge identity for vehicle mesh + loosely coupled systems
 
-> **Status:** Draft v0.1 (2026-04-25)
 > **Dependencies:** `08_heterogeneous_security.md` (peer classes, interface routing),
 >   `02_architecture.md §3` (transport layers), WP 4H-i (PKI↔crypto integration)
+>
+> **Code:** `crates/security-pki/src/delegation.rs` (`DelegationLink`,
+> `DelegationChain`, sign, verify, wire form), `crates/security-permissions/src/delegation_check.rs`
+> (`validate_chain`, `DelegationProfile`, `TrustAnchor`),
+> `crates/security-permissions/src/governance.rs` (the XML of §7.1),
+> `crates/security-runtime/src/gateway_bridge.rs` (`GatewayBridge`),
+> `crates/security-runtime/src/peer_class.rs` (`peer_matches_class_with_delegation`),
+> `crates/security-runtime/src/caps_wire.rs` (the SPDP property). This document
+> describes what that code does. The DCPS runtime calls none of it yet: no
+> participant announces a chain and none is validated during discovery
+> (`internal/release/OPEN-ITEMS.md`).
 
 ## 1 Motivation
 
@@ -128,8 +138,8 @@ Edge peers are additionally sorted into peer classes (WP 4H-h):
 | Fast subsystem with cert | `fast` | Optional (the gateway can represent them anyway) |
 | Highly secure C4I | `highassurance` | No delegation — a direct cert |
 
-The `PeerClassMatch` criteria are extended in stage j-d by
-`delegated_by` / `max_delegation_depth`.
+A peer class requires delegation by naming a delegation profile
+(`PeerClassMatch::delegation_profile`, §7.1).
 
 ### 4.3 Trust-policy modes
 
@@ -153,20 +163,21 @@ while another profile `internal-bridge` runs on
 
 ```rust
 pub struct DelegationLink {
-    /// Who delegates (known in the receiver's trust anchor, or
-    /// itself delegated by the next link).
+    /// Who delegates: the owner of the key that signed the link.
     pub delegator_guid: [u8; 16],
-    /// To whom it is delegated.
+    /// To whom: the peer that holds the delegated identity.
     pub delegatee_guid: [u8; 16],
-    /// Topic patterns the delegatee may serve on behalf of the
-    /// delegator. Wildcard semantics like `topic_match` (WP 4.2-c).
+    /// Topic patterns the delegatee may serve (wildcards as `topic_match`);
+    /// empty = all, only in the first link.
     pub allowed_topic_patterns: Vec<String>,
-    /// Partition patterns (wildcard).
+    /// Partition patterns; empty = the default partition.
     pub allowed_partition_patterns: Vec<String>,
     /// Validity window (Unix seconds).
     pub not_before: i64,
     pub not_after: i64,
-    /// Signature by the delegator cert over all of the above fields.
+    /// The algorithm the link is signed with (§7.2).
+    pub algorithm: SignatureAlgorithm,
+    /// Signature by the delegator over the fields above.
     pub signature: Vec<u8>,
 }
 ```
@@ -175,192 +186,154 @@ pub struct DelegationLink {
 
 ```rust
 pub struct DelegationChain {
-    /// Original claim bearer — the peer whose identity is in the
-    /// sample header. Must === links[0].delegatee_guid.
+    /// The participant the chain starts at: the delegator of `links[0]`,
+    /// whose key is a trust anchor of the receiver's profile.
     pub origin_guid: [u8; 16],
-    /// Chain in delegation order. First entry: the gateway
-    /// that attests the identity of origin_guid. Subsequent
-    /// entries are re-delegations.
+    /// Links in delegation order: `links[0]` from the origin to the first
+    /// delegatee, each next one from the previous delegatee onward; the
+    /// delegatee of the last link is the edge, the peer whose GUID is in
+    /// the samples (`DelegationChain::edge_guid`).
     pub links: Vec<DelegationLink>,
 }
 ```
 
+At most 8 links (`MAX_CHAIN_DEPTH_HARD_CAP`); a profile sets a lower limit
+(§6 point 6). A gateway that is itself a delegatee (§3.2) prepends the chain
+it received to its own link (`GatewayBridge::with_upstream`, `chain_for`).
+
 ### 5.3 Ephemeral vs. static edge identity
 
-Default: **static GuidPrefix** from the gateway config.
+Default: **static GuidPrefix** from the governance.
 
 ```xml
-<!-- gateway config (example) -->
-<edge_identities>
-  <edge name="lidar-A" guid_prefix="01020304050607080900000a" />
-  <edge name="radar-B" guid_prefix="01020304050607080900000b" />
-</edge_identities>
-```
-
-Optional: **ephemeral identity** per boot cycle or sample batch,
-when replay robustness is required. The gateway then generates a
-random GuidPrefix and signs it short-lived.
-
-```xml
-<edge_identities default_mode="static">
-  <edge name="lidar-A" guid_prefix="0102030405060708090...a" />
-  <edge name="radar-B" mode="ephemeral" lifetime_seconds="300" />
-</edge_identities>
+<zerodds:edge_identities default_mode="static">
+  <zerodds:edge name="lidar-A" guid_prefix="01020304050607080900000a" />
+  <zerodds:edge name="radar-B" mode="ephemeral" lifetime_seconds="300" />
+</zerodds:edge_identities>
 ```
 
 * **Static** — simple configuration, stable identity across boots,
   susceptible to replay when message counters are not protected
   along with it.
-* **Ephemeral** — a new GuidPrefix + new delegation per
-  `lifetime_seconds`. Replay windows are thus extremely narrow. More
-  SPDP traffic as the price.
+* **Ephemeral** — a new GuidPrefix and a new delegation per
+  `lifetime_seconds` (default 300, `DEFAULT_EPHEMERAL_LIFETIME_SECS`;
+  `GatewayBridge::rotate_ephemerals`). Replay windows are thus narrow, at
+  the price of more SPDP traffic.
 
 ## 6 Chain validation
 
-The receiver validates an incoming sample delegation as follows:
+The receiver validates a chain against a delegation profile
+(`validate_chain`):
 
 1. **Chain continuity**: for all `i`: `links[i].delegatee_guid == links[i+1].delegator_guid`.
-2. **Origin match**: `chain.origin_guid == links[0].delegatee_guid`.
-3. **Trust anchor**: the cert with which `links[0].signature` was created must lie in the receiver trust anchor (i.e. the first delegator is known-trusted).
-4. **Signature chain**: for all `i > 0`: the signature of `links[i]` must be created by the cert that belongs to `links[i-1].delegatee_guid` (i.e. every next delegator is authorized by the previous one).
-5. **Time window**: each `links[i]` with `now ∈ [not_before, not_after]`.
-6. **Chain depth**: `chain.links.len() <= max_delegation_depth` from the governance (default **3**, configurable).
-7. **Scope cascading**: the current topic/partition must match in **every** `allowed_*_pattern` set of all links — this corresponds to the intersection of all scopes (the narrowest hop wins).
+2. **Origin match**: `chain.origin_guid == links[0].delegator_guid`.
+3. **Trust anchor**: `links[0].delegator_guid` is the `subject_guid` of a
+   trust anchor of the profile (`gateway-only`: of its one anchor).
+4. **Signature chain**: `links[0]` verifies with the anchor's public key
+   (and is signed with the anchor's algorithm); every next link with the
+   public key of its delegator, which is the previous link's delegatee.
+5. **Algorithm and time window**: every link's algorithm is in the
+   profile's allowed set, and `now ∈ [not_before, not_after]`.
+6. **Chain depth**: `chain.links.len() <= max_chain_depth` of the profile
+   (default 3).
+7. **Scope intersection**: the topic and partition patterns in force are
+   the intersection of all links' patterns: a later hop only narrows.
+
+The result names the origin, the edge (the last delegatee), the depth and
+the patterns in force (`ValidatedChain`).
 
 ## 7 Configuration
 
-### 7.1 Governance XML — hybrid with named profiles
+### 7.1 Governance XML
 
-Delegation rules are defined as **named profiles** at the top level.
-Peer classes reference profiles via a `delegation_profile`
-attribute. This is DRY (one profile, several peer classes), allows
-differentiated policy per class and stays audit-friendly.
+Delegation profiles are named at the top level, in the namespace
+`https://zerodds.org/schema/security/heterogeneous`; a peer class names the
+profile its peers' chains are validated against.
 
 ```xml
-<!-- top level: named delegation profiles (named types) -->
-<zerodds:delegation_profiles>
-  <profile name="vehicle-internal-gateway">
-    <max_chain_depth>2</max_chain_depth>
-    <trust_policy>gateway-only</trust_policy>
-    <signature_algorithm>ecdsa-p256-sha256</signature_algorithm>
-    <allowed_delegators>
-      <delegator cert_cn_pattern="*.wanne.fleet-42.vehicle" />
-      <delegator cert_cn_pattern="*.turm.fleet-42.vehicle" />
-    </allowed_delegators>
-    <allowed_topics>
-      <topic_pattern>sensor.*</topic_pattern>
-      <topic_pattern>telemetry.*</topic_pattern>
-    </allowed_topics>
-  </profile>
+<dds xmlns:zerodds="https://zerodds.org/schema/security/heterogeneous">
+  <zerodds:delegation_profiles>
+    <zerodds:profile name="vehicle-internal">
+      <zerodds:trust_policy>gateway-only</zerodds:trust_policy>
+      <zerodds:max_chain_depth>2</zerodds:max_chain_depth>
+      <zerodds:require_ocsp>false</zerodds:require_ocsp>
+      <zerodds:allowed_algorithms>
+        <zerodds:algorithm>ECDSA+P256+SHA256</zerodds:algorithm>
+      </zerodds:allowed_algorithms>
+      <zerodds:trust_anchors>
+        <zerodds:anchor subject_guid="01020304050607080910111213141516"
+                        algorithm="ECDSA+P256+SHA256"
+                        public_key="(base64 of the public key)" />
+      </zerodds:trust_anchors>
+    </zerodds:profile>
+  </zerodds:delegation_profiles>
 
-  <profile name="c4i-via-wanne-gateway">
-    <max_chain_depth>3</max_chain_depth>
-    <trust_policy>strict-delegated</trust_policy>
-    <signature_algorithm>ecdsa-p256-sha256</signature_algorithm>
-    <allowed_delegators>
-      <delegator cert_cn_pattern="*.wanne.fleet-42.vehicle" />
-    </allowed_delegators>
-    <allowed_topics>
-      <topic_pattern>c4i.*</topic_pattern>
-    </allowed_topics>
-  </profile>
-
-  <profile name="federated-v2v">
-    <max_chain_depth>3</max_chain_depth>
-    <trust_policy>federation</trust_policy>
-    <signature_algorithm>ecdsa-p256-sha256</signature_algorithm>
-    <allowed_delegators>
-      <delegator cert_cn_pattern="*.gateway.fleet-*.vehicle" />
-    </allowed_delegators>
-  </profile>
-</zerodds:delegation_profiles>
-
-<!-- peer classes reference profiles -->
-<zerodds:peer_classes>
-  <peer_class name="legacy-edge" protection="NONE">
-    <match auth_plugin_class="" delegation_profile="vehicle-internal-gateway" />
-  </peer_class>
-  <peer_class name="c4i-relay" protection="ENCRYPT">
-    <match cert_cn_pattern="*.c4i.nato.int" delegation_profile="c4i-via-wanne-gateway" />
-  </peer_class>
-  <peer_class name="v2v-federated" protection="ENCRYPT">
-    <match cert_cn_pattern="*.gateway.fleet-*.vehicle"
-           delegation_profile="federated-v2v" />
-  </peer_class>
-  <peer_class name="direct-authed" protection="SIGN">
-    <!-- No delegation_profile → direct auth, no chain expected -->
-    <match auth_plugin_class="DDS:Auth:PKI-DH:1.2" />
-  </peer_class>
-</zerodds:peer_classes>
+  <domain_access_rules><domain_rule>
+    <domains><id>0</id></domains>
+    <zerodds:peer_classes>
+      <zerodds:peer_class name="legacy-edge" protection="NONE">
+        <zerodds:match auth_plugin_class="" delegation_profile="vehicle-internal" />
+      </zerodds:peer_class>
+      <zerodds:peer_class name="direct-authed" protection="SIGN">
+        <!-- No delegation_profile: direct authentication, no chain -->
+        <zerodds:match auth_plugin_class="DDS:Auth:PKI-DH:1.2" />
+      </zerodds:peer_class>
+    </zerodds:peer_classes>
+  </domain_rule></domain_access_rules>
+</dds>
 ```
 
-**Parser checks (stage j-h):**
-- `delegation_profile="..."` without an existing `<profile name="...">` → warning
-  `unreferenced delegation profile "<name>"`.
-- `<profile>` without a reference from a peer class → info
-  `delegation profile "<name>" unused`.
+`trust_policy`: `gateway-only`, `direct-or-delegated` (default),
+`federation`, `strict-delegated` (§4.3). A value the parser does not know is
+refused with the value named, as is a profile name declared twice. The
+topic and partition scope is in the links (§5.1), not in the profile.
 
 ### 7.2 Signature algorithm
 
-Configured per profile. Supported values (analogous to rustls-webpki):
+Allowed per profile (`allowed_algorithms`) and per trust anchor
+(`algorithm`). The names are the CryptoAlgorithmName strings of
+DDS-Security 1.2 Table 25 (case does not matter); the short names this
+implementation read before are accepted too:
 
-| Value | Algorithm | Token size | Pros/cons |
-|------|-------------|-------------|----------|
-| `ecdsa-p256-sha256` (default) | ECDSA P-256 + SHA-256 | ~72 byte | Hardware-accelerated on ARM embedded, smallest TLS-standard signature |
-| `ecdsa-p384-sha384` | ECDSA P-384 + SHA-384 | ~104 byte | Higher security, more expensive |
-| `rsa-pss-sha256` | RSA-PSS 2048 + SHA-256 | ~256 byte | OMG-DDS-Security mandatory (spec §9.3.2.1); for fleet interop with legacy vendors |
-| `ed25519` | Ed25519 (pure) | ~64 byte | Fastest, smallest — not OMG-conformant; for high-performance deployments |
+| Name (Table 25) | Also accepted | Algorithm |
+|---|---|---|
+| `ECDSA+P256+SHA256` | `ECDSA-SHA256`, `EC-prime256v1`, `ecdsa-p256` | ECDSA P-256 + SHA-256 |
+| `ECDSA+P384+SHA384` | `ecdsa-p384` | ECDSA P-384 + SHA-384 |
+| `RSASSA-PSS-MGF1SHA256+2048+SHA256` | `RSASSA-PSS-SHA256`, `RSA-2048`, `rsa-pss-2048` | RSA-PSS 2048 + SHA-256 |
+| — | `ed25519` | Ed25519 (not in Table 25) |
 
-**Rationale for the ECDSA-P-256 default:**
-- ARM Cortex-M/A have ECDSA hardware support (no AES-NI equivalent for RSA)
-- Token size drives SPDP overhead — small = less beacon fragmentation
-- The OMG spec lists it as optional-but-widely-supported
-
-**Switch semantics:** on a signature-algorithm change in a
-profile, all active delegations must be regenerated. The gateway
-detects the profile reload and regenerates — edge peers report an
-announce-refresh event in the process.
+`RSASSA-PKCS1-V1_5+2048+SHA256` of Table 25 has no delegation signature and
+is refused. A link names its algorithm on the wire by a number
+(`SignatureAlgorithm::wire_id`: 1, 2, 3, 4 in the order of the table).
 
 ### 7.3 Runtime config
 
 ```rust
-pub struct DelegationConfig {
-    /// Named profiles parsed from governance. In-memory lookup by name.
-    pub profiles: BTreeMap<String, DelegationProfile>,
-    /// Peer class → profile name mapping (from governance).
-    pub class_to_profile: BTreeMap<String, String>,
-    /// Per edge peer: static or ephemeral identity.
-    pub edge_identities: Vec<EdgeIdentityConfig>,
-    /// When true: peers without a valid delegation chain are dropped
-    /// (strict mode). Default: true.
-    pub require_chain_for_uncerted_peers: bool,
-}
-
 pub struct DelegationProfile {
     pub name: String,
-    pub max_chain_depth: u8,
-    pub trust_policy: TrustPolicy,  // gateway-only / direct-or-delegated / federation / strict-delegated
-    pub signature_algorithm: SignatureAlgorithm,
-    pub allowed_delegators: Vec<CertCnPattern>,
-    pub allowed_topics: Vec<TopicPattern>,
+    pub trust_policy: TrustPolicy,
+    pub trust_anchors: Vec<TrustAnchor>,   // subject_guid, public key, algorithm
+    pub max_chain_depth: usize,            // default 3
+    pub allowed_algorithms: BTreeSet<u8>,  // SignatureAlgorithm::wire_id
+    pub require_ocsp: bool,
 }
 ```
+
+`Governance::delegation_profiles` holds them by name,
+`PeerClassMatch::delegation_profile` the reference of a class, and
+`Governance::edge_identities` the edges of §5.3.
 
 ## 8 Revocation
 
 * **Implicit** via gateway failure: when the gateway no longer sends
-  SPDP beacons, all its delegations expire after `lease_duration`
-  (receivers no longer rely on `not_after`).
-* **Explicit** via a gateway command: the gateway can actively withdraw
-  a delegation ID. On the next SPDP beacon the gateway pushes
-  a `org.zerodds.sec.revoked_delegations` property (a list of
-  `(delegatee_guid, issued_at)` hashes). Receivers add them to a
-  local revocation list; samples from these delegatees are
-  dropped.
+  SPDP beacons, all its delegations expire after `lease_duration`.
+* **Explicit** via the gateway: `GatewayBridge::revoke_delegation` takes a
+  delegation back and keeps the edge for `take_revocations`, which the
+  discovery layer is to announce; no SPDP property carries it yet.
 * **Short-lived-first**: ephemeral identities have inherently short
   lifetimes and require no explicit revocation.
 
-## 9 Future extensions (not in WP 4H-j)
+## 9 Future extensions
 
 * **Cross-anchor federation** — direct V2V without a C4I broker.
   Several trust anchors that recognize each other through cross-signing
@@ -375,7 +348,7 @@ pub struct DelegationProfile {
 
 ## 10 Interop consequences
 
-Delegation is **not specified in OMG DDS-Security 1.1**. The
+Delegation is **not specified in OMG DDS-Security 1.2**. The
 entire mechanism runs in the `zerodds:` namespace and is ignored by foreign
 vendors. A Cyclone peer would:
 
@@ -386,19 +359,3 @@ vendors. A Cyclone peer would:
 * That is not a security breach: as long as Cyclone finds the gateway
   identity valid, it simply sees the aggregated view —
   the same data, only without finer origin resolution.
-
-## 11 Scope matrix WP 4H-j
-
-| Stage | Topic | LOC (estimate) |
-|-------|-------|-----------------|
-| 4H-j-a | `DelegationLink`/`DelegationChain` + sign/verify in `security-pki` | ~350 |
-| 4H-j-b | Chain validation + scope intersection in `security-permissions` | ~200 |
-| 4H-j-c | SPDP propagation (wire format for the chain in WireProperty) | ~200 |
-| 4H-j-d | `PeerClassMatch` extensions (`delegated_by`, `max_chain_depth`) | ~200 |
-| 4H-j-e | `GatewayBridge` helper (delegate_for / revoke_for / sub-gateway chaining) | ~300 |
-| 4H-j-f | Static + ephemeral edge-identity config parser | ~200 |
-| 4H-j-g | E2E test hull+turret double star: 2 gateways, 3 edges, 1 C4I | ~400 |
-| 4H-j-h | Governance-XML `<zerodds:delegation>` parser + interop test | ~250 |
-| **Total** | | **~2100 LOC** |
-
-Expected time effort: 10 working days.

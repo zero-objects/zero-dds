@@ -257,36 +257,4 @@ mod tests {
             .as_str());
         assert_eq!(aad, expected);
     }
-
-    // Full protect -> unprotect round-trip over a derived C.1.1-style context.
-    #[test]
-    fn protect_unprotect_roundtrip() {
-        // Client context C.1.1 (sender id empty) and the mirrored server context
-        // C.1.2 (the server's recipient_key == client's sender_key).
-        let client = SecurityContext::derive(
-            &hex("0102030405060708090a0b0c0d0e0f10"),
-            &hex("9e7ca92223786340"),
-            &[],
-            &hex("01"),
-            None,
-            AeadAlgorithm::AesCcm16_64_128,
-        );
-        let server = SecurityContext::derive(
-            &hex("0102030405060708090a0b0c0d0e0f10"),
-            &hex("9e7ca92223786340"),
-            &hex("01"),
-            &[],
-            None,
-            AeadAlgorithm::AesCcm16_64_128,
-        );
-        let plaintext = b"\x01gETcoap"; // arbitrary inner-message bytes
-        let piv = [0x05u8];
-        let ct = protect_request(&client, &[], &piv, &[], plaintext).unwrap();
-        // Server unprotects with its Recipient Key (== client Sender Key) + the
-        // request kid (the client Sender ID = empty) + the same Partial IV.
-        let pt = unprotect_request(&server, &[], &piv, &[], &ct).unwrap();
-        assert_eq!(pt, plaintext);
-        // Wrong Partial IV (replay/tamper) -> auth failure.
-        assert!(unprotect_request(&server, &[], &[0x06], &[], &ct).is_err());
-    }
 }

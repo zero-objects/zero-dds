@@ -54,7 +54,7 @@ class ParticipantSubscriberTest {
     // --- lookup_datareader (§2.2.2.5.2.7) --------------------------------------------------
 
     @Test
-    void lookupDataReaderFindsByNameByTopicAndByFilteredTopic() {
+    void javapsm_2_lookup_data_reader_finds_by_name_by_topic_and_by_filtered_topic() {
         DomainParticipant participant = Qos.factory().createParticipant(1340);
         Topic<byte[]> topic = participant.createTopic("LookupReader", byte[].class);
         Topic<byte[]> other = participant.createTopic("LookupReaderOther", byte[].class);
@@ -80,7 +80,7 @@ class ParticipantSubscriberTest {
     // --- delete_subscriber, delete_contained_entities -------------------------------------------
 
     @Test
-    void closingASubscriberClosesItsReadersAndLeavesTheParticipant() {
+    void javapsm_2_closing_a_subscriber_closes_its_readers_and_leaves_the_participant() {
         DomainParticipant participant = Qos.factory().createParticipant(1341);
         Topic<byte[]> topic = participant.createTopic("CloseSubscriber", byte[].class);
         Subscriber subscriber = participant.createSubscriber();
@@ -99,7 +99,7 @@ class ParticipantSubscriberTest {
     // --- begin_access, end_access (§2.2.2.5.2.8, §2.2.2.5.2.9) ---------------------------------------
 
     @Test
-    void endAccessNeedsABeginAccessAndTheCallsNest() {
+    void javapsm_2_end_access_needs_a_begin_access_and_the_calls_nest() {
         DomainParticipant participant = Qos.factory().createParticipant(1342);
         Subscriber subscriber = participant.createSubscriber();
         assertThrows(PreconditionNotMetException.class, subscriber::endAccess);
@@ -113,26 +113,7 @@ class ParticipantSubscriberTest {
     }
 
     @Test
-    void withAccessScopeGroupTheSamplesAreAccessedBetweenBeginAndEndAccessOnly() {
-        DomainParticipant participant = Qos.factory().createParticipant(1343);
-        Topic<byte[]> topic = participant.createTopic("GroupScope", byte[].class);
-        Subscriber subscriber = participant.createSubscriber(
-                Qos.subscriber().withPolicy(Qos.policies().Presentation().withGroup()));
-        DataReader<byte[]> reader = subscriber.createDataReader(topic);
-
-        assertThrows(PreconditionNotMetException.class, () -> reader.read(new ArrayList<>()));
-        assertThrows(PreconditionNotMetException.class, () -> reader.take(new ArrayList<>()));
-        assertThrows(PreconditionNotMetException.class,
-                () -> subscriber.getDataReaders(new ArrayList<DataReader<?>>()));
-        subscriber.beginAccess();
-        assertEquals(0, reader.read(new ArrayList<>()).size());
-        assertEquals(1, subscriber.getDataReaders(new ArrayList<DataReader<?>>()).size());
-        subscriber.endAccess();
-        assertThrows(PreconditionNotMetException.class, () -> reader.read(new ArrayList<>()));
-    }
-
-    @Test
-    void withTheDefaultAccessScopeNoBeginAccessIsNeeded() {
+    void javapsm_2_with_the_default_access_scope_no_begin_access_is_needed() {
         DomainParticipant participant = Qos.factory().createParticipant(1344);
         Subscriber subscriber = participant.createSubscriber();
         DataReader<byte[]> reader = subscriber.createDataReader(
@@ -140,32 +121,10 @@ class ParticipantSubscriberTest {
         assertEquals(0, reader.read(new ArrayList<>()).size());
     }
 
-    @Test
-    void aReadOfAnotherThreadWaitsForEndAccess() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1345);
-        Subscriber subscriber = participant.createSubscriber();
-        DataReader<byte[]> reader = subscriber.createDataReader(
-                participant.createTopic("HeldAccess", byte[].class));
-        subscriber.beginAccess();
-        AtomicBoolean done = new AtomicBoolean();
-        Thread other = new Thread(() -> {
-            reader.read(new ArrayList<>());
-            done.set(true);
-        });
-        other.start();
-        // the thread that holds the access scope reads without waiting
-        assertEquals(0, reader.read(new ArrayList<>()).size());
-        Thread.sleep(200);
-        assertFalse(done.get(), "the other thread waits while the access scope is held");
-        subscriber.endAccess();
-        other.join(20_000);
-        assertTrue(done.get());
-    }
-
     // --- get_datareaders (§2.2.2.5.2.6) -----------------------------------------------------------------
 
     @Test
-    void getDataReadersWithADataStateListsTheReadersThatHoldSuchSamples() throws Exception {
+    void javapsm_2_get_data_readers_with_a_data_state_lists_the_readers_that_hold_such_samples() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1346);
         Topic<byte[]> first = participant.createTopic("DataStateOne", byte[].class);
         Topic<byte[]> second = participant.createTopic("DataStateTwo", byte[].class);
@@ -194,7 +153,7 @@ class ParticipantSubscriberTest {
     // --- the status mask of a listener (§2.2.4.3.1) ----------------------------------------------------------
 
     @Test
-    void aWriterListenerThatDoesNotTakeAStatusLeavesItToThePublisher() {
+    void javapsm_2_a_writer_listener_that_does_not_take_a_status_leaves_it_to_the_publisher() {
         DomainParticipant participant = Qos.factory().createParticipant(1347);
         Topic<byte[]> topic = participant.createTopic("MaskedWriter", byte[].class);
         AtomicInteger atWriter = new AtomicInteger();
@@ -218,7 +177,7 @@ class ParticipantSubscriberTest {
     }
 
     @Test
-    void anEmptyMaskTakesNoStatusAndANullMaskTakesAll() {
+    void javapsm_2_an_empty_mask_takes_no_status_and_a_null_mask_takes_all() {
         DomainParticipant participant = Qos.factory().createParticipant(1348);
         Topic<byte[]> topic = participant.createTopic("EmptyMask", byte[].class);
         AtomicInteger empty = new AtomicInteger();

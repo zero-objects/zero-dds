@@ -441,6 +441,63 @@ impl AmqpExtValue {
         }
     }
 
+    /// The encoding of the widest constructor of the value's type, the one
+    /// an array element takes when the compact constructors of its
+    /// elements differ (Spec §1.6.24): `uint` 0x70, `ulong` 0x80, `int`
+    /// 0x71, `long` 0x81, `boolean` 0x56, `vbin32`, `str32-utf8`, `sym32`,
+    /// `list32`, `map32`, `array32`. Every other type has one encoding.
+    fn encode_wide(&self, depth: usize) -> Result<Vec<u8>, TypeError> {
+        fn fixed(code: u8, octets: &[u8]) -> Vec<u8> {
+            let mut out = alloc::vec![code];
+            out.extend_from_slice(octets);
+            out
+        }
+        fn variable(code: u8, octets: &[u8]) -> Result<Vec<u8>, TypeError> {
+            let len = u32::try_from(octets.len()).map_err(|_| TypeError::LengthTooLarge)?;
+            let mut out = fixed(code, &len.to_be_bytes());
+            out.extend_from_slice(octets);
+            Ok(out)
+        }
+        fn compound32(code: u8, encoded: &[u8]) -> Result<Vec<u8>, TypeError> {
+            // `encoded` is the 8-bit form: code, size, count, items; or
+            // list0 for the empty list.
+            let (count, items) = match encoded {
+                [_, _, count, items @ ..] => (u32::from(*count), items),
+                _ => (0, &[][..]),
+            };
+            let size = u32::try_from(items.len() + 4).map_err(|_| TypeError::LengthTooLarge)?;
+            let mut out = fixed(code, &size.to_be_bytes());
+            out.extend_from_slice(&count.to_be_bytes());
+            out.extend_from_slice(items);
+            Ok(out)
+        }
+        match self {
+            Self::Uint(v) => Ok(fixed(codes::UINT, &v.to_be_bytes())),
+            Self::Ulong(v) => Ok(fixed(codes::ULONG, &v.to_be_bytes())),
+            Self::Int(v) => Ok(fixed(codes::INT, &v.to_be_bytes())),
+            Self::Long(v) => Ok(fixed(codes::LONG, &v.to_be_bytes())),
+            Self::Boolean(b) => Ok(fixed(codes::BOOLEAN, &[u8::from(*b)])),
+            Self::Binary(b) => variable(codes::VBIN32, b),
+            Self::Str(s) => variable(codes::STR32, s.as_bytes()),
+            Self::Symbol(s) => {
+                if !s.is_ascii() {
+                    return Err(TypeError::NonAsciiSymbol);
+                }
+                variable(codes::SYM32, s.as_bytes())
+            }
+            Self::List(_) | Self::Map(_) | Self::Array(_) => {
+                let encoded = self.encode_at(depth)?;
+                match encoded.first() {
+                    Some(&codes::LIST0 | &codes::LIST8) => compound32(codes::LIST32, &encoded),
+                    Some(&codes::MAP8) => compound32(codes::MAP32, &encoded),
+                    Some(&codes::ARRAY8) => compound32(codes::ARRAY32, &encoded),
+                    _ => Ok(encoded),
+                }
+            }
+            _ => self.encode_at(depth),
+        }
+    }
+
     /// Decode a single value.
     ///
     /// # Errors
@@ -477,6 +534,14 @@ impl AmqpExtValue {
             codes::NULL => Ok((Self::Null, 1)),
             codes::BOOLEAN_TRUE => Ok((Self::Boolean(true), 1)),
             codes::BOOLEAN_FALSE => Ok((Self::Boolean(false), 1)),
+            // Spec §1.6.2: `boolean` 0x56 with one octet, 0x00 false, 0x01
+            // true; the encoding of a boolean array element.
+            codes::BOOLEAN => match bytes.get(1) {
+                Some(0x00) => Ok((Self::Boolean(false), 2)),
+                Some(0x01) => Ok((Self::Boolean(true), 2)),
+                Some(_) => Err(TypeError::UnsupportedFormatCode(codes::BOOLEAN)),
+                None => Err(TypeError::Truncated),
+            },
             codes::UBYTE => decode_ubyte(bytes).map(|(v, n)| (Self::Ubyte(v), n)),
             codes::USHORT => decode_ushort(bytes).map(|(v, n)| (Self::Ushort(v), n)),
             codes::UINT0 | codes::SMALLUINT | codes::UINT => {
@@ -714,17 +779,32 @@ fn encode_array(items: &[AmqpExtValue], depth: usize) -> Result<Vec<u8>, TypeErr
     if items.is_empty() {
         return Err(TypeError::LengthTooLarge); // array MUST have ≥1 element to know constructor
     }
-    let element_constructor = items[0].encode_at(depth + 1)?;
-    if element_constructor.is_empty() {
-        return Err(TypeError::LengthTooLarge);
+    // Spec §1.6.24: one constructor for every element. The compact
+    // encodings of one type differ with the value (uint0, smalluint and
+    // uint for a uint; str8 and str32 for a string), so elements whose
+    // compact constructors differ are written in the wide encoding of
+    // their type; only elements of different types are refused.
+    let mut encoded = items
+        .iter()
+        .map(|it| it.encode_at(depth + 1))
+        .collect::<Result<Vec<_>, _>>()?;
+    // A constructor without octets (true, false, uint0, ulong0, list0)
+    // would leave the elements no octets of their own to tell them apart.
+    let zero_width = matches!(encoded[0].first(), Some(0x41..=0x45));
+    if zero_width || encoded.iter().any(|e| e.first() != encoded[0].first()) {
+        encoded = items
+            .iter()
+            .map(|it| it.encode_wide(depth + 1))
+            .collect::<Result<Vec<_>, _>>()?;
     }
-    let constructor_byte = element_constructor[0];
+    let Some(&constructor_byte) = encoded[0].first() else {
+        return Err(TypeError::LengthTooLarge);
+    };
     let mut body = Vec::new();
     body.push(constructor_byte);
-    for it in items {
-        let enc = it.encode_at(depth + 1)?;
+    for enc in &encoded {
         // Skip the constructor byte for subsequent elements (Spec §1.2.4).
-        if enc.is_empty() || enc[0] != constructor_byte {
+        if enc.first() != Some(&constructor_byte) {
             return Err(TypeError::UnsupportedFormatCode(constructor_byte));
         }
         body.extend_from_slice(&enc[1..]);
@@ -811,208 +891,309 @@ fn decode_array(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), Typ
 mod tests {
     use super::*;
 
-    fn roundtrip(v: AmqpExtValue) {
-        let bytes = v.encode().expect("encode");
-        let (parsed, _) = AmqpExtValue::decode(&bytes).expect("decode");
-        assert_eq!(parsed, v);
-    }
+    // Expected octets from OASIS AMQP 1.0 Part 1 (`amqp-1.0-types`): the
+    // format code of each encoding (§1.6), the width of its octets, the
+    // layout of the compound and array encodings (§1.2, Figure 1.4 to 1.6).
 
-    #[test]
-    fn ubyte_round_trips_at_extremes() {
-        roundtrip(AmqpExtValue::Ubyte(0));
-        roundtrip(AmqpExtValue::Ubyte(255));
-    }
-
-    #[test]
-    fn ushort_round_trips() {
-        roundtrip(AmqpExtValue::Ushort(0));
-        roundtrip(AmqpExtValue::Ushort(0xABCD));
-    }
-
-    #[test]
-    fn uint_uses_compact_zero_form() {
-        let bytes = AmqpExtValue::Uint(0).encode().expect("encode");
-        assert_eq!(bytes, alloc::vec![codes::UINT0]);
-    }
-
-    #[test]
-    fn uint_uses_smalluint_for_low_values() {
-        let bytes = AmqpExtValue::Uint(42).encode().expect("encode");
-        assert_eq!(bytes[0], codes::SMALLUINT);
-    }
-
-    #[test]
-    fn uint_uses_full_for_high_values() {
-        let bytes = AmqpExtValue::Uint(0x1234_5678).encode().expect("encode");
-        assert_eq!(bytes[0], codes::UINT);
-        roundtrip(AmqpExtValue::Uint(0x1234_5678));
-    }
-
-    #[test]
-    fn byte_round_trips_negative() {
-        roundtrip(AmqpExtValue::Byte(-1));
-        roundtrip(AmqpExtValue::Byte(127));
-        roundtrip(AmqpExtValue::Byte(-128));
-    }
-
-    #[test]
-    fn short_round_trips() {
-        roundtrip(AmqpExtValue::Short(-1));
-        roundtrip(AmqpExtValue::Short(i16::MAX));
-        roundtrip(AmqpExtValue::Short(i16::MIN));
-    }
-
-    #[test]
-    fn int_uses_compact_when_in_byte_range() {
-        let bytes = AmqpExtValue::Int(42).encode().expect("encode");
-        assert_eq!(bytes[0], codes::SMALLINT);
-        roundtrip(AmqpExtValue::Int(42));
-    }
-
-    #[test]
-    fn int_uses_full_for_high_values() {
-        roundtrip(AmqpExtValue::Int(i32::MAX));
-        roundtrip(AmqpExtValue::Int(i32::MIN));
-    }
-
-    #[test]
-    fn float_round_trips() {
-        roundtrip(AmqpExtValue::Float(0.0));
-        roundtrip(AmqpExtValue::Float(core::f32::consts::PI));
-        roundtrip(AmqpExtValue::Float(-1.5));
-    }
-
-    #[test]
-    fn double_round_trips() {
-        roundtrip(AmqpExtValue::Double(core::f64::consts::E));
-    }
-
-    #[test]
-    fn char_round_trips_ascii_and_unicode() {
-        roundtrip(AmqpExtValue::Char('A'));
-        roundtrip(AmqpExtValue::Char('ä'));
-        roundtrip(AmqpExtValue::Char('🎉'));
-    }
-
-    /// Spec `dds-amqp-1.0` §7.1.4.2: an IDL `wchar` maps to the AMQP
-    /// `char`, "a 4-octet UCS-4 code point" on the wire. The format code
-    /// plus exactly four big-endian octets of the code point — measured,
-    /// not round-tripped, because a round trip would also pass on a
-    /// little-endian pair of encoder and decoder.
-    #[test]
-    fn char_is_four_octet_ucs4_big_endian() {
-        for c in ['A', 'ä', '🎉', '\u{10FFFF}'] {
-            let bytes = AmqpExtValue::Char(c).encode().expect("encode");
-            assert_eq!(bytes.len(), 5, "1 format code + 4 octets for {c:?}");
-            assert_eq!(bytes[0], codes::CHAR);
-            assert_eq!(&bytes[1..], &u32::from(c).to_be_bytes(), "{c:?}");
-        }
-        // 'A' spelled out: U+0041 as UCS-4, high octets first.
+    /// `value` encodes to `octets`, and `octets` decode to `value`.
+    fn wire(value: AmqpExtValue, octets: &[u8]) {
+        assert_eq!(value.encode().expect("encode"), octets, "{value:?}");
         assert_eq!(
-            AmqpExtValue::Char('A').encode().expect("encode"),
-            alloc::vec![codes::CHAR, 0x00, 0x00, 0x00, 0x41]
+            AmqpExtValue::decode(octets).expect("decode"),
+            (value, octets.len())
         );
     }
 
+    #[test]
+    fn amqp10_1_6_3_a_ubyte_is_0x50_and_one_octet() {
+        wire(AmqpExtValue::Ubyte(0), &[0x50, 0x00]);
+        wire(AmqpExtValue::Ubyte(255), &[0x50, 0xff]);
+    }
+
+    #[test]
+    fn amqp10_1_6_4_a_ushort_is_0x60_and_two_octets() {
+        wire(AmqpExtValue::Ushort(0), &[0x60, 0x00, 0x00]);
+        wire(AmqpExtValue::Ushort(0xabcd), &[0x60, 0xab, 0xcd]);
+    }
+
+    /// §1.6.5: `uint0` 0x43, `smalluint` 0x52 and one octet, `uint` 0x70
+    /// and four octets.
+    #[test]
+    fn amqp10_1_6_5_a_uint_is_uint0_smalluint_or_four_octets() {
+        wire(AmqpExtValue::Uint(0), &[0x43]);
+        wire(AmqpExtValue::Uint(42), &[0x52, 0x2a]);
+        wire(
+            AmqpExtValue::Uint(0x1234_5678),
+            &[0x70, 0x12, 0x34, 0x56, 0x78],
+        );
+    }
+
+    #[test]
+    fn amqp10_1_6_7_a_byte_is_0x51_and_one_signed_octet() {
+        wire(AmqpExtValue::Byte(-1), &[0x51, 0xff]);
+        wire(AmqpExtValue::Byte(127), &[0x51, 0x7f]);
+        wire(AmqpExtValue::Byte(-128), &[0x51, 0x80]);
+    }
+
+    #[test]
+    fn amqp10_1_6_8_a_short_is_0x61_and_two_octets() {
+        wire(AmqpExtValue::Short(-1), &[0x61, 0xff, 0xff]);
+        wire(AmqpExtValue::Short(i16::MAX), &[0x61, 0x7f, 0xff]);
+        wire(AmqpExtValue::Short(i16::MIN), &[0x61, 0x80, 0x00]);
+    }
+
+    /// §1.6.9: `smallint` 0x54 and one signed octet, `int` 0x71 and four.
+    #[test]
+    fn amqp10_1_6_9_an_int_is_smallint_or_four_octets() {
+        wire(AmqpExtValue::Int(42), &[0x54, 0x2a]);
+        wire(AmqpExtValue::Int(-1), &[0x54, 0xff]);
+        wire(AmqpExtValue::Int(i32::MAX), &[0x71, 0x7f, 0xff, 0xff, 0xff]);
+        wire(AmqpExtValue::Int(i32::MIN), &[0x71, 0x80, 0x00, 0x00, 0x00]);
+    }
+
+    /// §1.6.11: IEEE 754-2008 binary32 after 0x72.
+    #[test]
+    fn amqp10_1_6_11_a_float_is_0x72_and_binary32() {
+        wire(AmqpExtValue::Float(0.0), &[0x72, 0, 0, 0, 0]);
+        wire(
+            AmqpExtValue::Float(core::f32::consts::PI),
+            &[0x72, 0x40, 0x49, 0x0f, 0xdb],
+        );
+        wire(AmqpExtValue::Float(-1.5), &[0x72, 0xbf, 0xc0, 0x00, 0x00]);
+    }
+
+    /// §1.6.12: IEEE 754-2008 binary64 after 0x82.
+    #[test]
+    fn amqp10_1_6_12_a_double_is_0x82_and_binary64() {
+        wire(
+            AmqpExtValue::Double(core::f64::consts::E),
+            &[0x82, 0x40, 0x05, 0xbf, 0x0a, 0x8b, 0x14, 0x57, 0x69],
+        );
+    }
+
+    /// §1.6.13 to §1.6.15: 0x74, 0x84 and 0x94 with 4, 8 and 16 octets.
+    #[test]
+    fn amqp10_1_6_13_the_decimals_are_0x74_0x84_0x94_with_4_8_16_octets() {
+        assert_eq!(encode_decimal32([1, 2, 3, 4]), [0x74, 1, 2, 3, 4]);
+        let d64 = encode_decimal64([7; 8]);
+        assert_eq!((d64[0], d64.len()), (0x84, 9));
+        let d128 = encode_decimal128([9; 16]);
+        assert_eq!((d128[0], d128.len()), (0x94, 17));
+    }
+
+    /// §1.6.16: a UTF-32BE code point after 0x73.
+    #[test]
+    fn amqp10_1_6_16_a_char_is_0x73_and_a_utf_32be_code_point() {
+        wire(AmqpExtValue::Char('A'), &[0x73, 0x00, 0x00, 0x00, 0x41]);
+        wire(AmqpExtValue::Char('ä'), &[0x73, 0x00, 0x00, 0x00, 0xe4]);
+        wire(AmqpExtValue::Char('🎉'), &[0x73, 0x00, 0x01, 0xf3, 0x89]);
+    }
+
+    /// Spec `dds-amqp-1.0` §7.1.4.2: an IDL `wchar` maps to the AMQP
+    /// `char`, "a 4-octet UCS-4 code point", the format code and four
+    /// big-endian octets for every code point up to U+10FFFF.
+    #[test]
+    fn ddsamqp_7_1_4_2_a_wchar_is_four_octet_ucs4_big_endian() {
+        for c in ['A', 'ä', '🎉', '\u{10FFFF}'] {
+            let bytes = AmqpExtValue::Char(c).encode().expect("encode");
+            assert_eq!(bytes.len(), 5, "1 format code + 4 octets for {c:?}");
+            assert_eq!(bytes[0], 0x73);
+            assert_eq!(&bytes[1..], &u32::from(c).to_be_bytes(), "{c:?}");
+        }
+    }
+
     /// Spec `dds-amqp-1.0` §7.1.3: "all AMQP multi-byte values are
-    /// big-endian", while the XCDR2 source data is little-endian. Every
-    /// multi-octet primitive, checked against `to_be_bytes` of its own
-    /// value rather than against a round trip.
+    /// big-endian", while the XCDR2 source data is little-endian.
     #[test]
-    fn every_multi_octet_primitive_is_big_endian_on_the_wire() {
-        let ushort = AmqpExtValue::Ushort(0x1234).encode().expect("encode");
-        assert_eq!(&ushort[1..], &0x1234_u16.to_be_bytes());
-
-        let uint = AmqpExtValue::Uint(0x1122_3344).encode().expect("encode");
-        assert_eq!(&uint[1..], &0x1122_3344_u32.to_be_bytes());
-
-        let short = AmqpExtValue::Short(-2).encode().expect("encode");
-        assert_eq!(&short[1..], &(-2_i16).to_be_bytes());
-
-        let int = AmqpExtValue::Int(i32::MIN).encode().expect("encode");
-        assert_eq!(&int[1..], &i32::MIN.to_be_bytes());
-
-        let float = AmqpExtValue::Float(-1.5).encode().expect("encode");
-        assert_eq!(&float[1..], &(-1.5_f32).to_be_bytes());
-
-        let double = AmqpExtValue::Double(-1.5).encode().expect("encode");
-        assert_eq!(&double[1..], &(-1.5_f64).to_be_bytes());
-
-        let ts = AmqpExtValue::Timestamp(0x0102_0304_0506_0708)
-            .encode()
-            .expect("encode");
-        assert_eq!(&ts[1..], &0x0102_0304_0506_0708_i64.to_be_bytes());
-
-        // The high octet leads in every one of them — a little-endian
-        // encoder would put 0x34 first here.
-        assert_eq!(ushort[1], 0x12);
-        assert_eq!(uint[1], 0x11);
-        assert_eq!(ts[1], 0x01);
+    fn ddsamqp_7_1_3_every_multi_octet_primitive_is_big_endian_on_the_wire() {
+        let cases: [(AmqpExtValue, &[u8]); 7] = [
+            (AmqpExtValue::Ushort(0x1234), &[0x60, 0x12, 0x34]),
+            (
+                AmqpExtValue::Uint(0x1122_3344),
+                &[0x70, 0x11, 0x22, 0x33, 0x44],
+            ),
+            (AmqpExtValue::Short(-2), &[0x61, 0xff, 0xfe]),
+            (AmqpExtValue::Int(i32::MIN), &[0x71, 0x80, 0, 0, 0]),
+            (AmqpExtValue::Float(-1.5), &[0x72, 0xbf, 0xc0, 0, 0]),
+            (
+                AmqpExtValue::Double(-1.5),
+                &[0x82, 0xbf, 0xf8, 0, 0, 0, 0, 0, 0],
+            ),
+            (
+                AmqpExtValue::Timestamp(0x0102_0304_0506_0708),
+                &[0x83, 1, 2, 3, 4, 5, 6, 7, 8],
+            ),
+        ];
+        for (value, octets) in cases {
+            wire(value, octets);
+        }
     }
 
+    /// §1.6.17: milliseconds since the Unix epoch as a signed 64-bit
+    /// integer after 0x83.
     #[test]
-    fn timestamp_round_trips_negative() {
-        roundtrip(AmqpExtValue::Timestamp(-1));
-        roundtrip(AmqpExtValue::Timestamp(1_700_000_000_000));
+    fn amqp10_1_6_17_a_timestamp_is_0x83_and_milliseconds_as_eight_octets() {
+        wire(
+            AmqpExtValue::Timestamp(-1),
+            &[0x83, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff],
+        );
+        wire(
+            AmqpExtValue::Timestamp(1_700_000_000_000),
+            &[0x83, 0x00, 0x00, 0x01, 0x8b, 0xcf, 0xe5, 0x68, 0x00],
+        );
     }
 
+    /// §1.6.18: sixteen octets after 0x98.
     #[test]
-    fn uuid_round_trips() {
+    fn amqp10_1_6_18_a_uuid_is_0x98_and_sixteen_octets() {
         let mut u = [0u8; 16];
         for (i, b) in u.iter_mut().enumerate() {
             *b = i as u8;
         }
-        roundtrip(AmqpExtValue::Uuid(u));
+        let mut octets = alloc::vec![0x98];
+        octets.extend_from_slice(&u);
+        wire(AmqpExtValue::Uuid(u), &octets);
     }
 
-    // -- Compound --
-
+    /// §1.6.22: the empty list is `list0` 0x45.
     #[test]
-    fn empty_list_uses_list0() {
-        let bytes = AmqpExtValue::List(Vec::new()).encode().expect("encode");
-        assert_eq!(bytes, alloc::vec![codes::LIST0]);
+    fn amqp10_1_6_22_the_empty_list_is_list0() {
+        wire(AmqpExtValue::List(Vec::new()), &[0x45]);
     }
 
+    /// §1.6.22 and §1.2: `list8` 0xc0, the size (count and items), the
+    /// count, the items each with its constructor.
     #[test]
-    fn small_list_round_trips() {
-        roundtrip(AmqpExtValue::List(alloc::vec![
-            AmqpExtValue::Boolean(true),
-            AmqpExtValue::Int(42),
-            AmqpExtValue::Str("hello".to_string())
-        ]));
-    }
-
-    #[test]
-    fn nested_list_round_trips() {
+    fn amqp10_1_6_22_a_list_is_list8_size_count_and_items() {
+        wire(
+            AmqpExtValue::List(alloc::vec![
+                AmqpExtValue::Boolean(true),
+                AmqpExtValue::Int(42),
+                AmqpExtValue::Str("hello".to_string())
+            ]),
+            &[
+                0xc0, 0x0b, 0x03, 0x41, 0x54, 0x2a, 0xa1, 0x05, b'h', b'e', b'l', b'l', b'o',
+            ],
+        );
         let inner = AmqpExtValue::List(alloc::vec![AmqpExtValue::Int(1), AmqpExtValue::Int(2)]);
-        let outer = AmqpExtValue::List(alloc::vec![inner.clone(), inner]);
-        roundtrip(outer);
+        wire(
+            AmqpExtValue::List(alloc::vec![inner.clone(), inner]),
+            &[
+                0xc0, 0x0f, 0x02, 0xc0, 0x05, 0x02, 0x54, 0x01, 0x54, 0x02, 0xc0, 0x05, 0x02, 0x54,
+                0x01, 0x54, 0x02,
+            ],
+        );
     }
 
+    /// §1.6.22: decoding stops at the nesting bound of this codec
+    /// (`MAX_COMPOUND_DEPTH`, a guard against a stack exhausted by a
+    /// sender), on encode and on decode.
     #[test]
-    fn map_round_trips_with_string_keys() {
-        roundtrip(AmqpExtValue::Map(alloc::vec![
-            (AmqpExtValue::Str("k1".to_string()), AmqpExtValue::Int(1)),
-            (
-                AmqpExtValue::Str("k2".to_string()),
-                AmqpExtValue::Boolean(true)
-            ),
-        ]));
+    fn amqp10_1_6_22_a_list_nested_past_the_bound_is_refused() {
+        let mut current = AmqpExtValue::Int(0);
+        for _ in 0..(MAX_COMPOUND_DEPTH + 5) {
+            current = AmqpExtValue::List(alloc::vec![current]);
+        }
+        assert!(current.encode().is_err());
+        let bytes = AmqpExtValue::Ubyte(7).encode().unwrap();
+        assert!(AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH).is_ok());
+        assert!(matches!(
+            AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH + 1),
+            Err(TypeError::LengthTooLarge)
+        ));
     }
 
+    /// §1.6.23: `map8` 0xc1, the size, the count of keys and values, the
+    /// pairs.
     #[test]
-    fn array_round_trips_homogeneous_short() {
-        // Use `short` because all values share the same format code 0x61.
-        roundtrip(AmqpExtValue::Array(alloc::vec![
-            AmqpExtValue::Short(10),
-            AmqpExtValue::Short(20),
-            AmqpExtValue::Short(30)
-        ]));
+    fn amqp10_1_6_23_a_map_is_map8_size_count_and_pairs() {
+        wire(
+            AmqpExtValue::Map(alloc::vec![
+                (AmqpExtValue::Str("k1".to_string()), AmqpExtValue::Int(1)),
+                (
+                    AmqpExtValue::Str("k2".to_string()),
+                    AmqpExtValue::Boolean(true)
+                ),
+            ]),
+            &[
+                0xc1, 0x0c, 0x04, 0xa1, 0x02, b'k', b'1', 0x54, 0x01, 0xa1, 0x02, b'k', b'2', 0x41,
+            ],
+        );
     }
 
+    /// §1.6.23: more than 255 keys and values is `map32` 0xd1 with a
+    /// four-octet size and count.
     #[test]
-    fn array_homogeneous_constraint_violation_yields_error() {
-        // Mixed types in array — must fail.
+    fn amqp10_1_6_23_a_map_of_more_than_255_elements_is_map32() {
+        let entries: Vec<_> = (0..130u32)
+            .map(|i| (AmqpExtValue::Uint(i), AmqpExtValue::Uint(i + 1)))
+            .collect();
+        let bytes = AmqpExtValue::Map(entries.clone()).encode().unwrap();
+        assert_eq!(bytes[0], 0xd1);
+        let size = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]) as usize;
+        assert_eq!(size, bytes.len() - 5, "the size counts what follows it");
+        assert_eq!(&bytes[5..9], &[0x00, 0x00, 0x01, 0x04], "260 elements");
+        assert_eq!(
+            AmqpExtValue::decode(&bytes).unwrap(),
+            (AmqpExtValue::Map(entries), bytes.len())
+        );
+    }
+
+    /// §1.6.24: `array8` 0xe0, the size, the count, one constructor, then
+    /// the elements without one.
+    #[test]
+    fn amqp10_1_6_24_an_array_is_one_constructor_then_the_values() {
+        wire(
+            AmqpExtValue::Array(alloc::vec![
+                AmqpExtValue::Short(10),
+                AmqpExtValue::Short(20),
+                AmqpExtValue::Short(30)
+            ]),
+            &[0xe0, 0x08, 0x03, 0x61, 0x00, 0x0a, 0x00, 0x14, 0x00, 0x1e],
+        );
+        wire(
+            AmqpExtValue::Array(alloc::vec![AmqpExtValue::Ubyte(0xab)]),
+            &[0xe0, 0x03, 0x01, 0x50, 0xab],
+        );
+    }
+
+    /// §1.6.24: the elements of an array share one constructor, so uints
+    /// whose compact encodings differ (uint0, smalluint, uint) take the
+    /// four-octet `uint`, and booleans the one-octet `boolean` 0x56.
+    #[test]
+    fn amqp10_1_6_24_elements_whose_compact_encodings_differ_share_the_wide_one() {
+        wire(
+            AmqpExtValue::Array(alloc::vec![
+                AmqpExtValue::Uint(0),
+                AmqpExtValue::Uint(1),
+                AmqpExtValue::Uint(300)
+            ]),
+            &[
+                0xe0, 0x0e, 0x03, 0x70, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0x01, 0x2c,
+            ],
+        );
+        wire(
+            AmqpExtValue::Array(alloc::vec![
+                AmqpExtValue::Boolean(true),
+                AmqpExtValue::Boolean(false)
+            ]),
+            &[0xe0, 0x04, 0x02, 0x56, 0x01, 0x00],
+        );
+        wire(
+            AmqpExtValue::Array(alloc::vec![
+                AmqpExtValue::Symbol("PLAIN".into()),
+                AmqpExtValue::Symbol("ANONYMOUS".into())
+            ]),
+            &[
+                0xe0, 0x12, 0x02, 0xa3, 0x05, b'P', b'L', b'A', b'I', b'N', 0x09, b'A', b'N', b'O',
+                b'N', b'Y', b'M', b'O', b'U', b'S',
+            ],
+        );
+    }
+
+    /// §1.6.24: elements of different types are no array.
+    #[test]
+    fn amqp10_1_6_24_elements_of_different_types_are_refused() {
         let r = AmqpExtValue::Array(alloc::vec![
             AmqpExtValue::Int(1),
             AmqpExtValue::Boolean(true)
@@ -1021,206 +1202,90 @@ mod tests {
         assert!(r.is_err());
     }
 
+    /// §1.6.24: more than 255 elements is `array32` 0xf0.
     #[test]
-    fn deeply_nested_list_exceeds_dos_cap() {
-        let mut current = AmqpExtValue::Int(0);
-        for _ in 0..(MAX_COMPOUND_DEPTH + 5) {
-            current = AmqpExtValue::List(alloc::vec![current]);
-        }
-        assert!(current.encode().is_err());
+    fn amqp10_1_6_24_an_array_of_more_than_255_elements_is_array32() {
+        let items: Vec<AmqpExtValue> = (0..300u32)
+            .map(|i| AmqpExtValue::Ubyte((i & 0xff) as u8))
+            .collect();
+        let bytes = AmqpExtValue::Array(items.clone()).encode().unwrap();
+        assert_eq!(
+            &bytes[..10],
+            &[0xf0, 0, 0, 0x01, 0x31, 0, 0, 0x01, 0x2c, 0x50]
+        );
+        assert_eq!(bytes.len(), 9 + 1 + 300);
+        assert_eq!(
+            AmqpExtValue::decode(&bytes).unwrap(),
+            (AmqpExtValue::Array(items), bytes.len())
+        );
+    }
+
+    /// Spec `dds-amqp-1.0` §7.1.7 and §7.1.8: a sequence is a list of its
+    /// elements, a map a map of its pairs, a nested one inside its parent.
+    #[test]
+    fn ddsamqp_7_1_7_lists_maps_and_arrays_nest_with_their_own_sizes() {
+        wire(
+            AmqpExtValue::List(alloc::vec![
+                AmqpExtValue::Ubyte(1),
+                AmqpExtValue::Ushort(2),
+                AmqpExtValue::Uint(3)
+            ]),
+            &[0xc0, 0x08, 0x03, 0x50, 0x01, 0x60, 0x00, 0x02, 0x52, 0x03],
+        );
+        wire(
+            AmqpExtValue::Map(alloc::vec![
+                (AmqpExtValue::Str("a".into()), AmqpExtValue::Uint(1)),
+                (AmqpExtValue::Str("b".into()), AmqpExtValue::Uint(2)),
+            ]),
+            &[
+                0xc1, 0x0b, 0x04, 0xa1, 0x01, b'a', 0x52, 0x01, 0xa1, 0x01, b'b', 0x52, 0x02,
+            ],
+        );
+        wire(
+            AmqpExtValue::List(alloc::vec![AmqpExtValue::List(alloc::vec![
+                AmqpExtValue::Ubyte(42)
+            ])]),
+            &[0xc0, 0x06, 0x01, 0xc0, 0x03, 0x01, 0x50, 0x2a],
+        );
     }
 
     // -------------------------------------------------------------
-    // Buffer-cap hardening — wire-supplied element counts must be
-    // rejected cleanly (no OOM, no panic) when they cannot possibly
-    // fit the bytes actually present, *before* `Vec::with_capacity`
-    // runs. See crates/cdr/src/composite.rs for the established
-    // `len > reader.remaining()` pattern this mirrors.
+    // Wire-supplied element counts are refused when they cannot fit
+    // the octets present, before any allocation (a 9-octet packet must
+    // not ask for gigabytes).
     // -------------------------------------------------------------
 
     #[test]
     fn decode_list32_with_huge_count_and_tiny_body_is_rejected_cleanly() {
-        // LIST32 header claiming size=4 (just the count field, no
-        // items) but count = u32::MAX. A naive `Vec::with_capacity(count)`
-        // would attempt a many-GB allocation from a 9-byte packet.
         let mut bytes = alloc::vec![codes::LIST32];
-        bytes.extend_from_slice(&4u32.to_be_bytes()); // size
-        bytes.extend_from_slice(&u32::MAX.to_be_bytes()); // count
-        let res = AmqpExtValue::decode(&bytes);
-        assert!(
-            matches!(res, Err(TypeError::Truncated)),
-            "expected clean Truncated rejection, got {res:?}"
-        );
+        bytes.extend_from_slice(&4u32.to_be_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_be_bytes());
+        assert!(matches!(
+            AmqpExtValue::decode(&bytes),
+            Err(TypeError::Truncated)
+        ));
     }
 
     #[test]
     fn decode_map32_with_huge_count_and_tiny_body_is_rejected_cleanly() {
         let mut bytes = alloc::vec![codes::MAP32];
-        bytes.extend_from_slice(&4u32.to_be_bytes()); // size
-        bytes.extend_from_slice(&0xFFFF_FFFEu32.to_be_bytes()); // count (even)
-        let res = AmqpExtValue::decode(&bytes);
-        assert!(
-            matches!(res, Err(TypeError::Truncated)),
-            "expected clean Truncated rejection, got {res:?}"
-        );
+        bytes.extend_from_slice(&4u32.to_be_bytes());
+        bytes.extend_from_slice(&0xFFFF_FFFEu32.to_be_bytes());
+        assert!(matches!(
+            AmqpExtValue::decode(&bytes),
+            Err(TypeError::Truncated)
+        ));
     }
 
     #[test]
     fn decode_array32_with_huge_count_and_tiny_body_is_rejected_cleanly() {
-        // ARRAY32 header claiming just enough size for a single
-        // constructor byte, but a u32::MAX element count.
         let mut bytes = alloc::vec![codes::ARRAY32];
-        bytes.extend_from_slice(&5u32.to_be_bytes()); // size (4 count + 1 constructor)
-        bytes.extend_from_slice(&u32::MAX.to_be_bytes()); // count
-        bytes.push(codes::SMALLUINT); // constructor byte for the (absent) elements
-        let res = AmqpExtValue::decode(&bytes);
-        assert!(
-            matches!(res, Err(TypeError::Truncated)),
-            "expected clean Truncated rejection, got {res:?}"
-        );
-    }
-
-    #[test]
-    fn list_map_array_within_bound_still_round_trip() {
-        // Regression guard: the new bounds check must not reject
-        // legitimately-sized compounds.
-        roundtrip(AmqpExtValue::List(alloc::vec![
-            AmqpExtValue::Int(1),
-            AmqpExtValue::Int(2),
-            AmqpExtValue::Int(3)
-        ]));
-        roundtrip(AmqpExtValue::Map(alloc::vec![(
-            AmqpExtValue::Str("k".to_string()),
-            AmqpExtValue::Int(9)
-        )]));
-        roundtrip(AmqpExtValue::Array(alloc::vec![
-            AmqpExtValue::Short(1),
-            AmqpExtValue::Short(2)
-        ]));
-    }
-
-    #[test]
-    fn decimal32_64_128_have_correct_lengths() {
-        assert_eq!(encode_decimal32([0; 4]).len(), 5);
-        assert_eq!(encode_decimal64([0; 8]).len(), 9);
-        assert_eq!(encode_decimal128([0; 16]).len(), 17);
-    }
-
-    // -------------------------------------------------------------
-    // Mutation killers — extended_types.rs
-    // -------------------------------------------------------------
-
-    /// Catches the `Display::fmt -> Ok(default)` mutation (line 508).
-    /// Display delegates to Debug ({self:?}); the mutation would
-    /// return "".
-    #[test]
-    fn ext_value_display_non_empty() {
-        let s = alloc::format!("{}", AmqpExtValue::Ubyte(42));
-        assert!(s.contains("42"), "Display must include value, got '{s}'");
-        let s2 = alloc::format!("{}", AmqpExtValue::Boolean(true));
-        assert!(s2.contains("true") || s2.contains("Boolean"));
-    }
-
-    /// Catches the `decode_at` depth-cap boundary `>` -> `==`/`>=` (line 433).
-    /// MAX_COMPOUND_DEPTH=32. Depth=32 must pass, depth=33 must error.
-    /// Tested directly via a decode_at call instead of fully-nested encoding.
-    #[test]
-    fn decode_at_depth_at_cap_accepted() {
-        // Simple value, depth=MAX → must pass.
-        let bytes = AmqpExtValue::Ubyte(7).encode().unwrap();
-        let res = AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH);
-        assert!(res.is_ok(), "depth=MAX must decode, got {res:?}");
-    }
-
-    #[test]
-    fn decode_at_depth_over_cap_rejected() {
-        let bytes = AmqpExtValue::Ubyte(7).encode().unwrap();
-        let res = AmqpExtValue::decode_at(&bytes, MAX_COMPOUND_DEPTH + 1);
-        assert!(matches!(res, Err(TypeError::LengthTooLarge)));
-    }
-
-    /// Catches `&& -> ||` in the encode_map use_short boundary (line 598).
-    /// With `||`: count > 254 BUT body.len() <= 254 would still
-    /// use MAP8 — and truncate count to u8. Tested with count > 254.
-    /// Map with 128 entries (=256 elements; > u8::MAX=255).
-    #[test]
-    fn encode_map_uses_long_form_when_count_exceeds_u8() {
-        // 130 entries → count=260 > 255 → MUST use MAP32.
-        let mut entries = Vec::new();
-        for i in 0..130u32 {
-            entries.push((AmqpExtValue::Uint(i), AmqpExtValue::Uint(i + 1)));
-        }
-        let bytes = AmqpExtValue::Map(entries.clone()).encode().unwrap();
-        // MAP8 = 0xC1; MAP32 = 0xD1.
-        assert_eq!(bytes[0], codes::MAP32, "expected MAP32 for count>255");
-        // Round-trip must work.
-        let (parsed, _) = AmqpExtValue::decode(&bytes).unwrap();
-        assert_eq!(parsed, AmqpExtValue::Map(entries));
-    }
-
-    /// Catches `&& -> ||` in encode_array use_short (line 681).
-    /// An array with count > 255 must use ARRAY32.
-    #[test]
-    fn encode_array_uses_long_form_when_count_exceeds_u8() {
-        let items: Vec<AmqpExtValue> = (0..300u32)
-            .map(|i| AmqpExtValue::Ubyte((i & 0xff) as u8))
-            .collect();
-        let bytes = AmqpExtValue::Array(items.clone()).encode().unwrap();
-        // ARRAY8 = 0xE0; ARRAY32 = 0xF0.
-        assert_eq!(bytes[0], codes::ARRAY32, "expected ARRAY32 for count>255");
-        let (parsed, _) = AmqpExtValue::decode(&bytes).unwrap();
-        assert_eq!(parsed, AmqpExtValue::Array(items));
-    }
-
-    /// decode_array boundary `bytes.len() < 3` (line 712 ARRAY8) and
-    /// `bytes.len() < 9` (line 718 ARRAY32). Catches `<` -> `<=` mutations:
-    /// an exactly-3-byte buf for ARRAY8 / an exactly-9-byte buf for ARRAY32 must
-    /// PASS (no Truncated).
-    #[test]
-    fn decode_array_at_minimum_buffer_size() {
-        // ARRAY8 with body.len()=1 (constructor only) and count=0 — minimal.
-        // Bytes: [ARRAY8, size=1, count=0, constructor_for_first_item]
-        // size=1 because body=[constructor], total=2+1=3 → bytes.len() must
-        // be at least 3, plus 1 byte for the constructor = 4.
-        // We can't build that trivially because an empty array = Error.
-        // Instead: ARRAY8 with 1 element.
-        let bytes = AmqpExtValue::Array(vec![AmqpExtValue::Ubyte(0xAB)])
-            .encode()
-            .unwrap();
-        // Bytes: [0xE0, size=3, count=1, 0x50_for_ubyte, 0xAB]
-        assert_eq!(bytes[0], codes::ARRAY8);
-        let (parsed, n) = AmqpExtValue::decode(&bytes).unwrap();
-        assert_eq!(n, bytes.len());
-        if let AmqpExtValue::Array(items) = parsed {
-            assert_eq!(items.len(), 1);
-            assert_eq!(items[0], AmqpExtValue::Ubyte(0xAB));
-        } else {
-            panic!("expected Array");
-        }
-    }
-
-    /// Round-trip with concrete values indirectly tests the `+ -> *` and
-    /// `+ -> -` arithmetic mutations in the encode/decode bodies:
-    /// incorrectly computed offsets/sizes break the round-trip.
-    #[test]
-    fn list_map_array_roundtrip_concrete_values() {
-        roundtrip(AmqpExtValue::List(vec![
-            AmqpExtValue::Ubyte(1),
-            AmqpExtValue::Ushort(2),
-            AmqpExtValue::Uint(3),
-        ]));
-        roundtrip(AmqpExtValue::Map(vec![
-            (AmqpExtValue::Str("a".into()), AmqpExtValue::Uint(1)),
-            (AmqpExtValue::Str("b".into()), AmqpExtValue::Uint(2)),
-        ]));
-        roundtrip(AmqpExtValue::Array(vec![
-            AmqpExtValue::Ubyte(10),
-            AmqpExtValue::Ubyte(20),
-            AmqpExtValue::Ubyte(30),
-        ]));
-        // Nested compound — tests recursive depth + 1 increments.
-        roundtrip(AmqpExtValue::List(vec![AmqpExtValue::List(vec![
-            AmqpExtValue::Ubyte(42),
-        ])]));
+        bytes.extend_from_slice(&5u32.to_be_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_be_bytes());
+        bytes.push(codes::SMALLUINT);
+        assert!(matches!(
+            AmqpExtValue::decode(&bytes),
+            Err(TypeError::Truncated)
+        ));
     }
 }

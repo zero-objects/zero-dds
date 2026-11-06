@@ -40,7 +40,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use duckdb::{Connection, params};
 use zerodds_durability_store::{
     Contract, Cursor, DurabilitySample, DurabilityStore, Page, Result, Selector, StoreError,
-    StoreStats, TopicMeta,
+    StoreStats, TopicMeta, identifier_columns, identifier_from_columns,
 };
 use zerodds_qos::policies::history::HistoryKind;
 
@@ -359,6 +359,7 @@ impl DurabilityStore for LakehouseStore {
             }
         }
 
+        let (representation, big_endian) = identifier_columns(sample.representation_identifier);
         conn.execute(
             "INSERT OR REPLACE INTO samples(topic, instance, sequence, created_nanos, payload, representation, big_endian, source_guid, source_sequence) \
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -368,8 +369,8 @@ impl DurabilityStore for LakehouseStore {
                 sample.sequence as i64,
                 nanos_of(sample.created_at),
                 sample.payload,
-                i32::from(sample.representation),
-                i32::from(sample.big_endian),
+                i32::from(representation),
+                i32::from(big_endian),
                 sample.source_guid.to_vec(),
                 sample.source_sequence
             ],
@@ -451,8 +452,10 @@ impl DurabilityStore for LakehouseStore {
                     sequence: r.get::<_, i64>(1)? as u64,
                     created_at: time_of(r.get::<_, i64>(2)?),
                     payload: r.get(3)?,
-                    representation: r.get::<_, i32>(4)? as u8,
-                    big_endian: r.get::<_, i32>(5)? != 0,
+                    representation_identifier: identifier_from_columns(
+                        r.get::<_, i32>(4)? as u8,
+                        r.get::<_, i32>(5)? != 0,
+                    ),
                     source_guid,
                     source_sequence: r.get::<_, i64>(7)?,
                 })

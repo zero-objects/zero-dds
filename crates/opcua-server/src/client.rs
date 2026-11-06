@@ -1700,8 +1700,10 @@ mod tcp {
             handle.join().expect("writer thread");
         }
 
+        /// OPC 10000-6 §7.1.2.2: a message is its MessageSize octets, header
+        /// included.
         #[test]
-        fn read_message_roundtrip_within_bound() {
+        fn uacs_7_1_2_2_a_message_is_read_up_to_its_message_size() {
             let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
             let addr = listener.local_addr().expect("local_addr");
             let body = [1u8, 2, 3, 4, 5, 6, 7, 8];
@@ -1746,12 +1748,12 @@ mod tests {
         );
         // A method that doubles its Int32 input.
         space.register_method(NodeId::numeric(1, 100), |args| {
-            if let Some(v) = args.first() {
-                if let Some(VariantValue::Int32(x)) = v.value.first() {
-                    return MethodOutcome::good(alloc::vec![Variant::scalar(VariantValue::Int32(
-                        x * 2
-                    ))]);
-                }
+            if let Some(v) = args.first()
+                && let Some(VariantValue::Int32(x)) = v.value.first()
+            {
+                return MethodOutcome::good(alloc::vec![Variant::scalar(VariantValue::Int32(
+                    x * 2
+                ))]);
             }
             MethodOutcome::fault(0x8000_0000)
         });
@@ -1759,7 +1761,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_connect_read_call() {
+    fn uacs_7_2_e2e_loopback_connect_read_call() {
         let mut server = demo_server();
         let mut client = Client::new();
         {
@@ -1796,7 +1798,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_write_then_read() {
+    fn uacs_7_2_e2e_loopback_write_then_read() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -1829,7 +1831,7 @@ mod tests {
     }
 
     #[test]
-    fn write_hook_can_refuse_a_write_before_it_reaches_the_address_space() {
+    fn opcuabridge_4_2_write_hook_can_refuse_a_write_before_it_reaches_the_address_space() {
         let mut server = demo_server();
         server.set_write_hook(Box::new(|_wv, _user| {
             Some(crate::status::BAD_USER_ACCESS_DENIED)
@@ -1862,7 +1864,7 @@ mod tests {
     }
 
     #[test]
-    fn write_hook_observes_the_calling_sessions_identity() {
+    fn opcuabridge_4_2_write_hook_observes_the_calling_sessions_identity() {
         use crate::identity::{ClientUserId, UserStore};
         use alloc::sync::Arc;
         use std::sync::Mutex;
@@ -1904,7 +1906,7 @@ mod tests {
     }
 
     #[test]
-    fn read_unknown_node_yields_bad_status() {
+    fn uacs_5_11_2_read_unknown_node_yields_bad_status() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -1917,7 +1919,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_subscription_publish() {
+    fn uacs_5_13_e2e_loopback_subscription_publish() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -1977,7 +1979,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_discovery() {
+    fn uacs_5_5_4_e2e_loopback_discovery() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -2012,7 +2014,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_browse() {
+    fn uacs_5_9_2_e2e_loopback_browse() {
         use crate::address_space::{NodeClass, NodeMeta, reference_types};
         use zerodds_opcua_gateway::types::QualifiedName;
 
@@ -2071,7 +2073,7 @@ mod tests {
     // -------------------------------------------------------------------
 
     #[test]
-    fn e2e_loopback_reads_every_attribute_of_a_variable() {
+    fn uacs_5_11_2_e2e_loopback_reads_every_attribute_of_a_variable() {
         use crate::address_space::{NodeClass, NodeMeta};
         use crate::attributes::{
             ClassAttributes, VariableAttributes, access_level, attribute_ids as a, text, write_mask,
@@ -2184,7 +2186,7 @@ mod tests {
     // -------------------------------------------------------------------
 
     #[test]
-    fn e2e_loopback_history_read_raw_range_returns_retained_samples_in_order() {
+    fn opcuabridge_5_4_e2e_loopback_history_read_raw_range_returns_retained_samples_in_order() {
         use crate::address_space::AddressSpace;
 
         let mut space = AddressSpace::new();
@@ -2241,7 +2243,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_history_read_paginates_via_continuation_point() {
+    fn opcuabridge_5_4_e2e_loopback_history_read_paginates_via_continuation_point() {
         use crate::address_space::AddressSpace;
 
         let mut space = AddressSpace::new();
@@ -2269,7 +2271,7 @@ mod tests {
             .history_read(
                 &mut t,
                 details.clone(),
-                &[node.clone()],
+                std::slice::from_ref(&node),
                 TimestampsToReturn::Source,
             )
             .expect("first page");
@@ -2299,7 +2301,8 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_history_read_on_a_non_historizing_node_is_bad_node_id_unknown() {
+    fn opcuabridge_5_4_e2e_loopback_history_read_on_a_non_historizing_node_is_bad_node_id_unknown()
+    {
         use crate::address_space::AddressSpace;
 
         let mut space = AddressSpace::new();
@@ -2331,7 +2334,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_history_read_modified_is_refused_not_silently_answered() {
+    fn opcuabridge_5_4_e2e_loopback_history_read_modified_is_refused_not_silently_answered() {
         use crate::address_space::AddressSpace;
 
         let mut space = AddressSpace::new();
@@ -2369,7 +2372,8 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_history_read_on_a_historizing_node_with_no_samples_is_bad_no_data() {
+    fn opcuabridge_5_4_e2e_loopback_history_read_on_a_historizing_node_with_no_samples_is_bad_no_data()
+     {
         use crate::address_space::AddressSpace;
 
         // Historizing, but never written: distinct from "not historizing at
@@ -2402,7 +2406,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_history_read_at_time_returns_nearest_prior_sample() {
+    fn opcuabridge_5_4_e2e_loopback_history_read_at_time_returns_nearest_prior_sample() {
         use crate::address_space::AddressSpace;
 
         let mut space = AddressSpace::new();
@@ -2439,7 +2443,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_write_respects_the_write_mask_and_access_level() {
+    fn uacs_5_11_4_e2e_loopback_write_respects_the_write_mask_and_access_level() {
         use crate::address_space::{NodeClass, NodeMeta};
         use crate::attributes::{
             ClassAttributes, VariableAttributes, access_level, attribute_ids as a, text, write_mask,
@@ -2521,7 +2525,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_index_range_read_and_write() {
+    fn uacs_5_11_2_e2e_loopback_index_range_read_and_write() {
         use crate::attributes::attribute_ids as a;
         let mut space = AddressSpace::new();
         let node = NodeId::numeric(1, 9);
@@ -2614,7 +2618,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_read_honours_timestamps_to_return_and_max_age() {
+    fn uacs_5_11_2_e2e_loopback_read_honours_timestamps_to_return_and_max_age() {
         use crate::attributes::attribute_ids as a;
         let mut server = demo_server();
         let mut client = Client::new();
@@ -2705,7 +2709,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_browse_next_walks_continuation_points() {
+    fn uacs_5_9_2_e2e_loopback_browse_next_walks_continuation_points() {
         let (mut server, root, children) = browse_graph_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -2755,7 +2759,7 @@ mod tests {
     // -------------------------------------------------------------------
 
     #[test]
-    fn e2e_loopback_user_name_identity_token() {
+    fn uacs_5_7_2_e2e_loopback_user_name_identity_token() {
         use crate::identity::UserStore;
         let mut server = demo_server();
         let mut store = UserStore::anonymous_only();
@@ -2824,7 +2828,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_x509_and_issued_identity_tokens_and_user_change() {
+    fn uacs_5_7_3_e2e_loopback_x509_and_issued_identity_tokens_and_user_change() {
         use crate::identity::UserStore;
         let mut server = demo_server();
         let mut store = UserStore::anonymous_only();
@@ -2876,7 +2880,7 @@ mod tests {
     // -------------------------------------------------------------------
 
     #[test]
-    fn e2e_loopback_modify_subscription_and_monitored_items() {
+    fn uacs_5_13_e2e_loopback_modify_subscription_and_monitored_items() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -2943,7 +2947,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_set_monitoring_mode_and_delete_monitored_items() {
+    fn uacs_5_13_e2e_loopback_set_monitoring_mode_and_delete_monitored_items() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -2999,7 +3003,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_set_triggering_releases_a_sampling_item() {
+    fn uacs_5_13_e2e_loopback_set_triggering_releases_a_sampling_item() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -3063,7 +3067,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_republish_and_acknowledgements() {
+    fn uacs_5_13_e2e_loopback_republish_and_acknowledgements() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -3116,7 +3120,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_transfer_subscriptions_between_sessions() {
+    fn uacs_5_6_2_e2e_loopback_transfer_subscriptions_between_sessions() {
         let mut server = demo_server();
         let mut first = Client::new();
         let mut second = Client::new();
@@ -3173,7 +3177,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_session_must_be_activated_and_close_deletes_subscriptions() {
+    fn uacs_5_7_3_e2e_loopback_session_must_be_activated_and_close_deletes_subscriptions() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -3197,7 +3201,7 @@ mod tests {
     // -------------------------------------------------------------------
 
     #[test]
-    fn e2e_loopback_secure_channel_renew_keeps_the_channel_working() {
+    fn uacs_5_6_2_e2e_loopback_secure_channel_renew_keeps_the_channel_working() {
         let mut server = demo_server();
         let mut client = Client::new();
         let mut t = LoopbackTransport::new(&mut server);
@@ -3215,7 +3219,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_loopback_message_larger_than_the_buffer_is_chunked() {
+    fn uacs_6_7_e2e_loopback_message_larger_than_the_buffer_is_chunked() {
         // Part 6 §6.7.1: a Message larger than the negotiated buffer is broken
         // into several MessageChunks and reassembled by the receiver.
         let mut space = AddressSpace::new();
@@ -3231,7 +3235,9 @@ mod tests {
         client.connect(&mut t, "opc.tcp://x").expect("connect");
 
         // Reading it back needs a chunked response...
-        let vals = client.read_values(&mut t, &[node.clone()]).expect("read");
+        let vals = client
+            .read_values(&mut t, std::slice::from_ref(&node))
+            .expect("read");
         assert_eq!(
             vals[0].value,
             Some(Variant::scalar(VariantValue::String(big.clone())))
@@ -3262,7 +3268,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn e2e_tcp_message_larger_than_the_buffer_is_chunked() {
+    fn uacs_6_7_e2e_tcp_message_larger_than_the_buffer_is_chunked() {
         use std::net::TcpListener;
         use std::thread;
 
@@ -3296,24 +3302,26 @@ mod tests {
         server_thread.join().expect("join");
     }
 
-    /// The RSA-2048 key pair the secured end-to-end tests share. Generating a
-    /// 2048-bit key in a debug build costs minutes; the handshake under test
-    /// does not care which key it runs on, so one pair is generated per test
-    /// binary and reused.
+    /// The RSA-2048 key pair the secured end-to-end tests share, generated
+    /// once with OpenSSL (`openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt
+    /// -outform DER`). Generating a 2048-bit key in a debug build took the
+    /// first secured test past its 25 s; the handshake under test does not
+    /// care which key it runs on.
     #[cfg(all(feature = "crypto", feature = "std"))]
     fn shared_rsa_keys() -> &'static (
         zerodds_opcua_uacp::crypto::RsaPrivateKey,
         zerodds_opcua_uacp::crypto::RsaPrivateKey,
     ) {
-        use rand::rngs::OsRng;
+        use rsa::pkcs8::DecodePrivateKey;
         use std::sync::OnceLock;
         use zerodds_opcua_uacp::crypto::RsaPrivateKey;
         static KEYS: OnceLock<(RsaPrivateKey, RsaPrivateKey)> = OnceLock::new();
         KEYS.get_or_init(|| {
-            let mut kg = OsRng;
             (
-                RsaPrivateKey::new(&mut kg, 2048).expect("client key"),
-                RsaPrivateKey::new(&mut kg, 2048).expect("server key"),
+                RsaPrivateKey::from_pkcs8_der(include_bytes!("../tests/fixtures/rsa2048_a.der"))
+                    .expect("client key"),
+                RsaPrivateKey::from_pkcs8_der(include_bytes!("../tests/fixtures/rsa2048_b.der"))
+                    .expect("server key"),
             )
         })
     }
@@ -3405,7 +3413,7 @@ mod tests {
 
     #[cfg(all(feature = "crypto", feature = "std"))]
     #[test]
-    fn e2e_secured_loopback_sign_only_and_renew() {
+    fn uacs_5_6_2_e2e_secured_loopback_sign_only_and_renew() {
         use crate::server::ServerSecurity;
         use rand::rngs::OsRng;
         use zerodds_opcua_uacp::crypto::{SecuredMode, SecurityPolicy};
@@ -3476,7 +3484,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn e2e_tcp_connect_read_call() {
+    fn uacs_7_2_e2e_tcp_connect_read_call() {
         use std::net::TcpListener;
         use std::thread;
 

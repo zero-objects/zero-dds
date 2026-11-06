@@ -434,11 +434,11 @@ impl SystemDefinitions {
     pub fn scope_of(&self, def: &ParticipantDef) -> Result<ParticipantScope, String> {
         let el = self.effective_element(def, 0)?;
         let mut scope = ParticipantScope::default();
-        if let Some(reference) = el.attribute("domain_ref") {
-            if let Some(domain) = self.domains.get(reference) {
-                scope.register_types = domain.register_types.clone();
-                scope.topics = domain.topics.clone();
-            }
+        if let Some(reference) = el.attribute("domain_ref")
+            && let Some(domain) = self.domains.get(reference)
+        {
+            scope.register_types = domain.register_types.clone();
+            scope.topics = domain.topics.clone();
         }
         merge_children(&el, &mut scope.register_types, &mut scope.topics)?;
         Ok(scope)
@@ -741,7 +741,7 @@ mod tests {
     /// the ObjectIds of Table 16 (the participant is named after its
     /// application: "MyApplications::ShapesDemoApp::MyParticipant").
     #[test]
-    fn the_example_file_defines_the_objects_of_table_16() {
+    fn xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16() {
         let defs = example();
         assert!(defs.application("MyApplications::ShapesDemoApp").is_some());
         let participant = defs
@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn a_participant_library_and_inheritance() {
+    fn xrce_7_7_3_4_2_a_participant_library_and_inheritance() {
         let doc = zerodds_xml::parse_xml_tree(
             r#"<dds><domain_library name="D"><domain name="Base" domain_id="3">
                  <register_type name="T" type_ref="Mod::T"/><topic name="A" register_type_ref="T"/>
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn what_cannot_be_planned_is_refused() {
+    fn xrce_7_7_3_5_2_what_cannot_be_planned_is_refused() {
         let mut defs = SystemDefinitions::default();
         for (xml, expected) in [
             // A writer of a topic the participant does not hold.

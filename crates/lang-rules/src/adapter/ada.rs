@@ -920,10 +920,10 @@ fn operator_types(decls: &[ada::Decl]) -> Vec<Path> {
                 };
                 for arm in &variant.arms {
                     for choice in &arm.choices {
-                        if let ada::Choice::Value(value) = choice {
-                            if needs_operator(value) {
-                                note(&selector.type_, &mut marks);
-                            }
+                        if let ada::Choice::Value(value) = choice
+                            && needs_operator(value)
+                        {
+                            note(&selector.type_, &mut marks);
                         }
                     }
                 }
@@ -1013,10 +1013,10 @@ fn context_clause(decls: &[ada::Decl]) -> Vec<Path> {
 /// A single-segment name is one this column declared itself, so only a
 /// qualified one names a library unit.
 fn push_root(path: &Path, out: &mut Vec<String>) {
-    if path.segments().len() > 1 {
-        if let Some(root) = path.segments().first() {
-            out.push(root.as_str().to_string());
-        }
+    if path.segments().len() > 1
+        && let Some(root) = path.segments().first()
+    {
+        out.push(root.as_str().to_string());
     }
 }
 
@@ -1241,10 +1241,10 @@ fn dependencies(ast: &Ast, id: Id<TypeNode>) -> Vec<Id<TypeNode>> {
         TypeKind::Union { discriminator, .. } => {
             out.extend(discriminator.resolved());
             for case in ast.cases_of(id) {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        out.extend(member.type_.resolved());
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                {
+                    out.extend(member.type_.resolved());
                 }
             }
         }
@@ -1887,9 +1887,9 @@ fn declare_type(
             }
             // An aggregate with no members is `is null record;` and not
             // `record end record;` (RM 3.8). Unlike the C column, which
-            // has to refuse it — C23 §6.7.2.1p8 leaves a structure with
-            // no named member undefined — Ada has a spelling for it and
-            // the corpus contains the case.
+            // needs a member that stands in for none — C23 §6.7.2.1p8
+            // leaves a structure with no named member undefined — Ada has
+            // a spelling for it and the corpus contains the case.
             out.push(ada::Decl::Type(ada::TypeDecl {
                 doc: idl_note(&name, &node.name),
                 name: Ident::new(&name),
@@ -2062,10 +2062,10 @@ fn union_decl(
     let cases = ast.cases_of(id);
     let mut pairs = vec![(DISCRIMINANT.to_string(), "<discriminator>".to_string())];
     for case in cases {
-        if let Ok(case_node) = ast.case(*case) {
-            if let Ok(member) = ast.member(case_node.member) {
-                pairs.push((component_name(&member.name), member.name.clone()));
-            }
+        if let Ok(case_node) = ast.case(*case)
+            && let Ok(member) = ast.member(case_node.member)
+        {
+            pairs.push((component_name(&member.name), member.name.clone()));
         }
     }
     no_folded_collision(&pairs, name)?;

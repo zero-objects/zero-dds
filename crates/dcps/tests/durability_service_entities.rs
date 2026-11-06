@@ -106,7 +106,7 @@ fn eventually(mut cond: impl FnMut() -> bool) -> bool {
 /// §2.2.3.4: the data of a TRANSIENT topic survives its DataWriter and a
 /// reader that comes later gets it, with no application DataWriter around.
 #[test]
-fn a_reader_after_the_last_writer_gets_the_stored_samples() {
+fn dcps_2_2_3_4_a_reader_after_the_last_writer_gets_the_stored_samples() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("ServiceWriterSurvives", transient_topic())
@@ -147,7 +147,7 @@ fn a_reader_after_the_last_writer_gets_the_stored_samples() {
 /// The service ends when its store holds nothing any more: LIFESPAN took the
 /// samples, so a reader that comes then has no writer to match.
 #[test]
-fn the_service_writer_ends_with_the_content_of_the_store() {
+fn dcps_2_2_3_4_the_service_writer_ends_with_the_content_of_the_store() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("ServiceWriterEnds", transient_topic())
@@ -187,7 +187,7 @@ fn the_service_writer_ends_with_the_content_of_the_store() {
 /// fictitious reader requests; a reader that asks for RELIABLE meets a Topic
 /// that offers BEST_EFFORT.
 #[test]
-fn an_endpoint_incompatible_with_the_topic_changes_its_status() {
+fn dcps_2_2_3_4_an_endpoint_incompatible_with_the_topic_changes_its_status() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("ServiceIncompatible", transient_topic())
@@ -248,7 +248,7 @@ fn an_endpoint_incompatible_with_the_topic_changes_its_status() {
 /// A writer that is incompatible with the Topic "will not send its data to
 /// the transient/persistent service": nothing of it reaches the store.
 #[test]
-fn an_incompatible_writer_does_not_feed_the_store() {
+fn dcps_2_2_3_4_an_incompatible_writer_does_not_feed_the_store() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("ServiceRefusesWriter", transient_topic())
@@ -285,7 +285,7 @@ fn an_incompatible_writer_does_not_feed_the_store() {
 /// when its lease runs out, no live writer is left and the instance goes
 /// with the zero `service_cleanup_delay`.
 #[test]
-fn a_writer_that_lost_its_liveliness_is_no_live_writer() {
+fn dcps_2_2_3_4_a_writer_that_lost_its_liveliness_is_no_live_writer() {
     let p = participant();
     let topic = p
         .create_topic::<RawBytes>("ServiceLostLiveliness", TopicQos::default())

@@ -7,7 +7,7 @@
 //! §2.2.2.5.2.5, §2.2.2.5.2.15–16, §2.3.3), on offline participants.
 //!
 //! The participant factory is one per process: only
-//! `the_participant_factory_default` changes its default, and no other
+//! `dcps_2_2_2_1_1_1_the_participant_factory_default` changes its default, and no other
 //! test here creates a participant with `PARTICIPANT_QOS_DEFAULT`.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
@@ -39,7 +39,7 @@ fn partition(name: &str) -> PartitionQosPolicy {
 /// §2.2.2.2.2.3: "TheParticipantFactory can also be used as an alias for
 /// the singleton factory returned by the operation get_instance."
 #[test]
-fn the_participant_factory_is_the_instance() {
+fn dcps_2_2_2_2_2_3_the_participant_factory_is_the_instance() {
     assert!(core::ptr::eq(
         &*THE_PARTICIPANT_FACTORY,
         DomainParticipantFactory::instance()
@@ -53,7 +53,7 @@ fn the_participant_factory_is_the_instance() {
 /// PARTICIPANT_QOS_DEFAULT takes the factory's current default
 /// (§2.2.2.1.1.1). The stored default was read by no `create_participant*`.
 #[test]
-fn the_participant_factory_default() {
+fn dcps_2_2_2_1_1_1_the_participant_factory_default() {
     let factory = DomainParticipantFactory::instance();
     let mut qos = DomainParticipantQos::default();
     qos.user_data.value = vec![1, 2, 3];
@@ -82,7 +82,7 @@ fn the_participant_factory_default() {
 /// `create_subscriber`. A publisher created before the change keeps its
 /// QoS. There were no such operations.
 #[test]
-fn publisher_and_subscriber_defaults() {
+fn dcps_2_2_2_2_1_1_publisher_and_subscriber_defaults() {
     let p = offline();
     let before = p.create_publisher(PUBLISHER_QOS_DEFAULT);
 
@@ -118,7 +118,7 @@ fn publisher_and_subscriber_defaults() {
 /// and return INCONSISTENT_POLICY." `create_topic` with TOPIC_QOS_DEFAULT
 /// takes the default.
 #[test]
-fn topic_default_is_checked_and_used() {
+fn dcps_2_2_2_2_1_5_topic_default_is_checked_and_used() {
     let p = offline();
     let mut good = TopicQos::default();
     good.durability.kind = DurabilityKind::TransientLocal;
@@ -159,7 +159,7 @@ fn topic_default_is_checked_and_used() {
 /// with the Topic QoS copied over it, so a writer-only policy of the
 /// default stays and a policy the topic carries comes from the topic.
 #[test]
-fn datawriter_default_and_use_topic_qos() {
+fn dcps_2_2_2_1_1_1_datawriter_default_and_use_topic_qos() {
     let p = offline();
     let mut topic_qos = TopicQos::default();
     topic_qos.reliability.kind = ReliabilityKind::BestEffort;
@@ -214,7 +214,7 @@ fn datawriter_default_and_use_topic_qos() {
 /// also on a ContentFilteredTopic, whose "Topic in question is the
 /// ContentFilteredTopic's 'related Topic'" (§2.2.2.5.2.5).
 #[test]
-fn datareader_default_and_use_topic_qos() {
+fn dcps_2_2_2_5_2_5_datareader_default_and_use_topic_qos() {
     let p = offline();
     let mut topic_qos = TopicQos::default();
     topic_qos.durability.kind = DurabilityKind::TransientLocal;
@@ -269,7 +269,7 @@ fn datareader_default_and_use_topic_qos() {
 /// immutable QoS": once enabled, a default whose PRESENTATION differs is
 /// refused as that QoS given as a value would be, and nothing changes.
 #[test]
-fn set_qos_with_the_default_keeps_the_immutable_rule() {
+fn dcps_2_2_2_1_1_1_set_qos_with_the_default_keeps_the_immutable_rule() {
     let p = offline();
     let publisher = p.create_publisher(PublisherQos::default());
     publisher.enable().unwrap();
@@ -296,7 +296,7 @@ fn set_qos_with_the_default_keeps_the_immutable_rule() {
 /// `*_QOS_DEFAULT` takes the current default of the participant or the
 /// subscriber.
 #[test]
-fn set_qos_with_the_default_on_topic_subscriber_and_reader() {
+fn dcps_2_2_2_1_1_1_set_qos_with_the_default_on_topic_subscriber_and_reader() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("SetQosDefault", TopicQos::default())
@@ -330,7 +330,7 @@ fn set_qos_with_the_default_on_topic_subscriber_and_reader() {
 
 /// §2.2.2.4.1.13 and §2.2.2.5.2.13 `get_participant`.
 #[test]
-fn publisher_and_subscriber_know_their_participant() {
+fn dcps_2_2_2_4_1_13_publisher_and_subscriber_know_their_participant() {
     let p = offline();
     let publisher = p.create_publisher(PublisherQos::default());
     let subscriber = p.create_subscriber(SubscriberQos::default());
@@ -341,5 +341,20 @@ fn publisher_and_subscriber_know_their_participant() {
     assert_eq!(
         subscriber.get_participant().map(|q| q.instance_handle()),
         Some(p.instance_handle())
+    );
+}
+
+/// §2.2.3.14 RELIABILITY: BEST_EFFORT "is the default value for DataReaders
+/// and Topics", RELIABLE "is the default value for DataWriters". The runtime
+/// configurations a caller fills with `..Default::default()` follow it; the
+/// reader one asked for RELIABLE before.
+#[test]
+fn dcps_2_2_3_14_the_runtime_reader_default_is_best_effort_and_the_writer_default_reliable() {
+    use zerodds_dcps::runtime::{UserReaderConfig, UserWriterConfig};
+    assert!(!UserReaderConfig::default().reliable);
+    assert!(UserWriterConfig::default().reliable);
+    assert_eq!(
+        DataReaderQos::default().reliability.kind,
+        ReliabilityKind::BestEffort
     );
 }

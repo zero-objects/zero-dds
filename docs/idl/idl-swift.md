@@ -39,5 +39,5 @@ The `crates/idl-swift` suite runs string smoke tests in CI (job `idl-swift`, the
 Rust image has no swiftc). The `byte_identity_vs_rust_goldens` test compiles and
 runs the generated Swift (`swiftc`) when available — verified on macOS
 (Swift 6.3): the generated `marshalXCDR` output equals `golden_le.bin` /
-`golden_be.bin` byte-for-byte. The `endpoints-swift` job proves the same wire in
-the `swift:6.0` image.
+`golden_be.bin` byte-for-byte. The weekly job `integration-bindings-swift` proves
+the same wire with Swift 6.0.3.

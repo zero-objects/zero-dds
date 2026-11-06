@@ -1445,7 +1445,7 @@ mod tests {
     }
 
     #[test]
-    fn a_view_reports_what_the_model_holds() {
+    fn xtypes_7_5_2_a_view_reports_what_the_model_holds() {
         let (ast, id) = sample();
         let type_ = DynamicType::new(ast, id);
         assert_eq!(type_.kind(), TypeKind::Structure);
@@ -1474,7 +1474,7 @@ mod tests {
     /// The same model twice is the same type; a different member id is
     /// not.
     #[test]
-    fn equality_is_structural_and_not_by_pointer() {
+    fn xtypes_7_5_2_8_equality_is_structural_and_not_by_pointer() {
         let (one, id) = sample();
         let (other, other_id) = sample();
         assert!(DynamicType::new(Arc::clone(&one), id).equals(&DynamicType::new(other, other_id)));
@@ -1498,7 +1498,7 @@ mod tests {
     /// An alias chain ends at the type it names, and a `sequence`'s
     /// element is reachable without touching the model.
     #[test]
-    fn a_view_follows_an_alias_and_an_element() {
+    fn xtypes_7_5_2_4_a_view_follows_an_alias_and_an_element() {
         let mut builder = DynamicTypeBuilder::new();
         let long = builder.primitive(TypeKind::Int32).expect("a long");
         let sequence = builder.sequence(long, Some(4)).expect("a sequence");

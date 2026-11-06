@@ -159,14 +159,6 @@ write_lib_rs() {
       echo ""
     fi
     echo "// TODO: implementation follows. Placeholder for phase-0 CI wiring."
-    echo ""
-    echo "#[cfg(test)]"
-    echo "mod tests {"
-    echo "    #[test]"
-    echo "    fn crate_compiles() {"
-    echo "        // Smoke test: crate compiles and the test harness runs."
-    echo "    }"
-    echo "}"
   } > "$file"
 }
 

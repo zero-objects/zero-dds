@@ -1,17 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! D reliable-stream endpoint: the D app is the reliable sender (submit +
+//! D reliable-stream endpoint, live: the D app is the reliable sender (submit +
 //! WRITE_DATA + on-ACKNACK retransmit); the shared Rust reliable peer injects
-//! loss and drives recovery. Also runs D's unit/byte-golden suite, the
-//! in-process example, and the producer-latency bench. Gated on `gdc`.
+//! loss and drives recovery. The samples are the `Ping` of the codec the D
+//! generator writes from the IDL, so the run checks IDL, generated codec and
+//! runtime together. Plus the producer-latency comparison. D's unit
+//! and byte-golden suite and its in-process example run in the endpoints-gate column of D.
+//! Gated on `gdc`.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
+use zerodds_endpoint_e2e::codegen::{Language, runtime_dir, source};
+use zerodds_endpoint_e2e::{
+    RELIABLE_SAMPLES, assert_reliable_pings, bind_reliable_peer, reliable_receive,
+};
 
 fn gdc_available() -> bool {
     Command::new("gdc").arg("--version").output().is_ok()
@@ -43,17 +49,128 @@ fn gdc_build(bin: &Path, srcs: &[&str]) {
     );
 }
 
+/// The reliable app: the codec `codegen::source(Language::D)` writes from the
+/// IDL (`gen.d`, calling `runtime/d/zdwire.d`) encodes
+/// `Ping(seq = i, msg = "reliable")`, and the sender loop of
+/// `endpoints/d/reliable_app.d` over the SDK's `Sender` (`reliable.d`) sends
+/// it: WRITE_DATA for each, then HEARTBEAT and the retransmit of what an
+/// ACKNACK marks missing until the window drains.
+const D_RELIABLE_APP: &str = r#"
+module app;
+
+import gen;
+import zdwire;
+import reliable;
+import std.socket;
+import std.conv : to;
+import std.stdio : stderr;
+import core.time : MonoTime, dur;
+
+ubyte[] encodePing(int i)
+{
+    Ping ping;
+    ping.seq = i;
+    ping.msg = "reliable";
+    auto zdFraming = zdwire.PlCdr1Framing("sentinel-must-understand", 16128, true, true, true, true);
+    auto zdW = new zdwire.Writer(zdwire.Endianness.little, 4, zdFraming, false);
+    zd_enc_Ping(zdW, ping);
+    return zdW.Finish();
+}
+
+void main(string[] args)
+{
+    immutable ushort port = to!ushort(args[1]);
+    immutable int n = to!int(args[2]);
+    auto sock = new UdpSocket();
+    sock.bind(new InternetAddress("127.0.0.1", InternetAddress.PORT_ANY));
+    auto peer = new InternetAddress("127.0.0.1", port);
+    sock.setOption(SocketOptionLevel.SOCKET, SocketOption.RCVTIMEO, dur!"msecs"(50));
+
+    Sender s;
+    foreach (i; 0 .. n)
+    {
+        ushort seq;
+        auto sample = encodePing(i);
+        auto st = s.submit(sample, seq);
+        if (st != SubmitStatus.ok)
+        {
+            stderr.writeln("submit failed: ", st);
+            return;
+        }
+        sock.sendTo(reliableWriteFrame(seq, 0x0015, sample), peer);
+    }
+
+    immutable deadline = MonoTime.currTime + dur!"seconds"(20);
+    ubyte[4096] buf;
+    while (s.inFlightCount() > 0 && MonoTime.currTime < deadline)
+    {
+        Heartbeat hb;
+        if (s.pendingHeartbeat(MonoTime.currTime, hb))
+            sock.sendTo(heartbeatFrame(hb), peer);
+        else
+        {
+            auto seqs = s.inFlightSeqs();
+            sock.sendTo(heartbeatFrame(Heartbeat(cast(short) seqs[0],
+                    cast(short) seqs[$ - 1], STREAM_RELIABLE)), peer);
+        }
+        Address from;
+        auto got = sock.receiveFrom(buf[], from);
+        if (got <= 0)
+            continue;
+        AckNack a;
+        if (!parseAckNack(buf[0 .. got], a))
+            continue;
+        s.recvAcknack(a);
+        ushort base = cast(ushort) a.firstUnacked;
+        ushort bitmap = cast(ushort)(a.nack[0] | (a.nack[1] << 8));
+        foreach (ushort i; 0 .. 16)
+        {
+            if (((bitmap >> i) & 1) == 0)
+                continue;
+            ushort seq = cast(ushort)(base + i);
+            auto p = s.getInFlight(seq);
+            if (p !is null)
+                sock.sendTo(reliableWriteFrame(seq, 0x0015, p), peer);
+        }
+    }
+    if (s.inFlightCount() != 0)
+        stderr.writeln("RELIABLE INCOMPLETE: ", s.inFlightCount(), " still in-flight");
+}
+"#;
+
 fn run_loss(drop_every: Option<usize>, label: &str) {
     if !gdc_available() {
         eprintln!("SKIP {label}: gdc not on PATH");
         return;
     }
     let dir = tmp_dir(label.replace('/', "_").as_str());
+    std::fs::write(
+        dir.join("gen.d"),
+        format!("module gen;\n\nimport zdwire;\n\n{}", source(Language::D)),
+    )
+    .expect("write gen.d");
+    std::fs::write(dir.join("app.d"), D_RELIABLE_APP).expect("write app.d");
+    std::fs::copy(runtime_dir("d").join("zdwire.d"), dir.join("zdwire.d")).expect("copy zdwire.d");
+    std::fs::copy(
+        format!("{}/reliable.d", endpoints_d()),
+        dir.join("reliable.d"),
+    )
+    .expect("copy reliable.d");
     let app = dir.join("reliable_app");
-    gdc_build(&app, &["reliable.d", "reliable_app.d"]);
+    let o = Command::new("gdc")
+        .args(["app.d", "gen.d", "zdwire.d", "reliable.d", "-o"])
+        .arg(&app)
+        .current_dir(&dir)
+        .output()
+        .expect("run gdc");
+    assert!(
+        o.status.success(),
+        "gdc failed for the reliable app:\n{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
 
     let peer = bind_reliable_peer(drop_every).expect("bind reliable peer");
-    let n = 12usize;
+    let n = RELIABLE_SAMPLES;
     let child = Command::new(&app)
         .arg(peer.port.to_string())
         .arg(n.to_string())
@@ -63,79 +180,27 @@ fn run_loss(drop_every: Option<usize>, label: &str) {
         .expect("spawn d app");
 
     let samples = reliable_receive(&peer, child, label, n);
-    assert_eq!(samples.len(), n, "{label}: sample count");
-    for (i, s) in samples.iter().enumerate() {
-        assert!(s.len() >= 4, "{label}: sample {i} too short");
-        let v = u32::from_le_bytes([s[0], s[1], s[2], s[3]]);
-        assert_eq!(v as usize, i, "{label}: sample {i} value");
-    }
+    assert_reliable_pings(label, &samples, n);
 }
 
+/// reliable-endpoint 1.0 §5 point 3: the D app sends its samples on the
+/// reliable stream (DDS-XRCE 1.0 §8.4.10, stream id 0x80); the Rust peer
+/// drops datagrams and answers with ACKNACK (§8.3.5.11), and every sample
+/// arrives once and in order.
 #[test]
-fn d_reliable_loss_recovery() {
+#[ignore = "needs the D toolchain; runs in integration-bindings"]
+fn reliable_5_3_d_samples_arrive_in_order_despite_dropped_datagrams() {
     run_loss(Some(3), "d/loss");
 }
 
+/// reliable-endpoint 1.0 §5 point 4 and §2: the D producer's enqueue into
+/// the async-decoupled writer costs less than the inline send it replaces,
+/// which enters the kernel with `sendto`; both values are printed.
 #[test]
-fn d_reliable_no_loss() {
-    run_loss(None, "d/baseline");
-}
-
-#[test]
-fn d_reliable_unit_and_golden() {
+#[ignore = "needs the D toolchain; runs in integration-bindings"]
+fn reliable_5_4_d_the_producer_enqueue_costs_less_than_the_inline_send() {
     if !gdc_available() {
-        eprintln!("SKIP d_reliable_unit_and_golden: gdc not on PATH");
-        return;
-    }
-    let dir = tmp_dir("unit");
-    let bin = dir.join("reliable_test");
-    gdc_build(&bin, &["reliable.d", "reliable_test.d"]);
-
-    // Best-effort: generate the Rust goldens and pass them for a byte-identical
-    // check; the test also asserts the hardcoded golden bytes unconditionally.
-    let gold = dir.join("gold");
-    std::fs::create_dir_all(&gold).expect("mkdir gold");
-    let gen_res = Command::new("cargo")
-        .args(["run", "-q", "-p", "zerodds-endpoint-golden", "--"])
-        .arg(&gold)
-        .output();
-    let hb = gold.join("golden_heartbeat_le.bin");
-    let ak = gold.join("golden_acknack_le.bin");
-    let mut cmd = Command::new(&bin);
-    if gen_res.map(|o| o.status.success()).unwrap_or(false) && hb.exists() && ak.exists() {
-        cmd.arg(&hb).arg(&ak);
-    }
-    let o = cmd.output().expect("run reliable_test");
-    let out = String::from_utf8_lossy(&o.stdout);
-    assert!(
-        o.status.success() && out.contains("ALL OK"),
-        "d unit/golden failed:\nstdout: {out}\nstderr: {}",
-        String::from_utf8_lossy(&o.stderr)
-    );
-}
-
-#[test]
-fn d_reliable_example() {
-    if !gdc_available() {
-        eprintln!("SKIP d_reliable_example: gdc not on PATH");
-        return;
-    }
-    let dir = tmp_dir("example");
-    let bin = dir.join("example_reliable");
-    gdc_build(&bin, &["reliable.d", "example_reliable.d"]);
-    let o = Command::new(&bin).output().expect("run example");
-    let out = String::from_utf8_lossy(&o.stdout);
-    assert!(
-        out.contains("RELIABLE OK"),
-        "d example failed:\nstdout: {out}\nstderr: {}",
-        String::from_utf8_lossy(&o.stderr)
-    );
-}
-
-#[test]
-fn d_reliable_latency_bench() {
-    if !gdc_available() {
-        eprintln!("SKIP d_reliable_latency_bench: gdc not on PATH");
+        eprintln!("SKIP d reliable latency bench: gdc not on PATH");
         return;
     }
     let dir = tmp_dir("bench");
@@ -149,4 +214,5 @@ fn d_reliable_latency_bench() {
         String::from_utf8_lossy(&o.stderr)
     );
     eprintln!("d bench: {}", out.trim());
+    zerodds_endpoint_e2e::assert_enqueue_below_inline("d", &out);
 }

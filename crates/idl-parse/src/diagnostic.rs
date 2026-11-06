@@ -102,6 +102,14 @@ pub enum DiagnosticCode {
     /// identifier in an `#if` that names no macro, which §16.1 evaluates
     /// as 0.
     Preprocessing,
+    /// A construct outside the profile the file is checked against.
+    ///
+    /// OMG IDL 4.2 clause 9 combines the building blocks of §7.4 and the
+    /// groups of annotations of §8.3 into profiles; a file checked against
+    /// one may use only what the profile is made of. Reported only when a
+    /// caller names a profile — §9.1 calls them "not normative for the
+    /// related middleware solutions".
+    OutsideProfile,
 }
 
 impl DiagnosticCode {
@@ -131,11 +139,12 @@ impl DiagnosticCode {
             Self::ErrorDirective => "IDL0020",
             Self::InvalidInheritance => "IDL0021",
             Self::Preprocessing => "IDL0022",
+            Self::OutsideProfile => "IDL0023",
         }
     }
 
     /// Every code, so a test can assert the set is collision-free.
-    pub const ALL: [Self; 22] = [
+    pub const ALL: [Self; 23] = [
         Self::UnexpectedToken,
         Self::MissingToken,
         Self::UnterminatedDeclaration,
@@ -158,6 +167,7 @@ impl DiagnosticCode {
         Self::ErrorDirective,
         Self::InvalidInheritance,
         Self::Preprocessing,
+        Self::OutsideProfile,
     ];
 }
 

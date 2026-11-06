@@ -196,7 +196,7 @@ fn rig() -> (
 /// sleep/race required to produce two distinguishable instants.
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
-fn test_clock_drives_destination_order_deterministically() {
+fn dcps_2_2_2_4_2_11_test_clock_drives_destination_order_deterministically() {
     let (clock, writer, reader) = rig();
 
     // t=1000: first sample, always delivered (no prior delivery yet).
@@ -222,7 +222,7 @@ fn test_clock_drives_destination_order_deterministically() {
     // `take_with_info()` (spec §2.2.2.5.3.6 `take_w_condition` with ANY
     // masks) demonstrates C2(6)'s actual claim directly. Plain `take()`
     // enforces the identical DESTINATION_ORDER admission now (see
-    // `plain_take_enforces_destination_order` in this file) — both route
+    // `dcps_2_2_2_5_3_8_plain_take_enforces_destination_order` in this file) — both route
     // through the same `ingest_into_cache`.
     let delivered: Vec<u32> = reader
         .take_with_info()
@@ -321,7 +321,7 @@ fn intra_runtime_rig() -> (
 /// `spatial_bridge.rs` / the time-service DCPS example. Before the fix,
 /// `take()` never called `should_deliver_under_destination_order` at all.
 #[test]
-fn plain_take_enforces_destination_order() {
+fn dcps_2_2_2_5_3_8_plain_take_enforces_destination_order() {
     let (clock, writer, reader) = intra_runtime_rig();
 
     writer.write(&Reading { seq: 1 }).expect("write seq=1");
@@ -349,7 +349,7 @@ fn plain_take_enforces_destination_order() {
 /// Same claim through `read()` (non-consuming) — `read()`'s live-mode drain
 /// had the identical gap.
 #[test]
-fn plain_read_enforces_destination_order() {
+fn dcps_2_2_2_5_3_8_plain_read_enforces_destination_order() {
     let (clock, writer, reader) = intra_runtime_rig();
 
     writer.write(&Reading { seq: 1 }).expect("write seq=1");

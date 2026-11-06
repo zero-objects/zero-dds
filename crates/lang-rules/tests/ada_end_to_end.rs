@@ -85,7 +85,7 @@ fn a_struct_of_primitives_becomes_an_ada_record() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_an_interfaces_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_an_interfaces_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -123,7 +123,7 @@ fn every_idl_primitive_reaches_an_interfaces_type() {
 }
 
 #[test]
-fn no_generated_type_has_an_implementation_defined_width() {
+fn xtypes_7_2_2_2_no_generated_type_has_an_implementation_defined_width() {
     // RM 3.5.4 fixes only a lower bound on `Integer`, and RM 3.5.7
     // leaves the format of `Float` to the implementation. A member
     // declared with either would change width between two compilers, for
@@ -148,7 +148,7 @@ fn no_generated_type_has_an_implementation_defined_width() {
 }
 
 #[test]
-fn a_long_double_is_text_and_never_an_ada_float() {
+fn xtypes_7_2_2_2_a_long_double_is_text_and_never_an_ada_float() {
     // Ada names three predefined floating types and fixes the format of
     // none. `Long_Long_Float` is 80-bit x87 extended on x86-64 GNAT and
     // 64-bit where there is no wider hardware type, so one generated
@@ -165,7 +165,7 @@ fn a_long_double_is_text_and_never_an_ada_float() {
 }
 
 #[test]
-fn a_string_is_an_unbounded_string_and_never_an_ada_string() {
+fn xtypes_7_2_2_3_a_string_is_an_unbounded_string_and_never_an_ada_string() {
     // Ada's `String` is `array (Positive range <>) of Character`
     // (RM A.1) — an unconstrained array, and RM 3.8 requires a
     // component's subtype to be definite, so `Name : String;` is not a
@@ -187,7 +187,7 @@ fn a_string_is_an_unbounded_string_and_never_an_ada_string() {
 }
 
 #[test]
-fn an_optional_member_becomes_a_discriminated_record() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_discriminated_record() {
     // DDS-XTypes 1.3 §7.2.2.4.4.4.7. The absent state has no component
     // at all, so reading the value when `Present` is False raises
     // `Constraint_Error` (RM 3.8.1) rather than returning whatever was
@@ -212,7 +212,7 @@ fn an_optional_member_becomes_a_discriminated_record() {
 }
 
 #[test]
-fn a_member_named_after_a_reserved_word_escapes_with_a_letter() {
+fn idl_7_2_3_a_member_named_after_a_reserved_word_escapes_with_a_letter() {
     // RM 2.3(4/3) forbids an identifier that ends in an underscore, so
     // the `type_` every other column writes is not an Ada identifier.
     // The escape is a letter suffix instead, and the IDL spelling is not
@@ -239,7 +239,7 @@ fn a_member_named_after_a_reserved_word_escapes_with_a_letter() {
 }
 
 #[test]
-fn the_reserved_word_check_folds_case_because_ada_does() {
+fn idl_7_2_3_the_reserved_word_check_folds_case_because_ada_does() {
     // RM 2.9 lists the reserved words in lower case and RM 2.3(5/2)
     // folds before comparing, so `TYPE`, `Type` and `type` are one
     // reserved word and all three have to move. A case-sensitive check
@@ -277,7 +277,7 @@ fn a_member_named_after_a_unit_the_spec_relies_on_is_escaped_too() {
 }
 
 #[test]
-fn two_members_that_fold_onto_one_ada_identifier_are_refused_by_name() {
+fn idl_7_2_3_two_members_that_fold_onto_one_ada_identifier_are_refused_by_name() {
     // The case-insensitive check, and the only one that catches this.
     // IDL 4.2 §7.2.3.1 already forbids `value` beside `Value` in one
     // scope and the frontend reports that. What is left is the pair the
@@ -361,7 +361,7 @@ fn an_array_declares_one_type_per_dimension_outermost_first() {
 }
 
 #[test]
-fn a_map_becomes_a_sequence_of_entries_and_never_a_hashed_container() {
+fn xtypes_7_2_2_4_3_a_map_becomes_a_sequence_of_entries_and_never_a_hashed_container() {
     // DDS-XTypes 1.3 §7.4.1.1.4 defines a map on the wire as a sequence
     // of key/value pairs, which is ordered. `Ada.Containers.Hashed_Maps`
     // iterates in an order the implementation chooses, so a column
@@ -416,7 +416,7 @@ fn a_typedef_becomes_a_subtype_and_not_a_derived_type() {
 }
 
 #[test]
-fn an_enum_carries_its_numbering_in_a_representation_clause() {
+fn xtypes_7_2_2_4_1_1_an_enum_carries_its_numbering_in_a_representation_clause() {
     // The single most important thing this column does. RM 3.5.1
     // numbers the literals 0, 1, 2 in declaration order, so without the
     // clause of RM 13.4 an IDL `@value(4)` arrives as 1 and every value
@@ -438,7 +438,7 @@ fn an_enum_carries_its_numbering_in_a_representation_clause() {
 }
 
 #[test]
-fn an_enum_whose_values_do_not_ascend_is_refused_by_name() {
+fn xtypes_7_2_2_4_1_1_an_enum_whose_values_do_not_ascend_is_refused_by_name() {
     // RM 13.4 requires the codes of a representation clause to satisfy
     // the type's own ordering. IDL puts no such constraint on `@value`.
     // Emitting the clause anyway produces a spec GNAT rejects; dropping
@@ -451,7 +451,7 @@ fn an_enum_whose_values_do_not_ascend_is_refused_by_name() {
 }
 
 #[test]
-fn a_union_becomes_a_discriminated_record_with_a_variant_part() {
+fn xtypes_7_2_2_4_4_3_a_union_becomes_a_discriminated_record_with_a_variant_part() {
     // RM 3.8.1. The branches are inside the type and `D` is part of the
     // value, so reading a branch the discriminant does not select raises
     // `Constraint_Error` rather than returning whatever was there. Only
@@ -506,7 +506,7 @@ fn a_union_whose_branches_cover_the_discriminant_writes_no_others_arm() {
 }
 
 #[test]
-fn a_union_default_branch_becomes_the_others_arm() {
+fn xtypes_7_2_2_4_4_3_a_union_default_branch_becomes_the_others_arm() {
     // An IDL `default:` is exactly Ada's `others`, which RM 3.8.1
     // requires to be alone and last.
     let generated = generate("union U switch (long) { case 1: long a; default: double b; };");
@@ -852,7 +852,7 @@ fn a_native_declaration_becomes_a_derived_address_type() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_a_declarative_part_is_contiguous() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_a_declarative_part_is_contiguous() {
     let generated = generate("module common { module util { struct Location { long x; }; }; };");
     assert!(
         generated.contains("type Common_Util_Location is record"),
@@ -865,7 +865,7 @@ fn a_module_flattens_onto_the_name_because_a_declarative_part_is_contiguous() {
 }
 
 #[test]
-fn a_recursive_type_is_cut_with_an_incomplete_type_declaration() {
+fn xtypes_7_2_2_4_9_a_recursive_type_is_cut_with_an_incomplete_type_declaration() {
     // RM 3.10.1. `Node` cannot be declared before it is named, so the
     // name is declared first and the type follows. The array of `Node`
     // is split the same way, because an incomplete type may not be an
@@ -902,7 +902,7 @@ fn a_recursive_type_is_cut_with_an_incomplete_type_declaration() {
 }
 
 #[test]
-fn mutual_recursion_needs_only_one_incomplete_declaration() {
+fn xtypes_7_2_2_4_9_mutual_recursion_needs_only_one_incomplete_declaration() {
     // Cutting one type of the cycle is enough: the other is reached
     // through the sequence the cut made writable.
     let generated = generate(
@@ -979,7 +979,7 @@ fn a_recursive_optional_member_becomes_an_access_type() {
 }
 
 #[test]
-fn a_recursion_with_no_collection_and_no_reference_is_refused_by_name() {
+fn xtypes_7_2_2_4_9_a_recursion_with_no_collection_and_no_reference_is_refused_by_name() {
     // A record whose component is itself has no bound, and there is no
     // annotation here to make the component a reference. Refused by
     // name rather than emitted in whatever order the walk reached, which
@@ -1118,13 +1118,13 @@ fn a_boxed_value_with_an_unresolved_target_is_refused() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_table_claims_for_ada_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_table_claims_for_ada_produces_output() {
     // The table says a rule covers it; this says the rule reaches text.
     let sources = [
         ("struct S { long a; };", "type S is record"),
@@ -1210,7 +1210,7 @@ const REFUSED: &[(&str, &str)] = &[(
 )];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -1454,7 +1454,7 @@ const SAMPLES: &[(&str, &str)] = &[
 /// samples declare types with names of their own but each is a package
 /// spec, and two packages of one name cannot share a directory.
 #[test]
-fn the_generated_ada_compiles() {
+fn xtypes_7_3_1_the_generated_ada_compiles() {
     // Written whether or not GNAT is here, so a host that has it can be
     // handed exactly the text this host produced.
     if let Ok(dir) = std::env::var("ZD_ADA_SAMPLES") {
@@ -1503,27 +1503,28 @@ fn write_samples(dir: &str) {
     }
 }
 
-/// The whole corpus through GNAT, one package per case.
-///
-/// `#[ignore]`, because it is one invocation of a compiler per case and
-/// takes minutes. It is what proves the column rather than samples it,
-/// so it is run with `--include-ignored` on a host that has GNAT.
-#[test]
-#[ignore = "one `gnatmake` invocation per corpus case; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through GNAT, one package per case: every case renders
+/// or is refused as documented, and the cases of `share` (of `shares`)
+/// compile. 12.9 s for the corpus on the Linux test host.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         gnat_available(),
         "the explicitly selected ada gate requires its compiler"
     );
     let mut failures = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
         }
         let text = try_generate(&source, &path.display().to_string())
             .unwrap_or_else(|why| panic!("accepted corpus case {name} failed generation: {why}"));
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         if let Err(why) = gnat_compiles(&text, &name) {
             failures.push(format!("{name}: {why}"));
@@ -1536,7 +1537,64 @@ fn every_corpus_case_that_renders_also_compiles() {
         failures.len()
     );
     assert!(
-        checked >= MUST_RENDER,
-        "too few corpus cases reached the selected gate: {checked}"
+        rendered >= MUST_RENDER,
+        "too few corpus cases reached the selected gate: {rendered}"
     );
+}
+
+/// Every corpus case that renders compiles under GNAT.
+///
+/// The corpus in 8 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen-ada-lua-ocaml` job runs them
+/// with the toolchain, eight shares at a time.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 8);
+    }
+
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 8);
+    }
+
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 8);
+    }
+
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 8);
+    }
+
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 8);
+    }
+
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 8);
+    }
+
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 8);
+    }
+
+    #[test]
+    #[ignore = "an eighth of the corpus through GNAT; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 8);
+    }
 }

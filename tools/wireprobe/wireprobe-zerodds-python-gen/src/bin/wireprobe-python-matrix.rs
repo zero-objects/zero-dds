@@ -14,7 +14,7 @@
 //! What it has instead is a process launch per unit, and CPython's own
 //! start-up is what dominates at this column's scale: about eighty
 //! thousand `python3` launches for the twelve configurations over the
-//! whole corpus in both directions. [`python_matrix_worker.py`] is the
+//! whole corpus in both directions. `python_matrix_worker.py` is the
 //! answer — one interpreter, handed a shard of jobs inline as JSON
 //! (`source`, not `path`: that many small files on disk would buy
 //! nothing a string does not already give `compile()` for a traceback's
@@ -52,9 +52,10 @@
 //! ## Output
 //!
 //! One JSON object, `case → slot → verdict`, in the shape
-//! `wireprobe-c-matrix` produces, so
-//! `crates/wire-probe/tests/three_column_gate.rs` compares both without
-//! a translation layer in between.
+//! `wireprobe-c-matrix` produces. `tests/expected_bytes.rs` holds it to
+//! `tests/interop-corpus/expected-bytes.tsv` (`zerodds_wire_probe::expected`);
+//! `tools/interop-results` reads the whole of it from
+//! `tools/wireprobe/three-column-gate --full`.
 #![forbid(unsafe_code)]
 #![allow(
     clippy::print_stderr,
@@ -88,6 +89,8 @@ wireprobe-python-matrix — the Python column of the interop corpus, whole
     --case <name>       only this case, repeatable (default: all)
     --cases <file>       only the cases named in this file, one per line
     --config <name>      only this configuration, repeatable
+    --encoding <name>    only this encoding (plain-cdr1, pl-cdr1,
+                         plain-cdr2, delimited-cdr, pl-cdr2), repeatable
     --jobs <n>            how many python3 workers to run at once
     --keep                leave the work directory behind
 ";
@@ -110,6 +113,8 @@ struct Options {
     out: PathBuf,
     only: Vec<String>,
     configurations: Vec<String>,
+    /// Only these encodings, by their slot names; all when empty.
+    encodings: Vec<String>,
     jobs: usize,
     keep: bool,
 }
@@ -238,7 +243,7 @@ fn run(options: &Options) -> Result<(), String> {
             &worker,
             &runtime,
             &build,
-            options.jobs,
+            options,
             &mut report,
         )?;
         total_slots += slots;
@@ -283,12 +288,18 @@ fn run_configuration(
     worker: &Path,
     runtime: &Path,
     build: &Path,
-    jobs: usize,
+    options: &Options,
     report: &mut BTreeMap<String, BTreeMap<String, String>>,
 ) -> Result<usize, String> {
+    let jobs = options.jobs;
     let mut units = Vec::with_capacity(cases.len() * ENCODINGS.len() * ORDERS.len());
     for case in 0..cases.len() {
         for (encoding_name, encoding) in ENCODINGS {
+            if !options.encodings.is_empty()
+                && !options.encodings.iter().any(|name| name == encoding_name)
+            {
+                continue;
+            }
             for (order_name, endianness) in ORDERS {
                 units.push(Unit {
                     case,
@@ -545,7 +556,7 @@ fn refusal_message(result: &JobResult) -> String {
 /// Run every job, sharded across `jobs` `python3` workers, and return
 /// each job's answer keyed by the id it was given.
 ///
-/// One process per shard and not one per job: [`python_matrix_worker.py`]
+/// One process per shard and not one per job: `python_matrix_worker.py`
 /// is what answers many jobs in one interpreter, and this is the
 /// driver's half of that — partition, write each shard's manifest,
 /// spawn every worker, then wait for all of them, so the shards run
@@ -773,6 +784,7 @@ fn parse(argv: Vec<String>) -> Result<Options, String> {
     let mut out = None;
     let mut only = Vec::new();
     let mut configurations = Vec::new();
+    let mut encodings = Vec::new();
     let mut jobs = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
     let mut keep = false;
     let mut rest = argv.into_iter();
@@ -799,6 +811,13 @@ fn parse(argv: Vec<String>) -> Result<Options, String> {
                 }
                 configurations.push(name);
             }
+            "--encoding" => {
+                let name = next()?;
+                if !ENCODINGS.iter().any(|(entry, _)| *entry == name) {
+                    return Err(format!("`{name}` is not an encoding"));
+                }
+                encodings.push(name);
+            }
             "--jobs" => {
                 jobs = next()?
                     .parse()
@@ -816,6 +835,7 @@ fn parse(argv: Vec<String>) -> Result<Options, String> {
         out: out.ok_or("--out is required")?,
         only,
         configurations,
+        encodings,
         jobs,
         keep,
     })

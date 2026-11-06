@@ -4,6 +4,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Fixed
+
+- A peer class's `<match delegation_profile="...">` is read
+  (`PeerClassMatch::delegation_profile`); the attribute was ignored, so a
+  class that required a delegation chain matched as one without.
+- A delegation profile's algorithm (`<zerodds:algorithm>`, `<zerodds:anchor
+  algorithm>`) takes the CryptoAlgorithmName of DDS-Security 1.2 Table 25
+  (`ECDSA+P256+SHA256`, `ECDSA+P384+SHA384`,
+  `RSASSA-PSS-MGF1SHA256+2048+SHA256` and the names the table keeps as
+  deprecated) besides the short names read before; `docs/architecture/09_delegation.md`
+  describes the profile, the chain and its validation as the code has them.
+
+- A signed document whose content is the XML itself (signed without
+  `openssl cms -text`) came back cut when a line before its first empty line
+  named `content-type: text/plain`, e.g. in an XML comment: the verifier took
+  any such text for the MIME header that `-text` puts in front and returned
+  what followed the empty line; `secure-permissions sign` then refused with
+  "self-check: recovered XML differs". Only a header block at the start of the
+  content (every line a header field or its continuation, RFC 5322 §2.2, RFC
+  2045 §3) whose Content-Type is `text/plain` is removed (RFC 5751 §3.4).
+
+- A delegation profile of the governance document (`zerodds:delegation_profiles`)
+  with a `trust_policy`, `max_chain_depth` or `algorithm` value the parser does
+  not know is refused with the value named (`PermissionsError::Malformed`). A
+  misspelt trust policy ran the profile as `direct-or-delegated`, an unknown
+  algorithm was dropped from the allowed set, an unreadable depth left 3.
+
 ### Changed
 
 - The builtin and the PSK access-control plugin share `give_back` and the four

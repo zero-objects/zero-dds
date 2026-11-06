@@ -91,12 +91,16 @@ impl<'c, P: CryptographicPlugin> SecurityGate<'c, P> {
     }
 
     /// Decides whether the outgoing submessage for `topic_name` must be
-    /// wrapped.
+    /// wrapped: the `metadata_protection_kind` of the topic's rule, which
+    /// DDS-Security 1.2 §10.4.1.2.6.6 makes "the protection kind used for
+    /// the RTPS SubMessages sent by any DataWriter and DataReader" of the
+    /// topic. The `data_protection_kind` (§10.4.1.2.6.7) is about the
+    /// SerializedPayload inside them; this gate read it before.
     #[must_use]
     pub fn outbound_protection(&self, topic_name: &str) -> ProtectionKind {
         self.governance
             .find_topic_rule(self.domain_id, topic_name)
-            .map(|r| r.data_protection_kind)
+            .map(|r| r.metadata_protection_kind)
             .unwrap_or(ProtectionKind::None)
     }
 
@@ -275,19 +279,25 @@ mod tests {
     <topic_access_rules>
       <topic_rule>
         <topic_expression>Secret*</topic_expression>
-        <data_protection_kind>ENCRYPT</data_protection_kind>
+        <metadata_protection_kind>ENCRYPT</metadata_protection_kind>
+        <data_protection_kind>NONE</data_protection_kind>
       </topic_rule>
       <topic_rule>
         <topic_expression>*</topic_expression>
-        <data_protection_kind>NONE</data_protection_kind>
+        <metadata_protection_kind>NONE</metadata_protection_kind>
+        <data_protection_kind>ENCRYPT</data_protection_kind>
       </topic_rule>
     </topic_access_rules>
   </domain_rule>
 </domain_access_rules></dds>
 "#;
 
+    /// §10.4.1.2.6.6: the submessages of `Secret*` are protected by its
+    /// `metadata_protection_kind` ENCRYPT; those of `Chatter` are not,
+    /// although its `data_protection_kind` (§10.4.1.2.6.7, the payload) is
+    /// ENCRYPT.
     #[test]
-    fn outbound_protection_reads_governance_topic_rule() {
+    fn security_10_4_1_2_6_6_outbound_protection_reads_the_metadata_protection_kind() {
         let gov = parse_governance_xml(GOV).unwrap();
         let mut crypto = AesGcmCryptoPlugin::new();
         let gate = SecurityGate::new(0, gov, &mut crypto);

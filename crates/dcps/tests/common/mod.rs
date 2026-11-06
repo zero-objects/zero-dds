@@ -140,6 +140,34 @@ impl Drop for ParticipantGuard {
     }
 }
 
+/// A runtime the test stops on its own thread: `DcpsRuntime::shutdown` when
+/// this drops, also after a failed assertion.
+///
+/// Dropping the last `Arc<DcpsRuntime>` stops a runtime as well, but a
+/// worker thread that holds it for one datagram or one tick at that moment
+/// becomes its last holder, and the runtime stops in that thread after the
+/// test function has returned: the test process can end while the
+/// runtime's threads are still in their loops, and the coverage profile
+/// written at the exit then counts an iteration on one counter of a pair
+/// and not on the other. In the crate tier of `zerodds-dcps` 28 of 1584
+/// test processes ended with runtime threads running (pipeline 9094, job
+/// 230734).
+pub struct ShutsDown(pub std::sync::Arc<zerodds_dcps::runtime::DcpsRuntime>);
+
+impl core::ops::Deref for ShutsDown {
+    type Target = std::sync::Arc<zerodds_dcps::runtime::DcpsRuntime>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Drop for ShutsDown {
+    fn drop(&mut self) {
+        self.0.shutdown();
+    }
+}
+
 pub fn match_timeout() -> std::time::Duration {
     let cov = std::env::var_os("LLVM_PROFILE_FILE").is_some()
         || std::env::var_os("CARGO_LLVM_COV").is_some();

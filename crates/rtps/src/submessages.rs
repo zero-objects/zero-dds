@@ -524,10 +524,12 @@ pub struct DataSubmessage {
     pub writer_id: EntityId,
     /// Sequence number of this DATA.
     pub writer_sn: SequenceNumber,
-    /// Inline-QoS ParameterList (Q-flag, §9.4.5.3.2). `None` = no
-    /// Q-flag, no inline-QoS block. Carrier for PID_KEY_HASH (WP 1.B),
-    /// PID_STATUS_INFO, PID_COHERENT_SET etc.
-    pub inline_qos: Option<crate::parameter_list::ParameterList>,
+    /// In-line QoS (Q-flag, §9.4.5.3.2). `None` = no Q-flag, no in-line
+    /// QoS block. Carrier for PID_KEY_HASH, PID_STATUS_INFO,
+    /// PID_COHERENT_SET etc.; a received list of only the first two is held
+    /// in place ([`crate::inline_qos::InlineQos`]). A list built here goes
+    /// in with `.into()`.
+    pub inline_qos: Option<crate::inline_qos::InlineQos>,
     /// D-flag (spec §9.4.5.3, `DataFlag`). `true`:
     /// `serialized_payload` holds a full sample. D and K are mutually
     /// exclusive — a DATA that carries only the key clears D and sets K,
@@ -575,7 +577,7 @@ impl DataSubmessage {
         let inline_qos_buf = self
             .inline_qos
             .as_ref()
-            .map(|pl| pl.to_bytes(little_endian));
+            .map(|qos| qos.to_bytes(little_endian));
         let inline_qos_len = inline_qos_buf.as_ref().map_or(0, |v| v.len());
         // 20 = extraFlags(2)+octetsToInlineQos(2)+readerId(4)+writerId(4)
         // +writerSN(8).
@@ -673,9 +675,28 @@ impl DataSubmessage {
         little_endian: bool,
         flags: u8,
     ) -> Result<Self, WireError> {
+        Self::read_body_in(
+            &crate::payload::Payload::whole(Arc::clone(buffer)),
+            body,
+            little_endian,
+            flags,
+        )
+    }
+
+    /// [`Self::read_body_shared`] for a body that is `body` of the octets
+    /// of `datagram`, whatever buffer they are a range of.
+    ///
+    /// # Errors
+    /// As [`Self::read_body_with_flags`].
+    pub fn read_body_in(
+        datagram: &crate::payload::Payload,
+        body: core::ops::Range<usize>,
+        little_endian: bool,
+        flags: u8,
+    ) -> Result<Self, WireError> {
         let start = body.start;
-        Self::read_body_into(&buffer[body], little_endian, flags, |payload| {
-            crate::payload::Payload::slice(buffer, start + payload.start..start + payload.end)
+        Self::read_body_into(&datagram[body], little_endian, flags, |payload| {
+            datagram.sub(start + payload.start..start + payload.end)
         })
     }
 
@@ -763,13 +784,11 @@ impl DataSubmessage {
             // skipped PID_IGNORE: a DATA whose inline QoS held one had its
             // serializedPayload start that many octets early, and the
             // sample decoded from the wrong octets. Encoding the list again
-            // was also three allocations per received sample.
-            let (pl, consumed) = crate::parameter_list::ParameterList::from_bytes_with_consumed(
-                &body[pos..],
-                little_endian,
-            )?;
+            // was also three allocations per received sample. A list of only
+            // PID_KEY_HASH and PID_STATUS_INFO is read in place.
+            let (qos, consumed) = crate::inline_qos::InlineQos::read(&body[pos..], little_endian)?;
             pos += consumed;
-            Some(pl)
+            Some(qos)
         } else {
             None
         };
@@ -815,8 +834,9 @@ pub const HEARTBEAT_FLAG_GROUP_INFO: u8 = 0x08;
 /// numbers; the PIM and §8.7.5 ask for the sets. A writer sends all five
 /// (unless the peer's behaviour omits the sets,
 /// [`crate::dialect::HeartbeatGroupDigests`]); a reader reads the sets when
-/// the submessage leaves room and accepts their absence. See "Widersprüche
-/// innerhalb der Spec" in the audit findings.
+/// the submessage leaves room and accepts their absence. The figure and the
+/// table disagree; that is one of the DDSI-RTPS 2.5 contradictions for A4 of
+/// `internal/release/rc8-plan.md`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HeartbeatGroupInfo {
     /// "the last (highest) group sequence number written by any
@@ -2524,7 +2544,7 @@ mod tests {
         let flags = FLAG_E_LITTLE_ENDIAN | DATA_FLAG_DATA | DATA_FLAG_INLINE_QOS;
         let decoded = DataSubmessage::read_body_with_flags(&body, true, flags).unwrap();
         assert_eq!(&decoded.serialized_payload[..], &payload[..]);
-        let qos = decoded.inline_qos.expect("inline QoS");
+        let qos = decoded.inline_qos.expect("inline QoS").into_list();
         assert_eq!(qos.parameters.len(), 1, "PID_IGNORE is not kept");
         assert_eq!(qos.parameters[0].id, crate::parameter_list::pid::KEY_HASH);
     }
@@ -2609,7 +2629,7 @@ mod tests {
                 reader_id: reader_id(),
                 writer_id: writer_id(),
                 writer_sn: SequenceNumber(9),
-                inline_qos: Some(pl),
+                inline_qos: Some(pl.into()),
                 data_flag,
                 key_flag,
                 non_standard_flag: true,

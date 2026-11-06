@@ -54,7 +54,7 @@ pub struct AnnotationMemberNode {
 /// building-block annotations. The order is fixed, because builtin
 /// identities are allocated in it and must be identical in every model
 /// so that snapshots from different processes compare. Spec §3.6, §9.
-pub const BUILTIN_ANNOTATIONS: [&str; 40] = [
+pub const BUILTIN_ANNOTATIONS: [&str; 43] = [
     "id",
     "autoid",
     "optional",
@@ -103,6 +103,12 @@ pub const BUILTIN_ANNOTATIONS: [&str; 40] = [
     "Autoid",
     "Empty",
     "Mutable",
+    // The IDL4 language mappings' own annotations, IDL4 to Java 1.0 §8.1,
+    // IDL4 to C# 1.0 §8.1 and IDL4 to C++ 1.0 §8.1. Appended for the same
+    // reason.
+    "java_mapping",
+    "csharp_mapping",
+    "cpp_mapping",
 ];
 
 /// Name of the module holding the built-in declarations.

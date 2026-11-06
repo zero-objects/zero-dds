@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include "zerodds/builtin_type_support.hpp"
+#include "test_support.hpp"
 
 static int g_failures = 0;
 #define EXPECT(cond, what)                                                     \
@@ -18,8 +19,7 @@ static int g_failures = 0;
     } while (0)
 
 int main(int argc, char** argv) {
-    const uint32_t domain = argc > 1 ? static_cast<uint32_t>(std::atoi(argv[1])) : 0;
-    dds::domain::DomainParticipant participant(domain);
+    dds::domain::DomainParticipant participant(test_domain(argc, argv));
 
     DDS::StringTypeSupport string_support;
     DDS::KeyedStringTypeSupport keyed_string_support;

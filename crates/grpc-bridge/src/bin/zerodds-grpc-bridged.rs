@@ -171,26 +171,32 @@ mod bridge_dds {
     /// peer DataReader must register the same `(topic, type)` pair to match.
     pub const BRIDGE_TYPE_NAME: &str = "ZeroDdsBridgeBytes";
 
-    /// Per-topic egress reader: entity + its delivery channel.
-    struct ReaderSlot {
-        _eid: EntityId,
+    /// The DataReader of one `Subscribe` stream (spec §4.3: the daemon
+    /// registers a DataReader for each), with its delivery channel. Every
+    /// stream has its own, so two clients subscribed to one topic each get
+    /// every sample.
+    pub struct StreamReader {
+        eid: EntityId,
         rx: Mutex<std::sync::mpsc::Receiver<UserSample>>,
     }
 
-    /// Holds the DDS participant + the per-topic writer/reader entities.
+    /// Holds the DDS participant, the per-topic writers and the mappings the
+    /// streams' readers are made from.
     pub struct BridgeDds {
         rt: Arc<DcpsRuntime>,
         /// `dds_name → ingress DataWriter` (gRPC `Publish` → DDS).
         writers: HashMap<String, EntityId>,
-        /// `dds_name → egress DataReader` (DDS → gRPC `Subscribe`).
-        readers: HashMap<String, ReaderSlot>,
+        /// `dds_name → the mapping` of each topic carried out of DDS
+        /// (gRPC `Subscribe`).
+        outbound: HashMap<String, TopicMapping>,
     }
 
     impl BridgeDds {
         /// Starts the DDS participant for `domain` and registers, per DDS
         /// topic, a writer when a mapping carries it into DDS (`direction`
-        /// `in`/`bidir`) and a reader when one carries it out (`out`/`bidir`).
-        /// With `bidir` the bridge's own reader observes what `Publish` writes.
+        /// `in`/`bidir`). A topic carried out of DDS (`out`/`bidir`) gets a
+        /// reader per `Subscribe` stream ([`Self::open_reader`]); with
+        /// `bidir` that reader observes what `Publish` writes.
         pub fn start(
             domain: i32,
             topics: &[TopicMapping],
@@ -199,59 +205,93 @@ mod bridge_dds {
             let rt = DcpsRuntime::start(domain, guid_prefix(), runtime)
                 .map_err(|e| format!("DcpsRuntime::start: {e:?}"))?;
             let mut writers = HashMap::new();
-            let mut readers = HashMap::new();
+            let mut outbound = HashMap::new();
             for t in topics {
                 if t.dds_name.is_empty() {
                     continue;
                 }
                 if super::bridged_into_dds(t) && !writers.contains_key(&t.dds_name) {
                     let weid = rt
-                        .register_user_writer(writer_cfg(&t.dds_name))
+                        .register_user_writer(writer_cfg(t))
                         .map_err(|e| format!("register_user_writer({}): {e:?}", t.dds_name))?;
+                    if let Some(depth) = t.history_depth {
+                        let _ = rt.set_user_writer_history_depth(weid, depth);
+                    }
                     writers.insert(t.dds_name.clone(), weid);
                 }
-                if !super::bridged_out_of_dds(t) || readers.contains_key(&t.dds_name) {
-                    continue;
+                if super::bridged_out_of_dds(t) && !outbound.contains_key(&t.dds_name) {
+                    outbound.insert(t.dds_name.clone(), t.clone());
                 }
-                let (reid, rx) = rt
-                    .register_user_reader(reader_cfg(&t.dds_name))
-                    .map_err(|e| format!("register_user_reader({}): {e:?}", t.dds_name))?;
-                readers.insert(
-                    t.dds_name.clone(),
-                    ReaderSlot {
-                        _eid: reid,
-                        rx: Mutex::new(rx),
-                    },
-                );
             }
             Ok(Self {
                 rt,
                 writers,
-                readers,
+                outbound,
             })
         }
 
-        /// Writes `payload` to the DDS DataWriter for `dds_name`. Returns
-        /// `true` on success (writer present + write ok).
-        pub fn publish_to(&self, dds_name: &str, payload: &[u8]) -> bool {
-            match self.writers.get(dds_name) {
-                Some(&eid) => self.rt.write_user_sample_borrowed(eid, payload).is_ok(),
-                None => false,
-            }
+        /// Registers the DataReader of a new `Subscribe` stream of
+        /// `dds_name` (spec §4.3).
+        ///
+        /// # Errors
+        /// The topic is not carried out of DDS, or the runtime refused the
+        /// reader.
+        pub fn open_reader(&self, dds_name: &str) -> Result<StreamReader, String> {
+            let t = self
+                .outbound
+                .get(dds_name)
+                .ok_or_else(|| format!("{dds_name} is not bridged out of DDS"))?;
+            let (eid, rx) = self
+                .rt
+                .register_user_reader(reader_cfg(t))
+                .map_err(|e| format!("register_user_reader({dds_name}): {e:?}"))?;
+            Ok(StreamReader {
+                eid,
+                rx: Mutex::new(rx),
+            })
         }
 
-        /// Takes the next available Alive sample from the DDS DataReader for
-        /// `dds_name` (single `try_recv`, skipping lifecycle markers — matches
-        /// the C-FFI `zerodds_reader_take`). Returns `None` when no reader or
-        /// no data. Repeated `Subscribe` calls drain the queue one sample at a
-        /// time (pull-based server-stream cardinality over the request/
-        /// response transport).
-        pub fn take_one(&self, dds_name: &str) -> Option<Vec<u8>> {
-            let slot = self.readers.get(dds_name)?;
-            let rx = slot.rx.lock().ok()?;
+        /// Deletes the DataReader of a stream that ended; the runtime
+        /// disposes its SEDP subscription (spec §4.3: `grpc-status` 0 on
+        /// reader cleanup).
+        pub fn close_reader(&self, reader: StreamReader) {
+            self.rt.remove_user_reader(reader.eid);
+        }
+
+        /// Writes the CDR bytes `body` to the DDS DataWriter for `dds_name`
+        /// under the encapsulation header `identifier` that came in front of
+        /// them (spec §4.4; DDS-XTypes 1.3 §7.6.3.1.2, Table 60): its XCDR
+        /// version, its format (plain, delimited, parameter list) and its
+        /// byte order. Returns `true` on success (writer present + write ok).
+        pub fn publish_cdr(&self, dds_name: &str, identifier: [u8; 2], body: &[u8]) -> bool {
+            let Some(&eid) = self.writers.get(dds_name) else {
+                return false;
+            };
+            let _ = self
+                .rt
+                .set_user_writer_data_rep_override(eid, Some(vec![super::offer_of(identifier)]));
+            let _ = self
+                .rt
+                .set_user_writer_byte_order_override(eid, identifier[1] & 0x01 == 0);
+            let _ = self
+                .rt
+                .set_user_writer_wire_extensibility(eid, super::wire_extensibility_of(identifier));
+            self.rt.write_user_sample_borrowed(eid, body).is_ok()
+        }
+
+        /// The next Alive sample of a stream's reader — its CDR bytes, with
+        /// the representation identifier of the header it came under —
+        /// skipping lifecycle markers, as the C-FFI `zerodds_reader_take`
+        /// does; `None` when the reader holds nothing.
+        pub fn take_one(reader: &StreamReader) -> Option<(Vec<u8>, [u8; 2])> {
+            let rx = reader.rx.lock().ok()?;
             loop {
                 match rx.try_recv() {
-                    Ok(UserSample::Alive { payload, .. }) => return Some(payload.to_vec()),
+                    Ok(UserSample::Alive {
+                        payload,
+                        representation_identifier,
+                        ..
+                    }) => return Some((payload.to_vec(), representation_identifier)),
                     Ok(UserSample::Lifecycle { .. }) => continue,
                     // DDSI-RTPS 2.5 §8.7.6: the ECS marker carries no user
                     // data. The bridge does not offer PRESENTATION
@@ -264,10 +304,12 @@ mod bridge_dds {
         }
     }
 
-    fn writer_cfg(topic: &str) -> UserWriterConfig {
+    fn writer_cfg(t: &TopicMapping) -> UserWriterConfig {
         UserWriterConfig {
-            topic_name: topic.to_string(),
-            type_name: BRIDGE_TYPE_NAME.to_string(),
+            topic_name: t.dds_name.clone(),
+            type_name: t.dds_type.clone(),
+            reliable: t.reliable,
+            durability: t.durability,
             liveliness: LivelinessQosPolicy {
                 kind: LivelinessKind::Automatic,
                 ..Default::default()
@@ -277,10 +319,12 @@ mod bridge_dds {
         }
     }
 
-    fn reader_cfg(topic: &str) -> UserReaderConfig {
+    fn reader_cfg(t: &TopicMapping) -> UserReaderConfig {
         UserReaderConfig {
-            topic_name: topic.to_string(),
-            type_name: BRIDGE_TYPE_NAME.to_string(),
+            topic_name: t.dds_name.clone(),
+            type_name: t.dds_type.clone(),
+            reliable: t.reliable,
+            durability: t.durability,
             liveliness: LivelinessQosPolicy {
                 kind: LivelinessKind::Automatic,
                 ..Default::default()
@@ -298,7 +342,7 @@ mod bridge_dds {
     }
 }
 
-use bridge_dds::BridgeDds;
+use bridge_dds::{BridgeDds, StreamReader};
 
 fn main() -> ExitCode {
     match run() {
@@ -803,12 +847,28 @@ fn handle_connection<S: Read + Write>(
     let mut idle = Duration::ZERO;
     let mut last_stream_id = 0u32;
     let mut _responded = 0u32;
+    // The open Subscribe streams of this connection (§4.3).
+    let mut streams: Vec<OpenStream> = Vec::new();
     loop {
         if env.shutdown.load(Ordering::SeqCst) {
+            for open in streams.drain(..) {
+                if let Ok(out) = grpc.encode_stream_close(open.stream_id, Status::Ok, None) {
+                    stream.write_all(&out)?;
+                }
+                open.close(dds);
+            }
             eprintln!("{{\"event\":\"goaway\",\"last_stream_id\":{last_stream_id}}}");
             send_goaway(&mut stream, last_stream_id)?;
             break;
         }
+        pump_streams(&mut grpc, &mut stream, &streams, dds, metrics, cfg)?;
+        // While a stream is open its samples are forwarded every
+        // STREAM_POLL, and the connection is not idle.
+        ctl.set_read_timeout(Some(if streams.is_empty() {
+            CONN_POLL
+        } else {
+            STREAM_POLL
+        }))?;
         let n = match stream.read(&mut read_buf) {
             Ok(0) => break,
             Ok(n) => {
@@ -821,6 +881,9 @@ fn handle_connection<S: Read + Write>(
                     std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
                 ) =>
             {
+                if !streams.is_empty() {
+                    continue;
+                }
                 idle += CONN_POLL;
                 if idle >= CONN_IDLE {
                     send_goaway(&mut stream, last_stream_id)?;
@@ -851,6 +914,15 @@ fn handle_connection<S: Read + Write>(
                 metrics
                     .spec
                     .h2_reset(u32::from_be_bytes([acc[9], acc[10], acc[11], acc[12]]));
+                // A cancelled Subscribe (gRPC over HTTP/2: the client ends a
+                // server stream with RST_STREAM) closes its stream.
+                let id = u32::from_be_bytes([acc[5], acc[6], acc[7], acc[8]]) & 0x7FFF_FFFF;
+                if let Some(at) = streams
+                    .iter()
+                    .position(|open| u32::from(open.stream_id) == id)
+                {
+                    streams.remove(at).close(dds);
+                }
             }
             match grpc.process_frame(&acc) {
                 Ok((maybe_req, consumed)) => {
@@ -902,6 +974,53 @@ fn handle_connection<S: Read + Write>(
                             }
                         };
                         metrics.spec.count_call(cfg, &req, &resp);
+                        // §4.3: an OK Subscribe opens a server stream.
+                        let mut resp = resp;
+                        if req.method == "Subscribe"
+                            && resp.status == Status::Ok
+                            && let Some(t) = topic_for(cfg, &req.service)
+                            && let Some(d) = dds
+                        {
+                            match d.open_reader(&t.dds_name) {
+                                Ok(reader) => match grpc.encode_stream_open(req.stream_id) {
+                                    Ok(out) => {
+                                        metrics.base.bytes_out_total.add(out.len() as u64);
+                                        stream.write_all(&out)?;
+                                        eprintln!(
+                                            "{{\"event\":\"stream_open\",\"stream_id\":{},\"topic\":{:?}}}",
+                                            u32::from(req.stream_id),
+                                            t.dds_name
+                                        );
+                                        streams.push(OpenStream {
+                                            stream_id: req.stream_id,
+                                            reader,
+                                            dds_name: t.dds_name.clone(),
+                                            gauge: stream_gauge,
+                                        });
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        d.close_reader(reader);
+                                        if let Some(g) = &stream_gauge {
+                                            g.dec();
+                                        }
+                                        metrics.base.errors_total.inc();
+                                        eprintln!("{{\"event\":\"encode_error\",\"msg\":\"{e}\"}}");
+                                        continue;
+                                    }
+                                },
+                                // No reader, no stream: the call ends with
+                                // UNAVAILABLE (spec §4.5).
+                                Err(e) => {
+                                    resp = GrpcResponse {
+                                        stream_id: req.stream_id,
+                                        status: Status::Unavailable,
+                                        message: Some(e),
+                                        body: Vec::new(),
+                                    };
+                                }
+                            }
+                        }
                         let written = grpc.encode_response(&resp);
                         if let Some(g) = &stream_gauge {
                             g.dec();
@@ -929,8 +1048,124 @@ fn handle_connection<S: Read + Write>(
             }
         }
     }
+    for open in streams {
+        open.close(dds);
+    }
 
     Ok(())
+}
+
+/// The poll interval of a connection with an open Subscribe stream: how
+/// long a DDS sample may wait before it goes out as a stream message.
+const STREAM_POLL: Duration = Duration::from_millis(20);
+
+/// An open Subscribe stream (§4.3) and its own DataReader.
+struct OpenStream {
+    stream_id: u32,
+    reader: StreamReader,
+    dds_name: String,
+    gauge: Option<Arc<zerodds_monitor::Gauge>>,
+}
+
+impl OpenStream {
+    /// The stream ended: its reader is deleted and its gauge counts it out.
+    fn close(self, dds: Option<&BridgeDds>) {
+        if let Some(g) = &self.gauge {
+            g.dec();
+        }
+        if let Some(d) = dds {
+            d.close_reader(self.reader);
+        }
+    }
+}
+
+/// Sends every sample the DDS readers of the open streams hold as a stream
+/// message: `Sample.cdr_payload` is the encapsulation header and the CDR
+/// bytes (§4.4).
+fn pump_streams<S: Write>(
+    grpc: &mut GrpcServer,
+    out: &mut S,
+    streams: &[OpenStream],
+    dds: Option<&BridgeDds>,
+    metrics: &DaemonMetrics,
+    cfg: &DaemonConfig,
+) -> std::io::Result<()> {
+    if dds.is_none() {
+        return Ok(());
+    }
+    for open in streams {
+        while let Some((payload, identifier)) = BridgeDds::take_one(&open.reader) {
+            let mut cdr = Vec::with_capacity(payload.len() + 4);
+            cdr.extend_from_slice(&encapsulation(identifier));
+            cdr.extend_from_slice(&payload);
+            let body = proto_sample(&cdr);
+            match grpc.encode_stream_message(open.stream_id, &body) {
+                Ok(frame) => {
+                    metrics.base.bytes_out_total.add(frame.len() as u64);
+                    out.write_all(&frame)?;
+                    metrics.base.frames_out_total.inc();
+                    metrics.spec.streamed(cfg, &open.dds_name, body.len());
+                }
+                Err(e) => {
+                    metrics.base.errors_total.inc();
+                    eprintln!("{{\"event\":\"encode_error\",\"msg\":\"{e}\"}}");
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The encapsulation header (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3
+/// §7.6.3.1.2): the representation identifier the sample came under, and
+/// options. The CDR bytes go on unchanged, so the identifier does too; it
+/// names the XCDR version, the format (plain, delimited, parameter list) and
+/// the byte order.
+fn encapsulation(identifier: [u8; 2]) -> [u8; 4] {
+    [identifier[0], identifier[1], 0, 0]
+}
+
+/// The representation identifier and the CDR bytes of a
+/// `Sample.cdr_payload` (§4.4: the encapsulation header, then the CDR bytes).
+///
+/// # Errors
+/// A payload shorter than the header, or an identifier that names no CDR
+/// representation (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table 60).
+fn split_encapsulation(payload: &[u8]) -> Result<([u8; 2], &[u8]), String> {
+    if payload.len() < 4 {
+        return Err("shorter than the encapsulation header".into());
+    }
+    let identifier = [payload[0], payload[1]];
+    match u16::from_be_bytes(identifier) {
+        0x0000..=0x0003 | 0x0006..=0x000b => Ok((identifier, &payload[4..])),
+        other => Err(format!(
+            "encapsulation {other:#06x} is not a CDR representation"
+        )),
+    }
+}
+
+/// The data representation an identifier names (DDS-XTypes 1.3 Table 60):
+/// `CDR`, `PL_CDR` are XCDR1, the others XCDR2.
+fn offer_of(identifier: [u8; 2]) -> i16 {
+    use zerodds_rtps::publication_data::data_representation as dr;
+    if identifier[1] <= 0x03 {
+        dr::XCDR
+    } else {
+        dr::XCDR2
+    }
+}
+
+/// The extensibility the DDS writer frames a body under `identifier` with
+/// (DDS-XTypes 1.3 Table 60): a parameter list (`PL_CDR`, `PL_CDR2`) is
+/// `@mutable`, a delimited body (`D_CDR2`) `@appendable`, anything else
+/// `@final`.
+fn wire_extensibility_of(identifier: [u8; 2]) -> zerodds_types::qos::ExtensibilityForRepr {
+    use zerodds_types::qos::ExtensibilityForRepr as Ext;
+    match identifier[1] & !0x01 {
+        0x02 | 0x0a => Ext::Mutable,
+        0x08 => Ext::Appendable,
+        _ => Ext::Final,
+    }
 }
 
 /// `direction` `in`/`bidir`: `Publish` carries gRPC messages into DDS.
@@ -1056,8 +1291,20 @@ fn dispatch(
                 let sample_msg = decode_message(&req.body)
                     .map(|(_, msg, _)| msg)
                     .unwrap_or_default();
-                let payload = proto_sample_payload(&sample_msg);
-                if !d.publish_to(&topic.dds_name, &payload) {
+                // §4.4: `cdr_payload` is the encapsulation header and the
+                // CDR bytes, as over RTPS.
+                let cdr_payload = proto_sample_payload(&sample_msg);
+                let (identifier, body) = match split_encapsulation(&cdr_payload) {
+                    Ok(parts) => parts,
+                    Err(e) => {
+                        return failed(
+                            req,
+                            Status::InvalidArgument,
+                            format!("Sample.cdr_payload: {e} (spec §4.4)"),
+                        );
+                    }
+                };
+                if !d.publish_cdr(&topic.dds_name, identifier, body) {
                     return failed(
                         req,
                         Status::Unavailable,
@@ -1072,9 +1319,10 @@ fn dispatch(
                 }
             }
             "Subscribe" => {
-                // Drain the next available sample from the DDS DataReader and
-                // return it as one `Sample` message (pull-based server-stream
-                // cardinality, §4.2). Empty body = stream-end when no data.
+                // §4.3: a server-streaming call. An OK here opens the stream;
+                // `handle_connection` registers the stream's own DataReader
+                // and sends each of its samples as a message of the stream
+                // until the client cancels.
                 if !bridged_out_of_dds(topic) {
                     return failed(
                         req,
@@ -1085,18 +1333,14 @@ fn dispatch(
                         ),
                     );
                 }
-                let Some(d) = dds else {
+                if dds.is_none() {
                     return failed(req, Status::Unavailable, "no DDS participant".into());
-                };
-                let body = match d.take_one(&topic.dds_name) {
-                    Some(payload) => proto_sample(&payload),
-                    None => Vec::new(),
-                };
+                }
                 GrpcResponse {
                     stream_id: req.stream_id,
                     status: Status::Ok,
-                    message: Some(format!("dds_topic={}", topic.dds_name)),
-                    body,
+                    message: None,
+                    body: Vec::new(),
                 }
             }
             _ => GrpcResponse {
@@ -1120,9 +1364,18 @@ fn dispatch(
 /// component (spec §5.1: `zerodds.chat.v1.ChatMessageStream` is the
 /// fully-qualified service, `ChatMessageStream` the slug).
 fn topic_for<'a>(cfg: &'a DaemonConfig, service: &str) -> Option<&'a TopicMapping> {
-    cfg.topics.iter().find(|t| {
-        t.grpc_service == service || service.rsplit('.').next() == Some(t.grpc_service.as_str())
-    })
+    cfg.topics
+        .iter()
+        .find(|t| match (&t.grpc_package, service.rsplit_once('.')) {
+            // A configured package (§5.1): the fully-qualified name has to name it.
+            (Some(package), Some((qualifier, name))) => {
+                qualifier == package && name == t.grpc_service
+            }
+            _ => {
+                t.grpc_service == service
+                    || service.rsplit('.').next() == Some(t.grpc_service.as_str())
+            }
+        })
 }
 
 /// The bin's metric sets: the generic `zerodds_grpc_*` counters and the
@@ -1289,14 +1542,20 @@ impl SpecMetrics {
                     m.samples_published.inc();
                 }
             }
-            "Subscribe" if !resp.body.is_empty() => {
-                m.samples_received.inc();
-                m.messages_out.inc();
-                // The reply's Length-Prefixed-Message, prefix included,
-                // as `bytes_in` counts the request's.
-                m.bytes_out.add(resp.body.len() as u64 + 5);
-            }
+            // Subscribe messages are counted as they stream (`streamed`).
             _ => {}
+        }
+    }
+
+    /// One message of a Subscribe stream of `dds_name`, `len` octets of
+    /// protobuf.
+    fn streamed(&self, _cfg: &DaemonConfig, dds_name: &str, len: usize) {
+        if let Some(m) = self.topics.get(dds_name) {
+            m.samples_received.inc();
+            m.messages_out.inc();
+            // The Length-Prefixed-Message, prefix included, as `bytes_in`
+            // counts the request's.
+            m.bytes_out.add(len as u64 + 5);
         }
     }
 
@@ -1447,10 +1706,37 @@ impl Default for DaemonConfig {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TopicMapping {
     pub dds_name: String,
+    /// `dds_type` (Spec §3): the type name the DDS endpoints register.
+    pub dds_type: String,
     pub grpc_service: String,
+    /// `grpc_package` (Spec §3, §5.1): when set, a fully-qualified service
+    /// name has to name this package.
+    pub grpc_package: Option<String>,
     pub direction: String,
+    /// `qos.reliability` (Spec §3, §6): RELIABLE unless `best_effort`.
+    pub reliable: bool,
+    /// `qos.durability` (Spec §3, §6).
+    pub durability: zerodds_qos::DurabilityKind,
+    /// `qos.history` KEEP_LAST depth of the writer; `None` is KEEP_ALL.
+    pub history_depth: Option<usize>,
     /// `acl: { publish: [...], subscribe: [...] }` — Spec §7.3.
     pub acl: Option<(Vec<String>, Vec<String>)>,
+}
+
+impl Default for TopicMapping {
+    fn default() -> Self {
+        Self {
+            dds_name: String::new(),
+            dds_type: bridge_dds::BRIDGE_TYPE_NAME.to_string(),
+            grpc_service: String::new(),
+            grpc_package: None,
+            direction: "bidir".into(),
+            reliable: true,
+            durability: zerodds_qos::DurabilityKind::Volatile,
+            history_depth: None,
+            acl: None,
+        }
+    }
 }
 
 /// The base name of the daemon's file: `grpc-bridged.yaml`, `grpc-bridged.d/`.
@@ -1554,12 +1840,7 @@ impl DaemonConfig {
             cfg.metrics_listen = v;
         }
         for (path, item) in root.items("topics")? {
-            let mut t = TopicMapping {
-                dds_name: String::new(),
-                grpc_service: String::new(),
-                direction: "bidir".into(),
-                acl: None,
-            };
+            let mut t = TopicMapping::default();
             if let zerodds_config::Node::Scalar(text, _) = item {
                 // `--topic DDS=SERVICE` (Spec §2), or `DDS:SERVICE` split at
                 // the lone colon so that `Chat::Message` stays whole.
@@ -1571,9 +1852,45 @@ impl DaemonConfig {
                 t.grpc_service = service.unwrap_or_default();
             } else {
                 let entry = Section::of(Some(item), path.clone())?;
-                entry.only(&["dds_name", "grpc_service", "direction", "acl"])?;
+                entry.only(&[
+                    "dds_name",
+                    "dds_type",
+                    "grpc_service",
+                    "grpc_package",
+                    "direction",
+                    "qos",
+                    "acl",
+                ])?;
                 t.dds_name = entry.string("dds_name")?.unwrap_or_default();
+                if let Some(v) = entry.string("dds_type")? {
+                    t.dds_type = v;
+                }
                 t.grpc_service = entry.string("grpc_service")?.unwrap_or_default();
+                t.grpc_package = entry.string("grpc_package")?;
+                let qos = entry.section("qos")?;
+                qos.only(&["reliability", "durability", "history"])?;
+                if let Some(v) = qos.choice("reliability", &["reliable", "best_effort"])? {
+                    t.reliable = v == "reliable";
+                }
+                if let Some(v) = qos.choice(
+                    "durability",
+                    &["volatile", "transient_local", "transient", "persistent"],
+                )? {
+                    t.durability = match v.as_str() {
+                        "transient_local" => zerodds_qos::DurabilityKind::TransientLocal,
+                        "transient" => zerodds_qos::DurabilityKind::Transient,
+                        "persistent" => zerodds_qos::DurabilityKind::Persistent,
+                        _ => zerodds_qos::DurabilityKind::Volatile,
+                    };
+                }
+                let history = qos.section("history")?;
+                history.only(&["kind", "depth"])?;
+                let keep_last = history.choice("kind", &["keep_last", "keep_all"])?;
+                let depth = history.parse::<usize>("depth", "a history depth")?;
+                t.history_depth = match keep_last.as_deref() {
+                    Some("keep_all") => None,
+                    _ => depth,
+                };
                 if let Some(v) = entry.choice("direction", &["in", "out", "bidir"])? {
                     t.direction = v;
                 }
@@ -1621,12 +1938,10 @@ fn security_from(cfg: &DaemonConfig) -> Result<SecurityCtx, (u8, String)> {
         "jwt" => sc
             .apply_jwt(&cfg.auth_jwt)
             .map_err(|e| config_error(e.to_string()))?,
-        "mtls" => {
-            if !cfg.tls_enabled || cfg.tls_client_ca_file.is_empty() {
-                return Err(config_error(
-                    "auth.mode: mtls needs grpc.tls.enabled and grpc.tls.client_ca_file".into(),
-                ));
-            }
+        "mtls" if (!cfg.tls_enabled || cfg.tls_client_ca_file.is_empty()) => {
+            return Err(config_error(
+                "auth.mode: mtls needs grpc.tls.enabled and grpc.tls.client_ca_file".into(),
+            ));
         }
         _ => {}
     }
@@ -1762,14 +2077,14 @@ mod tests {
     use zerodds_grpc_bridge::encode_message;
 
     #[test]
-    fn config_default_has_default_bind() {
+    fn grpcbridge_3_config_default_has_default_bind() {
         let c = DaemonConfig::default();
         assert_eq!(c.bind, "0.0.0.0:50051");
         assert!(!c.tls_enabled);
     }
 
     #[test]
-    fn parse_minimal_grpc_config() {
+    fn grpcbridge_3_parse_minimal_grpc_config() {
         let yaml = "\
 domain: 5
 grpc:
@@ -1787,7 +2102,7 @@ auth:
     }
 
     #[test]
-    fn parse_topics_array() {
+    fn grpcbridge_3_parse_topics_array() {
         let yaml = "\
 topics:
   - dds_name: \"Chat::Message\"
@@ -1804,20 +2119,83 @@ topics:
         assert_eq!(cfg.topics[1].direction, "out");
     }
 
+    /// Spec §3: `dds_type`, `grpc_package` and `qos` of a topic entry reach
+    /// the mapping; a fully-qualified service name has to name the package.
     #[test]
-    fn parse_invalid_yaml_returns_err() {
+    fn a_topic_entry_takes_type_package_and_qos() {
+        let yaml = "\
+topics:
+  - dds_name: \"Chat::Message\"
+    dds_type: \"chat::Message\"
+    grpc_service: \"ChatMessageStream\"
+    grpc_package: \"zerodds.chat.v1\"
+    direction: \"bidir\"
+    qos:
+      reliability: \"best_effort\"
+      durability: \"transient_local\"
+      history: { kind: \"keep_last\", depth: 7 }
+";
+        let cfg = parse_yaml_subset(yaml).expect("parse");
+        let t = &cfg.topics[0];
+        assert_eq!(t.dds_type, "chat::Message");
+        assert_eq!(t.grpc_package.as_deref(), Some("zerodds.chat.v1"));
+        assert!(!t.reliable);
+        assert_eq!(t.durability, zerodds_qos::DurabilityKind::TransientLocal);
+        assert_eq!(t.history_depth, Some(7));
+        assert!(topic_for(&cfg, "zerodds.chat.v1.ChatMessageStream").is_some());
+        assert!(topic_for(&cfg, "zerodds.other.v1.ChatMessageStream").is_none());
+        assert!(topic_for(&cfg, "ChatMessageStream").is_some());
+    }
+
+    /// Spec §4.4 with DDS-XTypes 1.3 §7.6.3.1.2, Table 60: `cdr_payload`
+    /// carries the encapsulation header the sample came under; the
+    /// identifier names the representation, the format and the byte order.
+    #[test]
+    fn xtypes_7_6_3_1_2_cdr_payload_carries_the_header_the_sample_came_under() {
+        let cdr = [&encapsulation([0x00, 0x0a])[..], &[1, 2, 3, 4]].concat();
+        assert_eq!(&cdr[..4], &[0x00, 0x0a, 0x00, 0x00]);
+        assert_eq!(
+            split_encapsulation(&cdr).unwrap(),
+            ([0x00, 0x0a], &[1u8, 2, 3, 4][..])
+        );
+        assert!(split_encapsulation(b"hi").is_err());
+        assert!(
+            split_encapsulation(&[0x00, 0x04, 0, 0, 1]).is_err(),
+            "0x0004 is no CDR"
+        );
+        use zerodds_rtps::publication_data::data_representation as dr;
+        use zerodds_types::qos::ExtensibilityForRepr as Ext;
+        for (identifier, offer, extensibility, big_endian) in [
+            ([0x00, 0x00], dr::XCDR, Ext::Final, true),
+            ([0x00, 0x03], dr::XCDR, Ext::Mutable, false),
+            ([0x00, 0x07], dr::XCDR2, Ext::Final, false),
+            ([0x00, 0x08], dr::XCDR2, Ext::Appendable, true),
+            ([0x00, 0x0b], dr::XCDR2, Ext::Mutable, false),
+        ] {
+            assert_eq!(offer_of(identifier), offer, "{identifier:?}");
+            assert_eq!(
+                wire_extensibility_of(identifier),
+                extensibility,
+                "{identifier:?}"
+            );
+            assert_eq!(identifier[1] & 0x01 == 0, big_endian, "{identifier:?}");
+        }
+    }
+
+    #[test]
+    fn grpcbridge_3_parse_invalid_yaml_returns_err() {
         let res = parse_yaml_subset("just a string");
         assert!(res.is_err());
     }
 
     #[test]
-    fn build_catalog_emits_topics() {
+    fn grpcbridge_5_2_build_catalog_emits_topics() {
         let cfg = DaemonConfig {
             topics: vec![TopicMapping {
                 dds_name: "Foo::Bar".into(),
                 grpc_service: "FooBarStream".into(),
                 direction: "bidir".into(),
-                acl: None,
+                ..TopicMapping::default()
             }],
             ..DaemonConfig::default()
         };
@@ -1855,7 +2233,7 @@ topics:
                 dds_name: "T::M".into(),
                 grpc_service: "TMStream".into(),
                 direction: "bidir".into(),
-                acl: None,
+                ..TopicMapping::default()
             }],
             ..DaemonConfig::default()
         };
@@ -1891,7 +2269,7 @@ topics:
             dds_name: "T::M".into(),
             grpc_service: "TMStream".into(),
             direction: direction.into(),
-            acl: None,
+            ..TopicMapping::default()
         };
         let request = |method: &str| GrpcRequest {
             stream_id: 3u32,
@@ -1943,7 +2321,7 @@ topics:
     }
 
     #[test]
-    fn example_yaml_parses_without_error() {
+    fn grpcbridge_3_example_yaml_parses_without_error() {
         let res = parse_yaml_subset(EXAMPLE_YAML);
         assert!(
             res.is_ok(),
@@ -1953,7 +2331,7 @@ topics:
     }
 
     #[test]
-    fn example_yaml_key_fields_match_intent() {
+    fn grpcbridge_3_example_yaml_key_fields_match_intent() {
         let cfg = parse_yaml_subset(EXAMPLE_YAML).expect("example yaml must parse");
         assert_eq!(cfg.domain, 0);
         assert_eq!(cfg.log_level, "info");
@@ -1970,7 +2348,7 @@ topics:
     }
 
     #[test]
-    fn example_yaml_topics_reach_the_daemon() {
+    fn grpcbridge_3_example_yaml_topics_reach_the_daemon() {
         let cfg = parse_yaml_subset(EXAMPLE_YAML).expect("example yaml must parse");
         assert_eq!(cfg.topics.len(), 1, "example shows exactly one demo route");
         assert_eq!(cfg.topics[0].dds_name, "Inventory");
@@ -1979,7 +2357,7 @@ topics:
     }
 
     #[test]
-    fn example_yaml_has_no_unknown_top_level_keys() {
+    fn grpcbridge_3_example_yaml_has_no_unknown_top_level_keys() {
         for key in top_level_keys(EXAMPLE_YAML) {
             assert!(
                 KEYS.iter()
@@ -1991,7 +2369,7 @@ topics:
     }
 
     #[test]
-    fn unknown_top_level_key_does_not_abort_the_parse() {
+    fn grpcbridge_3_unknown_top_level_key_does_not_abort_the_parse() {
         let yaml = "\
 participant:
   domain_id: 7
@@ -2005,7 +2383,7 @@ domain: 5
     }
 
     #[test]
-    fn env_substitution_applies_before_the_parse() {
+    fn grpcbridge_3_env_substitution_applies_before_the_parse() {
         let yaml = "\
 grpc:
   bind: \"${ZERODDS_UNSET_PROBE_a41f:-127.0.0.1:50099}\"

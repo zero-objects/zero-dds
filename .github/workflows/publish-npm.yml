@@ -1,5 +1,4 @@
 # npm publish job for @zerodds/node (crates/ts-node).
-# Spec: internal/packaging/language-binding-publish-followup.md
 #
 # **Trusted Publishing (OIDC)** — no NPM_AUTH_TOKEN needed.
 #

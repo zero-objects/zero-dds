@@ -79,7 +79,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn create_roundtrip_carries_reuse_replace_flags() {
+    fn xrce_7_7_11_create_roundtrip_carries_reuse_replace_flags() {
         let p = CreatePayload {
             representation: alloc::vec![1, 2, 3],
             reuse: true,
@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[test]
-    fn create_default_flags_have_no_reuse_no_replace() {
+    fn xrce_8_3_5_2_create_default_flags_have_no_reuse_no_replace() {
         let p = CreatePayload {
             representation: alloc::vec![],
             reuse: false,

@@ -529,10 +529,10 @@ impl TypeRegistry {
                 TypeIdentifier::StronglyConnectedComponent(from),
                 TypeIdentifier::StronglyConnectedComponent(to),
             ) = (&link.type_identifier1, &link.type_identifier2)
+                && from.equivalence_kind == EK_COMPLETE
+                && to.equivalence_kind == EK_MINIMAL
             {
-                if from.equivalence_kind == EK_COMPLETE && to.equivalence_kind == EK_MINIMAL {
-                    paired.insert(from.hash, to.hash);
-                }
+                paired.insert(from.hash, to.hash);
             }
         }
         let whole = |length: i32, count: usize| i32::try_from(count).ok() == Some(length);
@@ -594,7 +594,7 @@ impl TypeRegistry {
         let mut added = 0usize;
         for _ in 0..=self.completes.len() {
             let mut round: Vec<(EquivalenceHash, MinimalTypeObject)> = Vec::new();
-            for (_, complete) in self.completes.iter() {
+            for complete in self.completes.values() {
                 let Ok(minimal) = complete.to_minimal(self) else {
                     continue;
                 };
@@ -1302,7 +1302,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_follows_single_alias_to_target() {
+    fn xtypes_7_2_2_4_2_resolve_follows_single_alias_to_target() {
         let mut reg = TypeRegistry::new();
         let target = TypeIdentifier::Primitive(PrimitiveKind::UInt64);
         let alias = MinimalTypeObject::Alias(make_alias(target.clone()));
@@ -1315,7 +1315,7 @@ mod tests {
     }
 
     #[test]
-    fn resolve_chained_aliases_two_deep() {
+    fn xtypes_7_2_2_4_2_resolve_chained_aliases_two_deep() {
         let mut reg = TypeRegistry::new();
         let final_target = TypeIdentifier::Primitive(PrimitiveKind::Int8);
         let inner = MinimalTypeObject::Alias(make_alias(final_target.clone()));
@@ -1681,7 +1681,7 @@ mod tests {
     // ---- §7.2.2.4.9 @external Forward-Decls + Diamond ----
 
     #[test]
-    fn external_forward_decl_roundtrip() {
+    fn xtypes_7_2_2_4_9_external_forward_decl_roundtrip() {
         // Struct A has an `@external A* next` (self-forward).
         // The TypeObject's wire encode/decode preserves the EXTERNAL flag.
         use crate::type_identifier::PrimitiveKind;
@@ -1729,7 +1729,7 @@ mod tests {
     }
 
     #[test]
-    fn external_diamond_resolves_through_both_paths() {
+    fn xtypes_7_2_2_4_9_external_diamond_resolves_through_both_paths() {
         // Diamond:
         //   A -> @external B -> @external D
         //   A -> @external C -> @external D

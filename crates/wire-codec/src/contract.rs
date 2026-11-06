@@ -18,7 +18,7 @@
 //! would be back where defect 11 was.
 //!
 //! They agreed once by inspection and diverged twice by edit. Defect 11
-//! of `docs/silent-drop-sweep.md` is one half of that divergence: the C
+//! of `0b2e8df9f6b:docs/silent-drop-sweep.md` is one half of that divergence: the C
 //! emitter walked `members_of` where the other two walked
 //! `all_members_of`, so a derived type's base members were never filled
 //! and the vendor serialised a structure of the right length with zeros
@@ -727,14 +727,14 @@ pub fn bounded_items<'a, V: Source>(
     path: &str,
 ) -> Result<&'a [V], ProbeError> {
     let items = array(value, path)?;
-    if let Some(limit) = bound.expr().and_then(|expr| ast.eval_integral(expr).ok()) {
-        if i128::try_from(items.len()).unwrap_or(i128::MAX) > limit {
-            return Err(ProbeError::Mismatch {
-                path: path.to_string(),
-                expected: format!("at most {limit} {noun}"),
-                found: format!("{}", items.len()),
-            });
-        }
+    if let Some(limit) = bound.expr().and_then(|expr| ast.eval_integral(expr).ok())
+        && i128::try_from(items.len()).unwrap_or(i128::MAX) > limit
+    {
+        return Err(ProbeError::Mismatch {
+            path: path.to_string(),
+            expected: format!("at most {limit} {noun}"),
+            found: format!("{}", items.len()),
+        });
     }
     Ok(items)
 }
@@ -876,11 +876,8 @@ pub fn reject_alias_cycle(ast: &Ast) -> Result<(), ProbeError> {
     for start in aliases {
         let mut chain: Vec<Id<TypeNode>> = vec![start];
         let mut current = start;
-        loop {
-            let Ok(TypeKind::Alias { aliased }) = ast.type_(current).map(|node| node.kind.clone())
-            else {
-                break;
-            };
+        while let Ok(TypeKind::Alias { aliased }) = ast.type_(current).map(|node| node.kind.clone())
+        {
             let Some(next) = aliased.resolved() else {
                 break;
             };

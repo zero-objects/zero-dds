@@ -1572,7 +1572,7 @@ class Reader {
     /// `read_wstring`, under the name the codec walk asks for — and the
     /// name this class's own writer half already uses.
     ///
-    /// The asymmetry was real and is recorded: commit 75b447271 renamed
+    /// The asymmetry was real and is recorded: commit c1fc1aaaf renamed
     /// the writer to `write_wstring_utf8` to match C, calling it "the
     /// third name to differ for one operation, after write_bitmask's
     /// argument order and Float128's parser", and did not rename the

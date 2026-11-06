@@ -49,7 +49,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_keyhash_yields_known_sha256() {
+    fn ddsamqp_7_6_empty_keyhash_yields_known_sha256() {
         // Spec requires a deterministic hash; SHA-256("") is
         // `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`.
         let id = group_id(b"");
@@ -60,7 +60,7 @@ mod tests {
     }
 
     #[test]
-    fn keyhash_length_always_64_lowercase_hex() {
+    fn ddsamqp_7_6_2_keyhash_length_always_64_lowercase_hex() {
         for sample in [b"a".as_slice(), b"abc".as_slice(), &[0u8; 64]] {
             let id = group_id(sample);
             assert_eq!(id.len(), 64);
@@ -79,7 +79,7 @@ mod tests {
     /// constant regardless of how long the key was, and a one-bit change
     /// in the key changes most of the digest.
     #[test]
-    fn group_id_carries_no_recoverable_trace_of_the_key() {
+    fn ddsamqp_7_6_2_group_id_carries_no_recoverable_trace_of_the_key() {
         let key: &[u8] = b"\x00\x00\x00\x07\x00\x00\x00\x0aSENSOR-ALPHA";
         let id = group_id(key);
 
@@ -119,14 +119,14 @@ mod tests {
     }
 
     #[test]
-    fn distinct_keyhash_yields_distinct_group_id() {
+    fn ddsamqp_7_6_2_distinct_keyhash_yields_distinct_group_id() {
         let a = group_id(b"\x00\x00\x00\x07");
         let b = group_id(b"\x00\x00\x00\x08");
         assert_ne!(a, b);
     }
 
     #[test]
-    fn solidus_in_key_safe() {
+    fn ddsamqp_7_6_solidus_in_key_safe() {
         // Spec §7.6.1 motivation: the old SOLIDUS separation was
         // unsafe for strings containing `/`. SHA-256 makes the edge
         // case moot — both inputs differ only by a byte pattern, and

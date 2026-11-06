@@ -126,7 +126,7 @@ class ObjectVariant {
   // OBJK_DATAWRITER/OBJK_DATAREADER, or nothing for every other kind —
   // byte-oracled in crates/xrce/src/object_repr.rs against real eProsima
   // Micro-XRCE-DDS Client 3.0.1 CREATE traffic (OBJK_TOPIC's own
-  // participant_id: commit 31c62df2a63). This — not the bare
+  // participant_id: commit bd30deaef0b). This — not the bare
   // `_encodeInner` — is the only form a real agent accepts.
   encodeForKind(objectKind, { domainId, parentObjectId } = {}) {
     const hasDomainId = objectKind === OBJK_PARTICIPANT;

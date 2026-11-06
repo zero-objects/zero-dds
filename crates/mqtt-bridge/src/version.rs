@@ -60,7 +60,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn level_round_trip() {
+    fn mqtt311_3_1_2_2_level_round_trip() {
         assert_eq!(ProtocolVersion::from_level(4), Some(ProtocolVersion::V311));
         assert_eq!(ProtocolVersion::from_level(5), Some(ProtocolVersion::V5));
         assert_eq!(ProtocolVersion::V311.level(), 4);
@@ -68,14 +68,14 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_levels_rejected() {
+    fn mqtt311_3_1_2_2_unsupported_levels_rejected() {
         assert_eq!(ProtocolVersion::from_level(3), None); // MQTT 3.1 (MQIsdp)
         assert_eq!(ProtocolVersion::from_level(0), None);
         assert_eq!(ProtocolVersion::from_level(6), None);
     }
 
     #[test]
-    fn only_v5_has_properties() {
+    fn mqtt311_3_1_2_2_only_v5_has_properties() {
         assert!(ProtocolVersion::V5.has_properties());
         assert!(!ProtocolVersion::V311.has_properties());
     }

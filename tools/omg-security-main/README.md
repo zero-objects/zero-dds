@@ -271,7 +271,7 @@ Five findings, in the order they block.
    `zerodds_security_runtime::resolve_file_uri` handles all three and is
    what the participant path calls;
    `security::tests::the_suites_authority_less_file_uri_resolves_to_a_path`
-   and `crates/dcps/tests/security_qos_properties.rs::every_file_uri_spelling_is_resolved_on_the_participant_path`
+   and `crates/dcps/tests/security_qos_properties.rs::security_10_3_1_every_file_uri_spelling_is_resolved_on_the_participant_path`
    pin both halves.
 4. **The `dds.sec.*` property names had no single home — closed.**
    `dds.sec.access.governance`, the property that decides whether a

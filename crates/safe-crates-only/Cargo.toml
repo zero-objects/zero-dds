@@ -49,3 +49,27 @@ zerodds-transport-udp = { version = "1.0.0-rc.7", path = "../transport-udp", def
 zerodds-security = { version = "1.0.0-rc.7", path = "../security", default-features = false }
 zerodds-xrce-client = { version = "1.0.0-rc.7", path = "../xrce-client", default-features = false }
 zerodds-sys = { version = "1.0.0-rc.7", path = "../sys", default-features = false }
+
+# The contract with zerodds-discovery (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-discovery's items only with `safety`, which
+# forwards its `alloc`.
+[[test]]
+name = "contract_discovery"
+path = "tests/contract_discovery.rs"
+required-features = ["safety"]
+
+# The contract with zerodds-transport-udp (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate forwards zerodds-transport-udp's `safety` and `alloc`
+# only with `safety`, the profile the target builds.
+[[test]]
+name = "contract_transport_udp"
+path = "tests/contract_transport_udp.rs"
+required-features = ["safety"]
+
+# The contract with zerodds-security (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate forwards zerodds-security's `safety` and `alloc` only with
+# `safety`, the profile the target builds.
+[[test]]
+name = "contract_security"
+path = "tests/contract_security.rs"
+required-features = ["safety"]

@@ -4,16 +4,21 @@
 //! Zig reliable-stream endpoint E2E. The zig app is the reliable **sender**
 //! (`endpoints/zig/src/reliable.zig`): it submits N samples on `stream_id 0x80`,
 //! sends `WRITE_DATA`, and retransmits on `ACKNACK` from the shared Rust
-//! [`ReliablePeer`], which injects loss. Also runs the zig unit + byte-golden
-//! tests (`zig test`), the runnable example, and the async-writer latency bench.
-//! Gated on `zig`.
+//! [`ReliablePeer`], which injects loss. The samples are the `Ping` of the
+//! codec the Zig generator writes from the IDL, so the run checks IDL,
+//! generated codec and runtime together. And the async-writer latency
+//! comparison. The unit and byte-golden tests and the runnable example run in
+//! the endpoints-gate column of Zig. Gated on `zig`.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
-use std::path::Path;
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive, zig_ready_or_skip};
+use zerodds_endpoint_e2e::codegen::{Language, runtime_dir, source};
+use zerodds_endpoint_e2e::{
+    RELIABLE_SAMPLES, assert_reliable_pings, bind_reliable_peer, reliable_receive,
+    zig_ready_or_skip,
+};
 
 fn reliable_zig() -> String {
     format!(
@@ -28,6 +33,21 @@ fn scaffold(main_src: &str) -> std::path::PathBuf {
     std::fs::create_dir_all(&dir).expect("mkdir");
     std::fs::copy(reliable_zig(), dir.join("reliable.zig")).expect("copy reliable.zig");
     std::fs::write(dir.join("main.zig"), main_src).expect("main.zig");
+    // The codec the Zig generator writes from the IDL, with the two imports it
+    // expects beside it (`tests/zig.rs`), and the wire runtime it calls.
+    std::fs::write(
+        dir.join("gen.zig"),
+        format!(
+            "const std = @import(\"std\");\nconst zdwire = @import(\"zdwire.zig\");\n\n{}",
+            source(Language::Zig)
+        ),
+    )
+    .expect("gen.zig");
+    std::fs::copy(
+        runtime_dir("zig").join("zdwire.zig"),
+        dir.join("zdwire.zig"),
+    )
+    .expect("copy zdwire.zig");
     dir
 }
 
@@ -35,6 +55,11 @@ fn scaffold(main_src: &str) -> std::path::PathBuf {
 // `bench <port>` reports the async-writer wait-free push latency vs inline sendto.
 const ZIG_RELIABLE_MAIN: &str = r#"const std = @import("std");
 const rel = @import("reliable.zig");
+const gen = @import("gen.zig");
+const zdwire = @import("zdwire.zig");
+
+// XCDR2 little-endian; the PL_CDR1 fields never fire under plain XCDR2.
+const zd_framing = zdwire.PlCdr1Framing{ .pid_flags = "sentinel-must-understand", .highest_short_id = 16128, .pad_declared_length = true, .pad_declared_optional_length = true, .member_must_understand = true, .pad_after_value = true };
 
 // Zig 0.16 moved sockets out of `std.posix` and into `std.Io.net`:
 // `std.posix.socket`, `bind`, `sendto` and `recvfrom` are gone, and the
@@ -122,10 +147,12 @@ pub fn main(zd_init: std.process.Init) !void {
 
     var i: u32 = 0;
     while (i < n_count) : (i += 1) {
-        var p: [4]u8 = undefined;
-        std.mem.writeInt(u32, &p, i, .little);
-        const seq = try snd.submit(&p);
-        const m = rel.writeDataFrame(&frame, seq, &p);
+        // The generated codec writes Ping { seq = i, msg = "reliable" }.
+        var zd_w = zdwire.Writer.init(alloc, zdwire.Endianness.little, 4, zd_framing, false);
+        try gen.zd_enc_Ping(&zd_w, .{ .seq = @intCast(i), .msg = "reliable" });
+        const p = zd_w.finish();
+        const seq = try snd.submit(p);
+        const m = rel.writeDataFrame(&frame, seq, p);
         try sock.send(zd_init.io, &peer, frame[0..m]);
     }
 
@@ -176,87 +203,36 @@ fn spawn_app(mode: &str, port: u16, n: u32) -> Child {
         .expect("spawn zig")
 }
 
-fn decode_u32(b: &[u8]) -> u32 {
-    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
-}
-
 fn loss_case(drop_every: Option<usize>, label: &str) {
     if !zig_ready_or_skip(label) {
         return;
     }
-    const N: u32 = 12;
+    let n = RELIABLE_SAMPLES;
     let peer = bind_reliable_peer(drop_every).expect("bind reliable peer");
-    let child = spawn_app("e2e", peer.port, N);
-    let delivered = reliable_receive(&peer, child, label, N as usize);
-    assert_eq!(delivered.len(), N as usize, "{label}: sample count");
-    for (i, payload) in delivered.iter().enumerate() {
-        assert_eq!(
-            decode_u32(payload),
-            i as u32,
-            "{label}: gap/misorder at {i}"
-        );
-    }
+    let child = spawn_app("e2e", peer.port, u32::try_from(n).expect("count"));
+    let delivered = reliable_receive(&peer, child, label, n);
+    assert_reliable_pings(label, &delivered, n);
 }
 
+/// reliable-endpoint 1.0 §5 point 3: the Zig app sends its samples on the
+/// reliable stream (DDS-XRCE 1.0 §8.4.10, stream id 0x80); the Rust peer
+/// drops datagrams and answers with ACKNACK (§8.3.5.11), and every sample
+/// arrives once and in order.
 #[test]
-fn zig_reliable_loss_recovery() {
+#[ignore = "needs the Zig toolchain; runs in integration-bindings-zig-nim"]
+fn reliable_5_3_zig_samples_arrive_in_order_despite_dropped_datagrams() {
     // Peer drops every 3rd distinct sample once → the app must retransmit.
     loss_case(Some(3), "zig/loss");
 }
 
+/// reliable-endpoint 1.0 §5 point 4 and §2: the Zig producer's enqueue into
+/// the async-decoupled writer costs less than the inline send it replaces,
+/// which enters the kernel with `sendto`; both values are printed.
 #[test]
-fn zig_reliable_no_loss() {
-    loss_case(None, "zig/baseline");
-}
-
-#[test]
-fn zig_reliable_unit() {
-    // Mirror-of-reference unit tests + byte-golden HEARTBEAT/ACKNACK (`zig test`).
-    if !zig_ready_or_skip("zig_reliable_unit") {
-        return;
-    }
-    let out = Command::new("zig")
-        .arg("test")
-        .arg(reliable_zig())
-        .output()
-        .expect("zig test");
-    assert!(
-        out.status.success(),
-        "zig test failed:\n{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-#[test]
-fn zig_reliable_example() {
-    // The runnable in-process loss-recovery demo prints the recovered sequence.
-    if !zig_ready_or_skip("zig_reliable_example") {
-        return;
-    }
-    let example = format!(
-        "{}/../../endpoints/zig/example_reliable.zig",
-        env!("CARGO_MANIFEST_DIR")
-    );
-    // Run from endpoints/zig so the relative `@import("src/reliable.zig")` resolves.
-    let cwd = format!("{}/../../endpoints/zig", env!("CARGO_MANIFEST_DIR"));
-    let out = Command::new("zig")
-        .arg("run")
-        .arg(&example)
-        .current_dir(Path::new(&cwd))
-        .output()
-        .expect("zig run example");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        stdout.contains("sequence 0..11 verified in order"),
-        "example did not verify:\nstdout: {stdout}\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-}
-
-#[test]
-fn zig_reliable_latency_bench() {
+#[ignore = "needs the Zig toolchain; runs in integration-bindings-zig-nim"]
+fn reliable_5_4_zig_the_producer_enqueue_costs_less_than_the_inline_send() {
     // Async-decoupled writer: wait-free ring push vs inline sendto.
-    if !zig_ready_or_skip("zig_reliable_latency_bench") {
+    if !zig_ready_or_skip("zig reliable latency") {
         return;
     }
     let child = spawn_app("bench", 9, 0);

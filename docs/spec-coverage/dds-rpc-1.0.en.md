@@ -42,7 +42,7 @@ not part of this file).
   `runtime/java/src/main/java/org/zerodds/ddsrpc/`
   (`ZeroDdsParticipant`, `RawTypeSupport`) connects it to the DDS Java PSM
   implementation in `crates/java-omgdds/`, including
-  `PID_RELATED_SAMPLE_IDENTITY` (merge `830064b55c76`). The tests of the
+  `PID_RELATED_SAMPLE_IDENTITY` (merge `a2a9a67acb58`). The tests of the
   runtime also use an in-memory loop
   (`crates/rpc/tests/java/RpcRuntimeRoundtrip.java`).
 - `crates/rtps/` — parameter IDs 0x0080 to 0x0083 and their codecs;
@@ -226,13 +226,13 @@ and `reply_reader`, created in `Requester::from_topics`);
 `runtime/java/src/main/java/org/omg/dds/rpc/Requester.java` (interface),
 `RequesterImpl.java`
 
-**Tests:** `crates/rpc/tests/runtime_e2e.rs::e2e_single_request_response_roundtrip`,
+**Tests:** `crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_single_request_response_roundtrip`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — all three runtimes hold one writer for requests and one
-reader for replies. The Java runtime as interfaces: `97c20505e85c`.
+reader for replies. The Java runtime as interfaces: `771f12846807`.
 
 ### §7.2.1 Service: DataReader for requests, DataWriter for replies
 
@@ -245,13 +245,13 @@ receiving the requests and a data writer for sending the replies."
 `runtime/java/src/main/java/org/omg/dds/rpc/Replier.java` (interface),
 `ReplierImpl.java`
 
-**Tests:** `crates/rpc/src/replier.rs::tests::tick_processes_request_and_writes_reply`,
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_2_1_tick_processes_request_and_writes_reply`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — all three runtimes hold one reader for requests and one
-writer for replies. The Java runtime as interfaces: `97c20505e85c`.
+writer for replies. The Java runtime as interfaces: `771f12846807`.
 
 ### §7.2.1 Replies of other clients are filtered out
 
@@ -268,17 +268,17 @@ the GUID of the own request writer `request_writer_guid_`);
 `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java` (`drain`: the
 same comparison with `requestWriterGuid`)
 
-**Tests:** `crates/rpc/src/requester.rs::tests::tick_drops_reply_without_matching_request`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_2_1_tick_drops_reply_without_matching_request`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (section "a reply to another client is filtered out" in
 `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (the same section in `crates/rpc/tests/java/RpcRuntimeRoundtrip.java`)
 
 **Status:** `done` — none of the three runtimes hands a reply to the
 application that belongs to a request of another client. The filter works in
 the `Requester` after the read, not as a `ContentFilteredTopic` of the
-DataReader; the specification asks for the effect. C++ and Java: `d6f6b5e975c8`.
+DataReader; the specification asks for the effect. C++ and Java: `35aa702e4900`.
 
 ### §7.2.1 Content filter in C++ and Java
 
@@ -288,14 +288,14 @@ DataReader; the specification asks for the effect. C++ and Java: `d6f6b5e975c8`.
 `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java`
 (`requestWriterGuid`, `drain`)
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — `Requester::receive_replies` (C++) and `drain` (Java)
 discard a reply whose `related_request_id` carries the GUID of another request
 writer, before it reaches the application or its error handling. In the
 Enhanced path the same comparison applies to the `related_identity` from
-`PID_RELATED_SAMPLE_IDENTITY`. `d6f6b5e975c8`.
+`PID_RELATED_SAMPLE_IDENTITY`. `35aa702e4900`.
 
 ### §7.2.1 Several outstanding requests of one client
 
@@ -308,11 +308,11 @@ correlated with the corresponding reply."
 `Requester::receive_reply`); `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java`
 (`receiveReply(SampleIdentity)`)
 
-**Tests:** `crates/rpc/tests/runtime_e2e.rs::e2e_multi_pending_requests_all_get_their_reply`,
-`crates/rpc/src/requester.rs::tests::tick_correlates_reply_with_pending_slot`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_multi_pending_requests_all_get_their_reply`,
+`crates/rpc/src/requester.rs::tests::rpc_7_2_1_tick_correlates_reply_with_pending_slot`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (section "two outstanding requests"),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (the same section)
 
 **Status:** `done` — matching by the `SampleIdentity` of the request in all
@@ -330,8 +330,8 @@ GUID_t and a SequenceNumber_t defined in sub clause 7.5.1.1.1 Common Types."
 `runtime/cpp/include/dds/rpc.hpp` (`dds::SampleIdentity`);
 `runtime/java/src/main/java/org/omg/dds/rpc/SampleIdentity.java`
 
-**Tests:** `crates/rpc/src/requester.rs::tests::send_request_async_assigns_unique_sample_ids`,
-`crates/rpc/src/common_types.rs::tests::sample_identity_invalid_constant_is_rtps_unknown`
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_2_1_send_request_async_assigns_unique_sample_ids`,
+`crates/rpc/src/common_types.rs::tests::rpc_7_2_1_sample_identity_invalid_constant_is_rtps_unknown`
 
 **Status:** `done` — the type consists of a GUID and a `SequenceNumber_t` in all
 three runtimes, and every request receives a unique identity. That this
@@ -351,10 +351,10 @@ C++: `runtime/cpp/include/dds/rpc/zerodds.hpp` (`Writer::next_identity` asks
 `zerodds_writer_next_sequence_number` in `crates/zerodds-c-api/src/lib.rs`)
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::a_live_request_identity_is_the_rtps_identity_of_the_request_writer`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::aWriteReturnsItsIdentityAndTheReaderSeesItWithTheRelatedOne`,
-`crates/zerodds-c-api/tests/writer_next_sequence_number.rs::the_next_sequence_number_is_the_one_the_next_write_carries`
+`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::rpc_7_8_2_a_write_returns_its_identity_and_the_reader_sees_it_with_the_related_one`,
+`crates/zerodds-c-api/tests/writer_next_sequence_number.rs::rpc_7_2_1_the_next_sequence_number_is_the_one_the_next_write_carries`
 
-**Status:** `done` — Rust and Java carry the identity of the sample in the `RequestHeader` (Rust `10ba007046af`, Java through the PSM binding `830064b55c76`). In C++, `Writer::next_identity` returns the sequence number from the writer through `zerodds_writer_next_sequence_number` (`976400f7d40a`). The program `crates/rpc/tests/cpp/real_library_roundtrip.cpp` runs the C++ binding (`runtime/cpp/include/dds/rpc/zerodds.hpp`) against the real C library `libzerodds`: two runtimes of one domain, a generated client and service of the Enhanced mapping, every call is matched with its reply by the identity of the sample and `PID_RELATED_SAMPLE_IDENTITY` (test `crates/rpc/tests/cpp_rpc_real_library.rs::the_cpp_binding_runs_against_libzerodds`, commit `0d2790e2987c`; run on the Linux test host, green). The run found a defect, fixed in `78a70b4c44c8`: `ClientEndpoint::bind` did not bind the requesters the client sends through to the instance.
+**Status:** `done` — Rust and Java carry the identity of the sample in the `RequestHeader` (Rust `2314c1c5fb58`, Java through the PSM binding `a2a9a67acb58`). In C++, `Writer::next_identity` returns the sequence number from the writer through `zerodds_writer_next_sequence_number` (`94181922bf32`). The program `crates/rpc/tests/cpp/real_library_roundtrip.cpp` runs the C++ binding (`runtime/cpp/include/dds/rpc/zerodds.hpp`) against the real C library `libzerodds`: two runtimes of one domain, a generated client and service of the Enhanced mapping, every call is matched with its reply by the identity of the sample and `PID_RELATED_SAMPLE_IDENTITY` (test `crates/rpc/tests/cpp_rpc_real_library.rs::the_cpp_binding_runs_against_libzerodds`, commit `192200b5a2e1`; run on the Linux test host, green). The run found a defect, fixed in `90be3edf2d76`: `ClientEndpoint::bind` did not bind the requesters the client sends through to the instance.
 
 ### §7.2.1 The reply names the identity of the request
 
@@ -369,15 +369,15 @@ providing the sample-identity of the request."
 `runtime/java/src/main/java/org/omg/dds/rpc/Replier.java`
 (`sendReply(reply, relatedRequestId)`)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::tick_processes_request_and_writes_reply`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_2_1_tick_processes_request_and_writes_reply`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (check "related_request_id is the request's identity")
 
 **Status:** `done` — Rust, C++ and Java write the identity of the request into
 the reply (Basic: `ReplyHeader::related_request_id`; Enhanced:
-`PID_RELATED_SAMPLE_IDENTITY`). C++ and Java: `8202f8c67446`; Enhanced:
-`3d4c42cad194`, C++ `a8058d1272c9`.
+`PID_RELATED_SAMPLE_IDENTITY`). C++ and Java: `58634aa2702a`; Enhanced:
+`e305669e2c42`, C++ `2bfb2786121b`.
 
 ### §7.2.1 The reply's own identity
 
@@ -441,23 +441,23 @@ the request/reply style does not take the interface name, §7.4.1);
 `crates/rpc/src/requester.rs`, `crates/rpc/src/replier.rs`
 (`with_instance_style`, `with_topics_style`, `with_options`)
 
-**Tests:** `crates/rpc/src/requester.rs::tests::request_reply_style_drops_the_interface_segment`,
-`crates/rpc/tests/language_binding_agreement.rs::both_readings_of_seven_four_produce_the_same_topic_names`,
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_2_2_3_request_reply_style_drops_the_interface_segment`,
+`crates/rpc/tests/language_binding_agreement.rs::rpc_7_2_2_3_both_readings_of_seven_four_produce_the_same_topic_names`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`
 (a `Requester` in request/reply style calls the generated service in
 function-call style),
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`
 (the same direction in C++ and Java),
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::a_basic_function_call_client_calls_a_request_reply_service`
 (generated client in function-call style against a `Replier` in
 request/reply style)
 
 **Status:** `done` — the topic names follow §7.4.1 for both styles
-(`575f889c965b`), the entities in request/reply style talk to the generated
+(`6834e51fdfef`), the entities in request/reply style talk to the generated
 service in function-call style, and the generated client in function-call style
 (`CalculatorClient`) calls a `Replier` with `BindingStyle::RequestReply` on
-topic names set to equal values (`d79e4dac24d0`). The test checks the names
+topic names set to equal values (`414e077c527d`). The test checks the names
 `demo_Calculator_Service_Request` and `demo_Calculator_Service_Reply` and two
 calls of `add`.
 
@@ -477,15 +477,15 @@ binding."
 `crates/lang-rules/src/emit/interface_java/calls.rs` (`client_class`,
 `service_class`)
 
-**Tests:** `crates/rpc/tests/runtime_e2e.rs::e2e_single_request_response_roundtrip`,
+**Tests:** `crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_single_request_response_roundtrip`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`
 
 **Status:** `done` — both styles run in Rust, C++ and Java. C++ function-call
-`24e3443ce819`, Java function-call `c4a249bd251f`.
+`ec3707125a9b`, Java function-call `c512ee365514`.
 
 ### §7.2.2.3 Function-call in C++ and Java
 
@@ -500,14 +500,14 @@ binding."
 `runtime/java/src/main/java/org/omg/dds/rpc/FunctionCallClient.java`,
 `FunctionCallService.java`
 
-**Tests:** `crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`
+**Tests:** `crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`
 
 **Status:** `done` — the generated client calls through a `Requester`, the
 generated service answers through a `Replier`; in C++ `Server::add` accepts the
-service. C++: `24e3443ce819`, Java: `c4a249bd251f`, Enhanced in C++
-`99bda16e455b` and in Java `9ab3b695e13c`.
+service. C++: `ec3707125a9b`, Java: `c512ee365514`, Enhanced in C++
+`45ead22cc2b9` and in Java `2ea77f7dad8a`.
 
 ### §7.2.3 Identity retrievable at requester and service
 
@@ -521,14 +521,14 @@ returns `PendingRequest::identity`; `AsyncReplierHandler` receives the identity)
 `runtime/cpp/include/dds/rpc.hpp` (`WriteSample::identity`, `Sample::identity`);
 `runtime/java/src/main/java/org/omg/dds/rpc/Sample.java` (`identity()`)
 
-**Tests:** `crates/rpc/tests/runtime_e2e.rs::e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
-`crates/rpc/src/replier.rs::tests::receive_requests_and_send_reply_expose_the_identity`,
-`crates/rpc/src/replier.rs::tests::dispatch_async_hands_the_replier_and_the_identity_to_the_listener`
+**Tests:** `crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
+`crates/rpc/src/replier.rs::tests::rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity`,
+`crates/rpc/src/replier.rs::tests::rpc_7_2_3_dispatch_async_hands_the_replier_and_the_identity_to_the_listener`
 
 **Status:** `done` — the identity is retrievable at the requester and at the
 service. The synchronous `ReplierHandler::handle` of the Rust runtime receives
 only the value of the request; `receive_requests` and the asynchronous handler
-supply the identity (`2933b7d28a88`).
+supply the identity (`c5af5c7c138e`).
 
 ### §7.2.3 Explicit and implicit propagation
 
@@ -558,13 +558,13 @@ with `RequestIdentity`); `runtime/cpp/include/dds/rpc.hpp`
 `runtime/java/src/main/java/org/omg/dds/rpc/Replier.java`
 (`receiveRequests`, `sendReply(reply, relatedRequestId)`)
 
-**Tests:** `crates/rpc/tests/runtime_e2e.rs::e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
-`crates/rpc/src/replier.rs::tests::receive_requests_and_send_reply_expose_the_identity`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
+`crates/rpc/src/replier.rs::tests::rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — reading at the client and reading and setting at the
-service in Rust, C++ and Java. Rust at the service: `2933b7d28a88`.
+service in Rust, C++ and Java. Rust at the service: `c5af5c7c138e`.
 
 ### §7.2.4 Basic: no extension of DDS and RTPS, explicit request-id
 
@@ -578,13 +578,13 @@ specifications. It uses explicit request-id for correlation."
 `ReplyHeader::related_request_id`);
 `runtime/java/src/main/java/org/omg/dds/rpc/HeaderCodec.java`
 
-**Tests:** `crates/rpc/src/requester.rs::tests::tick_correlates_reply_with_pending_slot`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_2_1_tick_correlates_reply_with_pending_slot`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns`
 
 **Status:** `done` — all three runtimes carry the request-id in the header of
 the sample and need no extension of DDS or RTPS for the Basic mapping. C++ and
-Java fill `requestId` with the identity of the writer: `8202f8c67446`. Whether
+Java fill `requestId` with the identity of the writer: `58634aa2702a`. Whether
 in C++ this identity is the one assigned by the writer is the subject of the
 item "Identity of the request is that of the sample".
 
@@ -631,7 +631,7 @@ Enhanced for both styles; `RpcMapping` or `ServiceMapping` selects the mapping,
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_call_is_answered_through_the_related_sample_identity`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::a_basic_function_call_client_calls_a_request_reply_service`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::an_enhanced_function_call_client_calls_a_request_reply_service`
 
@@ -641,7 +641,7 @@ in request/reply style against the generated service in function-call style
 round `a_basic_function_call_client_calls_a_request_reply_service`. Enhanced:
 `an_enhanced_function_call_client_calls_a_request_reply_service` (client in
 function-call style, `Replier` in request/reply style, topic names set to equal
-values `enh_Calc_Service_Request` and `enh_Calc_Service_Reply`; `d79e4dac24d0`).
+values `enh_Calc_Service_Request` and `enh_Calc_Service_Reply`; `414e077c527d`).
 
 ---
 
@@ -688,12 +688,12 @@ Rationale, p. 22: "Modified to remove the CORBA-specific import statement."
 `InterfaceError::OutsideServiceGrammar`)
 
 **Tests:** `crates/idl-lower/tests/conformance.rs::the_xtypes_specifications_own_idl_lowers_completely`,
-`crates/rpc/src/service_mapping.rs::tests::an_import_directive_is_outside_the_service_grammar`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_import_directive`
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_an_import_directive_is_outside_the_service_grammar`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_an_import_directive`
 
 **Status:** `done` — a sequence of definitions is read. `lower_service` (the
-service model in Rust) refuses `import` (`d2a0e370a1ed`), and the generator
-path refuses `import` as well (`bfd6f500aa94`). The front end `crates/idl-parse`
+service model in Rust) refuses `import` (`1627b386b569`), and the generator
+path refuses `import` as well (`c9f99bb02dd5`). The front end `crates/idl-parse`
 still reads full IDL 4.2 and accepts `import`; the refusal applies at the seam
 to the services, not in the parser.
 
@@ -710,19 +710,19 @@ declaration, suffix annotations `//@`);
 `crates/rpc/src/service_mapping.rs::lower_service` (refuses `typeid`,
 `typeprefix` and `component`)
 
-**Tests:** `crates/rpc/src/annotations.rs::tests::dds_request_and_reply_topics_lower_and_resolve`,
+**Tests:** `crates/rpc/src/annotations.rs::tests::rpc_7_3_1_1_dds_request_and_reply_topics_lower_and_resolve`,
 `crates/idl-parse/tests/parse.rs::a_suffix_annotation_reaches_the_tree_as_an_annotation`,
-`crates/rpc/src/service_mapping.rs::tests::a_typeid_directive_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_typeprefix_directive_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_component_declaration_is_outside_the_service_grammar`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_typeid_and_typeprefix_directives`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_component`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_import_directive`
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_typeid_directive_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_typeprefix_directive_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_component_declaration_is_outside_the_service_grammar`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_typeid_and_typeprefix_directives`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_component`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_an_import_directive`
 
 **Status:** done — the remaining alternatives and annotation declarations
 are read. `lower_service` refuses `typeid`, `typeprefix` and `component`
-(d2a0e370a1ed, 1de24d22343a); `crates/lang-rules/src/adapter/interface.rs::service`
-makes the same check for the generators (bfd6f500aa94).
+(1627b386b569, 009e7a5ef119); `crates/lang-rules/src/adapter/interface.rs::service`
+makes the same check for the generators (c9f99bb02dd5).
 
 ### §7.3.1.1 Production (7) interface_header with annotation
 
@@ -732,13 +732,13 @@ makes the same check for the generators (bfd6f500aa94).
 **Repo:** `crates/idl-parse/src/decl.rs`; annotations on the interface read in
 `crates/rpc/src/annotations.rs::lower_rpc_annotations`
 
-**Tests:** `crates/rpc/src/annotations.rs::tests::dds_request_and_reply_topics_lower_and_resolve`,
-`crates/rpc/src/service_mapping.rs::tests::every_base_interface_becomes_a_topic_alias`,
-`crates/rpc/src/service_mapping.rs::tests::a_local_interface_is_outside_the_service_grammar`
+**Tests:** `crates/rpc/src/annotations.rs::tests::rpc_7_3_1_1_dds_request_and_reply_topics_lower_and_resolve`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_every_base_interface_becomes_a_topic_alias`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_local_interface_is_outside_the_service_grammar`
 
 **Status:** done — annotations on the interface are read (c9f21d8f9a8e);
 `lower_service` refuses forms other than `interface` (`local`, `abstract`,
-`component`) (1de24d22343a).
+`component`) (009e7a5ef119).
 
 ### §7.3.1.1 Production (9) export
 
@@ -752,17 +752,17 @@ and attributes); `crates/rpc/src/service_mapping.rs::lower_service`
 (operations and attributes; constants, types and exceptions in the interface
 give `RpcError::OutsideServiceGrammar`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::the_seam_reads_every_part_of_an_interface`,
-`crates/rpc/src/service_mapping.rs::tests::a_nested_declaration_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_nested_type_declaration_is_outside_the_service_grammar`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_type_in_an_interface_body`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_constant_in_an_interface_body`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_exception_in_an_interface_body`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_reads_every_part_of_an_interface`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_nested_declaration_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_nested_type_declaration_is_outside_the_service_grammar`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_type_in_an_interface_body`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_constant_in_an_interface_body`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_an_exception_in_an_interface_body`
 
 **Status:** done — in `lower_service` a member other than an attribute or
-an operation is an error (d2a0e370a1ed). `crates/lang-rules/src/adapter/interface.rs::service`
+an operation is an error (1627b386b569). `crates/lang-rules/src/adapter/interface.rs::service`
 refuses a constant, a type and an exception in the interface with
-`InterfaceError::OutsideServiceGrammar` (bfd6f500aa94).
+`InterfaceError::OutsideServiceGrammar` (c9f99bb02dd5).
 
 ### §7.3.1.1 Production (42) type_dcl with annotation
 
@@ -787,21 +787,21 @@ refuses a constant, a type and an exception in the interface with
 **Repo:** `crates/idl-parse/src/decl.rs`; `crates/rpc/src/service_mapping.rs::lower_method`
 (refuses `oneway`, `@oneway` and `context`)
 
-**Tests:** `crates/rpc/src/service_mapping.rs::tests::the_oneway_keyword_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::the_oneway_annotation_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_context_clause_is_outside_the_service_grammar`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_oneway_operation`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_the_oneway_annotation`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_context_clause`
+**Tests:** `crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_the_oneway_keyword_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_the_oneway_annotation_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_context_clause_is_outside_the_service_grammar`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_oneway_operation`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_the_oneway_annotation`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_context_clause`
 
 **Status:** done — `lower_service` refuses the word `oneway`, `@oneway` and
 a `context` clause with `RpcError::OutsideServiceGrammar`
-(d2a0e370a1ed, 980f41ccd7aa). The reader of the generators
+(1627b386b569, cc78028ceb52). The reader of the generators
 (`crates/lang-rules/src/adapter/interface.rs::one_operation`) refuses them with
-`InterfaceError::OutsideServiceGrammar` (bfd6f500aa94); the sources of the
+`InterfaceError::OutsideServiceGrammar` (c9f99bb02dd5); the sources of the
 generator tests and of `crates/rpc-rust-e2e` no longer contain `oneway`
-(732364ad3635). The field `Operation::oneway` and the `oneway` branches in
-`emit/interface_{cpp,java,rust,typescript}.rs` and in `crates/webdds-bridge` are removed (`fb0f35afc27`). The design rationale of the production names the removal (“Removed the CORBA-specific “oneway” modifier and the “context” expressions.”); §7.3.2 keeps `@oneway` for Java sources only (`java_service_def`). The IDL `@oneway` is refused as well: the rationale row speaks of the IDL grammar, and a Java-only annotation has no mapping in the topic types.
+(83ead28f9c52). The field `Operation::oneway` and the `oneway` branches in
+`emit/interface_{cpp,java,rust,typescript}.rs` and in `crates/webdds-bridge` are removed (`31247aca290`). The design rationale of the production names the removal (“Removed the CORBA-specific “oneway” modifier and the “context” expressions.”); §7.3.2 keeps `@oneway` for Java sources only (`java_service_def`). The IDL `@oneway` is refused as well: the rationale row speaks of the IDL grammar, and a Java-only annotation has no mapping in the topic types.
 
 ### §7.3.1.1 Production (91) param_dcl with annotation
 
@@ -811,11 +811,11 @@ generator tests and of `crates/rpc-rust-e2e` no longer contain `oneway`
 **Repo:** `crates/rpc/src/service_mapping.rs::lower_method` (annotations on the
 parameter, `override_direction`)
 
-**Tests:** `crates/rpc/src/service_mapping.rs::tests::param_annotation_in_overrides_declared_direction`,
+**Tests:** `crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_param_annotation_in_overrides_declared_direction`,
 `crates/idl-lower/tests/conformance.rs::the_xtypes_specifications_own_idl_lowers_completely`
 
 **Status:** done — annotations on a parameter change its direction
-(0ecf76d597c0).
+(52a3f267a6d7).
 
 ### §7.3.1.1 Production (104) readonly_attr_spec with annotation
 
@@ -842,7 +842,7 @@ parameter, `override_direction`)
 
 **Status:** done — the front end reads annotations before declarations in
 general; the test with `@id(1) attribute long x;` (without `readonly`) shows the
-annotation as the first child of the `AttributeDecl` node (5c45d169f4d1).
+annotation as the first child of the `AttributeDecl` node (eb2c0e0f8f47).
 
 ### §7.3.1.1 Production (106) attr_spec: test with a writable attribute
 
@@ -854,7 +854,7 @@ annotation as the first child of the `AttributeDecl` node (5c45d169f4d1).
 
 **Status:** done — `an_annotation_precedes_a_writable_attribute` parses
 `interface I { @id(1) attribute long x; };` without a diagnostic and checks that
-the node contains no `readonly` (5c45d169f4d1).
+the node contains no `readonly` (eb2c0e0f8f47).
 
 ### §7.3.1.1 — constructs outside the grammar of the mapping
 
@@ -872,33 +872,33 @@ declarations in the interface, `oneway`, `@oneway`, `context`);
 `crates/idl-lower/src/lower.rs` and `crates/ast/src/facet/corba.rs`
 (`repository_directives` for `typeid` and `typeprefix`)
 
-**Tests:** `crates/rpc/src/service_mapping.rs::tests::the_oneway_keyword_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::the_oneway_annotation_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_context_clause_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_nested_declaration_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_nested_type_declaration_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::an_import_directive_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_typeid_directive_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_typeprefix_directive_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_component_declaration_is_outside_the_service_grammar`,
-`crates/rpc/src/service_mapping.rs::tests::a_local_interface_is_outside_the_service_grammar`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_oneway_operation`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_context_clause`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_type_in_an_interface_body`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_constant_in_an_interface_body`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_exception_in_an_interface_body`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_import_directive`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_typeid_and_typeprefix_directives`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_abstract_interface`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_component`,
-`crates/lang-rules/tests/interface_bindings.rs::a_local_interface_is_refused_by_the_seam`
+**Tests:** `crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_the_oneway_keyword_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_the_oneway_annotation_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_context_clause_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_nested_declaration_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_nested_type_declaration_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_an_import_directive_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_typeid_directive_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_typeprefix_directive_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_component_declaration_is_outside_the_service_grammar`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_local_interface_is_outside_the_service_grammar`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_oneway_operation`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_context_clause`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_type_in_an_interface_body`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_constant_in_an_interface_body`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_an_exception_in_an_interface_body`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_an_import_directive`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_typeid_and_typeprefix_directives`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_an_abstract_interface`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_component`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_a_local_interface_is_refused_by_the_seam`
 
 **Status:** done — the service model in Rust (`lower_service`) refuses the
-removed constructs with `RpcError::OutsideServiceGrammar` (d2a0e370a1ed,
-1de24d22343a). The reader of the generators,
+removed constructs with `RpcError::OutsideServiceGrammar` (1627b386b569,
+009e7a5ef119). The reader of the generators,
 `crates/lang-rules/src/adapter/interface.rs::service` and `services` (used by
 `idlc generate`), makes the same check with `InterfaceError::OutsideServiceGrammar`
-(bfd6f500aa94); `a_local_interface_is_refused_by_the_seam` also shows that
+(c9f99bb02dd5); `rpc_7_3_1_1_a_local_interface_is_refused_by_the_seam` also shows that
 `cpp_interface_items` and `java_interface_items` fail for a `local interface`.
 The front end (`crates/idl-parse`) reads full IDL 4.2 and has no profile of the
 grammar of §7.3.1.1; the refusal sits in `lower_service` and in the reader of
@@ -914,9 +914,9 @@ used by DDS does not have annotations."
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (the
 synthesised types are structures without annotation)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** done — commit d047dc5f497c.
+**Status:** done — commit ad892a10764a.
 
 ### §7.3.1.2 XTypes type system in signatures (Enhanced)
 
@@ -945,14 +945,14 @@ Service Mapping."
 **Repo:** `crates/idl-parse/src/decl.rs`; `crates/rpc/src/service_mapping.rs::lower_service`
 
 **Tests:** `crates/idl-lower/tests/conformance.rs::the_xtypes_specifications_own_idl_lowers_completely`,
-`crates/rpc/src/service_mapping.rs::tests::a_nested_declaration_is_outside_the_service_grammar`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_type_in_an_interface_body`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_a_constant_in_an_interface_body`
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_3_1_1_a_nested_declaration_is_outside_the_service_grammar`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_type_in_an_interface_body`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_the_seam_refuses_a_constant_in_an_interface_body`
 
 **Status:** done — the front end reads the modified productions of XTypes.
 `<definition>` stays that of the Basic mapping for the service model in Rust
-(`lower_service`, d2a0e370a1ed) and for the reader of the generators in
-`crates/lang-rules` (bfd6f500aa94); the front end itself reads IDL 4.2 (item
+(`lower_service`, 1627b386b569) and for the reader of the generators in
+`crates/lang-rules` (c9f99bb02dd5); the front end itself reads IDL 4.2 (item
 "§7.3.1.1 — constructs outside the grammar of the mapping" above).
 
 ### §7.3.1.3 Example of an Interface in IDL
@@ -978,12 +978,12 @@ of a model; `TypePairService`); `crates/rpc/src/annotations.rs::lower_single`
 `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`, the annotations
 need no declaration)
 
-**Tests:** `crates/rpc/src/type_pair.rs::tests::a_marked_pair_with_headers_is_a_basic_service`,
-`crates/rpc/src/type_pair.rs::tests::one_type_may_be_both_halves`,
-`crates/rpc/src/annotations.rs::tests::the_pair_annotations_lower_and_resolve`,
-`crates/rpc/src/annotations.rs::tests::the_spec_annotations_need_no_declaration`
+**Tests:** `crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_a_marked_pair_with_headers_is_a_basic_service`,
+`crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_one_type_may_be_both_halves`,
+`crates/rpc/src/annotations.rs::tests::rpc_7_3_1_4_the_pair_annotations_lower_and_resolve`,
+`crates/rpc/src/annotations.rs::tests::rpc_7_3_1_4_the_spec_annotations_need_no_declaration`
 
-**Status:** done — 3c21f462c6e2 (predefined annotations), 03b9867ea4df
+**Status:** done — 6c7f585a36ee (predefined annotations), 1e28b13546c1
 (`lower_type_pairs`; `@RPCRequest` and `@RPCReply`, which the spec does not
 know, removed).
 
@@ -997,18 +997,18 @@ know, removed).
 `crates/lang-rules/src/emit/type_pair_java.rs` (generated binding over the
 endpoints, `has_pair_types`)
 
-**Tests:** `crates/lang-rules/tests/type_pair_rust.rs::a_pair_with_headers_gets_the_header_traits_and_the_endpoints`,
-`crates/lang-rules/tests/type_pair_rust.rs::the_service_name_is_read_from_either_annotation_and_can_be_given_at_run_time`,
-`crates/lang-rules/tests/type_pair_cpp.rs::a_pair_with_headers_gets_traits_and_support`,
-`crates/lang-rules/tests/type_pair_cpp.rs::the_service_name_is_run_time_then_annotation_then_default`,
-`crates/lang-rules/tests/type_pair_java.rs::the_generated_pair_declares_the_support_and_uses_the_runtimes_headers`,
-`crates/rpc/src/type_pair.rs::tests::the_service_name_comes_from_either_annotation_on_either_type`
+**Tests:** `crates/lang-rules/tests/type_pair_rust.rs::rpc_7_3_1_4_a_pair_with_headers_gets_the_header_traits_and_the_endpoints`,
+`crates/lang-rules/tests/type_pair_rust.rs::rpc_7_3_1_4_the_service_name_is_read_from_either_annotation_and_can_be_given_at_run_time`,
+`crates/lang-rules/tests/type_pair_cpp.rs::rpc_7_3_1_4_a_pair_with_headers_gets_traits_and_support`,
+`crates/lang-rules/tests/type_pair_cpp.rs::rpc_7_3_1_4_the_service_name_is_run_time_then_annotation_then_default`,
+`crates/lang-rules/tests/type_pair_java.rs::rpc_7_3_1_4_the_generated_pair_declares_the_support_and_uses_the_runtimes_headers`,
+`crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_the_service_name_comes_from_either_annotation_on_either_type`
 
 **Status:** done — `lower_type_pairs` turns a pair of marked types into a
-service (03b9867ea4df). The generators produce a binding for it: Rust
-ca7c0cb2c78d, C++ 83d80ac9bf48 and 35a69aa60d98, Java f46b42ca8b3a (runtime)
+service (1e28b13546c1). The generators produce a binding for it: Rust
+d9446301d9b1, C++ 83d80ac9bf48 and 35a69aa60d98, Java f46b42ca8b3a (runtime)
 and 639d549b4bfd (generator). The service name comes from `@service` or
-`@DDSService` on either type or at run time (e4ca8f81ff8e).
+`@DDSService` on either type or at run time (f641beefbe78).
 
 ### §7.3.1.4 Only structures as types of the pair
 
@@ -1018,10 +1018,10 @@ request/reply types."
 **Repo:** `crates/rpc/src/type_pair.rs::lower_type_pairs` (`RpcError::InvalidTypePair`
 for a marked type that is not a structure)
 
-**Tests:** `crates/rpc/src/type_pair.rs::tests::a_marked_type_that_is_not_a_struct_is_refused`,
-`crates/lang-rules/tests/type_pair_rust.rs::a_marked_type_that_is_not_a_struct_is_refused`
+**Tests:** `crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_a_marked_type_that_is_not_a_struct_is_refused`,
+`crates/lang-rules/tests/type_pair_rust.rs::rpc_7_3_1_4_a_marked_type_that_is_not_a_struct_is_refused`
 
-**Status:** done — 03b9867ea4df.
+**Status:** done — 1e28b13546c1.
 
 ### §7.3.1.4 Basic: member header in the pair of types
 
@@ -1034,12 +1034,12 @@ member named header of type dds::rpc::RequestHeader."
 request type: `dds::rpc::RequestHeader`; reply type: `dds::rpc::ReplyHeader`,
 switchable to `dds::rpc::RequestHeader` with `TypePairOptions::reply_header`)
 
-**Tests:** `crates/rpc/src/type_pair.rs::tests::a_marked_pair_with_headers_is_a_basic_service`,
-`crates/rpc/src/type_pair.rs::tests::a_header_of_the_wrong_type_is_refused`,
-`crates/rpc/src/type_pair.rs::tests::a_header_in_only_one_type_is_refused`,
-`crates/rpc/src/type_pair.rs::tests::the_reply_header_type_is_a_setting`
+**Tests:** `crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_a_marked_pair_with_headers_is_a_basic_service`,
+`crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_a_header_of_the_wrong_type_is_refused`,
+`crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_a_header_in_only_one_type_is_refused`,
+`crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_the_reply_header_type_is_a_setting`
 
-**Status:** done — 03b9867ea4df. For the reply type the sentence of the spec
+**Status:** done — 1e28b13546c1. For the reply type the sentence of the spec
 names `dds::rpc::RequestHeader`; §7.5.1.1.1 defines `ReplyHeader`, and
 `RequestHeader` has no `related_request_id`. The default is `ReplyHeader`; the
 wording of the sentence can be selected with `TypePairOptions::reply_header`.
@@ -1053,13 +1053,13 @@ defined."
 **Repo:** `crates/rpc/src/type_pair.rs::lower_type_pairs` (`PairMapping::Enhanced`
 for a pair with no `header` member in either type)
 
-**Tests:** `crates/rpc/src/type_pair.rs::tests::a_marked_pair_without_headers_is_an_enhanced_service`,
-`crates/lang-rules/tests/type_pair_rust.rs::a_pair_without_headers_is_the_enhanced_mapping`,
-`crates/lang-rules/tests/type_pair_cpp.rs::a_pair_without_headers_is_the_enhanced_mapping`,
-`crates/lang-rules/tests/type_pair_java.rs::the_enhanced_pair_has_no_header_and_selects_the_enhanced_mapping`,
-`crates/rpc/src/type_pair.rs::tests::a_header_in_only_one_type_is_refused`
+**Tests:** `crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_a_marked_pair_without_headers_is_an_enhanced_service`,
+`crates/lang-rules/tests/type_pair_rust.rs::rpc_7_3_1_4_a_pair_without_headers_is_the_enhanced_mapping`,
+`crates/lang-rules/tests/type_pair_cpp.rs::rpc_7_3_1_4_a_pair_without_headers_is_the_enhanced_mapping`,
+`crates/lang-rules/tests/type_pair_java.rs::rpc_7_3_1_4_the_enhanced_pair_has_no_header_and_selects_the_enhanced_mapping`,
+`crates/rpc/src/type_pair.rs::tests::rpc_7_3_1_4_a_header_in_only_one_type_is_refused`
 
-**Status:** done — 03b9867ea4df. A pair with no `header` member is Enhanced; a
+**Status:** done — 1e28b13546c1. A pair with no `header` member is Enhanced; a
 `header` in only one type is refused. The model recognises a pair only by the
 annotations; types without annotation form no pair, and the spec names no
 other criterion.
@@ -1073,10 +1073,10 @@ p. 25: "Removed annotation type declaration."
 
 **Repo:** `crates/rpc/src/java_service_def.rs::parse`
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_example_of_seven_three_two_one_parses`,
-`crates/rpc/src/java_service_def.rs::tests::the_removed_productions_are_refused`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_example_of_seven_three_two_one_parses`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_removed_productions_are_refused`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2 Java: NormalInterfaceDeclaration
 
@@ -1086,10 +1086,10 @@ type parameters."
 
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::interface`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_extends_list_survives`,
-`crates/rpc/src/java_service_def.rs::tests::the_removed_productions_are_refused`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_extends_list_survives`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_removed_productions_are_refused`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2 Java: InterfaceBody
 
@@ -1099,10 +1099,10 @@ must be present in an interface."
 
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::interface`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::an_empty_interface_body_is_refused`,
-`crates/rpc/src/java_service_def.rs::tests::the_example_of_seven_three_two_one_parses`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_an_empty_interface_body_is_refused`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_example_of_seven_three_two_one_parses`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2 Java: InterfaceMemberDecl
 
@@ -1114,14 +1114,14 @@ declaration."
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::interface`,
 `Cursor::method`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::a_return_type_and_a_void_are_told_apart`,
-`crates/rpc/src/java_service_def.rs::tests::a_nested_declaration_is_kept`,
-`crates/rpc/src/java_service_def.rs::tests::a_field_in_an_interface_body_is_a_constant`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_a_return_type_and_a_void_are_told_apart`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_a_nested_declaration_is_kept`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_a_field_in_an_interface_body_is_a_constant`
 
 **Status:** done — methods, `void` methods and nested declarations are read.
 A field in the interface body is read by `Cursor::interface` as a constant
 (`JavaInterface::constants`), also with dimensions and several declarators; a
-field without a value is refused with `RpcError::JavaSyntax` (bd1f56dfddbb).
+field without a value is refused with `RpcError::JavaSyntax` (29381ca02054).
 
 ### §7.3.2 Java: NormalClassDeclaration
 
@@ -1131,12 +1131,12 @@ generic type parameters."
 
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::class`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_example_of_seven_three_two_one_parses`,
-`crates/rpc/src/java_service_def.rs::tests::the_removed_productions_are_refused`,
-`crates/rpc/src/java_service_def.rs::tests::the_implements_list_of_a_class_survives`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_example_of_seven_three_two_one_parses`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_removed_productions_are_refused`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_implements_list_of_a_class_survives`
 
 **Status:** done — `class`, `extends`, `implements` (`JavaClass::implements`)
-and the refusal of generics are tested (bd1f56dfddbb).
+and the refusal of generics are tested (29381ca02054).
 
 ### §7.3.2 Java: ClassBody
 
@@ -1146,10 +1146,10 @@ must be defined in the class body."
 
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::class`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::an_empty_class_body_is_refused`,
-`crates/rpc/src/java_service_def.rs::tests::the_pair_of_types_of_seven_three_two_two_is_found`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_an_empty_class_body_is_refused`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_pair_of_types_of_seven_three_two_two_is_found`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2 Java: ClassBodyDeclaration
 
@@ -1159,10 +1159,10 @@ Design Rationale, p. 25: "Removed Java’s static block support."
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::class`,
 `Cursor::modifiers`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_removed_productions_are_refused`,
-`crates/rpc/src/java_service_def.rs::tests::the_pair_of_types_of_seven_three_two_two_is_found`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_removed_productions_are_refused`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_pair_of_types_of_seven_three_two_two_is_found`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2 Java: MemberDecl
 
@@ -1173,10 +1173,10 @@ Java class."
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::class`,
 `JavaClass::fields`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_pair_of_types_of_seven_three_two_two_is_found`,
-`crates/rpc/src/java_service_def.rs::tests::the_removed_productions_are_refused`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_pair_of_types_of_seven_three_two_two_is_found`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_removed_productions_are_refused`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2 Java: MethodOrFieldRest
 
@@ -1185,15 +1185,15 @@ Rationale, p. 25: "Removed method declarator."
 
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::class`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_pair_of_types_of_seven_three_two_two_is_found`,
-`crates/rpc/src/java_service_def.rs::tests::dimensions_after_the_name_belong_to_the_type`,
-`crates/rpc/src/java_service_def.rs::tests::an_initialised_member_is_read_without_its_value`,
-`crates/rpc/src/java_service_def.rs::tests::several_declarators_share_one_type`,
-`crates/rpc/src/java_service_def.rs::tests::a_field_does_not_make_a_method_acceptable_in_a_class`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_pair_of_types_of_seven_three_two_two_is_found`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_dimensions_after_the_name_belong_to_the_type`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_an_initialised_member_is_read_without_its_value`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_several_declarators_share_one_type`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_a_field_does_not_make_a_method_acceptable_in_a_class`
 
 **Status:** done — a field with and without initialisation, several
 declarators (`int a, b;`) and dimensions after the name (`int a[];`, added to
-the dimensions of the type) are read and tested (bd1f56dfddbb).
+the dimensions of the type) are read and tested (29381ca02054).
 
 ### §7.3.2 Java: field in an interface, implements and VariableDeclaratorRest
 
@@ -1201,15 +1201,15 @@ the dimensions of the type) are read and tested (bd1f56dfddbb).
 
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::interface`, `Cursor::class`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::a_field_in_an_interface_body_is_a_constant`,
-`crates/rpc/src/java_service_def.rs::tests::dimensions_after_the_name_belong_to_the_type`,
-`crates/rpc/src/java_service_def.rs::tests::an_initialised_member_is_read_without_its_value`,
-`crates/rpc/src/java_service_def.rs::tests::several_declarators_share_one_type`,
-`crates/rpc/src/java_service_def.rs::tests::the_implements_list_of_a_class_survives`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_a_field_in_an_interface_body_is_a_constant`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_dimensions_after_the_name_belong_to_the_type`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_an_initialised_member_is_read_without_its_value`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_several_declarators_share_one_type`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_implements_list_of_a_class_survives`
 
 **Status:** done — a field in the interface body is a constant and needs a
 value; dimensions after the name, initialisation, several declarators and
-`implements` are read and tested (bd1f56dfddbb).
+`implements` are read and tested (29381ca02054).
 
 ### §7.3.2 Java: @in, @out, @inout
 
@@ -1219,9 +1219,9 @@ and the use of @in is optional."
 
 **Repo:** `crates/rpc/src/java_service_def.rs::direction_of`
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_direction_annotations_of_seven_three_two_are_read`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_direction_annotations_of_seven_three_two_are_read`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2 Java: @oneway
 
@@ -1231,9 +1231,9 @@ the @oneway annotation."
 **Repo:** `crates/rpc/src/java_service_def.rs` (`Cursor::method`,
 `JavaMethod::oneway`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_oneway_annotation_is_read_and_checked`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_oneway_annotation_is_read_and_checked`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2.1 Example of an interface in Java
 
@@ -1253,10 +1253,10 @@ such using the @RPCRequestType and @RPCReplyType annotations."
 
 **Repo:** `crates/rpc/src/java_service_def.rs::request_reply_pair`
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_pair_of_types_of_seven_three_two_two_is_found`,
-`crates/rpc/src/java_service_def.rs::tests::one_class_may_be_both_halves_of_the_pair`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_pair_of_types_of_seven_three_two_two_is_found`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_one_class_may_be_both_halves_of_the_pair`
 
-**Status:** done — d047dc5f497c.
+**Status:** done — ad892a10764a.
 
 ### §7.3.2.2 Java: only classes as types of the pair
 
@@ -1266,12 +1266,12 @@ types."
 **Repo:** `crates/rpc/src/java_service_def.rs::request_reply_pair` (considers
 classes only)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_pair_of_types_of_seven_three_two_two_is_found`,
-`crates/rpc/src/java_service_def.rs::tests::a_marked_interface_is_reported`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_the_pair_of_types_of_seven_three_two_two_is_found`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_a_marked_interface_is_reported`
 
 **Status:** done — `request_reply_pair` reports a marked interface, whichever
 half it is, with `RpcError::InvalidTypePair` ("only class types")
-(bd1f56dfddbb).
+(29381ca02054).
 
 ### §7.3.2.2 Java Basic: member header of type dds.rpc.RequestHeader
 
@@ -1282,13 +1282,13 @@ member named header of type dds.rpc.RequestHeader."
 
 **Repo:** `crates/rpc/src/java_service_def.rs::request_reply_pair`, `JavaClass::has_header_member`
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_type_of_the_header_member_is_checked`,
-`crates/rpc/src/java_service_def.rs::tests::a_header_in_only_one_class_is_reported`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_the_type_of_the_header_member_is_checked`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_a_header_in_only_one_class_is_reported`
 
 **Status:** done — `request_reply_pair` checks the type of `header`
 (`dds.rpc.RequestHeader` for the request type, `dds.rpc.ReplyHeader` for the
 reply type, switchable to `RequestHeader` with `TypePairOptions::reply_header`)
-and reports a `header` in one class only (bd1f56dfddbb).
+and reports a `header` in one class only (29381ca02054).
 
 ### §7.3.2.2 — checks of the pair in Java
 
@@ -1296,16 +1296,16 @@ and reports a `header` in one class only (bd1f56dfddbb).
 
 **Repo:** `crates/rpc/src/java_service_def.rs::request_reply_pair`
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::a_marked_interface_is_reported`,
-`crates/rpc/src/java_service_def.rs::tests::the_type_of_the_header_member_is_checked`,
-`crates/rpc/src/java_service_def.rs::tests::a_header_in_only_one_class_is_reported`,
-`crates/rpc/src/java_service_def.rs::tests::an_incomplete_or_ambiguous_pair_is_reported`,
-`crates/rpc/src/java_service_def.rs::tests::no_marked_class_is_no_pair`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_a_marked_interface_is_reported`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_the_type_of_the_header_member_is_checked`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_a_header_in_only_one_class_is_reported`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_an_incomplete_or_ambiguous_pair_is_reported`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_no_marked_class_is_no_pair`
 
 **Status:** done — a marked interface, a wrong type of `header`, a `header`
 in one class only, a missing half and two classes of the same half give
 `RpcError::InvalidTypePair`, as `crates/rpc/src/type_pair.rs` does for IDL
-(bd1f56dfddbb). With no marked class there is no pair and no error.
+(29381ca02054). With no marked class there is no pair and no error.
 
 ### §7.3.2.2 Java Enhanced: no annotations, no special members
 
@@ -1315,12 +1315,12 @@ defined."
 
 **Repo:** `crates/rpc/src/java_service_def.rs::request_reply_pair` (`JavaTypePair::mapping`, `PairMapping`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::a_pair_without_headers_is_an_enhanced_pair`,
-`crates/rpc/src/java_service_def.rs::tests::a_header_in_only_one_class_is_reported`
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_a_pair_without_headers_is_an_enhanced_pair`,
+`crates/rpc/src/java_service_def.rs::tests::rpc_7_3_2_2_a_header_in_only_one_class_is_reported`
 
 **Status:** done — `request_reply_pair` decides as `PairMapping` in
 `crates/rpc/src/type_pair.rs` does: `header` in both classes is Basic, in none
-Enhanced, in one an error (bd1f56dfddbb). The Java binding for a pair from IDL
+Enhanced, in one an error (29381ca02054). The Java binding for a pair from IDL
 (`crates/lang-rules/src/emit/type_pair_java.rs`, `ServiceMapping.ENHANCED`) is
 independent of this.
 
@@ -1337,10 +1337,10 @@ independent of this.
 `ServiceTopicNames::synthesize`);
 `crates/lang-rules/src/adapter/interface.rs::Service::request_topic_name`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::the_default_name_carries_the_service_segment`,
-`crates/rpc/src/service_mapping.rs::tests::calculator_service_with_in_params_lowers`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_default_name_carries_the_service_segment`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_4_1_calculator_service_with_in_params_lowers`
 
-**Status:** done — 902a5609dbb6.
+**Status:** done — 4f3b0f132d8a.
 
 ### §7.4.1 <topic_name> as a name given by the user
 
@@ -1350,10 +1350,10 @@ or a composite string consisting <interface_name> and <service_name>."
 **Repo:** `crates/rpc/src/topic_naming.rs::ServiceTopicNames::one` (whole name
 from the annotation)
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::an_annotation_gives_the_whole_name_and_no_alias`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_annotated_whole_topic_name_replaces_the_default_dds_rpc_1_0_section_7_4_2_2`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_an_annotation_gives_the_whole_name_and_no_alias`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_4_1_e2e_annotated_whole_topic_name_replaces_the_default_dds_rpc_1_0_section_7_4_2_2`
 
-**Status:** done — 902a5609dbb6 (names), 2c975ce36483 (Requester and Replier
+**Status:** done — 4f3b0f132d8a (names), 77bb7cba7e6d (Requester and Replier
 take the name from the annotation).
 
 ### §7.4.1 <service_name> with default "Service"
@@ -1365,10 +1365,10 @@ user-supplied. When it is not, it defaults to “Service.”"
 **Repo:** `crates/rpc/src/topic_naming.rs::DEFAULT_SERVICE_NAME`;
 `crates/rpc/src/service_mapping.rs::lower_service`
 
-**Tests:** `crates/rpc/src/service_mapping.rs::tests::without_the_annotation_the_service_segment_is_the_default`,
-`crates/rpc/src/topic_naming.rs::tests::service_topic_names_pair`
+**Tests:** `crates/rpc/src/service_mapping.rs::tests::rpc_7_4_1_without_the_annotation_the_service_segment_is_the_default`,
+`crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_service_topic_names_pair`
 
-**Status:** done — 902a5609dbb6.
+**Status:** done — 4f3b0f132d8a.
 
 ### §7.4.1 <user_def_alpha_num>
 
@@ -1378,10 +1378,10 @@ underscore and space."
 
 **Repo:** `crates/rpc/src/topic_naming.rs::validate_user_def_alpha_num`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::the_published_character_set_admits_a_space_and_a_leading_digit`,
-`crates/rpc/src/topic_naming.rs::tests::everything_outside_the_set_is_refused`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_published_character_set_admits_a_space_and_a_leading_digit`,
+`crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_everything_outside_the_set_is_refused`
 
-**Status:** done — 902a5609dbb6.
+**Status:** done — 4f3b0f132d8a.
 ### §7.4.1 <interface_name> fully qualified
 
 **Spec:** §7.4.1, p. 26 — "The <interface_name> non-terminal represents the
@@ -1394,10 +1394,10 @@ the interface."
 `crates/rpc/src/service_mapping.rs` (`qualified_name_of`);
 `crates/lang-rules/src/adapter/interface.rs::qualified_interface_name`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::the_interface_segment_is_the_fully_qualified_name`,
-`crates/rpc/src/service_mapping.rs::tests::the_module_chain_reaches_the_topic_name`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_interface_segment_is_the_fully_qualified_name`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_4_1_the_module_chain_reaches_the_topic_name`
 
-**Status:** `done` — code and tests exist. Commit 902a5609dbb6 (the topic name is `<interface>_<service>_Request`).
+**Status:** `done` — code and tests exist. Commit 4f3b0f132d8a (the topic name is `<interface>_<service>_Request`).
 
 ### §7.4.1 Specified <service_name> with the suffixes Request and Reply
 
@@ -1408,10 +1408,10 @@ the interface."
 in IDL through `@service(name = "…")` (IDL 4.2), read in
 `crates/rpc/src/annotations.rs::lower_service_annotation`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::a_user_supplied_service_name_replaces_only_that_segment`,
-`crates/rpc/src/service_mapping.rs::tests::the_service_annotation_supplies_the_service_segment_only`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_a_user_supplied_service_name_replaces_only_that_segment`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_4_1_the_service_annotation_supplies_the_service_segment_only`
 
-**Status:** `done` — code and tests exist. Commits 902a5609dbb6 (composition of the names), 0ecf76d597c0 (reading `@service`).
+**Status:** `done` — code and tests exist. Commits 4f3b0f132d8a (composition of the names), 52a3f267a6d7 (reading `@service`).
 
 ### §7.4.1 Java: <service_name> from @DDSService
 
@@ -1422,11 +1422,11 @@ in IDL through `@service(name = "…")` (IDL 4.2), read in
 `JavaServiceDef::service_name`, `JavaServiceDef::topic_names`);
 `crates/lang-rules/src/emit/interface_java.rs` (the generated `Support` class sets `interfaceName` and `annotatedServiceName`)
 
-**Tests:** `crates/rpc/src/java_service_def.rs::tests::the_service_annotation_overrides_the_interface_name`,
+**Tests:** `crates/rpc/src/java_service_def.rs::tests::rpc_7_4_1_the_service_annotation_overrides_the_interface_name`,
 `crates/rpc/tests/java/FunctionCallRoundtrip.java` (the check on `TopicNames.of(named)`; run by
 `crates/rpc/tests/java_rpc_runtime.rs`)
 
-**Status:** `done` — `@DDSService(name = "…")` supplies `<service_name>`; `<interface_name>` stays the interface name: `Calculator_Arithmetic_Request`. Without a name, `Service` applies. Commits 2a1fd4a2d51e (Rust reader), ebf6ead2d67a (the generated Java `Support` class names the interface for a run-time service name).
+**Status:** `done` — `@DDSService(name = "…")` supplies `<service_name>`; `<interface_name>` stays the interface name: `Calculator_Arithmetic_Request`. Without a name, `Service` applies. Commits b7f5da73ca28 (Rust reader), 53ae2ab01af5 (the generated Java `Support` class names the interface for a run-time service name).
 
 ### §7.4.1 Precedence of specified topic names over the service name
 
@@ -1437,11 +1437,11 @@ are both provided by the user, the user-defined topic names take precedence."
 C++: `runtime/cpp/include/dds/rpc/core.hpp::dds::rpc::synthesize_topic_names`;
 Java: `runtime/java/src/main/java/org/omg/dds/rpc/TopicNames.java::resolve`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_carries_the_topic_names_of_seven_four`,
-`crates/rpc/src/topic_naming.rs::tests::the_run_time_specification_beats_the_annotation`,
-`crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp::check_class_form` (run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`)
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_4_1_cpp_carries_the_topic_names_of_seven_four`,
+`crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_run_time_specification_beats_the_annotation`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together` (C++: check_class_form in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`)
 
-**Status:** `done` — within one layer the topic name wins (annotation before `@service`; run-time suffix before run-time service name). For a run-time service name next to a topic name from an annotation, the code follows §7.4.2.3 (p. 28: run time before annotation); there p. 27 and p. 28 contradict each other. Commit 902a5609dbb6.
+**Status:** `done` — within one layer the topic name wins (annotation before `@service`; run-time suffix before run-time service name). For a run-time service name next to a topic name from an annotation, the code follows §7.4.2.3 (p. 28: run time before annotation); there p. 27 and p. 28 contradict each other. Commit 4f3b0f132d8a.
 
 ### §7.4.1 Request/reply style: no <interface_name>
 
@@ -1455,11 +1455,11 @@ Rust runtime in the next item;
 C++: `runtime/cpp/include/dds/rpc/core.hpp::dds::rpc::synthesize_topic_names` (`BindingStyle::RequestReply`);
 Java: `runtime/java/src/main/java/org/omg/dds/rpc/TopicNames.java::resolve` (an empty `interfaceName` omits the segment)
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::the_request_reply_style_drops_the_interface_segment`,
-`crates/rpc/src/endpoint.rs::tests::the_binding_style_decides_the_topic_name`,
-`crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp::check_class_form` (run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`)
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_request_reply_style_drops_the_interface_segment`,
+`crates/rpc/src/endpoint.rs::tests::rpc_7_4_1_the_binding_style_decides_the_topic_name`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together` (C++: check_class_form in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`)
 
-**Status:** `done` — composition of the names in Rust and C++ with a test. For Java the case exists in the code of `TopicNames.resolve`; there is no test with an empty `interfaceName`. Commits 902a5609dbb6 (composition), e143bb6bfa0b (C++), a0f9fe096716 (Java).
+**Status:** `done` — composition of the names in Rust and C++ with a test. For Java the case exists in the code of `TopicNames.resolve`; there is no test with an empty `interfaceName`. Commits 4f3b0f132d8a (composition), 2ea2abb7d843 (C++), 35156b3406a3 (Java).
 
 ### §7.4.1 Rust runtime: topic names in the request/reply style
 
@@ -1468,10 +1468,10 @@ Java: `runtime/java/src/main/java/org/omg/dds/rpc/TopicNames.java::resolve` (an 
 **Repo:** `crates/rpc/src/requester.rs` (`Requester::with_instance_style`, `with_topics_style`, `with_options`);
 `crates/rpc/src/replier.rs` (`Replier::with_instance_style`, `with_topics_style`, `with_options`)
 
-**Tests:** `crates/rpc/src/requester.rs::tests::request_reply_style_drops_the_interface_segment`,
-`crates/rpc/src/replier.rs::tests::request_reply_style_drops_the_interface_segment`
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_2_2_3_request_reply_style_drops_the_interface_segment`,
+`crates/rpc/src/replier.rs::tests::rpc_7_4_1_request_reply_style_drops_the_interface_segment`
 
-**Status:** `done` — `with_instance` and `with_topics` form the function-call style; the `*_style` variants take the style and omit the `<interface_name>` segment. The tests check the names on the `Requester` and on the `Replier`. Commits 575f889c965b (composition), e8821ba9dae4 (test on the `Replier`).
+**Status:** `done` — `with_instance` and `with_topics` form the function-call style; the `*_style` variants take the style and omit the `<interface_name>` segment. The tests check the names on the `Requester` and on the `Replier`. Commits 6834e51fdfef (composition), 32972ee16bdd (test on the `Replier`).
 
 ### §7.4.2 Basic: one request and one reply topic per interface
 
@@ -1481,10 +1481,10 @@ request topic and a reply topic."
 **Repo:** `crates/rpc/src/codegen.rs::build_basic_pair`;
 `crates/lang-rules/src/emit/interface_rust.rs` (`client_impl`; one `Requester` per interface)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_pair_topic_names`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_4_2_basic_pair_topic_names`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`
 
-**Status:** `done` — code and tests exist. Commits b5224bd70dbb (`build_basic_pair`), 15c8509f56b1 (test with the generated binding).
+**Status:** `done` — code and tests exist. Commits b5224bd70dbb (`build_basic_pair`), 026f15d1df46 (test with the generated binding).
 
 ### §7.4.2 Three mechanisms, same names on both sides
 
@@ -1510,7 +1510,7 @@ to its own pair of request and reply topics."
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::a_derived_client_reaches_an_inherited_operation_through_its_base_field`
 
-**Status:** `done` — code and test exist. Commit 15c8509f56b1.
+**Status:** `done` — code and test exist. Commit 026f15d1df46.
 
 ### §7.4.2.1 Default Topic Names
 
@@ -1521,10 +1521,10 @@ rules defined in sub clause 7.4.1 Rules for Synthesizing DDS Topic Names."
 `crates/rpc/src/service_mapping.rs::ServiceDef::topic_names`;
 `crates/lang-rules/src/emit/interface_cpp.rs::support_class`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::service_topic_names_pair`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_carries_the_topic_names_of_seven_four`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_service_topic_names_pair`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_4_1_cpp_carries_the_topic_names_of_seven_four`
 
-**Status:** `done` — code and tests exist. Commit 902a5609dbb6.
+**Status:** `done` — code and tests exist. Commit 4f3b0f132d8a.
 
 ### §7.4.2.2 @DDSRequestTopic and @DDSReplyTopic on interfaces
 
@@ -1537,11 +1537,11 @@ purpose."
 `crates/rpc/src/service_mapping.rs::ServiceDef` (`request_topic`, `reply_topic`);
 `crates/lang-rules/src/adapter/interface.rs::service` (`annotation_string`)
 
-**Tests:** `crates/rpc/src/annotations.rs::tests::dds_request_and_reply_topics_lower_and_resolve`,
-`crates/rpc/src/service_mapping.rs::tests::the_topic_annotations_and_the_run_time_layer_have_their_order`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_carries_the_topic_names_of_seven_four`
+**Tests:** `crates/rpc/src/annotations.rs::tests::rpc_7_3_1_1_dds_request_and_reply_topics_lower_and_resolve`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_4_2_2_the_topic_annotations_and_the_run_time_layer_have_their_order`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_4_1_cpp_carries_the_topic_names_of_seven_four`
 
-**Status:** `done` — read on interfaces; on the types of a pair and as predefined annotations in the two following items. Commit 902a5609dbb6.
+**Status:** `done` — read on interfaces; on the types of a pair and as predefined annotations in the two following items. Commit 4f3b0f132d8a.
 
 ### §7.4.2.2 Annotations on the types of a pair
 
@@ -1549,9 +1549,9 @@ purpose."
 
 **Repo:** `crates/rpc/src/type_pair.rs::lower_type_pairs` (reads `@DDSRequestTopic` and `@DDSReplyTopic` on the types, §7.3.1.4)
 
-**Tests:** `crates/rpc/src/type_pair.rs::tests::the_topic_annotations_on_the_types_name_the_topics`
+**Tests:** `crates/rpc/src/type_pair.rs::tests::rpc_7_4_2_2_the_topic_annotations_on_the_types_name_the_topics`
 
-**Status:** `done` — code and test exist. Commit 03b9867ea4df.
+**Status:** `done` — code and test exist. Commit 1e28b13546c1.
 
 ### §7.4.2.2 DDSRequestTopic and DDSReplyTopic predefined
 
@@ -1562,10 +1562,10 @@ interface DDSReplyTopic { attribute String name; }; }; };"
 **Repo:** `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`: `DDSRequestTopic`, `DDSReplyTopic`);
 `crates/rpc/src/annotations.rs::lower_single`
 
-**Tests:** `crates/rpc/src/annotations.rs::tests::the_spec_annotations_need_no_declaration`,
-`crates/rpc/src/annotations.rs::tests::dds_request_and_reply_topics_lower_and_resolve`
+**Tests:** `crates/rpc/src/annotations.rs::tests::rpc_7_3_1_4_the_spec_annotations_need_no_declaration`,
+`crates/rpc/src/annotations.rs::tests::rpc_7_3_1_1_dds_request_and_reply_topics_lower_and_resolve`
 
-**Status:** `done` — a file uses both annotations without declaring them. They are built-in annotations of the front end; the IDL declaration of the spec (`module dds { module rpc { @Annotation local interface … } }`) is not offered as IDL text. They are read by the last part of the name; besides `name = "…"` the short form without a name is accepted. A use with the full name (`@dds::rpc::DDSRequestTopic`) was not checked. Commit 3c21f462c6e2.
+**Status:** `done` — a file uses both annotations without declaring them. They are built-in annotations of the front end; the IDL declaration of the spec (`module dds { module rpc { @Annotation local interface … } }`) is not offered as IDL text. They are read by the last part of the name; besides `name = "…"` the short form without a name is accepted. A use with the full name (`@dds::rpc::DDSRequestTopic`) was not checked. Commit 6c7f585a36ee.
 
 ### §7.4.2.2 XTypes not required in the implementation
 
@@ -1591,10 +1591,10 @@ DDS Topic Names apply."
 `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::topic_name_overrides`;
 C++ and Java in the next item
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::a_user_supplied_suffix_replaces_the_whole_tail`,
-`crates/rpc/src/endpoint.rs::tests::the_run_time_service_name_reaches_the_endpoints`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_2_3_a_user_supplied_suffix_replaces_the_whole_tail`,
+`crates/rpc/src/endpoint.rs::tests::rpc_7_4_2_3_the_run_time_service_name_reaches_the_endpoints`
 
-**Status:** `done` — Rust: run-time service name and suffix with the rules of §7.4.1; C++ and Java in the item “Params classes in C++ and Java”. Commits 902a5609dbb6, 2c975ce36483.
+**Status:** `done` — Rust: run-time service name and suffix with the rules of §7.4.1; C++ and Java in the item “Params classes in C++ and Java”. Commits 4f3b0f132d8a, 77bb7cba7e6d.
 
 ### §7.4.2.3 Params classes in C++ and Java
 
@@ -1603,10 +1603,10 @@ C++ and Java in the next item
 **Repo:** C++: `runtime/cpp/include/dds/rpc.hpp` (`EndpointParams` with `service_name`, `request_topic_name_suffix`, `reply_topic_name_suffix`; `RequesterParams`, `ReplierParams`, `ServiceParams`, `ClientParams`; `synthesize_topic_names`);
 Java: `runtime/java/src/main/java/org/omg/dds/rpc/` (`RequesterParams`, `ReplierParams` with `serviceName`, `requestTopicNameSuffix`, `replyTopicNameSuffix`; `TopicNames`)
 
-**Tests:** `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp::check_class_form` (run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`),
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together` (C++: check_class_form in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`),
 `crates/rpc/tests/java/FunctionCallRoundtrip.java` (`TopicNames.of(named)`; run by `crates/rpc/tests/java_rpc_runtime.rs`)
 
-**Status:** `done` — the params classes take the service name and the suffix and compose the names by §7.4.1. `ServiceParams` and `ClientParams` appear in the spec only in the C++ binding (§7.11.1.5); Java has none. Commits e143bb6bfa0b (C++), a0f9fe096716 (Java).
+**Status:** `done` — the params classes take the service name and the suffix and compose the names by §7.4.1. `ServiceParams` and `ClientParams` appear in the spec only in the C++ binding (§7.11.1.5); Java has none. Commits 2ea2abb7d843 (C++), 35156b3406a3 (Java).
 
 ### §7.4.2.3 Precedence: run time, annotation, default
 
@@ -1618,11 +1618,11 @@ annotations and the default mechanism in that order."
 C++: `runtime/cpp/include/dds/rpc/core.hpp::dds::rpc::synthesize_topic_names`;
 Java: `runtime/java/src/main/java/org/omg/dds/rpc/TopicNames.java::resolve`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::the_run_time_specification_beats_the_annotation`,
-`crates/rpc/src/service_mapping.rs::tests::the_topic_annotations_and_the_run_time_layer_have_their_order`,
-`crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp::check_class_form` (run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`)
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_run_time_specification_beats_the_annotation`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_4_2_2_the_topic_annotations_and_the_run_time_layer_have_their_order`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together` (C++: check_class_form in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`)
 
-**Status:** `done` — code and tests exist. Commits 902a5609dbb6, e143bb6bfa0b (C++), a0f9fe096716 (Java).
+**Status:** `done` — code and tests exist. Commits 4f3b0f132d8a, 2ea2abb7d843 (C++), 35156b3406a3 (Java).
 
 ### §7.4.3 Enhanced: aliases announced in discovery
 
@@ -1639,15 +1639,15 @@ SubscriptionBuiltinTopicDataExt structures described in 7.6.2.1".
 `crates/dcps` (matching by alias, functions in `crates/discovery`);
 C++: `runtime/cpp/include/dds/rpc.hpp` (`topic_aliases`) and `runtime/cpp/include/dds/rpc/zerodds.hpp`
 
-**Tests:** `crates/rpc/src/endpoint.rs::tests::the_parent_interfaces_are_announced_as_topic_aliases`,
-`crates/rpc/src/topic_naming.rs::tests::the_request_reply_style_has_no_aliases_for_the_bases_either`,
+**Tests:** `crates/rpc/src/endpoint.rs::tests::rpc_7_4_3_the_parent_interfaces_are_announced_as_topic_aliases`,
+`crates/rpc/src/topic_naming.rs::tests::rpc_7_4_3_the_request_reply_style_has_no_aliases_for_the_bases_either`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`,
 `crates/rtps/src/publication_data.rs::tests::rpc_discovery_pids_roundtrip`,
 `crates/rtps/src/publication_data.rs::tests::a_discovery_string_beyond_the_bound_is_refused`,
-`crates/dcps/tests/topic_alias_matching.rs::a_reader_on_an_alias_matches_the_writer_over_the_wire`,
+`crates/dcps/tests/topic_alias_matching.rs::rpc_7_4_3_a_reader_on_an_alias_matches_the_writer_over_the_wire`,
 `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp` (check `request_reader.aliases.size() == 1`; run by `crates/rpc/tests/cpp_rpc_runtime.rs`)
 
-**Status:** `done` — Rust, C++ and Java announce the aliases, `crates/dcps` matches by alias, and `crates/rtps` refuses an alias beyond `string<256>`. In Java, `ReplierParams.parents` (and `RequesterParams.parents`) set the base interfaces; `TopicNames` forms one alias per base from them (`95056920ba2f`, test `RpcInheritanceTest.java::specOperations`, `RpcDiscoveryTest.java::aTopicCorrespondsByNameOrByAlias`). A client of a base reaches a derived service through the alias match although the type names of the request and reply types differ: the topics of the Enhanced mapping now announce the `TypeInformation` of their types (`lang-rules` builds the `CompleteTypeObject` of Request, Reply, In, Out, Result, the exceptions and `RemoteExceptionCode_t`: `da6bf28aade1`; `DomainParticipant::create_topic_with_type_information` in `crates/dcps`; `Requester` and `Replier` call it when the generated options carry the objects). Test: `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::base_and_derived::a_base_client_calls_a_derived_service` (two participants; green on the Linux test host; without the objects the same call ends with `ServiceNotMatched`, measured with a control run). The Rust runtime carries the type information; C++ and Java announce none (see the items on §7.5.1.2.6 and §7.7.2.5). Commits 3d4c42cad194 (Rust), 95f5e6617035 (C++), 928df3c39a42 (match by alias in `crates/dcps`), 9a3940227ee4 (bound in `crates/rtps`), e8821ba9dae4 and d79e4dac24d0 (tests).
+**Status:** `done` — Rust, C++ and Java announce the aliases, `crates/dcps` matches by alias, and `crates/rtps` refuses an alias beyond `string<256>`. In Java, `ReplierParams.parents` (and `RequesterParams.parents`) set the base interfaces; `TopicNames` forms one alias per base from them (`9993349aff89`, test `RpcInheritanceTest.java::specOperations`, `RpcDiscoveryTest.java::rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). A client of a base reaches a derived service through the alias match although the type names of the request and reply types differ: the topics of the Enhanced mapping now announce the `TypeInformation` of their types (`lang-rules` builds the `CompleteTypeObject` of Request, Reply, In, Out, Result, the exceptions and `RemoteExceptionCode_t`: `a2bc3b857739`; `DomainParticipant::create_topic_with_type_information` in `crates/dcps`; `Requester` and `Replier` call it when the generated options carry the objects). Test: `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::base_and_derived::a_base_client_calls_a_derived_service` (two participants; green on the Linux test host; without the objects the same call ends with `ServiceNotMatched`, measured with a control run). The Rust runtime carries the type information; C++ and Java announce none (see the items on §7.5.1.2.6 and §7.7.2.5). Commits e305669e2c42 (Rust), 17a3aef74360 (C++), bdf9ab1e6caa (match by alias in `crates/dcps`), ae5fededca89 (bound in `crates/rtps`), 32972ee16bdd and 414e077c527d (tests).
 
 ### §7.4.3 Enhanced: Java announces the aliases of the params
 
@@ -1664,7 +1664,7 @@ SubscriptionBuiltinTopicDataExt structures described in 7.6.2.1".
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_of_the_base_calls_a_rust_service_of_the_derived_interface`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_of_the_base_calls_a_java_service_of_the_derived_interface`
 
-**Status:** `done` — `RequesterParams.parents` and `ReplierParams.parents` take the base interfaces; `TopicNames.resolve` makes one alias for each base (not under the request-reply style and not for a whole topic name, as in Rust), and `RequesterImpl` and `ReplierImpl` report them through `DataWriter.announce` and `DataReader.announce` (`ZeroDdsParticipant` → `DataWriterImpl.setRpcDiscovery`, PID 0x0082; `95056920ba2f`, `9f9cd6cfc777`). Tests: `crates/rpc/tests/java/RpcInheritanceTest.java::specOperations` (names and aliases), `RpcDiscoveryTest.java::theThreeParametersTravelWithTheEndpoint` (PID 0x0082 on the wire). The generated Java binding of the Enhanced mapping sets `parents` for a derived interface (`86817fa5f076`, checked on `CalcSupport` with `Calc : Base2` in `EnhancedRuntimeChecks.support()`, `7d0250078a28`). Measured: a Java client against a Rust service and a Rust client against a Java service over RTPS, both with the announcement of the aliases and of the `TypeInformation` (`b3748d506a39`). The Java PSM matches the endpoints of the Enhanced mapping over the aliases of the peer (`RpcDiscovery.topicsCorrespond`) and by the assignability of the announced `TypeInformation` (XTypes 1.3 §7.6.3.4.2; `RawTypeSupport.matchesByTypeInformation`, `org.zerodds.rtps.TypeConsistency`, `org.zerodds.typelookup.CompleteTypes`, `95818352de1`). It fetches objects of the peer with `getTypes` from the peer's TypeLookup service; the Java description also carries the MINIMAL objects a Rust peer asks for (`e6af3ee9150`), and a reader of a described type announces ALLOW_TYPE_COERCION (`64134babe64`). Measured over RTPS against Rust peers (Linux test host): a Java client of `Base2` calls a Rust service of `Derived2`, a Rust client of `Base2` a Java service of `Derived2`; both cells failed on `7484a8f0d46`, before the matching by assignability.
+**Status:** `done` — `RequesterParams.parents` and `ReplierParams.parents` take the base interfaces; `TopicNames.resolve` makes one alias for each base (not under the request-reply style and not for a whole topic name, as in Rust), and `RequesterImpl` and `ReplierImpl` report them through `DataWriter.announce` and `DataReader.announce` (`ZeroDdsParticipant` → `DataWriterImpl.setRpcDiscovery`, PID 0x0082; `9993349aff89`, `f65fb3965b5e`). Tests: `crates/rpc/tests/java/RpcInheritanceTest.java::specOperations` (names and aliases), `RpcDiscoveryTest.java::rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids` (PID 0x0082 on the wire). The generated Java binding of the Enhanced mapping sets `parents` for a derived interface (`400433a9d00a`, checked on `CalcSupport` with `Calc : Base2` in `EnhancedRuntimeChecks.support()`, `c9c4e86a881e`). Measured: a Java client against a Rust service and a Rust client against a Java service over RTPS, both with the announcement of the aliases and of the `TypeInformation` (`dbb935492284`). The Java PSM matches the endpoints of the Enhanced mapping over the aliases of the peer (`RpcDiscovery.topicsCorrespond`) and by the assignability of the announced `TypeInformation` (XTypes 1.3 §7.6.3.4.2; `RawTypeSupport.matchesByTypeInformation`, `org.zerodds.rtps.TypeConsistency`, `org.zerodds.typelookup.CompleteTypes`, `2d0f809c6e2`). It fetches objects of the peer with `getTypes` from the peer's TypeLookup service; the Java description also carries the MINIMAL objects a Rust peer asks for (`9b1608508c5`), and a reader of a described type announces ALLOW_TYPE_COERCION (`d67a980f80b`). Measured over RTPS against Rust peers (Linux test host): a Java client of `Base2` calls a Rust service of `Derived2`, a Rust client of `Base2` a Java service of `Derived2`; both cells failed on `78f243b596f`, before the matching by assignability.
 
 ### §7.4.3 Enhanced: exactly one request and one reply topic per interface
 
@@ -1677,10 +1677,10 @@ Names."
 `crates/rpc/src/endpoint_options.rs::RpcMapping::Enhanced`;
 `Requester::with_options` and `Replier::with_options` (`crates/rpc/src/requester.rs`, `crates/rpc/src/replier.rs`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_service_has_one_topic_pair`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_4_3_enhanced_service_has_one_topic_pair`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_call_is_answered_through_the_related_sample_identity`
 
-**Status:** `done` — the Enhanced mapping forms one pair of topics per interface; the Rust runtime uses it (`RpcMapping::Enhanced`). C++ and Java: commits 51bb6973e062 and 2cb2bcbe4eca. Commits 60dbad781c53 (mapping), 3d4c42cad194 (Rust runtime).
+**Status:** `done` — the Enhanced mapping forms one pair of topics per interface; the Rust runtime uses it (`RpcMapping::Enhanced`). C++ and Java: commits 51bb6973e062 and 2cb2bcbe4eca. Commits 0edbbcf11324 (mapping), e305669e2c42 (Rust runtime).
 
 ### §7.4.3 Enhanced: aliases per base by §7.4.1
 
@@ -1692,10 +1692,10 @@ obtained using the rules in sub clause 7.4.1 for each parent interface."
 `crates/rpc/src/service_mapping.rs::ServiceDef::bases`;
 `crates/lang-rules/src/adapter/interface.rs::Service::topic_aliases`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::every_parent_interface_contributes_one_alias`,
-`crates/rpc/tests/language_binding_agreement.rs::the_published_table_comes_out_of_the_idl`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_3_every_parent_interface_contributes_one_alias`,
+`crates/rpc/tests/language_binding_agreement.rs::rpc_7_4_3_the_published_table_comes_out_of_the_idl`
 
-**Status:** `done` — aliases are formed for the direct bases; whether “each parent interface” also means bases of bases, the spec does not say. Commit 902a5609dbb6.
+**Status:** `done` — aliases are formed for the direct bases; whether “each parent interface” also means bases of bases, the spec does not say. Commit 4f3b0f132d8a.
 
 ### §7.4.3 Example of the Calculator hierarchy
 
@@ -1716,9 +1716,9 @@ interfaces name shall not be annexed automatically."
 **Repo:** `crates/rpc/src/topic_naming.rs::ServiceTopicNames::aliases` (no aliases for the request/reply style);
 C++: `runtime/cpp/include/dds/rpc.hpp` (`topic_aliases`)
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::the_request_reply_style_drops_the_interface_segment` (without bases; alias list empty)
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_request_reply_style_drops_the_interface_segment` (without bases; alias list empty)
 
-**Status:** `done` — the request/reply style forms no name with the interface and no aliases; the Rust runtime takes the style (item at §7.4.1). The test passes no bases. Commits 902a5609dbb6, 575f889c965b.
+**Status:** `done` — the request/reply style forms no name with the interface and no aliases; the Rust runtime takes the style (item at §7.4.1). The test passes no bases. Commits 4f3b0f132d8a, 6834e51fdfef.
 
 ### §7.4.3.1 Default Topic Names (Enhanced)
 
@@ -1728,10 +1728,10 @@ described above."
 **Repo:** `crates/rpc/src/topic_naming.rs::ServiceTopicNames::synthesize`;
 `crates/rpc/src/codegen.rs::build_enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_service_has_one_topic_pair`,
-`crates/rpc/src/topic_naming.rs::tests::the_default_name_carries_the_service_segment`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_4_3_enhanced_service_has_one_topic_pair`,
+`crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_default_name_carries_the_service_segment`
 
-**Status:** `done` — code and tests exist. Commits 902a5609dbb6, 60dbad781c53.
+**Status:** `done` — code and tests exist. Commits 4f3b0f132d8a, 0edbbcf11324.
 
 ### §7.4.3.2 Annotations for the names (Enhanced)
 
@@ -1742,10 +1742,10 @@ for this purpose."
 **Repo:** `crates/rpc/src/service_mapping.rs::ServiceDef` (`request_topic`, `reply_topic`);
 `crates/rpc/src/type_pair.rs::lower_type_pairs`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::an_annotation_gives_the_whole_name_and_no_alias`,
-`crates/rpc/src/type_pair.rs::tests::the_topic_annotations_on_the_types_name_the_topics`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_an_annotation_gives_the_whole_name_and_no_alias`,
+`crates/rpc/src/type_pair.rs::tests::rpc_7_4_2_2_the_topic_annotations_on_the_types_name_the_topics`
 
-**Status:** `done` — the annotations act independently of the mapping (items at §7.4.2.2). Commits 902a5609dbb6, 03b9867ea4df.
+**Status:** `done` — the annotations act independently of the mapping (items at §7.4.2.2). Commits 4f3b0f132d8a, 1e28b13546c1.
 
 ### §7.4.3.3 Topic names at run time (Enhanced)
 
@@ -1757,10 +1757,10 @@ mechanism in that order."
 `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::topic_name_overrides`;
 C++ and Java: params classes (item at §7.4.2.3)
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::the_run_time_specification_beats_the_annotation`,
-`crates/rpc/src/endpoint.rs::tests::the_run_time_service_name_reaches_the_endpoints`
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_1_the_run_time_specification_beats_the_annotation`,
+`crates/rpc/src/endpoint.rs::tests::rpc_7_4_2_3_the_run_time_service_name_reaches_the_endpoints`
 
-**Status:** `done` — code and tests exist. Commits 902a5609dbb6, 60dbad781c53.
+**Status:** `done` — code and tests exist. Commits 4f3b0f132d8a, 0edbbcf11324.
 
 ---
 
@@ -1776,10 +1776,10 @@ synthesized from the interface definition."
 `crates/lang-rules/src/emit/interface_java.rs`;
 `crates/lang-rules/src/emit/interface_rust.rs::declare`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/rpc/tests/language_binding_agreement.rs::both_readings_of_seven_five_produce_the_same_sample_structure`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/rpc/tests/language_binding_agreement.rs::rpc_7_5_both_readings_of_seven_five_produce_the_same_sample_structure`
 
-**Status:** `done` — the types are synthesized, and the topics of the Rust runtime carry them under their names (next item). Commits d047dc5f497c (generators), 3d4c42cad194 (Rust runtime).
+**Status:** `done` — the types are synthesized, and the topics of the Rust runtime carry them under their names (next item). Commits ad892a10764a (generators), e305669e2c42 (Rust runtime).
 
 ### §7.5 Type and shape of the samples on the wire
 
@@ -1791,11 +1791,11 @@ synthesized from the interface definition."
 C++: `runtime/cpp/include/dds/rpc.hpp` (`Requester` and `Replier` pass `dds_type_traits<T>::type_name()`), `runtime/cpp/include/dds/rpc/zerodds.hpp`
 
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_topics_are_announced_with_the_interface_type_names`,
-`crates/rpc/src/wire_codec.rs::tests::the_call_union_starts_on_a_4_octet_boundary`,
-`crates/rpc/src/wire_codec.rs::tests::the_error_reply_data_is_the_default_case_of_the_union`,
+`crates/rpc/src/wire_codec.rs::tests::rpc_7_5_the_call_union_starts_on_a_4_octet_boundary`,
+`crates/rpc/src/wire_codec.rs::tests::rpc_7_5_the_error_reply_data_is_the_default_case_of_the_union`,
 `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp` (announced type names `robot::Calculator_Request` and `_Reply`; run by `crates/rpc/tests/cpp_rpc_runtime.rs`)
 
-**Status:** `done` — the topics announce `${interfaceName}_Request` and `${interfaceName}_Reply` as type names; a sample is the header, the padding to 4 octets and the encoding of `${I}_Call` or `${I}_Return`; a reply with an error code carries the `default` case of the `Return` union. The Rust runtime writes the octets of these structures through `RawBytes`; the generated Rust structures `${I}_Request` and `${I}_Reply` are not the types of a topic of the runtime, and their encoding gives the same octets (column test in the item on the encoding). Commits 3d4c42cad194 (Rust), eb4b24caa473 (C++).
+**Status:** `done` — the topics announce `${interfaceName}_Request` and `${interfaceName}_Reply` as type names; a sample is the header, the padding to 4 octets and the encoding of `${I}_Call` or `${I}_Return`; a reply with an error code carries the `default` case of the `Return` union. The Rust runtime writes the octets of these structures through `RawBytes`; the generated Rust structures `${I}_Request` and `${I}_Reply` are not the types of a topic of the runtime, and their encoding gives the same octets (column test in the item on the encoding). Commits e305669e2c42 (Rust), 208e7e0b25c3 (C++).
 
 ### §7.5.1.1 Basic: types for DDS 1.3 without XTypes
 
@@ -1805,9 +1805,9 @@ which may lack support for the [DDS-XTypes] specification."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (structures and unions without XTypes annotations)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** `done` — the types use nothing from XTypes; the encoding is classic CDR (next item). Commit d047dc5f497c.
+**Status:** `done` — the types use nothing from XTypes; the encoding is classic CDR (next item). Commit ad892a10764a.
 
 ### §7.5.1.1 Encoding of the samples: classic CDR and XCDR2
 
@@ -1818,13 +1818,13 @@ which may lack support for the [DDS-XTypes] specification."
 C++: `runtime/cpp/include/dds/rpc.hpp` (`WireEncoding`);
 Java: `runtime/java/src/main/java/org/omg/dds/rpc/WireEncoding.java`
 
-**Tests:** `crates/rpc/src/endpoint_options.rs::tests::the_defaults_are_the_spec_readings`,
+**Tests:** `crates/rpc/src/endpoint_options.rs::tests::rpc_7_5_1_1_the_defaults_are_the_spec_readings`,
 `crates/rpc-rust-e2e/tests/wire_bytes_match_columns.rs::the_rust_and_cpp_columns_put_eight_octet_members_where_the_same_octets`,
 `crates/rpc-rust-e2e/tests/wire_bytes_match_columns.rs::the_rust_and_java_columns_put_eight_octet_members_where_the_same_octets`,
 `crates/rpc-rust-e2e/tests/xcdr1_nested.rs::an_appendable_member_has_no_dheader_under_xcdr1`,
 `crates/rpc-rust-e2e/tests/xcdr1_nested.rs::xcdr2_frames_the_same_value_differently`
 
-**Status:** `done` — for the Basic mapping the spec says only “DDS 1.3 without XTypes”. The default in all three runtimes is classic CDR (XCDR1; a writer offers only that representation); XCDR2 is a named setting. The Enhanced mapping is always XCDR2. The columns for Rust, C++ and Java put members of 8 octets at the same places (test), including nested `@appendable`/`@mutable` members. Against a foreign peer this was not checked in this audit. Commits 33d1d98b1f92 (Rust), 24e3443ce819 (C++), 43c170c7bca6 (Java), 0e7a9dab792b (nested members), 2a06d562261e (column test).
+**Status:** `done` — for the Basic mapping the spec says only “DDS 1.3 without XTypes”. The default in all three runtimes is classic CDR (XCDR1; a writer offers only that representation); XCDR2 is a named setting. The Enhanced mapping is always XCDR2. The columns for Rust, C++ and Java put members of 8 octets at the same places (test), including nested `@appendable`/`@mutable` members. Against a foreign peer this was not checked in this audit. Commits c5285c57fad2 (Rust), ec3707125a9b (C++), 80df19b642fc (Java), 87cf9c7d0b26 (nested members), 77ded59f712c (column test).
 
 ### §7.5.1.1.1 GUID_t, SequenceNumber_t and SampleIdentity
 
@@ -1838,11 +1838,11 @@ SequenceNumber_t sequence_number; }; ...`
 `runtime/cpp/include/dds/rpc.hpp::dds::SampleIdentity` and `dds::SequenceNumber_t` (`high`, `low`; member `sequence_number`);
 `runtime/java/src/main/java/org/omg/dds/rpc/SampleIdentity.java`
 
-**Tests:** `crates/rpc/src/common_types.rs::tests::xcdr2_layout_sample_identity_le_is_24_bytes_no_padding`,
-`crates/rpc/src/common_types.rs::tests::sample_identity_roundtrip_le`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`
+**Tests:** `crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_xcdr2_layout_sample_identity_le_is_24_bytes_no_padding`,
+`crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_a_sample_identity_is_the_guid_then_high_then_low`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns`
 
-**Status:** `done` — the octets agree in Rust, C++ and Java; the C++ `dds::SampleIdentity` has the member `sequence_number` of type `dds::SequenceNumber_t` with `high` and `low`. Commit 569f84427581.
+**Status:** `done` — the octets agree in Rust, C++ and Java; the C++ `dds::SampleIdentity` has the member `sequence_number` of type `dds::SequenceNumber_t` with `high` and `low`. Commit d750a045b9fe.
 
 ### §7.5.1.1.1 UnknownOperation, UnknownException, UnusedMember
 
@@ -1853,9 +1853,9 @@ UnknownException; typedef octet UnusedMember;"
 `runtime/cpp/include/dds/rpc.hpp` (`UnusedMember`, `UnknownOperation`, `UnknownException`);
 `runtime/java/src/main/java/org/omg/dds/rpc/` (`UnusedMember.java`, `UnknownOperation.java`, `UnknownException.java`)
 
-**Tests:** `crates/rpc/tests/language_binding_agreement.rs::the_common_types_and_member_names_are_spelled_once`
+**Tests:** `crates/rpc/tests/language_binding_agreement.rs::rpc_7_5_1_1_1_the_common_types_and_member_names_are_spelled_once`
 
-**Status:** `done` — code and test exist. Commit d047dc5f497c.
+**Status:** `done` — code and test exist. Commit ad892a10764a.
 
 ### §7.5.1.1.1 RemoteExceptionCode_t with six values
 
@@ -1867,11 +1867,11 @@ REMOTE_EX_UNKNOWN_OPERATION, REMOTE_EX_UNKNOWN_EXCEPTION };"
 `runtime/cpp/include/dds/rpc/base.hpp::RemoteExceptionCode_t`;
 `runtime/java/src/main/java/org/omg/dds/rpc/RemoteExceptionCode.java`
 
-**Tests:** `crates/rpc/src/common_types.rs::tests::reply_header_roundtrip_all_codes`,
-`crates/rpc/src/common_types.rs::tests::remote_exception_code_six_is_outside_the_spec_enum`,
-`crates/rpc/src/language_binding.rs::tests::the_table_of_seven_eleven_one_three_is_the_published_one`
+**Tests:** `crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_a_reply_header_is_the_identity_then_the_exception_code`,
+`crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_remote_exception_code_six_is_outside_the_spec_enum`,
+`crates/rpc/src/language_binding.rs::tests::rpc_7_5_1_1_1_the_table_of_seven_eleven_one_three_is_the_published_one`
 
-**Status:** `done` — the six values 0 to 5 in Rust, C++ and Java; a seventh value no longer exists (next item). Commit 099e1d0fd595.
+**Status:** `done` — the six values 0 to 5 in Rust, C++ and Java; a seventh value no longer exists (next item). Commit 2fe2b7cdea14.
 
 ### §7.5.1.1.1 No additional values in RemoteExceptionCode_t
 
@@ -1880,10 +1880,10 @@ REMOTE_EX_UNKNOWN_OPERATION, REMOTE_EX_UNKNOWN_EXCEPTION };"
 **Repo:** `crates/rpc/src/common_types.rs::RemoteExceptionCode::from_u32` (every value above 5 is `RpcError::UnknownExceptionCode`);
 `runtime/java/src/main/java/org/omg/dds/rpc/RemoteExceptionCode.java::fromWire` (throws `RemoteUnknownExceptionError`)
 
-**Tests:** `crates/rpc/src/common_types.rs::tests::remote_exception_code_six_is_outside_the_spec_enum`,
-`crates/rpc/src/language_binding.rs::tests::the_exception_table_covers_the_six_spec_codes`
+**Tests:** `crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_remote_exception_code_six_is_outside_the_spec_enum`,
+`crates/rpc/src/language_binding.rs::tests::rpc_7_5_1_1_1_the_exception_table_covers_the_six_spec_codes`
 
-**Status:** `done` — `UnknownInterface = 6` is removed; the value 6 from the wire is rejected. Commit 099e1d0fd595.
+**Status:** `done` — `UnknownInterface = 6` is removed; the value 6 from the wire is rejected. Commit 2fe2b7cdea14.
 
 ### §7.5.1.1.1 InstanceName as string<255>
 
@@ -1892,12 +1892,12 @@ REMOTE_EX_UNKNOWN_OPERATION, REMOTE_EX_UNKNOWN_EXCEPTION };"
 **Repo:** `crates/rpc/src/common_types.rs::RequestHeader::instance_name`, `MAX_STRING_LEN` (255), `RequestHeader::to_cdr_le`, `encode_string`;
 `crates/rpc/src/wire_codec.rs::encode_request_frame`
 
-**Tests:** `crates/rpc/src/common_types.rs::tests::request_header_roundtrip_le`,
-`crates/rpc/src/common_types.rs::tests::request_header_instance_name_over_255_is_rejected_on_encode`,
-`crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp::main` (block “InstanceName of 255 characters”; run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`),
-`crates/rpc/tests/java/RpcRuntimeRoundtrip.java::headerCodec` (run by `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`)
+**Tests:** `crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_a_request_header_is_the_identity_then_the_instance_name`,
+`crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_request_header_instance_name_over_255_is_rejected_on_encode`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together` (C++: main in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`, block “InstanceName of 255 characters”),
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (Java: headerCodec in `crates/rpc/tests/java/RpcRuntimeRoundtrip.java`)
 
-**Status:** `done` — Rust rejects a name longer than 255 on encoding, and the decoder accepts at most 256 octets including the NUL. C++ (`InvalidArgumentError` on encoding, `false` on decoding) and Java (`IllegalArgumentException` on encoding, `RemoteInvalidArgumentError` on decoding, bound counted in octets) hold the same bound. Commits c0cd73188af3 (Rust), c9a42b1c29af (C++), b86e4eed3d9f (Java).
+**Status:** `done` — Rust rejects a name longer than 255 on encoding, and the decoder accepts at most 256 octets including the NUL. C++ (`InvalidArgumentError` on encoding, `false` on decoding) and Java (`IllegalArgumentException` on encoding, `RemoteInvalidArgumentError` on decoding, bound counted in octets) hold the same bound. Commits e5f4e895ad1d (Rust), ea817b7746ef (C++), 3f07ca73a620 (Java).
 
 ### §7.5.1.1.1 Bound 255 of InstanceName in C++ and Java
 
@@ -1906,10 +1906,10 @@ REMOTE_EX_UNKNOWN_OPERATION, REMOTE_EX_UNKNOWN_EXCEPTION };"
 **Repo:** `runtime/cpp/include/dds/rpc/core.hpp::dds::rpc::detail::put_string`, `get_string`, `INSTANCE_NAME_BOUND`;
 `runtime/java/src/main/java/org/omg/dds/rpc/HeaderCodec.java` (`putString`, `getString`, `MAX_INSTANCE_NAME_OCTETS`)
 
-**Tests:** `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp::main` (block “InstanceName of 255 characters”: 255 characters round-trip, 256 are refused on encoding and on decoding; run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`),
-`crates/rpc/tests/java/RpcRuntimeRoundtrip.java::headerCodec` (255 octets, 256 octets, 128 characters of two octets, length field 257 and above 2^31, missing NUL; run by `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`)
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together` (C++: main in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`, block “InstanceName of 255 characters”: 255 characters round-trip, 256 are refused on encoding and on decoding),
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (Java: headerCodec in `crates/rpc/tests/java/RpcRuntimeRoundtrip.java`, 255 octets, 256 octets, 128 characters of two octets, length field 257 and above 2^31, missing NUL)
 
-**Status:** `done` — both runtimes check the bound 255 when encoding and when decoding the `RequestHeader`. Commits c9a42b1c29af (C++), b86e4eed3d9f (Java).
+**Status:** `done` — both runtimes check the bound 255 when encoding and when decoding the `RequestHeader`. Commits ea817b7746ef (C++), 3f07ca73a620 (Java).
 
 ### §7.5.1.1.1 RequestHeader
 
@@ -1920,12 +1920,12 @@ requestId; InstanceName instanceName; };"
 `runtime/cpp/include/dds/rpc/base.hpp::RequestHeader`;
 `runtime/java/src/main/java/org/omg/dds/rpc/RequestHeader.java`
 
-**Tests:** `crates/rpc/src/common_types.rs::tests::request_header_roundtrip_le`,
-`crates/rpc/src/common_types.rs::tests::xcdr2_layout_string_includes_nul`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`
+**Tests:** `crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_a_request_header_is_the_identity_then_the_instance_name`,
+`crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_xcdr2_layout_string_includes_nul`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns`
 
-**Status:** `done` — layout and octets agree in Rust, C++ and Java. The C++ members are named `requestId` and `instanceName`, and both runtimes check the bound 255 of the name (items “§7.5.1.1.1 — member names in C++” and “Bound 255 of InstanceName in C++ and Java”). Commits 569f84427581 (names), c9a42b1c29af (C++), b86e4eed3d9f (Java).
+**Status:** `done` — layout and octets agree in Rust, C++ and Java. The C++ members are named `requestId` and `instanceName`, and both runtimes check the bound 255 of the name (items “§7.5.1.1.1 — member names in C++” and “Bound 255 of InstanceName in C++ and Java”). Commits d750a045b9fe (names), ea817b7746ef (C++), 3f07ca73a620 (Java).
 
 ### §7.5.1.1.1 ReplyHeader
 
@@ -1936,12 +1936,12 @@ relatedRequestId; dds::rpc::RemoteExceptionCode_t remoteEx; };"
 `runtime/cpp/include/dds/rpc/base.hpp::ReplyHeader`;
 `runtime/java/src/main/java/org/omg/dds/rpc/ReplyHeader.java`
 
-**Tests:** `crates/rpc/src/common_types.rs::tests::reply_header_roundtrip_all_codes`,
-`crates/rpc/src/wire_codec.rs::tests::reply_header_consumed_28_bytes`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`
+**Tests:** `crates/rpc/src/common_types.rs::tests::rpc_7_5_1_1_1_a_reply_header_is_the_identity_then_the_exception_code`,
+`crates/rpc/src/wire_codec.rs::tests::rpc_7_5_1_1_1_reply_header_consumed_28_bytes`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns`
 
-**Status:** `done` — layout and octets agree in Rust, C++ and Java; the C++ members are named `relatedRequestId` and `remoteEx` (item “§7.5.1.1.1 — member names in C++”). Commit 569f84427581.
+**Status:** `done` — layout and octets agree in Rust, C++ and Java; the C++ members are named `relatedRequestId` and `remoteEx` (item “§7.5.1.1.1 — member names in C++”). Commit d750a045b9fe.
 
 ### §7.5.1.1.1 — member names in C++
 
@@ -1951,10 +1951,10 @@ relatedRequestId; dds::rpc::RemoteExceptionCode_t remoteEx; };"
 **Repo:** `runtime/cpp/include/dds/rpc.hpp` (`RequestHeader::requestId`, `instanceName`; `ReplyHeader::relatedRequestId`, `remoteEx`; `dds::SequenceNumber_t::high`, `low`; `dds::SampleIdentity::sequence_number`);
 generated code with the prefix `cxx_` for members, enumerators and constants that are reserved words in C++: `crates/lang-rules/src/emit/interface_cpp.rs`
 
-**Tests:** `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp::print_header_octets` (sets and reads `requestId`, `instanceName`, `relatedRequestId`, `remoteEx`, `sequence_number.high`, `sequence_number.low`; run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_two_headers_take_the_same_octets_in_both_columns`),
-`crates/lang-rules/tests/cxx_prefix_members.rs::a_member_that_is_a_reserved_word_is_prefixed_by_cxx`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns` (C++: print_header_octets in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`, sets and reads `requestId`, `instanceName`, `relatedRequestId`, `remoteEx`, `sequence_number.high`, `sequence_number.low`),
+`crates/lang-rules/tests/cxx_prefix_members.rs::rpc_7_5_1_1_1_a_member_that_is_a_reserved_word_is_prefixed_by_cxx`
 
-**Status:** `done` — the members are named as in the IDL of the spec (`requestId`, `instanceName`, `relatedRequestId`, `remoteEx`), and `sequence_number` is a structure member of its own with `high` and `low`. The Java runtime uses the IDL names (`requestId()`, `instanceName()`). Commit 569f84427581.
+**Status:** `done` — the members are named as in the IDL of the spec (`requestId`, `instanceName`, `relatedRequestId`, `remoteEx`), and `sequence_number` is a structure member of its own with `high` and `low`. The Java runtime uses the IDL names (`requestId()`, `instanceName()`). Commit d750a045b9fe.
 
 ### §7.5.1.1.2 The Hashing Algorithm
 
@@ -1965,11 +1965,11 @@ generated code with the prefix `cxx_` for members, enumerators and constants tha
 **Repo:** `crates/rpc/src/rpc_hash.rs::rpc_member_hash`;
 `crates/lang-rules/src/adapter/interface.rs::operation_hash`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_label_is_the_published_hash_arithmetic`,
-`crates/rpc/src/rpc_hash.rs::tests::rpc_hash_uses_first_4_bytes_not_last`,
-`crates/rpc/src/rpc_hash.rs::tests::rpc_hash_empty_string_is_md5_empty_first_4_bytes`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_2_the_case_label_is_the_published_hash_arithmetic`,
+`crates/rpc/src/rpc_hash.rs::tests::rpc_7_5_1_1_2_hash_uses_first_4_bytes_not_last`,
+`crates/rpc/src/rpc_hash.rs::tests::rpc_7_5_1_1_2_hash_empty_string_is_md5_empty_first_4_bytes`
 
-**Status:** `done` — the sum can exceed 2^31; ZeroDDS reads the 32 bits as a signed `long`. The spec declares `long HASH` and says nothing about overflow. Commits 4085939c47aa (algorithm), 9467d977720c (labels of the unions).
+**Status:** `done` — the sum can exceed 2^31; ZeroDDS reads the 32 bits as a signed `long`. The spec declares `long HASH` and says nothing about overflow. Commits 4085939c47aa (algorithm), 64d55a6c8f94 (labels of the unions).
 
 ### §7.5.1.1.2 Collisions of *_Hash need not be detected
 
@@ -1991,12 +1991,12 @@ set_attribute_<attribute-name> in the same interface."
 **Repo:** `crates/lang-rules/src/adapter/interface.rs::Service::all_operations`;
 `crates/rpc/src/service_mapping.rs::lower_service` (implied operations per attribute)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::an_attribute_implies_the_operations_of_seven_five_one_one_three`,
-`crates/rpc/src/service_mapping.rs::tests::attributes_lower_into_the_implied_operations_of_seven_five_one_one_three`,
-`crates/rpc/src/service_mapping.rs::tests::a_declared_operation_colliding_with_an_implied_one_is_refused`,
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_an_attribute_implies_the_operations_of_seven_five_one_one_three`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_attributes_lower_into_the_implied_operations_of_seven_five_one_one_three`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_a_declared_operation_colliding_with_an_implied_one_is_refused`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`
 
-**Status:** `done` — each attribute yields `get_attribute_<name>` and, unless `readonly`, `set_attribute_<name>`, in the generators and in the data model of `crates/rpc`. Commit fb1b6a402a94.
+**Status:** `done` — each attribute yields `get_attribute_<name>` and, unless `readonly`, `set_attribute_<name>`, in the generators and in the data model of `crates/rpc`. Commit 259cf675efdf.
 
 ### §7.5.1.1.3 Names of the implied operations
 
@@ -2005,10 +2005,10 @@ set_attribute_<attribute-name> in the same interface."
 **Repo:** `crates/lang-rules/src/adapter/interface.rs::Service::all_operations` (`get_attribute_<name>`, `set_attribute_<name>`);
 `crates/rpc/src/service_mapping.rs::lower_service`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::an_attribute_implies_the_operations_of_seven_five_one_one_three`,
-`crates/rpc/src/service_mapping.rs::tests::attributes_lower_into_the_implied_operations_of_seven_five_one_one_three`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_an_attribute_implies_the_operations_of_seven_five_one_one_three`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_attributes_lower_into_the_implied_operations_of_seven_five_one_one_three`
 
-**Status:** `done` — the name of the operation enters the labels of the Call and Return unions through HASH (§7.5.1.1.6 rule 5a); with the names `get_attribute_<name>` and `set_attribute_<name>` a peer following the spec picks the same labels. Commit fb1b6a402a94.
+**Status:** `done` — the name of the operation enters the labels of the Call and Return unions through HASH (§7.5.1.1.6 rule 5a); with the names `get_attribute_<name>` and `set_attribute_<name>` a peer following the spec picks the same labels. Commit 259cf675efdf.
 ### §7.5.1.1.3 Rule 1: conflict with operations of the same name
 
 **Spec:** §7.5.1.1.3, p. 32 — "It is illegal to have an interface with an
@@ -2021,11 +2021,11 @@ get_attribute_<attribute-name> and set_attribute_<attribute-name>."
 `InterfaceError::DuplicateOperation`, also for `get_attribute_<name>` and
 `set_attribute_<name>`)
 
-**Tests:** `crates/rpc/src/service_mapping.rs::tests::a_declared_operation_colliding_with_an_implied_one_is_refused`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_operation_named_like_an_implied_getter`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_operation_named_like_an_implied_setter`
+**Tests:** `crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_a_declared_operation_colliding_with_an_implied_one_is_refused`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_the_seam_refuses_an_operation_named_like_an_implied_getter`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_the_seam_refuses_an_operation_named_like_an_implied_setter`
 
-**Status:** `done` — commits `fb1b6a402a94`, `bfd6f500aa94`. `lower_service` and
+**Status:** `done` — commits `259cf675efdf`, `c9f99bb02dd5`. `lower_service` and
 the point `adapter::interface::service` of the generators for C++, Java and Rust
 reject an interface that declares an operation with the name of an implied
 operation. A `readonly` attribute implies no setter, so the name
@@ -2041,11 +2041,11 @@ operation. A `readonly` attribute implies no setter, so the name
 `zerodds-dcps` → `zerodds-lang-rules`); the check therefore stands in
 `adapter::interface::service` itself.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_operation_named_like_an_implied_getter`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_an_operation_named_like_an_implied_setter`,
-`crates/lang-rules/tests/interface_bindings.rs::the_seam_refuses_two_operations_of_one_name`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_the_seam_refuses_an_operation_named_like_an_implied_getter`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_the_seam_refuses_an_operation_named_like_an_implied_setter`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_the_seam_refuses_two_operations_of_one_name`
 
-**Status:** `done` — commit `bfd6f500aa94`. For such an interface the generators
+**Status:** `done` — commit `c9f99bb02dd5`. For such an interface the generators
 receive the error `InterfaceError::DuplicateOperation` and no longer produce two
 cases with the same name and label.
 
@@ -2058,12 +2058,12 @@ This operation accepts no arguments."
 **Repo:** `crates/lang-rules/src/adapter/interface.rs::Service::all_operations`;
 `crates/rpc/src/service_mapping.rs::ServiceDef::all_methods`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::an_attribute_implies_the_operations_of_seven_five_one_one_three`,
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_an_attribute_implies_the_operations_of_seven_five_one_one_three`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`
 (the generated getter `get_attribute_memory()` has no argument and returns
 `i32`)
 
-**Status:** `done` — commit `fb1b6a402a94`.
+**Status:** `done` — commit `259cf675efdf`.
 
 ### §7.5.1.1.3 Rule 3: setter void with one argument
 
@@ -2076,12 +2076,12 @@ as the attribute name."
 (parameter with `attribute.name`);
 `crates/rpc/src/service_mapping.rs::ServiceDef::all_methods`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::an_attribute_implies_the_operations_of_seven_five_one_one_three`,
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_an_attribute_implies_the_operations_of_seven_five_one_one_three`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/lang-rules/tests/interface_bindings.rs::the_implied_setter_takes_one_argument_named_like_the_attribute`,
-`crates/rpc/src/service_mapping.rs::tests::the_implied_setter_takes_one_argument_named_like_the_attribute`
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_the_implied_setter_takes_one_argument_named_like_the_attribute`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_the_implied_setter_takes_one_argument_named_like_the_attribute`
 
-**Status:** `done` — commits `fb1b6a402a94`, `272968665473`, `dfd8c6d7f0ec`. The
+**Status:** `done` — commits `259cf675efdf`, `7036cde62638`, `9dbad4cbd573`. The
 first test checks the `void` return and one argument; the second enforces the
 type `i32` when `set_attribute_memory(&self, memory: i32)` is compiled. The last
 two tests check name, direction `in` and type of the argument against the
@@ -2095,10 +2095,10 @@ attribute, and the member of the same name in `Calculator_set_attribute_label_In
 (`Operation::params`); `crates/rpc/src/service_mapping.rs::ServiceDef::all_methods`
 (`ParamDef::name`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::the_implied_setter_takes_one_argument_named_like_the_attribute`,
-`crates/rpc/src/service_mapping.rs::tests::the_implied_setter_takes_one_argument_named_like_the_attribute`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_the_implied_setter_takes_one_argument_named_like_the_attribute`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_the_implied_setter_takes_one_argument_named_like_the_attribute`
 
-**Status:** `done` — commits `272968665473`, `dfd8c6d7f0ec`. Both tests check
+**Status:** `done` — commits `7036cde62638`, `9dbad4cbd573`. Both tests check
 that the setter's parameter carries the name of the attribute.
 
 ### §7.5.1.1.3 Rule 4: getraises
@@ -2111,10 +2111,10 @@ of exceptions listed as raises."
 and `crates/rpc/src/service_mapping.rs::ServiceDef::all_methods` (both set
 `raises: attribute.get_raises.clone()`); `lower_attribute` reads `get_raises`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::getraises_and_setraises_become_the_raises_of_the_implied_operations`,
-`crates/rpc/src/service_mapping.rs::tests::getraises_and_setraises_become_the_raises_of_the_implied_operations`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations`
 
-**Status:** `done` — commits `fb1b6a402a94`, `272968665473`, `dfd8c6d7f0ec`. Both
+**Status:** `done` — commits `259cf675efdf`, `7036cde62638`, `9dbad4cbd573`. Both
 tests contain an attribute with `getraises` and `setraises` and check that the
 implied operation `get_attribute_<name>` lists the exception of `getraises` in
 `raises`.
@@ -2129,10 +2129,10 @@ of exceptions listed as raises."
 and `crates/rpc/src/service_mapping.rs::ServiceDef::all_methods` (both set
 `raises: attribute.set_raises.clone()`); `lower_attribute` reads `set_raises`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::getraises_and_setraises_become_the_raises_of_the_implied_operations`,
-`crates/rpc/src/service_mapping.rs::tests::getraises_and_setraises_become_the_raises_of_the_implied_operations`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations`,
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations`
 
-**Status:** `done` — commits `fb1b6a402a94`, `272968665473`, `dfd8c6d7f0ec`. Both
+**Status:** `done` — commits `259cf675efdf`, `7036cde62638`, `9dbad4cbd573`. Both
 tests contain an attribute with `getraises` and `setraises` and check that the
 implied operation `set_attribute_<name>` lists the exception of `setraises` in
 `raises`.
@@ -2144,14 +2144,14 @@ implied operation `set_attribute_<name>` lists the exception of `setraises` in
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (Result union
 per operation, implied ones included)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::getraises_and_setraises_become_the_raises_of_the_implied_operations`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations`
 
-**Status:** `done` — commit `272968665473`. For `Guarded_get_attribute_level_Result`
+**Status:** `done` — commit `7036cde62638`. For `Guarded_get_attribute_level_Result`
 the test checks the case `notreadable_ex` without `notwritable_ex`, and for
 `Guarded_set_attribute_level_Result` the case `notwritable_ex` without
 `notreadable_ex`. The check of `all_methods` stands in the test
-`crates/rpc/src/service_mapping.rs::tests::getraises_and_setraises_become_the_raises_of_the_implied_operations`
-(commit `dfd8c6d7f0ec`).
+`crates/rpc/src/service_mapping.rs::tests::rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations`
+(commit `9dbad4cbd573`).
 
 ### §7.5.1.1.4 Unqualified names in the rules
 
@@ -2163,11 +2163,11 @@ qualified (i.e., any module prefixes shall be removed)."
 **Repo:** `crates/lang-rules/src/adapter/interface.rs::in_struct_name`;
 `crates/rpc/src/codegen.rs::build_call_union` (`svc.name`, the simple name)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`
 (interface in module `robot`, type name `Calculator_add_Result`)
 
-**Status:** `done` — commits `9467d977720c`, `d047dc5f497c`.
+**Status:** `done` — commits `64d55a6c8f94`, `ad892a10764a`.
 
 ### §7.5.1.1.4 Rule 1: In structure ${interfaceName}_${operationName}_In
 
@@ -2177,10 +2177,10 @@ an In structure with name “${interfaceName}_${operationName}_In.”"
 **Repo:** `crates/rpc/src/codegen.rs::build_call_union`;
 `crates/lang-rules/src/adapter/interface.rs::in_struct_name`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** `done` — commits `b5224bd70dbb`, `d047dc5f497c`.
+**Status:** `done` — commits `b5224bd70dbb`, `ad892a10764a`.
 
 ### §7.5.1.1.4 Rule 2: In structure in the module of the interface
 
@@ -2190,11 +2190,11 @@ same module as the original interface."
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (every
 declaration with `service.module`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/lang-rules/tests/interface_bindings.rs::the_topic_types_and_constants_stand_in_the_module_of_the_interface`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_the_topic_types_and_constants_stand_in_the_module_of_the_interface`
 
-**Status:** `done` — commits `b5224bd70dbb`, `d047dc5f497c`, `272968665473`. The code passes the module of the interface to every declaration. The test creates two
+**Status:** `done` — commits `b5224bd70dbb`, `ad892a10764a`, `7036cde62638`. The code passes the module of the interface to every declaration. The test creates two
 modules, plus an exception in a third, and checks for C++ that the declaration
 stands in the namespace of its interface and neither in the global namespace nor
 in the namespace of the other module; the Rust binding places the items in the
@@ -2209,8 +2209,8 @@ in and inout parameters defined in the operation signature."
 **Repo:** `crates/rpc/src/codegen.rs::method_in_members`;
 `crates/lang-rules/src/emit/interface_cpp.rs` (`request_fields`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_in_params_become_case_members`,
-`crates/rpc/src/codegen.rs::tests::enhanced_inout_param_is_in_both_structures`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_in_params_become_case_members`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_enhanced_inout_param_is_in_both_structures`
 (the Enhanced mapping calls the same function `method_in_members`),
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`
 (`swap(inout long v)` through the generated Rust binding)
@@ -2224,7 +2224,7 @@ the parameters in the operation, starting from the left."
 
 **Repo:** `crates/rpc/src/codegen.rs::method_in_members`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_in_params_become_case_members`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_in_params_become_case_members`
 (member `a`, then `b`)
 
 **Status:** `done` — commit `b5224bd70dbb`.
@@ -2236,7 +2236,7 @@ the formal parameter names."
 
 **Repo:** `crates/rpc/src/codegen.rs::method_in_members`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_in_params_become_case_members`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_in_params_become_case_members`
 
 **Status:** `done` — commit `b5224bd70dbb`.
 
@@ -2249,10 +2249,10 @@ UnusedMember and name “dummy.”"
 **Repo:** `crates/rpc/src/codegen.rs::method_in_members` (`DUMMY_MEMBER`);
 `crates/lang-rules/src/emit/interface_cpp.rs` (`request_fields`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::an_empty_in_or_out_carries_the_dummy_member`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_an_empty_in_or_out_carries_the_dummy_member`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Out structure and Result union per operation
 
@@ -2263,11 +2263,11 @@ Out structure and a Result union."
 `build_result_union`); `crates/lang-rules/src/emit/interface_cpp.rs`
 (`reply_fields`, `result_union_of`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`,
-`crates/rpc/src/codegen.rs::tests::basic_reply_excludes_oneway_methods`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_excludes_oneway_methods`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** `done` — commits `9467d977720c`, `d047dc5f497c`. A `oneway`
+**Status:** `done` — commits `64d55a6c8f94`, `ad892a10764a`. A `oneway`
 operation, which the grammar of §7.3.1.1 does not know (`lower_service` rejects
 it), gets neither an Out structure nor a Result union and no case in the Return
 union (item on production (87)).
@@ -2280,10 +2280,10 @@ union (item on production (87)).
 **Repo:** `crates/rpc/src/codegen.rs::build_result_union` (`out_type_name`);
 `crates/lang-rules/src/adapter/interface.rs::out_struct_name`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`,
-`crates/rpc/tests/language_binding_agreement.rs::both_readings_of_seven_five_produce_the_same_sample_structure`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`,
+`crates/rpc/tests/language_binding_agreement.rs::rpc_7_5_both_readings_of_seven_five_produce_the_same_sample_structure`
 
-**Status:** `done` — commits `9467d977720c`, `d047dc5f497c`.
+**Status:** `done` — commits `64d55a6c8f94`, `ad892a10764a`.
 
 ### §7.5.1.1.5 Out rule 2: in the module of the interface
 
@@ -2292,10 +2292,10 @@ same module as the original interface."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/lang-rules/tests/interface_bindings.rs::the_topic_types_and_constants_stand_in_the_module_of_the_interface`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_the_topic_types_and_constants_stand_in_the_module_of_the_interface`
 
-**Status:** `done` — commits `9467d977720c`, `d047dc5f497c`, `272968665473`. The code passes the module of the interface. The test creates two
+**Status:** `done` — commits `64d55a6c8f94`, `ad892a10764a`, `7036cde62638`. The code passes the module of the interface. The test creates two
 modules, plus an exception in a third, and checks for C++ that the declaration
 stands in the namespace of its interface and neither in the global namespace nor
 in the namespace of the other module; the Rust binding places the items in the
@@ -2312,12 +2312,12 @@ for each out and inout parameter in the operation signature."
 **Repo:** `crates/rpc/src/codegen.rs::method_out_members`;
 `crates/lang-rules/src/emit/interface_cpp.rs` (`reply_fields`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_return_value_is_the_last_member`,
-`crates/rpc/src/codegen.rs::tests::enhanced_inout_param_is_in_both_structures`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_return_value_is_the_last_member`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_enhanced_inout_param_is_in_both_structures`
 (the Enhanced mapping calls the same function `method_out_members`),
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Out rule 3a.i: order of the parameters
 
@@ -2326,11 +2326,11 @@ the parameters in the operation, starting from the left."
 
 **Repo:** `crates/rpc/src/codegen.rs::method_out_members`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_return_value_is_the_last_member`,
-`crates/rpc/src/codegen.rs::tests::basic_out_members_keep_the_order_of_the_parameters`,
-`crates/lang-rules/tests/interface_bindings.rs::the_out_structure_keeps_the_order_of_the_parameters`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_return_value_is_the_last_member`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_out_members_keep_the_order_of_the_parameters`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_5_the_out_structure_keeps_the_order_of_the_parameters`
 
-**Status:** `done` — commits `9467d977720c`, `dfd8c6d7f0ec`, `272968665473`. The code keeps
+**Status:** `done` — commits `64d55a6c8f94`, `9dbad4cbd573`, `7036cde62638`. The code keeps
 the order of the declaration. The first test has several `out` and `inout`
 parameters; the second checks, with `mix(in long a, inout long b, out double c)`
 and `mix2(out double c, in long a, inout long b)`, the order of the members in
@@ -2344,10 +2344,10 @@ no test of its own for the order of several members.
 **Repo:** `crates/rpc/src/codegen.rs::method_out_members`;
 `crates/lang-rules/src/emit/interface_cpp.rs` (`reply_fields`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_out_members_keep_the_order_of_the_parameters`,
-`crates/lang-rules/tests/interface_bindings.rs::the_out_structure_keeps_the_order_of_the_parameters`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_out_members_keep_the_order_of_the_parameters`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_5_the_out_structure_keeps_the_order_of_the_parameters`
 
-**Status:** `done` — commits `dfd8c6d7f0ec`, `272968665473`. The tests check the
+**Status:** `done` — commits `9dbad4cbd573`, `7036cde62638`. The tests check the
 order of several `out` and `inout` parameters in the Out structure (see the item
 "Out rule 3a.i: order of the parameters").
 
@@ -2358,10 +2358,10 @@ the formal parameter names."
 
 **Repo:** `crates/rpc/src/codegen.rs::method_out_members`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_return_value_is_the_last_member`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_return_value_is_the_last_member`
 (member `wrapped`)
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Out rule 3b: return_ as the last member
 
@@ -2373,10 +2373,10 @@ present."
 
 **Repo:** `crates/rpc/src/codegen.rs::method_out_members` (`RETURN_MEMBER`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_return_value_is_the_last_member`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_return_value_is_the_last_member`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Out rule 3b: return_N on collision
 
@@ -2391,11 +2391,11 @@ collision."
 `crates/lang-rules/src/emit/interface_java.rs::return_member_name`,
 `crates/lang-rules/src/emit/interface_rust.rs::return_member_name`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::a_colliding_return_member_takes_the_first_free_number`,
-`crates/lang-rules/tests/interface_bindings.rs::a_colliding_return_member_is_numbered_in_cpp_and_java`,
-`crates/lang-rules/tests/interface_bindings.rs::a_colliding_return_member_is_numbered_in_rust`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_a_colliding_return_member_takes_the_first_free_number`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_5_a_colliding_return_member_is_numbered_in_cpp_and_java`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_5_a_colliding_return_member_is_numbered_in_rust`
 
-**Status:** `done` — commits `9467d977720c`, `272968665473`. The first test covers
+**Status:** `done` — commits `64d55a6c8f94`, `7036cde62638`. The first test covers
 `return_member_name` in `crates/rpc`; the other two check, with
 `long f(out long return_)`, the members `return_` and `return_1` in this order in
 C++, Java and Rust.
@@ -2408,10 +2408,10 @@ C++, Java and Rust.
 `crates/lang-rules/src/emit/interface_java.rs::return_member_name`,
 `crates/lang-rules/src/emit/interface_rust.rs::return_member_name`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::a_colliding_return_member_is_numbered_in_cpp_and_java`,
-`crates/lang-rules/tests/interface_bindings.rs::a_colliding_return_member_is_numbered_in_rust`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_5_a_colliding_return_member_is_numbered_in_cpp_and_java`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_5_a_colliding_return_member_is_numbered_in_rust`
 
-**Status:** `done` — commit `272968665473`. The tests expect `return_1` in
+**Status:** `done` — commit `7036cde62638`. The tests expect `return_1` in
 `Odd_f_Out` for `long f(out long return_)` in C++ and Java (text of the
 declaration) and in Rust (fields of the item).
 
@@ -2424,9 +2424,9 @@ out/inout parameters, the Out structure shall contain a single member named
 **Repo:** `crates/rpc/src/codegen.rs::method_out_members`;
 `crates/lang-rules/src/emit/interface_cpp.rs` (`reply_fields`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::an_empty_in_or_out_carries_the_dummy_member`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_an_empty_in_or_out_carries_the_dummy_member`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Result rule 1: name ${interfaceName}_${operationName}_Result
 
@@ -2436,9 +2436,9 @@ out/inout parameters, the Out structure shall contain a single member named
 **Repo:** `crates/rpc/src/codegen.rs::build_result_union`;
 `crates/lang-rules/src/adapter/interface.rs::result_union_name`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`
 
-**Status:** `done` — commits `9467d977720c`, `d047dc5f497c`.
+**Status:** `done` — commits `64d55a6c8f94`, `ad892a10764a`.
 
 ### §7.5.1.1.5 Result rule 2: discriminator long
 
@@ -2448,9 +2448,9 @@ long."
 **Repo:** `crates/rpc/src/codegen.rs::ExceptionCase::discriminator` (`i32`);
 `crates/lang-rules/src/emit/interface_cpp.rs::discriminator_field` (`Int32`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_exception_label_hashes_the_scoped_name`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_the_exception_label_hashes_the_scoped_name`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Result rule 3: case dds::RETCODE_OK
 
@@ -2460,10 +2460,10 @@ dds::RETCODE_OK which is used to represent a successful return."
 **Repo:** `crates/rpc/src/codegen.rs::RETCODE_OK`;
 `crates/lang-rules/src/emit/interface_cpp.rs::result_union_of`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`
 (`RETCODE_OK == 0`)
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Result rule 3a: member result of the Out type
 
@@ -2473,10 +2473,10 @@ with name “result” and type ${interfaceName}_${operationName}_Out."
 **Repo:** `crates/rpc/src/codegen.rs::RESULT_MEMBER`;
 `crates/lang-rules/src/emit/interface_cpp.rs::result_union_of`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Result rule 4a: constant ${exceptionType}_Ex_Hash
 
@@ -2487,11 +2487,11 @@ interface is defined in."
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (constant with
 `service.module`); `crates/lang-rules/src/adapter/interface.rs::exception_hash_constant`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`,
-`crates/lang-rules/tests/interface_bindings.rs::the_topic_types_and_constants_stand_in_the_module_of_the_interface`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_the_topic_types_and_constants_stand_in_the_module_of_the_interface`
 
-**Status:** `done` — commits `9467d977720c`, `272968665473`. Name, type (`std::int32_t`) and occurrence of the constant `Overflow_Ex_Hash` are tested. The test creates two
+**Status:** `done` — commits `64d55a6c8f94`, `7036cde62638`. Name, type (`std::int32_t`) and occurrence of the constant `Overflow_Ex_Hash` are tested. The test creates two
 modules, plus an exception in a third, and checks for C++ that the declaration
 stands in the namespace of its interface and neither in the global namespace nor
 in the namespace of the other module; the Rust binding places the items in the
@@ -2507,12 +2507,12 @@ used is “::” (2 colons)."
 **Repo:** `crates/rpc/src/service_mapping.rs::scoped_exception_name`;
 `crates/lang-rules/src/adapter/interface.rs::exception_hash`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_exception_label_hashes_the_scoped_name`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_the_exception_label_hashes_the_scoped_name`
 (MD5 of `robot::Overflow`),
-`crates/rpc/tests/language_binding_agreement.rs::both_readings_of_seven_five_produce_the_same_sample_structure`
+`crates/rpc/tests/language_binding_agreement.rs::rpc_7_5_both_readings_of_seven_five_produce_the_same_sample_structure`
 (`exception_hash` in the generator equals the run-time value)
 
-**Status:** `done` — commit `9467d977720c`. The name is built without a leading
+**Status:** `done` — commit `64d55a6c8f94`. The name is built without a leading
 `::` (`robot::Overflow`); the specification's example on p. 34 hashes `"TooFast"`
 without the module.
 
@@ -2523,11 +2523,11 @@ exception declared as a possible outcome of the operation."
 
 **Repo:** `crates/rpc/src/codegen.rs::build_result_union`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`,
-`crates/rpc/tests/language_binding_agreement.rs::both_readings_of_seven_five_produce_the_same_sample_structure`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`,
+`crates/rpc/tests/language_binding_agreement.rs::rpc_7_5_both_readings_of_seven_five_produce_the_same_sample_structure`
 (number of cases equals `raises.len()`)
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Result rule 5a: label ${exceptionType}_Ex_Hash
 
@@ -2537,9 +2537,9 @@ ${exceptionType}_Ex_Hash."
 **Repo:** `crates/rpc/src/codegen.rs::ExceptionCase` (`discriminator`,
 `hash_constant`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_exception_label_hashes_the_scoped_name`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_the_exception_label_hashes_the_scoped_name`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Result rule 5b: member <exception>_ex in lower case
 
@@ -2550,10 +2550,10 @@ with name synthetized as the lower-case of the exception name with the suffix
 **Repo:** `crates/rpc/src/codegen.rs::build_result_union` (`member`);
 `crates/lang-rules/src/adapter/interface.rs::exception_member_name`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_result_union_of_seven_five_one_one_five_is_built`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built`
 (`toofast_ex`)
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.5 Result rule 5c: type of the exception
 
@@ -2562,10 +2562,10 @@ shall be the exception type."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::result_union_of`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 (`Overflow overflow_ex;`)
 
-**Status:** `done` — commits `9467d977720c`, `d047dc5f497c`.
+**Status:** `done` — commits `64d55a6c8f94`, `ad892a10764a`.
 
 ### §7.5.1.1.4 and §7.5.1.1.5 examples
 
@@ -2588,11 +2588,11 @@ in the same module as the interface."
 `crates/lang-rules/src/adapter/interface.rs::call_union_name`;
 `crates/lang-rules/src/emit/interface_cpp.rs::declare`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/lang-rules/tests/interface_bindings.rs::the_topic_types_and_constants_stand_in_the_module_of_the_interface`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_the_topic_types_and_constants_stand_in_the_module_of_the_interface`
 
-**Status:** `done` — commits `b5224bd70dbb`, `d047dc5f497c`, `272968665473`. The name `Calculator_Call` is tested. The test creates two
+**Status:** `done` — commits `b5224bd70dbb`, `ad892a10764a`, `7036cde62638`. The name `Calculator_Call` is tested. The test creates two
 modules, plus an exception in a third, and checks for C++ that the declaration
 stands in the namespace of its interface and neither in the global namespace nor
 in the namespace of the other module; the Rust binding places the items in the
@@ -2607,9 +2607,9 @@ type long."
 **Repo:** `crates/rpc/src/codegen.rs::CallUnionCase::discriminator` (`i32`);
 `crates/lang-rules/src/emit/interface_cpp.rs::discriminator_field` (`Int32`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_label_is_the_published_hash_arithmetic`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_2_the_case_label_is_the_published_hash_arithmetic`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.6 Call rule 3: default with unknownOp
 
@@ -2620,10 +2620,10 @@ dds::rpc::UnknownOperation."
 **Repo:** `crates/rpc/src/codegen.rs::UNKNOWN_OP_MEMBER`;
 `crates/lang-rules/src/emit/interface_cpp.rs::union_of`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::both_unions_carry_the_default_unknown_operation_case`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_both_unions_carry_the_default_unknown_operation_case`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 
 ### §7.5.1.1.6 Call rule 4: constant ${interfaceName}_${operationName}_Hash
 
@@ -2636,11 +2636,11 @@ constant is the HASH of unqualified ${operationName}."
 `crates/lang-rules/src/emit/interface_cpp.rs::declare`
 (`hash_constant`, `operation_hash`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_labels_are_the_operation_hashes`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/lang-rules/tests/interface_bindings.rs::the_topic_types_and_constants_stand_in_the_module_of_the_interface`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_the_topic_types_and_constants_stand_in_the_module_of_the_interface`
 
-**Status:** `done` — commits `9467d977720c`, `272968665473`. Name, type (`std::int32_t`) and value (HASH of the unqualified name) are tested. The test creates two
+**Status:** `done` — commits `64d55a6c8f94`, `7036cde62638`. Name, type (`std::int32_t`) and value (HASH of the unqualified name) are tested. The test creates two
 modules, plus an exception in a third, and checks for C++ that the declaration
 stands in the namespace of its interface and neither in the global namespace nor
 in the namespace of the other module; the Rust binding places the items in the
@@ -2656,9 +2656,9 @@ each operation in the interface."
 `ServiceDef::all_methods`, so the implied operations of the attributes are
 included)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`
 
-**Status:** `done` — commits `b5224bd70dbb`, `fb1b6a402a94`.
+**Status:** `done` — commits `b5224bd70dbb`, `259cf675efdf`.
 
 ### §7.5.1.1.6 Call rule 5a: label HASH of the operation name
 
@@ -2668,10 +2668,10 @@ the HASH of ${operationName}."
 **Repo:** `crates/rpc/src/codegen.rs::build_call_union`
 (`rpc_member_hash(&m.name)`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_label_is_the_published_hash_arithmetic`,
-`crates/rpc/src/codegen.rs::tests::the_case_labels_are_the_operation_hashes`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_2_the_case_label_is_the_published_hash_arithmetic`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes`
 
-**Status:** `done` — commit `9467d977720c`.
+**Status:** `done` — commit `64d55a6c8f94`.
 ### §7.5.1.1.6 Call rule 5b: member with the operation name
 
 **Spec:** §7.5.1.1.6, p. 35 — "b. The member name for the case label shall be
@@ -2679,7 +2679,7 @@ the operation name."
 
 **Repo:** `crates/rpc/src/codegen.rs::CallUnionCase::method`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`
 
 **Status:** `done` — commit `b5224bd70dbb`.
 
@@ -2691,7 +2691,7 @@ Hashing Algorithm."
 
 **Repo:** `crates/rpc/src/codegen.rs::CallUnionCase::case_type_name`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`
 
 **Status:** `done` — commit `b5224bd70dbb`.
 
@@ -2703,19 +2703,19 @@ Hashing Algorithm."
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (namespace per module of the interface);
 `crates/lang-rules/src/emit/interface_rust.rs` (Rust module per module of the interface)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::the_topic_types_and_constants_stand_in_the_module_of_the_interface`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_the_topic_types_and_constants_stand_in_the_module_of_the_interface`
 
-**Status:** `done` — the test has two modules `a` and `b` and an exception in a third module. For C++ it checks that `Svc_f_In`, `Svc_f_Out`, `Svc_f_Result`, `Svc_Call`, `Svc_Return`, `Svc_Request`, `Svc_Reply`, `Svc_f_Hash` and `Bad_Ex_Hash` stand in the namespace `a` only, and `Other_g_In`, `Other_Call`, `Other_g_Hash` in the namespace `b` only. For Rust it checks the placement of the structures and enumerations in the module of the interface; Rust generates no `_Hash` constants, so they are not checked there. Commit `272968665473`.
+**Status:** `done` — the test has two modules `a` and `b` and an exception in a third module. For C++ it checks that `Svc_f_In`, `Svc_f_Out`, `Svc_f_Result`, `Svc_Call`, `Svc_Return`, `Svc_Request`, `Svc_Reply`, `Svc_f_Hash` and `Bad_Ex_Hash` stand in the namespace `a` only, and `Other_g_In`, `Other_Call`, `Other_g_Hash` in the namespace `b` only. For Rust it checks the placement of the structures and enumerations in the module of the interface; Rust generates no `_Hash` constants, so they are not checked there. Commit `7036cde62638`.
 ### §7.5.1.1.6 Request rule 1: ${interfaceName}_Request in the module
 
 **Spec:** §7.5.1.1.6, p. 36 — "1. The name of Request structure shall be
 “${interfaceName}_Request” in the same module as the interface."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`);
-`crates/lang-rules/src/adapter/interface.rs::request_type_name` (Commit `d047dc5f497c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`);
+`crates/lang-rules/src/adapter/interface.rs::request_type_name` (Commit `ad892a10764a`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_pair_topic_names`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_4_2_basic_pair_topic_names`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
 **Status:** `done`
 
@@ -2724,9 +2724,9 @@ Hashing Algorithm."
 **Spec:** §7.5.1.1.6, p. 36 — "2. The Request structure shall have two
 members".
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`
 
 **Status:** `done`
 
@@ -2735,9 +2735,9 @@ members".
 **Spec:** §7.5.1.1.6, p. 36 — "a. The first member of the Request structure
 shall be named “header” and be of type dds::rpc::RequestHeader."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`
 
 **Status:** `done`
 
@@ -2746,10 +2746,10 @@ shall be named “header” and be of type dds::rpc::RequestHeader."
 **Spec:** §7.5.1.1.6, p. 36 — "b. The second member of the Request structure
 shall be named “data” and be of type ${interfaceName}_Call."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_request_has_header_and_call_union`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_basic_request_has_header_and_call_union`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
 **Status:** `done`
 
@@ -2770,11 +2770,11 @@ shall be named “data” and be of type ${interfaceName}_Call."
 Reply structure. [...] 1. The Return union name shall be
 “${interfaceName}_Return” in the same module as the interface."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (with `reply = true`; Commit `9467d977720c`);
-`crates/lang-rules/src/adapter/interface.rs::return_union_name` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (with `reply = true`; Commit `64d55a6c8f94`);
+`crates/lang-rules/src/adapter/interface.rs::return_union_name` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_excludes_oneway_methods`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_excludes_oneway_methods`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
 **Status:** `done`
 
@@ -2783,9 +2783,9 @@ Reply structure. [...] 1. The Return union name shall be
 **Spec:** §7.5.1.1.7, p. 37 — "2. The Return union discriminator type shall be
 of type long."
 
-**Repo:** `crates/rpc/src/codegen.rs::CallUnionCase::discriminator` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::CallUnionCase::discriminator` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_labels_are_the_operation_hashes`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes`
 
 **Status:** `done`
 
@@ -2795,9 +2795,9 @@ of type long."
 label containing a member named “unknownOp” of type
 dds::rpc::UnknownOperation."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (`default_member`, `UNKNOWN_OP_MEMBER`; Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (`default_member`, `UNKNOWN_OP_MEMBER`; Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::both_unions_carry_the_default_unknown_operation_case`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_both_unions_carry_the_default_unknown_operation_case`
 
 **Status:** `done`
 
@@ -2807,9 +2807,9 @@ dds::rpc::UnknownOperation."
 “${interfaceName}_${operationName}_Hash” shall be available in the same
 namespace as the interface is defined in."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (`hash_constant`, one constant per operation for both unions; Commit `9467d977720c`)
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (`hash_constant`, one constant per operation for both unions; Commit `64d55a6c8f94`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
 **Status:** `done`
 
@@ -2818,9 +2818,9 @@ namespace as the interface is defined in."
 **Spec:** §7.5.1.1.7, p. 37 — "b. The value of the constant shall be the HASH
 of the name of the operation (not qualified)."
 
-**Repo:** `crates/lang-rules/src/adapter/interface.rs::operation_hash` (Commit `9467d977720c`)
+**Repo:** `crates/lang-rules/src/adapter/interface.rs::operation_hash` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_labels_are_the_operation_hashes`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes`
 
 **Status:** `done`
 
@@ -2829,9 +2829,9 @@ of the name of the operation (not qualified)."
 **Spec:** §7.5.1.1.7, p. 37 — "5. The Return union shall have a case label for
 each operation in the interface".
 
-**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_excludes_oneway_methods`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_excludes_oneway_methods`
 
 **Status:** `done` — `oneway` operations get no case (item for production (87) in §7.3.1.1).
 
@@ -2841,9 +2841,9 @@ each operation in the interface".
 ${interfaceName}_${operationName}_Hash as computed using the HASH algorithm of
 the unqualified name of the operation."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_labels_are_the_operation_hashes`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes`
 
 **Status:** `done`
 
@@ -2852,9 +2852,9 @@ the unqualified name of the operation."
 **Spec:** §7.5.1.1.7, p. 37 — "b. The member name for the case label shall be
 the operation name and the type shall be ${interfaceName}_${operationName}_Result."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (`case_type_name`; Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_call_union` (`case_type_name`; Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_excludes_oneway_methods`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_excludes_oneway_methods`
 
 **Status:** `done`
 
@@ -2863,10 +2863,10 @@ the operation name and the type shall be ${interfaceName}_${operationName}_Resul
 **Spec:** §7.5.1.1.7, p. 38 — "1. The Reply structure name shall be
 “${interfaceName}_Reply,”."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`);
-`crates/lang-rules/src/adapter/interface.rs::reply_type_name` (Commit `d047dc5f497c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`);
+`crates/lang-rules/src/adapter/interface.rs::reply_type_name` (Commit `ad892a10764a`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_pair_topic_names`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_4_2_basic_pair_topic_names`
 
 **Status:** `done`
 
@@ -2875,9 +2875,9 @@ the operation name and the type shall be ${interfaceName}_${operationName}_Resul
 **Spec:** §7.5.1.1.7, p. 38 — "2. The Reply structure shall be defined within
 the same module as the original interface."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (Commit `d047dc5f497c`)
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (Commit `ad892a10764a`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
 **Status:** `done`
 
@@ -2885,9 +2885,9 @@ the same module as the original interface."
 
 **Spec:** §7.5.1.1.7, p. 38 — "3. The Reply structure shall have two members".
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_excludes_oneway_methods`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_excludes_oneway_methods`
 
 **Status:** `done`
 
@@ -2896,9 +2896,9 @@ the same module as the original interface."
 **Spec:** §7.5.1.1.7, p. 38 — "a. The first member of the Reply structure shall
 be named “header” and be of type dds::rpc::ReplyHeader."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
 **Status:** `done`
 
@@ -2907,10 +2907,10 @@ be named “header” and be of type dds::rpc::ReplyHeader."
 **Spec:** §7.5.1.1.7, p. 38 — "b. The second member of the Reply type shall be
 named “data” and be of type ${interfaceName}_Return."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `9467d977720c`)
+**Repo:** `crates/rpc/src/codegen.rs::build_basic_pair` (Commit `64d55a6c8f94`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::basic_reply_excludes_oneway_methods`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_5_basic_reply_excludes_oneway_methods`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`
 
 **Status:** `done`
 
@@ -2932,10 +2932,10 @@ of `RobotControl_Reply` `reply`, rule 3b names it `data`.
 structures and unions. [...] The Request and Reply types for a derived
 interface includes operations defined only in the derived interface."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (topic types from `service.all_operations()`, the interface's own operations only; Commit `d047dc5f497c`);
-`crates/lang-rules/src/emit/interface_rust.rs::declare` (Commit `638ba5279072`)
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare` (topic types from `service.all_operations()`, the interface's own operations only; Commit `ad892a10764a`);
+`crates/lang-rules/src/emit/interface_rust.rs::declare` (Commit `7751c4065bd3`)
 
-**Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::a_derived_client_reaches_an_inherited_operation_through_its_base_field` (Commit `15c8509f56b1`)
+**Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::a_derived_client_reaches_an_inherited_operation_through_its_base_field` (Commit `026f15d1df46`)
 
 **Status:** `done`
 
@@ -2948,9 +2948,9 @@ and N reply topics. Consequently, it will necessitate N DataWriters and N
 DataReaders. The types and the topic names are obtained as specified in 7.4.2
 Basic Service Mapping."
 
-**Repo:** `crates/lang-rules/src/emit/interface_rust.rs::client_impl` (one `Requester` per level); `crates/lang-rules/src/emit/interface_rust.rs` (one dispatcher per level, each with its own `Replier`; Commit `638ba5279072`)
+**Repo:** `crates/lang-rules/src/emit/interface_rust.rs::client_impl` (one `Requester` per level); `crates/lang-rules/src/emit/interface_rust.rs` (one dispatcher per level, each with its own `Replier`; Commit `7751c4065bd3`)
 
-**Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::a_derived_client_reaches_an_inherited_operation_through_its_base_field` (Commit `15c8509f56b1`)
+**Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::a_derived_client_reaches_an_inherited_operation_through_its_base_field` (Commit `026f15d1df46`)
 
 **Status:** `done`
 
@@ -2976,13 +2976,13 @@ call invocation and return, this specification defines additional built-in
 annotations. [...] The Enhanced Service Mapping uses the [DDS-XTypes] type
 system in addition to the annotations defined in 7.5.1.2.1".
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service` and `build_enhanced_service_with` (Commit `60dbad781c53`);
-topic types and codecs in `crates/lang-rules/src/emit/interface_rust/enhanced.rs` (Commit `076900132ad5`), `crates/lang-rules/src/emit/interface_cpp/enhanced.rs`, `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs` (Commit `99bda16e455b`), `crates/lang-rules/src/emit/interface_java/enhanced.rs`, `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs` (Commit `9ab3b695e13c`);
-selected by `zerodds-idlc generate --rpc-mapping basic|enhanced|enhanced-empty` (Commit `f3a2d2137b4a`);
-runtime `zerodds_rpc::endpoint_options::RpcMapping::Enhanced` (Commit `3d4c42cad194`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service` and `build_enhanced_service_with` (Commit `0edbbcf11324`);
+topic types and codecs in `crates/lang-rules/src/emit/interface_rust/enhanced.rs` (Commit `41b3b02f7a20`), `crates/lang-rules/src/emit/interface_cpp/enhanced.rs`, `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs` (Commit `45ead22cc2b9`), `crates/lang-rules/src/emit/interface_java/enhanced.rs`, `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs` (Commit `2ea77f7dad8a`);
+selected by `zerodds-idlc generate --rpc-mapping basic|enhanced|enhanced-empty` (Commit `c17fbe91ffe7`);
+runtime `zerodds_rpc::endpoint_options::RpcMapping::Enhanced` (Commit `e305669e2c42`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_request_is_a_choice_over_the_operations`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_enhanced_request_is_a_choice_over_the_operations`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_call_is_answered_through_the_related_sample_identity`
 
 **Status:** `done` — the Request, Reply, In, Out and Result structures with `@Choice`, `@Autoid`, `remoteEx` and flat inheritance exist in the model and in the generators for Rust, C++ and Java; the Rust runtime correlates through `PID_RELATED_SAMPLE_IDENTITY`.
@@ -2992,21 +2992,21 @@ runtime `zerodds_rpc::endpoint_options::RpcMapping::Enhanced` (Commit `3d4c42cad
 **Spec:** §7.5.1.2.1, p. 43 — "All annotations below are defined in the
 dds::rpc module."
 
-**Repo:** `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`: `Choice`, `Autoid`, `Empty`, `Mutable`; Commit `3c21f462c6e2`);
-`crates/idl-lower/src/annotation.rs::Lowering::apply_user_annotation` (Commit `20ca736326e4`)
+**Repo:** `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`: `Choice`, `Autoid`, `Empty`, `Mutable`; Commit `6c7f585a36ee`);
+`crates/idl-lower/src/annotation.rs::Lowering::apply_user_annotation` (Commit `b53b12d04ba2`)
 
 **Tests:** `crates/ast/tests/node_space.rs::every_builtin_annotation_of_the_spec_list_is_present`,
 `crates/idl-lower/tests/annotations.rs::the_dds_rpc_annotations_resolve_to_their_builtin_declarations`,
 `crates/idl-lower/tests/annotations.rs::the_qualified_dds_rpc_spelling_is_the_same_annotation`
 
-**Status:** `done` — the annotations of the module are predefined and resolve to the same declaration under their simple name (`@Choice`) and in the qualified spelling (`@dds::rpc::Choice`, `@dds::rpc::Autoid`) (test `crates/idl-lower/tests/annotations.rs::the_qualified_dds_rpc_spelling_is_the_same_annotation`, commit `ff347687da13`). The model keeps the declarations in the built-in module `@builtin`; a module `dds::rpc` in `crates/ast` would move the fixed indices of the built-in nodes, and the spec asks for the name, not for a module structure of the model. A built-in annotation has no `TypeObject` and does not appear as `ann_custom`; the module name is visible in no output (no `TypeObject` and no generated file names the declaration; only `scoped_name_of` yields `@builtin::Choice` internally; read from the code, not measured) (`61c11da59a10`, test `crates/lang-rules/tests/enhanced_bindings.rs::a_choice_structure_written_in_idl_has_a_mutable_type_object_with_optional_members`).
+**Status:** `done` — the annotations of the module are predefined and resolve to the same declaration under their simple name (`@Choice`) and in the qualified spelling (`@dds::rpc::Choice`, `@dds::rpc::Autoid`) (test `crates/idl-lower/tests/annotations.rs::the_qualified_dds_rpc_spelling_is_the_same_annotation`, commit `ecda940289b7`). The model keeps the declarations in the built-in module `@builtin`; a module `dds::rpc` in `crates/ast` would move the fixed indices of the built-in nodes, and the spec asks for the name, not for a module structure of the model. A built-in annotation has no `TypeObject` and does not appear as `ann_custom`; the module name is visible in no output (no `TypeObject` and no generated file names the declaration; only `scoped_name_of` yields `@builtin::Choice` internally; read from the code, not measured) (`9df3125c22b8`, test `crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_1_1_a_choice_structure_written_in_idl_has_a_mutable_type_object_with_optional_members`).
 
 ### §7.5.1.2.1.1 @Choice: declaration
 
 **Spec:** §7.5.1.2.1.1, p. 43 — "The @Choice annotation is a placeholder
 annotation defined as follows. @Annotation local interface Choice { };"
 
-**Repo:** `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`, Eintrag `Choice`; Commit `3c21f462c6e2`)
+**Repo:** `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`, Eintrag `Choice`; Commit `6c7f585a36ee`)
 
 **Tests:** `crates/ast/tests/node_space.rs::every_builtin_annotation_of_the_spec_list_is_present`
 
@@ -3017,7 +3017,7 @@ annotation defined as follows. @Annotation local interface Choice { };"
 **Spec:** §7.5.1.2.1.1, p. 43 — "The @Choice annotation is allowed on
 structures only."
 
-**Repo:** `crates/idl-lower/src/annotation.rs::Lowering::misplaced` (entry for `Choice`; Commit `ff347687da13`)
+**Repo:** `crates/idl-lower/src/annotation.rs::Lowering::misplaced` (entry for `Choice`; Commit `ecda940289b7`)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::choice_is_refused_on_anything_but_a_structure`
 
@@ -3030,56 +3030,56 @@ interpreted as if the structure had the @Extensibility(MUTABLE_EXTENSIBILITY)
 annotation and all the members of the structure had the @Optional annotation."
 
 **Repo:** `crates/rpc/src/codegen.rs::autoid_choice`;
-`crates/lang-rules/src/emit/interface_rust/enhanced.rs` (`choice_codec`: DHEADER and one EMHEADER per present member), `crates/lang-rules/src/emit/interface_cpp/enhanced.rs` (`std::optional` members), `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs`, `crates/lang-rules/src/emit/interface_java/enhanced.rs`, `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs` (Commits `076900132ad5`, `99bda16e455b`, `9ab3b695e13c`)
+`crates/lang-rules/src/emit/interface_rust/enhanced.rs` (`choice_codec`: DHEADER and one EMHEADER per present member), `crates/lang-rules/src/emit/interface_cpp/enhanced.rs` (`std::optional` members), `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs`, `crates/lang-rules/src/emit/interface_java/enhanced.rs`, `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs` (Commits `41b3b02f7a20`, `45ead22cc2b9`, `2ea77f7dad8a`)
 
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_request_is_a_mutable_structure_with_one_member`,
-`crates/lang-rules/tests/enhanced_cpp_calls.rs::the_codec_writes_the_member_ids_and_length_codes_of_the_clause`,
-`crates/lang-rules/tests/enhanced_java_calls.rs::the_codec_writes_the_member_ids_and_length_codes_of_the_clause`,
+`crates/lang-rules/tests/enhanced_cpp_calls.rs::rpc_7_5_1_2_1_1_the_codec_writes_the_member_ids_and_length_codes_of_the_clause`,
+`crates/lang-rules/tests/enhanced_java_calls.rs::rpc_7_5_1_2_1_1_the_codec_writes_the_member_ids_and_length_codes_of_the_clause`,
 `crates/idl-lower/tests/annotations.rs::a_choice_structure_is_mutable_with_every_member_optional`,
 `crates/idl-lower/tests/annotations.rs::a_choice_structure_cannot_be_final_or_appendable`,
-`crates/lang-rules/tests/enhanced_bindings.rs::a_choice_structure_written_in_idl_has_a_mutable_type_object_with_optional_members`
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_1_1_a_choice_structure_written_in_idl_has_a_mutable_type_object_with_optional_members`
 
-**Status:** `done` — the structures the generator creates (`Request`, `Reply`, `Result`) are MUTABLE with optional members. For a `@Choice` structure written in IDL, `crates/idl-lower` sets MUTABLE and every member `@optional`; its TypeObject is MUTABLE with optional members. A `@Choice` structure explicitly declared `@final` or `@appendable` is an error. Commit `ff347687da13`.
+**Status:** `done` — the structures the generator creates (`Request`, `Reply`, `Result`) are MUTABLE with optional members. For a `@Choice` structure written in IDL, `crates/idl-lower` sets MUTABLE and every member `@optional`; its TypeObject is MUTABLE with optional members. A `@Choice` structure explicitly declared `@final` or `@appendable` is an error. Commit `ecda940289b7`.
 
 ### §7.5.1.2.1.1 @Choice: exactly one member present
 
 **Spec:** §7.5.1.2.1.1, p. 43 — "Furthermore, exactly one member shall be
 present at any given time."
 
-**Repo:** `crates/lang-rules/src/emit/interface_rust/enhanced.rs` (`enum` with one variant per member); `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs` and `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs` (count of the members set when writing, error for a number other than 1; Commits `076900132ad5`, `99bda16e455b`, `9ab3b695e13c`)
+**Repo:** `crates/lang-rules/src/emit/interface_rust/enhanced.rs` (`enum` with one variant per member); `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs` and `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs` (count of the members set when writing, error for a number other than 1; Commits `41b3b02f7a20`, `45ead22cc2b9`, `2ea77f7dad8a`)
 
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_request_is_a_mutable_structure_with_one_member`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_request_with_two_active_members_is_refused`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_choice_without_a_member_is_refused`,
-`crates/lang-rules/tests/enhanced_java_calls.rs::a_choice_holds_exactly_one_member_on_both_sides_of_the_codec`,
-`crates/rpc/tests/java_enhanced_codec.rs::the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
+`crates/lang-rules/tests/enhanced_java_calls.rs::rpc_7_5_1_2_1_1_a_choice_holds_exactly_one_member_on_both_sides_of_the_codec`,
+`crates/rpc/tests/java_enhanced_codec.rs::rpc_7_5_1_2_1_1_the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
 
-**Status:** `done` — in Rust the `enum` form makes exactly one member present; the decoder refuses zero or two members (tests; commit `8891b6d7f067`). In Java the encoder and the decoder refuse zero and more than one member, and the generated runtime answers with `RemoteInvalidArgumentError` (tests; commit `2051ce1a2a87`). In C++ the codec counts the members set when writing and throws `dds::rpc::UnsupportedError` for a number other than 1; the decoder refuses zero and two members (`576ea3df00b1`). Test: `crates/rpc/tests/cpp/enhanced_function_call_roundtrip.cpp` through `crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service` (octets with no member and with two members are refused and answered `REMOTE_EX_INVALID_ARGUMENT` on the wire; `c398e1587cf7`, run on the Linux test host).
+**Status:** `done` — in Rust the `enum` form makes exactly one member present; the decoder refuses zero or two members (tests; commit `f88947810821`). In Java the encoder and the decoder refuse zero and more than one member, and the generated runtime answers with `RemoteInvalidArgumentError` (tests; commit `82ec363b6b82`). In C++ the codec counts the members set when writing and throws `dds::rpc::UnsupportedError` for a number other than 1; the decoder refuses zero and two members (`869a329a6b48`). Test: `crates/rpc/tests/cpp/enhanced_function_call_roundtrip.cpp` through `crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service` (octets with no member and with two members are refused and answered `REMOTE_EX_INVALID_ARGUMENT` on the wire; `49525d7e5e80`, run on the Linux test host).
 
 ### §7.5.1.2.1.2 @Autoid on structures and members
 
 **Spec:** §7.5.1.2.1.2, p. 43 — "The @Autoid annotation shall be allowed on
 structures and data members."
 
-**Repo:** `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`, entry `Autoid`; Commit `3c21f462c6e2`);
+**Repo:** `crates/ast/src/node/annotation.rs` (`BUILTIN_ANNOTATIONS`, entry `Autoid`; Commit `6c7f585a36ee`);
 `crates/idl-lower/src/annotation.rs::enumerated_parameter` (reads the argument `HASH`/`SEQUENTIAL`)
 
 **Tests:** `crates/ast/tests/node_space.rs::every_builtin_annotation_of_the_spec_list_is_present`,
 `crates/idl-lower/tests/annotations.rs::autoid_on_a_structure_assigns_hashed_member_ids`,
 `crates/idl-lower/tests/annotations.rs::autoid_on_a_member_hashes_that_members_name`,
 `crates/idl-lower/tests/annotations.rs::autoid_is_refused_where_there_are_no_member_ids`,
-`crates/lang-rules/tests/enhanced_bindings.rs::an_autoid_structure_written_in_idl_has_hashed_member_ids_in_its_type_object`
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_1_2_an_autoid_structure_written_in_idl_has_hashed_member_ids_in_its_type_object`
 
-**Status:** `done` — `Lowering::misplaced` allows `@Autoid` on structures and structure members and refuses it on other elements. On a structure written in IDL, `Lowering::dds_rpc_autoid` sets the member id of every member to the HASH of the member name (`hashed_member_id`); on a single member the HASH of its name applies. The TypeObject carries these ids. Commit `ff347687da13`.
+**Status:** `done` — `Lowering::misplaced` allows `@Autoid` on structures and structure members and refuses it on other elements. On a structure written in IDL, `Lowering::dds_rpc_autoid` sets the member id of every member to the HASH of the member name (`hashed_member_id`); on a single member the HASH of its name applies. The TypeObject carries these ids. Commit `ecda940289b7`.
 
 ### §7.5.1.2.1.2 Synthesized structures carry @Autoid
 
 **Spec:** §7.5.1.2.1.2, p. 43 — "The structures of the topic types synthesized
 from the interface shall be annotated as @Autoid."
 
-**Repo:** `crates/rpc/src/codegen.rs::autoid`; `crates/lang-rules/src/adapter/interface.rs::autoid_struct` (Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::autoid`; `crates/lang-rules/src/adapter/interface.rs::autoid_struct` (Commit `0edbbcf11324`)
 
-**Tests:** `crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`
+**Tests:** `crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`
 
 **Status:** `done` — every synthesized structure has `autoid: true`; the test compares the marks (`@Autoid` or `@Choice @Autoid`) of all structures of the `Calculator` example with the list from §7.5.1.2.
 
@@ -3090,10 +3090,10 @@ member-id of each member shall be computed using the HASH algorithm (defined in
 7.5.1.1.2 The Hashing Algorithm) applied to the name of the member."
 
 **Repo:** `crates/rpc/src/codegen.rs::autoid` with `MEMBER_ID_MASK` and `crate::rpc_hash::rpc_member_hash`;
-`crates/lang-rules/src/adapter/interface.rs::member_id` (Commit `60dbad781c53`)
+`crates/lang-rules/src/adapter/interface.rs::member_id` (Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_autoid_member_ids_are_the_hash_of_the_name`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_member_ids_are_the_hash_of_the_names`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_2_enhanced_autoid_member_ids_are_the_hash_of_the_name`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_1_2_the_member_ids_are_the_hash_of_the_names`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_request_is_a_mutable_structure_with_one_member`
 
 **Status:** `done` — the member id is the HASH of the name (§7.5.1.1.2), masked to the low 28 bits (`0x0FFF_FFFF`) because an EMHEADER carries a member id of 28 bits in XTypes 1.3 §7.4.3.4.2. The HASH itself has 32 bits.
@@ -3105,10 +3105,10 @@ result of @Autoid annotation must be detected. If a structure annotated as
 @Autoid has a hash collision due to two or more member names map to the same
 hash-code, the collision shall be reported as an error."
 
-**Repo:** `crates/rpc/src/codegen.rs::autoid` (`RpcError::MemberIdCollision`; Commit `60dbad781c53`);
-`crates/lang-rules/src/adapter/interface.rs::autoid_struct` (`BindingError::Codec`; Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::autoid` (`RpcError::MemberIdCollision`; Commit `0edbbcf11324`);
+`crates/lang-rules/src/adapter/interface.rs::autoid_struct` (`BindingError::Codec`; Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_member_id_collision_is_an_error`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_2_enhanced_member_id_collision_is_an_error`
 
 **Status:** `done` — `m9852` and `m12254` give the same 28-bit id and yield `MemberIdCollision`. The generator path (`autoid_struct` in `interface.rs`) checks the same way; it has no test of its own.
 
@@ -3118,12 +3118,12 @@ hash-code, the collision shall be reported as an error."
 empty. The code synthesized from an empty structure is implementation
 dependent."
 
-**Repo:** `crates/rpc/src/codegen.rs::EmptyOperationStyle::EmptyAnnotation` and `EnhancedOptions` (Commit `153b17a841b9`);
-`zerodds-idlc generate --rpc-mapping enhanced-empty` (Commit `f3a2d2137b4a`);
+**Repo:** `crates/rpc/src/codegen.rs::EmptyOperationStyle::EmptyAnnotation` and `EnhancedOptions` (Commit `d1824c24a497`);
+`zerodds-idlc generate --rpc-mapping enhanced-empty` (Commit `c17fbe91ffe7`);
 codecs for a structure without members in `crates/lang-rules/src/emit/interface_rust/enhanced.rs`, `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs`, `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_empty_operation_can_be_an_empty_structure`,
-`crates/lang-rules/tests/enhanced_empty_style.rs::the_empty_structure_reading_gives_it_no_member`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_3_enhanced_empty_operation_can_be_an_empty_structure`,
+`crates/lang-rules/tests/enhanced_empty_style.rs::rpc_7_5_1_2_1_3_the_empty_structure_reading_gives_it_no_member`,
 `crates/rpc-rust-e2e/tests/enhanced_empty.rs::an_empty_structure_has_no_octets`
 
 **Status:** `done` — an operation with nothing to carry can be mapped as an empty structure with `@Empty`; the default stays the `dummy` member (§7.5.1.1.4 rule 3c, example in §7.5.1.2.6).
@@ -3134,10 +3134,10 @@ codecs for a structure without members in `crates/lang-rules/src/emit/interface_
 operations."
 
 **Repo:** `crates/lang-rules/src/adapter/interface.rs` (`Operation::mutable` from `applied_annotation(&op.facets, "Mutable")`);
-`crates/rpc/src/service_mapping.rs` (`MethodDef::mutable`); Commits `3c21f462c6e2`, `20ca736326e4`
+`crates/rpc/src/service_mapping.rs` (`MethodDef::mutable`); Commits `6c7f585a36ee`, `b53b12d04ba2`
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::the_dds_rpc_annotations_resolve_to_their_builtin_declarations`,
-`crates/rpc/src/codegen.rs::tests::enhanced_mutable_operation_has_mutable_structures`
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures`
 
 **Status:** `done` — `@Mutable` on an operation resolves and is read.
 
@@ -3148,11 +3148,11 @@ type declaration of the synthesized call and return structures so that they are
 declared with the @Extensibility(MUTABLE_EXTENSIBILITY) annotation."
 
 **Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`method.mutable` for `In`, `Out` and `Result`);
-`crates/lang-rules/src/emit/interface_rust/enhanced.rs::mutable_struct_codec` (Commit `076900132ad5`)
+`crates/lang-rules/src/emit/interface_rust/enhanced.rs::mutable_struct_codec` (Commit `41b3b02f7a20`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_mutable_operation_has_mutable_structures`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_mutable_operation_has_mutable_structures`,
-`crates/lang-rules/tests/enhanced_cpp_calls.rs::the_codec_writes_the_member_ids_and_length_codes_of_the_clause`
+`crates/lang-rules/tests/enhanced_cpp_calls.rs::rpc_7_5_1_2_1_1_the_codec_writes_the_member_ids_and_length_codes_of_the_clause`
 
 **Status:** `done` — the structures of the operation with `@Mutable` are MUTABLE, those of the other operations are not.
 
@@ -3162,10 +3162,10 @@ declared with the @Extensibility(MUTABLE_EXTENSIBILITY) annotation."
 as defined in 7.5.1.1.2 The Hashing Algorithm with the following additional
 rules."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` with `method_in_members` (Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` with `method_in_members` (Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_inout_param_is_in_both_structures`,
-`crates/rpc/src/codegen.rs::tests::enhanced_empty_operation_has_a_dummy_member_by_default`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_4_enhanced_inout_param_is_in_both_structures`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_2_enhanced_empty_operation_has_a_dummy_member_by_default`
 
 **Status:** `done` — the In structure has the members of the Basic mapping (`in` and `inout` parameters, otherwise `dummy`).
 
@@ -3175,9 +3175,9 @@ rules."
 then the synthesized In structure shall have the annotation
 @Extensibility(MUTABLE_EXTENSIBILITY)."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`autoid_struct(..., method.mutable, ...)`; Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`autoid_struct(..., method.mutable, ...)`; Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_mutable_operation_has_mutable_structures`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_mutable_operation_has_mutable_structures`
 
 **Status:** `done`
@@ -3189,10 +3189,10 @@ identical to that defined in 7.5.1.1.5 [...] 1. If the operation has the
 @Mutable annotation, then the synthesized Out structure shall have the
 annotation @Extensibility(MUTABLE_EXTENSIBILITY)."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` with `method_out_members` (Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` with `method_out_members` (Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_out_carries_the_return_value`,
-`crates/rpc/src/codegen.rs::tests::enhanced_mutable_operation_has_mutable_structures`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_out_carries_the_return_value`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures`
 
 **Status:** `done`
 
@@ -3202,9 +3202,9 @@ annotation @Extensibility(MUTABLE_EXTENSIBILITY)."
 Out structure and a Result structure. [...] 2. The Result structure name shall
 be “${interfaceName}_${operationName}_Result.”"
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_result_carries_out_and_the_exceptions`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_result_carries_out_and_the_exceptions`
 
 **Status:** `done`
 
@@ -3213,10 +3213,10 @@ be “${interfaceName}_${operationName}_Result.”"
 **Spec:** §7.5.1.2.3, p. 44 — "3. The Result structure shall have the
 annotation @Choice."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`autoid_choice`; Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`autoid_choice`; Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_result_carries_out_and_the_exceptions`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_result_carries_out_and_the_exceptions`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`
 
 **Status:** `done`
 
@@ -3225,10 +3225,10 @@ annotation @Choice."
 **Spec:** §7.5.1.2.3, p. 44 — "4. The Result structure shall have the
 annotation @Autoid."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`autoid_choice`; Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`autoid_choice`; Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_result_carries_out_and_the_exceptions`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_result_carries_out_and_the_exceptions`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`
 
 **Status:** `done`
 
@@ -3237,9 +3237,9 @@ annotation @Autoid."
 **Spec:** §7.5.1.2.3, p. 44 — "5. The Result structure shall have a first
 member with name “result” and with type ${interfaceName}_${operationName}_Out."
 
-**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`RESULT_MEMBER`; Commit `60dbad781c53`)
+**Repo:** `crates/rpc/src/codegen.rs::build_enhanced_operation` (`RESULT_MEMBER`; Commit `0edbbcf11324`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_result_carries_out_and_the_exceptions`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_result_carries_out_and_the_exceptions`
 
 **Status:** `done`
 ### §7.5.1.2.3 Result structure: one member per exception
@@ -3254,12 +3254,12 @@ type."
 name in lower case),
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_result_carries_out_and_the_exceptions`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_result_carries_out_and_the_exceptions`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_result_is_a_choice_of_the_result_and_the_exceptions`
 
 **Status:** `done` — the model adds a member `<lower-case name>_ex` of the
-exception type for each exception (60dbad781c53; 076900132ad5 for the
+exception type for each exception (0edbbcf11324; 41b3b02f7a20 for the
 generators). The Rust binding encodes the member under the member id
 `toobig_ex`.
 
@@ -3273,11 +3273,11 @@ annotation, then the synthesized Result structure shall have the annotation
 `EnhancedStruct::mutable` on `In`, `Out` and `Result`),
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_mutable_operation_has_mutable_structures`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_mutable_operation_has_mutable_structures`
 
 **Status:** `done` — if the operation has `@Mutable`, `In`, `Out` and `Result`
-are MUTABLE, for other operations they are not (60dbad781c53; 076900132ad5). The
+are MUTABLE, for other operations they are not (0edbbcf11324; 41b3b02f7a20). The
 second test checks the octets of the `In` structure (DHEADER and one EMHEADER
 per member); for `Result` only the model test checks it.
 
@@ -3289,11 +3289,11 @@ per member); for `Result` only the model test checks it.
 **Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service_with` (`${interfaceName}_Request`),
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_request_is_a_choice_over_the_operations`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_enhanced_request_is_a_choice_over_the_operations`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`
 
 **Status:** `done` — each interface gets exactly one structure
-`${interfaceName}_Request` (60dbad781c53; 076900132ad5). The generators for
+`${interfaceName}_Request` (0edbbcf11324; 41b3b02f7a20). The generators for
 Rust, C++ and Java declare it
 (`enhanced_bindings.rs::rust_declares_the_structures_of_the_clause`,
 `cpp_declares_the_structures_of_the_clause`,
@@ -3307,12 +3307,12 @@ annotation."
 **Repo:** `crates/rpc/src/codegen.rs::autoid_choice`,
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_request_is_a_choice_over_the_operations`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_enhanced_request_is_a_choice_over_the_operations`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_request_is_a_mutable_structure_with_one_member`
 
 **Status:** `done` — `EnhancedStruct::choice` is set for the Request structure
-(60dbad781c53; 076900132ad5). The Rust binding encodes it as a PL_CDR2 object
+(0edbbcf11324; 41b3b02f7a20). The Rust binding encodes it as a PL_CDR2 object
 with exactly one member (DHEADER, EMHEADER, member).
 
 ### §7.5.1.2.4 Request structure with @Autoid
@@ -3323,12 +3323,12 @@ annotation."
 **Repo:** `crates/rpc/src/codegen.rs::autoid` (member id = HASH of the name, 28 bits),
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_autoid_member_ids_are_the_hash_of_the_name`,
-`crates/rpc/src/codegen.rs::tests::enhanced_member_id_collision_is_an_error`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_member_ids_are_the_hash_of_the_names`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_2_enhanced_autoid_member_ids_are_the_hash_of_the_name`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_2_enhanced_member_id_collision_is_an_error`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_1_2_the_member_ids_are_the_hash_of_the_names`
 
 **Status:** `done` — the Request structure has `@Autoid`; the member id is the
-HASH of the member name cut to 28 bits (60dbad781c53; 076900132ad5). A collision
+HASH of the member name cut to 28 bits (0edbbcf11324; 41b3b02f7a20). A collision
 of two names is an error (`RpcError::MemberIdCollision`).
 
 ### §7.5.1.2.4 Request structure: one member per operation
@@ -3340,13 +3340,13 @@ name. b. The member type shall be ${interfaceName}_${operationName}_In."
 **Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service_with` (one member per operation,
 type `${I}_${op}_In`), `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_request_is_a_choice_over_the_operations`,
-`crates/rpc/src/codegen.rs::tests::enhanced_inheritance_is_flattened`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_enhanced_request_is_a_choice_over_the_operations`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_4_enhanced_inheritance_is_flattened`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`
 
 **Status:** `done` — the member name is the operation name, the type is
 `${interfaceName}_${operationName}_In`; inherited operations carry the type name
-of their base interface (`Adder_add_In`). 60dbad781c53; 076900132ad5.
+of their base interface (`Adder_add_In`). 0edbbcf11324; 41b3b02f7a20.
 
 ### §7.5.1.2.5 Reply structure ${interfaceName}_Reply
 
@@ -3356,11 +3356,11 @@ of their base interface (`Adder_add_In`). 60dbad781c53; 076900132ad5.
 **Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service_with` (`${interfaceName}_Reply`),
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_reply_has_the_results_and_remote_ex`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_5_enhanced_reply_has_the_results_and_remote_ex`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`
 
 **Status:** `done` — each interface gets exactly one structure
-`${interfaceName}_Reply` (60dbad781c53; 076900132ad5). The three generators
+`${interfaceName}_Reply` (0edbbcf11324; 41b3b02f7a20). The three generators
 declare it (`enhanced_bindings.rs::rust_declares_the_structures_of_the_clause`,
 `cpp_declares_the_structures_of_the_clause`,
 `java_declares_the_structures_of_the_clause`).
@@ -3373,12 +3373,12 @@ annotation."
 **Repo:** `crates/rpc/src/codegen.rs::autoid_choice`,
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_reply_has_the_results_and_remote_ex`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_5_enhanced_reply_has_the_results_and_remote_ex`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_reply_carries_remote_ex`
 
 **Status:** `done` — `EnhancedStruct::choice` is set for the Reply structure
-(60dbad781c53; 076900132ad5). The Rust binding encodes a Reply with `remoteEx`
+(0edbbcf11324; 41b3b02f7a20). The Rust binding encodes a Reply with `remoteEx`
 as an object with one member.
 
 ### §7.5.1.2.5 Reply structure with @Autoid
@@ -3389,12 +3389,12 @@ annotation."
 **Repo:** `crates/rpc/src/codegen.rs::autoid`,
 `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_autoid_member_ids_are_the_hash_of_the_name`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_member_ids_are_the_hash_of_the_names`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_2_enhanced_autoid_member_ids_are_the_hash_of_the_name`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_1_2_the_member_ids_are_the_hash_of_the_names`
 
 **Status:** `done` — the Reply structure has `@Autoid`, member id as for the
-Request structure (60dbad781c53; 076900132ad5).
-`the_member_ids_are_the_hash_of_the_names` checks all structures of the model,
+Request structure (0edbbcf11324; 41b3b02f7a20).
+`rpc_7_5_1_2_1_2_the_member_ids_are_the_hash_of_the_names` checks all structures of the model,
 the Reply structure included.
 
 ### §7.5.1.2.5 Reply structure: one member per operation
@@ -3406,13 +3406,13 @@ name. b. The member type shall be ${interfaceName}_${operationName}_Result."
 **Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service_with` (one member per operation,
 type `${I}_${op}_Result`), `crates/lang-rules/src/adapter/interface.rs::enhanced_service`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_reply_has_the_results_and_remote_ex`,
-`crates/rpc/src/codegen.rs::tests::enhanced_inheritance_is_flattened`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_5_enhanced_reply_has_the_results_and_remote_ex`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_4_enhanced_inheritance_is_flattened`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`
 
 **Status:** `done` — the member name is the operation name, the type is
 `${interfaceName}_${operationName}_Result`; inherited operations carry the type
-name of the base (`Subtractor_sub_Result`). 60dbad781c53; 076900132ad5.
+name of the base (`Subtractor_sub_Result`). 0edbbcf11324; 41b3b02f7a20.
 
 ### §7.5.1.2.5 Reply structure: member remoteEx
 
@@ -3426,14 +3426,14 @@ the first integer in the range 1 to 2^31 that avoids the collision."
 `crates/lang-rules/src/adapter/interface.rs::remote_ex_member_name`,
 `crates/rpc/src/enhanced.rs::encode_remote_ex_reply`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_reply_has_the_results_and_remote_ex`,
-`crates/rpc/src/codegen.rs::tests::enhanced_remote_ex_avoids_an_operation_of_that_name`,
-`crates/rpc/src/enhanced.rs::tests::a_remote_ex_member_renamed_for_a_colliding_operation_is_found_by_its_name`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_5_enhanced_reply_has_the_results_and_remote_ex`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_5_enhanced_remote_ex_avoids_an_operation_of_that_name`,
+`crates/rpc/src/enhanced.rs::tests::rpc_7_5_1_2_5_a_remote_ex_member_renamed_for_a_colliding_operation_is_found_by_its_name`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_remote_exception_is_the_remote_ex_member`
 
 **Status:** `done` — the Reply structure has the member `remoteEx`; if an
 operation has that name, it is `remoteEx_N` with the first free N from 1
-(60dbad781c53; 076900132ad5). The type is `RemoteExceptionCode_t`: the spec does
+(0edbbcf11324; 41b3b02f7a20). The type is `RemoteExceptionCode_t`: the spec does
 not define the type `dds::rpc::RemoteException_t` it names, §7.5.1.1.1 and
 §7.5.2 define `RemoteExceptionCode_t` (contradiction inside the spec). The tests
 check N = 1; a case with an operation named `remoteEx_1` (N = 2) has no test.
@@ -3462,14 +3462,14 @@ first, base by base, then the interface's own),
 (through `operations_with_interface_flattened`),
 `crates/lang-rules/src/emit/interface_rust/enhanced.rs` (derived dispatcher)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_inheritance_is_flattened`,
-`crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_4_enhanced_inheritance_is_flattened`,
+`crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_derived_request_has_the_inherited_operation`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_derived_dispatcher_serves_an_inherited_member`
 
 **Status:** `done` — `Request` and `Reply` of the derived interface contain the
 inherited operations under the type names of the base; the derived dispatcher
-answers them (60dbad781c53, 076900132ad5, 2b68e33cef9b).
+answers them (0edbbcf11324, 41b3b02f7a20, 7607e8680852).
 
 ### §7.5.1.2.6 Calculator example
 
@@ -3478,10 +3478,10 @@ Subtractor` ("Non-normative Example").
 
 **Repo:** —
 
-**Tests:** `crates/lang-rules/tests/enhanced_bindings.rs::the_model_is_the_clause` (takes the example as its fixture)
+**Tests:** `crates/lang-rules/tests/enhanced_bindings.rs::rpc_7_5_1_2_the_model_is_the_clause` (takes the example as its fixture)
 
 **Status:** `n/a (informative)` — example. The structures of the example are the
-expectation in `the_model_is_the_clause`.
+expectation in `rpc_7_5_1_2_the_model_is_the_clause`.
 
 ### §7.5.1.2.6 Compatibility through the assignability rules
 
@@ -3496,9 +3496,9 @@ type names of the base, `topic_aliases` per parent through `ServiceDef::topic_na
 `crates/discovery/src/sedp/cache.rs::topics_correspond`
 (matching through `topic_aliases`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_inheritance_is_flattened`,
-`crates/rpc/src/topic_naming.rs::tests::every_parent_interface_contributes_one_alias`,
-`crates/dcps/tests/topic_alias_matching.rs::a_reader_on_an_alias_matches_the_writer_over_the_wire`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_4_enhanced_inheritance_is_flattened`,
+`crates/rpc/src/topic_naming.rs::tests::rpc_7_4_3_every_parent_interface_contributes_one_alias`,
+`crates/dcps/tests/topic_alias_matching.rs::rpc_7_4_3_a_reader_on_an_alias_matches_the_writer_over_the_wire`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_member_the_interface_does_not_have_is_unknown_operation`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_calls_a_rust_service`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_calls_a_java_service`,
@@ -3506,7 +3506,7 @@ type names of the base, `topic_aliases` per parent through `ServiceDef::topic_na
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_of_the_base_calls_a_java_service_of_the_derived_interface`,
 `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/TypeConsistencyTest.java`
 
-**Status:** `done` — Rust and C++ are implemented and measured: the same member ids for inherited operations, topic aliases of the parents, matching by alias (928df3c39a42), skipping of unknown members, and the topics carry the `TypeInformation` of their types, so that `decide_type_consistency` evaluates assignability (Rust `da6bf28aade1`; C++ through `zerodds_writer_create_qos_typed` and `zerodds_reader_create_qos_typed` of the C API, `d6f81c0ac615`, `b5363f647417`). Tests: `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::base_and_derived::a_base_client_calls_a_derived_service` (Rust), `crates/rpc/tests/cpp_rpc_real_library.rs::the_cpp_binding_runs_against_libzerodds` (C++, old client against new service through `ev_old`/`ev_new`), structure of the objects: `crates/lang-rules/tests/enhanced_type_information.rs` (Linux test host, green). The Java runtime announces the `TypeInformation` (`TypeDescription`, `RawTypeSupport`, written by the generator: `05372ae52d05`, `d81b41c4459a`); the generated Java code is compiled and has run (`crates/rpc/tests/java_rpc_runtime.rs`), and a Java peer against a Rust peer is measured (`b3748d506a39`, tests `java_peer.rs`, Linux test host). Java matches by assignability as Rust does (`95818352de1`, `e6af3ee9150`, `64134babe64`; item “§7.5.1.2.6 Java: matching of endpoints by aliases and assignability”): `crates/rpc-rust-e2e/tests/java_peer.rs` measures against Rust peers the client of the base against the service of the derived interface in both directions, a changed parameter type and a return type widened to `long long` (both without a match on the Java side) and a member appended to a `@mutable` structure (match, the reply is read); unit test `TypeConsistencyTest.java` (9 cases).
+**Status:** `done` — Rust and C++ are implemented and measured: the same member ids for inherited operations, topic aliases of the parents, matching by alias (bdf9ab1e6caa), skipping of unknown members, and the topics carry the `TypeInformation` of their types, so that `decide_type_consistency` evaluates assignability (Rust `a2bc3b857739`; C++ through `zerodds_writer_create_qos_typed` and `zerodds_reader_create_qos_typed` of the C API, `1f0f710986f4`, `bb1220c3d1b2`). Tests: `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::base_and_derived::a_base_client_calls_a_derived_service` (Rust), `crates/rpc/tests/cpp_rpc_real_library.rs::rpc_7_7_2_5_the_cpp_binding_matches_by_assignability_against_libzerodds` (C++, old client against new service through `ev_old`/`ev_new`), structure of the objects: `crates/lang-rules/tests/enhanced_type_information.rs` (Linux test host, green). The Java runtime announces the `TypeInformation` (`TypeDescription`, `RawTypeSupport`, written by the generator: `145d0036dd82`, `87d07b3ff2a3`); the generated Java code is compiled and has run (`crates/rpc/tests/java_rpc_runtime.rs`), and a Java peer against a Rust peer is measured (`dbb935492284`, tests `java_peer.rs`, Linux test host). Java matches by assignability as Rust does (`2d0f809c6e2`, `9b1608508c5`, `d67a980f80b`; item “§7.5.1.2.6 Java: matching of endpoints by aliases and assignability”): `crates/rpc-rust-e2e/tests/java_peer.rs` measures against Rust peers the client of the base against the service of the derived interface in both directions, a changed parameter type and a return type widened to `long long` (both without a match on the Java side) and a member appended to a `@mutable` structure (match, the reply is read); unit test `TypeConsistencyTest.java` (9 cases).
 
 ### §7.5.2 Local and remote error codes
 
@@ -3530,11 +3530,11 @@ successfully."
 **Repo:** `crates/rpc/src/replier.rs::Replier::tick` (`RemoteExceptionCode::Ok` after a
 successful handler), `Replier::send_reply`
 
-**Tests:** `crates/rpc/src/replier.rs::tests::tick_processes_request_and_writes_reply`,
-`crates/rpc/src/replier.rs::tests::receive_requests_and_send_reply_expose_the_identity`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_2_1_tick_processes_request_and_writes_reply`,
+`crates/rpc/src/replier.rs::tests::rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity`
 
 **Status:** `done` — the replier writes the code `Ok` with the reply; commit of
-the tests f06c1eaf3d3a (replier), 2933b7d28a88 (`send_reply`).
+the tests f06c1eaf3d3a (replier), c5af5c7c138e (`send_reply`).
 
 ### §7.5.2 REMOTE_EX_UNSUPPORTED
 
@@ -3546,16 +3546,16 @@ operation, §7.7.1.1), `crates/lang-rules/src/emit/interface_java/calls.rs` (dis
 of the Java service), `crates/rpc/src/replier.rs::Replier::send_exception`
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`
 (`FunctionCallRoundtrip.java`),
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (`function_call_roundtrip.cpp`),
-`crates/rpc/src/replier.rs::tests::send_exception_answers_with_the_code`
+`crates/rpc/src/replier.rs::tests::rpc_7_5_2_send_exception_answers_with_the_code`
 
 **Status:** `done` — the generated Rust dispatcher, the generated Java service
 and the generated C++ service answer an operation the service does not know with
-`REMOTE_EX_UNSUPPORTED` in the Basic mapping (§7.7.1.1; Rust fbc219a6b735, Java
-c4a249bd251f, C++ 3f74f05ed2b8). The default branch of `answer_method` in
+`REMOTE_EX_UNSUPPORTED` in the Basic mapping (§7.7.1.1; Rust b527a9f58028, Java
+c512ee365514, C++ 62ccb5f757a3). The default branch of `answer_method` in
 `crates/lang-rules/src/emit/interface_cpp/calls.rs` throws
 `RemoteUnsupportedError`; `function_call_roundtrip.cpp` expects that error at
 the client.
@@ -3570,20 +3570,20 @@ structure)."
 code of the handler), `runtime/cpp/include/dds/rpc/core.hpp::detail::remote_exception_code_of`
 (`RemoteInvalidArgumentError`)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::tick_propagates_handler_error_into_reply`,
-`crates/rpc/src/replier.rs::tests::tick_answers_an_undecodable_payload_with_invalid_argument`,
-`crates/rpc/src/replier.rs::tests::receive_requests_answers_an_undecodable_payload_with_invalid_argument`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_handler_error_surfaces_as_remote_exception_at_caller`,
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_5_2_tick_propagates_handler_error_into_reply`,
+`crates/rpc/src/replier.rs::tests::rpc_7_5_2_tick_answers_an_undecodable_payload_with_invalid_argument`,
+`crates/rpc/src/replier.rs::tests::rpc_7_5_2_receive_requests_answers_an_undecodable_payload_with_invalid_argument`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_5_2_e2e_handler_error_surfaces_as_remote_exception_at_caller`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_request_with_two_active_members_is_refused`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_choice_without_a_member_is_refused`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::the_generated_service_answers_two_active_members_with_invalid_argument`,
-`crates/rpc/tests/java_enhanced_codec.rs::the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
+`crates/rpc/tests/java_enhanced_codec.rs::rpc_7_5_1_2_1_1_the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
 (`EnhancedRuntimeChecks.java`),
-`crates/lang-rules/tests/enhanced_java_calls.rs::a_choice_holds_exactly_one_member_on_both_sides_of_the_codec`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+`crates/lang-rules/tests/enhanced_java_calls.rs::rpc_7_5_1_2_1_1_a_choice_holds_exactly_one_member_on_both_sides_of_the_codec`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (`rpc_runtime_roundtrip.cpp`)
 
-**Status:** `done` — the code is sent when the handler supplies it, when the payload of a request cannot be decoded and when a `@Choice` structure holds two active options or none. Rust: `Replier::tick` and `Replier::receive_requests` (commits 8891b6d7f067, 57d849ba9b26). Java: the generated decoder refuses, the runtime answers (2051ce1a2a87). C++: `Replier::pull` in `runtime/cpp/include/dds/rpc.hpp` answers a request it cannot decode with `REMOTE_EX_INVALID_ARGUMENT`, in the Enhanced mapping through the identity of the sample, in the Basic mapping through the identity in the header (before, it was dropped; `c398e1587cf7`). Test: `crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service` (the answer on the wire, run on the Linux test host). The path through the handler is tested in C++ (`RemoteInvalidArgumentError`). Commits of the earlier parts: f06c1eaf3d3a (path through the handler), 3d4c42cad194 (error reply with the default case of the `Return` union).
+**Status:** `done` — the code is sent when the handler supplies it, when the payload of a request cannot be decoded and when a `@Choice` structure holds two active options or none. Rust: `Replier::tick` and `Replier::receive_requests` (commits f88947810821, 58b9ca260b4c). Java: the generated decoder refuses, the runtime answers (82ec363b6b82). C++: `Replier::pull` in `runtime/cpp/include/dds/rpc.hpp` answers a request it cannot decode with `REMOTE_EX_INVALID_ARGUMENT`, in the Enhanced mapping through the identity of the sample, in the Basic mapping through the identity in the header (before, it was dropped; `49525d7e5e80`). Test: `crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service` (the answer on the wire, run on the Linux test host). The path through the handler is tested in C++ (`RemoteInvalidArgumentError`). Commits of the earlier parts: f06c1eaf3d3a (path through the handler), e305669e2c42 (error reply with the default case of the `Return` union).
 
 ### §7.5.2 REMOTE_EX_OUT_OF_RESOURCES
 
@@ -3594,22 +3594,22 @@ out of resources while processing the request."
 `runtime/cpp/include/dds/rpc/core.hpp::detail::remote_exception_code_of`
 (`RemoteOutOfResourcesError`)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::tick_answers_out_of_resources`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_out_of_resources_surfaces_as_remote_exception_at_caller`,
-`crates/rpc/src/replier.rs::tests::send_exception_answers_with_the_code`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_5_2_tick_answers_out_of_resources`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_5_2_e2e_out_of_resources_surfaces_as_remote_exception_at_caller`,
+`crates/rpc/src/replier.rs::tests::rpc_7_5_2_send_exception_answers_with_the_code`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (`RpcRuntimeRoundtrip.java`, `RemoteOutOfResourcesError`)
 
 **Status:** `done` — an application sends the code through the handler
 (`Err(RemoteExceptionCode::OutOfResources)`), in C++ and Java through
 `RemoteOutOfResourcesError`. Rust: the replier writes the code, the caller
-receives `RemoteException(OutOfResources)` (57d849ba9b26). Java: the test throws
+receives `RemoteException(OutOfResources)` (58b9ca260b4c). Java: the test throws
 the error in the service and checks it at the client. In C++
 `rpc_runtime_roundtrip.cpp` checks only the class relation of the error class
 (`static_assert`). No runtime detects a lack of resources itself; the spec does
 not define when a service reports a lack of resources. The Rust runtime does not
 send the code for a failure to encode the reply; that case reports
-`REMOTE_EX_UNKNOWN_EXCEPTION` (fbc219a6b735).
+`REMOTE_EX_UNKNOWN_EXCEPTION` (b527a9f58028).
 
 ### §7.5.2 REMOTE_EX_UNKNOWN_OPERATION
 
@@ -3623,16 +3623,16 @@ is unknown."
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_unknown_member_is_answered_unknown_operation`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_member_the_interface_does_not_have_is_unknown_operation`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_remote_exception_is_the_remote_ex_member`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`
 (`enhanced_function_call_roundtrip.cpp`),
-`crates/rpc/tests/java_enhanced_codec.rs::the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
+`crates/rpc/tests/java_enhanced_codec.rs::rpc_7_5_1_2_1_1_the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
 (`EnhancedRuntimeChecks.java`)
 
 **Status:** `done` — in the Enhanced mapping the generated dispatchers answer an
 unknown operation with `REMOTE_EX_UNKNOWN_OPERATION` (§7.7.2.1; Rust
-076900132ad5). The behaviour is tested with a running peer for Rust, C++
+41b3b02f7a20). The behaviour is tested with a running peer for Rust, C++
 (`enhanced_function_call_roundtrip.cpp`) and Java (`EnhancedRuntimeChecks.java`,
-2051ce1a2a87). The Basic mapping sends `REMOTE_EX_UNSUPPORTED` in this case
+82ec363b6b82). The Basic mapping sends `REMOTE_EX_UNSUPPORTED` in this case
 (§7.7.1.1, item above).
 
 ### §7.5.2 REMOTE_EX_UNKNOWN_EXCEPTION
@@ -3645,11 +3645,11 @@ unspecified exception was raised by the service implementation."
 `runtime/cpp/include/dds/rpc/core.hpp::detail::remote_exception_code_of`,
 `crates/lang-rules/src/emit/interface_java/calls.rs`
 
-**Tests:** `crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+**Tests:** `crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (`function_call_roundtrip.cpp`),
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (`rpc_runtime_roundtrip.cpp`),
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`
 (`FunctionCallRoundtrip.java`),
 `crates/rpc-rust-e2e/tests/e2e.rs::an_exception_the_operation_does_not_declare_is_unknown_exception`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_exception_the_operation_does_not_declare_is_unknown_exception`,
@@ -3658,11 +3658,11 @@ unspecified exception was raised by the service implementation."
 **Status:** `done` — an exception of the implementation that the operation does
 not declare and that is not a remote code is sent as
 `REMOTE_EX_UNKNOWN_EXCEPTION` in C++ and Java and raised at the client as
-`RemoteUnknownExceptionError` (C++ 24e3443ce819, Java c4a249bd251f). The
+`RemoteUnknownExceptionError` (C++ ec3707125a9b, Java c512ee365514). The
 generated Rust dispatcher sends the code for an undeclared exception (tests
-above, 8891b6d7f067); the Rust client reports an unknown member of the result as
+above, f88947810821); the Rust client reports an unknown member of the result as
 `UnknownException`. There is no test for `Replier::tick` with a reply that
-cannot be encoded (fbc219a6b735).
+cannot be encoded (b527a9f58028).
 
 ### §7.5.2 — use of the codes
 
@@ -3671,10 +3671,10 @@ cannot be encoded (fbc219a6b735).
 **Repo:** `crates/rpc/src/replier.rs::Replier::send_error_reply`,
 `crates/rpc/src/wire_codec.rs::ERROR_REPLY_DATA`
 
-**Tests:** `crates/rpc/src/replier.rs::tests::tick_propagates_handler_error_into_reply`,
-`crates/rpc/src/replier.rs::tests::send_exception_answers_with_the_code`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_5_2_tick_propagates_handler_error_into_reply`,
+`crates/rpc/src/replier.rs::tests::rpc_7_5_2_send_exception_answers_with_the_code`
 
-**Status:** `done` — the assignment of the codes to the cases is in the items for the individual codes; all six match the spec in Rust, C++ and Java (`REMOTE_EX_INVALID_ARGUMENT` in C++: `c398e1587cf7`). A reply with an error code holds the header and the default case of the `Return` union (§7.5.1.1.7 rule 3); both tests check `payload == ERROR_REPLY_DATA` (3d4c42cad194).
+**Status:** `done` — the assignment of the codes to the cases is in the items for the individual codes; all six match the spec in Rust, C++ and Java (`REMOTE_EX_INVALID_ARGUMENT` in C++: `49525d7e5e80`). A reply with an error code holds the header and the default case of the `Return` union (§7.5.1.1.7 rule 3); both tests check `payload == ERROR_REPLY_DATA` (e305669e2c42).
 
 ### §7.5.2 Mapping to exceptions in C++ and Java
 
@@ -3705,10 +3705,10 @@ use any extensions to the DDS discovery built-in topics."
 `RpcMapping::Enhanced`)
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/src/requester.rs::tests::the_basic_mapping_sends_without_a_service_match`
+`crates/rpc/src/requester.rs::tests::rpc_7_6_1_the_basic_mapping_sends_without_a_service_match`
 
 **Status:** `done` — the Basic mapping uses the built-in discovery of DCPS; no
-parameter of the extension is announced (3d4c42cad194).
+parameter of the extension is announced (e305669e2c42).
 
 ### §7.6.1 Endpoints of client and service through the built-in topics
 
@@ -3736,7 +3736,7 @@ service replies to be lost."
 
 **Repo:** —
 
-**Tests:** `crates/rpc/src/requester.rs::tests::the_basic_mapping_sends_without_a_service_match`
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_6_1_the_basic_mapping_sends_without_a_service_match`
 
 **Status:** `n/a (informative)` — note. Under the Basic mapping the Rust
 `Requester` writes a request at once, without waiting for the reply reader to
@@ -3768,20 +3768,20 @@ service-side DataReader."
 `runtime/cpp/include/dds/rpc/base.hpp::service_matching_complete`,
 `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java`
 
-**Tests:** `crates/rpc/src/requester.rs::tests::an_enhanced_request_waits_for_the_service_and_fails_without_sending`,
-`crates/rpc/src/requester.rs::tests::the_fail_setting_does_not_wait`,
-`crates/rpc/src/discovery_ext.rs::tests::the_client_waits_for_both_service_endpoints`,
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_6_2_an_enhanced_request_waits_for_the_service_and_fails_without_sending`,
+`crates/rpc/src/requester.rs::tests::rpc_7_6_2_the_fail_setting_does_not_wait`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_the_client_waits_for_both_service_endpoints`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/zerodds-c-api/tests/rpc_discovery.rs::the_extension_is_announced_read_and_decides_the_matching`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/zerodds-c-api/tests/rpc_discovery.rs::rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (5b7e99bb2b84, 95f5e6617035)
+**Status:** `done` — Rust (e305669e2c42) and C++ (4b6b049312ff, 17a3aef74360)
 send an Enhanced request only when the request writer and the reply reader have
 found a service together (Figure 7.4: the endpoints name each other through the
 related key, and the request reader of the service announces the instance name
 the client names); `ServiceMatching::Queue` is the default, `Fail` and `Off` are
-named alternatives. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+named alternatives. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2 Service: request only after discovery of the client DataReader
 
@@ -3795,18 +3795,18 @@ that is not discovered completely),
 `runtime/cpp/include/dds/rpc/base.hpp::client_matching_complete`,
 `runtime/java/src/main/java/org/zerodds/ddsrpc/ReplierImpl.java`
 
-**Tests:** `crates/rpc/src/replier.rs::tests::an_enhanced_request_of_an_undiscovered_client_is_held`,
-`crates/rpc/src/replier.rs::tests::the_named_alternatives_release_a_request_of_an_undiscovered_client`,
-`crates/rpc/src/discovery_ext.rs::tests::the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/zerodds-c-api/tests/rpc_discovery.rs::the_extension_is_announced_read_and_decides_the_matching`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_6_2_an_enhanced_request_of_an_undiscovered_client_is_held`,
+`crates/rpc/src/replier.rs::tests::rpc_7_6_2_the_named_alternatives_release_a_request_of_an_undiscovered_client`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/zerodds-c-api/tests/rpc_discovery.rs::rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (95f5e6617035) hold an
+**Status:** `done` — Rust (e305669e2c42) and C++ (17a3aef74360) hold an
 Enhanced request back until the reply reader of the sending client is discovered
 (Figure 7.3); `ClientMatching::Hold` is the default, `Off` and
 `accept_unannounced` are named alternatives. The Rust runtime holds at most
 `HELD_REQUESTS_MAX` requests, further ones are counted by
-`Replier::held_overflow`. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+`Replier::held_overflow`. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.1 Extended types of the built-in topics
 
@@ -3833,12 +3833,12 @@ PID_SERVICE_INSTANCE_NAME 0x0080".
 
 **Tests:** `crates/rtps/src/parameter_list.rs::tests::rpc_pid_constants_match_spec`,
 `crates/rtps/src/publication_data.rs::tests::rpc_discovery_pids_roundtrip`,
-`crates/dcps/tests/rpc_discovery_extension.rs::a_discovery_string_longer_than_256_is_refused`
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_a_discovery_string_longer_than_256_is_refused`
 
 **Status:** `done` — PID 0x0080 with a CDR string;
 `DataWriter::set_rpc_discovery` and `DataReader::set_rpc_discovery` refuse a
 name over 256 characters (`DdsError::BadParameter`). PID and codec b5224bd70dbb,
-announcement and bound 0e62f93df137. The decoder does not check the bound on a
+announcement and bound 211d416cdda3. The decoder does not check the bound on a
 received announcement.
 
 ### §7.6.2.1.1 related_datareader_key with PID 0x0081
@@ -3871,11 +3871,11 @@ PID_TOPIC_ALIASES 0x0082".
 
 **Tests:** `crates/rtps/src/parameter_list.rs::tests::rpc_pids_roundtrip_in_parameter_list`,
 `crates/rtps/src/publication_data.rs::tests::rpc_discovery_pids_roundtrip`,
-`crates/dcps/tests/topic_alias_matching.rs::a_reader_on_an_alias_matches_the_writer_over_the_wire`
+`crates/dcps/tests/topic_alias_matching.rs::rpc_7_4_3_a_reader_on_an_alias_matches_the_writer_over_the_wire`
 
 **Status:** `done` — PID 0x0082 with a sequence of strings; `set_rpc_discovery`
 refuses an alias over 256 characters, and the matching of endpoints uses the
-aliases (928df3c39a42; PID b5224bd70dbb, announcement 0e62f93df137).
+aliases (bdf9ab1e6caa; PID b5224bd70dbb, announcement 211d416cdda3).
 
 ### §7.6.2.1.1 PublicationBuiltinTopicDataExt
 
@@ -3889,12 +3889,12 @@ optional parameters of the ParameterList), `crates/dcps/src/runtime.rs::RpcDisco
 
 **Tests:** `crates/rtps/src/publication_data.rs::tests::rpc_discovery_pids_roundtrip`,
 `crates/rtps/src/publication_data.rs::tests::rpc_pids_optional_legacy_peer_parses_ok`,
-`crates/dcps/tests/rpc_discovery_extension.rs::the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
 
 **Status:** `done` — the wire carries the three members; a peer without the
 parameters is read, the members are then `None`. The type
 `PublicationBuiltinTopicDataExt` with the member names of the spec is in
-`crates/rpc` (next item). b5224bd70dbb, 0e62f93df137.
+`crates/rpc` (next item). b5224bd70dbb, 211d416cdda3.
 
 ### §7.6.2.1.1 Type PublicationBuiltinTopicDataExt in crates/rpc
 
@@ -3903,15 +3903,15 @@ parameters is read, the members are then `None`. The type
 **Repo:** `crates/rpc/src/discovery_ext.rs::PublicationBuiltinTopicDataExt` and
 `SubscriptionBuiltinTopicDataExt` (`announcement`, `from_peer`)
 
-**Tests:** `crates/rpc/src/discovery_ext.rs::tests::the_extension_carries_the_three_members_of_the_spec`,
-`crates/rpc/src/discovery_ext.rs::tests::an_absent_related_key_reads_as_guid_unknown`
+**Tests:** `crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_the_extension_carries_the_three_members_of_the_spec`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_an_absent_related_key_reads_as_guid_unknown`
 
 **Status:** `done` — the types have the members of the spec
 (`service_instance_name`, `related_datareader_key` or `related_datawriter_key`,
 `topic_aliases`); `service_name` and `mapping_profile` are removed.
 `announcement()` converts them into the announcement of `crates/dcps`.
 `Requester` and `Replier` build `RpcDiscoveryExt` directly with the same three
-members and do not use these types (3d4c42cad194).
+members and do not use these types (e305669e2c42).
 
 ### §7.6.2.1.1 service_instance_name: instance name at the service
 
@@ -3926,15 +3926,15 @@ default value."
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::a_service_without_an_instance_name_or_parents_announces_neither`,
-`crates/rpc/src/endpoint.rs::tests::instance_name_propagated_to_both_sides`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
-(`rpc_runtime_roundtrip.cpp`, `check_instance_addressing`)
+`crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_instance_name_propagated_to_both_sides`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
+(`rpc_runtime_roundtrip.cpp`, check_instance_addressing)
 
-**Status:** `done` — Rust (3d4c42cad194, tests e8821ba9dae4, d79e4dac24d0) and
-C++ (95f5e6617035) announce the name at the service endpoints when the user
+**Status:** `done` — Rust (e305669e2c42, tests 32972ee16bdd, 414e077c527d) and
+C++ (17a3aef74360) announce the name at the service endpoints when the user
 gives one; without a name nothing is announced (a test exists for this). In C++
 an Enhanced request bound to an instance reaches only the readers that announced
-that name (86c89466df19). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+that name (6289b73b7853). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.1.1 Client DataWriter without service_instance_name
 
@@ -3944,14 +3944,14 @@ include service_instance_name."
 **Repo:** `crates/rpc/src/requester.rs::Requester::from_topics` (`service_instance_name: None`),
 `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::publication` (service side only)
 
-**Tests:** `crates/rpc/src/endpoint.rs::tests::instance_name_propagated_to_both_sides`
+**Tests:** `crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_instance_name_propagated_to_both_sides`
 (checks the builder; the test's name comes from the earlier behaviour),
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — the client writer announces no `service_instance_name`, in
 Rust, C++ (test: `request_writer.has_instance_name` is false) and Java (the
-client gets no name). 7689fef2a37b (builder), 3d4c42cad194 (runtime). No Rust
+client gets no name). 973def296a10 (builder), e305669e2c42 (runtime). No Rust
 test reads the announcement of a `Requester` back from the peer.
 
 ### §7.6.2.1.1 topic_aliases by §7.4.3, without default
@@ -3964,18 +3964,18 @@ The Enhanced Service Mapping. There is no default value."
 `ServiceTopicNames::request_aliases` and `reply_aliases`),
 `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::aliases`
 
-**Tests:** `crates/rpc/src/topic_naming.rs::tests::every_parent_interface_contributes_one_alias`,
-`crates/rpc/src/endpoint.rs::tests::the_parent_interfaces_are_announced_as_topic_aliases`,
-`crates/rpc/src/endpoint.rs::tests::topic_aliases_empty_yields_none`,
+**Tests:** `crates/rpc/src/topic_naming.rs::tests::rpc_7_4_3_every_parent_interface_contributes_one_alias`,
+`crates/rpc/src/endpoint.rs::tests::rpc_7_4_3_the_parent_interfaces_are_announced_as_topic_aliases`,
+`crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_topic_aliases_empty_yields_none`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::a_service_without_an_instance_name_or_parents_announces_neither`,
-`crates/dcps/tests/rpc_discovery_extension.rs::the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`,
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_calls_a_rust_service`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_calls_a_java_service`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_of_the_base_calls_a_rust_service_of_the_derived_interface`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_of_the_base_calls_a_java_service_of_the_derived_interface`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ announce the aliases of the parents (§7.4.3), nothing without parents and without an entry. A running `Requester` and `Replier` announce the aliases, the peer reads them; without parents the field stays empty (tests above, e8821ba9dae4, d79e4dac24d0). Java announces the aliases the `parents` of the params give (PID 0x0082 on the wire: `RpcDiscoveryTest.java::theThreeParametersTravelWithTheEndpoint`, `9f9cd6cfc777`, `95056920ba2f`); the generated Java binding sets `parents` for a derived interface (`86817fa5f076`). The Java PSM matches over the aliases and pairs the types by assignability (`95818352de1`); measured with a Java client of the base against a Rust service of the derived interface and the other way round (item for §7.4.3, Java).
+**Status:** `done` — Rust (e305669e2c42) and C++ announce the aliases of the parents (§7.4.3), nothing without parents and without an entry. A running `Requester` and `Replier` announce the aliases, the peer reads them; without parents the field stays empty (tests above, 32972ee16bdd, 414e077c527d). Java announces the aliases the `parents` of the params give (PID 0x0082 on the wire: `RpcDiscoveryTest.java::rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `f65fb3965b5e`, `9993349aff89`); the generated Java binding sets `parents` for a derived interface (`400433a9d00a`). The Java PSM matches over the aliases and pairs the types by assignability (`2d0f809c6e2`); measured with a Java client of the base against a Rust service of the derived interface and the other way round (item for §7.4.3, Java).
 
 ### §7.6.2.1.1 related_datareader_key not present: GUID_UNKNOWN
 
@@ -3986,13 +3986,13 @@ clause 9.3.1.5 of the [RTPS] specification."
 **Repo:** `crates/rpc/src/discovery_ext.rs::GUID_UNKNOWN` and `from_peer`,
 `crates/rtps/src/publication_data.rs` (the decoder returns `None`)
 
-**Tests:** `crates/rpc/src/discovery_ext.rs::tests::an_absent_related_key_reads_as_guid_unknown`,
-`crates/rpc/src/discovery_ext.rs::tests::an_unannounced_service_completes_only_when_accepted`,
+**Tests:** `crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_an_absent_related_key_reads_as_guid_unknown`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_an_unannounced_service_completes_only_when_accepted`,
 `crates/rtps/src/publication_data.rs::tests::rpc_pids_optional_legacy_peer_parses_ok`
 
 **Status:** `done` — an absent key reads as `GUID_UNKNOWN` (16 zeros); the
 matching functions treat it as not named, a pair without naming is complete only
-with `accept_unannounced` (3d4c42cad194).
+with `accept_unannounced` (e305669e2c42).
 
 ### §7.6.2.1.1 Client DataWriter: related_datareader_key of the reply reader
 
@@ -4005,16 +4005,16 @@ the client-side DataReader used for receiving the replies."
 request writer with the GUID of the reply reader),
 `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::build_requester`
 
-**Tests:** `crates/rpc/src/endpoint.rs::tests::requester_related_entity_guids_cross_link`,
+**Tests:** `crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_requester_related_entity_guids_cross_link`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
-`crates/zerodds-c-api/tests/rpc_discovery.rs::the_extension_is_announced_read_and_decides_the_matching`
+`crates/zerodds-c-api/tests/rpc_discovery.rs::rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (95f5e6617035) set the key at
+**Status:** `done` — Rust (e305669e2c42) and C++ (17a3aef74360) set the key at
 the client writer to the reply reader and vice versa. The Rust test
 `the_runtime_announces_aliases_the_instance_name_and_the_related_keys` reads the
-keys at the peers of a running `Requester` and `Replier` (e8821ba9dae4,
-d79e4dac24d0). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+keys at the peers of a running `Requester` and `Replier` (32972ee16bdd,
+414e077c527d). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.1.1 Service DataWriter: related_datareader_key of the request reader
 
@@ -4027,15 +4027,15 @@ DataReader used to receive the requests."
 reply writer with the GUID of the request reader),
 `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::build_replier`
 
-**Tests:** `crates/rpc/src/endpoint.rs::tests::replier_related_entity_guids_cross_link`,
+**Tests:** `crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_replier_related_entity_guids_cross_link`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
-`crates/zerodds-c-api/tests/rpc_discovery.rs::the_extension_is_announced_read_and_decides_the_matching`,
+`crates/zerodds-c-api/tests/rpc_discovery.rs::rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (95f5e6617035) set the key on the
+**Status:** `done` — Rust (e305669e2c42) and C++ (17a3aef74360) set the key on the
 service writer to the request reader and the other way round. For Rust a test
 reads the announcement of the `Replier` at the other side: `related_entity_guid`
-of the reply writer is the GUID of the request reader (d79e4dac24d0). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+of the reply writer is the GUID of the request reader (414e077c527d). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.1.2 service_instance_name with PID 0x0080
 
@@ -4051,15 +4051,15 @@ codec in `to_pl_cdr_le` and `from_pl_cdr_le`);
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::rpc_discovery_pids_roundtrip_subscription`,
 `crates/rtps/src/parameter_list.rs::tests::rpc_pid_constants_match_spec`,
-`crates/dcps/tests/rpc_discovery_extension.rs::the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
 (Linux only)
 
 **Status:** `done` — PID 0x0080 is encoded, decoded and announced by the DataReader (codec
-b5224bd70dbb, announcement 0e62f93df137). `RpcDiscoveryExt::check`
+b5224bd70dbb, announcement 211d416cdda3). `RpcDiscoveryExt::check`
 (`crates/dcps/src/runtime.rs`) refuses a string over 256 on announcing (test:
-`crates/dcps/tests/rpc_discovery_extension.rs::a_discovery_string_longer_than_256_is_refused`).
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_a_discovery_string_longer_than_256_is_refused`).
 The decoder in `crates/rtps` rejects a value over 256 with
-`WireError::ValueOutOfRange` (9a3940227ee4; test:
+`WireError::ValueOutOfRange` (ae5fededca89; test:
 `crates/rtps/src/subscription_data.rs::tests::a_discovery_string_beyond_the_bound_is_refused_subscription`).
 
 ### §7.6.2.1.2 related_datawriter_key with PID 0x0081
@@ -4076,11 +4076,11 @@ codec in `to_pl_cdr_le` and `from_pl_cdr_le`);
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::rpc_discovery_pids_roundtrip_subscription`,
 `crates/rtps/src/parameter_list.rs::tests::rpc_pid_constants_match_spec`,
-`crates/dcps/tests/rpc_discovery_extension.rs::the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
 (Linux only)
 
 **Status:** `done` — PID 0x0081 (`PID_RELATED_ENTITY_GUID`) is encoded, decoded and announced
-(codec b5224bd70dbb, announcement 0e62f93df137). The field is named
+(codec b5224bd70dbb, announcement 211d416cdda3). The field is named
 `related_entity_guid` in the code; on a DataReader it is the
 `related_datawriter_key`.
 
@@ -4098,11 +4098,11 @@ codec in `to_pl_cdr_le` and `from_pl_cdr_le`);
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::rpc_discovery_pids_roundtrip_subscription`,
 `crates/rtps/src/parameter_list.rs::tests::rpc_pid_constants_match_spec`,
-`crates/dcps/tests/rpc_discovery_extension.rs::the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
 (Linux only)
 
 **Status:** `done` — PID 0x0082 is encoded (sequence of strings), decoded and announced
-(codec b5224bd70dbb, announcement 0e62f93df137). Matching by alias is under the
+(codec b5224bd70dbb, announcement 211d416cdda3). Matching by alias is under the
 item on §7.4.3.
 
 ### §7.6.2.1.2 SubscriptionBuiltinTopicDataExt
@@ -4119,12 +4119,12 @@ with the three members of the spec, `announcement` and `from_peer` to
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::rpc_discovery_pids_roundtrip_subscription`,
 `crates/rtps/src/subscription_data.rs::tests::rpc_pids_optional_legacy_subscription_parses_ok`,
-`crates/rpc/src/discovery_ext.rs::tests::the_extension_carries_the_three_members_of_the_spec`
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_the_extension_carries_the_three_members_of_the_spec`
 
 **Status:** `done` — the type in `crates/rpc` has the three members of the spec
 (`service_instance_name`, `related_datawriter_key`, `topic_aliases`); on the
 wire they are parameters 0x0080 to 0x0082 of the parameter list (type in
-`crates/rpc` 3d4c42cad194, wire b5224bd70dbb). An endpoint without the
+`crates/rpc` e305669e2c42, wire b5224bd70dbb). An endpoint without the
 parameters is read and yields `None` or `GUID_UNKNOWN`.
 
 ### §7.6.2.1.2 service_instance_name: instance name at the service
@@ -4137,13 +4137,13 @@ default value."
 goes to the request reader and the reply writer; without a name the value is
 absent); `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::instance_name`
 
-**Tests:** `crates/rpc/src/endpoint.rs::tests::instance_name_propagated_to_both_sides`,
+**Tests:** `crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_instance_name_propagated_to_both_sides`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`
 
 **Status:** `done` — the service announces the name the user set, `None` without a name
-(3d4c42cad194). The test shows that the client reaches only the instance whose
-name it carries. C++ announces the same value (95f5e6617035; test:
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`).
+(e305669e2c42). The test shows that the client reaches only the instance whose
+name it carries. C++ announces the same value (17a3aef74360; test:
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`).
 For Java see the item "§7.6.2.1 announcement of the extensions by the runtimes".
 
 ### §7.6.2.1.2 Client DataReader without service_instance_name
@@ -4153,17 +4153,17 @@ include service_instance_name."
 
 **Repo:** `crates/rpc/src/requester.rs::Requester::with_options` (Enhanced:
 `service_instance_name: None` on the request writer and the reply reader);
-`crates/rpc/src/endpoint.rs::RpcEndpointBuilder` (7689fef2a37b)
+`crates/rpc/src/endpoint.rs::RpcEndpointBuilder` (973def296a10)
 
-**Tests:** `crates/rpc/src/endpoint.rs::tests::instance_name_propagated_to_both_sides`
-(builder); C++: `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+**Tests:** `crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_instance_name_propagated_to_both_sides`
+(builder); C++: `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`
 
 **Status:** `done` — the requester's reply reader announces no name in Rust
-(3d4c42cad194), in C++ (95f5e6617035) and in the builder (7689fef2a37b). For
+(e305669e2c42), in C++ (17a3aef74360) and in the builder (973def296a10). For
 Rust a test reads the announcement of `Requester` and `Replier` at the other side
 (`matched_rpc_readers`, `matched_rpc_writers`): the client's endpoints carry
-`service_instance_name: None` (d79e4dac24d0). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+`service_instance_name: None` (414e077c527d). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.1.2 topic_aliases by §7.4.3, without default
 
@@ -4176,11 +4176,11 @@ clause 7.4.3. There is no default value."
 aliases); `crates/rpc/src/endpoint.rs::RpcEndpointBuilder` (`aliases`);
 `crates/dcps/src/runtime.rs` (matching by alias)
 
-**Tests:** `crates/rpc/src/endpoint.rs::tests::topic_aliases_propagated_to_both_sides`,
+**Tests:** `crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_2_topic_aliases_propagated_to_both_sides`,
 `crates/dcps/tests/topic_alias_matching.rs` (Linux only),
-`crates/dcps/tests/rpc_discovery_extension.rs::the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`,
+`crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`,
 `crates/rpc/tests/language_binding_agreement.rs` (names of the aliases);
-C++: `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+C++: `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::a_service_without_an_instance_name_or_parents_announces_neither`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_calls_a_rust_service`,
@@ -4188,7 +4188,7 @@ C++: `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_of_the_base_calls_a_rust_service_of_the_derived_interface`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_of_the_base_calls_a_java_service_of_the_derived_interface`
 
-**Status:** `done` — the aliases go on the wire for inheritance (Rust 3d4c42cad194, C++ 95f5e6617035) and let endpoints match (928df3c39a42); without aliases nothing is announced. For Rust a test reads the aliases of `Requester` and `Replier` at the other side (`robot_Base_Service_Request` and `robot_Base_Service_Reply`) and checks that a service without a base announces none (d79e4dac24d0). Java announces the aliases the `parents` of the params give (`9f9cd6cfc777`, `95056920ba2f`); the generated Java binding sets `parents` for a derived interface (`86817fa5f076`). The Java PSM matches over the aliases and pairs the types by assignability (`95818352de1`); measured with a Java client of the base against a Rust service of the derived interface and the other way round (item for §7.4.3, Java).
+**Status:** `done` — the aliases go on the wire for inheritance (Rust e305669e2c42, C++ 17a3aef74360) and let endpoints match (bdf9ab1e6caa); without aliases nothing is announced. For Rust a test reads the aliases of `Requester` and `Replier` at the other side (`robot_Base_Service_Request` and `robot_Base_Service_Reply`) and checks that a service without a base announces none (414e077c527d). Java announces the aliases the `parents` of the params give (`f65fb3965b5e`, `9993349aff89`); the generated Java binding sets `parents` for a derived interface (`400433a9d00a`). The Java PSM matches over the aliases and pairs the types by assignability (`2d0f809c6e2`); measured with a Java client of the base against a Rust service of the derived interface and the other way round (item for §7.4.3, Java).
 
 ### §7.6.2.1.2 related_datawriter_key absent: GUID_UNKNOWN
 
@@ -4201,10 +4201,10 @@ clause 9.3.1.5 of the [RTPS] specification."
 `None`)
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::rpc_pids_optional_legacy_subscription_parses_ok`,
-`crates/rpc/src/discovery_ext.rs::tests::an_absent_related_key_reads_as_guid_unknown`,
-`crates/rpc/src/discovery_ext.rs::tests::an_unannounced_service_completes_only_when_accepted`
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_an_absent_related_key_reads_as_guid_unknown`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_an_unannounced_service_completes_only_when_accepted`
 
-**Status:** `done` — an absent parameter 0x0081 reads as `GUID_UNKNOWN` (3d4c42cad194).
+**Status:** `done` — an absent parameter 0x0081 reads as `GUID_UNKNOWN` (e305669e2c42).
 The clause of the spec on the subscription names `related_datareader_key`
 here.
 
@@ -4219,10 +4219,10 @@ DataWriter used to send the requests to the DDS-RPC Service."
 the request writer); `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::build_requester`
 
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_call_is_answered_through_the_related_sample_identity`,
-`crates/rpc/src/endpoint.rs::tests::requester_related_entity_guids_cross_link`,
-`crates/rpc/src/discovery_ext.rs::tests::the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`
+`crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_requester_related_entity_guids_cross_link`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`
 
-**Status:** `done` — Rust 3d4c42cad194, C++ 95f5e6617035. The call in the first test is
+**Status:** `done` — Rust e305669e2c42, C++ 17a3aef74360. The call in the first test is
 answered only if the service can assign the client's reply reader to the request
 writer through `related_datawriter_key` (`client_matching_complete`, default
 `ClientMatching::Hold`).
@@ -4238,10 +4238,10 @@ DataWriter used to receive requests."
 reply writer); `crates/rpc/src/endpoint.rs::RpcEndpointBuilder::build_replier`
 
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
-`crates/rpc/src/endpoint.rs::tests::replier_related_entity_guids_cross_link`,
-`crates/rpc/src/discovery_ext.rs::tests::the_two_endpoints_must_name_each_other`
+`crates/rpc/src/endpoint.rs::tests::rpc_7_6_2_1_1_replier_related_entity_guids_cross_link`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_2_the_two_endpoints_must_name_each_other`
 
-**Status:** `done` — Rust 3d4c42cad194, C++ 95f5e6617035. The sentence of the spec swaps
+**Status:** `done` — Rust e305669e2c42, C++ 17a3aef74360. The sentence of the spec swaps
 the roles ("DataReader used to write replies", "DataWriter used to receive
 requests"); the request reader names the reply writer, as Figure 7.4 requires.
 `service_matching_complete` holds only if request reader and reply writer name
@@ -4260,10 +4260,10 @@ C++: `runtime/cpp/include/dds/rpc.hpp` (`announce_rpc_discovery`) and
 `zerodds_writer_set_rpc_discovery` and `zerodds_reader_set_rpc_discovery`
 (`crates/zerodds-c-api/src/rpc_discovery_ffi.rs`)
 
-**Tests:** `crates/dcps/tests/rpc_discovery_extension.rs::the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
+**Tests:** `crates/dcps/tests/rpc_discovery_extension.rs::rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer`
 (Linux only),
-`crates/zerodds-c-api/tests/rpc_discovery.rs::the_extension_is_announced_read_and_decides_the_matching`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/zerodds-c-api/tests/rpc_discovery.rs::rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::the_runtime_announces_aliases_the_instance_name_and_the_related_keys`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::a_service_without_an_instance_name_or_parents_announces_neither`,
@@ -4272,7 +4272,7 @@ C++: `runtime/cpp/include/dds/rpc.hpp` (`announce_rpc_discovery`) and
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_of_the_base_calls_a_rust_service_of_the_derived_interface`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_of_the_base_calls_a_java_service_of_the_derived_interface`
 
-**Status:** `done` — Rust, C++ and Java announce `service_instance_name`, `related_*_key` and `topic_aliases` of their endpoints and read them at discovered endpoints (dcps 0e62f93df137, Rust 3d4c42cad194, C++ 95f5e6617035, Java `9f9cd6cfc777` and `95056920ba2f`); the bound 256 is checked by `RpcDiscoveryExt::check` when announcing, the decoders in `crates/rtps` and in `crates/java-omgdds` refuse values beyond it (9a3940227ee4, `9f9cd6cfc777`). For Rust a test reads the announcement of `Requester` and `Replier` at the other side (d79e4dac24d0), for Java `RpcDiscoveryTest.java`. The generated Java binding sets the aliases of a derived interface (`86817fa5f076`); a Java peer against a Rust peer reads the announcement (`b3748d506a39`). The Java PSM matches over the aliases it reads and pairs by assignability (`95818352de1`), measured against Rust peers in both directions (item for §7.4.3, Java).
+**Status:** `done` — Rust, C++ and Java announce `service_instance_name`, `related_*_key` and `topic_aliases` of their endpoints and read them at discovered endpoints (dcps 211d416cdda3, Rust e305669e2c42, C++ 17a3aef74360, Java `f65fb3965b5e` and `9993349aff89`); the bound 256 is checked by `RpcDiscoveryExt::check` when announcing, the decoders in `crates/rtps` and in `crates/java-omgdds` refuse values beyond it (ae5fededca89, `f65fb3965b5e`). For Rust a test reads the announcement of `Requester` and `Replier` at the other side (414e077c527d), for Java `RpcDiscoveryTest.java`. The generated Java binding sets the aliases of a derived interface (`400433a9d00a`); a Java peer against a Rust peer reads the announcement (`dbb935492284`). The Java PSM matches over the aliases it reads and pairs by assignability (`2d0f809c6e2`), measured against Rust peers in both directions (item for §7.4.3, Java).
 
 ### §7.6.2.2 Additional rules for client writer and service reader
 
@@ -4299,21 +4299,21 @@ C++: `runtime/cpp/include/dds/rpc.hpp` (`Requester::wait_for_service`,
 `DataWriter::service_matching_complete`); Java:
 `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java`
 
-**Tests:** `crates/rpc/src/requester.rs::tests::an_enhanced_request_waits_for_the_service_and_fails_without_sending`,
-`crates/rpc/src/requester.rs::tests::the_fail_setting_does_not_wait`,
-`crates/rpc/src/requester.rs::tests::the_basic_mapping_sends_without_a_service_match`,
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_6_2_an_enhanced_request_waits_for_the_service_and_fails_without_sending`,
+`crates/rpc/src/requester.rs::tests::rpc_7_6_2_the_fail_setting_does_not_wait`,
+`crates/rpc/src/requester.rs::tests::rpc_7_6_1_the_basic_mapping_sends_without_a_service_match`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
-`crates/rpc/src/discovery_ext.rs::tests::the_client_waits_for_both_service_endpoints`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_the_client_waits_for_both_service_endpoints`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (5b7e99bb2b84, 95f5e6617035): the
+**Status:** `done` — Rust (e305669e2c42) and C++ (4b6b049312ff, 17a3aef74360): the
 request goes out only when the service's request reader and reply writer are
 discovered and name each other. The Rust call holds the request for at most
 the `request_timeout` of the QoS and then ends with
 `RpcError::ServiceNotMatched` without having sent (`ServiceMatching::Queue`;
 `Fail` and `Off` are the named alternatives). The Basic mapping does not have
-the rule (§7.6.1). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+the rule (§7.6.1). `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.2 Service reader rejects requests before the match
 
@@ -4328,17 +4328,17 @@ a client that is not completely discovered);
 `runtime/cpp/include/dds/rpc.hpp` (`Replier`, `DataReader::client_matching_complete`);
 Java: `runtime/java/src/main/java/org/zerodds/ddsrpc/ReplierImpl.java`
 
-**Tests:** `crates/rpc/src/replier.rs::tests::an_enhanced_request_of_an_undiscovered_client_is_held`,
-`crates/rpc/src/replier.rs::tests::the_named_alternatives_release_a_request_of_an_undiscovered_client`,
-`crates/rpc/src/discovery_ext.rs::tests::the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_6_2_an_enhanced_request_of_an_undiscovered_client_is_held`,
+`crates/rpc/src/replier.rs::tests::rpc_7_6_2_the_named_alternatives_release_a_request_of_an_undiscovered_client`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (5b7e99bb2b84, 95f5e6617035): the
+**Status:** `done` — Rust (e305669e2c42) and C++ (4b6b049312ff, 17a3aef74360): the
 service processes no request of a client whose reply reader the reply writer has
 not discovered. Rust holds the request (up to `HELD_REQUESTS_MAX` = 4096, the
 overflow is counted in `held_overflow()`) and processes it once the client is
-complete instead of discarding it. The Basic mapping does not have the rule. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+complete instead of discarding it. The Basic mapping does not have the rule. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.2 Implementation outside the DDS layer admissible
 
@@ -4364,17 +4364,17 @@ requests from the client."
 `crates/zerodds-c-api/src/rpc_discovery_ffi.rs` (`zerodds_rpc_client_matching_complete`);
 C++: `runtime/cpp/include/dds/rpc.hpp`
 
-**Tests:** `crates/rpc/src/discovery_ext.rs::tests::the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`,
-`crates/rpc/src/discovery_ext.rs::tests::an_unannounced_client_is_unmasked_only_when_accepted`,
-`crates/rpc/src/replier.rs::tests::an_enhanced_request_of_an_undiscovered_client_is_held`,
-`crates/zerodds-c-api/tests/rpc_discovery.rs::the_extension_is_announced_read_and_decides_the_matching`
+**Tests:** `crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_the_service_unmasks_a_client_once_both_its_endpoints_are_discovered`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_2_1_an_unannounced_client_is_unmasked_only_when_accepted`,
+`crates/rpc/src/replier.rs::tests::rpc_7_6_2_an_enhanced_request_of_an_undiscovered_client_is_held`,
+`crates/zerodds-c-api/tests/rpc_discovery.rs::rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (95f5e6617035): "client matching" is
+**Status:** `done` — Rust (e305669e2c42) and C++ (17a3aef74360): "client matching" is
 complete when the reply writer has discovered the reply reader that the client's
 request writer names in `related_datareader_key`, and that reader names the
 request writer (Figure 7.3). Until then the service processes no request of the
 client. A client without an announcement is released only with
-`accept_unannounced`. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+`accept_unannounced`. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.2.1 Client matching: local_mask and release of the client writer
 
@@ -4390,17 +4390,17 @@ request writer of the client, GUID from the identity of the request);
 C++: `runtime/cpp/include/dds/rpc.hpp` (`DataReader::client_matching_complete`
 per client)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::an_enhanced_request_of_an_undiscovered_client_is_held`,
-`crates/rpc/src/replier.rs::tests::the_named_alternatives_release_a_request_of_an_undiscovered_client`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_6_2_an_enhanced_request_of_an_undiscovered_client_is_held`,
+`crates/rpc/src/replier.rs::tests::rpc_7_6_2_the_named_alternatives_release_a_request_of_an_undiscovered_client`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
 `crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ReplierClientMatchingTest.java`,
 `crates/rpc-rust-e2e/tests/replier_activate_client_matching.rs::an_activated_replier_answers_a_held_request_once_its_client_is_matched`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (5b7e99bb2b84, 95f5e6617035) mask per
+**Status:** `done` — Rust (e305669e2c42) and C++ (4b6b049312ff, 17a3aef74360) mask per
 client: a request is processed only once `client_matching_complete` holds for
 that client's request writer; other clients are not held up by it. Rust sets no
 `local_mask` on the DataReader of the DDS layer; the replier takes the samples
-and holds them in a list of its own. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; green on the Linux test host, 3 tests, `64134babe64`). The release hung on a new sample: a replier whose listener runs on arrival (§7.9.2.2 way 1) kept a held request when its client became complete by discovery afterwards and no further sample came (measured with `crates/rpc-rust-e2e/tests/java_peer.rs`, a Rust client of `Base2` against the Java service of `Derived2` under load: “held … replyMatched=0”, then the match of the reply writer and no reply). Since `f6abe1435f1` such a replier checks every 5 ms while requests are held whether one of their clients is complete, and releases then; a polled replier (`receiveRequests`, `waitForRequests`, `Server`) checks at every poll. Test: `ReplierClientMatchingTest.java` (red on `d913a72f8c0`). The same gap was in Rust `Replier::activate` (and `activate_async`), which listened on DATA_AVAILABLE only; since `30f16f76c91` a thread of the replier looks at the held requests every 5 ms while some are held. Test: `replier_activate_client_matching.rs` (the client's reply reader enters the partition of the reply writer only after the request; without the fix held 1, answered 0).
+and holds them in a list of its own. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; green on the Linux test host, 3 tests, `d67a980f80b`). The release hung on a new sample: a replier whose listener runs on arrival (§7.9.2.2 way 1) kept a held request when its client became complete by discovery afterwards and no further sample came (measured with `crates/rpc-rust-e2e/tests/java_peer.rs`, a Rust client of `Base2` against the Java service of `Derived2` under load: “held … replyMatched=0”, then the match of the reply writer and no reply). Since `8ae48aed9a0` such a replier checks every 5 ms while requests are held whether one of their clients is complete, and releases then; a polled replier (`receiveRequests`, `waitForRequests`, `Server`) checks at every poll. Test: `ReplierClientMatchingTest.java` (red on `3f90296146e`). The same gap was in Rust `Replier::activate` (and `activate_async`), which listened on DATA_AVAILABLE only; since `30bcfe5cc2f` a thread of the replier looks at the held requests every 5 ms while some are held. Test: `replier_activate_client_matching.rs` (the client's reply reader enters the partition of the reply writer only after the request; without the fix held 1, answered 0).
 
 ### §7.6.2.2.2 Service matching at the client: no requests until complete
 
@@ -4414,18 +4414,18 @@ matching” completes."
 `crates/zerodds-c-api/src/rpc_discovery_ffi.rs` (`zerodds_rpc_service_matching_complete`);
 C++: `runtime/cpp/include/dds/rpc.hpp`
 
-**Tests:** `crates/rpc/src/discovery_ext.rs::tests::the_client_waits_for_both_service_endpoints`,
-`crates/rpc/src/discovery_ext.rs::tests::the_two_endpoints_must_name_each_other`,
-`crates/rpc/src/discovery_ext.rs::tests::the_client_addresses_the_instance_it_names`,
-`crates/rpc/src/discovery_ext.rs::tests::an_unannounced_service_completes_only_when_accepted`,
+**Tests:** `crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_the_client_waits_for_both_service_endpoints`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_2_the_two_endpoints_must_name_each_other`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_2_2_the_client_addresses_the_instance_it_names`,
+`crates/rpc/src/discovery_ext.rs::tests::rpc_7_6_2_1_1_an_unannounced_service_completes_only_when_accepted`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::the_client_waits_for_the_service_instance_it_names`,
-`crates/zerodds-c-api/tests/rpc_discovery.rs::the_extension_is_announced_read_and_decides_the_matching`
+`crates/zerodds-c-api/tests/rpc_discovery.rs::rpc_7_6_2_the_extension_is_announced_read_and_decides_the_matching`
 
-**Status:** `done` — Rust (3d4c42cad194) and C++ (95f5e6617035): "service matching" is
+**Status:** `done` — Rust (e305669e2c42) and C++ (17a3aef74360): "service matching" is
 complete when the service's request reader and reply writer are discovered, name
 each other, and the request reader announces the client's `instance_name`
 (Figure 7.4); the client does not send before. A service without an
-announcement is read as complete only with `accept_unannounced`. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+announcement is read as complete only with `accept_unannounced`. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ### §7.6.2.2.2 Service matching: local_mask, queue, release
 
@@ -4442,17 +4442,17 @@ call holds the request); C++: `runtime/cpp/include/dds/rpc.hpp`
 `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java` (queue `queue`,
 `flushQueue`)
 
-**Tests:** `crates/rpc/src/requester.rs::tests::an_enhanced_request_waits_for_the_service_and_fails_without_sending`,
-`crates/rpc/src/requester.rs::tests::the_fail_setting_does_not_wait`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_6_2_an_enhanced_request_waits_for_the_service_and_fails_without_sending`,
+`crates/rpc/src/requester.rs::tests::rpc_7_6_2_the_fail_setting_does_not_wait`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
-**Status:** `done` — Rust (3d4c42cad194): the client does not send; the call holds the
+**Status:** `done` — Rust (e305669e2c42): the client does not send; the call holds the
 request for at most `request_timeout` and then fails with
 `RpcError::ServiceNotMatched`; the request is not in a queue afterwards. C++
-(5b7e99bb2b84, 95f5e6617035) puts requests in a queue and releases them as soon
+(4b6b049312ff, 17a3aef74360) puts requests in a queue and releases them as soon
 as `service_matching_complete` holds; no runtime has a mask `local_mask =
-All_DR`, the release takes its place. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `9f9cd6cfc777`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`95056920ba2f`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`theThreeParametersTravelWithTheEndpoint`, `aStringBeyondTheBoundIsRefused`, `aTopicCorrespondsByNameOrByAlias`). The Java runtime applies the matching rule from the announced endpoints (`f6a4bcb079e1`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
+All_DR`, the release takes its place. `crates/java-omgdds` writes and reads PIDs 0x0080 to 0x0082 (`rtps/RpcDiscovery.java`, `DiscoveryData.buildEndpoint` and `parseEndpoint`, bound `string<256>`: an announcement beyond it is refused as in the decoder of `crates/rtps`; `f65fb3965b5e`). `ZeroDdsParticipant` announces `service_instance_name` on the endpoints of the service and `related_*_key` on both sides (`9993349aff89`). Tests: `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/RpcDiscoveryTest.java` (`rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids`, `rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused`, `rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias`). The Java runtime applies the matching rule from the announced endpoints (`1fddccd2b87b`): `ReplierImpl` holds back the requests of a client whose reply reader the reply writer does not know (Figure 7.3, per client); `RequesterImpl` sends when the instance's request reader names a reply writer that the reply reader has discovered (Figure 7.4). An endpoint without an announcement and a binding without discovery data keep the match by topic. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` through `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (needs a JDK; not run on the Mac or on the Linux test host).
 
 ## §7.7 Interface Evolution
 
@@ -4478,14 +4478,14 @@ service has more capabilities than the client can use."
 operation, not from the position); `crates/rpc/src/function_call.rs`
 (`dispatch_request` by opcode)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_labels_are_the_operation_hashes`,
-`crates/rpc/tests/profile_conformance.rs::function_call_processing_dispatches_to_correct_operation`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes`,
+`crates/rpc/tests/profile_conformance.rs::rpc_7_7_1_1_function_call_processing_dispatches_to_correct_operation`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::versions::an_old_client_calls_a_new_service`
 
 **Status:** `done` — the label of an operation is the HASH of its name
-(9467d977720c, 1944de30d46f) and does not depend on the other operations of the
+(64d55a6c8f94, c4a68d078000) and does not depend on the other operations of the
 interface; the service calls by label. For Enhanced a client of the old version
-runs against the service of the new version (test 3, d79e4dac24d0); for Basic
+runs against the service of the new version (test 3, 414e077c527d); for Basic
 there are three generated versions (`basic_old`, `basic_new`, `basic_fewer` in
 `crates/rpc-rust-e2e/build.rs`, `b21c700bc86e`) and the tests
 `evolution_styles_discovery.rs::basic_versions::a_client_with_fewer_operations_calls_a_service_with_more`,
@@ -4505,13 +4505,13 @@ operation: `RemoteExceptionCode::Unsupported`);
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`
 (expects `Unsupported`),
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`
 (`FunctionCallRoundtrip.java`, expects `RemoteUnsupportedError`),
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (`function_call_roundtrip.cpp`, expects `RemoteUnsupportedError`)
 
-**Status:** `done` — the generated Rust dispatcher (fbc219a6b735), the generated Java service
-(c4a249bd251f) and the generated C++ service of the Basic mapping (3f74f05ed2b8)
+**Status:** `done` — the generated Rust dispatcher (b527a9f58028), the generated Java service
+(c512ee365514) and the generated C++ service of the Basic mapping (62ccb5f757a3)
 answer an unknown operation with REMOTE_EX_UNSUPPORTED; the C++ client throws
 `RemoteUnsupportedError`. The spec has two statements here (§7.7.1.1:
 REMOTE_EX_UNSUPPORTED; table in §7.5.2: REMOTE_EX_UNKNOWN_OPERATION for "The
@@ -4528,12 +4528,12 @@ Reordering base interfaces has no impact on the semantics of the interface."
 **Repo:** `crates/rpc/src/codegen.rs::build_call_union` (labels from the name, not from
 the position); `crates/rpc/src/evolution_rules.rs::is_compatible`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::the_case_labels_are_the_operation_hashes`,
-`crates/rpc/src/evolution_rules.rs::tests::basic_mapping_reorder_operations_is_compatible`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_1_2_basic_mapping_reorder_operations_is_compatible`
 
-**Status:** `done` — the label of an operation is the HASH of its name (9467d977720c); the
+**Status:** `done` — the label of an operation is the HASH of its name (64d55a6c8f94); the
 order of operations and bases changes no label. The table `evolution_rules`
-names reordering compatible in Basic (b0468d6ed0f0).
+names reordering compatible in Basic (17fe2de3f32e).
 
 ### §7.7.1.3 No change of the signature in the Basic mapping
 
@@ -4543,10 +4543,10 @@ modifications to the operation signatures including exception specification."
 **Repo:** `crates/rpc/src/evolution_rules.rs::is_compatible` (Basic: `ChangeSignature`
 and the Enhanced changes incompatible)
 
-**Tests:** `crates/rpc/src/evolution_rules.rs::tests::basic_mapping_change_signature_is_breaking`
+**Tests:** `crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_1_3_basic_mapping_change_signature_is_breaking`
 
 **Status:** `done` — in the Basic mapping no change of a signature is treated as
-compatible (b0468d6ed0f0); the Basic types are `@final` and carry no member
+compatible (17fe2de3f32e); the Basic types are `@final` and carry no member
 IDs.
 
 ### §7.7.2 Evolution in the Enhanced mapping
@@ -4578,13 +4578,13 @@ C++: `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs`,
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_member_the_interface_does_not_have_is_unknown_operation`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_unknown_member_is_answered_unknown_operation`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_reply_carries_remote_ex`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`,
-`crates/rpc/tests/java_enhanced_codec.rs::the_generated_java_codec_writes_the_octets_of_the_clause`
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`,
+`crates/rpc/tests/java_enhanced_codec.rs::rpc_7_7_2_1_the_generated_java_codec_writes_the_octets_of_the_clause`
 
 **Status:** `done` — the member IDs are the HASH of the name; a member the service's version
 does not know leaves the request choice without an active member (Rust
 `UnknownOp`) and the service answers `remoteEx` = REMOTE_EX_UNKNOWN_OPERATION
-(Rust 076900132ad5, C++ 99bda16e455b, Java 9ab3b695e13c). An old client reaches
+(Rust 41b3b02f7a20, C++ 45ead22cc2b9, Java 2ea77f7dad8a). An old client reaches
 a new service because it never sets the additional member. Rust and C++ run the
 case; for Java the tests check the codec and the generated text
 (`enhanced_java_calls.rs`).
@@ -4599,10 +4599,10 @@ REMOTE_EX_UNKNOWN_OPERATION RemoteExceptionCode."
 
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_unknown_member_is_answered_unknown_operation`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_remote_exception_is_the_remote_ex_member`,
-`crates/rpc/src/enhanced.rs::tests::a_remote_ex_reply_round_trips_every_code`
+`crates/rpc/src/enhanced.rs::tests::rpc_7_7_2_2_a_remote_ex_reply_carries_each_code_as_its_ordinal`
 
 **Status:** `done` — when a client calls an operation the new service no longer has, it
-receives REMOTE_EX_UNKNOWN_OPERATION (076900132ad5, 3d4c42cad194). A new client
+receives REMOTE_EX_UNKNOWN_OPERATION (41b3b02f7a20, e305669e2c42). A new client
 with a subset of the old service's operations is the case of "fewer operations"
 in §7.7.1.1, here without an error.
 
@@ -4615,12 +4615,12 @@ as they contain the same operations."
 **Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service` (`@Autoid`: member ID =
 HASH of the name, 28 bits); `crates/rpc/src/evolution_rules.rs::is_compatible`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_autoid_member_ids_are_the_hash_of_the_name`,
-`crates/rpc/src/codegen.rs::tests::enhanced_inheritance_is_flattened`,
-`crates/rpc/src/evolution_rules.rs::tests::enhanced_mapping_reorder_operations_is_compatible`
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_2_enhanced_autoid_member_ids_are_the_hash_of_the_name`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_4_enhanced_inheritance_is_flattened`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_2_3_enhanced_mapping_reorder_operations_is_compatible`
 
 **Status:** `done` — the member ID of an operation is the HASH of its name, not its
-position (60dbad781c53); two interfaces with the same operations have the same
+position (0edbbcf11324); two interfaces with the same operations have the same
 IDs whatever the order of operations and bases.
 
 ### §7.7.2.4 Duck Typing
@@ -4632,13 +4632,13 @@ evolution of an interface."
 names of the base); `crates/lang-rules/src/emit/interface_rust/enhanced.rs`
 (derived dispatcher serves inherited operations)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_inheritance_is_flattened`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_4_enhanced_inheritance_is_flattened`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_derived_request_has_the_inherited_operation`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_derived_dispatcher_serves_an_inherited_member`
 
 **Status:** `done` — the request choice of a derived interface contains the inherited
 operations with the same member IDs they would have in the interface itself
-(60dbad781c53, 2b68e33cef9b); the topic names come from the name of the
+(0edbbcf11324, 7607e8680852); the topic names come from the name of the
 interface. An interface with inherited operations and one with directly defined
 operations of the same name are the same on the wire.
 
@@ -4657,17 +4657,17 @@ Java
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_mutable_operation_has_mutable_structures`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_mutable_structure_skips_a_member_it_does_not_know`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_absent_member_of_a_mutable_structure_takes_its_default`,
-`crates/rpc/src/codegen.rs::tests::enhanced_mutable_operation_has_mutable_structures`,
-`crates/rpc/src/evolution_rules.rs::tests::enhanced_mapping_add_remove_param_is_breaking`;
-C++: `crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`;
-Java: `crates/rpc/tests/java_enhanced_codec.rs::the_generated_java_codec_writes_the_octets_of_the_clause`
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_2_5_1_enhanced_mapping_add_remove_param_is_breaking`;
+C++: `crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`;
+Java: `crates/rpc/tests/java_enhanced_codec.rs::rpc_7_7_2_1_the_generated_java_codec_writes_the_octets_of_the_clause`
 
 **Status:** `done` — without `@Mutable` the structures are `@final` and carry no member
 headers (an extra parameter breaks compatibility); with `@Mutable` each
 parameter carries an EMHEADER with the ID of the name, an unknown member is
-skipped and a missing one takes its default (076900132ad5, 2a06d562261e). The
+skipped and a missing one takes its default (41b3b02f7a20, 77ded59f712c). The
 table `evolution_rules` names adding and removing parameters incompatible
-(b0468d6ed0f0).
+(17fe2de3f32e).
 
 ### §7.7.2.5.2 Reordering parameters
 
@@ -4680,11 +4680,11 @@ synthesized structures (In and Out) shall be annotated @mutable."
 parameter name; `@final` without `@Mutable`)
 
 **Tests:** `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_mutable_operation_has_mutable_structures`,
-`crates/rpc/src/evolution_rules.rs::tests::enhanced_mapping_reorder_params_is_breaking`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_2_5_2_enhanced_mapping_reorder_params_is_breaking`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::versions::an_old_client_calls_a_new_service`,
 `crates/rpc-rust-e2e/tests/evolution_styles_discovery.rs::versions::a_new_client_calls_an_old_service`
 
-**Status:** `done` — without `@Mutable` the parameters stand without headers in the order of the declaration (test 1, case `Calc_add_In`), reordering breaks compatibility; with `@Mutable` every parameter has an ID from its name (076900132ad5). Two generated versions of `interface Svc` have `@Mutable void mix(in long x, in long y)` and `@Mutable void mix(in long y, in long x)`; client and service of the other version exchange the arguments under their names. Rust: tests 3 and 4 (d79e4dac24d0). C++: `crates/rpc/tests/cpp/enhanced_evolution_roundtrip.cpp` through `crates/rpc/tests/cpp_enhanced_function_call.rs::two_generated_cpp_versions_of_an_interface_run_against_each_other` (`c398e1587cf7`, run on the Linux test host). Java: `crates/rpc/tests/java/EvolutionChecks.java` through `crates/rpc/tests/java_enhanced_codec.rs::two_generated_java_versions_of_an_interface_run_against_each_other` (`88711477f7cb`, needs a JDK).
+**Status:** `done` — without `@Mutable` the parameters stand without headers in the order of the declaration (test 1, case `Calc_add_In`), reordering breaks compatibility; with `@Mutable` every parameter has an ID from its name (41b3b02f7a20). Two generated versions of `interface Svc` have `@Mutable void mix(in long x, in long y)` and `@Mutable void mix(in long y, in long x)`; client and service of the other version exchange the arguments under their names. Rust: tests 3 and 4 (414e077c527d). C++: `crates/rpc/tests/cpp/enhanced_evolution_roundtrip.cpp` through `crates/rpc/tests/cpp_enhanced_function_call.rs::two_generated_cpp_versions_of_an_interface_run_against_each_other` (`49525d7e5e80`, run on the Linux test host). Java: `crates/rpc/tests/java/EvolutionChecks.java` through `crates/rpc/tests/java_enhanced_codec.rs::two_generated_java_versions_of_an_interface_run_against_each_other` (`19add727524b`, needs a JDK).
 
 ### §7.7.2.5.3 Changing the type of a parameter
 
@@ -4700,7 +4700,7 @@ by this specification. The type assignability rules shall be as described in
 `crates/rpc-rust-e2e/tests/java_peer.rs::versions::an_old_java_client_calls_an_old_rust_service`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::appended_member::a_member_appended_to_a_mutable_structure_matches_the_java_client`
 
-**Status:** `done` — Rust and C++ are implemented: the topics carry the `TypeInformation`, the pairing follows assignability under XTypes. Tests (Linux test host, green): `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::appended_member::a_member_appended_to_a_parameter_type_is_matched` (a member appended to a `@mutable` structure), `...::versions::a_changed_parameter_type_does_not_match` (`long` to `string`: `ServiceNotMatched`; with a match by type name the request would be sent and refused by the service, measured with a control run); for C++ `cpp_rpc_real_library.rs::the_cpp_binding_runs_against_libzerodds` (`ev_changed`: the client does not find the service). Java (`95818352de1`, `e6af3ee9150`, `64134babe64`), against Rust peers over RTPS: `crates/rpc-rust-e2e/tests/java_peer.rs::versions::a_changed_parameter_type_does_not_match_the_java_client` (`long` to `string`: the Java client finds no service, the Rust service sees no request; on `7484a8f0d46`, before the matching by assignability, the Java client matched by type name, called the service and got no reply), control `...::versions::an_old_java_client_calls_an_old_rust_service`, and `...::appended_member::a_member_appended_to_a_mutable_structure_matches_the_java_client` (a member appended to `Pose`: match, the argument reaches the service). The table `evolution_rules` calls the change compatible (`enhanced_mapping_change_param_type_is_compatible`).
+**Status:** `done` — Rust and C++ are implemented: the topics carry the `TypeInformation`, the pairing follows assignability under XTypes. Tests (Linux test host, green): `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::appended_member::a_member_appended_to_a_parameter_type_is_matched` (a member appended to a `@mutable` structure), `...::versions::a_changed_parameter_type_does_not_match` (`long` to `string`: `ServiceNotMatched`; with a match by type name the request would be sent and refused by the service, measured with a control run); for C++ `cpp_rpc_real_library.rs::rpc_7_7_2_5_the_cpp_binding_matches_by_assignability_against_libzerodds` (`ev_changed`: the client does not find the service). Java (`2d0f809c6e2`, `9b1608508c5`, `d67a980f80b`), against Rust peers over RTPS: `crates/rpc-rust-e2e/tests/java_peer.rs::versions::a_changed_parameter_type_does_not_match_the_java_client` (`long` to `string`: the Java client finds no service, the Rust service sees no request; on `78f243b596f`, before the matching by assignability, the Java client matched by type name, called the service and got no reply), control `...::versions::an_old_java_client_calls_an_old_rust_service`, and `...::appended_member::a_member_appended_to_a_mutable_structure_matches_the_java_client` (a member appended to `Pose`: match, the argument reaches the service). The table `evolution_rules` calls the change compatible (`enhanced_mapping_change_param_type_is_compatible`).
 
 ### §7.7.2.5.4 Adding or removing the return type
 
@@ -4712,14 +4712,14 @@ and consequently support addition or removal of return type".
 **Repo:** `crates/rpc/src/codegen.rs::build_enhanced_service` (the return value is the
 member `return` of the `Out` structure; `@final`, with `@Mutable` `@mutable`)
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_out_carries_the_return_value`,
-`crates/rpc/src/codegen.rs::tests::enhanced_mutable_operation_has_mutable_structures`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_out_carries_the_return_value`,
+`crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_absent_member_of_a_mutable_structure_takes_its_default`,
-`crates/rpc/src/evolution_rules.rs::tests::enhanced_mapping_add_remove_return_type_is_breaking`
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_2_5_4_enhanced_mapping_add_remove_return_type_is_breaking`
 
 **Status:** `done` — the return value is a member of the `Out` structure; without `@Mutable`
 it is `@final` (adding or removing breaks compatibility), with `@Mutable` it is
-`@mutable` and read like the `In` structure (076900132ad5, 2a06d562261e). The
+`@mutable` and read like the `In` structure (41b3b02f7a20, 77ded59f712c). The
 tests for decoding a missing and an unknown member run on the `In` structure;
 the codec of the `Out` structure is produced by the same generator.
 
@@ -4731,13 +4731,13 @@ by this specification. The type assignability rules shall be as described in
 
 **Repo:** —
 
-**Tests:** `crates/rpc/tests/cpp_rpc_real_library.rs::the_cpp_binding_runs_against_libzerodds`,
+**Tests:** `crates/rpc/tests/cpp_rpc_real_library.rs::rpc_7_7_2_5_5_a_changed_return_type_matches_by_assignability_against_libzerodds`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_java_client_calls_a_rust_service`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::a_rust_client_calls_a_java_service`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::versions::a_return_type_the_old_one_is_not_assignable_to_does_not_match_the_java_client`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::appended_member::a_member_appended_to_a_mutable_structure_matches_the_java_client`
 
-**Status:** `done` — Rust is implemented as for “§7.7.2.5.3 Changing the type of a parameter”. Tests (Linux test host, green): `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::return_type::a_return_type_the_old_one_is_not_assignable_to_does_not_match` (`long` to `long long`: `ServiceNotMatched`) and `...::appended_member::a_return_type_with_an_appended_member_is_matched` (a member appended to a `@mutable` structure in the return type: the old client reads the reply of the new service, `ca27bd49b395`). C++ carries the same `TypeInformation` (item on §7.5.1.2.6); `cpp_rpc_real_library.rs::the_cpp_binding_runs_against_libzerodds` checks a return type with an appended member (the old client reads the reply) and one widened from `long` to `long long` (no match) (`383e7958484`). Java (`95818352de1`, `64134babe64`), against Rust peers over RTPS: `crates/rpc-rust-e2e/tests/java_peer.rs::versions::a_return_type_the_old_one_is_not_assignable_to_does_not_match_the_java_client` (`long` to `long long`: the reply reader of the Java client does not match the writer of the service; on `7484a8f0d46` it matched by type name and the call of `add` went through) and `...::appended_member::a_member_appended_to_a_mutable_structure_matches_the_java_client` (return type `Pose` with an appended member: the Java client reads `origin.x=3`). The table `evolution_rules` calls the change compatible (`enhanced_mapping_change_return_type_is_compatible`).
+**Status:** `done` — Rust is implemented as for “§7.7.2.5.3 Changing the type of a parameter”. Tests (Linux test host, green): `crates/rpc-rust-e2e/tests/enhanced_type_information.rs::return_type::a_return_type_the_old_one_is_not_assignable_to_does_not_match` (`long` to `long long`: `ServiceNotMatched`) and `...::appended_member::a_return_type_with_an_appended_member_is_matched` (a member appended to a `@mutable` structure in the return type: the old client reads the reply of the new service, `f447919ebed2`). C++ carries the same `TypeInformation` (item on §7.5.1.2.6); `cpp_rpc_real_library.rs::rpc_7_7_2_5_5_a_changed_return_type_matches_by_assignability_against_libzerodds` checks a return type with an appended member (the old client reads the reply) and one widened from `long` to `long long` (no match) (`a7f9353650e`). Java (`2d0f809c6e2`, `d67a980f80b`), against Rust peers over RTPS: `crates/rpc-rust-e2e/tests/java_peer.rs::versions::a_return_type_the_old_one_is_not_assignable_to_does_not_match_the_java_client` (`long` to `long long`: the reply reader of the Java client does not match the writer of the service; on `78f243b596f` it matched by type name and the call of `add` went through) and `...::appended_member::a_member_appended_to_a_mutable_structure_matches_the_java_client` (return type `Pose` with an appended member: the Java client reads `origin.x=3`). The table `evolution_rules` calls the change compatible (`enhanced_mapping_change_return_type_is_compatible`).
 
 ### §7.7.2.5.6 Adding or removing an exception
 
@@ -4751,15 +4751,15 @@ structure will support this interface evolution."
 `Result` without `UnknownOp`); C++: `crates/lang-rules/src/emit/interface_cpp/calls.rs`;
 Java: `crates/lang-rules/src/emit/interface_java/enhanced_calls.rs`
 
-**Tests:** `crates/rpc/src/codegen.rs::tests::enhanced_result_carries_out_and_the_exceptions`,
+**Tests:** `crates/rpc/src/codegen.rs::tests::rpc_7_5_1_2_3_enhanced_result_carries_out_and_the_exceptions`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::a_result_is_a_choice_of_the_result_and_the_exceptions`,
-`crates/rpc/src/evolution_rules.rs::tests::enhanced_mapping_add_remove_exception_is_compatible`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_2_5_6_enhanced_mapping_add_remove_exception_is_compatible`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_unknown_exception_member_of_a_result_decodes_as_unknown_ex`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::the_generated_client_reports_unknown_exception_for_an_unknown_result_member`,
 `crates/rpc-rust-e2e/tests/enhanced_generated.rs::an_exception_the_operation_does_not_declare_is_unknown_exception`,
-`crates/rpc/tests/java_enhanced_codec.rs::the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
+`crates/rpc/tests/java_enhanced_codec.rs::rpc_7_5_1_2_1_1_the_generated_java_service_and_client_answer_the_error_cases_of_the_clauses`
 
-**Status:** `done` — every exception is a member `<name>_ex` of the `Result` choice with an ID from the name (076900132ad5); adding or removing an exception does not change the IDs of the others. The generated Rust client reports an unknown `_ex` member of the `Result` as `RpcError::RemoteException` with REMOTE_EX_UNKNOWN_EXCEPTION, and so an undeclared exception of the service (8891b6d7f067). Java: `EnhancedRuntimeChecks.java` (2051ce1a2a87) and `EvolutionChecks.java` (88711477f7cb). C++: `enhanced_function_call_roundtrip.cpp` checks an undeclared exception of the implementation and a `Result` with an unknown member (the client throws `RemoteUnknownExceptionError`), `enhanced_evolution_roundtrip.cpp` the version with an added exception against the one without (`c398e1587cf7`, run on the Linux test host).
+**Status:** `done` — every exception is a member `<name>_ex` of the `Result` choice with an ID from the name (41b3b02f7a20); adding or removing an exception does not change the IDs of the others. The generated Rust client reports an unknown `_ex` member of the `Result` as `RpcError::RemoteException` with REMOTE_EX_UNKNOWN_EXCEPTION, and so an undeclared exception of the service (f88947810821). Java: `EnhancedRuntimeChecks.java` (82ec363b6b82) and `EvolutionChecks.java` (19add727524b). C++: `enhanced_function_call_roundtrip.cpp` checks an undeclared exception of the implementation and a `Result` with an unknown member (the client throws `RemoteUnknownExceptionError`), `enhanced_evolution_roundtrip.cpp` the version with an added exception against the one without (`49525d7e5e80`, run on the Linux test host).
 
 ### §7.7.2.5.6 REMOTE_EX_UNKNOWN_EXCEPTION for an unknown exception
 
@@ -4780,20 +4780,20 @@ results into an exception that client does not understand."
 **Repo:** `crates/rpc/src/evolution_rules.rs::is_compatible` and
 `compatible_evolutions`
 
-**Tests:** `crates/rpc/src/evolution_rules.rs::tests::basic_mapping_add_remove_operation_is_compatible`,
-`crates/rpc/src/evolution_rules.rs::tests::basic_mapping_has_four_compatible_evolutions`,
-`crates/rpc/src/evolution_rules.rs::tests::enhanced_compatible_evolutions_includes_8_of_12`,
-`crates/rpc/src/evolution_rules.rs::tests::a_mutable_operation_allows_parameter_changes`,
-`crates/rpc/src/evolution_rules.rs::tests::mutable_changes_nothing_that_was_compatible_or_never_was`,
-`crates/rpc/src/evolution_rules.rs::tests::a_mutable_operation_has_eleven_compatible_enhanced_evolutions`
+**Tests:** `crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_basic_mapping_add_remove_operation_is_compatible`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_basic_mapping_has_four_compatible_evolutions`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_enhanced_compatible_evolutions_includes_8_of_12`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_a_mutable_operation_allows_parameter_changes`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_mutable_changes_nothing_that_was_compatible_or_never_was`,
+`crates/rpc/src/evolution_rules.rs::tests::rpc_7_7_a_mutable_operation_has_eleven_compatible_enhanced_evolutions`
 
-**Status:** `done` — the table agrees with §7.7.1.1 to §7.7.2.5.6 (b0468d6ed0f0): Basic names
+**Status:** `done` — the table agrees with §7.7.1.1 to §7.7.2.5.6 (17fe2de3f32e): Basic names
 adding, removing and reordering operations compatible and every change of the
 signature incompatible; Enhanced names type changes and adding or removing
 exceptions compatible and adding, removing and reordering parameters and return
 type incompatible. With `mutable = true` in `is_compatible` and
 `compatible_evolutions` it names the three changes compatible that the spec
-allows with `@mutable` (§7.7.2.5.1, .2, .4; e1e005ef9a09). No code outside the
+allows with `@mutable` (§7.7.2.5.1, .2, .4; 943d3afd7cb6). No code outside the
 tests calls the table; the spec asks for no run-time check (read from the code).
 
 ---
@@ -4808,14 +4808,14 @@ ReplyHeader described in sub clause 7.5.1.1.1."
 **Repo:** `crates/rpc/src/requester.rs::Requester::tick` (`related_request_id` against
 the outstanding requests); `crates/rpc/src/replier.rs::Replier::tick`
 
-**Tests:** `crates/rpc/src/requester.rs::tests::tick_correlates_reply_with_pending_slot`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_multi_pending_requests_all_get_their_reply`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
+**Tests:** `crates/rpc/src/requester.rs::tests::rpc_7_2_1_tick_correlates_reply_with_pending_slot`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_multi_pending_requests_all_get_their_reply`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
 `crates/rpc-rust-e2e/tests/e2e.rs::a_live_request_identity_is_the_rtps_identity_of_the_request_writer`
 
 **Status:** `done` — the Rust runtime correlates through `RequestHeader::request_id` and
 `ReplyHeader::related_request_id` (f06c1eaf3d3a); the `request_id` is the GUID
-and sequence number of the request writer (10ba007046af). For C++ and Java see
+and sequence number of the request writer (2314c1c5fb58). For C++ and Java see
 the next item.
 
 ### §7.8.1 C++ and Java: requestId in the header, correlation through relatedRequestId
@@ -4828,15 +4828,15 @@ identity from `DataWriter::next_identity()` into `RequestHeader::request_id`,
 Java: `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java`,
 `ReplierImpl.java`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (the in-memory binding hands out no identity),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — the header carries the explicit `request_id`, the replier reads it from
-the header, not from `SampleInfo` (8202f8c67446); requesters filter foreign
-replies by the GUID of their request writer (d6f6b5e975c8). The bindings to
-ZeroDDS in C++ and Java also hand out the identity of the sample (a8058d1272c9,
-830064b55c76).
+the header, not from `SampleInfo` (58634aa2702a); requesters filter foreign
+replies by the GUID of their request writer (35aa702e4900). The bindings to
+ZeroDDS in C++ and Java also hand out the identity of the sample (2bfb2786121b,
+a2a9a67acb58).
 
 ### §7.8.2 PID_RELATED_SAMPLE_IDENTITY 0x0083 in the inline QoS
 
@@ -4855,7 +4855,7 @@ may appear in the inlineQos sub-message element of the DATA sub-message".
 
 **Status:** `done` — parameter ID 0x0083, encoding and lookup in the inline QoS
 (b5224bd70dbb); reading masks only the must-understand bit, a vendor-specific ID
-0x8083 is not read as 0x0083 (dfaa3df22ad0).
+0x8083 is not read as 0x0083 (1a30e3dd368a).
 
 ### §7.8.2 PID_RELATED_SAMPLE_IDENTITY on every reply
 
@@ -4871,14 +4871,14 @@ through `write_related`); C++: `zerodds_writer_write_related` in
 (`Writer.write(sample, related)`); `crates/rmw-zerodds-shim/src/services.rs`
 
 **Tests:** `crates/rtps/src/inline_qos.rs::tests::reply_inline_qos_contains_only_pid_0x0083`,
-`crates/dcps/src/runtime.rs::tests::the_related_identity_is_0x0083_or_eprosimas_0x800f_from_a_writer_that_means_it`,
+`crates/dcps/src/runtime.rs::tests::rpc_7_8_2_the_related_identity_is_0x0083_or_eprosimas_0x800f_from_a_writer_that_means_it`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_call_is_answered_through_the_related_sample_identity`,
-`crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::aWriteReturnsItsIdentityAndTheReaderSeesItWithTheRelatedOne`
+`crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::rpc_7_8_2_the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::rpc_7_8_2_a_write_returns_its_identity_and_the_reader_sees_it_with_the_related_one`
 
 **Status:** `done` — in the Enhanced mapping every reply carries parameter 0x0083 with the
-identity of the request and the requester correlates by it: Rust (84416dc1319c,
-3d4c42cad194), C++ (a8058d1272c9, daf40ded82e0), Java (830064b55c76, the Java
+identity of the request and the requester correlates by it: Rust (8385434c2326,
+e305669e2c42), C++ (2bfb2786121b, 5a472acf053e), Java (a2a9a67acb58, the Java
 PSM writer returns the identity and takes a related one). The Basic mapping
 correlates through the header (§7.8.1). The ROS 2 services use the same write
 path.
@@ -4898,19 +4898,19 @@ path.
 `zerodds_reader_take_wire` of the C API. Java:
 `runtime/java/src/main/java/org/zerodds/ddsrpc/ZeroDdsParticipant.java`
 (`Writer.write(sample, related)`, `Reader.take`) through
-`DataWriterImpl.writeIdentified` of the Java PSM. Commits: `dfaa3df22ad0` (rtps:
-0x8083 is no longer read as 0x0083), `84416dc1319c` (dcps),
-`daf40ded82e0` (c-api), `3d4c42cad194` (Rust), `a8058d1272c9` (C++),
-`830064b55c76` (Java)
+`DataWriterImpl.writeIdentified` of the Java PSM. Commits: `1a30e3dd368a` (rtps:
+0x8083 is no longer read as 0x0083), `8385434c2326` (dcps),
+`5a472acf053e` (c-api), `e305669e2c42` (Rust), `2bfb2786121b` (C++),
+`a2a9a67acb58` (Java)
 
 **Tests:** `crates/rtps/src/inline_qos.rs::tests::a_vendor_specific_0x8083_is_not_the_related_sample_identity`,
 `crates/rtps/src/inline_qos.rs::tests::find_related_sample_identity_with_must_understand_bit_works`,
-`crates/dcps/src/subscriber.rs::tests::take_with_wire_hands_over_the_identity_and_the_related_identity`,
-`crates/dcps/src/publisher.rs::tests::write_related_without_a_runtime_is_refused`,
-`crates/zerodds-c-api/tests/related_sample_identity.rs::a_related_sample_identity_reaches_the_reader_with_the_wire_identity`,
+`crates/dcps/src/subscriber.rs::tests::rpc_7_8_2_take_with_wire_hands_over_the_identity_and_the_related_identity`,
+`crates/dcps/src/publisher.rs::tests::rpc_7_8_2_write_related_without_a_runtime_is_refused`,
+`crates/zerodds-c-api/tests/related_sample_identity.rs::rpc_7_8_2_a_related_sample_identity_reaches_the_reader_with_the_wire_identity`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_call_is_answered_through_the_related_sample_identity`,
-`crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::aWriteReturnsItsIdentityAndTheReaderSeesItWithTheRelatedOne`
+`crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::rpc_7_8_2_the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::rpc_7_8_2_a_write_returns_its_identity_and_the_reader_sees_it_with_the_related_one`
 
 **Status:** `done` — in Rust, C++ and Java the replier of the Enhanced mapping writes the
 reply with the parameter, and the requester reads it. The Basic mapping carries
@@ -4945,15 +4945,15 @@ the DATA), `Replier::send_reply` and `Replier::write_reply` (`write_related`
 with that identity). C++: `runtime/cpp/include/dds/rpc/core.hpp::Replier::send_reply`
 with `Correlation::SAMPLE_IDENTITY` (`Writer::write_related`). Java:
 `runtime/java/src/main/java/org/zerodds/ddsrpc/ReplierImpl.java::sendReply`
-(`DataWriter.write(sample, relatedRequestId)`). Commits: `3d4c42cad194`
-(Rust), `a8058d1272c9` (C++), `97c20505e85c` and `830064b55c76` (Java)
+(`DataWriter.write(sample, relatedRequestId)`). Commits: `e305669e2c42`
+(Rust), `2bfb2786121b` (C++), `771f12846807` and `a2a9a67acb58` (Java)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::an_enhanced_request_is_identified_by_its_data`,
-`crates/rpc/src/requester.rs::tests::an_enhanced_reply_is_correlated_by_its_related_identity`,
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_8_2_an_enhanced_request_is_identified_by_its_data`,
+`crates/rpc/src/requester.rs::tests::rpc_7_8_2_an_enhanced_reply_is_correlated_by_its_related_identity`,
 `crates/rpc-rust-e2e/tests/enhanced_e2e.rs::an_enhanced_call_is_answered_through_the_related_sample_identity`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_2_1_e2e_client_side_request_identity_is_the_one_the_reply_relates_to`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — the reply carries the identity of the request sample that the reader
 of the replier delivered; in Rust a request without an identity on its DATA is
@@ -4971,17 +4971,17 @@ specification."
 (`SampleIdentity::UNKNOWN` is an alias);
 `runtime/cpp/include/dds/rpc/base.hpp::related_sample_identity_invalid`;
 `runtime/java/src/main/java/org/omg/dds/rpc/SampleIdentity.java::RELATED_SAMPLE_IDENTITY_INVALID`.
-Commits: `099e1d0fd595`, `15cbcb328c65`
+Commits: `2fe2b7cdea14`, `6c1e75d0c116`
 
-**Tests:** `crates/rpc/src/common_types.rs::tests::sample_identity_invalid_constant_is_rtps_unknown`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/src/common_types.rs::tests::rpc_7_2_1_sample_identity_invalid_constant_is_rtps_unknown`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (program `rpc_runtime_roundtrip.cpp`: "the invalid related identity has SEQUENCENUMBER_UNKNOWN {-1, 0}"),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (program `RpcRuntimeRoundtrip.java`: "SEQUENCENUMBER_UNKNOWN.high is -1" and "SEQUENCENUMBER_UNKNOWN.low is 0")
 
 **Status:** `done` — all three runtimes have the constant with
 `SEQUENCENUMBER_UNKNOWN = {high = -1, low = 0}`; C++ and Java keep the "unset"
-value (sequence number 0) apart from it. The C++ program (c9a42b1c29af) and
+value (sequence number 0) apart from it. The C++ program (ea817b7746ef) and
 the Java program check the value of `related_sample_identity_invalid()` and
 `RELATED_SAMPLE_IDENTITY_INVALID`; the Java program also checks the octets in
 the `ReplyHeader`. The programs were read in the code; a run on the Linux test
@@ -4999,15 +4999,15 @@ form of a SampleIdentity object."
 `runtime/java/src/main/java/org/omg/dds/rpc/Sample.java` (`identity`;
 `TakenSample.identity` from `SampleImpl.identity()` of the Java PSM in
 `ZeroDdsParticipant.Reader.take`); Rust:
-`crates/rpc/src/replier.rs::PendingRequest::identity`. Commits: `e143bb6bfa0b`
-(C++ classes), `a8058d1272c9` (C++), `97c20505e85c` and `830064b55c76` (Java),
-`2933b7d28a88` (Rust)
+`crates/rpc/src/replier.rs::PendingRequest::identity`. Commits: `2ea2abb7d843`
+(C++ classes), `2bfb2786121b` (C++), `771f12846807` and `a2a9a67acb58` (Java),
+`c5af5c7c138e` (Rust)
 
-**Tests:** `crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::aWriteReturnsItsIdentityAndTheReaderSeesItWithTheRelatedOne`,
-`crates/rpc/src/replier.rs::tests::receive_requests_and_send_reply_expose_the_identity`
+**Tests:** `crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::rpc_7_8_2_the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::rpc_7_8_2_a_write_returns_its_identity_and_the_reader_sees_it_with_the_related_one`,
+`crates/rpc/src/replier.rs::tests::rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity`
 
 **Status:** `done` — C++ and Java (the language bindings of the spec) deliver the identity
 of the request on the `Sample`; the Rust runtime delivers it on the
@@ -5020,10 +5020,10 @@ of the request on the `Sample`; the Rust runtime delivers it on the
 **Repo:** `crates/rpc/src/replier.rs` (`ReplierHandler::handle` receives only the value;
 `AsyncReplierHandler::on_request(replier, request, identity)` and
 `PendingRequest::identity` carry a `RequestIdentity`);
-`crates/rpc/src/request_identity.rs::RequestIdentity`. Commit: `2933b7d28a88`
+`crates/rpc/src/request_identity.rs::RequestIdentity`. Commit: `c5af5c7c138e`
 
-**Tests:** `crates/rpc/src/replier.rs::tests::receive_requests_and_send_reply_expose_the_identity`,
-`crates/rpc/src/replier.rs::tests::dispatch_async_hands_the_replier_and_the_identity_to_the_listener`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity`,
+`crates/rpc/src/replier.rs::tests::rpc_7_2_3_dispatch_async_hands_the_replier_and_the_identity_to_the_listener`
 
 **Status:** `done` — the synchronous listener of the Rust runtime (way 1) receives only the
 value of the request; ways 2 and 3 receive the identity. The spec defines the
@@ -5043,12 +5043,12 @@ from the reply SampleInfo in the form of a SampleIdentity object."
 by `Requester::decode_reply` from the `ReplyHeader`);
 `runtime/java/src/main/java/org/omg/dds/rpc/Sample.java` (`relatedIdentity`;
 `TakenSample.relatedIdentity` from `SampleImpl.relatedIdentity()` of the Java PSM).
-Commits: `a8058d1272c9` (C++), `97c20505e85c` and `830064b55c76` (Java)
+Commits: `2bfb2786121b` (C++), `771f12846807` and `a2a9a67acb58` (Java)
 
-**Tests:** `crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::aWriteReturnsItsIdentityAndTheReaderSeesItWithTheRelatedOne`
+**Tests:** `crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::rpc_7_8_2_the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/ZeroDdsParticipantTest.java::rpc_7_8_2_a_write_returns_its_identity_and_the_reader_sees_it_with_the_related_one`
 
 **Status:** `done` — C++ and Java deliver the related identity on the reply sample from the
 information of the sample; in the Enhanced mapping it comes from
@@ -5063,11 +5063,11 @@ information of the sample; in the Enhanced mapping it comes from
 `crates/rpc/src/requester.rs::Requester::tick` (assigns replies of the
 Enhanced mapping through the related identity;
 `Requester::uncorrelated_replies` counts replies without it). Commits:
-`84416dc1319c`, `3d4c42cad194`
+`8385434c2326`, `e305669e2c42`
 
-**Tests:** `crates/dcps/src/subscriber.rs::tests::take_with_wire_hands_over_the_identity_and_the_related_identity`,
-`crates/rpc/src/requester.rs::tests::an_enhanced_reply_is_correlated_by_its_related_identity`,
-`crates/rpc/src/requester.rs::tests::an_enhanced_reply_without_a_related_identity_is_counted`
+**Tests:** `crates/dcps/src/subscriber.rs::tests::rpc_7_8_2_take_with_wire_hands_over_the_identity_and_the_related_identity`,
+`crates/rpc/src/requester.rs::tests::rpc_7_8_2_an_enhanced_reply_is_correlated_by_its_related_identity`,
+`crates/rpc/src/requester.rs::tests::rpc_7_8_2_2_an_enhanced_reply_without_a_related_identity_is_counted`
 
 **Status:** `done` — `SampleInfo` of the DCPS layer has no field for it; the runtime reads
 it from `SampleWire`. The Rust `Requester` gives the caller the payload of the
@@ -5088,13 +5088,13 @@ when sending the reply to a request."
 `relatedRequestId`; `DataWriter.write(sample, related)`); Rust:
 `crates/rpc/src/replier.rs::Replier::send_reply` (with `RequestIdentity`) and
 `crates/dcps/src/runtime.rs::DcpsRuntime::write_user_sample_related`. Commits:
-`a8058d1272c9` (C++), `97c20505e85c` and `830064b55c76` (Java), `2933b7d28a88`
+`2bfb2786121b` (C++), `771f12846807` and `a2a9a67acb58` (Java), `c5af5c7c138e`
 (Rust)
 
-**Tests:** `crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`,
-`crates/rpc/src/replier.rs::tests::receive_requests_and_send_reply_expose_the_identity`
+**Tests:** `crates/rpc/tests/cpp_rpc_zerodds_related_identity.rs::rpc_7_8_2_the_zerodds_binding_sends_and_reads_the_related_sample_identity`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`,
+`crates/rpc/src/replier.rs::tests::rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity`
 
 **Status:** `done` — the replier sets the identity of the request when it sends: in the
 Enhanced mapping as `PID_RELATED_SAMPLE_IDENTITY`, in the Basic mapping in the
@@ -5116,13 +5116,13 @@ language binding, creating an instance of a Replier activates the service."
 `runtime/cpp/include/dds/rpc.hpp::Replier` (constructor with `ReplierParams`);
 `crates/lang-rules/src/emit/interface_cpp/calls.rs` and
 `crates/lang-rules/src/emit/interface_java/calls.rs` (`<I>Service` over a
-`Replier`, created in the constructor). Commits: `24e3443ce819` (C++),
-`c4a249bd251f` (Java)
+`Replier`, created in the constructor). Commits: `ec3707125a9b` (C++),
+`c512ee365514` (Java)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::replier_new_creates_endpoints`,
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_9_1_replier_new_creates_endpoints`,
 `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`
 
 **Status:** `done` — creating the `Replier`, `serve` (Rust) and `<I>Service` (C++, Java)
 activates the service.
@@ -5138,7 +5138,7 @@ underlying DataReader and DataWriter entities and they shall be enabled."
 `runtime/java/src/main/java/org/zerodds/ddsrpc/ReplierImpl.java`
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (program `function_call_roundtrip.cpp`: "creating the service creates its DataReader and DataWriter")
 
 **Status:** `done` — the entities are created on construction and are active.
@@ -5168,13 +5168,13 @@ operations must return a reply consistent with the language binding."
 `dispatcher_handle_fn`); `crates/lang-rules/src/emit/interface_cpp/calls.rs`
 and `crates/lang-rules/src/emit/interface_java/calls.rs` (`<I>Service`, calls
 the implementation and translates what it throws into a remote exception code).
-Commits: `24e3443ce819` (C++), `c4a249bd251f` (Java)
+Commits: `ec3707125a9b` (C++), `c512ee365514` (Java)
 
 **Tests:** `crates/rpc-rust-e2e/tests/e2e.rs::the_generated_calculator_binding_runs_every_call`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_service_translates_what_the_implementation_throws`
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_9_2_1_cpp_service_translates_what_the_implementation_throws`
 
 **Status:** `done` — in Rust, C++ and Java the generated service calls the implementation
 of the operation and returns the reply.
@@ -5201,14 +5201,14 @@ reply before the callback returns. It is invoked for each received request."
 `runtime/cpp/include/dds/rpc.hpp` (`SimpleReplierListener`,
 `Replier::dispatch_requests`, called on arrival through `Replier::Impl::listen`);
 `runtime/java/src/main/java/org/omg/dds/rpc/SimpleReplierListener.java`
-(`ListenerDelivery.ON_ARRIVAL`). Commits: `c6c468fbbe42` (Rust),
-`e530fc03ed85` (C++), `97c20505e85c` (Java)
+(`ListenerDelivery.ON_ARRIVAL`). Commits: `cd07b2221f07` (Rust),
+`05c799d7e041` (C++), `771f12846807` (Java)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::tick_processes_request_and_writes_reply`,
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_2_1_tick_processes_request_and_writes_reply`,
 `crates/rpc-rust-e2e/tests/lifecycle_e2e.rs::a_call_is_answered_without_anyone_ticking`,
-`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::rpc_7_9_2_2_the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — the listener is passed on creation, returns the reply, and is called
 on arrival of each request (Rust: `activate`; Java: depending on
@@ -5225,13 +5225,13 @@ the Replier API can be used to retrieve the requests and send the replies."
 `Replier::activate_async`, `Replier::dispatch_async`);
 `runtime/cpp/include/dds/rpc.hpp` (`ReplierListener`);
 `runtime/java/src/main/java/org/omg/dds/rpc/ReplierListener.java`. Commits:
-`2933b7d28a88` and `c6c468fbbe42` (Rust), `e530fc03ed85` (C++),
-`97c20505e85c` (Java)
+`c5af5c7c138e` and `cd07b2221f07` (Rust), `05c799d7e041` (C++),
+`771f12846807` (Java)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::dispatch_async_hands_the_replier_and_the_identity_to_the_listener`,
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_2_3_dispatch_async_hands_the_replier_and_the_identity_to_the_listener`,
 `crates/rpc-rust-e2e/tests/lifecycle_e2e.rs::the_asynchronous_listener_is_called_as_the_request_arrives`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — the callback receives the replier and returns no reply; in all three
 runtimes.
@@ -5246,12 +5246,12 @@ requests and send replies."
 `runtime/cpp/include/dds/rpc.hpp` (`Replier::receive_requests`,
 `Replier::send_reply`);
 `runtime/java/src/main/java/org/omg/dds/rpc/Replier.java` (`receiveRequests`,
-`sendReply`). Commits: `2933b7d28a88` (Rust), `e143bb6bfa0b` (C++),
-`97c20505e85c` (Java)
+`sendReply`). Commits: `c5af5c7c138e` (Rust), `2ea2abb7d843` (C++),
+`771f12846807` (Java)
 
-**Tests:** `crates/rpc/src/replier.rs::tests::receive_requests_and_send_reply_expose_the_identity`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/src/replier.rs::tests::rpc_7_2_3_receive_requests_and_send_reply_expose_the_identity`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — the three runtimes have retrieval of requests and sending of replies.
 That the names of the operations differ from those of the normative C++ file
@@ -5268,13 +5268,13 @@ That the names of the operations differ from those of the normative C++ file
 `Impl::listen`; `Replier::on_arrival`);
 `runtime/java/src/main/java/org/zerodds/ddsrpc/ReplierImpl.java` and
 `ListenerDelivery.java` (`ON_ARRIVAL` through
-`DataReader.setDataAvailableListener`). Commits: `c6c468fbbe42` (Rust),
-`e530fc03ed85` (C++), `97c20505e85c` (Java)
+`DataReader.setDataAvailableListener`). Commits: `cd07b2221f07` (Rust),
+`05c799d7e041` (C++), `771f12846807` (Java)
 
 **Tests:** `crates/rpc-rust-e2e/tests/lifecycle_e2e.rs::a_call_is_answered_without_anyone_ticking`,
 `crates/rpc-rust-e2e/tests/lifecycle_e2e.rs::the_asynchronous_listener_is_called_as_the_request_arrives`,
-`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::rpc_7_9_2_2_the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (program `RpcRuntimeRoundtrip.java`, section on the Java PSM: "the replier listener ran on arrival")
 
 **Status:** `done` — in all three runtimes the runtime calls the listener when a request
@@ -5297,14 +5297,14 @@ the destructors of the binding call `zerodds_writer_destroy` and
 `zerodds_reader_destroy`);
 `runtime/java/src/main/java/org/zerodds/ddsrpc/ReplierImpl.java::close` and
 `runtime/java/src/main/java/org/zerodds/ddsrpc/RequesterImpl.java::close` (`DomainParticipant.deleteWriter`,
-`deleteReader`). Commits: `c6c468fbbe42` (Rust), `24e3443ce819` (C++),
-`b272ea523d51` and `97c20505e85c` (Java)
+`deleteReader`). Commits: `cd07b2221f07` (Rust), `ec3707125a9b` (C++),
+`530a4c8dee0a` and `771f12846807` (Java)
 
 **Tests:** `crates/rpc-rust-e2e/tests/lifecycle_e2e.rs::closing_a_service_deletes_its_entities`,
-`crates/rpc/src/requester.rs::tests::duplicate_instance_name_freed_after_drop`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+`crates/rpc/src/requester.rs::tests::rpc_7_9_3_duplicate_instance_name_freed_after_drop`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (program `function_call_roundtrip.cpp`: "destroying the last copy deletes the DataReader and the DataWriter"),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (program `RpcRuntimeRoundtrip.java`: "closing the service deleted its replier's DataWriter and DataReader")
 
 **Status:** `done` — in Rust, C++ and Java deactivation deletes the DataReader and the
@@ -5320,12 +5320,12 @@ match.
 (`deleteWriter`, `deleteReader` close the entities of the Java PSM);
 `runtime/cpp/include/dds/rpc.hpp::ServiceEndpoint::close`;
 `crates/lang-rules/src/emit/interface_cpp/calls.rs` (`<I>Service` holds the
-`Replier`, the destructor releases it). Commits: `b272ea523d51`,
-`24e3443ce819` (C++), `c4a249bd251f` (Java), `830064b55c76`
+`Replier`, the destructor releases it). Commits: `530a4c8dee0a`,
+`ec3707125a9b` (C++), `c512ee365514` (Java), `a2a9a67acb58`
 
-**Tests:** `crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** `done` — `close()` in Java and the destructor or `close()` of the generated C++
 classes delete the DataReader and the DataWriter. The programs of the tests
@@ -5357,7 +5357,7 @@ ReplyProfile; };"
 
 **Repo:** `crates/rpc/src/annotations.rs` (`lower_single`, branch `"Qos"`;
 `RpcAnnotation::Qos`; `LoweredRpc::qos_profiles`); `@Qos` is predefined as an
-annotation of the spec (commit `3c21f462c6e2`);
+annotation of the spec (commit `6c7f585a36ee`);
 `crates/lang-rules/src/adapter/interface.rs` (`qos_request_profile`,
 `qos_reply_profile`);
 `crates/lang-rules/src/emit/interface_rust.rs::declared_qos_fn`
@@ -5365,12 +5365,12 @@ annotation of the spec (commit `3c21f462c6e2`);
 `crates/lang-rules/src/emit/interface_cpp/calls.rs::defaults_method`;
 `crates/lang-rules/src/emit/interface_java/calls.rs` (`qosProfiles`).
 `@RPCInterfaceQos(profile = …)` remains as an extension next to `@Qos`. Commits:
-`fe0931797640` (Rust), `24e3443ce819` (C++), `c4a249bd251f` (Java)
+`e0eb1bf9c607` (Rust), `ec3707125a9b` (C++), `c512ee365514` (Java)
 
-**Tests:** `crates/rpc/src/annotations.rs::tests::the_spec_annotations_need_no_declaration`,
-`crates/rpc/src/qos_profile.rs::tests::the_request_and_the_reply_profile_apply_to_their_own_endpoints`,
-`crates/lang-rules/tests/interface_rust_binding.rs::the_qos_the_interface_declares_is_applied_by_a_constructor`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/src/annotations.rs::tests::rpc_7_3_1_4_the_spec_annotations_need_no_declaration`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_1_the_request_and_the_reply_profile_apply_to_their_own_endpoints`,
+`crates/lang-rules/tests/interface_rust_binding.rs::rpc_7_10_1_the_qos_the_interface_declares_is_applied_by_a_constructor`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (program `rpc_runtime_roundtrip.cpp`: profiles of the params)
 
 **Status:** `done` — `@Qos` with `RequestProfile` and `ReplyProfile` is recognised and
@@ -5390,14 +5390,14 @@ are separated by a #."
 `crates/zerodds-c-api/src/rpc_profile_ffi.rs::zerodds_endpoint_qos_from_profile_url`
 (C++: `runtime/cpp/include/dds/rpc/zerodds.hpp`);
 `runtime/java/src/main/java/org/omg/dds/rpc/RpcQos.java::fromUrl`. Commits:
-`1f980bd7b223` (Rust), `c6d883cd6e1e` (c-api), `cee4ca1b418b` (C++),
-`97c20505e85c` (Java)
+`152906e062f1` (Rust), `a0d1af7efd77` (c-api), `7253f8222589` (C++),
+`771f12846807` (Java)
 
-**Tests:** `crates/rpc/src/qos_profile.rs::tests::split_qos_url_defaults_the_protocol_to_file`,
-`crates/rpc/src/qos_profile.rs::tests::from_qos_url_reads_the_file_and_applies_the_library`,
-`crates/zerodds-c-api/tests/rpc_qos.rs::a_profile_url_resolves_the_named_library_over_the_rpc_defaults`,
-`crates/rpc/tests/cpp_rpc_zerodds_qos.rs::the_zerodds_binding_carries_the_rpc_qos_to_the_c_api`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/src/qos_profile.rs::tests::rpc_7_10_1_split_qos_url_defaults_the_protocol_to_file`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_1_from_qos_url_reads_the_file_and_applies_the_library`,
+`crates/zerodds-c-api/tests/rpc_qos.rs::rpc_7_10_1_a_profile_url_resolves_the_named_library_over_the_rpc_defaults`,
+`crates/rpc/tests/cpp_rpc_zerodds_qos.rs::rpc_7_10_1_the_zerodds_binding_carries_the_rpc_qos_to_the_c_api`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (program `RpcRuntimeRoundtrip.java`: `RpcQos.fromUrl`)
 
 **Status:** `done` — `file://` is read, without a protocol `file://` applies, `#` separates
@@ -5410,13 +5410,13 @@ the [DDS4CCM] specification."
 
 **Repo:** `crates/rpc/src/qos_profile.rs::RpcQos::from_xml_profile` and
 `RpcQos::from_qos_url` (profiles from `zerodds-xml`, DDS-XML 1.0:
-`<dds><qos_library><qos_profile>`); commit: `f1a7a3ea5731`
+`<dds><qos_library><qos_profile>`); commit: `9b74a81b0a98`
 
-**Tests:** `crates/rpc/src/qos_profile.rs::tests::from_xml_profile_overrides_history_depth`,
-`crates/rpc/src/qos_profile.rs::tests::from_xml_profile_follows_base_name_chain`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_qos_profile_from_xml_drives_history_depth`
+**Tests:** `crates/rpc/src/qos_profile.rs::tests::rpc_7_10_1_from_xml_profile_overrides_history_depth`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_1_from_xml_profile_follows_base_name_chain`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_10_1_e2e_qos_profile_from_xml_drives_history_depth`
 
-**Status:** `done` — DDS4CCM 1.1 §7.4.2.3 puts `<qos_profile>` directly under `<dds>` and knows the short form of a single `<datawriter_qos name="…">` (§7.4.2.3.3); there is no `qos_library` there. DDS-XML 1.0 has no such form, so `crates/xml` treats it as a vendor form: the default refuses it with an error that names it, `VendorForms::Accept` reads it into the library `CCM_LIBRARY` (`(dds)`) and reports each one (`crates/xml/src/qos_parser.rs::parse_ccm_top_level_profile`). `RpcQos::from_qos_url` and `zerodds_endpoint_qos_from_profile_url` read the files with that setting, because §7.10.1 names DDS4CCM as the format. Commit `ebebeff79b79`. Tests: `crates/xml/src/zerodds_xml.rs::tests::ccm_profiles_directly_under_dds_are_a_vendor_form`, `a_qos_library_and_ccm_profiles_can_share_a_document`, `crates/rpc/src/qos_profile.rs::tests::from_qos_url_reads_a_ddscm_profile_file`, `crates/zerodds-c-api/tests/rpc_qos.rs` (run on the Linux test host for `crates/xml`).
+**Status:** `done` — DDS4CCM 1.1 §7.4.2.3 puts `<qos_profile>` directly under `<dds>` and knows the short form of a single `<datawriter_qos name="…">` (§7.4.2.3.3); there is no `qos_library` there. DDS-XML 1.0 has no such form, so `crates/xml` treats it as a vendor form: the default refuses it with an error that names it, `VendorForms::Accept` reads it into the library `CCM_LIBRARY` (`(dds)`) and reports each one (`crates/xml/src/qos_parser.rs::parse_ccm_top_level_profile`). `RpcQos::from_qos_url` and `zerodds_endpoint_qos_from_profile_url` read the files with that setting, because §7.10.1 names DDS4CCM as the format. Commit `07a65cfe5cde`. Tests: `crates/xml/src/zerodds_xml.rs::tests::ccm_profiles_directly_under_dds_are_a_vendor_form`, `a_qos_library_and_ccm_profiles_can_share_a_document`, `crates/rpc/src/qos_profile.rs::tests::from_qos_url_reads_a_ddscm_profile_file`, `crates/zerodds-c-api/tests/rpc_qos.rs` (run on the Linux test host for `crates/xml`).
 
 ### §7.10.2 Defaults without specification
 
@@ -5427,11 +5427,11 @@ effect. [...] The users may modify the mutable QoS policies at run-time."
 `runtime/cpp/include/dds/rpc/base.hpp::EndpointQos`;
 `runtime/java/src/main/java/org/omg/dds/rpc/RpcQos.java::defaults`
 
-**Tests:** `crates/rpc/src/qos_profile.rs::tests::default_is_basic`,
-`crates/rpc/src/qos_profile.rs::tests::default_basic_matches_spec_710_2`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_default_is_basic`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_default_basic_matches_spec_710_2`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (program: "the defaults are §7.10.2's"),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (program: "§7.10.2: RELIABLE, KEEP_ALL, VOLATILE")
 
 **Status:** `done` — without a specification the defaults of the three policies apply in
@@ -5448,16 +5448,16 @@ item.
 `ServiceEndpoint::set_qos`) through `zerodds_writer_set_qos` and
 `zerodds_reader_set_qos` of the C API;
 `runtime/java/src/main/java/org/omg/dds/rpc/Requester.java::setQos`,
-`runtime/java/src/main/java/org/omg/dds/rpc/Replier.java::setQos`. Commits: `6e3bbd2758fd` (Rust), `cee4ca1b418b` (C++),
-`731994c71c51` (c-api: only DEADLINE and LIFESPAN are changeable), `97c20505e85c`
-(Java), `4884eac92a83` (Java: `ZeroDdsParticipant` passes the change on to the PSM)
+`runtime/java/src/main/java/org/omg/dds/rpc/Replier.java::setQos`. Commits: `5e31aafecaaf` (Rust), `7253f8222589` (C++),
+`19814c9f2e93` (c-api: only DEADLINE and LIFESPAN are changeable), `771f12846807`
+(Java), `04b1846d0ee5` (Java: `ZeroDdsParticipant` passes the change on to the PSM)
 
-**Tests:** `crates/rpc/tests/runtime_e2e.rs::e2e_set_qos_changes_the_mutable_policies_at_run_time`,
-`crates/zerodds-c-api/tests/rpc_qos.rs::the_mutable_policies_of_a_live_endpoint_change_and_the_immutable_ones_are_refused`,
-`crates/rpc/tests/cpp_rpc_zerodds_qos.rs::the_zerodds_binding_carries_the_rpc_qos_to_the_c_api`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/runtime_e2e.rs::rpc_7_10_2_e2e_set_qos_changes_the_mutable_policies_at_run_time`,
+`crates/zerodds-c-api/tests/rpc_qos.rs::rpc_7_10_2_the_mutable_policies_of_a_live_endpoint_change_and_the_immutable_ones_are_refused`,
+`crates/rpc/tests/cpp_rpc_zerodds_qos.rs::rpc_7_10_1_the_zerodds_binding_carries_the_rpc_qos_to_the_c_api`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
-**Status:** `done` — Rust and C++ change the changeable policies and refuse the immutable ones. In Java `ZeroDdsParticipant.Writer.setQos` (and `Reader.setQos`) pass the changed QoS to `DataWriterImpl.setQos` or `DataReaderImpl.setQos` of the PSM; the PSM applies the change of a changeable policy (DEADLINE, LIFESPAN) and refuses an immutable one with `ImmutablePolicyException` (`QosRules.checkChange`, `2e8078b94b5d`), which the runtime reports as `RemoteUnsupportedError`. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` (DEADLINE changes, RELIABILITY does not; needs a JDK). The earlier statement that the PSM refuses every change held before `2e8078b94b5d`.
+**Status:** `done` — Rust and C++ change the changeable policies and refuse the immutable ones. In Java `ZeroDdsParticipant.Writer.setQos` (and `Reader.setQos`) pass the changed QoS to `DataWriterImpl.setQos` or `DataReaderImpl.setQos` of the PSM; the PSM applies the change of a changeable policy (DEADLINE, LIFESPAN) and refuses an immutable one with `ImmutablePolicyException` (`QosRules.checkChange`, `8bc25e5d19b1`), which the runtime reports as `RemoteUnsupportedError`. Test: `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::overTheJavaPsm` (DEADLINE changes, RELIABILITY does not; needs a JDK). The earlier statement that the PSM refuses every change held before `8bc25e5d19b1`.
 
 ### §7.10.2 Reliability RELIABLE
 
@@ -5467,9 +5467,9 @@ item.
 `runtime/cpp/include/dds/rpc/base.hpp::EndpointQos`;
 `runtime/java/src/main/java/org/omg/dds/rpc/RpcQos.java::defaults`
 
-**Tests:** `crates/rpc/src/qos_profile.rs::tests::default_basic_matches_spec_710_2`,
-`crates/rpc/src/qos_profile.rs::tests::writer_qos_carries_reliability_and_history`,
-`crates/rpc/src/qos_profile.rs::tests::reader_qos_carries_reliability`
+**Tests:** `crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_default_basic_matches_spec_710_2`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_writer_qos_carries_reliability_and_history`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_reader_qos_carries_reliability`
 
 **Status:** `done` — default `RELIABLE` in Rust, C++ and Java.
 
@@ -5481,11 +5481,11 @@ item.
 `RpcQos::default_enhanced` (`DEFAULT_HISTORY_QOS`);
 `runtime/cpp/include/dds/rpc/base.hpp::EndpointQos`;
 `runtime/java/src/main/java/org/omg/dds/rpc/RpcQos.java::defaults`. Commit:
-`4e526346c547`
+`ff6353d0ef20`
 
-**Tests:** `crates/rpc/src/qos_profile.rs::tests::default_basic_matches_spec_710_2`,
-`crates/rpc/src/qos_profile.rs::tests::default_enhanced_uses_the_same_history`,
-`crates/rpc/src/qos_profile.rs::tests::writer_qos_carries_reliability_and_history`
+**Tests:** `crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_default_basic_matches_spec_710_2`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_default_enhanced_uses_the_same_history`,
+`crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_writer_qos_carries_reliability_and_history`
 
 **Status:** `done` — default `KEEP_ALL` in Rust, C++ and Java.
 
@@ -5497,7 +5497,7 @@ item.
 `runtime/cpp/include/dds/rpc/base.hpp::EndpointQos`;
 `runtime/java/src/main/java/org/omg/dds/rpc/RpcQos.java::defaults`
 
-**Tests:** `crates/rpc/src/qos_profile.rs::tests::default_basic_matches_spec_710_2`
+**Tests:** `crates/rpc/src/qos_profile.rs::tests::rpc_7_10_2_default_basic_matches_spec_710_2`
 
 **Status:** `done` — default `VOLATILE` in Rust, C++ and Java.
 
@@ -5516,19 +5516,19 @@ item.
 `Replier`, `ServiceEndpoint`, `ClientEndpoint`, `Service`, `Client`);
 `runtime/java/src/main/java/org/omg/dds/rpc/` (`RPCEntity`, `ServiceProxy`,
 `Requester`, `Replier`, `ServiceEndpoint`, `ClientEndpoint`, `Service`,
-`Client`). Commit: `e143bb6bfa0b` (C++)
+`Client`). Commit: `2ea2abb7d843` (C++)
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`,
-`crates/rpc/tests/class_summaries_are_declared.rs::the_java_package_declares_every_type_of_the_two_summaries`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`,
+`crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_java_package_declares_every_type_of_the_two_summaries`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (program `rpc_runtime_roundtrip.cpp`: `static_assert(std::is_base_of<…>)` for every relation of the figure),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: `Server` and `ClientEndpoint`)
 
 **Status:** `done` — C++: `rpc_runtime_roundtrip.cpp` checks every relation of the
 figure with `std::is_base_of` when it compiles, `Server` included
-(`cf75b773f40b`). Java: `RpcInheritanceTest.java` checks the base interfaces of
-the figure member by member (`ae439a055394`).
+(`f8116b6debc1`). Java: `RpcInheritanceTest.java` checks the base interfaces of
+the figure member by member (`267cd1cb4793`).
 
 ### §7.11 Server as RPCEntity
 
@@ -5538,11 +5538,11 @@ the figure member by member (`ae439a055394`).
 `is_null()`, `close()`, `run()`, `run(Duration)`);
 `runtime/java/src/main/java/org/omg/dds/rpc/Server.java`
 (`Server extends RPCEntity, Runnable`; `run`, `getDefaultServiceParams`,
-`isNull`, `close`). Commits: `cf75b773f40b` (C++), `998e1fc5e576` (Java)
+`isNull`, `close`). Commits: `f8116b6debc1` (C++), `17cc6c7ad2a5` (Java)
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (program `rpc_runtime_roundtrip.cpp`: `static_assert(std::is_base_of<dds::rpc::RPCEntity, dds::rpc::Server>)`),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: "Server extends RPCEntity", "Server extends Runnable", `run`, `getDefaultServiceParams`, `isNull`, `close`)
 
 **Status:** `done` — `Server` is an `RPCEntity` in C++ and Java, as the normative files
@@ -5560,13 +5560,13 @@ specification represent the normative language bindings for C++."
 **Repo:** `runtime/cpp/include/dds/rpc/normative/` (the three headers unchanged), `runtime/cpp/include/dds/rpc/vendor_dependent.h`, `runtime/cpp/include/dds/rpc/request_reply.hpp`, `runtime/cpp/include/dds/rpc/function_call.hpp`, `runtime/cpp/include/dds/rpc/core.hpp`, `runtime/cpp/include/dds/rpc/base.hpp`, `runtime/cpp/include/dds/rpc.hpp`; compared with the headers `request_reply`,
 `function_call` and `sample` from `omg-dds-rpc-cxx.zip`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (program `rpc_runtime_roundtrip.cpp`, namespace `signatures`),
-`crates/rpc/tests/cpp_normative_headers.rs::the_shipped_headers_are_the_omg_files`,
-`crates/rpc/tests/cpp_normative_headers.rs::the_normative_headers_compile_against_vendor_dependent_h`,
-`crates/rpc/tests/cpp_normative_headers.rs::a_program_against_the_normative_headers_runs_against_libzerodds`
+`crates/rpc/tests/cpp_normative_headers.rs::rpc_7_11_1_the_shipped_headers_are_the_omg_files`,
+`crates/rpc/tests/cpp_normative_headers.rs::rpc_7_11_1_the_normative_headers_compile_against_vendor_dependent_h`,
+`crates/rpc/tests/cpp_normative_headers.rs::rpc_7_11_1_a_program_against_the_normative_headers_runs_against_libzerodds`
 
-**Status:** done — `request_reply.h`, `function_call.h` and `sample.h` of `omg-dds-rpc-cxx.zip` are in `runtime/cpp/include/dds/rpc/normative/` unchanged (`NOTICE`, SHA-256 in `omg-dds-rpc-cxx.sha256`). `vendor_dependent.h` fills in what the headers call “vendor dependent” (`OMG_DDS_RPC_REFERENCE_IMPLEMENTATION`, `dds::dds_entity_traits`, `details::vendor_dependent<T>`, forward declarations). `request_reply.hpp` and `function_call.hpp` define the classes of the headers as handles on the implementation classes in `dds::rpc::core` (`core.hpp`, `base.hpp`); `rpc.hpp` is the layer above (`Service`, `Client`, `RPCRuntime`, `add(Server&, …)`), and the generated headers include them (`48637795f336`, `2226f63a15da`, `cae4d8ec831b`, `99ad7c1ed406`). Measured on the Linux test host: the translation unit of both normative headers, which had 254 errors before, compiles with `-Wall -Wextra -Werror`; a program written against the normative headers (`normative_roundtrip.cpp`) runs a request/reply (`Requester`, `Replier`) and a function call (`ClientEndpoint`/`ServiceEndpoint` of the generated client and service) against `libzerodds` (`182962baecf5`). The SHA-256 sums of the three files are in `omg-dds-rpc-cxx.sha256`; the comparison with the zip runs where `ZD_DDS_RPC_CXX_ZIP`, `internal/standards/cache/omg/` or `~/.cache/zerodds-spec/` name it; whether it was there on the test host was not checked. Two defects of the OMG headers are worked around, not changed: the private destructor of `ListenerBase` (while the header is read, `virtual` carries a `public:`, `vendor_dependent.h`) and `RequesterParams` used before its declaration. The headers give `Server` no `add`, `run_once` and `size`; `dds::rpc::add`, `run_once` and `size` in `rpc.hpp` add them.
+**Status:** done — `request_reply.h`, `function_call.h` and `sample.h` of `omg-dds-rpc-cxx.zip` are in `runtime/cpp/include/dds/rpc/normative/` unchanged (`NOTICE`, SHA-256 in `omg-dds-rpc-cxx.sha256`). `vendor_dependent.h` fills in what the headers call “vendor dependent” (`OMG_DDS_RPC_REFERENCE_IMPLEMENTATION`, `dds::dds_entity_traits`, `details::vendor_dependent<T>`, forward declarations). `request_reply.hpp` and `function_call.hpp` define the classes of the headers as handles on the implementation classes in `dds::rpc::core` (`core.hpp`, `base.hpp`); `rpc.hpp` is the layer above (`Service`, `Client`, `RPCRuntime`, `add(Server&, …)`), and the generated headers include them (`f2fc6695f1e9`, `c56e3e21d7cc`, `82edc9e2fb65`, `1052b15cbe41`). Measured on the Linux test host: the translation unit of both normative headers, which had 254 errors before, compiles with `-Wall -Wextra -Werror`; a program written against the normative headers (`normative_roundtrip.cpp`) runs a request/reply (`Requester`, `Replier`) and a function call (`ClientEndpoint`/`ServiceEndpoint` of the generated client and service) against `libzerodds` (`8527130ff3fb`). The SHA-256 sums of the three files are in `omg-dds-rpc-cxx.sha256`; the comparison with the zip runs where `ZD_DDS_RPC_CXX_ZIP`, `internal/standards/cache/omg/` or `~/.cache/zerodds-spec/` name it; whether it was there on the test host was not checked. Two defects of the OMG headers are worked around, not changed: the private destructor of `ListenerBase` (while the header is read, `virtual` carries a `public:`, `vendor_dependent.h`) and `RequesterParams` used before its declaration. The headers give `Server` no `add`, `run_once` and `size`; `dds::rpc::add`, `run_once` and `size` in `rpc.hpp` add them.
 
 ### §7.11.1.1.1 Request/reply: user IDL structs or synthesized ones
 
@@ -5577,10 +5577,10 @@ or the structs synthesized from an IDL interface."
 **Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester<TReq, TRep>`,
 `Replier<TReq, TRep>` over `dds_type_traits`);
 `crates/lang-rules/src/emit/interface_cpp.rs::requester_alias`. Commit:
-`d047dc5f497c`
+`ad892a10764a`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_binds_the_requester_and_replier_of_seven_eleven_one_one_one`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_1_cpp_binds_the_requester_and_replier_of_seven_eleven_one_one_one`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — `Requester` and `Replier` take the structs of the user and the
 synthesized ones through `dds_type_traits`; the generator binds both
@@ -5594,14 +5594,14 @@ in [IDL35] (including the vendor-specific mappings for DDS v1.3)."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (default: own mapping);
 `crates/lang-rules/src/adapter/cpp_psm.rs` (`--cpp-mapping psm`: mapping
 by DDS-PSM-Cxx §8.1); `tools/idlc/src/main.rs` (option `--cpp-mapping`).
-Commit: `56ff5b5f25ff`
+Commit: `1db807cbf0fb`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::the_psm_mapping_is_a_layer_over_the_native_types`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_enhanced_futures_hold_the_applications_types`
+**Tests:** `tools/idlc/src/generate.rs::tests::rpc_7_11_1_1_1_the_psm_mapping_is_a_layer_over_the_native_types`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`
 
-**Status:** done — The default is `--cpp-mapping psm` (`CppMapping::Psm` in `adapter/cpp.rs`); `--cpp-mapping native` is a named setting. The classes `<I>`, `<I>Async`, client and service spell the types of DDS-PSM-Cxx Table 7.1 (`std::wstring`, `std::map`, `::dds::core::array`) in the namespaces of the IDL and convert through `zerodds::psm::Conv` to the topic types, which stay native in `zd_native` (`68e7459fb040`, test `interface_cpp_psm_types.rs::the_topic_types_are_native_and_the_classes_are_the_applications`). The `future` types of the `_async` operations hold the application’s types, in the Basic and in the Enhanced mapping (`38c035d26d8d`). The C++ tests of this package run under the default (`cpp_function_call`, `cpp_enhanced_function_call`, `cpp_rpc_real_library`, `cpp_rpc_runtime`). Not checked: [IDL35] is not in the cache; the clause names DDS-PSM-Cxx Table 7.1 for the types.
+**Status:** done — The default is `--cpp-mapping psm` (`CppMapping::Psm` in `adapter/cpp.rs`); `--cpp-mapping native` is a named setting. The classes `<I>`, `<I>Async`, client and service spell the types of DDS-PSM-Cxx Table 7.1 (`std::wstring`, `std::map`, `::dds::core::array`) in the namespaces of the IDL and convert through `zerodds::psm::Conv` to the topic types, which stay native in `zd_native` (`93962a6aac1c`, test `interface_cpp_psm_types.rs::the_topic_types_are_native_and_the_classes_are_the_applications`). The `future` types of the `_async` operations hold the application’s types, in the Basic and in the Enhanced mapping (`1240c62e4ec6`). The C++ tests of this package run under the default (`cpp_function_call`, `cpp_enhanced_function_call`, `cpp_rpc_real_library`, `cpp_rpc_runtime`). Not checked: [IDL35] is not in the cache; the clause names DDS-PSM-Cxx Table 7.1 for the types.
 
 ### §7.11.1.1.1 Templates to send, receive, allocate, initialize, destroy
 
@@ -5612,8 +5612,8 @@ receive, allocate, initialize, and destroy data."
 **Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Sample`, `SampleRef`, `WriteSample`,
 `WriteSampleRef`, `Requester`, `Replier`)
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — the six templates exist and carry sending
 (`Requester::send_request`), receiving (`Replier::receive_requests`,
@@ -5631,11 +5631,11 @@ types as per defined in [DDS-Cxx-PSM] with the following additional rules".
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::declare`;
 `crates/lang-rules/src/adapter/cpp.rs::cpp_value_type`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_topic_types_of_seven_five`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_enhanced_futures_hold_the_applications_types`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`
 
-**Status:** done — integers, `string`, `sequence`, `T[N]`, `wstring` and `map` are spelled as in DDS-Cxx-PSM Table 7.1 by default (`56ff5b5f25ff`, `68e7459fb040`; test `interface_cpp_psm_types.rs::the_interface_spells_the_types_of_table_7_1`). The default is `--cpp-mapping psm` (`CppMapping::Psm` in `adapter/cpp.rs`); `--cpp-mapping native` is a named setting. The topic types stay native (`zd_native`), the futures of the `_async` operations hold the application’s types (`38c035d26d8d`).
+**Status:** done — integers, `string`, `sequence`, `T[N]`, `wstring` and `map` are spelled as in DDS-Cxx-PSM Table 7.1 by default (`1db807cbf0fb`, `93962a6aac1c`; test `interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_interface_spells_the_types_of_table_7_1`). The default is `--cpp-mapping psm` (`CppMapping::Psm` in `adapter/cpp.rs`); `--cpp-mapping native` is a named setting. The topic types stay native (`zd_native`), the futures of the `_async` operations hold the application’s types (`1240c62e4ec6`).
 
 ### §7.11.1.1.2 Rule 1: ${interface} and ${interface}Async in the module's namespace
 
@@ -5645,9 +5645,9 @@ the same namespace corresponding to the module of the interface. If there is no
 module, no C++ namespace is generated."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`sync_interface`,
-`async_interface`). Commit: `d047dc5f497c`
+`async_interface`). Commit: `ad892a10764a`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one`
 
 **Status:** `done` — two abstract classes in the namespace of the module; without a module
 no namespace.
@@ -5658,9 +5658,9 @@ no namespace.
 abstract classes shall have a public virtual destructor."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`sync_interface`,
-`async_interface`). Commit: `d047dc5f497c`
+`async_interface`). Commit: `ad892a10764a`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one`
 
 **Status:** `done` — `virtual ~<I>() = default;` and `virtual ~<I>Async() = default;`.
 
@@ -5672,9 +5672,9 @@ typedefs for “${interface}Support,” “${interface}_Request,” and
 “${interface}_Reply” types."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`sync_interface`,
-`async_interface`, `support_class`). Commit: `d047dc5f497c`
+`async_interface`, `support_class`). Commit: `ad892a10764a`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one`
 
 **Status:** `done` — both classes have `SupportType`, `RequestType` and `ReplyType`.
 
@@ -5683,9 +5683,9 @@ typedefs for “${interface}Support,” “${interface}_Request,” and
 **Spec:** §7.11.1.1.2, p. 61 — "4. The “${interface}” abstract class shall
 contain a public AsyncInterfaceType typedef for “${interface}Async.”"
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_interface`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_interface`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one`
 
 **Status:** `done`
 
@@ -5694,9 +5694,9 @@ contain a public AsyncInterfaceType typedef for “${interface}Async.”"
 **Spec:** §7.11.1.1.2, p. 61 — "5. The “${interface}Async” abstract class shall
 contain a public InterfaceType typedef for “${interface}.”"
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_interface`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_interface`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one`
 
 **Status:** `done`
 
@@ -5706,10 +5706,10 @@ contain a public InterfaceType typedef for “${interface}.”"
 contain public pure virtual functions for all the operations and attributes
 defined in the IDL using the following rules".
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`sync_interface`, `sync_method`, `attribute_method`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`sync_interface`, `sync_method`, `attribute_method`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_names_an_attribute_accessor_after_the_attribute`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_an_attribute_accessor_after_the_attribute`
 
 **Status:** `done`
 
@@ -5718,9 +5718,9 @@ defined in the IDL using the following rules".
 **Spec:** §7.11.1.1.2, p. 61 — "a. The name of the function shall be same as
 the name of the IDL operation."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`
 
 **Status:** `done`
 
@@ -5729,9 +5729,9 @@ the name of the IDL operation."
 **Spec:** §7.11.1.1.2, p. 61 — "b. The number and the order of the arguments
 shall be as defined in the IDL."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`
 
 **Status:** `done` — rule 6h puts `cxx_return` in front of the arguments for a constructed return.
 
@@ -5740,9 +5740,9 @@ shall be as defined in the IDL."
 **Spec:** §7.11.1.1.2, p. 61 — "c. The functions shall not have any exception
 specification even if the IDL operation has an exception specification."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method` (`is_noexcept: false`, no `throw(...)`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method` (`is_noexcept: false`, no `throw(...)`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`
 
 **Status:** `done`
 
@@ -5751,15 +5751,15 @@ specification even if the IDL operation has an exception specification."
 **Spec:** §7.11.1.1.2, p. 61 — "d. The mapping of IDL primitive and container
 types to C++ types is provided in sub clause 7.4.2 in [DDS-Cxx-PSM]."
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs::cpp_value_type` and `crates/lang-rules/src/adapter/cpp_psm.rs::psm_type`, called from `crates/lang-rules/src/emit/interface_cpp.rs::user_type` and `sync_method`; commits `d047dc5f497c`, `68e7459fb040`, `0fc844e3e5fd`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs::cpp_value_type` and `crates/lang-rules/src/adapter/cpp_psm.rs::psm_type`, called from `crates/lang-rules/src/emit/interface_cpp.rs::user_type` and `sync_method`; commits `ad892a10764a`, `93962a6aac1c`, `fb51779ae3bc`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_interface_spells_the_types_of_table_7_1`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_bodies_convert_between_the_psm_types_and_the_topic_structures`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_interface_spells_the_types_of_table_7_1`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_bodies_convert_between_the_psm_types_and_the_topic_structures`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`
 
-**Status:** done — `std::wstring`, `std::map` and `::dds::core::array` are in the arguments, returns and attributes of the synchronous interface; that is the default `--cpp-mapping psm`, `--cpp-mapping native` is a named setting (`68e7459fb040`, test `interface_cpp_psm_types.rs::the_interface_spells_the_types_of_table_7_1`; the C++ runs under the default: `cpp_function_call`, `cpp_enhanced_function_call`).
+**Status:** done — `std::wstring`, `std::map` and `::dds::core::array` are in the arguments, returns and attributes of the synchronous interface; that is the default `--cpp-mapping psm`, `--cpp-mapping native` is a named setting (`93962a6aac1c`, test `interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_interface_spells_the_types_of_table_7_1`; the C++ runs under the default: `cpp_function_call`, `cpp_enhanced_function_call`).
 
 ### §7.11.1.1.2 Rule 6e: passing by DDS-Cxx-PSM §7.4.5
 
@@ -5767,9 +5767,9 @@ types to C++ types is provided in sub clause 7.4.2 in [DDS-Cxx-PSM]."
 and constructed types (e.g., struct) is provided in sub clause 7.4.5 in
 [DDS-Cxx-PSM]."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`passed`, `is_native`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`passed`, `is_native`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`
 
 **Status:** `done`
 
@@ -5778,9 +5778,9 @@ and constructed types (e.g., struct) is provided in sub clause 7.4.5 in
 **Spec:** §7.11.1.1.2, p. 61 — "f. Getter/Setter functions for attributes in an
 interface is specified in sub clause 7.4.6 in [DDS-Cxx-PSM]."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::attribute_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::attribute_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_names_an_attribute_accessor_after_the_attribute`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_an_attribute_accessor_after_the_attribute`
 
 **Status:** `done`
 
@@ -5790,9 +5790,9 @@ interface is specified in sub clause 7.4.6 in [DDS-Cxx-PSM]."
 and enumeration types the corresponding C++ function shall return the C++ type
 by value".
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method` (`is_native`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method` (`is_native`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`
 
 **Status:** `done`
 
@@ -5802,9 +5802,9 @@ by value".
 (e.g., struct) shall map to the first parameter with name “cxx_return” of type a
 T& to the function and the function shall return void."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::sync_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`
 
 **Status:** `done` — ZeroDDS treats strings and sequences like constructed types; rules 6g and 6h do not name them.
 
@@ -5814,9 +5814,9 @@ T& to the function and the function shall return void."
 contain asynchronous public pure virtual functions for all the operations and
 attributes defined in the IDL using the following rules".
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`async_interface`, `async_method`, `async_attribute_method`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`async_interface`, `async_method`, `async_attribute_method`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** `done`
 
@@ -5825,9 +5825,9 @@ attributes defined in the IDL using the following rules".
 **Spec:** §7.11.1.1.2, p. 62 — "a. The name of the function shall be
 “${operation}_async”."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** `done`
 
@@ -5836,9 +5836,9 @@ attributes defined in the IDL using the following rules".
 **Spec:** §7.11.1.1.2, p. 62 — "b. The function shall accept only In and InOut
 parameters and shall have no Out parameters."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method` (`operation.inputs()`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method` (`operation.inputs()`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** `done`
 
@@ -5847,9 +5847,9 @@ parameters and shall have no Out parameters."
 **Spec:** §7.11.1.1.2, p. 62 — "c. The functions shall not have any exception
 specification even if the IDL operation has an exception specification."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** `done`
 
@@ -5859,13 +5859,13 @@ specification even if the IDL operation has an exception specification."
 types to C++ types is provided in sub clause 7.4.2 in [DDS-Cxx-PSM]. All the
 arguments shall be const."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method` (arguments through `user_type`); commits `d047dc5f497c`, `68e7459fb040`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method` (arguments through `user_type`); commits `ad892a10764a`, `93962a6aac1c`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_enhanced_futures_hold_the_applications_types`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_futures_hold_the_applications_types`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_futures_hold_the_applications_types`
 
-**Status:** done — all arguments are `const`, with the types of Table 7.1 under the default `--cpp-mapping psm`, and `future<…>` holds the application’s types (`050e54b2b089`, `38c035d26d8d`; tests `interface_cpp_psm_types.rs::the_futures_hold_the_applications_types` and `::the_enhanced_futures_hold_the_applications_types`).
+**Status:** done — all arguments are `const`, with the types of Table 7.1 under the default `--cpp-mapping psm`, and `future<…>` holds the application’s types (`576747fa1310`, `1240c62e4ec6`; tests `interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_futures_hold_the_applications_types` and `::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`).
 
 ### §7.11.1.1.2 Rule 7e: In and InOut by §7.4.5, all const
 
@@ -5873,9 +5873,9 @@ arguments shall be const."
 constructed types (e.g.,struct) is provided in sub clause 7.4.5 in
 [DDs-Cxx-PSM]. All the arguments shall be const."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** `done`
 
@@ -5885,9 +5885,9 @@ constructed types (e.g.,struct) is provided in sub clause 7.4.5 in
 parameters and shall return dds::rpc::future of the same type as the
 attribute."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`async_interface`, `async_attribute_method`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`async_interface`, `async_attribute_method`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_names_an_attribute_accessor_after_the_attribute`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_an_attribute_accessor_after_the_attribute`
 
 **Status:** `done`
 
@@ -5897,9 +5897,9 @@ attribute."
 parameter as per specified in sub clause 7.4.6 in [DDS-Cxx-PSM]. It shall
 return a dds::rpc::future<void>."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`async_interface`, `async_attribute_method`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`async_interface`, `async_attribute_method`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_names_an_attribute_accessor_after_the_attribute`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_an_attribute_accessor_after_the_attribute`
 
 **Status:** `done`
 
@@ -5909,9 +5909,9 @@ return a dds::rpc::future<void>."
 form of a regular return (primitive or constructed type) shall return a value of
 dds::rpc::future of that type."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method`; Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** `done`
 
@@ -5922,9 +5922,9 @@ one or more Out/InOut parameters shall return a value of dds::rpc::future of
 “${interface}_${operation}_Out” type. Otherwise, it will return
 dds::rpc::future<void>."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method` (`async_payload`, `has_outputs`); Commit `d047dc5f497c`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::async_method` (`async_payload`, `has_outputs`); Commit `ad892a10764a`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** `done`
 
@@ -5934,15 +5934,15 @@ dds::rpc::future<void>."
 Table 7.1: "string<Char32> std::wstring", "map<K, V> std::map<K, V>",
 "T[N] dds::core::array<T, N>".
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`user_type`, `converted`, `async_payload`), `crates/lang-rules/src/adapter/cpp_psm.rs::psm_type`, `crates/cpp/include/zerodds/psm/convert.hpp` (`zerodds::psm::Conv`); commits `56ff5b5f25ff`, `68e7459fb040`, `0fc844e3e5fd`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`user_type`, `converted`, `async_payload`), `crates/lang-rules/src/adapter/cpp_psm.rs::psm_type`, `crates/cpp/include/zerodds/psm/convert.hpp` (`zerodds::psm::Conv`); commits `1db807cbf0fb`, `93962a6aac1c`, `fb51779ae3bc`.
 
-**Tests:** `crates/lang-rules/tests/interface_cpp_psm_types.rs::the_interface_spells_the_types_of_table_7_1`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_native_mapping_keeps_the_native_spelling`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_bodies_convert_between_the_psm_types_and_the_topic_structures`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_header_compiles`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_enhanced_futures_hold_the_applications_types`
+**Tests:** `crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_interface_spells_the_types_of_table_7_1`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_native_mapping_keeps_the_native_spelling`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_bodies_convert_between_the_psm_types_and_the_topic_structures`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_2_the_header_compiles`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`
 
-**Status:** done — Under the default `--cpp-mapping psm` the abstract interface, client and service spell the rows of Table 7.1 (`std::wstring`, `std::map`, `::dds::core::array`) and convert in the bodies with `zerodds::psm::Conv` to the topic types. The futures of the `_async` functions and of the attribute accessors hold the application’s types, and the `Out` structure is the application’s, in the Basic mapping (`050e54b2b089`, `6d6d02eb4209`) and in the Enhanced mapping (`38c035d26d8d`, test `interface_cpp_psm_types.rs::the_enhanced_futures_hold_the_applications_types`; the Linux test host compiles both versions in `the_header_compiles`). `--cpp-mapping native` spells the native types and is a named setting.
+**Status:** done — Under the default `--cpp-mapping psm` the abstract interface, client and service spell the rows of Table 7.1 (`std::wstring`, `std::map`, `::dds::core::array`) and convert in the bodies with `zerodds::psm::Conv` to the topic types. The futures of the `_async` functions and of the attribute accessors hold the application’s types, and the `Out` structure is the application’s, in the Basic mapping (`576747fa1310`, `9ee81a26e23b`) and in the Enhanced mapping (`1240c62e4ec6`, test `interface_cpp_psm_types.rs::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`; the Linux test host compiles both versions in `rpc_7_11_1_1_2_the_header_compiles`). `--cpp-mapping native` spells the native types and is a named setting.
 
 ### §7.11.1.1.2 Rule 8: prefix cxx_ for reserved words
 
@@ -5950,24 +5950,24 @@ Table 7.1: "string<Char32> std::wstring", "map<K, V> std::map<K, V>",
 name, exception, interface, module) in an IDL file that is a reserved word in
 C++ shall be prefixed by “cxx_”."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::cxx_escape` (calls `crates/lang-rules/src/adapter/cpp.rs::cxx_name`); Commits `d047dc5f497c` (interface, operation, parameter), `f8678b4486c1` (exception), `2d3ebbfa06dc` (module, types).
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs::cxx_escape` (calls `crates/lang-rules/src/adapter/cpp.rs::cxx_name`); Commits `ad892a10764a` (interface, operation, parameter), `688eb96e852a` (exception), `cdb7355e3744` (module, types).
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_prefixes_a_reserved_word_with_cxx`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_names_a_reserved_exception_with_the_cxx_prefix`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_names_a_reserved_module_and_type_with_the_cxx_prefix`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_prefixes_a_reserved_word_with_cxx`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_a_reserved_exception_with_the_cxx_prefix`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_a_reserved_module_and_type_with_the_cxx_prefix`
 
-**Status:** `done` — interface, operation, parameter, exception, module, declared type, members, enumerators and constants get `cxx_` (item "members, enumerators and constants" below, commit `569f84427581`).
+**Status:** `done` — interface, operation, parameter, exception, module, declared type, members, enumerators and constants get `cxx_` (item "members, enumerators and constants" below, commit `d750a045b9fe`).
 
 ### §7.11.1.1.2 Rule 8 — members, enumerators and constants
 
 **Spec:** §7.11.1.1.2, p. 62 — as above.
 
-**Repo:** `crates/lang-rules/src/adapter/cpp.rs::cxx_name`, called for members (structure, union, exception, bitset), enumerators and constants; commit `569f84427581`.
+**Repo:** `crates/lang-rules/src/adapter/cpp.rs::cxx_name`, called for members (structure, union, exception, bitset), enumerators and constants; commit `d750a045b9fe`.
 
-**Tests:** `crates/lang-rules/tests/cxx_prefix_members.rs::a_member_that_is_a_reserved_word_is_prefixed_by_cxx`,
-`crates/lang-rules/tests/cxx_prefix_members.rs::an_enumerator_and_a_constant_that_are_reserved_words_are_prefixed_by_cxx`,
-`crates/lang-rules/tests/cxx_prefix_members.rs::the_codec_refers_to_the_prefixed_member`,
-`crates/lang-rules/tests/cxx_prefix_members.rs::the_idl_names_table_maps_the_prefixed_name_back_to_the_idl_spelling`
+**Tests:** `crates/lang-rules/tests/cxx_prefix_members.rs::rpc_7_5_1_1_1_a_member_that_is_a_reserved_word_is_prefixed_by_cxx`,
+`crates/lang-rules/tests/cxx_prefix_members.rs::rpc_7_11_1_1_2_an_enumerator_and_a_constant_that_are_reserved_words_are_prefixed_by_cxx`,
+`crates/lang-rules/tests/cxx_prefix_members.rs::rpc_7_11_1_1_2_the_codec_refers_to_the_prefixed_member`,
+`crates/lang-rules/tests/cxx_prefix_members.rs::rpc_7_11_1_1_2_the_idl_names_table_maps_the_prefixed_name_back_to_the_idl_spelling`
 
 **Status:** `done` — `long static;` becomes `std::int32_t cxx_static;`; enumerators and constants get `cxx_`. The codec and the `_idl_names` tables use the prefixed name and map back to the IDL spelling.
 
@@ -5978,11 +5978,11 @@ Enhanced Service Mapping shall use either the user-defined IDL structs directly
 or the structs synthesized from an IDL interface. The IDL shall be mapped to C++
 types as defined in [DDS-Cxx-PSM]."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester<TReq, TRep>`, `Replier<TReq, TRep>`); `crates/lang-rules/src/emit/interface_cpp/enhanced.rs`; Commits `99bda16e455b`, `e143bb6bfa0b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester<TReq, TRep>`, `Replier<TReq, TRep>`); `crates/lang-rules/src/emit/interface_cpp/enhanced.rs`; Commits `45ead22cc2b9`, `2ea2abb7d843`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`,
-`crates/lang-rules/tests/enhanced_cpp_calls.rs::the_enhanced_header_compiles`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`,
+`crates/lang-rules/tests/enhanced_cpp_calls.rs::rpc_7_11_1_2_the_enhanced_header_compiles`
 
 **Status:** done — the templates take the structures of the Enhanced mapping (`enhanced.rs` writes them, `Correlation::SAMPLE_IDENTITY`). The mapping of the IDL types to C++ follows DDS-Cxx-PSM Table 7.1 under the default `--cpp-mapping psm` (item “§7.11.1.2 — deviations from Table 7.1”).
 
@@ -5992,14 +5992,14 @@ types as defined in [DDS-Cxx-PSM]."
 Enhanced Service Mapping shall use the mapping rules defined in 7.11.1.1.2
 Function-Call Style Language Binding."
 
-**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`sync_interface`, `async_interface`), `crates/lang-rules/src/emit/interface_cpp/calls.rs`; Commit `99bda16e455b`.
+**Repo:** `crates/lang-rules/src/emit/interface_cpp.rs` (`sync_interface`, `async_interface`), `crates/lang-rules/src/emit/interface_cpp/calls.rs`; Commit `45ead22cc2b9`.
 
-**Tests:** `crates/lang-rules/tests/enhanced_cpp_calls.rs::the_function_call_classes_are_written_over_the_choice_structures`,
-`crates/lang-rules/tests/enhanced_cpp_calls.rs::a_derived_interface_answers_the_inherited_operation_itself`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`,
-`crates/lang-rules/tests/interface_cpp_psm_types.rs::the_enhanced_futures_hold_the_applications_types`
+**Tests:** `crates/lang-rules/tests/enhanced_cpp_calls.rs::rpc_7_11_1_2_the_function_call_classes_are_written_over_the_choice_structures`,
+`crates/lang-rules/tests/enhanced_cpp_calls.rs::rpc_7_11_1_2_a_derived_interface_answers_the_inherited_operation_itself`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`,
+`crates/lang-rules/tests/interface_cpp_psm_types.rs::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`
 
-**Status:** done — abstract classes, client and service exist for the Enhanced mapping. Rules 6d and 7d hold as in the Basic mapping: Table 7.1 under the default `--cpp-mapping psm`, and `future<…>` holds the application’s types (`38c035d26d8d`, test `interface_cpp_psm_types.rs::the_enhanced_futures_hold_the_applications_types`).
+**Status:** done — abstract classes, client and service exist for the Enhanced mapping. Rules 6d and 7d hold as in the Basic mapping: Table 7.1 under the default `--cpp-mapping psm`, and `future<…>` holds the application’s types (`1240c62e4ec6`, test `interface_cpp_psm_types.rs::rpc_7_11_1_1_1_the_enhanced_futures_hold_the_applications_types`).
 
 ### §7.11.1.3 Local exceptions by DDS-Cxx-PSM §7.5.5
 
@@ -6007,11 +6007,11 @@ Function-Call Style Language Binding."
 generated and remotely generated exceptions. As such, all DDS exceptions defined
 in sub clause 7.5.5 in [DDS-Cxx-PSM] are valid exceptions."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`LocalError` and ten derived classes: `NullReferenceError`, `AlreadyClosedError`, `IllegalOperationError`, `PreconditionNotMetError`, `OutOfResourcesError`, `TimeoutError`, `ImmutablePolicyError`, `InconsistentPolicyError`, `UnsupportedError`, `InvalidArgumentError`); Commit `e143bb6bfa0b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`LocalError` and ten derived classes: `NullReferenceError`, `AlreadyClosedError`, `IllegalOperationError`, `PreconditionNotMetError`, `OutOfResourcesError`, `TimeoutError`, `ImmutablePolicyError`, `InconsistentPolicyError`, `UnsupportedError`, `InvalidArgumentError`); Commit `2ea2abb7d843`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
-**Status:** `done` — local errors throw these classes in `dds::rpc`, named after the classes of DDS-Cxx-PSM §7.5.5 (`e143bb6bfa0b`). With `crates/cpp/include` on the path (`ZERODDS_RPC_HAS_DDS_CORE_EXCEPTION`), each class derives from the class of the same name in `dds::core` (through the virtual base `dds::core::Exception`; `crates/cpp/include/dds/core/Exception.hpp` derives virtually for it): a `catch (const dds::core::TimeoutError&)` catches `dds::rpc::TimeoutError`, and so does `catch (const dds::core::Exception&)` (`404a34c295b2`). A C API status with no class assigned throws `UnspecifiedError`. Test: `static_assert`s and `catch` cases in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`, run by `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together` (Linux test host, green). Without `crates/cpp/include` on the path the classes of DDS-Cxx-PSM do not exist and the base is `std::runtime_error`.
+**Status:** `done` — local errors throw these classes in `dds::rpc`, named after the classes of DDS-Cxx-PSM §7.5.5 (`2ea2abb7d843`). With `crates/cpp/include` on the path (`ZERODDS_RPC_HAS_DDS_CORE_EXCEPTION`), each class derives from the class of the same name in `dds::core` (through the virtual base `dds::core::Exception`; `crates/cpp/include/dds/core/Exception.hpp` derives virtually for it): a `catch (const dds::core::TimeoutError&)` catches `dds::rpc::TimeoutError`, and so does `catch (const dds::core::Exception&)` (`edb565cfcd88`). A C API status with no class assigned throws `UnspecifiedError`. Test: `static_assert`s and `catch` cases in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`, run by `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together` (Linux test host, green). Without `crates/cpp/include` on the path the classes of DDS-Cxx-PSM do not exist and the base is `std::runtime_error`.
 
 ### §7.11.1.3 Table: codes to exceptions
 
@@ -6022,10 +6022,10 @@ REMOTE_EX_OUT_OF_RESOURCES dds::rpc::RemoteOutOfResourcesError;
 REMOTE_EX_UNKNOWN_OPERATION dds::rpc::RemoteUnknownOperationError;
 REMOTE_EX_UNKNOWN_EXCEPTION dds::rpc::RemoteUnknownExceptionError".
 
-**Repo:** `runtime/cpp/include/dds/rpc/base.hpp::raise_remote_exception`; `crates/rpc/src/language_binding.rs::cpp_exception_class`; Commits `d047dc5f497c`, `099e1d0fd595` (six codes).
+**Repo:** `runtime/cpp/include/dds/rpc/base.hpp::raise_remote_exception`; `crates/rpc/src/language_binding.rs::cpp_exception_class`; Commits `ad892a10764a`, `2fe2b7cdea14` (six codes).
 
-**Tests:** `crates/rpc/src/language_binding.rs::tests::the_table_of_seven_eleven_one_three_is_the_published_one`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/src/language_binding.rs::tests::rpc_7_5_1_1_1_the_table_of_seven_eleven_one_three_is_the_published_one`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done`
 
@@ -6037,9 +6037,9 @@ REMOTE_EX_UNKNOWN_EXCEPTION dds::rpc::RemoteUnknownExceptionError".
 `RemoteInvalidArgumentError` under `std::invalid_argument`; the classes of the
 right column additionally under `dds::core::Exception`.
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`RemoteOutOfResourcesError`, `RemoteUnsupportedError`, `RemoteInvalidArgumentError`, `RemoteUnknownOperationError`, `RemoteUnknownExceptionError`, `detail::ExceptionRoot`); commits `d047dc5f497c`, `cf75b773f40b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`RemoteOutOfResourcesError`, `RemoteUnsupportedError`, `RemoteInvalidArgumentError`, `RemoteUnknownOperationError`, `RemoteUnknownExceptionError`, `detail::ExceptionRoot`); commits `ad892a10764a`, `f8116b6debc1`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — the bases from `std::` match; all five classes also derive from `detail::ExceptionRoot`, which is `dds::core::Exception` when `dds/core/Exception.hpp` is on the include path (`static_assert(std::is_base_of<…>)` in `check_exception_hierarchy` of `rpc_runtime_roundtrip.cpp`; `cpp_rpc_runtime.rs` passes `crates/cpp/include`).
 
@@ -6047,9 +6047,9 @@ right column additionally under `dds::core::Exception`.
 
 **Spec:** §7.11.1.3, p. 63, Figure 7.6 — as above.
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`detail::ExceptionRoot`, `ZERODDS_RPC_HAS_DDS_CORE_EXCEPTION`, `LocalError`); `crates/cpp/include/dds/core/Exception.hpp`; commit `cf75b773f40b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`detail::ExceptionRoot`, `ZERODDS_RPC_HAS_DDS_CORE_EXCEPTION`, `LocalError`); `crates/cpp/include/dds/core/Exception.hpp`; commit `f8116b6debc1`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — `rpc.hpp` includes `dds/core/Exception.hpp` when `__has_include` finds it; `detail::ExceptionRoot` is then `dds::core::Exception`. Without the PSM headers a class of the same shape (`what()`) stands there. `check_exception_hierarchy` checks the five `Remote*Error` classes and `LocalError` with `static_assert`.
 
@@ -6064,9 +6064,9 @@ future, shared_future, Sample, SampleRef, WriteSample, WriteSampleRef,
 LoanedSamples, SharedSamples, SampleIterator, dds_type_traits, and
 dds_entity_traits."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp`; `crates/rpc/src/language_binding.rs` (`CPP_NAMESPACES`, `CPP_REQUEST_REPLY_CLASSES`); Commits `d047dc5f497c`, `e143bb6bfa0b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp`; `crates/rpc/src/language_binding.rs` (`CPP_NAMESPACES`, `CPP_REQUEST_REPLY_CLASSES`); Commits `ad892a10764a`, `2ea2abb7d843`.
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`
 
 **Status:** `done`
 
@@ -6077,10 +6077,10 @@ templates. [...] Depending upon the profile in use (Basic/Enhanced), the actual
 structure of the TReq and TRep types will vary. However, the request-reply
 language binding is independent of the profile in use."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester<TReq, TRep>`, `Replier<TReq, TRep>`, `Correlation`); Commits `d047dc5f497c`, `99bda16e455b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester<TReq, TRep>`, `Replier<TReq, TRep>`, `Correlation`); Commits `ad892a10764a`, `45ead22cc2b9`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/cpp_enhanced_function_call.rs::the_generated_enhanced_client_calls_the_generated_enhanced_service`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/cpp_enhanced_function_call.rs::rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service`
 
 **Status:** `done` — the same templates carry the structures of the Basic mapping (`Correlation::HEADER`) and of the Enhanced mapping (`Correlation::SAMPLE_IDENTITY`).
 
@@ -6089,9 +6089,9 @@ language binding is independent of the profile in use."
 **Spec:** §7.11.1.4.2, p. 64 — "RPCEntity is the base abstract class extended
 by all the active RPC entities. It supports close() and is_null() operations."
 
-**Repo:** `runtime/cpp/include/dds/rpc/base.hpp::RPCEntity` (derived: `ServiceProxy`, `ServiceEndpoint`, `Server`); commits `d047dc5f497c`, `cf75b773f40b`.
+**Repo:** `runtime/cpp/include/dds/rpc/base.hpp::RPCEntity` (derived: `ServiceProxy`, `ServiceEndpoint`, `Server`); commits `ad892a10764a`, `f8116b6debc1`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — `close()` and `is_null()` are pure virtual in `RPCEntity`; `Requester`, `Replier`, `ServiceEndpoint` and `Server` derive from it (`static_assert(std::is_base_of<dds::rpc::RPCEntity, …>)` in `rpc_runtime_roundtrip.cpp`).
 
@@ -6100,9 +6100,9 @@ by all the active RPC entities. It supports close() and is_null() operations."
 **Spec:** §7.11.1.4.3, p. 64 — "A requester sends requests and receives
 replies."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp::Requester`; Commit `d047dc5f497c`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp::Requester`; Commit `ad892a10764a`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done`
 
@@ -6111,9 +6111,9 @@ replies."
 **Spec:** §7.11.1.4.3, p. 64 — "Requester is a reference type and when copied
 it makes a shallow copy."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp::Requester` (`std::shared_ptr<Impl>`, `ServiceProxy::Binding`); Commit `e143bb6bfa0b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp::Requester` (`std::shared_ptr<Impl>`, `ServiceProxy::Binding`); Commit `2ea2abb7d843`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — a copy shares `Impl` (writer, reader, replies, outstanding `future`s) and the instance binding; `close()` on a copy closes for all.
 
@@ -6123,10 +6123,10 @@ it makes a shallow copy."
 time of construction using RequesterParams, which is a container of
 configuration parameters, such as domain participant, QoS, listeners and more."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`EndpointParams`, `RequesterParams`, `Requester(const RequesterParams&)`); Commits `e143bb6bfa0b`, `cee4ca1b418b` (QoS), `e530fc03ed85` (listener).
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`EndpointParams`, `RequesterParams`, `Requester(const RequesterParams&)`); Commits `2ea2abb7d843`, `7253f8222589` (QoS), `05c799d7e041` (listener).
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/cpp_rpc_zerodds_qos.rs::the_zerodds_binding_carries_the_rpc_qos_to_the_c_api`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/cpp_rpc_zerodds_qos.rs::rpc_7_10_1_the_zerodds_binding_carries_the_rpc_qos_to_the_c_api`
 
 **Status:** `done` — `RequesterParams` carries participant, publisher, subscriber, topic names, service and instance name, `RpcQos` or profile URLs, and a listener.
 
@@ -6138,10 +6138,10 @@ replies is analogous to callback-based notification, however, no request-reply
 correlation is necessary because every future represents a reply to a unique
 request."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester::receive_replies`, `receive_reply`, `send_request_async`, `dispatch_replies`, constructor with `impl_->listen`); Commits `d047dc5f497c`, `e530fc03ed85` (listener and `future` on arrival).
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester::receive_replies`, `receive_reply`, `send_request_async`, `dispatch_replies`, constructor with `impl_->listen`); Commits `ad892a10764a`, `05c799d7e041` (listener and `future` on arrival).
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::rpc_7_9_2_2_the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`
 
 **Status:** `done`
 
@@ -6151,12 +6151,12 @@ request."
 specific service instance. Requests sent through a bound requester reference
 shall be sent to the bound service instance only."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`ServiceProxy::bind`, `Requester::Impl::send_locked` sets `RequestHeader::instance_name`, `Replier::Impl::receive_requests` filters); `crates/rpc/src/replier.rs::Replier::tick`; Commits `d6f6b5e975c8` (filter), `e143bb6bfa0b` (shared binding).
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`ServiceProxy::bind`, `Requester::Impl::send_locked` sets `RequestHeader::instance_name`, `Replier::Impl::receive_requests` filters); `crates/rpc/src/replier.rs::Replier::tick`; Commits `35aa702e4900` (filter), `2ea2abb7d843` (shared binding).
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/src/replier.rs::tests::tick_filters_requests_for_other_instance_name`,
-`crates/rpc/src/replier.rs::tests::a_named_replier_does_not_answer_a_request_without_an_instance`,
-`crates/rpc/tests/runtime_e2e.rs::e2e_instance_routing_filters_per_replier`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/src/replier.rs::tests::rpc_7_11_1_4_3_tick_filters_requests_for_other_instance_name`,
+`crates/rpc/src/replier.rs::tests::rpc_7_11_1_4_3_a_named_replier_does_not_answer_a_request_without_an_instance`,
+`crates/rpc/tests/runtime_e2e.rs::rpc_7_11_1_4_3_e2e_instance_routing_filters_per_replier`
 
 **Status:** `done` — Basic profile: the request carries the instance name in its header; a replier with a different name discards it (strict equality, the empty name matches only the empty name), also on the `dispatch_requests` path. Enhanced profile: item below.
 
@@ -6164,10 +6164,10 @@ shall be sent to the bound service instance only."
 
 **Spec:** §7.11.1.4.3, p. 64 — as above.
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester::Impl::send_locked`, `readers_of_instance`, `DataWriter::write_to`); `runtime/cpp/include/dds/rpc/zerodds.hpp::write_to`; `crates/zerodds-c-api` (`zerodds_writer_write_to_readers`, `zerodds_writer_next_sequence_number`); `crates/dcps` (`DcpsRuntime::write_user_sample_to_readers`); `crates/rtps` (`CacheChange::destination_readers`); commits `86c89466df19`, `976400f7d40a`, `ce04885de39d`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp` (`Requester::Impl::send_locked`, `readers_of_instance`, `DataWriter::write_to`); `runtime/cpp/include/dds/rpc/zerodds.hpp::write_to`; `crates/zerodds-c-api` (`zerodds_writer_write_to_readers`, `zerodds_writer_next_sequence_number`); `crates/dcps` (`DcpsRuntime::write_user_sample_to_readers`); `crates/rtps` (`CacheChange::destination_readers`); commits `6289b73b7853`, `94181922bf32`, `95c934ae90bc`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/zerodds-c-api/tests/write_to_readers.rs::a_sample_written_to_one_reader_reaches_that_reader_only`,
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/zerodds-c-api/tests/write_to_readers.rs::rpc_7_11_1_4_3_a_sample_written_to_one_reader_reaches_that_reader_only`,
 `crates/rtps/src/reliable_writer.rs::tests::a_change_for_one_reader_reaches_the_other_readers_of_its_participant_as_a_gap`
 
 **Status:** `done` — the request of the Enhanced mapping carries no name; `Requester::Impl::send_locked` writes with `write_to` only to the readers that announced the instance name. The other readers of the same participant receive the change as a gap. `check_instance_addressing` in `rpc_runtime_roundtrip.cpp` checks two named repliers and the unnamed one (in-memory loop); `write_to_readers.rs` checks delivery through the C API. Limit: `TRANSIENT_LOCAL` retention does not know the addressees; the RPC QoS is `VOLATILE` (§7.10.2). An unbound Enhanced request in discovery mode goes only to readers without a name. Without discovery of the extension the requester refuses a bound request with `UnsupportedError` (read from the code).
@@ -6179,9 +6179,9 @@ operations for Requester and the Client. For example, binding to a specific
 instance, waiting for an instance to discover, closing the service, and more.
 ServiceProxy shall not be instantiated directly."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp::ServiceProxy` (`bind`, `unbind`, `wait_for_service`, protected constructor); Commits `d047dc5f497c`, `e143bb6bfa0b`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp::ServiceProxy` (`bind`, `unbind`, `wait_for_service`, protected constructor); Commits `ad892a10764a`, `2ea2abb7d843`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done` — `wait_for_service()` checks whether the service was discovered; the overload with a timeout waits for it.
 
@@ -6194,10 +6194,10 @@ a container of configuration parameters such as domain participant, QoS,
 listeners and more. Replier allows listener-based and polling-based reception
 of requests."
 
-**Repo:** `runtime/cpp/include/dds/rpc.hpp::Replier` (`std::shared_ptr<Impl>`, `receive_requests`, `send_reply`, `dispatch_requests`, `set_qos`); Commits `d047dc5f497c`, `e143bb6bfa0b`, `cee4ca1b418b`, `e530fc03ed85`.
+**Repo:** `runtime/cpp/include/dds/rpc.hpp::Replier` (`std::shared_ptr<Impl>`, `receive_requests`, `send_reply`, `dispatch_requests`, `set_qos`); Commits `ad892a10764a`, `2ea2abb7d843`, `7253f8222589`, `05c799d7e041`.
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/cpp_rpc_zerodds_listener.rs::rpc_7_9_2_2_the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal`
 
 **Status:** `done` — reference type with shared `Impl`; `ReplierParams` carries participant, QoS and listener; reception through listener (on arrival) and polling.
 
@@ -6207,9 +6207,9 @@ of requests."
 which all generic listener abstract classes inherit from. It defines no member
 functions."
 
-**Repo:** `runtime/cpp/include/dds/rpc/base.hpp::ListenerBase` (only the virtual destructor); Commit `d047dc5f497c`.
+**Repo:** `runtime/cpp/include/dds/rpc/base.hpp::ListenerBase` (only the virtual destructor); Commit `ad892a10764a`.
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`
 
 **Status:** `done`
 ### §7.11.1.4.7 SimpleReplierListener
@@ -6220,9 +6220,9 @@ pass an instance [...] the callback provides the request object and expects the
 reply as the return value."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::SimpleReplierListener`
-(`process_request`); commit `d047dc5f497c`, call on arrival `e530fc03ed85`
+(`process_request`); commit `ad892a10764a`, call on arrival `05c799d7e041`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** `done`
 
@@ -6233,10 +6233,10 @@ provide an asynchronous request listener for a Replier. [...] the callback
 provides the Replier object and returns void."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::ReplierListener`
-(`on_request_available(Replier&)`); commit `d047dc5f497c`, call on arrival
-`e530fc03ed85`
+(`on_request_available(Replier&)`); commit `ad892a10764a`, call on arrival
+`05c799d7e041`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6247,9 +6247,9 @@ used to receive notifications of arrival of replies. [...] the callback provides
 access to the reply sample and returns void."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::SimpleRequesterListener`
-(`process_reply`); commit `d047dc5f497c`, call on arrival `e530fc03ed85`
+(`process_reply`); commit `ad892a10764a`, call on arrival `05c799d7e041`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6260,10 +6260,10 @@ to receive notification of reply arrival. [...] the callback provides the
 replier object and returns void."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::RequesterListener`
-(`on_reply_available(Requester&)`); commit `d047dc5f497c`, call on arrival
-`e530fc03ed85`
+(`on_reply_available(Requester&)`); commit `ad892a10764a`, call on arrival
+`05c799d7e041`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done — the callback receives the requester; the specification
 writes "replier object".
@@ -6274,10 +6274,10 @@ writes "replier object".
 container of configuration parameters of a Requester."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp::RequesterParams`; commit
-`d047dc5f497c`, shape per §7.11.1.3 to §7.11.1.5 `e143bb6bfa0b`, QoS
-`cee4ca1b418b`
+`ad892a10764a`, shape per §7.11.1.3 to §7.11.1.5 `2ea2abb7d843`, QoS
+`7253f8222589`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6287,10 +6287,10 @@ container of configuration parameters of a Requester."
 container of configuration parameters of a Replier."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp::ReplierParams`; commit
-`d047dc5f497c`, shape per §7.11.1.3 to §7.11.1.5 `e143bb6bfa0b`, QoS
-`cee4ca1b418b`
+`ad892a10764a`, shape per §7.11.1.3 to §7.11.1.5 `2ea2abb7d843`, QoS
+`7253f8222589`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6301,9 +6301,9 @@ dds::rpc::future<T> is a typedef for std::future<T>. [...] Future is not
 copyable but it is movable."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp` (`using future = std::future<T>`);
-commit `d047dc5f497c`
+commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6314,9 +6314,9 @@ future<T> and the only difference is that shared_future<T> is copyable and
 movable."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp` (`using shared_future =
-std::shared_future<T>`); commit `d047dc5f497c`
+std::shared_future<T>`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`
 
 **Status:** done
 
@@ -6326,9 +6326,9 @@ std::shared_future<T>`); commit `d047dc5f497c`
 type T and a value of type SampleInfo. Sample is conceptually immutable."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp::Sample` (read-only accessors);
-commit `d047dc5f497c`
+commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6339,9 +6339,9 @@ a value of type T and a value of type SampleInfo. Copying SampleRef<T> makes a
 shall copy."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::SampleRef` (over
-`std::shared_ptr<Sample<T>>`); commit `d047dc5f497c`
+`std::shared_ptr<Sample<T>>`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6354,9 +6354,9 @@ a request is sent as a WriteSample, upon function return, the
 WriteSample.identity()uniquely identifies the request sent."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp` (`WriteSample`;
-`Requester::send_request(WriteSample<TReq>&)`); commit `d047dc5f497c`
+`Requester::send_request(WriteSample<TReq>&)`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6368,10 +6368,10 @@ request is sent as a WriteSampleRef<T>, upon function return, the
 WriteSample.identity()uniquely identifies the request sent."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::WriteSampleRef` (over
-`std::shared_ptr<WriteSample<T>>`); commit `d047dc5f497c`
+`std::shared_ptr<WriteSample<T>>`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done — sending as a `WriteSampleRef` is in the item below.
 
@@ -6380,9 +6380,9 @@ WriteSample.identity()uniquely identifies the request sent."
 **Spec:** §7.11.1.4.18, p. 66 — as above.
 
 **Repo:** `runtime/cpp/include/dds/rpc/core.hpp::Requester::send_request(WriteSampleRef<TReq>)`;
-commit `e143bb6bfa0b`
+commit `2ea2abb7d843`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (program `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp`: after sending, the
 identity is in the sample the reference refers to)
 
@@ -6396,9 +6396,9 @@ is movable. LoanedSamples<T>::value_type is SampleRef<T>. Upon destruction,
 LoanedSamples<T> returns the loaned samples to the middleware."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::LoanedSamples` (copy deleted, move
-allowed); commit `d047dc5f497c`
+allowed); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done — the samples are copies; there is nothing to return.
 
@@ -6410,9 +6410,9 @@ Note that SharedSamples<T> can be obtained from LoanedSample<T> but not vice
 versa."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp` (`SharedSamples`;
-`LoanedSamples::to_shared`); commit `d047dc5f497c`
+`LoanedSamples::to_shared`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`
 
 **Status:** done
 
@@ -6423,9 +6423,9 @@ over LoanedSamples<T> and SharedSamples<T>. SampleIterator<T>::value_type is a
 SampleRef<T>."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::SampleIterator`
-(`std::random_access_iterator_tag`); commit `d047dc5f497c`
+(`std::random_access_iterator_tag`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6443,9 +6443,9 @@ from `dds_type_traits_base<T>`, and so do the generated specialisations
 (`crates/lang-rules/src/emit/type_pair_cpp.rs`,
 `crates/lang-rules/src/emit/interface_cpp/codec.rs`,
 `crates/lang-rules/src/emit/interface_cpp/enhanced_codec.rs`); commit
-`cf75b773f40b`
+`f8116b6debc1`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (`static_assert` in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp` on `Seq`,
 `DataReader`, `LoanedSamplesType`, `SharedSamplesType`, `iterator`,
 `const_iterator`)
@@ -6463,11 +6463,11 @@ Publisher, Subscriber, DataReaderQos, and DataWriterQos)."
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::dds_entity_traits`
 (`DomainParticipant`, `Publisher`, `Subscriber`, `DataWriter`, `DataReader`,
-`DataWriterQos`, `DataReaderQos`); commit `d047dc5f497c`, publisher,
-subscriber and QoS types `e143bb6bfa0b`
+`DataWriterQos`, `DataReaderQos`); commit `ad892a10764a`, publisher,
+subscriber and QoS types `2ea2abb7d843`
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`,
-`crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`,
+`crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 (`static_assert` in `crates/rpc/tests/cpp/rpc_runtime_roundtrip.cpp` on
 `DataWriterQos`, `Publisher`, `Subscriber`)
 
@@ -6478,9 +6478,9 @@ subscriber and QoS types `e143bb6bfa0b`
 **Spec:** §7.11.1.4.23, p. 66 — as above.
 
 **Repo:** `runtime/cpp/include/dds/rpc/base.hpp::dds_entity_traits`; commit
-`e143bb6bfa0b`
+`2ea2abb7d843`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done — `Publisher` and `Subscriber` are named, `DataWriterQos` and
 `DataReaderQos` are `EndpointQos`.
@@ -6493,9 +6493,9 @@ and are described below."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp`;
 `crates/rpc/src/language_binding.rs::CPP_FUNCTION_CALL_CLASSES`; commit
-`d047dc5f497c`
+`ad892a10764a`
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`
 
 **Status:** done
 
@@ -6509,10 +6509,10 @@ ServiceEndpoint. A Service may belong to only one Server."
 **Repo:** `runtime/cpp/include/dds/rpc.hpp::Service` (`claim`, `release_claim`);
 `crates/lang-rules/src/emit/interface_cpp/calls.rs::service_class` (`<I>Service`
 derives from `dds::rpc::Service`, takes `<I>&` and `ServiceParams`, creates the
-replier); commit `24e3443ce819`, membership of a server `cf75b773f40b`
+replier); commit `ec3707125a9b`, membership of a server `f8116b6debc1`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_binds_the_function_call_entities_of_seven_eleven_one_five`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_5_1_cpp_binds_the_function_call_entities_of_seven_eleven_one_five`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (program `crates/rpc/tests/cpp/function_call_roundtrip.cpp`: a service that a
 server holds is refused with `IllegalOperationError` by a second server and a
 second time by the same server)
@@ -6530,9 +6530,9 @@ Service object. ServiceEndpoint is a reference type."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp::ServiceEndpoint` (`pause`, `resume`,
 `close`, `set_qos`, protected constructor, state through `std::shared_ptr`);
-commit `d047dc5f497c`
+commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`
 
 **Status:** done
 
@@ -6545,15 +6545,15 @@ implementation. Server is a reference type."
 **Repo:** `runtime/cpp/include/dds/rpc.hpp::Server` (`add`, `run_once`, `run()`,
 `run(until)`, `run(Duration)`, `close`, `is_null`, `default_service_params`; the
 services are in a shared state, copies share it; `Server` inherits from
-`RPCEntity`); commit `d047dc5f497c`, base, `run()` and membership
-`cf75b773f40b`
+`RPCEntity`); commit `ad892a10764a`, base, `run()` and membership
+`f8116b6debc1`
 
-**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::the_cpp_rpc_runtime_and_the_generated_header_run_together`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+**Tests:** `crates/rpc/tests/cpp_rpc_runtime.rs::rpc_7_2_1_the_cpp_rpc_runtime_and_the_generated_header_run_together`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (`static_assert(std::is_base_of<dds::rpc::RPCEntity, dds::rpc::Server>)` and
 `runner.run()` in `crates/rpc/tests/cpp/function_call_roundtrip.cpp`)
 
-**Status:** done — container, dispatching of requests, `run()` without parameter and the base `RPCEntity` agree. The state is in a shared object (`core::Server`) that copies share; `rpc_runtime_roundtrip.cpp` copies a `Server` and has the copy answer a request (`79dc3800b8cf`), and checks that a service another server holds is refused. Under the normative headers `Server` is the handle on `core::Server` (`48637795f336`).
+**Status:** done — container, dispatching of requests, `run()` without parameter and the base `RPCEntity` agree. The state is in a shared object (`core::Server`) that copies share; `rpc_runtime_roundtrip.cpp` copies a `Server` and has the copy answer a request (`31b231a9e863`), and checks that a service another server holds is refused. Under the normative headers `Server` is the handle on `core::Server` (`f2fc6695f1e9`).
 
 ### §7.11.1.5.4 Client
 
@@ -6567,10 +6567,10 @@ them discoverable. Every Client inherits publicly from “${interface}”,
 (`<I>Client` with the bases `<I>`, `<I>Async` and `public virtual
 dds::rpc::ClientEndpoint`, operations through the requester, entities in the
 constructor);
-`runtime/cpp/include/dds/rpc.hpp::Client`; commit `24e3443ce819`
+`runtime/cpp/include/dds/rpc.hpp::Client`; commit `ec3707125a9b`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_binds_the_function_call_entities_of_seven_eleven_one_five`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_5_1_cpp_binds_the_function_call_entities_of_seven_eleven_one_five`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 
 **Status:** done — copies share the entities (program
 `crates/rpc/tests/cpp/function_call_roundtrip.cpp`).
@@ -6584,10 +6584,10 @@ obtained from a Client object."
 
 **Repo:** `runtime/cpp/include/dds/rpc.hpp::ClientEndpoint`
 (`get_request_datawriter<TReq>()`, `get_reply_datareader<TRep>()`); commit
-`d047dc5f497c`, access to the entities `cf75b773f40b`
+`ad892a10764a`, access to the entities `f8116b6debc1`
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_cpp_runtime_declares_every_class_of_the_two_summaries`,
-`crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries`,
+`crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`
 (program `crates/rpc/tests/cpp/function_call_roundtrip.cpp`: both accessors
 return entities, the writer has at least one matched reader)
 
@@ -6603,11 +6603,11 @@ reply DataReader.
 `ClientEndpoint::get_request_datawriter`;
 `runtime/java/src/main/java/org/omg/dds/rpc/Server.java` (`run()`),
 `runtime/java/src/main/java/org/omg/dds/rpc/ClientEndpoint.java`
-(`requestWriter`, `replyReader`); commits `cf75b773f40b` (C++),
-`998e1fc5e576` (Java)
+(`requestWriter`, `replyReader`); commits `f8116b6debc1` (C++),
+`17cc6c7ad2a5` (Java)
 
-**Tests:** `crates/rpc/tests/cpp_function_call.rs::the_generated_client_calls_the_generated_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+**Tests:** `crates/rpc/tests/cpp_function_call.rs::rpc_7_2_2_3_the_generated_client_calls_the_generated_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: `Server` has `run()`,
 `ClientEndpoint` returns writer and reader, a bound service is refused by a
 second server)
@@ -6625,9 +6625,9 @@ specification represent the normative language bindings for Java."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/`, `crates/rpc/tests/java/omg-dds-rpc-java.signatures` (the declarations of the zip), `crates/rpc/tests/java/extract_spec_signatures.py`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_binding_has_every_signature_of_the_machine_readable_files` (`SpecSignatureCheck.java`), `crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`, `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::nondataSamples` (`…::the_java_rpc_runtime_and_the_generated_services_run_together`)
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_2_the_java_binding_has_every_signature_of_the_machine_readable_files` (`SpecSignatureCheck.java`), `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`, `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (Java: nondataSamples in `crates/rpc/tests/java/RpcRuntimeRoundtrip.java`)
 
-**Status:** `done` — `omg-dds-rpc-java.zip` (from `https://www.omg.org/spec/DDS-RPC/20160215/`, in `internal/standards/cache/omg/`, not in the repository) is checked against the runtime declaration by declaration: `extract_spec_signatures.py` writes the 212 public declarations of the files (every type with its kind, number of type parameters and supertypes, every method with its name, `static`, number of type parameters, parameter and return types after erasure, the constructors, the enum constants) to `omg-dds-rpc-java.signatures`, and `SpecSignatureCheck.java` checks the compiled runtime against them by reflection. Measured on the Linux test host: 76 deviations before the change (`4a362a70769`), 0 after it (`02563569a84`). Fixed: the params without type parameters, with `withDataWriterQos`, `withDataReaderQos`, `withPublisher`, `withSubscriber` and the getters, and the generic methods `simpleRequesterListener`/`requesterListener`/`simpleReplierListener`/`replierListener` (item “§7.11.2 Java: params and DataWriter views of the PSM”); `Requester.getRequestDataWriter()`, `getReplyDataReader()`, `Replier.getRequestDataReader()`, `getReplyDataWriter()`, `ClientEndpoint.getRequestDataWriter(Class)`, `getReplyDataReader(Class)`, `ServiceEndpoint.getRequestDataReader(Class)` and `getReplyDataWriter(Class)` (the same item); the parameters of type `org.omg.dds.core.SampleIdentity` (`receiveReply`, `waitForReplies`, `takeReply`, `takeReplies`, `readReply`, `readReplies`, `sendReply`); `Sample.Iterator` is an `org.omg.dds.sub.Sample.Iterator` (§7.11.2.2.7: "the same as in [DDS-Java-PSM]"); the constructors `RequestHeader()`, `ReplyHeader()` and `RPCRuntime()`; `ServiceProxy.waitForService…` and `waitForServices…` return nothing, wait, and throw `TimeoutError` when the wait runs out, as the C++ binding does (`isServiceMatched()` asks without waiting). The return types are those of the files (`825670c769d`): `sendRequest` returns `org.omg.dds.core.SampleIdentity`, `sendRequestAsync` and the four `waitFor…Async` return `java.util.concurrent.Future`, the operations that receive, take or read requests or replies return `org.omg.dds.sub.Sample.Iterator`; `rpc.Sample` declares no `Iterator` of its own, as in the file `Sample.java`. The objects are the runtime's (`org.omg.dds.rpc.SampleIdentity`, `org.omg.dds.rpc.Future` with the completion listener, `org.zerodds.ddsrpc.RpcSampleIterator` with `rpc.Sample` elements). A return type that is only a subtype counts as a deviation in the test (`NARROWER`): code compiled against the files would not find the method, because its descriptor names the return type. Measured: 17 before the change (`9fc062e79fa`), 0 after it. `receiveNondataSamples(true)` makes `Requester` and `Replier` hand over the samples without data (`valid_data` false, DDS 1.4 §2.2.2.5.1) — as a sample with `validData()` false, `getData()` `null` and the state of the instance —, and without the setting they do not (the default); the return value is the setting it replaces. Test: `RpcRuntimeRoundtrip.java::nondataSamples` over the PSM: a deleted reply writer leaves a sample without data in the state NOT_ALIVE_DISPOSED at the requester with the setting (the default WRITER_DATA_LIFECYCLE, autodispose TRUE, DDS 1.4 §2.2.3.21), nothing at the requester without it; a deleted request writer does the same at the replier. Before the change the binding did not pass such samples on, and both checks failed (`9fc062e79fa`). A `SimpleReplierListener` is not called for a sample without data; it stays for the operations that take requests. What the runtime has beyond the files (`RpcQos`, `ServiceMapping`, `ServiceMatching`, `WireEncoding`, the binding interface `org.omg.dds.rpc.DomainParticipant`) the test does not check.
+**Status:** `done` — `omg-dds-rpc-java.zip` (from `https://www.omg.org/spec/DDS-RPC/20160215/`, in `internal/standards/cache/omg/`, not in the repository) is checked against the runtime declaration by declaration: `extract_spec_signatures.py` writes the 212 public declarations of the files (every type with its kind, number of type parameters and supertypes, every method with its name, `static`, number of type parameters, parameter and return types after erasure, the constructors, the enum constants) to `omg-dds-rpc-java.signatures`, and `SpecSignatureCheck.java` checks the compiled runtime against them by reflection. Measured on the Linux test host: 76 deviations before the change (`011427669d5`), 0 after it (`d6674336a94`). Fixed: the params without type parameters, with `withDataWriterQos`, `withDataReaderQos`, `withPublisher`, `withSubscriber` and the getters, and the generic methods `simpleRequesterListener`/`requesterListener`/`simpleReplierListener`/`replierListener` (item “§7.11.2 Java: params and DataWriter views of the PSM”); `Requester.getRequestDataWriter()`, `getReplyDataReader()`, `Replier.getRequestDataReader()`, `getReplyDataWriter()`, `ClientEndpoint.getRequestDataWriter(Class)`, `getReplyDataReader(Class)`, `ServiceEndpoint.getRequestDataReader(Class)` and `getReplyDataWriter(Class)` (the same item); the parameters of type `org.omg.dds.core.SampleIdentity` (`receiveReply`, `waitForReplies`, `takeReply`, `takeReplies`, `readReply`, `readReplies`, `sendReply`); `Sample.Iterator` is an `org.omg.dds.sub.Sample.Iterator` (§7.11.2.2.7: "the same as in [DDS-Java-PSM]"); the constructors `RequestHeader()`, `ReplyHeader()` and `RPCRuntime()`; `ServiceProxy.waitForService…` and `waitForServices…` return nothing, wait, and throw `TimeoutError` when the wait runs out, as the C++ binding does (`isServiceMatched()` asks without waiting). The return types are those of the files (`f216d90e776`): `sendRequest` returns `org.omg.dds.core.SampleIdentity`, `sendRequestAsync` and the four `waitFor…Async` return `java.util.concurrent.Future`, the operations that receive, take or read requests or replies return `org.omg.dds.sub.Sample.Iterator`; `rpc.Sample` declares no `Iterator` of its own, as in the file `Sample.java`. The objects are the runtime's (`org.omg.dds.rpc.SampleIdentity`, `org.omg.dds.rpc.Future` with the completion listener, `org.zerodds.ddsrpc.RpcSampleIterator` with `rpc.Sample` elements). A return type that is only a subtype counts as a deviation in the test (`NARROWER`): code compiled against the files would not find the method, because its descriptor names the return type. Measured: 17 before the change (`20241c67565`), 0 after it. `receiveNondataSamples(true)` makes `Requester` and `Replier` hand over the samples without data (`valid_data` false, DDS 1.4 §2.2.2.5.1) — as a sample with `validData()` false, `getData()` `null` and the state of the instance —, and without the setting they do not (the default); the return value is the setting it replaces. Test: `RpcRuntimeRoundtrip.java::nondataSamples` over the PSM: a deleted reply writer leaves a sample without data in the state NOT_ALIVE_DISPOSED at the requester with the setting (the default WRITER_DATA_LIFECYCLE, autodispose TRUE, DDS 1.4 §2.2.3.21), nothing at the requester without it; a deleted request writer does the same at the replier. Before the change the binding did not pass such samples on, and both checks failed (`20241c67565`). A `SimpleReplierListener` is not called for a sample without data; it stays for the operations that take requests. What the runtime has beyond the files (`RpcQos`, `ServiceMapping`, `ServiceMatching`, `WireEncoding`, the binding interface `org.omg.dds.rpc.DomainParticipant`) the test does not check.
 
 ### §7.5.1.2.6 Java: matching of endpoints by aliases and assignability
 
@@ -6648,9 +6648,9 @@ specification represent the normative language bindings for Java."
 `crates/rpc-rust-e2e/tests/java_peer.rs::appended_member::a_member_appended_to_a_mutable_structure_matches_the_java_client`,
 `crates/rpc-rust-e2e/tests/java_peer.rs::versions::a_return_type_the_old_one_is_not_assignable_to_does_not_match_the_java_client`,
 `crates/java-omgdds/java/src/test/java/org/zerodds/rtps/TypeConsistencyTest.java`,
-`crates/lang-rules/tests/enhanced_type_information.rs::every_minimal_identifier_the_information_announces_has_its_object`
+`crates/lang-rules/tests/enhanced_type_information.rs::rpc_7_5_1_2_6_every_minimal_identifier_the_information_announces_has_its_object`
 
-**Status:** `done` — `RawTypeSupport.matchesByTypeInformation()` makes the endpoints of a described topic type match by XTypes 1.3 §7.6.3.4.2: equal COMPLETE or MINIMAL identifiers, otherwise the assignability of the reader type from the writer type (§7.2.4.4) on the COMPLETE objects (`TypeConsistency`, `CompleteTypes`, `TypeAssignability`); without `TypeInformation` on one side the type names decide. `RtpsParticipant.askTypeObject` fetches objects of the peer with `getTypes` (at most three requests per identifier and peer; an object whose serialization does not hash to its identifier is not kept) and matches again after the reply (`95818352de1`). The Java description carries the MINIMAL objects its `TypeInformation` names (§7.6.3.3.4, `e6af3ee9150`); before, the Rust peer asked for them, got no answer and refused the pair after the TypeLookup grace. A reader of a described type announces ALLOW_TYPE_COERCION (`64134babe64`); with the default of the PSM (EXACT_TYPE, DISALLOW_TYPE_COERCION on the wire) the Rust service refused the reply reader. `TypeAssignability` takes two structures without members as assignable (as `crates/types`) and tells `int8`/`uint8` from `octet`. Measured over RTPS against Rust peers (Linux test host, `java_peer.rs`, 8 tests): base against derived in both directions, a changed parameter type and a return type widened to `long long` without a match, an appended member with a match and the reply read, a control of equal versions; on `7484a8f0d46`, before the matching by assignability, 5 of the 8 red. The other topics of the Java PSM keep matching by type name and by the TypeConsistencyEnforcement with PID 0x0072.
+**Status:** `done` — `RawTypeSupport.matchesByTypeInformation()` makes the endpoints of a described topic type match by XTypes 1.3 §7.6.3.4.2: equal COMPLETE or MINIMAL identifiers, otherwise the assignability of the reader type from the writer type (§7.2.4.4) on the COMPLETE objects (`TypeConsistency`, `CompleteTypes`, `TypeAssignability`); without `TypeInformation` on one side the type names decide. `RtpsParticipant.askTypeObject` fetches objects of the peer with `getTypes` (at most three requests per identifier and peer; an object whose serialization does not hash to its identifier is not kept) and matches again after the reply (`2d0f809c6e2`). The Java description carries the MINIMAL objects its `TypeInformation` names (§7.6.3.3.4, `9b1608508c5`); before, the Rust peer asked for them, got no answer and refused the pair after the TypeLookup grace. A reader of a described type announces ALLOW_TYPE_COERCION (`d67a980f80b`); with the default of the PSM (EXACT_TYPE, DISALLOW_TYPE_COERCION on the wire) the Rust service refused the reply reader. `TypeAssignability` takes two structures without members as assignable (as `crates/types`) and tells `int8`/`uint8` from `octet`. Measured over RTPS against Rust peers (Linux test host, `java_peer.rs`, 8 tests): base against derived in both directions, a changed parameter type and a return type widened to `long long` without a match, an appended member with a match and the reply read, a control of equal versions; on `78f243b596f`, before the matching by assignability, 5 of the 8 red. The other topics of the Java PSM keep matching by type name and by the TypeConsistencyEnforcement with PID 0x0072.
 
 ### §7.11.2 Java: params and DataWriter views of the PSM
 
@@ -6658,9 +6658,9 @@ specification represent the normative language bindings for Java."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/RequesterParams.java` (and `ReplierParams`, `ServiceParams`, `ClientParams`), `runtime/java/src/main/java/org/zerodds/ddsrpc/TopicSample.java`, `RpcTopicTypeSupport.java`, `PsmEndpoint.java`, `RpcTopicTypes.java`, `ZeroDdsParticipant.java`, `crates/java-omgdds/java/src/main/java/org/zerodds/pub/DataWriterImpl.java::writeSerializedIdentified`, `crates/java-omgdds/java/src/main/java/org/zerodds/sub/DataReaderImpl.java::takeSerialized`, `crates/java-omgdds/java/src/main/java/org/zerodds/cdr/TypeSupportResolver.java`
 
-**Tests:** `crates/rpc/tests/java/RpcRuntimeRoundtrip.java::psmEntities` (runs in `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`), `crates/rpc/tests/java/FunctionCallRoundtrip.java::run` (runs in `…::the_generated_function_call_client_calls_the_generated_service`), `crates/rpc-rust-e2e/tests/java_peer.rs` (Linux test host, green)
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together` (Java: psmEntities in `crates/rpc/tests/java/RpcRuntimeRoundtrip.java`), `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service` (Java: run in `crates/rpc/tests/java/FunctionCallRoundtrip.java`), `crates/rpc-rust-e2e/tests/java_peer.rs` (Linux test host, green)
 
-**Status:** `done` — (`02563569a84`) The params carry no type parameters any more and have `withDataWriterQos`, `withDataReaderQos`, `withPublisher` and `withSubscriber` with the getters; a DataWriterQos or DataReaderQos they name is the entity's QoS as it stands, and the `RpcQos` the runtime works with is derived from it; the entities are created in the Publisher and Subscriber named (one of the participant's, else `IllegalArgumentException`). `ServiceParams` and `ClientParams` pass the four settings on to their repliers and requesters, and the endpoints of the base interfaces get them through `sameSettingsAs`. The entities of the binding over the PSM (`ZeroDdsParticipant`) are `DataWriter<T>` and `DataReader<T>` of the PSM, typed by the topic type, on a `Topic<T>`, when the type support of the params names the class of its type (`TopicSample.classOf`, which every generated one does): a value written through `getRequestDataWriter()` is the topic's sample as it stands, header included (`TopicSample` puts the header from the `header` member in front in the Basic mapping and reads it back there), and the runtime keeps writing and reading its own octets through the same entities (`DataWriterImpl.writeSerializedIdentified`, `DataReaderImpl.takeSerialized` with the octets kept on arrival). The type registration from a `Class`: `TypeSupport.newTypeSupport(<I>_Request.class, …)` gives the runtime's framing through `TypeSupportResolver` and `RpcTopicTypes` instead of the reflective XCDR2 encoding. Measured (Linux test host): `psmEntities` makes a requester and a replier through `RPCRuntime.getInstance(…)`, `createRequesterParams().withDomainParticipant(…).withPublisher(…).withSubscriber(…).withDataWriterQos(…).withDataReaderQos(…)` and `createRequester(Class, Class, params)`; the request writer is in the Publisher and has the LIFESPAN of the DataWriterQos, the reply reader is in the Subscriber and has KEEP_LAST 11 from the DataReaderQos; the topics are typed by `Calculator_Request` and `Calculator_Reply`; a request of the runtime and its reply go through the typed entities; a request written through `getRequestDataWriter()` reaches the replier under the identity of its header; a reply written through `getReplyDataWriter()` is read through `getReplyDataReader()` with its value and header; a request taken through `getRequestDataReader()` carries the identity `sendRequest` returned and is gone from the replier; the type support made from the class writes the octets the requester writes, and a topic made from it carries a request with its header. `FunctionCallRoundtrip.java` checks the `Class` forms of `ClientEndpoint` and `ServiceEndpoint` for the own and the base interface and the refusal of a class that is not one. Without a typed entity the four operations return `null`: for a binding that is not the PSM (it refuses a Publisher, a Subscriber and a PSM QoS with `RemoteUnsupportedError` instead of passing over them), for a type support that names no class (such as a lambda), and when the participant already has the topic under another type. A sample the codec of the topic type cannot read is held by the typed reader without a value (`getData()` is `null`); the runtime sees its octets and answers it as §7.5.2 says. Further runs: Maven `verify` of the Java PSM 925 tests, 0 failures, 3 skipped; `java_peer.rs` 2/2 (Java client against Rust service and the other way, with the typed entities); `lang-rules` `enhanced_java_calls`, `java_corpus_compiles`, `java_psm_mapping`, `type_pair_java` 28 passed, 2 ignored (the full corpus runs, as before).
+**Status:** `done` — (`d6674336a94`) The params carry no type parameters any more and have `withDataWriterQos`, `withDataReaderQos`, `withPublisher` and `withSubscriber` with the getters; a DataWriterQos or DataReaderQos they name is the entity's QoS as it stands, and the `RpcQos` the runtime works with is derived from it; the entities are created in the Publisher and Subscriber named (one of the participant's, else `IllegalArgumentException`). `ServiceParams` and `ClientParams` pass the four settings on to their repliers and requesters, and the endpoints of the base interfaces get them through `sameSettingsAs`. The entities of the binding over the PSM (`ZeroDdsParticipant`) are `DataWriter<T>` and `DataReader<T>` of the PSM, typed by the topic type, on a `Topic<T>`, when the type support of the params names the class of its type (`TopicSample.classOf`, which every generated one does): a value written through `getRequestDataWriter()` is the topic's sample as it stands, header included (`TopicSample` puts the header from the `header` member in front in the Basic mapping and reads it back there), and the runtime keeps writing and reading its own octets through the same entities (`DataWriterImpl.writeSerializedIdentified`, `DataReaderImpl.takeSerialized` with the octets kept on arrival). The type registration from a `Class`: `TypeSupport.newTypeSupport(<I>_Request.class, …)` gives the runtime's framing through `TypeSupportResolver` and `RpcTopicTypes` instead of the reflective XCDR2 encoding. Measured (Linux test host): `psmEntities` makes a requester and a replier through `RPCRuntime.getInstance(…)`, `createRequesterParams().withDomainParticipant(…).withPublisher(…).withSubscriber(…).withDataWriterQos(…).withDataReaderQos(…)` and `createRequester(Class, Class, params)`; the request writer is in the Publisher and has the LIFESPAN of the DataWriterQos, the reply reader is in the Subscriber and has KEEP_LAST 11 from the DataReaderQos; the topics are typed by `Calculator_Request` and `Calculator_Reply`; a request of the runtime and its reply go through the typed entities; a request written through `getRequestDataWriter()` reaches the replier under the identity of its header; a reply written through `getReplyDataWriter()` is read through `getReplyDataReader()` with its value and header; a request taken through `getRequestDataReader()` carries the identity `sendRequest` returned and is gone from the replier; the type support made from the class writes the octets the requester writes, and a topic made from it carries a request with its header. `FunctionCallRoundtrip.java` checks the `Class` forms of `ClientEndpoint` and `ServiceEndpoint` for the own and the base interface and the refusal of a class that is not one. Without a typed entity the four operations return `null`: for a binding that is not the PSM (it refuses a Publisher, a Subscriber and a PSM QoS with `RemoteUnsupportedError` instead of passing over them), for a type support that names no class (such as a lambda), and when the participant already has the topic under another type. A sample the codec of the topic type cannot read is held by the typed reader without a value (`getData()` is `null`); the runtime sees its octets and answers it as §7.5.2 says. Further runs: Maven `verify` of the Java PSM 925 tests, 0 failures, 3 skipped; `java_peer.rs` 2/2 (Java client against Rust service and the other way, with the typed entities); `lang-rules` `enhanced_java_calls`, `java_corpus_compiles`, `java_psm_mapping`, `type_pair_java` 28 passed, 2 ignored (the full corpus runs, as before).
 
 ### §7.11.2 Type mapping by DDS-Java-PSM
 
@@ -6669,13 +6669,13 @@ mapping as per [DDS-Java-PSM]."
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::java_member_type` (mapping per
 DDS-Java-PSM Clause 9, selectable with `idlc generate --lang java --java-mapping
-psm`); `crates/lang-rules/src/emit/interface_java.rs`; commit `f8b91f3fdc1d`,
-interfaces `80e6a9531577`
+psm`); `crates/lang-rules/src/emit/interface_java.rs`; commit `5e078003c162`,
+interfaces `1214333fd89f`
 
-**Tests:** `crates/lang-rules/tests/java_psm_mapping.rs::an_aggregate_is_a_final_class_with_private_state_and_bean_accessors`,
-`crates/lang-rules/tests/java_psm_mapping.rs::an_unbounded_sequence_is_a_collection_and_a_bounded_one_an_array`,
-`crates/lang-rules/tests/java_psm_mapping.rs::an_interface_is_generated_under_the_psm_mapping`,
-`crates/lang-rules/tests/interface_bindings.rs::java_declares_the_same_entities_as_cpp`
+**Tests:** `crates/lang-rules/tests/java_psm_mapping.rs::javapsm_9_1_1_an_aggregate_is_a_final_class_with_private_state_and_bean_accessors`,
+`crates/lang-rules/tests/java_psm_mapping.rs::javapsm_9_1_2_an_unbounded_sequence_is_a_collection_and_a_bounded_one_an_array`,
+`crates/lang-rules/tests/java_psm_mapping.rs::rpc_7_11_2_an_interface_is_generated_under_the_psm_mapping`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_2_java_declares_the_same_entities_as_cpp`
 
 **Status:** done — data types and the types of an `interface` (request, reply, parameters,
 services) can be mapped per Clause 9 (item below).
@@ -6687,11 +6687,11 @@ services) can be mapped per Clause 9 (item below).
 **Repo:** `crates/lang-rules/src/emit/interface_java.rs` (`java_interface_items` takes
 `--java-mapping psm`; the holders `Request`, `Reply`, `In`, `Out`, `Result` keep
 public fields and take the types of the mapping, the codec reaches the data
-types through accessors); commit `80e6a9531577`
+types through accessors); commit `1214333fd89f`
 
-**Tests:** `crates/lang-rules/tests/java_psm_mapping.rs::an_interface_is_generated_under_the_psm_mapping`,
-`crates/lang-rules/tests/java_psm_mapping.rs::an_interface_under_the_psm_mapping_compiles`,
-`crates/lang-rules/tests/java_psm_mapping.rs::a_type_pair_under_the_psm_mapping_compiles`
+**Tests:** `crates/lang-rules/tests/java_psm_mapping.rs::rpc_7_11_2_an_interface_is_generated_under_the_psm_mapping`,
+`crates/lang-rules/tests/java_psm_mapping.rs::javapsm_7_2_6_an_interface_under_the_psm_mapping_compiles`,
+`crates/lang-rules/tests/java_psm_mapping.rs::rpc_7_11_2_a_type_pair_under_the_psm_mapping_compiles`
 
 **Status:** done — Basic and Enhanced; the generated sources compile with
 `-Xlint:all -Werror`. Like the data types, the services are in the outer class
@@ -6731,9 +6731,9 @@ Future, FutureCompletionListener, Sample, and Sample.Iterator."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/`;
 `crates/rpc/src/language_binding.rs` (`JAVA_PACKAGES`,
-`JAVA_REQUEST_REPLY_TYPES`); commit `97c20505e85c`
+`JAVA_REQUEST_REPLY_TYPES`); commit `771f12846807`
 
-**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::the_java_package_declares_every_type_of_the_two_summaries`
+**Tests:** `crates/rpc/tests/class_summaries_are_declared.rs::rpc_7_11_the_java_package_declares_every_type_of_the_two_summaries`
 
 **Status:** done — all 15 types exist; `Sample.Iterator` is nested in
 `Sample.java`. The interface form is in the item below.
@@ -6747,9 +6747,9 @@ Java language binding."
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/` (`Requester`, `Replier`,
 `RequesterParams`, `ReplierParams`, `Server` are interfaces; implementations
 `RequesterImpl`, `ReplierImpl`, `RequesterParamsImpl`, `ReplierParamsImpl`,
-`ServerImpl`; `RPCRuntime` is the abstract class); commit `97c20505e85c`
+`ServerImpl`; `RPCRuntime` is the abstract class); commit `771f12846807`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (the program compiles `RequesterImpl implements Requester` and the other
 implementations)
 
@@ -6763,12 +6763,12 @@ the active entities. It inherits from the DDSObject interface defined in
 the RPCRuntime object."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/RPCEntity.java`; `runtime/java/src/main/java/org/omg/dds/rpc/Server.java`
-(`extends RPCEntity, Runnable`); commit `dcdb4fd4a073`, access to the runtime
-`97c20505e85c`, `getRPCRuntime` `13f4277e0a04`, `Server` `998e1fc5e576`
+(`extends RPCEntity, Runnable`); commit `8853bea2e973`, access to the runtime
+`771f12846807`, `getRPCRuntime` `25d188119b45`, `Server` `17cc6c7ad2a5`
 
-**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::rpcEntityInheritsDdsObjectAndCloseable`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::anEntityAnRpcRuntimeMadeReturnsThatRuntime`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::rpc_7_11_2_2_2_rpc_entity_inherits_dds_object_and_closeable`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::rpc_7_11_2_2_2_an_entity_an_rpc_runtime_made_returns_that_runtime`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: `Server extends
 RPCEntity`)
 
@@ -6781,10 +6781,10 @@ placeholder implementation in the Java language binding. It extends
 ServiceEnvironment abstract class defined in [DDS-Java-PSM]."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/RPCRuntime.java`; commit
-`97c20505e85c`
+`771f12846807`
 
-**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::aServiceEnvironmentReturnsItself`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::javapsm_7_3_1_a_service_environment_returns_itself`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** done
 
@@ -6797,12 +6797,12 @@ RPCRuntime singleton, which serves as a factory for all other entities."
 (`over`, `createRequester`, `createReplier`, `createServer`,
 `createRequesterParams`, `createReplierParams`, `createServiceParams`,
 `createClientParams`, `createService`, `createClient`, `release`); commit
-`97c20505e85c`, service and client `998e1fc5e576`
+`771f12846807`, service and client `17cc6c7ad2a5`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (program `crates/rpc/tests/java/RpcRuntimeRoundtrip.java`: `over()` returns the
 one runtime of a participant),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: `createService` and
 `createClient` return entities of the runtime)
 
@@ -6817,9 +6817,9 @@ params.
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/RPCRuntime.java::createService`,
 `RPCRuntime.java::createClient` (take the constructor of the generated
 `<I>ServiceImpl` or `<I>ClientImpl`, also with an instance name);
-`ServiceParams`, `ClientParams`; commit `998e1fc5e576`
+`ServiceParams`, `ClientParams`; commit `17cc6c7ad2a5`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: `service.getEnvironment()
 == runtime`, a call of the client reaches the service, instance name bound,
 `createService` without a participant is refused)
@@ -6833,9 +6833,9 @@ java.util.concurrent.Future<T> interface and adds a single operation to specify
 a FutureCompletionListener."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/Future.java`
-(`setListener`); commit `d047dc5f497c`
+(`setListener`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** done
 
@@ -6845,9 +6845,9 @@ a FutureCompletionListener."
 notification when the corresponding future becomes ready."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/FutureCompletionListener.java`
-(`onFutureComplete`); commit `d047dc5f497c`
+(`onFutureComplete`); commit `ad892a10764a`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 
 **Status:** done
 
@@ -6858,10 +6858,10 @@ dds.sub.Sample<T> interface and defines two additional operations to retrieve
 the SampleIdentity and the related sample identity, if any."
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/Sample.java` (`identity`,
-`relatedIdentity`); commit `97c20505e85c`
+`relatedIdentity`); commit `771f12846807`
 
-**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::rpcSampleExtendsThePsmSampleOverTheSameParameter`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::anRpcSampleIsAPsmSample`
+**Tests:** `crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::rpc_7_11_2_2_6_rpc_sample_extends_the_psm_sample_over_the_same_parameter`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/rpc/RpcInheritanceTest.java::rpc_7_11_2_2_6_an_rpc_sample_is_a_psm_sample`
 
 **Status:** done — the interface additionally declares `validData()`.
 
@@ -6875,13 +6875,13 @@ implements the Java.io.Closeable interface".
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/Sample.java`
 (`Sample.Iterator extends java.io.Closeable, java.util.ListIterator<Sample<T>>`,
 `Sample.iterate`; `remove`, `set` and `add` throw
-`UnsupportedOperationException`); commit `97c20505e85c`, `Closeable`
-`998e1fc5e576`
+`UnsupportedOperationException`); commit `771f12846807`, `Closeable`
+`17cc6c7ad2a5`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_rpc_runtime_and_the_generated_services_run_together`
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together`
 (program `crates/rpc/tests/java/RpcRuntimeRoundtrip.java`: `instanceof
 java.util.ListIterator`, backward walk, `remove` refused),
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: `Closeable`,
 `close()` without a checked exception, `next()` after `close()`,
 try-with-resources)
@@ -6893,9 +6893,9 @@ try-with-resources)
 **Spec:** §7.11.2.2.7, p. 68 — as above.
 
 **Repo:** `runtime/java/src/main/java/org/omg/dds/rpc/Sample.java::Sample.Iterator`
-(`close`, `returnLoan`, `isClosed`); commit `998e1fc5e576`
+(`close`, `returnLoan`, `isClosed`); commit `17cc6c7ad2a5`
 
-**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+**Tests:** `crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 (program `crates/rpc/tests/java/RpcInheritanceTest.java`: `Closeable` is a
 supertype, `close()` ends the walk, a second `close()` is allowed, leaving
 try-with-resources returns the loan)
@@ -6913,13 +6913,13 @@ shall define the same entities as that of C++."
 `crates/lang-rules/src/emit/interface_java.rs` (`client_interface`,
 `service_interface`);
 `crates/lang-rules/src/emit/interface_java/calls.rs` (`client_class`,
-`service_class`); commit `c4a249bd251f`, `Server`, `ClientEndpoint` and runtime
-`998e1fc5e576`
+`service_class`); commit `c512ee365514`, `Server`, `ClientEndpoint` and runtime
+`17cc6c7ad2a5`
 
-**Tests:** `crates/rpc/src/language_binding.rs::tests::the_java_function_call_types_are_the_cpp_ones`,
-`crates/lang-rules/tests/interface_bindings.rs::java_declares_the_same_entities_as_cpp`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_generated_function_call_client_calls_the_generated_service`,
-`crates/rpc/tests/java_rpc_runtime.rs::the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
+**Tests:** `crates/rpc/src/language_binding.rs::tests::rpc_7_11_2_3_the_java_function_call_types_are_the_cpp_ones`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_2_java_declares_the_same_entities_as_cpp`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service`,
+`crates/rpc/tests/java_rpc_runtime.rs::rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients`
 
 **Status:** done — the five entities are declared and implemented; `Server` ties a
 `Service` to exactly one server (`IllegalStateException`), has `run()` and is an
@@ -6929,14 +6929,25 @@ shall define the same entities as that of C++."
 
 ## Audit-Status
 
-371 done / 0 partial / 0 open / 44 n/a (informative) / 0 n/a (rejected).
+371 done / 0 partial / 0 open / 0 blocked / 44 n/a (informative).
 
-Status values per `internal/spec-coverage/PROCESS.md`. `n/a (rejected)` does not
-occur.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-rpc-1.0.md`):
 
-State: code of the branch `agent/rpc`. The tests ran in rounds 1 to 10 on the
-Linux test host; round 10 had no failures. This statement comes from the report
-of the rounds, not from a run of this audit. Nothing was run on the Mac.
+* `cargo nextest run --profile merge -p zerodds-ast --all-targets` (job `merge-rust-ast`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (job `merge-rust-c-api`) — 6 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 8 tests green.
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (job `merge-rust-idl-lower`) — 10 tests green.
+* `cargo nextest run --profile merge -p zerodds-idl-parse --all-targets` (job `merge-rust-idl-parse`) — 3 tests green.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 63 tests green.
+* `cargo nextest run --profile merge -p zerodds-rpc --all-targets` (job `merge-rust-rpc`) — 209 tests green.
+* `cargo nextest run --profile merge -p zerodds-rpc-rust-e2e --all-targets` (job `merge-rust-rpc-rust-e2e`) — 49 tests green.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 16 tests green.
+* `python3 ci/run_integration.py merge-codegen-java` (job `merge-codegen-java`) — 12 tests green.
+* `python3 ci/run_integration.py merge-java-omgdds` (job `merge-java-omgdds`) — 6 tests green.
+* `python3 ci/run_integration.py integration-codegen-java` (job `integration-codegen-java`) — 4 tests green.
+* `python3 ci/run_integration.py integration-rpc-cpp` (job `integration-rpc-cpp`) — 2 tests green.
+
+390 cited tests green, 0 not green.
 
 Open items: none.
-

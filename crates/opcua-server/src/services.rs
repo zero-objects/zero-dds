@@ -2962,70 +2962,85 @@ fn decode_response_header(r: &mut UaReader<'_>) -> Result<ResponseHeader, Decode
 mod tests {
     use super::*;
     use zerodds_opcua_gateway::data_value::VariantValue;
-    use zerodds_opcua_uacp::securechannel::null_extension_object;
 
     fn req_header() -> RequestHeader {
         RequestHeader::new(NodeId::numeric(0, 0), 1)
     }
 
+    fn ua_string(s: &str) -> Vec<u8> {
+        let mut out = i32::try_from(s.len()).unwrap().to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    /// The TypeId of a service message, the `_Encoding_DefaultBinary` id of
+    /// NodeIds.csv in the Four Byte form (OPC 10000-6 Table 20).
+    fn type_id(id: u16) -> Vec<u8> {
+        let mut out = alloc::vec![0x01, 0x00];
+        out.extend_from_slice(&id.to_le_bytes());
+        out
+    }
+
+    /// `req_header()` in the field order of OPC 10000-4 §7.32.
+    fn request_header_octets() -> Vec<u8> {
+        let mut out = alloc::vec![0x00, 0x00];
+        out.extend_from_slice(&0_i64.to_le_bytes());
+        out.extend_from_slice(&1_u32.to_le_bytes());
+        out.extend_from_slice(&0_u32.to_le_bytes());
+        out.extend_from_slice(&ua_string(""));
+        out.extend_from_slice(&0_u32.to_le_bytes());
+        out.extend_from_slice(&[0x00, 0x00, 0x00]);
+        out
+    }
+
+    /// `ResponseHeader::new(1, 0)` in the field order of OPC 10000-4 §7.33.
+    fn response_header_octets() -> Vec<u8> {
+        let mut out = 0_i64.to_le_bytes().to_vec();
+        out.extend_from_slice(&1_u32.to_le_bytes());
+        out.extend_from_slice(&0_u32.to_le_bytes());
+        out.push(0x00);
+        out.extend_from_slice(&0_i32.to_le_bytes());
+        out.extend_from_slice(&[0x00, 0x00, 0x00]);
+        out
+    }
+
+    /// An empty DiagnosticInfo[] (OPC 10000-6 §5.2.5).
+    const NO_DIAGNOSTICS: [u8; 4] = [0, 0, 0, 0];
+
+    // Read, Write, Browse, GetEndpoints, CreateSession, ActivateSession and
+    // CloseSession are exchanged with open62541's client in the
+    // integration scenario `bridge-opcua`
+    // (tests/integration/tests/bridges.rs::opcua_bridge_against_open62541);
+    // the services below are not.
+
+    /// OPC 10000-4 §5.5.2: FindServersRequest (TypeId i=422) is the
+    /// RequestHeader, endpointUrl, localeIds and serverUris.
     #[test]
-    fn read_request_round_trips() {
-        let req = ServiceRequest::Read(ReadRequest {
+    fn uacs_5_5_2_a_find_servers_request_is_the_fields_of_5_5_2() {
+        let fs = ServiceRequest::FindServers(FindServersRequest {
             request_header: req_header(),
-            max_age: 0.0,
-            timestamps_to_return: 0,
-            nodes_to_read: alloc::vec![ReadValueId {
-                node_id: NodeId::numeric(1, 42),
-                attribute_id: ATTRIBUTE_VALUE,
-                index_range: String::new(),
-                data_encoding: QualifiedName {
-                    namespace_index: 0,
-                    name: String::new(),
-                },
-            }],
+            endpoint_url: String::from("opc.tcp://x:4840"),
+            locale_ids: Vec::new(),
+            server_uris: alloc::vec![String::from("urn:server")],
         });
-        let body = req.encode().expect("encode");
-        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
+        let mut expected = type_id(422);
+        expected.extend_from_slice(&request_header_octets());
+        expected.extend_from_slice(&ua_string("opc.tcp://x:4840"));
+        expected.extend_from_slice(&0_i32.to_le_bytes());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&ua_string("urn:server"));
+        assert_eq!(fs.encode().expect("encode"), expected);
+        assert_eq!(ServiceRequest::decode(&expected).expect("decode"), fs);
     }
 
+    /// OPC 10000-4 §5.11.3 and OPC 10000-11 §6.4.3: a HistoryReadRequest
+    /// (i=664) carries the details as an ExtensionObject (ReadRawModifiedDetails
+    /// i=649: isReadModified, startTime, endTime, numValuesPerNode,
+    /// returnBounds), timestampsToReturn, releaseContinuationPoints and the
+    /// HistoryReadValueIds (nodeId, indexRange, dataEncoding,
+    /// continuationPoint).
     #[test]
-    fn read_response_round_trips() {
-        let resp = ServiceResponse::Read(ReadResponse {
-            response_header: ResponseHeader::new(1, 0),
-            results: alloc::vec![DataValue::new_value(
-                Variant::scalar(VariantValue::Int32(99)),
-                0,
-                0,
-            )],
-        });
-        let body = resp.encode().expect("encode");
-        assert_eq!(ServiceResponse::decode(&body).expect("decode"), resp);
-    }
-
-    #[test]
-    fn write_round_trips() {
-        let req = ServiceRequest::Write(WriteRequest {
-            request_header: req_header(),
-            nodes_to_write: alloc::vec![WriteValue {
-                node_id: NodeId::numeric(1, 7),
-                attribute_id: ATTRIBUTE_VALUE,
-                index_range: String::new(),
-                value: DataValue::new_value(Variant::scalar(VariantValue::Int32(5)), 0, 0),
-            }],
-        });
-        let body = req.encode().expect("encode");
-        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
-
-        let resp = ServiceResponse::Write(WriteResponse {
-            response_header: ResponseHeader::new(1, 0),
-            results: alloc::vec![0],
-        });
-        let rb = resp.encode().expect("encode");
-        assert_eq!(ServiceResponse::decode(&rb).expect("decode"), resp);
-    }
-
-    #[test]
-    fn history_read_raw_round_trips() {
+    fn uacs_5_11_3_a_history_read_request_carries_its_details_as_an_extension_object() {
         let req = ServiceRequest::HistoryRead(HistoryReadRequest {
             request_header: req_header(),
             history_read_details: HistoryReadDetails::RawModified(ReadRawModifiedDetails {
@@ -3047,29 +3062,33 @@ mod tests {
                 continuation_point: alloc::vec![1, 2, 3],
             }],
         });
-        let body = req.encode().expect("encode");
-        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
-
-        let resp = ServiceResponse::HistoryRead(HistoryReadResponse {
-            response_header: ResponseHeader::new(1, 0),
-            results: alloc::vec![HistoryReadResult {
-                status_code: 0,
-                continuation_point: Vec::new(),
-                history_data: HistoryData {
-                    data_values: alloc::vec![DataValue::new_value(
-                        Variant::scalar(VariantValue::Int32(7)),
-                        0,
-                        123,
-                    )],
-                },
-            }],
-        });
-        let rb = resp.encode().expect("encode");
-        assert_eq!(ServiceResponse::decode(&rb).expect("decode"), resp);
+        let mut details = alloc::vec![0x00];
+        details.extend_from_slice(&100_i64.to_le_bytes());
+        details.extend_from_slice(&200_i64.to_le_bytes());
+        details.extend_from_slice(&10_u32.to_le_bytes());
+        details.push(0x01);
+        let mut expected = type_id(664);
+        expected.extend_from_slice(&request_header_octets());
+        expected.extend_from_slice(&type_id(649));
+        expected.push(0x01);
+        expected.extend_from_slice(&i32::try_from(details.len()).unwrap().to_le_bytes());
+        expected.extend_from_slice(&details);
+        expected.extend_from_slice(&0_i32.to_le_bytes());
+        expected.push(0x00);
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&[0x01, 0x01, 0x2A, 0x00]);
+        expected.extend_from_slice(&ua_string(""));
+        expected.extend_from_slice(&[0x00, 0x00]);
+        expected.extend_from_slice(&ua_string(""));
+        expected.extend_from_slice(&[0x03, 0x00, 0x00, 0x00, 1, 2, 3]);
+        assert_eq!(req.encode().expect("encode"), expected);
+        assert_eq!(ServiceRequest::decode(&expected).expect("decode"), req);
     }
 
+    /// OPC 10000-11 §6.4.5: ReadAtTimeDetails (i=655) is reqTimes and
+    /// useSimpleBounds.
     #[test]
-    fn history_read_at_time_round_trips() {
+    fn opcua11_6_4_5_read_at_time_details_are_req_times_and_use_simple_bounds() {
         let req = ServiceRequest::HistoryRead(HistoryReadRequest {
             request_header: req_header(),
             history_read_details: HistoryReadDetails::AtTime(ReadAtTimeDetails {
@@ -3078,109 +3097,125 @@ mod tests {
             }),
             timestamps_to_return: 2,
             release_continuation_points: true,
-            nodes_to_read: alloc::vec![HistoryReadValueId {
-                node_id: NodeId::numeric(1, 43),
-                index_range: String::new(),
-                data_encoding: QualifiedName {
-                    namespace_index: 0,
-                    name: String::new(),
-                },
-                continuation_point: Vec::new(),
-            }],
+            nodes_to_read: Vec::new(),
         });
-        let body = req.encode().expect("encode");
-        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
+        let mut details = 3_i32.to_le_bytes().to_vec();
+        for v in [10_i64, 20, 30] {
+            details.extend_from_slice(&v.to_le_bytes());
+        }
+        details.push(0x01);
+        let mut expected = type_id(664);
+        expected.extend_from_slice(&request_header_octets());
+        expected.extend_from_slice(&type_id(655));
+        expected.push(0x01);
+        expected.extend_from_slice(&i32::try_from(details.len()).unwrap().to_le_bytes());
+        expected.extend_from_slice(&details);
+        expected.extend_from_slice(&2_i32.to_le_bytes());
+        expected.push(0x01);
+        expected.extend_from_slice(&0_i32.to_le_bytes());
+        assert_eq!(req.encode().expect("encode"), expected);
+        assert_eq!(ServiceRequest::decode(&expected).expect("decode"), req);
     }
 
+    /// OPC 10000-4 §5.11.3: HistoryReadResponse (i=667) is the
+    /// ResponseHeader, the HistoryReadResults (statusCode,
+    /// continuationPoint, historyData as an ExtensionObject; HistoryData
+    /// i=658 of OPC 10000-11 §6.5.2: dataValues) and the DiagnosticInfos.
     #[test]
-    fn browse_round_trips() {
-        let req = ServiceRequest::Browse(BrowseRequest {
-            request_header: req_header(),
-            view: ViewDescription::default(),
-            requested_max_references_per_node: 100,
-            nodes_to_browse: alloc::vec![BrowseDescription {
-                node_id: NodeId::numeric(0, 85),
-                browse_direction: 2,
-                reference_type_id: NodeId::numeric(0, 33),
-                include_subtypes: true,
-                node_class_mask: 0,
-                result_mask: 0x3F,
-            }],
-        });
-        let body = req.encode().expect("encode");
-        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
-
-        let resp = ServiceResponse::Browse(BrowseResponse {
+    fn uacs_5_11_3_a_history_read_response_carries_history_data_as_an_extension_object() {
+        let resp = ServiceResponse::HistoryRead(HistoryReadResponse {
             response_header: ResponseHeader::new(1, 0),
-            results: alloc::vec![BrowseResult {
+            results: alloc::vec![HistoryReadResult {
                 status_code: 0,
                 continuation_point: Vec::new(),
-                references: alloc::vec![ReferenceDescription {
-                    reference_type_id: NodeId::numeric(0, 35),
-                    is_forward: true,
-                    node_id: ExpandedNodeId {
-                        node_id: NodeId::numeric(1, 1),
-                        namespace_uri: String::new(),
-                        server_index: 0,
-                    },
-                    browse_name: QualifiedName {
-                        namespace_index: 1,
-                        name: String::from("Boiler"),
-                    },
-                    display_name: LocalizedText {
-                        locale: None,
-                        text: Some(String::from("Boiler")),
-                    },
-                    node_class: 1,
-                    type_definition: ExpandedNodeId {
-                        node_id: NodeId::numeric(0, 58),
-                        namespace_uri: String::new(),
-                        server_index: 0,
-                    },
-                }],
+                history_data: HistoryData {
+                    data_values: alloc::vec![DataValue {
+                        value: Some(Variant::scalar(VariantValue::Int32(7))),
+                        status: None,
+                        source_timestamp: Some(123),
+                        server_timestamp: None,
+                        source_pico_sec: None,
+                        server_pico_sec: None,
+                    }],
+                },
             }],
         });
-        let rb = resp.encode().expect("encode");
-        assert_eq!(ServiceResponse::decode(&rb).expect("decode"), resp);
+        let mut data = 1_i32.to_le_bytes().to_vec();
+        data.extend_from_slice(&[0x05, 0x06, 0x07, 0x00, 0x00, 0x00]);
+        data.extend_from_slice(&123_i64.to_le_bytes());
+        let mut expected = type_id(667);
+        expected.extend_from_slice(&response_header_octets());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&0_u32.to_le_bytes());
+        expected.extend_from_slice(&(-1_i32).to_le_bytes());
+        expected.extend_from_slice(&type_id(658));
+        expected.push(0x01);
+        expected.extend_from_slice(&i32::try_from(data.len()).unwrap().to_le_bytes());
+        expected.extend_from_slice(&data);
+        expected.extend_from_slice(&NO_DIAGNOSTICS);
+        assert_eq!(resp.encode().expect("encode"), expected);
+        assert_eq!(ServiceResponse::decode(&expected).expect("decode"), resp);
     }
 
+    /// OPC 10000-4 §5.12.2: CallRequest (i=712) is the RequestHeader and
+    /// the CallMethodRequests (objectId, methodId, inputArguments);
+    /// CallResponse (i=715) the ResponseHeader, the CallMethodResults
+    /// (statusCode, inputArgumentResults, inputArgumentDiagnosticInfos,
+    /// outputArguments) and the DiagnosticInfos.
     #[test]
-    fn discovery_requests_round_trip() {
-        let ge = ServiceRequest::GetEndpoints(GetEndpointsRequest {
+    fn uacs_5_12_2_call_request_and_response_are_the_fields_of_5_12_2() {
+        let req = ServiceRequest::Call(CallRequest {
             request_header: req_header(),
-            endpoint_url: String::from("opc.tcp://x:4840"),
-            locale_ids: alloc::vec![String::from("en")],
-            profile_uris: Vec::new(),
+            methods_to_call: alloc::vec![CallMethodRequest {
+                object_id: NodeId::numeric(0, 0),
+                method_id: NodeId::numeric(1, 100),
+                input_arguments: alloc::vec![Variant::scalar(VariantValue::String(String::from(
+                    "group-1"
+                )))],
+            }],
         });
-        assert_eq!(
-            ServiceRequest::decode(&ge.encode().expect("e")).expect("d"),
-            ge
-        );
+        let mut expected = type_id(712);
+        expected.extend_from_slice(&request_header_octets());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&[0x00, 0x00, 0x01, 0x01, 0x64, 0x00]);
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.push(12);
+        expected.extend_from_slice(&ua_string("group-1"));
+        assert_eq!(req.encode().expect("encode"), expected);
+        assert_eq!(ServiceRequest::decode(&expected).expect("decode"), req);
 
-        let fs = ServiceRequest::FindServers(FindServersRequest {
-            request_header: req_header(),
-            endpoint_url: String::from("opc.tcp://x:4840"),
-            locale_ids: Vec::new(),
-            server_uris: alloc::vec![String::from("urn:server")],
-        });
-        assert_eq!(
-            ServiceRequest::decode(&fs.encode().expect("e")).expect("d"),
-            fs
-        );
-
-        // Empty responses round-trip through the dispatch too.
-        let ger = ServiceResponse::GetEndpoints(GetEndpointsResponse {
+        let resp = ServiceResponse::Call(CallResponse {
             response_header: ResponseHeader::new(1, 0),
-            endpoints: Vec::new(),
+            results: alloc::vec![CallMethodResult {
+                status_code: 0,
+                input_argument_results: alloc::vec![0],
+                output_arguments: alloc::vec![Variant::scalar(VariantValue::UInt32(7))],
+            }],
         });
-        assert_eq!(
-            ServiceResponse::decode(&ger.encode().expect("e")).expect("d"),
-            ger
-        );
+        let mut expected = type_id(715);
+        expected.extend_from_slice(&response_header_octets());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&0_u32.to_le_bytes());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&0_u32.to_le_bytes());
+        expected.extend_from_slice(&NO_DIAGNOSTICS);
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.push(7);
+        expected.extend_from_slice(&7_u32.to_le_bytes());
+        expected.extend_from_slice(&NO_DIAGNOSTICS);
+        assert_eq!(resp.encode().expect("encode"), expected);
+        assert_eq!(ServiceResponse::decode(&expected).expect("decode"), resp);
     }
 
+    /// OPC 10000-4 §5.14.2 and §5.13.2: CreateSubscriptionRequest (i=787:
+    /// requestedPublishingInterval, requestedLifetimeCount,
+    /// requestedMaxKeepAliveCount, maxNotificationsPerPublish,
+    /// publishingEnabled, priority) and CreateMonitoredItemsRequest (i=751:
+    /// subscriptionId, timestampsToReturn, itemsToCreate with
+    /// itemToMonitor, monitoringMode and the MonitoringParameters
+    /// clientHandle, samplingInterval, filter, queueSize, discardOldest).
     #[test]
-    fn subscription_round_trips() {
+    fn uacs_5_14_2_and_5_13_2_subscription_and_monitored_item_requests_are_their_fields() {
         let cs = ServiceRequest::CreateSubscription(CreateSubscriptionRequest {
             request_header: req_header(),
             requested_publishing_interval: 500.0,
@@ -3190,10 +3225,15 @@ mod tests {
             publishing_enabled: true,
             priority: 5,
         });
-        assert_eq!(
-            ServiceRequest::decode(&cs.encode().expect("e")).expect("d"),
-            cs
-        );
+        let mut expected = type_id(787);
+        expected.extend_from_slice(&request_header_octets());
+        expected.extend_from_slice(&500.0_f64.to_le_bytes());
+        expected.extend_from_slice(&6000_u32.to_le_bytes());
+        expected.extend_from_slice(&20_u32.to_le_bytes());
+        expected.extend_from_slice(&0_u32.to_le_bytes());
+        expected.extend_from_slice(&[0x01, 0x05]);
+        assert_eq!(cs.encode().expect("encode"), expected);
+        assert_eq!(ServiceRequest::decode(&expected).expect("decode"), cs);
 
         let cm = ServiceRequest::CreateMonitoredItems(CreateMonitoredItemsRequest {
             request_header: req_header(),
@@ -3219,28 +3259,60 @@ mod tests {
                 },
             }],
         });
-        assert_eq!(
-            ServiceRequest::decode(&cm.encode().expect("e")).expect("d"),
-            cm
-        );
+        let mut expected = type_id(751);
+        expected.extend_from_slice(&request_header_octets());
+        expected.extend_from_slice(&1_u32.to_le_bytes());
+        expected.extend_from_slice(&0_i32.to_le_bytes());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        // ReadValueId (§7.29): nodeId, attributeId 13 (Value), indexRange,
+        // dataEncoding.
+        expected.extend_from_slice(&[0x01, 0x01, 0x01, 0x00]);
+        expected.extend_from_slice(&13_u32.to_le_bytes());
+        expected.extend_from_slice(&ua_string(""));
+        expected.extend_from_slice(&[0x00, 0x00]);
+        expected.extend_from_slice(&ua_string(""));
+        expected.extend_from_slice(&2_i32.to_le_bytes());
+        expected.extend_from_slice(&7_u32.to_le_bytes());
+        expected.extend_from_slice(&250.0_f64.to_le_bytes());
+        expected.extend_from_slice(&[0x00, 0x00, 0x00]);
+        expected.extend_from_slice(&4_u32.to_le_bytes());
+        expected.push(0x01);
+        assert_eq!(cm.encode().expect("encode"), expected);
+        assert_eq!(ServiceRequest::decode(&expected).expect("decode"), cm);
     }
 
+    /// OPC 10000-4 §5.14.5 and §7.25: PublishResponse (i=829) is the
+    /// ResponseHeader, subscriptionId, availableSequenceNumbers,
+    /// moreNotifications, the NotificationMessage (sequenceNumber,
+    /// publishTime, notificationData) and results and DiagnosticInfos; a
+    /// DataChangeNotification (i=811, §7.25.2) is an ExtensionObject of
+    /// monitoredItems (clientHandle, value) and DiagnosticInfos.
     #[test]
-    fn publish_data_change_notification_round_trips() {
-        // The DataChangeNotification survives the ExtensionObject wrapping.
+    fn uacs_5_14_5_a_publish_response_carries_the_data_change_notification_as_an_extension_object()
+    {
         let dcn = DataChangeNotification {
             monitored_items: alloc::vec![MonitoredItemNotification {
                 client_handle: 7,
-                value: DataValue::new_value(Variant::scalar(VariantValue::Int32(99)), 0, 0),
+                value: DataValue {
+                    value: Some(Variant::scalar(VariantValue::Int32(99))),
+                    status: None,
+                    source_timestamp: None,
+                    server_timestamp: None,
+                    source_pico_sec: None,
+                    server_pico_sec: None,
+                },
             }],
         };
-        let eo = dcn.to_extension_object().expect("wrap");
-        assert_eq!(
-            DataChangeNotification::from_extension_object(&eo).expect("unwrap"),
-            dcn
-        );
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend_from_slice(&7_u32.to_le_bytes());
+        body.extend_from_slice(&[0x01, 0x06, 0x63, 0x00, 0x00, 0x00]);
+        body.extend_from_slice(&NO_DIAGNOSTICS);
+        let mut notification = type_id(811);
+        notification.push(0x01);
+        notification.extend_from_slice(&i32::try_from(body.len()).unwrap().to_le_bytes());
+        notification.extend_from_slice(&body);
 
-        // And the whole PublishResponse round-trips through the dispatch.
+        let eo = dcn.to_extension_object().expect("wrap");
         let resp = ServiceResponse::Publish(PublishResponse {
             response_header: ResponseHeader::new(1, 0),
             subscription_id: 3,
@@ -3253,59 +3325,29 @@ mod tests {
             },
             results: Vec::new(),
         });
+        let mut expected = type_id(829);
+        expected.extend_from_slice(&response_header_octets());
+        expected.extend_from_slice(&3_u32.to_le_bytes());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&1_u32.to_le_bytes());
+        expected.push(0x00);
+        expected.extend_from_slice(&1_u32.to_le_bytes());
+        expected.extend_from_slice(&0_i64.to_le_bytes());
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&notification);
+        expected.extend_from_slice(&0_i32.to_le_bytes());
+        expected.extend_from_slice(&NO_DIAGNOSTICS);
+        assert_eq!(resp.encode().expect("encode"), expected);
+        let ServiceResponse::Publish(back) = ServiceResponse::decode(&expected).expect("decode")
+        else {
+            panic!("a PublishResponse");
+        };
         assert_eq!(
-            ServiceResponse::decode(&resp.encode().expect("e")).expect("d"),
-            resp
-        );
-    }
-
-    #[test]
-    fn call_round_trips() {
-        let req = ServiceRequest::Call(CallRequest {
-            request_header: req_header(),
-            methods_to_call: alloc::vec![CallMethodRequest {
-                object_id: NodeId::numeric(0, 0),
-                method_id: NodeId::numeric(1, 100),
-                input_arguments: alloc::vec![Variant::scalar(VariantValue::String(String::from(
-                    "group-1"
-                )))],
-            }],
-        });
-        let body = req.encode().expect("encode");
-        assert_eq!(ServiceRequest::decode(&body).expect("decode"), req);
-
-        let resp = ServiceResponse::Call(CallResponse {
-            response_header: ResponseHeader::new(1, 0),
-            results: alloc::vec![CallMethodResult {
-                status_code: 0,
-                input_argument_results: alloc::vec![0],
-                output_arguments: alloc::vec![Variant::scalar(VariantValue::UInt32(7))],
-            }],
-        });
-        let rb = resp.encode().expect("encode");
-        assert_eq!(ServiceResponse::decode(&rb).expect("decode"), resp);
-    }
-
-    #[test]
-    fn session_lifecycle_round_trips() {
-        let close = ServiceRequest::CloseSession(CloseSessionRequest {
-            request_header: req_header(),
-            delete_subscriptions: true,
-        });
-        assert_eq!(
-            ServiceRequest::decode(&close.encode().expect("e")).expect("d"),
-            close
-        );
-
-        let act = ServiceResponse::ActivateSession(ActivateSessionResponse {
-            response_header: ResponseHeader::new(1, 0),
-            server_nonce: alloc::vec![1, 2, 3],
-            results: alloc::vec![0],
-        });
-        let _ = null_extension_object();
-        assert_eq!(
-            ServiceResponse::decode(&act.encode().expect("e")).expect("d"),
-            act
+            DataChangeNotification::from_extension_object(
+                &back.notification_message.notification_data[0]
+            )
+            .expect("unwrap"),
+            dcn
         );
     }
 }

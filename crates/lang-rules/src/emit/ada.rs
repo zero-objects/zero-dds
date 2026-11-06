@@ -737,10 +737,10 @@ impl CodecTarget for Ada {
                 vec![inner(value)],
             ));
         }
-        if type_.is_bool {
-            if let AExpr::Plain(ada::Expr::Literal(Literal::Int(text))) = &value {
-                return plain(ada::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_.is_bool
+            && let AExpr::Plain(ada::Expr::Literal(Literal::Int(text))) = &value
+        {
+            return plain(ada::Expr::Literal(Literal::Bool(text != "0")));
         }
         if type_.is_enum {
             return plain(ada::Expr::Attribute {
@@ -1100,13 +1100,13 @@ impl CodecTarget for Ada {
                 mark: mark_path(&spec.sample.mark),
             });
         }
-        if let Some(array) = &spec.sample.own_array {
-            if names_mark(&body, OWN_ARRAY) {
-                statements.push(ada::Stmt::Subtype {
-                    name: Ident::new(OWN_ARRAY),
-                    mark: Path::single(array),
-                });
-            }
+        if let Some(array) = &spec.sample.own_array
+            && names_mark(&body, OWN_ARRAY)
+        {
+            statements.push(ada::Stmt::Subtype {
+                name: Ident::new(OWN_ARRAY),
+                mark: Path::single(array),
+            });
         }
         let defaulter = crate::default_ada::defaulter_from_decoder(&spec.name);
         statements.push(ada::Stmt::Var(ada::VarDecl {

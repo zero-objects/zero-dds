@@ -12,7 +12,7 @@ Implementation:
   Laufzeit unter `runtime/typescript/src/`.
 
 **Der Mechanismus ist ein anderer als beim Verfassen dieser Spec.**
-`crates/idl-ts/` gab es bis Commit `d045e43ea86`: ein Codegen je Sprache,
+Bis Commit `fa2ed8b0a9c` gab es dafür die Crate `idl-ts`: ein Codegen je Sprache,
 der eine Descriptor-Runtime (`@zerodds/types` mit Registry, Type-Guards,
 `DdsAny`) belieferte, gegen die zur Laufzeit reflektiert wurde. Heute
 erzeugt ein geteilter Walk (`crates/lang-rules/src/emit/{encode,decode}.rs`)
@@ -59,7 +59,7 @@ Vendor-Status und Quellen-Bindung an `tsc` 5.x.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Status des Dokuments und Lesart der Schlüsselwörter; die einzige Anforderung (erzeugter Code übersetzt unter `tsc --strict` mit `typescript` 5.x) steht im Item Ch2 IDL-Codegen Profile, Punkt 4.
 
 ---
 
@@ -73,7 +73,7 @@ Vendor-Status und Quellen-Bindung an `tsc` 5.x.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Zweck der Spec.
 
 ### §1.2 Out of Scope
 
@@ -84,7 +84,7 @@ Vendor-Status und Quellen-Bindung an `tsc` 5.x.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Abgrenzung der Spec (sie definiert XCDR, eine JavaScript-Laufzeit und das DDS-RPC-Protokoll nicht neu); keine Anforderung an eine Implementierung.
 
 ---
 
@@ -118,7 +118,7 @@ Punkte 1, 2 und 4 sind erfüllt: das Type-Mapping deckt den
 Konstruktvorrat, die X-Types-Annotationen wirken über den geteilten Walk,
 und der erzeugte Source übersetzt unter `tsc --strict` ohne
 Decorator-Optionen — gemessen in
-`crates/lang-rules/tests/typescript_descriptors.rs::the_generated_types_type_check`
+`crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_the_generated_types_type_check`
 über neun Formen. Punkt 3 ist erfüllt: `ts_descriptors` schreibt je Typ
 `<Type>Type`, `is<Type>` und `registerType(<Type>Type)`.
 
@@ -127,15 +127,15 @@ Test. Die Class-Freedom-Klausel aus B.1.2 eingeschlossen — `pair`
 schreibt heute `interface P` neben `function newP(): P` und keine
 Klasse.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::the_generated_types_type_check`,
-`::b_1_1_every_primitive_round_trips`,
-`::b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard`;
-`crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`,
-`::a_sequence_counts_and_loops`, `::a_wide_integer_is_a_bigint_literal`;
-`crates/lang-rules/tests/typescript_reader_generates.rs::a_final_struct_gets_a_reader`,
-`::an_appendable_struct_gets_a_reader`, `::a_mutable_struct_gets_a_reader`,
-`::an_optional_member_gets_a_reader`;
-`crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`.
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_the_generated_types_type_check`,
+`::ddsts_2_1_b_1_1_every_primitive_round_trips`,
+`::ddsts_2_1_b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard`;
+`crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`,
+`::ddsts_2_1_a_sequence_counts_and_loops`, `::ddsts_2_1_a_wide_integer_is_a_bigint_literal`;
+`crates/lang-rules/tests/typescript_reader_generates.rs::ddsts_2_1_a_final_struct_gets_a_reader`,
+`::ddsts_2_1_an_appendable_struct_gets_a_reader`, `::ddsts_2_1_a_mutable_struct_gets_a_reader`,
+`::ddsts_2_1_an_optional_member_gets_a_reader`;
+`crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`.
 
 **Status:** `done`
 
@@ -177,7 +177,7 @@ plus Operations-Descriptor-Types (`ServiceDescriptor`,
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs::ts_interface_items` (Client/Handler-Paar je Interface), `runtime/typescript/src/operations.ts` (`ServiceDescriptor`, `OperationDescriptor`, `OperationParameterDescriptor`, `AttributeDescriptor`, `ParameterMode`, `hasAggregatedResult`)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`, `crates/lang-rules/tests/typescript_operations_profile.rs::the_generated_operations_profile_type_checks`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_2_3_typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`, `crates/lang-rules/tests/typescript_operations_profile.rs::ddsts_2_3_the_generated_operations_profile_type_checks`
 
 **Status:** done
 
@@ -251,7 +251,7 @@ uniform interface, Type Descriptor, Service Descriptor.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Kapitel „Overview (Informative)“.
 
 ### §6.2 Runtime Reflection Strategy
 
@@ -262,18 +262,18 @@ Side-Table-Begründung mit OMG-X-Types-Cross-Reference.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Kapitel „Overview (Informative)“; die Seitentabellen sind in Ch7 und Ch8 geführt.
 
 ### §6.3 Toolchain
 
-**Spec:** Ch6 §Toolchain — `tsc ≥ 5.0`, ESM-Output,
-`crates/idl-ts/` (bis `d045e43ea86`, heute `tools/idlc`).
+**Spec:** Ch6 §Toolchain — `tsc ≥ 5.0`, ESM-Output, Codegen
+`tools/idlc` (die Spec nennt die Crate `idl-ts`, die es bis `fa2ed8b0a9c` gab).
 
 **Repo:** `tools/idlc/` — Aufruf, Optionen und Ausgabe des Codegens
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Kapitel „Overview (Informative)“; die Anforderung an `tsc` steht im Item Ch2 IDL-Codegen Profile.
 
 ### §6.4 Code-Style Toggle
 
@@ -284,7 +284,7 @@ Side-Table-Begründung mit OMG-X-Types-Cross-Reference.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Kapitel „Overview (Informative)“; der Schalter ist in Ch10 beschrieben.
 
 ---
 
@@ -298,12 +298,19 @@ Qualifizierte Refs als dotted paths. Optional `--module-per-file`.
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs::{module_chain, module_handle, scope_decls}` (Modul als `export namespace`, verschachtelt über die Kette), `crates/lang-rules/src/emit/typescript.rs::module_prefix` (qualifizierte Namen als Punktpfad)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
-**Status:** `done` — `export namespace` mit declaration-merging
-voll abgedeckt; qualified-name-Resolver via `typespec_to_ts`
-Scoped-Pfad. `--module-per-file` ist optionaler Codegen-Flag
-(out of scope dieser Welle, im idlc-Tool zu integrieren).
+**Status:** partial — `export namespace` mit Verschachtelung und Declaration Merging sowie qualifizierte Namen als Punktpfad sind umgesetzt; es fehlt die optionale Ausgabe einer Datei je Modul der obersten Ebene (`--module-per-file`), eigenes Item.
+
+### §7.1 Option `--module-per-file`
+
+**Spec:** Ch7 §Module Mapping — "Implementations MAY additionally produce one ECMAScript module file per top-level IDL module under a `--module-per-file` configuration option; the namespace structure inside each file SHALL remain as specified above."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — weder `tools/idlc` noch `crates/lang-rules` kennen die Option.
 
 ### §7.2 Constant Mapping
 
@@ -313,7 +320,7 @@ Suffix für 64-bit, Decimal/Hex/Octal/Binary, cyclic-ref-reject.
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs::{const_object, declare}` (Konstanten-Deklaration), `crates/lang-rules/src/emit/typescript.rs::{constant, literal, wide_int}` (typisiertes Literal, `n`-Suffix ab 64 Bit)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done`
 
@@ -325,7 +332,7 @@ TS-Mapping. `char/wchar → Char/WChar` (Branded), `long double
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs::{scalar, int, unsigned_int, wide_int}` (Primitive auf `number` bzw. `bigint`), `crates/lang-rules/src/adapter/typescript.rs::ts_member_type`
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done`
 
@@ -341,8 +348,8 @@ gerufen in `declare` (Struktur-, Union- und Alias-Arm) und in
 `ts_pending` (Exception-Glieder). Aliase werden nicht verfolgt: ein
 Glied, das einen benannten Typedef nennt, nimmt dessen Konstante.
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_3_1_a_bounded_string_states_its_bound`,
-`::the_side_tables_and_their_codecs_type_check` (Fall `side-strings`)
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_3_1_s_7_3_1_a_bounded_string_states_its_bound`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fall `side-strings`)
 
 **Status:** `done`
 
@@ -355,7 +362,7 @@ surrogate-reject).
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs::code_point` (Zeichen als Codepunkt, Breite und Rahmung aus der Politik der Laufzeit)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done`
 
@@ -368,7 +375,7 @@ implementation-defined. Diagnostic `DDS-TS-I001`.
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs` (Zeile 145) und `runtime/typescript/src/float128.ts` (Träger für binary128)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done`
 
@@ -387,8 +394,8 @@ implementation-defined. Diagnostic `DDS-TS-I001`.
 strukturell, die Deklaration und die der Laufzeit sind ein Typ, und ein
 erzeugtes File ohne Deskriptoren bleibt so ohne Import übersetzbar.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_10_an_any_member_is_a_box_and_never_any_or_unknown`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::an_any_member_takes_the_box_and_not_a_typescript_keyword`;
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_3_4_b_1_10_an_any_member_is_a_box_and_never_any_or_unknown`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_3_4_an_any_member_takes_the_box_and_not_a_typescript_keyword`;
 `runtime/typescript/tests/descriptor-runtime.ts` (B.2.4, B.2.5).
 
 **Status:** `done`
@@ -409,7 +416,7 @@ zurückgibt. Der Defaulter des Lesepfads
 (`crates/lang-rules/src/default_typescript.rs::new_local`) ruft sie über
 `factory_path`. Ein `@optional`-Glied bekommt keinen Eintrag — §7.2.2.4.4.4.8.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_2_no_class_reaches_the_output_for_any_idl_data_type`, `::b_1_11_annotations_change_the_side_table_and_not_the_interface`, `crates/lang-rules/src/adapter/typescript.rs::tests::a_struct_is_an_interface_and_a_factory_and_never_a_class`, `crates/lang-rules/tests/typescript_reader_generates.rs::the_generated_reader_type_checks`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_4_b_1_2_no_class_reaches_the_output_for_any_idl_data_type`, `::ddsts_7_4_b_1_11_annotations_change_the_side_table_and_not_the_interface`, `crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_4_a_struct_is_an_interface_and_a_factory_and_never_a_class`, `crates/lang-rules/tests/typescript_reader_generates.rs::ddsts_7_4_the_generated_reader_type_checks`
 
 **Status:** `done`
 
@@ -427,7 +434,7 @@ Registrierung steht als Anweisung im Modul-Scope
 (`zerodds_lang_cst::typescript::Decl::Statement`), hinter der Konstante,
 die sie nennt.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard`, `::b_1_11_annotations_change_the_side_table_and_not_the_interface`, `::the_generated_types_type_check`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard`, `::ddsts_7_4_b_1_11_annotations_change_the_side_table_and_not_the_interface`, `::ddsts_2_1_the_generated_types_type_check`
 
 **Status:** `done`
 
@@ -439,7 +446,7 @@ die sie nennt.
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs::declare` (Exception als eigener Typ), `runtime/typescript/src/error.ts` (Fehlerträger der Laufzeit)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done`
 
@@ -467,10 +474,10 @@ Diskriminanten weiter `_d`; das ist `crates/wire-probe/src/canonical.rs`
 und nicht dieses Mapping. Die geschriebenen Oktette sind unverändert
 (gemessen, siehe Abschluss-Bemerkung).
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_5_a_union_arm_names_its_discriminator`,
-`::s_7_5_an_enumeration_discriminator_narrows_on_the_enumerator`,
-`::the_side_tables_and_their_codecs_type_check` (Fälle `side-union-integer`, `side-enum-union`),
-`crates/lang-rules/src/adapter/typescript.rs::tests::{a_union_is_a_discriminated_union_narrowed_on_a_literal, a_union_discriminant_takes_the_discriminators_own_literal_form}`
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_5_s_7_5_a_union_arm_names_its_discriminator`,
+`::ddsts_7_5_s_7_5_an_enumeration_discriminator_narrows_on_the_enumerator`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fälle `side-union-integer`, `side-enum-union`),
+`crates/lang-rules/src/adapter/typescript.rs::tests::{ddsts_7_5_a_union_is_a_discriminated_union_narrowed_on_a_literal, ddsts_7_5_a_union_discriminant_takes_the_discriminators_own_literal_form}`
 
 **Status:** `done`
 
@@ -489,7 +496,7 @@ Seitentabelle liest statt den Namen zweimal zu wissen. `hasImplicitDefault` wird
 `boolean`- und Enum-Diskriminanten aus der Abdeckung berechnet; ein
 Ganzzahl-Diskriminant gilt nie als abgedeckt.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_3_a_union_carries_its_labels_and_its_default_flags`, `::b_1_3_a_union_without_a_default_and_without_coverage_says_so`, `::b_1_3_an_enum_discriminator_the_cases_exhaust_has_no_implicit_default`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_5_1_b_1_3_a_union_carries_its_labels_and_its_default_flags`, `::ddsts_7_5_1_b_1_3_a_union_without_a_default_and_without_coverage_says_so`, `::ddsts_7_5_1_b_1_3_an_enum_discriminator_the_cases_exhaust_has_no_implicit_default`
 
 **Status:** `done`
 
@@ -516,11 +523,11 @@ keine Zahl mehr steht. Ohne diese Naht schrieb `enum-sparse-values`
 die Oktette `70 79 87` — die erste Codeeinheit von `FAIL`, `OK`,
 `WARN` — wo das Ledger `65535 1 100` hält.
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_6_an_enumeration_is_a_string_literal_union_with_its_ordinals`,
-`::s_7_6_implicit_ordinals_are_emitted_too`,
-`::the_side_tables_and_their_codecs_type_check` (Fall `side-enum`),
-`crates/lang-rules/tests/typescript_descriptors.rs::b_1_4_an_enum_gets_a_const_object_and_a_descriptor`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::an_enumeration_is_an_as_const_object_beside_a_string_literal_union`
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_6_s_7_6_an_enumeration_is_a_string_literal_union_with_its_ordinals`,
+`::ddsts_7_6_s_7_6_implicit_ordinals_are_emitted_too`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fall `side-enum`),
+`crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_6_b_1_4_an_enum_gets_a_const_object_and_a_descriptor`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_6_an_enumeration_is_an_as_const_object_beside_a_string_literal_union`
 
 **Status:** `done`
 
@@ -537,7 +544,7 @@ Jeder Enumerator wird ein `DdsMemberDescriptor` mit
 §7.4.3.5.3 — und seinem Ordinalwert als `default`. `bitBound` trägt den
 effektiven Bit-Bound, Vorgabe 32.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_4_an_enum_gets_a_const_object_and_a_descriptor`, `::b_1_4_an_explicit_value_reaches_the_descriptor`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_6_b_1_4_an_enum_gets_a_const_object_and_a_descriptor`, `::ddsts_7_6_1_b_1_4_an_explicit_value_reaches_the_descriptor`
 
 **Status:** `done`
 
@@ -552,8 +559,8 @@ effektiven Bit-Bound, Vorgabe 32.
 `unsigned_holder` für den Anker; die 64-Bit-Grenze weist der Parser ab.
 Ein anonymes Bitfeld ist Padding und bekommt keine Konstante.
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_7_a_bitset_states_the_width_of_every_bitfield`,
-`::the_side_tables_and_their_codecs_type_check` (Fall `side-bits`)
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_7_s_7_7_a_bitset_states_the_width_of_every_bitfield`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fall `side-bits`)
 
 **Status:** `done`
 
@@ -569,7 +576,7 @@ Jedes Bitfeld wird ein `DdsMemberDescriptor` mit
 Breiten, anonyme Padding-Felder eingerechnet. Die 64-Bit-Grenze weist
 der Parser ab.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_5a_a_bitset_widths_pick_their_holders_and_the_descriptor_totals_them`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_7_1_b_1_5a_a_bitset_widths_pick_their_holders_and_the_descriptor_totals_them`
 
 **Status:** `done`
 
@@ -585,9 +592,9 @@ Object mit shift-Expressions. `bit_bound ≤ 32` → `number` +
 `bit_literal` für den Wert des Ankertyps,
 `crates/lang-rules/src/emit/typescript.rs::bitmask_value` für den Codec.
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_8_a_bitmask_states_its_bit_bound`,
-`::the_side_tables_and_their_codecs_type_check` (Fall `side-bits`),
-`crates/lang-rules/src/adapter/typescript.rs::tests::a_bitmask_writes_its_bit_as_the_number_and_not_as_a_shift`
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_8_s_7_8_a_bitmask_states_its_bit_bound`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fall `side-bits`),
+`crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_8_a_bitmask_writes_its_bit_as_the_number_and_not_as_a_shift`
 
 **Status:** `done`
 
@@ -603,7 +610,7 @@ Jeder Bit-Wert wird ein `DdsMemberDescriptor` mit
 `effective_bit_position` sie bereits aufgelöst hat. `bitBound` trägt den
 effektiven Bound.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_5b_a_bitmask_carries_its_positions_and_its_bound`, `::b_1_5b_a_wide_bitmask_and_an_explicit_position`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_8_1_b_1_5b_a_bitmask_carries_its_positions_and_its_bound`, `::ddsts_7_8_1_b_1_5b_a_wide_bitmask_and_an_explicit_position`
 
 **Status:** `done`
 
@@ -614,7 +621,7 @@ position überschreiben; conflicting positions parser-reject.
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs::bitmask_value` (`@position` bestimmt das gesetzte Bit)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_wide_integer_is_a_bigint_literal`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_wide_integer_is_a_bigint_literal`
 
 **Status:** `done`
 
@@ -637,10 +644,10 @@ für `T[]`, `bound_constants` für `_BOUND`, `_LENGTH` und
 zugleich ein SHALL NOT ohne diese Konfiguration; emittiert wird
 `Array`.
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_9_a_bounded_sequence_and_an_array_state_their_sizes`,
-`::the_side_tables_and_their_codecs_type_check` (Fall `side-collections`),
-`crates/lang-rules/src/adapter/typescript.rs::tests::a_sequence_and_an_array_are_both_typescript_arrays`,
-`crates/lang-rules/tests/typescript_codec.rs::a_sequence_counts_and_loops`
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_9_s_7_9_a_bounded_sequence_and_an_array_state_their_sizes`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fall `side-collections`),
+`crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_9_a_sequence_and_an_array_are_both_typescript_arrays`,
+`crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_sequence_counts_and_loops`
 
 **Status:** `done`
 
@@ -667,10 +674,10 @@ Oktette sind unverändert (gemessen, siehe Abschluss-Bemerkung).
 `--mutable-collections` ist ein MAY der Klausel und ausdrücklich
 non-default; emittiert wird `ReadonlyMap`.
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_9_1_a_map_is_a_readonly_map_and_states_its_bound`,
-`::the_side_tables_and_their_codecs_type_check` (Fälle `side-map`, `side-map-struct-key`, `side-map-in-sequence`),
-`crates/lang-rules/src/adapter/typescript.rs::tests::a_map_member_is_a_readonly_map_over_a_staged_entry_type`,
-`crates/lang-rules/tests/typescript_descriptors.rs::b_1_16_a_bounded_map_carries_its_bound_and_a_struct_key_its_hazard`
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_9_1_s_7_9_1_a_map_is_a_readonly_map_and_states_its_bound`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fälle `side-map`, `side-map-struct-key`, `side-map-in-sequence`),
+`crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_9_1_a_map_member_is_a_readonly_map_over_a_staged_entry_type`,
+`crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_9_1_b_1_16_a_bounded_map_carries_its_bound_and_a_struct_key_its_hazard`
 
 **Status:** `done`
 
@@ -681,7 +688,7 @@ Recursive Resolution, Forward References.
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs::{module_chain, module_handle, scope_decls}` (Modul als `export namespace`, verschachtelt über die Kette), `crates/lang-rules/src/emit/typescript.rs::module_prefix` (qualifizierte Namen als Punktpfad)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done` — TS-`export type`-Aliases sind module-scope-
 order-frei (verifiziert via Forward-Ref-Test). Cycle-Reject ist
@@ -695,7 +702,7 @@ referenzierten Typs.
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs::{type_spec, GuardShape}` (Arm `TypeKind::Alias`; `GuardShape::Delegate` trägt den Guard des Ziels)
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_13_a_typedef_is_an_alias_with_one_member_named_value`, `::b_1_13_a_wide_bit_bound_switches_the_alias_to_bigint`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_7_10_1_b_1_13_a_typedef_is_an_alias_with_one_member_named_value`, `::ddsts_7_10_1_b_1_13_a_wide_bit_bound_switches_the_alias_to_bigint`
 
 **Status:** `done`
 
@@ -706,7 +713,7 @@ referenzierten Typs.
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs::{module_chain, module_handle, scope_decls}` (Modul als `export namespace`, verschachtelt über die Kette), `crates/lang-rules/src/emit/typescript.rs::module_prefix` (qualifizierte Namen als Punktpfad)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done`
 
@@ -727,10 +734,10 @@ Deklarationen. Ein `@default(V)` erzeugt
 aus der der Defaulter den Wert nimmt, und dazu das
 `default`-Feld des `DdsMemberDescriptor`.
 
-**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::s_7_11_a_default_reaches_a_side_table_constant`,
-`::s_7_11_an_optional_member_is_a_question_mark_and_undefined`,
-`::the_side_tables_and_their_codecs_type_check` (Fall `side-defaults`),
-`crates/lang-rules/src/adapter/typescript.rs::tests::an_optional_member_is_a_question_mark_and_not_a_null`
+**Tests:** `crates/lang-rules/tests/typescript_side_tables.rs::ddsts_7_11_s_7_11_a_default_reaches_a_side_table_constant`,
+`::ddsts_7_11_s_7_11_an_optional_member_is_a_question_mark_and_undefined`,
+`::ddsts_7_3_1_the_side_tables_and_their_codecs_type_check` (Fall `side-defaults`),
+`crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_11_an_optional_member_is_a_question_mark_and_not_a_null`
 
 **Status:** `done`
 
@@ -746,7 +753,7 @@ E004).
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs::{module_chain, module_handle, scope_decls}` (Modul als `export namespace`, verschachtelt über die Kette), `crates/lang-rules/src/emit/typescript.rs::module_prefix` (qualifizierte Namen als Punktpfad)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs::both_directions`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`
+**Tests:** `crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`, `crates/lang-rules/tests/typescript_reader_generates.rs`, `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`
 
 **Status:** `done`
 
@@ -766,7 +773,7 @@ und dies seine Werte sind; sie entsprechen `FINAL`, `APPENDABLE` und
 `MUTABLE` aus X-Types 1.3 §7.2.2.4.4 eins zu eins.
 
 **Tests:** `runtime/typescript/tests/descriptor-runtime.ts` (B.2.1 — die
-Typ-Liste ist ein Tupel, das `tsc` prüft), `crates/lang-rules/tests/typescript_descriptors.rs::b_1_11_an_unannotated_struct_is_appendable_and_carries_no_topic`
+Typ-Liste ist ein Tupel, das `tsc` prüft), `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_8_1_b_1_11_an_unannotated_struct_is_appendable_and_carries_no_topic`
 
 **Status:** `done`
 
@@ -788,7 +795,7 @@ IDL 4.2 §7.4.1.4.4.2 kennt `int8` neben `uint8`, die Liste nennt
 nichts. Additiv: jeder von §8.2 genannte Wert bedeutet unverändert das,
 was §8.2 sagt.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_1_every_primitive_round_trips`, `::b_1_16_a_map_member_is_described_as_a_map`, `::b_1_8_char_and_wchar_reach_the_descriptor_as_themselves`, `::the_generated_types_type_check`; `runtime/typescript/tests/descriptor-runtime.ts` (B.2.8)
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_b_1_1_every_primitive_round_trips`, `::ddsts_8_2_b_1_16_a_map_member_is_described_as_a_map`, `::ddsts_8_2_b_1_8_char_and_wchar_reach_the_descriptor_as_themselves`, `::ddsts_2_1_the_generated_types_type_check`; `runtime/typescript/tests/descriptor-runtime.ts` (B.2.8)
 
 **Status:** `done`
 
@@ -804,7 +811,7 @@ ist gültiges IDL 4.2, seine Case-Labels reichen über 2^53 hinaus, und
 eine Label-Liste, die keinen tragen kann, widerspräche dem Typ, den sie
 beschreibt. Additiv wie `int8` in §8.2.
 
-**Tests:** `runtime/typescript/tests/descriptor-runtime.ts` (B.2.1 bis B.2.6), `crates/lang-rules/tests/typescript_descriptors.rs::the_generated_types_type_check`
+**Tests:** `runtime/typescript/tests/descriptor-runtime.ts` (B.2.1 bis B.2.6), `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_the_generated_types_type_check`
 
 **Status:** `done`
 
@@ -866,7 +873,7 @@ ungültiges Bitmuster, und eine Fabrik, die den Exponenten ansähe, würde
 Werte abweisen, die IEEE 754 definiert. Die Umrechnung einer Dezimalzahl
 in die sechzehn Oktette steht in `runtime/typescript/src/float128.ts`.
 
-**Tests:** `runtime/typescript/tests/descriptor-runtime.ts` (B.2.7), `crates/lang-rules/tests/typescript_descriptors.rs::b_1_9_a_long_double_is_never_a_number`
+**Tests:** `runtime/typescript/tests/descriptor-runtime.ts` (B.2.7), `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_8_6_b_1_9_a_long_double_is_never_a_number`
 
 **Status:** `done`
 
@@ -903,7 +910,7 @@ text)`-Annotation; `language="ts"|"*"`-Recognition.
 
 **Repo:** `crates/lang-rules/src/verbatim.rs::{language_matches, declaration_slots, file_slots}`
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::encoder`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`, `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_the_wildcard_reaches_every_column`, `crates/lang-rules/src/verbatim.rs::tests::ddsts_9_1_the_wildcard_concerns_every_backend_and_names_compare_caselessly`
 
 **Status:** `done`
 
@@ -915,7 +922,7 @@ text)`-Annotation; `language="ts"|"*"`-Recognition.
 
 **Repo:** `crates/lang-rules/src/verbatim.rs::{declaration_slots, file_slots}` (Platzierung an Deklaration oder Datei)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::encoder`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`, `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`, `crates/lang-rules/src/verbatim.rs::tests::ddsts_9_2_every_placement_lands_in_its_own_slot`
 
 **Status:** `done`
 
@@ -926,7 +933,7 @@ vor Emission.
 
 **Repo:** `crates/lang-rules/src/verbatim.rs::gather` (Auflösung der IDL-Maskierung)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::encoder`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::ddsts_9_3_multi_line_text_arrives_line_by_line`
 
 **Status:** `done`
 
@@ -937,7 +944,7 @@ no-coalescing.
 
 **Repo:** `crates/lang-rules/src/verbatim.rs::gather` (mehrzeiliger Text, mehrere Annotationen je Platz)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::encoder`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::ddsts_9_3_multi_line_text_arrives_line_by_line`, `crates/lang-rules/tests/verbatim_end_to_end.rs::ddsts_9_4_repeated_directives_keep_their_declaration_order`
 
 **Status:** `done`
 
@@ -950,7 +957,7 @@ File-Layout-Optionen.
 
 **Repo:** `crates/lang-rules/src/verbatim.rs::gather` (mehrzeiliger Text, mehrere Annotationen je Platz)
 
-**Tests:** `crates/lang-rules/tests/typescript_codec.rs::encoder`
+**Tests:** —
 
 **Status:** `n/a (informative)`
 
@@ -966,7 +973,7 @@ File-Layout-Optionen.
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs::{ts_interface_items, decls_of}` — je Interface ein `<I>Client`, ein `<I>Handler` und der Deskriptor
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_2_3_typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`
 
 **Status:** done
 
@@ -978,7 +985,7 @@ oneway → `Promise<void>`.
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs::{signatures, operation_signature}` — `out`- und `inout`-Parameter wandern in den aufgelösten Wert des `Promise`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_aggregates_out_parameters_into_the_resolved_value`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_11_2_typescript_aggregates_out_parameters_into_the_resolved_value`
 
 **Status:** done
 
@@ -990,7 +997,7 @@ oneway → `Promise<void>`.
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs::attribute_signatures` — `get_`/`set_`; ein `readonly attribute` bekommt nur den Leser
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_maps_an_attribute_to_a_getter_and_a_setter`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_11_3_typescript_maps_an_attribute_to_a_getter_and_a_setter`
 
 **Status:** done
 
@@ -1001,7 +1008,7 @@ oneway → `Promise<void>`.
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs` (Zeile 395 und 420–424: die `raises`-Liste je Operation und je Attributrichtung im Deskriptor), `runtime/typescript/src/operations.ts` (`isOneOf` prüft die abgefangene Ablehnung)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_writes_the_service_descriptor_of_eleven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_11_4_typescript_writes_the_service_descriptor_of_eleven_five`
 
 **Status:** done
 
@@ -1013,7 +1020,7 @@ oneway → `Promise<void>`.
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs::{descriptor, operation_descriptor}`, `runtime/typescript/src/operations.ts::ServiceDescriptor`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_writes_the_service_descriptor_of_eleven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_11_4_typescript_writes_the_service_descriptor_of_eleven_five`
 
 **Status:** done
 
@@ -1025,7 +1032,7 @@ oneway → `Promise<void>`.
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs` (Zeile 141 und 156: `extends` am Client und am Handler; Zeile 313: das `inherits`-Feld des Deskriptors trägt jede Elternschaft in Deklarationsreihenfolge)
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_2_3_typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`
 
 **Status:** done
 
@@ -1036,7 +1043,7 @@ SHALL NOT separate Declaration produzieren. Orphan → DDS-TS-E002.
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs` — eine Vorwärtsdeklaration ohne Definition ist ein fataler Befund und trägt den Code `DDS-TS-E002`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::a_forward_declaration_without_a_definition_is_e002`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_11_7_a_forward_declaration_without_a_definition_is_e002`
 
 **Status:** done
 
@@ -1049,7 +1056,7 @@ Bitset).
 
 **Repo:** `crates/lang-rules/src/emit/interface_typescript.rs` — eine Vorwärtsdeklaration ohne Definition ist ein fataler Befund und trägt den Code `DDS-TS-E002`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::a_forward_declaration_without_a_definition_is_e002`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_11_7_a_forward_declaration_without_a_definition_is_e002`
 
 **Status:** `n/a (informative)`
 
@@ -1064,7 +1071,7 @@ Codegen-Output.
 
 **Repo:** `crates/lang-rules/tests/typescript_descriptors.rs` — 25 Tests,
 nach den Marken benannt (`b_1_1_…` bis `b_1_16_…`), plus
-`the_generated_types_type_check`, das neun Formen durch
+`ddsts_2_1_the_generated_types_type_check`, das neun Formen durch
 `tsc --strict --noEmit` gegen die echte Laufzeit schickt.
 
 Alle sechzehn Marken stehen. B.1.2 hat zwei Hälften und beide werden
@@ -1074,25 +1081,25 @@ generator output for any IDL data type" — geprüft über elf Formen, mit
 entfernten Kommentaren, weil ein Kommentar über das Wort keine Klasse
 ist.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::b_1_1_every_primitive_round_trips`,
-`::b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard`,
-`::b_1_2_no_class_reaches_the_output_for_any_idl_data_type`,
-`::b_1_3_a_union_carries_its_labels_and_its_default_flags`,
-`::b_1_4_an_enum_gets_a_const_object_and_a_descriptor`,
-`::b_1_5a_a_bitset_widths_pick_their_holders_and_the_descriptor_totals_them`,
-`::b_1_5b_a_bitmask_carries_its_positions_and_its_bound`,
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_b_1_1_every_primitive_round_trips`,
+`::ddsts_2_1_b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard`,
+`::ddsts_7_4_b_1_2_no_class_reaches_the_output_for_any_idl_data_type`,
+`::ddsts_7_5_1_b_1_3_a_union_carries_its_labels_and_its_default_flags`,
+`::ddsts_7_6_b_1_4_an_enum_gets_a_const_object_and_a_descriptor`,
+`::ddsts_7_7_1_b_1_5a_a_bitset_widths_pick_their_holders_and_the_descriptor_totals_them`,
+`::ddsts_7_8_1_b_1_5b_a_bitmask_carries_its_positions_and_its_bound`,
 `::b_1_6_a_module_nests_its_declarations_and_its_descriptors`,
 `::b_1_7_free_standing_constants_keep_their_types`,
-`::b_1_8_char_and_wchar_reach_the_descriptor_as_themselves`,
-`::b_1_9_a_long_double_is_never_a_number`,
-`::b_1_10_an_any_member_is_a_box_and_never_any_or_unknown`,
-`::b_1_11_annotations_change_the_side_table_and_not_the_interface`,
+`::ddsts_8_2_b_1_8_char_and_wchar_reach_the_descriptor_as_themselves`,
+`::ddsts_8_6_b_1_9_a_long_double_is_never_a_number`,
+`::ddsts_7_3_4_b_1_10_an_any_member_is_a_box_and_never_any_or_unknown`,
+`::ddsts_7_4_b_1_11_annotations_change_the_side_table_and_not_the_interface`,
 `::b_1_12_an_exception_is_described_as_one`,
-`::b_1_13_a_typedef_is_an_alias_with_one_member_named_value`,
+`::ddsts_7_10_1_b_1_13_a_typedef_is_an_alias_with_one_member_named_value`,
 `::b_1_14_a_mixed_module_produces_every_side_table`,
 `::b_1_15_an_unrecognised_annotation_does_not_stop_the_generator`,
-`::b_1_16_a_map_member_is_described_as_a_map`,
-`::the_generated_types_type_check`
+`::ddsts_8_2_b_1_16_a_map_member_is_described_as_a_map`,
+`::ddsts_2_1_the_generated_types_type_check`
 
 **Status:** `done`
 
@@ -1118,7 +1125,7 @@ Output.
 
 **Repo:** `crates/lang-rules/tests/interface_bindings.rs` (die sechs `typescript_*`-Marken) und `crates/lang-rules/tests/typescript_operations_profile.rs` (`tsc --strict` über den erzeugten Profil-Code)
 
-**Tests:** `crates/lang-rules/tests/typescript_operations_profile.rs::the_generated_operations_profile_type_checks`
+**Tests:** `crates/lang-rules/tests/typescript_operations_profile.rs::ddsts_2_3_the_generated_operations_profile_type_checks`
 
 **Status:** done
 
@@ -1137,7 +1144,7 @@ die beiden Hälften des Harness schon. Was §B.4 verlangt — Rust-Tests
 gegen den Codegen-Output, `tsc --noEmit --strict` darüber, und die
 Laufzeit-Helfer in einem Node.js-Runner — steht vollständig.
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::the_generated_types_type_check`,
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_the_generated_types_type_check`,
 `runtime/typescript/tests/descriptor-runtime.ts`,
 `runtime/typescript/tests/wasm-bindings.ts`
 
@@ -1251,13 +1258,13 @@ und genau das macht die Verzögerung in `bindWasmBackend` messbar.
 
 ### §C.6 Reservation of Future Extensions
 
-**Spec:** Annex C §C.6 — Reserved-Identifier-Liste.
+**Spec:** Annex C §C.6 — "The following identifiers are reserved for future revisions of this Profile and SHALL NOT be re-used by Beta implementations for unrelated purposes: `createGuardCondition`, `createWaitSet`, `createQueryCondition`, `getInstance`."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** open — nach dem Code erfüllt: `crates/ts-wasm/` und `runtime/typescript/src/` verwenden keinen der vier Bezeichner; `crates/ts-node/src/dds.ts` nutzt `getInstance` für die `DomainParticipantFactory` (gleicher Zweck). Es fehlt ein Test, der die Exporte des WASM-Profils gegen die Liste prüft.
 
 ---
 
@@ -1283,22 +1290,15 @@ im Baum nicht vor, und kein Test prüft sie.
 
 ## Audit-Status
 
-58 done / 0 partial / 1 open / 13 n/a (informative) / 0 n/a (rejected).
+57 done / 1 partial / 3 open / 0 blocked / 12 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 50 Testbinaries,
-1024 Tests grün, 0 failed; darunter
-`--test typescript_side_tables` (12), `--test typescript_descriptors` (26),
-`--test typescript_reader_generates` (16), `--test typescript_codec` (3),
-`--test typescript_names_its_runtime` (2) und
-`--test typescript_operations_profile` (1).
-`runtime/typescript/run-tests.sh` — 61 Marken grün (16 Oktett-Fälle,
-32 Wert-Fälle, 9 Descriptor-Runtime-Marken, 4 WASM-Konformanztests),
-0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document dds-ts-1.0.md`):
 
-Wire-Messung zur Oberfläche von §7.5, §7.6 und §7.9.1: 119 Fälle der
-Zelle `matrix/zerodds-typescript/cyclone-xcdr2-le` neu durch
-`tools/wireprobe/wireprobe-zerodds-typescript` gefahren und Oktette wie
-zurückgelesene Werte gegen die abgelegten Artefakte gehalten — 244 von
-244 Vergleichen gleich, 0 verschieden.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 22 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-typescript` (Job `merge-codegen-typescript`) — 60 Tests grün.
+* Job `ts-node-test` — 13 Tests grün.
 
-Offene Punkte: siehe `dds-ts-1.0.open.md`. Decision-Records: keine.
+96 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `dds-ts-1.0.open.md`.

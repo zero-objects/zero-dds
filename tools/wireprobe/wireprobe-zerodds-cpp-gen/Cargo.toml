@@ -33,5 +33,11 @@ zerodds-lang-rules = { path = "../../../crates/lang-rules", version = "1.0.0-rc.
 zerodds-wireprobe-gen = { path = "../wireprobe-zerodds-gen", version = "1.0.0-rc.7" }
 serde_json = "1"
 
+# `tests/contract_lang_rules.rs` and `tests/contract_lang_render.rs` build a
+# model the probe's own loader refuses (a type that contains itself).
+[dev-dependencies]
+zerodds-idl-parse = { path = "../../../crates/idl-parse", version = "1.0.0-rc.7" }
+zerodds-idl-lower = { path = "../../../crates/idl-lower", version = "1.0.0-rc.7" }
+
 [lints]
 workspace = true

@@ -156,99 +156,127 @@ mod tests {
     use super::*;
     use alloc::string::ToString;
 
-    fn round(s: MessageSection) {
-        let bytes = s.encode().expect("encode");
-        let (parsed, _) = MessageSection::decode(&bytes).expect("decode");
-        assert_eq!(parsed, s);
+    // OASIS AMQP 1.0 Part 3 (`amqp-1.0-messaging`) §3.2: each section is a
+    // described type, 0x00, the descriptor code as a smallulong (0x53,
+    // header 0x70 to footer 0x78), then its value (Part 1, §1.2).
+
+    /// `section` encodes to `octets`, and `octets` decode to `section`.
+    fn wire(section: MessageSection, octets: &[u8]) {
+        assert_eq!(section.encode().expect("encode"), octets, "{section:?}");
+        assert_eq!(
+            MessageSection::decode(octets).expect("decode"),
+            (section, octets.len())
+        );
     }
 
+    /// §3.2.1: header 0x70, a list (here `durable` true).
     #[test]
-    fn header_section_round_trips() {
-        round(MessageSection::Header(AmqpExtValue::List(alloc::vec![
-            AmqpExtValue::Boolean(true), // durable
-        ])));
+    fn amqp10_3_2_1_the_header_is_0x70_and_a_list() {
+        wire(
+            MessageSection::Header(AmqpExtValue::List(alloc::vec![AmqpExtValue::Boolean(true)])),
+            &[0x00, 0x53, 0x70, 0xc0, 0x02, 0x01, 0x41],
+        );
     }
 
+    /// §3.2.4: properties 0x73, a list in field order (message-id,
+    /// user-id, to, subject, ...).
     #[test]
-    fn properties_section_round_trips_with_subject() {
-        round(MessageSection::Properties(AmqpExtValue::List(alloc::vec![
-            AmqpExtValue::Null,                              // message-id
-            AmqpExtValue::Null,                              // user-id
-            AmqpExtValue::Null,                              // to
-            AmqpExtValue::Str("TrackingResult".to_string()), // subject
-        ])));
+    fn amqp10_3_2_4_the_properties_are_0x73_and_a_list_in_field_order() {
+        let mut octets = alloc::vec![
+            0x00, 0x53, 0x73, 0xc0, 0x14, 0x04, 0x40, 0x40, 0x40, 0xa1, 0x0e
+        ];
+        octets.extend_from_slice(b"TrackingResult");
+        wire(
+            MessageSection::Properties(AmqpExtValue::List(alloc::vec![
+                AmqpExtValue::Null,
+                AmqpExtValue::Null,
+                AmqpExtValue::Null,
+                AmqpExtValue::Str("TrackingResult".to_string()),
+            ])),
+            &octets,
+        );
     }
 
+    /// §3.2.5: application-properties 0x74, a map.
     #[test]
-    fn application_properties_round_trips() {
-        round(MessageSection::ApplicationProperties(AmqpExtValue::Map(
-            alloc::vec![(
+    fn amqp10_3_2_5_the_application_properties_are_0x74_and_a_map() {
+        let mut octets = alloc::vec![0x00, 0x53, 0x74, 0xc1, 0x12, 0x02, 0xa1, 0x0d];
+        octets.extend_from_slice(b"dds:domain-id");
+        octets.extend_from_slice(&[0x54, 0x00]);
+        wire(
+            MessageSection::ApplicationProperties(AmqpExtValue::Map(alloc::vec![(
                 AmqpExtValue::Str("dds:domain-id".to_string()),
                 AmqpExtValue::Int(0),
-            )],
-        )));
+            )])),
+            &octets,
+        );
     }
 
+    /// §3.2.6: data 0x75, a binary.
     #[test]
-    fn data_section_round_trips_binary() {
-        round(MessageSection::Data(alloc::vec![0xDE, 0xAD, 0xBE, 0xEF]));
+    fn amqp10_3_2_6_data_is_0x75_and_a_binary() {
+        wire(
+            MessageSection::Data(alloc::vec![0xde, 0xad, 0xbe, 0xef]),
+            &[0x00, 0x53, 0x75, 0xa0, 0x04, 0xde, 0xad, 0xbe, 0xef],
+        );
     }
 
+    /// §3.2.7: amqp-sequence 0x76, a list.
     #[test]
-    fn amqp_value_section_round_trips() {
-        round(MessageSection::AmqpValue(AmqpExtValue::Str(
-            "hello".to_string(),
-        )));
+    fn amqp10_3_2_7_an_amqp_sequence_is_0x76_and_a_list() {
+        wire(
+            MessageSection::AmqpSequence(alloc::vec![
+                AmqpExtValue::Int(1),
+                AmqpExtValue::Int(2),
+                AmqpExtValue::Int(3),
+            ]),
+            &[
+                0x00, 0x53, 0x76, 0xc0, 0x07, 0x03, 0x54, 0x01, 0x54, 0x02, 0x54, 0x03,
+            ],
+        );
     }
 
+    /// §3.2.8: amqp-value 0x77, any value.
     #[test]
-    fn amqp_sequence_round_trips() {
-        round(MessageSection::AmqpSequence(alloc::vec![
-            AmqpExtValue::Int(1),
-            AmqpExtValue::Int(2),
-            AmqpExtValue::Int(3),
-        ]));
+    fn amqp10_3_2_8_an_amqp_value_is_0x77_and_any_value() {
+        wire(
+            MessageSection::AmqpValue(AmqpExtValue::Str("hello".to_string())),
+            &[0x00, 0x53, 0x77, 0xa1, 0x05, b'h', b'e', b'l', b'l', b'o'],
+        );
     }
 
+    /// §3.2.9: footer 0x78, a map.
     #[test]
-    fn footer_section_round_trips() {
-        round(MessageSection::Footer(AmqpExtValue::Map(Vec::new())));
+    fn amqp10_3_2_9_the_footer_is_0x78_and_a_map() {
+        wire(
+            MessageSection::Footer(AmqpExtValue::Map(Vec::new())),
+            &[0x00, 0x53, 0x78, 0xc1, 0x01, 0x00],
+        );
     }
 
+    /// §3.2: the sections follow in the order header, delivery-annotations,
+    /// message-annotations, properties, application-properties, body,
+    /// footer.
     #[test]
-    fn canonical_order_passes_validator() {
-        let seq = alloc::vec![
+    fn amqp10_3_2_the_sections_follow_in_their_order() {
+        let ordered = alloc::vec![
             MessageSection::Header(AmqpExtValue::Null),
+            MessageSection::DeliveryAnnotations(AmqpExtValue::Null),
+            MessageSection::MessageAnnotations(AmqpExtValue::Null),
             MessageSection::Properties(AmqpExtValue::Null),
+            MessageSection::ApplicationProperties(AmqpExtValue::Null),
             MessageSection::Data(alloc::vec![0]),
             MessageSection::Footer(AmqpExtValue::Null),
         ];
-        assert!(validate_section_sequence(&seq).is_ok());
-    }
-
-    #[test]
-    fn out_of_order_fails_validator() {
-        // Properties before Header is wrong.
-        let seq = alloc::vec![
-            MessageSection::Properties(AmqpExtValue::Null),
-            MessageSection::Header(AmqpExtValue::Null),
-        ];
-        assert!(validate_section_sequence(&seq).is_err());
-    }
-
-    #[test]
-    fn all_seven_sections_have_unique_order_indexes() {
-        let order_set: alloc::collections::BTreeSet<_> = alloc::vec![
-            MessageSection::Header(AmqpExtValue::Null).order(),
-            MessageSection::DeliveryAnnotations(AmqpExtValue::Null).order(),
-            MessageSection::MessageAnnotations(AmqpExtValue::Null).order(),
-            MessageSection::Properties(AmqpExtValue::Null).order(),
-            MessageSection::ApplicationProperties(AmqpExtValue::Null).order(),
-            MessageSection::Data(Vec::new()).order(),
-            MessageSection::Footer(AmqpExtValue::Null).order(),
-        ]
-        .into_iter()
-        .collect();
-        assert_eq!(order_set.len(), 7);
+        assert!(validate_section_sequence(&ordered).is_ok());
+        let orders: Vec<u8> = ordered.iter().map(MessageSection::order).collect();
+        assert_eq!(orders, [0, 1, 2, 3, 4, 5, 6]);
+        assert!(
+            validate_section_sequence(&[
+                MessageSection::Properties(AmqpExtValue::Null),
+                MessageSection::Header(AmqpExtValue::Null),
+            ])
+            .is_err()
+        );
     }
 }

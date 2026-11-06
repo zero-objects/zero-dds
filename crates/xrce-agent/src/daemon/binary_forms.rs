@@ -439,7 +439,7 @@ mod tests {
     /// `type_reference` (0x01), length 19 and "MyTypes::ShapeType\0", and
     /// 0x00 for the absent `type_identifier`.
     #[test]
-    fn the_36_octet_example_of_the_clause_is_a_topic() {
+    fn xrce_7_7_3_1_3_the_36_octet_example_of_the_clause_is_a_topic() {
         let bytes: [u8; 36] = [
             0x07, 0x00, 0x00, 0x00, b'S', b'q', b'u', b'e', b'r', b'e', 0x00, 0x01, 0x13, 0x00,
             0x00, 0x00, b'M', b'y', b'T', b'y', b'p', b'e', b's', b':', b':', b'S', b'h', b'a',
@@ -461,7 +461,7 @@ mod tests {
     /// a DHEADER with the length of the members in front (here 36, the
     /// members of the example above).
     #[test]
-    fn annex_a_topic_has_a_dheader() {
+    fn xrce_7_7_annex_a_topic_has_a_dheader() {
         let members: [u8; 36] = [
             0x07, 0x00, 0x00, 0x00, b'S', b'q', b'u', b'e', b'r', b'e', 0x00, 0x01, 0x13, 0x00,
             0x00, 0x00, b'M', b'y', b'T', b'y', b'p', b'e', b's', b':', b':', b'S', b'h', b'a',
@@ -492,7 +492,7 @@ mod tests {
     /// §7.7.3.7.3: a `type_identifier` is read as the XTypes
     /// `TypeIdentifier`, and a topic names its type by one of the two.
     #[test]
-    fn a_topic_with_a_type_identifier_reads_it_and_one_without_a_type_is_refused() {
+    fn xrce_7_7_3_7_3_a_topic_with_a_type_identifier_reads_it_and_one_without_a_type_is_refused() {
         // Clause form: length 2 "T\0" (0..6), type_reference? 0 (6),
         // type_identifier? 1 (7), then TI_STRING8_SMALL (0x70) with the
         // bound 16: a TypeIdentifier that needs no hash.
@@ -507,7 +507,7 @@ mod tests {
 
     /// `string<256> topic_name`: a longer one is refused.
     #[test]
-    fn string_bounds_are_checked() {
+    fn xrce_7_7_3_7_3_string_bounds_are_checked() {
         let name = "n".repeat(257);
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&le(u32::try_from(name.len() + 1).unwrap()));
@@ -523,7 +523,7 @@ mod tests {
     /// §7.7.3.6.3 (the clause): `long domain_id` first, then the two
     /// optional references. Annex A: a DHEADER and the two references only.
     #[test]
-    fn participant_binary_in_both_forms() {
+    fn xrce_7_7_3_1_3_participant_binary_in_both_forms() {
         // 0..4 domain_id 7; 4 domain_reference? 1; 5..8 padding; 8..12
         // length 4; 12..16 "Lib\0"; 16 qos_profile_reference? 0.
         let clause = [7, 0, 0, 0, 1, 0, 0, 0, 4, 0, 0, 0, b'L', b'i', b'b', 0, 0];
@@ -554,7 +554,7 @@ mod tests {
     /// 15 qos? 1; 16 partitions? 1; 17..20 padding; 20..24 count 1; 24..28
     /// length 2; 28..30 "p\0"; 30 group_data? 0.
     #[test]
-    fn publisher_binary_of_annex_a() {
+    fn xrce_7_7_3_1_3_publisher_binary_of_annex_a() {
         let bytes = [
             27, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, b'P', b'u', 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0,
             0, b'p', 0, 0,
@@ -576,7 +576,7 @@ mod tests {
     /// deadline 120000; 24 lifespan? 0; 25 user_data? 0; 26
     /// ownership_strength? 0.
     #[test]
-    fn writer_binary_of_annex_a_with_qos() {
+    fn xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos() {
         let mut bytes = vec![23, 0, 0, 0, 7, 0, 0, 0];
         bytes.extend_from_slice(b"Square\0");
         bytes.extend_from_slice(&[1, 3, 0, 0, 1]);
@@ -609,7 +609,7 @@ mod tests {
     /// 14 history_depth? 0; 15 deadline? 0; 16 lifespan? 0; 17 user_data? 0;
     /// 18 ownership_strength? 1; 19 padding; 20..24 9.
     #[test]
-    fn writer_binary_of_annex_a_with_ownership_strength() {
+    fn xrce_annex_a_writer_binary_of_annex_a_with_ownership_strength() {
         let bytes = [
             20, 0, 0, 0, 3, 0, 0, 0, b'S', b'q', 0, 1, 0, 0, 0, 0, 0, 0, 1, 0, 9, 0, 0, 0,
         ];
@@ -636,7 +636,7 @@ mod tests {
     /// lifespan? 0; 16 user_data? 0; 17 timebasedfilter_msec? 1; 18..20
     /// padding; 20..24 50; 24 contentbased_filter? 0.
     #[test]
-    fn reader_binary_of_the_clause() {
+    fn xrce_7_7_3_1_3_reader_binary_of_the_clause() {
         let bytes = [
             3, 0, 0, 0, b'S', b'q', 0, 0, 2, 0, 1, 0, 5, 0, 0, 0, 0, 1, 0, 0, 50, 0, 0, 0, 0,
         ];

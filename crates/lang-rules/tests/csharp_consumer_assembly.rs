@@ -39,7 +39,7 @@
 //!
 //! What is **not** closed here, and cannot be by any executing
 //! assembly: `verbatim_end_to_end.rs`'s
-//! `the_wildcard_reaches_all_four_columns` asserts `// vb-everyone` in
+//! `xtypes_7_2_2_4_8_the_wildcard_reaches_all_four_columns` asserts `// vb-everyone` in
 //! the C# output. `@verbatim` text placed as a comment is not in the
 //! compiled metadata at all, so a consumer has nothing to name. That
 //! one stays a text assertion because its subject is text.
@@ -97,6 +97,8 @@ use zerodds_lang_rules::{ModelGraph, adapter, apply, rule};
 
 #[path = "support/corpus.rs"]
 mod corpus_harness;
+#[path = "support/csharp_together.rs"]
+mod csharp_together;
 
 /// The layout every assembly here is built under.
 ///
@@ -639,6 +641,50 @@ fn a_private_member_is_unreachable_from_the_second_assembly() {
     )
     .expect_err("the second assembly resolved a name nothing declares");
     assert!(why.contains("NoSuchTypeExists"), "{why}");
+
+    // The batch the corpus goes through (`support/csharp_together.rs`)
+    // answers the same: the public member is reached and the private one
+    // is not, a consumer that answers 1 fails, and a warning in the
+    // library is an error there as under `-warnaserror+`.
+    let answers_one = "    public static int Main()\n\
+                       \x20   {\n\
+                       \x20       return Fail(\"on purpose\");\n\
+                       \x20   }\n";
+    let warns = format!(
+        "{library}\npublic static class Warns\n{{\n    public static int Unused() {{ int x; return 0; }}\n}}\n"
+    );
+    let case = |name: &str, library: &str, body: &str| {
+        (
+            name.to_string(),
+            vec![
+                ("ZdTypes.cs", library.to_string()),
+                ("Consumer.cs", consumer(key(), body)),
+            ],
+        )
+    };
+    let said = csharp_together::run(
+        &roslyn.csc,
+        &roslyn.references,
+        &csharp_together::Mode::Consumer(&runtime),
+        &[
+            case("public", library, reaches_the_public_one),
+            case("private", library, reaches_the_private_one),
+            case("answers-one", library, answers_one),
+            case("warns", &warns, reaches_the_public_one),
+        ],
+    )
+    .expect("the driver runs");
+    let named: Vec<&str> = said.iter().map(|(name, _)| name.as_str()).collect();
+    assert_eq!(named, ["private", "answers-one", "warns"], "{said:#?}");
+    assert!(
+        said[0].1.contains("CS0117") && said[0].1.contains("Hidden"),
+        "{said:#?}"
+    );
+    assert!(
+        said[1].1.contains("answered 1") && said[1].1.contains("on purpose"),
+        "{said:#?}"
+    );
+    assert!(said[2].1.contains("CS0168"), "{said:#?}");
 }
 
 // -- the codec is published -----------------------------------------------
@@ -719,7 +765,7 @@ fn a_second_assembly_calls_the_generated_encoder_and_decoder() {
 /// with, so a getter that silently returned the wrong field would fail
 /// here and not only in `inherited_operations.rs`'s substring check.
 #[test]
-fn a_second_assembly_implements_the_generated_interface_operations_and_attributes() {
+fn idl4csharp_7_4_a_second_assembly_implements_the_generated_interface_operations_and_attributes() {
     let roslyn = roslyn_or_skip!();
     let runtime = runtime_or_skip!();
     let ast = model(
@@ -1067,18 +1113,80 @@ fn surface_consumer(key: LayoutKey, types: &[String], methods: &[String]) -> Str
 /// the same corpus.
 const MUST_REACH: usize = 350;
 
+/// The cases (`name`, library, consumer) of one share through one .NET
+/// process (`support/csharp_together.rs`, which compiles and runs each as
+/// [`two_assemblies`] does); when that does not report every case `OK`,
+/// every case through [`two_assemblies`] alone, so that a failure names
+/// its case in the compiler's words. The cases that failed, with what was
+/// said.
+fn two_assemblies_together(
+    roslyn: &Roslyn,
+    runtime: &Path,
+    cases: &[(String, String, String)],
+) -> Vec<(String, String)> {
+    if cases.is_empty() {
+        return Vec::new();
+    }
+    let started = std::time::Instant::now();
+    let batch: Vec<(String, Vec<(&str, String)>)> = cases
+        .iter()
+        .map(|(name, library, consumer)| {
+            (
+                name.clone(),
+                vec![
+                    ("ZdTypes.cs", library.clone()),
+                    ("Consumer.cs", consumer.clone()),
+                ],
+            )
+        })
+        .collect();
+    let together = csharp_together::run(
+        &roslyn.csc,
+        &roslyn.references,
+        &csharp_together::Mode::Consumer(runtime),
+        &batch,
+    );
+    let ok = matches!(&together, Ok(failed) if failed.is_empty());
+    // Said on the channel a passing test does not use: how long the one
+    // process took, and why the cases go on alone.
+    eprintln!(
+        "CSHARP_TOGETHER cases={} ok={ok} seconds={:.1}",
+        cases.len(),
+        started.elapsed().as_secs_f64()
+    );
+    match &together {
+        Ok(failed) if failed.is_empty() => return Vec::new(),
+        Ok(failed) => eprintln!("CSHARP_TOGETHER failed: {failed:#?}"),
+        Err(why) => eprintln!("CSHARP_TOGETHER did not run: {why}"),
+    }
+    cases
+        .iter()
+        .filter_map(|(name, library, consumer)| {
+            match two_assemblies(roslyn, runtime, library, consumer, name) {
+                Ok(ran) if ran.code == 0 => None,
+                Ok(ran) => Some((
+                    name.clone(),
+                    format!(
+                        "the consuming assembly answered {}:\n{}{}",
+                        ran.code, ran.stdout, ran.stderr
+                    ),
+                )),
+                Err(why) => Some((name.clone(), why)),
+            }
+        })
+        .collect()
+}
+
 /// Every corpus case, as two assemblies.
 ///
 /// The counterpart of `csharp_corpus_compiles.rs`'s corpus sweep, one
 /// question further on: not only that the case's C# compiles, but that
 /// everything the column declares `public` is reachable by name from
-/// outside the assembly it is compiled into.
-///
-/// `#[ignore]` for the same reason its sibling carries one: two Roslyn
-/// starts and one process start per corpus case.
-#[test]
-#[ignore = "two Roslyn starts and a process start per corpus case; run with --include-ignored"]
-fn every_corpus_case_publishes_its_surface_to_a_second_assembly() {
+/// outside the assembly it is compiled into. Every case renders; the cases
+/// of `share` (of `shares`) go through one .NET process
+/// ([`two_assemblies_together`]). Two Roslyn starts and a process start
+/// per case cost about 1.1 s a case on the Linux test host.
+fn every_corpus_case_publishes_its_surface_to_a_second_assembly(share: usize, shares: usize) {
     // Explicitly selecting this expensive gate requires its toolchain and
     // real runtime compilation. Missing prerequisites cannot pass as a skip.
     let roslyn = roslyn().expect("selected C# consumer corpus requires the .NET SDK and Roslyn");
@@ -1092,8 +1200,8 @@ fn every_corpus_case_publishes_its_surface_to_a_second_assembly() {
     let mut total = 0_usize;
     let mut frontend_refused = 0_usize;
     let mut reached = 0_usize;
-    let mut passed = 0_usize;
-    for (name, path) in corpus_harness::corpus() {
+    let mut selected = Vec::new();
+    for (position, (name, path)) in corpus_harness::corpus().into_iter().enumerate() {
         total += 1;
         let idl = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&idl, &path.display().to_string()) {
@@ -1165,21 +1273,14 @@ fn every_corpus_case_publishes_its_surface_to_a_second_assembly() {
         );
 
         reached += 1;
-        match two_assemblies(
-            &roslyn,
-            &runtime,
-            &library,
-            &surface_consumer(key, &types, &methods),
-            &name,
-        ) {
-            Ok(ran) if ran.code == 0 => passed += 1,
-            Ok(ran) => failures.push(format!(
-                "{name}: the consuming assembly answered {}:\n{}{}",
-                ran.code, ran.stdout, ran.stderr
-            )),
-            Err(why) => failures.push(format!("{name}: {why}")),
+        if position % shares == share {
+            selected.push((name, library, surface_consumer(key, &types, &methods)));
         }
     }
+    for (name, why) in two_assemblies_together(&roslyn, &runtime, &selected) {
+        failures.push(format!("{name}: {why}"));
+    }
+    let passed = selected.len() - failures.len();
     eprintln!(
         "CORPUS_SUMMARY total={total} frontend_refused={frontend_refused} \
          backend_refused={} reached={reached} passed={passed} failed={}",
@@ -1201,4 +1302,109 @@ fn every_corpus_case_publishes_its_surface_to_a_second_assembly() {
         "only {reached} corpus cases reached the second compiler; the gate says \
          nothing below {MUST_REACH}"
     );
+}
+
+/// Every corpus case publishes its surface to a second assembly.
+///
+/// The corpus in 16 shares of 26 or 27 cases, each share one .NET process
+/// ([`two_assemblies_together`]) within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares together
+/// are every case. `#[ignore]`: the crate tier has no toolchain for it; the
+/// weekly `integration-codegen-csharp` job runs them with the toolchain.
+mod every_corpus_case_publishes_its_surface_to_a_second_assembly_shares {
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_01() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(0, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_02() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(1, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_03() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(2, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_04() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(3, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_05() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(4, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_06() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(5, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_07() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(6, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_08() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(7, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_09() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(8, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_10() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(9, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_11() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(10, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_12() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(11, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_13() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(12, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_14() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(13, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_15() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(14, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through two C# assemblies; runs in integration-codegen-csharp"]
+    fn share_16() {
+        super::every_corpus_case_publishes_its_surface_to_a_second_assembly(15, 16);
+    }
 }

@@ -257,7 +257,9 @@ fn the_audit_aggregate_matches_the_rows() {
     let counted = rows(&text).len();
     let line = text
         .lines()
-        .find(|l| l.contains("done /") && l.contains("n/a (rejected)"))
+        // `internal/spec-coverage/PROCESS.md`: the fifth count is
+        // `n/a (informative)`; there is no `n/a (rejected)` any more.
+        .find(|l| l.contains("done /") && l.contains("n/a (informative)"))
         .expect("the Audit-Status line with the five counts");
     let numbers: Vec<usize> = line
         .split_whitespace()

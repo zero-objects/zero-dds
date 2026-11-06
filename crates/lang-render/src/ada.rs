@@ -955,7 +955,7 @@ mod tests {
     }
 
     #[test]
-    fn a_record_writes_one_component_per_line() {
+    fn xtypes_7_5_1_a_record_writes_one_component_per_line() {
         let node = Decl::Type(TypeDecl {
             doc: Doc::none(),
             name: Ident::new("Pose"),
@@ -974,7 +974,7 @@ mod tests {
     }
 
     #[test]
-    fn a_record_with_no_components_is_a_null_record() {
+    fn xtypes_7_5_1_a_record_with_no_components_is_a_null_record() {
         // RM 3.8: `record end record` has an empty `component_list`,
         // which is not Ada. The corpus contains aggregates with no
         // members, so this arm is reached.
@@ -987,7 +987,7 @@ mod tests {
     }
 
     #[test]
-    fn a_discriminated_record_writes_its_variant_part() {
+    fn xtypes_7_5_1_a_discriminated_record_writes_its_variant_part() {
         let node = Decl::Type(TypeDecl {
             doc: Doc::none(),
             name: Ident::new("Payload"),
@@ -1028,7 +1028,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_and_its_representation_clause_are_two_declarations() {
+    fn xtypes_7_5_1_an_enumeration_and_its_representation_clause_are_two_declarations() {
         // RM 3.5.1 numbers the literals 0, 1, 2 … in declaration order;
         // the clause of RM 13.4 is the only thing that carries the IDL
         // `@value` gaps into the generated spec.
@@ -1050,7 +1050,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unconstrained_array_and_the_access_type_that_reaches_it() {
+    fn xtypes_7_5_1_an_unconstrained_array_and_the_access_type_that_reaches_it() {
         let array = Decl::Type(TypeDecl {
             doc: Doc::none(),
             name: Ident::new("Zd_Seq_Long_Array"),

@@ -201,10 +201,10 @@ fn run_bridge(b: &BridgeArgs, config: &RuntimeConfig) -> ExitCode {
     });
 
     while !stop.load(Ordering::Relaxed) {
-        if let Some(end) = deadline {
-            if Instant::now() >= end {
-                break;
-            }
+        if let Some(end) = deadline
+            && Instant::now() >= end
+        {
+            break;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -220,8 +220,10 @@ fn run_bridge(b: &BridgeArgs, config: &RuntimeConfig) -> ExitCode {
         forwarded.load(Ordering::Relaxed),
         reversed.load(Ordering::Relaxed)
     );
-    drop(src_rt);
-    drop(dst_rt);
+    // Both participants leave their peers with the SPDP departure
+    // (DDSI-RTPS 2.5 §8.5.3) rather than by lease expiry.
+    src_rt.shutdown();
+    dst_rt.shutdown();
     ExitCode::SUCCESS
 }
 

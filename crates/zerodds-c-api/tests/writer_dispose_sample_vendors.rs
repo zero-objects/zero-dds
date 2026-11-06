@@ -125,15 +125,13 @@ fn run_against(which: &str, topic: &str) -> BTreeMap<String, String> {
         );
         let key_hash = keyed_point_a_key_hash(10);
         assert_eq!(zerodds_writer_dispose(writer, key_hash.as_ptr()), OK);
-        // The reliable writer keeps repairing until the reader has it all.
-        std::thread::sleep(Duration::from_millis(1500));
-        while_alive = reader.snapshot();
+        // The reliable writer repairs until the reader has it all: the
+        // reader's STATE lines say when.
+        while_alive = reader.wait_states(&EXPECTED, Duration::from_secs(10));
 
         zerodds_writer_destroy(writer);
         zerodds_runtime_destroy(runtime);
     }
-    // The deleted writer's unregister has a moment to arrive.
-    std::thread::sleep(Duration::from_millis(500));
     let _ = reader.finish();
     println!(
         "{label}: hash-only zerodds_writer_dispose, instance 10, writer alive: {}",
@@ -142,16 +140,20 @@ fn run_against(which: &str, topic: &str) -> BTreeMap<String, String> {
     while_alive
 }
 
-/// The states the four calls have to leave, the writer alive.
+/// The states the four calls have to leave, the writer alive: a dispose
+/// makes the instance NOT_ALIVE_DISPOSED, an unregister by its only writer
+/// NOT_ALIVE_NO_WRITERS (DDS 1.4 §2.2.2.5.1.11, §2.2.2.4.2.7).
+const EXPECTED: [(i32, &str); 4] = [
+    (7, "NOT_ALIVE_DISPOSED"),
+    (8, "NOT_ALIVE_NO_WRITERS"),
+    (9, "NOT_ALIVE_DISPOSED"),
+    (10, "NOT_ALIVE_DISPOSED"),
+];
+
 fn assert_the_calls_took_effect(label: &str, while_alive: &BTreeMap<String, String>) {
-    for (id, want) in [
-        ("7", "NOT_ALIVE_DISPOSED"),
-        ("8", "NOT_ALIVE_NO_WRITERS"),
-        ("9", "NOT_ALIVE_DISPOSED"),
-        ("10", "NOT_ALIVE_DISPOSED"),
-    ] {
+    for (id, want) in EXPECTED {
         assert_eq!(
-            while_alive.get(id).map(String::as_str),
+            while_alive.get(&id.to_string()).map(String::as_str),
             Some(want),
             "instance {id} at the {label} reader, writer alive (all: {while_alive:?})"
         );
@@ -159,7 +161,7 @@ fn assert_the_calls_took_effect(label: &str, while_alive: &BTreeMap<String, Stri
 }
 
 #[test]
-#[ignore = "live against Eclipse Cyclone DDS: needs python3 with the cyclonedds binding; run with --ignored"]
+#[ignore = "interop pillar, job vendor-live-dispose-services: live against Eclipse Cyclone DDS, needs python3 with the cyclonedds binding; run with --ignored"]
 fn a_cyclone_reader_sees_the_instance_states_the_sample_functions_send() {
     let states = run_against("cyclone", "CFfiDisposeSampleCycloneTopic");
     assert_the_calls_took_effect("cyclone", &states);
@@ -169,7 +171,7 @@ fn a_cyclone_reader_sees_the_instance_states_the_sample_functions_send() {
 /// (`tools/dispose-reader/`); the C-FFI calls were measured against Cyclone
 /// only before.
 #[test]
-#[ignore = "live against another vendor: set ZERODDS_DISPOSE_READER (tools/dispose-reader/build.sh); run with --ignored"]
+#[ignore = "interop pillar, job vendor-live-dispose-services: live against another vendor, set ZERODDS_DISPOSE_READER (tools/dispose-reader/build.sh); run with --ignored"]
 fn a_foreign_reader_sees_the_instance_states_the_sample_functions_send() {
     let states = run_against("env", "CFfiDisposeSampleForeignTopic");
     assert_the_calls_took_effect("foreign", &states);

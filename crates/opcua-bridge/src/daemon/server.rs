@@ -574,17 +574,17 @@ pub fn start_with_reload(
             let subscriber_local = SocketAddr::new(local.ip(), multicast.port());
             let transport = UdpTransport::bind(subscriber_local, multicast)
                 .map_err(|e| ServerError::Bind(e.to_string()))?;
-            if let Ok(local_bound) = transport.local_addr() {
-                if let std::net::IpAddr::V4(group) = multicast.ip() {
-                    let _ = transport.join_multicast_v4(
-                        group,
-                        local_bound
-                            .ip()
-                            .to_string()
-                            .parse()
-                            .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED),
-                    );
-                }
+            if let Ok(local_bound) = transport.local_addr()
+                && let std::net::IpAddr::V4(group) = multicast.ip()
+            {
+                let _ = transport.join_multicast_v4(
+                    group,
+                    local_bound
+                        .ip()
+                        .to_string()
+                        .parse()
+                        .unwrap_or(std::net::Ipv4Addr::UNSPECIFIED),
+                );
             }
             let _ = transport.set_read_timeout(Some(Duration::from_millis(50)));
             #[allow(unused_mut)]
@@ -767,14 +767,18 @@ pub fn start_with_reload(
     })
 }
 
-/// Converts a DDS `INFO_TS` source timestamp (DDSI-RTPS §8.7.3: `u32`
-/// seconds since the Unix epoch + `u32` nanosecond fraction) into an
-/// OPC-UA `DateTime` (Part 6 §5.2.2.5: 100 ns ticks since 1601-01-01).
+/// Converts a DDS `INFO_TS` source timestamp (DDSI-RTPS 2.5 §9.3.2.1
+/// `Time_t`: `u32` seconds since the Unix epoch + `u32` fraction in units of
+/// 2⁻³² s) into an OPC-UA `DateTime` (Part 6 §5.2.2.5: 100 ns ticks since
+/// 1601-01-01). The fraction was once divided by 100 as if it counted
+/// nanoseconds, which put the sub-second part up to 4.29 times too late.
 fn opcua_ticks_from_he_timestamp(ts: zerodds_rtps::header_extension::HeTimestamp) -> i64 {
     use zerodds_opcua_uacp::securechannel::DATETIME_TICKS_AT_UNIX_EPOCH;
+    // fraction / 2^32 s = fraction * 10^7 / 2^32 ticks; below 10^7, so i64.
+    let sub_second_ticks = ((u64::from(ts.fraction) * 10_000_000) >> 32) as i64;
     let unix_ticks = i64::from(ts.seconds)
         .saturating_mul(10_000_000)
-        .saturating_add(i64::from(ts.fraction / 100));
+        .saturating_add(sub_second_ticks);
     DATETIME_TICKS_AT_UNIX_EPOCH.saturating_add(unix_ticks)
 }
 
@@ -1387,4 +1391,32 @@ fn build_server_security(
         // `crates/opcua-server`'s own secured-handshake test uses.
         rng: Box::new(rand::rngs::OsRng),
     }))
+}
+
+#[cfg(test)]
+mod he_timestamp_ticks {
+    use super::opcua_ticks_from_he_timestamp;
+    use zerodds_opcua_uacp::securechannel::DATETIME_TICKS_AT_UNIX_EPOCH;
+    use zerodds_rtps::header_extension::HeTimestamp;
+
+    #[test]
+    fn rtps_9_3_2_1_the_fraction_counts_two_to_the_minus_32_seconds() {
+        // 2^31 / 2^32 s = 0.5 s = 5 000 000 ticks of 100 ns.
+        let half = HeTimestamp {
+            seconds: 0,
+            fraction: 1 << 31,
+        };
+        assert_eq!(
+            opcua_ticks_from_he_timestamp(half) - DATETIME_TICKS_AT_UNIX_EPOCH,
+            5_000_000
+        );
+        let whole = HeTimestamp {
+            seconds: 3,
+            fraction: u32::MAX,
+        };
+        assert_eq!(
+            opcua_ticks_from_he_timestamp(whole) - DATETIME_TICKS_AT_UNIX_EPOCH,
+            30_000_000 + 9_999_999
+        );
+    }
 }

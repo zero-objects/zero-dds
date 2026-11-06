@@ -41,7 +41,7 @@ class ValueCopyTest {
     }
 
     @Test
-    void timeDurationAndHandlesAreCopiedByValue() throws Exception {
+    void javapsm_7_3_3_time_duration_and_handles_are_copied_by_value() throws Exception {
         assertCopyable(Qos.env().getSPI().newTime(5, TimeUnit.SECONDS));
         assertCopyable(Qos.env().getSPI().newDuration(3, TimeUnit.MILLISECONDS));
         assertCopyable(Qos.env().getSPI().nilHandle());
@@ -56,7 +56,7 @@ class ValueCopyTest {
     }
 
     @Test
-    void everyPolicyOfThePolicyFactoryIsCopiedByValue() throws Exception {
+    void javapsm_7_3_3_every_policy_of_the_policy_factory_is_copied_by_value() throws Exception {
         PolicyFactory factory = Qos.policies();
         int checked = 0;
         for (Method m : PolicyFactory.class.getMethods()) {
@@ -69,7 +69,7 @@ class ValueCopyTest {
     }
 
     @Test
-    void qosAndStatusObjectsAreCopiedByValue() throws Exception {
+    void javapsm_7_3_3_qos_and_status_objects_are_copied_by_value() throws Exception {
         assertCopyable(Qos.writer());
         assertCopyable(Qos.reader());
         assertCopyable(Qos.publisher());

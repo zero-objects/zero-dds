@@ -40,6 +40,11 @@ struct Intended {
     reason: &'static str,
 }
 
+/// Why a fragment of the CORBA module is refused on its own.
+const CORBA_FRAGMENT: &str = "a file of the CORBA module as the OMG publishes it with CORBA 3.3, \
+     which `orb.idl` includes inside `module CORBA` (OMG IDL 4.2 §7.4.6.4.7); it uses names \
+     the other files of the module declare, so alone it names them unresolved";
+
 /// The files `check` refuses on purpose.
 ///
 /// Three groups: probe inputs whose whole point is a construct the front
@@ -122,6 +127,13 @@ const INTENDED: &[Intended] = &[
                  apply to (CORBA 3.3 §10.7)",
     },
     Intended {
+        path: "crates/corba-codegen/tests/orb-corpus/rows/04-native.idl",
+        codes: &["IDL0019"],
+        reason: "an ORB corpus row: native parameters in an operation of a remote \
+                 interface, which OMG IDL 4.2 §7.4.6.4.4 does not permit and tao_idl and \
+                 JacORB take; the row records how the three ORBs answer it",
+    },
+    Intended {
         path: "crates/idl-parse/tests/fixtures/spec_features/fastdds_pragmas.idl",
         codes: &["IDL0016"],
         reason: "a Fast DDS annotation fixture where two members share @hashid(\"position\") \
@@ -141,6 +153,36 @@ const INTENDED: &[Intended] = &[
         reason: "an ORB-corpus row for `CORBA::TypeCode`, a name every ORB predeclares and \
                  no `.idl` in this corpus declares; the row is fed to real ORBs, which \
                  supply it",
+    },
+    Intended {
+        path: "crates/idl-parse/src/preprocess/corba/CORBA_CustomMarshal.idl",
+        codes: &["IDL0010"],
+        reason: CORBA_FRAGMENT,
+    },
+    Intended {
+        path: "crates/idl-parse/src/preprocess/corba/CORBA_DomainManager.idl",
+        codes: &["IDL0010"],
+        reason: CORBA_FRAGMENT,
+    },
+    Intended {
+        path: "crates/idl-parse/src/preprocess/corba/CORBA_InterfaceRepository.idl",
+        codes: &["IDL0010"],
+        reason: CORBA_FRAGMENT,
+    },
+    Intended {
+        path: "crates/idl-parse/src/preprocess/corba/CORBA_Policy.idl",
+        codes: &["IDL0010"],
+        reason: CORBA_FRAGMENT,
+    },
+    Intended {
+        path: "crates/idl-parse/src/preprocess/corba/CORBA_Stream.idl",
+        codes: &["IDL0010"],
+        reason: CORBA_FRAGMENT,
+    },
+    Intended {
+        path: "crates/idl-parse/src/preprocess/corba/CORBA_TypeCode.idl",
+        codes: &["IDL0010"],
+        reason: CORBA_FRAGMENT,
     },
     // -- wire measurements of what the specification forbids --------
     Intended {

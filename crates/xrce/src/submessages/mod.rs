@@ -419,7 +419,7 @@ fn decode_run(bytes: &[u8], start: usize) -> Result<Vec<Submessage>, XrceError> 
         // §8.3.3: offsets are 4-byte-aligned. Header starts
         // at offset 0, header size is 4 or 8 → already aligned.
         // We check before every submessage read.
-        if offset % 4 != 0 {
+        if !offset.is_multiple_of(4) {
             return Err(XrceError::UnalignedSubmessage { offset });
         }
 
@@ -471,7 +471,7 @@ mod tests {
     use crate::serial_number::SerialNumber16;
 
     #[test]
-    fn submessage_id_roundtrip_all_16_values() {
+    fn xrce_8_3_5_submessage_id_roundtrip_all_16_values() {
         for byte in 0u8..=15 {
             let id = SubmessageId::from_u8(byte).unwrap();
             assert_eq!(id.as_u8(), byte);
@@ -479,7 +479,7 @@ mod tests {
     }
 
     #[test]
-    fn submessage_id_rejects_unknown_byte() {
+    fn xrce_8_3_4_1_submessage_id_rejects_unknown_byte() {
         let res = SubmessageId::from_u8(16);
         assert!(matches!(
             res,
@@ -493,7 +493,7 @@ mod tests {
     }
 
     #[test]
-    fn submessage_header_roundtrip() {
+    fn xrce_8_3_4_submessage_header_roundtrip() {
         let sh = SubmessageHeader {
             submessage_id: SubmessageId::Heartbeat,
             flags: FLAG_E_LITTLE_ENDIAN,
@@ -509,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn submessage_header_length_is_always_le_even_with_be_body() {
+    fn xrce_8_3_4_3_submessage_header_length_is_always_le_even_with_be_body() {
         // E-flag = 0 (BE body), but length is LE nonetheless
         let sh = SubmessageHeader {
             submessage_id: SubmessageId::Data,
@@ -522,7 +522,7 @@ mod tests {
     }
 
     #[test]
-    fn message_encode_decode_roundtrip_no_key_single_sm() {
+    fn xrce_8_3_3_message_encode_decode_roundtrip_no_key_single_sm() {
         let header = MessageHeader::without_client_key(
             SessionId(0x80),
             StreamId::BUILTIN_BEST_EFFORT,
@@ -542,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn message_encode_decode_roundtrip_with_key() {
+    fn xrce_8_3_1_message_encode_decode_roundtrip_with_key() {
         let header = MessageHeader::with_client_key(
             SessionId(0x10),
             StreamId::BUILTIN_RELIABLE,
@@ -563,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn message_two_submessages_padded_correctly() {
+    fn xrce_8_2_1_message_two_submessages_padded_correctly() {
         let header =
             MessageHeader::without_client_key(SessionId(0x80), StreamId(2), SerialNumber16::new(0))
                 .unwrap();
@@ -592,7 +592,7 @@ mod tests {
     /// submessages" — every one of them, 4-aligned as after a header
     /// (§8.3.3).
     #[test]
-    fn a_submessage_run_decodes_every_submessage_past_the_padding() {
+    fn xrce_8_3_5_14_a_submessage_run_decodes_every_submessage_past_the_padding() {
         let mut run = Vec::new();
         for body in [alloc::vec![1u8, 2, 3, 4, 5], alloc::vec![10, 20, 30]] {
             let sm = Submessage::new(SubmessageId::WriteData, FLAG_E_LITTLE_ENDIAN, body).unwrap();
@@ -634,7 +634,7 @@ mod tests {
     }
 
     #[test]
-    fn message_decode_rejects_truncated_body() {
+    fn xrce_8_3_3_message_decode_rejects_truncated_body() {
         let header = MessageHeader::without_client_key(
             SessionId(0xFF),
             StreamId::NONE,

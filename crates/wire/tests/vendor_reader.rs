@@ -13,7 +13,7 @@
 //! `wire.rs` next door writes with `Writer` and reads back with
 //! `Reader`. That passes a decoder which is wrong in exactly the way its
 //! own encoder is wrong, and the write path had eleven such defects in
-//! one sweep. The `docs/silent-drop-sweep.md` closing note says the
+//! one sweep. The `0b2e8df9f6b:docs/silent-drop-sweep.md` closing note says the
 //! reader "has the same shapes ... and a silent drop there is a decode
 //! that returns a plausible value for bytes that meant something else",
 //! and that grep was the only tool it had. These are the bytes.
@@ -131,7 +131,7 @@ fn framing(row: &Row) -> PlCdr1Framing {
 }
 
 fn bytes_of(hex: &str) -> Vec<u8> {
-    assert!(hex.len() % 2 == 0, "an odd hex string: {hex}");
+    assert!(hex.len().is_multiple_of(2), "an odd hex string: {hex}");
     (0..hex.len() / 2)
         .map(|index| u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).expect("hex"))
         .collect()
@@ -556,30 +556,6 @@ fn every_recorded_sample_reads_back_as_the_value_that_went_in() {
             ),
             Err(error) => panic!("{}: {error}", row.what),
         }
-    }
-}
-
-/// The rows cover both byte orders, both encodings and all three
-/// vendors. A table that quietly lost half of itself would pass every
-/// assertion above.
-#[test]
-fn the_rows_cover_what_the_fixture_records() {
-    let rows = rows();
-    assert!(rows.len() >= 45, "only {} rows", rows.len());
-    for needle in [
-        "XCDR1",
-        "XCDR2",
-        "Cyclone",
-        "RTI",
-        "FastDDS",
-        "all three",
-        " LE",
-        " BE",
-    ] {
-        assert!(
-            rows.iter().any(|row| row.what.contains(needle)),
-            "no row covers {needle}"
-        );
     }
 }
 

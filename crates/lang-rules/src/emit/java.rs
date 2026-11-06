@@ -694,10 +694,10 @@ impl CodecTarget for Java {
         // A `boolean` discriminator's labels arrive as 0 and 1 — the
         // integers the IDL evaluator gives — and Java has no conversion
         // from either. The label is the value it stands for.
-        if type_ == java::Type::Primitive(java::Primitive::Boolean) {
-            if let java::Expr::Literal(Literal::Int(text)) = &value {
-                return java::Expr::Literal(Literal::Bool(text.trim_end_matches('L') != "0"));
-            }
+        if type_ == java::Type::Primitive(java::Primitive::Boolean)
+            && let java::Expr::Literal(Literal::Int(text)) = &value
+        {
+            return java::Expr::Literal(Literal::Bool(text.trim_end_matches('L') != "0"));
         }
         // `(int) 1` on a union label is redundant and `[cast]` says so.
         // An `int` literal is already an `int`; one carrying `L` is not

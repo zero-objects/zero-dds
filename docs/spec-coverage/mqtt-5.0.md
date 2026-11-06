@@ -42,10 +42,10 @@ Implementation:
 **Repo:** `crates/mqtt-bridge/src/data_types.rs` +
 `crates/mqtt-bridge/src/vbi.rs`.
 
-**Tests:** `data_types::tests::two_byte_int_round_trip`,
-`utf8_string_round_trip`, `utf8_string_starts_with_be_length`,
-`utf8_string_decode_invalid_utf8`, `utf8_string_decode_truncated`,
-`binary_data_round_trip`; `vbi::tests::*` (10 Tests, alle Boundaries
+**Tests:** `data_types::tests::mqtt5_1_5_2_a_two_byte_integer_is_big_endian`,
+`mqtt5_1_5_4_a_string_is_its_length_and_its_utf8_octets`, `mqtt5_1_5_utf8_string_starts_with_be_length`,
+`mqtt5_1_5_utf8_string_decode_invalid_utf8`, `mqtt5_1_5_utf8_string_decode_truncated`,
+`mqtt5_1_5_6_binary_data_is_its_length_and_its_octets`; `vbi::tests::*` (10 Tests, alle Boundaries
 0/127/128/16383/16384/2097151/2097152/MAX, 5-byte-Reject).
 
 **Status:** done
@@ -61,8 +61,8 @@ Remaining Length VBI), Variable Header, Payload.
 
 **Repo:** `crates/mqtt-bridge/src/packet.rs::FixedHeader`.
 
-**Tests:** `packet::tests::publish_header_decodes_dup_qos_retain_flags`,
-`codec::tests::fixed_header_first_byte_layout_for_publish`.
+**Tests:** `packet::tests::mqtt5_2_1_publish_header_decodes_dup_qos_retain_flags`,
+`codec::tests::mqtt5_2_1_fixed_header_first_byte_layout_for_publish`.
 
 **Status:** done
 
@@ -73,8 +73,8 @@ Remaining Length VBI), Variable Header, Payload.
 **Repo:** `crates/mqtt-bridge/src/packet.rs::ControlPacketType` mit
 allen 15 Werten.
 
-**Tests:** `packet::tests::packet_type_round_trip_via_bits`,
-`packet_type_zero_is_reserved`.
+**Tests:** `packet::tests::mqtt5_2_1_2_the_packet_types_are_the_values_of_table_2_1`,
+`mqtt5_2_1_2_packet_type_zero_is_reserved`.
 
 **Status:** done
 
@@ -84,8 +84,8 @@ allen 15 Werten.
 
 **Repo:** Cross-Ref VBI-Modul.
 
-**Tests:** `codec::tests::large_payload_encodes_multibyte_remaining_length`,
-`truncated_remaining_length_decode_fails`.
+**Tests:** `codec::tests::mqtt5_2_1_4_large_payload_encodes_multibyte_remaining_length`,
+`mqtt5_2_1_4_truncated_remaining_length_decode_fails`.
 
 **Status:** done
 
@@ -96,9 +96,8 @@ allen 15 Werten.
 **Repo:** PUBLISH-Variable-Header in
 `crates/mqtt-bridge/src/codec.rs::encode_publish/decode_publish`.
 
-**Tests:** `codec::tests::publish_qos0_no_packet_id_round_trip`,
-`codec::tests::publish_qos1_includes_packet_id_round_trip`,
-`codec::tests::publish_qos2_round_trip`.
+**Tests:** `codec::tests::mqtt5_3_3_2_2_a_packet_identifier_only_above_qos_0`,
+`codec::tests::mqtt5_3_3_2_the_publish_of_figure_3_9`.
 
 **Status:** done — für PUBLISH; weitere Packet-Types analog
 implementierbar.
@@ -112,11 +111,9 @@ Property-Identifier (Spec Table 2-4) + Wert.
 mit 15 named-IDs + `Other(u32)`-Variante. Codec serialisiert
 Property-Block-Body als opaque Bytes mit VBI-Length-Prefix.
 
-**Tests:** `properties::tests::property_id_round_trip_for_all_named`,
-`property_id_unknown_yields_other_variant`,
-`well_known_property_ids_match_spec_values`,
-`codec::tests::empty_properties_round_trips_as_empty_vec`,
-`non_empty_properties_round_trip_preserves_bytes`.
+**Tests:** `properties::tests::mqtt5_2_2_2_each_named_property_has_its_identifier_of_table_2_4`,
+`mqtt5_2_2_2_property_id_unknown_yields_other_variant`,
+`codec::tests::mqtt5_3_3_2_3_the_properties_follow_their_length`.
 
 **Status:** done — Identifier-Registry + Wire-Length-Prefix +
 `PropertyValueKind`-Tabelle nach Spec §2.2.2.2 Table 2-4 mit
@@ -135,8 +132,8 @@ Authentication.
 
 **Repo:** `crates/mqtt-bridge/src/control_packets.rs::{encode_connect_body, decode_connect_body}` (`ConnectBody`).
 
-**Tests:** `control_packets::tests::connect_body_round_trip_minimal`,
-`control_packets::tests::connect_body_round_trip_with_will_and_credentials`.
+**Tests:** `control_packets::tests::mqtt5_3_1_3_without_will_and_credentials_the_payload_is_the_client_identifier`,
+`control_packets::tests::mqtt5_3_1_2_12_the_connect_of_figure_3_6_and_its_payload_in_the_order_of_3_1_3`.
 
 **Status:** done
 
@@ -146,7 +143,7 @@ Authentication.
 
 **Repo:** `control_packets::{encode_connack_body, decode_connack_body}` (`ConnackBody`).
 
-**Tests:** `control_packets::tests::connack_body_round_trip`.
+**Tests:** `control_packets::tests::mqtt5_3_2_2_a_connack_is_flags_reason_code_and_properties`.
 
 **Status:** done
 
@@ -160,17 +157,15 @@ Properties, Payload.
 decode_publish` voll implementiert; QoS-3 wird abgelehnt
 (MalformedPacket), Packet-Identifier-Pflicht bei QoS>0 enforced.
 
-**Tests:** `codec::tests::publish_qos0_no_packet_id_round_trip`,
-`publish_qos1_includes_packet_id_round_trip`,
-`publish_qos2_round_trip`, `invalid_qos_3_rejected_on_encode`,
-`missing_packet_id_at_qos1_rejected`,
-`wrong_packet_type_rejected_on_decode`,
-`fixed_header_first_byte_layout_for_publish`,
-`empty_properties_round_trips_as_empty_vec`,
-`non_empty_properties_round_trip_preserves_bytes`,
-`truncated_remaining_length_decode_fails`,
-`empty_input_decode_fails`,
-`large_payload_encodes_multibyte_remaining_length`.
+**Tests:** `codec::tests::mqtt5_3_3_2_2_a_packet_identifier_only_above_qos_0`,
+`mqtt5_3_3_2_the_publish_of_figure_3_9`, `mqtt5_3_3_invalid_qos_3_rejected_on_encode`,
+`mqtt5_3_3_missing_packet_id_at_qos1_rejected`,
+`mqtt5_3_3_wrong_packet_type_rejected_on_decode`,
+`mqtt5_2_1_fixed_header_first_byte_layout_for_publish`,
+`mqtt5_3_3_2_3_the_properties_follow_their_length`,
+`mqtt5_2_1_4_truncated_remaining_length_decode_fails`,
+`mqtt5_3_3_empty_input_decode_fails`,
+`mqtt5_2_1_4_large_payload_encodes_multibyte_remaining_length`.
 
 **Status:** done
 
@@ -181,7 +176,7 @@ decode_publish` voll implementiert; QoS-3 wird abgelehnt
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}`
 (gemeinsame `AckBody`-Struktur).
 
-**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
+**Tests:** `control_packets::tests::mqtt5_3_4_2_a_puback_is_packet_id_reason_code_and_properties`.
 
 **Status:** done
 
@@ -193,7 +188,7 @@ decode_publish` voll implementiert; QoS-3 wird abgelehnt
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}`
 (gleiche AckBody-Struktur).
 
-**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
+**Tests:** `control_packets::tests::mqtt5_3_4_2_a_puback_is_packet_id_reason_code_and_properties`.
 
 **Status:** done
 
@@ -203,7 +198,7 @@ decode_publish` voll implementiert; QoS-3 wird abgelehnt
 
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}`.
 
-**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
+**Tests:** `control_packets::tests::mqtt5_3_4_2_a_puback_is_packet_id_reason_code_and_properties`.
 
 **Status:** done
 
@@ -213,7 +208,7 @@ decode_publish` voll implementiert; QoS-3 wird abgelehnt
 
 **Repo:** `control_packets::{encode_ack_body, decode_ack_body}`.
 
-**Tests:** `control_packets::tests::ack_body_round_trip_with_properties`.
+**Tests:** `control_packets::tests::mqtt5_3_4_2_a_puback_is_packet_id_reason_code_and_properties`.
 
 **Status:** done
 
@@ -225,7 +220,7 @@ Topic-Filter-Liste.
 **Repo:** `control_packets::{encode_subscribe_body,
 decode_subscribe_body}`.
 
-**Tests:** `control_packets::tests::subscribe_body_round_trip_with_two_filters`.
+**Tests:** `control_packets::tests::mqtt5_3_8_the_subscribe_of_figures_3_19_and_3_21`.
 
 **Status:** done
 
@@ -237,7 +232,7 @@ Reason-Codes pro Subscription.
 **Repo:** `control_packets::{encode_suback_body,
 decode_suback_body}`.
 
-**Tests:** `control_packets::tests::suback_body_round_trip_with_reason_codes`.
+**Tests:** `control_packets::tests::mqtt5_3_9_a_suback_is_packet_id_properties_and_a_reason_code_per_filter`.
 
 **Status:** done
 
@@ -248,7 +243,7 @@ decode_suback_body}`.
 **Repo:** `control_packets::{encode_unsubscribe_body,
 decode_unsubscribe_body}`.
 
-**Tests:** `control_packets::tests::unsubscribe_body_round_trip`.
+**Tests:** `control_packets::tests::mqtt5_3_10_the_unsubscribe_payload_of_figure_3_30`.
 
 **Status:** done
 
@@ -259,7 +254,7 @@ decode_unsubscribe_body}`.
 **Repo:** `control_packets::{encode_unsuback_body,
 decode_unsuback_body}`.
 
-**Tests:** `control_packets::tests::unsuback_body_round_trip_via_alias`.
+**Tests:** `control_packets::tests::mqtt5_3_11_an_unsuback_is_packet_id_properties_and_a_reason_code_per_filter`.
 
 **Status:** done
 
@@ -269,7 +264,7 @@ decode_unsuback_body}`.
 
 **Repo:** Konstante `0xC0`; Encode trivial (1 Byte 0xC0 + VBI(0)).
 
-**Tests:** `packet::tests::packet_type_round_trip_via_bits`.
+**Tests:** `packet::tests::mqtt5_2_1_2_the_packet_types_are_the_values_of_table_2_1`.
 
 **Status:** done
 
@@ -279,7 +274,7 @@ decode_unsuback_body}`.
 
 **Repo:** Konstante `0xD0`; Encode trivial (1 Byte 0xD0 + VBI(0)).
 
-**Tests:** `packet::tests::packet_type_round_trip_via_bits`.
+**Tests:** `packet::tests::mqtt5_2_1_2_the_packet_types_are_the_values_of_table_2_1`.
 
 **Status:** done
 
@@ -290,7 +285,7 @@ decode_unsuback_body}`.
 **Repo:** `control_packets::{encode_disconnect_body,
 decode_disconnect_body}`.
 
-**Tests:** `control_packets::tests::disconnect_body_round_trip_with_reason_string_property`.
+**Tests:** `control_packets::tests::mqtt5_3_14_2_the_disconnect_of_figure_3_24`.
 
 **Status:** done
 
@@ -301,7 +296,7 @@ multi-step SASL-like challenge/response).
 
 **Repo:** `control_packets::{encode_auth_body, decode_auth_body}`.
 
-**Tests:** `control_packets::tests::auth_body_round_trip_via_alias`.
+**Tests:** `control_packets::tests::mqtt5_3_15_2_an_auth_is_reason_code_and_properties`.
 
 **Status:** done
 
@@ -323,12 +318,12 @@ Keep-Alive-Timer als Wall-Clock-Tick in
 `record_packet`/`is_expired`/`remaining` und Spec-§3.1.2.10-konformer
 1.5×-Period-Expiry-Regel.
 
-**Tests:** `keep_alive::tests::keep_alive_zero_is_disabled`,
-`keep_alive::tests::fresh_tracker_not_expired`,
-`keep_alive::tests::record_packet_resets_timer`,
-`keep_alive::tests::small_keep_alive_expires_after_1_5x`,
-`keep_alive::tests::remaining_decreases_over_time`;
-`broker::tests::qos_round_trip`; `topic_filter::tests::*`.
+**Tests:** `keep_alive::tests::mqtt5_4_1_keep_alive_zero_is_disabled`,
+`keep_alive::tests::mqtt5_4_1_fresh_tracker_not_expired`,
+`keep_alive::tests::mqtt5_4_1_record_packet_resets_timer`,
+`keep_alive::tests::mqtt5_4_1_small_keep_alive_expires_after_1_5x`,
+`keep_alive::tests::mqtt5_4_1_remaining_decreases_over_time`;
+`broker::tests::mqtt5_4_1_the_qos_levels_are_0_1_and_2`; `topic_filter::tests::*`.
 
 **Status:** done — Session-Manager, Subscription-Tree, Retained-
 Messages, Will-Handling, QoS-Levels (0/1/2) + Keep-Alive-Timer
@@ -351,16 +346,16 @@ Protocol-Level ausgehandelt — 5.0 und 3.1.1 am selben Broker.
 `crates/mqtt-bridge/src/net.rs::{MqttClient, read_packet}` — TCP-Framing
 + schlanker version-aware Client.
 
-**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs::publish_subscribe_qos1`,
-`retained_message_delivered_to_late_subscriber`, `wildcard_plus_and_hash`,
-`qos2_exactly_once_delivery`, `cross_version_v5_publishes_v311_subscribes`,
-`cross_version_v311_publishes_v5_subscribes`,
-`pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive`; Live
-`crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mosquitto_v5_clients_through_zerodds_broker`,
-`mosquitto_v311_clients_through_zerodds_broker`,
-`zerodds_client_through_zerodds_broker_cross_version`,
-`zerodds_311_client_receives_from_mosquitto`,
-`mosquitto_311_client_receives_from_zerodds`.
+**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs::mqtt5_4_publish_subscribe_qos1`,
+`mqtt5_4_retained_message_delivered_to_late_subscriber`, `mqtt5_4_wildcard_plus_and_hash`,
+`mqtt5_4_qos2_exactly_once_delivery`, `mqtt5_4_cross_version_v5_publishes_v311_subscribes`,
+`mqtt5_4_cross_version_v311_publishes_v5_subscribes`,
+`mqtt5_4_pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive`; Live
+`crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mqtt5_4_mosquitto_v5_clients_through_zerodds_broker`,
+`mqtt5_4_mosquitto_v311_clients_through_zerodds_broker`,
+`mqtt5_4_zerodds_client_through_zerodds_broker_cross_version`,
+`mqtt5_4_zerodds_311_client_receives_from_mosquitto`,
+`mqtt5_4_mosquitto_311_client_receives_from_zerodds`.
 
 **Status:** done
 
@@ -377,24 +372,29 @@ Privacy); informativ, kein Wire-Mapping.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Security-Considerations sind
-informativ; konkrete TLS-Bindings sind Caller-Layer.
+**Status:** n/a (informative) — Kapitel 5 trägt in der Spec die Kennzeichnung „(non-normative)“.
 
 ## §6 Web Socket Support
 
 ### §6 WebSocket-Transport für MQTT
 
-**Spec:** §6 — MQTT 5.0 über WebSocket (RFC 6455, Sub-Protocol
-`mqtt`).
+**Spec:** §6 — "MQTT Control Packets MUST be sent in WebSocket binary data frames. If any other type of data frame is received the recipient MUST close the Network Connection [MQTT-6.0.0-1]." "The receiver MUST NOT assume that MQTT Control Packets are aligned on WebSocket frame boundaries [MQTT-6.0.0-2]." "The Client MUST include mqtt in the list of WebSocket Sub Protocols it offers [MQTT-6.0.0-3]." "The WebSocket Subprotocol name selected and returned by the Server MUST be mqtt [MQTT-6.0.0-4]."
+
+**Repo:** `crates/mqtt-bridge/src/daemon/ws_transport.rs` (`WsStream`, Subprotokoll `mqtt`), `crates/mqtt-bridge/src/daemon/client.rs`
+
+**Tests:** `crates/mqtt-bridge/tests/websocket_broker.rs::mqtt5_6_ws_broker_url_carries_mqtt_both_ways_through_mosquitto`, `crates/mqtt-bridge/tests/websocket_broker.rs::mqtt5_6_wss_broker_url_carries_mqtt_through_mosquitto_and_checks_the_certificate`, `crates/mqtt-bridge/tests/websocket_broker.rs::mqtt5_6_a_ws_url_on_a_plain_listener_fails_the_handshake`
+
+**Status:** partial — die Client-Seite (`ws://`, `wss://` im Daemon) hält die vier Regeln und ist gegen Mosquitto getestet (die Tests sind `#[ignore]`, sie brauchen Mosquitto). Der Server (`crates/mqtt-bridge/src/server.rs`) nimmt keine WebSocket-Verbindung an; eigenes Item.
+
+### §6 MQTT-Server über WebSocket
+
+**Spec:** §6 — [MQTT-6.0.0-1], [MQTT-6.0.0-2] und [MQTT-6.0.0-4] auf der Seite des Servers: binäre Frames, Pakete über Frame-Grenzen hinweg, Subprotokoll `mqtt` auswählen.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — WebSocket-Layer ist eigene Crate
-(`crates/websocket-bridge/`, siehe `websocket-rfc-6455.md`); MQTT-
-über-WebSocket ist Caller-Layer-Composition (Frame-Codec von
-`crates/mqtt-bridge` durch WebSocket-Frames durchreichen).
+**Status:** open — `MqttBrokerServer` (`crates/mqtt-bridge/src/server.rs`) hat nur einen TCP-Listener.
 
 ## §7 Conformance
 
@@ -410,22 +410,19 @@ Mosquitto-Referenz interop-getestet (`tests/mosquitto_interop_e2e.rs`).
 
 **Tests:** `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs`.
 
-**Status:** `n/a (informative)` — Conformance-Statement ist deklarativ;
-ZeroDDS realisiert die Client- und Server-Targets, weist aber keinen
-formalen Conformance-Marker am Crate aus.
+**Status:** n/a (informative) — benennt die Konformitätsziele Client, Server und Server mit Bridge-Funktion; die Anforderungen sind die Items dieses Dokuments.
 
 ---
 
 ## Audit-Status
 
-23 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
+23 done / 1 partial / 1 open / 0 blocked / 3 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-mqtt-bridge` — 165 lib-Inline-Tests +
-24 Integration-Tests grün, 0 failed (Module: `broker`, `codec`,
-`control_packets`, `data_types`, `dds_bridge`, `net`, `packet`,
-`properties`, `reason_codes`, `server`, `topic_filter`, `vbi`, `version`).
-Live-Interop zusätzlich (Linux bench host): `cargo test -p zerodds-mqtt-bridge
---test mosquitto_interop_e2e -- --ignored` — 5 Tests grün gegen Eclipse
-Mosquitto 2.0.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document mqtt-5.0.md`):
 
-Keine offenen Punkte.
+* `cargo nextest run --profile merge -p zerodds-mqtt-bridge --all-targets` (Job `merge-rust-mqtt-bridge`) — 45 Tests grün.
+* `python3 ci/run_integration.py integration-bridges-vendor` (Job `integration-bridges-vendor`) — 7 Tests grün.
+
+52 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `mqtt-5.0.open.md`.

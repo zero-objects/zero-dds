@@ -31,16 +31,54 @@ gehören zum dds-amqp-Vendor-Profile (Spec-Coverage in
 
 ## amqp-1.0-overview
 
-### §1 Foreword + §2 Conformance
+### §0.1, §0.3, §0.4 Einleitung, Verweise, Danksagung, Historie
 
-**Spec:** Overview Document — beschreibt die Modell-Schichten
-(Network → Frame → Performative → Message).
+**Spec:** `amqp-1.0-overview` §0.1 (Introduction, Terminology, Normative
+und Non-normative References), §0.3 Acknowledgements, §0.4 Revision
+History — Schichtenmodell (Network → Frame → Performative → Message),
+RFC-2119-Schlüsselwörter, Verweislisten.
 
-**Repo:** Crate-Doc.
+**Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Überblicksprosa, Verweislisten,
+Danksagung und Dokumenthistorie; die einzige Anforderung aus §0.1
+(Senden und Empfangen in der Standard-Kodierung) steht im Item §0.2.
+
+### §0.2 Conformance
+
+**Spec:** `amqp-1.0-overview` §0.1/§0.2 — "Every compliant AMQP process
+MUST be able to send and receive messages in this standard encoding." —
+"A conformant implementation MUST perform protocol negotiation (see
+section 2.2), and then parse, process, and produce frames in accordance
+with the format and semantics defined in parts 1 through 5 of this
+specification."
+
+**Repo:** `crates/amqp-endpoint/src/client.rs` (`AMQP_HEADER`,
+`SASL_HEADER`, Protokoll-Header-Austausch), `crates/amqp-endpoint/src/broker.rs`
+(Protokoll-Header-Austausch), `crates/amqp-bridge/` (Parts 1–3),
+`crates/amqp-endpoint/src/sasl.rs` (Part 5 SASL).
+
+**Tests:** `crates/amqp-endpoint/src/session.rs::tests::amqp10_0_2_header_exchange_advances_to_hdr_exch`, `crates/amqp-endpoint/tests/bridge_e2e.rs::amqp10_0_2_a_broker_without_the_sasl_layer_is_refused_by_name`; RabbitMQ: `crates/amqp-endpoint/tests/rabbitmq_amqp10_e2e.rs::{amqp10_0_2_a_message_the_client_sends_is_read_by_pika, amqp10_0_2_the_client_receives_what_pika_published}`.
+
+**Status:** partial — Protokoll-Aushandlung, Parts 1–3 und Part 5
+(SASL) sind umgesetzt (Items der Parts 1–3 und 5); es fehlt Part 4 (Transactions),
+eigenes Item.
+
+### §0.2 Conformance — Part 4 Transactions
+
+**Spec:** `amqp-1.0-overview` §0.2 — Konformität verlangt die Parts 1
+bis 5; Part 4 (`amqp-core-transactions`) definiert Transaktionen
+(Coordinator, `declare`, `discharge`, transaktionale Zustände).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — kein Transaktions-Code in `crates/amqp-bridge` oder
+`crates/amqp-endpoint`; der Text von Part 4 liegt nicht im
+Standards-Cache.
 
 ---
 
@@ -65,18 +103,7 @@ gehören zum dds-amqp-Vendor-Profile (Spec-Coverage in
   `iso-8859-1`, `symbol`) via `extended_types.rs` mit
   Constraint-Validierung.
 
-**Tests:** Primitive — `crates/amqp-bridge/src/extended_types.rs::tests::every_multi_octet_primitive_is_big_endian_on_the_wire`,
-`crates/amqp-bridge/src/extended_types.rs::tests::uint_uses_compact_zero_form`,
-`crates/amqp-bridge/src/extended_types.rs::tests::decimal32_64_128_have_correct_lengths`.
-Described — `crates/amqp-bridge/tests/type_mapping.rs::the_two_descriptor_forms_come_from_the_same_identifier`,
-`crates/amqp-bridge/tests/type_mapping.rs::a_nested_composite_carries_its_own_descriptor`.
-Composite — `crates/amqp-bridge/src/performatives.rs::tests::all_nine_descriptors_have_unique_values`,
-`crates/amqp-bridge/src/performatives.rs::tests::arbitrary_descriptor_round_trip`.
-Restricted — `crates/amqp-bridge/src/extended_types.rs::tests::timestamp_round_trips_negative`,
-`crates/amqp-bridge/src/extended_types.rs::tests::uuid_round_trips`,
-`crates/amqp-bridge/src/extended_types.rs::tests::char_is_four_octet_ucs4_big_endian`.
-Weitere Inline-Tests in `performatives.rs`,
-`extended_types.rs`, `crates/amqp-bridge/src/types.rs`.
+**Tests:** Primitive: `crates/amqp-bridge/src/extended_types.rs::tests::ddsamqp_7_1_3_every_multi_octet_primitive_is_big_endian_on_the_wire`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_5_a_uint_is_uint0_smalluint_or_four_octets`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_13_the_decimals_are_0x74_0x84_0x94_with_4_8_16_octets`. Described: `crates/amqp-bridge/tests/type_mapping.rs::amqp10_1_1_the_two_descriptor_forms_come_from_the_same_identifier`, `crates/amqp-bridge/tests/type_mapping.rs::amqp10_1_1_a_nested_composite_carries_its_own_descriptor`. Composite: `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_the_descriptor_codes_are_0x10_to_0x18_and_0x40_to_0x44`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_1_5_a_descriptor_code_above_255_is_a_full_ulong`. Restricted: `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_17_a_timestamp_is_0x83_and_milliseconds_as_eight_octets`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_18_a_uuid_is_0x98_and_sixteen_octets`, `crates/amqp-bridge/src/extended_types.rs::tests::ddsamqp_7_1_4_2_a_wchar_is_four_octet_ucs4_big_endian`.
 
 **Status:** done — alle vier Type-Kategorien spec-konform; generic
 Described-/Composite-Layer ist per-Performative-eingebaut, nicht
@@ -91,7 +118,7 @@ generisch (legitime Architektur-Wahl für fixed-Profile-Bridge).
 **Repo:** `crates/amqp-bridge/src/types.rs::FormatCode::from_byte`
 klassifiziert Bytes nach Subkategorie (Spec Table 1-1).
 
-**Tests:** `types::tests::format_code_categorizes_correctly`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_2_the_high_nibble_names_the_subcategory`, `crates/amqp-bridge/src/types.rs::tests::amqp10_1_2_an_unassigned_code_or_a_cut_encoding_is_refused`.
 
 **Status:** done
 
@@ -118,15 +145,7 @@ of-fields encoded werden.
 `crates/amqp-bridge/src/sections.rs` nutzen das Pattern (described-
 composite mit Descriptor + List-Body); siehe §2.7 / §3.
 
-**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::arbitrary_descriptor_round_trip`
-(Descriptor-Marker `0x00` + Descriptor-Wert + List-Body, hin und zurück),
-`crates/amqp-bridge/src/performatives.rs::tests::all_nine_descriptors_have_unique_values`,
-`crates/amqp-bridge/src/performatives.rs::tests::attach_to_carries_target_address`
-(Composite im Composite: `target` als eigener described Typ im
-Attach-List-Body), `crates/amqp-bridge/src/sections.rs::tests::properties_section_round_trips_with_subject`,
-`crates/amqp-bridge/src/sections.rs::tests::all_seven_sections_have_unique_order_indexes`,
-`crates/amqp-bridge/tests/type_mapping.rs::the_two_descriptor_forms_come_from_the_same_identifier`,
-`crates/amqp-bridge/tests/type_mapping.rs::a_nested_composite_carries_its_own_descriptor`.
+**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::amqp10_1_5_a_descriptor_code_above_255_is_a_full_ulong`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_3_a_sender_attach_names_its_target_address` (a described list inside the attach list), `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_4_the_properties_are_0x73_and_a_list_in_field_order`, `crates/amqp-bridge/tests/type_mapping.rs::amqp10_1_1_the_two_descriptor_forms_come_from_the_same_identifier`, `crates/amqp-bridge/tests/type_mapping.rs::amqp10_1_1_a_nested_composite_carries_its_own_descriptor`.
 
 **Status:** done — Composite-Type-Encoding-Pattern (Descriptor +
 List-Body) ist via Performatives + Message-Sections abgedeckt.
@@ -140,9 +159,7 @@ symbolic-Name. Descriptor-Code-Allocation für Spec-Domains.
 0x10-0x18 für die 9 Performatives), `crates/amqp-bridge/src/sections.rs`
 (Codes 0x70-0x78 für Message-Sections).
 
-**Tests:** `performatives::tests::open_descriptor_is_0x10`,
-`begin_descriptor_is_0x11`, `all_nine_descriptors_have_unique_values`,
-`sections::tests::all_seven_sections_have_unique_order_indexes`.
+**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_the_descriptor_codes_are_0x10_to_0x18_and_0x40_to_0x44`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_1_5_a_descriptor_code_above_255_is_a_full_ulong`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_1_the_header_is_0x70_and_a_list`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_9_the_footer_is_0x78_and_a_map`.
 
 **Status:** done
 
@@ -152,8 +169,7 @@ symbolic-Name. Descriptor-Code-Allocation für Spec-Domains.
 
 **Repo:** `crates/amqp-bridge/src/types.rs::encode_null`.
 
-**Tests:** `types::tests::null_encodes_to_single_byte_0x40`,
-`round_trip_all_primitive_values`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_1_null_is_0x40`.
 
 **Status:** done
 
@@ -164,8 +180,7 @@ symbolic-Name. Descriptor-Code-Allocation für Spec-Domains.
 **Repo:** `crates/amqp-bridge/src/types.rs::encode_boolean` (kompakte
 Form); Decoder akzeptiert beide.
 
-**Tests:** `types::tests::boolean_uses_compact_format_codes`,
-`round_trip_all_primitive_values`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_2_a_boolean_is_0x41_0x42_or_0x56_and_an_octet`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_24_elements_whose_compact_encodings_differ_share_the_wide_one`.
 
 **Status:** done
 
@@ -177,7 +192,7 @@ Form); Decoder akzeptiert beide.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_ubyte,
 decode_ubyte}`.
 
-**Tests:** `extended_types::tests::ubyte_round_trips_at_extremes`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_3_a_ubyte_is_0x50_and_one_octet`.
 
 **Status:** done
 
@@ -189,7 +204,7 @@ decode_ubyte}`.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_ushort,
 decode_ushort}`.
 
-**Tests:** `extended_types::tests::ushort_round_trips`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_4_a_ushort_is_0x60_and_two_octets`.
 
 **Status:** done
 
@@ -202,9 +217,7 @@ Range 0..2^32-1.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_uint,
 decode_uint}` mit Compact-Selection.
 
-**Tests:** `extended_types::tests::uint_uses_compact_zero_form`,
-`extended_types::tests::uint_uses_smalluint_for_low_values`,
-`extended_types::tests::uint_uses_full_for_high_values`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_5_a_uint_is_uint0_smalluint_or_four_octets`.
 
 **Status:** done
 
@@ -216,9 +229,7 @@ Range 0..2^64-1.
 
 **Repo:** `crates/amqp-bridge/src/types.rs::{encode_ulong, decode_value}` mit Compact-Selection.
 
-**Tests:** `types::tests::ulong_zero_uses_ulong0_format`,
-`types::tests::ulong_small_uses_smallulong_format`,
-`types::tests::ulong_large_uses_full_8_byte_format`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_6_a_ulong_is_ulong0_smallulong_or_eight_octets`.
 
 **Status:** done
 
@@ -230,7 +241,7 @@ Range 0..2^64-1.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_byte,
 decode_byte}`.
 
-**Tests:** `extended_types::tests::byte_round_trips_negative`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_7_a_byte_is_0x51_and_one_signed_octet`.
 
 **Status:** done
 
@@ -242,7 +253,7 @@ decode_byte}`.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_short,
 decode_short}`.
 
-**Tests:** `extended_types::tests::short_round_trips`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_8_a_short_is_0x61_and_two_octets`.
 
 **Status:** done
 
@@ -254,8 +265,7 @@ fixed-1), `int` (`0x71`, fixed-4). Range -(2^31)..2^31-1.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_int,
 decode_int}` mit Compact-Selection.
 
-**Tests:** `extended_types::tests::int_uses_compact_when_in_byte_range`,
-`extended_types::tests::int_uses_full_for_high_values`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_9_an_int_is_smallint_or_four_octets`.
 
 **Status:** done
 
@@ -266,8 +276,7 @@ decode_int}` mit Compact-Selection.
 
 **Repo:** `crates/amqp-bridge/src/types.rs::{encode_long, decode_value}` mit Compact-Selection.
 
-**Tests:** `types::tests::long_small_uses_smalllong_format`,
-`types::tests::long_large_uses_full_8_byte_format`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_10_a_long_is_smalllong_or_eight_octets`.
 
 **Status:** done
 
@@ -278,7 +287,7 @@ decode_int}` mit Compact-Selection.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_float,
 decode_float}`.
 
-**Tests:** `extended_types::tests::float_round_trips`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_11_a_float_is_0x72_and_binary32`.
 
 **Status:** done
 
@@ -289,7 +298,7 @@ decode_float}`.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_double,
 decode_double}`.
 
-**Tests:** `extended_types::tests::double_round_trips`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_12_a_double_is_0x82_and_binary64`.
 
 **Status:** done
 
@@ -301,7 +310,7 @@ decimal32 in BID-Layout.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::encode_decimal32`
 (Encoder, BID-Layout verbatim; Decimal-Arithmetik ist Caller-Layer).
 
-**Tests:** `extended_types::tests::decimal32_64_128_have_correct_lengths`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_13_the_decimals_are_0x74_0x84_0x94_with_4_8_16_octets`.
 
 **Status:** done — Wire-Format korrekt; Decimal-Arithmetik (z.B.
 exact-decimal-roundtrips zwischen Werten) ist Caller-Verantwortung.
@@ -313,7 +322,7 @@ decimal64 in BID-Layout.
 
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::encode_decimal64`.
 
-**Tests:** `extended_types::tests::decimal32_64_128_have_correct_lengths`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_13_the_decimals_are_0x74_0x84_0x94_with_4_8_16_octets`.
 
 **Status:** done
 
@@ -324,7 +333,7 @@ decimal128 in BID-Layout.
 
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::encode_decimal128`.
 
-**Tests:** `extended_types::tests::decimal32_64_128_have_correct_lengths`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_13_the_decimals_are_0x74_0x84_0x94_with_4_8_16_octets`.
 
 **Status:** done
 
@@ -336,7 +345,7 @@ character" als UTF-32BE-Codepoint.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_char,
 decode_char}`.
 
-**Tests:** `extended_types::tests::char_round_trips_ascii_and_unicode`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_16_a_char_is_0x73_and_a_utf_32be_code_point`.
 
 **Status:** done
 
@@ -348,7 +357,7 @@ decode_char}`.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_timestamp,
 decode_timestamp}`.
 
-**Tests:** `extended_types::tests::timestamp_round_trips_negative`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_17_a_timestamp_is_0x83_and_milliseconds_as_eight_octets`.
 
 **Status:** done
 
@@ -359,7 +368,7 @@ decode_timestamp}`.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::{encode_uuid,
 decode_uuid}`.
 
-**Tests:** `extended_types::tests::uuid_round_trips`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_18_a_uuid_is_0x98_and_sixteen_octets`.
 
 **Status:** done
 
@@ -371,10 +380,7 @@ decode_uuid}`.
 **Repo:** `crates/amqp-bridge/src/types.rs::encode_binary` (wählt
 Compact-Form basierend auf Length); Decoder für beide Formate.
 
-**Tests:** `types::tests::binary_short_uses_vbin8_format`,
-`binary_long_uses_vbin32_format`,
-`round_trip_all_primitive_values`,
-`truncated_inputs_yield_error`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_19_binary_is_vbin8_or_vbin32`, `crates/amqp-bridge/src/types.rs::tests::amqp10_1_2_an_unassigned_code_or_a_cut_encoding_is_refused`.
 
 **Status:** done
 
@@ -384,8 +390,7 @@ Compact-Form basierend auf Length); Decoder für beide Formate.
 
 **Repo:** `crates/amqp-bridge/src/types.rs::encode_string`.
 
-**Tests:** `types::tests::string_short_uses_str8_format`,
-`string_unicode_round_trip`, `invalid_utf8_in_str_yields_error`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_20_a_string_is_its_utf_8_octets_after_the_length`, `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_20_octets_that_are_not_utf_8_are_refused`.
 
 **Status:** done
 
@@ -396,8 +401,7 @@ Compact-Form basierend auf Length); Decoder für beide Formate.
 **Repo:** `crates/amqp-bridge/src/types.rs::encode_symbol` lehnt
 non-ASCII-Strings ab (`NonAsciiSymbol`-Error).
 
-**Tests:** `types::tests::symbol_short_uses_sym8_format`,
-`symbol_rejects_non_ascii`.
+**Tests:** `crates/amqp-bridge/src/types.rs::tests::amqp10_1_6_21_a_symbol_is_ascii_after_sym8_or_sym32`.
 
 **Status:** done
 
@@ -410,10 +414,7 @@ compound-4). Generische Liste polymorpher Items.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::
 List` mit `encode/decode` und Compact-Selection list0/list8/list32.
 
-**Tests:** `extended_types::tests::empty_list_uses_list0`,
-`extended_types::tests::small_list_round_trips`,
-`extended_types::tests::nested_list_round_trips`,
-`extended_types::tests::deeply_nested_list_exceeds_dos_cap`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_22_the_empty_list_is_list0`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_22_a_list_is_list8_size_count_and_items`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_22_a_list_nested_past_the_bound_is_refused`.
 
 **Status:** done
 
@@ -426,8 +427,7 @@ Key-Value-Pairs.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::Map`
 mit `encode/decode` und Compact-Selection.
 
-**Tests:** `extended_types::tests::map_round_trips_with_string_keys`,
-`extended_types::tests::encode_map_uses_long_form_when_count_exceeds_u8`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_23_a_map_is_map8_size_count_and_pairs`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_23_a_map_of_more_than_255_elements_is_map32`.
 
 **Status:** done
 
@@ -440,17 +440,14 @@ einheitlichem Element-Constructor.
 **Repo:** `crates/amqp-bridge/src/extended_types.rs::AmqpExtValue::Array`
 mit `encode/decode` und Homogenitäts-Validation.
 
-**Tests:** `extended_types::tests::array_round_trips_homogeneous_short`,
-`extended_types::tests::array_homogeneous_constraint_violation_yields_error`,
-`extended_types::tests::encode_array_uses_long_form_when_count_exceeds_u8`,
-`extended_types::tests::decode_array_at_minimum_buffer_size`.
+**Tests:** `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_24_an_array_is_one_constructor_then_the_values`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_24_elements_whose_compact_encodings_differ_share_the_wide_one`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_24_elements_of_different_types_are_refused`, `crates/amqp-bridge/src/extended_types.rs::tests::amqp10_1_6_24_an_array_of_more_than_255_elements_is_array32`.
 
 **Status:** done
 
 Plus DoS-Cap-Schutz auf Recursion-Depth 32 (siehe
 `dds-amqp-1.0-beta1.pdf §6.1`):
-`extended_types::tests::decode_at_depth_at_cap_accepted`,
-`extended_types::tests::decode_at_depth_over_cap_rejected`.
+`extended_types::tests::amqp10_1_6_22_a_list_nested_past_the_bound_is_refused`,
+`extended_types::tests::amqp10_1_6_22_a_list_nested_past_the_bound_is_refused`.
 
 ---
 
@@ -465,13 +462,7 @@ DOFF + TYPE + CHANNEL 2-byte BE) + Extended-Header + Body.
 encode_frame_header, decode_frame_header}`. Pre-Condition-Enforcement:
 DOFF >= 2, SIZE >= 8, body_offset <= SIZE.
 
-**Tests:** `frame::tests::frame_type_round_trip`,
-`header_round_trip_minimum_size`,
-`header_with_channel_42_and_size_1024`,
-`body_offset_is_doff_times_4`, `header_too_short_decode_fails`,
-`doff_below_2_rejected`, `size_below_8_rejected`,
-`body_offset_exceeding_size_rejected`,
-`sasl_frame_type_byte_is_1`.
+**Tests:** `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_the_smallest_frame_is_its_eight_octet_header`, `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_size_and_channel_are_in_network_byte_order`, `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_the_body_begins_doff_times_four_octets_in`, `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_fewer_than_eight_octets_are_no_header`, `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_a_doff_below_2_is_refused`, `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_a_size_below_8_is_refused`, `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_a_body_offset_beyond_size_is_refused`.
 
 **Status:** done
 
@@ -481,8 +472,7 @@ DOFF >= 2, SIZE >= 8, body_offset <= SIZE.
 
 **Repo:** `FrameType::Amqp/Sasl/Reserved`.
 
-**Tests:** `frame::tests::frame_type_round_trip`,
-`sasl_frame_type_byte_is_1`.
+**Tests:** `crates/amqp-bridge/src/frame.rs::tests::amqp10_2_3_1_the_type_octet_is_0x00_for_amqp_and_0x01_for_sasl`.
 
 **Status:** done
 
@@ -498,13 +488,7 @@ Performative (open, begin, attach, flow, transfer, disposition,
 detach, end, close) plus generischer
 `encode_performative/decode_performative`.
 
-**Tests:** `performatives::tests::open_descriptor_is_0x10`,
-`begin_descriptor_is_0x11`, `attach_carries_role_bit`,
-`flow_carries_window_values`, `transfer_default_settled_false`,
-`disposition_settled_round_trip`, `detach_round_trips`,
-`end_and_close_are_minimal`, `arbitrary_descriptor_round_trip`,
-`truncated_input_yields_error`,
-`all_nine_descriptors_have_unique_values`.
+**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_the_descriptor_codes_are_0x10_to_0x18_and_0x40_to_0x44`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_1_open_is_its_container_id_and_the_fields_after_it`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_2_begin_is_channel_and_the_three_numbers`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_3_attach_is_name_handle_and_role`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_4_flow_is_the_windows_then_handle_count_and_credit`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_5_transfer_is_handle_id_tag_format_settled_then_the_message`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_6_disposition_is_role_first_last_settled_and_state`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_2_7_7_detach_end_and_close_are_their_fields`, `crates/amqp-bridge/src/performatives.rs::tests::amqp10_1_2_a_performative_without_the_described_prefix_is_refused`.
 
 **Status:** done
 
@@ -524,14 +508,7 @@ MessageAnnotations/Properties/ApplicationProperties/Data/
 AmqpSequence/AmqpValue/Footer) inkl. Roundtrip-Codec und
 `validate_section_sequence` für Spec-§3.2-Sequencing-Constraint.
 
-**Tests:** `sections::tests::header_section_round_trips`,
-`properties_section_round_trips_with_subject`,
-`application_properties_round_trips`,
-`data_section_round_trips_binary`, `amqp_value_section_round_trips`,
-`amqp_sequence_round_trips`, `footer_section_round_trips`,
-`canonical_order_passes_validator`,
-`out_of_order_fails_validator`,
-`all_seven_sections_have_unique_order_indexes`.
+**Tests:** `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_1_the_header_is_0x70_and_a_list`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_4_the_properties_are_0x73_and_a_list_in_field_order`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_5_the_application_properties_are_0x74_and_a_map`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_6_data_is_0x75_and_a_binary`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_7_an_amqp_sequence_is_0x76_and_a_list`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_8_an_amqp_value_is_0x77_and_any_value`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_9_the_footer_is_0x78_and_a_map`, `crates/amqp-bridge/src/sections.rs::tests::amqp10_3_2_the_sections_follow_in_their_order`.
 
 **Status:** done
 
@@ -555,18 +532,7 @@ Performatives** (§5.3) in `crates/amqp-bridge/src/performatives.rs`:
 0x40/0x44-Frames). **Client-Handshake** `crates/amqp-endpoint/src/client.rs::
 AmqpClient::sasl_plain` (SASL-Header → mechanisms → init(PLAIN) → outcome).
 
-**Tests:** `crates/amqp-endpoint/src/sasl.rs::tests::name_round_trips` (Mechanism-Liste),
-`crates/amqp-endpoint/src/sasl.rs::tests::plain_authenticates_on_correct_credentials`,
-`crates/amqp-endpoint/src/sasl.rs::tests::plain_fails_on_wrong_credentials`,
-`crates/amqp-endpoint/src/sasl.rs::tests::anonymous_authenticates_without_credentials`,
-`crates/amqp-endpoint/src/sasl.rs::tests::external_uses_transport_subject`,
-`crates/amqp-endpoint/src/sasl.rs::tests::sasl_code_wire_values_match_spec` (§5.3.3.6 ok/auth/sys/sys-perm/sys-temp),
-`crates/amqp-endpoint/src/sasl.rs::tests::sasl_code_from_u8_round_trip`, `crates/amqp-endpoint/src/sasl.rs::tests::sasl_code_unknown_value_rejected`;
-Wire-Codec `crates/amqp-bridge/src/performatives.rs::tests::sasl_init_descriptor_and_roundtrip`,
-`crates/amqp-bridge/src/performatives.rs::tests::sasl_mechanisms_extracts_symbols`,
-`crates/amqp-bridge/src/performatives.rs::tests::sasl_outcome_code_extracted`;
-Live `crates/amqp-endpoint/tests/rabbitmq_amqp10_e2e.rs` (SASL-PLAIN gegen
-RabbitMQ 4.0, env-gated und im Default-Lauf übersprungen).
+**Tests:** `crates/amqp-endpoint/src/sasl.rs::tests::{amqp10_5_3_3_1_the_mechanism_names_are_plain_anonymous_external, amqp10_5_plain_authenticates_on_correct_credentials, amqp10_5_plain_fails_on_wrong_credentials, amqp10_5_anonymous_authenticates_without_credentials, amqp10_5_external_uses_transport_subject, amqp10_5_3_3_6_the_sasl_codes_are_0_to_4, amqp10_5_sasl_code_unknown_value_rejected}`; `crates/amqp-bridge/src/performatives.rs::tests::{amqp10_5_3_3_2_sasl_init_is_mechanism_response_and_hostname, amqp10_5_3_3_1_the_offered_mechanisms_are_read_from_an_array_or_one_symbol, amqp10_5_3_3_5_the_outcome_code_is_read}`; RabbitMQ: `crates/amqp-endpoint/tests/rabbitmq_amqp10_e2e.rs::amqp10_0_2_a_message_the_client_sends_is_read_by_pika` (SASL PLAIN).
 
 **Status:** done
 
@@ -591,18 +557,7 @@ AmqpClient::{connect_plain, send_to, send_to_accepted, recv_from}` — voller Cl
 (SASL → open/begin → attach(sender/receiver) → transfer/flow/disposition →
 detach/close).
 
-**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::attach_to_carries_target_address`,
-`crates/amqp-bridge/src/performatives.rs::tests::transfer_message_has_tag_and_data`,
-`crates/amqp-bridge/src/performatives.rs::tests::attach_carries_role_bit`,
-`crates/amqp-bridge/src/performatives.rs::tests::transfer_default_settled_false`,
-`crates/amqp-bridge/src/performatives.rs::tests::an_unsettled_sender_attach_says_so`,
-`crates/amqp-bridge/src/performatives.rs::tests::a_disposition_reads_back`,
-`crates/amqp-endpoint/src/client.rs::tests::send_to_accepted_returns_on_the_accepting_disposition`
-(`send_to_accepted`: unsettled übertragen, auf `accepted` warten, §3.4.2);
-Live e2e `crates/amqp-endpoint/tests/
-rabbitmq_amqp10_e2e.rs` (ZeroDDS-1.0 ⇄ RabbitMQ ⇄ pika-0.9.1, beide
-Richtungen) + `rabbitmq_cross_stack_e2e.rs` (ZeroDDS-1.0 ⇄ ZeroDDS-0.9.1).
-Harness `crates/amqp-endpoint/competitors/rabbitmq/`.
+**Tests:** `crates/amqp-bridge/src/performatives.rs::tests::{amqp10_2_7_3_a_sender_attach_names_its_target_address, amqp10_2_7_5_transfer_is_handle_id_tag_format_settled_then_the_message, amqp10_2_7_3_attach_is_name_handle_and_role, amqp10_2_7_3_an_unsettled_sender_attach_says_so, amqp10_2_7_6_a_received_disposition_reads_its_range_and_state}`, `crates/amqp-endpoint/src/client.rs::tests::amqp10_3_4_2_send_to_accepted_returns_on_the_accepting_disposition`; RabbitMQ: `crates/amqp-endpoint/tests/rabbitmq_amqp10_e2e.rs::{amqp10_0_2_a_message_the_client_sends_is_read_by_pika, amqp10_0_2_the_client_receives_what_pika_published, amqp10_3_4_2_an_accepted_send_is_in_the_queue_when_it_returns}`.
 
 **Status:** done
 
@@ -610,11 +565,14 @@ Harness `crates/amqp-endpoint/competitors/rabbitmq/`.
 
 ## Audit-Status
 
-34 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+34 done / 1 partial / 1 open / 0 blocked / 2 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-amqp-bridge` — 87 lib-Tests grün,
-0 failed; davon 82 OASIS-AMQP-1.0-relevant
-(`extended_types`/`frame`/`performatives`/`sections`/`types`, inkl. der
-SASL-Performative- + attach/transfer-Codec-Tests). RabbitMQ-Interop
-zusätzlich live: `cargo test -p zerodds-amqp-endpoint --test
-rabbitmq_amqp10_e2e -- --ignored` (Linux bench host, `AMQP_RABBITMQ=1`).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document amqp-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-amqp-bridge --all-targets` (Job `merge-rust-amqp-bridge`) — 67 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-amqp-endpoint --all-targets` (Job `merge-rust-amqp-endpoint`) — 10 Tests grün.
+* `python3 ci/run_integration.py integration-bridges-vendor-amqp` (Job `integration-bridges-vendor-amqp`) — 3 Tests grün.
+
+80 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `amqp-1.0.open.md`.

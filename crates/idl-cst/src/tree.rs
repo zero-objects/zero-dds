@@ -321,10 +321,10 @@ impl Drop for GreenNode {
     fn drop(&mut self) {
         let mut stack: Vec<GreenChild> = core::mem::take(&mut self.children);
         while let Some(child) = stack.pop() {
-            if let GreenChild::Node(node) = child {
-                if let Some(mut inner) = Arc::into_inner(node) {
-                    stack.append(&mut inner.children);
-                }
+            if let GreenChild::Node(node) = child
+                && let Some(mut inner) = Arc::into_inner(node)
+            {
+                stack.append(&mut inner.children);
             }
         }
     }

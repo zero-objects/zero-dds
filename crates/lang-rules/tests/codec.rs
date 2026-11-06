@@ -168,7 +168,7 @@ fn xcdr2() -> LayoutKey {
 }
 
 #[test]
-fn a_final_struct_of_primitives_encodes_as_a_run_of_writes() {
+fn xtypes_7_4_3_a_final_struct_of_primitives_encodes_as_a_run_of_writes() {
     // No DHEADER, no headers per member: the plan says the extent is
     // fixed, so the body is exactly the writes.
     let generated = codec(
@@ -193,7 +193,7 @@ fn a_final_struct_of_primitives_encodes_as_a_run_of_writes() {
 }
 
 #[test]
-fn the_decoder_mirrors_the_encoder_member_for_member() {
+fn xtypes_7_4_3_the_decoder_mirrors_the_encoder_member_for_member() {
     // Built from the same plan, so the two agree by construction rather
     // than by review.
     let generated = codec(
@@ -215,7 +215,7 @@ fn the_decoder_mirrors_the_encoder_member_for_member() {
 }
 
 #[test]
-fn an_appendable_struct_carries_the_dheader_the_plan_asks_for() {
+fn xtypes_7_2_3_an_appendable_struct_carries_the_dheader_the_plan_asks_for() {
     // XCDR2 frames an appendable type with a DHEADER; a reader without
     // one cannot skip members it does not know.
     let generated = codec(
@@ -309,7 +309,7 @@ fn a_final_union_is_the_discriminator_and_its_branch_alone() {
 }
 
 #[test]
-fn a_mutable_struct_writes_an_emheader_per_member() {
+fn xtypes_7_4_3_4_2_a_mutable_struct_writes_an_emheader_per_member() {
     let generated = codec(
         "@mutable struct S { @id(3) long a; @id(7) long b; };",
         "S",
@@ -321,7 +321,7 @@ fn a_mutable_struct_writes_an_emheader_per_member() {
 }
 
 #[test]
-fn every_parameter_header_the_decoder_opens_it_also_closes() {
+fn xtypes_7_4_3_every_parameter_header_the_decoder_opens_it_also_closes() {
     // `Reader::read_pid` makes the parameter's value its own alignment
     // origin — XTypes 1.3 §7.4.1.2 calls each parameter "a
     // CDR-encapsulated block of data" — and `finish_pid` is the only
@@ -363,7 +363,7 @@ fn every_parameter_header_the_decoder_opens_it_also_closes() {
 }
 
 #[test]
-fn the_length_code_policy_is_visible_in_the_output() {
+fn xtypes_7_4_3_4_2_the_length_code_policy_is_visible_in_the_output() {
     // The two policies are both conformant and produce different bytes;
     // which one a build uses has to be readable in what it generated.
     let idl = "@mutable struct S { @id(1) string name; };";
@@ -386,7 +386,7 @@ fn the_length_code_policy_is_visible_in_the_output() {
 }
 
 #[test]
-fn a_member_with_no_writer_is_reported_rather_than_left_out() {
+fn xtypes_7_4_a_member_with_no_writer_is_reported_rather_than_left_out() {
     // A member missing from an encoder is a wire format that silently
     // disagrees with its own plan. The property is the reporting and not
     // the construct, so this test moves to whatever is still unwritten
@@ -494,7 +494,7 @@ fn a_bounded_map_passes_its_bound_to_the_runtime() {
 }
 
 #[test]
-fn a_nested_aggregate_encodes_itself() {
+fn xtypes_7_2_2_4_4_a_nested_aggregate_encodes_itself() {
     let generated = codec(
         "@final struct Header { long id; };
          @final struct Body { Header head; long value; };",
@@ -516,7 +516,7 @@ fn a_nested_aggregate_encodes_itself() {
 }
 
 #[test]
-fn the_extensibility_the_source_wrote_decides_the_framing() {
+fn xtypes_7_2_3_the_extensibility_the_source_wrote_decides_the_framing() {
     // Not a setting of the generator: three sources, three framings,
     // each the one its own annotation asks for.
     let final_ = codec("@final struct S { long a; };", "S", xcdr2());
@@ -539,7 +539,7 @@ fn the_extensibility_the_source_wrote_decides_the_framing() {
 // -- collections ---------------------------------------------------------
 
 #[test]
-fn a_sequence_writes_its_elements_by_their_own_writer() {
+fn xtypes_7_2_2_4_3_a_sequence_writes_its_elements_by_their_own_writer() {
     // The element function is a closure and not a named path.
     // `Writer::write_i32` takes an `i32` by value where an element
     // function takes a `&i32`, so the path never compiled.
@@ -555,7 +555,7 @@ fn a_sequence_writes_its_elements_by_their_own_writer() {
 }
 
 #[test]
-fn a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none() {
+fn xtypes_7_2_2_4_3_a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none() {
     // The bound is a promise about the source, not a difference on the
     // wire: both write a length and then the elements. What the bounded
     // form adds is the refusal — Table 17 makes
@@ -574,7 +574,7 @@ fn a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none() {
 }
 
 #[test]
-fn a_bounded_string_is_written_through_the_form_that_refuses_an_overrun() {
+fn xtypes_7_2_2_4_3_a_bounded_string_is_written_through_the_form_that_refuses_an_overrun() {
     // AL-14: `write_string_bounded` truncated at a character boundary
     // and reported nothing, which was tolerable only while nothing
     // called it. The generator calls it now, so it refuses instead —
@@ -587,7 +587,7 @@ fn a_bounded_string_is_written_through_the_form_that_refuses_an_overrun() {
 }
 
 #[test]
-fn an_array_writes_no_length_because_its_count_is_in_the_type() {
+fn xtypes_7_2_2_4_3_an_array_writes_no_length_because_its_count_is_in_the_type() {
     // One `write_array` per dimension: `long grid[2][3]` is
     // `[[i32; 3]; 2]`, so the outer call hands each row to a function
     // that writes a row. The count came out as trailing arguments the
@@ -608,7 +608,7 @@ fn an_array_writes_no_length_because_its_count_is_in_the_type() {
 }
 
 #[test]
-fn a_collection_of_aggregates_is_delimited_and_one_of_primitives_is_not() {
+fn xtypes_7_2_2_4_3_a_collection_of_aggregates_is_delimited_and_one_of_primitives_is_not() {
     // XTypes 1.3 §7.4.3.5 rules (9) and (12). The generator asks
     // `zerodds_ast_layout::collection_is_delimited`, the same function
     // the planner asks, so the emitted call and the planned extent
@@ -655,7 +655,7 @@ fn a_collection_of_aggregates_is_delimited_and_one_of_primitives_is_not() {
 }
 
 #[test]
-fn a_collection_directly_inside_a_collection_is_emitted() {
+fn xtypes_7_2_2_4_3_a_collection_directly_inside_a_collection_is_emitted() {
     // AL-9, closed. The three shapes
     // `docs/refused-constructs.md` measured against Cyclone and
     // Fast DDS — `sequence<sequence<long>>`, `sequence<long> rows[2]`
@@ -714,7 +714,8 @@ fn a_collection_directly_inside_a_collection_is_emitted() {
 }
 
 #[test]
-fn a_mutable_decoder_dispatches_on_the_member_id_and_a_positional_one_does_not() {
+fn xtypes_7_2_2_4_4_3_a_mutable_decoder_dispatches_on_the_member_id_and_a_positional_one_does_not()
+{
     // XTypes 1.3 §7.4.1.2.3 leaves a `@mutable` list unordered and
     // §7.4.3.4.2 puts the id on every header. A decoder that walked its
     // plan could take neither a reordered list nor an omitted member;
@@ -756,7 +757,8 @@ fn a_mutable_decoder_dispatches_on_the_member_id_and_a_positional_one_does_not()
 // -- `@optional` ---------------------------------------------------------
 
 #[test]
-fn an_optional_member_writes_its_marker_from_the_option_and_not_from_a_literal() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_writes_its_marker_from_the_option_and_not_from_a_literal()
+ {
     // Rule (20), §7.4.3.5.2. The `<is_present>` byte used to be a
     // literal `true`, because the field was the member's own type and
     // this column had no absence to write. It is the field's own answer
@@ -787,7 +789,8 @@ fn an_optional_member_writes_its_marker_from_the_option_and_not_from_a_literal()
 }
 
 #[test]
-fn an_optional_member_under_xcdr1_marks_the_absence_with_a_declared_length_of_zero() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_under_xcdr1_marks_the_absence_with_a_declared_length_of_zero()
+ {
     // Rule (19) and §7.4.1.2. The parameter header is written whether or
     // not the value is — that is what makes the length the marker — so
     // it sits outside the match and `finish_pid` closes the block either
@@ -841,7 +844,7 @@ fn an_optional_member_under_xcdr1_marks_the_absence_with_a_declared_length_of_ze
 }
 
 #[test]
-fn an_optional_member_of_a_mutable_type_omits_the_whole_parameter() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_of_a_mutable_type_omits_the_whole_parameter() {
     // Inside a parameter list there is no presence marker: §7.4.1.2.3
     // says a member the stream does not carry is one the reader has to
     // account for, and for an `@optional` member the account is the
@@ -882,7 +885,7 @@ fn an_optional_member_of_a_mutable_type_omits_the_whole_parameter() {
 /// call further in, and over `@value` rather than over Rust's
 /// discriminant, which the generator sets to the same numbers.
 #[test]
-fn an_enum_member_is_written_through_the_enumerations_own_codec() {
+fn xtypes_7_2_2_4_1_1_an_enum_member_is_written_through_the_enumerations_own_codec() {
     let generated = codec(
         "@bit_bound(16) enum Mode { IDLE };
          @final struct S { Mode state; };",
@@ -898,7 +901,7 @@ fn an_enum_member_is_written_through_the_enumerations_own_codec() {
 
 /// And the enumeration's own codec is where the width lives.
 #[test]
-fn the_enumerations_codec_writes_the_width_its_bit_bound_calls_for() {
+fn xtypes_7_2_2_4_1_1_the_enumerations_codec_writes_the_width_its_bit_bound_calls_for() {
     let generated = codec(
         "@bit_bound(16) enum Mode { IDLE, RUNNING };",
         "Mode",
@@ -908,7 +911,7 @@ fn the_enumerations_codec_writes_the_width_its_bit_bound_calls_for() {
 }
 
 #[test]
-fn a_typedef_is_written_as_what_it_aliases() {
+fn xtypes_7_2_2_4_2_a_typedef_is_written_as_what_it_aliases() {
     let generated = codec(
         "typedef sequence<long> Ids;
          @final struct S { Ids numbers; };",
@@ -924,7 +927,7 @@ fn a_typedef_is_written_as_what_it_aliases() {
 // -- the KeyHash ---------------------------------------------------------
 
 #[test]
-fn a_keyed_type_gets_a_key_hash_over_its_key_members_only() {
+fn xtypes_7_4_5_a_keyed_type_gets_a_key_hash_over_its_key_members_only() {
     let generated = codec(
         "@final struct Sensor { @key long id; double value; };",
         "Sensor",
@@ -1011,7 +1014,7 @@ fn a_key_hash_over_a_char_carries_it_too() {
 }
 
 #[test]
-fn a_type_with_no_key_gets_no_key_hash() {
+fn xtypes_7_4_5_a_type_with_no_key_gets_no_key_hash() {
     // A KeyHash over nothing is not a KeyHash; emitting one would give
     // every instance of that type the same handle.
     let generated = codec("@final struct S { long a; };", "S", xcdr2());
@@ -1019,7 +1022,7 @@ fn a_type_with_no_key_gets_no_key_hash() {
 }
 
 #[test]
-fn a_holder_of_sixteen_bytes_or_fewer_is_the_hash_and_a_longer_one_is_md5ed() {
+fn xtypes_7_4_5_a_holder_of_sixteen_bytes_or_fewer_is_the_hash_and_a_longer_one_is_md5ed() {
     // The plan decides, because the size is the plan's answer.
     let short = codec("@final struct A { @key long id; };", "A", xcdr2());
     assert!(short.contains("holder.zero_padded()"), "{short}");
@@ -1063,7 +1066,7 @@ fn an_aggregate_key_member_takes_the_holder_by_reference() {
         LayoutKey::data(Encoding::PlainCdr2, Endianness::Little),
     );
     assert!(
-        generated.contains("self.nested.encode(&mut holder)?"),
+        generated.contains("self.nested.encode_key_holder(&mut holder)?"),
         "the nested key write must take a reference:\n{generated}"
     );
     assert!(
@@ -1079,7 +1082,7 @@ fn an_aggregate_key_member_takes_the_holder_by_reference() {
 }
 
 #[test]
-fn the_holder_is_big_endian_and_plain_cdr2_aligned_whatever_the_sample_is() {
+fn xtypes_7_4_5_the_holder_is_big_endian_and_plain_cdr2_aligned_whatever_the_sample_is() {
     for encoding in [Encoding::PlainCdr2, Encoding::PlainCdr1] {
         let generated = codec(
             "@final struct S { @key long id; @key double at; };",
@@ -1109,13 +1112,13 @@ fn the_holder_is_big_endian_and_plain_cdr2_aligned_whatever_the_sample_is() {
 }
 
 #[test]
-fn an_unbounded_key_is_md5ed_because_its_length_is_not_known_until_the_sample_is() {
+fn xtypes_7_4_5_an_unbounded_key_is_md5ed_because_its_length_is_not_known_until_the_sample_is() {
     let generated = codec("@final struct S { @key string name; };", "S", xcdr2());
     assert!(generated.contains("holder.md5()"), "{generated}");
 }
 
 #[test]
-fn an_appendable_tail_the_writer_did_not_have_takes_its_default() {
+fn xtypes_7_2_2_4_4_4_7_an_appendable_tail_the_writer_did_not_have_takes_its_default() {
     // §7.2.4.4.8, Table 19: "Each non-optional member in a T1 object
     // that is not present in the T2 object takes its default value."
     // Under encoding version 2 the DHEADER says where the writer's
@@ -1160,7 +1163,28 @@ fn an_appendable_tail_the_writer_did_not_have_takes_its_default() {
 }
 
 #[test]
-fn an_appendable_tail_takes_an_explicit_default_over_table_nine() {
+fn xtypes_7_2_3_an_appendable_reader_steps_over_the_members_a_newer_writer_appended() {
+    // Table 19 lets an appendable writer carry members after the
+    // reader's last one; the DHEADER says where they end, and the reader
+    // moves there. The other direction of the tail above.
+    let delimited = codec(
+        "@appendable struct S { long a; short c; };",
+        "S",
+        LayoutKey::data(Encoding::DelimitedCdr, Endianness::Little),
+    );
+    assert!(delimited.contains("r.skip_to(end)?;"), "{delimited}");
+
+    // A `@final` type has no DHEADER to step by.
+    let final_ = codec(
+        "@final struct S { long a; short c; };",
+        "S",
+        LayoutKey::data(Encoding::PlainCdr2, Endianness::Little),
+    );
+    assert!(!final_.contains("skip_to(end)"), "{final_}");
+}
+
+#[test]
+fn xtypes_7_2_2_4_4_4_9_an_appendable_tail_takes_an_explicit_default_over_table_nine() {
     // §7.2.2.4.4.4.9: the implicit default is the type's only where the
     // declaration gives no explicit one.
     let generated = codec(
@@ -1172,7 +1196,7 @@ fn an_appendable_tail_takes_an_explicit_default_over_table_nine() {
 }
 
 #[test]
-fn an_appendable_tail_of_an_enumeration_takes_its_first_literal() {
+fn xtypes_7_2_2_4_4_4_9_an_appendable_tail_of_an_enumeration_takes_its_first_literal() {
     // Table 9's `ENUM_TYPE` row is "the first literal in the
     // enumeration", which is not the language's zero: `@value` may have
     // moved it.
@@ -1188,7 +1212,7 @@ fn an_appendable_tail_of_an_enumeration_takes_its_first_literal() {
 // -- `try_construct` ------------------------------------------------------
 
 #[test]
-fn a_bounded_member_narrows_after_the_whole_value_is_off_the_wire() {
+fn xtypes_7_2_2_7_a_bounded_member_narrows_after_the_whole_value_is_off_the_wire() {
     // §7.2.2.7. The bound is not on the wire, so the read is the same
     // read either way and the narrowing is a step after it. A reader
     // that stopped at its own bound would leave the rest in the stream
@@ -1215,7 +1239,7 @@ fn a_bounded_member_narrows_after_the_whole_value_is_off_the_wire() {
 }
 
 #[test]
-fn an_absent_annotation_is_discard_and_a_bare_one_is_use_default() {
+fn xtypes_7_2_2_7_an_absent_annotation_is_discard_and_a_bare_one_is_use_default() {
     // §7.2.2.7 makes an absent annotation DISCARD; §7.3.1.2.1.12
     // declares the annotation's own parameter `default USE_DEFAULT`, so
     // a valueless one is USE_DEFAULT. Reading the second as the first
@@ -1243,7 +1267,7 @@ fn an_absent_annotation_is_discard_and_a_bare_one_is_use_default() {
 }
 
 #[test]
-fn an_explicit_default_beats_table_nine_at_the_member_position() {
+fn xtypes_7_2_2_4_4_4_9_an_explicit_default_beats_table_nine_at_the_member_position() {
     // §7.2.2.4.4.4.9: "An explicit definition associates a default
     // value with the member at the time where the aggregated type is
     // defined." Only the member position can carry one — a collection
@@ -1260,7 +1284,7 @@ fn an_explicit_default_beats_table_nine_at_the_member_position() {
 }
 
 #[test]
-fn an_element_and_its_collection_narrow_separately() {
+fn xtypes_7_2_2_7_an_element_and_its_collection_narrow_separately() {
     // §7.3.1.2.1.12.4 gives the element position its own behaviour and
     // Table 17 keeps it apart from the collection's own bound: the
     // sequence's length overflow and an element's bound overflow are
@@ -1295,7 +1319,7 @@ fn an_element_and_its_collection_narrow_separately() {
 /// run time said so; `crates/wire-probe/tests/enumerator_value.rs::the_sites_go_through_the_crossing`
 /// is what caught it.
 #[test]
-fn the_enumeration_codec_takes_the_integer_the_plan_gives_it() {
+fn xtypes_7_2_2_4_1_1_the_enumeration_codec_takes_the_integer_the_plan_gives_it() {
     const IDL: &str = "enum Colour { @value(200) RED, @value(9) BLUE };";
 
     let declared = codec(
@@ -1332,7 +1356,7 @@ fn the_enumeration_codec_takes_the_integer_the_plan_gives_it() {
 /// not in the model, so `Ast::eval_integral` returns `Unresolved` and the
 /// branch used to disappear from the generated codec with nothing said.
 #[test]
-fn a_union_case_label_that_does_not_evaluate_is_refused() {
+fn xtypes_7_2_2_4_4_3_a_union_case_label_that_does_not_evaluate_is_refused() {
     let error = codec_error(
         "union U switch (long) {
            case UNDECLARED: long a;
@@ -1653,7 +1677,7 @@ fn the_key_holder_under_rti_states_the_short_form() {
         rti_xcdr1(),
     );
     assert!(
-        text.contains("self.first.encode_zd_extended(&mut holder, false)?;"),
+        text.contains("self.first.encode_key_holder_zd_extended(&mut holder, false)?;"),
         "the key holder did not state the short form:\n{text}"
     );
 }

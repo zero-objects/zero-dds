@@ -14,7 +14,7 @@
 //! `geographic_msgs`).
 //!
 //! Both sides are ZeroDDS-generated: the ROS 2 message types come from the
-//! vendored [`idl/ros_msgs.idl`] run through ZeroDDS' own IDL->Rust codegen (the
+//! vendored `idl/ros_msgs.idl` run through ZeroDDS' own IDL->Rust codegen (the
 //! same pipeline that generates the SpatialDDS types), so a converted value
 //! carries the ROS 2 XCDR wire layout directly.
 //!

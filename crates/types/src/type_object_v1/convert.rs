@@ -1330,8 +1330,14 @@ impl ToComplete<'_> {
             });
         }
         flag_seq.sort_by_key(|f| f.common.position);
+        // The extensibility position, as for an enumeration above.
+        let bitmask_flags = if b.base.property.flag & type_flag::IS_FINAL != 0 {
+            BitmaskTypeFlag::IS_FINAL
+        } else {
+            BitmaskTypeFlag::IS_APPENDABLE
+        };
         Ok(CompleteBitmaskType {
-            bitmask_flags: BitmaskTypeFlag(0),
+            bitmask_flags: BitmaskTypeFlag(bitmask_flags),
             bit_bound,
             detail: self.detail(path, &b.base, depth)?,
             flag_seq,
@@ -1438,16 +1444,16 @@ fn no_annotations(base: &TypeBase, what: &str) -> R<()> {
     }
 }
 
-/// The header of a plain collection for its element.
+/// The header of a plain collection for its element: `EK_BOTH` for a
+/// fully descriptive element (XTypes 1.3 §7.3.4.6.1), which a plain
+/// collection of a hashed type is not.
 fn header_for(element: &TypeIdentifier, shared: bool) -> PlainCollectionHeader {
-    let plain = !matches!(
-        element,
-        TypeIdentifier::EquivalenceHashComplete(_)
-            | TypeIdentifier::EquivalenceHashMinimal(_)
-            | TypeIdentifier::StronglyConnectedComponent(_)
-    );
     PlainCollectionHeader {
-        equiv_kind: if plain { EK_BOTH } else { EK_COMPLETE },
+        equiv_kind: if element.is_fully_descriptive() {
+            EK_BOTH
+        } else {
+            EK_COMPLETE
+        },
         element_flags: collection_flags(shared),
     }
 }

@@ -455,35 +455,64 @@ pub fn pack_bits(flags: &[bool]) -> u8 {
 mod tests {
     use super::*;
 
+    /// One field-table entry as the octets of AMQP 0-9-1 §4.2.5.5:
+    /// `field-name` (shortstr), the value's type octet, the value.
+    fn entry(name: &str, tag: u8, value: &[u8]) -> Vec<u8> {
+        let mut out = vec![name.len() as u8];
+        out.extend_from_slice(name.as_bytes());
+        out.push(tag);
+        out.extend_from_slice(value);
+        out
+    }
+
+    /// A field table: its byte length as a long-uint, then the entries.
+    fn table(entries: &[Vec<u8>]) -> Vec<u8> {
+        let body: Vec<u8> = entries.concat();
+        let mut out = (body.len() as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(&body);
+        out
+    }
+
+    /// AMQP 0-9-1 §4.2.5.1: integers are in network byte order, high
+    /// octet first.
     #[test]
-    fn integer_roundtrip_big_endian() {
+    fn amqp091_4_2_5_1_integers_are_in_network_byte_order() {
+        let wire = [
+            0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+            0x08,
+        ];
         let mut w = Writer::new();
         w.u8(0x12)
             .u16(0x3456)
             .u32(0x789a_bcde)
             .u64(0x0102_0304_0506_0708);
-        let bytes = w.into_bytes();
-        assert_eq!(bytes[0], 0x12);
-        assert_eq!(&bytes[1..3], &[0x34, 0x56]); // big-endian
-        let mut r = Reader::new(&bytes);
+        assert_eq!(w.into_bytes(), wire);
+        let mut r = Reader::new(&wire);
         assert_eq!(r.u8().unwrap(), 0x12);
         assert_eq!(r.u16().unwrap(), 0x3456);
         assert_eq!(r.u32().unwrap(), 0x789a_bcde);
         assert_eq!(r.u64().unwrap(), 0x0102_0304_0506_0708);
     }
 
+    /// §4.2.5.3: a short string is one length octet and at most 255
+    /// octets, a long string a long-uint length and the octets.
     #[test]
-    fn shortstr_longstr_roundtrip() {
+    fn amqp091_4_2_5_3_a_short_string_has_one_length_octet_a_long_string_four() {
+        let wire = [
+            0x05, b'g', b'u', b'e', b's', b't', 0x00, 0x00, 0x00, 0x0a, 0x00, b'u', b's', b'e',
+            b'r', 0x00, b'p', b'a', b's', b's',
+        ];
         let mut w = Writer::new();
         w.short_str("guest").unwrap().long_str(b"\x00user\x00pass");
-        let bytes = w.into_bytes();
-        let mut r = Reader::new(&bytes);
+        assert_eq!(w.into_bytes(), wire);
+        let mut r = Reader::new(&wire);
         assert_eq!(r.short_str().unwrap(), "guest");
         assert_eq!(r.long_str().unwrap(), b"\x00user\x00pass");
     }
 
+    /// §4.2.5.3: a short string holds at most 255 octets.
     #[test]
-    fn shortstr_rejects_over_255() {
+    fn amqp091_4_2_5_3_a_short_string_over_255_octets_is_refused() {
         let big = "x".repeat(256);
         let mut w = Writer::new();
         assert_eq!(
@@ -492,69 +521,111 @@ mod tests {
         );
     }
 
+    /// §4.2.5.2: bits are packed into octets starting from the low bit.
     #[test]
-    fn field_table_strs_then_skip() {
+    fn amqp091_4_2_5_2_bits_pack_from_the_low_bit() {
+        assert_eq!(pack_bits(&[true, false, true]), 0b101);
+        assert_eq!(pack_bits(&[false, true]), 0b010);
+        assert_eq!(pack_bits(&[false, false, false, false, true]), 0x10);
+    }
+
+    /// §4.2.5.5: a field table is its length in octets, then name,
+    /// type octet and value per entry; `S` is a long string.
+    #[test]
+    fn amqp091_4_2_5_5_a_field_table_is_its_length_then_name_type_value() {
+        let wire = table(&[
+            entry("product", b'S', b"\x00\x00\x00\x07ZeroDDS"),
+            entry("version", b'S', b"\x00\x00\x00\x031.0"),
+        ]);
+        assert_eq!(&wire[..4], &[0x00, 0x00, 0x00, 0x24]);
         let mut w = Writer::new();
         w.field_table_strs(&[("product", "ZeroDDS"), ("version", "1.0")])
             .unwrap();
-        let bytes = w.into_bytes();
-        let mut r = Reader::new(&bytes);
+        assert_eq!(w.into_bytes(), wire);
+        let mut r = Reader::new(&wire);
         r.skip_field_table().unwrap();
-        assert_eq!(r.remaining(), 0, "the whole table must be consumed");
+        assert_eq!(r.remaining(), 0, "the whole table is consumed");
     }
 
+    /// §4.2.5.5 with RabbitMQ's errata ("Field types": RabbitMQ and
+    /// Qpid use `t b B s u I i l f d D S T F V A x`, with `s` a signed
+    /// 16-bit and `l` a signed 64-bit integer; the decimal is a scale
+    /// octet and a signed long): every type octet with its value.
     #[test]
-    fn bit_packing() {
-        assert_eq!(pack_bits(&[true, false, true]), 0b101);
-        assert_eq!(pack_bits(&[false, true]), 0b010);
-    }
-
-    #[test]
-    fn field_table_typed_roundtrip() {
-        let nested = FieldValue::Table(vec![("x".into(), FieldValue::I32(7))]);
-        let entries: &[(&str, FieldValue)] = &[
-            ("ok", FieldValue::Bool(true)),
-            ("n", FieldValue::I64(-42)),
+    fn amqp091_4_2_5_5_the_field_types_are_the_tags_rabbitmq_reads() {
+        let wire = table(&[
+            entry("t", b't', &[0x01]),
+            entry("b", b'b', &[0xfe]),
+            entry("B", b'B', &[0xfe]),
+            entry("s", b's', &[0xff, 0xfe]),
+            entry("u", b'u', &[0x02, 0x01]),
+            entry("I", b'I', &[0xff, 0xff, 0xff, 0xd6]),
+            entry("i", b'i', &[0x00, 0x00, 0x01, 0x00]),
+            entry("l", b'l', &[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xd6]),
+            entry("f", b'f', &[0x3f, 0xc0, 0x00, 0x00]),
+            entry("d", b'd', &[0x3f, 0xf8, 0, 0, 0, 0, 0, 0]),
+            entry("D", b'D', &[0x02, 0x00, 0x00, 0x30, 0x39]),
+            entry("S", b'S', &[0x00, 0x00, 0x00, 0x02, b'Z', b'D']),
+            entry("T", b'T', &[0x00, 0x00, 0x00, 0x00, 0x65, 0x53, 0xf1, 0x00]),
+            entry(
+                "F",
+                b'F',
+                &[0x00, 0x00, 0x00, 0x07, 0x01, b'x', b'I', 0, 0, 0, 7],
+            ),
+            entry("A", b'A', &[0x00, 0x00, 0x00, 0x04, b'B', 0x01, b'B', 0x02]),
+            entry("x", b'x', &[0x00, 0x00, 0x00, 0x02, 0xca, 0xfe]),
+            entry("V", b'V', &[]),
+        ]);
+        let entries: Vec<(&str, FieldValue)> = vec![
+            ("t", FieldValue::Bool(true)),
+            ("b", FieldValue::I8(-2)),
+            ("B", FieldValue::U8(0xfe)),
+            ("s", FieldValue::I16(-2)),
             ("u", FieldValue::U16(513)),
-            ("ratio", FieldValue::F64(1.5)),
+            ("I", FieldValue::I32(-42)),
+            ("i", FieldValue::U32(256)),
+            ("l", FieldValue::I64(-42)),
+            ("f", FieldValue::F32(1.5)),
+            ("d", FieldValue::F64(1.5)),
             (
-                "dec",
+                "D",
                 FieldValue::Decimal {
                     scale: 2,
                     value: 12345,
                 },
             ),
-            ("name", FieldValue::str("ZeroDDS")),
-            ("ts", FieldValue::Timestamp(1_700_000_000)),
+            ("S", FieldValue::str("ZD")),
+            ("T", FieldValue::Timestamp(1_700_000_000)),
             (
-                "arr",
+                "F",
+                FieldValue::Table(vec![("x".into(), FieldValue::I32(7))]),
+            ),
+            (
+                "A",
                 FieldValue::Array(vec![FieldValue::U8(1), FieldValue::U8(2)]),
             ),
-            ("sub", nested),
-            ("nothing", FieldValue::Void),
+            ("x", FieldValue::Bytes(vec![0xca, 0xfe])),
+            ("V", FieldValue::Void),
         ];
         let mut w = Writer::new();
-        w.field_table(entries).unwrap();
-        let bytes = w.into_bytes();
-        let mut r = Reader::new(&bytes);
+        w.field_table(&entries).unwrap();
+        assert_eq!(w.into_bytes(), wire);
+        let mut r = Reader::new(&wire);
         let decoded = r.field_table().unwrap();
-        assert_eq!(r.remaining(), 0, "table fully consumed");
-        assert_eq!(decoded.len(), entries.len());
-        for ((k, v), (dk, dv)) in entries.iter().zip(decoded.iter()) {
-            assert_eq!(k, dk);
-            assert_eq!(v, dv);
-        }
+        assert_eq!(r.remaining(), 0, "the whole table is consumed");
+        let expected: Vec<(String, FieldValue)> = entries
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect();
+        assert_eq!(decoded, expected);
     }
 
+    /// §4.2.5.5: a type octet outside the table is refused, not
+    /// skipped.
     #[test]
-    fn unknown_field_type_rejected() {
-        // tag 'Z' is not a valid AMQP field type.
-        let mut w = Writer::new();
-        w.u32(3); // table byte-length: shortstr "k" (2) + tag (1)
-        w.short_str("k").unwrap();
-        w.u8(b'Z');
-        let bytes = w.into_bytes();
-        let mut r = Reader::new(&bytes);
+    fn amqp091_4_2_5_5_an_unknown_field_type_is_refused() {
+        let wire = table(&[entry("k", b'Z', &[])]);
+        let mut r = Reader::new(&wire);
         assert_eq!(
             r.field_table().unwrap_err(),
             WireError::UnsupportedFieldType(b'Z')

@@ -659,7 +659,7 @@ mod tests {
     use zerodds_xml::parse_dds_xml;
 
     #[test]
-    fn default_basic_matches_spec_710_2() {
+    fn rpc_7_10_2_default_basic_matches_spec_710_2() {
         let q = RpcQos::default_basic();
         assert_eq!(q.reliability.kind, ReliabilityKind::Reliable);
         assert_eq!(q.durability.kind, DurabilityKind::Volatile);
@@ -679,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn default_enhanced_uses_the_same_history() {
+    fn rpc_7_10_2_default_enhanced_uses_the_same_history() {
         let q = RpcQos::default_enhanced();
         assert_eq!(q.request_history.kind, HistoryKind::KeepAll);
         assert_eq!(q.reply_history.kind, HistoryKind::KeepAll);
@@ -689,12 +689,12 @@ mod tests {
     }
 
     #[test]
-    fn default_is_basic() {
+    fn rpc_7_10_2_default_is_basic() {
         assert_eq!(RpcQos::default(), RpcQos::default_basic());
     }
 
     #[test]
-    fn writer_qos_carries_reliability_and_history() {
+    fn rpc_7_10_2_writer_qos_carries_reliability_and_history() {
         let q = RpcQos::default_basic();
         let wq = q.request_writer_qos();
         assert_eq!(wq.reliability.kind, ReliabilityKind::Reliable);
@@ -714,7 +714,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_qos_carries_reliability() {
+    fn rpc_7_10_2_reader_qos_carries_reliability() {
         let q = RpcQos::default_basic();
         let rq = q.reply_reader_qos();
         assert_eq!(rq.reliability.kind, ReliabilityKind::Reliable);
@@ -749,7 +749,7 @@ mod tests {
     }
 
     #[test]
-    fn from_xml_profile_overrides_history_depth() {
+    fn rpc_7_10_1_from_xml_profile_overrides_history_depth() {
         let xml = r#"<dds>
             <qos_library name="RpcLib">
                 <qos_profile name="Calculator">
@@ -771,7 +771,7 @@ mod tests {
     /// §7.3.2.4.2: the profile's `base_name` chain is resolved, so a base's
     /// policies reach the RPC QoS.
     #[test]
-    fn from_xml_profile_follows_base_name_chain() {
+    fn rpc_7_10_1_from_xml_profile_follows_base_name_chain() {
         let xml = r#"<dds>
             <qos_library name="RpcLib">
                 <qos_profile name="Base">
@@ -839,7 +839,7 @@ mod tests {
     }
 
     #[test]
-    fn split_qos_url_defaults_the_protocol_to_file() {
+    fn rpc_7_10_1_split_qos_url_defaults_the_protocol_to_file() {
         // §7.10.1: the protocol, `:` and `//` are optional and default to
         // `file`; only `file` is supported.
         assert_eq!(
@@ -865,7 +865,7 @@ mod tests {
     }
 
     #[test]
-    fn from_qos_url_reads_the_file_and_applies_the_library() {
+    fn rpc_7_10_1_from_qos_url_reads_the_file_and_applies_the_library() {
         let path = std::env::temp_dir().join(format!(
             "zerodds-rpc-qos-{}-{:?}.xml",
             std::process::id(),
@@ -898,7 +898,7 @@ mod tests {
     /// §7.10.1: `@Qos(RequestProfile, ReplyProfile)` names one profile for
     /// the request endpoints and one for the reply endpoints.
     #[test]
-    fn the_request_and_the_reply_profile_apply_to_their_own_endpoints() {
+    fn rpc_7_10_1_the_request_and_the_reply_profile_apply_to_their_own_endpoints() {
         let dir = std::env::temp_dir();
         let write = |name: &str, depth: u32| {
             let path = dir.join(format!(

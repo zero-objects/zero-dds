@@ -14,7 +14,7 @@ use zerodds_dcps::{
 };
 
 #[test]
-fn a_domain_participant_contains_no_domain_participant() {
+fn dcps_2_2_2_1_2_a_domain_participant_contains_no_domain_participant() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(0, DomainParticipantQos::default());
     let q = factory.create_participant_offline(0, DomainParticipantQos::default());

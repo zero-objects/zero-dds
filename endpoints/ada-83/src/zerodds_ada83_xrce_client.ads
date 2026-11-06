@@ -225,7 +225,7 @@ package Zerodds_Ada83_Xrce_Client is
    --  inner REPRESENTATION_BY_REFERENCE payload, then that kind's own
    --  trailing field -- Parent_Object_Id (when Has_Parent) for a
    --  Topic/Publisher/Subscriber/DataWriter/DataReader, absent for every
-   --  other kind (Topic's own participant_id: commit 31c62df2a63).
+   --  other kind (Topic's own participant_id: commit bd30deaef0b).
    --  Reference is the object_reference string (spec section
    --  7.7.3.1.1). Reference'Length + 22 must not exceed Max_Buffer.
    function Frame_Create

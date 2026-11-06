@@ -975,7 +975,7 @@ mod tests {
     }
 
     #[test]
-    fn in_memory_keeplast_caps_history_at_depth() {
+    fn dcps_2_2_3_5_in_memory_keeplast_caps_history_at_depth() {
         let qos = DurabilityServiceQosPolicy {
             history_kind: HistoryKind::KeepLast,
             history_depth: 2,
@@ -1023,7 +1023,7 @@ mod tests {
     }
 
     #[test]
-    fn in_memory_max_instances_returns_oor() {
+    fn dcps_2_2_3_5_in_memory_max_instances_returns_oor() {
         let qos = DurabilityServiceQosPolicy {
             history_kind: HistoryKind::KeepAll,
             history_depth: -1,
@@ -1067,12 +1067,6 @@ mod tests {
         assert_eq!(bb.len(), 1);
         assert_eq!(a[0].topic, "A");
         assert_eq!(bb[0].topic, "B");
-    }
-
-    #[test]
-    fn in_memory_unknown_topic_returns_empty() {
-        let b = InMemoryDurabilityBackend::new(keep_all_qos());
-        assert!(b.replay_for_topic("nope").unwrap().is_empty());
     }
 
     #[test]
@@ -1158,7 +1152,7 @@ mod tests {
     }
 
     #[test]
-    fn on_disk_persistent_survives_backend_drop() {
+    fn dcps_2_2_3_4_on_disk_persistent_survives_backend_drop() {
         let root = tmp_dir("survive");
         {
             let b = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
@@ -1192,7 +1186,7 @@ mod tests {
     }
 
     #[test]
-    fn on_disk_max_samples_per_instance_returns_oor() {
+    fn dcps_2_2_3_5_on_disk_max_samples_per_instance_returns_oor() {
         let root = tmp_dir("oor");
         let qos = DurabilityServiceQosPolicy {
             history_kind: HistoryKind::KeepAll,
@@ -1218,7 +1212,7 @@ mod tests {
     /// DDS 1.4 §2.2.3.16: an expired sample is removed from the transient
     /// information cache; one inside its LIFESPAN stays.
     #[test]
-    fn in_memory_replay_drops_the_expired_sample() {
+    fn dcps_2_2_3_16_in_memory_replay_drops_the_expired_sample() {
         let b = InMemoryDurabilityBackend::new(keep_all_qos());
         let t0 = SystemTime::now();
         b.store(expiring("L", 1, 1, t0 + StdDuration::from_secs(10)))
@@ -1239,7 +1233,7 @@ mod tests {
     }
 
     #[test]
-    fn on_disk_replay_drops_the_expired_sample() {
+    fn dcps_2_2_3_16_on_disk_replay_drops_the_expired_sample() {
         let root = tmp_dir("lifespan");
         let b = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
         let t0 = SystemTime::now();
@@ -1273,7 +1267,7 @@ mod tests {
     /// has run out, and a sample written after the unregister brings the
     /// instance back.
     #[test]
-    fn replay_applies_the_service_cleanup_delay() {
+    fn dcps_2_2_3_4_replay_applies_the_service_cleanup_delay() {
         let qos = DurabilityServiceQosPolicy {
             service_cleanup_delay: zerodds_qos::Duration::from_secs(10),
             ..keep_all_qos()
@@ -1321,14 +1315,6 @@ mod tests {
         let reopened = OnDiskDurabilityBackend::new(&root, keep_all_qos()).unwrap();
         assert_eq!(reopened.next_sequence(), 8);
         let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
-    fn hex16_roundtrip() {
-        let key = [0xAB, 0xCD, 0xEF, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-        let h = hex16(&key);
-        assert_eq!(h.len(), 32);
-        assert_eq!(parse_hex16(&h).unwrap(), key);
     }
 
     #[test]

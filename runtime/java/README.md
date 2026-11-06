@@ -111,3 +111,28 @@ eight-byte field aligns to four or to eight.
 
 See `docs/float128-column.md` for the vendor measurements the binary128
 class answers.
+
+## `org.omg.type` and `org.omg.CORBA`
+
+The classes the IDL4 to Java Language Mapping 1.0 names
+(`zerodds-idlc generate --lang java --java-mapping idl4`), outside the
+wire runtime and independent of it:
+
+| Package | Classes | Clause |
+| --- | --- | --- |
+| `org.omg.type` | `Holder<E>` | §7.1.3 |
+| `org.omg.type` | `BooleanSeq`, `CharSeq`, `ByteSeq`, `ShortSeq`, `IntegerSeq`, `LongSeq`, `FloatSeq`, `DoubleSeq`, `BigDecimalSeq` | §7.2.4.2.1.1, Table 7.4 |
+| `org.omg.type` | `Any` | §7.3 |
+| `org.omg.CORBA` | `UserException`, `TypeCode`, `Object`, `Any` | Annex A.1.1 to A.1.4 |
+
+`org.omg.type` is in `src/main/java`; the four `org.omg.CORBA` classes are
+in `corba/`, outside the tree the wire runtime's builds compile, because
+they do not compile without the classes described next.
+
+The rest of `org.omg.CORBA` is the Java of the CORBA module itself:
+`zerodds-idlc generate --lang java --java-mapping idl4 --java-platform corba
+--java-corba-module` on an IDL file that includes `<orb.idl>` and
+`runtime/corba/CORBA_PIDL.idl` writes it, under the IDL naming scheme as
+A.1.2 requires. `TypeCode` and `Object` name its types (`TCKind`,
+`StructMember`, `InterfaceDef`, `ORB`, …), so they compile together with
+it. The tests in `crates/lang-rules/tests/java_idl4_*.rs` do exactly that.

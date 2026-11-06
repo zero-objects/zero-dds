@@ -62,7 +62,7 @@ fn id(sample: &mut DynamicSample, name: &str) -> u32 {
 /// member at its default and the optional one absent; §7.5.2.11.6 counts
 /// the members present.
 #[test]
-fn a_new_sample_has_its_type_and_defaults() {
+fn xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults() {
     let (ty, mut sample) = demo();
     assert!(sample.type_().equals(&ty));
     assert_eq!(sample.get_item_count(), 11, "the optional member is absent");
@@ -92,7 +92,7 @@ fn a_new_sample_has_its_type_and_defaults() {
 /// versa" — a short can be read as a long and a long can be set as if it
 /// were a short, and neither the other way.
 #[test]
-fn integers_promote_upwards_only() {
+fn xtypes_7_5_2_11_1_integers_promote_upwards_only() {
     let (_, mut sample) = demo();
     let small = id(&mut sample, "small");
     let serial = id(&mut sample, "serial");
@@ -147,7 +147,7 @@ fn integers_promote_upwards_only() {
 
 /// Annex C `get_string_value` and the bound of the string.
 #[test]
-fn strings_keep_their_bound_and_their_width() {
+fn xtypes_7_5_2_11_1_strings_keep_their_bound_and_their_width() {
     let (_, mut sample) = demo();
     let label = id(&mut sample, "label");
     sample.set_string_value(label, "abc").unwrap();
@@ -172,7 +172,7 @@ fn strings_keep_their_bound_and_their_width() {
 /// and is removed by clearing; a clone is equal, and a change makes it
 /// unequal.
 #[test]
-fn an_optional_member_is_set_and_removed() {
+fn xtypes_7_5_2_11_3_an_optional_member_is_set_and_removed() {
     let (_, mut sample) = demo();
     let maybe = id(&mut sample, "maybe");
     let error = sample.get_int32_value(maybe).unwrap_err();
@@ -192,7 +192,7 @@ fn an_optional_member_is_set_and_removed() {
 /// §7.5.2.11.9: an enumeration reads and sets as a signed integer wide
 /// enough for its bit bound; §7.5.2.11.3: clearing gives the first value.
 #[test]
-fn an_enumeration_is_a_signed_integer() {
+fn xtypes_7_5_2_11_3_an_enumeration_is_a_signed_integer() {
     let (_, mut sample) = demo();
     let color = id(&mut sample, "shade");
     assert_eq!(sample.get_int32_value(color).unwrap(), 0);
@@ -213,7 +213,7 @@ fn an_enumeration_is_a_signed_integer() {
 /// values by name or bit; the item count is the number of flags set; the
 /// bitmask reads as an unsigned integer.
 #[test]
-fn a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer() {
+fn xtypes_7_5_2_11_1_a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer() {
     let (_, mut sample) = demo();
     let flags = id(&mut sample, "permissions");
     let mut mask = sample.get_complex_value(flags).unwrap();
@@ -254,7 +254,7 @@ fn a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer() {
 /// §7.5.2.11.7: a loan takes the value out as a sample of its own; at most
 /// one is outstanding, and a value that is not the loan is refused.
 #[test]
-fn a_loan_is_taken_and_returned() {
+fn xtypes_7_5_2_11_9_a_loan_is_taken_and_returned() {
     let (_, mut sample) = demo();
     let inner = id(&mut sample, "embedded");
     let label = id(&mut sample, "label");
@@ -301,7 +301,7 @@ fn a_loan_is_taken_and_returned() {
 /// its end, respects its bound, loses an element by clearing it, and is
 /// read and set whole through the plural accessors.
 #[test]
-fn a_sequence_grows_shrinks_and_is_read_whole() {
+fn xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole() {
     let (_, mut sample) = demo();
     let numbers = id(&mut sample, "numbers");
     sample.set_int32_values(numbers, &[1, 2, 3]).unwrap();
@@ -340,7 +340,7 @@ fn a_sequence_grows_shrinks_and_is_read_whole() {
 /// element is set to its default by clearing, and the count is the product
 /// of the bounds.
 #[test]
-fn an_array_is_flattened() {
+fn xtypes_7_5_2_11_1_an_array_is_flattened() {
     let (_, mut sample) = demo();
     let grid = id(&mut sample, "grid");
     let mut array = sample.get_complex_value(grid).unwrap();
@@ -365,7 +365,7 @@ fn an_array_is_flattened() {
 /// §7.5.2.11.1: the values of a map are found by their key, converted to
 /// a string; the id of a new key is one past the end.
 #[test]
-fn a_map_is_reached_by_key() {
+fn xtypes_7_5_2_11_1_a_map_is_reached_by_key() {
     let (_, mut sample) = demo();
     let table = id(&mut sample, "table");
     let mut map = sample.get_complex_value(table).unwrap();
@@ -390,7 +390,7 @@ fn a_map_is_reached_by_key() {
 /// §7.5.2.11.6: a union holds the discriminator and the selected member,
 /// two values; writing a member selects it.
 #[test]
-fn a_union_member_is_selected_by_being_set() {
+fn xtypes_7_5_2_11_6_a_union_member_is_selected_by_being_set() {
     let ast = model();
     let ty = DynamicType::find(&ast, "U").unwrap();
     let mut sample = DynamicSample::new(&ty).unwrap();
@@ -415,7 +415,7 @@ fn a_union_member_is_selected_by_being_set() {
 /// §7.5.2.11.3: `clear_all_values` resets everything; `clear_nonkey_values`
 /// keeps the key members.
 #[test]
-fn clearing_all_values_and_the_nonkey_values() {
+fn xtypes_7_5_2_11_3_clearing_all_values_and_the_nonkey_values() {
     let (_, mut sample) = demo();
     let serial = id(&mut sample, "serial");
     let small = id(&mut sample, "small");
@@ -434,7 +434,7 @@ fn clearing_all_values_and_the_nonkey_values() {
 
 /// Annex C `get_descriptor` and `set_descriptor`.
 #[test]
-fn the_descriptor_of_a_value_is_its_types() {
+fn xtypes_7_5_2_11_2_the_descriptor_of_a_value_is_its_types() {
     let (_, mut sample) = demo();
     let serial = id(&mut sample, "serial");
     let descriptor = sample.get_descriptor(serial).unwrap();
@@ -452,7 +452,7 @@ fn the_descriptor_of_a_value_is_its_types() {
 
 /// §7.5.2.11.7 and §7.5.2.10.2: a sample with a loan out is not deleted.
 #[test]
-fn a_sample_with_a_loan_out_is_not_deleted() {
+fn xtypes_7_5_2_10_3_a_sample_with_a_loan_out_is_not_deleted() {
     let (_, mut sample) = demo();
     let inner = id(&mut sample, "embedded");
     let child = sample.loan_value(inner).unwrap();
@@ -472,7 +472,7 @@ fn a_sample_with_a_loan_out_is_not_deleted() {
 /// it is seen through the sample, and a setter on the sample is seen
 /// through it.
 #[test]
-fn a_value_from_get_complex_value_is_the_value_in_the_sample() {
+fn xtypes_7_5_2_11_a_value_from_get_complex_value_is_the_value_in_the_sample() {
     let (_, mut sample) = demo();
     let inner = id(&mut sample, "embedded");
     let mut child = sample.get_complex_value(inner).unwrap();
@@ -510,7 +510,7 @@ fn a_value_from_get_complex_value_is_the_value_in_the_sample() {
 /// taken, an absent optional member is `RETCODE_NO_DATA`, and a handle
 /// whose value was removed is `RETCODE_NO_DATA` too.
 #[test]
-fn a_handle_refers_to_stored_values_and_says_when_it_does_not() {
+fn xtypes_7_5_2_11_a_handle_refers_to_stored_values_and_says_when_it_does_not() {
     let (_, mut sample) = demo();
     let maybe = id(&mut sample, "maybe");
     let error = sample.get_complex_value(maybe).unwrap_err();
@@ -545,7 +545,7 @@ fn a_handle_refers_to_stored_values_and_says_when_it_does_not() {
 /// An element of an array, flattened, and the value of a map entry are
 /// references, too.
 #[test]
-fn elements_of_an_array_and_values_of_a_map_are_references() {
+fn xtypes_7_5_2_11_elements_of_an_array_and_values_of_a_map_are_references() {
     let (_, mut sample) = demo();
     let grid = id(&mut sample, "grid");
     let mut cell = sample
@@ -574,7 +574,7 @@ fn elements_of_an_array_and_values_of_a_map_are_references() {
 /// What has no storage of its own comes back as a copy: a character of a
 /// string and a flag of a bitmask.
 #[test]
-fn a_character_and_a_flag_are_copies() {
+fn xtypes_7_5_2_11_a_character_and_a_flag_are_copies() {
     let (_, mut sample) = demo();
     let label = id(&mut sample, "label");
     sample.set_string_value(label, "abc").unwrap();
@@ -596,7 +596,7 @@ fn a_character_and_a_flag_are_copies() {
 /// A loan is the reference with the clause's bookkeeping: what the
 /// borrower does is in the sample before the loan is returned.
 #[test]
-fn a_loan_is_a_reference() {
+fn xtypes_7_5_2_11_a_loan_is_a_reference() {
     let (_, mut sample) = demo();
     let inner = id(&mut sample, "embedded");
     let mut loan = sample.loan_value(inner).unwrap();
@@ -636,7 +636,7 @@ type Writer = fn(&mut DynamicSample, u32) -> bool;
 /// each type it promotes to. Every pair of the 15 primitive types is
 /// tried, getter and setter, against the clause's list.
 #[test]
-fn the_promotion_table_of_the_specification() {
+fn xtypes_7_5_2_11_9_the_promotion_table_of_the_specification() {
     let parsed = zerodds_idl_parse::parse(PRIMITIVES);
     assert!(!parsed.has_errors(), "{:?}", parsed.diagnostics());
     let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "every.idl");

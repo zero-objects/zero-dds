@@ -81,7 +81,7 @@ fn a_struct_of_primitives_becomes_a_julia_struct() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_julia_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_julia_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -116,7 +116,7 @@ fn every_idl_primitive_reaches_a_julia_type() {
 }
 
 #[test]
-fn no_generated_type_has_a_platform_defined_width() {
+fn xtypes_7_2_2_2_no_generated_type_has_a_platform_defined_width() {
     // `Int` is `Int64` on a 64-bit platform and `Int32` on a 32-bit one
     // (Julia manual, "Integers and Floating-Point Numbers"). A member
     // declared with it would change width between the host that
@@ -134,7 +134,7 @@ fn no_generated_type_has_a_platform_defined_width() {
 }
 
 #[test]
-fn a_long_double_is_a_string_and_never_a_float() {
+fn xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_float() {
     // `Float64` has 53 bits of significand; an IDL `long double` is a
     // binary128 with 113. `BigFloat` is not the answer either: its
     // precision is a run-time global set by `setprecision` and not part
@@ -149,7 +149,7 @@ fn a_long_double_is_a_string_and_never_a_float() {
 }
 
 #[test]
-fn an_optional_member_becomes_a_union_with_nothing_and_the_others_do_not() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_union_with_nothing_and_the_others_do_not() {
     // DDS-XTypes 1.3 §7.2.2.4.4.4.7. An all-bits-zero `UInt8` and a
     // member that did not arrive would otherwise be the same value;
     // `Nothing` has exactly one value and no `UInt8` is it. The union is
@@ -166,7 +166,7 @@ fn an_optional_member_becomes_a_union_with_nothing_and_the_others_do_not() {
 }
 
 #[test]
-fn a_member_named_after_a_julia_keyword_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_a_julia_keyword_is_escaped_and_keeps_its_idl_name() {
     // `struct S; end::Int32; end` does not declare a field called `end`
     // at all — it does not parse as one. The IDL name goes in the comment
     // above the field, because Julia has no counterpart of Go's
@@ -179,7 +179,7 @@ fn a_member_named_after_a_julia_keyword_is_escaped_and_keeps_its_idl_name() {
 }
 
 #[test]
-fn a_field_named_after_a_base_type_is_left_alone_because_a_field_shadows_nothing() {
+fn idl_7_2_3_a_field_named_after_a_base_type_is_left_alone_because_a_field_shadows_nothing() {
     // Measured on Julia 1.12.6: `struct S; Int32::Int32; String::String; end`
     // declares two fields and both annotations still resolve to the
     // `Core` types. Escaping them would rename a member the wire format
@@ -216,7 +216,7 @@ fn a_declared_name_that_would_shadow_the_language_is_escaped() {
 }
 
 #[test]
-fn two_declarations_that_would_reach_one_julia_name_are_refused_by_name() {
+fn idl_7_2_3_two_declarations_that_would_reach_one_julia_name_are_refused_by_name() {
     // What the escape makes: `end` escapes to `end_`, and a member
     // already spelled `end_` reaches the same name. Julia would accept
     // neither the struct nor a diagnostic naming the two IDL members.
@@ -227,7 +227,7 @@ fn two_declarations_that_would_reach_one_julia_name_are_refused_by_name() {
 }
 
 #[test]
-fn two_modules_that_flatten_onto_one_name_are_refused_by_name() {
+fn idl_7_5_2_two_modules_that_flatten_onto_one_name_are_refused_by_name() {
     // `a_b::C` and `a::b_C` both give `a_b_C`. This is the check the
     // interpreter cannot make for us: measured on Julia 1.12.6, a file
     // declaring `struct S; x::Int32; end` and then
@@ -255,7 +255,7 @@ fn a_sequence_becomes_a_vector_and_a_string_a_string() {
 }
 
 #[test]
-fn an_array_becomes_an_ntuple_and_the_outermost_dimension_is_outermost() {
+fn xtypes_7_2_2_4_3_an_array_becomes_an_ntuple_and_the_outermost_dimension_is_outermost() {
     // `long grid[2][3]` is two rows of three, which in Julia is
     // `NTuple{2, NTuple{3, Int32}}`. Reversing it silently transposes the
     // data.
@@ -267,7 +267,7 @@ fn an_array_becomes_an_ntuple_and_the_outermost_dimension_is_outermost() {
 }
 
 #[test]
-fn an_array_of_a_thousand_writes_its_length_and_nothing_truncates_it() {
+fn xtypes_7_2_2_4_3_an_array_of_a_thousand_writes_its_length_and_nothing_truncates_it() {
     // The length is part of the type, which is the one IDL fact Julia's
     // own type system enforces without a codec being asked: a tuple of
     // any other length is a different type. An `Array{Int32, 1}` would
@@ -281,7 +281,7 @@ fn an_array_of_a_thousand_writes_its_length_and_nothing_truncates_it() {
 }
 
 #[test]
-fn a_map_becomes_a_vector_of_entries_and_never_a_dict() {
+fn xtypes_7_2_2_4_3_a_map_becomes_a_vector_of_entries_and_never_a_dict() {
     // A `Dict` is a hash table and its iteration order is its layout's. A
     // `map<K,V>` goes on the wire as a sequence of pairs (DDS-XTypes 1.3
     // §7.4.1.1.4), so a `Dict` would give an octet stream ordered by the
@@ -387,7 +387,7 @@ fn a_valuetype_becomes_a_struct_of_its_state() {
 }
 
 #[test]
-fn a_constant_is_written_as_a_conversion_and_never_as_a_bare_literal() {
+fn idl_7_4_1_4_a_constant_is_written_as_a_conversion_and_never_as_a_bare_literal() {
     // `const LIMIT = 8` binds an `Int64` on a 64-bit host and an `Int32`
     // on a 32-bit one, because a Julia integer literal takes the
     // platform's `Int`. `UInt8(8)` binds what the IDL declared,
@@ -398,7 +398,7 @@ fn a_constant_is_written_as_a_conversion_and_never_as_a_bare_literal() {
 }
 
 #[test]
-fn a_string_constant_escapes_julias_interpolation_marker() {
+fn idl_7_4_1_4_a_string_constant_escapes_julias_interpolation_marker() {
     // `"$HOME"` in Julia is an interpolation and not four characters
     // (manual, "Strings"). A constant carrying it, written through the
     // C-family escape alone, would either stop the file with
@@ -454,7 +454,7 @@ fn a_native_declaration_becomes_an_opaque_const() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_a_module_cannot_be_reopened() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_a_module_cannot_be_reopened() {
     // Julia's `module` nests properly and would be the natural form. It
     // is not used because a module body is one contiguous block and a
     // second `module Common … end` rebinds the name — measured on Julia
@@ -497,7 +497,7 @@ fn a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
 }
 
 #[test]
-fn the_output_is_in_dependency_order_and_not_source_order() {
+fn xtypes_7_2_2_4_9_the_output_is_in_dependency_order_and_not_source_order() {
     // The C column's reason, not the Go column's: a struct's field types
     // are evaluated when the struct is defined, so a name declared later
     // in the file is an `UndefVarError`.
@@ -516,7 +516,7 @@ fn the_output_is_in_dependency_order_and_not_source_order() {
 }
 
 #[test]
-fn a_self_recursive_type_needs_no_forward_declaration() {
+fn xtypes_7_2_2_4_9_a_self_recursive_type_needs_no_forward_declaration() {
     // A struct naming itself is the one forward reference Julia accepts:
     // the type's own name is bound before its field types are evaluated.
     // Measured, and it is why this case gets no abstract type.
@@ -529,7 +529,7 @@ fn a_self_recursive_type_needs_no_forward_declaration() {
 }
 
 #[test]
-fn a_mutually_recursive_pair_gets_an_abstract_forward_declaration() {
+fn xtypes_7_2_2_4_9_a_mutually_recursive_pair_gets_an_abstract_forward_declaration() {
     // The measurement that decides this: `struct A; b::Vector{B}; end`
     // before `struct B` stops with ``UndefVarError: `B` not defined``,
     // exactly as a bare `b::B` does. A `Vector{…}` position is evaluated
@@ -556,13 +556,13 @@ fn a_mutually_recursive_pair_gets_an_abstract_forward_declaration() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_table_claims_for_julia_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_table_claims_for_julia_produces_output() {
     // The table says a rule covers it; this says the rule reaches text.
     let sources = [
         ("struct S { long a; };", "struct S"),
@@ -625,7 +625,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -768,7 +768,7 @@ fn the_load_check_catches_a_forward_reference() {
 /// this many sources is cheaper than the machinery that would avoid it;
 /// the whole-corpus test below is where that stops being true.
 #[test]
-fn the_generated_julia_loads() {
+fn xtypes_7_3_1_the_generated_julia_loads() {
     if !julia_available() {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the interpreter is exactly the failure this test
@@ -831,7 +831,7 @@ fn the_generated_julia_loads() {
 /// corpus has many, and a shared namespace would make this test about the
 /// corpus's naming rather than about the generated Julia.
 #[test]
-#[ignore = "evaluates the whole corpus in one julia process; run with --include-ignored"]
+#[ignore = "evaluates the whole corpus in one julia process; runs in integration-codegen-julia-zig-nim"]
 fn every_corpus_case_that_renders_also_loads() {
     assert!(
         julia_available(),

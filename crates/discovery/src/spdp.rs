@@ -248,11 +248,14 @@ impl SpdpBeacon {
             reader_id: EntityId::SPDP_BUILTIN_PARTICIPANT_READER,
             writer_id: EntityId::SPDP_BUILTIN_PARTICIPANT_WRITER,
             writer_sn: sn,
-            inline_qos: Some(zerodds_rtps::inline_qos::lifecycle_inline_qos(
-                guid,
-                zerodds_rtps::inline_qos::status_info::DISPOSED
-                    | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
-            )),
+            inline_qos: Some(
+                zerodds_rtps::inline_qos::lifecycle_inline_qos(
+                    guid,
+                    zerodds_rtps::inline_qos::status_info::DISPOSED
+                        | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
+                )
+                .into(),
+            ),
             data_flag: false,
             key_flag: true,
             non_standard_flag: false,
@@ -341,11 +344,14 @@ impl SpdpBeacon {
             reader_id: EntityId::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_READER,
             writer_id: EntityId::SPDP_RELIABLE_BUILTIN_PARTICIPANTS_SECURE_WRITER,
             writer_sn: sn,
-            inline_qos: Some(zerodds_rtps::inline_qos::lifecycle_inline_qos(
-                guid,
-                zerodds_rtps::inline_qos::status_info::DISPOSED
-                    | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
-            )),
+            inline_qos: Some(
+                zerodds_rtps::inline_qos::lifecycle_inline_qos(
+                    guid,
+                    zerodds_rtps::inline_qos::status_info::DISPOSED
+                        | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
+                )
+                .into(),
+            ),
             data_flag: false,
             key_flag: true,
             non_standard_flag: false,
@@ -708,7 +714,7 @@ mod tests {
     /// member of ParticipantBuiltinTopicDataSecure only; the plain SPDP does
     /// not carry it, the secure SPDP does.
     #[test]
-    fn the_identity_status_token_is_in_the_secure_participant_data_only() {
+    fn security_7_5_1_6_the_identity_status_token_is_in_the_secure_participant_data_only() {
         let mut data = sample_participant();
         data.identity_status_token = Some(vec![1, 2, 3, 4]);
         let mut beacon = SpdpBeacon::new(data);
@@ -752,7 +758,7 @@ mod tests {
     /// same data sent again is the same sample (it was always number 1, so a
     /// reliable reader took every change for a duplicate).
     #[test]
-    fn secure_spdp_takes_a_new_number_for_a_change_only() {
+    fn security_7_5_1_6_secure_spdp_takes_a_new_number_for_a_change_only() {
         let mut beacon = SpdpBeacon::new(sample_participant());
         let first = beacon.serialize_secure().unwrap();
         assert_eq!(sn_of(&first), 1);
@@ -773,7 +779,7 @@ mod tests {
     /// one, hold the DATA of their own writer and no submessage of another
     /// builtin topic or of an application topic.
     #[test]
-    fn an_spdp_datagram_holds_the_submessages_of_its_writer_only() {
+    fn security_7_5_12_an_spdp_datagram_holds_the_submessages_of_its_writer_only() {
         use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
         let mut beacon = SpdpBeacon::new(sample_participant());
         let cases = [
@@ -806,7 +812,7 @@ mod tests {
     /// also be sent using the DCPSParticipantsSecure builtin Topic": a
     /// key-only DATA on the secure writer, a change of its own.
     #[test]
-    fn secure_spdp_departure_is_a_key_only_change_on_the_secure_writer() {
+    fn security_7_5_1_6_secure_spdp_departure_is_a_key_only_change_on_the_secure_writer() {
         let mut beacon = SpdpBeacon::new(sample_participant());
         beacon.serialize_secure().unwrap();
         let departure = beacon.serialize_secure_departure().unwrap();
@@ -824,7 +830,7 @@ mod tests {
     }
 
     #[test]
-    fn samples_name_the_writer_they_came_from() {
+    fn security_7_5_1_6_samples_name_the_writer_they_came_from() {
         let mut beacon = SpdpBeacon::new(sample_participant());
         let plain = beacon.serialize().unwrap();
         let secure = beacon.serialize_secure().unwrap();
@@ -840,7 +846,7 @@ mod tests {
     }
 
     #[test]
-    fn touch_renews_the_lease_of_a_known_participant_only() {
+    fn security_7_5_1_6_touch_renews_the_lease_of_a_known_participant_only() {
         let mut cache = DiscoveredParticipantsCache::new();
         let p = DiscoveredParticipant {
             sender_prefix: GuidPrefix::from_bytes([0xA; 12]),
@@ -866,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn beacon_serializes_to_decodable_datagram() {
+    fn rtps_8_4_2_1_beacon_serializes_to_decodable_datagram() {
         let mut beacon = SpdpBeacon::new(sample_participant());
         let datagram = beacon.serialize().unwrap();
         let reader = SpdpReader::new();
@@ -927,7 +933,7 @@ mod tests {
     /// participant GUID as key hash and as serialized key, and the
     /// status disposed|unregistered.
     #[test]
-    fn a_departure_reads_back_as_departed_with_key_and_status() {
+    fn rtps_9_6_3_2_a_departure_reads_back_as_departed_with_key_and_status() {
         let mut beacon = SpdpBeacon::new(sample_participant());
         let prefix = beacon.data.guid.prefix;
         let first = beacon.serialize().unwrap();
@@ -943,8 +949,8 @@ mod tests {
         assert!(!d.data_flag && d.key_flag);
         let qos = d.inline_qos.as_ref().unwrap();
         let guid = beacon.data.guid.to_bytes();
-        assert_eq!(zerodds_rtps::inline_qos::find_key_hash(qos), Some(guid));
-        assert_eq!(zerodds_rtps::inline_qos::find_status_info(qos), Some(3));
+        assert_eq!(qos.key_hash(), Some(guid));
+        assert_eq!(qos.status_info(), Some(3));
         assert_eq!(
             &d.serialized_payload[..],
             &zerodds_rtps::parameter_list::spdp_participant_key_pl_cdr_le(guid)[..]
@@ -958,7 +964,7 @@ mod tests {
     }
 
     #[test]
-    fn samples_reads_every_participant_a_datagram_bundles() {
+    fn rtps_8_4_11_1_samples_reads_every_participant_a_datagram_bundles() {
         let (datagram, [a, b, c]) = bundle();
         let samples = SpdpReader::new().samples(&datagram).unwrap();
         assert_eq!(samples.len(), 3);
@@ -995,16 +1001,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn beacon_increments_sequence_number() {
-        let mut beacon = SpdpBeacon::new(sample_participant());
-        beacon.set_new_sn_each_period(true);
-        beacon.serialize().unwrap();
-        assert_eq!(beacon.next_sn, 2);
-        beacon.serialize().unwrap();
-        assert_eq!(beacon.next_sn, 3);
-    }
-
     /// The writer sequence numbers of the DATA in `beacons`.
     fn sns_of(beacons: &[Vec<u8>]) -> Vec<i64> {
         beacons
@@ -1023,7 +1019,7 @@ mod tests {
     /// same change keeps its sequence number, and a change of the participant
     /// data is a new change with the next one.
     #[test]
-    fn the_resent_beacon_keeps_its_sequence_number_until_the_data_changes() {
+    fn rtps_8_5_3_1_the_resent_beacon_keeps_its_sequence_number_until_the_data_changes() {
         let mut beacon = SpdpBeacon::new(sample_participant());
         let first = [
             beacon.serialize().unwrap(),
@@ -1041,7 +1037,7 @@ mod tests {
     }
 
     #[test]
-    fn beacon_uses_spdp_builtin_writer_id() {
+    fn rtps_8_5_3_1_beacon_uses_spdp_builtin_writer_id() {
         let mut beacon = SpdpBeacon::new(sample_participant());
         let datagram = beacon.serialize().unwrap();
         let parsed = decode_datagram(&datagram).unwrap();
@@ -1055,7 +1051,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_rejects_non_spdp_datagram() {
+    fn rtps_8_4_10_2_reader_rejects_non_spdp_datagram() {
         // A normal user DATA, not SPDP.
         let header = RtpsHeader::new(VendorId::ZERODDS, GuidPrefix::from_bytes([1; 12]));
         let data = DataSubmessage {
@@ -1086,7 +1082,7 @@ mod tests {
     }
 
     #[test]
-    fn participant_lease_lifecycle_observation_and_infinite() {
+    fn rtps_8_5_3_3_participant_lease_lifecycle_observation_and_infinite() {
         let mut cache = DiscoveredParticipantsCache::new();
         let mut beacon = SpdpBeacon::new(sample_participant());
         let mut peer = SpdpReader::new()
@@ -1108,14 +1104,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_starts_empty() {
-        let c = DiscoveredParticipantsCache::new();
-        assert!(c.is_empty());
-        assert_eq!(c.len(), 0);
-    }
-
-    #[test]
-    fn cache_insert_returns_true_for_new_participant() {
+    fn rtps_8_5_3_3_cache_insert_returns_true_for_new_participant() {
         let mut c = DiscoveredParticipantsCache::new();
         let mut beacon = SpdpBeacon::new(sample_participant());
         let datagram = beacon.serialize().unwrap();
@@ -1128,7 +1117,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_get_returns_inserted_participant() {
+    fn rtps_8_5_3_3_cache_get_returns_inserted_participant() {
         let mut c = DiscoveredParticipantsCache::new();
         let mut beacon = SpdpBeacon::new(sample_participant());
         let datagram = beacon.serialize().unwrap();

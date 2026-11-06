@@ -20,8 +20,9 @@
 //!   checked; a reference client that cannot run must fail this test, not
 //!   the code under test.
 //!
-//! Gated on `COAP_LIBCOAP=1`; `#[ignore]` by default. With the gate set and
-//! no client installed the test **fails** rather than passing.
+//! `#[ignore]`d; running them (`--run-ignored`, the weekly job
+//! `integration-bridges-vendor`) measures, and with no client installed the
+//! test **fails** rather than passing.
 
 #![cfg(feature = "std")]
 #![allow(
@@ -49,10 +50,6 @@ const CT_LINK_FORMAT: u16 = 40;
 /// RFC 7252 §12.3 — `text/plain;charset=utf-8`.
 const CT_TEXT_PLAIN: u16 = 0;
 
-fn enabled() -> bool {
-    std::env::var("COAP_LIBCOAP").is_ok()
-}
-
 /// The libcoap client under every name Debian and upstream give it.
 ///
 /// Upstream builds `coap-client`; Debian's `libcoap3-bin` ships one binary
@@ -76,7 +73,7 @@ fn libcoap_client() -> Option<String> {
 fn require_libcoap() -> String {
     libcoap_client().unwrap_or_else(|| {
         panic!(
-            "COAP_LIBCOAP is set but no libcoap client was found under any of \
+            "no libcoap client was found under any of \
              coap-client / coap-client-openssl / coap-client-gnutls / \
              coap-client-notls — install `libcoap3-bin`. Skipping here would \
              report interop that never happened."
@@ -196,12 +193,8 @@ fn run_client(bin: &str, args: &[&str]) -> String {
 }
 
 #[test]
-#[ignore = "needs libcoap (apt install libcoap3-bin); set COAP_LIBCOAP=1"]
+#[ignore = "needs libcoap (coap-client); runs in integration-bridges-vendor"]
 fn libcoap_get_reads_a_zerodds_encoded_response() {
-    if !enabled() {
-        eprintln!("[skip] COAP_LIBCOAP not set");
-        return;
-    }
     let bin = require_libcoap();
     let srv = Responder::start();
     let got = run_client(&bin, &["-m", "get", &srv.url("trade")]);
@@ -213,12 +206,8 @@ fn libcoap_get_reads_a_zerodds_encoded_response() {
 }
 
 #[test]
-#[ignore = "needs libcoap; set COAP_LIBCOAP=1"]
+#[ignore = "needs libcoap (coap-client); runs in integration-bridges-vendor"]
 fn libcoap_post_is_decoded_and_echoed() {
-    if !enabled() {
-        eprintln!("[skip] COAP_LIBCOAP not set");
-        return;
-    }
     let bin = require_libcoap();
     let srv = Responder::start();
     // libcoap builds the request octets; the payload comes back only if this
@@ -232,12 +221,8 @@ fn libcoap_post_is_decoded_and_echoed() {
 }
 
 #[test]
-#[ignore = "needs libcoap; set COAP_LIBCOAP=1"]
+#[ignore = "needs libcoap (coap-client); runs in integration-bridges-vendor"]
 fn libcoap_reads_the_well_known_core_catalog() {
-    if !enabled() {
-        eprintln!("[skip] COAP_LIBCOAP not set");
-        return;
-    }
     let bin = require_libcoap();
     let srv = Responder::start();
     let got = run_client(&bin, &["-m", "get", &srv.url(".well-known/core")]);

@@ -36,12 +36,15 @@ const MASTER_SECRET: [u8; 16] = [
 const MASTER_SALT: [u8; 8] = [0x9e, 0x7c, 0xa9, 0x22, 0x23, 0x78, 0x63, 0x40];
 const SERVER_ID: [u8; 1] = [0x01];
 
-fn make_oscore_config(bind: &str, domain: i32) -> DaemonConfig {
+/// The configuration on a leased DDS domain (the host's share of the band,
+/// `zerodds-test-domains`); the lease is held while the test runs.
+fn make_oscore_config(bind: &str) -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.bind = bind.to_string();
     // One DDS domain per test: the tests run in parallel and same-domain
     // daemons discover each other over loopback, cross-feeding notifies.
-    cfg.domain = domain;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.oscore = OscoreSettings {
         enabled: true,
         master_secret: MASTER_SECRET.to_vec(),
@@ -59,7 +62,7 @@ fn make_oscore_config(bind: &str, domain: i32) -> DaemonConfig {
         durability: "volatile".to_string(),
         history_depth: 10,
     });
-    cfg
+    (cfg, lease)
 }
 
 /// The client context mirroring the daemon: client Sender ID empty, Recipient
@@ -100,8 +103,8 @@ fn post_trade(mid: u16, token: &[u8], payload: &[u8]) -> CoapMessage {
 }
 
 #[test]
-fn protected_post_round_trips_and_replay_is_refused() {
-    let cfg = make_oscore_config("127.0.0.1:0", 91);
+fn coapbridge_7_2_protected_post_round_trips_and_replay_is_refused() {
+    let (cfg, _lease) = make_oscore_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();
@@ -134,8 +137,8 @@ fn protected_post_round_trips_and_replay_is_refused() {
 }
 
 #[test]
-fn unprotected_request_is_refused_with_4_01() {
-    let cfg = make_oscore_config("127.0.0.1:0", 92);
+fn coapbridge_7_2_unprotected_request_is_refused_with_4_01() {
+    let (cfg, _lease) = make_oscore_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();
@@ -150,8 +153,8 @@ fn unprotected_request_is_refused_with_4_01() {
 }
 
 #[test]
-fn well_known_core_stays_reachable_in_the_clear() {
-    let cfg = make_oscore_config("127.0.0.1:0", 93);
+fn coapbridge_7_2_well_known_core_stays_reachable_in_the_clear() {
+    let (cfg, _lease) = make_oscore_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();
@@ -169,8 +172,8 @@ fn well_known_core_stays_reachable_in_the_clear() {
 }
 
 #[test]
-fn notify_to_protected_observer_arrives_protected() {
-    let cfg = make_oscore_config("127.0.0.1:0", 94);
+fn coapbridge_7_2_notify_to_protected_observer_arrives_protected() {
+    let (cfg, _lease) = make_oscore_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();
@@ -227,8 +230,8 @@ fn notify_to_protected_observer_arrives_protected() {
 }
 
 #[test]
-fn protected_observe_register_is_answered_protected() {
-    let cfg = make_oscore_config("127.0.0.1:0", 95);
+fn coapbridge_7_2_protected_observe_register_is_answered_protected() {
+    let (cfg, _lease) = make_oscore_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let server_addr = handle.local_addr.clone();
     let client = client_socket();

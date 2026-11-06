@@ -76,7 +76,7 @@ if [ "$MODE" = "--dry-run" ]; then
       # and the resolution succeeds. A name that is *not* in the order is a
       # dependency on something that does not exist, which is exactly the
       # class this gate is for: it is how a crate depending on an
-      # unpublishable one looked before `64c65d784db`, and a typo in a
+      # unpublishable one looked before `84a7c7f9de1`, and a typo in a
       # dependency name looks the same.
       missing=$(echo "$out" | sed -nE "s/.*no matching package named .([a-z0-9_-]+). found.*/\1/p" | head -1)
       if [ -n "$missing" ] && grep -qxF "$missing" "$ORDER"; then

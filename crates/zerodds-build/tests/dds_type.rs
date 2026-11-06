@@ -6,9 +6,11 @@
 //! The text assertions here run everywhere. Several tests that build a crate
 //! around the generated module are `#[ignore]`d and shell out to cargo,
 //! the same shape as `crates/corba-rust/tests/compile_check.rs`: they
-//! need a populated registry and a writable target directory, and they
-//! take the better part of a minute even with the workspace's own target
-//! directory warm. Run them with `--include-ignored`. The external-storage
+//! need a populated registry and a writable target directory, and the
+//! first of them compiles the whole DCPS graph and the generator as build
+//! dependencies. The weekly job `integration-codegen-build` builds that
+//! graph once (`tests/integration/warm_build_consumer.sh`) and then runs
+//! them, each within its 25 s. The external-storage
 //! regression is also a generated consumer build, but runs by default.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
@@ -37,33 +39,21 @@ fn generated_in(dir: &Path, name: &str, idl_source: &str) -> String {
     fs::read_to_string(dir.join(format!("{name}.rs"))).expect("the module")
 }
 
+/// DDS-XTypes 1.3 §7.2.2.4.4.4.8 and Table 21 put `@key` on a union's
+/// discriminator: the build carries it, and the union is a keyed topic
+/// type whose key holder is the discriminator. The same union without
+/// `@key` stays keyless.
 #[test]
-fn a_keyed_union_is_explicitly_refused_by_the_default_frontend() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    let idl = dir.path().join("Command.idl");
-    fs::write(
-        &idl,
+fn xtypes_7_2_2_4_4_4_8_a_union_keyed_by_its_discriminator_is_a_keyed_topic() {
+    let keyed = generated(
+        "Command",
         "@final union Command switch (@key long) { case 0: long value; default: long other; };",
-    )
-    .expect("write idl");
-    let error = Config::new()
-        .out_dir(dir.path())
-        .emit_cargo_directives(false)
-        .dds_type_impls(true)
-        .compile(&[&idl])
-        .expect_err("the default frontend must report its keyed-discriminator boundary")
-        .to_string();
-    assert!(
-        error.contains("`@key` on a union discriminator is not carried"),
-        "{error}"
     );
-    assert!(
-        error.contains("this setting reports it rather than computing a KeyHash no peer computes"),
-        "{error}"
-    );
+    assert!(keyed.contains("impl zerodds_dcps::DdsType for Command"));
+    assert!(keyed.contains("const HAS_KEY: bool = true"), "{keyed}");
+    assert!(keyed.contains("pub fn key_holder_be(&self)"), "{keyed}");
+    assert!(keyed.contains("pub fn encode_key_holder(&self"), "{keyed}");
 
-    // Independent negative control: the same union without @key remains a
-    // legitimate keyless topic and must not be refused merely for being a union.
     let keyless = generated(
         "Command",
         "@final union Command switch (long) { case 0: long value; default: long other; };",
@@ -154,7 +144,7 @@ fn the_continuing_pair_is_overridden() {
 }
 
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_generated_type_continues_behind_a_reply_header() {
     run_generated(
         "continuing",
@@ -199,7 +189,7 @@ fn the_bridge_never_asserts_the_two_versions_are_one_stream() {
 
 /// `@key` reaches `HAS_KEY`, the holder and §7.6.8 step 5's branch.
 #[test]
-fn a_keyed_type_carries_its_holder_and_the_step_five_branch() {
+fn dcps_2_2_2_3_6_a_keyed_type_carries_its_holder_and_the_step_five_branch() {
     let bounded = generated("Small", "@final struct Small { @key uint32 id; int32 v; };");
     assert!(bounded.contains("const HAS_KEY: bool = true;"), "{bounded}");
     assert!(
@@ -288,7 +278,7 @@ fn a_recursive_type_is_identified_by_its_component_and_hands_it_over() {
 /// forms, and a registry that files it can build the type's
 /// TypeInformation.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_recursive_type_registers_and_announces_its_component() {
     run_generated(
         "recursiveannounce",
@@ -346,7 +336,7 @@ fn field_value_walks_into_a_nested_member() {
 /// `null` in a filter. The generated `field_value` had no arm for an
 /// optional member at all, so a filter on one denied every sample.
 #[test]
-fn an_absent_optional_member_is_null_to_a_filter() {
+fn xtypes_7_6_7_2_an_absent_optional_member_is_null_to_a_filter() {
     let text = generated(
         "OptionalFilter",
         "@final struct S { @optional long a; @optional string b; long c; \
@@ -371,8 +361,8 @@ fn an_absent_optional_member_is_null_to_a_filter() {
 }
 
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
-fn the_generated_filter_value_of_an_optional_member_is_null_or_the_value() {
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_6_7_2_the_generated_filter_value_of_an_optional_member_is_null_or_the_value() {
     run_generated(
         "optionalfilter",
         "@final struct S { @optional long a; @optional string b; long c; };",
@@ -542,8 +532,8 @@ fn a_tolerant_pl_cdr1_reading_reaches_the_reader_and_not_the_writer() {
 /// `create_topic` will not take. Both halves are here: the module chain
 /// resolves, and the type satisfies `T: DdsType`.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
-fn issue_41_a_cross_module_type_is_a_topic_type() {
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn dcps_2_2_2_2_1_5_issue_41_a_cross_module_type_is_a_topic_type() {
     run_generated(
         "issue41",
         "module common { module util { struct Location { double x; double y; double z; }; }; \
@@ -574,7 +564,7 @@ fn issue_41_a_cross_module_type_is_a_topic_type() {
 /// The aggregate keeps its own impl; a bitmask has no members and no key, so
 /// it is a member type and never a topic type.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_bitmask_member_leaves_the_file_compiling() {
     run_generated(
         "bitmaskmember",
@@ -615,7 +605,7 @@ fn a_bitmask_member_leaves_the_file_compiling() {
 /// and without the holder. The corpus had the shape all along
 /// (`annotation-key-whole-struct`); no target ever built it.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn an_aggregate_key_member_compiles_and_hashes() {
     run_generated(
         "aggkey",
@@ -645,7 +635,7 @@ fn an_aggregate_key_member_compiles_and_hashes() {
 /// A `map` member, through the whole consumer path.
 ///
 /// The one member kind the Rust column had no writer for until
-/// `docs/codec-runtime-gap-followup.md`'s last section. This case is the
+/// `0b2e8df9f6b:docs/codec-runtime-gap-followup.md`'s last section. This case is the
 /// end of that path rather than another byte assertion: `zerodds-build`
 /// generates the file, a real crate includes it, `rustc` compiles it —
 /// which is what catches the path of `MapEntry` and the `Default` impl's
@@ -656,7 +646,7 @@ fn an_aggregate_key_member_compiles_and_hashes() {
 /// different types, so a writer that swapped them would not compile
 /// here, and the string key is the half that carries a NUL and padding.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_map_member_reaches_the_generated_type_and_round_trips() {
     run_generated(
         "map",
@@ -723,7 +713,7 @@ fn a_map_member_reaches_the_generated_type_and_round_trips() {
 /// writer with that cap. The model is the one that was refused; the
 /// string's length moves the `double` through every offset modulo eight.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_mutable_double_after_an_emheader_round_trips_at_every_offset() {
     run_generated(
         "mutable_double",
@@ -791,7 +781,7 @@ fn a_mutable_double_after_an_emheader_round_trips_at_every_offset() {
 /// The four pairs, measured: the octets each puts out and the round trip
 /// each closes.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn the_four_pairs_write_the_octets_the_encoding_calls_for() {
     run_generated(
         "octets",
@@ -872,9 +862,8 @@ fn the_four_pairs_write_the_octets_the_encoding_calls_for() {
         }
 
         /// A little-endian sample read as big-endian must not come back
-        /// as a sample: the byte-order axis is what
-        /// `docs/OPEN-ITEMS.md` records the trait's defaults as
-        /// substituting silently, and an overridden pair is what closes
+        /// as a sample: the byte-order axis is what the trait's
+        /// defaults substituted silently, and an overridden pair is what closes
         /// it.
         #[test]
         fn the_two_orders_are_not_one_stream() {
@@ -929,6 +918,39 @@ fn run_generated(name: &str, idl_source: &str, tests: &str) {
 /// `build.rs` after `Config::new()` — `.dialect(...)`, for one — and
 /// `zerodds-ast-layout` among its build dependencies to name them with.
 fn run_generated_with(name: &str, idl_source: &str, config_calls: &str, tests: &str) {
+    run_generated_items(name, idl_source, config_calls, "", tests);
+}
+
+/// [`run_generated_with`] with `items` at the crate root beside the
+/// generated module — the Rust types a `rust_type` call names. Answers the
+/// consumer crate's directory.
+fn run_generated_items(
+    name: &str,
+    idl_source: &str,
+    config_calls: &str,
+    items: &str,
+    tests: &str,
+) -> PathBuf {
+    let (dir, output) = cargo_test_generated(name, idl_source, config_calls, items, tests);
+    assert!(
+        output.status.success(),
+        "the generated crate does not pass (exit {:?})\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    dir
+}
+
+/// Write the consumer crate and run `cargo test` in it, whatever the
+/// outcome.
+fn cargo_test_generated(
+    name: &str,
+    idl_source: &str,
+    config_calls: &str,
+    items: &str,
+    tests: &str,
+) -> (PathBuf, std::process::Output) {
     let root = workspace_root();
     let dir = std::env::temp_dir().join(format!("zerodds_build_dds_type_{name}"));
     let _ = fs::remove_dir_all(&dir);
@@ -947,6 +969,7 @@ edition = "2024"
 path = "src/lib.rs"
 
 [dependencies]
+zerodds-codec = {{ path = "{root}/crates/codec" }}
 zerodds-dcps = {{ path = "{root}/crates/dcps" }}
 zerodds-types = {{ path = "{root}/crates/types" }}
 zerodds-wire = {{ path = "{root}/crates/wire" }}
@@ -986,7 +1009,7 @@ zerodds-ast-layout = {{ path = "{root}/crates/ast-layout" }}
         dir.join("src/lib.rs"),
         format!(
             "#![allow(dead_code, clippy::all)]\n\
-             include!(concat!(env!(\"OUT_DIR\"), \"/idl.rs\"));\n\n\
+             include!(concat!(env!(\"OUT_DIR\"), \"/idl.rs\"));\n\n{items}\n\
              #[cfg(test)]\n#[allow(unused_imports)]\nmod generated_tests {{\n\
              use super::*;\n{tests}\n}}\n"
         ),
@@ -998,18 +1021,16 @@ zerodds-ast-layout = {{ path = "{root}/crates/ast-layout" }}
         .arg("--manifest-path")
         .arg(dir.join("Cargo.toml"))
         .arg("--offline")
-        // The workspace's own target directory, so the DCPS graph is
+        // The target directory of the run that started this test (a CI
+        // job's shared one), else the workspace's own, so the DCPS graph is
         // compiled once for the whole tree and not once per case.
-        .env("CARGO_TARGET_DIR", root.join("target"))
+        .env(
+            "CARGO_TARGET_DIR",
+            std::env::var_os("CARGO_TARGET_DIR").map_or_else(|| root.join("target"), PathBuf::from),
+        )
         .output()
         .expect("cargo invocation");
-    assert!(
-        output.status.success(),
-        "the generated crate does not pass (exit {:?})\n--- stdout ---\n{}\n--- stderr ---\n{}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stdout),
-        String::from_utf8_lossy(&output.stderr),
-    );
+    (dir, output)
 }
 
 fn workspace_root() -> PathBuf {
@@ -1018,6 +1039,106 @@ fn workspace_root() -> PathBuf {
         .ancestors()
         .find(|path| path.join("Cargo.lock").exists())
         .map_or(manifest.clone(), Path::to_path_buf)
+}
+
+/// An evolved `@appendable` type nested in a `@final` one, both ways.
+///
+/// `v2::Part` has a third member, `v1::Part` does not. The generated
+/// decoder stopped after its own last member, so `v1::Evo` read `tail`
+/// out of `v2::Part`'s `c` and its padding: no error, a value the
+/// writer never sent. Table 19: members a newer
+/// appendable writer appended are skipped by the DHEADER's extent, and a
+/// member an older writer lacks takes its default.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_2_3_a_nested_appendable_type_reads_a_newer_and_an_older_writer() {
+    run_generated(
+        "appendablenested",
+        // One simple name in two modules (IDL 4.2 §7.5.2): the generated
+        // file has to compile with both, `type_objects` constants included.
+        "module v2 { @appendable struct Part { long a; double b; short c; }; \
+         @final struct Evo { Part piece; long tail; }; }; \
+         module v1 { @appendable struct Part { long a; double b; }; \
+         @final struct Evo { Part piece; long tail; }; };",
+        r#"
+        #[test]
+        fn the_member_after_the_nested_type_is_the_one_the_writer_sent() {
+            use zerodds_dcps::DdsType;
+            let newer = v2::Evo { piece: v2::Part { a: 7, b: 1.5, c: -3 }, tail: 42 };
+            let mut bytes = Vec::new();
+            <v2::Evo as DdsType>::encode(&newer, &mut bytes).expect("encode");
+            let older = <v1::Evo as DdsType>::decode(&bytes).expect("decode");
+            assert_eq!(older.piece.a, 7);
+            assert_eq!(older.piece.b, 1.5);
+            assert_eq!(older.tail, 42);
+
+            let mut bytes = Vec::new();
+            <v1::Evo as DdsType>::encode(&older, &mut bytes).expect("encode");
+            let back = <v2::Evo as DdsType>::decode(&bytes).expect("decode");
+            assert_eq!(back.piece.c, 0, "Table 9: the default of a short");
+            assert_eq!(back.tail, 42);
+        }
+        "#,
+    );
+}
+
+/// XTypes 1.3 §7.6.8: `decode_key_members` reads the `@key` members of a
+/// generated type and steps over the rest. The KeyHash it gives is the
+/// whole sample's, in XCDR2 and XCDR1 and both byte orders, and a member it
+/// stepped over is at its default: octets, a string, a double, an array and
+/// a sequence of structures before, between and after the keys, a key that
+/// is a structure with a key of its own, and an `@optional` member.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_6_8_decode_key_members_gives_the_key_of_the_whole_sample() {
+    run_generated(
+        "keymembers",
+        "@final struct Inner { string s; @key long a; }; \
+         @appendable struct Track { sequence<octet> blob; string name; @key long id; \
+         @key Inner inner_key; double d; long arr[3]; sequence<Inner> parts; @optional long note; };",
+        r#"
+        #[test]
+        fn the_key_members_are_the_sample_s_and_the_rest_is_default() {
+            use zerodds_dcps::DdsType;
+            let track = Track {
+                blob: vec![1, 2, 3, 4, 5],
+                name: "track".to_string(),
+                id: 7,
+                inner_key: Inner { s: "x".to_string(), a: 9 },
+                d: 2.5,
+                arr: [1, 2, 3],
+                parts: vec![Inner { s: "p".to_string(), a: 1 }],
+                note: Some(4),
+            };
+            for (xcdr1, big_endian) in [(false, false), (false, true), (true, false), (true, true)] {
+                let mut bytes = Vec::new();
+                match (xcdr1, big_endian) {
+                    (false, false) => <Track as DdsType>::encode(&track, &mut bytes),
+                    (false, true) => <Track as DdsType>::encode_be(&track, &mut bytes),
+                    (true, false) => <Track as DdsType>::encode_xcdr1(&track, &mut bytes),
+                    (true, true) => <Track as DdsType>::encode_xcdr1_be(&track, &mut bytes),
+                }
+                .expect("encode");
+                let keys = <Track as DdsType>::decode_key_members(&bytes, xcdr1, big_endian)
+                    .expect("a generated type has the read")
+                    .expect("the read succeeds");
+                assert_eq!(keys.id, 7);
+                assert_eq!(keys.inner_key.a, 9);
+                assert_eq!(
+                    <Track as DdsType>::key_hash(&keys),
+                    <Track as DdsType>::key_hash(&track),
+                    "xcdr1 {xcdr1}, big endian {big_endian}"
+                );
+                assert!(keys.blob.is_empty());
+                assert!(keys.name.is_empty());
+                assert_eq!(keys.d, 0.0);
+                assert_eq!(keys.arr, [0, 0, 0]);
+                assert!(keys.parts.is_empty());
+                assert_eq!(keys.note, Some(4), "an @optional member is read, not stepped over");
+            }
+        }
+        "#,
+    );
 }
 
 /// A `fixed<P, S>` member, through the whole consumer path.
@@ -1039,7 +1160,7 @@ fn workspace_root() -> PathBuf {
 /// while only `account` belongs to the key. This also checks that adding
 /// fixed support does not accidentally include a non-key field in the hash.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_fixed_member_reaches_the_generated_type_and_round_trips() {
     run_generated(
         "fixedmember",
@@ -1228,7 +1349,7 @@ fn an_inherited_type_carries_its_closure_beside_its_object() {
 /// framing and refused the sentinel; the specification-dialect module still
 /// refuses it, and should.
 #[test]
-#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
 fn a_fastdds_dialect_module_reads_and_writes_what_fast_dds_writes() {
     run_generated_with(
         "fastdds_mutable",
@@ -1263,7 +1384,7 @@ fn a_fastdds_dialect_module_reads_and_writes_what_fast_dds_writes() {
 /// not, so no `DdsType` impl is generated for them; the structure and the
 /// union beside them keep theirs.
 #[test]
-fn an_enumeration_and_a_bitset_are_no_topic_types() {
+fn xtypes_7_6_2_an_enumeration_and_a_bitset_are_no_topic_types() {
     let text = generated(
         "Members",
         "enum Colour { RED, GREEN }; \
@@ -1287,4 +1408,1645 @@ fn an_enumeration_and_a_bitset_are_no_topic_types() {
         text.contains("impl zerodds_dcps::DdsType for Choice"),
         "{text}"
     );
+}
+
+// -- GitHub #33: a Rust type for an IDL typedef, member or union branch ---
+
+/// One unit, twice: `app` with `rust_type` mappings, `plain` without. The
+/// plain module's octets are the oracle the mapped one is held to — the
+/// IDL encoding, which the vendor runs hold the plain codec to.
+const ISSUE_33_IDL: &str = "\
+module app {
+    typedef string<12> Dtg;
+    typedef uint32 ItemId;
+    @final struct Track {
+        @key uint32 id;
+        Dtg stamp;
+        sequence<Dtg, 4> history;
+        Dtg window[2];
+        @optional Dtg until;
+        string source;
+        ItemId item;
+        map<ItemId, Dtg> due;
+        @external Dtg note;
+        long count;
+    };
+    @final union Mark switch (long) { case 1: Dtg at; case 2: long n; };
+    @appendable struct Older { long a; };
+    @appendable struct Newer { long a; ItemId b; };
+};
+module plain {
+    typedef string<12> Dtg;
+    typedef uint32 ItemId;
+    @final struct Track {
+        @key uint32 id;
+        Dtg stamp;
+        sequence<Dtg, 4> history;
+        Dtg window[2];
+        @optional Dtg until;
+        string source;
+        ItemId item;
+        map<ItemId, Dtg> due;
+        @external Dtg note;
+        long count;
+    };
+    @final union Mark switch (long) { case 1: Dtg at; case 2: long n; };
+    @appendable struct Older { long a; };
+    @appendable struct Newer { long a; ItemId b; };
+};
+";
+
+/// The mappings of [`ISSUE_33_IDL`]: a typedef onto a checked newtype, a
+/// key member and a typedef onto `NonZeroU32`, a member onto a foreign
+/// type through `DisplayFromStr`, a union branch onto `NonZeroI32`.
+const ISSUE_33_CONFIG: &str = "\
+        .rust_type(\"app::Dtg\", \"crate::Dtg\")
+        .rust_type(\"app::Track.id\", \"core::num::NonZeroU32\")
+        .rust_type(\"app::ItemId\", \"core::num::NonZeroU32\")
+        .rust_type_with(\"app::Track.source\", \"std::net::Ipv4Addr\", \"zerodds_wire::DisplayFromStr\")
+        .rust_type(\"app::Mark.n\", \"core::num::NonZeroI32\")";
+
+/// The checked newtype the reporter of #33 asked for: a date-time group,
+/// `DDHHMMZMONYY`, that cannot hold an invalid one. Written with
+/// `IdlOut::display`, read from the `&str` the sample lends.
+const ISSUE_33_DTG: &str = r#"
+/// A date-time group, `DDHHMMZMONYY`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Dtg {
+    day: u8,
+    hour: u8,
+    minute: u8,
+    month: u8,
+    year: u8,
+}
+
+const MONTHS: [&str; 12] = [
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+];
+
+impl Dtg {
+    pub fn new(day: u8, hour: u8, minute: u8, month: u8, year: u8) -> Self {
+        Self { day, hour, minute, month, year }
+    }
+
+    fn parse(text: &str) -> Option<Self> {
+        let b = text.as_bytes();
+        if b.len() != 12 || b[6] != b'Z' {
+            return None;
+        }
+        let two = |i: usize| -> Option<u8> {
+            let (t, u) = (b[i], b[i + 1]);
+            (t.is_ascii_digit() && u.is_ascii_digit()).then(|| (t - b'0') * 10 + (u - b'0'))
+        };
+        let month = MONTHS.iter().position(|m| m.as_bytes() == &b[7..10])? as u8 + 1;
+        let dtg = Self { day: two(0)?, hour: two(2)?, minute: two(4)?, month, year: two(10)? };
+        ((1..=31).contains(&dtg.day) && dtg.hour < 24 && dtg.minute < 60).then_some(dtg)
+    }
+}
+
+impl core::fmt::Display for Dtg {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(
+            f,
+            "{:02}{:02}{:02}Z{}{:02}",
+            self.day,
+            self.hour,
+            self.minute,
+            MONTHS[usize::from(self.month - 1)],
+            self.year
+        )
+    }
+}
+
+impl zerodds_wire::WireRepr for Dtg {
+    type Idl = str;
+    fn to_wire(
+        &self,
+        out: zerodds_wire::IdlOut<'_, str>,
+    ) -> Result<zerodds_wire::Written, zerodds_wire::WireError> {
+        out.display(self)
+    }
+    fn from_wire(wire: &str) -> Result<Self, zerodds_wire::WireError> {
+        Self::parse(wire)
+            .ok_or_else(|| zerodds_wire::WireError::invalid_value("a date-time group DDHHMMZMONYY"))
+    }
+}
+"#;
+
+/// GitHub #33: a typedef, a key member, a member through an adapter and a
+/// union branch held as Rust types — in a member, a sequence, an array, a
+/// map, `@optional` and `@external` — write the octets of their IDL types in all four
+/// encodings, and read back into the Rust types. A value the Rust type
+/// refuses rejects the sample with its reason; the key hash is the IDL
+/// value's (XTypes 1.3 §7.6.8); a member an older `@appendable` writer
+/// left out takes its IDL default, and a Rust type that refuses that
+/// default rejects the sample (Table 19).
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_4_issue_33_a_rust_type_writes_and_reads_the_octets_of_its_idl_type() {
+    run_generated_items(
+        "issue33",
+        ISSUE_33_IDL,
+        ISSUE_33_CONFIG,
+        ISSUE_33_DTG,
+        r#"
+        use core::num::{NonZeroI32, NonZeroU32};
+        use zerodds_dcps::DdsType;
+
+        type Pair<A, P> = (
+            fn(&A, &mut Vec<u8>) -> Result<(), zerodds_dcps::EncodeError>,
+            fn(&P, &mut Vec<u8>) -> Result<(), zerodds_dcps::EncodeError>,
+            fn(&[u8]) -> Result<A, zerodds_dcps::DecodeError>,
+        );
+
+        fn dtg(day: u8) -> Dtg { Dtg::new(day, 14, 30, 11, 26) }
+        fn text(day: u8) -> String { format!("{day:02}1430ZNOV26") }
+        fn nz(v: u32) -> NonZeroU32 { NonZeroU32::new(v).expect("non-zero") }
+
+        fn mapped() -> app::Track {
+            app::Track {
+                id: nz(7),
+                stamp: dtg(5),
+                history: vec![dtg(1), dtg(2)],
+                window: [dtg(3), dtg(4)],
+                until: Some(dtg(6)),
+                source: std::net::Ipv4Addr::new(10, 0, 0, 1),
+                item: nz(42),
+                due: vec![zerodds_wire::MapEntry { key: nz(9), value: dtg(8) }],
+                note: Box::new(dtg(10)),
+                count: -3,
+            }
+        }
+
+        fn plain() -> plain::Track {
+            plain::Track {
+                id: 7,
+                stamp: text(5),
+                history: vec![text(1), text(2)],
+                window: [text(3), text(4)],
+                until: Some(text(6)),
+                source: "10.0.0.1".to_string(),
+                item: 42,
+                due: vec![zerodds_wire::MapEntry { key: 9, value: text(8) }],
+                note: Box::new(text(10)),
+                count: -3,
+            }
+        }
+
+        fn four<A: DdsType, P: DdsType>() -> [Pair<A, P>; 4] {
+            [
+                (<A as DdsType>::encode, <P as DdsType>::encode, <A as DdsType>::decode),
+                (<A as DdsType>::encode_be, <P as DdsType>::encode_be, <A as DdsType>::decode_be),
+                (<A as DdsType>::encode_xcdr1, <P as DdsType>::encode_xcdr1, <A as DdsType>::decode_xcdr1),
+                (<A as DdsType>::encode_xcdr1_be, <P as DdsType>::encode_xcdr1_be, <A as DdsType>::decode_xcdr1_be),
+            ]
+        }
+
+        #[test]
+        fn the_octets_are_the_idl_types_and_read_back_into_the_rust_types() {
+            for (encode, encode_plain, decode) in four::<app::Track, plain::Track>() {
+                let (mut a, mut p) = (Vec::new(), Vec::new());
+                encode(&mapped(), &mut a).expect("mapped");
+                encode_plain(&plain(), &mut p).expect("plain");
+                assert_eq!(a, p, "the IDL encoding is the oracle");
+                assert_eq!(decode(&a).expect("decode"), mapped());
+            }
+            let marks = [
+                (app::Mark::At(dtg(9)), plain::Mark::At(text(9))),
+                (app::Mark::N(NonZeroI32::new(-5).expect("non-zero")), plain::Mark::N(-5)),
+            ];
+            for (mark, plain_mark) in marks {
+                for (encode, encode_plain, decode) in four::<app::Mark, plain::Mark>() {
+                    let (mut a, mut p) = (Vec::new(), Vec::new());
+                    encode(&mark, &mut a).expect("mapped");
+                    encode_plain(&plain_mark, &mut p).expect("plain");
+                    assert_eq!(a, p);
+                    assert_eq!(decode(&a).expect("decode"), mark);
+                }
+            }
+        }
+
+        #[test]
+        fn a_value_the_rust_type_refuses_rejects_the_sample_with_its_reason() {
+            for (field, reason) in [("stamp", "date-time group"), ("id", "other than zero"), ("source", "FromStr")] {
+                let mut bad = plain();
+                match field {
+                    "stamp" => bad.stamp = "991430ZNOV26".to_string(),
+                    "id" => bad.id = 0,
+                    _ => bad.source = "10.0.0".to_string(),
+                }
+                let mut bytes = Vec::new();
+                <plain::Track as DdsType>::encode(&bad, &mut bytes).expect("plain");
+                let mut r = zerodds_wire::Reader::with_max_align(&bytes, zerodds_wire::Endianness::Little, 4);
+                let refused = app::Track::decode(&mut r).expect_err("refused");
+                assert!(refused.to_string().contains(reason), "{field}: {refused}");
+                assert!(<app::Track as DdsType>::decode(&bytes).is_err(), "{field}");
+            }
+        }
+
+        #[test]
+        fn the_key_hash_is_the_idl_values() {
+            let mapped_hash = mapped().key_hash().expect("hash");
+            assert_eq!(mapped_hash, plain().key_hash().expect("hash"));
+            // §7.6.8: PLAIN_CDR2 big endian, zero-padded to sixteen.
+            assert_eq!(mapped_hash, [0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+            // A key-only sample spells the other members out with their
+            // defaults; `item` is a NonZeroU32, which Table 9's zero is not.
+            let holder = mapped().key_holder_be().expect("holder");
+            let mut r = zerodds_wire::Reader::with_max_align(&holder, zerodds_wire::Endianness::Big, 4);
+            let refused = app::Track::key_from_holder_be(&mut r).expect_err("no default for item");
+            assert!(refused.to_string().contains("did not carry"), "{refused}");
+        }
+
+        #[test]
+        fn a_member_an_older_writer_left_out_takes_its_idl_default_or_rejects_the_sample() {
+            let mut bytes = Vec::new();
+            <app::Older as DdsType>::encode(&app::Older { a: 1 }, &mut bytes).expect("older");
+            assert_eq!(<plain::Newer as DdsType>::decode(&bytes).expect("plain").b, 0);
+            let mut r = zerodds_wire::Reader::with_max_align(&bytes, zerodds_wire::Endianness::Little, 4);
+            let refused = app::Newer::decode(&mut r).expect_err("NonZeroU32 has no zero");
+            assert!(refused.to_string().contains("did not carry"), "{refused}");
+        }
+
+        #[test]
+        fn a_filter_compares_the_idl_value() {
+            let track = mapped();
+            assert!(matches!(track.field_value("stamp"), Some(zerodds_dcps::FilterValue::String(s)) if s == text(5)));
+            assert!(matches!(track.field_value("id"), Some(zerodds_dcps::FilterValue::Int(7))));
+            assert!(matches!(track.field_value("source"), Some(zerodds_dcps::FilterValue::String(s)) if s == "10.0.0.1"));
+            assert!(matches!(track.field_value("until"), Some(zerodds_dcps::FilterValue::String(s)) if s == text(6)));
+            assert!(matches!(track.field_value("note"), Some(zerodds_dcps::FilterValue::String(s)) if s == text(10)));
+        }
+        "#,
+    );
+}
+
+/// GitHub #33: a Rust type whose `WireRepr::Idl` is not its member's IDL
+/// type does not compile, and the error names the mapping — the build
+/// error the design asks for, stated in the generated file
+/// (`zerodds_wire::repr::idl_type_is`).
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn issue_33_a_rust_type_of_another_idl_type_fails_the_build() {
+    let (_, output) = cargo_test_generated(
+        "issue33mismatch",
+        "module app { typedef uint32 ItemId; @final struct S { ItemId id; }; };",
+        ".rust_type(\"app::ItemId\", \"crate::Dtg\")",
+        ISSUE_33_DTG,
+        "",
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "a `str` type on a uint32 compiled"
+    );
+    assert!(
+        stderr.contains("idl_type_is::<crate::Dtg, u32>"),
+        "the error names the mapping:\n{stderr}"
+    );
+}
+
+/// GitHub #33: a C peer generated from the same IDL reads what the Rust
+/// type wrote. The Rust side holds `NonZeroU32` and the checked
+/// date-time group; `runtime/c` and the C column's own codec decode the
+/// octets into `uint32_t` and `char *` and print them.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_4_issue_33_a_c_peer_reads_what_the_rust_type_wrote() {
+    const IDL: &str = "module app { typedef string<12> Dtg; \
+        @final struct Report { @key uint32 id; Dtg stamp; sequence<Dtg, 4> history; long count; }; };";
+    let dir = run_generated_items(
+        "issue33c",
+        IDL,
+        ".rust_type(\"app::Dtg\", \"crate::Dtg\").rust_type(\"app::Report.id\", \"core::num::NonZeroU32\")",
+        ISSUE_33_DTG,
+        r#"
+        #[test]
+        fn write_the_sample() {
+            use zerodds_dcps::DdsType;
+            let report = app::Report {
+                id: core::num::NonZeroU32::new(77).expect("non-zero"),
+                stamp: Dtg::new(5, 14, 30, 11, 26),
+                history: vec![Dtg::new(1, 0, 5, 1, 27), Dtg::new(31, 23, 59, 12, 25)],
+                count: -9,
+            };
+            let mut bytes = Vec::new();
+            <app::Report as DdsType>::encode(&report, &mut bytes).expect("encode");
+            std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/sample.bin"), bytes).expect("write");
+        }
+        "#,
+    );
+    let sample = fs::read(dir.join("sample.bin")).expect("the sample the Rust type wrote");
+    let out = run_c_peer(
+        &dir,
+        IDL,
+        &sample,
+        "    app_Report back;\n\
+         \x20   zdw_reader r;\n\
+         \x20   uint8_t heap[512];\n\
+         \x20   uint32_t i;\n\
+         \x20   memset(&back, 0, sizeof back);\n\
+         \x20   zdw_reader_init(&r, sample, sizeof sample, ZDW_LITTLE, 4);\n\
+         \x20   zdw_reader_set_heap(&r, heap, sizeof heap);\n\
+         \x20   zd_dec_app_Report(&r, &back, ZDW_TC_DISCARD);\n\
+         \x20   printf(\"status %d id %u stamp %s count %d\\n\", (int)zdw_reader_status(&r),\n\
+         \x20          (unsigned)back.id, back.stamp, (int)back.count);\n\
+         \x20   for (i = 0; i < back.history._length; i++) { printf(\"history %s\\n\", back.history._buffer[i]); }\n",
+    );
+    assert_eq!(
+        out,
+        "status 0 id 77 stamp 051430ZNOV26 count -9\nhistory 010005ZJAN27\nhistory 312359ZDEC25\n",
+        "the C peer's reading"
+    );
+}
+
+/// XTypes 1.3 §7.6.8 with DDS 1.4 §2.2.2.5.1.13: an instance whose key
+/// member is a struct comes back from its key holder — the key members
+/// from the holder, every other member at its default. `key_members_with`
+/// names the members of the nested struct too; the generated reader looked
+/// each of them up as a member of the outer type, found none and refused
+/// every holder.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_6_8_a_struct_typed_key_member_is_read_back_from_the_key_holder() {
+    run_generated(
+        "structkeyholder",
+        "module k { @appendable struct Inner { long x; string<8> tag; }; \
+         @appendable struct Outer { @key k::Inner who; long n; }; \
+         @final struct Plain { long a; short b; }; \
+         @final struct Mixed { @key long id; @key k::Plain p; double v; }; };",
+        r#"
+        #[test]
+        fn the_key_members_come_back_and_the_others_take_their_default() {
+            use zerodds_dcps::DdsType;
+            use zerodds_dcps::dds_type::PlainCdr2BeKeyHolder;
+            let outer = k::Outer { who: k::Inner { x: 3, tag: "t".into() }, n: 9 };
+            let mut holder = PlainCdr2BeKeyHolder::new();
+            outer.encode_key_holder_be(&mut holder);
+            let back = k::Outer::decode_key_holder_be(holder.as_bytes()).expect("Outer from its holder");
+            assert_eq!(back, k::Outer { who: k::Inner { x: 3, tag: "t".into() }, n: 0 });
+            assert_eq!(back.key_hash(), outer.key_hash());
+
+            let mixed = k::Mixed { id: -4, p: k::Plain { a: 7, b: 8 }, v: 2.5 };
+            let mut holder = PlainCdr2BeKeyHolder::new();
+            mixed.encode_key_holder_be(&mut holder);
+            // PLAIN_CDR2 big endian: id, then the nested struct's members.
+            assert_eq!(holder.as_bytes(), [0xff, 0xff, 0xff, 0xfc, 0, 0, 0, 7, 0, 8]);
+            let back = k::Mixed::decode_key_holder_be(holder.as_bytes()).expect("Mixed from its holder");
+            assert_eq!(back, k::Mixed { id: -4, p: k::Plain { a: 7, b: 8 }, v: 0.0 });
+        }
+        "#,
+    );
+}
+
+/// XTypes 1.3 §7.6.8 steps 1, 3 and 4, applied to a nested key member and
+/// to a union: each aggregate inside the holder is its own holder,
+/// `@final` — no DHEADER, no EMHEADER — and holds only its key members
+/// when it declares any; the holder of a union keyed by its discriminator
+/// is the discriminator (§7.2.2.4.4.4.8's `Command`, 1.4 Beta 1
+/// §7.2.3.2.8's `Command_KeyHolder`). The octets are the PLAIN_CDR2 big
+/// endian of those holders, worked by hand from the clause.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_6_8_a_nested_key_member_is_its_own_final_key_holder() {
+    run_generated(
+        "nestedholder",
+        "module k { @appendable struct Inner { long x; string<8> tag; }; \
+         @appendable struct Outer { @key k::Inner who; long n; }; \
+         @mutable struct MInner { @key long id; long y; }; \
+         @final struct MOuter { @key k::MInner m; long z; }; \
+         enum CommandKind { START, STOP, GO_LEFT, GO_RIGHT }; \
+         @appendable union Command switch (@key k::CommandKind) { case START: float delay; \
+         case STOP: float distance; case GO_LEFT: case GO_RIGHT: float angle; }; \
+         @appendable union Loose switch (short) { case 1: long a; case 2: k::MInner b; }; \
+         @final struct Ordered { @key octet tag; @key k::Command c; @key k::Loose l; long v; }; };",
+        r#"
+        #[test]
+        fn each_nested_holder_is_final_and_holds_its_keys() {
+            use zerodds_dcps::DdsType;
+            use zerodds_dcps::dds_type::PlainCdr2BeKeyHolder;
+            fn holder<T: DdsType>(value: &T) -> Vec<u8> {
+                let mut holder = PlainCdr2BeKeyHolder::new();
+                value.encode_key_holder_be(&mut holder);
+                holder.as_bytes().to_vec()
+            }
+            // Inner declares no key: all of it, without its DHEADER.
+            let outer = k::Outer { who: k::Inner { x: 3, tag: "t".into() }, n: 9 };
+            assert_eq!(holder(&outer), [0, 0, 0, 3, 0, 0, 0, 2, b't', 0]);
+            let back = k::Outer::decode_key_holder_be(&holder(&outer)).expect("Outer");
+            assert_eq!(back, k::Outer { who: k::Inner { x: 3, tag: "t".into() }, n: 0 });
+            // MInner declares `id`: `id` alone, without EMHEADER.
+            let m = k::MOuter { m: k::MInner { id: 5, y: 6 }, z: 7 };
+            assert_eq!(holder(&m), [0, 0, 0, 5]);
+            let back = k::MOuter::decode_key_holder_be(&holder(&m)).expect("MOuter");
+            assert_eq!(back, k::MOuter { m: k::MInner { id: 5, y: 0 }, z: 0 });
+            // A union keyed by its discriminator: GO_LEFT is 2.
+            let command = k::Command::Angle(k::CommandKind::GO_LEFT, 0.5);
+            assert!(k::Command::HAS_KEY);
+            assert_eq!(holder(&command), [0, 0, 0, 2]);
+            assert_eq!(
+                DdsType::key_hash(&command),
+                Some([0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+            );
+            let back = k::Command::decode_key_holder_be(&holder(&command)).expect("Command");
+            assert_eq!(back, k::Command::Angle(k::CommandKind::GO_LEFT, 0.0));
+            // Inside a struct's holder: the keyed union's discriminator
+            // alone, and the unkeyed union whole and `@final`, its branch
+            // as its own holder — the octet, padding to four, 2, the short
+            // 2, padding, MInner's `id`.
+            let ordered = k::Ordered {
+                tag: 7,
+                c: k::Command::Angle(k::CommandKind::GO_LEFT, 0.5),
+                l: k::Loose::B(k::MInner { id: 5, y: 6 }),
+                v: 1,
+            };
+            assert_eq!(
+                holder(&ordered),
+                [7, 0, 0, 0, 0, 0, 0, 2, 0, 2, 0, 0, 0, 0, 0, 5]
+            );
+            let back = k::Ordered::decode_key_holder_be(&holder(&ordered)).expect("Ordered");
+            assert_eq!(back.tag, 7);
+            assert_eq!(back.c, k::Command::Angle(k::CommandKind::GO_LEFT, 0.0));
+            assert_eq!(back.l, k::Loose::B(k::MInner { id: 5, y: 0 }));
+            assert_eq!(back.v, 0);
+        }
+        "#,
+    );
+}
+
+/// The IDL of the derive tests: one type per construct `derive(DdsType)`
+/// takes, written by hand, as a `.idl` file would declare it.
+const DERIVE_IDL: &str = "\
+module DDS {
+    @final struct Duration_t { long sec; unsigned long nanosec; };
+    @final struct Time_t { long sec; unsigned long nanosec; };
+};
+module eq {
+    enum Color { RED, GREEN, BLUE };
+    @bit_bound(8) enum Level { LOW, @value(5) MID, HIGH };
+    @final struct Prims { boolean b; octet o; char c; int8 i1; short s; unsigned short us;
+        long l; unsigned long ul; long long ll; unsigned long long ull; float f; double d; };
+    @appendable struct Inner { long x; string<8> tag; };
+    @final struct Collections { sequence<long> longs; sequence<long, 3> few;
+        sequence<eq::Inner> inners; long grid[2][3]; eq::Inner pair[2]; string<16> label;
+        string text; sequence<string> names; };
+    @appendable struct Optionals { @optional long a; @optional string b;
+        @optional eq::Inner c; long d; };
+    @mutable struct Mut { @key long id; @id(10) string name; @optional double score;
+        eq::Color color; eq::Level level; };
+    @final struct Keyed { @key long k1; @key string<8> k2; double v; };
+    @appendable struct NestedKey { @key eq::Inner who; long n; };
+    @mutable @autoid(HASH) struct Hashed { long a; @hashid string b; @hashid(\"other\") long c; };
+    @final struct Times { DDS::Duration_t d; DDS::Time_t t; };
+    @appendable struct Track { @key unsigned long id; string at; string<64> label;
+        @optional string note; };
+    struct Node;
+    @appendable struct Node { long v; sequence<eq::Node> kids; };
+    @final struct Manual { long a; string b; };
+    @final union Pick switch (short) { case 1: long a; case 2: case 3: string b; default: double c; };
+    @appendable union Choice switch (eq::Color) { case RED: long r; case GREEN: eq::Inner g; };
+    @mutable union Flex switch (long) { case 0: long x; case 1: @id(9) string y; };
+    @final struct Holder { eq::Pick p; sequence<eq::Pick> ps; eq::Choice c; eq::Flex f; };
+    @appendable struct UnionKey { @key eq::Pick k; long v; };
+    @appendable union Command switch (@key eq::Color) { case RED: long r;
+        case GREEN: case BLUE: eq::Inner gb; };
+    @mutable struct UnionKeys { @key octet tag; @key eq::Command c; @key eq::Choice h; long v; };
+    @appendable struct Pair_long { long first; long second; };
+    @appendable struct Pair_eq_Inner { eq::Inner first; eq::Inner second; };
+    @final struct Grid_3 { long cells[3]; };
+    @final struct Borrowed { string text; sequence<octet> data; string note; sequence<octet> blob;
+        @key string name; };
+};
+";
+
+/// The Rust side of [`DERIVE_IDL`]: each type defined in Rust with
+/// `derive(DdsType)`, and `Manual` with its codec written by hand.
+const DERIVE_ITEMS: &str = r#"
+/// The date-time group as `derive(WireRepr)` writes it: `TryFrom<&str>`
+/// and `Display`.
+#[derive(zerodds_codec::WireRepr, Debug, Clone, Copy, PartialEq)]
+#[wire(idl = "string")]
+pub struct Stamp(pub Dtg);
+
+impl core::fmt::Display for Stamp {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl TryFrom<&str> for Stamp {
+    type Error = &'static str;
+    fn try_from(text: &str) -> Result<Self, Self::Error> {
+        Dtg::parse(text).map(Stamp).ok_or("a date-time group DDHHMMZMONYY")
+    }
+}
+
+pub mod derived {
+    use core::num::NonZeroU32;
+    use zerodds_codec::DdsType;
+
+    #[derive(DdsType, Debug, Clone, Copy, PartialEq)]
+    #[dds(name = "eq::Color")]
+    pub enum Color {
+        #[dds(name = "RED")] Red,
+        #[dds(name = "GREEN")] Green,
+        #[dds(name = "BLUE")] Blue,
+    }
+
+    #[derive(DdsType, Debug, Clone, Copy, PartialEq)]
+    #[dds(name = "eq::Level", bit_bound = 8)]
+    pub enum Level {
+        #[dds(name = "LOW")] Low,
+        #[dds(name = "MID")] Mid = 5,
+        #[dds(name = "HIGH")] High,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Prims", extensibility = "final")]
+    pub struct Prims {
+        pub b: bool, pub o: u8, pub c: char, pub i1: i8, pub s: i16, pub us: u16, pub l: i32,
+        pub ul: u32, pub ll: i64, pub ull: u64, pub f: f32, pub d: f64,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Inner")]
+    pub struct Inner {
+        pub x: i32,
+        #[dds(bound = 8)]
+        pub tag: String,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Collections", extensibility = "final")]
+    pub struct Collections {
+        pub longs: Vec<i32>,
+        #[dds(bound = 3)]
+        pub few: Vec<i32>,
+        pub inners: Vec<Inner>,
+        pub grid: [[i32; 3]; 2],
+        pub pair: [Inner; 2],
+        #[dds(bound = 16)]
+        pub label: String,
+        pub text: String,
+        pub names: Vec<String>,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Optionals", extensibility = "appendable")]
+    pub struct Optionals {
+        pub a: Option<i32>,
+        pub b: Option<String>,
+        #[dds(optional)]
+        pub c: Option<Inner>,
+        pub d: i32,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Mut", extensibility = "mutable")]
+    pub struct Mut {
+        #[dds(key)]
+        pub id: i32,
+        #[dds(id = 10)]
+        pub name: String,
+        pub score: Option<f64>,
+        pub color: Color,
+        pub level: Level,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Keyed", extensibility = "final")]
+    pub struct Keyed {
+        #[dds(key)]
+        pub k1: i32,
+        #[dds(key, bound = 8)]
+        pub k2: String,
+        pub v: f64,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::NestedKey")]
+    pub struct NestedKey {
+        #[dds(key)]
+        pub who: Inner,
+        pub n: i32,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Hashed", extensibility = "mutable", autoid = "hash")]
+    pub struct Hashed {
+        pub a: i32,
+        #[dds(hashid)]
+        pub b: String,
+        #[dds(hashid = "other")]
+        pub c: i32,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Times", extensibility = "final")]
+    pub struct Times {
+        pub d: core::time::Duration,
+        pub t: std::time::SystemTime,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Track", extensibility = "appendable")]
+    pub struct Track {
+        #[dds(key)]
+        pub id: NonZeroU32,
+        pub at: super::Stamp,
+        #[dds(bound = 64)]
+        pub label: String,
+        pub note: Option<String>,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Node")]
+    pub struct Node {
+        pub v: i32,
+        pub kids: Vec<Node>,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Pick", extensibility = "final", discriminator = "i16")]
+    pub enum Pick {
+        #[dds(case = 1, name = "a")]
+        A(i32),
+        #[dds(case = [2, 3], name = "b")]
+        B(i16, String),
+        #[dds(default, name = "c")]
+        C(i16, f64),
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Choice", discriminator = "Color")]
+    pub enum Choice {
+        #[dds(case = Color::Red, name = "r")]
+        R(i32),
+        #[dds(case = Color::Green, name = "g")]
+        G(Inner),
+        #[dds(no_member)]
+        Other(Color),
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Flex", extensibility = "mutable")]
+    pub enum Flex {
+        #[dds(name = "x")]
+        X(i32),
+        #[dds(name = "y", id = 9)]
+        Y(String),
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Holder", extensibility = "final")]
+    pub struct Holder {
+        pub p: Pick,
+        pub ps: Vec<Pick>,
+        pub c: Choice,
+        pub f: Flex,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::UnionKey")]
+    pub struct UnionKey {
+        #[dds(key)]
+        pub k: Pick,
+        pub v: i32,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Command", discriminator = "Color", key)]
+    pub enum Command {
+        #[dds(case = Color::Red, name = "r")]
+        R(i32),
+        #[dds(case = [Color::Green, Color::Blue], name = "gb")]
+        Gb(Color, Inner),
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::UnionKeys", extensibility = "mutable")]
+    pub struct UnionKeys {
+        #[dds(key)]
+        pub tag: u8,
+        #[dds(key)]
+        pub c: Command,
+        #[dds(key)]
+        pub h: Choice,
+        pub v: i32,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Pair_{T}")]
+    pub struct Pair<T> {
+        pub first: T,
+        pub second: T,
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Grid_{N}", extensibility = "final")]
+    pub struct Grid<const N: usize> {
+        pub cells: [i32; N],
+    }
+
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Borrowed", extensibility = "final")]
+    pub struct Borrowed<'a> {
+        pub text: &'a str,
+        pub data: &'a [u8],
+        pub note: std::borrow::Cow<'a, str>,
+        pub blob: std::borrow::Cow<'a, [u8]>,
+        #[dds(key)]
+        pub name: &'a str,
+    }
+
+    /// The description from the derive, the codec by hand.
+    #[derive(DdsType, Debug, Clone, PartialEq)]
+    #[dds(name = "eq::Manual", extensibility = "final", codec = "manual")]
+    pub struct Manual {
+        pub a: i32,
+        pub b: String,
+    }
+
+    impl zerodds_codec::DdsSerialize for Manual {
+        fn serialize(
+            &self,
+            out: zerodds_codec::DdsSerializer<'_>,
+        ) -> Result<zerodds_codec::Serialized, zerodds_codec::WireError> {
+            out.serialize_struct::<Self>()?.member(&self.a)?.member(&self.b)?.end()
+        }
+    }
+
+    impl<'de> zerodds_codec::DdsDeserialize<'de> for Manual {
+        fn deserialize(
+            input: zerodds_codec::DdsDeserializer<'_, 'de>,
+        ) -> Result<zerodds_codec::Decoded<Self>, zerodds_codec::WireError> {
+            let input = input.deserialize_struct::<Self>()?;
+            let (a, input) = input.member()?;
+            let (b, input) = input.member()?;
+            Ok(input.end()?.with(Self { a, b }))
+        }
+    }
+}
+"#;
+
+/// GitHub #33, the derive route: for every construct `derive(DdsType)`
+/// takes — struct members of every kind, unions from data-carrying enums
+/// (several labels, `default:`, no member, an enumeration discriminator,
+/// `@mutable` framing, as a member, in a sequence, as a key), each
+/// instantiation of a generic type, and borrowed fields — the type
+/// defined in Rust and the type `zerodds-build` generates from the
+/// equivalent IDL have the same `TypeIdentifier`, the same `TypeObject` and
+/// dependencies (XTypes 1.3 §7.3.4), write every sample to the same octets
+/// under XCDR2 and XCDR1 in both byte orders (§7.4), read each other's
+/// octets, and have the same key holder and KeyHash (§7.6.8). A borrowed
+/// field reads lent out of the sample. The oracle is the generated codec of
+/// the IDL route.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type() {
+    let items = format!("{ISSUE_33_DTG}\n{DERIVE_ITEMS}");
+    run_generated_items(
+        "issue33derive",
+        DERIVE_IDL,
+        ".rust_type(\"eq::Track.at\", \"crate::Dtg\").rust_type(\"eq::Track.id\", \"core::num::NonZeroU32\")",
+        &items,
+        r##"
+        use core::num::NonZeroU32;
+        use std::time::{Duration, UNIX_EPOCH};
+        use zerodds_dcps::DdsType;
+        use zerodds_dcps::dds_type::PlainCdr2BeKeyHolder;
+
+        type Codec<T> = fn(&T, &mut Vec<u8>) -> Result<(), zerodds_dcps::EncodeError>;
+        type Read<T> = fn(&[u8]) -> Result<T, zerodds_dcps::DecodeError>;
+
+        fn encodings<T: DdsType>() -> [(&'static str, Codec<T>, Read<T>); 4] {
+            [
+                ("XCDR2 LE", T::encode, T::decode),
+                ("XCDR2 BE", T::encode_be, T::decode_be),
+                ("XCDR1 LE", T::encode_xcdr1, T::decode_xcdr1),
+                ("XCDR1 BE", T::encode_xcdr1_be, T::decode_xcdr1_be),
+            ]
+        }
+
+        fn one_type<D: DdsType + core::fmt::Debug, G: DdsType>(derived: &D, generated: &G) {
+            // `type_name()`, not `TYPE_NAME`: a generic type's name is made
+            // from its arguments at run time.
+            let name = G::type_name();
+            assert_eq!(D::type_name(), name);
+            assert_eq!(D::type_identifier(), G::type_identifier(), "TypeIdentifier of {name}");
+            assert!(
+                !matches!(G::type_identifier(), zerodds_types::TypeIdentifier::None),
+                "{name} has an identifier to compare"
+            );
+            assert_eq!(D::type_object(), G::type_object(), "TypeObject of {name}");
+            assert!(G::type_object().is_some(), "{name} has an object to compare");
+            // The closure as a set: its order is the order the IDL declares
+            // the types in, which no peer reads.
+            let closure = |objects: Vec<zerodds_types::type_object::TypeObject>| {
+                let mut octets: Vec<Vec<u8>> = objects
+                    .into_iter()
+                    .map(|object| object.to_bytes_le().expect("octets"))
+                    .collect();
+                octets.sort();
+                octets
+            };
+            assert_eq!(
+                closure(D::type_object_dependencies()),
+                closure(G::type_object_dependencies()),
+                "dependencies of {name}"
+            );
+            assert_eq!(D::type_component(), G::type_component(), "component of {name}");
+            assert_eq!(D::extensibility(), G::extensibility(), "extensibility of {name}");
+            assert_eq!(D::has_key(), G::has_key(), "key of {name}");
+            assert_eq!(D::key_holder_max_size(), G::key_holder_max_size(), "holder of {name}");
+            for ((label, d_encode, d_decode), (_, g_encode, g_decode)) in
+                encodings::<D>().into_iter().zip(encodings::<G>())
+            {
+                let mut theirs = Vec::new();
+                let generated_result = g_encode(generated, &mut theirs);
+                let mut ours = Vec::new();
+                let derived_result = d_encode(derived, &mut ours);
+                match (derived_result, generated_result) {
+                    (Ok(()), Ok(())) => {}
+                    (d, g) => panic!("{label} of {name}: derived {d:?}, generated {g:?}"),
+                }
+                assert_eq!(ours, theirs, "{label} octets of {name}");
+                let back = d_decode(&theirs)
+                    .unwrap_or_else(|e| panic!("{label}: the derived codec reads {name}: {e}"));
+                let mut again = Vec::new();
+                d_encode(&back, &mut again).expect("encode what was read");
+                assert_eq!(again, theirs, "{label}: {name} read and written again");
+                g_decode(&ours)
+                    .unwrap_or_else(|e| panic!("{label}: the generated codec reads {name}: {e}"));
+            }
+            assert_eq!(derived.key_hash(), generated.key_hash(), "KeyHash of {name}");
+            if G::has_key() {
+                let mut ours = PlainCdr2BeKeyHolder::new();
+                derived.encode_key_holder_be(&mut ours);
+                let mut theirs = PlainCdr2BeKeyHolder::new();
+                generated.encode_key_holder_be(&mut theirs);
+                assert_eq!(ours.as_bytes(), theirs.as_bytes(), "key holder of {name}");
+                // The members the holder does not carry take their IDL
+                // default; a Rust type that refuses its default refuses the
+                // holder, on both routes.
+                let ours_back = D::decode_key_holder_be(ours.as_bytes());
+                let theirs_back = G::decode_key_holder_be(theirs.as_bytes());
+                assert_eq!(
+                    ours_back.is_ok(),
+                    theirs_back.is_ok(),
+                    "{name} from its key holder: derived {:?}, generated {:?}",
+                    ours_back.as_ref().err(),
+                    theirs_back.as_ref().err()
+                );
+                if let Ok(back) = ours_back {
+                    assert_eq!(back.key_hash(), derived.key_hash(), "{name} from its key holder");
+                }
+            }
+        }
+
+        fn inner(x: i32, tag: &str) -> (derived::Inner, eq::Inner) {
+            (
+                derived::Inner { x, tag: tag.into() },
+                eq::Inner { x, tag: tag.into() },
+            )
+        }
+
+        #[test]
+        fn primitives() {
+            one_type(
+                &derived::Prims { b: true, o: 0xab, c: 'Z', i1: -7, s: -300, us: 60_000,
+                    l: -70_000, ul: 4_000_000_000, ll: -5_000_000_000,
+                    ull: 18_000_000_000_000_000_000, f: 1.5, d: -2.25 },
+                &eq::Prims { b: true, o: 0xab, c: 'Z', i1: -7, s: -300, us: 60_000,
+                    l: -70_000, ul: 4_000_000_000, ll: -5_000_000_000,
+                    ull: 18_000_000_000_000_000_000, f: 1.5, d: -2.25 },
+            );
+        }
+
+        #[test]
+        fn collections_strings_and_arrays() {
+            let (d1, g1) = inner(1, "a");
+            let (d2, g2) = inner(2, "bb");
+            let (d3, g3) = inner(3, "c");
+            let (d4, g4) = inner(4, "dd");
+            one_type(
+                &derived::Collections { longs: vec![1, 2, 3, 4], few: vec![9, 8],
+                    inners: vec![d1, d2], grid: [[1, 2, 3], [4, 5, 6]], pair: [d3, d4],
+                    label: "label".into(), text: "text".into(),
+                    names: vec!["x".into(), "yy".into()] },
+                &eq::Collections { longs: vec![1, 2, 3, 4], few: vec![9, 8],
+                    inners: vec![g1, g2], grid: [[1, 2, 3], [4, 5, 6]], pair: [g3, g4],
+                    label: "label".into(), text: "text".into(),
+                    names: vec!["x".into(), "yy".into()] },
+            );
+        }
+
+        #[test]
+        fn optional_members_present_and_absent() {
+            let (d, g) = inner(7, "t");
+            one_type(
+                &derived::Optionals { a: Some(5), b: Some("bee".into()), c: Some(d), d: 9 },
+                &eq::Optionals { a: Some(5), b: Some("bee".into()), c: Some(g), d: 9 },
+            );
+            one_type(
+                &derived::Optionals { a: None, b: None, c: None, d: 1 },
+                &eq::Optionals { a: None, b: None, c: None, d: 1 },
+            );
+        }
+
+        #[test]
+        fn mutable_members_ids_and_enums() {
+            one_type(
+                &derived::Mut { id: 42, name: "nm".into(), score: Some(0.5),
+                    color: derived::Color::Green, level: derived::Level::Mid },
+                &eq::Mut { id: 42, name: "nm".into(), score: Some(0.5),
+                    color: eq::Color::GREEN, level: eq::Level::MID },
+            );
+            one_type(
+                &derived::Mut { id: -1, name: String::new(), score: None,
+                    color: derived::Color::Blue, level: derived::Level::High },
+                &eq::Mut { id: -1, name: String::new(), score: None,
+                    color: eq::Color::BLUE, level: eq::Level::HIGH },
+            );
+        }
+
+        #[test]
+        fn keys() {
+            one_type(
+                &derived::Keyed { k1: 3, k2: "key".into(), v: 2.5 },
+                &eq::Keyed { k1: 3, k2: "key".into(), v: 2.5 },
+            );
+            let (d, g) = inner(8, "w");
+            one_type(
+                &derived::NestedKey { who: d, n: 1 },
+                &eq::NestedKey { who: g, n: 1 },
+            );
+        }
+
+        #[test]
+        fn hashed_member_ids() {
+            one_type(
+                &derived::Hashed { a: 1, b: "h".into(), c: 2 },
+                &eq::Hashed { a: 1, b: "h".into(), c: 2 },
+            );
+        }
+
+        #[test]
+        fn duration_and_system_time_are_duration_t_and_time_t() {
+            one_type(
+                &derived::Times { d: Duration::new(5, 250),
+                    t: UNIX_EPOCH + Duration::new(1_700_000_000, 999) },
+                &eq::Times { d: DDS::Duration_t { sec: 5, nanosec: 250 },
+                    t: DDS::Time_t { sec: 1_700_000_000, nanosec: 999 } },
+            );
+            one_type(
+                &derived::Times { d: Duration::MAX, t: UNIX_EPOCH },
+                &eq::Times { d: DDS::Duration_t { sec: 0x7fff_ffff, nanosec: 0x7fff_ffff },
+                    t: DDS::Time_t { sec: 0, nanosec: 0 } },
+            );
+        }
+
+        #[test]
+        fn wire_repr_members_and_optional_text() {
+            let id = NonZeroU32::new(77).expect("non-zero");
+            let at = Dtg::new(5, 14, 30, 11, 26);
+            one_type(
+                &derived::Track { id, at: Stamp(at), label: "convoy".into(),
+                    note: Some("n".into()) },
+                &eq::Track { id, at, label: "convoy".into(), note: Some("n".into()) },
+            );
+            one_type(
+                &derived::Track { id, at: Stamp(at), label: String::new(), note: None },
+                &eq::Track { id, at, label: String::new(), note: None },
+            );
+        }
+
+        #[test]
+        fn a_type_that_reaches_itself() {
+            let leaf = |v| (derived::Node { v, kids: vec![] }, eq::Node { v, kids: vec![] });
+            let ((d2, g2), (d4, g4)) = (leaf(2), leaf(4));
+            one_type(
+                &derived::Node { v: 1, kids: vec![d2, derived::Node { v: 3, kids: vec![d4] }] },
+                &eq::Node { v: 1, kids: vec![g2, eq::Node { v: 3, kids: vec![g4] }] },
+            );
+        }
+
+        #[test]
+        fn a_hand_written_codec_over_a_derived_description() {
+            one_type(
+                &derived::Manual { a: 1, b: "m".into() },
+                &eq::Manual { a: 1, b: "m".into() },
+            );
+        }
+
+        #[test]
+        fn unions_with_labels_a_default_no_member_and_mutable_framing() {
+            one_type(&derived::Pick::A(5), &eq::Pick::A(5));
+            one_type(&derived::Pick::B(3, "bee".into()), &eq::Pick::B(3, "bee".into()));
+            one_type(&derived::Pick::C(77, 2.5), &eq::Pick::C(77, 2.5));
+            one_type(&derived::Choice::R(7), &eq::Choice::R(7));
+            let (d, g) = inner(1, "u");
+            one_type(&derived::Choice::G(d), &eq::Choice::G(g));
+            one_type(
+                &derived::Choice::Other(derived::Color::Blue),
+                &eq::Choice::_NoMember(eq::Color::BLUE),
+            );
+            one_type(&derived::Flex::X(4), &eq::Flex::X(4));
+            one_type(&derived::Flex::Y("why".into()), &eq::Flex::Y("why".into()));
+        }
+
+        #[test]
+        fn unions_as_members_in_sequences_and_as_a_key() {
+            one_type(
+                &derived::Holder {
+                    p: derived::Pick::A(1),
+                    ps: vec![derived::Pick::B(2, "x".into()), derived::Pick::C(-5, 0.5)],
+                    c: derived::Choice::R(3),
+                    f: derived::Flex::Y("f".into()),
+                },
+                &eq::Holder {
+                    p: eq::Pick::A(1),
+                    ps: vec![eq::Pick::B(2, "x".into()), eq::Pick::C(-5, 0.5)],
+                    c: eq::Choice::R(3),
+                    f: eq::Flex::Y("f".into()),
+                },
+            );
+            one_type(
+                &derived::UnionKey { k: derived::Pick::B(3, "k".into()), v: 9 },
+                &eq::UnionKey { k: eq::Pick::B(3, "k".into()), v: 9 },
+            );
+        }
+
+        /// DDS-XTypes 1.3 §7.2.2.4.4.4.8: `switch (@key D)` makes the
+        /// discriminator the union's key; as a topic type its holder is the
+        /// discriminator, and as a struct's key member only the
+        /// discriminator is part of that key (§7.6.8 step 3), where an
+        /// unkeyed union is whole and `@final`.
+        #[test]
+        fn a_union_keyed_by_its_discriminator() {
+            let (d, g) = inner(4, "k");
+            one_type(
+                &derived::Command::Gb(derived::Color::Blue, d.clone()),
+                &eq::Command::Gb(eq::Color::BLUE, g.clone()),
+            );
+            assert!(<derived::Command as DdsType>::has_key());
+            one_type(&derived::Command::R(-2), &eq::Command::R(-2));
+            one_type(
+                &derived::UnionKeys {
+                    tag: 9,
+                    c: derived::Command::Gb(derived::Color::Green, d.clone()),
+                    h: derived::Choice::G(d),
+                    v: 3,
+                },
+                &eq::UnionKeys {
+                    tag: 9,
+                    c: eq::Command::Gb(eq::Color::GREEN, g.clone()),
+                    h: eq::Choice::G(g),
+                    v: 3,
+                },
+            );
+            // The holder of `Command` is its discriminator: BLUE is 2.
+            let mut holder = PlainCdr2BeKeyHolder::new();
+            derived::Command::Gb(derived::Color::Blue, inner(0, "").0)
+                .encode_key_holder_be(&mut holder);
+            assert_eq!(holder.as_bytes(), [0, 0, 0, 2]);
+        }
+
+        /// DDS-XTypes 1.4 Beta 1 §7.6.7.1: a filter names a union's branch
+        /// by its member's name and its discriminator `#discriminator`;
+        /// "if the discriminator does not select the named member, the
+        /// result of the filter evaluation shall be false". An enumerated
+        /// discriminator compares with its enumerator's name (DDS 1.4
+        /// Annex B.2). Both routes answer every expression as the clause
+        /// does.
+        #[test]
+        fn a_filter_reads_union_branches_and_the_discriminator() {
+            fn passes<T: DdsType>(expression: &str, sample: &T) -> bool {
+                let base = zerodds_dcps::ReadCondition::new(0xFFFF, 0xFFFF, 0xFFFF, |_, _, _| true);
+                zerodds_dcps::QueryCondition::new(base, expression, Vec::new())
+                    .expect("expression")
+                    .evaluate(&zerodds_dcps::DdsTypeRow::new(sample))
+                    .unwrap_or(false)
+            }
+            let derived = derived::Holder {
+                p: derived::Pick::B(3, "bee".into()),
+                ps: Vec::new(),
+                c: derived::Choice::R(7),
+                f: derived::Flex::Y("why".into()),
+            };
+            let generated = eq::Holder {
+                p: eq::Pick::B(3, "bee".into()),
+                ps: Vec::new(),
+                c: eq::Choice::R(7),
+                f: eq::Flex::Y("why".into()),
+            };
+            for (expression, expected) in [
+                ("p.#discriminator = 3", true),
+                ("p.b = 'bee'", true),
+                ("p.a = 1", false),
+                ("p.a <> 1", false),
+                ("NOT p.c = 0.5", false),
+                ("c.#discriminator = 'RED' AND c.r = 7", true),
+                ("c.g.x = 1", false),
+                ("f.#discriminator = 1 AND f.y = 'why'", true),
+                ("f.x = 0 OR f.y = 'why'", false),
+            ] {
+                assert_eq!(passes(expression, &derived), expected, "derived: {expression}");
+                assert_eq!(passes(expression, &generated), expected, "generated: {expression}");
+            }
+            // A union as the topic type: its branches at the root.
+            assert!(passes("#discriminator = 3 AND b = 'bee'", &derived::Pick::B(3, "bee".into())));
+            assert!(passes("#discriminator = 3 AND b = 'bee'", &eq::Pick::B(3, "bee".into())));
+            assert!(!passes("a = 1", &eq::Pick::B(3, "bee".into())));
+            assert!(passes("#discriminator = 'BLUE'", &eq::Choice::_NoMember(eq::Color::BLUE)));
+            assert!(passes("#discriminator = 'BLUE'", &derived::Choice::Other(derived::Color::Blue)));
+            assert!(!passes("g.x = 1", &eq::Choice::_NoMember(eq::Color::BLUE)));
+        }
+
+        #[test]
+        fn each_instantiation_of_a_generic_type_is_its_own_idl_type() {
+            one_type(
+                &derived::Pair::<i32> { first: 1, second: 2 },
+                &eq::Pair_long { first: 1, second: 2 },
+            );
+            let ((d1, g1), (d2, g2)) = (inner(1, "a"), inner(2, "b"));
+            one_type(
+                &derived::Pair::<derived::Inner> { first: d1, second: d2 },
+                &eq::Pair_eq_Inner { first: g1, second: g2 },
+            );
+            one_type(&derived::Grid::<3> { cells: [1, 2, 3] }, &eq::Grid_3 { cells: [1, 2, 3] });
+            assert_eq!(<derived::Pair<i32> as DdsType>::type_name(), "eq::Pair_long");
+            assert_eq!(<derived::Grid<3> as DdsType>::type_name(), "eq::Grid_3");
+        }
+
+        #[test]
+        fn borrowed_fields_write_the_idl_octets_and_lend_from_the_sample() {
+            use std::borrow::Cow;
+            use zerodds_codec::Encapsulation;
+            let data = [1u8, 2, 3];
+            let ours_value = derived::Borrowed {
+                text: "lent",
+                data: &data,
+                note: Cow::Borrowed("cow"),
+                blob: Cow::Borrowed(&data[1..]),
+                name: "n",
+            };
+            let theirs_value = eq::Borrowed {
+                text: "lent".into(),
+                data: vec![1, 2, 3],
+                note: "cow".into(),
+                blob: vec![2, 3],
+                name: "n".into(),
+            };
+            let model = zerodds_codec::model::model::<derived::Borrowed<'_>>().expect("model");
+            assert_eq!(model.type_identifier, <eq::Borrowed as DdsType>::type_identifier());
+            assert_eq!(model.type_object, <eq::Borrowed as DdsType>::type_object());
+            let encodings: [(Encapsulation, Codec<eq::Borrowed>); 4] = [
+                (Encapsulation::Xcdr2Le, <eq::Borrowed as DdsType>::encode),
+                (Encapsulation::Xcdr2Be, <eq::Borrowed as DdsType>::encode_be),
+                (Encapsulation::Xcdr1Le, <eq::Borrowed as DdsType>::encode_xcdr1),
+                (Encapsulation::Xcdr1Be, <eq::Borrowed as DdsType>::encode_xcdr1_be),
+            ];
+            for (encapsulation, encode) in encodings {
+                let mut theirs = Vec::new();
+                encode(&theirs_value, &mut theirs).expect("the generated codec writes");
+                let mut ours = Vec::new();
+                zerodds_codec::encode(&ours_value, encapsulation, &mut ours).expect("derived");
+                assert_eq!(ours, theirs, "{encapsulation:?} octets");
+                let back: derived::Borrowed<'_> =
+                    zerodds_codec::decode(&theirs, encapsulation).expect("read");
+                assert_eq!(back, ours_value, "{encapsulation:?} read back");
+                let range = theirs.as_ptr_range();
+                assert!(range.contains(&back.text.as_ptr()), "the text is lent from the sample");
+                assert!(range.contains(&back.data.as_ptr()), "the octets are lent from the sample");
+                assert!(matches!(back.note, Cow::Borrowed(_)) && matches!(back.blob, Cow::Borrowed(_)));
+            }
+            let mut holder = PlainCdr2BeKeyHolder::new();
+            theirs_value.encode_key_holder_be(&mut holder);
+            assert_eq!(zerodds_codec::key_holder(&ours_value).expect("holder"), holder.as_bytes());
+            assert_eq!(
+                zerodds_codec::key_hash(&ours_value).expect("hash"),
+                <eq::Borrowed as DdsType>::key_hash(&theirs_value)
+            );
+        }
+        "##,
+    );
+}
+
+/// GitHub #33, the derive route: a C peer generated from the IDL a derived
+/// type exports (`Report::idl()`) reads what the derived type wrote.
+/// `runtime/c` and the C column's own codec decode the octets and print
+/// them.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_4_issue_33_a_c_peer_reads_what_a_derived_type_wrote() {
+    let items = format!(
+        "{ISSUE_33_DTG}\n{}",
+        r#"
+#[derive(zerodds_codec::WireRepr, Debug, Clone, Copy, PartialEq)]
+#[wire(idl = "string")]
+pub struct Stamp(pub Dtg);
+
+impl core::fmt::Display for Stamp {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Display::fmt(&self.0, f)
+    }
+}
+
+impl TryFrom<&str> for Stamp {
+    type Error = &'static str;
+    fn try_from(text: &str) -> Result<Self, Self::Error> {
+        Dtg::parse(text).map(Stamp).ok_or("a date-time group DDHHMMZMONYY")
+    }
+}
+
+#[derive(zerodds_codec::DdsType, Debug, Clone, PartialEq)]
+#[dds(name = "app::Report", extensibility = "final")]
+pub struct Report {
+    #[dds(key)]
+    pub id: core::num::NonZeroU32,
+    #[dds(bound = 12)]
+    pub stamp: Stamp,
+    #[dds(bound = 4)]
+    pub history: Vec<Stamp>,
+    pub count: i32,
+}
+"#
+    );
+    let dir = run_generated_items(
+        "issue33derivec",
+        "module unused { @final struct U { long a; }; };",
+        "",
+        &items,
+        r#"
+        #[test]
+        fn write_the_sample_and_the_idl() {
+            use zerodds_dcps::DdsType;
+            let report = Report {
+                id: core::num::NonZeroU32::new(77).expect("non-zero"),
+                stamp: Stamp(Dtg::new(5, 14, 30, 11, 26)),
+                history: vec![Stamp(Dtg::new(1, 0, 5, 1, 27)), Stamp(Dtg::new(31, 23, 59, 12, 25))],
+                count: -9,
+            };
+            let mut bytes = Vec::new();
+            <Report as DdsType>::encode(&report, &mut bytes).expect("encode");
+            std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/sample.bin"), bytes).expect("write");
+            std::fs::write(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/exported.idl"),
+                Report::idl().expect("the IDL of Report"),
+            )
+            .expect("write");
+        }
+        "#,
+    );
+    let sample = fs::read(dir.join("sample.bin")).expect("the sample the derived type wrote");
+    let idl = fs::read_to_string(dir.join("exported.idl")).expect("the exported IDL");
+    assert_eq!(
+        idl.trim(),
+        "module app { @final struct Report { @key unsigned long id; string<12> stamp; \
+         sequence<string, 4> history; long count; }; };",
+        "the IDL the derived type exports"
+    );
+    let out = run_c_peer(
+        &dir,
+        &idl,
+        &sample,
+        "    app_Report back;\n\
+         \x20   zdw_reader r;\n\
+         \x20   uint8_t heap[512];\n\
+         \x20   uint32_t i;\n\
+         \x20   memset(&back, 0, sizeof back);\n\
+         \x20   zdw_reader_init(&r, sample, sizeof sample, ZDW_LITTLE, 4);\n\
+         \x20   zdw_reader_set_heap(&r, heap, sizeof heap);\n\
+         \x20   zd_dec_app_Report(&r, &back, ZDW_TC_DISCARD);\n\
+         \x20   printf(\"status %d id %u stamp %s count %d\\n\", (int)zdw_reader_status(&r),\n\
+         \x20          (unsigned)back.id, back.stamp, (int)back.count);\n\
+         \x20   for (i = 0; i < back.history._length; i++) { printf(\"history %s\\n\", back.history._buffer[i]); }\n",
+    );
+    assert_eq!(
+        out,
+        "status 0 id 77 stamp 051430ZNOV26 count -9\nhistory 010005ZJAN27\nhistory 312359ZDEC25\n",
+        "the C peer's reading"
+    );
+}
+
+/// GitHub #33, the derive route: a C peer generated from the IDL a derived
+/// type exports reads a union from a data-carrying enum and an
+/// instantiation of a generic type, as `runtime/c` and the C column decode
+/// them (`_d` and `_u` of the union, IDL 4.2 §7.4.1.4.4.4).
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn xtypes_7_4_issue_33_a_c_peer_reads_a_derived_union_and_generic_type() {
+    let items = r#"
+#[derive(zerodds_codec::DdsType, Debug, Clone, PartialEq)]
+#[dds(name = "app::Shape", extensibility = "final", discriminator = "i16")]
+pub enum Shape {
+    #[dds(case = 1, name = "radius")]
+    Circle(i32),
+    #[dds(case = 2, name = "label")]
+    Tag(String),
+}
+
+#[derive(zerodds_codec::DdsType, Debug, Clone, PartialEq)]
+#[dds(name = "app::Pair_{T}", extensibility = "final")]
+pub struct Pair<T> {
+    pub first: T,
+    pub second: T,
+}
+
+#[derive(zerodds_codec::DdsType, Debug, Clone, PartialEq)]
+#[dds(name = "app::Scene", extensibility = "final")]
+pub struct Scene {
+    pub shape: Shape,
+    pub other: Shape,
+    pub pair: Pair<i32>,
+}
+"#;
+    let dir = run_generated_items(
+        "issue33derivecunion",
+        "module unused { @final struct U { long a; }; };",
+        "",
+        items,
+        r#"
+        #[test]
+        fn write_the_sample_and_the_idl() {
+            use zerodds_dcps::DdsType;
+            let scene = Scene {
+                shape: Shape::Circle(9),
+                other: Shape::Tag("tag".into()),
+                pair: Pair { first: -4, second: 12 },
+            };
+            let mut bytes = Vec::new();
+            <Scene as DdsType>::encode(&scene, &mut bytes).expect("encode");
+            std::fs::write(concat!(env!("CARGO_MANIFEST_DIR"), "/sample.bin"), bytes).expect("write");
+            std::fs::write(
+                concat!(env!("CARGO_MANIFEST_DIR"), "/exported.idl"),
+                Scene::idl().expect("the IDL of Scene"),
+            )
+            .expect("write");
+        }
+        "#,
+    );
+    let sample = fs::read(dir.join("sample.bin")).expect("the sample the derived type wrote");
+    let idl = fs::read_to_string(dir.join("exported.idl")).expect("the exported IDL");
+    assert!(
+        idl.contains("module app { @final union Shape switch (short) { case 1: long radius; case 2: string label; }; };")
+            && idl.contains("module app { @final struct Pair_long { long first; long second; }; };"),
+        "the IDL the derived types export:\n{idl}"
+    );
+    let out = run_c_peer(
+        &dir,
+        &idl,
+        &sample,
+        "    app_Scene back;\n\
+         \x20   zdw_reader r;\n\
+         \x20   uint8_t heap[256];\n\
+         \x20   memset(&back, 0, sizeof back);\n\
+         \x20   zdw_reader_init(&r, sample, sizeof sample, ZDW_LITTLE, 4);\n\
+         \x20   zdw_reader_set_heap(&r, heap, sizeof heap);\n\
+         \x20   zd_dec_app_Scene(&r, &back, ZDW_TC_DISCARD);\n\
+         \x20   printf(\"status %d shape %d %d other %d %s pair %d %d\\n\", (int)zdw_reader_status(&r),\n\
+         \x20          (int)back.shape._d, (int)back.shape._u.radius, (int)back.other._d,\n\
+         \x20          back.other._u.label, (int)back.pair.first, (int)back.pair.second);\n",
+    );
+    assert_eq!(
+        out, "status 0 shape 1 9 other 2 tag pair -4 12\n",
+        "the C peer's reading"
+    );
+}
+
+/// GitHub #33, the typestate of a hand-written union codec: the branch is
+/// a type-level index and the value has that branch's type; a value of
+/// another type does not compile.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn issue_33_a_hand_written_union_codec_of_another_branch_type_does_not_compile() {
+    let items = r#"
+#[derive(zerodds_codec::DdsType, Debug)]
+#[dds(name = "app::Either", extensibility = "final", codec = "manual")]
+pub enum Either {
+    #[dds(case = 1)]
+    Number(i32),
+    #[dds(case = 2)]
+    Text(String),
+}
+
+impl zerodds_codec::DdsSerialize for Either {
+    fn serialize(
+        &self,
+        out: zerodds_codec::DdsSerializer<'_>,
+    ) -> Result<zerodds_codec::Serialized, zerodds_codec::WireError> {
+        let union = out.serialize_union::<Self>()?;
+        match self {
+            Self::Number(_) => union.branch::<zerodds_codec::B0>(&1, &String::from("not a long")),
+            Self::Text(text) => union.branch::<zerodds_codec::B1>(&2, text),
+        }
+    }
+}
+
+impl<'de> zerodds_codec::DdsDeserialize<'de> for Either {
+    fn deserialize(
+        input: zerodds_codec::DdsDeserializer<'_, 'de>,
+    ) -> Result<zerodds_codec::Decoded<Self>, zerodds_codec::WireError> {
+        let input = input.deserialize_union::<Self>()?;
+        let (_, text, finish) = input.branch::<zerodds_codec::B1>()?;
+        Ok(finish.with(Self::Text(text)))
+    }
+}
+"#;
+    let errors = compile_errors("issue33unionbranch", items);
+    assert!(
+        errors.contains("mismatched types") && errors.contains("expected `&i32`"),
+        "the branch's type is the compiler's error:\n{errors}"
+    );
+}
+
+/// A hand-written codec over `app::Pose { unsigned long id; string label; }`
+/// whose `serialize` body is `body`.
+fn pose_with(body: &str) -> String {
+    format!(
+        r#"
+pub struct Pose {{
+    pub id: u32,
+    pub label: String,
+}}
+
+impl zerodds_codec::DdsTypeInfo for Pose {{
+    type Members = (u32, (String, ()));
+    type Extensibility = zerodds_codec::Final;
+    const LAYOUT: zerodds_codec::codec::TypeDesc =
+        zerodds_codec::codec::TypeDesc::structure::<Self::Members, zerodds_codec::Final>(
+            "app::Pose",
+            &[zerodds_codec::codec::MemberDesc::new("id"), zerodds_codec::codec::MemberDesc::new("label")],
+        );
+}}
+
+impl zerodds_codec::DdsSerialize for Pose {{
+    fn serialize(
+        &self,
+        out: zerodds_codec::DdsSerializer<'_>,
+    ) -> Result<zerodds_codec::Serialized, zerodds_codec::WireError> {{
+        {body}
+    }}
+}}
+
+pub fn written() -> Vec<u8> {{
+    let mut out = Vec::new();
+    zerodds_codec::encode(&Pose {{ id: 1, label: String::new() }}, zerodds_codec::Encapsulation::Xcdr2Le, &mut out)
+        .expect("encode");
+    out
+}}
+"#
+    )
+}
+
+/// The compiler's answer for a crate whose items are `items`.
+fn compile_errors(name: &str, items: &str) -> String {
+    let (_, output) = cargo_test_generated(
+        name,
+        "module unused { @final struct U { long a; }; };",
+        "",
+        items,
+        "",
+    );
+    assert!(
+        !output.status.success(),
+        "{name} compiled:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stderr).into_owned()
+}
+
+/// GitHub #33, the codec API's typestate (rc8-rust-newtype.md, "Codec
+/// API"): a hand-written `serialize` that leaves a member out, or hands
+/// over one more than the description has, does not compile — `end`
+/// exists only on the empty member list, `member` only on a non-empty one.
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn issue_33_a_hand_written_codec_missing_or_adding_a_member_does_not_compile() {
+    let missing = compile_errors(
+        "issue33missing",
+        &pose_with("out.serialize_struct::<Self>()?.member(&self.id)?.end()"),
+    );
+    assert!(
+        missing.contains("no method named `end` found"),
+        "the missing member is the compiler's error:\n{missing}"
+    );
+    let extra = compile_errors(
+        "issue33extra",
+        &pose_with(
+            "out.serialize_struct::<Self>()?.member(&self.id)?.member(&self.label)?.member(&self.id)?.end()",
+        ),
+    );
+    assert!(
+        extra.contains("no method named `member` found"),
+        "the extra member is the compiler's error:\n{extra}"
+    );
+}
+
+/// GitHub #33, the typestate's other half: a member of another type than
+/// the description's does not compile, and neither does a description
+/// that names another number of members than its member list
+/// (`DdsTypeInfo::CHECK`, evaluated where the type is serialized).
+#[test]
+#[ignore = "builds a crate around the generated module; runs in integration-codegen-build"]
+fn issue_33_a_hand_written_codec_of_another_type_or_description_does_not_compile() {
+    let mistyped = compile_errors(
+        "issue33mistyped",
+        &pose_with("out.serialize_struct::<Self>()?.member(&self.label)?.member(&self.id)?.end()"),
+    );
+    assert!(
+        mistyped.contains("mismatched types"),
+        "the mistyped member is the compiler's error:\n{mistyped}"
+    );
+    let described = compile_errors(
+        "issue33described",
+        &pose_with("out.serialize_struct::<Self>()?.member(&self.id)?.member(&self.label)?.end()")
+            .replace(
+                "zerodds_codec::codec::MemberDesc::new(\"label\")]",
+                "zerodds_codec::codec::MemberDesc::new(\"label\"), zerodds_codec::codec::MemberDesc::new(\"extra\")]",
+            ),
+    );
+    assert!(
+        described.contains("names another number of members"),
+        "the description's mismatch is the compiler's error:\n{described}"
+    );
+}
+
+/// Generate the C column for `idl` (XCDR2 little endian, the encoding
+/// `DdsType::encode` writes for a `@final` type), compile it with
+/// `runtime/c` and a `main` that holds `sample` and runs `body`, and
+/// answer what it printed.
+fn run_c_peer(dir: &Path, idl: &str, sample: &[u8], body: &str) -> String {
+    let unit = dir.join("peer.idl");
+    fs::write(&unit, idl).expect("idl");
+    let composed = zerodds_idl_compose::compose_with(
+        &unit.to_string_lossy(),
+        &zerodds_idl_compose::PathLoader::new(Vec::new()),
+        zerodds_idl_compose::ComposeOptions::default(),
+    )
+    .expect("compose");
+    assert!(!composed.failed(), "{:?}", composed.diagnostics);
+    let generated = zerodds_lang_rules::generate::source(
+        &composed.ast,
+        zerodds_lang_cst::Language::C,
+        zerodds_ast_layout::LayoutKey::data(
+            zerodds_ast_layout::Encoding::PlainCdr2,
+            zerodds_ast_layout::Endianness::Little,
+        ),
+    )
+    .unwrap_or_else(|why| panic!("generate C: {why:?}"));
+    fs::write(
+        dir.join("gen.h"),
+        format!(
+            "#ifndef ZD_GEN_H\n#define ZD_GEN_H\n#include \"zerodds_wire.h\"\n\
+             #define ZD_ENDIANNESS ZDW_LITTLE\n{generated}\n#endif\n"
+        ),
+    )
+    .expect("header");
+    let octets: Vec<String> = sample.iter().map(|b| format!("0x{b:02x}")).collect();
+    fs::write(
+        dir.join("main.c"),
+        format!(
+            "#include <stdio.h>\n#include <string.h>\n#include \"gen.h\"\n\
+             static const uint8_t sample[] = {{ {} }};\n\
+             int main(void) {{\n{body}    return 0;\n}}\n",
+            octets.join(", ")
+        ),
+    )
+    .expect("main");
+    let runtime = workspace_root().join("runtime/c");
+    let binary = dir.join("peer");
+    let compiler = std::env::var("CC").unwrap_or_else(|_| String::from("cc"));
+    let mut command = Command::new(&compiler);
+    command
+        .args(["-std=c99", "-Wall", "-Wno-unused-function"])
+        .arg(format!("-I{}", dir.display()))
+        .arg(format!("-I{}", runtime.join("include").display()))
+        .arg("-o")
+        .arg(&binary)
+        .arg(dir.join("main.c"));
+    for source in [
+        "writer.c",
+        "reader.c",
+        "float128.c",
+        "float128_decimal.c",
+        "md5.c",
+    ] {
+        command.arg(runtime.join("src").join(source));
+    }
+    let compiled = command.output().expect("a C compiler (cc, or CC)");
+    assert!(
+        compiled.status.success(),
+        "the C peer does not compile:\n{}\n{}",
+        String::from_utf8_lossy(&compiled.stderr),
+        fs::read_to_string(dir.join("gen.h")).unwrap_or_default()
+    );
+    let ran = Command::new(&binary).output().expect("the C peer starts");
+    assert!(
+        ran.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ran.stderr)
+    );
+    String::from_utf8_lossy(&ran.stdout).into_owned()
 }

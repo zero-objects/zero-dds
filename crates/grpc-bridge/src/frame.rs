@@ -108,14 +108,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_message_encodes_to_5_byte_header() {
+    fn grpc_outline_empty_message_encodes_to_5_byte_header() {
         // Spec §"Length-Prefixed-Message" — 5-byte header, length=0.
         let bytes = encode_message(&[], false).expect("encode");
         assert_eq!(bytes, alloc::vec![0, 0, 0, 0, 0]);
     }
 
     #[test]
-    fn uncompressed_message_has_compressed_flag_zero() {
+    fn grpc_outline_uncompressed_message_has_compressed_flag_zero() {
         let bytes = encode_message(b"hello", false).expect("encode");
         assert_eq!(bytes[0], 0);
         assert_eq!(&bytes[1..5], &5u32.to_be_bytes());
@@ -123,29 +123,34 @@ mod tests {
     }
 
     #[test]
-    fn compressed_message_has_compressed_flag_one() {
+    fn grpc_outline_compressed_message_has_compressed_flag_one() {
         let bytes = encode_message(b"compressed", true).expect("encode");
         assert_eq!(bytes[0], 1);
     }
 
+    /// §"Requests", Length-Prefixed-Message: a compressed flag octet, the
+    /// length as four octets big-endian, the message; a decoder reads that
+    /// layout.
     #[test]
-    fn round_trip_message() {
-        for payload in [
-            alloc::vec![],
-            alloc::vec![0u8],
-            alloc::vec![1, 2, 3, 4],
-            alloc::vec![0xAB; 1000],
-        ] {
-            let bytes = encode_message(&payload, false).expect("encode");
-            let (flag, decoded, consumed) = decode_message(&bytes).expect("decode");
-            assert_eq!(flag, 0);
-            assert_eq!(decoded, payload);
-            assert_eq!(consumed, bytes.len());
-        }
+    fn grpc_requests_a_length_prefixed_message_is_read_from_its_octets() {
+        assert_eq!(
+            decode_message(&[0, 0, 0, 0, 4, 1, 2, 3, 4]).expect("decode"),
+            (0, alloc::vec![1, 2, 3, 4], 9)
+        );
+        assert_eq!(
+            decode_message(&[0, 0, 0, 0, 0]).expect("decode"),
+            (0, alloc::vec![], 5)
+        );
+        let mut long = alloc::vec![0, 0, 0, 0x03, 0xe8];
+        long.extend_from_slice(&[0xab; 1000]);
+        assert_eq!(
+            decode_message(&long).expect("decode"),
+            (0, alloc::vec![0xab; 1000], 1005)
+        );
     }
 
     #[test]
-    fn message_length_uses_big_endian_4_bytes() {
+    fn grpc_outline_message_length_uses_big_endian_4_bytes() {
         // Spec — 4-byte BE.
         let bytes = encode_message(&alloc::vec![0; 256], false).expect("encode");
         // length=256 -> 0x00 0x00 0x01 0x00.
@@ -153,20 +158,20 @@ mod tests {
     }
 
     #[test]
-    fn header_too_short_decode_fails() {
+    fn grpc_outline_header_too_short_decode_fails() {
         assert_eq!(decode_message(&[]), Err(FrameError::HeaderTooShort));
         assert_eq!(decode_message(&[0; 4]), Err(FrameError::HeaderTooShort));
     }
 
     #[test]
-    fn body_truncated_decode_fails() {
+    fn grpc_outline_body_truncated_decode_fails() {
         // Length=10, but only 3 body bytes.
         let bytes = [0u8, 0, 0, 0, 10, 1, 2, 3];
         assert_eq!(decode_message(&bytes), Err(FrameError::BodyTruncated));
     }
 
     #[test]
-    fn web_trailers_encoded_with_msb_set() {
+    fn grpc_web_web_trailers_encoded_with_msb_set() {
         // gRPC-Web — CF-MSB=1 (0x80).
         let trailers = b"grpc-status: 0\r\n";
         let bytes = encode_web_trailers(trailers).expect("encode");
@@ -175,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn back_to_back_messages_can_be_decoded_sequentially() {
+    fn grpc_outline_back_to_back_messages_can_be_decoded_sequentially() {
         // Spec: "*Length-Prefixed-Message" — stream of messages.
         let m1 = encode_message(b"first", false).expect("encode");
         let m2 = encode_message(b"second", false).expect("encode");

@@ -223,8 +223,8 @@ if paramCount() >= 1:
                             HeartbeatBody(first: 1'u16, last: 3'u16, streamId: 0x80'u8))
     let an = acknackFrame(0x80'u8, StreamNone, 1,
                           AckNackBody(firstUnacked: 1'u16, nackLo: 0, nackHi: 0, streamId: 0x80'u8))
-    check(hb == goldHb, "byte_golden_heartbeat")
-    check(an == goldAn, "byte_golden_acknack")
+    check(hb == goldHb, "endpointnim_4_byte_golden_heartbeat")
+    check(an == goldAn, "endpointnim_4_byte_golden_acknack")
     # round-trip: parse the golden and re-encode
     let phb = parseHeartbeat(goldHb)
     check(phb.isSome and phb.get.first == 1'u16 and phb.get.last == 3'u16, "golden_heartbeat_parse")

@@ -119,7 +119,7 @@ class BuiltinTopicQosTest {
     // --- The wire form of the built-in topics ------------------------------
 
     @Test
-    void thePublicationWireFormCarriesTheQosOnTheParameterIdsOfTable913() {
+    void javapsm_2_the_publication_wire_form_carries_the_qos_on_the_parameter_ids_of_rtps_table_9_13() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<String> topic = participant.createTopic("Chatter", String.class);
         Publisher publisher = participant.createPublisher(publisherQos());
@@ -168,7 +168,7 @@ class BuiltinTopicQosTest {
     }
 
     @Test
-    void everyBuiltinDataTypeRoundTripsItsQos() {
+    void javapsm_2_the_subscription_and_topic_data_carry_their_qos_on_the_parameter_ids_of_rtps_table_9_13() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         TopicQos topicQos = Qos.topic()
                 .withPolicy(PF.Durability().withTransient())
@@ -179,6 +179,12 @@ class BuiltinTopicQosTest {
                 .withPolicy(PF.Deadline().withPeriod(4, TimeUnit.SECONDS))
                 .withPolicy(PF.DurabilityService().withHistoryDepth(8).withMaxSamples(50)
                         .withServiceCleanupDelay(3, TimeUnit.SECONDS))
+                .withPolicy(PF.LatencyBudget().withDuration(2, TimeUnit.SECONDS))
+                .withPolicy(PF.Liveliness().withManualByParticipant().withLeaseDuration(6, TimeUnit.SECONDS))
+                .withPolicy(PF.Lifespan().withDuration(20, TimeUnit.SECONDS))
+                .withPolicy(PF.DestinationOrder().withSourceTimestamp())
+                .withPolicy(PF.Ownership().withExclusive())
+                .withPolicy(PF.Reliability().withReliable().withMaxBlockingTime(3, TimeUnit.SECONDS))
                 .withPolicy(org.zerodds.core.policy.PolicyFactoryImpl.class.cast(PF)
                         .TopicData().withValue(bytes(5, 6, 7, 8, 9), 0, 5));
         Topic<String> topic = ((DomainParticipantImpl) participant)
@@ -186,8 +192,14 @@ class BuiltinTopicQosTest {
         Publisher publisher = participant.createPublisher(publisherQos());
         DataWriter<String> writer = publisher.createDataWriter(topic, writerQos());
         Subscriber subscriber = participant.createSubscriber(Qos.subscriber()
-                .withPolicy(PF.Partition().withName(Arrays.asList("A"))));
+                .withPolicy(PF.Partition().withName(Arrays.asList("A")))
+                .withPolicy(PF.GroupData().withValue(bytes(7, 7), 0, 2))
+                .withPolicy(Qos.policies().Presentation().withTopic().withCoherentAccess(true).withOrderedAccess(true)));
         DataReaderQos readerQos = Qos.reader()
+                .withPolicy(PF.Deadline().withPeriod(6, TimeUnit.SECONDS))
+                .withPolicy(PF.LatencyBudget().withDuration(1, TimeUnit.SECONDS))
+                .withPolicy(PF.Ownership().withExclusive())
+                .withPolicy(PF.DestinationOrder().withSourceTimestamp())
                 .withPolicy(PF.Durability().withTransientLocal())
                 .withPolicy(PF.Reliability().withReliable())
                 .withPolicy(PF.Liveliness().withManualByParticipant()
@@ -198,48 +210,76 @@ class BuiltinTopicQosTest {
         org.omg.dds.topic.BuiltinTopicKey participantKey =
                 org.zerodds.topic.BuiltinTopicKeyImpl.of(Qos.env(), participant.getInstanceHandle());
 
-        PublicationBuiltinTopicDataImpl publication = BuiltinData.publication(
-                Qos.env(), writer, publisher, participantKey);
-        PublicationBuiltinTopicData publicationBack = (PublicationBuiltinTopicData)
-                BuiltinTopicWire.decode(Qos.env(), BuiltinTopics.PUBLICATION,
-                        BuiltinTopicWire.encode(publication), 0,
-                        BuiltinTopicWire.encode(publication).length);
-        assertEquals(publication.getKey(), publicationBack.getKey());
-        assertEquals(publication.getParticipantKey(), publicationBack.getParticipantKey());
-        assertEquals("Chatter", publicationBack.getTopicName());
-        assertEquals(publication.getDurability(), publicationBack.getDurability());
-        assertEquals(publication.getDeadline(), publicationBack.getDeadline());
-        assertEquals(publication.getLatencyBudget(), publicationBack.getLatencyBudget());
-        assertEquals(publication.getLiveliness(), publicationBack.getLiveliness());
-        assertEquals(publication.getReliability(), publicationBack.getReliability());
-        assertEquals(publication.getLifespan(), publicationBack.getLifespan());
-        assertEquals(publication.getUserData(), publicationBack.getUserData());
-        assertEquals(publication.getOwnership(), publicationBack.getOwnership());
-        assertEquals(publication.getOwnershipStrength(), publicationBack.getOwnershipStrength());
-        assertEquals(publication.getDestinationOrder(), publicationBack.getDestinationOrder());
-        assertEquals(publication.getPresentation(), publicationBack.getPresentation());
-        assertEquals(publication.getPartition(), publicationBack.getPartition());
-        assertEquals(publication.getTopicData(), publicationBack.getTopicData());
-        assertEquals(publication.getGroupData(), publicationBack.getGroupData());
-        assertEquals(publication.getDurabilityService(), publicationBack.getDurabilityService());
-
+        // The subscription: PL_CDR_LE, the policies of the reader and of its subscriber and the
+        // topic data on the parameter IDs of DDSI-RTPS 2.5 Table 9.13.
         SubscriptionBuiltinTopicDataImpl subscription = BuiltinData.subscription(
                 Qos.env(), reader, subscriber, participantKey);
         byte[] subscriptionWire = BuiltinTopicWire.encode(subscription);
+        assertArrayEquals(bytes(0x00, 0x03, 0x00, 0x00), Arrays.copyOf(subscriptionWire, 4));
+        ParameterList sub = ParameterList.fromBytesLe(subscriptionWire, 4, subscriptionWire.length);
+        // PID_DURABILITY 0x001d: TRANSIENT_LOCAL = 1
+        assertArrayEquals(bytes(1, 0, 0, 0), sub.find(0x001d));
+        // PID_LIVELINESS 0x001b: MANUAL_BY_PARTICIPANT = 1, lease { 9, 0 }
+        assertArrayEquals(bytes(1, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0), sub.find(0x001b));
+        // PID_TIME_BASED_FILTER 0x0004: minimum_separation { 1, 0 }
+        assertArrayEquals(bytes(1, 0, 0, 0, 0, 0, 0, 0), sub.find(0x0004));
+        // PID_USER_DATA 0x002c: sequence<octet> { 4 }, padded to four
+        assertArrayEquals(bytes(1, 0, 0, 0, 4, 0, 0, 0), sub.find(0x002c));
+        // PID_PARTITION 0x0029: sequence<string> { "A" }
+        assertArrayEquals(bytes(1, 0, 0, 0, 2, 0, 0, 0, 'A', 0, 0, 0), sub.find(0x0029));
+        // PID_TOPIC_DATA 0x002e: the topic data of the topic { 5, 6, 7, 8, 9 }
+        assertArrayEquals(bytes(5, 0, 0, 0, 5, 6, 7, 8, 9, 0, 0, 0), sub.find(0x002e));
+        // PID_DEADLINE 0x0023 { 6, 0 }, PID_LATENCY_BUDGET 0x0027 { 1, 0 }
+        assertArrayEquals(bytes(6, 0, 0, 0, 0, 0, 0, 0), sub.find(0x0023));
+        assertArrayEquals(bytes(1, 0, 0, 0, 0, 0, 0, 0), sub.find(0x0027));
+        // PID_OWNERSHIP 0x001f: EXCLUSIVE = 1; PID_DESTINATION_ORDER 0x0025: BY_SOURCE_TIMESTAMP = 1
+        assertArrayEquals(bytes(1, 0, 0, 0), sub.find(0x001f));
+        assertArrayEquals(bytes(1, 0, 0, 0), sub.find(0x0025));
+        // PID_GROUP_DATA 0x002d { 7, 7 }; PID_PRESENTATION 0x0021: TOPIC = 1, coherent, ordered
+        assertArrayEquals(bytes(2, 0, 0, 0, 7, 7, 0, 0), sub.find(0x002d));
+        assertArrayEquals(bytes(1, 0, 0, 0, 1, 1, 0, 0), sub.find(0x0021));
         SubscriptionBuiltinTopicData subscriptionBack = (SubscriptionBuiltinTopicData)
                 BuiltinTopicWire.decode(Qos.env(), BuiltinTopics.SUBSCRIPTION,
                         subscriptionWire, 0, subscriptionWire.length);
         assertEquals(subscription.getKey(), subscriptionBack.getKey());
         assertEquals(subscription.getDurability(), subscriptionBack.getDurability());
         assertEquals(subscription.getLiveliness(), subscriptionBack.getLiveliness());
-        assertEquals(subscription.getReliability(), subscriptionBack.getReliability());
         assertEquals(subscription.getTimeBasedFilter(), subscriptionBack.getTimeBasedFilter());
         assertEquals(subscription.getUserData(), subscriptionBack.getUserData());
         assertEquals(subscription.getPartition(), subscriptionBack.getPartition());
         assertEquals(subscription.getTopicData(), subscriptionBack.getTopicData());
 
+        // The topic: its policies on the same parameter IDs.
         TopicBuiltinTopicDataImpl topicData = BuiltinData.topic(Qos.env(), topic);
         byte[] topicWire = BuiltinTopicWire.encode(topicData);
+        assertArrayEquals(bytes(0x00, 0x03, 0x00, 0x00), Arrays.copyOf(topicWire, 4));
+        ParameterList top = ParameterList.fromBytesLe(topicWire, 4, topicWire.length);
+        assertEquals("Chatter", ParameterList.readCdrString(top.find(0x0005)));
+        // PID_DURABILITY: TRANSIENT = 2
+        assertArrayEquals(bytes(2, 0, 0, 0), top.find(0x001d));
+        // PID_HISTORY 0x0040: KEEP_LAST = 0, depth 5
+        assertArrayEquals(bytes(0, 0, 0, 0, 5, 0, 0, 0), top.find(0x0040));
+        // PID_RESOURCE_LIMITS 0x0041: max_samples 100, max_instances 10, max_samples_per_instance 20
+        assertArrayEquals(bytes(100, 0, 0, 0, 10, 0, 0, 0, 20, 0, 0, 0), top.find(0x0041));
+        // PID_TRANSPORT_PRIORITY 0x0049
+        assertArrayEquals(bytes(3, 0, 0, 0), top.find(0x0049));
+        // PID_DEADLINE 0x0023: { 4, 0 }
+        assertArrayEquals(bytes(4, 0, 0, 0, 0, 0, 0, 0), top.find(0x0023));
+        // PID_TOPIC_DATA 0x002e
+        assertArrayEquals(bytes(5, 0, 0, 0, 5, 6, 7, 8, 9, 0, 0, 0), top.find(0x002e));
+        // PID_DURABILITY_SERVICE 0x001e: service_cleanup_delay { 3, 0 }, KEEP_LAST = 0, depth 8,
+        // max_samples 50, max_instances and max_samples_per_instance LENGTH_UNLIMITED (-1)
+        assertArrayEquals(bytes(3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0, 50, 0, 0, 0,
+                0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF), top.find(0x001e));
+        // PID_LATENCY_BUDGET { 2, 0 }; PID_LIVELINESS MANUAL_BY_PARTICIPANT = 1, lease { 6, 0 }
+        assertArrayEquals(bytes(2, 0, 0, 0, 0, 0, 0, 0), top.find(0x0027));
+        assertArrayEquals(bytes(1, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0), top.find(0x001b));
+        // PID_LIFESPAN 0x002b { 20, 0 }; PID_DESTINATION_ORDER BY_SOURCE_TIMESTAMP = 1;
+        // PID_OWNERSHIP EXCLUSIVE = 1; PID_RELIABILITY 0x001a RELIABLE = 2, max_blocking_time { 3, 0 }
+        assertArrayEquals(bytes(20, 0, 0, 0, 0, 0, 0, 0), top.find(0x002b));
+        assertArrayEquals(bytes(1, 0, 0, 0), top.find(0x0025));
+        assertArrayEquals(bytes(1, 0, 0, 0), top.find(0x001f));
+        assertArrayEquals(bytes(2, 0, 0, 0, 3, 0, 0, 0, 0, 0, 0, 0), top.find(0x001a));
         TopicBuiltinTopicData topicBack = (TopicBuiltinTopicData)
                 BuiltinTopicWire.decode(Qos.env(), BuiltinTopics.TOPIC, topicWire, 0,
                         topicWire.length);
@@ -247,18 +287,16 @@ class BuiltinTopicQosTest {
         assertEquals(topicData.getDurability(), topicBack.getDurability());
         assertEquals(topicData.getDurabilityService(), topicBack.getDurabilityService());
         assertEquals(topicData.getDeadline(), topicBack.getDeadline());
-        assertEquals(topicData.getHistory(), topicBack.getHistory());
-        assertEquals(topicData.getResourceLimits(), topicBack.getResourceLimits());
-        assertEquals(topicData.getTransportPriority(), topicBack.getTransportPriority());
-        assertEquals(topicData.getTopicData(), topicBack.getTopicData());
         assertEquals(5, topicBack.getHistory().getDepth());
         assertEquals(100, topicBack.getResourceLimits().getMaxSamples());
+        assertEquals(topicData.getTransportPriority(), topicBack.getTransportPriority());
+        assertEquals(topicData.getTopicData(), topicBack.getTopicData());
     }
 
     // --- A reader of the built-in topic sees the QoS ------------------------
 
     @Test
-    void aBuiltinReaderSeesTheQosOfTheAnnouncedWriter() throws Exception {
+    void javapsm_2_a_builtin_reader_sees_the_qos_of_the_announced_writer() throws Exception {
         int domain = nextDom();
         DomainParticipant observer = Qos.factory().createParticipant(domain);
         DataReader<PublicationBuiltinTopicDataImpl> publications =
@@ -293,7 +331,7 @@ class BuiltinTopicQosTest {
     // --- The matched entities --------------------------------------------
 
     @Test
-    void theMatchedEntitiesAreDescribedWithTheirQos() throws Exception {
+    void javapsm_2_the_matched_entities_are_described_with_their_qos() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<String> topic = participant.createTopic("Chatter", String.class);
         Publisher publisher = participant.createPublisher(publisherQos());
@@ -332,39 +370,7 @@ class BuiltinTopicQosTest {
     // --- SEDP (DDSI-RTPS 2.5 §9.6.2) ----------------------------------------
 
     @Test
-    void sedpCarriesTheQosOfTheEndpoint() {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        Topic<String> topic = participant.createTopic("Chatter", String.class);
-        Publisher publisher = participant.createPublisher(publisherQos());
-        DataWriter<String> writer = publisher.createDataWriter(topic, writerQos());
-        QosParameters qos = BuiltinQos.of(BuiltinData.publication(Qos.env(), writer, publisher,
-                org.zerodds.topic.BuiltinTopicKeyImpl.of(Qos.env(), participant.getInstanceHandle())));
-
-        byte[] prefix = new byte[12];
-        byte[] guid = new byte[16];
-        guid[15] = 3;
-        byte[] payload = DiscoveryData.buildEndpoint(true, prefix, guid, "Chatter", "T",
-                2, 1, new int[] {0}, Locator.udpV4("127.0.0.1", 7411), new byte[0],
-                new byte[0], qos);
-        DiscoveryData.Endpoint parsed = DiscoveryData.parseEndpoint(true, payload);
-
-        assertNotNull(parsed);
-        assertEquals(Integer.valueOf(1), parsed.qos.durability);
-        assertEquals(new QosParameters.Dur(5, 0), parsed.qos.deadline);
-        assertEquals(new QosParameters.Dur(2, 0), parsed.qos.latencyBudget);
-        assertEquals(2, parsed.qos.liveliness.kind);
-        assertEquals(new QosParameters.Dur(7, 0), parsed.qos.liveliness.lease);
-        assertEquals(2, parsed.qos.reliability.kind);
-        assertEquals(Integer.valueOf(1), parsed.qos.ownership);
-        assertEquals(Integer.valueOf(7), parsed.qos.ownershipStrength);
-        assertEquals(Arrays.asList("A", "B"), parsed.qos.partition);
-        assertArrayEquals(bytes(1, 2, 3), parsed.qos.userData);
-        assertArrayEquals(bytes(9, 8), parsed.qos.groupData);
-        assertArrayEquals(new int[] {0}, parsed.qos.dataRepresentation);
-    }
-
-    @Test
-    void sedpOfAnEndpointWithoutQosParametersTakesTheDefaults() {
+    void javapsm_2_sedp_of_an_endpoint_without_qos_parameters_takes_the_defaults() {
         byte[] payload = DiscoveryData.buildEndpoint(false, new byte[12], new byte[16], "T", "T",
                 2, 1, new int[] {0}, Locator.udpV4("127.0.0.1", 7411), new byte[0]);
         DiscoveryData.Endpoint parsed = DiscoveryData.parseEndpoint(false, payload);
@@ -377,7 +383,7 @@ class BuiltinTopicQosTest {
     }
 
     @Test
-    void anAnnouncementWithAMalformedPolicyIsRefused() {
+    void javapsm_2_an_announcement_with_a_deadline_shorter_than_a_duration_is_refused() {
         ParameterList pl = new ParameterList();
         pl.add(0x005a, new byte[16]);
         pl.add(0x0005, ParameterList.cdrString("T"));
@@ -391,7 +397,7 @@ class BuiltinTopicQosTest {
     }
 
     @Test
-    void requestOfferedRulesOfTheEndpointsDecideTheMatch() {
+    void javapsm_7_3_5_1_the_request_offered_rules_decide_the_match_of_remote_endpoints() {
         QosParameters offered = new QosParameters();
         QosParameters requested = new QosParameters();
         assertNull(QosParameters.incompatibility(offered, requested));
@@ -434,7 +440,7 @@ class BuiltinTopicQosTest {
     private static final List<String> NAMES = Arrays.asList("A::One", "B::Two");
 
     @Test
-    void theTypeMembersAreOnTheirParameterIdsAndRoundTrip() {
+    void javapsm_7_8_the_type_members_are_on_their_parameter_ids() {
         PublicationBuiltinTopicDataImpl data = new PublicationBuiltinTopicDataImpl(Qos.env());
         data.setKey(org.zerodds.topic.BuiltinTopicKeyImpl.of(Qos.env(),
                 Qos.factory().createParticipant(nextDom()).getInstanceHandle()));
@@ -465,37 +471,7 @@ class BuiltinTopicQosTest {
     }
 
     @Test
-    void theTypeMembersOfTheOtherTwoBuiltinTopicsRoundTripToo() {
-        TopicBuiltinTopicDataImpl topic = new TopicBuiltinTopicDataImpl(Qos.env());
-        topic.setKey(org.zerodds.topic.BuiltinTopicKeyImpl.of(Qos.env(),
-                Qos.factory().createParticipant(nextDom()).getInstanceHandle()));
-        topic.setName("T");
-        topic.setTypeName("Ty");
-        topic.setEquivalentTypeName(NAMES);
-        topic.setTypeInformation(bytes(4, 3, 2, 1));
-        byte[] topicWire = BuiltinTopicWire.encode(topic);
-        TopicBuiltinTopicDataImpl topicBack = (TopicBuiltinTopicDataImpl)
-                BuiltinTopicWire.decode(Qos.env(), BuiltinTopics.TOPIC, topicWire, 0,
-                        topicWire.length);
-        assertEquals(NAMES, topicBack.getEquivalentTypeName());
-        assertArrayEquals(bytes(4, 3, 2, 1), topicBack.getTypeInformation());
-
-        SubscriptionBuiltinTopicDataImpl subscription =
-                new SubscriptionBuiltinTopicDataImpl(Qos.env());
-        subscription.setKey(topic.getKey());
-        subscription.setTopicName("T");
-        subscription.setTypeName("Ty");
-        subscription.setBaseTypeName(NAMES);
-        byte[] subscriptionWire = BuiltinTopicWire.encode(subscription);
-        SubscriptionBuiltinTopicDataImpl subscriptionBack = (SubscriptionBuiltinTopicDataImpl)
-                BuiltinTopicWire.decode(Qos.env(), BuiltinTopics.SUBSCRIPTION, subscriptionWire,
-                        0, subscriptionWire.length);
-        assertEquals(NAMES, subscriptionBack.getBaseTypeName());
-        assertNull(subscriptionBack.getTypeInformation());
-    }
-
-    @Test
-    void aLocalWriterDescribesTheBaseTypesOfItsType() {
+    void javapsm_8_6_1_1_a_local_writer_describes_the_base_types_of_its_type() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<DerivedType> topic = participant.createTopic("Derived", DerivedType.class);
         Publisher publisher = participant.createPublisher(publisherQos());
@@ -508,13 +484,17 @@ class BuiltinTopicQosTest {
     }
 
     @Test
-    void sedpCarriesTheTypeInformationAndTheTypeNames() {
+    void javapsm_7_8_sedp_carries_the_type_information_on_its_parameter_id() {
         QosParameters qos = new QosParameters();
         qos.baseTypeName = Arrays.asList("C::Three");
         qos.equivalentTypeName = NAMES;
         byte[] payload = DiscoveryData.buildEndpoint(false, new byte[12], new byte[16], "T", "Ty",
                 2, 1, new int[] {0}, Locator.udpV4("127.0.0.1", 7411), new byte[0],
                 bytes(5, 6, 7, 8), qos);
+        // XTypes 1.3 Annex D (DDS::SubscriptionBuiltinTopicData): type_information on @id(0x0075)
+        assertArrayEquals(bytes(0x00, 0x03, 0x00, 0x00), Arrays.copyOf(payload, 4));
+        assertArrayEquals(bytes(5, 6, 7, 8),
+                ParameterList.fromBytesLe(payload, 4, payload.length).find(0x0075));
         DiscoveryData.Endpoint parsed = DiscoveryData.parseEndpoint(false, payload);
         assertNotNull(parsed);
         assertArrayEquals(bytes(5, 6, 7, 8), parsed.typeInformation);

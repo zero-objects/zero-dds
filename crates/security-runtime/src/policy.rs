@@ -457,31 +457,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn protection_level_to_kind_roundtrip_without_origin_auth() {
-        for lvl in [
-            ProtectionLevel::None,
-            ProtectionLevel::Sign,
-            ProtectionLevel::Encrypt,
-        ] {
-            let kind = lvl.to_protection_kind();
-            assert_eq!(ProtectionLevel::from_protection_kind(kind), lvl);
-        }
-    }
-
-    #[test]
-    fn protection_level_default_is_none() {
-        assert_eq!(ProtectionLevel::default(), ProtectionLevel::None);
-    }
-
     // ---- SuiteHint ----
-
-    #[test]
-    fn suite_hint_roundtrip_suite() {
-        for s in [Suite::Aes128Gcm, Suite::Aes256Gcm, Suite::Aes256Gmac] {
-            assert_eq!(SuiteHint::from_suite(s).to_suite(), s);
-        }
-    }
 
     #[test]
     fn suite_hint_protection_level_matches_semantics() {

@@ -100,7 +100,7 @@ formal/2011-11-01..03), CCM (= CORBA Part 3), D&C (formal/06-04-02), DDS 1.2
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — reference list.
 
 ---
 
@@ -112,7 +112,7 @@ formal/2011-11-01..03), CCM (= CORBA Part 3), D&C (formal/06-04-02), DDS 1.2
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — terms.
 
 ---
 
@@ -124,7 +124,7 @@ formal/2011-11-01..03), CCM (= CORBA Part 3), D&C (formal/06-04-02), DDS 1.2
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — abbreviations.
 
 ---
 
@@ -138,7 +138,7 @@ formal/2011-11-01..03), CCM (= CORBA Part 3), D&C (formal/06-04-02), DDS 1.2
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — "None in this specification."
 
 ### §6.2 Acknowledgements
 
@@ -148,7 +148,7 @@ formal/2011-11-01..03), CCM (= CORBA Part 3), D&C (formal/06-04-02), DDS 1.2
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — acknowledgements.
 
 ---
 
@@ -165,7 +165,7 @@ of generic CCM receptacles.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — rationale.
 
 #### §7.1.2 From connector-oriented modeling to connectionless deployment
 
@@ -176,7 +176,7 @@ at deployment.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — explanation of the difference between model and execution; no requirement.
 
 ### §7.2 DDS-DCPS extended ports
 
@@ -190,11 +190,11 @@ Design, §7.2.1.4 Simplicity vs Richness Trade-off).
 
 **Tests:** —
 
-**Status:** n/a (informative) — design rationale, not a wire item.
+**Status:** n/a (informative) — design rules of the IDL; the normative ports are in §7.2.2 and Annex A.
 
 #### §7.2.2 Normative DDS-DCPS ports
 
-##### §7.2.2.1 DDS-DCPS basic port interfaces
+#### §7.2.2.1 DDS-DCPS basic port interfaces
 
 **Spec:** §7.2.2.1, p. 8-17 (PDF) — basic-port interfaces:
 `CCM_DDS::Reader<T>`, `CCM_DDS::Writer<T>`, `CCM_DDS::Updater<T>` etc., with
@@ -208,7 +208,7 @@ basic_port_construct}`.
 
 **Status:** done
 
-##### §7.2.2.2 DDS-DCPS extended ports
+#### §7.2.2.2 DDS-DCPS extended ports
 
 **Spec:** §7.2.2.2, p. 18-19 (PDF) — extended ports combine several basic
 ports (e.g. `DataReader<T>` + `DataListener<T>` + `DataWriter<T>`).
@@ -278,21 +278,27 @@ configuration; the concrete entity creation is done by the DCPS stack
 
 #### §7.4.2 DDS QoS policies in XML
 
-##### §7.4.2.1 XML file syntax
+#### §7.4.2.1 XML file syntax
 
-**Spec:** §7.4.2.1, p. 22 (PDF) — XML file syntax + DOCTYPE + root element.
+**Spec:** §7.4.2.1, p. 22 (PDF) — UTF-8; values without leading and trailing spaces; values are case-sensitive; comments `<!-- -->`; root `<dds>`. Table 7.1: Boolean "yes, 1, true or BOOLEAN_TRUE / no, 0, false or BOOLEAN_FALSE", "Not case-sensitive"; Enum as a string; Long and UnsignedLong decimal or hexadecimal, `LENGTH_UNLIMITED`.
 
-**Repo:** `crates/xml/src/qos.rs` with `parse_xml_string`.
+**Repo:** `crates/xml/src/parser.rs`, `crates/xml/src/qos_parser.rs` (`parse_qos_libraries`, `parse_bool_strict`), `crates/xml/src/types.rs` (`parse_long`)
 
-**Tests:** `crates/xml/src/parser.rs::tests::parse_minimal_document`,
-`::parse_with_xml_declaration`, `::parse_namespace_aware`,
-`::comments_stripped`, `::whitespace_tolerant`, `::attributes_preserved`,
-`::invalid_xml_rejected`, `::dtd_rejected`, `::list_dos_cap`. Cross-reference
-`zerodds-xml-1.0.en.md` §7.3.2.
+**Tests:** `crates/xml/src/parser.rs::tests::parse_minimal_document`, `crates/xml/src/parser.rs::tests::parse_with_xml_declaration`, `crates/xml/src/parser.rs::tests::non_utf8_declared_encoding_rejected`, `crates/xml/src/parser.rs::tests::comments_stripped`, `crates/xml/src/parser.rs::tests::attributes_preserved`, `crates/xml/src/parser.rs::tests::invalid_xml_rejected`, `crates/xml/src/qos_parser.rs::tests::rejects_non_dds_root`, `crates/xml/src/qos_parser.rs::tests::parse_bool_strict_accepts_only_lowercase`
 
-**Status:** done
+**Status:** partial — UTF-8, comments, root `<dds>`, trimmed spaces and hexadecimal numbers are implemented. The Boolean forms of Table 7.1 are missing: `parse_bool_strict` takes, per DDS-XML 1.0 §7.1.4, only `true`, `1`, `false`, `0` in that spelling; own item.
 
-##### §7.4.2.2 Entity QoS
+#### §7.4.2.1 Table 7.1 — Boolean `yes`/`no`/`BOOLEAN_TRUE`/`BOOLEAN_FALSE` regardless of case
+
+**Spec:** §7.4.2.1, Table 7.1, p. 22 (PDF) — "Boolean | yes, 1, true or BOOLEAN_TRUE: / no, 0, false or BOOLEAN_FALSE: | Not case-sensitive".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `parse_bool_strict` (`crates/xml/src/qos_parser.rs`) refuses `yes`, `no`, `BOOLEAN_TRUE`, `BOOLEAN_FALSE` and `True`, `TRUE` (`boolean_case_sensitive_rejected`); the reader follows DDS-XML 1.0 §7.1.4.
+
+#### §7.4.2.2 Entity QoS
 
 **Spec:** §7.4.2.2, p. 22-25 (PDF) — entity-QoS element definitions
 (participant_qos, topic_qos, publisher_qos, subscriber_qos, datawriter_qos,
@@ -308,11 +314,11 @@ structures.
 `library_profile_lookup`, `glob_star_matches_all`, `glob_prefix`,
 `glob_question_mark`, `glob_exact`;
 `crates/xml/src/parser.rs::tests::parse_minimal_document`,
-`::parse_namespace_aware`, `::invalid_xml_rejected`, `::dtd_rejected`.
+`::parse_namespace_aware`, `::invalid_xml_rejected`.
 
 **Status:** done
 
-##### §7.4.2.3 QoS profiles
+#### §7.4.2.3 QoS profiles
 
 **Spec:** §7.4.2.3, p. 25-27 (PDF) — the `<qos_profile name="...">` pattern,
 `base_name` inheritance, topic sub-profiles.
@@ -365,7 +371,7 @@ ThreadPerConnector/SharedThreadPool/InvokeInline.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — design principle; the normative port is in §8.2 and Annex B.
 
 #### §8.1.2 Scope of DLRL connectors
 
@@ -375,13 +381,13 @@ ThreadPerConnector/SharedThreadPool/InvokeInline.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — design principle; the connectors are in §8.3 and Annex B.
 
 ### §8.2 DDS-DLRL extended ports
 
 #### §8.2.1 DLRL basic ports
 
-##### §8.2.1.1 Cache operation
+#### §8.2.1.1 Cache operation
 
 **Spec:** §8.2.1.1, p. 30 (PDF) — the `CCM_DLRL::CacheOperation` port.
 
@@ -393,7 +399,7 @@ dlrl_port_construct}`.
 
 **Status:** done
 
-##### §8.2.1.2 DLRL class (ObjectHome)
+#### §8.2.1.2 DLRL class (ObjectHome)
 
 **Spec:** §8.2.1.2, p. 30 (PDF) — the `CCM_DLRL::ObjectHome<T>` port per DLRL
 class.
@@ -500,7 +506,7 @@ QoS-profile XML files.
 `library_profile_lookup`, `glob_star_matches_all`, `glob_prefix`,
 `glob_question_mark`, `glob_exact`;
 `crates/xml/src/parser.rs::tests::parse_minimal_document`,
-`::parse_namespace_aware`, `::invalid_xml_rejected`, `::dtd_rejected`.
+`::parse_namespace_aware`, `::invalid_xml_rejected`.
 
 **Status:** done
 
@@ -540,10 +546,13 @@ profile markers (the caller binds the concrete QosProfile configuration via
 
 ## Audit status
 
-24 done / 0 partial / 0 open / 10 n/a (informative) / 0 n/a (rejected).
+23 done / 1 partial / 1 open / 0 blocked / 10 n/a (informative).
 
-Test run: `cargo test -p zerodds-ccm -p zerodds-xml --lib` — 53 + 221 tests
-green, 0 failed (DDS4CCM connector/port model + XML-QoS loader §7.4.2 +
-Annex C/D); CCM container host, see `omg-ccm-4.0.md`.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds4ccm-1.1.md`):
 
-No open items — all `done`.
+* `cargo nextest run --profile merge -p zerodds-ccm --all-targets` (job `merge-rust-ccm`) — 13 tests green.
+* `cargo nextest run --profile merge -p zerodds-xml --all-targets` (job `merge-rust-xml`) — 19 tests green.
+
+32 cited tests green, 0 not green.
+
+Open items: `dds4ccm-1.1.open.en.md`.

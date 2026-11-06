@@ -90,6 +90,10 @@ fn write_object_ref(w: &mut Writer, ior_bytes: &[u8]) {
         w.write_string(""); // type_id "" (CDR length 1 + NUL)
         w.write_u32(0); // 0 TaggedProfiles
     } else {
+        // The IOR opens with the `unsigned long` length of its type_id, so it
+        // starts on a four-octet boundary (CORBA 3.3 part 2 §9.3.1.1); the
+        // raw bytes were serialised from offset zero, which assumes one.
+        w.align_to(4);
         w.write_bytes(ior_bytes);
     }
 }
@@ -236,10 +240,10 @@ impl PropagationContext {
         if looks_any {
             let mut r = Reader::new(data, e);
             r.read_u8()?;
-            if skip_type_code(&mut r).is_ok() {
-                if let Ok(ctx) = Self::decode(&mut r) {
-                    return Ok(ctx);
-                }
+            if skip_type_code(&mut r).is_ok()
+                && let Ok(ctx) = Self::decode(&mut r)
+            {
+                return Ok(ctx);
             }
         }
         // Spec form (§10.4.6): bare CDR encapsulation of the struct.
@@ -287,6 +291,36 @@ fn skip_type_code(r: &mut Reader<'_>) -> Result<(), WireError> {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    /// CORBA 3.3 part 2 §9.3.1.1: the terminator's IOR starts aligned
+    /// although the coordinator's IOR before it is 29 octets long; the
+    /// reader aligns before the type_id's length, so an unpadded writer
+    /// made the pair unreadable.
+    #[test]
+    fn corba_9_3_1_1_an_ior_after_an_odd_length_ior_starts_aligned() {
+        // type_id "IDL:X:1.0" (length 10), one profile of tag 0 and 1 octet.
+        let mut ior = Writer::new(Endianness::Little);
+        ior.write_string("IDL:X:1.0");
+        ior.write_u32(1);
+        ior.write_u32(0);
+        ior.write_u32(1);
+        ior.write_bytes(&[0xAB]);
+        let ior = ior.finish();
+        assert_eq!(ior.len(), 4 + 10 + 2 + 4 + 4 + 4 + 1);
+        let identity = TransIdentity {
+            coord_ior: ior.clone(),
+            term_ior: ior.clone(),
+            otid: Otid::new(0, alloc::vec![1]),
+        };
+        let mut w = Writer::new(Endianness::Little);
+        identity.encode(&mut w).unwrap();
+        let bytes = w.finish();
+        // 29 octets: three of padding, then the terminator's IOR at 32.
+        assert_eq!(&bytes[29..32], &[0, 0, 0]);
+        assert_eq!(&bytes[32..32 + ior.len()], &ior[..]);
+        let mut r = Reader::new(&bytes, Endianness::Little);
+        assert_eq!(TransIdentity::decode(&mut r).unwrap(), identity);
+    }
 
     #[test]
     fn service_context_id_is_zero() {

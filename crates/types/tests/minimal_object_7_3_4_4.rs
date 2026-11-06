@@ -40,7 +40,7 @@ fn type_id(ast: &Ast, name: &str) -> Id<zerodds_ast::TypeNode> {
 /// A user-defined annotation and a `@verbatim` change the COMPLETE object and
 /// not the MINIMAL one: the same MINIMAL object, the same MINIMAL identifier.
 #[test]
-fn user_defined_annotations_are_not_in_the_minimal_object() {
+fn xtypes_7_3_4_4_user_defined_annotations_are_not_in_the_minimal_object() {
     let annotated = model(
         "@annotation Tag { long v default 1; };\n\
          @verbatim(language=\"c++\", placement=BEFORE_DECLARATION, text=\"//\")\n\
@@ -66,7 +66,7 @@ fn user_defined_annotations_are_not_in_the_minimal_object() {
 /// The members of a MUTABLE structure are in declaration order in the
 /// MINIMAL object (§7.3.4.5), whatever their ids.
 #[test]
-fn the_members_of_a_mutable_type_are_in_declaration_order() {
+fn xtypes_7_3_4_4_the_members_of_a_mutable_type_are_in_declaration_order() {
     let ast = model("@mutable struct M { @id(20) long b; @id(10) long a; @id(30) long c; };");
     let MinimalTypeObject::Struct(s) = minimal_type_object(&ast, type_id(&ast, "M")).expect("m")
     else {
@@ -78,7 +78,7 @@ fn the_members_of_a_mutable_type_are_in_declaration_order() {
 
 /// A MINIMAL member has the hash of its name and nothing of the name.
 #[test]
-fn a_minimal_member_has_the_hash_of_its_name() {
+fn xtypes_7_3_4_4_a_minimal_member_has_the_hash_of_its_name() {
     use zerodds_types::type_object::common::NameHash;
     let ast = model("struct N { long color; };");
     let MinimalTypeObject::Struct(s) = minimal_type_object(&ast, type_id(&ast, "N")).expect("m")

@@ -113,13 +113,47 @@ fn generate(idl: &str, root_name: &str, key: LayoutKey, reading: bool) -> String
 
 /// Whether `elixirc` is on the path at all.
 fn elixirc_available() -> bool {
-    Command::new("elixirc")
-        .arg("--version")
-        .output()
-        .is_ok_and(|output| output.status.success())
+    // A look at PATH and not a start of the tool: a JVM, .NET or BEAM
+    // start cost seconds of a test's 25 s with eight compilers side by side
+    // (pipeline 8678); a tool that cannot start fails the compile that follows.
+    on_path("elixirc")
 }
 
-/// The compiled wire runtime, once per test process.
+fn on_path(tool: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
+}
+
+/// The Erlang VM options of every `elixirc` and `elixir` here
+/// (`ELIXIR_ERL_OPTIONS`). The codegen jobs run eight compilers side by side
+/// on a host that shows the VM 32 CPUs; a VM starts a scheduler per CPU and
+/// lets idle schedulers spin, so two schedulers without busy waiting is
+/// what one compile needs. Without them every share of the corpus ran past
+/// 25 s and `elixirc` exited without a word (pipeline 8693, job 228220).
+const ELIXIR_ERL_OPTIONS: &str = "+S 2:2 +sbwt none +sbwtdcpu none +sbwtdio none";
+
+/// The wire runtime as `tests/integration/elixir_runtime.sh` compiled it
+/// once for a codegen job: its ebin directory, when `complete` is there and
+/// the sources it compiled are `sources`, file for file.
+fn precompiled_runtime(sources: &[std::path::PathBuf]) -> Option<String> {
+    let dir = std::env::temp_dir().join("zd-elixir-runtime");
+    if !dir.join("complete").is_file() {
+        return None;
+    }
+    if std::fs::read_dir(dir.join("src")).ok()?.count() != sources.len() {
+        return None;
+    }
+    for source in sources {
+        let copy = dir.join("src").join(source.file_name()?);
+        if std::fs::read(source).ok()? != std::fs::read(copy).ok()? {
+            return None;
+        }
+    }
+    Some(dir.join("ebin").display().to_string())
+}
+
+/// The compiled wire runtime, once per test process, or once per codegen
+/// job (`precompiled_runtime`).
 ///
 /// On the code path rather than left out: a call into a module the
 /// compiler cannot find is a warning, and warnings are failures.
@@ -134,7 +168,11 @@ fn runtime_ebin() -> &'static str {
         for entry in std::fs::read_dir(runtime.join("zerodds_wire")).expect("the runtime modules") {
             sources.push(entry.expect("a runtime module").path());
         }
+        if let Some(ebin) = precompiled_runtime(&sources) {
+            return ebin;
+        }
         let output = Command::new("elixirc")
+            .env("ELIXIR_ERL_OPTIONS", ELIXIR_ERL_OPTIONS)
             .arg("--ignore-module-conflict")
             .arg("-o")
             .arg(&out)
@@ -156,6 +194,7 @@ fn runtime_ebin() -> &'static str {
             "the wire runtime does not compile under {}:\nstdout: {}\nstderr: {}",
             String::from_utf8_lossy(
                 &Command::new("elixir")
+                    .env("ELIXIR_ERL_OPTIONS", ELIXIR_ERL_OPTIONS)
                     .arg("--version")
                     .output()
                     .map(|v| v.stdout)
@@ -186,6 +225,7 @@ fn compiles(source: &str) -> Result<(), String> {
     let file = dir.join("zd_codec.ex");
     std::fs::write(&file, source).map_err(|error| error.to_string())?;
     let output = Command::new("elixirc")
+        .env("ELIXIR_ERL_OPTIONS", ELIXIR_ERL_OPTIONS)
         .arg("--ignore-module-conflict")
         .arg("-pa")
         .arg(runtime_ebin())
@@ -208,7 +248,12 @@ fn compiles(source: &str) -> Result<(), String> {
             if output.status.success() && only_accepted_warnings(&said) {
                 Ok(())
             } else {
-                Err(said)
+                // The status too: under eight tests side by side `elixirc`
+                // ended unsuccessfully with nothing on either stream
+                // (pipeline 8699, job 228253): the kernel killed its Erlang
+                // VM at the job's memory limit (CODEGEN_THREADS in
+                // ci/integration_scenarios.py).
+                Err(format!("{}\n{said}", output.status))
             }
         }
     };
@@ -346,7 +391,7 @@ fn the_same_input_generates_the_same_text_twice_in_one_process() {
 }
 
 #[test]
-fn the_compiler_check_catches_a_deliberate_error() {
+fn xtypes_7_4_3_the_compiler_check_catches_a_deliberate_error() {
     // Before the gates below are trusted: a call into a module that is
     // not on the path is the warning class this gate turns on, and it
     // exits 0.
@@ -359,8 +404,10 @@ fn the_compiler_check_catches_a_deliberate_error() {
     assert!(why.contains("ZdNoSuchModule"), "{why}");
 }
 
-#[test]
-fn every_shape_encodes_and_the_generated_elixir_compiles_without_warnings() {
+fn every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(
+    share: usize,
+    shares: usize,
+) {
     if !elixirc_available() {
         eprintln!(
             "SKIPPED: `elixirc` is not on the path, so the generated Elixir codec was not \
@@ -368,8 +415,14 @@ fn every_shape_encodes_and_the_generated_elixir_compiles_without_warnings() {
         );
         return;
     }
-    for key in keys() {
-        for (idl, root) in SOURCES {
+    let cases = keys()
+        .into_iter()
+        .flat_map(|key| SOURCES.iter().map(move |source| (key, source)));
+    for (position, (key, (idl, root))) in cases.enumerate() {
+        {
+            if position % shares != share {
+                continue;
+            }
             let generated = generate(idl, root, key, false);
             if let Err(why) = compiles(&generated) {
                 panic!("write, {key:?}\n{idl}\n\n{generated}\n\nelixirc said:\n{why}");
@@ -378,8 +431,10 @@ fn every_shape_encodes_and_the_generated_elixir_compiles_without_warnings() {
     }
 }
 
-#[test]
-fn every_shape_decodes_and_the_generated_elixir_compiles_without_warnings() {
+fn every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(
+    share: usize,
+    shares: usize,
+) {
     if !elixirc_available() {
         eprintln!(
             "SKIPPED: `elixirc` is not on the path, so the generated Elixir decoder was not \
@@ -387,8 +442,14 @@ fn every_shape_decodes_and_the_generated_elixir_compiles_without_warnings() {
         );
         return;
     }
-    for key in keys() {
-        for (idl, root) in SOURCES {
+    let cases = keys()
+        .into_iter()
+        .flat_map(|key| SOURCES.iter().map(move |source| (key, source)));
+    for (position, (key, (idl, root))) in cases.enumerate() {
+        {
+            if position % shares != share {
+                continue;
+            }
             let generated = generate(idl, root, key, true);
             if let Err(why) = compiles(&generated) {
                 panic!("read, {key:?}\n{idl}\n\n{generated}\n\nelixirc said:\n{why}");
@@ -409,6 +470,7 @@ fn runs(source: &str, script: &str) -> Result<String, String> {
     let file = dir.join("zd_codec.ex");
     std::fs::write(&file, source).map_err(|error| error.to_string())?;
     let output = Command::new("elixir")
+        .env("ELIXIR_ERL_OPTIONS", ELIXIR_ERL_OPTIONS)
         .arg("-pa")
         .arg(runtime_ebin())
         .arg("-r")
@@ -463,4 +525,98 @@ fn a_decoded_array_is_the_tuple_its_member_declares() {
         "true\ntrue",
         "a decoded or a default array is not the declared tuple:\n{source}"
     );
+}
+
+/// zerodds-xcdr2-elixir-1.0 §7.4.3: every shape encodes and the generated
+/// Elixir compiles under `elixirc` without warnings, in every layout key.
+///
+/// In shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"); the language's weekly job and its merge job run them.
+mod xtypes_7_4_3_every_shape_encodes_and_the_generated_elixir_compiles_without_warnings {
+    #[test]
+    fn share_01() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(0, 8);
+    }
+
+    #[test]
+    fn share_02() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(1, 8);
+    }
+
+    #[test]
+    fn share_03() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(2, 8);
+    }
+
+    #[test]
+    fn share_04() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(3, 8);
+    }
+
+    #[test]
+    fn share_05() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(4, 8);
+    }
+
+    #[test]
+    fn share_06() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(5, 8);
+    }
+
+    #[test]
+    fn share_07() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(6, 8);
+    }
+
+    #[test]
+    fn share_08() {
+        super::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings(7, 8);
+    }
+}
+
+/// zerodds-xcdr2-elixir-1.0 §7.4.3: every shape decodes and the generated
+/// Elixir compiles under `elixirc` without warnings, in every layout key.
+///
+/// In shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"); the language's weekly job and its merge job run them.
+mod xtypes_7_4_3_every_shape_decodes_and_the_generated_elixir_compiles_without_warnings {
+    #[test]
+    fn share_01() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(0, 8);
+    }
+
+    #[test]
+    fn share_02() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(1, 8);
+    }
+
+    #[test]
+    fn share_03() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(2, 8);
+    }
+
+    #[test]
+    fn share_04() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(3, 8);
+    }
+
+    #[test]
+    fn share_05() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(4, 8);
+    }
+
+    #[test]
+    fn share_06() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(5, 8);
+    }
+
+    #[test]
+    fn share_07() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(6, 8);
+    }
+
+    #[test]
+    fn share_08() {
+        super::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings(7, 8);
+    }
 }

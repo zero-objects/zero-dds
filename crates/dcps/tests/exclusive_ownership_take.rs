@@ -56,7 +56,7 @@ fn mk_reader(domain: i32, ownership: OwnershipKind) -> zerodds_dcps::DataReader<
 }
 
 #[test]
-fn shared_ownership_passes_all_samples() {
+fn dcps_2_2_3_9_1_shared_ownership_passes_all_samples() {
     let reader = mk_reader(310, OwnershipKind::Shared);
     let strong = [9u8; 16];
     let weak = [1u8; 16];
@@ -71,7 +71,7 @@ fn shared_ownership_passes_all_samples() {
 }
 
 #[test]
-fn exclusive_ownership_filters_weaker_writer() {
+fn dcps_2_2_3_9_2_exclusive_ownership_filters_weaker_writer() {
     let reader = mk_reader(311, OwnershipKind::Exclusive);
     let strong = [9u8; 16];
     let weak = [1u8; 16];
@@ -89,7 +89,7 @@ fn exclusive_ownership_filters_weaker_writer() {
 }
 
 #[test]
-fn exclusive_ownership_stronger_writer_takes_over() {
+fn dcps_2_2_3_9_2_exclusive_ownership_stronger_writer_takes_over() {
     let reader = mk_reader(312, OwnershipKind::Exclusive);
     let weak = [1u8; 16];
     let strong = [9u8; 16];
@@ -113,7 +113,7 @@ fn exclusive_ownership_stronger_writer_takes_over() {
 /// the same choice"; the lower GUID wins, as in Cyclone DDS. The higher one
 /// did.
 #[test]
-fn exclusive_ownership_tie_break_by_lower_guid() {
+fn dcps_2_2_3_9_2_exclusive_ownership_tie_break_by_lower_guid() {
     let reader = mk_reader(313, OwnershipKind::Exclusive);
     let lower = [1u8; 16];
     let higher = [9u8; 16];
@@ -132,7 +132,7 @@ fn exclusive_ownership_tie_break_by_lower_guid() {
 }
 
 #[test]
-fn exclusive_ownership_higher_guid_at_tie_rejected() {
+fn dcps_2_2_3_9_2_exclusive_ownership_higher_guid_at_tie_rejected() {
     let reader = mk_reader(314, OwnershipKind::Exclusive);
     let higher = [9u8; 16];
     let lower = [1u8; 16];

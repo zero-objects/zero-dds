@@ -14,12 +14,12 @@
 #include "typed_probe.hpp"
 #include "dds/dds.hpp"
 #include "reliable_pair.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <set>
-#include <thread>
 #include <vector>
 
 static int g_failures = 0;
@@ -32,8 +32,7 @@ static int g_failures = 0;
     } while (0)
 
 int main(int argc, char** argv) {
-    const int domain = argc > 1 ? std::atoi(argv[1]) : 0;
-    dds::domain::DomainParticipant dp(domain);
+    dds::domain::DomainParticipant dp(test_domain(argc, argv));
     dds::topic::Topic<probe::Reading> topic(dp, "GeneratedTypeRoundtrip");
     ReliablePair<probe::Reading> pair(dp, topic);
     dds::pub::DataWriter<probe::Reading>& writer = pair.writer;
@@ -44,11 +43,10 @@ int main(int argc, char** argv) {
 
     std::vector<dds::sub::Sample<probe::Reading>> got;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (got.size() < sent.size() && std::chrono::steady_clock::now() < deadline) {
+    while (got.size() < sent.size() && wait_for_samples(reader, deadline)) {
         for (auto& s : reader.take()) {
             if (s.info().valid()) got.push_back(s);
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     {
         // DDS-PSM-Cxx 1.0 §7.12: `swap` as a member and in the type's namespace.
@@ -74,7 +72,7 @@ int main(int argc, char** argv) {
     writer.dispose_instance(writer.lookup_instance(sent[0]));
     bool disposed = false;
     const auto dispose_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (!disposed && std::chrono::steady_clock::now() < dispose_deadline) {
+    while (!disposed && wait_for_samples(reader, dispose_deadline)) {
         for (auto& s : reader.take()) {
             if (s.info().state().instance_state() ==
                     dds::sub::status::InstanceState::not_alive_disposed() &&
@@ -82,7 +80,6 @@ int main(int argc, char** argv) {
                 disposed = true;
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT(disposed, "the dispose of key 5 reached the reader as key 5's instance");
 
@@ -105,7 +102,7 @@ int main(int argc, char** argv) {
 
     bool keyed = false;
     const auto key_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (!keyed && std::chrono::steady_clock::now() < key_deadline) {
+    while (!keyed && wait_for_samples(reader, key_deadline)) {
         for (auto& s : reader.take()) {
             if (s.info().valid() && s.data().id == sent[2].id) {
                 probe::Reading from_reader;
@@ -113,7 +110,6 @@ int main(int argc, char** argv) {
                 keyed = from_reader.id == sent[2].id;
             }
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT(keyed, "the reader's key_value gives the key of a sample it returned");
     writer.unregister_instance(h6);
@@ -123,7 +119,20 @@ int main(int argc, char** argv) {
     {
         writer.write(probe::Reading{7, 10.0, "low"});
         writer.write(probe::Reading{8, 90.0, "high"});
-        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        // Both samples in the reader before the queries: wait on the unread ones, read them
+        // (they stay in the reader) until 7 and 8 have been seen.
+        bool seven = false, eight = false;
+        const auto both_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+        while (!(seven && eight) &&
+               wait_for_samples(reader, dds::sub::status::SampleState::not_read(), both_deadline)) {
+            for (auto& s : reader.read()) {
+                if (s.info().valid()) {
+                    seven = seven || s.data().id == 7;
+                    eight = eight || s.data().id == 8;
+                }
+            }
+        }
+        EXPECT(seven && eight, "the two samples of the query arrived");
         dds::sub::Query query(reader, "value > %0", std::vector<std::string>{"50"});
         auto selected = reader.select().content(query).read();
         bool only_high = selected.length() > 0;

@@ -106,7 +106,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ipv4_multicast_recognizes_class_d_range() {
+    fn coap_8_ipv4_multicast_recognizes_class_d_range() {
         assert!(is_ipv4_multicast([224, 0, 1, 187]));
         assert!(is_ipv4_multicast([239, 255, 255, 255]));
         assert!(!is_ipv4_multicast([223, 255, 255, 255]));
@@ -114,14 +114,14 @@ mod tests {
     }
 
     #[test]
-    fn ipv6_multicast_recognizes_ff_prefix() {
+    fn coap_8_ipv6_multicast_recognizes_ff_prefix() {
         assert!(is_ipv6_multicast([0xFF02, 0, 0, 0, 0, 0, 0, 0xFD]));
         assert!(is_ipv6_multicast([0xFF05, 0, 0, 0, 0, 0, 0, 0xFD]));
         assert!(!is_ipv6_multicast([0xFE80, 0, 0, 0, 0, 0, 0, 1]));
     }
 
     #[test]
-    fn multicast_request_must_not_be_confirmable() {
+    fn coap_7_1_multicast_request_must_not_be_confirmable() {
         assert_eq!(
             validate_multicast_request(true, b"abc"),
             Err(MulticastError::ConfirmableNotAllowed)
@@ -129,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn multicast_request_must_have_token() {
+    fn coap_8_multicast_request_must_have_token() {
         assert_eq!(
             validate_multicast_request(false, b""),
             Err(MulticastError::EmptyToken)
@@ -137,12 +137,12 @@ mod tests {
     }
 
     #[test]
-    fn valid_multicast_request_passes() {
+    fn coap_7_1_valid_multicast_request_passes() {
         assert!(validate_multicast_request(false, b"abc").is_ok());
     }
 
     #[test]
-    fn leisure_delay_within_max() {
+    fn coap_8_leisure_delay_within_max() {
         let leisure = Duration::from_secs(5);
         for seed in [0u32, 100, 1_000_000, u32::MAX] {
             let d = leisure_delay(leisure, seed);
@@ -151,19 +151,19 @@ mod tests {
     }
 
     #[test]
-    fn leisure_delay_zero_when_leisure_is_zero() {
+    fn coap_8_leisure_delay_zero_when_leisure_is_zero() {
         assert_eq!(leisure_delay(Duration::ZERO, 42), Duration::ZERO);
     }
 
     #[test]
-    fn well_known_addresses_match_spec() {
+    fn coap_1_1_well_known_addresses_match_spec() {
         assert_eq!(ALL_NODES_LINK_LOCAL_V4, "224.0.1.187");
         assert_eq!(ALL_NODES_LINK_LOCAL_V6, "FF02::FD");
         assert_eq!(ALL_NODES_SITE_LOCAL_V6, "FF05::FD");
     }
 
     #[test]
-    fn default_leisure_is_5_seconds() {
+    fn coap_8_default_leisure_is_5_seconds() {
         assert_eq!(DEFAULT_LEISURE, Duration::from_secs(5));
     }
 }

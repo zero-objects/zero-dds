@@ -27,7 +27,7 @@
 extern crate alloc;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use alloc::vec::Vec;
 use core::time::Duration;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -480,11 +480,11 @@ fn enforce_retained_depth(
         if s.lifecycle.is_some() {
             return true;
         }
-        if let Some(rem) = to_drop.get_mut(&s.key_hash) {
-            if *rem > 0 {
-                *rem -= 1;
-                return false; // evict this (oldest) alive sample for the key
-            }
+        if let Some(rem) = to_drop.get_mut(&s.key_hash)
+            && *rem > 0
+        {
+            *rem -= 1;
+            return false; // evict this (oldest) alive sample for the key
         }
         true
     });
@@ -567,17 +567,14 @@ fn announce_locator(uc: &(dyn Transport + Send + Sync), hint: Ipv4Addr) -> Locat
     // table — no packet goes out.
     if let Ok(probe) =
         std::net::UdpSocket::bind(std::net::SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
-    {
-        if probe
+        && probe
             .connect(std::net::SocketAddrV4::new(Ipv4Addr::new(192, 0, 2, 1), 7))
             .is_ok()
-        {
-            if let Ok(std::net::SocketAddr::V4(local)) = probe.local_addr() {
-                let resolved = local.ip();
-                if !resolved.is_unspecified() {
-                    return to_locator(resolved.octets());
-                }
-            }
+        && let Ok(std::net::SocketAddr::V4(local)) = probe.local_addr()
+    {
+        let resolved = local.ip();
+        if !resolved.is_unspecified() {
+            return to_locator(resolved.octets());
         }
     }
     // Fallback: loopback (the pin hint is already handled above). Not
@@ -642,6 +639,24 @@ fn announce_locators(uc: &(dyn Transport + Send + Sync), hint: Ipv4Addr) -> Vec<
 /// host announces as its own and the kernel then delivers over `lo`. Only a
 /// UDP locator is either; anything else answers `false` and keeps the
 /// Ethernet-safe fragment size.
+/// The message limit of a reader proxy: [`LOOPBACK_MTU`] for a reader on
+/// this host that the writer reaches without a link, `None` (the writer's
+/// own limit) otherwise.
+///
+/// A TSN locator is reached over the interface also on this host: the frame
+/// crosses the link, whose limit is the transport's (IEEE 802.3, 1500
+/// octets of payload; `TsnTransport::max_message_size`). With
+/// [`LOOPBACK_MTU`] the writer built repairs of 2438 and 2470 octets for a
+/// reader on the same host, `sendto` refused each with EMSGSIZE, and the
+/// reader never got the samples it had asked for (DCPS over TSN on a veth
+/// pair, 6 of 248 runs on the Linux test host).
+fn same_host_message_limit(same_host: bool, unicast_locators: &[Locator]) -> Option<usize> {
+    let over_a_link = unicast_locators
+        .iter()
+        .any(|loc| loc.kind == LocatorKind::Tsn);
+    (same_host && !over_a_link).then_some(LOOPBACK_MTU)
+}
+
 fn locator_stays_on_host(loc: &Locator, local: &[[u8; 4]]) -> bool {
     match loc.kind {
         LocatorKind::UdpV4 => {
@@ -1037,8 +1052,9 @@ pub enum UserTransportKind {
     #[cfg(feature = "same-host-shm")]
     Shm,
     /// Unix domain socket (same-host, container-friendly). Only with the
-    /// `same-host-uds` feature.
-    #[cfg(feature = "same-host-uds")]
+    /// `same-host-uds` feature on a Unix target: `zerodds-transport-uds`
+    /// is empty elsewhere.
+    #[cfg(all(feature = "same-host-uds", unix))]
     Uds,
     /// TSN L2 transport (AF_PACKET, RTPS direct on Ethernet, EtherType
     /// 0x88B5). Only with the `tsn-live` feature on Linux. Interface/VLAN/
@@ -1246,7 +1262,7 @@ struct ThreadSchedConfigError {
 /// Shared by [`ConfigSource::runtime_findings`] (parses raw file/env
 /// strings before `RuntimeConfig` exists) and [`DcpsRuntime::start`] (defends
 /// a `RuntimeConfig` a caller built by hand, bypassing `from_source` and
-/// therefore this same check) — see `docs/silent-drop-sweep.md`: a setting
+/// therefore this same check) — see `0b2e8df9f6b:docs/silent-drop-sweep.md`: a setting
 /// nobody could make sense of must abort, not fall back to "nothing
 /// requested."
 fn resolve_thread_sched(
@@ -1573,7 +1589,7 @@ fn parse_user_transport(value: &str) -> Option<UserTransportKind> {
         "TCPv6" => Some(UserTransportKind::TcpV6),
         #[cfg(feature = "same-host-shm")]
         "SHM" => Some(UserTransportKind::Shm),
-        #[cfg(feature = "same-host-uds")]
+        #[cfg(all(feature = "same-host-uds", unix))]
         "UDS" => Some(UserTransportKind::Uds),
         #[cfg(all(feature = "tsn-live", target_os = "linux"))]
         "TSN" => Some(UserTransportKind::Tsn),
@@ -1599,7 +1615,7 @@ type UserTransportSelection = (
 // by the TSN arm — a build without those features has no use for them.
 #[cfg_attr(
     not(all(
-        any(feature = "same-host-shm", feature = "same-host-uds"),
+        any(feature = "same-host-shm", all(feature = "same-host-uds", unix)),
         feature = "tsn-live",
         target_os = "linux"
     )),
@@ -1699,7 +1715,7 @@ fn select_user_transport(
             );
             Ok((Arc::new(shm), None))
         }
-        #[cfg(feature = "same-host-uds")]
+        #[cfg(all(feature = "same-host-uds", unix))]
         UserTransportKind::Uds => {
             // local_id = guid_prefix (12 bytes) + 4-byte domain id — the
             // peer resolves this id from the announced UDS locator into the
@@ -2295,6 +2311,17 @@ pub struct RuntimeConfig {
     /// default) or `names_ignored`. File: `xtypes.strong_assignability`; see
     /// `zerodds_types::assignability::StrongAssignability`.
     pub strong_assignability: zerodds_types::assignability::StrongAssignability,
+    /// A key member's must-understand bit where two types are compared
+    /// for MINIMAL equivalence: `flagged` (as the `TypeObject` carries it,
+    /// DDS-XTypes 1.4 Beta 1 §7.3.3.4; default) or `implied` (`IS_KEY`
+    /// implies it, for a peer whose `TypeObject` leaves the bit off a key
+    /// member, as Cyclone DDS's `idlc` does). File:
+    /// `xtypes.key_must_understand`; see
+    /// `zerodds_types::assignability::KeyMustUnderstand`. Unset, a vendor
+    /// dialect named by `wire.rtps_dialect` or `wire.codec_dialect` brings
+    /// its reading (`dialect_key_must_understand`); the setting, where it is
+    /// set, wins.
+    pub key_must_understand: zerodds_types::assignability::KeyMustUnderstand,
     /// What a remote reader that announces no `TypeConsistencyEnforcement`
     /// is taken to request: `disallow` (the clause, §7.6.3.4.1; default) or
     /// `allow` for a peer that does not write PID `0x0074` and is to be
@@ -2494,7 +2521,9 @@ pub struct RuntimeConfig {
     pub tsn_interface: Option<String>,
 
     /// VLAN id of the TSN user transport. Default from the env
-    /// `tsn.vlan`, otherwise `0`. Only read for
+    /// `tsn.vlan`, otherwise `0`: no VLAN, the frames go untagged, or
+    /// priority-tagged (VID 0, IEEE 802.1Q §9.6) when
+    /// [`RuntimeConfig::tsn_pcp`] is not 0. Only read for
     /// `UserTransportKind::Tsn`.
     pub tsn_vlan: u16,
 
@@ -2748,12 +2777,12 @@ fn directed_spdp_targets(
     targets_axis: SpdpResponseTargets,
 ) -> Vec<Locator> {
     let mut targets = wlp_unicast_targets(core::slice::from_ref(peer));
-    if targets_axis.answers_beacon_source() {
-        if let Some(src) = reply_to {
-            if is_routable_user_locator(src) && !targets.contains(src) {
-                targets.push(*src);
-            }
-        }
+    if targets_axis.answers_beacon_source()
+        && let Some(src) = reply_to
+        && is_routable_user_locator(src)
+        && !targets.contains(src)
+    {
+        targets.push(*src);
     }
     targets
 }
@@ -2875,6 +2904,7 @@ impl core::fmt::Debug for RuntimeConfig {
         );
         dbg.field("key_member_bounds", &self.key_member_bounds);
         dbg.field("strong_assignability", &self.strong_assignability);
+        dbg.field("key_must_understand", &self.key_must_understand);
         dbg.field("absent_type_consistency", &self.absent_type_consistency);
         dbg.field(
             "annotation_parameter_order",
@@ -3106,6 +3136,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
         "ZERODDS_STRONG_ASSIGNABILITY",
         "xtypes.strong_assignability",
     ),
+    ("ZERODDS_KEY_MUST_UNDERSTAND", "xtypes.key_must_understand"),
     (
         "ZERODDS_TYPE_CONSISTENCY_ABSENT",
         "xtypes.type_consistency_absent",
@@ -3238,12 +3269,25 @@ pub const SETTINGS: &[(&str, &str)] = &[
 ];
 
 /// The configuration-file path a `ZERODDS_*` variable corresponds to.
+///
+/// From a table built once out of [`SETTINGS`], the first row of a name
+/// winning as before. Reading a configuration looks up each of its
+/// settings here, and a walk through the rows per lookup was 8 million
+/// comparisons in the crate tier's coverage run.
 #[must_use]
 pub fn setting_path(env_name: &str) -> Option<&'static str> {
-    SETTINGS
-        .iter()
-        .find(|(env, _)| *env == env_name)
-        .map(|(_, path)| *path)
+    static PATHS: std::sync::OnceLock<alloc::collections::BTreeMap<&'static str, &'static str>> =
+        std::sync::OnceLock::new();
+    PATHS
+        .get_or_init(|| {
+            let mut paths = alloc::collections::BTreeMap::new();
+            for &(env, path) in SETTINGS {
+                paths.entry(env).or_insert(path);
+            }
+            paths
+        })
+        .get(env_name)
+        .copied()
 }
 
 impl ConfigSource {
@@ -3750,6 +3794,7 @@ fn runtime_default_text(path: &str) -> String {
         "wire.type_lookup_encoding" => String::from(d.type_lookup_encoding.as_str()),
         "xtypes.key_member_bounds" => String::from(d.key_member_bounds.as_str()),
         "xtypes.strong_assignability" => String::from(d.strong_assignability.as_str()),
+        "xtypes.key_must_understand" => String::from(d.key_must_understand.as_str()),
         "xtypes.type_consistency_absent" => String::from(d.absent_type_consistency.as_str()),
         "xtypes.annotation_parameter_order" => String::from(d.annotation_parameter_order.as_str()),
         "wire.data_representation_offer" => {
@@ -3867,6 +3912,7 @@ fn runtime_expectation(path: &str) -> &'static str {
         "security.origin_authentication_fallback" => "spec or accept",
         "xtypes.key_member_bounds" => "enforced or ignored",
         "xtypes.strong_assignability" => "equivalence or names_ignored",
+        "xtypes.key_must_understand" => "flagged or implied",
         "xtypes.type_consistency_absent" => "disallow or allow",
         "xtypes.annotation_parameter_order" => "member-index or name",
         "transport.user_transport" => "UDPv4, UDPv6, TCPv4, TCPv6 (SHM, UDS, TSN where built in)",
@@ -3990,6 +4036,9 @@ fn valid_runtime_value(path: &str, value: &str) -> bool {
         }
         "xtypes.strong_assignability" => {
             zerodds_types::assignability::StrongAssignability::parse(value).is_some()
+        }
+        "xtypes.key_must_understand" => {
+            zerodds_types::assignability::KeyMustUnderstand::parse(value).is_some()
         }
         "xtypes.type_consistency_absent" => AbsentTypeConsistency::parse(value).is_some(),
         "xtypes.annotation_parameter_order" => {
@@ -4679,13 +4728,19 @@ impl RuntimeConfig {
                 .as_deref()
                 .and_then(zerodds_types::assignability::StrongAssignability::parse)
                 .unwrap_or_default(),
+            key_must_understand: source
+                .var("ZERODDS_KEY_MUST_UNDERSTAND")
+                .as_deref()
+                .and_then(zerodds_types::assignability::KeyMustUnderstand::parse)
+                .or_else(|| dialect_key_must_understand(dialect, codec_dialect))
+                .unwrap_or_default(),
             external_tick: false,
             // D.5e Phase 3 — the event-driven deadline-heap scheduler is the
             // DEFAULT tick (Phase C, 2026-06-14): it parks until the next due
             // deadline / a write-recv raise instead of polling every 5 ms (~17×
             // fewer idle iterations, lower tail latency, identical wire output).
             // Verified cross-vendor secured (data-enc + rtps-enc all pairs) +
-            // same_host_e2e + latency_assertions on the Linux test host. Escape hatch:
+            // same_host_e2e on the Linux test host. Escape hatch:
             // `runtime.scheduler_tick=0` restores the classic fixed-period
             // `tick_loop`.
             scheduler_tick: source
@@ -5052,6 +5107,41 @@ fn rtps_dialect_value(raw: Option<&str>) -> (Option<RtpsDialect>, Option<String>
     }
 }
 
+/// The reading of a key member's must-understand bit a vendor dialect brings
+/// along when `xtypes.key_must_understand` is not set: `implied` for a
+/// vendor whose `TypeObject` leaves the bit off a key member and whose
+/// reader announces no `TypeConsistencyEnforcement`, so that the clause
+/// (DDS-XTypes 1.4 Beta 1 §7.3.3.4, 1.3 §7.6.3.4.1) refuses the pair.
+/// Either dialect setting names the vendor: `wire.rtps_dialect` or
+/// `wire.codec_dialect`. `None` leaves the setting's default.
+///
+/// Measured with ZeroDDS publishing (Linux test host): Cyclone DDS `master`
+/// built with its type library (the OMG `dds-rtps` `shape_main`, member
+/// flags `0x21` on `ShapeType.color`, `rtps-vendor-1` 15 of 15 red with the
+/// default); the Fast DDS 3.6.1 reader whose type support fastddsgen
+/// generated and the OpenDDS 3.35 reader whose type support opendds_idl
+/// generated, of `@final struct KeyedPointA { @key long id; long value; }`
+/// (`tools/dispose-reader` without `@must_understand`): both announce the
+/// same minimal identifier with the key member at `0x21` and no PID
+/// 0x0074, and the ZeroDDS writer refused both until `implied`. Connext
+/// 7.7.0, CoreDX 6.15.3, Dust 0.16.1, HDDS 1.4.9 and InterCOM 4.3.1 readers
+/// announce PID 0x0074 (ALLOW_TYPE_COERCION), so the bit decides nothing
+/// against them.
+fn dialect_key_must_understand(
+    rtps: Option<RtpsDialect>,
+    codec: zerodds_ast_layout::Dialect,
+) -> Option<zerodds_types::assignability::KeyMustUnderstand> {
+    use zerodds_ast_layout::Dialect;
+    let implied = matches!(
+        rtps,
+        Some(RtpsDialect::Cyclone | RtpsDialect::FastDds | RtpsDialect::OpenDds)
+    ) || matches!(
+        codec,
+        Dialect::Cyclone | Dialect::FastDds | Dialect::OpenDds
+    );
+    implied.then_some(zerodds_types::assignability::KeyMustUnderstand::ImpliedByKey)
+}
+
 /// Reads `wire.codec_dialect` as [`rtps_dialect_value`] reads
 /// `wire.rtps_dialect`: the dialect that applies, and the spelling that named
 /// none.
@@ -5150,11 +5240,11 @@ fn expand_initial_peer(
     if spec.is_empty() {
         return;
     }
-    if let Some((ip_s, port_s)) = spec.rsplit_once(':') {
-        if let (Ok(ip), Ok(port)) = (ip_s.parse::<Ipv4Addr>(), port_s.parse::<u16>()) {
-            out.push(Locator::udp_v4(ip.octets(), u32::from(port)));
-            return;
-        }
+    if let Some((ip_s, port_s)) = spec.rsplit_once(':')
+        && let (Ok(ip), Ok(port)) = (ip_s.parse::<Ipv4Addr>(), port_s.parse::<u16>())
+    {
+        out.push(Locator::udp_v4(ip.octets(), u32::from(port)));
+        return;
     }
     if let Ok(ip) = spec.parse::<Ipv4Addr>() {
         for pid in 0..max_participants {
@@ -5878,10 +5968,10 @@ impl BatchBuffers {
     /// Keeps `buffer` for a later batch, or releases it when enough are
     /// kept.
     fn give_back(&self, buffer: Vec<u8>) {
-        if let Ok(mut held) = self.0.lock() {
-            if held.len() < Self::KEEP {
-                held.push(buffer);
-            }
+        if let Ok(mut held) = self.0.lock()
+            && held.len() < Self::KEEP
+        {
+            held.push(buffer);
         }
     }
 }
@@ -5916,10 +6006,10 @@ fn deliver_in_process(
         }) else {
             return;
         };
-        if let Some(secured) = secure_outbound_for_target(rt, writer_eid, &dg.bytes, target) {
-            if let Some(clear) = secure_inbound_bytes(peer, &secured, &DEFAULT_INBOUND_IFACE) {
-                handle_user_datagram(peer, &clear, now);
-            }
+        if let Some(secured) = secure_outbound_for_target(rt, writer_eid, &dg.bytes, target)
+            && let Some(clear) = secure_inbound_bytes(peer, &secured, &DEFAULT_INBOUND_IFACE)
+        {
+            handle_user_datagram(peer, &clear, now);
         }
         return;
     }
@@ -5953,11 +6043,11 @@ fn send_on_best_interface(rt: &DcpsRuntime, target: &Locator, bytes: &[u8], prio
     {
         return;
     }
-    if let Some(pool) = &rt.outbound_pool {
-        if let Some((socket, _iface)) = pool.route(target) {
-            let _ = socket.send_with_priority(target, bytes, priority);
-            return;
-        }
+    if let Some(pool) = &rt.outbound_pool
+        && let Some((socket, _iface)) = pool.route(target)
+    {
+        let _ = socket.send_with_priority(target, bytes, priority);
+        return;
     }
     let _ = rt.user_unicast.send_with_priority(target, bytes, priority);
 }
@@ -5994,7 +6084,7 @@ fn send_on_best_interface(rt: &DcpsRuntime, target: &Locator, bytes: &[u8], prio
 /// loses 20-32 % and RELIABLE 38-92 % of a stream that lost 0.0-0.7 % resp.
 /// 0.00 % before. The syscall per sample was pacing the writer. Coalescing at
 /// a zero budget therefore has to wait for a receive path that keeps up; see
-/// `docs/OPEN-ITEMS.md`.
+/// `internal/release/OPEN-ITEMS.md`.
 #[derive(Debug, Clone)]
 struct PendingMessage {
     /// Destination locators. Every message merged in here had exactly these —
@@ -6333,6 +6423,37 @@ fn resource_cap(value: i32) -> Option<usize> {
 /// §2.2.3.14): 100 ms.
 const DEFAULT_WRITER_MAX_BLOCKING_TIME: Duration = Duration::from_millis(100);
 
+std::thread_local! {
+    /// Set by [`without_waiting_for_room`] for the calls it runs.
+    static WRITES_DO_NOT_WAIT: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+/// Runs `f` with the writes, disposes and unregisters of the calling thread
+/// not waiting for room: where one would wait for RESOURCE_LIMITS up to
+/// RELIABILITY `max_blocking_time` (DDS 1.4 §2.2.2.4.2.11), it returns as
+/// that wait would have ended at once, `TIMEOUT` when the limits have no
+/// room, and the write goes out when only the flow-control window is full.
+/// What fails at once without waiting fails the same way.
+///
+/// For a caller that waits elsewhere: the `write` future of
+/// `zerodds-dcps-async` suspends and tries again instead of blocking the
+/// thread of its executor (zerodds-async-1.0 §5).
+pub fn without_waiting_for_room<R>(f: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WRITES_DO_NOT_WAIT.with(|c| c.set(self.0));
+        }
+    }
+    let _restore = Restore(WRITES_DO_NOT_WAIT.with(|c| c.replace(true)));
+    f()
+}
+
+/// Whether a write of this thread waits for room ([`without_waiting_for_room`]).
+pub(crate) fn writes_wait_for_room() -> bool {
+    !WRITES_DO_NOT_WAIT.with(core::cell::Cell::get)
+}
+
 /// Holds a write, dispose or unregister back until the writer's
 /// RESOURCE_LIMITS have room for its sample (DDS 1.4 §2.2.2.4.2.11), and
 /// hands the slot back for the write to go on under the same lock. The wait
@@ -6386,6 +6507,9 @@ fn await_writer_room<'a>(
             }
             slot.writer.request_heartbeat();
             wake_tick();
+        }
+        if !writes_wait_for_room() {
+            return past_max_blocking_time(slot, key, opens_instance);
         }
         let until = *deadline.get_or_insert_with(|| {
             slot.max_blocking_time
@@ -6445,11 +6569,10 @@ impl UserWriterSlot {
         let limits = &self.resource_limits;
         if let (true, Some(k), Some(max)) =
             (opens_instance, key, resource_cap(limits.max_instances))
+            && !self.instance_key_holders.contains_key(&k)
+            && self.instance_key_holders.len() >= max
         {
-            if !self.instance_key_holders.contains_key(&k) && self.instance_key_holders.len() >= max
-            {
-                return WriterRoom::NoInstance;
-            }
+            return WriterRoom::NoInstance;
         }
         if !self.reliable {
             return WriterRoom::Yes;
@@ -6527,10 +6650,10 @@ impl UserWriterSlot {
             return None;
         };
         let current_generation = server.registry.generation();
-        if let KeyHashSupport::Unavailable(at_generation) = &self.key_hash_support {
-            if *at_generation == current_generation {
-                return None;
-            }
+        if let KeyHashSupport::Unavailable(at_generation) = &self.key_hash_support
+            && *at_generation == current_generation
+        {
+            return None;
         }
         let resolved =
             build_key_hash_support(&self.type_identifier, &self.type_name, &server, dialect);
@@ -6570,14 +6693,13 @@ pub const REMEMBERED_INSTANCE_KEYS: usize = 65_536;
 const DEFAULT_INTRA_HISTORY_DEPTH: usize = 1;
 
 /// What a late-joining reader of the same runtime is handed of one
-/// retained sample: the payload, its representation and byte order, and
-/// whether it is a forwarded CryptoContent (see
+/// retained sample: the payload, the representation identifier of its
+/// encapsulation header, and whether it is a forwarded CryptoContent (see
 /// `DcpsRuntime::intra_runtime_replay_retained`).
 #[derive(Debug, Default)]
 struct ReplayForm {
     payload: Vec<u8>,
-    representation: u8,
-    big_endian: bool,
+    representation_identifier: [u8; 2],
     crypto: bool,
 }
 
@@ -6590,8 +6712,10 @@ struct RetainedSample {
     key_hash: [u8; 16],
     /// CDR body without encapsulation header.
     payload: Vec<u8>,
-    /// XCDR version tag (`0` = XCDR1, `1` = XCDR2).
-    representation: u8,
+    /// The representation identifier of the header the writer wrote the
+    /// payload under (DDSI-RTPS 2.5 §10.5): its XCDR version, format and
+    /// byte order. A replay hands it on as the live delivery did.
+    representation_identifier: [u8; 2],
     /// Writer ownership strength at write time.
     strength: i32,
     /// `Some(kind)` if this entry is a terminal lifecycle marker
@@ -6605,10 +6729,6 @@ struct RetainedSample {
     /// The writer's RTPS sequence number at write time, or `-1` when none
     /// applies (a lifecycle marker).
     source_sequence_number: i64,
-    /// Byte order the payload was actually encoded in (`true` =
-    /// big-endian) — a replay must decode it the same way the live
-    /// delivery would have, not assume little-endian.
-    big_endian: bool,
     /// The writer and sequence number of the sample's first write, when
     /// this writer forwards it on that writer's behalf (DDSI-RTPS 2.5
     /// §8.7.9); `None` for a sample of its own.
@@ -6618,9 +6738,9 @@ struct RetainedSample {
 }
 
 /// The listener dispatch carries, alongside the `UserSample`, a
-/// zero-copy view on the original `Arc<[u8]>` with the range of the body
-/// behind the encapsulation header (lever-E zero-copy path).
-pub type UserSampleWithEncap = (UserSample, Option<(Arc<[u8]>, core::ops::Range<usize>)>);
+/// zero-copy view of the body behind the encapsulation header, a range of
+/// the buffer the datagram arrived in (lever-E zero-copy path).
+pub type UserSampleWithEncap = (UserSample, Option<zerodds_rtps::payload::Payload>);
 
 /// Sample channel item: either data payload or lifecycle marker.
 /// Lifecycle is reconstructed by the wire path as `key_hash + ChangeKind` from
@@ -6657,10 +6777,19 @@ pub enum UserSample {
         /// Byte order of the `payload` — extracted from the encapsulation
         /// representation identifier's low bit (RTPS 2.5 §10.5: the `_BE`
         /// variants 0x0000/0x0002/0x0006/0x0008/0x000a are even, the `_LE`
-        /// variants odd). `false` = little-endian (the canonical wire and the
-        /// intra-runtime default), `true` = big-endian. The typed consumer
-        /// dispatches `DdsType::decode` vs `decode_be` on this.
+        /// variants odd). `false` = little-endian, `true` = big-endian. The
+        /// typed consumer dispatches `DdsType::decode` vs `decode_be` on this.
         big_endian: bool,
+        /// The representation identifier of the sample's encapsulation
+        /// header (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 §7.6.3.1.2) as the
+        /// writer sent it, e.g. `[0x00, 0x08]` for `D_CDR2_BE`;
+        /// `representation` and `big_endian` are read from it. It names the
+        /// format of the body beyond its XCDR version: plain, delimited
+        /// (`@appendable`) or parameter list (`@mutable`). A service that
+        /// passes the body on unchanged gives its output this identifier.
+        /// Within one runtime it is the identifier the writer's header
+        /// carries. Says nothing when `crypto_content` is set.
+        representation_identifier: [u8; 2],
         /// Source timestamp from the writer's INFO_TS submessage (DDSI-RTPS
         /// §8.7.3), if any. Threaded into `SampleInfo.source_timestamp` and the
         /// `DESTINATION_ORDER = BY_SOURCE_TIMESTAMP` decision. `None` ⇒ the
@@ -6878,6 +7007,11 @@ pub struct SampleOrigin {
     /// The writer's RTPS sequence number of the sample, `-1` when unknown
     /// (a durability replay).
     pub sequence_number: i64,
+    /// The representation identifier of the sample's encapsulation header
+    /// (DDSI-RTPS 2.5 §10.5): which of CDR, PL_CDR, CDR2, D_CDR2 or PL_CDR2
+    /// in which byte order. The `representation` and `big_endian` arguments
+    /// of the listener reduce it to the XCDR version and the byte order.
+    pub representation_identifier: [u8; 2],
 }
 
 /// The origin of a wire sample for a listener.
@@ -6887,16 +7021,19 @@ fn origin_of(item: &UserSample) -> SampleOrigin {
             writer_guid,
             source_timestamp,
             source_sequence_number,
+            representation_identifier,
             ..
         } => SampleOrigin {
             writer_guid: *writer_guid,
             source_timestamp: *source_timestamp,
             sequence_number: *source_sequence_number,
+            representation_identifier: *representation_identifier,
         },
         _ => SampleOrigin {
             writer_guid: [0; 16],
             source_timestamp: None,
             sequence_number: -1,
+            representation_identifier: [0; 2],
         },
     }
 }
@@ -6966,14 +7103,24 @@ pub(crate) struct ReaderRoom {
     /// set when the room is attached to the reader's slot.
     sent: std::sync::OnceLock<Arc<AtomicU64>>,
     runtime: alloc::sync::Weak<DcpsRuntime>,
+    /// RELIABLE: the runtime holds back what does not fit, and the writer
+    /// keeps it. BEST_EFFORT: nothing is held back; past the limit the
+    /// reader takes its channel into its cache ([`Self::drain`]), whose
+    /// admission discards the oldest (§2.2.3.18).
+    reliable: bool,
+    /// Takes the reader's channel into its cache; installed by the
+    /// DataReader.
+    drain: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl ReaderRoom {
     /// The room for a DataReader with these RESOURCE_LIMITS and HISTORY, or
-    /// `None` when nothing bounds its samples: HISTORY KEEP_LAST replaces
-    /// instead of refusing, and an unlimited cache never refuses for its
-    /// total. `pulled` is the DataReader's count of what it took off its
-    /// channel.
+    /// `None` when nothing bounds its samples: a RELIABLE reader under
+    /// HISTORY KEEP_LAST replaces instead of refusing, and an unlimited
+    /// cache never refuses for its total. A BEST_EFFORT reader has one
+    /// whenever its RESOURCE_LIMITS are finite: what it holds and what
+    /// waits on its channel stay within them. `pulled` is the DataReader's
+    /// count of what it took off its channel.
     pub(crate) fn for_reader(
         reliable: bool,
         keep_all: bool,
@@ -6981,7 +7128,7 @@ impl ReaderRoom {
         pulled: Arc<AtomicU64>,
         runtime: &Arc<DcpsRuntime>,
     ) -> Option<Arc<Self>> {
-        if !reliable || !keep_all {
+        if reliable && !keep_all {
             return None;
         }
         let finite = |n: i32| usize::try_from(n).ok().filter(|n| *n > 0);
@@ -6999,7 +7146,66 @@ impl ReaderRoom {
             waiting: AtomicBool::new(false),
             sent: std::sync::OnceLock::new(),
             runtime: Arc::downgrade(runtime),
+            reliable,
+            drain: std::sync::OnceLock::new(),
         }))
+    }
+
+    /// Samples on the reader's channel the DataReader has not taken off.
+    #[cfg(test)]
+    pub(crate) fn in_flight(&self) -> usize {
+        let sent = self
+            .sent
+            .get()
+            .map_or(0, |sent| sent.load(Ordering::Acquire));
+        usize::try_from(sent.saturating_sub(self.pulled.load(Ordering::Acquire)))
+            .unwrap_or(usize::MAX)
+    }
+
+    /// Whether the runtime holds samples back for this room (RELIABLE).
+    pub(crate) fn holds_back(&self) -> bool {
+        self.reliable
+    }
+
+    /// Installs what takes the reader's channel into its cache.
+    pub(crate) fn set_drain(&self, drain: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.drain.set(drain);
+    }
+
+    /// A BEST_EFFORT reader past its limit takes its channel into its
+    /// cache now, rather than when the application next takes: the
+    /// channel would otherwise hold every sample, each with its datagram,
+    /// until then. Measured on the Linux test host before the admission
+    /// counted its cache once per run (OPEN-ITEMS 50 then): a subscriber
+    /// that fell behind a writer at 600 kS/s ran into an 8 GB limit in 20 s.
+    ///
+    /// Not for every sample past the limit: a take-in run walks the whole
+    /// cache (LIFESPAN), and one run per sample kept the receive thread
+    /// busy with a cache of 100 000 samples while the kernel dropped
+    /// 785 293 datagrams in 15 s (Linux test host, 1 kB samples at 760 kS/s,
+    /// the subscriber taking every 3 s). The reader goes an eighth of its
+    /// limit past it, 4096 samples at most, before it takes in.
+    fn drain_if_over(&self) {
+        if self.reliable {
+            return;
+        }
+        let sent = self
+            .sent
+            .get()
+            .map_or(0, |sent| sent.load(Ordering::Acquire));
+        let in_flight = usize::try_from(sent.saturating_sub(self.pulled.load(Ordering::Acquire)))
+            .unwrap_or(usize::MAX);
+        let held = self
+            .cached
+            .load(Ordering::SeqCst)
+            .saturating_add(self.staged.load(Ordering::SeqCst))
+            .saturating_add(in_flight);
+        let over = held.saturating_sub(self.limit);
+        if over >= (self.limit / 8).clamp(1, 4096)
+            && let Some(drain) = self.drain.get()
+        {
+            drain();
+        }
     }
 
     /// How many more samples the runtime may put on the channel, given what
@@ -7072,10 +7278,10 @@ impl ReaderRoom {
     /// Room came free: if the runtime holds a sample back for it, the
     /// runtime's next pass hands it over.
     fn freed(&self) {
-        if self.waiting.swap(false, Ordering::SeqCst) {
-            if let Some(rt) = self.runtime.upgrade() {
-                rt.raise_tick_wake();
-            }
+        if self.waiting.swap(false, Ordering::SeqCst)
+            && let Some(rt) = self.runtime.upgrade()
+        {
+            rt.raise_tick_wake();
         }
     }
 }
@@ -7084,6 +7290,7 @@ impl core::fmt::Debug for ReaderRoom {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.debug_struct("ReaderRoom")
             .field("limit", &self.limit)
+            .field("reliable", &self.reliable)
             .field("cached", &self.cached.load(Ordering::Relaxed))
             .field("staged", &self.staged.load(Ordering::Relaxed))
             .finish_non_exhaustive()
@@ -7481,10 +7688,10 @@ impl UserReaderSlot {
             return None;
         };
         let current_generation = server.registry.generation();
-        if let KeyHashSupport::Unavailable(at_generation) = &self.key_hash_support {
-            if *at_generation == current_generation {
-                return None;
-            }
+        if let KeyHashSupport::Unavailable(at_generation) = &self.key_hash_support
+            && *at_generation == current_generation
+        {
+            return None;
         }
         let resolved = self.build_key_hash_support(&server, dialect);
         self.key_hash_support = match &resolved {
@@ -7745,10 +7952,12 @@ impl Default for UserWriterConfig {
 
 /// The QoS a reader gets when a caller names only what it cares about.
 ///
-/// Every member is the DDS default of its policy (Spec §2.2.3), except the
-/// two that have no default worth guessing: `topic_name` and `type_name` are
-/// empty, and a registration with an empty topic is refused rather than
-/// invented.
+/// Every member is the DDS default of its policy (Spec §2.2.3), `reliable`
+/// included: `false`, the BEST_EFFORT that DDS 1.4 §2.2.3.14 gives a
+/// DataReader ("This is the default value for DataReaders and Topics"). A
+/// caller that needs RELIABLE says so. The two that have no default worth
+/// guessing: `topic_name` and `type_name` are empty, and a registration with
+/// an empty topic is refused rather than invented.
 ///
 /// This exists because the struct has eighteen members and seventy call sites
 /// wrote all eighteen out. Adding `resource_limits` to it broke every one of
@@ -7762,7 +7971,7 @@ impl Default for UserReaderConfig {
             entity_name: None,
             group_entity_id: None,
             type_name: String::new(),
-            reliable: true,
+            reliable: false,
             durability: zerodds_qos::DurabilityKind::Volatile,
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
             time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
@@ -8604,6 +8813,11 @@ pub struct DcpsRuntime {
     /// all terminated together via `stop` (Sprint D.5b — previously
     /// a single single-threaded `event_loop`).
     handles: Mutex<Vec<JoinHandle<()>>>,
+    /// The receive sockets of worker threads besides the SPDP and user
+    /// unicast ones: the user-traffic multicast socket and the extra
+    /// `SO_REUSEPORT` user sockets. [`Self::shutdown`] closes them, which
+    /// ends their threads' wait.
+    extra_receive_sockets: Mutex<Vec<Arc<UdpTransport>>>,
     /// Match-event notifier (D.5e Phase-1 quick win). Notified by the
     /// SEDP match path after `add_reader_proxy` / `add_writer_proxy`;
     /// `wait_for_matched_*` parks on it instead of polling every 20 ms.
@@ -8961,6 +9175,10 @@ impl DcpsRuntime {
     }
 
     /// Starts a new runtime for a participant.
+    ///
+    /// The worker threads hold the runtime weakly: when the last handle the
+    /// caller holds drops, `Drop` stops the threads and joins them, as
+    /// [`Self::shutdown`] does.
     ///
     /// # Errors
     /// `TransportError` if one of the 3 UDP sockets fails to bind
@@ -9645,6 +9863,7 @@ impl DcpsRuntime {
             batch_buffers: BatchBuffers::default(),
             participant_liveliness_asserted: AtomicU64::new(0),
             handles: Mutex::new(Vec::new()),
+            extra_receive_sockets: Mutex::new(Vec::new()),
             match_event: Arc::new((Mutex::new(()), std::sync::Condvar::new())),
             match_refresh: Mutex::new(()),
             reader_progress: Arc::new((
@@ -9702,7 +9921,7 @@ impl DcpsRuntime {
         let (tune_tx, tune_rx) = mpsc::channel::<ThreadTuningReport>();
         let mut tuned_workers: usize = 0;
 
-        let rt_recv_spdp_mc = Arc::clone(&rt);
+        let rt_recv_spdp_mc = Arc::downgrade(&rt);
         let stop_recv_spdp_mc = stop.clone();
         let tune_recv_spdp_mc = tune_tx.clone();
         tuned_workers += 1;
@@ -9722,7 +9941,7 @@ impl DcpsRuntime {
                 })?,
         );
 
-        let rt_recv_meta = Arc::clone(&rt);
+        let rt_recv_meta = Arc::downgrade(&rt);
         let stop_recv_meta = stop.clone();
         let tune_recv_meta = tune_tx.clone();
         tuned_workers += 1;
@@ -9737,7 +9956,7 @@ impl DcpsRuntime {
                 })?,
         );
 
-        let rt_recv_user = Arc::clone(&rt);
+        let rt_recv_user = Arc::downgrade(&rt);
         let stop_recv_user = stop.clone();
         let primary_socket = Arc::clone(&rt.user_unicast);
         let tune_recv_user = tune_tx.clone();
@@ -9762,9 +9981,12 @@ impl DcpsRuntime {
         // The user-traffic multicast socket (`transport.user_multicast`):
         // received like user unicast.
         if let Some((socket, _)) = user_mc {
-            let rt_recv_mc = Arc::clone(&rt);
+            let rt_recv_mc = Arc::downgrade(&rt);
             let stop_recv_mc = stop.clone();
             let tune_recv_mc = tune_tx.clone();
+            if let Ok(mut sockets) = rt.extra_receive_sockets.lock() {
+                sockets.push(Arc::clone(&socket));
+            }
             let socket: Arc<dyn Transport + Send + Sync> = socket;
             tuned_workers += 1;
             handles_init.push(
@@ -9833,7 +10055,10 @@ impl DcpsRuntime {
                         )?),
                         Err(_) => break, // SO_REUSEPORT not available — skip.
                     };
-                let rt_extra = Arc::clone(&rt);
+                if let Ok(mut sockets) = rt.extra_receive_sockets.lock() {
+                    sockets.push(Arc::clone(&extra_socket));
+                }
+                let rt_extra = Arc::downgrade(&rt);
                 let stop_extra = stop.clone();
                 let name = format!("zdds-recv-user-{}", i + 1);
                 let tune_extra = tune_tx.clone();
@@ -9862,7 +10087,7 @@ impl DcpsRuntime {
         // compiled when the `same-host-shm` feature is on.
         #[cfg(feature = "same-host-shm")]
         {
-            let rt_recv_shm = Arc::clone(&rt);
+            let rt_recv_shm = Arc::downgrade(&rt);
             let stop_recv_shm = stop.clone();
             let tune_recv_shm = tune_tx.clone();
             tuned_workers += 1;
@@ -9898,7 +10123,7 @@ impl DcpsRuntime {
             if let Ok(mut g) = rt.tick_wake.lock() {
                 *g = Some(handle.clone());
             }
-            let rt_tick = Arc::clone(&rt);
+            let rt_tick = Arc::downgrade(&rt);
             let stop_tick = stop;
             let tune_tick = tune_tx.clone();
             tuned_workers += 1;
@@ -9915,7 +10140,7 @@ impl DcpsRuntime {
                     })?,
             );
         } else {
-            let rt_tick = Arc::clone(&rt);
+            let rt_tick = Arc::downgrade(&rt);
             let stop_tick = stop;
             let tune_tick = tune_tx.clone();
             tuned_workers += 1;
@@ -10653,11 +10878,10 @@ impl DcpsRuntime {
         } else {
             &self.type_lookup_transport
         };
+        let mut transport = transport.lock().map_err(|_| DdsError::PreconditionNotMet {
+            reason: "TypeLookup transport poisoned",
+        })?;
         let datagrams = transport
-            .lock()
-            .map_err(|_| DdsError::PreconditionNotMet {
-                reason: "TypeLookup transport poisoned",
-            })?
             .write(
                 request,
                 peer,
@@ -10669,7 +10893,17 @@ impl DcpsRuntime {
             .map_err(|error| DdsError::WireError {
                 message: alloc::format!("TypeLookup write: {error:?}"),
             })?;
-        self.send_type_lookup_datagrams(datagrams, secure)
+        // Sent while the transport is held. The tick takes the same lock for
+        // the HEARTBEAT that announces this sample and sends it before it
+        // lets go; sent after the lock, the DATA could follow that
+        // HEARTBEAT. A VOLATILE reader takes the first HEARTBEAT of a writer
+        // as the point it starts from: Cyclone DDS 11.0.1 skipped the reply
+        // to its getTypes it received after the HEARTBEAT announcing it, and
+        // the match it had deferred on the type never came (Cyclone trace,
+        // pipeline 9171).
+        let sent = self.send_type_lookup_datagrams(datagrams, secure);
+        drop(transport);
+        sent
     }
 
     /// Sends every datagram to every one of its targets.
@@ -10989,10 +11223,10 @@ impl DcpsRuntime {
         ));
         // The `serialized_local_participant_data` of the handshake
         // operations (§9.3.2.11.4, §9.3.2.11.5).
-        if let Some(pd) = pdata_for_stack {
-            if let Ok(mut s) = stack.lock() {
-                s.set_local_participant_data(pd);
-            }
+        if let Some(pd) = pdata_for_stack
+            && let Ok(mut s) = stack.lock()
+        {
+            s.set_local_participant_data(pd);
         }
         // FU2 S3: kick off in-process participant discovery + handshake trigger
         // deterministically — decouples the secured discovery from the
@@ -11046,11 +11280,11 @@ impl DcpsRuntime {
         let stack = Arc::new(Mutex::new(fresh));
         // Catch up on already-discovered peers (discovery may have already
         // seen SPDP beacons before the plugin was activated).
-        if let Ok(cache) = self.discovered.lock() {
-            if let Ok(mut s) = stack.lock() {
-                for peer in cache.iter() {
-                    s.handle_remote_endpoints(peer);
-                }
+        if let Ok(cache) = self.discovered.lock()
+            && let Ok(mut s) = stack.lock()
+        {
+            for peer in cache.iter() {
+                s.handle_remote_endpoints(peer);
             }
         }
         *slot = Some(Arc::clone(&stack));
@@ -11066,10 +11300,8 @@ impl DcpsRuntime {
                 .discovery_protection()
                 .map(|l| l != ProtectionLevel::None)
                 .unwrap_or(false);
-            if protected {
-                if let Ok(mut sedp) = self.sedp.lock() {
-                    sedp.set_discovery_protected(true);
-                }
+            if protected && let Ok(mut sedp) = self.sedp.lock() {
+                sedp.set_discovery_protected(true);
             }
         }
         stack
@@ -11241,10 +11473,10 @@ impl DcpsRuntime {
         if self.ignore_filter_snapshot().is_none() {
             self.attach_ignore_filter(crate::participant::IgnoreFilter::default());
         }
-        if let Some(filter) = self.ignore_filter_snapshot() {
-            if let Ok(mut participants) = filter.inner.participants.lock() {
-                participants.insert(handle);
-            }
+        if let Some(filter) = self.ignore_filter_snapshot()
+            && let Ok(mut participants) = filter.inner.participants.lock()
+        {
+            participants.insert(handle);
         }
         self.disconnect_ignored(Ignored::Participant(handle));
     }
@@ -11805,16 +12037,16 @@ impl DcpsRuntime {
         // filter must be honored here too — otherwise the Durability-Service's
         // own two participants (ingest + replay, same process) would match and
         // echo-loop despite mutually ignoring each other.
-        if let Some(filter) = self.ignore_filter_snapshot() {
-            if filter.ignores_endpoint(
+        if let Some(filter) = self.ignore_filter_snapshot()
+            && filter.ignores_endpoint(
                 data.key,
                 data.participant_key,
                 &data.topic_name,
                 &data.type_name,
                 true,
-            ) {
-                return;
-            }
+            )
+        {
+            return;
         }
         // DDS-Security 1.2 §9.8.3: the endpoints of a same-process participant
         // are taken once it is authenticated (`match_authenticated_builtins`
@@ -11858,16 +12090,16 @@ impl DcpsRuntime {
     ) {
         // See `inproc_inject_publication`: honor the ignore filter on the
         // in-process fastpath (symmetric, subscription side).
-        if let Some(filter) = self.ignore_filter_snapshot() {
-            if filter.ignores_endpoint(
+        if let Some(filter) = self.ignore_filter_snapshot()
+            && filter.ignores_endpoint(
                 data.key,
                 data.participant_key,
                 &data.topic_name,
                 &data.type_name,
                 false,
-            ) {
-                return;
-            }
+            )
+        {
+            return;
         }
         // DDS-Security 1.2 §9.8.3: the endpoints of a same-process participant
         // are taken once it is authenticated (`match_authenticated_builtins`
@@ -12198,11 +12430,15 @@ impl DcpsRuntime {
             let Some(mine) = class_of(mine) else {
                 continue;
             };
+            // §10.4.2.2 reads a PermissionsToken class without the versions
+            // as 1.0; §10.3.2.1 has no such rule for the IdentityToken.
+            let same = if name == "permissions_token" {
+                zerodds_security::token::class_id::same_permissions_class_and_major_version
+            } else {
+                zerodds_security::token::class_id::same_class_and_major_version
+            };
             match class_of(theirs) {
-                Some(theirs)
-                    if zerodds_security::token::class_id::same_class_and_major_version(
-                        &mine, &theirs,
-                    ) => {}
+                Some(theirs) if same(&mine, &theirs) => {}
                 Some(theirs) => {
                     return Some(alloc::format!(
                         "the {name} class '{theirs}' is not the plugin class '{mine}' of this \
@@ -12217,12 +12453,12 @@ impl DcpsRuntime {
                 }
             }
         }
-        if let Some(info) = local.participant_security_info.as_ref() {
-            if !info.is_compatible_with(remote.participant_security_info.as_ref()) {
-                return Some(String::from(
-                    "the ParticipantSecurityProtectionInfo masks differ (DDS-Security 1.2 §7.3.23)",
-                ));
-            }
+        if let Some(info) = local.participant_security_info.as_ref()
+            && !info.is_compatible_with(remote.participant_security_info.as_ref())
+        {
+            return Some(String::from(
+                "the ParticipantSecurityProtectionInfo masks differ (DDS-Security 1.2 §7.3.23)",
+            ));
         }
         let sig_of = |d: &zerodds_rtps::participant_data::ParticipantBuiltinTopicData| {
             d.sig_algo_info.unwrap_or_else(Sig::spec_default)
@@ -12364,12 +12600,12 @@ impl DcpsRuntime {
         {
             return None;
         }
-        if let Some(local) = self.user_endpoint_security_info(topic) {
-            if !local.is_compatible_with(remote_info) {
-                return Some(String::from(
-                    "the EndpointSecurityProtectionInfo masks differ (DDS-Security 1.2 §7.3.24)",
-                ));
-            }
+        if let Some(local) = self.user_endpoint_security_info(topic)
+            && !local.is_compatible_with(remote_info)
+        {
+            return Some(String::from(
+                "the EndpointSecurityProtectionInfo masks differ (DDS-Security 1.2 §7.3.24)",
+            ));
         }
         let local_sym = self
             .spdp_beacon
@@ -12439,22 +12675,21 @@ impl DcpsRuntime {
                 a
             },
         };
-        if let Ok(mut beacon) = self.spdp_beacon.lock() {
-            if let Ok(datagram) = beacon.serialize() {
-                if let Some(secured) = secure_outbound_bytes(self, &datagram) {
-                    self.send_spdp_multicast(&mc_target, &secured);
-                    // C1 multicast-free discovery: on the immediate announce too, to
-                    // the configured initial peers (discovery.peers). And the
-                    // directed unicast fan-out to already-discovered peers:
-                    // covers the order in which we discover a peer
-                    // BEFORE our security builtins (token) are active — then the
-                    // directed response in handle_spdp_datagram skipped tokenless;
-                    // announce_spdp_now() (called by enable() after the token set)
-                    // catches up with the tokened beacon promptly + LXC-multicast-
-                    // independently. Otherwise the peer waits until spdp_period.
-                    self.send_spdp_unicast(&secured);
-                }
-            }
+        if let Ok(mut beacon) = self.spdp_beacon.lock()
+            && let Ok(datagram) = beacon.serialize()
+            && let Some(secured) = secure_outbound_bytes(self, &datagram)
+        {
+            self.send_spdp_multicast(&mc_target, &secured);
+            // C1 multicast-free discovery: on the immediate announce too, to
+            // the configured initial peers (discovery.peers). And the
+            // directed unicast fan-out to already-discovered peers:
+            // covers the order in which we discover a peer
+            // BEFORE our security builtins (token) are active — then the
+            // directed response in handle_spdp_datagram skipped tokenless;
+            // announce_spdp_now() (called by enable() after the token set)
+            // catches up with the tokened beacon promptly + LXC-multicast-
+            // independently. Otherwise the peer waits until spdp_period.
+            self.send_spdp_unicast(&secured);
         }
         // The reliable secure SPDP writer (0xff0101c2) announces the
         // participant data to the authenticated participants (Fast DDS
@@ -12685,17 +12920,17 @@ impl DcpsRuntime {
         // DDS-Security 1.2 §9.8.6 step 2: the middleware calls
         // `get_topic_security_config` for the Topic being created; the
         // permissions of a gate without an AccessControl plugin have none.
-        if gate.has_permissions().unwrap_or(false) {
-            if let Err(error) = gate.topic_security_config(topic_name) {
-                self.log_access_denied(
-                    topic_name,
-                    true,
-                    &alloc::format!("get_topic_security_config failed: {error:?}"),
-                );
-                return Err(DdsError::NotAllowedBySecurity {
-                    what: "topic security config",
-                });
-            }
+        if gate.has_permissions().unwrap_or(false)
+            && let Err(error) = gate.topic_security_config(topic_name)
+        {
+            self.log_access_denied(
+                topic_name,
+                true,
+                &alloc::format!("get_topic_security_config failed: {error:?}"),
+            );
+            return Err(DdsError::NotAllowedBySecurity {
+                what: "topic security config",
+            });
         }
         let entries = crate::access_request::topic_qos(qos);
         let pairs = entries.pairs();
@@ -13191,6 +13426,11 @@ impl DcpsRuntime {
         // the discovered cache, which does not contain self.
         self.recompute_intra_runtime_routes();
         self.refresh_wlp_period();
+        // The writer's liveliness lease started at registration
+        // (`last_liveliness_assert`): the housekeeping pass schedules its end
+        // now, not at its next idle wake up to `SCHEDULER_IDLE_FLOOR` later,
+        // which counted LIVELINESS_LOST of a silent manual writer that late.
+        self.raise_tick_wake();
         // FU2 F-ECHO-WRITE: a user writer created AFTER handshake completion
         // (e.g. the event-driven echo writer in the responder/pong) must send its
         // per-endpoint datawriter_crypto_tokens IMMEDIATELY to the already-
@@ -13755,6 +13995,12 @@ impl DcpsRuntime {
     ) -> Arc<crate::listener_dispatcher::ListenerDispatcher> {
         Arc::clone(self.listener_dispatcher.get_or_init(|| {
             let dispatcher = crate::listener_dispatcher::ListenerDispatcher::start();
+            // A runtime already shut down runs no listener thread: an entity
+            // that registers afterwards would start one nothing stops.
+            if self.stop.load(Ordering::Acquire) {
+                dispatcher.stop();
+                dispatcher.join();
+            }
             let weak = Arc::downgrade(&dispatcher);
             self.add_status_hook(Arc::new(move || {
                 if let Some(dispatcher) = weak.upgrade() {
@@ -14726,10 +14972,10 @@ impl DcpsRuntime {
                 }
                 *last = Instant::now();
             }
-            if is_empty() {
-                if let Some(rt) = weak.upgrade() {
-                    rt.release_service_writer(&topic_name);
-                }
+            if is_empty()
+                && let Some(rt) = weak.upgrade()
+            {
+                rt.release_service_writer(&topic_name);
             }
         });
         self.add_tick_hook(&hook);
@@ -15326,26 +15572,26 @@ impl DcpsRuntime {
         };
         for (writer_eid, reader_eid, pid) in fresh {
             let mut topic = String::new();
-            if let Some(arc) = self.writer_slot(writer_eid) {
-                if let Ok(mut slot) = arc.lock() {
-                    slot.offered_incompatible_qos.update(|status| {
-                        status.total_count = status.total_count.saturating_add(1);
-                        status.total_count_change = status.total_count_change.saturating_add(1);
-                        status.last_policy_id = pid;
-                        bump_policy_count(&mut status.policies, pid);
-                    });
-                    topic = slot.topic_name.clone();
-                }
+            if let Some(arc) = self.writer_slot(writer_eid)
+                && let Ok(mut slot) = arc.lock()
+            {
+                slot.offered_incompatible_qos.update(|status| {
+                    status.total_count = status.total_count.saturating_add(1);
+                    status.total_count_change = status.total_count_change.saturating_add(1);
+                    status.last_policy_id = pid;
+                    bump_policy_count(&mut status.policies, pid);
+                });
+                topic = slot.topic_name.clone();
             }
-            if let Some(arc) = self.reader_slot(reader_eid) {
-                if let Ok(mut slot) = arc.lock() {
-                    slot.requested_incompatible_qos.update(|status| {
-                        status.total_count = status.total_count.saturating_add(1);
-                        status.total_count_change = status.total_count_change.saturating_add(1);
-                        status.last_policy_id = pid;
-                        bump_policy_count(&mut status.policies, pid);
-                    });
-                }
+            if let Some(arc) = self.reader_slot(reader_eid)
+                && let Ok(mut slot) = arc.lock()
+            {
+                slot.requested_incompatible_qos.update(|status| {
+                    status.total_count = status.total_count.saturating_add(1);
+                    status.total_count_change = status.total_count_change.saturating_add(1);
+                    status.last_policy_id = pid;
+                    bump_policy_count(&mut status.policies, pid);
+                });
             }
             self.status_changed();
             self.config.observability.record(
@@ -15410,10 +15656,10 @@ impl DcpsRuntime {
             let forms: Vec<Option<ReplayForm>> = samples
                 .iter()
                 .map(|s| {
-                    if let Some((guid, sn)) = s.original_writer {
-                        if !r.reader.accept_forwarded(guid, sn) {
-                            return None;
-                        }
+                    if let Some((guid, sn)) = s.original_writer
+                        && !r.reader.accept_forwarded(guid, sn)
+                    {
+                        return None;
                     }
                     if s.lifecycle.is_some() {
                         return Some(ReplayForm::default());
@@ -15422,19 +15668,17 @@ impl DcpsRuntime {
                         let from = s
                             .original_writer
                             .map_or(self.guid_prefix, |(guid, _)| guid.prefix);
-                        let (payload, representation, big_endian) =
+                        let (payload, representation_identifier) =
                             self.open_forwarded_payload(from, &s.payload)?;
                         return Some(ReplayForm {
                             payload,
-                            representation,
-                            big_endian,
+                            representation_identifier,
                             crypto: false,
                         });
                     }
                     Some(ReplayForm {
                         payload: s.payload.clone(),
-                        representation: s.representation,
-                        big_endian: s.big_endian,
+                        representation_identifier: s.representation_identifier,
                         crypto: s.crypto_content,
                     })
                 })
@@ -15444,8 +15688,7 @@ impl DcpsRuntime {
             for (s, form) in samples.iter().zip(&forms) {
                 let Some(ReplayForm {
                     payload,
-                    representation,
-                    big_endian,
+                    representation_identifier,
                     crypto,
                 }) = form
                 else {
@@ -15460,8 +15703,9 @@ impl DcpsRuntime {
                             payload: crate::sample_bytes::SampleBytes::from_vec(payload.clone()),
                             writer_guid,
                             writer_strength: s.strength,
-                            representation: *representation,
-                            big_endian: *big_endian,
+                            representation: encap_representation(representation_identifier),
+                            big_endian: encap_big_endian(representation_identifier),
+                            representation_identifier: *representation_identifier,
                             source_timestamp: s.source_timestamp,
                             reception_timestamp: None,
                             source_sequence_number,
@@ -15509,8 +15753,7 @@ impl DcpsRuntime {
             for (s, form) in samples.iter().zip(&forms) {
                 let Some(ReplayForm {
                     payload,
-                    representation,
-                    big_endian,
+                    representation_identifier,
                     ..
                 }) = form
                 else {
@@ -15522,12 +15765,13 @@ impl DcpsRuntime {
                 let (writer_guid, sequence_number) = origin_of(s);
                 l(
                     payload,
-                    *representation,
-                    u8::from(*big_endian),
+                    encap_representation(representation_identifier),
+                    u8::from(encap_big_endian(representation_identifier)),
                     &SampleOrigin {
                         writer_guid,
                         source_timestamp: s.source_timestamp,
                         sequence_number,
+                        representation_identifier: *representation_identifier,
                     },
                 );
             }
@@ -15565,29 +15809,27 @@ impl DcpsRuntime {
     ) {
         // Record in retained (terminal marker for the key) so future late
         // joiners observe the NOT_ALIVE state.
-        if let Some(w_arc) = self.writer_slot(writer_eid) {
-            if let Ok(mut w) = w_arc.lock() {
-                if !matches!(w.durability, zerodds_qos::DurabilityKind::Volatile) {
-                    // Replace any prior terminal marker for this key; keep the
-                    // retained alive samples (the reader saw them already, but a
-                    // brand-new late joiner needs both the data and the state).
-                    w.retained
-                        .retain(|s| !(s.lifecycle.is_some() && s.key_hash == key_hash));
-                    w.retained.push_back(RetainedSample {
-                        known_key_hash: Some(key_hash),
-                        key_hash,
-                        payload: Vec::new(),
-                        representation: 0,
-                        strength: 0,
-                        lifecycle: Some(kind),
-                        source_timestamp,
-                        source_sequence_number: marker_sn,
-                        big_endian: false,
-                        original_writer: original,
-                        crypto_content: false,
-                    });
-                }
-            }
+        if let Some(w_arc) = self.writer_slot(writer_eid)
+            && let Ok(mut w) = w_arc.lock()
+            && !matches!(w.durability, zerodds_qos::DurabilityKind::Volatile)
+        {
+            // Replace any prior terminal marker for this key; keep the
+            // retained alive samples (the reader saw them already, but a
+            // brand-new late joiner needs both the data and the state).
+            w.retained
+                .retain(|s| !(s.lifecycle.is_some() && s.key_hash == key_hash));
+            w.retained.push_back(RetainedSample {
+                known_key_hash: Some(key_hash),
+                key_hash,
+                payload: Vec::new(),
+                representation_identifier: [0; 2],
+                strength: 0,
+                lifecycle: Some(kind),
+                source_timestamp,
+                source_sequence_number: marker_sn,
+                original_writer: original,
+                crypto_content: false,
+            });
         }
         let routes: Vec<EntityId> = match self.intra_runtime_routes.read() {
             Ok(g) => match g.get(&writer_eid) {
@@ -15606,10 +15848,10 @@ impl DcpsRuntime {
                 };
                 // A forwarded marker the reader has from the original or
                 // another forwarder is a duplicate (DDSI-RTPS 2.5 §8.7.9).
-                if let Some((guid, sn)) = original {
-                    if !slot.reader.accept_forwarded(guid, sn) {
-                        continue;
-                    }
+                if let Some((guid, sn)) = original
+                    && !slot.reader.accept_forwarded(guid, sn)
+                {
+                    continue;
                 }
                 // The instance is not alive any more: its deadline ends.
                 slot.deadline_instances.remove(&key_hash);
@@ -15645,15 +15887,15 @@ impl DcpsRuntime {
     /// Opens a forwarded CryptoContent of a writer of the participant
     /// `from` for a reader of this runtime that is not a relay reader
     /// (DDS-Security 1.2 §7.1.1.4: the reader "will use Alice's secret key
-    /// to decrypt the data"): the body behind the encapsulation header, its
-    /// representation and byte order. `None` where this participant holds
-    /// no key of that writer, recorded as `security.inbound.refused`; the
-    /// reader does not get the sample.
+    /// to decrypt the data"): the body behind the encapsulation header and
+    /// the representation identifier of that header. `None` where this
+    /// participant holds no key of that writer, recorded as
+    /// `security.inbound.refused`; the reader does not get the sample.
     fn open_forwarded_payload(
         &self,
         from: GuidPrefix,
         content: &[u8],
-    ) -> Option<(Vec<u8>, u8, bool)> {
+    ) -> Option<(Vec<u8>, [u8; 2])> {
         #[cfg(feature = "security")]
         let clear = self.config.security.as_ref().and_then(|gate| {
             let peer = from.to_bytes();
@@ -15668,11 +15910,7 @@ impl DcpsRuntime {
         };
         let opened = clear.and_then(|clear| {
             let body = user_encap_body(&clear)?;
-            Some((
-                clear[body].to_vec(),
-                encap_representation(&clear),
-                encap_big_endian(&clear),
-            ))
+            Some((clear[body].to_vec(), encap_identifier(&clear)))
         });
         if opened.is_none() {
             use zerodds_foundation::observability::{Component, Event, Level};
@@ -15703,14 +15941,13 @@ impl DcpsRuntime {
         payload: &[u8],
         key_hash: Option<[u8; 16]>,
         writer_strength: i32,
-        // XCDR version tag of the writer's effective offer (`0` = XCDR1,
-        // `1` = XCDR2), matching `encap_representation`'s convention on the
-        // wire-receive path. On the wire path the reader recovers this from
-        // byte[1] of the encap header; here the intra-runtime payload carries
-        // no encap header, so the writer's actual representation must be
-        // threaded through explicitly (Bug R4 — previously hardcoded `0`,
-        // losing the XCDR version on the same-runtime loopback path).
-        representation: u8,
+        // The representation identifier of the header the writer put on
+        // the sample's wire (DDSI-RTPS 2.5 §10.5). On the wire path the
+        // reader reads it off the encapsulation header; the intra-runtime
+        // payload carries none, so it is threaded through: XCDR version
+        // (Bug R4: once a constant `0`), format and byte order (once a
+        // constant little endian, under a writer that wrote big endian).
+        representation_identifier: [u8; 2],
         // `PID_COHERENT_SET` of the sample (DDSI-RTPS 2.5 §8.7.6). The
         // intra-runtime handoff bypasses the wire, so the marker the wire path
         // would carry in the inline QoS is threaded through here; without it a
@@ -15788,8 +16025,7 @@ impl DcpsRuntime {
             // is to a relay reader, opened to any other (see
             // `open_forwarded_payload`).
             let mut payload = alloc::borrow::Cow::Borrowed(payload);
-            let mut representation = representation;
-            let mut big_endian = false;
+            let mut representation_identifier = representation_identifier;
             let mut crypto = false;
             {
                 let Ok(mut slot) = slot_arc.lock() else {
@@ -15802,25 +16038,26 @@ impl DcpsRuntime {
                 }
                 // DDSI-RTPS 2.5 §8.7.9: a forwarded change the reader has
                 // from the original or another forwarder is a duplicate.
-                if let Some((guid, sn)) = original {
-                    if !slot.reader.accept_forwarded(guid, sn) {
-                        continue;
-                    }
+                if let Some((guid, sn)) = original
+                    && !slot.reader.accept_forwarded(guid, sn)
+                {
+                    continue;
                 }
                 if crypto_content {
                     if slot.relay {
                         crypto = true;
                     } else {
                         let from = original.map_or(self.guid_prefix, |(guid, _)| guid.prefix);
-                        let Some((body, rep, be)) = self.open_forwarded_payload(from, &payload)
+                        let Some((body, identifier)) = self.open_forwarded_payload(from, &payload)
                         else {
                             continue;
                         };
                         payload = alloc::borrow::Cow::Owned(body);
-                        representation = rep;
-                        big_endian = be;
+                        representation_identifier = identifier;
                     }
                 }
+                let representation = encap_representation(&representation_identifier);
+                let big_endian = encap_big_endian(&representation_identifier);
                 let stamp = slot.stamps_reception();
                 let make_item = || UserSample::Alive {
                     key_hash,
@@ -15828,10 +16065,10 @@ impl DcpsRuntime {
                     writer_guid,
                     writer_strength,
                     representation,
-                    // Intra-runtime same-process delivery produces the
-                    // native little-endian wire, a forwarded payload the
-                    // order its writer wrote it in.
+                    // The order the writer wrote the payload in, a
+                    // forwarded payload the order its writer wrote it in.
                     big_endian,
+                    representation_identifier,
                     source_timestamp,
                     reception_timestamp: stamp.then(|| self.config.time_source.now()),
                     // The SN the writer gave the sample on its wire path.
@@ -15849,7 +16086,7 @@ impl DcpsRuntime {
                 // A2 TIME_BASED_FILTER (§2.2.3.12) — as on the wire path; the
                 // body without a header is what a listener gets here.
                 let gated = if slot.tbf_min_separation_nanos > 0 {
-                    let view = Some((Arc::<[u8]>::from(&*payload), 0..payload.len()));
+                    let view = Some(zerodds_rtps::payload::Payload::from(&payload[..]));
                     match slot.tbf_gate(self, (make_item(), view)) {
                         Some((item, _)) => Some(item),
                         None => continue,
@@ -15877,7 +16114,10 @@ impl DcpsRuntime {
                 // otherwise to the MPSC receiver.
                 queued = if listener.is_none() {
                     let _ = slot.sample_tx.send(gated.unwrap_or_else(make_item));
-                    Some(Arc::clone(&slot.async_waker))
+                    Some((
+                        Arc::clone(&slot.async_waker),
+                        slot.room.clone().filter(|room| !room.holds_back()),
+                    ))
                 } else {
                     None
                 };
@@ -15885,21 +16125,24 @@ impl DcpsRuntime {
             if let Some(l) = listener {
                 let _scope = crate::listener_dispatch::DataListenerScope::enter();
                 // The listener signature is `(payload, representation, big_endian)`.
-                // Intra-runtime: no encap header, so carry the writer's
-                // actual representation tag (Bug R4); same-process delivery is
-                // always native little-endian → big_endian = 0.
+                // Intra-runtime: no encap header, so the writer's own
+                // representation and byte order (see above).
                 l(
                     &payload,
-                    representation,
-                    u8::from(big_endian),
+                    encap_representation(&representation_identifier),
+                    u8::from(encap_big_endian(&representation_identifier)),
                     &SampleOrigin {
                         writer_guid,
                         source_timestamp,
                         sequence_number: source_sequence_number,
+                        representation_identifier,
                     },
                 );
-            } else if let Some(waker) = queued {
+            } else if let Some((waker, room)) = queued {
                 wake_async_waker(&waker);
+                if let Some(room) = room {
+                    room.drain_if_over();
+                }
             }
         }
     }
@@ -16934,7 +17177,8 @@ impl DcpsRuntime {
                 // identical for all readers; data is fragmented only where
                 // required. A reader reached without leaving this host takes a
                 // sample up to LOOPBACK_MTU as one DATA, the others get the
-                // fragments. A reader of another implementation on this host
+                // fragments; a reader on this host over TSN crosses the link
+                // and keeps the writer's limit (same_host_message_limit). A reader of another implementation on this host
                 // announces a loopback or one of our interface addresses.
                 let local = &self.local_ipv4_addresses;
                 let same_host = self
@@ -16945,9 +17189,8 @@ impl DcpsRuntime {
                             .unicast_locators
                             .iter()
                             .all(|loc| locator_stays_on_host(loc, local)));
-                if same_host {
-                    proxy.set_message_limit(Some(LOOPBACK_MTU));
-                }
+                proxy
+                    .set_message_limit(same_host_message_limit(same_host, &proxy.unicast_locators));
                 slot.writer.add_reader_proxy(proxy);
                 let matched = sub.key.to_bytes();
                 slot.incompatible_remotes.retain(|(g, _)| *g != matched);
@@ -17444,20 +17687,17 @@ impl DcpsRuntime {
                 // that writer's only where its participant's grant allows
                 // `<relay>` on the topic; otherwise it is this writer's own.
                 #[cfg(feature = "security")]
-                if let Some(gate) = self.config.security.as_ref() {
-                    if pubd.key.prefix != self.guid_prefix {
-                        let partitions: Vec<&str> =
-                            pubd.partition.iter().map(String::as_str).collect();
-                        let request = zerodds_security::access_control::EndpointRequest::new(
-                            0,
-                            &pubd.topic_name,
-                        )
-                        .in_partitions(&partitions);
-                        let trusted = gate
-                            .remote_may_relay(pubd.key.prefix.to_bytes(), &request)
-                            .unwrap_or(false);
-                        slot.reader.set_forwarder_trusted(pubd.key, trusted);
-                    }
+                if let Some(gate) = self.config.security.as_ref()
+                    && pubd.key.prefix != self.guid_prefix
+                {
+                    let partitions: Vec<&str> = pubd.partition.iter().map(String::as_str).collect();
+                    let request =
+                        zerodds_security::access_control::EndpointRequest::new(0, &pubd.topic_name)
+                            .in_partitions(&partitions);
+                    let trusted = gate
+                        .remote_may_relay(pubd.key.prefix.to_bytes(), &request)
+                        .unwrap_or(false);
+                    slot.reader.set_forwarder_trusted(pubd.key, trusted);
                 }
                 let matched = pubd.key.to_bytes();
                 slot.incompatible_remotes.retain(|(g, _)| *g != matched);
@@ -17620,6 +17860,48 @@ impl DcpsRuntime {
         Ok(())
     }
 
+    /// Sets the form of the samples `eid` sends from the representation
+    /// identifier of an encapsulation header (DDSI-RTPS 2.5 §10.5, DDS-XTypes
+    /// 1.3 §7.6.3.1.2 Table 60): the XCDR version it offers
+    /// ([`Self::set_user_writer_data_rep_override`]), the extensibility its
+    /// header declares ([`Self::set_user_writer_wire_extensibility`]) and the
+    /// byte order ([`Self::set_user_writer_byte_order_override`]). For a
+    /// service that sends a body it received or recorded under the header it
+    /// came with (`UserSample::Alive::representation_identifier`).
+    ///
+    /// # Errors
+    /// `BadParameter` for an identifier that names no CDR form of Table 60
+    /// (XML `00 04`, an identifier of a vendor's range); otherwise as the
+    /// three setters.
+    pub fn set_user_writer_representation_identifier(
+        &self,
+        eid: EntityId,
+        identifier: [u8; 2],
+    ) -> Result<()> {
+        use zerodds_rtps::publication_data::data_representation as dr;
+        use zerodds_types::qos::ExtensibilityForRepr as E;
+        let form = (identifier[0] == 0x00)
+            .then_some(identifier[1] & !0x01)
+            .and_then(|kind| match kind {
+                0x00 => Some((dr::XCDR, E::Final)),
+                0x02 => Some((dr::XCDR, E::Mutable)),
+                // 0x10, 0x12, 0x14: the XCDR2 identifiers some writers still
+                // send, read as the routing service reads them.
+                0x06 | 0x10 => Some((dr::XCDR2, E::Final)),
+                0x08 | 0x14 => Some((dr::XCDR2, E::Appendable)),
+                0x0a | 0x12 => Some((dr::XCDR2, E::Mutable)),
+                _ => None,
+            });
+        let Some((representation, extensibility)) = form else {
+            return Err(DdsError::BadParameter {
+                what: "representation identifier names no CDR form of XTypes 1.3 Table 60",
+            });
+        };
+        self.set_user_writer_data_rep_override(eid, Some(alloc::vec![representation]))?;
+        self.set_user_writer_wire_extensibility(eid, extensibility)?;
+        self.set_user_writer_byte_order_override(eid, identifier[1] & 0x01 == 0)
+    }
+
     /// Sets the HISTORY KeepLast depth (DDS 1.4 §2.2.3.18) for a user writer.
     /// This governs how many of the most-recent samples **per instance key**
     /// are retained for a TransientLocal late joiner, on both paths: the
@@ -17651,7 +17933,7 @@ impl DcpsRuntime {
         // tests/transient_local_history_depth.rs), and under VOLATILE a
         // reliable reader that had not acknowledged sample 1 of 100 got a GAP
         // for 1..=68 — KEEP_ALL lost samples without a word
-        // (`a_keep_all_writer_keeps_what_a_matched_reader_has_not_acknowledged`).
+        // (`dcps_2_2_2_4_2_11_a_keep_all_writer_keeps_what_a_matched_reader_has_not_acknowledged`).
         slot.apply_cache_history();
         Ok(())
     }
@@ -17794,10 +18076,10 @@ impl DcpsRuntime {
                 continue;
             };
             #[allow(clippy::print_stderr)]
-            if let Err(e) = self.user_unicast.send_with_priority(t, &secured, priority) {
-                if self.config.trace_send_err {
-                    eprintln!("[TRACE] user_unicast.send({t:?}) failed: {e:?}");
-                }
+            if let Err(e) = self.user_unicast.send_with_priority(t, &secured, priority)
+                && self.config.trace_send_err
+            {
+                eprintln!("[TRACE] user_unicast.send({t:?}) failed: {e:?}");
             }
         }
         self.batch_buffers.give_back(batch.bytes);
@@ -18124,6 +18406,10 @@ impl DcpsRuntime {
         // so the intra-runtime reader sees the writer's real representation
         // (Bug R4) instead of an unconditional `0`.
         let intra_representation: u8;
+        // The representation identifier of the header this sample goes out
+        // under (DDSI-RTPS 2.5 §10.5), for the same-runtime readers and the
+        // retained copy: they get the body without the header.
+        let intra_identifier: [u8; 2];
         // `PID_COHERENT_SET` of this sample (DDSI-RTPS 2.5 §8.7.6), resolved
         // AFTER staging: an open-but-empty set only gains its identity from
         // the SN of the sample staged right here.
@@ -18209,7 +18495,7 @@ impl DcpsRuntime {
                     } else {
                         0
                     };
-                encap_in_table(
+                let encap = encap_in_table(
                     self.config.encapsulation_ids,
                     user_payload_encap(
                         offer_first,
@@ -18219,7 +18505,21 @@ impl DcpsRuntime {
                     .ok_or(DdsError::BadParameter {
                         what: "the writer's DataRepresentation is not XCDR1, XCDR2 or XML; only those are emitted",
                     })?,
-                )
+                );
+                // An XML writer's same-runtime readers get the CDR body it
+                // was handed, XCDR1 like `intra_representation` says.
+                let intra_header = if is_xml_encap(&encap) {
+                    user_payload_encap(
+                        zerodds_rtps::publication_data::data_representation::XCDR,
+                        slot.wire_extensibility,
+                        slot.big_endian_override,
+                    )
+                    .unwrap_or(USER_PAYLOAD_ENCAP)
+                } else {
+                    encap
+                };
+                intra_identifier = [intra_header[0], intra_header[1]];
+                encap
             };
             if let Some(key_hash) = known_key_hash.filter(|_| !crypto_content) {
                 self.remember_instance_key(&mut slot, key_hash, payload, intra_representation);
@@ -18348,10 +18648,10 @@ impl DcpsRuntime {
             }
             intra_coherent_set_sn = slot.writer.coherent_set_first_sn();
             // Lifespan: remember the insert time of the just-written SN.
-            if slot.lifespan_nanos != 0 {
-                if let Some(sn) = slot.writer.cache().max_sn() {
-                    slot.sample_insert_times.push_back((sn, now));
-                }
+            if slot.lifespan_nanos != 0
+                && let Some(sn) = slot.writer.cache().max_sn()
+            {
+                slot.sample_insert_times.push_back((sn, now));
             }
             // QR-cluster (a)+(b): TRANSIENT_LOCAL same-runtime retention with
             // per-instance HISTORY KeepLast depth (DDS 1.4 §2.2.3.4 + §2.2.3.18).
@@ -18362,17 +18662,15 @@ impl DcpsRuntime {
                 slot.retained
                     .retain(|s| !(s.lifecycle.is_some() && s.key_hash == key_hash));
                 let strength = slot.ownership_strength;
-                let big_endian = slot.big_endian_override;
                 slot.retained.push_back(RetainedSample {
                     known_key_hash,
                     key_hash,
                     payload: payload_cdr.to_vec(),
-                    representation: intra_representation,
+                    representation_identifier: intra_identifier,
                     strength,
                     lifecycle: None,
                     source_timestamp: Some(resolved_source_ts),
                     source_sequence_number: written_sn,
-                    big_endian,
                     original_writer: original,
                     crypto_content,
                 });
@@ -18535,7 +18833,7 @@ impl DcpsRuntime {
             payload,
             known_key_hash,
             writer_strength,
-            intra_representation,
+            intra_identifier,
             intra_coherent_set_sn,
             intra_group,
             written_sn,
@@ -18604,6 +18902,29 @@ impl DcpsRuntime {
             &peer.data.metatraffic_unicast_locators,
             &peer.data.default_unicast_locators,
         );
+    }
+
+    /// Hands the default unicast locators of a ZeroDDS participant SPDP
+    /// reported to the user transport (`Transport::add_destination`), so
+    /// that it can receive from the participant before it has sent it
+    /// anything: the SHM user transport (`transport.user_transport = SHM`)
+    /// attaches the ring the participant writes into. It attached it at its
+    /// own first send, and a participant whose readers are best-effort
+    /// sends nothing before it has received: it received nothing (0 of
+    /// 30 000 echoes in the SHM cells of `bench-regression`, job 229228).
+    /// Nothing for another vendor, whose locator kinds in the vendor range
+    /// are its own, or a participant of this process, which the in-process
+    /// path serves.
+    #[cfg(feature = "same-host-shm")]
+    fn note_user_transport_peer(&self, peer: &DiscoveredParticipant) {
+        if peer.sender_vendor != VendorId::ZERODDS
+            || same_process(self.guid_prefix, peer.data.guid.prefix)
+        {
+            return;
+        }
+        for locator in &peer.data.default_unicast_locators {
+            self.user_unicast.add_destination(locator);
+        }
     }
 
     /// Sends a metatraffic unicast datagram: through the same-host channel
@@ -18872,10 +19193,10 @@ impl DcpsRuntime {
         let Ok(sample) = support.read_body(body, representation, big_endian) else {
             return Ok(());
         };
-        if let Some((hash, holder)) = support.key_material(&sample) {
-            if key_hash.is_none_or(|given| given == hash) {
-                slot.instance_key_holders.entry(hash).or_insert(holder);
-            }
+        if let Some((hash, holder)) = support.key_material(&sample)
+            && key_hash.is_none_or(|given| given == hash)
+        {
+            slot.instance_key_holders.entry(hash).or_insert(holder);
         }
         Ok(())
     }
@@ -19173,14 +19494,14 @@ impl DcpsRuntime {
             // FU2 S3: lifecycle DATA (dispose/unregister) per-target
             // data_protection-aware (heterogeneously correct like the immediate send).
             for t in dg.targets.iter() {
-                if is_routable_user_locator(t) {
-                    if let Some(secured) = secure_outbound_for_target(self, eid, &dg.bytes, t) {
-                        let _ = self.user_unicast.send_with_priority(
-                            t,
-                            &secured,
-                            self.user_writer_transport_priority(eid),
-                        );
-                    }
+                if is_routable_user_locator(t)
+                    && let Some(secured) = secure_outbound_for_target(self, eid, &dg.bytes, t)
+                {
+                    let _ = self.user_unicast.send_with_priority(
+                        t,
+                        &secured,
+                        self.user_writer_transport_priority(eid),
+                    );
                 }
             }
         }
@@ -19472,14 +19793,14 @@ impl DcpsRuntime {
         };
         for dg in out_datagrams {
             for t in dg.targets.iter() {
-                if is_routable_user_locator(t) {
-                    if let Some(secured) = secure_outbound_for_target(self, eid, &dg.bytes, t) {
-                        let _ = self.user_unicast.send_with_priority(
-                            t,
-                            &secured,
-                            self.user_writer_transport_priority(eid),
-                        );
-                    }
+                if is_routable_user_locator(t)
+                    && let Some(secured) = secure_outbound_for_target(self, eid, &dg.bytes, t)
+                {
+                    let _ = self.user_unicast.send_with_priority(
+                        t,
+                        &secured,
+                        self.user_writer_transport_priority(eid),
+                    );
                 }
             }
         }
@@ -19627,8 +19948,7 @@ impl DcpsRuntime {
         self.entity_counter.store(n, Ordering::Relaxed);
     }
 
-    /// Snapshot of all currently known remote publications (topic
-    /// name + type name + writer GUID).
+    /// The number of remote publications discovery knows now.
     #[must_use]
     pub fn discovered_publications_count(&self) -> usize {
         self.sedp
@@ -20636,10 +20956,10 @@ impl DcpsRuntime {
         eid: EntityId,
         reported: &crate::status::LivelinessChangedStatus,
     ) {
-        if let Some(arc) = self.reader_slot(eid) {
-            if let Ok(mut s) = arc.lock() {
-                s.liveliness.acknowledge(reported);
-            }
+        if let Some(arc) = self.reader_slot(eid)
+            && let Ok(mut s) = arc.lock()
+        {
+            s.liveliness.acknowledge(reported);
         }
     }
 
@@ -20846,8 +21166,10 @@ impl DcpsRuntime {
             let mut slot = arc.lock().map_err(|_| DdsError::PreconditionNotMet {
                 reason: "user_reader slot poisoned",
             })?;
-            let per_writer = slot.reader.max_samples_per_proxy().min(room.limit);
-            slot.reader.set_max_samples_per_proxy(per_writer);
+            if room.holds_back() {
+                let per_writer = slot.reader.max_samples_per_proxy().min(room.limit);
+                slot.reader.set_max_samples_per_proxy(per_writer);
+            }
             let _ = room.sent.set(Arc::clone(&slot.sample_tx.sent));
             slot.room = Some(room);
         }
@@ -20869,6 +21191,8 @@ impl DcpsRuntime {
                 .into_iter()
                 .flatten()
                 .filter_map(|reader_eid| self.reader_slot(*reader_eid)?.lock().ok()?.room.clone())
+                // A BEST_EFFORT reader's room does not make a writer wait.
+                .filter(|room| room.holds_back())
                 .collect();
             if let Ok(mut slot) = arc.lock() {
                 slot.intra_reader_rooms = rooms;
@@ -20934,15 +21258,15 @@ impl DcpsRuntime {
         if count == 0 {
             return;
         }
-        if let Some(arc) = self.reader_slot(eid) {
-            if let Ok(mut slot) = arc.lock() {
-                let n = i32::try_from(count).unwrap_or(i32::MAX);
-                slot.sample_lost.update(|status| {
-                    status.total_count = status.total_count.saturating_add(n);
-                    status.total_count_change = status.total_count_change.saturating_add(n);
-                });
-                self.status_changed();
-            }
+        if let Some(arc) = self.reader_slot(eid)
+            && let Ok(mut slot) = arc.lock()
+        {
+            let n = i32::try_from(count).unwrap_or(i32::MAX);
+            slot.sample_lost.update(|status| {
+                status.total_count = status.total_count.saturating_add(n);
+                status.total_count_change = status.total_count_change.saturating_add(n);
+            });
+            self.status_changed();
         }
     }
 
@@ -20953,16 +21277,16 @@ impl DcpsRuntime {
         kind: crate::status::SampleRejectedStatusKind,
         instance: crate::instance_handle::InstanceHandle,
     ) {
-        if let Some(arc) = self.reader_slot(eid) {
-            if let Ok(mut slot) = arc.lock() {
-                slot.sample_rejected.update(|status| {
-                    status.total_count = status.total_count.saturating_add(1);
-                    status.total_count_change = status.total_count_change.saturating_add(1);
-                    status.last_reason = kind;
-                    status.last_instance_handle = instance;
-                });
-                self.status_changed();
-            }
+        if let Some(arc) = self.reader_slot(eid)
+            && let Ok(mut slot) = arc.lock()
+        {
+            slot.sample_rejected.update(|status| {
+                status.total_count = status.total_count.saturating_add(1);
+                status.total_count_change = status.total_count_change.saturating_add(1);
+                status.last_reason = kind;
+                status.last_instance_handle = instance;
+            });
+            self.status_changed();
         }
     }
 
@@ -21008,10 +21332,10 @@ impl DcpsRuntime {
             .unwrap_or_default();
         let mut changed = false;
         for reader_eid in routed {
-            if let Some(r_arc) = self.reader_slot(reader_eid) {
-                if let Ok(mut slot) = r_arc.lock() {
-                    changed |= slot.liveliness.writer_asserted(writer_guid, now);
-                }
+            if let Some(r_arc) = self.reader_slot(reader_eid)
+                && let Ok(mut slot) = r_arc.lock()
+            {
+                changed |= slot.liveliness.writer_asserted(writer_guid, now);
             }
         }
         if changed {
@@ -21048,10 +21372,10 @@ impl DcpsRuntime {
             })
             .min();
         let period = shortest.map_or(base, |p| p.min(base));
-        if let Ok(mut wlp) = self.wlp.lock() {
-            if wlp.tick_period() != period {
-                wlp.set_tick_period(period);
-            }
+        if let Ok(mut wlp) = self.wlp.lock()
+            && wlp.tick_period() != period
+        {
+            wlp.set_tick_period(period);
         }
     }
 
@@ -21158,10 +21482,10 @@ impl DcpsRuntime {
         let Some(deadline) = Instant::now().checked_add(limit) else {
             return;
         };
-        if let Some(arc) = self.writer_slot(eid) {
-            if let Ok(mut slot) = arc.lock() {
-                slot.writer.request_heartbeat();
-            }
+        if let Some(arc) = self.writer_slot(eid)
+            && let Ok(mut slot) = arc.lock()
+        {
+            slot.writer.request_heartbeat();
         }
         self.raise_tick_wake();
         if !self.await_user_writer_acknowledged(eid, deadline) {
@@ -21205,6 +21529,7 @@ impl DcpsRuntime {
             writer_strength: 0,
             representation: 0,
             big_endian: false,
+            representation_identifier: [USER_PAYLOAD_ENCAP[0], USER_PAYLOAD_ENCAP[1]],
             source_timestamp: None,
             reception_timestamp: None,
             source_sequence_number: -1,
@@ -21236,12 +21561,11 @@ impl DcpsRuntime {
     /// the waker is woken. `None` as the argument clears the waker
     /// (e.g. after the async reader is dropped).
     pub fn register_user_reader_waker(&self, eid: EntityId, waker: Option<core::task::Waker>) {
-        if let Some(arc) = self.reader_slot(eid) {
-            if let Ok(slot) = arc.lock() {
-                if let Ok(mut g) = slot.async_waker.waker.lock() {
-                    *g = waker;
-                }
-            }
+        if let Some(arc) = self.reader_slot(eid)
+            && let Ok(slot) = arc.lock()
+            && let Ok(mut g) = slot.async_waker.waker.lock()
+        {
+            *g = waker;
         }
     }
 
@@ -21529,13 +21853,17 @@ impl DcpsRuntime {
         }
     }
 
-    /// Stops all worker threads (recv loops + tick loop) and joins
-    /// them. Idempotent — repeated calls are no-ops.
+    /// Stops all worker threads (recv loops + tick loop) and the listener
+    /// thread and joins them. Idempotent — repeated calls are no-ops.
     ///
-    /// Shutdown delay: the socket receive threads are woken and the user
-    /// transport closed, so the threads see the stop flag at once. Extra
-    /// user receive threads on a shared port (`SO_REUSEPORT`) wait out
-    /// their 1 s read timeout.
+    /// Shutdown delay: the stop flag is set, the receive sockets are closed
+    /// and the socket receive threads woken, so the threads see the flag at
+    /// once. On Linux closing a socket wakes the thread that waits on it;
+    /// elsewhere a thread whose socket got no wake-up datagram (see
+    /// `wake_socket_receivers`) waits out its 1 s read timeout.
+    /// Called on a thread of this runtime (a listener that deletes its
+    /// participant), the call joins every thread but that one, which ends
+    /// when it returns from the listener.
     pub fn shutdown(&self) {
         self.stop_threads(true);
     }
@@ -21556,6 +21884,21 @@ impl DcpsRuntime {
         if first {
             self.wake_socket_receivers();
         }
+        // The receive sockets of the worker threads: a thread waiting on
+        // one returns (Linux) instead of after its read timeout. The SPDP
+        // multicast socket got no wake-up datagram when this participant
+        // sends no multicast (`discovery.no_multicast`) or is not
+        // discoverable, and its shutdown waited out the second: 50 tests
+        // of `zerodds-dcps --features security` took 1.0 to 1.1 s each,
+        // the second in the join of `zdds-recv-spdp-mc`. Sending stays
+        // possible, the departure below goes out on `spdp_unicast`.
+        self.spdp_multicast_rx.close();
+        self.spdp_unicast.close();
+        if let Ok(sockets) = self.extra_receive_sockets.lock() {
+            for socket in sockets.iter() {
+                socket.close();
+            }
+        }
         if let Some(dispatcher) = self.listener_dispatcher.get() {
             dispatcher.stop();
         }
@@ -21563,22 +21906,39 @@ impl DcpsRuntime {
         // worker and connection readers block in `accept` and `read`
         // without a timeout, and the join below waited for every TCP peer
         // to disconnect; the peers now read EOF at once. The SHM adapter's
-        // per-peer threads and a layered transport's leg threads stop.
+        // per-peer threads and a layered transport's leg threads stop, and
+        // a UDP socket's waiting receive returns (see above).
         self.user_unicast.close();
         // The same-host receive thread parks on its doorbell.
         #[cfg(feature = "same-host-shm")]
         self.same_host_channels.wake_receiver();
         // D.5e Phase 3 — wake the scheduler tick worker so it observes `stop`
         // immediately instead of parking up to the idle floor.
-        if let Ok(guard) = self.tick_wake.lock() {
-            if let Some(h) = guard.as_ref() {
-                h.stop();
-            }
+        if let Ok(guard) = self.tick_wake.lock()
+            && let Some(h) = guard.as_ref()
+        {
+            h.stop();
         }
-        if let Ok(mut guard) = self.handles.lock() {
-            for h in guard.drain(..) {
+        // Taken out under the lock and joined after it: a worker that ends
+        // up here itself (it dropped the last reference to the participant)
+        // finds the list empty instead of waiting for the lock this call
+        // holds while it joins that worker.
+        let handles: Vec<JoinHandle<()>> = self
+            .handles
+            .lock()
+            .map(|mut guard| guard.drain(..).collect())
+            .unwrap_or_default();
+        let current = thread::current().id();
+        for h in handles {
+            // A thread cannot join itself (`pthread_join` answers
+            // `EDEADLK`, and `JoinHandle::join` may panic on it); it ends
+            // when it returns to its loop and sees the stop flag.
+            if h.thread().id() != current {
                 let _ = h.join();
             }
+        }
+        if let Some(dispatcher) = self.listener_dispatcher.get() {
+            dispatcher.join();
         }
         // After the threads, so no beacon follows the departure and brings
         // this participant back; before the channels close, so a same-host
@@ -21586,10 +21946,10 @@ impl DcpsRuntime {
         if first && announce {
             self.announce_departure();
         }
-        // The worker threads hold the runtime, so a runtime that is shut
-        // down but still referenced is not dropped, and its segments would
-        // stay mapped and named until the process ends. Release them here;
-        // an owner's drop also tells its consumers it is gone.
+        // A runtime that is shut down while a handle still refers to it is
+        // not dropped, and its segments would stay mapped and named until
+        // the process ends. Release them here; an owner's drop also tells
+        // its consumers it is gone.
         #[cfg(feature = "same-host-shm")]
         self.same_host_channels.clear();
     }
@@ -21661,9 +22021,12 @@ impl DcpsRuntime {
     /// share). Without it a
     /// shutdown waited out that second whenever the sockets were idle, as
     /// they are while the same-host channels carry the unicast traffic
-    /// (a multi-process test chain: 749–1 003 ms with them, 53–116 ms without). Extra
-    /// user receive sockets on a shared port (`SO_REUSEPORT`) keep their
-    /// timeout: which of them a datagram reaches is the kernel's choice.
+    /// (a multi-process test chain: 749–1 003 ms with them, 53–116 ms without).
+    /// The multicast datagrams go out only where this participant sends
+    /// multicast at all ([`Self::send_spdp_multicast`]), and a datagram to
+    /// a port several sockets share (`SO_REUSEPORT`) reaches the one the
+    /// kernel chooses; for those sockets [`Self::shutdown`] relies on
+    /// closing them, which wakes their threads on Linux.
     fn wake_socket_receivers(&self) {
         let poke =
             zerodds_rtps::header::RtpsHeader::new(VendorId::ZERODDS, self.guid_prefix).to_bytes();
@@ -21844,7 +22207,7 @@ impl Drop for DcpsRuntime {
 /// worker's own thread: which thread, what was requested, and the OS-level
 /// reason. `DcpsRuntime::start` reports this verbatim (via
 /// [`DdsError::ThreadTuning`]) rather than continuing on the CFS default —
-/// see `docs/silent-drop-sweep.md`: a requested setting that could not be
+/// see `0b2e8df9f6b:docs/silent-drop-sweep.md`: a requested setting that could not be
 /// applied must abort, never silently downgrade.
 #[derive(Debug, Clone)]
 struct ThreadTuningFailure {
@@ -22332,26 +22695,35 @@ fn protect_secure_spdp(rt: &DcpsRuntime, datagram: &[u8]) -> Option<Vec<u8>> {
 /// Worker: blocks on the SPDP multicast socket, dispatches SPDP beacons +
 /// WLP heartbeats that come in over multicast.
 fn recv_spdp_multicast_loop(
-    rt: Arc<DcpsRuntime>,
+    runtime: Weak<DcpsRuntime>,
     stop: Arc<AtomicBool>,
     sched: Option<ThreadSchedRequest>,
     tuned: mpsc::Sender<ThreadTuningReport>,
 ) {
-    if !tune_and_report(
-        "zdds-recv-spdp-mc",
-        sched,
-        rt.config.recv_thread_cpus.as_deref(),
-        &tuned,
-    ) {
+    let Some((socket, progress)) = runtime.upgrade().and_then(|rt| {
+        tune_and_report(
+            "zdds-recv-spdp-mc",
+            sched,
+            rt.config.recv_thread_cpus.as_deref(),
+            &tuned,
+        )
+        .then(|| {
+            (
+                Arc::clone(&rt.spdp_multicast_rx),
+                rt.register_recv_progress(),
+            )
+        })
+    }) else {
         return;
-    }
-    let progress = rt.register_recv_progress();
+    };
     while !stop.load(Ordering::Relaxed) {
-        let elapsed = rt.start_instant.elapsed();
-        let sedp_now = Duration::from_secs(elapsed.as_secs())
-            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
-        let mark = rt.removal_mark.load(Ordering::Acquire);
-        let dg = match rt.spdp_multicast_rx.recv() {
+        let Some(mark) = runtime
+            .upgrade()
+            .map(|rt| rt.removal_mark.load(Ordering::Acquire))
+        else {
+            break;
+        };
+        let dg = match socket.recv() {
             Ok(dg) => dg,
             Err(zerodds_transport::RecvError::Timeout) => {
                 progress.reach(mark);
@@ -22359,6 +22731,14 @@ fn recv_spdp_multicast_loop(
             }
             Err(_) => continue,
         };
+        // Held while one datagram is handled, not while the thread waits
+        // for the next: the last handle of the runtime's owner ends it.
+        let Some(rt) = runtime.upgrade() else {
+            break;
+        };
+        let elapsed = rt.start_instant.elapsed();
+        let sedp_now = Duration::from_secs(elapsed.as_secs())
+            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
         if let Some(poked) = removal_poke_mark(rt.guid_prefix, &dg.data) {
             progress.reach(poked);
             continue;
@@ -22446,26 +22826,30 @@ fn recv_spdp_multicast_loop(
 /// Worker: blocks on SPDP unicast (= metatraffic socket), dispatches
 /// SPDP reverse beacons + SEDP + WLP + security builtin.
 fn recv_metatraffic_loop(
-    rt: Arc<DcpsRuntime>,
+    runtime: Weak<DcpsRuntime>,
     stop: Arc<AtomicBool>,
     sched: Option<ThreadSchedRequest>,
     tuned: mpsc::Sender<ThreadTuningReport>,
 ) {
-    if !tune_and_report(
-        "zdds-recv-meta",
-        sched,
-        rt.config.recv_thread_cpus.as_deref(),
-        &tuned,
-    ) {
+    let Some((socket, progress)) = runtime.upgrade().and_then(|rt| {
+        tune_and_report(
+            "zdds-recv-meta",
+            sched,
+            rt.config.recv_thread_cpus.as_deref(),
+            &tuned,
+        )
+        .then(|| (Arc::clone(&rt.spdp_unicast), rt.register_recv_progress()))
+    }) else {
         return;
-    }
-    let progress = rt.register_recv_progress();
+    };
     while !stop.load(Ordering::Relaxed) {
-        let elapsed = rt.start_instant.elapsed();
-        let sedp_now = Duration::from_secs(elapsed.as_secs())
-            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
-        let mark = rt.removal_mark.load(Ordering::Acquire);
-        let dg = match rt.spdp_unicast.recv() {
+        let Some(mark) = runtime
+            .upgrade()
+            .map(|rt| rt.removal_mark.load(Ordering::Acquire))
+        else {
+            break;
+        };
+        let dg = match socket.recv() {
             Ok(dg) => dg,
             Err(zerodds_transport::RecvError::Timeout) => {
                 progress.reach(mark);
@@ -22473,6 +22857,12 @@ fn recv_metatraffic_loop(
             }
             Err(_) => continue,
         };
+        let Some(rt) = runtime.upgrade() else {
+            break;
+        };
+        let elapsed = rt.start_instant.elapsed();
+        let sedp_now = Duration::from_secs(elapsed.as_secs())
+            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
         if let Some(poked) = removal_poke_mark(rt.guid_prefix, &dg.data) {
             progress.reach(poked);
             continue;
@@ -22521,7 +22911,7 @@ fn dispatch_metatraffic_datagram(
         } else {
             None
         };
-        // OPEN (phase 3, internal/security/per-endpoint-crypto-followup.md):
+        // OPEN (internal/release/OPEN-ITEMS.md, secure SEDP):
         // if `unprotect_user_datagram` fails for a secure-SEDP DATA
         // (cyclone's per-endpoint token not yet installed — race),
         // `sedp_input` falls back to the SEC_* bytes and the DATA is discarded.
@@ -22574,7 +22964,7 @@ fn dispatch_metatraffic_datagram(
 /// that: about 1 030 threads in a chain of 21 processes.
 #[cfg(feature = "same-host-shm")]
 fn recv_same_host_loop(
-    rt: Arc<DcpsRuntime>,
+    runtime: Weak<DcpsRuntime>,
     stop: Arc<AtomicBool>,
     sched: Option<ThreadSchedRequest>,
     tuned: mpsc::Sender<ThreadTuningReport>,
@@ -22582,27 +22972,34 @@ fn recv_same_host_loop(
     use crate::same_host_channel::Port;
     use zerodds_transport_shm::PosixShmTransport;
 
-    if !tune_and_report(
-        "zdds-recv-shm",
-        sched,
-        rt.config.recv_thread_cpus.as_deref(),
-        &tuned,
-    ) {
+    let Some(progress) = runtime.upgrade().and_then(|rt| {
+        tune_and_report(
+            "zdds-recv-shm",
+            sched,
+            rt.config.recv_thread_cpus.as_deref(),
+            &tuned,
+        )
+        .then(|| rt.register_recv_progress())
+    }) else {
         return;
-    }
+    };
     /// Frames taken from one ring before the next ring's turn.
     const PER_RING: usize = 64;
     // (peer, its ring to this participant, the sources a frame names).
     let mut rings: Vec<(GuidPrefix, Arc<PosixShmTransport>, Locator, Locator)> = Vec::new();
     let mut generation = u64::MAX;
-    let progress = rt.register_recv_progress();
     while !stop.load(Ordering::Relaxed) {
+        // Held for one pass over the rings, not while the thread parks.
+        let Some(rt) = runtime.upgrade() else {
+            break;
+        };
         // A pass that finds every ring empty has handed on what they held
         // when this mark was read ([`RecvProgress`]).
         let mark = rt.removal_mark.load(Ordering::Acquire);
         let Some(bell) = rt.same_host_channels.receive_bell() else {
             // No channel yet: nothing to receive, and no bell to park on.
             progress.reach(mark);
+            drop(rt);
             thread::sleep(Duration::from_millis(100));
             continue;
         };
@@ -22680,6 +23077,7 @@ fn recv_same_host_loop(
         if busy {
             continue;
         }
+        drop(rt);
         bell.park(seen, Some(Duration::from_millis(250)));
     }
 }
@@ -22699,7 +23097,7 @@ fn recv_same_host_loop(
 /// atomic while a pass is pending), and asking once for 32 datagrams is the
 /// same request as asking 32 times.
 fn recv_user_data_loop(
-    rt: Arc<DcpsRuntime>,
+    runtime: Weak<DcpsRuntime>,
     socket: Arc<dyn Transport + Send + Sync>,
     stop: Arc<AtomicBool>,
     sched: Option<ThreadSchedRequest>,
@@ -22713,19 +23111,22 @@ fn recv_user_data_loop(
         .name()
         .unwrap_or("zdds-recv-user")
         .to_string();
-    if !tune_and_report(&label, sched, rt.config.recv_thread_cpus.as_deref(), &tuned) {
+    let Some((max_batch, progress)) = runtime.upgrade().and_then(|rt| {
+        tune_and_report(&label, sched, rt.config.recv_thread_cpus.as_deref(), &tuned)
+            .then(|| (rt.config.recv_batch_size, rt.register_recv_progress()))
+    }) else {
         return;
-    }
-    let max_batch = rt.config.recv_batch_size;
+    };
     let mut batch: Vec<zerodds_transport::ReceivedDatagram> = Vec::with_capacity(max_batch);
-    let progress = rt.register_recv_progress();
     while !stop.load(Ordering::Relaxed) {
-        let elapsed = rt.start_instant.elapsed();
-        let sedp_now = Duration::from_secs(elapsed.as_secs())
-            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
         // A read that leaves the socket empty has handed on what it held
         // when this mark was read ([`RecvProgress`]).
-        let mark = rt.removal_mark.load(Ordering::Acquire);
+        let Some(mark) = runtime
+            .upgrade()
+            .map(|rt| rt.removal_mark.load(Ordering::Acquire))
+        else {
+            break;
+        };
         batch.clear();
         let n = match socket.recv_batch(&mut batch, max_batch) {
             Ok(n) => n,
@@ -22739,6 +23140,12 @@ fn recv_user_data_loop(
             progress.reach(mark);
             continue;
         }
+        let Some(rt) = runtime.upgrade() else {
+            break;
+        };
+        let elapsed = rt.start_instant.elapsed();
+        let sedp_now = Duration::from_secs(elapsed.as_secs())
+            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
         let mut needs_tick = false;
         let mut reached = if n < max_batch { mark } else { 0 };
         for dg in &batch {
@@ -22798,12 +23205,12 @@ fn recv_user_data_loop(
 /// Returns whether the scheduler has something to do for the datagram; see
 /// [`handle_user_datagram`]. A TypeLookup frame always has.
 ///
-/// `shared`, when given, is `bytes` as the `Arc` the socket delivered: the
-/// samples of the datagram are then ranges of it ([`handle_user_datagram_from`]).
+/// `shared`, when given, is `bytes` as the [`zerodds_rtps::payload::Payload`]
+/// the socket delivered: the samples of the datagram are then ranges of it ([`handle_user_datagram_from`]).
 fn dispatch_user_entity_datagram(
     rt: &Arc<DcpsRuntime>,
     bytes: &[u8],
-    shared: Option<&Arc<[u8]>>,
+    shared: Option<&zerodds_rtps::payload::Payload>,
     source: &Locator,
     now: Duration,
 ) -> bool {
@@ -22862,26 +23269,33 @@ fn dispatch_user_bytes(rt: &Arc<DcpsRuntime>, data: &[u8], source: &Locator, now
 /// (non-blocking) + housekeeping. Sleeps `tick_period` between
 /// iterations.
 fn tick_loop(
-    rt: Arc<DcpsRuntime>,
+    runtime: Weak<DcpsRuntime>,
     stop: Arc<AtomicBool>,
     sched: Option<ThreadSchedRequest>,
     tuned: mpsc::Sender<ThreadTuningReport>,
 ) {
-    if !tune_and_report(
-        "zdds-tick",
-        sched,
-        rt.config.tick_thread_cpus.as_deref(),
-        &tuned,
-    ) {
+    let Some(mut st) = runtime.upgrade().and_then(|rt| {
+        tune_and_report(
+            "zdds-tick",
+            sched,
+            rt.config.tick_thread_cpus.as_deref(),
+            &tuned,
+        )
+        .then(|| TickState::new(&rt))
+    }) else {
         return;
-    }
-    let mut st = TickState::new(&rt);
+    };
     while !stop.load(Ordering::Relaxed) {
+        let Some(rt) = runtime.upgrade() else {
+            break;
+        };
         run_tick_iteration(Arc::clone(&rt), &mut st);
         // Housekeeping runs inline here in the classic fixed-period path,
         // exactly as before (every `tick_period`, same cadence).
         tick_housekeep(&rt, rt.start_instant.elapsed());
-        std::thread::sleep(rt.config.tick_period);
+        let period = rt.config.tick_period;
+        drop(rt);
+        std::thread::sleep(period);
     }
 }
 
@@ -22930,22 +23344,24 @@ enum TickEvent {
 /// `raise_tick_wake` wakes **both** immediately, so freshly-armed QoS windows
 /// are picked up without delay.
 fn scheduler_tick_loop(
-    rt: Arc<DcpsRuntime>,
+    runtime: Weak<DcpsRuntime>,
     stop: Arc<AtomicBool>,
     mut scheduler: crate::scheduler::Scheduler<TickEvent>,
     handle: crate::scheduler::SchedulerHandle<TickEvent>,
     sched: Option<ThreadSchedRequest>,
     tuned: mpsc::Sender<ThreadTuningReport>,
 ) {
-    if !tune_and_report(
-        "zdds-tick-sched",
-        sched,
-        rt.config.tick_thread_cpus.as_deref(),
-        &tuned,
-    ) {
+    let Some(mut st) = runtime.upgrade().and_then(|rt| {
+        tune_and_report(
+            "zdds-tick-sched",
+            sched,
+            rt.config.tick_thread_cpus.as_deref(),
+            &tuned,
+        )
+        .then(|| TickState::new(&rt))
+    }) else {
         return;
-    }
-    let mut st = TickState::new(&rt);
+    };
     // Prime both event streams immediately.
     handle.raise_now(TickEvent::Tick);
     handle.raise_now(TickEvent::Housekeep);
@@ -22957,6 +23373,9 @@ fn scheduler_tick_loop(
         if due.is_empty() {
             continue; // woken with nothing due yet — re-evaluate.
         }
+        let Some(rt) = runtime.upgrade() else {
+            break;
+        };
         // Coalesce: a batch of wakes maps to at most ONE run of each kind.
         let mut do_tick = false;
         let mut do_housekeep = false;
@@ -23143,39 +23562,24 @@ fn run_tick_iteration(rt: Arc<DcpsRuntime>, st: &mut TickState) {
     rt.same_host_channels
         .report_udp_sends(Duration::from_secs(10));
 
-    let type_lookup_output = rt
-        .type_lookup_transport
-        .lock()
-        .map_err(|_| "TypeLookup transport poisoned")
-        .and_then(|mut transport| {
-            transport
-                .tick(sedp_now)
-                .map_err(|_| "TypeLookup reliable tick failed")
-        });
-    match type_lookup_output {
-        Ok(datagrams) => {
-            if let Err(error) = rt.send_type_lookup_datagrams(datagrams, false) {
-                record_type_lookup_error(&rt, "feedback.send", &error);
-            }
+    // The HEARTBEATs and ACKNACKs go out while the transport is held, as a
+    // written sample does (`send_type_lookup_sample`): a HEARTBEAT never
+    // overtakes the DATA it announces.
+    for (transport, secure) in [
+        (&rt.type_lookup_transport, false),
+        (&rt.type_lookup_transport_secure, true),
+    ] {
+        match transport.lock() {
+            Ok(mut transport) => match transport.tick(sedp_now) {
+                Ok(datagrams) => {
+                    if let Err(error) = rt.send_type_lookup_datagrams(datagrams, secure) {
+                        record_type_lookup_error(&rt, "feedback.send", &error);
+                    }
+                }
+                Err(_) => record_type_lookup_error(&rt, "tick", &"TypeLookup reliable tick failed"),
+            },
+            Err(_) => record_type_lookup_error(&rt, "tick", &"TypeLookup transport poisoned"),
         }
-        Err(error) => record_type_lookup_error(&rt, "tick", &error),
-    }
-    let secure_output = rt
-        .type_lookup_transport_secure
-        .lock()
-        .map_err(|_| "secure TypeLookup transport poisoned")
-        .and_then(|mut transport| {
-            transport
-                .tick(sedp_now)
-                .map_err(|_| "secure TypeLookup reliable tick failed")
-        });
-    match secure_output {
-        Ok(datagrams) => {
-            if let Err(error) = rt.send_type_lookup_datagrams(datagrams, true) {
-                record_type_lookup_error(&rt, "feedback.send", &error);
-            }
-        }
-        Err(error) => record_type_lookup_error(&rt, "tick", &error),
     }
 
     // --- Periodic SPDP announce ---
@@ -23429,11 +23833,11 @@ fn run_tick_iteration(rt: Arc<DcpsRuntime>, st: &mut TickState) {
     // handshake failures the stack found, identities revoked, a changed
     // identity status, handshakes a retried step completed.
     #[cfg(feature = "security")]
-    if rt.config.security.is_some() {
-        if let Some(stack) = rt.security_builtin_snapshot() {
-            process_authentication_events(&rt, &stack, sedp_now);
-            complete_key_revision(&rt, &stack, sedp_now);
-        }
+    if rt.config.security.is_some()
+        && let Some(stack) = rt.security_builtin_snapshot()
+    {
+        process_authentication_events(&rt, &stack, sedp_now);
+        complete_key_revision(&rt, &stack, sedp_now);
     }
 
     // --- WLP-Tick (Writer-Liveliness-Protocol) ---
@@ -23555,10 +23959,10 @@ fn run_tick_iteration(rt: Arc<DcpsRuntime>, st: &mut TickState) {
     let user_reader_outbound: Vec<_> = {
         let mut all = Vec::new();
         for (_eid, arc) in rt.reader_slots_snapshot() {
-            if let Ok(mut slot) = arc.lock() {
-                if let Ok(dgs) = slot.reader.tick_outbound(sedp_now) {
-                    all.extend(dgs);
-                }
+            if let Ok(mut slot) = arc.lock()
+                && let Ok(dgs) = slot.reader.tick_outbound(sedp_now)
+            {
+                all.extend(dgs);
             }
         }
         all
@@ -23924,7 +24328,7 @@ impl DcpsRuntime {
     pub fn tick_driver(self: &Arc<Self>) -> DcpsTickDriver {
         DcpsTickDriver {
             st: TickState::new(self),
-            rt: Arc::clone(self),
+            rt: Arc::downgrade(self),
         }
     }
 
@@ -23934,10 +24338,10 @@ impl DcpsRuntime {
     /// "a pass is already on its way", and a pass on its way *now* is exactly
     /// the one that will find the batch not yet due.
     fn raise_tick_at(&self, at: Instant) {
-        if let Ok(guard) = self.tick_wake.lock() {
-            if let Some(h) = guard.as_ref() {
-                h.raise_at(at, TickEvent::Tick);
-            }
+        if let Ok(guard) = self.tick_wake.lock()
+            && let Some(h) = guard.as_ref()
+        {
+            h.raise_at(at, TickEvent::Tick);
         }
     }
 
@@ -23960,14 +24364,14 @@ impl DcpsRuntime {
         if self.tick_wake_pending.swap(true, Ordering::AcqRel) {
             return;
         }
-        if let Ok(guard) = self.tick_wake.lock() {
-            if let Some(h) = guard.as_ref() {
-                // Active traffic wakes the reliable tick AND re-evaluates
-                // housekeeping, so a freshly-armed deadline/lifespan/liveliness
-                // window is scheduled at once instead of waiting out the park.
-                h.raise_now(TickEvent::Tick);
-                h.raise_now(TickEvent::Housekeep);
-            }
+        if let Ok(guard) = self.tick_wake.lock()
+            && let Some(h) = guard.as_ref()
+        {
+            // Active traffic wakes the reliable tick AND re-evaluates
+            // housekeeping, so a freshly-armed deadline/lifespan/liveliness
+            // window is scheduled at once instead of waiting out the park.
+            h.raise_now(TickEvent::Tick);
+            h.raise_now(TickEvent::Housekeep);
         }
     }
 
@@ -24004,7 +24408,9 @@ impl DcpsRuntime {
 /// }
 /// ```
 pub struct DcpsTickDriver {
-    rt: Arc<DcpsRuntime>,
+    /// Weak, like the runtime's own threads: a driving task does not keep
+    /// a runtime its owner dropped.
+    rt: Weak<DcpsRuntime>,
     st: TickState,
 }
 
@@ -24013,23 +24419,29 @@ impl DcpsTickDriver {
     /// (mirrors the internal `zdds-tick` thread's `tick_period`).
     #[must_use]
     pub fn tick_period(&self) -> Duration {
-        self.rt.config.tick_period
+        self.rt
+            .upgrade()
+            .map_or(Duration::ZERO, |rt| rt.config.tick_period)
     }
 
-    /// `true` once the runtime is shutting down (set by `Drop`/`stop()`). The
-    /// driving task must then stop calling [`Self::tick`] and return so the
-    /// runtime can be dropped cleanly.
+    /// `true` once the runtime is shutting down (set by `Drop`/`stop()`) or
+    /// gone. The driving task must then stop calling [`Self::tick`] and
+    /// return.
     #[must_use]
     pub fn is_stopped(&self) -> bool {
-        self.rt.stop.load(Ordering::Relaxed)
+        self.rt
+            .upgrade()
+            .is_none_or(|rt| rt.stop.load(Ordering::Relaxed))
     }
 
     /// Run one tick iteration: periodic SPDP announce, SEDP/WLP ticks,
     /// per-user-writer ticks, deadline/lifespan/liveliness checks. Equivalent
     /// to one pass of the internal `zdds-tick` loop body.
     pub fn tick(&mut self) {
-        run_tick_iteration(Arc::clone(&self.rt), &mut self.st);
-        tick_housekeep(&self.rt, self.rt.start_instant.elapsed());
+        if let Some(rt) = self.rt.upgrade() {
+            run_tick_iteration(Arc::clone(&rt), &mut self.st);
+            tick_housekeep(&rt, rt.start_instant.elapsed());
+        }
     }
 }
 
@@ -24107,13 +24519,12 @@ fn check_liveliness(rt: &Arc<DcpsRuntime>, now: std::time::Duration) -> Option<u
     let mut next_due = NextDue::new();
     for (_eid, arc) in rt.reader_slots_snapshot() {
         let Ok(mut slot) = arc.lock() else { continue };
-        if let Some(at) = own {
-            if slot
+        if let Some(at) = own
+            && slot
                 .liveliness
                 .participant_asserted(rt.guid_prefix.to_bytes(), true, at)
-            {
-                rt.status_changed();
-            }
+        {
+            rt.status_changed();
         }
         let (changed, next) = slot.liveliness.expire(now);
         if changed {
@@ -24386,12 +24797,14 @@ fn type_identifier_label(id: &zerodds_types::TypeIdentifier) -> String {
 }
 
 /// The assignability axes of the runtime's settings
-/// (`xtypes.key_member_bounds`, `xtypes.strong_assignability`), as
+/// (`xtypes.key_member_bounds`, `xtypes.strong_assignability`,
+/// `xtypes.key_must_understand`), as
 /// [`decide_type_consistency`] takes them.
 #[derive(Debug, Clone, Copy)]
 struct AssignabilityAxes {
     key_member_bounds: zerodds_types::assignability::KeyMemberBounds,
     strong_assignability: zerodds_types::assignability::StrongAssignability,
+    key_must_understand: zerodds_types::assignability::KeyMustUnderstand,
 }
 
 impl RuntimeConfig {
@@ -24400,6 +24813,7 @@ impl RuntimeConfig {
         AssignabilityAxes {
             key_member_bounds: self.key_member_bounds,
             strong_assignability: self.strong_assignability,
+            key_must_understand: self.key_must_understand,
         }
     }
 }
@@ -24459,6 +24873,7 @@ fn decide_type_consistency(
     match zerodds_types::type_matcher::TypeMatcher::new(tce)
         .with_key_member_bounds(axes.key_member_bounds)
         .with_strong_assignability(axes.strong_assignability)
+        .with_key_must_understand(axes.key_must_understand)
         .match_types(writer_id, reader_id, reg)
     {
         zerodds_types::type_matcher::TypeMatchResult::Matches => TypeConsistency::Consistent,
@@ -25479,12 +25894,16 @@ fn compute_alive_key_material(
     // PLAIN_CDR2); `representation` here is this module's own XCDR-version
     // convention (0/1 from `encap_representation`) — not the same numbers.
     let dds_representation = if representation == 0 { 0 } else { 2 };
-    let decoded = support
-        .read_body(&payload[body], dds_representation, big_endian)
-        .map_err(|_| "sample body did not decode as the reader's registered type")?;
+    // From the key members alone: reading the whole body dynamically took
+    // about 92 µs for a sample with a kilobyte of octets before its key,
+    // reading the key 3.3 µs (Linux test host, release build,
+    // `key_of_a_kilobyte_sample_timing`).
+    if !support.is_keyed() {
+        return Err("the reader's registered type has no key");
+    }
     support
-        .key_material(&decoded)
-        .ok_or("the reader's registered type has no key")
+        .key_material_from_body(&payload[body], dds_representation, big_endian)
+        .map_err(|_| "sample body did not decode as the reader's registered type")
 }
 
 /// KeyHash and canonical key holder for a lifecycle marker (dispose/
@@ -25642,14 +26061,12 @@ fn delivered_to_user_sample(
             let writer_guid = sample.writer_guid.to_bytes();
             let item = UserSample::Alive {
                 key_hash: sample.key_hash,
-                payload: crate::sample_bytes::SampleBytes::from_arc_slice(
-                    Arc::clone(sample.payload.buffer()),
-                    sample.payload.range(),
-                ),
+                payload: crate::sample_bytes::SampleBytes::from_payload(sample.payload.clone()),
                 writer_guid,
                 writer_strength: sample_strength(sample, writer_strengths, &writer_guid),
                 representation: 0,
                 big_endian: false,
+                representation_identifier: [0; 2],
                 source_timestamp: sample.source_timestamp,
                 reception_timestamp: None,
                 source_sequence_number: sample.sequence_number.0,
@@ -25680,6 +26097,7 @@ fn delivered_to_user_sample(
             // (CDR/PL_CDR), 0x06–0x0b = XCDR2 (CDR2/D_CDR2/PL_CDR2).
             let representation = encap_representation(&sample.payload);
             let big_endian = encap_big_endian(&sample.payload);
+            let representation_identifier = encap_identifier(&sample.payload);
             let (key_hash, outcome) = match (sample.key_hash, keyed) {
                 (Some(kh), _) => (Some(kh), KeyHashComputation::NotNeeded),
                 (None, false) => (None, KeyHashComputation::NotNeeded),
@@ -25715,6 +26133,7 @@ fn delivered_to_user_sample(
                 writer_strength,
                 representation,
                 big_endian,
+                representation_identifier,
                 source_timestamp: sample.source_timestamp,
                 reception_timestamp: None,
                 // O2 P5: the wire path carries the writer's RTPS sequence number
@@ -25886,7 +26305,7 @@ fn rest_is_alignment_padding(reader: &mut zerodds_wire::Reader<'_>, body_len: us
     let left = reader.remaining();
     left == 0
         || (left <= 3
-            && body_len % 4 == 0
+            && body_len.is_multiple_of(4)
             && reader
                 .read_bytes(left)
                 .is_ok_and(|rest| rest.iter().all(|&octet| octet == 0)))
@@ -26094,10 +26513,9 @@ fn deliver_sample_with_key_hash(
         reception_timestamp,
         ..
     }) = item.as_mut()
+        && slot.stamps_reception()
     {
-        if slot.stamps_reception() {
-            *reception_timestamp = Some(rt.config.time_source.now());
-        }
+        *reception_timestamp = Some(rt.config.time_source.now());
     }
     item
 }
@@ -26156,17 +26574,11 @@ fn remote_instance_refused(
 /// and for a payload without a known header — the listener sees neither.
 fn listener_view_of(
     sample: &zerodds_rtps::reliable_reader::DeliveredSample,
-) -> Option<(Arc<[u8]>, core::ops::Range<usize>)> {
+) -> Option<zerodds_rtps::payload::Payload> {
     match sample.kind {
         zerodds_rtps::history_cache::ChangeKind::Alive
         | zerodds_rtps::history_cache::ChangeKind::AliveFiltered => {
-            user_encap_body(&sample.payload).map(|body| {
-                let at = sample.payload.range().start;
-                (
-                    Arc::clone(sample.payload.buffer()),
-                    at + body.start..at + body.end,
-                )
-            })
+            user_encap_body(&sample.payload).map(|body| sample.payload.sub(body))
         }
         _ => None,
     }
@@ -26194,8 +26606,9 @@ enum Released {
     /// The reader has a listener: these samples go to it.
     Listener(Arc<UserReaderListener>, Vec<UserSampleWithEncap>, Tap),
     /// The reader has no listener: this many samples are already in its
-    /// channel, and its waker is due once for each.
-    Channel(Arc<ReaderWake>, usize, Tap),
+    /// channel, and its waker is due once for each. The room of a
+    /// BEST_EFFORT reader is looked at after ([`ReaderRoom::drain_if_over`]).
+    Channel(Arc<ReaderWake>, usize, Tap, Option<Arc<ReaderRoom>>),
 }
 
 /// What a write that waited out `max_blocking_time` in [`await_writer_room`]
@@ -26230,7 +26643,7 @@ fn within_reader_room<R>(
     slot: &mut UserReaderSlot,
     handle: impl FnOnce(&mut ReliableReader) -> R,
 ) -> R {
-    let Some(room) = slot.room.clone() else {
+    let Some(room) = slot.room.clone().filter(|room| room.holds_back()) else {
         return handle(&mut slot.reader);
     };
     let budget = room.budget(slot.sample_tx.sent.load(Ordering::Acquire));
@@ -26450,7 +26863,12 @@ fn release_to_consumer(
     for (item, _) in items.drain(..) {
         let _ = slot.sample_tx.send(item);
     }
-    Released::Channel(Arc::clone(&slot.async_waker), count, tap)
+    Released::Channel(
+        Arc::clone(&slot.async_waker),
+        count,
+        tap,
+        slot.room.clone().filter(|room| !room.holds_back()),
+    )
 }
 
 impl Released {
@@ -26469,7 +26887,7 @@ impl Released {
                 for (item, view) in items {
                     #[cfg(feature = "inspect")]
                     dispatch_inspect_dcps_receive_tap(&tap.topic, tap.reader_id, &item);
-                    let Some((payload, body)) = view else {
+                    let Some(body) = view else {
                         continue;
                     };
                     let (representation, big_endian) = match &item {
@@ -26480,15 +26898,10 @@ impl Released {
                         } => (*representation, u8::from(*big_endian)),
                         _ => (0, 0),
                     };
-                    listener(
-                        &payload[body],
-                        representation,
-                        big_endian,
-                        &origin_of(&item),
-                    );
+                    listener(&body, representation, big_endian, &origin_of(&item));
                 }
             }
-            Released::Channel(waker, count, tap) => {
+            Released::Channel(waker, count, tap, room) => {
                 #[cfg(feature = "inspect")]
                 for item in &tap.queued {
                     dispatch_inspect_dcps_receive_tap(&tap.topic, tap.reader_id, item);
@@ -26498,6 +26911,9 @@ impl Released {
                 if count > 0 {
                     wake_async_waker_for_run(&waker, count);
                     signal_reader_data(&waker);
+                }
+                if let Some(room) = room {
+                    room.drain_if_over();
                 }
             }
         }
@@ -26524,6 +26940,16 @@ fn encap_representation(payload: &[u8]) -> u8 {
 /// (e.g. the intra-runtime bare body) defaults to little-endian (`false`).
 fn encap_big_endian(payload: &[u8]) -> bool {
     payload.len() >= 2 && (payload[1] & 0x01) == 0
+}
+
+/// The representation identifier, the first two octets of the
+/// encapsulation header (DDSI-RTPS 2.5 §10.5). `[0, 0]` for a payload too
+/// short to hold one; such a payload is refused by [`user_encap_body`].
+fn encap_identifier(payload: &[u8]) -> [u8; 2] {
+    match payload {
+        [first, second, ..] => [*first, *second],
+        _ => [0; 2],
+    }
 }
 
 /// The serialized body of `payload`: behind a known 4-byte encapsulation
@@ -26583,13 +27009,8 @@ fn user_encap_body(payload: &[u8]) -> Option<core::ops::Range<usize>> {
 fn strip_user_encap_arc(
     payload: &zerodds_rtps::payload::Payload,
 ) -> Option<crate::sample_bytes::SampleBytes> {
-    user_encap_body(payload).map(|body| {
-        let at = payload.range().start;
-        crate::sample_bytes::SampleBytes::from_arc_slice(
-            Arc::clone(payload.buffer()),
-            at + body.start..at + body.end,
-        )
-    })
+    user_encap_body(payload)
+        .map(|body| crate::sample_bytes::SampleBytes::from_payload(payload.sub(body)))
 }
 
 #[cfg(test)]
@@ -26759,7 +27180,7 @@ static REPLY_LOCATOR_FALLBACKS: core::sync::atomic::AtomicU64 =
 fn handle_user_datagram_from(
     rt: &Arc<DcpsRuntime>,
     bytes: &[u8],
-    shared: Option<&Arc<[u8]>>,
+    shared: Option<&zerodds_rtps::payload::Payload>,
     source: Option<&Locator>,
     now: Duration,
 ) -> bool {
@@ -26782,7 +27203,7 @@ fn handle_user_datagram_from(
     // send, and a datagram it causes on this thread finds an empty one.
     let mut scratch = RECV_SCRATCH.with(|cell| cell.take());
     let decoded = match shared {
-        Some(datagram) => zerodds_rtps::datagram::decode_datagram_shared_into(
+        Some(datagram) => zerodds_rtps::datagram::decode_datagram_payload_into(
             datagram,
             core::mem::take(&mut scratch.frames),
         ),
@@ -27281,12 +27702,11 @@ fn handle_user_datagram_from(
                     for dg in sync_outbound {
                         let targets: &[Locator] = &dg.targets;
                         for t in targets {
-                            if is_routable_user_locator(t) {
-                                if let Some(secured) =
+                            if is_routable_user_locator(t)
+                                && let Some(secured) =
                                     secure_outbound_for_target(rt, ack.writer_id, &dg.bytes, t)
-                                {
-                                    let _ = rt.user_unicast.send(t, &secured);
-                                }
+                            {
+                                let _ = rt.user_unicast.send(t, &secured);
                             }
                         }
                     }
@@ -27294,11 +27714,11 @@ fn handle_user_datagram_from(
             }
             ParsedSubmessage::NackFrag(nf) => {
                 needs_tick = true;
-                if let Some(arc) = rt.writer_slot(nf.writer_id) {
-                    if let Ok(mut slot) = arc.lock() {
-                        let src = Guid::new(src_prefix, nf.reader_id);
-                        slot.writer.handle_nackfrag(src, nf);
-                    }
+                if let Some(arc) = rt.writer_slot(nf.writer_id)
+                    && let Ok(mut slot) = arc.lock()
+                {
+                    let src = Guid::new(src_prefix, nf.reader_id);
+                    slot.writer.handle_nackfrag(src, nf);
                 }
             }
             _ => {}
@@ -27615,17 +28035,17 @@ fn handle_spdp_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], reply_to: Option<&L
     // periodic/announce_spdp_now path catches up. Participants announced in
     // one datagram share their locators, so the response goes out once per
     // target, before the handshakes below.
-    if !response_targets.is_empty() && rt.is_discoverable() {
-        if let Some(secured) = rt
+    if !response_targets.is_empty()
+        && rt.is_discoverable()
+        && let Some(secured) = rt
             .spdp_beacon
             .lock()
             .ok()
             .and_then(|mut b| b.serialize().ok())
             .and_then(|d| secure_outbound_bytes(rt, &d).map(|c| c.to_vec()))
-        {
-            for loc in &response_targets {
-                let _ = rt.send_metatraffic(loc, &secured);
-            }
+    {
+        for loc in &response_targets {
+            let _ = rt.send_metatraffic(loc, &secured);
         }
     }
     for parsed in &announced {
@@ -27645,10 +28065,10 @@ fn volatile_write_endpoint_token(
 ) -> Vec<zerodds_rtps::message_builder::OutboundDatagram> {
     let failed_before = rt.volatile_secure_failed.load(Ordering::Relaxed);
     let datagrams = volatile_write(rt, writer, msg, now);
-    if rt.volatile_secure_failed.load(Ordering::Relaxed) == failed_before {
-        if let Ok(mut set) = rt.endpoint_tokens_sent.write() {
-            set.insert(endpoint_token_key(msg));
-        }
+    if rt.volatile_secure_failed.load(Ordering::Relaxed) == failed_before
+        && let Ok(mut set) = rt.endpoint_tokens_sent.write()
+    {
+        set.insert(endpoint_token_key(msg));
     }
     datagrams
 }
@@ -27742,16 +28162,16 @@ fn spdp_departed(rt: &Arc<DcpsRuntime>, prefix: GuidPrefix, channel: SpdpChannel
     }
     #[cfg(not(feature = "security"))]
     let _ = channel;
-    if prefix != rt.guid_prefix {
-        if let Ok(_lifecycle) = rt.discovery_lifecycle.lock() {
-            let departed = rt
-                .discovered
-                .lock()
-                .ok()
-                .and_then(|mut cache| cache.remove(&prefix));
-            if let Some(participant) = departed {
-                remove_discovered_participant(rt, &participant, Departure::Deleted, true);
-            }
+    if prefix != rt.guid_prefix
+        && let Ok(_lifecycle) = rt.discovery_lifecycle.lock()
+    {
+        let departed = rt
+            .discovered
+            .lock()
+            .ok()
+            .and_then(|mut cache| cache.remove(&prefix));
+        if let Some(participant) = departed {
+            remove_discovered_participant(rt, &participant, Departure::Deleted, true);
         }
     }
 }
@@ -27914,19 +28334,17 @@ fn spdp_announced(
         if let Ok(mut transport) = rt.type_lookup_transport_secure.lock() {
             transport.observe_spdp(parsed.data.guid.prefix);
         }
-        if is_new {
-            if let Ok(mut sedp) = rt.sedp.lock() {
-                // DDS-Security 1.2 §9.8.3: what a secured participant
-                // matches before the authentication.
-                #[cfg(feature = "security")]
-                match builtins {
-                    BuiltinMatch::All => sedp.on_participant_discovered(parsed),
-                    BuiltinMatch::Regular => sedp.on_participant_discovered_regular(parsed),
-                    BuiltinMatch::Stateless => {}
-                }
-                #[cfg(not(feature = "security"))]
-                sedp.on_participant_discovered(parsed);
+        if is_new && let Ok(mut sedp) = rt.sedp.lock() {
+            // DDS-Security 1.2 §9.8.3: what a secured participant
+            // matches before the authentication.
+            #[cfg(feature = "security")]
+            match builtins {
+                BuiltinMatch::All => sedp.on_participant_discovered(parsed),
+                BuiltinMatch::Regular => sedp.on_participant_discovered_regular(parsed),
+                BuiltinMatch::Stateless => {}
             }
+            #[cfg(not(feature = "security"))]
+            sedp.on_participant_discovered(parsed);
         }
         // Its BuiltinParticipantMessageReader is a reader proxy of the WLP
         // writer (DDSI-RTPS 2.5 §8.4.13.1). Not only for a new participant:
@@ -27986,6 +28404,8 @@ fn spdp_announced(
     };
     #[cfg(feature = "same-host-shm")]
     rt.note_same_host_peer(parsed);
+    #[cfg(feature = "same-host-shm")]
+    rt.note_user_transport_peer(parsed);
     if !is_new {
         return Some(Vec::new());
     }
@@ -30110,9 +30530,9 @@ fn protect_wlp_outbound<'a>(
             let sec = writer_eid_in_submessage(submsg, id)
                 .and_then(|w| local_endpoint_crypto_handle(rt, w, true))
                 .and_then(|h| gate.encode_data_datawriter_by_handle(h, submsg).ok());
-            match sec {
-                Some(s) => out.extend_from_slice(&s),
-                None => return None,
+            {
+                let s = sec?;
+                out.extend_from_slice(&s)
             }
         } else {
             out.extend_from_slice(submsg);
@@ -30417,17 +30837,10 @@ fn dispatch_security_builtin_datagram_in(
                 {
                     // What a DATA_FRAG completes, a GAP or HEARTBEAT releases,
                     // is a token message like a DATA's — handled the same.
-                    if let Ok(msgs) = s.volatile_reader.handle_data_frag(remote_prefix, df, now) {
-                        if !msgs.is_empty() {
-                            on_volatile_messages(
-                                rt,
-                                &mut s,
-                                remote_prefix,
-                                &msgs,
-                                now,
-                                &mut outbound,
-                            );
-                        }
+                    if let Ok(msgs) = s.volatile_reader.handle_data_frag(remote_prefix, df, now)
+                        && !msgs.is_empty()
+                    {
+                        on_volatile_messages(rt, &mut s, remote_prefix, &msgs, now, &mut outbound);
                     }
                 }
             }
@@ -30437,35 +30850,19 @@ fn dispatch_security_builtin_datagram_in(
                     || (h.reader_id == EntityId::UNKNOWN
                         && h.writer_id
                             == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER);
-                if to_volatile_reader {
-                    if let Ok(msgs) = s.volatile_reader.handle_heartbeat(remote_prefix, h, now) {
-                        if !msgs.is_empty() {
-                            on_volatile_messages(
-                                rt,
-                                &mut s,
-                                remote_prefix,
-                                &msgs,
-                                now,
-                                &mut outbound,
-                            );
-                        }
-                    }
+                if to_volatile_reader
+                    && let Ok(msgs) = s.volatile_reader.handle_heartbeat(remote_prefix, h, now)
+                    && !msgs.is_empty()
+                {
+                    on_volatile_messages(rt, &mut s, remote_prefix, &msgs, now, &mut outbound);
                 }
             }
             ParsedSubmessage::Gap(g) => {
-                if g.reader_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER {
-                    if let Ok(msgs) = s.volatile_reader.handle_gap(remote_prefix, g) {
-                        if !msgs.is_empty() {
-                            on_volatile_messages(
-                                rt,
-                                &mut s,
-                                remote_prefix,
-                                &msgs,
-                                now,
-                                &mut outbound,
-                            );
-                        }
-                    }
+                if g.reader_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER
+                    && let Ok(msgs) = s.volatile_reader.handle_gap(remote_prefix, g)
+                    && !msgs.is_empty()
+                {
+                    on_volatile_messages(rt, &mut s, remote_prefix, &msgs, now, &mut outbound);
                 }
             }
             ParsedSubmessage::AckNack(ack) => {
@@ -30476,11 +30873,11 @@ fn dispatch_security_builtin_datagram_in(
                     s.volatile_writer.handle_acknack(src, base, requested);
                 }
             }
-            ParsedSubmessage::NackFrag(nf) => {
-                if nf.writer_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER {
-                    let src = Guid::new(remote_prefix, nf.reader_id);
-                    s.volatile_writer.handle_nackfrag(src, nf);
-                }
+            ParsedSubmessage::NackFrag(nf)
+                if nf.writer_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER =>
+            {
+                let src = Guid::new(remote_prefix, nf.reader_id);
+                s.volatile_writer.handle_nackfrag(src, nf);
             }
             _ => {}
         }
@@ -30905,10 +31302,11 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
                 }
                 // Preserve the original identifiers across pages. A repeated
                 // cursor cannot make progress and must not open an infinite loop.
-                if let Some((ids, previous)) = query {
-                    if !next.0.is_empty() && next != previous {
-                        let _ = rt.send_type_dependencies_page(src_prefix, ids, next);
-                    }
+                if let Some((ids, previous)) = query
+                    && !next.0.is_empty()
+                    && next != previous
+                {
+                    let _ = rt.send_type_dependencies_page(src_prefix, ids, next);
                 }
             }
             // Non-success result arms are never treated as empty successful data.
@@ -31146,11 +31544,11 @@ mod tests {
     }
 
     /// Shuts its runtime down when the test ends — on an early `return`
-    /// and on a failed assertion too. A runtime's threads hold it, so the
-    /// test dropping its last reference stops nothing, and with
-    /// `--test-threads=1` (the CI job) a runtime left running stays in the
-    /// test process as a peer of every later test on its domain and group.
-    struct ShutsDown(Arc<DcpsRuntime>);
+    /// and on a failed assertion too, and while a clone of the handle is
+    /// still held elsewhere: with `--test-threads=1` (the CI job) a runtime
+    /// left running stays in the test process as a peer of every later test
+    /// on its domain and group.
+    pub(super) struct ShutsDown(pub(super) Arc<DcpsRuntime>);
 
     impl Drop for ShutsDown {
         fn drop(&mut self) {
@@ -31168,9 +31566,11 @@ mod tests {
 
     /// Shuts a test's runtime down when it drops.
     ///
-    /// A runtime's worker threads each hold their own `Arc<DcpsRuntime>`, so
-    /// dropping the test's handle leaves the runtime announcing itself for
-    /// the rest of the test binary. On a domain leased for the process
+    /// A runtime whose handle a test cloned into something it keeps goes
+    /// on announcing itself after the test's own handle drops. When the
+    /// worker threads held their own `Arc<DcpsRuntime>`, every dropped
+    /// handle did that for the rest of the test binary. On a domain leased
+    /// for the process
     /// (`unique_domain`) that only cost a domain, and 28 of them emptied the
     /// band of 26 when the tests ran one after another (`--test-threads=1`,
     /// the full pipeline's `test` job). On a domain leased for one test the
@@ -31215,7 +31615,7 @@ mod tests {
     /// reader registers a fresh waker on every `Pending`, so a second
     /// arrival before that must not wake the consumed one twice.
     #[test]
-    fn the_related_identity_is_0x0083_or_eprosimas_0x800f_from_a_writer_that_means_it() {
+    fn rpc_7_8_2_the_related_identity_is_0x0083_or_eprosimas_0x800f_from_a_writer_that_means_it() {
         use zerodds_rtps::inline_qos::SampleIdentityBytes;
         let standard = SampleIdentityBytes::new([0xA1; 16], 7);
         let eprosima = SampleIdentityBytes::new([0xB2; 16], 9);
@@ -31366,7 +31766,7 @@ mod tests {
     /// them. The datagram's source gives the list its transport kind and
     /// address (Table 8.17).
     #[test]
-    fn a_reader_proxy_without_locators_takes_the_info_reply_of_its_acknack() {
+    fn rtps_8_3_4_a_reader_proxy_without_locators_takes_the_info_reply_of_its_acknack() {
         use zerodds_rtps::submessage_header::{
             FLAG_E_LITTLE_ENDIAN, SubmessageHeader, SubmessageId,
         };
@@ -31483,7 +31883,7 @@ mod tests {
     /// SPDPdiscoveredParticipantData is sent": the announcement carries the
     /// count, and each increment is another announcement.
     #[test]
-    fn the_manual_liveliness_count_of_the_announcement_counts_up() {
+    fn rtps_8_5_3_2_the_manual_liveliness_count_of_the_announcement_counts_up() {
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             lease.id(),
@@ -31511,7 +31911,8 @@ mod tests {
     /// still alive after a lease counted from the first and not alive after one
     /// counted from the second.
     #[test]
-    fn a_changed_manual_liveliness_count_renews_the_manual_writers_of_that_participant() {
+    fn rtps_8_5_3_2_a_changed_manual_liveliness_count_renews_the_manual_writers_of_that_participant()
+     {
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             lease.id(),
@@ -31523,6 +31924,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "ManualCount".into(),
                 type_name: "Raw".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("reader");
@@ -31658,7 +32060,7 @@ mod tests {
     /// The vendor form of the ACKNACK is a setting, off by default
     /// (DDSI-RTPS 2.5 §9.4.2.6 makes `bitmapBase` 0 invalid).
     #[test]
-    fn the_empty_acknack_setting_is_off_by_default() {
+    fn rtps_8_3_4_1_the_empty_acknack_setting_is_off_by_default() {
         assert!(!RuntimeConfig::default().accept_empty_acknack_base_zero);
     }
 
@@ -31666,7 +32068,7 @@ mod tests {
     /// Participant. After the 24-bit counter has wrapped, the key of a
     /// writer that still exists is not handed out again.
     #[test]
-    fn a_wrapped_entity_key_counter_skips_the_key_of_a_live_writer() {
+    fn rtps_8_2_4_4_a_wrapped_entity_key_counter_skips_the_key_of_a_live_writer() {
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             lease.id(),
@@ -31695,7 +32097,8 @@ mod tests {
     /// Publisher's or Subscriber's group id, are not handed out again while
     /// they are held; a key that is given back may be.
     #[test]
-    fn a_wrapped_entity_key_counter_skips_reserved_and_group_keys_until_they_are_given_back() {
+    fn rtps_8_2_4_4_a_wrapped_entity_key_counter_skips_reserved_and_group_keys_until_they_are_given_back()
+     {
         use zerodds_rtps::wire_types::EntityKind;
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
@@ -31729,7 +32132,7 @@ mod tests {
     /// the counter when it has come round, as those of registered endpoints
     /// are.
     #[test]
-    fn entity_keys_are_unique_across_groups_reserved_and_registered_endpoints() {
+    fn rtps_9_3_1_2_entity_keys_are_unique_across_groups_reserved_and_registered_endpoints() {
         use zerodds_rtps::wire_types::EntityKind;
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
@@ -31818,6 +32221,48 @@ mod tests {
         rt.shutdown();
     }
 
+    /// The same writer under [`without_waiting_for_room`]: the third write
+    /// returns TIMEOUT at once, as the wait of §2.2.2.4.2.11 would have
+    /// after `max_blocking_time` (5 s), and the cache stays at two. Outside
+    /// the scope the next write of the thread waits again.
+    #[test]
+    fn dcps_2_2_2_4_2_11_a_write_that_does_not_wait_returns_timeout_at_once() {
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0x76; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let (eid, _) = limited_writer(
+            &rt,
+            true,
+            zerodds_qos::DurabilityKind::Volatile,
+            None,
+            (2, -1, -1),
+            5_000,
+        );
+        let key = [7u8; 16];
+        rt.write_user_sample_keyed(eid, &[1], key, None).unwrap();
+        rt.write_user_sample_keyed(eid, &[2], key, None).unwrap();
+        let began = Instant::now();
+        let third = without_waiting_for_room(|| rt.write_user_sample_keyed(eid, &[3], key, None));
+        let waited = began.elapsed();
+        assert!(matches!(third, Err(DdsError::Timeout)), "{third:?}");
+        assert!(waited < Duration::from_secs(1), "{waited:?}");
+        assert!(writes_wait_for_room(), "the scope ends with the call");
+        let len = rt
+            .writer_slot(eid)
+            .unwrap()
+            .lock()
+            .unwrap()
+            .writer
+            .cache()
+            .len();
+        assert_eq!(len, 2);
+        rt.shutdown();
+    }
+
     /// The same writer waiting for room: the reader's ACKNACK, handled on
     /// the receive path as one from the wire is, makes room and the write
     /// goes on before its `max_blocking_time` (5 s) has passed.
@@ -31871,7 +32316,7 @@ mod tests {
     /// readers acknowledged, and a new instance beyond `max_instances`
     /// waits for an unregister.
     #[test]
-    fn a_write_no_acknowledgement_can_make_room_for_is_refused_at_once() {
+    fn dcps_2_2_2_4_2_11_a_write_no_acknowledgement_can_make_room_for_is_refused_at_once() {
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             lease.id(),
@@ -32039,6 +32484,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "Departure".into(),
                 type_name: "zerodds::RawBytes".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("reader");
@@ -32070,7 +32516,7 @@ mod tests {
     /// a reader that acknowledges: 50 writes all go through, each waiting at
     /// most for the reader's acknowledgement, and the reader gets all 50.
     #[test]
-    fn a_limited_writer_with_an_acknowledging_reader_writes_everything() {
+    fn dcps_2_2_2_4_2_11_a_limited_writer_with_an_acknowledging_reader_writes_everything() {
         let lease = zerodds_test_domains::lease_domain();
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(10),
@@ -32104,6 +32550,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "LimitedChatter".into(),
                 type_name: "zerodds::RawBytes".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("reader");
@@ -32133,9 +32580,10 @@ mod tests {
     /// (DDS 1.4 §2.2.3.18: KEEP_ALL keeps every sample until it is
     /// delivered). Measured: what the writer's cache holds after 100 writes.
     #[test]
-    fn a_keep_all_writer_keeps_what_a_matched_reader_has_not_acknowledged() {
+    fn dcps_2_2_2_4_2_11_a_keep_all_writer_keeps_what_a_matched_reader_has_not_acknowledged() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            67,
+            lease.id(),
             GuidPrefix::from_bytes([0x71; 12]),
             RuntimeConfig::default(),
         )
@@ -32200,7 +32648,7 @@ mod tests {
     }
 
     #[test]
-    fn wake_async_waker_takes_the_waker_and_wakes_once() {
+    fn async_3_wake_async_waker_takes_the_waker_and_wakes_once() {
         use alloc::sync::Arc as StdArc;
         use core::sync::atomic::{AtomicUsize, Ordering as AtomicOrdering};
         use std::task::{Wake, Waker};
@@ -32295,7 +32743,7 @@ mod tests {
     /// conversion), and asserts the resulting `big_endian` flag drives a correct
     /// decode — while the little-endian `decode` on the same BE body is wrong.
     #[test]
-    fn big_endian_encap_routes_to_decode_be() {
+    fn xtypes_7_4_3_2_3_big_endian_encap_routes_to_decode_be() {
         use crate::dds_type::{DdsType, DecodeError, EncodeError};
 
         /// XCDR2 caps alignment at four (XTypes 1.3 §7.4.1). One `i32`
@@ -32508,7 +32956,7 @@ mod tests {
     /// OWNERSHIP_STRENGTH and LIFESPAN, the others the writer's announced
     /// values.
     #[test]
-    fn the_in_line_strength_and_lifespan_of_a_sample_override_the_writers() {
+    fn rtps_8_3_8_2_the_in_line_strength_and_lifespan_of_a_sample_override_the_writers() {
         let writer = Guid::new(GuidPrefix::from_bytes([9; 12]), EntityId::PARTICIPANT).to_bytes();
         let announced_strengths = alloc::collections::BTreeMap::from([(writer, 3i32)]);
         let announced_lifespans = alloc::collections::BTreeMap::from([(writer, 5_000_000_000u64)]);
@@ -32559,7 +33007,7 @@ mod tests {
     /// non-key field gets the identical hash, because only `@key long id`
     /// feeds the KeyHash (XTypes 1.3 §7.6.8).
     #[test]
-    fn alive_sample_without_key_hash_gets_the_types_computed_hash() {
+    fn rtps_8_7_10_alive_sample_without_key_hash_gets_the_types_computed_hash() {
         let support = keyed_final_support();
         let body = keyed_final_wire(7, 42);
         let expected = support
@@ -32625,7 +33073,7 @@ mod tests {
     /// straight from that decode (`DisposeKeyForm::KeyInPayload`, Cyclone
     /// 11.0.1's measured form).
     #[test]
-    fn lifecycle_marker_without_key_hash_gets_the_alive_instances_hash_and_holder() {
+    fn rtps_8_7_10_lifecycle_marker_without_key_hash_gets_the_alive_instances_hash_and_holder() {
         let support = keyed_final_support();
         let alive_body = keyed_final_wire(7, 42);
         let alive_sample = support
@@ -33085,9 +33533,10 @@ mod tests {
             "ZeroDDS' own KeyHash for color=\"BLUE\" must match RTI's captured PID_KEY_HASH"
         );
 
+        let lease = zerodds_test_domains::lease_domain();
         let rt = ShutsDown(
             DcpsRuntime::start(
-                9,
+                lease.id(),
                 GuidPrefix::from_bytes([0xDA; 12]),
                 RuntimeConfig::default(),
             )
@@ -33178,7 +33627,7 @@ mod tests {
                     );
                     assert!(d.key_flag, "K flag must be set — RTI's own accepted form");
                     assert!(!d.data_flag);
-                    let qos = d.inline_qos.as_ref().expect("inline QoS present");
+                    let qos = d.inline_qos.as_ref().expect("inline QoS present").to_list();
                     let key_hash_param = qos
                         .find(zerodds_rtps::parameter_list::pid::KEY_HASH)
                         .expect("PID_KEY_HASH present");
@@ -33209,15 +33658,16 @@ mod tests {
     /// counts it. A keyed writer is not affected, and
     /// `writer.keyless_lifecycle_on_wire` sends the marker of a NO_KEY writer.
     #[test]
-    fn dispose_and_unregister_of_a_no_key_writer_send_no_marker_unless_asked_for() {
+    fn rtps_8_2_10_1_dispose_and_unregister_of_a_no_key_writer_send_no_marker_unless_asked_for() {
         let cfg_for = |topic: &str| UserWriterConfig {
             topic_name: topic.into(),
             type_name: "NoKeyLifecycleType".into(),
             ..Default::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         let run = |on_wire: bool, keyed: bool, prefix: u8| {
             let rt = DcpsRuntime::start(
-                9,
+                lease.id(),
                 GuidPrefix::from_bytes([prefix; 12]),
                 RuntimeConfig {
                     keyless_lifecycle_on_wire: on_wire,
@@ -33269,8 +33719,9 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt =
-            DcpsRuntime::start(9, GuidPrefix::from_bytes([0xDC; 12]), cfg).expect("start runtime");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xDC; 12]), cfg)
+            .expect("start runtime");
 
         // Writer A: type never registered as a CompleteTypeObject.
         let writer_a = rt
@@ -33368,9 +33819,12 @@ mod tests {
         assert!(topics.contains("NoHolderTopic"));
     }
 
-    /// A runtime with a keyed writer of `object` on `topic` and a reader
-    /// proxy at a local socket, for the lifecycle markers the writer sends.
+    /// A runtime on `domain` with a keyed writer of `object` on `topic` and
+    /// a reader proxy at a local socket, for the lifecycle markers the
+    /// writer sends. The caller holds the domain's lease for as long as the
+    /// runtime lives.
     fn lifecycle_marker_rig(
+        domain: i32,
         object: zerodds_types::TypeObject,
         type_name: &str,
         topic: &str,
@@ -33383,7 +33837,7 @@ mod tests {
             ..RuntimeConfig::default()
         };
         let rt = ShutsDown(
-            DcpsRuntime::start(9, GuidPrefix::from_bytes([prefix; 12]), cfg).expect("start"),
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([prefix; 12]), cfg).expect("start"),
         );
         rt.register_type_object(object).expect("register type");
         let eid = rt
@@ -33430,10 +33884,10 @@ mod tests {
             let (n, _) = socket.recv_from(&mut buf).expect("a datagram");
             let parsed = decode_datagram(&buf[..n]).expect("decode");
             for sub in &parsed.submessages {
-                if let ParsedSubmessage::Data(d) = &sub.submessage {
-                    if !d.data_flag {
-                        return (d.key_flag, d.serialized_payload.to_vec());
-                    }
+                if let ParsedSubmessage::Data(d) = &sub.submessage
+                    && !d.data_flag
+                {
+                    return (d.key_flag, d.serialized_payload.to_vec());
                 }
             }
         }
@@ -33481,8 +33935,15 @@ mod tests {
         );
 
         let sink = alloc::sync::Arc::new(zerodds_foundation::observability::VecSink::new());
-        let (rt, eid, socket) =
-            lifecycle_marker_rig(object, "KeyedPointA", "KeyedPoint", 0xD4, sink.clone());
+        let lease = zerodds_test_domains::lease_domain();
+        let (rt, eid, socket) = lifecycle_marker_rig(
+            lease.id(),
+            object,
+            "KeyedPointA",
+            "KeyedPoint",
+            0xD4,
+            sink.clone(),
+        );
         let expected_key = {
             let slot_arc = rt.writer_slot(eid).expect("slot");
             let mut slot = slot_arc.lock().expect("lock");
@@ -33533,7 +33994,9 @@ mod tests {
             .expect("keyed");
 
         let sink = alloc::sync::Arc::new(zerodds_foundation::observability::VecSink::new());
+        let lease = zerodds_test_domains::lease_domain();
         let (rt, eid, socket) = lifecycle_marker_rig(
+            lease.id(),
             shapetype_type_object(),
             "ShapeType",
             "Square",
@@ -33612,8 +34075,9 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt =
-            DcpsRuntime::start(9, GuidPrefix::from_bytes([0xDE; 12]), cfg).expect("start runtime");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xDE; 12]), cfg)
+            .expect("start runtime");
         rt.register_type_object(object).expect("register type");
         let eid = rt
             .register_user_writer_kind(
@@ -33667,10 +34131,10 @@ mod tests {
                 let (n, _) = socket.recv_from(&mut buf).expect("a datagram");
                 let parsed = decode_datagram(&buf[..n]).expect("decode");
                 for sub in &parsed.submessages {
-                    if let ParsedSubmessage::Data(d) = &sub.submessage {
-                        if !d.data_flag {
-                            return (d.key_flag, d.serialized_payload.to_vec());
-                        }
+                    if let ParsedSubmessage::Data(d) = &sub.submessage
+                        && !d.data_flag
+                    {
+                        return (d.key_flag, d.serialized_payload.to_vec());
                     }
                 }
             }
@@ -33750,8 +34214,9 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt =
-            DcpsRuntime::start(9, GuidPrefix::from_bytes([0xE0; 12]), cfg).expect("start runtime");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xE0; 12]), cfg)
+            .expect("start runtime");
         rt.register_type_object(object).expect("register type");
         let eid = rt
             .register_user_writer_kind(
@@ -34112,13 +34577,15 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt =
-            DcpsRuntime::start(9, GuidPrefix::from_bytes([0xD7; 12]), cfg).expect("start runtime");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xD7; 12]), cfg)
+            .expect("start runtime");
         let (eid, _rx) = rt
             .register_user_reader_kind(
                 UserReaderConfig {
                     topic_name: "UnavailableTypeTopic".into(),
                     type_name: "UnavailableTestType".into(),
+                    reliable: true,
                     ..Default::default()
                 },
                 true,
@@ -34200,14 +34667,16 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt =
-            DcpsRuntime::start(9, GuidPrefix::from_bytes([0xD8; 12]), cfg).expect("start runtime");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xD8; 12]), cfg)
+            .expect("start runtime");
         let (eid, _rx) = rt
             .register_user_reader_kind(
                 UserReaderConfig {
                     topic_name: "LateJoinerLifecycleTopic".into(),
                     type_name: "KeyedFinal".into(),
                     type_identifier,
+                    reliable: true,
                     ..Default::default()
                 },
                 true,
@@ -34309,7 +34778,7 @@ mod tests {
     /// captured, the beacon names domain 205 and is ignored; with its
     /// `PID_DOMAIN_ID` moved to 100 it is discovered.
     #[test]
-    fn handle_spdp_registers_real_fastdds_participant() {
+    fn rtps_8_5_6_handle_spdp_registers_real_fastdds_participant() {
         fn hx(s: &str) -> Vec<u8> {
             (0..s.len())
                 .step_by(2)
@@ -34319,17 +34788,22 @@ mod tests {
         const FASTDDS_SPDP: &str = "525450530203010f010fa72bbbebc90100000000090108006850196a57e882b41505b80100001000000100c7000100c2000000000100000000030000150004000203000016000400010f000000800400030601000f000400cd00000050001000010fa72bbbebc90100000000000001c107800400010000000380280021000000653830653630353335646339343432636231306537323239313038653135666600000000320018000100000024e50000000000000000000000000000c0a8b273310018000100000025e50000000000000000000000000000c0a8b273020008001400000000000000580004003ffc0f006200140010000000525450535061727469636970616e74005900cc0004000000110000005041525449434950414e545f54595045000000000700000053494d504c4500001b000000666173746464732e706879736963616c5f646174612e686f73740000210000006538306536303533356463393434326362313065373232393130386531356666000000001b000000666173746464732e706879736963616c5f646174612e75736572000005000000726f6f74000000001e000000666173746464732e706879736963616c5f646174612e70726f636573730000000600000036303334370000000100000080013800010000001ae50000000000000000000000000000efff00016850196a72ca8cb4020000000000000030040000000000000000000000000000";
         let bytes = hx(FASTDDS_SPDP);
         let prefix = GuidPrefix::from_bytes([0x99; 12]);
-        let rt =
-            ShutsDown(DcpsRuntime::start(100, prefix, RuntimeConfig::default()).expect("rt start"));
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = ShutsDown(
+            DcpsRuntime::start(lease.id(), prefix, RuntimeConfig::default()).expect("rt start"),
+        );
         assert_eq!(rt.discovered_participants().len(), 0, "fresh: no peers");
         handle_spdp_datagram_for_test(&rt, &bytes);
+        // No test host leases 205: its ports lie in the ephemeral range of
+        // Linux, macOS and Windows (`crates/test-domains`).
         assert_eq!(
             rt.discovered_participants().len(),
             0,
-            "the capture announces domain 205; this runtime is on 100"
+            "the capture announces domain 205; this runtime is on its leased domain"
         );
         assert_eq!(rt.ignored_spdp_samples(), 1);
-        handle_spdp_datagram_for_test(&rt, &fastdds_spdp_moved_to(bytes, 100));
+        let domain = u32::try_from(lease.id()).expect("a leased domain is not negative");
+        handle_spdp_datagram_for_test(&rt, &fastdds_spdp_moved_to(bytes, domain));
         let n = rt.discovered_participants().len();
         assert_eq!(
             n, 1,
@@ -34403,7 +34877,7 @@ mod tests {
                 .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
                 .collect()
         }
-        // The Fast DDS 3.6 SPDP of `handle_spdp_registers_real_fastdds_participant`:
+        // The Fast DDS 3.6 SPDP of `rtps_8_5_6_handle_spdp_registers_real_fastdds_participant`:
         // prefix 010fa72bbbebc90100000000, metatraffic unicast
         // 192.0.2.115:58660.
         const FASTDDS_SPDP: &str = "525450530203010f010fa72bbbebc90100000000090108006850196a57e882b41505b80100001000000100c7000100c2000000000100000000030000150004000203000016000400010f000000800400030601000f000400cd00000050001000010fa72bbbebc90100000000000001c107800400010000000380280021000000653830653630353335646339343432636231306537323239313038653135666600000000320018000100000024e50000000000000000000000000000c0a8b273310018000100000025e50000000000000000000000000000c0a8b273020008001400000000000000580004003ffc0f006200140010000000525450535061727469636970616e74005900cc0004000000110000005041525449434950414e545f54595045000000000700000053494d504c4500001b000000666173746464732e706879736963616c5f646174612e686f73740000210000006538306536303533356463393434326362313065373232393130386531356666000000001b000000666173746464732e706879736963616c5f646174612e75736572000005000000726f6f74000000001e000000666173746464732e706879736963616c5f646174612e70726f636573730000000600000036303334370000000100000080013800010000001ae50000000000000000000000000000efff00016850196a72ca8cb4020000000000000030040000000000000000000000000000";
@@ -34472,7 +34946,7 @@ mod tests {
         assert!(accept.is_none(), "UDP needs no accept handle");
     }
 
-    #[cfg(feature = "same-host-uds")]
+    #[cfg(all(feature = "same-host-uds", unix))]
     #[test]
     fn select_user_transport_uds_yields_uds_locator() {
         let prefix = GuidPrefix::from_bytes([3u8; 12]);
@@ -34490,37 +34964,37 @@ mod tests {
     }
 
     #[test]
-    fn strip_user_encap_xcdr2_le() {
+    fn rtps_10_2_strip_user_encap_xcdr2_le() {
         let payload = [0x00, 0x07, 0x00, 0x00, 1, 2, 3];
         assert_eq!(strip_user_encap(&payload), Some(alloc::vec![1, 2, 3]));
     }
 
     #[test]
-    fn strip_user_encap_xcdr1_le() {
+    fn rtps_10_2_strip_user_encap_xcdr1_le() {
         // Cyclone default for simple types.
         let payload = [0x00, 0x01, 0x00, 0x00, 0xAA];
         assert_eq!(strip_user_encap(&payload), Some(alloc::vec![0xAA]));
     }
 
     #[test]
-    fn strip_user_encap_rejects_unknown_scheme() {
+    fn xtypes_7_6_3_1_2_strip_user_encap_rejects_unknown_scheme() {
         let payload = [0xFF, 0xFF, 0x00, 0x00, 1];
         assert_eq!(strip_user_encap(&payload), None);
     }
 
     #[test]
-    fn strip_user_encap_rejects_short() {
+    fn rtps_10_2_strip_user_encap_rejects_short() {
         assert_eq!(strip_user_encap(&[0x00, 0x07]), None);
     }
 
     #[test]
-    fn strip_user_encap_drops_the_padding_the_options_name() {
+    fn rtps_10_2_strip_user_encap_drops_the_padding_the_options_name() {
         // CDR_LE with options 0x0002: two padding octets bring the two-octet
         // body to a multiple of four.
         let payload = [0x00, 0x01, 0x00, 0x02, 0xAA, 0xBB, 0x00, 0x00];
         assert_eq!(strip_user_encap(&payload), Some(alloc::vec![0xAA, 0xBB]));
         // A count larger than the body is refused:
-        // `strip_user_encap_refuses_padding_the_body_cannot_hold`.
+        // `rtps_10_2_strip_user_encap_refuses_padding_the_body_cannot_hold`.
     }
 
     /// OpenDDS 3.34 counts padding it does not append: the `RichF` sample of
@@ -34531,7 +35005,7 @@ mod tests {
     /// sample failed to decode. A payload whose length is not a multiple of
     /// four carries no padding.
     #[test]
-    fn strip_user_encap_keeps_a_body_whose_counted_padding_is_absent() {
+    fn xtypes_7_6_3_1_2_strip_user_encap_keeps_a_body_whose_counted_padding_is_absent() {
         let mut payload = alloc::vec![0x00, 0x07, 0x00, 0x02, 0x01, 0x00, 0x00, 0x00];
         payload.extend_from_slice(&[0x18, 0x2d, 0x44, 0x54, 0xfb, 0x21, 0x09, 0x40]);
         payload.extend_from_slice(&[0x32, 0x00, 0x00, 0x00]);
@@ -34546,7 +35020,7 @@ mod tests {
     /// counts octets the payload does not have: refused, like an unknown
     /// scheme, and not read as a body of one.
     #[test]
-    fn strip_user_encap_refuses_padding_the_body_cannot_hold() {
+    fn rtps_10_2_strip_user_encap_refuses_padding_the_body_cannot_hold() {
         assert_eq!(strip_user_encap(&[0x00, 0x07, 0x00, 0x03, 0xAB]), None);
         assert_eq!(strip_user_encap(&[0x00, 0x07, 0x00, 0x01]), None);
         assert_eq!(
@@ -34560,7 +35034,7 @@ mod tests {
     /// little-endian odd); DDSI-RTPS 2.5 Table 10.3 uses them too. A payload
     /// that carries them is read, like the identifiers of Table 60.
     #[test]
-    fn the_encapsulation_identifiers_of_table_39_are_read() {
+    fn rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read() {
         for id in 0x10u8..=0x15 {
             let frame = [0x00, id, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD];
             assert_eq!(
@@ -34590,7 +35064,7 @@ mod tests {
     /// 11 for none, one, two, three), and the receiver "determines where
     /// the serialized data exactly ended" from them. The padding is zero.
     #[test]
-    fn a_user_payload_names_its_padding_in_the_options() {
+    fn xtypes_7_6_3_1_2_a_user_payload_names_its_padding_in_the_options() {
         for (len, expected) in [
             (0usize, 0usize),
             (1, 3),
@@ -34622,14 +35096,14 @@ mod tests {
     }
 
     #[test]
-    fn user_payload_encap_is_cdr_le() {
+    fn rtps_10_5_user_payload_encap_is_cdr_le() {
         // CDR_LE (PLAIN_CDR / XCDR1, Little-Endian) — ehrliche
         // Declaration of the body encoding generated by codegen.
         assert_eq!(USER_PAYLOAD_ENCAP, [0x00, 0x01, 0x00, 0x00]);
     }
 
     #[test]
-    fn data_repr_offer_str_uses_spec_ids() {
+    fn xtypes_7_6_3_1_1_data_repr_offer_str_uses_spec_ids() {
         use zerodds_rtps::publication_data::data_representation as dr;
         // XCDR1 -> Spec-Id 0 (NICHT 1 = XML); XCDR2 -> 2.
         assert_eq!(parse_data_repr_offer_str("XCDR1"), Some(vec![dr::XCDR]));
@@ -34654,7 +35128,7 @@ mod tests {
     /// `@final` type fails the DataRepresentation RxO check and never
     /// delivers (Bug DR1).
     #[test]
-    fn reader_accept_repr_requests_xcdr2_and_xcdr() {
+    fn xtypes_7_6_3_1_1_reader_accept_repr_requests_xcdr2_and_xcdr() {
         use zerodds_rtps::publication_data::data_representation as dr;
         let both = alloc::vec![dr::XCDR2, dr::XCDR];
         // The offers of the writers do not narrow the reader.
@@ -34685,7 +35159,7 @@ mod tests {
     /// the same sample has under CDR, padding the options word counts
     /// included.
     #[test]
-    fn an_xml_sample_reaches_the_reader_as_its_cdr_body() {
+    fn rtps_10_5_an_xml_sample_reaches_the_reader_as_its_cdr_body() {
         let support = keyed_final_support();
         let document = "<KeyedFinal><id>7</id><value>42</value></KeyedFinal>";
         let sample = keyed_delivered_alive(keyed_final_xml_wire(document, true));
@@ -34720,7 +35194,7 @@ mod tests {
     /// A document that is no document of the type is refused and not
     /// handed on as something else.
     #[test]
-    fn an_xml_sample_that_is_no_document_of_the_type_is_refused() {
+    fn rtps_10_5_an_xml_sample_that_is_no_document_of_the_type_is_refused() {
         let support = keyed_final_support();
         for document in [
             "<Other><id>7</id></Other>",
@@ -34740,7 +35214,7 @@ mod tests {
     /// A dispose under the XML header carries the document of the key
     /// members; it yields the KeyHash the CDR form of the same key yields.
     #[test]
-    fn an_xml_dispose_carries_the_instance_key() {
+    fn rtps_10_5_an_xml_dispose_carries_the_instance_key() {
         let support = keyed_final_support();
         let alive = support
             .read_body(&keyed_final_wire(7, 42)[4..], 2, false)
@@ -34761,10 +35235,11 @@ mod tests {
     /// the XCDR1 body it was handed under `{0x00, 0x04}`; the key of a
     /// dispose is the document of the key members.
     #[test]
-    fn an_xml_writer_sends_the_document_of_the_sample() {
+    fn rtps_10_5_an_xml_writer_sends_the_document_of_the_sample() {
         use zerodds_rtps::publication_data::data_representation as dr;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            14,
+            lease.id(),
             GuidPrefix::from_bytes([0xC9; 12]),
             RuntimeConfig::default(),
         )
@@ -34820,7 +35295,7 @@ mod tests {
     /// endian: header CDR_LE with options 0, then the body. The octets are
     /// those printed in the spec.
     #[test]
-    fn the_example_of_10_7_has_the_header_and_body_of_the_spec() {
+    fn rtps_10_7_the_example_of_10_7_has_the_header_and_body_of_the_spec() {
         use zerodds_rtps::publication_data::data_representation as dr;
         use zerodds_types::qos::ExtensibilityForRepr as Ext;
         let spec: [u8; 28] = [
@@ -34855,7 +35330,7 @@ mod tests {
     /// 0x11}` for PLAIN_CDR2 little endian and `{0x01, 0x00}` for XML,
     /// where the default is Table 60's `{0x00, 0x07}` and `{0x00, 0x04}`.
     #[test]
-    fn a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them() {
+    fn rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them() {
         use zerodds_rtps::publication_data::data_representation as dr;
         use zerodds_wire_codec::value::EncapsulationIds;
         let writer_config = |offer: i16| UserWriterConfig {
@@ -34925,7 +35400,7 @@ mod tests {
     /// The identifiers of Table 60 map onto Table 39's, and the
     /// identifiers of encoding version 1 are the same in both.
     #[test]
-    fn encap_in_table_maps_table_60_onto_table_39() {
+    fn rtps_10_5_encap_in_table_maps_table_60_onto_table_39() {
         use zerodds_wire_codec::value::EncapsulationIds;
         let table39 = EncapsulationIds::Table39;
         for (from, to) in [
@@ -34959,7 +35434,7 @@ mod tests {
     /// A sample under the XML identifier of Table 39 reaches the reader as
     /// the XCDR2 body the same sample has under Table 60's.
     #[test]
-    fn an_xml_sample_under_the_identifier_of_table_39_reaches_the_reader() {
+    fn xtypes_7_4_3_4_an_xml_sample_under_the_identifier_of_table_39_reaches_the_reader() {
         let support = keyed_final_support();
         let document = "<KeyedFinal><id>7</id><value>42</value></KeyedFinal>";
         let mut wire = keyed_final_xml_wire(document, true);
@@ -34971,7 +35446,7 @@ mod tests {
     }
 
     #[test]
-    fn user_payload_encap_maps_repr_and_extensibility() {
+    fn rtps_10_2_user_payload_encap_maps_repr_and_extensibility() {
         use zerodds_rtps::publication_data::data_representation as dr;
         use zerodds_types::qos::ExtensibilityForRepr as Ext;
         // DDSI-RTPS 2.5 §10.5 / XTypes 1.3 Table 60 Encapsulation-IDs
@@ -35094,7 +35569,9 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt = DcpsRuntime::start(76, GuidPrefix::from_bytes([0xB1; 12]), cfg).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xB1; 12]), cfg).expect("start");
         let (reader_eid, _rx) = rt
             .register_user_reader(refusal_reader_config(Vec::new()))
             .expect("register reader");
@@ -35139,7 +35616,9 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt = DcpsRuntime::start(78, GuidPrefix::from_bytes([0xB3; 12]), cfg).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xB3; 12]), cfg).expect("start");
         let (reader_eid, _rx) = rt
             .register_user_reader(refusal_reader_config(Vec::new()))
             .expect("register reader");
@@ -35171,7 +35650,9 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt = DcpsRuntime::start(77, GuidPrefix::from_bytes([0xB2; 12]), cfg).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xB2; 12]), cfg).expect("start");
         let (reader_eid, _rx) = rt
             .register_user_reader(refusal_reader_config(alloc::vec!["left".to_string()]))
             .expect("register reader");
@@ -35211,7 +35692,7 @@ mod tests {
     /// subscription (`PID_CONTENT_FILTER_PROPERTY`, DDSI-RTPS 2.5 §9.6.3.4),
     /// and announces it again with new parameters.
     #[test]
-    fn the_content_filter_travels_in_the_subscription_and_is_reannounced() {
+    fn dcps_2_2_2_3_3_4_the_content_filter_travels_in_the_subscription_and_is_reannounced() {
         use zerodds_rtps::subscription_data::ContentFilterProperty;
         let domain_lease = zerodds_test_domains::lease_domain();
         let domain = domain_lease.id();
@@ -35234,6 +35715,7 @@ mod tests {
                 topic_name: "Scores".into(),
                 type_name: "Score".into(),
                 content_filter: Some(filter("9")),
+                reliable: true,
                 ..Default::default()
             })
             .expect("reader");
@@ -35256,7 +35738,7 @@ mod tests {
     /// beacons a lease. A period of its own stays, and the default lease
     /// keeps the spec's 30 s period (§9.6.2.4).
     #[test]
-    fn a_short_lease_without_a_period_beacons_three_times_a_lease() {
+    fn rtps_8_5_3_1_a_short_lease_without_a_period_beacons_three_times_a_lease() {
         assert_eq!(
             super::default_spdp_period_for(Duration::from_secs(100)),
             DEFAULT_SPDP_PERIOD
@@ -35294,7 +35776,7 @@ mod tests {
     }
 
     #[test]
-    fn initial_peer_specs_reach_the_runtime_without_touching_the_environment() {
+    fn rtps_8_5_3_3_initial_peer_specs_reach_the_runtime_without_touching_the_environment() {
         let domain_lease = zerodds_test_domains::lease_domain();
         let domain = domain_lease.id() as u32;
         let path = std::env::temp_dir().join(alloc::format!(
@@ -35355,6 +35837,69 @@ mod tests {
         assert_eq!(
             attr_of(&events[0], "applied"),
             RtpsDialect::MaximallyInteroperable.as_str()
+        );
+    }
+
+    /// `xtypes.key_must_understand` follows a vendor dialect that is named
+    /// when the setting itself is not set, and the setting wins where it is
+    /// set. The default without either is the clause's (DDS-XTypes 1.4 Beta
+    /// 1 §7.3.3.4).
+    #[test]
+    fn a_vendor_dialect_brings_its_key_must_understand_reading_and_the_setting_wins() {
+        use zerodds_types::assignability::KeyMustUnderstand;
+        let read = |vars: &[(&str, &str)]| {
+            let vars: Vec<(String, String)> = vars
+                .iter()
+                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+                .collect();
+            let cl = zerodds_config::CommandLine::default();
+            let source = ConfigSource::from_command_line_with_env(&cl, |name| {
+                vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone())
+            })
+            .expect("source");
+            RuntimeConfig::from_source(&source)
+                .expect("valid settings")
+                .key_must_understand
+        };
+        assert_eq!(read(&[]), KeyMustUnderstand::Flagged);
+        assert_eq!(
+            read(&[("ZERODDS_RTPS_DIALECT", "cyclone")]),
+            KeyMustUnderstand::ImpliedByKey
+        );
+        assert_eq!(
+            read(&[("ZERODDS_CODEC_DIALECT", "cyclone")]),
+            KeyMustUnderstand::ImpliedByKey
+        );
+        for dialect in ["fastdds", "opendds"] {
+            assert_eq!(
+                read(&[("ZERODDS_RTPS_DIALECT", dialect)]),
+                KeyMustUnderstand::ImpliedByKey,
+                "{dialect}"
+            );
+            assert_eq!(
+                read(&[("ZERODDS_CODEC_DIALECT", dialect)]),
+                KeyMustUnderstand::ImpliedByKey,
+                "{dialect}"
+            );
+        }
+        assert_eq!(
+            read(&[("ZERODDS_CODEC_DIALECT", "rti")]),
+            KeyMustUnderstand::Flagged
+        );
+        assert_eq!(
+            read(&[
+                ("ZERODDS_RTPS_DIALECT", "cyclone"),
+                ("ZERODDS_KEY_MUST_UNDERSTAND", "flagged"),
+            ]),
+            KeyMustUnderstand::Flagged
+        );
+        assert_eq!(
+            read(&[("ZERODDS_RTPS_DIALECT", "maximally-interoperable")]),
+            KeyMustUnderstand::Flagged
+        );
+        assert_eq!(
+            read(&[("ZERODDS_KEY_MUST_UNDERSTAND", "implied")]),
+            KeyMustUnderstand::ImpliedByKey
         );
     }
 
@@ -35470,7 +36015,7 @@ mod tests {
     /// `initial_peer_max_participants` well-known ports, `ip:port` stays one
     /// locator, anything else is dropped.
     #[test]
-    fn initial_peer_specs_expand_per_the_configured_participant_limit() {
+    fn rtps_8_4_8_1_initial_peer_specs_expand_per_the_configured_participant_limit() {
         let specs = alloc::vec![
             "192.168.1.10".to_string(),
             " 192.168.1.11:7500 ".to_string(),
@@ -35485,27 +36030,12 @@ mod tests {
         assert_eq!(out[2].address[12..], [192, 168, 1, 11]);
     }
 
-    /// The TSN interface/VLAN/PCP are config fields; a build without the
-    /// `tsn-live` feature can still state them, which is what makes the
-    /// transport selection configurable rather than env-bound.
-    #[test]
-    fn tsn_transport_parameters_are_config_fields() {
-        let cfg = RuntimeConfig {
-            tsn_interface: Some("eth0".to_string()),
-            tsn_vlan: 5,
-            tsn_pcp: 3,
-            ..RuntimeConfig::default()
-        };
-        assert_eq!(cfg.tsn_interface.as_deref(), Some("eth0"));
-        assert_eq!(cfg.tsn_vlan, 5);
-        assert_eq!(cfg.tsn_pcp, 3);
-    }
-
     fn refusal_reader_config(partition: Vec<String>) -> UserReaderConfig {
         UserReaderConfig {
             topic_name: "RefusalTopic".into(),
             type_name: "RefusalType".into(),
             partition,
+            reliable: true,
             ..Default::default()
         }
     }
@@ -35580,8 +36110,9 @@ mod tests {
     #[test]
     fn a_readers_resource_limits_reach_its_receive_cache() {
         fn capacity_of(max_samples: i32, prefix: u8) -> usize {
+            let lease = zerodds_test_domains::lease_domain();
             let rt = DcpsRuntime::start(
-                7,
+                lease.id(),
                 GuidPrefix::from_bytes([prefix; 12]),
                 RuntimeConfig::default(),
             )
@@ -35594,6 +36125,7 @@ mod tests {
                     },
                     topic_name: "LimitsTopic".into(),
                     type_name: "LimitsType".into(),
+                    reliable: true,
                     ..Default::default()
                 })
                 .expect("register the reader");
@@ -35645,8 +36177,9 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt =
-            DcpsRuntime::start(7, GuidPrefix::from_bytes([0xAA; 12]), cfg).expect("start runtime");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xAA; 12]), cfg)
+            .expect("start runtime");
         let _ = rt.register_user_writer(UserWriterConfig {
             topic_name: "ObsTopic".into(),
             type_name: "ObsType".into(),
@@ -35655,6 +36188,7 @@ mod tests {
         let _ = rt.register_user_reader(UserReaderConfig {
             topic_name: "ObsTopic".into(),
             type_name: "ObsType".into(),
+            reliable: true,
             ..Default::default()
         });
         rt.shutdown();
@@ -35697,8 +36231,9 @@ mod tests {
         // (DDS_INVALID_QOS_POLICY_ID, no log). create_datawriter/
         // create_datareader derive `is_keyed` from `DdsType::HAS_KEY`.
         use zerodds_rtps::wire_types::EntityKind;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            11,
+            lease.id(),
             GuidPrefix::from_bytes([0xBC; 12]),
             RuntimeConfig::default(),
         )
@@ -35711,6 +36246,7 @@ mod tests {
         let mk_r = || UserReaderConfig {
             topic_name: "KindTopic".into(),
             type_name: "KindType".into(),
+            reliable: true,
             ..Default::default()
         };
         // keyless (HAS_KEY=false) -> NoKey
@@ -35736,8 +36272,9 @@ mod tests {
     #[test]
     fn writer_offer_first_follows_override_no_body_encap_drift() {
         use zerodds_rtps::publication_data::data_representation as dr;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            13,
+            lease.id(),
             GuidPrefix::from_bytes([0xC7; 12]),
             RuntimeConfig::default(),
         )
@@ -35789,10 +36326,11 @@ mod tests {
     /// CDR body under a `CDR_LE` header, which it used to be given and then
     /// refused for; an unknown first id is still refused.
     #[test]
-    fn a_writer_registered_with_xml_first_is_accepted() {
+    fn rtps_10_5_a_writer_registered_with_xml_first_is_accepted() {
         use zerodds_rtps::publication_data::data_representation as dr;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            13,
+            lease.id(),
             GuidPrefix::from_bytes([0xC8; 12]),
             RuntimeConfig::default(),
         )
@@ -35839,10 +36377,11 @@ mod tests {
             tick_period: Duration::from_millis(5),
             ..RuntimeConfig::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         // Two same-process runtimes, same domain → inproc discovery.
-        let rt = DcpsRuntime::start(13, GuidPrefix::from_bytes([0xCE; 12]), cfg_a)
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xCE; 12]), cfg_a)
             .expect("start runtime a");
-        let rt_b = DcpsRuntime::start(13, GuidPrefix::from_bytes([0xCF; 12]), cfg_b)
+        let rt_b = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xCF; 12]), cfg_b)
             .expect("start runtime b");
         let _w = rt
             .register_user_writer(UserWriterConfig {
@@ -35888,7 +36427,7 @@ mod tests {
     }
 
     #[test]
-    fn spdp_unicast_port_follows_rtps_formula() {
+    fn rtps_8_5_3_3_spdp_unicast_port_follows_rtps_formula() {
         // Spec §9.6.1.4.1: PB + DG*domain + d1 + PG*pid = 7400+250*d+10+2*pid.
         assert_eq!(super::spdp_unicast_port(0, 0), 7410);
         assert_eq!(spdp_unicast_port(0, 1), 7412);
@@ -35908,6 +36447,25 @@ mod tests {
         // Without a pin (UNSPECIFIED) → probe/fallback does NOT return the pin IP.
         let auto = super::announce_locator(&udp, Ipv4Addr::UNSPECIFIED);
         assert_ne!(auto.address[12..], [10, 11, 12, 13]);
+    }
+
+    #[test]
+    fn rtps_8_4_14_1_a_reader_on_this_host_over_tsn_keeps_the_frame_limit() {
+        // DDSI-RTPS 2.5 §8.4.14.1: data is fragmented where the path
+        // requires it. The loopback path of a reader on this host carries
+        // LOOPBACK_MTU; a TSN frame crosses the link also on this host, so
+        // its reader proxy keeps the writer's limit (the transport's 1500
+        // octets of an Ethernet payload, IEEE 802.3).
+        let udp = [Locator::udp_v4([127, 0, 0, 1], 7411)];
+        let tsn = [Locator::tsn([0x02, 0, 0x5e, 0, 0, 1], 42)];
+        let both = [udp[0], tsn[0]];
+        assert_eq!(
+            super::same_host_message_limit(true, &udp),
+            Some(zerodds_rtps::reliable_writer::LOOPBACK_MTU)
+        );
+        assert_eq!(super::same_host_message_limit(true, &tsn), None);
+        assert_eq!(super::same_host_message_limit(true, &both), None);
+        assert_eq!(super::same_host_message_limit(false, &udp), None);
     }
 
     #[test]
@@ -36105,7 +36663,7 @@ mod tests {
     }
 
     #[test]
-    fn announce_locators_pins_to_single_interface() {
+    fn rtps_8_5_3_3_announce_locators_pins_to_single_interface() {
         // #27: an explicit interface keeps the deterministic SINGLE-locator
         // behaviour — no multi-interface fan-out of the announced set.
         let udp = UdpTransport::bind_v4(Ipv4Addr::UNSPECIFIED, 0).expect("bind");
@@ -36121,7 +36679,7 @@ mod tests {
     }
 
     #[test]
-    fn announce_locators_automatic_is_non_empty_and_includes_probe() {
+    fn rtps_8_5_3_2_announce_locators_automatic_is_non_empty_and_includes_probe() {
         // Automatic mode enumerates eligible interfaces; the list is never
         // empty and always contains at least the route-probe address (so the
         // default-route peer stays reachable while extra segments are added).
@@ -36144,7 +36702,7 @@ mod tests {
     }
 
     #[test]
-    fn expand_initial_peer_ip_only_yields_well_known_port_range() {
+    fn rtps_8_5_3_1_expand_initial_peer_ip_only_yields_well_known_port_range() {
         let m = super::INITIAL_PEER_MAX_PARTICIPANTS;
         let mut out = Vec::new();
         super::expand_initial_peer("127.0.0.1", 0, m, &Default::default(), &mut out);
@@ -36183,9 +36741,11 @@ mod tests {
             .and_then(|s| s.parse().ok())
             .unwrap_or(12)
             .clamp(2, 120);
-        let domain = 21;
+        let lease = zerodds_test_domains::lease_domain();
+        let domain = lease.id();
+        let port_domain = u32::try_from(domain).expect("a leased domain is not negative");
         let peers: Vec<Locator> = (0..n)
-            .map(|pid| Locator::udp_v4([127, 0, 0, 1], super::spdp_unicast_port(domain, pid)))
+            .map(|pid| Locator::udp_v4([127, 0, 0, 1], super::spdp_unicast_port(port_domain, pid)))
             .collect();
         let mut rts = Vec::new();
         for i in 0..n {
@@ -36203,7 +36763,7 @@ mod tests {
             pb[0] = (i & 0xff) as u8;
             pb[1] = (i >> 8) as u8;
             let prefix = GuidPrefix::from_bytes(pb);
-            rts.push(DcpsRuntime::start(domain as i32, prefix, cfg).expect("start"));
+            rts.push(DcpsRuntime::start(domain, prefix, cfg).expect("start"));
         }
         // Wait until each participant has discovered all n-1 others.
         // Grosszuegiges Fenster: viele Runtimes konkurrieren um CPU; break-early.
@@ -36267,12 +36827,13 @@ mod tests {
     }
 
     #[test]
-    fn multicast_free_discovery_via_initial_peers() {
+    fn rtps_8_5_3_1_multicast_free_discovery_via_initial_peers() {
+        let lease = zerodds_test_domains::lease_domain();
         // C1: two runtimes with DIFFERENT multicast groups lie
         // in different inproc buckets AND cannot see each other via
         // multicast — so they discover each other EXCLUSIVELY via
         // the unicast initial peers (well-known SPDP ports on 127.0.0.1).
-        let domain = 7;
+        let domain = lease.id();
         let mut peers = Vec::new();
         super::expand_initial_peer(
             "127.0.0.1",
@@ -36344,13 +36905,14 @@ mod tests {
 
     #[test]
     fn multi_robot_profile_discovers_via_unicast() {
+        let lease = zerodds_test_domains::lease_domain();
         // C6 e2e: two runtimes started from the `multi_robot()` profile (whose
         // `spdp_multicast_send = false` is the field under test) sit in
         // different multicast buckets and can ONLY find each other through the
         // unicast initial peers — proving the profile drives multicast-free
         // discovery end-to-end. Only test-timing + the peer list are
         // overridden; `spdp_multicast_send` comes from the profile.
-        let domain = 9;
+        let domain = lease.id();
         let mut peers = Vec::new();
         super::expand_initial_peer(
             "127.0.0.1",
@@ -36396,13 +36958,14 @@ mod tests {
 
     #[test]
     fn intra_runtime_writer_to_reader_loopback_delivers_sample() {
+        let lease = zerodds_test_domains::lease_domain();
         // Bridge daemon use case: writer and reader in the SAME
         // DcpsRuntime, same topic+type. Before the same-runtime loopback
         // hook, a write() produced NO sample at the local reader,
         // because `inproc_announce_*` explicitly skips self and UDP multicast
         // loopback is not guaranteed.
         let rt = DcpsRuntime::start(
-            17,
+            lease.id(),
             GuidPrefix::from_bytes([0x42; 12]),
             RuntimeConfig::default(),
         )
@@ -36418,6 +36981,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "IntraTopic".into(),
                 type_name: "IntraType".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("register reader");
@@ -36447,10 +37011,11 @@ mod tests {
     /// retained sample the same way, and the DATA for remote readers names
     /// the original writer in-line.
     #[test]
-    fn a_sample_written_on_behalf_of_another_writer_is_that_writers() {
+    fn rtps_8_7_9_a_sample_written_on_behalf_of_another_writer_is_that_writers() {
         use zerodds_rtps::wire_types::SequenceNumber;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            17,
+            lease.id(),
             GuidPrefix::from_bytes([0x43; 12]),
             RuntimeConfig::default(),
         )
@@ -36468,6 +37033,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "OnBehalf".into(),
                 type_name: "OnBehalfType".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("register reader");
@@ -36541,10 +37107,11 @@ mod tests {
     /// writer, the marker reaches a reader of the same runtime as that
     /// writer's, under its sequence number, once.
     #[test]
-    fn a_dispose_written_on_behalf_of_another_writer_is_that_writers() {
+    fn rtps_8_7_9_a_dispose_written_on_behalf_of_another_writer_is_that_writers() {
         use zerodds_rtps::wire_types::SequenceNumber;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            17,
+            lease.id(),
             GuidPrefix::from_bytes([0x44; 12]),
             RuntimeConfig::default(),
         )
@@ -36561,6 +37128,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "OnBehalfDispose".into(),
                 type_name: "OnBehalfType".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("register reader");
@@ -36608,6 +37176,7 @@ mod tests {
 
     #[test]
     fn intra_runtime_delivery_advances_the_data_available_detector() {
+        let lease = zerodds_test_domains::lease_domain();
         // The counter `on_data_available` is driven from (vendor spec
         // `zerodds-listener-callbacks-1.1` §6.3) was bumped on the
         // wire-receive path only. A reader fed by a writer in its own
@@ -36616,7 +37185,7 @@ mod tests {
         // stayed quiet. The sample arriving and the counter not moving is the
         // shape of a silent drop, so it is asserted here per delivery.
         let rt = DcpsRuntime::start(
-            18,
+            lease.id(),
             GuidPrefix::from_bytes([0x43; 12]),
             RuntimeConfig::default(),
         )
@@ -36632,6 +37201,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "DetectorTopic".into(),
                 type_name: "DetectorType".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("register reader");
@@ -36667,19 +37237,78 @@ mod tests {
         rt.shutdown();
     }
 
-    /// Bug R4 (#63): the same-runtime writer→reader loopback path
-    /// (`intra_runtime_dispatch_alive`) used to hardcode the XCDR
-    /// data-representation tag = `0`, so a DataWriter and DataReader sharing
-    /// one `DcpsRuntime` lost the writer's real representation. Asserts the
-    /// tag is carried through: the default offer (`[XCDR1]`, whose first
-    /// element is what the writer emits) → `0`, and explicit per-writer
-    /// overrides in each direction → `0` resp. `1`. Also confirms a typed
-    /// sample round-trips intact alongside the tag.
+    /// DDS-XTypes 1.3 Table 60: a writer given a representation identifier
+    /// sends its samples under it — XCDR version, extensibility and byte
+    /// order — for each CDR identifier of the table; XML (`00 04`) names no
+    /// CDR form and is refused.
     #[test]
-    fn intra_runtime_loopback_preserves_representation_tag() {
-        use zerodds_rtps::publication_data::data_representation as dr;
+    fn xtypes_7_6_3_1_2_a_writer_sends_under_the_representation_identifier_it_is_given() {
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(
+            lease.id(),
+            GuidPrefix::from_bytes([0x6a; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start runtime");
+        let writer = rt
+            .register_user_writer(UserWriterConfig {
+                topic_name: "IdTopic".into(),
+                type_name: "IdType".into(),
+                ..Default::default()
+            })
+            .expect("register writer");
+        let (_reader, rx) = rt
+            .register_user_reader(UserReaderConfig {
+                topic_name: "IdTopic".into(),
+                type_name: "IdType".into(),
+                reliable: true,
+                data_representation_offer: Some(alloc::vec![0, 2]),
+                ..Default::default()
+            })
+            .expect("register reader");
+        // CDR_BE, CDR_LE, PL_CDR_BE, PL_CDR_LE, CDR2_BE, CDR2_LE, D_CDR2_BE,
+        // D_CDR2_LE, PL_CDR2_BE, PL_CDR2_LE.
+        for id in [0x00u8, 0x01, 0x02, 0x03, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b] {
+            rt.set_user_writer_representation_identifier(writer, [0x00, id])
+                .expect("a CDR identifier");
+            rt.write_user_sample(writer, alloc::vec![1, 2, 3, 4])
+                .expect("write");
+            match rx
+                .recv_timeout(core::time::Duration::from_millis(500))
+                .expect("the reader gets the sample")
+            {
+                UserSample::Alive {
+                    representation_identifier,
+                    ..
+                } => assert_eq!(representation_identifier, [0x00, id]),
+                other => panic!("expected Alive, got {other:?}"),
+            }
+        }
+        assert!(matches!(
+            rt.set_user_writer_representation_identifier(writer, [0x00, 0x04]),
+            Err(DdsError::BadParameter { .. })
+        ));
+        rt.shutdown();
+    }
 
-        fn run_case(domain: i32, prefix: u8, offer: Option<Vec<i16>>, expected_rep: u8) {
+    /// The same-runtime writer→reader path (`intra_runtime_dispatch_alive`)
+    /// carries no encapsulation header, so the writer's representation
+    /// identifier is threaded through (DDSI-RTPS 2.5 §10.5, Table 10.3;
+    /// DDS-XTypes 1.3 Table 60). Bug R4 (#63): the XCDR version was once a
+    /// constant `0`; the byte order was a constant little endian under a
+    /// writer that wrote big endian.
+    #[test]
+    fn rtps_10_5_a_reader_in_the_writers_runtime_gets_the_writers_representation_identifier() {
+        use zerodds_rtps::publication_data::data_representation as dr;
+        use zerodds_types::qos::ExtensibilityForRepr;
+
+        fn run_case(
+            domain: i32,
+            prefix: u8,
+            offer: Option<Vec<i16>>,
+            (extensibility, big_endian): (ExtensibilityForRepr, bool),
+            expected: [u8; 2],
+        ) {
             let rt = DcpsRuntime::start(
                 domain,
                 GuidPrefix::from_bytes([prefix; 12]),
@@ -36694,67 +37323,79 @@ mod tests {
                     ..Default::default()
                 })
                 .expect("register writer");
+            rt.set_user_writer_wire_extensibility(writer_eid, extensibility)
+                .expect("extensibility");
+            rt.set_user_writer_byte_order_override(writer_eid, big_endian)
+                .expect("byte order");
             let (_reader_eid, rx) = rt
                 .register_user_reader(UserReaderConfig {
                     topic_name: "RepTopic".into(),
                     type_name: "RepType".into(),
+                    reliable: true,
                     ..Default::default()
                 })
                 .expect("register reader");
-
-            // Typed sample: a `struct { long seq; }` XCDR2-aligned body
-            // (little-endian 4-byte long). The intra-runtime path carries the
-            // RAW body (no encap header), so the representation tag is the
-            // only carrier of the wire version — exactly the lost signal.
-            let seq: i32 = 0x0A0B_0C0D;
-            let typed_payload = seq.to_le_bytes().to_vec();
-
-            rt.write_user_sample(writer_eid, typed_payload.clone())
+            let body = 0x0A0B_0C0D_i32.to_be_bytes().to_vec();
+            rt.write_user_sample(writer_eid, body.clone())
                 .expect("write");
-
-            let sample = rx
+            match rx
                 .recv_timeout(core::time::Duration::from_millis(100))
-                .expect("intra-runtime reader should receive sample");
-            match sample {
+                .expect("intra-runtime reader should receive sample")
+            {
                 UserSample::Alive {
                     payload,
                     representation,
+                    big_endian: delivered_big_endian,
+                    representation_identifier,
                     ..
                 } => {
-                    assert_eq!(
-                        representation, expected_rep,
-                        "intra-runtime loopback must carry the writer's XCDR \
-                         version tag (offer→rep), not a hardcoded 0"
-                    );
-                    // Typed round-trip: the recovered body decodes to the
-                    // original long.
-                    assert_eq!(payload.as_ref(), typed_payload.as_slice());
-                    let recovered =
-                        i32::from_le_bytes(payload.as_ref()[..4].try_into().expect("4-byte long"));
-                    assert_eq!(recovered, seq, "typed sample must round-trip");
+                    assert_eq!(representation_identifier, expected);
+                    assert_eq!(representation, u8::from(expected[1] >= 0x06));
+                    assert_eq!(delivered_big_endian, big_endian);
+                    assert_eq!(payload.as_ref(), body.as_slice());
                 }
                 other => panic!("expected Alive, got {other:?}"),
             }
             rt.shutdown();
         }
 
-        // Default offer is `[XCDR1]`, and the writer emits the first
-        // element → tag `0`.
-        run_case(19, 0x60, None, 0);
-        // Explicit per-writer XCDR1 override → tag `0`.
-        run_case(20, 0x61, Some(alloc::vec![dr::XCDR]), 0);
-        // Explicit per-writer XCDR2 override → tag `1` (proves the value is
-        // actually carried from the writer, not constant).
-        run_case(21, 0x62, Some(alloc::vec![dr::XCDR2]), 1);
+        let lease_a = zerodds_test_domains::lease_domain();
+        // The default offer is `[XCDR1]`: CDR_LE.
+        run_case(
+            lease_a.id(),
+            0x60,
+            None,
+            (ExtensibilityForRepr::Final, false),
+            [0x00, 0x01],
+        );
+        let lease_b = zerodds_test_domains::lease_domain();
+        // XCDR1 big endian: CDR_BE.
+        run_case(
+            lease_b.id(),
+            0x61,
+            Some(alloc::vec![dr::XCDR]),
+            (ExtensibilityForRepr::Final, true),
+            [0x00, 0x00],
+        );
+        let lease_c = zerodds_test_domains::lease_domain();
+        // XCDR2 @appendable big endian: D_CDR2_BE.
+        run_case(
+            lease_c.id(),
+            0x62,
+            Some(alloc::vec![dr::XCDR2]),
+            (ExtensibilityForRepr::Appendable, true),
+            [0x00, 0x08],
+        );
     }
 
     #[test]
     fn intra_runtime_loopback_not_matched_on_different_topic() {
+        let lease = zerodds_test_domains::lease_domain();
         // Negative test: writer on TopicA, reader on TopicB — no
         // intra-runtime match, no sample. Prevents the
         // routing table from topic-blindly merging everything.
         let rt = DcpsRuntime::start(
-            18,
+            lease.id(),
             GuidPrefix::from_bytes([0x43; 12]),
             RuntimeConfig::default(),
         )
@@ -36770,6 +37411,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "TopicB".into(),
                 type_name: "TypeB".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("register reader");
@@ -36788,7 +37430,7 @@ mod tests {
     /// writer was announced reaches the wire in a new SEDP sample, and
     /// clearing it announces the writer without it again.
     #[test]
-    fn a_shm_locator_set_after_registration_is_announced() {
+    fn flatdata_10_4_a_shm_locator_set_after_registration_is_announced() {
         fn carries_pid_0x8001(payload: &[u8]) -> bool {
             // PL_CDR_LE after the 4-byte encapsulation header.
             let mut i = 4;
@@ -36841,13 +37483,14 @@ mod tests {
 
     #[test]
     fn runtime_starts_and_shuts_down_cleanly() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            42,
+            lease.id(),
             GuidPrefix::from_bytes([7; 12]),
             RuntimeConfig::default(),
         )
         .expect("start runtime");
-        assert_eq!(rt.domain_id, 42);
+        assert_eq!(rt.domain_id, lease.id());
         // Spec `zerodds-zero-copy-1.0` §6: no same-host channel before SPDP
         // reports a peer on this host.
         #[cfg(feature = "same-host-shm")]
@@ -36876,19 +37519,21 @@ mod tests {
     }
 
     #[test]
-    fn start_refuses_spdp_group_outside_allowlist() {
+    fn rtps_8_5_3_3_start_refuses_spdp_group_outside_allowlist() {
         // Opt-in allowlist that excludes the default SPDP group (239.255.0.1)
         // → start must refuse before it touches any multicast socket.
         let cfg = RuntimeConfig {
             multicast_allowlist: vec![Ipv4Addr::new(239, 1, 1, 1)],
             ..RuntimeConfig::default()
         };
-        let res = DcpsRuntime::start(43, GuidPrefix::from_bytes([9; 12]), cfg);
+        let lease = zerodds_test_domains::lease_domain();
+        let res = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([9; 12]), cfg);
         assert!(matches!(res, Err(DdsError::BadParameter { .. })));
     }
 
     #[test]
-    fn spdp_announces_standard_bits_by_default() {
+    fn rtps_8_5_3_2_spdp_announces_standard_bits_by_default() {
+        let lease = zerodds_test_domains::lease_domain();
         // Default config (without security): standard bits + WLP bits 10/11
         // + TypeLookup bits 12/13 must be announced along;
         // secure bits 16..27 + SEDP-topics bits 28/29 must NOT
@@ -36899,7 +37544,7 @@ mod tests {
         // either.
         let rt = ShutsDown(
             DcpsRuntime::start(
-                5,
+                lease.id(),
                 GuidPrefix::from_bytes([0xC; 12]),
                 RuntimeConfig::default(),
             )
@@ -36929,15 +37574,17 @@ mod tests {
     }
 
     #[test]
-    fn spdp_announces_secure_bits_when_configured() {
+    fn rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured() {
         // With announce_secure_endpoints=true all 12 secure
         // bits (16..27) must be set.
         let config = RuntimeConfig {
             announce_secure_endpoints: true,
             ..Default::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         let rt = ShutsDown(
-            DcpsRuntime::start(6, GuidPrefix::from_bytes([0xD; 12]), config).expect("start"),
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xD; 12]), config)
+                .expect("start"),
         );
         let mask = rt.announced_builtin_endpoint_set();
         for bit in 16u32..=27 {
@@ -36960,8 +37607,10 @@ mod tests {
             participant_lease_duration: Duration::from_secs(17),
             ..Default::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         let rt = ShutsDown(
-            DcpsRuntime::start(7, GuidPrefix::from_bytes([0xE; 12]), config).expect("start"),
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xE; 12]), config)
+                .expect("start"),
         );
         let secs = rt
             .spdp_beacon
@@ -36973,9 +37622,10 @@ mod tests {
 
     #[test]
     fn user_locator_is_udp_v4_127_0_0_x() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = ShutsDown(
             DcpsRuntime::start(
-                0,
+                lease.id(),
                 GuidPrefix::from_bytes([0xA; 12]),
                 RuntimeConfig::default(),
             )
@@ -36989,10 +37639,11 @@ mod tests {
 
     #[test]
     fn two_runtimes_on_same_domain_can_coexist() {
+        let lease = zerodds_test_domains::lease_domain();
         // The SPDP multicast port is SO_REUSE in our bind.
         let a = ShutsDown(
             DcpsRuntime::start(
-                3,
+                lease.id(),
                 GuidPrefix::from_bytes([0xA; 12]),
                 RuntimeConfig::default(),
             )
@@ -37000,7 +37651,7 @@ mod tests {
         );
         let b = ShutsDown(
             DcpsRuntime::start(
-                3,
+                lease.id(),
                 GuidPrefix::from_bytes([0xB; 12]),
                 RuntimeConfig::default(),
             )
@@ -37010,22 +37661,7 @@ mod tests {
     }
 
     #[test]
-    fn peer_capabilities_unknown_peer_returns_none() {
-        let rt = ShutsDown(
-            DcpsRuntime::start(
-                10,
-                GuidPrefix::from_bytes([0x60; 12]),
-                RuntimeConfig::default(),
-            )
-            .expect("start"),
-        );
-        // A fresh runtime has discovered no peer.
-        let caps = rt.peer_capabilities(&GuidPrefix::from_bytes([0xEE; 12]));
-        assert!(caps.is_none());
-    }
-
-    #[test]
-    fn assert_liveliness_enqueues_wlp_pulse_without_panic() {
+    fn dcps_2_2_2_2_1_19_assert_liveliness_enqueues_wlp_pulse_without_panic() {
         // Smoke test: assert_liveliness() must not poison the lock
         // and must return synchronously.
         //
@@ -37040,8 +37676,9 @@ mod tests {
             spdp_multicast_send: false,
             ..RuntimeConfig::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         let rt = ShutsDown(
-            DcpsRuntime::start(8, GuidPrefix::from_bytes([0xF; 12]), cfg).expect("start"),
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xF; 12]), cfg).expect("start"),
         );
         rt.assert_liveliness();
         rt.assert_writer_liveliness(alloc::vec![0xDE, 0xAD]);
@@ -37109,7 +37746,7 @@ mod tests {
     /// unregister of a MANUAL_BY_PARTICIPANT writer send the participant's
     /// ParticipantMessageData; the same calls of an AUTOMATIC writer do not.
     #[test]
-    fn a_manual_by_participant_writer_refreshes_the_participant_liveliness() {
+    fn rtps_8_4_13_5_a_manual_by_participant_writer_refreshes_the_participant_liveliness() {
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             lease.id(),
@@ -37174,7 +37811,7 @@ mod tests {
     /// of the SPDP unicast socket (`d1`, same `PG`): the two ports differ by
     /// `d3 - d1`, and the announced default unicast locator carries it.
     #[test]
-    fn the_user_unicast_socket_takes_the_d3_port_of_its_participant_id() {
+    fn rtps_9_6_2_3_the_user_unicast_socket_takes_the_d3_port_of_its_participant_id() {
         let lease = zerodds_test_domains::lease_domain();
         let mapping = zerodds_rtps::wire_types::PortMapping::default();
         let before = DcpsRuntime::start(
@@ -37202,7 +37839,7 @@ mod tests {
     /// that locator as its default multicast locator; without it, none.
     #[cfg(target_os = "linux")]
     #[test]
-    fn the_user_multicast_port_is_d2_and_announced_unless_turned_off() {
+    fn rtps_9_6_2_2_the_user_multicast_port_is_d2_and_announced_unless_turned_off() {
         assert!(RuntimeConfig::default().user_multicast);
         let lease = zerodds_test_domains::lease_domain();
         let mapping = zerodds_rtps::wire_types::PortMapping::default();
@@ -37248,7 +37885,7 @@ mod tests {
     /// port: with `d3 == d1` the user port of the participant is the port
     /// its SPDP unicast socket holds.
     #[test]
-    fn a_taken_user_port_is_counted_and_the_socket_takes_an_ephemeral_one() {
+    fn rtps_9_6_2_3_a_taken_user_port_is_counted_and_the_socket_takes_an_ephemeral_one() {
         let lease = zerodds_test_domains::lease_domain();
         let cfg = RuntimeConfig {
             port_mapping: zerodds_rtps::wire_types::PortMapping {
@@ -37271,7 +37908,7 @@ mod tests {
     /// DDSI-RTPS 2.5 §9.6.2.3: the port parameters are settings; the SPDP
     /// unicast socket is bound in the range the given PB, DG, d1 and PG give.
     #[test]
-    fn the_spdp_unicast_port_follows_the_configured_port_mapping() {
+    fn rtps_9_6_2_3_the_spdp_unicast_port_follows_the_configured_port_mapping() {
         let mapping = zerodds_rtps::wire_types::PortMapping {
             port_base: 30000,
             domain_gain: 100,
@@ -37297,11 +37934,11 @@ mod tests {
     }
 
     #[test]
-    fn wlp_period_default_is_lease_over_three() {
+    fn rtps_8_4_13_5_wlp_period_default_is_lease_over_three() {
+        let lease = zerodds_test_domains::lease_domain();
         // With the default lease of 100 s → wlp_period = 33.33 s.
         // A domain of its own: a fixed domain 9 was shared with another test
         // of this binary, and the pulse of the other runtime's tick came first.
-        let lease = zerodds_test_domains::lease_domain();
         let rt = ShutsDown(
             DcpsRuntime::start(
                 lease.id(),
@@ -37332,7 +37969,7 @@ mod tests {
     // multicast of the discovery works out of the box; there the test runs.
     #[cfg(target_os = "linux")]
     #[test]
-    fn two_runtimes_exchange_wlp_heartbeat() {
+    fn rtps_8_4_13_two_runtimes_exchange_wlp_heartbeat() {
         // .D-e: A sends periodic WLP heartbeats. B must
         // know its own WLP endpoint with A's prefix as a peer
         // within ~3 tick periods.
@@ -37346,10 +37983,10 @@ mod tests {
             reader_heartbeat_response_delay: Duration::ZERO,
             ..RuntimeConfig::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         // A leased domain: the fixed domain 2 was shared with
         // `two_runtimes_e2e_user_data_match_and_transfer`, and the two ran in
         // parallel (measured: 17 of 30 runs of the `two_runtimes_` tests red).
-        let lease = zerodds_test_domains::lease_domain();
         let _a = ShutsDown(
             DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0x40; 12]), cfg.clone())
                 .expect("a"),
@@ -37402,7 +38039,7 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn two_runtimes_assert_liveliness_reaches_peer() {
+    fn dcps_2_2_2_2_1_19_two_runtimes_assert_liveliness_reaches_peer() {
         // The Manual-By-Participant pulse must arrive at the peer, the
         // last-seen timestamp must reset compared to purely Automatic
         // beats. Since the pulse goes out synchronously on the next
@@ -37416,11 +38053,14 @@ mod tests {
             wlp_period: Duration::from_secs(3600),
             ..RuntimeConfig::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         let a = ShutsDown(
-            DcpsRuntime::start(4, GuidPrefix::from_bytes([0x50; 12]), cfg.clone()).expect("a"),
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0x50; 12]), cfg.clone())
+                .expect("a"),
         );
-        let b =
-            ShutsDown(DcpsRuntime::start(4, GuidPrefix::from_bytes([0x51; 12]), cfg).expect("b"));
+        let b = ShutsDown(
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0x51; 12]), cfg).expect("b"),
+        );
 
         a.assert_liveliness();
         let a_prefix = GuidPrefix::from_bytes([0x50; 12]);
@@ -37444,7 +38084,7 @@ mod tests {
     /// would send; no HEARTBEAT follows.
     #[cfg(target_os = "linux")]
     #[test]
-    fn wait_for_historical_data_times_out_for_a_writer_without_a_heartbeat() {
+    fn dcps_2_2_2_5_3_32_wait_for_historical_data_times_out_for_a_writer_without_a_heartbeat() {
         use crate::dds_type::DdsType;
         use zerodds_discovery::sedp::SedpStack;
         use zerodds_qos::{DurabilityKind, ReliabilityKind};
@@ -37568,7 +38208,8 @@ mod tests {
     /// a SEDP announcement built by hand; no ACKNACK follows.
     #[cfg(target_os = "linux")]
     #[test]
-    fn wait_for_acknowledgments_times_out_for_a_reader_that_does_not_acknowledge() {
+    fn dcps_2_2_2_4_1_12_wait_for_acknowledgments_times_out_for_a_reader_that_does_not_acknowledge()
+    {
         use crate::dds_type::DdsType;
         use zerodds_discovery::sedp::SedpStack;
         use zerodds_qos::ReliabilityKind;
@@ -37687,13 +38328,16 @@ mod tests {
             spdp_period: Duration::from_millis(100),
             ..RuntimeConfig::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         // Own domain, so the test does not collide with the SPDP-only test
         // on domain 0 over the multicast port.
         let a = ShutsDown(
-            DcpsRuntime::start(1, GuidPrefix::from_bytes([0xCC; 12]), cfg.clone()).expect("a"),
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xCC; 12]), cfg.clone())
+                .expect("a"),
         );
-        let b =
-            ShutsDown(DcpsRuntime::start(1, GuidPrefix::from_bytes([0xDD; 12]), cfg).expect("b"));
+        let b = ShutsDown(
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xDD; 12]), cfg).expect("b"),
+        );
 
         // Wait until both see each other via SPDP.
         for _ in 0..40 {
@@ -37818,6 +38462,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "Chatter".into(),
                 type_name: "zerodds::RawBytes".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("rid");
@@ -37949,16 +38594,16 @@ mod tests {
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn two_runtimes_discover_each_other_via_spdp() {
+    fn rtps_8_5_3_1_two_runtimes_discover_each_other_via_spdp() {
         // We use a tight SPDP period so the test does not wait 5 s.
         let cfg = RuntimeConfig {
             tick_period: Duration::from_millis(20),
             spdp_period: Duration::from_millis(100),
             ..RuntimeConfig::default()
         };
+        let lease = zerodds_test_domains::lease_domain();
         // A leased domain: the fixed domain 3 was shared with another test of
         // this binary, and tests run in parallel.
-        let lease = zerodds_test_domains::lease_domain();
         let a = ShutsDown(
             DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xAA; 12]), cfg.clone())
                 .expect("a"),
@@ -37998,10 +38643,10 @@ mod tests {
     /// plain readers none from this path.
     #[cfg(feature = "security")]
     #[test]
-    fn the_secure_discovery_data_reaches_the_secure_readers() {
+    fn security_7_5_1_6_the_secure_discovery_data_reaches_the_secure_readers() {
         use zerodds_rtps::property_list::{WireDataTags, WireProperty};
-        // The datagrams: the secure SPDP writer is not the plain one.
         let lease = zerodds_test_domains::lease_domain();
+        // The datagrams: the secure SPDP writer is not the plain one.
         let rt = DcpsRuntime::start(
             lease.id(),
             GuidPrefix::from_bytes([0xD1; 12]),
@@ -38053,7 +38698,7 @@ mod tests {
     /// silence.
     #[cfg(feature = "security")]
     #[test]
-    fn a_token_for_an_endpoint_this_participant_lacks_is_not_installed() {
+    fn security_7_5_3_4_a_token_for_an_endpoint_this_participant_lacks_is_not_installed() {
         use zerodds_security::generic_message::{ParticipantGenericMessage, class_id};
         use zerodds_security::token::DataHolder;
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
@@ -38068,6 +38713,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "Chatter".into(),
                 type_name: "zerodds::RawBytes".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("reader")
@@ -38119,7 +38765,8 @@ mod tests {
     /// and its HEARTBEAT submessage is not in the clear.
     #[cfg(feature = "security")]
     #[test]
-    fn the_liveliness_heartbeat_of_a_manual_writer_is_protected_like_its_heartbeats() {
+    fn security_7_5_2_the_liveliness_heartbeat_of_a_manual_writer_is_protected_like_its_heartbeats()
+    {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>ENCRYPT</metadata_protection_kind><data_protection_kind>NONE</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
         let writer = rt
@@ -38172,7 +38819,7 @@ mod tests {
     /// The refusal is recorded with its reason.
     #[cfg(feature = "security")]
     #[test]
-    fn a_peer_the_join_access_control_does_not_admit_gets_no_access() {
+    fn security_7_5_13_a_peer_the_join_access_control_does_not_admit_gets_no_access() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>true</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let sink = std::sync::Arc::new(zerodds_foundation::observability::VecSink::new());
         let rt = build_runtime_with_sink(
@@ -38220,7 +38867,7 @@ mod tests {
     /// source and the matched writer as destination.
     #[cfg(feature = "security")]
     #[test]
-    fn volatile_messages_carry_the_fields_of_the_spec() {
+    fn security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec() {
         use zerodds_security::generic_message::{MessageIdentity, class_id};
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><discovery_protection_kind>ENCRYPT</discovery_protection_kind><rtps_protection_kind>ENCRYPT</rtps_protection_kind><topic_access_rules><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>ENCRYPT</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
@@ -38237,6 +38884,7 @@ mod tests {
             .register_user_reader(UserReaderConfig {
                 topic_name: "Chatter".into(),
                 type_name: "zerodds::RawBytes".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("reader");
@@ -38311,7 +38959,7 @@ mod tests {
     /// plain service does not take a secure writer's sample.
     #[cfg(feature = "security")]
     #[test]
-    fn the_secure_type_lookup_service_is_protected_per_submessage() {
+    fn security_6_1_the_secure_type_lookup_service_is_protected_per_submessage() {
         use zerodds_security::authentication::{IdentityHandle, SharedSecretHandle};
         use zerodds_security_crypto::AesGcmCryptoPlugin;
         use zerodds_security_permissions::parse_governance_xml;
@@ -38591,7 +39239,7 @@ mod tests {
     /// `PID_PROPERTY_LIST` of the SPDP data, the others do not; a change goes
     /// out at once; a list the wire cannot carry is refused.
     #[test]
-    fn the_propagated_participant_properties_reach_the_peer() {
+    fn security_7_3_21_the_propagated_participant_properties_reach_the_peer() {
         let property = zerodds_qos::PropertyQosPolicy::new()
             .with("local.only", "1")
             .with_propagated("com.example.shared", "2");
@@ -38691,7 +39339,9 @@ mod tests {
             security_guid_prefix: None,
             ..RuntimeConfig::default()
         };
-        let rt = ShutsDown(DcpsRuntime::start(0, prefix, cfg).expect("start without security"));
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            ShutsDown(DcpsRuntime::start(lease.id(), prefix, cfg).expect("start without security"));
         assert_eq!(rt.guid_prefix, prefix);
     }
 
@@ -38708,7 +39358,8 @@ mod tests {
             security_guid_prefix: None,
             ..RuntimeConfig::default()
         };
-        match DcpsRuntime::start(0, prefix, cfg) {
+        let lease = zerodds_test_domains::lease_domain();
+        match DcpsRuntime::start(lease.id(), prefix, cfg) {
             Err(DdsError::NotAllowedBySecurity { .. }) => {}
             other => panic!("expected NotAllowedBySecurity, got {other:?}"),
         }
@@ -38725,8 +39376,10 @@ mod tests {
             security_guid_prefix: Some(p),
             ..RuntimeConfig::default()
         };
-        let rt =
-            ShutsDown(DcpsRuntime::start(0, p, cfg).expect("start with matching identity prefix"));
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = ShutsDown(
+            DcpsRuntime::start(lease.id(), p, cfg).expect("start with matching identity prefix"),
+        );
         assert_eq!(rt.guid_prefix, p);
     }
 
@@ -38766,8 +39419,9 @@ mod tests {
             security_guid_prefix: Some(GuidPrefix::from_bytes([0xE4; 12])),
             ..RuntimeConfig::default()
         };
-        let rt =
-            DcpsRuntime::start(0, GuidPrefix::from_bytes([0xE4; 12]), cfg).expect("start runtime");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xE4; 12]), cfg)
+            .expect("start runtime");
 
         let wid = rt
             .register_user_writer(UserWriterConfig {
@@ -38977,7 +39631,7 @@ mod tests {
     /// authenticated payload.
     #[cfg(feature = "security")]
     #[test]
-    fn a_writer_gets_the_key_material_of_its_topic_rule() {
+    fn security_10_4_1_2_1_a_writer_gets_the_key_material_of_its_topic_rule() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>Secure*</topic_expression><metadata_protection_kind>NONE</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>NONE</metadata_protection_kind><data_protection_kind>SIGN</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let logger = std::sync::Arc::new(CapturingLogger::default());
         let rt = build_runtime_with(GOV, logger);
@@ -39005,7 +39659,7 @@ mod tests {
     /// DDS-Security 1.2 §7.3.21: only the entries of the PropertyQosPolicy
     /// with `propagate = TRUE` are in the discovery data of an endpoint.
     #[test]
-    fn only_propagated_properties_are_announced() {
+    fn security_7_3_21_only_propagated_properties_are_announced() {
         let property = zerodds_qos::PropertyQosPolicy::new()
             .with("local", "1")
             .with_propagated("shared", "2");
@@ -39025,6 +39679,7 @@ mod tests {
         assert_eq!(data.properties.get("local"), None);
         let reader = UserReaderConfig {
             property,
+            reliable: true,
             ..Default::default()
         };
         let data = build_subscription_data(
@@ -39041,7 +39696,7 @@ mod tests {
     /// DDS-Security 1.2 §7.3.21, §7.5.1.7, §7.5.1.8: the DataTags of an
     /// endpoint are in its discovery data (`PID_DATA_TAGS`).
     #[test]
-    fn data_tags_are_announced() {
+    fn security_7_3_21_data_tags_are_announced() {
         let tags = zerodds_qos::DataTagQosPolicy::new()
             .with("level", "secret")
             .with("owner", "ops");
@@ -39066,6 +39721,7 @@ mod tests {
         assert_eq!(sent, [("level", "secret"), ("owner", "ops")]);
         let reader = UserReaderConfig {
             data_tags: tags,
+            reliable: true,
             ..Default::default()
         };
         let data = build_subscription_data(
@@ -39129,7 +39785,7 @@ mod tests {
     /// under its GUID; the tags of a deleted or departed endpoint are removed.
     #[cfg(feature = "security")]
     #[test]
-    fn the_data_tagging_plugin_holds_the_tags_of_local_and_discovered_endpoints() {
+    fn security_10_1_the_data_tagging_plugin_holds_the_tags_of_local_and_discovered_endpoints() {
         use zerodds_security::data_tagging::DataTaggingPlugin;
         let plugin = std::sync::Arc::new(std::sync::Mutex::new(StampingTagger::default()));
         let shared: std::sync::Arc<std::sync::Mutex<dyn DataTaggingPlugin>> = plugin.clone();
@@ -39188,6 +39844,7 @@ mod tests {
                 topic_name: "Tagged".into(),
                 type_name: "RawBytes".into(),
                 data_tags: tags.clone(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("reader");
@@ -39230,6 +39887,7 @@ mod tests {
                 reid_r,
                 &UserReaderConfig {
                     data_tags: zerodds_qos::DataTagQosPolicy::new().with("origin", "remote"),
+                    reliable: true,
                     ..Default::default()
                 },
                 &[],
@@ -39275,7 +39933,7 @@ mod tests {
     /// they are.
     #[cfg(feature = "security")]
     #[test]
-    fn without_a_data_tagging_plugin_the_qos_tags_are_announced() {
+    fn security_10_1_without_a_data_tagging_plugin_the_qos_tags_are_announced() {
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             lease.id(),
@@ -39313,7 +39971,7 @@ mod tests {
     /// out ("or else until sufficient time has elapsed").
     #[cfg(feature = "security")]
     #[test]
-    fn a_key_revision_is_activated_after_the_acknowledgement_or_the_timeout() {
+    fn security_9_8_9_5_a_key_revision_is_activated_after_the_acknowledgement_or_the_timeout() {
         use crate::recording_crypto::RecordingCrypto;
         use zerodds_rtps::reader_proxy::ReaderProxy;
         use zerodds_security::generic_message::{
@@ -39419,7 +40077,8 @@ mod tests {
     /// it was made (its own `symmetric_cipher_algorithm` is applied again).
     #[cfg(feature = "security")]
     #[test]
-    fn a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints() {
+    fn security_9_3_2_12_2_a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints()
+     {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><enable_key_revision>true</enable_key_revision><topic_access_rules><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>ENCRYPT</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let logger = std::sync::Arc::new(CapturingLogger::default());
         let rt = build_runtime_with(GOV, logger);
@@ -39460,7 +40119,7 @@ mod tests {
     /// plugin returned when it registered the endpoint.
     #[cfg(feature = "security")]
     #[test]
-    fn the_announced_cipher_is_the_algorithm_info_of_the_plugin() {
+    fn security_9_4_2_7_the_announced_cipher_is_the_algorithm_info_of_the_plugin() {
         use zerodds_rtps::security_algo_info::symmetric_bit;
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>ENCRYPT</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let logger = std::sync::Arc::new(CapturingLogger::default());
@@ -39504,7 +40163,7 @@ mod tests {
     /// a revoked identity makes no new revision.
     #[cfg(feature = "security")]
     #[test]
-    fn a_revocation_makes_no_revision_unless_the_governance_enables_it() {
+    fn security_9_4_2_4_a_revocation_makes_no_revision_unless_the_governance_enables_it() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>ENCRYPT</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let logger = std::sync::Arc::new(CapturingLogger::default());
         let rt = build_runtime_with(GOV, logger);
@@ -39522,7 +40181,7 @@ mod tests {
     /// (AES256); a value outside §8.1 refuses the endpoint.
     #[cfg(feature = "security")]
     #[test]
-    fn the_cipher_property_of_an_endpoint_sets_its_key_width() {
+    fn security_7_3_21_the_cipher_property_of_an_endpoint_sets_its_key_width() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>ENCRYPT</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let logger = std::sync::Arc::new(CapturingLogger::default());
         let rt = build_runtime_with(GOV, logger);
@@ -39552,6 +40211,7 @@ mod tests {
                 topic_name: "Chatter".into(),
                 type_name: "zerodds::RawBytes".into(),
                 property,
+                reliable: true,
                 ..Default::default()
             })
         };
@@ -39639,7 +40299,7 @@ mod tests {
     /// refused and recorded; a message under another passphrase is refused.
     #[cfg(feature = "security")]
     #[test]
-    fn a_pre_shared_key_protects_the_bootstrapping_messages() {
+    fn security_9_4_2_4_a_pre_shared_key_protects_the_bootstrapping_messages() {
         use zerodds_security_crypto::psk_rtps::{Passphrase, PskConfig, PskProtection};
         use zerodds_security_runtime::SharedSecurityGate;
         const GOV_ENCRYPT: &str = r#"
@@ -39913,7 +40573,8 @@ mod tests {
             security_logger: Some(logger_dyn),
             ..RuntimeConfig::default()
         };
-        let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([0xE8; 12]), cfg).unwrap();
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xE8; 12]), cfg).unwrap();
         let msg = vec![0xAAu8; 40];
         let out = secure_inbound_bytes(&rt, &msg, &NetInterface::Wan).unwrap();
         assert_eq!(out, msg);
@@ -40145,7 +40806,9 @@ mod tests {
             security_guid_prefix: Some(GuidPrefix::from_bytes([0xF0; 12])),
             ..RuntimeConfig::default()
         };
-        let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([0xF0; 12]), cfg).expect("rt");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0xF0; 12]), cfg).expect("rt");
 
         let wid = rt
             .register_user_writer(UserWriterConfig {
@@ -40310,7 +40973,7 @@ mod tests {
     /// topic that is not read protected, do not hold it.
     #[cfg(feature = "security")]
     #[test]
-    fn a_publisher_partition_stays_with_a_durable_read_protected_writer() {
+    fn security_7_4_5_a_publisher_partition_stays_with_a_durable_read_protected_writer() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>Guarded*</topic_expression><enable_read_access_control>true</enable_read_access_control><enable_write_access_control>false</enable_write_access_control></topic_rule><topic_rule><topic_expression>*</topic_expression><enable_read_access_control>false</enable_read_access_control><enable_write_access_control>false</enable_write_access_control></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
         let writer = |topic: &str, durability| {
@@ -40348,7 +41011,7 @@ mod tests {
     /// The expected digest is RFC 1321 over the octets 00 00 00 05.
     #[cfg(feature = "security")]
     #[test]
-    fn the_key_hash_of_an_encrypted_payload_is_the_md5_of_the_key() {
+    fn security_7_4_4_the_key_hash_of_an_encrypted_payload_is_the_md5_of_the_key() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>Secure*</topic_expression><metadata_protection_kind>NONE</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>NONE</metadata_protection_kind><data_protection_kind>SIGN</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
         let holder = [0u8, 0, 0, 5];
@@ -40458,7 +41121,7 @@ mod tests {
     /// no tokens; the key material of a deleted endpoint is released.
     #[cfg(feature = "security")]
     #[test]
-    fn key_material_exists_for_protected_endpoints_only_and_goes_with_them() {
+    fn security_9_5_1_8_key_material_exists_for_protected_endpoints_only_and_goes_with_them() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>Secret*</topic_expression><metadata_protection_kind>NONE</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>NONE</metadata_protection_kind><data_protection_kind>NONE</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
         let writer = |topic: &str| {
@@ -40492,7 +41155,7 @@ mod tests {
     /// of the secure SPDP writer and not in the plain one.
     #[cfg(feature = "security")]
     #[test]
-    fn the_tokens_of_the_plugins_are_announced_and_token_nil_is_not() {
+    fn security_9_8_1_the_tokens_of_the_plugins_are_announced_and_token_nil_is_not() {
         use zerodds_discovery::SpdpReader;
         use zerodds_security::authentication::AuthenticationPlugin;
         use zerodds_security::mock::MockAuthenticationPlugin;
@@ -40549,7 +41212,7 @@ mod tests {
     /// is asked). The governance here protects nothing.
     #[cfg(feature = "security")]
     #[test]
-    fn the_endpoint_config_of_the_plugin_gives_the_protection_of_an_endpoint() {
+    fn security_9_8_4_the_endpoint_config_of_the_plugin_gives_the_protection_of_an_endpoint() {
         use zerodds_security::access_control::PermissionsHandle;
         use zerodds_security::cryptographic::PLUGIN_ENDPOINT_FLAG_IS_SUBMESSAGE_ENCRYPTED;
         use zerodds_security::mock::MockAccessControlPlugin;
@@ -40617,7 +41280,7 @@ mod tests {
     /// `kx_algo_info` and `sym_cipher_algo_info` (12).
     #[cfg(feature = "security")]
     #[test]
-    fn the_participant_data_follows_steps_6_to_12_of_the_creation() {
+    fn security_9_8_1_the_participant_data_follows_steps_6_to_12_of_the_creation() {
         use zerodds_rtps::participant_security_info::{
             attrs as participant_attrs, plugin_attrs as participant_plugin_attrs,
         };
@@ -40726,7 +41389,7 @@ mod tests {
     /// protection; the endpoints get key material and announce the rule.
     #[cfg(feature = "security")]
     #[test]
-    fn the_endpoints_of_the_log_topics_are_protected_by_the_builtin_rule() {
+    fn security_10_6_the_endpoints_of_the_log_topics_are_protected_by_the_builtin_rule() {
         use zerodds_security::logging::{TOPIC_LOG_TOPIC, TOPIC_LOG_TOPIC_V2};
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>NONE</metadata_protection_kind><data_protection_kind>NONE</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
@@ -40801,7 +41464,7 @@ mod tests {
     /// endpoints loses the hidden identifiers, that of the secure ones does not.
     #[cfg(feature = "security")]
     #[test]
-    fn the_regular_type_lookup_does_not_hand_out_the_types_of_protected_topics() {
+    fn security_9_4_2_6_the_regular_type_lookup_does_not_hand_out_the_types_of_protected_topics() {
         use zerodds_types::TypeIdentifier;
         use zerodds_types::type_identifier::EquivalenceHash;
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><discovery_protection_kind>ENCRYPT</discovery_protection_kind><topic_access_rules><topic_rule><topic_expression>Secret*</topic_expression><enable_discovery_protection>true</enable_discovery_protection></topic_rule><topic_rule><topic_expression>*</topic_expression><enable_discovery_protection>false</enable_discovery_protection></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
@@ -40848,7 +41511,8 @@ mod tests {
     /// learned of the GUID before are dropped from the SEDP cache.
     #[cfg(feature = "security")]
     #[test]
-    fn an_authenticating_participant_displaces_the_unauthenticated_one_with_its_guid() {
+    fn security_9_4_2_4_an_authenticating_participant_displaces_the_unauthenticated_one_with_its_guid()
+     {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>true</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
         let remote = GuidPrefix::from_bytes([0xC7; 12]);
@@ -40890,7 +41554,7 @@ mod tests {
     /// specification; `org.zerodds.sec.compatibility_check=ignore` turns it off.
     #[cfg(feature = "security")]
     #[test]
-    fn participants_with_an_incompatible_configuration_are_not_authenticated() {
+    fn security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated() {
         use zerodds_rtps::participant_security_info::{ParticipantSecurityInfo, plugin_attrs};
         use zerodds_rtps::security_algo_info::{
             AlgorithmRequirements, ParticipantSecurityDigitalSignatureAlgorithmInfo as Sig,
@@ -41026,7 +41690,7 @@ mod tests {
     /// participant supports AES256 only.
     #[cfg(feature = "security")]
     #[test]
-    fn an_endpoint_requires_the_algorithm_its_own_property_names() {
+    fn security_7_3_15_an_endpoint_requires_the_algorithm_its_own_property_names() {
         use zerodds_rtps::security_algo_info::{
             EndpointSecuritySymmetricCipherAlgorithmInfo as Cipher, symmetric_bit,
         };
@@ -41098,7 +41762,7 @@ mod tests {
     /// (§7.3.15.2).
     #[cfg(feature = "security")]
     #[test]
-    fn endpoints_with_an_incompatible_configuration_do_not_match() {
+    fn security_7_3_15_endpoints_with_an_incompatible_configuration_do_not_match() {
         use zerodds_rtps::endpoint_security_info::{EndpointSecurityInfo, attrs, plugin_attrs};
         use zerodds_rtps::security_algo_info::{
             EndpointSecuritySymmetricCipherAlgorithmInfo as Cipher, symmetric_bit,
@@ -41166,7 +41830,7 @@ mod tests {
     /// endpoints, whatever the governance says. A plugin that fails protects.
     #[cfg(feature = "security")]
     #[test]
-    fn the_topic_config_of_the_plugin_chooses_the_secure_sedp() {
+    fn security_9_8_6_the_topic_config_of_the_plugin_chooses_the_secure_sedp() {
         use zerodds_security::access_control::PermissionsHandle;
         use zerodds_security::mock::MockAccessControlPlugin;
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression><enable_discovery_protection>false</enable_discovery_protection></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
@@ -41196,7 +41860,7 @@ mod tests {
     /// the rule of its topic.
     #[cfg(feature = "security")]
     #[test]
-    fn discovery_and_liveliness_follow_the_topic_rule() {
+    fn security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><discovery_protection_kind>ENCRYPT</discovery_protection_kind><liveliness_protection_kind>ENCRYPT</liveliness_protection_kind><topic_access_rules><topic_rule><topic_expression>Secret*</topic_expression><enable_discovery_protection>true</enable_discovery_protection><enable_liveliness_protection>true</enable_liveliness_protection></topic_rule><topic_rule><topic_expression>*</topic_expression><enable_discovery_protection>false</enable_discovery_protection><enable_liveliness_protection>false</enable_liveliness_protection></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let rt = build_runtime_with(GOV, std::sync::Arc::new(CapturingLogger::default()));
         // SEDP: the stack's routing follows the topic of the next operation.
@@ -41243,7 +41907,7 @@ mod tests {
     /// was opened as well.
     #[cfg(feature = "security")]
     #[test]
-    fn a_user_datagram_under_the_kx_key_is_not_opened() {
+    fn security_9_5_1_10_a_user_datagram_under_the_kx_key_is_not_opened() {
         use zerodds_security::authentication::{SharedSecretHandle, SharedSecretProvider};
         use zerodds_security_crypto::{AesGcmCryptoPlugin, Suite};
         use zerodds_security_permissions::parse_governance_xml;
@@ -41308,7 +41972,7 @@ mod tests {
 
     #[cfg(feature = "security")]
     #[test]
-    fn inbound_loopback_plaintext_needs_the_setting() {
+    fn security_9_4_2_4_inbound_loopback_plaintext_needs_the_setting() {
         // Plaintext on a protected domain is refused on loopback as on any
         // interface, unless `org.zerodds.sec.plaintext_loopback` allows it: the
         // governance asks for protection, and a loopback packet is no
@@ -41493,11 +42157,12 @@ mod tests {
     #[cfg(feature = "security")]
     #[test]
     fn per_target_without_security_gate_is_passthrough() {
+        let lease = zerodds_test_domains::lease_domain();
         // Without a `security` config in RuntimeConfig, the per-target
         // path is a pure passthrough. Important so that we do not
         // break the v1.4 backward compat.
         let rt = DcpsRuntime::start(
-            0,
+            lease.id(),
             GuidPrefix::from_bytes([0xE5; 12]),
             RuntimeConfig::default(),
         )
@@ -41559,9 +42224,10 @@ mod tests {
     }
 
     #[test]
-    fn handle_spdp_datagram_pushes_into_builtin_participant_reader() {
+    fn dcps_2_2_5_handle_spdp_datagram_pushes_into_builtin_participant_reader() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            41,
+            lease.id(),
             GuidPrefix::from_bytes([0x21; 12]),
             RuntimeConfig::default(),
         )
@@ -41608,13 +42274,10 @@ mod tests {
             if !is_flag {
                 continue;
             }
-            assert_eq!(config(path, "true"), config(path, "1"), "{path}=true");
-            assert_eq!(config(path, "false"), config(path, "0"), "{path}=false");
-            assert_ne!(
-                config(path, "1"),
-                config(path, "0"),
-                "{path} changes nothing"
-            );
+            let (one, zero) = (config(path, "1"), config(path, "0"));
+            assert_eq!(config(path, "true"), one, "{path}=true");
+            assert_eq!(config(path, "false"), zero, "{path}=false");
+            assert_ne!(one, zero, "{path} changes nothing");
             checked += 1;
         }
         assert!(checked > 10, "{checked}");
@@ -41623,7 +42286,7 @@ mod tests {
     /// DDSI-RTPS 2.5 §8.5.3.2: only a participant with the same domain tag
     /// is discovered; the untagged beacon is the empty tag.
     #[test]
-    fn a_participant_of_another_domain_tag_is_not_discovered() {
+    fn dcps_2_2_2_2_1_a_participant_of_another_domain_tag_is_not_discovered() {
         let beacon = |prefix: GuidPrefix, tag: &str| {
             let mut data = zerodds_discovery::SpdpReader::new()
                 .parse_datagram(&make_remote_spdp_beacon(prefix))
@@ -41638,7 +42301,9 @@ mod tests {
             domain_tag: "plant-a".into(),
             ..RuntimeConfig::default()
         };
-        let rt = DcpsRuntime::start(43, GuidPrefix::from_bytes([0x23; 12]), config).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0x23; 12]), config)
+            .expect("start");
         let same = GuidPrefix::from_bytes([0x91; 12]);
         let other = GuidPrefix::from_bytes([0x92; 12]);
         let untagged = GuidPrefix::from_bytes([0x93; 12]);
@@ -41662,7 +42327,7 @@ mod tests {
     /// discovered and is counted; an announcement without the parameter
     /// is taken as ours, as Cyclone DDS 11.0.1 does.
     #[test]
-    fn a_participant_of_another_domain_id_is_not_discovered() {
+    fn dcps_2_2_2_2_1_a_participant_of_another_domain_id_is_not_discovered() {
         let lease = zerodds_test_domains::lease_domain();
         let own = lease.id();
         let beacon = |prefix: GuidPrefix, domain: Option<u32>| {
@@ -41710,7 +42375,7 @@ mod tests {
     /// collision; a beacon with its prefix and other locators is, and is
     /// counted instead of being dropped as its own.
     #[test]
-    fn a_beacon_with_the_own_prefix_from_another_participant_is_counted() {
+    fn rtps_8_2_4_2_a_beacon_with_the_own_prefix_from_another_participant_is_counted() {
         let lease = zerodds_test_domains::lease_domain();
         let prefix = GuidPrefix::from_bytes([0x25; 12]);
         let rt = DcpsRuntime::start(lease.id(), prefix, RuntimeConfig::default()).expect("start");
@@ -41742,7 +42407,7 @@ mod tests {
     /// came from and what the sender announced, so that the next one
     /// shows how it arrived.
     #[test]
-    fn a_beacon_of_another_domain_is_named_once_per_sender() {
+    fn rtps_8_5_5_1_a_beacon_of_another_domain_is_named_once_per_sender() {
         use zerodds_foundation::observability::VecSink;
         let lease = zerodds_test_domains::lease_domain();
         let own = lease.id();
@@ -41875,7 +42540,7 @@ mod tests {
     /// value answers only what the peer announced. Both keep the announced
     /// locators, because the second target is additive.
     #[test]
-    fn the_spdp_response_axis_decides_the_targets() {
+    fn rtps_8_5_3_1_the_spdp_response_axis_decides_the_targets() {
         use zerodds_rtps::dialect::SpdpResponseTargets;
         let announced = Locator::udp_v4([127, 0, 0, 1], 7501);
         // The address a beacon arrived from. OpenDDS 3.34 is reached here and
@@ -41944,6 +42609,7 @@ mod tests {
         use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
         use zerodds_rtps::dialect::RtpsDialect;
 
+        let lease = zerodds_test_domains::lease_domain();
         // (key_flag, carries PID_KEY_HASH) of the dispose one runtime sends.
         let form_of = |dialect: Option<RtpsDialect>| -> (bool, bool) {
             let local = GuidPrefix::from_bytes([0x51; 12]);
@@ -41955,7 +42621,7 @@ mod tests {
                 },
                 None => RuntimeConfig::default(),
             };
-            let rt = DcpsRuntime::start(50, local, cfg).expect("start");
+            let rt = DcpsRuntime::start(lease.id(), local, cfg).expect("start");
             let deleted = Guid::new(local, EntityId::user_reader_with_key([1, 2, 3]));
             // A peer with the subscriptions-detector bit gives our
             // subscriptions writer a ReaderProxy — the same path a live
@@ -41981,7 +42647,7 @@ mod tests {
                                 d.key_flag,
                                 d.inline_qos
                                     .as_ref()
-                                    .and_then(zerodds_rtps::inline_qos::find_key_hash)
+                                    .and_then(zerodds_rtps::inline_qos::InlineQos::key_hash)
                                     .is_some(),
                             ))
                         } else {
@@ -42051,7 +42717,7 @@ mod tests {
     /// participants only; the others, a participant index nobody holds yet
     /// among them, stay initial-peer targets.
     #[test]
-    fn an_initial_peer_a_discovered_participant_covers_is_left_to_the_fan_out() {
+    fn rtps_8_5_3_1_an_initial_peer_a_discovered_participant_covers_is_left_to_the_fan_out() {
         let initial = [
             Locator::udp_v4([127, 0, 0, 1], 7410),
             Locator::udp_v4([127, 0, 0, 1], 7412),
@@ -42067,9 +42733,10 @@ mod tests {
     }
 
     #[test]
-    fn handle_spdp_datagram_skips_self_beacon() {
+    fn dcps_2_2_5_handle_spdp_datagram_skips_self_beacon() {
         let prefix = GuidPrefix::from_bytes([0x22; 12]);
-        let rt = DcpsRuntime::start(42, prefix, RuntimeConfig::default()).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), prefix, RuntimeConfig::default()).expect("start");
         let bs = crate::builtin_subscriber::BuiltinSubscriber::new();
         rt.attach_builtin_sinks(bs.sinks());
 
@@ -42093,8 +42760,9 @@ mod tests {
         use crate::builtin_topics as bt;
         use zerodds_discovery::sedp::SedpEvents;
         use zerodds_qos::{LivelinessQosPolicy, ReliabilityQosPolicy};
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            43,
+            lease.id(),
             GuidPrefix::from_bytes([0x23; 12]),
             RuntimeConfig::default(),
         )
@@ -42168,8 +42836,9 @@ mod tests {
         use crate::builtin_topics as bt;
         use zerodds_discovery::sedp::SedpEvents;
         use zerodds_qos::{LivelinessQosPolicy, ReliabilityQosPolicy};
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            44,
+            lease.id(),
             GuidPrefix::from_bytes([0x24; 12]),
             RuntimeConfig::default(),
         )
@@ -42242,30 +42911,15 @@ mod tests {
         rt.shutdown();
     }
 
-    #[test]
-    fn push_sedp_events_to_builtin_readers_is_noop_without_sinks() {
-        use zerodds_discovery::sedp::SedpEvents;
-        let rt = DcpsRuntime::start(
-            45,
-            GuidPrefix::from_bytes([0x25; 12]),
-            RuntimeConfig::default(),
-        )
-        .expect("start");
-        // No attach_builtin_sinks → push must stay silent, not
-        // panic.
-        let events = SedpEvents::default();
-        push_sedp_events_to_builtin_readers(&rt, &events);
-        rt.shutdown();
-    }
-
     // ----  Ignore-Filter im Discovery-Hot-Path -------------
 
     #[test]
-    fn handle_spdp_datagram_drops_ignored_participant_beacon() {
+    fn dcps_2_2_2_2_1_14_handle_spdp_datagram_drops_ignored_participant_beacon() {
+        let lease = zerodds_test_domains::lease_domain();
         // Spec §2.2.2.2.1.14: a once-ignored participant
         // no longer appears in any subsequent builtin sample.
         let rt = DcpsRuntime::start(
-            46,
+            lease.id(),
             GuidPrefix::from_bytes([0x26; 12]),
             RuntimeConfig::default(),
         )
@@ -42300,12 +42954,13 @@ mod tests {
     }
 
     #[test]
-    fn sedp_event_push_filters_ignored_publication() {
+    fn dcps_2_2_2_2_1_14_sedp_event_push_filters_ignored_publication() {
         use crate::builtin_topics as bt;
         use zerodds_discovery::sedp::SedpEvents;
         use zerodds_qos::{LivelinessQosPolicy, ReliabilityQosPolicy};
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            47,
+            lease.id(),
             GuidPrefix::from_bytes([0x27; 12]),
             RuntimeConfig::default(),
         )
@@ -42387,12 +43042,13 @@ mod tests {
     }
 
     #[test]
-    fn sedp_event_push_filters_ignored_subscription() {
+    fn dcps_2_2_2_2_1_17_sedp_event_push_filters_ignored_subscription() {
         use crate::builtin_topics as bt;
         use zerodds_discovery::sedp::SedpEvents;
         use zerodds_qos::{LivelinessQosPolicy, ReliabilityQosPolicy};
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            48,
+            lease.id(),
             GuidPrefix::from_bytes([0x28; 12]),
             RuntimeConfig::default(),
         )
@@ -42466,7 +43122,7 @@ mod tests {
     }
 
     #[test]
-    fn sedp_event_push_drops_the_publications_of_an_ignored_topic() {
+    fn dcps_2_2_2_2_1_15_sedp_event_push_drops_the_publications_of_an_ignored_topic() {
         // DDS 1.4 §2.2.2.2.1.15 ignore_topic: the Service "will locally
         // ignore any publication or subscription to the Topic" — neither
         // the DCPSPublication sample nor the synthetic DCPSTopic sample is
@@ -42474,8 +43130,9 @@ mod tests {
         use crate::builtin_topics as bt;
         use zerodds_discovery::sedp::SedpEvents;
         use zerodds_qos::{LivelinessQosPolicy, ReliabilityQosPolicy};
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            49,
+            lease.id(),
             GuidPrefix::from_bytes([0x29; 12]),
             RuntimeConfig::default(),
         )
@@ -42641,7 +43298,7 @@ mod tests {
     }
 
     #[test]
-    fn wlp_unicast_targets_prefers_metatraffic_then_default() {
+    fn rtps_8_4_13_1_wlp_unicast_targets_prefers_metatraffic_then_default() {
         // M-2: the WLP unicast fan-out selects per-peer metatraffic_unicast (preferred),
         // otherwise default_unicast; peers without a routable locator fall out.
         let meta = Locator::udp_v4([127, 0, 0, 1], 7501);
@@ -42895,7 +43552,7 @@ mod tests {
     /// test body, because each `DcpsRuntime::start` binds a multicast socket
     /// and parallel tests could brush against the OS resource caps.
     #[test]
-    fn c34c_security_builtin_wiring_end_to_end() {
+    fn security_9_8_3_1_c34c_security_builtin_wiring_end_to_end() {
         use zerodds_discovery::security::SecurityBuiltinStack;
         use zerodds_security::generic_message::{
             MessageIdentity, ParticipantGenericMessage, class_id,
@@ -42903,7 +43560,9 @@ mod tests {
         use zerodds_security::token::DataHolder;
 
         let local_prefix = GuidPrefix::from_bytes([0x75; 12]);
-        let rt = DcpsRuntime::start(75, local_prefix, RuntimeConfig::default()).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            DcpsRuntime::start(lease.id(), local_prefix, RuntimeConfig::default()).expect("start");
 
         // 1. Snapshot is None before enable
         assert!(rt.security_builtin_snapshot().is_none());
@@ -42989,11 +43648,13 @@ mod tests {
     /// the auth-less `enable_security_builtins`).
     #[cfg(feature = "security")]
     #[test]
-    fn enable_security_builtins_with_auth_activates_handshake_driver() {
+    fn security_2_3_enable_security_builtins_with_auth_activates_handshake_driver() {
         use zerodds_security::authentication::{AuthenticationPlugin, IdentityHandle};
 
         let local_prefix = GuidPrefix::from_bytes([0x40; 12]);
-        let rt = DcpsRuntime::start(40, local_prefix, RuntimeConfig::default()).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            DcpsRuntime::start(lease.id(), local_prefix, RuntimeConfig::default()).expect("start");
 
         let auth: Arc<Mutex<dyn AuthenticationPlugin>> = Arc::new(Mutex::new(FakeAuth));
         let stack =
@@ -43034,7 +43695,7 @@ mod tests {
     /// of the governance); what the plugins require stays as it is.
     #[cfg(feature = "security")]
     #[test]
-    fn the_allowed_algorithms_cut_the_announced_ones() {
+    fn security_9_4_2_4_the_allowed_algorithms_cut_the_announced_ones() {
         use zerodds_security::access_control::{
             CryptoAlgorithmRequirements as Req, DigitalSignatureAlgorithmInfo,
             KeyEstablishmentAlgorithmInfo, ParticipantSecurityAlgorithmInfo,
@@ -43099,7 +43760,7 @@ mod tests {
     /// (§9.4.2.9.17), of the class `DDS:Access:Permissions:1.2`.
     #[cfg(feature = "security")]
     #[test]
-    fn the_participant_security_info_is_the_config_of_the_access_control_plugin() {
+    fn security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin() {
         use zerodds_rtps::participant_security_info::{attrs, opt_attrs, plugin_attrs};
         use zerodds_security::authentication::{AuthenticationPlugin, IdentityHandle};
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>true</enable_join_access_control><enable_key_revision>true</enable_key_revision><discovery_protection_kind>ENCRYPT</discovery_protection_kind><liveliness_protection_kind>SIGN_WITH_ORIGIN_AUTHENTICATION</liveliness_protection_kind><rtps_protection_kind>ENCRYPT</rtps_protection_kind><rtps_psk_protection_kind>ENCRYPT</rtps_psk_protection_kind><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
@@ -43157,11 +43818,13 @@ mod tests {
     /// Auth-Handshake an (Discovery-Trigger).
     #[cfg(feature = "security")]
     #[test]
-    fn spdp_beacon_announces_identity_token_and_discovery_triggers_handshake() {
+    fn security_7_5_1_6_spdp_beacon_announces_identity_token_and_discovery_triggers_handshake() {
         use zerodds_security::authentication::{AuthenticationPlugin, IdentityHandle};
 
         let local_prefix = GuidPrefix::from_bytes([0x41; 12]);
-        let rt = DcpsRuntime::start(41, local_prefix, RuntimeConfig::default()).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt =
+            DcpsRuntime::start(lease.id(), local_prefix, RuntimeConfig::default()).expect("start");
         let auth: Arc<Mutex<dyn AuthenticationPlugin>> = Arc::new(Mutex::new(FakeAuth));
         let stack =
             rt.enable_security_builtins_with_auth(VendorId::ZERODDS, auth, IdentityHandle(1));
@@ -43248,8 +43911,11 @@ mod tests {
 
         let a_prefix = GuidPrefix::from_bytes([0x4A; 12]);
         let b_prefix = GuidPrefix::from_bytes([0x4B; 12]);
-        let rt_a = DcpsRuntime::start(47, a_prefix, RuntimeConfig::default()).expect("start a");
-        let rt_b = DcpsRuntime::start(47, b_prefix, RuntimeConfig::default()).expect("start b");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt_a =
+            DcpsRuntime::start(lease.id(), a_prefix, RuntimeConfig::default()).expect("start a");
+        let rt_b =
+            DcpsRuntime::start(lease.id(), b_prefix, RuntimeConfig::default()).expect("start b");
         let auth_a: Arc<Mutex<dyn AuthenticationPlugin>> = Arc::new(Mutex::new(FakeAuth));
         let auth_b: Arc<Mutex<dyn AuthenticationPlugin>> = Arc::new(Mutex::new(FakeAuth));
         let stack_a =
@@ -43279,7 +43945,7 @@ mod tests {
     /// without an observation time, so its lease never ran out: a participant
     /// of the process that ended without notice stayed discovered and its
     /// writers matched (measured: `liveliness_qos::linux::
-    /// a_writer_lost_with_its_participant_counts_as_not_alive`, 7 of 100 runs
+    /// dcps_2_2_4_1_a_writer_lost_with_its_participant_counts_as_not_alive`, 7 of 100 runs
     /// on a loaded host). Here A announces nothing and B sends no multicast,
     /// so A knows B from the in-process path alone.
     #[test]
@@ -43441,7 +44107,7 @@ mod tests {
     /// reply/final → completion) in the real runtime context.
     #[cfg(feature = "security")]
     #[test]
-    fn handshake_completes_through_runtime_dispatch_e2e() {
+    fn security_7_5_4_2_handshake_completes_through_runtime_dispatch_e2e() {
         use zerodds_discovery::security::SecurityBuiltinStack;
         use zerodds_security::authentication::AuthenticationPlugin;
         use zerodds_security_pki::{IdentityConfig, PkiAuthenticationPlugin};
@@ -43471,7 +44137,8 @@ mod tests {
             )
             .unwrap();
         let a_token = a_pki.lock().unwrap().get_identity_token(a_local).unwrap();
-        let rt = DcpsRuntime::start(42, a_prefix, RuntimeConfig::default()).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), a_prefix, RuntimeConfig::default()).expect("start");
         let a_auth: Arc<Mutex<dyn AuthenticationPlugin>> = a_pki.clone();
         let a_stack = rt.enable_security_builtins_with_auth(VendorId::ZERODDS, a_auth, a_local);
 
@@ -43571,7 +44238,7 @@ mod tests {
     /// unauthenticated and not authenticated again.
     #[cfg(feature = "security")]
     #[test]
-    fn a_revoked_identity_ends_the_authentication_through_the_runtime_tick() {
+    fn security_9_3_2_12_a_revoked_identity_ends_the_authentication_through_the_runtime_tick() {
         use zerodds_discovery::security::SecurityBuiltinStack;
         use zerodds_discovery::security::stack::{PeerAuthentication, UnauthenticatedReason};
         use zerodds_security::authentication::AuthenticationPlugin;
@@ -43595,7 +44262,8 @@ mod tests {
             )
             .unwrap();
         let a_token = a_pki.lock().unwrap().get_identity_token(a_local).unwrap();
-        let rt = DcpsRuntime::start(43, a_prefix, RuntimeConfig::default()).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), a_prefix, RuntimeConfig::default()).expect("start");
         let a_auth: Arc<Mutex<dyn AuthenticationPlugin>> = a_pki.clone();
         let a_stack = rt.enable_security_builtins_with_auth(VendorId::ZERODDS, a_auth, a_local);
 
@@ -43705,7 +44373,8 @@ mod tests {
             observability: sink.clone(),
             ..RuntimeConfig::default()
         };
-        let rt = DcpsRuntime::start(42, a_prefix, config).expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = DcpsRuntime::start(lease.id(), a_prefix, config).expect("start");
         let a_auth: Arc<Mutex<dyn AuthenticationPlugin>> = a_pki.clone();
         let _a_stack = rt.enable_security_builtins_with_auth(VendorId::ZERODDS, a_auth, a_local);
 
@@ -43946,7 +44615,7 @@ mod tests {
     /// the SPDP announcement, before any authentication.
     #[cfg(feature = "security")]
     #[test]
-    fn the_sedp_of_a_peer_is_matched_once_it_authenticated() {
+    fn security_9_4_2_4_the_sedp_of_a_peer_is_matched_once_it_authenticated() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><enable_join_access_control>false</enable_join_access_control><allow_unauthenticated_participants>FALSE</allow_unauthenticated_participants><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let (before, after) = sedp_matched_before_and_after_authentication(GOV);
         assert_eq!(
@@ -43962,7 +44631,7 @@ mod tests {
     /// endpoints only; the secure ones follow its authentication.
     #[cfg(feature = "security")]
     #[test]
-    fn an_unauthenticated_peer_gets_the_regular_sedp_only() {
+    fn security_9_4_2_4_an_unauthenticated_peer_gets_the_regular_sedp_only() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><enable_join_access_control>false</enable_join_access_control><allow_unauthenticated_participants>TRUE</allow_unauthenticated_participants><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let (before, after) = sedp_matched_before_and_after_authentication(GOV);
         assert_eq!(before, (true, false), "the regular SEDP only");
@@ -43984,7 +44653,7 @@ mod tests {
     /// the secure ones are not matched.
     #[cfg(feature = "security")]
     #[test]
-    fn unauthenticated_participants_get_the_regular_builtin_endpoints_only() {
+    fn security_9_8_3_1_unauthenticated_participants_get_the_regular_builtin_endpoints_only() {
         assert_eq!(
             sedp_matched_with_peer(GOV_UNAUTH, PeerKind::NoSecurity),
             ((true, false), (true, false)),
@@ -44005,7 +44674,7 @@ mod tests {
     /// matched, before and after the attempt.
     #[cfg(feature = "security")]
     #[test]
-    fn unauthenticated_participants_are_rejected_where_they_are_not_allowed() {
+    fn security_9_8_3_2_unauthenticated_participants_are_rejected_where_they_are_not_allowed() {
         assert_eq!(
             sedp_matched_with_peer(GOV_AUTH_ONLY, PeerKind::NoSecurity),
             ((false, false), (false, false)),
@@ -44027,7 +44696,7 @@ mod tests {
     /// permissions, and its endpoints stay matched.
     #[cfg(feature = "security")]
     #[test]
-    fn an_unauthenticated_participant_is_not_checked_for_permissions() {
+    fn security_9_8_7_an_unauthenticated_participant_is_not_checked_for_permissions() {
         use zerodds_security::authentication::AuthenticationPlugin;
         use zerodds_security::mock::MockAuthenticationPlugin;
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>TRUE</allow_unauthenticated_participants><enable_join_access_control>TRUE</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
@@ -44090,7 +44759,8 @@ mod tests {
     /// try to match"), whichever of the two it is.
     #[cfg(feature = "security")]
     #[test]
-    fn a_participant_that_is_not_authenticated_gets_no_endpoint_on_a_protected_topic() {
+    fn security_9_8_8_1_a_participant_that_is_not_authenticated_gets_no_endpoint_on_a_protected_topic()
+     {
         use zerodds_security::authentication::AuthenticationPlugin;
         use zerodds_security::mock::MockAuthenticationPlugin;
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>TRUE</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>Guarded*</topic_expression><enable_read_access_control>TRUE</enable_read_access_control><enable_write_access_control>TRUE</enable_write_access_control></topic_rule><topic_rule><topic_expression>ReadGuarded*</topic_expression><enable_read_access_control>TRUE</enable_read_access_control><enable_write_access_control>FALSE</enable_write_access_control></topic_rule><topic_rule><topic_expression>*</topic_expression><enable_read_access_control>FALSE</enable_read_access_control><enable_write_access_control>FALSE</enable_write_access_control></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
@@ -44251,7 +44921,7 @@ mod tests {
     /// and the partitions, and matched only where the plugin permits.
     #[cfg(feature = "security")]
     #[test]
-    fn the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only() {
+    fn security_9_8_4_the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only() {
         use zerodds_security::access_control::PermissionsHandle;
         use zerodds_security::authentication::{
             AuthenticationPlugin, IdentityHandle, SharedSecretHandle,
@@ -44434,7 +45104,7 @@ mod tests {
     #[cfg(feature = "security")]
     #[test]
     #[serial_test::serial(dcps_security_e2e)]
-    fn secured_data_round_trips_through_runtime_dispatch_e2e() {
+    fn security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e() {
         use zerodds_discovery::security::SecurityBuiltinStack;
         use zerodds_security::authentication::{AuthenticationPlugin, SharedSecretProvider};
         use zerodds_security::generic_message::{
@@ -44501,8 +45171,9 @@ mod tests {
             .unwrap();
         let a_token = pki_a.lock().unwrap().get_identity_token(a_local).unwrap();
         let gate_a = Arc::new(gate_with(&pki_a));
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            43,
+            lease.id(),
             a_prefix,
             RuntimeConfig {
                 security: Some(gate_a.clone()),
@@ -44673,21 +45344,21 @@ mod tests {
             let parsed = zerodds_rtps::datagram::decode_datagram(&vol_plain).unwrap();
             let vol_src = parsed.header.guid_prefix;
             for frame in parsed.submessages {
-                if let zerodds_rtps::datagram::ParsedSubmessage::Data(d) = frame.submessage {
-                    if d.reader_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER {
-                        for m in stack_b.volatile_reader.handle_data(vol_src, &d).unwrap() {
-                            if m.message_class_id == class_id::PARTICIPANT_CRYPTO_TOKENS {
-                                // plaintext keymat (confidentiality was provided by the SEC_*
-                                // protection of the volatile DATA, decrypted above) —
-                                // install directly, no transform_kx_inbound.
-                                let token = m.message_data[0]
-                                    .binary_property(CRYPTO_TOKEN_PROP)
-                                    .unwrap();
-                                gate_b
-                                    .set_remote_data_token_by_guid(&a_key_pk, token)
-                                    .unwrap();
-                                b_installed += 1;
-                            }
+                if let zerodds_rtps::datagram::ParsedSubmessage::Data(d) = frame.submessage
+                    && d.reader_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER
+                {
+                    for m in stack_b.volatile_reader.handle_data(vol_src, &d).unwrap() {
+                        if m.message_class_id == class_id::PARTICIPANT_CRYPTO_TOKENS {
+                            // plaintext keymat (confidentiality was provided by the SEC_*
+                            // protection of the volatile DATA, decrypted above) —
+                            // install directly, no transform_kx_inbound.
+                            let token = m.message_data[0]
+                                .binary_property(CRYPTO_TOKEN_PROP)
+                                .unwrap();
+                            gate_b
+                                .set_remote_data_token_by_guid(&a_key_pk, token)
+                                .unwrap();
+                            b_installed += 1;
                         }
                     }
                 }
@@ -44801,12 +45472,13 @@ mod tests {
 
     #[test]
     fn c34c_enable_security_builtins_replays_known_peers() {
+        let lease = zerodds_test_domains::lease_domain();
         // Order reversed: SPDP discovery first, plugin-
         // activation afterward. enable_security_builtins must catch up on already-
         // known peers. Plus: demux without a plugin (before enable)
         // is a no-op + does not panic.
         let rt = DcpsRuntime::start(
-            76,
+            lease.id(),
             GuidPrefix::from_bytes([0x76; 12]),
             RuntimeConfig::default(),
         )
@@ -44840,7 +45512,7 @@ mod tests {
     /// peer as "done".
     #[cfg(feature = "security")]
     #[test]
-    fn pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent() {
+    fn security_7_5_4_6_2_pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent() {
         use zerodds_security::generic_message::ParticipantGenericMessage;
         // An early-sent builtin token (secure-SEDP) ...
         let builtin = ParticipantGenericMessage {
@@ -44880,8 +45552,9 @@ mod tests {
     /// and rejected the match with TYPE_CONSISTENCY_ENFORCEMENT.
     #[test]
     fn qt_same_complete_type_identifier_matches_and_exchanges() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            60,
+            lease.id(),
             GuidPrefix::from_bytes([0x60; 12]),
             RuntimeConfig::default(),
         )
@@ -44960,9 +45633,10 @@ mod tests {
     /// has to be the identifier the endpoint itself advertises, or the
     /// endpoint would name two different types in one announcement.
     #[test]
-    fn issue42_publication_announces_standard_type_information() {
+    fn xtypes_7_6_3_2_1_issue42_publication_announces_standard_type_information() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            64,
+            lease.id(),
             GuidPrefix::from_bytes([0x64; 12]),
             RuntimeConfig::default(),
         )
@@ -45023,9 +45697,10 @@ mod tests {
     /// the assignability check (XTypes 1.3 §7.6.3.4) and can only run it on
     /// a reader that declared its type.
     #[test]
-    fn issue42_subscription_announces_standard_type_information() {
+    fn xtypes_7_6_3_2_1_issue42_subscription_announces_standard_type_information() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            65,
+            lease.id(),
             GuidPrefix::from_bytes([0x65; 12]),
             RuntimeConfig::default(),
         )
@@ -45065,10 +45740,11 @@ mod tests {
     /// none before: its identifier is not a hash and nothing in the
     /// registry answered for it.
     #[test]
-    fn a_recursive_topic_type_announces_the_type_information_of_its_component() {
+    fn xtypes_7_6_3_2_1_a_recursive_topic_type_announces_the_type_information_of_its_component() {
         use zerodds_types::type_identifier::kinds::{EK_COMPLETE, EK_MINIMAL};
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            67,
+            lease.id(),
             GuidPrefix::from_bytes([0x67; 12]),
             RuntimeConfig::default(),
         )
@@ -45165,8 +45841,9 @@ mod tests {
     /// whole announcement, not just its type identity.
     #[test]
     fn issue42_a_type_without_a_type_object_announces_no_type_information() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            66,
+            lease.id(),
             GuidPrefix::from_bytes([0x66; 12]),
             RuntimeConfig::default(),
         )
@@ -45205,9 +45882,10 @@ mod tests {
     /// built out of the registry, so a hash with no object behind it has no
     /// sizes and no minimal counterpart to state.
     #[test]
-    fn issue42_an_unregistered_hash_announces_no_type_information() {
+    fn xtypes_7_6_3_2_1_issue42_an_unregistered_hash_announces_no_type_information() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            67,
+            lease.id(),
             GuidPrefix::from_bytes([0x67; 12]),
             RuntimeConfig::default(),
         )
@@ -45233,8 +45911,9 @@ mod tests {
     #[test]
     fn gap2_structural_evolution_matches_via_populated_registry() {
         use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            63,
+            lease.id(),
             GuidPrefix::from_bytes([0x63; 12]),
             RuntimeConfig::default(),
         )
@@ -45346,7 +46025,7 @@ mod tests {
     /// Real UDP child processes: hard death cannot send endpoint disposals and
     /// the second process deliberately reuses its GUID and sequence number one.
     #[test]
-    fn participant_lease_lifecycle_hard_death_and_same_prefix() {
+    fn rtps_8_5_3_3_participant_lease_lifecycle_hard_death_and_same_prefix() {
         const CHILD: &str = "ZERODDS_TEST_LEASE_CHILD";
         const DOMAIN: &str = "ZERODDS_TEST_LEASE_DOMAIN";
         const TOPIC: &str = "ParticipantLeaseLifecycle";
@@ -45395,7 +46074,7 @@ mod tests {
                 std::process::Command::new(std::env::current_exe().expect("test executable"))
                     .args([
                         "--exact",
-                        "runtime::tests::participant_lease_lifecycle_hard_death_and_same_prefix",
+                        "runtime::tests::rtps_8_5_3_3_participant_lease_lifecycle_hard_death_and_same_prefix",
                         "--test-threads=1",
                         "--nocapture",
                     ])
@@ -45484,6 +46163,7 @@ mod tests {
                 lease_duration: QosDuration::INFINITE,
             },
             partition,
+            reliable: true,
             ..Default::default()
         }
     }
@@ -45493,8 +46173,9 @@ mod tests {
     /// exactly those 2 (not all 3 written).
     #[test]
     fn qr_history_keep_last_depth_enforced_on_replay() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            61,
+            lease.id(),
             GuidPrefix::from_bytes([0x61; 12]),
             RuntimeConfig::default(),
         )
@@ -45546,10 +46227,11 @@ mod tests {
     /// retained sample written before it matched. A VOLATILE writer replays
     /// nothing.
     #[test]
-    fn qr_transient_local_late_join_replay_vs_volatile() {
+    fn dcps_2_2_3_4_qr_transient_local_late_join_replay_vs_volatile() {
+        let lease_a = zerodds_test_domains::lease_domain();
         // TransientLocal: late joiner sees the prior sample.
         let rt = DcpsRuntime::start(
-            62,
+            lease_a.id(),
             GuidPrefix::from_bytes([0x62; 12]),
             RuntimeConfig::default(),
         )
@@ -45581,9 +46263,10 @@ mod tests {
         }
         rt.shutdown();
 
+        let lease_b = zerodds_test_domains::lease_domain();
         // Volatile: late joiner gets nothing for the pre-match write.
         let rt2 = DcpsRuntime::start(
-            63,
+            lease_b.id(),
             GuidPrefix::from_bytes([0x63; 12]),
             RuntimeConfig::default(),
         )
@@ -45622,8 +46305,9 @@ mod tests {
     /// must NOT match (no intra-runtime route); a matching partition delivers.
     #[test]
     fn qr_partition_gates_intra_runtime_match() {
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            64,
+            lease.id(),
             GuidPrefix::from_bytes([0x64; 12]),
             RuntimeConfig::default(),
         )
@@ -45677,11 +46361,12 @@ mod tests {
     /// matched same-runtime reader; a later late joiner observes the terminal
     /// NOT_ALIVE_DISPOSED state.
     #[test]
-    fn qr_dispose_delivers_lifecycle_to_intra_reader() {
+    fn dcps_2_2_2_4_2_13_qr_dispose_delivers_lifecycle_to_intra_reader() {
         use zerodds_rtps::history_cache::ChangeKind;
         use zerodds_rtps::inline_qos::status_info;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            65,
+            lease.id(),
             GuidPrefix::from_bytes([0x65; 12]),
             RuntimeConfig::default(),
         )
@@ -45752,11 +46437,11 @@ mod tests {
                 assert_eq!(*key_hash, Some(key));
                 saw_keyed_alive = true;
             }
-            if let UserSample::Lifecycle { kind, .. } = s {
-                if kind == ChangeKind::NotAliveDisposed {
-                    saw_disposed = true;
-                    break;
-                }
+            if let UserSample::Lifecycle { kind, .. } = s
+                && kind == ChangeKind::NotAliveDisposed
+            {
+                saw_disposed = true;
+                break;
             }
         }
         assert!(
@@ -45772,11 +46457,12 @@ mod tests {
 
     /// QR (d) KEYED LIFECYCLE — unregister(key) maps to NOT_ALIVE (NO_WRITERS).
     #[test]
-    fn qr_unregister_delivers_no_writers_lifecycle() {
+    fn dcps_2_2_2_4_2_7_qr_unregister_delivers_no_writers_lifecycle() {
         use zerodds_rtps::history_cache::ChangeKind;
         use zerodds_rtps::inline_qos::status_info;
+        let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
-            66,
+            lease.id(),
             GuidPrefix::from_bytes([0x66; 12]),
             RuntimeConfig::default(),
         )
@@ -45826,12 +46512,13 @@ mod tests {
     fn a_dispose_unregister_marker_reaches_a_local_reader_as_the_setting_says() {
         use zerodds_rtps::history_cache::ChangeKind;
         use zerodds_rtps::inline_qos::status_info;
+        let lease = zerodds_test_domains::lease_domain();
         for (setting, expected) in [
             (true, ChangeKind::NotAliveDisposedUnregistered),
             (false, ChangeKind::NotAliveUnregistered),
         ] {
             let rt = DcpsRuntime::start(
-                66,
+                lease.id(),
                 GuidPrefix::from_bytes([0x66; 12]),
                 RuntimeConfig {
                     reader_dispose_with_unregister: setting,
@@ -45920,14 +46607,16 @@ mod tests {
     /// A runtime on a leased domain. The lease is released when the test
     /// drops it, after `shutdown`: `unique_domain` would hold it for the
     /// life of the test binary, whose band of free domains is small.
-    fn live_runtime(prefix: u8) -> (zerodds_test_domains::DomainLease, Arc<DcpsRuntime>) {
+    fn live_runtime(prefix: u8) -> (zerodds_test_domains::DomainLease, ShutsDown) {
         let lease = zerodds_test_domains::lease_domain();
-        let rt = DcpsRuntime::start(
-            lease.id(),
-            GuidPrefix::from_bytes([prefix; 12]),
-            RuntimeConfig::default(),
-        )
-        .expect("start");
+        let rt = ShutsDown(
+            DcpsRuntime::start(
+                lease.id(),
+                GuidPrefix::from_bytes([prefix; 12]),
+                RuntimeConfig::default(),
+            )
+            .expect("start"),
+        );
         (lease, rt)
     }
 
@@ -45982,7 +46671,7 @@ mod tests {
     /// A MANUAL_BY_TOPIC writer counts from its first assertion, is not
     /// alive once its lease runs out, and alive again when it writes.
     #[test]
-    fn a_manual_writer_goes_not_alive_when_silent_and_back_when_it_writes() {
+    fn dcps_2_2_2_4_2_11_a_manual_writer_goes_not_alive_when_silent_and_back_when_it_writes() {
         let (_lease, rt) = live_runtime(0x72);
         let (r, _rx) = rt
             .register_user_reader(live_reader_cfg("LiveManual", 100))
@@ -46018,7 +46707,7 @@ mod tests {
     /// `DataWriter::assert_liveliness` keeps a MANUAL_BY_TOPIC writer alive
     /// without a write, at the reader and at the writer.
     #[test]
-    fn assert_liveliness_keeps_a_manual_writer_alive_without_writing() {
+    fn dcps_2_2_2_4_2_22_assert_liveliness_keeps_a_manual_writer_alive_without_writing() {
         let (_lease, rt) = live_runtime(0x73);
         let (r, _rx) = rt
             .register_user_reader(live_reader_cfg("LiveAssert", 150))
@@ -46043,7 +46732,7 @@ mod tests {
     /// by the service and is never lost for not writing; a silent manual
     /// writer is lost once, not once per lease.
     #[test]
-    fn liveliness_lost_counts_a_silent_manual_writer_once_and_no_automatic_one() {
+    fn dcps_2_2_3_11_liveliness_lost_counts_a_silent_manual_writer_once_and_no_automatic_one() {
         let (_lease, rt) = live_runtime(0x74);
         let auto = rt
             .register_user_writer(live_writer_cfg(
@@ -46245,13 +46934,18 @@ mod tests {
     /// A single-runtime harness on a UNIQUE domain per test — otherwise the
     /// same-process in-process discovery cross-matches the "RxOTopic"
     /// endpoints of the sibling RxO tests and inflates the matched count.
-    fn rxo_runtime(seed: u8) -> Arc<DcpsRuntime> {
-        DcpsRuntime::start(
-            i32::from(seed),
-            GuidPrefix::from_bytes([seed; 12]),
-            RuntimeConfig::default(),
-        )
-        .expect("start runtime")
+    /// A runtime on a leased domain; the lease goes after the runtime.
+    fn rxo_runtime(seed: u8) -> (zerodds_test_domains::DomainLease, ShutsDown) {
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = ShutsDown(
+            DcpsRuntime::start(
+                lease.id(),
+                GuidPrefix::from_bytes([seed; 12]),
+                RuntimeConfig::default(),
+            )
+            .expect("start runtime"),
+        );
+        (lease, rt)
     }
 
     /// DDS 1.4 §2.2.4.1 InconsistentTopicStatus.total_count: "Total
@@ -46262,7 +46956,7 @@ mod tests {
     /// first participant left and came back is a third. Each refused pair
     /// counted.
     #[test]
-    fn an_inconsistent_topic_counts_once_per_remote_participant() {
+    fn dcps_2_2_4_1_an_inconsistent_topic_counts_once_per_remote_participant() {
         let lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             lease.id(),
@@ -46318,9 +47012,9 @@ mod tests {
     /// match (DDS 1.4 §2.2.3.14), and both report RELIABILITY once — not
     /// again when another endpoint makes the runtime recompute its routes.
     #[test]
-    fn a_same_runtime_pair_is_refused_for_an_rxo_policy_and_counted_once() {
+    fn dcps_2_2_3_a_same_runtime_pair_is_refused_for_an_rxo_policy_and_counted_once() {
         use crate::psm_constants::qos_policy_id as qid;
-        let rt = rxo_runtime(0x3C);
+        let (_lease, rt) = rxo_runtime(0x3C);
         let writer = rt
             .register_user_writer(rxo_writer_cfg(
                 zerodds_qos::DestinationOrderKind::ByReceptionTimestamp,
@@ -46349,6 +47043,7 @@ mod tests {
         let (_other, _rx2) = rt
             .register_user_reader(UserReaderConfig {
                 topic_name: "OtherTopic".into(),
+                reliable: true,
                 ..Default::default()
             })
             .expect("another reader");
@@ -46388,7 +47083,7 @@ mod tests {
     /// 1.4 §2.2.4.1 counts the times the writer discovered an incompatible
     /// reader.
     #[test]
-    fn an_incompatible_remote_endpoint_is_counted_once() {
+    fn dcps_2_2_3_an_incompatible_remote_endpoint_is_counted_once() {
         use zerodds_qos::DestinationOrderKind as DO;
         let (_lease, rt) = qos_change_runtime(0x73);
         let w = rt
@@ -46422,7 +47117,7 @@ mod tests {
     /// of a matched remote endpoint carries `remoteGroupEntityId`, the
     /// entity id of the group in the endpoint's `PID_GROUP_GUID`.
     #[test]
-    fn the_proxies_of_a_match_carry_the_remote_group_entity_id() {
+    fn rtps_8_4_7_5_the_proxies_of_a_match_carry_the_remote_group_entity_id() {
         use zerodds_qos::DestinationOrderKind as DO;
         let (_lease, rt) = qos_change_runtime(0x7B);
         let w = rt
@@ -46472,7 +47167,7 @@ mod tests {
     /// maximum message size of the transport it sends over, fixed at its
     /// creation: 1344 at the UDP default of 1472, 8872 for 9000.
     #[test]
-    fn a_writers_fragment_size_follows_the_message_size_of_its_transport() {
+    fn rtps_8_3_8_3_a_writers_fragment_size_follows_the_message_size_of_its_transport() {
         let size_of = |seed: u8, max_message_size: Option<usize>| {
             let lease = zerodds_test_domains::lease_domain();
             let mut config = RuntimeConfig::default();
@@ -46504,7 +47199,7 @@ mod tests {
     /// requests is unmatched, and the reader is counted (DDS 1.4 §2.2.3:
     /// RxO and changeable). Lowering it again matches the pair again.
     #[test]
-    fn a_writer_qos_change_is_decided_again_against_a_matched_reader() {
+    fn dcps_2_2_3_8_a_writer_qos_change_is_decided_again_against_a_matched_reader() {
         use crate::psm_constants::qos_policy_id as qid;
         use zerodds_qos::DestinationOrderKind as DO;
         let (_lease, rt) = qos_change_runtime(0x74);
@@ -46541,7 +47236,7 @@ mod tests {
     /// unmatched without a status (DDS 1.4 §2.2.3.13), and its next
     /// announcement carries the move and the other changed values.
     #[test]
-    fn a_partition_change_unmatches_without_a_status_and_is_announced() {
+    fn dcps_2_2_3_13_a_partition_change_unmatches_without_a_status_and_is_announced() {
         use zerodds_qos::DestinationOrderKind as DO;
         let (_lease, rt) = qos_change_runtime(0x75);
         let w = rt
@@ -46575,7 +47270,7 @@ mod tests {
     /// sets them and from its publisher and topic where not, and a change
     /// on the publisher or the topic reaches the announcement.
     #[test]
-    fn group_and_topic_values_reach_a_writer_that_sets_none_of_its_own() {
+    fn dcps_2_2_3_2_group_and_topic_values_reach_a_writer_that_sets_none_of_its_own() {
         use zerodds_qos::DestinationOrderKind as DO;
         let (_lease, rt) = qos_change_runtime(0x76);
         let w = rt
@@ -46622,7 +47317,7 @@ mod tests {
     /// LIFESPAN is taken up by the reader; the first match alone used to
     /// set them.
     #[test]
-    fn a_matched_writer_announcing_new_strength_and_lifespan_is_taken_up() {
+    fn dcps_2_2_3_10_a_matched_writer_announcing_new_strength_and_lifespan_is_taken_up() {
         use zerodds_qos::DestinationOrderKind as DO;
         let (_lease, rt) = qos_change_runtime(0x77);
         let (r, _rx) = rt
@@ -46700,7 +47395,7 @@ mod tests {
     /// match out, and the pass then wired the writer anew, until its second
     /// look at the filter took it out again. In that window the ignored
     /// writer's samples were delivered — measured in
-    /// `ignore_entities.rs::ignore_topic_unmatches_the_endpoints_of_the_topic`
+    /// `ignore_entities.rs::dcps_2_2_2_2_1_15_ignore_topic_unmatches_the_endpoints_of_the_topic`
     /// on the Linux test host, 2 of 200 runs: a valid sample, then the
     /// NOT_ALIVE_NO_WRITERS marker of the second departure. Here the test
     /// holds the participant cache, so the pass waits exactly there.
@@ -46902,7 +47597,7 @@ mod tests {
     /// A writer and a reader of one runtime follow the same rules: a
     /// partition change on either side rebuilds their route.
     #[test]
-    fn a_partition_change_moves_a_same_runtime_pair_apart_and_together() {
+    fn dcps_2_2_3_13_a_partition_change_moves_a_same_runtime_pair_apart_and_together() {
         use zerodds_qos::DestinationOrderKind as DO;
         let (_lease, rt) = qos_change_runtime(0x79);
         let w = rt
@@ -46930,9 +47625,9 @@ mod tests {
     // ---- offered side (writer matcher) — DESTINATION_ORDER ----
 
     #[test]
-    fn rxo_offered_destination_order_incompatible_rejects_match() {
+    fn dcps_2_2_3_17_rxo_offered_destination_order_incompatible_rejects_match() {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(0x40);
+        let (_lease, rt) = rxo_runtime(0x40);
         // Writer offers BY_RECEPTION, remote reader requests BY_SOURCE:
         // offered(0) >= requested(1) is false → incompatible.
         let w = rt
@@ -46963,7 +47658,7 @@ mod tests {
     #[test]
     fn rxo_offered_destination_order_compatible_matches() {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(0x41);
+        let (_lease, rt) = rxo_runtime(0x41);
         // Writer offers BY_SOURCE, remote reader requests BY_RECEPTION:
         // offered(1) >= requested(0) → compatible.
         let w = rt
@@ -46989,9 +47684,9 @@ mod tests {
     // ---- offered side (writer matcher) — LATENCY_BUDGET ----
 
     #[test]
-    fn rxo_offered_latency_budget_incompatible_rejects_match() {
+    fn dcps_2_2_3_8_rxo_offered_latency_budget_incompatible_rejects_match() {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(0x42);
+        let (_lease, rt) = rxo_runtime(0x42);
         // Writer offers 100 ms, remote reader requests 10 ms:
         // offered.duration(100) <= requested.duration(10) is false.
         let w = rt
@@ -47018,7 +47713,7 @@ mod tests {
     #[test]
     fn rxo_offered_latency_budget_compatible_matches() {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(0x43);
+        let (_lease, rt) = rxo_runtime(0x43);
         // Writer offers 10 ms, remote reader requests 100 ms → compatible.
         let w = rt
             .register_user_writer(rxo_writer_cfg(DO::ByReceptionTimestamp, 10))
@@ -47039,9 +47734,9 @@ mod tests {
     // ---- requested side (reader matcher) — symmetric checks ----
 
     #[test]
-    fn rxo_requested_destination_order_incompatible_rejects_match() {
+    fn dcps_2_2_3_17_rxo_requested_destination_order_incompatible_rejects_match() {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(0x44);
+        let (_lease, rt) = rxo_runtime(0x44);
         // Reader requests BY_SOURCE, remote writer offers BY_RECEPTION:
         // offered(0) >= requested(1) is false → incompatible.
         let (r, _rx) = rt
@@ -47066,9 +47761,9 @@ mod tests {
     }
 
     #[test]
-    fn rxo_requested_latency_budget_incompatible_rejects_match() {
+    fn dcps_2_2_3_8_rxo_requested_latency_budget_incompatible_rejects_match() {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(0x45);
+        let (_lease, rt) = rxo_runtime(0x45);
         // Reader requests 10 ms, remote writer offers 100 ms:
         // offered.duration(100) <= requested.duration(10) is false.
         let (r, _rx) = rt
@@ -47093,9 +47788,9 @@ mod tests {
     }
 
     #[test]
-    fn rxo_requested_both_compatible_matches() {
+    fn dcps_2_2_3_rxo_requested_both_compatible_matches() {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(0x46);
+        let (_lease, rt) = rxo_runtime(0x46);
         // Reader requests BY_RECEPTION + 100 ms; writer offers BY_SOURCE +
         // 10 ms → both compatible.
         let (r, _rx) = rt
@@ -47159,7 +47854,7 @@ mod tests {
         requested: zerodds_qos::PresentationQosPolicy,
     ) -> (usize, crate::status::OfferedIncompatibleQosStatus) {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(seed);
+        let (_lease, rt) = rxo_runtime(seed);
         let mut wcfg = rxo_writer_cfg(DO::ByReceptionTimestamp, 0);
         wcfg.presentation = offered;
         let w = rt.register_user_writer(wcfg).expect("writer");
@@ -47186,7 +47881,7 @@ mod tests {
         requested: zerodds_qos::PresentationQosPolicy,
     ) -> (usize, crate::status::RequestedIncompatibleQosStatus) {
         use zerodds_qos::DestinationOrderKind as DO;
-        let rt = rxo_runtime(seed);
+        let (_lease, rt) = rxo_runtime(seed);
         let mut rcfg = rxo_reader_cfg(DO::ByReceptionTimestamp, 0);
         rcfg.presentation = requested;
         let (r, _rx) = rt.register_user_reader(rcfg).expect("reader");
@@ -47217,7 +47912,7 @@ mod tests {
 
     /// §2.2.3.6 condition 1 violated: offered INSTANCE < requested TOPIC.
     #[test]
-    fn rxo_presentation_access_scope_below_request_rejects_on_both_sides() {
+    fn dcps_2_2_3_6_rxo_presentation_access_scope_below_request_rejects_on_both_sides() {
         use zerodds_qos::PresentationAccessScope as S;
         let pid = crate::psm_constants::qos_policy_id::PRESENTATION;
         let offered = presentation(S::Instance, false, false);
@@ -47260,7 +47955,7 @@ mod tests {
     /// §2.2.3.6 condition 2 violated: requested coherent_access is TRUE while
     /// the offered one is FALSE.
     #[test]
-    fn rxo_presentation_coherent_access_unoffered_rejects_on_both_sides() {
+    fn dcps_2_2_3_6_rxo_presentation_coherent_access_unoffered_rejects_on_both_sides() {
         use zerodds_qos::PresentationAccessScope as S;
         let pid = crate::psm_constants::qos_policy_id::PRESENTATION;
         let offered = presentation(S::Topic, false, false);
@@ -47295,7 +47990,7 @@ mod tests {
     /// §2.2.3.6 condition 3 violated: requested ordered_access is TRUE while
     /// the offered one is FALSE.
     #[test]
-    fn rxo_presentation_ordered_access_unoffered_rejects_on_both_sides() {
+    fn dcps_2_2_3_6_rxo_presentation_ordered_access_unoffered_rejects_on_both_sides() {
         use zerodds_qos::PresentationAccessScope as S;
         let pid = crate::psm_constants::qos_policy_id::PRESENTATION;
         let offered = presentation(S::Topic, false, false);
@@ -47332,12 +48027,12 @@ mod tests {
     /// which is precisely what makes the listener fire, so the assertion on
     /// `total_count == 0` is the assertion that no event is dispatched.
     #[test]
-    fn partition_mismatch_blocks_match_without_any_incompatible_qos_event() {
+    fn dcps_2_2_3_13_partition_mismatch_blocks_match_without_any_incompatible_qos_event() {
         use zerodds_qos::DestinationOrderKind as DO;
         let pid = crate::psm_constants::qos_policy_id::PARTITION;
 
         // Offered side: local writer in ["A"], remote reader in ["B"].
-        let rt = rxo_runtime(0x54);
+        let (_lease, rt) = rxo_runtime(0x54);
         let mut wcfg = rxo_writer_cfg(DO::ByReceptionTimestamp, 0);
         wcfg.partition = alloc::vec!["A".into()];
         let w = rt.register_user_writer(wcfg).expect("writer");
@@ -47364,7 +48059,7 @@ mod tests {
         rt.shutdown();
 
         // Requested side: local reader in ["B"], remote writer in ["A"].
-        let rt = rxo_runtime(0x55);
+        let (_lease, rt) = rxo_runtime(0x55);
         let mut rcfg = rxo_reader_cfg(DO::ByReceptionTimestamp, 0);
         rcfg.partition = alloc::vec!["B".into()];
         let (r, _rx) = rt.register_user_reader(rcfg).expect("reader");
@@ -47555,7 +48250,7 @@ mod tests {
     /// group value: a Publisher offering both satisfies a reader requesting
     /// both (§2.2.3.6 conditions 2 and 3).
     #[test]
-    fn publisher_coherent_and_ordered_flags_reach_the_writer_announcement() {
+    fn dcps_2_2_3_6_publisher_coherent_and_ordered_flags_reach_the_writer_announcement() {
         use zerodds_qos::PresentationAccessScope as S;
         let domain_lease = zerodds_test_domains::lease_domain();
         let participant = crate::DomainParticipantFactory::instance()
@@ -47605,7 +48300,7 @@ mod tests {
     /// with a default `DataWriterQos` on a Publisher in partition `["A"]`
     /// announces `["A"]` and associates with a remote reader in `["A"]`.
     #[test]
-    fn partition_from_publisher_reaches_the_writer_announcement() {
+    fn dcps_2_2_3_13_partition_from_publisher_reaches_the_writer_announcement() {
         use zerodds_qos::PresentationAccessScope as S;
         let domain_lease = zerodds_test_domains::lease_domain();
         let participant = crate::DomainParticipantFactory::instance()
@@ -47659,7 +48354,7 @@ mod tests {
     /// Regression: the previous exact-equality implementation rejected
     /// `["p1"]` vs `["p*"]`, breaking wildcard partition matching.
     #[test]
-    fn partitions_overlap_matches_canonical_fnmatch() {
+    fn dcps_2_2_3_13_partitions_overlap_matches_canonical_fnmatch() {
         let s = |v: &[&str]| v.iter().map(|x| String::from(*x)).collect::<Vec<_>>();
         for (a, b, want) in [
             (s(&[]), s(&[]), true),
@@ -47778,7 +48473,7 @@ mod tests {
     /// `SedpCache::match_publications` filtered on the type name.
     #[test]
     fn xtypes_step1_matches_a_differently_named_assignable_type() {
-        let rt = rxo_runtime(0x70);
+        let (_lease, rt) = rxo_runtime(0x70);
         let (v1_id, v2_id) = xt_step1_pair(&rt);
         // Writer = the superset, reader = the prefix: the direction
         // §7.2.4.4.4.4 supports for APPENDABLE.
@@ -47824,9 +48519,9 @@ mod tests {
     /// before it looks at a single member: `@final` and `@appendable`
     /// are two different wire framings (Table 60).
     #[test]
-    fn xtypes_step1_refuses_a_differently_named_non_assignable_type() {
+    fn dcps_2_2_4_1_xtypes_step1_refuses_a_differently_named_non_assignable_type() {
         use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
-        let rt = rxo_runtime(0x71);
+        let (_lease, rt) = rxo_runtime(0x71);
         let i32_id = zerodds_types::TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::Int32);
         let register = |st| {
             let hash = rt
@@ -47893,8 +48588,8 @@ mod tests {
     /// into the match decision, and a test that showed only the
     /// accepting half would pass with the rule deleted.
     #[test]
-    fn xtypes_step2_falls_back_to_the_type_name_for_a_peer_without_type_information() {
-        let rt = rxo_runtime(0x72);
+    fn xtypes_7_6_1_step2_falls_back_to_the_type_name_for_a_peer_without_type_information() {
+        let (_lease, rt) = rxo_runtime(0x72);
         let (v1_id, _v2_id) = xt_step1_pair(&rt);
         let r = rt
             .register_user_reader(xt_local_reader_cfg("::xt::V1", v1_id))
@@ -48181,7 +48876,7 @@ mod tests {
     /// time through the full `--set PATH=VALUE` config path
     /// (`ConfigSource::runtime_findings`), each refused before a
     /// `RuntimeConfig` is even built — naming the exact key, per
-    /// `docs/silent-drop-sweep.md`.
+    /// `0b2e8df9f6b:docs/silent-drop-sweep.md`.
     #[test]
     fn threads_config_refuses_every_invalid_combination_naming_the_key() {
         let refused_setting = |sets: &[&str]| {
@@ -49047,7 +49742,7 @@ mod tests {
     /// matched writer counts for a GROUP-scope subscriber's commit rule
     /// until its lease runs out.
     #[test]
-    fn a_writer_that_lost_its_liveliness_is_not_counted_for_the_group_order() {
+    fn rtps_8_7_5_a_writer_that_lost_its_liveliness_is_not_counted_for_the_group_order() {
         let domain_lease = zerodds_test_domains::lease_domain();
         let rt = DcpsRuntime::start(
             domain_lease.id(),
@@ -49149,7 +49844,8 @@ mod tests {
     }
 
     #[test]
-    fn the_submessages_after_an_info_destination_for_another_participant_are_not_ours() {
+    fn rtps_8_3_8_1_the_submessages_after_an_info_destination_for_another_participant_are_not_ours()
+    {
         use zerodds_rtps::header::RtpsHeader;
         use zerodds_rtps::submessage_header::{
             FLAG_E_LITTLE_ENDIAN, SubmessageHeader, SubmessageId,
@@ -49275,7 +49971,7 @@ mod tests {
     /// handed out the samples after the gap and counted nothing, so a loss
     /// in transit showed in no status.
     #[test]
-    fn samples_a_best_effort_reader_steps_over_are_sample_lost() {
+    fn dcps_2_2_4_1_samples_a_best_effort_reader_steps_over_are_sample_lost() {
         use zerodds_rtps::header::RtpsHeader;
         use zerodds_rtps::submessage_header::{
             FLAG_E_LITTLE_ENDIAN, SubmessageHeader, SubmessageId,
@@ -49516,6 +50212,7 @@ mod tests {
                 .find(|d| d.reader_id == reader.entity_id)
                 .unwrap_or_else(|| panic!("no DATA to {reader:?}"))
                 .inline_qos
+                .map(zerodds_rtps::inline_qos::InlineQos::into_list)
         };
         for reader in [stateless, in_stateless_participant] {
             let qos = inline_qos_to(reader).expect("in-line QoS");
@@ -49540,11 +50237,17 @@ mod tests {
     /// (`attach_durability_backend`, `match_local_writer_against_cache`,
     /// the real ACKNACK/tick round trip), entirely in-process (no sockets),
     /// per the "prefer in-process participants" guidance.
+    ///
+    /// The runtime runs no tick of its own (`external_tick`): the test ticks
+    /// the writer itself and looks at a reader proxy between a match and its
+    /// own tick. A tick of the runtime's scheduler in between pushed the
+    /// history to the new reader and moved its `highest_sent_sn` to 4; on
+    /// Windows the test read that (job 230275), on Linux only with a pause
+    /// after the match.
     #[test]
     fn transient_backend_restore_keys_and_times_history_and_serves_every_late_joiner_once() {
         use crate::durability_service::DurabilityBackend;
         use zerodds_rtps::header_extension::HeTimestamp;
-        use zerodds_rtps::inline_qos::find_key_hash;
         use zerodds_rtps::message_builder::OutboundDatagram;
         use zerodds_rtps::wire_types::SequenceNumber;
 
@@ -49557,6 +50260,7 @@ mod tests {
             RuntimeConfig {
                 nack_response_delay: Duration::ZERO,
                 reader_heartbeat_response_delay: Duration::ZERO,
+                external_tick: true,
                 ..RuntimeConfig::default()
             },
         )
@@ -49692,7 +50396,10 @@ mod tests {
                 };
                 for (state, sub) in parsed.receiver_walk(GuidPrefix::from_bytes([0; 12])) {
                     if let ParsedSubmessage::Data(d) = sub {
-                        let key_hash = d.inline_qos.as_ref().and_then(find_key_hash);
+                        let key_hash = d
+                            .inline_qos
+                            .as_ref()
+                            .and_then(zerodds_rtps::inline_qos::InlineQos::key_hash);
                         out.push((
                             key_hash,
                             d.serialized_payload.to_vec(),
@@ -49791,9 +50498,10 @@ mod tests {
             );
         }
 
-        // R1's realistic first ACKNACK: it has nothing (empty bitmap, base=1)
-        // — RTPS §8.4.2.3.3 lets the writer treat that as "send me the whole
-        // unacked tail".
+        // R1's first ACKNACK: it has nothing (empty set, base=1). It requests
+        // nothing (DDSI-RTPS 2.5 Table 8.66 T8); the tick pushes the proxy,
+        // which is behind the cache, into step (T4): DATA for what the cache
+        // holds, GAP for what it evicted.
         let r1_data = {
             let mut slot = slot_arc.lock().expect("lock");
             slot.writer
@@ -49867,8 +50575,10 @@ mod tests {
         }
 
         // R2 matching must not perturb R1: no new DATA/GAP for R1 without a
-        // fresh ACKNACK from R1, and R1's ack state is untouched.
-        {
+        // fresh ACKNACK from R1, and R1's ack state is untouched. The same
+        // tick pushes R2, behind the cache, into step: it gets exactly the
+        // same two samples R1 got.
+        let r2_data = {
             let mut slot = slot_arc.lock().expect("lock");
             let dgs = slot.writer.tick(now).expect("tick");
             assert!(
@@ -49876,21 +50586,13 @@ mod tests {
                 "an already-caught-up early reader must not be resent anything \
                  just because a later reader matched"
             );
-        }
+            decode_data(&dgs, r2_locator)
+        };
         assert_eq!(
             proxy_highest_acked(&slot_arc, r1_guid),
             r1_acked_before_r2,
             "R1's ack state must be unchanged by R2's match"
         );
-
-        // R2's own ACKNACK round trip gets exactly the same two samples R1 got.
-        let r2_data = {
-            let mut slot = slot_arc.lock().expect("lock");
-            slot.writer
-                .handle_acknack(r2_guid, SequenceNumber(1), core::iter::empty());
-            let dgs = slot.writer.tick(now).expect("tick");
-            decode_data(&dgs, r2_locator)
-        };
         assert_eq!(
             r2_data, r1_data,
             "a second late joiner gets exactly what the first one got"
@@ -50176,7 +50878,8 @@ mod tests {
     /// fix) — what was missing is this same dispatch on the metatraffic
     /// receive paths.
     #[test]
-    fn transient_local_reader_acknacked_on_metatraffic_socket_gets_history_and_live_samples() {
+    fn dcps_2_2_3_4_transient_local_reader_acknacked_on_metatraffic_socket_gets_history_and_live_samples()
+     {
         use zerodds_rtps::header::RtpsHeader;
         use zerodds_rtps::submessage_header::{
             FLAG_E_LITTLE_ENDIAN, SubmessageHeader, SubmessageId,
@@ -50264,8 +50967,9 @@ mod tests {
                 ));
         }
 
-        // The reader's first ACKNACK: nothing acked, base=1, empty bitmap —
-        // RTPS §8.4.2.3.3's "send me the unacked tail" — delivered exactly
+        // The reader's first ACKNACK: nothing acked, base=1, empty set; the
+        // tick it triggers pushes the proxy, behind the cache, into step
+        // (DDSI-RTPS 2.5 Table 8.66 T4). Delivered exactly
         // where HDDS 1.4.8 was measured to send it: the metatraffic socket
         // (simulated here by feeding it straight through
         // `dispatch_user_entity_datagram`, the function that socket now
@@ -50291,10 +50995,9 @@ mod tests {
                 .find(|p| p.remote_reader_guid == reader_guid)
                 .expect("proxy still present");
             assert_eq!(
-                p.pending_requested_count(),
-                0,
-                "the two history samples must have been picked up and resent \
-                 — before the fix this ACKNACK reached no writer at all"
+                p.highest_sent_sn(),
+                SequenceNumber(2),
+                "the two history samples must have gone out to the late reader"
             );
         }
 
@@ -50346,6 +51049,7 @@ mod tests {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod type_object_v1_tests {
+    use super::tests::ShutsDown;
     use super::*;
     use zerodds_types::builder::TypeObjectBuilder;
     use zerodds_types::type_object::CompleteTypeObject;
@@ -50374,14 +51078,28 @@ mod type_object_v1_tests {
     }
 
     #[test]
-    fn the_type_object_v1_is_announced_only_when_asked() {
-        let off = DcpsRuntime::start(71, GuidPrefix::from_bytes([0x71; 12]), config(false))
-            .expect("start");
+    fn xtypes_annex_d_the_type_object_v1_is_announced_only_when_asked() {
+        let lease_a = zerodds_test_domains::lease_domain();
+        let off = ShutsDown(
+            DcpsRuntime::start(
+                lease_a.id(),
+                GuidPrefix::from_bytes([0x71; 12]),
+                config(false),
+            )
+            .expect("start"),
+        );
         let id = register_sample(&off);
         assert_eq!(off.announced_type_object_v1(&id), (None, None));
 
-        let on = DcpsRuntime::start(72, GuidPrefix::from_bytes([0x72; 12]), config(true))
-            .expect("start");
+        let lease_b = zerodds_test_domains::lease_domain();
+        let on = ShutsDown(
+            DcpsRuntime::start(
+                lease_b.id(),
+                GuidPrefix::from_bytes([0x72; 12]),
+                config(true),
+            )
+            .expect("start"),
+        );
         let id = register_sample(&on);
         let (type_id, object) = on.announced_type_object_v1(&id);
         let object = object.expect("the object of a type that has a form in Annex B");
@@ -50395,8 +51113,11 @@ mod type_object_v1_tests {
 
     #[test]
     fn a_type_without_a_form_in_annex_b_is_announced_without_it() {
-        let rt = DcpsRuntime::start(73, GuidPrefix::from_bytes([0x73; 12]), config(true))
-            .expect("start");
+        let lease = zerodds_test_domains::lease_domain();
+        let rt = ShutsDown(
+            DcpsRuntime::start(lease.id(), GuidPrefix::from_bytes([0x73; 12]), config(true))
+                .expect("start"),
+        );
         let object = CompleteTypeObject::Struct(
             TypeObjectBuilder::struct_type("Demo::Small")
                 .member("v", TypeIdentifier::Primitive(PrimitiveKind::Int8), |m| m)
@@ -50413,15 +51134,29 @@ mod type_object_v1_tests {
     }
 
     #[test]
-    fn the_type_object_v1_of_a_remote_makes_its_types_known() {
-        let sender = DcpsRuntime::start(74, GuidPrefix::from_bytes([0x74; 12]), config(true))
-            .expect("start");
+    fn xtypes_annex_d_the_type_object_v1_of_a_remote_makes_its_types_known() {
+        let lease_a = zerodds_test_domains::lease_domain();
+        let sender = ShutsDown(
+            DcpsRuntime::start(
+                lease_a.id(),
+                GuidPrefix::from_bytes([0x74; 12]),
+                config(true),
+            )
+            .expect("start"),
+        );
         let id = register_sample(&sender);
         let (_, object) = sender.announced_type_object_v1(&id);
         let object = object.expect("announced");
 
-        let receiver = DcpsRuntime::start(75, GuidPrefix::from_bytes([0x75; 12]), config(false))
-            .expect("start");
+        let lease_b = zerodds_test_domains::lease_domain();
+        let receiver = ShutsDown(
+            DcpsRuntime::start(
+                lease_b.id(),
+                GuidPrefix::from_bytes([0x75; 12]),
+                config(false),
+            )
+            .expect("start"),
+        );
         let TypeIdentifier::EquivalenceHashComplete(hash) = id else {
             panic!("a complete hash identifier");
         };

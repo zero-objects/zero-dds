@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Lakehouse-adapter tests: contract enforcement, pagination, restart, and the
-//! Parquet lake export.
+//! The lakehouse adapter against the retention of DDS 1.4 §2.2.3.5, the
+//! PERSISTENT guarantee of §2.2.3.4, the paginated read of ADR 0009 and its
+//! Parquet export, read back by DuckDB's Parquet reader.
 //!
 //! The whole crate is gated behind the optional `duckdb` feature
 //! (`#![cfg(feature = "duckdb")]` in lib.rs); mirror that here so a default
@@ -36,8 +37,7 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: format!("p-{inst}-{seq}").into_bytes(),
-        representation: 1,
-        big_endian: false,
+        representation_identifier: [0x00, 0x07],
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
         source_guid: [0u8; 16],
         source_sequence: -1,
@@ -55,7 +55,7 @@ fn tmp(tag: &str, ext: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn keep_last_trims_to_depth() {
+fn dcps_2_2_3_5_keep_last_keeps_the_newest_depth_samples() {
     let store = LakehouseStore::open_in_memory(keep_all()).unwrap();
     let c = Contract {
         history_kind: HistoryKind::KeepLast,
@@ -75,8 +75,11 @@ fn keep_last_trims_to_depth() {
     assert_eq!(seqs, vec![7, 8, 9]);
 }
 
+/// Under KEEP_ALL a sample past `max_samples_per_instance` is refused
+/// (DDS 1.4 §2.2.3.5 with §2.2.3.19: OUT_OF_RESOURCES); the same sample sent
+/// again is not a new one.
 #[test]
-fn caps_and_idempotent() {
+fn dcps_2_2_3_5_keep_all_refuses_a_sample_past_max_samples_per_instance() {
     let store = LakehouseStore::open_in_memory(keep_all()).unwrap();
     let c = Contract {
         max_samples_per_instance: 2,
@@ -94,8 +97,10 @@ fn caps_and_idempotent() {
     assert_eq!(store.stats("T").unwrap().samples, 2);
 }
 
+/// ADR 0009, invariant 3: a read is paginated, in `(instance, sequence)`
+/// order.
 #[test]
-fn pagination_and_selector() {
+fn adr_0009_3_a_query_pages_through_the_history_in_order() {
     let store = LakehouseStore::open_in_memory(keep_all()).unwrap();
     store.set_contract("T", keep_all()).unwrap();
     for inst in 1..=2u8 {
@@ -121,43 +126,34 @@ fn pagination_and_selector() {
     assert!(got.windows(2).all(|w| w[0] < w[1]));
 }
 
+/// What a store held comes back from the DuckDB file after the process that
+/// wrote it is gone: every field of every sample, among them a `PL_CDR2_LE`
+/// identifier, and the topic metadata.
 #[test]
-fn persistent_survives_reopen() {
+fn dcps_2_2_3_4_persistent_samples_and_topic_meta_outlive_the_store() {
     let db = tmp("reopen", "duckdb");
-    {
-        let store = LakehouseStore::open(&db, keep_all()).unwrap();
-        store.set_contract("S", keep_all()).unwrap();
-        for seq in 0..6 {
-            store.store(sample("S", 1, seq)).unwrap();
-        }
-    } // dropped → DuckDB file persists
-    let reopened = LakehouseStore::open(&db, keep_all()).unwrap();
-    let all = reopened.replay_for_topic("S").unwrap();
-    assert_eq!(all.len(), 6);
-    assert_eq!(all[5].sequence, 5);
-    assert_eq!(all[2].payload, b"p-1-2");
-    let _ = std::fs::remove_file(&db);
-}
-
-#[test]
-fn topic_meta_round_trips_across_reopen() {
-    let db = tmp("meta-roundtrip", "duckdb");
+    let mut written: Vec<DurabilitySample> = (0..6).map(|seq| sample("S", 1, seq)).collect();
+    written[2].representation_identifier = [0x00, 0x0b];
     let meta = TopicMeta {
         type_name: "demo::Command".to_string(),
         keyed: true,
         contract: Contract {
             history_kind: HistoryKind::KeepLast,
-            history_depth: 5,
+            history_depth: 6,
             ..keep_all()
         },
     };
     {
         let store = LakehouseStore::open(&db, keep_all()).unwrap();
-        assert_eq!(store.topic_meta("Commands").unwrap(), None);
-        store.set_topic_meta("Commands", meta.clone()).unwrap();
-    }
+        assert_eq!(store.topic_meta("S").unwrap(), None);
+        store.set_topic_meta("S", meta.clone()).unwrap();
+        for s in &written {
+            store.store(s.clone()).unwrap();
+        }
+    } // dropped → DuckDB file persists
     let reopened = LakehouseStore::open(&db, keep_all()).unwrap();
-    assert_eq!(reopened.topic_meta("Commands").unwrap(), Some(meta));
+    assert_eq!(reopened.replay_for_topic("S").unwrap(), written);
+    assert_eq!(reopened.topic_meta("S").unwrap(), Some(meta));
     let _ = std::fs::remove_file(&db);
 }
 
@@ -166,7 +162,7 @@ fn topic_meta_round_trips_across_reopen() {
 /// split closed (`contract_for` used to re-lock `self.conn`, which is not
 /// reentrant, inside `cleanup`'s row-filtering closure).
 #[test]
-fn topic_meta_contract_governs_cleanup_no_deadlock() {
+fn dcps_2_2_3_5_the_cleanup_delay_of_the_topic_meta_purges_an_unregistered_instance() {
     let store = LakehouseStore::open_in_memory(keep_all()).unwrap();
     store
         .set_topic_meta(
@@ -188,17 +184,34 @@ fn topic_meta_contract_governs_cleanup_no_deadlock() {
     assert_eq!(store.stats("T").unwrap().samples, 0);
 }
 
+/// The lake export (ADR 0009: the adapter's own read interface) is a Parquet
+/// file that DuckDB's Parquet reader reads back as the topic's samples, in
+/// `(instance, sequence)` order.
 #[test]
-fn parquet_lake_export() {
+fn adr_0009_the_parquet_export_reads_back_as_the_topics_samples() {
     let store = LakehouseStore::open_in_memory(keep_all()).unwrap();
     store.set_contract("T", keep_all()).unwrap();
     for seq in 0..5 {
         store.store(sample("T", 7, seq)).unwrap();
     }
+    store.store(sample("Other", 7, 9)).unwrap();
     let parquet = tmp("export", "parquet");
     store.export_parquet("T", &parquet).unwrap();
-    // The Parquet file exists and is non-empty (schema-on-read lake artifact).
-    let meta = std::fs::metadata(&parquet).unwrap();
-    assert!(meta.len() > 0, "parquet export should be non-empty");
+    let reader = duckdb::Connection::open_in_memory().unwrap();
+    let path = parquet.display().to_string().replace('\'', "''");
+    let mut statement = reader
+        .prepare(&format!(
+            "SELECT topic, sequence, payload FROM read_parquet('{path}')"
+        ))
+        .unwrap();
+    let rows: Vec<(String, i64, Vec<u8>)> = statement
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let want: Vec<(String, i64, Vec<u8>)> = (0..5)
+        .map(|seq| ("T".to_string(), seq, format!("p-7-{seq}").into_bytes()))
+        .collect();
+    assert_eq!(rows, want);
     let _ = std::fs::remove_file(&parquet);
 }

@@ -93,7 +93,7 @@ took one token, so the row rested on the half of the production that had
 a test. That is the failure mode this table has, and the answer to it is
 more cases rather than a different table. Fifty-four minimal files, one
 per construct of every block above, now stand behind these rows;
-`docs/annotation-scoped-name-followup.md` records that sweep and what it
+`0b2e8df9f6b:docs/annotation-scoped-name-followup.md` records that sweep and what it
 found — 7.4.15 was the only row resting on a partial implementation.
 
 ### Three constructs that no longer vanish

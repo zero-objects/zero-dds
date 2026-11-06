@@ -144,7 +144,7 @@ fn a_topic_at_every_default_sends_its_key_names_and_vendor_only() {
     assert_eq!(&bytes[..4], [0x00, 0x03, 0x00, 0x00]);
     let pl = ParameterList::from_bytes(&bytes[4..], true).unwrap();
     assert_eq!(
-        pl.find(pid::ENDPOINT_GUID).map(|p| p.value.clone()),
+        pl.find(pid::ENDPOINT_GUID).map(|p| p.value.to_vec()),
         Some(key.to_bytes().to_vec())
     );
     for id in [pid::TOPIC_NAME, pid::TYPE_NAME, pid::VENDOR_ID] {

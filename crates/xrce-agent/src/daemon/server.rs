@@ -579,7 +579,7 @@ mod tests {
     /// ADDRESS_FORMAT_MEDIUM with the port number, IPv6 is ADDRESS_FORMAT_LARGE;
     /// a serial line has no locator.
     #[test]
-    fn listener_locators_maps_udp_tcp_and_ipv6() {
+    fn xrce_7_8_2_2_listener_locators_maps_udp_tcp_and_ipv6() {
         use zerodds_xrce::transport_locator::{
             TransportLocator, TransportLocatorLarge, TransportLocatorMedium,
         };
@@ -617,7 +617,7 @@ mod tests {
     /// their own: they are reported as `ADDRESS_FORMAT_STRING` with a URL that
     /// names the protection, never as the plain locator.
     #[test]
-    fn listener_locators_names_the_secured_and_the_serial_listeners() {
+    fn xrce_7_8_2_2_listener_locators_names_the_secured_and_the_serial_listeners() {
         let listeners = vec![
             ListenerConfig::Dtls {
                 bind: "127.0.0.1:2018".to_string(),

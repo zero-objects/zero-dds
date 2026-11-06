@@ -45,7 +45,7 @@ fn wait_until(timeout: Duration, mut pred: impl FnMut() -> bool) -> bool {
     false
 }
 
-fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
+fn two_runtimes(domain: i32) -> (common::ShutsDown, common::ShutsDown) {
     let prefix_a = GuidPrefix::from_bytes([0x5A; 12]);
     let prefix_b = {
         let mut p = [0x6B; 12];
@@ -53,8 +53,8 @@ fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
         GuidPrefix::from_bytes(p)
     };
     let cfg = RuntimeConfig::default();
-    let rt_a = DcpsRuntime::start(domain, prefix_a, cfg.clone()).expect("rt_a");
-    let rt_b = DcpsRuntime::start(domain, prefix_b, cfg).expect("rt_b");
+    let rt_a = common::ShutsDown(DcpsRuntime::start(domain, prefix_a, cfg.clone()).expect("rt_a"));
+    let rt_b = common::ShutsDown(DcpsRuntime::start(domain, prefix_b, cfg).expect("rt_b"));
     for rt in [&rt_a, &rt_b] {
         assert!(
             wait_until(TIMEOUT, || !rt.discovered_participants().is_empty()),
@@ -82,7 +82,7 @@ fn holds(rt: &Arc<DcpsRuntime>, scc: &StronglyConnectedComponentId) -> bool {
 }
 
 #[test]
-fn a_recursive_topic_type_is_announced_matched_and_fetched_as_a_component() {
+fn xtypes_7_2_2_4_a_recursive_topic_type_is_announced_matched_and_fetched_as_a_component() {
     let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
     let parsed = zerodds_idl_parse::parse(

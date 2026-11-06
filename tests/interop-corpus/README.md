@@ -52,6 +52,38 @@ all three vendor emitters, and compares the result against each case's own
 one CI runs, so a case that stops producing the bytes recorded below fails a
 build rather than waiting for someone to run a shell script.
 
+### The expected bytes
+
+`expected-bytes.tsv` holds, for every case, sample, encoding and byte order,
+the octets the other implementations wrote, keyed by the ZeroDDS dialect that
+has to reproduce them. It is generated from one commit of `zerodds-matrix`
+(the `matrix/` checkout, the one place where bytes are measured) and names
+that commit in its header:
+
+```sh
+tools/expected-bytes/generate.py --matrix ../matrix          # write
+tools/expected-bytes/generate.py --matrix ../matrix --check  # compare
+```
+
+A vendor dialect expects its own matrix column's octets; `specification`
+expects the octets every DDS implementation that wrote the cell agrees on, at
+least two of them. No ZeroDDS column of the matrix is read: this project's
+own earlier output is not an oracle. A matrix case enters only where its IDL,
+type and sample are this corpus's. Every producer of ZeroDDS bytes checks its
+output against the table in its own crate; the reflective codec's check is
+`cargo test -p zerodds-wire-probe --test expected_bytes`.
+
+`cyclone-type-objects.tsv` holds, from the same matrix commit, the TypeObjects
+CycloneDDS's `idlc` writes for each case's type (the `TYPE_MAP_CDR` and
+`TYPE_INFO_CDR` arrays of the cell's generated C): the COMPLETE objects with
+their octets, the MINIMAL ones by identifier. `crates/types/tests/type_object_bridge.rs`
+holds this project's TypeObjects to them.
+
+```sh
+tools/expected-bytes/type_objects.py --matrix ../matrix          # write
+tools/expected-bytes/type_objects.py --matrix ../matrix --check  # compare
+```
+
 ### The samples
 
 A sample of zeroes tests nothing, so nothing here is zero unless zero is the

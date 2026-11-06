@@ -145,6 +145,7 @@ fn answers() -> Vec<Answer> {
 const READ_GAPS: &[&str] = &[];
 
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn one_dialect_alone_reads_back_every_row_of_its_own_system() {
     let answers = answers();
     let mut registered: BTreeMap<&str, usize> = BTreeMap::new();
@@ -482,7 +483,7 @@ fn what_the_default_alone_reads_of_every_systems_rows() {
         &sweep,
         zerodds_ast_layout::Dialect::Cyclone,
     );
-    // 57f4d99f made read_aggregate use the plan's dialect-aware
+    // 5536e2ab made read_aggregate use the plan's dialect-aware
     // extensibility_of, not Ast's implicit Appendable default. Cyclone's
     // unannotated aggregates are Final. These foreign PLAIN_CDR2 bytes,
     // misframed under Cyclone, exhaust the stream before the required tail.
@@ -731,6 +732,7 @@ fn required_tail_refusal_octets() -> BTreeMap<String, String> {
 /// exemption is how the next axis the reader stops consulting stays out
 /// of sight.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn every_axis_the_reader_does_not_consult_is_named_with_a_reason() {
     let root = results::repository_root();
     let results_root = results::results_root(&root);
@@ -986,6 +988,7 @@ const READ_INSENSITIVE: &[(&str, &str, &str)] = &[
 /// appearing here is a finding whatever else is green: it would mean a
 /// difference had been reclassified rather than closed.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn the_unreadable_rows_are_the_suppressed_branches_and_nothing_else() {
     let by_system: BTreeMap<&str, usize> = answers()
         .iter()

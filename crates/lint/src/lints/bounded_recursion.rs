@@ -248,10 +248,8 @@ impl<'ast> Visit<'ast> for CallCollector {
                 .is_some_and(|s| s.ident == "self" || s.ident == "Self");
             let names_this_scope =
                 p.path.segments.len() == 1 || (is_self_scope && p.path.segments.len() == 2);
-            if names_this_scope {
-                if let Some(last) = p.path.segments.last() {
-                    self.calls.insert(last.ident.to_string());
-                }
+            if names_this_scope && let Some(last) = p.path.segments.last() {
+                self.calls.insert(last.ident.to_string());
             }
         }
         visit::visit_expr_call(self, node);

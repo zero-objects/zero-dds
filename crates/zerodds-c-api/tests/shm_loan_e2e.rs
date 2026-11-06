@@ -60,16 +60,12 @@ fn flink_path(tag: &str) -> String {
 }
 
 #[test]
-fn shm_loan_writer_to_reader_zero_copy() {
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 27;
+fn capi_2_6_shm_loan_writer_to_reader_zero_copy() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic_name = CString::new("ShmLoanE2E").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
     let path = flink_path("zc");
@@ -195,18 +191,12 @@ fn shm_loan_writer_to_reader_zero_copy() {
 }
 
 #[test]
-fn delivery_mode_setter_validation() {
-    // Portable (0) and RawSameHost (1) accepted; Iceoryx (2) not yet wired →
-    // Unsupported; junk → BadParameter.
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 28;
+fn capi_13_2_delivery_mode_setter_validation() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic_name = CString::new("DeliveryModeSet").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
 
@@ -260,18 +250,12 @@ fn delivery_mode_setter_validation() {
 }
 
 #[test]
-fn raw_same_host_mode_writer_to_reader() {
-    // RawSameHost: the loan slot carries the in-memory form; commit does NOT
-    // publish over RTPS (same-host only), the same-host reader takes it via SHM.
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 29;
+fn capi_13_2_raw_same_host_mode_writer_to_reader() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic_name = CString::new("RawModeE2E").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
     let path = flink_path("raw");
@@ -335,18 +319,12 @@ fn raw_same_host_mode_writer_to_reader() {
 }
 
 #[test]
-fn loan_without_shm_falls_back_to_heap() {
-    // Without `zerodds_dw_enable_shm_loan`, the loan path stays on the heap box
-    // — the transparent fallback. The same loan/commit calls still succeed.
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 33;
+fn capi_2_6_loan_without_shm_falls_back_to_heap() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic_name = CString::new("ShmLoanFallback").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
 
@@ -390,16 +368,12 @@ fn loan_without_shm_falls_back_to_heap() {
 /// `zerodds_writer_loan_message`/`commit_loan`, and `zerodds_reader_enable_shm`
 /// + `zerodds_reader_take_shm` read the slot zero-copy.
 #[test]
-fn shm_loan_runtime_path_writer_to_reader_zero_copy() {
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 34;
+fn capi_2_6_shm_loan_runtime_path_writer_to_reader_zero_copy() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic = CString::new("ShmLoanRtE2E").unwrap();
     let typ = CString::new("RawBytes").unwrap();
     let path = flink_path("rt");
@@ -476,15 +450,11 @@ fn shm_loan_runtime_path_writer_to_reader_zero_copy() {
 fn iceoryx_mode_writer_to_reader() {
     use zerodds::{zerodds_reader_enable_iceoryx, zerodds_writer_enable_iceoryx};
 
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 35;
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic = CString::new("IceoryxModeE2E").unwrap();
     let typ = CString::new("RawBytes").unwrap();
     // iceoryx2 service names are plain identifiers — keep it unique per run.

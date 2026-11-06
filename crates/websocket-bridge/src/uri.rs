@@ -149,7 +149,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_basic_ws_uri() {
+    fn ws_3_parses_basic_ws_uri() {
         let u = parse_websocket_uri("ws://example.com/chat").expect("ok");
         assert!(!u.secure);
         assert_eq!(u.host, "example.com");
@@ -159,33 +159,33 @@ mod tests {
     }
 
     #[test]
-    fn parses_basic_wss_uri() {
+    fn ws_3_parses_basic_wss_uri() {
         let u = parse_websocket_uri("wss://example.com/").expect("ok");
         assert!(u.secure);
         assert_eq!(u.port, 443);
     }
 
     #[test]
-    fn parses_explicit_port() {
+    fn ws_3_parses_explicit_port() {
         let u = parse_websocket_uri("ws://example.com:8080/foo").expect("ok");
         assert_eq!(u.port, 8080);
     }
 
     #[test]
-    fn parses_query_string() {
+    fn ws_3_parses_query_string() {
         let u = parse_websocket_uri("wss://e.com:443/p?token=abc").expect("ok");
         assert_eq!(u.query.as_deref(), Some("token=abc"));
         assert_eq!(u.resource_name, "/p");
     }
 
     #[test]
-    fn parses_default_path_when_missing() {
+    fn ws_3_parses_default_path_when_missing() {
         let u = parse_websocket_uri("ws://e.com").expect("ok");
         assert_eq!(u.resource_name, "/");
     }
 
     #[test]
-    fn rejects_unknown_scheme() {
+    fn ws_3_rejects_unknown_scheme() {
         assert_eq!(
             parse_websocket_uri("http://e.com"),
             Err(UriError::InvalidScheme)
@@ -193,12 +193,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_host() {
+    fn ws_3_rejects_missing_host() {
         assert_eq!(parse_websocket_uri("ws://"), Err(UriError::MissingHost));
     }
 
     #[test]
-    fn rejects_missing_host_before_port() {
+    fn ws_3_rejects_missing_host_before_port() {
         assert_eq!(
             parse_websocket_uri("ws://:8080/"),
             Err(UriError::MissingHost)
@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_port() {
+    fn ws_3_rejects_invalid_port() {
         assert_eq!(
             parse_websocket_uri("ws://e.com:abc/"),
             Err(UriError::InvalidPort)
@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_fragment() {
+    fn ws_3_rejects_fragment() {
         assert_eq!(
             parse_websocket_uri("ws://e.com/#anchor"),
             Err(UriError::FragmentNotAllowed)
@@ -222,13 +222,13 @@ mod tests {
     }
 
     #[test]
-    fn default_port_returns_443_for_wss() {
+    fn ws_3_default_port_returns_443_for_wss() {
         assert_eq!(default_port(true), 443);
         assert_eq!(default_port(false), 80);
     }
 
     #[test]
-    fn resource_name_combines_path_and_query() {
+    fn ws_3_resource_name_combines_path_and_query() {
         let u = WebSocketUri {
             secure: false,
             host: "e.com".into(),
@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn resource_name_without_query_is_path() {
+    fn ws_3_resource_name_without_query_is_path() {
         let u = WebSocketUri {
             secure: false,
             host: "e.com".into(),
@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn is_local_loopback_recognizes_localhost() {
+    fn ws_3_is_local_loopback_recognizes_localhost() {
         assert!(is_local_loopback("localhost"));
         assert!(is_local_loopback("127.0.0.1"));
         assert!(is_local_loopback("::1"));

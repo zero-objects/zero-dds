@@ -45,7 +45,7 @@ fn unbounded_history() -> DataReaderQos {
 }
 
 #[test]
-fn filter_drops_samples_that_return_false() {
+fn dcps_2_2_2_3_3_filter_drops_samples_that_return_false() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(80, DomainParticipantQos::default());
     let topic = p
@@ -91,7 +91,7 @@ fn without_filter_all_samples_pass_through() {
 }
 
 #[test]
-fn filter_applies_also_to_read_peek() {
+fn rtps_8_7_3_4_filter_applies_also_to_read_peek() {
     // `read()` peeks (does not remove), but must also filter.
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(82, DomainParticipantQos::default());

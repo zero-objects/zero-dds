@@ -7,6 +7,11 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `Transport::add_destination(&Locator)`, default nothing: a peer announced a
+  locator it receives on, and a transport that receives from a peer only on a
+  path it opens per peer opens it now. The counterpart of
+  `forget_destination`.
+
 - `Transport::max_message_size` and `DEFAULT_MAX_MESSAGE_SIZE` (1472): the largest RTPS message a transport sends in one datagram. DDSI-RTPS 2.5 §8.4.14.1 takes the fragment size of a writer from the transport with the smallest one.
 
 ## [1.0.0-rc.1] — 2026-05-05

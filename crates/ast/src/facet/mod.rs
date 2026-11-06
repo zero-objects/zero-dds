@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 pub mod applied;
 pub mod corba;
 pub mod flatdata;
+pub mod mapping;
 pub mod ros2;
 pub mod source;
 pub mod vendor;
@@ -24,10 +25,11 @@ pub mod xtypes;
 
 pub use applied::{AppliedAnnotation, AppliedArgument};
 pub use corba::{
-    ComponentRole, CorbaFacet, HomeManages, RepositoryIdOrigin, StateVisibility, TemplateArg,
-    TemplateParam, TemplateParamKind,
+    ComponentRole, CorbaFacet, HomeManages, HomeOperation, RepositoryIdOrigin, StateVisibility,
+    TemplateArg, TemplateParam, TemplateParamKind,
 };
 pub use flatdata::FlatDataFacet;
+pub use mapping::{MappingLanguage, MappingSetting, MappingValue};
 pub use ros2::{Ros2Facet, RosBoundedOrigin, RosInterfaceRole};
 pub use source::{ByteSpan, MacroExpansion, SourceFacet, SourceOrigin};
 pub use vendor::{CoreDxFacet, FastDdsFacet, OpenDdsFacet, RtiFacet, VendorFacets, VendorKind};
@@ -63,6 +65,10 @@ pub struct Facets {
     /// [`XTypesFacet::is_key`] and nothing else, so a consumer never has
     /// to reconcile two answers.
     pub annotations: Vec<AppliedAnnotation>,
+    /// The settings of the IDL4 language mappings' own annotations
+    /// (`@java_mapping`, `@csharp_mapping`, `@cpp_mapping`), in the order
+    /// they were written.
+    pub mappings: Vec<MappingSetting>,
 }
 
 impl Facets {

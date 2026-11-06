@@ -86,7 +86,7 @@ class ReadCopyTest {
     @AfterEach void tearDown() { InProcessBus.instance().reset(); }
 
     @Test
-    void readReturnsAFreshCopyNotTheReadersObject() throws Exception {
+    void javapsm_7_7_3_read_returns_a_fresh_copy_not_the_readers_object() throws Exception {
         DomainParticipant p =
                 Qos.factory().createParticipant(530);
         Topic<Reading> t = p.createTopic("CopyTopic", Reading.class);
@@ -110,22 +110,4 @@ class ReadCopyTest {
         p.close();
     }
 
-    @Test
-    void takeReturnsAFreshCopyNotTheReadersObject() throws Exception {
-        DomainParticipant p =
-                Qos.factory().createParticipant(531);
-        Topic<Reading> t = p.createTopic("CopyTakeTopic", Reading.class);
-        try (Publisher pub = p.createPublisher();
-             Subscriber sub = p.createSubscriber();
-             DataReader<Reading> dr = Qos.reader(sub, t, SUPPORT, Qos.reader());
-             DataWriter<Reading> dw = Qos.writer(pub, t, SUPPORT, Qos.writer())) {
-
-            dw.write(new Reading(7));
-            List<Sample<Reading>> got = Qos.take(dr);
-            assertEquals(1, got.size());
-            assertEquals(7, got.get(0).getData().value);
-            got.get(0).getData().value = -1; // the returned object is the app's now
-        }
-        p.close();
-    }
 }

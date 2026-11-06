@@ -112,7 +112,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn node_holds_mac_and_optional_ips() {
+    fn tsn_7_2_2_node_holds_mac_and_optional_ips() {
         let n = Node {
             name: "Edge1".into(),
             hostname: "edge1.tsn.lab".into(),
@@ -126,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn deployment_with_one_app_validates() {
+    fn tsn_7_2_2_deployment_with_one_app_validates() {
         let d = Deployment {
             name: "main".into(),
             node_ref: "Edge1".into(),
@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn deployment_without_apps_is_invalid_per_spec_mult_1_star() {
+    fn tsn_7_2_2_deployment_without_apps_is_invalid_per_spec_mult_1_star() {
         // Spec Tab 7.13: application_list is Mult 1..* (not 0..*).
         let d = Deployment {
             name: "main".into(),
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn deployment_configuration_can_reference_tsn_block() {
+    fn tsn_7_2_2_deployment_configuration_can_reference_tsn_block() {
         let dc = DeploymentConfiguration {
             tsn_configuration_ref: Some("PerimeterTSN".into()),
         };

@@ -128,52 +128,6 @@ fn compile_each_header(standard: &str, flags: &[&str]) {
     );
 }
 
-/// The CMake target itself (`zerodds_psm_standalone_headers`), configured and built from the
-/// top-level project. It builds the Rust libraries as well, so it is not part of the default run:
-/// `cargo test -p zerodds-cpp --test public_headers -- --ignored`.
-#[test]
-#[ignore = "builds the whole project with CMake; run with --ignored"]
-fn the_cmake_target_for_standalone_headers_builds() {
-    let root = workspace_root();
-    let build = std::env::temp_dir().join(format!("zerodds_cmake_headers_{}", std::process::id()));
-    let configure = Command::new("cmake")
-        .arg("-S")
-        .arg(&root)
-        .arg("-B")
-        .arg(&build)
-        .args([
-            "-DZERODDS_BUILD_TESTS=ON",
-            "-DZERODDS_BUILD_EXAMPLES=OFF",
-            "-DCMAKE_BUILD_TYPE=Release",
-        ])
-        .output()
-        .expect("cmake");
-    assert!(
-        configure.status.success(),
-        "cmake configure failed:\n{}\n{}",
-        String::from_utf8_lossy(&configure.stdout),
-        String::from_utf8_lossy(&configure.stderr)
-    );
-    let built = Command::new("cmake")
-        .arg("--build")
-        .arg(&build)
-        .args(["--target", "zerodds_psm_standalone_headers", "-j", "8"])
-        .output()
-        .expect("cmake --build");
-    let tail: String = String::from_utf8_lossy(&built.stdout)
-        .lines()
-        .rev()
-        .take(30)
-        .collect::<Vec<_>>()
-        .join("\n");
-    let _ = std::fs::remove_dir_all(&build);
-    assert!(
-        built.status.success(),
-        "zerodds_psm_standalone_headers failed:\n{tail}\n{}",
-        String::from_utf8_lossy(&built.stderr)
-    );
-}
-
 /// Every name the normative headers declare is reachable through the header that declares it:
 /// `#include <dds/sub/TSample.hpp>` is enough to write `dds::sub::Sample`. The list is made from
 /// the headers of the OMG by `tools/psm-omg-names.py` (`omg_names.txt`: header, namespace, name);

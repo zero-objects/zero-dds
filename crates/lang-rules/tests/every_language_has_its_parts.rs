@@ -80,7 +80,7 @@ const NO_RUNTIME: &[Language] = &[Language::Rust];
 const NO_ENDPOINT: &[Language] = &[];
 
 #[test]
-fn every_language_has_a_runtime() {
+fn xtypes_7_5_1_every_language_has_a_runtime() {
     let root = root();
     let missing: Vec<&str> = Language::ALL
         .into_iter()
@@ -98,7 +98,7 @@ fn every_language_has_a_runtime() {
 }
 
 #[test]
-fn every_language_has_an_endpoint_sdk() {
+fn xtypes_7_5_1_every_language_has_an_endpoint_sdk() {
     let root = root();
     let missing: Vec<&str> = Language::ALL
         .into_iter()
@@ -114,74 +114,42 @@ fn every_language_has_an_endpoint_sdk() {
     );
 }
 
+/// The cells of a column come from its generator in this repository,
+/// `tools/wireprobe/wireprobe-zerodds-<lang>-gen`, which writes the program
+/// the column's probe builds and runs. The matrix repository's
+/// `gen-zerodds-<lang>.sh` calls it; whether that script exists and carries
+/// its exit-9 guard is a property of the matrix repository and is checked
+/// there, not in a checkout of this one (OPEN-ITEMS 92, the matrix's own
+/// checks).
+///
+/// Rust has no generator crate: its cells are encoded in process by
+/// `crates/wire-probe`, which reads the same model.
 #[test]
-fn every_language_has_a_cell_generator() {
+fn xtypes_7_4_every_language_has_a_cell_generator() {
     let root = root();
-    // `matrix/` is a sibling repository, split out on 2026-08-26. When it is
-    // not cloned next to this one — as on a CI runner that checks out this
-    // repository alone — every generator looks missing, and the assertion
-    // below names seventeen columns as broken. That reads like a defect in
-    // this tree and is a statement about the checkout.
-    //
-    // Refuse rather than pass: a run that could not look is not a run that
-    // found nothing.
-    let matrix = root.join("matrix");
-    assert!(
-        matrix.is_dir(),
-        "the `matrix` repository is not checked out at {}. This test reads \
-         `matrix/gen-zerodds-<lang>.sh`; without the clone it measures the \
-         checkout, not the code. Clone it beside this repository, or exclude \
-         this test from the job that cannot.",
-        matrix.display()
-    );
     let missing: Vec<&str> = Language::ALL
         .into_iter()
+        .filter(|language| *language != Language::Rust)
         .filter(|language| {
             !root
-                .join("matrix")
-                .join(format!("gen-zerodds-{}.sh", generator_name(*language)))
+                .join("tools/wireprobe")
+                .join(format!(
+                    "wireprobe-zerodds-{}-gen",
+                    generator_name(*language)
+                ))
+                .join("Cargo.toml")
                 .is_file()
         })
         .map(Language::as_str)
         .collect();
     assert!(
         missing.is_empty(),
-        "no `matrix/gen-zerodds-<lang>.sh` for: {}. Without one the column has \
-         no cells, and the matrix reports it as unmeasured rather than as \
-         absent.",
+        "no `tools/wireprobe/wireprobe-zerodds-<lang>-gen` for: {}. Without one the column \
+         has no cells, and the matrix reports it as unmeasured rather than as absent.",
         missing.join(", ")
     );
-}
-
-/// Every cell generator carries the guard that keeps a missing toolchain
-/// out of the matrix.
-///
-/// A driver answers exit 9 when the host has none of its compiler, and
-/// the cell's `run.sh` must stop rather than record it. Without the
-/// guard the run writes one cell per case saying the toolchain is
-/// absent, and those read exactly like refusals that were measured:
-/// `zerodds-nim` wrote 17 760 of them, and `hdds/empty-struct` still
-/// holds two that say `no cargo on PATH`.
-#[test]
-fn every_cell_generator_guards_against_a_missing_toolchain() {
-    let root = root();
-    let mut without = Vec::new();
-    for language in Language::ALL {
-        let path = root
-            .join("matrix")
-            .join(format!("gen-zerodds-{}.sh", generator_name(language)));
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue; // the test above names it
-        };
-        if !text.contains("has no toolchain on this host") {
-            without.push(language.as_str());
-        }
-    }
     assert!(
-        without.is_empty(),
-        "no exit-9 guard in the generator for: {}. A host without the \
-         column's compiler would write a cell per case saying so, and each \
-         reads as a measured refusal.",
-        without.join(", ")
+        root.join("crates/wire-probe/Cargo.toml").is_file(),
+        "the Rust column's cells come from crates/wire-probe"
     );
 }

@@ -27,7 +27,7 @@ fn reliable() -> ZeroDdsEndpointQos {
 }
 
 #[test]
-fn a_related_sample_identity_reaches_the_reader_with_the_wire_identity() {
+fn rpc_7_8_2_a_related_sample_identity_reaches_the_reader_with_the_wire_identity() {
     let lease = zerodds_test_domains::lease_domain();
     let topic = CString::new("CFfiRelatedIdentity").unwrap();
     let typ = CString::new("RawBytes").unwrap();

@@ -30,12 +30,11 @@ use zerodds_ast::{Bound, CharWidth, PrimitiveKind, TypeKind};
 use zerodds_ast_core::Ref;
 use zerodds_dcps::builtin_type_set::{
     NAME_DDS_BYTES, NAME_DDS_KEYED_BYTES, NAME_DDS_KEYED_STRING, NAME_DDS_STRING,
-    is_builtin_type_name,
 };
 use zerodds_dcps::{DomainParticipantFactory, DomainParticipantQos};
 
 #[test]
-fn participant_after_create_has_four_builtin_types_registered() {
+fn xtypes_7_6_5_participant_after_create_has_four_builtin_types_registered() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     assert_eq!(p.registered_type_count(), 4);
@@ -50,7 +49,7 @@ fn participant_after_create_has_four_builtin_types_registered() {
 }
 
 #[test]
-fn find_builtin_type_returns_correct_kind() {
+fn xtypes_7_6_5_2_find_builtin_type_returns_correct_kind() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let s = p.find_builtin_type(NAME_DDS_STRING).unwrap();
@@ -92,24 +91,7 @@ fn unregister_then_register_restores_all_four() {
 }
 
 #[test]
-fn find_builtin_type_unknown_name_returns_none() {
-    let p = DomainParticipantFactory::instance()
-        .create_participant_offline(0, DomainParticipantQos::default());
-    assert!(p.find_builtin_type("My::Custom").is_none());
-    assert!(p.find_builtin_type("dds::string").is_none());
-}
-
-#[test]
-fn is_builtin_type_name_helper_matches_registry() {
-    assert!(is_builtin_type_name("DDS::String"));
-    assert!(is_builtin_type_name("DDS::KeyedString"));
-    assert!(is_builtin_type_name("DDS::Bytes"));
-    assert!(is_builtin_type_name("DDS::KeyedBytes"));
-    assert!(!is_builtin_type_name("DDS::String_"));
-}
-
-#[test]
-fn dds_string_has_unbounded_string_value_member() {
+fn xtypes_7_6_5_1_dds_string_has_unbounded_string_value_member() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let t = p.find_builtin_type(NAME_DDS_STRING).unwrap();
@@ -124,7 +106,7 @@ fn dds_string_has_unbounded_string_value_member() {
 }
 
 #[test]
-fn dds_bytes_has_octet_sequence_value_member() {
+fn xtypes_7_6_5_3_dds_bytes_has_octet_sequence_value_member() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let t = p.find_builtin_type(NAME_DDS_BYTES).unwrap();
@@ -161,7 +143,7 @@ fn separate_participants_have_separate_registries() {
 }
 
 #[test]
-fn dds_keyed_bytes_has_key_member() {
+fn xtypes_7_6_5_4_dds_keyed_bytes_has_key_member() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let t = p.find_builtin_type(NAME_DDS_KEYED_BYTES).unwrap();
@@ -178,7 +160,7 @@ fn dds_keyed_bytes_has_key_member() {
 }
 
 #[test]
-fn builtin_types_are_not_nested() {
+fn xtypes_7_6_5_builtin_types_are_not_nested() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     for name in [

@@ -306,7 +306,7 @@ fn build_test_client_config(server_cert_pem: &str) -> Arc<ClientConfig> {
 // ---------- TESTS ----------
 
 #[test]
-fn tls_connect_to_broker_succeeds_with_valid_cert() {
+fn mqttbridge_7_1_tls_connect_to_broker_succeeds_with_valid_cert() {
     use zerodds_mqtt_bridge::daemon::client::MqttClient;
     let (cert, key) = gen_self_signed_for("localhost");
     let server_cfg = server_tls_cfg(&cert, &key);
@@ -336,7 +336,7 @@ fn tls_connect_to_broker_succeeds_with_valid_cert() {
 /// broker that speaks ALPN agrees on it; the mock broker reads back what
 /// the handshake agreed on.
 #[test]
-fn tls_connect_offers_the_mqtt_alpn_protocol() {
+fn mqttbridge_7_1_tls_connect_offers_the_mqtt_alpn_protocol() {
     use zerodds_mqtt_bridge::daemon::client::MqttClient;
     let (cert, key) = gen_self_signed_for("localhost");
     let mut server_cfg = (*server_tls_cfg(&cert, &key)).clone();
@@ -374,7 +374,7 @@ fn tls_connect_offers_the_mqtt_alpn_protocol() {
 }
 
 #[test]
-fn auth_bearer_emits_password_in_connect() {
+fn mqttbridge_7_2_auth_bearer_emits_password_in_connect() {
     use zerodds_mqtt_bridge::daemon::client::MqttClient;
     let (cert, key) = gen_self_signed_for("localhost");
     let server_cfg = server_tls_cfg(&cert, &key);
@@ -404,7 +404,7 @@ fn auth_bearer_emits_password_in_connect() {
 }
 
 #[test]
-fn auth_sasl_plain_emits_user_and_password() {
+fn mqttbridge_7_2_auth_sasl_plain_emits_user_and_password() {
     use zerodds_mqtt_bridge::daemon::client::MqttClient;
     let (cert, key) = gen_self_signed_for("localhost");
     let server_cfg = server_tls_cfg(&cert, &key);
@@ -433,7 +433,7 @@ fn auth_sasl_plain_emits_user_and_password() {
 }
 
 #[test]
-fn ctx_from_config_builds_security_context_with_acl() {
+fn mqttbridge_7_3_ctx_from_config_builds_security_context_with_acl() {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.auth_mode = "bearer".into();
     cfg.auth_bearer_token = Some("tk".into());
@@ -454,7 +454,7 @@ fn ctx_from_config_builds_security_context_with_acl() {
 }
 
 #[test]
-fn outbound_credentials_bearer_yields_password_only() {
+fn mqttbridge_7_2_outbound_credentials_bearer_yields_password_only() {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.auth_mode = "bearer".into();
     cfg.auth_bearer_token = Some("tok42".into());
@@ -464,7 +464,7 @@ fn outbound_credentials_bearer_yields_password_only() {
 }
 
 #[test]
-fn outbound_credentials_sasl_yields_user_and_password() {
+fn mqttbridge_7_2_outbound_credentials_sasl_yields_user_and_password() {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.auth_mode = "sasl_plain".into();
     cfg.outbound_username = Some("u".into());
@@ -475,7 +475,7 @@ fn outbound_credentials_sasl_yields_user_and_password() {
 }
 
 #[test]
-fn acl_skip_subscribe_when_subject_not_in_read_list() {
+fn mqttbridge_7_3_acl_skip_subscribe_when_subject_not_in_read_list() {
     // Synthetic ACL setup; covers the behavior used in
     // server.rs for SUBSCRIBE filters.
     let mut sec = SecurityConfig::default();

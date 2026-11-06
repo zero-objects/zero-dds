@@ -4,7 +4,7 @@
 //!
 //! The counterpart of the `every_corpus_case_that_renders_also_compiles`
 //! that `swift_end_to_end.rs`, `go_end_to_end.rs` and eight more carry.
-//! The TypeScript column had none: `docs/OPEN-ITEMS.md` records that the
+//! The TypeScript column had none: the
 //! six oldest columns lost theirs when `zerodds-idl-<lang>` was removed.
 //!
 //! `typescript_descriptors.rs` type-checks fourteen hand-written shapes
@@ -170,7 +170,7 @@ fn typecheck(tsc: &Path, directory: &Path) -> String {
 }
 
 #[test]
-#[ignore = "one `tsc` start; run with --include-ignored"]
+#[ignore = "one `tsc` start; runs in integration-codegen"]
 fn the_compiler_check_catches_a_deliberate_error() {
     // Without this, a green result below could come from a `tsc` that
     // accepts anything — or from a harness that never ran one.
@@ -206,10 +206,10 @@ fn the_compiler_check_catches_a_deliberate_error() {
 /// `#[ignore]`, because it renders 418 files and starts a TypeScript
 /// compiler over them, which costs seconds rather than the milliseconds
 /// a `cargo test` run budgets. It is what proves the column rather than
-/// samples it, so it is run with `--include-ignored` and its result is
-/// what the `idl-ts-corpus` job records.
+/// samples it; the weekly `integration-codegen` job runs it with the
+/// ignored tests.
 #[test]
-#[ignore = "renders the whole corpus and starts `tsc` over it; run with --include-ignored"]
+#[ignore = "renders the whole corpus and starts `tsc` over it; runs in integration-codegen"]
 fn every_corpus_case_that_renders_also_compiles() {
     let Some(tsc) = compiler_or_note("the TypeScript column") else {
         return;

@@ -734,3 +734,24 @@ fn a_bare_error_directive_is_still_a_diagnostic() {
         out.diagnostics
     );
 }
+
+/// OMG IDL 4.2 §7.2.5, Table 7-8: the tokens the preprocessor uses beside
+/// the punctuation — `#` (a directive, and stringizing), `##` (pasting),
+/// `!`, `||` and `&&` (in a conditional).
+#[test]
+fn idl_7_2_5_the_preprocessor_tokens_of_table_7_8_take_effect() {
+    let source = "#define CAT(a, b) a ## b\n\
+                  #define STR(a) # a\n\
+                  #define ONE 1\n\
+                  #if !defined(TWO) && defined(ONE) || 0\n\
+                  const string CAT(na, me) = STR(text);\n\
+                  #endif\n\
+                  #if !ONE || defined(TWO)\n\
+                  const long hidden = 1;\n\
+                  #endif\n";
+    let expanded = text(source);
+    assert!(expanded.contains("name"), "{expanded}");
+    assert!(expanded.contains("\"text\""), "{expanded}");
+    assert!(!expanded.contains("hidden"), "{expanded}");
+    assert!(!expanded.contains("CAT"), "{expanded}");
+}

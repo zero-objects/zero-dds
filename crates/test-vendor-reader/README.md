@@ -12,7 +12,9 @@ reader DOMAIN TOPIC SECONDS SNAPSHOT_FILE STOP_FILE
 ```
 
 It prints `READY` once its reader exists, `MATCHED` once it matched a
-writer and `SEEN id=<id>` for the first valid sample of each instance. When `SNAPSHOT_FILE` appears it prints `SNAP id=<id> state=<state>`
+writer, `SEEN id=<id>` for the first valid sample of each instance and
+`STATE id=<id> state=<state>` for each change of an instance's state, as it
+takes the samples. When `SNAPSHOT_FILE` appears it prints `SNAP id=<id> state=<state>`
 per instance and `SNAPDONE`; when `STOP_FILE` appears, or after `SECONDS`,
 the same as `FINAL` lines and exits. The type is
 `@final struct KeyedPointA { @key long id; long value; }`.

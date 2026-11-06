@@ -48,9 +48,9 @@ Feature `extension-module`), `crates/py/pyproject.toml`
 `maturin build` baut daraus ein abi3-Wheel mit `_core.abi3.so` und den
 Python-Modulen.
 
-**Tests:** `crates/py/python/tests/test_docs.py::test_examples_parse`,
-`crates/py/python/tests/test_docs.py::test_literalincludes_point_at_existing_examples`,
-`crates/py/python/tests/test_smoke.py::test_version_exposed`
+**Tests:** `crates/py/python/tests/test_docs.py::py_1_1_examples_parse`,
+`crates/py/python/tests/test_docs.py::py_1_1_literalincludes_point_at_existing_examples`,
+`crates/py/python/tests/test_smoke.py::py_1_1_version_exposed`
 
 **Status:** done
 
@@ -70,9 +70,9 @@ Pro PyClass ein Item. Mapping aus DDS 1.4 §2.2.2.
 `zerodds_dcps::DomainParticipantFactory`; `create_participant_fast`
 setzt `RuntimeConfig { tick_period: 20 ms, spdp_period: 100 ms }`.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_factory_singleton_and_offline_participant`,
-`crates/py/python/tests/test_smoke.py::test_pub_sub_roundtrip_live`,
-`crates/py/python/tests/test_loader_smoke.py::test_loader_factory_singleton`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_1_factory_singleton_and_offline_participant`,
+`crates/py/python/tests/test_smoke.py::py_1_2_1_pub_sub_roundtrip_live`,
+`crates/py/python/tests/test_loader_smoke.py::py_1_2_1_loader_factory_singleton`
 
 **Status:** done
 
@@ -89,10 +89,10 @@ setzt `RuntimeConfig { tick_period: 20 ms, spdp_period: 100 ms }`.
 die vier `ignore_*` und `contains_entity` nehmen den `u64` einer
 `InstanceHandle`.
 
-**Tests:** `crates/py/python/tests/test_participant_ignore.py::test_ignore_participant_unknown_handle_is_silent`,
-`crates/py/python/tests/test_participant_ignore.py::test_contains_entity_false_for_unknown_handle`,
-`crates/py/python/tests/test_participant_ignore.py::test_get_discovered_participants_offline_is_empty`,
-`crates/py/python/tests/test_participant_ignore.py::test_assert_liveliness_offline_does_not_raise`
+**Tests:** `crates/py/python/tests/test_participant_ignore.py::py_1_2_2_ignore_participant_unknown_handle_is_silent`,
+`crates/py/python/tests/test_participant_ignore.py::py_1_2_2_contains_entity_false_for_unknown_handle`,
+`crates/py/python/tests/test_participant_ignore.py::py_1_2_2_get_discovered_participants_offline_is_empty`,
+`crates/py/python/tests/test_participant_ignore.py::py_1_2_2_assert_liveliness_offline_does_not_raise`
 
 **Status:** done
 
@@ -105,7 +105,7 @@ die vier `ignore_*` und `contains_entity` nehmen den `u64` einer
 `<RawBytes as DdsType>::TYPE_NAME` und ist damit an die Rust-Seite
 gebunden statt neu geschrieben.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_bytes_topic_and_reader_are_creatable_offline`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_3_bytes_topic_and_reader_are_creatable_offline`
 
 **Status:** done
 
@@ -118,8 +118,8 @@ Type-Name = `"ShapeType"`.
 `Topic<ShapeType>`; `type_name` liest
 `<ShapeType as DdsType>::TYPE_NAME` aus `crates/dcps/src/interop.rs`.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_shape_topic_matches_vendor_interop_type_name`,
-`crates/py/python/tests/test_shapesdemo_interop.py::test_shape_type_name_matches_shapesdemo_convention`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_4_shape_topic_matches_vendor_interop_type_name`,
+`crates/py/python/tests/test_shapesdemo_interop.py::py_1_2_4_shape_type_name_matches_shapesdemo_convention`
 
 **Status:** done
 
@@ -131,9 +131,9 @@ Type-Name = `"ShapeType"`.
 **Repo:** `crates/py/src/ffi.rs` (`PyPublisher`) — dazu die
 `*_with_qos`-Varianten aus §6.2 und `create_keyed_writer`.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_pub_sub_roundtrip_live`,
-`crates/py/python/tests/test_qos.py::test_create_bytes_writer_with_qos_offline`,
-`crates/py/python/tests/test_qos.py::test_create_shape_writer_with_qos_offline`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_1_pub_sub_roundtrip_live`,
+`crates/py/python/tests/test_qos.py::py_1_2_5_create_bytes_writer_with_qos_offline`,
+`crates/py/python/tests/test_qos.py::py_1_2_5_create_shape_writer_with_qos_offline`
 
 **Status:** done
 
@@ -146,9 +146,9 @@ Type-Name = `"ShapeType"`.
 `*_with_qos`-Varianten, `create_keyed_reader` und
 `create_bytes_reader_cft` für den Content-Filter aus §2.2.2.5.4.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_bytes_topic_and_reader_are_creatable_offline`,
-`crates/py/python/tests/test_qos.py::test_create_bytes_reader_with_qos_offline`,
-`crates/py/python/tests/test_qos_lifecycle_surface.py::test_content_filtered_topic_filters_samples`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_3_bytes_topic_and_reader_are_creatable_offline`,
+`crates/py/python/tests/test_qos.py::py_1_2_6_create_bytes_reader_with_qos_offline`,
+`crates/py/python/tests/test_qos_lifecycle_surface.py::py_1_2_6_content_filtered_topic_filters_samples`
 
 **Status:** done
 
@@ -164,10 +164,10 @@ Type-Name = `"ShapeType"`.
 `unregister_instance` und `set_listener`/`clear_listener`. `write` und
 die drei Wartefunktionen geben den GIL über `py.detach` frei.
 
-**Tests:** `crates/py/python/tests/test_status_getters.py::test_publication_matched_status_shape`,
-`crates/py/python/tests/test_status_getters.py::test_liveliness_lost_status_shape`,
-`crates/py/python/tests/test_status_getters.py::test_offered_deadline_missed_status_shape`,
-`crates/py/python/tests/test_qos_lifecycle_surface.py::test_bytes_writer_lifecycle_methods_present`
+**Tests:** `crates/py/python/tests/test_status_getters.py::py_1_2_7_publication_matched_status_shape`,
+`crates/py/python/tests/test_status_getters.py::py_1_2_7_liveliness_lost_status_shape`,
+`crates/py/python/tests/test_status_getters.py::py_1_2_7_offered_deadline_missed_status_shape`,
+`crates/py/python/tests/test_qos_lifecycle_surface.py::py_1_2_7_bytes_writer_lifecycle_methods_present`
 
 **Status:** done
 
@@ -183,10 +183,10 @@ die drei Wartefunktionen geben den GIL über `py.detach` frei.
 liefern, `liveliness_changed_status` und
 `set_listener`/`clear_listener`.
 
-**Tests:** `crates/py/python/tests/test_status_getters.py::test_subscription_matched_status_shape`,
-`crates/py/python/tests/test_status_getters.py::test_sample_lost_status_shape`,
-`crates/py/python/tests/test_status_getters.py::test_requested_deadline_missed_status_shape`,
-`crates/py/python/tests/test_qos_lifecycle_surface.py::test_bytes_take_with_info_returns_sample_info`
+**Tests:** `crates/py/python/tests/test_status_getters.py::py_1_2_8_subscription_matched_status_shape`,
+`crates/py/python/tests/test_status_getters.py::py_1_2_8_sample_lost_status_shape`,
+`crates/py/python/tests/test_status_getters.py::py_1_2_8_requested_deadline_missed_status_shape`,
+`crates/py/python/tests/test_qos_lifecycle_surface.py::py_1_2_8_bytes_take_with_info_returns_sample_info`
 
 **Status:** done
 
@@ -200,8 +200,8 @@ und `From<ShapeType>` in beide Richtungen.
 `#[pyo3(signature = (color, x, y, shapesize=30))]` und den beiden
 `From`-Implementierungen gegen `zerodds_dcps::interop::ShapeType`.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_shape_constructor_and_repr`,
-`crates/py/python/tests/test_smoke.py::test_shape_default_shapesize_is_30`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_9_shape_constructor_and_repr`,
+`crates/py/python/tests/test_smoke.py::py_1_2_9_shape_default_shapesize_is_30`
 
 **Status:** done
 
@@ -216,9 +216,9 @@ und `From<ShapeType>` in beide Richtungen.
 `lookup_instance` nil liefert, damit immer ein gültiges Handle
 vorliegt (Spec §2.2.2.4.2.4).
 
-**Tests:** `crates/py/python/tests/test_writer_lifecycle.py::test_register_instance_returns_nonzero_handle`,
-`crates/py/python/tests/test_writer_lifecycle.py::test_register_instance_is_idempotent_for_same_key`,
-`crates/py/python/tests/test_writer_lifecycle.py::test_lifecycle_full_sequence`
+**Tests:** `crates/py/python/tests/test_writer_lifecycle.py::py_1_2_10_register_instance_returns_nonzero_handle`,
+`crates/py/python/tests/test_writer_lifecycle.py::py_1_2_10_register_instance_is_idempotent_for_same_key`,
+`crates/py/python/tests/test_writer_lifecycle.py::py_1_2_10_lifecycle_full_sequence`
 
 **Status:** done
 
@@ -231,8 +231,8 @@ vorliegt (Spec §2.2.2.4.2.4).
 `take_with_info` / `read_with_info` und
 `liveliness_changed_status`.
 
-**Tests:** `crates/py/python/tests/test_status_getters.py::test_matched_publication_count_zero_offline`,
-`crates/py/python/tests/test_listener.py::test_set_listener_on_shape_reader_offline`
+**Tests:** `crates/py/python/tests/test_status_getters.py::py_1_2_11_matched_publication_count_zero_offline`,
+`crates/py/python/tests/test_listener.py::py_1_2_11_set_listener_on_shape_reader_offline`
 
 **Status:** done
 
@@ -244,9 +244,9 @@ vorliegt (Spec §2.2.2.4.2.4).
 **Repo:** `crates/py/src/ffi.rs` (`PyGuardCondition`) über
 `zerodds_dcps::condition::GuardCondition`.
 
-**Tests:** `crates/py/python/tests/test_conditions.py::test_guard_condition_default_trigger_is_false`,
-`crates/py/python/tests/test_conditions.py::test_guard_condition_set_trigger_roundtrip`,
-`crates/py/python/tests/test_conditions.py::test_guard_condition_via_outer_namespace`
+**Tests:** `crates/py/python/tests/test_conditions.py::py_1_2_12_guard_condition_default_trigger_is_false`,
+`crates/py/python/tests/test_conditions.py::py_1_2_12_guard_condition_set_trigger_roundtrip`,
+`crates/py/python/tests/test_conditions.py::py_1_2_12_guard_condition_via_outer_namespace`
 
 **Status:** done
 
@@ -260,9 +260,9 @@ vorliegt (Spec §2.2.2.4.2.4).
 `TimeoutError`, wenn nichts triggert. `attach_read_condition` und
 `attach_query_condition` kommen aus §6.6 dazu.
 
-**Tests:** `crates/py/python/tests/test_conditions.py::test_waitset_attach_and_wait_raises_timeout`,
-`crates/py/python/tests/test_conditions.py::test_waitset_wakes_when_guard_condition_fires`,
-`crates/py/python/tests/test_conditions.py::test_waitset_via_outer_namespace`
+**Tests:** `crates/py/python/tests/test_conditions.py::py_1_2_13_waitset_attach_and_wait_raises_timeout`,
+`crates/py/python/tests/test_conditions.py::py_1_2_13_waitset_wakes_when_guard_condition_fires`,
+`crates/py/python/tests/test_conditions.py::py_1_2_13_waitset_via_outer_namespace`
 
 **Status:** done
 
@@ -282,9 +282,9 @@ PyClasses werden zu Platzhaltern, die beim Instanziieren einen
 `ImportError` mit der maturin-Zeile werfen — die pure-Python-Module
 bleiben ohne Rust-Build benutzbar.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_version_exposed`,
-`crates/py/python/tests/test_conditions.py::test_guard_condition_via_outer_namespace`,
-`crates/py/python/tests/test_docs.py::test_api_rst_documents_every_extension_class`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_1_version_exposed`,
+`crates/py/python/tests/test_conditions.py::py_1_2_12_guard_condition_via_outer_namespace`,
+`crates/py/python/tests/test_docs.py::py_1_3_1_api_rst_documents_every_extension_class`
 
 **Status:** done
 
@@ -300,11 +300,11 @@ Topic mit CompleteTypeObject, Schlüssel und Extensibility des Typs an;
 PyClasses `DescriptorTopic`/`DescriptorWriter`/`DescriptorReader` in
 `crates/py/src/ffi.rs`.
 
-**Tests:** `crates/py/python/tests/test_idl_topic.py::test_idl_topic_rejects_a_non_topic_descriptor`,
-`::test_idl_topic_exposes_type_name_from_the_descriptor`,
-`::test_idl_writer_encodes_and_reader_decodes_roundtrip`,
-`::test_idl_writer_rejects_wrong_type`,
-`::test_idl_writer_passthrough_status`
+**Tests:** `crates/py/python/tests/test_idl_topic.py::py_1_3_2_idl_topic_rejects_a_non_topic_descriptor`,
+`::py_1_3_2_idl_topic_exposes_type_name_from_the_descriptor`,
+`::py_1_3_2_idl_writer_encodes_and_reader_decodes_roundtrip`,
+`::py_1_3_2_idl_writer_rejects_wrong_type`,
+`::py_1_3_2_idl_writer_passthrough_status`
 
 **Status:** done
 
@@ -319,10 +319,9 @@ Alignment auf `min(N, MAXALIGN)` mit MAXALIGN vier unter XCDR2 und acht
 unter XCDR1, DHEADER- und EMHEADER-Framing, PL_CDR1-Parameter.
 
 **Tests:** `runtime/python/tests/test_wire.py`,
-`crates/py/python/tests/test_idl.py::test_wire_primitive_roundtrip`,
-`::test_wire_string_alignment_padding`,
-`::test_wire_reader_rejects_truncated_string`,
-`::test_xcdr2_max_align_caps_double_at_four`
+`crates/py/python/tests/test_idl.py::py_1_3_3_wire_string_alignment_padding`,
+`::py_1_3_3_wire_reader_rejects_truncated_string`,
+`::py_1_3_3_xcdr2_max_align_caps_double_at_four`
 
 **Status:** done
 
@@ -339,9 +338,9 @@ unter XCDR1, DHEADER- und EMHEADER-Framing, PL_CDR1-Parameter.
 Wheel-interne `_lib/`, `target/{debug,release}` im Entwicklungsbaum
 und zuletzt den System-Linker.
 
-**Tests:** `crates/py/python/tests/test_loader_smoke.py::test_loader_resolves_library`,
-`crates/py/python/tests/test_loader_smoke.py::test_loader_runtime_create_participant_offline`,
-`crates/py/python/tests/test_loader_smoke.py::test_loader_zerodds_error_is_runtime_error_subclass`
+**Tests:** `crates/py/python/tests/test_loader_smoke.py::py_1_3_4_loader_resolves_library`,
+`crates/py/python/tests/test_loader_smoke.py::py_1_3_4_loader_runtime_create_participant_offline`,
+`crates/py/python/tests/test_loader_smoke.py::py_1_3_4_loader_zerodds_error_is_runtime_error_subclass`
 
 Die vier Tests überspringen, wenn keine `libzerodds` gefunden wird
 (`cargo build -p zerodds-c-api` oder `ZERODDS_LIB`).
@@ -359,10 +358,20 @@ teilen nur Wire-Format und Domain-ID: `loader.py` importiert
 `_core` nicht und läuft ohne Rust-Toolchain, `ffi.rs` kennt
 `libzerodds` nicht.
 
-**Tests:** `crates/py/python/tests/test_loader_smoke.py::test_loader_factory_singleton`,
-`crates/py/python/tests/test_smoke.py::test_factory_singleton_and_offline_participant`
+**Tests:** `crates/py/python/tests/test_loader_smoke.py::py_1_2_1_loader_factory_singleton`,
+`crates/py/python/tests/test_smoke.py::py_1_2_1_factory_singleton_and_offline_participant`
 
 **Status:** done
+
+### Nicht-Ziel — RTPS direkt in reinem Python
+
+**Spec:** Nicht-Ziele — „Direct RTPS wire in pure Python: the pure Python path goes via the ctypes loader bridge to the Rust library. There is no pure-Python RTPS datagram in v1.0 or v2.0.“
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — der `ctypes`-Pfad braucht `libzerodds`; `runtime/python/zerodds_wire` kodiert CDR, sendet aber kein RTPS.
 
 ### §1.5 Schichten-Position
 
@@ -394,8 +403,8 @@ Schicht im Crate-Doc.
 Das Löschen hängt am Python-GC: `PyParticipant` hält den
 `DomainParticipant`, dessen `Drop` die Rust-Seite abbaut.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_factory_singleton_and_offline_participant`,
-`crates/py/python/tests/test_multiproc.py::test_multiproc_python_python_roundtrip`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_1_factory_singleton_and_offline_participant`,
+`crates/py/python/tests/test_multiproc.py::py_2_1_multiproc_python_python_roundtrip`
 
 **Status:** done
 
@@ -411,10 +420,10 @@ Das Löschen hängt am Python-GC: `PyParticipant` hält den
 drei getypten Konstruktoren `create_bytes_topic`,
 `create_shape_topic` und `create_keyed_topic`.
 
-**Tests:** `crates/py/python/tests/test_participant_ignore.py::test_ignore_topic_unknown_handle_is_silent`,
-`crates/py/python/tests/test_participant_ignore.py::test_ignore_publication_unknown_handle_is_silent`,
-`crates/py/python/tests/test_participant_ignore.py::test_ignore_subscription_unknown_handle_is_silent`,
-`crates/py/python/tests/test_participant_ignore.py::test_get_discovered_topics_offline_is_empty`
+**Tests:** `crates/py/python/tests/test_participant_ignore.py::py_2_2_ignore_topic_unknown_handle_is_silent`,
+`crates/py/python/tests/test_participant_ignore.py::py_2_2_ignore_publication_unknown_handle_is_silent`,
+`crates/py/python/tests/test_participant_ignore.py::py_2_2_ignore_subscription_unknown_handle_is_silent`,
+`crates/py/python/tests/test_participant_ignore.py::py_2_2_get_discovered_topics_offline_is_empty`
 
 **Status:** done
 
@@ -428,8 +437,8 @@ drei getypten Konstruktoren `create_bytes_topic`,
 **Repo:** `crates/py/src/ffi.rs` (`PyPublisher`, `PySubscriber`) —
 je Topic-Typ ein Konstruktor, jeweils mit `*_with_qos`-Variante.
 
-**Tests:** `crates/py/python/tests/test_qos.py::test_create_shape_reader_with_qos_offline`,
-`crates/py/python/tests/test_smoke.py::test_pub_sub_roundtrip_live`
+**Tests:** `crates/py/python/tests/test_qos.py::py_2_3_create_shape_reader_with_qos_offline`,
+`crates/py/python/tests/test_smoke.py::py_1_2_1_pub_sub_roundtrip_live`
 
 **Status:** done
 
@@ -446,10 +455,10 @@ je Topic-Typ ein Konstruktor, jeweils mit `*_with_qos`-Variante.
 `matched_subscription_count`, die drei Status-Getter liefern die
 Tupel der Spec-Struktur.
 
-**Tests:** `crates/py/python/tests/test_writer_lifecycle.py::test_dispose_does_not_raise`,
-`crates/py/python/tests/test_writer_lifecycle.py::test_unregister_instance_does_not_raise`,
-`crates/py/python/tests/test_status_getters.py::test_matched_subscription_count_zero_offline`,
-`crates/py/python/tests/test_qos_lifecycle_surface.py::test_keyed_register_instance_returns_real_handle`
+**Tests:** `crates/py/python/tests/test_writer_lifecycle.py::py_2_4_dispose_does_not_raise`,
+`crates/py/python/tests/test_writer_lifecycle.py::py_2_4_unregister_instance_does_not_raise`,
+`crates/py/python/tests/test_status_getters.py::py_2_4_matched_subscription_count_zero_offline`,
+`crates/py/python/tests/test_qos_lifecycle_surface.py::py_2_4_keyed_register_instance_returns_real_handle`
 
 **Status:** done
 
@@ -466,9 +475,9 @@ und `wait_for_historical_data` bewusst weggelassen.
 `SampleInfo` mitliefern — `read` ohne `SampleInfo` bleibt weg, wie die
 Spec es sagt.
 
-**Tests:** `crates/py/python/tests/test_qos_lifecycle_surface.py::test_bytes_take_with_info_returns_sample_info`,
-`crates/py/python/tests/test_status_getters.py::test_subscription_matched_status_shape`,
-`crates/py/python/tests/test_smoke.py::test_pub_sub_roundtrip_live`
+**Tests:** `crates/py/python/tests/test_qos_lifecycle_surface.py::py_1_2_8_bytes_take_with_info_returns_sample_info`,
+`crates/py/python/tests/test_status_getters.py::py_1_2_8_subscription_matched_status_shape`,
+`crates/py/python/tests/test_smoke.py::py_1_2_1_pub_sub_roundtrip_live`
 
 **Status:** done
 
@@ -487,9 +496,9 @@ Re-Export-Block. `crates/py/python/zerodds/__init__.py` folgt §1.3:
 beide sind über `zerodds.` und über `zerodds._core.` erreichbar, was
 den §2.6-Zugang einschliesst.
 
-**Tests:** `crates/py/python/tests/test_conditions.py::test_waitset_wakes_when_guard_condition_fires`,
-`crates/py/python/tests/test_conditions.py::test_waitset_via_outer_namespace`,
-`crates/py/python/tests/test_read_conditions.py::test_read_condition_attaches_to_waitset`
+**Tests:** `crates/py/python/tests/test_conditions.py::py_1_2_13_waitset_wakes_when_guard_condition_fires`,
+`crates/py/python/tests/test_conditions.py::py_1_2_13_waitset_via_outer_namespace`,
+`crates/py/python/tests/test_read_conditions.py::py_2_6_read_condition_attaches_to_waitset`
 
 **Status:** done
 
@@ -505,9 +514,9 @@ selbst, es gibt keinen zweiten Codec auf der Rust-Seite.
 `shape_reference_octets` gibt die Oktette dieses Codecs nach Python
 zurück, damit der generierte Python-Code gegen ihn gemessen werden kann.
 
-**Tests:** `crates/py/python/tests/test_idl.py::test_shapetype_matches_the_rust_codec_octet_for_octet`,
-`crates/py/python/tests/test_smoke.py::test_shape_topic_matches_vendor_interop_type_name`,
-`crates/py/python/tests/test_shapesdemo_interop.py::test_shape_type_name_matches_shapesdemo_convention`
+**Tests:** `crates/py/python/tests/test_idl.py::py_5_5_the_shapetype_codec_matches_the_rust_codec_octet_for_octet`,
+`crates/py/python/tests/test_smoke.py::py_1_2_4_shape_topic_matches_vendor_interop_type_name`,
+`crates/py/python/tests/test_shapesdemo_interop.py::py_1_2_4_shape_type_name_matches_shapesdemo_convention`
 
 **Status:** done
 
@@ -528,12 +537,11 @@ geschrieben ist; der Decoder wendet `@try_construct` an (XTypes 1.3
 Schrankenprüfung), `tools/idlc` (`generate --lang python`),
 `runtime/python/zerodds_wire/`.
 
-**Tests:** `crates/py/python/tests/test_idl.py::test_sensor_mixed_fields_roundtrip`,
-`::test_optional_present_and_absent`, `::test_enum_roundtrip`,
-`::test_enum_unknown_value_raises`, `::test_union_case_int_roundtrip`,
-`::test_union_default_branch_used_for_unknown_disc`,
-`::test_nested_struct_roundtrip`, `::test_fixed_array_roundtrip`,
-`::test_generated_bounds_roundtrip_and_enforced`
+**Tests:** `crates/py/python/tests/test_idl.py::py_3_1_fixed_array_roundtrip`,
+`::py_3_1_enum_unknown_value_raises`, `::py_3_1_generated_bounds_roundtrip_and_enforced`,
+`::py_3_1_a_union_without_default_writes_only_the_discriminator`,
+`::py_3_1_xcdr2_optional_present_flag_then_align`,
+`::py_3_1_xcdr2_sequence_of_struct_has_dheader_primitive_array_does_not`
 
 **Status:** partial — die Elementzahl eines festen Arrays prüft der
 Encoder nicht: zu viele Elemente werden gekürzt, zu wenige werfen
@@ -549,8 +557,8 @@ Deskriptor.
 `crates/py/examples/03_idl_topic_gen.py` (der `zerodds-idlc`-Output),
 `crates/py/examples/03_idl_topic.py`.
 
-**Tests:** `crates/py/python/tests/test_docs.py::test_examples_parse`,
-`crates/py/python/tests/test_idl.py::test_shapetype_matches_the_rust_codec_octet_for_octet`
+**Tests:** `crates/py/python/tests/test_docs.py::py_1_1_examples_parse`,
+`crates/py/python/tests/test_idl.py::py_5_5_the_shapetype_codec_matches_the_rust_codec_octet_for_octet`
 
 **Status:** done
 
@@ -573,12 +581,12 @@ Testfunktionen über den generierten Fixtures), `test_idl_topic.py`,
 `test_shapesdemo_interop.py`, `test_docs.py` — dazu der ROS-2-Baum aus
 §6.4 und `runtime/python/tests/test_wire.py`.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_version_exposed`,
-`::test_factory_singleton_and_offline_participant`,
-`::test_bytes_topic_and_reader_are_creatable_offline`,
-`::test_shape_topic_matches_vendor_interop_type_name`,
-`::test_shape_constructor_and_repr`, `::test_shape_default_shapesize_is_30`,
-`::test_pub_sub_roundtrip_live`; die Testfunktionen von `test_idl.py`.
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_1_version_exposed`,
+`::py_1_2_1_factory_singleton_and_offline_participant`,
+`::py_1_2_3_bytes_topic_and_reader_are_creatable_offline`,
+`::py_1_2_4_shape_topic_matches_vendor_interop_type_name`,
+`::py_1_2_9_shape_constructor_and_repr`, `::py_1_2_9_shape_default_shapesize_is_30`,
+`::py_1_2_1_pub_sub_roundtrip_live`; die Testfunktionen von `test_idl.py`.
 
 **Status:** done
 
@@ -610,9 +618,9 @@ Coverage über Verhalten steht auf einem pytest-Fall.
 — zwei Participants derselben Domain in einem Prozess; das Matching
 läuft über den In-Prozess-Discovery-Fastpath aus `crates/dcps`.
 
-**Tests:** `crates/py/python/tests/test_smoke.py::test_pub_sub_roundtrip_live`,
-`crates/py/python/tests/test_qos_lifecycle_surface.py::test_bytes_take_with_info_returns_sample_info`,
-`crates/py/python/tests/test_qos_lifecycle_surface.py::test_content_filtered_topic_filters_samples`
+**Tests:** `crates/py/python/tests/test_smoke.py::py_1_2_1_pub_sub_roundtrip_live`,
+`crates/py/python/tests/test_qos_lifecycle_surface.py::py_1_2_8_bytes_take_with_info_returns_sample_info`,
+`crates/py/python/tests/test_qos_lifecycle_surface.py::py_1_2_6_content_filtered_topic_filters_samples`
 
 **Status:** done
 
@@ -625,7 +633,7 @@ SPDP/SEDP.
 `python -c`-Subprozesse, ein `BytesTopic`, eine Nutzlast; der
 Subscriber beendet sich mit 0 und `OK`, sobald er sie hat.
 
-**Tests:** `crates/py/python/tests/test_multiproc.py::test_multiproc_python_python_roundtrip`
+**Tests:** `crates/py/python/tests/test_multiproc.py::py_2_1_multiproc_python_python_roundtrip`
 
 **Status:** done
 
@@ -640,11 +648,11 @@ generierte Modul `shape_gen.py` +
 `zerodds_dcps::interop::ShapeType::encode` schreibt) — die Referenz, gegen
 die der generierte Python-Codec Oktett für Oktett gehalten wird.
 
-**Tests:** `crates/py/python/tests/test_idl.py::test_shapetype_matches_the_rust_codec_octet_for_octet`
+**Tests:** `crates/py/python/tests/test_idl.py::py_5_5_the_shapetype_codec_matches_the_rust_codec_octet_for_octet`
 (7 Parameter-Sätze, jeder Fall vergleicht die geschriebenen Oktetten mit
 der Rust-Referenz aus demselben Prozess),
-`crates/py/python/tests/test_idl.py::test_shapetype_byte_roundtrip`,
-`crates/py/python/tests/test_shapesdemo_interop.py::test_shape_type_name_matches_shapesdemo_convention`
+`crates/py/python/tests/test_idl.py::py_5_3_shapetype_byte_roundtrip`,
+`crates/py/python/tests/test_shapesdemo_interop.py::py_1_2_4_shape_type_name_matches_shapesdemo_convention`
 (Topic-Type-Name `"ShapeType"`). Kein Gate; alle drei laufen im
 Default-Lauf von pytest.
 
@@ -678,7 +686,7 @@ gleicher Type-Name + RTPS-2.5-Wire.
 **Repo:** `matrix/zerodds-python/cyclone-*` und `matrix/zerodds-python/fastdds-*` — dieselbe Messung gegen Cyclone und Fast DDS
 
 **Tests:** die Zellen dieser Optionssätze; dazu
-`crates/py/python/tests/test_shapesdemo_interop.py::test_cross_vendor_participant_discovery_against_ddsperf`,
+`crates/py/python/tests/test_shapesdemo_interop.py::py_5_4_cross_vendor_participant_discovery_against_ddsperf`,
 das die SPDP-Entdeckung gegen Cyclones `ddsperf` misst und
 überspringt, wo `ddsperf` nicht im Pfad liegt
 
@@ -696,11 +704,10 @@ selben Modul kompiliert ist, nicht mit einem aus einem Rust-Test
 kopierten Literal. `wireprobe-python-matrix` misst die ganze
 Python-Spalte gegen die Rust-Spalte.
 
-**Tests:** `crates/py/python/tests/test_idl.py::test_shapetype_matches_the_rust_codec_octet_for_octet`
+**Tests:** `crates/py/python/tests/test_idl.py::py_5_5_the_shapetype_codec_matches_the_rust_codec_octet_for_octet`
 (sieben Shapes, darunter eine leere und eine einbuchstabige Farbe sowie
 `i32::MAX`/`i32::MIN`),
-`crates/py/python/tests/test_idl.py::test_fixed_member_struct_byte_identical_to_rust_cpp`,
-`crates/py/python/tests/test_idl.py::test_sensor_mixed_fields_roundtrip`
+`crates/py/python/tests/test_idl.py::py_5_5_fixed_member_struct_byte_identical_to_rust_cpp`
 
 **Status:** done
 
@@ -717,10 +724,10 @@ mit dem generierten Code kodieren und dekodieren.
 der Konstruktor weist alles ausser einem `TopicDescriptor` ab, und
 `IdlTopic.type_name` kommt aus dem Deskriptor.
 
-**Tests:** `crates/py/python/tests/test_idl_topic.py::test_idl_topic_rejects_a_non_topic_descriptor`,
-`::test_idl_topic_exposes_type_name_from_the_descriptor`,
-`::test_idl_writer_encodes_and_reader_decodes_roundtrip`,
-`::test_idl_writer_rejects_wrong_type`, `::test_idl_writer_passthrough_status`
+**Tests:** `crates/py/python/tests/test_idl_topic.py::py_1_3_2_idl_topic_rejects_a_non_topic_descriptor`,
+`::py_1_3_2_idl_topic_exposes_type_name_from_the_descriptor`,
+`::py_1_3_2_idl_writer_encodes_and_reader_decodes_roundtrip`,
+`::py_1_3_2_idl_writer_rejects_wrong_type`, `::py_1_3_2_idl_writer_passthrough_status`
 
 **Status:** done
 
@@ -742,11 +749,11 @@ führt. Ein unbekannter Kind-String wird als `ValueError` abgewiesen
 statt still auf einen Default zu fallen. Die
 `create_*_with_qos`-Konstruktoren liegen in `crates/py/src/ffi.rs`.
 
-**Tests:** `crates/py/python/tests/test_qos.py::test_writer_qos_defaults`,
-`crates/py/python/tests/test_qos.py::test_writer_qos_setters_with_durations`,
-`crates/py/python/tests/test_qos.py::test_reader_qos_full_setter_chain`,
-`crates/py/python/tests/test_qos.py::test_writer_qos_rejects_unknown_reliability_kind`,
-`crates/py/python/tests/test_qos.py::test_create_bytes_writer_with_qos_offline`
+**Tests:** `crates/py/python/tests/test_qos.py::py_6_2_writer_qos_defaults`,
+`crates/py/python/tests/test_qos.py::py_6_2_writer_qos_setters_with_durations`,
+`crates/py/python/tests/test_qos.py::py_6_2_reader_qos_full_setter_chain`,
+`crates/py/python/tests/test_qos.py::py_6_2_writer_qos_rejects_unknown_reliability_kind`,
+`crates/py/python/tests/test_qos.py::py_1_2_5_create_bytes_writer_with_qos_offline`
 
 **Status:** done
 
@@ -761,22 +768,22 @@ statt still auf einen Default zu fallen. Die
 blockierende Operation läuft über `asyncio.to_thread`, die
 nicht-blockierenden Getter gehen direkt durch.
 
-**Tests:** `crates/py/python/tests/test_aio.py::test_async_wrappers_are_constructible`,
-`crates/py/python/tests/test_aio.py::test_async_wait_for_data_uses_event_loop`,
-`crates/py/python/tests/test_aio.py::test_async_take_returns_list_passthrough`,
-`crates/py/python/tests/test_aio.py::test_async_waitset_wait_raises_timeout`
+**Tests:** `crates/py/python/tests/test_aio.py::py_6_3_async_wrappers_are_constructible`,
+`crates/py/python/tests/test_aio.py::py_6_3_async_wait_for_data_uses_event_loop`,
+`crates/py/python/tests/test_aio.py::py_6_3_async_take_returns_list_passthrough`,
+`crates/py/python/tests/test_aio.py::py_6_3_async_waitset_wait_raises_timeout`
 
 **Status:** done
 
 ### §6.4 ROS-2-pytest-Integration
 
 **Spec:** §6.4 — Test-Baum `crates/py/python/tests/ros2/` mit
-`conftest.py` (Skip, wenn `ROS_DISTRO` + `rclpy` +
+`ros2/conftest.py` (Skip, wenn `ROS_DISTRO` + `rclpy` +
 `RMW_IMPLEMENTATION` fehlen) und `test_rmw_zerodds_interop.py` für
 Standard-rclpy-Publish/Subscribe über das ZeroDDS-rmw.
 
 **Repo:** `crates/py/python/tests/ros2/conftest.py` — markiert
-ausschliesslich die Fälle unterhalb `ros2/` als übersprungen, wenn
+ausschließlich die Fälle unterhalb `ros2/` als übersprungen, wenn
 `ROS_DISTRO`, `ros2` im Pfad oder `rclpy` fehlen, und getrennt davon,
 wenn `RMW_IMPLEMENTATION` nicht auf dem ZeroDDS-rmw steht;
 `crates/py/python/tests/ros2/test_rmw_zerodds_interop.py` — sechs
@@ -788,7 +795,7 @@ ROS-2-Installation registriert und diesen Baum darauf ausführt.
 Die Spec nennt den RMW-Namen `rmw_zerodds_shim`; der
 Implementierungs-Identifier nach REP-2007 ist
 `rmw_zerodds_cpp` (`crates/rmw-zerodds-shim/ament/package.xml`), und
-danach prüft die `conftest.py`.
+danach prüft die `ros2/conftest.py`.
 
 **Tests:** `crates/py/python/tests/ros2/test_rmw_zerodds_interop.py::test_rclpy_init_succeeds_with_zerodds_rmw`,
 `crates/py/python/tests/ros2/test_rmw_zerodds_interop.py::test_rclpy_publish_subscribe_string_roundtrip`,
@@ -798,11 +805,24 @@ danach prüft die `conftest.py`.
 `crates/py/python/tests/ros2/test_rmw_zerodds_interop.py::test_rclpy_endpoint_info_by_topic`
 
 Auf einem Host ohne ROS 2 überspringen alle sechs mit der Begründung
-aus der `conftest.py`; gemessen werden sie über
+aus der `ros2/conftest.py`; gemessen werden sie über
 `run_ros2_pytest.sh` auf einer ROS-2-Installation, siehe
 `docs/spec-coverage/ros2-rmw.md`.
 
-**Status:** done
+**Status:** partial — Nicht in CI gelaufen: `test_rclpy_init_succeeds_with_zerodds_rmw`, `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `test_rclpy_topic_graph_introspection`, `test_rclpy_node_names_graph`, `test_rclpy_endpoint_info_by_topic`. Die rclpy-Tests unter `crates/py/python/tests/ros2/` sind im Job `integration-python` deklariert übersprungen. ROS 2 ist nicht im CI-Image (OPEN-ITEMS 42; ROS 2 kommt mit RC9).
+
+### §6.4 ROS-2-pytest-Integration — Lauf in CI
+
+**Spec:** §6.4 — Test-Baum `crates/py/python/tests/ros2/` mit
+`ros2/conftest.py` (Skip, wenn `ROS_DISTRO` + `rclpy` +
+`RMW_IMPLEMENTATION` fehlen) und `test_rmw_zerodds_interop.py` für
+Standard-rclpy-Publish/Subscribe über das ZeroDDS-rmw.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Nicht in CI gelaufen: `test_rclpy_init_succeeds_with_zerodds_rmw`, `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `test_rclpy_topic_graph_introspection`, `test_rclpy_node_names_graph`, `test_rclpy_endpoint_info_by_topic`. Die rclpy-Tests unter `crates/py/python/tests/ros2/` sind im Job `integration-python` deklariert übersprungen. ROS 2 ist nicht im CI-Image (OPEN-ITEMS 42; ROS 2 kommt mit RC9).
 
 ### §6.5 Status-Listener-Callbacks
 
@@ -823,12 +843,12 @@ Aufruf; eine Exception im Callback wird gedruckt und nicht nach Rust
 propagiert. `set_listener`/`clear_listener` liegen an den vier
 Writer-/Reader-PyClasses in `crates/py/src/ffi.rs`.
 
-**Tests:** `crates/py/python/tests/test_listener.py::test_writer_listener_constructible`,
-`crates/py/python/tests/test_listener.py::test_reader_listener_constructible`,
-`crates/py/python/tests/test_listener.py::test_set_listener_on_bytes_writer_offline`,
-`crates/py/python/tests/test_listener.py::test_set_listener_on_bytes_reader_offline`,
-`crates/py/python/tests/test_listener.py::test_set_listener_on_shape_writer_offline`,
-`crates/py/python/tests/test_listener.py::test_set_listener_on_shape_reader_offline`
+**Tests:** `crates/py/python/tests/test_listener.py::py_6_5_writer_listener_constructible`,
+`crates/py/python/tests/test_listener.py::py_6_5_reader_listener_constructible`,
+`crates/py/python/tests/test_listener.py::py_6_5_set_listener_on_bytes_writer_offline`,
+`crates/py/python/tests/test_listener.py::py_6_5_set_listener_on_bytes_reader_offline`,
+`crates/py/python/tests/test_listener.py::py_6_5_set_listener_on_shape_writer_offline`,
+`crates/py/python/tests/test_listener.py::py_1_2_11_set_listener_on_shape_reader_offline`
 
 **Status:** done
 
@@ -849,11 +869,11 @@ Konstruktor validiert, `WaitSet.attach_read_condition` /
 `zerodds_dcps::sample_info` setzt. Ein ungültiger SQL-Ausdruck wird im
 Konstruktor als `RuntimeError` abgewiesen.
 
-**Tests:** `crates/py/python/tests/test_read_conditions.py::test_sample_state_constants`,
-`crates/py/python/tests/test_read_conditions.py::test_read_condition_modes`,
-`crates/py/python/tests/test_read_conditions.py::test_query_condition_with_parameters`,
-`crates/py/python/tests/test_read_conditions.py::test_query_condition_invalid_sql_raises`,
-`crates/py/python/tests/test_read_conditions.py::test_query_condition_attaches_to_waitset`
+**Tests:** `crates/py/python/tests/test_read_conditions.py::py_6_6_sample_state_constants`,
+`crates/py/python/tests/test_read_conditions.py::py_6_6_read_condition_modes`,
+`crates/py/python/tests/test_read_conditions.py::py_6_6_query_condition_with_parameters`,
+`crates/py/python/tests/test_read_conditions.py::py_6_6_query_condition_invalid_sql_raises`,
+`crates/py/python/tests/test_read_conditions.py::py_6_6_query_condition_attaches_to_waitset`
 
 **Status:** done
 
@@ -873,12 +893,12 @@ Klasse, die das Erweiterungsmodul exportiert, und die Module `loader`,
 `crates/py/docs/index.rst`, `crates/py/docs/quickstart.rst`,
 `crates/py/docs/examples.rst`.
 
-**Tests:** `crates/py/python/tests/test_docs.py::test_conf_py_declares_the_four_extensions_the_spec_names`,
-`crates/py/python/tests/test_docs.py::test_api_rst_documents_every_spec_pyclass`,
-`crates/py/python/tests/test_docs.py::test_api_rst_documents_every_pure_python_module`,
-`crates/py/python/tests/test_docs.py::test_api_rst_documents_every_extension_class`,
-`crates/py/python/tests/test_docs.py::test_toctree_entries_exist`,
-`crates/py/python/tests/test_docs.py::test_conf_py_is_importable_and_names_the_workspace_version`
+**Tests:** `crates/py/python/tests/test_docs.py::py_6_7_conf_py_declares_the_four_extensions_the_spec_names`,
+`crates/py/python/tests/test_docs.py::py_6_7_api_rst_documents_every_spec_pyclass`,
+`crates/py/python/tests/test_docs.py::py_6_7_api_rst_documents_every_pure_python_module`,
+`crates/py/python/tests/test_docs.py::py_1_3_1_api_rst_documents_every_extension_class`,
+`crates/py/python/tests/test_docs.py::py_6_7_toctree_entries_exist`,
+`crates/py/python/tests/test_docs.py::py_6_7_conf_py_is_importable_and_names_the_workspace_version`
 
 Die Tests prüfen den Bestand des Baums, nicht den `sphinx-build`-Lauf.
 
@@ -893,8 +913,7 @@ Breaking-Changes.
 
 **Tests:** —
 
-**Status:** n/a (informative) — Policy-Statement, nicht
-test-pflichtig.
+**Status:** n/a (informative) — Versionierungszusage, keine Eigenschaft der Bindung.
 
 ## §8 Lizenz
 
@@ -904,7 +923,7 @@ test-pflichtig.
 
 **Tests:** —
 
-**Status:** n/a (informative).
+**Status:** open — `crates/py/pyproject.toml` deklariert `license = { text = "Apache-2.0 OR MIT" }`, der Cargo-Workspace `Apache-2.0`; die Spec nennt Apache-2.0. Kein Test prüft die Angabe.
 
 ## §9 Referenzen
 
@@ -917,21 +936,19 @@ PEP 384.
 
 **Tests:** —
 
-**Status:** n/a (informative).
+**Status:** n/a (informative) — Verweisliste.
 
 ---
 
 ## Audit-Status
 
-41 done / 2 partial / 1 open / 3 n/a (informative) / 0 n/a (rejected).
+40 done / 3 partial / 4 open / 0 blocked / 2 n/a (informative).
 
-Test-Lauf: `PYTHONPATH=runtime/python:crates/py/python python3 -m pytest
-crates/py/python/tests` ohne `test_qos_lifecycle_surface.py` (startet
-Participants auf den Domains 41–46) — 161 grün, 0 failed, 1 xfailed
-(`test_fixed_array_count_is_refused_on_encode`, §3.1), 17 bedingt
-übersprungen (ROS-2 ohne `ROS_DISTRO`/`rclpy`, ShapesDemo ohne `ddsperf`,
-Loader ohne `libzerodds`).
-`cd runtime/python && python3 -m unittest discover -s tests` — 125
-Tests grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-py-1.0.md`):
 
-Offene Punkte: siehe `zerodds-py-1.0.open.md`. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-py --all-targets` (Job `merge-rust-py`) — 1 Test grün.
+* `python3 ci/run_integration.py integration-python` (Job `integration-python`) — 95 Tests grün.
+
+96 zitierte Tests grün, 6 nicht grün.
+
+Offene Punkte: `zerodds-py-1.0.open.md`.

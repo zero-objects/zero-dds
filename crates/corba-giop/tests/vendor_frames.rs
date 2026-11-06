@@ -58,7 +58,7 @@ fn frames_dir(vendor: &str) -> PathBuf {
 }
 
 fn hex_to_bytes(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "a hex stream has an even length");
+    assert!(s.len().is_multiple_of(2), "a hex stream has an even length");
     (0..s.len() / 2)
         .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())
         .collect()
@@ -232,8 +232,8 @@ fn the_tao_exemption_is_load_bearing() {
 /// and 285 TAO carry a four-octet gap. JacORB and omniORB write
 /// `00 00 00 00` in every one; TAO writes `01 00 00 00` in every one.
 ///
-/// One limit of the measurement, and it is the one
-/// `docs/OPEN-ITEMS.md`'s open item about `markHeaderEnd` names: all 57
+/// One limit of the measurement, kept as an open item in
+/// `internal/release/OPEN-ITEMS.md` (JacORB, `markHeaderEnd`): all 57
 /// JacORB instances are **the first message of their connection**, one
 /// per capture file and so one per JVM. JacORB's `BufferManager` pool
 /// hands back buffers uncleared, so these captures cannot separate "the

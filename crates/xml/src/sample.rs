@@ -347,15 +347,15 @@ fn parse_member_value(
         // §7.3.7.3.2 / XTypes: a bounded sequence may not carry more
         // elements than its `sequenceMaxLength`.
         // `Some(0)` is the unbounded sequence (`sequenceMaxLength="-1"`).
-        if let Some(max) = member.sequence_max_length.filter(|m| *m > 0) {
-            if items.len() > max as usize {
-                return Err(XmlError::ValueOutOfRange(format!(
-                    "sequence `{}` has {} items, over sequenceMaxLength {}",
-                    member.name,
-                    items.len(),
-                    max
-                )));
-            }
+        if let Some(max) = member.sequence_max_length.filter(|m| *m > 0)
+            && items.len() > max as usize
+        {
+            return Err(XmlError::ValueOutOfRange(format!(
+                "sequence `{}` has {} items, over sequenceMaxLength {}",
+                member.name,
+                items.len(),
+                max
+            )));
         }
         return Ok(SampleValue::Sequence(items));
     }
@@ -459,10 +459,10 @@ fn walk(types: &[TypeDef], parts: &[&str]) -> Option<TypeDef> {
     // Fallback: recursive search through modules at any depth (bare name).
     if parts.len() == 1 {
         for t in types {
-            if let TypeDef::Module(m) = t {
-                if let Some(found) = walk(&m.types, parts) {
-                    return Some(found);
-                }
+            if let TypeDef::Module(m) = t
+                && let Some(found) = walk(&m.types, parts)
+            {
+                return Some(found);
             }
         }
     }

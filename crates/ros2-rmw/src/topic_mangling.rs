@@ -127,60 +127,42 @@ pub fn is_ros_topic(dds_name: &str) -> bool {
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {
+    //! The oracle: the design article "Topic and Service name mapping to
+    //! DDS" (design.ros2.org/articles/topic_and_service_names.html),
+    //! §"ROS Specific Namespace Prefix" and §"ROS 2 Topic and Service Name
+    //! Constraints", as `rmw_dds_common` and the other RMWs apply it.
     use super::*;
 
     #[test]
-    fn mangle_topic_strips_leading_slash_and_prepends_rt() {
-        // `/chatter` → `rt/chatter`.
-        assert_eq!(
-            mangle_topic_name("/chatter", RosKind::Topic).expect("ok"),
-            "rt/chatter"
-        );
+    fn ros_names_prefix_a_topic_loses_its_leading_slash_and_takes_rt() {
+        for (ros, dds) in [
+            ("/chatter", "rt/chatter"),
+            ("/sensors/imu/data", "rt/sensors/imu/data"),
+            ("chatter", "rt/chatter"),
+            ("/_private", "rt/_private"),
+        ] {
+            assert_eq!(
+                mangle_topic_name(ros, RosKind::Topic).expect("ok"),
+                dds,
+                "{ros}"
+            );
+        }
     }
 
     #[test]
-    fn mangle_preserves_internal_slashes() {
-        assert_eq!(
-            mangle_topic_name("/sensors/imu/data", RosKind::Topic).expect("ok"),
-            "rt/sensors/imu/data"
-        );
+    fn ros_names_prefix_each_kind_takes_its_prefix() {
+        for (kind, dds) in [
+            (RosKind::Topic, "rt/foo"),
+            (RosKind::ServiceRequest, "rq/foo"),
+            (RosKind::ServiceReply, "rr/foo"),
+            (RosKind::ServiceLegacy, "rs/foo"),
+        ] {
+            assert_eq!(mangle_topic_name("/foo", kind).expect("ok"), dds);
+        }
     }
 
     #[test]
-    fn mangle_each_kind_uses_correct_prefix() {
-        assert!(
-            mangle_topic_name("/foo", RosKind::Topic)
-                .expect("ok")
-                .starts_with("rt/")
-        );
-        assert!(
-            mangle_topic_name("/foo", RosKind::ServiceRequest)
-                .expect("ok")
-                .starts_with("rq/")
-        );
-        assert!(
-            mangle_topic_name("/foo", RosKind::ServiceReply)
-                .expect("ok")
-                .starts_with("rr/")
-        );
-        assert!(
-            mangle_topic_name("/foo", RosKind::ServiceLegacy)
-                .expect("ok")
-                .starts_with("rs/")
-        );
-    }
-
-    #[test]
-    fn mangle_handles_already_unprefixed_name() {
-        // `chatter` (no leading slash) → `rt/chatter`.
-        assert_eq!(
-            mangle_topic_name("chatter", RosKind::Topic).expect("ok"),
-            "rt/chatter"
-        );
-    }
-
-    #[test]
-    fn mangle_rejects_empty_name() {
+    fn ros_names_constraints_an_empty_name_is_refused() {
         assert_eq!(
             mangle_topic_name("", RosKind::Topic),
             Err(NameMangleError::EmptyName)
@@ -192,8 +174,7 @@ mod tests {
     }
 
     #[test]
-    fn mangle_rejects_invalid_leading_character() {
-        // ROS 2 topic names must not start with a digit.
+    fn ros_names_constraints_a_name_starting_with_a_digit_or_a_hyphen_is_refused() {
         assert_eq!(
             mangle_topic_name("/1foo", RosKind::Topic),
             Err(NameMangleError::InvalidLeadingChar('1'))
@@ -205,52 +186,27 @@ mod tests {
     }
 
     #[test]
-    fn mangle_accepts_underscore_leading() {
-        assert_eq!(
-            mangle_topic_name("/_private", RosKind::Topic).expect("ok"),
-            "rt/_private"
-        );
-    }
-
-    #[test]
-    fn demangle_round_trips_all_kinds() {
-        for (kind, prefix) in [
-            (RosKind::Topic, "rt/"),
-            (RosKind::ServiceRequest, "rq/"),
-            (RosKind::ServiceReply, "rr/"),
-            (RosKind::ServiceLegacy, "rs/"),
+    fn ros_names_prefix_the_four_prefixes_read_back_as_their_kind() {
+        for (dds, kind) in [
+            ("rt/sensors/imu", RosKind::Topic),
+            ("rq/sensors/imu", RosKind::ServiceRequest),
+            ("rr/sensors/imu", RosKind::ServiceReply),
+            ("rs/sensors/imu", RosKind::ServiceLegacy),
         ] {
-            let dds = alloc::format!("{prefix}sensors/imu");
-            let (k, ros) = demangle_topic_name(&dds).expect("ok");
-            assert_eq!(k, kind);
-            assert_eq!(ros, "/sensors/imu");
+            let (k, ros) = demangle_topic_name(dds).expect("ok");
+            assert_eq!(k, kind, "{dds}");
+            assert_eq!(ros, "/sensors/imu", "{dds}");
+            assert!(is_ros_topic(dds), "{dds}");
         }
     }
 
     #[test]
-    fn demangle_rejects_unknown_prefix() {
+    fn ros_names_prefix_a_name_without_a_ros_prefix_is_no_ros_name() {
         assert!(matches!(
             demangle_topic_name("xyz/foo"),
             Err(NameMangleError::UnknownPrefix(_))
         ));
-    }
-
-    #[test]
-    fn is_ros_topic_recognizes_all_four_prefixes() {
-        assert!(is_ros_topic("rt/chatter"));
-        assert!(is_ros_topic("rq/foo"));
-        assert!(is_ros_topic("rr/foo"));
-        assert!(is_ros_topic("rs/foo"));
         assert!(!is_ros_topic("foo/bar"));
         assert!(!is_ros_topic("dds/foo"));
-    }
-
-    #[test]
-    fn mangle_demangle_round_trip() {
-        let original = "/sensors/imu/data";
-        let dds = mangle_topic_name(original, RosKind::Topic).expect("mangle");
-        let (kind, ros) = demangle_topic_name(&dds).expect("demangle");
-        assert_eq!(kind, RosKind::Topic);
-        assert_eq!(ros, original);
     }
 }

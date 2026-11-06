@@ -31,7 +31,7 @@ use zerodds_amqp_endpoint::MetricsHub;
 use zerodds_amqp_endpoint::sasl::SaslMechanism;
 
 #[test]
-fn a_tls_client_is_offered_plain_and_authenticated_against_the_store() {
+fn ddsamqp_10_1_a_tls_client_is_offered_plain_and_authenticated_against_the_store() {
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
     let cert_pem = cert.cert.pem().into_bytes();
     let server_tls = build_server_config(&ServerTlsConfig {
@@ -110,7 +110,7 @@ fn a_tls_client_is_offered_plain_and_authenticated_against_the_store() {
 /// client's certificate, the server requires client certificates, offers
 /// EXTERNAL and takes the client certificate as the identity.
 #[test]
-fn an_mtls_client_authenticates_with_external() {
+fn ddsamqp_2_1_an_mtls_client_authenticates_with_external() {
     use rcgen::{CertificateParams, IsCa, KeyPair};
     let mut ca_p = CertificateParams::new(vec!["endpoint test CA".to_string()]).unwrap();
     ca_p.is_ca = IsCa::Ca(rcgen::BasicConstraints::Unconstrained);

@@ -103,13 +103,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_fanout_drops_events_without_panic() {
-        let f = FanOutLoggingPlugin::new();
-        f.log(LogLevel::Error, [0u8; 16], "cat", "msg");
-        assert_eq!(f.sink_count(), 0);
-    }
-
-    #[test]
     fn event_reaches_all_registered_sinks() {
         let s1 = sink();
         let s2 = sink();

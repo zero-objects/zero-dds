@@ -3,7 +3,7 @@
 #
 # Note: the lakehouse adapter bundles DuckDB, compiled from C++ source — the
 # builder needs cmake + a C++ toolchain, and the runtime needs libstdc++6.
-FROM rust:1.88-bookworm AS chef
+FROM rust:1.97.1-bookworm AS chef
 RUN apt-get update && apt-get install -y --no-install-recommends \
         cmake build-essential clang libclang-dev \
     && rm -rf /var/lib/apt/lists/* \

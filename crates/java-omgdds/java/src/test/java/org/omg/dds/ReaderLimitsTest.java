@@ -55,7 +55,7 @@ class ReaderLimitsTest {
     }
 
     @Test
-    void aSampleOfANewInstanceBeyondMaxInstancesIsRejectedWithThatReasonAndInstance()
+    void javapsm_2_a_sample_of_a_new_instance_beyond_max_instances_is_rejected_with_that_reason_and_instance()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll()
@@ -79,7 +79,7 @@ class ReaderLimitsTest {
     }
 
     @Test
-    void aSampleBeyondMaxSamplesPerInstanceIsRejectedWithThatReasonAndInstance()
+    void javapsm_2_a_sample_beyond_max_samples_per_instance_is_rejected_with_that_reason_and_instance()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.reader(Qos.readerKeepAll()
@@ -103,7 +103,7 @@ class ReaderLimitsTest {
     }
 
     @Test
-    void aLateReaderGetsTheHistoricalDataOfATransientLocalWriterBeforeWaitForHistoricalDataReturns()
+    void javapsm_2_a_late_reader_gets_the_historical_data_of_a_transient_local_writer_before_wait_for_historical_data_returns()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataWriter<Keyed> writer = Qos.writer(rig.publisher, rig.topic, ReaderRig.SUPPORT,

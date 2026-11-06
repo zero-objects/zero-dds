@@ -32,6 +32,26 @@ LimitMEMLOCK=infinity
 WantedBy=multi-user.target
 ```
 
+### Real-time privileges
+
+`zerodds-rt-linux`'s `SchedulerProfile::apply_to_current_thread()` and the
+CPU pinning need these privileges (`crates/rt-linux/src/scheduler.rs`):
+
+| Profile | Linux policy | Privilege |
+|---|---|---|
+| `Default` | `SCHED_OTHER` | none |
+| `RealtimeFifo { priority }` | `SCHED_FIFO` | `CAP_SYS_NICE` for a priority above 0; for 0 depending on `RLIMIT_RTPRIO` |
+| `RealtimeRoundRobin { priority }` | `SCHED_RR` | as `RealtimeFifo` |
+| `Deadline { runtime_ns, deadline_ns, period_ns }` | `SCHED_DEADLINE` | always `CAP_SYS_NICE`; `runtime ≤ deadline ≤ period`, `EBUSY` when the kernel's bandwidth reservation does not fit |
+| CPU pinning | `sched_setaffinity` | none, within the process's own CPU set |
+
+Without the privilege the call fails with `EPERM`. Give the binary the
+capability instead of running it with `sudo`
+(`sudo setcap 'cap_sys_nice=eip' /usr/local/bin/your-app`), or use the unit
+above. Kernel parameters, `PREEMPT_RT`, IRQ affinity and the `cyclictest`
+baseline are in
+[`tests/perf/rt-tuning/host-config-checklist.md`](../../tests/perf/rt-tuning/host-config-checklist.md).
+
 ## Container (Docker / Podman)
 
 ```dockerfile
@@ -107,6 +127,49 @@ When multicast is disabled (typical AWS / GCP / Azure VPCs):
 | RAM | 256 MiB minimum — ZeroDDS itself is ~10 MiB, the rest is your application + history caches |
 | Network | 1 GbE for general use, 10 GbE for high-throughput data + isolated NIC for RT deployments |
 | Disk | None required — ZeroDDS is RAM-only by default unless you enable `Persistent` durability or recording |
+
+## Durability service (TRANSIENT and PERSISTENT)
+
+`TRANSIENT_LOCAL` needs no service: the writer keeps its own history.
+`TRANSIENT` and `PERSISTENT` (DDS 1.4 §2.2.3.4) are served by the daemon
+`zerodds-durability-svc` (ADR 0009), one per DDS domain. It keeps the history
+of the topics it serves and replays it to readers that join later, after the
+writer's process is gone; with a durable store the history survives a restart
+of the daemon. The options are in `zerodds-durability-svc(1)` and
+`zerodds-durability-svc.yaml(5)`.
+
+```bash
+# every TRANSIENT/PERSISTENT topic on domain 0, sqlite store
+zerodds-durability-svc --domain 0 --store sqlite \
+    --path /var/lib/zerodds/durability/dur.db --auto
+
+# a fixed set of topics, file store
+zerodds-durability-svc --domain 0 --store file \
+    --path /var/lib/zerodds/durability --topic SensorData --topic Commands
+```
+
+| `--store` | `--path` | Build |
+|---|---|---|
+| `sqlite` (default) | a database file; omitted: in memory, lost on restart | default |
+| `file` | a directory (required) | default |
+| `lakehouse` (DuckDB) | a database file | `--features lakehouse` |
+| `postgres` | a libpq connection string (required) | `--features postgres` |
+
+- systemd: `packaging/linux/systemd/zerodds-durability-svc.service`
+  (`Type=notify`; domain, store and path from the `ZERODDS_DURABILITY_*`
+  lines; the store directory is the only `ReadWritePaths`). One unit per
+  domain, each with its own `--path`.
+- Docker: `packaging/docker/durability-svc/Dockerfile` (default build:
+  `sqlite` and `file`), with `--network host` and a volume on
+  `/var/lib/zerodds/durability`.
+- Backup: the store is the durable state. sqlite: `sqlite3 dur.db
+  ".backup '/backup/dur.db'"` while running, or the `.db` with `-wal` and
+  `-shm` while idle; file: copy the directory. At start the daemon serves what
+  the store holds, so a restored backup resumes that history; a committed
+  sample survives `kill -9` (the integration scenario
+  `tests/integration/tests/services.rs::durability_outlives_writer_and_daemon`).
+- Two daemons on the same domain and topic both replay; readers may see
+  duplicates.
 
 ## Deployment checklist
 

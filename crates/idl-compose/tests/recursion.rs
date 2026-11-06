@@ -45,7 +45,7 @@ fn refuses_the_cycle(source: &str) -> bool {
 }
 
 #[test]
-fn a_cycle_with_no_terminator_on_it_is_refused() {
+fn idl_7_4_1_4_4_4_4_a_cycle_with_no_terminator_on_it_is_refused() {
     for source in [
         "struct Sa { Sa m; };",
         // An array has no length on the wire, so a cycle through one
@@ -65,7 +65,7 @@ fn a_cycle_with_no_terminator_on_it_is_refused() {
 }
 
 #[test]
-fn a_cycle_with_a_terminator_on_it_is_admitted() {
+fn idl_7_4_1_4_4_4_4_a_cycle_with_a_terminator_on_it_is_admitted() {
     // The half that matters most: refusing these would break every
     // recursive type in the tree. §7.4.1.4.4.4.4 admits the collection
     // forms, and XTypes 1.3 §7.3.1.2.1.3 gives `@optional` the same
@@ -92,7 +92,7 @@ fn a_cycle_with_a_terminator_on_it_is_admitted() {
 }
 
 #[test]
-fn the_diagnostic_names_the_type_and_the_clause() {
+fn idl_7_4_1_4_4_4_4_the_diagnostic_names_the_type_and_the_clause() {
     // A refusal that does not say which type closed the cycle sends the
     // author looking through the file. The layout stage's own message
     // named a `NodeId`, which is worse than nothing outside a debugger.
@@ -106,7 +106,7 @@ fn the_diagnostic_names_the_type_and_the_clause() {
 }
 
 #[test]
-fn the_interop_corpus_case_for_this_is_refused_and_its_neighbours_are_not() {
+fn idl_7_4_1_4_4_4_4_the_interop_corpus_case_for_this_is_refused_and_its_neighbours_are_not() {
     // The corpus curates seven recursion cases and exactly one of them
     // is the inadmissible kind. Reading them off disk rather than
     // restating them keeps this test measuring the same files the wire
@@ -150,7 +150,7 @@ fn the_interop_corpus_case_for_this_is_refused_and_its_neighbours_are_not() {
 /// where the second sentence read `` `::` closes a type cycle `` and
 /// named nothing.
 #[test]
-fn a_forward_declared_cycle_is_reported_once() {
+fn idl_7_4_1_4_4_4_4_a_forward_declared_cycle_is_reported_once() {
     let reported: Vec<String> =
         errors("module m { struct Node; @appendable struct Node { long value; Node pair[2]; }; };")
             .into_iter()

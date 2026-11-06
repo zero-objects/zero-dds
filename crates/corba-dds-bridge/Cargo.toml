@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "Bidirectional CORBA-Object ↔ DDS-Topic bridge: GIOP request → DDS sample (servant mode) and DDS sample → GIOP request (forwarder mode). Many-to-many BridgeMapping with BridgeServant + LifecycleSync; wire helpers to corba-giop + corba-ior. no_std + alloc."
+description = "The DDS-CORBA bridge daemon zerodds-corba-bridged: a GIOP request becomes a DDS request sample and the reply sample its GIOP reply; a DDS sample becomes a oneway GIOP request. IIOP, SSLIOP, CSIv2, NameService."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-corba-dds-bridge"
 readme = "README.md"
@@ -39,7 +39,6 @@ std = [
     "dep:zerodds-corba-iiop",
     "zerodds-corba-giop/std",
     "zerodds-corba-ior/std",
-    "zerodds-corba-poa/std",
     "zerodds-corba-csiv2/std",
     "zerodds-corba-cosnaming/serve",
     "sha2/std",
@@ -52,17 +51,13 @@ std = [
     "dep:zerodds-config",
     "dep:zerodds-dcps",
     "dep:zerodds-rtps",
-    "dep:zerodds-types",
 ]
 alloc = [
     "zerodds-corba-giop/alloc",
     "zerodds-corba-ior/alloc",
-    "zerodds-corba-poa/alloc",
     "zerodds-corba-csiv2/alloc",
     "zerodds-corba-cosnaming/alloc",
 ]
-# Cross-vendor interop tests against omniORB (Spec §10 + §12.3).
-cross-vendor-tests = ["std"]
 
 [dependencies]
 # The layered configuration every ZeroDDS program reads (--config, --set,
@@ -71,13 +66,11 @@ zerodds-config = { version = "1.0.0-rc.7", path = "../config", optional = true }
 zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true, default-features = false, features = ["std"] }
 # Wire types of the bridge daemon's DDS side (entity ids, representation ids).
 zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps", optional = true, default-features = false, features = ["std"] }
-zerodds-types = { version = "1.0.0-rc.7", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 zerodds-corba-giop = { version = "1.0.0-rc.7", path = "../corba-giop", default-features = false }
 zerodds-corba-ior = { version = "1.0.0-rc.7", path = "../corba-ior", default-features = false }
 zerodds-corba-iiop = { version = "1.0.0-rc.7", path = "../corba-iiop", optional = true, features = [
     "tls",
 ] }
-zerodds-corba-poa = { version = "1.0.0-rc.7", path = "../corba-poa", default-features = false }
 zerodds-corba-csiv2 = { version = "1.0.0-rc.7", path = "../corba-csiv2", default-features = false }
 # The NamingContext wire codec (client side: rebind/unbind into
 # corba.ior.naming_service) and, in-process, the servant + graph
@@ -109,8 +102,25 @@ zerodds-test-domains = { path = "../test-domains" }
 zerodds-corba-cosnaming = { version = "1.0.0-rc.7", path = "../corba-cosnaming", features = [
     "daemon",
 ] }
+# tests/plain_cdr_e2e.rs gives a writer the `PL_CDR` header
+# (`ExtensibilityForRepr::Mutable`).
+zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
 
 # SIGTERM-graceful shutdown in the DaemonGuard (otherwise SIGKILL →
 # corrupt `.profraw` under cargo-llvm-cov). Unix-only via cfg gate.
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true, features = ["std"] }
+
+# The contract with zerodds-dcps (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-dcps only with `std`.
+[[test]]
+name = "contract_dcps"
+path = "tests/contract_dcps.rs"
+required-features = ["std"]
+
+# The contract with zerodds-bridge-security (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-bridge-security only with `std`.
+[[test]]
+name = "contract_bridge_security"
+path = "tests/contract_bridge_security.rs"
+required-features = ["std"]

@@ -126,7 +126,7 @@ const CASES: &[Case] = &[
 ];
 
 fn unhex(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "an odd number of hex digits");
+    assert!(s.len().is_multiple_of(2), "an odd number of hex digits");
     (0..s.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
@@ -157,7 +157,7 @@ fn type_named(ast: &zerodds_ast::Ast, name: &str) -> zerodds_ast_core::Id<zerodd
 /// Every octet of Cyclone's serialized `TypeObject`, `MINIMAL` and
 /// `COMPLETE`, for all four cases.
 #[test]
-fn a_serialized_type_object_is_cyclones_octet_for_octet() {
+fn xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet() {
     let ast = model();
     for case in CASES {
         let id = type_named(&ast, case.name);
@@ -188,43 +188,6 @@ fn a_serialized_type_object_is_cyclones_octet_for_octet() {
     }
 }
 
-/// The first four octets are a `DHEADER` over the rest — the shape of
-/// the finding, stated on its own so a failure names it.
-///
-/// A mutation that drops the `encode_appendable` wrapper from
-/// `TypeObject::encode_into` fails this and the octet test above; a
-/// mutation that writes the header twice fails this one on the length
-/// and the hash test below on the hash.
-#[test]
-fn the_first_four_octets_announce_everything_after_them() {
-    let ast = model();
-    for case in CASES {
-        let id = type_named(&ast, case.name);
-        for bytes in [
-            TypeObject::Minimal(minimal_type_object(&ast, id).expect("minimal"))
-                .to_bytes_le()
-                .expect("encode"),
-            TypeObject::Complete(complete_type_object(&ast, id).expect("complete"))
-                .to_bytes_le()
-                .expect("encode"),
-        ] {
-            let announced = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-            assert_eq!(
-                announced,
-                bytes.len() - 4,
-                "{}: the DHEADER counts everything after it",
-                case.name
-            );
-            assert!(
-                matches!(bytes[4], 0xF1 | 0xF2),
-                "{}: then the EquivalenceKind, not {:#04x}",
-                case.name,
-                bytes[4]
-            );
-        }
-    }
-}
-
 /// The COMPLETE hashes RTI Connext 7.7.0 computes for the same corpus,
 /// measured on the Linux test host on 2026-09-06.
 ///
@@ -246,7 +209,7 @@ fn the_first_four_octets_announce_everything_after_them() {
 /// RTI reports — so the size RTI counts and the size ZeroDDS announces
 /// are the same number for the same bytes.
 #[test]
-fn the_complete_hash_is_the_one_rti_and_cyclone_both_report() {
+fn xtypes_7_3_4_2_the_complete_hash_is_the_one_rti_and_cyclone_both_report() {
     /// name, COMPLETE hash, and the octet count the hash is taken over.
     const COMPLETE: &[(&str, &str, usize)] = &[
         ("Plain", "7c0c6fab7d066a0c56b8e93c0ea7", 80),

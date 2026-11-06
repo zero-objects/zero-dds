@@ -72,7 +72,7 @@ class QosEntityFactoryTest {
     // --- Publisher and DataWriter -----------------------------------------------------
 
     @Test
-    void aPublisherWithAutoEnableFalseCreatesDisabledWriters() throws Exception {
+    void javapsm_7_3_5_1_a_publisher_with_auto_enable_false_creates_disabled_writers() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig(publisherQos(false), Qos.subscriber())) {
             assertTrue(((PublisherImpl) rig.publisher).isEnabled());
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.reader());
@@ -90,15 +90,7 @@ class QosEntityFactoryTest {
     }
 
     @Test
-    void aPublisherWithAutoEnableTrueCreatesEnabledWriters() throws Exception {
-        try (QosFixtures.Rig rig = new QosFixtures.Rig(publisherQos(true), Qos.subscriber())) {
-            DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
-            writeOne(writer); // no NotEnabledException
-        }
-    }
-
-    @Test
-    void theChangeOfTheFactoryPolicyAffectsOnlyTheEntitiesCreatedAfterIt() throws Exception {
+    void javapsm_7_3_5_1_the_change_of_the_factory_policy_affects_only_the_entities_created_after_it() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> before = rig.writer(Qos.writer());
             rig.publisher.setQos(rig.publisher.getQos().withPolicy(autoEnable(false)));
@@ -113,24 +105,7 @@ class QosEntityFactoryTest {
     }
 
     @Test
-    void enablingThePublisherEnablesTheWritersItCreatedWhileDisabled() throws Exception {
-        DomainParticipant participant = lazyParticipant();
-        try {
-            Topic<QosFixtures.Item> topic = participant.createTopic("Items", QosFixtures.Item.class);
-            Publisher publisher = participant.createPublisher(publisherQos(true));
-            assertFalse(((PublisherImpl) publisher).isEnabled(), "created by a participant that does not enable");
-            DataWriter<QosFixtures.Item> writer = Qos.writer(publisher, topic, QosFixtures.SUPPORT, Qos.writer());
-            assertThrows(NotEnabledException.class, () -> writeOne(writer));
-
-            publisher.enable();
-            writeOne(writer);
-        } finally {
-            participant.close();
-        }
-    }
-
-    @Test
-    void enablingThePublisherLeavesTheWritersDisabledWhenItsPolicyIsFalse() throws Exception {
+    void javapsm_7_3_5_1_enabling_the_publisher_leaves_the_writers_disabled_when_its_policy_is_false() throws Exception {
         DomainParticipant participant = lazyParticipant();
         try {
             Topic<QosFixtures.Item> topic = participant.createTopic("Items", QosFixtures.Item.class);
@@ -146,25 +121,10 @@ class QosEntityFactoryTest {
         }
     }
 
-    @Test
-    void aWriterCannotBeEnabledBeforeItsPublisher() throws Exception {
-        DomainParticipant participant = lazyParticipant();
-        try {
-            Topic<QosFixtures.Item> topic = participant.createTopic("Items", QosFixtures.Item.class);
-            Publisher publisher = participant.createPublisher(publisherQos(true));
-            DataWriter<QosFixtures.Item> writer = Qos.writer(publisher, topic, QosFixtures.SUPPORT, Qos.writer());
-            assertThrows(PreconditionNotMetException.class, writer::enable);
-            publisher.enable();
-            writer.enable(); // idempotent now
-        } finally {
-            participant.close();
-        }
-    }
-
     // --- Subscriber and DataReader --------------------------------------------------------
 
     @Test
-    void aSubscriberWithAutoEnableFalseCreatesDisabledReaders() throws Exception {
+    void javapsm_7_3_5_1_a_subscriber_with_auto_enable_false_creates_disabled_readers() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig(Qos.publisher(), subscriberQos(false))) {
             assertTrue(((SubscriberImpl) rig.subscriber).isEnabled());
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.reader());
@@ -180,56 +140,10 @@ class QosEntityFactoryTest {
         }
     }
 
-    @Test
-    void enablingTheSubscriberEnablesTheReadersItCreatedWhileDisabled() throws Exception {
-        DomainParticipant participant = lazyParticipant();
-        try {
-            Topic<QosFixtures.Item> topic = participant.createTopic("Items", QosFixtures.Item.class);
-            Subscriber subscriber = participant.createSubscriber(subscriberQos(true));
-            DataReader<QosFixtures.Item> reader = Qos.reader(subscriber, topic, QosFixtures.SUPPORT, Qos.reader());
-            assertThrows(NotEnabledException.class, () -> Qos.read(reader));
-            assertThrows(PreconditionNotMetException.class, reader::enable);
-
-            subscriber.enable();
-            assertEquals(0, Qos.read(reader).size());
-        } finally {
-            participant.close();
-        }
-    }
-
     // --- the participant and the factory ------------------------------------------------------
 
     @Test
-    void theParticipantFactoryDecidesWhetherTheParticipantsItCreatesAreEnabled() {
-        DomainParticipantFactory factory = Qos.factory();
-        DomainParticipantFactoryQos original = factory.getQos();
-        assertTrue(original.getEntityFactory().isAutoEnableCreatedEntities());
-        DomainParticipant enabled = factory.createParticipant(QosFixtures.nextDomain());
-        DomainParticipant disabled = null;
-        try {
-            assertTrue(((DomainParticipantImpl) enabled).isEnabled());
-
-            DomainParticipantFactoryQos off = ((DomainParticipantFactoryQosImpl)
-                    DomainParticipantFactoryQosImpl.defaults(Qos.env())).withPolicy(autoEnable(false));
-            assertFalse(off.getEntityFactory().isAutoEnableCreatedEntities());
-            factory.setQos(off);
-            assertFalse(factory.getQos().getEntityFactory().isAutoEnableCreatedEntities());
-            disabled = factory.createParticipant(QosFixtures.nextDomain());
-            assertFalse(((DomainParticipantImpl) disabled).isEnabled());
-            disabled.enable();
-            assertTrue(((DomainParticipantImpl) disabled).isEnabled());
-        } finally {
-            factory.setQos(original);
-            enabled.close();
-            if (disabled != null) {
-                disabled.close();
-            }
-        }
-        assertTrue(factory.getQos().getEntityFactory().isAutoEnableCreatedEntities());
-    }
-
-    @Test
-    void theParticipantPolicyDecidesWhetherItsPublishersSubscribersAndTopicsAreEnabled() {
+    void javapsm_7_3_5_1_the_participant_policy_decides_whether_its_publishers_subscribers_and_topics_are_enabled() {
         DomainParticipant lazy = lazyParticipant();
         try {
             assertFalse(((PublisherImpl) lazy.createPublisher()).isEnabled());

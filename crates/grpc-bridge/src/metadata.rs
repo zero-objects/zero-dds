@@ -127,7 +127,7 @@ pub fn encode_base64(input: &[u8]) -> String {
 /// malformed padding.
 pub fn decode_base64(input: &str) -> Result<Vec<u8>, MetadataError> {
     let bytes = input.as_bytes();
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return Err(MetadataError::InvalidBase64);
     }
     let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
@@ -240,99 +240,109 @@ mod tests {
     use super::*;
 
     #[test]
-    fn is_binary_header_recognizes_bin_suffix() {
+    fn grpc_metadata_is_binary_header_recognizes_bin_suffix() {
         assert!(is_binary_header("trace-bin"));
         assert!(is_binary_header("custom-meta-bin"));
     }
 
     #[test]
-    fn is_binary_header_rejects_text_headers() {
+    fn grpc_metadata_is_binary_header_rejects_text_headers() {
         assert!(!is_binary_header("custom-key"));
         assert!(!is_binary_header(""));
         assert!(!is_binary_header("-bin"));
     }
 
     #[test]
-    fn encode_base64_empty() {
+    fn grpc_metadata_encode_base64_empty() {
         assert_eq!(encode_base64(b""), "");
     }
 
     #[test]
-    fn encode_base64_one_byte_pads_two() {
+    fn grpc_metadata_encode_base64_one_byte_pads_two() {
         assert_eq!(encode_base64(b"f"), "Zg==");
     }
 
     #[test]
-    fn encode_base64_two_bytes_pads_one() {
+    fn grpc_metadata_encode_base64_two_bytes_pads_one() {
         assert_eq!(encode_base64(b"fo"), "Zm8=");
     }
 
     #[test]
-    fn encode_base64_three_bytes_no_padding() {
+    fn grpc_metadata_encode_base64_three_bytes_no_padding() {
         assert_eq!(encode_base64(b"foo"), "Zm9v");
     }
 
     #[test]
-    fn encode_base64_known_vector() {
+    fn grpc_metadata_encode_base64_known_vector() {
         // RFC 4648 Test-Vector
         assert_eq!(encode_base64(b"foobar"), "Zm9vYmFy");
     }
 
+    /// §"Custom-Metadata" (binary values are base64, RFC 4648 §4) with the
+    /// test vectors of RFC 4648 §10.
     #[test]
-    fn decode_base64_round_trip() {
-        for input in [&b""[..], b"f", b"fo", b"foo", b"foob", b"fooba", b"foobar"] {
-            let encoded = encode_base64(input);
-            let decoded = decode_base64(&encoded).expect("decode");
-            assert_eq!(decoded, input);
+    fn grpc_metadata_base64_reads_the_vectors_of_rfc_4648() {
+        for (text, octets) in [
+            ("", &b""[..]),
+            ("Zg==", b"f"),
+            ("Zm8=", b"fo"),
+            ("Zm9v", b"foo"),
+            ("Zm9vYg==", b"foob"),
+            ("Zm9vYmE=", b"fooba"),
+            ("Zm9vYmFy", b"foobar"),
+        ] {
+            assert_eq!(decode_base64(text).expect("decode"), octets);
+            assert_eq!(encode_base64(octets), text);
         }
     }
 
     #[test]
-    fn decode_base64_rejects_invalid_chars() {
+    fn grpc_metadata_decode_base64_rejects_invalid_chars() {
         assert!(decode_base64("Zm**").is_err());
     }
 
     #[test]
-    fn decode_base64_rejects_bad_padding_length() {
+    fn grpc_metadata_decode_base64_rejects_bad_padding_length() {
         assert!(decode_base64("Zm9").is_err());
     }
 
     #[test]
-    fn encode_header_value_text_passes_ascii() {
+    fn grpc_metadata_encode_header_value_text_passes_ascii() {
         let v = encode_header_value("custom-key", b"hello").expect("ok");
         assert_eq!(v, "hello");
     }
 
     #[test]
-    fn encode_header_value_text_rejects_non_ascii() {
+    fn grpc_metadata_encode_header_value_text_rejects_non_ascii() {
         // 0xff is invalid ASCII
         let r = encode_header_value("custom-key", &[0xff]);
         assert!(r.is_err());
     }
 
     #[test]
-    fn encode_header_value_bin_uses_base64() {
+    fn grpc_metadata_encode_header_value_bin_uses_base64() {
         let v = encode_header_value("trace-bin", &[0xde, 0xad, 0xbe, 0xef]).expect("ok");
         // 0xdeadbeef → 3q2+7w==
         assert_eq!(v, "3q2+7w==");
     }
 
+    /// §"Custom-Metadata": a `-bin` header's value is base64 of the octets.
     #[test]
-    fn decode_header_value_round_trip_bin() {
-        let original = vec![0x01, 0x02, 0x03, 0x04, 0xff];
-        let encoded = encode_header_value("trace-bin", &original).expect("encode");
-        let decoded = decode_header_value("trace-bin", &encoded).expect("decode");
-        assert_eq!(decoded, original);
+    fn grpc_metadata_a_bin_header_value_is_read_from_base64() {
+        assert_eq!(
+            decode_header_value("trace-bin", "AQIDBP8=").expect("decode"),
+            vec![0x01, 0x02, 0x03, 0x04, 0xff]
+        );
     }
 
     #[test]
-    fn decode_header_value_text_passes_through() {
+    fn grpc_metadata_decode_header_value_text_passes_through() {
         let decoded = decode_header_value("user-agent", "grpc-rust/1.0").expect("ok");
         assert_eq!(decoded, b"grpc-rust/1.0");
     }
 
     #[test]
-    fn content_types_match_spec_strings() {
+    fn grpc_requests_content_types_match_spec_strings() {
         assert_eq!(content_types::GRPC, "application/grpc");
         assert_eq!(content_types::GRPC_PROTO, "application/grpc+proto");
         assert_eq!(content_types::GRPC_WEB, "application/grpc-web");
@@ -340,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn request_headers_constants_match_spec() {
+    fn grpc_requests_request_headers_constants_match_spec() {
         assert_eq!(request_headers::METHOD, ":method");
         assert_eq!(request_headers::PATH, ":path");
         assert_eq!(request_headers::AUTHORITY, ":authority");
@@ -349,7 +359,7 @@ mod tests {
     }
 
     #[test]
-    fn response_headers_constants_match_spec() {
+    fn grpc_responses_response_headers_constants_match_spec() {
         assert_eq!(response_headers::STATUS, ":status");
         assert_eq!(response_headers::GRPC_STATUS, "grpc-status");
         assert_eq!(response_headers::GRPC_MESSAGE, "grpc-message");

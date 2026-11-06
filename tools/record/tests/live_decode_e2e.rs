@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Live end-to-end of `record --decode` against a real typed writer.
+//! `zerodds-record --decode` (zerodds-record(1)) against a live writer.
 //!
-//! A real DCPS writer publishes XCDR2-LE-encoded `cuas::Track` samples on a
-//! topic; a separate `zerodds-record --decode` process discovers it
-//! (type-following), captures + decodes, and writes typed SQLite + NDJSON. We
-//! then assert the decoded rows/values and that the retained `raw_cdr` lets
-//! `zerodds-replay` read the NDJSON back.
+//! A DCPS writer publishes `cuas::Track` samples (id = 42, name = "bandit",
+//! xs = [7, -3, 1000]) on a topic; a separate `zerodds-record --decode`
+//! process discovers it (type-following), captures, decodes and writes the
+//! typed SQLite and the NDJSON. The body is the XCDR1 little-endian octets
+//! DDS-XTypes 1.3 §7.4.1.1 gives for the value, written out by hand; the
+//! outputs hold the values and that body byte for byte, `--out-sqlite`
+//! replaces the file it names, and `zerodds-replay`'s NDJSON source reads
+//! the sample back.
 //!
 //! Linux-only: macOS multicast loopback is unreliable for cross-process DDS
 //! discovery. Run on the Linux test host.
@@ -21,12 +24,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use zerodds_ast_layout::key::{Encoding, Endianness};
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
+use zerodds_recorder_decode::RawSample;
 use zerodds_recorder_decode::type_source::TypeBook;
 use zerodds_rtps::wire_types::GuidPrefix;
 use zerodds_types::dynamic::DynamicData;
-use zerodds_wire_codec::{ProbeRequest, encode};
 
 const IDL: &str = r#"
     module cuas {
@@ -68,24 +70,23 @@ fn canonical_value() -> DynamicData {
     ])
 }
 
+/// The XCDR1 little-endian body of the canonical value: the writer
+/// declares `data_representation_offer.first()`, `DEFAULT_OFFER = [XCDR,
+/// XCDR2]`, so its header is `CDR_LE`. An `@appendable` struct under XCDR1 is
+/// PLAIN_CDR (§7.4.1.1); a string is its length with the NUL, then the
+/// characters and the NUL (§7.4.1.1.2); the length of the sequence is
+/// aligned to four.
 fn make_wire() -> Vec<u8> {
-    let book = TypeBook::from_idl(IDL).unwrap();
-    let value = canonical_value();
-    // The body has to be the encoding the writer *declares*, and the writer
-    // declares `data_representation_offer.first()`. That is
-    // `DEFAULT_OFFER = [XCDR, XCDR2]` — XCDR**1** first — so
-    // `user_payload_encap` stamps `CDR_LE` (0x01) and a reader derives
-    // `representation = 0` from it.
-    //
-    // The comment this replaces said `DEFAULT_OFFER` was `[XCDR2]`, citing a
-    // commit from before the list gained its XCDR1 head. Writing an XCDR2
-    // body under an XCDR1 header does not fail where the mismatch is: the
-    // reader honours the header, reads the XCDR2 delimiter as `id`, and then
-    // reads `id` as the length of `name` —
-    // `at 4: a length of 42 with 28 bytes left`, with 42 being the `id` that
-    // was written.
-    let request = ProbeRequest::new(TYPE_NAME, Encoding::PlainCdr1, Endianness::Little);
-    encode(book.ast(), &request, &value).unwrap()
+    let mut b = Vec::new();
+    b.extend_from_slice(&42u32.to_le_bytes());
+    b.extend_from_slice(&7u32.to_le_bytes());
+    b.extend_from_slice(b"bandit\0");
+    b.push(0);
+    b.extend_from_slice(&3u32.to_le_bytes());
+    for x in [7i32, -3, 1000] {
+        b.extend_from_slice(&x.to_le_bytes());
+    }
+    b
 }
 
 fn writer_config() -> UserWriterConfig {
@@ -117,14 +118,17 @@ fn seed_an_earlier_recording(db: &std::path::Path) {
         &ty,
         STALE_RECV_TS_NS,
         "00",
-        &make_wire(),
+        RawSample {
+            body: &make_wire(),
+            representation_identifier: Some([0x00, 0x09]),
+        },
         &canonical_value(),
     )
     .unwrap();
 }
 
 #[test]
-fn live_record_decode_roundtrip() {
+fn record_decode_holds_the_values_and_the_raw_body_of_a_live_writer_in_both_outputs() {
     // Held for the life of this process, so the recorder subprocess can be
     // pointed at the same number.
     let domain = lease_domain();
@@ -161,9 +165,6 @@ fn live_record_decode_roundtrip() {
             std::thread::sleep(Duration::from_millis(100));
         }
     });
-
-    // Let the writer get announced before the recorder's settle window.
-    std::thread::sleep(Duration::from_millis(800));
 
     // --- Recorder process: discover, capture, decode → SQLite + NDJSON. ---
     let status = Command::new(record_bin())

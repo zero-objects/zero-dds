@@ -133,10 +133,10 @@ impl DdsOperationDispatcher for InstanceTrackingDispatcher {
             DdsOperation::Unregister | DdsOperation::Dispose => {
                 // Spec §11.3 — unknown instance → precondition-
                 // failed.
-                if let Some(h) = op.instance_handle {
-                    if !self.known.contains(&h) {
-                        return DispatchOutcome::UnknownInstance;
-                    }
+                if let Some(h) = op.instance_handle
+                    && !self.known.contains(&h)
+                {
+                    return DispatchOutcome::UnknownInstance;
                 }
                 DispatchOutcome::Accepted
             }
@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn accept_all_returns_accepted_for_every_operation() {
+    fn amqpbridge_12_1_accept_all_returns_accepted_for_every_operation() {
         let d = AcceptAllDispatcher;
         for o in [
             DdsOperation::Write,
@@ -230,14 +230,14 @@ mod tests {
     }
 
     #[test]
-    fn instance_tracking_register_with_body_accepts() {
+    fn ddsamqp_7_7_2_instance_tracking_register_with_body_accepts() {
         let d = InstanceTrackingDispatcher::new();
         let r = d.dispatch(&op(DdsOperation::Register));
         assert_eq!(r, DispatchOutcome::Accepted);
     }
 
     #[test]
-    fn instance_tracking_register_empty_body_yields_missing_key() {
+    fn ddsamqp_7_7_2_instance_tracking_register_empty_body_yields_missing_key() {
         let d = InstanceTrackingDispatcher::new();
         let mut o = op(DdsOperation::Register);
         o.body = alloc::vec![];
@@ -245,7 +245,7 @@ mod tests {
     }
 
     #[test]
-    fn instance_tracking_unregister_unknown_yields_unknown_instance() {
+    fn ddsamqp_7_7_2_instance_tracking_unregister_unknown_yields_unknown_instance() {
         let d = InstanceTrackingDispatcher::new();
         let r = d.dispatch(&op(DdsOperation::Unregister));
         assert_eq!(r, DispatchOutcome::UnknownInstance);
@@ -259,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn instance_tracking_unregister_known_accepts() {
+    fn ddsamqp_7_7_2_instance_tracking_unregister_known_accepts() {
         let mut d = InstanceTrackingDispatcher::new();
         d.register_instance([1u8; 16]);
         let mut o = op(DdsOperation::Unregister);
@@ -268,7 +268,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_outcome_to_amqp_error_maps_correctly() {
+    fn ddsamqp_11_3_dispatch_outcome_to_amqp_error_maps_correctly() {
         // Accepted → no error.
         assert!(DispatchOutcome::Accepted.to_amqp_error("k").is_none());
         // UnknownInstance → precondition-failed.
@@ -295,7 +295,7 @@ mod tests {
     }
 
     #[test]
-    fn noop_disposition_mapper_does_nothing() {
+    fn ddsamqp_7_7_3_noop_disposition_mapper_does_nothing() {
         let m = NoopDispositionMapper;
         // Mandatory smoke test: the trait call must not panic.
         m.apply([0u8; 16], DispositionState::Accepted);

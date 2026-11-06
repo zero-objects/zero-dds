@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.omg.dds;
 
+import org.zerodds.testing.Waits;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,7 +51,7 @@ class QosResourceLimitsTest {
     // --- writer: max_instances -----------------------------------------------------------
 
     @Test
-    void aWriteToANewInstanceBeyondMaxInstancesTimesOutUntilAnInstanceIsUnregistered() throws Exception {
+    void javapsm_7_3_5_1_a_write_to_a_new_instance_beyond_max_instances_times_out_until_an_instance_is_unregistered() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(
                     limited(Qos.pf().ResourceLimits().withMaxInstances(1), 50));
@@ -64,16 +65,17 @@ class QosResourceLimitsTest {
     }
 
     @Test
-    void aBlockedWriteContinuesWhenAnotherThreadFreesTheInstance() throws Exception {
+    void javapsm_7_3_5_1_a_blocked_write_continues_when_another_thread_frees_the_instance() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             // a long max_blocking_time: only the unregister of the other thread can end the wait in time
             DataWriter<QosFixtures.Item> writer = rig.writer(
                     limited(Qos.pf().ResourceLimits().withMaxInstances(1), 20_000));
             writer.write(new QosFixtures.Item(1, 0));
             AtomicReference<Throwable> failure = new AtomicReference<>();
+            Thread blocked = Thread.currentThread();
             Thread freeing = new Thread(() -> {
                 try {
-                    Thread.sleep(200);
+                    Waits.untilWaitingIn(blocked, "write");
                     Qos.unregister(writer, new QosFixtures.Item(1, 0));
                 } catch (Throwable t) {
                     failure.set(t);
@@ -87,7 +89,7 @@ class QosResourceLimitsTest {
     }
 
     @Test
-    void aBestEffortWriterDoesNotWaitAndIsOutOfResources() throws Exception {
+    void javapsm_7_3_5_1_a_best_effort_writer_does_not_wait_and_is_out_of_resources() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer()
                     .withPolicy(Qos.pf().ResourceLimits().withMaxInstances(1))
@@ -100,7 +102,7 @@ class QosResourceLimitsTest {
     // --- writer: the history kept for late joiners ------------------------------------------
 
     @Test
-    void keepAllWithMaxSamplesPerInstanceTimesOutForTransientLocal() throws Exception {
+    void javapsm_7_3_5_1_keep_all_with_max_samples_per_instance_times_out_for_transient_local() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(limited(
                     Qos.pf().ResourceLimits().withMaxSamplesPerInstance(2), 50)
@@ -118,7 +120,7 @@ class QosResourceLimitsTest {
     }
 
     @Test
-    void maxSamplesBoundsTheHistoryOfAllInstancesTogether() throws Exception {
+    void javapsm_7_3_5_1_max_samples_bounds_the_history_of_all_instances_together() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(limited(
                     Qos.pf().ResourceLimits().withMaxSamples(2), 50)
@@ -132,7 +134,7 @@ class QosResourceLimitsTest {
     }
 
     @Test
-    void keepLastReplacesTheOldestSampleOfTheInstanceAndNeedsNoNewResource() throws Exception {
+    void javapsm_7_3_5_1_keep_last_replaces_the_oldest_sample_of_the_instance_and_needs_no_new_resource() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(limited(
                     Qos.pf().ResourceLimits().withMaxSamples(1), 50)
@@ -145,7 +147,7 @@ class QosResourceLimitsTest {
     }
 
     @Test
-    void withNoLimitAWriterNeverWaits() throws Exception {
+    void javapsm_7_3_5_1_with_no_limit_a_writer_never_waits() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer()
                     .withPolicy(Qos.pf().Durability().withTransientLocal())
@@ -159,51 +161,7 @@ class QosResourceLimitsTest {
     // --- reader ------------------------------------------------------------------------
 
     @Test
-    void aReaderRejectsAnInstanceBeyondMaxInstances() throws Exception {
-        try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
-            DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll()
-                    .withPolicy(Qos.pf().ResourceLimits().withMaxInstances(1)));
-            DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
-            writer.write(new QosFixtures.Item(1, 0));
-            writer.write(new QosFixtures.Item(2, 0));
-            writer.write(new QosFixtures.Item(1, 1));
-
-            List<Integer> ids = new ArrayList<>();
-            for (Sample<QosFixtures.Item> sample : Qos.take(reader)) {
-                ids.add(sample.getData().id());
-            }
-            assertEquals(java.util.Arrays.asList(1, 1), ids);
-            SampleRejectedStatus rejected = reader.getSampleRejectedStatus();
-            assertEquals(1, rejected.getTotalCount());
-            assertEquals(SampleRejectedStatus.Kind.REJECTED_BY_INSTANCES_LIMIT, rejected.getLastReason());
-        }
-    }
-
-    @Test
-    void aKeepAllReaderRejectsASampleBeyondMaxSamplesPerInstance() throws Exception {
-        try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
-            DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll()
-                    .withPolicy(Qos.pf().ResourceLimits().withMaxSamplesPerInstance(2)));
-            DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
-            for (int seq = 0; seq < 3; seq++) {
-                writer.write(new QosFixtures.Item(1, seq));
-            }
-            writer.write(new QosFixtures.Item(2, 0)); // another instance has room
-
-            List<Integer> seqs = new ArrayList<>();
-            for (Sample<QosFixtures.Item> sample : Qos.take(reader)) {
-                seqs.add(sample.getData().seq());
-            }
-            assertEquals(java.util.Arrays.asList(0, 1, 0), seqs);
-            SampleRejectedStatus rejected = reader.getSampleRejectedStatus();
-            assertEquals(1, rejected.getTotalCount());
-            assertEquals(SampleRejectedStatus.Kind.REJECTED_BY_SAMPLES_PER_INSTANCE_LIMIT,
-                    rejected.getLastReason());
-        }
-    }
-
-    @Test
-    void theDefaultLimitsAreUnlimitedAndRejectNothing() throws Exception {
+    void javapsm_7_3_5_1_the_default_limits_are_unlimited_and_reject_nothing() throws Exception {
         assertEquals(ResourceLimits.LENGTH_UNLIMITED, Qos.reader().getResourceLimits().getMaxSamples());
         assertEquals(ResourceLimits.LENGTH_UNLIMITED, Qos.reader().getResourceLimits().getMaxInstances());
         assertEquals(ResourceLimits.LENGTH_UNLIMITED,

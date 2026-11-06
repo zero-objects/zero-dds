@@ -101,7 +101,7 @@ fn rec(id: u32, value: u32) -> Rec {
 /// "The size of the returned collection will be limited to the specified
 /// max_samples"; what is not returned stays as it was.
 #[test]
-fn max_samples_limits_read_and_take() {
+fn dcps_2_2_2_5_3_8_max_samples_limits_read_and_take() {
     let (w, r) = pair();
     feed(&w, &r, &[rec(1, 1), rec(1, 2), rec(1, 3)]);
 
@@ -130,7 +130,7 @@ fn max_samples_limits_read_and_take() {
 /// "If the DataReader has no samples that meet the constraints, the return
 /// value will be NO_DATA"; a `max_samples` below LENGTH_UNLIMITED is no count.
 #[test]
-fn no_matching_sample_is_no_data() {
+fn dcps_2_2_2_5_3_8_no_matching_sample_is_no_data() {
     let (w, r) = pair();
     assert!(matches!(
         r.read_selected(&ReadSelection::ANY),
@@ -158,7 +158,7 @@ fn no_matching_sample_is_no_data() {
 /// §2.2.2.5.3.14 and .15: read_instance and take_instance take
 /// `max_samples` and the three masks.
 #[test]
-fn instance_reads_take_masks_and_a_limit() {
+fn dcps_2_2_2_5_3_8_instance_reads_take_masks_and_a_limit() {
     let (w, r) = pair();
     feed(&w, &r, &[rec(1, 1), rec(1, 2), rec(2, 1)]);
     let all = r.read_selected(&ReadSelection::ANY).unwrap();
@@ -219,7 +219,7 @@ fn instance_reads_take_masks_and_a_limit() {
 /// §2.2.2.5.3.16: the next instance is the smallest handle above `previous`
 /// that has samples in the states asked for; none is NO_DATA.
 #[test]
-fn next_instance_looks_at_the_states() {
+fn dcps_2_2_2_5_3_14_next_instance_looks_at_the_states() {
     let (w, r) = pair();
     feed(&w, &r, &[rec(1, 1), rec(2, 1)]);
     let all = r.read_selected(&ReadSelection::ANY).unwrap();

@@ -23,7 +23,7 @@ fn offline() -> DomainParticipant {
 }
 
 #[test]
-fn a_content_filtered_topic_with_a_reader_is_not_deleted() {
+fn dcps_2_2_2_2_1_8_a_content_filtered_topic_with_a_reader_is_not_deleted() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Base", TopicQos::default())
@@ -50,7 +50,7 @@ fn a_content_filtered_topic_with_a_reader_is_not_deleted() {
 }
 
 #[test]
-fn a_dropped_reader_lets_the_content_filtered_topic_go() {
+fn dcps_2_2_2_2_1_8_a_dropped_reader_lets_the_content_filtered_topic_go() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Base", TopicQos::default())
@@ -67,7 +67,7 @@ fn a_dropped_reader_lets_the_content_filtered_topic_go() {
 }
 
 #[test]
-fn a_deleted_content_filtered_topic_is_deleted_for_every_handle() {
+fn dcps_2_2_2_2_1_8_a_deleted_content_filtered_topic_is_deleted_for_every_handle() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Base", TopicQos::default())
@@ -100,7 +100,7 @@ fn a_deleted_content_filtered_topic_is_deleted_for_every_handle() {
 }
 
 #[test]
-fn a_reader_cannot_be_created_on_a_deleted_content_filtered_topic() {
+fn dcps_2_2_2_2_1_8_a_reader_cannot_be_created_on_a_deleted_content_filtered_topic() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Base", TopicQos::default())
@@ -119,7 +119,8 @@ fn a_reader_cannot_be_created_on_a_deleted_content_filtered_topic() {
 }
 
 #[test]
-fn a_deleted_multitopic_releases_its_related_topics_and_answers_already_deleted() {
+fn dcps_2_2_2_2_1_10_a_deleted_multitopic_releases_its_related_topics_and_answers_already_deleted()
+{
     let p = offline();
     let topic = common::order_topic(&p, "Joined");
     let multitopic = {

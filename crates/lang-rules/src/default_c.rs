@@ -623,11 +623,33 @@ fn body_of(ast: &Ast, id: Id<TypeNode>, own_name: &str) -> Result<Option<c::Bloc
         // other members set to their default values."
         TypeKind::Structure { .. } | TypeKind::Valuetype { .. } => {
             let mut statements = Vec::new();
+            let members = crate::adapter::c::c_members(ast, id);
+            if members.is_empty() {
+                // No IDL member here or in a base: the structure at the
+                // end of the base chain holds the member that stands in
+                // for none (`adapter::c::EMPTY_PLACEHOLDER`), reached
+                // through one `parent` per base.
+                let mut depth = 0;
+                let mut at = id;
+                while let Some(base) = crate::adapter::c::struct_base(ast, at) {
+                    if depth == 64 {
+                        break;
+                    }
+                    depth += 1;
+                    at = base;
+                }
+                let field = format!(
+                    "{}{}",
+                    format!("{}.", crate::adapter::c::PARENT).repeat(depth),
+                    crate::adapter::c::EMPTY_PLACEHOLDER
+                );
+                statements.push(assign(arrow("v", &field), literal("0u")));
+            }
             for crate::adapter::c::CMember {
                 handle: member,
                 path,
                 owner,
-            } in &crate::adapter::c::c_members(ast, id)
+            } in &members
             {
                 let Ok(member_node) = ast.member(*member) else {
                     continue;

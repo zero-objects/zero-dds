@@ -150,7 +150,7 @@ fn write_frame(
 }
 
 #[test]
-fn http2_roundtrip_publish_topic() {
+fn grpcbridge_2_http2_roundtrip_publish_topic() {
     let port = pick_port();
     let _guard = spawn_daemon(port);
     let mut stream = connect(port);
@@ -195,11 +195,21 @@ fn http2_roundtrip_publish_topic() {
     write_frame(
         &mut stream,
         FrameType::Headers,
-        Flags::END_HEADERS | Flags::END_STREAM,
+        Flags::END_HEADERS,
         1,
         &h_payload,
     )
     .expect("write headers");
+    // The Sample: `cdr_payload` is the encapsulation header (XCDR1, little
+    // endian) and the CDR bytes (spec §4.4), as one Length-Prefixed-Message.
+    write_frame(
+        &mut stream,
+        FrameType::Data,
+        Flags::END_STREAM,
+        1,
+        &[0, 0, 0, 0, 8, 0x0a, 6, 0, 1, 0, 0, b'h', b'i'],
+    )
+    .expect("write data");
 
     // 4) Read response: server should send HEADERS + DATA(?) + Trailer-HEADERS.
     let mut got_response_hdr = false;
@@ -241,7 +251,7 @@ fn http2_roundtrip_publish_topic() {
 }
 
 #[test]
-fn http2_unknown_service_yields_status_5() {
+fn grpcbridge_2_http2_unknown_service_yields_status_5() {
     let port = pick_port();
     let _guard = spawn_daemon(port);
     let mut stream = connect(port);

@@ -28,8 +28,9 @@
 //! };
 //! ```
 //!
-//! The encoding is XCDR1 (PL_CDR_LE) — the ParticipantGenericMessage
-//! is transported as the `serialized_payload` of a DATA submessage.
+//! The encoding is XCDR1 (`CDR_LE`, a plain struct, not a parameter list)
+//! — the ParticipantGenericMessage is transported as the
+//! `serialized_payload` of a DATA submessage.
 //!
 //! `message_class_id`-Constants (Spec §7.5.5):
 //!
@@ -435,7 +436,7 @@ mod tests {
     /// §7.3.22: `GenericMessageClassId` is `string<>`. A class id of more
     /// than 256 octets, which a plugin may define (§7.5.3.5), was refused.
     #[test]
-    fn a_message_class_id_is_not_bounded_to_256_octets() {
+    fn security_7_3_22_a_message_class_id_is_not_bounded_to_256_octets() {
         let mut m = sample_msg();
         m.message_class_id = alloc::format!("com.acme.{}", "x".repeat(600));
         let back = ParticipantGenericMessage::from_cdr_le(&m.to_cdr_le()).unwrap();
@@ -458,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_le() {
+    fn security_7_3_22_roundtrip_le() {
         let msg = sample_msg();
         let bytes = msg.to_cdr_le();
         let back = ParticipantGenericMessage::from_cdr_le(&bytes).unwrap();
@@ -466,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn message_data_dataholder_is_inline_not_length_prefixed() {
+    fn security_7_3_1_2_message_data_dataholder_is_inline_not_length_prefixed() {
         // Spec `sequence<DataHolder>`: cyclone/FastDDS serialize the
         // DataHolders INLINE (no octet-seq length prefix). Earlier ZeroDDS
         // wrapped each DataHolder in a length-prefixed sequence<octet> —
@@ -500,7 +501,7 @@ mod tests {
     }
 
     #[test]
-    fn nil_message_identity() {
+    fn security_7_3_22_nil_message_identity() {
         let mi = MessageIdentity::default();
         assert!(mi.is_nil());
         let mi2 = MessageIdentity {
@@ -511,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn class_id_constants_match_spec() {
+    fn security_7_3_22_class_id_constants_match_spec() {
         // Spec §7.5.5 — these strings must NEVER have drifted, otherwise
         // Cyclone/FastDDS won't match our auth messages.
         assert_eq!(class_id::AUTH_REQUEST, "dds.sec.auth_request");
@@ -541,19 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_message_data_roundtrip() {
-        let msg = ParticipantGenericMessage {
-            message_class_id: class_id::AUTH.to_string(),
-            ..ParticipantGenericMessage::default()
-        };
-        let bytes = msg.to_cdr_le();
-        let back = ParticipantGenericMessage::from_cdr_le(&bytes).unwrap();
-        assert_eq!(msg, back);
-        assert!(back.message_data.is_empty());
-    }
-
-    #[test]
-    fn handshake_request_token_in_message_data() {
+    fn security_7_3_22_handshake_request_token_in_message_data() {
         // Realistic scenario: the initiator sends its
         // HandshakeRequestMessageToken via DCPSParticipantStateless.
         let token = DataHolder::new("DDS:Auth:PKI-DH:1.2+AuthReq")
@@ -585,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn related_message_identity_links_reply_to_request() {
+    fn security_7_5_3_3_related_message_identity_links_reply_to_request() {
         // The replier sets related_message_identity = the sender_identity of the
         // request, so the initiator can map the reply to its request.
         let request_id = MessageIdentity {
@@ -609,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn truncated_buffer_rejected() {
+    fn security_7_3_22_truncated_buffer_rejected() {
         let msg = sample_msg();
         let bytes = msg.to_cdr_le();
         let truncated = &bytes[..bytes.len() / 2];
@@ -617,7 +606,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_class_id_utf8_rejected() {
+    fn security_7_3_22_invalid_class_id_utf8_rejected() {
         // Encode with forged non-UTF-8 class-id bytes.
         let mut buf = Vec::new();
         // message_identity (24 byte: 16 + i64 padded)

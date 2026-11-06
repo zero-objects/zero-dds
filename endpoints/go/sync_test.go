@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestSyncLoopback(t *testing.T) {
+func Test_endpointgo_2_sync_loopback(t *testing.T) {
 	const N = 5
 	tr := &memTransport{}
 	c := NewClient(tr, XrceObjectID(0x001, uint16(ObjkDataWriter)))

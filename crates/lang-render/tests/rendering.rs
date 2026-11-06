@@ -26,7 +26,7 @@ fn rust_field(name: &str, type_: rust_tree::Type) -> rust_tree::Field {
 }
 
 #[test]
-fn a_rust_struct_renders_with_its_derives_on_one_line() {
+fn xtypes_7_5_1_a_rust_struct_renders_with_its_derives_on_one_line() {
     let item = rust_tree::Item::Struct(rust_tree::Struct {
         body_text: zerodds_lang_cst::common::BodyText::none(),
         doc: Doc::line("A pose."),
@@ -58,7 +58,7 @@ pub struct Pose {
 }
 
 #[test]
-fn a_rust_enum_renders_its_variants_and_discriminants() {
+fn xtypes_7_5_1_a_rust_enum_renders_its_variants_and_discriminants() {
     let item = rust_tree::Item::Enum(rust_tree::Enum {
         doc: Doc::none(),
         attrs: vec![rust_tree::Attr {
@@ -101,7 +101,7 @@ pub enum Mode {
 }
 
 #[test]
-fn a_rust_impl_renders_its_method_body() {
+fn xtypes_7_5_1_a_rust_impl_renders_its_method_body() {
     let item = rust_tree::Item::Impl(rust_tree::Impl {
         doc: Doc::none(),
         attrs: Vec::new(),
@@ -142,7 +142,7 @@ impl Pose {
 }
 
 #[test]
-fn a_rust_generic_type_renders_its_arguments() {
+fn xtypes_7_5_1_a_rust_generic_type_renders_its_arguments() {
     let type_ = rust_tree::Type::generic(
         Path::new(&["Vec"]),
         vec![rust_tree::Type::generic(
@@ -154,7 +154,7 @@ fn a_rust_generic_type_renders_its_arguments() {
 }
 
 #[test]
-fn a_rust_one_element_tuple_keeps_its_comma() {
+fn xtypes_7_5_1_a_rust_one_element_tuple_keeps_its_comma() {
     // `(T)` is a parenthesised type and `(T,)` is a tuple; dropping the
     // comma changes what the code means.
     let type_ = rust_tree::Type::Tuple(vec![rust_tree::Type::Primitive(rust_tree::Primitive::U8)]);
@@ -166,7 +166,7 @@ fn a_rust_one_element_tuple_keeps_its_comma() {
 }
 
 #[test]
-fn a_rust_array_length_renders_as_the_expression_it_is() {
+fn xtypes_7_5_1_a_rust_array_length_renders_as_the_expression_it_is() {
     let type_ = rust_tree::Type::Array {
         element: Box::new(rust_tree::Type::Primitive(rust_tree::Primitive::U8)),
         length: Box::new(rust_tree::Expr::Path(Path::single("MAX"))),
@@ -210,7 +210,7 @@ mod cpp_tree {
 }
 
 #[test]
-fn a_cpp_class_renders_its_access_sections_in_order() {
+fn xtypes_7_5_1_a_cpp_class_renders_its_access_sections_in_order() {
     let decl = cpp_tree::Decl::Class(cpp_tree::Class {
         doc: Doc::none(),
         is_struct: false,
@@ -262,7 +262,7 @@ private:
 }
 
 #[test]
-fn a_cpp_accessor_with_one_statement_stays_on_one_line() {
+fn xtypes_7_5_1_a_cpp_accessor_with_one_statement_stays_on_one_line() {
     // Which is what the fixture output has for every accessor.
     let method = cpp_tree::ClassMember::Method(cpp_tree::Method {
         doc: Doc::none(),
@@ -308,7 +308,7 @@ public:
 }
 
 #[test]
-fn a_cpp_constructor_with_initialisers_puts_them_on_their_own_line() {
+fn xtypes_7_5_1_a_cpp_constructor_with_initialisers_puts_them_on_their_own_line() {
     let constructor = cpp_tree::Constructor {
         doc: Doc::none(),
         name: Ident::new("Point"),
@@ -359,7 +359,7 @@ public:
 /// shifted sum renders as `a + b << c` and nothing says it was meant the
 /// other way round.
 #[test]
-fn a_cpp_expression_brackets_only_where_the_tree_asked_for_it() {
+fn xtypes_7_5_1_a_cpp_expression_brackets_only_where_the_tree_asked_for_it() {
     let sum = cpp_tree::Expr::Binary {
         op: "+",
         lhs: Box::new(cpp_tree::Expr::Path(Path::single("a"))),
@@ -393,7 +393,7 @@ fn a_cpp_expression_brackets_only_where_the_tree_asked_for_it() {
 }
 
 #[test]
-fn a_cpp_namespace_body_is_not_indented() {
+fn xtypes_7_5_1_a_cpp_namespace_body_is_not_indented() {
     let decl = cpp_tree::Decl::Namespace(cpp_tree::Namespace {
         doc: Doc::none(),
         name: Ident::new("dds"),
@@ -413,7 +413,7 @@ struct Pose;
 }
 
 #[test]
-fn a_cpp_template_specialisation_renders_its_header_above_the_declaration() {
+fn xtypes_7_5_1_a_cpp_template_specialisation_renders_its_header_above_the_declaration() {
     let decl = cpp_tree::Decl::Template(cpp_tree::Template {
         doc: Doc::none(),
         params: Vec::new(),
@@ -452,7 +452,7 @@ mod c_tree {
 /// of nested compound statement, so a large enough type produced a file
 /// no conforming compiler must accept.
 #[test]
-fn a_c_else_holding_one_if_renders_as_else_if() {
+fn xtypes_7_5_1_a_c_else_holding_one_if_renders_as_else_if() {
     let refuse = |name: &str| c_tree::Block {
         statements: vec![c_tree::Statement::Expr(c_tree::Expr::Call {
             callee: Box::new(c_tree::Expr::Name(Ident::new(name))),
@@ -506,7 +506,7 @@ static void dispatch(void) {
 /// An else branch that is not a lone `if` keeps its braces: flattening
 /// it would move the statements beside it into the wrong scope.
 #[test]
-fn a_c_else_holding_anything_else_keeps_its_block() {
+fn xtypes_7_5_1_a_c_else_holding_anything_else_keeps_its_block() {
     let call = |name: &str| {
         c_tree::Statement::Expr(c_tree::Expr::Call {
             callee: Box::new(c_tree::Expr::Name(Ident::new(name))),
@@ -561,7 +561,7 @@ static void dispatch(void) {
 }
 
 #[test]
-fn a_c_struct_renders_with_its_members() {
+fn xtypes_7_5_1_a_c_struct_renders_with_its_members() {
     let decl = c_tree::Decl::Struct(c_tree::Struct {
         body_text: zerodds_lang_cst::common::BodyText::none(),
         doc: Doc::none(),
@@ -596,7 +596,7 @@ struct Point {
 }
 
 #[test]
-fn a_c_prototype_with_no_parameters_writes_void() {
+fn xtypes_7_5_1_a_c_prototype_with_no_parameters_writes_void() {
     // An empty `()` in C means "unspecified", which is not what a
     // generated prototype states.
     let decl = c_tree::Decl::Function(c_tree::Function {
@@ -613,7 +613,7 @@ fn a_c_prototype_with_no_parameters_writes_void() {
 }
 
 #[test]
-fn a_c_pointer_type_binds_to_the_declarator() {
+fn xtypes_7_5_1_a_c_pointer_type_binds_to_the_declarator() {
     let decl = c_tree::Decl::Function(c_tree::Function {
         doc: Doc::none(),
         is_static: true,
@@ -636,7 +636,7 @@ fn a_c_pointer_type_binds_to_the_declarator() {
 }
 
 #[test]
-fn a_c_file_writes_its_include_guard_at_both_ends() {
+fn xtypes_7_5_1_a_c_file_writes_its_include_guard_at_both_ends() {
     let file = c_tree::File {
         doc: Doc::none(),
         guard: Some(Ident::new("POINT_H")),
@@ -701,7 +701,7 @@ mod java_tree {
 }
 
 #[test]
-fn a_java_class_renders_its_modifiers_annotations_and_members() {
+fn xtypes_7_5_1_a_java_class_renders_its_modifiers_annotations_and_members() {
     let decl = java_tree::TypeDecl::Class(java_tree::Class {
         doc: Doc::none(),
         annotations: vec![java_tree::Annotation {
@@ -759,7 +759,7 @@ public final class Pose {
 }
 
 #[test]
-fn a_java_enum_ends_its_constants_with_a_semicolon_only_when_members_follow() {
+fn xtypes_7_5_1_a_java_enum_ends_its_constants_with_a_semicolon_only_when_members_follow() {
     let bare = java_tree::TypeDecl::Enum(java_tree::Enum {
         doc: Doc::none(),
         annotations: Vec::new(),
@@ -796,7 +796,7 @@ public enum Mode {
 }
 
 #[test]
-fn a_java_generic_type_renders_its_arguments_with_dots_in_the_path() {
+fn xtypes_7_5_1_a_java_generic_type_renders_its_arguments_with_dots_in_the_path() {
     let type_ = java_tree::Type::generic(
         Path::new(&["java", "util", "List"]),
         vec![java_tree::Type::named(Path::single("Pose"))],
@@ -808,7 +808,7 @@ fn a_java_generic_type_renders_its_arguments_with_dots_in_the_path() {
 }
 
 #[test]
-fn a_java_file_writes_its_package_and_imports() {
+fn xtypes_7_5_1_a_java_file_writes_its_package_and_imports() {
     let file = java_tree::File {
         doc: Doc::none(),
         package: Some(Path::new(&["org", "zerodds", "generated"])),
@@ -880,7 +880,7 @@ public interface Marker {
 // -- what every renderer must not do -------------------------------------
 
 #[test]
-fn every_renderer_ends_its_output_with_exactly_one_newline() {
+fn xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline() {
     // A file that ends without one, or with several, differs from what
     // every formatter produces and shows up as a byte difference.
     let rust = zerodds_lang_render::rust::file(&rust_tree::File::default());
@@ -893,7 +893,7 @@ fn every_renderer_ends_its_output_with_exactly_one_newline() {
 }
 
 #[test]
-fn no_rendered_line_carries_trailing_whitespace() {
+fn xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace() {
     let item = rust_tree::Item::Struct(rust_tree::Struct {
         body_text: zerodds_lang_cst::common::BodyText::none(),
         doc: Doc::lines(&["first", "", "third"]),

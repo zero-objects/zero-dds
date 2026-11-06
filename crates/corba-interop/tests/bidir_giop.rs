@@ -50,7 +50,7 @@ fn bidir_pair(listen_points: Vec<BiDirIiopListenPoint>) -> (BiDirEndpoint, BiDir
 /// The acceptor calls BACK over the connection opened by the originator to an
 /// object that lives on the originator (§15.8 core).
 #[test]
-fn acceptor_callbacks_originator_over_shared_connection() {
+fn corbarust_7_acceptor_callbacks_originator_over_shared_connection() {
     let (mut client, mut server) = bidir_pair(vec![BiDirIiopListenPoint {
         host: "client.local".into(),
         port: 5555,
@@ -99,7 +99,7 @@ fn acceptor_callbacks_originator_over_shared_connection() {
 /// Out-of-order reply demux: the originator has two requests open; the replies
 /// are collected in a different order — the stash correlates by `request_id`.
 #[test]
-fn out_of_order_reply_demux() {
+fn corbarust_7_out_of_order_reply_demux() {
     let (mut client, mut server) = bidir_pair(vec![]);
     server.register(b"Echo", |_op, body, _e| {
         SkeletonResult::Reply(body.to_vec())
@@ -121,7 +121,7 @@ fn out_of_order_reply_demux() {
 /// Synchronous `invoke` (send + collect reply in one step), driven by
 /// alternating `serve_one` on the other side.
 #[test]
-fn sync_invoke_convenience() {
+fn corbarust_7_sync_invoke_convenience() {
     let (mut client, mut server) = bidir_pair(vec![]);
     server.register(b"Sq", |_op, body, e| {
         SkeletonResult::Reply(u32_body(read_u32(body, e).pow(2)))

@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn deliver_consumes_credit_and_increments_delivered() {
+    fn ddsamqp_7_4_1_deliver_consumes_credit_and_increments_delivered() {
         let mut l = link(LinkRole::Sender, SettlementMode::Settled);
         l.grant_credit(2);
         assert!(l.deliver().is_ok());
@@ -224,13 +224,13 @@ mod tests {
     }
 
     #[test]
-    fn deliver_without_credit_yields_error() {
+    fn amqpbridge_12_1_deliver_without_credit_yields_error() {
         let mut l = link(LinkRole::Sender, SettlementMode::Settled);
         assert!(l.deliver().is_err());
     }
 
     #[test]
-    fn unsettled_deliver_increments_pending() {
+    fn ddsamqp_7_4_1_unsettled_deliver_increments_pending() {
         let mut l = link(LinkRole::Sender, SettlementMode::Unsettled);
         l.grant_credit(3);
         l.deliver().expect("ok");
@@ -239,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn settle_decrements_pending() {
+    fn ddsamqp_7_4_1_settle_decrements_pending() {
         let mut l = link(LinkRole::Sender, SettlementMode::Unsettled);
         l.grant_credit(3);
         l.deliver().expect("ok");
@@ -249,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn settle_at_zero_does_not_underflow() {
+    fn ddsamqp_7_4_1_settle_at_zero_does_not_underflow() {
         let mut l = link(LinkRole::Sender, SettlementMode::Settled);
         l.settle();
         assert_eq!(l.pending_settlements, 0);
@@ -259,7 +259,7 @@ mod tests {
     /// MUST call the caller's mapper with the correct sample handle and
     /// disposition state, AND decrement the pending counter.
     #[test]
-    fn settle_with_mapper_calls_apply_and_decrements_pending() {
+    fn ddsamqp_7_4_1_settle_with_mapper_calls_apply_and_decrements_pending() {
         use core::cell::RefCell;
 
         struct RecordingMapper {
@@ -324,7 +324,7 @@ mod tests {
     }
 
     #[test]
-    fn terminus_durability_from_wire() {
+    fn ddsamqp_7_4_2_terminus_durability_from_wire() {
         assert_eq!(
             TerminusDurability::from_wire(0),
             Some(TerminusDurability::None)
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn attach_durability_unsettled_state_rejected_not_implemented() {
+    fn ddsamqp_7_4_2_attach_durability_unsettled_state_rejected_not_implemented() {
         // Spec §7.4.2: durability=unsettled-state (broker-level)
         // is out of scope and SHALL be rejected with
         // amqp:not-implemented.

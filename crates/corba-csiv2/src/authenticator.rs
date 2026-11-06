@@ -6,7 +6,7 @@
 //! but nothing about credentials) and [`crate::gssup_store::GssupUserStore`]
 //! (which knows credentials but nothing about SAS messages).
 //!
-//! [`docs/doc-map`]'s recorded decision for this project's CORBA daemons
+//! `docs/doc-map`'s recorded decision for this project's CORBA daemons
 //! is a **stateless** target — every request carries its own
 //! `EstablishContext` rather than reusing a retained context via
 //! `MessageInContext` (CORBA 3.4 Part 2 §10.3 leaves the choice to the

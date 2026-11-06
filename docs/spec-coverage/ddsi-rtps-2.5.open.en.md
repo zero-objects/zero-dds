@@ -7,20 +7,80 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §8.3.3.1 Table 8.14 Header.vendorId
 
-**Status:** `partial` — the field is sent and read; ZeroDDS sends `0x01F0`, according to the comment on `VendorId::ZERODDS` an interim value and not one assigned by the OMG (an `open` item of its own under §8.3.5.2). Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+**Status:** `partial` — the field is sent and read; ZeroDDS sends `0x01F0`, according to the comment on `VendorId::ZERODDS` an interim value and not one assigned by the OMG (a `blocked` item of its own under §8.3.5.2).
 
 ## §8.3.5.2 VendorId assigned by the OMG
 
-**Status:** `open` — ZeroDDS sends `VendorId::ZERODDS = 0x01F0` (`crates/rtps/src/wire_types.rs`); the comment there calls the value an interim one until a VendorId has been applied for. Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+**Status:** `blocked` — assignment of a VendorId by the OMG (applied for); lifted once the OMG assigns the value and `VendorId::ZERODDS` carries it. Until then ZeroDDS sends `0x01F0` (`crates/rtps/src/wire_types.rs`, by its comment an interim value), a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+
+## §8.3.8.4 Gap: content of filteredCount
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform. The Gap codec knows the field (`GAP_FLAG_FILTERED_COUNT`), `append_gap` sets `filtered_count: None`.
 
 ## §8.5.3.2 Table 8.78 vendorId
 
-**Status:** `partial` — ZeroDDS sends `0x01F0`, not a value assigned by the OMG (`open` item under §8.3.5.2). Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+**Status:** `partial` — ZeroDDS sends `0x01F0`, not a value assigned by the OMG (`blocked` item under §8.3.5.2).
+
+## §8.7.2.2.4 TIME_BASED_FILTER on the writer side
+
+**Status:** `open` — an optional function; ZeroDDS applies TIME_BASED_FILTER only on the reader side (`tbf_should_deliver`) and sends no GAP for time-filtered samples.
+
+## §8.7.3 Filtering on the writer side
+
+**Status:** `open` — an optional function; ZeroDDS does not filter on the writer side. The filter information of the reader in SEDP is listed under §8.7.3.1.
+
+## §8.7.3 Hints by the writer: ALIVE_FILTERED, ContentFilterInfo, omitted data
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+
+## §8.7.3.1 A writer without the matching filter class
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+
+## §8.7.3.2 Indicating a filtered sample
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform. The Data submessage has no FilteredFlag; the FilteredFlag belongs to StatusInfo_t (§9.6.4.9).
+
+## §8.7.3.3 GAP instead of DATA and filter results in the inline QoS
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+
+## §8.7.3.3 Table 8.87 filterResult
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; PID_CONTENT_FILTER_INFO is not sent.
+
+## §8.7.3.3 Table 8.87 filterSignatures
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; PID_CONTENT_FILTER_INFO is not sent.
+
+## §8.7.3.4 Information for ALIVE_FILTERED despite filtering at the writer
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; every sample goes to every matched reader.
+
+## §8.7.4 A value that does not pass the filter
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform; ZeroDDS sends every value.
 
 ## §9.3.1.5 First two octets of the guidPrefix = vendorId
 
-**Status:** `partial` — the first two octets are `01 F0`, not a value assigned by the OMG (`open` item under §8.3.5.2). `DcpsRuntime::start` also accepts a freely chosen prefix; under DDS-Security the prefix derived from the identity replaces the one built. DDS-Security 1.2 §10.3.3 Table 59 (`validate_local_identity`) sets its first 48 bits: the first bit 1, then 47 bits of the SHA-256 of the SubjectName; by the more specific spec the vendorId is not in them (`crates/security-pki/src/guid_adjust.rs`, test `adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`). Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+**Status:** `partial` — the first two octets are `01 F0`, not a value assigned by the OMG (`blocked` item under §8.3.5.2). `DcpsRuntime::start` also accepts a freely chosen prefix; under DDS-Security the prefix derived from the identity replaces the one built. DDS-Security 1.2 §10.3.3 Table 59 (`validate_local_identity`) sets its first 48 bits: the first bit 1, then 47 bits of the SHA-256 of the SubjectName; by the more specific spec the vendorId is not in them (`crates/security-pki/src/guid_adjust.rs`, test `adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`).
+
+## §9.3.2.1 ContentFilterInfo_t, FilterResult_t, FilterSignature_t
+
+**Status:** `open` — the types are missing in the code; part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
 
 ## §9.4.4 Use an assigned VendorId
 
-**Status:** `open` — `VendorId::ZERODDS = [0x01, 0xF0]` (`crates/rtps/src/wire_types.rs`), by its comment an interim value; as under §8.3.5.2. Blocker: a hard external one, the assignment of a VendorId by the OMG; the request has been pending since 22 June. Until then ZeroDDS sends `0x01F0`, a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+**Status:** `blocked` — assignment of a VendorId by the OMG (applied for); lifted once the OMG assigns the value and `VendorId::ZERODDS` carries it. Until then ZeroDDS sends `0x01F0` (`crates/rtps/src/wire_types.rs`, by its comment an interim value), a value the OMG list does not hold (assigned up to `{0x01,0x1C}`, `{0x01,0x1D}` and `{0x01,0x1E}` reserved).
+
+## §9.6.4 Table 9.20 PID_CONTENT_FILTER_INFO (0x0055)
+
+**Status:** `open` — ZeroDDS does not know the PID; a received parameter is skipped as an unknown PID without the must-understand bit. Part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+
+## §9.6.4.1 PID_CONTENT_FILTER_INFO: wire form, bitmap, signature
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.
+
+## §9.6.4.1 Table 9.21 filterResult
+
+**Status:** `open` — part of the optional filtering on the writer side (§8.7.3), which ZeroDDS does not perform.

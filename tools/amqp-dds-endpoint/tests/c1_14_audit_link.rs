@@ -17,7 +17,7 @@ use zerodds_amqp_bridge::extended_types::AmqpExtValue;
 use zerodds_amqp_endpoint::management::{AuditEvent, AuditProducer, audit_event_sample};
 
 #[test]
-fn c1_14_link_attach_success_event_carries_subject() {
+fn ddsamqp_c_1_14_link_attach_success_event_carries_subject() {
     // Spec §C.1.14: receiver on $audit; after
     // SASL auth + link attach an event with subject_name arrives.
     let event = AuditEvent::LinkAttached {
@@ -51,7 +51,7 @@ fn c1_14_link_attach_success_event_carries_subject() {
 }
 
 #[test]
-fn c1_14_audit_producer_streams_events_in_order() {
+fn ddsamqp_2_2_audit_producer_streams_events_in_order() {
     let mut prod = AuditProducer::new(8);
     prod.push(
         AuditEvent::ConnectionOpened {
@@ -106,7 +106,7 @@ fn c1_14_audit_producer_streams_events_in_order() {
 }
 
 #[test]
-fn c1_14_unauthorized_event_carries_resource_field() {
+fn ddsamqp_c_1_14_unauthorized_event_carries_resource_field() {
     // Spec §C.1.14 + §10.3.3 — on an AccessControl reject
     // an `access.unauthorized` event is emitted that contains subject +
     // Resource-Address fuehrt.
@@ -137,7 +137,7 @@ fn c1_14_unauthorized_event_carries_resource_field() {
 }
 
 #[test]
-fn c1_14_ringbuffer_evicts_oldest_on_overflow() {
+fn ddsamqp_c_1_14_ringbuffer_evicts_oldest_on_overflow() {
     // §sec:audit-channel: audit is a read-only stream, no
     // persistenter Trail. Capacity-bounded queue verdraengt
     // aelteste Events.

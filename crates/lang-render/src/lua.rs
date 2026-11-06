@@ -652,7 +652,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_ends_with_the_return_its_module_needs() {
+    fn xtypes_7_5_1_a_file_ends_with_the_return_its_module_needs() {
         let rendered = file(&File {
             end_text: Vec::new(),
             doc: Doc::line("A header."),
@@ -667,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn a_note_takes_two_dashes_and_an_annotation_three() {
+    fn xtypes_7_5_1_a_note_takes_two_dashes_and_an_annotation_three() {
         // `lua-language-server` attaches a `---` block to the declaration
         // below it, so a plain note written with `---` would become
         // documentation for something nobody wrote it about.
@@ -679,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn a_luacats_tag_is_written_against_the_dashes_and_prose_is_not() {
+    fn xtypes_7_5_1_a_luacats_tag_is_written_against_the_dashes_and_prose_is_not() {
         // `---@class Pose` is the spelling LuaCATS reads; the space is
         // not part of it. A prose line takes the space so that it reads
         // as prose.
@@ -693,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn a_commented_statement_starts_a_block_and_an_uncommented_one_does_not() {
+    fn xtypes_7_5_1_a_commented_statement_starts_a_block_and_an_uncommented_one_does_not() {
         // `M.Pose = { … }` and the registry line under it are one thing.
         let rendered = file(&File {
             end_text: Vec::new(),
@@ -725,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_comment_line_carries_no_trailing_space() {
+    fn xtypes_7_5_1_an_empty_comment_line_carries_no_trailing_space() {
         let rendered = stat(&Stat::Comment(Doc::lines(&["first", "", "third"])));
         assert_eq!(rendered, "-- first\n--\n-- third\n");
     }

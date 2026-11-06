@@ -379,15 +379,15 @@ impl DaemonConfig {
         if let Some(v) = tls.string("key_file")? {
             cfg.tls_key_file = v;
         }
-        if let Some((v, origin)) = tls.scalar("verify_hostname")? {
-            if v != "true" {
-                return Err(invalid(
-                    "amqp.tls.verify_hostname",
-                    origin.clone(),
-                    "the broker certificate is always checked against the host; \
+        if let Some((v, origin)) = tls.scalar("verify_hostname")?
+            && v != "true"
+        {
+            return Err(invalid(
+                "amqp.tls.verify_hostname",
+                origin.clone(),
+                "the broker certificate is always checked against the host; \
                      connect by the name the certificate carries",
-                ));
-            }
+            ));
         }
         // §7.1 fixes ALPN to `amqp`; the key exists so the file can say so.
         for (path, item) in tls.items("alpn")? {
@@ -448,14 +448,14 @@ impl DaemonConfig {
         if let Some(v) = metrics.string("listen")? {
             cfg.metrics_listen = v;
         }
-        if let Some((v, origin)) = metrics.scalar("path")? {
-            if v != "/metrics" {
-                return Err(invalid(
-                    "metrics.path",
-                    origin.clone(),
-                    "the admin endpoint serves /metrics, /catalog and /healthz",
-                ));
-            }
+        if let Some((v, origin)) = metrics.scalar("path")?
+            && v != "/metrics"
+        {
+            return Err(invalid(
+                "metrics.path",
+                origin.clone(),
+                "the admin endpoint serves /metrics, /catalog and /healthz",
+            ));
         }
         let catalog = root.section("catalog")?;
         catalog.only(&["enabled", "address"])?;
@@ -802,17 +802,40 @@ pub const CONTENT_TYPE_XCDR2: &str = "application/vnd.dds.xcdr2";
 /// encapsulation header under this type instead of being relabelled.
 pub const CONTENT_TYPE_XCDR1: &str = "application/vnd.dds.xcdr1";
 
-/// The encapsulation header of a body (RTPS 2.5 §10.5): representation
-/// identifier and options.
-fn encapsulation(representation: u8, big_endian: bool) -> [u8; 4] {
-    let id: u16 = match (representation, big_endian) {
-        (0, true) => 0x0000,
-        (0, false) => 0x0001,
-        (_, true) => 0x0006,
-        (_, false) => 0x0007,
-    };
-    let b = id.to_be_bytes();
-    [b[0], b[1], 0, 0]
+/// The encapsulation header of a body (RTPS 2.5 §10.5): the representation
+/// identifier the sample came under, and options. The body is passed on
+/// unchanged, so the identifier is too: it names the XCDR version, the
+/// format (plain, delimited, parameter list) and the byte order.
+fn encapsulation(representation_identifier: [u8; 2]) -> [u8; 4] {
+    [
+        representation_identifier[0],
+        representation_identifier[1],
+        0,
+        0,
+    ]
+}
+
+/// Whether a representation identifier names XCDR2 (DDS-XTypes 1.3 Table 60
+/// and Table 39: `0x0006` and up), else XCDR1.
+fn is_xcdr2(representation_identifier: [u8; 2]) -> bool {
+    representation_identifier[1] >= 0x06
+}
+
+/// The extensibility the DDS writer frames a body under `identifier` with
+/// (DDS-XTypes 1.3 Table 60, Table 39): a parameter list (`PL_CDR`,
+/// `PL_CDR2`) is `@mutable`, a delimited body (`D_CDR2`) `@appendable`,
+/// anything else `@final`. Without it the writer's header named every body
+/// plain, also one that carries a DHEADER or member headers.
+#[must_use]
+pub fn wire_extensibility_of(
+    representation_identifier: [u8; 2],
+) -> zerodds_types::qos::ExtensibilityForRepr {
+    use zerodds_types::qos::ExtensibilityForRepr as Ext;
+    match representation_identifier[1] & !0x01 {
+        0x02 | 0x0a | 0x12 => Ext::Mutable,
+        0x08 | 0x14 => Ext::Appendable,
+        _ => Ext::Final,
+    }
 }
 
 /// What a DDS sample contributes to its message.
@@ -820,10 +843,9 @@ fn encapsulation(representation: u8, big_endian: bool) -> [u8; 4] {
 pub struct OutSample<'a> {
     /// CDR payload without the encapsulation header.
     pub payload: &'a [u8],
-    /// 0 = XCDR1, 1 = XCDR2.
-    pub representation: u8,
-    /// Byte order of `payload`.
-    pub big_endian: bool,
+    /// The representation identifier of the header the sample came under
+    /// (`UserSample::Alive::representation_identifier`, DDSI-RTPS 2.5 §10.5).
+    pub representation_identifier: [u8; 2],
     /// Key hash; `None` for an unkeyed topic.
     pub key_hash: Option<[u8; 16]>,
     /// Writer GUID.
@@ -867,10 +889,10 @@ pub fn encode_message(
         partitions: Vec::new(),
     };
     let props = produce_properties(&hdr);
-    let content_type = if s.representation == 0 {
-        CONTENT_TYPE_XCDR1
-    } else {
+    let content_type = if is_xcdr2(s.representation_identifier) {
         CONTENT_TYPE_XCDR2
+    } else {
+        CONTENT_TYPE_XCDR1
     };
     let durable = !matches!(topic.durability, zerodds_qos::DurabilityKind::Volatile);
     // §6: LIFESPAN is the message's ttl.
@@ -901,7 +923,7 @@ pub fn encode_message(
     let mut app = produce_application_properties(&hdr);
     stamp_outbound(coexistence, &mut app);
     let mut body = Vec::with_capacity(4 + s.payload.len());
-    body.extend_from_slice(&encapsulation(s.representation, s.big_endian));
+    body.extend_from_slice(&encapsulation(s.representation_identifier));
     body.extend_from_slice(s.payload);
     let mut out = Vec::with_capacity(body.len() + 256);
     for section in [
@@ -997,13 +1019,12 @@ pub fn decode_message(bytes: &[u8]) -> Result<InMessage, String> {
     }
     if let Some(AmqpExtValue::Binary(b)) =
         app_prop(&msg.application_properties, app_keys::INSTANCE_HANDLE)
+        && b.len() == 16
     {
-        if b.len() == 16 {
-            let mut k = [0u8; 16];
-            k.copy_from_slice(b);
-            if k != [0; 16] {
-                msg.instance_handle = Some(k);
-            }
+        let mut k = [0u8; 16];
+        k.copy_from_slice(b);
+        if k != [0; 16] {
+            msg.instance_handle = Some(k);
         }
     }
     Ok(msg)
@@ -2015,11 +2036,11 @@ fn pump(
             }
         }
         let now = Instant::now();
-        if let (Some(at), Some(b)) = (next_beat, beat) {
-            if now >= at {
-                writer.heartbeat().map_err(|e| format!("heartbeat: {e}"))?;
-                next_beat = Some(now + b);
-            }
+        if let (Some(at), Some(b)) = (next_beat, beat)
+            && now >= at
+        {
+            writer.heartbeat().map_err(|e| format!("heartbeat: {e}"))?;
+            next_beat = Some(now + b);
         }
         for l in outs.iter_mut() {
             if l.state == LinkState::Down && l.retry_at.is_some_and(|t| now >= t) {
@@ -2075,13 +2096,14 @@ fn pump(
                     log("acl_denied", &[("topic", &t.dds_name), ("op", "read")]);
                     continue;
                 }
-                let out = match &*sample {
+                let outs = match &*sample {
                     UserSample::Alive {
                         key_hash,
                         payload,
                         writer_guid,
                         representation,
                         big_endian,
+                        representation_identifier,
                         source_timestamp,
                         source_sequence_number,
                         lifespan_nanos,
@@ -2093,25 +2115,24 @@ fn pump(
                         // A dispose coming back from AMQP names this
                         // instance by its key hash alone; the topic's
                         // AMQP → DDS writer records the key now.
-                        if t.keyed {
-                            if let Some(back) = ins.iter().find(|l| l.topic == topic) {
-                                let _ = runtime.remember_user_writer_instance(
-                                    back.writer,
-                                    *key_hash,
-                                    payload.as_ref(),
-                                    *representation,
-                                    *big_endian,
-                                );
-                            }
+                        if t.keyed
+                            && let Some(back) = ins.iter().find(|l| l.topic == topic)
+                        {
+                            let _ = runtime.remember_user_writer_instance(
+                                back.writer,
+                                *key_hash,
+                                payload.as_ref(),
+                                *representation,
+                                *big_endian,
+                            );
                         }
-                        encode_message(
+                        vec![encode_message(
                             t,
                             cfg.domain,
                             coexistence,
                             &OutSample {
                                 payload: payload.as_ref(),
-                                representation: *representation,
-                                big_endian: *big_endian,
+                                representation_identifier: *representation_identifier,
                                 key_hash: if t.keyed { *key_hash } else { None },
                                 writer_guid: *writer_guid,
                                 sequence: *source_sequence_number,
@@ -2126,60 +2147,77 @@ fn pump(
                                 lifespan_ms: (*lifespan_nanos > 0)
                                     .then(|| (*lifespan_nanos / 1_000_000).max(1)),
                             },
-                        )
+                        )]
                     }
-                    UserSample::Lifecycle { key_hash, kind, .. } => {
-                        let op = if matches!(
-                            kind,
-                            zerodds_rtps::history_cache::ChangeKind::NotAliveUnregistered
-                        ) {
-                            DdsOperation::Unregister
-                        } else {
-                            DdsOperation::Dispose
-                        };
-                        encode_message(
-                            t,
-                            cfg.domain,
-                            coexistence,
-                            &OutSample {
-                                payload: &[],
-                                representation: 1,
-                                big_endian: false,
-                                key_hash: Some(*key_hash),
-                                writer_guid: [0; 16],
-                                sequence: 0,
-                                source_timestamp_ns: None,
-                                operation: op,
-                                lifespan_ms: None,
-                            },
-                        )
-                    }
+                    UserSample::Lifecycle { key_hash, kind, .. } => lifecycle_operations(*kind)
+                        .iter()
+                        .map(|op| {
+                            encode_message(
+                                t,
+                                cfg.domain,
+                                coexistence,
+                                &OutSample {
+                                    payload: &[],
+                                    // CDR2_LE: a marker carries no body.
+                                    representation_identifier: [0x00, 0x07],
+                                    key_hash: Some(*key_hash),
+                                    writer_guid: [0; 16],
+                                    sequence: 0,
+                                    source_timestamp_ns: None,
+                                    operation: *op,
+                                    lifespan_ms: None,
+                                },
+                            )
+                        })
+                        .collect(),
                     UserSample::CoherentSetEnd { .. } => continue,
                 };
-                match out {
-                    Ok(message) => {
-                        metrics.dds_samples_in_total.inc();
-                        if let Some(tm) = l.topic.and_then(|i| topic_metrics(metrics, i)) {
-                            tm.dds_received.inc();
+                for out in outs {
+                    match out {
+                        Ok(message) => {
+                            metrics.dds_samples_in_total.inc();
+                            if let Some(tm) = l.topic.and_then(|i| topic_metrics(metrics, i)) {
+                                tm.dds_received.inc();
+                            }
+                            if l.queue.len() >= l.cap {
+                                l.queue.pop_front();
+                                metrics.errors_total.inc();
+                                log("queue_full_dropped_oldest", &[("topic", &t.dds_name)]);
+                            }
+                            l.queue.push_back(Pending {
+                                message,
+                                attempts: 0,
+                            });
+                            drain(writer, l, metrics)?;
                         }
-                        if l.queue.len() >= l.cap {
-                            l.queue.pop_front();
+                        Err(e) => {
                             metrics.errors_total.inc();
-                            log("queue_full_dropped_oldest", &[("topic", &t.dds_name)]);
+                            log("encode_error", &[("topic", &t.dds_name), ("err", &e)]);
                         }
-                        l.queue.push_back(Pending {
-                            message,
-                            attempts: 0,
-                        });
-                        drain(writer, l, metrics)?;
-                    }
-                    Err(e) => {
-                        metrics.errors_total.inc();
-                        log("encode_error", &[("topic", &t.dds_name), ("err", &e)]);
                     }
                 }
             }
         }
+    }
+}
+
+/// The DDS-AMQP operations a lifecycle marker becomes, in order. DDSI-RTPS
+/// 2.5 §9.6.4.9 sets the D and U bits of a status info together for a
+/// `dispose` and `unregister_instance` of one instance; DDS-AMQP 1.0 has one
+/// operation per message (`dds:operation`), so that marker is two messages,
+/// the dispose first (DDS 1.4 §2.2.2.4.2.13 `dispose`, §2.2.2.4.2.7
+/// `unregister_instance`).
+pub(crate) fn lifecycle_operations(
+    kind: zerodds_rtps::history_cache::ChangeKind,
+) -> &'static [DdsOperation] {
+    use zerodds_rtps::history_cache::ChangeKind;
+    match kind {
+        ChangeKind::NotAliveDisposed => &[DdsOperation::Dispose],
+        ChangeKind::NotAliveUnregistered => &[DdsOperation::Unregister],
+        ChangeKind::NotAliveDisposedUnregistered => {
+            &[DdsOperation::Dispose, DdsOperation::Unregister]
+        }
+        _ => &[],
     }
 }
 
@@ -2396,16 +2434,15 @@ fn on_inbound(
             ..
         } => {
             writer.apply_session_flow(channel, next_incoming_id, incoming_window);
-            if let (Some(h), Some(credit)) = (remote_handle, link_credit) {
-                if let Some(l) = outs
+            if let (Some(h), Some(credit)) = (remote_handle, link_credit)
+                && let Some(l) = outs
                     .iter_mut()
                     .find(|l| l.channel == channel && l.remote_handle == Some(h))
-                {
-                    // Part 2 §2.6.7: credit = receiver's delivery-count +
-                    // link-credit - sender's delivery-count.
-                    let theirs = delivery_count.unwrap_or(l.delivery_count);
-                    l.credit = theirs.wrapping_add(credit).wrapping_sub(l.delivery_count);
-                }
+            {
+                // Part 2 §2.6.7: credit = receiver's delivery-count +
+                // link-credit - sender's delivery-count.
+                let theirs = delivery_count.unwrap_or(l.delivery_count);
+                l.credit = theirs.wrapping_add(credit).wrapping_sub(l.delivery_count);
             }
             drain_all(writer, outs, metrics)?;
         }
@@ -2646,6 +2683,12 @@ fn deliver(
             let offer = if rep == 0 { dr::XCDR } else { dr::XCDR2 };
             let _ = runtime.set_user_writer_data_rep_override(eid, Some(vec![offer]));
             let _ = runtime.set_user_writer_byte_order_override(eid, be);
+            // The format of the body as its header named it: the writer's
+            // header has to say the same (DDSI-RTPS 2.5 §10.5).
+            let _ = runtime.set_user_writer_wire_extensibility(
+                eid,
+                wire_extensibility_of([msg.body[0], msg.body[1]]),
+            );
             match key {
                 Some(k) => runtime.write_user_sample_keyed(eid, payload, k, None),
                 None => runtime.write_user_sample_borrowed(eid, payload),
@@ -2689,7 +2732,7 @@ mod tests {
 
     /// The spec §3 example, with its paths, loads as written.
     #[test]
-    fn the_spec_example_loads() {
+    fn amqpbridge_3_the_spec_example_loads() {
         let yaml = "domain: 0\nlog_level: info\namqp:\n  broker_url: \"amqps://rabbitmq.example.com:5671\"\n  container_id: \"zerodds-bridge-prod-01\"\n  channel_max: 256\n  max_frame_size: 65536\n  idle_time_out_ms: 30000\n  hostname: \"rabbitmq.example.com\"\n  sasl:\n    mechanism: \"SCRAM-SHA-256\"\n    username: \"u\"\n    password: \"p\"\n  tls:\n    enabled: true\n    ca_file: \"/etc/zerodds/amqp-ca.pem\"\n    cert_file: \"/etc/zerodds/amqp-client.pem\"\n    key_file: \"/etc/zerodds/amqp-client.key\"\n    verify_hostname: true\n    alpn: [\"amqp\"]\n  reconnect:\n    initial_delay_ms: 500\n    max_delay_ms: 30000\n    factor: 2.0\ntopics:\n  - dds_name: \"Chat::Message\"\n    dds_type: \"Chat::Message\"\n    amqp_address: \"topic://chat/message\"\n    direction: \"bidir\"\n    sender:\n      settled: false\n      durable: 1\n      rcv_settle_mode: 0\n      snd_settle_mode: 0\n    receiver:\n      credit: 256\n    qos:\n      reliability: \"reliable\"\n      durability: \"volatile\"\n      history: { kind: \"keep_last\", depth: 10 }\n  - dds_name: \"Sensor::Reading\"\n    amqp_address: \"queue://sensors/reading\"\n    direction: \"out\"\n    sender:\n      settled: true\n    qos:\n      reliability: \"best_effort\"\nacl:\n  default_deny: false\nmetrics:\n  enabled: true\n  listen: \"127.0.0.1:9093\"\n  path: \"/metrics\"\n";
         let c = load(yaml).unwrap();
         assert_eq!(c.topics.len(), 2);
@@ -2702,7 +2745,7 @@ mod tests {
     }
 
     #[test]
-    fn what_the_daemon_would_not_honour_is_refused() {
+    fn amqpbridge_3_what_the_daemon_would_not_honour_is_refused() {
         for (yaml, needle) in [
             ("amqp:\n  tls:\n    alpn: [\"h2\"]\n", "amqp.tls.alpn"),
             ("metrics:\n  path: /stats\n", "metrics.path"),
@@ -2732,7 +2775,7 @@ mod tests {
     /// A sample goes out as the §4.3 message and comes back as the same
     /// body, key and operation.
     #[test]
-    fn a_sample_round_trips_through_the_message_form() {
+    fn amqpbridge_4_3_a_sample_round_trips_through_the_message_form() {
         let t = topic();
         let coex = CoexistenceConfig::new("11111111-2222-4333-8444-555555555555".into());
         let key = [9u8; 16];
@@ -2742,8 +2785,7 @@ mod tests {
             &coex,
             &OutSample {
                 payload: &[1, 2, 3, 4],
-                representation: 1,
-                big_endian: false,
+                representation_identifier: [0x00, 0x07],
                 key_hash: Some(key),
                 writer_guid: [7; 16],
                 sequence: 42,
@@ -2775,7 +2817,7 @@ mod tests {
     }
 
     #[test]
-    fn an_xcdr1_sample_keeps_its_header_and_says_so() {
+    fn amqpbridge_4_3_an_xcdr1_sample_keeps_its_header_and_says_so() {
         let t = topic();
         let coex = CoexistenceConfig::new("x".into());
         let m = encode_message(
@@ -2784,8 +2826,7 @@ mod tests {
             &coex,
             &OutSample {
                 payload: &[5],
-                representation: 0,
-                big_endian: true,
+                representation_identifier: [0x00, 0x00],
                 key_hash: None,
                 writer_guid: [1; 16],
                 sequence: 1,
@@ -2798,6 +2839,116 @@ mod tests {
         let d = decode_message(&m).unwrap();
         assert_eq!(d.content_type.as_deref(), Some(CONTENT_TYPE_XCDR1));
         assert_eq!(d.body[..2], [0x00, 0x00], "CDR_BE");
+    }
+
+    /// DDSI-RTPS 2.5 §10.5: a body passed on unchanged goes under the
+    /// identifier it came with, delimited and parameter-list bodies
+    /// included (DDS-XTypes 1.3 Table 60); before, the header named every
+    /// XCDR2 body `CDR2` and every XCDR1 body `CDR`.
+    #[test]
+    fn rtps_10_5_a_sample_keeps_the_identifier_of_its_format() {
+        let t = topic();
+        let coex = CoexistenceConfig::new("x".into());
+        for (identifier, content_type) in [
+            ([0x00, 0x03], CONTENT_TYPE_XCDR1), // PL_CDR_LE
+            ([0x00, 0x08], CONTENT_TYPE_XCDR2), // D_CDR2_BE
+            ([0x00, 0x0b], CONTENT_TYPE_XCDR2), // PL_CDR2_LE
+        ] {
+            let m = encode_message(
+                &t,
+                0,
+                &coex,
+                &OutSample {
+                    payload: &[5, 0, 0, 0],
+                    representation_identifier: identifier,
+                    key_hash: None,
+                    writer_guid: [1; 16],
+                    sequence: 1,
+                    source_timestamp_ns: None,
+                    operation: DdsOperation::Write,
+                    lifespan_ms: None,
+                },
+            )
+            .unwrap();
+            let d = decode_message(&m).unwrap();
+            assert_eq!(d.body[..2], identifier, "{identifier:02x?}");
+            assert_eq!(d.content_type.as_deref(), Some(content_type));
+        }
+    }
+
+    /// DDSI-RTPS 2.5 §9.6.4.9: a status info with the D and U bits is a
+    /// dispose and an unregister of the instance. DDS-AMQP 1.0 carries one
+    /// `dds:operation` per message, so the bridge sends both, the dispose
+    /// first; before, it sent the dispose alone.
+    #[test]
+    fn rtps_9_6_4_9_a_dispose_with_unregister_is_two_messages_dispose_first() {
+        use zerodds_rtps::history_cache::ChangeKind;
+        assert_eq!(
+            lifecycle_operations(ChangeKind::NotAliveDisposedUnregistered),
+            [DdsOperation::Dispose, DdsOperation::Unregister]
+        );
+        assert_eq!(
+            lifecycle_operations(ChangeKind::NotAliveDisposed),
+            [DdsOperation::Dispose]
+        );
+        assert_eq!(
+            lifecycle_operations(ChangeKind::NotAliveUnregistered),
+            [DdsOperation::Unregister]
+        );
+        assert!(lifecycle_operations(ChangeKind::Alive).is_empty());
+        let t = topic();
+        let coex = CoexistenceConfig::new("x".into());
+        let operations: Vec<DdsOperation> =
+            lifecycle_operations(ChangeKind::NotAliveDisposedUnregistered)
+                .iter()
+                .map(|op| {
+                    let m = encode_message(
+                        &t,
+                        0,
+                        &coex,
+                        &OutSample {
+                            payload: &[],
+                            representation_identifier: [0x00, 0x07],
+                            key_hash: Some([3; 16]),
+                            writer_guid: [0; 16],
+                            sequence: 0,
+                            source_timestamp_ns: None,
+                            operation: *op,
+                            lifespan_ms: None,
+                        },
+                    )
+                    .unwrap();
+                    decode_message(&m).unwrap().operation
+                })
+                .collect();
+        assert_eq!(
+            operations,
+            [DdsOperation::Dispose, DdsOperation::Unregister]
+        );
+    }
+
+    /// DDS-XTypes 1.3 Table 60 and Table 39: the format an identifier names
+    /// is the extensibility the DDS writer frames the body with.
+    #[test]
+    fn xtypes_7_6_3_1_2_the_identifier_names_the_extensibility_of_the_body() {
+        use zerodds_types::qos::ExtensibilityForRepr as Ext;
+        for (identifier, ext) in [
+            ([0x00, 0x00], Ext::Final),
+            ([0x00, 0x01], Ext::Final),
+            ([0x00, 0x02], Ext::Mutable),
+            ([0x00, 0x03], Ext::Mutable),
+            ([0x00, 0x06], Ext::Final),
+            ([0x00, 0x07], Ext::Final),
+            ([0x00, 0x08], Ext::Appendable),
+            ([0x00, 0x09], Ext::Appendable),
+            ([0x00, 0x0a], Ext::Mutable),
+            ([0x00, 0x0b], Ext::Mutable),
+            ([0x00, 0x10], Ext::Final),
+            ([0x00, 0x13], Ext::Mutable),
+            ([0x00, 0x15], Ext::Appendable),
+        ] {
+            assert_eq!(wire_extensibility_of(identifier), ext, "{identifier:02x?}");
+        }
     }
 
     #[test]
@@ -2822,7 +2973,7 @@ mod tests {
         include_str!("../../../packaging/linux/configs/amqp-bridged.yaml.example");
 
     #[test]
-    fn the_shipped_example_reads_as_it_says() {
+    fn amqpbridge_3_the_shipped_example_reads_as_it_says() {
         let c = load(EXAMPLE_YAML).unwrap();
         assert_eq!(c.broker_url, "amqp://localhost:5672");
         assert_eq!(c.channel_max, 128, "not the default 256");
@@ -2839,7 +2990,7 @@ mod tests {
     }
 
     #[test]
-    fn values_the_shared_parser_reads_reach_the_daemon() {
+    fn amqpbridge_3_values_the_shared_parser_reads_reach_the_daemon() {
         let c = load(
             "amqp:\n  broker_url: \"amqp://h:1\"   # the broker\n  sasl:\n    password: \"${ZERODDS_UNSET_PROBE_a41f:-p#ss}\"\n",
         )
@@ -2869,7 +3020,7 @@ mod tests {
     }
 
     #[test]
-    fn every_event_has_a_level_and_the_threshold_orders_them() {
+    fn amqpbridge_8_1_every_event_has_a_level_and_the_threshold_orders_them() {
         assert_eq!(event_level("connected"), "info");
         assert_eq!(event_level("link_down"), "warn");
         assert_eq!(event_level("connection_lost"), "error");

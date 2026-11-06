@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_128_yields_two_bytes_with_continuation() {
+    fn mqttbridge_12_1_encode_128_yields_two_bytes_with_continuation() {
         // Spec §1.5.5 Table — 128 = 0x80 0x01.
         assert_eq!(encode_vbi(128).expect("ok"), alloc::vec![0x80, 0x01]);
     }
@@ -155,14 +155,18 @@ mod tests {
     }
 
     #[test]
-    fn decode_round_trips_all_boundary_values() {
-        for v in [
-            0u32, 1, 127, 128, 16_383, 16_384, 2_097_151, 2_097_152, MAX_VBI,
+    fn mqtt5_1_5_5_the_boundary_values_of_table_1_1_decode() {
+        for (v, octets) in [
+            (0u32, &[0x00][..]),
+            (127, &[0x7F]),
+            (128, &[0x80, 0x01]),
+            (16_383, &[0xFF, 0x7F]),
+            (16_384, &[0x80, 0x80, 0x01]),
+            (2_097_151, &[0xFF, 0xFF, 0x7F]),
+            (2_097_152, &[0x80, 0x80, 0x80, 0x01]),
+            (268_435_455, &[0xFF, 0xFF, 0xFF, 0x7F]),
         ] {
-            let bytes = encode_vbi(v).expect("encode");
-            let (decoded, consumed) = decode_vbi(&bytes).expect("decode");
-            assert_eq!(decoded, v);
-            assert_eq!(consumed, bytes.len());
+            assert_eq!(decode_vbi(octets).expect("decode"), (v, octets.len()));
         }
     }
 

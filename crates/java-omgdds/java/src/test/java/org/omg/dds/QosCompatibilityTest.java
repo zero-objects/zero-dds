@@ -56,7 +56,7 @@ class QosCompatibilityTest {
     }
 
     @Test
-    void differentTypeNamesDoNotConnect() throws Exception {
+    void javapsm_2_a_writer_and_a_reader_of_different_type_names_do_not_connect() throws Exception {
         DomainParticipant participant =
                 Qos.factory().createParticipant(nextDom());
         Topic<A> ta = participant.createTopic("sameName", A.class);
@@ -72,7 +72,7 @@ class QosCompatibilityTest {
     }
 
     @Test
-    void incompatibleReliabilityDoesNotConnect() throws Exception {
+    void javapsm_7_3_5_1_a_reliable_reader_and_a_best_effort_writer_do_not_connect_and_both_record_it() throws Exception {
         DomainParticipant participant =
                 Qos.factory().createParticipant(nextDom());
         Topic<A> topic = participant.createTopic("reliability", A.class);

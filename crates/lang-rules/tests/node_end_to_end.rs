@@ -11,7 +11,7 @@
 //! What proves this column is the codec: a curated set of shapes run
 //! all the way to `function zd_enc_T`/`function zd_dec_T` pairs and
 //! through the real `node --check` parser, exactly as
-//! `the_generated_zig_compiles` runs its own set through `zig`.
+//! `xtypes_7_3_1_the_generated_zig_compiles` runs its own set through `zig`.
 //!
 //! `print_stderr` is allowed here on purpose, as it is in every sibling
 //! harness: a skipped `node` check and a corpus case the frontend
@@ -110,7 +110,7 @@ fn full_program(idl: &str) -> String {
 // -- the mapping -----------------------------------------------------------
 
 #[test]
-fn an_enumeration_is_a_frozen_object_of_its_names() {
+fn xtypes_7_2_2_4_1_1_an_enumeration_is_a_frozen_object_of_its_names() {
     let generated = generate("enum Mode { IDLE, @value(4) ACTIVE, FAULT };");
     assert!(
         generated.contains("const Mode = Object.freeze({"),
@@ -122,7 +122,7 @@ fn an_enumeration_is_a_frozen_object_of_its_names() {
 }
 
 #[test]
-fn a_bitmask_declares_one_constant_per_bit_and_no_type_of_its_own() {
+fn xtypes_7_2_2_4_1_2_a_bitmask_declares_one_constant_per_bit_and_no_type_of_its_own() {
     let generated = generate("@bit_bound(16) bitmask Flags { READY, @position(4) MOVING };");
     assert!(generated.contains("const READY = 1 << 0;"), "{generated}");
     assert!(generated.contains("const MOVING = 1 << 4;"), "{generated}");
@@ -134,13 +134,13 @@ fn a_bitmask_declares_one_constant_per_bit_and_no_type_of_its_own() {
 }
 
 #[test]
-fn a_wide_bitmask_writes_its_bits_as_bigint_literals() {
+fn xtypes_7_2_2_4_1_2_a_wide_bitmask_writes_its_bits_as_bigint_literals() {
     let generated = generate("@bit_bound(64) bitmask Wide { @position(63) TOP };");
     assert!(generated.contains("const TOP = 1n << 63n;"), "{generated}");
 }
 
 #[test]
-fn a_struct_a_union_and_a_bitset_declare_nothing() {
+fn xtypes_7_5_1_a_struct_a_union_and_a_bitset_declare_nothing() {
     // The module documentation's central claim: every aggregate is a
     // plain object literal wherever the codec walk or the defaulter
     // builds one, and none of them needs a name at load time.
@@ -171,25 +171,25 @@ fn a_struct_a_union_and_a_bitset_declare_nothing() {
 }
 
 #[test]
-fn a_boolean_constant_writes_the_literal() {
+fn idl_7_4_1_4_a_boolean_constant_writes_the_literal() {
     let generated = generate("const boolean ON = TRUE;");
     assert!(generated.contains("const ON = true;"), "{generated}");
 }
 
 #[test]
-fn a_sixty_four_bit_constant_carries_the_bigint_suffix() {
+fn idl_7_4_1_4_a_sixty_four_bit_constant_carries_the_bigint_suffix() {
     let generated = generate("const unsigned long long BIG = 18446744073709551615;");
     assert!(generated.contains("18446744073709551615n"), "{generated}");
 }
 
 #[test]
-fn a_string_constant_is_a_plain_string_literal() {
+fn idl_7_4_1_4_a_string_constant_is_a_plain_string_literal() {
     let generated = generate("const string TAG = \"abc\";");
     assert!(generated.contains("const TAG = \"abc\";"), "{generated}");
 }
 
 #[test]
-fn a_reserved_word_used_as_a_top_level_declaration_is_escaped() {
+fn idl_7_2_3_a_reserved_word_used_as_a_top_level_declaration_is_escaped() {
     let generated = generate("const long class = 1; const long delete = 2;");
     assert!(generated.contains("const class_ = 1;"), "{generated}");
     assert!(generated.contains("const delete_ = 2;"), "{generated}");
@@ -197,7 +197,7 @@ fn a_reserved_word_used_as_a_top_level_declaration_is_escaped() {
 }
 
 #[test]
-fn no_predefined_type_name_is_reserved_here() {
+fn idl_7_2_3_no_predefined_type_name_is_reserved_here() {
     // Plain JavaScript has no predefined type names, unlike TypeScript,
     // which reserves both of these as binding names. `string` and
     // `number` themselves are IDL keywords and cannot be tested as IDL
@@ -208,7 +208,7 @@ fn no_predefined_type_name_is_reserved_here() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_enumerations_binding() {
+fn idl_7_5_2_a_module_flattens_onto_the_enumerations_binding() {
     let generated = generate("module common { module util { enum Mode { A }; }; };");
     assert!(
         generated.contains("const common_util_Mode ="),
@@ -217,14 +217,14 @@ fn a_module_flattens_onto_the_enumerations_binding() {
 }
 
 #[test]
-fn escape_decl_never_moves_a_plain_name() {
+fn idl_7_2_3_escape_decl_never_moves_a_plain_name() {
     for name in ["Pose", "pose", "x_min", "_d", "MODULE_ID"] {
         assert_eq!(escape_decl(name), name);
     }
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "enum E { A, B }; const long N = 1;";
     assert_eq!(generate(idl), generate(idl));
 }
@@ -253,7 +253,7 @@ fn corpus() -> Vec<(String, std::path::PathBuf)> {
 const MUST_RENDER: usize = 350;
 
 #[test]
-fn every_corpus_case_reaches_the_materialiser_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_reaches_the_materialiser_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -334,7 +334,7 @@ static SERIAL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(
 /// One source per case: two of these declare an `S` and a `T`, and a
 /// script may declare one function of a name only once.
 #[test]
-fn the_generated_node_passes_node_check() {
+fn xtypes_7_3_1_the_generated_node_passes_node_check() {
     if !node_available() {
         eprintln!(
             "SKIPPED: `node` is not on the path, so the generated JavaScript was not checked."

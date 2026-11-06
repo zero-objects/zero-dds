@@ -4,8 +4,8 @@
 //! (`TypeIdV1`), the optional members `type` (0x0072) and `type_id` (0x0069)
 //! of the built-in topic data of XTypes 1.3 Annex D.
 //!
-//! The byte vectors in `a_minimal_object_has_the_octets_the_rules_give` and
-//! `a_type_id_has_the_octets_of_its_union` are derived by hand from XTypes
+//! The byte vectors in `xtypes_annex_d_a_minimal_object_has_the_octets_the_rules_give` and
+//! `xtypes_annex_d_a_type_id_has_the_octets_of_its_union` are derived by hand from XTypes
 //! 1.1 §7.4.1 and Annex B; the id of a type is checked against the MD5 of its
 //! big-endian serialization, as §7.3.4.1.2 describes.
 
@@ -92,7 +92,7 @@ fn root_of(ast: &Ast, name: &str) -> TypeIdentifier {
 }
 
 #[test]
-fn a_minimal_object_has_the_octets_the_rules_give() {
+fn xtypes_annex_d_a_minimal_object_has_the_octets_the_rules_give() {
     // TypeObject is MUTABLE: `library` is member 0, `the_type` member 1, a
     // sentinel ends the list. An empty library is a count of zero; the one
     // `_TypeId` of `long` is its kind and its primitive id, two shorts.
@@ -125,7 +125,7 @@ fn a_minimal_object_has_the_octets_the_rules_give() {
 }
 
 #[test]
-fn a_type_id_has_the_octets_of_its_union() {
+fn xtypes_annex_d_a_type_id_has_the_octets_of_its_union() {
     // `_TypeId` is an extensible union over a short: a primitive kind selects
     // the primitive id, every other value the 64-bit id, aligned to eight.
     let primitive = TypeId::Primitive(kind::UINT_16_TYPE);
@@ -160,7 +160,7 @@ fn a_type_id_has_the_octets_of_its_union() {
 }
 
 #[test]
-fn a_library_made_of_every_kind_survives_both_byte_orders() {
+fn xtypes_annex_d_a_library_made_of_every_kind_survives_both_byte_orders() {
     let ast = model(IDL);
     let registry = registry_of(&ast);
     let object = from_complete(&root_of(&ast, "Sensors::Holder"), &registry).expect("converts");
@@ -205,7 +205,7 @@ fn a_library_made_of_every_kind_survives_both_byte_orders() {
 }
 
 #[test]
-fn the_id_of_a_type_is_the_low_64_bits_of_the_md5_of_its_serialization() {
+fn xtypes_annex_d_the_id_of_a_type_is_the_low_64_bits_of_the_md5_of_its_serialization() {
     let ast = model(IDL);
     let registry = registry_of(&ast);
     let object = from_complete(&root_of(&ast, "Sensors::Holder"), &registry).expect("converts");
@@ -255,7 +255,7 @@ fn two_types_that_differ_have_two_ids_and_a_type_keeps_its_own() {
 }
 
 #[test]
-fn a_topic_type_comes_back_as_the_complete_objects_it_was() {
+fn xtypes_annex_d_a_topic_type_comes_back_as_the_complete_objects_it_was() {
     let ast = model(IDL);
     let registry = registry_of(&ast);
     let mut differences = Vec::new();
@@ -306,7 +306,7 @@ fn a_topic_type_comes_back_as_the_complete_objects_it_was() {
 }
 
 #[test]
-fn an_annotation_and_its_application_cross_both_ways() {
+fn xtypes_annex_d_an_annotation_and_its_application_cross_both_ways() {
     let annotation = CompleteTypeObject::Annotation(CompleteAnnotationType {
         annotation_flag: AnnotationTypeFlag(0),
         header: CompleteAnnotationHeader {
@@ -381,7 +381,7 @@ fn an_annotation_and_its_application_cross_both_ways() {
 }
 
 #[test]
-fn what_annex_b_has_no_form_for_is_refused_by_name() {
+fn xtypes_annex_d_what_annex_b_has_no_form_for_is_refused_by_name() {
     // int8: XTypes 1.1 has no 8-bit signed integer.
     let ast = model("module M { struct S { int8 small; }; };");
     let registry = registry_of(&ast);
@@ -415,7 +415,7 @@ fn what_annex_b_has_no_form_for_is_refused_by_name() {
 }
 
 #[test]
-fn a_type_that_refers_to_itself_has_no_form() {
+fn xtypes_annex_d_a_type_that_refers_to_itself_has_no_form() {
     // The id of a type is the hash of a serialization that contains the ids
     // of the types it uses: a cycle has none.
     let ast = model("module M { struct Node { long v; sequence<Node> next; }; };");
@@ -477,10 +477,10 @@ fn a_name_past_its_bound_is_refused_on_writing() {
     let registry = registry_of(&ast);
     let v1 = from_complete(&root_of(&ast, "M::S"), &registry).unwrap();
     object.library = v1.library;
-    if let Some(LibraryElement::Module(m)) = object.library.element.first_mut() {
-        if let Some(LibraryElement::Structure(s)) = m.library.element.first_mut() {
-            s.base.property.name = "x".repeat(300);
-        }
+    if let Some(LibraryElement::Module(m)) = object.library.element.first_mut()
+        && let Some(LibraryElement::Structure(s)) = m.library.element.first_mut()
+    {
+        s.base.property.name = "x".repeat(300);
     }
     let error = object.to_bytes_le().expect_err("ObjectName holds 256");
     assert!(matches!(error, V1Error::Invalid(_)), "{error}");

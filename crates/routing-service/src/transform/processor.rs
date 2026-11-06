@@ -8,7 +8,8 @@ use super::shape::{Member, ScalarKind, TypeRegistry, TypeShape};
 use super::sqlbridge::{CompiledFilter, DecodedRow};
 use crate::config::Route;
 use crate::error::RoutingError;
-use crate::forwarding::SampleProcessor;
+use crate::forwarding::{Processed, SampleProcessor};
+use zerodds_wire::Endianness;
 
 /// Where an output member's value comes from.
 enum OutSlot {
@@ -88,26 +89,80 @@ impl DynamicProcessor {
     }
 }
 
+/// How a body under `identifier` is laid out (DDSI-RTPS 2.5 §10.5,
+/// DDS-XTypes 1.3 Table 60 and Table 39): XCDR2 or XCDR1, a DHEADER in
+/// front of the members or not, the byte order. `None` for a parameter
+/// list (`PL_CDR`, `PL_CDR2`: a `@mutable` type, whose members a flat shape
+/// does not describe) and for an identifier that is no CDR format.
+fn body_form(identifier: [u8; 2]) -> Option<(bool, bool, Endianness)> {
+    if identifier[0] != 0x00 {
+        return None;
+    }
+    let endianness = if identifier[1] & 0x01 == 0 {
+        Endianness::Big
+    } else {
+        Endianness::Little
+    };
+    let (xcdr2, delimited) = match identifier[1] & !0x01 {
+        0x00 => (false, false),
+        0x06 | 0x10 => (true, false),
+        0x08 | 0x14 => (true, true),
+        _ => return None,
+    };
+    Some((xcdr2, delimited, endianness))
+}
+
+/// The identifier of an XCDR2 (else XCDR1) body of a shape that is
+/// `appendable` or not, in `endianness` (DDS-XTypes 1.3 Table 60).
+fn identifier_of(xcdr2: bool, appendable: bool, endianness: Endianness) -> [u8; 2] {
+    let id = match (xcdr2, appendable) {
+        (false, _) => 0x00,
+        (true, false) => 0x06,
+        (true, true) => 0x08,
+    };
+    [0x00, id | u8::from(endianness == Endianness::Little)]
+}
+
 impl SampleProcessor for DynamicProcessor {
-    fn process(&mut self, payload: &[u8], representation: u8) -> Option<(Vec<u8>, u8)> {
+    fn process(&mut self, payload: &[u8], representation_identifier: [u8; 2]) -> Processed {
         // Decode the input only when needed (filter or transform present).
         let need_decode = self.filter.is_some() || self.plan.is_some();
         if !need_decode {
-            return Some((payload.to_vec(), representation));
+            return Processed::Forward(payload.to_vec(), representation_identifier);
         }
-        let in_values = codec::decode(&self.in_shape, payload, representation).ok()?;
+        let Some((xcdr2, delimited, endianness)) = body_form(representation_identifier) else {
+            return Processed::Refused(format!(
+                "representation identifier {representation_identifier:02x?} is no plain or \
+                 delimited CDR body"
+            ));
+        };
+        // XCDR2 frames an @appendable body with a DHEADER and a @final one
+        // without (DDS-XTypes 1.3 §7.4.3.4.1, §7.4.3.4.2): the shape has to
+        // say the same as the header, or every member is read at the wrong
+        // offset.
+        if xcdr2 && delimited != self.in_shape.appendable {
+            return Processed::Refused(format!(
+                "representation identifier {representation_identifier:02x?} does not frame \
+                 the body the input shape `{}` describes",
+                self.in_shape.name
+            ));
+        }
+        let in_values = match codec::decode(&self.in_shape, payload, xcdr2, endianness) {
+            Ok(values) => values,
+            Err(error) => return Processed::Refused(error.to_string()),
+        };
 
         if let Some(f) = &self.filter {
             let row = DecodedRow::new(&self.in_shape, &in_values);
             if !f.matches(&row) {
-                return None;
+                return Processed::Filtered;
             }
         }
 
         match &self.plan {
             None => {
                 // Filter passed, no transform → forward original bytes verbatim.
-                Some((payload.to_vec(), representation))
+                Processed::Forward(payload.to_vec(), representation_identifier)
             }
             Some(plan) => {
                 let out_values: Vec<DynValue> = plan
@@ -117,8 +172,15 @@ impl SampleProcessor for DynamicProcessor {
                         OutSlot::Const(v) => v.clone(),
                     })
                     .collect();
-                let bytes = codec::encode(&self.out_shape, &out_values, representation).ok()?;
-                Some((bytes, representation))
+                // The output is written in the version and the byte order
+                // of the input, framed as the output shape is.
+                match codec::encode(&self.out_shape, &out_values, xcdr2, endianness) {
+                    Ok(bytes) => Processed::Forward(
+                        bytes,
+                        identifier_of(xcdr2, self.out_shape.appendable, endianness),
+                    ),
+                    Err(error) => Processed::Refused(error.to_string()),
+                }
             }
         }
     }
@@ -277,31 +339,15 @@ mod tests {
         }
     }
 
-    #[test]
-    fn filter_only_forwards_original() {
-        let mut p =
-            DynamicProcessor::build(&route_with(Some("id > 5"), None), "T", "T", &reg()).unwrap();
-        let body = codec::encode(
-            reg().get("T").unwrap(),
-            &[DynValue::U32(10), DynValue::Str("X".into())],
-            2,
-        )
-        .unwrap();
-        let (out, rep) = p.process(&body, 2).unwrap();
-        assert_eq!(out, body); // verbatim
-        assert_eq!(rep, 2);
-        // failing filter drops.
-        let body2 = codec::encode(
-            reg().get("T").unwrap(),
-            &[DynValue::U32(1), DynValue::Str("X".into())],
-            2,
-        )
-        .unwrap();
-        assert!(p.process(&body2, 2).is_none());
-    }
+    const CDR2_LE: [u8; 2] = [0x00, 0x07];
 
+    /// A constant set by the transform replaces the member in the body the
+    /// route writes. The oracle is the XCDR2 little-endian octets of
+    /// `@final struct T { uint32 id; string zone; }` (DDS-XTypes 1.3
+    /// §7.4.1.1.2: a string is its length with the terminating NUL, then the
+    /// characters and the NUL; §7.4.2: no DHEADER for `@final`).
     #[test]
-    fn set_const_transform() {
+    fn xtypes_7_4_1_1_2_a_constant_set_by_the_transform_is_written_in_the_body() {
         let t = Transform {
             rename: vec![],
             set_const: vec![SetConstRule {
@@ -311,15 +357,15 @@ mod tests {
             drop: vec![],
         };
         let mut p = DynamicProcessor::build(&route_with(None, Some(t)), "T", "T", &reg()).unwrap();
-        let body = codec::encode(
-            reg().get("T").unwrap(),
-            &[DynValue::U32(9), DynValue::Str("orig".into())],
-            2,
-        )
-        .unwrap();
-        let (out, _) = p.process(&body, 2).unwrap();
-        let decoded = codec::decode(reg().get("T").unwrap(), &out, 2).unwrap();
-        assert_eq!(decoded[0], DynValue::U32(9));
-        assert_eq!(decoded[1], DynValue::Str("FIXED".into()));
+        // id = 9, zone = "orig"
+        let input = [0x09, 0, 0, 0, 0x05, 0, 0, 0, b'o', b'r', b'i', b'g', 0];
+        // id = 9, zone = "FIXED"
+        let output = [
+            0x09, 0, 0, 0, 0x06, 0, 0, 0, b'F', b'I', b'X', b'E', b'D', 0,
+        ];
+        assert_eq!(
+            p.process(&input, CDR2_LE),
+            Processed::Forward(output.to_vec(), CDR2_LE)
+        );
     }
 }

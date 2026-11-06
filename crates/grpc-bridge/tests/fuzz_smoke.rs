@@ -30,7 +30,7 @@ fn random_bytes(rng: &mut XorShift32, len: usize) -> Vec<u8> {
 }
 
 #[test]
-fn fuzz_decode_message_no_panic() {
+fn grpcbridge_12_1_fuzz_decode_message_no_panic() {
     let mut rng = XorShift32::new(0x4752_504D);
     for i in 0..3_000 {
         let len = match i % 8 {
@@ -49,7 +49,7 @@ fn fuzz_decode_message_no_panic() {
 }
 
 #[test]
-fn fuzz_parse_path_no_panic() {
+fn grpcbridge_12_1_fuzz_parse_path_no_panic() {
     let mut rng = XorShift32::new(0x4752_5050);
     let alphabet: &[u8] = b"/abcdefghijklmnopqrstuvwxyz0123456789-_.:";
     for i in 0..3_000 {
@@ -78,7 +78,7 @@ fn fuzz_parse_path_no_panic() {
 }
 
 #[test]
-fn fuzz_decode_timeout_no_panic() {
+fn grpcbridge_12_1_fuzz_decode_timeout_no_panic() {
     let mut rng = XorShift32::new(0x4752_5054);
     let alphabet: &[u8] = b"0123456789HMSnumun";
     for i in 0..3_000 {
@@ -105,7 +105,7 @@ fn fuzz_decode_timeout_no_panic() {
 }
 
 #[test]
-fn empty_inputs_no_panic() {
+fn grpcbridge_12_1_empty_inputs_no_panic() {
     let _ = decode_message(&[]);
     let _ = parse_path("");
     let _ = decode_timeout("");
@@ -114,7 +114,7 @@ fn empty_inputs_no_panic() {
 /// 32-bit length-prefix overflow: gRPC frame `[0x00 0xFF 0xFF 0xFF 0xFF]`
 /// — the decoder must return `Err`, not `Vec::with_capacity(u32::MAX)`.
 #[test]
-fn message_oversized_length_no_oom() {
+fn grpcbridge_12_1_message_oversized_length_no_oom() {
     let buf = [0x00, 0xFF, 0xFF, 0xFF, 0xFF];
     let _ = decode_message(&buf);
 }

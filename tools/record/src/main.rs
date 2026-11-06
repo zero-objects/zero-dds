@@ -26,13 +26,16 @@ use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use zerodds_ast_layout::key::Endianness;
-use zerodds_cli_common::{participant_guid, stable_prefix};
-use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample};
+use zerodds_cli_common::{
+    WriterReliability, monitor_reader_configs, participant_guid, stable_prefix,
+};
+use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserSample};
 use zerodds_record::{
     Command, RecordArgs, count_frames_per_topic, parse_args, read_header_summary,
 };
 use zerodds_recorder::format::{ParticipantEntry, SampleKind};
 use zerodds_recorder::session::{RecordingSession, SessionOptions, TopicKey};
+use zerodds_recorder_decode::RawSample;
 use zerodds_recorder_decode::json_sink::{JsonSink, to_hex};
 use zerodds_recorder_decode::sqlite_sink::SqliteSink;
 use zerodds_recorder_decode::type_source::{TypeBook, parse_topic_type_map};
@@ -144,28 +147,32 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
     let session = Arc::new(RecordingSession::new(BufWriter::new(file), opts));
     let _ = r.max_sample_bytes; // DoS cap will be enforced in a future iteration via a config hook.
 
-    // One type-following reader per resolved (topic, type) — announces the real
-    // type so it matches the typed writer on both ends.
-    let mut readers = Vec::with_capacity(topics.len());
+    // Two type-following readers per resolved (topic, type) — each announces
+    // the real type so it matches the typed writer on both ends; one
+    // RELIABLE, one BEST_EFFORT, so that every writer is recorded
+    // (`monitor_reader_configs`).
+    let mut readers = Vec::with_capacity(2 * topics.len());
     for (idx, t) in topics.iter().enumerate() {
-        let cfg = user_reader_config(&t.topic, &t.type_name);
-        match runtime.register_user_reader(cfg) {
-            Ok((eid, rx)) => {
-                println!(
-                    "zerodds-record: attached topic={} type={}",
-                    t.topic, t.type_name
-                );
-                readers.push((idx, eid, rx));
-            }
-            Err(e) => {
-                eprintln!(
-                    "error: register_user_reader({}, {}): {e:?}",
-                    t.topic, t.type_name
-                );
-                return ExitCode::from(3);
+        for (cfg, reliable) in monitor_reader_configs(&t.topic, &t.type_name) {
+            match runtime.register_user_reader(cfg) {
+                Ok((eid, rx)) => readers.push((idx, eid, rx, reliable)),
+                Err(e) => {
+                    eprintln!(
+                        "error: register_user_reader({}, {}): {e:?}",
+                        t.topic, t.type_name
+                    );
+                    return ExitCode::from(3);
+                }
             }
         }
+        println!(
+            "zerodds-record: attached topic={} type={}",
+            t.topic, t.type_name
+        );
     }
+    // What a RELIABLE writer wrote reaches both readers; the RELIABLE one
+    // records it.
+    let mut reliability = WriterReliability::new();
 
     // Optional decode-sinks (typed JSON / SQLite) on top of the opaque capture.
     let mut decode = match setup_decode(&r, &topics, config.codec_dialect) {
@@ -204,15 +211,18 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
     // whatever is still queued at SIGINT never reaches the file, which turns
     // the capture into a truncated prefix of the traffic.
     while !stop.load(Ordering::Relaxed) {
-        if let Some(end) = deadline {
-            if Instant::now() >= end {
-                break;
-            }
+        if let Some(end) = deadline
+            && Instant::now() >= end
+        {
+            break;
         }
         let mut got_any = false;
-        'sweep: for (topic_idx, _eid, rx) in &readers {
+        'sweep: for (topic_idx, _eid, rx, reliable) in &readers {
             while let Ok(sample) = rx.try_recv() {
                 got_any = true;
+                if !reliability.keep(&runtime, *reliable, &sample) {
+                    continue;
+                }
                 let topic = &topics[*topic_idx];
                 write_sample(&mut decode, &session_for_loop, part_guid, topic, sample);
                 if let Some(count) = per_topic.get_mut(*topic_idx) {
@@ -225,10 +235,10 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
                 if stop.load(Ordering::Relaxed) {
                     break 'sweep;
                 }
-                if let Some(end) = deadline {
-                    if Instant::now() >= end {
-                        break 'sweep;
-                    }
+                if let Some(end) = deadline
+                    && Instant::now() >= end
+                {
+                    break 'sweep;
                 }
             }
         }
@@ -266,7 +276,7 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
     let flush_until = Instant::now() + Duration::from_millis(500);
     let mut flushed: u64 = 0;
     let mut left_behind: u64 = 0;
-    'flush: for (topic_idx, _eid, rx) in &readers {
+    'flush: for (topic_idx, _eid, rx, reliable) in &readers {
         loop {
             // The deadline before the receive, so a sample is either
             // written or counted as left behind — checking it after the
@@ -277,6 +287,7 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
                 break 'flush;
             }
             match rx.try_recv() {
+                Ok(sample) if !reliability.keep(&runtime, *reliable, &sample) => {}
                 Ok(sample) => {
                     let topic = &topics[*topic_idx];
                     write_sample(&mut decode, &session_for_loop, part_guid, topic, sample);
@@ -293,7 +304,7 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
     // samples are discarded — the capture ends here — so the count is
     // the one number that says how much of the traffic the file does
     // not hold.
-    for (_topic_idx, _eid, rx) in &readers {
+    for (_topic_idx, _eid, rx, _reliable) in &readers {
         while rx.try_recv().is_ok() {
             left_behind += 1;
         }
@@ -323,6 +334,12 @@ fn run_record(r: RecordArgs, config: &RuntimeConfig) -> ExitCode {
         }
     }
 
+    // A run that recorded nothing still leaves a capture: the header.
+    if let Err(e) = session.finish() {
+        eprintln!("zerodds-record: error: finishing the capture: {e}");
+        runtime.shutdown();
+        return ExitCode::from(3);
+    }
     let stats = session.stats();
     let elapsed = started.elapsed();
     println!(
@@ -360,6 +377,7 @@ fn write_sample(
             writer_guid,
             representation,
             big_endian,
+            representation_identifier,
             ..
         } => {
             let ts = unix_ns_now();
@@ -367,20 +385,29 @@ fn write_sample(
                 &topic.topic,
                 ts,
                 writer_guid,
-                &payload,
-                representation,
-                big_endian,
+                Encapsulated {
+                    payload: &payload,
+                    representation,
+                    big_endian,
+                    representation_identifier,
+                },
             );
-            session.record_sample(ts, writer_guid, topic, SampleKind::Alive, payload.to_vec())
+            // The identifier of the encapsulation header goes with the body
+            // (DDSI-RTPS 2.5 §10.5): a replay sends the body under it.
+            session.record_sample(
+                ts,
+                writer_guid,
+                topic,
+                SampleKind::Alive,
+                Some(representation_identifier),
+                payload.to_vec(),
+            )
         }
         UserSample::Lifecycle { kind, .. } => {
-            let mapped = match kind {
-                zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed => {
-                    SampleKind::NotAliveDisposed
-                }
-                _ => SampleKind::NotAliveUnregistered,
-            };
-            session.record_sample(unix_ns_now(), part_guid, topic, mapped, Vec::new())
+            let ts = unix_ns_now();
+            lifecycle_kinds(kind).iter().try_for_each(|mapped| {
+                session.record_sample(ts, part_guid, topic, *mapped, None, Vec::new())
+            })
         }
         // DDSI-RTPS 2.5 §8.7.6 — the end-of-coherent-set marker carries no user
         // data. `.zddsrec` has no sample kind for it, so it is not recorded;
@@ -389,6 +416,24 @@ fn write_sample(
     };
     if let Err(e) = res {
         eprintln!("warn: record_sample dropped: {e:?}");
+    }
+}
+
+/// The `.zddsrec` entries a lifecycle marker becomes, in order. DDSI-RTPS
+/// 2.5 §9.6.4.9 sets the D and U bits of a status info together for a
+/// `dispose` and `unregister_instance` of one instance; the format has one
+/// kind per entry (`SampleKind`), so that marker is two entries at the same
+/// time, the dispose first. A replay sends both.
+fn lifecycle_kinds(kind: zerodds_rtps::history_cache::ChangeKind) -> &'static [SampleKind] {
+    use zerodds_rtps::history_cache::ChangeKind;
+    match kind {
+        ChangeKind::NotAliveDisposed => &[SampleKind::NotAliveDisposed],
+        ChangeKind::NotAliveUnregistered => &[SampleKind::NotAliveUnregistered],
+        ChangeKind::NotAliveDisposedUnregistered => &[
+            SampleKind::NotAliveDisposed,
+            SampleKind::NotAliveUnregistered,
+        ],
+        ChangeKind::Alive | ChangeKind::AliveFiltered => &[],
     }
 }
 
@@ -405,6 +450,17 @@ struct DecodeSinks {
     types: std::collections::HashMap<String, (DynamicType, String)>,
     /// The dialect samples are decoded in (`--dialect`).
     dialect: zerodds_ast_layout::Dialect,
+}
+
+/// The body of an ALIVE sample and what its encapsulation header says
+/// about it (DDSI-RTPS 2.5 §10.5).
+#[derive(Clone, Copy)]
+struct Encapsulated<'a> {
+    payload: &'a [u8],
+    /// `UserSample::Alive::representation`: 1 for XCDR2.
+    representation: u8,
+    big_endian: bool,
+    representation_identifier: [u8; 2],
 }
 
 impl DecodeSinks {
@@ -425,10 +481,14 @@ impl DecodeSinks {
         topic: &str,
         recv_ts_ns: i64,
         writer_guid: [u8; 16],
-        payload: &[u8],
-        representation: u8,
-        big_endian: bool,
+        sample: Encapsulated<'_>,
     ) {
+        let Encapsulated {
+            payload,
+            representation,
+            big_endian,
+            representation_identifier,
+        } = sample;
         let Some((ty, type_name)) = self.types.get(topic).cloned() else {
             return;
         };
@@ -453,17 +513,35 @@ impl DecodeSinks {
             }
         };
         let writer_hex = to_hex(&writer_guid);
-        if let Some(j) = self.json.as_mut() {
-            if let Err(e) =
-                j.write_sample(topic, &type_name, recv_ts_ns, &writer_hex, &data, payload)
-            {
-                eprintln!("warn: json write {topic} dropped: {e}");
-            }
+        if let Some(j) = self.json.as_mut()
+            && let Err(e) = j.write_sample(
+                topic,
+                &type_name,
+                recv_ts_ns,
+                &writer_hex,
+                &data,
+                RawSample {
+                    body: payload,
+                    representation_identifier: Some(representation_identifier),
+                },
+            )
+        {
+            eprintln!("warn: json write {topic} dropped: {e}");
         }
-        if let Some(s) = self.sqlite.as_mut() {
-            if let Err(e) = s.insert_sample(topic, &ty, recv_ts_ns, &writer_hex, payload, &data) {
-                eprintln!("warn: sqlite write {topic} dropped: {e:?}");
-            }
+        if let Some(s) = self.sqlite.as_mut()
+            && let Err(e) = s.insert_sample(
+                topic,
+                &ty,
+                recv_ts_ns,
+                &writer_hex,
+                RawSample {
+                    body: payload,
+                    representation_identifier: Some(representation_identifier),
+                },
+                &data,
+            )
+        {
+            eprintln!("warn: sqlite write {topic} dropped: {e:?}");
         }
     }
 }
@@ -545,11 +623,11 @@ fn setup_decode(
                 continue;
             }
         };
-        if let Some(s) = sqlite.as_mut() {
-            if let Err(e) = s.ensure_topic(&t.topic, want, &idl_src, &ty) {
-                eprintln!("error: sqlite schema for {}: {e:?}", t.topic);
-                return Err(ExitCode::from(3));
-            }
+        if let Some(s) = sqlite.as_mut()
+            && let Err(e) = s.ensure_topic(&t.topic, want, &idl_src, &ty)
+        {
+            eprintln!("error: sqlite schema for {}: {e:?}", t.topic);
+            return Err(ExitCode::from(3));
         }
         println!("zerodds-record: decode topic={} as {want}", t.topic);
         types.insert(t.topic.clone(), (ty, want.clone()));
@@ -604,20 +682,6 @@ fn run_list(file: &str) -> ExitCode {
 /// The opaque type announced when no concrete writer type is discovered for a
 /// requested topic (so a genuine RawBytes writer still records).
 const RAW_BYTES_TYPE_NAME: &str = "zerodds::RawBytes";
-
-/// Build an opaque (raw-payload) reader config that announces `type_name`.
-///
-/// Type-following: DDS matches reader↔writer by type-name equality on both ends,
-/// so to capture a typed topic (e.g. `cuas::Track`) the recorder must announce
-/// the writer's *real* `type_name`, discovered via SEDP — not a generic
-/// `RawBytes`. The payload is stored opaquely (lossless CDR bytes).
-fn user_reader_config(topic: &str, type_name: &str) -> UserReaderConfig {
-    UserReaderConfig {
-        topic_name: topic.to_string(),
-        type_name: type_name.to_string(),
-        ..Default::default()
-    }
-}
 
 /// Resolve each requested topic to the real `type_name`(s) of its discovered
 /// writers, polling SEDP for up to `settle`. Returns one [`TopicKey`] per
@@ -684,7 +748,7 @@ fn attach_late_topics(
     session: &RecordingSession<BufWriter<File>>,
     wanted: &[String],
     topics: &mut Vec<TopicKey>,
-    readers: &mut Vec<(usize, EntityId, Receiver<UserSample>)>,
+    readers: &mut Vec<(usize, EntityId, Receiver<UserSample>, bool)>,
     per_topic: &mut Vec<u64>,
 ) {
     for (topic, type_name) in rt.discovered_publication_topics() {
@@ -708,22 +772,27 @@ fn attach_late_topics(
                 continue;
             }
         };
-        match rt.register_user_reader(user_reader_config(&topic, &type_name)) {
-            Ok((eid, rx)) => {
-                println!(
-                    "zerodds-record: attached topic={topic} type={type_name} \
-                     (its writer appeared after the settle window)"
-                );
-                topics.push(key);
-                if per_topic.len() <= index {
-                    per_topic.resize(index + 1, 0);
+        let mut attached = Vec::new();
+        for (cfg, reliable) in monitor_reader_configs(&topic, &type_name) {
+            match rt.register_user_reader(cfg) {
+                Ok((eid, rx)) => attached.push((index, eid, rx, reliable)),
+                Err(e) => {
+                    eprintln!("warn: register_user_reader({topic}, {type_name}): {e:?}");
                 }
-                readers.push((index, eid, rx));
-            }
-            Err(e) => {
-                eprintln!("warn: register_user_reader({topic}, {type_name}): {e:?}");
             }
         }
+        if attached.is_empty() {
+            continue;
+        }
+        println!(
+            "zerodds-record: attached topic={topic} type={type_name} \
+             (its writer appeared after the settle window)"
+        );
+        topics.push(key);
+        if per_topic.len() <= index {
+            per_topic.resize(index + 1, 0);
+        }
+        readers.extend(attached);
     }
 }
 
@@ -746,10 +815,10 @@ fn install_signal_handler(stop: Arc<AtomicBool>) {
         *g = Some(stop);
     }
     extern "C" fn handler(_: i32) {
-        if let Ok(g) = HOOK.lock() {
-            if let Some(s) = g.as_ref() {
-                s.store(true, Ordering::Relaxed);
-            }
+        if let Ok(g) = HOOK.lock()
+            && let Some(s) = g.as_ref()
+        {
+            s.store(true, Ordering::Relaxed);
         }
     }
     #[cfg(target_os = "linux")]
@@ -757,8 +826,8 @@ fn install_signal_handler(stop: Arc<AtomicBool>) {
         // SAFETY: libc::signal takes a C-ABI function pointer; `handler`
         // is `extern "C"` and matches the libc signature.
         unsafe {
-            libc::signal(libc::SIGINT, handler as usize);
-            libc::signal(libc::SIGTERM, handler as usize);
+            libc::signal(libc::SIGINT, handler as *const () as usize);
+            libc::signal(libc::SIGTERM, handler as *const () as usize);
         }
     }
     #[cfg(target_os = "macos")]
@@ -766,8 +835,8 @@ fn install_signal_handler(stop: Arc<AtomicBool>) {
         // SAFETY: libc::signal call as on Linux; `handler` is
         // `extern "C"` and ABI-compatible.
         unsafe {
-            libc::signal(libc::SIGINT, handler as usize);
-            libc::signal(libc::SIGTERM, handler as usize);
+            libc::signal(libc::SIGINT, handler as *const () as usize);
+            libc::signal(libc::SIGTERM, handler as *const () as usize);
         }
     }
 }
@@ -820,4 +889,34 @@ fn print_help() {
          SPEC: docs/specs/zddsrec-1.0.md"
     );
     println!("\n{}", zerodds_dcps::cli::HELP);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zerodds_rtps::history_cache::ChangeKind;
+
+    /// DDSI-RTPS 2.5 §9.6.4.9: a status info with the D and U bits is a
+    /// dispose and an unregister of the instance; the recording holds both,
+    /// the dispose first. Before, it held the unregister alone and the
+    /// dispose was lost.
+    #[test]
+    fn rtps_9_6_4_9_a_dispose_with_unregister_is_recorded_as_both() {
+        assert_eq!(
+            lifecycle_kinds(ChangeKind::NotAliveDisposedUnregistered),
+            [
+                SampleKind::NotAliveDisposed,
+                SampleKind::NotAliveUnregistered
+            ]
+        );
+        assert_eq!(
+            lifecycle_kinds(ChangeKind::NotAliveDisposed),
+            [SampleKind::NotAliveDisposed]
+        );
+        assert_eq!(
+            lifecycle_kinds(ChangeKind::NotAliveUnregistered),
+            [SampleKind::NotAliveUnregistered]
+        );
+        assert!(lifecycle_kinds(ChangeKind::Alive).is_empty());
+    }
 }

@@ -841,9 +841,10 @@ impl CodecTarget for Cpp {
         // The stream was left out of that until an empty `@appendable`
         // structure was read under XCDR1, where the type takes no
         // delimiter either — so the body was empty in both directions
-        // and neither parameter was touched. The C column cannot reach
-        // it: C23 §6.7.2.1p8 leaves a structure with no named member
-        // undefined and the C materialiser refuses one.
+        // and neither parameter was touched. The C column marks both only
+        // in the codec of a structure without members
+        // (`CodecTarget::no_members`), where it declares the member that
+        // stands in for none.
         let stream = if spec.writing { "w" } else { "r" };
         let body = spec.body.map(|block| {
             let mut statements = vec![
@@ -1015,10 +1016,10 @@ fn data_of(base: &str) -> cpp::Expr {
 /// The member's name in a presence test the walk built: `v.x != nullptr`
 /// gives `x`. Only for the text of a diagnostic.
 fn cpp_text_of(present: &cpp::Expr) -> String {
-    if let cpp::Expr::Binary { lhs, .. } = present {
-        if let cpp::Expr::Member { name, .. } = lhs.as_ref() {
-            return name.as_str().to_string();
-        }
+    if let cpp::Expr::Binary { lhs, .. } = present
+        && let cpp::Expr::Member { name, .. } = lhs.as_ref()
+    {
+        return name.as_str().to_string();
     }
     String::new()
 }

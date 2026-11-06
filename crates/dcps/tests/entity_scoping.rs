@@ -37,7 +37,7 @@ fn live_participant() -> (common::DomainLease, common::ParticipantGuard) {
 /// operation refers to the status that are triggered on the Entity itself and
 /// does not include statuses that apply to contained entities."
 #[test]
-fn get_status_changes_reports_the_entity_itself() {
+fn dcps_2_2_2_1_1_6_get_status_changes_reports_the_entity_itself() {
     let (_lease, p) = live_participant();
     let topic = p
         .create_topic::<RawBytes>("OwnStatuses", TopicQos::default())
@@ -99,7 +99,7 @@ fn get_status_changes_reports_the_entity_itself() {
 /// §2.2.2.2.1.28 and §2.2.2.2.1.30: a handle that is not that of a discovered
 /// (and not ignored) participant or topic is PRECONDITION_NOT_MET.
 #[test]
-fn a_handle_that_is_no_discovered_entity_is_precondition_not_met() {
+fn dcps_2_2_2_2_1_28_a_handle_that_is_no_discovered_entity_is_precondition_not_met() {
     let (_lease, p) = live_participant();
     let nobody = InstanceHandle::from_raw(0xFEED_FACE);
     assert!(matches!(
@@ -129,7 +129,7 @@ fn a_handle_that_is_no_discovered_entity_is_precondition_not_met() {
 /// publisher inside a coherent set, a subscriber inside a group access.
 /// Nothing is deleted then.
 #[test]
-fn delete_contained_entities_refuses_an_entity_that_cannot_be_deleted() {
+fn dcps_2_2_2_2_1_18_delete_contained_entities_refuses_an_entity_that_cannot_be_deleted() {
     let (_lease, p) = live_participant();
     let topic = p
         .create_topic::<RawBytes>("CannotDelete", TopicQos::default())
@@ -184,7 +184,7 @@ fn delete_contained_entities_refuses_an_entity_that_cannot_be_deleted() {
 
 /// §2.2.2.2.1.18: the participant also deletes its ContentFilteredTopics.
 #[test]
-fn delete_contained_entities_deletes_a_content_filtered_topic() {
+fn dcps_2_2_2_2_1_18_delete_contained_entities_deletes_a_content_filtered_topic() {
     let (_lease, p) = live_participant();
     let topic = p
         .create_topic::<RawBytes>("CftContained", TopicQos::default())
@@ -206,7 +206,7 @@ fn delete_contained_entities_deletes_a_content_filtered_topic() {
 /// kind with a lease of 400 ms stays alive while the participant asserts
 /// every 100 ms, and loses its liveliness when it stops.
 #[test]
-fn assert_liveliness_keeps_a_manual_by_participant_writer_alive() {
+fn dcps_2_2_2_2_1_19_assert_liveliness_keeps_a_manual_by_participant_writer_alive() {
     use std::time::Duration;
     use zerodds_dcps::qos::{LivelinessKind, LivelinessQosPolicy};
     let (_lease, p) = live_participant();

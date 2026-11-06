@@ -117,7 +117,7 @@ fn pump(w: &zerodds_dcps::DataWriter<KeyedRecord>, r: &zerodds_dcps::DataReader<
 }
 
 #[test]
-fn default_infinite_delay_keeps_disposed_instance() {
+fn dcps_2_2_3_22_default_infinite_delay_keeps_disposed_instance() {
     // Default: both delays = INFINITE → autopurge does nothing.
     let (w, r) = pair_with_rqos(DataReaderQos::default());
     let s = KeyedRecord { id: 1, value: 10 };
@@ -149,7 +149,7 @@ fn default_infinite_delay_keeps_disposed_instance() {
 }
 
 #[test]
-fn finite_disposed_delay_purges_after_window() {
+fn dcps_2_2_2_5_1_8_finite_disposed_delay_purges_after_window() {
     let rqos = DataReaderQos {
         reader_data_lifecycle: ReaderDataLifecycleQosPolicy {
             autopurge_disposed_samples_delay: QosDuration::from_millis(100),
@@ -187,7 +187,7 @@ fn finite_disposed_delay_purges_after_window() {
 }
 
 #[test]
-fn finite_nowriter_delay_purges_after_window() {
+fn dcps_2_2_3_22_finite_nowriter_delay_purges_after_window() {
     let rqos = DataReaderQos {
         reader_data_lifecycle: ReaderDataLifecycleQosPolicy {
             autopurge_disposed_samples_delay: QosDuration::INFINITE,

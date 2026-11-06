@@ -45,6 +45,22 @@ fn src() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tao")
 }
 
+/// A TAO program, started with at most 1024 open files.
+///
+/// TAO 2.5.24 (the OpenDDS 3.34.0 build) sizes its tables by the process's
+/// limit of open files. In the interop image that limit is 1073741816; the
+/// transport cache of a client is then not allocated (ACE prints
+/// `ACE_Hash_Map_Manager_Ex`) and the first invocation ends with `SIGSEGV`
+/// in `TAO::Transport_Cache_Manager_T::bind_i` (pipeline 8912, job 229335,
+/// with gdb). With `ulimit -n 1024` both tests pass there (pipeline 8916,
+/// job 229346); the Linux test host's soft limit is 1024.
+fn tao(program: &Path) -> Command {
+    let mut cmd = Command::new("sh");
+    cmd.args(["-c", "ulimit -n 1024 2>/dev/null; exec \"$0\" \"$@\""])
+        .arg(program);
+    cmd
+}
+
 /// A fresh directory under the test target directory.
 fn workdir(name: &str) -> PathBuf {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
@@ -103,7 +119,7 @@ fn build(dir: &Path) {
 
 #[test]
 #[ignore = "needs tao_idl, g++ and the TAO libraries (Linux test host)"]
-fn tao_calls_reach_a_dds_backend_and_dds_samples_reach_a_tao_servant() {
+fn corbabridge_10_tao_calls_reach_a_dds_backend_and_dds_samples_reach_a_tao_servant() {
     let dir = workdir("tao-e2e");
     build(&dir);
 
@@ -122,9 +138,9 @@ fn tao_calls_reach_a_dds_backend_and_dds_samples_reach_a_tao_servant() {
     let backend = CalcBackend::start(lease.id());
     backend.settle();
 
-    let client = common::output(Command::new(dir.join("calc_client")).arg(&ior_file));
+    let client = common::output(tao(&dir.join("calc_client")).arg(&ior_file));
 
-    let mut server = Command::new(dir.join("listener_server"))
+    let mut server = tao(&dir.join("listener_server"))
         .args([listener_port.to_string(), "3".into()])
         .stdout(Stdio::piped())
         .spawn()
@@ -162,7 +178,7 @@ fn tao_calls_reach_a_dds_backend_and_dds_samples_reach_a_tao_servant() {
 /// with a `corbaname:` URL, which TAO's core library resolves itself.
 #[test]
 #[ignore = "needs tao_idl, g++ and the TAO libraries (Linux test host)"]
-fn tao_resolves_the_bridge_through_zerodds_naming_svc() {
+fn corbabridge_10_tao_resolves_the_bridge_through_zerodds_naming_svc() {
     let dir = workdir("tao-zd-naming");
     build(&dir);
 
@@ -182,8 +198,7 @@ fn tao_resolves_the_bridge_through_zerodds_naming_svc() {
     let backend = CalcBackend::start(lease.id());
     backend.settle();
     let resolved = common::output(
-        Command::new(dir.join("naming_client"))
-            .arg(format!("corbaname::127.0.0.1:{ns_port}#Calc::add")),
+        tao(&dir.join("naming_client")).arg(format!("corbaname::127.0.0.1:{ns_port}#Calc::add")),
     );
     bridge.stop();
     drop(backend);

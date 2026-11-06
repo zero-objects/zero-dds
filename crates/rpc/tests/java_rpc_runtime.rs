@@ -210,9 +210,9 @@ fn compile(root: &Path, test: &str) -> PathBuf {
 
 /// §7.11.2.2.1 and §7.11.2.3: the whole binding, compiled and run.
 #[test]
-fn the_java_rpc_runtime_and_the_generated_services_run_together() {
+fn rpc_7_2_1_the_java_rpc_runtime_and_the_generated_services_run_together() {
     if !toolchain() {
-        println!("no JDK on this machine — the Java binding is not measured here");
+        println!("NOT RUN: no JDK (javac, java) on the path; the Java binding is not measured.");
         return;
     }
     let root = repository_root();
@@ -238,9 +238,9 @@ fn the_java_rpc_runtime_and_the_generated_services_run_together() {
 /// and the runtime makes services and clients from the generated
 /// constructors.
 #[test]
-fn the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients() {
+fn rpc_7_11_the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients() {
     if !toolchain() {
-        println!("no JDK on this machine — the Java entities are not measured here");
+        println!("NOT RUN: no JDK (javac, java) on the path; the Java entities are not measured.");
         return;
     }
     let root = repository_root();
@@ -268,9 +268,9 @@ fn the_java_entities_are_interfaces_and_the_runtime_makes_services_and_clients()
 /// parameter and return types of each method after erasure, the
 /// constructors and the enum constants.
 #[test]
-fn the_java_binding_has_every_signature_of_the_machine_readable_files() {
+fn rpc_7_11_2_the_java_binding_has_every_signature_of_the_machine_readable_files() {
     if !toolchain() {
-        println!("no JDK on this machine — the signatures are not checked here");
+        println!("NOT RUN: no JDK (javac, java) on the path; the signatures are not checked.");
         return;
     }
     let root = repository_root();
@@ -294,9 +294,9 @@ fn the_java_binding_has_every_signature_of_the_machine_readable_files() {
 /// §7.5.1.1.1: the Java header codec and `wire_codec.rs` write the same
 /// octets.
 #[test]
-fn the_two_headers_take_the_same_octets_in_both_columns() {
+fn rpc_7_2_4_the_two_headers_take_the_same_octets_in_both_columns() {
     if !toolchain() {
-        println!("no JDK on this machine — the header octets are not compared here");
+        println!("NOT RUN: no JDK (javac, java) on the path; the header octets are not compared.");
         return;
     }
     let root = repository_root();
@@ -368,9 +368,11 @@ fn function_call_files() -> (String, String, String) {
 /// client calls the generated service, over the DDS Java PSM, with the
 /// generated codec, under classic CDR (the default) and under XCDR2.
 #[test]
-fn the_generated_function_call_client_calls_the_generated_service() {
+fn rpc_7_2_2_3_the_generated_function_call_client_calls_the_generated_service() {
     if !toolchain() {
-        println!("no JDK on this machine — the function-call binding is not measured here");
+        println!(
+            "NOT RUN: no JDK (javac, java) on the path; the function-call binding is not measured."
+        );
         return;
     }
     let root = repository_root();

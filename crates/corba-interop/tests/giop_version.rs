@@ -107,6 +107,6 @@ fn client_speaks_giop_1_0_from_ior_profile() {
         .invoke(&obj, "ping", Endianness::Big, &encode_string_body("hi-1.0"))
         .unwrap();
     let _ = reply_e;
-    assert_eq!(decode_string_body(&reply_body), "hi-1.0");
+    assert_eq!(decode_string_body(&reply_body).unwrap(), "hi-1.0");
     acceptor.shutdown();
 }

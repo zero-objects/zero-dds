@@ -135,17 +135,18 @@ impl std::error::Error for RecvError {}
 
 /// Received datagram + source locator.
 ///
-/// `data` is a refcounted `Arc<[u8]>` so that downstream consumers can
-/// share the buffer without a heap copy (spec: zerodds-zero-copy-1.0 §6
-/// wave 3). Construct via `Arc::from(vec.into_boxed_slice())` or
-/// `Arc::from(&slice[..])`.
+/// `data` is a refcounted [`zerodds_rtps::payload::Payload`] so that
+/// downstream consumers can share the buffer without a heap copy (spec:
+/// zerodds-zero-copy-1.0 §6 wave 3). Construct with `.into()` from a
+/// `Vec<u8>` (taken over, not copied), an `Arc<[u8]>` or a `&[u8]`.
 #[cfg(feature = "alloc")]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReceivedDatagram {
     /// Source locator (e.g. the UDP source address).
     pub source: Locator,
-    /// Datagram bytes (refcounted, zero-copy shareable).
-    pub data: alloc::sync::Arc<[u8]>,
+    /// Datagram bytes (refcounted, zero-copy shareable): an allocation of
+    /// their own, or a range of the receive buffer they were received into.
+    pub data: zerodds_rtps::payload::Payload,
 }
 
 /// What [`Transport::max_message_size`] answers by default: 1472 octets,
@@ -209,6 +210,15 @@ pub trait Transport {
     fn local_locators(&self) -> alloc::vec::Vec<Locator> {
         alloc::vec![self.local_locator()]
     }
+
+    /// A peer announced `dest` as a locator it receives on: a transport
+    /// that receives from a peer only on a path it opens per peer opens it
+    /// now, before anything is sent to the peer. The shared-memory adapter
+    /// of the DCPS runtime attaches the ring the peer writes into; without
+    /// this it attached it at its own first send to the peer, and a peer
+    /// that is only ever sent to (a best-effort reader, which answers
+    /// nothing) received nothing. Nothing by default.
+    fn add_destination(&self, _dest: &Locator) {}
 
     /// The peer behind `dest` is gone: a transport that keeps state per
     /// destination (the UDP transport's connected socket per target) drops
@@ -322,7 +332,7 @@ mod tests {
         let bytes: alloc::sync::Arc<[u8]> = alloc::sync::Arc::from([1u8, 2, 3].as_slice());
         let r = ReceivedDatagram {
             source: Locator::INVALID,
-            data: bytes,
+            data: bytes.into(),
         };
         assert_eq!(&r.data[..], &[1u8, 2, 3]);
     }

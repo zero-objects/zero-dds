@@ -78,7 +78,7 @@ fn an_inherited_key_member_is_in_the_key_hash() {
 /// structure, so an alias contributed nothing and the aliased type's
 /// keyed members never joined the key.
 #[test]
-fn a_key_member_behind_a_typedef_keeps_its_nested_keys() {
+fn xtypes_7_6_8_a_key_member_behind_a_typedef_keeps_its_nested_keys() {
     let direct = "
         struct Inner { @key long i; long j; };
         struct Outer { @key Inner a; long b; };
@@ -185,7 +185,7 @@ fn a_pl_cdr1_parameter_declares_its_members_own_length() {
 
 #[test]
 fn a_value_longer_than_its_string_bound_is_refused_and_not_written() {
-    // `silent-drop-sweep.md`'s "Unclear" row 4 and inventory row D6.
+    // `0b2e8df9f6b:docs/silent-drop-sweep.md`'s "Unclear" row 4 and inventory row D6.
     // `write_string` had `let _ = bound;` under a comment claiming the
     // front end caught an overrun — the front end never sees the value.
     // Eight characters went into a `string<4>` whole, and the probe,

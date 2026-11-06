@@ -197,7 +197,7 @@ fn an_fsharp_dispatch_chain_of_ten_thousand_arms_renders_flat() {
 // -- Go ------------------------------------------------------------------
 
 #[test]
-fn a_go_dispatch_chain_of_ten_thousand_arms_renders_flat() {
+fn xtypes_7_5_1_a_go_dispatch_chain_of_ten_thousand_arms_renders_flat() {
     use zerodds_lang_cst::go::{Decl, Expr, FuncDecl, Stmt};
 
     let text = rendered(
@@ -286,7 +286,7 @@ fn a_lua_dispatch_chain_of_ten_thousand_arms_renders_flat() {
 // -- Node ----------------------------------------------------------------
 
 #[test]
-fn a_node_dispatch_chain_of_ten_thousand_arms_renders_flat() {
+fn xtypes_7_5_1_a_node_dispatch_chain_of_ten_thousand_arms_renders_flat() {
     use zerodds_lang_cst::node::{Expr, Stat};
 
     let text = rendered(

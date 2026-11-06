@@ -12,7 +12,7 @@ SpSc ring buffer, crash recovery. The zero-copy loan path of §7 lives in
 `crates/flatdata/` and `crates/zerodds-c-api/src/shm_loan_ffi.rs`; see
 §7.2 for the delineation.
 
-Open items and decision records: [`zerodds-shm-transport-1.0.open.en.md`](zerodds-shm-transport-1.0.open.en.md).
+Open items: `zerodds-shm-transport-1.0.open.en.md`.
 
 ## §1 Scope and spec status
 
@@ -28,11 +28,11 @@ bytes carry the segment id.
 `crates/transport-shm/src/posix.rs` (`PosixShmTransport::local_locator`,
 `peer_locator`, the kind check in `Transport::send`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::locator_kind_is_the_vendor_reserved_shm_value`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::rtps_9_3_2_4_locator_kind_is_the_vendor_reserved_shm_value`
 (asserts the numeric value `0x01F0_0001`, the position in the range `0x00000003` to `0x01ffffff` and
 `port == 0`),
-`crates/transport-shm/src/posix.rs::tests::local_locator_is_shm_with_own_id`,
-`crates/transport-shm/src/posix.rs::tests::send_rejects_non_shm_locator`,
+`crates/transport-shm/src/posix.rs::tests::shm_1_1_local_locator_is_shm_with_own_id`,
+`crates/transport-shm/src/posix.rs::tests::shm_1_1_send_rejects_non_shm_locator`,
 `crates/rtps/src/wire_types.rs::tests::locator_kind_roundtrip`.
 
 **Status:** done
@@ -49,7 +49,7 @@ implementation requirement.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — scope statement; the requirements are the items from §2 on.
 
 ## §2 Segment layout
 
@@ -75,10 +75,10 @@ so `head` and `tail` do not share a cache line with the data region.
 `SHM_VERSION`, `HEADER_BYTES = 64`, initialization in the `is_creator`
 branch of `PosixShmTransport::open`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::owner_writes_magic_and_version_into_the_header`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_2_1_owner_writes_magic_and_version_into_the_header`
 (reads magic, version and capacity straight out of the mapping and
 compares the magic against `b"ZSHM"`),
-`crates/transport-shm/src/posix.rs::tests::invalid_config_capacity_too_small_for_max_datagram`.
+`crates/transport-shm/src/posix.rs::tests::shm_2_1_invalid_config_capacity_too_small_for_max_datagram`.
 
 **Status:** done
 
@@ -91,10 +91,10 @@ ring. A layout change bumps the version.
 **Repo:** `crates/transport-shm/src/posix.rs` (the `else` branch of
 `PosixShmTransport::open`, `PosixShmError::InvalidHeader`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::attach_rejects_foreign_magic`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_2_2_attach_rejects_foreign_magic`
 (a segment with a foreign magic, built through the same `shared_memory`
 primitives, is refused with `InvalidHeader`),
-`crates/transport-shm/src/posix.rs::tests::attach_rejects_unknown_version`
+`crates/transport-shm/src/posix.rs::tests::shm_2_2_attach_rejects_unknown_version`
 (`SHM_VERSION + 1` is refused).
 
 **Status:** done
@@ -110,10 +110,10 @@ new `head` value — across process boundaries too.
 `SegmentLayout::tail`, the `Ordering::Release` and `Ordering::Acquire`
 sites in `push_frame` and `pop_frame`).
 
-**Tests:** `crates/transport-shm/tests/l1_cross_process.rs::l1_shm_datagram_crosses_process_boundary`
+**Tests:** `crates/transport-shm/tests/l1_cross_process.rs::shm_2_3_l1_shm_datagram_crosses_process_boundary`
 (two OS processes, one segment; the receiver sees the sender's bytes),
-`crates/transport-shm/src/posix.rs::tests::open_concurrent_two_threads_both_bound`,
-`crates/transport-shm/src/posix.rs::tests::many_frames_roundtrip_with_wraparound`.
+`crates/transport-shm/src/posix.rs::tests::shm_2_3_open_concurrent_two_threads_both_bound`,
+`crates/transport-shm/src/posix.rs::tests::shm_2_3_many_frames_roundtrip_with_wraparound`.
 
 **Status:** done
 
@@ -138,9 +138,9 @@ Occupancy is `head - tail`.
 (`SegmentLayout::write_u32`, `read_u32`, `push_frame`, `pop_frame`,
 `occupied_bytes`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::open_owner_then_consumer_roundtrip_single_frame`,
-`crates/transport-shm/src/posix.rs::tests::occupied_bytes_reflects_send_state`,
-`crates/transport-shm/src/posix.rs::tests::recv_after_send_drains_occupied_bytes`.
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_3_1_open_owner_then_consumer_roundtrip_single_frame`,
+`crates/transport-shm/src/posix.rs::tests::shm_3_1_occupied_bytes_reflects_send_state`,
+`crates/transport-shm/src/posix.rs::tests::shm_3_1_recv_after_send_drains_occupied_bytes`.
 
 **Status:** done
 
@@ -157,16 +157,16 @@ wrap branch in `push_frame` with the padding and the skip of a rest under
 4 bytes, the padding and `tail_space < 4` branches in `pop_frame`,
 `padding_frames_seen`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::fill_ring_triggers_wraparound_padding`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_3_2_fill_ring_triggers_wraparound_padding`
 (300-byte ring, five 60-byte frames — the wrap is forced and every frame
 arrives unchanged),
-`crates/transport-shm/src/posix.rs::tests::a_remainder_too_small_for_a_padding_header_is_skipped`
+`crates/transport-shm/src/posix.rs::tests::shm_3_2_a_remainder_too_small_for_a_padding_header_is_skipped`
 (a frame ends 2 bytes before the ring end; the next one goes through),
-`crates/transport-shm/src/posix.rs::tests::frames_of_every_length_cross_the_ring_end_whole_and_in_order`
+`crates/transport-shm/src/posix.rs::tests::shm_3_2_frames_of_every_length_cross_the_ring_end_whole_and_in_order`
 (5 000 rounds of lengths 1–200 bytes; without the skip of the rest the run
 stopped in round 16 with "shm ring full near wraparound"),
-`crates/transport-shm/src/posix.rs::tests::many_frames_roundtrip_with_wraparound`,
-`crates/transport-shm/src/posix.rs::tests::corrupt_frame_counter_default_zero`.
+`crates/transport-shm/src/posix.rs::tests::shm_2_3_many_frames_roundtrip_with_wraparound`,
+`crates/transport-shm/src/posix.rs::tests::shm_3_2_corrupt_frame_counter_default_zero`.
 
 **Status:** done
 
@@ -182,11 +182,11 @@ or hostile owner.
 **Repo:** `crates/transport-shm/src/posix.rs` (the DoS branch in
 `pop_frame`, `corrupt_frame_counter`, `corrupt_frames_seen`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::corrupt_length_is_dropped_and_counted`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_3_3_corrupt_length_is_dropped_and_counted`
 (writes half the ring + 1 as the length header into the ring; `pop_frame`
 returns nothing and `corrupt_frames_seen()` reads 1),
-`crates/transport-shm/src/posix.rs::tests::corrupt_frame_counter_default_zero`,
-`crates/transport-shm/src/posix.rs::tests::send_rejects_oversize_payload`.
+`crates/transport-shm/src/posix.rs::tests::shm_3_2_corrupt_frame_counter_default_zero`,
+`crates/transport-shm/src/posix.rs::tests::shm_3_3_send_rejects_oversize_payload`.
 
 **Status:** done
 
@@ -202,10 +202,10 @@ writer down to the slowest reader. Price: N segments for N readers.
 **Repo:** `crates/transport-shm/src/posix.rs` (`segment_os_id` and
 `segment_flink` are functions of `(owner_id, consumer_id)`; `ShmRole`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::open_owner_then_consumer_roundtrip_single_frame`,
-`crates/transport-shm/src/posix.rs::tests::send_rejects_wrong_peer`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_3_1_open_owner_then_consumer_roundtrip_single_frame`,
+`crates/transport-shm/src/posix.rs::tests::shm_4_1_send_rejects_wrong_peer`
 (a locator that is not this segment's peer is refused),
-`crates/transport-shm/tests/l1_cross_process.rs::l1_shm_datagram_crosses_process_boundary`.
+`crates/transport-shm/tests/l1_cross_process.rs::shm_2_3_l1_shm_datagram_crosses_process_boundary`.
 
 **Status:** done
 
@@ -219,8 +219,8 @@ assumption.
 **Repo:** `crates/transport-shm/src/posix.rs` (the role check in
 `Transport::send` and `Transport::recv`, `ShmRole`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::consumer_cannot_send`,
-`crates/transport-shm/src/posix.rs::tests::owner_cannot_recv`.
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_4_2_consumer_cannot_send`,
+`crates/transport-shm/src/posix.rs::tests::shm_4_2_owner_cannot_recv`.
 
 **Status:** done
 
@@ -229,15 +229,19 @@ assumption.
 **Spec:** §4 — the SEDP match order is not predictable: the reader side
 may open before the writer side. Whoever comes first creates the segment;
 whoever comes later attaches. The role determines only send/recv, not who
-creates.
+creates. The SHM user transport of the DCPS runtime opens both segments of
+a peer when SPDP reports it, not at its own first send to the peer: a
+best-effort reader sends nothing (DDSI-RTPS 2.5 §8.4.2.3).
 
 **Repo:** `crates/transport-shm/src/posix.rs` (`open` — flock, attach
 attempt, otherwise create; `open_owner` and `open_consumer` share that
-path).
+path); `crates/dcps/src/shm_user.rs` (`add_destination`),
+`crates/dcps/src/runtime.rs` (`note_user_transport_peer`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::open_consumer_first_then_owner_roundtrip`,
-`crates/transport-shm/src/posix.rs::tests::consumer_open_succeeds_without_owner_creates_segment`,
-`crates/transport-shm/src/posix.rs::tests::open_concurrent_two_threads_both_bound`.
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_4_3_open_consumer_first_then_owner_roundtrip`,
+`crates/transport-shm/src/posix.rs::tests::shm_4_3_consumer_open_succeeds_without_owner_creates_segment`,
+`crates/transport-shm/src/posix.rs::tests::shm_2_3_open_concurrent_two_threads_both_bound`,
+`crates/dcps/tests/shm_user_transport.rs::shm_4_3_a_best_effort_reader_takes_what_a_process_it_never_sent_to_writes`.
 
 **Status:** done
 
@@ -254,14 +258,14 @@ on the low 32 bits of `head`, called from `wait_parked` and
 with `os_sync_wait_on_address` and `OS_SYNC_WAIT_ON_ADDRESS_SHARED`,
 resolved at run time through `dlsym`; `wait_polling` otherwise).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::the_consumer_parks_instead_of_polling`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_4_4_the_consumer_parks_instead_of_polling`
 (Linux and macOS),
-`crates/transport-shm/src/posix.rs::tests::owner_drop_signals_consumer_via_shutdown_flag`
+`crates/transport-shm/src/posix.rs::tests::shm_4_4_owner_drop_signals_consumer_via_shutdown_flag`
 (the waiting consumer returns in under 200 ms although `recv_timeout` is
 10 s),
-`crates/transport-shm/src/posix.rs::tests::interrupt_recv_returns_a_waiting_recv_at_once`,
-`crates/transport-shm/src/posix.rs::tests::recv_times_out_when_idle`,
-`crates/flatdata/src/posix.rs::tests::futex_notify_wakes_consumer_across_mappings`.
+`crates/transport-shm/src/posix.rs::tests::shm_4_4_interrupt_recv_returns_a_waiting_recv_at_once`,
+`crates/transport-shm/src/posix.rs::tests::shm_4_4_recv_times_out_when_idle`,
+`crates/flatdata/src/posix.rs::tests::flatdata_4_1_futex_notify_wakes_consumer_across_mappings`.
 Measured on macOS 26 (a Mac under load, load average 97), three runs:
 100 waiting consumers 0.3 % of a core; wake latency p50 22 to 24 µs
 against 63 to 69 µs over UDP loopback in the same run. With the
@@ -272,9 +276,9 @@ Big-endian Linux parks on the same low 32 bits of `head`, at byte 20
 there (`head_word`); green on s390x under qemu-user (every
 `transport-shm` test, Linux test host). Windows waits on a named auto-reset event
 per segment (`RingEvent`) the owner sets after every frame; in nightly
-6555 (`windows-smoke`, `c704c3ccfaa`)
-`interrupt_recv_returns_a_waiting_recv_at_once` and
-`bell::tests::a_ring_wakes_the_parked_receiver_and_none_is_lost` ran
+6555 (`windows-smoke`, `81d8500d495`)
+`shm_4_4_interrupt_recv_returns_a_waiting_recv_at_once` and
+`crates/transport-shm/src/bell.rs::tests::shm_4_4_a_ring_wakes_the_parked_receiver_and_none_is_lost` ran
 green on Windows.
 
 **Status:** partial — macOS before 14.4 waits by sleep-poll.
@@ -288,10 +292,10 @@ forever and discarding quietly are both unacceptable.
 **Repo:** `crates/transport-shm/src/posix.rs` (`SPIN_LIMIT = 1024`, the
 two `SendError::Io` branches in `push_frame`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::full_ring_returns_an_error_instead_of_dropping`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_4_5_full_ring_returns_an_error_instead_of_dropping`
 (512-byte ring, 128-byte frames, no consumer drain; the error text names
 "ring full"),
-`crates/transport-shm/src/posix.rs::tests::send_rejects_oversize_payload`.
+`crates/transport-shm/src/posix.rs::tests::shm_3_3_send_rejects_oversize_payload`.
 
 **Status:** done
 
@@ -311,13 +315,13 @@ endpoints from the same start.
 **Repo:** `crates/transport-shm/src/posix.rs` (`segment_os_id`,
 `segment_os_id_in`, `fnv1a_128`, `segment_flink`, `DEFAULT_FLINK_DIR`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::segment_os_id_is_deterministic_and_within_platform_limit`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_5_1_segment_os_id_is_deterministic_and_within_platform_limit`
 (the same pair yields the same name, the reversed pair a different one,
 length under 31 on macOS),
-`crates/transport-shm/src/posix.rs::tests::short_names_of_pairs_that_differ_only_in_the_prefix_differ`
+`crates/transport-shm/src/posix.rs::tests::shm_5_1_short_names_of_pairs_that_differ_only_in_the_prefix_differ`
 (the short form, on every platform: two pairs with the same entity ids and
 other participants get different names),
-`crates/transport-shm/src/posix.rs::tests::open_owner_then_consumer_roundtrip_single_frame`.
+`crates/transport-shm/src/posix.rs::tests::shm_3_1_open_owner_then_consumer_roundtrip_single_frame`.
 
 **Status:** done
 
@@ -331,10 +335,10 @@ the open fail.
 **Repo:** `crates/transport-shm/src/posix.rs` (`shm_unlink_by_os_id`, the
 create branch in `open` with a preceding `remove_file` on the flink).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::open_recovers_from_stale_flink_of_crashed_owner`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_5_2_open_recovers_from_stale_flink_of_crashed_owner`
 (a crashed owner's flink file points at a segment that no longer exists;
 `open_owner` cleans up and a frame passes through afterwards),
-`crates/transport-shm/src/posix.rs::tests::consumer_open_succeeds_without_owner_creates_segment`.
+`crates/transport-shm/src/posix.rs::tests::shm_4_3_consumer_open_succeeds_without_owner_creates_segment`.
 
 **Status:** done
 
@@ -348,10 +352,9 @@ before the drop still arrive — the check sits behind `pop_frame`.
 **Repo:** `crates/transport-shm/src/posix.rs` (`SegmentLayout::shutdown`,
 `Drop for PosixShmTransport`, the shutdown check in `wait_for_frame`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::owner_drop_signals_consumer_via_shutdown_flag`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_4_4_owner_drop_signals_consumer_via_shutdown_flag`
 (measures the return time against a 10 s timeout and checks the error
-text for "owner"),
-`crates/transport-shm/src/posix.rs::tests::posix_shm_error_display_covers_all_variants`.
+text for "owner").
 
 **Status:** done
 
@@ -366,10 +369,10 @@ or the process dies (the same crash resilience as the segment itself).
 `flock(LOCK_EX)` on Unix, `LockFileEx` with `LOCKFILE_EXCLUSIVE_LOCK` on
 Windows —, `FlockGuard`, the sentinel file `<flink>.lock`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::open_concurrent_two_threads_both_bound`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_2_3_open_concurrent_two_threads_both_bound`
 (two threads open the same `os_id` concurrently; both end up validly
 bound),
-`crates/transport-shm/src/posix.rs::tests::users_in_different_flink_directories_share_the_segment`
+`crates/transport-shm/src/posix.rs::tests::shm_5_4_users_in_different_flink_directories_share_the_segment`
 (owner and consumer look the segment up in different flink directories,
 under another `TMPDIR` say; the second attaches to the held segment
 instead of removing it and making its own).
@@ -405,17 +408,17 @@ per process when a participant with `transport.same_host_shm` starts,
 rings and doorbells, then per flink directory the pair files, minimum age
 60 s, event `shm.orphaned_segments_removed`).
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::an_orphaned_segment_is_made_anew_not_attached`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_5_5_an_orphaned_segment_is_made_anew_not_attached`
 (a process of its own opens the owner, publishes a frame and ends without
 a drop; the consumer then finds an empty ring and receives only the frame
 of the new session),
-`crates/transport-shm/src/posix.rs::tests::the_sweep_removes_orphaned_segments_and_keeps_held_ones`
+`crates/transport-shm/src/posix.rs::tests::shm_5_5_the_sweep_removes_orphaned_segments_and_keeps_held_ones`
 (the orphaned segment stays below the minimum age and is removed above
 it; a held segment stays, and a frame passes afterwards; a segment with a
 blank header is removed),
-`crates/transport-shm/src/bell.rs::tests::the_sweep_removes_orphaned_bells_and_keeps_held_ones`,
-`crates/transport-shm/src/posix.rs::tests::the_pair_file_sweep_removes_lone_lock_files_and_keeps_the_rest`,
-`crates/transport-shm/src/posix.rs::tests::a_lock_taken_on_a_removed_lock_file_is_taken_anew`.
+`crates/transport-shm/src/bell.rs::tests::shm_5_5_the_sweep_removes_orphaned_bells_and_keeps_held_ones`,
+`crates/transport-shm/src/posix.rs::tests::shm_5_5_the_pair_file_sweep_removes_lone_lock_files_and_keeps_the_rest`,
+`crates/transport-shm/src/posix.rs::tests::shm_5_5_a_lock_taken_on_a_removed_lock_file_is_taken_anew`.
 Measured on the Linux test host: two participants ended by `kill -9`; the start of a
 third after 60 s removed their 2 rings and 2 doorbells (`removed: 4`).
 Before, the doorbell of every process that did not end cleanly stayed
@@ -427,9 +430,9 @@ orphaned segments through the flink directory (dcps: once per directory,
 that is per host and domain). A doorbell leaves a marker `<name>.bell`
 there on which its participant holds the lock; the sweep removes bell and
 marker when nobody holds it. Tests
-`the_flink_sweep_removes_orphaned_segments_and_keeps_held_ones` and
-`bell.rs::tests::the_flink_sweep_removes_orphaned_bells_and_keeps_held_ones`,
-green on macOS 26; `an_orphaned_segment_is_made_anew_not_attached` runs on every
+`shm_5_5_the_flink_sweep_removes_orphaned_segments_and_keeps_held_ones` and
+`bell.rs::tests::shm_5_5_the_flink_sweep_removes_orphaned_bells_and_keeps_held_ones`,
+green on macOS 26; `shm_5_5_an_orphaned_segment_is_made_anew_not_attached` runs on every
 Unix. Windows: §6.3.
 
 **Status:** done
@@ -453,14 +456,14 @@ a multi-process test chain ran out at macOS' default limit of 256 descriptors, 6
 them shared-memory objects. What stays per peer is the liveness lock of
 each of the two rings).
 
-**Tests:** `crates/transport-shm/src/mapping.rs::tests::a_mapping_holds_no_file_descriptor`
+**Tests:** `crates/transport-shm/src/mapping.rs::tests::shm_6_1_a_mapping_holds_no_file_descriptor`
 (100 mappings, the number of open descriptors unchanged in a process of
 its own; macOS 26),
-`crates/transport-shm/src/mapping.rs::tests::create_open_share_and_the_owner_unlinks`,
-`crates/transport-shm/src/posix.rs::tests::segment_os_id_is_deterministic_and_within_platform_limit`
+`crates/transport-shm/src/mapping.rs::tests::shm_6_1_create_open_share_and_the_owner_unlinks`,
+`crates/transport-shm/src/posix.rs::tests::shm_5_1_segment_os_id_is_deterministic_and_within_platform_limit`
 (checks the 31-character limit under `cfg(target_os = "macos")`),
-`crates/transport-shm/tests/l1_cross_process.rs::l1_shm_datagram_crosses_process_boundary`,
-`crates/transport-shm/src/posix.rs::tests::open_owner_then_consumer_roundtrip_single_frame`.
+`crates/transport-shm/tests/l1_cross_process.rs::shm_2_3_l1_shm_datagram_crosses_process_boundary`,
+`crates/transport-shm/src/posix.rs::tests::shm_3_1_open_owner_then_consumer_roundtrip_single_frame`.
 
 **Status:** done
 
@@ -477,11 +480,11 @@ variant of `acquire_flock_excl` with
 `shm_unlink_by_os_id`); the CI job `windows-smoke` in `.gitlab-ci.yml`
 calls `cargo test -p zerodds-transport-shm` on the Windows runner.
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::open_concurrent_two_threads_both_bound`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_2_3_open_concurrent_two_threads_both_bound`
 (the test that drives the `LockFileEx` path on Windows),
-`crates/transport-shm/src/posix.rs::tests::open_recovers_from_stale_flink_of_crashed_owner`.
+`crates/transport-shm/src/posix.rs::tests::shm_5_2_open_recovers_from_stale_flink_of_crashed_owner`.
 
-**Status:** partial — in nightly 6555 (`windows-smoke`, `c704c3ccfaa`)
+**Status:** partial — in nightly 6555 (`windows-smoke`, `81d8500d495`)
 39 of 40 `transport-shm` lib tests ran green on Windows; the failing one
 is §6.3.
 
@@ -500,7 +503,7 @@ not hold for `shared_memory`: it puts every mapping on a file
 crate's file windows.rs, function `new_map`). Measured in nightly 6555: the test found 29 bytes of the
 ended session in the ring.
 
-**Tests:** `crates/transport-shm/src/posix.rs::tests::an_orphaned_segment_is_made_anew_not_attached`
+**Tests:** `crates/transport-shm/src/posix.rs::tests::shm_5_5_an_orphaned_segment_is_made_anew_not_attached`
 (a child process opens the owner, publishes a frame and ends without a
 drop; the same name then opens with an empty ring). Runs on every
 platform, on Windows in the `windows-smoke` job.
@@ -543,18 +546,18 @@ pointer — the bytes never cross the network and are never re-copied.
 `try_take`, `zerodds_dw_enable_shm_loan`, `zerodds_dr_enable_shm`,
 `zerodds_dr_take_shm`, `zerodds_dr_release_shm`).
 
-**Tests:** `crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_writer_to_reader_zero_copy`
+**Tests:** `crates/zerodds-c-api/tests/shm_loan_e2e.rs::capi_2_6_shm_loan_writer_to_reader_zero_copy`
 (measures the loan path itself, not its setup: the test writes the
 payload straight into the loaned pointer, commits in place and asserts on
 the reader side with `assert_ne!` that its read pointer carries a
 different address than the writer pointer — its own mapping of the same
 segment — and that the bytes are equal; then release, `NoData` on the
 next take and a second sample through the same ring),
-`crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_runtime_path_writer_to_reader_zero_copy`
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::capi_2_6_shm_loan_runtime_path_writer_to_reader_zero_copy`
 (the same path over the runtime FFI the ROS 2 RMW uses),
-`crates/zerodds-c-api/tests/shm_loan_e2e.rs::loan_without_shm_falls_back_to_heap`
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::capi_2_6_loan_without_shm_falls_back_to_heap`
 (without an enabled loan the heap path stays),
-`crates/flatdata/src/posix.rs::tests::write_read_through_shm`
+`crates/flatdata/src/posix.rs::tests::flatdata_3_2_write_read_through_shm`
 (slot backend without the FFI). The `flatdata-loan` feature is in
 `default` of `crates/zerodds-c-api/Cargo.toml`; the tests run in the
 default run, not behind a switch.
@@ -575,18 +578,23 @@ of its own.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — boundary between ring and loan path; the loan path is item §7.1.
 
 ---
 
 ## Audit-Status
 
-18 done / 3 partial / 1 open / 2 n/a (informative) / 0 n/a (rejected).
+18 done / 3 partial / 1 open / 0 blocked / 2 n/a (informative).
 
-Test run: `cargo test -p zerodds-transport-shm` — 27 tests (lib) + 1 test
-(`tests/l1_cross_process.rs`) green, 0 failed;
-`cargo test -p zerodds-c-api --test shm_loan_e2e` — 5 tests green, 0
-failed. Measured on macOS 15 (Rust host `aarch64-apple-darwin`); the
-Windows run of §6.2 and the Linux futex path of §4.4 are not included.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-shm-transport-1.0.md`):
 
-Open items and decision records: [`zerodds-shm-transport-1.0.open.en.md`](zerodds-shm-transport-1.0.open.en.md).
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (job `merge-rust-c-api`) — 3 tests green.
+* `cargo nextest run --profile merge -p zerodds-flatdata --all-targets` (job `merge-rust-flatdata`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-transport-shm --all-targets` (job `merge-rust-transport-shm`) — 41 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets --features same-host-shm` (job `merge-rust-dcps-features-same-host-shm`) — 1 test green.
+* job `merge-macos-transport-shm` — 2 tests green.
+
+50 cited tests green, 0 not green.
+
+Open items: `zerodds-shm-transport-1.0.open.en.md`.

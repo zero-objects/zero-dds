@@ -175,7 +175,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn header_exchange_advances_to_hdr_exch() {
+    fn amqp10_0_2_header_exchange_advances_to_hdr_exch() {
         let s = advance_connection(ConnectionState::Start, InboundFrameKind::Header).expect("ok");
         assert_eq!(s, ConnectionState::HdrRcvd);
         let s = advance_connection(s, InboundFrameKind::Header).expect("ok");

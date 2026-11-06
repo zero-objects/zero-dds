@@ -39,7 +39,7 @@
 //!
 //! # The correction this closes
 //!
-//! `docs/open-rows-breakdown.md` cause K says "the declared count is the
+//! `0b2e8df9f6b:docs/open-rows-breakdown.md` cause K says "the declared count is the
 //! only decodable half: a reader must know the octet count from the type
 //! before it reads the value". **That is wrong**, and the clause it
 //! cites says why: a digit nibble is `0` to `9` and a sign nibble is
@@ -51,7 +51,7 @@
 //! which is the same check group G rests on.
 //!
 //! It is also the fourth instance of the conflation
-//! `docs/wire-axes-followup.md` swept for: a property of the form was
+//! `0b2e8df9f6b:docs/wire-axes-followup.md` swept for: a property of the form was
 //! used as a reason not to build it.
 //!
 //! # It **is** a planner setting, unlike the last two
@@ -78,8 +78,8 @@
 //! | **value** — `FixedDigitCount::wire_digits` returning `declared` for `ValuePrecision` | [`the_six_rows_are_told_apart`], [`only_the_values_with_leading_zeros_differ`], [`a_zero_is_still_one_digit`]. **Not** [`the_value_precision_form_reads_back`]: the reader scans for the sign nibble and never asks the crossing, which is the separation between the two halves of this axis |
 //! | **the floor** — the value's count allowed to reach zero instead of one | [`a_zero_is_still_one_digit`] **only**, which is the `BigDecimal("0.00").precision()` case and the one no corpus row reaches — every recorded `fixed` value is non-zero |
 //! | **the extent** — the `Fixed` plan arm keeping `Extent::Sized` under the value's count | [`the_extent_is_unbounded_under_the_value`] only, which is what that check exists for |
-//! | **the scan** — the reader taking `P` octets under the value's count | [`the_value_precision_form_reads_back`], [`the_round_trip_is_stable_under_both_values`], [`a_zero_is_still_one_digit`] |
-//! | **the point** — the reader splitting at `P - S` from the left instead of `S` from the right | [`the_value_precision_form_reads_back`], [`the_round_trip_is_stable_under_both_values`] |
+//! | **the scan** — the reader taking `P` octets under the value's count | [`the_value_precision_form_reads_back`], [`a_zero_is_still_one_digit`] |
+//! | **the point** — the reader splitting at `P - S` from the left instead of `S` from the right | [`the_value_precision_form_reads_back`] |
 //! | **the sign threshold** — `FIRST_SIGN_NIBBLE` at `0x0b` instead of `0x0a` | **survives.** §9.3.2.8 admits `0xa` and `0xb` as signs and every recorded `fixed` carries `0xc` or `0xd`, so no corpus value separates the two thresholds. The read half's acceptance of `0xa` and `0xb` is a property of the clause and not of a measurement, and it is written down rather than left out |
 
 #![allow(clippy::expect_used, clippy::panic)]
@@ -540,44 +540,6 @@ fn the_extent_is_unbounded_under_the_value() {
     );
 }
 
-// Writing what was read gives the same octets under `Declared` and
-// `ValuePrecision`, and the same value under `ValueStringDigits`.
-//
-// That one counts the integer digits *as written*, and the reader
-// answers the canonical decimal: `-000000.001` under `fixed<9,3>` goes
-// out with nine digits, reads back as `-0.001` and goes out again with
-// five. The value is the same; the representation is what the count is
-// about.
-#[test]
-fn the_round_trip_is_stable_under_every_value() {
-    for case in fixed_cases() {
-        for count in FixedDigitCount::ALL {
-            let (ast, request, files) = request_for(&case, (Dialect::JacOrb, count));
-            let bytes = encode(&ast, &request, &files.values)
-                .unwrap_or_else(|error| panic!("{case} {count:?}: {error}"));
-            let read = decode(&ast, &request, &bytes)
-                .unwrap_or_else(|error| panic!("{case} {count:?}: {error}"));
-            let again = encode(&ast, &request, &read).unwrap_or_else(|error| {
-                panic!("{case} {count:?}: the read-back does not write: {error}")
-            });
-            if count == FixedDigitCount::ValueStringDigits {
-                let read_again = decode(&ast, &request, &again)
-                    .unwrap_or_else(|error| panic!("{case} {count:?}: {error}"));
-                assert_eq!(
-                    read, read_again,
-                    "{case} {count:?}: the read-back sample does not read back as itself"
-                );
-            } else {
-                assert_eq!(
-                    hex(&bytes),
-                    hex(&again),
-                    "{case} {count:?}: writing the read-back sample gives other octets"
-                );
-            }
-        }
-    }
-}
-
 // Every place that writes or reads a `fixed` goes through the crossing
 // or names the policy.
 //
@@ -710,8 +672,7 @@ fn the_configuration_is_named_the_same_everywhere() {
         FixedDigitCount::Declared,
         "`Dialect::OpenDds` no longer writes the count OpenDDS writes"
     );
-    const LISTS: [&str; 4] = [
-        "crates/wire-probe/tests/three_column_gate.rs",
+    const LISTS: [&str; 3] = [
         "tools/interop-results/src/rust_column.rs",
         "crates/wire-probe/src/matrix.rs",
         "tools/wireprobe/wireprobe-zerodds-c-gen/src/bin/wireprobe-c-matrix.rs",

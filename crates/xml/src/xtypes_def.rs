@@ -232,20 +232,15 @@ pub struct ModuleEntry {
 
 /// Extensibility-Annotation (`@final`, `@appendable`, `@mutable`) — Spec
 /// §7.2.3.5 + §7.3.3.4.4.1.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Extensibility {
     /// `final` — no extending, byte-compatible with strict IDL templates.
     Final,
     /// `appendable` — spec default; only extensible at the end.
+    #[default]
     Appendable,
     /// `mutable` — XCDR2 with member IDs, reordering allowed.
     Mutable,
-}
-
-impl Default for Extensibility {
-    fn default() -> Self {
-        Self::Appendable
-    }
 }
 
 /// Primitive type symbol per Spec §7.2.1 + §7.3.3.4.4.2.

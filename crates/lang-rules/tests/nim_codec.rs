@@ -202,7 +202,7 @@ fn the_read_direction_opens_with_table_9_and_returns_the_sample() {
 }
 
 #[test]
-fn a_forward_declaration_precedes_every_body() {
+fn xtypes_7_4_3_a_forward_declaration_precedes_every_body() {
     // Nim resolves a module-scope name only after its declaration, so
     // the bodiless signature has to come first — the same shape the C
     // column emits, and the reason `routine` answers `Some` for a body
@@ -238,7 +238,7 @@ fn an_optional_member_reads_through_some_and_resets_on_absence() {
 }
 
 #[test]
-fn an_external_member_reads_through_zd_ref_and_writes_the_dereference() {
+fn xtypes_7_2_2_4_9_an_external_member_reads_through_zd_ref_and_writes_the_dereference() {
     let read = decoder(
         "@final struct Inner { long a; }; @final struct S { @external Inner i; };",
         "S",
@@ -307,7 +307,7 @@ fn a_union_marks_its_selected_branch_with_some() {
 }
 
 #[test]
-fn the_operators_are_nims_and_not_cs() {
+fn xtypes_7_4_3_the_operators_are_nims_and_not_cs() {
     // A bitmask decoder complements a 64-bit mask and masks the read:
     // Nim spells that `and`/`not`, and C's `&`/`~` would not parse.
     let text = decoder(
@@ -329,10 +329,10 @@ fn the_operators_are_nims_and_not_cs() {
 }
 
 /// Every aggregate the corpus has, through both directions, to the end
-/// of the walk, each checked against the real runtime.
-#[test]
-fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
-    for (idl, root) in [
+/// of the walk, each checked against the real runtime: the shapes of
+/// `share` (of `shares`). 24 s for all of them on the Linux test host.
+fn the_shapes_the_corpus_has_reach_the_end_of_both_walks(share: usize, shares: usize) {
+    for (position, (idl, root)) in [
         ("@final struct S { long a; };", "S"),
         ("@appendable struct S { long a; string b; };", "S"),
         (
@@ -381,7 +381,13 @@ fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
             "typedef long Distance; @final struct S { Distance d; };",
             "S",
         ),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if position % shares != share {
+            continue;
+        }
         let written = encoder(idl, root);
         assert!(!written.is_empty(), "no encoder for {idl}");
         compiles(&written);
@@ -462,4 +468,50 @@ fn take_and_remove(ast: &mut Ast) -> zerodds_ast_core::Id<zerodds_ast::TypeNode>
     ast.remove(any).expect("remove Point");
     assert!(ast.type_(id).is_err(), "the handle is still answered");
     id
+}
+
+/// zerodds-xcdr2-nim-1.0 §7.4.3: every aggregate shape the corpus has reaches the end of both walks.
+///
+/// In 8 shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"); `integration-codegen-julia-zig-nim` and the language's merge job run them.
+mod xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks {
+    #[test]
+    fn share_01() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(0, 8);
+    }
+
+    #[test]
+    fn share_02() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(1, 8);
+    }
+
+    #[test]
+    fn share_03() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(2, 8);
+    }
+
+    #[test]
+    fn share_04() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(3, 8);
+    }
+
+    #[test]
+    fn share_05() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(4, 8);
+    }
+
+    #[test]
+    fn share_06() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(5, 8);
+    }
+
+    #[test]
+    fn share_07() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(6, 8);
+    }
+
+    #[test]
+    fn share_08() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(7, 8);
+    }
 }

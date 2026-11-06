@@ -17,11 +17,19 @@ publish = true
 [lints]
 workspace = true
 
+# The crate tier runs the tests of this crate with its default features and
+# once more with each of these (internal/release/rc8-test-suite.md, "Crate
+# tier"): the `pkcs11:` identity material is behind a feature no default
+# build has. Its SoftHSM test runs in the integration job
+# `integration-security`.
+[package.metadata.crate-tier]
+feature-runs = ["pkcs11"]
+
 [lib]
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+safety = []  # empty marker for safe-profile lints (docs/architecture/04_safety_by_architecture.md §3)
 default = ["std", "ring-backend"]
 std = []
 # The security deps are pulled `default-features = false`, so the backend is
@@ -93,3 +101,7 @@ zerodds-discovery = { path = "../discovery" }
 ring = { workspace = true }
 # Conformance matrix test needs the production logging builtin.
 zerodds-security-logging = { path = "../security-logging" }
+# cyclone_live_security_caps: a leased domain, and the SPDP port shared with
+# the local Cyclone (SO_REUSEADDR).
+zerodds-test-domains = { path = "../test-domains" }
+socket2 = { workspace = true }

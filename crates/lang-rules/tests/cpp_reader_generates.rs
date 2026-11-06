@@ -77,27 +77,27 @@ fn both_directions(source: &str, type_name: &str) {
 }
 
 #[test]
-fn an_appendable_struct_gets_a_reader() {
+fn xtypes_7_4_3_an_appendable_struct_gets_a_reader() {
     both_directions("@appendable struct S { long a; long b; };", "S");
 }
 
 #[test]
-fn a_mutable_struct_gets_a_reader() {
+fn xtypes_7_4_3_a_mutable_struct_gets_a_reader() {
     both_directions("@mutable struct S { @id(1) long a; @id(2) long b; };", "S");
 }
 
 #[test]
-fn an_optional_member_gets_a_reader() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_gets_a_reader() {
     both_directions("@appendable struct S { long a; @optional long b; };", "S");
 }
 
 #[test]
-fn a_bounded_string_gets_a_reader() {
+fn xtypes_7_4_3_a_bounded_string_gets_a_reader() {
     both_directions("@final struct S { string<5> text; };", "S");
 }
 
 #[test]
-fn a_union_gets_a_reader() {
+fn xtypes_7_2_2_4_4_3_a_union_gets_a_reader() {
     both_directions(
         "@final union Choice switch (long) { case 1: long a; case 2: string b; }; \
          @final struct S { Choice picked; };",
@@ -109,7 +109,7 @@ fn a_union_gets_a_reader() {
 /// refuses one of them refuses the whole reader, so this is where a hole
 /// shows up rather than in whichever corpus case happened to reach it.
 #[test]
-fn every_kind_table_9_answers_for_gets_a_defaulter() {
+fn xtypes_7_2_2_4_4_4_7_every_kind_table_9_answers_for_gets_a_defaulter() {
     both_directions(
         "enum Colour { red, green, blue }; \
          @bit_bound(8) bitmask Flags { flag_a, flag_b }; \
@@ -135,7 +135,7 @@ fn every_kind_table_9_answers_for_gets_a_defaulter() {
 /// per type rather than value-initialisation: Table 9 for an enumeration
 /// is "the first literal", and here that is 7.
 #[test]
-fn an_enumeration_whose_first_literal_is_not_zero() {
+fn xtypes_7_2_2_4_4_4_7_an_enumeration_whose_first_literal_is_not_zero() {
     both_directions(
         "enum Sparse { @value(7) seven, @value(9) nine }; \
          @appendable struct S { Sparse e; long tail; };",

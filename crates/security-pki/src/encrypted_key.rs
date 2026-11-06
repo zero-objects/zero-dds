@@ -112,12 +112,12 @@ pub fn decrypt_private_key_pem_as(
         .map_err(|_| invalid("a DEK-Info IV that is not sixteen octets"))?;
 
     let mut tried = Vec::new();
-    if cipher == Cipher::Aes128 {
-        if let Some(key) = clause_key(password) {
-            match open_traditional(cipher, &key, &iv, &block) {
-                Ok(der) => return Ok(der),
-                Err(_) => tried.push("the password as the base64 AES-128 key (§10.3.1 Table 50)"),
-            }
+    if cipher == Cipher::Aes128
+        && let Some(key) = clause_key(password)
+    {
+        match open_traditional(cipher, &key, &iv, &block) {
+            Ok(der) => return Ok(der),
+            Err(_) => tried.push("the password as the base64 AES-128 key (§10.3.1 Table 50)"),
         }
     }
     if reading == PasswordReading::Clause {
@@ -307,7 +307,7 @@ fn decrypt_pkcs8(der: &[u8], password: &str) -> Result<Vec<u8>, PkiError> {
 }
 
 fn hex_bytes(text: &str) -> Option<Vec<u8>> {
-    if text.len() % 2 != 0 {
+    if !text.len().is_multiple_of(2) {
         return None;
     }
     (0..text.len())
@@ -351,7 +351,7 @@ mod tests {
     /// OpenSSL form and an encrypted PKCS#8 key open only when the vendors'
     /// reading is asked for.
     #[test]
-    fn the_clause_reading_is_the_default_and_the_passphrase_is_named() {
+    fn security_10_3_1_the_clause_reading_is_the_default_and_the_passphrase_is_named() {
         let spec_key = fixture!("ec_trad_spec_key.pem");
         let password = "AAECAwQFBgcICQoLDA0ODw==";
         assert_eq!(
@@ -426,7 +426,7 @@ mod tests {
     /// §10.3.1 Table 50 read as written: the password is the base64 of
     /// the AES-128 key itself.
     #[test]
-    fn the_clause_key_opens_a_file_encrypted_with_it() {
+    fn security_10_3_1_the_clause_key_opens_a_file_encrypted_with_it() {
         assert_eq!(
             decrypt_private_key_pem(fixture!("ec_trad_spec_key.pem"), "AAECAwQFBgcICQoLDA0ODw==")
                 .expect("opens"),
@@ -449,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unencrypted_key_ignores_the_password() {
+    fn security_10_3_1_an_unencrypted_key_ignores_the_password() {
         assert_eq!(
             decrypt_private_key_pem(fixture!("ec.pem"), "anything").expect("opens"),
             plain(fixture!("ec.pem"))

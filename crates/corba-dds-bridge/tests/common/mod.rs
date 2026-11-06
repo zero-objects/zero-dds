@@ -24,7 +24,7 @@ use zerodds_dcps::runtime::{
 };
 use zerodds_monitor::Registry;
 use zerodds_rtps::publication_data::data_representation as dr;
-use zerodds_rtps::wire_types::GuidPrefix;
+use zerodds_rtps::wire_types::{EntityId, GuidPrefix};
 use zerodds_test_domains::DomainLease;
 
 /// `tests/omniorb/Calc.idl`, the one IDL every foreign ORB compiles.
@@ -146,6 +146,9 @@ pub struct CalcBackend {
     pub dds: Arc<DcpsRuntime>,
     stop: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
+    /// The request readers and the reply writers, which `settle` waits on.
+    readers: Vec<EntityId>,
+    writers: Vec<EntityId>,
 }
 
 impl CalcBackend {
@@ -177,7 +180,6 @@ impl CalcBackend {
                 false,
             )
             .unwrap()
-            .1
         };
         let writer = |topic: &str| {
             let w = dds
@@ -187,9 +189,9 @@ impl CalcBackend {
                 .unwrap();
             w
         };
-        let add_requests = reader("Calc_add_Request");
+        let (add_reader, add_requests) = reader("Calc_add_Request");
         let add_writer = writer("Calc_add_Reply");
-        let echo_requests = reader("Calc_echo_Request");
+        let (echo_reader, echo_requests) = reader("Calc_echo_Request");
         let echo_writer = writer("Calc_echo_Reply");
 
         let add = {
@@ -256,12 +258,30 @@ impl CalcBackend {
             dds,
             stop,
             threads: vec![add, echo],
+            readers: vec![add_reader, echo_reader],
+            writers: vec![add_writer, echo_writer],
         }
     }
 
-    /// Lets the bridge's readers match the backend's writers and back.
+    /// Waits until the bridge's request writers matched the backend's
+    /// readers and its reply readers the backend's writers.
     pub fn settle(&self) {
-        std::thread::sleep(Duration::from_secs(2));
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !(self
+            .readers
+            .iter()
+            .all(|&r| self.dds.user_reader_matched_count(r) > 0)
+            && self
+                .writers
+                .iter()
+                .all(|&w| self.dds.user_writer_matched_count(w) > 0))
+        {
+            assert!(
+                Instant::now() < deadline,
+                "the bridge and the backend did not match"
+            );
+            self.dds.wait_match_event(Duration::from_millis(200));
+        }
     }
 
     /// Writes `values` on the notify topic once the bridge's reader matched.
@@ -279,7 +299,7 @@ impl CalcBackend {
                 Instant::now() < deadline,
                 "the bridge's notify reader did not match"
             );
-            std::thread::sleep(Duration::from_millis(50));
+            self.dds.wait_match_event(Duration::from_millis(200));
         }
         for v in values {
             self.dds

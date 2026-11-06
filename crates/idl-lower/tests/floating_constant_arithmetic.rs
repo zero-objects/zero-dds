@@ -121,27 +121,56 @@ fn a_value_beyond_the_declared_range_is_refused() {
     );
 }
 
-/// A `long double` constant's arithmetic runs in `long double`, which
-/// this build cannot do; it is refused by name rather than rounded to
-/// `double`. A literal alone needs no arithmetic and still evaluates.
+/// OMG IDL 4.2 §7.4.1.4.2: "If the type of a floating-point constant is
+/// long double, then each sub-expression of the associated constant
+/// expression is treated as a long double", and "If either argument is long
+/// double, it shall use long double." The arithmetic runs in binary128
+/// (§7.4.1.4.4.2.2: an exponent of at least 15 bits and a fraction of at
+/// least 64), so `1.0 + 1e-20` keeps what a `double` loses, a value too
+/// large for binary128 is an error, and a `double` constant computed from a
+/// `long double` holds the `double` the result rounds to.
 #[test]
-fn long_double_arithmetic_is_refused_and_a_long_double_literal_is_not() {
-    assert!(matches!(
-        value_of("const long double L = 1.0 + 2.0;", "L"),
-        Err(EvalError::LongDouble { .. })
-    ));
-    assert!(matches!(
-        value_of("typedef long double LD;\nconst LD T = 1.0 * 2.0;", "T"),
-        Err(EvalError::LongDouble { .. })
-    ));
-    assert!(matches!(
-        value_of("const long double W = -(1.0 + 2.0);", "W"),
-        Err(EvalError::LongDouble { .. })
-    ));
+fn idl_7_4_1_4_2_long_double_arithmetic_runs_in_binary128() {
+    assert_eq!(
+        value_of("const long double L = 1.0 + 2.0;", "L").as_deref(),
+        Ok("3.0")
+    );
+    assert_eq!(
+        value_of("typedef long double LD;\nconst LD T = 1.0 * 2.0;", "T").as_deref(),
+        Ok("2.0")
+    );
+    assert_eq!(
+        value_of("const long double W = -(1.0 + 2.0);", "W").as_deref(),
+        Ok("-3.0")
+    );
+    assert_eq!(
+        value_of("const long double E = 1.0 + 1e-20;", "E").as_deref(),
+        Ok("1.00000000000000000001")
+    );
+    assert_eq!(
+        value_of("const double E = 1.0 + 1e-20;", "E").as_deref(),
+        Ok("1.0"),
+        "the same sum in double"
+    );
     // "If either argument is long double, it shall use long double."
+    assert_eq!(
+        value_of("const long double X = 1.5;\nconst double Y = X * 2.0;", "Y").as_deref(),
+        Ok("3.0")
+    );
+    // A literal too large for a double is a long double, and the result
+    // has to fit the declared type.
     assert!(matches!(
-        value_of("const long double X = 1.5;\nconst double Y = X * 2.0;", "Y"),
-        Err(EvalError::LongDouble { .. })
+        value_of("const double D = 1e400;", "D"),
+        Err(EvalError::Overflow { .. })
+    ));
+    assert!(value_of("const long double B = 1e300 * 1e300;", "B").is_ok());
+    assert!(matches!(
+        value_of("const long double O = 1e4000 * 1e4000;", "O"),
+        Err(EvalError::Overflow { .. })
+    ));
+    assert!(matches!(
+        value_of("const long double Z = 1.0 / 0.0;", "Z"),
+        Err(EvalError::DivisionByZero { .. })
     ));
     assert_eq!(
         value_of("const long double P = -1.5;", "P").as_deref(),

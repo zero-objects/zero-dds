@@ -217,17 +217,6 @@ mod tests {
     }
 
     #[test]
-    fn make_and_parse_get_types_roundtrip() {
-        let mut stack = TypeLookupStack::new(GuidPrefix::from_bytes([1; 12]));
-        let hash = zerodds_types::compute_minimal_hash(&sample_struct()).unwrap();
-        let (bytes, seq) = stack.make_get_types_request(&[hash], true).unwrap();
-        assert_eq!(seq, 1);
-        let mut r = zerodds_types::framing::xcdr2_reader(&bytes);
-        let decoded = GetTypesRequest::decode_from(&mut r).unwrap();
-        assert_eq!(decoded.type_ids.len(), 1);
-    }
-
-    #[test]
     fn responder_round_trip_via_registry() {
         let mut responder = TypeLookupStack::new(GuidPrefix::from_bytes([2; 12]));
         let m = sample_struct();

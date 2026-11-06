@@ -16,6 +16,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- The lists of alternative pre-shared passphrases are read under the names of
+  DDS-Security 1.2, whose Table 86 and Table 71 give every property the prefix
+  `dds.sec.crypto.`: `PROP_PASSPHRASE_ALT` is
+  `dds.sec.crypto.rtps_psk_secret_passphrase_alt` (Table 86),
+  `PROP_PASSPHRASE_EXTRA` `dds.sec.crypto.rtps_psk_secret_passphrase_extra`
+  (Table 71). They were `org.zerodds.sec.crypto.*`, so a configuration with
+  the names of the specification got no alternatives and no message about
+  it. The `org.zerodds.` names are still read
+  (`PROP_PASSPHRASE_ALT_ZERODDS`, `PROP_PASSPHRASE_EXTRA_ZERODDS`); every name
+  of `ALTERNATIVE_PASSPHRASE_PROPERTIES` that is set adds its passphrases.
+
 - `decode_serialized_payload` opens a payload sealed with a key material the writer
   reuses for metadata and data under origin authentication (Table 78 allows the
   reuse; the first element then carries the receiver-specific key). The check of the

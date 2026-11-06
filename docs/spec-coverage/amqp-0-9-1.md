@@ -8,13 +8,15 @@ Broker-Modell) — getrennt von AMQP 1.0 (`crates/amqp-bridge` +
 `crates/amqp-endpoint`). Abgedeckt sind alle Klassen, die ein vollständiger
 Producer/Consumer braucht: connection, channel, exchange, queue, basic, confirm
 (Publisher-Confirms) und tx (Transaktionen). Jedes Item ist mit Repo-Pfad und
-Test belegt; die Interop ist live gegen RabbitMQ 4.0 + Cross-Protocol gegen
-qpid-proton (AMQP 1.0) bewiesen.
+Test belegt: die Oktette der Methoden gegen die XML-Definitionen des Protokolls
+(`amqp0-9-1.xml`, für `basic.nack` und `confirm` RabbitMQs
+`amqp0-9-1.extended.xml`), der Client gegen RabbitMQ mit pika und qpid-proton
+(AMQP 1.0) auf der anderen Seite.
 
 Implementation:
 
 - `crates/amqp-0-9-1/` — class/method-Framing, typisierte Field-Tables,
-  Content-Properties, Broker-Modell; 25 Tests grün (live gegen RabbitMQ 4.0).
+  Content-Properties, Broker-Modell, synchroner Client.
 
 ---
 
@@ -35,9 +37,7 @@ mit Werttypen `t/b/B/s/u/I/i/l/f/d/D/S/T/F/A/x/V`.
 `Reader::{field_value, field_table}` (decode). `field_table_strs` bleibt als
 S-only-Schnellpfad für `client-properties` in start-ok.
 
-**Tests:** `types::tests::{integer_roundtrip_big_endian,
-shortstr_longstr_roundtrip, shortstr_rejects_over_255, field_table_strs_then_skip,
-bit_packing, field_table_typed_roundtrip, unknown_field_type_rejected}`.
+**Tests:** `crates/amqp-0-9-1/src/types.rs::tests::{amqp091_4_2_5_1_integers_are_in_network_byte_order, amqp091_4_2_5_2_bits_pack_from_the_low_bit, amqp091_4_2_5_3_a_short_string_has_one_length_octet_a_long_string_four, amqp091_4_2_5_3_a_short_string_over_255_octets_is_refused, amqp091_4_2_5_5_a_field_table_is_its_length_then_name_type_value, amqp091_4_2_5_5_the_field_types_are_the_tags_rabbitmq_reads, amqp091_4_2_5_5_an_unknown_field_type_is_refused}` (expected octets from §4.2.5 and RabbitMQ's errata, "Field types").
 
 **Status:** done
 
@@ -53,8 +53,7 @@ METHOD(1)/HEADER(2)/BODY(3)/HEARTBEAT(8).
 PROTOCOL_HEADER, FRAME_END}` — `encode`/`decode` (mit Truncation-Erkennung +
 frame-end-Validierung).
 
-**Tests:** `frame::tests::{frame_roundtrips, decode_reports_truncation,
-protocol_header_is_0_0_9_1}`.
+**Tests:** `crates/amqp-0-9-1/src/frame.rs::tests::{amqp091_4_2_2_the_protocol_header_is_amqp_0_0_9_1, amqp091_4_2_3_a_method_frame_is_type_channel_size_payload_and_frame_end, amqp091_4_2_3_the_frame_types_are_one_two_three_and_eight, amqp091_4_2_3_a_frame_cut_short_or_without_frame_end_is_refused}`.
 
 **Status:** done
 
@@ -72,9 +71,7 @@ connection_tune_ok, connection_open, connection_tune_params}` +
 `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{connect, close}` (treibt den
 vollen Handshake mit PLAIN-Auth).
 
-**Tests:** `method::tests::{start_ok_carries_plain_response,
-tune_ok_roundtrips_params}`; Live `tests/rabbitmq_amqp091_e2e.rs::
-zerodds_amqp091_self_roundtrip`.
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::{amqp091_1_4_start_ok_is_properties_mechanism_plain_response_and_locale, amqp091_1_4_tune_and_tune_ok_carry_channel_max_frame_max_heartbeat, amqp091_1_4_open_is_the_virtual_host_and_two_reserved_fields, amqp091_1_4_a_method_payload_begins_with_class_and_method}` (expected octets from `amqp0-9-1.xml`); RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::amqp091_1_4_the_client_handshakes_declares_publishes_and_gets`.
 
 **Status:** done
 
@@ -95,8 +92,7 @@ bleibt offen).
 channel_flow_ok, channel_close, channel_close_ok}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::
 {channel_flow, channel_close}` (connect öffnet Kanal 1).
 
-**Tests:** `method::tests::channel_close_and_flow_ids`; Live
-`tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_channel_flow_and_close`.
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::amqp091_1_5_channel_open_flow_and_close_are_their_fields`; RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::amqp091_1_5_flow_and_close_are_answered_and_the_connection_stays`.
 
 **Status:** done
 
@@ -110,9 +106,7 @@ channel_flow_ok, channel_close, channel_close_ok}` + `crates/amqp-0-9-1/src/clie
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{exchange_declare, exchange_delete}`
 + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{exchange_declare, exchange_delete}`.
 
-**Tests:** `method::tests::exchange_declare_carries_type`; Live
-`tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_exchange_routing` (topic-
-Exchange + Routing in eine gebundene Queue).
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::amqp091_1_6_exchange_declare_and_delete_are_their_fields`; RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::amqp091_1_6_a_topic_exchange_routes_to_the_bound_queue`.
 
 **Status:** done
 
@@ -129,9 +123,7 @@ queue_unbind, queue_purge, queue_delete, queue_declare_ok_name,
 queue_op_ok_message_count}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{queue_declare,
 queue_bind, queue_unbind, queue_purge, queue_delete}`.
 
-**Tests:** `method::tests::{queue_declare_and_publish_ids,
-queue_bind_unbind_purge_delete_ids, queue_op_ok_count_parsed}`; Live
-`tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_exchange_routing`.
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::{amqp091_1_7_queue_declare_bind_purge_delete_unbind_are_their_fields, amqp091_1_7_declare_ok_names_the_queue_purge_ok_and_delete_ok_count}`; RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::amqp091_1_6_a_topic_exchange_routes_to_the_bound_queue`.
 
 **Status:** done
 
@@ -149,11 +141,7 @@ user-id, app-id.
 content_header_with_props, content_header_body_size, parse_content_header,
 ContentProperties}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{publish, publish_with_props}`.
 
-**Tests:** `method::tests::{content_header_roundtrip, content_properties_roundtrip,
-content_header_no_props_matches_legacy}`; Live `tests/rabbitmq_amqp091_e2e.rs::
-{zerodds_amqp091_self_roundtrip, zerodds_amqp091_publish_consumed_by_proton_10,
-zerodds_amqp091_content_properties}` (persistent delivery-mode + typed headers
-round-trip durch RabbitMQ).
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::{amqp091_1_8_publish_is_its_fields, amqp091_4_2_6_1_a_content_header_without_properties_has_flags_zero, amqp091_4_2_6_1_the_properties_follow_their_flag_bits_in_order}`; RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::{amqp091_1_4_the_client_handshakes_declares_publishes_and_gets, amqp091_1_8_a_published_message_is_read_by_an_amqp_1_0_client, amqp091_4_2_6_1_pika_and_the_client_read_each_others_properties}`.
 
 **Status:** done
 
@@ -167,10 +155,7 @@ Content, oder `get-empty`; `basic.ack`; `basic.reject` (+requeue); `basic.nack`
 basic_get_ok_delivery_tag, basic_ack, basic_ack_delivery_tag, basic_reject,
 basic_nack}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{get, get_with_props, get_reject}`.
 
-**Tests:** `method::tests::{basic_consume_cancel_qos_ids, ack_delivery_tag_parsed}`;
-Live `tests/rabbitmq_amqp091_e2e.rs::{zerodds_amqp091_consumes_pika_published,
-zerodds_amqp091_reject_requeue}` + Cross-Stack
-`amqp-endpoint/tests/rabbitmq_cross_stack_e2e.rs`.
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::{amqp091_1_8_get_ack_reject_nack_are_their_fields, amqp091_1_8_get_ok_and_ack_begin_with_the_delivery_tag}`; RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::{amqp091_1_8_get_reads_what_pika_published, amqp091_1_8_a_message_rejected_with_requeue_is_delivered_again}`.
 
 **Status:** done
 
@@ -184,9 +169,7 @@ zerodds_amqp091_reject_requeue}` + Cross-Stack
 basic_cancel, basic_consume_ok_tag, basic_deliver_delivery_tag}` +
 `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{qos, consume_one}`.
 
-**Tests:** `method::tests::{basic_consume_cancel_qos_ids,
-basic_deliver_tag_skips_consumer_tag, consume_ok_tag_parsed}`; Live
-`tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_async_consume`.
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::{amqp091_1_8_qos_consume_and_cancel_are_their_fields, amqp091_1_8_consume_ok_and_deliver_carry_their_tags}`; RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::amqp091_1_8_consume_delivers_asynchronously`.
 
 **Status:** done
 
@@ -202,8 +185,7 @@ publizierte Nachricht wird vom Broker mit server-pushed `basic.ack`
 basic_ack_delivery_tag}` + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{confirm_select,
 publish_confirmed}`.
 
-**Tests:** `method::tests::confirm_and_tx_ids`; Live
-`tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_publisher_confirms`.
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::amqp091_confirm_select_is_class_85_method_10_with_no_wait` (`amqp0-9-1.extended.xml`); RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::amqp091_confirm_the_broker_acks_a_publish_after_select`.
 
 **Status:** done
 
@@ -216,9 +198,7 @@ publish_confirmed}`.
 **Repo:** `crates/amqp-0-9-1/src/method.rs::{tx_select, tx_commit, tx_rollback}`
 + `crates/amqp-0-9-1/src/client.rs::Amqp091Client::{tx_select, tx_commit, tx_rollback}`.
 
-**Tests:** `method::tests::confirm_and_tx_ids`; Live
-`tests/rabbitmq_amqp091_e2e.rs::zerodds_amqp091_transactions` (rollback liefert
-nicht, commit liefert).
+**Tests:** `crates/amqp-0-9-1/src/method.rs::tests::amqp091_1_9_tx_select_commit_and_rollback_have_no_fields`; RabbitMQ: `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs::amqp091_1_9_a_rolled_back_publish_is_not_queued_a_committed_one_is`.
 
 **Status:** done
 
@@ -226,10 +206,12 @@ nicht, commit liefert).
 
 ## Audit-Status
 
-11 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+11 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-amqp-0-9-1 --lib` — 25 Tests grün, 0 failed.
-RabbitMQ-Interop zusätzlich live (Linux bench host, `AMQP_RABBITMQ=1`):
-`cargo test -p zerodds-amqp-0-9-1 --test rabbitmq_amqp091_e2e -- --ignored` —
-10 Tests grün; Cross-Stack `cargo test -p zerodds-amqp-endpoint --test
-rabbitmq_cross_stack_e2e -- --ignored` — 2 Tests grün.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document amqp-0-9-1.md`):
+
+* `cargo nextest run --profile merge -p zerodds-amqp-0-9-1 --all-targets` (Job `merge-rust-amqp-0-9-1`) — 28 Tests grün.
+* `python3 ci/run_integration.py integration-bridges-vendor-amqp` (Job `integration-bridges-vendor-amqp`) — 10 Tests grün.
+
+38 zitierte Tests grün, 0 nicht grün.
+

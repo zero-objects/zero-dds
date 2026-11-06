@@ -183,6 +183,7 @@ fn each_language_column_covers_the_whole_grid_in_both_directions() {
 /// the point: the failure is a question to answer, not a number to
 /// carry.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn every_disagreeing_read_cell_names_its_cause() {
     use zerodds_interop_results::assemble::{self, Inputs, READER_LOST_IT};
     use zerodds_interop_results::ledger::Outcome;

@@ -5,6 +5,18 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
+## §7.1 Module Mapping
+
+**Status:** `partial` — `export namespace` with nesting and declaration merging and qualified names as a dotted path are implemented; the optional output of one file per top-level module (`--module-per-file`) is missing, own item.
+
+## §7.1 Option `--module-per-file`
+
+**Status:** `open` — neither `tools/idlc` nor `crates/lang-rules` knows the option.
+
+## §C.6 Reservation of Future Extensions
+
+**Status:** `open` — fulfilled by the code: `crates/ts-wasm/` and `runtime/typescript/src/` use none of the four identifiers; `crates/ts-node/src/dds.ts` uses `getInstance` for the `DomainParticipantFactory` (same purpose). A test that checks the exports of the WASM profile against the list is missing.
+
 ## §D.1 Diagnostic Code Registry
 
 **Status:** `open` — the tree carries a stable code set, but a different one: `crates/idl-parse/src/diagnostic.rs::DiagnosticCode` assigns `IDL0001` through `IDL0018`. The Annex D codes `E001`-`E004`, `W001`-`W004` and `I001` do not occur in the tree, and no test covers them.

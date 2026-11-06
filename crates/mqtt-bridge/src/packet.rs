@@ -125,36 +125,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn packet_type_round_trip_via_bits() {
-        for t in [
-            ControlPacketType::Connect,
-            ControlPacketType::ConnAck,
-            ControlPacketType::Publish,
-            ControlPacketType::PubAck,
-            ControlPacketType::PubRec,
-            ControlPacketType::PubRel,
-            ControlPacketType::PubComp,
-            ControlPacketType::Subscribe,
-            ControlPacketType::SubAck,
-            ControlPacketType::Unsubscribe,
-            ControlPacketType::UnsubAck,
-            ControlPacketType::PingReq,
-            ControlPacketType::PingResp,
-            ControlPacketType::Disconnect,
-            ControlPacketType::Auth,
+    fn mqtt5_2_1_2_the_packet_types_are_the_values_of_table_2_1() {
+        for (t, v) in [
+            (ControlPacketType::Connect, 1),
+            (ControlPacketType::ConnAck, 2),
+            (ControlPacketType::Publish, 3),
+            (ControlPacketType::PubAck, 4),
+            (ControlPacketType::PubRec, 5),
+            (ControlPacketType::PubRel, 6),
+            (ControlPacketType::PubComp, 7),
+            (ControlPacketType::Subscribe, 8),
+            (ControlPacketType::SubAck, 9),
+            (ControlPacketType::Unsubscribe, 10),
+            (ControlPacketType::UnsubAck, 11),
+            (ControlPacketType::PingReq, 12),
+            (ControlPacketType::PingResp, 13),
+            (ControlPacketType::Disconnect, 14),
+            (ControlPacketType::Auth, 15),
         ] {
-            assert_eq!(ControlPacketType::from_bits(t.to_bits()), Some(t));
+            assert_eq!(t.to_bits(), v);
+            assert_eq!(ControlPacketType::from_bits(v), Some(t));
         }
     }
 
     #[test]
-    fn packet_type_zero_is_reserved() {
+    fn mqtt5_2_1_2_packet_type_zero_is_reserved() {
         // Spec §2.1.2 Table 2-1 — Code 0 is Reserved.
         assert_eq!(ControlPacketType::from_bits(0), None);
     }
 
     #[test]
-    fn publish_header_decodes_dup_qos_retain_flags() {
+    fn mqtt5_2_1_publish_header_decodes_dup_qos_retain_flags() {
         // Spec §2.1.3 — flags layout.
         let h = FixedHeader {
             packet_type: ControlPacketType::Publish,

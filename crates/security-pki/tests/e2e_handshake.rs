@@ -54,7 +54,7 @@ const B_SIG_PLACEHOLDER: &[u8] = b"b-signature-placeholder-32-bytes";
 const OCSP_STATUS: &[u8] = b"";
 
 #[test]
-fn full_three_stage_handshake() {
+fn security_8_2_full_three_stage_handshake() {
     // Stage 1: A -> B (Request)
     let req_bytes = build_request_token(&RequestBuildInput {
         version: Default::default(),
@@ -123,7 +123,7 @@ fn full_three_stage_handshake() {
 }
 
 #[test]
-fn tampered_request_token_fails_hash_check() {
+fn security_10_3_4_2_tampered_request_token_fails_hash_check() {
     let mut req_bytes = build_request_token(&RequestBuildInput {
         version: Default::default(),
         cert_der: A_CERT,
@@ -145,7 +145,7 @@ fn tampered_request_token_fails_hash_check() {
 }
 
 #[test]
-fn replay_attack_with_swapped_challenges_detected() {
+fn security_10_3_4_2_replay_attack_with_swapped_challenges_detected() {
     // Simulates a MitM: the attacker intercepts a valid reply token and
     // tries to forward it with a swapped challenge2 — the
     // hash-C2 recompute would indeed match if c.dsign_algo is also
@@ -215,7 +215,7 @@ fn empty_certs_rejected_by_dos_cap() {
 }
 
 #[test]
-fn handshake_with_different_cert_dh_combos() {
+fn security_10_3_2_5_3_handshake_with_different_cert_dh_combos() {
     // Sanity: 5 different cert/DH combinations all produce
     // valid tokens and round-trip.
     for seed in 0u8..5 {

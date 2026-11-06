@@ -76,8 +76,8 @@ controlled by a build flag AND a config flag.**
 **Follow-up tasks**:
 - F-Iox: implement Iceoryx2SlotAdapter (against the `SlotBackend`
   trait from ADR-0003).
-- Documentation: `internal/integration/flatdata-backend-choice.md` as
-  decision guidance for callers.
+- Documentation: decision guidance for callers in
+  `docs/specs/zerodds-flatdata-1.0.md`.
 - CI: `--features iceoryx2-bridge` build as a separate job.
 
 ## References

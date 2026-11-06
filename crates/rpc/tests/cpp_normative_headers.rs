@@ -13,7 +13,10 @@
 //!   vendor files the same unit had 254 errors.
 //! * A program written against them (`tests/cpp/normative_roundtrip.cpp`)
 //!   runs a request/reply and a function call against the ZeroDDS runtime over
-//!   `libzerodds` (Linux, or `ZD_RUN_GENERATED=1`).
+//!   `libzerodds` (Linux, or `ZD_RUN_GENERATED=1`), on a leased domain. Its
+//!   build does not fit the 25 s of a crate-tier test, so it runs in the job
+//!   `integration-sdk`, after `tests/integration/rpc_cpp.sh` built the
+//!   library.
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stdout)]
 
 use std::path::{Path, PathBuf};
@@ -30,9 +33,8 @@ const INTERFACE: &str = "
     };
 ";
 
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+mod common;
+use common::root;
 
 fn generated_header() -> String {
     let parsed = zerodds_idl_parse::parse(INTERFACE);
@@ -83,14 +85,14 @@ fn normative_dir() -> PathBuf {
 
 fn sha256(path: &Path) -> String {
     for tool in [&["sha256sum"][..], &["shasum", "-a", "256"][..]] {
-        if let Ok(out) = Command::new(tool[0]).args(&tool[1..]).arg(path).output() {
-            if out.status.success() {
-                return String::from_utf8_lossy(&out.stdout)
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or_default()
-                    .to_string();
-            }
+        if let Ok(out) = Command::new(tool[0]).args(&tool[1..]).arg(path).output()
+            && out.status.success()
+        {
+            return String::from_utf8_lossy(&out.stdout)
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_string();
         }
     }
     panic!("neither sha256sum nor shasum is available");
@@ -114,7 +116,7 @@ fn locate_zip() -> Option<PathBuf> {
 }
 
 #[test]
-fn the_shipped_headers_are_the_omg_files() {
+fn rpc_7_11_1_the_shipped_headers_are_the_omg_files() {
     let list = std::fs::read_to_string(normative_dir().join("omg-dds-rpc-cxx.sha256"))
         .expect("the sha256 list");
     for file in FILES {
@@ -162,7 +164,7 @@ fn the_shipped_headers_are_the_omg_files() {
 }
 
 #[test]
-fn the_normative_headers_compile_against_vendor_dependent_h() {
+fn rpc_7_11_1_the_normative_headers_compile_against_vendor_dependent_h() {
     let tmp = std::env::temp_dir().join(format!("zd-normative-tu-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&tmp);
     std::fs::create_dir_all(&tmp).expect("tmp");
@@ -191,21 +193,15 @@ fn the_normative_headers_compile_against_vendor_dependent_h() {
 }
 
 #[test]
-fn a_program_against_the_normative_headers_runs_against_libzerodds() {
+#[ignore = "integration-sdk: builds a C++ program against libzerodds, which tests/integration/rpc_cpp.sh builds first; run with --run-ignored"]
+fn rpc_7_11_1_a_program_against_the_normative_headers_runs_against_libzerodds() {
     if !(cfg!(target_os = "linux") || std::env::var("ZD_RUN_GENERATED").is_ok_and(|v| v == "1")) {
         println!("not Linux and ZD_RUN_GENERATED is not 1: the program is compiled by no one here");
         return;
     }
     let root = root();
-    let build_dir = root.join("target/cpp-smoke");
-    run(
-        Command::new(env!("CARGO"))
-            .args(["build", "-p", "zerodds-c-api", "--release", "--target-dir"])
-            .arg(&build_dir)
-            .current_dir(&root),
-        "cargo build zerodds-c-api",
-    );
-    let lib_dir = build_dir.join("release");
+    let lib_dir = common::library_dir();
+    let lease = zerodds_test_domains::lease_domain();
     let at = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join("dds-rpc-cpp")
         .join("normative");
@@ -236,8 +232,9 @@ fn a_program_against_the_normative_headers_runs_against_libzerodds() {
     );
     let output = run(
         Command::new(&binary)
-            .env("LD_LIBRARY_PATH", &lib_dir)
-            .env("DYLD_LIBRARY_PATH", &lib_dir),
+            .arg(lease.id().to_string())
+            .env("LD_LIBRARY_PATH", lib_dir)
+            .env("DYLD_LIBRARY_PATH", lib_dir),
         "the normative program",
     );
     let text = String::from_utf8_lossy(&output.stdout);

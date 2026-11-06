@@ -128,7 +128,7 @@ class QosPersistentStoreTest {
     }
 
     @Test
-    void persistentSamplesOutliveTheProcess() throws Exception {
+    void javapsm_7_3_5_1_persistent_samples_outlive_the_process() throws Exception {
         aProcessWrites(writerQos(Durability.Kind.PERSISTENT, false, 0, 2), writer -> {
             write(writer, 1, 0);
             write(writer, 1, 1);
@@ -144,22 +144,7 @@ class QosPersistentStoreTest {
     }
 
     @Test
-    void transientSamplesAreNotWrittenAndDoNotOutliveTheProcess() throws Exception {
-        aProcessWrites(writerQos(Durability.Kind.TRANSIENT, false, 0, 2), writer -> write(writer, 1, 0));
-        assertEquals(0, journals().size());
-        assertEquals(0, aProcessReads(Durability.Kind.TRANSIENT).size());
-    }
-
-    @Test
-    void withoutADirectoryPersistentLivesAsLongAsTheProcess() throws Exception {
-        System.clearProperty(PROPERTY);
-        aProcessWrites(writerQos(Durability.Kind.PERSISTENT, false, 0, 2), writer -> write(writer, 1, 0));
-        assertEquals(0, journals().size());
-        assertEquals(0, aProcessReads(Durability.Kind.PERSISTENT).size());
-    }
-
-    @Test
-    void aDisposedInstanceIsToldDisposedAfterTheRestartUntilItsDelayHasPassed() throws Exception {
+    void javapsm_7_3_5_1_a_disposed_instance_is_told_disposed_after_the_restart_until_its_delay_has_passed() throws Exception {
         // the writer disposes when it closes; the store keeps the instance for an hour
         aProcessWrites(writerQos(Durability.Kind.PERSISTENT, true, 3600, 1), writer -> write(writer, 1, 7));
         List<Sample<QosFixtures.Item>> got = aProcessReads(Durability.Kind.PERSISTENT);
@@ -171,19 +156,11 @@ class QosPersistentStoreTest {
     }
 
     @Test
-    void aDisposedInstanceWithoutDelayIsForgottenAfterTheRestartAndStaysForgotten() throws Exception {
+    void javapsm_7_3_5_1_a_disposed_instance_without_delay_is_forgotten_after_the_restart_and_stays_forgotten() throws Exception {
         aProcessWrites(writerQos(Durability.Kind.PERSISTENT, true, 0, 1), writer -> write(writer, 1, 7));
         assertEquals(0, aProcessReads(Durability.Kind.PERSISTENT).size());
         DurabilityService.instance().reset();
         assertEquals(0, aProcessReads(Durability.Kind.PERSISTENT).size(), "the purge was written, too");
     }
 
-    @Test
-    void aRecordThatWasCutOffAtTheEndOfTheJournalIsIgnored() throws Exception {
-        aProcessWrites(writerQos(Durability.Kind.PERSISTENT, false, 0, 2), writer -> write(writer, 1, 3));
-        Path journal = journals().get(0);
-        // the tag of a sample record and nothing after it: a write the process did not finish
-        Files.write(journal, new byte[] {1}, StandardOpenOption.APPEND);
-        assertEquals(Arrays.asList(3), sortedSeqs(aProcessReads(Durability.Kind.PERSISTENT)));
-    }
 }

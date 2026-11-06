@@ -124,6 +124,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), ver
   §7.4.3 and §7.5.1.2 do not.
 
 ### Changed
+- The two tests that run a C++ program against `libzerodds`
+  (`cpp_normative_headers::a_program_against_the_normative_headers_runs_against_libzerodds`,
+  `cpp_rpc_real_library::the_cpp_binding_runs_against_libzerodds`) run in the
+  job `integration-sdk`, after `tests/integration/rpc_cpp.sh` built the
+  library; in the merge lane their cargo build of `zerodds-c-api` took them
+  past 25 s (pipeline 8642, job 227953). The programs take the domain the
+  test leased (`zerodds-test-domains`) instead of the fixed 87 and 88. The
+  type evolution of §7.7.2.5 is in two programs and tests of their own
+  (`rpc_7_7_2_5_the_cpp_binding_matches_by_assignability_against_libzerodds`,
+  `rpc_7_7_2_5_5_a_changed_return_type_matches_by_assignability_against_libzerodds`):
+  with the Calculator's, the build (13.1 s) and the run (7.7 s, two waits of
+  3 s for a service that must not match) came to 22.0 s of the 25 s on the
+  Linux test host; split, the four tests take 8.6 s to 11.5 s there, run
+  side by side under the nextest profile `integration`.
+
 - Java `ServiceProxy.waitForService…` return nothing, wait, and throw
   `TimeoutError` when the wait runs out, as the machine-readable files and
   the C++ binding have them; `isServiceMatched()` asks without waiting.

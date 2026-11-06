@@ -487,7 +487,7 @@ fn resolve_primitive(ast: &Ast, id: Id<TypeNode>, depth: usize) -> Option<Primit
 
 /// `Enum.map(Tuple.to_list(v), fn zd_a1 -> … end)`, one level per
 /// dimension. The decoder answers an array as nested tuples
-/// (`ZeroddsWire.array_to_tuples`, since `fb65ea29e50`), and `Enum` takes
+/// (`ZeroddsWire.array_to_tuples`, since `ba66cef350a`), and `Enum` takes
 /// no tuple: every array cell of the matrix refresh of 2026-10-02 failed its
 /// read with "protocol Enumerable not implemented for type Tuple".
 fn nested_map(element: &str, dims: usize) -> String {

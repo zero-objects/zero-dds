@@ -112,22 +112,22 @@ fn both_directions(source: &str, type_name: &str) {
 }
 
 #[test]
-fn a_final_struct_gets_a_reader() {
+fn ddsts_2_1_a_final_struct_gets_a_reader() {
     both_directions("@final struct S { long a; double b; boolean c; };", "S");
 }
 
 #[test]
-fn an_appendable_struct_gets_a_reader() {
+fn ddsts_2_1_an_appendable_struct_gets_a_reader() {
     both_directions("@appendable struct S { long a; long b; };", "S");
 }
 
 #[test]
-fn a_mutable_struct_gets_a_reader() {
+fn ddsts_2_1_a_mutable_struct_gets_a_reader() {
     both_directions("@mutable struct S { @id(1) long a; @id(2) long b; };", "S");
 }
 
 #[test]
-fn an_optional_member_gets_a_reader() {
+fn ddsts_2_1_an_optional_member_gets_a_reader() {
     both_directions("@final struct S { @optional long a; long b; };", "S");
 }
 
@@ -162,7 +162,7 @@ fn an_enumeration_gets_a_reader() {
 /// rule (5) makes the holder signed, so `@value(200)` is the pattern
 /// `-56` and an unsigned read matched no arm at all.
 #[test]
-fn a_signed_enumerator_pattern_gets_a_reader() {
+fn xtypes_7_2_2_4_1_1_a_signed_enumerator_pattern_gets_a_reader() {
     both_directions(
         "@bit_bound(8) enum Level { @value(1) LOW, @value(200) HIGH }; \
          @final struct S { Level l; };",
@@ -280,8 +280,7 @@ fn generated_file(source: &str, type_name: &str) -> String {
 ///
 /// One test and not one per shape, because `tsc` costs seconds and the
 /// failure names the file it came from anyway.
-#[test]
-fn the_generated_reader_type_checks() {
+fn the_generated_reader_type_checks(share: usize, shares: usize) {
     let shapes: &[(&str, &str, &str)] = &[
         (
             "primitives",
@@ -363,7 +362,10 @@ fn the_generated_reader_type_checks() {
         return;
     };
     let mut failures: Vec<String> = Vec::new();
-    for (name, source, type_name) in shapes {
+    for (position, (name, source, type_name)) in shapes.iter().enumerate() {
+        if position % shares != share {
+            continue;
+        }
         let text = generated_file(source, type_name);
         let report = typescript_toolchain::typecheck(&tsc, name, &text, &[]);
         if !report.trim().is_empty() {
@@ -375,4 +377,21 @@ fn the_generated_reader_type_checks() {
         "the generated TypeScript does not type-check:\n{}",
         failures.join("\n")
     );
+}
+
+/// DDS-TS 1.0 §7.4: the reader generated for every shape above type-checks
+/// under `tsc`; 12.8 s for all of them on the Linux test host.
+///
+/// In shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"); the language's weekly job and its merge job run them.
+mod ddsts_7_4_the_generated_reader_type_checks {
+    #[test]
+    fn share_01() {
+        super::the_generated_reader_type_checks(0, 2);
+    }
+
+    #[test]
+    fn share_02() {
+        super::the_generated_reader_type_checks(1, 2);
+    }
 }

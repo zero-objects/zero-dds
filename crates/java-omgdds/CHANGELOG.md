@@ -18,6 +18,18 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- The tests by B3 (`rc8-test-suite.md`, "Rules"): 940 to 741. Gone: round trips of the own encoder
+  and decoder, checks of the own design without a clause, and tests another one already checks
+  (`Xcdr2WireVectorsTest` checked what the self-test of `runtime/java` checks, which
+  `zerodds-lang-rules` runs; `SequencesTest` the helper API of that runtime); rewritten against octets written out from the clauses:
+  the built-in topic data on the parameter IDs of DDSI-RTPS 2.5 Table 9.13, the primitive kinds of
+  Table 8.1, the MUTABLE and the derived structures, the DynamicData of nested structures, Float128 and
+  UInt64 sequences, INFO_TS before a DATA, the DDS-RPC discovery parameters. Every test is named after
+  its clause (`javapsm_<clause>_…`, `rtps_…`, `xtypes_…`, `rpc_…`, `javaomgdds_…`, `async_…`); the
+  coverage documents cite the new names. Fixed sleeps that ordered threads or waited for nothing are
+  waits on an event now (`org.zerodds.testing.Waits`: a thread parked in a named method, a
+  condition); the test that needs the gRPC bridge daemon carries the JUnit tag `bridge-daemon`.
+
 - A reliable reader takes a user DATA or GAP only from a writer it has matched (DDSI-RTPS 2.5
   §8.4.12). One addressed to it before the match went into its receive state and was dropped, and
   the next ACKNACK acknowledged it: a request a Rust client pushed to a service still fetching the
@@ -138,6 +150,24 @@ versioning follows [Semantic Versioning](https://semver.org/).
   not Serializable are not part of the type of a Serializable class.
 
 ### Fixed
+
+- A Java class without `@Id` numbered its members from 1; DDS-XTypes 1.3 §7.3.1.2.1.1 gives the first
+  member of a type without a base type the ID 0, and a union's cases follow its discriminator (ID 0)
+  from 1. `ReflectionTypeSupport` assigned 1, 2, … (the EMHEADERs of a MUTABLE class and the
+  member IDs of `createType(Class)` and its TypeObject), and a union's cases from 2. Now 0, 1, … and
+  the cases from 1; `xtypes_7_4_3_5_3_a_mutable_structure_numbers_its_members_from_zero_and_aligns_an_eight_octet_member_to_four`
+  and `xtypes_7_4_3_5_3_a_mutable_union_carries_its_discriminator_as_member_zero_and_the_cases_from_one`
+  hold the octets.
+- A TRANSIENT_LOCAL DataWriter over RTPS gave a remote reader that matched later none of the samples it
+  kept (DDS 1.4 §2.2.3.4): `RtpsParticipant.WireWriter` held a sample only for the readers matched when
+  it was written. The DataWriter now hands the wire writer the samples it keeps (its HISTORY,
+  LIFESPAN, dispose and unregister), each under the sequence number it went out with, and a reliable
+  reader that matches later gets them and the HEARTBEAT
+  (`javapsm_2_a_transient_local_writer_hands_what_it_keeps_to_a_reader_of_another_process_that_matches_later`).
+  `ReaderWireHistoricalDataTest`, which depended on the timing of the match (OPEN-ITEMS 37), writes
+  its samples before the reader exists now.
+- `RtpsParticipant` logs the pair it does not match for a type name it does not take, as it did for a
+  verdict on TypeInformation (`SEDP no match: …`).
 - A reliable writer repairs at the locator of the reader proxy, the one its samples went to, and
   not at the UDP source of the ACKNACK or NACK_FRAG (DDSI-RTPS 2.5 §8.4.9.2.8; §8.3.4.1 gives the
   reply locator of a received message no port). A reader that sends from another socket than it

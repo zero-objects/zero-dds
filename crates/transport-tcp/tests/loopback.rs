@@ -25,7 +25,7 @@ use zerodds_transport::Transport;
 use zerodds_transport_tcp::TcpTransport;
 
 #[test]
-fn loopback_single_frame_end_to_end() {
+fn tcp_1_2_loopback_single_frame_end_to_end() {
     // Bind side (Server).
     let server = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
     let server_loc = server.local_locator();
@@ -60,7 +60,7 @@ fn loopback_single_frame_end_to_end() {
 }
 
 #[test]
-fn reconnect_after_peer_restart() {
+fn tcp_5_1_reconnect_after_peer_restart() {
     // We start a server, send, the server closes (via accept_one
     // return), then we start a second server on the *same* address
     // and expect a new send to succeed (a new connect attempt).
@@ -83,7 +83,7 @@ fn reconnect_after_peer_restart() {
 }
 
 #[test]
-fn backoff_prevents_tight_loop_on_dead_peer() {
+fn tcp_5_2_backoff_prevents_tight_loop_on_dead_peer() {
     let client = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("client bind");
     // Port 2 is reserved and on connect() typically yields
     // ECONNREFUSED — perfect for the backoff test.
@@ -102,7 +102,7 @@ fn backoff_prevents_tight_loop_on_dead_peer() {
 }
 
 #[test]
-fn concurrent_senders_to_one_server() {
+fn tcp_1_2_concurrent_senders_to_one_server() {
     // B10/#13: two client threads fire 50 frames in parallel at one
     // server; the server reads everything and checks the count.
     let server = TcpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
@@ -148,7 +148,7 @@ fn concurrent_senders_to_one_server() {
 /// length prefix and the first payload half before the rest exists. The
 /// frame pump must hand up exactly one reassembled datagram.
 #[test]
-fn frame_split_across_two_writes_is_reassembled() {
+fn tcp_2_2_frame_split_across_two_writes_is_reassembled() {
     use std::io::Write;
     use std::net::{Ipv4Addr as V4, SocketAddrV4, TcpStream};
 

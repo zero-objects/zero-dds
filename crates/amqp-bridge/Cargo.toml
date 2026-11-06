@@ -42,7 +42,6 @@ alloc = []
 codec-lite = []
 
 [dev-dependencies]
-proptest = { workspace = true }
 criterion = { workspace = true }
 zerodds-idl-parse = { path = "../idl-parse", version = "1.0.0-rc.7" }
 zerodds-idl-lower = { path = "../idl-lower", version = "1.0.0-rc.7" }

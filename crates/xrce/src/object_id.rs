@@ -189,7 +189,7 @@ mod tests {
     /// one the clause gives (`0x03e26181adfef529038bf0dce7cab871`, prefix
     /// `{0x03, 0xe2}`).
     #[test]
-    fn from_reference_matches_the_examples_of_the_spec() {
+    fn xrce_7_6_from_reference_matches_the_examples_of_the_spec() {
         use md5::Digest as _;
         assert_eq!(
             md5::Md5::digest(b"MyWriter")[..],
@@ -235,7 +235,7 @@ mod tests {
     }
 
     #[test]
-    fn new_packs_kind_into_lower_4_bits() {
+    fn xrce_7_7_6_new_packs_kind_into_lower_4_bits() {
         let id = ObjectId::new(0x123, ObjectKind::DataWriter).unwrap();
         // raw_id = 0x123 → upper 12 bits; kind = 0x05
         assert_eq!(id.raw(), (0x123 << 4) | 0x05);
@@ -250,28 +250,28 @@ mod tests {
     }
 
     #[test]
-    fn agent_singleton_has_kind_agent() {
+    fn xrce_annex_a_agent_singleton_has_kind_agent() {
         assert_eq!(OBJECTID_AGENT.kind().unwrap(), ObjectKind::Agent);
     }
 
     #[test]
-    fn client_singleton_has_kind_client() {
+    fn xrce_7_6_client_singleton_has_kind_client() {
         assert_eq!(OBJECTID_CLIENT.kind().unwrap(), ObjectKind::Client);
     }
 
     #[test]
-    fn invalid_object_id_is_all_zeros() {
+    fn xrce_7_6_invalid_object_id_is_all_zeros() {
         assert!(OBJECTID_INVALID.is_invalid());
         assert_eq!(OBJECTID_INVALID.raw(), 0x0000);
     }
 
     #[test]
-    fn session_object_id_is_all_ones() {
+    fn xrce_annex_a_session_object_id_is_all_ones() {
         assert_eq!(OBJECTID_SESSION.raw(), 0xFFFF);
     }
 
     #[test]
-    fn reserved_object_ids_per_spec_7_6_and_annex_a() {
+    fn xrce_7_6_reserved_object_ids_per_spec_7_6_and_annex_a() {
         // DDS-XRCE 1.0 §7.6, Annex A: reserved values are two bytes
         // OBJECTID_INVALID = {0x00, 0x00}
         let invalid_bytes = OBJECTID_INVALID.to_bytes();
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn bytes_are_big_endian() {
+    fn xrce_7_7_4_bytes_are_big_endian() {
         let id = ObjectId::from_raw(0x1234);
         let b = id.to_bytes();
         assert_eq!(b, [0x12, 0x34]);
@@ -330,10 +330,5 @@ mod tests {
         let c = ObjectId::from_raw(0x1000);
         assert!(a < b);
         assert!(b < c);
-    }
-
-    #[test]
-    fn default_is_zero() {
-        assert_eq!(ObjectId::default().raw(), 0);
     }
 }

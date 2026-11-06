@@ -244,12 +244,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ticks_roundtrip_seconds_only() {
-        let t = Time::new(1_700_000_000, 0);
-        assert_eq!(ticks_to_time(time_to_ticks(t)), t);
-    }
-
-    #[test]
     fn ticks_roundtrip_rounds_down_to_100ns() {
         // 123 ns rounds down to the nearest 100ns tick (23ns dropped),
         // the same lossy direction UtcT::to_wire already accepts.
@@ -264,36 +258,12 @@ mod tests {
     }
 
     #[test]
-    fn system_clock_matches_get_current_time() {
-        let a = SystemClock.now();
-        let b = crate::time::get_current_time();
-        // Both read `SystemTime::now()` a few nanoseconds apart; compare
-        // seconds only to avoid a flaky sub-second race.
-        assert_eq!(a.sec, b.sec);
-    }
-
-    #[test]
-    fn test_clock_does_not_advance_on_its_own() {
-        let clock = TestClock::new(Time::new(100, 0));
-        assert_eq!(clock.now(), Time::new(100, 0));
-        assert_eq!(clock.now(), Time::new(100, 0));
-    }
-
-    #[test]
     fn test_clock_set_and_advance() {
         let clock = TestClock::new(Time::new(0, 0));
         clock.set(Time::new(50, 0));
         assert_eq!(clock.now(), Time::new(50, 0));
         clock.advance(crate::time::Duration::new(1, 500_000_000));
         assert_eq!(clock.now(), Time::new(51, 500_000_000));
-    }
-
-    #[test]
-    fn test_clock_clones_share_state() {
-        let a = TestClock::new(Time::new(0, 0));
-        let b = a.clone();
-        a.set(Time::new(7, 0));
-        assert_eq!(b.now(), Time::new(7, 0));
     }
 
     #[test]

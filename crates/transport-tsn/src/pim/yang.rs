@@ -759,7 +759,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_id_yang_string_is_mac_plus_16bit_id() {
+    fn tsn_7_3_3_stream_id_yang_string_is_mac_plus_16bit_id() {
         let sid = StreamId {
             mac: [0x00, 0x11, 0x22, 0x33, 0x44, 0x55],
             unique_id: 0x0007,
@@ -768,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_id_uses_node_mac_and_datawriter_id() {
+    fn tsn_7_3_3_stream_id_uses_node_mac_and_datawriter_id() {
         // §7.3.3: first 6 octets = node MAC, last 2 = DataWriter ID.
         let g = GroupTalker::from_talker(
             &eth_talker(),
@@ -782,14 +782,14 @@ mod tests {
     }
 
     #[test]
-    fn talker_stream_rank_is_one_per_spec() {
+    fn tsn_7_3_3_talker_stream_rank_is_one_per_spec() {
         let g =
             GroupTalker::from_talker(&eth_talker(), [0; 6], 0, InterfaceCapabilities::default());
         assert_eq!(g.stream_rank, 1);
     }
 
     #[test]
-    fn ethernet_data_frame_maps_mac_and_vlan_from_stream() {
+    fn tsn_7_3_3_ethernet_data_frame_maps_mac_and_vlan_from_stream() {
         let g = GroupTalker::from_talker(
             &eth_talker(),
             [0; 6],
@@ -812,7 +812,7 @@ mod tests {
     }
 
     #[test]
-    fn ipv4_data_frame_maps_tuple_including_dscp() {
+    fn tsn_7_3_3_ipv4_data_frame_maps_tuple_including_dscp() {
         let mut t = eth_talker();
         t.data_frame = Some(DataFrameSpecification::IPv4(IPv4Tuple {
             source_ip: [10, 0, 0, 1],
@@ -835,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn absent_data_frame_yields_none() {
+    fn tsn_7_3_3_absent_data_frame_yields_none() {
         let mut t = eth_talker();
         t.data_frame = None;
         let g = GroupTalker::from_talker(&t, [0; 6], 0, InterfaceCapabilities::default());
@@ -843,7 +843,7 @@ mod tests {
     }
 
     #[test]
-    fn interval_is_period_as_reduced_fraction_of_second() {
+    fn tsn_7_3_3_interval_is_period_as_reduced_fraction_of_second() {
         // 1 ms = 1/1000 s.
         assert_eq!(
             Interval::from_nanoseconds(1_000_000),
@@ -871,7 +871,7 @@ mod tests {
     }
 
     #[test]
-    fn traffic_spec_maps_all_fields() {
+    fn tsn_7_3_3_traffic_spec_maps_all_fields() {
         let g =
             GroupTalker::from_talker(&eth_talker(), [0; 6], 0, InterfaceCapabilities::default());
         let ts = g.traffic_specification;
@@ -882,7 +882,7 @@ mod tests {
     }
 
     #[test]
-    fn time_aware_unspecified_sets_zero_offsets() {
+    fn tsn_7_3_3_time_aware_unspecified_sets_zero_offsets() {
         // §7.3.3: if time_aware is None, all three leaves are 0.
         let mut t = eth_talker();
         t.time_aware = None;
@@ -894,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn time_aware_present_maps_offsets() {
+    fn tsn_7_3_3_time_aware_present_maps_offsets() {
         let g =
             GroupTalker::from_talker(&eth_talker(), [0; 6], 0, InterfaceCapabilities::default());
         let ta = g.traffic_specification.time_aware;
@@ -904,7 +904,7 @@ mod tests {
     }
 
     #[test]
-    fn user_to_network_requirements_present_when_talker_has_them() {
+    fn tsn_7_3_3_user_to_network_requirements_present_when_talker_has_them() {
         let g =
             GroupTalker::from_talker(&eth_talker(), [0; 6], 0, InterfaceCapabilities::default());
         let unr = g.user_to_network_requirements.expect("unr");
@@ -913,7 +913,7 @@ mod tests {
     }
 
     #[test]
-    fn user_to_network_requirements_absent_when_talker_has_none() {
+    fn tsn_7_3_3_user_to_network_requirements_absent_when_talker_has_none() {
         let mut t = eth_talker();
         t.network_requirements = None;
         let g = GroupTalker::from_talker(&t, [0; 6], 0, InterfaceCapabilities::default());
@@ -921,7 +921,7 @@ mod tests {
     }
 
     #[test]
-    fn end_station_interface_carries_node_mac_and_ifname() {
+    fn tsn_7_3_3_end_station_interface_carries_node_mac_and_ifname() {
         let g = GroupTalker::from_talker(
             &eth_talker(),
             [1, 2, 3, 4, 5, 6],
@@ -934,7 +934,7 @@ mod tests {
     }
 
     #[test]
-    fn listener_maps_node_mac_and_requirements() {
+    fn tsn_7_3_3_listener_maps_node_mac_and_requirements() {
         let l = TsnListener {
             name: "l1".into(),
             stream_name: "ControlStream".into(),
@@ -958,7 +958,7 @@ mod tests {
     }
 
     #[test]
-    fn config_transform_assigns_sequential_datawriter_ids() {
+    fn tsn_1_config_transform_assigns_sequential_datawriter_ids() {
         let cfg = TsnConfiguration {
             name: "cfg".into(),
             tsn_talkers: alloc::vec![eth_talker(), eth_talker()],
@@ -976,7 +976,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn yang_json_contains_normative_keys() {
+    fn tsn_7_3_3_yang_json_contains_normative_keys() {
         let g = GroupTalker::from_talker(
             &eth_talker(),
             [0xDE, 0xAD, 0xBE, 0xEF, 0, 1],
@@ -1002,7 +1002,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn yang_json_groups_has_both_arrays() {
+    fn tsn_7_3_3_yang_json_groups_has_both_arrays() {
         let cfg = TsnConfiguration {
             name: "cfg".into(),
             tsn_talkers: alloc::vec![eth_talker()],

@@ -436,186 +436,170 @@ fn decode_str32(
 mod tests {
     use super::*;
 
-    #[test]
-    fn null_encodes_to_single_byte_0x40() {
-        // Spec §1.6.1.
-        assert_eq!(encode_null(), alloc::vec![0x40]);
-    }
+    // Expected octets from OASIS AMQP 1.0 Part 1 (`amqp-1.0-types`), §1.6:
+    // the format code of each encoding and its width.
 
     #[test]
-    fn boolean_uses_compact_format_codes() {
-        // Spec §1.6.2 — 0x41 true, 0x42 false.
+    fn amqp10_1_6_1_null_is_0x40() {
+        assert_eq!(encode_null(), alloc::vec![0x40]);
+        assert_eq!(decode_value(&[0x40]), Ok((AmqpValue::Null, 1)));
+    }
+
+    /// §1.6.2: `boolean` is 0x56 with one octet, or 0x41 (true) and 0x42
+    /// (false) without one.
+    #[test]
+    fn amqp10_1_6_2_a_boolean_is_0x41_0x42_or_0x56_and_an_octet() {
         assert_eq!(encode_boolean(true), alloc::vec![0x41]);
         assert_eq!(encode_boolean(false), alloc::vec![0x42]);
-    }
-
-    #[test]
-    fn ulong_zero_uses_ulong0_format() {
-        // Spec §1.6.6.
-        assert_eq!(encode_ulong(0), alloc::vec![0x44]);
-    }
-
-    #[test]
-    fn ulong_small_uses_smallulong_format() {
-        // Spec §1.6.6 — smallulong = 0x53 + 1 byte.
-        assert_eq!(encode_ulong(255), alloc::vec![0x53, 0xFF]);
-    }
-
-    #[test]
-    fn ulong_large_uses_full_8_byte_format() {
-        // Spec §1.6.6 — ulong = 0x80 + 8 bytes BE.
-        let bytes = encode_ulong(0x1122_3344_5566_7788);
-        assert_eq!(bytes[0], 0x80);
-        assert_eq!(&bytes[1..], &0x1122_3344_5566_7788_u64.to_be_bytes());
-    }
-
-    #[test]
-    fn long_small_uses_smalllong_format() {
-        // Spec §1.6.10 — smalllong = 0x55 + 1 byte (signed).
-        assert_eq!(encode_long(-1), alloc::vec![0x55, 0xFF]);
-        assert_eq!(encode_long(127), alloc::vec![0x55, 0x7F]);
-    }
-
-    #[test]
-    fn long_large_uses_full_8_byte_format() {
-        let bytes = encode_long(i64::MIN);
-        assert_eq!(bytes[0], 0x81);
-    }
-
-    #[test]
-    fn binary_short_uses_vbin8_format() {
-        // Spec §1.6.19 — vbin8 = 0xA0 + 1 byte len.
-        let bytes = encode_binary(&[1, 2, 3]).expect("encode");
-        assert_eq!(bytes, alloc::vec![0xA0, 0x03, 1, 2, 3]);
-    }
-
-    #[test]
-    fn binary_long_uses_vbin32_format() {
-        // Spec §1.6.19 — vbin32 = 0xB0 + 4 byte BE len.
-        let data = alloc::vec![0xAA; 300];
-        let bytes = encode_binary(&data).expect("encode");
-        assert_eq!(bytes[0], 0xB0);
-        assert_eq!(&bytes[1..5], &300u32.to_be_bytes());
-    }
-
-    #[test]
-    fn string_short_uses_str8_format() {
-        // Spec §1.6.20 — str8-utf8 = 0xA1 + 1 byte len + UTF-8.
-        let bytes = encode_string("hi").expect("encode");
-        assert_eq!(bytes, alloc::vec![0xA1, 0x02, b'h', b'i']);
-    }
-
-    #[test]
-    fn string_unicode_round_trip() {
-        let bytes = encode_string("Käfer").expect("encode");
-        let (parsed, consumed) = decode_value(&bytes).expect("decode");
-        assert_eq!(consumed, bytes.len());
-        match parsed {
-            AmqpValue::String(s) => assert_eq!(s, "Käfer"),
-            _ => panic!("expected string"),
-        }
-    }
-
-    #[test]
-    fn symbol_rejects_non_ascii() {
-        // Spec §1.6.21 — Symbols are ASCII.
-        assert_eq!(encode_symbol("Käfer"), Err(TypeError::NonAsciiSymbol));
-    }
-
-    #[test]
-    fn symbol_short_uses_sym8_format() {
-        let bytes = encode_symbol("hello").expect("encode");
-        assert_eq!(bytes[0], 0xA3);
-        assert_eq!(bytes[1], 0x05);
-        assert_eq!(&bytes[2..], b"hello");
-    }
-
-    #[test]
-    fn round_trip_all_primitive_values() {
-        let values = alloc::vec![
-            (encode_null(), AmqpValue::Null),
-            (encode_boolean(true), AmqpValue::Boolean(true)),
-            (encode_boolean(false), AmqpValue::Boolean(false)),
-            (encode_ulong(0), AmqpValue::Ulong(0)),
-            (encode_ulong(42), AmqpValue::Ulong(42)),
-            (
-                encode_ulong(0x1234_5678_9ABC_DEF0),
-                AmqpValue::Ulong(0x1234_5678_9ABC_DEF0)
-            ),
-            (encode_long(-100), AmqpValue::Long(-100)),
-            (encode_long(i64::MIN), AmqpValue::Long(i64::MIN)),
-            (
-                encode_binary(&[1, 2, 3]).expect("ok"),
-                AmqpValue::Binary(alloc::vec![1, 2, 3])
-            ),
-            (
-                encode_binary(&alloc::vec![0u8; 500]).expect("ok"),
-                AmqpValue::Binary(alloc::vec![0u8; 500])
-            ),
-            (
-                encode_string("foo").expect("ok"),
-                AmqpValue::String("foo".into())
-            ),
-            (
-                encode_symbol("bar").expect("ok"),
-                AmqpValue::Symbol("bar".into())
-            ),
-        ];
-        for (bytes, expected) in values {
-            let (parsed, consumed) = decode_value(&bytes).expect("decode");
-            assert_eq!(parsed, expected);
-            assert_eq!(consumed, bytes.len());
-        }
-    }
-
-    #[test]
-    fn unsupported_format_code_yields_error() {
-        // 0xFF is reserved/unsupported in our subset implementation.
         assert_eq!(
-            decode_value(&[0xFF]),
-            Err(TypeError::UnsupportedFormatCode(0xFF))
+            decode_value(&[0x56, 0x01]),
+            Ok((AmqpValue::Boolean(true), 2))
+        );
+        assert_eq!(
+            decode_value(&[0x56, 0x00]),
+            Ok((AmqpValue::Boolean(false), 2))
+        );
+        assert_eq!(decode_value(&[0x41]), Ok((AmqpValue::Boolean(true), 1)));
+        assert_eq!(decode_value(&[0x42]), Ok((AmqpValue::Boolean(false), 1)));
+    }
+
+    /// §1.6.6: `ulong0` 0x44, `smallulong` 0x53 and one octet, `ulong`
+    /// 0x80 and eight octets in network byte order.
+    #[test]
+    fn amqp10_1_6_6_a_ulong_is_ulong0_smallulong_or_eight_octets() {
+        assert_eq!(encode_ulong(0), alloc::vec![0x44]);
+        assert_eq!(encode_ulong(255), alloc::vec![0x53, 0xff]);
+        assert_eq!(
+            encode_ulong(0x1122_3344_5566_7788),
+            alloc::vec![0x80, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]
+        );
+        assert_eq!(decode_value(&[0x44]), Ok((AmqpValue::Ulong(0), 1)));
+        assert_eq!(decode_value(&[0x53, 0x2a]), Ok((AmqpValue::Ulong(42), 2)));
+        assert_eq!(
+            decode_value(&[0x80, 0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0]),
+            Ok((AmqpValue::Ulong(0x1234_5678_9abc_def0), 9))
         );
     }
 
+    /// §1.6.10: `smalllong` 0x55 and one signed octet, `long` 0x81 and
+    /// eight octets, two's complement in network byte order.
     #[test]
-    fn truncated_inputs_yield_error() {
-        assert_eq!(decode_value(&[]), Err(TypeError::Truncated));
-        assert_eq!(decode_value(&[0xA0]), Err(TypeError::Truncated)); // vbin8 without len.
-        assert_eq!(decode_value(&[0xA0, 5, 1]), Err(TypeError::Truncated)); // vbin8 truncated body.
-        assert_eq!(decode_value(&[0x80, 0, 0, 0]), Err(TypeError::Truncated)); // ulong truncated.
+    fn amqp10_1_6_10_a_long_is_smalllong_or_eight_octets() {
+        assert_eq!(encode_long(-1), alloc::vec![0x55, 0xff]);
+        assert_eq!(encode_long(127), alloc::vec![0x55, 0x7f]);
+        assert_eq!(
+            encode_long(i64::MIN),
+            alloc::vec![0x81, 0x80, 0, 0, 0, 0, 0, 0, 0]
+        );
+        assert_eq!(decode_value(&[0x55, 0x9c]), Ok((AmqpValue::Long(-100), 2)));
+        assert_eq!(
+            decode_value(&[0x81, 0x80, 0, 0, 0, 0, 0, 0, 0]),
+            Ok((AmqpValue::Long(i64::MIN), 9))
+        );
     }
 
+    /// §1.6.19: `vbin8` 0xa0 with a one-octet length, `vbin32` 0xb0 with a
+    /// four-octet length.
     #[test]
-    fn invalid_utf8_in_str_yields_error() {
-        // str8 with invalid UTF-8 byte 0xFF.
+    fn amqp10_1_6_19_binary_is_vbin8_or_vbin32() {
         assert_eq!(
-            decode_value(&[0xA1, 0x01, 0xFF]),
+            encode_binary(&[1, 2, 3]).expect("encode"),
+            alloc::vec![0xa0, 0x03, 1, 2, 3]
+        );
+        let long = encode_binary(&[0xaa; 300]).expect("encode");
+        assert_eq!(&long[..5], &[0xb0, 0x00, 0x00, 0x01, 0x2c]);
+        assert_eq!(long.len(), 305);
+        assert_eq!(
+            decode_value(&[0xb0, 0, 0, 0, 2, 0xca, 0xfe]),
+            Ok((AmqpValue::Binary(alloc::vec![0xca, 0xfe]), 7))
+        );
+    }
+
+    /// §1.6.20: `str8-utf8` 0xa1 with a one-octet length of the UTF-8
+    /// octets, `str32-utf8` 0xb1 with four.
+    #[test]
+    fn amqp10_1_6_20_a_string_is_its_utf_8_octets_after_the_length() {
+        assert_eq!(
+            encode_string("hi").expect("encode"),
+            alloc::vec![0xa1, 0x02, b'h', b'i']
+        );
+        let kaefer = [0xa1, 0x06, b'K', 0xc3, 0xa4, b'f', b'e', b'r'];
+        assert_eq!(encode_string("Käfer").expect("encode"), kaefer);
+        assert_eq!(
+            decode_value(&kaefer),
+            Ok((AmqpValue::String("Käfer".into()), 8))
+        );
+        assert_eq!(
+            decode_value(&[0xb1, 0, 0, 0, 3, b'f', b'o', b'o']),
+            Ok((AmqpValue::String("foo".into()), 8))
+        );
+    }
+
+    /// §1.6.20: a string whose octets are not UTF-8 is refused.
+    #[test]
+    fn amqp10_1_6_20_octets_that_are_not_utf_8_are_refused() {
+        assert_eq!(
+            decode_value(&[0xa1, 0x01, 0xff]),
             Err(TypeError::InvalidUtf8)
         );
     }
 
+    /// §1.6.21: a symbol is ASCII; `sym8` 0xa3 and `sym32` 0xb3.
     #[test]
-    fn format_code_categorizes_correctly() {
-        // Spec §1.2 Subcategories.
-        assert!(matches!(FormatCode::from_byte(0x40), FormatCode::Fixed(_)));
-        assert!(matches!(FormatCode::from_byte(0x80), FormatCode::Fixed(_)));
-        assert!(matches!(
-            FormatCode::from_byte(0xA0),
-            FormatCode::Variable(_)
-        ));
-        assert!(matches!(
-            FormatCode::from_byte(0xB0),
-            FormatCode::Variable(_)
-        ));
-        assert!(matches!(
-            FormatCode::from_byte(0xC0),
-            FormatCode::Compound(_)
-        ));
-        assert!(matches!(
-            FormatCode::from_byte(0xD0),
-            FormatCode::Compound(_)
-        ));
-        assert!(matches!(FormatCode::from_byte(0xE0), FormatCode::Array(_)));
-        assert!(matches!(FormatCode::from_byte(0xF0), FormatCode::Array(_)));
+    fn amqp10_1_6_21_a_symbol_is_ascii_after_sym8_or_sym32() {
+        assert_eq!(
+            encode_symbol("hello").expect("encode"),
+            alloc::vec![0xa3, 0x05, b'h', b'e', b'l', b'l', b'o']
+        );
+        assert_eq!(encode_symbol("Käfer"), Err(TypeError::NonAsciiSymbol));
+        assert_eq!(
+            decode_value(&[0xb3, 0, 0, 0, 3, b'b', b'a', b'r']),
+            Ok((AmqpValue::Symbol("bar".into()), 8))
+        );
+    }
+
+    /// §1.2: a format code the type system does not assign is refused,
+    /// and an encoding cut short is refused rather than read past.
+    #[test]
+    fn amqp10_1_2_an_unassigned_code_or_a_cut_encoding_is_refused() {
+        assert_eq!(
+            decode_value(&[0xff]),
+            Err(TypeError::UnsupportedFormatCode(0xff))
+        );
+        assert_eq!(decode_value(&[]), Err(TypeError::Truncated));
+        assert_eq!(decode_value(&[0xa0]), Err(TypeError::Truncated));
+        assert_eq!(decode_value(&[0xa0, 5, 1]), Err(TypeError::Truncated));
+        assert_eq!(decode_value(&[0x80, 0, 0, 0]), Err(TypeError::Truncated));
+    }
+
+    /// §1.2, Table 1-1 (subcategories by the high nibble): 0x4 fixed-0 to
+    /// 0x9 fixed-16, 0xa and 0xb variable, 0xc and 0xd compound, 0xe and
+    /// 0xf array.
+    #[test]
+    fn amqp10_1_2_the_high_nibble_names_the_subcategory() {
+        for code in [0x40, 0x56, 0x60, 0x70, 0x80, 0x98] {
+            assert!(
+                matches!(FormatCode::from_byte(code), FormatCode::Fixed(_)),
+                "{code:#x}"
+            );
+        }
+        for code in [0xa0, 0xb0] {
+            assert!(
+                matches!(FormatCode::from_byte(code), FormatCode::Variable(_)),
+                "{code:#x}"
+            );
+        }
+        for code in [0xc0, 0xd0] {
+            assert!(
+                matches!(FormatCode::from_byte(code), FormatCode::Compound(_)),
+                "{code:#x}"
+            );
+        }
+        for code in [0xe0, 0xf0] {
+            assert!(
+                matches!(FormatCode::from_byte(code), FormatCode::Array(_)),
+                "{code:#x}"
+            );
+        }
     }
 }

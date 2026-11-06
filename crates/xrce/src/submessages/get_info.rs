@@ -156,7 +156,7 @@ mod tests {
     /// §7.8.2.2, §8.4.4 Figure 10: `client_info` follows the mask; the mask
     /// is read the same with or without it.
     #[test]
-    fn client_info_follows_the_info_mask() {
+    fn xrce_7_8_2_2_client_info_follows_the_info_mask() {
         use crate::handshake::ClientRepresentation;
         use crate::header::ClientKey;
         use crate::object_info::ObjectConfig;
@@ -190,7 +190,7 @@ mod tests {
     }
 
     #[test]
-    fn get_info_roundtrip() {
+    fn xrce_8_3_5_3_get_info_roundtrip() {
         let p = GetInfoPayload {
             representation: alloc::vec![0xAA; 16],
         };

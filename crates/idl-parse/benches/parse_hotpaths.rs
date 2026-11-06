@@ -1,7 +1,7 @@
 //! Criterion benches for the IDL frontend's hot paths.
 //!
 //! Successor of `crates/idl/benches/parse_hotpaths.rs`, which was removed
-//! together with `zerodds-idl` in d045e43ea86. The parser now builds a
+//! together with `zerodds-idl` in fa2ed8b0a9c. The parser now builds a
 //! lossless CST in `zerodds-idl-parse`; this bench measures that, at the
 //! same three sizes the removed one used.
 //!

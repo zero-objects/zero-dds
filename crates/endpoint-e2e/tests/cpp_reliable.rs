@@ -3,17 +3,23 @@
 
 //! C++ reliable endpoint: the `endpoints/cpp` reliable-stream layer
 //! (`zerodds_reliable.hpp`) as a live reliable **sender** against the shared
-//! Rust reliable peer, plus the unit + byte-golden + latency-bench binary and
-//! the in-process example. Gated on `g++`. Proves loss recovery: the peer drops
-//! every 3rd datagram, the app retransmits on ACKNACK, all samples arrive
-//! gap-free in order.
+//! Rust reliable peer, its unit and byte-golden binary
+//! (`test/test_reliable_cpp.cpp`, which the endpoints-gate column of C++ does
+//! not build) and the in-process example. Gated on `g++`. Loss recovery: the
+//! peer drops every 3rd datagram, the app retransmits on ACKNACK, all samples
+//! arrive gap-free in order. The samples are the `Ping` of the codec the C++
+//! generator writes from the IDL, so the run checks IDL, generated codec and
+//! runtime together.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
+use zerodds_endpoint_e2e::codegen::{Language, runtime_dir, source};
+use zerodds_endpoint_e2e::{
+    RELIABLE_SAMPLES, assert_reliable_pings, bind_reliable_peer, reliable_receive,
+};
 
 fn gpp() -> Option<&'static str> {
     Command::new("g++")
@@ -57,6 +63,7 @@ fn compile(cc: &str, src: &std::path::Path, out: &std::path::Path) {
 // ACKNACK-driven retransmit) over a real UDP socket to the peer.
 const APP_CPP: &str = r####"
 #define _GNU_SOURCE
+#include "__GENHDR__"
 #include "zerodds_reliable.hpp"
 #include <cstdio>
 #include <cstdlib>
@@ -69,6 +76,12 @@ const APP_CPP: &str = r####"
 #include <unistd.h>
 
 using namespace zerodds::reliable;
+
+// XCDR2 little-endian, MAXALIGN four. The PL_CDR1 fields never fire under
+// plain XCDR2; they are spelled out because the aggregate is positional.
+static const zerodds::wire::PlCdr1Framing kFraming{
+    zerodds::wire::PidFlagPolicy::SentinelMustUnderstand, 16128,
+    true, true, true, true};
 
 int main(int argc, char** argv) {
     if (argc < 3) { std::fprintf(stderr, "usage: %s <port> <count>\n", argv[0]); return 2; }
@@ -118,9 +131,14 @@ int main(int argc, char** argv) {
     {
         AsyncWriter w(send_batch, send_one, poll_ack, 1024);
         for (std::uint32_t i = 0; i < count; ++i) {
-            std::uint8_t b[4] = {static_cast<std::uint8_t>(i), static_cast<std::uint8_t>(i >> 8),
-                                 static_cast<std::uint8_t>(i >> 16), static_cast<std::uint8_t>(i >> 24)};
-            while (!w.enqueue(b, 4)) { /* ring full: producer spins briefly */ }
+            // The generated codec writes Ping { seq = i, msg = "reliable" }.
+            ::Ping p;
+            p.seq = static_cast<std::int32_t>(i);
+            p.msg = "reliable";
+            zerodds::wire::Writer pw(zerodds::wire::Endianness::Little, 4, kFraming, false);
+            zd_enc_Ping(pw, p);
+            std::vector<std::uint8_t> b = pw.finish();
+            while (!w.enqueue(b.data(), b.size())) { /* ring full: producer spins briefly */ }
         }
         w.finish();
     }  // AsyncWriter dtor joins the drain thread once the window has drained
@@ -136,10 +154,45 @@ fn build_app(cc: &str, port: u16, count: u32) -> Child {
     // exec'd it — ETXTBSY ("Text file busy"). A per-port dir removes the sharing.
     let dir = std::env::temp_dir().join(format!("rel_cpp_{}_{}", std::process::id(), port));
     std::fs::create_dir_all(&dir).expect("mkdir");
+    let hdr = dir.join("pingpong.hpp");
+    std::fs::write(
+        &hdr,
+        format!(
+            "#pragma once\n#include \"zerodds/wire.hpp\"\n#include <cstdint>\n\
+             #include <string>\n#include <vector>\n\n{}",
+            source(Language::Cpp)
+        ),
+    )
+    .expect("write header");
     let src = dir.join("app.cpp");
-    std::fs::write(&src, APP_CPP).expect("write app");
+    std::fs::write(&src, APP_CPP.replace("__GENHDR__", &hdr.to_string_lossy())).expect("write app");
     let bin = dir.join("app");
-    compile(cc, &src, &bin);
+    // The generated codec calls `zerodds::wire`, which is `runtime/cpp`.
+    let rt = runtime_dir("cpp");
+    let o = Command::new(cc)
+        .args([
+            "-std=c++17",
+            "-pthread",
+            "-D_GNU_SOURCE",
+            "-Wall",
+            "-Wno-unused",
+        ])
+        .arg(format!("-I{}", cpp_include().display()))
+        .arg(format!("-I{}", rt.join("include").display()))
+        .arg(&src)
+        .arg(rt.join("src/writer.cpp"))
+        .arg(rt.join("src/reader.cpp"))
+        .arg(rt.join("src/md5.cpp"))
+        .arg(rt.join("src/float128.cpp"))
+        .arg("-o")
+        .arg(&bin)
+        .output()
+        .expect("spawn g++");
+    assert!(
+        o.status.success(),
+        "compile the reliable app:\n{}",
+        String::from_utf8_lossy(&o.stderr)
+    );
     Command::new(&bin)
         .arg(port.to_string())
         .arg(count.to_string())
@@ -149,47 +202,34 @@ fn build_app(cc: &str, port: u16, count: u32) -> Child {
         .expect("spawn app")
 }
 
-/// Decodes the delivered 4-byte LE payloads and asserts they are exactly the
-/// contiguous sequence `0..count`.
-fn assert_contiguous(delivered: &[Vec<u8>], count: u32, label: &str) {
-    assert_eq!(delivered.len(), count as usize, "{label}: delivered count");
-    for (i, p) in delivered.iter().enumerate() {
-        assert_eq!(p.len(), 4, "{label}: payload {i} width");
-        let v = u32::from_le_bytes([p[0], p[1], p[2], p[3]]);
-        assert_eq!(v, i as u32, "{label}: payload {i} value");
-    }
-}
-
+/// reliable-endpoint 1.0 §5 point 3: the C++ app sends its samples on the
+/// reliable stream (DDS-XRCE 1.0 §8.4.10, stream id 0x80); the Rust peer
+/// drops datagrams and answers with ACKNACK (§8.3.5.11), and every sample
+/// arrives once and in order.
 #[test]
-fn cpp_reliable_loss_recovery() {
+#[ignore = "needs the C++ toolchain; runs in integration-bindings"]
+fn reliable_5_3_cpp_samples_arrive_in_order_despite_dropped_datagrams() {
     let Some(cc) = gpp() else {
-        eprintln!("SKIP cpp_reliable_loss_recovery: `g++` not on PATH");
+        eprintln!("SKIP cpp reliable loss recovery: `g++` not on PATH");
         return;
     };
-    let count = 12u32;
+    let count = RELIABLE_SAMPLES;
     let peer = bind_reliable_peer(Some(3)).expect("bind reliable peer");
-    let child = build_app(cc, peer.port, count);
-    let delivered = reliable_receive(&peer, child, "cpp/loss", count as usize);
-    assert_contiguous(&delivered, count, "cpp/loss");
+    let child = build_app(cc, peer.port, u32::try_from(count).expect("count"));
+    let delivered = reliable_receive(&peer, child, "cpp/loss", count);
+    assert_reliable_pings("cpp/loss", &delivered, count);
 }
 
+/// reliable-endpoint 1.0 §5 points 1, 2 and 4: the C++ state machine
+/// (`zerodds_reliable.hpp`) passes the reference cases of §3, writes
+/// HEARTBEAT and ACKNACK as the goldens of §4, and its `AsyncWriter` enqueue
+/// costs less than the inline send; the endpoints-gate column of C++ does
+/// not build `test/test_reliable_cpp.cpp`.
 #[test]
-fn cpp_reliable_lossless_baseline() {
+#[ignore = "needs the C++ toolchain; runs in integration-bindings"]
+fn reliable_5_1_cpp_state_machine_passes_the_reference_cases_and_the_goldens() {
     let Some(cc) = gpp() else {
-        eprintln!("SKIP cpp_reliable_lossless_baseline: `g++` not on PATH");
-        return;
-    };
-    let count = 12u32;
-    let peer = bind_reliable_peer(None).expect("bind reliable peer");
-    let child = build_app(cc, peer.port, count);
-    let delivered = reliable_receive(&peer, child, "cpp/baseline", count as usize);
-    assert_contiguous(&delivered, count, "cpp/baseline");
-}
-
-#[test]
-fn cpp_reliable_unit_and_golden() {
-    let Some(cc) = gpp() else {
-        eprintln!("SKIP cpp_reliable_unit_and_golden: `g++` not on PATH");
+        eprintln!("SKIP cpp reliable unit and golden: `g++` not on PATH");
         return;
     };
     // Generate the real Rust HEARTBEAT/ACKNACK goldens to assert byte-identity.
@@ -226,12 +266,17 @@ fn cpp_reliable_unit_and_golden() {
         "unit/golden failed:\nstdout: {stdout}\nstderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
+    zerodds_endpoint_e2e::assert_enqueue_below_inline("cpp", &stdout);
 }
 
+/// reliable-endpoint 1.0 §5 point 5: the C++ reliable example runs and
+/// reports its sequence without gaps; the endpoints-gate column of C++
+/// builds it without running it.
 #[test]
-fn cpp_reliable_example() {
+#[ignore = "needs the C++ toolchain; runs in integration-bindings"]
+fn reliable_5_5_cpp_example_recovers_its_sequence_without_gaps() {
     let Some(cc) = gpp() else {
-        eprintln!("SKIP cpp_reliable_example: `g++` not on PATH");
+        eprintln!("SKIP cpp reliable example: `g++` not on PATH");
         return;
     };
     let src =

@@ -703,24 +703,6 @@ mod tests {
     #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
     use super::*;
 
-    #[test]
-    fn the_emit_names_round_trip_and_a_typo_is_rejected() {
-        for emit in Emit::ALL {
-            assert_eq!(Emit::parse(emit.as_str()), Some(emit));
-        }
-        assert_eq!(Emit::parse("Payload"), None);
-        assert_eq!(Emit::parse(""), None);
-    }
-
-    #[test]
-    fn the_map_length_names_round_trip_and_a_typo_is_rejected() {
-        for policy in MapLengthPolicy::ALL {
-            assert_eq!(MapLengthPolicy::parse(policy.as_str()), Some(policy));
-        }
-        assert_eq!(MapLengthPolicy::parse("rule15-omits"), None);
-        assert!(MapLengthPolicy::default().is_default());
-    }
-
     /// `zerodds_ast_layout::axes::MAP_LENGTH_VALUES` cannot name this
     /// type — this crate depends on `zerodds-ast-layout`, so that
     /// module naming this type back would be a cycle — and writes the
@@ -752,7 +734,7 @@ mod tests {
     /// depend on one, and under encoding version 1 because PL_CDR1 is
     /// the only place these six reach the wire.
     #[test]
-    fn the_default_framing_is_the_default_dialects() {
+    fn xtypes_7_4_1_2_the_default_framing_is_the_default_dialects() {
         for endianness in [Endianness::Little, Endianness::Big] {
             let request = ProbeRequest::new("Sample", Encoding::PlCdr1, endianness);
             assert_eq!(

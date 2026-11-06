@@ -19,7 +19,7 @@ use zerodds_xrce::submessages::{CreateClientPayload, Message};
 use zerodds_xrce::transport_tls::{RustlsTlsClient, RustlsTlsServer, XrceTlsStream};
 
 #[test]
-fn tls_handshake_and_message_roundtrip() {
+fn xrce_11_3_tls_handshake_and_message_roundtrip() {
     let server =
         RustlsTlsServer::bind(SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0))).unwrap();
     let addr = server.local_addr().unwrap();

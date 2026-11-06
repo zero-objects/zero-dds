@@ -846,8 +846,9 @@ fn every_builtin_annotation_of_the_spec_list_is_present() {
     // number is written out so that adding an entry is a deliberate act:
     // the order allocates builtin identities and a snapshot from another
     // build has to compare, which is why a new name is appended and never
-    // inserted.
-    assert_eq!(BUILTIN_ANNOTATIONS.len(), 40);
+    // inserted. 43 since the three IDL4 language mappings' own
+    // annotations (`@java_mapping`, `@csharp_mapping`, `@cpp_mapping`).
+    assert_eq!(BUILTIN_ANNOTATIONS.len(), 43);
     for name in BUILTIN_ANNOTATIONS {
         assert!(
             ast.builtin_annotation(name).is_some(),

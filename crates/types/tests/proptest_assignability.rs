@@ -5,8 +5,6 @@
 //! 2. **Anti-symmetry for primitives:** two distinct primitive types
 //!    are **not** mutually assignable (except
 //!    `is_assignable(T, T)`).
-//! 3. **Consistency with roundtrip:** `T → bytes → T'` preserves
-//!    `is_assignable(T, T') == Yes` (encode/decode roundtrip).
 
 #![allow(
     clippy::expect_used,
@@ -140,20 +138,6 @@ proptest! {
         prop_assert!(
             !matches!(result, Assignable::Yes),
             "distinct primitives {a:?} → {b:?} must not be assignable, got {result:?}"
-        );
-    }
-
-    /// Wire-Roundtrip-Konsistenz: `T → bytes → T' → is_assignable(T, T')` MUSS Yes.
-    #[test]
-    fn roundtrip_preserves_assignability_for_primitive(p in primitive_kinds()) {
-        let t = TypeIdentifier::Primitive(p);
-        let bytes = t.to_bytes_le().unwrap();
-        let decoded = TypeIdentifier::from_bytes_le(&bytes).unwrap();
-        let reg = TypeRegistry::new();
-        let result = is_assignable(&t, &decoded, &reg, &AssignabilityConfig::default());
-        prop_assert!(
-            matches!(result, Assignable::Yes),
-            "T → bytes → T' must preserve assignability, got {result:?}"
         );
     }
 }

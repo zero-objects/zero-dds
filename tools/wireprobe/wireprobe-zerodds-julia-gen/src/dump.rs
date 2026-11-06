@@ -90,13 +90,12 @@ pub fn dump(ast: &Ast, root: Id<TypeNode>, union_label: UnionLabelMatch) -> Resu
         // `alias_collapses_onto_target`, and a stack overflow on the
         // first value without it (`fixed-basic`, where the typedef
         // precedes the struct that uses it).
-        if let Ok(TypeKind::Alias { aliased }) = ast.type_(id).map(|node| node.kind.clone()) {
-            if aliased
+        if let Ok(TypeKind::Alias { aliased }) = ast.type_(id).map(|node| node.kind.clone())
+            && aliased
                 .resolved()
                 .is_some_and(|target| dumper_name(ast, target) == name)
-            {
-                continue;
-            }
+        {
+            continue;
         }
         if emitted.contains(&name) {
             continue;

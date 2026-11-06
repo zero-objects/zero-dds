@@ -346,10 +346,10 @@ fn key_support(
         let mut exported = f.clone();
         exported.exported = true;
         let text = zerodds_lang_render::typescript::decl(&ts::Decl::Function(exported));
-        if let Some(previous) = key_declarations.insert(name.clone(), text.clone()) {
-            if previous != text {
-                return Err(format!("conflicting TypeScript key encoder: {name}"));
-            }
+        if let Some(previous) = key_declarations.insert(name.clone(), text.clone())
+            && previous != text
+        {
+            return Err(format!("conflicting TypeScript key encoder: {name}"));
         }
     }
     let finish = match zerodds_ast_layout::keyhash::key_hash_form_for(ast, id, key)

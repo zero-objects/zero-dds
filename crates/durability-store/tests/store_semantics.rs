@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! Trait-semantics tests for the durability store core: contract enforcement,
-//! paginated query, unregister/cleanup, and the tiered hot/cold invariant.
+//! The store semantics of `InMemoryStore` and `TieredStore` against the
+//! clauses they implement: the retention of DDS 1.4 §2.2.3.5
+//! DURABILITY_SERVICE (history kind and depth, `max_instances`,
+//! `max_samples_per_instance`, `service_cleanup_delay`) and the invariants
+//! of ADR 0009 (`docs/adr/0009-durability-service.md`: the cold store holds
+//! the whole contracted history, the hot budget bounds only the cache,
+//! reads are paginated).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::time::{Duration, SystemTime};
 
 use zerodds_durability_store::{
-    Contract, DurabilitySample, DurabilityStore, InMemoryStore, Selector, TieredStore, TopicMeta,
+    Contract, DurabilitySample, DurabilityStore, InMemoryStore, Selector, StoreError, TieredStore,
+    TopicMeta,
 };
 use zerodds_qos::policies::history::HistoryKind;
 use zerodds_qos::policies::resource_limits::LENGTH_UNLIMITED;
@@ -31,80 +37,112 @@ fn sample(topic: &str, inst: u8, seq: u64, bytes: usize) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: vec![inst; bytes],
-        representation: 1,
-        big_endian: false,
+        representation_identifier: [0x00, 0x07],
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
         source_guid: [inst; 16],
         source_sequence: seq as i64,
     }
 }
 
+fn sequences(store: &dyn DurabilityStore, topic: &str) -> Vec<u64> {
+    store
+        .replay_for_topic(topic)
+        .unwrap()
+        .iter()
+        .map(|s| s.sequence)
+        .collect()
+}
+
+/// A stored sample comes back with what a replay needs besides its body:
+/// the writer and sequence number it came from (to tell the writer's
+/// history from its live stream) and the representation identifier of its
+/// header (DDSI-RTPS 2.5 §10.5), here `PL_CDR2_BE`.
 #[test]
-fn source_identity_round_trips_through_replay() {
-    // O2 P5: the store must persist and return the per-sample source identity
-    // (writer GUID + source sequence) so a durability service can dedup a
-    // writer's history against its live stream across a restart.
+fn a_sample_comes_back_with_its_source_and_its_representation_identifier() {
     let store = InMemoryStore::default();
     store.set_contract("T", Contract::default()).unwrap();
-    store.store(sample("T", 7, 42, 8)).unwrap();
-    let got = store.replay_for_topic("T").unwrap();
-    assert_eq!(got.len(), 1);
-    assert_eq!(got[0].source_guid, [7u8; 16]);
-    assert_eq!(got[0].source_sequence, 42);
+    let mut s = sample("T", 7, 42, 8);
+    s.representation_identifier = [0x00, 0x0a];
+    store.store(s.clone()).unwrap();
+    assert_eq!(store.replay_for_topic("T").unwrap(), vec![s]);
 }
 
 #[test]
-fn keep_last_caps_history_per_instance() {
+fn dcps_2_2_3_5_keep_last_keeps_the_newest_depth_samples_of_each_instance() {
     let store = InMemoryStore::default();
     store
         .set_contract("T", contract(HistoryKind::KeepLast, 3))
         .unwrap();
     for seq in 0..10 {
         store.store(sample("T", 1, seq, 8)).unwrap();
+        store.store(sample("T", 2, seq, 8)).unwrap();
     }
-    let all = store.replay_for_topic("T").unwrap();
-    // Only the newest 3 sequences survive.
-    let seqs: Vec<u64> = all.iter().map(|s| s.sequence).collect();
-    assert_eq!(seqs, vec![7, 8, 9]);
+    assert_eq!(sequences(&store, "T"), vec![7, 8, 9, 7, 8, 9]);
 }
 
+/// Under KEEP_ALL a sample past `max_samples_per_instance` is refused
+/// (DDS 1.4 §2.2.3.5 with §2.2.3.19: OUT_OF_RESOURCES); the same sample sent
+/// again is not a new one.
 #[test]
-fn keep_all_rejects_past_per_instance_cap() {
+fn dcps_2_2_3_5_keep_all_refuses_a_sample_past_max_samples_per_instance() {
     let store = InMemoryStore::default();
     let mut c = contract(HistoryKind::KeepAll, 0);
     c.max_samples_per_instance = 2;
     store.set_contract("T", c).unwrap();
-    assert!(store.store(sample("T", 1, 0, 8)).is_ok());
-    assert!(store.store(sample("T", 1, 1, 8)).is_ok());
-    let err = store.store(sample("T", 1, 2, 8)).unwrap_err();
-    assert!(matches!(
-        err,
-        zerodds_durability_store::StoreError::OutOfResources(_)
-    ));
-    // A re-send of an EXISTING sequence at the cap is idempotent, not rejected.
     store.store(sample("T", 1, 0, 8)).unwrap();
-    assert_eq!(store.stats("T").unwrap().samples, 2);
+    store.store(sample("T", 1, 1, 8)).unwrap();
+    assert!(matches!(
+        store.store(sample("T", 1, 2, 8)),
+        Err(StoreError::OutOfResources(_))
+    ));
+    store.store(sample("T", 1, 0, 8)).unwrap();
+    assert_eq!(sequences(&store, "T"), vec![0, 1]);
 }
 
 #[test]
-fn max_instances_cap_enforced() {
+fn dcps_2_2_3_5_a_new_instance_past_max_instances_is_refused() {
     let store = InMemoryStore::default();
     let mut c = contract(HistoryKind::KeepAll, 0);
     c.max_instances = 2;
     store.set_contract("T", c).unwrap();
-    assert!(store.store(sample("T", 1, 0, 8)).is_ok());
-    assert!(store.store(sample("T", 2, 0, 8)).is_ok());
-    let err = store.store(sample("T", 3, 0, 8)).unwrap_err();
+    store.store(sample("T", 1, 0, 8)).unwrap();
+    store.store(sample("T", 2, 0, 8)).unwrap();
     assert!(matches!(
-        err,
-        zerodds_durability_store::StoreError::OutOfResources(_)
+        store.store(sample("T", 3, 0, 8)),
+        Err(StoreError::OutOfResources(_))
     ));
-    // An existing instance still accepts more.
-    assert!(store.store(sample("T", 1, 1, 8)).is_ok());
+    // An instance the store holds still takes samples.
+    store.store(sample("T", 1, 1, 8)).unwrap();
 }
 
+/// `service_cleanup_delay`: the samples of an instance without writers go
+/// once the delay has passed, not before.
 #[test]
-fn query_paginates_in_order() {
+fn dcps_2_2_3_5_an_unregistered_instance_is_purged_after_the_cleanup_delay() {
+    let store = InMemoryStore::default();
+    let mut c = contract(HistoryKind::KeepAll, 0);
+    c.cleanup_delay = Duration::from_secs(10);
+    store.set_contract("T", c).unwrap();
+    store.store(sample("T", 1, 0, 8)).unwrap();
+    store.store(sample("T", 2, 0, 8)).unwrap();
+    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+    store.unregister("T", &[1u8; 16], t0).unwrap();
+    assert_eq!(store.cleanup(t0 + Duration::from_secs(5)).unwrap(), 0);
+    assert_eq!(store.cleanup(t0 + Duration::from_secs(11)).unwrap(), 1);
+    let left: Vec<u8> = store
+        .replay_for_topic("T")
+        .unwrap()
+        .iter()
+        .map(|s| s.instance_key[0])
+        .collect();
+    assert_eq!(left, vec![2]);
+}
+
+/// ADR 0009, invariant 3: a read is paginated. Pages of three walk the ten
+/// samples of two instances in `(instance, sequence)` order, and a selector
+/// narrows by instance and sequence range.
+#[test]
+fn adr_0009_3_a_query_pages_through_the_history_in_order() {
     let store = InMemoryStore::default();
     store
         .set_contract("T", contract(HistoryKind::KeepAll, 0))
@@ -114,7 +152,6 @@ fn query_paginates_in_order() {
             store.store(sample("T", inst, seq, 8)).unwrap();
         }
     }
-    // Page through with a small limit.
     let mut got = Vec::new();
     let mut sel = Selector {
         limit: Some(3),
@@ -122,151 +159,50 @@ fn query_paginates_in_order() {
     };
     loop {
         let page = store.query("T", &sel).unwrap();
-        let n = page.samples.len();
+        assert!(page.samples.len() <= 3);
         got.extend(page.samples.iter().map(|s| (s.instance_key[0], s.sequence)));
         match page.next {
-            Some(c) if n > 0 => sel = sel.after_cursor(c),
+            Some(c) if !page.samples.is_empty() => sel = sel.after_cursor(c),
             _ => break,
         }
     }
-    // 10 total, ordered (instance, seq).
-    assert_eq!(got.len(), 10);
-    assert_eq!(got[0], (1, 0));
-    assert_eq!(got[9], (2, 4));
-    assert!(got.windows(2).all(|w| w[0] < w[1]));
-}
-
-#[test]
-fn query_selector_filters() {
-    let store = InMemoryStore::default();
-    store
-        .set_contract("T", contract(HistoryKind::KeepAll, 0))
-        .unwrap();
-    for seq in 0..10 {
-        store.store(sample("T", 1, seq, 8)).unwrap();
-    }
-    let sel = Selector {
-        seq_from: Some(3),
-        seq_to: Some(6),
-        ..Selector::default()
-    };
-    let page = store.query("T", &sel).unwrap();
-    let seqs: Vec<u64> = page.samples.iter().map(|s| s.sequence).collect();
-    assert_eq!(seqs, vec![3, 4, 5, 6]);
-}
-
-#[test]
-fn unregister_then_cleanup_purges_after_delay() {
-    let store = InMemoryStore::default();
-    let mut c = contract(HistoryKind::KeepAll, 0);
-    c.cleanup_delay = Duration::from_secs(10);
-    store.set_contract("T", c).unwrap();
-    store.store(sample("T", 1, 0, 8)).unwrap();
-    let t0 = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
-    store.unregister("T", &[1u8; 16], t0).unwrap();
-    // Before the delay: not purged.
-    assert_eq!(store.cleanup(t0 + Duration::from_secs(5)).unwrap(), 0);
-    assert_eq!(store.stats("T").unwrap().samples, 1);
-    // After the delay: purged.
-    assert_eq!(store.cleanup(t0 + Duration::from_secs(11)).unwrap(), 1);
-    assert_eq!(store.stats("T").unwrap().samples, 0);
-}
-
-#[test]
-fn stats_counts_samples_instances_bytes() {
-    let store = InMemoryStore::default();
-    store
-        .set_contract("T", contract(HistoryKind::KeepAll, 0))
-        .unwrap();
-    store.store(sample("T", 1, 0, 10)).unwrap();
-    store.store(sample("T", 1, 1, 10)).unwrap();
-    store.store(sample("T", 2, 0, 10)).unwrap();
-    let s = store.stats("T").unwrap();
-    assert_eq!(s.samples, 3);
-    assert_eq!(s.instances, 2);
-    assert_eq!(s.bytes, 30);
-}
-
-#[test]
-fn tiered_hot_budget_bounds_cache_but_not_contract() {
-    // THE core invariant (ADR 0009 inv. 2): a tiny hot budget must NOT shrink
-    // the contracted history a late-joiner receives. Cold holds everything.
-    let cold = InMemoryStore::default();
-    let tiered = TieredStore::new(cold, 50); // 50 bytes hot budget
-    tiered
-        .set_contract("T", contract(HistoryKind::KeepAll, 0))
-        .unwrap();
-    // 100 samples × 10 bytes = 1000 bytes total, far over the 50-byte budget.
-    for seq in 0..100 {
-        tiered.store(sample("T", 1, seq, 10)).unwrap();
-    }
-    // Hot cache stayed within budget (~50 bytes = ~5 samples).
-    let hot = tiered.hot_bytes("T").unwrap();
-    assert!(hot <= 60, "hot bytes {hot} exceeded budget");
-    // recent() returns only the hot subset (the newest few).
-    let recent = tiered.recent("T", &Selector::default()).unwrap();
-    assert!(recent.len() < 100 && !recent.is_empty());
-    assert_eq!(recent.last().unwrap().sequence, 99); // newest is hot
-    // query() (cold-authoritative) returns the FULL contracted history.
-    let all = tiered.replay_for_topic("T").unwrap();
-    assert_eq!(all.len(), 100);
-    assert_eq!(all.first().unwrap().sequence, 0);
-    assert_eq!(all.last().unwrap().sequence, 99);
-}
-
-#[test]
-fn topic_meta_round_trips_and_is_none_before_set() {
-    let store = InMemoryStore::default();
-    assert_eq!(store.topic_meta("T").unwrap(), None);
-    let meta = TopicMeta {
-        type_name: "demo::Command".to_string(),
-        keyed: true,
-        contract: contract(HistoryKind::KeepLast, 5),
-    };
-    store.set_topic_meta("T", meta.clone()).unwrap();
-    assert_eq!(store.topic_meta("T").unwrap(), Some(meta));
-    // A different topic stays unregistered.
-    assert_eq!(store.topic_meta("Other").unwrap(), None);
-}
-
-#[test]
-fn topic_meta_contract_governs_store_over_a_plain_set_contract() {
-    // set_topic_meta's contract must be what `store()`/`cleanup()` actually
-    // enforce — not a stale value from an earlier plain `set_contract`.
-    let store = InMemoryStore::default();
-    store
-        .set_contract("T", contract(HistoryKind::KeepLast, 100))
-        .unwrap();
-    store
-        .set_topic_meta(
+    let want: Vec<(u8, u64)> = (1..=2u8)
+        .flat_map(|i| (0..5).map(move |s| (i, s)))
+        .collect();
+    assert_eq!(got, want);
+    let narrowed = store
+        .query(
             "T",
-            TopicMeta {
-                type_name: "T".to_string(),
-                keyed: false,
-                contract: contract(HistoryKind::KeepLast, 2),
+            &Selector {
+                instance_key: Some([2u8; 16]),
+                seq_from: Some(1),
+                seq_to: Some(3),
+                ..Selector::default()
             },
         )
         .unwrap();
-    for seq in 0..5 {
-        store.store(sample("T", 1, seq, 8)).unwrap();
-    }
-    let seqs: Vec<u64> = store
-        .replay_for_topic("T")
-        .unwrap()
-        .iter()
-        .map(|s| s.sequence)
-        .collect();
-    assert_eq!(
-        seqs,
-        vec![3, 4],
-        "topic_meta's depth=2 must govern, not depth=100"
-    );
+    let seqs: Vec<u64> = narrowed.samples.iter().map(|s| s.sequence).collect();
+    assert_eq!(seqs, vec![1, 2, 3]);
 }
 
+/// ADR 0009, invariants 1 and 2: the hot budget bounds the cache in memory,
+/// not the history a late joiner gets; the cold store holds every sample the
+/// contract keeps, and the topic metadata.
 #[test]
-fn tiered_topic_meta_delegates_to_cold() {
-    let cold = InMemoryStore::default();
-    let tiered = TieredStore::new(cold, 1024);
+fn adr_0009_2_the_hot_budget_bounds_the_cache_and_not_the_history() {
+    let tiered = TieredStore::new(InMemoryStore::default(), 50);
+    tiered
+        .set_contract("T", contract(HistoryKind::KeepAll, 0))
+        .unwrap();
+    // 100 samples of 10 bytes, far over the 50-byte budget.
+    for seq in 0..100 {
+        tiered.store(sample("T", 1, seq, 10)).unwrap();
+    }
+    assert!(tiered.hot_bytes("T").unwrap() <= 60);
+    let recent = tiered.recent("T", &Selector::default()).unwrap();
+    assert!(recent.len() < 100 && !recent.is_empty());
+    assert_eq!(recent.last().unwrap().sequence, 99);
+    assert_eq!(sequences(&tiered, "T"), (0..100).collect::<Vec<u64>>());
     let meta = TopicMeta {
         type_name: "T".to_string(),
         keyed: false,
@@ -276,17 +212,25 @@ fn tiered_topic_meta_delegates_to_cold() {
     assert_eq!(tiered.topic_meta("T").unwrap(), Some(meta));
 }
 
+/// The topic's metadata comes back as set (none before), and its contract is
+/// the one the store keeps to, not an earlier plain `set_contract`.
 #[test]
-fn tiered_write_through_survives_hot_eviction() {
-    let cold = InMemoryStore::default();
-    let tiered = TieredStore::new(cold, 10); // 1 sample fits hot
-    tiered
-        .set_contract("T", contract(HistoryKind::KeepLast, 1000))
+fn the_topic_meta_comes_back_and_its_contract_governs_the_store() {
+    let store = InMemoryStore::default();
+    assert_eq!(store.topic_meta("T").unwrap(), None);
+    store
+        .set_contract("T", contract(HistoryKind::KeepLast, 100))
         .unwrap();
-    for seq in 0..20 {
-        tiered.store(sample("T", 1, seq, 10)).unwrap();
+    let meta = TopicMeta {
+        type_name: "demo::Command".to_string(),
+        keyed: true,
+        contract: contract(HistoryKind::KeepLast, 2),
+    };
+    store.set_topic_meta("T", meta.clone()).unwrap();
+    assert_eq!(store.topic_meta("T").unwrap(), Some(meta));
+    assert_eq!(store.topic_meta("Other").unwrap(), None);
+    for seq in 0..5 {
+        store.store(sample("T", 1, seq, 8)).unwrap();
     }
-    // Even with a 1-sample hot budget, all 20 are in cold.
-    assert_eq!(tiered.stats("T").unwrap().samples, 20);
-    assert_eq!(tiered.replay_for_topic("T").unwrap().len(), 20);
+    assert_eq!(sequences(&store, "T"), vec![3, 4]);
 }

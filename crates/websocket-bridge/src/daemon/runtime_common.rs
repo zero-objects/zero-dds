@@ -404,7 +404,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metrics_register_is_idempotent() {
+    fn wsbridge_8_2_metrics_register_is_idempotent() {
         let r = Registry::new();
         let m1 = BridgeMetrics::register(&r);
         let m2 = BridgeMetrics::register(&r);
@@ -414,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn metrics_counter_visible_in_prometheus_render() {
+    fn wsbridge_8_2_metrics_counter_visible_in_prometheus_render() {
         let r = Registry::new();
         let m = BridgeMetrics::register(&r);
         m.frames_in_total.add(7);
@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_render_json_contains_topic_fields() {
+    fn wsbridge_5_2_catalog_render_json_contains_topic_fields() {
         let mut cfg = DaemonConfig::default_for_dev();
         cfg.topics.push(TopicConfig {
             name: "Chat::Message".into(),
@@ -441,6 +441,7 @@ mod tests {
             reliability: "reliable".into(),
             durability: "volatile".into(),
             history_depth: 10,
+            idl_file: String::new(),
         });
         let snap = CatalogSnapshot::from_config(&cfg);
         let j = snap.render_json();
@@ -451,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_endpoint_serves_catalog_and_healthz_and_metrics() {
+    fn wsbridge_5_2_admin_endpoint_serves_catalog_and_healthz_and_metrics() {
         use std::io::{Read, Write};
         use std::net::TcpStream;
         let mut cfg = DaemonConfig::default_for_dev();
@@ -463,6 +464,7 @@ mod tests {
             reliability: "reliable".into(),
             durability: "volatile".into(),
             history_depth: 5,
+            idl_file: String::new(),
         });
         let snap = Arc::new(CatalogSnapshot::from_config(&cfg));
         let reg = Arc::new(Registry::new());
@@ -531,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn otlp_config_from_endpoint_parses_http_url() {
+    fn wsbridge_8_3_otlp_config_from_endpoint_parses_http_url() {
         let c = otlp_config_from_endpoint("svc-1", "http://collector.local:4318");
         assert_eq!(c.host, "collector.local");
         assert_eq!(c.port, 4318);
@@ -539,21 +541,21 @@ mod tests {
     }
 
     #[test]
-    fn otlp_config_from_endpoint_parses_bare_host_port() {
+    fn wsbridge_8_3_otlp_config_from_endpoint_parses_bare_host_port() {
         let c = otlp_config_from_endpoint("svc", "host:9999");
         assert_eq!(c.host, "host");
         assert_eq!(c.port, 9999);
     }
 
     #[test]
-    fn otlp_config_from_endpoint_handles_https_and_trailing_slash() {
+    fn wsbridge_8_3_otlp_config_from_endpoint_handles_https_and_trailing_slash() {
         let c = otlp_config_from_endpoint("svc", "https://otel.svc.local:4318/");
         assert_eq!(c.host, "otel.svc.local");
         assert_eq!(c.port, 4318);
     }
 
     #[test]
-    fn otlp_config_from_endpoint_falls_back_to_default_port() {
+    fn wsbridge_8_3_otlp_config_from_endpoint_falls_back_to_default_port() {
         let c = otlp_config_from_endpoint("svc", "host-only");
         assert_eq!(c.host, "host-only");
         assert_eq!(c.port, 4318);

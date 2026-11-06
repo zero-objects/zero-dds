@@ -66,9 +66,19 @@ public enum PresentationAccessScopeKind : uint
 // Policy Records (Spec §2.2.3)
 // ======================================================================
 
-public sealed record class ReliabilityPolicy(
-    ReliabilityKind Kind = ReliabilityKind.Reliable,
-    Core.Duration MaxBlockingTime = default);
+// The parameterless and the one-argument constructors give the defaults of
+// DDS 1.4 §2.2.3 (the table of QoS policies). A `Core.Duration` parameter
+// cannot default to anything but zero, and zero is the default of none of the
+// durations below except LATENCY_BUDGET, TIME_BASED_FILTER and
+// DURABILITY_SERVICE's cleanup delay: a reader that requested a DEADLINE of
+// zero or a LIVELINESS lease of zero matched no writer with the defaults.
+
+public sealed record class ReliabilityPolicy(ReliabilityKind Kind, Core.Duration MaxBlockingTime)
+{
+    /// <summary>DDS 1.4 §2.2.3.14: max_blocking_time 100 ms.</summary>
+    public ReliabilityPolicy(ReliabilityKind kind = ReliabilityKind.Reliable)
+        : this(kind, Core.Duration.FromMillis(100)) { }
+}
 
 public sealed record class DurabilityPolicy(DurabilityKind Kind = DurabilityKind.Volatile);
 
@@ -76,17 +86,28 @@ public sealed record class HistoryPolicy(
     HistoryKind Kind = HistoryKind.KeepLast,
     int Depth = 1);
 
-public sealed record class DeadlinePolicy(Core.Duration Period = default);
+public sealed record class DeadlinePolicy(Core.Duration Period)
+{
+    /// <summary>DDS 1.4 §2.2.3.7: an infinite period.</summary>
+    public DeadlinePolicy() : this(Core.Duration.Infinite) { }
+}
 
 public sealed record class LatencyBudgetPolicy(Core.Duration Duration = default);
 
-public sealed record class LifespanPolicy(Core.Duration Duration = default);
+public sealed record class LifespanPolicy(Core.Duration Duration)
+{
+    /// <summary>DDS 1.4 §2.2.3.16: an infinite duration.</summary>
+    public LifespanPolicy() : this(Core.Duration.Infinite) { }
+}
 
 public sealed record class TimeBasedFilterPolicy(Core.Duration MinimumSeparation = default);
 
-public sealed record class LivelinessPolicy(
-    LivelinessKind Kind = LivelinessKind.Automatic,
-    Core.Duration LeaseDuration = default);
+public sealed record class LivelinessPolicy(LivelinessKind Kind, Core.Duration LeaseDuration)
+{
+    /// <summary>DDS 1.4 §2.2.3.11: AUTOMATIC with an infinite lease.</summary>
+    public LivelinessPolicy(LivelinessKind kind = LivelinessKind.Automatic)
+        : this(kind, Core.Duration.Infinite) { }
+}
 
 public sealed record class OwnershipPolicy(OwnershipKind Kind = OwnershipKind.Shared);
 
@@ -100,10 +121,11 @@ public sealed record class PresentationPolicy(
     bool CoherentAccess = false,
     bool OrderedAccess = false);
 
+/// <summary>DDS 1.4 §2.2.3.19: LENGTH_UNLIMITED (-1) for all three.</summary>
 public sealed record class ResourceLimitsPolicy(
-    int MaxSamples = 1000,
-    int MaxInstances = 10,
-    int MaxSamplesPerInstance = 100);
+    int MaxSamples = -1,
+    int MaxInstances = -1,
+    int MaxSamplesPerInstance = -1);
 
 public sealed record class TransportPriorityPolicy(int Value = 0);
 
@@ -112,8 +134,12 @@ public sealed record class EntityFactoryPolicy(bool AutoenableCreatedEntities = 
 public sealed record class WriterDataLifecyclePolicy(bool AutodisposeUnregisteredInstances = true);
 
 public sealed record class ReaderDataLifecyclePolicy(
-    Core.Duration AutopurgeNoWriterSamplesDelay = default,
-    Core.Duration AutopurgeDisposedSamplesDelay = default);
+    Core.Duration AutopurgeNoWriterSamplesDelay,
+    Core.Duration AutopurgeDisposedSamplesDelay)
+{
+    /// <summary>DDS 1.4 §2.2.3.22: both delays infinite.</summary>
+    public ReaderDataLifecyclePolicy() : this(Core.Duration.Infinite, Core.Duration.Infinite) { }
+}
 
 public sealed record class DurabilityServicePolicy(
     Core.Duration ServiceCleanupDelay = default,

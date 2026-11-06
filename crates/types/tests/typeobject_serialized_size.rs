@@ -104,7 +104,7 @@ fn robot_is_announced_at_the_size_four_stacks_agree_on() {
 /// The DHEADER is in the announced number, and it is the same four octets
 /// the hash is taken over.
 #[test]
-fn the_announced_size_opens_with_the_dheader_of_the_appendable_union() {
+fn xtypes_annex_b_the_announced_size_opens_with_the_dheader_of_the_appendable_union() {
     let (minimal, complete) = robot();
 
     let min = minimal_hash_input(&minimal).unwrap();

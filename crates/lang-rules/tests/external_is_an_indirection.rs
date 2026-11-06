@@ -113,7 +113,7 @@ const RECURSIVE: &str = "module m { struct Node; @mutable struct Node { long val
                          @optional @external Node next; }; };";
 
 #[test]
-fn a_recursive_external_member_is_a_shared_pointer_and_not_a_value() {
+fn xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value() {
     let generated = cpp(RECURSIVE, Encoding::PlCdr2);
     assert!(
         generated.contains("std::shared_ptr<::m::Node> next;"),
@@ -147,7 +147,7 @@ fn the_reader_fills_the_pointer_before_it_writes_through_it() {
 }
 
 #[test]
-fn a_non_optional_external_member_gets_table_9_behind_the_indirection() {
+fn xtypes_7_3_1_2_1_4_a_non_optional_external_member_gets_table_9_behind_the_indirection() {
     // The Table 9 defaulter has to fill the pointer as well, or the
     // value it writes goes into nothing. Measured through
     // `annotation-external-primitive-unannotated`, whose appendable
@@ -169,7 +169,7 @@ fn a_non_optional_external_member_gets_table_9_behind_the_indirection() {
 }
 
 #[test]
-fn an_external_union_branch_takes_the_same_indirection() {
+fn xtypes_7_5_1_2_3_2_an_external_union_branch_takes_the_same_indirection() {
     let generated = cpp(
         "module m { struct Inner { long a; }; union Choice switch (long) { \
          case 1: @external Inner nested; case 2: long plain; }; };",
@@ -229,7 +229,7 @@ fn the_model_says_which_member_has_no_room_inside_its_own_aggregate() {
 }
 
 #[test]
-fn the_c_column_declares_a_recursive_member_as_a_pointer() {
+fn xtypes_7_5_1_2_3_1_the_c_column_declares_a_recursive_member_as_a_pointer() {
     let generated = c(RECURSIVE, Encoding::PlCdr2);
     assert!(
         generated.contains("m_Node *next;"),
@@ -244,7 +244,7 @@ fn the_c_column_declares_a_recursive_member_as_a_pointer() {
 }
 
 #[test]
-fn the_c_encoder_hands_the_pointer_and_not_its_address() {
+fn xtypes_7_5_1_2_3_1_1_the_c_encoder_hands_the_pointer_and_not_its_address() {
     let generated = c(RECURSIVE, Encoding::PlCdr2);
     assert!(
         generated.contains("zd_enc_m_Node(w, v->next);"),
@@ -272,7 +272,7 @@ fn the_c_reader_makes_the_pointer_point_somewhere_before_it_writes_through_it() 
 }
 
 #[test]
-fn a_non_recursive_external_member_is_a_pointer_in_c() {
+fn xtypes_7_5_1_2_3_1_a_non_recursive_external_member_is_a_pointer_in_c() {
     // XTypes 1.3 §7.5.1.2.3.1: "Other external members are mapped like
     // non-external members except that a member of type X shall instead
     // be mapped as type pointer-to-X. For example, short shall be
@@ -292,7 +292,7 @@ fn a_non_recursive_external_member_is_a_pointer_in_c() {
 }
 
 #[test]
-fn an_external_string_stays_the_pointer_it_is() {
+fn xtypes_7_5_1_2_3_1_an_external_string_stays_the_pointer_it_is() {
     // "String and wide string members are already represented using
     // pointers, so the mappings for these members do not change."
     let generated = c(
@@ -305,7 +305,7 @@ fn an_external_string_stays_the_pointer_it_is() {
 }
 
 #[test]
-fn the_c_encoder_writes_through_an_external_pointer() {
+fn xtypes_7_5_1_2_3_1_1_the_c_encoder_writes_through_an_external_pointer() {
     let generated = c(
         "module m { @final struct Sample { @external long a; long b; }; };",
         Encoding::DelimitedCdr,

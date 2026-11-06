@@ -358,7 +358,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn metrics_register_idempotent() {
+    fn mqttbridge_8_2_metrics_register_idempotent() {
         let r = Registry::new();
         let m1 = BridgeMetrics::register(&r);
         let m2 = BridgeMetrics::register(&r);
@@ -367,7 +367,7 @@ mod tests {
     }
 
     #[test]
-    fn metrics_visible_in_prometheus_render() {
+    fn mqttbridge_8_2_metrics_visible_in_prometheus_render() {
         let r = Registry::new();
         let m = BridgeMetrics::register(&r);
         m.dds_samples_in_total.add(3);
@@ -376,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_render_json_contains_topic_fields() {
+    fn mqttbridge_5_2_catalog_render_json_contains_topic_fields() {
         let mut cfg = DaemonConfig::default_for_dev();
         cfg.topics.push(TopicConfig {
             dds_name: "Sensor".into(),
@@ -398,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn admin_endpoint_serves_paths() {
+    fn mqttbridge_5_2_admin_endpoint_serves_paths() {
         use std::io::{Read, Write};
         use std::net::TcpStream;
         let cfg = DaemonConfig::default_for_dev();
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn otlp_config_parses_endpoint() {
+    fn mqttbridge_8_3_otlp_config_parses_endpoint() {
         let c = otlp_config_from_endpoint("svc", "http://collector:4318");
         assert_eq!(c.host, "collector");
         assert_eq!(c.port, 4318);

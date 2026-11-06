@@ -85,7 +85,7 @@ fn plain_init(user: &str, pass: &str) -> Vec<AmqpExtValue> {
 /// Cl. 7: PLAIN is not offered on plaintext, and a PLAIN init there gets
 /// outcome `auth` and a closed connection.
 #[test]
-fn a_plain_init_on_plaintext_is_auth_and_the_connection_closes() {
+fn ddsamqp_2_1_a_plain_init_on_plaintext_is_auth_and_the_connection_closes() {
     let mut cfg = test_handler_cfg_with_tls(false);
     cfg.sasl = SaslPolicy {
         enabled: vec![SaslMechanism::Plain, SaslMechanism::Anonymous],
@@ -105,7 +105,7 @@ fn a_plain_init_on_plaintext_is_auth_and_the_connection_closes() {
 /// On TLS, PLAIN is checked against the store: the right password is `ok`,
 /// a wrong one `auth`.
 #[test]
-fn plain_on_tls_checks_the_password_against_the_store() {
+fn ddsamqp_2_1_plain_on_tls_checks_the_password_against_the_store() {
     for (password, code) in [("wonder", 0u8), ("wrong", 1)] {
         let mut cfg = test_handler_cfg_with_tls(true);
         cfg.sasl = SaslPolicy {
@@ -125,7 +125,7 @@ fn plain_on_tls_checks_the_password_against_the_store() {
 /// SCRAM-SHA-256 (RFC 7677) end to end: challenge, response, outcome `ok`
 /// with the server signature as additional data, which the client checks.
 #[test]
-fn scram_sha_256_authenticates_and_proves_the_server() {
+fn ddsamqp_2_1_scram_sha_256_authenticates_and_proves_the_server() {
     let mut cfg = test_handler_cfg_with_tls(false);
     cfg.sasl = SaslPolicy {
         enabled: vec![SaslMechanism::ScramSha256],
@@ -185,7 +185,7 @@ fn scram_sha_256_authenticates_and_proves_the_server() {
 
 /// A mechanism that is not offered is `auth`.
 #[test]
-fn an_init_with_a_mechanism_not_offered_is_auth() {
+fn ddsamqp_2_1_an_init_with_a_mechanism_not_offered_is_auth() {
     let mut cfg = test_handler_cfg_with_tls(false);
     cfg.sasl = SaslPolicy {
         enabled: vec![SaslMechanism::ScramSha256],
@@ -203,7 +203,7 @@ fn an_init_with_a_mechanism_not_offered_is_auth() {
 /// AMQP 1.0 §5.3.1: without ANONYMOUS, a client that skips SASL gets the
 /// SASL header back and a closed connection.
 #[test]
-fn skipping_sasl_is_refused_when_anonymous_is_not_enabled() {
+fn ddsamqp_2_1_skipping_sasl_is_refused_when_anonymous_is_not_enabled() {
     let mut cfg = test_handler_cfg_with_tls(false);
     cfg.sasl = SaslPolicy {
         enabled: vec![SaslMechanism::ScramSha256],

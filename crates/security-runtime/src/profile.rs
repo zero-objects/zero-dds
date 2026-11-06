@@ -754,7 +754,6 @@ pub fn gate_with_crypto(
     Ok(gate)
 }
 
-/// PKCS#8 DER as the `PRIVATE KEY` PEM block the PKI plugin reads.
 /// The delay between two calls of `validate_local_identity` that returned
 /// VALIDATION_PENDING_RETRY (§9.3.2.11.2: "after a configurable delay").
 pub const LOCAL_VALIDATION_RETRY_DELAY: core::time::Duration =
@@ -827,6 +826,7 @@ fn private_key_pem(
     }))
 }
 
+/// PKCS#8 DER as the `PRIVATE KEY` PEM block the PKI plugin reads.
 fn pkcs8_pem(der: &[u8]) -> Vec<u8> {
     use base64::Engine as _;
     let body = base64::engine::general_purpose::STANDARD.encode(der);
@@ -928,7 +928,7 @@ mod tests {
     /// next to a `pkcs11:` key is not applied and not an error; next to a
     /// `data:` key it opens the key.
     #[test]
-    fn a_password_does_not_apply_to_a_pkcs11_key() {
+    fn security_10_3_1_a_password_does_not_apply_to_a_pkcs11_key() {
         use zerodds_security_pki::encrypted_key::PasswordReading;
         let token_key = Material::Pkcs11(
             crate::pkcs11::parse(
@@ -978,7 +978,7 @@ mod tests {
     }
 
     #[test]
-    fn enclave_dir_resolves_all_sros2_filenames() {
+    fn ros2bridge_7_1_enclave_dir_resolves_all_sros2_filenames() {
         // C7: from_enclave_dir must map the six SROS2 enclave file names. With
         // all six present (dummy content) it gets PAST file resolution and
         // fails later at PKI parsing — i.e. NO Io error → the mapping is
@@ -1009,7 +1009,7 @@ mod tests {
     }
 
     #[test]
-    fn enclave_dir_missing_cert_is_io_naming_cert() {
+    fn ros2bridge_7_1_enclave_dir_missing_cert_is_io_naming_cert() {
         // An empty enclave dir → the first read (cert.pem) fails with an Io
         // error whose path is exactly the SROS2 cert name.
         let dir = scratch_dir("nocert");

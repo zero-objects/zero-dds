@@ -74,7 +74,7 @@ class QosTypesTest {
     // --- Defaults of every policy (DDS 1.4 §2.2.3, tables of the policies) ------------
 
     @Test
-    void theDefaultsOfTheDataWriterQos() {
+    void javapsm_7_3_5_1_the_defaults_of_the_data_writer_qos() {
         DataWriterQos qos = Qos.writer();
         assertEquals(Durability.Kind.VOLATILE, qos.getDurability().getKind());
         assertEquals(0, qos.getDurabilityService().getServiceCleanupDelay().getDuration(TimeUnit.NANOSECONDS));
@@ -104,7 +104,7 @@ class QosTypesTest {
     }
 
     @Test
-    void theDefaultsOfTheDataReaderQos() {
+    void javapsm_7_3_5_1_the_defaults_of_the_data_reader_qos() {
         DataReaderQos qos = Qos.reader();
         assertEquals(Durability.Kind.VOLATILE, qos.getDurability().getKind());
         assertTrue(qos.getDeadline().getPeriod().isInfinite());
@@ -124,7 +124,7 @@ class QosTypesTest {
     }
 
     @Test
-    void theDefaultsOfTopicPublisherAndSubscriberQos() {
+    void javapsm_7_3_5_1_the_defaults_of_topic_publisher_and_subscriber_qos() {
         assertEquals(0, Qos.topic().getTopicData().getValue().length);
         assertEquals(Reliability.Kind.BEST_EFFORT, Qos.topic().getReliability().getKind());
         assertEquals(Presentation.AccessScopeKind.INSTANCE, Qos.publisher().getPresentation().getAccessScope());
@@ -140,7 +140,7 @@ class QosTypesTest {
     }
 
     @Test
-    void theDefaultOwnershipStrengthAndDurabilityServiceOfTheFactoryAreTheTableValues() {
+    void javapsm_7_3_5_1_the_default_ownership_strength_and_durability_service_of_the_factory_are_the_table_values() {
         OwnershipStrength strength = Qos.pf().OwnershipStrength();
         assertEquals(0, strength.getValue());
         DurabilityService service = Qos.pf().DurabilityService();
@@ -152,7 +152,7 @@ class QosTypesTest {
     // --- The accessors of the QoS interfaces (§7.3.5.2) --------------------------------
 
     @Test
-    void theTopicQosAnswersWhatItWasGivenForEveryPolicyOfTable72() {
+    void javapsm_7_3_5_2_the_topic_qos_answers_what_it_was_given_for_every_policy_of_table_7_2() {
         LatencyBudget budget = Qos.pf().LatencyBudget().withDuration(40, TimeUnit.MILLISECONDS);
         Liveliness liveliness = Qos.pf().Liveliness().withManualByParticipant().withLeaseDuration(3, TimeUnit.SECONDS);
         DestinationOrder order = Qos.pf().DestinationOrder().withSourceTimestamp();
@@ -175,7 +175,7 @@ class QosTypesTest {
     }
 
     @Test
-    void theDataWriterQosAnswersWhatItWasGivenForTheRemainingPolicies() {
+    void javapsm_7_3_5_2_the_data_writer_qos_answers_what_it_was_given_for_the_remaining_policies() {
         ResourceLimits limits = Qos.pf().ResourceLimits().withMaxSamples(10).withMaxInstances(4);
         org.omg.dds.core.policy.TransportPriority priority = Qos.pf().TransportPriority().withValue(5);
         DurabilityService service = Qos.pf().DurabilityService().withHistoryDepth(2).withMaxSamples(8);
@@ -193,7 +193,7 @@ class QosTypesTest {
     }
 
     @Test
-    void theDataReaderQosAnswersWhatItWasGivenForTheRemainingPolicies() {
+    void javapsm_7_3_5_2_the_data_reader_qos_answers_what_it_was_given_for_the_remaining_policies() {
         LatencyBudget budget = Qos.pf().LatencyBudget().withDuration(15, TimeUnit.MILLISECONDS);
         DestinationOrder order = Qos.pf().DestinationOrder().withSourceTimestamp();
         org.omg.dds.core.policy.ReaderDataLifecycle lifecycle = Qos.pf().ReaderDataLifecycle()
@@ -208,7 +208,7 @@ class QosTypesTest {
     }
 
     @Test
-    void thePublisherAndSubscriberQosAnswerPresentationEntityFactoryAndGroupData() {
+    void javapsm_7_3_5_2_the_publisher_and_subscriber_qos_answer_presentation_entity_factory_and_group_data() {
         Presentation presentation = Qos.policies().Presentation().withGroup().withCoherentAccess(true);
         org.omg.dds.core.policy.EntityFactory factory = Qos.pf().EntityFactory().withAutoEnableCreatedEntities(false);
         org.omg.dds.core.policy.GroupData data = Qos.pf().GroupData().withValue(new byte[] {4, 5, 6}, 0, 3);
@@ -227,7 +227,7 @@ class QosTypesTest {
     // --- Unmodifiable (§7.3.5.2) ------------------------------------------------------
 
     @Test
-    void theMapOfAQosCannotBeChanged() {
+    void javapsm_7_3_5_2_the_map_of_a_qos_cannot_be_changed() {
         for (EntityQos<?> qos : allQos()) {
             @SuppressWarnings("unchecked")
             Map<Class<?>, QosPolicy> map = (Map<Class<?>, QosPolicy>) (Map<?, ?>) qos;
@@ -247,7 +247,7 @@ class QosTypesTest {
     }
 
     @Test
-    void withPolicyReturnsAnotherQosAndLeavesTheSourceAsItWas() {
+    void javapsm_7_3_5_3_with_policy_returns_another_qos_and_leaves_the_source_as_it_was() {
         DataWriterQos original = Qos.writer();
         Reliability before = original.getReliability();
         DataWriterQos changed = original.withPolicy(Qos.policies().DataWriterReliability().withBestEffort());
@@ -262,7 +262,7 @@ class QosTypesTest {
     }
 
     @Test
-    void aQosFromAnEntityIsNotChangedByDerivingFromIt() throws Exception {
+    void javapsm_7_3_5_2_a_qos_from_an_entity_is_not_changed_by_deriving_from_it() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             org.omg.dds.pub.DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
             DataWriterQos fromTheEntity = writer.getQos();
@@ -278,7 +278,7 @@ class QosTypesTest {
     // --- DSL: withPolicies and the policy classes (§7.3.5.3) ----------------------------
 
     @Test
-    void withPoliciesAppliesSeveralPoliciesAtOnce() {
+    void javapsm_7_3_5_3_with_policies_applies_several_policies_at_once() {
         DataWriterQos original = Qos.writer();
         DataWriterQos changed = original.withPolicies(
                 Qos.pf().Deadline().withPeriod(2, TimeUnit.SECONDS),
@@ -295,7 +295,7 @@ class QosTypesTest {
     }
 
     @Test
-    void aPolicyThatIsNoPolicyOfTheQosIsRefused() {
+    void javapsm_7_3_5_3_a_policy_that_is_no_policy_of_the_qos_is_refused() {
         DataReaderQos reader = Qos.reader();
         // a policy that names itself only as "for readers", not as one of Table 7.2
         assertThrows(IllegalArgumentException.class,
@@ -305,7 +305,7 @@ class QosTypesTest {
     }
 
     @Test
-    void everyWithOfAPolicyReturnsANewObjectAndLeavesTheSource() {
+    void javapsm_7_3_5_3_every_with_of_a_policy_returns_a_new_object_and_leaves_the_source() {
         Reliability reliability = Qos.pf().Reliability();
         Reliability bestEffort = reliability.withBestEffort();
         assertNotSame(reliability, bestEffort);
@@ -354,7 +354,7 @@ class QosTypesTest {
     }
 
     @Test
-    void withCallsChainOnePolicyIntoTheNext() {
+    void javapsm_7_3_5_3_with_calls_chain_one_policy_into_the_next() {
         // the example of §7.3.5.3
         ResourceLimits limits = Qos.pf().ResourceLimits().withMaxSamples(20).withMaxInstances(6);
         assertEquals(20, limits.getMaxSamples());
@@ -372,7 +372,7 @@ class QosTypesTest {
     // --- equals, hashCode, compareTo, names --------------------------------------------
 
     @Test
-    void qosWithTheSamePoliciesAreEqualAndHaveTheSameHashCode() {
+    void javapsm_7_3_3_qos_with_the_same_policies_are_equal_and_have_the_same_hash_code() {
         assertEquals(Qos.writer(), Qos.writer());
         assertEquals(Qos.writer().hashCode(), Qos.writer().hashCode());
         assertEquals(Qos.reader(), Qos.reader());
@@ -391,7 +391,7 @@ class QosTypesTest {
     }
 
     @Test
-    void policiesWithTheSameValueAreEqualAndHaveTheSameHashCode() {
+    void javapsm_7_3_3_policies_with_the_same_value_are_equal_and_have_the_same_hash_code() {
         for (EntityQos<?> first : allQos()) {
             EntityQos<?> second = allQos().get(allQos().indexOf(first));
             for (Map.Entry<?, ?> entry : first.entrySet()) {
@@ -411,20 +411,7 @@ class QosTypesTest {
     }
 
     @Test
-    void everyPolicyIsNamedAfterItsInterfaceInItsStringForm() {
-        for (EntityQos<?> qos : allQos()) {
-            for (Map.Entry<?, ?> entry : qos.entrySet()) {
-                Class<?> key = (Class<?>) entry.getKey();
-                assertTrue(entry.getValue().toString().startsWith(key.getSimpleName() + "["),
-                        key.getSimpleName() + " is " + entry.getValue());
-                assertTrue(key.isInstance(entry.getValue()), key.getSimpleName());
-            }
-            assertTrue(qos.toString().startsWith(qos.getClass().getSimpleName()), qos.toString());
-        }
-    }
-
-    @Test
-    void theRequestOfferedPoliciesCompareByTheirOrder() {
+    void javapsm_7_3_5_3_the_request_offered_policies_compare_by_their_order() {
         Durability volatileKind = Qos.pf().Durability().withVolatile();
         Durability transientKind = Qos.pf().Durability().withTransient();
         assertTrue(volatileKind.compareTo(transientKind) < 0);

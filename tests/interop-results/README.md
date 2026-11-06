@@ -218,8 +218,8 @@ default's octets beside the ones a clause-by-clause reading of XTypes
 1.3 produces.
 
 Nothing on it is written by hand and
-`the_page_is_the_one_a_run_writes` fails when the committed page is not
-what a fresh run produces.
+`interop-results --verify` (the weekly job `interop-results`) fails when
+the committed page is not what a fresh run produces.
 
 ## What the two tables are not
 
@@ -229,5 +229,4 @@ with one corpus, and — where they differed — which setting of this
 project's reproduces each of the others. The argument about which
 answer the specification requires is
 [`docs/wire-feature-inventory.md`](../../docs/wire-feature-inventory.md),
-which cites a clause per row; the entry point to all of it is
-[`docs/interop-evidence.md`](../../docs/interop-evidence.md).
+which cites a clause per row.

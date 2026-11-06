@@ -164,7 +164,7 @@ ubyte[] encodeByReference(string name) {
 /// Topic/Publisher/Subscriber/Datawriter/Datareader, `null` for every
 /// other kind — byte-oracled in `crates/xrce/src/object_repr.rs` against
 /// real eProsima Micro-XRCE-DDS Client 3.0.1 CREATE traffic (Topic's own
-/// participant_id: commit 31c62df2a63). This — not `encodeByReference`
+/// participant_id: commit bd30deaef0b). This — not `encodeByReference`
 /// alone — is the only form a real agent accepts.
 ubyte[] encodeObjectVariantForKind(ObjectId objectId, string name, ObjectId* parentObjectId = null) {
     uint n = cast(uint) (name.length + 1);

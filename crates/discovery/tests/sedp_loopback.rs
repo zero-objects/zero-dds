@@ -149,7 +149,7 @@ fn sample_sub() -> SubscriptionBuiltinTopicData {
 }
 
 #[test]
-fn publication_announce_then_reader_fills_cache() {
+fn rtps_8_5_4_4_publication_announce_then_reader_fills_cache() {
     // Remote writer in participant REMOTE_PREFIX, local reader.
     let mut writer =
         SedpPublicationsWriter::new(GuidPrefix::from_bytes(REMOTE_PREFIX), VendorId::ZERODDS);
@@ -254,7 +254,7 @@ fn multiple_publications_accumulate_in_cache() {
 }
 
 #[test]
-fn subscription_announce_then_reader_fills_cache() {
+fn rtps_8_5_4_4_subscription_announce_then_reader_fills_cache() {
     let mut writer =
         SedpSubscriptionsWriter::new(GuidPrefix::from_bytes(REMOTE_PREFIX), VendorId::ZERODDS);
     writer.add_reader_proxy(ReaderProxy::new(

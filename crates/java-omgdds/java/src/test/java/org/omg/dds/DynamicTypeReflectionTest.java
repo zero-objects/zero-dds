@@ -60,7 +60,7 @@ class DynamicTypeReflectionTest {
     }
 
     @Test
-    void everyJavaPrimitiveHasTheDdsTypeOfTable81() {
+    void javapsm_8_2_every_java_primitive_has_the_dds_type_of_table_8_1() {
         DynamicType type = TYPES.createType(Primitives.class);
         assertEquals(TypeKind.STRUCTURE_TYPE, type.getKind());
         // INT, java.lang.Integer -> INT32 and so on, row by row of Table 8.1.
@@ -101,7 +101,7 @@ class DynamicTypeReflectionTest {
     }
 
     @Test
-    void serializeAsChoosesTheKindOfTheMember() {
+    void javapsm_8_4_serialize_as_chooses_the_kind_of_the_member() {
         DynamicType type = TYPES.createType(Customized.class);
         assertEquals(TypeKind.UINT_16_TYPE, kindOf(type, "u16"));
         assertEquals(TypeKind.UINT_32_TYPE, kindOf(type, "u32"));
@@ -143,7 +143,7 @@ class DynamicTypeReflectionTest {
     }
 
     @Test
-    void enumerationsStructuresCollectionsAndMapsFollowTable81() {
+    void javapsm_8_2_enumerations_structures_collections_and_maps_follow_table_8_1() {
         DynamicType type = TYPES.createType(Outer.class);
         assertEquals(TypeKind.ENUMERATION_TYPE, kindOf(type, "color"));
         assertEquals(3, type.getMember("color").getDescriptor().getType().getAllMembers().size());
@@ -175,7 +175,7 @@ class DynamicTypeReflectionTest {
     }
 
     @Test
-    void aUnionHasItsDiscriminatorTypeAndLabels() {
+    void javapsm_8_6_2_a_union_has_its_discriminator_type_and_labels() {
         DynamicType type = TYPES.createType(Choice.class);
         assertEquals(TypeKind.UNION_TYPE, type.getKind());
         assertEquals(TypeKind.INT_32_TYPE, type.getDescriptor().getDiscriminatorType().getKind());
@@ -195,7 +195,7 @@ class DynamicTypeReflectionTest {
     }
 
     @Test
-    void anAnnotationTypeIsRepresentedOnlyWhenMarked() {
+    void javapsm_8_9_an_annotation_type_is_represented_only_when_marked() {
         DynamicType tag = TYPES.createType(Tag.class);
         assertEquals(TypeKind.ANNOTATION_TYPE, tag.getKind());
         assertEquals(TypeKind.STRING_TYPE, kindOf(tag, "label"));
@@ -216,7 +216,7 @@ class DynamicTypeReflectionTest {
     }
 
     @Test
-    void aJavaTypeWithoutAKindIsRefused() {
+    void javapsm_7_8_1_3_a_java_type_without_a_kind_is_refused() {
         assertThrows(IllegalArgumentException.class, () -> TYPES.createType(Raw.class));
         assertThrows(IllegalArgumentException.class, () -> TYPES.createType(Untyped.class));
         assertThrows(IllegalArgumentException.class, () -> TYPES.createType((Class<?>) null));
@@ -229,7 +229,7 @@ class DynamicTypeReflectionTest {
     }
 
     @Test
-    void nestedGenericsAreFollowed() {
+    void javapsm_8_5_2_nested_generics_are_followed() {
         DynamicType type = TYPES.createType(Mixed.class);
         DynamicType rows = type.getMember("rows").getDescriptor().getType();
         DynamicType row = rows.getDescriptor().getElementType();

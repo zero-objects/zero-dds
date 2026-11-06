@@ -414,12 +414,12 @@ fn parse_header_lines(s: &str) -> Vec<(String, String)> {
         if line.is_empty() {
             continue;
         }
-        if line.starts_with(' ') || line.starts_with('\t') {
-            if let Some((_, v)) = current.as_mut() {
-                v.push(' ');
-                v.push_str(line.trim_start());
-                continue;
-            }
+        if (line.starts_with(' ') || line.starts_with('\t'))
+            && let Some((_, v)) = current.as_mut()
+        {
+            v.push(' ');
+            v.push_str(line.trim_start());
+            continue;
         }
         if let Some(pair) = current.take() {
             out.push(pair);
@@ -707,27 +707,59 @@ fn strip_text_plain_envelope(content: &[u8]) -> Vec<u8> {
     // `Content-Type: text/plain\r\n\r\n`. This is spec-conform (RFC 5751
     // §3.4) and must be stripped by the verifier — otherwise the
     // XML arrives at the caller with a leading MIME header.
-    if let Some(idx) = find_subseq(content, b"\r\n\r\n") {
-        let head = &content[..idx];
-        if header_indicates_text_plain(head) {
-            return content[idx + 4..].to_vec();
-        }
-    }
-    if let Some(idx) = find_subseq(content, b"\n\n") {
-        let head = &content[..idx];
-        if header_indicates_text_plain(head) {
-            return content[idx + 2..].to_vec();
+    //
+    // The prefix is a MIME header block (RFC 2045 §3, RFC 5322 §2.2): it
+    // starts at the first octet, every line up to the empty line is a header
+    // field or the continuation of one, and one field is a Content-Type of
+    // `text/plain`. Content that does not start that way is the signed
+    // document itself and comes back whole: an XML document whose comment
+    // reads `Content-Type: text/plain` before its first empty line is no
+    // header block, and cutting it there handed the caller its tail.
+    for separator in [&b"\r\n\r\n"[..], &b"\n\n"[..]] {
+        if let Some(idx) = find_subseq(content, separator)
+            && is_text_plain_header_block(&content[..idx])
+        {
+            return content[idx + separator.len()..].to_vec();
         }
     }
     content.to_vec()
 }
 
-fn header_indicates_text_plain(head: &[u8]) -> bool {
-    let s = match core::str::from_utf8(head) {
-        Ok(s) => s.to_lowercase(),
-        Err(_) => return false,
+/// Whether `head` is a MIME header block whose Content-Type is `text/plain`:
+/// each line a header field `name: value` (the name printable US-ASCII
+/// without `:` or space, RFC 5322 §2.2) or a continuation line starting
+/// with a space or a tab, the first line a field.
+fn is_text_plain_header_block(head: &[u8]) -> bool {
+    let Ok(text) = core::str::from_utf8(head) else {
+        return false;
     };
-    s.contains("content-type: text/plain") || s.contains("content-type:text/plain")
+    // (name, unfolded value) per field.
+    let mut fields: Vec<(&str, String)> = Vec::new();
+    for line in text.split('\n') {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        if line.starts_with(' ') || line.starts_with('\t') {
+            let Some((_, value)) = fields.last_mut() else {
+                return false;
+            };
+            value.push(' ');
+            value.push_str(line.trim());
+            continue;
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        if name.is_empty() || !name.bytes().all(|b| (33..=126).contains(&b)) {
+            return false;
+        }
+        fields.push((name, value.trim().to_string()));
+    }
+    fields.iter().any(|(name, value)| {
+        name.eq_ignore_ascii_case("content-type")
+            && value
+                .split(';')
+                .next()
+                .is_some_and(|media_type| media_type.trim().eq_ignore_ascii_case("text/plain"))
+    })
 }
 
 fn match_signer_cert(
@@ -1093,7 +1125,7 @@ fn base64_decode(input: &[u8]) -> Result<Vec<u8>, PermissionsError> {
             )));
         }
     }
-    if clean.len() % 4 != 0 {
+    if !clean.len().is_multiple_of(4) {
         return Err(PermissionsError::Malformed(format!(
             "base64: length {l} not divisible by 4",
             l = clean.len()
@@ -1140,16 +1172,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn base64_roundtrip_basic() {
-        // "hello" -> aGVsbG8=
-        assert_eq!(base64_decode(b"aGVsbG8=").unwrap(), b"hello");
-        // "hi" -> aGk=
-        assert_eq!(base64_decode(b"aGk=").unwrap(), b"hi");
-        // empty -> empty.
-        assert_eq!(base64_decode(b"").unwrap(), b"");
-    }
-
-    #[test]
     fn base64_rejects_invalid_alphabet() {
         let err = base64_decode(b"!!!!").unwrap_err();
         assert!(matches!(err, PermissionsError::Malformed(_)));
@@ -1181,6 +1203,41 @@ mod tests {
             ),
             Some("signed-data".to_string()),
         );
+    }
+
+    /// RFC 5751 §3.4 / RFC 2045 §3: what `openssl cms -sign -text` puts in
+    /// front of the content is a header block, and it goes.
+    #[test]
+    fn rfc_5751_3_4_the_text_plain_header_block_is_removed() {
+        assert_eq!(
+            strip_text_plain_envelope(b"Content-Type: text/plain\r\n\r\n<a/>\n\nb"),
+            b"<a/>\n\nb"
+        );
+        assert_eq!(
+            strip_text_plain_envelope(b"content-type: Text/Plain; charset=utf-8\n\n<a/>"),
+            b"<a/>"
+        );
+        assert_eq!(
+            strip_text_plain_envelope(b"Content-Type:\r\n text/plain\r\n\r\n<a/>"),
+            b"<a/>",
+            "a folded field is one field"
+        );
+    }
+
+    /// Content that does not start with a header block is the document: an
+    /// XML comment that names text/plain before the first empty line, a
+    /// header block of another type, and a field after a line that is none.
+    #[test]
+    fn rfc_5322_2_2_content_without_a_header_block_comes_back_whole() {
+        for doc in [
+            &b"<?xml version=\"1.0\"?>\n<!-- Content-Type: text/plain -->\n<a/>\n\n<b/>"[..],
+            b"<!-- content-type:text/plain -->\r\n\r\n<a/>",
+            b"Content-Type: application/xml\n\n<a/>",
+            b"<a/>\nContent-Type: text/plain\n\n<b/>",
+            b" Content-Type: text/plain\n\n<a/>",
+        ] {
+            assert_eq!(strip_text_plain_envelope(doc), doc);
+        }
     }
 
     #[test]

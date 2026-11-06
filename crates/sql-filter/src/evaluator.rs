@@ -19,6 +19,19 @@ pub trait RowAccess {
     /// Returns the value of the field path if present. `None` = no field
     /// with that name.
     fn get(&self, path: &str) -> Option<Value>;
+
+    /// Whether the path names a member of a union whose discriminator
+    /// selects another member, at any step of the path.
+    ///
+    /// DDS-XTypes 1.4 Beta 1 §7.6.7.1: "The evaluation of an expression
+    /// involving a union member shall also check that the value of the
+    /// discriminator selects the named member; if the discriminator does
+    /// not select the named member, the result of the filter evaluation
+    /// shall be false." A row without unions keeps the default, `false`.
+    fn unselected(&self, path: &str) -> bool {
+        let _ = path;
+        false
+    }
 }
 
 /// Error during evaluation.
@@ -48,13 +61,54 @@ impl std::error::Error for EvalError {}
 impl Expr {
     /// Evaluates the expression against a row + parameter slice.
     ///
+    /// An expression that names a member of a union whose discriminator
+    /// selects another member is `false`, whatever the rest of it
+    /// evaluates to (DDS-XTypes 1.4 Beta 1 §7.6.7.1, see
+    /// [`RowAccess::unselected`]). Every field the expression names is
+    /// checked, also one that `AND` or `OR` would not reach.
+    ///
     /// # Errors
     /// See [`EvalError`].
     pub fn evaluate<R: RowAccess>(&self, row: &R, params: &[Value]) -> Result<bool, EvalError> {
+        if self.any_field(&mut |field| row.unselected(field)) {
+            return Ok(false);
+        }
+        self.evaluate_selected(row, params)
+    }
+
+    /// Whether `test` holds for any field the expression names.
+    ///
+    /// zerodds-lint: recursion-depth = parse-tree-depth (≤ 64 via
+    /// parser input caps; no unbounded recursion possible).
+    fn any_field<F: FnMut(&str) -> bool>(&self, test: &mut F) -> bool {
+        fn operand<F: FnMut(&str) -> bool>(op: &Operand, test: &mut F) -> bool {
+            matches!(op, Operand::Field(name) if test(name))
+        }
         match self {
-            Self::And(a, b) => Ok(a.evaluate(row, params)? && b.evaluate(row, params)?),
-            Self::Or(a, b) => Ok(a.evaluate(row, params)? || b.evaluate(row, params)?),
-            Self::Not(inner) => Ok(!inner.evaluate(row, params)?),
+            Self::And(a, b) | Self::Or(a, b) => a.any_field(test) || b.any_field(test),
+            Self::Not(inner) => inner.any_field(test),
+            Self::Cmp { lhs, rhs, .. } => operand(lhs, test) || operand(rhs, test),
+            Self::Between {
+                field, low, high, ..
+            } => operand(field, test) || operand(low, test) || operand(high, test),
+        }
+    }
+
+    /// zerodds-lint: recursion-depth = parse-tree-depth (≤ 64 via
+    /// parser input caps; no unbounded recursion possible).
+    fn evaluate_selected<R: RowAccess>(
+        &self,
+        row: &R,
+        params: &[Value],
+    ) -> Result<bool, EvalError> {
+        match self {
+            Self::And(a, b) => {
+                Ok(a.evaluate_selected(row, params)? && b.evaluate_selected(row, params)?)
+            }
+            Self::Or(a, b) => {
+                Ok(a.evaluate_selected(row, params)? || b.evaluate_selected(row, params)?)
+            }
+            Self::Not(inner) => Ok(!inner.evaluate_selected(row, params)?),
             Self::Cmp { lhs, op, rhs } => {
                 let l = resolve_operand(lhs, row, params)?;
                 let r = resolve_operand(rhs, row, params)?;
@@ -111,15 +165,16 @@ fn cmp(lhs: &Value, op: CmpOp, rhs: &Value) -> Result<bool, EvalError> {
     }
     // §7.6.7.1: a bitmask flag has a Boolean type, and "comparisons with
     // the integer literals 1 and 0 shall also be allowed".
-    if let (Value::Bool(b), Value::Int(n)) | (Value::Int(n), Value::Bool(b)) = (lhs, rhs) {
-        if matches!(op, CmpOp::Eq | CmpOp::Neq) && (*n == 0 || *n == 1) {
-            let equal = (*n == 1) == *b;
-            return Ok(if matches!(op, CmpOp::Eq) {
-                equal
-            } else {
-                !equal
-            });
-        }
+    if let (Value::Bool(b), Value::Int(n)) | (Value::Int(n), Value::Bool(b)) = (lhs, rhs)
+        && matches!(op, CmpOp::Eq | CmpOp::Neq)
+        && (*n == 0 || *n == 1)
+    {
+        let equal = (*n == 1) == *b;
+        return Ok(if matches!(op, CmpOp::Eq) {
+            equal
+        } else {
+            !equal
+        });
     }
     // Two integers compare exactly: through f64 every pair above 2^53 that
     // differs only in the low bits would compare equal.
@@ -448,5 +503,46 @@ mod tests {
             by_param.evaluate(&absent, &[Value::from_parameter("null")]),
             Ok(true)
         );
+    }
+
+    /// A union `u` whose discriminator 2 selects `b`, and a member `x`
+    /// outside it.
+    struct UnionRow;
+    impl RowAccess for UnionRow {
+        fn get(&self, path: &str) -> Option<Value> {
+            match path {
+                "x" => Some(Value::Int(7)),
+                "u.#discriminator" => Some(Value::Int(2)),
+                "u.b" => Some(Value::String("on".into())),
+                _ => None,
+            }
+        }
+        fn unselected(&self, path: &str) -> bool {
+            path == "u.a" || path.starts_with("u.a.")
+        }
+    }
+
+    /// DDS-XTypes 1.4 Beta 1 §7.6.7.1: a union member is named by its
+    /// name, the discriminator by `#discriminator`, and "if the
+    /// discriminator does not select the named member, the result of the
+    /// filter evaluation shall be false" — the expression's result, also
+    /// under `OR` and `NOT` and where the member is not reached.
+    #[test]
+    fn xtypes_1_4_7_6_7_1_a_member_the_discriminator_does_not_select_makes_the_filter_false() {
+        for (text, expected) in [
+            ("u.#discriminator = 2", true),
+            ("u.#discriminator <> 2", false),
+            ("u.b = 'on'", true),
+            ("u.b = 'on' AND x = 7", true),
+            ("u.a = 1", false),
+            ("NOT u.a = 1", false),
+            ("u.a <> 1", false),
+            ("x = 7 OR u.a = 1", false),
+            ("u.b = 'on' OR u.a = 1", false),
+            ("u.a.c BETWEEN 1 AND 2", false),
+        ] {
+            let e = parse(text).unwrap();
+            assert_eq!(e.evaluate(&UnionRow, &[]), Ok(expected), "{text}");
+        }
     }
 }

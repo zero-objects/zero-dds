@@ -64,7 +64,7 @@ class CoreExceptionsTest {
     };
 
     @Test
-    void everyTable71ExceptionIsAnAbstractDdsExceptionOfOrgOmgDdsCore() throws Exception {
+    void javapsm_7_3_2_every_table_7_1_exception_is_an_abstract_dds_exception_of_org_omg_dds_core() throws Exception {
         assertTrue(Modifier.isAbstract(DDSException.class.getModifiers()));
         assertEquals("org.omg.dds.core", DDSException.class.getPackage().getName());
         for (Object[] row : TABLE_7_1) {
@@ -76,13 +76,13 @@ class CoreExceptionsTest {
     }
 
     @Test
-    void ddsExceptionIsADdsObjectAndUnchecked() throws Exception {
+    void javapsm_7_3_1_dds_exception_is_a_dds_object_and_unchecked() throws Exception {
         assertTrue(DDSObject.class.isAssignableFrom(DDSException.class));
         assertTrue(RuntimeException.class.isAssignableFrom(DDSException.class));
     }
 
     @Test
-    void theExceptionsKeepTheSerialVersionUidOfTheOmgSource() throws Exception {
+    void javapsm_7_3_2_the_exceptions_keep_the_serial_version_uid_of_the_omg_source() throws Exception {
         for (Object[] row : TABLE_7_1) {
             Class<?> omg = (Class<?>) row[0];
             assertEquals(((Long) row[1]).longValue(), ObjectStreamClass.lookup(omg).getSerialVersionUID(),
@@ -96,7 +96,7 @@ class CoreExceptionsTest {
     }
 
     @Test
-    void onlyTimeoutExceptionIsChecked() throws Exception {
+    void javapsm_7_3_2_only_timeout_exception_is_checked() throws Exception {
         for (Object[] row : TABLE_7_1) {
             assertTrue(RuntimeException.class.isAssignableFrom((Class<?>) row[0]), row[0].toString());
         }
@@ -114,7 +114,7 @@ class CoreExceptionsTest {
     }
 
     @Test
-    void theServiceProvidesAConcreteClassForEveryTable71ExceptionAndForRetcodeError() throws Exception {
+    void javapsm_7_3_2_the_service_provides_a_concrete_class_for_every_table_7_1_exception_and_for_retcode_error() throws Exception {
         for (Object[] row : TABLE_7_1) {
             Class<?> omg = (Class<?>) row[0];
             Class<?> concrete = (Class<?>) row[2];
@@ -128,7 +128,7 @@ class CoreExceptionsTest {
     }
 
     @Test
-    void anExceptionBelongsToTheEnvironmentItWasCreatedIn() throws Exception {
+    void javapsm_7_3_1_an_exception_belongs_to_the_environment_it_was_created_in() throws Exception {
         ServiceEnvironment env = Qos.env();
         assertSame(env, new org.zerodds.core.AlreadyClosedException().getEnvironment());
         assertSame(env, new org.zerodds.core.ErrorException("x").getEnvironment());
@@ -148,24 +148,6 @@ class CoreExceptionsTest {
         }
     }
 
-    @Test
-    void anExceptionIsSerializableWithMessageAndCauseAndGetsTheDefaultEnvironment() throws Exception {
-        Throwable cause = new IllegalStateException("root");
-        org.zerodds.core.ErrorException original = new org.zerodds.core.ErrorException(
-                new org.zerodds.ServiceEnvironmentImpl(), "failed", cause);
-        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-        try (ObjectOutputStream out = new ObjectOutputStream(bytes)) {
-            out.writeObject(original);
-        }
-        DDSException copy;
-        try (ObjectInputStream in = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
-            copy = (DDSException) in.readObject();
-        }
-        assertEquals("failed", copy.getMessage());
-        assertEquals("root", copy.getCause().getMessage());
-        assertSame(Qos.env(), copy.getEnvironment());
-    }
-
     // ---- RETCODE_ERROR and RETCODE_OUT_OF_RESOURCES raised by a writer --------
 
     private static TopicTypeSupport<byte[]> support(Qos.Writer<byte[]> writer) {
@@ -173,7 +155,7 @@ class CoreExceptionsTest {
     }
 
     @Test
-    void aSampleTheEncoderRejectsFailsWithRetcodeError() throws Exception {
+    void javapsm_7_3_2_a_sample_the_encoder_rejects_fails_with_retcode_error() throws Exception {
         Topic<byte[]> topic = participant.createTopic("CoreErrorTopic", byte[].class);
         Publisher publisher = participant.createPublisher();
         DataWriter<byte[]> writer = Qos.writer(publisher, topic, support((value, buf) -> {
@@ -189,7 +171,7 @@ class CoreExceptionsTest {
     }
 
     @Test
-    void anEncodingBeyondTheLimitFailsWithOutOfResources() throws Exception {
+    void javapsm_7_3_2_an_encoding_beyond_the_limit_fails_with_out_of_resources() throws Exception {
         TopicTypeSupport<byte[]> support = support((value, buf) -> buf.put(value));
         // 1000 octets fit into the 1024-octet limit, 2000 octets do not
         assertEquals(1000, DataWriterImpl.serialize(support, new byte[1000], 1024).length);

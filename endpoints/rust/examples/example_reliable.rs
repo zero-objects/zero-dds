@@ -146,7 +146,7 @@ fn standalone_demo() {
             if let Some((seq, body)) = unframe(frame) {
                 count += 1;
                 // Drop every 3rd distinct sample once, to force retransmit.
-                if count % 3 == 0 && dropped_once.insert(seq) {
+                if count.is_multiple_of(3) && dropped_once.insert(seq) {
                     continue;
                 }
                 let _ = state.recv_data(seq, body.to_vec());

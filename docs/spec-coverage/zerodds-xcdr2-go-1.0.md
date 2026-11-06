@@ -19,8 +19,8 @@ Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden W
 `exporting_moves_the_first_letter_and_nothing_else`,
 `an_array_type_nests_outermost_dimension_first`,
 `a_field_carries_its_idl_spelling_in_a_tag`;
-`crates/lang-render/tests/dispatch_chains.rs::a_go_dispatch_chain_of_ten_thousand_arms_renders_flat`;
-querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+`crates/lang-render/tests/dispatch_chains.rs::xtypes_7_5_1_a_go_dispatch_chain_of_ten_thousand_arms_renders_flat`;
+querschnittlich `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -30,8 +30,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/rule/go.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -41,7 +41,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -51,8 +51,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/go.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -62,7 +62,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_go.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -72,8 +72,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/go`, Endpoint-SDK `endpoints/go`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -85,8 +85,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::every_idl_primitive_reaches_a_go_type`,
-`crates/lang-rules/tests/go_end_to_end.rs::no_generated_type_has_an_implementation_defined_width`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_2_every_idl_primitive_reaches_a_go_type`,
+`crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_2_no_generated_type_has_an_implementation_defined_width`
 
 **Status:** done
 
@@ -96,7 +96,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_long_double_is_a_string_and_never_a_float64`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_float64`
 
 **Status:** done
 
@@ -106,8 +106,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::an_optional_member_becomes_a_pointer_and_the_others_do_not`,
-`crates/lang-rules/tests/go_codec.rs::an_optional_member_reads_through_a_pointer`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_pointer_and_the_others_do_not`,
+`crates/lang-rules/tests/go_codec.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_reads_through_a_pointer`
 
 **Status:** done
 
@@ -117,7 +117,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_map_becomes_a_slice_of_entries_and_never_a_go_map`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_5_1_3_6_a_map_becomes_a_slice_of_entries_and_never_a_go_map`
 
 **Status:** done
 
@@ -127,7 +127,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_typedef_becomes_an_alias_and_not_a_defined_type`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_4_2_a_typedef_becomes_an_alias_and_not_a_defined_type`
 
 **Status:** done
 
@@ -137,7 +137,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::an_enum_becomes_a_defined_type_with_its_numbering_written_out`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_becomes_a_defined_type_with_its_numbering_written_out`
 
 **Status:** done
 
@@ -147,8 +147,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_bitmask_becomes_an_unsigned_type_and_one_constant_per_bit`,
-`crates/lang-rules/tests/go_codec.rs::a_bitmask_mask_is_gos_own_and_typed`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_4_1_2_a_bitmask_becomes_an_unsigned_type_and_one_constant_per_bit`,
+`crates/lang-rules/tests/go_codec.rs::xtypes_7_2_2_4_1_2_a_bitmask_mask_is_gos_own_and_typed`
 
 **Status:** done — der Leser behält die deklarierten Bits mit der Maske der deklarierten Bits
 (ein typisierter `uint64`-Wert, etwa `uint64(9)`); ein Komplement wird nicht geschrieben.
@@ -159,9 +159,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_member_named_after_a_go_keyword_is_escaped_and_keeps_its_idl_name`,
-`crates/lang-rules/tests/go_end_to_end.rs::a_member_named_after_a_predeclared_identifier_is_escaped_too`,
-`crates/lang-rules/tests/go_end_to_end.rs::two_members_that_would_reach_one_go_name_are_refused_by_name`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::idl_7_2_3_a_member_named_after_a_go_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/go_end_to_end.rs::idl_7_2_3_a_member_named_after_a_predeclared_identifier_is_escaped_too`,
+`crates/lang-rules/tests/go_end_to_end.rs::idl_7_2_3_two_members_that_would_reach_one_go_name_are_refused_by_name`
 
 **Status:** done
 
@@ -171,7 +171,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::a_module_flattens_onto_the_name_because_a_go_package_is_a_directory`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::idl_7_5_2_a_module_flattens_onto_the_name_because_a_go_package_is_a_directory`
 
 **Status:** done
 
@@ -181,9 +181,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_codec.rs::the_read_direction_opens_with_table_9_and_returns_the_sample`,
-`crates/lang-rules/tests/go_codec.rs::a_mutable_aggregate_compiles_with_its_seen_flags`,
-`crates/lang-rules/tests/go_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+**Tests:** `crates/lang-rules/tests/go_codec.rs::xtypes_7_4_3_the_read_direction_opens_with_table_9_and_returns_the_sample`,
+`crates/lang-rules/tests/go_codec.rs::xtypes_7_4_3_a_mutable_aggregate_compiles_with_its_seen_flags`,
+`crates/lang-rules/tests/go_codec.rs::xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks`
 
 **Status:** done
 
@@ -195,7 +195,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -205,7 +205,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::the_generated_go_compiles`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_3_1_the_generated_go_compiles`
 
 **Status:** done
 
@@ -215,7 +215,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::the_generated_go_is_gofmt_stable`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_3_1_the_generated_go_is_gofmt_stable`
 
 **Status:** done
 
@@ -225,7 +225,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -235,7 +235,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/go.rs`, `crates/lang-rules/src/adapter/go.rs`
 
-**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::every_construct_the_table_claims_for_go_produces_output`
+**Tests:** `crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_2_2_4_every_construct_the_table_claims_for_go_produces_output`
 
 **Status:** done
 
@@ -245,9 +245,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/go.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -259,8 +259,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -270,8 +270,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-go-gen/`, `tools/wireprobe/wireprobe-zerodds-go`, `tools/wireprobe/wireprobe-go-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -279,8 +278,17 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 ## Audit-Status
 
-24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-go-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-cst --all-targets` (Job `merge-rust-lang-cst`) — 6 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (Job `merge-rust-lang-render`) — 3 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 11 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-go` (Job `merge-codegen-go`) — 21 Tests grün.
+* `python3 ci/run_integration.py integration-codegen` (Job `integration-codegen`) — 1 Test grün.
+
+44 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

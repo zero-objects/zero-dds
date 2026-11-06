@@ -150,7 +150,16 @@ fn one_impl(
         &key_for(encoding_for(ast, id))?,
         &key_for(xcdr1_encoding(ast.effective_extensibility(id)))?,
     ));
-    body.push_str(&field_value_item(ast, node));
+    if zerodds_lang_rules::encode::has_key_members_read(ast, id, key_for(encoding_for(ast, id))?) {
+        body.push_str(&key_members_item(
+            &path,
+            has_xcdr1,
+            &key_for(encoding_for(ast, id))?,
+            &key_for(xcdr1_encoding(ast.effective_extensibility(id)))?,
+            ast.effective_extensibility(id),
+        ));
+    }
+    body.push_str(&field_value_item(ast, id, node));
 
     let mut out = format!("\nimpl zerodds_dcps::DdsType for {path} {{\n{body}}}\n");
     if !has_xcdr1 {
@@ -178,17 +187,12 @@ fn key_items(
     path: &str,
     key_for: &dyn Fn(Encoding) -> Result<LayoutKey, String>,
 ) -> Result<String, String> {
-    // A union's discriminator is a key without being a MemberNode. The
-    // Rust union codec currently returns before emitting the inherent
-    // key_holder_be/key_from_holder_be methods used by this bridge. Do not
-    // advertise a keyless topic, or emit calls to methods that do not exist.
-    if zerodds_ast_layout::keyhash::union_key_discriminator(ast, id).is_some() {
-        return Err(format!(
-            "DdsType key holder for `{path}`: a keyed union discriminator requires \
-             Rust key_holder_be/key_from_holder_be methods, which the union codec \
-             does not yet generate"
-        ));
-    }
+    // A union's discriminator is a key without being a MemberNode
+    // (`switch (@key D)`, XTypes 1.3 §7.2.2.4.4.4.8): `key_members_with`
+    // answers the empty list for it, and the union is a keyed topic type
+    // all the same, whose holder is the discriminator. The Rust union
+    // codec emits `key_holder_be`/`key_from_holder_be` for it.
+    let keyed_union = zerodds_ast_layout::keyhash::union_key_discriminator(ast, id).is_some();
     // The holder's key, not the sample's: XTypes 1.3 §7.6.8 fixes the
     // purpose and the byte order, and the rest of the dialect carries
     // over from the plan the codec was built with.
@@ -205,7 +209,7 @@ fn key_items(
         key.key_holder_order,
     )
     .map_err(|error| format!("DdsType key holder for `{path}`: {error}"))?;
-    if members.is_empty() {
+    if members.is_empty() && !keyed_union {
         return Ok(String::new());
     }
     // §7.6.8 step 5 branches on the holder's **maximum** serialised
@@ -536,6 +540,48 @@ fn codec_items(
     out
 }
 
+/// `decode_key_members` (`zerodds_dcps::DdsType`): the codec's
+/// `decode_keys` pair, which reads the `@key` members and steps over the
+/// others, under the encoding and byte order the caller names. A type with
+/// no XCDR1 plan answers `None` for XCDR1; the reader decodes it whole.
+fn key_members_item(
+    path: &str,
+    has_xcdr1: bool,
+    v2_key: &LayoutKey,
+    v1_key: &LayoutKey,
+    extensibility: Extensibility,
+) -> String {
+    let second = zerodds_lang_rules::encode::SECONDARY_SUFFIX;
+    let v2 = Encoding::PlainCdr2.max_alignment();
+    let v2_read = wire_settings(v2_key, false);
+    let xcdr1 = if has_xcdr1 {
+        let v1 = xcdr1_encoding(extensibility).max_alignment();
+        let v1_read = wire_settings(v1_key, false);
+        format!(
+            "if xcdr1 {{\n            \
+             let mut r = zerodds_wire::Reader::with_max_align(bytes, endianness, {v1}){v1_read};\n            \
+             return Ok({path}::decode_keys{second}(&mut r)?);\n        }}"
+        )
+    } else {
+        "if xcdr1 {\n            return Err(zerodds_dcps::DecodeError::Invalid { what: \"no XCDR1 plan\" });\n        }"
+            .to_string()
+    };
+    let unsupported = if has_xcdr1 {
+        String::new()
+    } else {
+        "\n        if xcdr1 {\n            return None;\n        }".to_string()
+    };
+    format!(
+        "\n    fn decode_key_members(\n        bytes: &[u8],\n        xcdr1: bool,\n        big_endian: bool,\n    \
+         ) -> Option<Result<Self, zerodds_dcps::DecodeError>> {{{unsupported}\n        \
+         let endianness = if big_endian {{\n            zerodds_wire::Endianness::Big\n        }} else {{\n            \
+         zerodds_wire::Endianness::Little\n        }};\n        \
+         let read = || -> Result<Self, zerodds_dcps::DecodeError> {{\n        {xcdr1}\n        \
+         let mut r = zerodds_wire::Reader::with_max_align(bytes, endianness, {v2}){v2_read};\n        \
+         Ok({path}::decode_keys(&mut r)?)\n        }};\n        Some(read())\n    }}\n"
+    )
+}
+
 /// `encode_continuing` and `decode_continuing`: the value as the
 /// continuation of a sample whose first octets someone else wrote, little
 /// endian, alignment counted from the start of the sample. DDS-RPC 1.0
@@ -748,11 +794,18 @@ fn decode_fn(
 /// absence is `null`, §7.6.7.2); a collection, which §B.2.1 reaches by
 /// index and this does not carry; and an `unsigned long long`, whose
 /// range does not fit the filter's `i64`.
-fn field_value_item(ast: &Ast, node: &TypeNode) -> String {
+fn field_value_item(ast: &Ast, id: Id<TypeNode>, node: &TypeNode) -> String {
+    if matches!(node.kind, TypeKind::Union { .. }) {
+        return union_filter_items(ast, id);
+    }
     let TypeKind::Structure { members, .. } = &node.kind else {
         return String::new();
     };
     let mut arms = String::new();
+    // DDS-XTypes 1.4 Beta 1 §7.6.7.1: whether a path reaches a union
+    // member its discriminator does not select, through the members that
+    // are aggregates.
+    let mut unselected_arms = String::new();
     for member in members {
         let Ok(member_node) = ast.member(*member) else {
             continue;
@@ -773,6 +826,28 @@ fn field_value_item(ast: &Ast, node: &TypeNode) -> String {
             continue;
         };
         let field = zerodds_lang_cst::rust::escape_keyword(&member_node.name);
+        // A member held as a `rust_type` mapping: the filter compares the
+        // IDL value the Rust value stands for, written through `to_wire`
+        // and read back, as a peer would receive it.
+        if let Some(mapping) =
+            zerodds_lang_rules::adapter::cst::member_rust_type_mapping(ast, member_node)
+        {
+            if let Some(arm) = mapped_filter_arm(
+                &member_node.name,
+                &field,
+                &target_node.kind,
+                &mapping,
+                optional,
+                member_node
+                    .facets
+                    .xtypes
+                    .as_ref()
+                    .is_some_and(|x| x.is_external),
+            ) {
+                arms.push_str(&arm);
+            }
+            continue;
+        }
         // §7.6.7.2: "A DataReader's filter [...] shall consider an
         // optional member that is absent to be equal to null." The
         // field is an `Option` (boxed when it is also `@external`); a
@@ -840,20 +915,339 @@ fn field_value_item(ast: &Ast, node: &TypeNode) -> String {
                     "            (\"{name}\", Some(rest)) => \
                      zerodds_dcps::DdsType::field_value(&{value}, rest),"
                 );
+                let _ = writeln!(
+                    unselected_arms,
+                    "            Some((\"{name}\", rest)) => \
+                     zerodds_dcps::DdsType::field_unselected(&{value}, rest),"
+                );
+            }
+            // Annex B.2 ENUMERATEDVALUE: an enumerated member compares
+            // with the name of its enumerator.
+            TypeKind::Enumeration { .. } => {
+                // The place itself, without the parentheses an
+                // `@external` member's value carries.
+                let place = value
+                    .strip_prefix('(')
+                    .and_then(|v| v.strip_suffix(')'))
+                    .unwrap_or(&value);
+                if let Some(text) = enumerator_name(ast, target, place) {
+                    let _ = writeln!(arms, "            (\"{name}\", None) => Some({text}),");
+                }
             }
             _ => {}
         }
     }
-    if arms.is_empty() {
-        return String::new();
+    let mut out = String::new();
+    if !arms.is_empty() {
+        let _ = write!(
+            out,
+            "\n    fn field_value(&self, path: &str) -> Option<zerodds_dcps::FilterValue> {{\n        \
+             let (head, rest) = match path.split_once('.') {{\n            \
+             Some((head, rest)) => (head, Some(rest)),\n            \
+             None => (path, None),\n        }};\n        \
+             match (head, rest) {{\n{arms}            _ => None,\n        }}\n    }}\n"
+        );
     }
+    if !unselected_arms.is_empty() {
+        let _ = write!(
+            out,
+            "\n    fn field_unselected(&self, path: &str) -> bool {{\n        \
+             match path.split_once('.') {{\n{unselected_arms}            _ => false,\n        }}\n    }}\n"
+        );
+    }
+    out
+}
+
+/// `FilterValue::String` of the name of the enumerator `value` holds, for
+/// the enumeration `enumeration` (DDS 1.4 Annex B.2 ENUMERATEDVALUE).
+fn enumerator_name(ast: &Ast, enumeration: Id<TypeNode>, value: &str) -> Option<String> {
+    let path = zerodds_lang_rules::adapter::cst::path_from_file_root(ast, enumeration).ok()?;
+    let mut arms = String::new();
+    for enumerator in ast.enumerators_of(enumeration) {
+        let enumerator = ast.enumerator(*enumerator).ok()?;
+        let _ = write!(
+            arms,
+            "{path}::{} => \"{}\", ",
+            zerodds_lang_cst::rust::escape_keyword(&enumerator.name),
+            enumerator.name
+        );
+    }
+    Some(format!(
+        "zerodds_dcps::FilterValue::String(String::from(match {value} {{ {arms}}}))"
+    ))
+}
+
+/// `field_value` and `field_unselected` of a union (DDS-XTypes 1.4 Beta 1
+/// §7.6.7.1): a branch by its member's name, the discriminator by
+/// `#discriminator`; a branch the discriminator does not select has no
+/// value and makes the filter that names it false.
+///
+/// A branch this cannot answer for gets no arm, as a struct member does:
+/// a `rust_type` mapping, a collection, an `unsigned long long`.
+fn union_filter_items(ast: &Ast, id: Id<TypeNode>) -> String {
+    let Ok(shape) = zerodds_lang_rules::union_variants(ast, id) else {
+        return String::new();
+    };
+    let discriminator = shape.discriminator;
+    let Ok(discriminator_node) = ast.type_(discriminator) else {
+        return String::new();
+    };
+    // The discriminator a variant carries, `d` a reference to it.
+    let carried = match &discriminator_node.kind {
+        TypeKind::Primitive(PrimitiveKind::Boolean) => {
+            Some(String::from("Some(zerodds_dcps::FilterValue::Bool(*d))"))
+        }
+        TypeKind::Primitive(PrimitiveKind::Char | PrimitiveKind::WChar) => Some(String::from(
+            "Some(zerodds_dcps::FilterValue::String(d.to_string()))",
+        )),
+        // `unsigned long long` overruns the filter's `i64`: the value
+        // where it fits, none where it does not.
+        TypeKind::Primitive(PrimitiveKind::UInt64) => Some(String::from(
+            "i64::try_from(*d).ok().map(zerodds_dcps::FilterValue::Int)",
+        )),
+        TypeKind::Primitive(kind) => {
+            scalar_value(*kind, "*d").map(|value| format!("Some({value})"))
+        }
+        TypeKind::Enumeration { .. } => {
+            enumerator_name(ast, discriminator, "d").map(|text| format!("Some({text})"))
+        }
+        _ => None,
+    };
+    // The discriminator a one-label variant stands for, from its label.
+    let fixed = |label: i128| -> Option<String> {
+        Some(match &discriminator_node.kind {
+            TypeKind::Primitive(PrimitiveKind::Boolean) => {
+                format!("Some(zerodds_dcps::FilterValue::Bool({}))", label != 0)
+            }
+            TypeKind::Primitive(PrimitiveKind::Char | PrimitiveKind::WChar) => {
+                let character = char::from_u32(u32::try_from(label).ok()?)?;
+                format!(
+                    "Some(zerodds_dcps::FilterValue::String(String::from({:?})))",
+                    character.to_string()
+                )
+            }
+            TypeKind::Primitive(_) => match i64::try_from(label) {
+                Ok(value) => format!("Some(zerodds_dcps::FilterValue::Int({value}))"),
+                Err(_) => String::from("None"),
+            },
+            TypeKind::Enumeration { .. } => {
+                let enumerator = ast
+                    .enumerators_of(discriminator)
+                    .iter()
+                    .copied()
+                    .find(|e| ast.effective_enumerator_value(*e) == Some(label))?;
+                let name = &ast.enumerator(enumerator).ok()?.name;
+                format!("Some(zerodds_dcps::FilterValue::String(String::from(\"{name}\")))")
+            }
+            _ => return None,
+        })
+    };
+
+    let mut discriminator_arms = String::new();
+    let mut value_arms = String::new();
+    let mut unselected_arms = String::new();
+    let mut names = Vec::new();
+    for case in &shape.cases {
+        let variant = &case.variant;
+        let name = &case.member.name;
+        names.push(format!("\"{name}\""));
+        // The discriminator.
+        let discriminator_value = if case.carries_discriminator {
+            carried
+                .as_ref()
+                .map(|value| (format!("Self::{variant}(d, _)"), value.clone()))
+        } else {
+            case.labels
+                .first()
+                .and_then(|label| fixed(*label))
+                .map(|value| (format!("Self::{variant}(..)"), value))
+        };
+        if let Some((pattern, value)) = discriminator_value {
+            let _ = writeln!(discriminator_arms, "                {pattern} => {value},");
+        }
+        // The branch.
+        if zerodds_lang_rules::adapter::cst::member_rust_type_mapping(ast, case.member).is_some() {
+            continue;
+        }
+        let bound = if case.carries_discriminator {
+            format!("Self::{variant}(_, v)")
+        } else {
+            format!("Self::{variant}(v)")
+        };
+        let external = case
+            .member
+            .facets
+            .xtypes
+            .as_ref()
+            .is_some_and(|x| x.is_external);
+        let deref = if external { "**v" } else { "*v" };
+        let reference = if external { "&**v" } else { "v" };
+        let Some(target) = case
+            .member
+            .type_
+            .resolved()
+            .map(|id| resolve_alias(ast, id))
+        else {
+            continue;
+        };
+        let Ok(target_node) = ast.type_(target) else {
+            continue;
+        };
+        match &target_node.kind {
+            // A character as the text it is (`v` is a reference).
+            TypeKind::Primitive(PrimitiveKind::Char | PrimitiveKind::WChar) => {
+                let _ = writeln!(
+                    value_arms,
+                    "            ({bound}, \"{name}\", None) => \
+                     Some(zerodds_dcps::FilterValue::String(v.to_string())),"
+                );
+            }
+            TypeKind::Primitive(kind) => {
+                if let Some(value) = scalar_value(*kind, deref) {
+                    let _ = writeln!(
+                        value_arms,
+                        "            ({bound}, \"{name}\", None) => Some({value}),"
+                    );
+                }
+            }
+            TypeKind::String { .. } => {
+                let _ = writeln!(
+                    value_arms,
+                    "            ({bound}, \"{name}\", None) => \
+                     Some(zerodds_dcps::FilterValue::String(String::clone({reference}))),"
+                );
+            }
+            TypeKind::Enumeration { .. } => {
+                if let Some(text) = enumerator_name(ast, target, reference) {
+                    let _ = writeln!(
+                        value_arms,
+                        "            ({bound}, \"{name}\", None) => Some({text}),"
+                    );
+                }
+            }
+            TypeKind::Structure { .. } | TypeKind::Union { .. } => {
+                let _ = writeln!(
+                    value_arms,
+                    "            ({bound}, \"{name}\", Some(rest)) => \
+                     zerodds_dcps::DdsType::field_value({reference}, rest),"
+                );
+                let _ = writeln!(
+                    unselected_arms,
+                    "            ({bound}, \"{name}\") => \
+                     rest.is_some_and(|rest| zerodds_dcps::DdsType::field_unselected({reference}, rest)),"
+                );
+            }
+            _ => {}
+        }
+    }
+    if let Some(no_member) = shape.no_member
+        && let Some(value) = &carried
+    {
+        let _ = writeln!(
+            discriminator_arms,
+            "                Self::{no_member}(d) => {value},"
+        );
+    }
+    let names = names.join(" | ");
     format!(
-        "\n    fn field_value(&self, path: &str) -> Option<zerodds_dcps::FilterValue> {{\n        \
+        "\n    // Every variant has a discriminator arm where the type allows\n    \
+         // one; the wildcard is for those it does not.\n    \
+         #[allow(unreachable_patterns)]\n    \
+         fn field_value(&self, path: &str) -> Option<zerodds_dcps::FilterValue> {{\n        \
          let (head, rest) = match path.split_once('.') {{\n            \
          Some((head, rest)) => (head, Some(rest)),\n            \
          None => (path, None),\n        }};\n        \
-         match (head, rest) {{\n{arms}            _ => None,\n        }}\n    }}\n"
+         if head == \"#discriminator\" {{\n            \
+         if rest.is_some() {{\n                return None;\n            }}\n            \
+         return match self {{\n{discriminator_arms}                _ => None,\n            }};\n        }}\n        \
+         match (self, head, rest) {{\n{value_arms}            _ => None,\n        }}\n    }}\n\n    \
+         // A variant can match two arms below: an aggregate branch is\n    \
+         // asked further, every other selected one is not.\n    \
+         #[allow(unreachable_patterns)]\n    \
+         fn field_unselected(&self, path: &str) -> bool {{\n        \
+         let (head, rest) = match path.split_once('.') {{\n            \
+         Some((head, rest)) => (head, Some(rest)),\n            \
+         None => (path, None),\n        }};\n        \
+         let _ = rest;\n        \
+         match (self, head) {{\n{unselected_arms}{selected_arms}            (_, {names}) => true,\n            _ => false,\n        }}\n    }}\n",
+        selected_arms = selected_arms(&shape),
     )
+}
+
+/// `(Self::V(..), "name") => false,` for every case: a branch the
+/// discriminator selects, named without a further step.
+fn selected_arms(shape: &zerodds_lang_rules::UnionVariants<'_>) -> String {
+    let mut out = String::new();
+    for case in &shape.cases {
+        let _ = writeln!(
+            out,
+            "            (Self::{}(..), \"{}\") => false,",
+            case.variant, case.member.name
+        );
+    }
+    out
+}
+
+/// The `field_value` arm of a member held as a `rust_type` mapping, or
+/// `None` where the filter has no value shape for its IDL type.
+///
+/// `zerodds_wire::repr::idl_string` and `idl_primitive` write the Rust
+/// value through its `to_wire` and read the IDL value back; a value the
+/// conversion refuses answers `None`, and the filter denies the sample
+/// rather than compare a substitute. An absent `@optional` member is
+/// `null` (§7.6.7.2).
+fn mapped_filter_arm(
+    name: &str,
+    field: &str,
+    idl: &TypeKind,
+    mapping: &zerodds_lang_rules::adapter::cst::RustTypeMapping,
+    optional: bool,
+    external: bool,
+) -> Option<String> {
+    let (function, convert) = match idl {
+        TypeKind::String { .. } => (
+            "idl_string",
+            String::from("zerodds_dcps::FilterValue::String"),
+        ),
+        TypeKind::Primitive(kind) => (
+            "idl_primitive",
+            format!("|v| {}", scalar_value(*kind, "v")?),
+        ),
+        _ => return None,
+    };
+    let call = |value: &str| match &mapping.adapter {
+        None => format!("zerodds_wire::repr::{function}({value})"),
+        Some(adapter) => {
+            let adapter: Vec<&str> = adapter
+                .segments()
+                .iter()
+                .map(zerodds_lang_cst::common::Ident::as_str)
+                .collect();
+            format!(
+                "zerodds_wire::repr::{function}_with(&{}, {value})",
+                adapter.join("::")
+            )
+        }
+    };
+    Some(if optional {
+        let value = if external { "&**v" } else { "v" };
+        format!(
+            "            (\"{name}\", None) => match &self.{field} {{\n                \
+             Some(v) => {}.ok().map({convert}),\n                \
+             None => Some(zerodds_dcps::FilterValue::Null),\n            }},\n",
+            call(value)
+        )
+    } else {
+        let value = if external {
+            format!("&*self.{field}")
+        } else {
+            format!("&self.{field}")
+        };
+        format!(
+            "            (\"{name}\", None) => {}.ok().map({convert}),\n",
+            call(&value)
+        )
+    })
 }
 
 /// The filter value one scalar member yields, if the filter has a shape
@@ -988,41 +1382,23 @@ mod tests {
         composed.ast
     }
 
+    /// XTypes 1.3 §7.2.2.4.4.4.8 and §7.6.8: a union keyed by its
+    /// discriminator is a keyed topic type although it has no `@key`
+    /// member, and its holder is the discriminator — a `long`, four
+    /// octets, so step 5's zero-padded branch.
     #[test]
-    fn a_carried_union_discriminator_cannot_acquire_keyless_dds_defaults() {
-        // Build the internal model directly: the default text frontend refuses
-        // this annotation earlier, so a Config test cannot reach this guard.
-        let mut ast = Ast::new();
-        let discriminator = ast
-            .add_type(
-                ast.root_module(),
-                "Long",
-                TypeKind::Primitive(PrimitiveKind::Int32),
-            )
-            .expect("discriminator");
+    fn xtypes_7_6_8_a_union_keyed_by_its_discriminator_is_a_keyed_topic_type() {
+        let ast = model(
+            "enum CommandKind { START, STOP, GO_LEFT, GO_RIGHT }; \
+             union Command switch (@key CommandKind) { case START: float delay; \
+             case STOP: float distance; case GO_LEFT: case GO_RIGHT: float angle; }; \
+             union Plain switch (long) { case 0: float x; };",
+        );
         let union = ast
-            .add_type(
-                ast.root_module(),
-                "Command",
-                TypeKind::Union {
-                    discriminator: zerodds_ast_core::Ref::Resolved(discriminator),
-                    cases: Vec::new(),
-                    default_case: None,
-                },
-            )
-            .expect("union");
-        let zero = ast.add_int_expr(0).expect("label");
-        ast.add_case(
-            union,
-            vec![zerodds_ast::CaseLabel::Value(zero)],
-            zerodds_ast::MemberSpec::new("value", zerodds_ast_core::Ref::Resolved(discriminator)),
-        )
-        .expect("case");
-        let any = ast.any_of_type(union).expect("union id");
-        ast.facets_mut(any)
-            .expect("facets")
-            .xtypes_mut()
-            .discriminator_is_key = true;
+            .types()
+            .find(|(_, node)| node.name == "Command")
+            .map(|(id, _)| id)
+            .expect("Command");
         assert!(
             zerodds_ast_layout::keyhash::key_members_with(
                 &ast,
@@ -1032,27 +1408,21 @@ mod tests {
             )
             .expect("members")
             .is_empty(),
-            "the discriminator is deliberately not a MemberNode"
+            "the discriminator is not a MemberNode"
         );
-        let error = dds_type_impls(&ast, &[], &default_key_for)
-            .expect_err("a carried discriminator must not become keyless");
-        assert!(
-            error.contains("DdsType key holder for `Command`"),
-            "{error}"
-        );
-        assert!(error.contains("keyed union discriminator"), "{error}");
-        assert!(
-            error.contains("key_holder_be/key_from_holder_be"),
-            "{error}"
-        );
-        ast.facets_mut(any)
-            .expect("facets")
-            .xtypes_mut()
-            .discriminator_is_key = false;
-        let keyless =
-            dds_type_impls(&ast, &[], &default_key_for).expect("same union without a key");
-        assert!(keyless.contains("impl zerodds_dcps::DdsType for Command"));
-        assert!(!keyless.contains("const HAS_KEY: bool = true"));
+        let impls = dds_type_impls(&ast, &[], &default_key_for).expect("impls");
+        let command = impls
+            .split("impl zerodds_dcps::DdsType for ")
+            .find(|block| block.starts_with("Command "))
+            .expect("Command's impl");
+        assert!(command.contains("const HAS_KEY: bool = true"), "{command}");
+        assert!(command.contains("const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(16)"));
+        assert!(command.contains("Command::key_holder_be(self)"));
+        let plain = impls
+            .split("impl zerodds_dcps::DdsType for ")
+            .find(|block| block.starts_with("Plain "))
+            .expect("Plain's impl");
+        assert!(!plain.contains("const HAS_KEY: bool = true"));
     }
 
     #[test]
@@ -1078,9 +1448,8 @@ mod tests {
     /// The list of types with an XCDR1 pair is passed in, so this holds
     /// the *shape* of the answer open even while every construct in the
     /// tree happens to plan under both versions. The alternative — four
-    /// methods quietly delegating to the XCDR2 codec — is what
-    /// `docs/OPEN-ITEMS.md` records as the fault class this bridge
-    /// exists to avoid.
+    /// methods quietly delegating to the XCDR2 codec — is the fault class
+    /// this bridge exists to avoid.
     #[test]
     fn without_an_xcdr1_plan_the_four_methods_are_left_refusing() {
         let ast = model("@final struct Pose { int32 id; double x; };");

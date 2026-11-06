@@ -15,7 +15,7 @@ use zerodds::factory_ffi::{
 use zerodds::participant_ffi::{zerodds_dp_create_topic, zerodds_dp_find_topic_w_timeout};
 
 #[test]
-fn find_topic_waits_for_a_topic_and_times_out_without_one() {
+fn dcps_2_2_2_2_1_11_find_topic_waits_for_a_topic_and_times_out_without_one() {
     let lease = zerodds_test_domains::lease_domain();
     let name = CString::new("CFindTimeout").unwrap();
     let type_name = CString::new("FindTimeoutType").unwrap();

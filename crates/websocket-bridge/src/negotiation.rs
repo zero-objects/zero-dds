@@ -103,7 +103,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_extensions_single() {
+    fn ws_9_parse_extensions_single() {
         let offers = parse_extensions("permessage-deflate");
         assert_eq!(offers.len(), 1);
         assert_eq!(offers[0].name, "permessage-deflate");
@@ -111,7 +111,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_extensions_with_param() {
+    fn ws_9_parse_extensions_with_param() {
         let offers = parse_extensions("permessage-deflate; client_max_window_bits");
         assert_eq!(offers.len(), 1);
         assert_eq!(offers[0].params.len(), 1);
@@ -119,20 +119,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_extensions_with_value_param() {
+    fn ws_9_parse_extensions_with_value_param() {
         let offers = parse_extensions("foo; bar=baz");
         assert_eq!(offers[0].params[0].0, "bar");
         assert_eq!(offers[0].params[0].1.as_deref(), Some("baz"));
     }
 
     #[test]
-    fn parse_extensions_strips_quoted_value() {
+    fn ws_9_parse_extensions_strips_quoted_value() {
         let offers = parse_extensions("foo; bar=\"baz\"");
         assert_eq!(offers[0].params[0].1.as_deref(), Some("baz"));
     }
 
     #[test]
-    fn parse_extensions_multiple_offers() {
+    fn ws_9_parse_extensions_multiple_offers() {
         let offers = parse_extensions("foo, bar; x=1, baz");
         assert_eq!(offers.len(), 3);
         assert_eq!(offers[0].name, "foo");
@@ -141,13 +141,13 @@ mod tests {
     }
 
     #[test]
-    fn parse_extensions_empty_returns_empty() {
+    fn ws_9_parse_extensions_empty_returns_empty() {
         assert!(parse_extensions("").is_empty());
         assert!(parse_extensions(" , ").is_empty());
     }
 
     #[test]
-    fn parse_subprotocols_basic() {
+    fn ws_9_parse_subprotocols_basic() {
         assert_eq!(
             parse_subprotocols("chat, soap, mqtt"),
             vec!["chat".to_string(), "soap".into(), "mqtt".into()]
@@ -155,12 +155,12 @@ mod tests {
     }
 
     #[test]
-    fn parse_subprotocols_empty_returns_empty() {
+    fn ws_9_parse_subprotocols_empty_returns_empty() {
         assert!(parse_subprotocols("").is_empty());
     }
 
     #[test]
-    fn select_subprotocol_picks_first_match() {
+    fn ws_9_select_subprotocol_picks_first_match() {
         let client = vec!["soap".to_string(), "chat".into()];
         let server = ["mqtt", "chat", "soap"];
         assert_eq!(
@@ -170,14 +170,14 @@ mod tests {
     }
 
     #[test]
-    fn select_subprotocol_returns_none_when_no_match() {
+    fn ws_9_select_subprotocol_returns_none_when_no_match() {
         let client = vec!["xmpp".to_string()];
         let server = ["chat", "mqtt"];
         assert!(select_subprotocol(&client, &server).is_none());
     }
 
     #[test]
-    fn select_subprotocol_is_case_insensitive() {
+    fn ws_9_select_subprotocol_is_case_insensitive() {
         let client = vec!["CHAT".to_string()];
         let server = ["chat"];
         assert_eq!(
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn header_constants_match_spec() {
+    fn ws_9_header_constants_match_spec() {
         assert_eq!(SUBPROTOCOL_HEADER, "Sec-WebSocket-Protocol");
         assert_eq!(EXTENSIONS_HEADER, "Sec-WebSocket-Extensions");
     }

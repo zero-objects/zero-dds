@@ -2543,7 +2543,7 @@ mod tests {
     /// directory is the second half of the check — a file that does not
     /// compile is a materialiser defect, not a corpus defect.
     #[test]
-    fn every_corpus_case_renders_or_names_its_failure() {
+    fn idl4csharp_7_2_4_2_3_every_corpus_case_renders_or_names_its_failure() {
         let cases = corpus();
         assert!(
             cases.len() > 300,
@@ -2607,7 +2607,7 @@ mod tests {
     ";
 
     #[test]
-    fn every_idl_primitive_reaches_the_csharp_type_that_holds_it() {
+    fn idl4csharp_7_2_4_1_1_every_idl_primitive_reaches_the_csharp_type_that_holds_it() {
         let generated = declarations(
             "@final struct P {
                boolean a; octet b; char c; wchar d;
@@ -2639,7 +2639,7 @@ mod tests {
     }
 
     #[test]
-    fn every_field_carries_the_idl_name_it_was_folded_from() {
+    fn idl4csharp_7_1_1_2_every_field_carries_the_idl_name_it_was_folded_from() {
         // The fold is what makes the attribute load-bearing: a member's
         // ID under @autoid(HASH) is the MD5 of `venue`, not of `Venue`.
         let generated = declarations("@final struct P { long venue; long my_field; };");
@@ -2654,7 +2654,7 @@ mod tests {
     }
 
     #[test]
-    fn two_members_that_differ_only_after_the_fold_stay_two_members() {
+    fn idl_7_2_3_two_members_that_differ_only_after_the_fold_stay_two_members() {
         // `my_field` and `myField` are both legal in one IDL struct and
         // both fold to `MyField` under a full PascalCase. Under this
         // one they do not collide at all.
@@ -2664,7 +2664,7 @@ mod tests {
     }
 
     #[test]
-    fn a_member_that_would_collide_with_its_type_cannot_come_from_idl() {
+    fn idl4csharp_7_2_4_3_1_a_member_that_would_collide_with_its_type_cannot_come_from_idl() {
         // CS0542 forbids a member sharing the simple name of its type,
         // and `fields_of` moves such a member to `Name_` with an
         // `[IdlName]` attribute keeping the IDL spelling.
@@ -2699,7 +2699,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sequence_and_an_array_are_both_csharp_arrays() {
+    fn idl4csharp_7_2_4_2_1_a_sequence_and_an_array_are_both_csharp_arrays() {
         let generated = declarations(
             "@final struct P { sequence<long> s; long a[3]; long g[2][3]; sequence<string> t; };",
         );
@@ -2710,7 +2710,7 @@ mod tests {
     }
 
     #[test]
-    fn a_map_is_an_array_of_a_generated_entry_class() {
+    fn idl4csharp_7_2_4_2_2_a_map_is_an_array_of_a_generated_entry_class() {
         let generated = declarations("@final struct P { map<long, string> m; };");
         // The tag is the IDL kind's spelling: `char` and `wchar` are
         // both a C# `char` and are one and two octets on the wire.
@@ -2734,13 +2734,13 @@ mod tests {
     }
 
     #[test]
-    fn two_maps_of_one_shape_are_one_entry_class() {
+    fn xtypes_7_2_2_4_3_two_maps_of_one_shape_are_one_entry_class() {
         let generated = declarations("@final struct P { map<long, long> a; map<long, long> b; };");
         assert_eq!(generated.matches("class ZdEntry_long_long").count(), 1);
     }
 
     #[test]
-    fn two_maps_whose_csharp_spelling_coincides_are_still_two_entry_classes() {
+    fn xtypes_7_2_2_4_3_two_maps_whose_csharp_spelling_coincides_are_still_two_entry_classes() {
         // `char` and `wchar` are both a C# `char` and are one and two
         // octets on the wire. One entry class for both would put one of
         // them out at the other's width.
@@ -2753,7 +2753,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_value_type_is_nullable_and_a_reference_one_is_not() {
+    fn idl4csharp_7_17_1_an_optional_value_type_is_nullable_and_a_reference_one_is_not() {
         let generated = declarations(
             "@mutable struct P {
                @optional long a; @optional string b; @optional long long c;
@@ -2769,7 +2769,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_enum_is_nullable_because_an_enum_is_a_value_type() {
+    fn idl4csharp_7_17_1_an_optional_enum_is_nullable_because_an_enum_is_a_value_type() {
         let generated = declarations(
             "enum Colour { RED, GREEN };
              @mutable struct P { @optional Colour c; };",
@@ -2781,7 +2781,7 @@ mod tests {
     }
 
     #[test]
-    fn a_union_is_a_class_with_a_discriminator_and_one_field_per_case() {
+    fn idl4csharp_7_2_4_3_2_a_union_is_a_class_with_a_discriminator_and_one_field_per_case() {
         let generated = declarations(
             "union Choice switch (long) {
                case 1: long whole;
@@ -2801,7 +2801,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_is_a_real_enum_and_a_member_of_it_is_that_type() {
+    fn idl4csharp_7_2_4_3_3_an_enumeration_is_a_real_enum_and_a_member_of_it_is_that_type() {
         let generated = declarations(
             "enum Colour { RED, GREEN, BLUE };
              @final struct P { Colour c; };",
@@ -2821,14 +2821,14 @@ mod tests {
     }
 
     #[test]
-    fn an_explicit_enumerator_value_is_written_out() {
+    fn idl4csharp_7_2_4_3_3_an_explicit_enumerator_value_is_written_out() {
         let generated = declarations("enum E { @value(-1) LOW, @value(70000) HIGH };");
         assert!(generated.contains("LOW = -1,"), "{generated}");
         assert!(generated.contains("HIGH = 70000,"), "{generated}");
     }
 
     #[test]
-    fn a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for() {
+    fn idl4csharp_7_14_3_3_a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for() {
         let narrow =
             declarations("@bit_bound(8) bitmask Small { @position(0) A, @position(7) B };");
         assert!(narrow.contains("public enum Small : byte"), "{narrow}");
@@ -2842,7 +2842,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bitset_is_a_class_of_one_field_per_bitfield() {
+    fn idl4csharp_7_14_3_2_a_bitset_is_a_class_of_one_field_per_bitfield() {
         let generated = declarations(
             "bitset Packed { bitfield<3> low; bitfield<5> high; };
              @final struct P { Packed value; };",
@@ -2856,7 +2856,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fixed_is_a_string_and_not_a_decimal() {
+    fn idl4csharp_7_2_4_2_4_a_fixed_is_a_string_and_not_a_decimal() {
         let generated = declarations(
             "typedef fixed<9,3> Money;
              @final struct P { Money amount; };",
@@ -2868,7 +2868,7 @@ mod tests {
     }
 
     #[test]
-    fn a_typedef_is_a_using_alias_and_every_use_takes_the_resolved_type() {
+    fn idl4csharp_7_2_4_6_a_typedef_is_a_using_alias_and_every_use_takes_the_resolved_type() {
         let generated = declarations(
             "typedef sequence<long> Row;
              @final struct P { Row r; };",
@@ -2880,7 +2880,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_is_a_namespace_and_two_modules_do_not_collide() {
+    fn idl4csharp_7_2_2_a_module_is_a_namespace_and_two_modules_do_not_collide() {
         let generated = declarations(
             "module a { @final struct P { long x; }; };
              module b { @final struct P { double y; }; };
@@ -2893,7 +2893,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_reopened_beside_a_nested_one_is_one_namespace_block() {
+    fn idl4csharp_7_2_2_a_module_reopened_beside_a_nested_one_is_one_namespace_block() {
         let generated = declarations(
             "module common {
                module util { @final struct Location { double x; }; };
@@ -2912,7 +2912,7 @@ mod tests {
     }
 
     #[test]
-    fn an_identifier_that_is_a_csharp_keyword_is_escaped_with_an_at_sign() {
+    fn idl4csharp_7_1_1_an_identifier_that_is_a_csharp_keyword_is_escaped_with_an_at_sign() {
         let generated = declarations(
             "module namespace {
                enum class { template, virtual, friend };
@@ -2939,7 +2939,7 @@ mod tests {
     }
 
     #[test]
-    fn a_constant_becomes_a_const_field_of_a_holder_class() {
+    fn idl4csharp_7_2_3_a_constant_becomes_a_const_field_of_a_holder_class() {
         let generated = declarations(
             "const long MAX = 10;
              const string NAME = \"zerodds\";
@@ -2963,7 +2963,7 @@ mod tests {
     }
 
     #[test]
-    fn a_construct_with_no_csharp_data_form_is_named_and_not_left_out() {
+    fn idl4csharp_7_3_a_construct_with_no_csharp_data_form_is_named_and_not_left_out() {
         // The member is not dropped and no `object` is substituted for
         // it: a class missing a field that reports success is the defect
         // this materialiser is arranged against.
@@ -2996,7 +2996,8 @@ mod tests {
     }
 
     #[test]
-    fn an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes() {
+    fn idl4csharp_7_1_1_2_2_an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes()
+    {
         // No corpus case declares one, so this is what says the
         // `interface-to-interface` rule materialises rather than
         // claiming a coverage cell that produces nothing.
@@ -3019,7 +3020,7 @@ mod tests {
     }
 
     #[test]
-    fn an_exception_is_a_data_class_and_not_a_system_exception() {
+    fn idl4csharp_7_4_1_an_exception_is_a_data_class_and_not_a_system_exception() {
         // No corpus case declares one either. An IDL member named
         // `message` folds onto `System.Exception.Message`, and hiding an
         // inherited member (CS0108) is not a decision the wire makes.
@@ -3037,7 +3038,7 @@ mod tests {
     }
 
     #[test]
-    fn a_valuetype_is_a_class_of_its_state_members() {
+    fn idl4csharp_7_6_a_valuetype_is_a_class_of_its_state_members() {
         let generated = declarations(
             "valuetype Node { public long id; public string label; };
              @final struct P { Node n; };",
@@ -3063,7 +3064,7 @@ mod tests {
     }
 
     #[test]
-    fn every_generated_file_carries_the_support_namespace() {
+    fn idl4csharp_2_1_every_generated_file_carries_the_support_namespace() {
         let generated = declarations("@final struct P { long x; };");
         assert!(generated.contains("namespace ZeroDds.Idl"), "{generated}");
         assert!(

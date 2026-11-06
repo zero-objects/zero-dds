@@ -666,7 +666,7 @@ fn a_sequence_of_arrays_writes_the_bytes_cyclone_and_fast_dds_write() {
 
 #[test]
 fn a_nested_aggregate_and_a_bounded_string_compile_and_round_trip() {
-    // The five rows of `docs/codec-runtime-gap-followup.md`'s table in
+    // The five rows of `0b2e8df9f6b:docs/codec-runtime-gap-followup.md`'s table in
     // one type. Every one of them emitted a call the runtime did not
     // have, and `crates/lang-rules/tests/codec.rs` compared the text and
     // passed.

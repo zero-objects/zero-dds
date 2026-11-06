@@ -43,13 +43,13 @@ def _shape_type_name() -> str:
     return topic.type_name
 
 
-def test_shape_type_name_matches_shapesdemo_convention():
+def py_1_2_4_shape_type_name_matches_shapesdemo_convention():
     """§5.4 — the topic type name on the Python side is `ShapeType`, compatible
     with Cyclone/Fast-DDS ShapesDemo (no module prefix)."""
     assert _shape_type_name() == "ShapeType"
 
 
-def test_cross_vendor_participant_discovery_against_ddsperf():
+def py_5_4_cross_vendor_participant_discovery_against_ddsperf(leased_domain):
     """§5.4 — Cyclone `ddsperf -i <domain> pub 1Hz` starts a
     DomainParticipant on the given domain. ZeroDDS speaks
     SPDP multicast on the same domain and MUST see the Cyclone
@@ -60,7 +60,7 @@ def test_cross_vendor_participant_discovery_against_ddsperf():
     topic names (the KeyedSeq pattern changes between ddsperf versions)
     would be fragile; full byte tests run on the Rust side in
     `crates/discovery/tests/cyclone_live_*.rs`."""
-    domain = 91
+    domain = leased_domain
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_fast(domain)
 
@@ -81,14 +81,24 @@ def test_cross_vendor_participant_discovery_against_ddsperf():
             if discovered >= 1:
                 break
             time.sleep(0.2)
-        assert discovered >= 1, (
-            f"Cyclone ddsperf participant on domain {domain} not discovered via "
-            f"SPDP (discovered_participants_count={discovered})"
-        )
+        if discovered < 1:
+            # What ddsperf said: a refused configuration or a missing
+            # interface ends it before it sends SPDP.
+            publisher.terminate()
+            try:
+                _, stderr = publisher.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                publisher.kill()
+                _, stderr = publisher.communicate()
+            pytest.fail(
+                f"Cyclone ddsperf participant on domain {domain} not discovered via "
+                f"SPDP (discovered_participants_count={discovered}); ddsperf exit "
+                f"{publisher.returncode}, stderr: {stderr.decode(errors='replace')[-2000:]!r}"
+            )
     finally:
-        publisher.terminate()
-        try:
-            publisher.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            publisher.kill()
-        time.sleep(0.1)
+        if publisher.poll() is None:
+            publisher.terminate()
+            try:
+                publisher.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                publisher.kill()

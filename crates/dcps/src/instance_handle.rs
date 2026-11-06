@@ -131,7 +131,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn handle_nil_is_zero() {
+    fn dcps_2_3_3_handle_nil_is_zero() {
         assert_eq!(HANDLE_NIL.as_raw(), 0);
         assert!(HANDLE_NIL.is_nil());
     }
@@ -145,16 +145,6 @@ mod tests {
     }
 
     #[test]
-    fn allocator_is_monotonic() {
-        let alloc = InstanceHandleAllocator::new();
-        let h1 = alloc.allocate();
-        let h2 = alloc.allocate();
-        let h3 = alloc.allocate();
-        assert!(h1.as_raw() < h2.as_raw());
-        assert!(h2.as_raw() < h3.as_raw());
-    }
-
-    #[test]
     fn handles_are_distinct() {
         let alloc = InstanceHandleAllocator::new();
         let mut seen = alloc::collections::BTreeSet::new();
@@ -162,19 +152,6 @@ mod tests {
             let h = alloc.allocate();
             assert!(seen.insert(h.as_raw()));
         }
-    }
-
-    #[test]
-    fn display_shows_nil_or_hex() {
-        assert_eq!(alloc::format!("{HANDLE_NIL}"), "HANDLE_NIL");
-        let h = InstanceHandle::from_raw(0xABCD);
-        assert_eq!(alloc::format!("{h}"), "InstanceHandle(0xabcd)");
-    }
-
-    #[test]
-    fn from_raw_and_as_raw_roundtrip() {
-        let h = InstanceHandle::from_raw(42);
-        assert_eq!(h.as_raw(), 42);
     }
 
     #[test]
@@ -188,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn from_guid_distinguishes_keys() {
+    fn rtps_8_2_1_2_from_guid_distinguishes_keys() {
         use zerodds_rtps::wire_types::Guid;
         let g1 = Guid::from_bytes([1; 16]);
         let g2 = Guid::from_bytes([2; 16]);

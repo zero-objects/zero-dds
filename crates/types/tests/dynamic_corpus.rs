@@ -267,7 +267,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 #[test]
-fn a_dynamic_data_writes_the_octets_a_json_value_writes() {
+fn xtypes_7_5_2_a_dynamic_data_writes_the_octets_a_json_value_writes() {
     let cases = corpus();
     assert!(!cases.is_empty(), "the corpus is empty");
 
@@ -438,7 +438,7 @@ fn a_dynamic_data_writes_the_octets_a_json_value_writes() {
 /// that pointed at a different node of the same name would be invisible
 /// everywhere else.
 #[test]
-fn a_dynamic_type_names_the_node_the_encoder_encodes() {
+fn xtypes_7_5_2_4_10_a_dynamic_type_names_the_node_the_encoder_encodes() {
     let cases = corpus();
     let mut seen = 0usize;
     for case in &cases {

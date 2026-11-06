@@ -16,9 +16,9 @@
 //!
 //! ## Why this app declares no `_POSIX_C_SOURCE`
 //!
-//! `endpoints/c/test/reliable_udp_app.c` sets `_POSIX_C_SOURCE 200809L`, which
-//! under Apple's libc hides `INADDR_LOOPBACK` — a BSD socket extension, not a
-//! POSIX constant — and that file therefore does not compile on macOS. This app
+//! A strict `_POSIX_C_SOURCE 200809L` hides `INADDR_LOOPBACK` under Apple's
+//! libc — a BSD socket extension, not a POSIX constant — so a file that sets it
+//! alone does not compile on macOS. This app
 //! sets no feature-test macro and spells the loopback address `htonl(0x7f000001)`,
 //! so it builds on both libcs.
 
@@ -382,10 +382,15 @@ fn spawn(bin: &PathBuf, port: u16) -> Child {
 
 // ---- 1) the generated codec over a plain UDP socket ----
 
+/// zerodds-endpoint-c-1.0 §3.4: the C app sends the `Ping` of the generated codec as a
+/// bare XCDR2 datagram, without the XRCE frame; the test reads it with the
+/// XCDR2 reader (DDS-XTypes 1.3 §7.4) and answers with a bare `Pong`, which
+/// the app decodes and prints.
 #[test]
-fn c_raw_udp() {
+#[ignore = "needs the C toolchain; runs in integration-bindings"]
+fn endpoint_c_3_4_the_generated_codec_pings_without_the_xrce_frame() {
     if !cc_available() {
-        eprintln!("SKIP c_raw_udp: `cc` not on PATH");
+        eprintln!("SKIP c raw udp: `cc` not on PATH");
         return;
     }
     // The raw app sends a bare XCDR2 Ping (no XRCE frame), so the shared
@@ -417,10 +422,15 @@ fn c_raw_udp() {
 
 // ---- 2/3) the endpoint SDK: XRCE framing, sync and async ----
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the C app sends its `Ping`
+/// through the endpoint SDK's sync API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn c_endpoint_sync() {
+#[ignore = "needs the C toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_c_sync_app_writes_the_ping_and_reads_the_pong() {
     if !cc_available() {
-        eprintln!("SKIP c_endpoint_sync: `cc` not on PATH");
+        eprintln!("SKIP c endpoint sync: `cc` not on PATH");
         return;
     }
     let peer: Peer = bind_peer().expect("bind peer");
@@ -429,10 +439,15 @@ fn c_endpoint_sync() {
     ping_pong(&peer, child, "c/sync");
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the C app sends its `Ping`
+/// through the endpoint SDK's async API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn c_endpoint_async() {
+#[ignore = "needs the C toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_c_async_app_writes_the_ping_and_reads_the_pong() {
     if !cc_available() {
-        eprintln!("SKIP c_endpoint_async: `cc` not on PATH");
+        eprintln!("SKIP c endpoint async: `cc` not on PATH");
         return;
     }
     let peer: Peer = bind_peer().expect("bind peer");

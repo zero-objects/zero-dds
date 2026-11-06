@@ -369,7 +369,7 @@ pub type RelatedObjectRequest = BaseObjectRequest;
 // ============================================================================
 
 fn pad_to(out: &mut Vec<u8>, n: usize) {
-    while out.len() % n != 0 {
+    while !out.len().is_multiple_of(n) {
         out.push(0);
     }
 }
@@ -872,7 +872,7 @@ mod tests {
     // ---- ResultStatusCode -------------------------------------------
 
     #[test]
-    fn result_status_code_all_ten_spec_values_roundtrip() {
+    fn xrce_7_7_7_result_status_code_all_ten_spec_values_roundtrip() {
         for code in [
             ResultStatusCode::Ok,
             ResultStatusCode::OkMatched,
@@ -892,7 +892,7 @@ mod tests {
     }
 
     #[test]
-    fn result_status_code_unknown_byte_rejected() {
+    fn xrce_7_7_7_result_status_code_unknown_byte_rejected() {
         // Values between 0x02 and 0x7F are not in the spec, and the enum
         // literal list stops at 0x87 — there is no 0x88.
         assert!(ResultStatusCode::from_u8(0x02).is_err());
@@ -910,7 +910,7 @@ mod tests {
     }
 
     #[test]
-    fn result_status_roundtrip() {
+    fn xrce_7_7_7_result_status_roundtrip() {
         let r = ResultStatus {
             status_code: ResultStatusCode::AlreadyExists,
             implementation_status: 0x42,
@@ -942,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn result_status_decode_short_returns_eof() {
+    fn xrce_7_7_7_result_status_decode_short_returns_eof() {
         assert!(ResultStatus::decode(&[]).is_err());
         assert!(ResultStatus::decode(&[0x00]).is_err());
     }
@@ -950,7 +950,7 @@ mod tests {
     // ---- BaseObjectRequest -----------------------------------------
 
     #[test]
-    fn base_object_request_roundtrip() {
+    fn xrce_7_7_4_base_object_request_roundtrip() {
         let oid = ObjectId::new(
             0x010,
             crate::object_kind::ObjectKind::from_u8(OBJK_PARTICIPANT).unwrap(),
@@ -967,14 +967,14 @@ mod tests {
     }
 
     #[test]
-    fn base_object_request_decode_short_returns_eof() {
+    fn xrce_7_7_8_base_object_request_decode_short_returns_eof() {
         assert!(BaseObjectRequest::decode(&[0x01, 0x02, 0x03]).is_err());
     }
 
     // ---- BaseObjectReply -------------------------------------------
 
     #[test]
-    fn base_object_reply_roundtrip() {
+    fn xrce_7_7_9_base_object_reply_roundtrip() {
         let oid = ObjectId::new(
             0x123,
             crate::object_kind::ObjectKind::from_u8(OBJK_PARTICIPANT).unwrap(),
@@ -1011,7 +1011,7 @@ mod tests {
     /// `BaseObjectRequest`, so it shares the exact same 4-byte codec —
     /// this is a type-level check, not a new encoding.
     #[test]
-    fn related_object_request_is_base_object_request() {
+    fn xrce_7_7_10_related_object_request_is_base_object_request() {
         let oid = ObjectId::new(
             0x010,
             crate::object_kind::ObjectKind::from_u8(OBJK_PARTICIPANT).unwrap(),
@@ -1033,7 +1033,7 @@ mod tests {
     /// §7.7.12: `INFO_CONFIGURATION` is position 0, `INFO_ACTIVITY` position 1
     /// of a 32-bit bitmask.
     #[test]
-    fn info_mask_bits_and_wire_form() {
+    fn xrce_7_7_12_info_mask_bits_and_wire_form() {
         let mask = InfoMask(InfoMask::INFO_CONFIGURATION);
         assert!(mask.configuration() && !mask.activity());
         assert!(InfoMask(2).activity());
@@ -1061,7 +1061,7 @@ mod tests {
     /// length of the members. The union has a one-octet `ObjectKind`
     /// discriminator, so the DHEADER sits at 4.
     #[test]
-    fn agent_activity_info_has_a_dheader_and_a_locator_sequence() {
+    fn xrce_7_7_agent_activity_info_has_a_dheader_and_a_locator_sequence() {
         // The locators of the sequence are written in the form of the
         // reference implementation here, to keep the octets listed.
         crate::encoding::with_unannotated_types(crate::encoding::UnannotatedTypes::Final, || {
@@ -1108,7 +1108,7 @@ mod tests {
 
     /// `DATAREADER_ActivityInfo { short highest_acked_num; }`.
     #[test]
-    fn data_reader_activity_info_is_a_dheader_and_a_short() {
+    fn xrce_7_7_12_data_reader_activity_info_is_a_dheader_and_a_short() {
         let a = ActivityInfoVariant::DataReader {
             highest_acked_num: -2,
         };
@@ -1120,7 +1120,7 @@ mod tests {
     /// `DATAWRITER_ActivityInfo { unsigned long long sample_seq_num; short
     /// stream_seq_num; }`: the 64-bit number is aligned to 4 in XCDR2.
     #[test]
-    fn data_writer_activity_info_is_a_dheader_a_long_long_and_a_short() {
+    fn xrce_7_7_12_data_writer_activity_info_is_a_dheader_a_long_long_and_a_short() {
         let a = ActivityInfoVariant::DataWriter {
             sample_seq_num: 0x0102_0304_0506_0708,
             stream_seq_num: 3,
@@ -1143,7 +1143,7 @@ mod tests {
 
     /// A member an appended-to later version adds is skipped by the DHEADER.
     #[test]
-    fn appended_members_of_an_activity_are_skipped() {
+    fn xrce_7_7_12_appended_members_of_an_activity_are_skipped() {
         let mut bytes = alloc::vec![
             0x06, 0, 0, 0, 6, 0, 0, 0, 0x05, 0x00, 0xAA, 0xBB, 0xCC, 0xDD
         ];
@@ -1161,13 +1161,13 @@ mod tests {
     }
 
     #[test]
-    fn activity_info_decode_unknown_discriminator_rejected() {
+    fn xrce_7_7_12_activity_info_decode_unknown_discriminator_rejected() {
         let bytes = [0x77u8, 0, 0, 0, 0, 0, 0, 0];
         assert!(ActivityInfoVariant::decode(&bytes).is_err());
     }
 
     #[test]
-    fn activity_info_decode_truncated_rejected() {
+    fn xrce_7_7_12_activity_info_decode_truncated_rejected() {
         assert!(ActivityInfoVariant::decode(&[0x06, 0x01]).is_err());
     }
 
@@ -1176,7 +1176,7 @@ mod tests {
     /// `ObjectInfo { @optional activity; @optional config; }`: two presence
     /// octets for an empty one.
     #[test]
-    fn an_empty_object_info_is_two_presence_octets() {
+    fn xrce_7_7_13_an_empty_object_info_is_two_presence_octets() {
         let info = ObjectInfo::default();
         assert_eq!(info.encode().unwrap(), alloc::vec![0, 0]);
         assert_eq!(ObjectInfo::decode(&[0, 0]).unwrap(), (info, 2));
@@ -1186,7 +1186,7 @@ mod tests {
     /// octet. With the 6 octets of a `BaseObjectReply` in front (an INFO)
     /// the DHEADER lands at 8.
     #[test]
-    fn object_info_puts_the_activity_before_the_config() {
+    fn xrce_7_7_object_info_puts_the_activity_before_the_config() {
         let info = ObjectInfo {
             activity: Some(ActivityInfoVariant::DataReader {
                 highest_acked_num: -2,
@@ -1210,7 +1210,7 @@ mod tests {
     /// The `config` of the agent is an `ObjectVariant` of kind `OBJK_AGENT`,
     /// i.e. the `AGENT_Representation` behind the kind octet (§7.8.2.2).
     #[test]
-    fn the_config_of_the_agent_is_its_agent_representation() {
+    fn xrce_7_7_13_the_config_of_the_agent_is_its_agent_representation() {
         let rep = AgentRepresentation {
             timestamp: None,
             version: [1, 0],
@@ -1240,7 +1240,7 @@ mod tests {
     /// The `config` of any other object is the `ObjectVariant` it was
     /// created with: the kind octet, the representation, the trailing field.
     #[test]
-    fn the_config_of_a_topic_is_the_object_variant_it_was_created_with() {
+    fn xrce_7_7_13_the_config_of_a_topic_is_the_object_variant_it_was_created_with() {
         let extra = ObjectVariantExtra {
             domain_id: None,
             parent: Some(ObjectId::from_raw(0x0011)),

@@ -317,7 +317,7 @@ pub fn process_unique(pid: u32, seed: u16, counter: u32) -> [u8; 6] {
 /// The failure in (3) is the point. Before this path existed, a complete and
 /// correct `dds.sec.*` list produced a participant *without* a bundle:
 /// plaintext RTPS, silently. A participant that comes up unencrypted because
-/// a path was wrong is the failure class `docs/silent-drop-sweep.md` names,
+/// a path was wrong is the failure class `0b2e8df9f6b:docs/silent-drop-sweep.md` names,
 /// so it is an error here and never a fallback.
 #[cfg(all(feature = "std", feature = "security"))]
 fn security_from_participant_properties(
@@ -487,11 +487,12 @@ fn read_etc_hostname() -> Option<String> {
         .map(|s| s.trim().to_owned())
 }
 
-/// The GUID prefix of a bridge daemon's participant: the host identifier of
-/// [`host_id_bytes`] in bytes 0..4, as every participant of this stack
-/// carries it, and FNV-1a-64 of `seed` (the daemon's client or container
-/// id, its listen address) in bytes 4..12. Stable across restarts of the
-/// same daemon on the same host; two seeds or two hosts give two prefixes.
+/// The GUID prefix of a bridge daemon's participant: the vendor id in bytes
+/// 0..2 (DDSI-RTPS 2.5 §9.3.1.5), the host identifier of [`host_id_bytes`] in
+/// bytes 2..6, as every participant of this stack carries it, and six octets
+/// of FNV-1a-64 of `seed` (the daemon's client or container id, its listen
+/// address) in bytes 6..12. Stable across restarts of the same daemon on the
+/// same host; two seeds or two hosts give two prefixes.
 ///
 /// The bridges used to take the first 12 bytes of the seed itself, so
 /// `zerodds-bridge-a` and `zerodds-bridge-b`, or `127.0.0.1:9001` and
@@ -776,11 +777,13 @@ fn topic_user_key(name: &str, type_name: &str) -> String {
 
 /// Explicit teardown once the last strong handle to this participant is
 /// gone. [`DomainParticipant::downgrade`]'s doc comment promises "natural
-/// RAII teardown ... via the `Arc<DcpsRuntime>` drop chain", but that chain
-/// alone never actually reaches a zero refcount: every recv/tick worker
-/// thread [`crate::runtime::DcpsRuntime::start`] spawns is handed its own
-/// strong `Arc<DcpsRuntime>` clone for as long as it runs, and a thread only
-/// exits (dropping its clone) once told to via
+/// RAII teardown ... via the `Arc<DcpsRuntime>` drop chain". The chain
+/// reaches the runtime's own `Drop` now that its worker threads hold it
+/// weakly; the explicit call stays for a reference to the runtime that
+/// outlives the participant. Before, every recv/tick worker thread
+/// [`crate::runtime::DcpsRuntime::start`] spawned held its own strong
+/// `Arc<DcpsRuntime>` clone for as long as it ran, and a thread only
+/// exited (dropping its clone) once told to via
 /// [`crate::runtime::DcpsRuntime::shutdown`] — which nothing called when a
 /// `DomainParticipant` was merely dropped (as opposed to explicitly deleted
 /// via `DomainParticipantFactory::delete_participant`, which also never
@@ -1149,11 +1152,11 @@ impl DomainParticipant {
     /// disable.
     #[cfg(feature = "std")]
     pub fn register_builtin_types(&self) {
-        if let Ok(set) = crate::builtin_type_set::BuiltinTypeSet::build() {
-            if let Ok(mut reg) = self.inner.type_registry.lock() {
-                for (name, t) in set.all() {
-                    reg.insert(name, t);
-                }
+        if let Ok(set) = crate::builtin_type_set::BuiltinTypeSet::build()
+            && let Ok(mut reg) = self.inner.type_registry.lock()
+        {
+            for (name, t) in set.all() {
+                reg.insert(name, t);
             }
         }
     }
@@ -1352,16 +1355,18 @@ impl DomainParticipant {
         };
         let mut queued = 0;
         // Check the minimal hash.
-        if let Some(hash) = extract_equivalence_hash(&ti.minimal.typeid_with_size.type_id) {
-            if !self.has_type_for_hash(hash) && self.enqueue_type_lookup(hash) {
-                queued += 1;
-            }
+        if let Some(hash) = extract_equivalence_hash(&ti.minimal.typeid_with_size.type_id)
+            && !self.has_type_for_hash(hash)
+            && self.enqueue_type_lookup(hash)
+        {
+            queued += 1;
         }
         // Check the complete hash (if present).
-        if let Some(hash) = extract_equivalence_hash(&ti.complete.typeid_with_size.type_id) {
-            if !self.has_type_for_hash(hash) && self.enqueue_type_lookup(hash) {
-                queued += 1;
-            }
+        if let Some(hash) = extract_equivalence_hash(&ti.complete.typeid_with_size.type_id)
+            && !self.has_type_for_hash(hash)
+            && self.enqueue_type_lookup(hash)
+        {
+            queued += 1;
         }
         queued
     }
@@ -1893,10 +1898,8 @@ impl DomainParticipant {
             .push(topic_inner(&topic));
         drop(topics);
         #[cfg(feature = "std")]
-        if enabled_now {
-            if let Some(rt) = self.inner.runtime.as_ref() {
-                announce_topic(rt, &topic.inner())?;
-            }
+        if enabled_now && let Some(rt) = self.inner.runtime.as_ref() {
+            announce_topic(rt, &topic.inner())?;
         }
         Ok(topic)
     }
@@ -2636,17 +2639,17 @@ impl DomainParticipant {
         if let Some(support) = self.registered_support(type_name) {
             return Ok(support);
         }
-        if T::type_name() == type_name {
-            if let Some(object) = T::type_object() {
-                return crate::serialized_type::SerializedTypeSupport::from_topic_objects(
-                    type_name,
-                    &object,
-                    &T::type_object_dependencies(),
-                )
-                .map_err(|_| DdsError::BadParameter {
-                    what: "multitopic: the TypeObject of the result type cannot be read",
-                });
-            }
+        if T::type_name() == type_name
+            && let Some(object) = T::type_object()
+        {
+            return crate::serialized_type::SerializedTypeSupport::from_topic_objects(
+                type_name,
+                &object,
+                &T::type_object_dependencies(),
+            )
+            .map_err(|_| DdsError::BadParameter {
+                what: "multitopic: the TypeObject of the result type cannot be read",
+            });
         }
         Err(DdsError::BadParameter {
             what: "multitopic: type_name is no registered type and the result type has no TypeObject",
@@ -2773,10 +2776,11 @@ impl DomainParticipant {
                 what: "multitopic: the TypeObject of a topic of the FROM clause cannot be read",
             }
         })?;
-        if let Some(rt) = self.inner.runtime.as_ref() {
-            if support.dialect() != rt.codec_dialect() && support.dialect().is_default() {
-                support = support.in_dialect(rt.codec_dialect());
-            }
+        if let Some(rt) = self.inner.runtime.as_ref()
+            && support.dialect() != rt.codec_dialect()
+            && support.dialect().is_default()
+        {
+            support = support.in_dialect(rt.codec_dialect());
         }
         let topic =
             reconstruct_topic::<crate::serialized_type::SerializedSample>(inner, self.clone())
@@ -3328,11 +3332,7 @@ impl DomainParticipant {
                 publisher.inner.check_writers_may_change()?;
             }
             for subscriber in self.live_subscribers() {
-                if subscriber.is_access_open() {
-                    return Err(DdsError::PreconditionNotMet {
-                        reason: "a group access (begin_access) is open on a subscriber",
-                    });
-                }
+                subscriber.check_readers_may_be_deleted()?;
             }
             for publisher in self.live_publishers() {
                 publisher.delete_contained_entities()?;
@@ -4146,7 +4146,7 @@ mod tests {
     use crate::dds_type::RawBytes;
 
     #[test]
-    fn participant_created_with_domain_id() {
+    fn dcps_2_2_2_2_1_participant_created_with_domain_id() {
         let p = DomainParticipant::new(42, DomainParticipantQos::default());
         assert_eq!(p.domain_id(), 42);
         assert_eq!(p.topics_len(), 0);
@@ -4157,7 +4157,7 @@ mod tests {
     /// are pairwise different whatever the seed is; the clock does not enter
     /// them again.
     #[test]
-    fn the_prefixes_of_one_process_are_pairwise_different() {
+    fn rtps_8_2_4_2_the_prefixes_of_one_process_are_pairwise_different() {
         for seed in [0u16, 1, 0x7FFF, 0xFFFF] {
             let mut seen = std::collections::BTreeSet::new();
             for counter in 0..=u32::from(u16::MAX) {
@@ -4186,7 +4186,7 @@ mod tests {
     /// namespace the map is one-to-one, and the initial namespace is not
     /// marked.
     #[test]
-    fn two_pid_namespaces_with_the_same_pid_give_different_prefixes() {
+    fn rtps_8_2_4_2_two_pid_namespaces_with_the_same_pid_give_different_prefixes() {
         let initial = Some(u64::from(super::INITIAL_PID_NAMESPACE_INODE));
         let a = Some(4_026_532_201_u64);
         let b = Some(4_026_532_305_u64);
@@ -4219,20 +4219,9 @@ mod tests {
         assert_ne!(pa.to_bytes()[..10], pb.to_bytes()[..10], "not one process");
     }
 
-    /// The prefixes of one process share the first ten octets (host and
-    /// marked process id) and differ in the tail, which the OS-random seed
-    /// and the counter make; the seed is not the clock.
-    #[test]
-    fn the_prefixes_of_one_process_share_ten_octets_and_differ_in_the_tail() {
-        let a = random_guid_prefix().to_bytes();
-        let b = random_guid_prefix().to_bytes();
-        assert_eq!(a[..10], b[..10], "same process");
-        assert_ne!(a[10..], b[10..]);
-    }
-
     /// The PID bytes must correspond to `process::id()`.
     #[test]
-    fn random_guid_prefixes_share_host_id_within_process() {
+    fn rtps_8_2_4_2_random_guid_prefixes_share_host_id_within_process() {
         let p1 = random_guid_prefix();
         let p2 = random_guid_prefix();
         assert_eq!(p1.host_id(), p2.host_id(), "same-host within process");
@@ -4245,20 +4234,19 @@ mod tests {
         assert_eq!(&bytes[2..6], &host_id_bytes(), "host id in prefix[2..6]");
         assert_eq!(&bytes[6..10], &pid_le, "PID bytes in prefix[6..10]");
 
-        // The counter + time bytes must make the two prefixes
-        // distinguishable.
-        assert_ne!(p1, p2, "two prefixes must be distinct");
+        // The prefixes of one process share the first ten octets (host and
+        // marked process id) and differ in the tail, which the OS-random
+        // seed and the counter make; the seed is not the clock.
+        assert_eq!(bytes[..10], p2.to_bytes()[..10], "same process");
+        assert_ne!(
+            bytes[10..],
+            p2.to_bytes()[10..],
+            "two prefixes must be distinct"
+        );
     }
 
     #[test]
-    fn host_id_bytes_deterministic_within_process() {
-        let a = host_id_bytes();
-        let b = host_id_bytes();
-        assert_eq!(a, b, "OnceLock-cached host-id must be stable");
-    }
-
-    #[test]
-    fn create_topic_stores_in_registry() {
+    fn dcps_2_2_2_2_1_5_create_topic_stores_in_registry() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let t1 = p
             .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -4271,7 +4259,7 @@ mod tests {
     }
 
     #[test]
-    fn create_topic_takes_a_second_type_and_rejects_an_inconsistent_qos() {
+    fn dcps_2_2_2_2_1_5_create_topic_takes_a_second_type_and_rejects_an_inconsistent_qos() {
         // A second DdsType for the test.
         #[derive(Debug)]
         struct DummyU32(u32);
@@ -4333,7 +4321,7 @@ mod tests {
     }
 
     #[test]
-    fn create_topic_rejects_empty_name() {
+    fn dcps_2_2_2_2_1_5_create_topic_rejects_empty_name() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let err = p
             .create_topic::<RawBytes>("", TopicQos::default())
@@ -4344,7 +4332,7 @@ mod tests {
     /// DDSI-RTPS 2.5 Table 9.18: topic and type names are `string<256>`; a
     /// topic that could not be announced is not created.
     #[test]
-    fn create_topic_rejects_a_name_longer_than_string_256() {
+    fn rtps_9_6_3_2_create_topic_rejects_a_name_longer_than_string_256() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         assert!(
             p.create_topic::<RawBytes>(&"n".repeat(256), TopicQos::default())
@@ -4361,7 +4349,7 @@ mod tests {
     }
 
     #[test]
-    fn lookup_topicdescription_returns_local_topics() {
+    fn dcps_2_2_2_2_1_12_lookup_topicdescription_returns_local_topics() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let _t = p
             .create_topic::<RawBytes>("Hello", TopicQos::default())
@@ -4505,7 +4493,7 @@ mod tests {
     }
 
     #[test]
-    fn lookup_topicdescription_none_for_unknown() {
+    fn dcps_2_2_2_2_1_12_lookup_topicdescription_none_for_unknown() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         assert!(p.lookup_topicdescription("Unknown").is_none());
     }
@@ -4513,14 +4501,14 @@ mod tests {
     // ---- §2.2.2.2.1.10 contains_entity ----
 
     #[test]
-    fn contains_entity_returns_true_for_self_handle() {
+    fn dcps_2_2_2_2_1_31_contains_entity_returns_true_for_self_handle() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let h = p.instance_handle();
         assert!(p.contains_entity(h));
     }
 
     #[test]
-    fn contains_entity_returns_true_for_local_topic() {
+    fn dcps_2_2_2_2_1_5_contains_entity_returns_true_for_local_topic() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let t = p
             .create_topic::<RawBytes>("Hi", TopicQos::default())
@@ -4530,7 +4518,7 @@ mod tests {
     }
 
     #[test]
-    fn contains_entity_returns_true_for_local_publisher() {
+    fn dcps_2_2_2_2_1_1_contains_entity_returns_true_for_local_publisher() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let pub_ = p.create_publisher(PublisherQos::default());
         let h = pub_.inner.entity_state.instance_handle();
@@ -4538,7 +4526,7 @@ mod tests {
     }
 
     #[test]
-    fn contains_entity_returns_true_for_local_subscriber() {
+    fn dcps_2_2_2_2_1_3_contains_entity_returns_true_for_local_subscriber() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let s = p.create_subscriber(SubscriberQos::default());
         let h = s.inner.entity_state.instance_handle();
@@ -4555,7 +4543,7 @@ mod tests {
     }
 
     #[test]
-    fn contains_entity_returns_false_for_topic_after_delete() {
+    fn dcps_2_2_2_2_1_31_contains_entity_returns_false_for_topic_after_delete() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let t = p
             .create_topic::<RawBytes>("Tmp", TopicQos::default())
@@ -4567,7 +4555,7 @@ mod tests {
     }
 
     #[test]
-    fn contains_entity_recursive_finds_local_datawriter() {
+    fn dcps_2_2_2_2_1_contains_entity_recursive_finds_local_datawriter() {
         // §2.2.2.2.1.10 — contains_entity MUST also recognize DataWriter
         // handles created via Publisher::create_datawriter.
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
@@ -4585,7 +4573,7 @@ mod tests {
     }
 
     #[test]
-    fn contains_entity_recursive_finds_local_datareader() {
+    fn dcps_2_2_2_2_1_31_contains_entity_recursive_finds_local_datareader() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let topic = p
             .create_topic::<RawBytes>("Hello2", TopicQos::default())
@@ -4600,7 +4588,7 @@ mod tests {
     }
 
     #[test]
-    fn contains_entity_recursive_does_not_find_foreign_datawriter() {
+    fn dcps_2_2_2_2_1_31_contains_entity_recursive_does_not_find_foreign_datawriter() {
         // Negative: a DW created via a different participant is NOT
         // contained.
         let p1 = DomainParticipant::new(0, DomainParticipantQos::default());
@@ -4618,7 +4606,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn find_topic_returns_immediately_for_local() {
+    fn dcps_2_2_2_2_1_11_find_topic_returns_immediately_for_local() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         // §2.2.2.2.1.11: find_topic gives access to an *enabled* Topic. A
         // topic of a participant that is not enabled is created disabled
@@ -4640,7 +4628,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn find_topic_times_out_when_unknown() {
+    fn dcps_2_2_2_2_1_11_find_topic_times_out_when_unknown() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let err = p
             .find_topic("NotExists", core::time::Duration::from_millis(80))
@@ -4659,7 +4647,7 @@ mod tests {
     }
 
     #[test]
-    fn create_contentfilteredtopic_rejects_empty_name() {
+    fn dcps_2_2_2_2_1_7_create_contentfilteredtopic_rejects_empty_name() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let topic = p
             .create_topic::<RawBytes>("Base", TopicQos::default())
@@ -4671,7 +4659,7 @@ mod tests {
     }
 
     #[test]
-    fn create_contentfilteredtopic_rejects_empty_expression() {
+    fn dcps_2_2_2_2_1_7_create_contentfilteredtopic_rejects_empty_expression() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let topic = p
             .create_topic::<RawBytes>("Base", TopicQos::default())
@@ -4682,21 +4670,9 @@ mod tests {
         assert!(matches!(err, DdsError::BadParameter { .. }));
     }
 
-    #[test]
-    fn delete_contentfilteredtopic_accepts_own() {
-        let p = DomainParticipant::new(0, DomainParticipantQos::default());
-        let topic = p
-            .create_topic::<RawBytes>("Base", TopicQos::default())
-            .unwrap();
-        let cft = p
-            .create_contentfilteredtopic("CF", &topic, "x > 0", alloc::vec::Vec::new())
-            .unwrap();
-        p.delete_contentfilteredtopic(&cft).unwrap();
-    }
-
     #[cfg(feature = "std")]
     #[test]
-    fn find_topic_resolves_via_sedp_subscription() {
+    fn dcps_2_2_2_2_1_11_find_topic_resolves_via_sedp_subscription() {
         // A variant of the discovery hook: this time we inject a
         // subscription (reader-side discovery), not a publication.
         // find_topic must find both.
@@ -4706,64 +4682,65 @@ mod tests {
         use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
         use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
+        let lease = zerodds_test_domains::lease_domain();
         let p = DomainParticipantFactory::instance()
             .create_participant_with_config(
-                43,
+                lease.id(),
                 DomainParticipantQos::default(),
                 crate::runtime::RuntimeConfig::default(),
             )
             .expect("runtime start");
 
         let target_topic = "DiscoveredViaSubSedp";
-        if let Some(rt) = p.runtime() {
-            if let Ok(mut sedp) = rt.sedp.lock() {
-                let prefix = GuidPrefix::from_bytes([0xCD; 12]);
-                let subdata = SubscriptionBuiltinTopicData {
-                    content_filter_unreadable: false,
-                    vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
-                    key: Guid::new(prefix, EntityId::user_reader_with_key([4, 5, 6])),
-                    participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
-                    topic_name: target_topic.into(),
-                    type_name: "test::SubT".into(),
-                    durability: DurabilityKind::Volatile,
-                    reliability: ReliabilityQos {
-                        kind: ReliabilityKind::Reliable,
-                        max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
-                    },
-                    ownership: zerodds_qos::OwnershipKind::Shared,
-                    liveliness: zerodds_qos::LivelinessQosPolicy::default(),
-                    deadline: zerodds_qos::DeadlineQosPolicy::default(),
-                    time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
-                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
-                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
-                    presentation: zerodds_qos::PresentationQosPolicy::default(),
-                    partition: alloc::vec::Vec::new(),
-                    user_data: alloc::vec::Vec::new(),
-                    topic_data: alloc::vec::Vec::new(),
-                    group_data: alloc::vec::Vec::new(),
-                    type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-                    type_information: None,
-                    type_id_v1: None,
-                    type_object_v1: None,
-                    data_representation: alloc::vec::Vec::new(),
-                    content_filter: None,
-                    security_info: None,
-                    sym_cipher_algo_info: None,
-                    data_tags: Default::default(),
-                    properties: Default::default(),
-                    service_instance_name: None,
-                    related_entity_guid: None,
-                    topic_aliases: None,
-                    type_identifier: zerodds_types::TypeIdentifier::None,
-                    unicast_locators: Vec::new(),
-                    multicast_locators: Vec::new(),
-                    expects_inline_qos: false,
-                    group_guid: None,
-                    type_consistency_announced: true,
-                    entity_name: None,
-                };
-                sedp.cache_mut().insert_subscription(subdata, CoreDur::ZERO);
-            }
+        if let Some(rt) = p.runtime()
+            && let Ok(mut sedp) = rt.sedp.lock()
+        {
+            let prefix = GuidPrefix::from_bytes([0xCD; 12]);
+            let subdata = SubscriptionBuiltinTopicData {
+                content_filter_unreadable: false,
+                vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
+                key: Guid::new(prefix, EntityId::user_reader_with_key([4, 5, 6])),
+                participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
+                topic_name: target_topic.into(),
+                type_name: "test::SubT".into(),
+                durability: DurabilityKind::Volatile,
+                reliability: ReliabilityQos {
+                    kind: ReliabilityKind::Reliable,
+                    max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
+                },
+                ownership: zerodds_qos::OwnershipKind::Shared,
+                liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+                deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                presentation: zerodds_qos::PresentationQosPolicy::default(),
+                partition: alloc::vec::Vec::new(),
+                user_data: alloc::vec::Vec::new(),
+                topic_data: alloc::vec::Vec::new(),
+                group_data: alloc::vec::Vec::new(),
+                type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+                type_information: None,
+                type_id_v1: None,
+                type_object_v1: None,
+                data_representation: alloc::vec::Vec::new(),
+                content_filter: None,
+                security_info: None,
+                sym_cipher_algo_info: None,
+                data_tags: Default::default(),
+                properties: Default::default(),
+                service_instance_name: None,
+                related_entity_guid: None,
+                topic_aliases: None,
+                type_identifier: zerodds_types::TypeIdentifier::None,
+                unicast_locators: Vec::new(),
+                multicast_locators: Vec::new(),
+                expects_inline_qos: false,
+                group_guid: None,
+                type_consistency_announced: true,
+                entity_name: None,
+            };
+            sedp.cache_mut().insert_subscription(subdata, CoreDur::ZERO);
         }
 
         let h = p
@@ -4776,7 +4753,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn find_topic_resolves_after_sedp_publication() {
+    fn dcps_2_2_2_2_1_11_find_topic_resolves_after_sedp_publication() {
         // Spec §2.2.2.2.1.11: find_topic must return as soon as a topic
         // is visible via discovery. We start a live participant (with a
         // real runtime) and inject a publication directly into the SEDP
@@ -4789,9 +4766,10 @@ mod tests {
         };
         use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
+        let lease = zerodds_test_domains::lease_domain();
         let p = DomainParticipantFactory::instance()
             .create_participant_with_config(
-                42,
+                lease.id(),
                 DomainParticipantQos::default(),
                 crate::runtime::RuntimeConfig::default(),
             )
@@ -4807,55 +4785,53 @@ mod tests {
         let type_name = String::from(target_type);
         let join = std::thread::spawn(move || {
             std::thread::sleep(CoreDur::from_millis(50));
-            if let Some(rt) = p_inject.runtime() {
-                if let Ok(mut sedp) = rt.sedp.lock() {
-                    let prefix = GuidPrefix::from_bytes([0xAB; 12]);
-                    let pubdata = PublicationBuiltinTopicData {
-                        vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
-                        key: Guid::new(prefix, EntityId::user_writer_with_key([1, 2, 3])),
-                        participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
-                        topic_name,
-                        type_name,
-                        durability: DurabilityKind::Volatile,
-                        durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
-                        reliability: ReliabilityQos {
-                            kind: ReliabilityKind::Reliable,
-                            max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(
-                                1,
-                            ),
-                        },
-                        ownership: zerodds_qos::OwnershipKind::Shared,
-                        ownership_strength: 0,
-                        liveliness: zerodds_qos::LivelinessQosPolicy::default(),
-                        deadline: zerodds_qos::DeadlineQosPolicy::default(),
-                        latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
-                        destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
-                        lifespan: zerodds_qos::LifespanQosPolicy::default(),
-                        presentation: zerodds_qos::PresentationQosPolicy::default(),
-                        partition: alloc::vec::Vec::new(),
-                        user_data: alloc::vec::Vec::new(),
-                        topic_data: alloc::vec::Vec::new(),
-                        group_data: alloc::vec::Vec::new(),
-                        type_information: None,
-                        type_id_v1: None,
-                        type_object_v1: None,
-                        data_representation: alloc::vec::Vec::new(),
-                        security_info: None,
-                        sym_cipher_algo_info: None,
-                        data_tags: Default::default(),
-                        properties: Default::default(),
-                        service_instance_name: None,
-                        related_entity_guid: None,
-                        topic_aliases: None,
-                        type_identifier: zerodds_types::TypeIdentifier::None,
-                        unicast_locators: Vec::new(),
-                        multicast_locators: Vec::new(),
-                        group_guid: None,
-                        data_max_size_serialized: None,
-                        entity_name: None,
-                    };
-                    sedp.cache_mut().insert_publication(pubdata, CoreDur::ZERO);
-                }
+            if let Some(rt) = p_inject.runtime()
+                && let Ok(mut sedp) = rt.sedp.lock()
+            {
+                let prefix = GuidPrefix::from_bytes([0xAB; 12]);
+                let pubdata = PublicationBuiltinTopicData {
+                    vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
+                    key: Guid::new(prefix, EntityId::user_writer_with_key([1, 2, 3])),
+                    participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
+                    topic_name,
+                    type_name,
+                    durability: DurabilityKind::Volatile,
+                    durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
+                    reliability: ReliabilityQos {
+                        kind: ReliabilityKind::Reliable,
+                        max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
+                    },
+                    ownership: zerodds_qos::OwnershipKind::Shared,
+                    ownership_strength: 0,
+                    liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+                    deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                    lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                    presentation: zerodds_qos::PresentationQosPolicy::default(),
+                    partition: alloc::vec::Vec::new(),
+                    user_data: alloc::vec::Vec::new(),
+                    topic_data: alloc::vec::Vec::new(),
+                    group_data: alloc::vec::Vec::new(),
+                    type_information: None,
+                    type_id_v1: None,
+                    type_object_v1: None,
+                    data_representation: alloc::vec::Vec::new(),
+                    security_info: None,
+                    sym_cipher_algo_info: None,
+                    data_tags: Default::default(),
+                    properties: Default::default(),
+                    service_instance_name: None,
+                    related_entity_guid: None,
+                    topic_aliases: None,
+                    type_identifier: zerodds_types::TypeIdentifier::None,
+                    unicast_locators: Vec::new(),
+                    multicast_locators: Vec::new(),
+                    group_guid: None,
+                    data_max_size_serialized: None,
+                    entity_name: None,
+                };
+                sedp.cache_mut().insert_publication(pubdata, CoreDur::ZERO);
             }
         });
 
@@ -4872,7 +4848,7 @@ mod tests {
     // ============================================================
 
     #[test]
-    fn ignore_participant_records_handle() {
+    fn dcps_2_2_2_2_1_14_ignore_participant_records_handle() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         // §2.2.2.1.1.7: ignore_* is not an operation a disabled participant
         // takes.
@@ -4881,10 +4857,14 @@ mod tests {
         assert!(!p.is_participant_ignored(h));
         p.ignore_participant(h).unwrap();
         assert!(p.is_participant_ignored(h));
+        // A second ignore of the same handle is no error and does not
+        // reverse the first.
+        p.ignore_participant(h).unwrap();
+        assert!(p.is_participant_ignored(h));
     }
 
     #[test]
-    fn ignore_topic_records_handle() {
+    fn dcps_2_2_2_2_1_15_ignore_topic_records_handle() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         // §2.2.2.1.1.7: ignore_* is not an operation a disabled participant
         // takes.
@@ -4896,7 +4876,7 @@ mod tests {
     }
 
     #[test]
-    fn ignore_publication_records_handle() {
+    fn dcps_2_2_2_2_1_16_ignore_publication_records_handle() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         // §2.2.2.1.1.7: ignore_* is not an operation a disabled participant
         // takes.
@@ -4908,7 +4888,7 @@ mod tests {
     }
 
     #[test]
-    fn ignore_subscription_records_handle() {
+    fn dcps_2_2_2_2_1_17_ignore_subscription_records_handle() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         // §2.2.2.1.1.7: ignore_* is not an operation a disabled participant
         // takes.
@@ -4937,21 +4917,7 @@ mod tests {
     }
 
     #[test]
-    fn ignore_is_monotonic_and_idempotent() {
-        // A double ignore_participant must not turn into an error, and
-        // the filter state must not "reverse".
-        let p = DomainParticipant::new(0, DomainParticipantQos::default());
-        // §2.2.2.1.1.7: ignore_* is not an operation a disabled participant
-        // takes.
-        p.inner.entity_state.enable();
-        let h = InstanceHandle::from_raw(0x42);
-        p.ignore_participant(h).unwrap();
-        p.ignore_participant(h).unwrap();
-        assert!(p.is_participant_ignored(h));
-    }
-
-    #[test]
-    fn delete_contained_entities_clears_topics_and_groups() {
+    fn dcps_2_2_2_2_1_18_delete_contained_entities_clears_topics_and_groups() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let _t = p
             .create_topic::<RawBytes>("ToBeRemoved", TopicQos::default())
@@ -4989,7 +4955,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn get_discovered_participants_offline_is_empty() {
+    fn dcps_2_2_2_2_1_27_get_discovered_participants_offline_is_empty() {
         // Without a runtime, get_discovered_participants returns an empty
         // vec — Spec §2.2.2.2.1.27 allows that.
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
@@ -5014,7 +4980,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn get_discovered_topics_offline_is_empty() {
+    fn dcps_2_2_2_2_1_29_get_discovered_topics_offline_is_empty() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         assert!(p.get_discovered_topics().is_empty());
     }
@@ -5037,15 +5003,16 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn get_discovered_participants_lists_after_spdp_inject() {
+    fn dcps_2_2_2_2_1_27_get_discovered_participants_lists_after_spdp_inject() {
         // End-to-end: a live participant + one synthetic SPDP beacon of a
         // remote participant → get_discovered_participants returns
         // exactly one handle, get_discovered_participant_data finds the
         // matching wire data.
         use crate::factory::DomainParticipantFactory;
+        let lease = zerodds_test_domains::lease_domain();
         let p = DomainParticipantFactory::instance()
             .create_participant_with_config(
-                30,
+                lease.id(),
                 DomainParticipantQos::default(),
                 crate::runtime::RuntimeConfig::default(),
             )
@@ -5065,7 +5032,7 @@ mod tests {
             default_multicast_locators: Vec::new(),
             metatraffic_unicast_locators: Vec::new(),
             metatraffic_multicast_locators: Vec::new(),
-            domain_id: Some(30),
+            domain_id: Some(lease.id() as u32),
             domain_tag: Default::default(),
             builtin_endpoint_set: 0,
             lease_duration: zerodds_rtps::participant_data::Duration::from_secs(100),
@@ -5107,7 +5074,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn get_discovered_topics_lists_unique_handles_for_pub_and_sub() {
+    fn dcps_2_2_2_2_1_29_get_discovered_topics_lists_unique_handles_for_pub_and_sub() {
         // Pub + Sub on the same (topic, type) → one topic handle.
         use crate::factory::DomainParticipantFactory;
         use core::time::Duration as CoreDur;
@@ -5117,105 +5084,106 @@ mod tests {
         use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
         use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
+        let lease = zerodds_test_domains::lease_domain();
         let p = DomainParticipantFactory::instance()
             .create_participant_with_config(
-                21,
+                lease.id(),
                 DomainParticipantQos::default(),
                 crate::runtime::RuntimeConfig::default(),
             )
             .expect("rt start");
-        if let Some(rt) = p.runtime() {
-            if let Ok(mut sedp) = rt.sedp.lock() {
-                let prefix = GuidPrefix::from_bytes([0x77; 12]);
-                let pubdata = PublicationBuiltinTopicData {
-                    vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
-                    key: Guid::new(prefix, EntityId::user_writer_with_key([1, 2, 3])),
-                    participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
-                    topic_name: "SharedTopic".into(),
-                    type_name: "SharedType".into(),
-                    durability: DurabilityKind::Volatile,
-                    durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
-                    reliability: ReliabilityQos {
-                        kind: ReliabilityKind::Reliable,
-                        max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
-                    },
-                    ownership: zerodds_qos::OwnershipKind::Shared,
-                    ownership_strength: 0,
-                    liveliness: zerodds_qos::LivelinessQosPolicy::default(),
-                    deadline: zerodds_qos::DeadlineQosPolicy::default(),
-                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
-                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
-                    lifespan: zerodds_qos::LifespanQosPolicy::default(),
-                    presentation: zerodds_qos::PresentationQosPolicy::default(),
-                    partition: alloc::vec::Vec::new(),
-                    user_data: alloc::vec::Vec::new(),
-                    topic_data: alloc::vec::Vec::new(),
-                    group_data: alloc::vec::Vec::new(),
-                    type_information: None,
-                    type_id_v1: None,
-                    type_object_v1: None,
-                    data_representation: alloc::vec::Vec::new(),
-                    security_info: None,
-                    sym_cipher_algo_info: None,
-                    data_tags: Default::default(),
-                    properties: Default::default(),
-                    service_instance_name: None,
-                    related_entity_guid: None,
-                    topic_aliases: None,
-                    type_identifier: zerodds_types::TypeIdentifier::None,
-                    unicast_locators: Vec::new(),
-                    multicast_locators: Vec::new(),
-                    group_guid: None,
-                    data_max_size_serialized: None,
-                    entity_name: None,
-                };
-                let subdata = SubscriptionBuiltinTopicData {
-                    content_filter_unreadable: false,
-                    vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
-                    key: Guid::new(prefix, EntityId::user_reader_with_key([4, 5, 6])),
-                    participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
-                    topic_name: "SharedTopic".into(),
-                    type_name: "SharedType".into(),
-                    durability: DurabilityKind::Volatile,
-                    reliability: ReliabilityQos {
-                        kind: ReliabilityKind::Reliable,
-                        max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
-                    },
-                    ownership: zerodds_qos::OwnershipKind::Shared,
-                    liveliness: zerodds_qos::LivelinessQosPolicy::default(),
-                    deadline: zerodds_qos::DeadlineQosPolicy::default(),
-                    time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
-                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
-                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
-                    presentation: zerodds_qos::PresentationQosPolicy::default(),
-                    partition: alloc::vec::Vec::new(),
-                    user_data: alloc::vec::Vec::new(),
-                    topic_data: alloc::vec::Vec::new(),
-                    group_data: alloc::vec::Vec::new(),
-                    type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-                    type_information: None,
-                    type_id_v1: None,
-                    type_object_v1: None,
-                    data_representation: alloc::vec::Vec::new(),
-                    content_filter: None,
-                    security_info: None,
-                    sym_cipher_algo_info: None,
-                    data_tags: Default::default(),
-                    properties: Default::default(),
-                    service_instance_name: None,
-                    related_entity_guid: None,
-                    topic_aliases: None,
-                    type_identifier: zerodds_types::TypeIdentifier::None,
-                    unicast_locators: Vec::new(),
-                    multicast_locators: Vec::new(),
-                    expects_inline_qos: false,
-                    group_guid: None,
-                    type_consistency_announced: true,
-                    entity_name: None,
-                };
-                sedp.cache_mut().insert_publication(pubdata, CoreDur::ZERO);
-                sedp.cache_mut().insert_subscription(subdata, CoreDur::ZERO);
-            }
+        if let Some(rt) = p.runtime()
+            && let Ok(mut sedp) = rt.sedp.lock()
+        {
+            let prefix = GuidPrefix::from_bytes([0x77; 12]);
+            let pubdata = PublicationBuiltinTopicData {
+                vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
+                key: Guid::new(prefix, EntityId::user_writer_with_key([1, 2, 3])),
+                participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
+                topic_name: "SharedTopic".into(),
+                type_name: "SharedType".into(),
+                durability: DurabilityKind::Volatile,
+                durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
+                reliability: ReliabilityQos {
+                    kind: ReliabilityKind::Reliable,
+                    max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
+                },
+                ownership: zerodds_qos::OwnershipKind::Shared,
+                ownership_strength: 0,
+                liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+                deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: zerodds_qos::PresentationQosPolicy::default(),
+                partition: alloc::vec::Vec::new(),
+                user_data: alloc::vec::Vec::new(),
+                topic_data: alloc::vec::Vec::new(),
+                group_data: alloc::vec::Vec::new(),
+                type_information: None,
+                type_id_v1: None,
+                type_object_v1: None,
+                data_representation: alloc::vec::Vec::new(),
+                security_info: None,
+                sym_cipher_algo_info: None,
+                data_tags: Default::default(),
+                properties: Default::default(),
+                service_instance_name: None,
+                related_entity_guid: None,
+                topic_aliases: None,
+                type_identifier: zerodds_types::TypeIdentifier::None,
+                unicast_locators: Vec::new(),
+                multicast_locators: Vec::new(),
+                group_guid: None,
+                data_max_size_serialized: None,
+                entity_name: None,
+            };
+            let subdata = SubscriptionBuiltinTopicData {
+                content_filter_unreadable: false,
+                vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
+                key: Guid::new(prefix, EntityId::user_reader_with_key([4, 5, 6])),
+                participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
+                topic_name: "SharedTopic".into(),
+                type_name: "SharedType".into(),
+                durability: DurabilityKind::Volatile,
+                reliability: ReliabilityQos {
+                    kind: ReliabilityKind::Reliable,
+                    max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
+                },
+                ownership: zerodds_qos::OwnershipKind::Shared,
+                liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+                deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                presentation: zerodds_qos::PresentationQosPolicy::default(),
+                partition: alloc::vec::Vec::new(),
+                user_data: alloc::vec::Vec::new(),
+                topic_data: alloc::vec::Vec::new(),
+                group_data: alloc::vec::Vec::new(),
+                type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+                type_information: None,
+                type_id_v1: None,
+                type_object_v1: None,
+                data_representation: alloc::vec::Vec::new(),
+                content_filter: None,
+                security_info: None,
+                sym_cipher_algo_info: None,
+                data_tags: Default::default(),
+                properties: Default::default(),
+                service_instance_name: None,
+                related_entity_guid: None,
+                topic_aliases: None,
+                type_identifier: zerodds_types::TypeIdentifier::None,
+                unicast_locators: Vec::new(),
+                multicast_locators: Vec::new(),
+                expects_inline_qos: false,
+                group_guid: None,
+                type_consistency_announced: true,
+                entity_name: None,
+            };
+            sedp.cache_mut().insert_publication(pubdata, CoreDur::ZERO);
+            sedp.cache_mut().insert_subscription(subdata, CoreDur::ZERO);
         }
         let topics = p.get_discovered_topics();
         assert_eq!(topics.len(), 1, "Pub+Sub on same topic -> 1 handle");
@@ -5226,7 +5194,7 @@ mod tests {
 
     #[cfg(feature = "std")]
     #[test]
-    fn get_discovered_topic_data_filters_ignored() {
+    fn dcps_2_2_2_2_1_15_get_discovered_topic_data_filters_ignored() {
         use crate::factory::DomainParticipantFactory;
         use core::time::Duration as CoreDur;
         use zerodds_rtps::publication_data::{
@@ -5234,60 +5202,61 @@ mod tests {
         };
         use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix};
 
+        let lease = zerodds_test_domains::lease_domain();
         let p = DomainParticipantFactory::instance()
             .create_participant_with_config(
-                22,
+                lease.id(),
                 DomainParticipantQos::default(),
                 crate::runtime::RuntimeConfig::default(),
             )
             .expect("rt start");
-        if let Some(rt) = p.runtime() {
-            if let Ok(mut sedp) = rt.sedp.lock() {
-                let prefix = GuidPrefix::from_bytes([0x55; 12]);
-                let pubdata = PublicationBuiltinTopicData {
-                    vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
-                    key: Guid::new(prefix, EntityId::user_writer_with_key([1, 2, 3])),
-                    participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
-                    topic_name: "ToIgnore".into(),
-                    type_name: "T".into(),
-                    durability: DurabilityKind::Volatile,
-                    durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
-                    reliability: ReliabilityQos {
-                        kind: ReliabilityKind::Reliable,
-                        max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
-                    },
-                    ownership: zerodds_qos::OwnershipKind::Shared,
-                    ownership_strength: 0,
-                    liveliness: zerodds_qos::LivelinessQosPolicy::default(),
-                    deadline: zerodds_qos::DeadlineQosPolicy::default(),
-                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
-                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
-                    lifespan: zerodds_qos::LifespanQosPolicy::default(),
-                    presentation: zerodds_qos::PresentationQosPolicy::default(),
-                    partition: alloc::vec::Vec::new(),
-                    user_data: alloc::vec::Vec::new(),
-                    topic_data: alloc::vec::Vec::new(),
-                    group_data: alloc::vec::Vec::new(),
-                    type_information: None,
-                    type_id_v1: None,
-                    type_object_v1: None,
-                    data_representation: alloc::vec::Vec::new(),
-                    security_info: None,
-                    sym_cipher_algo_info: None,
-                    data_tags: Default::default(),
-                    properties: Default::default(),
-                    service_instance_name: None,
-                    related_entity_guid: None,
-                    topic_aliases: None,
-                    type_identifier: zerodds_types::TypeIdentifier::None,
-                    unicast_locators: Vec::new(),
-                    multicast_locators: Vec::new(),
-                    group_guid: None,
-                    data_max_size_serialized: None,
-                    entity_name: None,
-                };
-                sedp.cache_mut().insert_publication(pubdata, CoreDur::ZERO);
-            }
+        if let Some(rt) = p.runtime()
+            && let Ok(mut sedp) = rt.sedp.lock()
+        {
+            let prefix = GuidPrefix::from_bytes([0x55; 12]);
+            let pubdata = PublicationBuiltinTopicData {
+                vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
+                key: Guid::new(prefix, EntityId::user_writer_with_key([1, 2, 3])),
+                participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
+                topic_name: "ToIgnore".into(),
+                type_name: "T".into(),
+                durability: DurabilityKind::Volatile,
+                durability_service: zerodds_qos::DurabilityServiceQosPolicy::default(),
+                reliability: ReliabilityQos {
+                    kind: ReliabilityKind::Reliable,
+                    max_blocking_time: zerodds_rtps::participant_data::Duration::from_secs(1),
+                },
+                ownership: zerodds_qos::OwnershipKind::Shared,
+                ownership_strength: 0,
+                liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+                deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: zerodds_qos::PresentationQosPolicy::default(),
+                partition: alloc::vec::Vec::new(),
+                user_data: alloc::vec::Vec::new(),
+                topic_data: alloc::vec::Vec::new(),
+                group_data: alloc::vec::Vec::new(),
+                type_information: None,
+                type_id_v1: None,
+                type_object_v1: None,
+                data_representation: alloc::vec::Vec::new(),
+                security_info: None,
+                sym_cipher_algo_info: None,
+                data_tags: Default::default(),
+                properties: Default::default(),
+                service_instance_name: None,
+                related_entity_guid: None,
+                topic_aliases: None,
+                type_identifier: zerodds_types::TypeIdentifier::None,
+                unicast_locators: Vec::new(),
+                multicast_locators: Vec::new(),
+                group_guid: None,
+                data_max_size_serialized: None,
+                entity_name: None,
+            };
+            sedp.cache_mut().insert_publication(pubdata, CoreDur::ZERO);
         }
         let topics_before = p.get_discovered_topics();
         assert_eq!(topics_before.len(), 1);
@@ -5301,7 +5270,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_contentfilteredtopic_rejects_foreign() {
+    fn dcps_2_2_2_2_1_8_delete_contentfilteredtopic_rejects_foreign() {
         let p1 = DomainParticipant::new(0, DomainParticipantQos::default());
         let p2 = DomainParticipant::new(1, DomainParticipantQos::default());
         let topic = p1
@@ -5323,7 +5292,7 @@ mod tests {
     /// both the registry (§2.2.2.2.1.12) and `contains_entity`
     /// (§2.2.2.2.1.10).
     #[test]
-    fn delete_topic_removes_the_entry_and_its_handle() {
+    fn dcps_2_2_2_2_1_6_delete_topic_removes_the_entry_and_its_handle() {
         let p = DomainParticipant::new(0, DomainParticipantQos::default());
         let t = p
             .create_topic::<RawBytes>("Doomed", TopicQos::default())

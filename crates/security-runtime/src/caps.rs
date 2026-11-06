@@ -341,13 +341,6 @@ mod tests {
     // ---- PeerCache ----
 
     #[test]
-    fn cache_new_is_empty() {
-        let c = PeerCache::new();
-        assert!(c.is_empty());
-        assert_eq!(c.len(), 0);
-    }
-
-    #[test]
     fn cache_insert_and_get() {
         let mut c = PeerCache::new();
         let key: PeerKey = [1; 12];

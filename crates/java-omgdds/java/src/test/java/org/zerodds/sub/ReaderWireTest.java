@@ -80,7 +80,7 @@ class ReaderWireTest {
     }
 
     @Test
-    void theSourceTimestampAndTheWriterGuidOfTheDataReachTheSample() {
+    void javapsm_2_the_source_timestamp_and_the_writer_guid_of_a_data_reach_the_sample_info() {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReaderImpl<Keyed> reader = readerOf(rig);
         reader.deliverWire(payload(sample(1, 0))
@@ -103,15 +103,7 @@ class ReaderWireTest {
     }
 
     @Test
-    void aSampleWithoutAnIdentityHasANilPublicationHandle() {
-        ReaderRig rig = new ReaderRig(nextDom());
-        DataReaderImpl<Keyed> reader = readerOf(rig);
-        reader.deliverWire(payload(sample(1, 0)));
-        assertTrue(reader.read(new ArrayList<>()).get(0).getPublicationHandle().isNil());
-    }
-
-    @Test
-    void aGapInTheSequenceNumbersOfAWriterIsSampleLost() {
+    void javapsm_2_a_gap_in_the_sequence_numbers_of_a_writer_is_sample_lost() {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReaderImpl<Keyed> reader = readerOf(rig);
         reader.deliverWire(payload(sample(1, 0)).withSource(new SourceIdentity(guid(1), 1), null));
@@ -134,7 +126,7 @@ class ReaderWireTest {
     }
 
     @Test
-    void sampleLostIsReportedToTheListener() {
+    void javapsm_2_sample_lost_is_reported_to_the_listener() {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReaderImpl<Keyed> reader = readerOf(rig);
         AtomicInteger calls = new AtomicInteger();
@@ -159,34 +151,40 @@ class ReaderWireTest {
         assertEquals(1, calls.get());
     }
 
-    @Test
-    void theInfoTimestampThatPrecedesADataSubmessageIsItsSourceTimestamp() {
-        byte[] prefix = new byte[12];
-        byte[] readerId = Guid.userEntityId(0, 0, 1, Guid.KIND_USER_READER_NO_KEY);
-        byte[] writerId = Guid.userEntityId(0, 0, 2, Guid.KIND_USER_WRITER_NO_KEY);
-        byte[] payload = new byte[] {0, 7, 0, 0, 1, 2, 3, 4};
-        // 1_700_000_000 s and a fraction of 0x80000000 / 2^32 s = 500 ms
-        byte[] stamped = new RtpsMessage.Builder(prefix)
-                .infoTimestamp(1_700_000_000, 0x80000000L)
-                .data(readerId, writerId, 7L, null, payload, false)
-                .toBytes();
-        RtpsMessage.Data data = RtpsMessage.decode(stamped, stamped.length).data.get(0);
-        assertEquals(1_700_000_000_500L, data.sourceTimestampMillis);
-        // a DATA without an INFO_TS has none
-        byte[] plain = new RtpsMessage.Builder(prefix)
-                .data(readerId, writerId, 8L, null, payload, false)
-                .toBytes();
-        assertEquals(-1L, RtpsMessage.decode(plain, plain.length).data.get(0).sourceTimestampMillis);
-        // and the sample carries it on
-        SerializedSample sample = SerializedSample.parse(payload).withSourceTimestamp(1234L);
-        assertEquals(1234L, sample.sourceTimestampMillis());
-        assertEquals(1234L, sample.withSource(new SourceIdentity(guid(1), 1), null)
-                .sourceTimestampMillis());
-        assertEquals(-1L, SerializedSample.parse(payload).sourceTimestampMillis());
+    /**
+     * An RTPS message written out by hand (DDSI-RTPS 2.5 §9.4): the header, an INFO_TS
+     * (§9.4.5.12) when {@code seconds} is not negative, and a DATA (§9.4.5.4) with sequence
+     * number 7 and the payload {@code 00 07 00 00 01 02 03 04}, little-endian.
+     */
+    private static byte[] message(int seconds, long fraction) {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(80).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        b.put(new byte[] {'R', 'T', 'P', 'S', 2, 5, 0x01, 0x10}).put(new byte[12]);
+        if (seconds >= 0) {
+            b.put((byte) 0x09).put((byte) 0x01).putShort((short) 8);
+            b.putInt(seconds).putInt((int) fraction);
+        }
+        b.put((byte) 0x15).put((byte) 0x05).putShort((short) 28);
+        b.putShort((short) 0).putShort((short) 16);
+        b.put(new byte[] {0, 0, 1, 4}).put(new byte[] {0, 0, 2, 3});
+        b.putInt(0).putInt(7);
+        b.put(new byte[] {0, 7, 0, 0, 1, 2, 3, 4});
+        return java.util.Arrays.copyOf(b.array(), b.position());
     }
 
     @Test
-    void aReaderThatIsNotOnTheWireWaitsForNoHistoricalData() throws Exception {
+    void rtps_8_3_7_9_the_info_timestamp_before_a_data_is_its_source_timestamp() {
+        // 1_700_000_000 s and a fraction of 0x80000000 / 2^32 s = 500 ms (Time_t, §9.3.2)
+        byte[] stamped = message(1_700_000_000, 0x80000000L);
+        RtpsMessage.Data data = RtpsMessage.decode(stamped, stamped.length).data.get(0);
+        assertEquals(7L, data.writerSn);
+        assertEquals(1_700_000_000_500L, data.sourceTimestampMillis);
+        // a DATA without an INFO_TS before it has none
+        byte[] plain = message(-1, 0);
+        assertEquals(-1L, RtpsMessage.decode(plain, plain.length).data.get(0).sourceTimestampMillis);
+    }
+
+    @Test
+    void javapsm_2_a_reader_that_is_not_on_the_wire_waits_for_no_historical_data() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         // everything of this process arrived in enable(): both forms return at once

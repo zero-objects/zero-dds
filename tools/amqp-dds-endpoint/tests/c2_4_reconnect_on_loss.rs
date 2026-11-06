@@ -25,42 +25,53 @@ use std::thread;
 use std::time::Duration;
 use zerodds_amqp_endpoint::{ConnectionState, MetricsHub};
 
+/// Spec §10.8 and Annex C C.2.4: connects fail while nothing listens; the
+/// loop backs off and tries again, and connects once the server is up.
 #[test]
-fn c2_4_reconnect_succeeds_on_first_retry_after_intermittent_failure() {
-    // We simulate an intermittent connection: the server
-    // is offline at first, the reconnect loop polls and finds
-    // the server as soon as it is started.
+fn ddsamqp_10_8_the_client_reconnects_once_the_server_is_up() {
+    // A port nobody listens on until the server below binds it.
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     let metrics = Arc::new(MetricsHub::new());
     let shutdown = Arc::new(AtomicBool::new(false));
-
-    // Reserved but inactive port (typically: 1).
-    // We start the server in a second thread with a delay,
-    // so the first connect attempts fail.
-    let server_started = Arc::new(AtomicBool::new(false));
-    let server_started_signal = server_started.clone();
-    let server_handle = thread::spawn(move || {
-        // Delay before server start.
-        thread::sleep(Duration::from_millis(80));
-        let server = TestServer::spawn(test_handler_cfg());
-        server_started_signal.store(true, std::sync::atomic::Ordering::Relaxed);
-        // Server-Port via Channel weiterreichen.
-        let port = server.port;
-        // Server kurz laufen lassen.
-        thread::sleep(Duration::from_millis(800));
-        server.shutdown();
-        port
-    });
-
-    // We do not know the server port yet — we cannot write the
-    // test directly this way. Variant: we bind
-    // a port ourselves, then release it, then a server thread
-    // starts on the same port after a delay.
-    let _ = server_handle.join();
-    let _ = (metrics, shutdown);
+    let cfg = ClientConfig {
+        upstream_addr: format!("127.0.0.1:{port}"),
+        container_id: "c2-4-reconnect".into(),
+        max_frame_size: 65_536,
+        tls_active: false,
+        plain_credentials: None,
+        io_timeout: Some(Duration::from_secs(2)),
+    };
+    let r = ReconnectConfig {
+        initial_ms: 50,
+        multiplier: 2,
+        cap_ms: 200,
+        max_attempts: Some(100),
+    };
+    let client = {
+        let (metrics, shutdown) = (Arc::clone(&metrics), Arc::clone(&shutdown));
+        thread::spawn(move || connect_with_reconnect(&cfg, &r, &shutdown, &metrics))
+    };
+    // The first attempt failed: the loop counts it before it backs off.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while metrics.snapshot("errors.decode").unwrap_or(0) == 0 {
+        assert!(std::time::Instant::now() < deadline, "no failed attempt");
+        thread::yield_now();
+    }
+    let server = TestServer::spawn_on(port, test_handler_cfg());
+    let (_stream, session) = client
+        .join()
+        .unwrap()
+        .expect("connected after the server came up");
+    assert_eq!(session.state, ConnectionState::Opened);
+    server.shutdown();
 }
 
 #[test]
-fn c2_4_reconnect_loop_pacing_follows_spec_defaults() {
+fn ddsamqp_10_8_reconnect_loop_pacing_follows_spec_defaults() {
     // Spec §10.8: init 1s, mult 2, cap 60s.
     let r = ReconnectConfig::default();
     assert_eq!(r.next_backoff_ms(0), 1_000);
@@ -70,7 +81,7 @@ fn c2_4_reconnect_loop_pacing_follows_spec_defaults() {
 }
 
 #[test]
-fn c2_4_reconnect_aborts_on_max_attempts() {
+fn ddsamqp_10_8_reconnect_aborts_on_max_attempts() {
     // Client tries max=3 times; with an unreachable broker
     // ReconnectExhausted is returned.
     let metrics = Arc::new(MetricsHub::new());
@@ -103,7 +114,7 @@ fn c2_4_reconnect_aborts_on_max_attempts() {
 }
 
 #[test]
-fn c2_4_reconnect_after_server_restart_eventually_succeeds() {
+fn ddsamqp_10_8_reconnect_after_server_restart_eventually_succeeds() {
     // E2E: 1) server bind+drop (port reserved, client finds
     // nobody). 2) Client retries with a reconnect loop. 3)
     // Next connect attempt after server start succeeds.
@@ -137,7 +148,7 @@ fn c2_4_reconnect_after_server_restart_eventually_succeeds() {
 }
 
 #[test]
-fn c2_4_single_connect_attempt_works_for_normal_path() {
+fn ddsamqp_c_2_1_single_connect_attempt_works_for_normal_path() {
     // Normal case: server is running, client connects immediately, no
     // Reconnect noetig.
     let server = TestServer::spawn(test_handler_cfg());

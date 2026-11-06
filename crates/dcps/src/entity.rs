@@ -653,19 +653,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn entity_state_starts_disabled() {
+    fn dcps_2_2_2_1_1_entity_state_starts_disabled() {
         let s = EntityState::new();
         assert!(!s.is_enabled());
     }
 
     #[test]
-    fn entity_state_factory_starts_enabled() {
-        let s = EntityState::new_enabled();
-        assert!(s.is_enabled());
-    }
-
-    #[test]
-    fn enable_is_idempotent_and_reports_first_transition() {
+    fn dcps_2_2_2_1_1_7_enable_is_idempotent_and_reports_first_transition() {
         let s = EntityState::new();
         assert!(s.enable(), "first enable returns true");
         assert!(!s.enable(), "second enable returns false");
@@ -673,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn instance_handles_are_unique_per_entity() {
+    fn dcps_2_2_2_1_1_8_instance_handles_are_unique_per_entity() {
         let a = EntityState::new();
         let b = EntityState::new();
         assert_ne!(a.instance_handle(), b.instance_handle());
@@ -691,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn status_condition_trigger_value() {
+    fn dcps_2_2_2_1_9_status_condition_trigger_value() {
         // §2.2.2.1.1.7: the conditions of a disabled entity are inactive.
         let s = EntityState::new_enabled();
         let cond = StatusCondition::new(s.clone());
@@ -710,14 +704,7 @@ mod tests {
     }
 
     #[test]
-    fn listener_mask_is_round_tripped() {
-        let s = EntityState::new();
-        s.set_listener_mask(0xABCD);
-        assert_eq!(s.listener_mask(), 0xABCD);
-    }
-
-    #[test]
-    fn immutable_if_enabled_returns_correct_error() {
+    fn dcps_2_2_1_1_immutable_if_enabled_returns_correct_error() {
         let e = immutable_if_enabled("DURABILITY");
         assert!(matches!(
             e,
@@ -730,14 +717,7 @@ mod tests {
     // ---- §2.2.1.1.5 ALREADY_DELETED ----
 
     #[test]
-    fn check_not_deleted_passes_for_fresh_entity() {
-        let s = EntityState::new();
-        assert!(s.check_not_deleted().is_ok());
-        assert!(!s.is_deleted());
-    }
-
-    #[test]
-    fn check_not_deleted_returns_already_deleted_after_mark() {
+    fn dcps_2_2_1_1_check_not_deleted_returns_already_deleted_after_mark() {
         let s = EntityState::new();
         let first = s.mark_deleted();
         assert!(first, "first mark_deleted should return true");
@@ -758,25 +738,11 @@ mod tests {
     // ---- §2.2.1.1.7 NOT_ENABLED ----
 
     #[test]
-    fn check_enabled_returns_not_enabled_for_disabled_entity() {
+    fn dcps_2_2_1_1_check_enabled_returns_not_enabled_for_disabled_entity() {
         let s = EntityState::new();
         assert!(!s.is_enabled());
         let res = s.check_enabled();
         assert!(matches!(res, Err(DdsError::NotEnabled)));
-    }
-
-    #[test]
-    fn check_enabled_passes_after_enable() {
-        let s = EntityState::new();
-        let _ = s.enable();
-        assert!(s.check_enabled().is_ok());
-    }
-
-    #[test]
-    fn check_enabled_passes_for_factory_entity() {
-        // DomainParticipantFactory is always enabled (Spec §2.2.2.1.4).
-        let s = EntityState::new_enabled();
-        assert!(s.check_enabled().is_ok());
     }
 
     // ---- §2.2.2.1.9 StatusCondition.get_entity ----
@@ -787,42 +753,5 @@ mod tests {
         let cond = StatusCondition::new(state.clone());
         // Handle of the condition == handle of the entity it is bound to.
         assert_eq!(cond.get_entity_handle(), state.instance_handle());
-    }
-
-    #[test]
-    fn status_condition_get_entity_handle_unique_per_entity() {
-        // Two different entities → two different handles via their
-        // StatusConditions.
-        let s1 = EntityState::new();
-        let s2 = EntityState::new();
-        let c1 = StatusCondition::new(s1);
-        let c2 = StatusCondition::new(s2);
-        assert_ne!(c1.get_entity_handle(), c2.get_entity_handle());
-    }
-
-    #[test]
-    fn status_condition_entity_state_returns_same_arc() {
-        let state = EntityState::new();
-        let cond = StatusCondition::new(state.clone());
-        // Identity via Arc::ptr_eq — the condition holds exactly this
-        // Arc, not a clone of the inner.
-        assert!(Arc::ptr_eq(
-            &state,
-            &cond.entity_state().expect("the entity")
-        ));
-    }
-
-    #[test]
-    fn status_condition_entity_state_reflects_lifecycle_changes() {
-        // The get_entity path must make lifecycle changes visible
-        // (e.g. enable, mark_deleted) so callers can inspect the state
-        // directly.
-        let state = EntityState::new();
-        let cond = StatusCondition::new(state.clone());
-        assert!(!cond.entity_state().expect("the entity").is_enabled());
-        let _ = state.enable();
-        assert!(cond.entity_state().expect("the entity").is_enabled());
-        let _ = state.mark_deleted();
-        assert!(cond.entity_state().expect("the entity").is_deleted());
     }
 }

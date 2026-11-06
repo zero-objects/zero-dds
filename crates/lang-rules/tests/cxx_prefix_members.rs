@@ -55,7 +55,7 @@ fn header() -> String {
 }
 
 #[test]
-fn a_member_that_is_a_reserved_word_is_prefixed_by_cxx() {
+fn rpc_7_5_1_1_1_a_member_that_is_a_reserved_word_is_prefixed_by_cxx() {
     let text = header();
     assert!(text.contains("std::int32_t cxx_static"), "{text}");
     // A union case is an accessor over the storage `zd_<case>`.
@@ -69,7 +69,7 @@ fn a_member_that_is_a_reserved_word_is_prefixed_by_cxx() {
 }
 
 #[test]
-fn an_enumerator_and_a_constant_that_are_reserved_words_are_prefixed_by_cxx() {
+fn rpc_7_11_1_1_2_an_enumerator_and_a_constant_that_are_reserved_words_are_prefixed_by_cxx() {
     let text = header();
     assert!(text.contains("cxx_delete = 0"), "{text}");
     assert!(
@@ -83,7 +83,7 @@ fn an_enumerator_and_a_constant_that_are_reserved_words_are_prefixed_by_cxx() {
 }
 
 #[test]
-fn the_codec_refers_to_the_prefixed_member() {
+fn rpc_7_11_1_1_2_the_codec_refers_to_the_prefixed_member() {
     let text = header();
     assert!(text.contains("zd_enc_p_long(w, v.cxx_static);"), "{text}");
     assert!(
@@ -101,7 +101,7 @@ fn the_codec_refers_to_the_prefixed_member() {
 }
 
 #[test]
-fn the_idl_names_table_maps_the_prefixed_name_back_to_the_idl_spelling() {
+fn rpc_7_11_1_1_2_the_idl_names_table_maps_the_prefixed_name_back_to_the_idl_spelling() {
     let text = header();
     assert!(
         text.contains("{{{\"cxx_static\", \"static\"}, {\"tint\", \"tint\"}}}"),

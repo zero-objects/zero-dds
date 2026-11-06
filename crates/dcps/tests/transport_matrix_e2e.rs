@@ -81,6 +81,7 @@ fn make_reader_config(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
+        reliable: true,
         ..Default::default()
     }
 }
@@ -112,8 +113,12 @@ fn roundtrip_over(transport: UserTransportKind, domain: i32, topic: &str, payloa
         user_transport: Some(transport),
         ..RuntimeConfig::default()
     };
-    let rt_a = Arc::new(DcpsRuntime::start(domain, prefix_a, cfg()).expect("rt_a start"));
-    let rt_b = Arc::new(DcpsRuntime::start(domain, prefix_b, cfg()).expect("rt_b start"));
+    let rt_a = Arc::new(common::ShutsDown(
+        DcpsRuntime::start(domain, prefix_a, cfg()).expect("rt_a start"),
+    ));
+    let rt_b = Arc::new(common::ShutsDown(
+        DcpsRuntime::start(domain, prefix_b, cfg()).expect("rt_b start"),
+    ));
 
     assert!(
         wait_for_peers(&rt_a, 1, Duration::from_secs(10)),
@@ -330,7 +335,7 @@ fn e2e_roundtrip_over_tcpv6() {
     );
 }
 
-#[cfg(feature = "same-host-uds")]
+#[cfg(all(feature = "same-host-uds", unix))]
 #[test]
 fn e2e_roundtrip_over_uds() {
     roundtrip_over(

@@ -1414,7 +1414,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_is_a_do_end_block_indented_by_two_spaces() {
+    fn xtypes_7_5_1_a_module_is_a_do_end_block_indented_by_two_spaces() {
         let text = module(&module_of(vec![Item::Defstruct(vec![Field {
             name: Ident::new("x"),
             default: Expr::int(0),
@@ -1423,7 +1423,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_name_joins_its_segments_with_dots() {
+    fn xtypes_7_5_1_a_module_name_joins_its_segments_with_dots() {
         let text = module(&Module {
             doc: Doc::none(),
             name: Path::new(&["Common", "Util", "Location"]),
@@ -1436,7 +1436,7 @@ mod tests {
     }
 
     #[test]
-    fn a_moduledoc_is_a_heredoc_at_the_top_of_the_body() {
+    fn xtypes_7_5_1_a_moduledoc_is_a_heredoc_at_the_top_of_the_body() {
         let text = module(&Module {
             doc: Doc::lines(&["first", "second"]),
             name: Path::single("Probe"),
@@ -1449,13 +1449,13 @@ mod tests {
     }
 
     #[test]
-    fn a_struct_with_no_fields_is_defstruct_with_an_empty_list() {
+    fn xtypes_7_5_1_a_struct_with_no_fields_is_defstruct_with_an_empty_list() {
         let text = item(&Item::Defstruct(Vec::new()));
         assert_eq!(text, "defstruct []\n");
     }
 
     #[test]
-    fn a_struct_of_several_short_fields_stays_on_one_line() {
+    fn xtypes_7_5_1_a_struct_of_several_short_fields_stays_on_one_line() {
         let text = item(&Item::Defstruct(vec![
             Field {
                 name: Ident::new("x"),

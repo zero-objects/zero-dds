@@ -31,10 +31,12 @@ export class DomainParticipantFactory {
     return DomainParticipantFactory.singleton;
   }
 
-  /// Connects to a ZeroDDS websocket-bridge at `url` and returns a participant
-  /// on `domainId`. The bridge fronts a native DDS domain; the browser speaks
-  /// DCPS to it over WebSocket (Annex C.4.1: browser transport SHALL be
-  /// WebSocket / WebTransport / HTTP-3, never native UDP-multicast).
+  /// A participant on `domainId` through the ZeroDDS websocket bridge at
+  /// `url` (`ws://host:port`). The bridge fronts a native DDS domain; the
+  /// browser speaks DCPS to it over WebSocket (Annex C.4.1: browser transport
+  /// SHALL be WebSocket / WebTransport / HTTP-3, never native UDP-multicast),
+  /// a connection per topic (zerodds-ws-bridge-1.0 §4.2). `domainId` is the
+  /// domain the bridge was started on; the bridge's configuration fixes it.
   async createParticipantWebSocket(
     url: string,
     domainId: number,
@@ -149,12 +151,13 @@ export class DataWriter {
     this.write(bytes);
   }
 
-  /// Resolves once a matched subscription is observed. The bridge does not
-  /// surface a discovery count over the JSON protocol, so a successful
-  /// connection is treated as a satisfied match; `min`/`timeoutMs` are honoured
-  /// as an immediate readiness check.
-  async waitForMatchedSubscription(_min: number, _timeoutMs: number): Promise<void> {
-    await Promise.resolve();
+  /// Resolves once the topic's connection to the bridge is open: the bridge
+  /// writes the samples of this writer into DDS through its own DataWriter of
+  /// the topic. The bridge reports no discovery count (zerodds-ws-bridge-1.0
+  /// §4.4), so `min` is not checked against DDS readers. Rejects after
+  /// `timeoutMs`.
+  async waitForMatchedSubscription(_min: number, timeoutMs: number): Promise<void> {
+    await this.transport.whenOpen(this.topic.name, timeoutMs);
   }
 }
 
@@ -176,9 +179,14 @@ export class DataReader {
     this.transport.subscribe(this.topic.name, this.subId);
   }
 
-  /// Takes all currently-buffered samples (iterable of XCDR2 byte payloads).
+  /// Takes all currently-buffered samples and returns the payloads of those
+  /// with data; a dispose or an unregister carries none (its info is in
+  /// `takeSamples`).
   take(): Uint8Array[] {
-    return this.transport.drain(this.topic.name, 0).map((s) => s.bytes);
+    return this.transport
+      .drain(this.topic.name, 0)
+      .filter((s) => s.kind === "alive")
+      .map((s) => s.bytes);
   }
 
   /// Annex C.2.3 `takeSamples`: returns up to `max` full Samples (bytes+info).
@@ -186,9 +194,11 @@ export class DataReader {
     return this.transport.drain(this.topic.name, max).map(sampleFromBytes);
   }
 
-  /// Resolves once a matched publication is observed (see writer note).
-  async waitForMatchedPublication(_min: number, _timeoutMs: number): Promise<void> {
-    await Promise.resolve();
+  /// Resolves once the topic's connection to the bridge is open: from then on
+  /// the bridge forwards the samples its DataReader of the topic takes (see
+  /// the writer's note on `min`). Rejects after `timeoutMs`.
+  async waitForMatchedPublication(_min: number, timeoutMs: number): Promise<void> {
+    await this.transport.whenOpen(this.topic.name, timeoutMs);
   }
 
   /// Resolves once at least one sample is buffered, or after `timeoutMs`.

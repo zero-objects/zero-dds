@@ -5,6 +5,142 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
+## Type adaptation in topics
+
+**Status:** `partial` — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Type adaptation in topics — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Type adaptation in services and actions
+
+**Status:** `partial` — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Type adaptation in services and actions — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Pillar I — extensions to the ament build system
+
+**Status:** `partial` — Not run in CI: `rmw_c/accel_loan_memory_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Pillar I — extensions to the ament build system — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/accel_loan_memory_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Methodology §3.2 — accelerator-registerable loan memory
+
+**Status:** `partial` — Not run in CI: `rmw_c/run_accel_loan_memory_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Methodology §3.2 — accelerator-registerable loan memory — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/run_accel_loan_memory_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Endpoint info by topic — `rmw_get_publishers/subscriptions_info_by_topic`
+
+**Status:** `partial` — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Endpoint info by topic — `rmw_get_publishers/subscriptions_info_by_topic` — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Supported message type identity — RIHS type hash
+
+**Status:** `partial` — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Supported message type identity — RIHS type hash — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Carrying the supported message priority map
+
+**Status:** `partial` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Carrying the supported message priority map — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## One regular publisher per selected message type
+
+**Status:** `partial` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## One regular publisher per selected message type — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Renegotiation — endpoints leave and are created again
+
+**Status:** `partial` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Renegotiation — endpoints leave and are created again — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## The network change as a trigger — graph guard condition
+
+**Status:** `partial` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## The network change as a trigger — graph guard condition — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## `rmw_wait` — event-driven
+
+**Status:** `partial` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## `rmw_wait` — event-driven — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Services — request/reply
+
+**Status:** `partial` — Not run in CI: `test_rclpy_service_call_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Services — request/reply — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_service_call_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## `rmw_serialize` / `rmw_deserialize` + serialized publish/take
+
+**Status:** `partial` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## `rmw_serialize` / `rmw_deserialize` + serialized publish/take — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Topic graph — `rmw_get_topic_names_and_types` + `rmw_count_publishers/subscribers`
+
+**Status:** `partial` — Not run in CI: `test_rclpy_topic_graph_introspection`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Topic graph — `rmw_get_topic_names_and_types` + `rmw_count_publishers/subscribers` — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_topic_graph_introspection`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Service graph and names by node
+
+**Status:** `partial` — the check graph covers `rmw_get_service_names_and_types` (`ros2 service list -t`) and the service servers per node (`ros2 node info`). Without a test: `rmw_count_services`, `rmw_count_clients`, publishers, subscribers and clients per node, `no_demangle` and `rmw_qos_profile_check_compatible`. Not run in CI: `rmw_c/run_ros2_services_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Service graph and names by node — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/run_ros2_services_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Guard conditions + event-driven wake
+
+**Status:** `partial` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Guard conditions + event-driven wake — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## `rmw_get_node_names` + `_with_enclaves`
+
+**Status:** `partial` — `ros_discovery_info` as in rmw_dds_common: NoKey, RELIABLE, TRANSIENT_LOCAL, KEEP_LAST(1) (`src/lib.rs`, discovery QoS); a process started later receives each participant's latest state. Not run in CI: `test_rclpy_node_names_graph`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## `rmw_get_node_names` + `_with_enclaves` — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_node_names_graph`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
 ## `rmw_get_serialized_message_size`
 
 **Status:** `partial` — the walk is implemented and structurally checked. What is missing is the behavioural check "the returned value really is ≥ the length `rmw_serialize` writes"; that needs the rosidl introspection type supports and hence a ROS 2 host. Tracked as its own item below.
@@ -13,6 +149,22 @@ No new content: every entry appears there as an item with its evidence.
 
 **Status:** `open` — no test case holds `rmw_get_serialized_message_size` for a real message against the length `rmw_serialize` writes. That needs a ROS 2 host; the case belongs beside the existing rclcpp e2e tests in `crates/rmw-zerodds-shim/rmw_c/`.
 
+## Introspection typesupport flavours (C and C++)
+
+**Status:** `partial` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `rmw_c/type_adaptation_test.cpp`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## Introspection typesupport flavours (C and C++) — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `rmw_c/type_adaptation_test.cpp`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
 ## RMW integration (`rmw_serialization_support_init`, `rmw_take_dynamic_message[_with_info]`)
 
-**Status:** `partial` — the interface table and the RMW wiring run (`run_dynamic_typesupport_test.sh` against ROS 2 Jazzy; last measured 17/17 pass, before the checks named above). Two named, deliberate gaps, none of them hidden: (1) `dynamic_data_serialize` has no negotiated `DataRepresentation` QoS to consult — the interface gives the call no writer/QoS context at all — and so always writes `@final`, little-endian, XCDR1 (PLAIN_CDR1), matching the framing choice the static introspection codec in `rmw_zerodds.c` already makes. (2) `long double`/`float128` is bridged only for the x86-64 80-bit-extended and the aarch64 true-binary128 memory layouts (`Float128::{to,from}_x87_padded_bytes`/`{to,from}_le_bytes`); 32-bit ARM and PowerPC's double-double `long double` are refused with RCUTILS_RET_UNSUPPORTED rather than guessed.
+**Status:** `partial` — the interface table and the RMW wiring are implemented. `dynamic_data_serialize` always writes `@final`, little-endian, XCDR1 (PLAIN_CDR1), like the static introspection codec in `rmw_zerodds.c`; the interface passes no writer or QoS context. `long double` on 32-bit ARM and PowerPC (double-double) is missing; own item. Not run in CI: `rmw_c/dynamic_typesupport_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## RMW integration (`rmw_serialization_support_init`, `rmw_take_dynamic_message[_with_info]`) — run in CI
+
+**Status:** `open` — Not run in CI: `rmw_c/dynamic_typesupport_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## RMW integration — `long double` on 32-bit ARM and PowerPC
+
+**Status:** `open` — `crates/rmw-zerodds-shim/src/dynamic.rs` bridges `long double` only for the x86-64 80-bit extended and the aarch64 binary128 storage form (`Float128::{to,from}_x87_padded_bytes`, `{to,from}_le_bytes`); on 32-bit ARM and for PowerPC's double-double `long double` it answers `RCUTILS_RET_UNSUPPORTED`.

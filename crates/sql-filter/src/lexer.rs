@@ -207,10 +207,10 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
                 } else if (d == b'e' || d == b'E') && !saw_exp {
                     saw_exp = true;
                     j += 1;
-                    if let Some(&nx) = bytes.get(j) {
-                        if nx == b'+' || nx == b'-' {
-                            j += 1;
-                        }
+                    if let Some(&nx) = bytes.get(j)
+                        && (nx == b'+' || nx == b'-')
+                    {
+                        j += 1;
                     }
                 } else {
                     break;
@@ -235,8 +235,9 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
         // Identifier or keyword. Allowed: [A-Za-z_][A-Za-z0-9_.]*, each
         // name optionally followed by subscripts: `[0]` (array or
         // sequence element), `['key']` (map value or bitmask flag),
-        // XTypes 1.3 §7.6.7.1.
-        if c.is_ascii_alphabetic() || c == b'_' {
+        // XTypes 1.3 §7.6.7.1. A union's discriminator is the name
+        // `#discriminator` (DDS-XTypes 1.4 Beta 1 §7.6.7.1).
+        if c.is_ascii_alphabetic() || c == b'_' || discriminator_at(bytes, i) {
             let (word, j, subscripted) = scan_field(input, i)?;
             if subscripted {
                 out.push(Token::Ident(word));
@@ -275,6 +276,20 @@ pub(crate) fn tokenize(input: &str) -> Result<Vec<Token>, LexError> {
     Ok(out)
 }
 
+/// The name of a union's discriminator in a field reference, DDS-XTypes
+/// 1.4 Beta 1 §7.6.7.1: "The union discriminator may also be referenced
+/// using the name “#discriminator”."
+const DISCRIMINATOR: &str = "#discriminator";
+
+/// Whether `#discriminator` starts at `at` as a whole name: not followed
+/// by a character that would continue it.
+fn discriminator_at(bytes: &[u8], at: usize) -> bool {
+    bytes[at..].starts_with(DISCRIMINATOR.as_bytes())
+        && !bytes
+            .get(at + DISCRIMINATOR.len())
+            .is_some_and(|next| next.is_ascii_alphanumeric() || *next == b'_')
+}
+
 /// Scans a field reference from `start`: names joined by `.`, each one
 /// optionally followed by subscripts. Returns the canonical text (no
 /// blanks inside the brackets, `'` doubled inside a key), the position
@@ -290,10 +305,14 @@ fn scan_field(input: &str, start: usize) -> Result<(String, usize, bool), LexErr
     let mut subscripted = false;
     loop {
         let name_start = j;
-        while j < bytes.len()
-            && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'.')
-        {
-            j += 1;
+        while j < bytes.len() {
+            if bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'.' {
+                j += 1;
+            } else if (j == start || bytes[j - 1] == b'.') && discriminator_at(bytes, j) {
+                j += DISCRIMINATOR.len();
+            } else {
+                break;
+            }
         }
         if subscripted && j > name_start && bytes[name_start] != b'.' {
             return Err(LexError(alloc::format!(
@@ -504,5 +523,27 @@ mod tests {
         for bad in ["a[", "a[]", "a[-1]", "a[x]", "a['k]", "a[1]b", "[1]"] {
             assert!(tokenize(bad).is_err(), "{bad}");
         }
+    }
+
+    /// DDS-XTypes 1.4 Beta 1 §7.6.7.1: "The union discriminator may also
+    /// be referenced using the name “#discriminator”" — at the root of a
+    /// union topic type and as a step of a dotted reference.
+    #[test]
+    fn xtypes_1_4_7_6_7_1_the_discriminator_is_the_name_hash_discriminator() {
+        assert_eq!(
+            tokenize("#discriminator = 2").unwrap(),
+            [
+                Token::Ident("#discriminator".into()),
+                Token::Eq,
+                Token::IntLit(2)
+            ]
+        );
+        assert_eq!(
+            tokenize("a.u.#discriminator").unwrap(),
+            [Token::Ident("a.u.#discriminator".into())]
+        );
+        assert!(tokenize("#discriminatorx = 1").is_err());
+        assert!(crate::parse("a#discriminator = 1").is_err());
+        assert!(tokenize("#other = 1").is_err());
     }
 }

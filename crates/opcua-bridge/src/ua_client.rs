@@ -252,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn client_job_writes_a_monitored_scalar_node_into_dds() {
+    fn opcuabridge_1_client_job_writes_a_monitored_scalar_node_into_dds() {
         let ast = ast_of("@final struct Temp { double v; };");
         let dyn_type = DynamicType::find(&ast, "Temp").expect("type");
         let type_support = crate::idl::type_support_for(&[ast], "Temp").expect("support");

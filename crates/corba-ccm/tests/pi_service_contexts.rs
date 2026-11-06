@@ -64,15 +64,15 @@ fn ots_and_csiv2_service_contexts_route_through_pi() {
             "extractor"
         }
         fn receive_request_service_contexts(&self, info: &mut RequestInfo) {
-            if let Some(b) = info.get_request_service_context(0) {
-                if let Ok(pc) = PropagationContext::from_service_context_data(b) {
-                    *self.otid.lock().unwrap() = Some(pc.current.otid);
-                }
+            if let Some(b) = info.get_request_service_context(0)
+                && let Ok(pc) = PropagationContext::from_service_context_data(b)
+            {
+                *self.otid.lock().unwrap() = Some(pc.current.otid);
             }
-            if let Some(b) = info.get_request_service_context(SAS_ID) {
-                if let Ok(tok) = GssupCredentialToken::from_gss_token(b) {
-                    *self.user.lock().unwrap() = Some(tok.username);
-                }
+            if let Some(b) = info.get_request_service_context(SAS_ID)
+                && let Ok(tok) = GssupCredentialToken::from_gss_token(b)
+            {
+                *self.user.lock().unwrap() = Some(tok.username);
             }
         }
     }

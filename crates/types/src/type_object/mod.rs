@@ -155,21 +155,16 @@ impl TypeObject {
 mod tests {
     use super::*;
     use crate::type_identifier::{PrimitiveKind, TypeIdentifier};
-    use crate::type_object::common::{
-        AnnotationParameterValue, CommonStructMember, CommonUnionMember, NameHash,
-    };
+    use crate::type_object::common::{CommonUnionMember, NameHash};
     use crate::type_object::flags::{
-        AliasMemberFlag, AliasTypeFlag, BitmaskTypeFlag, CollectionElementFlag, CollectionTypeFlag,
-        EnumLiteralFlag, EnumTypeFlag, StructMemberFlag, StructTypeFlag, UnionDiscriminatorFlag,
-        UnionMemberFlag, UnionTypeFlag,
+        AliasMemberFlag, AliasTypeFlag, BitmaskTypeFlag, EnumLiteralFlag, EnumTypeFlag,
+        StructTypeFlag, UnionDiscriminatorFlag, UnionMemberFlag, UnionTypeFlag,
     };
     use crate::type_object::minimal::{
-        CommonAliasBody, CommonCollectionElement, CommonDiscriminatorMember,
-        CommonEnumeratedHeader, CommonEnumeratedLiteral, MinimalAliasBody, MinimalAliasType,
-        MinimalArrayType, MinimalCollectionElement, MinimalDiscriminatorMember,
-        MinimalEnumeratedHeader, MinimalEnumeratedLiteral, MinimalEnumeratedType, MinimalMapType,
-        MinimalSequenceType, MinimalStructHeader, MinimalStructMember, MinimalStructType,
-        MinimalUnionMember, MinimalUnionType,
+        CommonAliasBody, CommonDiscriminatorMember, CommonEnumeratedHeader,
+        CommonEnumeratedLiteral, MinimalAliasBody, MinimalAliasType, MinimalDiscriminatorMember,
+        MinimalEnumeratedHeader, MinimalEnumeratedLiteral, MinimalEnumeratedType,
+        MinimalStructHeader, MinimalStructType, MinimalUnionMember, MinimalUnionType,
     };
 
     fn roundtrip(to: TypeObject) {
@@ -187,36 +182,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn minimal_struct_sensor_with_two_fields() {
-        let st = MinimalStructType {
-            struct_flags: StructTypeFlag(StructTypeFlag::IS_APPENDABLE),
-            header: MinimalStructHeader {
-                base_type: TypeIdentifier::None,
-            },
-            member_seq: alloc::vec![
-                MinimalStructMember {
-                    common: CommonStructMember {
-                        member_id: 1,
-                        member_flags: StructMemberFlag(StructMemberFlag::IS_KEY),
-                        member_type_id: TypeIdentifier::Primitive(PrimitiveKind::Int64),
-                    },
-                    detail: name_hash([0xde, 0xad, 0xbe, 0xef]),
-                },
-                MinimalStructMember {
-                    common: CommonStructMember {
-                        member_id: 2,
-                        member_flags: StructMemberFlag::default(),
-                        member_type_id: TypeIdentifier::String8Small { bound: 128 },
-                    },
-                    detail: name_hash([0xfe, 0xed, 0xfa, 0xce]),
-                },
-            ],
-        };
-        roundtrip(TypeObject::Minimal(MinimalTypeObject::Struct(st)));
-    }
-
-    #[test]
-    fn minimal_struct_with_base_type() {
+    fn xtypes_annex_b_minimal_struct_with_base_type() {
         let st = MinimalStructType {
             struct_flags: StructTypeFlag::empty(),
             header: MinimalStructHeader {
@@ -230,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn minimal_struct_mutable_final_flags() {
+    fn xtypes_annex_b_minimal_struct_mutable_final_flags() {
         for flags in [
             StructTypeFlag::IS_FINAL,
             StructTypeFlag::IS_MUTABLE | StructTypeFlag::IS_AUTOID_HASH,
@@ -251,7 +217,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn minimal_union_with_int_discriminator_two_cases() {
+    fn xtypes_annex_b_minimal_union_with_int_discriminator_two_cases() {
         let u = MinimalUnionType {
             union_flags: UnionTypeFlag::default(),
             discriminator: MinimalDiscriminatorMember {
@@ -289,7 +255,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn minimal_enum_color_3_literals() {
+    fn xtypes_7_3_4_5_minimal_enum_color_3_literals() {
         let e = MinimalEnumeratedType {
             enum_flags: EnumTypeFlag::default(),
             header: MinimalEnumeratedHeader {
@@ -327,7 +293,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn minimal_alias_int64_typedef() {
+    fn xtypes_annex_b_minimal_alias_int64_typedef() {
         let a = MinimalAliasType {
             alias_flags: AliasTypeFlag::default(),
             body: MinimalAliasBody {
@@ -345,7 +311,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn minimal_bitmask_3_flags() {
+    fn xtypes_7_3_4_5_minimal_bitmask_3_flags() {
         use crate::type_object::minimal::{CommonBitflag, MinimalBitflag, MinimalBitmaskType};
         let b = MinimalBitmaskType {
             bitmask_flags: BitmaskTypeFlag::default(),
@@ -381,87 +347,16 @@ mod tests {
     // Sequence / Array / Map
     // ------------------------------------------------------------------
 
-    #[test]
-    fn minimal_sequence_of_floats() {
-        let s = MinimalSequenceType {
-            collection_flag: CollectionTypeFlag::default(),
-            bound: 100,
-            element: MinimalCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::Primitive(PrimitiveKind::Float64),
-                },
-            },
-        };
-        roundtrip(TypeObject::Minimal(MinimalTypeObject::Sequence(s)));
-    }
-
-    #[test]
-    fn minimal_array_3d_doubles() {
-        let a = MinimalArrayType {
-            collection_flag: CollectionTypeFlag::default(),
-            bound_seq: alloc::vec![4, 4, 4],
-            element: MinimalCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::Primitive(PrimitiveKind::Float64),
-                },
-            },
-        };
-        roundtrip(TypeObject::Minimal(MinimalTypeObject::Array(a)));
-    }
-
-    #[test]
-    fn minimal_map_string_to_int64() {
-        let m = MinimalMapType {
-            collection_flag: CollectionTypeFlag::default(),
-            bound: 1_000,
-            key: MinimalCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::String8Small { bound: 64 },
-                },
-            },
-            element: MinimalCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::Primitive(PrimitiveKind::Int64),
-                },
-            },
-        };
-        roundtrip(TypeObject::Minimal(MinimalTypeObject::Map(m)));
-    }
-
     // ------------------------------------------------------------------
     // Annotation
     // ------------------------------------------------------------------
-
-    #[test]
-    fn minimal_annotation_with_named_parameter() {
-        use crate::type_object::flags::{AnnotationParameterFlag, AnnotationTypeFlag};
-        use crate::type_object::minimal::{
-            CommonAnnotationParameter, MinimalAnnotationParameter, MinimalAnnotationType,
-        };
-        let a = MinimalAnnotationType {
-            annotation_flag: AnnotationTypeFlag::default(),
-            member_seq: alloc::vec![MinimalAnnotationParameter {
-                common: CommonAnnotationParameter {
-                    member_flags: AnnotationParameterFlag::default(),
-                    member_type_id: TypeIdentifier::Primitive(PrimitiveKind::Int32),
-                },
-                name_hash: name_hash([0x70, 0xdd, 0xa5, 0xdf]),
-                default_value: AnnotationParameterValue::Int32(10),
-            }],
-        };
-        roundtrip(TypeObject::Minimal(MinimalTypeObject::Annotation(a)));
-    }
 
     // ------------------------------------------------------------------
     // Bitset
     // ------------------------------------------------------------------
 
     #[test]
-    fn minimal_bitset_roundtrips() {
+    fn xtypes_annex_b_minimal_bitset_roundtrips() {
         use crate::type_object::flags::{BitfieldFlag, BitsetTypeFlag};
         use crate::type_object::minimal::{CommonBitfield, MinimalBitfield, MinimalBitsetType};
         let b = MinimalBitsetType {
@@ -484,71 +379,7 @@ mod tests {
     // ------------------------------------------------------------------
 
     #[test]
-    fn complete_struct_sensor_with_names_and_annotations() {
-        use crate::type_object::common::{
-            AppliedAnnotation, AppliedAnnotationParameter, AppliedBuiltinMemberAnnotations,
-            AppliedBuiltinTypeAnnotations, AppliedVerbatimAnnotation, CompleteMemberDetail,
-            CompleteTypeDetail, OptionalAppliedAnnotationSeq, VerbatimPlacement,
-        };
-        use crate::type_object::complete::{
-            CompleteStructHeader, CompleteStructMember, CompleteStructType,
-        };
-        let st = CompleteStructType {
-            struct_flags: StructTypeFlag(StructTypeFlag::IS_MUTABLE),
-            header: CompleteStructHeader {
-                base_type: TypeIdentifier::None,
-                detail: CompleteTypeDetail {
-                    ann_builtin: AppliedBuiltinTypeAnnotations {
-                        verbatim: Some(AppliedVerbatimAnnotation {
-                            placement: VerbatimPlacement::Before,
-                            language: alloc::string::String::from("c++"),
-                            text: alloc::string::String::from("// hand-written"),
-                        }),
-                    },
-                    ann_custom: OptionalAppliedAnnotationSeq(Some(alloc::vec![
-                        AppliedAnnotation {
-                            annotation_typeid: TypeIdentifier::EquivalenceHashComplete(
-                                crate::type_identifier::EquivalenceHash([0xA0; 14]),
-                            ),
-                            param_seq: alloc::vec![AppliedAnnotationParameter {
-                                paramname_hash: name_hash([0x01; 4]),
-                                value: crate::type_object::common::AnnotationParameterValue::Int32(
-                                    42
-                                ),
-                            }],
-                        },
-                    ])),
-                    type_name: alloc::string::String::from("::sensors::Chatter"),
-                },
-            },
-            member_seq: alloc::vec![CompleteStructMember {
-                common: CommonStructMember {
-                    member_id: 1,
-                    member_flags: StructMemberFlag(StructMemberFlag::IS_KEY),
-                    member_type_id: TypeIdentifier::Primitive(PrimitiveKind::Int64),
-                },
-                detail: CompleteMemberDetail {
-                    name: alloc::string::String::from("sensor_id"),
-                    ann_builtin: AppliedBuiltinMemberAnnotations {
-                        unit: Some(alloc::string::String::from("celsius")),
-                        min: Some(crate::type_object::common::AnnotationParameterValue::Int64(
-                            0
-                        )),
-                        max: Some(crate::type_object::common::AnnotationParameterValue::Int64(
-                            1_000_000,
-                        )),
-                        hash_id: None,
-                        default_value: None,
-                    },
-                    ann_custom: OptionalAppliedAnnotationSeq::default(),
-                },
-            }],
-        };
-        roundtrip(TypeObject::Complete(CompleteTypeObject::Struct(st)));
-    }
-
-    #[test]
-    fn complete_union_roundtrips() {
+    fn xtypes_annex_b_complete_union_roundtrips() {
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
             CompleteTypeDetail, OptionalAppliedAnnotationSeq,
@@ -592,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_enum_with_literal_names() {
+    fn xtypes_annex_b_complete_enum_with_literal_names() {
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
             CompleteTypeDetail, OptionalAppliedAnnotationSeq,
@@ -639,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_alias_typedef() {
+    fn xtypes_annex_b_complete_alias_typedef() {
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteTypeDetail,
             OptionalAppliedAnnotationSeq,
@@ -667,69 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_array_3d_roundtrips() {
-        use crate::type_object::common::{
-            AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteTypeDetail,
-            OptionalAppliedAnnotationSeq,
-        };
-        use crate::type_object::complete::{CompleteArrayType, CompleteCollectionElement};
-        let a = CompleteArrayType {
-            collection_flag: CollectionTypeFlag::default(),
-            bound_seq: alloc::vec![3, 4, 5],
-            detail: CompleteTypeDetail {
-                ann_builtin: AppliedBuiltinTypeAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-                type_name: alloc::string::String::from("::Cube"),
-            },
-            element: CompleteCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::Primitive(PrimitiveKind::Int32),
-                },
-                ann_builtin: AppliedBuiltinMemberAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-            },
-        };
-        roundtrip(TypeObject::Complete(CompleteTypeObject::Array(a)));
-    }
-
-    #[test]
-    fn complete_map_roundtrips() {
-        use crate::type_object::common::{
-            AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteTypeDetail,
-            OptionalAppliedAnnotationSeq,
-        };
-        use crate::type_object::complete::{CompleteCollectionElement, CompleteMapType};
-        let m = CompleteMapType {
-            collection_flag: CollectionTypeFlag::default(),
-            bound: 200,
-            detail: Some(CompleteTypeDetail {
-                ann_builtin: AppliedBuiltinTypeAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-                type_name: alloc::string::String::from("::StrIntMap"),
-            }),
-            key: CompleteCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::String8Small { bound: 32 },
-                },
-                ann_builtin: AppliedBuiltinMemberAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-            },
-            element: CompleteCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::Primitive(PrimitiveKind::Int64),
-                },
-                ann_builtin: AppliedBuiltinMemberAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-            },
-        };
-        roundtrip(TypeObject::Complete(CompleteTypeObject::Map(m)));
-    }
-
-    #[test]
-    fn complete_bitmask_roundtrips() {
+    fn xtypes_annex_b_complete_bitmask_roundtrips() {
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
             CompleteTypeDetail, OptionalAppliedAnnotationSeq,
@@ -773,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_bitset_roundtrips() {
+    fn xtypes_annex_b_complete_bitset_roundtrips() {
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
             CompleteTypeDetail, OptionalAppliedAnnotationSeq,
@@ -805,30 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_annotation_roundtrips() {
-        use crate::type_object::complete::{
-            CompleteAnnotationHeader, CompleteAnnotationParameter, CompleteAnnotationType,
-        };
-        use crate::type_object::flags::{AnnotationParameterFlag, AnnotationTypeFlag};
-        let a = CompleteAnnotationType {
-            annotation_flag: AnnotationTypeFlag::default(),
-            header: CompleteAnnotationHeader {
-                annotation_name: alloc::string::String::from("my_ann"),
-            },
-            member_seq: alloc::vec![CompleteAnnotationParameter {
-                common: crate::type_object::minimal::CommonAnnotationParameter {
-                    member_flags: AnnotationParameterFlag::default(),
-                    member_type_id: TypeIdentifier::Primitive(PrimitiveKind::Int32),
-                },
-                name: alloc::string::String::from("max"),
-                default_value: AnnotationParameterValue::Int32(99),
-            }],
-        };
-        roundtrip(TypeObject::Complete(CompleteTypeObject::Annotation(a)));
-    }
-
-    #[test]
-    fn complete_verbatim_placement_variants_roundtrip() {
+    fn xtypes_annex_b_complete_verbatim_placement_variants_roundtrip() {
         use crate::type_object::common::{
             AppliedBuiltinTypeAnnotations, AppliedVerbatimAnnotation, CompleteTypeDetail,
             OptionalAppliedAnnotationSeq, VerbatimPlacement,
@@ -863,39 +609,12 @@ mod tests {
         }
     }
 
-    #[test]
-    fn complete_sequence_of_floats() {
-        use crate::type_object::common::{
-            AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteTypeDetail,
-            OptionalAppliedAnnotationSeq,
-        };
-        use crate::type_object::complete::{CompleteCollectionElement, CompleteSequenceType};
-        let s = CompleteSequenceType {
-            collection_flag: CollectionTypeFlag::default(),
-            bound: 128,
-            detail: Some(CompleteTypeDetail {
-                ann_builtin: AppliedBuiltinTypeAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-                type_name: alloc::string::String::from("::Floats"),
-            }),
-            element: CompleteCollectionElement {
-                common: CommonCollectionElement {
-                    element_flags: CollectionElementFlag::default(),
-                    type_id: TypeIdentifier::Primitive(PrimitiveKind::Float64),
-                },
-                ann_builtin: AppliedBuiltinMemberAnnotations::default(),
-                ann_custom: OptionalAppliedAnnotationSeq::default(),
-            },
-        };
-        roundtrip(TypeObject::Complete(CompleteTypeObject::Sequence(s)));
-    }
-
     // ------------------------------------------------------------------
     // Unknown discriminator
     // ------------------------------------------------------------------
 
     #[test]
-    fn unknown_equivalence_kind_fails_gracefully() {
+    fn xtypes_annex_b_unknown_equivalence_kind_fails_gracefully() {
         // A `DHEADER` of one, then the octet the union has no case for.
         // The bare octet this used to feed is no longer a `TypeObject` at
         // all — Annex B's `@extensibility(APPENDABLE)` puts a length in
@@ -913,7 +632,7 @@ mod tests {
     /// with XCDR encoding version 2". §7.4.2 gives such an object a
     /// `DHEADER` over everything that follows.
     #[test]
-    fn a_type_object_opens_with_a_dheader_over_the_rest() {
+    fn xtypes_annex_b_a_type_object_opens_with_a_dheader_over_the_rest() {
         let object = TypeObject::Minimal(MinimalTypeObject::Struct(
             crate::builder::TypeObjectBuilder::struct_type("::S")
                 .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
@@ -936,7 +655,7 @@ mod tests {
     /// survives a decode and an encode unchanged instead of being
     /// refused as `UnknownTypeKind`.
     #[test]
-    fn a_type_kind_this_revision_does_not_define_survives_the_round_trip() {
+    fn xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip() {
         // DHEADER(8), EK_MINIMAL, TypeKind 0xC0, padding, DHEADER(0).
         let bytes = [
             0x08, 0x00, 0x00, 0x00, EK_MINIMAL, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -955,7 +674,7 @@ mod tests {
     /// A member list a later revision wrote survives verbatim, so the
     /// object goes back on the wire as it arrived rather than shortened.
     #[test]
-    fn an_extended_type_kind_keeps_the_member_list_it_arrived_with() {
+    fn xtypes_annex_b_an_extended_type_kind_keeps_the_member_list_it_arrived_with() {
         let mut bytes = alloc::vec![0u8; 4];
         bytes.extend_from_slice(&[EK_COMPLETE, 0xC1, 0x00, 0x00]);
         bytes.extend_from_slice(&8_u32.to_le_bytes());

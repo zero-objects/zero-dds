@@ -515,7 +515,8 @@ mod tests {
     /// samples of the secure writers and not those of the plain ones, and the
     /// plain one the reverse.
     #[test]
-    fn the_secure_service_has_its_own_endpoints() -> Result<(), Box<dyn std::error::Error>> {
+    fn security_6_1_the_secure_service_has_its_own_endpoints()
+    -> Result<(), Box<dyn std::error::Error>> {
         let local_prefix = GuidPrefix::from_bytes([1; 12]);
         let peer_prefix = GuidPrefix::from_bytes([2; 12]);
         let at = Locator::udp_v4([127, 0, 0, 1], 10000);
@@ -546,7 +547,8 @@ mod tests {
     /// unacknowledged samples are all held and none is replaced by a newer
     /// one (a depth of 32 would have kept the newest 32).
     #[test]
-    fn the_history_of_a_type_lookup_endpoint_keeps_all() -> Result<(), Box<dyn std::error::Error>> {
+    fn xtypes_7_6_3_3_3_the_history_of_a_type_lookup_endpoint_keeps_all()
+    -> Result<(), Box<dyn std::error::Error>> {
         let mut channel = Channel::new(
             GuidPrefix::from_bytes([1; 12]),
             EntityId::user_writer_with_key([9, 9, 9]),
@@ -564,7 +566,8 @@ mod tests {
     /// (non-secure) endpoint in DDS-XTYPES": reliable writers and readers with
     /// KEEP_ALL history (XTypes 1.3 §7.6.3.3), as the plain service has them.
     #[test]
-    fn the_secure_service_has_the_qos_of_the_plain_one() -> Result<(), Box<dyn std::error::Error>> {
+    fn security_7_5_5_2_the_secure_service_has_the_qos_of_the_plain_one()
+    -> Result<(), Box<dyn std::error::Error>> {
         let prefix = GuidPrefix::from_bytes([1; 12]);
         let lease = Duration::from_secs(5);
         let mut plain = TypeLookupTransport::new(prefix, lease);
@@ -589,8 +592,8 @@ mod tests {
     /// sample was written is not sent that sample, neither with the write that
     /// matches it nor later.
     #[test]
-    fn the_endpoints_are_reliable_keep_all_and_volatile() -> Result<(), Box<dyn std::error::Error>>
-    {
+    fn xtypes_7_6_3_3_3_the_endpoints_are_reliable_keep_all_and_volatile()
+    -> Result<(), Box<dyn std::error::Error>> {
         fn holds(datagram: &OutboundDatagram, needle: &[u8]) -> bool {
             datagram
                 .bytes

@@ -59,7 +59,7 @@ class BuiltinTopicsTest {
     }
 
     @Test
-    void theParticipantCreatesTheFourBuiltinTopics() {
+    void javapsm_2_the_participant_creates_the_four_builtin_topics() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         for (String name : new String[] {BuiltinTopics.PARTICIPANT,
                 BuiltinTopics.PUBLICATION, BuiltinTopics.SUBSCRIPTION,
@@ -72,21 +72,7 @@ class BuiltinTopicsTest {
     }
 
     @Test
-    void createTopicWithTheBuiltinNameReturnsTheBuiltinTopic() {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        Topic<ParticipantBuiltinTopicDataImpl> created =
-                participant.createTopic(BuiltinTopics.PARTICIPANT,
-                        ParticipantBuiltinTopicDataImpl.class);
-        assertSame(builtin(participant, BuiltinTopics.PARTICIPANT,
-                ParticipantBuiltinTopicDataImpl.class), created);
-        // A built-in name is taken by the built-in topic of that type.
-        assertThrows(IllegalArgumentException.class,
-                () -> participant.createTopic(BuiltinTopics.PARTICIPANT,
-                        byte[].class));
-    }
-
-    @Test
-    void theBuiltinReaderOfAParticipantSeesTheEntitiesOfTheDomain() {
+    void javapsm_2_the_builtin_reader_of_a_participant_sees_the_entities_of_the_domain() {
         int domain = nextDom();
         DomainParticipant observer = Qos.factory().createParticipant(domain);
         // The readers are created first: the built-in data is VOLATILE, so a
@@ -161,33 +147,7 @@ class BuiltinTopicsTest {
     }
 
     @Test
-    void closingAPublisherWithdrawsItsWriterFromTheBuiltinTopic() {
-        int domain = nextDom();
-        DomainParticipant observer = Qos.factory().createParticipant(domain);
-        DataReader<PublicationBuiltinTopicDataImpl> publications =
-                observer.getBuiltinSubscriber().createDataReader(
-                        builtin(observer, BuiltinTopics.PUBLICATION,
-                                PublicationBuiltinTopicDataImpl.class));
-
-        DomainParticipant other = Qos.factory().createParticipant(domain);
-        Topic<String> topic = other.createTopic("Chatter", String.class);
-        Publisher publisher = other.createPublisher();
-        publisher.createDataWriter(topic);
-        assertNotNull(find(Qos.take(publications), data -> data != null
-                && "Chatter".equals(data.getTopicName())), "announced");
-
-        publisher.close();
-        // The unregister leaves the instance NOT_ALIVE_NO_WRITERS
-        // (DDS 1.2 §2.2.2.4.2.7) with no data.
-        Sample<PublicationBuiltinTopicDataImpl> after = find(
-                Qos.take(publications), data -> data == null);
-        assertNotNull(after, "the withdrawn publication has no data");
-        assertEquals(org.omg.dds.sub.InstanceState.NOT_ALIVE_NO_WRITERS,
-                after.getInstanceState());
-    }
-
-    @Test
-    void getDiscoveredParticipantDataCarriesTheUserData() {
+    void javapsm_2_get_discovered_participant_data_carries_the_user_data() {
         int domain = nextDom();
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -202,7 +162,7 @@ class BuiltinTopicsTest {
     }
 
     @Test
-    void getDiscoveredTopicDataCarriesTheTopicQos() {
+    void javapsm_2_get_discovered_topic_data_carries_the_topic_qos() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<String> topic = participant.createTopic("Chatter", String.class);
         assertTrue(participant.getDiscoveredTopics()

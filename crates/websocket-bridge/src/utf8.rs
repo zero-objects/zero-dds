@@ -219,68 +219,68 @@ mod tests {
     use super::*;
 
     #[test]
-    fn empty_is_valid() {
+    fn ws_8_1_empty_is_valid() {
         assert!(validate(b"").is_ok());
     }
 
     #[test]
-    fn ascii_is_valid() {
+    fn ws_8_1_ascii_is_valid() {
         assert!(validate(b"hello world").is_ok());
     }
 
     #[test]
-    fn valid_2_byte_codepoint() {
+    fn ws_8_1_valid_2_byte_codepoint() {
         // U+00E9 (é) = 0xC3 0xA9
         assert!(validate(&[0xC3, 0xA9]).is_ok());
     }
 
     #[test]
-    fn valid_3_byte_codepoint() {
+    fn ws_8_1_valid_3_byte_codepoint() {
         // U+20AC (€) = 0xE2 0x82 0xAC
         assert!(validate(&[0xE2, 0x82, 0xAC]).is_ok());
     }
 
     #[test]
-    fn valid_4_byte_codepoint() {
+    fn ws_8_1_valid_4_byte_codepoint() {
         // U+1F600 (😀) = 0xF0 0x9F 0x98 0x80
         assert!(validate(&[0xF0, 0x9F, 0x98, 0x80]).is_ok());
     }
 
     #[test]
-    fn rejects_overlong_2_byte_for_ascii() {
+    fn ws_8_1_rejects_overlong_2_byte_for_ascii() {
         // 0xC0 0x80 would encode U+0000 in 2 bytes (overlong)
         assert_eq!(validate(&[0xC0, 0x80]), Err(Utf8Error::OverlongEncoding));
     }
 
     #[test]
-    fn rejects_unexpected_continuation_byte() {
+    fn ws_8_1_rejects_unexpected_continuation_byte() {
         assert_eq!(validate(&[0x80]), Err(Utf8Error::UnexpectedContinuation));
     }
 
     #[test]
-    fn rejects_invalid_lead_byte() {
+    fn ws_8_1_rejects_invalid_lead_byte() {
         assert_eq!(validate(&[0xFF]), Err(Utf8Error::InvalidLeadByte));
     }
 
     #[test]
-    fn rejects_truncated_2_byte() {
+    fn ws_8_1_rejects_truncated_2_byte() {
         // 0xC3 (lead) without continuation
         assert_eq!(validate(&[0xC3]), Err(Utf8Error::Truncated));
     }
 
     #[test]
-    fn rejects_truncated_3_byte() {
+    fn ws_8_1_rejects_truncated_3_byte() {
         assert_eq!(validate(&[0xE2, 0x82]), Err(Utf8Error::Truncated));
     }
 
     #[test]
-    fn rejects_invalid_continuation() {
+    fn ws_8_1_rejects_invalid_continuation() {
         // 0xC3 0x00 — second byte is not 10xxxxxx
         assert_eq!(validate(&[0xC3, 0x00]), Err(Utf8Error::InvalidContinuation));
     }
 
     #[test]
-    fn rejects_surrogate_codepoint() {
+    fn ws_8_1_rejects_surrogate_codepoint() {
         // U+D800 = 0xED 0xA0 0x80 — surrogate
         assert_eq!(
             validate(&[0xED, 0xA0, 0x80]),
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_codepoint_above_max() {
+    fn ws_8_1_rejects_codepoint_above_max() {
         // 0xF4 0x90 0x80 0x80 = U+110000 (just out of range)
         assert_eq!(
             validate(&[0xF4, 0x90, 0x80, 0x80]),
@@ -298,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_handles_split_codepoint() {
+    fn ws_8_1_streaming_handles_split_codepoint() {
         // U+20AC split: 0xE2 in chunk 1, 0x82 0xAC in chunk 2
         let mut v = StreamingValidator::new();
         assert!(v.feed(&[0xE2]).is_ok());
@@ -307,14 +307,14 @@ mod tests {
     }
 
     #[test]
-    fn streaming_finalize_with_pending_is_truncated() {
+    fn ws_8_1_streaming_finalize_with_pending_is_truncated() {
         let mut v = StreamingValidator::new();
         assert!(v.feed(&[0xE2, 0x82]).is_ok());
         assert_eq!(v.finalize(), Err(Utf8Error::Truncated));
     }
 
     #[test]
-    fn streaming_complete_codepoint_in_one_chunk() {
+    fn ws_8_1_streaming_complete_codepoint_in_one_chunk() {
         let mut v = StreamingValidator::new();
         assert!(v.feed(b"hello").is_ok());
         assert!(v.finalize().is_ok());

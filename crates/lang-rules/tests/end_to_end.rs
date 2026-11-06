@@ -45,7 +45,7 @@ fn generate(idl: &str) -> String {
 }
 
 #[test]
-fn a_struct_of_primitives_becomes_a_rust_struct() {
+fn xtypes_7_2_2_2_a_struct_of_primitives_becomes_a_rust_struct() {
     assert_eq!(
         generate("struct Pose { long x; double y; boolean active; };"),
         "\
@@ -60,7 +60,7 @@ pub struct Pose {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_rust_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_rust_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -95,7 +95,7 @@ fn every_idl_primitive_reaches_a_rust_type() {
 }
 
 #[test]
-fn an_optional_member_becomes_an_option_and_the_others_do_not() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_an_option_and_the_others_do_not() {
     // DDS-XTypes 1.3 §7.2.2.4.4.4.7: "the member may or may not be
     // present in a given object of that type". A field of the member's
     // own type has nowhere to put the absence rule (19) and rule (20)
@@ -114,7 +114,7 @@ pub struct S {
 }
 
 #[test]
-fn a_member_named_after_a_rust_keyword_is_escaped() {
+fn idl_7_2_3_a_member_named_after_a_rust_keyword_is_escaped() {
     // `r#type` rather than `type_`: the reader of the generated code
     // sees the field the IDL declared.
     let generated = generate("struct S { long type; long match; };");
@@ -123,14 +123,14 @@ fn a_member_named_after_a_rust_keyword_is_escaped() {
 }
 
 #[test]
-fn a_sequence_becomes_a_vec_and_a_string_a_string() {
+fn xtypes_7_2_2_4_3_a_sequence_becomes_a_vec_and_a_string_a_string() {
     let generated = generate("struct Bag { sequence<long> ids; string name; };");
     assert!(generated.contains("pub ids: Vec<i32>,"), "{generated}");
     assert!(generated.contains("pub name: String,"), "{generated}");
 }
 
 #[test]
-fn an_array_nests_outermost_dimension_first() {
+fn xtypes_7_2_2_4_3_an_array_nests_outermost_dimension_first() {
     // `long grid[2][3]` is two rows of three, which in Rust is
     // `[[i32; 3]; 2]`. Reversing it silently transposes the data.
     let generated = generate("struct S { long grid[2][3]; };");
@@ -150,7 +150,7 @@ fn a_member_of_a_named_type_refers_to_it_by_name() {
 }
 
 #[test]
-fn a_typedef_resolves_to_what_it_aliases() {
+fn xtypes_7_2_2_4_2_a_typedef_resolves_to_what_it_aliases() {
     let generated = generate(
         "typedef long Distance;
          struct S { Distance d; };",
@@ -159,7 +159,7 @@ fn a_typedef_resolves_to_what_it_aliases() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     // Everything in the chain is deterministic: the model's identities,
     // the graph built from them, the order the items are walked in.
     let idl = "struct A { long x; }; struct B { long y; long z; };";
@@ -167,7 +167,7 @@ fn two_runs_over_one_source_produce_the_same_text() {
 }
 
 #[test]
-fn an_enum_becomes_a_rust_enum_with_its_numbering_written_out() {
+fn xtypes_7_2_2_4_1_1_an_enum_becomes_a_rust_enum_with_its_numbering_written_out() {
     // Without discriminants a Rust enum renumbers silently when a
     // variant is inserted, and the wire format is the IDL's numbering,
     // not Rust's.
@@ -185,7 +185,7 @@ pub enum Mode {
 }
 
 #[test]
-fn a_typedef_becomes_a_type_alias_as_well_as_resolving_in_a_member() {
+fn xtypes_7_2_2_4_2_a_typedef_becomes_a_type_alias_as_well_as_resolving_in_a_member() {
     let generated = generate("typedef long Distance; struct S { Distance d; };");
     assert!(
         generated.contains("pub type Distance = i32;"),
@@ -195,7 +195,7 @@ fn a_typedef_becomes_a_type_alias_as_well_as_resolving_in_a_member() {
 }
 
 #[test]
-fn a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
+fn xtypes_7_4_a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
     // A user-declared annotation has no Rust equivalent, and the
     // coverage table says so. Emitting an approximation would be worse
     // than emitting nothing.
@@ -213,7 +213,7 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 // -- every construct the Rust catalogue claims ---------------------------
 
 #[test]
-fn a_union_becomes_an_enum_with_one_variant_per_case() {
+fn xtypes_7_2_2_4_4_3_a_union_becomes_an_enum_with_one_variant_per_case() {
     // Rust's untagged union is unsafe, and the discriminator already is
     // the tag; an enum says the same thing safely.
     let generated = generate(
@@ -229,7 +229,7 @@ fn a_union_becomes_an_enum_with_one_variant_per_case() {
 }
 
 #[test]
-fn a_bitmask_becomes_an_integer_and_one_constant_per_bit() {
+fn xtypes_7_2_2_4_1_2_a_bitmask_becomes_an_integer_and_one_constant_per_bit() {
     // An enum could not hold two bits at once, which is the point of a
     // bitmask; the constants are the positions written out.
     let generated = generate("@bit_bound(16) bitmask Flags { READY, @position(4) MOVING };");
@@ -245,7 +245,7 @@ fn a_bitmask_becomes_an_integer_and_one_constant_per_bit() {
 }
 
 #[test]
-fn a_bitset_becomes_a_struct_of_holder_typed_fields() {
+fn xtypes_7_2_2_4_1_2_a_bitset_becomes_a_struct_of_holder_typed_fields() {
     let generated = generate("bitset B { bitfield<3> low; bitfield<12> high; };");
     assert!(generated.contains("pub struct B {"), "{generated}");
     assert!(generated.contains("pub low: u8,"), "{generated}");
@@ -278,7 +278,7 @@ fn an_exception_becomes_a_struct_of_its_members() {
 }
 
 #[test]
-fn an_interface_becomes_a_trait_of_signatures() {
+fn idl_7_4_3_an_interface_becomes_a_trait_of_signatures() {
     let generated = generate(
         "struct Pose { long x; };
          interface Control {
@@ -298,7 +298,7 @@ fn an_interface_becomes_a_trait_of_signatures() {
 }
 
 #[test]
-fn a_native_declaration_becomes_an_opaque_alias() {
+fn idl_7_4_3_a_native_declaration_becomes_an_opaque_alias() {
     // Never a guess at what the name might mean: the concrete type comes
     // from the facet a `#pragma` or an annotation set, and there is none
     // here.
@@ -307,7 +307,7 @@ fn a_native_declaration_becomes_an_opaque_alias() {
 }
 
 #[test]
-fn every_construct_the_table_claims_for_rust_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_table_claims_for_rust_produces_output() {
     // The table says a rule covers it; this says the rule reaches text.
     // A table green on rules that emit nothing would be worse than a
     // table that admitted the gap.
@@ -382,7 +382,7 @@ fn try_generate(idl: &str, origin: &str) -> Result<String, String> {
 /// `tools/wireprobe/collect-generated` uses it to fill the Rust column
 /// of the side-by-side view.
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,

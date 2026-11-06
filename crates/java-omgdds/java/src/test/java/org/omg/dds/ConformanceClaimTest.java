@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ConformanceClaimTest {
 
     @Test
-    void theReadmeNamesTheConformanceLevelsOfClause2() throws Exception {
+    void javapsm_2_the_readme_names_the_conformance_levels_of_clause2() throws Exception {
         Path readme = Paths.get("..", "README.md");
         assertTrue(Files.exists(readme), "README.md of the binding, from the module directory");
         String text = new String(Files.readAllBytes(readme), StandardCharsets.UTF_8);

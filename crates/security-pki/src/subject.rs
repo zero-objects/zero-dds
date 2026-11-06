@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_subject_is_read_in_certificate_order_with_short_names() {
+    fn security_10_4_1_5_3_1_the_subject_is_read_in_certificate_order_with_short_names() {
         use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair};
         let mut params = CertificateParams::new(Vec::new()).unwrap();
         let mut dn = DistinguishedName::new();

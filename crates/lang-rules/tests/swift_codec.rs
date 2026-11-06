@@ -165,7 +165,7 @@ fn a_structure_of_primitives_becomes_a_swift_encoder() {
 }
 
 #[test]
-fn the_read_direction_opens_with_table_9_and_returns_the_sample() {
+fn xtypes_7_4_3_the_read_direction_opens_with_table_9_and_returns_the_sample() {
     let text = decoder("@final struct S { long a; string b; };", "S");
     assert!(
         text.contains("var v = zd_def_S()"),
@@ -196,7 +196,7 @@ fn an_optional_member_assigns_bare_and_clears_with_nil() {
 }
 
 #[test]
-fn an_external_member_reads_through_the_box_and_writes_its_value() {
+fn xtypes_7_2_2_4_9_an_external_member_reads_through_the_box_and_writes_its_value() {
     let read = decoder(
         "@final struct Inner { long a; }; @final struct S { @external Inner i; };",
         "S",
@@ -241,7 +241,7 @@ fn an_external_union_branch_reads_through_the_box_and_writes_its_value() {
 }
 
 #[test]
-fn a_union_branch_is_a_place_bare_and_a_value_unwrapped() {
+fn xtypes_7_4_3_a_union_branch_is_a_place_bare_and_a_value_unwrapped() {
     let idl = "@final union U switch (long) { case 1: long one; default: string other; }; \
                @final struct S { U pick; };";
     let read = decoder(idl, "S");
@@ -273,10 +273,10 @@ fn a_sequence_reads_by_appending() {
 }
 
 /// Every aggregate the corpus has, through both directions, to the end
-/// of the walk, each typechecked against the real runtime.
-#[test]
-fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
-    for (idl, root) in [
+/// of the walk, each checked against the real runtime: the shapes of
+/// `share` (of `shares`). 25 s for all of them on the Linux test host.
+fn the_shapes_the_corpus_has_reach_the_end_of_both_walks(share: usize, shares: usize) {
+    for (position, (idl, root)) in [
         ("@final struct S { long a; };", "S"),
         ("@appendable struct S { long a; string b; };", "S"),
         (
@@ -325,12 +325,64 @@ fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
             "typedef long Distance; @final struct S { Distance d; };",
             "S",
         ),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        if position % shares != share {
+            continue;
+        }
         let written = encoder(idl, root);
         assert!(!written.is_empty(), "no encoder for {idl}");
         compiles(&written);
         let read = decoder(idl, root);
         assert!(!read.is_empty(), "no decoder for {idl}");
         compiles(&read);
+    }
+}
+
+/// zerodds-xcdr2-swift-1.0 §7.4.3: every aggregate shape the corpus has reaches the end of both walks.
+///
+/// In 8 shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"); `integration-codegen-swift` and the language's merge job run them.
+mod xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks {
+    #[test]
+    fn share_01() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(0, 8);
+    }
+
+    #[test]
+    fn share_02() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(1, 8);
+    }
+
+    #[test]
+    fn share_03() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(2, 8);
+    }
+
+    #[test]
+    fn share_04() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(3, 8);
+    }
+
+    #[test]
+    fn share_05() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(4, 8);
+    }
+
+    #[test]
+    fn share_06() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(5, 8);
+    }
+
+    #[test]
+    fn share_07() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(6, 8);
+    }
+
+    #[test]
+    fn share_08() {
+        super::the_shapes_the_corpus_has_reach_the_end_of_both_walks(7, 8);
     }
 }

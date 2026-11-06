@@ -25,7 +25,7 @@ ARG ROS_DISTRO
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential cmake curl ca-certificates pkg-config libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.88
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.97.1
 ENV PATH=/root/.cargo/bin:${PATH}
 WORKDIR /build
 COPY . .

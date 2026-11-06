@@ -35,14 +35,14 @@ Trailers-Only`.
 **Repo:** `crates/grpc-bridge/src/frame.rs::{encode_message,
 decode_message, encode_web_trailers}`.
 
-**Tests:** `crates/grpc-bridge/src/frame.rs::tests::empty_message_encodes_to_5_byte_header`,
-`crates/grpc-bridge/src/frame.rs::tests::uncompressed_message_has_compressed_flag_zero`,
-`crates/grpc-bridge/src/frame.rs::tests::compressed_message_has_compressed_flag_one`,
-`crates/grpc-bridge/src/frame.rs::tests::message_length_uses_big_endian_4_bytes`,
-`crates/grpc-bridge/src/frame.rs::tests::round_trip_message`,
-`crates/grpc-bridge/src/frame.rs::tests::header_too_short_decode_fails`,
-`crates/grpc-bridge/src/frame.rs::tests::body_truncated_decode_fails`,
-`crates/grpc-bridge/src/frame.rs::tests::back_to_back_messages_can_be_decoded_sequentially`.
+**Tests:** `crates/grpc-bridge/src/frame.rs::tests::grpc_outline_empty_message_encodes_to_5_byte_header`,
+`crates/grpc-bridge/src/frame.rs::tests::grpc_outline_uncompressed_message_has_compressed_flag_zero`,
+`crates/grpc-bridge/src/frame.rs::tests::grpc_outline_compressed_message_has_compressed_flag_one`,
+`crates/grpc-bridge/src/frame.rs::tests::grpc_outline_message_length_uses_big_endian_4_bytes`,
+`crates/grpc-bridge/src/frame.rs::tests::grpc_requests_a_length_prefixed_message_is_read_from_its_octets`,
+`crates/grpc-bridge/src/frame.rs::tests::grpc_outline_header_too_short_decode_fails`,
+`crates/grpc-bridge/src/frame.rs::tests::grpc_outline_body_truncated_decode_fails`,
+`crates/grpc-bridge/src/frame.rs::tests::grpc_outline_back_to_back_messages_can_be_decoded_sequentially`.
 
 **Status:** done
 
@@ -66,10 +66,10 @@ PATH, AUTHORITY, TE, CONTENT_TYPE, GRPC_ENCODING,
 GRPC_ACCEPT_ENCODING, USER_AGENT, GRPC_TIMEOUT, GRPC_MESSAGE_TYPE}`
 + `content_types::{GRPC, GRPC_PROTO, GRPC_WEB, GRPC_WEB_TEXT}`.
 
-**Tests:** `crates/grpc-bridge/src/metadata.rs::tests::request_headers_constants_match_spec`,
-`crates/grpc-bridge/src/metadata.rs::tests::content_types_match_spec_strings`,
-`crates/grpc-bridge/src/path.rs::tests::parses_standard_grpc_path`,
-`crates/grpc-bridge/src/timeout.rs::tests::well_known_unit_chars_match_spec`.
+**Tests:** `crates/grpc-bridge/src/metadata.rs::tests::grpc_requests_request_headers_constants_match_spec`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_requests_content_types_match_spec_strings`,
+`crates/grpc-bridge/src/path.rs::tests::grpc_requests_parses_standard_grpc_path`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_the_timeout_units_are_h_m_s_m_u_n`.
 
 **Status:** done — all required header names + the content-type set
 declared as constants.
@@ -81,10 +81,10 @@ declared as constants.
 **Repo:** `crates/grpc-bridge/src/path.rs::parse_path` rejecting relative
 paths, a missing method, empty segments, a method with a slash.
 
-**Tests:** `path::tests::parses_standard_grpc_path`,
-`rejects_relative_path`, `rejects_path_without_method`,
-`rejects_empty_service`, `rejects_empty_method`,
-`rejects_method_with_slash`, `parses_dotted_service_name`.
+**Tests:** `path::tests::grpc_requests_parses_standard_grpc_path`,
+`grpc_requests_rejects_relative_path`, `grpc_requests_rejects_path_without_method`,
+`grpc_requests_rejects_empty_service`, `grpc_requests_rejects_empty_method`,
+`grpc_requests_rejects_method_with_slash`, `grpc_requests_parses_dotted_service_name`.
 
 **Status:** done
 
@@ -97,15 +97,15 @@ TimeoutValue MUST be at most 8 digits, unit ∈ {H,M,S,m,u,n}.
 encode_timeout, decode_timeout}` rejecting over-8-digit, non-digit,
 unknown-unit, an empty header.
 
-**Tests:** `crates/grpc-bridge/src/timeout.rs::tests::timeout_unit_round_trip_for_all`
-(all six units), `crates/grpc-bridge/src/timeout.rs::tests::encodes_30_seconds`,
-`crates/grpc-bridge/src/timeout.rs::tests::encodes_500_milliseconds`,
-`crates/grpc-bridge/src/timeout.rs::tests::round_trip_decode_encode`,
-`crates/grpc-bridge/src/timeout.rs::tests::rejects_value_above_8_digits_on_encode`,
-`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_unknown_unit`,
-`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_non_digit_value`,
-`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_empty`,
-`crates/grpc-bridge/src/timeout.rs::tests::decode_rejects_only_unit_no_value`.
+**Tests:** `crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_the_timeout_units_are_h_m_s_m_u_n`
+(all six units), `crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_encodes_30_seconds`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_encodes_500_milliseconds`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_a_timeout_header_is_read_as_value_and_unit`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_rejects_value_above_8_digits_on_encode`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_decode_rejects_unknown_unit`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_decode_rejects_non_digit_value`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_decode_rejects_empty`,
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_decode_rejects_only_unit_no_value`.
 
 **Status:** done
 
@@ -117,12 +117,12 @@ Message`, Compressed-Flag = 1 byte, Message-Length = 4 bytes BE.
 **Repo:** `crates/grpc-bridge/src/frame.rs::{encode_message,
 decode_message}` with empty/short/large/back-to-back stream tests.
 
-**Tests:** `frame::tests::empty_message_encodes_to_5_byte_header`,
-`uncompressed_message_has_compressed_flag_zero`,
-`compressed_message_has_compressed_flag_one`, `round_trip_message`,
-`message_length_uses_big_endian_4_bytes`, `header_too_short_decode_fails`,
-`body_truncated_decode_fails`,
-`back_to_back_messages_can_be_decoded_sequentially`.
+**Tests:** `frame::tests::grpc_outline_empty_message_encodes_to_5_byte_header`,
+`grpc_outline_uncompressed_message_has_compressed_flag_zero`,
+`grpc_outline_compressed_message_has_compressed_flag_one`, `grpc_requests_a_length_prefixed_message_is_read_from_its_octets`,
+`grpc_outline_message_length_uses_big_endian_4_bytes`, `grpc_outline_header_too_short_decode_fails`,
+`grpc_outline_body_truncated_decode_fails`,
+`grpc_outline_back_to_back_messages_can_be_decoded_sequentially`.
 
 **Status:** done
 
@@ -141,9 +141,8 @@ response-header constants in
 `crates/grpc-bridge/src/metadata.rs::response_headers::{STATUS,
 CONTENT_TYPE, GRPC_ENCODING, GRPC_STATUS, GRPC_MESSAGE}`.
 
-**Tests:** `crates/grpc-bridge/src/status.rs::tests::all_17_codes_round_trip_via_numeric`,
-`crates/grpc-bridge/src/status.rs::tests::well_known_codes_match_spec_values`,
-`crates/grpc-bridge/src/metadata.rs::tests::response_headers_constants_match_spec`.
+**Tests:** `crates/grpc-bridge/src/status.rs::tests::grpc_responses_the_status_codes_are_the_table_of_seventeen`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_responses_response_headers_constants_match_spec`.
 
 **Status:** done — the status-code set + the required-response-header set
 declared as constants.
@@ -156,11 +155,9 @@ values 0..=16 (OK/CANCELLED/UNKNOWN/.../UNAUTHENTICATED).
 **Repo:** `crates/grpc-bridge/src/status.rs::Status` enum with
 `code/from_code/is_ok/name` methods. All 17 values modeled.
 
-**Tests:** `crates/grpc-bridge/src/status.rs::tests::all_17_codes_round_trip_via_numeric`,
-`crates/grpc-bridge/src/status.rs::tests::unknown_codes_yield_none` (reject of code 17/255),
-`crates/grpc-bridge/src/status.rs::tests::ok_is_only_status_with_is_ok_true`,
-`crates/grpc-bridge/src/status.rs::tests::well_known_codes_match_spec_values`,
-`crates/grpc-bridge/src/status.rs::tests::names_use_screaming_snake_case`.
+**Tests:** `crates/grpc-bridge/src/status.rs::tests::grpc_responses_the_status_codes_are_the_table_of_seventeen`,
+`crates/grpc-bridge/src/status.rs::tests::grpc_responses_unknown_codes_yield_none` (reject of code 17/255),
+`crates/grpc-bridge/src/status.rs::tests::grpc_responses_ok_is_only_status_with_is_ok_true`.
 
 **Status:** done
 
@@ -179,17 +176,17 @@ encode_base64, decode_base64, encode_header_value,
 decode_header_value, BIN_SUFFIX}`. RFC-4648 base64 without an external
 crate dependency; rejection of non-ASCII bytes in text headers.
 
-**Tests:** `metadata::tests::{is_binary_header_recognizes_bin_suffix,
-is_binary_header_rejects_text_headers, encode_base64_empty,
-encode_base64_one_byte_pads_two, encode_base64_two_bytes_pads_one,
-encode_base64_three_bytes_no_padding, encode_base64_known_vector,
-decode_base64_round_trip, decode_base64_rejects_invalid_chars,
-decode_base64_rejects_bad_padding_length,
-encode_header_value_text_passes_ascii,
-encode_header_value_text_rejects_non_ascii,
-encode_header_value_bin_uses_base64,
-decode_header_value_round_trip_bin,
-decode_header_value_text_passes_through}` (15 tests).
+**Tests:** `metadata::tests::{grpc_metadata_is_binary_header_recognizes_bin_suffix,
+grpc_metadata_is_binary_header_rejects_text_headers, grpc_metadata_encode_base64_empty,
+grpc_metadata_encode_base64_one_byte_pads_two, grpc_metadata_encode_base64_two_bytes_pads_one,
+grpc_metadata_encode_base64_three_bytes_no_padding, grpc_metadata_encode_base64_known_vector,
+grpc_metadata_base64_reads_the_vectors_of_rfc_4648, grpc_metadata_decode_base64_rejects_invalid_chars,
+grpc_metadata_decode_base64_rejects_bad_padding_length,
+grpc_metadata_encode_header_value_text_passes_ascii,
+grpc_metadata_encode_header_value_text_rejects_non_ascii,
+grpc_metadata_encode_header_value_bin_uses_base64,
+grpc_metadata_a_bin_header_value_is_read_from_base64,
+grpc_metadata_decode_header_value_text_passes_through}` (15 tests).
 
 **Status:** done — binary-header codec + ASCII validation live.
 
@@ -231,8 +228,7 @@ HPACK — `crates/hpack/src/integer.rs::tests::rfc7541_c1_1_encoded_10_in_5bit_p
 `crates/hpack/src/decoder.rs::tests::dynamic_table_size_update_applied`,
 `crates/hpack/src/decoder.rs::tests::invalid_index_zero_rejected`.
 
-**Status:** done — its own no_std-capable implementation (a greenfield
-gap closed in 2026).
+**Status:** done — its own no_std-capable implementation.
 
 ---
 
@@ -245,7 +241,7 @@ with the Compressed-Flag MSB=1 (`0x80`).
 
 **Repo:** `crates/grpc-bridge/src/frame.rs::encode_web_trailers`.
 
-**Tests:** `frame::tests::web_trailers_encoded_with_msb_set`.
+**Tests:** `frame::tests::grpc_web_web_trailers_encoded_with_msb_set`.
 
 **Status:** done — the caller provides the trailers as UTF-8 bytes
 (typically `grpc-status: 0\r\ngrpc-message: ...\r\n`).
@@ -259,14 +255,14 @@ with the Compressed-Flag MSB=1 (`0x80`).
 decode_base64}` (the RFC-4648 standard variant with padding) +
 `content_types::GRPC_WEB_TEXT` as a marker.
 
-**Tests:** `crates/grpc-bridge/src/metadata.rs::tests::encode_base64_empty`,
-`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_one_byte_pads_two`,
-`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_two_bytes_pads_one`,
-`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_three_bytes_no_padding`,
-`crates/grpc-bridge/src/metadata.rs::tests::encode_base64_known_vector`,
-`crates/grpc-bridge/src/metadata.rs::tests::decode_base64_round_trip`,
-`crates/grpc-bridge/src/metadata.rs::tests::decode_base64_rejects_invalid_chars`,
-`crates/grpc-bridge/src/metadata.rs::tests::decode_base64_rejects_bad_padding_length`.
+**Tests:** `crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_encode_base64_empty`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_encode_base64_one_byte_pads_two`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_encode_base64_two_bytes_pads_one`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_encode_base64_three_bytes_no_padding`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_encode_base64_known_vector`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_base64_reads_the_vectors_of_rfc_4648`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_decode_base64_rejects_invalid_chars`,
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_decode_base64_rejects_bad_padding_length`.
 
 **Status:** done — base64 subprotocol codec + content-type marker live.
 
@@ -274,12 +270,13 @@ decode_base64}` (the RFC-4648 standard variant with padding) +
 
 ## Audit status
 
-11 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+11 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run:
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document grpc-protocol.md`):
 
-* `cargo test -p zerodds-grpc-bridge` — 36 lib + 5 integration = 41
-  tests green, modules: `frame`, `path`, `server`, `status`, `timeout`.
-* `cargo test -p zerodds-hpack` — 49 lib tests green (RFC 7541 HPACK).
-* `cargo test -p zerodds-http2` — 45 lib tests green (RFC 7540 frames +
-  stream state + settings).
+* `cargo nextest run --profile merge -p zerodds-grpc-bridge --all-targets` (job `merge-rust-grpc-bridge`) — 46 tests green.
+* `cargo nextest run --profile merge -p zerodds-hpack --all-targets` (job `merge-rust-hpack`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-http2 --all-targets` (job `merge-rust-http2`) — 15 tests green.
+
+68 cited tests green, 0 not green.
+

@@ -100,7 +100,9 @@ macro_rules! bridge_xcdr2_codec {
             &self,
             out: &mut Vec<u8>,
         ) -> core::result::Result<(), zerodds_dcps::dds_type::EncodeError> {
-            let mut w = zerodds_wire::Writer::new(zerodds_wire::Endianness::Little);
+            // XCDR2's MAXALIGN is four (XTypes 1.3 §7.4.1.1.1); the
+            // generated codec aligns to whatever the writer caps at.
+            let mut w = zerodds_wire::Writer::with_max_align(zerodds_wire::Endianness::Little, 4);
             self.0
                 .encode(&mut w)
                 .map_err(|_| zerodds_dcps::dds_type::EncodeError::Invalid {
@@ -111,7 +113,8 @@ macro_rules! bridge_xcdr2_codec {
         }
 
         fn decode(bytes: &[u8]) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
-            let mut r = zerodds_wire::Reader::new(bytes, zerodds_wire::Endianness::Little);
+            let mut r =
+                zerodds_wire::Reader::with_max_align(bytes, zerodds_wire::Endianness::Little, 4);
             <$inner>::decode(&mut r).map(Self).map_err(|_| {
                 zerodds_dcps::dds_type::DecodeError::Invalid {
                     what: concat!("spatial_bridge: ", $type_name, " decode failed"),
@@ -664,7 +667,7 @@ impl SpatialBridge {
         // `crates/spatial-ros2/tests/mapping.rs`'s own words) — there is no
         // PLAIN_CDR (XCDR1) form to fall back to, unlike a hand-written
         // `DdsType` that can assert `XCDR1_MATCHES_XCDR2`. The runtime
-        // default offer is `[XCDR1, XCDR2]` (legacy-first); this
+        // default offer is `[XCDR1]` (`DEFAULT_OFFER`); this
         // participant overrides it to `[XCDR2]` so every bridge writer
         // announces and emits the only representation these types have.
         let mut runtime_config = zerodds_dcps::runtime::RuntimeConfig::from_standard_paths()
@@ -852,6 +855,22 @@ mod tests {
         )
         .unwrap();
         SpatialBridgeConfig::from_config(Some(&c))
+    }
+
+    /// XCDR2 caps alignment at four (XTypes 1.3 §7.4.1.1.1): behind the
+    /// DHEADERs of `PoseStamped`, `Header` and `Time`, the stamp, the
+    /// frame id `"map"` and the DHEADERs of `Pose` and `Point`, `x` sits at
+    /// offset 36. The codec ran with the cap of XCDR1 and put it at 40.
+    #[test]
+    fn xtypes_7_4_1_1_1_the_xcdr2_codec_aligns_a_double_to_four() {
+        let mut sample = BridgePoseStamped::default();
+        sample.0.header.frame_id = "map".into();
+        sample.0.pose.position.x = 1.0;
+        let mut out = Vec::new();
+        DdsType::encode(&sample, &mut out).unwrap();
+        assert_eq!(&out[20..28], &[4, 0, 0, 0, b'm', b'a', b'p', 0]);
+        assert_eq!(&out[36..44], &1.0_f64.to_le_bytes());
+        assert_eq!(BridgePoseStamped::decode(&out).unwrap(), sample);
     }
 
     #[test]

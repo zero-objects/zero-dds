@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn build_server_config_from_self_signed() {
+    fn ddsamqp_10_1_build_server_config_from_self_signed() {
         let (cert_pem, key_pem) = self_signed();
         let cfg = ServerTlsConfig {
             cert_pem,
@@ -293,7 +293,7 @@ mod tests {
     }
 
     #[test]
-    fn build_server_config_require_client_cert_needs_ca() {
+    fn ddsamqp_10_1_build_server_config_require_client_cert_needs_ca() {
         let (cert_pem, key_pem) = self_signed();
         let cfg = ServerTlsConfig {
             cert_pem,
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn build_client_config_from_root_ca() {
+    fn ddsamqp_10_1_build_client_config_from_root_ca() {
         let (cert_pem, _key_pem) = self_signed();
         // We use the self-signed cert as the root CA for the
         // Client trust store (common test pattern).
@@ -331,7 +331,7 @@ mod tests {
     /// E2E: server + client perform a real TLS handshake against
     /// self-signed Cert.
     #[test]
-    fn tls_handshake_round_trip_with_self_signed_cert() {
+    fn ddsamqp_10_1_tls_handshake_round_trip_with_self_signed_cert() {
         let (cert_pem, key_pem) = self_signed();
 
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -359,8 +359,7 @@ mod tests {
             Ok(buf.to_vec())
         });
 
-        thread::sleep(Duration::from_millis(50));
-
+        // The listener is bound: the connect queues until the server accepts.
         let tcp = TcpStream::connect(format!("127.0.0.1:{port}")).unwrap();
         tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
         tcp.set_write_timeout(Some(Duration::from_secs(5))).unwrap();

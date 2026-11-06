@@ -139,7 +139,7 @@ fn gen_fixtures(dir: &Path, domain: i32) {
 }
 
 struct Peer {
-    rt: Arc<DcpsRuntime>,
+    rt: common::ShutsDown,
     prefix: GuidPrefix,
     profile: Arc<SecurityProfile>,
 }
@@ -189,7 +189,7 @@ fn start(
     let prefix = rt_cfg
         .security_guid_prefix
         .expect("identity-adjusted prefix");
-    let rt = DcpsRuntime::start(domain, prefix, rt_cfg).expect("runtime");
+    let rt = common::ShutsDown(DcpsRuntime::start(domain, prefix, rt_cfg).expect("runtime"));
     rt.enable_security_builtins_with_auth(
         VendorId::ZERODDS,
         profile.pki.clone(),
@@ -300,7 +300,8 @@ fn scenario(governance: &str) -> (bool, bool, bool) {
 /// refuse (`check_remote_participant`) is ignored: its writer never matches.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn a_participant_the_permissions_refuse_is_ignored_when_the_domain_is_access_protected() {
+fn security_9_4_2_4_a_participant_the_permissions_refuse_is_ignored_when_the_domain_is_access_protected()
+ {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the join test cannot run");
         return;
@@ -314,7 +315,7 @@ fn a_participant_the_permissions_refuse_is_ignored_when_the_domain_is_access_pro
 /// remote participant are not asked: its writer matches.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn a_participant_is_not_checked_when_the_domain_is_not_access_protected() {
+fn security_9_4_2_4_a_participant_is_not_checked_when_the_domain_is_not_access_protected() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the join test cannot run");
         return;

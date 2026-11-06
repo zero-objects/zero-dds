@@ -37,7 +37,7 @@ fn pair() -> (ParticipantGuard, ParticipantGuard) {
 }
 
 #[test]
-fn a_late_transient_local_reader_waits_for_the_history_and_then_holds_it() {
+fn dcps_2_2_2_5_3_32_a_late_transient_local_reader_waits_for_the_history_and_then_holds_it() {
     let (a, b) = pair();
     let topic_a = a
         .create_topic::<RawBytes>("HistoricalData", TopicQos::default())
@@ -79,7 +79,7 @@ fn a_late_transient_local_reader_waits_for_the_history_and_then_holds_it() {
 }
 
 #[test]
-fn a_volatile_reader_expects_no_history() {
+fn dcps_2_2_2_5_3_32_a_volatile_reader_expects_no_history() {
     let (_a, b) = pair();
     let topic = b
         .create_topic::<RawBytes>("HistoricalDataVolatile", TopicQos::default())

@@ -13,7 +13,8 @@
 //!
 //! The octets below are RTI Connext 7.7.0's, read off the SEDP
 //! announcement of topic `RichF` on the Linux test host; they are quoted
-//! in `docs/OPEN-ITEMS.md` beside ZeroDDS's own for the same type.
+//! in the old open-items log (`0b2e8df9f6b:internal/release/open-items-history.md`)
+//! beside ZeroDDS's own for the same type.
 //! Whatever a decoder does with them, it must arrive at the two
 //! `TypeIdentifier`s and the two sizes they carry.
 

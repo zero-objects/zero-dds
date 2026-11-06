@@ -14,8 +14,8 @@ Node ist die einzige Spalte ohne `crates/lang-rules/src/rule/node.rs`: Struct, U
 
 **Repo:** `crates/lang-cst/src/node/`, `crates/lang-render/src/node.rs`
 
-**Tests:** `crates/lang-render/src/node.rs::tests` (8 Tests), darunter `a_const_declaration_ends_in_a_semicolon`, `an_object_literal_writes_every_key_bare`, `a_for_loop_counts_from_zero_with_no_off_by_one_correction`, `a_function_declaration_has_no_type_annotation_anywhere`, `a_nul_is_written_as_the_named_escape_because_javascript_has_one`;
-querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/node.rs::tests` (8 Tests), darunter `xtypes_7_5_1_a_const_declaration_ends_in_a_semicolon`, `xtypes_7_5_1_an_object_literal_writes_every_key_bare`, `xtypes_7_5_1_a_for_loop_counts_from_zero_with_no_off_by_one_correction`, `xtypes_7_5_1_a_function_declaration_has_no_type_annotation_anywhere`, `xtypes_7_5_1_a_nul_is_written_as_the_named_escape_because_javascript_has_one`;
+querschnittlich `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -25,7 +25,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -35,8 +35,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/node.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -46,7 +46,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_node.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -56,8 +56,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/node`, Endpoint-SDK `endpoints/node`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -69,7 +69,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::an_enumeration_is_a_frozen_object_of_its_names`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enumeration_is_a_frozen_object_of_its_names`
 
 **Status:** done
 
@@ -79,8 +79,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_bitmask_declares_one_constant_per_bit_and_no_type_of_its_own`,
-`crates/lang-rules/tests/node_end_to_end.rs::a_wide_bitmask_writes_its_bits_as_bigint_literals`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::xtypes_7_2_2_4_1_2_a_bitmask_declares_one_constant_per_bit_and_no_type_of_its_own`,
+`crates/lang-rules/tests/node_end_to_end.rs::xtypes_7_2_2_4_1_2_a_wide_bitmask_writes_its_bits_as_bigint_literals`
 
 **Status:** done
 
@@ -90,9 +90,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_struct_a_union_and_a_bitset_declare_nothing`,
-`crates/lang-rules/src/adapter/node.rs::tests::a_member_name_never_moves`,
-`crates/lang-rules/src/adapter/node.rs::tests::a_map_entry_has_no_declared_name`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::xtypes_7_5_1_a_struct_a_union_and_a_bitset_declare_nothing`,
+`crates/lang-rules/src/adapter/node.rs::tests::xtypes_7_5_1_a_member_name_never_moves`,
+`crates/lang-rules/src/adapter/node.rs::tests::xtypes_7_5_1_a_map_entry_has_no_declared_name`
 
 **Status:** done
 
@@ -102,9 +102,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_sixty_four_bit_constant_carries_the_bigint_suffix`,
-`crates/lang-rules/tests/node_end_to_end.rs::a_string_constant_is_a_plain_string_literal`,
-`crates/lang-rules/tests/node_end_to_end.rs::a_boolean_constant_writes_the_literal`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::idl_7_4_1_4_a_sixty_four_bit_constant_carries_the_bigint_suffix`,
+`crates/lang-rules/tests/node_end_to_end.rs::idl_7_4_1_4_a_string_constant_is_a_plain_string_literal`,
+`crates/lang-rules/tests/node_end_to_end.rs::idl_7_4_1_4_a_boolean_constant_writes_the_literal`
 
 **Status:** done
 
@@ -114,9 +114,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_reserved_word_used_as_a_top_level_declaration_is_escaped`,
-`crates/lang-rules/tests/node_end_to_end.rs::no_predefined_type_name_is_reserved_here`,
-`crates/lang-rules/tests/node_end_to_end.rs::escape_decl_never_moves_a_plain_name`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::idl_7_2_3_a_reserved_word_used_as_a_top_level_declaration_is_escaped`,
+`crates/lang-rules/tests/node_end_to_end.rs::idl_7_2_3_no_predefined_type_name_is_reserved_here`,
+`crates/lang-rules/tests/node_end_to_end.rs::idl_7_2_3_escape_decl_never_moves_a_plain_name`
 
 **Status:** done
 
@@ -126,7 +126,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::a_module_flattens_onto_the_enumerations_binding`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::idl_7_5_2_a_module_flattens_onto_the_enumerations_binding`
 
 **Status:** done
 
@@ -138,7 +138,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/node.rs`, `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::every_corpus_case_reaches_the_materialiser_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::xtypes_7_3_1_every_corpus_case_reaches_the_materialiser_or_names_its_failure`
 
 **Status:** done
 
@@ -148,7 +148,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/node.rs`, `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::the_generated_node_passes_node_check`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::xtypes_7_3_1_the_generated_node_passes_node_check`
 
 **Status:** done
 
@@ -158,7 +158,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/node.rs`, `crates/lang-rules/src/adapter/node.rs`
 
-**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/node_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -168,9 +168,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/node.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -182,8 +182,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -193,8 +193,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-node-gen/`, `tools/wireprobe/wireprobe-zerodds-node`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -202,8 +201,15 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 ## Audit-Status
 
-17 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+17 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-node-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (Job `merge-rust-lang-render`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 11 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-node` (Job `merge-codegen-node`) — 14 Tests grün.
+
+34 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

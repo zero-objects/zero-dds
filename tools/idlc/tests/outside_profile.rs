@@ -49,7 +49,7 @@ fn generate(tag: &str, language: &str, extra: &[&str]) -> (Output, std::path::Pa
 }
 
 #[test]
-fn the_rest_of_the_file_is_generated_and_the_two_declarations_are_named() {
+fn xtypes_7_3_1_1_1_the_rest_of_the_file_is_generated_and_the_two_declarations_are_named() {
     for (language, file) in [
         ("rust", "sample.rs"),
         ("c", "sample.h"),
@@ -92,7 +92,7 @@ fn the_rest_of_the_file_is_generated_and_the_two_declarations_are_named() {
 }
 
 #[test]
-fn deny_warnings_turns_it_back_into_a_failure() {
+fn xtypes_7_3_1_1_1_deny_warnings_turns_it_back_into_a_failure() {
     let (output, _) = generate("deny", "rust", &["--deny-warnings"]);
     assert!(
         !output.status.success(),

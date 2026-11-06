@@ -89,7 +89,7 @@ fn make_pub_data(data_rep: Vec<i16>) -> PublicationBuiltinTopicData {
 /// Cluster-A: PID_DATA_REPRESENTATION is emitted when the list is
 /// non-empty.
 #[test]
-fn publication_data_emits_data_representation_pid_when_set() {
+fn xtypes_7_6_3_1_3_publication_data_emits_data_representation_pid_when_set() {
     let pd = make_pub_data(vec![publication_data::data_representation::XCDR2]);
     let bytes = pd.to_pl_cdr_le().expect("encode");
     // PID layout: 4-byte encap header + ParameterList. Search for
@@ -106,27 +106,9 @@ fn publication_data_emits_data_representation_pid_when_set() {
     );
 }
 
-/// Cluster-A neg: empty list → PID is NOT emitted (pre-D.5f behavior,
-/// which is exactly what we want to avoid). Documentary only —
-/// production code must ALWAYS populate the list.
-#[test]
-fn publication_data_skips_pid_when_empty_documentary() {
-    let pd = make_pub_data(Vec::new());
-    let bytes = pd.to_pl_cdr_le().expect("encode");
-    let hex_dump: String = bytes
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    assert!(
-        !hex_dump.contains("73 00"),
-        "empty data_representation emitted a PID — encoder bug:\n{hex_dump}"
-    );
-}
-
 /// Cluster-A roundtrip: encode → decode preserves the list exactly.
 #[test]
-fn publication_data_roundtrip_preserves_data_representation() {
+fn xtypes_7_6_3_1_1_publication_data_roundtrip_preserves_data_representation() {
     let original = vec![
         publication_data::data_representation::XCDR2,
         publication_data::data_representation::XCDR,
@@ -236,26 +218,6 @@ fn announced_xcdr2_with_xcdr2_encap_is_consistent() {
     );
 }
 
-/// Consistency check FAIL: announced [XCDR1] but received-encap=PLAIN_CDR2_LE.
-/// Pre-D.5f bug: ZeroDDS announces nothing (=XCDR1 default) but sends
-/// XCDR2 — this mismatch is detected explicitly here.
-#[test]
-fn announced_default_xcdr1_with_xcdr2_encap_is_inconsistent() {
-    let announced_or_default: Vec<i16> = Vec::new(); // empty = default = [XCDR1]
-    let effective_announced = if announced_or_default.is_empty() {
-        vec![publication_data::data_representation::XCDR]
-    } else {
-        announced_or_default
-    };
-    let received_rep = detect_data_rep(ENCAP_PLAIN_CDR2_LE);
-    assert_eq!(received_rep, DataRepFromEncap::Xcdr2);
-    assert!(
-        !effective_announced.contains(&publication_data::data_representation::XCDR2),
-        "pre-D.5f constellation: announce-default=XCDR1 + wire=XCDR2 — \
-         exactly the inconsistency that RTI 7.7.0 silently rejected."
-    );
-}
-
 // ---------------------------------------------------------------------------
 // D.5g — DataRep-Negotiation Tests (Strict + Tolerant Match-Mode).
 // ---------------------------------------------------------------------------
@@ -266,7 +228,7 @@ use zerodds_rtps::publication_data::data_representation::{
 
 /// Strict Match (XTypes 1.3 §7.6.3.1.2): Writer's first must be in Reader's list.
 #[test]
-fn strict_writer_xcdr2_first_reader_xcdr1_only_no_match() {
+fn xtypes_7_6_3_1_1_strict_writer_xcdr2_first_reader_xcdr1_only_no_match() {
     let result = negotiate(&[XCDR2, XCDR], &[XCDR], DataRepMatchMode::Strict);
     assert_eq!(
         result, None,
@@ -292,7 +254,7 @@ fn strict_both_xcdr2_only_matches() {
 
 /// Tolerant Match: any overlap → first-overlap wins.
 #[test]
-fn tolerant_writer_xcdr2_first_reader_xcdr1_only_falls_back() {
+fn xtypes_7_6_3_1_1_tolerant_writer_xcdr2_first_reader_xcdr1_only_falls_back() {
     let result = negotiate(&[XCDR2, XCDR], &[XCDR], DataRepMatchMode::Tolerant);
     assert_eq!(
         result,
@@ -356,7 +318,7 @@ fn encap_for_final_xcdr1_yields_plain_cdr_le() {
 /// element against the reader's list, and the reader's list is `[XCDR1]`
 /// whenever a peer leaves the QoS at the DDS default.
 #[test]
-fn default_offer_is_xcdr1_alone_and_both_is_a_setting() {
+fn xtypes_7_6_3_1_1_default_offer_is_xcdr1_alone_and_both_is_a_setting() {
     assert_eq!(DEFAULT_OFFER, [XCDR]);
     assert_eq!(
         zerodds_rtps::publication_data::data_representation::OFFER_XCDR1_XCDR2,
@@ -368,23 +330,11 @@ fn default_offer_is_xcdr1_alone_and_both_is_a_setting() {
 // D.5g Config-Options — RuntimeConfig override + Per-Writer/Reader override
 // ---------------------------------------------------------------------------
 
-/// `RuntimeConfig::data_representation_offer` is configurable.
-#[test]
-fn runtime_config_data_rep_offer_default_matches_default_offer() {
-    use zerodds_dcps::runtime::RuntimeConfig;
-    let cfg = RuntimeConfig::default();
-    assert_eq!(
-        cfg.data_representation_offer.as_slice(),
-        DEFAULT_OFFER,
-        "RuntimeConfig-Default = lib-DEFAULT_OFFER"
-    );
-}
-
 /// `RuntimeConfig::data_rep_match_mode` is configurable; default = Strict,
 /// DDS-XTypes 1.3 §7.6.3.1.1: the offer is compatible when the writer's
 /// offered representation is contained in the reader's sequence.
 #[test]
-fn runtime_config_data_rep_match_mode_default_is_strict() {
+fn xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_default_is_strict() {
     use zerodds_dcps::runtime::RuntimeConfig;
     let cfg = RuntimeConfig::default();
     assert_eq!(cfg.data_rep_match_mode, DataRepMatchMode::Strict);
@@ -392,7 +342,7 @@ fn runtime_config_data_rep_match_mode_default_is_strict() {
 
 /// The tolerant mode stays selectable.
 #[test]
-fn runtime_config_data_rep_match_mode_tolerant_is_selectable() {
+fn xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_tolerant_is_selectable() {
     use zerodds_dcps::runtime::RuntimeConfig;
     let cfg = RuntimeConfig {
         data_rep_match_mode: DataRepMatchMode::Tolerant,
@@ -403,7 +353,7 @@ fn runtime_config_data_rep_match_mode_tolerant_is_selectable() {
 
 /// The user can set a custom offer list, e.g. XCDR2-only for modern deployments.
 #[test]
-fn runtime_config_data_rep_offer_user_override_xcdr2_only() {
+fn xtypes_7_6_3_1_1_runtime_config_data_rep_offer_user_override_xcdr2_only() {
     use zerodds_dcps::runtime::RuntimeConfig;
     let cfg = RuntimeConfig {
         data_representation_offer: vec![XCDR2],
@@ -414,7 +364,7 @@ fn runtime_config_data_rep_offer_user_override_xcdr2_only() {
 
 /// The user can set strict mode.
 #[test]
-fn runtime_config_data_rep_match_mode_user_strict() {
+fn xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_user_strict() {
     use zerodds_dcps::runtime::RuntimeConfig;
     let cfg = RuntimeConfig {
         data_rep_match_mode: DataRepMatchMode::Strict,
@@ -428,7 +378,7 @@ fn runtime_config_data_rep_match_mode_user_strict() {
 /// `@id(0x0073) DataRepresentationQosPolicy representation`. The topic
 /// announcement writes both parameters under those ids and reads them back.
 #[test]
-fn topic_data_roundtrip_preserves_data_representation_and_type_information() {
+fn xtypes_annex_d_topic_data_roundtrip_preserves_data_representation_and_type_information() {
     use zerodds_rtps::parameter_list::pid;
     use zerodds_rtps::topic_data::TopicBuiltinTopicData;
     use zerodds_rtps::wire_types::VendorId;

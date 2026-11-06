@@ -1,0 +1,153 @@
+.TH ZERODDS-DURABILITY-SVC 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-durability-svc \- ZeroDDS-Daemon für den Durability-Service
+.SH ÜBERSICHT
+.B zerodds-durability-svc
+\fB\-\-domain\fR \fIN\fR
+[\fB\-\-store\fR \fIsqlite\fR|\fIfile\fR|\fIlakehouse\fR|\fIpostgres\fR]
+[\fB\-\-path\fR \fIPFAD\fR]
+[\fB\-\-auto\fR]
+[\fB\-\-topic\fR \fINAME\fR]...
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPFAD\fR=\fIWERT\fR]...
+.br
+.B zerodds-durability-svc
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPFAD\fR=\fIWERT\fR]...
+\fB\-\-check\-config\fR
+.SH BESCHREIBUNG
+.B zerodds-durability-svc
+hält die Samples von TRANSIENT- und PERSISTENT-Topics (DDS 1.4 \(sc2.2.3.4)
+für Reader vor, die später hinzukommen, über die Lebensdauer der Writer hinaus,
+die sie geschrieben haben. Ein Daemon bedient eine DDS-Domäne; er findet die
+Topics selbst und spielt ihre Historie für spät hinzukommende Reader ab. Die
+PERSISTENT-Historie übersteht einen Neustart des Daemons, wenn der Speicher
+dauerhaft ist.
+.PP
+Die eigene Aufbewahrungsregel eines gefundenen Writers \(em seine
+.B DurabilityServiceQosPolicy
+(DDS 1.4 \(sc2.2.3.5) \(em bestimmt, wie lange die Historie seines Topics
+gehalten wird, außer die Konfigurationsdatei legt für dieses Topic ausdrücklich
+einen Vertrag fest; siehe
+.BR zerodds-durability-svc.yaml (5),
+„WHICH CONTRACT WINS“. Ob ein gefundenes Topic Schlüssel hat, kommt ebenso vom
+Writer (seiner RTPS-entityKind, DDSI-RTPS 2.5 \(sc9.3.1.2), nicht aus einer
+Annahme.
+.SH OPTIONEN
+Jede Option unten ist
+.B --set
+ihres Konfigurationsschlüssels (siehe
+.BR zerodds-durability-svc.yaml (5)):
+.BR \-\-domain\ N
+ist
+.BR "--set domain=N" ,
+.BR \-\-topic\ NAME
+ist
+.BR "--set +durability.topics=NAME" ,
+und so weiter \(em die Option und eine gleichwertige Zeile in der Datei sind
+also dieselbe Einstellung, und was zuletzt angewendet wird (erst Dateien, dann
+Optionen), gilt. Überschreibungen von
+.BR type / keyed / contract
+je Topic haben keine Option: Es gibt sie nur in der Konfiguration (siehe
+.BR zerodds-durability-svc.yaml (5)).
+.TP
+.BR \-\-domain " " \fIN\fR
+Die DDS-Domain-ID. Pflicht (aus dieser Option oder der Datei).
+.TP
+.BR \-\-store " " \fIART\fR
+Der kalte Speicher:
+.I sqlite
+(Standard) oder
+.IR file ;
+.I lakehouse
+(DuckDB) und
+.I postgres
+nur in einem Build mit den gleichnamigen Features.
+.TP
+.BR \-\-path " " \fIPFAD\fR
+Wo der Speicher liegt:
+.IR sqlite / lakehouse :
+eine Datenbankdatei (weggelassen: im Speicher, bei einem Neustart verloren);
+.IR file :
+ein Verzeichnis (Pflicht);
+.IR postgres :
+ein libpq-Verbindungsstring (Pflicht).
+.TP
+.B \-\-auto
+Bedient jedes Topic, dessen Writer TRANSIENT- oder PERSISTENT-Durability
+deklarieren.
+.TP
+.BR \-\-topic " " \fINAME\fR
+Bedient dieses Topic; wiederholbar. Hält der Speicher aus einem früheren Lauf
+schon Typ, Schlüsseleigenschaft und Vertrag dafür, macht er sofort weiter \(em
+es muss vorher kein Writer oder Reader gefunden werden. Sonst ergeben sich Typ
+und Schlüsseleigenschaft aus dem Writer des Topics, der zuerst gefunden wird
+(unabhängig von seiner Durability-Art, weil das Topic ausdrücklich genannt
+ist), außer die Konfigurationsdatei nennt einen ausdrücklichen
+.B type
+dafür. Mindestens eine der Optionen
+.B \-\-auto
+und
+.B \-\-topic
+ist Pflicht (aus irgendeiner Quelle, nachdem alle Ebenen zusammengeführt sind).
+.TP
+.BR \-\-config " " \fIYAML\fR
+Die Konfigurationsdatei mit ihrem Drop-in-Verzeichnis
+.IR YAML .d/;
+Standard: das System-Konfigurationsverzeichnis. Enthält die eigenen
+Einstellungen dieses Daemons (oben) neben denen der gemeinsamen
+DDS-Laufzeitumgebung.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.B --set\ +PFAD=WERT
+hängt an eine Liste an (z. B. einen weiteren Eintrag in
+.BR durability.topics ")."
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration \(em die eigenen Einstellungen dieses Daemons
+und die der gemeinsamen DDS-Laufzeitumgebung \(em und gibt sie mit der Herkunft
+jedes Werts aus, dann Ende (0 gültig, 1 ungültiger Wert oder unbekannter
+Schlüssel, 2 nicht lesbare Datei oder Syntaxfehler).
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Aufrufhilfe.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus und beendet sich.
+.SH DATEIEN
+.TP
+.I /usr/lib/systemd/system/zerodds-durability-svc.service
+Die Unit; ihre Umgebung
+.RB ( ZERODDS_DURABILITY_DOMAIN ,
+.BR ZERODDS_DURABILITY_STORE ,
+.BR ZERODDS_DURABILITY_PATH ,
+.BR ZERODDS_DURABILITY_EXTRA )
+füllt die Kommandozeile. Standard: Domäne 0, sqlite in
+.IR /var/lib/zerodds/durability/dur.db ,
+.BR \-\-auto .
+.TP
+.I /var/lib/zerodds/durability
+Das Speicherverzeichnis der Unit, der einzige Pfad, den sie schreiben darf.
+.SH SIGNALE
+SIGTERM und SIGINT beenden den Daemon: Die Pumpen werden zusammengeführt
+(join), und er endet mit 0.
+.SH EXIT-STATUS
+.TP
+.B 0
+Durch ein Signal beendet, oder
+.B \-\-check\-config
+hat die Konfiguration als gültig befunden.
+.TP
+.B 1
+Eine ungültige Kommandozeile oder ein ungültiger Konfigurationswert, oder der
+Speicher ließ sich nicht öffnen.
+.TP
+.B 2
+Eine Konfigurationsdatei war nicht lesbar oder nicht parsebar.
+.SH SIEHE AUCH
+.BR zerodds-durability-svc.yaml (5),
+.BR zerodds-router (1),
+.BR zerodds-admin (1)
+.SH AUTOR
+ZeroDDS Contributors

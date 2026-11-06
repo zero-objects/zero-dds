@@ -87,7 +87,7 @@ mod tests {
     use alloc::vec;
 
     #[test]
-    fn active_profile_full_by_default() {
+    fn ddsamqp_2_3_active_profile_full_by_default() {
         // Tests run without the `codec-lite` feature → Full.
         // If `codec-lite` is active it would be `Lite`.
         let p = active_profile();
@@ -100,7 +100,7 @@ mod tests {
     }
 
     #[test]
-    fn primitives_are_codec_lite() {
+    fn ddsamqp_2_3_primitives_are_codec_lite() {
         for v in [
             AmqpExtValue::Null,
             AmqpExtValue::Boolean(true),
@@ -117,19 +117,19 @@ mod tests {
     }
 
     #[test]
-    fn list_map_array_are_not_codec_lite() {
+    fn ddsamqp_2_3_list_map_array_are_not_codec_lite() {
         assert!(!is_codec_lite_value(&AmqpExtValue::List(vec![])));
         assert!(!is_codec_lite_value(&AmqpExtValue::Map(vec![])));
         assert!(!is_codec_lite_value(&AmqpExtValue::Array(vec![])));
     }
 
     #[test]
-    fn data_section_is_codec_lite() {
+    fn ddsamqp_2_3_data_section_is_codec_lite() {
         assert!(is_codec_lite_section(&MessageSection::Data(vec![1, 2, 3])));
     }
 
     #[test]
-    fn other_sections_are_not_codec_lite() {
+    fn ddsamqp_2_3_other_sections_are_not_codec_lite() {
         let v = AmqpExtValue::Null;
         for s in [
             MessageSection::Header(v.clone()),

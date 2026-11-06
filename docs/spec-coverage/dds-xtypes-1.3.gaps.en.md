@@ -152,7 +152,7 @@ produced from IDL.
 `Ast::annotation_defs` is the counterpart to `Ast::types` for the other
 declaration kind that has a TypeObject. No `TypeNode` is created for it:
 `@Name` is meant to resolve to the declaration and not to a type. Test:
-`crates/types/tests/type_object_annotations.rs::an_annotation_declaration_has_a_type_object`.
+`crates/types/tests/type_object_annotations.rs::xtypes_7_2_2_4_4_1_an_annotation_declaration_has_a_type_object`.
 
 ### A.2 Six of the ten TypeLookup types of §7.6.3.3.3 do not exist
 
@@ -176,10 +176,10 @@ types `MUTABLE`, the other six appendable, because §7.3.1.2.1.8 says a
 type whose representation does not indicate its extensibility kind is
 appendable. `RequestHeader` is declared there rather than taken from
 `zerodds-rpc`, because that crate depends on this one. Tests:
-`type_lookup_call_roundtrips_both_operations`,
-`type_lookup_return_roundtrips_both_operations`,
-`type_lookup_request_and_reply_roundtrip`,
-`get_types_result_roundtrips_both_arms`,
+`xtypes_7_6_3_3_3_type_lookup_call_roundtrips_both_operations`,
+`xtypes_7_6_3_3_3_type_lookup_return_roundtrips_both_operations`,
+`xtypes_7_6_3_3_3_type_lookup_request_and_reply_roundtrip`,
+`xtypes_7_6_3_3_3_get_types_result_roundtrips_both_arms`,
 `get_type_dependencies_result_roundtrips_both_arms`.
 
 **Probes:** `tl-gettypes_result`, `tl-gettypedependencies_result`,
@@ -201,8 +201,8 @@ does not know.
 `Extended` variant holding the TypeKind and the member list verbatim —
 the DHEADER excluded, because that is a length the encoder writes and a
 byte order the value does not carry. Tests:
-`a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`an_extended_type_kind_keeps_the_member_list_it_arrived_with`.
+`xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`xtypes_annex_b_an_extended_type_kind_keeps_the_member_list_it_arrived_with`.
 
 ### A.4 `@non_serialized` members count in the compatibility check
 
@@ -224,7 +224,7 @@ both halves at once: it is not on the wire, and the rules that read the
 TypeObject and nothing else cannot see it. The member *index* still
 advances, because a `@non_serialized` declaration occupies a position.
 Test:
-`crates/types/tests/table19_key_members.rs::a_non_serialized_member_does_not_enter_the_comparison`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_2_a_non_serialized_member_does_not_enter_the_comparison`.
 
 ### A.5 `@ignore_literal_names` has no effect
 
@@ -253,7 +253,7 @@ read `||`, which let one side alone decide about the other's names. That
 writes one bit of a flag word Annex B calls `// Unused` — the
 extensibility bits of the same word are still **not** written, see
 B.8/B.9 and `omg-xtypes-issues.md` §B8. Test:
-`crates/types/tests/table19_key_members.rs::ignore_literal_names_needs_the_annotation_on_both_types`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_ignore_literal_names_needs_the_annotation_on_both_types`.
 
 ### A.6 Table 18 puts no condition on the bitmask flags; the tree does
 
@@ -274,7 +274,7 @@ wire width. The "Object construction" column is the argument for it and
 not merely the absence of a condition: "for all bits identified in both
 T1 and T2" expects bits only one side names, and says what happens to
 them. Test:
-`crates/types/tests/table19_key_members.rs::two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags`.
 
 ### A.7 The empty DataRepresentation list
 
@@ -296,7 +296,7 @@ this function.
 list `[XCDR]` for an empty one, on both sides. The substitution is
 `XCDR` and not "anything": an empty offer against a reader that takes
 only XCDR2 still finds nothing. Test:
-`crates/types/src/qos.rs::an_empty_list_of_preferences_is_the_single_element_xcdr`.
+`crates/types/src/qos.rs::xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr`.
 
 ### A.8 XCDR1 with `APPENDABLE` is refused, and Table 60 carries it
 
@@ -345,7 +345,7 @@ carrying the invalid identifier match.
 encoding stay allowed: `TypeInformation` writes `TK_NONE` for an
 equivalence form the sender left out (§7.6.3.2.1), and a stream carrying
 that is not malformed. Test:
-`crates/types/tests/table19_key_members.rs::tk_none_is_not_assignable_from_itself`.
+`crates/types/tests/table19_key_members.rs::xtypes_7_3_4_2_tk_none_is_not_assignable_from_itself`.
 
 ### B.2 `EK_BOTH` passes as a TypeIdentifier discriminator
 
@@ -365,7 +365,7 @@ the fourteen hash octets are gone.
 **Closed.** `EK_BOTH` at the TypeIdentifier discriminator is refused. In
 a `PlainCollectionHeader`, where it belongs, nothing changes — that is
 an octet field and not a union discriminator. Test:
-`ek_both_is_not_a_type_identifier_discriminator`.
+`xtypes_7_3_4_6_1_ek_both_is_not_a_type_identifier_discriminator`.
 
 ### B.3 The tree's SCC form leaves out two fields, and does not read them either
 
@@ -404,9 +404,9 @@ SCC identifiers are indistinguishable here.
 **Closed.** `StronglyConnectedComponentId` now has the field
 `equivalence_kind` and the appendable framing; the tree's 24-octet form
 is refused. Tests:
-`a_component_identifier_is_the_thirty_two_octets_of_annex_b`,
+`xtypes_7_3_4_2_a_component_identifier_is_the_thirty_two_octets_of_annex_b`,
 `a_minimal_and_a_complete_component_identifier_differ`,
-`a_component_identifier_takes_only_the_two_equivalence_kinds`.
+`xtypes_annex_b_a_component_identifier_takes_only_the_two_equivalence_kinds`.
 
 ### B.4 The `@key` on a union discriminator never reaches the TypeObject
 
@@ -427,12 +427,13 @@ discriminators of both T1 and T2 are keys or neither are keys."
 `XTypesFacet::discriminator_is_key`, `from_ast` into
 `UnionDiscriminatorFlag::IS_KEY`, and `check_unions` compares the two.
 Which reading applies is an axis rather than this front end's decision:
-`KeyOnUnionDiscriminator::Refused` is the default and reports the
-annotation — the measured refusal by Cyclone, RTI and Fast DDS
-(2026-08-10, `/root/n11-keyunion/`) is the reason — and `Carried` is
-what asks for it, all the way to a KeyHash over the discriminator alone
-(`keyhash::union_key_discriminator`). Tests:
-`crates/types/tests/table19_key_members.rs::one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`,
+`KeyOnUnionDiscriminator::Carried` is the default (Table 21,
+§7.2.2.4.4.4.8), all the way to a KeyHash over the discriminator alone
+(`keyhash::union_key_discriminator`), in `zerodds-build` and
+`derive(DdsType)` as well; `Refused` reports the annotation — the
+measured refusal by Cyclone, RTI and Fast DDS (2026-08-10) is the
+reason for that setting. Tests:
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`,
 `crates/idl-lower/tests/annotations.rs::a_key_on_a_union_discriminator_is_refused_with_the_clause_that_permits_it`
 and `…::a_key_on_a_union_discriminator_reaches_the_facet_when_carried`.
 
@@ -461,10 +462,10 @@ assignable from a `string<16>` writer as long as the member is not a
 key — then `@try_construct` decides, and it is being a key that makes
 the loss inadmissible. The other direction is checked too. Tests in
 `crates/types/tests/table19_key_members.rs`:
-`a_shorter_string_key_in_the_reader_is_not_assignable`,
-`a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
-`a_shorter_sequence_key_in_the_reader_is_not_assignable`,
-`a_shorter_string_member_that_is_not_a_key_is_still_assignable`.
+`xtypes_7_2_4_4_8_a_shorter_string_key_in_the_reader_is_not_assignable`,
+`xtypes_7_2_2_4_4_4_8_a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
+`xtypes_7_2_4_4_8_a_shorter_sequence_key_in_the_reader_is_not_assignable`,
+`xtypes_7_2_4_4_8_a_shorter_string_member_that_is_not_a_key_is_still_assignable`.
 
 ### B.8/B.9 The extensibility of an enumeration is not compared
 
@@ -574,9 +575,9 @@ of the stream, and no error appears anywhere.
 
 **Closed.** `TypeIdentifier::Extended` holds the discriminator and the
 member list; the framing is read and written. Tests:
-`the_extended_arm_carries_its_body`,
-`an_extended_arm_with_a_member_list_round_trips_verbatim`,
-`the_extended_arm_encodes_its_dheader_too`.
+`xtypes_annex_b_the_extended_arm_carries_its_body`,
+`xtypes_7_3_4_2_an_extended_arm_with_a_member_list_round_trips_verbatim`,
+`extended_arms_cover_multiple_discriminators`.
 
 ### C.4 `TK_ANNOTATION` as a TypeIdentifier loses its hash
 
@@ -658,9 +659,9 @@ derivation has a check with a printed answer: the clause publishes
 reproduces both. `04000000 00000000` is now refused. Tests:
 `a_dheader_of_four_is_not_a_sequence_length_of_four`,
 `an_empty_get_types_request_carries_its_member_header`,
-`get_types_reply_carries_types_and_complete_to_minimal`,
-`member_ids_are_the_hashid_of_their_name`,
-`the_operation_hashes_are_the_ones_the_clause_prints`.
+`xtypes_7_6_3_3_3_get_types_reply_carries_types_and_complete_to_minimal`,
+`xtypes_7_6_3_3_3_member_ids_are_the_hashid_of_their_name`,
+`xtypes_7_6_3_3_3_the_operation_hashes_are_the_ones_the_clause_prints`.
 
 ---
 
@@ -858,9 +859,9 @@ written where they apply in the source rather than here:
    and `zerodds_idl_lower::KeyOnUnionDiscriminator`. Table 19 needs the
    bit in the TypeObject; three measured vendors refuse a
    keyed-discriminator IDL outright, so a KeyHash over it would be one
-   nobody else computes. `Refused` is the default and reports the
-   annotation with the clause that permits it; `Carried` records it and
-   the KeyHash follows.
+   nobody else computes. `Carried` is the default, as the clause has
+   it, and the KeyHash follows; `Refused` reports the annotation with
+   the clause that permits it.
 2. **`EnumTypeFlag` carries the extensibility bits and
    `IGNORE_LITERAL_NAMES` at bit 5.** `crates/types/src/from_ast.rs`,
    `enumeration`. The extensibility bits follow the measurement in E.3;

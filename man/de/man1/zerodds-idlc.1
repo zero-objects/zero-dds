@@ -1,0 +1,657 @@
+.TH ZERODDS-IDLC 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-idlc \- OMG IDL 4.2 lesen und sagen, was darin steht
+.SH ÜBERSICHT
+.B zerodds-idlc
+.I UNTERBEFEHL
+[\fIOPTIONEN\fR]
+.I DATEI.idl
+\&...
+.SH BESCHREIBUNG
+Liest OMG IDL 4.2 und sagt, was darin steht: parst eine Datei und überführt
+sie in das Modell (Lowering), meldet Diagnosen, gibt die kanonische Form oder
+das Modell aus und erzeugt Datentypen der Zielsprache samt DDS-TypeSupport.
+Implementiert die Sprach-PSMs (DDS-Java-PSM, DDS-PSM-Cxx usw.).
+.SH UNTERBEFEHLE
+.TP
+.B check
+Parsen und Lowering; jede Diagnose melden.
+.TP
+.B lint
+Die Regeln, die eine gültige Datei trotzdem verletzen kann.
+.TP
+.B format
+Die kanonische Form, standardmäßig auf die Standardausgabe.
+.TP
+.B dump-ast
+Das Modell als Baum.
+.TP
+.B print-deps
+Die Typen, die jede Deklaration nennt.
+.TP
+.B generate
+Der Quelltext einer Sprache für das Modell.
+.TP
+.B dlrl
+Objekt- und Home-Klassen nach OMG DDS 1.2 \(sc8 DLRL, aus den drei
+DLRL-Pragmas.
+.SS "dlrl und die Kollision von DCPS_DATA_TYPE/DCPS_DATA_KEY"
+Der Generierungsprozess aus DDS 1.2 \(sc8.2.2 liest drei Pragmas aus dem
+IDL-Text:
+.PP
+.RS
+.nf
+#pragma DCPS_DATA_TYPE     "<scoped-name>"
+#pragma DCPS_DATA_KEY      "<scoped-name> <field>"
+#pragma DCPS_DLRL_RELATION "<scoped-name> <relation> <target>"
+.fi
+.RE
+.PP
+Die ersten beiden Schreibweisen gehören nicht DLRL allein: Der Devguide von
+OpenDDS verwendet genau dieselben zwei Pragma-Namen für eine davon
+unabhängige Markierung von Topic-Typ und Schlüssel ohne DLRL, und
+.B check
+/
+.B generate
+lesen sie bereits so \(em die Diagnose zu jedem sagt das jetzt und nennt die
+andere Lesart.
+.B dlrl
+erweitert diese Lesart über die AST-Facette nicht um eine zweite,
+DLRL-Bedeutung derselben beiden Schreibweisen; es liest den rohen IDL-Text
+selbst, über
+.IR zerodds_dlrl::pragma::parse_pragma ,
+unabhängig von
+.IR idl\-lower .
+Laufen
+.B check
+/
+.B generate
+und
+.B dlrl
+über dieselbe Datei, wendet daher jedes genau eine Lesart an, und keines
+verschluckt still die des anderen. Ein Pragma, das einen der drei DLRL-Tags
+nennt und sich nach dieser Grammatik nicht parsen lässt \(em falsche
+Stelligkeit, eine nicht abgeschlossene Zeichenkette in Anführungszeichen \(em,
+wird als Fehler gemeldet und lässt den Lauf fehlschlagen; ein Pragma außerhalb
+der drei Tags bleibt unter
+.B dlrl
+stumm, was immer es für ein anderes Werkzeug bedeutet.
+.PP
+Die vier Backends erzeugen Klassen, die von PSM-Basistypen abgeleitet sind,
+die dieser Baum nicht implementiert: C++ von
+.IR DLRL::ObjectRoot / ObjectHome / RefList
+und
+.IR DDS::Long
+(DDS 1.2 \(sc B.6/\(sc B.7, das C++-PSM der Spezifikation selbst), Java von
+.I org.omg.dds.dlrl.ObjectRoot/ObjectHome
+(\(sc B.8), C# von einem Paar
+.I ObjectRoot/ObjectHome
+und den Attributen
+.IR [DlrlKey]/[DlrlRelation] ,
+die diese Codebasis für ein Ziel erfunden hat, für das OMG nie ein PSM
+vorgelegt hat. ZeroDDS liefert eine DLRL-
+.I Laufzeit
+für genau eine Sprache, Rust, und
+.B dlrl
+zielt nicht auf Rust \(em die vier Sprachen, auf die es zielt, haben hier
+keine Laufzeit, gegen die die erzeugte Klasse kompilieren könnte, und der
+Kopfkommentar jeder erzeugten Datei sagt das. TypeScript ist die Ausnahme:
+Seine erzeugte Schnittstelle und Klasse nennen überhaupt keinen externen Typ.
+.SS "generate und ein IDL-Interface"
+.B \-\-lang
+.I rust
+liefert für jedes
+.B interface
+im Modell eine vollständige Bindung nach DDS-RPC 1.0 (formal/16-12-04): die
+Request- und Reply-Topic-Typen aus \(sc7.5.1.1 mit einem echten XCDR2-Codec,
+einen typisierten
+.IR <Iface>Client ,
+einen Service-Trait
+.I <Iface>
+mit
+.B raises
+in jeder Methodensignatur und einen
+.IR <Iface>Dispatcher ,
+der ihn über
+.I Requester
+/
+.I Replier
+von
+.B zerodds\-rpc
+bedient. Ein
+.BR out -
+oder
+.BR inout -Parameter
+ist ein
+.IR &mut -Argument;
+ein reiner
+.BR out -Parameter
+neben dem deklarierten Rückgabewert kommt über den
+.IR Ok -Wert
+der Methode zurück. Die Operationen eines Basis-Interface werden über einen
+Rust-Supertrait
+.RI ( "trait Derived: Base" )
+erreicht und, auf dem Client, über ein zusammengesetztes Feld mit dem
+Basis-Client \(em DDS-RPC 1.0 \(sc7.5.1.1.8 hält das Topic einer Basis getrennt
+von dem eigenen eines abgeleiteten Interface. Die erzeugte Datei hängt ab von
+.IR zerodds\-rpc ", " zerodds\-dcps " und " zerodds\-wire ;
+die Präambel nennt sie.
+.PP
+.IR c++ ", " java ", " typescript ", " csharp ", " go ", " swift ", " nim ", " zig ", " ada ", " d ", " elixir ", " julia ", " lua ", " ocaml " und " fsharp
+haben ebenfalls vollständige
+.BR interface -Bindungen,
+jede in der Form, die ihr ihre eigene Laufzeit und ihr Idiom geben: Jede
+Operation und jedes Attribut erreicht die Ausgabe \(em ein Attribut als
+Property, als Paar der Form
+.IR name() / setName() ,
+als primitive
+.IR get_ / set_ -Operation
+oder als Feld, oder als Eintrag in einem Deskriptor, je nachdem, was diese
+Spalte schon verwendet \(em und ein deklariertes
+.BR raises / getraises / setraises
+erreicht sie auch. Keine hat einen Codec, weil keine dieser Laufzeiten in
+diesem Baum liegt; vierzehn der fünfzehn flachen die Member eines
+Basis-Interface in die abgeleitete Deklaration ab, weil sie keinen
+Sprachmechanismus haben, um eine Basis stattdessen zusammenzusetzen \(em Rusts
+Supertrait, oben, ist die eine Ausnahme.
+.PP
+.IR c ", " python " und " node
+haben überhaupt keine Abbildung für ein
+.B interface
+und lehnen ein Modell ab, das eines deklariert \(em Exit
+.BR 1 ,
+mit dem Namen des Interface, seiner Position in der Quelle und den Sprachen,
+die eine Bindung haben. Nie eine teilweise Deklaration und nie ein stilles
+.BR 0 ,
+bei dem das Interface in der Ausgabe fehlt.
+.SH OPTIONEN
+.TP
+.B \-\-strict
+Nur OMG IDL 4.2; jede Herstellererweiterung ablehnen.
+.TP
+.BI \-\-idl\-profile " P"
+Jedes Konstrukt außerhalb des OMG-IDL-4.2-Profils
+.I P
+(Klausel 9) als
+.B IDL0023
+melden: einen Baustein aus \(sc7.4 oder eine Annotationsgruppe aus \(sc8.3,
+die das Profil nicht enthält.
+.I P
+ist eines von
+.BR plain\-corba ,
+.BR minimum\-corba ,
+.BR ccm ,
+.BR ccm\-gis ,
+.BR plain\-dds ,
+.B extensible\-dds
+und
+.BR rpc\-over\-dds .
+.TP
+.B \-\-ros2
+Den ROS-2-Dialekt zulassen: Ein unqualifizierter Member-Typ, der sich nur in
+der Groß-/Kleinschreibung vom Member-Namen unterscheidet, etwa
+.BR "Pose pose;" ,
+wird zum Typ aufgelöst.
+.TP
+.B \-\-json
+Maschinenlesbare Diagnosen.
+.TP
+.B \-\-deny\-warnings
+Mit einem Wert ungleich null enden, wenn irgendetwas gemeldet wurde.
+.TP
+.BR \-\-default\-extensibility " " \fIfinal\fR|\fIappendable\fR|\fImutable\fR
+Was ein Aggregat ist, zu dem die Quelle nichts sagt. Standard:
+.I appendable
+nach der Spezifikation. Eine Quelle, die etwas sagt, gewinnt weiterhin.
+.B idlc
+von Cyclone DDS nimmt ein nicht annotiertes Aggregat als
+.IR final ,
+RTI Connext, Fast DDS und OpenDDS als
+.I appendable
+(festgehalten in
+.IR docs/wire-axis-flags.md );
+für IDL, die für Cyclone geschrieben ist,
+.B "\-\-default\-extensibility final"
+angeben.
+.TP
+.B \-\-check
+Nur
+.BR format :
+jede nicht kanonische Datei nennen, Exit 1.
+.TP
+.B \-\-write
+Nur
+.BR format :
+nicht kanonische Dateien an Ort und Stelle neu schreiben.
+.TP
+.BR \-\-lang " " \fINAME\fR
+Nur
+.B generate
+/
+.BR dlrl ,
+Pflicht: die Sprache, die erzeugt wird \(em ein unbekannter Name listet die
+gültigen für den Unterbefehl, dem er gegeben wurde.
+.B generate
+nimmt eine von \fIrust\fR, \fIc++\fR, \fIc\fR, \fIjava\fR, \fIc#\fR, \fIpython\fR, \fItypescript\fR, \fIgo\fR, \fIocaml\fR, \fIada\fR, \fId\fR, \fIelixir\fR, \fIjulia\fR, \fIlua\fR, \fInim\fR, \fIswift\fR, \fIzig\fR, \fInode\fR, \fIada83\fR, \fIf#\fR, \fIkotlin\fR, oder \fIall\fR für alle in einem Lauf.
+.B dlrl
+nimmt eine von \fIc++\fR, \fIc#\fR, \fIjava\fR, \fItypescript\fR, oder \fIall\fR für diese vier.
+\fIcpp\fR/\fIcxx\fR, \fIcsharp\fR/\fIcs\fR, \fIfsharp\fR/\fIfs\fR und \fIts\fR werden zusätzlich angenommen, unter beiden Unterbefehlen.
+.TP
+.BR \-\-java\-mapping " " \fIpsm\fR | \fIomg\fR | \fIidl4\fR
+Nur
+.BR generate ,
+mit
+.BR "\-\-lang java" " (oder " "\-\-lang all" "):"
+die Form der erzeugten Java-Typen.
+.I psm
+(der Standard) ist Klausel 9 von DDS-Java-PSM 1.0: Eine Struktur, Union, ein
+Bitset und eine Exception sind eine finale Klasse mit privatem Zustand, einem
+Konstruktor ohne Argumente und Java-Bean-Accessoren, und eine unbeschränkte
+Sequenz ist eine
+.BR java.util.Collection<E> ;
+beschränkte Sequenzen und Arrays bleiben Java-Arrays.
+.I omg
+ist die Abbildung von OMG IDL nach Java: öffentliche Felder und ein
+.B T[]
+für jede Sequenz. Die Bytes auf der Leitung sind unter beiden gleich. Code, der
+die Felder der erzeugten Typen direkt liest, gibt
+.B "\-\-java\-mapping omg"
+an.
+.I idl4
+ist die Abbildung IDL4 to Java Language Mapping 1.0: ein Paket je Modul, eine
+Datei je Klasse, Strukturen mit privaten Feldern, Accessoren, Modifikatoren und
+zwei Konstruktoren, Java-Enums,
+.B Holder<E>
+für
+.BR out "- und " inout -Parameter
+und die Sequenzklassen aus
+.BR org.omg.type ;
+ein DDS-Codec wird nicht erzeugt.
+.B @java_mapping
+im IDL überschreibt die Einstellungen je Modul oder Deklaration.
+.TP
+.BR \-\-java\-naming " " \fIidl\fR | \fIjava\fR
+Mit
+.BR "\-\-java\-mapping idl4" :
+das Namensschema aus \(sc7.1.1.
+.I idl
+(der Standard) behält die IDL-Namen;
+.I java
+wendet die JavaBeans-Konventionen an (Pascal Case für Typen, Camel Case für
+Member und Methoden, Großbuchstaben für Konstanten, Kleinbuchstaben für Pakete).
+.TP
+.BR \-\-java\-platform " " \fIdds\fR | \fIcorba\fR
+Mit
+.BR "\-\-java\-mapping idl4" :
+die Plattform aus Anhang A.
+.I dds
+(der Standard) fügt den Klauseln 7 und 8 nichts hinzu;
+.I corba
+bildet eine Exception auf eine Unterklasse von
+.BR org.omg.CORBA.UserException ,
+.B any
+auf
+.B org.omg.CORBA.Any
+und
+.B Object
+auf
+.B org.omg.CORBA.Object
+ab.
+.TP
+.B \-\-java\-corba\-module
+Mit
+.BR "\-\-java\-platform corba" :
+schreibt zusätzlich das Java des Moduls
+.BR CORBA ,
+das eine eingebundene
+.I orb.idl
+deklariert, im Paket
+.B org.omg.CORBA
+und nach dem IDL-Namensschema (Anhang A.1.2). Ohne die Option gelten diese
+Klassen als Teil der ORB-Laufzeit, und nur die eigenen Deklarationen der
+IDL-Datei werden geschrieben.
+.TP
+.BR \-\-csharp\-mapping " " \fIidl4\fR
+Nur
+.BR generate ,
+mit
+.BR "\-\-lang csharp" " (oder " "\-\-lang all" "):"
+die Abbildung IDL4 to C# Language Mapping 1.0 statt der XCDR2-Bindung: ein
+Namespace je Modul, eine Datei je Deklaration, Klassen mit Properties, Default-,
+Kopier- und All-Values-Konstruktor und
+.BR IEquatable<T> ,
+.BR I<Name> -Interfaces
+mit
+.BR ref "- und " out -Parametern
+und
+.BR Omg.Types.ISequence<T> ;
+ein Codec wird nicht erzeugt.
+.B @csharp_mapping
+im IDL überschreibt die Einstellungen je Modul oder Deklaration.
+.TP
+.BR \-\-csharp\-naming " " \fIidl\fR | \fIdotnet\fR
+Mit
+.BR "\-\-csharp\-mapping idl4" :
+das Namensschema aus \(sc7.1.1.
+.I idl
+(der Standard) behält die IDL-Namen;
+.I dotnet
+wendet die .NET Framework Design Guidelines an (Pascal Case, Camel Case für
+Parameter).
+.TP
+.BR \-\-csharp\-platform " " \fIdds\fR | \fIcorba\fR
+Mit
+.BR "\-\-csharp\-mapping idl4" :
+die Plattform aus Anhang A.
+.I corba
+bildet eine Exception auf eine Unterklasse von
+.BR Corba.UserException ,
+.B any
+auf
+.BR Corba.Any ,
+.B Object
+auf
+.B Corba.IObject
+und jedes Interface auf
+.B Corba.IObject
+und seine Klasse auf
+.B Corba.Object
+ab.
+.TP
+.B \-\-csharp\-corba\-module
+Mit
+.BR "\-\-csharp\-platform corba" :
+schreibt zusätzlich das C# des Moduls
+.BR CORBA ,
+das eine eingebundene
+.I orb.idl
+deklariert, im Namespace
+.B Corba
+und nach dem IDL-Namensschema (Anhang A.1.2).
+.TP
+.BR \-\-rpc\-mapping " " \fIbasic\fR | \fIenhanced\fR | \fIenhanced-empty\fR
+Nur
+.BR generate :
+die Service-Abbildung aus DDS-RPC 1.0 \(sc7.5.1, für die ein
+.B interface
+geschrieben wird.
+.I basic
+(der Standard) ist das Basic Service Mapping,
+.I enhanced
+das Enhanced Service Mapping und
+.I enhanced-empty
+das Enhanced Mapping mit
+.BR @Empty -Strukturen
+für eine Operation, die nichts zu transportieren hat.
+.TP
+.BR \-\-out " " \fIVERZ\fR
+Nur
+.B generate
+/
+.BR dlrl :
+wohin die Datei geht. Standard: das aktuelle Verzeichnis.
+.TP
+.BR \-I " " \fIVERZ\fR ", " \-\-include " " \fIVERZ\fR
+Wo ein
+.B #include
+in Anführungszeichen nach dem eigenen Verzeichnis der einbindenden Datei
+gesucht wird; wiederholbar, in der angegebenen Reihenfolge.
+.TP
+.BR \-\-stamp " " \fIDATEI\fR
+Nur
+.B generate
+/
+.BR dlrl :
+nach jeder Ausgabe des Laufs geschrieben, und nur, wenn der Lauf erfolgreich
+war \(em die eine Ausgabe, von der ein Build-System abhängt.
+.TP
+.BR \-\-depfile " " \fIDATEI\fR
+Nur
+.B generate
+/
+.BR dlrl :
+eine Abhängigkeitsdatei im Make-Format, die den Stamp (oder das Manifest) und
+jede IDL-Datei nennt, die der Lauf gelesen hat, die per
+.B #include
+eingebundenen eingeschlossen. Braucht
+.B \-\-stamp
+oder
+.BR \-\-output\-manifest .
+.TP
+.BR \-\-output\-manifest " " \fIDATEI\fR
+Nur
+.B generate
+/
+.BR dlrl :
+JSON mit den Sprachen, den gelesenen Dateien
+.RB ( inputs )
+und den geschriebenen Dateien
+.RB ( outputs ).
+.TP
+.BR \-\-encoding " " \fIKOD\fR
+Nur
+.BR generate :
+eine von
+.IR xcdr1 ", " xcdr2 ", " pl\-cdr1 ", " pl\-cdr2 ", " delimited\-cdr .
+Standard:
+.IR xcdr2 .
+.TP
+.BR \-\-endian " " \fIle\fR|\fIbe\fR
+Nur
+.BR generate :
+die Byte-Reihenfolge, für die der Codec geplant ist. Sie ändert den erzeugten
+Text nicht \(em jede Wire-Laufzeit hält die Reihenfolge in ihrem Writer und
+Reader \(em, aber die Präambel nennt sie. Standard:
+.IR le .
+.TP
+.BR \-\-xcdr\-endianness " " \fIBE\fR|\fILE\fR
+Die Schreibweise von
+.B \-\-endian
+aus DDS-TS 1.0.
+.TP
+.BR \-\-cpp\-mapping " " \fIpsm\fR|\fInative\fR|\fIclassic\fR
+Nur
+.B generate
+.BR "\-\-lang c++" :
+wie Topic-Typen geschrieben werden. Standard:
+.IR psm ,
+die Abbildung aus DDS\-PSM\-Cxx 1.0 \(sc7.4 und \(sc8.1 \(em Klassen mit
+Accessoren,
+.IR dds::core::optional ,
+.IR dds::core::array ,
+.IR std::map ,
+.IR std::wstring ,
+Unions als Klassen mit einem Diskriminator \(em über demselben Codec: Die
+Strukturen, die der Codec liest und schreibt, wandern in den Namensraum
+.IR zd_native ,
+und
+.I zerodds::psm::Conv
+konvertiert auf dem Weg in den Codec und aus ihm heraus.
+.I native
+erzeugt diese Strukturen unter den Namen aus der IDL: öffentliche Felder, ein
+einfacher Zeiger für
+.BR @optional ,
+.IR std::array ,
+eine Map als Vektor von Paaren. Die Wire-Codec-Gates, die Endpoint-SDKs und
+jeder andere Verbraucher, der die Felder eines erzeugten Headers liest, geben
+.B "\-\-cpp\-mapping native"
+an.
+.I classic
+ist die klassische Abbildung von OMG IDL nach C++ 1.3 in C++03 über demselben
+Codec:
+.IR CORBA::Long ,
+.IR CORBA::String_var ,
+.I zerodds::classic::Sequence
+für eine Sequenz und
+.I zerodds::classic::Optional
+für
+.BR @optional .
+.TP
+.BR \-\-rust\-map " " \fIentries\fR|\fIbtree-map\fR
+Nur
+.B generate
+.BR "\-\-lang rust" :
+wie eine IDL-
+.B map
+gehalten wird.
+.I entries
+(der Standard) ist die Sequenz von
+.IR MapEntry -Strukturen,
+an die XTypes 1.3 \(sc7.5.1.3.6 eine Map bindet;
+.I btree-map
+ist eine
+.IR BTreeMap ,
+die die Operationen einer Map hat und ihre Einträge in aufsteigender
+Schlüsselreihenfolge hält.
+.TP
+.BR \-\-dialect " " \fINAME\fR
+Nur
+.BR generate :
+die Antworten eines Gegenübers auf jede Wire-Achse auf einmal nachbilden,
+bevor eine der Achsen-Optionen unten eine davon überschreibt. Ein unbekannter
+Name listet die gültigen. Einer von
+.IR specification " (der Standard), " cyclone ", " rti ", " fastdds ", "
+.IR opendds ", " opensplice ", " ros\-fastrtps ", " ros\-cyclone ", "
+.IR omniorb ", " tao ", "
+oder
+.IR jacorb .
+Der Präambel-Kommentar nennt den Dialekt und jede angegebene Achsen-Option.
+Siehe
+.IR docs/wire\-axis\-flags.md
+für das, was jeder Dialekt auf jeder Achse antwortet, und
+.B Config::dialect
+von
+.B zerodds\-build
+für dieselbe Voreinstellung aus einer
+.BR build.rs .
+.TP
+.BR \-\-<axis> " " \fIWERT\fR
+Nur
+.BR generate :
+eine Antwort des Dialekts überschreiben (oder von
+.I specification
+ohne
+.BR \-\-dialect ).
+Ein unbekannter Achsenwert listet die gültigen für diese Achse. In der
+angegebenen Reihenfolge angewendet, nach
+.BR \-\-dialect .
+Die Achsen, jeweils mit ihrer Option und ihren Werten:
+.RS
+.TP
+.B collection\-delimiters
+specification, enum\-is\-primitive, never
+.TP
+.B default\-extensibility
+final, appendable, mutable
+.TP
+.B defaulted\-discriminator\-member
+type\-default, stream\-value
+.TP
+.B enum\-holder
+declared, bit\-bound\-dropped
+.TP
+.B enumerator\-value
+declared, ordinal
+.TP
+.B fixed\-digits
+declared, value\-precision
+.TP
+.B key\-holder
+forced\-final, as\-declared
+.TP
+.B key\-holder\-order
+ascending\-member\-id, declaration
+.TP
+.B length\-codes
+compact, reuse\-nested\-delimiter, short\-where\-it\-fits, universal\-nextint, sized\-or\-nextint
+.TP
+.B map\-delimiter
+either\-half, value\-only
+.TP
+.B map\-entries
+declaration, ascending\-key
+.TP
+.B map\-length
+sequence\-equivalent, rule\-15\-omits
+.TP
+.B pid\-flags
+sentinel\-must\-understand, bare, impl\-extension\-members
+.TP
+.B pl\-cdr1\-headers
+specification, always\-extended, short\-true\-length
+.TP
+.B short\-pid\-range
+up\-to\-reserved, all\-fourteen\-bits
+.TP
+.B union\-framing
+specification, branches\-from\-zero
+.TP
+.B union\-labels
+sign\-extended, negative\-unmatched\-below\-32
+.TP
+.B wchar\-framing
+fixed, giop\-length\-prefixed, giop\-length\-prefixed\-member\-only
+.TP
+.B wchar\-width
+2, 4
+.TP
+.B wstring\-length
+specification, character\-count, character\-count\-terminated, specification\-wide\-units, ros\-type\-support, oder die drei Koordinaten
+.IR counts / terminator / width
+(octets|characters / unterminated|terminated / 2|4) für eine Zelle, die keiner der fünf Namen trifft
+.TP
+.B wstring\-units
+stream, big\-endian\-always, byte\-order\-mark, host\-unswapped
+.RE
+.TP
+.BR \-h ", " \-\-help
+Dieser Text.
+.TP
+.BR \-V ", " \-\-version
+Die Version.
+.SH EXIT-STATUS
+.TP
+.B 0
+Nichts zu melden.
+.TP
+.B 1
+Eine Diagnose wurde gemeldet, oder \fB\-\-check\fR hat eine Datei zum
+Umformatieren gefunden.
+.TP
+.B 2
+Die Kommandozeile war falsch.
+.TP
+.B 3
+Eine Datei konnte nicht gelesen werden.
+.SH DATEIEN
+.B generate
+schreibt eine Datei je Eingabe unter
+.BR \-\-out ,
+benannt nach dem Stamm der Eingabe:
+.IR <out>/<stem>.<ext>
+(zum Beispiel
+.IR robot.rs ", " robot.hpp ", " robot.py );
+C# fügt
+.IR <stem>.TypeSupport.cs
+hinzu. Java und Ada schreiben stattdessen feste Namen
+.RI ( ZdTypes.java ", " ZdCodec.java ", " ZdTypeSupports.java ;
+.IR zd_types.ads ", " zd_types.adb ).
+Eine solche Sprache lehnt eine zweite Eingabe mit demselben
+.B \-\-out
+im selben Lauf ab, statt die erste zu überschreiben; jeder IDL-Datei ihr
+eigenes
+.B \-\-out
+geben oder sie per
+.B #include
+in eine Datei einbinden.
+.PP
+.B dlrl
+schreibt für C++/C#/TypeScript eine gebündelte Datei je Eingabe, benannt
+.IR <out>/<stem>_dlrl.<ext> ,
+und für Java eine Objektdatei und eine Home-Datei je DLRL-Typ, benannt
+.IR <out>/<Type>.java " und " <out>/<Type>Home.java .
+Dieselbe Ablehnung einer zweiten Eingabe mit gleichem Namen gilt.
+.SH SIEHE AUCH
+.BR zerodds-xmlc (1).
+.SH AUTOREN
+ZeroDDS Contributors.

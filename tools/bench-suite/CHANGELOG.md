@@ -3,6 +3,34 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Changed
+
+- `regression` measures two builds of `roundtrip-1us` in turn
+  (`--reference <bin>`, `--reference-tag <tag>`, `--cells`, `--reps`) and
+  gates the median p50 of the build beside it against the reference's
+  with 25 %; it reads and writes no baselines (`--update` and
+  `tests/perf/internal-bench/baselines.txt` are gone). Cells a reference
+  tag cannot measure are declared with the reason (`REFERENCE_GAPS`).
+
+- `regression --update` writes a header that names the speed host and
+  `RUN_BENCH_REGRESSION_UPDATE=true` as where the baselines come from; CI
+  runs the gate there (`speed-regression`), not on the shared CI runner.
+
+### Fixed
+
+- `roundtrip_1us` in DCPS mode ends with an error when its writer or its
+  reader matches no endpoint of the peer within 5 s; it dropped the results
+  of both waits and printed "matched (both directions)" either way.
+  `regression` prints the ping's error output for a repetition that fails or
+  gets fewer than half its samples back, and prints the tolerance as +20 %
+  (it truncated 1.20 to +19 %).
+
+- `roundtrip_1us` destroys the writer or reader it made before the runtime
+  when the other one cannot be created; it destroyed the runtime with the
+  endpoint still in it.
+
 ## [1.0.0-rc.1] — 2026-05-07
 
 Initial release materialisation.

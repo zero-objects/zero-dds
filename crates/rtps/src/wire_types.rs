@@ -1399,12 +1399,6 @@ mod tests {
         assert_eq!(VendorId::ZERODDS.0, [0x01, 0xF0]);
     }
 
-    #[test]
-    fn vendor_id_roundtrip() {
-        let v = VendorId([0xAB, 0xCD]);
-        assert_eq!(VendorId::from_bytes(v.to_bytes()), v);
-    }
-
     // ---- GuidPrefix ----
     /// §9.3.2.1: `VENDORID_UNKNOWN: VendorId_t[0] = 0, VendorId_t[1] = 0`
     /// over the two octets the type occupies.
@@ -1424,13 +1418,6 @@ mod tests {
         assert_eq!(GuidPrefix::UNKNOWN.to_bytes(), [0u8; 12]);
         assert_eq!(GuidPrefix::WIRE_SIZE, 12);
         assert_eq!(GuidPrefix::from_bytes([0u8; 12]), GuidPrefix::UNKNOWN);
-    }
-
-    #[test]
-    fn guid_prefix_roundtrip() {
-        let bytes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-        let p = GuidPrefix::from_bytes(bytes);
-        assert_eq!(p.to_bytes(), bytes);
     }
 
     /// DDSI-RTPS 2.5 §9.3.1.5 puts the vendor id in octets 0..2, so the
@@ -1779,22 +1766,15 @@ mod tests {
     }
 
     // ---- SequenceNumber ----
-    #[test]
-    fn sequence_number_split_zero() {
-        let (h, l) = SequenceNumber(0).split();
-        assert_eq!((h, l), (0, 0));
-    }
 
+    /// DDSI-RTPS 2.5 §9.3.2.10: `sequence_number = low + high * 2^(32)`.
     #[test]
-    fn sequence_number_split_one() {
-        let (h, l) = SequenceNumber(1).split();
-        assert_eq!((h, l), (0, 1));
-    }
-
-    #[test]
-    fn sequence_number_split_high_low() {
-        let sn = SequenceNumber::from_high_low(2, 5);
-        assert_eq!(sn.0, (2_i64 << 32) | 5);
+    fn rtps_9_3_2_10_sequence_number_is_low_plus_high_times_2_to_the_32() {
+        for (high, low) in [(0, 0), (0, 1), (2, 5), (-1, 0)] {
+            let sn = SequenceNumber::from_high_low(high, low);
+            assert_eq!(sn.0, i64::from(high) * (1_i64 << 32) + i64::from(low));
+            assert_eq!(sn.split(), (high, low));
+        }
     }
 
     #[test]
@@ -1830,8 +1810,10 @@ mod tests {
         }
     }
 
+    /// DDSI-RTPS 2.5 §8.3.5.6: "Fragment numbers start at 1", so the
+    /// sentinel 0 names no fragment.
     #[test]
-    fn fragment_number_unknown_is_zero() {
+    fn rtps_8_3_5_6_fragment_numbers_start_at_1_so_unknown_is_0() {
         assert_eq!(FragmentNumber::UNKNOWN.0, 0);
     }
 
@@ -2087,10 +2069,11 @@ mod tests {
         assert_eq!(u.0, [0x11, 0x22, 0x33, 0x44]);
     }
 
+    /// DDSI-RTPS 2.5 §9.3.2.8: "an undefined 4-byte value".
     #[test]
-    fn uextension4_default_is_zero() {
-        assert_eq!(UExtension4::default().0, [0u8; 4]);
+    fn rtps_9_3_2_8_uextension4_is_four_octets() {
         assert_eq!(UExtension4::WIRE_SIZE, 4);
+        assert_eq!(UExtension4::from_u32_be(0x0102_0304).to_bytes().len(), 4);
     }
 
     // ---- §8.3.2 WExtension8_t ----
@@ -2108,10 +2091,16 @@ mod tests {
         assert_eq!(w.0, [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
     }
 
+    /// DDSI-RTPS 2.5 §9.3.2.9: "an undefined 8-byte value".
     #[test]
-    fn wextension8_default_is_zero() {
-        assert_eq!(WExtension8::default().0, [0u8; 8]);
+    fn rtps_9_3_2_9_wextension8_is_eight_octets() {
         assert_eq!(WExtension8::WIRE_SIZE, 8);
+        assert_eq!(
+            WExtension8::from_u64_be(0x0102_0304_0506_0708)
+                .to_bytes()
+                .len(),
+            8
+        );
     }
 
     // ---- SPDP builtin EntityIds (Spec §9.3.1.5 Table 9.4) ----
@@ -2173,19 +2162,13 @@ mod tests {
         assert_eq!(d.user_traffic_unicast_port(0, 0), 7411);
     }
 
+    /// DDSI-RTPS 2.5 §9.6.1.4.1: the SPDP multicast port is
+    /// `PB + DG * domainId + d0`, with PB = 7400, DG = 250, d0 = 0.
     #[test]
-    fn spdp_multicast_port_domain_0_is_7400() {
-        assert_eq!(spdp_multicast_port(0), 7400);
-    }
-
-    #[test]
-    fn spdp_multicast_port_domain_1_is_7650() {
-        assert_eq!(spdp_multicast_port(1), 7650);
-    }
-
-    #[test]
-    fn spdp_multicast_port_domain_5_is_8650() {
-        assert_eq!(spdp_multicast_port(5), 8650);
+    fn rtps_9_6_1_4_1_spdp_multicast_port_is_7400_plus_250_per_domain() {
+        for (domain, port) in [(0, 7400), (1, 7650), (5, 8650)] {
+            assert_eq!(spdp_multicast_port(domain), port, "domain {domain}");
+        }
     }
 
     #[test]

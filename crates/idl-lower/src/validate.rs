@@ -32,6 +32,10 @@ enum KeyReach {
     Nested,
 }
 
+/// The values `@default`, `@range`, `@min` and `@max` give an element, each
+/// with the words a diagnostic names it by.
+type AnnotatedValues = Vec<(&'static str, Id<zerodds_ast::ConstExprNode>)>;
+
 /// How far a `typedef` chain is followed before it is taken for a cycle.
 /// The cycle itself is a resolution fault with its own report.
 const MAX_ALIAS_DEPTH: usize = 64;
@@ -48,6 +52,1108 @@ impl Lowering<'_> {
         }
         self.annotation_member_types();
         self.forward_declarations_are_defined();
+        self.constant_values_fit_their_type();
+        self.oneway_operations_return_nothing();
+        self.ranges_are_ordered();
+        self.interface_inheritance_rules();
+        self.value_inheritance_rules();
+        self.native_parameters_stay_local();
+        self.context_expressions_are_well_formed();
+        self.annotated_values_fit_their_element();
+        self.component_model_rules();
+    }
+
+    /// What the declarations of the component model may name.
+    ///
+    /// OMG IDL 4.2:
+    /// - §7.4.8.4.1, §7.4.9.4.1, §7.4.11.4.3: a component, a home and a
+    ///   connector inherit from "a previously defined" component, home and
+    ///   connector respectively;
+    /// - §7.4.9.4.1: "The manages keyword followed by a scoped name that
+    ///   denotes the previously defined component type";
+    /// - §7.4.8.4.2.1, §7.4.8.4.2.2: the interface of a facet or a
+    ///   receptacle "must denote a previously-defined non-component
+    ///   interface type" — or `Object`, rule (157);
+    /// - §7.4.10.4.4.1: `supports` names interfaces;
+    /// - §7.4.10.4.5: `emits`, `publishes` and `consumes` name event types;
+    /// - §7.4.11.4.2: `port` and `mirrorport` name "a previously declared
+    ///   port type";
+    /// - §7.4.11.4.1.1 and §7.4.11.4.3: a port type holds "At least one
+    ///   facet … or receptacle … or port declaration", a connector "At
+    ///   least one port", and "no cycles are allowed among port type
+    ///   definitions".
+    fn component_model_rules(&mut self) {
+        use zerodds_ast::{ComponentRole, InterfaceKind};
+        let containers: Vec<_> = self
+            .ast
+            .interfaces()
+            .filter(|(_, node)| {
+                matches!(
+                    node.kind,
+                    InterfaceKind::Component
+                        | InterfaceKind::Home
+                        | InterfaceKind::PortType
+                        | InterfaceKind::Connector
+                )
+            })
+            .map(|(id, node)| {
+                (
+                    id,
+                    node.node_id,
+                    node.name.clone(),
+                    node.kind,
+                    node.bases.clone(),
+                )
+            })
+            .collect();
+        for (id, node_id, name, kind, bases) in containers {
+            let span = self.span_of(AnyId::Interface(id, node_id));
+            let kind_of = |this: &Self, target: Id<zerodds_ast::InterfaceNode>| {
+                this.ast
+                    .interface(target)
+                    .ok()
+                    .map(|node| (node.kind, node.name.clone()))
+            };
+            // Bases of the same kind.
+            for base in bases.iter().filter_map(Ref::resolved) {
+                let Some((base_kind, base_name)) = kind_of(self, base) else {
+                    continue;
+                };
+                if base_kind != kind {
+                    let message = alloc::format!(
+                        "the {} `{name}` derives from `{base_name}`, a {}; a {} derives from a {}",
+                        kind.as_str(),
+                        base_kind.as_str(),
+                        kind.as_str(),
+                        kind.as_str()
+                    );
+                    self.diagnose_at(
+                        DiagnosticCode::InvalidInheritance,
+                        span,
+                        &message,
+                        "OMG IDL 4.2 §7.4.8.4.1, §7.4.9.4.1, §7.4.11.4.3",
+                    );
+                }
+            }
+            let facets = self
+                .ast
+                .interface(id)
+                .ok()
+                .map(|node| node.facets.clone())
+                .unwrap_or_default();
+            // `supports` names interfaces.
+            if let Some(corba) = facets.corba.as_ref() {
+                for supported in corba.supports.iter().filter_map(Ref::resolved) {
+                    let Some((supported_kind, supported_name)) = kind_of(self, supported) else {
+                        continue;
+                    };
+                    if !matches!(
+                        supported_kind,
+                        InterfaceKind::Interface | InterfaceKind::Abstract | InterfaceKind::Local
+                    ) {
+                        let message = alloc::format!(
+                            "`{name}` supports `{supported_name}`, a {}; `supports` names \
+                             interfaces",
+                            supported_kind.as_str()
+                        );
+                        self.diagnose_at(
+                            DiagnosticCode::InvalidInheritance,
+                            span,
+                            &message,
+                            "OMG IDL 4.2 §7.4.10.4.4.1",
+                        );
+                    }
+                }
+                // `manages` names a component.
+                if let Some(manages) = corba.manages.as_ref()
+                    && let Some(component) = manages.component.resolved()
+                    && let Some((managed_kind, managed_name)) = kind_of(self, component)
+                    && managed_kind != InterfaceKind::Component
+                {
+                    let message = alloc::format!(
+                        "the home `{name}` manages `{managed_name}`, a {}; a home manages a \
+                         component",
+                        managed_kind.as_str()
+                    );
+                    self.diagnose_at(
+                        DiagnosticCode::TypeMismatch,
+                        span,
+                        &message,
+                        "OMG IDL 4.2 §7.4.9.4.1",
+                    );
+                }
+            }
+            // The ports.
+            let mut ports = 0;
+            for attribute in self.ast.attributes_of(id).to_vec() {
+                let Ok(node) = self.ast.attribute(attribute) else {
+                    continue;
+                };
+                let at = self.span_of(AnyId::Attribute(attribute, node.node_id));
+                let port = node.name.clone();
+                let role = node
+                    .facets
+                    .corba
+                    .as_ref()
+                    .and_then(|corba| corba.component_role.clone());
+                let target = self.port_target(&node.type_);
+                match role {
+                    Some(
+                        ComponentRole::Facet { interface, .. }
+                        | ComponentRole::Receptacle { interface, .. },
+                    ) => {
+                        ports += 1;
+                        // `Object`, rule (157), has no interface node.
+                        let named = interface.resolved().or(target);
+                        let Some((found, found_name)) = named.and_then(|i| kind_of(self, i)) else {
+                            continue;
+                        };
+                        if !matches!(
+                            found,
+                            InterfaceKind::Interface
+                                | InterfaceKind::Local
+                                | InterfaceKind::Abstract
+                        ) {
+                            let message = alloc::format!(
+                                "the port `{port}` of `{name}` names `{found_name}`, a {}; a facet \
+                                 or a receptacle names a non-component interface or `Object`",
+                                found.as_str()
+                            );
+                            self.diagnose_at(
+                                DiagnosticCode::TypeMismatch,
+                                at,
+                                &message,
+                                "OMG IDL 4.2 §7.4.8.4.2.1, §7.4.8.4.2.2",
+                            );
+                        }
+                    }
+                    Some(ComponentRole::PortTypeRole | ComponentRole::ConnectorRole) => {
+                        ports += 1;
+                        let found = target.and_then(|i| kind_of(self, i));
+                        let wrong = match found {
+                            Some((InterfaceKind::PortType, _)) => None,
+                            Some((other, other_name)) => {
+                                Some(alloc::format!("`{other_name}`, a {}", other.as_str()))
+                            }
+                            None => node
+                                .type_
+                                .resolved()
+                                .and_then(|t| self.ast.type_(t).ok())
+                                .map(|t| alloc::format!("a {}", t.kind.as_str())),
+                        };
+                        if let Some(found) = wrong {
+                            let message = alloc::format!(
+                                "the port `{port}` of `{name}` names {found}; `port` and \
+                                 `mirrorport` name a port type"
+                            );
+                            self.diagnose_at(
+                                DiagnosticCode::TypeMismatch,
+                                at,
+                                &message,
+                                "OMG IDL 4.2 §7.4.11.4.2",
+                            );
+                        }
+                    }
+                    Some(
+                        ComponentRole::EventSource { event, .. }
+                        | ComponentRole::EventSink { event, .. },
+                    ) => {
+                        let event_type =
+                            event
+                                .resolved()
+                                .and_then(|t| self.ast.type_(t).ok())
+                                .map(|n| {
+                                    (
+                                        n.name.clone(),
+                                        n.facets.corba.as_ref().is_some_and(|c| c.is_event_type),
+                                    )
+                                });
+                        if let Some((event_name, false)) = event_type {
+                            let message = alloc::format!(
+                                "the port `{port}` of `{name}` names `{event_name}`, which is no \
+                                 event type; `emits`, `publishes` and `consumes` name event types"
+                            );
+                            self.diagnose_at(
+                                DiagnosticCode::TypeMismatch,
+                                at,
+                                &message,
+                                "OMG IDL 4.2 §7.4.10.4.5",
+                            );
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            // Rule (175): a port type's body starts with a `<port_ref>`;
+            // rule (180): a connector's body holds at least one
+            // `<connector_export>`, which rule (183) makes a port or an
+            // attribute.
+            let empty = match kind {
+                InterfaceKind::PortType => ports == 0,
+                InterfaceKind::Connector => self.ast.attributes_of(id).is_empty(),
+                _ => false,
+            };
+            if empty {
+                let what = if kind == InterfaceKind::PortType {
+                    "declares no port; a port type holds at least one facet, receptacle or port"
+                } else {
+                    "declares nothing; a connector holds at least one port or attribute"
+                };
+                let message = alloc::format!("`{name}` {what}");
+                self.diagnose_at(
+                    DiagnosticCode::UnexpectedToken,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.11.4.1.1, §7.4.11.4.3",
+                );
+            }
+        }
+        self.port_types_have_no_cycle();
+    }
+
+    /// The interface a port's type names: the object reference the name
+    /// resolves to, or — before the names are resolved, which is when
+    /// lowering validates — the declaration its pending scoped name finds.
+    fn port_target(&self, type_: &Ref<TypeNode>) -> Option<Id<zerodds_ast::InterfaceNode>> {
+        match type_ {
+            Ref::Resolved(id) => match &self.ast.type_(*id).ok()?.kind {
+                TypeKind::ObjectRef { interface: Some(r) } => r.resolved(),
+                _ => None,
+            },
+            Ref::Pending(zerodds_ast_core::PendingRef::ScopedName(name)) => {
+                match self.ast.find_by_scoped_name(name).ok()? {
+                    AnyId::Interface(id, _) => Some(id),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    }
+
+    /// "no cycles are allowed among port type definitions" (§7.4.11.4.1.1):
+    /// a port type that, through the extended ports it embeds, reaches
+    /// itself.
+    fn port_types_have_no_cycle(&mut self) {
+        use zerodds_ast::InterfaceKind;
+        let port_types: Vec<_> = self
+            .ast
+            .interfaces()
+            .filter(|(_, node)| node.kind == InterfaceKind::PortType)
+            .map(|(id, node)| (id, node.node_id, node.name.clone()))
+            .collect();
+        let embedded = |this: &Self,
+                        id: Id<zerodds_ast::InterfaceNode>|
+         -> Vec<Id<zerodds_ast::InterfaceNode>> {
+            this.ast
+                .attributes_of(id)
+                .iter()
+                .filter_map(|attribute| this.ast.attribute(*attribute).ok())
+                .filter_map(|node| this.port_target(&node.type_))
+                .filter(|i| {
+                    this.ast
+                        .interface(*i)
+                        .is_ok_and(|node| node.kind == InterfaceKind::PortType)
+                })
+                .collect()
+        };
+        for (id, node_id, name) in port_types {
+            let mut queue = embedded(self, id);
+            let mut seen: Vec<Id<zerodds_ast::InterfaceNode>> = Vec::new();
+            let mut cyclic = false;
+            while let Some(next) = (!queue.is_empty()).then(|| queue.remove(0)) {
+                if next == id {
+                    cyclic = true;
+                    break;
+                }
+                if seen.contains(&next) || seen.len() > MAX_ALIAS_DEPTH {
+                    continue;
+                }
+                seen.push(next);
+                queue.extend(embedded(self, next));
+            }
+            if cyclic {
+                let span = self.span_of(AnyId::Interface(id, node_id));
+                let message = alloc::format!(
+                    "the port type `{name}` embeds itself through its extended ports; no cycles \
+                     are allowed among port type definitions"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidInheritance,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.11.4.1.1",
+                );
+            }
+        }
+    }
+
+    /// `@default`, `@range`, `@min` and `@max` give values of the type of
+    /// the element they annotate.
+    ///
+    /// OMG IDL 4.2 §8.3.3.1: "The provided value must be compliant with the
+    /// type of the annotated element", and the same sentence for `@range`
+    /// (§8.3.3.2), `@min` (§8.3.3.3) and `@max` (§8.3.3.4). A member is
+    /// held to its own type, a `typedef` to the type it names. Compliant
+    /// means the form (`value_disagrees_with`, the reading
+    /// §7.4.1.4.3 gives a constant) and, for an integer type, the range of
+    /// Table 7-26.
+    fn annotated_values_fit_their_element(&mut self) {
+        let mut annotated: Vec<(AnyId, Ref<TypeNode>, AnnotatedValues)> = Vec::new();
+        let values_of = |facets: &zerodds_ast::Facets| {
+            let mut values = Vec::new();
+            if let Some(x) = facets.xtypes.as_ref() {
+                if let Some(value) = x.default_value {
+                    values.push(("@default", value));
+                }
+                if let Some(range) = x.range {
+                    if let Some(min) = range.min {
+                        values.push(("the min of @range", min));
+                    }
+                    if let Some(max) = range.max {
+                        values.push(("the max of @range", max));
+                    }
+                }
+            }
+            values
+        };
+        for (id, node) in self.ast.members() {
+            let values = values_of(&node.facets);
+            if !values.is_empty() {
+                annotated.push((AnyId::Member(id, node.node_id), node.type_.clone(), values));
+            }
+        }
+        for (id, node) in self.ast.types() {
+            let TypeKind::Alias { aliased } = &node.kind else {
+                continue;
+            };
+            let values = values_of(&node.facets);
+            if !values.is_empty() {
+                annotated.push((AnyId::Type(id, node.node_id), aliased.clone(), values));
+            }
+        }
+        for (any, declared, values) in annotated {
+            for (what, value) in values {
+                let complaint = self.value_disagrees_with(&declared, value).or_else(|| {
+                    let target = declared.resolved().and_then(|t| self.through_aliases(t))?;
+                    let TypeKind::Primitive(kind) = self.ast.type_(target).ok()?.kind.clone() else {
+                        return None;
+                    };
+                    let (low, high) = primitive_range(kind)?;
+                    let zerodds_ast::ConstValue::Integer(number) = self.ast.eval_const(value).ok()?
+                    else {
+                        return None;
+                    };
+                    (!(low..=high).contains(&number)).then(|| {
+                        alloc::format!(
+                            "is {number}, outside the {low} to {high} the element's type `{}` holds",
+                            kind.as_str()
+                        )
+                    })
+                });
+                let Some(complaint) = complaint else {
+                    continue;
+                };
+                let span = self.span_of(any);
+                let message = alloc::format!(
+                    "{what} {complaint}; the value must be compliant with the type of the \
+                     annotated element"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidAnnotation,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §8.3.3.1, §8.3.3.2",
+                );
+            }
+        }
+    }
+
+    /// A native type is no parameter of an operation of a remote interface.
+    ///
+    /// OMG IDL 4.2 §7.4.6.4.4: "native type parameters are not permitted in
+    /// operations of remote interfaces. Any attempt to transmit a value of a
+    /// native type in a remote invocation may raise the MARSHAL standard
+    /// system exception." A local interface (§7.4.6.4.3) is not remote; an
+    /// interface, an abstract interface, a component and a home are.
+    fn native_parameters_stay_local(&mut self) {
+        if self.options.native_in_remote_interfaces == crate::NativeInRemoteInterface::Admitted {
+            return;
+        }
+        let operations: Vec<_> = self
+            .ast
+            .operations()
+            .map(|(id, node)| {
+                (
+                    id,
+                    node.node_id,
+                    node.name.clone(),
+                    node.params.clone(),
+                    node.parent,
+                )
+            })
+            .collect();
+        for (id, node_id, name, params, parent) in operations {
+            let AnyId::Interface(interface, _) = parent else {
+                continue;
+            };
+            let Ok(owner) = self.ast.interface(interface) else {
+                continue;
+            };
+            if owner.kind == zerodds_ast::InterfaceKind::Local {
+                continue;
+            }
+            let owner_name = owner.name.clone();
+            for param in params {
+                let Ok(param) = self.ast.param(param) else {
+                    continue;
+                };
+                let native = param
+                    .type_
+                    .resolved()
+                    .and_then(|target| self.through_aliases(target))
+                    .and_then(|target| self.ast.type_(target).ok())
+                    .is_some_and(|node| matches!(node.kind, TypeKind::Native));
+                if !native {
+                    continue;
+                }
+                let span = self.span_of(AnyId::Operation(id, node_id));
+                let message = alloc::format!(
+                    "the parameter `{}` of `{owner_name}::{name}` is of a native type, and \
+                     `{owner_name}` is a remote interface; a native value is not transmitted, so \
+                     a native parameter belongs to a local interface",
+                    param.name
+                );
+                self.diagnose_at(
+                    DiagnosticCode::TypeMismatch,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.6.4.4",
+                );
+            }
+        }
+    }
+
+    /// The string literals of a `context` clause.
+    ///
+    /// OMG IDL 4.2 §7.4.6.4.6: "Each <string_literal> is a non-empty
+    /// string. If the character * appears in a <string_literal>, it must
+    /// appear only once, as the last character of the <string_literal>,
+    /// and must be preceded by one or more characters other than *."
+    fn context_expressions_are_well_formed(&mut self) {
+        let operations: Vec<_> = self
+            .ast
+            .operations()
+            .filter(|(_, node)| !node.contexts.is_empty())
+            .map(|(id, node)| (id, node.node_id, node.name.clone(), node.contexts.clone()))
+            .collect();
+        for (id, node_id, name, contexts) in operations {
+            for context in contexts {
+                let stars = context.matches('*').count();
+                let well_formed = !context.is_empty()
+                    && (stars == 0 || (stars == 1 && context.len() > 1 && context.ends_with('*')));
+                if well_formed {
+                    continue;
+                }
+                let span = self.span_of(AnyId::Operation(id, node_id));
+                let message = alloc::format!(
+                    "the context \"{context}\" of `{name}` is not one: a context string is not \
+                     empty, and a `*` in it stands once, last, after one or more other characters"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::UnexpectedToken,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.6.4.6",
+                );
+            }
+        }
+    }
+
+    /// The inheritance rules of a value type, OMG IDL 4.2 §7.4.7.4.3 and
+    /// Table 7-19, and of truncation and custom marshaling, §7.4.7.4.5.
+    ///
+    /// - "all derived value types (which must of course implement the
+    ///   state) may only derive from a single (concrete) value type";
+    /// - "The single immediate base concrete value type, if present, must
+    ///   be the first element specified in the inheritance list";
+    /// - an abstract value type inherits abstract value types only, and a
+    ///   boxed value type is never a base (Table 7-19);
+    /// - a value type supports any number of abstract interfaces and at
+    ///   most one other ("supports single"), and that one "must be
+    ///   derived, directly or indirectly, from each interface that the
+    ///   value type supports through inheritance";
+    /// - truncation needs a stateful value deriving from a stateful value,
+    ///   and "Non-custom value types may not (transitively) inherit from
+    ///   custom value types."
+    fn value_inheritance_rules(&mut self) {
+        use zerodds_ast::ValuetypeKind;
+        let values: Vec<_> = self
+            .ast
+            .types()
+            .filter_map(|(id, node)| match &node.kind {
+                TypeKind::Valuetype {
+                    kind,
+                    bases,
+                    supported,
+                    ..
+                } => Some((
+                    id,
+                    node.node_id,
+                    node.name.clone(),
+                    *kind,
+                    bases.clone(),
+                    supported.clone(),
+                )),
+                _ => None,
+            })
+            .collect();
+        for (id, node_id, name, kind, bases, supported) in values {
+            let span = self.span_of(AnyId::Type(id, node_id));
+            let mut concrete_seen = false;
+            for (index, base) in bases.iter().enumerate() {
+                let Some(base) = base.resolved().and_then(|b| self.through_aliases(b)) else {
+                    continue;
+                };
+                let Ok(base_node) = self.ast.type_(base) else {
+                    continue;
+                };
+                let base_name = base_node.name.clone();
+                let base_kind = match &base_node.kind {
+                    TypeKind::Valuetype { kind, .. } => *kind,
+                    other => {
+                        let what = other.as_str();
+                        let message = alloc::format!(
+                            "`{name}` derives from `{base_name}`, a {what}; a value type derives \
+                             from value types only, and a boxed value type is never a base"
+                        );
+                        self.diagnose_at(
+                            DiagnosticCode::InvalidInheritance,
+                            span,
+                            &message,
+                            "OMG IDL 4.2 §7.4.7.4.3, Table 7-19",
+                        );
+                        continue;
+                    }
+                };
+                if base_kind == ValuetypeKind::Abstract {
+                    continue;
+                }
+                let complaint = if kind == ValuetypeKind::Abstract {
+                    Some("an abstract value type inherits abstract value types only")
+                } else if concrete_seen {
+                    Some("a value type derives from a single concrete value type")
+                } else if index != 0 {
+                    Some(
+                        "the concrete base of a value type is the first element of its \
+                         inheritance list",
+                    )
+                } else {
+                    None
+                };
+                concrete_seen = true;
+                if let Some(complaint) = complaint {
+                    let message = alloc::format!(
+                        "`{name}` names the concrete value type `{base_name}` as a base; {complaint}"
+                    );
+                    self.diagnose_at(
+                        DiagnosticCode::InvalidInheritance,
+                        span,
+                        &message,
+                        "OMG IDL 4.2 §7.4.7.4.3, Table 7-19",
+                    );
+                }
+            }
+            if kind == ValuetypeKind::Truncatable && !concrete_seen {
+                let message = alloc::format!(
+                    "`{name}` is truncatable and has no stateful base to be truncated to; \
+                     truncatable is for a stateful value deriving from another stateful value"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidInheritance,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.7.4.5",
+                );
+            }
+            if kind != ValuetypeKind::Custom
+                && let Some(custom) = self.custom_ancestor_of(id)
+            {
+                let message = alloc::format!(
+                    "`{name}` is not custom and inherits from the custom value type `{custom}`; \
+                     a non-custom value type may not inherit from a custom one"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidInheritance,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.7.4.5",
+                );
+            }
+
+            // Supported interfaces: any number of abstract ones, one other.
+            let concrete: Vec<Id<zerodds_ast::InterfaceNode>> = supported
+                .iter()
+                .filter_map(Ref::resolved)
+                .filter(|interface| {
+                    self.ast
+                        .interface(*interface)
+                        .is_ok_and(|node| node.kind != zerodds_ast::InterfaceKind::Abstract)
+                })
+                .collect();
+            if concrete.len() > 1 {
+                let message = alloc::format!(
+                    "`{name}` supports {} interfaces that are not abstract; a value type \
+                     supports a single one",
+                    concrete.len()
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidInheritance,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.7.4.3, Table 7-19",
+                );
+            }
+            if let Some(own) = concrete.first() {
+                let own_bases = self.all_bases_of(*own);
+                for inherited in self.supported_through_bases(id) {
+                    if inherited == *own || own_bases.contains(&inherited) {
+                        continue;
+                    }
+                    let (own_name, inherited_name) = (
+                        self.ast
+                            .interface(*own)
+                            .map_or_else(|_| String::new(), |n| n.name.clone()),
+                        self.ast
+                            .interface(inherited)
+                            .map_or_else(|_| String::new(), |n| n.name.clone()),
+                    );
+                    let message = alloc::format!(
+                        "`{name}` supports `{own_name}`, which does not derive from \
+                         `{inherited_name}`, an interface it supports through its bases"
+                    );
+                    self.diagnose_at(
+                        DiagnosticCode::InvalidInheritance,
+                        span,
+                        &message,
+                        "OMG IDL 4.2 §7.4.7.4.3",
+                    );
+                }
+            }
+        }
+    }
+
+    /// The first custom value type among the bases of a value type,
+    /// followed transitively.
+    fn custom_ancestor_of(&self, value: Id<TypeNode>) -> Option<String> {
+        let mut queue = self.value_bases(value);
+        let mut seen: Vec<Id<TypeNode>> = Vec::new();
+        while let Some(next) = (!queue.is_empty()).then(|| queue.remove(0)) {
+            if next == value || seen.contains(&next) || seen.len() > MAX_ALIAS_DEPTH {
+                continue;
+            }
+            seen.push(next);
+            if let Ok(node) = self.ast.type_(next)
+                && let TypeKind::Valuetype { kind, .. } = &node.kind
+            {
+                if *kind == zerodds_ast::ValuetypeKind::Custom {
+                    return Some(node.name.clone());
+                }
+                queue.extend(self.value_bases(next));
+            }
+        }
+        None
+    }
+
+    /// The value types a value type names as its bases, aliases followed.
+    fn value_bases(&self, value: Id<TypeNode>) -> Vec<Id<TypeNode>> {
+        match self.ast.type_(value).map(|node| &node.kind) {
+            Ok(TypeKind::Valuetype { bases, .. }) => bases
+                .iter()
+                .filter_map(Ref::resolved)
+                .filter_map(|base| self.through_aliases(base))
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The interfaces, not abstract, that the bases of a value type
+    /// support, followed transitively.
+    fn supported_through_bases(&self, value: Id<TypeNode>) -> Vec<Id<zerodds_ast::InterfaceNode>> {
+        let mut out = Vec::new();
+        let mut queue = self.value_bases(value);
+        let mut seen: Vec<Id<TypeNode>> = Vec::new();
+        while let Some(next) = (!queue.is_empty()).then(|| queue.remove(0)) {
+            if next == value || seen.contains(&next) || seen.len() > MAX_ALIAS_DEPTH {
+                continue;
+            }
+            seen.push(next);
+            if let Ok(TypeKind::Valuetype { supported, .. }) = self.ast.type_(next).map(|n| &n.kind)
+            {
+                for interface in supported.iter().filter_map(Ref::resolved) {
+                    let abstract_ = self
+                        .ast
+                        .interface(interface)
+                        .is_ok_and(|node| node.kind == zerodds_ast::InterfaceKind::Abstract);
+                    if !abstract_ && !out.contains(&interface) {
+                        out.push(interface);
+                    }
+                }
+            }
+            queue.extend(self.value_bases(next));
+        }
+        out
+    }
+
+    /// The inheritance rules of an interface.
+    ///
+    /// OMG IDL 4.2 §7.4.3.4.3.2.1: "An interface may not be specified as a
+    /// direct base interface of a derived interface more than once; it may
+    /// be an indirect base interface more than once" — the diamond of
+    /// Figure 7-1 stays legal — and "It is forbidden to redefine an
+    /// operation or an attribute in a derived interface, as well as
+    /// inheriting two different operations or attributes with the same
+    /// name." §7.4.4.4 repeats the last two for interfaces with embedded
+    /// declarations. An operation or attribute reached along two paths of
+    /// a diamond is one declaration and not a conflict.
+    fn interface_inheritance_rules(&mut self) {
+        let interfaces: Vec<_> = self
+            .ast
+            .interfaces()
+            .map(|(id, node)| (id, node.node_id, node.name.clone(), node.bases.clone()))
+            .collect();
+        for (id, node_id, name, bases) in interfaces {
+            let span = self.span_of(AnyId::Interface(id, node_id));
+            let direct: Vec<_> = bases.iter().filter_map(Ref::resolved).collect();
+            for (index, base) in direct.iter().enumerate() {
+                if !direct[..index].contains(base) {
+                    continue;
+                }
+                let base_name = self
+                    .ast
+                    .interface(*base)
+                    .map_or_else(|_| String::from("?"), |node| node.name.clone());
+                let message = alloc::format!(
+                    "`{name}` names `{base_name}` as a direct base twice; an interface may be a \
+                     direct base only once"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidInheritance,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.3.4.3.2.1",
+                );
+            }
+
+            // Table 7-19: "An abstract interface may only inherit from
+            // abstract interfaces" (§7.4.7.4.2 says it in words).
+            let is_abstract = self
+                .ast
+                .interface(id)
+                .is_ok_and(|node| node.kind == zerodds_ast::InterfaceKind::Abstract);
+            if is_abstract {
+                for base in &direct {
+                    let Ok(base_node) = self.ast.interface(*base) else {
+                        continue;
+                    };
+                    if base_node.kind == zerodds_ast::InterfaceKind::Abstract {
+                        continue;
+                    }
+                    let message = alloc::format!(
+                        "the abstract interface `{name}` derives from `{}`, which is not \
+                         abstract; an abstract interface may only inherit from abstract interfaces",
+                        base_node.name
+                    );
+                    self.diagnose_at(
+                        DiagnosticCode::InvalidInheritance,
+                        span,
+                        &message,
+                        "OMG IDL 4.2 §7.4.7.4.2, Table 7-19",
+                    );
+                }
+            }
+
+            // Every operation and attribute of every base, direct or
+            // indirect, each declaration once.
+            let mut inherited: Vec<(String, AnyId, String)> = Vec::new();
+            for base in self.all_bases_of(id) {
+                let Ok(node) = self.ast.interface(base) else {
+                    continue;
+                };
+                let base_name = node.name.clone();
+                for (element, any) in self.elements_of(base) {
+                    if !inherited.iter().any(|(_, known, _)| *known == any) {
+                        inherited.push((element, any, base_name.clone()));
+                    }
+                }
+            }
+            for (index, (element, any, from)) in inherited.iter().enumerate() {
+                let Some((_, _, other)) = inherited[..index]
+                    .iter()
+                    .find(|(known, other, _)| known.eq_ignore_ascii_case(element) && other != any)
+                else {
+                    continue;
+                };
+                let message = alloc::format!(
+                    "`{name}` inherits two different operations or attributes named `{element}`, \
+                     from `{other}` and from `{from}`"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidInheritance,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.3.4.3.2.1",
+                );
+            }
+            for (element, any) in self.elements_of(id) {
+                let Some((_, _, from)) = inherited
+                    .iter()
+                    .find(|(known, _, _)| known.eq_ignore_ascii_case(&element))
+                else {
+                    continue;
+                };
+                let at = self.span_of(any);
+                let message = alloc::format!(
+                    "`{element}` redefines the operation or attribute `{name}` inherits from \
+                     `{from}`; a derived interface may not redefine one"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidInheritance,
+                    at,
+                    &message,
+                    "OMG IDL 4.2 §7.4.3.4.3.2.1",
+                );
+            }
+        }
+    }
+
+    /// The direct and indirect bases of an interface, each once.
+    fn all_bases_of(
+        &self,
+        interface: Id<zerodds_ast::InterfaceNode>,
+    ) -> Vec<Id<zerodds_ast::InterfaceNode>> {
+        let mut out = Vec::new();
+        let mut queue: Vec<Id<zerodds_ast::InterfaceNode>> = self
+            .ast
+            .interface(interface)
+            .map(|node| node.bases.iter().filter_map(Ref::resolved).collect())
+            .unwrap_or_default();
+        while let Some(next) = (!queue.is_empty()).then(|| queue.remove(0)) {
+            if next == interface || out.contains(&next) || out.len() > MAX_ALIAS_DEPTH {
+                continue;
+            }
+            if let Ok(node) = self.ast.interface(next) {
+                queue.extend(node.bases.iter().filter_map(Ref::resolved));
+            }
+            out.push(next);
+        }
+        out
+    }
+
+    /// The operations and attributes an interface declares itself, with
+    /// their names.
+    fn elements_of(&self, interface: Id<zerodds_ast::InterfaceNode>) -> Vec<(String, AnyId)> {
+        let mut out = Vec::new();
+        for operation in self.ast.operations_of(interface) {
+            if let Ok(node) = self.ast.operation(*operation) {
+                out.push((
+                    node.name.clone(),
+                    AnyId::Operation(*operation, node.node_id),
+                ));
+            }
+        }
+        for attribute in self.ast.attributes_of(interface) {
+            if let Ok(node) = self.ast.attribute(*attribute) {
+                out.push((
+                    node.name.clone(),
+                    AnyId::Attribute(*attribute, node.node_id),
+                ));
+            }
+        }
+        out
+    }
+
+    /// A constant's value lies in the range of the integer type it is
+    /// declared with.
+    ///
+    /// OMG IDL 4.2 §7.4.1.4.3: "If the value of an integer constant
+    /// declaration is too large to fit in the actual type of the constant on
+    /// the left hand side (for example `const short s = 655592;`) or is
+    /// inappropriate for the actual type of the constant (for example
+    /// `const octet o = -54;`) it shall be treated as an error." The ranges
+    /// are the ones Table 7-26 (§7.4.13.4.6) gives every integer type,
+    /// [`primitive_range`]. The form check in lowering
+    /// (`value_disagrees_with`) answers whether the value is an integer at
+    /// all; this one, run over the finished model so that a reference to a
+    /// constant declared later is resolved, answers whether it fits.
+    fn constant_values_fit_their_type(&mut self) {
+        let constants: Vec<_> = self
+            .ast
+            .constants()
+            .map(|(id, node)| {
+                (
+                    id,
+                    node.node_id,
+                    node.name.clone(),
+                    node.type_.clone(),
+                    node.expr,
+                )
+            })
+            .collect();
+        for (id, node_id, name, declared, expr) in constants {
+            let Some(target) = declared.resolved().and_then(|t| self.through_aliases(t)) else {
+                continue;
+            };
+            let Ok(TypeKind::Primitive(kind)) =
+                self.ast.type_(target).map(|node| node.kind.clone())
+            else {
+                continue;
+            };
+            if matches!(
+                kind,
+                PrimitiveKind::Boolean | PrimitiveKind::Char | PrimitiveKind::WChar
+            ) {
+                continue;
+            }
+            let Some((low, high)) = primitive_range(kind) else {
+                continue;
+            };
+            let Ok(zerodds_ast::ConstValue::Integer(value)) = self.ast.eval_const(expr) else {
+                continue;
+            };
+            if (low..=high).contains(&value) {
+                continue;
+            }
+            let span = self.span_of(AnyId::Const(id, node_id));
+            let message = alloc::format!(
+                "the constant `{name}` has the value {value}, and its type `{}` holds {low} to \
+                 {high}; a value that does not fit its type is an error",
+                kind.as_str()
+            );
+            self.diagnose_at(
+                DiagnosticCode::TypeMismatch,
+                span,
+                &message,
+                "OMG IDL 4.2 §7.4.1.4.3, Table 7-26",
+            );
+        }
+    }
+
+    /// A one-way operation returns nothing and passes nothing back.
+    ///
+    /// OMG IDL 4.2 §8.3.6.2 on `@oneway`: "This annotation may only concern
+    /// operations without any return value (void return type) and without
+    /// any out or inout parameters." Rule (120) states the same of the
+    /// keyword form, `"oneway" "void" <identifier> "(" [ <in_parameter_dcls> ] ")"`.
+    fn oneway_operations_return_nothing(&mut self) {
+        let operations: Vec<_> = self
+            .ast
+            .operations()
+            .filter(|(_, node)| node.oneway)
+            .map(|(id, node)| {
+                (
+                    id,
+                    node.node_id,
+                    node.name.clone(),
+                    node.return_type.is_some(),
+                    node.params.clone(),
+                    !node.raises.is_empty(),
+                )
+            })
+            .collect();
+        for (id, node_id, name, returns, params, raises) in operations {
+            let span = self.span_of(AnyId::Operation(id, node_id));
+            // §7.4.6.4.5: one-way operations "Cannot trigger exceptions."
+            if raises {
+                let message = alloc::format!(
+                    "the one-way operation `{name}` has a `raises` clause; a one-way operation \
+                     cannot trigger exceptions"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidAnnotation,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.6.4.5",
+                );
+            }
+            if returns {
+                let message = alloc::format!(
+                    "the one-way operation `{name}` returns a value; a one-way operation's \
+                     return type is `void`"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidAnnotation,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §8.3.6.2",
+                );
+            }
+            for param in params {
+                let Ok(param) = self.ast.param(param) else {
+                    continue;
+                };
+                if param.direction == zerodds_ast::ParamDirection::In {
+                    continue;
+                }
+                let message = alloc::format!(
+                    "the one-way operation `{name}` has the {} parameter `{}`; a one-way \
+                     operation takes `in` parameters only",
+                    param.direction.as_str(),
+                    param.name
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidAnnotation,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §8.3.6.2",
+                );
+            }
+        }
+    }
+
+    /// The upper end of a range is not below its lower end.
+    ///
+    /// OMG IDL 4.2 §8.3.3.2: "The max value must be greater or equal to the
+    /// min value." `@min` and `@max` written separately state the same two
+    /// ends (§8.3.3.3, §8.3.3.4) and are held to the same order.
+    fn ranges_are_ordered(&mut self) {
+        let mut ranged: Vec<(AnyId, zerodds_ast::RangeConstraint)> = Vec::new();
+        for (id, node) in self.ast.types() {
+            if let Some(range) = node.facets.xtypes.as_ref().and_then(|x| x.range) {
+                ranged.push((AnyId::Type(id, node.node_id), range));
+            }
+        }
+        for (id, node) in self.ast.members() {
+            if let Some(range) = node.facets.xtypes.as_ref().and_then(|x| x.range) {
+                ranged.push((AnyId::Member(id, node.node_id), range));
+            }
+        }
+        for (any, range) in ranged {
+            let (Some(min), Some(max)) = (range.min, range.max) else {
+                continue;
+            };
+            let (Ok(low), Ok(high)) = (self.ast.eval_const(min), self.ast.eval_const(max)) else {
+                continue;
+            };
+            let Some(order) = numeric_order(&low, &high) else {
+                continue;
+            };
+            if order != core::cmp::Ordering::Greater {
+                continue;
+            }
+            let span = self.span_of(any);
+            let message = alloc::format!(
+                "the range runs from {} down to {}; the max value must be greater than or \
+                 equal to the min value",
+                value_text(&low),
+                value_text(&high)
+            );
+            self.diagnose_at(
+                DiagnosticCode::InvalidAnnotation,
+                span,
+                &message,
+                "OMG IDL 4.2 §8.3.3.2",
+            );
+        }
     }
 
     fn validate_type(&mut self, id: Id<TypeNode>) {
@@ -287,6 +1393,32 @@ impl Lowering<'_> {
                 let Some(target) = node.type_.resolved() else {
                     continue;
                 };
+                if self.is_any(target, 0) {
+                    // OMG IDL 4.2 rules (223) and (224) give an annotation
+                    // member the type `any` (`<any_const_type>`), and the
+                    // note of §7.4.15.4.2 says what its value has to match.
+                    // `any` is the Any building block (§7.4.2), which the
+                    // Extensible DDS Profile of DDS-XTypes 1.3 §7.3.1.1.1
+                    // does not hold: "These constructs remain legal for use
+                    // in IDL files provided to IDL compilers compliant with
+                    // this specification. [...] Compilers that do not
+                    // support them shall ignore them or issue a warning
+                    // rather than halting with an error." §7.2.2.6 admits
+                    // no such annotation parameter, so the declaration is
+                    // read and warned about.
+                    let message = alloc::format!(
+                        "`@{name}`'s member `{member_name}` is any, which DDS-XTypes 1.3 \
+                         §7.2.2.6 does not admit for an annotation parameter; the declaration \
+                         has no representation in the type system"
+                    );
+                    self.warn_at(
+                        DiagnosticCode::InvalidAnnotation,
+                        at,
+                        &message,
+                        "DDS-XTypes 1.3 §7.3.1.1.1",
+                    );
+                    continue;
+                }
                 if !self.is_legal_annotation_member_type(target, 0) {
                     let found = self
                         .ast
@@ -304,6 +1436,23 @@ impl Lowering<'_> {
                     );
                 }
             }
+        }
+    }
+
+    /// Whether `target` is `any`, through any number of aliases.
+    fn is_any(&self, target: Id<TypeNode>, depth: usize) -> bool {
+        if depth > MAX_ALIAS_DEPTH {
+            return false;
+        }
+        let Ok(node) = self.ast.type_(target) else {
+            return false;
+        };
+        match &node.kind {
+            TypeKind::Any => true,
+            TypeKind::Alias { aliased } => aliased
+                .resolved()
+                .is_some_and(|target| self.is_any(target, depth + 1)),
+            _ => false,
         }
     }
 
@@ -699,17 +1848,15 @@ impl Lowering<'_> {
                 .as_ref()
                 .and_then(|x| x.member_id.as_ref())
                 .map(|a| a.effective)
-            {
-                if let Some((other, _)) = inherited_members
+                && let Some((other, _)) = inherited_members
                     .iter()
                     .find(|(_, other_id)| *other_id == Some(effective))
-                {
-                    let message = alloc::format!(
-                        "`{member_name}` of `{name}` has member id {effective}, which `{other}` \
+            {
+                let message = alloc::format!(
+                    "`{member_name}` of `{name}` has member id {effective}, which `{other}` \
                          inherited from `{base_name}` already has"
-                    );
-                    self.diagnose_at(DiagnosticCode::DuplicateMemberId, at, &message, SPEC);
-                }
+                );
+                self.diagnose_at(DiagnosticCode::DuplicateMemberId, at, &message, SPEC);
             }
             if xtypes.as_ref().is_some_and(|x| x.is_key) {
                 let message = alloc::format!(
@@ -879,9 +2026,9 @@ impl Lowering<'_> {
     /// It stops at an aggregate that declares no key member of its own.
     /// Read with §7.6.8 Step 1 — "Otherwise do not remove any members" —
     /// every member of such a type is in the key, which would make a
-    /// `map` anywhere inside it a refusal here. That reading is the open
-    /// question in `docs/OPEN-ITEMS.md` ("A keyed member whose type
-    /// declares no `@key` of its own"), it is not what
+    /// `map` anywhere inside it a refusal here. That reading was the open
+    /// question "A keyed member whose type declares no `@key` of its own"
+    /// (closed: `keyhash::member_key_for`), it is not what
     /// `zerodds_ast_layout::keyhash::collect_key_members` implements, and
     /// no vendor has been asked. Refusing on a reading this project does
     /// not itself follow would reject IDL whose key holds no map at all.
@@ -1162,9 +2309,59 @@ impl Lowering<'_> {
     }
 }
 
-/// The value range a primitive discriminator admits.
-///
-/// `None` for kinds a label cannot be compared against numerically.
+/// How two numeric constant values compare: exactly for two integers,
+/// through `f64` once a floating or fixed-point value takes part. `None`
+/// when either is not a number.
+fn numeric_order(
+    low: &zerodds_ast::ConstValue,
+    high: &zerodds_ast::ConstValue,
+) -> Option<core::cmp::Ordering> {
+    use zerodds_ast::ConstValue;
+    if let (ConstValue::Integer(a), ConstValue::Integer(b)) = (low, high) {
+        return Some(a.cmp(b));
+    }
+    let as_f64 = |value: &ConstValue| -> Option<f64> {
+        match value {
+            ConstValue::Integer(number) => value_text(&ConstValue::Integer(*number)).parse().ok(),
+            ConstValue::Float { .. } | ConstValue::Fixed { .. } => value_text(value).parse().ok(),
+            _ => None,
+        }
+    };
+    as_f64(low)?.partial_cmp(&as_f64(high)?)
+}
+
+/// A numeric constant value as decimal text, as a diagnostic quotes it.
+fn value_text(value: &zerodds_ast::ConstValue) -> String {
+    use zerodds_ast::ConstValue;
+    match value {
+        ConstValue::Integer(number) => alloc::format!("{number}"),
+        ConstValue::Float { mantissa, exponent } => match exponent {
+            Some(exponent) => alloc::format!("{mantissa}e{exponent}"),
+            None => mantissa.clone(),
+        },
+        ConstValue::Fixed { digits, scale } => {
+            let (sign, digits) = digits
+                .strip_prefix('-')
+                .map_or(("", digits.as_str()), |rest| ("-", rest));
+            let scale = usize::from(*scale);
+            if scale == 0 {
+                alloc::format!("{sign}{digits}")
+            } else if digits.len() > scale {
+                let (whole, fraction) = digits.split_at(digits.len() - scale);
+                alloc::format!("{sign}{whole}.{fraction}")
+            } else {
+                alloc::format!("{sign}0.{}{digits}", "0".repeat(scale - digits.len()))
+            }
+        }
+        ConstValue::Boolean(flag) => alloc::format!("{flag}"),
+        ConstValue::Char(c) => alloc::format!("'{c}'"),
+        ConstValue::WChar(code) => alloc::format!("U+{code:04X}"),
+        ConstValue::String(text) => alloc::format!("{text:?}"),
+        ConstValue::WString(_) => String::from("a wide string"),
+        _ => String::from("a value"),
+    }
+}
+
 /// The annotation that states `extensibility`, as a diagnostic names it.
 fn extensibility_word(extensibility: zerodds_ast::Extensibility) -> &'static str {
     match extensibility {
@@ -1174,6 +2371,10 @@ fn extensibility_word(extensibility: zerodds_ast::Extensibility) -> &'static str
     }
 }
 
+/// The value range of an integer type, Table 7-26 of OMG IDL 4.2
+/// (§7.4.13.4.6), and the code range of the character types.
+///
+/// `None` for kinds a value cannot be compared against numerically.
 fn primitive_range(kind: PrimitiveKind) -> Option<(i128, i128)> {
     Some(match kind {
         PrimitiveKind::Boolean => (0, 1),
@@ -1207,6 +2408,7 @@ pub fn rule_name(code: DiagnosticCode) -> &'static str {
         DiagnosticCode::InvalidAnnotation => "annotation-argument",
         DiagnosticCode::KeywordCollision => "keyword-collision",
         DiagnosticCode::InvalidInheritance => "inheritance",
+        DiagnosticCode::OutsideProfile => "profile",
         DiagnosticCode::Preprocessing | DiagnosticCode::ErrorDirective => "preprocessor",
         DiagnosticCode::UnexpectedToken
         | DiagnosticCode::MissingToken

@@ -160,7 +160,7 @@ mod tls {
     /// §11.1 (5), §11.3: a client that trusts the agent's certificate opens
     /// a session over TLS and gets STATUS_AGENT with STATUS_OK.
     #[test]
-    fn a_client_that_trusts_the_agents_certificate_opens_a_session() {
+    fn xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session() {
         bounded(TEST_DEADLINE_SECONDS, move || {
             let creds = Credentials::new("tls-ok");
             let (_daemon, port) = start(&creds, None);
@@ -203,7 +203,7 @@ mod tls {
     /// §8.3.2.4: the ClientKey is not sent in the clear. A plain-text
     /// CREATE_CLIENT on the TLS port is not answered with a STATUS_AGENT.
     #[test]
-    fn a_plain_text_create_client_on_the_tls_port_is_not_answered() {
+    fn xrce_8_3_2_4_a_plain_text_create_client_on_the_tls_port_is_not_answered() {
         bounded(TEST_DEADLINE_SECONDS, move || {
             let creds = Credentials::new("tls-plain");
             let (_daemon, port) = start(&creds, None);
@@ -306,7 +306,7 @@ mod dtls {
     /// §11.1 (5), §11.2: a client that trusts the agent's certificate opens
     /// a session over DTLS and gets STATUS_AGENT with STATUS_OK.
     #[test]
-    fn a_client_that_trusts_the_agents_certificate_opens_a_session() {
+    fn xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session() {
         bounded(TEST_DEADLINE_SECONDS, move || {
             let creds = Credentials::new("dtls-ok");
             let (_daemon, port) = start(&creds, None);
@@ -339,7 +339,7 @@ mod dtls {
     /// §8.3.2.4: a plain-text CREATE_CLIENT datagram on the DTLS port gets
     /// no STATUS_AGENT.
     #[test]
-    fn a_plain_text_create_client_on_the_dtls_port_is_not_answered() {
+    fn xrce_8_3_2_4_a_plain_text_create_client_on_the_dtls_port_is_not_answered() {
         bounded(TEST_DEADLINE_SECONDS, move || {
             let creds = Credentials::new("dtls-plain");
             let (_daemon, port) = start(&creds, None);

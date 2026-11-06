@@ -7,7 +7,7 @@ candidate is released.
 
 ## Requirements
 
-The workspace declares Rust 1.88 or newer in [Cargo.toml](../../Cargo.toml).
+The workspace declares Rust 1.97 or newer in [Cargo.toml](../../Cargo.toml).
 Install a compatible Rust toolchain and your platform's native linker.
 Run the commands below from the ZeroDDS checkout root. Keep Cargo.lock and
 the source revision together.

@@ -521,16 +521,16 @@ fn check_xtypes_bounds(
 
     match &node.kind {
         TypeKind::Enumeration { .. } => {
-            if let Some(bound) = bit_bound {
-                if bound == 0 || bound > 32 {
-                    out.push(violation(
-                        node_id,
-                        Profile::XTypes13,
-                        "enum bit bound in 1..=32",
-                        "DDS-XTypes 1.3 §7.3.1.2.1.9",
-                        "an enumeration's @bit_bound must be between 1 and 32",
-                    ));
-                }
+            if let Some(bound) = bit_bound
+                && (bound == 0 || bound > 32)
+            {
+                out.push(violation(
+                    node_id,
+                    Profile::XTypes13,
+                    "enum bit bound in 1..=32",
+                    "DDS-XTypes 1.3 §7.3.1.2.1.9",
+                    "an enumeration's @bit_bound must be between 1 and 32",
+                ));
             }
         }
         TypeKind::Bitmask { bits } => {
@@ -548,16 +548,16 @@ fn check_xtypes_bounds(
                 let Ok(b) = ast.bit_value(*bit) else {
                     continue;
                 };
-                if let Some(position) = b.position {
-                    if position >= bound {
-                        out.push(violation(
-                            b.node_id,
-                            Profile::XTypes13,
-                            "bit position within bound",
-                            "DDS-XTypes 1.3 §7.3.1.2.1.10",
-                            "@position is at or beyond the bitmask's bit bound",
-                        ));
-                    }
+                if let Some(position) = b.position
+                    && position >= bound
+                {
+                    out.push(violation(
+                        b.node_id,
+                        Profile::XTypes13,
+                        "bit position within bound",
+                        "DDS-XTypes 1.3 §7.3.1.2.1.10",
+                        "@position is at or beyond the bitmask's bit bound",
+                    ));
                 }
             }
         }

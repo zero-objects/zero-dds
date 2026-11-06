@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn truncated_input_is_malformed() {
-        let bytes = [b'G', b'I', b'O', b'P'];
+        let bytes = *b"GIOP";
         let err = MessageHeader::decode(&bytes).unwrap_err();
         assert!(matches!(err, GiopError::Malformed(_)));
     }

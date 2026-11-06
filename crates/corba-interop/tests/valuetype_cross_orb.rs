@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-#![allow(
-    clippy::unwrap_used,
-    clippy::expect_used,
-    clippy::panic,
-    clippy::print_stderr
-)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 //! Live valuetype cross-ORB (§15.3.4): ZeroDDS invokes a REAL operation with
 //! a `valuetype` parameter on a FOREIGN server (JacORB). Proves the
 //! valuetype wire not just as a byte capture, but as an operation parameter
 //! end-to-end over GIOP (marshal → invoke → foreign server unmarshals + echoes →
 //! ZeroDDS decodes).
 //!
-//! Runs only with a live `interface ValueEcho { Point echo(in Point p); }` server
-//! whose IOR is provided via `VALUEECHO_IOR` (the Linux test host). Ignored by default.
+//! The server, `interface ValueEcho { Point echo(in Point p); }` in
+//! JacORB, is `competitors/jacorb/valuetype/`; the test builds and starts it
+//! (`tests/support/jacorb.rs`) and runs in the integration job
+//! `integration-bridges-vendor-corba`.
 
 use std::rc::Rc;
 
@@ -52,10 +49,26 @@ fn registry() -> ValueRegistry {
     reg
 }
 
+#[path = "support/jacorb.rs"]
+mod jacorb;
+
 #[test]
-#[ignore = "needs live foreign ValueEcho server via VALUEECHO_IOR env (Linux test host)"]
-fn valuetype_echo_against_foreign_server() {
-    let ior = std::env::var("VALUEECHO_IOR").expect("VALUEECHO_IOR env");
+#[ignore = "needs JacORB 3.9 and a Java 8 JDK (integration-bridges-vendor-corba)"]
+fn corbarust_13_a_jacorb_server_echoes_a_valuetype_parameter() {
+    let fixture =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("competitors/jacorb/valuetype");
+    let (_server, ior) = jacorb::start(&jacorb::Spec {
+        name: "jacorb-valueecho",
+        idl: vec![fixture.join("ValueEcho.idl")],
+        java: vec![
+            fixture.join("ValueEchoServer.java"),
+            fixture.join("PointImpl.java"),
+        ],
+        main: "ValueEchoServer",
+        props: &[],
+        ior_to_file: false,
+        stdout_prefix: "VALUEECHO_IOR=",
+    });
     let oref = object_reference_from_ior(ior.trim()).expect("parse IOR");
     let conn = IiopCorbaConnection::new();
 
@@ -78,5 +91,4 @@ fn valuetype_echo_against_foreign_server() {
         *got.downcast_ref::<Point>().unwrap(),
         Point { x: 42, y: -7 }
     );
-    eprintln!("cross-ORB live valuetype OK: echo(Point(42,-7)) roundtrip");
 }

@@ -176,4 +176,8 @@ function main()
     end
 end
 
-main()
+# Run as a program; included (as the E2E test's app includes it for `drain`),
+# it only defines.
+if abspath(PROGRAM_FILE) == @__FILE__
+    main()
+end

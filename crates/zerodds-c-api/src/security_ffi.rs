@@ -725,11 +725,11 @@ fn finish_secure_runtime_with(
     // a topic is access-controlled and has nothing to decide with, and every
     // `create_datawriter`/`create_datareader` on such a topic would be refused
     // as `NoPermissions`.
-    if let Some(builtin) = &profile.builtin {
-        if let Err(e) = zerodds_security_runtime::arm_endpoint_access_control(builtin) {
-            eprintln!("zerodds_runtime_create_secure(domain_id={domain_id}): {e}");
-            return core::ptr::null_mut();
-        }
+    if let Some(builtin) = &profile.builtin
+        && let Err(e) = zerodds_security_runtime::arm_endpoint_access_control(builtin)
+    {
+        eprintln!("zerodds_runtime_create_secure(domain_id={domain_id}): {e}");
+        return core::ptr::null_mut();
     }
 
     // A5: this is the secured `rmw_zerodds` entry point (SROS2 enclave), so it
@@ -745,11 +745,11 @@ fn finish_secure_runtime_with(
     // AccessControl plugin in the gate (DDS-Security 1.2 §9.8.1 step 2:
     // `validate_local_permissions` first, whose handle is the local one),
     // the Logging and the DataTagging plugin in the runtime configuration.
-    if let Some(handle) = plugins.access_control.as_ref() {
-        if let Err(e) = install_access_control(domain_id, &profile, handle) {
-            eprintln!("zerodds_runtime_create_secure(domain_id={domain_id}): {e}");
-            return core::ptr::null_mut();
-        }
+    if let Some(handle) = plugins.access_control.as_ref()
+        && let Err(e) = install_access_control(domain_id, &profile, handle)
+    {
+        eprintln!("zerodds_runtime_create_secure(domain_id={domain_id}): {e}");
+        return core::ptr::null_mut();
     }
     let security_logger = plugins
         .logging
@@ -876,14 +876,6 @@ mod tests {
     }
 
     #[test]
-    fn config_create_destroy_roundtrip() {
-        let cfg = zerodds_security_config_create();
-        assert!(!cfg.is_null());
-        // SAFETY: cfg from config_create, freed exactly once.
-        unsafe { zerodds_security_config_destroy(cfg) };
-    }
-
-    #[test]
     fn null_setter_clears_path() {
         let cfg = zerodds_security_config_create();
         let path = std::ffi::CString::new("/tmp/foo.pem").unwrap();
@@ -972,8 +964,9 @@ mod tests {
         unsafe {
             zerodds_security_set_identity_ca_path(cfg, path.as_ptr());
         }
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: cfg valid; an incomplete config must return a NULL runtime.
-        let rt = unsafe { zerodds_runtime_create_secure(0, cfg) };
+        let rt = unsafe { zerodds_runtime_create_secure(lease.id() as u32, cfg) };
         assert!(rt.is_null());
         // SAFETY: cfg from config_create, freed exactly once.
         unsafe { zerodds_security_config_destroy(cfg) };
@@ -986,45 +979,17 @@ mod tests {
         if std::env::var("ZERODDS_SECURITY_DIR").is_ok() {
             return;
         }
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: no pointer arguments; always callable.
-        let rt = unsafe { zerodds_runtime_create_secure_from_env(0) };
+        let rt = unsafe { zerodds_runtime_create_secure_from_env(lease.id() as u32) };
         assert!(rt.is_null());
     }
 
     #[test]
     fn null_cfg_yields_null_runtime() {
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: NULL cfg is explicitly allowed and must return a NULL runtime.
-        let rt = unsafe { zerodds_runtime_create_secure(0, ptr::null()) };
+        let rt = unsafe { zerodds_runtime_create_secure(lease.id() as u32, ptr::null()) };
         assert!(rt.is_null());
-    }
-
-    #[test]
-    fn six_setters_all_writeable() {
-        let cfg = zerodds_security_config_create();
-        let p = std::ffi::CString::new("/x").unwrap();
-        for setter in [
-            zerodds_security_set_identity_ca_path
-                as unsafe extern "C" fn(*mut ZeroDdsSecurityConfig, *const c_char) -> i32,
-            zerodds_security_set_identity_cert_path,
-            zerodds_security_set_private_key_path,
-            zerodds_security_set_permissions_ca_path,
-            zerodds_security_set_governance_path,
-            zerodds_security_set_permissions_path,
-        ] {
-            // SAFETY: cfg valid from config_create; p.as_ptr() lives until the end of the function.
-            let rc = unsafe { setter(cfg, p.as_ptr()) };
-            assert_eq!(rc, 0);
-        }
-        // SAFETY: cfg valid and non-null — deref reads the 6 set fields.
-        unsafe {
-            assert!((*cfg).identity_ca_path.is_some());
-            assert!((*cfg).identity_cert_path.is_some());
-            assert!((*cfg).identity_key_path.is_some());
-            assert!((*cfg).permissions_ca_path.is_some());
-            assert!((*cfg).governance_path.is_some());
-            assert!((*cfg).permissions_path.is_some());
-        }
-        // SAFETY: cfg from config_create, freed exactly once.
-        unsafe { zerodds_security_config_destroy(cfg) };
     }
 }

@@ -1,19 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! e2e (v2): a bidirectional bridge does not feed back on itself.
+//! A bidirectional bridge does not feed back on itself (README of this
+//! crate, "Loop guard": input and output participants on a shared domain
+//! are made mutually invisible).
 //!
-//! Two routes form a bidirectional bridge between domains 50 and 51 on the same
-//! topic `Bi`: `fwd` (50→51) and `back` (51→50). Without the loop guard, a
-//! sample written on 50 would be forwarded to 51 by `fwd`, then picked up on 51
-//! by `back` and forwarded to 50, then by `fwd` again — an infinite cycle that
-//! amplifies without bound.
-//!
-//! With the participant-level loop guard (input and output participants on a
-//! shared domain are mutually invisible), each application sample crosses the
-//! bridge exactly once. We write 3 distinct samples and assert the downstream
-//! reader sees exactly those 3 — and that draining well past delivery yields no
-//! runaway re-forwarding. Own test binary = isolated process.
+//! Two routes form a bidirectional bridge between two domains on the same
+//! topic `Bi`: `fwd` (A to B) and `back` (B to A). Without the loop guard a
+//! sample written on A would be forwarded to B by `fwd`, read there by
+//! `back`, forwarded to A, and by `fwd` again, without end. With it, each
+//! application sample crosses the bridge once: the reader on B sees the
+//! three samples written, and draining past their delivery yields no
+//! runaway re-forwarding.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -53,7 +51,7 @@ fn config(input: i32, output: i32) -> String {
 }
 
 #[test]
-fn bidirectional_bridge_does_not_loop() {
+fn the_loop_guard_keeps_a_bidirectional_bridge_from_feeding_back() {
     let input = zerodds_test_domains::unique_domain();
     let output = zerodds_test_domains::unique_domain();
     let cfg = RouterConfig::from_json(&config(input, output)).unwrap();
@@ -88,7 +86,7 @@ fn bidirectional_bridge_does_not_loop() {
     );
 
     // The `back` route ran but the loop guard kept it from re-ingesting the
-    // `fwd` output on domain 51 — so it forwarded nothing of the router's own.
+    // `fwd` output on domain B, so it forwarded nothing of the router's own.
     let fwd = router.route_metrics("fwd").unwrap();
     let back = router.route_metrics("back").unwrap();
     assert_eq!(fwd.errors, 0);

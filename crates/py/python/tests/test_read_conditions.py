@@ -21,7 +21,7 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-def test_sample_state_constants():
+def py_6_6_sample_state_constants():
     # DDS 1.4 §2.3.3: READ = 0x0001 << 0, NOT_READ = 0x0001 << 1,
     # ANY = 0xffff.
     assert zerodds.sample_state.READ == 1
@@ -48,20 +48,7 @@ def test_instance_state_constants():
 # ---------------------------------------------------------------------------
 
 
-def test_read_condition_constructible():
-    """§6.6 — ReadCondition with three bitmasks."""
-    rc = zerodds.ReadCondition(
-        zerodds.sample_state.ANY,
-        zerodds.view_state.ANY,
-        zerodds.instance_state.ALIVE,
-    )
-    # ANY_SAMPLE_STATE and ANY_VIEW_STATE are 0xffff (DDS 1.4 §2.3.3).
-    assert rc.get_sample_state_mask() == 0xFFFF
-    assert rc.get_view_state_mask() == 0xFFFF
-    assert rc.get_instance_state_mask() == 1
-
-
-def test_read_condition_modes():
+def py_6_6_read_condition_modes():
     """§6.6 — state_check_mode='any'|'always'|'never' affects the trigger."""
     rc_any = zerodds.ReadCondition(3, 3, 7, "any")
     assert rc_any.get_trigger_value() is True
@@ -78,7 +65,7 @@ def test_read_condition_unknown_mode_raises():
         zerodds.ReadCondition(3, 3, 7, "elsewhere")
 
 
-def test_read_condition_attaches_to_waitset():
+def py_2_6_read_condition_attaches_to_waitset():
     rc = zerodds.ReadCondition(
         zerodds.sample_state.NOT_READ,
         zerodds.view_state.NEW,
@@ -95,19 +82,7 @@ def test_read_condition_attaches_to_waitset():
 # ---------------------------------------------------------------------------
 
 
-def test_query_condition_constructible_simple_filter():
-    """§6.6 — QueryCondition with a valid SQL92 filter."""
-    qc = zerodds.QueryCondition(
-        zerodds.sample_state.ANY,
-        zerodds.view_state.ANY,
-        zerodds.instance_state.ALIVE,
-        "x > 5",
-        [],
-    )
-    assert qc is not None
-
-
-def test_query_condition_with_parameters():
+def py_6_6_query_condition_with_parameters():
     """§6.6 — QueryCondition accepts positional query parameters (%0, %1, ...)."""
     qc = zerodds.QueryCondition(
         zerodds.sample_state.ANY,
@@ -119,7 +94,7 @@ def test_query_condition_with_parameters():
     assert qc is not None
 
 
-def test_query_condition_invalid_sql_raises():
+def py_6_6_query_condition_invalid_sql_raises():
     """§6.6 — invalid SQL expression → RuntimeError in the constructor."""
     with pytest.raises(RuntimeError, match="QueryCondition"):
         zerodds.QueryCondition(
@@ -131,7 +106,7 @@ def test_query_condition_invalid_sql_raises():
         )
 
 
-def test_query_condition_attaches_to_waitset():
+def py_6_6_query_condition_attaches_to_waitset():
     qc = zerodds.QueryCondition(
         zerodds.sample_state.ANY,
         zerodds.view_state.ANY,

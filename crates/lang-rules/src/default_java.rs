@@ -900,24 +900,24 @@ fn new_array(element: Box<java::Type>, lengths: Vec<java::Expr>) -> java::Expr {
     while let java::Type::Array(inner) = innermost {
         innermost = inner;
     }
-    if let java::Type::Named { path, args } = innermost {
-        if !args.is_empty() {
-            let mut segments: Vec<&str> = path
-                .segments()
-                .iter()
-                .map(|segment| segment.as_str())
-                .collect();
-            segments.push("class");
-            let mut arguments = vec![java::Expr::Path(Path::new(&segments))];
-            arguments.extend(lengths);
-            return java::Expr::MethodCall {
-                receiver: Some(Box::new(java::Expr::Path(Path::new(&[
-                    crate::adapter::java::SEQUENCES,
-                ])))),
-                name: Ident::new("newArray"),
-                args: arguments,
-            };
-        }
+    if let java::Type::Named { path, args } = innermost
+        && !args.is_empty()
+    {
+        let mut segments: Vec<&str> = path
+            .segments()
+            .iter()
+            .map(|segment| segment.as_str())
+            .collect();
+        segments.push("class");
+        let mut arguments = vec![java::Expr::Path(Path::new(&segments))];
+        arguments.extend(lengths);
+        return java::Expr::MethodCall {
+            receiver: Some(Box::new(java::Expr::Path(Path::new(&[
+                crate::adapter::java::SEQUENCES,
+            ])))),
+            name: Ident::new("newArray"),
+            args: arguments,
+        };
     }
     java::Expr::NewArray {
         element,

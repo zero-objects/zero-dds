@@ -78,6 +78,79 @@ namespace ZeroDds.Wire.Tests
             return data;
         }
 
+        // -- the operations no corpus case reaches ----------------------------
+
+        /// <summary>
+        /// The five operations the generated code reaches only in a dialect or
+        /// with a member no corpus case carries: <c>WritePidExtended</c>,
+        /// <c>WriteUnionOverlay</c>, <c>ReaderClearDiscard</c>,
+        /// <c>ReaderSave</c> and <c>ReaderRestore</c>
+        /// (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+        /// vectors, each against an oracle outside this code.
+        /// </summary>
+        private static void TheOperationsNoCorpusCaseReaches()
+        {
+            // The first parameter of `annotation-autoid-sequential` as Cyclone
+            // DDS recorded it, XCDR1 little endian
+            // (tests/interop-corpus/expected-bytes.tsv).
+            Writer pid = new Writer(Endianness.Little, 8, null, false);
+            Pid header = pid.WritePidExtended(0, ParameterRole.Member, false);
+            pid.WriteI32(-1234567);
+            pid.FinishPid(header);
+            Equal(Hex(pid.Finish()), "017f0800" + "00000000" + "04000000" + "7929edff",
+                "WritePidExtended: Cyclone's recorded parameter");
+
+            // A `short` read through a four-octet and a one-octet `default:`
+            // branch: Cyclone DDS 11.0.1 writes the union's storage, the
+            // member's octets with zeros above (`combined-everything`,
+            // crates/wire-codec/src/encode.rs `write_selected_branch`).
+            Writer overlay = new Writer(Endianness.Little, 4, null, false);
+            ulong pattern = Writer.BitPatternInt(-2, 2);
+            overlay.WriteUnionOverlay(pattern, 4);
+            overlay.WriteUnionOverlay(pattern, 1);
+            Equal(Hex(overlay.Finish()), "feff0000fe", "WriteUnionOverlay: the storage at the branch's width");
+
+            // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes
+            // before Table 9's value, so the call site asks for DISCARD and
+            // takes it back. Any other refusal is not a narrowing and stays.
+            Reader discarded = new Reader(Unhex("01020304"), Endianness.Little, 4, null);
+            discarded.ReaderRefuse(Status.Discarded);
+            Check(discarded.ReaderClearDiscard(), "ReaderClearDiscard takes back a Discarded");
+            Equal(discarded.ReaderStatus(), Status.Ok, "the status after ReaderClearDiscard");
+            Reader refused = new Reader(Unhex("01020304"), Endianness.Little, 4, null);
+            refused.ReaderRefuse(Status.OutOfRange);
+            Check(!refused.ReaderClearDiscard(), "ReaderClearDiscard leaves an OutOfRange");
+            Equal(refused.ReaderStatus(), Status.OutOfRange, "an OutOfRange stays");
+
+            // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as
+            // its DHEADER and the pairs, without a count. The reader counts the
+            // pairs, goes back and reads them again; a refusal made while
+            // counting goes back with the cursor.
+            Reader map = new Reader(
+                Unhex("10000000" + "01000000" + "0a000000" + "02000000" + "14000000"),
+                Endianness.Little, 4, null);
+            uint extent = map.ReadDheader();
+            int end = map.ReaderPosition() + (int)extent;
+            ReaderMark mark = map.ReaderSave();
+            int pairs = 0;
+            while (map.ReaderPosition() < end && map.ReaderStatus() == Status.Ok)
+            {
+                map.ReadI32();
+                map.ReadI32();
+                pairs++;
+            }
+
+            map.ReaderRefuse(Status.OutOfRange);
+            map.ReaderRestore(mark);
+            Equal(pairs, 2, "the counting pass finds two pairs");
+            Equal(map.ReadI32(), 1, "the first key, read again");
+            Equal(map.ReadI32(), 10, "the first value, read again");
+            Equal(map.ReadI32(), 2, "the second key, read again");
+            Equal(map.ReadI32(), 20, "the second value, read again");
+            Equal(map.ReaderPosition(), 20, "the end of the map");
+            Equal(map.ReaderStatus(), Status.Ok, "ReaderRestore takes the refusal back");
+        }
+
         // -- alignment ---------------------------------------------------------
 
         /// <summary>
@@ -973,6 +1046,7 @@ namespace ZeroDds.Wire.Tests
             Float128AgreesWithTheOracle();
             TheSupportNamespaceIsASupersetOfTheMaterialisersOwn();
             CorpusCasesMatchTheRustColumn();
+            TheOperationsNoCorpusCaseReaches();
 
             if (failures != 0)
             {

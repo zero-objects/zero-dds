@@ -60,3 +60,9 @@ features = ["extension-module"]
 # _core (= the Rust cdylib).
 python-source = "python"
 module-name = "zerodds._core"
+
+[tool.pytest.ini_options]
+# A test named by its clause (internal/release/rc8-test-suite.md, "Rules":
+# `<spec>_<section>_<what>`) is collected beside pytest's `test_*`:
+# `py_` for zerodds-py-1.0, `ffiloader_` for zerodds-ffi-loader-1.0.
+python_functions = ["test_*", "py_[0-9]*", "ffiloader_[0-9]*"]

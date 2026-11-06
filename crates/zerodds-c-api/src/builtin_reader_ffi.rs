@@ -314,7 +314,7 @@ pub unsafe extern "C" fn zerodds_builtin_samples_free(
         return;
     }
     // SAFETY: the pointer and length of a boxed slice that call leaked.
-    let mut array = unsafe { Box::from_raw(core::slice::from_raw_parts_mut(samples, count)) };
+    let mut array = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(samples, count)) };
     for sample in array.iter_mut() {
         // SAFETY: filled by `zerodds_builtin_reader_read`.
         unsafe { zerodds_builtin_sample_free(sample) };

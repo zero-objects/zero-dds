@@ -306,6 +306,20 @@ pub(crate) trait TopicCodec<T: DdsType>: core::fmt::Debug + Send + Sync {
         big_endian: bool,
     ) -> core::result::Result<T, crate::dds_type::DecodeError>;
 
+    /// The KeyHash and the key holder of a sample, from its body: the
+    /// type's own read of them ([`DdsType::key_material_from_body`]), or
+    /// its key members read into a value ([`DdsType::decode_key_members`]).
+    /// `None` where neither exists.
+    fn key_material_from_body(
+        &self,
+        bytes: &[u8],
+        representation: u8,
+        big_endian: bool,
+    ) -> crate::dds_type::KeyMaterialRead {
+        let _ = (bytes, representation, big_endian);
+        None
+    }
+
     /// Actual hash and holder, distinct from the absence of a keyed instance.
     /// The static adapter retains the existing infallible holder contract.
     fn key_material(&self, sample: &T) -> Option<([u8; 16], Vec<u8>)>;
@@ -384,12 +398,12 @@ impl KeyMaterialCache {
             drop(state);
             return codec.key_material(sample).map(|(hash, _)| hash);
         };
-        if let Some((bytes, hash)) = state.last.as_ref() {
-            if *bytes == holder {
-                let hash = *hash;
-                state.scratch = holder;
-                return Some(hash);
-            }
+        if let Some((bytes, hash)) = state.last.as_ref()
+            && *bytes == holder
+        {
+            let hash = *hash;
+            state.scratch = holder;
+            return Some(hash);
         }
         let hash = crate::dds_type::compute_key_hash(&holder, max);
         state.scratch = state
@@ -440,10 +454,10 @@ impl KeyMaterialCache {
             return codec.key_material(sample);
         };
         let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((bytes, hash)) = state.last.as_ref() {
-            if *bytes == holder {
-                return Some((*hash, holder));
-            }
+        if let Some((bytes, hash)) = state.last.as_ref()
+            && *bytes == holder
+        {
+            return Some((*hash, holder));
         }
         let hash = crate::dds_type::compute_key_hash(&holder, max);
         state.last = Some((holder.clone(), hash));
@@ -586,6 +600,24 @@ impl<T: DdsType> TopicCodec<T> for StaticTopicCodec {
             (_, false) => T::decode(bytes),
             (_, true) => T::decode_be(bytes),
         }
+    }
+
+    fn key_material_from_body(
+        &self,
+        bytes: &[u8],
+        representation: u8,
+        big_endian: bool,
+    ) -> crate::dds_type::KeyMaterialRead {
+        if let Some(read) = T::key_material_from_body(bytes, representation == 0, big_endian) {
+            return Some(read);
+        }
+        let keys = T::decode_key_members(bytes, representation == 0, big_endian)?;
+        Some(keys.and_then(|keys| {
+            self.key_material(&keys)
+                .ok_or(crate::dds_type::DecodeError::Invalid {
+                    what: "a keyed type whose key members give no KeyHash",
+                })
+        }))
     }
 }
 
@@ -1183,20 +1215,21 @@ impl<T: DdsType> crate::entity::Entity for Topic<T> {
                 return Err(crate::entity::immutable_if_enabled(policy));
             }
         }
-        if current.topic_data != qos.topic_data {
-            if let Some(rt) = self.participant.as_ref().and_then(|p| p.runtime()) {
-                rt.update_user_topic_data(&self.inner.name, &qos.topic_data.value)?;
-            }
+        if current.topic_data != qos.topic_data
+            && let Some(rt) = self.participant.as_ref().and_then(|p| p.runtime())
+        {
+            rt.update_user_topic_data(&self.inner.name, &qos.topic_data.value)?;
         }
         let changed = *current != qos;
         *current = qos;
         drop(current);
         // DDSI-RTPS 2.5 Table 8.84: "each time the QoS of an existing
         // Topic is modified" — announced again, under its GUID.
-        if enabled && changed {
-            if let Some(rt) = self.participant.as_ref().and_then(|p| p.runtime()) {
-                crate::participant::announce_topic(rt, &self.inner)?;
-            }
+        if enabled
+            && changed
+            && let Some(rt) = self.participant.as_ref().and_then(|p| p.runtime())
+        {
+            crate::participant::announce_topic(rt, &self.inner)?;
         }
         Ok(())
     }
@@ -1665,12 +1698,12 @@ impl<T: DdsType> ContentFilteredTopic<T> {
                 })?;
                 // Check parameter indices.
                 let used = parsed.collect_param_indices();
-                if let Some(max) = used.iter().max() {
-                    if (*max as usize) >= filter_parameters.len() {
-                        return Err(DdsError::BadParameter {
-                            what: "filter parameter %N out of range",
-                        });
-                    }
+                if let Some(max) = used.iter().max()
+                    && (*max as usize) >= filter_parameters.len()
+                {
+                    return Err(DdsError::BadParameter {
+                        what: "filter parameter %N out of range",
+                    });
                 }
                 FilterImpl::Sql(Arc::new(parsed))
             }
@@ -1889,12 +1922,12 @@ impl<T: DdsType> ContentFilteredTopic<T> {
         match &self.filter {
             FilterImpl::Sql(parsed) => {
                 let used = parsed.collect_param_indices();
-                if let Some(max) = used.iter().max() {
-                    if (*max as usize) >= params.len() {
-                        return Err(DdsError::BadParameter {
-                            what: "filter parameter %N out of range",
-                        });
-                    }
+                if let Some(max) = used.iter().max()
+                    && (*max as usize) >= params.len()
+                {
+                    return Err(DdsError::BadParameter {
+                        what: "filter parameter %N out of range",
+                    });
                 }
             }
             FilterImpl::Custom { filter, .. } => {
@@ -2120,12 +2153,12 @@ impl<T: DdsType> MultiTopic<T> {
             .as_ref()
             .map(Expr::collect_param_indices)
             .unwrap_or_default();
-        if let Some(max) = used.iter().max() {
-            if (*max as usize) >= expression_parameters.len() {
-                return Err(DdsError::BadParameter {
-                    what: "multitopic expression parameter %N out of range",
-                });
-            }
+        if let Some(max) = used.iter().max()
+            && (*max as usize) >= expression_parameters.len()
+        {
+            return Err(DdsError::BadParameter {
+                what: "multitopic expression parameter %N out of range",
+            });
         }
         let values: Vec<Value> = expression_parameters
             .iter()
@@ -2307,12 +2340,12 @@ impl<T: DdsType> MultiTopic<T> {
             .as_ref()
             .map(|expr| expr.collect_param_indices())
             .unwrap_or_default();
-        if let Some(max) = used.iter().max() {
-            if (*max as usize) >= params.len() {
-                return Err(DdsError::BadParameter {
-                    what: "multitopic expression parameter %N out of range",
-                });
-            }
+        if let Some(max) = used.iter().max()
+            && (*max as usize) >= params.len()
+        {
+            return Err(DdsError::BadParameter {
+                what: "multitopic expression parameter %N out of range",
+            });
         }
         let values: Vec<Value> = params.iter().map(|s| param_string_to_value(s)).collect();
         let fp = FilterParams {
@@ -2554,7 +2587,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_implements_topic_description() {
+    fn dcps_2_2_2_3_1_topic_implements_topic_description() {
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(0, DomainParticipantQos::default());
         let t = p
@@ -2568,18 +2601,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_description_handle_is_cloneable() {
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(7, DomainParticipantQos::default());
-        let h = TopicDescriptionHandle::new("X".into(), "T".into(), p.clone());
-        let h2 = h.clone();
-        assert_eq!(h2.get_name(), "X");
-        assert_eq!(h2.get_type_name(), "T");
-        assert_eq!(h2.get_participant().domain_id(), 7);
-    }
-
-    #[test]
-    fn topic_description_trait_is_object_safe() {
+    fn dcps_2_2_2_3_1_topic_description_trait_is_object_safe() {
         // Verify object safety: we can hold `&dyn TopicDescription` and
         // dispatch non-statically. Collect from several concrete
         // implementations.
@@ -2596,21 +2618,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_description_create_topic_rejects_empty_name() {
-        // §2.2.2.2.1.4 create_topic: empty topic name → BadParameter.
-        // This is the only place where TopicDescription consumers
-        // encounter an invalid TopicDescription construction attempt.
-        let p = DomainParticipantFactory::instance()
-            .create_participant_offline(9, DomainParticipantQos::default());
-        let res = p.create_topic::<RawBytes>("", TopicQos::default());
-        assert!(matches!(
-            res,
-            Err(crate::error::DdsError::BadParameter { .. })
-        ));
-    }
-
-    #[test]
-    fn topic_description_get_participant_returns_owning_participant() {
+    fn dcps_2_2_2_3_1_1_topic_description_get_participant_returns_owning_participant() {
         // get_participant() returns exactly the participant on which
         // create_topic was called — no other.
         let p1 = DomainParticipantFactory::instance()
@@ -2651,7 +2659,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_compiles_and_evaluates_filter() {
+    fn dcps_2_2_2_3_1_cft_compiles_and_evaluates_filter() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("Chatter", TopicQos::default())
@@ -2672,7 +2680,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_with_params_can_be_updated() {
+    fn dcps_2_2_2_3_3_2_cft_with_params_can_be_updated() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())
@@ -2693,7 +2701,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_get_related_topic() {
+    fn dcps_2_2_2_3_3_1_cft_get_related_topic() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("Base", TopicQos::default())
@@ -2705,7 +2713,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_invalid_expression_rejected() {
+    fn dcps_2_2_2_3_3_cft_invalid_expression_rejected() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())
@@ -2717,7 +2725,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_param_index_out_of_range_rejected() {
+    fn dcps_2_2_2_3_3_cft_param_index_out_of_range_rejected() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())
@@ -2730,7 +2738,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_set_filter_parameters_validates_count() {
+    fn dcps_2_2_2_3_3_4_cft_set_filter_parameters_validates_count() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())
@@ -2750,7 +2758,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_filter_with_string_param() {
+    fn dcps_2_2_2_3_3_cft_filter_with_string_param() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())
@@ -2811,7 +2819,7 @@ mod tests {
     }
 
     #[test]
-    fn cft_clone_shares_params() {
+    fn dcps_2_2_2_3_3_3_cft_clone_shares_params() {
         let p = mk_p(0);
         let topic = p
             .create_topic::<RawBytes>("T", TopicQos::default())

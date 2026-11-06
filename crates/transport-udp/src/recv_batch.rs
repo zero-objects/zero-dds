@@ -176,7 +176,10 @@ fn recv_batch_with(
         let addr_storage = unsafe { sockaddrs[i].assume_init_ref() };
         let source = sockaddr_storage_to_locator(addr_storage)?;
         let data: Arc<[u8]> = Arc::from(buf);
-        out.push(ReceivedDatagram { source, data });
+        out.push(ReceivedDatagram {
+            source,
+            data: data.into(),
+        });
     }
     Ok(n)
 }

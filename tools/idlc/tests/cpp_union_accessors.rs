@@ -127,7 +127,7 @@ fn compilers() -> Vec<&'static str> {
 }
 
 #[test]
-fn a_union_has_the_accessor_functions_and_goes_through_the_codec() {
+fn xtypes_7_5_1_4_a_union_has_the_accessor_functions_and_goes_through_the_codec() {
     let found = compilers();
     if found.is_empty() {
         eprintln!("SKIPPED: neither clang++ nor g++ on the path.");

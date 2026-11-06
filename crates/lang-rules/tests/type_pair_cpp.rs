@@ -117,7 +117,7 @@ const BASIC: &str = "module robot {
 };";
 
 #[test]
-fn a_pair_with_headers_gets_traits_and_support() {
+fn rpc_7_3_1_4_a_pair_with_headers_gets_traits_and_support() {
     let out = cpp(&format!("{COMMON}\n{BASIC}"));
     assert!(
         out.contains("struct dds_type_traits<::robot::Req>"),
@@ -281,7 +281,7 @@ dds::rpc::Octets zd_nested_probe(dds::rpc::WireEncoding encoding) {
 }
 
 #[test]
-fn a_pair_without_headers_is_the_enhanced_mapping() {
+fn rpc_7_3_1_4_a_pair_without_headers_is_the_enhanced_mapping() {
     let out = cpp("module robot {
            @RPCRequestType struct Req { long x; };
            @RPCReplyType struct Rep { long y; };
@@ -468,7 +468,7 @@ int main() {
 /// DDS-RPC 1.0 §7.4.2.3: "the run-time specification shall take precedence
 /// over the IDL annotations and the default mechanism in that order".
 #[test]
-fn the_service_name_is_run_time_then_annotation_then_default() {
+fn rpc_7_3_1_4_the_service_name_is_run_time_then_annotation_then_default() {
     let text = cpp(&format!(
         "{COMMON}\n{BASIC}\nmodule arm {{
            @RPCRequestType @service(name=\"Arm\")

@@ -550,10 +550,10 @@ impl CodecTarget for Julia {
         if type_ == jl::Type::Primitive(jl::Primitive::Int64) {
             return jl::Expr::free_call("zd_i64", vec![value]);
         }
-        if type_ == jl::Type::Primitive(jl::Primitive::Bool) {
-            if let jl::Expr::Literal(Literal::Int(text)) = &value {
-                return jl::Expr::Literal(Literal::Bool(text != "0"));
-            }
+        if type_ == jl::Type::Primitive(jl::Primitive::Bool)
+            && let jl::Expr::Literal(Literal::Int(text)) = &value
+        {
+            return jl::Expr::Literal(Literal::Bool(text != "0"));
         }
         match &type_ {
             jl::Type::Primitive(

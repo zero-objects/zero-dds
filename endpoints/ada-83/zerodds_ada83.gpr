@@ -19,9 +19,8 @@ project Zerodds_Ada83 is
       for Default_Switches ("Ada") use ("-gnat83", "-g", "-O2");
       --  The reliability CORE + its unit test are strict Ada 83. The UDP sender
       --  app is the driver half (GNAT.Sockets / Command_Line / Real_Time are not
-      --  Ada 83), so -- like endpoints/c builds reliable_udp_app.c with the
-      --  default gcc std, not the strict-C89 Makefile -- it is compiled with a
-      --  relaxed standard while the core it calls stays -gnat83.
+      --  Ada 83), so it is compiled with a relaxed standard while the core it
+      --  calls stays -gnat83.
       for Switches ("example_ada83_reliable.adb") use ("-gnat2012", "-g", "-O2");
    end Compiler;
 

@@ -90,7 +90,7 @@ const PRIMITIVES: &str = "\
 };";
 
 #[test]
-fn both_backends_write_the_same_members_in_the_same_order() {
+fn xtypes_7_4_3_both_backends_write_the_same_members_in_the_same_order() {
     let c = as_c(PRIMITIVES, "Sample", Encoding::PlainCdr2);
     let java = as_java(PRIMITIVES, "Sample", Encoding::PlainCdr2);
 
@@ -108,7 +108,7 @@ fn both_backends_write_the_same_members_in_the_same_order() {
     for op in order {
         let camel = match op {
             "bool" => "writeBool".to_string(),
-            other => format!("write{}{}", &other[..1].to_uppercase(), &other[1..]),
+            other => format!("write{}{}", other[..1].to_uppercase(), &other[1..]),
         };
         let at = position(&java, &format!("{camel}("));
         assert!(at > last, "the Java column writes {op} out of order");
@@ -117,7 +117,7 @@ fn both_backends_write_the_same_members_in_the_same_order() {
 }
 
 #[test]
-fn the_difference_between_the_two_is_spelling() {
+fn xtypes_7_4_3_the_difference_between_the_two_is_spelling() {
     // the assertions read the IDL-to-Java shape
     zerodds_lang_rules::adapter::java::with_mapping(
         zerodds_lang_rules::adapter::java::JavaMapping::Omg,
@@ -157,7 +157,7 @@ fn the_difference_between_the_two_is_spelling_omg() {
 /// walk not at all: the same counted loop over the same length, asked
 /// for in two places the languages keep it.
 #[test]
-fn a_sequence_is_one_loop_and_two_ways_of_asking_its_length() {
+fn xtypes_7_4_3_a_sequence_is_one_loop_and_two_ways_of_asking_its_length() {
     const IDL: &str = "@final struct Bag { sequence<long> items; };";
     let c = as_c(IDL, "Bag", Encoding::PlainCdr2);
     let java = as_java(IDL, "Bag", Encoding::PlainCdr2);
@@ -175,7 +175,7 @@ fn a_sequence_is_one_loop_and_two_ways_of_asking_its_length() {
 /// closes it afterwards. If the seam leaked, this is where: the header
 /// handle is a local whose type each backend names for itself.
 #[test]
-fn a_mutable_aggregate_opens_and_closes_a_header_in_both() {
+fn xtypes_7_4_3_4_2_a_mutable_aggregate_opens_and_closes_a_header_in_both() {
     const IDL: &str = "\
 @mutable struct Tagged {
     @id(7) long first;
@@ -210,7 +210,7 @@ fn a_mutable_aggregate_opens_and_closes_a_header_in_both() {
 /// So this is asserted against the runtime's signature rather than
 /// against a byte.
 #[test]
-fn an_unsigned_local_is_wide_enough_in_java() {
+fn idl4java_7_2_4_1_1_an_unsigned_local_is_wide_enough_in_java() {
     use zerodds_lang_cst::java::Primitive;
     use zerodds_lang_rules::emit::{CodecTarget, Scalar};
 
@@ -241,7 +241,7 @@ fn an_unsigned_local_is_wide_enough_in_java() {
 /// or allocating an `ArrayList` would generate source against types that
 /// are never emitted, and nothing would say so until javac ran.
 #[test]
-fn the_java_backend_spells_the_shapes_the_materialiser_declares() {
+fn xtypes_7_4_3_the_java_backend_spells_the_shapes_the_materialiser_declares() {
     // the assertions read the IDL-to-Java shape
     zerodds_lang_rules::adapter::java::with_mapping(
         zerodds_lang_rules::adapter::java::JavaMapping::Omg,
@@ -299,7 +299,7 @@ fn the_java_backend_spells_the_shapes_the_materialiser_declares_omg() {
 /// `T::unary("%", …)` turns this red, and the fix is to give each
 /// backend a form for it.
 #[test]
-fn the_walk_asks_for_one_unary_operator_and_no_others() {
+fn xtypes_7_4_3_the_walk_asks_for_one_unary_operator_and_no_others() {
     let mut found: Vec<String> = Vec::new();
     let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/emit");
     for entry in std::fs::read_dir(&source).expect("the emit directory") {

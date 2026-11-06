@@ -31,8 +31,10 @@ got.thenAccept(samples -> samples.forEach(s -> handle(s.data())));
 Each method has an overload taking an explicit `Executor`, so the wait/write
 work can run on a caller-supplied pool.
 
-## Tests (CI job `endpoints-java-async`)
+## Tests (CI job `merge-java-omgdds`)
 
-`mvn test` on `crates/java-omgdds/java` runs the whole binding suite including
-`DdsAsyncTest`: `writeAsync` → `takeAsync` round-trip, `waitForSamplesAsync`
-true-when-present and false-on-timeout. Toolchain: `maven` + JDK 17 from apt.
+`mvn verify` on `crates/java-omgdds/java` runs the whole binding suite including
+`DdsAsyncTest`: a sample written with `writeAsync` is taken with `takeAsync`,
+`waitForSamplesAsync` completes true when data is present and false on
+timeout. The merge job `merge-java-omgdds` (`ci/integration_scenarios.py`) runs
+it when a file of the Java PSM changes. Toolchain: `maven` and the JDK from apt.

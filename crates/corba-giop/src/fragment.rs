@@ -74,10 +74,10 @@ impl Fragment {
     /// # Errors
     /// Buffer write error.
     pub fn encode(&self, version: Version, w: &mut Writer) -> GiopResult<()> {
-        if version.uses_v1_2_request_layout() {
-            if let Some(h) = &self.header {
-                h.encode(w)?;
-            }
+        if version.uses_v1_2_request_layout()
+            && let Some(h) = &self.header
+        {
+            h.encode(w)?;
         }
         w.write_bytes(&self.body);
         Ok(())

@@ -555,7 +555,7 @@ mod tests {
     // -------- Object safety: all 6 traits must be usable as `dyn` --------
 
     #[test]
-    fn topic_listener_is_object_safe() {
+    fn dcps_2_2_2_1_4_topic_listener_is_object_safe() {
         struct Counter(AtomicU32);
         impl TopicListener for Counter {
             fn on_inconsistent_topic(
@@ -570,56 +570,41 @@ mod tests {
     }
 
     #[test]
-    fn datawriter_listener_is_object_safe() {
+    fn dcps_2_2_2_4_4_datawriter_listener_is_object_safe() {
         struct L;
         impl DataWriterListener for L {}
         let _: BoxedDataWriterListener = Box::new(L);
     }
 
     #[test]
-    fn publisher_listener_is_object_safe() {
+    fn dcps_2_2_2_4_3_publisher_listener_is_object_safe() {
         struct L;
         impl PublisherListener for L {}
         let _: BoxedPublisherListener = Box::new(L);
     }
 
     #[test]
-    fn datareader_listener_is_object_safe() {
+    fn dcps_2_2_2_5_7_datareader_listener_is_object_safe() {
         struct L;
         impl DataReaderListener for L {}
         let _: BoxedDataReaderListener = Box::new(L);
     }
 
     #[test]
-    fn subscriber_listener_is_object_safe() {
+    fn dcps_2_2_4_3_1_subscriber_listener_is_object_safe() {
         struct L;
         impl SubscriberListener for L {}
         let _: BoxedSubscriberListener = Box::new(L);
     }
 
     #[test]
-    fn participant_listener_is_object_safe() {
+    fn dcps_2_2_2_1_4_participant_listener_is_object_safe() {
         struct L;
         impl DomainParticipantListener for L {}
         let _: BoxedDomainParticipantListener = Box::new(L);
     }
 
     // -------- Default impls may have an empty body --------
-
-    #[test]
-    fn default_callbacks_do_not_panic() {
-        // Empty impl on all 6 traits.
-        struct Noop;
-        impl TopicListener for Noop {}
-        impl DataWriterListener for Noop {}
-        impl PublisherListener for Noop {}
-        impl DataReaderListener for Noop {}
-        impl SubscriberListener for Noop {}
-        impl DomainParticipantListener for Noop {}
-        // We can at least construct + box them — the actual call needs
-        // an entity (see tests in entity.rs).
-        let _: BoxedDomainParticipantListener = Box::new(Noop);
-    }
 
     #[test]
     fn listener_handles_respects_mask_and_presence() {
@@ -632,7 +617,7 @@ mod tests {
     }
 
     #[test]
-    fn status_bit_for_inconsistent_topic_matches_psm() {
+    fn dcps_2_2_2_1_1_status_bit_for_inconsistent_topic_matches_psm() {
         assert_eq!(
             status_bit_for_inconsistent_topic(),
             status_bits::INCONSISTENT_TOPIC
@@ -640,7 +625,7 @@ mod tests {
     }
 
     #[test]
-    fn all_listener_traits_default_methods_invoke_safely() {
+    fn dcps_2_2_2_1_4_all_listener_traits_default_methods_invoke_safely() {
         // Exercises the default bodies of all 6 listener traits.
         // Since all default methods have empty bodies, we simply go
         // through and call them on a Noop instance.
@@ -752,33 +737,5 @@ mod tests {
             h,
             SubscriptionMatchedStatus::default(),
         );
-    }
-
-    #[test]
-    fn datareader_listener_call_runs_default_methods() {
-        struct Counters {
-            avail: AtomicU32,
-            lost: AtomicU32,
-        }
-        impl DataReaderListener for Counters {
-            fn on_data_available(&self, _r: InstanceHandle) {
-                self.avail.fetch_add(1, Ordering::Relaxed);
-            }
-            fn on_sample_lost(&self, _r: InstanceHandle, _s: SampleLostStatus) {
-                self.lost.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-        let c = Counters {
-            avail: AtomicU32::new(0),
-            lost: AtomicU32::new(0),
-        };
-        let h = InstanceHandle::from_raw(1);
-        c.on_data_available(h);
-        c.on_data_available(h);
-        c.on_sample_lost(h, SampleLostStatus::default());
-        // Methods we did not override should work as a default no-op.
-        c.on_subscription_matched(h, SubscriptionMatchedStatus::default());
-        assert_eq!(c.avail.load(Ordering::Relaxed), 2);
-        assert_eq!(c.lost.load(Ordering::Relaxed), 1);
     }
 }

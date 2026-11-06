@@ -50,7 +50,7 @@ fn hex(text: &str) -> Vec<u8> {
 }
 
 #[test]
-fn a_get_types_request_is_cdr_le_with_its_parameters_as_a_parameter_list() {
+fn rtps_10_4_a_get_types_request_is_cdr_le_with_its_parameters_as_a_parameter_list() {
     let request = TypeLookupRequest {
         header: RequestHeader {
             writer_guid: [0x5a; 16],
@@ -106,7 +106,7 @@ fn minimal_struct() -> TypeObject {
 }
 
 #[test]
-fn a_get_types_reply_carries_its_object_in_the_encoding_version_1() {
+fn rtps_10_4_a_get_types_reply_carries_its_object_in_the_encoding_version_1() {
     let reply = TypeLookupReplyMessage {
         header: ReplyHeader {
             writer_guid: [0x5a; 16],

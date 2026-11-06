@@ -137,10 +137,10 @@ and `SharedSecurityGate::set_access_control` (AccessControl);
 (Logging)
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::enable_security_builtins_with_auth_activates_handshake_driver`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::create_topic_is_asked_of_the_plugin`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`,
-`crates/dcps/tests/security_bundle_e2e.rs::bundle_logger_is_wired_into_runtime_config_and_fires`
+`crates/dcps/src/runtime.rs::tests::security_2_3_enable_security_builtins_with_auth_activates_handshake_driver`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_create_topic_is_asked_of_the_plugin`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`,
+`crates/dcps/tests/security_bundle_e2e.rs::security_2_3_bundle_logger_is_wired_into_runtime_config_and_fires`
 
 **Status:** `done` — Authentication, Cryptographic, AccessControl and Logging
 have a public insertion point. The insertion point for AccessControl
@@ -160,8 +160,8 @@ Tagging (§9.7) are exempt. Tests green on the Linux test host
 `crates/security-runtime/src/shared.rs::SharedSecurityGate::application_access_control`
 
 **Tests:**
-`crates/dcps/tests/security_access_plugin_e2e.rs::instance_operations_are_asked_of_the_plugin`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::participant_set_qos_is_asked_of_the_plugin`
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_instance_operations_are_asked_of_the_plugin`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_participant_set_qos_is_asked_of_the_plugin`
 
 **Status:** `done` — a user inserts an AccessControl plugin of their own into a
 participant (`SharedSecurityGate::set_access_control`); the gate and the runtime
@@ -271,12 +271,12 @@ Secure TypeLookup Endpoints (see section 7.5.11)."
 `crates/rtps/src/wire_types.rs` (`EntityId::TL_SVC_*_SECURE_*`)
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::the_secure_type_lookup_service_is_protected_per_submessage`,
-`crates/dcps/src/type_lookup_transport.rs::tests::the_secure_service_has_its_own_endpoints`,
+`crates/dcps/src/runtime.rs::tests::security_6_1_the_secure_type_lookup_service_is_protected_per_submessage`,
+`crates/dcps/src/type_lookup_transport.rs::tests::security_6_1_the_secure_service_has_its_own_endpoints`,
 `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
-**Status:** `done` — the four secure TypeLookup endpoints exist (`a542c9f545d`,
-`7cfdb4fd99a`, `37de123a72e`): own EntityIds, SPDP announcement, protection per
+**Status:** `done` — the four secure TypeLookup endpoints exist (`02bf5bbd061`,
+`06cdb138f77`, `aa0cc16ae0b`): own EntityIds, SPDP announcement, protection per
 submessage, tokens. Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
@@ -374,9 +374,9 @@ without seeing their content.
 (`check_create_relay_datareader`, `remote_may_relay`);
 `crates/routing-service/src/config.rs` (`Route::relay`)
 
-**Tests:** `crates/dcps/tests/security_relay_e2e.rs::a_relay_forwards_what_it_cannot_read_and_the_reader_takes_it_as_the_originals`,
-`crates/dcps/tests/security_relay_e2e.rs::a_relay_only_reader_is_matched_and_cannot_read_the_payload`,
-`crates/routing-service/tests/relay_route.rs::a_relay_route_forwards_on_behalf_of_the_writer`
+**Tests:** `crates/dcps/tests/security_relay_e2e.rs::security_7_1_1_4_a_relay_forwards_what_it_cannot_read_and_the_reader_takes_it_as_the_originals`,
+`crates/dcps/tests/security_relay_e2e.rs::security_7_1_1_4_a_relay_only_reader_is_matched_and_cannot_read_the_payload`,
+`crates/routing-service/tests/relay_route.rs::rtps_8_7_9_a_relay_route_forwards_on_behalf_of_the_writer`
 
 **Status:** `done` — a relay reader is created on the grant's `<relay>`, gets the
 submessage key only and hands the payload on unopened; a writer sends it
@@ -451,8 +451,8 @@ it had been declared to have extensibility kind FINAL."
 DHEADER); `crates/security/src/generic_message.rs::ParticipantGenericMessage::to_cdr`
 (l. 138, APPENDABLE type without DHEADER)
 
-**Tests:** `crates/security/src/token.rs::tests::cdr_le_layout_class_id_only`,
-`crates/security/src/generic_message.rs::tests::message_data_dataholder_is_inline_not_length_prefixed`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_1_2_cdr_le_layout_class_id_only`,
+`crates/security/src/generic_message.rs::tests::security_7_3_1_2_message_data_dataholder_is_inline_not_length_prefixed`
 
 **Status:** done — `DataHolder` and `ParticipantGenericMessage` are written as
 XCDR1 without DHEADER; the discovery types as a ParameterList.
@@ -476,7 +476,7 @@ parameters from `0x8000`); `crates/security-runtime/src/caps_wire.rs` (names
 **Status:** `done` — the own parameter ids of ZeroDDS are in the vendor range.
 Own entries in `PID_PROPERTY_LIST` carry the vendor prefix `org.zerodds.`
 (§7.3.2); the tags of an endpoint go as `PID_DATA_TAGS` (0x1003), no longer as
-`dds.sec.data_tags.*` entries (`715589c2094`, `aef84a98a0b`). Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
+`dds.sec.data_tags.*` entries (`e6a2278023e`, `566c260b2ef`). Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.2 Property_t: name, value, propagate
 
@@ -488,8 +488,8 @@ attribute 'propagate'". Attributes `name String`, `value String`,
 **Repo:** `crates/security/src/properties.rs::Property` (l. 21, fields `name`,
 `value`, `propagate`)
 
-**Tests:** `crates/security/src/properties.rs::tests::propagatable_filter`,
-`crates/security/src/properties.rs::tests::set_replaces_duplicate`
+**Tests:** `crates/security/src/properties.rs::tests::security_7_3_2_propagatable_filter`,
+`crates/security/src/properties.rs::tests::security_7_3_2_set_replaces_duplicate`
 
 **Status:** done
 
@@ -506,16 +506,16 @@ versions of this specification."
 `crates/security-runtime/src/caps_wire.rs`
 
 **Tests:**
-`crates/security-runtime/tests/property_qos_names.rs::builtin_property_names_match_the_spec_strings`,
-`crates/security-pki/src/x509v1_compat.rs::tests::the_property_name_reads_as_a_deviation`
+`crates/security-runtime/tests/property_qos_names.rs::security_7_3_2_builtin_property_names_match_the_spec_strings`,
+`crates/security-pki/src/x509v1_compat.rs::tests::security_7_3_2_the_property_name_reads_as_a_deviation`
 
 **Status:** `done` — the names of the spec (`dds.sec.auth.*`,
 `dds.sec.access.{permissions,permissions_ca,governance}`,
 `dds.sec.crypto.{symmetric_cipher_algorithm,rtps_psk_*}`, `dds.sec.log.plugin`,
 `dds.sec.log.builtin.DDS_LogTopic.{log_file,distribute}`) stay; every name the
 spec does not define is under `org.zerodds.`:
-`org.zerodds.sec.{access.psk_governance,access.psk_permissions,access.subject_name,auth.crl,auth.accept_x509v1_identity_certificate,crypto.max_blocks_per_session,crypto.rtps_psk_secret_passphrase_alt,crypto.rtps_psk_secret_passphrase_extra,log.level,log.jsonl.path,log.syslog.*,log.builtin.DDS_LogTopic.{logging_level,legacy_topic}}`,
-the plugin classes in `caps_wire.rs` (`7ed5d2621ff`, `aef84a98a0b`). The name
+`org.zerodds.sec.{access.psk_governance,access.psk_permissions,access.subject_name,auth.crl,auth.accept_x509v1_identity_certificate,crypto.max_blocks_per_session,log.level,log.jsonl.path,log.syslog.*,log.builtin.DDS_LogTopic.{logging_level,legacy_topic}}`,
+the plugin classes in `caps_wire.rs` (`861b246f986`, `566c260b2ef`). The name
 `dds.sec.log.builtin.DDS_LogTopic.logging_level` stays in the bench app for Fast
 DDS, which reads it itself. New on the wire and in configurations: the old names
 are no longer read. Tests green on the Linux test host
@@ -533,8 +533,8 @@ the prefix would be 'com.acme.'".
 (`org.zerodds.psk.*`)
 
 **Tests:**
-`crates/security-runtime/tests/spdp_caps_e2e.rs::secure_caps_roundtrip_through_spdp_beacon`,
-`crates/security-runtime/tests/property_qos_names.rs::builtin_property_names_match_the_spec_strings`
+`crates/security-runtime/tests/spdp_caps_e2e.rs::security_7_3_2_secure_caps_roundtrip_through_spdp_beacon`,
+`crates/security-runtime/tests/property_qos_names.rs::security_7_3_2_builtin_property_names_match_the_spec_strings`
 
 **Status:** `done` — all names of ZeroDDS start with `org.zerodds.` (the domain
 zerodds.org, reversed): `org.zerodds.sec.*`, `org.zerodds.crypto.*`,
@@ -570,13 +570,13 @@ entries); `crates/qos/src/policies/property.rs::PropertyQosPolicy`
 (`binary_value`, `propagate` per entry)
 
 **Tests:**
-`crates/security/src/properties.rs::tests::binary_properties_carry_propagate_and_it_is_not_serialized`,
+`crates/security/src/properties.rs::tests::security_7_3_3_binary_properties_carry_propagate_and_it_is_not_serialized`,
 `crates/qos/src/policies/property.rs::tests::only_propagate_true_entries_are_propagated`,
 `crates/rtps/src/property_list.rs::tests::binary_properties_cross_the_wire`
 
 **Status:** `done` — `BinaryProperty` has `propagate` (not serialized); the
 local `PropertyList` and the `PropertyQosPolicy` hold binary properties
-(`b4c91fb4ed1`, `928d39304cd`, `f6657d231dd`). Tests green on the Linux test host
+(`22a56e7d491`, `7a42590d03b`, `1a9a81d9f4a`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.3 BinaryProperty_t: propagate and local binary properties
@@ -592,13 +592,13 @@ entries); `crates/qos/src/policies/property.rs::PropertyQosPolicy`
 (`binary_value`, `propagate` per entry)
 
 **Tests:**
-`crates/security/src/properties.rs::tests::binary_properties_carry_propagate_and_it_is_not_serialized`,
+`crates/security/src/properties.rs::tests::security_7_3_3_binary_properties_carry_propagate_and_it_is_not_serialized`,
 `crates/qos/src/policies/property.rs::tests::only_propagate_true_entries_are_propagated`,
 `crates/rtps/src/property_list.rs::tests::binary_properties_cross_the_wire`
 
 **Status:** `done` — `BinaryProperty` has `propagate` (not serialized); the
 local `PropertyList` and the `PropertyQosPolicy` hold binary properties
-(`b4c91fb4ed1`, `928d39304cd`, `f6657d231dd`). Tests green on the Linux test host
+(`22a56e7d491`, `7a42590d03b`, `1a9a81d9f4a`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.3.1 IDL Representation for BinaryProperty_t
@@ -609,7 +609,7 @@ string name; OctetSeq value; @non-serialized boolean propagate; };"
 **Repo:** `crates/security/src/token.rs::encode` (l. 357, `encode_string` and
 `encode_octet_seq`)
 
-**Tests:** `crates/security/src/token.rs::tests::token_with_binary_property_roundtrip`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_3_1_token_with_binary_property_roundtrip`
 
 **Status:** done — name as CDR string, value as `sequence<octet>`.
 
@@ -628,12 +628,12 @@ length 13 where the first octet is 0x45 [...] and the last octet is 0x00."
 `crates/security-permissions/src/plugin.rs` (`validate_remote_permissions`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::the_algorithm_names_follow_the_setting`,
-`crates/discovery/src/security/stack.rs::tests::the_reply_has_the_form_of_the_request`,
-`crates/security/src/vendor_forms.rs::tests::the_spec_form_has_the_nul_for_every_peer`,
-`crates/security-runtime/src/qos_properties.rs::tests::the_algo_name_form_is_the_spec_form_unless_named`,
-`crates/security-pki/src/plugin.rs::tests::request_token_has_spec_class_id_and_properties`,
-`crates/security-pki/src/plugin.rs::tests::the_authenticated_peer_credential_token_holds_c_id_and_c_perm`
+`crates/discovery/src/security/stack.rs::tests::security_7_3_3_1_the_algorithm_names_follow_the_setting`,
+`crates/discovery/src/security/stack.rs::tests::security_7_3_3_1_the_reply_has_the_form_of_the_request`,
+`crates/security/src/vendor_forms.rs::tests::security_7_3_3_1_the_spec_form_has_the_nul_for_every_peer`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_7_3_3_1_the_algo_name_form_is_the_spec_form_unless_named`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_request_token_has_spec_class_id_and_properties`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_the_authenticated_peer_credential_token_holds_c_id_and_c_perm`
 
 **Status:** `done` — the default is the form of the spec: `c.dsign_algo` and
 `c.kagree_algo` have 13 and 21 octets, the NUL included (§7.3.3.1), for every
@@ -644,11 +644,11 @@ read. RTI Connext 7.7.0 reported "not properly null terminated" for a `c.id`
 without it (OMG dds-security, Linux test host). The forms of other vendors are named settings:
 `org.zerodds.sec.algo_name_nul` / `ZERODDS_SEC_ALGO_NAME_NUL` = `omit` (without
 the NUL, Fast DDS), `mirror` (as initiator with the NUL, as replier in the form
-of the request: a request without the NUL is answered without it, `97a1d7fc001`,
-`89b70651dad`) or `by_vendor` (the NUL for OpenDDS only, the former form)
-(`e87b0411306`). Measured (Linux test host, sec-diag10, before it became a setting, then
+of the request: a request without the NUL is answered without it, `2826c9d2f8a`,
+`39042d4726e`) or `by_vendor` (the NUL for OpenDDS only, the former form)
+(`89b57d9e637`). Measured (Linux test host, sec-diag10, before it became a setting, then
 as a behaviour of the replier): `fastdds:zerodds` and `zerodds:fastdds` of
-`common-subset` ok on `32f11c44270`; with the default `spec` ZeroDDS answers a
+`common-subset` ok on `fe6a7157255`; with the default `spec` ZeroDDS answers a
 Fast DDS initiator with the NUL, which is not measured and, by the finding of
 that time, NO_MATCH. Fast DDS cells need `mirror`; the column with Fast DDS in
 `tests/perf/dds-roundtrip-bench/security-matrix/deep_matrix.sh` sets it in the
@@ -672,8 +672,8 @@ PropertySeq`, `binary_properties BinaryPropertySeq`.
 
 **Repo:** `crates/security/src/token.rs::DataHolder` (l. 96)
 
-**Tests:** `crates/security/src/token.rs::tests::pki_dh_identity_token_roundtrip`,
-`crates/security/src/token.rs::tests::token_with_binary_property_roundtrip`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_4_pki_dh_identity_token_roundtrip`,
+`crates/security/src/token.rs::tests::security_7_3_3_1_token_with_binary_property_roundtrip`
 
 **Status:** done
 
@@ -686,10 +686,10 @@ typedef sequence<DataHolder> DataHolderSeq;"
 **Repo:** `crates/security/src/token.rs::encode` (l. 357),
 `decode_consumed` (l. 381)
 
-**Tests:** `crates/security/src/token.rs::tests::cdr_le_layout_class_id_only`,
-`crates/security/src/token.rs::tests::empty_data_holder_roundtrip_be`,
-`crates/security/src/token.rs::tests::missing_trailing_nul_rejected`,
-`crates/security/src/token.rs::tests::truncated_buffer_is_error`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_1_2_cdr_le_layout_class_id_only`,
+`crates/security/src/token.rs::tests::security_7_3_4_1_empty_data_holder_roundtrip_be`,
+`crates/security/src/token.rs::tests::security_7_3_4_1_missing_trailing_nul_rejected`,
+`crates/security/src/token.rs::tests::security_7_3_4_1_truncated_buffer_is_error`
 
 **Status:** done — `DataHolderSeq` appears in `ParticipantGenericMessage`
 (§7.3.22).
@@ -703,8 +703,8 @@ shall be specified by each plugin implementation."
 **Repo:** `crates/security/src/token.rs::IdentityToken` (l. 247,
 `pub type IdentityToken = DataHolder`)
 
-**Tests:** `crates/security/src/token.rs::tests::pki_dh_identity_token_roundtrip`,
-`crates/security/src/token.rs::tests::permissions_token_roundtrip`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_4_pki_dh_identity_token_roundtrip`,
+`crates/security/src/token.rs::tests::security_7_3_5_permissions_token_roundtrip`
 
 **Status:** done
 
@@ -719,13 +719,13 @@ to an ICANN domain name they own".
 `crates/security-permissions/src/psk_access.rs::CLASS_ID_PSK_PERMISSIONS`
 
 **Tests:**
-`crates/security-pki/src/psk.rs::tests::the_handshake_classes_are_not_the_spec_class`
+`crates/security-pki/src/psk.rs::tests::security_7_3_5_1_the_handshake_classes_are_not_the_spec_class`
 
 **Status:** `done` — the classes of `DDS:Auth:PSK` and `DDS:Access:PSK` are
 those of the spec (`DDS:Auth:PSK:1.2`, `DDS:Access:PSK:1.2`, sec-auth and
 sec-access); the handshake with PSK that ZeroDDS speaks in addition carries the
 classes `org.zerodds.auth.psk-handshake:1.0[+AuthReq|+AuthReply|+AuthFinal]`, a
-reversed domain name (`7ed5d2621ff`). The constant
+reversed domain name (`861b246f986`). The constant
 `DDS:Auth:PKI-DH:1.0+IdentityStatus` in
 `crates/security-pki/src/identity_status.rs` is unused; the IdentityStatusToken
 of the plugin carries the class `DDS:Auth:PKI-DH:1.0` (Table 53). Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1018-083929.log`).
@@ -745,8 +745,8 @@ Token DatawriterCryptoToken; typedef Token DatareaderCryptoToken;"
 `AuthRequestMessageToken`, `HandshakeMessageToken`, `CryptoToken` as
 `DataHolder`)
 
-**Tests:** `crates/security/src/token.rs::tests::pki_dh_identity_token_roundtrip`,
-`crates/security/src/token.rs::tests::permissions_token_roundtrip`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_4_pki_dh_identity_token_roundtrip`,
+`crates/security/src/token.rs::tests::security_7_3_5_permissions_token_roundtrip`
 
 **Status:** done — all tokens are `DataHolder` on the wire. Rust has no alias
 for `Token`, `MessageToken`, `AuthenticatedPeerCredentialToken`,
@@ -763,7 +763,7 @@ DatawriterCryptoTokenSeq; typedef CryptoTokenSeq DatareaderCryptoTokenSeq;"
 **Repo:** `crates/security/src/generic_message.rs::ParticipantGenericMessage`
 (l. 97, `message_data: Vec<DataHolder>`)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::message_data_dataholder_is_inline_not_length_prefixed`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_1_2_message_data_dataholder_is_inline_not_length_prefixed`
 
 **Status:** done — on the wire the sequences appear only as `message_data`;
 in Rust they are `Vec<DataHolder>` without aliases of their own.
@@ -778,7 +778,7 @@ the absence of a Token."
 **Repo:** `crates/security/src/token.rs::DataHolder` (l. 96, `Default` yields
 an empty `class_id` and empty sequences)
 
-**Tests:** `crates/security/src/token.rs::tests::empty_data_holder_roundtrip_le`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_5_3_empty_data_holder_roundtrip_le`
 
 **Status:** done — `DataHolder::default()` is TokenNIL; there is no named
 constant. The use of TokenNIL in the plugin operations is listed with the
@@ -793,13 +793,13 @@ clause 8 for the values".
 names of Table 25 and 26), `crates/security-pki/src/identity_token.rs`
 
 **Tests:**
-`crates/security-pki/src/handshake_token.rs::tests::an_algorithm_name_over_64_characters_is_refused`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1`,
-`crates/security-pki/src/identity_token.rs::tests::the_algorithms_are_the_names_of_table_25`
+`crates/security-pki/src/handshake_token.rs::tests::security_7_3_6_an_algorithm_name_over_64_characters_is_refused`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_6_the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1`,
+`crates/security-pki/src/identity_token.rs::tests::security_7_3_6_the_algorithms_are_the_names_of_table_25`
 
 **Status:** `done` — algorithm names are strings of up to 64 characters; ZeroDDS
 sends the names of version 1.2 (Tables 25 and 26: `ECDSA+P256+SHA256`, ...) and
-those of 1.1 only when the peer reads them (sec-crypto/sec-auth, `8a3e542788d`).
+those of 1.1 only when the peer reads them (sec-crypto/sec-auth, `9cfe9bd68b9`).
 Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1018-083929.log`).
 
 ### §7.3.6 CryptoAlgorithmName: bound 64 not checked
@@ -810,10 +810,10 @@ Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1018-
 (`MAX_ALGO_NAME` = 64)
 
 **Tests:**
-`crates/security-pki/src/handshake_token.rs::tests::an_algorithm_name_over_64_characters_is_refused`
+`crates/security-pki/src/handshake_token.rs::tests::security_7_3_6_an_algorithm_name_over_64_characters_is_refused`
 
 **Status:** `done` — an algorithm name over 64 characters is refused when read
-(`a4c86d977df`). Test green on the Linux test host
+(`37aea50c01b`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.7 CryptoAlgorithmId and CRYPTO_ALGORITHM_INVALID_ID
@@ -825,8 +825,8 @@ specification, 0x80 to 0xFF vendor-specific.
 **Repo:** `crates/security-crypto/src/crypto_transform.rs::CryptoTransformKind`
 (l. 29, `None = 0` to `Aes256Gcm = 4`)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::kind_round_trip_all_variants`,
-`crates/security-crypto/src/crypto_transform.rs::tests::unknown_kind_rejected`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_7_kind_round_trip_all_variants`,
+`crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_7_unknown_kind_rejected`
 
 **Status:** done — the value 0 means no transformation; ZeroDDS occupies no
 value in the vendor range. There is no constant named
@@ -841,7 +841,7 @@ CryptoAlgorithmBit CRYPTO_ALGORITHM_COMPATIBILITY_MODE=0x80000000;" — bits
 
 **Repo:** `crates/security/src/algorithm.rs::CryptoAlgorithmBit`, `CRYPTO_ALGORITHM_COMPATIBILITY_MODE`; `crates/rtps/src/security_algo_info.rs::CRYPTO_ALGORITHM_COMPATIBILITY_MODE`
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — type and constant `0x80000000`.
 
@@ -852,7 +852,7 @@ meaning defined in 7.3.10.1."
 
 **Repo:** `crates/security/src/algorithm.rs::CRYPTO_ALGORITHM_COMPATIBILITY_MODE`
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — in `zerodds-security` and in `zerodds-rtps`.
 
@@ -864,7 +864,7 @@ CryptoAlgorithmSet CRYPTO_ALGORITHM_SET_EMPTY = 0x00000000;"
 
 **Repo:** `crates/security/src/algorithm.rs::CryptoAlgorithmSet`
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — type and both constants.
 
@@ -874,7 +874,7 @@ CryptoAlgorithmSet CRYPTO_ALGORITHM_SET_EMPTY = 0x00000000;"
 
 **Repo:** `crates/security/src/algorithm.rs::CRYPTO_ALGORITHM_SET_ALL`, `CRYPTO_ALGORITHM_SET_EMPTY`
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — `0xffffffff` and `0`.
 
@@ -950,15 +950,15 @@ call in `crates/security-runtime/src/profile.rs`;
 `crates/dcps/src/runtime.rs::local_algorithm_infos`
 
 **Tests:**
-`crates/security-pki/src/plugin.rs::tests::the_algorithm_masks_follow_the_identity_and_the_key_agreement`,
-`crates/security-pki/src/plugin.rs::tests::the_required_trust_chain_mask_holds_the_algorithm_of_the_permissions_document`,
-`crates/security-permissions/tests/cms_verify.rs::the_signature_algorithm_of_a_signed_document_is_read`
+`crates/security-pki/src/plugin.rs::tests::security_7_3_11_the_algorithm_masks_follow_the_identity_and_the_key_agreement`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_11_the_required_trust_chain_mask_holds_the_algorithm_of_the_permissions_document`,
+`crates/security-permissions/tests/cms_verify.rs::security_7_3_11_the_signature_algorithm_of_a_signed_document_is_read`
 
 **Status:** `done` — `trust_chain.required` holds the signature of the identity
 certificate and the signature of the own permissions document (read from the
 SignerInfo of the `.p7s`, set when the profile is loaded);
 `message_auth.required` the signature of the identity key; `supported` the four
-algorithms the plugin verifies (`aef84a98a0b`). Tests green on the Linux test host
+algorithms the plugin verifies (`566c260b2ef`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195430.log`).
 
@@ -971,7 +971,7 @@ authenticate with each other."
 
 **Repo:** `crates/dcps/src/runtime.rs::participant_incompatibility`; `crates/rtps/src/security_algo_info.rs::ParticipantSecurityDigitalSignatureAlgorithmInfo::compatible_with`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`, `crates/rtps/src/security_algo_info.rs::tests::signature_and_key_establishment_compatibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`, `crates/rtps/src/security_algo_info.rs::tests::signature_and_key_establishment_compatibility`
 
 **Status:** `done` — a remote participant with incompatible signature masks is not authenticated (`security.participant.incompatible`).
 
@@ -1012,7 +1012,7 @@ other participants must support in order to interoperate."
 
 **Repo:** `crates/security-pki/src/plugin.rs::set_participant_security_config`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_algorithm_masks_follow_the_identity_and_the_key_agreement`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_7_3_11_the_algorithm_masks_follow_the_identity_and_the_key_agreement`
 
 **Status:** `done` — `supported`: DHE+MODP-2048-256, ECDHE-CEUM P-256 and P-384; `required`: the preferred one (X25519 has no bit and gives 0).
 
@@ -1023,7 +1023,7 @@ compatible according to the compatibility rules [...] of 7.3.10.1."
 
 **Repo:** `crates/dcps/src/runtime.rs::participant_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`
 
 **Status:** `done` — as §7.3.11.1.
 
@@ -1067,7 +1067,7 @@ that will be used by user-defined (non-builtin) endpoint."
 
 **Repo:** `crates/dcps/src/runtime.rs::local_algorithm_infos`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`
 
 **Status:** `done` — `supported`: AES128 and AES256; `builtin_endpoints_required_mask` and `user_endpoints_default_required_mask`: the width of the property `dds.sec.crypto.symmetric_cipher_algorithm`; `builtin_kx_endpoints_required_mask`: AES256 (the Kx key is AES256-GCM).
 
@@ -1080,7 +1080,7 @@ user_endpoints_default_required_mask is not considered for compatibility".
 
 **Repo:** `crates/dcps/src/runtime.rs::participant_incompatibility`; `crates/rtps/src/security_algo_info.rs::ParticipantSecuritySymmetricCipherAlgorithmInfo::compatible_with`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`, `crates/rtps/src/security_algo_info.rs::tests::symmetric_cipher_info_compatibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`, `crates/rtps/src/security_algo_info.rs::tests::symmetric_cipher_info_compatibility`
 
 **Status:** `done` — builtin and Kx requirements of both sides; `user_endpoints_default_required_mask` does not count.
 
@@ -1114,7 +1114,7 @@ ParticipantSecuritySymmetricCipherAlgorithmInfo symmetric_cipher; };"
 
 **Status:** `done` — the aggregate type exists
 (`ParticipantSecurityAlgorithmInfo`: 40 octets, the three parts in the order of
-the spec; `EndpointSecurityAlgorithmInfo`) (`a5b73d27f19`). Test green on the Linux test host
+the spec; `EndpointSecurityAlgorithmInfo`) (`ea094fbe5fd`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`). Its use in the plugin
 operations belongs to the items of §9.
 
@@ -1146,7 +1146,7 @@ contains the Endpoint."
 `crates/rtps/src/security_algo_info.rs::tests::the_aggregates_hold_their_members_in_order`
 
 **Status:** `done` — the field `supported_mask` exists; it is not serialized
-(`a5b73d27f19`). Tests green on the Linux test host
+(`ea094fbe5fd`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.15 required_mask of a DataWriter and a DataReader
@@ -1163,14 +1163,14 @@ to matched writers".
 `crates/security-runtime/src/plugin_attributes.rs::endpoint_cipher_required_mask`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::an_endpoint_requires_the_algorithm_its_own_property_names`,
-`crates/dcps/src/runtime.rs::tests::endpoints_with_an_incompatible_configuration_do_not_match`,
-`crates/security-runtime/src/plugin_attributes.rs::tests::an_endpoint_requires_the_algorithm_it_names`
+`crates/dcps/src/runtime.rs::tests::security_7_3_15_an_endpoint_requires_the_algorithm_its_own_property_names`,
+`crates/dcps/src/runtime.rs::tests::security_7_3_15_endpoints_with_an_incompatible_configuration_do_not_match`,
+`crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_15_an_endpoint_requires_the_algorithm_it_names`
 
 **Status:** `done` — an endpoint requires the algorithm its own property
 `dds.sec.crypto.symmetric_cipher_algorithm` names; it goes into discovery as
 `PID_ENDPOINT_SECURITY_SYMMETRIC_CIPHER` (0x1013), and an endpoint with an
-incompatible setting is not matched (`b7c1adc7281`). Tests green on the Linux test host
+incompatible setting is not matched (`02271881c32`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -1183,7 +1183,7 @@ E2.required_mask)".
 
 **Repo:** `crates/dcps/src/runtime.rs::endpoint_incompatibility`, `wire_writer_to_remote_reader`, `wire_reader_to_remote_writer`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::endpoints_with_an_incompatible_configuration_do_not_match`, `crates/rtps/src/security_algo_info.rs::tests::endpoint_symmetric_cipher_compatibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_15_endpoints_with_an_incompatible_configuration_do_not_match`, `crates/rtps/src/security_algo_info.rs::tests::endpoint_symmetric_cipher_compatibility`
 
 **Status:** `done` — endpoints with an incompatible requirement are not matched (`match.refused`).
 
@@ -1196,7 +1196,7 @@ DomainParticipant that contains the Endpoint".
 
 **Repo:** `crates/rtps/src/security_algo_info.rs::EndpointSecuritySymmetricCipherAlgorithmInfo::spec_default`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::endpoints_with_an_incompatible_configuration_do_not_match`, `crates/rtps/src/security_algo_info.rs::tests::sym_info_spec_default`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_15_endpoints_with_an_incompatible_configuration_do_not_match`, `crates/rtps/src/security_algo_info.rs::tests::sym_info_spec_default`
 
 **Status:** `done` — missing: the `user_endpoints_default_required_mask` of the participant of the endpoint.
 
@@ -1215,7 +1215,7 @@ symmetric_cipher; };"
 
 **Status:** `done` — the aggregate type exists
 (`ParticipantSecurityAlgorithmInfo`: 40 octets, the three parts in the order of
-the spec; `EndpointSecurityAlgorithmInfo`) (`a5b73d27f19`). Test green on the Linux test host
+the spec; `EndpointSecurityAlgorithmInfo`) (`ea094fbe5fd`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`). Its use in the plugin
 operations belongs to the items of §9.
 
@@ -1226,7 +1226,7 @@ operations belongs to the items of §9.
 
 **Repo:** `crates/security-crypto/src/crypto_transform.rs::CryptoTransformIdentifier::key_revision`; `crates/security-crypto/src/plugin.rs` (`KeyMaterial::key_revision`)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::the_key_revision_is_part_of_the_kind`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_17_the_key_revision_is_part_of_the_kind`
 
 **Status:** `done` — three octets, in the `transformation_kind` of the CryptoHeader.
 
@@ -1237,7 +1237,7 @@ represent changes to Key Material."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::check_header_kind`, `from_keymat_cyclone`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_key_revision_is_carried_in_the_keymat_and_the_header`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_3_17_the_key_revision_is_carried_in_the_keymat_and_the_header`
 
 **Status:** `done` — the key material keeps the revision of its keymat, a CryptoHeader under another revision of the same key id is refused. Making a key revision (`revise_local_entity_keys`, §9.5.1.6) is missing (its own item).
 
@@ -1250,7 +1250,7 @@ key_revision_value[2]".
 
 **Repo:** `crates/security/src/algorithm.rs::CryptoTransformKeyRevisionIntHolder`, `key_revision_to_int`, `key_revision_from_int`
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_key_revision_int_holder_follows_the_formula`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_17_the_key_revision_int_holder_follows_the_formula`
 
 **Status:** `done` — `256*256*r[0] + 256*r[1] + r[2]`.
 
@@ -1263,7 +1263,7 @@ transformation_algorithm_id; }; #define CRYPTO_TRANSFORM_KIND_INVALID
 
 **Repo:** `crates/security-crypto/src/crypto_transform.rs`; `crates/security-crypto/src/plugin.rs`
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::the_key_revision_is_part_of_the_kind`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_17_the_key_revision_is_part_of_the_kind`
 
 **Status:** `done` — revision and algorithm id, read the same in both codecs.
 
@@ -1275,7 +1275,7 @@ with a CryptoTransformKeyId."
 
 **Repo:** `crates/security-crypto/src/crypto_transform.rs::CryptoTransformIdentifier`
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::the_key_revision_is_part_of_the_kind`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_17_the_key_revision_is_part_of_the_kind`
 
 **Status:** `done` — as §7.3.17.
 
@@ -1289,12 +1289,12 @@ Cipher and MAC algorithms, see clause 8."
 `from_transform_kind_id`)
 
 **Tests:**
-`crates/security-crypto/src/suite.rs::tests::aes128_gmac_uses_spec_id_1`,
-`crates/security-crypto/src/suite.rs::tests::from_id_roundtrip_for_all_supported`
+`crates/security-crypto/src/suite.rs::tests::security_7_3_18_2_aes128_gmac_uses_spec_id_1`,
+`crates/security-crypto/src/suite.rs::tests::security_7_3_18_2_from_id_roundtrip_for_all_supported`
 
 **Status:** `done` — the ids are those of §8.1: 0x01 AES128-GMAC, 0x02
 AES128-GCM, 0x03 AES256-GMAC, 0x04 AES256-GCM; id 0x01 no longer carries
-HMAC-SHA256 (`702c1c51a54`, before this package; the entries were out of date).
+HMAC-SHA256 (`e95eb4a1ed0`, before this package; the entries were out of date).
 Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.18.2 Id 0x01 carries HMAC-SHA256 instead of AES128-GMAC
@@ -1306,12 +1306,12 @@ CID_AES128_GMAC = 0x01;"
 `from_transform_kind_id`)
 
 **Tests:**
-`crates/security-crypto/src/suite.rs::tests::aes128_gmac_uses_spec_id_1`,
-`crates/security-crypto/src/suite.rs::tests::from_id_roundtrip_for_all_supported`
+`crates/security-crypto/src/suite.rs::tests::security_7_3_18_2_aes128_gmac_uses_spec_id_1`,
+`crates/security-crypto/src/suite.rs::tests::security_7_3_18_2_from_id_roundtrip_for_all_supported`
 
 **Status:** `done` — the ids are those of §8.1: 0x01 AES128-GMAC, 0x02
 AES128-GCM, 0x03 AES256-GMAC, 0x04 AES256-GCM; id 0x01 no longer carries
-HMAC-SHA256 (`702c1c51a54`, before this package; the entries were out of date).
+HMAC-SHA256 (`e95eb4a1ed0`, before this package; the entries were out of date).
 Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.19 CryptoTransformKeyId
@@ -1325,8 +1325,8 @@ CryptoTransformKeyId."
 (l. 99, `key_id: [u8; 4]`); `crates/security-crypto/src/plugin.rs::KeyMaterial`
 (`transformation_key_id`, generated at random, l. 91–97)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::transform_identifier_round_trip`,
-`crates/security-crypto/src/plugin.rs::tests::key_rotation_changes_the_wire_key_id_and_the_derived_session_key`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_19_transform_identifier_round_trip`,
+`crates/security-crypto/src/plugin.rs::tests::security_7_3_19_key_rotation_changes_the_wire_key_id_and_the_derived_session_key`
 
 **Status:** done — four random octets per KeyMaterial.
 
@@ -1341,8 +1341,8 @@ CryptoTransformKeyId transformation_key_id; };"
 (l. 278, writes `transform_kind` and `transformation_key_id` at the start of
 the CryptoHeader)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::transform_identifier_round_trip`,
-`crates/security-crypto/src/crypto_transform.rs::tests::header_round_trip_with_full_iv`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_19_transform_identifier_round_trip`,
+`crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_20_header_round_trip_with_full_iv`
 
 **Status:** done — eight octets, `transformation_kind` before
 `transformation_key_id`.
@@ -1357,7 +1357,7 @@ transformation_key_id attribute to identify the key material".
 
 **Repo:** `crates/security-crypto/src/crypto_transform.rs::CryptoTransformIdentifier`
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::the_key_revision_is_part_of_the_kind`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_17_the_key_revision_is_part_of_the_kind`
 
 **Status:** `done` — algorithm and revision.
 
@@ -1372,11 +1372,11 @@ a common DDS Domain."
 key `(Sender, transformation_key_id, Revision)`, `decode_data_by_key_id`)
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_key_is_found_by_sender_key_id_and_revision`
+`crates/security-crypto/src/plugin.rs::tests::security_7_3_20_2_a_key_is_found_by_sender_key_id_and_revision`
 
 **Status:** `done` — the remote key is stored and looked up by (handle of the
 sender, `transformation_key_id`, revision); two peers with the same
-`transformation_key_id` do not overwrite each other (`409b63fcd0d`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
+`transformation_key_id` do not overwrite each other (`757dffecc26`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.21 PropertyQosPolicy
 
@@ -1415,7 +1415,7 @@ PropertyQosPolicy property; };"
 **Repo:** `crates/dcps/src/qos.rs::DomainParticipantQos` (l. 306, field
 `property`, l. 313)
 
-**Tests:** `crates/dcps/tests/security_qos_properties.rs::a_complete_dds_sec_property_list_creates_a_secured_participant`
+**Tests:** `crates/dcps/tests/security_qos_properties.rs::security_7_3_21_a_complete_dds_sec_property_list_creates_a_secured_participant`
 
 **Status:** done
 
@@ -1428,25 +1428,25 @@ property; DataTagQosPolicy data_tags; };"
 `propagated_properties`); `crates/dcps/src/runtime.rs::register_endpoint_crypto`
 
 **Tests:**
-`crates/dcps/src/qos.rs::tests::property_is_a_member_and_immutable_after_enable`,
-`crates/dcps/src/runtime.rs::tests::only_propagated_properties_are_announced`,
-`crates/dcps/src/runtime.rs::tests::the_cipher_property_of_an_endpoint_sets_its_key_width`,
-`crates/zerodds-c-api/src/qos_ffi.rs::tests::property_and_data_tags_cross_the_c_abi_both_ways`
+`crates/dcps/src/qos.rs::tests::security_7_3_21_property_is_a_member_and_immutable_after_enable`,
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_only_propagated_properties_are_announced`,
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_the_cipher_property_of_an_endpoint_sets_its_key_width`,
+`crates/zerodds-c-api/src/qos_ffi.rs::tests::security_7_3_21_property_and_data_tags_cross_the_c_abi_both_ways`
 
 **Status:** `done` — the field exists and cannot be changed after enabling;
 `dds.sec.crypto.symmetric_cipher_algorithm` sets the key width of the writer
 (§10.5.1.1), a value outside Table 22 refuses it with `SecurityConfiguration`;
 the entries with `propagate = TRUE` go as `PID_PROPERTY_LIST` into the
-`PublicationBuiltinTopicData` (`f6657d231dd`). Tests green on the Linux test host
+`PublicationBuiltinTopicData` (`1a9a81d9f4a`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`). The C structs
 `ZeroDdsDataWriterQos` and `ZeroDdsDataReaderQos`
 (`crates/zerodds-c-api/src/qos_ffi.rs`) end in the members `property` and
-`data_tags` (`e797d6d6433`, header `e08203d6784`); the layouts in
-`crates/ts-node` (`dd8e8f32c24`) and `crates/cs` (`1bd5d2126cf`) follow, the C++
+`data_tags` (`9d1754bd9b3`, header `0c056753f66`); the layouts in
+`crates/ts-node` (`693c5166ecd`) and `crates/cs` (`18402df876b`) follow, the C++
 binding reads the header. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-220659.log`):
-`crates/zerodds-c-api/src/qos_ffi.rs::tests::property_and_data_tags_cross_the_c_abi_both_ways`.
+`crates/zerodds-c-api/src/qos_ffi.rs::tests::security_7_3_21_property_and_data_tags_cross_the_c_abi_both_ways`.
 The bindings ts-node and csharp were not built or run.
 
 ### §7.3.21 DataReaderQos.property
@@ -1458,18 +1458,18 @@ property; DataTagQosPolicy data_tags; };"
 
 **Tests:**
 `crates/rtps/src/subscription_data.rs::tests::endpoint_property_list_roundtrip`,
-`crates/dcps/src/runtime.rs::tests::the_cipher_property_of_an_endpoint_sets_its_key_width`,
-`crates/zerodds-c-api/src/qos_ffi.rs::tests::property_and_data_tags_cross_the_c_abi_both_ways`
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_the_cipher_property_of_an_endpoint_sets_its_key_width`,
+`crates/zerodds-c-api/src/qos_ffi.rs::tests::security_7_3_21_property_and_data_tags_cross_the_c_abi_both_ways`
 
 **Status:** `done` — as for `DataWriterQos.property`: the field, the key width
 of the reader and the announcement of the `propagate = TRUE` entries in the
 `SubscriptionBuiltinTopicData` exist. The C structs `ZeroDdsDataWriterQos` and
 `ZeroDdsDataReaderQos` (`crates/zerodds-c-api/src/qos_ffi.rs`) end in the
-members `property` and `data_tags` (`e797d6d6433`, header `e08203d6784`); the
-layouts in `crates/ts-node` (`dd8e8f32c24`) and `crates/cs` (`1bd5d2126cf`)
+members `property` and `data_tags` (`9d1754bd9b3`, header `0c056753f66`); the
+layouts in `crates/ts-node` (`693c5166ecd`) and `crates/cs` (`18402df876b`)
 follow, the C++ binding reads the header. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-220659.log`):
-`crates/zerodds-c-api/src/qos_ffi.rs::tests::property_and_data_tags_cross_the_c_abi_both_ways`.
+`crates/zerodds-c-api/src/qos_ffi.rs::tests::security_7_3_21_property_and_data_tags_cross_the_c_abi_both_ways`.
 The bindings ts-node and csharp were not built or run.
 
 ### §7.3.21 Tag, TagSeq, DataTags, DataTagQosPolicy
@@ -1483,13 +1483,13 @@ struct DataTags { TagSeq tags; }; typedef DataTags DataTagQosPolicy;"
 `announced_data_tags`)
 
 **Tests:** `crates/qos/src/policies/data_tag.rs::tests::tags_keep_their_order`,
-`crates/dcps/src/runtime.rs::tests::data_tags_are_announced`
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_data_tags_are_announced`
 
 **Status:** `done` — `Tag`, `DataTagQosPolicy` and the fields `data_tags` of
 `DataWriterQos` and `DataReaderQos` exist (not changeable after enabling) and go
-into discovery as `PID_DATA_TAGS` (`bf4642c3c25`, `7b1de8f5255`). Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
+into discovery as `PID_DATA_TAGS` (`03bec975665`, `0edb3c53462`). Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`). The member in the C
-struct is with the items on `property` (built, `e797d6d6433`).
+struct is with the items on `property` (built, `9d1754bd9b3`).
 
 ### §7.3.21 DataWriterQos.data_tags and DataReaderQos.data_tags
 
@@ -1500,13 +1500,13 @@ struct is with the items on `property` (built, `e797d6d6433`).
 `announced_data_tags`)
 
 **Tests:** `crates/qos/src/policies/data_tag.rs::tests::tags_keep_their_order`,
-`crates/dcps/src/runtime.rs::tests::data_tags_are_announced`
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_data_tags_are_announced`
 
 **Status:** `done` — `Tag`, `DataTagQosPolicy` and the fields `data_tags` of
 `DataWriterQos` and `DataReaderQos` exist (not changeable after enabling) and go
-into discovery as `PID_DATA_TAGS` (`bf4642c3c25`, `7b1de8f5255`). Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
+into discovery as `PID_DATA_TAGS` (`03bec975665`, `0edb3c53462`). Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`). The member in the C
-struct is with the items on `property` (built, `e797d6d6433`).
+struct is with the items on `property` (built, `9d1754bd9b3`).
 
 ### §7.3.21 Propagation of the PropertyQosPolicy through discovery
 
@@ -1519,13 +1519,13 @@ ones with propagate=TRUE are propagated via DDS discovery".
 `RuntimeConfig.participant_properties`; `crates/rtps/src/participant_data.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::the_propagated_participant_properties_reach_the_peer`,
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_the_propagated_participant_properties_reach_the_peer`,
 `crates/rtps/src/participant_data.rs::tests::participant_data_properties_roundtrip`
 
 **Status:** `done` — only entries of the participant's `PropertyQosPolicy` with
 `propagate = TRUE` go as `PID_PROPERTY_LIST` into the SPDP beacon; a change goes
-out at once; a list the wire cannot carry is refused (`a5b73d27f19`,
-`e357ab7a5ac`). Test green on the Linux test host
+out at once; a list the wire cannot carry is refused (`ea094fbe5fd`,
+`91ddf7b58f8`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.3.22 MessageIdentity
@@ -1535,8 +1535,8 @@ GUID_t source_guid; long long sequence_number; };"
 
 **Repo:** `crates/security/src/generic_message.rs::MessageIdentity` (l. 80)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::nil_message_identity`,
-`crates/security/src/generic_message.rs::tests::roundtrip_le`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_nil_message_identity`,
+`crates/security/src/generic_message.rs::tests::security_7_3_22_roundtrip_le`
 
 **Status:** done — `sequence_number` is aligned to eight.
 
@@ -1546,7 +1546,7 @@ GUID_t source_guid; long long sequence_number; };"
 
 **Repo:** `crates/security/src/generic_message.rs::ParticipantGenericMessage`
 
-**Tests:** `crates/security/src/generic_message.rs::tests::a_message_class_id_is_not_bounded_to_256_octets`, `::class_id_constants_match_spec`, `::invalid_class_id_utf8_rejected`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_a_message_class_id_is_not_bounded_to_256_octets`, `::security_7_3_22_class_id_constants_match_spec`, `::security_7_3_22_invalid_class_id_utf8_rejected`
 
 **Status:** `done` — an unbounded string; the decoder bounds it by the bound of the whole message only.
 
@@ -1556,7 +1556,7 @@ GUID_t source_guid; long long sequence_number; };"
 
 **Repo:** `crates/security/src/generic_message.rs` (`MAX_CLASS_ID_LEN`)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::a_message_class_id_is_not_bounded_to_256_octets`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_a_message_class_id_is_not_bounded_to_256_octets`
 
 **Status:** `done` — the bound of 256 octets is removed.
 
@@ -1571,9 +1571,9 @@ message_class_id; DataHolderSeq message_data; };"
 **Repo:** `crates/security/src/generic_message.rs::ParticipantGenericMessage`
 (l. 97), `to_cdr` (l. 138), `from_cdr` (l. 176)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::roundtrip_le`,
-`crates/security/src/generic_message.rs::tests::handshake_request_token_in_message_data`,
-`crates/security/src/generic_message.rs::tests::truncated_buffer_rejected`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_roundtrip_le`,
+`crates/security/src/generic_message.rs::tests::security_7_3_22_handshake_request_token_in_message_data`,
+`crates/security/src/generic_message.rs::tests::security_7_3_22_truncated_buffer_rejected`
 
 **Status:** done — the fields are called `destination_participant_key`,
 `destination_endpoint_key` and `source_endpoint_key` instead of `*_guid`.
@@ -1593,7 +1593,7 @@ participant_security_optional_attributes; };"
 `crates/rtps/src/participant_security_info.rs::tests::the_optional_attributes_are_the_third_member`
 
 **Status:** `done` — `ParticipantSecurityProtectionInfo` has the three members
-of the spec (`470192aa99a`, before this package; the entries were out of date).
+of the spec (`983fa7e88c7`, before this package; the entries were out of date).
 Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.23 ParticipantSecurityAttributesMaskExt missing
@@ -1643,7 +1643,7 @@ either of the masks, the comparison [...] shall ignore the attribute."
 
 **Repo:** `crates/rtps/src/participant_security_info.rs::is_compatible_with`; `crates/dcps/src/runtime.rs::participant_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`, `crates/rtps/src/participant_security_info.rs::tests::compatibility_is_equality_of_the_valid_masks`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`, `crates/rtps/src/participant_security_info.rs::tests::compatibility_is_equality_of_the_valid_masks`
 
 **Status:** `done` — equal masks, a mask without `IS_VALID` on either side is not compared. Not measured against Cyclone, Fast DDS, OpenDDS; `zerodds.sec.compatibility_check=ignore` turns it off.
 
@@ -1655,7 +1655,7 @@ consider the other participant as an 'unauthenticated participant.'"
 
 **Repo:** `crates/dcps/src/runtime.rs::spdp_security_handshake`, `inproc_drive_security_handshake`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`
 
 **Status:** `done` — the handshake does not begin; the participant stays unauthenticated.
 
@@ -1708,7 +1708,7 @@ comparison [...] shall ignore the attribute."
 
 **Repo:** `crates/rtps/src/endpoint_security_info.rs::is_compatible_with`; `crates/dcps/src/runtime.rs::endpoint_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::endpoints_with_an_incompatible_configuration_do_not_match`, `crates/rtps/src/endpoint_security_info.rs::tests::endpoint_compatibility_is_equality_of_the_valid_masks`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_15_endpoints_with_an_incompatible_configuration_do_not_match`, `crates/rtps/src/endpoint_security_info.rs::tests::endpoint_compatibility_is_equality_of_the_valid_masks`
 
 **Status:** `done` — as for participants; an endpoint without a mask (OpenDDS) is not compared.
 
@@ -1722,13 +1722,13 @@ DDS middleware (other than the is_valid bit)."
 `crates/dcps/src/runtime.rs` (passes the plugin's masks through)
 
 **Tests:**
-`crates/security-runtime/src/plugin_attributes.rs::tests::the_plugin_reads_back_what_it_announces`,
-`crates/security-runtime/src/plugin_attributes.rs::tests::key_protected_follows_data_encrypt_per_spec_10_4_1_2_6`,
-`crates/security-runtime/src/plugin_attributes.rs::tests::liveliness_protected_sets_0x40_per_spec_9_4_1_3`
+`crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_the_plugin_reads_back_what_it_announces`,
+`crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_key_protected_follows_data_encrypt_per_spec_10_4_1_2_6`,
+`crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_liveliness_protected_sets_0x40_per_spec_9_4_1_3`
 
 **Status:** `done` — the masks `plugin_*_security_attributes` come from the
 plugin (`plugin_attributes`) and the middleware only passes them on, it does not
-evaluate them (`ee7183c45df`). Tests green on the Linux test host
+evaluate them (`f6c269e76e5`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.3.25 NOT_ALLOWED_BY_SECURITY
@@ -1740,8 +1740,8 @@ on the DDS API that fails because the security plugins do not allow it."
 **Repo:** `crates/dcps/src/error.rs::DdsError::NotAllowedBySecurity` (l. 67),
 `return_code::NOT_ALLOWED_BY_SECURITY` (l. 211)
 
-**Tests:** `crates/dcps/src/error.rs::tests::rc_not_allowed_by_security_maps`,
-`crates/dcps/tests/security_endpoint_access_e2e.rs::the_six_omg_suite_refusals_reach_the_runtime`
+**Tests:** `crates/dcps/src/error.rs::tests::security_7_3_25_rc_not_allowed_by_security_maps`,
+`crates/dcps/tests/security_endpoint_access_e2e.rs::security_7_3_25_the_six_omg_suite_refusals_reach_the_runtime`
 
 **Status:** done — which operations return the code is stated with the
 AccessControl operations in §9.4 and §9.8.
@@ -1795,9 +1795,9 @@ DomainParticipant. This is enforced by the Authentication plugin."
 (`check_pdata`)
 
 **Tests:**
-`crates/security-pki/src/guid_adjust.rs::tests::adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`,
-`crates/dcps/tests/security_guid_wiring_e2e.rs::with_security_bundle_wires_the_identity_adjusted_prefix_not_random`,
-`crates/security-pki/src/plugin.rs::tests::a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`
+`crates/security-pki/src/guid_adjust.rs::tests::security_7_4_3_adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`,
+`crates/dcps/tests/security_guid_wiring_e2e.rs::security_7_4_3_with_security_bundle_wires_the_identity_adjusted_prefix_not_random`,
+`crates/security-pki/src/plugin.rs::tests::security_7_4_3_a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`
 
 **Status:** `done` — the own GUID prefix is derived from the certificate and
 that of a remote participant is checked against its certificate (the second item
@@ -1812,9 +1812,9 @@ below was already `done`). Tests green on the Linux test host
 `validate_remote_identity`: `remote_guids`)
 
 **Tests:**
-`crates/security-pki/src/plugin.rs::tests::a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`,
-`crates/security-pki/src/plugin.rs::tests::a_request_from_a_participant_discovered_under_another_guid_is_refused`,
-`crates/security-pki/src/plugin.rs::tests::a_reply_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`
+`crates/security-pki/src/plugin.rs::tests::security_7_4_3_a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`,
+`crates/security-pki/src/plugin.rs::tests::security_7_4_3_a_request_from_a_participant_discovered_under_another_guid_is_refused`,
+`crates/security-pki/src/plugin.rs::tests::security_7_4_3_a_reply_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`
 
 **Status:** `done` — the GUID in the `c.pdata` of request and reply must derive
 from the certificate's SubjectName and equal the prefix the participant was
@@ -1830,7 +1830,7 @@ Qos."
 `crates/dcps/src/runtime.rs::key_hash_of_keyless_write` (l. 14514)
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::keyed_alive_preserves_inline_hash_on_data_fragments_and_rebuilds`,
-`crates/dcps/src/runtime.rs::tests::alive_sample_without_key_hash_gets_the_types_computed_hash`
+`crates/dcps/src/runtime.rs::tests::rtps_8_7_10_alive_sample_without_key_hash_gets_the_types_computed_hash`
 
 **Status:** done — every change of a keyed type carries `PID_KEY_HASH`,
 independent of payload protection.
@@ -1846,7 +1846,7 @@ serialized key."
 **Repo:** `crates/dcps/src/runtime.rs::payload_key_hash`,
 `write_user_sample_with_key`, `write_user_lifecycle_with`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_key_hash_of_an_encrypted_payload_is_the_md5_of_the_key`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_4_4_the_key_hash_of_an_encrypted_payload_is_the_md5_of_the_key`
 
 **Status:** `done` — under `data_protection_kind` ENCRYPT, samples and
 dispose/unregister carry the MD5 of the key holder, also for keys of up to 16
@@ -1866,7 +1866,7 @@ kind set to something other than VOLATILE."
 **Repo:** `crates/dcps/src/runtime.rs::check_user_writer_partition_change`;
 `crates/dcps/src/publisher.rs` (`set_qos`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_publisher_partition_stays_with_a_durable_read_protected_writer`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_4_5_a_publisher_partition_stays_with_a_durable_read_protected_writer`
 
 **Status:** `done` — `Publisher::set_qos` refuses a change of the PARTITION
 of an enabled publisher with `ImmutablePolicy` when it holds a DataWriter
@@ -1908,11 +1908,11 @@ necessary key material."
 key `(Sender, transformation_key_id, Revision)`, `decode_data_by_key_id`)
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_key_is_found_by_sender_key_id_and_revision`
+`crates/security-crypto/src/plugin.rs::tests::security_7_3_20_2_a_key_is_found_by_sender_key_id_and_revision`
 
 **Status:** `done` — the remote key is stored and looked up by (handle of the
 sender, `transformation_key_id`, revision); two peers with the same
-`transformation_key_id` do not overwrite each other (`409b63fcd0d`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
+`transformation_key_id` do not overwrite each other (`757dffecc26`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.6.2.2 CryptoContent
 
@@ -1924,7 +1924,7 @@ plugin implementation."
 **Repo:** `crates/security-crypto/src/plugin.rs::push_sec_body` (l. 1106,
 `content.length` and ciphertext)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::sec_body_is_padded_to_four_for_any_ciphertext_length`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length`
 
 **Status:** done — format of the builtin plugin in §10.5.
 
@@ -1938,7 +1938,7 @@ in the CryptoHeader shall encode the CryptoTransformIdentifier".
 (l. 278, `transform_kind`, `transformation_key_id`, `session_id`,
 `iv_suffix`)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -1951,8 +1951,8 @@ Message."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116, `common_mac` and the number of receiver-specific MACs)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`,
-`crates/security-crypto/src/crypto_transform.rs::tests::footer_round_trip_with_receivers`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`,
+`crates/security-crypto/src/crypto_transform.rs::tests::security_7_4_6_2_4_footer_round_trip_with_receivers`
 
 **Status:** done — format in §10.5.
 
@@ -1964,7 +1964,7 @@ CryptoContent`.
 
 **Repo:** `crates/security-crypto/src/plugin.rs::push_sec_body` (l. 1106)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::sec_body_is_padded_to_four_for_any_ciphertext_length`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length`
 
 **Status:** done
 
@@ -1976,10 +1976,10 @@ submessageLength in the Submessage header is too small."
 **Repo:** `crates/security-crypto/src/plugin.rs::parse_secure_submessages`
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_secure_body_with_too_small_a_length_is_invalid`
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_3_a_secure_body_with_too_small_a_length_is_invalid`
 
 **Status:** `done` — a SEC_BODY whose length is smaller than `content.length`
-asks for is refused in the codec of the runtime (`66307936260`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
+asks for is refused in the codec of the runtime (`176b9d6a0b6`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.6.3.4 SecureBodySubMsg: Logical Interpretation
 
@@ -1989,8 +1989,8 @@ Submessage or a whole RTPS Message."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116), `assemble_srtps_message` (l. 956)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`,
-`crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`,
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done — with GMAC (ids 0x01, 0x03) the SEC_BODY is left out, the
 submessages stand in clear text between prefix and postfix (as Cyclone does).
@@ -2004,7 +2004,7 @@ CryptoTransformIdentifier`, `plugin_crypto_header_extra octet[]`.
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116, 20-octet CryptoHeader after the submessage header)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2016,10 +2016,10 @@ submessageLength in the Submessage header is too small."
 **Repo:** `crates/security-crypto/src/plugin.rs::parse_secure_submessages`
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_secure_prefix_with_too_small_a_length_is_invalid`
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_4_3_a_secure_prefix_with_too_small_a_length_is_invalid`
 
 **Status:** `done` — a SEC_PREFIX whose length does not hold the 20 octets of
-the CryptoHeader is refused (`66307936260`). Test green on the Linux test host
+the CryptoHeader is refused (`176b9d6a0b6`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.6.4.4 SecurePrefixSubMsg: exactly one submessage, then SEC_POSTFIX
@@ -2031,7 +2031,7 @@ SecurePostfixSubMsg."
 **Repo:** `crates/security-crypto/src/plugin.rs::parse_secure_submessages`
 (l. 1144, order prefix, body, postfix)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2043,7 +2043,7 @@ SecurePostfixSubMsg."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2056,10 +2056,10 @@ SecurePostfixSubMsg."
 **Repo:** `crates/security-crypto/src/plugin.rs::parse_secure_submessages`
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_secure_postfix_without_a_prefix_is_invalid`
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_5_3_a_secure_postfix_without_a_prefix_is_invalid`
 
 **Status:** `done` — a SEC_POSTFIX without a SEC_PREFIX is invalid and refused
-(`66307936260`). Test green on the Linux test host
+(`176b9d6a0b6`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.6.5.4 SecurePostfixSubMsg: Logical Interpretation
@@ -2072,7 +2072,7 @@ the related SecurePrefixSubMsg."
 **Repo:** `crates/security-crypto/src/plugin.rs::parse_secure_submessages`
 (l. 1144, `common_mac` from the postfix, transformation from the prefix)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2087,12 +2087,12 @@ read, `assemble_srtps_message`);
 `crates/security-rtps/src/srtps.rs::PRE_SHARED_KEY_FLAG` (0x04)
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_message_with_the_flag_a_is_checked_with_its_header`,
-`crates/security-crypto/src/plugin.rs::tests::the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message`,
-`crates/security-rtps/src/srtps.rs::tests::psk_encode_sets_pre_shared_key_flag`
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_6_a_message_with_the_flag_a_is_checked_with_its_header`,
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_6_the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message`,
+`crates/security-rtps/src/srtps.rs::tests::security_7_4_6_6_psk_encode_sets_pre_shared_key_flag`
 
 **Status:** `done` — E and the CryptoHeader are written; A and P are read
-(`9732105bf3e`, `a01b12a89e9`, before this package; the entries were out of
+(`d4c82c477f8`, `1c3ccac2102`, before this package; the entries were out of
 date). The sender does not set A: it does not bind the RTPS header into the AAD,
 which the spec leaves open. Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
@@ -2108,10 +2108,10 @@ the RTPS Header and RTPS HeaderExtension as 'Additional Authenticated Data'
 `open_rtps_cyclone` with the AAD)
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_message_with_the_flag_a_is_checked_with_its_header`
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_6_a_message_with_the_flag_a_is_checked_with_its_header`
 
 **Status:** `done` — a message with A=1 is checked against the RTPS header and
-HeaderExtension as AAD (`9732105bf3e`, before this package; the entry was out of
+HeaderExtension as AAD (`d4c82c477f8`, before this package; the entry was out of
 date). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2125,10 +2125,10 @@ using a Pre-Shared-Key".
 `srtps_psk_flag`; `crates/security-crypto/src/plugin.rs` (`parse_srtps`)
 
 **Tests:**
-`crates/security-rtps/src/srtps.rs::tests::psk_encode_sets_pre_shared_key_flag`
+`crates/security-rtps/src/srtps.rs::tests::security_7_4_6_6_psk_encode_sets_pre_shared_key_flag`
 
 **Status:** `done` — P is bit 0x04; the PSK codec sets and reads it, the codec
-of the runtime reads it (`a01b12a89e9`, `9732105bf3e`, before this package; the
+of the runtime reads it (`1c3ccac2102`, `d4c82c477f8`, before this package; the
 entry was out of date). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2142,7 +2142,7 @@ SecureRTPSPrefixSubMsg shall immediately follow the RTPS Header."
 (l. 1400, SRTPS_PREFIX only at octet 20); `crates/security-crypto/src/plugin.rs::parse_srtps_body`
 (l. 995, "expected SRTPS_PREFIX(20)")
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done
 
@@ -2155,8 +2155,8 @@ SecureRTPSPostfixSubMsg."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_srtps_message`
 (l. 956), `parse_srtps_body` (l. 995)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::sec_body_is_padded_to_four_for_any_ciphertext_length`,
-`crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length`,
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done
 
@@ -2168,7 +2168,7 @@ SecureRTPSPostfixSubMsg."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_srtps_message`
 (l. 956, `common_mac` and count 0)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done
 
@@ -2179,7 +2179,7 @@ there is no SecureRTPSPrefixSubMsg following the RTPS Header."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::parse_srtps_body` (l. 995)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done — evaluation begins only when octet 20 is SRTPS_PREFIX.
 
@@ -2191,7 +2191,7 @@ the related SecureRTPSPrefixSubMsg and the SecureRTPSPrefixSubMsg."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::parse_srtps_body` (l. 995)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done
 
@@ -2228,7 +2228,7 @@ specification."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2241,7 +2241,7 @@ specification."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2254,7 +2254,7 @@ specification."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2267,7 +2267,7 @@ specification."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2280,7 +2280,7 @@ specification."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2304,7 +2304,7 @@ specification."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2340,7 +2340,7 @@ specification."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2365,7 +2365,7 @@ above.
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -2381,7 +2381,7 @@ above.
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the constant exists with the octets of the table
-(`7b1de8f5255`, test `a5b73d27f19`). Test green on the Linux test host
+(`0edb3c53462`, test `ea094fbe5fd`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.7.1 Table 9 — TypeLookupServiceRequestSecureReader {{ff,03,00},c4}
@@ -2395,7 +2395,7 @@ above.
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the constant exists with the octets of the table
-(`7b1de8f5255`, test `a5b73d27f19`). Test green on the Linux test host
+(`0edb3c53462`, test `ea094fbe5fd`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.7.1 Table 9 — TypeLookupServiceReplySecureWriter {{ff,03,01},c3}
@@ -2409,7 +2409,7 @@ above.
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the constant exists with the octets of the table
-(`7b1de8f5255`, test `a5b73d27f19`). Test green on the Linux test host
+(`0edb3c53462`, test `ea094fbe5fd`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.7.1 Table 9 — TypeLookupServiceReplySecureReader {{ff,03,01},c4}
@@ -2423,7 +2423,7 @@ above.
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the constant exists with the octets of the table
-(`7b1de8f5255`, test `a5b73d27f19`). Test green on the Linux test host
+(`0edb3c53462`, test `ea094fbe5fd`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.4.7.2 Mapping of the CryptoTransformIdentifier Type
@@ -2434,7 +2434,7 @@ to the IDL definition in 7.3.20."
 **Repo:** `crates/security-crypto/src/crypto_transform.rs::CryptoTransformIdentifier`
 (l. 99)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::transform_identifier_round_trip`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_19_transform_identifier_round_trip`
 
 **Status:** done
 
@@ -2450,8 +2450,8 @@ plugin_crypto_header_extra returned by the encoding transformation." Layout:
 (l. 278); `crates/security-crypto/src/crypto_transform.rs::CryptoHeader`
 (l. 150)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::header_round_trip_with_full_iv`,
-`crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_20_header_round_trip_with_full_iv`,
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2464,8 +2464,8 @@ plugin_crypto_footer returned by the encoding transformation."
 (l. 207); `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::footer_round_trip_no_receivers`,
-`crates/security-crypto/src/crypto_transform.rs::tests::footer_rejects_oversized_receiver_count_cleanly`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_4_7_4_footer_round_trip_no_receivers`,
+`crates/security-crypto/src/crypto_transform.rs::tests::security_7_4_7_4_footer_rejects_oversized_receiver_count_cleanly`
 
 **Status:** done
 
@@ -2478,7 +2478,7 @@ submessageId set to the value 0x30."
 **Repo:** `crates/security-crypto/src/plugin.rs::SEC_BODY_ID` (l. 943),
 `push_sec_body` (l. 1106)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::sec_body_is_padded_to_four_for_any_ciphertext_length`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length`
 
 **Status:** done
 
@@ -2490,7 +2490,7 @@ EndiannessFlag."
 **Repo:** `crates/security-crypto/src/plugin.rs::push_sec_body` (l. 1106,
 flag `0x01`)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::sec_body_is_padded_to_four_for_any_ciphertext_length`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length`
 
 **Status:** done — ZeroDDS always writes E=1; on receipt the length follows
 the flag (`parse_secure_submessages`).
@@ -2503,7 +2503,7 @@ CryptoHeader crypto_header" — "submessageId set to the value 0x31".
 **Repo:** `crates/security-crypto/src/plugin.rs::SEC_PREFIX_ID` (l. 942),
 `assemble_secure_submessages` (l. 1116)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2515,7 +2515,7 @@ EndiannessFlag."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2527,7 +2527,7 @@ CryptoFooter crypto_footer" — "submessageId set to the value 0x32".
 **Repo:** `crates/security-crypto/src/plugin.rs::SEC_POSTFIX_ID` (l. 944),
 `assemble_secure_submessages` (l. 1116)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2539,7 +2539,7 @@ EndiannessFlag."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -2551,7 +2551,7 @@ CryptoHeader crypto_header" — "submessageId set to the value 0x33".
 **Repo:** `crates/security-crypto/src/plugin.rs::SRTPS_PREFIX_ID` (l. 951),
 `assemble_srtps_message` (l. 956)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done
 
@@ -2566,12 +2566,12 @@ read, `assemble_srtps_message`);
 `crates/security-rtps/src/srtps.rs::PRE_SHARED_KEY_FLAG` (0x04)
 
 **Tests:**
-`crates/security-crypto/src/plugin.rs::tests::a_message_with_the_flag_a_is_checked_with_its_header`,
-`crates/security-crypto/src/plugin.rs::tests::the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message`,
-`crates/security-rtps/src/srtps.rs::tests::psk_encode_sets_pre_shared_key_flag`
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_6_a_message_with_the_flag_a_is_checked_with_its_header`,
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_6_the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message`,
+`crates/security-rtps/src/srtps.rs::tests::security_7_4_6_6_psk_encode_sets_pre_shared_key_flag`
 
 **Status:** `done` — E and the CryptoHeader are written; A and P are read
-(`9732105bf3e`, `a01b12a89e9`, before this package; the entries were out of
+(`d4c82c477f8`, `1c3ccac2102`, before this package; the entries were out of
 date). The sender does not set A: it does not bind the RTPS header into the AAD,
 which the spec leaves open. Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
@@ -2584,7 +2584,7 @@ which the spec leaves open. Tests green on the Linux test host
 **Repo:** `crates/security-crypto/src/plugin.rs::SRTPS_POSTFIX_ID` (l. 952),
 `assemble_srtps_message` (l. 956)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done
 
@@ -2596,7 +2596,7 @@ EndiannessFlag."
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_srtps_message`
 (l. 956)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`
 
 **Status:** done
 
@@ -2687,7 +2687,7 @@ entries); `crates/rtps/src/participant_data.rs`
 `crates/rtps/src/participant_data.rs::tests::participant_data_properties_roundtrip`
 
 **Status:** `done` — the `BinaryPropertySeq` is written and read with its
-entries (`928d39304cd`). Tests green on the Linux test host
+entries (`7a42590d03b`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.4 PID_PROPERTY_LIST: binary_value is lost
@@ -2714,7 +2714,7 @@ ParticipantSecurityProtectionInfo PID_PARTICIPANT_SECURITY_PROTECTION_INFO
 `crates/rtps/src/participant_security_info.rs::tests::the_optional_attributes_are_the_third_member`
 
 **Status:** `done` — `ParticipantSecurityProtectionInfo` has the three members
-of the spec (`470192aa99a`, before this package; the entries were out of date).
+of the spec (`983fa7e88c7`, before this package; the entries were out of date).
 Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.4 Table 10 — available_builtin_endpoints_ext, PID 0x1007
@@ -2730,7 +2730,7 @@ AvailableBuiltinEndpointsExtSet_t PID_AVAILABLE_BUILTIN_ENDPOINTS_EXT 0x1007".
 `crates/rtps/src/participant_data.rs::tests::available_builtin_endpoints_ext_roundtrip`
 
 **Status:** `done` — the parameter 0x1007 exists; when absent the value is 0
-(`7b1de8f5255`). Test green on the Linux test host
+(`0edb3c53462`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.4 Table 10 — digital_signature, PID 0x1010
@@ -2787,7 +2787,7 @@ value of the member to be 0x00000000."
 `crates/rtps/src/participant_data.rs::tests::available_builtin_endpoints_ext_roundtrip`
 
 **Status:** `done` — the parameter 0x1007 exists; when absent the value is 0
-(`7b1de8f5255`). Test green on the Linux test host
+(`0edb3c53462`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.4 Missing digital_signature counts as the default
@@ -2798,7 +2798,7 @@ defined in clause 7.3.11.2."
 
 **Repo:** `crates/dcps/src/runtime.rs::participant_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`
 
 **Status:** `done` — missing: the default of §7.3.11.2.
 
@@ -2810,7 +2810,7 @@ member to be the default defined in clause 7.3.13.2."
 
 **Repo:** `crates/dcps/src/runtime.rs::participant_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`
 
 **Status:** `done` — missing: §7.3.12.2.
 
@@ -2821,7 +2821,7 @@ member to be the default defined in clause 7.3.13.2."
 
 **Repo:** `crates/dcps/src/runtime.rs::participant_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`
 
 **Status:** `done` — missing: §7.3.13.2.
 
@@ -2834,13 +2834,13 @@ having the propagate member set to TRUE are serialized."
 `RuntimeConfig.participant_properties`; `crates/rtps/src/participant_data.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::the_propagated_participant_properties_reach_the_peer`,
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_the_propagated_participant_properties_reach_the_peer`,
 `crates/rtps/src/participant_data.rs::tests::participant_data_properties_roundtrip`
 
 **Status:** `done` — only entries of the participant's `PropertyQosPolicy` with
 `propagate = TRUE` go as `PID_PROPERTY_LIST` into the SPDP beacon; a change goes
-out at once; a list the wire cannot carry is refused (`a5b73d27f19`,
-`e357ab7a5ac`). Test green on the Linux test host
+out at once; a list the wire cannot carry is refused (`ea094fbe5fd`,
+`91ddf7b58f8`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.1.4 propagate is not serialized
@@ -2892,7 +2892,7 @@ availableBuiltinEndpoints."
 (l. 94); set in `crates/dcps/src/runtime.rs` (l. 8670)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2903,7 +2903,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PUBLICATIONS_SECURE_READER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2914,7 +2914,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::SUBSCRIPTIONS_SECURE_WRITER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2925,7 +2925,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::SUBSCRIPTIONS_SECURE_READER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2936,7 +2936,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PARTICIPANT_MESSAGE_SECURE_WRITER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2947,7 +2947,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PARTICIPANT_MESSAGE_SECURE_READER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2958,7 +2958,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_WRITER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2969,7 +2969,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PARTICIPANT_STATELESS_MESSAGE_READER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2980,7 +2980,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -2991,7 +2991,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done
 
@@ -3002,7 +3002,7 @@ availableBuiltinEndpoints."
 **Repo:** `crates/rtps/src/participant_data.rs::endpoint_flag::PARTICIPANT_SECURE_WRITER`
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done — with `enable_secure_spdp = false`
 (`crates/dcps/src/runtime.rs` l. 1589) bits 26 and 27 stay set although the
@@ -3016,7 +3016,7 @@ endpoints do not run (comment l. 1578–1579).
 (l. 127)
 
 **Tests:** `crates/rtps/src/participant_data.rs::tests::endpoint_flag_bit_positions_match_spec`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done — as bit 26.
 
@@ -3030,13 +3030,13 @@ Endpoints using the Parameter with ID PID_AVAILABLE_BUILTIN_ENDPOINTS_EXT".
 `available_builtin_endpoints_ext = ALL_TYPE_LOOKUP_SECURE`)
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::the_secure_type_lookup_service_is_protected_per_submessage`,
+`crates/dcps/src/runtime.rs::tests::security_6_1_the_secure_type_lookup_service_is_protected_per_submessage`,
 `crates/rtps/src/participant_data.rs::tests::table_12_bits`
 
 **Status:** `done` — a secured participant announces the four endpoints
-(`a542c9f545d`). Measured (Linux test host, sec-diag10): the announcement changes
+(`02bf5bbd061`). Measured (Linux test host, sec-diag10): the announcement changes
 nothing in any cell of `common-subset`, `disc-meta-data`, `disc-data-enc`,
-`data-sign` (`4912df99883` against `32f11c44270`). Tests green on the Linux test host
+`data-sign` (`f0f428ccad8` against `fe6a7157255`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3050,7 +3050,7 @@ nothing in any cell of `common-subset`, `disc-meta-data`, `disc-data-enc`,
 **Tests:** `crates/rtps/src/participant_data.rs::tests::table_12_bits`
 
 **Status:** `done` — the constant exists with the bit of the table
-(`7b1de8f5255`). Test green on the Linux test host
+(`0edb3c53462`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.4 Table 12 — TypeLookupServiceRequestSecureReader, bit 1
@@ -3062,7 +3062,7 @@ nothing in any cell of `common-subset`, `disc-meta-data`, `disc-data-enc`,
 **Tests:** `crates/rtps/src/participant_data.rs::tests::table_12_bits`
 
 **Status:** `done` — the constant exists with the bit of the table
-(`7b1de8f5255`). Test green on the Linux test host
+(`0edb3c53462`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.4 Table 12 — TypeLookupServiceReplySecureWriter, bit 2
@@ -3074,7 +3074,7 @@ nothing in any cell of `common-subset`, `disc-meta-data`, `disc-data-enc`,
 **Tests:** `crates/rtps/src/participant_data.rs::tests::table_12_bits`
 
 **Status:** `done` — the constant exists with the bit of the table
-(`7b1de8f5255`). Test green on the Linux test host
+(`0edb3c53462`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.4 Table 12 — TypeLookupServiceReplySecureReader, bit 3
@@ -3086,7 +3086,7 @@ nothing in any cell of `common-subset`, `disc-meta-data`, `disc-data-enc`,
 **Tests:** `crates/rtps/src/participant_data.rs::tests::table_12_bits`
 
 **Status:** `done` — the constant exists with the bit of the table
-(`7b1de8f5255`). Test green on the Linux test host
+(`0edb3c53462`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.1.5 Table 13 — protection_info, PID_ENDPOINT_SECURITY_PROTECTION_INFO 0x1004
@@ -3124,7 +3124,7 @@ in clause 7.3.15.2."
 
 **Repo:** `crates/dcps/src/runtime.rs::endpoint_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::endpoints_with_an_incompatible_configuration_do_not_match`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_15_endpoints_with_an_incompatible_configuration_do_not_match`
 
 **Status:** `done` — see §7.3.15.2.
 
@@ -3137,7 +3137,7 @@ information."
 **Repo:** `crates/dcps/src/runtime.rs` (SPDP beacon over
 `SPDP_BUILTIN_PARTICIPANT_WRITER`, also with security)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_6_spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`
 
 **Status:** done
 
@@ -3154,13 +3154,13 @@ and associated builtin DataReader and DataWriter entities".
 `send_secure_spdp`; `crates/discovery/src/spdp.rs::serialize_secure`
 
 **Tests:**
-`crates/dcps/src/builtin_subscriber.rs::tests::the_secure_topics_have_their_names_and_the_reliable_qos`,
-`crates/dcps/src/runtime.rs::tests::the_secure_discovery_data_reaches_the_secure_readers`,
-`crates/discovery/src/spdp.rs::tests::secure_spdp_takes_a_new_number_for_a_change_only`
+`crates/dcps/src/builtin_subscriber.rs::tests::security_7_5_1_6_the_secure_topics_have_their_names_and_the_reliable_qos`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_6_the_secure_discovery_data_reaches_the_secure_readers`,
+`crates/discovery/src/spdp.rs::tests::security_7_5_1_6_secure_spdp_takes_a_new_number_for_a_change_only`
 
 **Status:** `done` — the topic `DCPSParticipantsSecure` exists with reader, type
 and the QoS of `DCPSPublications` (RELIABLE); the secure SPDP writer numbers
-every change and does not go to multicast (`1bee936d138`, `054dd0f3a8b`). Tests
+every change and does not go to multicast (`0a325437bd3`, `219fe7afa6e`). Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3176,13 +3176,13 @@ Topic shall be 'DCPSParticipantsSecure'."
 `send_secure_spdp`; `crates/discovery/src/spdp.rs::serialize_secure`
 
 **Tests:**
-`crates/dcps/src/builtin_subscriber.rs::tests::the_secure_topics_have_their_names_and_the_reliable_qos`,
-`crates/dcps/src/runtime.rs::tests::the_secure_discovery_data_reaches_the_secure_readers`,
-`crates/discovery/src/spdp.rs::tests::secure_spdp_takes_a_new_number_for_a_change_only`
+`crates/dcps/src/builtin_subscriber.rs::tests::security_7_5_1_6_the_secure_topics_have_their_names_and_the_reliable_qos`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_6_the_secure_discovery_data_reaches_the_secure_readers`,
+`crates/discovery/src/spdp.rs::tests::security_7_5_1_6_secure_spdp_takes_a_new_number_for_a_change_only`
 
 **Status:** `done` — the topic `DCPSParticipantsSecure` exists with reader, type
 and the QoS of `DCPSPublications` (RELIABLE); the secure SPDP writer numbers
-every change and does not go to multicast (`1bee936d138`, `054dd0f3a8b`). Tests
+every change and does not go to multicast (`0a325437bd3`, `219fe7afa6e`). Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3198,15 +3198,15 @@ ParticipantBuiltinTopicDataSecure: ParticipantBuiltinTopicData { @id(0x1006)
 plugin); `crates/security-pki/src/plugin.rs::get_identity_status_token`
 
 **Tests:**
-`crates/discovery/src/spdp.rs::tests::the_identity_status_token_is_in_the_secure_participant_data_only`,
-`crates/security-pki/src/plugin.rs::tests::the_identity_status_token_has_the_class_of_table_53`,
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_carry_their_added_member`
+`crates/discovery/src/spdp.rs::tests::security_7_5_1_6_the_identity_status_token_is_in_the_secure_participant_data_only`,
+`crates/security-pki/src/plugin.rs::tests::security_7_5_1_6_the_identity_status_token_has_the_class_of_table_53`,
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_6_the_secure_types_carry_their_added_member`
 
 **Status:** `done` — the `identity_status_token` (0x1006) is in the secure SPDP
 and in the type `ParticipantBuiltinTopicDataSecure` only, not in the beacon of
 `DCPSParticipants`; the runtime sets it from the plugin's `IdentityStatusToken`
 (class `DDS:Auth:PKI-DH:1.0`, `ocsp_status` when an OCSP response exists, Table
-53) (`aef84a98a0b`, `257d0f8d0e6`). New on the wire: PID 0x1006 in the secure
+53) (`566c260b2ef`, `b1d59c3d1a5`). New on the wire: PID 0x1006 in the secure
 SPDP to authenticated peers; not measured against Cyclone, Fast DDS and OpenDDS.
 Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`,
@@ -3221,15 +3221,15 @@ Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-
 plugin); `crates/security-pki/src/plugin.rs::get_identity_status_token`
 
 **Tests:**
-`crates/discovery/src/spdp.rs::tests::the_identity_status_token_is_in_the_secure_participant_data_only`,
-`crates/security-pki/src/plugin.rs::tests::the_identity_status_token_has_the_class_of_table_53`,
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_carry_their_added_member`
+`crates/discovery/src/spdp.rs::tests::security_7_5_1_6_the_identity_status_token_is_in_the_secure_participant_data_only`,
+`crates/security-pki/src/plugin.rs::tests::security_7_5_1_6_the_identity_status_token_has_the_class_of_table_53`,
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_6_the_secure_types_carry_their_added_member`
 
 **Status:** `done` — the `identity_status_token` (0x1006) is in the secure SPDP
 and in the type `ParticipantBuiltinTopicDataSecure` only, not in the beacon of
 `DCPSParticipants`; the runtime sets it from the plugin's `IdentityStatusToken`
 (class `DDS:Auth:PKI-DH:1.0`, `ocsp_status` when an OCSP response exists, Table
-53) (`aef84a98a0b`, `257d0f8d0e6`). New on the wire: PID 0x1006 in the secure
+53) (`566c260b2ef`, `b1d59c3d1a5`). New on the wire: PID 0x1006 in the secure
 SPDP to authenticated peers; not measured against Cyclone, Fast DDS and OpenDDS.
 Tests green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`,
@@ -3249,13 +3249,13 @@ DCPSParticipantsSecure has ReliabilityQosPolicy kind set to RELIABLE."
 `send_secure_spdp`; `crates/discovery/src/spdp.rs::serialize_secure`
 
 **Tests:**
-`crates/dcps/src/builtin_subscriber.rs::tests::the_secure_topics_have_their_names_and_the_reliable_qos`,
-`crates/dcps/src/runtime.rs::tests::the_secure_discovery_data_reaches_the_secure_readers`,
-`crates/discovery/src/spdp.rs::tests::secure_spdp_takes_a_new_number_for_a_change_only`
+`crates/dcps/src/builtin_subscriber.rs::tests::security_7_5_1_6_the_secure_topics_have_their_names_and_the_reliable_qos`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_6_the_secure_discovery_data_reaches_the_secure_readers`,
+`crates/discovery/src/spdp.rs::tests::security_7_5_1_6_secure_spdp_takes_a_new_number_for_a_change_only`
 
 **Status:** `done` — the topic `DCPSParticipantsSecure` exists with reader, type
 and the QoS of `DCPSPublications` (RELIABLE); the secure SPDP writer numbers
-every change and does not go to multicast (`1bee936d138`, `054dd0f3a8b`). Tests
+every change and does not go to multicast (`0a325437bd3`, `219fe7afa6e`). Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3281,7 +3281,7 @@ changes shall be sent using the DCPSParticipantsSecure builtin Topic."
 
 **Repo:** `crates/discovery/src/spdp.rs::SpdpBeacon::secure_sequence_number`, `serialize_secure`
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::secure_spdp_takes_a_new_number_for_a_change_only`
+**Tests:** `crates/discovery/src/spdp.rs::tests::security_7_5_1_6_secure_spdp_takes_a_new_number_for_a_change_only`
 
 **Status:** `done` — a change of the participant data takes the next sequence number of the secure writer; the same data sent again keeps its number. HEARTBEAT and repair name the current number. Measured: open (security matrix, Fast DDS).
 
@@ -3292,7 +3292,7 @@ sent using the DCPSParticipantsSecure builtin Topic."
 
 **Repo:** `crates/discovery/src/spdp.rs::SpdpBeacon::serialize_secure_departure`; `crates/dcps/src/runtime.rs::announce_departure`, `spdp_departed`
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::secure_spdp_departure_is_a_key_only_change_on_the_secure_writer`
+**Tests:** `crates/discovery/src/spdp.rs::tests::security_7_5_1_6_secure_spdp_departure_is_a_key_only_change_on_the_secure_writer`
 
 **Status:** `done` — a secured participant sends the departure (`D=0`, `DISPOSED|UNREGISTERED`) on the secure writer to the authenticated participants; a participant takes a departure only from the secure writer of an authenticated participant. Measured: open.
 
@@ -3305,7 +3305,7 @@ DCPSParticipants builtin Topic from the authenticated DomainParticipant."
 
 **Repo:** `crates/discovery/src/spdp.rs::SpdpReader::samples_with_channel`; `crates/dcps/src/runtime.rs::handle_spdp_datagram`, `spdp_plain_is_liveliness_only`
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::samples_name_the_writer_they_came_from`, `crates/discovery/src/spdp.rs::tests::touch_renews_the_lease_of_a_known_participant_only`, `crates/dcps/src/runtime.rs::tests` (handshake dispatch test, last step)
+**Tests:** `crates/discovery/src/spdp.rs::tests::security_7_5_1_6_samples_name_the_writer_they_came_from`, `crates/discovery/src/spdp.rs::tests::security_7_5_1_6_touch_renews_the_lease_of_a_known_participant_only`, `crates/dcps/src/runtime.rs::tests` (handshake dispatch test, last step)
 
 **Status:** `done` — after the authentication a sample of the plain writer only renews the lease and liveliness of the participant; content and departure from the plain writer are ignored, changes come from the secure writer.
 
@@ -3317,7 +3317,7 @@ Topic entities that are not considered sensitive."
 
 **Repo:** `crates/dcps/src/runtime.rs::sync_sedp_discovery_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`
 
 **Status:** `done` — an endpoint of a topic without `enable_discovery_protection` goes over the plain writer (the dispose too, with the topic of the deleted endpoint).
 
@@ -3331,7 +3331,7 @@ and associated builtin DataReader and DataWriter entities".
 (l. 91); `crates/discovery/src/sedp/reader.rs::SedpPublicationsReader::new_secure`
 (l. 154)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::security_7_5_1_7_handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
 
 **Status:** done
 
@@ -3342,7 +3342,7 @@ considered sensitive shall be specified by the AccessControl plugin."
 
 **Repo:** `crates/dcps/src/runtime.rs::sync_sedp_discovery_protected`, `SharedSecurityGate::topic_discovery_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`
 
 **Status:** `done` — the selection follows `is_discovery_protected` of the rule of the topic.
 
@@ -3356,13 +3356,13 @@ Topic shall be 'DCPSPublicationsSecure'."
 `data_tags`); `crates/dcps/src/builtin_subscriber.rs`
 
 **Tests:**
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_carry_their_added_member`,
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_are_made_from_the_wire_data`,
-`crates/dcps/src/builtin_subscriber.rs::tests::the_secure_topics_have_their_names_and_the_reliable_qos`
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_6_the_secure_types_carry_their_added_member`,
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_7_the_secure_types_are_made_from_the_wire_data`,
+`crates/dcps/src/builtin_subscriber.rs::tests::security_7_5_1_6_the_secure_topics_have_their_names_and_the_reliable_qos`
 
 **Status:** `done` — the topics `DCPSPublicationsSecure` and
 `DCPSSubscriptionsSecure` exist with their types and `data_tags` (0x1003)
-(`054dd0f3a8b`). Tests green on the Linux test host
+(`219fe7afa6e`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.1.7 PublicationBuiltinTopicDataSecure: data_tags 0x1003
@@ -3374,13 +3374,13 @@ Topic shall be 'DCPSPublicationsSecure'."
 `data_tags`); `crates/dcps/src/builtin_subscriber.rs`
 
 **Tests:**
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_carry_their_added_member`,
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_are_made_from_the_wire_data`,
-`crates/dcps/src/builtin_subscriber.rs::tests::the_secure_topics_have_their_names_and_the_reliable_qos`
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_6_the_secure_types_carry_their_added_member`,
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_7_the_secure_types_are_made_from_the_wire_data`,
+`crates/dcps/src/builtin_subscriber.rs::tests::security_7_5_1_6_the_secure_topics_have_their_names_and_the_reliable_qos`
 
 **Status:** `done` — the topics `DCPSPublicationsSecure` and
 `DCPSSubscriptionsSecure` exist with their types and `data_tags` (0x1003)
-(`054dd0f3a8b`). Tests green on the Linux test host
+(`219fe7afa6e`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.1.7 QoS as DCPSPublications
@@ -3391,7 +3391,7 @@ Topic shall be the same as for the DCPSPublications Topic."
 **Repo:** `crates/discovery/src/sedp/writer.rs::SedpPublicationsWriter::new_secure`
 (l. 91, the same writer type as the plain writer)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::security_7_5_1_7_handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
 
 **Status:** done
 
@@ -3416,7 +3416,7 @@ for Topic entities that are not considered sensitive."
 
 **Repo:** `crates/dcps/src/runtime.rs::sync_sedp_discovery_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`
 
 **Status:** `done` — as §7.5.1.7 for subscriptions.
 
@@ -3430,7 +3430,7 @@ and associated builtin DataReader and DataWriter entities".
 (l. 273); `crates/discovery/src/sedp/reader.rs::SedpSubscriptionsReader::new_secure`
 (l. 317)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::security_7_5_1_7_handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
 
 **Status:** done
 
@@ -3441,7 +3441,7 @@ considered sensitive shall be specified by the AccessControl plugin."
 
 **Repo:** `crates/dcps/src/runtime.rs::sync_sedp_discovery_protected`, `SharedSecurityGate::topic_discovery_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`
 
 **Status:** `done` — as §7.5.1.7.
 
@@ -3455,13 +3455,13 @@ considered sensitive shall be specified by the AccessControl plugin."
 `data_tags`); `crates/dcps/src/builtin_subscriber.rs`
 
 **Tests:**
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_carry_their_added_member`,
-`crates/dcps/src/builtin_topics.rs::tests::the_secure_types_are_made_from_the_wire_data`,
-`crates/dcps/src/builtin_subscriber.rs::tests::the_secure_topics_have_their_names_and_the_reliable_qos`
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_6_the_secure_types_carry_their_added_member`,
+`crates/dcps/src/builtin_topics.rs::tests::security_7_5_1_7_the_secure_types_are_made_from_the_wire_data`,
+`crates/dcps/src/builtin_subscriber.rs::tests::security_7_5_1_6_the_secure_topics_have_their_names_and_the_reliable_qos`
 
 **Status:** `done` — the topics `DCPSPublicationsSecure` and
 `DCPSSubscriptionsSecure` exist with their types and `data_tags` (0x1003)
-(`054dd0f3a8b`). Tests green on the Linux test host
+(`219fe7afa6e`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.1.8 QoS as DCPSSubscriptions
@@ -3473,7 +3473,7 @@ Topic."
 **Repo:** `crates/discovery/src/sedp/writer.rs::SedpSubscriptionsWriter::new_secure`
 (l. 273)
 
-**Tests:** `crates/discovery/src/sedp/stack.rs::tests::handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
+**Tests:** `crates/discovery/src/sedp/stack.rs::tests::security_7_5_1_7_handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst`
 
 **Status:** done
 
@@ -3488,7 +3488,7 @@ SEDPbuiltinSubscriptionsSecureWriter."
 **Tests:** `crates/rtps/src/wire_types.rs::tests::table_9_entity_id_octets`
 
 **Status:** `done` — the four octets of the table are in the test
-(`a5b73d27f19`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
+(`ea094fbe5fd`); `crates/dcps/src/wlp.rs` now names the secure WLP writer
 `0xff0200c2` as the table does. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3506,17 +3506,17 @@ entities that are not considered sensitive."
 `crates/security-runtime/src/shared.rs::SharedSecurityGate::topic_liveliness_protected`
 
 **Tests:**
-`crates/dcps/src/wlp.rs::tests::the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
-`crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`,
-`crates/dcps/src/wlp.rs::tests::wlp_secure_sender_uses_secure_entity_and_is_received`
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`,
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received`
 
 **Status:** `done` — the participant beats on the plain writer for the writers
 of its topics that are not sensitive and on the secure writer for those of the
 sensitive ones (`is_liveliness_protected` of the rule of the topic); with topics
 of both kinds it beats on both, each writer with its own sequence numbers,
 history and reader proxies. Without a writer, `liveliness_protection_kind` of
-the domain decides. Restored: the choice of `62017f49303` was lost in the merge
-`13cb1667912` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
+the domain decides. Restored: the choice of `7d8c2eb0de3` was lost in the merge
+`021bb9dff29` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
 reader proxies) was taken; it now sits on that endpoint (`WlpEndpoint` holds the
 plain and the secure `ReliableWriter`). The plain WLP DATA is not protected with
 the key of the secure writer. Tests green on the Linux test host
@@ -3530,8 +3530,8 @@ associated builtin DataReader and DataWriter entities".
 
 **Repo:** `crates/dcps/src/wlp.rs::WlpEndpoint::set_secure` (l. 156)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::wlp_secure_sender_uses_secure_entity_and_is_received`,
-`crates/dcps/src/wlp.rs::tests::the_secure_writer_is_answered_by_the_secure_reader`
+**Tests:** `crates/dcps/src/wlp.rs::tests::security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received`,
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_the_secure_writer_is_answered_by_the_secure_reader`
 
 **Status:** done
 
@@ -3543,7 +3543,7 @@ ParticipantMessageData structure."
 
 **Repo:** `crates/dcps/src/wlp.rs` (the same codec for both writers)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::wlp_secure_sender_uses_secure_entity_and_is_received`
+**Tests:** `crates/dcps/src/wlp.rs::tests::security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received`
 
 **Status:** done
 
@@ -3557,8 +3557,8 @@ Interoperability Wire Protocol".
 **Repo:** `crates/dcps/src/wlp.rs` (reliable sending with a history of the
 last 32 beats for both writers)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::the_secure_writer_is_answered_by_the_secure_reader`,
-`crates/dcps/src/wlp.rs::tests::a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it`
+**Tests:** `crates/dcps/src/wlp.rs::tests::security_7_5_2_the_secure_writer_is_answered_by_the_secure_reader`,
+`crates/dcps/src/wlp.rs::tests::rtps_8_4_13_3_a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it`
 
 **Status:** done
 
@@ -3571,7 +3571,7 @@ BuiltinParticipantMessageSecureWriter."
 **Repo:** `crates/rtps/src/wire_types.rs::EntityId::BUILTIN_PARTICIPANT_MESSAGE_SECURE_WRITER`
 (l. 555), `BUILTIN_PARTICIPANT_MESSAGE_SECURE_READER` (l. 560)
 
-**Tests:** `crates/dcps/src/wlp.rs::tests::wlp_secure_sender_uses_secure_entity_and_is_received`
+**Tests:** `crates/dcps/src/wlp.rs::tests::security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received`
 
 **Status:** done
 
@@ -3586,10 +3586,10 @@ DataWriter heartbeats."
 **Repo:** `crates/dcps/src/runtime.rs` (protection of the HEARTBEAT submessage)
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::the_liveliness_heartbeat_of_a_manual_writer_is_protected_like_its_heartbeats`
+`crates/dcps/src/runtime.rs::tests::security_7_5_2_the_liveliness_heartbeat_of_a_manual_writer_is_protected_like_its_heartbeats`
 
 **Status:** `done` — the HEARTBEAT of the liveliness of a MANUAL_BY_TOPIC writer
-is protected like a HEARTBEAT of the writer (`054dd0f3a8b`). Test green on the Linux test host
+is protected like a HEARTBEAT of the writer (`219fe7afa6e`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.2 Liveliness per topic over both channels
@@ -3604,17 +3604,17 @@ DCPSParticipantMessageSecure Topic."
 `crates/security-runtime/src/shared.rs::SharedSecurityGate::topic_liveliness_protected`
 
 **Tests:**
-`crates/dcps/src/wlp.rs::tests::the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
-`crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`,
-`crates/dcps/src/wlp.rs::tests::wlp_secure_sender_uses_secure_entity_and_is_received`
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`,
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received`
 
 **Status:** `done` — the participant beats on the plain writer for the writers
 of its topics that are not sensitive and on the secure writer for those of the
 sensitive ones (`is_liveliness_protected` of the rule of the topic); with topics
 of both kinds it beats on both, each writer with its own sequence numbers,
 history and reader proxies. Without a writer, `liveliness_protection_kind` of
-the domain decides. Restored: the choice of `62017f49303` was lost in the merge
-`13cb1667912` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
+the domain decides. Restored: the choice of `7d8c2eb0de3` was lost in the merge
+`021bb9dff29` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
 reader proxies) was taken; it now sits on that endpoint (`WlpEndpoint` holds the
 plain and the secure `ReliableWriter`). The plain WLP DATA is not protected with
 the key of the secure writer. Tests green on the Linux test host
@@ -3633,17 +3633,17 @@ DCPSParticipantMessageSecure Topic."
 `crates/security-runtime/src/shared.rs::SharedSecurityGate::topic_liveliness_protected`
 
 **Tests:**
-`crates/dcps/src/wlp.rs::tests::the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
-`crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`,
-`crates/dcps/src/wlp.rs::tests::wlp_secure_sender_uses_secure_entity_and_is_received`
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`,
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received`
 
 **Status:** `done` — the participant beats on the plain writer for the writers
 of its topics that are not sensitive and on the secure writer for those of the
 sensitive ones (`is_liveliness_protected` of the rule of the topic); with topics
 of both kinds it beats on both, each writer with its own sequence numbers,
 history and reader proxies. Without a writer, `liveliness_protection_kind` of
-the domain decides. Restored: the choice of `62017f49303` was lost in the merge
-`13cb1667912` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
+the domain decides. Restored: the choice of `7d8c2eb0de3` was lost in the merge
+`021bb9dff29` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
 reader proxies) was taken; it now sits on that endpoint (`WlpEndpoint` holds the
 plain and the secure `ReliableWriter`). The plain WLP DATA is not protected with
 the key of the secure writer. Tests green on the Linux test host
@@ -3680,8 +3680,8 @@ implementations of this specification."
 **Repo:** `crates/discovery/src/security/stateless.rs::StatelessMessageWriter`
 (l. 52), `StatelessMessageReader` (l. 173)
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::writer_has_expected_entity_id`,
-`crates/discovery/src/security/stateless.rs::tests::reader_has_expected_entity_id`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_writer_has_expected_entity_id`,
+`crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_reader_has_expected_entity_id`
 
 **Status:** done
 
@@ -3693,8 +3693,8 @@ RTPS Best-Effort StatelessWriter".
 **Repo:** `crates/discovery/src/security/stateless.rs::StatelessMessageWriter::write`
 (l. 122, one DATA per reader proxy, no HEARTBEAT, no history)
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::write_increments_sequence_number`,
-`crates/discovery/src/security/stateless.rs::tests::write_to_two_proxies_produces_two_datagrams`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_write_increments_sequence_number`,
+`crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_write_to_two_proxies_produces_two_datagrams`
 
 **Status:** done
 
@@ -3706,8 +3706,8 @@ RTPS Best-Effort StatelessReader".
 **Repo:** `crates/discovery/src/security/stateless.rs::StatelessMessageReader`
 (l. 173, no ACKNACK, no history)
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::reader_handle_data_decodes_generic_message`,
-`crates/discovery/src/security/stateless.rs::tests::end_to_end_writer_to_reader_loopback`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_reader_handle_data_decodes_generic_message`,
+`crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_end_to_end_writer_to_reader_loopback`
 
 **Status:** done
 
@@ -3719,8 +3719,7 @@ ParticipantGenericMessage;"
 **Repo:** `crates/security/src/generic_message.rs::encode_generic_message`
 (l. 385), `decode_generic_message` (l. 406)
 
-**Tests:** `crates/discovery/src/security/codec.rs::tests::roundtrip_preserves_message`,
-`crates/discovery/src/security/codec.rs::tests::encode_starts_with_cdr_le_encapsulation`
+**Tests:** `crates/discovery/src/security/codec.rs::tests::rtps_10_2_encode_starts_with_cdr_le_encapsulation`
 
 **Status:** done
 
@@ -3733,7 +3732,7 @@ BuiltinParticipantStatelessMessageReader shall be as specified in 7.5.8."
 **Repo:** `crates/rtps/src/wire_types.rs::EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER`
 (l. 567), `BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER` (l. 572)
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::write_carries_writer_entity_id_on_wire`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_write_carries_writer_entity_id_on_wire`
 
 **Status:** done
 
@@ -3745,7 +3744,7 @@ that writes the message."
 
 **Repo:** `crates/discovery/src/security/stateless.rs::StatelessMessageWriter::next_message_identity`; `crates/discovery/src/security/stack.rs::build_message`
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::message_identities_are_the_writers_and_rise_by_one`, `crates/discovery/src/security/stack.rs::tests::smaller_local_guid_initiates_handshake_cyclone_compatible`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_3_message_identities_are_the_writers_and_rise_by_one`, `crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_smaller_local_guid_initiates_handshake_cyclone_compatible`
 
 **Status:** `done` — `source_guid` is the GUID of the stateless writer (EntityId `0x000201c3`). Measured: open (security matrix).
 
@@ -3757,7 +3756,7 @@ each different message sent by the BuiltinParticipantStatelessMessageWriter."
 
 **Repo:** `crates/discovery/src/security/stateless.rs::StatelessMessageWriter::next_message_identity`
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::message_identities_are_the_writers_and_rise_by_one`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_3_message_identities_are_the_writers_and_rise_by_one`
 
 **Status:** `done` — one counter of the writer across all peers, starting at 1; a repeated message keeps its identity.
 
@@ -3772,8 +3771,8 @@ ParticipantStatelessMessage."
 (l. 418, `MessageIdentity::default()` for the request),
 `on_stateless_message` (l. 551, `msg.message_identity` for reply and final)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`,
-`crates/security/src/generic_message.rs::tests::related_message_identity_links_reply_to_request`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`,
+`crates/security/src/generic_message.rs::tests::security_7_5_3_3_related_message_identity_links_reply_to_request`
 
 **Status:** done — the receiver tells request and reply apart by
 `related_message_identity`; the handshake in the test reaches the shared
@@ -3789,12 +3788,12 @@ DomainParticipant."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3807,12 +3806,12 @@ of a specific endpoint within destination DomainParticipant."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3823,7 +3822,7 @@ the message_class_id".
 
 **Repo:** `crates/discovery/src/security/stack.rs::build_message` (l. 752)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`
 
 **Status:** done
 
@@ -3836,7 +3835,7 @@ an implied content filter with the logical expression:
 
 **Repo:** `crates/discovery/src/security/stack.rs::on_stateless_message`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::a_handshake_message_is_taken_only_as_the_spec_addresses_it`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_4_a_handshake_message_is_taken_only_as_the_spec_addresses_it`
 
 **Status:** `done` — a message whose `destination_participant_guid` names another
 participant is not taken. The writer sends every message to all reader
@@ -3852,13 +3851,13 @@ destination DomainParticipant with a matching Endpoint Key."
 `crates/dcps/src/runtime.rs::install_crypto_token`, `local_endpoint_named`
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::a_stateless_message_for_another_endpoint_is_left_alone`,
-`crates/dcps/src/runtime.rs::tests::a_token_for_an_endpoint_this_participant_lacks_is_not_installed`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_4_a_stateless_message_for_another_endpoint_is_left_alone`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_3_4_a_token_for_an_endpoint_this_participant_lacks_is_not_installed`
 
 **Status:** `done` — a message whose `destination_endpoint_guid` is not
 GUID_UNKNOWN targets the named endpoint: the stateless reader leaves one for
 another endpoint alone, a token for an endpoint this participant does not have
-is not installed and recorded as `security.token.not_addressed` (`e493c610d8a`).
+is not installed and recorded as `security.token.not_addressed` (`2b8f3d90684`).
 New on the wire (receiving): a message for another endpoint is ignored. Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
@@ -3871,7 +3870,7 @@ prefix 'dds.sec.'".
 
 **Repo:** `crates/security/src/generic_message.rs::class_id` (l. 63)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::class_id_constants_match_spec`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_class_id_constants_match_spec`
 
 **Status:** done — ZeroDDS uses only the five values of the specification.
 
@@ -3882,7 +3881,7 @@ prefix 'dds.sec.'".
 
 **Repo:** `crates/security/src/generic_message.rs::class_id::AUTH_REQUEST`
 
-**Tests:** `crates/security/src/generic_message.rs::tests::class_id_constants_match_spec`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_class_id_constants_match_spec`
 
 **Status:** done
 
@@ -3893,7 +3892,7 @@ prefix 'dds.sec.'".
 
 **Repo:** `crates/security/src/generic_message.rs::class_id::AUTH`
 
-**Tests:** `crates/security/src/generic_message.rs::tests::class_id_constants_match_spec`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_class_id_constants_match_spec`
 
 **Status:** done
 
@@ -3917,7 +3916,7 @@ HandshakeMessageTokenSeq containing one element."
 **Repo:** `crates/discovery/src/security/stack.rs::build_message` (l. 752,
 `message_data: vec![holder]`)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`
 
 **Status:** done
 
@@ -3930,12 +3929,12 @@ the GUID_t of the destination DomainParticipant."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3948,12 +3947,12 @@ GUID_UNKNOWN."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3966,12 +3965,12 @@ GUID_UNKNOWN."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -3984,12 +3983,12 @@ AUTH_REQUEST message. Test green on the Linux test host
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -4003,12 +4002,12 @@ AuthRequestMessageTokenSeq containing one element."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -4021,12 +4020,12 @@ the GUID_t of the destination DomainParticipant."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -4039,12 +4038,12 @@ GUID_UNKNOWN."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -4057,12 +4056,12 @@ GUID_UNKNOWN."
 `on_stateless_message`)
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::handshake_messages_carry_the_fields_of_the_spec`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_handshake_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields `destination_participant_key`,
 `destination_endpoint_key`, `source_endpoint_key`, `related_message_identity`
 and `message_data` of AUTH_REQUEST and AUTH_HANDSHAKE have the values of the
-spec; the test checks them on sent messages (`368e8ed28f0`). ZeroDDS sends the
+spec; the test checks them on sent messages (`c41faa208fd`). ZeroDDS sends the
 AUTH_REQUEST message. Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
@@ -4085,8 +4084,8 @@ implementations of this specification."
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageWriter`
 (l. 56), `VolatileSecureMessageReader` (l. 177)
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::writer_has_expected_entity_id`,
-`crates/discovery/src/security/volatile_secure.rs::tests::reader_has_expected_entity_id`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_writer_has_expected_entity_id`,
+`crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_reader_has_expected_entity_id`
 
 **Status:** done
 
@@ -4100,10 +4099,10 @@ implementations of this specification."
 (`builtin_endpoint_security_attributes`, `builtin_endpoint_kinds`)
 
 **Tests:**
-`crates/security-runtime/src/builtin_attributes.rs::tests::table_17_has_the_values_of_the_spec`
+`crates/security-runtime/src/builtin_attributes.rs::tests::security_7_5_4_2_table_17_has_the_values_of_the_spec`
 
 **Status:** `done` — the `TopicSecurityConfig` of the
-`ParticipantVolatileMessageSecure` has the values of Table 17 (`054dd0f3a8b`).
+`ParticipantVolatileMessageSecure` has the values of Table 17 (`219fe7afa6e`).
 Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.4.2 Table 18 — EndpointSecurityConfig: only is_submessage_protected
@@ -4115,8 +4114,8 @@ others `false`.
 every DATA submessage as SEC_PREFIX/SEC_BODY/SEC_POSTFIX with the Kx key; the
 payload itself stays unchanged)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`,
-`crates/dcps/src/runtime.rs::tests::handshake_completes_through_runtime_dispatch_e2e`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_2_handshake_completes_through_runtime_dispatch_e2e`
 
 **Status:** done
 
@@ -4128,7 +4127,7 @@ an RTPS Reliable StatefulWriter".
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageWriter`
 (l. 56, `ReliableWriter`)
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::write_with_heartbeat_piggybacks_heartbeat_submessage`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_write_with_heartbeat_piggybacks_heartbeat_submessage`
 
 **Status:** done
 
@@ -4139,7 +4138,7 @@ an RTPS Reliable StatefulWriter".
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageWriter`
 (l. 56)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::end_to_end_volatile_secure_handshake_via_reliable_loop`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_4_2_end_to_end_volatile_secure_handshake_via_reliable_loop`
 
 **Status:** done
 
@@ -4149,7 +4148,7 @@ an RTPS Reliable StatefulWriter".
 
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageWriter`
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::identity_is_the_writers_and_a_late_reader_gets_no_old_message`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_identity_is_the_writers_and_a_late_reader_gets_no_old_message`
 
 **Status:** `done` — HISTORY KEEP_ALL (limit 1024; a write beyond it fails).
 
@@ -4159,7 +4158,7 @@ an RTPS Reliable StatefulWriter".
 
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageWriter`::add_reader_proxy
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::identity_is_the_writers_and_a_late_reader_gets_no_old_message`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_identity_is_the_writers_and_a_late_reader_gets_no_old_message`
 
 **Status:** `done` — a reader matched later skips earlier messages, acknowledged ones are removed.
 
@@ -4171,8 +4170,8 @@ an RTPS Reliable StatefulReader".
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageReader`
 (l. 177, `ReliableReader`)
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::reader_decodes_data_with_known_writer`,
-`crates/discovery/src/security/volatile_secure.rs::tests::reader_drops_data_from_unknown_writer`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_reader_decodes_data_with_known_writer`,
+`crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_reader_drops_data_from_unknown_writer`
 
 **Status:** done
 
@@ -4183,7 +4182,7 @@ an RTPS Reliable StatefulReader".
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageReader`
 (l. 177)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::end_to_end_volatile_secure_handshake_via_reliable_loop`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_4_2_end_to_end_volatile_secure_handshake_via_reliable_loop`
 
 **Status:** done
 
@@ -4194,7 +4193,7 @@ an RTPS Reliable StatefulReader".
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VOLATILE_SECURE_READER_CAPACITY`
 (l. 52, 64 samples per writer proxy until delivery)
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::reader_decodes_data_with_known_writer`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_reader_decodes_data_with_known_writer`
 
 **Status:** done — the reader hands every sample in order to the caller and
 keeps no history; the bound of 64 applies to samples that cannot be delivered
@@ -4207,7 +4206,7 @@ yet.
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageReader`
 (l. 177)
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::reader_decodes_data_with_known_writer`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_reader_decodes_data_with_known_writer`
 
 **Status:** done — the reader requests no samples before the first HEARTBEAT.
 
@@ -4219,7 +4218,7 @@ ParticipantGenericMessage;"
 **Repo:** `crates/security/src/generic_message.rs::encode_generic_message`
 (l. 385)
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::reader_decodes_data_with_known_writer`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_reader_decodes_data_with_known_writer`
 
 **Status:** done
 
@@ -4246,13 +4245,13 @@ DomainParticipant."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.3 message_identity.source_guid = GUID of the volatile writer
 
@@ -4262,7 +4261,7 @@ BuiltinParticipantVolatileMessageSecureWriter that writes the message."
 
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageWriter`::with_identity
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::identity_is_the_writers_and_a_late_reader_gets_no_old_message`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_identity_is_the_writers_and_a_late_reader_gets_no_old_message`
 
 **Status:** `done` — the writer sets `source_guid` to its GUID (EntityId `0xff0202c3`), whatever the caller put there.
 
@@ -4275,7 +4274,7 @@ BuiltinParticipantVolatileMessageSecureWriter."
 
 **Repo:** `crates/discovery/src/security/volatile_secure.rs::VolatileSecureMessageWriter`::with_identity
 
-**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::identity_is_the_writers_and_a_late_reader_gets_no_old_message`
+**Tests:** `crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_2_identity_is_the_writers_and_a_late_reader_gets_no_old_message`
 
 **Status:** `done` — the number starts at 1 and rises per message.
 
@@ -4289,13 +4288,13 @@ BuiltinParticipantVolatileMessageSecureWriter."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.3 message_data per message_class_id
 
@@ -4304,7 +4303,7 @@ the message_class_id".
 
 **Repo:** `crates/dcps/src/runtime.rs::build_crypto_token_message` (l. 21338)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::secured_data_round_trips_through_runtime_dispatch_e2e`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e`
 
 **Status:** done
 
@@ -4320,9 +4319,9 @@ destination_participant_guid==BuiltinParticipantVolatileMessageSecureReader.part
 `crates/rtps/src/reliable_writer.rs` (`write_with_heartbeat_to`)
 
 **Tests:** `crates/rtps/src/reliable_writer.rs::tests::a_change_for_one_participant_reaches_the_others_as_a_gap`,
-`crates/discovery/src/security/volatile_secure.rs::tests::writer_sends_a_directed_message_to_its_destination_only`,
-`crates/discovery/src/security/volatile_secure.rs::tests::the_implied_content_filter`,
-`crates/discovery/src/security/volatile_secure.rs::tests::reader_does_not_take_a_message_for_another_participant`
+`crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_4_writer_sends_a_directed_message_to_its_destination_only`,
+`crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_4_the_implied_content_filter`,
+`crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_4_4_reader_does_not_take_a_message_for_another_participant`
 
 **Status:** `done` — the reader takes only messages for its participant and that
 participant's endpoints and counts the others. The writer gives every other
@@ -4341,13 +4340,13 @@ destination DomainParticipant."
 `crates/dcps/src/runtime.rs::install_crypto_token`, `local_endpoint_named`
 
 **Tests:**
-`crates/discovery/src/security/stack.rs::tests::a_stateless_message_for_another_endpoint_is_left_alone`,
-`crates/dcps/src/runtime.rs::tests::a_token_for_an_endpoint_this_participant_lacks_is_not_installed`
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_4_a_stateless_message_for_another_endpoint_is_left_alone`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_3_4_a_token_for_an_endpoint_this_participant_lacks_is_not_installed`
 
 **Status:** `done` — a message whose `destination_endpoint_guid` is not
 GUID_UNKNOWN targets the named endpoint: the stateless reader leaves one for
 another endpoint alone, a token for an endpoint this participant does not have
-is not installed and recorded as `security.token.not_addressed` (`e493c610d8a`).
+is not installed and recorded as `security.token.not_addressed` (`2b8f3d90684`).
 New on the wire (receiving): a message for another endpoint is ignored. Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
@@ -4359,7 +4358,7 @@ GenericMessageClassId values that start with the prefix 'dds.sec.'".
 
 **Repo:** `crates/security/src/generic_message.rs::class_id` (l. 63)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::class_id_constants_match_spec`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_class_id_constants_match_spec`
 
 **Status:** done
 
@@ -4369,7 +4368,7 @@ GenericMessageClassId values that start with the prefix 'dds.sec.'".
 
 **Repo:** `crates/security/src/generic_message.rs::class_id::PARTICIPANT_CRYPTO_TOKENS`
 
-**Tests:** `crates/security/src/generic_message.rs::tests::class_id_constants_match_spec`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_class_id_constants_match_spec`
 
 **Status:** done
 
@@ -4379,7 +4378,7 @@ GenericMessageClassId values that start with the prefix 'dds.sec.'".
 
 **Repo:** `crates/security/src/generic_message.rs::class_id::DATAWRITER_CRYPTO_TOKENS`
 
-**Tests:** `crates/security/src/generic_message.rs::tests::class_id_constants_match_spec`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_class_id_constants_match_spec`
 
 **Status:** done
 
@@ -4389,7 +4388,7 @@ GenericMessageClassId values that start with the prefix 'dds.sec.'".
 
 **Repo:** `crates/security/src/generic_message.rs::class_id::DATAREADER_CRYPTO_TOKENS`
 
-**Tests:** `crates/security/src/generic_message.rs::tests::class_id_constants_match_spec`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_class_id_constants_match_spec`
 
 **Status:** done
 
@@ -4411,7 +4410,7 @@ ParticipantCryptoTokenSeq."
 
 **Repo:** `crates/dcps/src/runtime.rs::build_crypto_token_message` (l. 21338)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::secured_data_round_trips_through_runtime_dispatch_e2e`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e`
 
 **Status:** done
 
@@ -4425,13 +4424,13 @@ the GUID_t of the destination DomainParticipant."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.6.1 PARTICIPANT_CRYPTO_TOKENS: destination_endpoint_guid = GUID_UNKNOWN
 
@@ -4443,13 +4442,13 @@ GUID_UNKNOWN."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.6.1 PARTICIPANT_CRYPTO_TOKENS: source_endpoint_guid = GUID_UNKNOWN
 
@@ -4461,13 +4460,13 @@ GUID_UNKNOWN."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.6.2 DATAWRITER_CRYPTO_TOKENS: message_data
 
@@ -4477,7 +4476,7 @@ DatawriterCryptoTokenSeq."
 **Repo:** `crates/dcps/src/runtime.rs::prepare_endpoint_crypto_tokens`
 (l. 21431)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_4_6_2_pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent`
 
 **Status:** done
 
@@ -4492,13 +4491,13 @@ message."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.6.2 DATAWRITER_CRYPTO_TOKENS: source_endpoint_guid = DataWriter
 
@@ -4511,13 +4510,13 @@ the data it sends to the DataReader."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.6.3 DATAREADER_CRYPTO_TOKENS: message_data
 
@@ -4527,7 +4526,7 @@ DatareaderCryptoTokenSeq."
 **Repo:** `crates/dcps/src/runtime.rs::prepare_endpoint_crypto_tokens`
 (l. 21431)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_4_6_2_pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent`
 
 **Status:** done
 
@@ -4541,13 +4540,13 @@ GUID_t of the DataWriter that should receive the CryptoToken values".
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4.6.3 DATAREADER_CRYPTO_TOKENS: source_endpoint_guid = DataReader
 
@@ -4559,13 +4558,13 @@ GUID_t of the DataReader that will be using the CryptoToken values".
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.4 — field values without a test
 
@@ -4577,13 +4576,13 @@ received; the test checks sending and assignment (`368e8ed28f0`). Test green on 
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::volatile_messages_carry_the_fields_of_the_spec`
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_volatile_messages_carry_the_fields_of_the_spec`
 
 **Status:** `done` — the fields of the volatile messages
 (`destination_participant_key`, `destination_endpoint_key`,
 `source_endpoint_key`, `related_message_identity`) have the values of the spec
 for each token class, and the tokens are assigned by source and destination when
-received; the test checks sending and assignment (`368e8ed28f0`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
+received; the test checks sending and assignment (`c41faa208fd`). Test green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.5.1 Background (TypeLookup)
 
@@ -4609,11 +4608,11 @@ TypeLookupServiceReplySecureWriter, and TypeLookupServiceReplySecureReader."
 `crates/rtps/src/wire_types.rs`
 
 **Tests:**
-`crates/dcps/src/type_lookup_transport.rs::tests::the_secure_service_has_its_own_endpoints`,
-`crates/dcps/src/type_lookup_transport.rs::tests::the_secure_service_has_the_qos_of_the_plain_one`
+`crates/dcps/src/type_lookup_transport.rs::tests::security_6_1_the_secure_service_has_its_own_endpoints`,
+`crates/dcps/src/type_lookup_transport.rs::tests::security_7_5_5_2_the_secure_service_has_the_qos_of_the_plain_one`
 
 **Status:** `done` — four secure endpoints with the EntityIds of Table 9 and the
-same data types and QoS as the plain ones (`a542c9f545d`, `14e1984914d`). Tests
+same data types and QoS as the plain ones (`02bf5bbd061`, `2a6b01edc55`). Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.5.2 EntityIds of the secure TypeLookup endpoints
@@ -4626,11 +4625,11 @@ endpoints are defined in Table 9."
 `crates/rtps/src/wire_types.rs`
 
 **Tests:**
-`crates/dcps/src/type_lookup_transport.rs::tests::the_secure_service_has_its_own_endpoints`,
-`crates/dcps/src/type_lookup_transport.rs::tests::the_secure_service_has_the_qos_of_the_plain_one`
+`crates/dcps/src/type_lookup_transport.rs::tests::security_6_1_the_secure_service_has_its_own_endpoints`,
+`crates/dcps/src/type_lookup_transport.rs::tests::security_7_5_5_2_the_secure_service_has_the_qos_of_the_plain_one`
 
 **Status:** `done` — four secure endpoints with the EntityIds of Table 9 and the
-same data types and QoS as the plain ones (`a542c9f545d`, `14e1984914d`). Tests
+same data types and QoS as the plain ones (`02bf5bbd061`, `2a6b01edc55`). Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.5.2 Data types and QoS as the non-secure endpoints
@@ -4644,11 +4643,11 @@ endpoint in DDS-XTYPES."
 `crates/rtps/src/wire_types.rs`
 
 **Tests:**
-`crates/dcps/src/type_lookup_transport.rs::tests::the_secure_service_has_its_own_endpoints`,
-`crates/dcps/src/type_lookup_transport.rs::tests::the_secure_service_has_the_qos_of_the_plain_one`
+`crates/dcps/src/type_lookup_transport.rs::tests::security_6_1_the_secure_service_has_its_own_endpoints`,
+`crates/dcps/src/type_lookup_transport.rs::tests::security_7_5_5_2_the_secure_service_has_the_qos_of_the_plain_one`
 
 **Status:** `done` — four secure endpoints with the EntityIds of Table 9 and the
-same data types and QoS as the plain ones (`a542c9f545d`, `14e1984914d`). Tests
+same data types and QoS as the plain ones (`02bf5bbd061`, `2a6b01edc55`). Tests
 green on the Linux test host (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ### §7.5.6 Definition of the Types a DDS Endpoint depends on
@@ -4729,12 +4728,12 @@ application-defined topic."
 `crates/discovery/src/security/volatile_secure.rs`
 
 **Tests:**
-`crates/discovery/src/spdp.rs::tests::an_spdp_datagram_holds_the_submessages_of_its_writer_only`,
-`crates/discovery/src/security/stateless.rs::tests::a_stateless_datagram_holds_the_submessages_of_its_writer_only`,
-`crates/discovery/src/security/volatile_secure.rs::tests::a_volatile_datagram_holds_the_submessages_of_its_writer_only`
+`crates/discovery/src/spdp.rs::tests::security_7_5_12_an_spdp_datagram_holds_the_submessages_of_its_writer_only`,
+`crates/discovery/src/security/stateless.rs::tests::security_7_5_12_a_stateless_datagram_holds_the_submessages_of_its_writer_only`,
+`crates/discovery/src/security/volatile_secure.rs::tests::security_7_5_12_a_volatile_datagram_holds_the_submessages_of_its_writer_only`
 
 **Status:** `done` — a datagram of the bootstrapping messages holds submessages
-of its writer only (`054dd0f3a8b`). Tests green on the Linux test host
+of its writer only (`219fe7afa6e`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`).
 
 ### §7.5.13 get_datawriter_sec_attributes/get_datareader_sec_attributes for the Builtin Secure Endpoints
@@ -4749,13 +4748,13 @@ DataReader and DataWriter entities on all the 'Builtin Secure Endpoints'."
 `crates/dcps/src/runtime.rs::local_endpoint_crypto_handle`
 
 **Tests:**
-`crates/security-runtime/src/builtin_attributes.rs::tests::table_21_has_the_values_of_the_spec`,
-`crates/security-runtime/src/builtin_attributes.rs::tests::the_kinds_follow_table_21`,
-`crates/dcps/src/runtime.rs::tests::the_secure_type_lookup_service_is_protected_per_submessage`
+`crates/security-runtime/src/builtin_attributes.rs::tests::security_7_5_13_table_21_has_the_values_of_the_spec`,
+`crates/security-runtime/src/builtin_attributes.rs::tests::security_7_5_13_the_kinds_follow_table_21`,
+`crates/dcps/src/runtime.rs::tests::security_6_1_the_secure_type_lookup_service_is_protected_per_submessage`
 
 **Status:** `done` — the attributes of the secure builtin endpoints follow Table
 21 and are determined in one place; the runtime protects accordingly, the
-TypeLookup endpoints too (`054dd0f3a8b`, `ee7183c45df`). Tests green on the Linux test host
+TypeLookup endpoints too (`219fe7afa6e`, `f6c269e76e5`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
@@ -4770,7 +4769,7 @@ false`, `is_key_protected false`.
 protection only with `discovery_protection_kind != NONE`); secure SEDP
 submessages likewise
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_discovery_protection`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_7_5_13_matrix_discovery_protection`
 
 **Status:** done
 
@@ -4782,7 +4781,7 @@ match ParticipantSecurityConfig is_liveliness_protected", otherwise `false`.
 **Repo:** `crates/dcps/src/runtime.rs` (l. 18036, secure WLP writer with
 `liveliness_protection_kind != NONE`)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_liveliness_protection`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_7_5_13_matrix_liveliness_protection`
 
 **Status:** done
 
@@ -4793,7 +4792,7 @@ match ParticipantSecurityConfig is_liveliness_protected", otherwise `false`.
 **Repo:** `crates/discovery/src/security/stateless.rs::StatelessMessageWriter::write`
 (l. 122, plain DATA)
 
-**Tests:** `crates/discovery/src/security/stateless.rs::tests::write_carries_writer_entity_id_on_wire`
+**Tests:** `crates/discovery/src/security/stateless.rs::tests::security_7_5_3_2_write_carries_writer_entity_id_on_wire`
 
 **Status:** done
 
@@ -4807,13 +4806,13 @@ otherwise `false`.
 `crates/dcps/src/runtime.rs::local_endpoint_crypto_handle`
 
 **Tests:**
-`crates/security-runtime/src/builtin_attributes.rs::tests::table_21_has_the_values_of_the_spec`,
-`crates/security-runtime/src/builtin_attributes.rs::tests::the_kinds_follow_table_21`,
-`crates/dcps/src/runtime.rs::tests::the_secure_type_lookup_service_is_protected_per_submessage`
+`crates/security-runtime/src/builtin_attributes.rs::tests::security_7_5_13_table_21_has_the_values_of_the_spec`,
+`crates/security-runtime/src/builtin_attributes.rs::tests::security_7_5_13_the_kinds_follow_table_21`,
+`crates/dcps/src/runtime.rs::tests::security_6_1_the_secure_type_lookup_service_is_protected_per_submessage`
 
 **Status:** `done` — the attributes of the secure builtin endpoints follow Table
 21 and are determined in one place; the runtime protects accordingly, the
-TypeLookup endpoints too (`054dd0f3a8b`, `ee7183c45df`). Tests green on the Linux test host
+TypeLookup endpoints too (`219fe7afa6e`, `f6c269e76e5`). Tests green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195038.log`,
 `/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
@@ -4828,11 +4827,11 @@ the secure builtin topics is protected."
 the join access control)
 
 **Tests:**
-`crates/dcps/src/runtime.rs::tests::a_peer_the_join_access_control_does_not_admit_gets_no_access`
+`crates/dcps/src/runtime.rs::tests::security_7_5_13_a_peer_the_join_access_control_does_not_admit_gets_no_access`
 
 **Status:** `done` — an authenticated peer that the join access control of the
 domain does not admit gets no access to the secure builtin topics
-(`054dd0f3a8b`). Test green on the Linux test host
+(`219fe7afa6e`). Test green on the Linux test host
 (`/root/zerodds-rc7/agent-logs/security-1017-195553.log`).
 
 ---
@@ -4859,7 +4858,7 @@ provided for the same algorithm, they shall all be treated as equivalent."
 
 **Repo:** `crates/security-pki/src/plugin.rs::DsignScheme::from_name`, `kx_suite_for_algo`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_algorithm_names_of_1_2_and_1_1_are_taken`, `crates/security-pki/src/plugin.rs::tests::the_algorithm_names_follow_the_version_of_the_peer_and_the_setting`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_8_the_algorithm_names_of_1_2_and_1_1_are_taken`, `crates/security-pki/src/plugin.rs::tests::security_8_the_algorithm_names_follow_the_version_of_the_peer_and_the_setting`
 
 **Status:** `done` — Names of 1.2 and the names of 1.1 marked "deprecated in v 1.2" are treated alike on receipt (Table 25, Table 26). The default sent is the name of the table; `auto` (names of 1.2 only to a peer whose IdentityToken names 1.2) and `1.1` are named settings (`org.zerodds.sec.algorithm_names`, `ZERODDS_SEC_ALGORITHM_NAMES`). The specification does not make the sent spelling depend on the peer version, so `auto` is not the default. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -4884,7 +4883,7 @@ specialized to 128-bit AES keys with 96-bit Initialization Vector."
 
 **Repo:** `crates/security-crypto/src/suite.rs::Suite::Aes128Gmac`
 
-**Tests:** `crates/security-crypto/src/suite.rs::tests::aes128_gmac_uses_spec_id_1`, `crates/security-crypto/src/plugin.rs::tests::gmac_only_suite_roundtrip_without_encryption`, `crates/security-crypto/src/plugin.rs::tests::an_aes128_gmac_key_with_a_short_salt_crosses_instances`
+**Tests:** `crates/security-crypto/src/suite.rs::tests::security_7_3_18_2_aes128_gmac_uses_spec_id_1`, `crates/security-crypto/src/plugin.rs::tests::security_8_1_gmac_only_suite_roundtrip_without_encryption`, `crates/security-crypto/src/plugin.rs::tests::security_8_1_an_aes128_gmac_key_with_a_short_salt_crosses_instances`
 
 **Status:** `done` — Id 0x01 is AES128-GMAC with a 16-octet key (tag over the data as AAD, AES-GCM over an empty plaintext). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -4897,8 +4896,8 @@ in Galois Counter Mode".
 **Repo:** `crates/security-crypto/src/suite.rs::Suite::Aes128Gcm` (l. 61,
 16-octet key), `transform_kind::AES128_GCM` (l. 38)
 
-**Tests:** `crates/security-crypto/src/suite.rs::tests::aes128_gcm_uses_spec_id_2`,
-`crates/security-crypto/src/plugin.rs::tests::encrypt_decrypt_roundtrip`
+**Tests:** `crates/security-crypto/src/suite.rs::tests::security_8_1_aes128_gcm_uses_spec_id_2`,
+`crates/security-crypto/src/plugin.rs::tests::security_8_1_encrypt_decrypt_roundtrip`
 
 **Status:** done
 
@@ -4911,8 +4910,8 @@ authentication codes (MACs) computed using Galois MAC (AES-GMAC)".
 `crates/security-crypto/src/plugin.rs::KeyMaterial::seal_cyclone` (l. 278,
 branch without encryption)
 
-**Tests:** `crates/security-crypto/src/suite.rs::tests::from_id_roundtrip_for_all_supported`,
-`crates/dcps/tests/security_matrix_e2e.rs::matrix_data_protection_all_kinds`
+**Tests:** `crates/security-crypto/src/suite.rs::tests::security_7_3_18_2_from_id_roundtrip_for_all_supported`,
+`crates/dcps/tests/security_matrix_e2e.rs::security_8_1_matrix_data_protection_all_kinds`
 
 **Status:** done
 
@@ -4925,8 +4924,8 @@ in Galois Counter Mode".
 **Repo:** `crates/security-crypto/src/suite.rs::Suite::Aes256Gcm` (l. 61,
 32-octet key)
 
-**Tests:** `crates/security-crypto/src/suite.rs::tests::aes256_gcm_uses_spec_id_4`,
-`crates/security-crypto/src/plugin.rs::tests::aes256_encrypt_decrypt_roundtrip`
+**Tests:** `crates/security-crypto/src/suite.rs::tests::security_8_1_aes256_gcm_uses_spec_id_4`,
+`crates/security-crypto/src/plugin.rs::tests::security_8_1_aes256_encrypt_decrypt_roundtrip`
 
 **Status:** done
 
@@ -4951,7 +4950,7 @@ string CNAME_AES128_GCM = 'AES128+GCM'; const string CNAME_AES256_GMAC =
 
 **Repo:** `crates/security/src/algorithm.rs::CNAME_AES128_GMAC`, `CNAME_AES128_GCM`, `CNAME_AES256_GMAC`, `CNAME_AES256_GCM`
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — the strings of the spec (`AES128+GCM`, `AES256+GCM`; the GMAC constants have the same value as the GCM ones).
 
@@ -4964,7 +4963,7 @@ CID_AES256_GCM = 0x04;"
 **Repo:** `crates/security-crypto/src/suite.rs::transform_kind` (l. 38,
 `NONE`, `AES128_GMAC`, `AES128_GCM`, `AES256_GMAC`, `AES256_GCM`)
 
-**Tests:** `crates/security-crypto/src/suite.rs::tests::spec_constants_match_table_79`
+**Tests:** `crates/security-crypto/src/suite.rs::tests::security_8_1_spec_constants_match_table_79`
 
 **Status:** done — the constants carry other names (`transform_kind::*`;
 naming).
@@ -4991,8 +4990,8 @@ the same key."
 **Repo:** `crates/security-crypto/src/plugin.rs::KeyMaterial::seal_cyclone`
 (l. 278, nonce = `session_id` (4) and a running counter (8))
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::two_encrypts_produce_different_ciphertexts`,
-`crates/security-crypto/src/plugin.rs::tests::encrypts_remaining_decrements_per_call`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_8_1_1_two_encrypts_produce_different_ciphertexts`,
+`crates/security-crypto/src/plugin.rs::tests::security_8_1_1_encrypts_remaining_decrements_per_call`
 
 **Status:** done — the counter is incremented per seal; the cipher itself
 comes from `ring` or `aws-lc-rs`.
@@ -5006,8 +5005,8 @@ for the Ciphertext (C) and the Additional Authenticated Data (AAD)."
 **Repo:** `crates/security-crypto/src/plugin.rs::KeyMaterial::seal_cyclone`
 (l. 278, ciphertext and 16-octet tag apart)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`,
-`crates/security-crypto/src/plugin.rs::tests::decrypt_rejects_tampered_ciphertext`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`,
+`crates/security-crypto/src/plugin.rs::tests::security_8_1_1_decrypt_rejects_tampered_ciphertext`
 
 **Status:** done
 
@@ -5021,7 +5020,7 @@ remaining right-most 32 bits. Incremental values [...] are obtained using the
 **Repo:** `crates/security-crypto/src/plugin.rs::KeyMaterial::seal_cyclone`
 (l. 278, `Nonce::assume_unique_for_key` with 96 bits)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::encrypt_decrypt_roundtrip`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_8_1_encrypt_decrypt_roundtrip`
 
 **Status:** done — the counter blocks are formed by the AES-GCM implementation
 of `ring`/`aws-lc-rs`; there is no test vector after NIST SP 800-38D in the
@@ -5034,7 +5033,7 @@ repository.
 **Repo:** `crates/security-crypto/src/plugin.rs::KeyMaterial::seal_cyclone`
 (l. 278, GMAC branch: payload as AAD, empty plaintext)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_metadata_protection_all_kinds`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_8_1_1_matrix_metadata_protection_all_kinds`
 
 **Status:** done — for AES256-GMAC only; AES128-GMAC see Table 22.
 
@@ -5060,7 +5059,7 @@ signature."
 
 **Repo:** `crates/security-crypto/src/rsa_pss.rs::verify_rsassa_pss_sha256`; `crates/security-pki/src/plugin.rs::verify_signature_with_cert`; `crates/security-permissions/src/cms.rs`
 
-**Tests:** `crates/security-crypto/src/rsa_pss.rs::tests::the_salt_length_is_read_from_the_signature`, `crates/security-pki/src/plugin.rs::tests::an_rsa_pss_handshake_signature_of_any_salt_length_verifies`, `crates/security-permissions/tests/cms_verify.rs::rsa_pss_signers_of_any_salt_length_are_accepted`
+**Tests:** `crates/security-crypto/src/rsa_pss.rs::tests::security_8_2_the_salt_length_is_read_from_the_signature`, `crates/security-pki/src/plugin.rs::tests::security_8_2_an_rsa_pss_handshake_signature_of_any_salt_length_verifies`, `crates/security-permissions/tests/cms_verify.rs::security_8_2_rsa_pss_signers_of_any_salt_length_are_accepted`
 
 **Status:** `done` — Verification reads the salt length from the signature (OpenSSL 4.0.3 vectors with 0, 8, 20, 32, 64 and 222 octets); the handshake and the CMS verification use it. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -5071,7 +5070,7 @@ the salt length from the signature."
 
 **Repo:** `crates/security-crypto/src/rsa_pss.rs`
 
-**Tests:** `crates/security-crypto/src/rsa_pss.rs::tests::the_salt_length_is_read_from_the_signature`, `crates/security-crypto/src/rsa_pss.rs::tests::a_3072_bit_key_verifies_signatures_of_any_salt_length`, `crates/security-crypto/src/rsa_pss.rs::tests::what_does_not_verify_is_refused`
+**Tests:** `crates/security-crypto/src/rsa_pss.rs::tests::security_8_2_the_salt_length_is_read_from_the_signature`, `crates/security-crypto/src/rsa_pss.rs::tests::security_8_2_a_3072_bit_key_verifies_signatures_of_any_salt_length`, `crates/security-crypto/src/rsa_pss.rs::tests::security_8_2_what_does_not_verify_is_refused`
 
 **Status:** `done` — `webpki` verifies 32 octets of salt only; the own verification per RFC 8017 §9.1.2 reads the length from `DB`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -5083,7 +5082,7 @@ hash function."
 
 **Repo:** `crates/security-pki/src/plugin.rs::DsignScheme::RsaPkcs1`, `sign_with`, `verify_signature_with_cert`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that`, `crates/security-permissions/tests/cms_verify.rs::rsa_pkcs1_signer_is_accepted`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_8_2_an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that`, `crates/security-permissions/tests/cms_verify.rs::security_8_2_rsa_pkcs1_signer_is_accepted`
 
 **Status:** `done` — certificate chain, documents and handshake; an RSA key signs PKCS#1 v1.5 when the peer verifies only that.
 
@@ -5094,7 +5093,7 @@ ECDSA+P384+SHA384.
 
 **Repo:** `crates/security-pki/src/plugin.rs::DsignScheme`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::a_dsign_algo_must_fit_the_certificate`, `::a_p384_identity_authenticates_with_ecdsa_p384`, `::an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_8_2_a_dsign_algo_must_fit_the_certificate`, `::security_8_2_a_p384_identity_authenticates_with_ecdsa_p384`, `::security_8_2_an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that`
 
 **Status:** `done` — `c.dsign_algo` names a scheme that has to fit the certificate.
 
@@ -5107,8 +5106,8 @@ algorithm".
 **Repo:** `crates/security-pki/src/plugin.rs::sign_with` (l. 515,
 `ECDSA_P256_SHA256_ASN1_SIGNING`), `verify_signature_with_cert` (l. 584)
 
-**Tests:** `crates/security-pki/tests/e2e_handshake.rs::full_three_stage_handshake`,
-`crates/security-pki/src/identity.rs::mutation_killers::detect_cert_algo_requires_both_ecdsa_oids`
+**Tests:** `crates/security-pki/tests/e2e_handshake.rs::security_8_2_full_three_stage_handshake`,
+`crates/security-pki/src/identity.rs::mutation_killers::security_8_2_detect_cert_algo_requires_both_ecdsa_oids`
 
 **Status:** done
 
@@ -5120,7 +5119,7 @@ algorithm".
 
 **Repo:** `crates/security-pki/src/identity.rs::CertKeyAlgo::EcdsaP384Sha384`; `crates/security-pki/src/plugin.rs::DsignScheme::EcdsaP384`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::a_p384_identity_authenticates_with_ecdsa_p384`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_8_2_a_p384_identity_authenticates_with_ecdsa_p384`
 
 **Status:** `done` — key, handshake and masks; a chain with a P-384 CA is not tested (the chain in the test is P-256).
 
@@ -5133,7 +5132,7 @@ algorithm".
 
 **Repo:** `crates/security/src/algorithm.rs::CNAME_RSASSA_PSS_MGF1SHA256_2048_SHA256`` u. a.
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — four constants.
 
@@ -5145,7 +5144,7 @@ CID_ECDSA_P384_SHA384 = 0x13;"
 
 **Repo:** `crates/security/src/algorithm.rs::CID_RSASSA_PSS_MGF1SHA256_2048_SHA256`` u. a.
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — 0x10 to 0x13.
 
@@ -5183,7 +5182,7 @@ C(2e, 0s, FFC DH) Scheme'".
 
 **Repo:** `crates/security-keyexchange/src/modp.rs`, `crates/security-keyexchange/src/lib.rs::KxSuite::DhModp2048_256`; `crates/security-pki/src/plugin.rs::kx_suite_for_algo`
 
-**Tests:** `crates/security-keyexchange/src/modp.rs::tests::the_constants_are_the_ones_printed_in_rfc_5114_2_3`, `crates/security-keyexchange/src/modp.rs::tests::the_group_has_the_structure_of_rfc_5114_2_3`, `crates/security-pki/src/plugin.rs::tests::the_handshake_runs_over_dhe_modp_2048_256`
+**Tests:** `crates/security-keyexchange/src/modp.rs::tests::security_8_3_the_constants_are_the_ones_printed_in_rfc_5114_2_3`, `crates/security-keyexchange/src/modp.rs::tests::security_8_3_the_group_has_the_structure_of_rfc_5114_2_3`, `crates/security-pki/src/plugin.rs::tests::security_8_3_the_handshake_runs_over_dhe_modp_2048_256`
 
 **Status:** `done` — group of RFC 5114 §2.3 (the test compares the constants byte for byte with the text of the RFC, plus 2048/256 bits, q | p-1, g^q = 1); names `DH+MODP-2048-256` (sent) and `DHE+MODP-2048-256`. Not measured against another vendor; the exponentiation runs with `crypto-bigint` (Montgomery form, `pow` over the full width of the 256-bit exponent, the same time for every exponent), the exponent is zeroed on drop.
 
@@ -5196,8 +5195,8 @@ the NIST's EC Curve P-256 [...] The Key Agreement Algorithm shall be the
 **Repo:** `crates/security-keyexchange/src/lib.rs::KxSuite::EcdhP256`
 (l. 100)
 
-**Tests:** `crates/security-keyexchange/src/lib.rs::tests::p256_two_parties_derive_identical_secret`,
-`crates/security-keyexchange/src/lib.rs::tests::p256_rejects_off_curve_point`
+**Tests:** `crates/security-keyexchange/src/lib.rs::tests::security_8_3_p256_two_parties_derive_identical_secret`,
+`crates/security-keyexchange/src/lib.rs::tests::security_8_3_p256_rejects_off_curve_point`
 
 **Status:** done
 
@@ -5209,8 +5208,8 @@ the NIST's EC Curve P-384 [...] (Cofactor) Ephemeral Unified Model".
 **Repo:** `crates/security-keyexchange/src/lib.rs::KxSuite::EcdhP384`
 (l. 110)
 
-**Tests:** `crates/security-keyexchange/src/lib.rs::tests::p384_matches_the_spec_table_and_derives_one_shared_secret`,
-`crates/security-keyexchange/src/lib.rs::tests::p384_rejects_a_p256_public_key`
+**Tests:** `crates/security-keyexchange/src/lib.rs::tests::security_8_3_p384_matches_the_spec_table_and_derives_one_shared_secret`,
+`crates/security-keyexchange/src/lib.rs::tests::security_8_3_p384_rejects_a_p256_public_key`
 
 **Status:** done
 
@@ -5222,7 +5221,7 @@ the big endian representation [...] of the DH public key".
 
 **Repo:** `crates/security-keyexchange/src/modp.rs`
 
-**Tests:** `crates/security-keyexchange/src/lib.rs::tests::modp_2048_256_agrees_and_has_id_0x20`
+**Tests:** `crates/security-keyexchange/src/lib.rs::tests::security_8_3_modp_2048_256_agrees_and_has_id_0x20`
 
 **Status:** `done` — big-endian number without leading zeros, up to 256 octets; the peer key is checked per SP 800-56A §5.6.2.3.1.
 
@@ -5237,8 +5236,8 @@ The octet string representation encoding must conform with Sec. 2.3.3
 **Repo:** `crates/security-keyexchange/src/lib.rs::KxSuite` (l. 100,
 uncompressed point `0x04 || X || Y`)
 
-**Tests:** `crates/security-keyexchange/src/lib.rs::tests::p256_public_key_is_65_bytes`,
-`crates/security-keyexchange/src/lib.rs::tests::p384_matches_the_spec_table_and_derives_one_shared_secret`
+**Tests:** `crates/security-keyexchange/src/lib.rs::tests::security_8_3_p256_public_key_is_65_bytes`,
+`crates/security-keyexchange/src/lib.rs::tests::security_8_3_p384_matches_the_spec_table_and_derives_one_shared_secret`
 
 **Status:** done
 
@@ -5250,7 +5249,7 @@ CNAME_ECDHE_CEUM_P256 = 'ECDHE-CEUM+P256'; CNAME_ECDHE_CEUM_P384 =
 
 **Repo:** `crates/security/src/algorithm.rs`; `crates/security-pki/src/plugin.rs::kagree_algo_str`
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`, `crates/security-pki/src/plugin.rs::tests::the_algorithm_names_follow_the_version_of_the_peer_and_the_setting`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`, `crates/security-pki/src/plugin.rs::tests::security_8_the_algorithm_names_follow_the_version_of_the_peer_and_the_setting`
 
 **Status:** `done` — The constants of the specification are there; by default the initiator sends `ECDHE-CEUM+P256` and `DHE+MODP-2048-256`, and `ECDH+prime256v1-CEUM` and `DH+MODP-2048-256` with the setting `1.1`. Not measured against Cyclone, Fast DDS, OpenDDS (matrix); they send the names of 1.1. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -5261,7 +5260,7 @@ CNAME_ECDHE_CEUM_P256 = 'ECDHE-CEUM+P256'; CNAME_ECDHE_CEUM_P384 =
 
 **Repo:** `crates/security/src/algorithm.rs::CID_DHE_MODP_2048_256`` u. a.
 
-**Tests:** `crates/security/src/algorithm.rs::tests::the_constants_are_the_ones_of_the_specification`
+**Tests:** `crates/security/src/algorithm.rs::tests::security_7_3_8_the_constants_are_the_ones_of_the_specification`
 
 **Status:** `done` — 0x20 to 0x22.
 
@@ -5284,7 +5283,7 @@ ECDHE-CEUM+P256 and ECDHE-CEUM+P384.
 
 **Repo:** `crates/security-pki/src/plugin.rs::kx_suite_for_algo`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_algorithm_names_of_1_2_and_1_1_are_taken`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_8_the_algorithm_names_of_1_2_and_1_1_are_taken`
 
 **Status:** `done` — As replier `X25519` is taken only where this side set it itself (`allow_x25519`). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -5317,7 +5316,7 @@ Address Space."
 `crates/dcps/src/runtime.rs::with_security_bundle` (l. 3788);
 `crates/security-runtime/src/bundle.rs::SecurityBundle` (l. 40)
 
-**Tests:** `crates/dcps/tests/security_guid_wiring_e2e.rs::secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_discover`
+**Tests:** `crates/dcps/tests/security_guid_wiring_e2e.rs::security_9_1_2_secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_discover`
 
 **Status:** done — the test creates two participants with different
 identities in the same process.
@@ -5333,8 +5332,8 @@ DomainParticipant enable operations".
 **Repo:** `crates/dcps/src/participant.rs::security_from_participant_properties`
 (l. 203, called while the participant is created, l. 676)
 
-**Tests:** `crates/dcps/tests/security_qos_properties.rs::a_complete_dds_sec_property_list_creates_a_secured_participant`,
-`crates/dcps/tests/security_qos_properties.rs::an_incomplete_property_list_fails_the_create_and_names_the_property`
+**Tests:** `crates/dcps/tests/security_qos_properties.rs::security_7_3_21_a_complete_dds_sec_property_list_creates_a_secured_participant`,
+`crates/dcps/tests/security_qos_properties.rs::security_9_1_2_an_incomplete_property_list_fails_the_create_and_names_the_property`
 
 **Status:** done
 
@@ -5347,7 +5346,7 @@ are used to return an error code and message." Attributes: `message String`,
 
 **Repo:** `crates/security/src/error.rs::SecurityError` (`detail`, `code`, `minor_code`), `SecurityErrorKind::code`
 
-**Tests:** `crates/security/src/error.rs::tests::a_security_exception_has_message_code_and_minor_code`
+**Tests:** `crates/security/src/error.rs::tests::security_9_2_1_a_security_exception_has_message_code_and_minor_code`
 
 **Status:** `done` — `message` is `detail`; `code` the number of the category (1 to 7), `minor_code` 0 unless the plugin sets one. The spec assigns no values.
 
@@ -5391,8 +5390,8 @@ shall be defined by each Authentication plugin specialization."
 `DataHolder`, l. 247–268);
 `crates/security/src/authentication.rs::get_identity_token` (l. 196)
 
-**Tests:** `crates/security/src/token.rs::tests::pki_dh_identity_token_roundtrip`,
-`crates/security-pki/src/plugin.rs::tests::get_identity_token_returns_decodable_spec_descriptor`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_4_pki_dh_identity_token_roundtrip`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_1_get_identity_token_returns_decodable_spec_descriptor`
 
 **Status:** done — the content of the builtin plugin is in §10.3.
 
@@ -5407,10 +5406,10 @@ DCPSParticipantSecure builtin Topic."
 
 **Repo:** `crates/security-pki/src/plugin.rs::get_identity_status_token`; `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth` (fetches the token, sets it in the beacon), `process_authentication_events` (new token after a change); `crates/discovery/src/spdp.rs::SpdpBeacon::serialize_secure` (carries it), `serialize` (leaves it out); `crates/discovery/src/security/stack.rs::identity_status_token`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`,
-`crates/discovery/src/security/stack.rs::tests::a_status_change_is_passed_on_with_the_new_token`,
-`crates/security-pki/src/plugin.rs::tests::the_identity_status_token_carries_the_ocsp_response`,
-`crates/security-pki/src/plugin.rs::tests::a_changed_status_token_is_reported_as_identity_status`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_6_spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_2_a_status_change_is_passed_on_with_the_new_token`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_the_identity_status_token_carries_the_ocsp_response`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_a_changed_status_token_is_reported_as_identity_status`
 
 **Status:** `done` — the runtime calls `get_identity_status_token` and puts the token into `identity_status_token` of the beacon. The secure SPDP (DCPSParticipantsSecure) carries it, the plain SPDP (DCPSParticipants) does not, nor does `c.pdata` of the handshake. When the plugin changes the status (`on_status_changed`, `IDENTITY_STATUS`) the runtime fetches the new token and sends the secure SPDP again; the changed beacon is a new change of the secure writer.
 
@@ -5422,7 +5421,7 @@ identifies a DomainParticipant."
 
 **Repo:** `crates/security/src/authentication.rs::IdentityHandle` (l. 34)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_local_identity_accepts_ca_signed_cert`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_3_validate_local_identity_accepts_ca_signed_cert`
 
 **Status:** done — newtype over `u64`.
 
@@ -5434,7 +5433,7 @@ handshake protocol."
 
 **Repo:** `crates/security/src/authentication.rs::HandshakeHandle` (l. 38)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::full_three_round_handshake_alice_bob`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_4_full_three_round_handshake_alice_bob`
 
 **Status:** done
 
@@ -5448,10 +5447,10 @@ to GMCLASSID_SECURITY_AUTH_REQUEST".
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::validate_remote_identity` (`remote_auth_request_token` in, `local_auth_request_token` out); `crates/security-pki/src/plugin.rs::validate_remote_identity`; `crates/discovery/src/security/stack.rs::begin_handshake_with`, `on_auth_request`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
-`crates/security-pki/src/plugin.rs::tests::the_auth_request_announces_the_challenge1_of_the_request`,
-`crates/discovery/src/security/stack.rs::tests::an_auth_request_goes_out_on_discovery_and_binds_the_challenge`,
-`crates/discovery/src/security/stack.rs::tests::an_auth_request_is_passed_to_the_plugin_whenever_it_arrives`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_auth_request_announces_the_challenge1_of_the_request`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_5_an_auth_request_goes_out_on_discovery_and_binds_the_challenge`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_5_an_auth_request_is_passed_to_the_plugin_whenever_it_arrives`
 
 **Status:** `done` — `validate_remote_identity` takes the AuthRequestMessageToken of the peer and returns the own one (`local_auth_request_token`, `None` is TokenNIL). The stack sends it with `message_class_id` `dds.sec.auth_request`, keeps one received before the discovery for `validate_remote_identity` (at most 256), and passes every received one to the plugin (§9.3.2.9.1 rule 1).
 
@@ -5467,8 +5466,8 @@ to GMCLASSID_SECURITY_AUTH_HANDSHAKE".
 l. 247–268); `crates/discovery/src/security/stack.rs::build_message`
 (l. 752, `class_id::AUTH`)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::handshake_request_token_in_message_data`,
-`crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_3_22_handshake_request_token_in_message_data`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`
 
 **Status:** done
 
@@ -5482,9 +5481,9 @@ operation get_authenticated_peer_credential_token."
 
 **Repo:** `crates/security-pki/src/plugin.rs::get_authenticated_peer_credential_token`; `crates/security-pki/src/psk.rs::get_authenticated_peer_credential_token`; `crates/discovery/src/security/stack.rs::collect_completion` (calls the operation after completion; `peer_permissions` and `peer_identity_certificate` come from it)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_authenticated_peer_credential_token_holds_c_id_and_c_perm`,
-`crates/discovery/src/security/stack.rs::tests::the_peer_credential_token_gives_the_permissions_and_the_certificate`,
-`crates/security-pki/src/psk.rs::tests::the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_the_authenticated_peer_credential_token_holds_c_id_and_c_perm`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_7_the_peer_credential_token_gives_the_permissions_and_the_certificate`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_7_the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
 
 **Status:** `done` — the plugin returns the token after a completed handshake (the initiator after VALIDATION_OK_FINAL_MESSAGE, the replier after VALIDATION_OK), an error before. The stack fetches it on every completion, reads `c.perm` and `c.id` from it for the access control, and gives it back. The own operation `peer_permissions` is gone.
 
@@ -5498,7 +5497,7 @@ the peer AuthenticationPlugin implementation".
 **Repo:** `crates/security/src/authentication.rs::SharedSecretHandle`
 (l. 43), `SharedSecretProvider` (l. 57)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::get_shared_secret_returns_stored_value`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_8_get_shared_secret_returns_stored_value`
 
 **Status:** done — the crypto plugin reads the bytes of the secret through
 the own interface `SharedSecretProvider`.
@@ -5512,15 +5511,15 @@ branch AuthRequestSend/AuthRequestWait and AuthenticationTimeoutWait.
 
 **Repo:** `crates/discovery/src/security/stack.rs::begin_handshake_with`, `continue_validation`, `apply_outcome`, `on_stateless_message`, `run_retries`, `expire_handshakes`, `poll_stateless`; `crates/security-runtime/src/profile.rs` (`LOCAL_VALIDATION_RETRY_DELAY`)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`,
-`crates/discovery/src/security/stack.rs::tests::smaller_local_guid_initiates_handshake_cyclone_compatible`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_validation_is_retried_after_the_retry_timeout`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_request_is_retried_after_the_retry_timeout`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_reply_and_a_pending_process_are_retried_with_their_message`,
-`crates/discovery/src/security/stack.rs::tests::a_handshake_that_does_not_complete_ends_with_the_authentication_timeout`,
-`crates/discovery/src/security/stack.rs::tests::a_refused_reply_makes_the_stack_send_the_request_again`,
-`crates/discovery/src/security/stack.rs::tests::an_auth_request_is_passed_to_the_plugin_whenever_it_arrives`,
-`crates/security-pki/src/ocsp.rs::tests::a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_smaller_local_guid_initiates_handshake_cyclone_compatible`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_validation_is_retried_after_the_retry_timeout`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_request_is_retried_after_the_retry_timeout`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_reply_and_a_pending_process_are_retried_with_their_message`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_handshake_that_does_not_complete_ends_with_the_authentication_timeout`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_refused_reply_makes_the_stack_send_the_request_again`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_5_an_auth_request_is_passed_to_the_plugin_whenever_it_arrives`,
+`crates/security-pki/src/ocsp.rs::tests::security_9_3_2_9_a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`
 
 **Status:** `done` — all states of Figure 9: `validate_local_identity` (the profile calls it again after a fixed pause of 100 ms as long as it returns VALIDATION_PENDING_RETRY; only a key on a token goes through the blocking operation), `validate_remote_identity` with the branches PENDING_HANDSHAKE_REQUEST and _MESSAGE, `begin_handshake_request`, `begin_handshake_reply`, `process_handshake` with the wait states for VALIDATION_PENDING_RETRY (`set_retry_timeout`, 500 ms), sending and resending the message, the branch AuthRequestSend/-Wait, `get_shared_secret` after OK and OK_FINAL_MESSAGE, AuthenticationTimeoutWait (`set_authentication_timeout`, 60 s). The timeout is not fixed ("implementation-specific timeout").
 
@@ -5531,10 +5530,10 @@ branch AuthRequestSend/AuthRequestWait and AuthenticationTimeoutWait.
 
 **Repo:** `crates/discovery/src/security/stack.rs::run_retries`, `retry_step`, `expire_handshakes`, `set_retry_timeout`, `set_authentication_timeout`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::a_pending_validation_is_retried_after_the_retry_timeout`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_request_is_retried_after_the_retry_timeout`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_reply_and_a_pending_process_are_retried_with_their_message`,
-`crates/discovery/src/security/stack.rs::tests::a_handshake_that_does_not_complete_ends_with_the_authentication_timeout`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_validation_is_retried_after_the_retry_timeout`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_request_is_retried_after_the_retry_timeout`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_reply_and_a_pending_process_are_retried_with_their_message`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_handshake_that_does_not_complete_ends_with_the_authentication_timeout`
 
 **Status:** `done` — a step that returned VALIDATION_PENDING_RETRY is called again after the retry timeout with the same inputs (token, message, `related_message_identity`); a handshake not complete after the timeout ends: the peer is unauthenticated (reason `Timeout`), the handles go back to the plugin, the failure is in `take_handshake_failures`, the next beacon starts again. A completed handshake does not expire.
 
@@ -5547,9 +5546,9 @@ set to GMCLASSID_SECURITY_AUTH_REQUEST or GMCLASSID_SECURITY_AUTH_HANDSHAKE."
 
 **Repo:** `crates/discovery/src/security/stack.rs::on_stateless_message`, `on_auth_request`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::an_auth_request_is_passed_to_the_plugin_whenever_it_arrives`,
-`crates/discovery/src/security/stack.rs::tests::an_auth_request_goes_out_on_discovery_and_binds_the_challenge`,
-`crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_3_2_5_an_auth_request_is_passed_to_the_plugin_whenever_it_arrives`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_5_an_auth_request_goes_out_on_discovery_and_binds_the_challenge`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`
 
 **Status:** `done` — messages with `GMCLASSID_SECURITY_AUTH_HANDSHAKE` go to `begin_handshake_reply` or `process_handshake`. A message with `GMCLASSID_SECURITY_AUTH_REQUEST` goes to `validate_remote_identity` as `remote_auth_request_token`: from a participant not yet discovered it is kept until the discovery; for a participant whose handshake has not begun, the identity made with the token replaces the first one; with a handshake begun, the plugin checks the token and the identity this makes goes back at once.
 
@@ -5566,9 +5565,9 @@ every 500 ms, l. 347), `begin_handshake_with` (l. 418, repeat on every SPDP
 beacon), `on_stateless_message` (l. 622, a duplicate request gets the cached
 reply)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::lost_reply_recovered_by_resend_yields_matching_secret`,
-`crates/discovery/src/security/stack.rs::tests::initiator_resends_auth_request_on_repeated_begin_while_incomplete`,
-`crates/discovery/src/security/stack.rs::tests::a_duplicate_reply_after_completion_is_answered_with_the_final`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_1_lost_reply_recovered_by_resend_yields_matching_secret`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_1_initiator_resends_auth_request_on_repeated_begin_while_incomplete`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_1_a_duplicate_reply_after_completion_is_answered_with_the_final`
 
 **Status:** done
 
@@ -5582,11 +5581,11 @@ authentication exchange by sending bad replies."
 
 **Repo:** `crates/discovery/src/security/stack.rs::on_stateless_message` (`resend_now`), `poll_stateless`; `crates/security-pki/src/plugin.rs::process_handshake` (the state stays until the check has passed)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::a_refused_reply_makes_the_stack_send_the_request_again`,
-`crates/discovery/src/security/stack.rs::tests::a_forged_final_does_not_take_the_handshake_down`,
-`crates/security-pki/src/plugin.rs::tests::a_forged_reply_does_not_take_the_handshake_down`,
-`crates/security-pki/src/plugin.rs::tests::the_replier_has_no_shared_secret_before_a_verified_final`,
-`crates/security-pki/src/psk.rs::tests::a_forged_message_leaves_the_handshake_in_place`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_refused_reply_makes_the_stack_send_the_request_again`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_1_a_forged_final_does_not_take_the_handshake_down`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_9_1_a_forged_reply_does_not_take_the_handshake_down`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_9_1_the_replier_has_no_shared_secret_before_a_verified_final`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_9_1_a_forged_message_leaves_the_handshake_in_place`
 
 **Status:** `done` — a step the plugin refuses leaves the handshake as it was; the stack sends the cached message that caused the step again at the next `poll` (at most one per peer per tick). The error still goes to the caller. The name VALIDATION_NOT_OK is not in Table 30 (contradiction in the spec); a failure of the operation is meant.
 
@@ -5599,8 +5598,8 @@ protocol. All these cases shall be treated the same."
 
 **Repo:** `crates/discovery/src/security/stack.rs::authentication_status`, `is_authenticated`, `mark_unauthenticated`, `PeerAuthentication`, `UnauthenticatedReason`; `crates/dcps/src/runtime.rs::builtin_match` (decides by `is_authenticated`), `spdp_security_handshake`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::every_reason_for_being_unauthenticated_is_one_case`,
-`crates/dcps/src/runtime.rs::tests::spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_3_2_10_every_reason_for_being_unauthenticated_is_one_case`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_6_spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`
 
 **Status:** `done` — a participant without an IdentityToken, with a refused identity, with a failed handshake, with an incompatible configuration (§7.3.23) or after the timeout is `Unauthenticated`; the reason is for the log. The matching of the builtin endpoints (`builtin_match`) and the acceptance of plaintext ask only whether the peer is authenticated, and `allow_unauthenticated_participants`. A failure of `begin_handshake_with` is reported as `security.handshake.failed`.
 
@@ -5616,12 +5615,12 @@ VALIDATION_PENDING_RETRY.
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::validate_local_identity`; `crates/security-pki/src/plugin.rs::validate_local_identity`, `validate_identity`; `crates/security-pki/src/psk.rs::validate_local_identity`; `crates/security-runtime/src/profile.rs`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_local_identity_returns_the_adjusted_guid_of_table_59`,
-`crates/security-pki/src/plugin.rs::tests::validate_local_identity_with_a_foreign_ca_fails_without_a_handle`,
-`crates/security-pki/src/plugin.rs::tests::validate_local_identity_accepts_ca_signed_cert`,
-`crates/security-pki/src/plugin.rs::tests::validate_local_identity_rejects_wrong_ca`,
-`crates/security-pki/src/ocsp.rs::tests::a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`,
-`crates/security-pki/src/ocsp.rs::tests::a_revoked_answer_ends_the_pending_validation_with_a_failure`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_local_identity_returns_the_adjusted_guid_of_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_local_identity_with_a_foreign_ca_fails_without_a_handle`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_3_validate_local_identity_accepts_ca_signed_cert`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_local_identity_rejects_wrong_ca`,
+`crates/security-pki/src/ocsp.rs::tests::security_9_3_2_9_a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`,
+`crates/security-pki/src/ocsp.rs::tests::security_9_3_2_11_a_revoked_answer_ends_the_pending_validation_with_a_failure`
 
 **Status:** `done` — the operation has the parameters `domain_id`, `participant_qos` (the PropertyQosPolicy) and `candidate_participant_guid` and returns result, handle and `adjusted_participant_guid` (`LocalIdentityValidation`); a failure is `Err` (VALIDATION_FAILED with SecurityException); VALIDATION_PENDING_RETRY is in the next item.
 
@@ -5634,9 +5633,9 @@ verification has not completed and the operation should be retried later."
 
 **Repo:** `crates/security-pki/src/plugin.rs::validate_local_identity_nonblocking`, `register_local_identity`; `crates/security-runtime/src/profile.rs` (retry)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_local_identity_returns_the_adjusted_guid_of_table_59`,
-`crates/security-pki/src/ocsp.rs::tests::a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`,
-`crates/security-pki/src/ocsp.rs::tests::a_revoked_answer_ends_the_pending_validation_with_a_failure`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_local_identity_returns_the_adjusted_guid_of_table_59`,
+`crates/security-pki/src/ocsp.rs::tests::security_9_3_2_9_a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`,
+`crates/security-pki/src/ocsp.rs::tests::security_9_3_2_11_a_revoked_answer_ends_the_pending_validation_with_a_failure`
 
 **Status:** `done` — `adjusted_participant_guid` as Table 59 says (bit 0 set, 47 bits of the SHA-256 of the SubjectName, 48 bits of the SHA-256 of the candidate GUID, the same EntityId); the profile takes the GUID from the result. `domain_id` stays with the identity. A certificate that names an OCSP responder is checked on a thread of its own: the first call returns VALIDATION_PENDING_RETRY without waiting, each further one the result or `PendingRetry` until the answer is in.
 
@@ -5652,7 +5651,7 @@ return false and fill the SecurityException."
 (l. 196); `crates/security-pki/src/plugin.rs::get_identity_token` (l. 791,
 an unknown handle yields `BadArgument`)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::get_identity_token_returns_decodable_spec_descriptor`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_1_get_identity_token_returns_decodable_spec_descriptor`
 
 **Status:** done
 
@@ -5664,9 +5663,9 @@ DomainParticipant identified by the specified IdentityHandle."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::get_identity_status_token`; `crates/security-pki/src/plugin.rs::get_identity_status_token`; `crates/security-pki/src/psk.rs::get_identity_status_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_identity_status_token_carries_the_ocsp_response`,
-`crates/security-pki/src/plugin.rs::tests::the_tokens_of_a_local_identity_need_a_local_identity_handle`,
-`crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_the_identity_status_token_carries_the_ocsp_response`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_tokens_of_a_local_identity_need_a_local_identity_handle`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — PKI-DH returns the token of Table 53, `DDS:Auth:PSK` TokenNIL (Table 83); the runtime calls the operation (see §9.3.2.2); a handle `validate_local_identity` did not return is an error.
 
@@ -5680,12 +5679,12 @@ participant_security_config.algorithm_info the operation shall fail".
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::set_participant_security_config`, `ParticipantSecurityConfig`; `crates/security-pki/src/plugin.rs::set_participant_security_config`; `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::set_participant_security_config_adjusts_a_copy_of_the_given_info`,
-`crates/security-pki/src/plugin.rs::tests::set_participant_security_config_fails_without_an_algorithm_of_the_plugin`,
-`crates/security-pki/src/plugin.rs::tests::set_participant_security_config_fails_when_a_used_algorithm_is_not_supported`,
-`crates/security-pki/src/plugin.rs::tests::the_configured_algorithms_bind_the_handshake`,
-`crates/security-pki/src/plugin.rs::tests::the_algorithm_masks_follow_the_identity_and_the_key_agreement`,
-`crates/security-pki/src/psk.rs::tests::table_83_set_participant_security_config_and_credential_do_nothing`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_set_participant_security_config_adjusts_a_copy_of_the_given_info`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_set_participant_security_config_fails_without_an_algorithm_of_the_plugin`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_set_participant_security_config_fails_when_a_used_algorithm_is_not_supported`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_configured_algorithms_bind_the_handshake`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_11_the_algorithm_masks_follow_the_identity_and_the_key_agreement`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_set_participant_security_config_and_credential_do_nothing`
 
 **Status:** `done` — the operation takes `ParticipantSecurityConfig` (the `algorithm_info` part, the digital signature and key establishment masks) and returns the adjusted info; it fails where the spec says so. The runtime calls it with `ParticipantSecurityConfig::unrestricted()` and announces the adjusted info (`algorithm_masks` is gone).
 
@@ -5700,9 +5699,9 @@ validate_remote_identity."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::set_permissions_credential_and_token`; `crates/security-pki/src/plugin.rs::set_permissions_credential_and_token`; `crates/security-runtime/src/profile.rs`; `crates/security-pki/src/psk.rs::set_permissions_credential_and_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_permissions_credential_is_what_the_handshake_sends_as_c_perm`,
-`crates/security-pki/src/plugin.rs::tests::a_permissions_credential_that_is_none_is_refused`,
-`crates/security-pki/src/psk.rs::tests::table_83_set_participant_security_config_and_credential_do_nothing`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_permissions_credential_is_what_the_handshake_sends_as_c_perm`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_a_permissions_credential_that_is_none_is_refused`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_set_participant_security_config_and_credential_do_nothing`
 
 **Status:** `done` — PKI-DH keeps the credential token and the PermissionsToken per IdentityHandle; `dds.perm.cert` (Table 64) is the `c.perm` of the handshakes of that identity, the token the answer of `get_permissions_token`. The profile calls the operation with the signed permissions document; a token of the wrong class, without the document, or no DataHolder is an error.
 
@@ -5719,12 +5718,12 @@ VALIDATION_PENDING_RETRY.
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::validate_remote_identity`, `RemoteIdentityValidation`; `crates/security-pki/src/plugin.rs::validate_remote_identity`; `crates/security-pki/src/psk.rs::validate_remote_identity`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_remote_identity_orders_the_guids_like_table_59`,
-`crates/security-pki/src/plugin.rs::tests::validate_remote_identity_compares_the_plugin_name_and_the_major_version`,
-`crates/security-pki/src/plugin.rs::tests::the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
-`crates/security-pki/src/plugin.rs::tests::validate_remote_identity_takes_only_a_pki_dh_identity_token`,
-`crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`,
-`crates/security-pki/src/psk.rs::tests::the_handshake_plugin_orders_remote_identities_by_guid`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_orders_the_guids_like_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_compares_the_plugin_name_and_the_major_version`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_takes_only_a_pki_dh_identity_token`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_handshake_plugin_orders_remote_identities_by_guid`
 
 **Status:** `done` — the operation returns `RemoteIdentityValidation` (result, handle, `local_auth_request_token`); the results OK, PENDING_HANDSHAKE_REQUEST, PENDING_HANDSHAKE_MESSAGE and PENDING_RETRY can be represented, VALIDATION_FAILED is `Err`.
 
@@ -5737,10 +5736,10 @@ local_auth_request_token [...] Parameter remote_auth_request_token".
 
 **Repo:** `crates/security-pki/src/plugin.rs::validate_remote_identity`; `crates/discovery/src/security/stack.rs::continue_validation`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_remote_identity_orders_the_guids_like_table_59`,
-`crates/security-pki/src/plugin.rs::tests::the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
-`crates/discovery/src/security/stack.rs::tests::smaller_local_guid_initiates_handshake_cyclone_compatible`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_validation_is_retried_after_the_retry_timeout`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_orders_the_guids_like_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_smaller_local_guid_initiates_handshake_cyclone_compatible`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_validation_is_retried_after_the_retry_timeout`
 
 **Status:** `done` — the plugin decides the role: a greater GUID of the peer is PENDING_HANDSHAKE_REQUEST, a smaller one PENDING_HANDSHAKE_MESSAGE, the own GUID an error. The stack follows the result. The GUID of the peer stays with its identity (the plugin checks `c.pdata` against it).
 
@@ -5755,10 +5754,10 @@ out `handshake_message`, `initiator_identity_handle`,
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::begin_handshake_request`; `crates/security-pki/src/plugin.rs::begin_handshake_request`; `crates/security-pki/src/psk.rs::begin_handshake_request`; `crates/discovery/src/security/stack.rs::continue_validation`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_handshake_returns_the_validation_results_of_table_59`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_operations_need_the_result_of_validate_remote_identity`,
-`crates/security-pki/src/plugin.rs::tests::request_token_has_spec_class_id_and_properties`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_request_is_retried_after_the_retry_timeout`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_returns_the_validation_results_of_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_operations_need_the_result_of_validate_remote_identity`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_request_token_has_spec_class_id_and_properties`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_request_is_retried_after_the_retry_timeout`
 
 **Status:** `done` — `serialized_local_participant_data` is a parameter (the `c.pdata`); the call is allowed only for a handle `validate_remote_identity` returned with PENDING_HANDSHAKE_REQUEST (otherwise PreconditionError); the result is PENDING_HANDSHAKE_MESSAGE with the message, or PENDING_RETRY.
 
@@ -5774,10 +5773,10 @@ begin_handshake_request operation." Parameters: out `handshake_handle`, out
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::begin_handshake_reply`; `crates/security-pki/src/plugin.rs::begin_handshake_reply`; `crates/security-pki/src/psk.rs::begin_handshake_reply`; `crates/discovery/src/security/stack.rs::on_stateless_message`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_handshake_returns_the_validation_results_of_table_59`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_operations_need_the_result_of_validate_remote_identity`,
-`crates/security-pki/src/plugin.rs::tests::the_replier_has_no_shared_secret_before_a_verified_final`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_reply_and_a_pending_process_are_retried_with_their_message`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_returns_the_validation_results_of_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_operations_need_the_result_of_validate_remote_identity`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_9_1_the_replier_has_no_shared_secret_before_a_verified_final`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_reply_and_a_pending_process_are_retried_with_their_message`
 
 **Status:** `done` — as `begin_handshake_request`: `serialized_local_participant_data` as a parameter, only for a handle with PENDING_HANDSHAKE_MESSAGE (otherwise PreconditionError); the stack calls the operation with the identity `validate_remote_identity` returned for the initiator, not with the local one.
 
@@ -5792,9 +5791,9 @@ VALIDATION_PENDING_RETRY.
 
 **Repo:** `crates/security/src/authentication.rs::HandshakeStepOutcome`; `crates/security-pki/src/plugin.rs::process_handshake`; `crates/security-pki/src/psk.rs::process_handshake`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_handshake_returns_the_validation_results_of_table_59`,
-`crates/security-pki/src/plugin.rs::tests::the_replier_has_no_shared_secret_before_a_verified_final`,
-`crates/security/src/authentication.rs::tests::a_handshake_outcome_is_the_validation_result_of_table_30`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_returns_the_validation_results_of_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_9_1_the_replier_has_no_shared_secret_before_a_verified_final`,
+`crates/security/src/authentication.rs::tests::security_9_3_2_11_a_handshake_outcome_is_the_validation_result_of_table_30`
 
 **Status:** `done` — the initiator returns VALIDATION_OK_FINAL_MESSAGE after the reply (`SendFinalMessage`, distinguishable from VALIDATION_PENDING_HANDSHAKE_MESSAGE), the replier VALIDATION_OK after the final; PENDING_RETRY can be represented.
 
@@ -5808,9 +5807,9 @@ DomainParticipant").
 
 **Repo:** `crates/security/src/authentication.rs::HandshakeStepOutcome` (`SendMessage`, `SendFinalMessage`, `Complete`, `WaitingForPeer`, `PendingRetry`, `validation_result`, `message_out`); `crates/discovery/src/security/stack.rs::set_local_participant_data`
 
-**Tests:** `crates/security/src/authentication.rs::tests::a_handshake_outcome_is_the_validation_result_of_table_30`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_returns_the_validation_results_of_table_59`,
-`crates/discovery/src/security/stack.rs::tests::a_pending_request_is_retried_after_the_retry_timeout`
+**Tests:** `crates/security/src/authentication.rs::tests::security_9_3_2_11_a_handshake_outcome_is_the_validation_result_of_table_30`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_returns_the_validation_results_of_table_59`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_pending_request_is_retried_after_the_retry_timeout`
 
 **Status:** `done` — all six values of Table 30 can be represented; the data of the participant go into the operations as the parameter `serialized_local_participant_data`. The runtime gives the ParticipantBuiltinTopicData of the beacon as PL_CDR in big endian (without `identity_status_token`) to the stack; they are not the ParticipantBuiltinTopicDataSecure, because Cyclone and Fast DDS read `c.pdata` as ParticipantBuiltinTopicData (Table 56).
 
@@ -5828,9 +5827,9 @@ sequence_number to zero."
 
 **Repo:** `crates/discovery/src/security/stack.rs::PeerHandshake::build_message`, `apply_outcome`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::the_sequence_number_counts_the_messages_of_the_writer`,
-`crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`,
-`crates/security/src/generic_message.rs::tests::nil_message_identity`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_3_2_11_4_the_sequence_number_counts_the_messages_of_the_writer`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`,
+`crates/security/src/generic_message.rs::tests::security_7_3_22_nil_message_identity`
 
 **Status:** `done` — `message_class_id`, `destination_participant_guid`, `source_guid`, the empty `related_message_identity` of the request and the sequence of the `sequence_number` (next item) are as the clause says.
 
@@ -5842,7 +5841,7 @@ BuiltinParticipantMessageWriter, incremented by one."
 
 **Repo:** `crates/discovery/src/security/stack.rs::SecurityBuiltinStack::stateless_writer` (`next_message_identity`), `apply_outcome`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::the_sequence_number_counts_the_messages_of_the_writer`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_3_2_11_4_the_sequence_number_counts_the_messages_of_the_writer`
 
 **Status:** `done` — the `sequence_number` counts the messages of the stateless writer (1, 2, 3 for three peers), not those to one peer.
 
@@ -5855,8 +5854,8 @@ triggered the execution of the begin_handshake_reply operation."
 **Repo:** `crates/discovery/src/security/stack.rs::on_stateless_message`
 (l. 551, `msg.message_identity` as `related`)
 
-**Tests:** `crates/security/src/generic_message.rs::tests::related_message_identity_links_reply_to_request`,
-`crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`
+**Tests:** `crates/security/src/generic_message.rs::tests::security_7_5_3_3_related_message_identity_links_reply_to_request`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`
 
 **Status:** done — for `process_handshake` the code also sets the identity
 of the received message; the text of §9.3.2.11.6 names
@@ -5873,9 +5872,9 @@ of the receiving DomainParticipant".
 
 **Repo:** `crates/discovery/src/security/stack.rs::on_stateless_message`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::a_handshake_message_is_taken_only_as_the_spec_addresses_it`,
-`crates/discovery/src/security/stack.rs::tests::the_reply_to_an_undiscovered_initiator_is_addressed_to_its_participant`,
-`crates/discovery/src/security/stack.rs::tests::an_undiscovered_request_under_another_prefix_is_refused`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_4_a_handshake_message_is_taken_only_as_the_spec_addresses_it`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_11_5_the_reply_to_an_undiscovered_initiator_is_addressed_to_its_participant`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_11_5_an_undiscovered_request_under_another_prefix_is_refused`
 
 **Status:** `done` — `message_class_id`, `message_identity.source_guid` (the prefix has to be the sender's) and `destination_participant_guid` are checked before `begin_handshake_reply`; a message for another participant is not taken, one with a foreign `source_guid` is an error. The plugin additionally requires a handle with PENDING_HANDSHAKE_MESSAGE.
 
@@ -5889,8 +5888,8 @@ DomainParticipant."
 
 **Repo:** `crates/discovery/src/security/stack.rs::on_stateless_message`
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::a_handshake_message_is_taken_only_as_the_spec_addresses_it`,
-`crates/discovery/src/security/stack.rs::tests::a_forged_final_does_not_take_the_handshake_down`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_4_a_handshake_message_is_taken_only_as_the_spec_addresses_it`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_1_a_forged_final_does_not_take_the_handshake_down`
 
 **Status:** `done` — `related_message_identity` has to name the last message sent to the peer and `destination_participant_guid` the receiver; otherwise the message is not given to `process_handshake` and the handshake stays.
 
@@ -5903,8 +5902,8 @@ this method shall return the NILHandle and fill the SecurityException."
 **Repo:** `crates/security/src/authentication.rs::shared_secret` (l. 175);
 `crates/security-pki/src/plugin.rs::shared_secret` (l. 1059)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::get_shared_secret_returns_stored_value`,
-`crates/security-pki/src/plugin.rs::tests::shared_secret_returns_bad_argument_for_unknown_handle`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_8_get_shared_secret_returns_stored_value`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_shared_secret_returns_bad_argument_for_unknown_handle`
 
 **Status:** done — the operation is named `shared_secret` (naming).
 
@@ -5918,9 +5917,9 @@ that uses that handle completes successfully".
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::get_authenticated_peer_credential_token`; `crates/security-pki/src/plugin.rs::get_authenticated_peer_credential_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_authenticated_peer_credential_token_holds_c_id_and_c_perm`,
-`crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/discovery/src/security/stack.rs::tests::the_peer_credential_token_gives_the_permissions_and_the_certificate`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_the_authenticated_peer_credential_token_holds_c_id_and_c_perm`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_7_the_peer_credential_token_gives_the_permissions_and_the_certificate`
 
 **Status:** `done` — see §9.3.2.7; a call before the completion is an error.
 
@@ -5932,10 +5931,10 @@ of events relevant to the Authentication of DDS Participants."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::set_listener`, `AuthenticationListener`; `crates/security-pki/src/plugin.rs::set_listener`; `crates/discovery/src/security/stack.rs::install_listener`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::revoking_an_identity_tells_the_listener_and_invalidates_the_handle`,
-`crates/security-pki/src/plugin.rs::tests::an_expired_identity_certificate_is_revoked`,
-`crates/security-pki/src/psk.rs::tests::table_83_set_listener_saves_the_listener`,
-`crates/discovery/src/security/stack.rs::tests::a_revoked_identity_ends_the_authentication_of_its_participant`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_revoking_an_identity_tells_the_listener_and_invalidates_the_handle`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_an_expired_identity_certificate_is_revoked`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_set_listener_saves_the_listener`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_11_a_revoked_identity_ends_the_authentication_of_its_participant`
 
 **Status:** `done` — the operation sets the listener (`None` removes it); the discovery stack sets its own.
 
@@ -5946,9 +5945,9 @@ plugin so it can be disposed of."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::return_identity_token`, `IssuedTokens`; `crates/security-pki/src/plugin.rs::return_identity_token`; `crates/security-pki/src/psk.rs::return_identity_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::table_83_the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_7_the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
 
 **Status:** `done` — the plugin keeps the IdentityTokens it issued and takes back only those, each as often as it was issued; a foreign token or one already returned is an error.
 
@@ -5959,9 +5958,9 @@ the plugin so it can be disposed of."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::return_identity_status_token`, `IssuedTokens`; `crates/security-pki/src/plugin.rs::return_identity_status_token`; `crates/security-pki/src/psk.rs::return_identity_status_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::table_83_the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_7_the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
 
 **Status:** `done` — the plugin keeps the IdentityStatusTokens it issued and takes back only those, each as often as it was issued; a foreign token or one already returned is an error.
 
@@ -5973,9 +5972,9 @@ of."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::return_authenticated_peer_credential_token`, `IssuedTokens`; `crates/security-pki/src/plugin.rs::return_authenticated_peer_credential_token`; `crates/security-pki/src/psk.rs::return_authenticated_peer_credential_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::table_83_the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_7_the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
 
 **Status:** `done` — the plugin keeps the AuthenticatedPeerCredentialTokens it issued and takes back only those, each as often as it was issued; a foreign token or one already returned is an error.
 
@@ -5986,8 +5985,8 @@ plugin so it can be disposed of."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::return_handshake_handle`; `crates/security-pki/src/plugin.rs::return_handshake_handle`; `crates/discovery/src/security/stack.rs::release_peer_handles`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/discovery/src/security/stack.rs::tests::a_handshake_that_does_not_complete_ends_with_the_authentication_timeout`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_9_a_handshake_that_does_not_complete_ends_with_the_authentication_timeout`
 
 **Status:** `done` — the plugin takes an issued handle back once and releases the state of the handshake (request, reply, association with the secret, token of the peer); the stack gives the handles of an ended authentication and of a lost participant back.
 
@@ -5998,9 +5997,9 @@ plugin so it can be disposed of."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::return_identity_handle`; `crates/security-pki/src/plugin.rs::return_identity_handle`; `crates/security-pki/src/psk.rs::return_identity_handle`; `crates/discovery/src/security/stack.rs::release_peer_handles`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::a_returned_identity_handle_is_disposed_of`,
-`crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::table_83_the_return_operations_take_back_what_was_issued`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_a_returned_identity_handle_is_disposed_of`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_the_return_operations_take_back_what_was_issued`
 
 **Status:** `done` — the plugin takes the handles of `validate_local_identity` and `validate_remote_identity` back once each and releases the state (version of the peer, GUID, challenges, role).
 
@@ -6011,8 +6010,8 @@ the plugin so it can be disposed of."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationPlugin::return_sharedsecret_handle`; `crates/security-pki/src/plugin.rs::return_sharedsecret_handle`; `crates/security-pki/src/psk.rs::return_sharedsecret_handle`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/psk.rs::tests::the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_7_the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued`
 
 **Status:** `done` — a secret a completed handshake returned goes back once; the bytes and the challenges are gone afterwards. The stack does it only when the peer is lost (the crypto plugin reads the secret through the `SharedSecretProvider` as long as the peer is there).
 
@@ -6023,7 +6022,7 @@ of the interface completely.
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationExtensions`, `AuthenticationPlugin`
 
-**Tests:** `crates/security/src/authentication.rs::tests::stub_can_be_boxed`
+**Tests:** `crates/security/src/authentication.rs::tests::security_9_3_2_11_stub_can_be_boxed`
 
 **Status:** `done` — `AuthenticationPlugin` has exactly the operations of Table 29. What is needed beyond them is in the supertrait `AuthenticationExtensions` and reasoned there: `plugin_class_id` (name for the log), `set_algo_nul_terminate`, `set_remote_message_auth_supported` and `set_peer_algorithm_names` (spelling per vendor of the peer), `get_permissions_token` (the token for `PID_PERMISSIONS_TOKEN`, until AccessControl supplies it) and `check_identities` (the clock: the interface of Table 29 has no operation that brings the time, the plugin needs it for expired certificates). `peer_permissions`, `peer_identity_certificate`, `local_auth_request_token`, `algorithm_masks` and `set_local_participant_data` are gone.
 
@@ -6035,10 +6034,10 @@ VALIDATION_PENDING_HANDSHAKE_MESSAGE, VALIDATION_OK_FINAL_MESSAGE.
 
 **Repo:** `crates/security/src/authentication.rs::ValidationResult`, `HandshakeStepOutcome::validation_result`
 
-**Tests:** `crates/security/src/authentication.rs::tests::a_handshake_outcome_is_the_validation_result_of_table_30`,
-`crates/security/src/authentication.rs::tests::only_ok_and_ok_final_message_succeed`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_returns_the_validation_results_of_table_59`,
-`crates/security-pki/src/plugin.rs::tests::validate_remote_identity_orders_the_guids_like_table_59`
+**Tests:** `crates/security/src/authentication.rs::tests::security_9_3_2_11_a_handshake_outcome_is_the_validation_result_of_table_30`,
+`crates/security/src/authentication.rs::tests::security_9_3_2_11_1_only_ok_and_ok_final_message_succeed`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_returns_the_validation_results_of_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_orders_the_guids_like_table_59`
 
 **Status:** `done` — all six values; VALIDATION_FAILED is the error case `Err`, `ValidationResult::Failed` names it.
 
@@ -6051,11 +6050,11 @@ communications with the DomainParticipant associated with that handle."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationListener`; `crates/security-pki/src/plugin.rs::revoke_identity`, `check_identities`; `crates/discovery/src/security/stack.rs::drain_auth_events`; `crates/dcps/src/runtime.rs::process_authentication_events`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::revoking_an_identity_tells_the_listener_and_invalidates_the_handle`,
-`crates/security-pki/src/plugin.rs::tests::an_expired_identity_certificate_is_revoked`,
-`crates/security-pki/src/plugin.rs::tests::a_crl_that_lists_the_peer_revokes_its_identity`,
-`crates/discovery/src/security/stack.rs::tests::a_revoked_identity_ends_the_authentication_of_its_participant`,
-`crates/dcps/src/runtime.rs::tests::a_revoked_identity_ends_the_authentication_through_the_runtime_tick`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_revoking_an_identity_tells_the_listener_and_invalidates_the_handle`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_an_expired_identity_certificate_is_revoked`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_12_a_crl_that_lists_the_peer_revokes_its_identity`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_11_a_revoked_identity_ends_the_authentication_of_its_participant`,
+`crates/dcps/src/runtime.rs::tests::security_9_3_2_12_a_revoked_identity_ends_the_authentication_through_the_runtime_tick`
 
 **Status:** `done` — the plugin calls `on_revoke_identity` when an identity is revoked (`revoke_identity`, expired certificate, new CRL); the handle is invalid afterwards, the handshake and the secret go with it. The stack ends the authentication of the participant, does not authenticate it again, and reports it; the runtime ignores the participant (endpoints and matches go) and releases its keys.
 
@@ -6071,7 +6070,7 @@ that is more than 7 revisions earlier than the current."
 
 **Repo:** `crates/dcps/src/runtime.rs::process_authentication_events`, `renew_key_material_after_revocation`; `crates/security-runtime/src/shared.rs::SharedSecurityGate::revise_local_entity_keys`, `activate_key_revision`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_3_2_12_2_a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`
 
 **Status:** `done` — after `on_revoke_identity` the runtime calls `revise_local_entity_keys` (§9.5.1.8.7): the keys of the participant and of all local endpoints get a new revision. The participant token goes to the remaining authenticated participants at once, the endpoint tokens at the next tick; `activate_key_revision` (§9.5.1.8.8) follows. The revoked participant holds the earlier revision only and cannot decode the new one. The activation does not wait for the endpoint tokens.
 
@@ -6083,8 +6082,8 @@ plugin has changed."
 
 **Repo:** `crates/security/src/authentication.rs::AuthenticationListener::on_status_changed`; `crates/security-pki/src/plugin.rs::check_identities`; `crates/discovery/src/security/stack.rs::drain_auth_events`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::a_changed_status_token_is_reported_as_identity_status`,
-`crates/discovery/src/security/stack.rs::tests::a_status_change_is_passed_on_with_the_new_token`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_a_changed_status_token_is_reported_as_identity_status`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_2_a_status_change_is_passed_on_with_the_new_token`
 
 **Status:** `done` — the plugin calls the operation when the IdentityStatusToken changes; the stack notes the change, the runtime fetches the new token.
 
@@ -6097,8 +6096,8 @@ the DCPSParticipantsSecure builtin Topic."
 
 **Repo:** `crates/security/src/authentication.rs::AuthStatusKind`; `crates/discovery/src/security/stack.rs::take_identity_status_changed`; `crates/dcps/src/runtime.rs::process_authentication_events`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::a_changed_status_token_is_reported_as_identity_status`,
-`crates/discovery/src/security/stack.rs::tests::a_status_change_is_passed_on_with_the_new_token`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_a_changed_status_token_is_reported_as_identity_status`,
+`crates/discovery/src/security/stack.rs::tests::security_9_3_2_2_a_status_change_is_passed_on_with_the_new_token`
 
 **Status:** `done` — `AuthStatusKind::IdentityStatus`; a changed token goes into the beacon and is sent in the secure SPDP (DCPSParticipantsSecure) to the authenticated participants.
 
@@ -6137,10 +6136,10 @@ the UML level".
 
 **Repo:** `crates/security-runtime/src/shared.rs::SharedSecurityGate` (holds a `Box<dyn AccessControlPlugin>`, `application_access_control`), `crates/dcps/src/runtime.rs`, `crates/dcps/src/participant.rs`, `crates/dcps/src/publisher.rs`, `crates/dcps/src/access_request.rs`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::a_plugin_of_the_application_decides_every_check`,
-`crates/security-runtime/src/shared.rs::tests::a_refusing_plugin_of_the_application_refuses_every_check`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::create_topic_is_asked_of_the_plugin`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_a_plugin_of_the_application_decides_every_check`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_a_refusing_plugin_of_the_application_refuses_every_check`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_create_topic_is_asked_of_the_plugin`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`
 
 **Status:** `done` — every decision of the runtime (participant, topic, endpoint, instance, match, remote participants and endpoints, configs, tokens) goes through `dyn AccessControlPlugin`. Without an application plugin the gate builds the builtin one from governance, permissions, CA and identity certificate. An application plugin replaces it (`set_access_control`).
 
@@ -6154,8 +6153,8 @@ be externalized and propagated over DDS discovery."
 l. 247–268); `crates/security-pki/src/plugin.rs::get_permissions_token`
 (l. 806)
 
-**Tests:** `crates/security/src/token.rs::tests::permissions_token_roundtrip`,
-`crates/security-pki/src/plugin.rs::tests::permissions_token_announces_spec_class_id_when_permissions_set`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_5_permissions_token_roundtrip`,
+`crates/security-pki/src/plugin.rs::tests::security_9_4_2_1_permissions_token_announces_spec_class_id_when_permissions_set`
 
 **Status:** done — produced by the Authentication plugin, not by
 AccessControl (see Table 39 — get_permissions_token); the content is in
@@ -6183,7 +6182,7 @@ reference to internal state within the AccessControl plugin."
 
 **Repo:** `crates/security/src/access_control.rs::PermissionsHandle` (l. 30)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::permit_on_exact_match`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_3_permit_on_exact_match`
 
 **Status:** done — the runtime uses no handle but keeps the documents in
 `SharedSecurityGate` (see above).
@@ -6201,8 +6200,8 @@ algorithm_info; };"
 
 **Repo:** `crates/security/src/access_control.rs::ParticipantSecurityConfig` (+ `ParticipantSecurityAlgorithmInfo`)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/security/src/access_control.rs::tests::the_participant_mask_has_the_bits_of_table_34`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/security/src/access_control.rs::tests::security_9_4_2_4_the_participant_mask_has_the_bits_of_table_34`
 
 **Status:** `done` — the type has every member of §9.4.2.4 including `is_rtps_psk_protected`, `is_key_revision_enabled`, `ac_participant_properties` and `algorithm_info`; both plugins fill it.
 
@@ -6218,10 +6217,10 @@ authenticated."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config`; `crates/dcps/src/runtime.rs::builtin_match`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/dcps/src/runtime.rs::tests::the_sedp_of_a_peer_is_matched_once_it_authenticated`,
-`crates/dcps/src/runtime.rs::tests::an_unauthenticated_peer_gets_the_regular_sedp_only`,
-`crates/security-runtime/src/shared.rs::tests::allow_unauthenticated_reads_true_when_set`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_4_the_sedp_of_a_peer_is_matched_once_it_authenticated`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_4_an_unauthenticated_peer_gets_the_regular_sedp_only`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_4_allow_unauthenticated_reads_true_when_set`
 
 **Status:** `done` — the value comes from the plugin, decides the matching of §9.8.3.1/§9.8.3.2 and the acceptance of plaintext. The kick-out on the same GUID is its own item below.
 
@@ -6234,7 +6233,7 @@ unauthenticated DomainParticipant if it has the same GUID."
 
 **Repo:** `crates/dcps/src/runtime.rs::displace_unauthenticated_endpoints`, `store_remote_permissions`, `spdp_plain_is_liveliness_only`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::an_authenticating_participant_displaces_the_unauthenticated_one_with_its_guid`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_4_2_4_an_authenticating_participant_displaces_the_unauthenticated_one_with_its_guid`
 
 **Status:** `done` — with `allow_unauthenticated_participants` TRUE, `store_remote_permissions` drops at the end of the handshake everything learned of the GUID over the regular discovery before it authenticated (endpoints in the SEDP cache and their matches); the endpoints of the authenticated participant come over the secure channels. A plaintext announcement of an already authenticated GUID renews the lease only (`spdp_plain_is_liveliness_only`).
 
@@ -6247,8 +6246,8 @@ DomainParticipants".
 **Repo:** `crates/security-runtime/src/shared.rs::classify_inbound`,
 `::set_plaintext_loopback`; setting `zerodds.sec.plaintext_loopback`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::classify_inbound_plain_on_loopback_needs_the_setting`,
-`crates/dcps/src/runtime.rs::tests::inbound_loopback_plaintext_needs_the_setting`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_4_classify_inbound_plain_on_loopback_needs_the_setting`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_4_inbound_loopback_plaintext_needs_the_setting`
 
 **Status:** `done` — plaintext from loopback counts as plaintext from any other
 interface. It is accepted only with `zerodds.sec.plaintext_loopback` (opt-in)
@@ -6266,9 +6265,9 @@ HandleNIL return from these operations will not prevent authorization."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config`; `crates/dcps/src/runtime.rs::store_remote_permissions`
 
-**Tests:** `crates/dcps/tests/security_join_access_e2e.rs::a_participant_the_permissions_refuse_is_ignored_when_the_domain_is_access_protected`,
-`crates/dcps/tests/security_join_access_e2e.rs::a_participant_is_not_checked_when_the_domain_is_not_access_protected`,
-`crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`
+**Tests:** `crates/dcps/tests/security_join_access_e2e.rs::security_9_4_2_4_a_participant_the_permissions_refuse_is_ignored_when_the_domain_is_access_protected`,
+`crates/dcps/tests/security_join_access_e2e.rs::security_9_4_2_4_a_participant_is_not_checked_when_the_domain_is_not_access_protected`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`
 
 **Status:** `done` — the plugin returns `is_access_protected` from `enable_join_access_control`; with TRUE the runtime calls `validate_remote_permissions` and `check_remote_participant` after the handshake and ignores a participant whose check fails (`ignore_unauthorized_participant`): its writer is never matched. With FALSE nothing is checked. Measured with three running runtimes over UDP (log `sec-access-1018-112603.log`). The test found that the exclusion lapsed with the next SPDP on a runtime without a `DomainParticipant`; fixed.
 
@@ -6285,9 +6284,9 @@ CryptoTransform operation decode_rtps_message."
 
 **Repo:** `crates/security-runtime/src/shared.rs::rtps_protection`, `transform_outbound_for`, `transform_inbound_from`; `crates/security-permissions/src/governance.rs::parse_domain_rule`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::transform_outbound_for_encrypt_produces_srtps_wire`,
-`crates/security-runtime/src/shared.rs::tests::transform_inbound_from_looks_up_slot_by_guid`,
-`crates/security-permissions/src/governance.rs::tests::rtps_protection_with_unauthenticated_participants_is_refused`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_4_transform_outbound_for_encrypt_produces_srtps_wire`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_4_transform_inbound_from_looks_up_slot_by_guid`,
+`crates/security-permissions/src/governance.rs::tests::security_9_4_2_4_rtps_protection_with_unauthenticated_participants_is_refused`
 
 **Status:** `done` — whole messages are protected by `rtps_protection_kind`; condition (1) is checked when the governance is read (item below).
 
@@ -6298,7 +6297,7 @@ then: (1) allow_unauthenticated_participants must be FALSE."
 
 **Repo:** `crates/security-permissions/src/governance.rs::parse_domain_rule`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::rtps_protection_with_unauthenticated_participants_is_refused`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_9_4_2_4_rtps_protection_with_unauthenticated_participants_is_refused`
 
 **Status:** `done` — `rtps_protection_kind` other than NONE with `allow_unauthenticated_participants` TRUE makes the governance invalid.
 
@@ -6313,7 +6312,7 @@ shall NOT be transformed".
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config`; `crates/security-runtime/src/qos_properties.rs::rtps_psk_from_properties`; `crates/security-runtime/src/psk_gate.rs`; `crates/dcps/src/runtime.rs::secure_outbound_bytes`, `secure_inbound_bytes`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_governance_decides_the_pre_shared_key_protection`, `crates/security-runtime/src/psk_gate.rs::tests::the_gate_protects_a_message_with_the_pre_shared_key`, `crates/dcps/src/runtime.rs::tests::a_pre_shared_key_protects_the_bootstrapping_messages`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_9_4_2_4_the_governance_decides_the_pre_shared_key_protection`, `crates/security-runtime/src/psk_gate.rs::tests::security_9_4_2_4_the_gate_protects_a_message_with_the_pre_shared_key`, `crates/dcps/src/runtime.rs::tests::security_9_4_2_4_a_pre_shared_key_protects_the_bootstrapping_messages`
 
 **Status:** `done` — The `rtps_psk_protection_kind` of the governance (otherwise the property of Table 84) decides whether and how the gate transforms the RTPS messages with the pre-shared key (§10.9); with the key set, bootstrapping messages go out with flags A and P and unprotected ones are refused. The enclave path without a property list has no passphrase and does not protect. run `cargo test -p zerodds-security-runtime --lib` and `-p zerodds-dcps --features security --lib`: green, logs `/root/zerodds-rc7/agent-logs/sec-crypto-1018-085015.log`, `…085119.log`.
 
@@ -6330,7 +6329,7 @@ for the DCPSPublicationsSecure and DCPSSubscriptionsSecure entities."
 **Repo:** `crates/security-runtime/src/shared.rs::discovery_protection`
 (l. 537); `crates/dcps/src/runtime.rs::protect_secure_spdp` (l. 17028)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_discovery_protection`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_7_5_13_matrix_discovery_protection`
 
 **Status:** done — the protection of the submessages of the secure SEDP
 endpoints follows `discovery_protection_kind`; the runtime protects the
@@ -6349,7 +6348,7 @@ for the BuiltinParticipantMessageSecure entities."
 **Repo:** `crates/security-runtime/src/shared.rs::liveliness_protection`
 (l. 622)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_liveliness_protection`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_7_5_13_matrix_liveliness_protection`
 
 **Status:** done
 
@@ -6361,7 +6360,7 @@ revise Key Material for its entities when certain events are encountered
 
 **Repo:** `crates/security-runtime/src/shared.rs::key_revision_enabled`; `crates/dcps/src/runtime.rs::renew_key_material_after_revocation`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`, `crates/dcps/src/runtime.rs::tests::a_revocation_makes_no_revision_unless_the_governance_enables_it`, `crates/security-crypto/src/plugin/spec.rs::tests::a_key_revision_keeps_the_key_id_and_changes_the_keys`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_3_2_12_2_a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`, `crates/dcps/src/runtime.rs::tests::security_9_4_2_4_a_revocation_makes_no_revision_unless_the_governance_enables_it`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys`
 
 **Status:** `done` — With `<enable_key_revision>` the runtime makes a new revision (`revise_local_entity_keys`) when an identity is revoked, sends it to the remaining participants and activates it (`activate_key_revision`); without the element nothing happens. run `cargo test -p zerodds-security-runtime --lib` and `-p zerodds-dcps --features security --lib`: green, logs `/root/zerodds-rc7/agent-logs/sec-crypto-1018-085015.log`, `…085119.log`.
 
@@ -6375,7 +6374,7 @@ ParticipantSecurityInfo".
 (l. 33); `crates/dcps/src/runtime.rs` (l. 8722, set in the beacon)
 
 **Tests:** `crates/rtps/src/participant_security_info.rs::tests::fully_protected_sets_all_encrypt_bits`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** done — the runtime derives the bits from the governance, not a
 plugin.
@@ -6388,7 +6387,7 @@ register_local_participant."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config`; `crates/security-runtime/src/shared.rs::ensure_local` (passes the properties to `register_local_participant`)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`
 
 **Status:** `done` — the plugin returns the properties; the gate hands them to the CryptoKeyFactory in `participant_properties`. The IDL of the spec names the member `ac_endpoint_properties`, Table 33 `ac_participant_properties` (contradiction in the spec); the code uses `ac_participant_properties`.
 
@@ -6399,9 +6398,9 @@ supported by the participant. See 7.3.14."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config`, `governance.rs::AllowedCryptoAlgorithms`; `crates/dcps/src/runtime.rs` (SPDP)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::without_allowed_algorithms_every_algorithm_is_supported`,
-`crates/security-permissions/src/plugin.rs::tests::the_identity_certificates_algorithms_must_be_allowed`,
-`crates/dcps/src/runtime.rs::tests::the_allowed_algorithms_cut_the_announced_ones`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_without_allowed_algorithms_every_algorithm_is_supported`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_identity_certificates_algorithms_must_be_allowed`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_4_the_allowed_algorithms_cut_the_announced_ones`
 
 **Status:** `done` — `supported_mask` and `required_mask` follow `<allowed_crypto_algorithms>`; without the element CRYPTO_ALGORITHM_SET_ALL applies (Table 70). The identity certificate must use the allowed algorithms. The runtime announces the masks in the SPDP.
 
@@ -6414,8 +6413,8 @@ supported by the participant. See 7.3.14."
 
 **Repo:** `crates/rtps/src/participant_security_info.rs::attrs`; `crates/dcps/src/runtime.rs` (SPDP from the plugin configuration)
 
-**Tests:** `crates/security/src/access_control.rs::tests::the_participant_mask_has_the_bits_of_table_34`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security/src/access_control.rs::tests::security_9_4_2_4_the_participant_mask_has_the_bits_of_table_34`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — all bits of Table 34 (0, 1, 2, 3, 4, 31) come from `ParticipantSecurityConfig::attributes_mask`.
 
@@ -6428,8 +6427,8 @@ PARTICIPANT_SECURITY_ATTRIBUTES_FLAG_IS_KEY_REVISION_ENABLED (0x00000001 <<
 
 **Repo:** `crates/security/src/access_control.rs::participant_attributes_mask`; `crates/rtps/src/participant_security_info.rs::attrs`
 
-**Tests:** `crates/security/src/access_control.rs::tests::the_participant_mask_has_the_bits_of_table_34`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security/src/access_control.rs::tests::security_9_4_2_4_the_participant_mask_has_the_bits_of_table_34`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — both bits are set from the governance (`enable_key_revision`, `rtps_psk_protection_kind`) and announced.
 
@@ -6442,8 +6441,8 @@ PARTICIPANT_SECURITY_OPT_ATTRIBUTES_FLAG_ALLOW_UNAUTHENTICATED_PARTICIPANTS
 
 **Repo:** `crates/security/src/access_control.rs::participant_optional_attributes_mask`; `crates/rtps/src/participant_security_info.rs::opt_attrs`; `crates/security-runtime/src/qos_properties.rs::PROP_OPTIONAL_ATTRIBUTES`
 
-**Tests:** `crates/security/src/access_control.rs::tests::the_optional_mask_has_the_bits_of_table_35`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security/src/access_control.rs::tests::security_9_4_2_5_the_optional_mask_has_the_bits_of_table_35`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — the third member `participant_security_optional_attributes` is sent by default (value from `allow_unauthenticated_participants` and `is_access_protected`). With `org.zerodds.sec.optional_attributes=omit` it is left out. Not measured against Cyclone DDS, Fast DDS and OpenDDS; expected: peers that read two masks only ignore the member.
 
@@ -6455,7 +6454,7 @@ boolean is_discovery_protected; boolean is_liveliness_protected; };"
 
 **Repo:** `crates/security/src/access_control.rs::TopicSecurityConfig`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`
 
 **Status:** `done` — the type has the four members; the plugin fills them from the topic rule.
 
@@ -6471,8 +6470,8 @@ the AccessControl operations."
 (l. 414); `crates/security-runtime/src/shared.rs::check_create_datareader`
 (l. 441), `check_remote_datareader` (l. 362)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::access_control_flags_come_from_the_matching_rule`,
-`crates/security-permissions/src/governance.rs::tests::an_uncontrolled_topic_needs_no_grant`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_access_control_flags_come_from_the_matching_rule`,
+`crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_an_uncontrolled_topic_needs_no_grant`
 
 **Status:** done — the check of the remote reader is assessed under
 Table 39 — check_remote_datareader.
@@ -6488,8 +6487,8 @@ access-control mechanisms imposed."
 (l. 405); `crates/security-runtime/src/shared.rs::check_create_datawriter`
 (l. 406), `check_remote_datawriter` (l. 326)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::access_control_flags_come_from_the_matching_rule`,
-`crates/security-permissions/src/governance.rs::tests::the_granted_direction_still_creates`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_access_control_flags_come_from_the_matching_rule`,
+`crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_the_granted_direction_still_creates`
 
 **Status:** done
 
@@ -6504,7 +6503,7 @@ SEDPbuiltinSubscriptionsWriter."
 
 **Repo:** `crates/dcps/src/runtime.rs::sync_sedp_discovery_protected`, `SharedSecurityGate::topic_discovery_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`
 
 **Status:** `done` — `is_discovery_protected` of the topic selects the SEDP endpoints and enters the mask. TypeLookup: see the item below.
 
@@ -6516,7 +6515,7 @@ which require use of the Builtin Secure TypeLookup Endpoints".
 
 **Repo:** `crates/dcps/src/runtime.rs::hidden_from_regular_type_lookup`, `without_hidden_types`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_regular_type_lookup_does_not_hand_out_the_types_of_protected_topics`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_4_2_6_the_regular_type_lookup_does_not_hand_out_the_types_of_protected_topics`
 
 **Status:** `done` — the regular TypeLookup endpoints do not hand out the types of topics with `is_discovery_protected`; the secure endpoints do.
 
@@ -6534,17 +6533,17 @@ the BuiltinParticipantMessage builtin Topic."
 `crates/security-runtime/src/shared.rs::SharedSecurityGate::topic_liveliness_protected`
 
 **Tests:**
-`crates/dcps/src/wlp.rs::tests::the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
-`crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`,
-`crates/dcps/src/wlp.rs::tests::wlp_secure_sender_uses_secure_entity_and_is_received`
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`,
+`crates/dcps/src/wlp.rs::tests::security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received`
 
 **Status:** `done` — the participant beats on the plain writer for the writers
 of its topics that are not sensitive and on the secure writer for those of the
 sensitive ones (`is_liveliness_protected` of the rule of the topic); with topics
 of both kinds it beats on both, each writer with its own sequence numbers,
 history and reader proxies. Without a writer, `liveliness_protection_kind` of
-the domain decides. Restored: the choice of `62017f49303` was lost in the merge
-`13cb1667912` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
+the domain decides. Restored: the choice of `7d8c2eb0de3` was lost in the merge
+`021bb9dff29` when the WLP endpoint of wip/dcps-1.4 (a `ReliableWriter` with
 reader proxies) was taken; it now sits on that endpoint (`WlpEndpoint` holds the
 plain and the secure `ReliableWriter`). The plain WLP DATA is not protected with
 the key of the secure writer. Tests green on the Linux test host
@@ -6561,8 +6560,8 @@ EndpointSecurityAlgorithmInfo algorithm_info; };"
 
 **Repo:** `crates/security/src/access_control.rs::EndpointSecurityConfig`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`,
-`crates/security/src/access_control.rs::tests::the_endpoint_mask_has_the_bits_of_table_38`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`,
+`crates/security/src/access_control.rs::tests::security_9_4_2_7_the_endpoint_mask_has_the_bits_of_table_38`
 
 **Status:** `done` — the type has every member of §9.4.2.7; the endpoint mask is derived from it.
 
@@ -6579,7 +6578,7 @@ CryptoTransform operation encode_datareader_submessage".
 (l. 515); `crates/dcps/src/runtime.rs::user_endpoint_security_info`, `crates/security-runtime/src/plugin_attributes.rs::endpoint_security_info`
 (l. 2087)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_metadata_protection_all_kinds`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_8_1_1_matrix_metadata_protection_all_kinds`
 
 **Status:** done — which submessages of a reader are protected is covered
 in §7.4.7 and §10.5.
@@ -6597,7 +6596,7 @@ decode_serialized_payload".
 `encode_serialized_payload` (l. 1024), `decode_serialized_payload`
 (l. 1040)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_data_protection_all_kinds`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_8_1_matrix_data_protection_all_kinds`
 
 **Status:** done
 
@@ -6613,9 +6612,9 @@ in section 7.4.4."
 `crates/dcps/src/runtime.rs::payload_key_hash`
 
 **Tests:**
-`crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`,
-`crates/security-runtime/src/plugin_attributes.rs::tests::key_protected_follows_data_encrypt_per_spec_10_4_1_2_6`,
-`crates/dcps/src/runtime.rs::tests::the_key_hash_of_an_encrypted_payload_is_the_md5_of_the_key`
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`,
+`crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_key_protected_follows_data_encrypt_per_spec_10_4_1_2_6`,
+`crates/dcps/src/runtime.rs::tests::security_7_4_4_the_key_hash_of_an_encrypted_payload_is_the_md5_of_the_key`
 
 **Status:** `done` — the member is set from `data_protection_kind` ENCRYPT
 (§10.4.1.2.6), and under that protection every sample and every
@@ -6648,7 +6647,7 @@ register_local_datareader."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_datawriter_security_config`; `crates/security-runtime/src/shared.rs::register_local_endpoint` (properties to the CryptoKeyFactory); `crates/dcps/src/runtime.rs`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`
 
 **Status:** `done` — the plugin returns the properties; the runtime hands them to `register_local_datawriter` and `register_local_datareader`.
 
@@ -6659,7 +6658,7 @@ interoperate with the endpoint. See 7.3.16."
 
 **Repo:** `crates/security-runtime/src/gate_crypto.rs::endpoint_required_mask`; `crates/dcps/src/runtime.rs::local_endpoint_cipher`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_announced_cipher_is_the_algorithm_info_of_the_plugin`, `crates/security-runtime/src/shared.rs::tests::the_basic_protection_kind_of_an_endpoint_decides_gmac_or_gcm`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_4_2_7_the_announced_cipher_is_the_algorithm_info_of_the_plugin`, `crates/security-runtime/src/shared.rs::tests::security_9_4_2_7_the_basic_protection_kind_of_an_endpoint_decides_gmac_or_gcm`
 
 **Status:** `done` — The `required_mask` of the `adjusted_algorithm_info` the plugin returns from `register_local_datawriter`/`_datareader` is the announcement as PID 0x1013 (only when it differs from the default of the participant, §7.3.15.2). run `cargo test -p zerodds-security-runtime --lib` and `-p zerodds-dcps --features security --lib`: green, logs `/root/zerodds-rc7/agent-logs/sec-crypto-1018-085015.log`, `…085119.log`.
 
@@ -6675,7 +6674,7 @@ is_key_protected (0x1 << 5), is_liveliness_protected (0x1 << 6), is_valid
 `crates/dcps/src/runtime.rs::user_endpoint_security_info`, `crates/security-runtime/src/plugin_attributes.rs::endpoint_security_info` (l. 2087)
 
 **Tests:** `crates/rtps/src/endpoint_security_info.rs::tests::encoded_bytes_le_match_spec_layout`,
-`crates/security-runtime/src/plugin_attributes.rs::tests::liveliness_protected_sets_0x40_per_spec_9_4_1_3`
+`crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_liveliness_protected_sets_0x40_per_spec_9_4_1_3`
 
 **Status:** done
 
@@ -6706,7 +6705,7 @@ PermissionsCredentialToken obtained as part of the authentication process."
 
 **Tests:** `tools/secure-permissions/tests/access_plugin_signed.rs::a_remote_participant_is_validated_and_checked`,
 `tools/secure-permissions/tests/access_plugin_signed.rs::a_remote_document_needs_the_permissions_ca`,
-`crates/security-permissions/src/plugin.rs::tests::a_remote_validation_without_ca_or_credential_is_refused`
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_a_remote_validation_without_ca_or_credential_is_refused`
 
 **Status:** `done` — signature and SubjectName of `c.perm` are checked; a failure returns the NIL handle with a minor code.
 
@@ -6721,10 +6720,18 @@ NOT_ALLOWED_BY_SECURITY error."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::check_create_participant`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::check_create_participant_honours_the_domain_range`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::participant_set_qos_is_asked_of_the_plugin`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_check_create_participant_honours_the_domain_range`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_participant_set_qos_is_asked_of_the_plugin`
 
 **Status:** `done` — the check runs at creation and at `set_qos`; a refusal is NOT_ALLOWED_BY_SECURITY.
+It is grant-based (`crates/security-permissions/src/governance.rs::Governance::check_create_participant`,
+test `check_create_participant_consults_permissions`): no `<domain_rule>` for
+the domain denies; `enable_join_access_control = FALSE` allows; `TRUE` allows
+only with a grant valid at that time whose `<domains>` contain the domain.
+Table 63 is not read by topology alone: a governance with join access control
+and read/write access control on every topic stays joinable for participants
+with a matching grant, as in Cyclone DDS and Fast DDS; OpenDDS reads Table 63
+by topology and refuses that governance even against itself.
 
 ### §9.4.2.9.3 check_create_participant: error code and set_qos
 
@@ -6736,7 +6743,7 @@ NOT_ALLOWED_BY_SECURITY."
 
 **Repo:** `crates/dcps/src/participant.rs` (JoinDenied and `set_qos` on NOT_ALLOWED_BY_SECURITY)
 
-**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::participant_set_qos_is_asked_of_the_plugin`
+**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_participant_set_qos_is_asked_of_the_plugin`
 
 **Status:** `done` — `set_qos` of the participant asks the plugin with the new QoS; a refusal is NOT_ALLOWED_BY_SECURITY.
 
@@ -6751,9 +6758,9 @@ DataWriter". Parameters `permissions_handle`, `domain_id`, `topic_name`,
 
 **Repo:** `crates/dcps/src/runtime.rs::check_create_endpoint`, `crates/dcps/src/publisher.rs` (`set_qos`)
 
-**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`,
-`crates/dcps/tests/security_endpoint_access_e2e.rs::the_six_omg_suite_refusals_reach_the_runtime`,
-`crates/dcps/tests/security_endpoint_access_e2e.rs::the_granted_direction_and_the_open_topic_still_create`
+**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`,
+`crates/dcps/tests/security_endpoint_access_e2e.rs::security_7_3_25_the_six_omg_suite_refusals_reach_the_runtime`,
+`crates/dcps/tests/security_endpoint_access_e2e.rs::security_9_4_2_9_the_granted_direction_and_the_open_topic_still_create`
 
 **Status:** `done` — creating and `set_qos` of the DataWriter ask the plugin with topic, partitions, QoS and data tags.
 
@@ -6766,8 +6773,8 @@ argument can be nil if it is not considered for access control."
 
 **Repo:** `crates/dcps/src/access_request.rs`; `DataWriterQos.data_tags`, `DataReaderQos.data_tags`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::the_plugin_gets_partitions_data_tags_and_qos`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`
 
 **Status:** `done` — `qos` and `data_tag` are part of the request; a tag the plugin refuses prevents the creation.
 
@@ -6779,8 +6786,8 @@ associated with the data_tag, its permissions must allow this."
 
 **Repo:** `crates/dcps/src/runtime.rs::check_create_endpoint`, `crates/dcps/src/subscriber.rs`
 
-**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::the_six_omg_suite_refusals_reach_the_runtime`,
-`crates/security-runtime/src/shared.rs::tests::the_plugin_gets_partitions_data_tags_and_qos`
+**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::security_7_3_25_the_six_omg_suite_refusals_reach_the_runtime`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos`
 
 **Status:** `done` — as `check_create_datawriter`, for the DataReader.
 
@@ -6794,8 +6801,8 @@ NOT_ALLOWED_BY_SECURITY error."
 
 **Repo:** `crates/dcps/src/participant.rs`, `topic.rs`
 
-**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::create_topic_is_asked_of_the_plugin`,
-`crates/security-permissions/src/plugin.rs::tests::check_create_topic_follows_governance_and_grant`
+**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_create_topic_is_asked_of_the_plugin`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_check_create_topic_follows_governance_and_grant`
 
 **Status:** `done` — creating and `set_qos` of the Topic ask the plugin.
 
@@ -6808,7 +6815,7 @@ registered".
 
 **Repo:** `crates/dcps/src/publisher.rs` (`register_on_write`)
 
-**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::instance_operations_are_asked_of_the_plugin`
+**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_instance_operations_are_asked_of_the_plugin`
 
 **Status:** `done` — `register_instance` asks the plugin with the serialized key; a refused instance is not registered.
 
@@ -6819,7 +6826,7 @@ disposing an instance."
 
 **Repo:** `crates/dcps/src/publisher.rs` (`dispose_key`)
 
-**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::instance_operations_are_asked_of_the_plugin`
+**Tests:** `crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_instance_operations_are_asked_of_the_plugin`
 
 **Status:** `done` — `dispose` asks the plugin with the key.
 
@@ -6834,7 +6841,7 @@ by its permissions. [...] If the check_remote_participant does not succeed
 **Repo:** `crates/dcps/src/runtime.rs::store_remote_permissions`
 
 **Tests:** `tools/secure-permissions/tests/access_plugin_signed.rs::a_remote_participant_is_validated_and_checked`,
-`crates/security-permissions/src/plugin.rs::tests::a_remote_token_of_another_class_or_major_version_is_refused`
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_a_remote_token_of_another_class_or_major_version_is_refused`
 
 **Status:** `done` — after the handshake the runtime checks domain, token class and grant; with `is_access_protected` a participant that is refused is ignored.
 
@@ -6849,9 +6856,9 @@ different (peer) DomainParticipant".
 
 **Repo:** `crates/dcps/src/runtime.rs` (assignment of remote writers)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::a_peer_without_a_grant_is_denied_on_an_access_controlled_topic`,
-`crates/security-runtime/src/shared.rs::tests::a_plugin_of_the_application_decides_every_check`,
-`crates/dcps/tests/security_endpoint_access_e2e.rs::the_granted_direction_and_the_open_topic_still_create`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_a_peer_without_a_grant_is_denied_on_an_access_controlled_topic`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_a_plugin_of_the_application_decides_every_check`,
+`crates/dcps/tests/security_endpoint_access_e2e.rs::security_9_4_2_9_the_granted_direction_and_the_open_topic_still_create`
 
 **Status:** `done` — before matching, with partitions, data tags and QoS of the remote writer; without a known grant the result on a protected topic is deny, and the match is made again once the grant arrived.
 
@@ -6866,9 +6873,9 @@ operation on the CryptoKeyFactory."
 
 **Repo:** `crates/dcps/src/runtime.rs` (`relay_only_readers`)
 
-**Tests:** `crates/dcps/tests/security_relay_e2e.rs::a_relay_only_reader_is_matched_and_cannot_read_the_payload`,
-`crates/security-runtime/src/shared.rs::tests::relaying_needs_the_relay_grant_on_an_access_controlled_topic`,
-`crates/security-permissions/src/plugin.rs::tests::relaying_needs_the_relay_action_where_the_topic_is_controlled`
+**Tests:** `crates/dcps/tests/security_relay_e2e.rs::security_7_1_1_4_a_relay_only_reader_is_matched_and_cannot_read_the_payload`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_relaying_needs_the_relay_grant_on_an_access_controlled_topic`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_relaying_needs_the_relay_action_where_the_topic_is_controlled`
 
 **Status:** `done` — as `check_remote_datawriter`; `relay_only` is remembered and gives the reader the submessage key material only (§9.5.1.9.5).
 
@@ -6881,8 +6888,8 @@ allow it to create the DDS Topic with the specified QoS."
 
 **Repo:** `crates/dcps/src/runtime.rs`, `crates/dcps/src/access_request.rs::remote_topic_qos`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_nil_handle_is_refused_on_a_controlled_topic_only`,
-`crates/dcps/tests/security_relay_e2e.rs::a_relay_only_reader_is_matched_and_cannot_read_the_payload`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_the_nil_handle_is_refused_on_a_controlled_topic_only`,
+`crates/dcps/tests/security_relay_e2e.rs::security_7_1_1_4_a_relay_only_reader_is_matched_and_cannot_read_the_payload`
 
 **Status:** `done` — before matching, the runtime checks the topic of the remote endpoint with the topic QoS from `topic_data`.
 
@@ -6894,8 +6901,8 @@ DataTag associated with DataWriter and a matching DataReader."
 
 **Repo:** `crates/dcps/src/runtime.rs`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::the_plugin_gets_partitions_data_tags_and_qos`,
-`crates/security-permissions/src/plugin.rs::tests::instance_and_match_checks_return_true`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_instance_and_match_checks_return_true`
 
 **Status:** `done` — the runtime asks the plugin before the match with the remote reader (data tags).
 
@@ -6907,8 +6914,8 @@ associated with a DataReader and a matching DataWriter."
 
 **Repo:** `crates/dcps/src/runtime.rs`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::the_plugin_gets_partitions_data_tags_and_qos`,
-`crates/security-permissions/src/plugin.rs::tests::instance_and_match_checks_return_true`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_instance_and_match_checks_return_true`
 
 **Status:** `done` — the runtime asks the plugin before the match with the remote writer.
 
@@ -6920,8 +6927,8 @@ permissions of the remote DataWriter."
 
 **Repo:** `crates/dcps/src/runtime.rs`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::instance_and_match_checks_return_true`,
-`crates/security-runtime/src/shared.rs::tests::the_builtin_plugin_is_not_asked_for_what_it_always_permits`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_instance_and_match_checks_return_true`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_builtin_plugin_is_not_asked_for_what_it_always_permits`
 
 **Status:** `done` — the runtime asks the plugin for instances of remote writers (key from the sample).
 
@@ -6932,8 +6939,8 @@ disposing an instance."
 
 **Repo:** `crates/dcps/src/runtime.rs`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::instance_and_match_checks_return_true`,
-`crates/security-runtime/src/shared.rs::tests::the_builtin_plugin_is_not_asked_for_what_it_always_permits`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_instance_and_match_checks_return_true`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_builtin_plugin_is_not_asked_for_what_it_always_permits`
 
 **Status:** `done` — as `register_instance`, for `dispose`.
 
@@ -6947,7 +6954,7 @@ PermissionsHandle."
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
 **Tests:** `tools/secure-permissions/tests/access_plugin_signed.rs::the_tokens_are_the_ones_of_tables_64_and_65`,
-`crates/security-permissions/src/plugin.rs::tests::the_permissions_token_class_is_1_2_unless_named`
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_the_permissions_token_class_is_1_2_unless_named`
 
 **Status:** `done` — the token `DDS:Access:Permissions:1.2` with `dds.perm_ca.sn` and `dds.perm_ca.algo`; the runtime writes it into the SPDP.
 
@@ -6970,8 +6977,8 @@ plugin."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::revoking_permissions_tells_the_listener`,
-`crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_revoking_permissions_tells_the_listener`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — `AccessControlListener` and `set_listener` are in the interface; the plugin calls `on_revoke_permissions`.
 
@@ -6982,8 +6989,8 @@ for disposal."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::returned_tokens_and_configs_must_have_been_issued`,
-`crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — the plugin takes back only tokens it issued.
 
@@ -6994,8 +7001,8 @@ the plugin for disposal."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::returned_tokens_and_configs_must_have_been_issued`,
-`crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — as `return_permissions_token`.
 
@@ -7010,8 +7017,8 @@ plugin."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — the gate takes the config when the participant is created and hands it to authentication and cryptography (`algorithm_info`, `ac_participant_properties`).
 
@@ -7024,8 +7031,8 @@ by the DDS middleware as part of the creation or enabling of a DDS Topic."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`,
-`crates/security-permissions/src/psk_access.rs::tests::the_topic_and_endpoint_configs_are_all_false`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_the_topic_and_endpoint_configs_are_all_false`
 
 **Status:** `done` — the plugin returns the four values from the topic rule.
 
@@ -7038,8 +7045,8 @@ The operation shall be called after calling check_create_datawriter."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`,
-`crates/security-permissions/src/psk_access.rs::tests::the_topic_and_endpoint_configs_are_all_false`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_the_topic_and_endpoint_configs_are_all_false`
 
 **Status:** `done` — after `check_create_datawriter`; the endpoint mask is derived from it.
 
@@ -7051,8 +7058,8 @@ of the information related to the DDS DataReader endpoint."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`,
-`crates/security-permissions/src/psk_access.rs::tests::the_topic_and_endpoint_configs_are_all_false`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_the_topic_and_endpoint_configs_are_all_false`
 
 **Status:** `done` — as `get_datawriter_security_config`.
 
@@ -7063,8 +7070,8 @@ to the plugin for disposal."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::returned_tokens_and_configs_must_have_been_issued`,
-`crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — the plugin takes back only configs it issued.
 
@@ -7075,8 +7082,8 @@ plugin for disposal."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::returned_tokens_and_configs_must_have_been_issued`,
-`crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — the plugin takes back only configs it issued.
 
@@ -7087,8 +7094,8 @@ plugin for disposal."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::returned_tokens_and_configs_must_have_been_issued`,
-`crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — the plugin takes back only configs it issued.
 
@@ -7099,8 +7106,8 @@ plugin for disposal."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`, `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`, `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::returned_tokens_and_configs_must_have_been_issued`,
-`crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued`,
+`crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — the plugin takes back only configs it issued.
 
@@ -7111,8 +7118,8 @@ the interface.
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlPlugin`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::plugin_class_id_matches_spec`,
-`crates/security-runtime/src/shared.rs::tests::the_builtin_plugin_is_not_asked_for_what_it_always_permits`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_plugin_class_id_matches_spec`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_builtin_plugin_is_not_asked_for_what_it_always_permits`
 
 **Status:** `done` — the interface has the 29 operations of Table 39 and, in addition, `check_relay` (§7.1.1.4, default: refuse) and `plugin_class_id`. The earlier own operations `check_*_in_partitions` and `check_remote_*_match` are replaced by the parameters of the spec.
 
@@ -7124,8 +7131,8 @@ revocation/changes."
 
 **Repo:** `crates/security/src/access_control.rs::AccessControlListener`; `crates/security-runtime/src/shared.rs` (removes the handle and re-matches)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::revoking_permissions_tells_the_listener`,
-`crates/security-runtime/src/shared.rs::tests::a_revoked_remote_handle_is_handed_to_the_runtime_once`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_revoking_permissions_tells_the_listener`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_10_a_revoked_remote_handle_is_handed_to_the_runtime_once`
 
 **Status:** `done` — the plugin reports revoked permissions; the gate hands the handle to the runtime once.
 
@@ -7168,8 +7175,8 @@ applications are able to interoperate."
 **Repo:** `crates/security/src/token.rs` (alias `CryptoToken`, l. 247–268);
 `crates/dcps/src/runtime.rs::build_crypto_token_message` (l. 21338)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cross_plugin_interop_via_tokens`,
-`crates/security-crypto/src/plugin.rs::tests::tokens_carry_suite_tag_so_cross_suite_interop_works`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_9_5_1_1_cross_plugin_interop_via_tokens`,
+`crates/security-crypto/src/plugin.rs::tests::security_9_5_1_1_tokens_carry_suite_tag_so_cross_suite_interop_works`
 
 **Status:** done — the content of the builtin plugin is in §10.5.
 
@@ -7182,7 +7189,7 @@ sign whole RTPS Messages."
 **Repo:** `crates/security/src/crypto.rs::CryptoHandle` (l. 29);
 `crates/security-runtime/src/shared.rs::ensure_local` (l. 637)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::e2e_alice_bob_with_shared_gate`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_5_1_2_e2e_alice_bob_with_shared_gate`
 
 **Status:** done — one type `CryptoHandle` for participant, writer and
 reader handles.
@@ -7199,7 +7206,7 @@ SerializedPayload submessage element".
 (l. 21403); `crates/security-runtime/src/shared.rs::register_local_endpoint`
 (l. 904)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::per_endpoint_datawriter_token_roundtrips_by_key_id`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_5_1_3_per_endpoint_datawriter_token_roundtrips_by_key_id`
 
 **Status:** done
 
@@ -7214,7 +7221,7 @@ AckNack and NackFrag."
 (l. 21403, `is_writer = false`); selection of the reader submessages
 `SMID_ACKNACK` (l. 21716)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_metadata_protection_all_kinds`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_8_1_1_matrix_metadata_protection_all_kinds`
 
 **Status:** done
 
@@ -7227,7 +7234,7 @@ definition and interpretation is provided in 7.3.20."
 **Repo:** `crates/security-crypto/src/crypto_transform.rs::CryptoTransformIdentifier`
 (l. 99)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::transform_identifier_round_trip`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_19_transform_identifier_round_trip`
 
 **Status:** done — details in §7.3.20.
 
@@ -7241,7 +7248,7 @@ transformation_kind's member transformation_key_revision."
 
 **Repo:** `crates/security-crypto/src/plugin/spec.rs`::revise_local_entity_keys
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::the_participant_key_is_revised_with_the_entities`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_6_the_participant_key_is_revised_with_the_entities`
 
 **Status:** `done` — A revision keeps the `transformation_key_id` and the algorithm id and increments the revision in the CryptoHeader; the receiver keeps the revision it replaces and drops the one before. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7252,7 +7259,7 @@ DATAWRITER_SUMBESSAGE, DATAREADER_SUMBESSAGE.
 
 **Repo:** `crates/security/src/cryptographic.rs`::SecureSubmessageCategory
 
-**Tests:** `crates/security/src/cryptographic.rs::tests::the_three_categories_of_table_41_are_distinct`, `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security/src/cryptographic.rs::tests::security_9_5_1_7_the_three_categories_of_table_41_are_distinct`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — The three categories; `preprocess_secure_submsg` reports writer and reader submessages. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7267,7 +7274,7 @@ ParticipantSecurityAlgorithmInfo". Parameters: out `adjusted_algorithm_info`,
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::register_local_participant_fills_the_adjusted_algorithm_info`, `crates/security-crypto/src/plugin/spec.rs::tests::the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width`, `crates/security-runtime/src/shared.rs::tests::e2e_alice_bob_with_shared_gate`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_register_local_participant_fills_the_adjusted_algorithm_info`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_2_e2e_alice_bob_with_shared_gate`
 
 **Status:** `done` — Handle, `adjusted_algorithm_info`, identity, permissions, properties and `ParticipantSecurityConfig` are parameters; the gate calls the operation (`SharedSecurityGate::ensure_local`). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -7281,7 +7288,7 @@ by the AccessControl get_participant_security_config operation."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::register_local_participant_fills_the_adjusted_algorithm_info`, `crates/security-crypto/src/plugin/spec.rs::tests::the_plugin_accepts_only_the_supported_algorithms`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_register_local_participant_fills_the_adjusted_algorithm_info`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_1_the_plugin_accepts_only_the_supported_algorithms`
 
 **Status:** `done` — A nil identity or permissions handle is an error; unknown properties are ignored; only the algorithms of `supported_mask` are accepted. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7298,7 +7305,7 @@ Parameters `local_participant_crypto_handle`, `remote_participant_identity`,
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_participant2participant_material_matches_the_participant_key`, `crates/security-runtime/src/shared.rs::tests::kx_channel_round_trips_through_gate`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_participant2participant_material_matches_the_participant_key`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_8_kx_channel_round_trips_through_gate`
 
 **Status:** `done` — `remote_participant_permissions` is a parameter; with origin authentication a key for each remote participant. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7313,7 +7320,7 @@ DataWriter". Parameters: out `adjusted_algorithm_info`,
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_datawriter_has_one_or_two_key_materials`, `crates/dcps/src/runtime.rs::tests::key_material_exists_for_protected_endpoints_only_and_goes_with_them`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_datawriter_has_one_or_two_key_materials`, `crates/dcps/src/runtime.rs::tests::security_9_5_1_8_key_material_exists_for_protected_endpoints_only_and_goes_with_them`
 
 **Status:** `done` — `adjusted_algorithm_info`, config, `endpoint_guid` and properties are parameters. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -7327,7 +7334,7 @@ DataWriter."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_datawriter_has_one_or_two_key_materials`, `crates/security-crypto/src/plugin/spec.rs::tests::the_endpoints_get_receiver_specific_keys_under_origin_authentication`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_datawriter_has_one_or_two_key_materials`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_endpoints_get_receiver_specific_keys_under_origin_authentication`
 
 **Status:** `done` — As register_local_datawriter, for readers. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7342,7 +7349,7 @@ whose name has the prefix 'dds.sec.crypto.'"
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_datawriter_has_one_or_two_key_materials`, `crates/security-crypto/src/plugin/spec.rs::tests::the_plugin_accepts_only_the_supported_algorithms`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_datawriter_has_one_or_two_key_materials`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_1_the_plugin_accepts_only_the_supported_algorithms`
 
 **Status:** `done` — All parameters of Table 42 are in `CryptoKeyFactory`; `endpoint_guid` identifies the volatile endpoints (EntityId 0xff0202c3/c4). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7356,7 +7363,7 @@ sent to the DataReader."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_relay_only_reader_gets_the_submessage_key_alone`, `crates/security-crypto/src/plugin/spec.rs::tests::the_endpoints_get_receiver_specific_keys_under_origin_authentication`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_relay_only_reader_gets_the_submessage_key_alone`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_endpoints_get_receiver_specific_keys_under_origin_authentication`
 
 **Status:** `done` — `relay_only` is associated with the handle and decides the writer tokens. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7370,7 +7377,7 @@ remote DataWriter to the DataReader."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_volatile_endpoints_use_the_key_of_the_shared_secret`, `crates/security-crypto/src/plugin/spec.rs::tests::the_endpoints_get_receiver_specific_keys_under_origin_authentication`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_volatile_endpoints_use_the_key_of_the_shared_secret`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_endpoints_get_receiver_specific_keys_under_origin_authentication`
 
 **Status:** `done` — Material of the remote writer; for the volatile endpoints the Kx key of the SharedSecret. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7383,7 +7390,7 @@ does not support Key Revisions".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::the_volatile_endpoints_are_not_revised`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_volatile_endpoints_are_not_revised`
 
 **Status:** `done` — Creates the revision for the participant and endpoints, not for the volatile endpoints; gate: `SharedSecurityGate::revise_local_entity_keys`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7395,7 +7402,7 @@ the operation revise_local_entity_keys."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::the_participant_key_is_revised_with_the_entities`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_6_the_participant_key_is_revised_with_the_entities`
 
 **Status:** `done` — Afterwards the plugin encodes with the revision; gate: `SharedSecurityGate::activate_key_revision`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7409,7 +7416,7 @@ matched DomainParticipant is no longer in the system."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::unregistering_releases_the_key_material_and_the_matches`, `crates/security-runtime/src/shared.rs::tests::forget_remote_removes_mapping`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_unregistering_releases_the_key_material_and_the_matches`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_8_forget_remote_removes_mapping`
 
 **Status:** `done` — Releases local and remote participant with endpoints; gate: `forget_remote`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7420,7 +7427,7 @@ a DataWriter that the Cryptographic plugin maintains."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::unregistering_releases_the_key_material_and_the_matches`, `crates/dcps/src/runtime.rs::tests::key_material_exists_for_protected_endpoints_only_and_goes_with_them`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_unregistering_releases_the_key_material_and_the_matches`, `crates/dcps/src/runtime.rs::tests::security_9_5_1_8_key_material_exists_for_protected_endpoints_only_and_goes_with_them`
 
 **Status:** `done` — Releases the material of the writer and its matches; gate: `unregister_local_endpoint`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -7431,7 +7438,7 @@ DataReader, that the Cryptographic plugin maintains."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::unregistering_releases_the_key_material_and_the_matches`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_unregistering_releases_the_key_material_and_the_matches`
 
 **Status:** `done` — As unregister_datawriter, for readers. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7446,7 +7453,7 @@ GMCLASSID_SECURITY_PARTICIPANT_CRYPTO_TOKENS". Parameter `key_revision`.
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_participant2participant_material_matches_the_participant_key`, `crates/security-runtime/src/shared.rs::tests::data_round_trips_via_token_after_kx_register`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_participant2participant_material_matches_the_participant_key`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_9_data_round_trips_via_token_after_kx_register`
 
 **Status:** `done` — `key_revision` is a parameter; gate: `local_token_for`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7461,8 +7468,8 @@ GMCLASSID_SECURITY_PARTICIPANT_CRYPTO_TOKENS".
 (l. 107); `crates/security-runtime/src/shared.rs::set_remote_data_token_by_guid`
 (l. 762); `crates/dcps/src/runtime.rs::on_volatile_messages` (l. 22563)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cross_plugin_interop_via_tokens`,
-`crates/security-crypto/src/plugin.rs::tests::data_token_exchange_does_not_clobber_kx_key`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_9_5_1_1_cross_plugin_interop_via_tokens`,
+`crates/security-crypto/src/plugin.rs::tests::security_9_5_1_9_data_token_exchange_does_not_clobber_kx_key`
 
 **Status:** done
 
@@ -7479,7 +7486,7 @@ DataReader."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_relay_only_reader_gets_the_submessage_key_alone`, `crates/security-runtime/src/shared.rs::tests::per_endpoint_datawriter_token_roundtrips_by_key_id`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_relay_only_reader_gets_the_submessage_key_alone`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_3_per_endpoint_datawriter_token_roundtrips_by_key_id`
 
 **Status:** `done` — Own operation with `remote_datareader_crypto`; for relay-only the submessage material alone. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7492,7 +7499,7 @@ GMCLASSID_SECURITY_DATAWRITER_CRYPTO_TOKENS".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`, `crates/security-runtime/src/shared.rs::tests::per_endpoint_datawriter_token_roundtrips_by_key_id`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_3_per_endpoint_datawriter_token_roundtrips_by_key_id`
 
 **Status:** `done` — Own operation with `local_datareader_crypto` and `remote_datawriter_crypto`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7505,7 +7512,7 @@ GMCLASSID_SECURITY_DATAREADER_CRYPTO_TOKENS".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_endpoints_get_receiver_specific_keys_under_origin_authentication`, `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_endpoints_get_receiver_specific_keys_under_origin_authentication`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — Own operation for readers. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7518,7 +7525,7 @@ GMCLASSID_SECURITY_DATAREADER_CRYPTO_TOKENS".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — Own operation for readers. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7532,7 +7539,7 @@ set_remote_datareader_crypto_tokens.
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::the_volatile_endpoints_use_the_key_of_the_shared_secret`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_volatile_endpoints_use_the_key_of_the_shared_secret`
 
 **Status:** `done` — The four operations are in `CryptoKeyExchange`; the gate calls them (`set_endpoint_token`, `endpoint_token`). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7544,7 +7551,7 @@ is encoded into the returned CryptoTokenSeq."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_key_revision_keeps_the_key_id_and_changes_the_keys`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys`
 
 **Status:** `done` — A revision that `revise_local_entity_keys` did not return is an error. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7556,7 +7563,7 @@ with it."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::crypto_tokens_are_returned_once`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_9_crypto_tokens_are_returned_once`
 
 **Status:** `done` — Takes issued tokens back once. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7585,7 +7592,7 @@ outgoing RTPS Submessages with submessage kind Data and DataFrag."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_serialized_payload_goes_through_the_interface`, `crates/security-runtime/src/shared.rs::tests::e2e_alice_bob_with_shared_gate`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_serialized_payload_goes_through_the_interface`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_2_e2e_alice_bob_with_shared_gate`
 
 **Status:** `done` — Output `EncodedPayload` with `extra_inline_qos` (empty: the identifier is in the CryptoHeader). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -7600,7 +7607,7 @@ derived from the SharedSecret".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_receiver_specific_macs_follow_the_list_index`, `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_receiver_specific_macs_follow_the_list_index`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — List of receivers with index; MACs per receiver. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7612,7 +7619,7 @@ AckNack or NackFrag."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — List of writers as a parameter. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7628,7 +7635,7 @@ return false but not set the exception object." Parameters
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::an_rtps_message_goes_through_the_interface_without_aad`, `crates/security-crypto/src/plugin/spec.rs::tests::transform_with_psk_uses_the_pre_shared_key`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_an_rtps_message_goes_through_the_interface_without_aad`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_transform_with_psk_uses_the_pre_shared_key`
 
 **Status:** `done` — Receiver list, index, `transform_with_psk`; FALSE without an exception when nothing is transformed. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7643,8 +7650,8 @@ encode_rtps_message operation".
 (l. 372); `crates/security-runtime/src/shared.rs::transform_inbound_from`
 (l. 1131), `classify_inbound` (l. 1348)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::classify_inbound_srtps_from_known_peer_accepts`,
-`crates/security-runtime/src/shared.rs::tests::classify_inbound_srtps_with_wrong_key_is_crypto_error`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_5_1_10_classify_inbound_srtps_from_known_peer_accepts`,
+`crates/security-runtime/src/shared.rs::tests::security_9_5_1_10_classify_inbound_srtps_with_wrong_key_is_crypto_error`
 
 **Status:** done — `receiving_participant_crypto` and
 `sending_participant_crypto` are no parameters; the key is found by
@@ -7660,7 +7667,7 @@ DatareaderCryptoHandle needed to decode the submessage."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::preprocess_refuses_unknown_kinds_and_unknown_keys`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_preprocess_refuses_unknown_kinds_and_unknown_keys`
 
 **Status:** `done` — Category and handles; the gate decodes with them. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7674,7 +7681,7 @@ operation."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::a_key_is_taken_only_from_the_entities_it_is_associated_with`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_a_key_is_taken_only_from_the_entities_it_is_associated_with`
 
 **Status:** `done` — With the handles of `preprocess_secure_submsg`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7685,7 +7692,7 @@ transformation performed by the encode_datareader_submessage operation".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — As for writers. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7699,7 +7706,7 @@ the correct key is available".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_serialized_payload_goes_through_the_interface`, `crates/security-crypto/src/plugin/spec.rs::tests::a_key_is_taken_only_from_the_entities_it_is_associated_with`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_serialized_payload_goes_through_the_interface`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_a_key_is_taken_only_from_the_entities_it_is_associated_with`
 
 **Status:** `done` — With `inline_qos` and the handles; key of the sender only. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7713,7 +7720,7 @@ the correct key is available".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_receiver_specific_macs_follow_the_list_index`, `crates/security-crypto/src/plugin/spec.rs::tests::the_serialized_payload_goes_through_the_interface`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_receiver_specific_macs_follow_the_list_index`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_serialized_payload_goes_through_the_interface`
 
 **Status:** `done` — All parameters of Table 44 are in `CryptoTransform`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -7724,7 +7731,7 @@ the operations of the three interfaces.
 
 **Repo:** `crates/security/src/cryptographic.rs`; `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`; `crates/security/src/cryptographic.rs::VendorFormCrypto`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::data_round_trips_via_token_after_kx_register`, `crates/security-runtime/src/shared.rs::tests::two_peers_with_the_same_key_id_keep_their_keys`, `crates/dcps/src/runtime.rs::tests::a_user_datagram_under_the_kx_key_is_not_opened`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_5_1_9_data_round_trips_via_token_after_kx_register`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_10_two_peers_with_the_same_key_id_keep_their_keys`, `crates/dcps/src/runtime.rs::tests::security_9_5_1_10_a_user_datagram_under_the_kx_key_is_not_opened`
 
 **Status:** `done` — Gate and runtime call only the operations of Tables 42 to 44 (`gate_crypto.rs`). What a vendor needs without a spec basis (participant key for submessages and payload, Kx key for payload) is in `VendorFormCrypto` and is used only with `org.zerodds.sec.kx_key_fallback=accept` or for endpoints without a key of their own. The older trait `CryptographicPlugin` remains as an implementation detail of `security-rtps` and `PskDerivedCryptoPlugin`; the middleware does not call it. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -7774,7 +7781,7 @@ and may not be changed at run-time after logging has commenced."
 **Repo:** `crates/security-logging/src/log_topic.rs::set_log_options`
 (l. 624, `AlreadyEnabled` after `enable_logging`)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::options_cannot_change_after_logging_is_enabled`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_options_cannot_change_after_logging_is_enabled`
 
 **Status:** done — for the builtin plugin `LogTopicLoggingPlugin`.
 
@@ -7785,8 +7792,8 @@ and may not be changed at run-time after logging has commenced."
 
 **Repo:** `crates/security-logging/src/log_topic.rs::LogOptions` (l. 101)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::log_options_write_one_line_per_event_at_or_below_the_level`,
-`crates/security-logging/src/log_topic.rs::tests::distribute_off_publishes_nothing`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_distribute_off_publishes_nothing`
 
 **Status:** done — `log_file` is `Option<PathBuf>`, `log_level` a
 `LogLevel`.
@@ -7800,8 +7807,8 @@ INFO_LEVEL [...] DEBUG_LEVEL [...] TRACE_LEVEL".
 
 **Repo:** `crates/security/src/logging.rs::LogLevel`, `to_spec_level`, `from_spec_level`; `crates/security-logging/src/control.rs::LogControl::admit`
 
-**Tests:** `crates/security/src/logging.rs::tests::the_spec_level_names_are_numbered_low_to_high`,
-`crates/security-logging/src/control.rs::tests::the_spec_levels_filter_from_fatal_to_trace`
+**Tests:** `crates/security/src/logging.rs::tests::security_9_6_2_1_1_the_spec_level_names_are_numbered_low_to_high`,
+`crates/security-logging/src/control.rs::tests::security_9_6_2_1_1_the_spec_levels_filter_from_fatal_to_trace`
 
 **Status:** `done` — eight levels `FATAL_LEVEL` to `TRACE_LEVEL` numbered 0 to 7; a message at or below the saved level is logged.
 ### §9.6.2.1.1 Names FATAL_LEVEL to TRACE_LEVEL
@@ -7811,7 +7818,7 @@ WARNING_LEVEL, NOTICE_LEVEL, INFO_LEVEL, DEBUG_LEVEL, TRACE_LEVEL.
 
 **Repo:** `crates/security/src/logging.rs` (`FATAL_LEVEL` to `TRACE_LEVEL`, `LogLevel::spec_name`, `LogLevel::Trace`)
 
-**Tests:** `crates/security/src/logging.rs::tests::the_spec_level_names_are_numbered_low_to_high`
+**Tests:** `crates/security/src/logging.rs::tests::security_9_6_2_1_1_the_spec_level_names_are_numbered_low_to_high`
 
 **Status:** `done` — `LogLevel` has `Trace`; `Alert` and `Critical` are both `SEVERE_LEVEL`. The conversion to `LoggingLevel` (§10.6) maps `Trace` to `Debug`, the IDL enumeration having no value for it.
 ### §9.6.2.1.2 log_file: append, NULL writes no file
@@ -7823,8 +7830,8 @@ to a file."
 
 **Repo:** `crates/security-logging/src/control.rs::open_log_file`
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::log_options_write_one_line_per_event_at_or_below_the_level`,
-`crates/security-logging/src/log_topic.rs::tests::an_unopenable_log_file_is_refused`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_2_an_unopenable_log_file_is_refused`
 
 **Status:** done
 
@@ -7837,8 +7844,8 @@ log_level is published as a DDS Topic."
 **Repo:** `crates/security-logging/src/log_topic.rs::LogTopicLoggingPlugin`
 (l. 554)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::distribute_off_publishes_nothing`,
-`crates/dcps/tests/security_log_topic_e2e.rs::a_security_event_reaches_the_v2_log_topic`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_distribute_off_publishes_nothing`,
+`crates/dcps/tests/security_log_topic_e2e.rs::security_9_6_2_1_3_a_security_event_reaches_the_v2_log_topic`
 
 **Status:** done — published are messages at or below the level, as with the
 filter in §9.6.2.1.1; the text of §9.6.2.1.3 says "at or above" (contradiction in the specification).
@@ -7851,9 +7858,9 @@ logging has been enabled."
 
 **Repo:** `crates/security/src/logging.rs::LoggingPlugin::set_log_options`; `crates/security-logging/src/control.rs::LogControl::set_log_options`
 
-**Tests:** `crates/security-logging/src/control.rs::tests::a_sink_without_a_writer_refuses_distribute`,
-`crates/security-logging/src/control.rs::tests::a_sink_enabled_at_construction_refuses_new_options`,
-`crates/security-logging/src/log_topic.rs::tests::options_cannot_change_after_logging_is_enabled`
+**Tests:** `crates/security-logging/src/control.rs::tests::security_9_6_2_2_a_sink_without_a_writer_refuses_distribute`,
+`crates/security-logging/src/control.rs::tests::security_9_6_2_2_a_sink_enabled_at_construction_refuses_new_options`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_options_cannot_change_after_logging_is_enabled`
 
 **Status:** `done` — on the interface and on all sinks; after `enable_logging` a `SecurityException` error, `distribute` without a DataWriter is refused.
 ### §9.6.2.2 Table 46 — log
@@ -7868,8 +7875,8 @@ severity, and timestamp, fields." Parameters `log_level`, `message`,
 **Repo:** `crates/security/src/logging.rs::log` (l. 56);
 `crates/security-logging/src/log_topic.rs::from_log_event` (l. 407)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::an_event_fills_every_field_from_the_clause`,
-`crates/security/src/mock.rs::tests::mock_logging_captures_events`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_an_event_fills_every_field_from_the_clause`,
+`crates/security/src/mock.rs::tests::security_9_6_2_2_mock_logging_captures_events`
 
 **Status:** done — the caller passes the GUID as parameter `participant`.
 
@@ -7885,9 +7892,9 @@ plugin_class [...] plugin_method".
 `crates/dcps/src/security_log_topic.rs::add_domain_id` (l. 270, `domain_id`
 when writing through `LogTopicDataWriterPublisher`)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::an_event_fills_every_field_from_the_clause`,
-`crates/dcps/src/security_log_topic.rs::tests::the_publisher_inserts_the_domain_id_pair`,
-`crates/dcps/tests/security_log_topic_e2e.rs::a_security_event_reaches_the_v2_log_topic`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_an_event_fills_every_field_from_the_clause`,
+`crates/dcps/src/security_log_topic.rs::tests::security_9_6_2_2_2_the_publisher_inserts_the_domain_id_pair`,
+`crates/dcps/tests/security_log_topic_e2e.rs::security_9_6_2_1_3_a_security_event_reaches_the_v2_log_topic`
 
 **Status:** done — the four pairs are in every published sample.
 `LoggingPlugin::log` receives no domain id; `domain_id` is set by
@@ -7902,8 +7909,8 @@ After this method is called, the options may not be modified."
 
 **Repo:** `crates/security/src/logging.rs::LoggingPlugin::enable_logging`; `crates/security-logging/src/control.rs::LogControl::enable_logging`
 
-**Tests:** `crates/security-logging/src/control.rs::tests::enable_logging_without_options_is_an_error`,
-`crates/security-logging/src/log_topic.rs::tests::enable_without_options_is_refused`
+**Tests:** `crates/security-logging/src/control.rs::tests::security_9_6_2_2_enable_logging_without_options_is_an_error`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_enable_without_options_is_refused`
 
 **Status:** `done` — on the interface and on all sinks; an error without options.
 ### §9.6.2.2 Table 46 — set_listener
@@ -7913,8 +7920,8 @@ plugin will use to notify the application of log events."
 
 **Repo:** `crates/security/src/logging.rs::{LoggerListener, LoggingPlugin::set_listener}`; `crates/security-logging/src/control.rs::LogControl::admit`
 
-**Tests:** `crates/security-logging/src/control.rs::tests::the_listener_hears_each_logged_message`,
-`crates/security-logging/src/log_topic.rs::tests::the_listener_is_told_of_each_message_the_sink_logs`
+**Tests:** `crates/security-logging/src/control.rs::tests::security_9_6_2_2_the_listener_hears_each_logged_message`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_the_listener_is_told_of_each_message_the_sink_logs`
 
 **Status:** `done` — the listener is told of each logged message; `None` removes it.
 ### §9.6.2.2 Operations of Table 46 missing in LoggingPlugin
@@ -7924,9 +7931,9 @@ set_listener.
 
 **Repo:** `crates/security/src/logging.rs::LoggingPlugin`; `LogControl` in all sinks of `crates/security-logging`
 
-**Tests:** `crates/security-logging/src/control.rs::tests::a_sink_without_a_writer_refuses_distribute`,
-`crates/security-logging/src/control.rs::tests::the_listener_hears_each_logged_message`,
-`crates/security-logging/src/log_topic.rs::tests::the_listener_is_told_of_each_message_the_sink_logs`
+**Tests:** `crates/security-logging/src/control.rs::tests::security_9_6_2_2_a_sink_without_a_writer_refuses_distribute`,
+`crates/security-logging/src/control.rs::tests::security_9_6_2_2_the_listener_hears_each_logged_message`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_the_listener_is_told_of_each_message_the_sink_logs`
 
 **Status:** `done` — all four operations are on the interface; the stderr, JSON-lines, syslog, fan-out, `LogTopicLoggingPlugin` and `MockLoggingPlugin` sinks implement them.
 
@@ -7962,7 +7969,7 @@ immutable DataWriterQos."
 
 **Repo:** `crates/dcps/src/qos.rs::DataWriterQos::data_tags`, `immutable_writer_change`
 
-**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::property_is_a_member_and_immutable_after_enable`
+**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::security_7_3_21_property_is_a_member_and_immutable_after_enable`
 
 **Status:** `done` — field `data_tags`, not changeable after enabling (`DATA_TAGS`).
 ### §9.7.2 DataTag of the DataWriter in PublicationBuiltinTopicData
@@ -7972,8 +7979,8 @@ PublicationBuiltinTopicData as part of the DDS discovery protocol."
 
 **Repo:** `crates/dcps/src/builtin_topics.rs::PublicationBuiltinTopicData::data_tags`; `crates/dcps/src/runtime.rs::build_publication_data`
 
-**Tests:** `crates/dcps/src/builtin_topics.rs::tests::the_data_tags_of_an_announcement_reach_the_builtin_topic_samples`,
-`crates/dcps/src/runtime.rs::tests::data_tags_are_announced`
+**Tests:** `crates/dcps/src/builtin_topics.rs::tests::security_9_7_2_the_data_tags_of_an_announcement_reach_the_builtin_topic_samples`,
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_data_tags_are_announced`
 
 **Status:** `done` — `PID_DATA_TAGS` goes into the announcement and appears in the builtin topic sample.
 ### §9.7.2 DataTag of the DataReader as immutable DataReaderQos
@@ -7983,7 +7990,7 @@ immutable DataReaderQos."
 
 **Repo:** `crates/dcps/src/qos.rs::DataReaderQos::data_tags`, `immutable_reader_change`
 
-**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::property_is_a_member_and_immutable_after_enable`
+**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::security_7_3_21_property_is_a_member_and_immutable_after_enable`
 
 **Status:** `done` — field `data_tags`, not changeable after enabling (`DATA_TAGS`).
 ### §9.7.2 DataTag of the DataReader in SubscriptionBuiltinTopicData
@@ -7993,8 +8000,8 @@ SubscriptionBuiltinTopicData as part of the DDS discovery protocol."
 
 **Repo:** `crates/dcps/src/builtin_topics.rs::SubscriptionBuiltinTopicData::data_tags`; `crates/dcps/src/runtime.rs::build_subscription_data`
 
-**Tests:** `crates/dcps/src/builtin_topics.rs::tests::the_data_tags_of_an_announcement_reach_the_builtin_topic_samples`,
-`crates/dcps/src/runtime.rs::tests::data_tags_are_announced`
+**Tests:** `crates/dcps/src/builtin_topics.rs::tests::security_9_7_2_the_data_tags_of_an_announcement_reach_the_builtin_topic_samples`,
+`crates/dcps/src/runtime.rs::tests::security_7_3_21_data_tags_are_announced`
 
 **Status:** `done` — as for the DataWriter.
 
@@ -8023,8 +8030,8 @@ return NIL and set the return code to NOT_ALLOWED_BY_SECURITY."
 
 **Repo:** `crates/dcps/src/participant.rs::security_from_participant_properties`
 
-**Tests:** `crates/dcps/tests/security_participant_sequence.rs::step_1_an_identity_that_is_not_validated_refuses_the_participant`,
-`crates/dcps/tests/security_participant_sequence.rs::the_fixtures_create_a_participant_when_nothing_is_wrong`
+**Tests:** `crates/dcps/tests/security_participant_sequence.rs::security_9_8_1_step_1_an_identity_that_is_not_validated_refuses_the_participant`,
+`crates/dcps/tests/security_participant_sequence.rs::security_9_8_1_the_fixtures_create_a_participant_when_nothing_is_wrong`
 
 **Status:** `done` — an identity that is not validated gives `NOT_ALLOWED_BY_SECURITY` and no participant; the control without a fault creates one.
 ### §9.8.1 Step 2: validate_local_permissions before creation
@@ -8038,7 +8045,7 @@ NOT_ALLOWED_BY_SECURITY."
 
 **Repo:** `crates/dcps/src/participant.rs::security_from_participant_properties`
 
-**Tests:** `crates/dcps/tests/security_participant_sequence.rs::step_2_permissions_that_are_not_validated_refuse_the_participant`
+**Tests:** `crates/dcps/tests/security_participant_sequence.rs::security_9_8_1_step_2_permissions_that_are_not_validated_refuse_the_participant`
 
 **Status:** `done` — permissions whose signature the permissions CA does not verify give `NOT_ALLOWED_BY_SECURITY`.
 ### §9.8.1 Step 3: check_create_participant before creation
@@ -8051,7 +8058,7 @@ the DomainParticipant shall not be created".
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::security_bundle_from_properties`
 
-**Tests:** `crates/dcps/tests/security_participant_sequence.rs::step_3_a_domain_the_permissions_do_not_grant_refuses_the_participant`
+**Tests:** `crates/dcps/tests/security_participant_sequence.rs::security_9_8_1_step_3_a_domain_the_permissions_do_not_grant_refuses_the_participant`
 
 **Status:** `done` — a grant for another domain under `enable_join_access_control` gives `NOT_ALLOWED_BY_SECURITY`; the message names `check_create_participant`.
 ### §9.8.1 Steps 1 to 3: return code NOT_ALLOWED_BY_SECURITY
@@ -8061,9 +8068,9 @@ NIL and set the return code to NOT_ALLOWED_BY_SECURITY."
 
 **Repo:** `crates/dcps/src/error.rs::DdsError::as_return_code`
 
-**Tests:** `crates/dcps/tests/security_participant_sequence.rs::step_1_an_identity_that_is_not_validated_refuses_the_participant`,
-`crates/dcps/tests/security_participant_sequence.rs::step_2_permissions_that_are_not_validated_refuse_the_participant`,
-`crates/dcps/tests/security_participant_sequence.rs::step_3_a_domain_the_permissions_do_not_grant_refuses_the_participant`
+**Tests:** `crates/dcps/tests/security_participant_sequence.rs::security_9_8_1_step_1_an_identity_that_is_not_validated_refuses_the_participant`,
+`crates/dcps/tests/security_participant_sequence.rs::security_9_8_1_step_2_permissions_that_are_not_validated_refuse_the_participant`,
+`crates/dcps/tests/security_participant_sequence.rs::security_9_8_1_step_3_a_domain_the_permissions_do_not_grant_refuses_the_participant`
 
 **Status:** `done` — all three steps give `NOT_ALLOWED_BY_SECURITY`; `lookup_participant` finds no participant afterwards.
 ### §9.8.1 Step 4: IdentityToken in ParticipantBuiltinTopicData
@@ -8076,7 +8083,7 @@ the ParticipantBuiltinTopicData sent via discovery".
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth`
 (l. 8638)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_1_6_spdp_beacon_announces_identity_token_and_discovery_triggers_handshake`
 
 **Status:** done
 
@@ -8089,8 +8096,8 @@ the ParticipantBuiltinTopicDataSecure sent via secure discovery".
 
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth`; `crates/discovery/src/spdp.rs::SpdpBeacon::serialize`, `serialize_secure`
 
-**Tests:** `crates/discovery/src/spdp.rs::tests::the_identity_status_token_is_in_the_secure_participant_data_only`,
-`crates/dcps/src/runtime.rs::tests::the_tokens_of_the_plugins_are_announced_and_token_nil_is_not`
+**Tests:** `crates/discovery/src/spdp.rs::tests::security_7_5_1_6_the_identity_status_token_is_in_the_secure_participant_data_only`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_1_the_tokens_of_the_plugins_are_announced_and_token_nil_is_not`
 
 **Status:** `done` — the token goes out on the secure SPDP writer only, not on the plain one; TokenNIL is not announced.
 ### §9.8.1 Step 6: PermissionsToken in ParticipantBuiltinTopicData
@@ -8103,8 +8110,8 @@ discovery".
 
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth` (the token comes from `SharedSecurityGate::local_permissions_token`, which calls `get_permissions_token` of the AccessControl plugin and returns the token with `return_permissions_token`)
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
-`crates/dcps/src/runtime.rs::tests::the_participant_data_follows_steps_6_to_12_of_the_creation`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_1_the_participant_data_follows_steps_6_to_12_of_the_creation`
 
 **Status:** `done` — the plugin gives the PermissionsToken; it is in the participant data, and `return_permissions_token` follows.
 
@@ -8117,8 +8124,8 @@ received PermissionsHandle."
 
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth`; `crates/security-runtime/src/shared.rs::SharedSecurityGate::local_permissions_credential_token`
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
-`crates/dcps/src/runtime.rs::tests::the_participant_data_follows_steps_6_to_12_of_the_creation`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_1_the_participant_data_follows_steps_6_to_12_of_the_creation`
 
 **Status:** `done` — `get_permissions_credential_token` is called, and the token goes back with `return_permissions_credential_token`.
 
@@ -8130,7 +8137,7 @@ such that it can be sent during the authentication handshake."
 
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth` (`set_permissions_credential_and_token` on the Authentication plugin)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_participant_data_follows_steps_6_to_12_of_the_creation`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_1_the_participant_data_follows_steps_6_to_12_of_the_creation`
 
 **Status:** `done` — `set_permissions_credential_and_token` is called with the credential token and the PermissionsToken, before `set_participant_security_config`.
 
@@ -8143,8 +8150,8 @@ the Authentication plugin passing the ParticipantSecurityConfig".
 
 **Repo:** `crates/security-runtime/src/shared.rs::SharedSecurityGate::participant_security_config`; `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth` (`set_participant_security_config`)
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
-`crates/dcps/src/runtime.rs::tests::the_participant_data_follows_steps_6_to_12_of_the_creation`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_1_the_participant_data_follows_steps_6_to_12_of_the_creation`
 
 **Status:** `done` — `get_participant_security_config` on the AccessControl plugin, then `set_participant_security_config` on the Authentication plugin with the algorithms of the config.
 
@@ -8157,7 +8164,7 @@ get_participant_security_config".
 
 **Repo:** `crates/security-runtime/src/gate_crypto.rs::CryptoLayer::ensure_local` (`LocalParams::config`, `algorithm_info`); `crates/security-runtime/src/shared.rs::SharedSecurityGate::ensure_local`
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_cryptographic_plugin_registers_the_participant_and_the_volatile_endpoints`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_cryptographic_plugin_registers_the_participant_and_the_volatile_endpoints`
 
 **Status:** `done` — `register_local_participant` gets the ParticipantSecurityConfig that `get_participant_security_config` returned (the test checks `is_rtps_axk_protected` on the recorded operation).
 
@@ -8172,9 +8179,9 @@ IdentityStatusToken, is used to set the identity_status_token."
 
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth` (`participant_security_info`, `local_algorithm_infos`); `crates/security-runtime/src/plugin_attributes.rs::participant_security_info`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_participant_data_follows_steps_6_to_12_of_the_creation`,
-`crates/dcps/src/runtime.rs::tests::the_tokens_of_the_plugins_are_announced_and_token_nil_is_not`,
-`crates/dcps/src/runtime.rs::tests::spdp_announces_secure_bits_when_configured`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_1_the_participant_data_follows_steps_6_to_12_of_the_creation`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_1_the_tokens_of_the_plugins_are_announced_and_token_nil_is_not`,
+`crates/dcps/src/runtime.rs::tests::rtps_8_5_3_2_1_spdp_announces_secure_bits_when_configured`
 
 **Status:** `done` — `identity_token`, `permissions_token`, `participant_security_info`, the three algorithm infos (the answer of `set_participant_security_config`, cut by the `algorithm_info` of the AccessControl plugin) and `identity_status_token` (in the data of the secure topic only) are in the participant data.
 
@@ -8190,7 +8197,7 @@ symmetric_cipher."
 
 **Repo:** `crates/dcps/src/runtime.rs::participant_incompatibility`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`
 
 **Status:** `done` — `identity_token` and `permissions_token` (PluginClassName and MajorVersion), protection masks and algorithm infos are compared; a difference means no authentication.
 ### §9.8.3 Authentication behavior with discovered DomainParticipant
@@ -8216,8 +8223,8 @@ DomainParticipant entities."
 
 **Repo:** `crates/dcps/src/runtime.rs::builtin_match`, `BuiltinMatch::Regular`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::unauthenticated_participants_get_the_regular_builtin_endpoints_only`,
-`crates/dcps/src/runtime.rs::tests::an_unauthenticated_peer_gets_the_regular_sedp_only`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_3_1_unauthenticated_participants_get_the_regular_builtin_endpoints_only`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_4_an_unauthenticated_peer_gets_the_regular_sedp_only`
 
 **Status:** `done` — a participant without DDS Security gets the regular builtin endpoints, without a handshake.
 ### §9.8.3.1 TRUE: a failed authentication counts as unauthenticated
@@ -8229,7 +8236,7 @@ Plugins but fail the Authentication protocol shall be matched and treated as
 
 **Repo:** `crates/dcps/src/runtime.rs::builtin_match`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::unauthenticated_participants_get_the_regular_builtin_endpoints_only`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_3_1_unauthenticated_participants_get_the_regular_builtin_endpoints_only`
 
 **Status:** `done` — a participant of another CA fails the handshake and stays matched with the regular endpoints.
 ### §9.8.3.1 Unauthenticated participants only with the regular builtin endpoints
@@ -8241,8 +8248,8 @@ DCPSPublications, DCPSSubscriptions) and not the builtin secure Endpoints".
 
 **Repo:** `crates/dcps/src/runtime.rs::builtin_match`, `handle_spdp_datagram`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::an_unauthenticated_peer_gets_the_regular_sedp_only`,
-`crates/dcps/src/runtime.rs::tests::unauthenticated_participants_get_the_regular_builtin_endpoints_only`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_4_2_4_an_unauthenticated_peer_gets_the_regular_sedp_only`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_3_1_unauthenticated_participants_get_the_regular_builtin_endpoints_only`
 
 **Status:** `done` — the secure endpoints are matched only after the authentication.
 ### §9.8.3.1 Authenticated participants with all builtin endpoints
@@ -8255,8 +8262,8 @@ builtin endpoints."
 (l. 236); `crates/discovery/src/sedp/stack.rs::on_participant_discovered`
 (l. 433)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::c34c_security_builtin_wiring_end_to_end`,
-`crates/discovery/src/security/stack.rs::tests::handle_remote_endpoints_with_all_bits_wires_all_four`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_3_1_c34c_security_builtin_wiring_end_to_end`,
+`crates/discovery/src/security/stack.rs::tests::security_9_8_3_1_handle_remote_endpoints_with_all_bits_wires_all_four`
 
 **Status:** done
 
@@ -8269,7 +8276,7 @@ to authenticate them."
 
 **Repo:** `crates/dcps/src/runtime.rs::builtin_match`, `BuiltinMatch::Stateless`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::unauthenticated_participants_are_rejected_where_they_are_not_allowed`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_3_2_unauthenticated_participants_are_rejected_where_they_are_not_allowed`
 
 **Status:** `done` — with `allow_unauthenticated_participants` FALSE nothing but the stateless message endpoints is matched.
 ### §9.8.3.2 FALSE: reject a failed authentication
@@ -8280,7 +8287,7 @@ Plugins but fail the Authentication protocol shall be rejected."
 
 **Repo:** `crates/dcps/src/runtime.rs::builtin_match`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::unauthenticated_participants_are_rejected_where_they_are_not_allowed`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_3_2_unauthenticated_participants_are_rejected_where_they_are_not_allowed`
 
 **Status:** `done` — a participant of another CA is not matched.
 ### §9.8.3.2 FALSE: stateless message endpoints before the authentication
@@ -8293,8 +8300,8 @@ endpoints to allow the authentication handshake to proceed."
 **Repo:** `crates/discovery/src/security/stack.rs::handle_remote_endpoints`
 (l. 236)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::handle_remote_endpoints_with_only_stateless_bits_skips_volatile`,
-`crates/discovery/src/security/stack.rs::tests::end_to_end_stateless_message_loopback_between_stacks`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_8_3_2_handle_remote_endpoints_with_only_stateless_bits_skips_volatile`,
+`crates/discovery/src/security/stack.rs::tests::security_9_8_3_2_end_to_end_stateless_message_loopback_between_stacks`
 
 **Status:** done
 
@@ -8310,7 +8317,7 @@ protocol."
 
 **Repo:** `crates/dcps/src/runtime.rs::match_authenticated_builtins`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_sedp_of_a_peer_is_matched_once_it_authenticated`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_4_2_4_the_sedp_of_a_peer_is_matched_once_it_authenticated`
 
 **Status:** `done` — SEDP is not matched before the handshake and fully matched after it.
 ### §9.8.3 Figure 23 — authentication sequence with a discovered participant
@@ -8322,9 +8329,9 @@ and get_authenticated_peer_credential_token on both sides.
 
 **Repo:** `crates/discovery/src/security/stack.rs::begin_handshake_with`, `on_stateless_message`, `collect_completion` (`shared_secret`, `get_authenticated_peer_credential_token`, `return_authenticated_peer_credential_token`)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::figure_23_calls_the_operations_of_both_plugins_in_order`,
-`crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`,
-`crates/dcps/src/runtime.rs::tests::handshake_completes_through_runtime_dispatch_e2e`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_9_8_3_figure_23_calls_the_operations_of_both_plugins_in_order`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_2_handshake_completes_through_runtime_dispatch_e2e`
 
 **Status:** `done` — both sides call `validate_remote_identity`, the initiator `begin_handshake_request`, the replier `begin_handshake_reply`, both `process_handshake`, then `get_shared_secret` and `get_authenticated_peer_credential_token` (order checked on the recording plugin).
 
@@ -8340,7 +8347,7 @@ BuiltinParticipantStatelessMessageReader."
 called only from the paths for application writers and readers, l. 9868 and
 10318)
 
-**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::the_six_omg_suite_refusals_reach_the_runtime`
+**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::security_7_3_25_the_six_omg_suite_refusals_reach_the_runtime`
 
 **Status:** done
 
@@ -8365,8 +8372,8 @@ shall be created unconditionally when the DomainParticipant is created."
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth`
 (l. 8638)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::c34c_security_builtin_wiring_end_to_end`,
-`crates/dcps/src/runtime.rs::tests::enable_security_builtins_with_auth_activates_handshake_driver`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_3_1_c34c_security_builtin_wiring_end_to_end`,
+`crates/dcps/src/runtime.rs::tests::security_2_3_enable_security_builtins_with_auth_activates_handshake_driver`
 
 **Status:** done — `security.secure_spdp: false` switches off the endpoints
 of DCPSParticipantsSecure; the default is on (see §7.5.1.6).
@@ -8382,9 +8389,9 @@ call the Cryptographic plugin operations on these endpoints."
 
 **Repo:** `crates/security-runtime/src/builtin_attributes.rs::builtin_endpoint_kinds_asked`, `kinds_of_endpoint_config`, `builtin_topic_name`; `crates/dcps/src/runtime.rs::local_endpoint_crypto_handle`, `register_endpoint_crypto`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_endpoint_config_of_the_plugin_gives_the_protection_of_an_endpoint`,
-`crates/dcps/tests/security_access_sequence.rs::the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
-`crates/security-runtime/src/builtin_attributes.rs::tests::the_plugin_is_not_asked_for_the_endpoints_table_21_fixes`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_4_the_endpoint_config_of_the_plugin_gives_the_protection_of_an_endpoint`,
+`crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
+`crates/security-runtime/src/builtin_attributes.rs::tests::security_9_8_4_the_plugin_is_not_asked_for_the_endpoints_table_21_fixes`
 
 **Status:** `done` — with an AccessControl plugin of the application the runtime calls `get_datawriter_security_config` / `get_datareader_security_config` for the endpoints of DCPSParticipantsSecure, DCPSPublicationsSecure, DCPSSubscriptionsSecure and DCPSParticipantMessageSecure and follows the answer; application endpoints likewise. For the endpoints of DCPSParticipantVolatileMessageSecure and the secure TypeLookup endpoints (request and reply) §7.5.13 Table 21 fixes the protection (`is_submessage_protected true`, all other attributes `false`, independent of the plugin and of the governance). The plugin does not decide there; the runtime does not ask it and protects as Table 21 says. The test installs a plugin that protects nothing and checks that it is not called for these six endpoints and that the protection kinds of Table 21 apply; for DCPSPublicationsSecure it is called and its answer is followed. The plugin test in C, C++ and Java checks that the Cryptographic plugin gets the volatile endpoints under `dds.sec.builtin_endpoint_name`. Green on the Linux test host (`/root/zerodds-rc7/agent-logs/sec-behavior-1018-105058.log`).
 
@@ -8396,7 +8403,7 @@ endpoints unconditionally for all created DomainParticipant."
 **Repo:** `crates/dcps/src/runtime.rs::enable_security_builtins_with_auth`
 (l. 8638)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::enable_security_builtins_with_auth_activates_handshake_driver`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_2_3_enable_security_builtins_with_auth_activates_handshake_driver`
 
 **Status:** done — for every participant with security; a participant
 without security does not have the endpoints.
@@ -8413,9 +8420,9 @@ prevent matching".
 
 **Repo:** `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader`, `wire_reader_to_remote_writer`; `crates/security-runtime/src/shared.rs::SharedSecurityGate::check_remote_datawriter`, `check_remote_datareader`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::partition_scope_narrows_an_otherwise_permitted_topic`,
-`crates/security-permissions/src/governance.rs::tests::partitions_scope_the_grant`,
-`crates/dcps/src/runtime.rs::tests::the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_8_4_partition_scope_narrows_an_otherwise_permitted_topic`,
+`crates/security-permissions/src/governance.rs::tests::security_9_8_4_partitions_scope_the_grant`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_4_the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only`
 
 **Status:** `done` — the partitions of the remote endpoint enter the check; a grant with partitions permits only those; the plugin of the application sees them in the request.
 ### §9.8.5 AccessControl behavior with local participant creation
@@ -8440,7 +8447,7 @@ verification fails, the Topic object is not created."
 
 **Repo:** `crates/dcps/src/runtime.rs::check_create_topic_access` (`get_topic_security_config`, `check_create_topic`); `crates/security-runtime/src/shared.rs::SharedSecurityGate::topic_security_config`
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`
 
 **Status:** `done` — `get_topic_security_config`, `return_topic_security_config` and `check_create_topic` in this order; a topic the plugin refuses is not created.
 
@@ -8455,11 +8462,10 @@ DataReader is not created."
 
 **Repo:** `crates/dcps/src/runtime.rs::check_create_endpoint` (l. 9685)
 
-**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::the_six_omg_suite_refusals_reach_the_runtime`,
-`crates/dcps/tests/security_endpoint_access_e2e.rs::an_unarmed_gate_refuses_instead_of_creating`
+**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::security_7_3_25_the_six_omg_suite_refusals_reach_the_runtime`,
+`crates/dcps/tests/security_endpoint_access_e2e.rs::security_9_8_6_an_unarmed_gate_refuses_instead_of_creating`
 
-**Status:** done — the optional checks of data tags and QoS are not
-implemented (see §9.4.2.9).
+**Status:** done — the request also carries QoS and data tags (§9.4.2.9 check_create_datawriter/datareader: qos and data_tag).
 
 ### §9.8.6 Steps 6 and 10: get_datawriter_/get_datareader_security_config
 
@@ -8470,8 +8476,8 @@ calls the operation AccessControl::get_datareader_security_config".
 
 **Repo:** `crates/dcps/src/runtime.rs::register_endpoint_crypto` (`SharedSecurityGate::endpoint_security_config`)
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
-`crates/dcps/src/runtime.rs::tests::the_endpoint_config_of_the_plugin_gives_the_protection_of_an_endpoint`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
+`crates/dcps/src/runtime.rs::tests::security_9_8_4_the_endpoint_config_of_the_plugin_gives_the_protection_of_an_endpoint`
 
 **Status:** `done` — `get_datawriter_security_config` and `get_datareader_security_config` after `check_create_*`, with `return_*_security_config`; the answer decides whether the endpoint has key material and with which protection.
 
@@ -8485,8 +8491,8 @@ to use the secure subscriptions discovery endpoint".
 
 **Repo:** `crates/dcps/src/runtime.rs::sync_sedp_discovery_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_topic_config_of_the_plugin_chooses_the_secure_sedp`,
-`crates/dcps/src/runtime.rs::tests::discovery_and_liveliness_follow_the_topic_rule`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_6_the_topic_config_of_the_plugin_chooses_the_secure_sedp`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_1_7_discovery_and_liveliness_follow_the_topic_rule`
 
 **Status:** `done` — `is_discovery_protected` of the plugin's TopicSecurityConfig chooses between the regular and the secure discovery endpoints, also against the governance; a plugin that fails protects.
 
@@ -8500,8 +8506,8 @@ instance is not disposed."
 
 **Repo:** `crates/dcps/src/publisher.rs` (`register_instance`, `dispose`); `crates/security-runtime/src/shared.rs::SharedSecurityGate::check_local_datawriter_instance`
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::instance_operations_are_asked_of_the_plugin`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_instance_operations_are_asked_of_the_plugin`
 
 **Status:** `done` — `check_local_datawriter_register_instance` and `check_local_datawriter_dispose_instance` before the operation; when refused, the instance is left as it was.
 
@@ -8514,7 +8520,7 @@ check_remote_participant will not be called)."
 
 **Repo:** `crates/dcps/src/runtime.rs::store_remote_permissions`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::an_unauthenticated_participant_is_not_checked_for_permissions`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_7_an_unauthenticated_participant_is_not_checked_for_permissions`
 
 **Status:** `done` — neither `validate_remote_permissions` nor `check_remote_participant` is called for an unauthenticated participant; no `security.remote_permissions.refused` event.
 ### §9.8.7 is_access_protected=TRUE: check and exclusion of the peer
@@ -8528,7 +8534,7 @@ considered ignored and all the builtin Topics should not be matched."
 
 **Repo:** `crates/dcps/src/runtime.rs::store_remote_permissions`, `ignore_unauthorized_participant`
 
-**Tests:** `crates/dcps/tests/security_remote_participant_access_e2e.rs::an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected`
+**Tests:** `crates/dcps/tests/security_remote_participant_access_e2e.rs::security_9_8_7_an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected`
 
 **Status:** `done` — an authenticated peer without a grant for the domain is ignored and not matched.
 ### §9.8.7 is_access_protected=FALSE: HandleNIL without consequences
@@ -8542,7 +8548,7 @@ impact the validation result."
 
 **Repo:** `crates/dcps/src/runtime.rs::store_remote_permissions`
 
-**Tests:** `crates/dcps/tests/security_remote_participant_access_e2e.rs::an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected`
+**Tests:** `crates/dcps/tests/security_remote_participant_access_e2e.rs::security_9_8_7_an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected`
 
 **Status:** `done` — without `enable_join_access_control` the same peer is kept.
 ### §9.8.7 Figure 25 steps 3 and 5: check_remote_participant and check_remote_topic
@@ -8555,8 +8561,8 @@ fails, the discovered Topic is ignored."
 
 **Repo:** `crates/security-runtime/src/shared.rs::SharedSecurityGate::check_remote_participant`, `check_remote_topic`; `crates/dcps/src/runtime.rs` (`wire_*_to_remote_*_unguarded`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only`,
-`crates/dcps/tests/security_remote_participant_access_e2e.rs::an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_4_the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only`,
+`crates/dcps/tests/security_remote_participant_access_e2e.rs::security_9_8_7_an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected`
 
 **Status:** `done` — `check_remote_participant` ignores the peer; `check_remote_topic` refuses endpoints of a topic that the plugin or the grant of the peer does not permit (the event `match.refused` names §9.4.2.9.12).
 ### §9.8.8 Endpoints of unauthenticated participants over regular discovery
@@ -8582,7 +8588,7 @@ is_write_protected set to TRUE."
 
 **Repo:** `crates/dcps/src/runtime.rs::refuses_unauthenticated_peer`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_participant_that_is_not_authenticated_gets_no_endpoint_on_a_protected_topic`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_8_1_a_participant_that_is_not_authenticated_gets_no_endpoint_on_a_protected_topic`
 
 **Status:** `done` — endpoints of an unauthenticated peer are not matched on read- or write-protected topics; the `match.refused` event names §9.8.8.1.
 ### §9.8.8.1 and §9.8.8.2 Match unprotected topics without AccessControl
@@ -8596,7 +8602,7 @@ is_write_protected set to FALSE." (Figure 26)
 
 **Repo:** `crates/dcps/src/runtime.rs::refuses_unauthenticated_peer`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_participant_that_is_not_authenticated_gets_no_endpoint_on_a_protected_topic`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_8_1_a_participant_that_is_not_authenticated_gets_no_endpoint_on_a_protected_topic`
 
 **Status:** `done` — the open topic (no read and no write protection) is matched with the peer over the plain SEDP, without a call to AccessControl.
 ### §9.8.8.2 Authenticated: check protected topics before matching
@@ -8610,7 +8616,7 @@ DataReader for whom the is_write_protected attribute is set to TRUE".
 
 **Repo:** `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader`, `wire_reader_to_remote_writer` (`check_remote_topic`, `check_remote_datareader`, `check_remote_datawriter`), `peer_is_unauthenticated`, `topic_is_access_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_4_the_plugin_is_asked_about_the_endpoints_of_authenticated_participants_only`
 
 **Status:** `done` — for an authenticated participant the runtime asks the plugin `check_remote_topic` and `check_remote_datareader` / `check_remote_datawriter` with the topic and partitions of the remote endpoint and matches only where it permits (`RelayOnly` for check_remote_datareader); for an unauthenticated one it does not ask the plugin (§9.8.8.1), and a protected topic is not matched there.
 
@@ -8624,9 +8630,9 @@ verification doesn't succeed, the instance disposal shall be ignored."
 
 **Repo:** `crates/dcps/src/runtime.rs::remote_instance_refused`; `crates/security-runtime/src/shared.rs::SharedSecurityGate::check_remote_datawriter_instance`
 
-**Tests:** `crates/dcps/tests/security_remote_instance_e2e.rs::a_sample_of_an_instance_the_plugin_refuses_to_register_is_ignored`,
-`crates/dcps/tests/security_remote_instance_e2e.rs::a_disposal_the_plugin_refuses_is_ignored`,
-`crates/dcps/tests/security_remote_instance_e2e.rs::a_remote_writer_that_the_plugin_permits_registers_and_disposes`
+**Tests:** `crates/dcps/tests/security_remote_instance_e2e.rs::security_9_8_8_2_a_sample_of_an_instance_the_plugin_refuses_to_register_is_ignored`,
+`crates/dcps/tests/security_remote_instance_e2e.rs::security_9_8_8_2_a_disposal_the_plugin_refuses_is_ignored`,
+`crates/dcps/tests/security_remote_instance_e2e.rs::security_9_8_8_2_a_remote_writer_that_the_plugin_permits_registers_and_disposes`
 
 **Status:** `done` — the DataReader calls `check_remote_datawriter_register_instance` for the first sample of an instance and `check_remote_datawriter_dispose_instance` for a disposal; when refused, the sample, the disposal, is ignored. The control with a permitting plugin delivers both.
 
@@ -8657,8 +8663,8 @@ CryptoKeyExchange."
 (l. 732); `crates/dcps/src/runtime.rs::prepare_endpoint_crypto_tokens`
 (l. 21431, without the VolatileMessageSecure endpoints)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::kx_channel_round_trips_through_gate`,
-`crates/security-crypto/src/plugin.rs::tests::cyclone_kx_key_matches_both_directions`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_5_1_8_kx_channel_round_trips_through_gate`,
+`crates/security-crypto/src/plugin.rs::tests::security_9_8_9_1_cyclone_kx_key_matches_both_directions`
 
 **Status:** done
 
@@ -8674,7 +8680,7 @@ register_local_datareader".
 
 **Repo:** `crates/security-runtime/src/gate_crypto.rs::volatile_properties`, `CryptoLayer::ensure_local`
 
-**Tests:** `crates/dcps/tests/security_access_sequence.rs::the_cryptographic_plugin_registers_the_participant_and_the_volatile_endpoints`
+**Tests:** `crates/dcps/tests/security_access_sequence.rs::security_9_8_1_the_cryptographic_plugin_registers_the_participant_and_the_volatile_endpoints`
 
 **Status:** `done` — the registration of the volatile message writer and reader carries the property `dds.sec.builtin_endpoint_name` with the names of the specification; it runs once, after `register_local_participant`.
 ### §9.8.9.2 register_local_participant for every local participant
@@ -8685,7 +8691,7 @@ register_local_participant on the KeyFactory."
 
 **Repo:** `crates/security-runtime/src/shared.rs::ensure_local` (l. 637)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::e2e_alice_bob_with_shared_gate`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_5_1_2_e2e_alice_bob_with_shared_gate`
 
 **Status:** done — on first use, not on creation.
 
@@ -8698,8 +8704,8 @@ register_matched_remote_participant on the KeyFactory."
 
 **Repo:** `crates/dcps/src/runtime.rs::prepare_crypto_token` (l. 21368)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::handshake_completes_through_runtime_dispatch_e2e`,
-`crates/dcps/src/runtime.rs::tests::secured_data_round_trips_through_runtime_dispatch_e2e`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_4_2_handshake_completes_through_runtime_dispatch_e2e`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e`
 
 **Status:** done
 
@@ -8714,7 +8720,7 @@ KeyFactory::register_matched_remote_datawriter for each local DataWriter
 
 **Repo:** `crates/dcps/src/runtime.rs::local_endpoint_crypto_handle`, `prepare_endpoint_crypto_tokens`; `crates/security-runtime/src/gate_crypto.rs::CryptoLayer::endpoint_tokens` (`register_matched_remote_datareader` / `_datawriter`)
 
-**Tests:** `crates/dcps/tests/security_crypto_sequence.rs::the_builtin_secure_endpoints_are_registered_and_matched`
+**Tests:** `crates/dcps/tests/security_crypto_sequence.rs::security_9_8_9_3_the_builtin_secure_endpoints_are_registered_and_matched`
 
 **Status:** `done` — `register_local_datawriter` / `register_local_datareader` for the secure builtin endpoints (the VolatileMessageSecure writer apart), then `register_matched_remote_datareader` / `_datawriter` and `create_local_*_crypto_tokens`, with the kinds of §10.4.1.2.5.
 
@@ -8729,8 +8735,8 @@ DataReader that matches the DataWriter."
 
 **Repo:** `crates/dcps/src/runtime.rs::register_endpoint_crypto`, `prepare_endpoint_crypto_tokens`; `crates/security-runtime/src/gate_crypto.rs::CryptoLayer::endpoint_tokens`
 
-**Tests:** `crates/dcps/tests/security_crypto_sequence.rs::the_key_material_of_two_endpoints_and_the_protected_data_follow_the_figures`,
-`crates/security-runtime/src/shared.rs::tests::per_endpoint_datawriter_token_roundtrips_by_key_id`
+**Tests:** `crates/dcps/tests/security_crypto_sequence.rs::security_9_8_9_4_the_key_material_of_two_endpoints_and_the_protected_data_follow_the_figures`,
+`crates/security-runtime/src/shared.rs::tests::security_9_5_1_3_per_endpoint_datawriter_token_roundtrips_by_key_id`
 
 **Status:** `done` — `register_local_datawriter` with the config of the endpoint, `register_matched_remote_datareader` for the discovered DataReader, then the CryptoTokens; the other side sets them with `set_remote_datawriter_crypto_tokens`.
 
@@ -8746,8 +8752,8 @@ Call activate_key_revision".
 
 **Repo:** `crates/dcps/src/runtime.rs::renew_key_material_after_revocation`, `complete_key_revision`; `RuntimeConfig::key_revision_ack_timeout`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_key_revision_is_activated_after_the_acknowledgement_or_the_timeout`,
-`crates/dcps/src/runtime.rs::tests::a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_9_5_a_key_revision_is_activated_after_the_acknowledgement_or_the_timeout`,
+`crates/dcps/src/runtime.rs::tests::security_9_3_2_12_2_a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`
 
 **Status:** `done` — `revise_local_entity_keys`, the new CryptoTokens to the authenticated participants, waiting for the acknowledgement of the VolatileSecure writer or `key_revision_ack_timeout` (the specification gives no value: "sufficient time"; default 5 s, a programmatic setting), then `activate_key_revision`. The revision is triggered by the revocation of an identity (§9.3.2.12.2).
 
@@ -8760,8 +8766,8 @@ internally by the Security Plugins."
 
 **Repo:** `crates/security-crypto/src/plugin.rs` (method `rotate_key`)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::rotate_key_resets_counter_and_changes_key`,
-`crates/security-crypto/src/plugin.rs::tests::encrypts_remaining_decrements_per_call`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_9_8_9_5_rotate_key_resets_counter_and_changes_key`,
+`crates/security-crypto/src/plugin.rs::tests::security_8_1_1_encrypts_remaining_decrements_per_call`
 
 **Status:** done — details of the rotation of the builtin plugin are in
 §10.5.
@@ -8805,8 +8811,8 @@ set_remote_participant_crypto_tokens".
 **Repo:** `crates/dcps/src/runtime.rs::prepare_crypto_token` (l. 21368),
 `on_volatile_messages` (l. 22563)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::data_round_trips_via_token_after_kx_register`,
-`crates/dcps/src/runtime.rs::tests::secured_data_round_trips_through_runtime_dispatch_e2e`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_5_1_9_data_round_trips_via_token_after_kx_register`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e`
 
 **Status:** done — the runtime sends ParticipantCryptoTokens only for
 `rtps_protection_kind` other than NONE (l. 21387); this follows Table 33
@@ -8824,7 +8830,7 @@ each of its matched DataReader entities."
 
 **Repo:** `crates/dcps/src/runtime.rs::prepare_endpoint_crypto_tokens`, `endpoint_is_protected`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::key_material_exists_for_protected_endpoints_only_and_goes_with_them`, `::pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent`, `::secured_data_round_trips_through_runtime_dispatch_e2e`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_5_1_8_key_material_exists_for_protected_endpoints_only_and_goes_with_them`, `::security_7_5_4_6_2_pending_endpoint_tokens_keeps_late_user_token_after_builtins_sent`, `::security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e`
 
 **Status:** `done` — tokens go for the secure builtin endpoints by the protection kinds of the governance and for application endpoints with protected submessages or payload, per matching remote endpoint.
 
@@ -8836,7 +8842,7 @@ are called only if is_payload_protected is TRUE."
 
 **Repo:** `crates/dcps/src/runtime.rs::endpoint_is_protected`, `register_endpoint_crypto`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::key_material_exists_for_protected_endpoints_only_and_goes_with_them`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_5_1_8_key_material_exists_for_protected_endpoints_only_and_goes_with_them`
 
 **Status:** `done` — an endpoint of a topic with neither submessage nor payload protection has no key material and gets no tokens.
 
@@ -8850,8 +8856,8 @@ has elapsed. After this it shall call activate_key_revision".
 
 **Repo:** `crates/dcps/src/runtime.rs::renew_key_material_after_revocation`, `complete_key_revision`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_key_revision_is_activated_after_the_acknowledgement_or_the_timeout`,
-`crates/dcps/src/runtime.rs::tests::a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_9_8_9_5_a_key_revision_is_activated_after_the_acknowledgement_or_the_timeout`,
+`crates/dcps/src/runtime.rs::tests::security_9_3_2_12_2_a_revocation_makes_a_new_revision_of_the_keys_of_the_participant_and_its_endpoints`
 
 **Status:** `done` — as §9.8.9.5: after `revise_local_entity_keys` the tokens go out; `activate_key_revision` follows the acknowledgement or the end of the time.
 
@@ -8867,8 +8873,8 @@ operations are executed on the reverse order."
 **Repo:** `crates/dcps/src/runtime.rs` (l. 4590–4602: payload, submessage,
 message)
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_full_secure_profile`,
-`crates/dcps/src/runtime.rs::tests::secured_data_round_trips_through_runtime_dispatch_e2e`
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_9_8_11_matrix_full_secure_profile`,
+`crates/dcps/src/runtime.rs::tests::security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e`
 
 **Status:** done
 
@@ -8882,8 +8888,8 @@ decode_serialized_payload.
 
 **Repo:** `crates/security-runtime/src/shared.rs::SharedSecurityGate::encode_serialized_payload`, `encode_data_datawriter_by_handle`, `transform_outbound_for`, `transform_inbound_from`, `decode_data_by_key_id`, `decode_serialized_payload`; `crates/security-runtime/src/gate_crypto.rs::CryptoLayer::decode_submessage` (`preprocess_secure_submsg`)
 
-**Tests:** `crates/dcps/tests/security_crypto_sequence.rs::the_key_material_of_two_endpoints_and_the_protected_data_follow_the_figures`,
-`crates/dcps/tests/security_matrix_e2e.rs::matrix_metadata_protection_all_kinds`
+**Tests:** `crates/dcps/tests/security_crypto_sequence.rs::security_9_8_9_4_the_key_material_of_two_endpoints_and_the_protected_data_follow_the_figures`,
+`crates/dcps/tests/security_matrix_e2e.rs::security_8_1_1_matrix_metadata_protection_all_kinds`
 
 **Status:** `done` — Figures 31 and 32: `encode_serialized_payload`, `encode_datawriter_submessage`, `encode_rtps_message`; Figures 33 and 34: `decode_rtps_message`, `preprocess_secure_submsg`, `decode_datawriter_submessage`, `decode_serialized_payload`; order checked on the recording plugin.
 
@@ -8909,7 +8915,7 @@ with a pre-configured shared Certificate Authority."
 **Repo:** `crates/security-pki/src/plugin.rs::PkiAuthenticationPlugin`
 (`plugin_class_id`, l. 1071)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::plugin_class_id_matches_spec`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_1_plugin_class_id_matches_spec`
 
 **Status:** done
 
@@ -8921,7 +8927,7 @@ Permissions document signed by shared Certificate Authority".
 **Repo:** `crates/security-permissions/src/plugin.rs::PermissionsAccessControl`
 (`plugin_class_id`, l. 275); `crates/security-runtime/src/shared.rs::SharedSecurityGate`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::plugin_class_id_matches_spec`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_plugin_class_id_matches_spec`
 
 **Status:** done — the runtime uses the plugin's types through
 `SharedSecurityGate` (see §9.4.2).
@@ -8935,7 +8941,7 @@ authentication."
 **Repo:** `crates/security-crypto/src/plugin.rs::AesGcmCryptoPlugin`
 (`plugin_class_id`, l. 2006)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::plugin_class_id_matches_spec`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_1_plugin_class_id_matches_spec`
 
 **Status:** done
 
@@ -8946,9 +8952,9 @@ Send Tags via Endpoint Discovery".
 
 **Repo:** `crates/security-runtime/src/data_tagging.rs::BuiltinDataTaggingPlugin` (`DATA_TAGGING_PLUGIN_CLASS_ID`); `crates/dcps/src/runtime.rs::DcpsRuntime::register_endpoint_tags`, `RuntimeConfig::security_data_tagging`
 
-**Tests:** `crates/security-runtime/src/data_tagging.rs::tests::plugin_class_id_matches_spec_format`,
-`crates/dcps/src/runtime.rs::tests::the_data_tagging_plugin_holds_the_tags_of_local_and_discovered_endpoints`,
-`crates/dcps/src/runtime.rs::tests::without_a_data_tagging_plugin_the_qos_tags_are_announced`
+**Tests:** `crates/security-runtime/src/data_tagging.rs::tests::security_10_1_plugin_class_id_matches_spec_format`,
+`crates/dcps/src/runtime.rs::tests::security_10_1_the_data_tagging_plugin_holds_the_tags_of_local_and_discovered_endpoints`,
+`crates/dcps/src/runtime.rs::tests::security_10_1_without_a_data_tagging_plugin_the_qos_tags_are_announced`
 
 **Status:** `done` — class id `DDS:Tagging:DDS_Discovery`; the runtime hands the tags of every endpoint to the plugin, announces what it returns, and registers the tags of discovered endpoints.
 ### §10.1 Table 49 — Logging: DDS:Logging:DDS_LogTopic
@@ -8959,7 +8965,7 @@ security events to a dedicated DDS Log Topic".
 **Repo:** `crates/security-logging/src/log_topic.rs::LogTopicLoggingPlugin`
 (`plugin_class_id`, l. 728)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::plugin_class_id_is_the_spec_name`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_10_1_plugin_class_id_is_the_spec_name`
 
 **Status:** done
 
@@ -9042,8 +9048,8 @@ X.509 Certificate that chains up to the Shared Identity CA".
 (l. 380); `crates/security-runtime/src/profile.rs::from_files_with_cert_policy`
 (l. 301)
 
-**Tests:** `crates/dcps/tests/security_qos_properties.rs::a_complete_dds_sec_property_list_creates_a_secured_participant`,
-`crates/security-runtime/src/qos_properties.rs::tests::each_missing_property_is_reported_by_its_own_name`
+**Tests:** `crates/dcps/tests/security_qos_properties.rs::security_7_3_21_a_complete_dds_sec_property_list_creates_a_secured_participant`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_3_each_missing_property_is_reported_by_its_own_name`
 
 **Status:** done
 
@@ -9058,8 +9064,8 @@ IETF RFC 3986."
 **Repo:** `crates/security-runtime/src/qos_properties.rs` (constants
 `PROP_IDENTITY_CA` to `PROP_KEY_ESTABLISHMENT`, l. 72–88)
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_property_names_are_the_spec_strings`,
-`crates/security-runtime/src/qos_properties.rs::tests::the_profile_config_follows_the_property_list`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_the_property_names_are_the_spec_strings`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_the_profile_config_follows_the_property_list`
 
 **Status:** done — `PropertyQosPolicy` has no `propagate`; the properties are
 not sent over discovery (see §7.3.21).
@@ -9073,9 +9079,9 @@ pkcs11".
 **Repo:** `crates/security-runtime/src/qos_properties.rs::resolve_material`
 (l. 302), `resolve_file_uri` (l. 252)
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::every_file_uri_form_resolves_to_a_path`,
-`crates/security-runtime/src/qos_properties.rs::tests::a_data_uri_is_the_content_and_not_a_path`,
-`crates/security-runtime/src/pkcs11.rs::tests::every_path_attribute_parses`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_every_file_uri_form_resolves_to_a_path`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_a_data_uri_is_the_content_and_not_a_path`,
+`crates/security-runtime/src/pkcs11.rs::tests::security_10_3_1_every_path_attribute_parses`
 
 **Status:** done — `pkcs11:` only with the feature `pkcs11` of
 `zerodds-security-runtime`; without the feature the value is refused with
@@ -9090,7 +9096,7 @@ pkcs11:object=MyParticipantPrivateKey;type=private?pin-value=OpenSesame".
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::resolve_material`, `resolve_private_key`; `crates/security-runtime/src/profile.rs::from_files_with_cert_policy`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_uri_schemes_that_are_not_paths_are_named_not_opened_as_paths`, `::a_password_in_the_key_uri_is_not_part_of_the_path`, `crates/security-runtime/src/pkcs11.rs::tests::every_query_attribute_parses`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_the_uri_schemes_that_are_not_paths_are_named_not_opened_as_paths`, `::security_10_3_1_a_password_in_the_key_uri_is_not_part_of_the_path`, `crates/security-runtime/src/pkcs11.rs::tests::security_10_3_1_every_query_attribute_parses`
 
 **Status:** `done` — `file:`, `data:` and `pkcs11:` with `pin-value` are read; `?password=` on `file:` is the password.
 
@@ -9100,7 +9106,7 @@ pkcs11:object=MyParticipantPrivateKey;type=private?pin-value=OpenSesame".
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::resolve_private_key`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::a_password_in_the_key_uri_is_not_part_of_the_path`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_a_password_in_the_key_uri_is_not_part_of_the_path`
 
 **Status:** `done` — the query is not part of the path; `password` is percent-decoded; the property `dds.sec.auth.password` takes precedence.
 
@@ -9114,7 +9120,7 @@ the unencrypted private key."
 
 **Repo:** `crates/security-pki/src/encrypted_key.rs::decrypt_private_key_pem_as`, `PasswordReading`; `crates/security-runtime/src/qos_properties.rs::profile_config_from_properties`
 
-**Tests:** `crates/security-pki/src/encrypted_key.rs::tests::the_clause_reading_is_the_default_and_the_passphrase_is_named`, `crates/security-pki/src/encrypted_key.rs::tests::the_clause_key_opens_a_file_encrypted_with_it`, `crates/security-pki/src/encrypted_key.rs::tests::an_unencrypted_key_ignores_the_password`, `crates/security-runtime/src/qos_properties.rs::tests::a_key_password_reaches_the_profile_config`, `::the_password_reading_is_the_clause_unless_named`
+**Tests:** `crates/security-pki/src/encrypted_key.rs::tests::security_10_3_1_the_clause_reading_is_the_default_and_the_passphrase_is_named`, `crates/security-pki/src/encrypted_key.rs::tests::security_10_3_1_the_clause_key_opens_a_file_encrypted_with_it`, `crates/security-pki/src/encrypted_key.rs::tests::security_10_3_1_an_unencrypted_key_ignores_the_password`, `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_a_key_password_reaches_the_profile_config`, `::security_10_3_1_the_password_reading_is_the_clause_unless_named`
 
 **Status:** `done` — the default is the clause's reading (Base64 of the AES-128 key); the OpenSSL passphrase reading (Cyclone, Fast DDS) is the setting `zerodds.sec.auth.password_reading=openssl_passphrase`.
 
@@ -9126,8 +9132,8 @@ apply to private keys supplied with the 'pkcs11:' URI."
 
 **Repo:** `crates/security-runtime/src/profile.rs::private_key_pem`
 
-**Tests:** `crates/security-runtime/src/profile.rs::tests::a_password_does_not_apply_to_a_pkcs11_key`,
-`crates/security-runtime/src/qos_properties.rs::tests::a_key_password_reaches_the_profile_config`
+**Tests:** `crates/security-runtime/src/profile.rs::tests::security_10_3_1_a_password_does_not_apply_to_a_pkcs11_key`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_a_key_password_reaches_the_profile_config`
 
 **Status:** `done` — a key on a token is never decrypted, a password next to it is not applied and is no error (the PIN is `pin-value` of the URI); for `file:` and `data:` it opens the key, a wrong one is an error. The test needs no token, because the decision is taken before the access.
 
@@ -9141,8 +9147,8 @@ pkcs11".
 **Repo:** `crates/security-runtime/src/qos_properties.rs::resolve_material`
 (l. 302)
 
-**Tests:** `crates/dcps/tests/security_qos_properties.rs::every_file_uri_spelling_is_resolved_on_the_participant_path`,
-`crates/security-runtime/src/qos_properties.rs::tests::a_data_uri_with_a_media_type_decodes_by_rfc_2397`
+**Tests:** `crates/dcps/tests/security_qos_properties.rs::security_10_3_1_every_file_uri_spelling_is_resolved_on_the_participant_path`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_a_data_uri_with_a_media_type_decodes_by_rfc_2397`
 
 **Status:** done
 
@@ -9155,7 +9161,7 @@ optional)"
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::kx_suite_from_properties`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_key_establishment_property_selects_a_suite_and_refuses_the_unknown`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_the_key_establishment_property_selects_a_suite_and_refuses_the_unknown`
 
 **Status:** `done` — `AUTO`, `ECDHE-CEUM+P256`, `ECDHE-CEUM+P384`, `DHE+MODP-2048-256` and absence; also `ECDH+prime256v1-CEUM`, `ECDHE-CEUM-P256`, `DH+MODP-2048-256` and `X25519`.
 
@@ -9167,7 +9173,7 @@ selection of the algorithm will be left to the Authentication plugin."
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::kx_suite_from_properties`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_key_establishment_property_selects_a_suite_and_refuses_the_unknown`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_the_key_establishment_property_selects_a_suite_and_refuses_the_unknown`
 
 **Status:** `done` — `AUTO` is ECDHE-CEUM+P256, which every vendor runs.
 
@@ -9182,8 +9188,8 @@ sign DomainParticipant Identity Certificates".
 
 **Repo:** `crates/security-pki/src/plugin.rs::validate_with_config` (l. 368)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_local_identity_accepts_ca_signed_cert`,
-`crates/security-pki/src/plugin.rs::tests::validate_local_identity_rejects_wrong_ca`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_3_validate_local_identity_accepts_ca_signed_cert`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_local_identity_rejects_wrong_ca`
 
 **Status:** done — a test with a subordinate CA as trust anchor was not
 found (not checked whether it behaves like a root).
@@ -9196,11 +9202,11 @@ the algorithms defined in 8.2."
 
 **Repo:** `crates/security-pki/src/plugin.rs::sign_with`, `signing_scheme`; `crates/security-pki/src/identity.rs::private_key_pkcs8_der`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::a_p384_identity_authenticates_with_ecdsa_p384`,
-`crates/security-pki/src/plugin.rs::tests::an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that`,
-`crates/security-pki/src/plugin.rs::tests::full_three_round_handshake_alice_bob`,
-`crates/security-pki/tests/private_key_forms.rs::a_pkcs1_rsa_key_reaches_the_backend_as_pkcs8`,
-`crates/security-pki/tests/private_key_forms.rs::a_sec1_ec_key_reaches_the_backend_as_the_same_pkcs8_openssl_writes`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_8_2_a_p384_identity_authenticates_with_ecdsa_p384`,
+`crates/security-pki/src/plugin.rs::tests::security_8_2_an_rsa_identity_signs_pkcs1_when_the_peer_verifies_only_that`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_4_full_three_round_handshake_alice_bob`,
+`crates/security-pki/tests/private_key_forms.rs::security_10_3_1_2_a_pkcs1_rsa_key_reaches_the_backend_as_pkcs8`,
+`crates/security-pki/tests/private_key_forms.rs::security_10_3_1_2_a_sec1_ec_key_reaches_the_backend_as_the_same_pkcs8_openssl_writes`
 
 **Status:** `done` — the four algorithms of Table 25 run: ECDSA P-256 (default), ECDSA P-384, RSASSA-PSS and RSASSA-PKCS1-v1_5 with an RSA key; the forms PKCS#8, PKCS#1 and SEC1 are read.
 
@@ -9213,8 +9219,8 @@ DomainParticipant."
 
 **Repo:** `crates/security-pki/src/plugin.rs::validate_with_config` (l. 368)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_local_identity_accepts_ca_signed_cert`,
-`crates/security-runtime/src/qos_properties.rs::tests::the_x509v1_deviation_comes_out_of_the_property_list`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_3_validate_local_identity_accepts_ca_signed_cert`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_3_the_x509v1_deviation_comes_out_of_the_property_list`
 
 **Status:** done — an X.509 v1 certificate is accepted only with the own
 property `PROP_ACCEPT_X509V1_IDENTITY` (default off).
@@ -9228,10 +9234,10 @@ algorithms defined in 8.2."
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::kx_suite_from_properties`; `crates/security-pki/src/plugin.rs::set_preferred_kx_suite`, `begin_handshake_request`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_key_establishment_property_selects_a_suite_and_refuses_the_unknown`,
-`crates/security-pki/src/plugin.rs::tests::kagree_algo_string_round_trips_for_every_supported_suite`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_runs_over_dhe_modp_2048_256`,
-`crates/security-pki/src/plugin.rs::tests::set_participant_security_config_fails_when_a_used_algorithm_is_not_supported`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_the_key_establishment_property_selects_a_suite_and_refuses_the_unknown`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_1_4_kagree_algo_string_round_trips_for_every_supported_suite`,
+`crates/security-pki/src/plugin.rs::tests::security_8_3_the_handshake_runs_over_dhe_modp_2048_256`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_set_participant_security_config_fails_when_a_used_algorithm_is_not_supported`
 
 **Status:** `done` — the property selects the key agreement of the initiator: `AUTO` and absence are ECDHE-CEUM+P256, plus ECDHE-CEUM+P384 and DHE+MODP-2048-256 (Table 26); `set_participant_security_config` checks that it is in the supported mask. The reference to §8.2 instead of §8.3 is a contradiction of the spec.
 
@@ -9245,8 +9251,8 @@ attributes. Attributes that are not understood shall be ignored."
 **Repo:** `crates/security-pki/src/handshake_token.rs::parse_reply_token`
 (l. 604), `parse_request_token` (l. 479)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::extra_unknown_properties_in_reply_accepted_forward_compat`,
-`crates/security-pki/src/identity_token.rs::tests::unknown_property_skipped_in_decode`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_2_extra_unknown_properties_in_reply_accepted_forward_compat`,
+`crates/security-pki/src/identity_token.rs::tests::security_10_3_2_unknown_property_skipped_in_decode`
 
 **Status:** done
 
@@ -9259,11 +9265,11 @@ signature algorithms defined in Table 25. dds.ca.sn [...] dds.ca.algo".
 
 **Repo:** `crates/security-pki/src/identity_token.rs::IdentityToken::encode`, `decode`, `build_identity_token_from_der_named`
 
-**Tests:** `crates/security-pki/src/identity_token.rs::tests::a_token_without_the_optional_properties_decodes`,
-`crates/security-pki/src/identity_token.rs::tests::an_empty_property_is_left_out_of_the_token`,
-`crates/security-pki/src/identity_token.rs::tests::the_algorithms_are_the_names_of_table_25`,
-`crates/security-pki/src/identity_token.rs::tests::round_trip_full_token`,
-`crates/security-pki/src/plugin.rs::tests::the_identity_token_names_the_algorithms_of_table_25`
+**Tests:** `crates/security-pki/src/identity_token.rs::tests::security_10_3_2_1_a_token_without_the_optional_properties_decodes`,
+`crates/security-pki/src/identity_token.rs::tests::security_10_3_2_1_an_empty_property_is_left_out_of_the_token`,
+`crates/security-pki/src/identity_token.rs::tests::security_7_3_6_the_algorithms_are_the_names_of_table_25`,
+`crates/security-pki/src/identity_token.rs::tests::security_10_3_2_1_round_trip_full_token`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_1_the_identity_token_names_the_algorithms_of_table_25`
 
 **Status:** `done` — `dds.cert.sn`, `dds.cert.algo`, `dds.ca.sn`, `dds.ca.algo`: each property is optional (without a value it is not sent, a missing field is empty on reading).
 
@@ -9275,10 +9281,10 @@ digital signature algorithms defined in Table 25."
 
 **Repo:** `crates/security-pki/src/identity_token.rs::crypto_algorithm_name`, `legacy_cert_algo`; `crates/security-pki/src/plugin.rs::validate_remote_identity`
 
-**Tests:** `crates/security-pki/src/identity_token.rs::tests::the_algorithms_are_the_names_of_table_25`,
-`crates/security-pki/src/identity_token.rs::tests::the_names_of_1_1_are_the_opt_in`,
-`crates/security-pki/src/plugin.rs::tests::the_identity_token_names_the_algorithms_of_table_25`,
-`crates/security-pki/src/plugin.rs::tests::validate_remote_identity_compares_the_plugin_name_and_the_major_version`
+**Tests:** `crates/security-pki/src/identity_token.rs::tests::security_7_3_6_the_algorithms_are_the_names_of_table_25`,
+`crates/security-pki/src/identity_token.rs::tests::security_10_3_2_1_the_names_of_1_1_are_the_opt_in`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_1_the_identity_token_names_the_algorithms_of_table_25`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_compares_the_plugin_name_and_the_major_version`
 
 **Status:** `done` — `dds.cert.algo` and `dds.ca.algo` carry the names of Table 25 (`ECDSA+P256+SHA256`, `ECDSA+P384+SHA384`, `RSASSA-PSS-MGF1SHA256+2048+SHA256`, `RSASSA-PKCS1-V1_5+2048+SHA256`); an algorithm without a name in Table 25 (ecdsa-with-SHA512) leaves the property out. Only `org.zerodds.sec.algorithm_names=1.1` sends the names of 1.1 (`EC-prime256v1`, `RSA-2048`). The comparison of the class concerns name and MajorVersion. `DDS:Auth:PKI-DH:1.0` is sent (the text of §10.3.2.1 sets MinorVersion 0, Table 51 says 1.2: contradiction of the spec; only name and MajorVersion are compared).
 
@@ -9292,7 +9298,7 @@ separated from the MajorVersion by the last ':' character in the class_id."
 
 **Repo:** `crates/security-pki/src/handshake_token.rs::of_class_id` (l. 88)
 
-**Tests:** `crates/security-pki/src/handshake_token.rs::class_version_tests::the_peers_version_is_read_and_carried_back`
+**Tests:** `crates/security-pki/src/handshake_token.rs::class_version_tests::security_10_3_2_1_the_peers_version_is_read_and_carried_back`
 
 **Status:** done — the peer's version is read and returned in the
 handshake tokens.
@@ -9319,8 +9325,8 @@ status of the identity certificate of the DomainParticipant."
 
 **Repo:** `crates/security-pki/src/plugin.rs::get_identity_status_token`, `identity_status_bytes`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_identity_status_token_carries_the_ocsp_response`,
-`crates/security-pki/src/plugin.rs::tests::a_changed_status_token_is_reported_as_identity_status`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_the_identity_status_token_carries_the_ocsp_response`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_a_changed_status_token_is_reported_as_identity_status`
 
 **Status:** `done` — class `DDS:Auth:PKI-DH:1.0`, the binary property `ocsp_status` with the OCSP response for the own certificate when there is one (the property is optional). The own class `+IdentityStatus` of `identity_status.rs` stays without a caller.
 
@@ -9333,7 +9339,7 @@ document signed by the PermissionCA".
 
 **Repo:** `crates/security-pki/src/plugin.rs::get_authenticated_peer_credential_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_authenticated_peer_credential_token_holds_c_id_and_c_perm`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_the_authenticated_peer_credential_token_holds_c_id_and_c_perm`
 
 **Status:** `done` — class `DDS:Auth:PKI-DH:1.0`, binary properties `c.id` (the certificate of the peer as it stood in the request or reply) and `c.perm` (its permissions document).
 
@@ -9347,9 +9353,9 @@ or the challenge2 property of the HandshakeReplyMessageToken."
 
 **Repo:** `crates/security-pki/src/handshake_token.rs::build_auth_request_token`, `parse_auth_request_token`; `crates/security-pki/src/plugin.rs::validate_remote_identity`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
-`crates/security-pki/src/plugin.rs::tests::the_auth_request_announces_the_challenge1_of_the_request`,
-`crates/security-pki/src/plugin.rs::tests::a_request_whose_challenge1_is_not_the_announced_one_is_refused`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_auth_request_announces_the_challenge1_of_the_request`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_4_a_request_whose_challenge1_is_not_the_announced_one_is_refused`
 
 **Status:** `done` — class `DDS:Auth:PKI-DH:1.0+AuthReq`, binary property `future_challenge` with 256 bits; it is `challenge1` of the request or `challenge2` of the reply. The TLV encoder `auth_request.rs` is superseded and stays without a caller.
 
@@ -9363,10 +9369,10 @@ c.dsign_algo [...] c.kagree_algo [...] hash_c1 [...] dh1 [...] challenge1 A
 
 **Repo:** `crates/security-pki/src/handshake_token.rs::build_request_token`; `crates/security-pki/src/plugin.rs::begin_handshake_request`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::request_token_has_spec_class_id_and_properties`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1`,
-`crates/security-pki/src/plugin.rs::tests::the_algorithm_names_follow_the_version_of_the_peer_and_the_setting`,
-`crates/discovery/src/security/stack.rs::tests::smaller_local_guid_initiates_handshake_cyclone_compatible`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_request_token_has_spec_class_id_and_properties`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_6_the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1`,
+`crates/security-pki/src/plugin.rs::tests::security_8_the_algorithm_names_follow_the_version_of_the_peer_and_the_setting`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_smaller_local_guid_initiates_handshake_cyclone_compatible`
 
 **Status:** `done` — `class_id` and all properties; `c.dsign_algo` and `c.kagree_algo` carry the names of Table 25 and 26 (the default). Cyclone, Fast DDS and OpenDDS read the names of 1.1: `org.zerodds.sec.algorithm_names=1.1` sends them to every peer, `auto` to a peer of version 1.0 and to one of these vendors (by `VendorId`). `ocsp_status` goes along when the response of the responder is there.
 
@@ -9380,9 +9386,9 @@ above."
 **Repo:** `crates/security-pki/src/handshake_token.rs::compute_hash_c`
 (l. 206), `serialize_bin_prop_seq` (l. 259)
 
-**Tests:** `crates/security-pki/src/handshake_token.rs::tests::hash_c_is_deterministic_and_input_separated`,
-`crates/security-pki/src/handshake_token.rs::tests::parse_request_token_rejects_tampered_hash_c1`,
-`crates/security-pki/src/plugin.rs::tests::hash_c1_mismatch_in_request_rejected`
+**Tests:** `crates/security-pki/src/handshake_token.rs::tests::security_10_3_2_5_1_hash_c_is_deterministic_and_input_separated`,
+`crates/security-pki/src/handshake_token.rs::tests::security_10_3_2_5_1_parse_request_token_rejects_tampered_hash_c1`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_1_hash_c1_mismatch_in_request_rejected`
 
 **Status:** done
 
@@ -9396,10 +9402,10 @@ signature".
 
 **Repo:** `crates/security-pki/src/handshake_token.rs::build_reply_token`; `crates/security-pki/src/plugin.rs::begin_handshake_reply`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::full_three_round_handshake_alice_bob`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1`,
-`crates/security-pki/src/plugin.rs::tests::a_replier_answers_in_the_names_of_the_request`,
-`crates/discovery/src/security/stack.rs::tests::full_pki_handshake_between_two_stacks_yields_shared_secret`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_4_full_three_round_handshake_alice_bob`,
+`crates/security-pki/src/plugin.rs::tests::security_7_3_6_the_handshake_names_the_algorithms_as_table_25_and_26_unless_the_peer_reads_1_1`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_2_a_replier_answers_in_the_names_of_the_request`,
+`crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_full_pki_handshake_between_two_stacks_yields_shared_secret`
 
 **Status:** `done` — complete; the replier answers in the names of the request (`c.dsign_algo`, `c.kagree_algo`), so that every vendor gets its own spelling back.
 
@@ -9414,9 +9420,9 @@ Key associated with the DomainParticipant".
 **Repo:** `crates/security-pki/src/handshake_token.rs::reply_signing_bytes`
 (l. 289); `crates/security-pki/src/plugin.rs::sign_with_identity` (l. 566)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::signature_tamper_rejected_by_initiator`,
-`crates/security-pki/src/plugin.rs::tests::dh_tamper_in_reply_breaks_final_signature`,
-`crates/security-pki/src/handshake_token.rs::tests::reply_and_final_content_differ_by_order`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_2_signature_tamper_rejected_by_initiator`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_2_dh_tamper_in_reply_breaks_final_signature`,
+`crates/security-pki/src/handshake_token.rs::tests::security_10_3_2_5_2_reply_and_final_content_differ_by_order`
 
 **Status:** done
 
@@ -9428,8 +9434,8 @@ shared secret computed by the key agreement algorithm."
 
 **Repo:** `crates/security-pki/src/plugin.rs::derive_shared_secret` (l. 701)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::get_shared_secret_returns_stored_value`,
-`crates/security-pki/tests/e2e_handshake.rs::full_three_stage_handshake`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_8_get_shared_secret_returns_stored_value`,
+`crates/security-pki/tests/e2e_handshake.rs::security_8_2_full_three_stage_handshake`
 
 **Status:** done
 
@@ -9445,9 +9451,9 @@ hash_c2, placed in that order."
 **Repo:** `crates/security-pki/src/handshake_token.rs::build_final_token`
 (l. 690), `final_signing_bytes` (l. 313)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::final_token_challenge1_tamper_rejected`,
-`crates/security-pki/src/plugin.rs::tests::final_token_dh2_tamper_rejected`,
-`crates/security-pki/src/plugin.rs::tests::final_token_hash_c2_tamper_rejected`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_3_final_token_challenge1_tamper_rejected`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_3_final_token_dh2_tamper_rejected`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_3_final_token_hash_c2_tamper_rejected`
 
 **Status:** done
 
@@ -9462,8 +9468,8 @@ algorithm used."
 **Repo:** `crates/security-pki/src/plugin.rs::begin_handshake_reply`
 (l. 900, `kx_suite_for_algo(&req.kagree_algo)`)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::kagree_algo_string_round_trips_for_every_supported_suite`,
-`crates/security-pki/tests/e2e_handshake.rs::handshake_with_different_cert_dh_combos`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_1_4_kagree_algo_string_round_trips_for_every_supported_suite`,
+`crates/security-pki/tests/e2e_handshake.rs::security_10_3_2_5_3_handshake_with_different_cert_dh_combos`
 
 **Status:** done
 
@@ -9478,14 +9484,14 @@ the certificate."
 
 **Repo:** `crates/security-pki/src/ocsp.rs::query_responder`, `check_identity`, `verify_staple`; `crates/security-pki/src/identity.rs::verify_cert_chain_checked`; `crates/security-pki/src/plugin.rs::validate_local_identity_nonblocking`
 
-**Tests:** `crates/security-pki/src/ocsp.rs::tests::the_responder_in_the_certificate_is_asked`,
-`crates/security-pki/src/ocsp.rs::tests::an_https_responder_is_asked_over_tls`,
-`crates/security-pki/src/ocsp.rs::tests::an_https_responder_with_a_foreign_certificate_is_not_believed`,
-`crates/security-pki/src/ocsp.rs::tests::a_responder_url_of_another_scheme_is_refused`,
-`crates/security-pki/src/ocsp.rs::tests::an_unreachable_responder_fails_unless_the_setting_says_accept`,
-`crates/security-pki/src/ocsp.rs::tests::a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`,
-`crates/security-pki/src/plugin.rs::tests::validate_local_identity_with_a_foreign_ca_fails_without_a_handle`,
-`crates/security-pki/src/plugin.rs::tests::validate_local_identity_rejects_wrong_ca`
+**Tests:** `crates/security-pki/src/ocsp.rs::tests::security_10_3_3_the_responder_in_the_certificate_is_asked`,
+`crates/security-pki/src/ocsp.rs::tests::security_10_3_3_an_https_responder_is_asked_over_tls`,
+`crates/security-pki/src/ocsp.rs::tests::security_10_3_3_an_https_responder_with_a_foreign_certificate_is_not_believed`,
+`crates/security-pki/src/ocsp.rs::tests::security_10_3_3_a_responder_url_of_another_scheme_is_refused`,
+`crates/security-pki/src/ocsp.rs::tests::security_10_3_3_an_unreachable_responder_fails_unless_the_setting_says_accept`,
+`crates/security-pki/src/ocsp.rs::tests::security_9_3_2_9_a_responder_that_is_slow_gives_pending_retry_until_the_answer_is_in`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_local_identity_with_a_foreign_ca_fails_without_a_handle`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_local_identity_rejects_wrong_ca`
 
 **Status:** `done` — chain, validity, CRL (`dds.sec.auth.crl`) and OCSP: the responder of the Authority Information Access is asked over `http://` or `https://` (RFC 6960 Appendix A names no scheme; TLS with rustls, the server certificate against the identity CA, feature `ocsp-https`, on by default); `good` goes along as `ocsp_status`. When the status cannot be determined the certificate is refused, except with `zerodds.sec.auth.ocsp_unreachable=accept` (warning in the security log). The query does not block the call: VALIDATION_PENDING_RETRY (thread). A certificate without a responder and without a CRL is not checked for revocation (the spec asks for "CRL and/or OCSP"; there is nothing to ask). No cache of the answers. Measured against a foreign responder: no.
 
@@ -9499,7 +9505,7 @@ included in the property corresponds to the identity in the c.id property.
 
 **Repo:** `crates/security-pki/src/ocsp.rs::verify_staple`, `check_identity`, `query_responder`; `crates/security-pki/src/identity.rs::verify_cert_chain_checked`
 
-**Tests:** `crates/security-pki/src/ocsp.rs::tests::a_signed_response_for_the_certificate_gives_its_status`, `::a_response_that_does_not_hold_says_nothing`, `::a_delegated_responder_signs_only_with_the_ocsp_signing_purpose`, `::a_stapled_status_decides_and_a_useless_one_is_none`, `::the_responder_in_the_certificate_is_asked`, `::an_unreachable_responder_fails_unless_the_setting_says_accept`, `crates/security-runtime/src/qos_properties.rs::tests::the_ocsp_policy_refuses_by_default_and_reads_its_settings`
+**Tests:** `crates/security-pki/src/ocsp.rs::tests::security_10_3_3_a_signed_response_for_the_certificate_gives_its_status`, `::security_10_3_3_a_response_that_does_not_hold_says_nothing`, `::security_10_3_3_a_delegated_responder_signs_only_with_the_ocsp_signing_purpose`, `::security_10_3_3_a_stapled_status_decides_and_a_useless_one_is_none`, `::security_10_3_3_the_responder_in_the_certificate_is_asked`, `::security_10_3_3_an_unreachable_responder_fails_unless_the_setting_says_accept`, `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_3_the_ocsp_policy_refuses_by_default_and_reads_its_settings`
 
 **Status:** `done` — the `ocsp_status` of a request or reply token is evaluated (CertID, validity interval, signature of the CA or of a responder certificate issued for OCSP signing): `good` is the proof, `revoked` fails, a response that does not hold counts as absent. `crl.rs` has no caller; `rustls-webpki` checks the CRLs.
 
@@ -9515,8 +9521,8 @@ candidate_participant_guid."
 **Repo:** `crates/security-pki/src/guid_adjust.rs::adjust_participant_guid_prefix`
 (l. 28)
 
-**Tests:** `crates/security-pki/src/guid_adjust.rs::tests::adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`,
-`crates/dcps/tests/security_guid_wiring_e2e.rs::with_security_bundle_wires_the_identity_adjusted_prefix_not_random`
+**Tests:** `crates/security-pki/src/guid_adjust.rs::tests::security_7_4_3_adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity`,
+`crates/dcps/tests/security_guid_wiring_e2e.rs::security_7_4_3_with_security_bundle_wires_the_identity_adjusted_prefix_not_random`
 
 **Status:** done — the computation runs in
 `crates/security-runtime/src/profile.rs` (l. 319), not in
@@ -9531,7 +9537,7 @@ specified in 10.3.2.1."
 
 **Repo:** `crates/security-pki/src/plugin.rs::get_identity_token` (l. 791)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::get_identity_token_returns_decodable_spec_descriptor`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_1_get_identity_token_returns_decodable_spec_descriptor`
 
 **Status:** done — an unknown handle yields `BadArgument`; for the content
 see Table 51.
@@ -9543,7 +9549,7 @@ IdentityToken object with the content specified in 10.3.2.2."
 
 **Repo:** `crates/security-pki/src/plugin.rs::get_identity_status_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_identity_status_token_carries_the_ocsp_response`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_2_the_identity_status_token_carries_the_ocsp_response`
 
 **Status:** `done` — see Table 53.
 
@@ -9557,10 +9563,10 @@ algorithms in the adjusted_algorithm_info."
 
 **Repo:** `crates/security-pki/src/plugin.rs::set_participant_security_config`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::set_participant_security_config_adjusts_a_copy_of_the_given_info`,
-`crates/security-pki/src/plugin.rs::tests::set_participant_security_config_fails_without_an_algorithm_of_the_plugin`,
-`crates/security-pki/src/plugin.rs::tests::set_participant_security_config_fails_when_a_used_algorithm_is_not_supported`,
-`crates/security-pki/src/plugin.rs::tests::the_configured_algorithms_bind_the_handshake`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_set_participant_security_config_adjusts_a_copy_of_the_given_info`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_set_participant_security_config_fails_without_an_algorithm_of_the_plugin`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_set_participant_security_config_fails_when_a_used_algorithm_is_not_supported`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_configured_algorithms_bind_the_handshake`
 
 **Status:** `done` — the three checks for at least one supported algorithm, the adjustment as a copy (unsupported bits out of the supported masks, certificate, key and the initiator's method into the required masks), the two checks "present in supported_mask" and the limit of the handshake to the adjusted masks.
 
@@ -9573,8 +9579,8 @@ IdentityHandle."
 
 **Repo:** `crates/security-pki/src/plugin.rs::set_permissions_credential_and_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_permissions_credential_is_what_the_handshake_sends_as_c_perm`,
-`crates/security-pki/src/plugin.rs::tests::a_permissions_credential_that_is_none_is_refused`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_permissions_credential_is_what_the_handshake_sends_as_c_perm`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_a_permissions_credential_that_is_none_is_refused`
 
 **Status:** `done` — credential token and PermissionsToken are stored per identity; `set_local_permissions` stays as the way for callers without a token.
 
@@ -9587,8 +9593,8 @@ VALIDATION_FAILED."
 
 **Repo:** `crates/security-pki/src/plugin.rs::validate_remote_identity`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::validate_remote_identity_compares_the_plugin_name_and_the_major_version`,
-`crates/security-pki/src/plugin.rs::tests::validate_remote_identity_takes_only_a_pki_dh_identity_token`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_compares_the_plugin_name_and_the_major_version`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_validate_remote_identity_takes_only_a_pki_dh_identity_token`
 
 **Status:** `done` — name and MajorVersion of the IdentityToken are compared with those of the own (`DDS:Auth:PKI-DH`, 1); `DDS:Auth:PKI-DHX:1.0`, 2.0 and a token that is no DataHolder are VALIDATION_FAILED; every MinorVersion is the same.
 
@@ -9603,7 +9609,7 @@ VALIDATION_PENDING_HANDSHAKE_MESSAGE."
 **Repo:** `crates/discovery/src/security/stack.rs::begin_handshake_with`
 (l. 447)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::smaller_local_guid_initiates_handshake_cyclone_compatible`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_smaller_local_guid_initiates_handshake_cyclone_compatible`
 
 **Status:** done — decided in the stack, not in the plugin (see
 §9.3.2.11.3).
@@ -9619,10 +9625,10 @@ in that token is the same value as the property named 'challenge1'".
 
 **Repo:** `crates/security-pki/src/plugin.rs::validate_remote_identity`, `begin_handshake_request`, `begin_handshake_reply`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_auth_request_announces_the_challenge1_of_the_request`,
-`crates/security-pki/src/plugin.rs::tests::a_request_whose_challenge1_is_not_the_announced_one_is_refused`,
-`crates/security-pki/src/plugin.rs::tests::the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
-`crates/discovery/src/security/stack.rs::tests::a_reply_whose_challenge2_is_not_the_announced_one_is_refused`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_auth_request_announces_the_challenge1_of_the_request`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_2_4_a_request_whose_challenge1_is_not_the_announced_one_is_refused`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_5_the_local_auth_request_token_is_made_for_a_nil_remote_one_only`,
+`crates/discovery/src/security/stack.rs::tests::security_10_3_3_a_reply_whose_challenge2_is_not_the_announced_one_is_refused`
 
 **Status:** `done` — without a `remote_auth_request_token`, `validate_remote_identity` makes the own one, whose `future_challenge` becomes `challenge1` (initiator) or `challenge2` (replier); with one, `begin_handshake_reply` (and `process_handshake` at the initiator) checks that it equals `challenge1` (`challenge2`).
 
@@ -9636,7 +9642,7 @@ VALIDATION_PENDING_HANDSHAKE_MESSAGE."
 **Repo:** `crates/security-pki/src/plugin.rs::begin_handshake_request`
 (l. 828)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::request_token_has_spec_class_id_and_properties`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_request_token_has_spec_class_id_and_properties`
 
 **Status:** done — content see Table 56.
 
@@ -9652,8 +9658,8 @@ manner as the validate_local_identity operation."
 (l. 900, `verify_remote_der_checked`); `crates/security-pki/src/identity.rs::verify_remote_der_checked`
 (l. 217)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::wrong_ca_initiator_rejected_by_replier`,
-`crates/security-pki/src/plugin.rs::tests::cross_algorithm_dsign_mismatch_rejected`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_3_wrong_ca_initiator_rejected_by_replier`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_3_cross_algorithm_dsign_mismatch_rejected`
 
 **Status:** done — CRL and OCSP see above (`open`).
 
@@ -9671,8 +9677,8 @@ return ValidationResult_Fail."
 `crates/security-pki/src/guid_adjust.rs::identity_prefix_head`
 
 **Tests:**
-`crates/security-pki/src/plugin.rs::tests::a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`,
-`crates/security-pki/src/plugin.rs::tests::the_pdata_guid_is_read_from_the_parameter_list`
+`crates/security-pki/src/plugin.rs::tests::security_7_4_3_a_request_with_a_pdata_guid_not_bound_to_its_certificate_is_refused`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_3_the_pdata_guid_is_read_from_the_parameter_list`
 
 **Status:** `done` — bit 0 and the following 47 bits are checked, as Cyclone
 (`validate_pdata`) and Fast DDS do; `c.pdata` is read as a big-endian parameter
@@ -9688,9 +9694,9 @@ VALIDATION_PENDING_HANDSHAKE_MESSAGE."
 
 **Repo:** `crates/security-pki/src/plugin.rs::begin_handshake_reply`, `process_final_on_replier`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_replier_has_no_shared_secret_before_a_verified_final`,
-`crates/security-pki/src/plugin.rs::tests::the_handshake_returns_the_validation_results_of_table_59`,
-`crates/security-pki/src/plugin.rs::tests::full_three_round_handshake_alice_bob`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_9_1_the_replier_has_no_shared_secret_before_a_verified_final`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_handshake_returns_the_validation_results_of_table_59`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_4_full_three_round_handshake_alice_bob`
 
 **Status:** `done` — reply and state are right; the secret is available only after the verified final (VALIDATION_PENDING_HANDSHAKE_MESSAGE until then).
 
@@ -9707,7 +9713,7 @@ DDS_SecurityException_PreconditionError."
 `process_final_on_replier`, `shared_secret`)
 
 **Tests:**
-`crates/security-pki/src/plugin.rs::tests::the_replier_has_no_shared_secret_before_a_verified_final`
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_9_1_the_replier_has_no_shared_secret_before_a_verified_final`
 
 **Status:** `done` — the replier registers the secret for the handshake only
 after the checks of the final; a failed final removes it.
@@ -9725,8 +9731,8 @@ return VALIDATION_OK_FINAL_MESSAGE."
 **Repo:** `crates/security-pki/src/plugin.rs::process_reply_on_initiator`
 (l. 1077)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::signature_tamper_rejected_by_initiator`,
-`crates/security-pki/src/plugin.rs::tests::cert_bind_replier_modifies_initiator_cert_in_reply_rejected`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_2_5_2_signature_tamper_rejected_by_initiator`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_3_cert_bind_replier_modifies_initiator_cert_in_reply_rejected`
 
 **Status:** done — OCSP see above (`open`).
 
@@ -9741,8 +9747,8 @@ return VALIDATION_OK."
 **Repo:** `crates/security-pki/src/plugin.rs::process_final_on_replier`
 (l. 1219)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::final_token_challenge2_tamper_rejected`,
-`crates/security-pki/src/plugin.rs::tests::full_three_round_handshake_alice_bob`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_3_final_token_challenge2_tamper_rejected`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_4_full_three_round_handshake_alice_bob`
 
 **Status:** done — the check itself is present; its result comes too late
 (see "get_shared_secret only after VALIDATION_OK").
@@ -9756,8 +9762,8 @@ information [...] The value attribute of the challenge_message returned".
 
 **Repo:** `crates/security-pki/src/plugin.rs::record_challenge` (l. 432)
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::replay_initiator_request_rejected_second_time`,
-`crates/security-pki/src/plugin.rs::tests::replay_cache_evicts_oldest_at_cap_plus_one`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_10_3_3_replay_initiator_request_rejected_second_time`,
+`crates/security-pki/src/plugin.rs::tests::security_10_3_3_replay_cache_evicts_oldest_at_cap_plus_one`
 
 **Status:** done — ZeroDDS refuses a `challenge1` already seen; the spec
 does not require this explicitly.
@@ -9770,7 +9776,7 @@ with the handshake_handle."
 
 **Repo:** `crates/security-pki/src/plugin.rs::get_authenticated_peer_credential_token`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_authenticated_peer_credential_token_holds_c_id_and_c_perm`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_7_3_3_1_the_authenticated_peer_credential_token_holds_c_id_and_c_perm`
 
 **Status:** `done` — see Table 54.
 
@@ -9783,9 +9789,9 @@ return_*)
 
 **Repo:** `crates/security-pki/src/plugin.rs::set_listener`, `return_identity_token`, `return_identity_status_token`, `return_authenticated_peer_credential_token`, `return_handshake_handle`, `return_identity_handle`, `return_sharedsecret_handle`
 
-**Tests:** `crates/security-pki/src/plugin.rs::tests::the_return_operations_take_back_what_was_issued`,
-`crates/security-pki/src/plugin.rs::tests::revoking_an_identity_tells_the_listener_and_invalidates_the_handle`,
-`crates/security-pki/src/plugin.rs::tests::a_returned_identity_handle_is_disposed_of`
+**Tests:** `crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_the_return_operations_take_back_what_was_issued`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_revoking_an_identity_tells_the_listener_and_invalidates_the_handle`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_11_a_returned_identity_handle_is_disposed_of`
 
 **Status:** `done` — all seven behave as §9.3.2.11.13 to §9.3.2.11.19 say.
 
@@ -9799,7 +9805,7 @@ lower GUID (using lexicographical order) initiates the protocol."
 **Repo:** `crates/discovery/src/security/stack.rs::begin_handshake_with`
 (l. 447)
 
-**Tests:** `crates/discovery/src/security/stack.rs::tests::smaller_local_guid_initiates_handshake_cyclone_compatible`
+**Tests:** `crates/discovery/src/security/stack.rs::tests::security_7_5_3_3_smaller_local_guid_initiates_handshake_cyclone_compatible`
 
 **Status:** done
 
@@ -9828,10 +9834,10 @@ Challenge2 | DH2 | Hash(C2)); both sides compute the shared secret.
 `process_final_on_replier`
 
 **Tests:**
-`crates/security-pki/tests/e2e_handshake.rs::full_three_stage_handshake`,
-`crates/security-pki/tests/e2e_handshake.rs::tampered_request_token_fails_hash_check`,
-`crates/security-pki/tests/e2e_handshake.rs::replay_attack_with_swapped_challenges_detected`,
-`crates/security-pki/src/plugin.rs::tests::the_replier_has_no_shared_secret_before_a_verified_final`
+`crates/security-pki/tests/e2e_handshake.rs::security_8_2_full_three_stage_handshake`,
+`crates/security-pki/tests/e2e_handshake.rs::security_10_3_4_2_tampered_request_token_fails_hash_check`,
+`crates/security-pki/tests/e2e_handshake.rs::security_10_3_4_2_replay_attack_with_swapped_challenges_detected`,
+`crates/security-pki/src/plugin.rs::tests::security_9_3_2_9_1_the_replier_has_no_shared_secret_before_a_verified_final`
 
 **Status:** `done` — the three messages with their checks; the secret is
 available to the replier only after the verified final.
@@ -9848,7 +9854,7 @@ instance of the DDS:Access:Permissions plugin."
 **Repo:** `crates/security-runtime/src/profile.rs::from_files_with_cert_policy`
 (l. 301, governance and permissions per profile)
 
-**Tests:** `crates/dcps/tests/security_guid_wiring_e2e.rs::secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_discover`
+**Tests:** `crates/dcps/tests/security_guid_wiring_e2e.rs::security_9_1_2_secured_participants_on_public_rust_api_use_identity_adjusted_guids_and_discover`
 
 **Status:** done — the plugin interface is not used (see §9.4.2).
 
@@ -9865,8 +9871,8 @@ DomainParticipantQos."
 (l. 380), constants `PROP_PERMISSIONS_CA`, `PROP_GOVERNANCE`,
 `PROP_PERMISSIONS` (l. 91–95)
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_property_names_are_the_spec_strings`,
-`crates/security-runtime/src/qos_properties.rs::tests::the_auth_and_access_namespaces_request_security_and_the_log_one_does_not`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_the_property_names_are_the_spec_strings`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_4_1_the_auth_and_access_namespaces_request_security_and_the_log_one_does_not`
 
 **Status:** done
 
@@ -9879,8 +9885,8 @@ data, pkcs11".
 **Repo:** `crates/security-runtime/src/qos_properties.rs::resolve_material`
 (l. 302)
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::every_file_uri_form_resolves_to_a_path`,
-`crates/security-runtime/src/qos_properties.rs::tests::a_data_uri_is_the_content_and_not_a_path`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_every_file_uri_form_resolves_to_a_path`,
+`crates/security-runtime/src/qos_properties.rs::tests::security_10_3_1_a_data_uri_is_the_content_and_not_a_path`
 
 **Status:** done — `pkcs11:` as for Table 50 only with the feature `pkcs11`.
 
@@ -9894,8 +9900,8 @@ schemes: file, data".
 (l. 302); `crates/security-permissions/src/cms.rs::CmsPkcs7Verifier`
 (l. 117)
 
-**Tests:** `crates/security-permissions/tests/cms_verify.rs::happy_path_multipart_signed_passes`,
-`crates/dcps/tests/security_qos_properties.rs::a_complete_dds_sec_property_list_creates_a_secured_participant`
+**Tests:** `crates/security-permissions/tests/cms_verify.rs::security_10_4_1_happy_path_multipart_signed_passes`,
+`crates/dcps/tests/security_qos_properties.rs::security_7_3_21_a_complete_dds_sec_property_list_creates_a_secured_participant`
 
 **Status:** done
 
@@ -9908,7 +9914,7 @@ S/MIME format URI schemes: file, data".
 **Repo:** `crates/security-permissions/src/signature.rs::open_signed_permissions`
 (l. 89)
 
-**Tests:** `crates/security-permissions/tests/cms_verify.rs::happy_path_then_open_signed_permissions_parses`
+**Tests:** `crates/security-permissions/tests/cms_verify.rs::security_10_4_1_happy_path_then_open_signed_permissions_parses`
 
 **Status:** done
 
@@ -9921,8 +9927,8 @@ trusted to sign the aforementioned Governance and Permissions documents".
 **Repo:** `crates/security-permissions/src/cms.rs::CmsPkcs7Verifier`
 (l. 117)
 
-**Tests:** `crates/security-permissions/tests/cms_verify.rs::intermediate_ca_chain_is_accepted`,
-`crates/security-permissions/tests/cms_verify.rs::wrong_ca_signature_is_rejected`
+**Tests:** `crates/security-permissions/tests/cms_verify.rs::security_10_4_1_1_intermediate_ca_chain_is_accepted`,
+`crates/security-permissions/tests/cms_verify.rs::security_10_4_1_1_wrong_ca_signature_is_rejected`
 
 **Status:** done
 
@@ -9938,9 +9944,9 @@ be included within the signature."
 (l. 117); `crates/security-runtime/src/profile.rs::from_files_with_cert_policy`
 (l. 301)
 
-**Tests:** `crates/security-permissions/tests/cms_verify.rs::happy_path_multipart_signed_passes`,
-`crates/security-permissions/tests/cms_verify.rs::tampered_xml_is_rejected`,
-`crates/security-permissions/tests/cms_verify.rs::expired_signer_is_rejected`
+**Tests:** `crates/security-permissions/tests/cms_verify.rs::security_10_4_1_happy_path_multipart_signed_passes`,
+`crates/security-permissions/tests/cms_verify.rs::security_10_4_1_2_tampered_xml_is_rejected`,
+`crates/security-permissions/tests/cms_verify.rs::security_10_4_1_2_expired_signer_is_rejected`
 
 **Status:** done — in addition `application/pkcs7-mime; smime-type=signed-data`
 and PKCS#7 in PEM are accepted. The module documentation of
@@ -9972,7 +9978,7 @@ authentication code (MAC) computed on the ciphertext".
 
 **Repo:** `crates/security-runtime/src/gate_crypto.rs::register_endpoint`; `crates/security-crypto/src/plugin/spec.rs`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::the_basic_protection_kind_of_an_endpoint_decides_gmac_or_gcm`, `crates/security-crypto/src/plugin/spec.rs::tests::a_datawriter_has_one_or_two_key_materials`, `crates/dcps/tests/security_matrix_e2e.rs::matrix_data_protection_all_kinds`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_7_the_basic_protection_kind_of_an_endpoint_decides_gmac_or_gcm`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_datawriter_has_one_or_two_key_materials`, `crates/dcps/tests/security_matrix_e2e.rs::security_8_1_matrix_data_protection_all_kinds`
 
 **Status:** `done` — SIGN gives GMAC per endpoint (AES256_GMAC 0x03, AES128_GMAC 0x01), ENCRYPT GCM (0x04, 0x02); the width follows `symmetric_cipher_algorithm`. run `cargo test -p zerodds-security-runtime --lib` and `-p zerodds-dcps --features security --lib`: green, logs `/root/zerodds-rc7/agent-logs/sec-crypto-1018-085015.log`, `…085119.log`.
 
@@ -9985,7 +9991,7 @@ matches the rule's topic expression."
 
 **Repo:** `crates/security-runtime/src/shared.rs::register_local_endpoint_with_kinds`; `crates/security-crypto/src/plugin.rs::register_local_endpoint`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_key_material_of_an_endpoint_follows_its_protection_kinds`, `crates/security-runtime/src/shared.rs::tests::the_protection_kinds_of_an_endpoint_come_from_its_topic_rule`, `crates/dcps/src/runtime.rs::tests::a_writer_gets_the_key_material_of_its_topic_rule`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_4_1_2_1_the_key_material_of_an_endpoint_follows_its_protection_kinds`, `crates/security-runtime/src/shared.rs::tests::security_10_4_1_2_1_the_protection_kinds_of_an_endpoint_come_from_its_topic_rule`, `crates/dcps/src/runtime.rs::tests::security_10_4_1_2_1_a_writer_gets_the_key_material_of_its_topic_rule`
 
 **Status:** `done` — an application endpoint gets its key material at creation for the kinds of the rule of its topic, a secure builtin one for the discovery or liveliness kind of the domain.
 
@@ -10000,7 +10006,7 @@ computed on the ciphertext, followed by additional authentication codes."
 
 **Repo:** `crates/security-permissions/src/governance.rs::ProtectionKind`; `crates/security-runtime/src/shared.rs::metadata_origin_authenticated`, `discovery_origin_authenticated`, `liveliness_origin_authenticated`, `rtps_origin_authenticated`; `crates/security-runtime/src/policy.rs::from_protection_kind` (for the level SIGN/ENCRYPT)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::origin_authentication_follows_the_governance_kinds`, `crates/security-crypto/src/plugin.rs::tests::a_reader_checks_the_origin_of_a_submessage_by_its_own_key`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_10_4_1_2_2_origin_authentication_follows_the_governance_kinds`, `crates/security-crypto/src/plugin.rs::tests::security_10_4_1_2_2_a_reader_checks_the_origin_of_a_submessage_by_its_own_key`
 
 **Status:** `done` — the four kinds are read; `ProtectionLevel` still folds them into SIGN and ENCRYPT, the origin authentication comes from the four queries of the gate and goes into the keys (`register_local_endpoint` with the kind as a property, `register_local_participant` with `zerodds.crypto.rtps_origin_authentication`).
 
@@ -10013,7 +10019,7 @@ that the sender originated the message".
 
 **Repo:** `crates/security-crypto/src/plugin.rs::footer_tail`, `receiver_key_for`, `create_endpoint_crypto_token_for`, `create_local_participant_crypto_tokens`; `crates/dcps/src/runtime.rs::prepare_endpoint_crypto_tokens`, `prepare_crypto_token`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::origin_authentication_follows_the_governance_kinds`, `crates/security-crypto/src/plugin.rs::tests::a_reader_checks_the_origin_of_a_submessage_by_its_own_key`, `crates/security-crypto/src/plugin.rs::tests::the_receiver_specific_mac_is_the_one_of_the_spec`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_10_4_1_2_2_origin_authentication_follows_the_governance_kinds`, `crates/security-crypto/src/plugin.rs::tests::security_10_4_1_2_2_a_reader_checks_the_origin_of_a_submessage_by_its_own_key`, `crates/security-crypto/src/plugin.rs::tests::security_10_4_1_2_2_the_receiver_specific_mac_is_the_one_of_the_spec`
 
 **Status:** `done` — each remote endpoint (participant) gets a key of its own, in the token to it; the footers of the submessages (RTPS messages) carry the MAC for each. The payload stays without MACs (Table 80). Measured: nothing; the matrix on the Linux host has no profile with `*_WITH_ORIGIN_AUTHENTICATION`. The functions `encrypt_submessage_multi`, `transform_outbound_group` and their relatives (HMAC-SHA256 over the ciphertext, no mechanism of the specification) are removed.
 
@@ -10026,10 +10032,10 @@ element tag and contains a single domain access rules Section".
 
 **Repo:** `crates/security-permissions/src/governance.rs::parse_governance_xml`, `parse_dds_root`, `parse_domain_rule`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_structure_of_the_document_is_the_xsds`,
-`crates/security-permissions/src/governance.rs::tests::a_governance_in_the_omg_namespace_parses`,
-`crates/security-permissions/src/governance.rs::tests::a_rule_without_a_domain_is_refused`,
-`crates/security-permissions/src/governance.rs::tests::missing_domain_rule_flags_are_true`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_the_structure_of_the_document_is_the_xsds`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_a_governance_in_the_omg_namespace_parses`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_a_rule_without_a_domain_is_refused`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_missing_domain_rule_flags_are_true`
 
 **Status:** `done` — the root `<dds>` holds exactly one `<domain_access_rules>`; elements outside the XSD follow `must_interpret`; the namespace of the OMG sample files is accepted; a missing `allow_unauthenticated_participants` or `enable_join_access_control` counts as TRUE (Table 70).
 
@@ -10043,8 +10049,8 @@ minOccurs='0'/>".
 
 **Repo:** `crates/security-permissions/src/governance.rs::parse_domain_rule`, `AllowedCryptoAlgorithms`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_key_revision_psk_and_allowed_algorithm_elements_are_read`,
-`crates/security-permissions/src/governance.rs::tests::the_allowed_algorithm_names_are_those_of_the_xsd`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_the_key_revision_psk_and_allowed_algorithm_elements_are_read`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_the_allowed_algorithm_names_are_those_of_the_xsd`
 
 **Status:** `done` — the three elements are read, checked and evaluated in the plugin (`is_key_revision_enabled`, `is_rtps_psk_protected`, `algorithm_info`).
 
@@ -10056,8 +10062,8 @@ SIGN, NONE [...] BasicProtectionKind [...] ENCRYPT, SIGN, NONE".
 
 **Repo:** `crates/security-permissions/src/governance.rs` (`ProtectionKind::parse_xsd`, `basic_of`)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_protection_kind_enumerations_of_the_xsd_are_exact`,
-`crates/security-permissions/src/governance.rs::tests::protection_kind_parses_case_insensitive`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_the_protection_kind_enumerations_of_the_xsd_are_exact`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_protection_kind_parses_case_insensitive`
 
 **Status:** `done` — a value outside the five makes the document invalid; basic elements (`data_protection_kind`, `rtps_psk_protection_kind`) accept NONE, SIGN, ENCRYPT only; the values are exactly those of the XSD in their spelling.
 
@@ -10070,7 +10076,7 @@ SIGN, NONE [...] BasicProtectionKind [...] ENCRYPT, SIGN, NONE".
 **Repo:** `crates/security-permissions/src/governance.rs::parse_bool`
 
 **Tests:**
-`crates/security-permissions/src/governance.rs::tests::a_governance_outside_the_xsd_is_refused`
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_a_governance_outside_the_xsd_is_refused`
 
 **Status:** `done` — `true`, `false`, `1`, `0` (also upper-case); any other text
 makes the document invalid.
@@ -10086,8 +10092,8 @@ rule that matches is the only one that applies."
 **Repo:** `crates/security-permissions/src/governance.rs::find_domain_rule`
 (l. 322)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::domain_filter_id_range_matches_inclusive`,
-`crates/security-permissions/src/governance.rs::tests::an_uncovered_domain_creates_nothing`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_domain_filter_id_range_matches_inclusive`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_an_uncovered_domain_creates_nothing`
 
 **Status:** done
 
@@ -10100,9 +10106,9 @@ DomainId (an integer) and a DomainTag (a string). One or more DomainId values
 **Repo:** `crates/security-permissions/src/governance.rs::parse_domain_filter`
 
 **Tests:**
-`crates/security-permissions/src/governance.rs::tests::parses_domain_rule_with_ranges`,
-`crates/security-permissions/src/governance.rs::tests::domain_filter_id_range_matches_inclusive`,
-`crates/security-permissions/src/governance.rs::tests::a_rule_without_a_domain_is_refused`
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_1_parses_domain_rule_with_ranges`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_domain_filter_id_range_matches_inclusive`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_a_rule_without_a_domain_is_refused`
 
 **Status:** `done` — `<id>` and `<id_range>` as non-negative integers; an
 unreadable value, a `<domains>` without a domain and a rule without `<domains>`
@@ -10117,7 +10123,7 @@ must always be specified."
 (`parse_domain_filter`, `parse_domain_rule`)
 
 **Tests:**
-`crates/security-permissions/src/governance.rs::tests::a_rule_without_a_domain_is_refused`
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_a_rule_without_a_domain_is_refused`
 
 **Status:** `done` — an empty or missing set is refused instead of read as every
 domain.
@@ -10135,7 +10141,7 @@ match".
 **Repo:** `crates/security-permissions/src/governance.rs::parse_domain_filter`,
 `DomainFilter::matches`; `crates/security-runtime/src/shared.rs::set_domain_tag`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::domain_rules_match_the_domain_tag`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_1_domain_rules_match_the_domain_tag`
 
 **Status:** `done` — `<tag>` and `<tag_expression>` apply to the DomainTag of
 the participant (`fnmatch()` for the expression); a rule with neither
@@ -10152,8 +10158,8 @@ allow_unauthenticated_participants member set to FALSE."
 (l. 876); `crates/security-runtime/src/shared.rs::allow_unauthenticated`
 (l. 1314)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::allow_unauthenticated_reads_true_when_set`,
-`crates/security-runtime/src/shared.rs::tests::allow_unauthenticated_default_false_without_element`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_4_allow_unauthenticated_reads_true_when_set`,
+`crates/security-runtime/src/shared.rs::tests::security_10_4_1_2_5_2_allow_unauthenticated_default_false_without_element`
 
 **Status:** done — for the effect of the value see §9.4.2.4 and §9.8.3.
 
@@ -10167,7 +10173,7 @@ to TRUE."
 **Repo:** `crates/security-permissions/src/governance.rs::DomainRule`
 (l. 154, `enable_join_access_control`)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::check_create_participant_consults_permissions`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_3_check_create_participant_consults_permissions`
 
 **Status:** done — the effect for remote participants is missing (see
 §9.4.2.4 Table 33 — is_access_protected, `open`).
@@ -10181,8 +10187,8 @@ set to TRUE."
 
 **Repo:** `crates/security-permissions/src/governance.rs::DomainRule::enable_key_revision`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_key_revision_psk_and_allowed_algorithm_elements_are_read`,
-`crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_the_key_revision_psk_and_allowed_algorithm_elements_are_read`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`
 
 **Status:** `done` — `is_key_revision_enabled` of the config follows the element.
 
@@ -10199,8 +10205,8 @@ SIGN_WITH_ORIGIN_AUTHENTICATION or ENCRYPT_WITH_ORIGIN_AUTHENTICATION".
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config` (`plugin_participant_attributes`)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — the `*_encrypted` and `*_origin_authenticated` attributes of the config follow the value of the element; the runtime announces them.
 
@@ -10212,8 +10218,8 @@ and DataReader associated with the ParticipantMessageSecure builtin Topic".
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config` (`plugin_participant_attributes`)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — the `*_encrypted` and `*_origin_authenticated` attributes of the config follow the value of the element; the runtime announces them.
 
@@ -10227,8 +10233,8 @@ and to TRUE otherwise."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config` (`plugin_participant_attributes`)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — the `*_encrypted` and `*_origin_authenticated` attributes of the config follow the value of the element; the runtime announces them.
 
@@ -10241,7 +10247,7 @@ or ENCRYPT_WITH_ORIGIN_AUTHENTICATION".
 
 **Repo:** `crates/dcps/src/runtime.rs` (mask in `enable_security_builtins_with_auth`); `crates/security-runtime/src/shared.rs::metadata_origin_authenticated`, `discovery_origin_authenticated`, `liveliness_origin_authenticated`, `rtps_origin_authenticated`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::origin_authentication_follows_the_governance_kinds` (the queries); the bits themselves: no test
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_10_4_1_2_2_origin_authentication_follows_the_governance_kinds` (the queries); the bits themselves: no test
 
 **Status:** `done` — `IS_RTPS_ORIGIN_AUTHENTICATED` (0x8), `IS_DISCOVERY_ORIGIN_AUTHENTICATED` (0x10), `IS_LIVELINESS_ORIGIN_AUTHENTICATED` (0x20) in the plugin attributes of the participant follow the kinds.
 
@@ -10254,8 +10260,8 @@ includes the RTPS Bootstrapping Messages".
 
 **Repo:** `crates/security-permissions/src/governance.rs::DomainRule::rtps_psk_protection_kind`; `crates/security-permissions/src/plugin.rs::get_participant_security_config`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_key_revision_psk_and_allowed_algorithm_elements_are_read`,
-`crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_the_key_revision_psk_and_allowed_algorithm_elements_are_read`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`
 
 **Status:** `done` — the element is read; `is_rtps_psk_protected` and `is_rtps_psk_encrypted` follow it.
 
@@ -10269,10 +10275,10 @@ algorithms of §8 are allowed.
 
 **Repo:** `crates/security-permissions/src/governance.rs::AllowedCryptoAlgorithms`, `parse_allowed_crypto_algorithms`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_allowed_algorithm_names_are_those_of_the_xsd`,
-`crates/security-permissions/src/plugin.rs::tests::without_allowed_algorithms_every_algorithm_is_supported`,
-`crates/security-permissions/src/plugin.rs::tests::the_identity_certificates_algorithms_must_be_allowed`,
-`crates/dcps/src/runtime.rs::tests::the_allowed_algorithms_cut_the_announced_ones`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_the_allowed_algorithm_names_are_those_of_the_xsd`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_without_allowed_algorithms_every_algorithm_is_supported`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_identity_certificates_algorithms_must_be_allowed`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_4_the_allowed_algorithms_cut_the_announced_ones`
 
 **Status:** `done` — the section is read; a missing element allows all algorithms; `algorithm_info` and the check of the identity certificate follow it.
 
@@ -10284,7 +10290,7 @@ element <topic_access_rules> and contains a sequence of topic rule elements."
 **Repo:** `crates/security-permissions/src/governance.rs::parse_domain_rule`
 (l. 897)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::topic_rule_matches_exact_topic_first`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_10_topic_rule_matches_exact_topic_first`
 
 **Status:** done
 
@@ -10298,9 +10304,9 @@ applies."
 **Repo:** `crates/security-permissions/src/governance.rs::find_topic_rule`
 (l. 332)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::topic_rule_matches_exact_topic_first`,
-`crates/security-permissions/src/governance.rs::tests::topic_rule_falls_through_to_wildcard`,
-`crates/security-permissions/src/governance.rs::tests::access_control_flags_come_from_the_matching_rule`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_10_topic_rule_matches_exact_topic_first`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_6_topic_rule_falls_through_to_wildcard`,
+`crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_access_control_flags_come_from_the_matching_rule`
 
 **Status:** done
 
@@ -10312,11 +10318,11 @@ specified in POSIX 1003.2-1992, Section B.6 [38]."
 
 **Repo:** `crates/security-permissions/src/topic_match.rs::fnmatch`, `::topic_match`
 
-**Tests:** `crates/security-permissions/src/topic_match.rs::tests::star_matches_all`,
-`crates/security-permissions/src/topic_match.rs::tests::question_mark_exact_one`,
-`crates/security-permissions/src/topic_match.rs::tests::combined_wildcards`,
-`crates/security-permissions/src/topic_match.rs::tests::sets_ranges_and_negation_match_one_character`,
-`crates/security-permissions/src/topic_match.rs::tests::a_backslash_quotes_unless_noescape`
+**Tests:** `crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_star_matches_all`,
+`crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_question_mark_exact_one`,
+`crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_combined_wildcards`,
+`crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_sets_ranges_and_negation_match_one_character`,
+`crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_a_backslash_quotes_unless_noescape`
 
 **Status:** `done` — POSIX `fnmatch()`: `*`, `?`, bracket expressions with sets, ranges
 and negation, the backslash as escape. The same function checks topics,
@@ -10329,9 +10335,9 @@ partitions, data tags and domain tags in governance and permissions.
 
 **Repo:** `crates/security-permissions/src/topic_match.rs::fnmatch`
 
-**Tests:** `crates/security-permissions/src/topic_match.rs::tests::sets_ranges_and_negation_match_one_character`,
-`crates/security-permissions/src/topic_match.rs::tests::a_backslash_quotes_unless_noescape`,
-`crates/security-permissions/src/topic_match.rs::tests::pathname_keeps_slashes_out_of_wildcards`
+**Tests:** `crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_sets_ranges_and_negation_match_one_character`,
+`crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_a_backslash_quotes_unless_noescape`,
+`crates/security-permissions/src/topic_match.rs::tests::security_10_4_1_2_6_1_pathname_keeps_slashes_out_of_wildcards`
 
 **Status:** `done` — bracket expressions (`[abc]`, `[a-z]`, `[!a-z]`) and the backslash
 as escape, `FNM_NOESCAPE` and `FNM_PATHNAME` for the subject expressions.
@@ -10345,7 +10351,7 @@ specified in the <enable_discovery_protection> element."
 **Repo:** `crates/security-runtime/src/shared.rs::topic_discovery_protected`
 (l. 559)
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::topic_discovery_protected_reads_topic_rule_flag`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_10_4_1_2_6_2_topic_discovery_protected_reads_topic_rule_flag`
 
 **Status:** done — the choice of the SEDP endpoints does not follow the value
 (see §9.4.2.6 Table 36 — is_discovery_protected per topic, `open`).
@@ -10358,7 +10364,7 @@ specified in the <enable_liveliness_protection> element."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_topic_security_config`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`
 
 **Status:** `done` — `is_liveliness_protected` of the `TopicSecurityConfig` follows the element.
 
@@ -10371,8 +10377,8 @@ whose associated Topic name matches the rule's topic expression."
 **Repo:** `crates/security-permissions/src/governance.rs::read_access_controlled`
 (l. 414), `check_create_datareader` (l. 460)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::an_uncontrolled_topic_needs_no_grant`,
-`crates/security-permissions/src/governance.rs::tests::the_six_omg_suite_refusals_are_denied`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_an_uncontrolled_topic_needs_no_grant`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_6_4_the_six_omg_suite_refusals_are_denied`
 
 **Status:** done — the spec names `enable_write_access_control` in the two
 bullets; the code takes `enable_read_access_control` (contradiction in the specification).
@@ -10387,8 +10393,8 @@ Permissions document."
 **Repo:** `crates/security-permissions/src/governance.rs::write_access_controlled`
 (l. 405), `check_create_datawriter` (l. 439)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::an_uncontrolled_topic_needs_no_grant`,
-`crates/security-permissions/src/governance.rs::tests::the_granted_direction_still_creates`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_an_uncontrolled_topic_needs_no_grant`,
+`crates/security-permissions/src/governance.rs::tests::security_9_4_2_6_the_granted_direction_still_creates`
 
 **Status:** done
 
@@ -10401,7 +10407,7 @@ the <metadata_protection_kind> is NONE and shall be set to TRUE otherwise.
 
 **Repo:** `crates/security-runtime/src/shared.rs::metadata_protection`, `metadata_origin_authenticated`; `crates/dcps/src/runtime.rs::user_endpoint_security_info`, `crates/security-runtime/src/plugin_attributes.rs::endpoint_security_info`
 
-**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::matrix_metadata_protection_all_kinds`, `crates/security-runtime/src/plugin_attributes.rs::tests::key_protected_follows_data_encrypt_per_spec_10_4_1_2_6` (the call with the new parameter `false`)
+**Tests:** `crates/dcps/tests/security_matrix_e2e.rs::security_8_1_1_matrix_metadata_protection_all_kinds`, `crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_key_protected_follows_data_encrypt_per_spec_10_4_1_2_6` (the call with the new parameter `false`)
 
 **Status:** `done` — `is_submessage_protected`, `is_submessage_encrypted` and `is_submessage_origin_authenticated` (plugin bit 0x4) follow the value. The bit 0x4 is not tested.
 
@@ -10417,8 +10423,8 @@ is_payload_encrypted shall be set to TRUE."
 
 **Repo:** `crates/dcps/src/runtime.rs::user_endpoint_security_info`, `crates/security-runtime/src/plugin_attributes.rs::endpoint_security_info` (l. 2087)
 
-**Tests:** `crates/security-runtime/src/plugin_attributes.rs::tests::key_protected_follows_data_encrypt_per_spec_10_4_1_2_6`,
-`crates/security-runtime/src/plugin_attributes.rs::tests::liveliness_protected_sets_0x40_per_spec_9_4_1_3`
+**Tests:** `crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_key_protected_follows_data_encrypt_per_spec_10_4_1_2_6`,
+`crates/security-runtime/src/plugin_attributes.rs::tests::security_7_3_24_liveliness_protected_sets_0x40_per_spec_9_4_1_3`
 
 **Status:** done
 
@@ -10431,7 +10437,7 @@ with a suitable 'permissions error'."
 **Repo:** `crates/security-permissions/src/governance.rs::check_create_participant`
 (l. 364), `check_create_datawriter` (l. 439)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::an_uncovered_domain_creates_nothing`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_an_uncovered_domain_creates_nothing`
 
 **Status:** done
 
@@ -10445,7 +10451,7 @@ name the operation under consideration shall fail with a suitable
 `crates/security-runtime/src/shared.rs` (`check_create_datawriter`,
 `check_create_datareader`, `check_remote_datawriter`, `check_remote_datareader`)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::a_topic_without_a_rule_is_refused`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_7_a_topic_without_a_rule_is_refused`
 
 **Status:** `done` — a topic without a matching rule gets no endpoint,
 neither local nor remote; the builtin logging topic keeps its builtin
@@ -10461,9 +10467,9 @@ shall be considered invalid, and an error shall be raised."
 
 **Repo:** `crates/security-permissions/src/governance.rs::extension_element`, `crates/security-permissions/src/xml.rs::check_known_element`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::an_extension_attribute_follows_must_interpret`,
-`crates/security-permissions/src/governance.rs::tests::zerodds_elements_without_the_namespace_follow_must_interpret`,
-`crates/security-permissions/src/governance.rs::tests::a_governance_outside_the_xsd_is_refused`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_3_an_extension_attribute_follows_must_interpret`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_3_zerodds_elements_without_the_namespace_follow_must_interpret`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_a_governance_outside_the_xsd_is_refused`
 
 **Status:** `done` — unknown elements and attributes follow `must_interpret`; an invalid attribute value makes the document invalid; the elements in the namespace `ZERODDS_NS` are treated by `must_interpret` as well.
 
@@ -10486,8 +10492,8 @@ Additionally, the signer certificate shall be included within the signature."
 **Repo:** `crates/security-permissions/src/signature.rs::open_signed_permissions`
 (l. 89)
 
-**Tests:** `crates/security-permissions/tests/cms_verify.rs::happy_path_then_open_signed_permissions_parses`,
-`crates/security-permissions/tests/cms_verify.rs::tampered_xml_is_rejected`
+**Tests:** `crates/security-permissions/tests/cms_verify.rs::security_10_4_1_happy_path_then_open_signed_permissions_parses`,
+`crates/security-permissions/tests/cms_verify.rs::security_10_4_1_2_tampered_xml_is_rejected`
 
 **Status:** done
 
@@ -10499,9 +10505,9 @@ type='PermissionsNode' /> [...] permissions [...] grant [...]
 
 **Repo:** `crates/security-permissions/src/xml.rs::parse_permissions_xml`, `parse_grant`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::a_document_outside_the_xsd_is_refused`,
-`crates/security-permissions/src/xml.rs::tests::rejects_invalid_xml`,
-`crates/security-permissions/src/xml.rs::tests::missing_subject_name_is_malformed`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_1_a_document_outside_the_xsd_is_refused`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_1_rejects_invalid_xml`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_1_missing_subject_name_is_malformed`
 
 **Status:** `done` — documents follow the XSD: root `<dds>`, `<validity>`, at least one
 rule, `<domains>` in each rule, `<topics>` in each action; an element outside
@@ -10521,8 +10527,8 @@ certificate shall be ignored."
 `crates/security-pki/src/subject.rs::subject_attributes`
 
 **Tests:**
-`crates/security-permissions/src/xml.rs::tests::only_the_grant_of_the_subject_counts`,
-`crates/security-pki/src/subject.rs::tests::the_subject_is_read_in_certificate_order_with_short_names`
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_1_only_the_grant_of_the_subject_counts`,
+`crates/security-pki/src/subject.rs::tests::security_10_4_1_5_3_1_the_subject_is_read_in_certificate_order_with_short_names`
 
 **Status:** `done` — locally and for a peer only the grant whose `subject_name`
 is the certificate's SubjectName counts; without one the profile refuses, a peer
@@ -10543,8 +10549,8 @@ matching."
 `normalized`)
 
 **Tests:**
-`crates/security-permissions/src/xml.rs::tests::a_subject_name_reads_in_both_forms_and_any_order`,
-`crates/security-permissions/src/xml.rs::tests::only_the_grant_of_the_subject_counts`
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_1_1_a_subject_name_reads_in_both_forms_and_any_order`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_1_only_the_grant_of_the_subject_counts`
 
 **Status:** `done` — the same attribute names (case-insensitive), equal values,
 the order without meaning; read are the RFC 4514 form and the OpenSSL one-line
@@ -10562,7 +10568,7 @@ FNM_NOESCAPE=TRUE."
 **Repo:** `crates/security-permissions/src/xml.rs::parse_grant`, `Grant::is_for`,
 `Permissions::for_subject`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::a_subject_name_expression_matches_by_fnmatch`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_2_a_subject_name_expression_matches_by_fnmatch`
 
 **Status:** `done` — `<subject_name_expression>` is read and compared with the
 SubjectName by `fnmatch()` (`FNM_PATHNAME`, `FNM_NOESCAPE`).
@@ -10577,8 +10583,8 @@ evaluated shall be ignored."
 
 **Repo:** `crates/security-permissions/src/xml.rs` (`parse_validity`, `Grant::is_valid_at`)
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::validity_window_enforced`,
-`crates/security-permissions/src/governance.rs::tests::validity_and_domain_bound_the_grant`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_3_validity_window_enforced`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_5_3_3_validity_and_domain_bound_the_grant`
 
 **Status:** `done` — a date without a zone is UTC; a grant outside its period is
 passed over.
@@ -10593,9 +10599,9 @@ without `minOccurs='0'`.
 **Repo:** `crates/security-permissions/src/xml.rs` (`parse_validity`,
 `parse_iso_seconds`)
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::iso_parser_applies_the_zone`,
-`crates/security-permissions/src/xml.rs::tests::an_unreadable_validity_or_default_is_refused`,
-`crates/security-permissions/src/xml.rs::tests::a_document_outside_the_xsd_is_refused`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_3_iso_parser_applies_the_zone`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_3_an_unreadable_validity_or_default_is_refused`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_1_a_document_outside_the_xsd_is_refused`
 
 **Status:** `done` — the time zone is applied; an unreadable `not_before` or
 `not_after` and a grant without `<validity>` are errors, as the XSD requires.
@@ -10612,9 +10618,9 @@ is applied. [...] the absence of the default rule shall be treated as a
 
 **Repo:** `crates/security-permissions/src/xml.rs` (`Grant::decide`, `parse_grant`)
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::the_first_matching_rule_decides`,
-`crates/security-permissions/src/xml.rs::tests::default_deny_without_explicit_tag`,
-`crates/security-permissions/src/plugin.rs::tests::allow_rule_and_deny_rule_decide_the_same_xml_differently`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_the_first_matching_rule_decides`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_default_deny_without_explicit_tag`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_1_5_3_4_allow_rule_and_deny_rule_decide_the_same_xml_differently`
 
 **Status:** `done` — the rules apply in document order, the first matching one decides;
 without a match `default` applies, without `default` DENY.
@@ -10626,8 +10632,8 @@ that appear in the document."
 
 **Repo:** `crates/security-permissions/src/xml.rs::Grant::decide`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::the_first_matching_rule_decides`,
-`crates/security-permissions/src/plugin.rs::tests::allow_rule_and_deny_rule_decide_the_same_xml_differently`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_the_first_matching_rule_decides`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_1_5_3_4_allow_rule_and_deny_rule_decide_the_same_xml_differently`
 
 **Status:** `done` — an `allow_rule` before a `deny_rule` for the same topic gives
 "allow", in the opposite order "deny".
@@ -10641,9 +10647,9 @@ as an AND of each of the criteria. For a specific criterion to match (e.g.,
 
 **Repo:** `crates/security-permissions/src/xml.rs::Grant::decide`; `crates/security-permissions/src/governance.rs::granted`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::partitions_of_allow_and_deny_rules`,
-`crates/security-permissions/src/xml.rs::tests::data_tags_of_allow_and_deny_rules`,
-`crates/security-permissions/src/plugin.rs::tests::partition_scope_narrows_an_otherwise_permitted_topic`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_partitions_of_allow_and_deny_rules`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_data_tags_of_allow_and_deny_rules`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_8_4_partition_scope_narrows_an_otherwise_permitted_topic`
 
 **Status:** `done` — the topics, partitions and data tags of an action are combined, per
 rule. Endpoints carry no data tags yet and enter with the empty set (item
@@ -10658,10 +10664,10 @@ the topic name, partitions, and data-tags."
 
 **Repo:** `crates/security-permissions/src/xml.rs` (`parse_grant`, `Grant::decide`)
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::a_deny_rule_holds_only_in_its_domains`,
-`crates/security-permissions/src/xml.rs::tests::partitions_of_allow_and_deny_rules`,
-`crates/security-permissions/src/xml.rs::tests::data_tags_of_allow_and_deny_rules`,
-`crates/security-permissions/src/xml.rs::tests::domain_ranges_of_a_rule`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_a_deny_rule_holds_only_in_its_domains`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_partitions_of_allow_and_deny_rules`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_data_tags_of_allow_and_deny_rules`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_domain_ranges_of_a_rule`
 
 **Status:** `done` — domains, partitions and data tags count for the rule or action they
 stand in; a deny rule holds only in its domains.
@@ -10676,9 +10682,9 @@ delimited by the <relay> XML element".
 `crates/security-permissions/src/governance.rs` (`check_datareader`,
 `check_relay_reader`, `check_relay_writer`)
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::relay_is_an_action_of_its_own`,
-`crates/security-permissions/src/governance.rs::tests::relaying_needs_the_relay_action_where_access_is_controlled`,
-`crates/dcps/tests/security_relay_e2e.rs::a_relay_only_reader_is_matched_and_cannot_read_the_payload`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_1_2_relay_is_an_action_of_its_own`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_5_3_4_1_2_relaying_needs_the_relay_action_where_access_is_controlled`,
+`crates/dcps/tests/security_relay_e2e.rs::security_7_1_1_4_a_relay_only_reader_is_matched_and_cannot_read_the_payload`
 
 **Status:** `done` — `<relay>` is an action of its own. A remote reader with `<relay>`
 only is relay-only (§9.4.2.9.11); a local relay reader is created on
@@ -10693,8 +10699,8 @@ appears separately in a <topic> sub-element within the <topics> element."
 
 **Repo:** `crates/security-permissions/src/xml.rs` (`parse_grant`)
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::a_document_outside_the_xsd_is_refused`,
-`crates/security-permissions/src/plugin.rs::tests::permit_on_wildcard_match`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_1_a_document_outside_the_xsd_is_refused`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_1_5_3_4_1_3_permit_on_wildcard_match`
 
 **Status:** `done` — `<topics>` with one `<topic>` for each name or expression; a
 `<topic>` directly under the action is outside the XSD and refused.
@@ -10709,9 +10715,9 @@ string' partition is assumed."
 
 **Repo:** `crates/security-permissions/src/xml.rs::Grant::decide`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::partitions_of_allow_and_deny_rules`,
-`crates/security-permissions/src/plugin.rs::tests::grant_without_partitions_covers_only_the_default_partition`,
-`crates/security-permissions/src/plugin.rs::tests::partition_check_never_widens_a_denied_topic`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_partitions_of_allow_and_deny_rules`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_1_5_3_4_1_4_grant_without_partitions_covers_only_the_default_partition`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_1_5_3_4_1_4_partition_check_never_widens_a_denied_topic`
 
 **Status:** `done` — per rule: the endpoint's partitions must lie within those of the
 action; without `<partitions>` the partition `""` applies.
@@ -10728,7 +10734,7 @@ of the partitions in the allowed partitions condition."
 **Repo:** `crates/security-permissions/src/xml.rs` (`PartitionMatching`);
 setting `zerodds.sec.access.partition_matching`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::partitions_of_allow_and_deny_rules`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_partitions_of_allow_and_deny_rules`
 
 **Status:** `done` — selectable with `zerodds.sec.access.partition_matching`; the
 default is the spec's comparison (subset).
@@ -10742,9 +10748,9 @@ no <data_tags> section then the default empty set is assumed."
 
 **Repo:** `crates/security-permissions/src/xml.rs::Grant::decide`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::data_tags_of_allow_and_deny_rules`,
-`crates/security-runtime/src/shared.rs::tests::the_plugin_gets_partitions_data_tags_and_qos`,
-`crates/dcps/tests/security_access_plugin_e2e.rs::a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_data_tags_of_allow_and_deny_rules`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos`,
+`crates/dcps/tests/security_access_plugin_e2e.rs::security_2_3_a_datawriter_is_created_and_changed_with_its_request_in_the_plugins_hands`
 
 **Status:** `done` — the condition is evaluated per rule; endpoints carry data tags (`DataTagQosPolicy`) and the plugin sees them.
 
@@ -10757,9 +10763,9 @@ to deny the operation."
 
 **Repo:** `crates/security-permissions/src/xml.rs` (`parse_grant`, `Grant::decide`)
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::the_first_matching_rule_decides`,
-`crates/security-permissions/src/plugin.rs::tests::deny_rule_also_binds_the_reader_side`,
-`crates/security-permissions/src/plugin.rs::tests::remote_match_inherits_the_deny_decision`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_the_first_matching_rule_decides`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_1_5_3_4_2_deny_rule_also_binds_the_reader_side`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_1_5_3_4_2_remote_match_inherits_the_deny_decision`
 
 **Status:** `done` — a matching deny rule refuses the operation, in rule order, with its
 domains and partitions.
@@ -10774,7 +10780,7 @@ the '*' partition expression is assumed."
 
 **Repo:** `crates/security-permissions/src/xml.rs::Grant::decide`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::partitions_of_allow_and_deny_rules`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_partitions_of_allow_and_deny_rules`
 
 **Status:** `done` — a deny rule applies when one partition of the endpoint matches one
 of its partitions; without `<partitions>` `*` applies.
@@ -10786,8 +10792,8 @@ the 'set of all possible tags' set is assumed as default."
 
 **Repo:** `crates/security-permissions/src/xml.rs::Grant::decide`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::data_tags_of_allow_and_deny_rules`,
-`crates/security-runtime/src/shared.rs::tests::the_plugin_gets_partitions_data_tags_and_qos`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_data_tags_of_allow_and_deny_rules`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos`
 
 **Status:** `done` — without `<data_tags>` the set of all tags applies; endpoints carry data tags.
 
@@ -10798,7 +10804,7 @@ Governance document, see 10.4.1.3."
 
 **Repo:** `crates/security-permissions/src/xml.rs::check_known_element_with`, `check_must_interpret_value`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::the_permissions_document_is_extended_by_must_interpret`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_6_the_permissions_document_is_extended_by_must_interpret`
 
 **Status:** `done` — unknown elements and attributes of the permissions document follow `must_interpret` as in the governance.
 
@@ -10845,8 +10851,8 @@ to 'DDS:Access:Permissions', MajorVersion set to 1, and MinorVersion set to
 
 **Repo:** `crates/security-permissions/src/plugin.rs` (`PROP_TOKEN_CLASS_ID`, `plugin_class_id`)
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_permissions_token_class_is_1_2_unless_named`,
-`crates/security-permissions/src/plugin.rs::tests::a_remote_token_of_another_class_or_major_version_is_refused`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_the_permissions_token_class_is_1_2_unless_named`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_a_remote_token_of_another_class_or_major_version_is_refused`
 
 **Status:** `done` — the default is `DDS:Access:Permissions:1.2` (Table 65). `DDS:Access:Permissions:1.0` stays as the named setting `org.zerodds.sec.access.permissions_token_class_id` for peers that send 1.0. Expected: Cyclone DDS and Fast DDS compare PluginClassName and MajorVersion (Table 70), so they accept 1.2; not measured.
 
@@ -10860,8 +10866,8 @@ transformation.
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — all seven attributes (`*_encrypted`, `*_origin_authenticated`, `is_rtps_psk_encrypted`) follow the governance.
 
@@ -10874,7 +10880,7 @@ IS_LIVELINESS_ORIGIN_AUTHENTICATED, IS_RTPS_PSK_ENCRYPTED; default 0.
 
 **Repo:** `crates/security/src/access_control.rs::plugin_participant_attributes_mask`; `crates/rtps/src/participant_security_info.rs::plugin_attrs`
 
-**Tests:** `crates/security/src/access_control.rs::tests::the_plugin_masks_have_the_bits_of_tables_67_and_69`,
+**Tests:** `crates/security/src/access_control.rs::tests::security_10_4_2_4_the_plugin_masks_have_the_bits_of_tables_67_and_69`,
 `crates/rtps/src/participant_security_info.rs::tests::fully_protected_sets_all_encrypt_bits`
 
 **Status:** `done` — bits 0 to 6 are assigned and set from the config.
@@ -10887,8 +10893,8 @@ PLUGIN_PARTICIPANT_SECURITY_ATTRIBUTES_FLAG_IS_RTPS_PSK_ENCRYPTED
 
 **Repo:** `crates/security/src/access_control.rs::plugin_participant_attributes_mask`
 
-**Tests:** `crates/security/src/access_control.rs::tests::the_plugin_masks_have_the_bits_of_tables_67_and_69`,
-`crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`
+**Tests:** `crates/security/src/access_control.rs::tests::security_10_4_2_4_the_plugin_masks_have_the_bits_of_tables_67_and_69`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`
 
 **Status:** `done` — bit 6 is set from `rtps_psk_protection_kind`.
 
@@ -10900,8 +10906,8 @@ on keys and transformation.
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_datawriter_security_config`; `crates/security/src/access_control.rs::plugin_endpoint_attributes_mask`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_topic_and_endpoint_configs_follow_the_topic_rule`,
-`crates/security/src/access_control.rs::tests::the_plugin_masks_have_the_bits_of_tables_67_and_69`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule`,
+`crates/security/src/access_control.rs::tests::security_10_4_2_4_the_plugin_masks_have_the_bits_of_tables_67_and_69`
 
 **Status:** `done` — `is_submessage_encrypted`, `is_submessage_origin_authenticated` and `is_payload_encrypted` follow the topic rule.
 
@@ -10926,8 +10932,8 @@ PluginParticipantSecurityAttributesMask must also be the same."
 
 **Repo:** `crates/dcps/src/runtime.rs::endpoint_incompatibility` and the participant check during authentication
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::participants_with_an_incompatible_configuration_are_not_authenticated`,
-`crates/dcps/src/runtime.rs::tests::the_participant_security_info_is_the_config_of_the_access_control_plugin`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_11_1_participants_with_an_incompatible_configuration_are_not_authenticated`,
+`crates/dcps/src/runtime.rs::tests::security_9_4_2_5_the_participant_security_info_is_the_config_of_the_access_control_plugin`
 
 **Status:** `done` — participants and endpoints with other masks than the own are not authenticated or not matched, respectively.
 
@@ -10940,7 +10946,7 @@ the mechanism for initialization is implementation dependent."
 **Repo:** `crates/security-runtime/src/endpoint_access.rs::arm_endpoint_access_control`
 (l. 26)
 
-**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::an_unarmed_gate_refuses_instead_of_creating`
+**Tests:** `crates/dcps/tests/security_endpoint_access_e2e.rs::security_9_8_6_an_unarmed_gate_refuses_instead_of_creating`
 
 **Status:** done
 
@@ -10958,9 +10964,9 @@ return TRUE if the default is ALLOW and return FALSE otherwise."
 **Repo:** `crates/security-permissions/src/governance.rs::check_create_participant`;
 `crates/security-permissions/src/xml.rs::Grant::may_join`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::check_create_participant_consults_permissions`,
-`crates/security-permissions/src/xml.rs::tests::joining_follows_the_first_rule_for_the_domain`,
-`crates/security-permissions/src/plugin.rs::tests::a_deny_rule_with_actions_first_leaves_joining_to_the_default`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_5_3_check_create_participant_consults_permissions`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_3_joining_follows_the_first_rule_for_the_domain`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_3_a_deny_rule_with_actions_first_leaves_joining_to_the_default`
 
 **Status:** `done` — with FALSE the participant is admitted; otherwise the grant's first
 rule for the domain decides: an allow rule admits, a deny rule without publish
@@ -10976,8 +10982,8 @@ default is ALLOW and return FALSE otherwise."
 
 **Repo:** `crates/security-permissions/src/xml.rs::Grant::may_join`
 
-**Tests:** `crates/security-permissions/src/xml.rs::tests::joining_follows_the_first_rule_for_the_domain`,
-`crates/security-permissions/src/plugin.rs::tests::a_deny_rule_with_actions_first_leaves_joining_to_the_default`
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_3_joining_follows_the_first_rule_for_the_domain`,
+`crates/security-permissions/src/plugin.rs::tests::security_10_4_3_a_deny_rule_with_actions_first_leaves_joining_to_the_default`
 
 **Status:** `done` — see the item above.
 
@@ -10994,9 +11000,9 @@ TRUE. Otherwise the operation shall return FALSE."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::check_create_datawriter`, `check_create_datareader`; `governance.rs::check_datawriter`, `check_datareader`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_six_omg_suite_refusals_are_denied`,
-`crates/security-permissions/src/governance.rs::tests::partitions_scope_the_grant`,
-`crates/security-runtime/src/shared.rs::tests::the_plugin_gets_partitions_data_tags_and_qos`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_6_4_the_six_omg_suite_refusals_are_denied`,
+`crates/security-permissions/src/governance.rs::tests::security_9_8_4_partitions_scope_the_grant`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos`
 
 **Status:** `done` — governance, topic, all partitions, data tags, grant of the subject and topic rule are checked.
 
@@ -11012,7 +11018,7 @@ DomainParticipant allowing it to publish the Topic [...] subscribe the Topic
 
 **Repo:** `crates/security-permissions/src/plugin.rs::check_create_topic`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::check_create_topic_follows_governance_and_grant`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_check_create_topic_follows_governance_and_grant`
 
 **Status:** `done` — TRUE for an open topic or an allowed publish or subscribe; otherwise FALSE.
 
@@ -11026,8 +11032,8 @@ check_remote_datawriter_dispose_instance This operation shall return TRUE."
 
 **Repo:** `crates/security-permissions/src/plugin.rs`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::instance_and_match_checks_return_true`,
-`crates/security-permissions/src/plugin.rs::tests::the_nil_handle_is_refused_on_a_controlled_topic_only`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_instance_and_match_checks_return_true`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_the_nil_handle_is_refused_on_a_controlled_topic_only`
 
 **Status:** `done` — the six operations return TRUE; the handles are checked.
 
@@ -11041,7 +11047,7 @@ rule, then the operation shall succeed and return TRUE."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::check_remote_participant`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::a_remote_token_of_another_class_or_major_version_is_refused`,
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_a_remote_token_of_another_class_or_major_version_is_refused`,
 `tools/secure-permissions/tests/access_plugin_signed.rs::a_remote_participant_is_validated_and_checked`
 
 **Status:** `done` — PluginClassName and MajorVersion of the token are compared; otherwise the first matching rule of the grant for the domain decides.
@@ -11062,9 +11068,9 @@ topic_name, the operation shall return TRUE and also set the
 `::check_remote_datareader`, `::set_remote_permissions`;
 `crates/security/src/token.rs::class_id::same_class_and_major_version`
 
-**Tests:** `crates/security-runtime/src/shared.rs::tests::a_peer_without_a_grant_is_denied_on_an_access_controlled_topic`,
-`crates/security/src/token.rs::tests::class_ids_compare_by_plugin_class_name_and_major_version`,
-`crates/dcps/tests/security_relay_e2e.rs::a_relay_only_reader_is_matched_and_cannot_read_the_payload`
+**Tests:** `crates/security-runtime/src/shared.rs::tests::security_9_4_2_9_a_peer_without_a_grant_is_denied_on_an_access_controlled_topic`,
+`crates/security/src/token.rs::tests::security_10_4_3_class_ids_compare_by_plugin_class_name_and_major_version`,
+`crates/dcps/tests/security_relay_e2e.rs::security_7_1_1_4_a_relay_only_reader_is_matched_and_cannot_read_the_payload`
 
 **Status:** `done` — a peer whose PermissionsToken is missing or names another
 PluginClassName or MajorVersion keeps no grant and is refused on
@@ -11079,8 +11085,8 @@ specified topic_name, then the operation shall succeed and return TRUE."
 
 **Repo:** `crates/security-permissions/src/plugin.rs::check_remote_topic`; `crates/security-permissions/src/xml.rs::Grant::allows_topic`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_nil_handle_is_refused_on_a_controlled_topic_only`,
-`crates/dcps/tests/security_relay_e2e.rs::a_relay_only_reader_is_matched_and_cannot_read_the_payload`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_the_nil_handle_is_refused_on_a_controlled_topic_only`,
+`crates/dcps/tests/security_relay_e2e.rs::security_7_1_1_4_a_relay_only_reader_is_matched_and_cannot_read_the_payload`
 
 **Status:** `done` — TRUE for an allowed publish, subscribe or relay of the topic in the grant of the remote participant.
 
@@ -11108,9 +11114,9 @@ Governance and Signed Permissions document by the configured Permissions CA."
 (`NoGrantForSubject`)
 
 **Tests:**
-`crates/security-permissions/tests/cms_verify.rs::wrong_ca_signature_is_rejected`,
-`crates/security-permissions/tests/cms_verify.rs::tampered_xml_is_rejected`,
-`crates/security-permissions/src/xml.rs::tests::only_the_grant_of_the_subject_counts`
+`crates/security-permissions/tests/cms_verify.rs::security_10_4_1_1_wrong_ca_signature_is_rejected`,
+`crates/security-permissions/tests/cms_verify.rs::security_10_4_1_2_tampered_xml_is_rejected`,
+`crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_1_only_the_grant_of_the_subject_counts`
 
 **Status:** `done` — both signatures are checked; a local document without a
 grant for the own certificate's SubjectName is refused.
@@ -11141,9 +11147,9 @@ CRYPTO_ALGORITHM_SET_ALL".
 
 **Repo:** `crates/security-permissions/src/plugin.rs::get_participant_security_config`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::the_participant_config_follows_the_domain_rule`,
-`crates/security-permissions/src/plugin.rs::tests::without_allowed_algorithms_every_algorithm_is_supported`,
-`crates/security-permissions/src/governance.rs::tests::missing_domain_rule_flags_are_true`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_the_participant_config_follows_the_domain_rule`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_4_without_allowed_algorithms_every_algorithm_is_supported`,
+`crates/security-permissions/src/governance.rs::tests::security_10_4_1_2_3_missing_domain_rule_flags_are_true`
 
 **Status:** `done` — `allow_unauthenticated_participants` and all other members follow Table 70; without `<allowed_crypto_algorithms>` the `supported_mask` is CRYPTO_ALGORITHM_SET_ALL.
 
@@ -11156,8 +11162,8 @@ return_*)
 
 **Repo:** `crates/security-permissions/src/plugin.rs`
 
-**Tests:** `crates/security-permissions/src/plugin.rs::tests::revoking_permissions_tells_the_listener`,
-`crates/security-permissions/src/plugin.rs::tests::returned_tokens_and_configs_must_have_been_issued`
+**Tests:** `crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_revoking_permissions_tells_the_listener`,
+`crates/security-permissions/src/plugin.rs::tests::security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued`
 
 **Status:** `done` — `set_listener` keeps the reference; the `return_*` behave as in §9.4.2.9.
 
@@ -11174,8 +11180,8 @@ reader-specific MACs".
 **Repo:** `crates/security-crypto/src/plugin.rs::AesGcmCryptoPlugin`
 (l. 724)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::encrypt_decrypt_roundtrip`,
-`crates/security-crypto/src/plugin.rs::tests::gmac_only_suite_roundtrip_without_encryption`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_8_1_encrypt_decrypt_roundtrip`,
+`crates/security-crypto/src/plugin.rs::tests::security_8_1_gmac_only_suite_roundtrip_without_encryption`
 
 **Status:** done — the MACs for single readers are assessed under Table 80.
 
@@ -11189,7 +11195,7 @@ DataWriterQos, or DataReaderQos." Properties `symmetric_cipher_algorithm`,
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs`; `crates/security-crypto/src/plugin/spec.rs`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_cipher_property_of_an_endpoint_sets_its_key_width`, `crates/security-crypto/src/psk_rtps.rs::tests::the_uri_properties_of_the_pre_shared_key_are_read`, `crates/security-crypto/src/plugin/spec.rs::tests::a_datawriter_has_one_or_two_key_materials`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_3_21_the_cipher_property_of_an_endpoint_sets_its_key_width`, `crates/security-crypto/src/psk_rtps.rs::tests::security_10_5_1_the_uri_properties_of_the_pre_shared_key_are_read`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_datawriter_has_one_or_two_key_materials`
 
 **Status:** `done` — `symmetric_cipher_algorithm` of participant, writer and reader (the runtime passes the endpoint property on), the PSK properties as `file:`/`data:` URI. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -11202,7 +11208,7 @@ specific DataWriter or DataReader".
 
 **Repo:** `crates/security-crypto/src/suite.rs::symmetric_cipher_key_bits`; `crates/security-crypto/src/plugin/spec.rs`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::default_plugin_uses_aes256`, `crates/security-crypto/src/plugin.rs::tests::the_key_width_follows_symmetric_cipher_algorithm`, `crates/security-crypto/src/plugin/spec.rs::tests::the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width`, `crates/dcps/src/runtime.rs::tests::the_cipher_property_of_an_endpoint_sets_its_key_width`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_1_1_default_plugin_uses_aes256`, `crates/security-crypto/src/plugin.rs::tests::security_10_5_1_1_the_key_width_follows_symmetric_cipher_algorithm`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width`, `crates/dcps/src/runtime.rs::tests::security_7_3_21_the_cipher_property_of_an_endpoint_sets_its_key_width`
 
 **Status:** `done` — Missing or `AUTO` is AES256-GCM, overridable per endpoint. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -11217,7 +11223,7 @@ values for the KeyMaterial".
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskConfig``, `key_bits_from_cipher`; `crates/security-runtime/src/qos_properties.rs::psk_crypto_config_from_properties`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_passphrase_rules_of_table_86`, `crates/security-runtime/src/qos_properties.rs::tests::the_psk_crypto_properties_of_table_86_are_read`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_5_1_2_the_passphrase_rules_of_table_86`, `crates/security-runtime/src/qos_properties.rs::tests::security_10_5_1_2_the_psk_crypto_properties_of_table_86_are_read`
 
 **Status:** `done` — key width, passphrase with its id and the alternatives are read; the derivation follows §10.5.2.1.3.
 
@@ -11245,8 +11251,8 @@ the KeyMaterial_AES_GCM_GMAC structure defined below."
 and `CRYPTO_TOKEN_CLASS_ID` l. 21333), `build_crypto_token_message`
 (l. 21338)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::secured_data_round_trips_through_runtime_dispatch_e2e`,
-`crates/security-crypto/src/plugin.rs::tests::cross_plugin_interop_via_tokens`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_7_5_4_3_secured_data_round_trips_through_runtime_dispatch_e2e`,
+`crates/security-crypto/src/plugin.rs::tests::security_9_5_1_1_cross_plugin_interop_via_tokens`
 
 **Status:** done
 
@@ -11261,7 +11267,7 @@ receiver_specific_key_id; sequence<octet, 32> master_receiver_specific_key;
 
 **Repo:** `crates/security-crypto/src/plugin.rs::serialize_keymat_for`, `serialize_keymat_cyclone`, `from_keymat_cyclone`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::a_receiver_specific_key_id_and_key_go_together`, `::tokens_carry_suite_tag_so_cross_suite_interop_works`, `::rejects_token_with_unknown_suite_id`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_2_1_1_a_receiver_specific_key_id_and_key_go_together`, `::security_9_5_1_1_tokens_carry_suite_tag_so_cross_suite_interop_works`, `::security_10_5_2_1_1_rejects_token_with_unknown_suite_id`
 
 **Status:** `done` — the six members are written and read in this order in Big Endian, with `receiver_specific_key_id` and `master_receiver_specific_key`; the id is 0 if and only if the key is empty, and the key has the length of the sender key.
 
@@ -11275,7 +11281,7 @@ master_receiver_specific_key is also zero."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::from_keymat_cyclone`, `receiver_key_for`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::an_aes128_gmac_key_with_a_short_salt_crosses_instances`, `::a_receiver_specific_key_id_and_key_go_together`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_8_1_an_aes128_gmac_key_with_a_short_salt_crosses_instances`, `::security_10_5_2_1_1_a_receiver_specific_key_id_and_key_go_together`
 
 **Status:** `done` — `master_salt` of up to 32 octets (earlier round); `receiver_specific_key_id` and `master_receiver_specific_key` are written under origin authentication (an id other than 0, never that of another key of this side) and read.
 
@@ -11292,8 +11298,8 @@ key", KxSaltCookie "keyexchange salt".
 **Repo:** `crates/security-crypto/src/plugin.rs::from_kx_shared_secret`
 (l. 590), `register_matched_remote_participant` (l. 1352)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_kx_key_matches_both_directions`,
-`crates/security-crypto/src/plugin.rs::tests::with_secret_provider_derives_same_kx_key_for_both_sides`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_9_8_9_1_cyclone_kx_key_matches_both_directions`,
+`crates/security-crypto/src/plugin.rs::tests::security_10_5_2_1_2_with_secret_provider_derives_same_kx_key_for_both_sides`
 
 **Status:** done — without known challenges the plugin derives the key with
 its own HKDF (`from_shared_secret_kx`, l. 573; comment at l. 1380–1383); this
@@ -11310,7 +11316,7 @@ sender key derivation'| 0x01 )"; example with result values.
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::derive_key_material``, `domain_key_prefix`, `Passphrase`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_material_is_the_one_the_spec_prints`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_5_2_1_3_the_key_material_is_the_one_the_spec_prints`
 
 **Status:** `done` — SenderKeyId, `master_salt`, `master_sender_key` and revision equal the example of the spec (domain 201, passphrase 5632); cut to 16 octets for AES-128. `receiver_specific_key_id` 0, no `master_receiver_specific_key`.
 
@@ -11324,7 +11330,7 @@ octets".
 
 **Repo:** `crates/security-crypto/src/suite.rs`
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::kind_round_trip_all_variants`, `crates/security-crypto/src/suite.rs::tests::aes128_gmac_uses_spec_id_1`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_7_kind_round_trip_all_variants`, `crates/security-crypto/src/suite.rs::tests::security_7_3_18_2_aes128_gmac_uses_spec_id_1`
 
 **Status:** `done` — All four algorithm ids carry AES (0x01 AES128-GMAC). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11338,7 +11344,7 @@ transformation_key_revision".
 
 **Repo:** `crates/security-crypto/src/plugin.rs::KeyMaterial`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_key_revision_is_carried_in_the_keymat_and_the_header`, `crates/security-crypto/src/plugin/spec.rs::tests::a_key_revision_keeps_the_key_id_and_changes_the_keys`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_3_17_the_key_revision_is_carried_in_the_keymat_and_the_header`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys`
 
 **Status:** `done` — First revision {0,0,0}, then incremented. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11351,7 +11357,7 @@ same DomainParticipant."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::new_local_key`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_local_keys_have_distinct_nonzero_key_ids`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_2_2_the_local_keys_have_distinct_nonzero_key_ids`
 
 **Status:** `done` — Random, never 0, never repeated for a participant. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11362,7 +11368,7 @@ for the same DomainParticipant."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::new_local_key`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_local_keys_have_distinct_nonzero_key_ids`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_2_2_the_local_keys_have_distinct_nonzero_key_ids`
 
 **Status:** `done` — A drawn id is discarded when this side has already used it. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11376,8 +11382,8 @@ serialized using Big Endian serialization".
 **Repo:** `crates/security-crypto/src/plugin.rs::seal_cyclone` (l. 278,
 20-octet header)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::header_round_trip_with_full_iv`,
-`crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_3_20_header_round_trip_with_full_iv`,
+`crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`
 
 **Status:** done
 
@@ -11390,8 +11396,8 @@ Endian serialization".
 **Repo:** `crates/security-crypto/src/plugin.rs::push_sec_body` (l. 1106),
 `encode_payload_from_mat` (l. 918)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::sec_body_is_padded_to_four_for_any_ciphertext_length`,
-`crates/security-crypto/src/plugin.rs::tests::serialized_payload_cross_plugin_via_tokens`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length`,
+`crates/security-crypto/src/plugin.rs::tests::security_10_5_2_4_serialized_payload_cross_plugin_via_tokens`
 
 **Status:** done
 
@@ -11406,8 +11412,8 @@ receiver_specific_macs; };"
 (l. 207); `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116)
 
-**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::footer_round_trip_with_receivers`,
-`crates/security-crypto/src/crypto_transform.rs::tests::footer_rejects_oversized_receiver_count_cleanly`
+**Tests:** `crates/security-crypto/src/crypto_transform.rs::tests::security_7_4_6_2_4_footer_round_trip_with_receivers`,
+`crates/security-crypto/src/crypto_transform.rs::tests::security_7_4_7_4_footer_rejects_oversized_receiver_count_cleanly`
 
 **Status:** done — the runtime codec always writes an empty list.
 
@@ -11434,7 +11440,7 @@ shall be done according to the setting of the RTPS Protection Kind".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width`, `crates/security-crypto/src/plugin/spec.rs::tests::register_local_participant_fills_the_adjusted_algorithm_info`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_register_local_participant_fills_the_adjusted_algorithm_info`
 
 **Status:** `done` — GCM or GMAC by the RTPS Protection Kind (`is_rtps_axk_encrypted`), width by the property; `adjusted_algorithm_info` filled. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11448,7 +11454,7 @@ passed as a parameter. [...] Participant2ParticipantKxKeyMaterial."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_participant2participant_material_matches_the_participant_key`, `crates/security-crypto/src/plugin/spec.rs::tests::the_plugin_accepts_only_the_supported_algorithms`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_participant2participant_material_matches_the_participant_key`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_1_the_plugin_accepts_only_the_supported_algorithms`
 
 **Status:** `done` — Kind, salt, key and id as the ParticipantKeyMaterial; Kx material from the SharedSecret. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11466,7 +11472,7 @@ implementation to reuse the same key material for both."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_datawriter_has_one_or_two_key_materials`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_datawriter_has_one_or_two_key_materials`
 
 **Status:** `done` — One or two elements by Metadata and Data Protection Kind, submessage key first; the kinds come from `EndpointSecurityConfig`. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11482,7 +11488,7 @@ ReaderKeyMaterial."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_endpoints_get_receiver_specific_keys_under_origin_authentication`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_endpoints_get_receiver_specific_keys_under_origin_authentication`
 
 **Status:** `done` — Writer2ReaderKeyMaterialSeq and Reader2WriterKeyMaterial as operations of the specification; a receiver key for each remote endpoint. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11496,7 +11502,7 @@ authentication only (GMAC) or encryption followed by authentication (GCM)."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_datawriter_has_one_or_two_key_materials`, `crates/security-crypto/src/plugin/spec.rs::tests::the_endpoints_get_receiver_specific_keys_under_origin_authentication`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_datawriter_has_one_or_two_key_materials`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_the_endpoints_get_receiver_specific_keys_under_origin_authentication`
 
 **Status:** `done` — One material; the kind follows the submessage attribute (the specification names the Data Protection Kind here, a contradiction in the specification; readers protect only submessages). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11510,7 +11516,7 @@ and BuiltinParticipantVolatileMessageSecureReader."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::the_participant_key_is_revised_with_the_entities`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_6_the_participant_key_is_revised_with_the_entities`
 
 **Status:** `done` — New salt and key; id and receiver key stay. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11522,7 +11528,7 @@ register_matched_remote_participant."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyFactory; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::unregistering_releases_the_key_material_and_the_matches`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_unregistering_releases_the_key_material_and_the_matches`
 
 **Status:** `done` — Release the resources of the registrations. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11537,8 +11543,8 @@ containing one CryptoToken object".
 **Repo:** `crates/security-crypto/src/plugin.rs::create_local_participant_crypto_tokens`
 (l. 1430), `set_remote_participant_crypto_tokens` (l. 1450)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cross_plugin_interop_via_tokens`,
-`crates/security-runtime/src/shared.rs::tests::data_round_trips_via_token_after_kx_register`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_9_5_1_1_cross_plugin_interop_via_tokens`,
+`crates/security-runtime/src/shared.rs::tests::security_9_5_1_9_data_round_trips_via_token_after_kx_register`
 
 **Status:** done
 
@@ -11551,7 +11557,7 @@ Reader2WriterKeyMaterial [...] return_crypto_tokens Releases the resources".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoKeyExchange; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::crypto_tokens_are_returned_once`, `crates/security-crypto/src/plugin/spec.rs::tests::a_relay_only_reader_gets_the_submessage_key_alone`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_9_crypto_tokens_are_returned_once`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_8_a_relay_only_reader_gets_the_submessage_key_alone`
 
 **Status:** `done` — Writer2Reader and Reader2Writer material in the tokens; `return_crypto_tokens` releases. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11569,8 +11575,8 @@ sequence."
 **Repo:** `crates/security-crypto/src/plugin.rs::encode_serialized_payload`
 (l. 1745), `encode_payload_from_mat` (l. 918)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::serialized_payload_cross_plugin_via_tokens`,
-`crates/dcps/tests/security_matrix_e2e.rs::matrix_data_protection_all_kinds`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_2_4_serialized_payload_cross_plugin_via_tokens`,
+`crates/dcps/tests/security_matrix_e2e.rs::security_8_1_matrix_data_protection_all_kinds`
 
 **Status:** done
 
@@ -11586,7 +11592,7 @@ receiver_specific_macs".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_receiver_specific_macs_follow_the_list_index`, `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_receiver_specific_macs_follow_the_list_index`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — `receiver_specific_macs` for each receiver of the list. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11603,8 +11609,8 @@ was called with transform_with_psk=TRUE."
 **Repo:** `crates/security-crypto/src/plugin.rs::encode_rtps_message_cyclone`
 (l. 1655, INFO_SRC before the content), `assemble_srtps_message` (l. 956)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`,
-`crates/security-runtime/src/shared.rs::tests::transform_outbound_for_encrypt_produces_srtps_wire`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`,
+`crates/security-runtime/src/shared.rs::tests::security_9_4_2_4_transform_outbound_for_encrypt_produces_srtps_wire`
 
 **Status:** done — with GMAC SEC_BODY is left out as in §10.5.3.3.4.6.2; the
 flag P is never set because there is no protection with a pre-shared key.
@@ -11620,7 +11626,7 @@ element, if present, set to zero".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::an_rtps_message_goes_through_the_interface_with_aad_and_a_header_extension`, `crates/security-crypto/src/plugin.rs::tests::the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_an_rtps_message_goes_through_the_interface_with_aad_and_a_header_extension`, `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_6_the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message`
 
 **Status:** `done` — Flag A, header and HeaderExtension (length and checksum zero) as AAD, then `messageLength` and `messageChecksum` (CRC-32C, CRC-64/XZ, MD5) of the encoded message; setting `org.zerodds.crypto.rtps_additional_authenticated_data` (default off: INFO_SRC form). run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11637,7 +11643,7 @@ found, the operation shall fail with an exception."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::an_rtps_message_goes_through_the_interface_without_aad`, `crates/security-crypto/src/plugin/spec.rs::tests::a_kind_other_than_the_expected_one_is_refused`, `crates/security-runtime/src/shared.rs::tests::classify_inbound_srtps_from_known_peer_accepts`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_an_rtps_message_goes_through_the_interface_without_aad`, `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_a_kind_other_than_the_expected_one_is_refused`, `crates/security-runtime/src/shared.rs::tests::security_9_5_1_10_classify_inbound_srtps_from_known_peer_accepts`
 
 **Status:** `done` — Expected kind, key only of the handles of sender and receiver. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11649,7 +11655,7 @@ not found, the operation shall fail with an exception."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_kind_other_than_the_expected_one_is_refused`, `crates/security-crypto/src/plugin/spec.rs::tests::a_key_is_taken_only_from_the_entities_it_is_associated_with`, `crates/security-runtime/src/shared.rs::tests::a_key_of_another_peer_does_not_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_a_kind_other_than_the_expected_one_is_refused`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_a_key_is_taken_only_from_the_entities_it_is_associated_with`, `crates/security-runtime/src/shared.rs::tests::security_10_5_3_3_1_a_key_of_another_peer_does_not_decode`
 
 **Status:** `done` — The kind (GCM/GMAC, origin authentication, algorithm in `supported_mask`) is checked; a key of another sender does not open. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11663,7 +11669,7 @@ handles associated with the CryptoTransformIdentifier transformation_key_id."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::preprocess_refuses_unknown_kinds_and_unknown_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_preprocess_refuses_unknown_kinds_and_unknown_keys`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`
 
 **Status:** `done` — Recognized kind, classification, handles. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11680,7 +11686,7 @@ receiver_specific_macs element".
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::a_kind_other_than_the_expected_one_is_refused`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_7_submessages_go_through_preprocess_and_decode`, `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_a_kind_other_than_the_expected_one_is_refused`
 
 **Status:** `done` — `common_mac` and the receiver MAC are required and checked. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11695,7 +11701,7 @@ is not found, the operation shall fail with an exception."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::the_serialized_payload_goes_through_the_interface`, `crates/security-crypto/src/plugin/spec.rs::tests::a_key_is_taken_only_from_the_entities_it_is_associated_with`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_serialized_payload_goes_through_the_interface`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_a_key_is_taken_only_from_the_entities_it_is_associated_with`
 
 **Status:** `done` — Key by id and revision among the keys associated with the handles. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11708,7 +11714,7 @@ max_blocks_per_session.
 
 **Repo:** `crates/security-crypto/src/plugin.rs::KeyMaterial`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_session_id_changes_after_max_blocks_per_session`, `crates/security-crypto/src/plugin/spec.rs::tests::the_initialization_vector_suffix_starts_random_and_counts`, `crates/security-crypto/src/plugin/spec.rs::tests::the_receiver_specific_macs_follow_the_list_index`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_3_3_2_the_session_id_changes_after_max_blocks_per_session`, `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_2_the_initialization_vector_suffix_starts_random_and_counts`, `crates/security-crypto/src/plugin/spec.rs::tests::security_9_5_1_10_the_receiver_specific_macs_follow_the_list_index`
 
 **Status:** `done` — MasterReceiverSpecificKey, `session_block_counter`, `max_blocks_per_session`, random start of the IV suffix. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11723,7 +11729,7 @@ the input plain text."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::session_for`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_session_id_changes_after_max_blocks_per_session`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_3_3_2_the_session_id_changes_after_max_blocks_per_session`
 
 **Status:** `done` — The SessionId is incremented and the counter reset before plaintext is transformed. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11736,8 +11742,8 @@ is truncated to the first 128 bits."
 **Repo:** `crates/security-crypto/src/session_key.rs::derive_session_key_cyclone`
 (l. 95)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`,
-`crates/security-crypto/src/session_key.rs::tests::session_key_aes128_gcm_truncated_to_16_byte`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`,
+`crates/security-crypto/src/session_key.rs::tests::security_10_5_3_3_3_session_key_aes128_gcm_truncated_to_16_byte`
 
 **Status:** done — the function `derive_session_key` (l. 65) next to it puts
 MasterSalt before the string; it is only called by tests, and its module
@@ -11751,7 +11757,7 @@ SessionId)".
 
 **Repo:** `crates/security-crypto/src/session_key.rs::derive_session_receiver_key_cyclone`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_receiver_specific_mac_is_the_one_of_the_spec` (computed with Python from the formula)
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_4_1_2_2_the_receiver_specific_mac_is_the_one_of_the_spec` (computed with Python from the formula)
 
 **Status:** `done` — `HMAC256(MasterReceiverSpecificKey, "SessionReceiverKey" | MasterSalt | SessionId)`, cut to the key length, the salt cut to the key length as in `derive_session_key_cyclone`. `derive_session_hmac_key` (salt before the label) is removed.
 
@@ -11764,7 +11770,7 @@ those keys are used to encrypt and/or create a MAC."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::seal_cyclone` (l. 278)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::two_encrypts_produce_different_ciphertexts`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_8_1_1_two_encrypts_produce_different_ciphertexts`
 
 **Status:** done — the suffix starts at 1, not at random as in Table 81.
 
@@ -11778,8 +11784,8 @@ CryptoContent with `long crypto_content.length = N`; CryptoFooter with
 **Repo:** `crates/security-crypto/src/plugin.rs::push_sec_body` (l. 1106),
 `assemble_secure_submessages` (l. 1116)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::sec_body_is_padded_to_four_for_any_ciphertext_length`,
-`crates/security-crypto/src/crypto_transform.rs::tests::footer_round_trip_no_receivers`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length`,
+`crates/security-crypto/src/crypto_transform.rs::tests::security_7_4_7_4_footer_round_trip_no_receivers`
 
 **Status:** done — the sentence that N is always a multiple of 16 does not
 hold for AES-GCM (contradiction in the specification); ZeroDDS pads SEC_BODY to 4 octets.
@@ -11795,8 +11801,8 @@ Authenticated Data is empty."
 **Repo:** `crates/security-crypto/src/plugin.rs::encode_payload_from_mat`
 (l. 918)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::serialized_payload_cross_plugin_via_tokens`,
-`crates/dcps/tests/security_matrix_e2e.rs::matrix_data_protection_all_kinds`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_5_2_4_serialized_payload_cross_plugin_via_tokens`,
+`crates/dcps/tests/security_matrix_e2e.rs::security_8_1_matrix_data_protection_all_kinds`
 
 **Status:** done
 
@@ -11809,8 +11815,8 @@ SEC_POSTFIX; AAD empty.
 **Repo:** `crates/security-crypto/src/plugin.rs::assemble_secure_submessages`
 (l. 1116), `seal_cyclone` (l. 278)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::cyclone_volatile_submessage_roundtrips`,
-`crates/dcps/tests/security_matrix_e2e.rs::matrix_metadata_protection_all_kinds`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips`,
+`crates/dcps/tests/security_matrix_e2e.rs::security_8_1_1_matrix_metadata_protection_all_kinds`
 
 **Status:** done
 
@@ -11823,7 +11829,7 @@ Authenticated Data is set to the RTPS Header and RTPS HeaderExtension."
 
 **Repo:** `crates/security/src/cryptographic.rs`::CryptoTransform; `crates/security-crypto/src/plugin/spec.rs`; called by the gate: `crates/security-runtime/src/gate_crypto.rs::CryptoLayer`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::an_rtps_message_goes_through_the_interface_with_aad_and_a_header_extension`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_an_rtps_message_goes_through_the_interface_with_aad_and_a_header_extension`
 
 **Status:** `done` — GMAC and GCM with header and HeaderExtension as AAD. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11839,8 +11845,8 @@ Extension."
 **Repo:** `crates/security-crypto/src/plugin.rs::encode_rtps_message_cyclone`
 (l. 1655), `assemble_srtps_message` (l. 956)
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::srtps_cyclone_cross_instance_roundtrip`,
-`crates/security-runtime/src/shared.rs::tests::transform_outbound_for_sign_also_uses_srtps_encoder`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip`,
+`crates/security-runtime/src/shared.rs::tests::security_10_5_3_3_4_6_2_transform_outbound_for_sign_also_uses_srtps_encoder`
 
 **Status:** done
 
@@ -11856,7 +11862,7 @@ obtain the proper SessionReceiverSpecificKeys and SessionKey."
 
 **Repo:** `crates/security-crypto/src/plugin.rs::open_cyclone`; `crates/security-crypto/src/plugin/spec.rs`
 
-**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::a_kind_other_than_the_expected_one_is_refused`, `crates/security-crypto/src/plugin.rs::tests::a_header_kind_other_than_the_keys_is_refused`
+**Tests:** `crates/security-crypto/src/plugin/spec.rs::tests::security_10_5_3_3_1_a_kind_other_than_the_expected_one_is_refused`, `crates/security-crypto/src/plugin.rs::tests::security_10_5_3_3_5_a_header_kind_other_than_the_keys_is_refused`
 
 **Status:** `done` — The kind in the header is compared with the expected one and with that of the material. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -11870,7 +11876,7 @@ SessionReceiverSpecificKey".
 
 **Repo:** `crates/security-crypto/src/plugin.rs::seal_cyclone`, `footer_tail`, `receiver_mac`, `check_receiver_mac`, `open_submessage`
 
-**Tests:** `crates/security-crypto/src/plugin.rs::tests::the_receiver_specific_mac_is_the_one_of_the_spec`, `::a_reader_checks_the_origin_of_a_submessage_by_its_own_key`, `::decrypt_rejects_tampered_ciphertext`
+**Tests:** `crates/security-crypto/src/plugin.rs::tests::security_10_4_1_2_2_the_receiver_specific_mac_is_the_one_of_the_spec`, `::security_10_4_1_2_2_a_reader_checks_the_origin_of_a_submessage_by_its_own_key`, `::security_8_1_1_decrypt_rejects_tampered_ciphertext`
 
 **Status:** `done` — `common_mac` under the SessionKey; the MACs for single receivers are the AES-GMAC on the `common_mac` under the SessionReceiverSpecificKey with the IV of the header. A receiver with a key of its own requires its MAC and checks it.
 
@@ -11885,7 +11891,7 @@ publishing information to a DDS Topic BuiltinLoggingTopic defined below."
 **Repo:** `crates/security-logging/src/log_topic.rs::LogTopicLoggingPlugin`
 (l. 554), `plugin_class_id` (l. 728)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::plugin_class_id_is_the_spec_name`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_10_1_plugin_class_id_is_the_spec_name`
 
 **Status:** done
 
@@ -11899,9 +11905,9 @@ BuiltinLoggingTypeV2 defined in the IDL below."
 `crates/dcps/src/security_log_topic.rs::log_topic_publisher_for_participant`
 (l. 344), `DdsType for BuiltinLoggingTypeV2` (l. 122, `TYPE_NAME`)
 
-**Tests:** `crates/dcps/tests/security_log_topic_e2e.rs::a_security_event_reaches_the_v2_log_topic`,
-`crates/dcps/tests/security_log_topic_e2e.rs::the_topic_names_are_the_clause_names`,
-`crates/dcps/src/security_log_topic.rs::tests::the_type_names_are_the_idl_names`
+**Tests:** `crates/dcps/tests/security_log_topic_e2e.rs::security_9_6_2_1_3_a_security_event_reaches_the_v2_log_topic`,
+`crates/dcps/tests/security_log_topic_e2e.rs::security_10_6_the_topic_names_are_the_clause_names`,
+`crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_type_names_are_the_idl_names`
 
 **Status:** done
 
@@ -11919,8 +11925,8 @@ separate DataWriters."
 `crates/security-logging/src/from_properties.rs::PROP_LOG_BUILTIN_LEGACY_TOPIC`
 (l. 76)
 
-**Tests:** `crates/dcps/tests/security_log_topic_e2e.rs::the_legacy_topic_is_published_when_configured`,
-`crates/security-logging/src/log_topic.rs::tests::legacy_topic_is_published_when_asked`
+**Tests:** `crates/dcps/tests/security_log_topic_e2e.rs::security_10_6_the_legacy_topic_is_published_when_configured`,
+`crates/security-logging/src/log_topic.rs::tests::security_10_6_legacy_topic_is_published_when_asked`
 
 **Status:** done — switched on through the property
 `dds.sec.log.builtin.DDS_LogTopic.legacy_topic`, a name in the reserved
@@ -11948,8 +11954,8 @@ DEBUG_LEVEL };"
 **Repo:** `crates/security-logging/src/log_topic.rs::LoggingLevel` (l. 59);
 `crates/dcps/src/security_log_topic.rs::severity_from_u32` (l. 50)
 
-**Tests:** `crates/dcps/src/security_log_topic.rs::tests::an_unknown_severity_is_refused_not_guessed`,
-`crates/dcps/src/security_log_topic.rs::tests::the_v2_codec_writes_the_idl_octets`
+**Tests:** `crates/dcps/src/security_log_topic.rs::tests::security_10_6_an_unknown_severity_is_refused_not_guessed`,
+`crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_v2_codec_writes_the_idl_octets`
 
 **Status:** done — values 0 to 7 in IDL order, 32 bits on the wire.
 §9.6.2.1.1 names other levels (FATAL_LEVEL to TRACE_LEVEL; contradiction in the specification).
@@ -11964,8 +11970,8 @@ NameValuePairSeq;" and "map<string, NameValuePairSeq> structured_data;"
 `NameValuePairSeq` (l. 207);
 `crates/dcps/src/security_log_topic.rs::write_structured_data` (l. 85)
 
-**Tests:** `crates/dcps/src/security_log_topic.rs::tests::the_v2_codec_writes_the_idl_octets`,
-`crates/dcps/src/security_log_topic.rs::tests::the_v2_codec_round_trips`
+**Tests:** `crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_v2_codec_writes_the_idl_octets`,
+`crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_v2_codec_round_trips`
 
 **Status:** done — map and sequence each carry a DHEADER, the NameValuePair
 elements carry none.
@@ -11978,8 +11984,8 @@ nanosec; }; struct Time_t { long long sec; unsigned long nanosec; };"
 **Repo:** `crates/security-logging/src/log_topic.rs::LegacyTime` (l. 214),
 `Time` (l. 226)
 
-**Tests:** `crates/dcps/src/security_log_topic.rs::tests::the_legacy_codec_round_trips_with_a_32_bit_second`,
-`crates/dcps/src/security_log_topic.rs::tests::the_v2_codec_writes_the_idl_octets`
+**Tests:** `crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_legacy_codec_round_trips_with_a_32_bit_second`,
+`crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_v2_codec_writes_the_idl_octets`
 
 **Status:** done
 
@@ -11995,8 +12001,8 @@ string msgid; string message; map<string, NameValuePairSeq> structured_data;
 (l. 271); `crates/dcps/src/security_log_topic.rs::DdsType for BuiltinLoggingType`
 (l. 179)
 
-**Tests:** `crates/dcps/src/security_log_topic.rs::tests::the_legacy_codec_round_trips_with_a_32_bit_second`,
-`crates/dcps/tests/security_log_topic_e2e.rs::the_legacy_topic_is_published_when_configured`
+**Tests:** `crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_legacy_codec_round_trips_with_a_32_bit_second`,
+`crates/dcps/tests/security_log_topic_e2e.rs::security_10_6_the_legacy_topic_is_published_when_configured`
 
 **Status:** done
 
@@ -12011,8 +12017,8 @@ structured_data; };"
 (l. 297); `crates/dcps/src/security_log_topic.rs::DdsType for BuiltinLoggingTypeV2`
 (l. 122, XCDR2 with DHEADER)
 
-**Tests:** `crates/dcps/src/security_log_topic.rs::tests::the_v2_codec_writes_the_idl_octets`,
-`crates/dcps/src/security_log_topic.rs::tests::a_reader_skips_unknown_trailing_member_octets`
+**Tests:** `crates/dcps/src/security_log_topic.rs::tests::security_10_6_the_v2_codec_writes_the_idl_octets`,
+`crates/dcps/src/security_log_topic.rs::tests::security_10_6_a_reader_skips_unknown_trailing_member_octets`
 
 **Status:** done — the reference value of the test is hand-built in the same
 repository; no comparison with bytes from other vendors exists.
@@ -12030,8 +12036,8 @@ application string procid; // Process name/ID for syslog system string msgid;
 (l. 51), `BuiltinLoggingTypeV2::from_log_event` (l. 407),
 `BuiltinLoggingType::from_log_event` (l. 433), `Time::now` (l. 236)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::an_event_fills_every_field_from_the_clause`,
-`crates/security-logging/src/log_topic.rs::tests::legacy_topic_is_published_when_asked`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_an_event_fills_every_field_from_the_clause`,
+`crates/security-logging/src/log_topic.rs::tests::security_10_6_legacy_topic_is_published_when_asked`
 
 **Status:** done — `hostname` from `HOSTNAME`/`COMPUTERNAME`, `hostip` from
 `ZERODDS_HOSTIP`, else empty; `msgid` is the `category` argument.
@@ -12052,7 +12058,7 @@ treated according to the following topic rule: <topic_rule>
 (l. 115), `effective_topic_rule` (l. 392, the builtin rule takes precedence
 over the governance document)
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_builtin_log_topic_rule_allows_any_write_and_gates_reads`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_6_the_builtin_log_topic_rule_allows_any_write_and_gates_reads`
 
 **Status:** done — the rule applies to both names. The text gives only the
 name of the earlier version's topic as `topic_expression` (contradiction in the specification).
@@ -12067,8 +12073,8 @@ permissions document."
 
 **Repo:** `crates/security-permissions/src/governance.rs::check_create_datawriter`, `check_create_datareader`; `crates/security-runtime/src/shared.rs::check_remote_datawriter`, `check_remote_datareader`
 
-**Tests:** `crates/security-permissions/src/governance.rs::tests::the_builtin_log_topic_rule_allows_any_write_and_gates_reads`,
-`crates/security-runtime/src/shared.rs::tests::a_log_topic_is_written_without_a_grant_and_read_only_with_one`
+**Tests:** `crates/security-permissions/src/governance.rs::tests::security_10_6_the_builtin_log_topic_rule_allows_any_write_and_gates_reads`,
+`crates/security-runtime/src/shared.rs::tests::security_10_6_a_log_topic_is_written_without_a_grant_and_read_only_with_one`
 
 **Status:** `done` — local and remote endpoints, both names of the log topic.
 ### §10.6 Protection of the DDS:Security:LogTopicV2 endpoints by the builtin rule
@@ -12078,8 +12084,8 @@ permissions document."
 
 **Repo:** `crates/security-runtime/src/shared.rs::SharedSecurityGate::endpoint_protection_kinds`, `topic_*_protected` (via `effective_topic_rule`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::the_endpoints_of_the_log_topics_are_protected_by_the_builtin_rule`,
-`crates/security-runtime/src/shared.rs::tests::the_builtin_log_topic_rule_carries_its_protection`
+**Tests:** `crates/dcps/src/runtime.rs::tests::security_10_6_the_endpoints_of_the_log_topics_are_protected_by_the_builtin_rule`,
+`crates/security-runtime/src/shared.rs::tests::security_10_6_the_builtin_log_topic_rule_carries_its_protection`
 
 **Status:** `done` — key material, announced mask and read/write protection of the endpoints of both log topics follow the builtin rule (SIGN, ENCRYPT, read with a grant).
 ### §10.6.1 Table 82 — set_log_options: DataWriter only with distribute
@@ -12093,9 +12099,9 @@ BuiltinLoggingTopic if it is FALSE, it shall not."
 `crates/security-logging/src/from_properties.rs::logging_plugin_from_properties_with_publisher`
 (l. 259)
 
-**Tests:** `crates/dcps/tests/security_log_properties_e2e.rs::builtin_sink_with_distribute_off_is_file_only`,
-`crates/security-logging/src/from_properties.rs::tests::distribute_off_needs_no_publisher`,
-`crates/security-logging/src/log_topic.rs::tests::distribute_off_publishes_nothing`
+**Tests:** `crates/dcps/tests/security_log_properties_e2e.rs::security_10_6_1_builtin_sink_with_distribute_off_is_file_only`,
+`crates/security-logging/src/from_properties.rs::tests::security_10_6_1_distribute_off_needs_no_publisher`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_distribute_off_publishes_nothing`
 
 **Status:** done — the participant creates the DataWriter when it is created,
 not `LogTopicLoggingPlugin::set_log_options`; that method receives the
@@ -12109,8 +12115,8 @@ name indicated in the log_file parameter."
 **Repo:** `crates/security-logging/src/log_topic.rs::set_log_options`
 (l. 624), `open_log_file` (l. 183)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::log_options_write_one_line_per_event_at_or_below_the_level`,
-`crates/security-logging/src/log_topic.rs::tests::an_unopenable_log_file_is_refused`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_2_an_unopenable_log_file_is_refused`
 
 **Status:** done
 
@@ -12122,8 +12128,8 @@ the log_level so that it can be used during the log operation."
 **Repo:** `crates/security-logging/src/log_topic.rs::set_log_options`
 (l. 624)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::options_cannot_change_after_logging_is_enabled`,
-`crates/security-logging/src/log_topic.rs::tests::log_options_write_one_line_per_event_at_or_below_the_level`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_options_cannot_change_after_logging_is_enabled`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level`
 
 **Status:** done
 
@@ -12135,8 +12141,8 @@ without performing any action."
 
 **Repo:** `crates/security-logging/src/control.rs::LogControl::admit`; `LogTopicLoggingPlugin::log`
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::log_before_enable_logging_does_nothing`,
-`crates/security-logging/src/control.rs::tests::log_before_enable_logging_does_nothing`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_10_6_1_log_before_enable_logging_does_nothing`,
+`crates/security-logging/src/control.rs::tests::security_10_6_1_log_before_enable_logging_does_nothing`
 
 **Status:** `done` — before `enable_logging` there is no file line, no publication and no listener call.
 ### §10.6.1 Table 82 — log: comparison with the stored log_level
@@ -12149,8 +12155,8 @@ actions".
 
 **Repo:** `crates/security-logging/src/log_topic.rs::log` (l. 712)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::events_above_the_level_are_dropped_and_at_or_below_pass`,
-`crates/security-logging/src/log_topic.rs::tests::log_options_write_one_line_per_event_at_or_below_the_level`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_10_6_1_events_above_the_level_are_dropped_and_at_or_below_pass`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level`
 
 **Status:** done
 
@@ -12162,8 +12168,8 @@ the file opened by the set_log_options operation."
 
 **Repo:** `crates/security-logging/src/control.rs::file_line`
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::log_options_write_one_line_per_event_at_or_below_the_level`,
-`crates/security-logging/src/log_topic.rs::tests::a_field_with_a_newline_stays_on_one_line`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level`,
+`crates/security-logging/src/log_topic.rs::tests::security_10_6_1_a_field_with_a_newline_stays_on_one_line`
 
 **Status:** done — one line per message; line breaks inside fields are
 escaped.
@@ -12179,8 +12185,8 @@ BuiltinLoggingTopic created by the set_log_options operation."
 **Repo:** `crates/security-logging/src/log_topic.rs::log` (l. 723),
 `publish` (l. 677)
 
-**Tests:** `crates/dcps/tests/security_log_topic_e2e.rs::a_security_event_reaches_the_v2_log_topic`,
-`crates/security-logging/src/log_topic.rs::tests::distribute_off_publishes_nothing`
+**Tests:** `crates/dcps/tests/security_log_topic_e2e.rs::security_9_6_2_1_3_a_security_event_reaches_the_v2_log_topic`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_distribute_off_publishes_nothing`
 
 **Status:** done — BuiltinLoggingTypeV2 is published on
 `DDS:Security:LogTopicV2` as in §10.6, BuiltinLoggingType in addition on
@@ -12195,8 +12201,8 @@ operation."
 **Repo:** `crates/security-logging/src/log_topic.rs::enable_logging`
 (l. 645)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::log_options_write_one_line_per_event_at_or_below_the_level`,
-`crates/security-logging/src/log_topic.rs::tests::enable_without_options_is_refused`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level`,
+`crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_enable_without_options_is_refused`
 
 **Status:** done
 
@@ -12208,8 +12214,8 @@ message is produced."
 
 **Repo:** `crates/security-logging/src/log_topic.rs::LogTopicLoggingPlugin` (`LoggingPlugin::set_listener`)
 
-**Tests:** `crates/security-logging/src/log_topic.rs::tests::the_listener_is_told_of_each_message_the_sink_logs`,
-`crates/security-logging/src/control.rs::tests::the_listener_hears_each_logged_message`
+**Tests:** `crates/security-logging/src/log_topic.rs::tests::security_9_6_2_2_the_listener_is_told_of_each_message_the_sink_logs`,
+`crates/security-logging/src/control.rs::tests::security_9_6_2_2_the_listener_hears_each_logged_message`
 
 **Status:** `done` — the listener is notified of each logged message.
 
@@ -12225,7 +12231,7 @@ Participants."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — `DDS:Auth:PSK` authenticates nobody; `validate_remote_identity` always fails. The handshake with keys that carried this name is `PskHandshakeAuthenticationPlugin` with classes of its own (`ZeroDDS:Auth:PSK-Handshake:1.0`).
 
@@ -12237,7 +12243,7 @@ active is implementation specific."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — `validate_local_identity` needs no property.
 
@@ -12252,7 +12258,7 @@ and BinaryProperty_t names shall comply with the rules defined in 7.3.1 and
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — the IdentityToken carries the `class_id` only.
 
@@ -12264,8 +12270,8 @@ attributes are specified or required."
 
 **Repo:** `crates/security-pki/src/psk.rs::SPEC_CLASS_ID`, `PskAuthenticationPlugin::get_identity_token`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::token_roundtrip_via_data_holder_codec`,
-`crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_10_7_2_1_token_roundtrip_via_data_holder_codec`,
+`crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** done — the token of the spec plugin `PskAuthenticationPlugin` carries the `class_id` only and no properties (`the_spec_plugin_authenticates_nobody`); the handshake plugin of ZeroDDS (`PskHandshakeAuthenticationPlugin`) has a class of its own, `ZeroDDS:Auth:PSK-Handshake:1.0`, and carries `dds.psk.identity_id` (see
 §10.7.2). Table 52 (§10.3.2.1, p. 228) names the property `dds.psk.algo`
@@ -12281,7 +12287,7 @@ equal to 'DDS:Auth:PSK', MajorVersion set to 1, and MinorVersion set to 2."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`, `crates/security-pki/src/psk.rs::tests::the_handshake_classes_are_not_the_spec_class`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`, `crates/security-pki/src/psk.rs::tests::security_7_3_5_1_the_handshake_classes_are_not_the_spec_class`
 
 **Status:** `done` — the plugin does not evaluate the class of a remote token; `validate_remote_identity` fails for every token.
 
@@ -12306,7 +12312,7 @@ The DDS:Auth:PSK plugin does not use this Token."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — the plugin knows no handshake tokens; the handshake operations fail.
 
@@ -12320,7 +12326,7 @@ same value as the input participant_guid."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — `validate_local_identity` always returns a handle (VALIDATION_OK); the GUID stays as it is.
 
@@ -12331,7 +12337,7 @@ specified in 10.7.2.1".
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — token of the class `DDS:Auth:PSK:1.2` with no other attribute.
 
@@ -12341,7 +12347,7 @@ specified in 10.7.2.1".
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — TokenNIL (empty).
 
@@ -12352,7 +12358,7 @@ return TRUE."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin::set_participant_security_config`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::table_83_set_participant_security_config_and_credential_do_nothing`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_set_participant_security_config_and_credential_do_nothing`
 
 **Status:** `done` — does nothing and returns the given info (TRUE).
 
@@ -12363,7 +12369,7 @@ return TRUE."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin::set_permissions_credential_and_token`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::table_83_set_participant_security_config_and_credential_do_nothing`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_set_participant_security_config_and_credential_do_nothing`
 
 **Status:** `done` — does nothing and returns TRUE, for empty or arbitrary tokens too.
 
@@ -12374,7 +12380,7 @@ VALIDATION_FAILED."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — always refused (`AuthenticationFailed`).
 
@@ -12389,7 +12395,7 @@ validate_remote_identity always returns VALIDATION_FAILED."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::the_spec_plugin_authenticates_nobody`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_the_spec_plugin_authenticates_nobody`
 
 **Status:** `done` — `begin_handshake_request`, `begin_handshake_reply`, `process_handshake` and `shared_secret` fail.
 
@@ -12400,7 +12406,7 @@ to the listener object and associate it with the specified IdentityHandle."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin::set_listener`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::table_83_set_listener_saves_the_listener`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_set_listener_saves_the_listener`
 
 **Status:** `done` — saves the listener (`None` removes it); it is never called, because the plugin authenticates nothing and revokes nothing.
 
@@ -12412,7 +12418,7 @@ specified in 9.3.2.11.14." (return_identity_token), "[...] 9.3.2.11.15."
 
 **Repo:** `crates/security-pki/src/psk.rs::PskAuthenticationPlugin::return_identity_token`, `return_identity_status_token`, `return_identity_handle`
 
-**Tests:** `crates/security-pki/src/psk.rs::tests::table_83_the_return_operations_take_back_what_was_issued`
+**Tests:** `crates/security-pki/src/psk.rs::tests::security_9_3_2_11_table_83_the_return_operations_take_back_what_was_issued`
 
 **Status:** `done` — behave as §9.3.2.11.14, .15 and .18: only what was issued goes back, once; TokenNIL (the status) is taken back as an empty token.
 
@@ -12428,7 +12434,7 @@ as publish and subscribe to any DDS Topic in that domain."
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::permissions_token_class_id_matches_spec`, `::a_remote_is_accepted_whatever_it_presents`, `::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::security_10_8_permissions_token_class_id_matches_spec`, `::security_10_8_a_remote_is_accepted_whatever_it_presents`, `::security_10_8_every_check_returns_true`
 
 **Status:** `done` — all checks of Table 85 permit; no document is needed.
 
@@ -12442,7 +12448,7 @@ Domain." Prefix `dds.sec.access.`, `propagate` FALSE.
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`::validate_local_permissions, `RtpsPskProtection`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::permissions_token_class_id_matches_spec`, `::a_remote_is_accepted_whatever_it_presents`, `::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::security_10_8_permissions_token_class_id_matches_spec`, `::security_10_8_a_remote_is_accepted_whatever_it_presents`, `::security_10_8_every_check_returns_true`
 
 **Status:** `done` — NONE, SIGN or ENCRYPT, ENCRYPT when absent, another value is refused.
 
@@ -12466,7 +12472,7 @@ set."
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::permissions_token_class_id_matches_spec`, `::a_remote_is_accepted_whatever_it_presents`, `::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::security_10_8_permissions_token_class_id_matches_spec`, `::security_10_8_a_remote_is_accepted_whatever_it_presents`, `::security_10_8_every_check_returns_true`
 
 **Status:** `done` — class `DDS:Access:PSK:1.2`.
 
@@ -12491,7 +12497,7 @@ to encode the value of the PluginEndpointSecurityAttributes".
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::the_participant_topic_instance_and_match_checks_return_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_3_the_participant_topic_instance_and_match_checks_return_true`
 
 **Status:** `done` — the three operations return TRUE.
 
@@ -12503,7 +12509,7 @@ to encode the value of the PluginEndpointSecurityAttributes".
 `check_create_datareader`, `check_remote_datawriter_match`,
 `check_remote_datareader_match`)
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_every_check_returns_true`
 
 **Status:** `done` — every one of the checks returns TRUE, for topics a grant would
 deny too; an unknown handle stays an error.
@@ -12518,7 +12524,7 @@ check_remote_datawriter_dispose_instance: "This operation shall return TRUE."
 
 **Repo:** `crates/security-permissions/src/psk_access.rs`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::the_participant_topic_instance_and_match_checks_return_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_3_the_participant_topic_instance_and_match_checks_return_true`
 
 **Status:** `done` — the operations return TRUE.
 
@@ -12529,7 +12535,7 @@ PermissionsToken formatted as described in 10.8.2.2."
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`::get_permissions_token
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::permissions_token_class_id_matches_spec`, `::a_remote_is_accepted_whatever_it_presents`, `::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::security_10_8_permissions_token_class_id_matches_spec`, `::security_10_8_a_remote_is_accepted_whatever_it_presents`, `::security_10_8_every_check_returns_true`
 
 **Status:** `done` — token per §10.8.2.2.
 
@@ -12540,7 +12546,7 @@ PermissionsToken formatted as described in 10.8.2.1".
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`::get_permissions_credential_token
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::permissions_token_class_id_matches_spec`, `::a_remote_is_accepted_whatever_it_presents`, `::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::security_10_8_permissions_token_class_id_matches_spec`, `::security_10_8_a_remote_is_accepted_whatever_it_presents`, `::security_10_8_every_check_returns_true`
 
 **Status:** `done` — token of the same class (the value is implementation specific, §10.8.2.1).
 
@@ -12554,7 +12560,7 @@ in 9.4.2.9.20" (return_permissions_token), "[...] 9.4.2.9.21"
 
 **Repo:** `crates/security-permissions/src/psk_access.rs`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — `set_listener` keeps the reference; the returns take only tokens that were issued.
 
@@ -12566,7 +12572,7 @@ implementation-specific saved information."
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::permissions_token_class_id_matches_spec`, `::a_remote_is_accepted_whatever_it_presents`, `::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::security_10_8_permissions_token_class_id_matches_spec`, `::security_10_8_a_remote_is_accepted_whatever_it_presents`, `::security_10_8_every_check_returns_true`
 
 **Status:** `done` — always succeeds, without a document.
 
@@ -12578,7 +12584,7 @@ implementation-specific saved information."
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::PskPermissionsAccessControl`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::permissions_token_class_id_matches_spec`, `::a_remote_is_accepted_whatever_it_presents`, `::every_check_returns_true`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_nothing_is_needed_and_the_rtps_psk_protection_is_read`, `::security_10_8_permissions_token_class_id_matches_spec`, `::security_10_8_a_remote_is_accepted_whatever_it_presents`, `::security_10_8_every_check_returns_true`
 
 **Status:** `done` — always succeeds, token and credential arbitrary.
 
@@ -12598,7 +12604,7 @@ CRYPTO_ALGORITHM_SET_EMPTY".
 
 **Repo:** `crates/security-permissions/src/psk_access.rs::get_participant_security_config`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::the_participant_config_is_the_one_of_table_85`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_10_8_3_the_participant_config_is_the_one_of_table_85`
 
 **Status:** `done` — the config is that of Table 85.
 
@@ -12612,7 +12618,7 @@ CRYPTO_ALGORITHM_SET_ALL [...] required_mask [...] CRYPTO_ALGORITHM_SET_EMPTY".
 
 **Repo:** `crates/security-permissions/src/psk_access.rs`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::the_topic_and_endpoint_configs_are_all_false`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_the_topic_and_endpoint_configs_are_all_false`
 
 **Status:** `done` — all values are FALSE.
 
@@ -12623,7 +12629,7 @@ specified in 9.4.2.9.26" to "[...] 9.4.2.9.29."
 
 **Repo:** `crates/security-permissions/src/psk_access.rs`
 
-**Tests:** `crates/security-permissions/src/psk_access.rs::tests::listener_and_return_operations`
+**Tests:** `crates/security-permissions/src/psk_access.rs::tests::security_9_4_2_9_listener_and_return_operations`
 
 **Status:** `done` — the four returns take only configs that were issued.
 
@@ -12638,7 +12644,7 @@ same described in 10.5."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin`; `crates/security-runtime/src/psk_gate.rs`; `crates/dcps/src/runtime.rs::secure_inbound_bytes`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_transform_of_table_89`, `crates/security-runtime/src/psk_gate.rs::tests::the_gate_protects_a_message_with_the_pre_shared_key`, `crates/dcps/src/runtime.rs::tests::a_pre_shared_key_protects_the_bootstrapping_messages`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_the_transform_of_table_89`, `crates/security-runtime/src/psk_gate.rs::tests::security_9_4_2_4_the_gate_protects_a_message_with_the_pre_shared_key`, `crates/dcps/src/runtime.rs::tests::security_9_4_2_4_a_pre_shared_key_protects_the_bootstrapping_messages`
 
 **Status:** `done` — With a passphrase set the runtime protects whole messages (bootstrap with flags A and P) and refuses unprotected ones. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log` and `-p zerodds-dcps --features security --lib` (7 tests), log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051258.log`.
 
@@ -12653,7 +12659,7 @@ Domain." Prefix `dds.sec.crypto.`.
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::key_bits_from_cipher`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_passphrase_rules_of_table_86`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_5_1_2_the_passphrase_rules_of_table_86`
 
 **Status:** `done` — AUTO is AES256-GCM; the names of Table 22 select the width.
 
@@ -12670,7 +12676,7 @@ URI schemas are: 'file' and 'data'."
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::psk_crypto_config_from_properties`, `crates/security-crypto/src/psk_rtps.rs::Passphrase`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_psk_crypto_properties_of_table_86_are_read`, `crates/security-crypto/src/psk_rtps.rs::tests::the_passphrase_rules_of_table_86`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_5_1_2_the_psk_crypto_properties_of_table_86_are_read`, `crates/security-crypto/src/psk_rtps.rs::tests::security_10_5_1_2_the_passphrase_rules_of_table_86`
 
 **Status:** `done` — mandatory; `file:` and `data:`; id up to 2^32-1 without 0xFF as the low octet; passphrase of up to 512 printable characters without a space at either end.
 
@@ -12684,9 +12690,14 @@ the next using the LineFeed (\n, character 10), the CarryReturn (\r, character
 
 **Repo:** `crates/security-runtime/src/qos_properties.rs::psk_crypto_config_from_properties`, `crates/security-crypto/src/psk_rtps.rs::parse_passphrase_list`
 
-**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::the_psk_crypto_properties_of_table_86_are_read`, `crates/security-crypto/src/psk_rtps.rs::tests::an_alternative_passphrase_decodes`
+**Tests:** `crates/security-runtime/src/qos_properties.rs::tests::security_10_5_1_2_the_psk_crypto_properties_of_table_86_are_read`, `crates/security-runtime/src/qos_properties.rs::tests::security_10_9_1_the_alternative_passphrases_are_read_under_the_names_of_the_spec`, `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_1_an_alternative_passphrase_decodes`
 
 **Status:** `done` — list separated by LF, CR or both; accepted in decoding.
+Read under the name of the table, `dds.sec.crypto.rtps_psk_secret_passphrase_alt`
+("all properties have `dds.sec.crypto.` prefix"), and under the one of
+Table 71, `dds.sec.crypto.rtps_psk_secret_passphrase_extra`. The names
+`org.zerodds.sec.crypto.rtps_psk_secret_passphrase_{alt,extra}` read before
+still apply; each name that is set adds its passphrases.
 
 ### §10.9.2 and §10.9.2.1 CryptoToken as for DDS:Crypto:AES-GCM-GMAC
 
@@ -12696,7 +12707,7 @@ needed as the pre-shared Keys are not sent over the network."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_exchange_of_table_88`, `crates/security-crypto/src/psk_rtps.rs::tests::the_key_material_is_the_one_the_spec_prints`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_2_the_key_exchange_of_table_88`, `crates/security-crypto/src/psk_rtps.rs::tests::security_10_5_2_1_3_the_key_material_is_the_one_the_spec_prints`
 
 **Status:** `done` — The key material is derived, no token is sent (Table 88: FALSE); 16 octets of salt for AES128. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -12708,7 +12719,7 @@ using the same algorithm described in 10.5.2.1.3."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::derive_key_material`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_material_is_the_one_the_spec_prints`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_5_2_1_3_the_key_material_is_the_one_the_spec_prints`
 
 **Status:** `done` — per §10.5.2.1.3.
 
@@ -12721,9 +12732,9 @@ wasy as the DDS:Crypto:AES-GCM-GMAC CryptoTransformIdentifier, see 10.5.2.2."
 **Repo:** `crates/security-crypto/src/psk_plugin.rs::encrypt_submessage`
 (l. 344), `decrypt_submessage` (l. 355)
 
-**Tests:** `crates/security-crypto/src/psk_plugin.rs::tests::transform_kind_id_aes128_matches_x509_path`,
-`crates/security-crypto/src/psk_plugin.rs::tests::transform_kind_id_aes256_matches_x509_path`,
-`crates/security-crypto/src/psk_plugin.rs::tests::psk_encrypt_decrypt_roundtrip_two_plugins_same_psk`
+**Tests:** `crates/security-crypto/src/psk_plugin.rs::tests::security_10_9_2_2_transform_kind_id_aes128_matches_x509_path`,
+`crates/security-crypto/src/psk_plugin.rs::tests::security_10_9_2_2_transform_kind_id_aes256_matches_x509_path`,
+`crates/security-crypto/src/psk_plugin.rs::tests::security_10_9_2_2_psk_encrypt_decrypt_roundtrip_two_plugins_same_psk`
 
 **Status:** done — the formats are those of the embedded
 `AesGcmCryptoPlugin`; its deviations (§10.5) apply here as well.
@@ -12750,7 +12761,7 @@ ParticipantKeyMaterial."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin::register_local_participant_for`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::a_message_goes_through_encode_and_decode`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_a_message_goes_through_encode_and_decode`
 
 **Status:** `done` — ParticipantKeyMaterial from the key material of the passphrase.
 
@@ -12771,7 +12782,7 @@ plugins to only accept the resulting set of supported algorithms".
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::CryptoKeyFactory`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_factory_of_table_87`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_the_key_factory_of_table_87`
 
 **Status:** `done` — `adjusted_algorithm_info`: `supported_mask` of the property, builtin masks empty, rest zero; the `supported_mask` of the config is stored. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -12785,7 +12796,7 @@ Handle."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::CryptoKeyFactory`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_factory_of_table_87`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_the_key_factory_of_table_87`
 
 **Status:** `done` — The registrations return a dummy handle (not HandleNIL), `revise_local_entity_keys` the revision 0. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -12796,7 +12807,7 @@ return FALSE."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::CryptoKeyFactory`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_factory_of_table_87`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_the_key_factory_of_table_87`
 
 **Status:** `done` — Does nothing and returns FALSE. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -12808,7 +12819,7 @@ register_matched_remote_participant." (likewise for writers and readers).
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::CryptoKeyFactory`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_factory_of_table_87`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_the_key_factory_of_table_87`
 
 **Status:** `done` — As operations of the specification. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -12822,7 +12833,7 @@ create_local_datareader_crypto_tokens, set_remote_datareader_crypto_tokens:
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin` (CryptographicPlugin)
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_other_operations_do_nothing`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_2_the_other_operations_do_nothing`
 
 **Status:** `done` — `create_*` and `set_remote_*_crypto_tokens` do nothing and fail (`NotImplemented`, the return value FALSE in the interface).
 
@@ -12833,7 +12844,7 @@ with the CryptoToken objects in the sequence."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::CryptoKeyExchange`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_key_exchange_of_table_88`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_2_the_key_exchange_of_table_88`
 
 **Status:** `done` — Releases tokens; the plugin issues none. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -12844,7 +12855,7 @@ and return FALSE."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin` (CryptographicPlugin)
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_other_operations_do_nothing`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_2_the_other_operations_do_nothing`
 
 **Status:** `done` — `encode_serialized_payload`, the submessage operations and `decode_serialized_payload` do nothing and fail.
 
@@ -12859,7 +12870,7 @@ ParticipantKeyMaterial associated with the sending_participant_crypto."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin::encode_rtps_message`, `crates/security-crypto/src/plugin.rs::PskRtpsKey`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::a_message_goes_through_encode_and_decode`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_a_message_goes_through_encode_and_decode`
 
 **Status:** `done` — `transform_with_psk` is the operation `encode_rtps_message_psk`; empty `receiver_specific_macs`: the plugin writes none.
 
@@ -12877,7 +12888,7 @@ Header and (if present) the (adjusted) HeaderExtension as AAD".
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin::encode_rtps_message`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::a_message_goes_through_encode_and_decode`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_a_message_goes_through_encode_and_decode`
 
 **Status:** `done` — RTPS Header, SRTPS_PREFIX with A and P, SEC_BODY, SRTPS_POSTFIX; tag over the body with header and HeaderExtension as AAD.
 
@@ -12892,7 +12903,7 @@ ParticipantKeyMaterial associated with the sending_participant_crypto."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin::encode_rtps_message`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::a_message_goes_through_encode_and_decode`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_1_a_message_goes_through_encode_and_decode`
 
 **Status:** `done` — GMAC: the body stays, the tag covers AAD and body.
 
@@ -12907,7 +12918,7 @@ appropriate values of the messageLength and messageChecksum elements".
 
 **Repo:** `crates/security-crypto/src/plugin.rs::adjust_header_extension`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::a_header_extension_with_a_checksum_is_adjusted_both_ways`, `crates/security-crypto/src/psk_rtps.rs::tests::a_header_extension_is_kept_and_its_length_set`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_3_1_a_header_extension_with_a_checksum_is_adjusted_both_ways`, `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_3_1_a_header_extension_is_kept_and_its_length_set`
 
 **Status:** `done` — `messageLength` and `messageChecksum` zero in the AAD, then the values of the encoded message; the decoded message gets those of the decoded message. run `cargo test -p zerodds-security -p zerodds-security-crypto -p zerodds-security-pki -p zerodds-security-permissions -p zerodds-security-runtime`: green, log `/root/zerodds-rc7/agent-logs/sec-crypto-1018-051206.log`.
 
@@ -12924,7 +12935,7 @@ previously computed) PSK Key Material associated with the sending Participant
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin::decode_rtps_message`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::what_does_not_hold_is_refused`, `::an_alternative_passphrase_decodes`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_3_1_what_does_not_hold_is_refused`, `::security_10_9_1_an_alternative_passphrase_decodes`
 
 **Status:** `done` — expected kind, key of the sender from the RTPS Header and the passphrase (primary or alternative), domain.
 
@@ -12941,7 +12952,7 @@ message."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin::decode_rtps_message`, `crates/security-crypto/src/plugin.rs::parse_psk_wire`
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::what_does_not_hold_is_refused`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_3_1_what_does_not_hold_is_refused`
 
 **Status:** `done` — without the flag A or P the decode fails; header and HeaderExtension (length and checksum zero) are in the AAD.
 
@@ -12952,7 +12963,7 @@ nothing and return FALSE."
 
 **Repo:** `crates/security-crypto/src/psk_rtps.rs::PskCryptoPlugin` (CryptographicPlugin)
 
-**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::the_other_operations_do_nothing`
+**Tests:** `crates/security-crypto/src/psk_rtps.rs::tests::security_10_9_3_2_the_other_operations_do_nothing`
 
 **Status:** `done` — do nothing and fail.
 
@@ -12983,8 +12994,8 @@ un-annotated types."
 `crates/security/src/generic_message.rs::ParticipantGenericMessage::to_cdr`
 (l. 138)
 
-**Tests:** `crates/security/src/token.rs::tests::cdr_le_layout_class_id_only`,
-`crates/security/src/generic_message.rs::tests::message_data_dataholder_is_inline_not_length_prefixed`
+**Tests:** `crates/security/src/token.rs::tests::security_7_3_1_2_cdr_le_layout_class_id_only`,
+`crates/security/src/generic_message.rs::tests::security_7_3_1_2_message_data_dataholder_is_inline_not_length_prefixed`
 
 **Status:** done — the specification's types are written as XCDR1, where
 APPENDABLE and FINAL are encoded the same way (§7.3.1.2). The types of the
@@ -13002,11 +13013,11 @@ the DDS-JAVA5+ specification".
 
 **Repo:** `crates/security/idl/dds_security.idl`; `crates/security/tests/idl_bindings/`; `crates/security/examples/dds_security_bindings.rs`
 
-**Tests:** `crates/security/tests/dds_security_bindings.rs::c_representation_compiles_and_the_logging_operations_link`,
-`crates/security/tests/dds_security_bindings.rs::cpp_classic_representation_compiles_and_the_logging_interface_is_implementable`,
-`crates/security/tests/dds_security_bindings.rs::cpp11_representation_compiles_without_a_cpp11_only_feature`,
-`crates/security/tests/dds_security_bindings.rs::java_classic_representation_compiles_and_the_logging_interface_is_implementable`,
-`crates/security/tests/dds_security_bindings.rs::java_modern_representation_maps_module_dds_to_org_omg_dds`
+**Tests:** `crates/security/tests/dds_security_bindings.rs::security_11_1_c_representation_compiles_and_the_logging_operations_link`,
+`crates/security/tests/dds_security_bindings.rs::security_11_1_cpp_classic_representation_compiles_and_the_logging_interface_is_implementable`,
+`crates/security/tests/dds_security_bindings.rs::security_11_1_cpp11_representation_compiles_without_a_cpp11_only_feature`,
+`crates/security/tests/dds_security_bindings.rs::security_11_1_java_classic_representation_compiles_and_the_logging_interface_is_implementable`,
+`crates/security/tests/dds_security_bindings.rs::security_11_1_java_modern_representation_maps_module_dds_to_org_omg_dds`
 
 **Status:** `done` — all five representations are generated from `dds_security.idl` and compiled with the language's compiler; the Logging interface is implemented with the generated signatures. The base types of the ORB mappings and of the DDS-STD-C++ PSM are stand-ins in the tests. Placing a plugin of the application written in C, C++ or Java into a participant is listed in §11.3, §11.4 and §11.5 (Authentication, AccessControl, Cryptographic, Logging, DataTagging).
 ### §11.2 IDL representation: PIM to PSM rules and dds_security.idl
@@ -13020,11 +13031,11 @@ Security specification."
 
 **Repo:** `crates/security/idl/dds_security.idl`
 
-**Tests:** `crates/security/tests/dds_security_idl.rs::the_file_parses_as_omg_idl`,
-`crates/security/tests/dds_security_idl.rs::no_operation_has_an_out_parameter`,
-`crates/security/tests/dds_security_idl.rs::authentication_has_the_operations_of_table_29`,
-`crates/security/tests/dds_security_idl.rs::access_control_has_the_operations_of_table_39`,
-`crates/security/tests/dds_security_idl.rs::crypto_key_factory_has_the_operations_of_table_42`
+**Tests:** `crates/security/tests/dds_security_idl.rs::security_11_2_the_file_parses_as_omg_idl`,
+`crates/security/tests/dds_security_idl.rs::security_11_2_no_operation_has_an_out_parameter`,
+`crates/security/tests/dds_security_idl.rs::security_11_2_authentication_has_the_operations_of_table_29`,
+`crates/security/tests/dds_security_idl.rs::security_11_2_access_control_has_the_operations_of_table_39`,
+`crates/security/tests/dds_security_idl.rs::security_11_2_crypto_key_factory_has_the_operations_of_table_42`
 
 **Status:** `done` — the file is there, parses as IDL 4.2, has no `out` parameter and, per interface, the operations of its table.
 ### §11.3 C language representation
@@ -13035,12 +13046,12 @@ dds_security.idl file."
 
 **Repo:** `crates/security/tests/idl_bindings/c.rs`
 
-**Tests:** `crates/security/tests/dds_security_bindings.rs::c_representation_compiles_and_the_logging_operations_link`,
-`crates/zerodds-c-api/tests/plugin_languages.rs::a_plugin_in_c_is_placed_into_a_participant`,
-`crates/zerodds-c-api/src/plugin_ffi/security_plugins.rs::tests::the_handshake_goes_through_the_c_functions`,
-`crates/zerodds-c-api/src/plugin_ffi/security_plugins.rs::tests::tokens_and_transforms_go_through_the_c_functions`
+**Tests:** `crates/security/tests/dds_security_bindings.rs::security_11_1_c_representation_compiles_and_the_logging_operations_link`,
+`crates/zerodds-c-api/tests/plugin_languages.rs::security_11_3_a_plugin_in_c_is_placed_into_a_participant`,
+`crates/zerodds-c-api/src/plugin_ffi/security_plugins.rs::tests::security_11_3_the_handshake_goes_through_the_c_functions`,
+`crates/zerodds-c-api/src/plugin_ffi/security_plugins.rs::tests::security_11_3_tokens_and_transforms_go_through_the_c_functions`
 
-**Status:** `done` — header by the rules of IDL2C, compiled as C99. A plugin of the application in C (Authentication, AccessControl, Cryptographic, Logging, DataTagging) is placed into a participant through the structs of `zerodds_security_plugins.h` and called by the runtime at the points of §9.8; these structs are not an IDL2C mapping of `dds_security.idl`. Authentication and Cryptographic of the application: `zerodds_runtime_create_secure` takes them instead of the PKI and AES-GCM path from files; a Cryptographic plugin without an Authentication plugin is refused; the paths of the configuration (governance, permissions CA, identity files if set) go to `validate_local_identity` as the properties of Table 50, governance and permissions CA are required. Checked are the calls of §9.3.2.11 and §9.8.1 (tokens given back, credential before config, `register_local_participant` once, volatile endpoints named, protected writer registered, `destroy` once each) and the passing of the structures. Not checked: a handshake and encoding and decoding between two runtimes with plugins of the application; the passing of the structures of those operations is checked by the Rust tests `plugin_ffi::security_plugins::tests::the_handshake_goes_through_the_c_functions` and `::tokens_and_transforms_go_through_the_c_functions` and the size checks (`SIZE_IS`) in the C test. Green on the Linux test host: `/root/zerodds-rc7/agent-logs/sec-behavior-1018-105526.log` (C, C++, Rust), Java on the Linux test host `/root/agent-cargo/logs/sec-behavior-1018-104914.log`.
+**Status:** `done` — header by the rules of IDL2C, compiled as C99. A plugin of the application in C (Authentication, AccessControl, Cryptographic, Logging, DataTagging) is placed into a participant through the structs of `zerodds_security_plugins.h` and called by the runtime at the points of §9.8; these structs are not an IDL2C mapping of `dds_security.idl`. Authentication and Cryptographic of the application: `zerodds_runtime_create_secure` takes them instead of the PKI and AES-GCM path from files; a Cryptographic plugin without an Authentication plugin is refused; the paths of the configuration (governance, permissions CA, identity files if set) go to `validate_local_identity` as the properties of Table 50, governance and permissions CA are required. Checked are the calls of §9.3.2.11 and §9.8.1 (tokens given back, credential before config, `register_local_participant` once, volatile endpoints named, protected writer registered, `destroy` once each) and the passing of the structures. Not checked: a handshake and encoding and decoding between two runtimes with plugins of the application; the passing of the structures of those operations is checked by the Rust tests `plugin_ffi::security_plugins::tests::security_11_3_the_handshake_goes_through_the_c_functions` and `::security_11_3_tokens_and_transforms_go_through_the_c_functions` and the size checks (`SIZE_IS`) in the C test. Green on the Linux test host: `/root/zerodds-rc7/agent-logs/sec-behavior-1018-105526.log` (C, C++, Rust), Java on the Linux test host `/root/agent-cargo/logs/sec-behavior-1018-104914.log`.
 ### §11.4 C++ classic representation
 
 **Spec:** §11.4, p. 348 — "The C++ classic (without the use of the C++
@@ -13049,8 +13060,8 @@ obtained using the IDL2C++ mapping [7] to the dds_security.idl file."
 
 **Repo:** `crates/security/tests/idl_bindings/cpp.rs`
 
-**Tests:** `crates/security/tests/dds_security_bindings.rs::cpp_classic_representation_compiles_and_the_logging_interface_is_implementable`,
-`crates/zerodds-c-api/tests/plugin_languages.rs::a_plugin_in_cpp_is_placed_into_a_participant`
+**Tests:** `crates/security/tests/dds_security_bindings.rs::security_11_1_cpp_classic_representation_compiles_and_the_logging_interface_is_implementable`,
+`crates/zerodds-c-api/tests/plugin_languages.rs::security_11_4_a_plugin_in_cpp_is_placed_into_a_participant`
 
 **Status:** `done` — header by IDL2C++ without the standard library, compiled as C++98. A plugin of the application in C++ (Authentication, AccessControl, Cryptographic, Logging, DataTagging; abstract classes in `zerodds_security_plugins.hpp`, C++11) is placed into a participant.
 ### §11.5 Java classic
@@ -13061,8 +13072,8 @@ dds_security.idl file."
 
 **Repo:** `crates/security/tests/idl_bindings/java.rs`
 
-**Tests:** `crates/security/tests/dds_security_bindings.rs::java_classic_representation_compiles_and_the_logging_interface_is_implementable`,
-`crates/zerodds-c-api/tests/plugin_languages.rs::a_plugin_in_java_is_placed_into_a_participant`
+**Tests:** `crates/security/tests/dds_security_bindings.rs::security_11_1_java_classic_representation_compiles_and_the_logging_interface_is_implementable`,
+`crates/zerodds-c-api/tests/plugin_languages.rs::security_11_5_a_plugin_in_java_is_placed_into_a_participant`
 
 **Status:** `done` — classes by IDL2Java (struct, holder, helper, operations interface), compiled with `javac`. A plugin of the application in Java (Authentication, AccessControl, Cryptographic, Logging, DataTagging; `org.zerodds.security`, JDK 21 with `--enable-preview`, foreign function interface) is placed into a participant.
 ### §11.6 C++11 representation with five exceptions
@@ -13078,7 +13089,7 @@ type dds::code::xtypes::DynamicData".
 
 **Repo:** `crates/security/tests/idl_bindings/cpp.rs` (`Dialect::Cxx11`)
 
-**Tests:** `crates/security/tests/dds_security_bindings.rs::cpp11_representation_compiles_without_a_cpp11_only_feature`
+**Tests:** `crates/security/tests/dds_security_bindings.rs::security_11_1_cpp11_representation_compiles_without_a_cpp11_only_feature`
 
 **Status:** `done` — the five exceptions: namespace `dds`, no C++11-only feature (compiled as C++98), `dds::core::array`, `dds::core::safe_enum`, `dds::core::xtypes::DynamicData`.
 ### §11.7 Java modern with two exceptions
@@ -13092,7 +13103,7 @@ org.omg.dds.type.dynamic.DynamicData".
 
 **Repo:** `crates/security/tests/idl_bindings/java.rs` (`Dialect::Modern`)
 
-**Tests:** `crates/security/tests/dds_security_bindings.rs::java_modern_representation_maps_module_dds_to_org_omg_dds`
+**Tests:** `crates/security/tests/dds_security_bindings.rs::security_11_1_java_modern_representation_maps_module_dds_to_org_omg_dds`
 
 **Status:** `done` — module `DDS` is the package `org.omg.dds`, DynamicData is `org.omg.dds.type.dynamic.DynamicData`.
 
@@ -13115,7 +13126,29 @@ org.omg.dds.type.dynamic.DynamicData".
 
 ## Audit-Status
 
-803 done / 0 partial / 0 open / 88 n/a (informative) / 0 n/a (rejected).
+803 done / 0 partial / 0 open / 0 blocked / 88 n/a (informative).
 
-Test run: to be added on the Linux test host.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-security-1.2.md`):
 
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (job `merge-rust-c-api`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 18 tests green.
+* `cargo nextest run --profile merge -p zerodds-discovery --all-targets` (job `merge-rust-discovery`) — 58 tests green.
+* `cargo nextest run --profile merge -p zerodds-qos --all-targets` (job `merge-rust-qos`) — 4 tests green.
+* `cargo nextest run --profile merge -p zerodds-routing-service --all-targets` (job `merge-rust-routing-service`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 53 tests green.
+* `cargo nextest run --profile merge -p zerodds-secure-permissions --all-targets` (job `merge-rust-secure-permissions`) — 6 tests green.
+* `cargo nextest run --profile merge -p zerodds-security --all-targets` (job `merge-rust-security`) — 45 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-crypto --all-targets` (job `merge-rust-security-crypto`) — 91 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-keyexchange --all-targets` (job `merge-rust-security-keyexchange`) — 8 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-logging --all-targets` (job `merge-rust-security-logging`) — 19 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-permissions --all-targets` (job `merge-rust-security-permissions`) — 93 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-pki --all-targets` (job `merge-rust-security-pki`) — 111 tests green.
+* `cargo nextest run --profile merge -p zerodds-security-rtps --all-targets` (job `merge-rust-security-rtps`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-security-runtime --all-targets` (job `merge-rust-security-runtime`) — 61 tests green.
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets --features security` (job `merge-rust-c-api-features-security`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets --features security` (job `merge-rust-dcps-features-security`) — 91 tests green.
+* `python3 ci/run_integration.py integration-sdk` (job `integration-sdk`) — 3 tests green.
+
+666 cited tests green, 0 not green.
+
+Open items: none.

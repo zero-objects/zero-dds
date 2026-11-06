@@ -128,6 +128,17 @@ DDS topic name.
 Fully-qualified IDL type. Defaults to
 .BR name .
 .TP
+.B idl_file
+An IDL file that declares
+.BR type .
+With it the daemon sends and takes the topic's samples as the JSON text
+frames of the
+.I zerodds-ws-bridge-1.0+json
+subprotocol, and keys the topic's reader and writer when the type has a key
+member. The daemon does not start when the file does not compile or does not
+declare the type. Without it a JSON-mode client of the topic gets an error
+frame (code 415).
+.TP
 .B direction
 .IR in " | " out " | " bidir .
 .I in
@@ -140,10 +151,9 @@ both. Default
 .IR bidir .
 A publish to a topic that is not bridged into DDS, or a subscribe to one
 that is not bridged out of DDS, is answered with an error frame
-(code 404, reason
-.I not-bridged-into-dds
-or
-.IR not-bridged-out-of-dds ).
+(code 404, its
+.I message
+names the topic and the direction).
 .TP
 .B ws_path
 HTTP path clients connect to. Defaults to

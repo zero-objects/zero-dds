@@ -349,20 +349,22 @@ pub struct AmqpBridgeConfig {
 mod tests {
     use super::*;
 
+    /// Spec §9.1, Annex A `enum SaslMechanism`: the enumerator names.
     #[test]
-    fn sasl_mechanism_idl_round_trip() {
-        for m in [
-            SaslMechanism::SaslPlain,
-            SaslMechanism::SaslAnonymous,
-            SaslMechanism::SaslExternal,
-            SaslMechanism::SaslScramSha256,
+    fn ddsamqp_9_1_the_sasl_mechanisms_are_the_enumerators_of_annex_a() {
+        for (m, name) in [
+            (SaslMechanism::SaslPlain, "SASL_PLAIN"),
+            (SaslMechanism::SaslAnonymous, "SASL_ANONYMOUS"),
+            (SaslMechanism::SaslExternal, "SASL_EXTERNAL"),
+            (SaslMechanism::SaslScramSha256, "SASL_SCRAM_SHA_256"),
         ] {
-            assert_eq!(SaslMechanism::parse(m.as_idl()), Some(m));
+            assert_eq!(m.as_idl(), name);
+            assert_eq!(SaslMechanism::parse(name), Some(m));
         }
     }
 
     #[test]
-    fn sasl_mechanism_accepts_amqp_wire_aliases() {
+    fn ddsamqp_9_1_sasl_mechanism_accepts_amqp_wire_aliases() {
         assert_eq!(
             SaslMechanism::parse("PLAIN"),
             Some(SaslMechanism::SaslPlain)
@@ -381,14 +383,17 @@ mod tests {
         );
     }
 
+    /// Spec §9.1, Annex A `enum BodyEncodingMode`: the enumerator names,
+    /// `MODE_PASSTHROUGH` the default.
     #[test]
-    fn body_encoding_mode_idl_round_trip() {
-        for m in [
-            BodyEncodingMode::ModePassthrough,
-            BodyEncodingMode::ModeJson,
-            BodyEncodingMode::ModeAmqpNative,
+    fn ddsamqp_9_1_the_body_encoding_modes_are_the_enumerators_of_annex_a() {
+        for (m, name) in [
+            (BodyEncodingMode::ModePassthrough, "MODE_PASSTHROUGH"),
+            (BodyEncodingMode::ModeJson, "MODE_JSON"),
+            (BodyEncodingMode::ModeAmqpNative, "MODE_AMQP_NATIVE"),
         ] {
-            assert_eq!(BodyEncodingMode::parse(m.as_idl()), Some(m));
+            assert_eq!(m.as_idl(), name);
+            assert_eq!(BodyEncodingMode::parse(name), Some(m));
         }
         assert_eq!(
             BodyEncodingMode::default(),
@@ -397,22 +402,22 @@ mod tests {
     }
 
     #[test]
-    fn descriptor_form_default_is_truncated() {
+    fn ddsamqp_9_1_descriptor_form_default_is_truncated() {
         assert_eq!(DescriptorForm::default(), DescriptorForm::DescTruncated);
     }
 
     #[test]
-    fn time_mapping_default_is_standard() {
+    fn ddsamqp_9_1_time_mapping_default_is_standard() {
         assert_eq!(TimeMapping::default(), TimeMapping::MappingStandard);
     }
 
     #[test]
-    fn link_direction_default_is_both() {
+    fn ddsamqp_9_1_link_direction_default_is_both() {
         assert_eq!(LinkDirection::default(), LinkDirection::DirBoth);
     }
 
     #[test]
-    fn topic_mapping_defaults_match_spec() {
+    fn ddsamqp_9_1_topic_mapping_defaults_match_spec() {
         let t = TopicMapping::default();
         assert_eq!(t.dds_domain_id, 0);
         assert_eq!(t.mode, BodyEncodingMode::ModePassthrough);
@@ -424,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_config_default_is_empty() {
+    fn ddsamqp_9_1_endpoint_config_default_is_empty() {
         let c = AmqpEndpointConfig::default();
         assert!(c.endpoint_name.is_empty());
         assert!(c.topics.is_empty());
@@ -432,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn resource_limits_default_has_dos_caps() {
+    fn ddsamqp_9_1_resource_limits_default_has_dos_caps() {
         let l = ResourceLimits::default();
         assert!(l.max_connections > 0);
         assert!(l.max_frame_size >= 65_536);
@@ -440,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn link_direction_amqp_aliases() {
+    fn ddsamqp_9_1_link_direction_amqp_aliases() {
         assert_eq!(
             LinkDirection::parse("producer-to-dds"),
             Some(LinkDirection::DirProducerToDds)

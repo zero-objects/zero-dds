@@ -17,10 +17,11 @@
 //!
 //! ## When a toolchain is missing
 //!
-//! The test names the compiler it could not find and passes. That is a
-//! loud skip and not a silent one: the message says which column went
-//! unchecked, so a run on a host without `javac` does not read as a run
-//! that checked Java.
+//! The test fails and names the compiler it could not find. The C++ and
+//! TypeScript columns run in the crate tier, whose image carries `c++`,
+//! `node` and `tsc`; the Java column is `#[ignore]` there and runs in the
+//! integration pillar's job `integration-bridges-vendor-amqp`, which installs a
+//! JDK (`ci/integration_scenarios.py`).
 
 #![allow(
     clippy::expect_used,
@@ -207,12 +208,14 @@ fn scratch(name: &str) -> PathBuf {
     path
 }
 
-fn have(program: &str) -> bool {
-    Command::new(program)
+/// Fails the test when `program` does not answer `--version`.
+fn require(program: &str) {
+    let found = Command::new(program)
         .arg("--version")
         .output()
         .map(|output| output.status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+    assert!(found, "`{program}` is not on PATH; this column needs it");
 }
 
 fn write(directory: &Path, name: &str, contents: &str) -> PathBuf {
@@ -253,21 +256,7 @@ fn split_output(text: &str, column: &str) -> (String, String) {
 // ---------------------------------------------------------------------
 
 #[test]
-fn the_rust_reference_round_trips_through_the_wire_codec() {
-    let ast = model();
-    let plans = plans(&ast);
-    let plan = plans.get("probe::Sample").expect("the plan");
-    let value = described_composite(&plans, plan, &sample(), EncodeOptions::default())
-        .expect("the reference encoding");
-    let octets = value.encode().expect("octets");
-    let (back, consumed) =
-        zerodds_amqp_bridge::AmqpExtValue::decode(&octets).expect("the codec reads it back");
-    assert_eq!(consumed, octets.len());
-    assert_eq!(back, value);
-}
-
-#[test]
-fn the_reference_json_is_a_valid_rfc_8259_document() {
+fn ddsamqp_c_1_12_the_reference_json_is_a_valid_rfc_8259_document() {
     // Annex C §C.1.12 — "a sample with MODE_JSON is valid RFC-8259
     // JSON." Checked structurally: balanced braces and brackets outside
     // strings, no trailing comma, and every key quoted.
@@ -308,13 +297,8 @@ fn the_reference_json_is_a_valid_rfc_8259_document() {
 }
 
 #[test]
-fn the_emitted_cpp_writes_the_same_octets_and_the_same_json() {
-    if !have("c++") {
-        eprintln!(
-            "SKIPPED: no `c++` on PATH, so the emitted C++ column went unchecked in this run"
-        );
-        return;
-    }
+fn ddsamqp_c_1_12_the_emitted_cpp_writes_the_same_octets_and_the_same_json() {
+    require("c++");
     let ast = model();
     let plans = plans(&ast);
     let plan = plans.get("probe::Sample").expect("the plan");
@@ -359,13 +343,9 @@ fn the_emitted_cpp_writes_the_same_octets_and_the_same_json() {
 }
 
 #[test]
-fn the_emitted_java_writes_the_same_octets_and_the_same_json() {
-    if !have("javac") {
-        eprintln!(
-            "SKIPPED: no `javac` on PATH, so the emitted Java column went unchecked in this run"
-        );
-        return;
-    }
+#[ignore = "needs a JDK (javac, java); runs in integration-bridges-vendor-amqp"]
+fn ddsamqp_c_1_12_the_emitted_java_writes_the_same_octets_and_the_same_json() {
+    require("javac");
     let ast = model();
     let plans = plans(&ast);
     let plan = plans.get("probe::Sample").expect("the plan");
@@ -428,19 +408,9 @@ fn the_emitted_java_writes_the_same_octets_and_the_same_json() {
 }
 
 #[test]
-fn the_emitted_typescript_writes_the_same_octets_and_the_same_json() {
-    if !have("node") {
-        eprintln!(
-            "SKIPPED: no `node` on PATH, so the emitted TypeScript column went unchecked in this run"
-        );
-        return;
-    }
-    if !have("tsc") {
-        eprintln!(
-            "SKIPPED: no `tsc` on PATH, so the emitted TypeScript column went unchecked in this run"
-        );
-        return;
-    }
+fn ddsamqp_c_1_12_the_emitted_typescript_writes_the_same_octets_and_the_same_json() {
+    require("node");
+    require("tsc");
     let ast = model();
     let plans = plans(&ast);
     let plan = plans.get("probe::Sample").expect("the plan");

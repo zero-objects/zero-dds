@@ -26,18 +26,20 @@ pub fn expand_env_vars(input: &str) -> String {
     let chars: Vec<char> = input.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        if i + 1 < chars.len() && chars[i] == '$' && chars[i + 1] == '{' {
-            if let Some(end) = chars[i + 2..].iter().position(|&c| c == '}') {
-                let inner: String = chars[i + 2..i + 2 + end].iter().collect();
-                let (name, default) = match inner.split_once(":-") {
-                    Some((n, d)) => (n.to_string(), Some(d.to_string())),
-                    None => (inner, None),
-                };
-                let value = std::env::var(&name).ok().or(default).unwrap_or_default();
-                out.push_str(&value);
-                i += 2 + end + 1;
-                continue;
-            }
+        if i + 1 < chars.len()
+            && chars[i] == '$'
+            && chars[i + 1] == '{'
+            && let Some(end) = chars[i + 2..].iter().position(|&c| c == '}')
+        {
+            let inner: String = chars[i + 2..i + 2 + end].iter().collect();
+            let (name, default) = match inner.split_once(":-") {
+                Some((n, d)) => (n.to_string(), Some(d.to_string())),
+                None => (inner, None),
+            };
+            let value = std::env::var(&name).ok().or(default).unwrap_or_default();
+            out.push_str(&value);
+            i += 2 + end + 1;
+            continue;
         }
         out.push(chars[i]);
         i += 1;

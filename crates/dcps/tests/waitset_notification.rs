@@ -78,7 +78,7 @@ fn undelivered_sample_condition(reader: &DataReader<RawBytes>) -> Arc<ReadCondit
 /// condition as the triggered one, and the sample is then read in the
 /// application's own thread.
 #[test]
-fn data_arrival_unblocks_a_waitset_waiting_on_a_read_condition() {
+fn dcps_2_2_2_1_6_3_data_arrival_unblocks_a_waitset_waiting_on_a_read_condition() {
     let (_p, _subr, r) = reader_setup("WaitSetChatter");
     let cond = undelivered_sample_condition(&r);
     let ws = WaitSet::new();
@@ -122,7 +122,7 @@ fn data_arrival_unblocks_a_waitset_waiting_on_a_read_condition() {
 /// §2.2.4.6: with both mechanisms enabled the listener runs first and the
 /// wait-sets are signalled afterwards — one arrival, both notified.
 #[test]
-fn a_listener_and_a_waitset_both_see_the_same_arrival() {
+fn dcps_2_2_4_6_a_listener_and_a_waitset_both_see_the_same_arrival() {
     let (_p, _subr, r) = reader_setup("CombinedChatter");
     let counter = Arc::new(AvailableCounter::default());
     r.set_listener(

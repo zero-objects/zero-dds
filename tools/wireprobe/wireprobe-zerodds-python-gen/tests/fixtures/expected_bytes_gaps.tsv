@@ -1,0 +1,5 @@
+# Cells of tests/interop-corpus/expected-bytes.tsv the Python column does not
+# reproduce, each with its OPEN-ITEMS.md entry, or `-` for a refusal
+# docs/language-limits.md documents. Read by tests/expected_bytes.rs: a
+# cell listed here that passes fails the test.
+# dialect	case/sample	encoding	endian	open-item	reason

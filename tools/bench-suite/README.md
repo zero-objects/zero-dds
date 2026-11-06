@@ -38,8 +38,7 @@ sudo ./benches/hosts/llvm/tune.sh off
 ```
 
 The generated reports are under `target/criterion/` — raw JSON +
-HTML plots. Baseline exports as Markdown under
-`internal/perf/baseline-<host>-<date>.md`.
+HTML plots.
 
 ## Design decisions
 
@@ -90,15 +89,22 @@ Output: stdout p50/p90/p99/p999/p9999/p99999 + min/max/n;
 `tools/bench-suite` only measures the ZeroDDS path. Cross-vendor
 comparisons against Cyclone DDS (`ddsperf`) + FastDDS
 (`LatencyTestPublisher`) run via the live interop harness in
-`internal/interop/`.
+`tests/interop/`.
 
 ## Regression gate
 
-After every tag, the CI is meant to:
+The bin `regression` measures the p50 of the cross-process round trip
+(UDPv4, TCPv4, SHM and the same-host channel, 64 and 4096 B) of two
+builds of `roundtrip-1us` in turn, in the same window: the build beside
+it and the one `--reference` names (in CI a build of the last release
+tag with the same `roundtrip_1us.rs`). Each side runs five repetitions
+per cell, the order swapped every repetition; a cell fails when the
+median p50 of the checked build lies above the reference's by more than
+its tolerance (`TOLERANCE_PCT` in `src/bin/regression.rs`, from the
+spread of one build measured against itself). It needs leased DDS
+domains:
 
-1. Load the frozen baseline from the repo.
-2. Run `cargo bench -- --baseline <tag>`.
-3. Fail on regression: > 10 % degradation of p50 at any
-   (bench, size) point breaks the build.
-
-Currently manual — automation is material for a follow-up sprint.
+```text
+python3 tests/integration/with_domains.py 3 -- \
+    target/release/regression --reference <release build>/roundtrip-1us
+```

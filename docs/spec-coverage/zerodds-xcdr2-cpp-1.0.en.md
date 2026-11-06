@@ -12,8 +12,8 @@ The mechanism this column shares with the other twenty — the two walks, the fr
 
 **Repo:** `crates/lang-cst/src/cpp/`, `crates/lang-render/src/cpp.rs`
 
-**Tests:** `crates/lang-render/tests/rendering.rs`: `a_cpp_class_renders_its_access_sections_in_order`, `a_cpp_accessor_with_one_statement_stays_on_one_line`, `a_cpp_constructor_with_initialisers_puts_them_on_their_own_line`, `a_cpp_expression_brackets_only_where_the_tree_asked_for_it`, `a_cpp_namespace_body_is_not_indented`, `a_cpp_template_specialisation_renders_its_header_above_the_declaration`;
-across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/tests/rendering.rs`: `xtypes_7_5_1_a_cpp_class_renders_its_access_sections_in_order`, `xtypes_7_5_1_a_cpp_accessor_with_one_statement_stays_on_one_line`, `xtypes_7_5_1_a_cpp_constructor_with_initialisers_puts_them_on_their_own_line`, `xtypes_7_5_1_a_cpp_expression_brackets_only_where_the_tree_asked_for_it`, `xtypes_7_5_1_a_cpp_namespace_body_is_not_indented`, `xtypes_7_5_1_a_cpp_template_specialisation_renders_its_header_above_the_declaration`;
+across all renderers `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/rule/cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/cpp`, endpoint SDK `endpoints/cpp`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,7 +78,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_long_double_is_the_runtime_type_and_never_the_compiler_s`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_1_2_a_long_double_is_the_runtime_type_and_never_the_compiler_s`
 
 **Status:** done
 
@@ -89,8 +89,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_optional_member_is_a_plain_pointer_and_not_a_second_field`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::an_optional_member_gets_a_reader`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_2_4_2_an_optional_member_is_a_plain_pointer_and_not_a_second_field`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_gets_a_reader`
 
 **Status:** done
 
@@ -101,7 +101,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs`
 
 **Status:** done
 
@@ -111,7 +111,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_array_nests_with_the_outer_dimension_outermost`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::idl4cpp_7_2_4_1_an_array_nests_with_the_outer_dimension_outermost`
 
 **Status:** done
 
@@ -121,8 +121,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::an_enumeration_takes_an_underlying_type_from_its_bit_bound`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::an_enumeration_whose_first_literal_is_not_zero`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_an_enumeration_whose_first_literal_is_not_zero`
 
 **Status:** done
 
@@ -132,8 +132,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::a_union_gets_a_reader`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_4_a_union_is_a_class_with_a_discriminator_and_one_field_per_case`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_3_a_union_gets_a_reader`
 
 **Status:** done
 
@@ -143,8 +143,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_module_is_a_namespace_and_not_a_prefix`,
-`crates/lang-rules/src/adapter/cpp.rs::tests::a_reference_across_modules_is_written_from_the_root`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::idl4cpp_7_2_2_a_module_is_a_namespace_and_not_a_prefix`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::idl_7_5_2_a_reference_across_modules_is_written_from_the_root`
 
 **Status:** done
 
@@ -154,8 +154,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
-`crates/lang-rules/src/adapter/cpp.rs::tests::an_any_member_is_refused_by_name_at_any_depth`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::idl_7_2_3_an_any_member_is_refused_by_name_at_any_depth`
 
 **Status:** done
 
@@ -165,7 +165,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::every_kind_table_9_answers_for_gets_a_defaulter`
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_every_kind_table_9_answers_for_gets_a_defaulter`
 
 **Status:** done
 
@@ -175,9 +175,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::an_appendable_struct_gets_a_reader`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::a_mutable_struct_gets_a_reader`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::a_bounded_string_gets_a_reader`
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_4_3_an_appendable_struct_gets_a_reader`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_4_3_a_mutable_struct_gets_a_reader`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_4_3_a_bounded_string_gets_a_reader`
 
 **Status:** done
 
@@ -187,10 +187,10 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/interface.rs`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_two_abstract_classes_of_rule_one`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_prefixes_a_reserved_word_with_cxx`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_prefixes_a_reserved_word_with_cxx`
 
 **Status:** done
 
@@ -202,7 +202,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/cpp.rs`, `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
 
 **Status:** done
 
@@ -212,7 +212,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/cpp.rs`, `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_places_all_six_slots_in_spec_order`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::xtypes_7_2_2_4_8_2_cpp_places_all_six_slots_in_spec_order`
 
 **Status:** done
 
@@ -224,8 +224,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -235,8 +235,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-cpp-gen/`, `tools/wireprobe/wireprobe-zerodds-cpp`, `tools/wireprobe/wireprobe-cpp-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -244,8 +243,15 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ## Audit Status
 
-21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-cpp-1.0.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (job `merge-rust-lang-render`) — 28 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 24 tests green.
+* `python3 ci/run_integration.py merge-codegen-cpp` (job `merge-codegen-cpp`) — 7 tests green.
+
+61 cited tests green, 0 not green.
+
+Open items: none.

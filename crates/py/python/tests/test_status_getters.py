@@ -25,7 +25,7 @@ def _make_writer_reader(domain: int):
     return writer, reader
 
 
-def test_publication_matched_status_shape():
+def py_1_2_7_publication_matched_status_shape():
     """§2.5 — publication_matched_status returns
     `(total_count, total_count_change, current_count, current_count_change, last_subscription_handle)`
     per DDS 1.4 §2.2.4.6 PublicationMatchedStatus."""
@@ -41,7 +41,7 @@ def test_publication_matched_status_shape():
     assert last_handle == 0  # HANDLE_NIL
 
 
-def test_subscription_matched_status_shape():
+def py_1_2_8_subscription_matched_status_shape():
     """§2.5 — DDS 1.4 §2.2.4.5 SubscriptionMatchedStatus."""
     _w, reader = _make_writer_reader(141)
     status = reader.subscription_matched_status()
@@ -50,7 +50,7 @@ def test_subscription_matched_status_shape():
     assert status == (0, 0, 0, 0, 0)
 
 
-def test_liveliness_lost_status_shape():
+def py_1_2_7_liveliness_lost_status_shape():
     """§2.5 — DDS 1.4 §2.2.4.2 LivelinessLostStatus = (total_count, total_count_change)."""
     writer, _r = _make_writer_reader(142)
     status = writer.liveliness_lost_status()
@@ -59,7 +59,7 @@ def test_liveliness_lost_status_shape():
     assert status == (0, 0)
 
 
-def test_offered_deadline_missed_status_shape():
+def py_1_2_7_offered_deadline_missed_status_shape():
     """§2.5 — DDS 1.4 §2.2.4.1 OfferedDeadlineMissedStatus = (total_count, total_count_change)."""
     writer, _r = _make_writer_reader(143)
     status = writer.offered_deadline_missed_status()
@@ -68,7 +68,7 @@ def test_offered_deadline_missed_status_shape():
     assert status == (0, 0)
 
 
-def test_sample_lost_status_shape():
+def py_1_2_8_sample_lost_status_shape():
     """§2.5 — DDS 1.4 §2.2.4.3 SampleLostStatus = (total_count, total_count_change)."""
     _w, reader = _make_writer_reader(144)
     status = reader.sample_lost_status()
@@ -77,7 +77,7 @@ def test_sample_lost_status_shape():
     assert status == (0, 0)
 
 
-def test_requested_deadline_missed_status_shape():
+def py_1_2_8_requested_deadline_missed_status_shape():
     """§2.5 — DDS 1.4 §2.2.4.4 RequestedDeadlineMissedStatus = (total_count, total_count_change)."""
     _w, reader = _make_writer_reader(145)
     status = reader.requested_deadline_missed_status()
@@ -86,11 +86,11 @@ def test_requested_deadline_missed_status_shape():
     assert status == (0, 0)
 
 
-def test_matched_subscription_count_zero_offline():
+def py_2_4_matched_subscription_count_zero_offline():
     writer, _r = _make_writer_reader(146)
     assert writer.matched_subscription_count() == 0
 
 
-def test_matched_publication_count_zero_offline():
+def py_1_2_11_matched_publication_count_zero_offline():
     _w, reader = _make_writer_reader(147)
     assert reader.matched_publication_count() == 0

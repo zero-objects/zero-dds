@@ -434,6 +434,34 @@ fn the_exact_decimal_reads_back_as_the_same_pattern() {
     }
 }
 
+/// IEEE 754-2019 §5.12.2: a decimal string converts correctly rounded,
+/// however many digits it has, and a tie goes to the even neighbour
+/// (§4.3.1). The parser reads the first forty significant digits of a
+/// long string and every digit only near a rounding boundary; these are
+/// strings where the forty decide nothing. `TIE` is `1 + 2^-113`, the
+/// midpoint between one and its successor, written out exactly (Python's
+/// `decimal` at 400 digits); `2^-113` has 113 decimal places.
+#[test]
+fn ieee754_5_12_2_a_long_decimal_is_rounded_by_every_digit_near_a_tie() {
+    const TIE: &str = "1.00000000000000000000000000000000009629649721936179265279889712924636592690508241076940976199693977832794189453125";
+    const ONE: u128 = 0x3fff_0000_0000_0000_0000_0000_0000_0000;
+    const SUCCESSOR: u128 = ONE + 1;
+    const SIGN: u128 = 1 << 127;
+    // The tie less and more than 10^-200.
+    let below = format!("{}4{}", &TIE[..TIE.len() - 1], "9".repeat(200 - 113));
+    let above = format!("{TIE}{}1", "0".repeat(200 - 113 - 1));
+    for (text, bits) in [(TIE, ONE), (&below, ONE), (&above, SUCCESSOR)] {
+        let value: Float128 = text.parse().expect("a decimal");
+        assert_eq!(value.to_bits(), bits, "{text}");
+        let negative: Float128 = format!("-{text}").parse().expect("a decimal");
+        assert_eq!(negative.to_bits(), SIGN | bits, "-{text}");
+    }
+    // Far from a tie the forty digits decide: a third, 300 digits of it,
+    // is the binary128 nearest a third.
+    let third: Float128 = format!("0.{}", "3".repeat(300)).parse().expect("a decimal");
+    assert_eq!(third.to_bits(), 0x3ffd_5555_5555_5555_5555_5555_5555_5555);
+}
+
 #[test]
 fn the_exact_decimal_of_a_half_is_a_half() {
     assert_eq!(Float128::from_f64(0.5).to_exact_decimal(), "0.5");

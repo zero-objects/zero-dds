@@ -90,10 +90,8 @@ fn apply_container(
     if let Some(p) = container.deadline {
         out.deadline_ns = duration_ns(p.period);
     }
-    if writer {
-        if let Some(p) = container.lifespan {
-            out.lifespan_ns = duration_ns(p.duration);
-        }
+    if writer && let Some(p) = container.lifespan {
+        out.lifespan_ns = duration_ns(p.duration);
     }
     Ok(())
 }
@@ -157,15 +155,15 @@ pub unsafe extern "C" fn zerodds_endpoint_qos_from_profile_url(
         return ZeroDdsStatus::Error as c_int;
     };
     let mut qos = rpc_default();
-    if let Some(container) = zerodds_xml::default_qos(&resolved.datawriter_qos) {
-        if let Err(status) = apply_container(&mut qos, container, true) {
-            return status as c_int;
-        }
+    if let Some(container) = zerodds_xml::default_qos(&resolved.datawriter_qos)
+        && let Err(status) = apply_container(&mut qos, container, true)
+    {
+        return status as c_int;
     }
-    if let Some(container) = zerodds_xml::default_qos(&resolved.datareader_qos) {
-        if let Err(status) = apply_container(&mut qos, container, false) {
-            return status as c_int;
-        }
+    if let Some(container) = zerodds_xml::default_qos(&resolved.datareader_qos)
+        && let Err(status) = apply_container(&mut qos, container, false)
+    {
+        return status as c_int;
     }
     // SAFETY: `out` is writable per the # Safety doc.
     unsafe { *out = qos };

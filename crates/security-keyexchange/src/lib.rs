@@ -96,12 +96,13 @@ use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 /// DDS-Security-1.2 spec (§10.3.1.4, §8.3 Table 26) (cyclone/FastDDS/OpenDDS). `X25519` is **not** a spec algorithm,
 /// but a ZeroDDS vendor extension — only opt-in between pure ZeroDDS peers
 /// (via `with_suite`), NEVER as a cross-vendor default.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum KxSuite {
     /// X25519 (Curve25519). 32-byte public key. **Non-spec** — opt-in only.
     X25519,
     /// NIST P-256 ECDH. 65-byte uncompressed public key (0x04 || X || Y).
     /// Spec default (§9.3.2.3.1), cross-vendor.
+    #[default]
     EcdhP256,
     /// `ECDHE-CEUM+P384` — DDS-Security 1.2 §8.3 Table 26,
     /// `CryptoAlgorithm Id 0x22`: the Cofactor Ephemeral Unified Model
@@ -113,12 +114,6 @@ pub enum KxSuite {
     /// MODP group with 256-bit prime order subgroup of RFC 5114 §2.3, the
     /// big-endian representation of the number (up to 256 octets).
     DhModp2048_256,
-}
-
-impl Default for KxSuite {
-    fn default() -> Self {
-        Self::EcdhP256
-    }
 }
 
 impl KxSuite {
@@ -339,7 +334,7 @@ mod tests {
     /// public key is a number of up to 256 octets, and the two parties
     /// derive the same secret.
     #[test]
-    fn modp_2048_256_agrees_and_has_id_0x20() {
+    fn security_8_3_modp_2048_256_agrees_and_has_id_0x20() {
         assert_eq!(KxSuite::DhModp2048_256.crypto_algorithm_id(), Some(0x20));
         let alice = KeyExchange::with_suite(KxSuite::DhModp2048_256).unwrap();
         let bob = KeyExchange::with_suite(KxSuite::DhModp2048_256).unwrap();
@@ -420,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn p256_public_key_is_65_bytes() {
+    fn security_8_3_p256_public_key_is_65_bytes() {
         let kx = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
         assert_eq!(kx.suite(), KxSuite::EcdhP256);
         assert_eq!(kx.public_key().len(), 65);
@@ -429,7 +424,7 @@ mod tests {
     }
 
     #[test]
-    fn p256_two_parties_derive_identical_secret() {
+    fn security_8_3_p256_two_parties_derive_identical_secret() {
         let alice = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
         let bob = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
         let a_pub = alice.public_key().to_vec();
@@ -446,7 +441,7 @@ mod tests {
     /// is `0x04` plus two 48-octet coordinates = 97 octets, and two
     /// parties must land on the same secret.
     #[test]
-    fn p384_matches_the_spec_table_and_derives_one_shared_secret() {
+    fn security_8_3_p384_matches_the_spec_table_and_derives_one_shared_secret() {
         assert_eq!(KxSuite::EcdhP384.crypto_algorithm_id(), Some(0x22));
         assert_eq!(KxSuite::EcdhP256.crypto_algorithm_id(), Some(0x21));
         assert_eq!(
@@ -472,7 +467,7 @@ mod tests {
     /// A P-384 endpoint must not accept a P-256 public key: the point
     /// lies on a different curve and is the wrong length.
     #[test]
-    fn p384_rejects_a_p256_public_key() {
+    fn security_8_3_p384_rejects_a_p256_public_key() {
         let alice = KeyExchange::with_suite(KxSuite::EcdhP384).unwrap();
         let bob = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();
         let err = alice.derive_shared_secret(bob.public_key()).unwrap_err();
@@ -487,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn p256_rejects_off_curve_point() {
+    fn security_8_3_p256_rejects_off_curve_point() {
         // 65 bytes, starts with 0x04, but the rest is null bytes →
         // not a valid P-256 point.
         let alice = KeyExchange::with_suite(KxSuite::EcdhP256).unwrap();

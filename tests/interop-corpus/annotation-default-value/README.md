@@ -10,7 +10,7 @@ form of that report a corpus can hold. The other half of the same production —
 IDL 4.2 §8.2 writes the name as a `<scoped_name>`, so `@::default(42)` and
 `@m::mark(7)` are the same rule — is held by
 [`annotation-scoped-name`](../annotation-scoped-name/);
-`docs/annotation-scoped-name-followup.md` has the measurement that found it.
+`0b2e8df9f6b:docs/annotation-scoped-name-followup.md` has the measurement that found it.
 
 `@default` states the value a reader substitutes for a member it did not receive. It has no wire form: the sample gives every member a value, and all three must be on the wire, none of them the default. An implementation that omits a member equal to its default, or that writes the default instead of the sample's value, is wrong in a way that only a sample deliberately unlike its defaults exposes.
 

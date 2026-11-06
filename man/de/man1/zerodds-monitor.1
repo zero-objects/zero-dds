@@ -1,0 +1,95 @@
+.TH ZERODDS-MONITOR 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-monitor \- Live-Schnappschuss oder Prometheus-/metrics-Server für die ZeroDDS-Laufzeitumgebung
+.SH ÜBERSICHT
+.B zerodds-monitor snapshot
+[\fB\-d\fR \fIDOMÄNE\fR]
+[\fB\-\-duration\fR \fIDAUER\fR]
+[\fB\-f\fR \fIFORMAT\fR]
+.PP
+.B zerodds-monitor serve
+[\fB\-d\fR \fIDOMÄNE\fR]
+[\fB\-a\fR \fIADR\fR]
+[\fB\-\-duration\fR \fIDAUER\fR]
+.PP
+.B zerodds-monitor names
+.SH BESCHREIBUNG
+.B zerodds-monitor
+startet eine DCPS-Laufzeitumgebung und stellt die prozessweite
+Metrik-Registry bereit, entweder als einmaligen Schnappschuss oder über HTTP
+zum Abruf durch Prometheus.
+.PP
+.B snapshot
+sammelt Metriken für die Dauer von
+.B \-\-duration
+(Standard 5s) und gibt dann den Inhalt der Registry im Format
+.I text
+oder
+.I prometheus
+aus.
+.PP
+.B serve
+stellt die Registry als HTTP-Endpunkt
+.B /metrics
+auf
+.B \-\-addr
+bereit (Standard 127.0.0.1:9991), bis SIGINT kommt oder
+.B \-\-duration
+abgelaufen ist.
+.PP
+.B names
+gibt die kanonische Liste der bekannten ZeroDDS-Metriknamen aus.
+.SH OPTIONEN
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-duration " " \fIDAUER\fR
+Laufzeit: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR.
+.TP
+.BR \-f ", " \-\-format " " \fIFORMAT\fR
+Ausgabeformat für
+.BR snapshot :
+.I text
+(Standard) oder
+.IR prometheus .
+.TP
+.BR \-a ", " \-\-addr " " \fIADR\fR
+Listen-Adresse für
+.BR serve .
+Standard 127.0.0.1:9991.
+.TP
+.BR \-\-config " " \fIPFAD\fR
+Die Basis-Konfigurationsdatei; das danebenliegende
+.IR PFAD .d/
+enthält Drop-ins. Standard: das System-Konfigurationsverzeichnis
+.RI ( /etc/zerodds
+unter Linux,
+.I /usr/local/etc/zerodds
+unter macOS).
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg.
+.TP
+.B 2
+Fehler beim Parsen der Kommandozeile.
+.TP
+.B 3
+DDS- oder E/A-Fehler.
+.SH SIEHE AUCH
+.BR zerodds-bench (1),
+.BR zerodds-spy (1),
+.BR zerodds-snitch (1)
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

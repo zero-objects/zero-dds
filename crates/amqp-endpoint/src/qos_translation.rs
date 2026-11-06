@@ -100,7 +100,7 @@ mod tests {
     /// mode, durability and TTL, the whole of `AmqpBehavior` — exactly
     /// as it was. Only RELIABILITY, DURABILITY and DEADLINE cross.
     #[test]
-    fn the_dds_side_policies_leave_no_trace_on_the_amqp_boundary() {
+    fn ddsamqp_7_4_3_the_dds_side_policies_leave_no_trace_on_the_amqp_boundary() {
         use zerodds_qos::{
             DestinationOrderKind, DestinationOrderQosPolicy, HistoryKind, HistoryQosPolicy,
             LatencyBudgetQosPolicy, LivelinessKind, LivelinessQosPolicy, OwnershipKind,
@@ -223,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn default_for_topic_is_unsettled_no_durable() {
+    fn ddsamqp_7_4_9_default_for_topic_is_unsettled_no_durable() {
         let b = AmqpBehavior::default_for_topic();
         assert_eq!(b.settle_mode, SettleMode::Unsettled);
         assert!(!b.durable);

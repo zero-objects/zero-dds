@@ -49,6 +49,7 @@ fn reader_config(topic: &str, type_name: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: type_name.into(),
+        reliable: true,
         ..Default::default()
     }
 }
@@ -100,15 +101,19 @@ fn wait_for_discovered_type(
     false
 }
 
-fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
+fn two_runtimes(domain: i32) -> (common::ShutsDown, common::ShutsDown) {
     let prefix_a = GuidPrefix::from_bytes([0xA1; 12]);
     let prefix_b = {
         let mut p = [0xB2; 12];
         p[..6].copy_from_slice(&prefix_a.to_bytes()[..6]); // same vendor and host id
         GuidPrefix::from_bytes(p)
     };
-    let rt_a = DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a");
-    let rt_b = DcpsRuntime::start(domain, prefix_b, RuntimeConfig::default()).expect("rt_b");
+    let rt_a = common::ShutsDown(
+        DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a"),
+    );
+    let rt_b = common::ShutsDown(
+        DcpsRuntime::start(domain, prefix_b, RuntimeConfig::default()).expect("rt_b"),
+    );
     assert!(
         wait_for_peers(&rt_a, 1, Duration::from_secs(10)),
         "rt_a !see rt_b"

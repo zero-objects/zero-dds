@@ -1760,12 +1760,11 @@ fn apply_qos_profile(
                 // WRITER_DATA_LIFECYCLE: the runtime unregisters (and, by the
                 // default, disposes) on delete for all writers alike; one
                 // writer cannot say otherwise.
-                if let Some(w) = &q.writer_data_lifecycle {
-                    if !w.autodispose_unregistered_instances {
-                        skipped.push(
-                            "writer_data_lifecycle (autodispose_unregistered_instances=false)",
-                        );
-                    }
+                if let Some(w) = &q.writer_data_lifecycle
+                    && !w.autodispose_unregistered_instances
+                {
+                    skipped
+                        .push("writer_data_lifecycle (autodispose_unregistered_instances=false)");
                 }
             }
             EndpointRole::Reader => {
@@ -1775,12 +1774,11 @@ fn apply_qos_profile(
                 }
                 // READER_DATA_LIFECYCLE: a DataReader of the runtime keeps no
                 // instance after its writers are gone for a delay.
-                if let Some(r) = &q.reader_data_lifecycle {
-                    if !r.autopurge_nowriter_samples_delay.is_infinite()
-                        || !r.autopurge_disposed_samples_delay.is_infinite()
-                    {
-                        skipped.push("reader_data_lifecycle (autopurge delay)");
-                    }
+                if let Some(r) = &q.reader_data_lifecycle
+                    && (!r.autopurge_nowriter_samples_delay.is_infinite()
+                        || !r.autopurge_disposed_samples_delay.is_infinite())
+                {
+                    skipped.push("reader_data_lifecycle (autopurge delay)");
                 }
             }
         }
@@ -2237,7 +2235,7 @@ mod tests {
     }
 
     #[test]
-    fn the_captured_binary_topic_names_its_topic_and_type() {
+    fn xrce_7_7_3_1_3_the_captured_binary_topic_names_its_topic_and_type() {
         let v = captured(
             "02030000240000000d0000004578616d706c65546f706963000001000c000000\
              4578616d706c6554797065000011",
@@ -2256,7 +2254,7 @@ mod tests {
     }
 
     #[test]
-    fn the_captured_binary_writer_is_reliable_keep_last_transient_local() {
+    fn xrce_7_7_3_10_2_the_captured_binary_writer_is_reliable_keep_last_transient_local() {
         let v = captured("050300000b000000001201000b0000000000000013");
         let d = endpoint(&v, EndpointRole::Writer, false).unwrap();
         assert_eq!(d.topic, Some(TopicRef::Object(ObjectId::from_raw(0x0012))));
@@ -2268,7 +2266,7 @@ mod tests {
     }
 
     #[test]
-    fn the_captured_binary_reader_is_reliable_keep_last_transient_local() {
+    fn xrce_7_7_3_11_2_the_captured_binary_reader_is_reliable_keep_last_transient_local() {
         let v = captured("060300000c000000001201000b000000000000000014");
         let d = endpoint(&v, EndpointRole::Reader, false).unwrap();
         assert_eq!(d.topic, Some(TopicRef::Object(ObjectId::from_raw(0x0012))));
@@ -2280,7 +2278,7 @@ mod tests {
     }
 
     #[test]
-    fn the_captured_binary_publisher_has_default_qos() {
+    fn xrce_7_7_3_8_2_the_captured_binary_publisher_has_default_qos() {
         let v = captured("030300000200000000000011");
         assert_eq!(
             container(&v, false).unwrap(),
@@ -2289,7 +2287,7 @@ mod tests {
     }
 
     #[test]
-    fn a_binary_writer_with_every_optional_member_reads_back() {
+    fn xrce_7_7_3_10_2_a_binary_writer_with_every_optional_member_reads_back() {
         // topic_id, qos present, flags reliable|keep_last|exclusive|persistent,
         // depth 7, deadline 250 ms, lifespan 1000 ms, user_data [1,2,3],
         // ownership strength 9 (u64, aligned to 8).
@@ -2325,7 +2323,7 @@ mod tests {
     }
 
     #[test]
-    fn a_binary_endpoint_without_qos_gets_the_role_defaults() {
+    fn xrce_7_7_3_10_2_a_binary_endpoint_without_qos_gets_the_role_defaults() {
         let w = endpoint(
             &ObjectVariant::InBinary(vec![0x00, 0x12, 0x00]),
             EndpointRole::Writer,
@@ -2371,7 +2369,7 @@ mod tests {
     }
 
     #[test]
-    fn a_big_endian_binary_topic_reads_back() {
+    fn xrce_7_7_3_1_3_a_big_endian_binary_topic_reads_back() {
         let mut b = Vec::new();
         b.extend_from_slice(&2u32.to_be_bytes());
         b.extend_from_slice(b"T\0");
@@ -2387,7 +2385,7 @@ mod tests {
     /// The strings the eProsima `PublishHelloWorld`/`SubscribeHelloWorld`
     /// examples send, verbatim.
     #[test]
-    fn the_eprosima_element_form_names_topic_type_and_kind() {
+    fn xrce_7_7_3_10_1_the_eprosima_element_form_names_topic_type_and_kind() {
         let t = topic(
             &ObjectVariant::ByXmlString(
                 "<dds><topic><name>HelloWorldTopic</name><dataType>HelloWorld</dataType>\
@@ -2447,7 +2445,7 @@ mod tests {
     }
 
     #[test]
-    fn the_attribute_form_still_reads() {
+    fn xrce_7_7_3_10_1_the_attribute_form_still_reads() {
         let t = topic(
             &ObjectVariant::ByXmlString("<dds><topic name=\"T\" type_name=\"Ty\"/></dds>".into()),
             false,
@@ -2486,7 +2484,7 @@ mod tests {
     }
 
     #[test]
-    fn the_participant_domain_comes_from_the_wire_unless_the_xml_names_one() {
+    fn xrce_7_8_3_1_the_participant_domain_comes_from_the_wire_unless_the_xml_names_one() {
         let eprosima = ObjectVariant::ByXmlString(
             "<dds><participant><rtps><name>default_xrce_participant</name></rtps>\
              </participant></dds>"
@@ -2508,7 +2506,7 @@ mod tests {
     }
 
     #[test]
-    fn a_binary_complete_type_object_is_named_by_its_own_type_name() {
+    fn xrce_7_7_3_3_a_binary_complete_type_object_is_named_by_its_own_type_name() {
         let ast = std::sync::Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "module M { @final struct P { @key long id; }; };",
@@ -2545,7 +2543,7 @@ mod tests {
     /// The `<type>` element `crates/xrce/src/xml_config.rs` sends for an
     /// `OBJK_TYPE`.
     #[test]
-    fn an_xml_type_library_compiles_to_named_complete_types() {
+    fn xrce_7_7_3_3_2_an_xml_type_library_compiles_to_named_complete_types() {
         let named = types(
             &ObjectVariant::ByXmlString(
                 "<type object_id=\"0x000A\"><module name=\"ShapesDemoTypes\">\
@@ -2565,7 +2563,7 @@ mod tests {
     /// "reference other Types already known to the Agent". A reference to a
     /// known type is resolved; one to no type is a reference to nothing.
     #[test]
-    fn a_types_string_may_reference_types_the_agent_knows() {
+    fn xrce_7_7_3_3_2_a_types_string_may_reference_types_the_agent_knows() {
         let profiles = AgentProfiles::default();
         let base = types(
             &ObjectVariant::ByXmlString(
@@ -2669,7 +2667,7 @@ mod tests {
     /// The eProsima ShapesDemo client's `uxr_buffer_create_*_ref` calls,
     /// resolved against the agent's `agent.refs` profiles.
     #[test]
-    fn a_reference_is_read_like_the_profile_it_names() {
+    fn xrce_7_3_a_reference_is_read_like_the_profile_it_names() {
         let mut profiles = AgentProfiles::default();
         profiles
             .add_profiles(
@@ -2727,7 +2725,7 @@ mod tests {
     /// `qos_profile="Lib::Profile"` of the attribute form, with its
     /// `base_name` chain; the element's own attribute overrides it.
     #[test]
-    fn a_qos_profile_reference_applies_the_profile() {
+    fn xrce_7_7_3_10_1_a_qos_profile_reference_applies_the_profile() {
         let mut profiles = AgentProfiles::default();
         profiles
             .add_profiles(
@@ -2823,7 +2821,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_container_xml_is_a_default_container() {
+    fn xrce_7_7_3_8_1_an_empty_container_xml_is_a_default_container() {
         assert_eq!(
             container(&ObjectVariant::ByXmlString(String::new()), false).unwrap(),
             ContainerDescription::default()
@@ -2843,7 +2841,7 @@ mod tests {
     /// DDS 1.4 §2.2.3.6 PRESENTATION and §2.2.3.20 ENTITY_FACTORY of a
     /// Publisher are read, not skipped.
     #[test]
-    fn a_container_reads_presentation_and_entity_factory() {
+    fn xrce_7_7_3_8_1_a_container_reads_presentation_and_entity_factory() {
         use zerodds_qos::PresentationAccessScope;
         let p = container(
             &ObjectVariant::ByXmlString(
@@ -2890,7 +2888,7 @@ mod tests {
     /// §7.7.3.7.3: a topic in the XCDR2 form names its type by
     /// `type_reference`; the DHEADER form of Annex A reads the same.
     #[test]
-    fn a_spec_binary_topic_names_its_topic_and_type() {
+    fn xrce_7_7_3_1_3_a_spec_binary_topic_names_its_topic_and_type() {
         let clause = clause_topic_example();
         assert_eq!(clause.len(), 36);
         let t = topic(&ObjectVariant::InBinary(clause.clone()), false).unwrap();
@@ -2910,7 +2908,7 @@ mod tests {
     /// and the type name is left to the session to resolve; a topic with
     /// neither member is refused.
     #[test]
-    fn a_spec_binary_topic_may_name_its_type_by_identifier() {
+    fn xrce_7_7_3_7_3_a_spec_binary_topic_may_name_its_type_by_identifier() {
         let bytes = [2, 0, 0, 0, b'T', 0, 0, 1, 0x70, 0x10];
         let t = topic(&ObjectVariant::InBinary(bytes.to_vec()), false).unwrap();
         assert_eq!(t.topic_name, "T");
@@ -2928,7 +2926,7 @@ mod tests {
     /// `STATUS_ERR_UNKNOWN_REFERENCE`; the `long domain_id` of the clause has
     /// to agree with the one of the representation.
     #[test]
-    fn a_spec_binary_participant_is_read() {
+    fn xrce_7_7_3_1_3_a_spec_binary_participant_is_read() {
         let participant = |bytes: &[u8], wire: Option<i16>| {
             super::participant(
                 &ObjectVariant::InBinary(bytes.to_vec()),
@@ -2979,7 +2977,7 @@ mod tests {
                 None => b.push(0),
                 Some(text) => {
                     b.push(1);
-                    while b.len() % 4 != 0 {
+                    while !b.len().is_multiple_of(4) {
                         b.push(0);
                     }
                     let len = u32::try_from(text.len() + 1).unwrap();
@@ -3017,7 +3015,7 @@ mod tests {
     /// the `<domain_library>` the agent read; only a name in no library is an
     /// unknown reference.
     #[test]
-    fn a_domain_reference_is_resolved_against_the_domain_libraries() {
+    fn xrce_7_7_3_4_1_a_domain_reference_is_resolved_against_the_domain_libraries() {
         let profiles = library_profiles();
         let part = |bytes: Vec<u8>, wire: Option<i16>| {
             super::participant(&ObjectVariant::InBinary(bytes), wire, false, &profiles)
@@ -3049,7 +3047,7 @@ mod tests {
     /// USER_DATA and ENTITY_FACTORY of the profile's participant QoS reach the
     /// description.
     #[test]
-    fn a_participant_qos_profile_reference_is_applied() {
+    fn xrce_7_1_a_participant_qos_profile_reference_is_applied() {
         let profiles = library_profiles();
         let part = |qos: &str| {
             super::participant(
@@ -3116,7 +3114,7 @@ mod tests {
     /// takes (LIVELINESS, LATENCY_BUDGET, DESTINATION_ORDER, TRANSPORT_PRIORITY,
     /// DURABILITY_SERVICE) reach the endpoint from a profile.
     #[test]
-    fn the_qos_of_a_topic_is_the_default_of_its_endpoints() {
+    fn xrce_7_1_the_qos_of_a_topic_is_the_default_of_its_endpoints() {
         let mut profiles = AgentProfiles::default();
         profiles
             .add_profiles(
@@ -3205,7 +3203,7 @@ mod tests {
     /// `qos_profile_reference` is: USER_DATA and ENTITY_FACTORY; another
     /// policy is refused when the file is read.
     #[test]
-    fn the_qos_of_an_xml_participant_is_applied() {
+    fn xrce_7_1_the_qos_of_an_xml_participant_is_applied() {
         let profiles = library_profiles();
         let xml = |qos: &str| {
             ObjectVariant::ByXmlString(format!(
@@ -3243,7 +3241,7 @@ mod tests {
     /// `is_history_keep_all`, the deadline is in milliseconds, and the topic
     /// is named.
     #[test]
-    fn an_annex_a_binary_writer_names_its_topic_and_qos() {
+    fn xrce_7_7_3_1_3_an_annex_a_binary_writer_names_its_topic_and_qos() {
         let mut bytes = vec![23, 0, 0, 0, 7, 0, 0, 0];
         bytes.extend_from_slice(b"Square\0");
         bytes.extend_from_slice(&[1, 3, 0, 0, 1]);
@@ -3264,7 +3262,7 @@ mod tests {
     /// table say `is_reliable`); B.2.7: keep all, three minutes (the intro
     /// says five), and the filter "x>100".
     #[test]
-    fn the_annex_b_binary_examples_read_as_their_qos() {
+    fn xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos() {
         // B.2.4 members, DHEADER 24 (the padding octet 43 counted).
         let mut w = vec![24, 0, 0, 0, 7, 0, 0, 0];
         w.extend_from_slice(b"Square\0");
@@ -3299,7 +3297,7 @@ mod tests {
     /// §7.7.3.11.2: the clause's `OBJK_DataReader_Binary`, bit 1 being
     /// `is_history_keep_last`, with the depth and the time-based filter.
     #[test]
-    fn a_clause_binary_reader_names_its_topic_and_qos() {
+    fn xrce_7_7_3_1_3_a_clause_binary_reader_names_its_topic_and_qos() {
         let bytes = [
             3, 0, 0, 0, b'S', b'q', 0, 0, 2, 0, 1, 0, 5, 0, 0, 0, 0, 1, 0, 0, 50, 0, 0, 0, 0,
         ];
@@ -3317,7 +3315,7 @@ mod tests {
 
     /// Annex A `OBJK_Publisher_Binary`: a DHEADER, then the name and the qos.
     #[test]
-    fn an_annex_a_binary_publisher_gives_its_partitions() {
+    fn xrce_7_7_3_8_2_an_annex_a_binary_publisher_gives_its_partitions() {
         let bytes = [
             27, 0, 0, 0, 1, 0, 0, 0, 3, 0, 0, 0, b'P', b'u', 0, 1, 1, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0,
             0, b'p', 0, 0,
@@ -3330,7 +3328,7 @@ mod tests {
     /// A blob that is none of the forms is refused, and the message names
     /// what each form found.
     #[test]
-    fn a_blob_of_no_form_is_refused_naming_each_reading() {
+    fn xrce_7_7_3_1_3_a_blob_of_no_form_is_refused_naming_each_reading() {
         let err = endpoint(
             &ObjectVariant::InBinary(vec![1, 2, 3, 4, 5, 6, 7, 8, 9]),
             EndpointRole::Writer,

@@ -13,7 +13,7 @@
 //! Every `endpoints/{ada,ada-83,c,cpp,csharp,d,elixir,fsharp,go,java,
 //! julia,kotlin,lua,nim,node,ocaml,python,swift,typescript,zig}` port and
 //! `endpoints/xrce-agent-demo` checks its own XRCE-client encoder against
-//! these six files. Since commit `939faa45298` the Rust endpoint
+//! these six files. Since commit `817fb773197` the Rust endpoint
 //! (`endpoints/rust/src/xrce_client.rs`) is a type alias over the real
 //! `crates/xrce-client` (`zerodds-xrce-client`) — so the fixtures below
 //! are produced by *running* that crate's [`XrceClient`] state machine
@@ -84,7 +84,7 @@
 //!    so the first four request/sequence numbers above are untouched.
 //!    Creates `Topic` raw id `0x010` named `"HelloWorldTopic"`
 //!    (`ObjectVariant::ByReference`) under `Participant` raw id `0x001`
-//!    — since commit `31c62df2a63` (`xrce: OBJK_TOPIC_Representation
+//!    — since commit `bd30deaef0b` (`xrce: OBJK_TOPIC_Representation
 //!    carries its participant's ObjectId`), `OBJK_TOPIC`'s own
 //!    `..._Representation` carries a trailing parent `ObjectId` exactly
 //!    like a `Publisher`'s or `Subscriber`'s does
@@ -378,7 +378,7 @@ mod tests {
 
     /// `xrce_client_create_topic.bin`'s representation carries its
     /// participant's `ObjectId` as `OBJK_TOPIC_Representation`'s own
-    /// trailing field (commit `31c62df2a63`), the same shape a
+    /// trailing field (commit `bd30deaef0b`), the same shape a
     /// `Publisher`'s or `Subscriber`'s representation carries — proven
     /// here by decoding the fixture this module actually wrote, not by
     /// re-deriving the rule.

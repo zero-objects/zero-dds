@@ -709,7 +709,7 @@ mod tests {
     }
 
     #[test]
-    fn the_three_categories_of_table_41_are_distinct() {
+    fn security_9_5_1_7_the_three_categories_of_table_41_are_distinct() {
         assert_ne!(
             SecureSubmessageCategory::InfoSubmessage,
             SecureSubmessageCategory::DatawriterSubmessage

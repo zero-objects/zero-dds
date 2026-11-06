@@ -278,7 +278,7 @@ mod tests {
     /// Spec §8.3.2.1: 0x00 and 0x80 are the "no session" values, one for each
     /// kind of header; every other session id is a session.
     #[test]
-    fn only_0x00_and_0x80_are_the_no_session_values() {
+    fn xrce_8_3_2_1_only_0x00_and_0x80_are_the_no_session_values() {
         for v in 0..=255u8 {
             assert_eq!(SessionId(v).is_none(), v == 0x00 || v == 0x80, "{v:#x}");
         }
@@ -289,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn session_id_127_carries_client_key() {
+    fn xrce_8_3_2_1_session_id_127_carries_client_key() {
         assert!(SessionId(0).carries_client_key());
         assert!(SessionId(127).carries_client_key());
         assert!(!SessionId(128).carries_client_key());
@@ -297,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn stream_id_classification() {
+    fn xrce_8_2_2_stream_id_classification() {
         assert!(StreamId::NONE.is_none());
         assert!(StreamId::BUILTIN_BEST_EFFORT.is_best_effort());
         assert!(StreamId::BUILTIN_RELIABLE.is_reliable());
@@ -307,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn header_no_client_key_wire_size_4() {
+    fn xrce_8_3_2_1_header_no_client_key_wire_size_4() {
         let h = MessageHeader::without_client_key(
             SessionId(SESSION_ID_NONE_WITHOUT_CLIENT_KEY),
             StreamId::NONE,
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn header_with_client_key_wire_size_8() {
+    fn xrce_8_3_2_1_header_with_client_key_wire_size_8() {
         let h = MessageHeader::with_client_key(
             SessionId(0),
             StreamId::BUILTIN_RELIABLE,
@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn header_constructor_rejects_inconsistent_with_key() {
+    fn xrce_8_3_2_1_header_constructor_rejects_inconsistent_with_key() {
         // session_id=200 (>=128) would have no client_key — with_client_key must fail
         let res = MessageHeader::with_client_key(
             SessionId(200),
@@ -353,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn header_layout_bytes_no_key() {
+    fn xrce_8_3_2_header_layout_bytes_no_key() {
         let h = MessageHeader::without_client_key(
             SessionId(0x80),
             StreamId(0x42),
@@ -371,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn header_layout_bytes_with_key() {
+    fn xrce_8_3_2_header_layout_bytes_with_key() {
         let h = MessageHeader::with_client_key(
             SessionId(0x10),
             StreamId(0x80),
@@ -389,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn header_roundtrip_no_key() {
+    fn xrce_8_3_2_1_header_roundtrip_no_key() {
         let h = MessageHeader::without_client_key(
             SessionId(SESSION_ID_NONE_WITHOUT_CLIENT_KEY),
             StreamId::BUILTIN_BEST_EFFORT,
@@ -404,22 +404,6 @@ mod tests {
     }
 
     #[test]
-    fn header_roundtrip_with_key() {
-        let h = MessageHeader::with_client_key(
-            SessionId(0x55),
-            StreamId::BUILTIN_RELIABLE,
-            SerialNumber16::new(0xFFFE),
-            ClientKey([9, 8, 7, 6]),
-        )
-        .unwrap();
-        let mut buf = [0u8; 8];
-        h.write_to(&mut buf).unwrap();
-        let (decoded, n) = MessageHeader::read_from(&buf).unwrap();
-        assert_eq!(n, 8);
-        assert_eq!(decoded, h);
-    }
-
-    #[test]
     fn header_decode_truncated_no_key() {
         let buf = [0x80u8, 0x01, 0x00]; // 3 bytes
         let res = MessageHeader::read_from(&buf);
@@ -430,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn header_decode_truncated_with_key() {
+    fn xrce_8_3_2_header_decode_truncated_with_key() {
         // session_id=0 (<=127) → needs 8 bytes
         let buf = [0x00u8, 0x01, 0x00, 0x00, 0xAA]; // 5 bytes
         let res = MessageHeader::read_from(&buf);

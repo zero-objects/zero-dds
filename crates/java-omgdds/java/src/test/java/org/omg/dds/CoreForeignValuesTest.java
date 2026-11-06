@@ -219,7 +219,7 @@ class CoreForeignValuesTest {
     }
 
     @Test
-    void aSampleOfAnotherImplementationIsWrittenWithItsTimestampAndHandle() throws Exception {
+    void javapsm_7_2_2_a_sample_of_another_implementation_is_written_with_its_timestamp_and_handle() throws Exception {
         long nanos = 1_700_000_000_123_000_000L;
         ForeignSample foreign = new ForeignSample(new Item(1, 10),
                 new CoreValuesTest.ForeignTime(nanos), new ForeignModifiableHandle(true));
@@ -232,7 +232,7 @@ class CoreForeignValuesTest {
     }
 
     @Test
-    void aSampleOfAnotherImplementationIsDisposedAndUnregistered() throws Exception {
+    void javapsm_7_2_2_a_sample_of_another_implementation_is_disposed_and_unregistered() throws Exception {
         ForeignSample one = new ForeignSample(new Item(1, 10),
                 new CoreValuesTest.ForeignTime(5_000_000_000L), new ForeignModifiableHandle(true));
         ForeignSample two = new ForeignSample(new Item(2, 20),
@@ -246,7 +246,7 @@ class CoreForeignValuesTest {
     }
 
     @Test
-    void aTimeOfAnotherImplementationIsTheSourceTimestamp() throws Exception {
+    void javapsm_7_2_2_a_time_of_another_implementation_is_the_source_timestamp() throws Exception {
         writer.write(new Item(3, 30), new CoreValuesTest.ForeignTime(7_000_000_000L));
         List<Sample<Item>> taken = reader.take(new ArrayList<Sample<Item>>());
         assertEquals(1, taken.size());
@@ -254,7 +254,7 @@ class CoreForeignValuesTest {
     }
 
     @Test
-    void aForeignHandleThatNamesNoInstanceOfTheWriterIsABadParameter() throws Exception {
+    void javapsm_7_2_2_a_foreign_handle_that_names_no_instance_of_the_writer_is_a_bad_parameter() throws Exception {
         writer.write(new Item(4, 40));
         InstanceHandle strange = new CoreValuesTest.ForeignHandle(9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9);
         // DDS 1.4 2.2.2.4.2.11: an invalid handle is BAD_PARAMETER (Table 7.1: IllegalArgumentException),
@@ -267,7 +267,7 @@ class CoreForeignValuesTest {
     }
 
     @Test
-    void aNilHandleOfAnotherImplementationNamesTheInstanceOfTheSample() throws Exception {
+    void javapsm_7_2_2_a_nil_handle_of_another_implementation_names_the_instance_of_the_sample() throws Exception {
         writer.write(new Item(5, 50));
         InstanceHandle nil = new CoreValuesTest.ForeignHandle(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         writer.write(new Item(5, 51), nil);
@@ -276,7 +276,7 @@ class CoreForeignValuesTest {
     }
 
     @Test
-    void lookupInstanceFillsAModifiableHandleOfAnotherImplementation() throws Exception {
+    void javapsm_7_2_5_lookup_instance_fills_a_modifiable_handle_of_another_implementation() throws Exception {
         InstanceHandle registered = writer.registerInstance(new Item(6, 60));
         assertTrue(!registered.isNil());
         ForeignModifiableHandle target = new ForeignModifiableHandle(true);

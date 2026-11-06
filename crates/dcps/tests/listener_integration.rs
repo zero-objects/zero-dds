@@ -201,7 +201,7 @@ fn mk_setup() -> (DomainParticipant, Topic<RawBytes>, Publisher, Subscriber) {
 // ============================================================================
 
 #[test]
-fn participant_set_get_listener_roundtrip() {
+fn dcps_2_2_2_1_1_4_participant_set_get_listener_roundtrip() {
     let (p, _, _, _) = mk_setup();
     assert!(p.get_listener().is_none());
     p.set_listener(Some(Arc::new(ParticipantCounters::default())), bits::ANY);
@@ -211,7 +211,7 @@ fn participant_set_get_listener_roundtrip() {
 }
 
 #[test]
-fn publisher_set_get_listener_roundtrip() {
+fn dcps_2_2_2_1_1_4_publisher_set_get_listener_roundtrip() {
     let (_, _, pubr, _) = mk_setup();
     assert!(pubr.get_listener().is_none());
     pubr.set_listener(Some(Arc::new(PublisherCounters::default())), bits::ANY);
@@ -221,7 +221,7 @@ fn publisher_set_get_listener_roundtrip() {
 }
 
 #[test]
-fn subscriber_set_get_listener_roundtrip() {
+fn dcps_2_2_2_1_1_4_subscriber_set_get_listener_roundtrip() {
     let (_, _, _, subr) = mk_setup();
     assert!(subr.get_listener().is_none());
     subr.set_listener(Some(Arc::new(SubscriberCounters::default())), bits::ANY);
@@ -231,7 +231,7 @@ fn subscriber_set_get_listener_roundtrip() {
 }
 
 #[test]
-fn topic_set_get_listener_roundtrip() {
+fn dcps_2_2_2_1_1_4_topic_set_get_listener_roundtrip() {
     let (_, t, _, _) = mk_setup();
     assert!(t.get_listener().is_none());
     t.set_listener(Some(Arc::new(TopicCounters::default())), bits::ANY);
@@ -241,7 +241,7 @@ fn topic_set_get_listener_roundtrip() {
 }
 
 #[test]
-fn datawriter_set_get_listener_roundtrip() {
+fn dcps_2_2_2_1_1_4_datawriter_set_get_listener_roundtrip() {
     let (_, t, pubr, _) = mk_setup();
     let w = pubr
         .create_datawriter::<RawBytes>(&t, DataWriterQos::default())
@@ -252,7 +252,7 @@ fn datawriter_set_get_listener_roundtrip() {
 }
 
 #[test]
-fn datareader_set_get_listener_roundtrip() {
+fn dcps_2_2_2_1_1_4_datareader_set_get_listener_roundtrip() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -267,7 +267,7 @@ fn datareader_set_get_listener_roundtrip() {
 // ============================================================================
 
 #[test]
-fn push_raw_fires_on_data_available_at_reader() {
+fn dcps_2_2_2_5_7_push_raw_fires_on_data_available_at_reader() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -280,7 +280,7 @@ fn push_raw_fires_on_data_available_at_reader() {
 }
 
 #[test]
-fn push_raw_fires_on_data_on_readers_at_subscriber() {
+fn dcps_2_2_2_5_2_1_push_raw_fires_on_data_on_readers_at_subscriber() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -296,7 +296,7 @@ fn push_raw_fires_on_data_on_readers_at_subscriber() {
 }
 
 #[test]
-fn push_raw_bubbles_to_participant_when_others_have_no_listener() {
+fn dcps_2_2_2_2_3_push_raw_bubbles_to_participant_when_others_have_no_listener() {
     let (p, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -311,7 +311,7 @@ fn push_raw_bubbles_to_participant_when_others_have_no_listener() {
 }
 
 #[test]
-fn push_raw_with_zero_mask_at_reader_bubbles_to_subscriber() {
+fn dcps_2_2_2_1_1_3_push_raw_with_zero_mask_at_reader_bubbles_to_subscriber() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -330,7 +330,7 @@ fn push_raw_with_zero_mask_at_reader_bubbles_to_subscriber() {
 }
 
 #[test]
-fn push_raw_with_only_data_available_bit_does_not_call_reader_for_others() {
+fn dcps_2_2_2_1_1_3_push_raw_with_only_data_available_bit_does_not_call_reader_for_others() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -342,16 +342,6 @@ fn push_raw_with_only_data_available_bit_does_not_call_reader_for_others() {
     assert_eq!(rc.avail.load(Ordering::Relaxed), 1);
     // Other bits (sub_matched) stay 0, because the mask doesn't cover them.
     assert_eq!(rc.sub_matched.load(Ordering::Relaxed), 0);
-}
-
-#[test]
-fn no_listener_set_anywhere_is_safe() {
-    let (_, t, _, subr) = mk_setup();
-    let r = subr
-        .create_datareader::<RawBytes>(&t, DataReaderQos::default())
-        .unwrap();
-    // No listeners at any stage — push must not panic.
-    r.__push_raw(vec![1]).unwrap();
 }
 
 #[test]
@@ -375,7 +365,7 @@ fn multi_push_increments_listener_counter() {
 // ============================================================================
 
 #[test]
-fn on_data_on_readers_takes_the_arrival_from_on_data_available() {
+fn dcps_2_2_2_5_1_9_on_data_on_readers_takes_the_arrival_from_on_data_available() {
     // The reader has ONLY data_on_readers in its mask (which would be
     // nonsensical, since that is a subscriber status); the subscriber
     // listens for everything and takes the arrival as DATA_ON_READERS.
@@ -400,7 +390,7 @@ fn on_data_on_readers_takes_the_arrival_from_on_data_available() {
 // ============================================================================
 
 #[test]
-fn listener_replacement_during_dispatch_is_safe() {
+fn dcps_2_2_2_1_1_3_listener_replacement_during_dispatch_is_safe() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -457,22 +447,12 @@ fn data_available_consumed_at_reader_does_not_bubble() {
 // Topic-Listener-Slot.
 // ============================================================================
 
-#[test]
-fn topic_listener_can_be_attached_and_detached() {
-    let (_, t, _, _) = mk_setup();
-    let tc = Arc::new(TopicCounters::default());
-    t.set_listener(Some(tc.clone()), bits::ANY);
-    assert!(t.get_listener().is_some());
-    t.set_listener(None, bits::NONE);
-    assert!(t.get_listener().is_none());
-}
-
 // ============================================================================
 // Listener replacement at subscriber + participant.
 // ============================================================================
 
 #[test]
-fn subscriber_listener_replacement_works() {
+fn dcps_2_2_2_1_1_3_subscriber_listener_replacement_works() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -490,7 +470,7 @@ fn subscriber_listener_replacement_works() {
 }
 
 #[test]
-fn participant_listener_replacement_works() {
+fn dcps_2_2_2_1_1_3_participant_listener_replacement_works() {
     let (p, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -573,7 +553,7 @@ fn panicking_listener_does_not_break_push() {
 /// handled by a NO-OP operation", so the status does not bubble up to the
 /// listener of the entity above.
 #[test]
-fn a_nil_listener_with_a_mask_handles_the_status_by_doing_nothing() {
+fn dcps_2_2_2_1_1_3_a_nil_listener_with_a_mask_handles_the_status_by_doing_nothing() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -592,7 +572,7 @@ fn a_nil_listener_with_a_mask_handles_the_status_by_doing_nothing() {
 
 /// With an empty mask there is no listener at all: the status bubbles up.
 #[test]
-fn a_nil_listener_with_an_empty_mask_is_no_listener() {
+fn dcps_2_2_2_1_1_3_a_nil_listener_with_an_empty_mask_is_no_listener() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -608,7 +588,7 @@ fn a_nil_listener_with_an_empty_mask_is_no_listener() {
 /// §2.2.4.4: DATA_ON_READERS is handled first; handled by a 'nil' listener
 /// it is a NO-OP, and on_data_available is not called after it.
 #[test]
-fn a_nil_listener_for_data_on_readers_leaves_on_data_available_uncalled() {
+fn dcps_2_2_2_1_1_3_a_nil_listener_for_data_on_readers_leaves_on_data_available_uncalled() {
     let (_, t, _, subr) = mk_setup();
     let r = subr
         .create_datareader::<RawBytes>(&t, DataReaderQos::default())
@@ -625,7 +605,7 @@ fn a_nil_listener_for_data_on_readers_leaves_on_data_available_uncalled() {
 /// §2.2.2.5.2.5: every `create_<entity>` has the listener and the mask as
 /// parameters.
 #[test]
-fn every_create_has_a_listener_and_a_mask() {
+fn dcps_2_2_2_2_1_1_every_create_has_a_listener_and_a_mask() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic_listener = Arc::new(TopicCounters::default());

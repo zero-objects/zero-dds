@@ -11,7 +11,7 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §5.2 Nachweis über eine echte Container-Grenze
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — kein Test startet zwei Container mit gemountetem Volume und unterschiedlichen UID-Mappings.
 
 ## §6.2 Windows
 

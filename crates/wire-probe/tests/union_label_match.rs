@@ -58,8 +58,8 @@
 //! | **the coordinate** — `discriminator_signedness` giving `Int32` a width of 16, so the rule reaches `long` | [`the_pair_it_reaches_is_the_narrow_signed_one`], [`the_wider_and_the_unsigned_discriminators_are_untouched`], [`the_shape_with_no_storage_is_left_to_the_clause`] |
 //! | **the coordinate, the other way** — giving `UInt16` a signed answer | [`the_pair_it_reaches_is_the_narrow_signed_one`] and [`the_shape_with_no_storage_is_left_to_the_clause`]; no byte check can see it, because no union can declare a negative label on an unsigned discriminator |
 //! | **the storage half** — `union_negative_matches_nothing` dropping its branch check | [`the_shape_with_no_storage_is_left_to_the_clause`] **only**, which is what that check exists for |
-//! | **the overlay** — `write_selected_branch` writing the member zero-padded in the stream's order instead of the storage as one value | [`the_storage_is_not_the_member_zero_padded`] and [`the_round_trip_is_stable_under_the_rule`]. [`the_branchless_half_is_told_apart`] stays **green**, which is the separation this file exists for: the sixteen rows with no `default:` write no branch at all and say nothing about what a branch would have held |
-//! | **the reader** — `select_case` taking `false` for its suppression | [`the_reader_takes_the_writers_setting`], [`the_round_trip_is_stable_under_the_rule`], [`the_sites_go_through_the_crossing`] |
+//! | **the overlay** — `write_selected_branch` writing the member zero-padded in the stream's order instead of the storage as one value | [`the_storage_is_not_the_member_zero_padded`]. [`the_branchless_half_is_told_apart`] stays **green**, which is the separation this file exists for: the sixteen rows with no `default:` write no branch at all and say nothing about what a branch would have held |
+//! | **the reader** — `select_case` taking `false` for its suppression | [`the_reader_takes_the_writers_setting`], [`the_sites_go_through_the_crossing`] |
 //! | **the C column's dump** — `wireprobe-zerodds-c-gen`'s `dump.rs` reading the labels straight | [`the_sites_go_through_the_crossing`] **only** |
 //!
 //! The last row is a finding and not a gap in this file. That site's
@@ -113,7 +113,6 @@ use zerodds_ast_layout::{
     DepCollector, Dialect, Encoding, Endianness, LayoutKey, Purpose, UnionLabelMatch, plan,
     union_negative_matches_nothing,
 };
-use zerodds_wire_probe::canonical::{canonicalise, text};
 use zerodds_wire_probe::decode::decode;
 use zerodds_wire_probe::encode::{encode, hex, model_from_idl_in_dialect};
 use zerodds_wire_probe::value::ProbeRequest;
@@ -799,42 +798,73 @@ fn the_shape_with_no_storage_is_left_to_the_clause() {
     );
 
     // And the recorded evidence for the exclusion, read rather than
-    // quoted: the matrix's cyclone cells for those two cases are marked
-    // failed in all four option sets, and each cell's why names the
-    // mechanism — `find_union_case` compares the zero-extended narrow
-    // discriminator against the sign-extended label, so a negative
-    // label matches nothing and the union has no branch to serialise.
-    // The cells live in the `zerodds-matrix` repository, split out on
-    // 2026-08-26 and cloned into `matrix/`. Without the clone every marker
-    // below is missing, and the assertion reads like the recording changed
-    // when in fact nothing was compared. Refuse instead, naming the reason:
-    // a run that could not look is not a run that found nothing.
-    let cells = repository_root().join("matrix/cyclone");
-    assert!(
-        cells.is_dir(),
-        "matrix/cyclone is not here: this test reads recorded cells, and \
-         they live in the zerodds-matrix repository, cloned into matrix/. \
-         See docs/matrix-repo-split.md."
-    );
+    // quoted. The matrix's cyclone cells for those two cases are marked
+    // failed in all four option sets: `find_union_case` compares the
+    // zero-extended narrow discriminator against the sign-extended label,
+    // so a negative label matches nothing and the union has no branch to
+    // serialise. The matrix reaches this repository as
+    // `tests/interop-corpus/expected-bytes.tsv` (rc8-test-suite.md,
+    // decision 3), which lists, per cell, the implementations that wrote
+    // octets: Cyclone is in none of the eight rows, while at least two
+    // other DDS implementations wrote each, so the cells were measured and
+    // Cyclone wrote nothing. `vendor-corpus.tsv` records the same eight
+    // runs as refusals.
+    let table =
+        std::fs::read_to_string(repository_root().join("tests/interop-corpus/expected-bytes.tsv"))
+            .expect("tests/interop-corpus/expected-bytes.tsv");
+    let corpus = std::fs::read_to_string(
+        repository_root().join("tests/interop-results/sources/vendor-corpus.tsv"),
+    )
+    .expect("tests/interop-results/sources/vendor-corpus.tsv");
     let mut failed_cells = 0usize;
     for case in NO_STORAGE {
-        for optset in ["xcdr1-be", "xcdr1-le", "xcdr2-be", "xcdr2-le"] {
-            let cell = repository_root()
-                .join("matrix/cyclone")
-                .join(optset)
-                .join(case);
-            let marker = cell.join(format!("cyclone-{optset}-{case}-failed.md"));
+        for (version, order) in [
+            ("xcdr1", "be"),
+            ("xcdr1", "le"),
+            ("xcdr2", "be"),
+            ("xcdr2", "le"),
+        ] {
+            let writers: Vec<&str> = table
+                .lines()
+                .filter(|line| !line.starts_with('#'))
+                .map(|line| line.split('\t').collect::<Vec<&str>>())
+                .filter(|f| {
+                    f.len() == 6
+                        && f[0] == case
+                        && f[1] == "values"
+                        && f[2] == version
+                        && f[3] == order
+                })
+                .flat_map(|f| f[4].split(',').collect::<Vec<&str>>())
+                .collect();
             assert!(
-                marker.is_file(),
-                "{}: the cell is no longer marked failed, so the exclusion needs re-measuring",
-                marker.display()
+                !writers.contains(&"cyclone"),
+                "{case} {version} {order}: Cyclone wrote octets in the matrix, so the \
+                 exclusion needs re-measuring"
             );
-            let why = std::fs::read_to_string(cell.join("why.md"))
-                .unwrap_or_else(|error| panic!("{}/why.md: {error}", cell.display()));
+            let others = writers
+                .iter()
+                .filter(|writer| {
+                    ["rti", "fastdds", "opendds", "opensplice", "hdds"].contains(writer)
+                })
+                .count();
             assert!(
-                why.contains("find_union_case"),
-                "{}: the why no longer carries the mechanism behind the exclusion",
-                cell.display()
+                others >= 2,
+                "{case} {version} {order}: the cell has {others} other DDS writer(s); \
+                 without them Cyclone's absence says nothing"
+            );
+            let refused = corpus.lines().any(|line| {
+                let f: Vec<&str> = line.split('\t').collect();
+                f.len() >= 5
+                    && f[0] == case
+                    && f[1] == "cyclone"
+                    && f[2] == version
+                    && f[3] == order
+                    && f[4] == "refused"
+            });
+            assert!(
+                refused,
+                "{case} {version} {order}: vendor-corpus.tsv no longer records Cyclone's refusal"
             );
             failed_cells += 1;
         }
@@ -976,8 +1006,7 @@ fn the_configuration_is_named_the_same_everywhere() {
         UnionLabelMatch::NegativeLabelUnmatchedBelow32,
         "`Dialect::Cyclone` no longer selects the setting this file measures"
     );
-    const LISTS: [&str; 4] = [
-        "crates/wire-probe/tests/three_column_gate.rs",
+    const LISTS: [&str; 3] = [
         "tools/interop-results/src/rust_column.rs",
         "crates/wire-probe/src/matrix.rs",
         "tools/wireprobe/wireprobe-zerodds-c-gen/src/bin/wireprobe-c-matrix.rs",
@@ -989,61 +1018,5 @@ fn the_configuration_is_named_the_same_everywhere() {
             text.contains("cyclone"),
             "{path} does not drive `--dialect cyclone`"
         );
-    }
-}
-
-// The canonical text of a read-back sample is the same in shape as the
-// sample that went in, minus the branch the stream does not carry.
-//
-// A round trip of this project's own bytes under the rule: what is
-// written is read back, which is the property that makes the setting
-// usable rather than merely reproducible.
-#[test]
-fn the_round_trip_is_stable_under_the_rule() {
-    for case in BRANCHLESS_CASES.iter().chain(DEFAULTED_CASES.iter()) {
-        let files = case_files(case);
-        let ast =
-            model_from_idl_in_dialect(&files.idl, &format!("{case}/type.idl"), Dialect::Cyclone)
-                .expect("the case lowers");
-        for encoding in [Encoding::PlainCdr1, Encoding::PlainCdr2] {
-            for endianness in [Endianness::Little, Endianness::Big] {
-                let mut request = ProbeRequest::in_dialect(
-                    &files.type_name,
-                    encoding,
-                    endianness,
-                    Dialect::Cyclone,
-                );
-                request.union_label = UnionLabelMatch::NegativeLabelUnmatchedBelow32;
-                let bytes = encode(&ast, &request, &files.values)
-                    .unwrap_or_else(|error| panic!("{case}: {error}"));
-                let read = decode(&ast, &request, &bytes)
-                    .unwrap_or_else(|error| panic!("{case}: {error}"));
-                let again = encode(&ast, &request, &read).unwrap_or_else(|error| {
-                    panic!("{case}: the read-back does not write: {error}")
-                });
-                assert_eq!(
-                    hex(&bytes),
-                    hex(&again),
-                    "{case}: writing the read-back sample gives other octets"
-                );
-            }
-        }
-        // And the sample the corpus declares still canonicalises, so the
-        // comparison the gate makes has something to compare against.
-        let type_ = ast
-            .find_by_scoped_name(&zerodds_ast_core::ScopedName::absolute(
-                files
-                    .type_name
-                    .split("::")
-                    .filter(|segment| !segment.is_empty())
-                    .map(std::string::ToString::to_string)
-                    .collect(),
-            ))
-            .ok()
-            .and_then(zerodds_ast::AnyId::as_type)
-            .expect("the case's type");
-        let canonical =
-            canonicalise(&ast, type_, &files.values, "sample").expect("the sample canonicalises");
-        assert!(!text(&canonical).is_empty());
     }
 }

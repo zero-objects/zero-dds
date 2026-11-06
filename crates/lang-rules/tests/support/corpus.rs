@@ -77,3 +77,27 @@ pub fn rpc_corpus() -> Vec<(
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
 }
+
+/// The Java wire runtime as `tests/integration/java_runtime.sh` compiled it
+/// once for a codegen job: its classes, when the directory holds `complete`
+/// and the sources it compiled are `sources`, file for file. A gate that
+/// gets `None` compiles the runtime itself, once per test process; under
+/// nextest that is once per test.
+#[allow(dead_code)]
+pub fn precompiled_java_runtime(sources: &[PathBuf]) -> Option<PathBuf> {
+    let dir = std::env::temp_dir().join("zd-java-runtime");
+    if !dir.join("complete").is_file() {
+        return None;
+    }
+    let compiled = std::fs::read_dir(dir.join("src")).ok()?.count();
+    if compiled != sources.len() {
+        return None;
+    }
+    for source in sources {
+        let copy = dir.join("src").join(source.file_name()?);
+        if std::fs::read(source).ok()? != std::fs::read(copy).ok()? {
+            return None;
+        }
+    }
+    Some(dir.join("classes"))
+}

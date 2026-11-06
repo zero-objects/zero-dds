@@ -51,7 +51,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void anInstanceDisposedAndWrittenAgainCountsADisposedGeneration() throws Exception {
+    void javapsm_2_an_instance_disposed_and_written_again_counts_a_disposed_generation() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -92,7 +92,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void anInstanceWithoutWritersWrittenAgainCountsANoWritersGeneration() throws Exception {
+    void javapsm_2_an_instance_without_writers_written_again_counts_a_no_writers_generation() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -114,7 +114,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void theRanksAreMeasuredWithinTheSamplesOfOneInstanceInTheCollection() throws Exception {
+    void javapsm_2_the_ranks_are_measured_within_the_samples_of_one_instance_in_the_collection() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -142,7 +142,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void allSamplesOfAnInstanceInOneCollectionHaveTheSameViewStateAndTheSampleStateOfBeforeTheRead() throws Exception {
+    void javapsm_2_all_samples_of_an_instance_in_one_collection_have_the_same_view_state_and_the_sample_state_of_before_the_read() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -170,7 +170,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void theSourceTimestampIsTheOneTheWriterGave() throws Exception {
+    void javapsm_2_the_source_timestamp_is_the_one_the_writer_gave() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -183,7 +183,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void thePublicationHandleNamesTheWriterThatIsMatchedWithTheReader() throws Exception {
+    void javapsm_2_the_publication_handle_names_the_writer_that_is_matched_with_the_reader() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -196,7 +196,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void theInstanceHandleOfASampleIsTheOneTheReaderAndTheWriterLookUp() throws Exception {
+    void javapsm_2_the_instance_handle_of_a_sample_is_the_one_the_reader_and_the_writer_look_up() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -211,7 +211,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void aKeyLongerThanSixteenOctetsKeepsItsOwnInstanceHandle() throws Exception {
+    void javapsm_2_a_key_longer_than_sixteen_octets_keeps_its_own_instance_handle() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<ReaderRig.Named> topic = participant.createTopic("ReaderNamedTopic",
                 ReaderRig.Named.class);
@@ -238,7 +238,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void anInstanceWithoutLiveWritersAndWithoutSamplesIsForgottenByTheReader() throws Exception {
+    void javapsm_2_an_instance_without_live_writers_and_without_samples_is_forgotten_by_the_reader() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -260,7 +260,7 @@ class ReaderSampleInfoTest {
     }
 
     @Test
-    void aDisposedInstanceStaysDisposedWhenItsLastWriterUnregisters() throws Exception {
+    void javapsm_2_a_disposed_instance_stays_disposed_when_its_last_writer_unregisters() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();

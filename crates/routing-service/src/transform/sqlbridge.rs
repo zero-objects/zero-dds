@@ -127,29 +127,19 @@ mod tests {
         }
     }
 
+    /// DDS 1.4 Annex B: a filter names members by their field names,
+    /// compares strings with quoted literals, joins conditions with AND and
+    /// takes `%0` from the first parameter.
     #[test]
-    fn filter_matches() {
+    fn dcps_annex_b_a_filter_reads_members_by_name_and_parameters_by_position() {
         let sh = shape();
+        let row = |temp: i32, zone: &str| vec![DynValue::I32(temp), DynValue::Str(zone.into())];
         let f = CompiledFilter::build("r", "temp > 50 AND zone = 'A'", &[]).unwrap();
-        let pass = vec![DynValue::I32(60), DynValue::Str("A".into())];
-        let fail_temp = vec![DynValue::I32(40), DynValue::Str("A".into())];
-        let fail_zone = vec![DynValue::I32(60), DynValue::Str("B".into())];
-        assert!(f.matches(&DecodedRow::new(&sh, &pass)));
-        assert!(!f.matches(&DecodedRow::new(&sh, &fail_temp)));
-        assert!(!f.matches(&DecodedRow::new(&sh, &fail_zone)));
-    }
-
-    #[test]
-    fn filter_with_param() {
-        let sh = shape();
+        assert!(f.matches(&DecodedRow::new(&sh, &row(60, "A"))));
+        assert!(!f.matches(&DecodedRow::new(&sh, &row(40, "A"))));
+        assert!(!f.matches(&DecodedRow::new(&sh, &row(60, "B"))));
         let f = CompiledFilter::build("r", "temp > %0", &["50".into()]).unwrap();
-        assert!(f.matches(&DecodedRow::new(
-            &sh,
-            &[DynValue::I32(60), DynValue::Str("A".into())]
-        )));
-        assert!(!f.matches(&DecodedRow::new(
-            &sh,
-            &[DynValue::I32(10), DynValue::Str("A".into())]
-        )));
+        assert!(f.matches(&DecodedRow::new(&sh, &row(60, "A"))));
+        assert!(!f.matches(&DecodedRow::new(&sh, &row(10, "A"))));
     }
 }

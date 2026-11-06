@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn builds_and_browses_hierarchy() {
+    fn uapubsub_6_2_7_builds_and_browses_hierarchy() {
         let mut cfg = PubSubConfiguration::new(1);
         let conn = cfg.add_connection(connection());
         let wg = cfg
@@ -585,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn add_to_unknown_group_is_rejected() {
+    fn uapubsub_9_1_5_add_to_unknown_group_is_rejected() {
         let mut cfg = PubSubConfiguration::new(1);
         let phantom = NodeId::numeric(1, 999);
         assert_eq!(
@@ -595,7 +595,7 @@ mod tests {
     }
 
     #[test]
-    fn remove_prunes_subtree_entries() {
+    fn uapubsub_9_1_5_remove_prunes_subtree_entries() {
         let mut cfg = PubSubConfiguration::new(1);
         let conn = cfg.add_connection(connection());
         let wg = cfg

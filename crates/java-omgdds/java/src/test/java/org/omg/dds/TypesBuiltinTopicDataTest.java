@@ -70,7 +70,7 @@ class TypesBuiltinTopicDataTest {
     }
 
     @Test
-    void thePublicationDataCarriesTheRepresentationAndTheTypeConsistencyOfItsWriter() throws Exception {
+    void javapsm_7_8_the_publication_data_carries_the_representation_and_the_type_consistency_of_its_writer() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<byte[]> topic = participant.createTopic("TypesRepPublication", byte[].class);
         Publisher publisher = participant.createPublisher();
@@ -99,7 +99,7 @@ class TypesBuiltinTopicDataTest {
     }
 
     @Test
-    void anExactTypeConsistencyForbidsCoercionOnTheWire() throws Exception {
+    void javapsm_7_8_an_exact_type_consistency_forbids_coercion_on_the_wire() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<byte[]> topic = participant.createTopic("TypesExactPublication", byte[].class);
         Publisher publisher = participant.createPublisher();
@@ -122,7 +122,7 @@ class TypesBuiltinTopicDataTest {
     }
 
     @Test
-    void theSubscriptionDataCarriesTheRepresentationAndTheTypeConsistencyOfItsReader() throws Exception {
+    void javapsm_7_8_the_subscription_data_carries_the_representation_and_the_type_consistency_of_its_reader() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<byte[]> topic = participant.createTopic("TypesRepSubscription", byte[].class);
         Subscriber subscriber = participant.createSubscriber();
@@ -147,7 +147,7 @@ class TypesBuiltinTopicDataTest {
     }
 
     @Test
-    void theTopicDataCarriesTheRepresentationAndTheTypeConsistencyOfItsTopic() {
+    void javapsm_7_8_the_topic_data_carries_the_representation_and_the_type_consistency_of_its_topic() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         TopicQos qos = Qos.topic()
                 .withPolicy(PF.Representation().withValue(XCDR2))
@@ -168,14 +168,42 @@ class TypesBuiltinTopicDataTest {
                 back.getTypeConsistency().getKind());
     }
 
+    /**
+     * The value of parameter {@code pid} in a PL_CDR_LE payload (the encapsulation header, then
+     * the parameter list of DDSI-RTPS 2.5 §9.4.2.11), read here and not by the decoder under test.
+     */
+    private static byte[] parameter(byte[] payload, int pid) {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(payload).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        b.position(4);
+        while (b.remaining() >= 4) {
+            int id = b.getShort() & 0xFFFF;
+            int length = b.getShort() & 0xFFFF;
+            if (id == 0x0001) {
+                break;
+            }
+            byte[] value = new byte[length];
+            b.get(value);
+            if (id == pid) {
+                return value;
+            }
+        }
+        return null;
+    }
+
     @Test
-    void aRemoteEndpointAnnouncesTheRepresentationAndTheTypeConsistencyInSedp() {
+    void xtypes_7_6_3_2_a_remote_endpoint_announces_its_representation_and_type_consistency_in_sedp() {
         QosParameters qos = new QosParameters();
         qos.dataRepresentation = new int[] {2};
         qos.typeConsistency = new QosParameters.TypeConsistency();
         qos.typeConsistency.kind = 0;
         byte[] payload = DiscoveryData.buildEndpoint(true, new byte[12], new byte[16], "T", "Ty",
                 2, 1, new int[] {2}, Locator.udpV4("127.0.0.1", 7411), new byte[0], new byte[0], qos);
+        // DATA_REPRESENTATION (PID 0x0073): a sequence of one short, XCDR2 = 2, padded to four
+        assertArrayEquals(new byte[] {1, 0, 0, 0, 2, 0, 0, 0}, parameter(payload, 0x0073));
+        // TYPE_CONSISTENCY_ENFORCEMENT (PID 0x0074): the kind as 16 bits (@bit_bound(16)),
+        // DISALLOW_TYPE_COERCION = 0, then the five booleans, ignore_sequence_bounds and
+        // ignore_string_bounds true (XTypes 1.3 §7.6.3.4.1), padded to eight
+        assertArrayEquals(new byte[] {0, 0, 1, 1, 0, 0, 0, 0}, parameter(payload, 0x0074));
         DiscoveryData.Endpoint parsed = DiscoveryData.parseEndpoint(true, payload);
         assertNotNull(parsed);
         assertArrayEquals(new int[] {2}, parsed.qos.dataRepresentation);
@@ -191,6 +219,8 @@ class TypesBuiltinTopicDataTest {
         byte[] readerPayload = DiscoveryData.buildEndpoint(false, new byte[12], new byte[16], "T",
                 "Ty", 2, 1, new int[] {2}, Locator.udpV4("127.0.0.1", 7411), new byte[0],
                 new byte[0], qos);
+        // ALLOW_TYPE_COERCION = 1
+        assertArrayEquals(new byte[] {1, 0, 1, 1, 0, 0, 0, 0}, parameter(readerPayload, 0x0074));
         SubscriptionBuiltinTopicDataImpl subscription = BuiltinData.subscription(Qos.env(),
                 DiscoveryData.parseEndpoint(false, readerPayload));
         assertEquals(Arrays.asList(XCDR2), subscription.getRepresentation().getValue());
@@ -199,7 +229,7 @@ class TypesBuiltinTopicDataTest {
     }
 
     @Test
-    void anEndpointThatStatesNeitherHasTheDefaultsOfTheEntityQos() {
+    void javapsm_7_8_an_endpoint_that_states_neither_has_the_defaults_of_the_entity_qos() {
         byte[] payload = DiscoveryData.buildEndpoint(true, new byte[12], new byte[16], "T", "Ty",
                 2, 1, new int[] {0}, Locator.udpV4("127.0.0.1", 7411), new byte[0]);
         DiscoveryData.Endpoint parsed = DiscoveryData.parseEndpoint(true, payload);

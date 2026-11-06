@@ -31,7 +31,7 @@ per vendor moves the gate to a machine that puts them elsewhere.
 `fe/fe.sh` beside the cases asks the question one step earlier: which
 positions each front end accepts `@try_construct` in at all.
 §7.3.1.2.1.12's list is incomplete and the four disagree about the rest,
-and that run is what `docs/interop-evidence.md` §4.3 reports as "two
+and that run is what `0b2e8df9f6b:docs/interop-evidence.md` §4.3 reports as "two
 refusals against two silences is not a reading".
 
 `write` builds the writer side from `writer.idl` and prints the payload

@@ -3,7 +3,9 @@
 //! The `fixed<P,S>` interop goldens, anchored as tests.
 //!
 //! The ORB octets for `fixed` live in two committed places: the matrix
-//! cells (`matrix/{omniorb,jacorb}/cdr-{le,be}/<case>/*.values.bin`) and
+//! cells, carried into this repository as the rows of
+//! `tests/interop-corpus/expected-bytes.tsv` (rc8-test-suite.md, decision
+//! 3; the matrix commit is in the table's header), and
 //! `tests/interop-results/sources/corba-corpus.tsv`. Until this file,
 //! only the big-endian corpus rows were held against the encoder —
 //! `fixed_digit_count.rs` — and nothing asserted that the matrix cells
@@ -13,8 +15,8 @@
 //!
 //! Three anchors:
 //!
-//! 1. **The matrix cells are the corpus rows**, octet for octet — thirty
-//!    cells: omniORB in both byte orders and JacORB big-endian, over the
+//! 1. **The table's rows are the corpus rows**, octet for octet — thirty
+//!    rows: omniORB in both byte orders and JacORB big-endian, over the
 //!    ten `fixed` cases. TAO has no cell to anchor (`tao_idl` refuses
 //!    the IDL; its runtime's reading is measured in
 //!    `crates/ast-layout/tests/fixtures/unspecified_constructs.md` §3),
@@ -164,72 +166,70 @@ fn unhex(text: &str) -> Vec<u8> {
         .collect()
 }
 
-// The matrix cells and the corpus rows are the same recording.
+// The rows of `expected-bytes.tsv` and the corpus rows are the same
+// recording.
 //
-// Thirty cells: omniORB `cdr-le` and `cdr-be` and JacORB `cdr-be`, over
-// the ten `fixed` cases. Each `.values.bin` is required to exist and to
-// equal its `corba-corpus.tsv` row octet for octet — the `0xAA` fill
-// included, because both places recorded the same serialiser run and a
-// difference in the fill would mean they did not. The two refusal
-// columns are held to stay refusals: a `.values.bin` appearing under
-// `matrix/tao/` or `matrix/jacorb/cdr-le/` would be a measurement this
-// file does not compare, and it must fail rather than pass unseen.
+// Thirty rows: omniORB `xcdr1` little- and big-endian and JacORB `xcdr1`
+// big-endian, over the ten `fixed` cases. The table holds the octets of the
+// matrix cells (`tools/expected-bytes/generate.py` reads the ORBs' `cdr-<endian>`
+// cells as their `xcdr1` rows), so each row has to equal its
+// `corba-corpus.tsv` row octet for octet — the `0xAA` fill included, because
+// both places recorded the same serialiser run and a difference in the fill
+// would mean they did not. The two refusal columns are held to stay refusals:
+// a TAO row or a JacORB little-endian row appearing in the table would be a
+// measurement this file does not compare, and it must fail rather than pass
+// unseen.
 #[test]
-fn the_matrix_cells_are_the_recorded_rows() {
+fn the_table_rows_are_the_recorded_rows() {
     let rows = recorded();
-    let root = repository_root();
-    // The cells live in `zerodds-matrix` since 2026-08-26 and are
-    // cloned into `matrix/` beside this repository (see
-    // `docs/matrix-repo-split.md`). A checkout without that clone
-    // cannot run this comparison — say so and stop, rather than
-    // passing with nothing compared: an empty loop below would report
-    // green for a file whose whole subject is absent.
-    if !root.join("matrix").join("omniorb").is_dir() {
-        panic!(
-            "matrix/omniorb is not here: this test compares recorded \
-             cells and the cells live in the zerodds-matrix repository, \
-             cloned into matrix/. See docs/matrix-repo-split.md."
-        );
+    let path = repository_root().join("tests/interop-corpus/expected-bytes.tsv");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+    // (case, dialect, endian) -> hex, for the `values` sample under `xcdr1`.
+    let mut table: BTreeMap<(String, String, String), String> = BTreeMap::new();
+    for line in text.lines() {
+        if line.starts_with('#') || line.starts_with("case\t") {
+            continue;
+        }
+        let f: Vec<&str> = line.split('\t').collect();
+        if f.len() != 6 || f[1] != "values" || f[2] != "xcdr1" {
+            continue;
+        }
+        for dialect in f[4].split(',') {
+            table.insert(
+                (f[0].to_string(), dialect.to_string(), f[3].to_string()),
+                f[5].to_string(),
+            );
+        }
     }
     let mut compared = 0usize;
     for case in fixed_cases() {
         for (orb, order) in [("omniorb", "le"), ("omniorb", "be"), ("jacorb", "be")] {
-            let cell = root
-                .join("matrix")
-                .join(orb)
-                .join(format!("cdr-{order}"))
-                .join(&case)
-                .join(format!("{orb}-cdr-{order}-{case}.values.bin"));
-            let bin =
-                std::fs::read(&cell).unwrap_or_else(|error| panic!("{}: {error}", cell.display()));
             let key = (case.clone(), orb.to_string(), order.to_string());
+            let Some(cell) = table.get(&key) else {
+                panic!("{case} {orb} {order}: no row in expected-bytes.tsv");
+            };
             let Some(row) = rows.get(&key) else {
-                panic!("{case} {orb} {order}: a matrix cell with no corba-corpus.tsv row");
+                panic!("{case} {orb} {order}: a table row with no corba-corpus.tsv row");
             };
             assert_eq!(
-                hex(&bin),
-                *row,
-                "{case} {orb} {order}: the matrix cell and the corpus row have drifted apart"
+                cell, row,
+                "{case} {orb} {order}: the table row and the corpus row have drifted apart"
             );
             compared += 1;
         }
         for (orb, order) in [("tao", "le"), ("tao", "be"), ("jacorb", "le")] {
-            let cell = root
-                .join("matrix")
-                .join(orb)
-                .join(format!("cdr-{order}"))
-                .join(&case)
-                .join(format!("{orb}-cdr-{order}-{case}.values.bin"));
+            let key = (case.clone(), orb.to_string(), order.to_string());
             assert!(
-                !cell.exists(),
-                "{}: octets appeared in a column this file records as a refusal — compare them",
-                cell.display()
+                !table.contains_key(&key),
+                "{case} {orb} {order}: octets appeared in a column this file records as a \
+                 refusal — compare them"
             );
         }
     }
     assert_eq!(
         compared, 30,
-        "ten cases in three recorded columns is thirty cells and {compared} were compared"
+        "ten cases in three recorded columns is thirty rows and {compared} were compared"
     );
 }
 

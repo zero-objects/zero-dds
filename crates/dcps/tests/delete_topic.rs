@@ -33,7 +33,7 @@ fn offline() -> DomainParticipant {
 
 /// §2.2.2.2.1.6 with nothing attached to the topic: the deletion happens.
 #[test]
-fn delete_topic_succeeds_when_nothing_uses_it() {
+fn dcps_2_2_2_2_1_6_delete_topic_succeeds_when_nothing_uses_it() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Free", TopicQos::default())
@@ -49,7 +49,7 @@ fn delete_topic_succeeds_when_nothing_uses_it() {
 /// `contains_entity` no longer see a deleted topic; `create_topic` with the
 /// same name then builds a new one rather than handing the old state back.
 #[test]
-fn a_deleted_topic_is_gone_from_the_registry_and_its_name_is_free_again() {
+fn dcps_2_2_2_2_1_6_a_deleted_topic_is_gone_from_the_registry_and_its_name_is_free_again() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Cycling", TopicQos::default())
@@ -84,7 +84,7 @@ fn a_deleted_topic_is_gone_from_the_registry_and_its_name_is_free_again() {
 /// second deletes it, and a third is ALREADY_DELETED. The first deleted
 /// it.
 #[test]
-fn a_topic_created_twice_goes_with_the_second_delete() {
+fn dcps_2_2_2_2_1_5_a_topic_created_twice_goes_with_the_second_delete() {
     let p = offline();
     let first = p
         .create_topic::<RawBytes>("Shared", TopicQos::default())
@@ -116,7 +116,7 @@ fn a_topic_created_twice_goes_with_the_second_delete() {
 /// delete_topic is called on a different DomainParticipant, the operation
 /// will have no effect and it will return PRECONDITION_NOT_MET."
 #[test]
-fn delete_topic_from_another_participant_is_refused_and_changes_nothing() {
+fn dcps_2_2_2_2_1_6_delete_topic_from_another_participant_is_refused_and_changes_nothing() {
     let owner = offline();
     let stranger = offline();
     let topic = owner
@@ -138,7 +138,7 @@ fn delete_topic_from_another_participant_is_refused_and_changes_nothing() {
 
 /// §2.2.2.2.1.6, first rule, DataWriter clause.
 #[test]
-fn delete_topic_is_refused_while_a_datawriter_uses_it() {
+fn dcps_2_2_2_2_1_6_delete_topic_is_refused_while_a_datawriter_uses_it() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Written", TopicQos::default())
@@ -164,7 +164,7 @@ fn delete_topic_is_refused_while_a_datawriter_uses_it() {
 
 /// §2.2.2.2.1.6, first rule, DataReader clause.
 #[test]
-fn delete_topic_is_refused_while_a_datareader_uses_it() {
+fn dcps_2_2_2_2_1_6_delete_topic_is_refused_while_a_datareader_uses_it() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Read", TopicQos::default())
@@ -191,7 +191,7 @@ fn delete_topic_is_refused_while_a_datareader_uses_it() {
 /// deletes a ContentFilteredTopic with its last handle, as
 /// `delete_contentfilteredtopic` documents — so the count follows the handle.
 #[test]
-fn delete_topic_is_refused_while_a_content_filtered_topic_uses_it() {
+fn dcps_2_2_2_2_1_6_delete_topic_is_refused_while_a_content_filtered_topic_uses_it() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Filtered", TopicQos::default())
@@ -222,7 +222,7 @@ fn delete_topic_is_refused_while_a_content_filtered_topic_uses_it() {
 /// §2.2.2.2.1.6, first rule, MultiTopic clause. A MultiTopic names its
 /// related topics, and each of them is held while the MultiTopic exists.
 #[test]
-fn delete_topic_is_refused_while_a_multitopic_uses_it() {
+fn dcps_2_2_2_2_1_6_delete_topic_is_refused_while_a_multitopic_uses_it() {
     let p = offline();
     let topic = common::order_topic(&p, "Joined");
     let multitopic = common::order_copy_multitopic(&p, "Joined::Multi", "Joined");
@@ -243,7 +243,7 @@ fn delete_topic_is_refused_while_a_multitopic_uses_it() {
 /// Every kind at once, then none: the precondition is "any", so the count
 /// is per kind and the topic is freed only when all four are empty.
 #[test]
-fn every_kind_of_user_holds_the_topic_and_releasing_all_of_them_frees_it() {
+fn dcps_2_2_2_2_1_6_every_kind_of_user_holds_the_topic_and_releasing_all_of_them_frees_it() {
     let p = offline();
     let topic = common::order_topic(&p, "Busy");
     let publisher = p.create_publisher(PublisherQos::default());
@@ -297,7 +297,7 @@ fn every_kind_of_user_holds_the_topic_and_releasing_all_of_them_frees_it() {
 /// result." Neither endpoint is created, and the owning participant counts
 /// no user of its topic.
 #[test]
-fn an_endpoint_cannot_use_the_topic_of_another_participant() {
+fn dcps_2_2_2_4_1_5_an_endpoint_cannot_use_the_topic_of_another_participant() {
     let owner = offline();
     let stranger = offline();
     let topic = owner
@@ -348,7 +348,7 @@ fn delete_topic_refuses_a_topic_that_was_never_registered() {
 /// The untyped form the C-FFI uses: a name, not a typed handle. It follows
 /// the same precondition and the same ALREADY_DELETED answer.
 #[test]
-fn delete_topic_by_name_follows_the_same_rules() {
+fn dcps_2_2_2_2_1_12_delete_topic_by_name_follows_the_same_rules() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("ByName", TopicQos::default())

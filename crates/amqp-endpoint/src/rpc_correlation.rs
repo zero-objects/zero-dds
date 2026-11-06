@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn defaults_match_spec() {
+    fn ddsamqp_d_2_defaults_match_spec() {
         // §D.4.3 default: 30000 ms.
         assert_eq!(DEFAULT_RPC_TIMEOUT_MS, 30_000);
         // §D.4.4 default: bounded; specifically 4096.
@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn issue_accepts_then_full() {
+    fn ddsamqp_d_4_issue_accepts_then_full() {
         let mut t = OutstandingCalls::new(RpcConfig {
             max_outstanding: 2,
             ..cfg(true)
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_reply_rejects_missing_correlation_id() {
+    fn ddsamqp_d_3_validate_reply_rejects_missing_correlation_id() {
         let metrics = MetricsHub::new();
         let mut t = OutstandingCalls::new(cfg(true));
         let props = ReplyProperties::default();
@@ -371,7 +371,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_reply_drops_unknown_correlation_id() {
+    fn ddsamqp_d_4_validate_reply_drops_unknown_correlation_id() {
         let metrics = MetricsHub::new();
         let mut t = OutstandingCalls::new(cfg(true));
         let props = ReplyProperties {
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_reply_late_reply_dropped() {
+    fn ddsamqp_d_4_validate_reply_late_reply_dropped() {
         let metrics = MetricsHub::new();
         let mut t = OutstandingCalls::new(RpcConfig {
             rpc_timeout_ms: 100,
@@ -457,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn expire_overdue_removes_and_counts() {
+    fn ddsamqp_d_4_expire_overdue_removes_and_counts() {
         let metrics = MetricsHub::new();
         let mut t = OutstandingCalls::new(RpcConfig {
             rpc_timeout_ms: 100,
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn from_amqp_handles_str_symbol_uuid_binary() {
+    fn ddsamqp_d_1_from_amqp_handles_str_symbol_uuid_binary() {
         // String correlation-id.
         let p = ReplyProperties::from_amqp(Some(&AmqpExtValue::Str("foo".into())));
         assert_eq!(p.correlation_id, Some("foo".to_string()));
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_reply_does_not_block_on_table_full() {
+    fn ddsamqp_d_4_validate_reply_does_not_block_on_table_full() {
         // §D.4.4 — non-blocking guarantee: with a full table
         // `issue` must return OutOfResources synchronously, no
         // block, no wait.

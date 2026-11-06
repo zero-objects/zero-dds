@@ -145,8 +145,8 @@ fn route_and_dispose(which: &str, with_type_file: bool) -> BTreeMap<String, Stri
         rt.write_user_lifecycle(eid, keyed_point_a_key_hash(id), None, bits, None)
             .unwrap();
     }
-    std::thread::sleep(Duration::from_millis(1500));
-    let states = reader.snapshot();
+    // The reader's STATE lines say when the four changes arrived.
+    let states = reader.wait_states(&ROUTED, Duration::from_secs(10));
     rt.shutdown();
     drop(router);
     let _ = reader.finish();
@@ -158,15 +158,20 @@ fn route_and_dispose(which: &str, with_type_file: bool) -> BTreeMap<String, Stri
     states
 }
 
+/// The states the four lifecycle writes leave behind the route: a dispose
+/// makes the instance NOT_ALIVE_DISPOSED, an unregister by its only writer
+/// NOT_ALIVE_NO_WRITERS (DDS 1.4 §2.2.2.5.1.11, §2.2.2.4.2.7).
+const ROUTED: [(i32, &str); 4] = [
+    (7, "NOT_ALIVE_DISPOSED"),
+    (8, "NOT_ALIVE_NO_WRITERS"),
+    (9, "NOT_ALIVE_DISPOSED"),
+    (10, "NOT_ALIVE_DISPOSED"),
+];
+
 fn assert_routed_states(label: &str, states: &BTreeMap<String, String>) {
-    for (id, want) in [
-        ("7", "NOT_ALIVE_DISPOSED"),
-        ("8", "NOT_ALIVE_NO_WRITERS"),
-        ("9", "NOT_ALIVE_DISPOSED"),
-        ("10", "NOT_ALIVE_DISPOSED"),
-    ] {
+    for (id, want) in ROUTED {
         assert_eq!(
-            states.get(id).map(String::as_str),
+            states.get(&id.to_string()).map(String::as_str),
             Some(want),
             "instance {id} at the {label} reader behind the route (all: {states:?})"
         );
@@ -174,7 +179,7 @@ fn assert_routed_states(label: &str, states: &BTreeMap<String, String>) {
 }
 
 #[test]
-#[ignore = "live against Eclipse Cyclone DDS: needs python3 with the cyclonedds binding; run with --ignored"]
+#[ignore = "interop pillar, job vendor-live-dispose-services: live against Eclipse Cyclone DDS, needs python3 with the cyclonedds binding"]
 fn a_routed_dispose_reaches_a_cyclone_reader() {
     let _ = route_and_dispose("cyclone", false);
     let states = route_and_dispose("cyclone", true);
@@ -182,7 +187,7 @@ fn a_routed_dispose_reaches_a_cyclone_reader() {
 }
 
 #[test]
-#[ignore = "live against another vendor: set ZERODDS_DISPOSE_READER (tools/dispose-reader/build.sh); run with --ignored"]
+#[ignore = "interop pillar, job vendor-live-dispose-services: live against Fast DDS, set ZERODDS_DISPOSE_READER (tools/dispose-reader/build.sh)"]
 fn a_routed_dispose_reaches_a_foreign_reader() {
     let _ = route_and_dispose("env", false);
     let states = route_and_dispose("env", true);

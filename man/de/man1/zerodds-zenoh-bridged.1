@@ -1,0 +1,164 @@
+.TH ZERODDS-ZENOH-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-zenoh-bridged \- Bridge-Daemon von DDS nach Eclipse Zenoh
+.SH ÜBERSICHT
+.B zerodds-zenoh-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-mode\fR \fIpeer\fR|\fIclient\fR|\fIrouter\fR]
+[\fB\-\-connect\fR \fIENDPUNKT\fR]...
+[\fB\-\-listen\fR \fIENDPUNKT\fR]...
+[\fB\-\-no\-multicast\-scouting\fR]
+[\fB\-\-scope\fR \fISCOPE\fR]
+[\fB\-\-topic\fR \fIDDS\fR[\fI:RICHTUNG\fR]]...
+[\fB\-\-log\-level\fR \fISTUFE\fR]
+[\fB\-\-metrics\fR \fIADR\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-zenoh-bridged
+verbindet DDS-Topics und Key Expressions von Eclipse Zenoh in beide
+Richtungen. Er ist auf der Leitung kompatibel mit der eigenen DDS-Bridge von
+Zenoh
+.RB ( zenoh\-plugin\-dds " / " zenoh\-bridge\-dds ,
+github.com/eclipse-zenoh/zenoh-plugin-dds): Das Standard-Schema der Key
+Expressions
+.RI ( <scope>/<partition>/<topic> ,
+Scope standardmäßig leer), die Zenoh-Nutzlast (der vollständige, in RTPS
+gekapselte CDR-Block, nicht der Inhalt ohne Kopf), die Wahl von
+.BR CongestionControl ,
+gesteuert über
+.BR reliable_routes_blocking ,
+und der Mechanismus für spät hinzukommende Teilnehmer bei TRANSIENT_LOCAL
+.RI ( PublicationCache / FetchingSubscriber )
+entsprechen alle denen des Plugins, sodass ein
+.B zerodds-zenoh-bridged
+an einem Standort und eine
+.B zenoh-bridge-dds
+an einem anderen im selben Zenoh-Netz zusammenarbeiten. Siehe
+.I crates/zenoh-bridge/src/mapping.rs
+für die genauen Quellenangaben, gegen die dieses Crate gelesen wurde.
+.PP
+Jedes DDS-Topic, das der Daemon findet (über die eingebauten DCPS-Topics),
+wird automatisch verbunden, gefiltert durch
+.BR discovery.allow / deny ,
+so wie
+.B zenoh-plugin-dds
+jedes Topic verbindet, das es sieht; Topics können auch ausdrücklich unter
+.B topics:
+aufgeführt werden, für QoS-Überschreibungen, eine ausdrückliche Key Expression
+oder eine
+.B type_file
+(nötig für ein Topic mit Schlüssel, das von Zenoh nach DDS verbunden wird, um
+den echten Key Hash je Instanz abzuleiten, statt jede Instanz auf eine
+zusammenfallen zu lassen).
+.PP
+.B zenoh-plugin-dds
+leitet DDS-dispose/unregister in keine Richtung weiter (es überspringt sie
+still). Die Regel dieses Projekts, kein Sample ohne Spur zu verwerfen,
+bedeutet, dass
+.B zerodds-zenoh-bridged
+dispose/unregister weiterleitet, als Zenoh-
+.B delete
+auf
+.IR <key-expr>/<key-hash-hex> ,
+eine Erweiterung des Key-Schemas des Plugins, kein Ersatz dafür.
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+YAML-Konfiguration. Siehe
+.BR zerodds-zenoh-bridged.yaml (5).
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-mode =\fIpeer\fR|\fIclient\fR|\fIrouter\fR
+Modus der Zenoh-Sitzung. Standard:
+.IR peer .
+.TP
+.BR \-\-connect =\fIENDPUNKT\fR
+Zenoh-Endpunkt, mit dem verbunden wird, z. B.
+.IR tcp/192.0.2.10:7447
+(wiederholbar).
+.TP
+.BR \-\-listen =\fIENDPUNKT\fR
+Zenoh-Endpunkt, auf dem gelauscht wird (wiederholbar).
+.TP
+.BR \-\-no\-multicast\-scouting
+Schaltet das UDP-Multicast-Scouting von Zenoh ab (entspricht der
+gleichnamigen Option von
+.B zenoh-bridge-dds
+selbst).
+.TP
+.BR \-\-scope =\fISCOPE\fR
+Scope der Zenoh-Key-Expressions. Standard: keiner (wie bei
+.BR zenoh-plugin-dds ).
+.TP
+.BR \-\-topic =\fIDDS\fR[\fI:RICHTUNG\fR]
+Topic-Überschreibung, RICHTUNG eine von
+.IR in ", " out ", " bidir
+(wiederholbar).
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listen-Adresse für Prometheus.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+SIGTERM und SIGINT beenden den Daemon: Jede Weiterleitungs-Pumpe wird
+zusammengeführt (join), und jeder Zenoh-Subscriber und jeder
+Publication-Cache wird vor dem Ende abgemeldet.
+SIGHUP liest die Konfiguration neu:
+.BR discovery.allow / deny / auto_bridge
+gelten für die folgenden Abfragedurchläufe. Ein geändertes
+.BR domain ,
+.BR zenoh. \fI* \fR
+oder
+.B topics:
+braucht einen Neustart (die Zenoh-Sitzung und die registrierten DDS-Reader
+und -Writer werden beim Neuladen nicht abgebaut und neu aufgebaut) und wird
+protokolliert, nicht angewendet. Eine Konfiguration, die nicht lädt, ändert
+nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden.
+.TP
+.B 1
+Konfigurationsfehler.
+.TP
+.B 2
+Bind-Fehler: Eine Listen-Adresse für Metriken oder Administration ist schon
+belegt.
+.TP
+.B 3
+Fehler bei der DDS-Discovery.
+.TP
+.B 4
+Fehler der Zenoh-Sitzung.
+.SH DATEIEN
+.I /etc/zerodds/zenoh-bridged.yaml .
+.SH SIEHE AUCH
+.BR zerodds-zenoh-bridged.yaml (5).
+.SH AUTOREN
+ZeroDDS Contributors.

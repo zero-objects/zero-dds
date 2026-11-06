@@ -1063,7 +1063,7 @@ mod tests {
     }
 
     #[test]
-    fn a_structure_of_primitives_names_every_required_field() {
+    fn xtypes_7_2_2_4_4_4_7_a_structure_of_primitives_names_every_required_field() {
         // `kw_only=True` makes a positional argument a TypeError, and a
         // required field left out is one too — which is what
         // `adapter/python.rs` meant by giving it no default.
@@ -1105,7 +1105,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_member_is_absent_from_the_constructor_call() {
+    fn xtypes_7_2_2_4_4_4_7_an_optional_member_is_absent_from_the_constructor_call() {
         // 7.2.2.4.4.4.8: "Implementations shall not provide a default
         // value in such a case". The declared field is
         // `typing.Optional[T] = None` and the absence is the value.
@@ -1118,7 +1118,7 @@ mod tests {
     }
 
     #[test]
-    fn a_union_whose_discriminators_default_selects_a_case_sets_both() {
+    fn xtypes_7_2_2_4_4_4_7_a_union_whose_discriminators_default_selects_a_case_sets_both() {
         // Table 9: the discriminator's own default, and the member it
         // selects. A `long` discriminator defaults to zero.
         let text = defaulter(
@@ -1132,7 +1132,8 @@ mod tests {
     }
 
     #[test]
-    fn a_union_whose_discriminators_default_selects_nothing_is_the_discriminator_alone() {
+    fn xtypes_7_2_2_4_4_4_7_a_union_whose_discriminators_default_selects_nothing_is_the_discriminator_alone()
+     {
         // No label is zero and there is no `default:`, so Table 9's "if
         // this selects a branch" does not fire. A Python union is one
         // dataclass whose case fields default to None, so no case is
@@ -1148,7 +1149,7 @@ mod tests {
     }
 
     #[test]
-    fn a_unions_default_case_is_what_an_unlisted_discriminator_selects() {
+    fn xtypes_7_2_2_4_4_3_a_unions_default_case_is_what_an_unlisted_discriminator_selects() {
         let text = defaulter(
             "@final union U switch (long) { case 1: long one; default: string other; };",
             "U",
@@ -1160,7 +1161,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_takes_its_first_literal_by_name() {
+    fn xtypes_7_2_2_4_4_4_7_an_enumeration_takes_its_first_literal_by_name() {
         // 7.3.1.2.1.10. By name and not as the number: a file that
         // spelled the value would keep working after `@value` moved it.
         let text = defaulter("enum Colour { RED, GREEN, BLUE };", "Colour");
@@ -1171,7 +1172,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_with_a_default_literal_takes_that_one() {
+    fn xtypes_7_3_1_2_1_10_an_enumeration_with_a_default_literal_takes_that_one() {
         let text = defaulter(
             "enum Colour { RED, @default_literal GREEN, BLUE };",
             "Colour",
@@ -1183,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sequence_is_an_empty_list_at_every_bound() {
+    fn xtypes_7_2_2_4_4_4_7_a_sequence_is_an_empty_list_at_every_bound() {
         // 7.2.2.4.4.4.7 asks for a zero-length sequence, and the bound
         // does not change what zero elements are.
         // The two names differ because the bound is part of the tag —
@@ -1211,7 +1212,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fixed_size_array_is_that_many_elements() {
+    fn xtypes_7_2_2_4_4_4_7_a_fixed_size_array_is_that_many_elements() {
         // One call per element and never `(zd_def_T(),) * 3`, which
         // evaluates the element once and repeats the reference; a tuple,
         // because `adapter/python.rs` declares the member `tuple[int, int,
@@ -1225,7 +1226,7 @@ mod tests {
     }
 
     #[test]
-    fn a_two_dimensional_array_is_one_tuple_per_dimension() {
+    fn xtypes_7_2_2_4_4_4_7_a_two_dimensional_array_is_one_tuple_per_dimension() {
         let text = closure("@final struct S { long g[2][3]; };", "S");
         // Two rows of three, which is what the walk indexes [i0][i1].
         assert!(
@@ -1257,7 +1258,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_double_is_a_float128_and_never_a_float() {
+    fn xtypes_7_2_2_4_4_4_7_a_long_double_is_a_float128_and_never_a_float() {
         // A Python `float` is a binary64 with 53 significand bits and a
         // `long double` is a binary128 with 113.
         let text = defaulter("typedef long double LD; @final struct S { LD d; };", "LD");
@@ -1272,7 +1273,7 @@ mod tests {
     }
 
     #[test]
-    fn a_char_is_a_one_character_string_and_not_an_integer() {
+    fn xtypes_7_2_2_4_4_4_7_a_char_is_a_one_character_string_and_not_an_integer() {
         // Python has no character type; the octet is the C column's 0.
         let text = closure("@final struct S { char c; };", "S");
         assert!(
@@ -1282,7 +1283,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bitset_is_the_dataclass_with_every_field_at_zero() {
+    fn xtypes_7_2_2_4_4_4_7_a_bitset_is_the_dataclass_with_every_field_at_zero() {
         // `adapter/python.rs` declares a dataclass of one field per
         // bitfield; the packing into the anchor is the codec's.
         let text = defaulter(
@@ -1296,7 +1297,8 @@ mod tests {
     }
 
     #[test]
-    fn a_typedef_and_its_target_are_one_function_and_it_does_not_call_itself() {
+    fn xtypes_7_2_2_4_4_4_7_a_typedef_and_its_target_are_one_function_and_it_does_not_call_itself()
+    {
         // `type_tag` follows an alias through, so both name
         // `zd_def_Point`; an alias arm answering with a call would be a
         // function whose body calls itself.
@@ -1315,7 +1317,7 @@ mod tests {
     }
 
     #[test]
-    fn the_closure_reaches_every_defaulter_a_batch_calls() {
+    fn xtypes_7_2_2_4_4_4_9_the_closure_reaches_every_defaulter_a_batch_calls() {
         // The set is read off the emitted calls, so a member's member's
         // defaulter arrives without a second walk over the model.
         let idl = "@final struct Leaf { long a; };

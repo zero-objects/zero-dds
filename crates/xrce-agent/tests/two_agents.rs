@@ -219,7 +219,7 @@ fn build_side(
 }
 
 #[test]
-fn two_clients_on_two_agents_exchange_a_sample_through_dds() {
+fn xrce_10_2_two_clients_on_two_agents_exchange_a_sample_through_dds() {
     let start = Instant::now();
     let lease = zerodds_test_domains::lease_domain();
     let domain = lease.id();

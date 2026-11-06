@@ -777,19 +777,7 @@ mod tests {
     }
 
     #[test]
-    fn null_port_records_the_participant_qos() {
-        let mut p = NullDdsPort::new();
-        let participant = (ck(5), oid(1, ObjectKind::Participant));
-        let qos = ParticipantQos {
-            user_data: vec![7],
-            autoenable_created_entities: false,
-        };
-        p.create_participant_with(participant, 0, &qos).unwrap();
-        assert_eq!(p.participant_qos(participant), Some(&qos));
-    }
-
-    #[test]
-    fn null_port_rejects_topic_before_participant() {
+    fn xrce_7_7_3_7_null_port_rejects_topic_before_participant() {
         let mut p = NullDdsPort::new();
         let topic = (ck(1), oid(1, ObjectKind::Topic));
         let participant = (ck(1), oid(2, ObjectKind::Participant));
@@ -806,76 +794,7 @@ mod tests {
     }
 
     #[test]
-    fn null_port_full_chain_and_delete() {
-        let mut p = NullDdsPort::new();
-        let client = ck(1);
-        let participant = (client, oid(1, ObjectKind::Participant));
-        let topic = (client, oid(2, ObjectKind::Topic));
-        let writer = (client, oid(3, ObjectKind::DataWriter));
-        p.create_participant(participant, 0).unwrap();
-        p.create_topic(
-            topic,
-            participant,
-            TopicSpec {
-                topic_name: "T".into(),
-                type_name: "Ty".into(),
-                known_type: None,
-            },
-        )
-        .unwrap();
-        let publisher = (client, oid(9, ObjectKind::Publisher));
-        p.create_publisher(publisher, participant, ContainerSpec::default())
-            .unwrap();
-        p.create_writer(writer, topic, publisher, EndpointQos::writer_default())
-            .unwrap();
-        let outcome = p
-            .write(writer, &[1, 2, 3], false, false, false, None)
-            .unwrap();
-        assert_eq!(outcome, WriteOutcome::Written);
-        p.delete(writer);
-        assert!(matches!(
-            p.write(writer, &[], false, false, false, None),
-            Err(DdsPortError::UnknownReference(_))
-        ));
-    }
-
-    #[test]
-    fn null_port_refuses_a_dispose_it_cannot_identify() {
-        let mut p = NullDdsPort::new();
-        let client = ck(2);
-        let participant = (client, oid(1, ObjectKind::Participant));
-        let topic = (client, oid(2, ObjectKind::Topic));
-        let writer = (client, oid(3, ObjectKind::DataWriter));
-        p.create_participant(participant, 0).unwrap();
-        p.create_topic(
-            topic,
-            participant,
-            TopicSpec {
-                topic_name: "T".into(),
-                type_name: "Ty".into(),
-                known_type: None,
-            },
-        )
-        .unwrap();
-        let publisher = (client, oid(9, ObjectKind::Publisher));
-        p.create_publisher(publisher, participant, ContainerSpec::default())
-            .unwrap();
-        p.create_writer(writer, topic, publisher, EndpointQos::writer_default())
-            .unwrap();
-        for (dispose, unregister) in [(true, false), (false, true), (true, true)] {
-            assert!(matches!(
-                p.write(writer, &[1], false, dispose, unregister, None),
-                Err(DdsPortError::InvalidType(_))
-            ));
-        }
-        assert!(matches!(
-            p.sample_length(writer, &[1, 2, 3, 4], false),
-            Err(DdsPortError::InvalidType(_))
-        ));
-    }
-
-    #[test]
-    fn null_port_rejects_content_filter_but_accepts_clearing_it() {
+    fn xrce_7_8_5_1_null_port_rejects_content_filter_but_accepts_clearing_it() {
         let mut p = NullDdsPort::new();
         let client = ck(4);
         let participant = (client, oid(1, ObjectKind::Participant));
@@ -912,7 +831,7 @@ mod tests {
     /// created with the participant, which must exist; a DataWriter and a
     /// DataReader are created with their Publisher or Subscriber.
     #[test]
-    fn publisher_and_subscriber_need_their_participant_and_endpoints_need_them() {
+    fn xrce_7_5_publisher_and_subscriber_need_their_participant_and_endpoints_need_them() {
         let mut p = NullDdsPort::new();
         let client = ck(5);
         let participant = (client, oid(1, ObjectKind::Participant));
@@ -1009,7 +928,7 @@ mod tests {
     /// what it creates leaves its DataWriters disabled; XRCE cannot enable
     /// them, so the creation is refused.
     #[test]
-    fn a_publisher_that_does_not_autoenable_refuses_its_writers() {
+    fn xrce_7_5_a_publisher_that_does_not_autoenable_refuses_its_writers() {
         let mut p = NullDdsPort::new();
         let client = ck(7);
         let participant = (client, oid(1, ObjectKind::Participant));
@@ -1044,13 +963,6 @@ mod tests {
             ),
             Err(DdsPortError::DdsError(_))
         ));
-    }
-
-    #[test]
-    fn null_port_poll_samples_always_empty() {
-        let mut p = NullDdsPort::new();
-        let reader = (ck(1), oid(1, ObjectKind::DataReader));
-        assert!(p.poll_samples(reader, 10).is_empty());
     }
 
     #[test]

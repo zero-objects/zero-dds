@@ -20,6 +20,9 @@
 #   - expired_signer.smime.p7s           (EE not_after in past → reject)
 #   - future_signer.smime.p7s            (EE not_before in future → reject)
 #   - rsa_pkcs1_signer.smime.p7s         (RSA-PKCS#1-v1.5 signer)
+#   - comment_permissions.xml, comment_permissions.smime.p7s,
+#     comment_signer_cert.pem (XML whose comment names text/plain,
+#     signed as it is by a self-signed signer)
 #   - alice_identity_cert.der, bob_identity_cert.der (remote identity
 #     certificates: the grant subject and a subject without a grant)
 
@@ -233,6 +236,44 @@ openssl cms -sign -in permissions.xml -text \
 openssl cms -sign -in permissions.xml -text \
     -signer rsa_pkcs1_signer_cert.pem -inkey rsa_pkcs1_signer_key.pem \
     -out rsa_pkcs1_signer.smime.p7s -nodetach
+
+# -------------------- A document whose comment names text/plain -------------
+# Signed with -binary and without -text: the signed content is the XML itself,
+# octet for octet, with no MIME header in front. Its comment names a
+# Content-Type before the first empty line. `openssl cms -verify` hands back
+# the whole document; so must the verifier. The signer is self-signed and its
+# own trust anchor.
+cat > comment_permissions.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Content-Type: text/plain -->
+
+<dds>
+  <permissions>
+    <grant name="signed-alice">
+      <subject_name>CN=alice</subject_name>
+      <validity>
+        <not_before>2020-01-01T00:00:00</not_before>
+        <not_after>2100-01-01T00:00:00</not_after>
+      </validity>
+      <allow_rule>
+        <domains><id>0</id></domains>
+        <publish><topics><topic>Chatter</topic></topics></publish>
+      </allow_rule>
+      <default>DENY</default>
+    </grant>
+  </permissions>
+</dds>
+EOF
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
+    -keyout comment_signer_key.pem -subj "/CN=comment-signer/O=ZeroDDS/C=DE" \
+    -days 36500 -out comment_signer_cert.pem
+openssl cms -sign -binary -in comment_permissions.xml \
+    -signer comment_signer_cert.pem -inkey comment_signer_key.pem \
+    -out comment_permissions.smime.p7s -nodetach
+openssl cms -verify -binary -in comment_permissions.smime.p7s \
+    -CAfile comment_signer_cert.pem -out comment_permissions.verified
+cmp comment_permissions.xml comment_permissions.verified
+rm -f comment_permissions.verified
 
 # -------------------- Identity certificates of the remote participant -------
 # validate_remote_permissions takes the grant whose subject is the remote

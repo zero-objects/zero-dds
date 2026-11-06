@@ -12,8 +12,8 @@ use alloc::vec::Vec;
 use core::fmt;
 
 use crate::format::{
-    FRAME_MAGIC, Frame, FrameView, Header, ParticipantEntry, SampleKind, TopicEntry, ZDDSREC_MAGIC,
-    ZDDSREC_VERSION,
+    FIRST_VERSION_WITH_REPRESENTATION, FRAME_MAGIC, Frame, FrameView, Header, ParticipantEntry,
+    SampleKind, TopicEntry, ZDDSREC_MAGIC, ZDDSREC_VERSION,
 };
 
 /// Error while reading.
@@ -67,6 +67,8 @@ pub struct RecordReader<'a> {
     added_topics: Vec<TopicEntry>,
     bytes: &'a [u8],
     cursor: usize,
+    /// The version the header names; the frames are read in its layout.
+    version: u32,
 }
 
 impl<'a> RecordReader<'a> {
@@ -77,7 +79,14 @@ impl<'a> RecordReader<'a> {
             bytes,
             cursor: 0,
             added_topics: Vec::new(),
+            version: ZDDSREC_VERSION,
         }
+    }
+
+    /// The format version the header named (after [`Self::parse_header`]).
+    #[must_use]
+    pub fn version(&self) -> u32 {
+        self.version
     }
 
     /// The topics added after the header, in the order they were added.
@@ -174,6 +183,7 @@ impl<'a> RecordReader<'a> {
         if version > ZDDSREC_VERSION {
             return Err(ReadError::UnsupportedVersion(version));
         }
+        self.version = version;
         let time_base = self.read_i64("time_base")?;
         let pn = self.read_u32("participant_count")? as usize;
         let tn = self.read_u32("topic_count")? as usize;
@@ -254,6 +264,13 @@ impl<'a> RecordReader<'a> {
         let kind_byte = self.read_u8("frame_sample_kind")?;
         let sample_kind =
             SampleKind::from_u8(kind_byte).ok_or(ReadError::BadSampleKind(kind_byte))?;
+        let representation_identifier = if self.version >= FIRST_VERSION_WITH_REPRESENTATION {
+            let present = self.read_u8("frame_representation_present")?;
+            let id = self.read_bytes("frame_representation_identifier", 2)?;
+            (present != 0).then(|| [id[0], id[1]])
+        } else {
+            None
+        };
         let plen = self.read_u32("frame_payload_len")? as usize;
         let payload = self.read_bytes("frame_payload", plen)?;
         Ok(Some(FrameView {
@@ -261,6 +278,7 @@ impl<'a> RecordReader<'a> {
             participant_idx: pidx,
             topic_idx: tidx,
             sample_kind,
+            representation_identifier,
             payload,
         }))
     }
@@ -271,194 +289,5 @@ impl<'a> RecordReader<'a> {
     /// As [`RecordReader::next_frame_view`].
     pub fn next_frame(&mut self) -> Result<Option<Frame>, ReadError> {
         Ok(self.next_frame_view()?.map(|v| v.to_owned()))
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests may use unwrap.
-mod tests {
-    use super::*;
-    use crate::writer::{header_with, write_all};
-
-    fn alloc_string(s: &str) -> String {
-        s.to_string()
-    }
-
-    #[test]
-    fn header_roundtrip() {
-        let h = header_with(
-            1_700_000_000_000_000_000,
-            vec![
-                (alloc_string("talker"), [1u8; 16]),
-                (alloc_string("listener"), [2u8; 16]),
-            ],
-            vec![(
-                alloc_string("/chatter"),
-                alloc_string("std_msgs::msg::String"),
-            )],
-        );
-        let w = write_all(Vec::<u8>::new(), &h, std::iter::empty()).unwrap();
-        let bytes = w.into_inner();
-        let mut r = RecordReader::new(&bytes);
-        let parsed = r.parse_header().unwrap();
-        assert_eq!(parsed, h);
-        assert!(r.next_frame_view().unwrap().is_none());
-    }
-
-    #[test]
-    fn frame_roundtrip() {
-        let h = header_with(
-            0,
-            vec![(alloc_string("p"), [1u8; 16])],
-            vec![(alloc_string("/t"), alloc_string("T"))],
-        );
-        let frames: Vec<Frame> = (0..3u8)
-            .map(|i| Frame {
-                timestamp_delta_ns: (i as i64) * 1_000_000,
-                participant_idx: 0,
-                topic_idx: 0,
-                sample_kind: SampleKind::Alive,
-                payload: vec![i, i + 1, i + 2, 0xab],
-            })
-            .collect();
-        let w = write_all(Vec::<u8>::new(), &h, frames.clone()).unwrap();
-        let bytes = w.into_inner();
-        let mut r = RecordReader::new(&bytes);
-        let _ = r.parse_header().unwrap();
-        let mut got = Vec::new();
-        while let Some(f) = r.next_frame().unwrap() {
-            got.push(f);
-        }
-        assert_eq!(got, frames);
-    }
-
-    #[test]
-    fn bad_magic_rejected() {
-        let bytes = [0u8; 32];
-        let mut r = RecordReader::new(&bytes);
-        let res = r.parse_header();
-        assert!(matches!(res, Err(ReadError::BadMagic)));
-    }
-
-    #[test]
-    fn truncated_header_detected() {
-        let bytes = b"ZDD".as_slice(); // 3 bytes, magic needs 4
-        let mut r = RecordReader::new(bytes);
-        assert!(matches!(r.parse_header(), Err(ReadError::Truncated { .. })));
-    }
-
-    #[test]
-    fn truncated_frame_detected() {
-        let h = header_with(
-            0,
-            vec![(alloc_string("p"), [1u8; 16])],
-            vec![(alloc_string("/t"), alloc_string("T"))],
-        );
-        let mut buf = Vec::new();
-        h.write(&mut buf);
-        // Add half a frame.
-        buf.push(b'F');
-        buf.extend_from_slice(&0i64.to_le_bytes()); // timestamp ok
-        buf.extend_from_slice(&0u32.to_le_bytes()); // participant
-        // missing topic + sample_kind + payload-len
-        let mut r = RecordReader::new(&buf);
-        let _ = r.parse_header().unwrap();
-        assert!(matches!(
-            r.next_frame_view(),
-            Err(ReadError::Truncated { .. })
-        ));
-    }
-
-    #[test]
-    fn unsupported_version_rejected() {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&ZDDSREC_MAGIC);
-        buf.extend_from_slice(&999u32.to_le_bytes());
-        buf.extend_from_slice(&0i64.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        let mut r = RecordReader::new(&buf);
-        assert!(matches!(
-            r.parse_header(),
-            Err(ReadError::UnsupportedVersion(999))
-        ));
-    }
-
-    // -------------------------------------------------------------
-    // Buffer-cap hardening — a wire-announced participant_count /
-    // topic_count that cannot possibly fit the bytes remaining in
-    // the file must be rejected cleanly (no OOM, no panic) *before*
-    // `Vec::with_capacity` runs. Mirrors the established
-    // `len > reader.remaining()` guard in
-    // crates/cdr/src/composite.rs.
-    // -------------------------------------------------------------
-
-    #[test]
-    fn huge_participant_count_with_tiny_file_is_rejected_cleanly() {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&ZDDSREC_MAGIC);
-        buf.extend_from_slice(&ZDDSREC_VERSION.to_le_bytes());
-        buf.extend_from_slice(&0i64.to_le_bytes()); // time_base
-        buf.extend_from_slice(&u32::MAX.to_le_bytes()); // participant_count
-        buf.extend_from_slice(&0u32.to_le_bytes()); // topic_count
-        // No participant bytes follow — a naive `Vec::with_capacity`
-        // would attempt a many-GB allocation from this ~20-byte file.
-        let mut r = RecordReader::new(&buf);
-        let res = r.parse_header();
-        assert!(
-            matches!(
-                res,
-                Err(ReadError::Truncated {
-                    what: "participant_count",
-                    ..
-                })
-            ),
-            "expected clean Truncated rejection, got {res:?}"
-        );
-    }
-
-    #[test]
-    fn huge_topic_count_with_tiny_file_is_rejected_cleanly() {
-        let mut buf = Vec::new();
-        buf.extend_from_slice(&ZDDSREC_MAGIC);
-        buf.extend_from_slice(&ZDDSREC_VERSION.to_le_bytes());
-        buf.extend_from_slice(&0i64.to_le_bytes()); // time_base
-        buf.extend_from_slice(&0u32.to_le_bytes()); // participant_count
-        buf.extend_from_slice(&u32::MAX.to_le_bytes()); // topic_count
-        let mut r = RecordReader::new(&buf);
-        let res = r.parse_header();
-        assert!(
-            matches!(
-                res,
-                Err(ReadError::Truncated {
-                    what: "topic_count",
-                    ..
-                })
-            ),
-            "expected clean Truncated rejection, got {res:?}"
-        );
-    }
-
-    #[test]
-    fn bad_sample_kind_rejected() {
-        let h = header_with(
-            0,
-            vec![(alloc_string("p"), [0u8; 16])],
-            vec![(alloc_string("/t"), alloc_string("T"))],
-        );
-        let mut buf = Vec::new();
-        h.write(&mut buf);
-        buf.push(b'F');
-        buf.extend_from_slice(&0i64.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        buf.push(99); // invalid sample-kind
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        let mut r = RecordReader::new(&buf);
-        let _ = r.parse_header().unwrap();
-        assert!(matches!(
-            r.next_frame_view(),
-            Err(ReadError::BadSampleKind(99))
-        ));
     }
 }

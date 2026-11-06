@@ -391,13 +391,13 @@ mod tests {
     }
 
     #[test]
-    fn transform_kind_id_aes128_matches_x509_path() {
+    fn security_10_9_2_2_transform_kind_id_aes128_matches_x509_path() {
         let p = PskDerivedCryptoPlugin::with_suite(Suite::Aes128Gcm);
         assert_eq!(p.suite().transform_kind_id(), 0x02);
     }
 
     #[test]
-    fn transform_kind_id_aes256_matches_x509_path() {
+    fn security_10_9_2_2_transform_kind_id_aes256_matches_x509_path() {
         let p = PskDerivedCryptoPlugin::with_suite(Suite::Aes256Gcm);
         assert_eq!(p.suite().transform_kind_id(), 0x04);
     }
@@ -446,7 +446,7 @@ mod tests {
     }
 
     #[test]
-    fn psk_encrypt_decrypt_roundtrip_two_plugins_same_psk() {
+    fn security_10_9_2_2_psk_encrypt_decrypt_roundtrip_two_plugins_same_psk() {
         let psk = alloc::vec![0x77u8; 32];
         let mut alice = PskDerivedCryptoPlugin::new();
         let mut bob = PskDerivedCryptoPlugin::new();

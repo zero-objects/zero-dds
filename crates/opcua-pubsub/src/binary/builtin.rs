@@ -617,14 +617,16 @@ impl UaEncode for DataValue {
         if let Some(status) = self.status {
             w.write_u32(status);
         }
+        // OPC 10000-6 Table 27: each timestamp is followed by its
+        // picoseconds.
         if let Some(ts) = self.source_timestamp {
-            w.write_i64(ts);
-        }
-        if let Some(ts) = self.server_timestamp {
             w.write_i64(ts);
         }
         if let Some(pico) = self.source_pico_sec {
             w.write_u16(pico);
+        }
+        if let Some(ts) = self.server_timestamp {
+            w.write_i64(ts);
         }
         if let Some(pico) = self.server_pico_sec {
             w.write_u16(pico);
@@ -651,13 +653,13 @@ impl UaDecode for DataValue {
         } else {
             None
         };
-        let server_timestamp = if mask & DV_SERVER_TS_FLAG != 0 {
-            Some(r.read_i64()?)
+        let source_pico_sec = if mask & DV_SOURCE_PICO_FLAG != 0 {
+            Some(r.read_u16()?)
         } else {
             None
         };
-        let source_pico_sec = if mask & DV_SOURCE_PICO_FLAG != 0 {
-            Some(r.read_u16()?)
+        let server_timestamp = if mask & DV_SERVER_TS_FLAG != 0 {
+            Some(r.read_i64()?)
         } else {
             None
         };
@@ -683,186 +685,279 @@ mod tests {
     use crate::binary::{from_binary, to_binary};
     use zerodds_opcua_gateway::types::BuiltinTypeKind;
 
-    fn roundtrip<T: UaEncode + UaDecode + PartialEq + core::fmt::Debug>(v: &T) -> Vec<u8> {
-        let bytes = to_binary(v).expect("encode");
-        let back: T = from_binary(&bytes).expect("decode");
-        assert_eq!(&back, v, "roundtrip mismatch");
-        bytes
+    /// `v` encodes to `expected`, the octets OPC 10000-6 §5.2.2 gives for
+    /// it, and `expected` decodes to `v`.
+    fn octets<T: UaEncode + UaDecode + PartialEq + core::fmt::Debug>(v: &T, expected: &[u8]) {
+        assert_eq!(to_binary(v).expect("encode"), expected, "{v:?}");
+        let back: T = from_binary(expected).expect("decode");
+        assert_eq!(&back, v);
     }
 
-    #[test]
-    fn nodeid_two_byte_compact_form() {
-        let n = NodeId::numeric(0, 42);
-        let bytes = roundtrip(&n);
-        // Part 6 §5.2.2.9 — TwoByte form: [0x00][id].
-        assert_eq!(bytes, alloc::vec![NODEID_TWO_BYTE, 42]);
+    fn ua_string(s: &str) -> Vec<u8> {
+        let mut out = i32::try_from(s.len()).expect("len").to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
     }
 
+    /// §5.2.2.9, Tables 17 to 20: the Two Byte form (0x00, the identifier
+    /// as a Byte), the Four Byte form (0x01, the namespace as a Byte, the
+    /// identifier as a UInt16), the Numeric form (0x02, UInt16 and UInt32)
+    /// and the String form (0x03, UInt16 and a String; the example of
+    /// Figure 7, namespace 1 and "Hot水", whose first identifier octet the
+    /// figure prints as 0x72 for the 'H' of the text).
     #[test]
-    fn nodeid_four_byte_form() {
-        let n = NodeId::numeric(5, 1000);
-        let bytes = roundtrip(&n);
-        assert_eq!(bytes.first().copied(), Some(NODEID_FOUR_BYTE));
-        assert_eq!(bytes.len(), 4); // enc + ns(u8) + id(u16)
-    }
-
-    #[test]
-    fn nodeid_numeric_full_form() {
-        let n = NodeId::numeric(300, 70_000);
-        let bytes = roundtrip(&n);
-        assert_eq!(bytes.first().copied(), Some(NODEID_NUMERIC));
-        assert_eq!(bytes.len(), 7); // enc + ns(u16) + id(u32)
-    }
-
-    #[test]
-    fn nodeid_string_form() {
-        let n = NodeId {
-            namespace_index: 2,
-            identifier_type: NodeIdentifier::String(String::from("Temperature")),
-        };
-        let bytes = roundtrip(&n);
-        assert_eq!(bytes.first().copied(), Some(NODEID_STRING));
-    }
-
-    #[test]
-    fn guid_encodes_data1_little_endian() {
-        let g = Guid {
-            data1: 0x0102_0304,
-            data2: 0x0506,
-            data3: 0x0708,
-            data4: [9, 10, 11, 12, 13, 14, 15, 16],
-        };
-        let bytes = roundtrip(&g);
-        // Data1 little-endian per Part 6 §5.1.5.
-        assert_eq!(&bytes[0..4], &[0x04, 0x03, 0x02, 0x01]);
-        assert_eq!(bytes.len(), 16);
-    }
-
-    #[test]
-    fn expanded_node_id_with_uri_and_server() {
-        let e = ExpandedNodeId {
-            node_id: NodeId::numeric(0, 7),
-            namespace_uri: String::from("urn:example"),
-            server_index: 3,
-        };
-        let bytes = roundtrip(&e);
-        // First byte carries both flags.
-        assert_ne!(bytes.first().copied().unwrap_or(0) & EXPNODEID_URI_FLAG, 0);
-        assert_ne!(
-            bytes.first().copied().unwrap_or(0) & EXPNODEID_SERVER_FLAG,
-            0
+    fn uacs_5_2_2_9_the_four_nodeid_forms_of_tables_17_to_20() {
+        octets(&NodeId::numeric(0, 42), &[NODEID_TWO_BYTE, 42]);
+        octets(
+            &NodeId::numeric(5, 1025),
+            &[NODEID_FOUR_BYTE, 0x05, 0x01, 0x04],
+        );
+        octets(
+            &NodeId::numeric(300, 70_000),
+            &[NODEID_NUMERIC, 0x2C, 0x01, 0x70, 0x11, 0x01, 0x00],
+        );
+        octets(
+            &NodeId {
+                namespace_index: 1,
+                identifier_type: NodeIdentifier::String(String::from("Hot水")),
+            },
+            &[
+                NODEID_STRING,
+                0x01,
+                0x00,
+                0x06,
+                0x00,
+                0x00,
+                0x00,
+                0x48,
+                0x6F,
+                0x74,
+                0xE6,
+                0xB0,
+                0xB4,
+            ],
         );
     }
 
+    /// §5.2.2.6, Figure 5: the Guid 72962B91-FA75-4AE6-8D28-B404DC7DAF63.
     #[test]
-    fn expanded_node_id_bare() {
-        let e = ExpandedNodeId {
-            node_id: NodeId::numeric(0, 7),
-            namespace_uri: String::new(),
-            server_index: 0,
-        };
-        let bytes = roundtrip(&e);
-        assert_eq!(bytes.first().copied().unwrap_or(0xFF) & 0xC0, 0);
-    }
-
-    #[test]
-    fn qualified_name_roundtrip() {
-        let q = QualifiedName {
-            namespace_index: 1,
-            name: String::from("Sensor"),
-        };
-        roundtrip(&q);
-    }
-
-    #[test]
-    fn localized_text_partial_masks() {
-        roundtrip(&LocalizedText {
-            locale: Some(String::from("en")),
-            text: Some(String::from("Hello")),
-        });
-        roundtrip(&LocalizedText {
-            locale: None,
-            text: Some(String::from("only text")),
-        });
-        let bytes = roundtrip(&LocalizedText {
-            locale: None,
-            text: None,
-        });
-        assert_eq!(bytes, alloc::vec![0u8]);
-    }
-
-    #[test]
-    fn extension_object_bodies() {
-        roundtrip(&ExtensionObject {
-            type_id: NodeId::numeric(0, 1),
-            body: ExtensionObjectBody::None,
-        });
-        roundtrip(&ExtensionObject {
-            type_id: NodeId::numeric(2, 99),
-            body: ExtensionObjectBody::ByteString(alloc::vec![1, 2, 3, 4]),
-        });
-        roundtrip(&ExtensionObject {
-            type_id: NodeId::numeric(0, 5),
-            body: ExtensionObjectBody::XmlElement(String::from("<x/>")),
-        });
-    }
-
-    #[test]
-    fn variant_scalar_int32() {
-        let v = Variant::scalar(VariantValue::Int32(-12345));
-        let bytes = roundtrip(&v);
-        // enc byte = Int32 kind value (6), no array/dim bits.
-        assert_eq!(bytes.first().copied(), Some(BuiltinTypeKind::Int32.value()));
-    }
-
-    #[test]
-    fn variant_scalar_string() {
-        roundtrip(&Variant::scalar(VariantValue::String(String::from("hi"))));
-    }
-
-    #[test]
-    fn variant_null() {
-        let v = Variant {
-            array_dimensions: Vec::new(),
-            value: Vec::new(),
-        };
-        let bytes = roundtrip(&v);
-        assert_eq!(bytes, alloc::vec![0u8]);
-    }
-
-    #[test]
-    fn variant_1d_array() {
-        let v = Variant {
-            array_dimensions: alloc::vec![3],
-            value: alloc::vec![
-                VariantValue::Int32(1),
-                VariantValue::Int32(2),
-                VariantValue::Int32(3),
+    fn uacs_5_2_2_6_the_guid_of_figure_5() {
+        octets(
+            &Guid {
+                data1: 0x7296_2B91,
+                data2: 0xFA75,
+                data3: 0x4AE6,
+                data4: [0x8D, 0x28, 0xB4, 0x04, 0xDC, 0x7D, 0xAF, 0x63],
+            },
+            &[
+                0x91, 0x2B, 0x96, 0x72, 0x75, 0xFA, 0xE6, 0x4A, 0x8D, 0x28, 0xB4, 0x04, 0xDC, 0x7D,
+                0xAF, 0x63,
             ],
-        };
-        let bytes = roundtrip(&v);
-        assert_ne!(bytes.first().copied().unwrap_or(0) & VARIANT_ARRAY_FLAG, 0);
-        assert_eq!(
-            bytes.first().copied().unwrap_or(0) & VARIANT_DIMENSIONS_FLAG,
-            0
         );
     }
 
+    /// §5.2.2.10, Table 21: the NodeId with the NamespaceUri flag 0x80 and
+    /// the ServerIndex flag 0x40, then the NamespaceUri and the ServerIndex;
+    /// without them the NodeId alone.
     #[test]
-    fn variant_multidim_array() {
-        let v = Variant {
-            array_dimensions: alloc::vec![2, 2],
-            value: alloc::vec![
-                VariantValue::Byte(1),
-                VariantValue::Byte(2),
-                VariantValue::Byte(3),
-                VariantValue::Byte(4),
+    fn uacs_5_2_2_10_an_expanded_nodeid_flags_and_appends_uri_and_server_index() {
+        let mut expected = alloc::vec![
+            NODEID_TWO_BYTE | EXPNODEID_URI_FLAG | EXPNODEID_SERVER_FLAG,
+            7
+        ];
+        expected.extend_from_slice(&ua_string("urn:example"));
+        expected.extend_from_slice(&3_u32.to_le_bytes());
+        octets(
+            &ExpandedNodeId {
+                node_id: NodeId::numeric(0, 7),
+                namespace_uri: String::from("urn:example"),
+                server_index: 3,
+            },
+            &expected,
+        );
+        octets(
+            &ExpandedNodeId {
+                node_id: NodeId::numeric(0, 7),
+                namespace_uri: String::new(),
+                server_index: 0,
+            },
+            &[NODEID_TWO_BYTE, 7],
+        );
+    }
+
+    /// §5.2.2.13, Table 23: NamespaceIndex (UInt16) and Name (String).
+    #[test]
+    fn uacs_5_2_2_13_a_qualified_name_is_namespace_index_and_name() {
+        let mut expected = alloc::vec![0x01, 0x00];
+        expected.extend_from_slice(&ua_string("Sensor"));
+        octets(
+            &QualifiedName {
+                namespace_index: 1,
+                name: String::from("Sensor"),
+            },
+            &expected,
+        );
+    }
+
+    /// §5.2.2.14, Table 24: the EncodingMask (0x01 Locale, 0x02 Text), then
+    /// the fields it names.
+    #[test]
+    fn uacs_5_2_2_14_localized_text_carries_the_fields_its_mask_names() {
+        let mut both = alloc::vec![0x03];
+        both.extend_from_slice(&ua_string("en"));
+        both.extend_from_slice(&ua_string("Hello"));
+        octets(
+            &LocalizedText {
+                locale: Some(String::from("en")),
+                text: Some(String::from("Hello")),
+            },
+            &both,
+        );
+        let mut text = alloc::vec![0x02];
+        text.extend_from_slice(&ua_string("only text"));
+        octets(
+            &LocalizedText {
+                locale: None,
+                text: Some(String::from("only text")),
+            },
+            &text,
+        );
+        octets(
+            &LocalizedText {
+                locale: None,
+                text: None,
+            },
+            &[0x00],
+        );
+    }
+
+    /// §5.2.2.15, Table 25: TypeId, Encoding (0x00 no body, 0x01
+    /// ByteString, 0x02 XmlElement), Length and Body.
+    #[test]
+    fn uacs_5_2_2_15_an_extension_object_is_type_id_encoding_length_and_body() {
+        octets(
+            &ExtensionObject {
+                type_id: NodeId::numeric(0, 1),
+                body: ExtensionObjectBody::None,
+            },
+            &[NODEID_TWO_BYTE, 0x01, 0x00],
+        );
+        octets(
+            &ExtensionObject {
+                type_id: NodeId::numeric(2, 99),
+                body: ExtensionObjectBody::ByteString(alloc::vec![1, 2, 3, 4]),
+            },
+            &[
+                NODEID_FOUR_BYTE,
+                0x02,
+                0x63,
+                0x00,
+                0x01,
+                0x04,
+                0x00,
+                0x00,
+                0x00,
+                1,
+                2,
+                3,
+                4,
             ],
-        };
-        let bytes = roundtrip(&v);
-        let enc = bytes.first().copied().unwrap_or(0);
-        assert_ne!(enc & VARIANT_ARRAY_FLAG, 0);
-        assert_ne!(enc & VARIANT_DIMENSIONS_FLAG, 0);
+        );
+        let mut xml = alloc::vec![NODEID_TWO_BYTE, 0x05, 0x02];
+        xml.extend_from_slice(&ua_string("<x/>"));
+        octets(
+            &ExtensionObject {
+                type_id: NodeId::numeric(0, 5),
+                body: ExtensionObjectBody::XmlElement(String::from("<x/>")),
+            },
+            &xml,
+        );
+    }
+
+    /// §5.2.2.16, Table 26: the EncodingMask carries the built-in type id
+    /// (Table 1: Byte 3, Int32 6, String 12) in bits 0 to 5; a scalar
+    /// follows it directly, a NULL Variant is the mask 0 alone.
+    #[test]
+    fn uacs_5_2_2_16_a_scalar_variant_is_its_type_id_and_its_value() {
+        octets(
+            &Variant::scalar(VariantValue::Int32(-12345)),
+            &[BuiltinTypeKind::Int32.value(), 0xC7, 0xCF, 0xFF, 0xFF],
+        );
+        let mut s = alloc::vec![BuiltinTypeKind::String.value()];
+        s.extend_from_slice(&ua_string("hi"));
+        octets(
+            &Variant::scalar(VariantValue::String(String::from("hi"))),
+            &s,
+        );
+        octets(
+            &Variant {
+                array_dimensions: Vec::new(),
+                value: Vec::new(),
+            },
+            &[0x00],
+        );
+    }
+
+    /// §5.2.2.16, Table 26: bit 7 marks an array, the ArrayLength (Int32)
+    /// and the elements follow; bit 6 marks the ArrayDimensions, which
+    /// follow the values for two or more dimensions.
+    #[test]
+    fn uacs_5_2_2_16_an_array_variant_has_its_length_and_its_dimensions_after_the_values() {
+        let mut one = alloc::vec![
+            VARIANT_ARRAY_FLAG | BuiltinTypeKind::Int32.value(),
+            3,
+            0,
+            0,
+            0
+        ];
+        for v in [1_i32, 2, 3] {
+            one.extend_from_slice(&v.to_le_bytes());
+        }
+        octets(
+            &Variant {
+                array_dimensions: alloc::vec![3],
+                value: alloc::vec![
+                    VariantValue::Int32(1),
+                    VariantValue::Int32(2),
+                    VariantValue::Int32(3),
+                ],
+            },
+            &one,
+        );
+        octets(
+            &Variant {
+                array_dimensions: alloc::vec![2, 2],
+                value: alloc::vec![
+                    VariantValue::Byte(1),
+                    VariantValue::Byte(2),
+                    VariantValue::Byte(3),
+                    VariantValue::Byte(4),
+                ],
+            },
+            &[
+                VARIANT_ARRAY_FLAG | VARIANT_DIMENSIONS_FLAG | BuiltinTypeKind::Byte.value(),
+                4,
+                0,
+                0,
+                0,
+                1,
+                2,
+                3,
+                4,
+                2,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+                2,
+                0,
+                0,
+                0,
+            ],
+        );
     }
 
     #[test]
@@ -904,30 +999,41 @@ mod tests {
         assert!(matches!(err, DecodeError::InvalidDiscriminant { .. }));
     }
 
+    /// §5.2.2.17, Table 27: the EncodingMask (0x01 Value, 0x02 Status,
+    /// 0x04 SourceTimestamp, 0x08 ServerTimestamp, 0x10 SourcePicoseconds,
+    /// 0x20 ServerPicoseconds), then Value, Status, SourceTimestamp,
+    /// SourcePicoseconds, ServerTimestamp, ServerPicoseconds in that order;
+    /// an empty DataValue is the mask 0 alone.
     #[test]
-    fn data_value_full() {
-        let dv = DataValue {
-            value: Some(Variant::scalar(VariantValue::Double(3.5))),
-            status: Some(0x8000_0000),
-            source_timestamp: Some(132_000_000_000_000_000),
-            server_timestamp: Some(132_000_000_000_000_001),
-            source_pico_sec: Some(10),
-            server_pico_sec: Some(20),
-        };
-        roundtrip(&dv);
-    }
-
-    #[test]
-    fn data_value_empty_mask() {
-        let dv = DataValue {
-            value: None,
-            status: None,
-            source_timestamp: None,
-            server_timestamp: None,
-            source_pico_sec: None,
-            server_pico_sec: None,
-        };
-        let bytes = roundtrip(&dv);
-        assert_eq!(bytes, alloc::vec![0u8]);
+    fn uacs_5_2_2_17_a_data_value_is_its_mask_and_the_fields_in_the_order_of_table_27() {
+        let mut expected = alloc::vec![0x3F, BuiltinTypeKind::Double.value()];
+        expected.extend_from_slice(&3.5_f64.to_le_bytes());
+        expected.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
+        expected.extend_from_slice(&132_000_000_000_000_000_i64.to_le_bytes());
+        expected.extend_from_slice(&10_u16.to_le_bytes());
+        expected.extend_from_slice(&132_000_000_000_000_001_i64.to_le_bytes());
+        expected.extend_from_slice(&20_u16.to_le_bytes());
+        octets(
+            &DataValue {
+                value: Some(Variant::scalar(VariantValue::Double(3.5))),
+                status: Some(0x8000_0000),
+                source_timestamp: Some(132_000_000_000_000_000),
+                server_timestamp: Some(132_000_000_000_000_001),
+                source_pico_sec: Some(10),
+                server_pico_sec: Some(20),
+            },
+            &expected,
+        );
+        octets(
+            &DataValue {
+                value: None,
+                status: None,
+                source_timestamp: None,
+                server_timestamp: None,
+                source_pico_sec: None,
+                server_pico_sec: None,
+            },
+            &[0x00],
+        );
     }
 }

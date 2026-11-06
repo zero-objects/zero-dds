@@ -112,7 +112,9 @@ pub mod value;
 pub const MAX_VALUE_DEPTH: usize = 64;
 
 pub use canonical::{Difference, canonicalise};
-pub use decode::{decode, decode_continuing, decode_prefix};
+pub use decode::{
+    DecodePlans, decode, decode_continuing, decode_prefix, decode_with, key_of_sample,
+};
 pub use default::of_type as default_of_type;
 pub use encode::{ProbeError, encode, encode_continuing};
 pub use sink::{Aggregate, Sink};

@@ -884,19 +884,19 @@ fn walk_types<'a>(types: &'a [TypeDef], parts: &[&str]) -> Option<&'a TypeDef> {
             if parts.len() == 1 {
                 return Some(t);
             }
-            if let TypeDef::Module(m) = t {
-                if let Some(found) = walk_types(&m.types, &parts[1..]) {
-                    return Some(found);
-                }
+            if let TypeDef::Module(m) = t
+                && let Some(found) = walk_types(&m.types, &parts[1..])
+            {
+                return Some(found);
             }
         }
     }
     if parts.len() == 1 {
         for t in types {
-            if let TypeDef::Module(m) = t {
-                if let Some(found) = walk_types(&m.types, parts) {
-                    return Some(found);
-                }
+            if let TypeDef::Module(m) = t
+                && let Some(found) = walk_types(&m.types, parts)
+            {
+                return Some(found);
             }
         }
     }

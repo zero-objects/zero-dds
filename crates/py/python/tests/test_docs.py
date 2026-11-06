@@ -23,7 +23,7 @@ _EXAMPLES = pathlib.Path(__file__).resolve().parents[2] / "examples"
 _PACKAGE = pathlib.Path(zerodds.__file__).resolve().parent
 
 # PyClasses the vendor spec's §1.2 table names; the extension exports more,
-# which `test_api_rst_documents_every_extension_class` covers.
+# which `py_1_3_1_api_rst_documents_every_extension_class` covers.
 _SPEC_PYCLASSES = (
     "DomainParticipantFactory",
     "DomainParticipant",
@@ -63,7 +63,7 @@ def _documented_modules() -> set[str]:
     }
 
 
-def test_conf_py_is_importable_and_names_the_workspace_version() -> None:
+def py_6_7_conf_py_is_importable_and_names_the_workspace_version() -> None:
     """The doc build reads the version rather than repeating it."""
     namespace: dict[str, object] = {"__file__": str(_DOCS / "conf.py")}
     exec(compile((_DOCS / "conf.py").read_text(encoding="utf-8"), "conf.py", "exec"), namespace)  # noqa: S102
@@ -78,7 +78,7 @@ def test_conf_py_is_importable_and_names_the_workspace_version() -> None:
     assert f'version = "{release}"' in manifest.read_text(encoding="utf-8")
 
 
-def test_conf_py_declares_the_four_extensions_the_spec_names() -> None:
+def py_6_7_conf_py_declares_the_four_extensions_the_spec_names() -> None:
     """§6.7 — autodoc, napoleon, viewcode, intersphinx, plus the mock that
     lets the tree build without a compiled `_core`."""
     namespace: dict[str, object] = {"__file__": str(_DOCS / "conf.py")}
@@ -96,13 +96,13 @@ def test_conf_py_declares_the_four_extensions_the_spec_names() -> None:
 
 
 @pytest.mark.parametrize("name", _SPEC_PYCLASSES)
-def test_api_rst_documents_every_spec_pyclass(name: str) -> None:
+def py_6_7_api_rst_documents_every_spec_pyclass(name: str) -> None:
     """§6.7 — api.rst lists the PyClasses of the §1.2 table."""
     assert name in _documented_classes(), f"api.rst has no autoclass for {name}"
 
 
 @pytest.mark.parametrize("name", _SPEC_MODULES)
-def test_api_rst_documents_every_pure_python_module(name: str) -> None:
+def py_6_7_api_rst_documents_every_pure_python_module(name: str) -> None:
     """§6.7 — api.rst lists the three pure-Python modules of §1.1."""
     assert name in _documented_modules(), f"api.rst has no automodule for {name}"
 
@@ -111,7 +111,7 @@ def test_api_rst_documents_every_pure_python_module(name: str) -> None:
     not getattr(zerodds, "_CORE_AVAILABLE", False),
     reason="zerodds._core not compiled — maturin develop needed",
 )
-def test_api_rst_documents_every_extension_class() -> None:
+def py_1_3_1_api_rst_documents_every_extension_class() -> None:
     """Nothing the extension module exports is left out of the reference. A
     PyClass added to `_core` without a directive would otherwise be invisible.
 
@@ -139,7 +139,7 @@ def test_api_rst_documents_every_pure_python_module_in_the_package() -> None:
     assert not missing, f"module present but undocumented: {missing}"
 
 
-def test_toctree_entries_exist() -> None:
+def py_6_7_toctree_entries_exist() -> None:
     index = (_DOCS / "index.rst").read_text(encoding="utf-8")
     body = index.split(".. toctree::", 1)[1]
     entries = []
@@ -157,7 +157,7 @@ def test_toctree_entries_exist() -> None:
         assert (_DOCS / f"{entry}.rst").is_file(), f"toctree names a missing {entry}.rst"
 
 
-def test_literalincludes_point_at_existing_examples() -> None:
+def py_1_1_literalincludes_point_at_existing_examples() -> None:
     """The three §1.1 examples and native descriptor consumer stay included."""
     text = (_DOCS / "examples.rst").read_text(encoding="utf-8")
     included = re.findall(r"^\.\. literalinclude:: (\S+)$", text, re.M)
@@ -177,7 +177,7 @@ def test_literalincludes_point_at_existing_examples() -> None:
     "script",
     ["01_bytes_pubsub.py", "02_shape_pubsub.py", "03_idl_topic.py"],
 )
-def test_examples_parse(script: str) -> None:
+def py_1_1_examples_parse(script: str) -> None:
     """§1.1 — the three examples are present and syntactically whole."""
     path = _EXAMPLES / script
     assert path.is_file(), f"{path} is missing"

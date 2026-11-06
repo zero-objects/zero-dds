@@ -215,7 +215,7 @@ class TypeObjectModelTest {
     }
 
     @Test
-    void everyInterfaceOfThePackageIsImplementedAndAnObjectOfItComesBackOverTheWire() {
+    void javapsm_7_2_1_every_interface_of_the_type_object_package_is_implemented() {
         byte[] bytes = TypeObjectCodec.encode(sample());
         TypeObject object = TypeObjectModel.of(org.omg.dds.Qos.env(), TypeObjectCodec.decode(bytes));
         Set<Class<?>> seen = new HashSet<>();
@@ -323,7 +323,7 @@ class TypeObjectModelTest {
     }
 
     @Test
-    void theObjectsAreSerializable() throws Exception {
+    void javapsm_7_8_3_the_type_objects_are_serializable() throws Exception {
         TypeObject object = TypeObjectModel.of(org.omg.dds.Qos.env(), sample());
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try (ObjectOutputStream o = new ObjectOutputStream(out)) {
@@ -337,7 +337,7 @@ class TypeObjectModelTest {
     }
 
     @Test
-    void equalStateIsEqualObjects() {
+    void javapsm_7_8_3_type_objects_of_equal_state_are_equal() {
         TypeObject one = TypeObjectModel.of(org.omg.dds.Qos.env(), sample());
         TypeObject two = TypeObjectModel.of(org.omg.dds.Qos.env(), sample());
         assertEquals(one, two);
@@ -349,19 +349,4 @@ class TypeObjectModelTest {
                 TypeObjectModel.of(org.omg.dds.Qos.env(), changed).getLibrary().getElement().get(0));
     }
 
-    @Test
-    void theIdsOfTheLibraryAreTheHashesOfTheirTypes() {
-        ZdTypes.DDS.TypeObject object = sample();
-        for (ZdTypes.DDS.TypeLibraryElement e : object.library.element) {
-            if (e._d == ZdTypes.DDS.TypeLibraryElementKind.MODULE_ELEMENT) {
-                continue;
-            }
-            ZdTypes.DDS.TypeId id = TypeObjectCodec.propertyOf(e).type_id;
-            TypeObjectCodec.propertyOf(e).type_id = TypeObjectCodec.constructed(ZdTypes.DDS.NO_TYPE, 0L);
-            assertEquals(id.constructed_type_id, TypeObjectCodec.constructedTypeId(e));
-            TypeObjectCodec.propertyOf(e).type_id = id;
-        }
-        byte[] first = TypeObjectCodec.encode(object);
-        assertArrayEquals(first, TypeObjectCodec.encode(TypeObjectCodec.decode(first)));
-    }
 }

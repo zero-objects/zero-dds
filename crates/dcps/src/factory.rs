@@ -186,9 +186,9 @@ impl DomainParticipantFactory {
         Ok(p)
     }
 
-    /// Offline variant without a runtime — only for unit tests that
-    /// don't want a network. The returned participant can create
-    /// topics, but no DataWriters/Readers.
+    /// Offline variant without a runtime — for tests that want no
+    /// network. The returned participant creates topics, DataWriters and
+    /// DataReaders; nothing it writes leaves the process.
     #[must_use]
     pub fn create_participant_offline(
         &self,
@@ -481,14 +481,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn factory_is_singleton() {
+    fn dcps_2_2_2_2_2_factory_is_singleton() {
         let a = DomainParticipantFactory::instance();
         let b = DomainParticipantFactory::instance();
         assert!(core::ptr::eq(a, b));
     }
 
     #[test]
-    fn factory_creates_participant_with_correct_domain_id() {
+    fn dcps_2_2_2_2_1_26_factory_creates_participant_with_correct_domain_id() {
         // Offline variant — no UDP bind in the unit test. The live
         // variant is tested in runtime.rs.
         let p = DomainParticipantFactory::instance()
@@ -499,7 +499,7 @@ mod tests {
     // ---- §2.2.2.2.2.4 lookup_participant ----
 
     #[test]
-    fn lookup_participant_finds_registered_offline_participant() {
+    fn dcps_2_2_2_2_2_4_lookup_participant_finds_registered_offline_participant() {
         let f = DomainParticipantFactory::instance();
         // Unique domain id so that no other test participant affects
         // the lookup.
@@ -511,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn dropping_participant_releases_it_from_the_factory() {
+    fn dcps_2_2_2_2_2_4_dropping_participant_releases_it_from_the_factory() {
         // The factory holds only weak references: once the user drops their last
         // strong handle, the participant is gone (RAII) and `lookup_participant`
         // returns `None`, garbage-collecting the dead weak. (Pre-weak-refs the
@@ -532,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn lookup_participant_returns_none_for_unknown_domain() {
+    fn dcps_2_2_2_2_2_4_lookup_participant_returns_none_for_unknown_domain() {
         let f = DomainParticipantFactory::instance();
         // Very high domain_id value for which nothing likely exists.
         assert!(f.lookup_participant(60_001).is_none());
@@ -541,7 +541,7 @@ mod tests {
     // ---- §2.2.2.2.2.3 delete_participant ----
 
     #[test]
-    fn delete_participant_removes_from_registry() {
+    fn dcps_2_2_2_2_2_2_delete_participant_removes_from_registry() {
         let f = DomainParticipantFactory::instance();
         let domain = 92;
         let p = f.create_participant_offline(domain, DomainParticipantQos::default());
@@ -557,7 +557,7 @@ mod tests {
     /// publisher is gone it is deleted, and its operations return
     /// ALREADY_DELETED. It deleted the publisher itself and went on.
     #[test]
-    fn delete_participant_wants_its_entities_deleted_first() {
+    fn dcps_2_2_2_2_2_2_delete_participant_wants_its_entities_deleted_first() {
         let f = DomainParticipantFactory::instance();
         let domain = 94;
         let p = f.create_participant_offline(domain, DomainParticipantQos::default());
@@ -587,7 +587,7 @@ mod tests {
     /// ALREADY_DELETED, `create_publisher` and `create_subscriber` among
     /// them.
     #[test]
-    fn a_deleted_participant_creates_no_publisher_or_subscriber() {
+    fn dcps_2_2_2_2_2_2_a_deleted_participant_creates_no_publisher_or_subscriber() {
         let f = DomainParticipantFactory::instance();
         let p = f.create_participant_offline(95, DomainParticipantQos::default());
         f.delete_participant(&p).unwrap();
@@ -622,7 +622,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_participant_unknown_returns_precondition_not_met() {
+    fn dcps_2_2_2_2_2_2_delete_participant_unknown_returns_precondition_not_met() {
         let f = DomainParticipantFactory::instance();
         // Create a participant without tracking it via the factory
         // (DomainParticipant::new directly).
@@ -638,7 +638,7 @@ mod tests {
     // ---- §2.2.2.2.2.5 default_participant_qos ----
 
     #[test]
-    fn default_participant_qos_roundtrips() {
+    fn dcps_2_2_2_2_2_5_default_participant_qos_roundtrips() {
         let f = DomainParticipantFactory::instance();
         let mut new_qos = f.get_default_participant_qos();
         // We mutate some recognizable default. DomainParticipantQos is
@@ -654,14 +654,14 @@ mod tests {
     // ---- §2.2.2.2.2.6 factory's own QoS ----
 
     #[test]
-    fn factory_qos_default_is_autoenable_true() {
+    fn dcps_2_2_2_2_2_8_factory_qos_default_is_autoenable_true() {
         // Spec default §2.2.2.2.2.6: autoenable_created_entities = TRUE.
         let q = DomainParticipantFactoryQos::default();
         assert!(q.autoenable_created_entities);
     }
 
     #[test]
-    fn factory_set_get_qos_roundtrip() {
+    fn dcps_2_2_2_2_2_7_factory_set_get_qos_roundtrip() {
         let f = DomainParticipantFactory::instance();
         let q = DomainParticipantFactoryQos {
             autoenable_created_entities: false,

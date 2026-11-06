@@ -695,7 +695,7 @@ mod tests {
     }
 
     #[test]
-    fn create_attach_roundtrip() {
+    fn flatdata_2_create_attach_roundtrip() {
         let flink = unique_flink();
         let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
         let consumer = PosixSlotAllocator::attach(&flink).expect("attach");
@@ -707,7 +707,7 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn futex_notify_wakes_consumer_across_mappings() {
+    fn flatdata_4_1_futex_notify_wakes_consumer_across_mappings() {
         // Spec §4.2: the consumer parks on a cross-process futex on the shared
         // generation word; the owner's commit wakes it. Owner (create) and
         // consumer (attach) map the SAME segment at different virtual addresses
@@ -746,7 +746,7 @@ mod tests {
     /// both parked until the 5 s timeout.
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn every_bump_reaches_a_parked_peer_and_the_count_returns_to_zero() {
+    fn flatdata_4_1_every_bump_reaches_a_parked_peer_and_the_count_returns_to_zero() {
         use alloc::sync::Arc;
         use core::time::Duration;
         use std::time::Instant;
@@ -802,7 +802,7 @@ mod tests {
     /// A segment of the layout without the waiter count (magic "ZDSS") is
     /// refused: its readers would park without counting themselves.
     #[test]
-    fn a_segment_without_the_waiter_count_is_refused() {
+    fn flatdata_4_1_a_segment_without_the_waiter_count_is_refused() {
         let flink = unique_flink();
         let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
         let base = owner.shmem.as_ref().expect("mapping").as_ptr();
@@ -818,10 +818,10 @@ mod tests {
     /// Spec §7.1, portable half: the flink file that names the segment must
     /// be owner-only on every unix. The `/dev/shm` object carries the same
     /// mode but only exists on Linux — that half is
-    /// `segment_is_owner_only_0600`.
+    /// `flatdata_7_1_segment_is_owner_only_0600`.
     #[cfg(unix)]
     #[test]
-    fn flink_file_is_owner_only_0600() {
+    fn flatdata_7_1_flink_file_is_owner_only_0600() {
         use std::os::unix::fs::PermissionsExt;
         let flink = unique_flink();
         let _owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
@@ -833,16 +833,19 @@ mod tests {
         assert_eq!(mode, 0o600, "flink file must be 0600, was {mode:o}");
     }
 
-    /// Spec §7.1 on macOS and the BSDs: the shm object has no path there,
-    /// so its mode is read off a descriptor of it.
-    #[cfg(all(unix, not(target_os = "linux")))]
+    /// Spec §7.1 by descriptor: on macOS the shm object has no path, so its
+    /// mode is read off a descriptor of it (`shm_open`, `fstat`). The same
+    /// read works on Linux, where the crate tier runs it.
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn shm_object_is_owner_only_0600_by_descriptor() {
+    fn flatdata_7_1_shm_object_is_owner_only_0600_by_descriptor() {
         let flink = unique_flink();
         let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
         let name = std::ffi::CString::new(owner.shmem_os_id()).unwrap();
         // SAFETY: a NUL-terminated name; read-only open of an existing object.
-        let fd = unsafe { libc::shm_open(name.as_ptr(), libc::O_RDONLY) };
+        // The mode argument is ignored without O_CREAT; Linux declares it as
+        // `mode_t` (u32), macOS takes it through the variadic tail.
+        let fd = unsafe { libc::shm_open(name.as_ptr(), libc::O_RDONLY, 0u32) };
         assert!(fd >= 0, "shm_open: {}", std::io::Error::last_os_error());
         // SAFETY: an all-zero stat is a valid out-parameter; fd is open.
         let mut st: libc::stat = unsafe { core::mem::zeroed() };
@@ -851,13 +854,15 @@ mod tests {
         // SAFETY: fd came from shm_open above and is closed once.
         unsafe { libc::close(fd) };
         assert_eq!(rc, 0, "fstat: {}", std::io::Error::last_os_error());
+        // `st_mode` is a u16 on macOS and a u32 on Linux.
+        #[allow(clippy::useless_conversion)]
         let mode = u32::from(st.st_mode) & 0o777;
         assert_eq!(mode, 0o600, "shm object must be 0600, was {mode:o}");
     }
 
     #[cfg(target_os = "linux")]
     #[test]
-    fn segment_is_owner_only_0600() {
+    fn flatdata_7_1_segment_is_owner_only_0600() {
         // Spec §7.1: the flink file and the /dev/shm object must be 0600
         // (owner-only), not world-readable. Linux-only (shm path is /dev/shm).
         use std::os::unix::fs::PermissionsExt;
@@ -883,7 +888,7 @@ mod tests {
     }
 
     #[test]
-    fn write_read_through_shm() {
+    fn flatdata_3_2_write_read_through_shm() {
         let flink = unique_flink();
         let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
         let consumer = PosixSlotAllocator::attach(&flink).expect("attach");
@@ -897,7 +902,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_read_visible_to_owner() {
+    fn flatdata_4_1_mark_read_visible_to_owner() {
         let flink = unique_flink();
         let owner = PosixSlotAllocator::create(&flink, 1, 64).expect("create");
         let consumer = PosixSlotAllocator::attach(&flink).expect("attach");
@@ -918,7 +923,7 @@ mod tests {
     }
 
     #[test]
-    fn next_sn_increments_atomically() {
+    fn flatdata_4_1_next_sn_increments_atomically() {
         let flink = unique_flink();
         let owner = PosixSlotAllocator::create(&flink, 4, 64).expect("create");
 

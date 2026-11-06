@@ -568,7 +568,7 @@ mod tests {
     /// §10.6.1 — with `distribute` off the sink creates no writer and so needs
     /// no publisher; a file-only logger is built.
     #[test]
-    fn distribute_off_needs_no_publisher() {
+    fn security_10_6_1_distribute_off_needs_no_publisher() {
         let dir = std::env::temp_dir().join(format!("zerodds-log-file-off-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("builtin-off.log");

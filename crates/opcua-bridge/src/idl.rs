@@ -3,7 +3,7 @@
 
 //! Compiles an operator-supplied `.idl` file into a model this daemon can
 //! resolve DDS types from, and builds the
-//! [`zerodds-dcps::serialized_type::SerializedTypeSupport`] a topic named
+//! [`zerodds_dcps::serialized_type::SerializedTypeSupport`] a topic named
 //! in the config needs to decode/encode its samples without a compiled
 //! Rust type.
 
@@ -191,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn compiles_a_struct_and_resolves_its_type_support() {
+    fn opcuabridge_5_1_compiles_a_struct_and_resolves_its_type_support() {
         let dir = std::env::temp_dir().join(format!("zd-opcua-idl-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = write_idl(
@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_type_is_reported_by_name() {
+    fn opcuabridge_5_1_unknown_type_is_reported_by_name() {
         let dir = std::env::temp_dir().join(format!("zd-opcua-idl-test2-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = write_idl(&dir, "empty.idl", "struct A { long x; };");
@@ -217,7 +217,7 @@ mod tests {
     }
 
     #[test]
-    fn broken_idl_is_reported_with_diagnostics() {
+    fn opcuabridge_5_1_broken_idl_is_reported_with_diagnostics() {
         let dir = std::env::temp_dir().join(format!("zd-opcua-idl-test3-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = write_idl(&dir, "broken.idl", "struct A { long x");

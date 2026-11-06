@@ -1,0 +1,81 @@
+# cargo-nextest configuration (https://nexte.st/docs/configuration/).
+#
+# The `merge` profile is what the merge lane runs (ci/run_merge_rust.py,
+# internal/release/rc8-test-suite.md "Crate tier"). The default profile is
+# nextest's own.
+
+[profile.merge]
+# A single test at most 25 s. A test still running then is terminated,
+# reported by name as TIMEOUT, and the run fails. The budget is not raised
+# for a slow test: the test is split or moves to a pillar.
+slow-timeout = { period = "25s", terminate-after = 1, grace-period = "2s" }
+retries = 0
+# Every test of the run, also after a failure.
+fail-fast = false
+# One test at a time, as `--test-threads=1` did before: nextest runs every
+# test in a process of its own, so `serial_test`'s mutex, which lives inside
+# one process, would no longer keep two tests of a binary apart.
+test-threads = 1
+# Each finished test with its duration in the job log, the failures again at
+# the end.
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate-final"
+success-output = "never"
+
+# The `integration` profile is what the integration pillar runs
+# (ci/run_integration.py, internal/release/rc8-test-suite.md "Pillars ->
+# Integration"): the same budget as the merge lane, a single test at most
+# 25 s and no retries, one test at a time (a scenario starts processes of its
+# own and leases its DDS domains), and a JUnit report for the job.
+[profile.integration]
+slow-timeout = { period = "25s", terminate-after = 1, grace-period = "2s" }
+retries = 0
+fail-fast = false
+test-threads = 1
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate-final"
+success-output = "never"
+
+[profile.integration.junit]
+path = "junit.xml"
+
+# The `codegen` profile is what the code generators' language jobs run
+# (`merge-codegen-<language>` and the weekly `integration-codegen-*`,
+# ci/integration_scenarios.py "CODEGEN"): the same budget, a single test at
+# most 25 s and no retries, but eight tests side by side, because their
+# tests start a compiler or an interpreter and share nothing (a whole-corpus
+# gate is cut into shares). Eight and not a test per CPU: with 32 at a time
+# on the CI runner host (16 cores) 51 of the 142 Java and D tests ran past their 25 s
+# (pipeline 8668, job 228097). Every test's output goes to the log as
+# it finishes, so that ci/check_skips.py sees a SKIPPED a test printed when
+# it found no toolchain.
+[profile.codegen]
+slow-timeout = { period = "25s", terminate-after = 1, grace-period = "2s" }
+retries = 0
+fail-fast = false
+test-threads = 8
+status-level = "pass"
+final-status-level = "slow"
+failure-output = "immediate-final"
+success-output = "immediate"
+
+[profile.codegen.junit]
+path = "junit.xml"
+
+# The `coverage` profile is what the coverage report of the weekly run runs
+# (ci/coverage_jobs.py, decision 7 of internal/release/rc8-test-suite.md):
+# the merge lane's tests under `cargo llvm-cov`, one at a time as there. An
+# instrumented test runs slower than the 25 s the merge lane gives it, and
+# the report blocks nothing, so a test may run 60 s; one past it counts as
+# not run and is named in the job log.
+[profile.coverage]
+slow-timeout = { period = "60s", terminate-after = 1, grace-period = "2s" }
+retries = 0
+fail-fast = false
+test-threads = 1
+status-level = "fail"
+final-status-level = "slow"
+failure-output = "final"
+success-output = "never"

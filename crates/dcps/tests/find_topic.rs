@@ -40,7 +40,7 @@ fn offline() -> DomainParticipant {
 /// The result of `find_topic` is a Topic a writer and a reader are created
 /// from, not a name.
 #[test]
-fn find_topic_gives_a_topic_that_writers_and_readers_are_created_from() {
+fn dcps_2_2_2_2_1_11_find_topic_gives_a_topic_that_writers_and_readers_are_created_from() {
     let p = offline();
     p.create_topic::<RawBytes>("Found", TopicQos::default())
         .unwrap();
@@ -77,7 +77,7 @@ fn find_topic_times_out_for_a_topic_nobody_creates() {
 /// (or the specified timeout occurs). This other mechanism can be another
 /// thread".
 #[test]
-fn find_topic_waits_for_a_topic_another_thread_creates() {
+fn dcps_2_2_2_2_1_11_find_topic_waits_for_a_topic_another_thread_creates() {
     let p = offline();
     let creator = p.clone();
     let thread = std::thread::spawn(move || {
@@ -95,7 +95,7 @@ fn find_topic_waits_for_a_topic_another_thread_creates() {
 /// create_topic, it must also be deleted that same number of times using
 /// delete_topic." `lookup_topicdescription` needs no extra deletion.
 #[test]
-fn a_topic_obtained_by_find_topic_is_deleted_as_often() {
+fn dcps_2_2_2_2_1_11_a_topic_obtained_by_find_topic_is_deleted_as_often() {
     let p = offline();
     let created = p
         .create_topic::<RawBytes>("Counted", TopicQos::default())
@@ -119,7 +119,7 @@ fn a_topic_obtained_by_find_topic_is_deleted_as_often() {
 /// Topic, ContentFilteredTopic, and MultiTopic object", never creates one,
 /// and a deleted one is not found.
 #[test]
-fn lookup_finds_a_content_filtered_topic_and_not_a_deleted_one() {
+fn dcps_2_2_2_2_1_12_lookup_finds_a_content_filtered_topic_and_not_a_deleted_one() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Related", TopicQos::default())
@@ -164,7 +164,7 @@ fn lookup_finds_a_content_filtered_topic_and_not_a_deleted_one() {
 
 /// A ContentFilteredTopic nobody holds any more is not found.
 #[test]
-fn lookup_does_not_find_a_description_without_a_handle() {
+fn dcps_2_2_2_2_1_12_lookup_does_not_find_a_description_without_a_handle() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("Related2", TopicQos::default())

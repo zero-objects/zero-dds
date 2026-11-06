@@ -1116,7 +1116,7 @@ impl PskHandshakeAuthenticationPlugin {
 }
 
 fn hex_decode(s: &str) -> SecurityResult<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err(SecurityError::new(
             SecurityErrorKind::BadArgument,
             "psk: hex string with odd length",
@@ -1173,7 +1173,7 @@ mod tests {
     /// The handshake of ZeroDDS does not use the class the specification
     /// gives to `DDS:Auth:PSK`.
     #[test]
-    fn the_handshake_classes_are_not_the_spec_class() {
+    fn security_7_3_5_1_the_handshake_classes_are_not_the_spec_class() {
         let p = PskHandshakeAuthenticationPlugin::new();
         assert_eq!(p.plugin_class_id(), "org.zerodds.auth.psk-handshake:1.0");
         assert_eq!(class_id::PSK, "org.zerodds.auth.psk-handshake:1.0");
@@ -1197,7 +1197,7 @@ mod tests {
     /// attribute, the status token is TokenNIL, validate_remote_identity
     /// always fails, and there is no handshake and no shared secret.
     #[test]
-    fn the_spec_plugin_authenticates_nobody() {
+    fn security_9_3_2_11_the_spec_plugin_authenticates_nobody() {
         let mut p = PskAuthenticationPlugin::new();
         assert_eq!(p.plugin_class_id(), "DDS:Auth:PSK:1.2");
         let local = p
@@ -1253,7 +1253,7 @@ mod tests {
     /// TRUE": the adjusted info is the one given, and nothing the credential
     /// carries is kept or checked.
     #[test]
-    fn table_83_set_participant_security_config_and_credential_do_nothing() {
+    fn security_9_3_2_11_table_83_set_participant_security_config_and_credential_do_nothing() {
         let mut p = PskAuthenticationPlugin::new();
         let local = p
             .validate_local_identity(0, &PropertyList::default(), [1; 16])
@@ -1283,7 +1283,7 @@ mod tests {
 
     /// Table 83, set_listener: "shall save a reference to the listener".
     #[test]
-    fn table_83_set_listener_saves_the_listener() {
+    fn security_9_3_2_11_table_83_set_listener_saves_the_listener() {
         struct Quiet;
         impl AuthenticationListener for Quiet {
             fn on_revoke_identity(&self, _handle: IdentityHandle) -> SecurityResult<()> {
@@ -1308,7 +1308,7 @@ mod tests {
     /// return_identity_handle behave as §9.3.2.11.14, .15 and .18: a token the
     /// plugin issued goes back once, one it did not issue is refused.
     #[test]
-    fn table_83_the_return_operations_take_back_what_was_issued() {
+    fn security_9_3_2_11_table_83_the_return_operations_take_back_what_was_issued() {
         let mut p = PskAuthenticationPlugin::new();
         let local = p
             .validate_local_identity(0, &PropertyList::default(), [1; 16])
@@ -1559,7 +1559,7 @@ mod tests {
     }
 
     #[test]
-    fn token_roundtrip_via_data_holder_codec() {
+    fn security_10_7_2_1_token_roundtrip_via_data_holder_codec() {
         let mut p = PskHandshakeAuthenticationPlugin::new();
         p.register_psk("alpha".into(), alloc::vec![0xBE; 32])
             .unwrap();
@@ -1956,7 +1956,7 @@ mod tests {
     /// Table 59 (analogous): the smaller GUID starts; a local identity that
     /// does not know its GUID cannot validate a remote one.
     #[test]
-    fn the_handshake_plugin_orders_remote_identities_by_guid() {
+    fn security_9_3_2_11_the_handshake_plugin_orders_remote_identities_by_guid() {
         let (mut alice, mut bob, alice_h, bob_h) = guided_pair();
         let token = |p: &PskHandshakeAuthenticationPlugin, h| p.build_identity_token(h).unwrap();
         let (alice_token, bob_token) = (token(&alice, alice_h), token(&bob, bob_h));
@@ -1994,7 +1994,8 @@ mod tests {
     /// `psk.id`; before, there is none. The return operations take back what
     /// was issued (§9.3.2.11.14 to .19), once.
     #[test]
-    fn the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued() {
+    fn security_9_3_2_7_the_handshake_plugin_gives_the_peer_credential_and_takes_back_what_it_issued()
+     {
         let (mut alice, mut bob, alice_h, bob_h) = guided_pair();
         let (alice_hs, out1) = alice.begin_handshake_request(alice_h, bob_h, &[]).unwrap();
         assert!(
@@ -2068,7 +2069,7 @@ mod tests {
     /// §9.3.2.9.1 rule 3 for the handshake of ZeroDDS: a forged reply or
     /// final leaves the handshake in place, so the genuine message completes it.
     #[test]
-    fn a_forged_message_leaves_the_handshake_in_place() {
+    fn security_9_3_2_9_1_a_forged_message_leaves_the_handshake_in_place() {
         let (mut alice, mut bob, alice_h, bob_h) = guided_pair();
         let (alice_hs, out1) = alice.begin_handshake_request(alice_h, bob_h, &[]).unwrap();
         let (bob_hs, out2) = bob

@@ -48,9 +48,9 @@ ReverseHello (§7.1.3 Establishing a connection, S. 83).
 `MessageHeader`, `HelloMessage`, `AcknowledgeMessage`, `ErrorMessage`,
 `ReverseHelloMessage`).
 
-**Tests:** `crates/opcua-uacp/src/connection.rs::tests::header_round_trips_and_sizes_match`,
-`acknowledge_round_trips`, `error_round_trips`, `reverse_hello_round_trips`,
-`unknown_message_type_rejected`, `oversized_string_rejected`.
+**Tests:** `crates/opcua-uacp/src/connection.rs::tests::uacs_7_1_2_3_a_hello_is_the_header_and_the_fields_of_table_74`,
+`uacs_7_1_2_4_an_acknowledge_is_the_header_and_the_fields_of_table_75`, `uacs_7_1_2_5_an_error_is_the_header_a_status_code_and_a_reason`, `uacs_7_1_2_6_a_reverse_hello_is_the_header_server_uri_and_endpoint_url`,
+`uacs_7_1_unknown_message_type_rejected`, `uacs_7_1_oversized_string_rejected`.
 
 **Status:** done
 
@@ -80,13 +80,13 @@ gesicherte Chunk-Typen über
 in `crates/opcua-server/src/server.rs` (`Server::process`) und
 `crates/opcua-server/src/client.rs` (`Client::open_channel`).
 
-**Tests:** `crates/opcua-uacp/src/securechannel.rs::tests::message_chunk_round_trip`,
-`open_secure_channel_round_trip_none`, `chunked_message_round_trips_across_c_and_f`,
-`abort_chunk_reports_the_error_and_keeps_the_channel`,
-`split_messages_splits_by_message_size`;
+**Tests:** `crates/opcua-uacp/src/securechannel.rs::tests::uacs_6_7_2_a_message_chunk_is_header_token_id_sequence_header_and_body`,
+`uacs_6_7_2_an_open_secure_channel_chunk_under_policy_none_is_the_octets_of_tables_57_to_64`, `uacs_6_7_2_2_a_message_above_the_send_buffer_is_cut_into_c_chunks_and_a_final_f`,
+`uacs_6_7_abort_chunk_reports_the_error_and_keeps_the_channel`,
+`uacs_6_7_split_messages_splits_by_message_size`;
 End-to-End über beide Transporte:
-`crates/opcua-server/src/client.rs::tests::e2e_loopback_message_larger_than_the_buffer_is_chunked`,
-`e2e_tcp_message_larger_than_the_buffer_is_chunked`.
+`crates/opcua-server/src/client.rs::tests::uacs_6_7_e2e_loopback_message_larger_than_the_buffer_is_chunked`,
+`uacs_6_7_e2e_tcp_message_larger_than_the_buffer_is_chunked`.
 
 **Status:** done
 
@@ -116,16 +116,16 @@ ISSUE wie RENEW),
 -Public-Keys; RNG Caller-bereitgestellt (`Box<dyn CryptoRngCore + Send>`,
 OS-RNG unter `std`).
 
-**Tests:** `crates/opcua-uacp/src/crypto.rs::tests::p_sha256_is_deterministic_and_sized`,
-`derive_keys_lengths_and_mirror`, `symmetric_sign_and_encrypt_round_trip`
-(alle 3 Policies), `symmetric_sign_only_round_trip`, `symmetric_tamper_is_rejected`,
-`asymmetric_round_trip_oaep_pkcs15`, `asymmetric_round_trip_oaep_sha256_pss`,
-`asymmetric_wrong_signer_is_rejected`, `full_secured_handshake_flow`;
+**Tests:** `crates/opcua-uacp/src/crypto.rs::tests::uacs_6_7_5_p_sha256_is_the_p_hash_of_rfc_5246_5`,
+`uacs_6_7_5_the_keys_are_p_sha256_cut_into_signing_key_encrypting_key_and_iv`, `uacs_6_7_2_5_an_encrypted_chunk_is_aes_cbc_of_sequence_body_padding_and_signature`
+(alle 3 Policies), `uacs_6_7_2_a_signed_chunk_is_its_plaintext_and_the_hmac_over_it`, `uacs_6_7_symmetric_tamper_is_rejected`,
+`uacs_6_7_2_an_open_secure_channel_chunk_is_the_layout_of_figure_13`,
+`uacs_6_7_asymmetric_wrong_signer_is_rejected`, `uacs_6_7_full_secured_handshake_flow`;
 **gesicherter End-to-End je Betriebsart:**
 `crates/opcua-server/src/client.rs::tests::e2e_secured_loopback_sign_and_encrypt`
 (echte RSA-Keys + OS-RNG: verschlüsselter+signierter Handshake → Read/Call/Write
 über `Basic256Sha256`/SignAndEncrypt) und
-`e2e_secured_loopback_sign_only_and_renew` (`Aes256_Sha256_RsaPss`/Sign:
+`uacs_5_6_2_e2e_secured_loopback_sign_only_and_renew` (`Aes256_Sha256_RsaPss`/Sign:
 Handshake → Read, `EndpointDescription` mit `MessageSecurityMode::Sign` und
 Policy-URI, dann RENEW über den gesicherten Kanal).
 
@@ -141,12 +141,12 @@ Variant, DataValue, ExtensionObject, Arrays).
 `ExtensionObject` aus `zerodds-opcua-gateway`.
 
 **Tests:** `crates/opcua-pubsub/src/binary/builtin.rs::tests` (20 Tests), darunter
-`nodeid_two_byte_compact_form`, `guid_encodes_data1_little_endian`,
-`variant_scalar_int32`, `variant_multidim_array`, `data_value_full`;
-`crates/opcua-pubsub/src/binary/io.rs::tests::primitive_roundtrip_is_little_endian`,
-`::read_past_end_reports_eof`, `::floats_roundtrip`;
-`crates/opcua-pubsub/src/binary/mod.rs::tests::read_array_rejects_oversized_length`,
-`::read_string_array_roundtrip_within_bound`.
+`uacs_5_2_2_9_the_four_nodeid_forms_of_tables_17_to_20`, `uacs_5_2_2_6_the_guid_of_figure_5`,
+`uacs_5_2_2_16_a_scalar_variant_is_its_type_id_and_its_value`, `uacs_5_2_2_16_an_array_variant_has_its_length_and_its_dimensions_after_the_values`, `uacs_5_2_2_17_a_data_value_is_its_mask_and_the_fields_in_the_order_of_table_27`;
+`crates/opcua-pubsub/src/binary/io.rs::tests::uacs_5_2_2_2_the_integer_of_figure_2_is_little_endian`,
+`::uacs_5_2_read_past_end_reports_eof`, `::uacs_5_2_2_3_the_float_of_figure_3_and_a_double_are_ieee_754_little_endian`;
+`crates/opcua-pubsub/src/binary/mod.rs::tests::uacs_5_2_read_array_rejects_oversized_length`,
+`::uacs_5_2_5_a_string_array_is_its_length_then_length_prefixed_strings`.
 
 **Status:** done
 
@@ -159,9 +159,9 @@ Variant, DataValue, ExtensionObject, Arrays).
 (`TcpTransport`, `serve_connection`, `Transport`-Trait, `LoopbackTransport`),
 `crates/opcua-server/src/server.rs` (`Server::process`).
 
-**Tests:** `crates/opcua-server/src/client.rs::tests::e2e_tcp_connect_read_call`
+**Tests:** `crates/opcua-server/src/client.rs::tests::uacs_7_2_e2e_tcp_connect_read_call`
 (echter `opc.tcp`-Socket: Connect/Read/Call über `TcpListener`+Thread),
-`e2e_loopback_connect_read_call`, `e2e_loopback_write_then_read`.
+`uacs_7_2_e2e_loopback_connect_read_call`, `uacs_7_2_e2e_loopback_write_then_read`.
 
 **Status:** done
 
@@ -191,12 +191,12 @@ Kanal je Chunk aus der `SecureChannelId` des Headers),
 `SecurityTokenRequestType`-Parameter — die RENEW-OPN trägt die eigene
 `SecureChannelId`, die ISSUE-OPN die Null-Id).
 
-**Tests:** `crates/opcua-uacp/src/securechannel.rs::tests::open_response_round_trip`,
-`crates/opcua-server/src/client.rs::tests::e2e_loopback_connect_read_call`
-(durchläuft OPN), `e2e_loopback_secure_channel_renew_keeps_the_channel_working`
+**Tests:** `crates/opcua-uacp/src/securechannel.rs::tests::uacs_6_7_4_an_open_secure_channel_response_is_the_fields_of_table_64`,
+`crates/opcua-server/src/client.rs::tests::uacs_7_2_e2e_loopback_connect_read_call`
+(durchläuft OPN), `uacs_5_6_2_e2e_loopback_secure_channel_renew_keeps_the_channel_working`
 (RENEW im Modus `None`: Session und Read überleben den Token-Wechsel),
-`e2e_secured_loopback_sign_only_and_renew` (RENEW über den gesicherten Kanal),
-`e2e_loopback_transfer_subscriptions_between_sessions` (zwei Clients, zwei
+`uacs_5_6_2_e2e_secured_loopback_sign_only_and_renew` (RENEW über den gesicherten Kanal),
+`uacs_5_6_2_e2e_loopback_transfer_subscriptions_between_sessions` (zwei Clients, zwei
 gleichzeitig offene SecureChannels auf demselben Server).
 
 **Status:** done
@@ -214,8 +214,8 @@ ServerSignature).
 aus dem konfigurierten CSPRNG) und liefert `serverCertificate` +
 `EndpointDescription` mit den `UserTokenPolicy`s des `UserStore`).
 
-**Tests:** `crates/opcua-server/src/client.rs::tests::e2e_loopback_connect_read_call`,
-`e2e_tcp_connect_read_call`, `e2e_loopback_user_name_identity_token`.
+**Tests:** `crates/opcua-server/src/client.rs::tests::uacs_7_2_e2e_loopback_connect_read_call`,
+`uacs_7_2_e2e_tcp_connect_read_call`, `uacs_5_7_2_e2e_loopback_user_name_identity_token`.
 
 **Status:** done
 
@@ -251,18 +251,18 @@ in der `EndpointDescription`, `ClientUserId`),
 §6.1.8-Signatur über `serverCertificate‖serverNonce` via
 `crates/opcua-uacp/src/crypto.rs::sign_with_policy`/`signature_data`).
 
-**Tests:** `crates/opcua-server/src/identity.rs::tests::all_four_table_181_tokens_round_trip_through_the_extension_object`,
-`null_token_is_anonymous`, `user_token_policy_round_trips`,
-`store_accepts_each_token_type_and_rejects_bad_credentials`,
-`anonymous_is_rejected_when_the_server_does_not_allow_it`;
-`crates/opcua-server/src/services.rs::tests::session_lifecycle_round_trips`;
-End-to-End `crates/opcua-server/src/client.rs::tests::e2e_loopback_user_name_identity_token`
+**Tests:** `crates/opcua-server/src/identity.rs::tests::uacs_7_41_the_four_identity_tokens_are_their_fields_under_their_encoding_ids`,
+`uacs_5_7_3_null_token_is_anonymous`, `uacs_7_41_a_user_token_policy_is_its_fields_in_order`,
+`uacs_5_7_3_store_accepts_each_token_type_and_rejects_bad_credentials`,
+`uacs_5_7_3_anonymous_is_rejected_when_the_server_does_not_allow_it`;
+`tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`;
+End-to-End `crates/opcua-server/src/client.rs::tests::uacs_5_7_2_e2e_loopback_user_name_identity_token`
 (publizierte USERNAME-Policy, Anonymous abgelehnt, falsches Passwort
 `Bad_UserAccessDenied`, richtiges aktiviert) und
-`e2e_loopback_x509_and_issued_identity_tokens_and_user_change`
+`uacs_5_7_3_e2e_loopback_x509_and_issued_identity_tokens_and_user_change`
 (X.509- und IssuedToken-Aktivierung, Identitätswechsel auf der laufenden
 Session, gefälschtes Token und unbekanntes Zertifikat abgelehnt),
-`e2e_loopback_session_must_be_activated_and_close_deletes_subscriptions`.
+`uacs_5_7_3_e2e_loopback_session_must_be_activated_and_close_deletes_subscriptions`.
 
 **Status:** done
 
@@ -274,7 +274,7 @@ Session, gefälschtes Token und unbekanntes Zertifikat abgelehnt),
 **Repo:** `crates/opcua-server/src/services.rs`
 (`CloseSessionRequest`, `CloseSessionResponse`).
 
-**Tests:** `crates/opcua-server/src/services.rs::tests::session_lifecycle_round_trips`.
+**Tests:** `tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`.
 
 **Status:** done
 
@@ -305,18 +305,17 @@ TimestampsToReturn, `read_one` wendet `indexRange` und `dataEncoding` an),
 `crates/opcua-server/src/client.rs` (`Client::read_attributes`,
 `read_attribute`, `read_values`, `read_value_id`).
 
-**Tests:** `crates/opcua-server/src/attributes.rs::tests::numeric_range_parses_the_annex_a3_grammar`,
-`numeric_range_rejects_the_forms_the_spec_calls_invalid`,
-`numeric_range_apply_selects_and_clamps`,
-`timestamps_to_return_strips_what_was_not_asked_for`;
-`crates/opcua-server/src/services.rs::tests::read_request_round_trips`,
-`read_response_round_trips`;
-End-to-End `crates/opcua-server/src/client.rs::tests::e2e_loopback_reads_every_attribute_of_a_variable`
+**Tests:** `crates/opcua-server/src/attributes.rs::tests::uacs_5_11_2_numeric_range_parses_the_annex_a3_grammar`,
+`uacs_5_11_2_numeric_range_rejects_the_forms_the_spec_calls_invalid`,
+`uacs_5_11_2_numeric_range_apply_selects_and_clamps`,
+`uacs_5_11_2_timestamps_to_return_strips_what_was_not_asked_for`;
+`tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`;
+End-to-End `crates/opcua-server/src/client.rs::tests::uacs_5_11_2_e2e_loopback_reads_every_attribute_of_a_variable`
 (16 Attribute einer Variable, jedes `Good` mit geprüftem Wert; `Executable`
 und eine Id außerhalb Table A.1 als `Bad_AttributeIdInvalid`),
-`e2e_loopback_index_range_read_and_write`,
-`e2e_loopback_read_honours_timestamps_to_return_and_max_age`,
-`read_unknown_node_yields_bad_status`.
+`uacs_5_11_2_e2e_loopback_index_range_read_and_write`,
+`uacs_5_11_2_e2e_loopback_read_honours_timestamps_to_return_and_max_age`,
+`uacs_5_11_2_read_unknown_node_yields_bad_status`.
 
 **Status:** done
 
@@ -349,14 +348,14 @@ bzw. `ValueForVariableType`, `write_class_attribute` je NodeClass;
 gegen den aktuellen Wert auf), `crates/opcua-server/src/client.rs`
 (`Client::write_attributes`, `write_values`).
 
-**Tests:** `crates/opcua-server/src/attributes.rs::tests::write_mask_bit_matches_table_44`,
-`numeric_range_replace_writes_in_place`;
-`crates/opcua-server/src/services.rs::tests::write_round_trips`;
-End-to-End `crates/opcua-server/src/client.rs::tests::e2e_loopback_write_respects_the_write_mask_and_access_level`
+**Tests:** `crates/opcua-server/src/attributes.rs::tests::uacs_5_11_4_write_mask_bit_matches_table_44`,
+`uacs_5_11_4_numeric_range_replace_writes_in_place`;
+`tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`;
+End-to-End `crates/opcua-server/src/client.rs::tests::uacs_5_11_4_e2e_loopback_write_respects_the_write_mask_and_access_level`
 (gesetztes Maskenbit schreibt, gelöschtes gibt `Bad_NotWritable`, fehlendes
 `CurrentWrite` gibt `Bad_NotWritable`, falscher Typ gibt `Bad_TypeMismatch`,
 der abgelehnte Schreibvorgang lässt den Wert unverändert),
-`e2e_loopback_index_range_read_and_write`, `e2e_loopback_write_then_read`.
+`uacs_5_11_2_e2e_loopback_index_range_read_and_write`, `uacs_7_2_e2e_loopback_write_then_read`.
 
 **Status:** done
 
@@ -370,10 +369,10 @@ der abgelehnte Schreibvorgang lässt den Wert unverändert),
 `crates/opcua-server/src/address_space.rs` (Method-Handler-Registry),
 `crates/opcua-server/src/client.rs` (`Client::call_method`).
 
-**Tests:** `crates/opcua-server/src/services.rs::tests::call_round_trips`,
-`crates/opcua-server/src/address_space.rs::tests::method_call_dispatch`,
-`crates/opcua-server/src/client.rs::tests::e2e_loopback_connect_read_call`,
-`e2e_tcp_connect_read_call`.
+**Tests:** `crates/opcua-server/src/services.rs::tests::uacs_5_12_2_call_request_and_response_are_the_fields_of_5_12_2`,
+`crates/opcua-server/src/address_space.rs::tests::uacs_5_12_2_method_call_dispatch`,
+`crates/opcua-server/src/client.rs::tests::uacs_7_2_e2e_loopback_connect_read_call`,
+`uacs_7_2_e2e_tcp_connect_read_call`.
 
 **Status:** done
 
@@ -410,12 +409,12 @@ ExpandedNodeId-Wire); `crates/opcua-server/src/server.rs`
 `Bad_NoContinuationPoints`), `crates/opcua-server/src/client.rs`
 (`Client::browse`, `browse_limited`, `browse_next`, `browse_all`).
 
-**Tests:** `crates/opcua-server/src/address_space.rs::tests::browse_forward_and_inverse`,
-`browse_subtype_filter_excludes_non_hierarchical`, `browse_node_class_mask_filters_targets`,
-`crates/opcua-server/src/services.rs::tests::browse_round_trips`,
-`crates/opcua-server/src/client.rs::tests::e2e_loopback_browse`
+**Tests:** `crates/opcua-server/src/address_space.rs::tests::uacs_5_9_2_browse_forward_and_inverse`,
+`uacs_5_9_2_browse_subtype_filter_excludes_non_hierarchical`, `uacs_5_9_2_browse_node_class_mask_filters_targets`,
+`tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`,
+`crates/opcua-server/src/client.rs::tests::uacs_5_9_2_e2e_loopback_browse`
 (Objects→Boiler→Temperature über Organizes/HasComponent) und
-`e2e_loopback_browse_next_walks_continuation_points` (fünf Referenzen,
+`uacs_5_9_2_e2e_loopback_browse_next_walks_continuation_points` (fünf Referenzen,
 `requestedMaxReferencesPerNode` = 2 → erster Batch + Continuation-Point,
 BrowseNext liefert die restlichen drei in Reihenfolge, `release` gibt den Punkt
 frei und ein zweiter Zugriff darauf ist `Bad_ContinuationPointInvalid`,
@@ -439,12 +438,12 @@ FindServers seine `ApplicationDescription`),
 `crates/opcua-server/src/client.rs` (`Client::open_channel` — Hello+OPN ohne
 Session — plus `Client::get_endpoints`/`find_servers`).
 
-**Tests:** `crates/opcua-server/src/services.rs::tests::discovery_requests_round_trip`,
-`crates/opcua-server/src/client.rs::tests::e2e_loopback_discovery`
+**Tests:** `crates/opcua-server/src/services.rs::tests::uacs_5_5_2_a_find_servers_request_is_the_fields_of_5_5_2`,
+`crates/opcua-server/src/client.rs::tests::uacs_5_5_4_e2e_loopback_discovery`
 (session-loser Channel → GetEndpoints liefert Endpoint mit
 SecurityPolicy `None`, FindServers liefert den Server);
-`e2e_secured_loopback_sign_only_and_renew` prüft denselben Endpoint mit
-`Aes256_Sha256_RsaPss`/`Sign`, `e2e_loopback_user_name_identity_token` die
+`uacs_5_6_2_e2e_secured_loopback_sign_only_and_renew` prüft denselben Endpoint mit
+`Aes256_Sha256_RsaPss`/`Sign`, `uacs_5_7_2_e2e_loopback_user_name_identity_token` die
 publizierte USERNAME-`UserTokenPolicy`.
 
 **Status:** done
@@ -510,24 +509,24 @@ geht eine Keep-Alive-Nachricht hinaus, ohne Subscription der Service-Fehler
 `publish_acknowledging` (→ `PublishOutcome`), `republish`,
 `transfer_subscriptions`, `delete_subscriptions`.
 
-**Tests:** `crates/opcua-server/src/services.rs::tests::subscription_round_trips`,
-`publish_data_change_notification_round_trips`;
+**Tests:** `crates/opcua-server/src/services.rs::tests::uacs_5_14_2_and_5_13_2_subscription_and_monitored_item_requests_are_their_fields`,
+`uacs_5_14_5_a_publish_response_carries_the_data_change_notification_as_an_extension_object`;
 End-to-End in `crates/opcua-server/src/client.rs::tests`:
-`e2e_loopback_subscription_publish` (Erstwert, unveränderter Zyklus,
+`uacs_5_13_e2e_loopback_subscription_publish` (Erstwert, unveränderter Zyklus,
 Wertwechsel, Löschen, danach `Bad_NoSubscription`),
-`e2e_loopback_modify_subscription_and_monitored_items` (revidierte Intervalle,
+`uacs_5_13_e2e_loopback_modify_subscription_and_monitored_items` (revidierte Intervalle,
 neuer Client-Handle wirkt im nächsten Publish, unbekannte Item-Id ist
 `Bad_MonitoredItemIdInvalid`),
-`e2e_loopback_set_monitoring_mode_and_delete_monitored_items`
+`uacs_5_13_e2e_loopback_set_monitoring_mode_and_delete_monitored_items`
 (DISABLED verwirft die Queue, REPORTING nimmt sie wieder auf, doppeltes
 Löschen ist `Bad_MonitoredItemIdInvalid`),
-`e2e_loopback_set_triggering_releases_a_sampling_item`
+`uacs_5_13_e2e_loopback_set_triggering_releases_a_sampling_item`
 (ein Sampling-Item meldet erst, nachdem es an das triggernde Item gebunden
-wurde), `e2e_loopback_republish_and_acknowledgements`
+wurde), `uacs_5_13_e2e_loopback_republish_and_acknowledgements`
 (Republish liefert die Nachricht erneut, ein Acknowledgement entfernt sie aus
 der Queue, danach `Bad_MessageNotAvailable`, eine unbekannte Sequenznummer
 ist `Bad_SequenceNumberUnknown`),
-`e2e_loopback_transfer_subscriptions_between_sessions`
+`uacs_5_6_2_e2e_loopback_transfer_subscriptions_between_sessions`
 (Übernahme in eine zweite Session, `Good_SubscriptionTransferred` an die alte,
 `sendInitialValues` im ersten Publish der neuen, `Bad_NothingToDo` für die
 eigene und `Bad_SubscriptionIdInvalid` für eine unbekannte Subscription).
@@ -548,8 +547,8 @@ DiagnosticInfo-Skip), `crates/opcua-server/src/services.rs`
 `crates/opcua-server/src/wire.rs` (String/ByteString/Array/DiagnosticInfo-Hilfen),
 `MessageSecurityMode`/`EndpointDescription` aus `zerodds-opcua-pubsub`.
 
-**Tests:** `crates/opcua-uacp/src/securechannel.rs::tests::response_header_with_string_table_round_trips`,
-`crates/opcua-server/src/services.rs::tests::read_response_round_trips`.
+**Tests:** `crates/opcua-uacp/src/securechannel.rs::tests::uacs_7_33_a_response_header_carries_its_string_table_as_an_array`,
+`tests/integration/tests/bridges.rs::opcua_bridge_against_open62541`.
 
 **Status:** done
 
@@ -557,14 +556,17 @@ DiagnosticInfo-Skip), `crates/opcua-server/src/services.rs`
 
 ## Audit-Status
 
-16 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+16 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-opcua-uacp -p zerodds-opcua-server --features zerodds-opcua-server/crypto`
-— 81 Tests grün (23 UACP inkl. Krypto und Message-Chunking + 58 Server), 0
-failed; inkl. echtem `opc.tcp`-End-to-End, gechunkter Nachricht über beide
-Transporte, gesicherten Loopbacks in `Sign` und `SignAndEncrypt`,
-SecureChannel-Renew, allen vier UserIdentityTokens, dem vollen Attributsatz,
-BrowseNext mit Continuation-Points sowie beiden Service-Sets für
-MonitoredItems und Subscriptions.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document opcua-client-server-1.05.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-opcua-pubsub --all-targets` (Job `merge-rust-opcua-pubsub`) — 10 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-opcua-server --all-targets` (Job `merge-rust-opcua-server`) — 42 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-opcua-uacp --all-targets` (Job `merge-rust-opcua-uacp`) — 13 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-opcua-server --all-targets --features crypto` (Job `merge-rust-opcua-server-features-crypto`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-opcua-uacp --all-targets --features crypto` (Job `merge-rust-opcua-uacp-features-crypto`) — 8 Tests grün.
+* `python3 ci/run_integration.py integration-bridges` (Job `integration-bridges`) — 1 Test grün.
+
+75 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

@@ -51,17 +51,25 @@ because CORBA Part 1 §8.5.2 requires it as a standard initial reference.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — scope.
 
 ### §2 Conformance and Compliance
 
-**Spec:** Part 1 §2, p. 1 — conformance points, compliance markers.
+**Spec:** Part 1 §2.1, p. 1 — "The minimum required for a
+CORBA-compliant system is adherence to the specifications in this
+standard and one mapping. Each additional language mapping is a
+separate, optional compliance point."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** open — adherence to the standard is the sum of the items in
+this document; evidence of an OMG language mapping is missing. ZeroDDS
+maps CORBA IDL to Rust (`zerodds-corba-rust-1.1`, own spec, no OMG
+mapping); `crates/corba-codegen` produces stub and skeleton nodes for
+C++ and Java, without a coverage document against the OMG mappings for
+C++ or Java.
 
 ### §3 Normative References
 
@@ -71,7 +79,7 @@ because CORBA Part 1 §8.5.2 requires it as a standard initial reference.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — reference list.
 
 ### §4 Additional Information
 
@@ -82,7 +90,8 @@ because CORBA Part 1 §8.5.2 requires it as a standard initial reference.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — outline of Part 1 and the reading of the
+keywords per RFC 2119; no requirement on an implementation.
 
 ### §5 The Object Model
 
@@ -105,7 +114,8 @@ Object Adapter, IR).
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — overview; the requirements on ORB, DII,
+DSI, object adapter and IR are in §7–§18.
 
 ### §7 IDL Syntax and Semantics
 
@@ -177,21 +187,17 @@ in the codegen.
 **Tests:** `crates/idl-lower/tests/lowering.rs::{the_other_valuetype_forms_are_unaffected_by_the_box,
 an_abstract_valuetype_parses_as_a_valuetype,
 a_forward_declared_valuetype_is_completed_by_its_definition}`,
-`crates/corba-codegen/tests/orb_agreement.rs::the_valuebase_holder_is_the_omgs_and_jacorbs_names_a_class_that_does_not_exist`.
+`crates/corba-codegen/tests/orb_agreement.rs::the_valuebase_holder_is_the_omgs_and_jacorbs_names_a_class_that_does_not_exist`,
+`crates/corba-codegen/tests/annex_a1_traits.rs::{table_a8_reads_abstract_and_truncatable_off_the_declaration,
+table_a9_gives_a_valuebox_its_boxed_trait, every_traited_type_renders_in_every_column}`.
 
 **Status:** done — valuetype IDL parses, lowers and carries an emission
-rule per target language in `lang-rules`. Custom-marshal streams via
+rule per target language in `lang-rules`; a valuetype and a valuebox
+carry the members Annex A.1.1 gives them in all four PSM columns.
+Custom-marshal streams via
 `crates/corba-ccm/src/orb_core.rs::StreamableValue` trait
 (`marshal/unmarshal/repository_id`); sending-context runtime via
 `SendingContext` with `code_set` + `truncation_codebase`.
-
-**Tests:** `crates/corba-codegen/tests/annex_a1_traits.rs`:
-`table_a8_reads_abstract_and_truncatable_off_the_declaration`,
-`table_a9_gives_a_valuebox_its_boxed_trait`,
-`every_traited_type_renders_in_every_column`.
-
-**Status:** done — a valuetype and a valuebox carry the members Annex
-A.1.1 gives them in all four PSM columns.
 
 ### §10 Abstract Interface Semantics
 
@@ -425,16 +431,51 @@ roundtrip behavior.
 
 ## Part 2: Interoperability
 
-### §1-§5 Scope/Conformance/References/Terms/Symbols
+### §1, §3–§5 Scope/References/Terms/Symbols
 
-**Spec:** Part 2 §1-§5, pp. 1-6 — scope, conformance points,
-term definitions.
+**Spec:** Part 2 §1, §3–§5, pp. 1-6 — scope, normative references, term
+definitions, symbols.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — scope, reference lists and terms.
+
+### §2 Conformance and Compliance — interoperability
+
+**Spec:** Part 2 §2, p. 1 — "An ORB is considered to be
+interoperability-compliant when it meets the following requirements":
+the APIs for request-level bridges (Dynamic Invocation Interface,
+Dynamic Skeleton Interface, the object identity operations) and IIOP
+(GIOP transfer syntax and message formats over TCP/IP). ZIOP is an
+optional compliance point (item §12).
+
+**Repo:** `crates/corba-ccm/src/dynamic_api.rs` (DII, DSI),
+`crates/corba-giop/src/object_ops.rs` (`_is_a`, `_non_existent`,
+`_interface`, `_repository_id`, `_domain_managers`, `_component`),
+`crates/corba-iiop/` (IIOP).
+
+**Tests:** `crates/corba-ccm/src/dynamic_api.rs::tests::dii_encode_giop_request_round_trip_via_giop_codec`,
+`crates/corba-ccm/src/dynamic_api.rs::tests::dsi_servant_default_dispatch_via_input_body`,
+`crates/corba-giop/src/object_ops.rs::tests::is_object_operation_recognizes_all_six_and_the_legacy_spelling`,
+`crates/corba-iiop/src/connection.rs::tests::round_trip_request_reply`.
+
+**Status:** done
+
+### §2.1 MIOP — extension of the IOP module
+
+**Spec:** Part 2 §2.1, p. 2 — `const ProfileId TAG_UIPMC = 3; const
+ComponentId TAG_GROUP = 39; const ComponentId TAG_GROUP_IIOP = 40`.
+
+**Repo:** `crates/corba-ior/src/profile_tags.rs` (`ProfileId::Uipmc`),
+`crates/corba-ior/src/component_tags.rs` (`ComponentId::Group`,
+`ComponentId::GroupIiop`).
+
+**Tests:** `crates/corba-ior/src/profile_tags.rs::tests::standard_profile_tag_values_match_spec`,
+`crates/corba-ior/src/component_tags.rs::tests::round_trip_all_known_tags`.
+
+**Status:** done
 
 ### §6 Interoperability Overview
 
@@ -444,35 +485,174 @@ term definitions.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — overview; the requirements are in
+§7–§12.
 
-### §7 ORB Interoperability Architecture
+### §7.1–§7.5 Domains, ORB services, bridging, object addressing
 
-**Spec:** Part 2 §7, p. 15 — bridges, domains, object references in the
-interop context.
+**Spec:** Part 2 §7.1–§7.5, pp. 15–24 — domains, ORB services, bridging
+between domains, interoperability approaches, domain-relative object
+references.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative) — conceptual architecture; concrete
-implementation obligations in §8-§12.
+**Status:** n/a (informative) — architecture description; the
+fulfillable statements of §7 are in §7.6–§7.10.
+
+### §7.6 Interoperable Object References (IOR)
+
+**Spec:** Part 2 §7.6, pp. 25–37 — IOR structure, `TaggedProfile`,
+standard profiles, `TaggedComponent`, standard components, composition,
+stringified IOR (`IOR:` + hex of the CDR encapsulation), object URLs
+`corbaloc` (`iiop`, `rir`, default port 2809, default version 1.0, IPv6
+host in square brackets) and `corbaname`; failed conversion:
+`BAD_PARAM` with minor code 7 to 10.
+
+**Repo:** `crates/corba-ior/src/ior.rs`, `crates/corba-ior/src/tagged_profile.rs`,
+`crates/corba-ior/src/profile_tags.rs`, `crates/corba-ior/src/components.rs`,
+`crates/corba-ior/src/component_tags.rs`, `crates/corba-ior/src/stringified.rs`,
+`crates/corba-ior/src/url.rs`.
+
+**Tests:** `crates/corba-ior/src/ior.rs::tests::round_trip_multi_profile_le`,
+`crates/corba-ior/src/ior.rs::tests::nil_ior_is_recognized`,
+`crates/corba-ior/src/tagged_profile.rs::tests::unknown_profile_tag_round_trips_as_other`,
+`crates/corba-ior/src/component_tags.rs::tests::well_known_component_tag_values_match_spec`,
+`crates/corba-ior/src/stringified.rs::tests::round_trip_be`,
+`crates/corba-ior/src/url.rs::tests::default_port_2809_when_missing`,
+`crates/corba-ior/src/url.rs::tests::rir_endpoint`,
+`crates/corba-ior/src/url.rs::tests::corbaname_with_fragment`.
+
+**Status:** partial — IOR, profiles, components, stringified IOR and
+`corbaloc`/`corbaname` are encoded and tested. Missing: an IPv6 host
+without a port, `rir` together with another protocol and the minor
+codes 7–10; own item.
+
+### §7.6.10 Object URLs — IPv6 without port, `rir` exclusion, minor codes
+
+**Spec:** Part 2 §7.6.10, pp. 33–35 — `<host> = DNS_style_host_name |
+IPv4_address | "[" IPv6_address "]"`, port optional with default 2809;
+"The rir protocol cannot be used with any other protocol in a URL";
+"If conversion fails, string_to_object raises a BAD_PARAM exception"
+with minor code 7 (bad scheme name), 8 (bad address), 9 (bad schema
+specific part), 10 (non-specific reason).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `parse_endpoint` in `crates/corba-ior/src/url.rs`
+splits the port off at the last colon; an IPv6 host without a port
+(`corbaloc::[::1]/key`) is cut apart and refused. A list with `rir` and
+`iiop` is accepted. Errors come as `IorError`, not as `BAD_PARAM` with a
+minor code.
+
+### §7.7 Service Context
+
+**Spec:** Part 2 §7.7, pp. 37–40 — `IOP::ServiceContext` (`context_id`,
+`context_data` as a CDR encapsulation), standard IDs (§7.7.1),
+processing rules (§7.7.2): a context outside the own GIOP version or
+outside the OMG range may be ignored, but "must be passed on through a
+bridge and must be made available to interceptors. No exception shall
+be raised."
+
+**Repo:** `crates/corba-giop/src/service_context.rs` (`ServiceContext`,
+`ServiceContextList`, `ServiceContextTag`).
+
+**Tests:** `crates/corba-giop/src/service_context.rs::tests::standard_tag_values_match_spec`,
+`crates/corba-giop/src/service_context.rs::tests::round_trip_with_two_entries_be`,
+`crates/corba-giop/src/service_context.rs::tests::round_trip_le_byte_order`.
+
+**Status:** partial — encoding of the list and the standard IDs are
+tested; no test checks the processing rules of §7.7.2 (pass unknown or
+foreign-version contexts on without an exception and make them
+available to interceptors).
+
+### §7.8 Coder/Decoder Interfaces
+
+**Spec:** Part 2 §7.8, pp. 40–43 — `IOP::Codec` (`encode`, `decode`,
+`encode_value`, `decode_value`) and `IOP::CodecFactory::create_codec`,
+reachable via `resolve_initial_references("CodecFactory")`;
+"The encodings which shall be supported are: ENCODING_CDR_ENCAPS,
+version 1.0; [...] 1.1; [...] 1.2".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — no `Codec` and no `CodecFactory` in the tree.
+
+### §7.9 Feature Support and GIOP Versions
+
+**Spec:** Part 2 §7.9, pp. 43–44, Table 7.2 — which service contexts,
+IOR components and features apply from which GIOP version 1.0 to 1.4.
+
+**Repo:** `crates/corba-giop/src/version.rs` (`Version::V1_0`, `V1_1`,
+`V1_2`, `supports_fragments`, `uses_flags_octet`,
+`uses_v1_2_request_layout`, `supports_bidirectional`),
+`crates/corba-iiop/src/profile_body.rs` (components from IIOP 1.1).
+
+**Tests:** `crates/corba-giop/src/version.rs::tests::flags_octet_replaces_byte_order_at_1_1`,
+`crates/corba-giop/src/version.rs::tests::v1_2_request_layout_only_in_1_2_plus`,
+`crates/corba-iiop/src/profile_body.rs::tests::components_only_from_iiop_1_1`.
+
+**Status:** partial — the dependencies of GIOP 1.0 to 1.2 are
+implemented and tested; GIOP 1.3 and 1.4 are missing, own item.
+
+### §7.9 GIOP 1.3 and 1.4
+
+**Spec:** Part 2 §7.9, pp. 43–44, Table 7.2 — columns V1.3 and V1.4.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `crates/corba-giop/src/version.rs` knows only 1.0,
+1.1 and 1.2.
+
+### §7.10 Code Set Conversion
+
+**Spec:** Part 2 §7.10, pp. 45–58 — code set component of the IOR
+(`TAG_CODE_SETS`), negotiation of the transmission code set for `char`
+and `wchar`, `CodeSets` service context, OSF registry IDs, conversion of
+character data into the negotiated code set.
+
+**Repo:** `crates/corba-ior/src/components.rs` (`CodeSetComponentInfo::negotiate`),
+`crates/corba-giop/src/code_set.rs` (`CodeSetContext`).
+
+**Tests:** `crates/corba-ior/src/components.rs::tests::negotiate_client_converts_to_server_native`,
+`crates/corba-ior/src/components.rs::tests::negotiate_universal_fallback`,
+`crates/corba-giop/src/code_set.rs::tests::well_known_ids_match_osf_registry`,
+`crates/corba-giop/src/code_set.rs::tests::service_context_roundtrip_via_list`.
+
+**Status:** partial — negotiation, service context and registry IDs are
+tested; conversion of character data into a negotiated code set other
+than UTF-8/UTF-16 is missing, own item.
+
+### §7.10 Conversion into a negotiated code set other than UTF-8/UTF-16
+
+**Spec:** Part 2 §7.10.2, pp. 48–55 — client and server convert `char`
+and `wchar` data into the negotiated transmission code set (e.g. ISO
+8859-1).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `crates/corba-giop/src/lib.rs` describes the
+ISO-Latin conversion as the caller's task; `crates/wire/` encodes only
+UTF-8 and UTF-16.
 
 ### §8 Building Inter-ORB Bridges
 
 **Spec:** Part 2 §8, p. 63 — inline bridges, request-level bridges.
 
-**Repo:** `crates/corba-dds-bridge/src/mapping.rs` (CORBA↔DDS mapping),
-`crates/corba-dds-bridge/src/servant.rs`, `sync.rs` +
-`crates/corba-ccm/src/orb_extensions.rs::{BridgeMode, BridgeConfig}`
-for inline/request-level mode classification.
+**Repo:** —
 
-**Tests:** 15 inline `#[test]` functions in `crates/corba-dds-bridge/src/`
-+ `orb_extensions::tests::{bridge_modes_distinct, bridge_config_construct}`.
+**Tests:** —
 
-**Status:** done — DDS bridge (request-level) + inline-bridge API
-via BridgeMode/BridgeConfig live; wire implementation of the
-generic inline bridge is caller-layer.
+**Status:** n/a (informative) — Part 2 §8.1: "an implementation-oriented conceptual framework for the construction of bridges"; the clause states no requirement. The CORBA↔DDS bridge is covered in `zerodds-corba-bridge-1.0.en.md`.
 
 ### §9 General Inter-ORB Protocol (GIOP)
 
@@ -542,11 +722,9 @@ round_trip_giop_1_2_user_exception, round_trip_location_forward_perm_in_1_2}`,
 round_trip_giop_1_2_with_profile_addr}`,
 `crates/corba-giop/src/locate_reply.rs::{round_trip_giop_1_0_object_here,
 round_trip_giop_1_2_object_forward_perm}`,
-`crates/corba-giop/src/close_connection.rs::tests::body_is_unit`,
-`crates/corba-giop/src/message_error.rs::tests::body_is_unit`,
 `crates/corba-giop/src/fragment.rs::{round_trip_giop_1_2_with_header,
-round_trip_giop_1_1_without_header}`. All eight also through the
-whole-message codec: `crates/corba-giop/src/codec.rs::{round_trip_request_giop_1_0_be,
+round_trip_giop_1_1_without_header}`. All eight through the
+whole-message codec, CloseConnection and MessageError (no body) only there: `crates/corba-giop/src/codec.rs::{round_trip_request_giop_1_0_be,
 round_trip_close_connection, round_trip_message_error,
 round_trip_fragment_with_more_bit, round_trip_cancel_request,
 round_trip_locate_request_giop_1_2, round_trip_locate_reply_object_here}`.
@@ -787,7 +965,7 @@ levels.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — sample flows.
 
 #### §10.8 References
 
@@ -797,7 +975,7 @@ levels.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — reference list.
 
 #### §10.9 IDL for CSIv2
 
@@ -866,16 +1044,34 @@ explicitly unsupported.
 
 ## Part 3: Component Model (CCM)
 
-### §1-§5 Scope/Conformance/References/Terms/Symbols
+### §1, §3–§5 Scope/References/Terms/Symbols
 
-**Spec:** Part 3 §1-§5, pp. 1-7 — scope, conformance,
-terms.
+**Spec:** Part 3 §1, §3–§5, pp. 1-7 — scope, references, terms,
+symbols.
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — scope, reference lists and terms.
+
+### §2 Conformance and Compliance
+
+**Spec:** Part 3 §2, pp. 1–3 — compliance points: Basic Level (for
+non-Java products IDL extensions, CIDL without segments, a container,
+XML deployment descriptors), Java Basic Level (EJB 1.1, RMI/IIOP,
+EJB-to-IDL), Extended Level, Lightweight CCM profile, EJB clients
+(optional), Generic Interaction Support (`porttype`, `mirrorport`,
+`port`, templates, connectors, D&C extensions).
+
+**Repo:** `crates/corba-ccm/src/container.rs`, `crates/corba-ccm/src/cidl.rs`,
+`crates/corba-ccm-ejb/`, `crates/corba-ccm-lib/`.
+
+**Tests:** `crates/corba-ccm/src/container.rs::tests::install_and_full_lifecycle_round_trip`.
+
+**Status:** partial — container, component model, EJB integration and
+the Lightweight profile are items §6–§17; the Basic Level lacks the CIDL
+parser (item "§8 OMG CIDL — remaining constructs", open).
 
 ### §6 Component Model
 
@@ -1304,46 +1500,37 @@ reference per Part 1 §8.5.2.
 **Spec:** no OMG spec item; ZeroDDS-specific migration layer
 for the incremental replacement of CORBA endpoints by DDS wire.
 
-**Repo:** `crates/corba-dds-bridge/src/mapping.rs` (IOR↔topic+instance),
-`crates/corba-dds-bridge/src/servant.rs` (CORBA servant over DDS-RPC),
-`crates/corba-dds-bridge/src/sync.rs`.
+**Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs` (the daemon
+`zerodds-corba-bridged`).
 
-**Tests:** `crates/corba-dds-bridge/src/mapping.rs::tests` (6 tests):
-`add_and_lookup_route`, `lookup_unknown_yields_none`,
-`operation_mapping_by_name`, `add_route_replaces_existing`,
-`all_routes_listing`, `direction_variants_distinct`;
-`crates/corba-dds-bridge/src/locate.rs::tests` (4),
-`crates/corba-dds-bridge/src/notify.rs::tests` (4),
-`crates/corba-dds-bridge/src/csiv2_wire.rs::tests` (4),
-`crates/corba-dds-bridge/src/bridge_security.rs::tests` (5).
+**Tests:** —
 
-**Status:** done — informative; not spec-bound.
+**Status:** n/a (informative) — no OMG item; the daemon
+`zerodds-corba-bridged` is covered in `zerodds-corba-bridge-1.0.md`, with
+its tests.
 
 ---
 
 ## Audit status
 
-50 done / 1 partial / 1 open / 12 n/a (informative) / 0 n/a (rejected).
+50 done / 6 partial / 6 open / 0 blocked / 13 n/a (informative).
 
-Test run:
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document corba-3.3.md`):
 
-* `cargo test -p zerodds-corba-giop --lib` — 80 tests green.
-* `cargo test -p zerodds-corba-iiop --lib` — 38 tests green.
-* `cargo test -p zerodds-corba-ior --lib` — 53 tests green.
-* `cargo test -p zerodds-corba-poa --lib` — 39 tests green.
-* `cargo test -p zerodds-corba-cosnaming --lib` — 25 tests green.
-* `cargo test -p zerodds-corba-csiv2 --lib` — 35 tests green.
-* `cargo test -p zerodds-corba-cos-event --lib` — 23 tests green.
-* `cargo test -p zerodds-corba-ccm --lib` — 181 tests green.
-* `cargo test -p zerodds-corba-ccm-lib --lib` — 23 tests green.
-* `cargo test -p zerodds-corba-ccm-ejb --lib` — 25 tests green.
-* `cargo test -p zerodds-corba-ir --lib` — 23 tests green.
-* `cargo test -p zerodds-corba-dnc --lib` — 30 tests green.
-* `cargo test -p zerodds-corba-dds-bridge --lib` — 43 tests green.
-* `cargo test -p zerodds-corba-codegen --tests` — 38 + 15 + 10 tests green.
-* `cargo test -p zerodds-idl-parse --tests` — 36 + 32 tests green.
-* `cargo test -p zerodds-idl-lower --tests` — 5 + 49 + 23 + 12 + 36 + 4 +
-  82 + 3 + 62 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ccm --all-targets` (job `merge-rust-corba-ccm`) — 125 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ccm-ejb --all-targets` (job `merge-rust-corba-ccm-ejb`) — 10 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-codegen --all-targets` (job `merge-rust-corba-codegen`) — 10 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-cosnaming --all-targets` (job `merge-rust-corba-cosnaming`) — 13 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-csiv2 --all-targets` (job `merge-rust-corba-csiv2`) — 30 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-dnc --all-targets` (job `merge-rust-corba-dnc`) — 27 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-giop --all-targets` (job `merge-rust-corba-giop`) — 48 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-iiop --all-targets` (job `merge-rust-corba-iiop`) — 22 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ior --all-targets` (job `merge-rust-corba-ior`) — 25 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ir --all-targets` (job `merge-rust-corba-ir`) — 21 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-poa --all-targets` (job `merge-rust-corba-poa`) — 14 tests green.
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (job `merge-rust-idl-lower`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-idl-parse --all-targets` (job `merge-rust-idl-parse`) — 2 tests green.
 
-Open items and the reason for the `partial` status of Part 3 §8:
-`corba-3.3.open.en.md`.
+354 cited tests green, 0 not green.
+
+Open items: `corba-3.3.open.en.md`.

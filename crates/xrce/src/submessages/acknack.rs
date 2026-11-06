@@ -106,7 +106,7 @@ mod tests {
     /// Annex A gives ACKNACK_Payload no @extensibility: APPENDABLE, a DHEADER
     /// of 5 (the members) in front, in the byte order of the E flag.
     #[test]
-    fn acknack_le_roundtrip() {
+    fn xrce_8_3_5_11_acknack_le_roundtrip() {
         let p = AckNackPayload {
             first_unacked_seq_num: 0x1234,
             nack_bitmap: [0xAA, 0x55],
@@ -134,7 +134,7 @@ mod tests {
     }
 
     #[test]
-    fn acknack_be_roundtrip() {
+    fn xrce_8_3_4_2_acknack_be_roundtrip() {
         let p = AckNackPayload {
             first_unacked_seq_num: 0x0102,
             nack_bitmap: [0xFF, 0x00],
@@ -147,7 +147,7 @@ mod tests {
     }
 
     #[test]
-    fn acknack_roundtrip_via_submessage() {
+    fn xrce_8_3_5_11_acknack_roundtrip_via_submessage() {
         let p = AckNackPayload {
             first_unacked_seq_num: -1,
             nack_bitmap: [0, 0],

@@ -253,7 +253,7 @@ fn hex_digit(n: u8) -> char {
 }
 
 fn hex_decode(s: &str) -> Result<Vec<u8>, CodecError> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err(CodecError::InvalidHex);
     }
     let mut out = Vec::with_capacity(s.len() / 2);

@@ -5,6 +5,10 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
+## Non-goal — async counterpart of WaitSet
+
+**Status:** `open` — the spec excludes the async form of `WaitSet` and at the same time describes it as `Stream<Item = ConditionEvent>`; that stream is missing in `crates/dcps-async/`. `WaitSet` itself stays synchronous in `crates/dcps/`.
+
 ## §8 One async counterpart per sync test
 
 **Status:** `partial` — the async surface is covered item by item, but `crates/dcps/tests/` holds around sixty test files (QoS matrix, lifecycle wire, discovery server, security) and `crates/dcps-async/tests/` holds nine. There is no 1:1 counterpart per sync test. The remainder is tracked as its own `open` item "§8 1:1 async counterpart per sync test".
@@ -13,18 +17,10 @@ No new content: every entry appears there as an item with its evidence.
 
 **Status:** `partial` — the default runner is tokio, and runtime independence is covered by a park executor built inside the test. There is no `smol` variant; `smol` is not a dev-dependency. The remainder is tracked as its own `open` item "§8 smol test variant".
 
-## §8 E2E against live Cyclone plus a latency comparison
-
-**Status:** `partial` — the sync-against-async latency comparison runs as an assertion on the release build, in the CI job `perf-gate`. The Cyclone live part is `#[ignore]` and did not run in this audit. The remainder is tracked as its own `open` item "§8 Cyclone live e2e without a lab gate".
-
 ## §8 1:1 async counterpart per sync test
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — `crates/dcps-async/tests/` has 9 test files, `crates/dcps/tests/` 150; a mapping sync test → async counterpart is missing.
 
 ## §8 smol test variant
 
-**Status:** `open` — no description in the main file.
-
-## §8 Cyclone live e2e without a lab gate
-
-**Status:** `open` — no description in the main file.
+**Status:** `open` — no test runs under `smol::test`; `smol` appears only in the list of runtimes that `crates/dcps-async/tests/default_build.rs` rules out as a dependency.

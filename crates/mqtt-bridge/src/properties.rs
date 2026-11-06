@@ -224,44 +224,36 @@ impl Property {
 mod tests {
     use super::*;
 
+    /// §2.2.2.2, Table 2-4: the identifier of each named property, both
+    /// ways.
     #[test]
-    fn property_id_round_trip_for_all_named() {
-        for id in [
-            PropertyId::PayloadFormatIndicator,
-            PropertyId::MessageExpiryInterval,
-            PropertyId::ContentType,
-            PropertyId::ResponseTopic,
-            PropertyId::CorrelationData,
-            PropertyId::SubscriptionIdentifier,
-            PropertyId::SessionExpiryInterval,
-            PropertyId::AssignedClientIdentifier,
-            PropertyId::ServerKeepAlive,
-            PropertyId::AuthenticationMethod,
-            PropertyId::AuthenticationData,
-            PropertyId::ReceiveMaximum,
-            PropertyId::TopicAliasMaximum,
-            PropertyId::TopicAlias,
-            PropertyId::UserProperty,
+    fn mqtt5_2_2_2_each_named_property_has_its_identifier_of_table_2_4() {
+        for (id, value) in [
+            (PropertyId::PayloadFormatIndicator, 1),
+            (PropertyId::MessageExpiryInterval, 2),
+            (PropertyId::ContentType, 3),
+            (PropertyId::ResponseTopic, 8),
+            (PropertyId::CorrelationData, 9),
+            (PropertyId::SubscriptionIdentifier, 11),
+            (PropertyId::SessionExpiryInterval, 17),
+            (PropertyId::AssignedClientIdentifier, 18),
+            (PropertyId::ServerKeepAlive, 19),
+            (PropertyId::AuthenticationMethod, 21),
+            (PropertyId::AuthenticationData, 22),
+            (PropertyId::ReceiveMaximum, 33),
+            (PropertyId::TopicAliasMaximum, 34),
+            (PropertyId::TopicAlias, 35),
+            (PropertyId::UserProperty, 38),
         ] {
-            assert_eq!(PropertyId::from_value(id.to_value()), id);
+            assert_eq!(id.to_value(), value, "{id:?}");
+            assert_eq!(PropertyId::from_value(value), id);
         }
     }
 
     #[test]
-    fn property_id_unknown_yields_other_variant() {
+    fn mqtt5_2_2_2_property_id_unknown_yields_other_variant() {
         // Spec §2.2.2.2 — future IDs are kept as Other.
         assert_eq!(PropertyId::from_value(99), PropertyId::Other(99));
-    }
-
-    #[test]
-    fn well_known_property_ids_match_spec_values() {
-        // Spec §2.2.2.2 Table 2-4.
-        assert_eq!(PropertyId::PayloadFormatIndicator.to_value(), 1);
-        assert_eq!(PropertyId::ContentType.to_value(), 3);
-        assert_eq!(PropertyId::SubscriptionIdentifier.to_value(), 11);
-        assert_eq!(PropertyId::SessionExpiryInterval.to_value(), 17);
-        assert_eq!(PropertyId::TopicAlias.to_value(), 35);
-        assert_eq!(PropertyId::UserProperty.to_value(), 38);
     }
 
     #[test]

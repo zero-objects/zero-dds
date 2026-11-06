@@ -99,10 +99,7 @@ impl SampleIdentityBytes {
 /// the 24-byte XCDR2 encoding of the `SampleIdentity` as the value.
 #[must_use]
 pub fn related_sample_identity_param(id: SampleIdentityBytes, little_endian: bool) -> Parameter {
-    Parameter::new(
-        pid::RELATED_SAMPLE_IDENTITY,
-        id.to_bytes(little_endian).to_vec(),
-    )
+    Parameter::new(pid::RELATED_SAMPLE_IDENTITY, id.to_bytes(little_endian))
 }
 
 /// Builds an inline-QoS `ParameterList` that carries only the
@@ -135,7 +132,7 @@ pub fn eprosima_related_sample_identity_param(
 ) -> Parameter {
     Parameter::new(
         PID_EPROSIMA_RELATED_SAMPLE_IDENTITY,
-        id.to_bytes(little_endian).to_vec(),
+        id.to_bytes(little_endian),
     )
 }
 
@@ -170,7 +167,7 @@ pub mod status_info {
 /// (DDSI-RTPS 2.5 §9.6.4.9).
 #[must_use]
 pub fn status_info_param(bits: u32) -> Parameter {
-    Parameter::new(pid::STATUS_INFO, bits.to_be_bytes().to_vec())
+    Parameter::new(pid::STATUS_INFO, bits.to_be_bytes())
 }
 
 /// Reads `PID_STATUS_INFO` from an inline-QoS list. Returns the
@@ -226,6 +223,228 @@ impl InlineQosOverride {
     }
 }
 
+/// The in-line QoS of a DATA (DDSI-RTPS 2.5 §9.4.5.3.2, Q flag).
+///
+/// A list of nothing but `PID_KEY_HASH` and `PID_STATUS_INFO` — the
+/// in-line QoS of almost every sample — is read in place and held without
+/// an allocation, as Cyclone DDS's `ddsi_plist_quickscan` does; any other
+/// list is parsed into a [`ParameterList`] as before. [`Self::key_hash`]
+/// and [`Self::status_info`] read either form; [`Self::parsed`] gives the
+/// list for the other parameters, and has none to give for the short form,
+/// which holds no other parameter.
+#[derive(Debug, Clone)]
+pub struct InlineQos(InlineQosRepr);
+
+#[derive(Debug, Clone)]
+enum InlineQosRepr {
+    /// `PID_KEY_HASH` and `PID_STATUS_INFO`, each at most once, in the
+    /// order they came; `PID_PAD` and `PID_IGNORE` skipped, as the parser
+    /// skips them.
+    Short {
+        params: [Option<ShortParam>; 2],
+        little_endian: bool,
+    },
+    /// Any other list.
+    List(ParameterList),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShortParam {
+    KeyHash([u8; 16]),
+    StatusInfo([u8; 4]),
+}
+
+impl ShortParam {
+    fn parameter(self) -> Parameter {
+        match self {
+            Self::KeyHash(octets) => Parameter::new(pid::KEY_HASH, octets),
+            Self::StatusInfo(octets) => Parameter::new(pid::STATUS_INFO, octets),
+        }
+    }
+}
+
+impl InlineQos {
+    /// Reads the in-line QoS at the start of `bytes`, up to and with its
+    /// sentinel, and the octets it took. A list the short form does not
+    /// hold goes through [`ParameterList::from_bytes_with_consumed`], which
+    /// also reports a malformed one.
+    ///
+    /// # Errors
+    /// As [`ParameterList::from_bytes_with_consumed`].
+    pub fn read(bytes: &[u8], little_endian: bool) -> Result<(Self, usize), WireError> {
+        if let Some(short) = Self::read_short(bytes, little_endian) {
+            return Ok(short);
+        }
+        let (list, consumed) = ParameterList::from_bytes_with_consumed(bytes, little_endian)?;
+        Ok((Self(InlineQosRepr::List(list)), consumed))
+    }
+
+    /// The short form, where the list at the start of `bytes` holds nothing
+    /// but one `PID_KEY_HASH` of 16 octets and one `PID_STATUS_INFO` of 4,
+    /// besides `PID_PAD` and `PID_IGNORE`, and ends in a sentinel; `None`
+    /// for any other list, malformed ones included, which the parser reads.
+    fn read_short(bytes: &[u8], little_endian: bool) -> Option<(Self, usize)> {
+        let mut params: [Option<ShortParam>; 2] = [None, None];
+        let mut count = 0usize;
+        let mut pos = 0usize;
+        loop {
+            let head = bytes.get(pos..pos + 4)?;
+            let id = crate::parameter_list::read_u16(head, little_endian);
+            let length = usize::from(crate::parameter_list::read_u16(&head[2..], little_endian));
+            pos += 4;
+            // The two ends of a list the parser accepts (XTypes 1.3
+            // §7.4.1.2.1, Table 34).
+            if id == pid::SENTINEL
+                || (id & !MUST_UNDERSTAND_BIT == pid::LIST_END && id & VENDOR_SPECIFIC_BIT == 0)
+            {
+                let short = Self(InlineQosRepr::Short {
+                    params,
+                    little_endian,
+                });
+                return Some((short, pos));
+            }
+            let value = bytes.get(pos..pos + length)?;
+            pos += length;
+            let param = match id {
+                pid::PAD | pid::IGNORE if length.is_multiple_of(4) => continue,
+                pid::KEY_HASH if length == 16 => {
+                    let mut octets = [0u8; 16];
+                    octets.copy_from_slice(value);
+                    ShortParam::KeyHash(octets)
+                }
+                pid::STATUS_INFO if length == 4 => {
+                    let mut octets = [0u8; 4];
+                    octets.copy_from_slice(value);
+                    ShortParam::StatusInfo(octets)
+                }
+                _ => return None,
+            };
+            let seen = params[..count]
+                .iter()
+                .flatten()
+                .any(|p| core::mem::discriminant(p) == core::mem::discriminant(&param));
+            if seen {
+                return None;
+            }
+            *params.get_mut(count)? = Some(param);
+            count += 1;
+        }
+    }
+
+    /// `PID_KEY_HASH` (DDSI-RTPS 2.5 §9.6.4.8), as [`find_key_hash`].
+    #[must_use]
+    pub fn key_hash(&self) -> Option<[u8; 16]> {
+        match &self.0 {
+            InlineQosRepr::Short { params, .. } => params.iter().flatten().find_map(|p| match p {
+                ShortParam::KeyHash(octets) => Some(*octets),
+                ShortParam::StatusInfo(_) => None,
+            }),
+            InlineQosRepr::List(list) => find_key_hash(list),
+        }
+    }
+
+    /// `PID_STATUS_INFO` (DDSI-RTPS 2.5 §9.6.4.9), as [`find_status_info`].
+    #[must_use]
+    pub fn status_info(&self) -> Option<u32> {
+        match &self.0 {
+            InlineQosRepr::Short { params, .. } => params.iter().flatten().find_map(|p| match p {
+                ShortParam::StatusInfo(octets) => Some(u32::from_be_bytes(*octets)),
+                ShortParam::KeyHash(_) => None,
+            }),
+            InlineQosRepr::List(list) => find_status_info(list),
+        }
+    }
+
+    /// The parsed list, for the parameters other than `PID_KEY_HASH` and
+    /// `PID_STATUS_INFO`; `None` for the short form, which holds no other
+    /// parameter. Read those two with [`Self::key_hash`] and
+    /// [`Self::status_info`], which answer for both forms.
+    #[must_use]
+    pub fn parsed(&self) -> Option<&ParameterList> {
+        match &self.0 {
+            InlineQosRepr::Short { .. } => None,
+            InlineQosRepr::List(list) => Some(list),
+        }
+    }
+
+    /// [`Self::parsed`], to change.
+    pub fn parsed_mut(&mut self) -> Option<&mut ParameterList> {
+        match &mut self.0 {
+            InlineQosRepr::Short { .. } => None,
+            InlineQosRepr::List(list) => Some(list),
+        }
+    }
+
+    /// The whole list, built for the short form.
+    #[must_use]
+    pub fn to_list(&self) -> ParameterList {
+        self.clone().into_list()
+    }
+
+    /// The whole list, built for the short form.
+    #[must_use]
+    pub fn into_list(self) -> ParameterList {
+        match self.0 {
+            InlineQosRepr::Short {
+                params,
+                little_endian,
+            } => ParameterList {
+                parameters: params.iter().flatten().map(|p| p.parameter()).collect(),
+                little_endian,
+            },
+            InlineQosRepr::List(list) => list,
+        }
+    }
+
+    /// Whether this is the short form, read in place.
+    #[must_use]
+    pub fn is_short(&self) -> bool {
+        matches!(self.0, InlineQosRepr::Short { .. })
+    }
+
+    /// The list encoded with its sentinel ([`ParameterList::to_bytes`]).
+    #[must_use]
+    pub fn to_bytes(&self, little_endian: bool) -> alloc::vec::Vec<u8> {
+        match &self.0 {
+            InlineQosRepr::List(list) => list.to_bytes(little_endian),
+            InlineQosRepr::Short { .. } => self.to_list().to_bytes(little_endian),
+        }
+    }
+}
+
+impl From<ParameterList> for InlineQos {
+    fn from(list: ParameterList) -> Self {
+        Self(InlineQosRepr::List(list))
+    }
+}
+
+impl From<InlineQos> for ParameterList {
+    fn from(qos: InlineQos) -> Self {
+        qos.into_list()
+    }
+}
+
+/// Equal when the lists are: a short form equals the list it stands for.
+impl PartialEq for InlineQos {
+    fn eq(&self, other: &Self) -> bool {
+        match (&self.0, &other.0) {
+            (InlineQosRepr::List(a), InlineQosRepr::List(b)) => a == b,
+            _ => self.to_list() == other.to_list(),
+        }
+    }
+}
+
+impl Eq for InlineQos {}
+
+impl PartialEq<ParameterList> for InlineQos {
+    fn eq(&self, other: &ParameterList) -> bool {
+        match &self.0 {
+            InlineQosRepr::List(list) => list == other,
+            InlineQosRepr::Short { .. } => &self.to_list() == other,
+        }
+    }
+}
+
 /// Reads `PID_KEY_HASH` from an inline-QoS list (Spec §9.6.4.8 +
 /// XTypes 1.3 §7.6.8). Returns the 16-byte identity of the instance,
 /// or `None` if the PID is missing / the value has an invalid
@@ -247,7 +466,7 @@ pub fn find_key_hash(pl: &ParameterList) -> Option<[u8; 16]> {
 #[must_use]
 pub fn lifecycle_inline_qos(key_hash: [u8; 16], status_bits: u32) -> ParameterList {
     let mut pl = ParameterList::new();
-    pl.push(Parameter::new(pid::KEY_HASH, key_hash.to_vec()));
+    pl.push(Parameter::new(pid::KEY_HASH, key_hash));
     pl.push(status_info_param(status_bits));
     pl
 }
@@ -282,7 +501,7 @@ pub const COHERENT_SET_WIRE_SIZE: usize = 8;
 pub fn coherent_set_param(set_first_sn: i64, little_endian: bool) -> Parameter {
     Parameter::new(
         pid::COHERENT_SET,
-        coherent_set_bytes(set_first_sn, little_endian).to_vec(),
+        coherent_set_bytes(set_first_sn, little_endian),
     )
 }
 
@@ -355,7 +574,7 @@ pub fn coherent_set_inline_qos(set_first_sn: i64, little_endian: bool) -> Parame
 pub fn group_coherent_set_param(group_first_gsn: i64, little_endian: bool) -> Parameter {
     Parameter::new(
         pid::GROUP_COHERENT_SET,
-        coherent_set_bytes(group_first_gsn, little_endian).to_vec(),
+        coherent_set_bytes(group_first_gsn, little_endian),
     )
 }
 
@@ -370,10 +589,7 @@ pub fn find_group_coherent_set(pl: &ParameterList, little_endian: bool) -> Optio
 /// GROUP-scope publisher carry it. CDR `SequenceNumber_t`.
 #[must_use]
 pub fn group_seq_num_param(gsn: i64, little_endian: bool) -> Parameter {
-    Parameter::new(
-        pid::GROUP_SEQ_NUM,
-        coherent_set_bytes(gsn, little_endian).to_vec(),
-    )
+    Parameter::new(pid::GROUP_SEQ_NUM, coherent_set_bytes(gsn, little_endian))
 }
 
 /// Reads `PID_GROUP_SEQ_NUM` from an inline-QoS list.
@@ -389,7 +605,7 @@ pub fn find_group_seq_num(pl: &ParameterList, little_endian: bool) -> Option<i64
 /// which have no byte order.
 #[must_use]
 pub fn writer_group_info_param(writer_set: crate::group_digest::GroupDigest) -> Parameter {
-    Parameter::new(pid::WRITER_GROUP_INFO, writer_set.to_bytes().to_vec())
+    Parameter::new(pid::WRITER_GROUP_INFO, writer_set.to_bytes())
 }
 
 /// `PID_SECURE_WRITER_GROUP_INFO` (0x0066, §9.6.4.6): the same
@@ -398,10 +614,7 @@ pub fn writer_group_info_param(writer_set: crate::group_digest::GroupDigest) -> 
 /// the PID_WRITER_GROUP_INFO in-line QoS is required."
 #[must_use]
 pub fn secure_writer_group_info_param(writer_set: crate::group_digest::GroupDigest) -> Parameter {
-    Parameter::new(
-        pid::SECURE_WRITER_GROUP_INFO,
-        writer_set.to_bytes().to_vec(),
-    )
+    Parameter::new(pid::SECURE_WRITER_GROUP_INFO, writer_set.to_bytes())
 }
 
 /// Reads `PID_WRITER_GROUP_INFO` from an inline-QoS list, or, where the
@@ -515,7 +728,7 @@ pub fn find_original_writer_info(
 /// (e.g. via multicast) MUST discard it.
 #[must_use]
 pub fn directed_write_param(target_reader_guid: [u8; 16]) -> Parameter {
-    Parameter::new(pid::DIRECTED_WRITE, target_reader_guid.to_vec())
+    Parameter::new(pid::DIRECTED_WRITE, target_reader_guid)
 }
 
 /// Reads `PID_DIRECTED_WRITE` from an inline-QoS list.
@@ -818,7 +1031,7 @@ mod tests {
             reader_id: EntityId::user_reader_with_key([1, 2, 3]),
             writer_id: EntityId::user_writer_with_key([4, 5, 6]),
             writer_sn: SequenceNumber(42),
-            inline_qos: Some(inline),
+            inline_qos: Some(inline.into()),
             data_flag: true,
             key_flag: false,
             non_standard_flag: false,
@@ -829,7 +1042,7 @@ mod tests {
 
         let decoded = DataSubmessage::read_body_with_flags(&body, true, flags).unwrap();
         assert!(decoded.inline_qos.is_some());
-        let pl = decoded.inline_qos.unwrap();
+        let pl = decoded.inline_qos.unwrap().into_list();
         let back = find_related_sample_identity(&pl, true).unwrap();
         assert_eq!(back, Some(id));
         // Payload byte-identical.
@@ -962,9 +1175,11 @@ mod tests {
         );
     }
 
-    /// A small set-first SN — the normal case — is `high = 0`, `low = n`.
+    /// DDSI-RTPS 2.5 §9.6.4.2: PID_COHERENT_SET holds the SequenceNumber_t
+    /// of the set's first sample, `high` then `low` in the byte order of
+    /// the submessage; a small number — the normal case — is `high = 0`.
     #[test]
-    fn coherent_set_small_sn_octets() {
+    fn rtps_9_6_4_2_coherent_set_holds_high_then_low_in_submessage_order() {
         assert_eq!(coherent_set_bytes(1, true), [0, 0, 0, 0, 1, 0, 0, 0]);
         assert_eq!(coherent_set_bytes(1, false), [0, 0, 0, 0, 0, 0, 0, 1]);
     }
@@ -1030,7 +1245,7 @@ mod tests {
             reader_id: EntityId::user_reader_with_key([1, 2, 3]),
             writer_id: EntityId::user_writer_with_key([4, 5, 6]),
             writer_sn: SequenceNumber(5),
-            inline_qos: Some(coherent_set_inline_qos(4, true)),
+            inline_qos: Some(coherent_set_inline_qos(4, true).into()),
             data_flag: true,
             key_flag: false,
             non_standard_flag: false,
@@ -1039,7 +1254,7 @@ mod tests {
         let (body, flags) = data.write_body(true);
         assert_ne!(flags & DATA_FLAG_INLINE_QOS, 0);
         let decoded = DataSubmessage::read_body_with_flags(&body, true, flags).unwrap();
-        let pl = decoded.inline_qos.expect("inline QoS");
+        let pl = decoded.inline_qos.expect("inline QoS").into_list();
         assert_eq!(find_coherent_set(&pl, true), Some(4));
     }
 
@@ -1085,5 +1300,155 @@ mod tests {
             find_original_writer_info(&pl, true).unwrap(),
             Some((guid, 42))
         );
+    }
+
+    /// One parameter of a raw in-line QoS list: id, length, value, padded.
+    fn raw(out: &mut alloc::vec::Vec<u8>, id: u16, value: &[u8], le: bool) {
+        let len = u16::try_from(value.len()).unwrap();
+        if le {
+            out.extend_from_slice(&id.to_le_bytes());
+            out.extend_from_slice(&len.to_le_bytes());
+        } else {
+            out.extend_from_slice(&id.to_be_bytes());
+            out.extend_from_slice(&len.to_be_bytes());
+        }
+        out.extend_from_slice(value);
+    }
+
+    /// DDSI-RTPS 2.5 §9.4.5.3.2, §9.4.2.11: the in-line QoS read in place
+    /// is the list the parser reads — the same parameters in the same
+    /// order, the same octets taken, the same refusals — and only a list of
+    /// PID_KEY_HASH and PID_STATUS_INFO (with PID_PAD, PID_IGNORE) is held
+    /// in the short form.
+    #[test]
+    fn ddsi_9_4_5_3_2_inline_qos_read_in_place_is_what_the_parser_reads() {
+        let key = [7u8; 16];
+        let status = [0u8, 0, 0, 3];
+        type Build = fn(&mut alloc::vec::Vec<u8>, bool);
+        // Both ends a list may have (XTypes 1.3 §7.4.1.2.1).
+        let ends: [Build; 2] = [
+            |o, le| raw(o, pid::SENTINEL, &[], le),
+            |o, le| raw(o, pid::LIST_END, &[], le),
+        ];
+        let lists: [(&str, Build, bool); 12] = [
+            (
+                "key, status",
+                |o, le| {
+                    raw(o, pid::KEY_HASH, &[7; 16], le);
+                    raw(o, pid::STATUS_INFO, &[0, 0, 0, 3], le);
+                },
+                true,
+            ),
+            (
+                "status, key",
+                |o, le| {
+                    raw(o, pid::STATUS_INFO, &[0, 0, 0, 3], le);
+                    raw(o, pid::KEY_HASH, &[7; 16], le);
+                },
+                true,
+            ),
+            ("key", |o, le| raw(o, pid::KEY_HASH, &[7; 16], le), true),
+            (
+                "pad, ignore, key",
+                |o, le| {
+                    raw(o, pid::PAD, &[0; 4], le);
+                    raw(o, pid::IGNORE, &[1; 8], le);
+                    raw(o, pid::KEY_HASH, &[7; 16], le);
+                },
+                true,
+            ),
+            ("empty", |_, _| {}, true),
+            (
+                "key twice",
+                |o, le| {
+                    raw(o, pid::KEY_HASH, &[7; 16], le);
+                    raw(o, pid::KEY_HASH, &[8; 16], le);
+                },
+                false,
+            ),
+            (
+                "key with must-understand",
+                |o, le| {
+                    raw(o, pid::KEY_HASH | MUST_UNDERSTAND_BIT, &[7; 16], le);
+                },
+                false,
+            ),
+            (
+                "key of 12 octets",
+                |o, le| raw(o, pid::KEY_HASH, &[7; 12], le),
+                false,
+            ),
+            (
+                "coherent set",
+                |o, le| {
+                    raw(o, pid::KEY_HASH, &[7; 16], le);
+                    raw(o, pid::COHERENT_SET, &[0, 0, 0, 0, 1, 0, 0, 0], le);
+                },
+                false,
+            ),
+            (
+                "pad of 3 octets",
+                |o, le| raw(o, pid::PAD, &[0; 3], le),
+                false,
+            ),
+            (
+                "status of 4 octets cut short",
+                |o, le| {
+                    raw(o, pid::STATUS_INFO, &[0, 0, 0, 3], le);
+                    o.truncate(o.len() - 2);
+                },
+                false,
+            ),
+            (
+                "ignore of 6 octets",
+                |o, le| raw(o, pid::IGNORE, &[0; 6], le),
+                false,
+            ),
+        ];
+        for le in [true, false] {
+            for (name, build, short) in lists {
+                for end in ends {
+                    let mut bytes = alloc::vec::Vec::new();
+                    build(&mut bytes, le);
+                    end(&mut bytes, le);
+                    // What follows the list is not read.
+                    bytes.extend_from_slice(&[0xEE; 8]);
+                    let parsed = ParameterList::from_bytes_with_consumed(&bytes, le);
+                    let read = InlineQos::read(&bytes, le);
+                    match (&parsed, &read) {
+                        (Ok((list, taken)), Ok((qos, read_taken))) => {
+                            assert_eq!(qos.is_short(), short, "{name}, le {le}");
+                            assert_eq!(&qos.to_list(), list, "{name}, le {le}");
+                            assert_eq!(read_taken, taken, "{name}, le {le}");
+                            assert_eq!(qos.key_hash(), find_key_hash(list), "{name}");
+                            assert_eq!(qos.status_info(), find_status_info(list), "{name}");
+                            assert_eq!(qos.parsed().is_none(), short, "{name}");
+                        }
+                        (Err(a), Err(b)) => assert_eq!(a, b, "{name}, le {le}"),
+                        _ => assert_eq!(
+                            parsed.is_ok(),
+                            read.is_ok(),
+                            "{name}, le {le}: parser {parsed:?}, in place {read:?}"
+                        ),
+                    }
+                }
+            }
+        }
+        let (qos, _) = InlineQos::read(
+            &{
+                let mut bytes = alloc::vec::Vec::new();
+                raw(&mut bytes, pid::STATUS_INFO, &status, true);
+                raw(&mut bytes, pid::KEY_HASH, &key, true);
+                raw(&mut bytes, pid::SENTINEL, &[], true);
+                bytes
+            },
+            true,
+        )
+        .unwrap();
+        assert!(qos.is_short());
+        assert_eq!(qos.key_hash(), Some(key));
+        assert_eq!(qos.status_info(), Some(3));
+        let list = ParameterList::from_bytes(&qos.to_bytes(true), true).unwrap();
+        assert_eq!(qos, list, "encoded again, the same list");
     }
 }

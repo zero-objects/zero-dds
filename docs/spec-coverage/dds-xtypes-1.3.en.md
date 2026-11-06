@@ -344,8 +344,8 @@ sequence, etc."
 `crates/types/src/dynamic/descriptor.rs::TypeKind` (l. 48);
 `crates/types/src/type_object/kinds.rs::TK_STRUCTURE` (l. 26)
 
-**Tests:** `crates/types/src/dynamic/descriptor.rs::tests::every_model_primitive_has_a_kind_and_comes_back`,
-`crates/types/src/dynamic/descriptor.rs::tests::the_classifications_are_disjoint`
+**Tests:** `crates/types/src/dynamic/descriptor.rs::tests::xtypes_7_2_2_every_model_primitive_has_a_kind_and_comes_back`,
+`crates/types/src/dynamic/descriptor.rs::tests::xtypes_7_2_2_the_classifications_are_disjoint`
 
 **Status:** done
 
@@ -425,7 +425,7 @@ their names are top-level names." Figure 6–8: `{nested = true}`,
 `crates/types/src/type_identifier/mod.rs::PrimitiveKind` (l. 315)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — a primitive type is a discriminator without a body, without a
 name and without an extensibility in the TypeIdentifier.
@@ -441,8 +441,8 @@ this type can only take two values: true and false."
 
 **Tests:** `crates/ast/tests/node_space.rs::every_primitive_of_the_spec_table_is_representable`,
 `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`,
-`crates/types/src/dynamic/descriptor.rs::tests::every_model_primitive_has_a_kind_and_comes_back`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/src/dynamic/descriptor.rs::tests::xtypes_7_2_2_every_model_primitive_has_a_kind_and_comes_back`
 
 **Status:** done
 
@@ -455,9 +455,9 @@ value has no numeric value."
 `crates/types/src/type_identifier/kinds.rs::TK_BYTE` (l. 23);
 `crates/types/src/from_ast.rs::primitive_kind` (l. 1479, arm l. 1493)
 
-**Tests:** `crates/types/src/from_ast.rs::primitive_kind_tests::octet_and_uint8_are_two_kinds`,
-`crates/types/src/dynamic/descriptor.rs::tests::octet_and_uint8_are_two_kinds`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+**Tests:** `crates/types/src/from_ast.rs::primitive_kind_tests::xtypes_7_2_2_2_octet_and_uint8_are_two_primitive_kinds`,
+`crates/types/src/dynamic/descriptor.rs::tests::xtypes_7_2_2_2_octet_and_uint8_are_two_dynamic_type_kinds`,
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — `octet` becomes `TK_BYTE` (0x02) and stays separate from
 `uint8` (`TK_UINT8`).
@@ -472,7 +472,7 @@ capable of representing values in the range -127 to +128."
 
 **Tests:** `crates/ast/tests/node_space.rs::every_primitive_of_the_spec_table_is_representable`,
 `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — the value range is `i8` (−128 to +127). The table names "-127
 to +128", which a signed 8-bit type cannot represent (defect of the
@@ -487,9 +487,9 @@ minimally capable of representing values in the range 0 to +255."
 `crates/types/src/type_identifier/kinds.rs::TK_UINT8` (l. 45);
 `crates/types/src/from_ast.rs::primitive_kind` (l. 1479, arm l. 1494)
 
-**Tests:** `crates/types/src/from_ast.rs::primitive_kind_tests::octet_and_uint8_are_two_kinds`,
+**Tests:** `crates/types/src/from_ast.rs::primitive_kind_tests::xtypes_7_2_2_2_octet_and_uint8_are_two_primitive_kinds`,
 `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -502,7 +502,7 @@ capable of representing values in the range -32768 to +32767."
 `crates/types/src/type_identifier/kinds.rs::TK_INT16` (l. 25)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -515,7 +515,7 @@ minimally capable of representing values in the range 0 to +65535."
 `crates/types/src/type_identifier/kinds.rs::TK_UINT16` (l. 31)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -528,7 +528,7 @@ capable of representing values in the range -2147483648 to +2147483647."
 `crates/types/src/type_identifier/kinds.rs::TK_INT32` (l. 27)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -541,7 +541,7 @@ minimally capable of representing values in the range 0 to +4294967295."
 `crates/types/src/type_identifier/kinds.rs::TK_UINT32` (l. 33)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -555,7 +555,7 @@ capable of supporting values in the range -9223372036854775808 to
 `crates/types/src/type_identifier/kinds.rs::TK_INT64` (l. 29)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -568,7 +568,7 @@ minimally capable of supporting values in the range 0 to +18446744073709551617."
 `crates/types/src/type_identifier/kinds.rs::TK_UINT64` (l. 35)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — the value range is `u64` (0 to 18446744073709551615). The
 table names 18446744073709551617, i.e. 2^64 + 1, as the upper bound (defect of
@@ -584,7 +584,7 @@ single-precision floating point value."
 `crates/types/src/type_identifier/kinds.rs::TK_FLOAT32` (l. 37)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -598,7 +598,7 @@ double-precision floating point value."
 `crates/types/src/type_identifier/kinds.rs::TK_FLOAT64` (l. 39)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -614,7 +614,7 @@ quadruple-precision floating point value."
 
 **Tests:** `crates/ast/tests/node_space.rs::every_primitive_of_the_spec_table_is_representable`,
 `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — `long double` is present in the type model and in the
 TypeIdentifier; the value is carried by `zerodds_float128::Float128` (see
@@ -630,7 +630,7 @@ byte of a multi-byte-encoded character set."
 `crates/types/src/type_identifier/kinds.rs::TK_CHAR8` (l. 47)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -643,7 +643,7 @@ capable of supporting the Basic Multilingual Plane (BMP) encoded in UTF-16."
 `crates/types/src/type_identifier/kinds.rs::TK_CHAR16` (l. 49)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -680,8 +680,8 @@ representable using 8 bits."
 **Repo:** `crates/wire/src/writer.rs::write_char` (l. 1524);
 `crates/wire/src/reader.rs::read_char` (l. 410)
 
-**Tests:** `crates/wire/tests/char_width.rs::every_code_point_a_char_can_hold_round_trips`,
-`crates/wire/tests/char_width.rs::a_char_above_u00ff_is_refused_and_not_narrowed`
+**Tests:** `crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_2_every_code_point_a_char_can_hold_round_trips`,
+`crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_2_a_char_above_u00ff_is_refused_and_not_narrowed`
 
 **Status:** done — a `char` is one octet. A `char` value outside Latin-1 is
 refused by the writer (§7.4.1.1.1).
@@ -694,8 +694,8 @@ of CHAR_8_TYPE."
 
 **Repo:** `crates/wire/src/writer.rs::write_char` (l. 1524)
 
-**Tests:** `crates/wire/tests/char_width.rs::every_code_point_a_char_can_hold_round_trips`,
-`crates/wire/tests/char_width.rs::a_char_above_u00ff_is_refused_and_not_narrowed`
+**Tests:** `crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_2_every_code_point_a_char_can_hold_round_trips`,
+`crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_2_a_char_above_u00ff_is_refused_and_not_narrowed`
 
 **Status:** done — the elements are written one octet each; no encoding across
 the elements is assumed.
@@ -711,8 +711,8 @@ external Data Representation."
 **Repo:** `crates/wire/src/writer.rs::write_string` (l. 1881);
 `crates/wire/src/reader.rs::read_string` (l. 927)
 
-**Tests:** `crates/wire/tests/wire.rs::a_string_of_bytes_that_are_not_utf8_is_refused`,
-`crates/wire/tests/wire.rs::a_string_round_trips_with_its_terminator_consumed`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_2_2_2_1_2_4_a_string_of_bytes_that_are_not_utf8_is_refused`,
+`crates/wire/tests/vendor_reader.rs::every_recorded_sample_reads_back_as_the_value_that_went_in`
 
 **Status:** done — the writer writes the UTF-8 octets of a Rust `str`, the
 reader refuses octets that are not UTF-8 (`WireError::NotUtf8`).
@@ -725,8 +725,8 @@ CHAR_16_TYPE encoding shall be UTF-16."
 
 **Repo:** `crates/wire/src/writer.rs::write_wchar` (l. 1559)
 
-**Tests:** `crates/wire/tests/char_width.rs::a_wchar_above_the_bmp_is_refused_and_not_narrowed`,
-`crates/wire/tests/char_width.rs::the_reader_refuses_a_surrogate_rather_than_returning_something_else`
+**Tests:** `crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_5_a_wchar_above_the_bmp_is_refused_and_not_narrowed`,
+`crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_5_the_reader_refuses_a_surrogate_rather_than_returning_something_else`
 
 **Status:** done — a `wchar` outside the BMP is refused by the writer ("a BMP
 character, not U+…").
@@ -739,8 +739,8 @@ restricted to being in the Basic Multilingual Plane".
 
 **Repo:** `crates/wire/src/writer.rs::write_wchar` (l. 1559)
 
-**Tests:** `crates/wire/tests/char_width.rs::a_wchar_above_the_bmp_is_refused_and_not_narrowed`,
-`crates/wire/tests/char_width.rs::the_reader_refuses_a_surrogate_rather_than_returning_something_else`
+**Tests:** `crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_5_a_wchar_above_the_bmp_is_refused_and_not_narrowed`,
+`crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_5_the_reader_refuses_a_surrogate_rather_than_returning_something_else`
 
 **Status:** done — every element goes through the same writer as a single
 `wchar`.
@@ -753,8 +753,8 @@ UTF-16. This encoded shall be used for the externalized Data Representation".
 **Repo:** `crates/wire/src/writer.rs::write_wstring` (l. 1980);
 `crates/wire/src/reader.rs::read_wstring` (l. 1027)
 
-**Tests:** `crates/wire/tests/wstring.rs::every_cell_round_trips_under_every_unit_order`,
-`crates/wire/tests/wstring.rs::an_unpaired_surrogate_is_refused_and_not_replaced`
+**Tests:** `crates/wire/tests/wstring.rs::xtypes_7_2_2_2_1_2_7_every_cell_round_trips_under_every_unit_order`,
+`crates/wire/tests/wstring.rs::xtypes_7_2_2_2_1_2_7_an_unpaired_surrogate_is_refused_and_not_replaced`
 
 **Status:** done — the default `WstringLengthPolicy::SPECIFICATION` writes two
 octets per UTF-16 code unit. The vendor variants (four octets per unit, UTF-8)
@@ -772,8 +772,8 @@ undefined." Figure 9: String8 `{element_type = Char8}`, String16 `{element_type
 **Repo:** `crates/ast/src/node/type_.rs::CharWidth` (l. 120);
 `crates/types/src/type_identifier/kinds.rs::TI_STRING8_SMALL` (l. 63)
 
-**Tests:** `crates/types/src/assignability.rs::tests::string8_vs_string16_not_assignable`,
-`crates/types/src/assignability.rs::tests::string_small_and_large_interchangeable`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_2_3_string8_vs_string16_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_3_string_small_and_large_interchangeable`
 
 **Status:** done — a string has only the width `Char` or `WChar` in the model;
 other element types cannot be represented.
@@ -806,8 +806,8 @@ a name when they are defined."
 **Repo:** `crates/types/src/from_ast.rs::structure` (l. 2082);
 `crates/types/src/resolve.rs::transitive_dependencies` (l. 246)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_self_referential_type_gets_a_component_identifier`,
-`crates/types/tests/strongly_connected_components.rs::a_mutually_recursive_pair_is_one_component_of_two`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_self_referential_type_gets_a_component_identifier`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_mutually_recursive_pair_is_one_component_of_two`
 
 **Status:** done — recursive types through sequences and `@external` are built;
 their TypeIdentifier is a strongly connected component (§7.3.4.9).
@@ -823,7 +823,7 @@ integer values".
 **Repo:** `crates/ast/src/node/type_.rs::TypeKind` (l. 201);
 `crates/types/src/type_object/kinds.rs::TK_ALIAS` (l. 15)
 
-**Tests:** `crates/types/src/dynamic/descriptor.rs::tests::the_classifications_are_disjoint`,
+**Tests:** `crates/types/src/dynamic/descriptor.rs::tests::xtypes_7_2_2_the_classifications_are_disjoint`,
 `crates/idl-lower/tests/idl_4_2_grammar.rs::every_constructed_form_can_be_defined_inside_a_typedef`
 
 **Status:** done
@@ -923,7 +923,7 @@ are each unique within that type."
 `crates/types/src/from_ast.rs::enumeration`
 
 **Tests:** `crates/idl-lower/tests/validation.rs::an_enumerator_value_outside_int32_is_rejected`,
-`crates/types/tests/type_system_rules.rs::an_enumerator_value_outside_int32_is_no_type_object`,
+`crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_1_1_an_enumerator_value_outside_int32_is_no_type_object`,
 `crates/idl-lower/tests/completion.rs::an_explicit_enumerator_value_shifts_the_ones_after_it`
 
 **Status:** `done` — the front end refuses `@value` outside `i32` (`enumerator_values_fit_int32`, also the value the implicit numbering reaches behind `2147483647`); `from_ast::enumeration` reports `FromAstError::OutOfRange` when the diagnostic is not heeded.
@@ -936,7 +936,7 @@ are each unique within that type."
 `crates/types/src/from_ast.rs::enumeration`
 
 **Tests:** `crates/idl-lower/tests/validation.rs::an_enumerator_value_outside_int32_is_rejected`,
-`crates/types/tests/type_system_rules.rs::an_enumerator_value_outside_int32_is_no_type_object`
+`crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_1_1_an_enumerator_value_outside_int32_is_no_type_object`
 
 **Status:** `done` — refusal in the front end (`validate.rs`) and in the TypeObject builder (`from_ast.rs`), each with a test; both forms (`Minimal`, `Complete`) report `OutOfRange`.
 
@@ -1021,8 +1021,8 @@ alias/typedef does not introduce a distinct type."
 `crates/types/src/resolve.rs::resolve_alias_chain`
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::a_typedef_becomes_an_alias_to_its_target`,
-`crates/types/src/resolve.rs::tests::resolve_follows_single_alias_to_target`,
-`crates/types/src/resolve.rs::tests::resolve_chained_aliases_two_deep`
+`crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_2_resolve_follows_single_alias_to_target`,
+`crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_2_resolve_chained_aliases_two_deep`
 
 **Status:** done — for assignability and keys an alias is resolved to its target
 type; in the TypeObject it is a `TK_ALIAS` object of its own, as Annex B
@@ -1073,7 +1073,7 @@ distinct from arrays of arrays of lower dimensionality."
 
 **Tests:** `crates/idl-lower/tests/completion.rs::a_multi_dimensional_array_keeps_its_dimensions_in_order`,
 `crates/idl-lower/tests/lowering.rs::dimensions_belong_to_the_declarator_and_not_to_the_typedef`,
-`crates/types/src/assignability.rs::tests::plain_array_diff_bounds_is_no`
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_3_plain_array_diff_bounds_is_no`
 
 **Status:** done — a multi-dimensional array carries all dimensions in one
 `array_bounds`; an array of arrays through a `typedef` is a different
@@ -1090,7 +1090,7 @@ index."
 `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_SEQUENCE_SMALL` (l. 72)
 
 **Tests:** `crates/idl-lower/tests/completion.rs::a_bounded_string_and_sequence_carry_their_bound_expressions`,
-`crates/lang-rules/tests/codec.rs::a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`
 
 **Status:** done
 
@@ -1103,7 +1103,7 @@ The types of both of these are homogeneous within a given map type".
 **Repo:** `crates/ast/src/node/type_.rs::Map` (l. 233);
 `crates/wire/src/reader.rs::read_map` (l. 1764)
 
-**Tests:** `crates/wire/tests/wire.rs::the_ordered_map_reader_refuses_a_stream_that_repeats_a_key`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_2_2_4_3_the_ordered_map_reader_refuses_a_stream_that_repeats_a_key`,
 `crates/wire-conformance/tests/map_bytes.rs::a_stream_that_repeats_a_key_keeps_every_entry`
 
 **Status:** done
@@ -1164,8 +1164,8 @@ However, all one-dimensional arrays of 10 integers are of the same type."
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::TypeIdentifier`
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_array_small_3d_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done — an anonymous collection type is determined by its plain
 TypeIdentifier from kind, bound and element type; equal values give the same
@@ -1204,10 +1204,10 @@ structures, unions, and annotations." Figure 16 names `STRUCTURE_TYPE`,
 `crates/types/src/type_object/kinds.rs::TK_ANNOTATION` (l. 23);
 `crates/types/src/type_object/kinds.rs::TK_BITSET` (l. 30)
 
-**Tests:** `crates/types/src/builder.rs::tests::struct_builder_basic_with_two_members`,
-`crates/types/src/builder.rs::tests::union_builder_minimal_with_two_cases_and_default`,
-`crates/types/tests/type_object_annotations.rs::an_annotation_declaration_has_a_type_object`,
-`crates/types/src/builder.rs::tests::bitset_builder_two_fields`
+**Tests:** `crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_1_struct_builder_basic_with_two_members`,
+`crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_1_union_builder_minimal_with_two_cases_and_default`,
+`crates/types/tests/type_object_annotations.rs::xtypes_7_2_2_4_4_1_an_annotation_declaration_has_a_type_object`,
+`crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_1_bitset_builder_two_fields`
 
 **Status:** done — all four kinds have a TypeObject. The text, Figure 16 and
 Table 8 name different sets of kinds (contradiction in the specification, listed
@@ -1224,7 +1224,7 @@ type-specific members."
 `crates/types/src/from_ast.rs::union` (l. 2178)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::a_union_over_an_enumeration_lowers_with_its_labels_evaluated`,
-`crates/types/src/builder.rs::tests::union_builder_minimal_with_two_cases_and_default`
+`crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_1_union_builder_minimal_with_two_cases_and_default`
 
 **Status:** done
 
@@ -1239,7 +1239,7 @@ members may coexist."
 `crates/types/src/from_ast.rs::structure` (l. 2082)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::a_struct_carries_its_members_in_order`,
-`crates/types/src/builder.rs::tests::struct_builder_basic_with_two_members`
+`crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_1_struct_builder_basic_with_two_members`
 
 **Status:** done
 
@@ -1277,7 +1277,7 @@ to be the first member of a union."
 
 **Repo:** `crates/types/src/from_ast.rs::union` (l. 2178, branches numbered from 1)
 
-**Tests:** `crates/types/src/builder.rs::tests::union_builder_minimal_with_two_cases_and_default`
+**Tests:** `crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_1_union_builder_minimal_with_two_cases_and_default`
 
 **Status:** done — the branches get the member IDs from 1 on, the discriminator
 counts as member 0.
@@ -1306,7 +1306,7 @@ member."
 `default_case`)
 
 **Tests:** `crates/idl-lower/tests/validation.rs::two_default_cases_are_rejected`,
-`crates/lang-rules/src/default_python.rs::tests::a_unions_default_case_is_what_an_unlisted_discriminator_selects`
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_3_a_unions_default_case_is_what_an_unlisted_discriminator_selects`
 
 **Status:** done
 
@@ -1319,7 +1319,7 @@ value of the newly observed member is undefined by the type system".
 
 **Repo:** `crates/lang-rules/src/rust_union.rs`
 
-**Tests:** `crates/lang-rules/tests/a_decoded_union_has_only_its_selected_case.rs::every_case_is_cleared_before_the_selected_one_is_read`
+**Tests:** `crates/lang-rules/tests/a_decoded_union_has_only_its_selected_case.rs::xtypes_7_2_2_4_4_3_every_case_is_cleared_before_the_selected_one_is_read`
 
 **Status:** done — a union is generated in Rust as an `enum` with one variant
 per branch; a decoded value holds only the selected branch.
@@ -1379,7 +1379,7 @@ members minus one."
 `crates/ast/src/query.rs::all_members_of` (l. 151)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::a_struct_carries_its_members_in_order`,
-`crates/types/src/assignability.rs::tests::flatten_inheritance_two_levels_concatenates_base_first`
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_4_4_3_flatten_inheritance_two_levels_concatenates_base_first`
 
 **Status:** done — the index is the position in the member vector; for a derived
 structure the members of the base count first.
@@ -1396,7 +1396,7 @@ can be represented in 28 bits: from zero to 268,435,455 (0x0FFFFFFF)."
 **Tests:** `crates/idl-lower/tests/validation.rs::a_member_id_is_at_most_28_bits`,
 `crates/idl-lower/tests/completion.rs::a_hashed_id_stays_within_the_28_bit_member_id_space`,
 `crates/idl-lower/src/complete.rs::tests::a_hashed_id_stays_inside_the_28_bit_space`,
-`crates/wire/tests/wire.rs::an_emheader_member_id_past_28_bits_is_refused`
+`crates/wire/tests/wire.rs::xtypes_7_2_2_4_4_4_4_an_emheader_member_id_past_28_bits_is_refused`
 
 **Status:** `done` — `id_annotation` refuses an id above 0x0FFFFFFF (`MAX_MEMBER_ID`), hashed ids are masked to 28 bits, `write_emheader` refuses an id above 0x0FFFFFFF when writing.
 
@@ -1433,9 +1433,9 @@ the member name 'color' shall result on the 4 octets {0x70, 0xDD, 0xA5, 0xDF}."
 `crates/idl-lower/src/complete.rs::hash_id` (l. 1165);
 `crates/wire/src/digest.rs::md5`
 
-**Tests:** `crates/types/src/builder.rs::tests::member_id_from_name_matches_known_md5_vectors`,
+**Tests:** `crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_4_5_member_id_from_name_matches_known_md5_vectors`,
 `crates/idl-lower/src/complete.rs::tests::the_digest_matches_the_published_vectors`,
-`crates/types/tests/compliance_typeobject.rs::md5_empty_string_first_14_bytes_golden_vector`
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_4_4_5_md5_empty_string_first_14_bytes_golden_vector`
 
 **Status:** done — the test checks "color" as the masked ID `0x0FA5DD70`, i.e.
 the octets `70 DD A5` and the masked fourth octet.
@@ -1451,7 +1451,7 @@ permitted to process the sample, omitting the value of the unrecognized member."
 `crates/wire/src/reader.rs::read_emheader` (l. 1265)
 
 **Tests:** `crates/wire-conformance/tests/bytes.rs::an_unknown_mutable_member_is_skipped_and_a_must_understand_one_is_not`,
-`crates/wire-probe/tests/decode_round_trip.rs::an_unknown_must_understand_parameter_discards_the_sample_under_xcdr1`
+`crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_2_2_4_4_4_6_an_unknown_must_understand_parameter_discards_the_sample_under_xcdr1`
 
 **Status:** done — the detection per data representation is under §7.4.
 
@@ -1476,11 +1476,11 @@ shall always have the 'must understand' attribute set to true."
 `crates/ast-layout/src/xcdr.rs::plan_at (Diskriminator)`,
 `crates/ast-layout/src/key.rs::MustUnderstandPolicy::DeclaredKeyAndDiscriminator`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::the_discriminator_of_a_union_is_must_understand_in_both_forms`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_discriminator_of_a_mutable_union_is_must_understand`,
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_union_is_must_understand_in_both_forms`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_mutable_union_is_must_understand`,
 `crates/ast-layout/tests/vendor_gate.rs::each_dialect_holds_what_its_implementation_was_measured_writing`
 
-**Status:** `done` — the TypeObject sets `IS_MUST_UNDERSTAND` on the discriminator (minimal and complete). On the wire `Dialect::Specification` (`MustUnderstandPolicy::DeclaredKeyAndDiscriminator`) sets `M_FLAG` (XCDR2) and `FLAG_MUST_UNDERSTAND` (XCDR1) on the member header of the discriminator of a `@mutable` union. The dialects `Rti` and `OpenDds` leave the bit clear, as measured (`union-mutable`, `vendor-corpus.tsv`); the reader takes both forms.
+**Status:** `done` — the TypeObject sets `IS_MUST_UNDERSTAND` on the discriminator (minimal and complete). On the wire `Dialect::Specification` (`MustUnderstandPolicy::DeclaredKeyAndDiscriminator`) sets `M_FLAG` (XCDR2) and `FLAG_MUST_UNDERSTAND` (XCDR1) on the member header of the discriminator of a `@mutable` union. The dialects `Rti` and `OpenDds` leave the bit clear, as measured (`union-mutable`, `vendor-corpus.tsv`); the reader takes both forms. Cyclone 11.0.1 writes the bit clear in its TypeObjects, so the identifiers of a type with a union or a key member differ (`crates/types/tests/type_object_bridge.rs::xtypes_7_3_4_6_the_type_identifiers_of_the_corpus_types_are_cyclones`). The two match anyway: the OMG `dds-xtypes` cases against Cyclone 11.0.1 in both directions passed (pipeline 9021 on `6c018d1662a`, jobs 230116 to 230121, 649 cases), among them every `union_*` and `struct_key_*` case the suite runs and `ext_autoid_1` (`@autoid`, `@hashid`); Cyclone resolves the other identifier through TypeLookup and accepts the TypeObject. The clause's value stays the default; no dialect option.
 
 ### §7.2.2.4.4.4.6 Must understand: no test of the discriminator bit
 
@@ -1489,8 +1489,8 @@ shall always have the 'must understand' attribute set to true."
 **Repo:** `crates/types/src/from_ast.rs::union`,
 `crates/ast-layout/src/xcdr.rs::plan_at (Diskriminator)`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::the_discriminator_of_a_union_is_must_understand_in_both_forms`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_discriminator_of_a_mutable_union_is_must_understand`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_union_is_must_understand_in_both_forms`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_mutable_union_is_must_understand`
 
 **Status:** `done` — both tests ask for the bit: `IS_MUST_UNDERSTAND` in the minimal and complete TypeObject, `0xA0000000` (XCDR2) and `0x4000` (XCDR1) in the member header; `Rti` writes `0x20000000`.
 
@@ -1519,8 +1519,8 @@ have the default 'zero' value defined in Table 9 below."
 **Repo:** `crates/wire-codec/src/default.rs::member` (l. 100);
 `crates/lang-rules/src/default_rust.rs::member_default` (l. 48)
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_appendable_tail_the_writer_did_not_have_takes_its_default`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_mutable_member_that_did_not_arrive_takes_its_default`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_7_an_appendable_tail_the_writer_did_not_have_takes_its_default`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_a_mutable_member_that_did_not_arrive_takes_its_default`
 
 **Status:** done
 
@@ -1531,9 +1531,9 @@ have the default 'zero' value defined in Table 9 below."
 **Repo:** `crates/wire-codec/src/default.rs::primitive` (l. 237);
 `crates/lang-rules/src/default_rust.rs::primitive_default` (l. 349)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/tests/c_end_to_end.rs::every_table_nine_row_has_a_c_default`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::every_kind_table_9_answers_for_gets_a_defaulter`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_every_table_nine_row_has_a_c_default`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_every_kind_table_9_answers_for_gets_a_defaulter`
 
 **Status:** done
 
@@ -1544,8 +1544,8 @@ have the default 'zero' value defined in Table 9 below."
 **Repo:** `crates/wire-codec/src/default.rs::primitive` (l. 237);
 `crates/lang-rules/src/default_rust.rs::primitive_default` (l. 349)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/tests/c_end_to_end.rs::every_table_nine_row_has_a_c_default`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_every_table_nine_row_has_a_c_default`
 
 **Status:** done
 
@@ -1558,9 +1558,9 @@ FLOAT_32_TYPE, FLOAT_64_TYPE, FLOAT_128_TYPE 0".
 **Repo:** `crates/wire-codec/src/default.rs::primitive` (l. 237);
 `crates/lang-rules/src/default_rust.rs::primitive_default` (l. 349)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/tests/c_end_to_end.rs::every_table_nine_row_has_a_c_default`,
-`crates/lang-rules/src/default_python.rs::tests::a_long_double_is_a_float128_and_never_a_float`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_every_table_nine_row_has_a_c_default`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_long_double_is_a_float128_and_never_a_float`
 
 **Status:** done
 
@@ -1571,9 +1571,9 @@ FLOAT_32_TYPE, FLOAT_64_TYPE, FLOAT_128_TYPE 0".
 **Repo:** `crates/wire-codec/src/default.rs::primitive` (l. 237);
 `crates/lang-rules/src/default_rust.rs::primitive_default` (l. 349)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/src/default_python.rs::tests::a_char_is_a_one_character_string_and_not_an_integer`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::every_kind_table_9_answers_for_gets_a_defaulter`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_char_is_a_one_character_string_and_not_an_integer`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_every_kind_table_9_answers_for_gets_a_defaulter`
 
 **Status:** done
 
@@ -1583,9 +1583,9 @@ FLOAT_32_TYPE, FLOAT_64_TYPE, FLOAT_128_TYPE 0".
 
 **Repo:** `crates/wire-codec/src/default.rs::at_depth` (l. 152, arm `TypeKind::String`)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/tests/codec.rs::an_appendable_tail_the_writer_did_not_have_takes_its_default`,
-`crates/lang-rules/tests/c_end_to_end.rs::every_table_nine_row_has_a_c_default`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_7_an_appendable_tail_the_writer_did_not_have_takes_its_default`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_every_table_nine_row_has_a_c_default`
 
 **Status:** done
 
@@ -1597,9 +1597,9 @@ type."
 
 **Repo:** `crates/wire-codec/src/default.rs::array` (l. 304)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/src/default_python.rs::tests::a_fixed_size_array_is_that_many_elements`,
-`crates/lang-rules/src/default_python.rs::tests::a_two_dimensional_array_is_one_tuple_per_dimension`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_fixed_size_array_is_that_many_elements`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_two_dimensional_array_is_one_tuple_per_dimension`
 
 **Status:** done
 
@@ -1611,8 +1611,8 @@ type."
 **Repo:** `crates/wire-codec/src/default.rs::at_depth` (l. 152, arm `TypeKind::Alias`);
 `crates/lang-rules/src/default_rust.rs::resolve_alias` (l. 516)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/src/default_python.rs::tests::a_typedef_and_its_target_are_one_function_and_it_does_not_call_itself`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_typedef_and_its_target_are_one_function_and_it_does_not_call_itself`
 
 **Status:** done
 
@@ -1623,9 +1623,9 @@ element type."
 
 **Repo:** `crates/wire-codec/src/default.rs::at_depth` (l. 152, arm `TypeKind::Sequence`)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/src/default_python.rs::tests::a_sequence_is_an_empty_list_at_every_bound`,
-`crates/lang-rules/tests/c_end_to_end.rs::every_table_nine_row_has_a_c_default`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_sequence_is_an_empty_list_at_every_bound`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_every_table_nine_row_has_a_c_default`
 
 **Status:** done
 
@@ -1636,7 +1636,7 @@ type."
 
 **Repo:** `crates/wire-codec/src/default.rs::at_depth` (l. 152, arm `TypeKind::Map` l. 202)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`
 
 **Status:** done
 
@@ -1648,12 +1648,12 @@ enumeration."
 **Repo:** `crates/wire-codec/src/default.rs::first_enumerator` (l. 270);
 `crates/lang-rules/src/default_rust.rs::default_enumerator` (l. 370)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/tests/cpp_reader_generates.rs::an_enumeration_whose_first_literal_is_not_zero`,
-`crates/lang-rules/src/default_python.rs::tests::an_enumeration_takes_its_first_literal_by_name`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_an_enumeration_whose_first_literal_is_not_zero`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_an_enumeration_takes_its_first_literal_by_name`
 
 **Status:** done — with `@default_literal` the literal so marked applies
-(`an_enumeration_with_a_default_literal_takes_that_one`); Table 9 and
+(`xtypes_7_3_1_2_1_10_an_enumeration_with_a_default_literal_takes_that_one`); Table 9 and
 §7.3.1.2.1.12.5 contradict each other here (`docs/omg-xtypes-issues.md` §B5).
 
 ### §7.2.2.4.4.4.7 Table 9 — UNION_TYPE
@@ -1666,10 +1666,10 @@ Otherwise the value of the union is fully specified by the discriminator value."
 **Repo:** `crates/wire-codec/src/default.rs::union` (l. 366);
 `crates/lang-rules/src/default_rust.rs::discriminator_default_value` (l. 393)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/src/default_python.rs::tests::a_union_whose_discriminators_default_selects_a_case_sets_both`,
-`crates/lang-rules/src/default_python.rs::tests::a_union_whose_discriminators_default_selects_nothing_is_the_discriminator_alone`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_union_member_the_stream_does_not_carry_takes_its_default`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_union_whose_discriminators_default_selects_a_case_sets_both`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_union_whose_discriminators_default_selects_nothing_is_the_discriminator_alone`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_a_union_member_the_stream_does_not_carry_takes_its_default`
 
 **Status:** done
 
@@ -1681,9 +1681,9 @@ their corresponding types."
 
 **Repo:** `crates/wire-codec/src/default.rs::structure` (l. 330)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
-`crates/lang-rules/src/default_python.rs::tests::a_structure_of_primitives_names_every_required_field`,
-`crates/lang-rules/src/default_python.rs::tests::an_optional_member_is_absent_from_the_constructor_call`
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_structure_of_primitives_names_every_required_field`,
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_an_optional_member_is_absent_from_the_constructor_call`
 
 **Status:** done
 
@@ -1695,9 +1695,9 @@ their corresponding types."
 **Repo:** `crates/wire-codec/src/default.rs::at_depth` (l. 152, arms `TypeKind::Bitmask`,
 `TypeKind::Bitset`)
 
-**Tests:** `crates/wire-probe/tests/evolution.rs::table_nine_gives_every_kind_the_value_the_clause_names`,
+**Tests:** `crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_7_table_nine_gives_every_kind_the_value_the_clause_names`,
 `crates/wire-conformance/tests/bitmask_bytes.rs::table_9_gives_a_bitmask_no_bit_and_a_bitset_no_field`,
-`crates/lang-rules/src/default_python.rs::tests::a_bitset_is_the_dataclass_with_every_field_at_zero`
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_a_bitset_is_the_dataclass_with_every_field_at_zero`
 
 **Status:** done — the tree takes "no bit set" and "every field 0". The missing
 row is a gap in the specification (DDSXTY14-60, listed in the findings file).
@@ -1710,7 +1710,7 @@ value in such a case."
 
 **Repo:** `crates/lang-rules/src/default_rust.rs::member_default` (l. 48)
 
-**Tests:** `crates/lang-rules/src/default_python.rs::tests::an_optional_member_is_absent_from_the_constructor_call`
+**Tests:** `crates/lang-rules/src/default_python.rs::tests::xtypes_7_2_2_4_4_4_7_an_optional_member_is_absent_from_the_constructor_call`
 
 **Status:** done — an `@optional` member becomes `None`, not Table 9.
 
@@ -1784,10 +1784,10 @@ understand' attribute set to true."
 `crates/types/src/assignability.rs::must_not_be_missing`,
 `crates/ast-layout/src/xcdr.rs::member_must_understand`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::a_key_member_is_must_understand_in_both_forms`,
-`crates/types/tests/table19_key_members.rs::a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
-`crates/wire-probe/tests/opendds_mutable_framing.rs::the_key_rows_are_reproduced`,
-`crates/wire-probe/tests/opendds_mutable_framing.rs::the_clause_reaches_only_the_specification_dialect`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_4_4_8_a_key_member_is_must_understand_in_both_forms`,
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
+`crates/wire-probe/tests/opendds_mutable_framing.rs::xtypes_7_2_2_4_4_4_8_the_key_rows_are_reproduced`,
+`crates/wire-probe/tests/opendds_mutable_framing.rs::xtypes_7_2_2_4_4_4_8_the_clause_reaches_only_the_specification_dialect`
 
 **Status:** `done` — the TypeObject sets `IS_MUST_UNDERSTAND` on every key member (minimal and complete), the assignability treats a key member like a member with must understand. On the wire the default `Dialect::Specification` sets `M_FLAG` on key members as well; `Cyclone`, `Rti` and `FastDds` do not, as measured (`docs/omg-xtypes-issues.md` §B3).
 
@@ -1797,9 +1797,13 @@ understand' attribute set to true."
 
 **Repo:** `crates/types/src/from_ast.rs::member_bits`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::a_key_member_is_must_understand_in_both_forms`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_4_4_8_a_key_member_is_must_understand_in_both_forms`,
+`crates/types/tests/key_must_understand_cyclone.rs::xtypes_7_2_2_4_4_4_8_cyclone_writes_the_key_member_without_must_understand`,
+`crates/types/tests/key_must_understand_cyclone.rs::xtypes_7_6_3_4_2_disallow_refuses_cyclone_unless_the_key_implies_must_understand`,
+`crates/types/tests/key_must_understand_cyclone.rs::xtypes_7_3_4_7_the_reading_rewrites_the_types_a_type_names`,
+`crates/dcps/src/runtime.rs::tests::a_vendor_dialect_brings_its_key_must_understand_reading_and_the_setting_wins`
 
-**Status:** `done` — the test asks for `IS_KEY` and `IS_MUST_UNDERSTAND` on key and non-key members in the minimal and complete TypeObject. A comparison with the TypeObjects of other vendors (same `EquivalenceHash`) is not measured.
+**Status:** `done` — the test asks for `IS_KEY` and `IS_MUST_UNDERSTAND` on key and non-key members in the minimal and complete TypeObject. Cyclone 11.0.1 writes the bit clear in its TypeObjects, so the identifiers of a type with a union or a key member differ (`crates/types/tests/type_object_bridge.rs::xtypes_7_3_4_6_the_type_identifiers_of_the_corpus_types_are_cyclones`). The two match anyway: the OMG `dds-xtypes` cases against Cyclone 11.0.1 in both directions passed (pipeline 9021 on `6c018d1662a`, jobs 230116 to 230121, 649 cases), among them every `union_*` and `struct_key_*` case the suite runs and `ext_autoid_1` (`@autoid`, `@hashid`); Cyclone resolves the other identifier through TypeLookup and accepts the TypeObject. DDS-XTypes 1.4 Beta 1 §7.3.3.4 (resolution of DDSXTY14-64) encodes the attribute in the bit. A Cyclone reader that announces no PID 0x0074 (the `dds-rtps` `shape_main` of Cyclone `master` with its type library) is held to DISALLOW_TYPE_COERCION (§7.6.3.4.1), and the clause refuses the pair: the minimal identifiers differ in that bit alone. The clause's value stays the default; the setting `xtypes.key_must_understand: implied` compares with `IS_KEY` implying the bit and matches the pair (`rtps-vendor-1` against `master`, 15 of 15 passed). The readers of Fast DDS 3.6.1 and OpenDDS 3.35 with the type support of fastddsgen and opendds_idl leave the bit off as well and announce no PID 0x0074 (measured with `KeyedPointA`, refused with the default, matched with `implied`); the dialects `cyclone`, `fastdds` and `opendds` select `implied` where the setting is not given.
 
 ### §7.2.2.4.4.4.8 Key members: permitted types, no map
 
@@ -1844,9 +1848,9 @@ annotating the discriminator itself with the @key annotation".
 **Tests:** `crates/idl-lower/tests/validation.rs::only_a_unions_discriminator_may_be_a_key`,
 `crates/idl-lower/tests/annotations.rs::a_key_on_a_union_discriminator_is_carried_by_default`,
 `crates/idl-lower/tests/annotations.rs::a_key_on_a_union_discriminator_reaches_the_facet_when_carried`,
-`crates/types/tests/table19_key_members.rs::one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`
 
-**Status:** `done` — `@key` on a branch is refused. `@key` on the discriminator is carried by default (`KeyOnUnionDiscriminator::Carried` is the default); `Refused` is the named setting for tools that have to follow the measured vendors. `zerodds-build` sets `Refused` for the generated Rust code because the union codec there generates no key holder (language binding, not this package).
+**Status:** `done` — `@key` on a branch is refused. `@key` on the discriminator is carried by default (`KeyOnUnionDiscriminator::Carried` is the default); `Refused` is the named setting for tools that have to follow the measured vendors. `zerodds-build` carries it as well: the generated union is a keyed topic type whose key holder is the discriminator (`crates/zerodds-build/tests/dds_type.rs::xtypes_7_2_2_4_4_4_8_a_union_keyed_by_its_discriminator_is_a_keyed_topic`), and `derive(DdsType)` writes it for `#[dds(key)]` on a union.
 
 ### §7.2.2.4.4.4.8 Key members: @key on the discriminator is carried
 
@@ -1903,9 +1907,9 @@ the member type. See Table 9."
 **Repo:** `crates/wire-codec/src/default.rs::member` (l. 100);
 `crates/lang-rules/src/default_rust.rs::member_default` (l. 48)
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_appendable_tail_takes_an_explicit_default_over_table_nine`,
-`crates/lang-rules/tests/codec.rs::an_explicit_default_beats_table_nine_at_the_member_position`,
-`crates/wire-probe/tests/evolution.rs::an_explicit_default_beats_table_nine`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_9_an_appendable_tail_takes_an_explicit_default_over_table_nine`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_9_an_explicit_default_beats_table_nine_at_the_member_position`,
+`crates/wire-probe/tests/evolution.rs::xtypes_7_2_2_4_4_4_9_an_explicit_default_beats_table_nine`
 
 **Status:** done
 
@@ -1917,8 +1921,8 @@ an explicit default value for the member."
 **Repo:** `crates/wire-codec/src/default.rs::member_at_depth` (l. 110, check l. 123);
 `crates/types/src/dynamic/builder.rs`
 
-**Tests:** `crates/types/src/dynamic/builder.rs::tests::optional_with_a_default_is_refused`,
-`crates/types/src/dynamic/builder.rs::tests::optional_with_a_default_is_refused_on_a_union_case`,
+**Tests:** `crates/types/src/dynamic/builder.rs::tests::xtypes_7_2_2_4_4_4_9_optional_with_a_default_is_refused`,
+`crates/types/src/dynamic/builder.rs::tests::xtypes_7_2_2_4_4_4_9_optional_with_a_default_is_refused_on_a_union_case`,
 `crates/idl-lower/tests/validation.rs::an_optional_member_has_no_default`
 
 **Status:** done — The `DynamicTypeBuilder` and the reflective decoder refuse `@optional` with `@default`; the IDL front end does so too (`validate.rs::member_rules`).
@@ -1946,8 +1950,8 @@ Aggegated Types."
 `base: Option<Ref<TypeNode>>`);
 `crates/types/src/assignability.rs::flatten_inheritance` (l. 58)
 
-**Tests:** `crates/types/src/assignability.rs::tests::flatten_inheritance_two_levels_concatenates_base_first`,
-`crates/types/src/assignability.rs::tests::two_level_inheritance_assignability_chain`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_4_4_3_flatten_inheritance_two_levels_concatenates_base_first`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_5_two_level_inheritance_assignability_chain`
 
 **Status:** done — for structures; unions see below.
 
@@ -1978,8 +1982,8 @@ have unique names and member IDs."
 
 **Tests:** `crates/idl-lower/tests/keys_and_inheritance.rs::a_member_name_of_the_base_chain_cannot_be_declared_again`,
 `crates/idl-lower/tests/keys_and_inheritance.rs::a_member_id_of_the_base_chain_cannot_be_given_again`,
-`crates/types/src/assignability.rs::tests::inheritance_conflict_same_id`,
-`crates/types/src/assignability.rs::tests::inheritance_conflict_same_name`
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_5_inheritance_conflict_same_id`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_5_inheritance_conflict_same_name`
 
 **Status:** done
 
@@ -2010,14 +2014,14 @@ derived Union or any of the base Union ancestor types."
 **Repo:** `crates/types/src/union_inheritance.rs::check_union_derivation`,
 `crates/types/src/union_inheritance.rs::expand_union`
 
-**Tests:** `crates/types/src/union_inheritance.rs::tests::a_derived_union_that_meets_the_five_conditions_is_accepted`,
-`crates/types/src/union_inheritance.rs::tests::a_derived_union_of_another_extensibility_kind_is_refused`,
-`crates/types/src/union_inheritance.rs::tests::a_derived_union_with_another_discriminator_type_is_refused`,
-`crates/types/src/union_inheritance.rs::tests::the_discriminator_of_a_derived_union_is_not_a_key`,
-`crates/types/src/union_inheritance.rs::tests::no_ancestor_defines_a_default_member`,
-`crates/types/src/union_inheritance.rs::tests::a_discriminator_value_selects_at_most_one_member_of_the_hypothetical_union`,
-`crates/types/src/union_inheritance.rs::tests::the_hypothetical_union_has_unique_member_ids_and_names`,
-`crates/types/src/union_inheritance.rs::tests::the_members_of_the_ancestors_are_expanded_ahead_of_the_derived_ones`
+**Tests:** `crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_a_derived_union_that_meets_the_five_conditions_is_accepted`,
+`crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_a_derived_union_of_another_extensibility_kind_is_refused`,
+`crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_a_derived_union_with_another_discriminator_type_is_refused`,
+`crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_the_discriminator_of_a_derived_union_is_not_a_key`,
+`crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_no_ancestor_defines_a_default_member`,
+`crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_a_discriminator_value_selects_at_most_one_member_of_the_hypothetical_union`,
+`crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_the_hypothetical_union_has_unique_member_ids_and_names`,
+`crates/types/src/union_inheritance.rs::tests::xtypes_7_2_2_4_5_the_members_of_the_ancestors_are_expanded_ahead_of_the_derived_ones`
 
 **Status:** `done` — `check_union_derivation` checks the five conditions on the objects of the ancestors and of the derived union (one test per condition and for the chain of ancestors), `expand_union` builds Table 19's hypothetical union. No Type Representation carries a base union: IDL 4.2 has no syntax, the XSD gives `baseType` to `structDecl` and `annotationTypeDecl` only, `MinimalUnionHeader` and `CompleteUnionHeader` are empty (findings file, contradictions). A representation that adds a base calls the functions.
 
@@ -2033,8 +2037,8 @@ had no members designated key members then KeyErased(T) is the same type 'T'."
 
 **Repo:** `crates/types/src/assignability.rs::key_erased`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::key_erased_removes_the_key_designation_and_nothing_else`,
-`crates/types/tests/type_system_rules.rs::the_types_of_members_are_compared_with_their_keys_erased`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_6_key_erased_removes_the_key_designation_and_nothing_else`,
+`crates/types/tests/type_system_rules.rs::xtypes_7_2_2_4_6_the_types_of_members_are_compared_with_their_keys_erased`
 
 **Status:** `done` — `assignability::key_erased` is public and builds KeyErased(T) for a structure and a union after the clause's example (`Aircraft`, `Coordinates`, `Command`); a type without keys and an enumeration are left as they are. Table 19 compares the types of members as KeyErased (`member_types_assignable`).
 
@@ -2078,7 +2082,7 @@ marked as key, then KeyHolder(T) is the same type T."
 **Repo:** `crates/ast-layout/src/keyhash.rs::union_key_discriminator`,
 `crates/ast-layout/src/key_maximum.rs`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::a_union_as_the_type_of_a_key_member_is_in_the_holder_whole`,
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_2_4_7_a_union_as_the_type_of_a_key_member_is_in_the_holder_whole`,
 `crates/ast-layout/tests/key_maximum.rs::union_takes_largest_branch_not_sum`
 
 **Status:** `done` — a union whose discriminator is not a key goes into the holder whole (discriminator and selected member, PLAIN_CDR2 big endian); `key_maximum` counts the discriminator and the largest branch. A union with `@key` on the discriminator is the discriminator alone in the holder.
@@ -2089,7 +2093,7 @@ marked as key, then KeyHolder(T) is the same type T."
 
 **Repo:** `crates/ast-layout/src/keyhash.rs::collect_key_members`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::a_union_as_the_type_of_a_key_member_is_in_the_holder_whole`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_2_4_7_a_union_as_the_type_of_a_key_member_is_in_the_holder_whole`
 
 **Status:** `done` — the test checks the octets of the KeyHash for two branches of the union and that a non-key member does not move the value.
 
@@ -2120,8 +2124,8 @@ indicate that text applies to all programming languages."
 **Repo:** `crates/lang-rules/src/verbatim.rs::language_matches` (l. 105);
 `crates/lang-rules/src/verbatim.rs::aliases_of` (l. 324)
 
-**Tests:** `crates/lang-rules/src/verbatim.rs::tests::the_wildcard_concerns_every_backend_and_names_compare_caselessly`,
-`crates/lang-rules/src/verbatim.rs::tests::a_directive_for_another_language_is_left_to_that_backend`
+**Tests:** `crates/lang-rules/src/verbatim.rs::tests::ddsts_9_1_the_wildcard_concerns_every_backend_and_names_compare_caselessly`,
+`crates/lang-rules/src/verbatim.rs::tests::xtypes_7_2_2_4_8_1_a_directive_for_another_language_is_left_to_that_backend`
 
 **Status:** done
 
@@ -2136,7 +2140,7 @@ begin-declaration, end-declaration, after-declaration, end-declaration-file".
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::an_unknown_verbatim_placement_is_reported`,
 `crates/idl-lower/tests/annotations.rs::a_verbatim_placement_is_read_without_regard_to_case_and_in_the_xtypes_spelling`,
-`crates/lang-rules/src/verbatim.rs::tests::every_placement_lands_in_its_own_slot`
+`crates/lang-rules/src/verbatim.rs::tests::ddsts_9_2_every_placement_lands_in_its_own_slot`
 
 **Status:** done — The names of IDL 4.2 §8.3.5.1 are accepted, the six of the specification (`before-declaration`, `begin-declaration`, `end-declaration`, `after-declaration`, `begin-file`, `end-file`) and `begin-declaration-file` and `end-declaration-file`, with no distinction of case.
 
@@ -2161,9 +2165,9 @@ after all members, immediately after the declaration, end of the file.
 `crates/lang-rules/src/verbatim.rs::file_slots` (l. 167);
 `crates/lang-rules/src/verbatim.rs::weave` (l. 245)
 
-**Tests:** `crates/lang-rules/src/verbatim.rs::tests::every_placement_lands_in_its_own_slot`,
-`crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_places_all_six_slots_in_spec_order`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`
+**Tests:** `crates/lang-rules/src/verbatim.rs::tests::ddsts_9_2_every_placement_lands_in_its_own_slot`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::xtypes_7_2_2_4_8_2_cpp_places_all_six_slots_in_spec_order`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`
 
 **Status:** done — a generator whose tree cannot hold text at `begin`/`end` (C
 `struct`, `enum`) writes it next to the declaration; a verbatim on a member is
@@ -2176,8 +2180,8 @@ string contained in this property into its output as described above."
 
 **Repo:** `crates/lang-rules/src/verbatim.rs::weave` (l. 245)
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::multi_line_text_arrives_line_by_line`,
-`crates/lang-rules/tests/verbatim_every_column.rs::the_wildcard_reaches_every_column`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::ddsts_9_3_multi_line_text_arrives_line_by_line`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_the_wildcard_reaches_every_column`
 
 **Status:** done
 
@@ -2193,7 +2197,7 @@ only by a forward declaration) at the time of the member's declaration."
 
 **Repo:** `crates/types/src/resolve.rs::transitive_dependencies` (l. 246)
 
-**Tests:** `crates/types/src/resolve.rs::tests::external_forward_decl_roundtrip`
+**Tests:** `crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_9_external_forward_decl_roundtrip`
 
 **Status:** done
 
@@ -2205,8 +2209,8 @@ permitted to refer to the member's containing type."
 **Repo:** `crates/lang-rules/tests/external_is_an_indirection.rs`;
 `crates/ast-layout/src/plan.rs`
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value`,
-`crates/types/src/resolve.rs::tests::external_diamond_resolves_through_both_paths`
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value`,
+`crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_9_external_diamond_resolves_through_both_paths`
 
 **Status:** done
 
@@ -2236,7 +2240,7 @@ be optionally marked as external."
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::external_on_an_element_a_map_key_or_a_map_value_is_carried`,
 `crates/idl-lower/tests/annotations.rs::external_after_an_array_declarators_name_is_the_elements`,
-`crates/types/tests/collection_element_flags.rs::the_element_of_a_collection_carries_its_external_and_its_try_construct`
+`crates/types/tests/collection_element_flags.rs::xtypes_7_2_2_4_9_the_element_of_a_collection_carries_its_external_and_its_try_construct`
 
 **Status:** done — `@external` on an element, a map key or a map value (`sequence<@external Foo, 42>`) and after the name of an array declarator (`Foo array_of_foo @external [42];`) applies to the elements: the model has `element_is_external` and `key_is_external`, the element identifier carries `IS_EXTERNAL` and `TRY_CONSTRUCT`.
 
@@ -2286,10 +2290,10 @@ related_type of an alias type."
 **Repo:** `crates/ast/src/facet/applied.rs`;
 `crates/idl-lower/src/annotation.rs::apply_user_annotation` (l. 417)
 
-**Tests:** `crates/types/tests/type_object_custom_annotations.rs::an_annotation_applied_to_the_type_itself_reaches_the_object`,
-`crates/types/tests/type_object_custom_annotations.rs::every_position_with_a_complete_member_detail_is_read`,
-`crates/types/tests/type_object_custom_annotations.rs::an_annotation_on_a_typedef_reaches_the_alias_object`,
-`crates/types/tests/annotations_on_uses.rs::an_annotation_on_an_element_is_in_the_complete_collection_object`
+**Tests:** `crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_an_annotation_applied_to_the_type_itself_reaches_the_object`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_every_position_with_a_complete_member_detail_is_read`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_an_annotation_on_a_typedef_reaches_the_alias_object`,
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_2_2_6_an_annotation_on_an_element_is_in_the_complete_collection_object`
 
 **Status:** done — the annotation reaches the type, the member, the literal, a collection element and the `typedef` declaration (`CompleteAliasType`, header `ann_custom`).
 
@@ -2302,11 +2306,11 @@ related_type of an alias type."
 `crates/types/src/type_object/to_minimal.rs::plain_collection`
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_declared_annotation_on_an_element_a_key_or_an_array_is_kept`,
-`crates/types/tests/annotations_on_uses.rs::an_annotation_on_an_element_is_in_the_complete_collection_object`,
-`crates/types/tests/annotations_on_uses.rs::the_minimal_form_is_the_one_the_unannotated_declaration_has`,
-`crates/types/tests/annotations_on_uses.rs::the_complete_object_projects_onto_the_same_minimal_object`,
-`crates/types/tests/annotations_on_uses.rs::the_applications_come_back_into_the_model`,
-`crates/types/tests/annotations_on_uses.rs::an_undeclared_annotation_leaves_the_collection_plain`
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_2_2_6_an_annotation_on_an_element_is_in_the_complete_collection_object`,
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_2_2_6_the_minimal_form_is_the_one_the_unannotated_declaration_has`,
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_2_2_6_the_complete_object_projects_onto_the_same_minimal_object`,
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_2_2_6_the_applications_come_back_into_the_model`,
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_2_2_6_an_undeclared_annotation_leaves_the_collection_plain`
 
 **Status:** done — A user-declared annotation on a collection element, a map key or after an array name is kept in the model on the collection (`XTypesFacet::element_annotations`, `key_annotations`) and written into the `ann_custom` of `CompleteCollectionElement`. The collection is then a type with a `TypeObject` (§7.3.4.1): `CompleteSequenceType`, `CompleteArrayType` or `CompleteMapType`, in the hash identifier of the COMPLETE form; the MINIMAL form stays the plain collection.
 
@@ -2320,9 +2324,9 @@ default value of each AnnotationParameter."
 **Repo:** `crates/types/src/from_ast.rs::annotation_type_object` (l. 537);
 `crates/idl-lower/src/annotation.rs::check_annotation_application` (l. 468)
 
-**Tests:** `crates/types/tests/type_object_annotations.rs::an_annotation_declaration_has_a_type_object`,
-`crates/types/tests/type_object_custom_annotations.rs::the_parameter_value_is_the_value_that_was_applied`,
-`crates/types/tests/type_object_custom_annotations.rs::an_unapplied_member_writes_ann_custom_absent`
+**Tests:** `crates/types/tests/type_object_annotations.rs::xtypes_7_2_2_4_4_1_an_annotation_declaration_has_a_type_object`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_the_parameter_value_is_the_value_that_was_applied`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_an_unapplied_member_writes_ann_custom_absent`
 
 **Status:** done
 
@@ -2334,8 +2338,8 @@ Primitive types, String types of Char8 or Char16 elements, Enumerated types".
 **Repo:** `crates/types/src/from_ast.rs::annotation_type_object` (l. 537);
 `crates/types/src/type_object/common.rs::AnnotationParameterValue` (l. 488)
 
-**Tests:** `crates/types/tests/annotation_parameter_value_union.rs::an_annotation_with_long_double_wchar_and_wstring_parameters_builds`,
-`crates/types/tests/type_object_custom_annotations.rs::an_enumerated_annotation_parameter_is_in_the_closure`,
+**Tests:** `crates/types/tests/annotation_parameter_value_union.rs::xtypes_7_2_2_6_an_annotation_with_long_double_wchar_and_wstring_parameters_builds`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_an_enumerated_annotation_parameter_is_in_the_closure`,
 `crates/idl-lower/tests/validation.rs::an_annotation_member_is_a_primitive_a_string_or_an_enum`
 
 **Status:** done — Parameters of type Boolean, Byte, Int8 to UInt64, Float32, Float64, Float128, Char8, Char16, enumeration, String8 and String16 are represented; `AnnotationParameterValue` has every case of the union of Annex B and the extended case.
@@ -2346,10 +2350,10 @@ Primitive types, String types of Char8 or Char16 elements, Enumerated types".
 
 **Repo:** `crates/types/src/type_object/common.rs::AnnotationParameterValue`
 
-**Tests:** `crates/types/tests/annotation_parameter_value_union.rs::a_wchar_value_is_tk_char16_and_two_octets`,
-`crates/types/tests/annotation_parameter_value_union.rs::a_long_double_value_is_tk_float128_and_sixteen_octets`,
-`crates/types/tests/annotation_parameter_value_union.rs::a_wstring_value_is_tk_string16_with_an_octet_length`,
-`crates/types/tests/annotation_parameter_value_union.rs::an_unknown_discriminator_is_the_extended_value`
+**Tests:** `crates/types/tests/annotation_parameter_value_union.rs::xtypes_7_2_2_6_a_wchar_value_is_tk_char16_and_two_octets`,
+`crates/types/tests/annotation_parameter_value_union.rs::xtypes_7_2_2_6_a_long_double_value_is_tk_float128_and_sixteen_octets`,
+`crates/types/tests/annotation_parameter_value_union.rs::xtypes_7_2_2_6_a_wstring_value_is_tk_string16_with_an_octet_length`,
+`crates/types/tests/annotation_parameter_value_union.rs::xtypes_7_2_2_6_an_unknown_discriminator_is_the_extended_value`
 
 **Status:** done — `AnnotationParameterValue` has `Float128Bits`, `Char16`, `String16` and the extended case (with a DHEADER).
 
@@ -2387,8 +2391,8 @@ can prevent the construction of the collection/aggregated type."
 
 **Repo:** `crates/wire-codec/src/decode.rs`
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_unannotated_member_discards_the_sample`,
-`crates/wire-probe/tests/try_construct.rs::an_element_annotation_trims_the_element_and_not_the_collection`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_unannotated_member_discards_the_sample`,
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_element_annotation_trims_the_element_and_not_the_collection`
 
 **Status:** done
 
@@ -2401,7 +2405,7 @@ declare that their element has one of three kinds of TryConstruct behavior".
 `crates/ast/src/query.rs::element_try_construct` (l. 413)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::try_construct_reaches_every_position_the_clause_names`,
-`crates/wire-probe/tests/try_construct.rs::an_element_annotation_trims_the_element_and_not_the_collection`
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_element_annotation_trims_the_element_and_not_the_collection`
 
 **Status:** done
 
@@ -2415,7 +2419,7 @@ behavior".
 `crates/idl-lower/src/annotation.rs::apply_use_site` (l. 775)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_map_key_may_only_be_discard`,
-`crates/wire-probe/tests/try_construct.rs::a_map_value_trims_and_the_entry_survives`
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_a_map_value_trims_and_the_entry_survives`
 
 **Status:** done — the map value takes all three kinds; the map key only
 `DISCARD`, because Table 17 provides no other for the key. §7.2.2.7 names three
@@ -2432,7 +2436,7 @@ Unions this extends to the discriminator member."
 `crates/ast/src/query.rs::discriminator_try_construct` (l. 508)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::try_construct_reaches_every_position_the_clause_names`,
-`crates/wire-probe/tests/try_construct.rs::a_defaulted_discriminator_defaults_the_member_it_now_selects`
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_a_defaulted_discriminator_defaults_the_member_it_now_selects`
 
 **Status:** done
 
@@ -2444,8 +2448,8 @@ using the TryConstruct annotation is DISCARD."
 **Repo:** `crates/ast/src/facet/xtypes.rs::ABSENT` (l. 88)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_bare_try_construct_is_use_default_and_an_absent_one_is_discard`,
-`crates/wire-probe/tests/try_construct.rs::an_unannotated_member_discards_the_sample`,
-`crates/types/src/builder.rs::tests::member_default_try_construct_is_discard_bits`
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_unannotated_member_discards_the_sample`,
+`crates/types/src/builder.rs::tests::xtypes_7_2_2_7_member_default_try_construct_is_discard_bits`
 
 **Status:** done
 
@@ -2457,8 +2461,8 @@ propagates to the collection or aggregated type that contains it."
 **Repo:** `crates/wire/src/try_construct.rs::fit_string` (l. 89);
 `crates/wire/src/try_construct.rs::fit_sequence` (l. 131)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_unannotated_member_discards_the_sample`,
-`crates/wire-probe/tests/try_construct.rs::a_discard_and_a_malformed_stream_are_not_the_same_error`,
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_unannotated_member_discards_the_sample`,
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_a_discard_and_a_malformed_stream_are_not_the_same_error`,
 `crates/wire-conformance/tests/map_bytes.rs::an_over_long_map_is_discarded_where_the_position_says_discard`
 
 **Status:** done
@@ -2472,7 +2476,7 @@ object to fail its construction."
 
 **Repo:** `crates/wire/src/try_construct.rs::Narrowed` (l. 61)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::use_default_substitutes_table_nines_value_and_keeps_the_sample`,
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_use_default_substitutes_table_nines_value_and_keeps_the_sample`,
 `crates/wire-conformance/tests/map_bytes.rs::an_over_long_map_takes_the_default_where_the_position_says_use_default`
 
 **Status:** done
@@ -2502,9 +2506,9 @@ string or elements in the sequence or map is preserved."
 `crates/wire/src/try_construct.rs::fit_map` (l. 169);
 `crates/wire/src/try_construct.rs::fit_wstring` (l. 209)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::trim_cuts_the_string_to_the_bound_and_keeps_the_sample`,
-`crates/wire-probe/tests/try_construct.rs::trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements`,
-`crates/wire-probe/tests/try_construct.rs::a_trim_stops_on_a_character_boundary`,
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_trim_cuts_the_string_to_the_bound_and_keeps_the_sample`,
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements`,
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_a_trim_stops_on_a_character_boundary`,
 `crates/wire-conformance/tests/map_bytes.rs::an_over_long_map_is_trimmed_where_the_position_says_trim`
 
 **Status:** done — a string is not cut inside a character; for a map the entries
@@ -2528,9 +2532,11 @@ removal, and/or transposition of elements/members while remaining assignable."
 `crates/types/src/type_object/flags.rs::IS_FINAL` (l. 14)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::each_extensibility_keyword_reaches_the_facet`,
-`crates/types/src/assignability.rs::tests::final_struct_with_extra_writer_field_is_not_assignable`,
-`crates/types/src/assignability.rs::tests::appendable_struct_with_extra_writer_field_is_assignable`,
-`crates/types/src/assignability.rs::tests::mutable_struct_member_id_matching`
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_final_struct_with_extra_writer_field_is_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_appendable_struct_with_extra_writer_field_is_assignable`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_3_an_appendable_reader_steps_over_the_members_a_newer_writer_appended`,
+`crates/zerodds-build/tests/dds_type.rs::xtypes_7_2_3_a_nested_appendable_type_reads_a_newer_and_an_older_writer`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_mutable_struct_member_id_matching`
 
 **Status:** done
 
@@ -2559,8 +2565,8 @@ Any members marked as keys must be present in all variants of the type."
 `crates/types/src/assignability.rs::must_not_be_missing` (l. 1054)
 
 **Tests:** `crates/idl-lower/tests/keys_and_inheritance.rs::a_derived_structure_with_another_extensibility_than_its_base_is_refused`,
-`crates/types/tests/table19_key_members.rs::a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
-`crates/types/src/assignability.rs::tests::a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`
 
 **Status:** done — a key member missing on one side makes two variants
 non-assignable.
@@ -2588,8 +2594,8 @@ may be final or appendable on a type-by-type basis."
 `crates/types/src/assignability.rs::check_enumerations`
 
 **Tests:** `crates/idl-lower/tests/validation.rs::an_enum_or_bitmask_is_never_mutable`,
-`crates/types/src/assignability.rs::tests::a_final_enum_has_the_same_literals_on_both_sides`,
-`crates/types/src/assignability.rs::tests::an_enum_that_grew_a_literal_is_still_assignable`
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_final_enum_has_the_same_literals_on_both_sides`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_an_enum_that_grew_a_literal_is_still_assignable`
 
 **Status:** `done` — `@mutable` on an enumeration or a bitmask is refused (`@final` and `@appendable` are accepted).
 
@@ -2613,7 +2619,7 @@ of its base type."
 **Repo:** `crates/types/src/resolve.rs::resolve_alias_chain`;
 `crates/ast-layout/src/plan.rs`
 
-**Tests:** `crates/types/src/resolve.rs::tests::resolve_chained_aliases_two_deep`
+**Tests:** `crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_2_resolve_chained_aliases_two_deep`
 
 **Status:** done — layout and assignability resolve the alias.
 
@@ -2641,8 +2647,8 @@ directed binary relationship between every pair of types in the Type System.
 **Repo:** `crates/types/src/assignability.rs::is_assignable` (l. 274);
 `crates/types/src/assignability.rs::check_direct` (l. 321)
 
-**Tests:** `crates/types/tests/evolution_assignability.rs::a_type_is_assignable_to_itself`,
-`crates/types/tests/evolution_assignability.rs::every_evolution_case_gets_a_verdict_and_the_verdicts_are_recorded`
+**Tests:** `crates/types/tests/evolution_assignability.rs::xtypes_7_2_4_a_type_is_assignable_to_itself`,
+`crates/types/tests/evolution_assignability.rs::xtypes_7_2_4_every_evolution_case_gets_a_verdict_and_the_verdicts_are_recorded`
 
 **Status:** done — `is_assignable(w, r, …)` takes the writer type (T2) first and
 the reader type (T1) as second argument.
@@ -2658,8 +2664,8 @@ any inspection of a data producer's type definition."
 **Repo:** `crates/wire-codec/src/decode.rs`;
 `crates/wire/src/try_construct.rs`
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_unannotated_member_discards_the_sample`,
-`crates/wire-probe/tests/try_construct.rs::an_enumerator_the_reader_does_not_declare_is_a_construction_failure`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_unannotated_member_discards_the_sample`,
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_4_1_an_enumerator_the_reader_does_not_declare_is_a_construction_failure`
 
 **Status:** done — the decoder reads with the type of the reader; the type of
 the writer is not consulted when a sample is read.
@@ -2675,8 +2681,8 @@ member."
 
 **Repo:** `crates/wire/src/try_construct.rs::TryConstruct` (l. 42)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_unannotated_member_discards_the_sample`,
-`crates/wire-probe/tests/try_construct.rs::use_default_substitutes_table_nines_value_and_keeps_the_sample`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_unannotated_member_discards_the_sample`,
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_use_default_substitutes_table_nines_value_and_keeps_the_sample`
 
 **Status:** done
 
@@ -2688,8 +2694,8 @@ construct T2.
 
 **Repo:** `crates/types/src/assignability.rs::check_direct` (l. 321, arm Sequence)
 
-**Tests:** `crates/types/src/assignability.rs::tests::sequence_bounds_ignored_when_policy_allows`,
-`crates/lang-rules/tests/codec.rs::a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_1_sequence_bounds_ignored_when_policy_allows`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`
 
 **Status:** done — with the default `ignore_sequence_bounds = true` both
 directions are assignable; the decoder checks the length per sample.
@@ -2716,7 +2722,7 @@ the overall serialized length of the string."
 **Repo:** `crates/wire/src/writer.rs::write_string` (l. 1881);
 `crates/wire/src/writer.rs::write_wstring` (l. 1980)
 
-**Tests:** `crates/wire/tests/wire.rs::a_string_length_counts_its_terminator`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_2_a_string_length_counts_its_terminator`
 
 **Status:** done
 
@@ -2729,8 +2735,8 @@ delimited."
 
 **Repo:** `crates/types/src/assignability.rs::is_delimited`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::a_collection_of_delimited_elements_is_delimited`,
-`crates/types/tests/strong_assignability_and_table19.rs::appendable_elements_are_delimited_under_xcdr2_only`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_2_a_collection_of_delimited_elements_is_delimited`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_2_appendable_elements_are_delimited_under_xcdr2_only`
 
 **Status:** done — `assignability.rs::is_delimited` answers §7.2.4.2: a type is delimited if it is MUTABLE, APPENDABLE under XCDR2 (`AssignabilityConfig::appendable_is_delimited`) or a collection with delimited element and key types.
 
@@ -2780,9 +2786,9 @@ T2 is a delimited type, then T1 is said to be 'strongly' assignable from T2."
 
 **Repo:** `crates/types/src/assignability.rs::strongly_assignable`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::a_sequence_of_final_structs_needs_equivalent_elements`,
-`crates/types/tests/strong_assignability_and_table19.rs::array_elements_and_map_keys_and_values_are_strongly_assignable`,
-`crates/types/tests/strong_assignability_and_table19.rs::members_of_appendable_and_final_types_are_strongly_assignable`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_a_sequence_of_final_structs_needs_equivalent_elements`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_array_elements_and_map_keys_and_values_are_strongly_assignable`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_members_of_appendable_and_final_types_are_strongly_assignable`
 
 **Status:** done — `assignability.rs::strongly_assignable` checks strong assignability (Table 17: elements of array, sequence and map; Table 19: members at the same index of APPENDABLE and FINAL structs): a type is delimited or MINIMAL-equivalent.
 
@@ -2794,12 +2800,10 @@ assignable [...]. The reverse is not always true."
 
 **Repo:** `crates/types/src/assignability.rs::is_assignable` (l. 274, check `w == r` l. 301)
 
-**Tests:** `crates/types/src/assignability.rs::tests::identical_type_identifiers_short_circuit_yes`,
-`crates/types/src/assignability.rs::tests::equal_minimal_hash_is_assignable_with_empty_registry`,
-`crates/types/src/assignability.rs::tests::equivalence_hash_identical_short_circuits_to_yes`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_1_identical_type_identifiers_short_circuit_yes`
 
 **Status:** done — `TK_NONE` is excepted; two endpoints with the invalid
-identifier are not assignable (`tk_none_is_not_assignable_from_itself`).
+identifier are not assignable (`xtypes_7_3_4_2_tk_none_is_not_assignable_from_itself`).
 
 ### §7.2.4.4.2 Non-serialized members are ignored
 
@@ -2808,7 +2812,7 @@ Sub Clause 7.3.1.2.1.14, shall be ignored during type compatibility checking."
 
 **Repo:** `crates/types/src/from_ast.rs::structure` (l. 2082, omission l. 2105–2123)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::a_non_serialized_member_does_not_enter_the_comparison`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_2_a_non_serialized_member_does_not_enter_the_comparison`
 
 **Status:** done — a `@non_serialized` member does not go into the TypeObject.
 
@@ -2820,8 +2824,8 @@ kind T2 if and only if T1.base_type is-assignable-from T2".
 **Repo:** `crates/types/src/assignability.rs::is_assignable` (l. 274,
 `resolve_alias_chain` l. 306–311)
 
-**Tests:** `crates/types/src/resolve.rs::tests::resolve_follows_single_alias_to_target`,
-`crates/types/tests/evolution_assignability.rs::every_evolution_case_gets_a_verdict_and_the_verdicts_are_recorded`
+**Tests:** `crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_2_resolve_follows_single_alias_to_target`,
+`crates/types/tests/evolution_assignability.rs::xtypes_7_2_4_every_evolution_case_gets_a_verdict_and_the_verdicts_are_recorded`
 
 **Status:** done
 
@@ -2832,7 +2836,7 @@ ALIAS_TYPE T2 if and only if T1 is-assignable-from T2.base_type".
 
 **Repo:** `crates/types/src/assignability.rs::is_assignable` (l. 274)
 
-**Tests:** `crates/types/src/resolve.rs::tests::resolve_chained_aliases_two_deep`
+**Tests:** `crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_2_resolve_chained_aliases_two_deep`
 
 **Status:** done
 
@@ -2843,7 +2847,7 @@ T1.base_type is-assignable-from T2.base_type".
 
 **Repo:** `crates/types/src/assignability.rs::check_minimal_types` (l. 725, arm Alias)
 
-**Tests:** `crates/types/src/resolve.rs::tests::resolve_chained_aliases_two_deep`
+**Tests:** `crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_2_resolve_chained_aliases_two_deep`
 
 **Status:** done
 
@@ -2856,7 +2860,7 @@ their ultimate base types."
 **Repo:** `crates/types/src/resolve.rs::resolve_alias_chain`;
 `crates/types/src/assignability.rs::key_members_fit` (l. 1260, resolution l. 1291)
 
-**Tests:** `crates/types/src/resolve.rs::tests::resolve_chained_aliases_two_deep`
+**Tests:** `crates/types/src/resolve.rs::tests::xtypes_7_2_2_4_2_resolve_chained_aliases_two_deep`
 
 **Status:** done
 
@@ -2867,10 +2871,8 @@ Type | Copy the primitive object."
 
 **Repo:** `crates/types/src/assignability.rs::primitive_compatible` (l. 698)
 
-**Tests:** `crates/types/src/assignability.rs::tests::only_the_identical_primitive_kind_is_assignable`,
-`crates/types/src/assignability.rs::tests::primitive_widening_is_rejected_per_table_15`,
-`crates/types/src/assignability.rs::tests::primitive_narrowing_and_cross_family_are_rejected`,
-`crates/types/src/type_matcher_vectors.rs::uint8_to_uint32_widening_does_not_match`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_4_only_the_identical_primitive_kind_is_assignable`,
+`crates/types/src/type_matcher_vectors.rs::xtypes_7_2_4_4_4_uint8_to_uint32_widening_does_not_match`
 
 **Status:** done — `octet` and `uint8` are different primitive types and not
 mutually assignable; the OMG ShapeType IDL in `interop/shapes/omg-dds-rtps.idl`
@@ -2883,8 +2885,8 @@ if T2.bound is between 1 and 8, inclusive."
 
 **Repo:** `crates/types/src/assignability.rs::bitmask_uint_compatible` (l. 560)
 
-**Tests:** `crates/types/src/assignability.rs::tests::bitmask_is_assignable_to_the_uint_of_its_bound`,
-`crates/types/src/assignability.rs::tests::bitmask_is_not_assignable_to_a_wider_uint`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_4_bitmask_is_assignable_to_the_uint_of_its_bound`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_4_bitmask_is_not_assignable_to_a_wider_uint`
 
 **Status:** done
 
@@ -2895,7 +2897,7 @@ if T2.bound is between 9 and 16, inclusive."
 
 **Repo:** `crates/types/src/assignability.rs::bitmask_uint_compatible` (l. 560)
 
-**Tests:** `crates/types/src/assignability.rs::tests::bitmask_is_assignable_to_the_uint_of_its_bound`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_4_bitmask_is_assignable_to_the_uint_of_its_bound`
 
 **Status:** done
 
@@ -2906,7 +2908,7 @@ if T2.bound is between 17 and 32, inclusive."
 
 **Repo:** `crates/types/src/assignability.rs::bitmask_uint_compatible` (l. 560)
 
-**Tests:** `crates/types/src/assignability.rs::tests::bitmask_is_assignable_to_the_uint_of_its_bound`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_4_bitmask_is_assignable_to_the_uint_of_its_bound`
 
 **Status:** done
 
@@ -2917,7 +2919,7 @@ if T2.bound is between 33 and 64, inclusive."
 
 **Repo:** `crates/types/src/assignability.rs::bitmask_uint_compatible` (l. 560)
 
-**Tests:** `crates/types/src/assignability.rs::tests::bitmask_is_assignable_to_the_uint_of_its_bound`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_4_bitmask_is_assignable_to_the_uint_of_its_bound`
 
 **Status:** done
 
@@ -2931,8 +2933,8 @@ T1".
 **Repo:** `crates/types/src/assignability.rs::bitmask_uint_compatible`,
 `crates/wire-codec/src/decode.rs::read_bitmask`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::an_unsigned_integer_is_built_from_the_flags_of_a_bitmask`,
-`crates/types/tests/type_system_rules.rs::an_unsigned_integer_is_assignable_from_a_bitmask_of_its_width_only`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_4_4_4_an_unsigned_integer_is_built_from_the_flags_of_a_bitmask`,
+`crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_4_an_unsigned_integer_is_assignable_from_a_bitmask_of_its_width_only`
 
 **Status:** `done` — Table 33 writes a bitmask as the unsigned integer of its bound; a reader of type `uint8` to `uint64` reads the octets and gets the sum of `1 << position` of the flags that are set (four bounds, both byte orders, both versions). Assignability holds for the width of the bound only. The reverse (bitmask from integer) is accepted by the code as well, as OpenDDS does; Table 15 does not list it.
 
@@ -2943,9 +2945,9 @@ if T1.element_type is-assignable-from T2.element_type".
 
 **Repo:** `crates/types/src/assignability.rs::check_direct` (l. 321, arms String8 and String16)
 
-**Tests:** `crates/types/src/assignability.rs::tests::string8_vs_string16_not_assignable`,
-`crates/types/src/assignability.rs::tests::string_small_and_large_interchangeable`,
-`crates/types/src/assignability.rs::tests::string16_small_and_large_interchangeable`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_2_3_string8_vs_string16_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_3_string_small_and_large_interchangeable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_5_string16_small_and_large_interchangeable`
 
 **Status:** done — with the default `ignore_string_bounds = true` assignability
 does not depend on the bound.
@@ -2959,8 +2961,8 @@ O1.length is set to O2.length."
 **Repo:** `crates/wire/src/try_construct.rs::fit_string` (l. 89);
 `crates/wire/src/try_construct.rs::fit_wstring` (l. 209)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_unannotated_member_discards_the_sample`,
-`crates/wire/tests/wire.rs::a_value_longer_than_its_string_bound_is_refused_and_not_truncated`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_unannotated_member_discards_the_sample`,
+`crates/wire/tests/wire.rs::xtypes_7_2_4_4_5_a_value_longer_than_its_string_bound_is_refused_and_not_truncated`
 
 **Status:** done — the bound of a `string<N>` counts octets, that of a
 `wstring<N>` UTF-16 code units.
@@ -2973,8 +2975,8 @@ assignable; a string that is too long constructs no T1 object.
 **Repo:** `crates/types/src/assignability.rs::check_direct`,
 `crates/wire-codec/src/decode.rs (TryConstruct)`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::narrow_and_wide_strings_are_not_assignable_to_each_other`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::a_string_longer_than_the_bound_of_the_reader_constructs_no_object`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_5_1_narrow_and_wide_strings_are_not_assignable_to_each_other`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_4_4_5_1_a_string_longer_than_the_bound_of_the_reader_constructs_no_object`
 
 **Status:** `done` — narrow and wide strings are not assignable to each other, strings of one kind are whatever the bound; a string beyond the bound of the reader constructs no object (`ProbeError::Discarded`), one within the bound does.
 
@@ -2986,8 +2988,8 @@ T2.element_type".
 
 **Repo:** `crates/types/src/assignability.rs::strongly_assignable`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::array_elements_and_map_keys_and_values_are_strongly_assignable`,
-`crates/types/tests/strong_assignability_and_table19.rs::a_sequence_of_final_structs_needs_equivalent_elements`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_array_elements_and_map_keys_and_values_are_strongly_assignable`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_a_sequence_of_final_structs_needs_equivalent_elements`
 
 **Status:** done — The element type (for a map key and value) is checked with `strongly_assignable`.
 
@@ -3001,7 +3003,7 @@ TryConstruct behavior associated with T1 element type."
 **Repo:** `crates/ast/src/query.rs::element_try_construct` (l. 413);
 `crates/wire-codec/src/decode.rs`
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_element_annotation_trims_the_element_and_not_the_collection`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_element_annotation_trims_the_element_and_not_the_collection`
 
 **Status:** done
 
@@ -3012,8 +3014,8 @@ only if T1.element_type is strongly assignable from T2.element_type".
 
 **Repo:** `crates/types/src/assignability.rs::strongly_assignable`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::array_elements_and_map_keys_and_values_are_strongly_assignable`,
-`crates/types/tests/strong_assignability_and_table19.rs::a_sequence_of_final_structs_needs_equivalent_elements`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_array_elements_and_map_keys_and_values_are_strongly_assignable`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_a_sequence_of_final_structs_needs_equivalent_elements`
 
 **Status:** done — The element type (for a map key and value) is checked with `strongly_assignable`.
 
@@ -3025,8 +3027,8 @@ construct T1.element_type, the result depends on the TryConstruct behavior".
 
 **Repo:** `crates/wire/src/try_construct.rs::fit_sequence` (l. 131)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements`,
-`crates/lang-rules/tests/codec.rs::a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`
 
 **Status:** done
 
@@ -3038,8 +3040,8 @@ T1.element_type is strongly assignable from T2.element_type."
 
 **Repo:** `crates/types/src/assignability.rs::strongly_assignable`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::array_elements_and_map_keys_and_values_are_strongly_assignable`,
-`crates/types/tests/strong_assignability_and_table19.rs::a_sequence_of_final_structs_needs_equivalent_elements`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_array_elements_and_map_keys_and_values_are_strongly_assignable`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_a_sequence_of_final_structs_needs_equivalent_elements`
 
 **Status:** done — The element type (for a map key and value) is checked with `strongly_assignable`.
 
@@ -3065,7 +3067,7 @@ if T1.bound == T2.bound".
 
 **Repo:** `crates/types/src/assignability.rs::check_minimal_types` (l. 725, arm Bitmask l. 813–844)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags`
 
 **Status:** done
 
@@ -3078,8 +3080,8 @@ between 17 and 32, inclusive. UINT_16_TYPE [...] 9 and 16 [...] UINT_64_TYPE
 **Repo:** `crates/types/src/assignability.rs::check_direct` (l. 321, arm primitive against hash l. 516–519);
 `crates/types/src/assignability.rs::bitmask_uint_compatible` (l. 560)
 
-**Tests:** `crates/types/src/assignability.rs::tests::bitmask_is_assignable_to_the_uint_of_its_bound`,
-`crates/types/src/assignability.rs::tests::a_struct_against_a_uint_is_still_no_row`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_4_bitmask_is_assignable_to_the_uint_of_its_bound`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_7_a_struct_against_a_uint_is_still_no_row`
 
 **Status:** done
 
@@ -3090,8 +3092,8 @@ bits identified in both T1 and T2."
 
 **Repo:** `crates/wire-codec/src/decode.rs::read_bitmask` (l. 2499)
 
-**Tests:** `crates/wire-codec/tests/bitmask_unnamed_bits.rs::a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read`,
-`crates/wire/tests/wire.rs::a_bitmask_read_keeps_only_the_declared_bits`,
+**Tests:** `crates/wire-codec/tests/bitmask_unnamed_bits.rs::xtypes_7_2_4_4_7_a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read`,
+`crates/wire/tests/wire.rs::xtypes_7_2_4_4_7_a_bitmask_read_keeps_only_the_declared_bits`,
 `crates/wire-conformance/tests/bitmask_bytes.rs::a_bit_the_type_does_not_declare_is_not_part_of_the_value`
 
 **Status:** done — Common bits are kept; a set bit that the reader does not name is not part of the value and is dropped on reading (the Rust reader and the decoders `lang-rules` generates).
@@ -3103,8 +3105,8 @@ both types name.
 
 **Repo:** `crates/wire-codec/src/decode.rs::read_bitmask`
 
-**Tests:** `crates/wire-codec/tests/bitmask_unnamed_bits.rs::a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read`,
-`crates/wire-codec/tests/bitmask_unnamed_bits.rs::the_declared_bits_beside_an_unnamed_one_are_kept`
+**Tests:** `crates/wire-codec/tests/bitmask_unnamed_bits.rs::xtypes_7_2_4_4_7_a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read`,
+`crates/wire-codec/tests/bitmask_unnamed_bits.rs::xtypes_7_2_4_4_7_the_declared_bits_beside_an_unnamed_one_are_kept`
 
 **Status:** done — `read_bitmask` drops a bit that the type does not name, with no error; the named bits beside an unnamed one are kept.
 
@@ -3115,8 +3117,8 @@ T1.extensibility == T2.extensibility".
 
 **Repo:** `crates/types/src/assignability.rs::check_enumerations`
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_final_enum_has_the_same_literals_on_both_sides`,
-`crates/types/tests/strong_assignability_and_table19.rs::an_enum_without_an_extensibility_flag_is_appendable`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_final_enum_has_the_same_literals_on_both_sides`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_7_an_enum_without_an_extensibility_flag_is_appendable`
 
 **Status:** done — An enumeration without an extensibility flag is APPENDABLE (§7.3.1.2.1.8), and the extensibility is always compared: FINAL against APPENDABLE is not assignable.
 
@@ -3126,7 +3128,7 @@ T1.extensibility == T2.extensibility".
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::an_enum_without_an_extensibility_flag_is_appendable`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_7_an_enum_without_an_extensibility_flag_is_appendable`
 
 **Status:** done — The test checks FINAL against APPENDABLE and against an enumeration without a flag, in both directions.
 
@@ -3139,10 +3141,10 @@ T1 and T2 also have the same name. This behavior may be modified with the
 
 **Repo:** `crates/types/src/assignability.rs::check_enumerations` (l. 964, loop l. 1025–1038)
 
-**Tests:** `crates/types/src/assignability.rs::tests::enum_literals_that_disagree_are_not_assignable`,
-`crates/types/src/assignability.rs::tests::an_enum_that_grew_a_literal_is_still_assignable`,
-`crates/types/src/assignability.rs::tests::ignore_literal_names_on_both_sides_drops_the_name_rule`,
-`crates/types/tests/table19_key_members.rs::ignore_literal_names_needs_the_annotation_on_both_types`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_7_enum_literals_that_disagree_are_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_an_enum_that_grew_a_literal_is_still_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_7_ignore_literal_names_on_both_sides_drops_the_name_rule`,
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_ignore_literal_names_needs_the_annotation_on_both_types`
 
 **Status:** done — in addition the code requires the same `bit_bound` of both
 enumerations (DDSXTY14-34), which Table 18 does not name.
@@ -3154,7 +3156,7 @@ have the same literals."
 
 **Repo:** `crates/types/src/assignability.rs::check_enumerations` (l. 964, branch l. 1009–1023)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_final_enum_has_the_same_literals_on_both_sides`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_final_enum_has_the_same_literals_on_both_sides`
 
 **Status:** done
 
@@ -3166,7 +3168,7 @@ object cannot construct any object of type T1."
 
 **Repo:** `crates/wire-codec/src/decode.rs` (enumeration, l. 2457–2473)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_enumerator_the_reader_does_not_declare_is_a_construction_failure`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_4_1_an_enumerator_the_reader_does_not_declare_is_a_construction_failure`
 
 **Status:** done — the decision is then made by the `@try_construct` of the
 position.
@@ -3180,8 +3182,8 @@ on their respective member names."
 
 **Repo:** `crates/types/src/assignability.rs::check_minimal_types` (l. 725)
 
-**Tests:** `crates/types/src/assignability.rs::tests::mutable_struct_member_id_matching`,
-`crates/types/src/assignability.rs::tests::a_member_name_at_two_different_ids_is_refused`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_3_mutable_struct_member_id_matching`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_member_name_at_two_different_ids_is_refused`
 
 **Status:** done — the name is compared as a 4-octet hash in the MINIMAL
 TypeObject.
@@ -3192,8 +3194,8 @@ TypeObject.
 
 **Repo:** `crates/types/src/assignability.rs::check_unions`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::two_unions_of_different_extensibility_are_not_assignable`,
-`crates/types/src/assignability.rs::tests::a_final_union_has_a_default_member_on_both_sides_or_neither`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_8_two_unions_of_different_extensibility_are_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_final_union_has_a_default_member_on_both_sides_or_neither`
 
 **Status:** `done` — two unions of the same extensibility (`@final`, `@appendable`, `@mutable`) are assignable, two of different extensibility are not (all six pairings).
 
@@ -3203,7 +3205,7 @@ TypeObject.
 
 **Repo:** `crates/types/src/assignability.rs::check_unions`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::two_unions_of_different_extensibility_are_not_assignable`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_8_two_unions_of_different_extensibility_are_not_assignable`
 
 **Status:** `done` — the test covers every pairing of different extensibility.
 
@@ -3214,7 +3216,7 @@ is-strongly-assignable-from T2.discriminator.type."
 
 **Repo:** `crates/types/src/assignability.rs::check_unions` (l. 1536, call l. 1589–1597)
 
-**Tests:** `crates/types/src/assignability.rs::tests::two_unions_need_a_case_label_in_common`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_two_unions_need_a_case_label_in_common`
 
 **Status:** done — a discriminator is primitive or an enumeration and so
 delimited; `is_assignable` coincides with strong assignability here.
@@ -3226,7 +3228,7 @@ and T2 are keys or neither are keys."
 
 **Repo:** `crates/types/src/assignability.rs::check_unions` (l. 1536, check l. 1580–1587)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable`
 
 **Status:** done
 
@@ -3238,7 +3240,7 @@ same name."
 
 **Repo:** `crates/types/src/assignability.rs::union_names_and_ids_agree` (l. 1121)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_shared_union_label_may_carry_different_member_ids`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_shared_union_label_may_carry_different_member_ids`
 
 **Status:** done — can be switched off through `ignore_member_names`.
 
@@ -3251,7 +3253,7 @@ member."
 
 **Repo:** `crates/types/src/assignability.rs::check_unions` (l. 1536, loop l. 1666–1712)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_label_the_other_side_lacks_is_checked_against_its_default_member`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_label_the_other_side_lacks_is_checked_against_its_default_member`
 
 **Status:** done
 
@@ -3263,7 +3265,7 @@ the type of the T2 default member."
 
 **Repo:** `crates/types/src/assignability.rs::check_unions` (l. 1536, l. 1734–1749)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_label_the_other_side_lacks_is_checked_against_its_default_member`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_label_the_other_side_lacks_is_checked_against_its_default_member`
 
 **Status:** done
 
@@ -3275,7 +3277,7 @@ associated with T2 default member."
 
 **Repo:** `crates/types/src/assignability.rs::check_unions` (l. 1536, l. 1751–1754)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_final_union_has_a_default_member_on_both_sides_or_neither`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_final_union_has_a_default_member_on_both_sides_or_neither`
 
 **Status:** done
 
@@ -3287,8 +3289,8 @@ common label other than the default label."
 
 **Repo:** `crates/types/src/assignability.rs::check_unions` (l. 1536, l. 1653–1664 and l. 1714–1728)
 
-**Tests:** `crates/types/src/assignability.rs::tests::two_unions_need_a_case_label_in_common`,
-`crates/types/src/assignability.rs::tests::a_default_case_is_not_a_case_label_in_common`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_two_unions_need_a_case_label_in_common`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_default_case_is_not_a_case_label_in_common`
 
 **Status:** done — for FINAL the code additionally requires that either both
 sides or neither has a default member.
@@ -3303,8 +3305,8 @@ but one in O1, m1 takes its default.
 **Repo:** `crates/wire-codec/src/decode.rs`;
 `crates/ast/src/query.rs::discriminator_try_construct` (l. 508)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::a_defaulted_discriminator_defaults_the_member_it_now_selects`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_union_member_the_stream_does_not_carry_takes_its_default`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_a_defaulted_discriminator_defaults_the_member_it_now_selects`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_a_union_member_the_stream_does_not_carry_takes_its_default`
 
 **Status:** done — the column names TryConstruct "DEFAULT"; Table 11 names the
 kind USE_DEFAULT (naming in the specification, listed in the findings file).
@@ -3316,8 +3318,8 @@ kind."
 
 **Repo:** `crates/types/src/assignability.rs::check_minimal_types` (l. 725, check l. 738–742)
 
-**Tests:** `crates/types/src/assignability.rs::tests::extensibility_mismatch_fails`,
-`crates/types/src/assignability.rs::tests::minimal_and_complete_hash_still_reject_an_extensibility_mismatch`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_extensibility_mismatch_fails`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_minimal_and_complete_hash_still_reject_an_extensibility_mismatch`
 
 **Status:** done
 
@@ -3329,7 +3331,7 @@ same name."
 
 **Repo:** `crates/types/src/assignability.rs::struct_names_and_ids_agree` (l. 1100)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_member_name_at_two_different_ids_is_refused`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_member_name_at_two_different_ids_is_refused`
 
 **Status:** done — can be switched off through `ignore_member_names`.
 
@@ -3340,7 +3342,7 @@ and one corresponding member 'm2' of T2 such that m1.id == m2.id."
 
 **Repo:** `crates/types/src/assignability.rs::at_least_one_common_member_id` (l. 1155)
 
-**Tests:** `crates/types/src/assignability.rs::tests::two_mutable_structs_need_a_member_id_in_common`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_two_mutable_structs_need_a_member_id_in_common`
 
 **Status:** done — two structures without members count as assignable; the rule
 presupposes members.
@@ -3354,8 +3356,8 @@ is-assignable-from the type KeyErased(m2.type)."
 **Repo:** `crates/types/src/assignability.rs::key_erased`,
 `crates/types/src/assignability.rs::check_member_pair`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::a_nested_types_key_bound_does_not_count_for_a_non_key_member`,
-`crates/types/src/assignability.rs::tests::mutable_struct_member_id_matching`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_a_nested_types_key_bound_does_not_count_for_a_non_key_member`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_mutable_struct_member_id_matching`
 
 **Status:** done — The member types are compared as `KeyErased` (`assignability.rs::key_erased`): the length of a key member of a nested type does not count for a non-key member.
 
@@ -3369,10 +3371,10 @@ corresponding member of the same member ID) in both T1 and T2."
 `crates/types/src/assignability.rs::check_appendable_structs` (l. 1414);
 `crates/types/src/assignability.rs::check_mutable_structs` (l. 1474)
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::an_optional_must_understand_member_may_be_missing`,
-`crates/types/src/assignability.rs::tests::an_appendable_tail_member_that_must_be_understood_is_no`,
-`crates/types/src/assignability.rs::tests::a_mutable_reader_member_the_writer_lacks_is_yes_unless_it_must_be_understood`,
-`crates/types/src/assignability.rs::tests::a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_an_optional_must_understand_member_may_be_missing`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_an_appendable_tail_member_that_must_be_understood_is_no`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_mutable_reader_member_the_writer_lacks_is_yes_unless_it_must_be_understood`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`
 
 **Status:** done — `must_not_be_missing` reads `IS_OPTIONAL`: a member `@optional @must_understand` that is missing on one side leaves the pair assignable.
 
@@ -3383,7 +3385,7 @@ must_understand is true".
 
 **Repo:** `crates/types/src/assignability.rs::must_not_be_missing`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::an_optional_must_understand_member_may_be_missing`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_an_optional_must_understand_member_may_be_missing`
 
 **Status:** done — `must_not_be_missing` reads `IS_OPTIONAL`.
 
@@ -3395,9 +3397,9 @@ and T2."
 
 **Repo:** `crates/types/src/assignability.rs::must_not_be_missing`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::a_key_member_that_one_side_lacks_makes_the_structures_not_assignable`,
-`crates/types/tests/table19_key_members.rs::a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
-`crates/types/src/assignability.rs::tests::a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_8_a_key_member_that_one_side_lacks_makes_the_structures_not_assignable`,
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`
 
 **Status:** `done` — a key member that one side lacks (reader or writer) makes the structures not assignable; a member present on both sides and a key on one only does not.
 
@@ -3407,7 +3409,7 @@ and T2."
 
 **Repo:** `crates/types/src/assignability.rs::must_not_be_missing`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::a_key_member_that_one_side_lacks_makes_the_structures_not_assignable`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_8_a_key_member_that_one_side_lacks_makes_the_structures_not_assignable`
 
 **Status:** `done` — the test leaves the key member out on the reader side and on the writer side.
 
@@ -3419,8 +3421,8 @@ m2.type.length."
 
 **Repo:** `crates/types/src/assignability.rs::key_members_fit` (l. 1260, check l. 1301–1308)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::a_shorter_string_key_in_the_reader_is_not_assignable`,
-`crates/types/tests/table19_key_members.rs::a_shorter_string_member_that_is_not_a_key_is_still_assignable`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_8_a_shorter_string_key_in_the_reader_is_not_assignable`,
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_8_a_shorter_string_member_that_is_not_a_key_is_still_assignable`
 
 **Status:** done — can be switched off through `KeyMemberBounds`; the default is
 the rule of the specification. The OMG test suite expects the opposite for four
@@ -3434,7 +3436,7 @@ m2.type appear as literals in m1.type."
 
 **Repo:** `crates/types/src/assignability.rs::key_members_fit` (l. 1260, check l. 1313–1329)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_2_4_4_4_8_a_writer_enum_key_literal_the_reader_lacks_is_not_assignable`
 
 **Status:** done — the comparison goes by the value of the literal.
 
@@ -3447,7 +3449,7 @@ m2.type.length."
 **Repo:** `crates/types/src/assignability.rs::key_members_fit` (l. 1260);
 `crates/types/src/assignability.rs::key_length_of` (l. 1198)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::a_shorter_sequence_key_in_the_reader_is_not_assignable`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_8_a_shorter_sequence_key_in_the_reader_is_not_assignable`
 
 **Status:** done — a map is not permitted as a key member by §7.2.2.4.4.4.8; the
 check covers it nevertheless.
@@ -3460,8 +3462,8 @@ KeyHolder(m1.type) is-assignable-from KeyHolder(m2.type)."
 
 **Repo:** `crates/types/src/assignability.rs::key_holder_assignable`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::a_nested_types_key_bound_does_not_count_for_a_non_key_member`,
-`crates/types/tests/strong_assignability_and_table19.rs::every_value_of_a_union_key_member_must_select_a_member_in_the_reader`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_a_nested_types_key_bound_does_not_count_for_a_non_key_member`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_every_value_of_a_union_key_member_must_select_a_member_in_the_reader`
 
 **Status:** done — A key member of structure or union type is compared through `KeyHolder` (`key_holder_struct`, `key_holder_assignable`).
 
@@ -3475,7 +3477,7 @@ KeyHolder(m11.type) is-assignable-from KeyHolder(m22.type)."
 
 **Repo:** `crates/types/src/assignability.rs::union_key_values_fit`
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::every_value_of_a_union_key_member_must_select_a_member_in_the_reader`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_every_value_of_a_union_key_member_must_select_a_member_in_the_reader`
 
 **Status:** done — For a key member of union type, every value of the writer's discriminator must select a member in the reader (`union_key_values_fit`).
 
@@ -3488,10 +3490,10 @@ member type."
 
 **Repo:** `crates/types/src/assignability.rs::check_appendable_structs` (l. 1414)
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::members_of_appendable_and_final_types_are_strongly_assignable`,
-`crates/types/tests/strong_assignability_and_table19.rs::members_of_the_same_index_agree_on_optional`,
-`crates/types/src/assignability.rs::tests::appendable_struct_with_extra_writer_field_is_assignable`,
-`crates/types/src/assignability.rs::tests::appendable_struct_reader_longer_than_writer_is_yes`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_members_of_appendable_and_final_types_are_strongly_assignable`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_members_of_the_same_index_agree_on_optional`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_appendable_struct_with_extra_writer_field_is_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_appendable_struct_reader_longer_than_writer_is_yes`
 
 **Status:** done — Member ID, type (strongly assignable) and `optional` at the same index are compared.
 
@@ -3502,7 +3504,7 @@ attribute".
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::members_of_the_same_index_agree_on_optional`
+**Tests:** `crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_4_8_members_of_the_same_index_agree_on_optional`
 
 **Status:** done — `check_appendable_structs` and `check_final_structs` compare `optional` of the members at the same index.
 
@@ -3514,9 +3516,9 @@ same set of member IDs."
 
 **Repo:** `crates/types/src/assignability.rs::check_final_structs` (l. 1370)
 
-**Tests:** `crates/types/src/assignability.rs::tests::final_struct_with_extra_writer_field_is_not_assignable`,
-`crates/types/src/assignability.rs::tests::final_struct_member_count_mismatch_is_no`,
-`crates/types/tests/strong_assignability_and_table19.rs::members_of_appendable_and_final_types_are_strongly_assignable`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_3_final_struct_with_extra_writer_field_is_not_assignable`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_final_struct_member_count_mismatch_is_no`,
+`crates/types/tests/strong_assignability_and_table19.rs::xtypes_7_2_4_3_members_of_appendable_and_final_types_are_strongly_assignable`
 
 **Status:** done — Same count, same ID per position, same `optional` and strong assignability are checked.
 
@@ -3530,8 +3532,8 @@ part of the sub-type."
 **Repo:** `crates/types/src/assignability.rs::check_minimal_types` (l. 725, flattening l. 757–780);
 `crates/types/src/assignability.rs::flatten_inheritance` (l. 58)
 
-**Tests:** `crates/types/src/assignability.rs::tests::two_level_inheritance_assignability_chain`,
-`crates/types/src/assignability.rs::tests::flat_type_construction_two_levels`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_5_two_level_inheritance_assignability_chain`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_flat_type_construction_two_levels`
 
 **Status:** done
 
@@ -3547,8 +3549,8 @@ TryConstruct; a member that cannot be constructed follows its TryConstruct.
 `crates/wire-codec/src/default.rs::member` (l. 100)
 
 **Tests:** `crates/wire-conformance/tests/bytes.rs::an_unknown_mutable_member_is_skipped_and_a_must_understand_one_is_not`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_mutable_member_that_did_not_arrive_takes_its_default`,
-`crates/wire-probe/tests/try_construct.rs::use_default_substitutes_table_nines_value_and_keeps_the_sample`
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_2_2_4_4_4_7_a_mutable_member_that_did_not_arrive_takes_its_default`,
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_use_default_substitutes_table_nines_value_and_keeps_the_sample`
 
 **Status:** done
 
@@ -3571,7 +3573,7 @@ without aliasing or loss of information."
 
 **Repo:** `crates/types/src/assignability.rs::check_appendable_structs`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::coordinate2d_is_assignable_from_coordinate3d`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_8_1_coordinate2d_is_assignable_from_coordinate3d`
 
 **Status:** `done` — `Coordinate2D` is assignable from `Coordinate3D` (the example's IDL, unannotated, hence `@appendable`).
 
@@ -3583,7 +3585,7 @@ value of the member km_per_hour and ignore the member num_wheels."
 
 **Repo:** `crates/types/src/assignability.rs::flatten_inheritance`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::a_structure_and_its_derived_structure_are_assignable`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_8_2_a_structure_and_its_derived_structure_are_assignable`
 
 **Status:** `done` — `Vehicle` and `LandVehicle` are assignable in both directions (the first sentence of the example swaps the direction, the second names it correctly; findings file).
 
@@ -3594,7 +3596,7 @@ value of the member km_per_hour and ignore the member num_wheels."
 
 **Repo:** `crates/types/src/assignability.rs::flatten_inheritance`
 
-**Tests:** `crates/types/tests/type_system_rules.rs::both_versions_of_giraffe_are_assignable_to_one_another`
+**Tests:** `crates/types/tests/type_system_rules.rs::xtypes_7_2_4_4_8_3_both_versions_of_giraffe_are_assignable_to_one_another`
 
 **Status:** `done` — both versions of `Giraffe` are mutually assignable, `Giraffe` and `Snake` are not.
 
@@ -3662,8 +3664,8 @@ with an error."
 **Tests:** `crates/idl-lower/tests/lowering.rs::an_any_member_reaches_the_model_as_a_type_rather_than_a_broken_reference`,
 `crates/idl-lower/tests/lowering.rs::a_native_declaration_becomes_a_native_type`,
 `crates/idl-lower/tests/outside_profile.rs::what_holds_an_any_is_dropped_and_the_rest_of_the_file_stays`,
-`tools/idlc/tests/outside_profile.rs::the_rest_of_the_file_is_generated_and_the_two_declarations_are_named`,
-`tools/idlc/tests/outside_profile.rs::deny_warnings_turns_it_back_into_a_failure`
+`tools/idlc/tests/outside_profile.rs::xtypes_7_3_1_1_1_the_rest_of_the_file_is_generated_and_the_two_declarations_are_named`,
+`tools/idlc/tests/outside_profile.rs::xtypes_7_3_1_1_1_deny_warnings_turns_it_back_into_a_failure`
 
 **Status:** done — The IDL front end takes `any`, `native`, `valuetype` and interfaces into the model without stopping the run. `zerodds-idlc generate` and `zerodds-build` leave out a declaration that reaches `any`, `ValueBase`, `native` or an object reference (`Ast::drop_outside_profile`), report it as a warning with name, construct and paragraph, and generate the rest of the file. `--deny-warnings` makes it an error again.
 
@@ -3679,7 +3681,7 @@ halting with an error."
 `crates/idl-lower/tests/outside_profile.rs::native_and_an_object_reference_are_dropped_too`,
 `crates/idl-lower/tests/outside_profile.rs::a_type_an_operation_names_is_kept`,
 `crates/idl-lower/tests/outside_profile.rs::a_profile_that_admits_any_keeps_it`,
-`crates/zerodds-build/src/lib.rs::tests::a_struct_holding_an_any_is_left_out_and_the_rest_of_the_unit_builds`,
+`crates/zerodds-build/src/lib.rs::tests::xtypes_7_3_1_1_1_a_struct_holding_an_any_is_left_out_and_the_rest_of_the_unit_builds`,
 `crates/ast-layout/tests/layout.rs::any_is_refused_at_planning_and_the_reason_names_the_construct`
 
 **Status:** done — `Ast::drop_outside_profile(Profile::XTypes13)` removes every data type that reaches `any`, `ValueBase`, `native` or an object reference (member, case, alias, collection element, map key and value, base, discriminator), and reports it. A type that a constant, an operation, a parameter, an attribute, an annotation member or a topic names stays in the model; for it the layout planner refuses the construct by name as before (`LayoutError::UnsupportedForEncoding`).
@@ -3823,7 +3825,7 @@ precedence over the automatic mechanisms."
 **Repo:** `crates/idl-lower/src/complete.rs::member_ids` (l. 1051)
 
 **Tests:** `crates/idl-lower/tests/completion.rs::a_declared_id_wins_over_the_aggregates_autoid`,
-`crates/types/src/builder.rs::tests::explicit_id_wins_over_hashid`
+`crates/types/src/builder.rs::tests::xtypes_7_3_1_2_1_1_explicit_id_wins_over_hashid`
 
 **Status:** done
 
@@ -3904,7 +3906,7 @@ integer 0x0FFFFFFF to zero the most significant 4-bits of the integer."
 **Repo:** `crates/idl-lower/src/complete.rs::hash_id` (l. 1165);
 `crates/types/src/type_object/common.rs::member_id_from_name` (l. 53)
 
-**Tests:** `crates/types/src/builder.rs::tests::member_id_from_name_matches_known_md5_vectors`,
+**Tests:** `crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_4_5_member_id_from_name_matches_known_md5_vectors`,
 `crates/idl-lower/src/complete.rs::tests::a_hashed_id_stays_inside_the_28_bit_space`
 
 **Status:** done
@@ -3916,7 +3918,7 @@ integer 0x0FFFFFFF to zero the most significant 4-bits of the integer."
 **Repo:** `crates/idl-lower/src/complete.rs::hash_id` (l. 1165)
 
 **Tests:** `crates/idl-lower/tests/completion.rs::example_2_of_the_member_id_clause_gives_the_two_published_ids`,
-`crates/types/src/builder.rs::tests::member_id_from_name_matches_known_md5_vectors`
+`crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_4_5_member_id_from_name_matches_known_md5_vectors`
 
 **Status:** done — `@autoid(HASH)` gives `color` the id 0x0FA5DD70 and `@hashid("shapesize") long size` the id 0x047790DA.
 
@@ -3969,8 +3971,8 @@ as Key."
 
 **Repo:** `crates/lang-rules/tests/external_is_an_indirection.rs`
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_non_optional_external_member_gets_table_9_behind_the_indirection`,
-`crates/lang-rules/tests/d_end_to_end.rs::an_optional_external_member_is_one_pointer_and_not_a_nullable_pointer`
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_3_1_2_1_4_a_non_optional_external_member_gets_table_9_behind_the_indirection`,
+`crates/lang-rules/tests/d_end_to_end.rs::xtypes_7_3_1_2_1_4_an_optional_external_member_is_one_pointer_and_not_a_nullable_pointer`
 
 **Status:** done — a non-optional `@external` member is a non-empty indirection
 in the generated code. A test with `@key @external` is missing; the validation
@@ -4162,11 +4164,15 @@ default behavior".
 `crates/ast-layout/src/key.rs::default_extensibility` (l. 5640)
 
 **Tests:** `crates/idl-lower/tests/completion.rs::a_type_that_said_nothing_is_appendable_by_rule_and_silent_in_the_facet`,
-`crates/idl-lower/tests/completion.rs::the_callers_default_extensibility_does_not_override_a_bases`
+`crates/idl-lower/tests/completion.rs::the_callers_default_extensibility_does_not_override_a_bases`,
+`crates/idl-lower/tests/completion.rs::xtypes_7_3_1_2_1_8_the_callers_default_extensibility_reaches_enumerations_and_bitmasks`
 
 **Status:** done — the default is APPENDABLE; the `Cyclone` dialect of the
 layout planner takes FINAL. Which default applied cannot be seen on the wire
-(`docs/omg-xtypes-issues.md` §B6).
+(`docs/omg-xtypes-issues.md` §B6). The caller's default
+(`Options::default_extensibility`) fills every type that carries an
+extensibility, enumerations and bitmasks included, as Cyclone's `idlc`
+applies its own; it shows in their TypeObject flags.
 
 ### §7.3.1.2.1.8 Shortcuts @final, @appendable, @mutable
 
@@ -4190,7 +4196,7 @@ type T1 shall fail if the type T1 does not define such a member."
 **Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (l. 330, arm `must_understand` l. 337);
 `crates/types/src/assignability.rs::check_mutable_structs` (l. 1474)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`,
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`,
 `crates/wire-conformance/tests/bytes.rs::an_unknown_mutable_member_is_skipped_and_a_must_understand_one_is_not`,
 `crates/idl-lower/tests/annotations.rs::the_boolean_parameter_of_a_builtin_annotation_is_read`
 
@@ -4205,7 +4211,7 @@ behavior to be changed. @annotation default_literal {};"
 `crates/types/src/from_ast.rs::enumeration` (l. 2361)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_default_literal_marks_the_enumerator_and_not_the_enum`,
-`crates/lang-rules/src/default_python.rs::tests::an_enumeration_with_a_default_literal_takes_that_one`
+`crates/lang-rules/src/default_python.rs::tests::xtypes_7_3_1_2_1_10_an_enumeration_with_a_default_literal_takes_that_one`
 
 **Status:** done
 
@@ -4218,7 +4224,7 @@ it is interpreted as having the value TRUE."
 
 **Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (l. 330, arm `ignore_literal_names` l. 352)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::ignore_literal_names_needs_the_annotation_on_both_types`,
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_ignore_literal_names_needs_the_annotation_on_both_types`,
 `crates/idl-lower/tests/annotations.rs::the_boolean_parameter_of_a_builtin_annotation_is_read`
 
 **Status:** done — absent is FALSE, without a parameter and with TRUE it is TRUE, `@ignore_literal_names(FALSE)` is FALSE.
@@ -4232,8 +4238,8 @@ the purpose of checking the assignability of the two Enumerated Types."
 **Repo:** `crates/types/src/assignability.rs::check_enumerations` (l. 964, l. 1005–1007);
 `crates/types/src/from_ast.rs::enumeration` (l. 2361)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::ignore_literal_names_needs_the_annotation_on_both_types`,
-`crates/types/src/assignability.rs::tests::one_sided_ignore_literal_names_does_not_drop_the_name_rule`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_7_ignore_literal_names_needs_the_annotation_on_both_types`,
+`crates/types/src/assignability.rs::tests::xtypes_7_3_1_2_1_11_one_sided_ignore_literal_names_does_not_drop_the_name_rule`
 
 **Status:** done — the introduction of the clause says Table 18 requires equal
 default literals; Table 18 does not say so (contradiction in the specification,
@@ -4252,7 +4258,7 @@ specified without a value [...] then the behavior is set to DEFAULT".
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_bare_try_construct_is_use_default_and_an_absent_one_is_discard`,
 `crates/idl-lower/tests/annotations.rs::each_try_construct_behaviour_is_distinguished`,
-`crates/wire-probe/tests/try_construct.rs::a_bare_annotation_is_use_default_and_not_discard`
+`crates/wire-probe/tests/try_construct.rs::xtypes_7_3_1_2_1_12_a_bare_annotation_is_use_default_and_not_discard`
 
 **Status:** done
 
@@ -4283,7 +4289,7 @@ against "Hello World!": `O1.member` is the empty string.
 
 **Repo:** `crates/wire/src/try_construct.rs::fit_string` (l. 89)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::use_default_substitutes_table_nines_value_and_keeps_the_sample`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_use_default_substitutes_table_nines_value_and_keeps_the_sample`
 
 **Status:** done — the example names the type `String4 (string<5>)` (naming
 defect of the specification, listed in the findings file).
@@ -4295,7 +4301,7 @@ defect of the specification, listed in the findings file).
 
 **Repo:** `crates/wire/src/try_construct.rs::fit_string` (l. 89)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::trim_cuts_the_string_to_the_bound_and_keeps_the_sample`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_trim_cuts_the_string_to_the_bound_and_keeps_the_sample`
 
 **Status:** done
 
@@ -4306,7 +4312,7 @@ against eight elements: the first four.
 
 **Repo:** `crates/wire/src/try_construct.rs::fit_sequence` (l. 131)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements`
 
 **Status:** done
 
@@ -4317,7 +4323,7 @@ against eight elements: the first four.
 
 **Repo:** `crates/ast/src/query.rs::element_try_construct` (l. 413)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::an_element_annotation_trims_the_element_and_not_the_collection`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_an_element_annotation_trims_the_element_and_not_the_collection`
 
 **Status:** done
 
@@ -4328,7 +4334,7 @@ T1Enum)`: a discriminator ENUM3 becomes the default ENUM2.
 
 **Repo:** `crates/ast/src/query.rs::discriminator_try_construct` (l. 508)
 
-**Tests:** `crates/wire-probe/tests/try_construct.rs::a_defaulted_discriminator_defaults_the_member_it_now_selects`
+**Tests:** `crates/wire-probe/tests/try_construct.rs::xtypes_7_2_2_7_a_defaulted_discriminator_defaults_the_member_it_now_selects`
 
 **Status:** done — the example ends with "O1.e1_value would be constructed from
 O2.e3_value", although ENUM2 selects `e2_value` (defect of the specification,
@@ -4357,7 +4363,7 @@ non_serialized and as a key."
 `crates/idl-lower/src/validate.rs::member_rules` (l. 327, check l. 357)
 
 **Tests:** `crates/idl-lower/tests/validation.rs::a_key_member_must_not_be_non_serialized`,
-`crates/types/tests/table19_key_members.rs::a_non_serialized_member_does_not_enter_the_comparison`,
+`crates/types/tests/table19_key_members.rs::xtypes_7_2_4_4_2_a_non_serialized_member_does_not_enter_the_comparison`,
 `crates/idl-lower/tests/annotations.rs::the_boolean_parameter_of_a_builtin_annotation_is_read`
 
 **Status:** done — the annotation and the refusal together with `@key`; `@non_serialized(FALSE)` does not set the attribute.
@@ -4591,7 +4597,7 @@ Structure declarations, Union declarations".
 `crates/lang-rules/src/verbatim.rs::declaration_slots` (l. 129)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_verbatim_directive_on_a_member_reaches_the_member`,
-`crates/lang-rules/src/verbatim.rs::tests::a_member_directive_is_hoisted_into_the_aggregate_and_taken_once`
+`crates/lang-rules/src/verbatim.rs::tests::xtypes_7_3_1_2_2_a_member_directive_is_hoisted_into_the_aggregate_and_taken_once`
 
 **Status:** done
 
@@ -4649,7 +4655,7 @@ identifier name even when defined in the same module."
 `crates/ast/src/node/annotation.rs`
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_user_declared_annotation_is_kept_whole`,
-`crates/types/tests/type_object_annotations.rs::an_annotation_declaration_has_a_type_object`
+`crates/types/tests/type_object_annotations.rs::xtypes_7_2_2_4_4_1_an_annotation_declaration_has_a_type_object`
 
 **Status:** done — an annotation declaration is an `AnnotationDefNode` and not a
 `TypeNode`; a type of the same name does not collide.
@@ -4676,8 +4682,8 @@ declared member type."
 **Repo:** `crates/idl-lower/src/lower.rs` (annotation member, around l. 2647);
 `crates/idl-lower/src/annotation.rs::check_annotation_application` (l. 468)
 
-**Tests:** `crates/types/tests/type_object_custom_annotations.rs::the_parameter_value_is_the_value_that_was_applied`,
-`crates/types/tests/type_object_custom_annotations.rs::an_unapplied_member_writes_ann_custom_absent`
+**Tests:** `crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_the_parameter_value_is_the_value_that_was_applied`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_2_2_6_an_unapplied_member_writes_ann_custom_absent`
 
 **Status:** done — annotations on annotation members (`<pre_annotations>`) are
 refused in the TypeObject, because Annex B has no place for them
@@ -4693,7 +4699,7 @@ be applied to the same element."
 **Repo:** `crates/idl-lower/src/annotation.rs::apply_annotations` (l. 295)
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::several_annotations_on_one_member_all_apply`,
-`crates/types/tests/type_object_custom_annotations.rs::one_declaration_applied_twice_is_one_node`
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_1_2_5_one_declaration_applied_twice_is_one_node`
 
 **Status:** done
 
@@ -4732,8 +4738,8 @@ declaration in the header of the union type's definition: union MyUnion switch
 `crates/types/src/from_ast.rs::union`
 
 **Tests:** `crates/idl-lower/tests/annotations.rs::a_declared_annotation_on_a_discriminator_is_kept`,
-`crates/types/tests/annotations_on_uses.rs::an_annotation_on_the_discriminator_is_in_the_discriminator_member`,
-`crates/types/tests/annotations_on_uses.rs::the_applications_come_back_into_the_model`,
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_3_1_2_5_an_annotation_on_the_discriminator_is_in_the_discriminator_member`,
+`crates/types/tests/annotations_on_uses.rs::xtypes_7_2_2_6_the_applications_come_back_into_the_model`,
 `crates/idl-lower/tests/annotations.rs::a_builtin_annotation_with_no_meaning_on_a_use_is_still_reported`
 
 **Status:** done — A user-declared annotation on the discriminator (`union MyUnion switch (@MyAnnotation long)`) is in `XTypesFacet::discriminator_annotations` and in the `ann_custom` of `CompleteDiscriminatorMember`; the union's own list stays empty. A built-in name with no meaning there is still reported.
@@ -4775,8 +4781,8 @@ annotation."
 **Repo:** `crates/idl-lower/src/annotation.rs::check_annotation_application` (l. 468);
 `crates/types/src/from_ast.rs::annotation_type_object` (l. 537)
 
-**Tests:** `crates/types/tests/type_object_custom_annotations.rs::the_short_form_comes_back_as_the_named_one`,
-`crates/types/tests/type_object_custom_annotations.rs::a_parameterless_annotation_is_written_without_a_param_seq`,
+**Tests:** `crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_1_2_5_the_short_form_comes_back_as_the_named_one`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_1_2_5_a_parameterless_annotation_is_written_without_a_param_seq`,
 `crates/idl-lower/tests/validation.rs::an_annotation_member_with_no_default_takes_the_default_of_its_type`
 
 **Status:** done — Named values, short form, defaults and an omitted member are implemented; a member without a default that is given no value takes the default of its type.
@@ -4819,7 +4825,7 @@ Float128 `long double`, Char8 `char`, Char16 `wchar`, Boolean `boolean`, Byte
 `crates/types/src/from_ast.rs::primitive_kind` (l. 1479)
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/types/src/from_ast.rs::primitive_kind_tests::octet_and_uint8_are_two_kinds`
+`crates/types/src/from_ast.rs::primitive_kind_tests::xtypes_7_2_2_2_octet_and_uint8_are_two_primitive_kinds`
 
 **Status:** done — `uint8` becomes `TK_UINT8`, `octet` becomes `TK_BYTE`. The
 OMG ShapeType IDL `interop/shapes/omg-dds-rtps.idl` has been changed to
@@ -4885,7 +4891,7 @@ Extended Data-Types Building Block of [IDL]."
 
 **Repo:** `crates/ast/src/node/type_.rs::Map` (l. 233)
 
-**Tests:** `crates/types/src/builder.rs::tests::map_builder_string_to_int`,
+**Tests:** `crates/types/src/builder.rs::tests::xtypes_7_3_1_9_map_builder_string_to_int`,
 `crates/wire-conformance/tests/map_bytes.rs::the_recorded_row_round_trips_back_into_the_sample`
 
 **Status:** done
@@ -5493,8 +5499,8 @@ TypeObject."
 `crates/types/src/type_object/mod.rs::TypeObject` (l. 36);
 `crates/types/src/from_ast.rs::type_identifier` (l. 389)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/src/hash.rs::tests::to_hashed_type_identifier_picks_correct_kind`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/src/hash.rs::tests::xtypes_7_3_4_to_hashed_type_identifier_picks_correct_kind`
 
 **Status:** done
 
@@ -5507,8 +5513,8 @@ a TypeIdentifier. Non-plain types have both a TypeIdentifier and a TypeObject."
 
 **Repo:** `crates/types/src/from_ast.rs::is_plain` (l. 1261)
 
-**Tests:** `crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`,
-`crates/types/tests/dependency_type_objects.rs::a_type_of_fully_descriptive_members_has_no_dependencies`
+**Tests:** `crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`,
+`crates/types/tests/dependency_type_objects.rs::xtypes_7_3_4_1_a_type_of_fully_descriptive_members_has_no_dependencies`
 
 **Status:** done — an anonymous collection is always plain; the front end
 refuses other annotations on it (§7.2.2.6).
@@ -5522,7 +5528,7 @@ union allowing the format of the identifier to vary depending on the type. Table
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::TypeIdentifier` (l. 197)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::primitive_none_roundtrips`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — the text refers to "Table 21" instead of Table 29 and to
 §7.3.4.6 instead of §7.3.4.7 (defect of the specification, listed in the
@@ -5535,8 +5541,8 @@ findings file).
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_NONE` (l. 19);
 `crates/types/src/assignability.rs::is_assignable` (l. 274, check l. 295)
 
-**Tests:** `crates/types/tests/table19_key_members.rs::tk_none_is_not_assignable_from_itself`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_none_roundtrips`
+**Tests:** `crates/types/tests/table19_key_members.rs::xtypes_7_3_4_2_tk_none_is_not_assignable_from_itself`,
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -5549,8 +5555,7 @@ TypeObject. Fully described by the discriminator."
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::PrimitiveKind` (l. 315)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/src/type_identifier/mod.rs::tests::primitive_kind_roundtrip_via_u8`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -5564,8 +5569,7 @@ octet. It is used for unbounded strings or strings with bounds smaller than
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRING8_SMALL` (l. 63);
 `crates/types/src/type_identifier/kinds.rs::TI_STRING8_LARGE` (l. 65)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::string8_small_roundtrips`,
-`crates/types/src/type_identifier/mod.rs::tests::string8_large_roundtrips`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — the threshold in the code is `bound <= 255` for SMALL; the
 specification says "smaller than 256", which is the same set.
@@ -5578,7 +5582,7 @@ TypeObject. Fully described by the discriminator and the bound of the string."
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRING16_SMALL` (l. 67);
 `crates/types/src/type_identifier/kinds.rs::TI_STRING16_LARGE` (l. 69)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::string16_small_and_large_roundtrip`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -5591,8 +5595,7 @@ representation of maximum length."
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_SEQUENCE_SMALL` (l. 72);
 `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_SEQUENCE_LARGE` (l. 74)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_sequence_of_int32_roundtrips`,
-`crates/types/src/type_identifier/mod.rs::tests::plain_sequence_large_of_string_roundtrips`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -5605,8 +5608,7 @@ dimensions."
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_ARRAY_SMALL` (l. 77);
 `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_ARRAY_LARGE` (l. 79)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_array_small_3d_roundtrips`,
-`crates/types/src/type_identifier/mod.rs::tests::plain_array_large_roundtrips`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -5618,8 +5620,7 @@ and the TypeIdentifier of key and element."
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_MAP_SMALL` (l. 82);
 `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_MAP_LARGE` (l. 84)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_map_small_roundtrips`,
-`crates/types/src/type_identifier/mod.rs::tests::plain_map_large_with_nested_map_value_roundtrips`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -5632,8 +5633,8 @@ of the set of mutually-dependent types."
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRONGLY_CONNECTED_COMPONENT` (l. 87);
 `crates/types/src/type_identifier/mod.rs::StronglyConnectedComponentId` (l. 176)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::strongly_connected_component_large_scc_length_and_index`,
-`crates/types/tests/strongly_connected_components.rs::a_self_referential_type_gets_a_component_identifier`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_a_component_identifier_is_the_thirty_two_octets_of_annex_b`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_self_referential_type_gets_a_component_identifier`
 
 **Status:** done — for the computation of the hash see §7.3.4.9.2.
 
@@ -5646,7 +5647,7 @@ describes the type."
 **Repo:** `crates/types/src/type_identifier/kinds.rs::EK_COMPLETE` (l. 92);
 `crates/types/src/hash.rs::compute_complete_hash` (l. 78)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::the_complete_hash_is_the_one_rti_and_cyclone_both_report`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_2_the_complete_hash_is_the_one_rti_and_cyclone_both_report`
 
 **Status:** done
 
@@ -5658,8 +5659,8 @@ that describes the type."
 **Repo:** `crates/types/src/type_identifier/kinds.rs::EK_MINIMAL` (l. 90);
 `crates/types/src/hash.rs::compute_minimal_hash` (l. 53)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_minimal_object_is_cyclones_octet_for_octet`,
-`crates/types/src/hash.rs::tests::minimal_and_complete_same_semantic_differ_in_hash`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_2_the_minimal_object_is_cyclones_octet_for_octet`,
+`crates/types/src/hash.rs::tests::xtypes_7_3_4_2_minimal_and_complete_same_semantic_differ_in_hash`
 
 **Status:** done
 
@@ -5671,7 +5672,7 @@ the Annotation declaration".
 
 **Repo:** `crates/types/src/from_ast.rs::annotation_type_object` (l. 537)
 
-**Tests:** `crates/types/tests/type_object_custom_annotations.rs::the_typeid_carries_the_hash_of_the_declarations_own_object`
+**Tests:** `crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_4_2_the_typeid_carries_the_hash_of_the_declarations_own_object`
 
 **Status:** done — the annotation declaration gets a TypeObject, and its
 identifier is that object's hash (`EK_MINIMAL`/`EK_COMPLETE`). `TK_ANNOTATION`
@@ -5686,11 +5687,11 @@ extensions".
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::TypeIdentifier` (l. 197, variant `Extended`)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::an_extended_arm_with_a_member_list_round_trips_verbatim`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_an_extended_arm_with_a_member_list_round_trips_verbatim`
 
 **Status:** done — Annex B has no constant `TI_EXTENDED` but the branch
 `default: ExtendedTypeDefn`; the tree reads an unknown discriminator into this
-branch (contradiction in the specification, listed in the findings file). Under XCDR1 the arm is a parameter list that `PID_LIST_END` closes (the type is MUTABLE and empty); an unknown member in it is stepped over, a must-understand member refuses the value, and members read under XCDR2 for a type of a later revision have no XCDR1 form (`320c16503d2`, tests in `crates/types/tests/type_lookup_xcdr1.rs`).
+branch (contradiction in the specification, listed in the findings file). Under XCDR1 the arm is a parameter list that `PID_LIST_END` closes (the type is MUTABLE and empty); an unknown member in it is stepped over, a must-understand member refuses the value, and members read under XCDR2 for a type of a later revision have no XCDR1 form (`d2eaf0438ab`, tests in `crates/types/tests/type_lookup_xcdr1.rs`).
 
 ### §7.3.4.3 Complete TypeObject: back to IDL without loss
 
@@ -5702,12 +5703,12 @@ information loss, other than formatting".
 `crates/types/src/from_ast.rs::type_builtin_annotations`;
 `crates/types/src/dynamic/to_ast.rs::apply_type_verbatim`
 
-**Tests:** `crates/types/tests/type_verbatim_round_trip.rs::a_types_verbatim_is_in_its_complete_object_after_the_wire`,
-`crates/types/tests/type_verbatim_round_trip.rs::the_verbatim_comes_back_into_the_rebuilt_model`,
-`crates/types/tests/type_verbatim_round_trip.rs::more_than_one_verbatim_on_a_type_is_refused_by_name`,
-`crates/types/tests/type_object_annotations.rs::the_annotations_come_back_into_the_rebuilt_model`,
-`crates/types/tests/type_object_bridge.rs::a_type_survives_its_own_wire_form`,
-`crates/types/tests/strongly_connected_components.rs::a_component_rebuilds_into_a_model`
+**Tests:** `crates/types/tests/type_verbatim_round_trip.rs::xtypes_7_3_4_3_a_types_verbatim_is_in_its_complete_object_after_the_wire`,
+`crates/types/tests/type_verbatim_round_trip.rs::xtypes_7_3_4_3_the_verbatim_comes_back_into_the_rebuilt_model`,
+`crates/types/tests/type_verbatim_round_trip.rs::xtypes_7_3_4_3_more_than_one_verbatim_on_a_type_is_refused_by_name`,
+`crates/types/tests/type_object_annotations.rs::xtypes_7_3_4_3_the_annotations_come_back_into_the_rebuilt_model`,
+`crates/types/tests/type_object_bridge.rs::xtypes_7_3_4_3_a_type_rebuilt_from_cyclones_type_object_writes_cyclones_octets`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_3_a_component_rebuilds_into_a_model`
 
 **Status:** done — Structure, union, enumeration, bitmask, bitset, alias, annotations (parameters of type `long double`, `wchar`, `wstring` too) and the `@verbatim` of a type come back; it is in the `AppliedBuiltinTypeAnnotations` of the `CompleteTypeDetail` (placement as §7.2.2.4.8.2 spells it, `string<32>` checked). Annex B has room for one `@verbatim`, §7.2.2.4.8 allows several: a type with more than one is refused by name and not written without the others (contradiction in the findings file). The MINIMAL object holds no `@verbatim`.
 
@@ -5720,11 +5721,11 @@ annotations or the order of members for types with extensibility kind MUTABLE."
 **Repo:** `crates/types/src/from_ast.rs::minimal_type_object`;
 `crates/types/src/type_object/to_minimal.rs`
 
-**Tests:** `crates/types/tests/minimal_object_7_3_4_4.rs::user_defined_annotations_are_not_in_the_minimal_object`,
-`crates/types/tests/minimal_object_7_3_4_4.rs::the_members_of_a_mutable_type_are_in_declaration_order`,
-`crates/types/tests/minimal_object_7_3_4_4.rs::a_minimal_member_has_the_hash_of_its_name`,
-`crates/types/tests/type_object_custom_annotations.rs::the_minimal_form_leaves_the_applied_annotation_out`,
-`crates/types/tests/typeobject_annotation_annexb.rs::the_minimal_object_is_annex_bs_octet_for_octet`
+**Tests:** `crates/types/tests/minimal_object_7_3_4_4.rs::xtypes_7_3_4_4_user_defined_annotations_are_not_in_the_minimal_object`,
+`crates/types/tests/minimal_object_7_3_4_4.rs::xtypes_7_3_4_4_the_members_of_a_mutable_type_are_in_declaration_order`,
+`crates/types/tests/minimal_object_7_3_4_4.rs::xtypes_7_3_4_4_a_minimal_member_has_the_hash_of_its_name`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_4_4_the_minimal_form_leaves_the_applied_annotation_out`,
+`crates/types/tests/typeobject_annotation_annexb.rs::xtypes_7_3_4_4_the_minimal_object_is_annex_bs_octet_for_octet`
 
 **Status:** done — The MINIMAL object holds no user-defined annotation, no `@verbatim` and no names (only the `NameHash`); equal types with and without an annotation have the same MINIMAL object and the same MINIMAL identifier. The members of a MUTABLE type are in declaration order (`member_index`, §7.3.4.5 with the ordering rules of the serialization); the example sentence in §7.3.4.4 says the opposite (contradiction in the findings file). Two camps of vendors compute different hashes for a MINIMAL struct with a nested aggregate; the tree chooses through `minimal_member_trailing_octet` (`docs/omg-xtypes-issues.md` §C2, a named setting).
 
@@ -5737,9 +5738,8 @@ serialization shall use Little Endian encoding."
 
 **Repo:** `crates/types/src/type_object/mod.rs::to_bytes_le` (l. 115)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/typeobject_vendor_dheader.rs::the_first_four_octets_announce_everything_after_them`,
-`crates/types/tests/typeobject_annotation_annexb.rs::every_appendable_and_sequence_carries_its_own_length`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/typeobject_annotation_annexb.rs::xtypes_7_3_4_5_every_appendable_and_sequence_carries_its_own_length`
 
 **Status:** done
 
@@ -5750,7 +5750,7 @@ ordered in increasing values of their paramname_hash _typeid."
 
 **Repo:** `crates/types/src/from_ast.rs::applied_parameters` (l. 2011, sorting l. 2078)
 
-**Tests:** `crates/types/tests/type_object_custom_annotations.rs::the_parameters_are_ordered_by_name_hash`
+**Tests:** `crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_4_5_the_parameters_are_ordered_by_name_hash`
 
 **Status:** done — "paramname_hash _typeid" is a typo of the specification
 (listed in the findings file).
@@ -5762,7 +5762,7 @@ ordered in increasing values of their annotation_typeid."
 
 **Repo:** `crates/types/src/from_ast.rs::applied_annotations` (l. 1958, sorting l. 1985)
 
-**Tests:** `crates/types/tests/type_object_custom_annotations.rs::the_applications_are_ordered_by_annotation_typeid`
+**Tests:** `crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_4_5_the_applications_are_ordered_by_annotation_typeid`
 
 **Status:** done
 
@@ -5775,8 +5775,8 @@ be ordered in increasing values of the member_index."
 **Repo:** `crates/types/src/from_ast.rs::structure` (l. 2082);
 `crates/types/src/from_ast.rs::union` (l. 2178)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/src/assignability.rs::tests::flatten_inheritance_two_levels_concatenates_base_first`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_2_4_4_4_3_flatten_inheritance_two_levels_concatenates_base_first`
 
 **Status:** done — the members are written in declaration order.
 
@@ -5790,9 +5790,9 @@ member_name hash."
 **Repo:** `crates/types/src/type_object/complete/annotation_type.rs::AnnotationParameterOrder`;
 `crates/types/src/type_object/minimal/annotation_type.rs::ordered_by_name_hash`
 
-**Tests:** `crates/types/tests/annotation_parameter_order.rs::the_parameters_follow_member_index_and_the_annex_b_comment_is_a_setting`,
-`crates/types/tests/annotation_parameter_order.rs::the_minimal_form_is_ordered_by_the_hash_of_the_name_in_both_readings`,
-`crates/types/tests/typeobject_annotation_annexb.rs::each_sequence_is_ordered_by_its_own_key`
+**Tests:** `crates/types/tests/annotation_parameter_order.rs::xtypes_7_3_4_5_the_parameters_follow_member_index_and_the_annex_b_comment_is_a_setting`,
+`crates/types/tests/annotation_parameter_order.rs::xtypes_7_3_4_5_the_minimal_form_is_ordered_by_the_hash_of_the_name_in_both_readings`,
+`crates/types/tests/typeobject_annotation_annexb.rs::xtypes_7_3_4_5_each_sequence_is_ordered_by_its_own_key`
 
 **Status:** done — MINIMAL by the hash of the name; COMPLETE by `member_index`, the declaration order (§7.3.4.5, the normative text; the maintainer's decision). The reading of Annex B ("Ordered by CompleteAnnotationParameter.name") is the named setting `xtypes.annotation_parameter_order: name`, environment variable `ZERODDS_ANNOTATION_PARAMETER_ORDER`; the order is in the object and so in the `annotation_typeid` of every application. The contradiction is in the findings file.
 
@@ -5803,9 +5803,9 @@ member_name hash."
 **Repo:** `crates/types/src/from_ast.rs::annotation_type_object`;
 `crates/types/src/type_object/complete/annotation_type.rs::annotation_parameter_order`
 
-**Tests:** `crates/types/tests/annotation_parameter_order.rs::the_parameters_follow_member_index_and_the_annex_b_comment_is_a_setting`,
-`crates/types/tests/annotation_parameter_order.rs::the_setting_has_a_spelling_that_reads_back`,
-`crates/types/tests/type_object_annotations.rs::an_annotation_declaration_has_a_type_object`
+**Tests:** `crates/types/tests/annotation_parameter_order.rs::xtypes_7_3_4_5_the_parameters_follow_member_index_and_the_annex_b_comment_is_a_setting`,
+`crates/types/tests/annotation_parameter_order.rs::xtypes_7_3_4_5_the_setting_has_a_spelling_that_reads_back`,
+`crates/types/tests/type_object_annotations.rs::xtypes_7_2_2_4_4_1_an_annotation_declaration_has_a_type_object`
 
 **Status:** done — `CompleteAnnotationParameterSeq` is ordered by `member_index`, the position of the parameter in the declaration (`CommonAnnotationParameter` has no member id); the test declares `zebra`, `alpha`, `mid` and expects that order, and under the setting `name` the order of the names. The hash of the annotation type changes with the setting. Expectation for Cyclone DDS, Fast DDS and OpenDDS: none of them writes `ann_custom` with annotation types; not measured.
 
@@ -5817,8 +5817,8 @@ numeric value."
 
 **Repo:** `crates/types/src/from_ast.rs::enumeration`
 
-**Tests:** `crates/types/tests/literal_and_flag_order.rs::enumerated_literals_are_written_in_increasing_value_order`,
-`crates/types/src/type_object/mod.rs::tests::minimal_enum_color_3_literals`
+**Tests:** `crates/types/tests/literal_and_flag_order.rs::xtypes_7_3_4_5_enumerated_literals_are_written_in_increasing_value_order`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_7_3_4_5_minimal_enum_color_3_literals`
 
 **Status:** done — The literals are written in increasing order of value, also when `@value` reverses the declaration order.
 
@@ -5828,7 +5828,7 @@ numeric value."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/literal_and_flag_order.rs::enumerated_literals_are_written_in_increasing_value_order`
+**Tests:** `crates/types/tests/literal_and_flag_order.rs::xtypes_7_3_4_5_enumerated_literals_are_written_in_increasing_value_order`
 
 **Status:** done — `enum E { @value(7) A, @value(0) B };` has `B` before `A` in the TypeObject and in the hashed stream.
 
@@ -5839,8 +5839,8 @@ MinimalBitflagSeq shall be ordered in increasing values of their position."
 
 **Repo:** `crates/types/src/from_ast.rs::bitmask`
 
-**Tests:** `crates/types/tests/literal_and_flag_order.rs::bitmask_flags_are_written_in_increasing_position_order`,
-`crates/types/src/type_object/mod.rs::tests::minimal_bitmask_3_flags`
+**Tests:** `crates/types/tests/literal_and_flag_order.rs::xtypes_7_3_4_5_bitmask_flags_are_written_in_increasing_position_order`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_7_3_4_5_minimal_bitmask_3_flags`
 
 **Status:** done — The flags are written in increasing order of position.
 
@@ -5850,7 +5850,7 @@ MinimalBitflagSeq shall be ordered in increasing values of their position."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/literal_and_flag_order.rs::bitmask_flags_are_written_in_increasing_position_order`
+**Tests:** `crates/types/tests/literal_and_flag_order.rs::xtypes_7_3_4_5_bitmask_flags_are_written_in_increasing_position_order`
 
 **Status:** done — With `@position` in descending order the flags are sorted by position all the same.
 
@@ -5861,7 +5861,7 @@ MinimalBitfieldSeq shall be ordered in increasing values of their position."
 
 **Repo:** `crates/types/src/from_ast.rs` (Bitset, positions consecutive l. 2549–2600)
 
-**Tests:** `crates/types/src/builder.rs::tests::bitset_builder_two_fields`
+**Tests:** `crates/types/src/builder.rs::tests::xtypes_7_2_2_4_4_1_bitset_builder_two_fields`
 
 **Status:** done — positions are assigned consecutively, so the sequence is
 ascending.
@@ -5876,8 +5876,9 @@ contained PlainCollectionHeader having EquivalenceKind set to EK_BOTH."
 **Repo:** `crates/types/src/from_ast.rs` (header, l. 1443–1456);
 `crates/types/src/type_identifier/kinds.rs::EK_BOTH` (l. 98)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::ek_both_is_not_a_type_identifier_discriminator`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_nested_sequence_of_sequence_minimal_wire_roundtrip`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_6_1_ek_both_is_not_a_type_identifier_discriminator`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_1_indirect_hash_nested_sequence_of_sequence_minimal_wire_roundtrip`,
+`crates/types/tests/type_object_bridge.rs::xtypes_7_3_4_6_the_type_identifiers_of_the_corpus_types_are_cyclones`
 
 **Status:** done
 
@@ -5890,8 +5891,8 @@ PlainCollectionHeader has EquivalenceKind EK_MINIMAL or EK_COMPLETE."
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::PlainCollectionHeader` (l. 122)
 
-**Tests:** `crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_large_complete_wire_vector`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector`
+**Tests:** `crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_2_indirect_hash_plain_sequence_large_complete_wire_vector`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_2_indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector`
 
 **Status:** done — the specification writes `TI_STRONG_COMPONENT` here, Annex B
 `TI_STRONGLY_CONNECTED_COMPONENT` (listed in the findings file).
@@ -5905,7 +5906,7 @@ discriminator EK_MINIMAL, EK_COMPLETE, or TI_STRONG_COMPONENT."
 `EquivalenceHashComplete`,
 `StronglyConnectedComponent`)
 
-**Tests:** `crates/types/src/hash.rs::tests::to_hashed_type_identifier_picks_correct_kind`
+**Tests:** `crates/types/src/hash.rs::tests::xtypes_7_3_4_to_hashed_type_identifier_picks_correct_kind`
 
 **Status:** done
 
@@ -5918,9 +5919,9 @@ EK_COMPLETE."
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::PlainCollectionHeader` (l. 122)
 
-**Tests:** `crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_array_small_minimal_wire_vector`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_array_large_complete_wire_vector`
+**Tests:** `crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_4_indirect_hash_plain_array_small_minimal_wire_vector`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_4_indirect_hash_plain_array_large_complete_wire_vector`
 
 **Status:** done
 
@@ -5931,9 +5932,16 @@ TypeObjectHashId EK_MINIMAL, plain collections with EquivalenceKind EK_MINIMAL.
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::StronglyConnectedComponentId` (l. 176, field `equivalence_kind`)
 
-**Tests:** `crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`,
+`crates/types/tests/type_object_bridge.rs::xtypes_7_3_4_6_the_type_identifiers_of_the_corpus_types_are_cyclones`
 
-**Status:** done
+**Status:** done — the MINIMAL object's type flags are masked with Annex B's
+`TypeFlagMinimalMask`, which takes `IS_NESTED` and `IS_AUTOID_HASH` out;
+Cyclone 11.0.1 keeps them, so the MINIMAL identifier of a `@nested` or
+`@autoid(HASH)` type differs from Cyclone's. The OMG `dds-xtypes` case
+`ext_autoid_1` (`@autoid`, `@hashid`) passed against Cyclone 11.0.1 in both
+directions (pipeline 9021, jobs 230116 to 230121); a `@nested` type is not
+among the suite's cases and is not measured. The mask stays the default.
 
 ### §7.3.4.6.6 Complete Hash TypeIdentifiers
 
@@ -5943,7 +5951,7 @@ EK_COMPLETE.
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::StronglyConnectedComponentId` (l. 176)
 
-**Tests:** `crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_large_complete_wire_vector`
+**Tests:** `crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_2_indirect_hash_plain_sequence_large_complete_wire_vector`
 
 **Status:** done
 
@@ -5954,7 +5962,7 @@ PlainCollectionHeader is EK_BOTH, EK_MINIMAL or EK_COMPLETE.
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::EquivalenceKind` (l. 85)
 
-**Tests:** `crates/types/tests/compliance_typeobject.rs::indirect_hash_invalid_equiv_kind_in_header_decodes_as_unknown_ek_byte`
+**Tests:** `crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_indirect_hash_invalid_equiv_kind_in_header_decodes_as_unknown_ek_byte`
 
 **Status:** done — another octet is read and kept unchanged.
 
@@ -5970,9 +5978,8 @@ TypeIdentifiers, or else they have equal Minimal TypeIdentifiers."
 **Repo:** `crates/types/src/assignability.rs::is_assignable` (l. 274, check `w == r` l. 301);
 `crates/types/src/hash.rs::compute_hash` (l. 37)
 
-**Tests:** `crates/types/src/hash.rs::tests::different_type_objects_have_different_hashes`,
-`crates/types/src/hash.rs::tests::hash_is_14_bytes_and_deterministic`,
-`crates/types/src/assignability.rs::tests::equal_complete_hash_is_assignable_with_empty_registry`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_1_identical_type_identifiers_short_circuit_yes`,
+`crates/types/src/assignability.rs::tests::xtypes_7_3_4_7_equal_complete_hash_is_assignable_with_empty_registry`
 
 **Status:** done
 
@@ -5995,8 +6002,8 @@ dependency.
 
 **Repo:** `crates/types/src/from_ast.rs::strongly_connected_component` (l. 236)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_self_referential_type_gets_a_component_identifier`,
-`crates/types/tests/strongly_connected_components.rs::a_mutually_recursive_pair_is_one_component_of_two`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_self_referential_type_gets_a_component_identifier`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_mutually_recursive_pair_is_one_component_of_two`
 
 **Status:** done — the example uses `sequence<@external TreeNode>`, a form the
 front end refuses (open under §7.3.1.2.1.4); recursion through a sequence
@@ -6020,7 +6027,7 @@ equivalence relation.
 
 **Repo:** `crates/types/src/from_ast.rs::component_identifier` (l. 440)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_component_members_type_object_builds`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_1_a_component_members_type_object_builds`
 
 **Status:** done — `form` selects MINIMAL or COMPLETE.
 
@@ -6032,7 +6039,7 @@ algorithm of hashing the serialized TypeObjects".
 
 **Repo:** `crates/types/src/from_ast.rs::strongly_connected_component` (l. 236)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::an_ordinary_type_is_not_given_a_component_identifier`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_an_ordinary_type_is_not_given_a_component_identifier`
 
 **Status:** done
 
@@ -6045,8 +6052,8 @@ Identify the Strongly Connected Components of the ReducedDependencyDG(T)."
 **Repo:** `crates/types/src/from_ast.rs::strongly_connected_component` (l. 236);
 `crates/types/src/from_ast.rs::reachable` (l. 189)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_mutually_recursive_pair_is_one_component_of_two`,
-`crates/types/tests/strongly_connected_components.rs::a_type_that_holds_a_component_member_from_outside_builds`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_mutually_recursive_pair_is_one_component_of_two`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_a_type_that_holds_a_component_member_from_outside_builds`
 
 **Status:** done — the component is the set of types that reach `T` and are
 reached by `T`; plain collections are no members.
@@ -6058,8 +6065,8 @@ single type, then use the regular algorithm to compute its TypeIdentifier".
 
 **Repo:** `crates/types/src/from_ast.rs::strongly_connected_component`
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_type_that_holds_a_component_member_from_outside_builds`,
-`crates/types/tests/strongly_connected_components.rs::an_ordinary_type_is_not_given_a_component_identifier`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_a_type_that_holds_a_component_member_from_outside_builds`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_an_ordinary_type_is_not_given_a_component_identifier`
 
 **Status:** done — A type that is itself on no cycle and only reaches a component gets the ordinary hash; its TypeObject carries the SCC identifier of the member it reaches.
 
@@ -6070,9 +6077,9 @@ algorithm.
 
 **Repo:** `crates/types/src/from_ast.rs::strongly_connected_component`
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_self_referential_type_gets_a_component_identifier`,
-`crates/types/tests/strongly_connected_components.rs::a_component_members_type_object_builds`,
-`crates/types/tests/strongly_connected_components.rs::the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_self_referential_type_gets_a_component_identifier`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_1_a_component_members_type_object_builds`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
 
 **Status:** done — Step 4a: a component of one type uses the ordinary algorithm. A type that reaches itself has no hash that way, because its TypeObject would hold the identifier it yields; it is treated as a component of one type by steps 4b to 4f (`TI_STRONGLY_CONNECTED_COMPONENT` with `scc_length = 1`, `scc_index = 1`). The specification names no other way for this case (contradiction in the findings file). A comparison with the identifier of another vendor is not possible: none in the matrix computes an SCC identifier.
 
@@ -6087,7 +6094,7 @@ member name using '.' as the separator".
 **Repo:** `crates/types/src/from_ast.rs::strongly_connected_component` (l. 236, sorting l. 265);
 `crates/types/src/from_ast.rs::Descent` (l. 88, index from 1)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_mutually_recursive_pair_is_one_component_of_two`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_mutually_recursive_pair_is_one_component_of_two`
 
 **Status:** done — anonymous types do not occur as members (plain collections
 are excluded), so the naming rule for them is not needed.
@@ -6101,7 +6108,7 @@ SCC, scc_index = SCCIndex(U)".
 
 **Repo:** `crates/types/src/from_ast.rs::component_hash`
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
 
 **Status:** done — The hash input of the component carries the provisional identifier with hash 0, `scc_length` and `scc_index` (step 4b.i).
 
@@ -6112,8 +6119,8 @@ SC using the temporary TypeIdentifier for references to other types in the SCC."
 
 **Repo:** `crates/types/src/from_ast.rs::component_hash` (l. 466)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_component_members_type_object_builds`,
-`crates/types/tests/strongly_connected_components.rs::the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_1_a_component_members_type_object_builds`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
 
 **Status:** done — The TypeObjects of the component are built with the provisional identifiers (step 4b.ii).
 
@@ -6127,8 +6134,7 @@ first 14 bytes."
 
 **Repo:** `crates/types/src/from_ast.rs::component_hash` (l. 466)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`,
-`crates/types/tests/strongly_connected_components.rs::the_component_hash_is_deterministic`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
 
 **Status:** done — The stream is the `sequence<TypeObject>` under XCDR2 little endian with a DHEADER and alignment to four; the hash is MD5, the first 14 octets count (steps 4c to 4e).
 
@@ -6138,7 +6144,7 @@ first 14 bytes."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_2_the_component_hash_is_the_md5_of_the_xcdr2_sequence_of_its_objects`
 
 **Status:** done — `component_hash` writes the DHEADER and the alignment of the sequence. A comparison with the SCC hash of another vendor is not possible.
 
@@ -6150,7 +6156,7 @@ StronglyConnectedComponentId(SC), scc_index = SCCIndex(U)".
 
 **Repo:** `crates/types/src/from_ast.rs::component_identifier` (l. 440)
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::a_mutually_recursive_pair_is_one_component_of_two`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_2_2_4_a_mutually_recursive_pair_is_one_component_of_two`
 
 **Status:** done
 
@@ -6174,7 +6180,7 @@ except the scc_index field is set to 0."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/strongly_connected_components.rs::an_scc_identifier_with_index_zero_is_written_and_read`
+**Tests:** `crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_3_an_scc_identifier_with_index_zero_is_written_and_read`
 
 **Status:** done — `TypeIdentifier::to_bytes_le` and the reader accept `scc_index = 0`.
 
@@ -6188,8 +6194,7 @@ scc_index field, which always takes values from 1 to scc_length."
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::StronglyConnectedComponentId` (l. 176)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::scc_encode_rejects_index_out_of_bounds`,
-`crates/types/src/type_identifier/mod.rs::tests::scc_encode_rejects_negative_values`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_9_3_scc_encode_rejects_index_out_of_bounds`
 
 **Status:** done
 
@@ -6204,7 +6209,7 @@ XML_DATA_REPRESENTATION = 1, XCDR2_DATA_REPRESENTATION = 2".
 
 **Repo:** `crates/types/src/qos.rs::DataRepresentationId` (l. 174)
 
-**Tests:** `crates/types/src/qos.rs::tests::negotiate_xcdr2_preferred`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_4_negotiate_xcdr2_preferred`
 
 **Status:** done
 
@@ -6248,7 +6253,7 @@ shall use the PL_CDR encoding".
 **Repo:** `crates/zerodds-build/src/lib.rs::xcdr1_encoding_for` (l. 978);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
 `crates/ast-layout/tests/vendor_gate.rs::appendable_adds_a_delimiter_under_xcdr2_and_nothing_under_xcdr1`
 
 **Status:** done
@@ -6261,8 +6266,8 @@ any padding bytes added at the end of the serialized data shall be set to zero."
 **Repo:** `crates/wire/src/writer.rs::align_to` (l. 1415);
 `crates/wire-codec/src/value.rs::encapsulation_header`
 
-**Tests:** `crates/wire/tests/padding_record.rs::every_recorded_octet_is_a_zero_the_writer_wrote`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_drops_the_padding_the_options_name`
+**Tests:** `crates/wire/tests/padding_record.rs::xtypes_7_4_1_1_every_recorded_octet_is_a_zero_the_writer_wrote`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_drops_the_padding_the_options_name`
 
 **Status:** done — every alignment writes zero octets; the number of padding
 bytes at the end is in the field `options` of the encapsulation header.
@@ -6278,8 +6283,8 @@ one currently configured in the XCDR stream (XCDR.cendian)."
 `crates/wire/src/writer.rs::align_to` (l. 1415)
 
 **Tests:** `crates/ast-layout/tests/layout.rs::xcdr1_aligns_every_primitive_to_its_own_size`,
-`crates/wire/tests/wire.rs::the_two_byte_orders_write_the_same_value_differently`,
-`crates/wire/tests/wire.rs::a_long_after_a_char_sits_at_four_not_at_one`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_a_long_after_a_char_sits_at_four_not_at_one`
 
 **Status:** done
 
@@ -6300,7 +6305,7 @@ true".
 
 **Repo:** `crates/wire/src/writer.rs::write_bool` (l. 1460)
 
-**Tests:** `crates/wire/tests/wire.rs::a_boolean_that_is_neither_zero_nor_one_is_refused`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_a_boolean_that_is_neither_zero_nor_one_is_refused`
 
 **Status:** done — an octet other than 0 or 1 is refused when reading.
 
@@ -6386,7 +6391,7 @@ normalized single-precision floating-point numbers".
 
 **Repo:** `crates/ast-layout/src/xcdr.rs::primitive_layout` (l. 456)
 
-**Tests:** `crates/wire/tests/wire.rs::a_double_aligns_to_eight`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_a_double_aligns_to_eight`
 
 **Status:** done
 
@@ -6401,7 +6406,7 @@ normalized quadruple-precision floating-point numbers".
 
 **Tests:** `crates/ast-layout/tests/layout.rs::long_double_is_sixteen_bytes`,
 `crates/float128/tests/binary128.rs::one_and_a_half_is_the_pattern_the_vendors_write`,
-`crates/wire-probe/tests/interop_corpus.rs::every_case_produces_the_bytes_its_readme_records_in_all_four_modes`
+`crates/wire-probe/tests/interop_corpus.rs::xtypes_7_3_1_2_2_every_case_produces_the_bytes_its_readme_records_in_all_four_modes`
 
 **Status:** done — the corpus case `primitive-longdouble` runs through
 `write_f128` in both versions and both byte orders; the octets are the ones
@@ -6415,7 +6420,7 @@ Byte primitive type."
 
 **Repo:** `crates/wire/src/writer.rs::write_char` (l. 1524)
 
-**Tests:** `crates/wire/tests/char_width.rs::every_code_point_a_char_can_hold_round_trips`
+**Tests:** `crates/wire/tests/char_width.rs::xtypes_7_2_2_2_1_2_2_every_code_point_a_char_can_hold_round_trips`
 
 **Status:** done — a Rust `char` above U+00FF is refused because it is not one
 octet.
@@ -6429,9 +6434,8 @@ characters, including the terminating NUL character."
 
 **Repo:** `crates/wire/src/writer.rs::write_string` (l. 1881)
 
-**Tests:** `crates/wire/tests/wire.rs::a_string_length_counts_its_terminator`,
-`crates/wire/tests/wire.rs::an_empty_string_is_a_length_of_one_and_a_nul`,
-`crates/wire/tests/wire.rs::a_string_whose_terminator_is_not_a_nul_is_refused`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_2_a_string_length_counts_its_terminator`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_1_2_a_string_whose_terminator_is_not_a_nul_is_refused`
 
 **Status:** done
 
@@ -6448,7 +6452,7 @@ character(s)."
 `crates/ast-layout/src/key.rs::WstringLengthPolicy`
 
 **Tests:** `crates/wire-conformance/tests/wstring_bytes.rs::the_unbounded_octets_are_the_recorded_cyclone_and_opendds_rows`,
-`crates/wire/tests/wstring.rs::every_cell_round_trips_under_every_unit_order`
+`crates/wire/tests/wstring.rs::xtypes_7_2_2_2_1_2_7_every_cell_round_trips_under_every_unit_order`
 
 **Status:** done — `WstringLengthPolicy::SPECIFICATION` is the default; counting
 characters, a NUL and four octets per unit are dialects.
@@ -6564,8 +6568,8 @@ are not specified, and those bits are not considered to be part of the bitmask."
 
 **Repo:** `crates/wire-codec/src/decode.rs::read_bitmask`
 
-**Tests:** `crates/wire-codec/tests/bitmask_unnamed_bits.rs::a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read`,
-`crates/wire/tests/wire.rs::a_bitmask_read_keeps_only_the_declared_bits`
+**Tests:** `crates/wire-codec/tests/bitmask_unnamed_bits.rs::xtypes_7_2_4_4_7_a_bit_inside_the_bound_that_the_type_does_not_name_is_not_read`,
+`crates/wire/tests/wire.rs::xtypes_7_2_4_4_7_a_bitmask_read_keeps_only_the_declared_bits`
 
 **Status:** done — `read_bitmask` returns no error for such a bit; the reader in `lang-rules` masks likewise.
 
@@ -6606,8 +6610,8 @@ the same order, in the most-derived type."
 **Repo:** `crates/ast/src/query.rs::all_members_of` (l. 151);
 `crates/ast-layout/src/xcdr.rs::plan_aggregate` (l. 1720)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::an_inherited_member_is_written_ahead_of_the_derived_ones`,
-`crates/wire-probe/tests/vendor_bytes.rs::member_ids_continue_across_the_inheritance_boundary`,
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_1_1_5_1_an_inherited_member_is_written_ahead_of_the_derived_ones`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_1_1_5_1_member_ids_continue_across_the_inheritance_boundary`,
 `crates/ast-layout/tests/layout.rs::a_bitset_that_inherits_is_sized_over_the_whole_chain`
 
 **Status:** done
@@ -6633,7 +6637,7 @@ One parameter follows another until a list-terminating sentinel is reached."
 **Repo:** `crates/ast-layout/src/plan.rs::MemberHeader` (l. 93, variant `PidCdr1`);
 `crates/wire/src/reader.rs::read_pid` (l. 1344)
 
-**Tests:** `crates/wire/tests/wire.rs::the_sentinel_ends_a_parameter_list`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_the_default_parameter_length_is_the_exact_length_of_the_member`,
 `crates/wire-conformance/tests/bytes.rs::a_mutable_xcdr1_struct_round_trips_through_its_sentinel`
 
 **Status:** done
@@ -6649,9 +6653,9 @@ the next parameterID at a 4 byte offset relative to the previous parameterID."
 `crates/wire/src/writer.rs::DEFAULT`,
 `crates/wire/src/reader.rs::check_declared_length`
 
-**Tests:** `crates/wire/tests/wire.rs::the_default_parameter_length_is_the_exact_length_of_the_member`,
-`crates/wire/tests/wire.rs::a_parameter_length_excludes_the_padding_that_follows_it`,
-`crates/wire/tests/wire.rs::a_parameter_length_covers_the_padding_where_the_framing_says_so`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_the_default_parameter_length_is_the_exact_length_of_the_member`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_a_parameter_length_excludes_the_padding_that_follows_it`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_a_parameter_length_covers_the_padding_where_the_framing_says_so`
 
 **Status:** `done` — the default (`PlCdr1HeaderPolicy::Specification`) writes the exact length of the member; the next parameter starts on a 4-octet boundary (padding behind the value). The length rounded up to four of DDSI-RTPS 2.5 §9.4.2.11 is the named setting `PlCdr1HeaderPolicy::ShortRoundedLength` (`--pl-cdr1-headers short-rounded-length`, runtime `wire.pl_cdr1_headers`). The specifications contradict each other here; the XTypes reading is the maintainer's decision.
 
@@ -6665,9 +6669,9 @@ may follow the serialized member."
 `crates/wire/src/writer.rs::PlCdr1Framing::DEFAULT`,
 `crates/wire/src/reader.rs::check_declared_length`
 
-**Tests:** `crates/wire/tests/wire.rs::the_default_parameter_length_is_the_exact_length_of_the_member`,
-`crates/wire/tests/wire.rs::a_default_reader_refuses_the_rounded_length_and_names_the_setting`,
-`crates/wire-codec/src/value.rs::tests::the_default_framing_is_the_default_dialects`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_the_default_parameter_length_is_the_exact_length_of_the_member`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_a_default_reader_refuses_the_rounded_length_and_names_the_setting`,
+`crates/wire-codec/src/value.rs::tests::xtypes_7_4_1_2_the_default_framing_is_the_default_dialects`
 
 **Status:** `done` — writer and reader of the default use the exact length; a stream with a rounded length is reported as `WireError::WrongFraming` naming `short-rounded-length`. The Rust constant `PlCdr1Framing::DEFAULT` and the default dialect agree (test). Measured vendors: Cyclone DDS and RTI Connext write the rounded length, Fast DDS and OpenDDS the exact one (`vendor_bytes.md`); their dialects keep that.
 
@@ -6711,7 +6715,7 @@ encapsulated is set to true."
 `crates/ast-layout/src/xcdr.rs::member_must_understand` (l. 1287)
 
 **Tests:** `crates/ast-layout/tests/layout.rs::must_understand_is_set_exactly_when_the_facet_says_so`,
-`crates/wire/tests/wire.rs::a_flagged_sentinel_and_a_flagged_extended_header_are_recognised`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_flagged_sentinel_and_a_flagged_extended_header_are_recognised`
 
 **Status:** done — under the default `Dialect::Specification` a key member sets
 the flag as well (§7.2.2.4.4.4.8).
@@ -6726,7 +6730,7 @@ FLAG_IMPL_EXTENSION bit must be set to zero."
 **Repo:** `crates/wire/src/reader.rs::read_pid_as` (l. 1357, field `reserved` l. 1486);
 `crates/wire-codec/src/decode.rs::read_parameter_list` (l. 1526)
 
-**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type`
+**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_4_1_2_1_a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type`
 
 **Status:** done — a parameter with `FLAG_IMPL_EXTENSION` or with an ID in the
 reserved range is assigned to no member.
@@ -6739,7 +6743,7 @@ the specification of large member ID and/or data length values".
 **Repo:** `crates/ast-layout/src/xcdr.rs::PID_EXTENDED` (l. 49)
 
 **Tests:** `crates/ast-layout/tests/xcdr1_gate.rs::the_pl_cdr1_constants_match_the_oracle`,
-`crates/wire/tests/wire.rs::the_extended_parameter_form_carries_a_thirty_two_bit_id`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_the_extended_parameter_form_carries_a_thirty_two_bit_id`
 
 **Status:** done — written as `0x7F01` (with `FLAG_MUST_UNDERSTAND`) under the
 default `PidFlagPolicy::SentinelMustUnderstand`; `PidFlagPolicy::Bare` writes
@@ -6791,7 +6795,7 @@ consumers of this Data Representation shall ignore parameters with this ID."
 `crates/wire-codec/src/decode.rs::read_parameter_list` (l. 1526, check l. 1553);
 `crates/rtps/src/parameter_list.rs` (`IGNORE`)
 
-**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type`,
+**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_4_1_2_1_a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type`,
 `crates/rtps/src/parameter_list.rs::tests::pid_ignore_skipped_in_pl_cdr_decode`,
 `crates/rtps/src/parameter_list.rs::tests::pid_ignore_zero_length_is_valid`
 
@@ -6804,7 +6808,7 @@ N/A".
 
 **Repo:** `crates/wire/src/reader.rs::read_pid_as` (l. 1357, field `reserved` l. 1486)
 
-**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type`
+**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_4_1_2_1_a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type`
 
 **Status:** done — a reserved ID is assigned to no member; skipped without
 `FLAG_MUST_UNDERSTAND`, with the bit the sample is discarded.
@@ -6819,9 +6823,9 @@ setting of the FLAG_MUST_UNDERSTAND bit and accept the parameter nevertheless."
 **Repo:** `crates/wire/src/reader.rs::read_pid_as`,
 `crates/wire/src/reader.rs::Reader::with_pl_cdr1_reading`
 
-**Tests:** `crates/wire/tests/wire.rs::a_tolerant_reader_takes_any_flags_on_the_extended_marker`,
-`crates/wire/tests/wire.rs::a_tolerant_reader_takes_any_flags_on_the_sentinel`,
-`crates/wire/tests/wire.rs::a_flagged_sentinel_and_a_flagged_extended_header_are_recognised`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_extended_marker`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_flagged_sentinel_and_a_flagged_extended_header_are_recognised`
 
 **Status:** `done` — writing per Table 34. Reading: `PlCdr1Reading::Tolerant` (`Reader::with_pl_cdr1_reading`, `LayoutKey::with_pl_cdr1_reading`, `zerodds_build::Config::pl_cdr1_reading`) accepts every setting of `FLAG_MUST_UNDERSTAND` and `FLAG_IMPL_EXTENSION` on `PID_EXTENDED` and `PID_LIST_END`. The default reader still reports the flags of another dialect as `WrongFraming`: maintainer decision, tolerant reading only behind a named setting. For the runtime: `wire.pl_cdr1_reading` (`ZERODDS_WIRE_PL_CDR1_READING`), process-wide; no `--` flag.
 
@@ -6832,8 +6836,8 @@ FLAG_MUST_UNDERSTAND bit and accept the parameter nevertheless."
 
 **Repo:** `crates/wire/src/reader.rs::read_pid_as`
 
-**Tests:** `crates/wire/tests/wire.rs::a_tolerant_reader_takes_any_flags_on_the_extended_marker`,
-`crates/wire/tests/wire.rs::a_tolerant_reader_takes_any_flags_on_the_sentinel`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_extended_marker`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel`
 
 **Status:** `done` — the test reads `0x3f02`, `0x7f02`, `0xbf02`, `0xff02` and `0x3f01`, `0x7f01`, `0xbf01`, `0xff01`: the default reader takes the form of its dialect only, the tolerant reader all of them.
 
@@ -6859,9 +6863,9 @@ llength [...] the exact length of the serialized member".
 **Repo:** `crates/wire/src/writer.rs::promote_pid`;
 `crates/wire/src/reader.rs::read_pid_as` (l. 1357)
 
-**Tests:** `crates/wire/tests/wire.rs::the_extended_parameter_form_carries_a_thirty_two_bit_id`,
-`crates/wire/tests/wire.rs::flag_two_of_an_extended_header_is_the_members_must_understand`,
-`crates/wire/tests/wire.rs::a_promoted_header_moves_the_must_understand_bit_to_flag_two`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_the_extended_parameter_form_carries_a_thirty_two_bit_id`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_flag_two_of_an_extended_header_is_the_members_must_understand`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_promoted_header_moves_the_must_understand_bit_to_flag_two`
 
 **Status:** done
 
@@ -6874,7 +6878,7 @@ bytes from the beginning of the PID_EXTENDED parameter." Figure 24.
 
 **Repo:** `crates/wire/src/reader.rs::read_pid_as` (l. 1357, check `length != 8` l. 1379)
 
-**Tests:** `crates/wire/tests/wire.rs::the_extended_parameter_form_carries_a_thirty_two_bit_id`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_the_extended_parameter_form_carries_a_thirty_two_bit_id`
 
 **Status:** done
 
@@ -6889,7 +6893,7 @@ be set to zero."
 
 **Repo:** `crates/wire/src/reader.rs::read_pid_as` (l. 1357, l. 1413–1422)
 
-**Tests:** `crates/wire/tests/wire.rs::flag_two_of_an_extended_header_is_the_members_must_understand`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_flag_two_of_an_extended_header_is_the_members_must_understand`
 
 **Status:** done
 
@@ -6916,7 +6920,7 @@ shall be the same as those for non-extended parameters, which are defined in
 **Repo:** `crates/wire/src/reader.rs::read_pid_as` (l. 1357,
 `align_to(4)` l. 1358)
 
-**Tests:** `crates/wire/tests/wire.rs::a_parameter_value_counts_alignment_from_its_own_block`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_parameter_value_counts_alignment_from_its_own_block`
 
 **Status:** done
 
@@ -6953,9 +6957,9 @@ that header shall be considered totally equivalent."
 
 **Repo:** `crates/wire/src/reader.rs::read_pid_as`
 
-**Tests:** `crates/wire/tests/wire.rs::a_tolerant_reader_takes_the_short_form_where_the_extended_one_is_expected`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_2_a_tolerant_reader_takes_the_short_form_where_the_extended_one_is_expected`,
 `crates/ast-layout/tests/xcdr1_gate.rs::the_always_extended_policy_takes_the_long_header_for_a_member_that_fits_the_short_one`,
-`crates/wire/tests/wire.rs::a_short_parameter_header_becomes_extended_when_the_value_overruns_it`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_2_a_short_parameter_header_becomes_extended_when_the_value_overruns_it`
 
 **Status:** `done` — both forms are written and read; under `PlCdr1Reading::Tolerant` a reader configured for `AlwaysExtended` reads the short form as well (and a reader of the short form the extended one). By default the short form under `AlwaysExtended` stays a `WrongFraming` (maintainer decision).
 
@@ -6965,7 +6969,7 @@ that header shall be considered totally equivalent."
 
 **Repo:** `crates/wire/src/reader.rs::read_pid_as`
 
-**Tests:** `crates/wire/tests/wire.rs::a_tolerant_reader_takes_the_short_form_where_the_extended_one_is_expected`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_2_a_tolerant_reader_takes_the_short_form_where_the_extended_one_is_expected`
 
 **Status:** `done` — the test reads the short form under `require_extended` with the tolerant reader and checks that the default reader reports it as `WrongFraming`.
 
@@ -6976,7 +6980,7 @@ user-defined data types will never set the FLAG_IMPL_EXTENSION bit."
 
 **Repo:** `crates/ast-layout/src/key.rs::impl_extension_at` (l. 2192)
 
-**Tests:** `crates/wire-probe/tests/opendds_mutable_framing.rs::the_key_rows_are_reproduced`
+**Tests:** `crates/wire-probe/tests/opendds_mutable_framing.rs::xtypes_7_2_2_4_4_4_8_the_key_rows_are_reproduced`
 
 **Status:** done — only `PidFlagPolicy::ImplExtensionOnMembers` (OpenDDS, chosen
 by no dialect) sets the bit.
@@ -7032,8 +7036,8 @@ discriminator value shall not be omitted."
 
 **Repo:** `crates/ast-layout/src/xcdr.rs::plan_at_inner` (l. 736, arm `TypeKind::Union`)
 
-**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::a_mutable_union_frames_its_discriminator_and_its_member`,
-`crates/wire-probe/tests/vendor_bytes.rs::a_boolean_and_a_char_discriminator_are_one_octet_and_then_the_member`
+**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_4_1_2_3_a_mutable_union_frames_its_discriminator_and_its_member`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_1_2_3_a_boolean_and_a_char_discriminator_are_one_octet_and_then_the_member`
 
 **Status:** done
 
@@ -7045,7 +7049,7 @@ conclusion of the innermost parameter list."
 
 **Repo:** `crates/wire-codec/src/decode.rs::read_parameter_list` (l. 1526)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::a_nested_parameter_list_numbers_and_terminates_per_level`,
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_1_2_4_a_nested_parameter_list_numbers_and_terminates_per_level`,
 `crates/wire-conformance/tests/bytes.rs::a_parameter_list_that_does_not_end_at_its_sentinel_is_refused`
 
 **Status:** done — the test checks the octets of `Outer { @id(5) Inner }` with
@@ -7112,7 +7116,7 @@ header (EMHEADER) ahead each serialized member."
 `crates/wire/src/writer.rs::write_emheader` (l. 2261)
 
 **Tests:** `crates/ast-layout/tests/wire_vectors.rs::v10_mutable_plans_the_oracle_member_id_and_length_code_sequence`,
-`crates/wire/tests/wire.rs::an_emheader_packs_its_id_code_and_flag_into_one_word`
+`crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_an_emheader_packs_its_id_code_and_flag_into_one_word`
 
 **Status:** done
 
@@ -7144,7 +7148,7 @@ does not reproduce the machine; the plan (`zerodds-ast-layout`) and the `Writer`
 `crates/zerodds-build/src/dds_type.rs::xcdr1_encoding` (l. 685);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -7155,7 +7159,7 @@ does not reproduce the machine; the plan (`zerodds-ast-layout`) and the `Writer`
 **Repo:** `crates/zerodds-build/src/lib.rs::encoding_for` (l. 983);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -7166,7 +7170,7 @@ does not reproduce the machine; the plan (`zerodds-ast-layout`) and the `Writer`
 **Repo:** `crates/zerodds-build/src/dds_type.rs::xcdr1_encoding` (l. 685);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
 `crates/ast-layout/tests/vendor_gate.rs::appendable_adds_a_delimiter_under_xcdr2_and_nothing_under_xcdr1`
 
 **Status:** done
@@ -7178,7 +7182,7 @@ does not reproduce the machine; the plan (`zerodds-ast-layout`) and the `Writer`
 **Repo:** `crates/zerodds-build/src/lib.rs::encoding_for` (l. 983);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
 `crates/ast-layout/tests/vendor_gate.rs::appendable_adds_a_delimiter_under_xcdr2_and_nothing_under_xcdr1`
 
 **Status:** done
@@ -7190,7 +7194,7 @@ does not reproduce the machine; the plan (`zerodds-ast-layout`) and the `Writer`
 **Repo:** `crates/zerodds-build/src/dds_type.rs::xcdr1_encoding` (l. 685);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -7201,7 +7205,7 @@ does not reproduce the machine; the plan (`zerodds-ast-layout`) and the `Writer`
 **Repo:** `crates/zerodds-build/src/lib.rs::encoding_for` (l. 983);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -7212,7 +7216,7 @@ native endianness used by the system."
 
 **Repo:** `crates/wire/src/writer.rs::order4` (l. 2997)
 
-**Tests:** `crates/wire/tests/wire.rs::the_two_byte_orders_write_the_same_value_differently`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently`
 
 **Status:** done — the `Writer` assembles values through
 `to_le_bytes`/`to_be_bytes` of the configured order; the native order of the
@@ -7226,8 +7230,8 @@ types, floating-point types, enumerated types, and the Char16 type."
 
 **Repo:** `crates/wire/src/writer.rs::Writer` (l. 1105, field `endianness`)
 
-**Tests:** `crates/wire/tests/wire.rs::the_two_byte_orders_write_the_same_value_differently`,
-`crates/wire-probe/tests/decode_round_trip.rs::every_case_comes_back_the_value_that_went_in`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently`,
+`crates/wire-probe/tests/expected_bytes.rs::specification`
 
 **Status:** done — the order holds for the whole stream; a change in the middle
 of the stream is not provided for and required by no rule. The units of a
@@ -7242,7 +7246,7 @@ currently serialized into the stream."
 **Repo:** `crates/wire/src/writer.rs::Writer` (l. 1105, field `out`);
 `crates/wire/src/writer.rs::position`
 
-**Tests:** `crates/wire/tests/wire.rs::a_long_after_a_char_sits_at_four_not_at_one`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_a_long_after_a_char_sits_at_four_not_at_one`
 
 **Status:** done
 
@@ -7258,7 +7262,7 @@ minimum 'padding bytes' needed".
 `crates/wire/src/writer.rs::align_to` (l. 1415);
 `crates/wire/src/writer.rs::begin_parameter_value` (l. 2541)
 
-**Tests:** `crates/wire/tests/wire.rs::a_parameter_value_counts_alignment_from_its_own_block`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_parameter_value_counts_alignment_from_its_own_block`,
 `crates/wire-conformance/tests/bytes.rs::a_parameter_value_is_its_own_alignment_origin_and_the_origin_is_put_back`
 
 **Status:** done
@@ -7288,7 +7292,7 @@ XCDR.eversion )".
 `crates/ast-layout/src/key.rs::max_alignment` (l. 83)
 
 **Tests:** `crates/ast-layout/tests/layout.rs::xcdr2_caps_alignment_at_four_and_leaves_sizes_alone`,
-`crates/wire/tests/wire.rs::a_double_aligns_to_eight`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_a_double_aligns_to_eight`
 
 **Status:** done
 
@@ -7376,8 +7380,9 @@ neededalign == 0".
 
 **Repo:** `crates/wire/src/writer.rs::align_to` (l. 1415)
 
-**Tests:** `crates/wire/tests/wire.rs::a_reader_skips_exactly_the_padding_the_writer_wrote`,
-`crates/wire/tests/padding_record.rs::every_recorded_octet_is_a_zero_the_writer_wrote`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_a_double_aligns_to_eight`,
+`crates/wire/tests/vendor_reader.rs::every_recorded_sample_reads_back_as_the_value_that_went_in`,
+`crates/wire/tests/padding_record.rs::xtypes_7_4_1_1_every_recorded_octet_is_a_zero_the_writer_wrote`
 
 **Status:** done — the padding bytes are zero.
 
@@ -7403,8 +7408,8 @@ although a common setting for best performance is the native system endianness
 **Repo:** `crates/wire/src/writer.rs::with_max_align` (l. 1341);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728, parameter `big_endian`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::big_endian_encap_routes_to_decode_be`,
-`crates/wire/tests/wire.rs::the_two_byte_orders_write_the_same_value_differently`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_4_3_2_3_big_endian_encap_routes_to_decode_be`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently`
 
 **Status:** done
 
@@ -7416,7 +7421,7 @@ may be set to 1 or 2."
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728, parameter `offer_first`)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done — the first element of the offered
 `DataRepresentationQosPolicy` chooses the version.
@@ -7430,9 +7435,9 @@ version, and encoding algorithm of the top-level type. See Table 39."
 **Repo:** `crates/wire-codec/src/value.rs::encapsulation_header_in`,
 `crates/dcps/src/runtime.rs::user_payload_encap`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/vendor_bytes.rs::the_encapsulation_options_carry_the_padding_count`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_2_3_the_encapsulation_options_carry_the_padding_count`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** `done` — the first two octets are the ENC_HEADER of the outermost type with endianness, version and format; the identifier follows Table 60 (default) or Table 39 (`EncapsulationIds::Table39`, `RuntimeConfig::encapsulation_ids`).
 
@@ -7457,7 +7462,7 @@ Nested type for serialization purposes."
 
 **Repo:** `crates/wire-codec/src/encode.rs::encode` (l. 340)
 
-**Tests:** `crates/wire-probe/tests/interop_corpus.rs::every_case_emits_a_keyhash_and_an_encapsulated_payload`
+**Tests:** `crates/wire-probe/tests/interop_corpus.rs::xtypes_7_4_3_3_every_case_emits_a_keyhash_and_an_encapsulated_payload`
 
 **Status:** done — the outermost type is written behind the header by the same
 path as a nested value.
@@ -7470,7 +7475,7 @@ appear in the processor memory according to the native Endianness".
 
 **Repo:** `crates/wire/src/writer.rs::order4` (l. 2997)
 
-**Tests:** `crates/wire/tests/wire.rs::the_two_byte_orders_write_the_same_value_differently`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently`
 
 **Status:** done — `to_le_bytes`/`to_be_bytes` replace AsBytes and ESWAP
 together; the result is the same.
@@ -7484,7 +7489,7 @@ length 2: { B[1], B[0] } For length 4: { B[3], B[2], B[1], B[0] } For length 8:
 **Repo:** `crates/wire/src/writer.rs::order4` (l. 2997);
 `crates/wire/src/writer.rs::write_f128` (l. 1864)
 
-**Tests:** `crates/wire/tests/wire.rs::the_two_byte_orders_write_the_same_value_differently`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently`,
 `crates/float128/tests/binary128.rs::every_pattern_round_trips_through_sixteen_bytes_in_both_orders`
 
 **Status:** done — ESWAP is not defined for 16 octets, yet rule (2) applies it
@@ -7499,8 +7504,8 @@ Figure 9.2, according to the comment in the code).
 **Repo:** `crates/wire-codec/src/value.rs::encapsulation_header` (l. 527);
 `crates/dcps/src/runtime.rs::user_encap_body` (l. 20061)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/src/runtime.rs::tests::big_endian_encap_routes_to_decode_be`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/src/runtime.rs::tests::xtypes_7_4_3_2_3_big_endian_encap_routes_to_decode_be`
 
 **Status:** done
 
@@ -7512,8 +7517,8 @@ LITTLE_ENDIAN".
 **Repo:** `crates/wire-codec/src/value.rs::encapsulation_header` (l. 527);
 `crates/dcps/src/runtime.rs::user_encap_body` (l. 20061)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::strip_user_encap_xcdr1_le`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_xcdr1_le`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -7524,7 +7529,7 @@ LITTLE_ENDIAN".
 **Repo:** `crates/wire-codec/src/value.rs::encapsulation_header` (l. 527);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done — `user_payload_encap` clears the lowest bit of the
 little-endian identifier.
@@ -7536,7 +7541,7 @@ little-endian identifier.
 **Repo:** `crates/wire-codec/src/value.rs::encapsulation_header` (l. 527);
 `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -7550,11 +7555,11 @@ little-endian identifier.
 `crates/dcps/src/runtime.rs::encap_in_table`,
 `crates/dcps/src/runtime.rs::user_encap_body`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_default_header_is_table_60_and_both_tables_are_read`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_4_the_default_header_is_table_60_and_both_tables_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`
 
 **Status:** `done` — Reading: `user_encap_body` and `encapsulation_form` accept the identifier. Writing: `EncapsulationIds::Table39` (probe, `Emit::PayloadWithEncapsulation`) and `RuntimeConfig::encapsulation_ids = Table39` (runtime) write `{0x00, 0x10}` for PLAIN_CDR2 big endian. The default stays Table 60 (`{0x00, 0x06}` to `{0x00, 0x0b}`), which Cyclone DDS, RTI Connext and Fast DDS write; the tables contradict each other (findings file, contradictions). Runtime: `wire.encapsulation_ids` (`ZERODDS_WIRE_ENCAPSULATION_IDS`).
 
@@ -7569,11 +7574,11 @@ LITTLE_ENDIAN".
 `crates/dcps/src/runtime.rs::encap_in_table`,
 `crates/dcps/src/runtime.rs::user_encap_body`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_default_header_is_table_60_and_both_tables_are_read`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_4_the_default_header_is_table_60_and_both_tables_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`
 
 **Status:** `done` — Reading: `user_encap_body` and `encapsulation_form` accept the identifier. Writing: `EncapsulationIds::Table39` (probe, `Emit::PayloadWithEncapsulation`) and `RuntimeConfig::encapsulation_ids = Table39` (runtime) write `{0x00, 0x11}` for PLAIN_CDR2 little endian. The default stays Table 60 (`{0x00, 0x06}` to `{0x00, 0x0b}`), which Cyclone DDS, RTI Connext and Fast DDS write; the tables contradict each other (findings file, contradictions). Runtime: `wire.encapsulation_ids` (`ZERODDS_WIRE_ENCAPSULATION_IDS`).
 
@@ -7587,11 +7592,11 @@ LITTLE_ENDIAN".
 `crates/dcps/src/runtime.rs::encap_in_table`,
 `crates/dcps/src/runtime.rs::user_encap_body`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_default_header_is_table_60_and_both_tables_are_read`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_4_the_default_header_is_table_60_and_both_tables_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`
 
 **Status:** `done` — Reading: `user_encap_body` and `encapsulation_form` accept the identifier. Writing: `EncapsulationIds::Table39` (probe, `Emit::PayloadWithEncapsulation`) and `RuntimeConfig::encapsulation_ids = Table39` (runtime) write `{0x00, 0x12}` for PL_CDR2 big endian. The default stays Table 60 (`{0x00, 0x06}` to `{0x00, 0x0b}`), which Cyclone DDS, RTI Connext and Fast DDS write; the tables contradict each other (findings file, contradictions). Runtime: `wire.encapsulation_ids` (`ZERODDS_WIRE_ENCAPSULATION_IDS`).
 
@@ -7605,11 +7610,11 @@ LITTLE_ENDIAN".
 `crates/dcps/src/runtime.rs::encap_in_table`,
 `crates/dcps/src/runtime.rs::user_encap_body`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_default_header_is_table_60_and_both_tables_are_read`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_4_the_default_header_is_table_60_and_both_tables_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`
 
 **Status:** `done` — Reading: `user_encap_body` and `encapsulation_form` accept the identifier. Writing: `EncapsulationIds::Table39` (probe, `Emit::PayloadWithEncapsulation`) and `RuntimeConfig::encapsulation_ids = Table39` (runtime) write `{0x00, 0x13}` for PL_CDR2 little endian. The default stays Table 60 (`{0x00, 0x06}` to `{0x00, 0x0b}`), which Cyclone DDS, RTI Connext and Fast DDS write; the tables contradict each other (findings file, contradictions). Runtime: `wire.encapsulation_ids` (`ZERODDS_WIRE_ENCAPSULATION_IDS`).
 
@@ -7624,11 +7629,11 @@ BIG_ENDIAN".
 `crates/dcps/src/runtime.rs::encap_in_table`,
 `crates/dcps/src/runtime.rs::user_encap_body`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_default_header_is_table_60_and_both_tables_are_read`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_4_the_default_header_is_table_60_and_both_tables_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`
 
 **Status:** `done` — Reading: `user_encap_body` and `encapsulation_form` accept the identifier. Writing: `EncapsulationIds::Table39` (probe, `Emit::PayloadWithEncapsulation`) and `RuntimeConfig::encapsulation_ids = Table39` (runtime) write `{0x00, 0x14}` for DELIMIT_CDR big endian. The default stays Table 60 (`{0x00, 0x06}` to `{0x00, 0x0b}`), which Cyclone DDS, RTI Connext and Fast DDS write; the tables contradict each other (findings file, contradictions). Runtime: `wire.encapsulation_ids` (`ZERODDS_WIRE_ENCAPSULATION_IDS`).
 
@@ -7643,11 +7648,11 @@ LITTLE_ENDIAN".
 `crates/dcps/src/runtime.rs::encap_in_table`,
 `crates/dcps/src/runtime.rs::user_encap_body`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_default_header_is_table_60_and_both_tables_are_read`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::encap_in_table_maps_table_60_onto_table_39`,
-`crates/dcps/src/runtime.rs::tests::the_encapsulation_identifiers_of_table_39_are_read`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_4_the_default_header_is_table_60_and_both_tables_are_read`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_encap_in_table_maps_table_60_onto_table_39`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_the_encapsulation_identifiers_of_table_39_are_read`
 
 **Status:** `done` — Reading: `user_encap_body` and `encapsulation_form` accept the identifier. Writing: `EncapsulationIds::Table39` (probe, `Emit::PayloadWithEncapsulation`) and `RuntimeConfig::encapsulation_ids = Table39` (runtime) write `{0x00, 0x15}` for DELIMIT_CDR little endian. The default stays Table 60 (`{0x00, 0x06}` to `{0x00, 0x0b}`), which Cyclone DDS, RTI Connext and Fast DDS write; the tables contradict each other (findings file, contradictions). Runtime: `wire.encapsulation_ids` (`ZERODDS_WIRE_ENCAPSULATION_IDS`).
 
@@ -7659,10 +7664,10 @@ LITTLE_ENDIAN".
 `crates/dcps/src/runtime.rs::is_xml_encap`,
 `crates/dcps/src/runtime.rs::encap_in_table`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::an_xml_sample_under_the_identifier_of_table_39_reaches_the_reader`,
-`crates/dcps/src/runtime.rs::tests::a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
-`crates/dcps/src/runtime.rs::tests::an_xml_writer_sends_the_document_of_the_sample`,
-`crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_4_3_4_an_xml_sample_under_the_identifier_of_table_39_reaches_the_reader`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_stamps_the_identifiers_of_table_39_when_the_runtime_is_set_to_them`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_writer_sends_the_document_of_the_sample`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** `done` — a sample under `{0x01, 0x00}` is read as an XML document (`is_xml_payload`); under `RuntimeConfig::encapsulation_ids = Table39` an XML writer puts `{0x01, 0x00}` in front of the document of the sample and of the `serializedKey`. The default is `{0x00, 0x04}` (Table 60, DDSI-RTPS 2.5 Table 10.3). A vendor that writes `{0x01, 0x00}` is not measured.
 
@@ -7687,7 +7692,7 @@ serialized representation of O."
 
 **Repo:** `crates/wire/src/writer.rs::finish_dheader` (l. 2241)
 
-**Tests:** `crates/wire/tests/wire.rs::a_dheader_holds_the_length_of_what_followed_it`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_a_dheader_holds_the_length_of_what_followed_it`
 
 **Status:** done
 
@@ -7698,7 +7703,7 @@ M.id".
 
 **Repo:** `crates/wire/src/writer.rs::write_emheader` (l. 2261)
 
-**Tests:** `crates/wire/tests/wire.rs::an_emheader_packs_its_id_code_and_flag_into_one_word`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_an_emheader_packs_its_id_code_and_flag_into_one_word`
 
 **Status:** done
 
@@ -7722,8 +7727,8 @@ construct the EMHEADER1. It determines whether EMHEADER header has an additional
 **Repo:** `crates/wire/src/writer.rs::write_emheader` (l. 2261);
 `crates/wire/src/reader.rs::read_emheader` (l. 1265)
 
-**Tests:** `crates/wire/tests/wire.rs::a_length_code_below_four_carries_no_next_int`,
-`crates/wire/tests/wire.rs::a_length_code_of_five_leaves_its_next_int_for_the_member`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_a_length_code_below_four_carries_no_next_int`,
+`crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_a_length_code_of_five_leaves_its_next_int_for_the_member`
 
 **Status:** done
 
@@ -7753,9 +7758,9 @@ being smaller than 4 Giga Bytes (2^32 Bytes)."
 `crates/wire/src/writer.rs::finish_dheader`,
 `runtime/c/src/writer.c::zdw_finish_dheader`
 
-**Tests:** `crates/wire/tests/wire.rs::a_delimited_sequence_cannot_run_past_its_delimiter`,
-`crates/wire/tests/wire.rs::a_dheader_length_of_4_gib_or_more_is_refused`,
-`crates/wire/src/writer.rs::tests::an_infallible_finish_dheader_over_4_gib_is_deferred_and_not_truncated`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_1_a_delimited_sequence_cannot_run_past_its_delimiter`,
+`crates/wire/tests/wire.rs::xtypes_7_4_3_4_1_a_dheader_length_of_4_gib_or_more_is_refused`,
+`crates/wire/src/writer.rs::tests::xtypes_7_4_3_4_1_an_infallible_finish_dheader_over_4_gib_is_deferred_and_not_truncated`
 
 **Status:** `done` — reading: a UInt32 cannot name a larger length, `read_dheader` refuses a length beyond the rest. Writing: `try_finish_dheader` returns the error, `finish_dheader` (no return value) records it (`Writer::deferred_error`, `check_deferred`, `finish_checked`) and does not write a length modulo 2^32; the `DdsType` glue of `zerodds-build` checks it before returning. The C runtime sets the status of the writer to `ZDW_RANGE`. The tests for 4 GiB run on the length as an argument, not on a buffer of that size. The other language runtimes (C++, Python, Lua, Julia, OCaml, Elixir) check the range in the patch call.
 
@@ -7767,9 +7772,9 @@ Giga Bytes".
 **Repo:** `crates/wire/src/writer.rs::try_finish_dheader`,
 `crates/wire/src/writer.rs::finish_dheader`
 
-**Tests:** `crates/wire/tests/wire.rs::a_dheader_length_of_4_gib_or_more_is_refused`,
-`crates/wire/src/writer.rs::tests::an_infallible_finish_dheader_over_4_gib_is_deferred_and_not_truncated`,
-`crates/wire/src/writer.rs::tests::a_dheader_below_4_gib_is_patched_and_nothing_is_deferred`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_1_a_dheader_length_of_4_gib_or_more_is_refused`,
+`crates/wire/src/writer.rs::tests::xtypes_7_4_3_4_1_an_infallible_finish_dheader_over_4_gib_is_deferred_and_not_truncated`,
+`crates/wire/src/writer.rs::tests::xtypes_7_4_3_4_1_a_dheader_below_4_gib_is_patched_and_nothing_is_deferred`
 
 **Status:** `done` — `finish_dheader` no longer writes a truncated length: the placeholder stays unpatched, the error is recorded and returned by `check_deferred` and `finish_checked`; `lang-rules` still generates `w.finish_dheader(..)`, the glue of `zerodds-build` checks afterwards.
 
@@ -7782,7 +7787,7 @@ stream up to 3 padding bytes prior to the DHEADER."
 **Repo:** `crates/wire/src/writer.rs::write_dheader` (l. 2233);
 `crates/wire/src/reader.rs::read_dheader` (l. 1213)
 
-**Tests:** `crates/wire/tests/wire.rs::an_appending_writer_writes_what_a_fresh_one_appended_would`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_1_an_appending_writer_writes_what_a_fresh_one_appended_would`
 
 **Status:** done
 
@@ -7795,8 +7800,8 @@ endianness active in the XCDR stream at the time it is serialized
 **Repo:** `crates/wire/src/writer.rs::finish_dheader` (l. 2241,
 `order4`)
 
-**Tests:** `crates/wire/tests/wire.rs::an_appending_writer_writes_what_a_fresh_one_appended_would`,
-`crates/wire-probe/tests/interop_corpus.rs::every_case_produces_the_bytes_its_readme_records_in_all_four_modes`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_1_an_appending_writer_writes_what_a_fresh_one_appended_would`,
+`crates/wire-probe/tests/interop_corpus.rs::xtypes_7_3_1_2_2_every_case_produces_the_bytes_its_readme_records_in_all_four_modes`
 
 **Status:** done
 
@@ -7807,7 +7812,7 @@ each member. The member header can be either 4 or 8 bytes."
 
 **Repo:** `crates/wire/src/writer.rs::write_emheader` (l. 2261)
 
-**Tests:** `crates/wire/tests/wire.rs::a_length_code_below_four_carries_no_next_int`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_a_length_code_below_four_carries_no_next_int`,
 `crates/ast-layout/tests/wire_vectors.rs::v10_mutable_plans_the_oracle_member_id_and_length_code_sequence`
 
 **Status:** done
@@ -7821,8 +7826,8 @@ It shall be serialized with the same endianness as EMHEADER1."
 **Repo:** `crates/wire/src/writer.rs::write_emheader` (l. 2261);
 `crates/wire/src/writer.rs::finish_emheader` (l. 2321)
 
-**Tests:** `crates/wire/tests/wire.rs::shortening_a_header_keeps_its_id_and_its_flag_in_both_orders`,
-`crates/wire/tests/wire.rs::an_emheader_next_int_that_cannot_be_true_is_refused`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_shortening_a_header_keeps_its_id_and_its_flag_in_both_orders`,
+`crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_an_emheader_next_int_that_cannot_be_true_is_refused`
 
 **Status:** done
 
@@ -7834,7 +7839,7 @@ It shall be serialized with the same endianness as EMHEADER1."
 **Repo:** `crates/wire/src/writer.rs::write_emheader` (l. 2261);
 `crates/wire/src/reader.rs::read_emheader` (l. 1265)
 
-**Tests:** `crates/wire/tests/wire.rs::an_emheader_packs_its_id_code_and_flag_into_one_word`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_an_emheader_packs_its_id_code_and_flag_into_one_word`
 
 **Status:** done — a member ID above `0x0FFFFFFF` is refused when writing
 instead of masked.
@@ -7849,8 +7854,8 @@ to 1 if the corresponding member must be understood by the receiver, see Clause
 `crates/ast-layout/src/key.rs::MustUnderstandPolicy`
 
 **Tests:** `crates/ast-layout/tests/layout.rs::must_understand_is_set_exactly_when_the_facet_says_so`,
-`crates/wire-probe/tests/vendor_bytes.rs::the_must_understand_flag_is_the_one_each_vendor_writes_in_both_versions`,
-`crates/wire-probe/tests/xtypes_enc_items.rs::the_discriminator_of_a_mutable_union_is_must_understand`
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_4_2_the_must_understand_flag_is_the_one_each_vendor_writes_in_both_versions`,
+`crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_mutable_union_is_must_understand`
 
 **Status:** `done` — set for `@must_understand`, by default (`Dialect::Specification`) for key members and for the discriminator of a `@mutable` union (`MustUnderstandPolicy::DeclaredKeyAndDiscriminator`); the vendor dialects write what was measured.
 
@@ -7908,7 +7913,7 @@ length is NEXTINT".
 **Repo:** `crates/wire/src/writer.rs::write_emheader` (l. 2261);
 `crates/wire/src/reader.rs::read_emheader` (l. 1265)
 
-**Tests:** `crates/wire/tests/wire.rs::the_default_writer_leaves_an_lc4_header_alone`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_the_default_writer_leaves_an_lc4_header_alone`,
 `crates/ast-layout/tests/layout.rs::a_union_member_frames_with_an_explicit_nextint`
 
 **Status:** done
@@ -7921,7 +7926,7 @@ length is also NEXTINT".
 **Repo:** `crates/wire/src/reader.rs::read_emheader` (l. 1265);
 `crates/ast-layout/src/xcdr.rs::length_code` (l. 2149)
 
-**Tests:** `crates/wire/tests/wire.rs::a_length_code_of_five_leaves_its_next_int_for_the_member`,
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_a_length_code_of_five_leaves_its_next_int_for_the_member`,
 `crates/ast-layout/tests/layout.rs::a_string_member_frames_as_lc5`
 
 **Status:** done — the reader takes `4 + NEXTINT` as the extent of the member:
@@ -7938,7 +7943,7 @@ length is 4*NEXTINT".
 `crates/ast-layout/src/xcdr.rs::length_code` (l. 2149)
 
 **Tests:** `crates/ast-layout/tests/layout.rs::the_sequence_length_code_follows_the_element_width`,
-`crates/wire-probe/tests/vendor_bytes.rs::an_aliased_sequence_element_takes_the_same_length_code_as_the_type_it_aliases`
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_4_2_an_aliased_sequence_element_takes_the_same_length_code_as_the_type_it_aliases`
 
 **Status:** done — as for LC 5 the reader takes `4 + 4 · NEXTINT`.
 
@@ -7965,8 +7970,8 @@ reused also as part of the serialized member."
 `crates/wire/src/reader.rs::read_emheader` (l. 1265,
 `peek_u32`)
 
-**Tests:** `crates/wire/tests/wire.rs::a_length_code_of_five_leaves_its_next_int_for_the_member`,
-`crates/wire-probe/tests/vendor_bytes.rs::every_length_code_matches_the_dialect_s_own_vendor`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_a_length_code_of_five_leaves_its_next_int_for_the_member`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_4_2_every_length_code_matches_the_dialect_s_own_vendor`
 
 **Status:** done — which code is chosen is decided by `LengthCodePolicy`; the
 default `Compact` follows Cyclone DDS.
@@ -8018,7 +8023,7 @@ and the index of the last dimension varies most quickly."
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_array_dimension` (l. 884)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::a_typedef_of_an_array_matches_cyclone_and_rti`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_1_a_typedef_of_an_array_matches_cyclone_and_rti`
 
 **Status:** done
 
@@ -8049,7 +8054,7 @@ shall be omitted from the serialization."
 **Repo:** `crates/wire-codec/src/encode.rs::write_aggregate` (l. 931, arm `MemberHeader::OptionalFlag`)
 
 **Tests:** `crates/wire-conformance/tests/bytes.rs::an_optional_member_under_xcdr2_is_the_marker_byte_the_three_vendors_write`,
-`crates/wire-probe/tests/decode_round_trip.rs::the_optional_marker_is_the_one_the_vendors_write_and_read`
+`crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_4_3_5_2_the_optional_marker_is_the_one_the_vendors_write_and_read`
 
 **Status:** done
 
@@ -8062,9 +8067,9 @@ serialized stream."
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_aggregate`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::an_absent_optional_member_has_no_parameter_under_pl_cdr`,
-`crates/wire-probe/tests/vendor_bytes.rs::an_absent_optional_member_is_not_written`,
-`crates/wire-probe/src/decode.rs::tests::an_absent_optional_stays_absent_and_a_present_one_comes_back`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_5_2_an_absent_optional_member_has_no_parameter_under_pl_cdr`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_2_an_absent_optional_member_is_not_written`,
+`crates/wire-probe/tests/expected_bytes.rs::specification`
 
 **Status:** `done` — PL_CDR2 and PL_CDR1 omit header and value of an absent `@optional` member and read it back as absent.
 
@@ -8075,7 +8080,7 @@ corresponding member header and serialized member are omitted".
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_aggregate`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::an_absent_optional_member_has_no_parameter_under_pl_cdr`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_5_2_an_absent_optional_member_has_no_parameter_under_pl_cdr`
 
 **Status:** `done` — the test writes a `@mutable` structure with an absent and with a present `@optional` member under XCDR1 (`0000040007000000027f0000`, and with the parameter for `b`) and reads both back.
 
@@ -8093,9 +8098,9 @@ MAXALIGN = MAXALIGN(<eversion>) ) << PUSH( ORIGIN = 0 ) << { <OPTIONS> : Byte[2]
 **Repo:** `crates/wire-codec/src/value.rs::encapsulation_header_in`,
 `crates/wire-codec/src/encode.rs::encode_with_padding`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_header_names_the_identifiers_of_table_39_when_asked`,
-`crates/wire-probe/tests/vendor_bytes.rs::the_encapsulation_options_carry_the_padding_count`,
-`crates/wire-probe/tests/vendor_bytes.rs::a_reader_that_is_told_the_padding_count_stops_at_the_data`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_2_3_the_encapsulation_options_carry_the_padding_count`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_a_reader_that_is_told_the_padding_count_stops_at_the_data`
 
 **Status:** `done` — four octets of header (ENC_HEADER, OPTIONS), alignment from the octet behind them (ORIGIN=0); ENC_HEADER per Table 60 (default) or Table 39, OPTIONS carry the number of padding octets (§7.6.3.1.2).
 
@@ -8108,7 +8113,7 @@ ALIGN( O.ssize ) << ESWAP( AsBytes(O) )".
 `crates/wire/src/writer.rs::align_to` (l. 1415)
 
 **Tests:** `crates/ast-layout/tests/layout.rs::xcdr1_aligns_every_primitive_to_its_own_size`,
-`crates/wire/tests/wire.rs::the_two_byte_orders_write_the_same_value_differently`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently`
 
 **Status:** done — Float128 aligns to 8 by Table 31, not to `O.ssize` = 16; both
 rules together give MIN(16, MAXALIGN) = 8 or 4.
@@ -8120,8 +8125,8 @@ O.ssize : UInt32 } // includes NUL << { O[i] : Byte }* // includes NUL".
 
 **Repo:** `crates/wire/src/writer.rs::write_string` (l. 1881)
 
-**Tests:** `crates/wire/tests/wire.rs::a_string_length_counts_its_terminator`,
-`crates/wire-probe/tests/vendor_bytes.rs::a_string_member_matches_all_three`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_1_2_a_string_length_counts_its_terminator`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_a_string_member_matches_all_three`
 
 **Status:** done
 
@@ -8132,8 +8137,8 @@ O.ssize : UInt32 } // No NUL << { O[i] : Char16 }* // No NUL".
 
 **Repo:** `crates/wire/src/writer.rs::write_wstring` (l. 1980)
 
-**Tests:** `crates/wire-probe/tests/spec_constructs.rs::a_wstring_counts_bytes_and_writes_no_terminator`,
-`crates/wire-probe/tests/spec_constructs.rs::a_wstring_is_the_same_under_both_encoding_versions`
+**Tests:** `crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_wstring_counts_bytes_and_writes_no_terminator`,
+`crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_wstring_is_the_same_under_both_encoding_versions`
 
 **Status:** done
 
@@ -8144,8 +8149,8 @@ O.ssize : UInt32 } // No NUL << { O[i] : Char16 }* // No NUL".
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_enumeration` (l. 1550)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::an_enumeration_matches_all_three`,
-`crates/wire-probe/tests/vendor_bytes.rs::a_negative_enumerator_is_the_twos_complement_rti_wrote`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_an_enumeration_matches_all_three`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_a_negative_enumerator_is_the_twos_complement_rti_wrote`
 
 **Status:** done
 
@@ -8156,7 +8161,7 @@ O.value : O.holder_type }".
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_bitmask` (l. 2040)
 
-**Tests:** `crates/wire-probe/tests/spec_constructs.rs::a_bitmask_is_the_integer_its_bit_bound_calls_for`
+**Tests:** `crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_bitmask_is_the_integer_its_bit_bound_calls_for`
 
 **Status:** done
 
@@ -8167,8 +8172,8 @@ O.base_type }".
 
 **Repo:** `crates/ast-layout/src/xcdr.rs::plan_at_inner` (l. 736, arm `TypeKind::Alias`)
 
-**Tests:** `crates/wire-probe/tests/spec_constructs.rs::a_typedef_of_a_fixed_writes_what_the_target_writes`,
-`crates/wire-probe/tests/vendor_bytes.rs::an_aliased_sequence_element_takes_the_same_length_code_as_the_type_it_aliases`
+**Tests:** `crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_typedef_of_a_fixed_writes_what_the_target_writes`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_4_2_an_aliased_sequence_element_takes_the_same_length_code_as_the_type_it_aliases`
 
 **Status:** done
 
@@ -8179,8 +8184,8 @@ O.element_type }*".
 
 **Repo:** `crates/ast-layout/src/xcdr.rs::array_is_delimited` (l. 199)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::an_array_of_primitives_matches_all_three`,
-`crates/wire/tests/wire.rs::a_sequence_writes_a_count_and_an_array_does_not`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_an_array_of_primitives_matches_all_three`,
+`crates/wire/tests/wire.rs::xtypes_7_4_3_5_3_a_sequence_writes_a_count_and_an_array_does_not`
 
 **Status:** done
 
@@ -8192,8 +8197,8 @@ DHEADER(O) : UINT32 } << { O[i] : O.element_type }*".
 **Repo:** `crates/ast-layout/src/xcdr.rs::array_is_delimited` (l. 199);
 `crates/ast-layout/src/xcdr.rs::collection_is_delimited` (l. 89)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::an_array_of_structs_reproduces_each_vendor_under_its_policy`,
-`crates/wire-probe/tests/spec_constructs.rs::a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_an_array_of_structs_reproduces_each_vendor_under_its_policy`,
+`crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it`
 
 **Status:** done — the default `CollectionDelimiterPolicy::Specification` sets
 the DHEADER for every non-primitive element; an enumeration does not count as
@@ -8207,7 +8212,7 @@ O[i] : O.element_type }*".
 **Repo:** `crates/ast-layout/src/xcdr.rs::collection_is_delimited` (l. 89)
 
 **Tests:** `crates/ast-layout/tests/layout.rs::xcdr1_plans_no_dheader_at_all`,
-`crates/wire-probe/tests/spec_constructs.rs::a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it`
+`crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it`
 
 **Status:** done
 
@@ -8232,8 +8237,8 @@ O.length : UInt32 } << { O[i] : O.element_type }*".
 
 **Repo:** `crates/wire/src/writer.rs::write_sequence`
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::a_sequence_of_a_primitive_matches_all_three`,
-`crates/wire/tests/wire.rs::a_sequence_writes_a_count_and_an_array_does_not`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_a_sequence_of_a_primitive_matches_all_three`,
+`crates/wire/tests/wire.rs::xtypes_7_4_3_5_3_a_sequence_writes_a_count_and_an_array_does_not`
 
 **Status:** done
 
@@ -8245,7 +8250,7 @@ DHEADER(O) : UINT32 } << { O.length : UINT32 } << { O[i] : O.element_type }*".
 **Repo:** `crates/ast-layout/src/xcdr.rs::collection_is_delimited` (l. 89)
 
 **Tests:** `crates/wire-conformance/tests/bytes.rs::a_sequence_of_sequences_writes_the_bytes_cyclone_and_fast_dds_write`,
-`crates/wire-probe/tests/vendor_bytes.rs::a_collection_of_structs_reproduces_each_vendor_under_its_policy`
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_a_collection_of_structs_reproduces_each_vendor_under_its_policy`
 
 **Status:** done
 
@@ -8257,7 +8262,7 @@ DHEADER(O) : UINT32 } << { O.length : UINT32 } << { O[i] : O.element_type }*".
 **Repo:** `crates/ast-layout/src/xcdr.rs::collection_is_delimited` (l. 89)
 
 **Tests:** `crates/ast-layout/tests/layout.rs::xcdr1_plans_no_dheader_at_all`,
-`crates/wire-probe/tests/spec_constructs.rs::a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it`
+`crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_bitset_in_a_collection_is_delimited_the_way_fast_dds_delimits_it`
 
 **Status:** done
 
@@ -8270,7 +8275,7 @@ O.element_type) }*".
 **Repo:** `crates/ast-layout/src/xcdr.rs::plan_at_inner` (l. 736, arm `TypeKind::Map`);
 `crates/ast-layout/src/key.rs::MapDelimiter` (l. 464)
 
-**Tests:** `crates/wire-probe/tests/spec_constructs.rs::a_map_of_primitives_is_a_length_and_the_pairs`,
+**Tests:** `crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_map_of_primitives_is_a_length_and_the_pairs`,
 `crates/wire-conformance/tests/map_bytes.rs::a_map_is_delimited_only_where_rule_14_does_not_exempt_it`
 
 **Status:** done — under the default `MapDelimiter::EitherHalf` a non-primitive
@@ -8285,9 +8290,9 @@ O.element_type) }*".
 **Repo:** `crates/wire-codec/src/encode.rs::write_map`,
 `crates/wire-codec/src/value.rs::MapLengthPolicy`
 
-**Tests:** `crates/wire-probe/tests/spec_constructs.rs::a_map_with_a_structured_value_is_delimited_under_xcdr2`,
-`crates/wire-probe/tests/spec_constructs.rs::the_two_readings_of_a_delimited_maps_length_differ_by_four_bytes`,
-`crates/wire-probe/tests/spec_constructs.rs::each_reading_of_a_delimited_maps_length_is_the_bytes_of_one_implementation`
+**Tests:** `crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_map_with_a_structured_value_is_delimited_under_xcdr2`,
+`crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_the_two_readings_of_a_delimited_maps_length_differ_by_four_bytes`,
+`crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_each_reading_of_a_delimited_maps_length_is_the_bytes_of_one_implementation`
 
 **Status:** `done` — the default is the reading of the recorded vendor rows: under XCDR2 a delimited map writes the entry count after the DHEADER (Fast DDS, `vendor-corpus.tsv`, 24 `map-*` rows; equivalence with `sequence<MapEntry>` of §7.4.1.1.4 with rule (12)). For OpenDDS, which omits the count, the corpus has no row (measured in `unspecified_constructs.md`). Rule (15) literally (DHEADER, pairs, no count) is the named setting `MapLengthPolicy::Rule15Omits` (`--map-length rule-15-omits`, `Dialect::OpenDds`). The reading chosen is in the findings file under DDSXTY14-72.
 
@@ -8299,7 +8304,7 @@ O.element_type) }*".
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_map` (l. 2221)
 
-**Tests:** `crates/wire-probe/tests/spec_constructs.rs::a_map_with_a_structured_value_is_delimited_under_xcdr2`,
+**Tests:** `crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_map_with_a_structured_value_is_delimited_under_xcdr2`,
 `crates/wire-conformance/tests/map_bytes.rs::the_bytes_are_the_recorded_fast_dds_row`
 
 **Status:** done
@@ -8312,7 +8317,7 @@ O.member[i] : FMEMBER }*".
 **Repo:** `crates/wire-codec/src/encode.rs::write_aggregate` (l. 931)
 
 **Tests:** `crates/wire-conformance/tests/bytes.rs::a_final_struct_of_a_long_and_a_double_encodes_to_sixteen_bytes`,
-`crates/wire-probe/tests/vendor_bytes.rs::point_matches_cyclone_rti_and_fastdds`
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_point_matches_cyclone_rti_and_fastdds`
 
 **Status:** done
 
@@ -8323,7 +8328,7 @@ M.value : M.value.type }".
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_aggregate` (l. 931, arm `MemberHeader::NoHeader`)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::the_mixed_primitive_struct_matches_all_three`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_the_mixed_primitive_struct_matches_all_three`
 
 **Status:** done
 
@@ -8371,8 +8376,8 @@ EMHEADER1(M) : UInt32 } << IF (LC(M)>=4) { NEXTINT(M) : UInt32 } << IF
 **Repo:** `crates/wire-codec/src/encode.rs::write_aggregate` (l. 931, arm `MemberHeader::EmHeader`);
 `crates/wire/src/writer.rs::write_emheader` (l. 2261)
 
-**Tests:** `crates/wire/tests/wire.rs::a_length_code_of_five_leaves_its_next_int_for_the_member`,
-`crates/wire-probe/tests/vendor_bytes.rs::every_length_code_matches_the_dialect_s_own_vendor`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_3_4_2_a_length_code_of_five_leaves_its_next_int_for_the_member`,
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_4_2_every_length_code_matches_the_dialect_s_own_vendor`
 
 **Status:** done — on `M_FLAG` see §7.4.3.4.2.
 
@@ -8385,7 +8390,7 @@ O.member[i] : MMEMBER }* << { PID_SENTINEL : UInt16 } << { length = 0 : UInt16
 **Repo:** `crates/wire/src/writer.rs::write_sentinel` (l. 2664)
 
 **Tests:** `crates/ast-layout/tests/xcdr1_gate.rs::a_mutable_struct_plans_the_pid_list_end_sentinel`,
-`crates/wire/tests/wire.rs::the_sentinel_ends_a_parameter_list`
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_the_default_parameter_length_is_the_exact_length_of_the_member`
 
 **Status:** done — `PID_LIST_END` (`0x3F02`) is written, by Table 34. The rule
 names `PID_SENTINEL`, which has the value `0x0001` in DDSI-RTPS (contradiction
@@ -8402,7 +8407,7 @@ ORIGIN=0 ) << { M.value : M.value.type }".
 `crates/wire/src/writer.rs::write_pid` (l. 2422)
 
 **Tests:** `crates/ast-layout/tests/xcdr1_gate.rs::the_last_id_the_short_header_holds_is_the_threshold_itself`,
-`crates/wire/tests/wire.rs::a_value_that_fits_sixteen_bits_keeps_the_short_header`
+`crates/wire/tests/wire.rs::xtypes_7_4_3_5_3_a_value_that_fits_sixteen_bits_keeps_the_short_header`
 
 **Status:** done — the short form holds up to ID `0x3F00` and length `0xFFFF`
 (§7.4.1.2.2, width of the field). The comment of the rule names `2^14` and
@@ -8420,8 +8425,8 @@ M.value.type }".
 **Repo:** `crates/wire/src/writer.rs::write_pid_extended`;
 `crates/wire/src/writer.rs::promote_pid` (l. 2628)
 
-**Tests:** `crates/wire/tests/wire.rs::the_extended_parameter_form_carries_a_thirty_two_bit_id`,
-`crates/wire/tests/wire.rs::a_short_parameter_header_becomes_extended_when_the_value_overruns_it`
+**Tests:** `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_the_extended_parameter_form_carries_a_thirty_two_bit_id`,
+`crates/wire/tests/wire.rs::xtypes_7_4_1_2_2_a_short_parameter_header_becomes_extended_when_the_value_overruns_it`
 
 **Status:** done — the 32-bit word carries the flags of §7.4.1.2.1 above the ID;
 rule (25) writes `M.id` without them.
@@ -8433,8 +8438,8 @@ O.disc : NOPT_FMEMBER } << { O.selected_member : FMEMBER }?".
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_union` (l. 1167)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::a_union_in_a_struct_matches_all_three`,
-`crates/wire-probe/src/decode.rs::tests::a_union_with_no_default_and_no_matching_label_carries_no_member`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_4_3_5_3_a_union_in_a_struct_matches_all_three`,
+`crates/wire-probe/src/decode.rs::tests::xtypes_7_4_3_5_3_a_union_with_no_default_and_no_matching_label_carries_no_member`
 
 **Status:** done
 
@@ -8447,9 +8452,9 @@ DHEADER(O) : UInt32 } << { O.disc : MMEMBER } << { O.selected_member : MMEMBER
 **Repo:** `crates/wire-codec/src/encode.rs::write_union`,
 `crates/wire-codec/src/encode.rs::write_mmember`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_discriminator_of_a_mutable_union_is_must_understand`,
-`crates/wire-probe/tests/decode_round_trip.rs::a_mutable_union_frames_its_discriminator_and_its_member`,
-`crates/wire-probe/tests/opendds_mutable_framing.rs::the_union_rows_are_reproduced`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_mutable_union_is_must_understand`,
+`crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_4_1_2_3_a_mutable_union_frames_its_discriminator_and_its_member`,
+`crates/wire-probe/tests/opendds_mutable_framing.rs::xtypes_7_4_3_5_3_the_union_rows_are_reproduced`
 
 **Status:** `done` — DHEADER, discriminator with member id 0 and the selected member, each with an EMHEADER; the EMHEADER of the discriminator carries `M_FLAG` by default (`0xA0000000` for a `long`), not in the dialects `Rti`, `FastDds` and `OpenDds`, as measured.
 
@@ -8462,8 +8467,8 @@ UInt16 } << { length = 0 : UInt16 }".
 **Repo:** `crates/wire-codec/src/encode.rs::write_union`,
 `crates/wire/src/writer.rs::write_sentinel`
 
-**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::the_discriminator_of_a_mutable_union_is_must_understand`,
-`crates/wire-probe/tests/decode_round_trip.rs::a_mutable_union_frames_its_discriminator_and_its_member`
+**Tests:** `crates/wire-probe/tests/xtypes_enc_items.rs::xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_mutable_union_is_must_understand`,
+`crates/wire-probe/tests/decode_round_trip.rs::xtypes_7_4_1_2_3_a_mutable_union_frames_its_discriminator_and_its_member`
 
 **Status:** `done` — discriminator and selected member as parameters, then `PID_LIST_END` (`0x7f02`, Table 34; the rule writes `PID_SENTINEL`, see rule (23)). The parameter of the discriminator carries `FLAG_MUST_UNDERSTAND` (`0x4000`) by default. The comment before the rule refers to "(25)-(26)" instead of (24) and (25) (findings file).
 
@@ -8508,16 +8513,16 @@ Representation for the sample's corresponding type definition."
 `crates/dcps/src/runtime.rs::xml_wire_body`,
 `crates/dcps/src/runtime.rs::xml_sample_as_cdr`
 
-**Tests:** `crates/dcps/src/xml_data.rs::tests::a_value_is_written_as_its_document_and_read_back`,
-`crates/dcps/src/xml_data.rs::tests::an_absent_optional_member_is_not_in_the_document`,
-`crates/dcps/src/xml_data.rs::tests::the_document_of_a_cdr_body_is_that_body_again`,
-`crates/dcps/src/xml_data.rs::tests::the_key_document_holds_the_key_members_only`,
-`crates/dcps/src/xml_data.rs::tests::a_document_that_is_none_of_the_types_is_refused`,
-`crates/dcps/src/runtime.rs::tests::an_xml_sample_reaches_the_reader_as_its_cdr_body`,
-`crates/dcps/src/runtime.rs::tests::an_xml_sample_that_is_no_document_of_the_type_is_refused`,
-`crates/dcps/src/runtime.rs::tests::an_xml_dispose_carries_the_instance_key`,
-`crates/dcps/src/runtime.rs::tests::an_xml_writer_sends_the_document_of_the_sample`,
-`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::dynamic_data_goes_over_xml`
+**Tests:** `crates/dcps/src/xml_data.rs::tests::xtypes_7_4_4_a_value_is_written_as_its_document_and_read_back`,
+`crates/dcps/src/xml_data.rs::tests::xtypes_7_4_4_an_absent_optional_member_is_not_in_the_document`,
+`crates/dcps/src/xml_data.rs::tests::xtypes_7_4_4_the_document_of_a_cdr_body_is_that_body_again`,
+`crates/dcps/src/xml_data.rs::tests::xtypes_7_4_4_the_key_document_holds_the_key_members_only`,
+`crates/dcps/src/xml_data.rs::tests::xtypes_7_4_4_a_document_that_is_none_of_the_types_is_refused`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_sample_reaches_the_reader_as_its_cdr_body`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_sample_that_is_no_document_of_the_type_is_refused`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_dispose_carries_the_instance_key`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_writer_sends_the_document_of_the_sample`,
+`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::xtypes_7_4_4_dynamic_data_goes_over_xml`
 
 **Status:** done — A sample is a document of its own: the root element carries the name of the type, the members of an aggregate are elements of their name, the elements of a sequence and an array `<item>`, an entry of a map an `<item>` with `<key>` and `<value>`, a union its `<discriminator>` and the element of the selected member, a bitmask the names of the flags set, separated by blanks; an absent optional member is left out. `xml_data::to_xml` writes the document, `from_xml` reads it against the type; a DataWriter whose first representation is XML sends it behind `{0x00, 0x04}` (`xml_wire_body`), a DataReader reads it (`xml_sample_as_cdr`). A document with another root element, an unknown or a repeated element or a value that does not fit the type is refused and reported as `reader.sample.encapsulation_refused`. `crates/xml` (`serialize_sample` with `<sample type_ref>`) is the path of DDS-XML 1.0 and not that of the wire.
 
@@ -8644,10 +8649,10 @@ language-specific transformations".
 `crates/lang-rules/src/adapter/cpp.rs::cpp_items`, `crates/lang-rules/src/adapter/cpp_psm.rs`, `crates/lang-rules/src/adapter/cpp_classic.rs`;
 `crates/lang-rules/src/adapter/java.rs::java_items`
 
-**Tests:** `tools/idlc/tests/cpp_classic.rs::the_classic_types_are_cpp03_and_the_codec_writes_the_native_bytes`,
-`crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
+**Tests:** `tools/idlc/tests/cpp_classic.rs::xtypes_7_5_1_the_classic_types_are_cpp03_and_the_codec_writes_the_native_bytes`,
+`crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`,
 `crates/lang-rules/tests/java_runtime_selftest.rs`,
-`crates/lang-rules/tests/java_map_class.rs::a_map_is_a_java_util_map_with_the_operations_of_table_47`
+`crates/lang-rules/tests/java_map_class.rs::xtypes_7_5_1_a_map_is_a_java_util_map_with_the_operations_of_table_47`
 
 **Status:** done — `zerodds-lang-rules` generates the bindings per language by the OMG mapping: C++ by default as DDS-PSM-Cxx (`std::map`, `dds::core::optional`; `--cpp-mapping psm`), as the classic mapping of [C++-MAP] (OMG IDL to C++ 1.3, C++03; `--cpp-mapping classic`) and as the native structure of the codecs (`--cpp-mapping native`); Java with `octet` as `byte`, `fixed` as `BigDecimal`, the enumeration as a class by CORBA 3.3 part 3 §1.5.9, a union with accessor functions and a map as `java.util.Map`; C with map and sequence by [C-MAP] and §7.5.1.3.2. Log: `.agent/REPORT.md`.
 
@@ -8658,9 +8663,9 @@ mappings [C-MAP, C++-MAP, JAVA-MAP]."
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs::sequence_decl`, `crates/lang-rules/src/emit/c.rs::make_room`, `crates/lang-rules/src/default_c.rs`, `tools/idlc/src/c_support.rs::buffer_walks`
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_sequence_becomes_a_length_and_a_buffer`,
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_a_sequence_becomes_a_length_and_a_buffer`,
 `tools/idlc/tests/c_typesupport.rs` (the harness checks the capacity and `_release` of a decoded and of a released sequence),
-`crates/wire-probe/tests/three_column_gate.rs::the_three_columns_agree`
+`tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::specification` (the C column's sequences against the octets of tests/interop-corpus/expected-bytes.tsv)
 
 **Status:** done — `sequence<T>` is `struct { uint32_t _maximum; uint32_t _length; T *_buffer; bool _release; }`; the reader sets the capacity and `_release = false` (the arena is not the sequence's), the default and the release set and clear both, the probes and the harness fill them. Log: `.agent/REPORT.md`.
 
@@ -8683,7 +8688,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Int32`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8693,7 +8698,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_UInt32`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8703,7 +8708,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Int8`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8713,7 +8718,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_UInt8`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8723,7 +8728,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Int16`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8733,7 +8738,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_UInt16`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8743,7 +8748,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Int64`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8753,7 +8758,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_UInt64`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8764,7 +8769,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Float32`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8775,7 +8780,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Float64`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8786,7 +8791,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Float128`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8796,7 +8801,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Char8`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8806,7 +8811,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Char16`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8816,7 +8821,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Boolean`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8826,7 +8831,7 @@ be overridden in a language-specific PSM, such as [DDS-PSM-CXX]."
 
 **Repo:** `runtime/c/include/zerodds_wire.h`
 
-**Tests:** `runtime/c/tests/selftest.c::the_primitive_typedefs_of_table_42_exist`
+**Tests:** `runtime/c/tests/selftest.c::xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist`
 
 **Status:** done — `runtime/c/include/zerodds_wire.h` declares `DDS_Byte`; the generated code may write the native or the C99 types under §7.5.1.1.1 and writes `int32_t` etc.
 
@@ -8837,7 +8842,7 @@ specification, the implementation may generate equivalent C99-compatible types."
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_primitive` (l. 872)
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::every_idl_primitive_reaches_a_c_type`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_1_1_every_idl_primitive_reaches_a_c_type`
 
 **Status:** done
 
@@ -8861,7 +8866,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_primitive` (l. 872, arm `PrimitiveKind::WChar`)
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::every_idl_primitive_reaches_a_c_type`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_1_1_every_idl_primitive_reaches_a_c_type`
 
 **Status:** done — `uint16_t`.
 
@@ -8871,7 +8876,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Int32`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8882,7 +8887,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::UInt32`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8892,7 +8897,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Int8`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8902,7 +8907,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::UInt8`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8912,7 +8917,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Int16`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8923,7 +8928,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::UInt16`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8933,7 +8938,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Int64`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8944,7 +8949,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::UInt64`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8955,7 +8960,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Float32`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8966,7 +8971,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Float64`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8977,7 +8982,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Float128`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8987,7 +8992,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Char8`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -8997,7 +9002,7 @@ size. Otherwise, they may map Char16 to an equivalent integer type."
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Char16`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -9008,7 +9013,7 @@ _Bool".
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Boolean`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -9018,7 +9023,7 @@ _Bool".
 
 **Repo:** `runtime/cpp/include/dds/types.hpp`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_primitive_typedefs_of_table_43_exist`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist`
 
 **Status:** done — `runtime/cpp/include/dds/types.hpp` declares `DDS::Byte`; the generated code may write the native or the C99 types under §7.5.1.1.2 and writes `std::int32_t` etc.
 
@@ -9029,7 +9034,7 @@ specification, the implementation may generate equivalent C99-compatible types."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::cpp_primitive`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::the_integers_are_spelled_with_the_c99_types_of_table_43`; `crates/lang-rules/src/adapter/cpp.rs::tests::a_long_double_is_the_runtime_type_and_never_the_compiler_s`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_1_2_the_integers_are_spelled_with_the_c99_types_of_table_43`; `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_1_2_a_long_double_is_the_runtime_type_and_never_the_compiler_s`
 
 **Status:** done — the integer types are `std::int8_t` to `std::uint64_t`; log: `.agent/REPORT.md`.
 
@@ -9052,7 +9057,7 @@ for purposes of overloading."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::cpp_primitive` (l. 858, arm `PrimitiveKind::WChar`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
 
 **Status:** done — `std::uint16_t`, as `UInt16`.
 
@@ -9064,7 +9069,7 @@ types shall be distinguishable for the purposes of overloading."
 
 **Repo:** `runtime/cpp/include/zerodds/wire.hpp::Octet`; `crates/lang-rules/src/adapter/cpp.rs::octet`
 
-**Tests:** `runtime/cpp/tests/selftest.cpp::the_types_of_table_43_are_distinguishable_for_overloading`; `tools/idlc/tests/cpp_inheritance.rs::a_derived_struct_inherits_and_the_octet_is_its_own_type`
+**Tests:** `runtime/cpp/tests/selftest.cpp::xtypes_7_5_1_1_2_the_types_of_table_43_are_distinguishable_for_overloading`; `tools/idlc/tests/cpp_inheritance.rs::xtypes_7_5_1_1_2_a_derived_struct_inherits_and_the_octet_is_its_own_type`
 
 **Status:** done — `DDS::Byte` and `octet` are `zerodds::wire::Octet`, a type of its own; `UInt8` is `std::uint8_t`; overloads on the two are told apart; log: `.agent/REPORT.md`.
 
@@ -9081,7 +9086,7 @@ implicitly or explicitly defined."
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs::declare` (l. 937)
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::an_enumeration_becomes_an_integer_and_constants_not_a_c_enum`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_2_1_1_an_enumeration_becomes_an_integer_and_constants_not_a_c_enum`
 
 **Status:** done — `#define ACTIVE ((Mode)4)` after `@value(4)`, `FAULT` after
 it `5`.
@@ -9095,8 +9100,8 @@ the annotation."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::declare` (l. 1203)
 
-**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::cpp_follows_an_enumerator_with_a_value_by_an_equals_sign_and_the_value`,
-`crates/lang-rules/src/adapter/cpp.rs::tests::an_enumeration_takes_an_underlying_type_from_its_bit_bound`
+**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_1_2_cpp_follows_an_enumerator_with_a_value_by_an_equals_sign_and_the_value`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound`
 
 **Status:** done — `enum Mode { IDLE, @value(4) ACTIVE, FAULT, @value(70000) HIGH }` gives `ACTIVE = 4`, `FAULT = 5` and `HIGH = 70000`; every enumerator carries `=` and its value.
 
@@ -9109,9 +9114,9 @@ explicit or implicit value".
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::enumeration_class_body`
 
-**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::java_has_an_int_constant_with_an_underscore_and_an_object_per_literal`,
-`crates/lang-rules/src/adapter/java.rs::tests::an_explicit_enumerator_value_is_written_out`,
-`crates/lang-rules/src/adapter/java.rs::tests::an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one`
+**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_1_3_java_has_an_int_constant_with_an_underscore_and_an_object_per_literal`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_1_3_an_explicit_enumerator_value_is_written_out`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_1_3_an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one`
 
 **Status:** done — per literal `public static final int _<label> = <value>` (the explicit or implicit value) and an object `<label>` of the class of CORBA 3.3 part 3 §1.5.9 with `value()` and `from_int`; a member of the enumeration is an instance of that class.
 
@@ -9126,11 +9131,11 @@ definition like the following: @bit_bound(<bit_bound_value>) enum <TypeName>Bits
 `crates/lang-rules/src/adapter/cpp.rs::declare`,
 `crates/lang-rules/src/adapter/java.rs::declare`
 
-**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::the_example_of_the_clause_myflags_binds_as_the_text_shows`,
-`crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::a_type_named_like_the_flag_enumeration_is_a_collision_in_every_column`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_bitmask_becomes_an_integer_and_one_constant_per_bit`,
-`crates/lang-rules/tests/keyword_collision.rs::the_c_column_refuses_a_type_named_like_the_flag_type_of_a_bitmask`,
-`crates/lang-rules/tests/keyword_collision.rs::the_c_column_accepts_a_bitmask_and_a_type_with_another_name`
+**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_2_the_example_of_the_clause_myflags_binds_as_the_text_shows`,
+`crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_2_a_type_named_like_the_flag_enumeration_is_a_collision_in_every_column`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_2_2_a_bitmask_becomes_an_integer_and_one_constant_per_bit`,
+`crates/lang-rules/tests/keyword_collision.rs::xtypes_7_5_1_2_2_the_c_column_refuses_a_type_named_like_the_flag_type_of_a_bitmask`,
+`crates/lang-rules/tests/keyword_collision.rs::xtypes_7_5_1_2_2_the_c_column_accepts_a_bitmask_and_a_type_with_another_name`
 
 **Status:** done — C: integer type `<TypeName>Bits` with a `#define` per flag; C++: `enum class <TypeName>Bits : <holder>` with `= 1 << position` per flag; Java: type-safe class `<TypeName>Bits` with `_<label>` and an object per flag. A type named like the flag enumeration in the same scope is a collision in C, C++ and Java (`SpellingCollision`).
 
@@ -9143,7 +9148,7 @@ typedef like the following [...] typedef <unsigned_integer_equivalent>
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_holder` (l. 897);
 `crates/lang-rules/src/adapter/cpp.rs::cpp_holder` (l. 884)
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_bitmask_becomes_an_integer_and_one_constant_per_bit`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_2_2_a_bitmask_becomes_an_integer_and_one_constant_per_bit`
 
 **Status:** done — C `typedef uint16_t Flags;`, C++ an alias; Java has no
 typedef and uses the integer type at the member.
@@ -9155,8 +9160,8 @@ typedef and uses the integer type at the member.
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_holder` (l. 897);
 `crates/lang-rules/src/adapter/cpp.rs::cpp_holder` (l. 884)
 
-**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::table_44_one_to_eight_bits_is_an_8_bit_unsigned_integer`,
-`crates/lang-rules/src/adapter/java.rs::tests::a_bitmask_takes_the_holder_its_bound_calls_for`
+**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_2_table_44_one_to_eight_bits_is_an_8_bit_unsigned_integer`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_2_a_bitmask_takes_the_holder_its_bound_calls_for`
 
 **Status:** done — `@bit_bound(8)` gives `typedef uint8_t` in C, `using … = std::uint8_t` and `enum class …Bits : std::uint8_t` in C++.
 
@@ -9167,7 +9172,7 @@ typedef and uses the integer type at the member.
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_holder` (l. 897);
 `crates/lang-rules/src/adapter/cpp.rs::cpp_holder` (l. 884)
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_bitmask_becomes_an_integer_and_one_constant_per_bit`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_2_2_a_bitmask_becomes_an_integer_and_one_constant_per_bit`
 
 **Status:** done — `uint16_t`.
 
@@ -9178,7 +9183,7 @@ typedef and uses the integer type at the member.
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_holder`;
 `crates/lang-rules/src/adapter/cpp.rs::cpp_holder`
 
-**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::table_44_seventeen_to_thirty_two_bits_is_an_unsigned_long`
+**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_2_table_44_seventeen_to_thirty_two_bits_is_an_unsigned_long`
 
 **Status:** done — `@bit_bound(32)` gives `uint32_t` in C and C++ (flag 31 as `1 << 31`), `long` in Java.
 
@@ -9189,8 +9194,8 @@ typedef and uses the integer type at the member.
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_holder` (l. 897);
 `crates/lang-rules/src/adapter/cpp.rs::cpp_holder` (l. 884)
 
-**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::table_44_thirty_three_to_sixty_four_bits_is_an_unsigned_long_long`,
-`crates/lang-rules/src/adapter/java.rs::tests::a_bitmask_takes_the_holder_its_bound_calls_for`
+**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_2_table_44_thirty_three_to_sixty_four_bits_is_an_unsigned_long_long`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_2_a_bitmask_takes_the_holder_its_bound_calls_for`
 
 **Status:** done — `@bit_bound(64)` gives `uint64_t` in C and C++ (flag 63), `long` in Java.
 
@@ -9204,7 +9209,7 @@ MyFlags;`.
 `crates/lang-rules/src/adapter/cpp.rs::declare`,
 `crates/lang-rules/src/adapter/java.rs::declare`
 
-**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::the_example_of_the_clause_myflags_binds_as_the_text_shows`
+**Tests:** `crates/lang-rules/tests/enumeration_and_bitmask_binding.rs::xtypes_7_5_1_2_2_the_example_of_the_clause_myflags_binds_as_the_text_shows`
 
 **Status:** done — `@bit_bound(19) bitmask MyFlags` gives `uint32_t` (`unsigned long`) in C and C++, `MyFlagsBits` with FIRST_FLAG = 1 << 0, SECOND_FLAG = 1 << 14 and THIRD_FLAG = 1 << 15, the class `MyFlagsBits` in Java.
 
@@ -9228,9 +9233,9 @@ except that a member of type X shall instead be mapped as type pointer-to-X."
 
 **Repo:** `crates/lang-rules/src/adapter/c.rs::c_held_member_type` (l. 583)
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_non_recursive_external_member_is_a_pointer_in_c`,
-`crates/lang-rules/tests/external_is_an_indirection.rs::the_c_column_declares_a_recursive_member_as_a_pointer`,
-`crates/lang-rules/tests/external_is_an_indirection.rs::an_external_string_stays_the_pointer_it_is`
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_5_1_2_3_1_a_non_recursive_external_member_is_a_pointer_in_c`,
+`crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_5_1_2_3_1_the_c_column_declares_a_recursive_member_as_a_pointer`,
+`crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_5_1_2_3_1_an_external_string_stays_the_pointer_it_is`
 
 **Status:** done — An external member is a pointer in C (`string`, `wstring` and `fixed` stay `const char *`); `@external long a` becomes `int32_t *a`.
 
@@ -9241,7 +9246,7 @@ type pointer-to-X. For example, short shall be replaced by short*."
 
 **Repo:** —
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_non_recursive_external_member_is_a_pointer_in_c`
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_5_1_2_3_1_a_non_recursive_external_member_is_a_pointer_in_c`
 
 **Status:** done — A non-recursive external member is a pointer too (`short` becomes `short*`).
 
@@ -9252,8 +9257,8 @@ object shall set the external member pointers to NULL."
 
 **Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs`
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::the_initialiser_sets_the_external_pointers_to_null`,
-`crates/lang-rules/tests/c_external_lifecycle.rs::an_aggregate_with_an_external_member_gets_the_four_functions`
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_initialiser_sets_the_external_pointers_to_null`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_an_aggregate_with_an_external_member_gets_the_four_functions`
 
 **Status:** done — `zd_init_<T>` sets the external pointers to NULL; for every aggregate type that holds an external member the C generator makes four functions (`zd_init_<T>`, `zd_fini_<T>`, `zd_copy_<T>`, `zd_copy_with_<T>`).
 
@@ -9264,8 +9269,8 @@ delete the objects referenced by non-NULL external member pointers."
 
 **Repo:** —
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::the_destructor_deletes_what_a_non_null_pointer_references`,
-`crates/lang-rules/tests/c_external_lifecycle.rs::an_external_branch_of_a_union_is_released_by_the_live_discriminator`
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_destructor_deletes_what_a_non_null_pointer_references`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_an_external_branch_of_a_union_is_released_by_the_live_discriminator`
 
 **Status:** done — `zd_fini_<T>` deletes the objects that a non-NULL pointer references; for a union the live discriminator selects the branch.
 
@@ -9279,8 +9284,8 @@ object shall fail as well."
 
 **Repo:** —
 
-**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::the_copy_allocates_a_null_destination_and_fills_it`,
-`crates/lang-rules/tests/c_external_lifecycle.rs::the_copy_has_the_modes_of_table_45`
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_allocates_a_null_destination_and_fills_it`,
+`crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
 **Status:** done — `zd_copy_<T>` copies external members deeply and allocates a NULL destination pointer; `zd_copy_with_<T>` has the depth and the action of Table 45. If the copy of an external member fails, the copy of the aggregate fails.
 
@@ -9291,67 +9296,61 @@ This additional copy function shall allow the user to choose whether a shallow
 or deep copy is made as well as whether any existing memory pointed by the
 member is reused, released, or replaced".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
-**Status:** `n/a (informative)` — optional ("There may be"); the requirements
-apply only where the function exists. ZeroDDS does not have it.
+**Status:** partial — the C binding generates `zd_copy_with_<T>` with depth (`ZD_COPY_DEEP`, `ZD_COPY_SHALLOW`) and action (`ZD_COPY_REUSE`, `ZD_COPY_REPLACE`, `ZD_COPY_RELEASE`); the test only checks that the constants and the default (deep, reuse) are in the generated text. No test compiles the generated C code and checks the behaviour per combination.
 
 ### §7.5.1.2.3.1 Table 45 — Shallow Copy, Replace
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 174 — "Shallow Copy | Replace".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
-**Status:** `n/a (informative)` — behaviour of the optional additional copy
-function, which ZeroDDS does not have.
+**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
 
 ### §7.5.1.2.3.1 Table 45 — Shallow Copy, Release
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 174 — "Shallow Copy | Release".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
-**Status:** `n/a (informative)` — behaviour of the optional additional copy
-function, which ZeroDDS does not have.
+**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
 
 ### §7.5.1.2.3.1 Table 45 — Deep Copy, Reuse
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 175 — "Deep Copy | Reuse".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
-**Status:** `n/a (informative)` — behaviour of the optional additional copy
-function, which ZeroDDS does not have.
+**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
 
 ### §7.5.1.2.3.1 Table 45 — Deep Copy, Replace
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 175 — "Deep Copy | Replace".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
-**Status:** `n/a (informative)` — behaviour of the optional additional copy
-function, which ZeroDDS does not have.
+**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
 
 ### §7.5.1.2.3.1 Table 45 — Deep Copy, Release
 
 **Spec:** §7.5.1.2.3.1, Table 45, p. 175 — "Deep Copy | Release".
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/adapter/c_lifecycle.rs` (`zd_copy_with_<T>(dst, src, depth, action)`, `zd_copy_depth`, `zd_copy_action`)
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/c_external_lifecycle.rs::xtypes_7_5_1_2_3_1_the_copy_has_the_modes_of_table_45`
 
-**Status:** `n/a (informative)` — behaviour of the optional additional copy
-function, which ZeroDDS does not have.
+**Status:** partial — the branch is in `zd_copy_with_<T>`; no test runs the generated C code and checks this behaviour.
 
 ### §7.5.1.2.3.1.1 C: an external optional member may be NULL when writing
 
@@ -9363,9 +9362,9 @@ of a write."
 **Repo:** `crates/lang-rules/src/emit/c.rs::refuse_unset_external`;
 `runtime/c/src/writer.c::zdw_writer_refuse`
 
-**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::an_external_member_that_is_not_optional_may_not_be_null_at_a_write`,
-`crates/lang-rules/tests/external_is_an_indirection.rs::the_c_encoder_hands_the_pointer_and_not_its_address`,
-`crates/lang-rules/tests/external_is_an_indirection.rs::the_c_encoder_writes_through_an_external_pointer`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_3_1_1_an_external_member_that_is_not_optional_may_not_be_null_at_a_write`,
+`crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_5_1_2_3_1_1_the_c_encoder_hands_the_pointer_and_not_its_address`,
+`crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_5_1_2_3_1_1_the_c_encoder_writes_through_an_external_pointer`
 
 **Status:** done — an optional external member is a pointer and may be NULL at a write (marker 0); an external member that is not optional and NULL sets `ZDW_UNSET_EXTERNAL` in the writer (`zdw_writer_refuse`) and nothing more is written.
 
@@ -9378,8 +9377,8 @@ The chosen type must support the concept of being 'unset.'"
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::declare` (l. 1203, `held_externally`);
 `crates/lang-rules/src/adapter/cpp.rs::external_doc` (l. 898)
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value`,
-`crates/lang-rules/tests/external_is_an_indirection.rs::an_external_union_branch_takes_the_same_indirection`
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value`,
+`crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_5_1_2_3_2_an_external_union_branch_takes_the_same_indirection`
 
 **Status:** done — every `@external` member is a `std::shared_ptr`; empty is
 "unset".
@@ -9391,8 +9390,8 @@ and copy functions shall be the same as specified for C."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::owning_members`
 
-**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::a_copy_of_a_class_with_a_pointer_member_is_deep_and_the_destructor_deletes`,
-`crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
+**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::xtypes_7_5_1_2_3_2_a_copy_of_a_class_with_a_pointer_member_is_deep_and_the_destructor_deletes`,
+`crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
 
 **Status:** done — a class with a pointer member has a default constructor (NULL), a copy constructor and assignment that copy deep, move operations that leave NULL behind, and a destructor that deletes.
 
@@ -9405,7 +9404,7 @@ members").
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::owning_members`;
 `runtime/cpp/include/zerodds/wire.hpp::clone`
 
-**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::a_copy_of_a_class_with_a_pointer_member_is_deep_and_the_destructor_deletes`
+**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::xtypes_7_5_1_2_3_2_a_copy_of_a_class_with_a_pointer_member_is_deep_and_the_destructor_deletes`
 
 **Status:** done — the copy makes a new object for a `std::shared_ptr` and for a pointer (`zerodds::wire::clone`); the test checks that source and copy hold different objects.
 
@@ -9418,8 +9417,8 @@ be unset when writing".
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::external_doc`;
 `crates/lang-rules/src/emit/cpp.rs::refuse_unset_external`
 
-**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::an_external_member_that_is_not_optional_may_not_be_unset_at_a_write`,
-`crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
+**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::xtypes_7_5_1_2_3_2_1_an_external_member_that_is_not_optional_may_not_be_unset_at_a_write`,
+`crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
 
 **Status:** done — an optional external member is the same `std::shared_ptr`, empty means absent; an empty pointer at a member that is only external throws `zerodds::wire::UnsetExternal` at a write.
 
@@ -9433,8 +9432,8 @@ this namespace is dds::core."
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`;
 `crates/lang-rules/src/adapter/cpp_psm.rs::attribute`
 
-**Tests:** `crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`,
-`crates/lang-rules/tests/cpp_psm_external_run.rs::a_psm_external_member_is_dds_core_external_and_an_unset_one_is_refused_at_a_write`
+**Tests:** `runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`,
+`crates/lang-rules/tests/cpp_psm_external_run.rs::xtypes_7_5_1_2_3_3_a_psm_external_member_is_dds_core_external_and_an_unset_one_is_refused_at_a_write`
 
 **Status:** done — `dds::core::external<T>` in `runtime/cpp/include/dds/core/external.hpp` with `ptr_` (a shared pointer) and `locked_`; under `CppMapping::Psm` an `@external` member is a `dds::core::external<T>`.
 
@@ -9447,10 +9446,10 @@ a non-NULL value."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::copy_constructor`,
-`runtime/cpp/tests/external_selftest.cpp::constructor_from_a_pointer`,
-`runtime/cpp/tests/external_selftest.cpp::lock_and_is_locked`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_4_copy_constructor`,
+`runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_2_constructor_from_a_pointer`,
+`runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_14_lock_and_is_locked`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — unlocked, copy and assignment share the reference, locked they copy deep; `locked_` can only be true for a non-NULL pointer (the constructor and `lock()` throw otherwise).
 
@@ -9461,8 +9460,8 @@ empty ptr_ and locked_ initialized to false."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::default_constructor`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_1_default_constructor`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — empty `ptr_`, `locked_` is false.
 
@@ -9474,8 +9473,8 @@ initialized with p."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::constructor_from_a_pointer`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_2_constructor_from_a_pointer`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — `ptr_` manages `p`, `locked_` is false (or the parameter `locked`).
 
@@ -9486,8 +9485,8 @@ references the same object managed by the specified shared pointer p."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::constructor_from_a_shared_pointer`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_3_constructor_from_a_shared_pointer`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — `ptr_` shares the object of the given `shared_ptr`, `locked_` is false.
 
@@ -9499,8 +9498,8 @@ is true, then a new T object is created [...] deep copy."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::copy_constructor`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_4_copy_constructor`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — unlocked source: the same reference; locked source: a new `T`, copied deep; `locked_` of the copy is false in both cases.
 
@@ -9512,12 +9511,12 @@ external<T> object destination"
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::assignment_destination_locked_is_an_error`,
-`runtime/cpp/tests/external_selftest.cpp::assignment_source_empty_resets_the_destination`,
-`runtime/cpp/tests/external_selftest.cpp::assignment_empty_destination_locked_source_creates_and_deep_copies`,
-`runtime/cpp/tests/external_selftest.cpp::assignment_existing_destination_locked_source_reuses_and_deep_copies`,
-`runtime/cpp/tests/external_selftest.cpp::assignment_unlocked_source_is_a_shallow_copy`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_destination_locked_is_an_error`,
+`runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_source_empty_resets_the_destination`,
+`runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_empty_destination_locked_source_creates_and_deep_copies`,
+`runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_existing_destination_locked_source_reuses_and_deep_copies`,
+`runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_unlocked_source_is_a_shallow_copy`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — the five rows of Table 46 (see there); a locked destination throws `external_locked_error`.
 
@@ -9529,8 +9528,8 @@ will simply be decreased."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::destructor`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_6_destructor`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — the destructor of the `shared_ptr` releases the object with the last reference.
 
@@ -9541,8 +9540,8 @@ object that ptr_ points at."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::accessors`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_7_accessors`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — both versions give the managed object; an empty `external` throws `external_empty_error`.
 
@@ -9552,9 +9551,9 @@ object that ptr_ points at."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::accessors`,
-`runtime/cpp/tests/external_selftest.cpp::default_constructor`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_7_accessors`,
+`runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_1_default_constructor`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — both versions give the pointer to the managed object, NULL when empty.
 
@@ -9565,8 +9564,8 @@ object."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::constructor_from_a_shared_pointer`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_3_constructor_from_a_shared_pointer`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — gives the `shared_ptr` of the managed object.
 
@@ -9577,8 +9576,8 @@ object."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::accessors`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_7_accessors`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — both versions access the members of the object.
 
@@ -9589,8 +9588,8 @@ the same object or are both empty."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::comparison_and_bool`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_11_comparison_and_bool`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — equal when both manage the same object or both are empty.
 
@@ -9601,8 +9600,8 @@ manage the same object."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::comparison_and_bool`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_11_comparison_and_bool`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — unequal when they do not manage the same object.
 
@@ -9613,8 +9612,8 @@ NULL) or not (is NULL)."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::comparison_and_bool`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_11_comparison_and_bool`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — true when an object is managed.
 
@@ -9625,8 +9624,8 @@ not."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::lock_and_is_locked`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_14_lock_and_is_locked`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — returns `locked_`.
 
@@ -9636,8 +9635,8 @@ not."
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::lock_and_is_locked`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_14_lock_and_is_locked`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — sets `locked_`; with an empty `ptr_` it throws.
 
@@ -9648,8 +9647,8 @@ Error. Operation cannot be called when destination.is_locked() == TRUE".
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::assignment_destination_locked_is_an_error`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_destination_locked_is_an_error`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — error: `external_locked_error`, the destination is unchanged.
 
@@ -9660,8 +9659,8 @@ The destination is reset.".
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::assignment_source_empty_resets_the_destination`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_source_empty_resets_the_destination`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — the destination is reset, `ptr_` is empty.
 
@@ -9672,8 +9671,8 @@ Create new object for destination.ptr_ Perform deep copy".
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::assignment_empty_destination_locked_source_creates_and_deep_copies`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_empty_destination_locked_source_creates_and_deep_copies`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — a new object, copied deep.
 
@@ -9684,8 +9683,8 @@ EMPTY | Reuse existing destination.ptr_ Perform deep copy".
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::assignment_existing_destination_locked_source_reuses_and_deep_copies`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_existing_destination_locked_source_reuses_and_deep_copies`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — the existing object of the destination is reused, copied deep.
 
@@ -9696,8 +9695,8 @@ EMPTY | Reuse existing destination.ptr_ Perform deep copy".
 
 **Repo:** `runtime/cpp/include/dds/core/external.hpp`
 
-**Tests:** `runtime/cpp/tests/external_selftest.cpp::assignment_unlocked_source_is_a_shallow_copy`,
-`crates/lang-rules/tests/dds_core_external.rs::the_template_does_what_every_operation_and_every_row_of_table_46_says`
+**Tests:** `runtime/cpp/tests/external_selftest.cpp::xtypes_7_5_1_2_3_3_5_assignment_unlocked_source_is_a_shallow_copy`,
+`runtime/cpp/CMakeLists.txt::xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says`
 
 **Status:** done — shallow copy: the `ptr_` of the destination is the `ptr_` of the source.
 
@@ -9710,7 +9709,7 @@ for ptr_ to be empty when writing".
 **Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs::attribute`;
 `crates/cpp/include/zerodds/psm/convert.hpp::Conv<dds::core::external<E>>`
 
-**Tests:** `crates/lang-rules/tests/cpp_psm_external_run.rs::a_psm_external_member_is_dds_core_external_and_an_unset_one_is_refused_at_a_write`
+**Tests:** `crates/lang-rules/tests/cpp_psm_external_run.rs::xtypes_7_5_1_2_3_3_a_psm_external_member_is_dds_core_external_and_an_unset_one_is_refused_at_a_write`
 
 **Status:** done — an optional external member is a `dds::core::external<T>` that may be empty at a write (marker 0); a member that is only external with an empty `ptr_` throws `UnsetExternal` at a write.
 
@@ -9723,7 +9722,7 @@ from the java.lang package."
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::declare`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_external_member_is_an_object_reference_and_a_primitive_one_is_boxed`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_3_4_an_external_member_is_an_object_reference_and_a_primitive_one_is_boxed`
 
 **Status:** done — a primitive `@external` member (and union branch) is `java.lang.Short`, `Integer`, `Boolean` and so on; a string and a sequence stay the reference they are.
 
@@ -9748,9 +9747,9 @@ pointers. [...] a member of type X shall instead be mapped as type pointer-to-X.
 **Repo:** `crates/lang-rules/src/adapter/c.rs::pointer_member`;
 `crates/lang-rules/src/emit/c.rs::present`
 
-**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer`,
-`crates/lang-rules/tests/c_optional_and_external_run.rs::an_optional_string_is_the_pointer_it_already_is`,
-`crates/lang-rules/tests/c_end_to_end.rs::an_optional_member_is_a_pointer_and_null_is_the_absent_one`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_4_1_an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer`,
+`crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_4_1_an_optional_string_is_the_pointer_it_already_is`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_2_4_1_an_optional_member_is_a_pointer_and_null_is_the_absent_one`
 
 **Status:** done — an optional member is `T *m`, a `string` stays `const char *`; the encoder asks `m != NULL`, the decoder allocates the value in the reader's arena and sets an absent member to NULL; the `_has_` flag is gone.
 
@@ -9763,9 +9762,9 @@ pointer shall indicate an omitted value."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::held`;
 `crates/lang-rules/src/emit/cpp.rs::present`
 
-**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer`,
-`crates/lang-rules/tests/cpp_optional_and_external_run.rs::an_optional_string_is_a_pointer_to_a_string`,
-`crates/lang-rules/src/adapter/cpp.rs::tests::an_optional_member_is_a_plain_pointer_and_not_a_second_field`
+**Tests:** `crates/lang-rules/tests/cpp_optional_and_external_run.rs::xtypes_7_5_1_2_4_2_an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer`,
+`crates/lang-rules/tests/cpp_optional_and_external_run.rs::xtypes_7_5_1_2_4_2_an_optional_string_is_a_pointer_to_a_string`,
+`crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_2_4_2_an_optional_member_is_a_plain_pointer_and_not_a_second_field`
 
 **Status:** done — an optional member of the native C++ mapping is `T *m = nullptr`, not a `std::optional`; encoder and decoder ask `!= nullptr`, the class owns the object (see §7.5.1.2.3.2). The PSM mapping (`CppMapping::Psm`) keeps `dds::core::optional<T>` of DDS-PSM-Cxx 1.0 §8.1.4 and converts to the pointer.
 
@@ -9778,7 +9777,7 @@ Java primitive types shall be replaced by the corresponding object box types.
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::boxed` (l. 1282)
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_optional_member_is_boxed_and_a_primitive_one_too`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_4_3_an_optional_member_is_boxed_and_a_primitive_one_too`
 
 **Status:** done
 
@@ -9791,8 +9790,8 @@ array-of-pointers-to-type-T. [...] int32_t (*array_member)[10];"
 **Repo:** `crates/lang-rules/src/adapter/c.rs::pointer_member`;
 `crates/lang-rules/src/adapter/cpp.rs::held`
 
-**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers`,
-`crates/lang-rules/tests/cpp_optional_and_external_run.rs::an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers`
+**Tests:** `crates/lang-rules/tests/c_optional_and_external_run.rs::xtypes_7_5_1_2_4_4_an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers`,
+`crates/lang-rules/tests/cpp_optional_and_external_run.rs::xtypes_7_5_1_2_4_4_an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers`
 
 **Status:** done — C: `@optional long array_member[3]` is a pointer to the array type and can be assigned to `int32_t (*p)[3]`; C++: a pointer to `std::array<std::int32_t, 3>`, which has the layout of the C array.
 
@@ -9827,7 +9826,7 @@ represented by a corresponding Java annotation type. [...] public @interface
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::annotation_types`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_user_annotation_is_an_interface_with_its_defaults_and_a_group`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_6_1_a_user_annotation_is_an_interface_with_its_defaults_and_a_group`
 
 **Status:** done — per annotation declaration `public @interface <TypeName>` with its members and `public @interface <TypeName>Group { <TypeName>[] value(); }`.
 
@@ -9839,7 +9838,7 @@ definition shall have no default value."
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::annotation_types`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_user_annotation_is_an_interface_with_its_defaults_and_a_group`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_6_1_a_user_annotation_is_an_interface_with_its_defaults_and_a_group`
 
 **Status:** done — a member with a default carries `default <value>`, one without does not.
 
@@ -9854,8 +9853,8 @@ bearing the 'Group' suffix".
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::user_annotations`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_applied_annotation_sits_on_the_java_element_and_several_go_through_the_group`,
-`crates/lang-rules/src/adapter/java.rs::tests::an_annotation_on_a_module_and_on_a_constant_reaches_the_java_element`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_6_1_an_applied_annotation_sits_on_the_java_element_and_several_go_through_the_group`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_6_1_an_annotation_on_a_module_and_on_a_constant_reaches_the_java_element`
 
 **Status:** done — an applied annotation sits on the class, field, enumerator constant, bit constant, module class or constant; several instances of one annotation on one element go through `<TypeName>Group({…})`.
 
@@ -9873,7 +9872,7 @@ support other key types".
 `crates/lang-rules/src/adapter/c.rs::c_map_entry_name` (l. 818)
 
 **Tests:** `crates/wire-conformance/tests/map_bytes.rs::the_bytes_are_the_recorded_fast_dds_row`,
-`crates/wire-probe/tests/spec_constructs.rs::a_map_of_primitives_is_a_length_and_the_pairs`
+`crates/wire-probe/tests/spec_constructs.rs::xtypes_7_4_3_5_3_a_map_of_primitives_is_a_length_and_the_pairs`
 
 **Status:** done — keys of every type the model admits, `string` and the integer
 types among them. The tests use `string` and `long`; a test with `unsigned long`
@@ -9903,7 +9902,7 @@ implementation-specific way, this operation shall return NULL."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_new` allocates an empty map, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9914,7 +9913,7 @@ implementation-specific way, this operation shall return NULL."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_delete` frees the map, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9926,7 +9925,7 @@ p. 184 — "Initialize the map. The initial size and capacity of the map shall b
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_initialize` sets size and capacity to 0, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9938,7 +9937,7 @@ size and maximum size set to 0."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_finalize` frees the entries, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9951,7 +9950,7 @@ shall fail and return DDS_RETCODE_PRECONDITION_NOT_MET."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_copy` copies, with and without autogrow, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9962,7 +9961,7 @@ shall fail and return DDS_RETCODE_PRECONDITION_NOT_MET."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_get_size`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9973,7 +9972,7 @@ shall fail and return DDS_RETCODE_PRECONDITION_NOT_MET."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_get_max_size`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9986,7 +9985,7 @@ return DDS_RETCODE_BAD_PARAMETER."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_set_max_size` (not below the size, not above the bound), generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -9998,7 +9997,7 @@ and the maximum size does not change."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_clear`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10011,7 +10010,7 @@ DDS_RETCODE_BAD_PARAMETER."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_insert` (existing key: DDS_RETCODE_BAD_PARAMETER, full: DDS_RETCODE_PRECONDITION_NOT_MET), generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10023,7 +10022,7 @@ corresponding element shall be replaced."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_insert_or_assign`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10035,7 +10034,7 @@ successful, the size of the map shall be decreased by 1."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_erase`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10047,7 +10046,7 @@ map. The returned MapEntry may be a sentinel if the map is empty."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_get_first`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10058,7 +10057,7 @@ map. The returned MapEntry may be a sentinel if the map is empty."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_get_next`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10071,7 +10070,7 @@ the key, otherwise return NULL."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_find_element`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10083,7 +10082,7 @@ one from the map."
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_find_entry`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10095,7 +10094,7 @@ MapEntry. If the MapEntry was a sentinel the operation will return FALSE"
 
 **Repo:** `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`; `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — C: `<MAP>_get_pair`, generated for every map beside its type; log: `.agent/REPORT.md`.
 
@@ -10108,7 +10107,7 @@ the map type shall also be generated."
 
 **Repo:** `crates/lang-rules/src/adapter/c_map.rs::map_decl`; `runtime/c/include/zerodds_map.h::ZD_MAP_DEFINE`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_operations_of_table_47_answer_as_the_clause_says`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says`
 
 **Status:** done — `struct { _maximum; _length; Entry *_buffer; _release }` of `struct { K key; V value; }`, with the methods of Table 47; log: `.agent/REPORT.md`.
 
@@ -10121,7 +10120,7 @@ with the element type name. [...] [key_type][fully_qualified_element_type]Map
 
 **Repo:** `crates/lang-rules/src/adapter/c_map.rs::map_type_name`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_name_of_a_map_is_the_key_and_the_element`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_1_the_name_of_a_map_is_the_key_and_the_element`
 
 **Status:** done — `UInt32m_FooMap`, `StringInt32Map`, `UInt64m_ColorMap`; with a bound `Int32StringMap_b3`; log: `.agent/REPORT.md`.
 
@@ -10134,7 +10133,7 @@ element type T."
 
 **Repo:** `crates/lang-rules/src/adapter/c_map.rs::maps`
 
-**Tests:** `crates/lang-rules/tests/c_map_operations.rs::the_name_of_a_map_is_the_key_and_the_element`
+**Tests:** `crates/lang-rules/tests/c_map_operations.rs::xtypes_7_5_1_3_2_1_the_name_of_a_map_is_the_key_and_the_element`
 
 **Status:** done — for every declared type T the header holds `UInt32TMap`, `UInt64TMap` and `StringTMap`; log: `.agent/REPORT.md`.
 
@@ -10156,7 +10155,7 @@ type declaration."
 
 **Repo:** `runtime/cpp/include/zerodds/map.hpp`; `crates/lang-rules/src/adapter/cpp.rs::maps_alongside`
 
-**Tests:** `tools/idlc/tests/cpp_map_class.rs::a_map_is_a_class_with_the_operations_of_table_47`
+**Tests:** `tools/idlc/tests/cpp_map_class.rs::xtypes_7_5_1_3_3_a_map_is_a_class_with_the_operations_of_table_47`
 
 **Status:** done — `zerodds::Map<K, V, Bound>` with the operations of Table 47; `UInt32FooMap`, `UInt64FooMap`, `StringFooMap` stand in the namespace of `Foo`; log: `.agent/REPORT.md`.
 
@@ -10168,7 +10167,7 @@ insert_or_assign() if replace parameter is true."
 
 **Repo:** `runtime/cpp/include/zerodds/map.hpp::Map::insert`
 
-**Tests:** `tools/idlc/tests/cpp_map_class.rs::a_map_is_a_class_with_the_operations_of_table_47`
+**Tests:** `tools/idlc/tests/cpp_map_class.rs::xtypes_7_5_1_3_3_a_map_is_a_class_with_the_operations_of_table_47`
 
 **Status:** done — `insert(key, element, replace)`: with `replace` an existing entry is overwritten, without it the result is DDS::RETCODE_BAD_PARAMETER; log: `.agent/REPORT.md`.
 
@@ -10179,7 +10178,7 @@ of the std::map template."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (Map unter `CppMapping::Psm`), `cpp_psm.rs`
 
-**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader` (`crates/cpp/tests/generated_psm_roundtrip.cpp`)
+**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader` (`crates/cpp/tests/generated_psm_roundtrip.cpp`)
 
 **Status:** done — in the default mapping `map<K,V>` is `std::map<K,V>`; `--cpp-mapping native` (`zerodds::Map`, the operations of Table 47) and `classic` are named options; log: `.agent/REPORT.md`.
 
@@ -10191,7 +10190,7 @@ shall not operate on the strings' pointer values".
 
 **Repo:** `crates/cpp/include/zerodds/` (the `std::map` comparison), `crates/cpp/tests/generated_psm_roundtrip.cpp`
 
-**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** done — a `std::string` key compares by contents (`std::less<std::string>`), which the program in `generated_psm_roundtrip.cpp` checks; log: `.agent/REPORT.md`.
 
@@ -10204,8 +10203,8 @@ these Java types is a primitive type, then the corresponding object box type
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::map_class`, `map_key_supported`
 
-**Tests:** `crates/lang-rules/tests/java_map_class.rs::a_map_is_a_java_util_map_with_the_operations_of_table_47`,
-`crates/lang-rules/tests/java_map_class.rs::a_structure_or_union_is_a_key_of_a_java_util_map`
+**Tests:** `crates/lang-rules/tests/java_map_class.rs::xtypes_7_5_1_a_map_is_a_java_util_map_with_the_operations_of_table_47`,
+`crates/lang-rules/tests/java_map_class.rs::xtypes_7_5_1_3_5_a_structure_or_union_is_a_key_of_a_java_util_map`
 
 **Status:** done — `ZdMap_…` extends `java.util.LinkedHashMap` over the boxed types and carries the operations of Table 47; keys are primitive, string, enumeration, bitmask, bit set, structure and union (generated `equals`/`hashCode`); log: `.agent/REPORT.md`.
 
@@ -10215,7 +10214,7 @@ these Java types is a primitive type, then the corresponding object box type
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::map_key_supported`, `equals_and_hash_code`
 
-**Tests:** `crates/lang-rules/tests/java_map_class.rs::a_structure_or_union_is_a_key_of_a_java_util_map`
+**Tests:** `crates/lang-rules/tests/java_map_class.rs::xtypes_7_5_1_3_5_a_structure_or_union_is_a_key_of_a_java_util_map`
 
 **Status:** done — a structure, union or bit set as a key gives the generated class `equals` and `hashCode` over the contents; log: `.agent/REPORT.md`.
 
@@ -10227,9 +10226,9 @@ equivalent IDL definition given in 7.4.1.1.4."
 
 **Repo:** `crates/lang-rules/src/adapter/cst.rs` (`RustMapForm`), `crates/wire/src/map_entries.rs`; the other languages in `crates/lang-rules/src/adapter/`
 
-**Tests:** `crates/lang-rules/tests/rust_corpus_compiles.rs::a_map_is_a_sequence_of_entries_that_keeps_its_order`,
+**Tests:** `crates/lang-rules/tests/rust_corpus_compiles.rs::xtypes_7_5_1_3_6_a_map_is_a_sequence_of_entries_that_keeps_its_order`,
 `crates/wire-conformance/tests/map_bytes.rs::the_bytes_are_the_recorded_fast_dds_row`,
-`crates/lang-rules/tests/go_end_to_end.rs::a_map_becomes_a_slice_of_entries_and_never_a_go_map` (ebenso D, Nim, Zig, Swift, Kotlin, F#, Julia, Lua, OCaml, Ada, Ada83, Elixir)
+`crates/lang-rules/tests/go_end_to_end.rs::xtypes_7_5_1_3_6_a_map_becomes_a_slice_of_entries_and_never_a_go_map` (ebenso D, Nim, Zig, Swift, Kotlin, F#, Julia, Lua, OCaml, Ada, Ada83, Elixir)
 
 **Status:** done — Rust holds a map as a sequence of `MapEntry` by default (`--rust-map btree-map` is the named option); the other languages without a mapping of their own bind a sequence of entries (Go, D, Nim, Zig, Swift, Kotlin, F#, Julia, Lua, OCaml, Ada, Ada83) or a list of pairs (Python, Elixir); C# follows the form of Java; TypeScript takes the mapping of DDS-TS §7.9.1. Log: `.agent/REPORT.md`.
 
@@ -10245,9 +10244,9 @@ unions as amended below."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::union_members`, `crates/lang-rules/src/adapter/java.rs`, `crates/lang-rules/src/adapter/c.rs`
 
-**Tests:** `tools/idlc/tests/cpp_union_accessors.rs::a_union_has_the_accessor_functions_and_goes_through_the_codec`,
+**Tests:** `tools/idlc/tests/cpp_union_accessors.rs::xtypes_7_5_1_4_a_union_has_the_accessor_functions_and_goes_through_the_codec`,
 `crates/lang-rules/tests/java_map_class.rs` (Union-Zugriffsfunktionen),
-`crates/lang-rules/tests/c_end_to_end.rs::a_union_becomes_a_discriminator_beside_a_union`
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_4_a_union_becomes_a_discriminator_beside_a_union`
 
 **Status:** done — a structure becomes a structure or class, a union a class with accessor functions (`_d()` and an accessor and a modifier per case; C++ and Java) or in C `_d` with `union _u`; log: `.agent/REPORT.md`.
 
@@ -10258,7 +10257,7 @@ shall publicly inherit from the C++ struct corresponding to the supertype."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs::class`
 
-**Tests:** `tools/idlc/tests/cpp_inheritance.rs::a_derived_struct_inherits_and_the_octet_is_its_own_type`
+**Tests:** `tools/idlc/tests/cpp_inheritance.rs::xtypes_7_5_1_1_2_a_derived_struct_inherits_and_the_octet_is_its_own_type`
 
 **Status:** done — `struct Derived : public Base`, only the own members stand in the class; the bytes equal those of the flat structure (§7.4.1.1.5.1); log: `.agent/REPORT.md`.
 
@@ -10269,7 +10268,7 @@ shall extend the Java class corresponding to the supertype."
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs::data_class`
 
-**Tests:** `crates/lang-rules/tests/java_map_class.rs::a_derived_class_extends_its_base_class`
+**Tests:** `crates/lang-rules/tests/java_map_class.rs::xtypes_7_5_1_4_1_2_a_derived_class_extends_its_base_class`
 
 **Status:** done — `class Derived extends Base`, only the own members stand in the class; log: `.agent/REPORT.md`.
 
@@ -10282,11 +10281,11 @@ an instance of the base type were the first member of the subtype with the name
 
 **Repo:** `crates/lang-rules/src/emit/mod.rs::reach`; the adapters `crates/lang-rules/src/adapter/c.rs`, `crates/lang-rules/src/adapter/cst.rs`, `crates/lang-rules/src/adapter/go.rs`, `crates/lang-rules/src/adapter/d.rs`, `crates/lang-rules/src/adapter/nim.rs`, `crates/lang-rules/src/adapter/zig.rs`, `crates/lang-rules/src/adapter/swift.rs`, `crates/lang-rules/src/adapter/kotlin.rs`, `crates/lang-rules/src/adapter/fsharp.rs`, `crates/lang-rules/src/adapter/julia.rs`, `crates/lang-rules/src/adapter/lua.rs`, `crates/lang-rules/src/adapter/python.rs`, `crates/lang-rules/src/adapter/elixir.rs`, `crates/lang-rules/src/adapter/node.rs`, `crates/lang-rules/src/adapter/ada.rs`, `crates/lang-rules/src/adapter/ada83.rs`, `crates/lang-rules/src/adapter/ocaml.rs`, `crates/lang-rules/src/adapter/csharp.rs`, `crates/lang-rules/src/adapter/typescript.rs` (`cst.rs` is Rust; C# as a base class by IDL4 to C# §7.14.1)
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_derived_struct_holds_the_base_as_its_first_member_parent`,
-`crates/lang-rules/tests/rust_corpus_compiles.rs::a_derived_structure_holds_its_base_as_its_first_member_parent`,
-`crates/lang-rules/tests/typescript_descriptors.rs::a_derived_struct_holds_its_base_as_the_member_parent`,
-`crates/wire-probe/tests/three_column_gate.rs::the_three_columns_agree` (case `inherit-two-levels`: Rust, C and Python),
-the `*_end_to_end` tests of Go, D, Nim, Zig, Swift, Julia, Lua, OCaml, Ada, Ada83 and Node, `python_corpus_compiles`, `elixir_end_to_end`, `csharp_corpus_compiles`, `typescript_corpus_compiles`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_5_1_4_1_3_a_derived_struct_holds_the_base_as_its_first_member_parent`,
+`crates/lang-rules/tests/rust_corpus_compiles.rs::xtypes_7_5_1_4_1_3_a_derived_structure_holds_its_base_as_its_first_member_parent`,
+`crates/lang-rules/tests/typescript_descriptors.rs::xtypes_7_5_1_4_1_3_a_derived_struct_holds_its_base_as_the_member_parent`,
+`tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::specification`, `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs::specification` (case `inherit-two-levels`: the C and the Python column write the octets of tests/interop-corpus/expected-bytes.tsv),
+the `*_end_to_end` tests of Go, D, Nim, Zig, Swift, Julia, Lua, OCaml, Ada, Ada83 and Node, `crates/lang-rules/tests/python_corpus_compiles.rs`, `crates/lang-rules/tests/elixir_end_to_end.rs`, `crates/lang-rules/tests/csharp_corpus_compiles.rs`, `crates/lang-rules/tests/typescript_corpus_compiles.rs`
 
 **Status:** done — the base is the first member `parent` in C, Rust, Go, D, Nim, Zig, Swift, Kotlin, F#, Julia, Lua, Python, Elixir, Node, Ada, Ada83, OCaml and TypeScript (in the descriptor as a member with `base: true`, which `getKey` and `withDefaults` follow); C# inherits from the base class (IDL4 to C# §7.14.1); the bytes are those of the flat structure (§7.4.1.1.5.1). `kotlin_end_to_end` and `fsharp_end_to_end` run in the integration round. Log: `.agent/REPORT.md`.
 
@@ -10296,7 +10295,7 @@ the `*_end_to_end` tests of Go, D, Nim, Zig, Swift, Julia, Lua, OCaml, Ada, Ada8
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`, `crates/lang-rules/src/emit/typescript.rs`, `runtime/typescript/src/registry.ts`
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::a_derived_struct_holds_its_base_as_the_member_parent`,
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::xtypes_7_5_1_4_1_3_a_derived_struct_holds_its_base_as_the_member_parent`,
 `crates/lang-rules/tests/typescript_corpus_compiles.rs`
 
 **Status:** done — TypeScript: the interface and the factory have `parent` as the first member, the descriptor lists it with `base: true`, the guard calls that of the base, the codec reaches a member of the base as `parent.m`. Log: `.agent/REPORT.md`.
@@ -10313,7 +10312,7 @@ manipulate objects of any Type."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::DynamicType`; `crates/types/src/dynamic/data.rs::DynamicData`; `crates/types/src/dynamic/builder.rs::DynamicTypeBuilder`
 
-**Tests:** `crates/dcps/tests/annex_c_idl_conformance.rs::every_operation_of_annex_c_has_its_counterpart`; `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`; `crates/types/tests/dynamic_corpus.rs::a_dynamic_data_writes_the_octets_a_json_value_writes`
+**Tests:** `crates/dcps/tests/annex_c_idl_conformance.rs::xtypes_7_5_2_every_operation_of_annex_c_has_its_counterpart`; `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`; `crates/types/tests/dynamic_corpus.rs::xtypes_7_5_2_a_dynamic_data_writes_the_octets_a_json_value_writes`
 
 **Status:** done — every operation of Tables 48 to 58 and of Annex C has its counterpart (entries below, all done or n/a); `annex_c_idl_conformance` reads the IDL of the annex and checks it; log in `.agent/REPORT.md`.
 
@@ -10357,8 +10356,8 @@ either argument is nil."
 **Repo:** `crates/types/src/dynamic/type_.rs::annotation`,
 `crates/types/src/dynamic/type_.rs::get_member_by_index`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::an_index_past_the_end_is_a_bad_parameter`,
-`crates/types/tests/dynamic_annotation_descriptors.rs::the_member_lookups_report_a_bad_parameter`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_an_index_past_the_end_is_a_bad_parameter`,
+`crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_the_member_lookups_report_a_bad_parameter`
 
 **Status:** done — `annotation_count`/`annotation(index)`, `verbatim_text_count`/`verbatim_text(index)` and `member_count`/`get_member_by_index` follow the rule: an index past the end is `RETCODE_BAD_PARAMETER` (`DynamicError::BadParameter`, `return_code`). Appending is `apply_annotation` and `add_member`.
 
@@ -10371,7 +10370,7 @@ return with RETCODE_BAD_PARAMETER if either argument is nil."
 **Repo:** `crates/types/src/dynamic/annotation.rs::get_value`,
 `crates/types/src/dynamic/annotation.rs::set_value`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::an_annotation_descriptor_has_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_an_annotation_descriptor_has_value_semantics`
 
 **Status:** done — `AnnotationDescriptor::get_value(key)`, `get_all_value()` and `set_value(key, value)`: a key with no value is `RETCODE_NO_DATA`, an empty key or value `RETCODE_BAD_PARAMETER`.
 
@@ -10388,8 +10387,8 @@ starting point for creating and deleting DynamicTypeBuilder objects."
 **Repo:** `crates/types/src/dynamic/factory.rs::DynamicTypeBuilderFactory`,
 `crates/types/src/dynamic/import.rs::import`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`,
-`crates/types/tests/dynamic_type_builder_factory.rs::a_copy_carries_the_state_and_leaves_the_original_alone`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_copy_carries_the_state_and_leaves_the_original_alone`
 
 **Status:** done — `DynamicTypeBuilderFactory` has no state; every instance behaves as every other. A `TypeBuilder` per type owns a model of its own; a type that an argument names is copied into that model with everything it reaches (`DynamicTypeBuilder::import`, recursive types included). `DynamicTypeBuilder` remains the factory over one shared model.
 
@@ -10401,7 +10400,7 @@ this operation is legal even after delete_instance has been called."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_instance`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_primitive_type_is_answered_and_a_composite_kind_is_not`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_11_a_primitive_type_is_answered_and_a_composite_kind_is_not`
 
 **Status:** done — `DynamicTypeBuilderFactory::get_instance()`; a call after `delete_instance` is legal.
 
@@ -10414,7 +10413,7 @@ reason."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::delete_instance`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_primitive_type_is_answered_and_a_composite_kind_is_not`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_11_a_primitive_type_is_answered_and_a_composite_kind_is_not`
 
 **Status:** done — `DynamicTypeBuilderFactory::delete_instance()` succeeds; there is nothing to reclaim.
 
@@ -10427,7 +10426,7 @@ value."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_primitive_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_primitive_type_is_answered_and_a_composite_kind_is_not`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_11_a_primitive_type_is_answered_and_a_composite_kind_is_not`
 
 **Status:** done — `get_primitive_type(kind)` returns the type; a kind that is no primitive type is `RETCODE_BAD_PARAMETER`.
 
@@ -10440,8 +10439,8 @@ operation), this operation shall fail and return a nil value."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`,
-`crates/types/tests/dynamic_type_builder_factory.rs::an_inconsistent_descriptor_creates_no_type`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_6_an_inconsistent_descriptor_creates_no_type`
 
 **Status:** done — `create_type(&TypeDescriptor)` creates structure, union, enumeration, bitmask, bitset, alias, string, sequence, array and map; an inconsistent descriptor and a type with no name are `RETCODE_BAD_PARAMETER`; an annotation kind is no type of this model and is refused as `Unrepresentable`.
 
@@ -10453,7 +10452,7 @@ DynamicTypeBuilder object with a copy of the state of the given type."
 **Repo:** `crates/types/src/dynamic/factory.rs::create_type_copy`,
 `crates/types/src/dynamic/import.rs::import`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_copy_carries_the_state_and_leaves_the_original_alone`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_copy_carries_the_state_and_leaves_the_original_alone`
 
 **Status:** done — `create_type_copy(&DynamicType)` returns a builder with a copy of the state; changes to the builder do not reach the type.
 
@@ -10466,8 +10465,8 @@ object shall not be reflected in the input TypeObject object."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_type_w_type_object`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_type_is_created_from_a_type_object`,
-`crates/types/src/dynamic/to_ast.rs::tests::a_minimal_type_object_is_refused_by_name`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_8_a_type_is_created_from_a_type_object`,
+`crates/types/src/dynamic/to_ast.rs::tests::xtypes_7_5_2_2_8_a_minimal_type_object_is_refused_by_name`
 
 **Status:** done — `create_type_w_type_object(&TypeObject, &TypeRegistry)` returns a builder for the type a COMPLETE TypeObject describes; changes to the builder do not reach the object. A MINIMAL TypeObject has no names and is refused as `MinimalHasNoNames`.
 
@@ -10479,7 +10478,7 @@ to LENGTH_UNLIMITED, the string type shall be considered to be unbounded."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_string_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::the_collection_and_string_creators_build_their_kinds`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_5_the_collection_and_string_creators_build_their_kinds`
 
 **Status:** done — `create_string_type(bound)`; `LENGTH_UNLIMITED` is unbounded, the element is Char8.
 
@@ -10490,7 +10489,7 @@ returned by create_wstring_type shall be Char16."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_wstring_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::the_collection_and_string_creators_build_their_kinds`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_5_the_collection_and_string_creators_build_their_kinds`
 
 **Status:** done — `create_wstring_type(bound)`; the element is Char16.
 
@@ -10503,7 +10502,7 @@ RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_sequence_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::the_collection_and_string_creators_build_their_kinds`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_5_the_collection_and_string_creators_build_their_kinds`
 
 **Status:** done — `create_sequence_type(&DynamicType, bound)`; the element type is a copy of the argument.
 
@@ -10516,7 +10515,7 @@ integers, the length of which is equal to the number of dimensions".
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_array_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::the_collection_and_string_creators_build_their_kinds`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_5_the_collection_and_string_creators_build_their_kinds`
 
 **Status:** done — `create_array_type(&DynamicType, &[bound])`; no dimension is `RETCODE_BAD_PARAMETER`.
 
@@ -10529,7 +10528,7 @@ unbounded."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_map_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::the_collection_and_string_creators_build_their_kinds`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_5_the_collection_and_string_creators_build_their_kinds`
 
 **Status:** done — `create_map_type(&DynamicType, &DynamicType, bound)`.
 
@@ -10541,7 +10540,7 @@ fail with RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::create_bitmask_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::an_enumeration_and_a_bitmask_take_literals_and_flags`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_2_an_enumeration_and_a_bitmask_take_literals_and_flags`
 
 **Status:** done — `create_bitmask_type(bound)`; a bound outside 1 to 64 is `RETCODE_BAD_PARAMETER`.
 
@@ -10582,7 +10581,7 @@ effect [...] RETCODE_ALREADY_DELETED".
 
 **Repo:** `crates/types/src/dynamic/factory.rs::delete_type`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_primitive_type_is_answered_and_a_composite_kind_is_not`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_11_a_primitive_type_is_answered_and_a_composite_kind_is_not`
 
 **Status:** done — `delete_type(DynamicType)` succeeds; the type is dropped with its last holder.
 
@@ -10599,8 +10598,8 @@ created, this reference shall be nil."
 **Repo:** `crates/types/src/dynamic/annotation.rs::AnnotationDescriptor`,
 `crates/types/src/dynamic/annotation.rs::AnnotationType`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::an_annotation_descriptor_has_value_semantics`,
-`crates/types/tests/dynamic_annotation_descriptors.rs::a_type_reports_its_builtin_and_declared_annotations`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_an_annotation_descriptor_has_value_semantics`,
+`crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_3_4_a_type_reports_its_builtin_and_declared_annotations`
 
 **Status:** done — `AnnotationDescriptor::annotation_type()` is an `AnnotationType` of kind `ANNOTATION_TYPE`; a new descriptor has none.
 
@@ -10613,7 +10612,7 @@ be considered to have its default value."
 
 **Repo:** `crates/types/src/dynamic/annotation.rs::get_all_value`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_type_reports_its_builtin_and_declared_annotations`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_3_4_a_type_reports_its_builtin_and_declared_annotations`
 
 **Status:** done — `value` is a map from attribute names to strings; an attribute with no entry has its default value.
 
@@ -10625,7 +10624,7 @@ equals, passing the same argument as to this method, return true."
 
 **Repo:** `crates/types/src/dynamic/annotation.rs::copy_from`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::an_annotation_descriptor_has_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_an_annotation_descriptor_has_value_semantics`
 
 **Status:** done — `AnnotationDescriptor::copy_from(&other)`.
 
@@ -10637,7 +10636,7 @@ properties refer to equal types. [...]"
 
 **Repo:** `crates/types/src/dynamic/annotation.rs::equals`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::an_annotation_descriptor_has_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_an_annotation_descriptor_has_value_semantics`
 
 **Status:** done — `AnnotationDescriptor::equals(&other)`: equal types and the same attributes with equal values.
 
@@ -10649,7 +10648,7 @@ representation of an object of the type of the attribute named by s1."
 
 **Repo:** `crates/types/src/dynamic/annotation.rs::is_consistent`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::an_annotation_descriptor_has_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_an_annotation_descriptor_has_value_semantics`
 
 **Status:** done — `AnnotationDescriptor::is_consistent()`: the type is not nil and an annotation type, every attribute belongs to the type, every value is a well-formed string of its type.
 
@@ -10661,7 +10660,7 @@ evaluated"
 
 **Repo:** `crates/types/src/dynamic/annotation.rs::is_well_formed`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::an_annotation_descriptor_has_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_an_annotation_descriptor_has_value_semantics`
 
 **Status:** done — A value without quotation marks and without operators: `"5"` is well-formed for an integer attribute, `"2 + 3"` is not (`ValueKind::is_well_formed`).
 
@@ -10678,7 +10677,7 @@ copied and compared."
 **Repo:** `crates/types/src/dynamic/descriptor.rs::TypeDescriptor` (l. 381);
 `crates/types/src/dynamic/type_.rs::descriptor` (l. 189)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_follows_an_alias_and_an_element`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_4_a_view_follows_an_alias_and_an_element`
 
 **Status:** done — a value (`Clone`, `PartialEq`), read from the model.
 
@@ -10690,8 +10689,8 @@ indicates what 'kind' of type this descriptor describes".
 **Repo:** `crates/types/src/dynamic/type_.rs::kind` (l. 153);
 `crates/types/src/dynamic/descriptor.rs::TypeKind` (l. 48)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`,
-`crates/types/src/dynamic/descriptor.rs::tests::octet_and_uint8_are_two_kinds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`,
+`crates/types/src/dynamic/descriptor.rs::tests::xtypes_7_2_2_2_octet_and_uint8_are_two_dynamic_type_kinds`
 
 **Status:** done — constructs without an XTypes kind (`fixed`, `valuetype`,
 `any` and others) give `TypeKind::NoType`.
@@ -10705,9 +10704,9 @@ identifier for the given type kind".
 **Repo:** `crates/types/src/dynamic/type_.rs::qualified_name`,
 `crates/types/src/dynamic/descriptor.rs::is_consistent`
 
-**Tests:** `crates/types/tests/dynamic_corpus.rs::a_dynamic_type_names_the_node_the_encoder_encodes`,
-`crates/types/tests/dynamic_annotation_descriptors.rs::the_descriptor_of_a_union_and_a_map_and_the_names`,
-`crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_corpus.rs::xtypes_7_5_2_4_10_a_dynamic_type_names_the_node_the_encoder_encodes`,
+`crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_4_10_the_descriptor_of_a_union_and_a_map_and_the_names`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `name` is the fully qualified name without a leading `::` (`qualified_name`); `is_consistent` requires identifiers separated by `::` for named kinds.
 
@@ -10721,8 +10720,8 @@ this property."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::descriptor` (l. 189)
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::an_alias_names_its_target_as_the_base_type`,
-`crates/types/src/dynamic/type_.rs::tests::a_view_follows_an_alias_and_an_element`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_1_an_alias_names_its_target_as_the_base_type`,
+`crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_4_a_view_follows_an_alias_and_an_element`
 
 **Status:** done — For a structure the supertype, for an alias the target (`base_type`, Table 50); a bitset carries its base there too.
 
@@ -10734,7 +10733,7 @@ considered consistent."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::an_alias_names_its_target_as_the_base_type`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_1_an_alias_names_its_target_as_the_base_type`
 
 **Status:** done — `descriptor` sets the target of an alias in `base_type`; `is_consistent` checks it there.
 
@@ -10747,7 +10746,7 @@ union. It must not be nil for the descriptor to be consistent."
 **Repo:** `crates/types/src/dynamic/type_.rs::descriptor`,
 `crates/types/src/dynamic/descriptor.rs::is_consistent`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::the_descriptor_of_a_union_and_a_map_and_the_names`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_4_10_the_descriptor_of_a_union_and_a_map_and_the_names`
 
 **Status:** done — `discriminator_type` of a union is the type of the discriminator; without it the descriptor is inconsistent.
 
@@ -10761,7 +10760,7 @@ indicates the bound of the collection."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::one_bound`
 
-**Tests:** `crates/types/tests/dynamic_annex_c.rs::the_bound_of_an_unbounded_collection_is_one_value`; `crates/types/tests/dynamic_type_descriptors.rs::bounds_are_checked_and_unlimited_is_unbounded`
+**Tests:** `crates/types/tests/dynamic_annex_c.rs::xtypes_7_5_2_4_2_the_bound_of_an_unbounded_collection_is_one_value`; `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_bounds_are_checked_and_unlimited_is_unbounded`
 
 **Status:** done — array: one number per dimension; sequence, map, string, bitmask: one number; unbounded is `LENGTH_UNLIMITED`; log: `.agent/REPORT.md`.
 
@@ -10772,7 +10771,7 @@ bitmask, or string type, the length of the property value is one".
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
 
 **Status:** done — For a bitmask the bound is in `bound`; `bit_bound` stays empty.
 
@@ -10786,9 +10785,9 @@ represents a bitmask type, this property must indicate a Boolean type".
 
 **Repo:** `crates/types/src/dynamic/type_.rs::descriptor` (l. 189)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_follows_an_alias_and_an_element`,
-`crates/types/tests/dynamic_type_descriptors.rs::a_string_has_a_character_element_type`,
-`crates/types/tests/dynamic_type_descriptors.rs::a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_4_a_view_follows_an_alias_and_an_element`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_5_a_string_has_a_character_element_type`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
 
 **Status:** done — Array, sequence: the element; map: the value; string: `Char8` or `Char16`; bitmask: Boolean.
 
@@ -10801,8 +10800,8 @@ be consistent."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_string_has_a_character_element_type`,
-`crates/types/tests/dynamic_type_descriptors.rs::a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_5_a_string_has_a_character_element_type`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
 
 **Status:** done — `descriptor` sets `Char8` or `Char16` for a string and Boolean for a bitmask as `element_type`.
 
@@ -10815,7 +10814,7 @@ be nil for the descriptor to be consistent."
 **Repo:** `crates/types/src/dynamic/type_.rs::descriptor`,
 `crates/types/src/dynamic/descriptor.rs::is_consistent`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::the_descriptor_of_a_union_and_a_map_and_the_names`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_4_10_the_descriptor_of_a_union_and_a_map_and_the_names`
 
 **Status:** done — `key_element_type` of a map is the key type; without it the descriptor is inconsistent. (The text of the spec says "value element type" for the key; a typo, listed in the findings file.)
 
@@ -10827,7 +10826,7 @@ equals, passing the same argument as to this method, return true."
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::copy_from`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_type_descriptor_has_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_4_3_a_type_descriptor_has_value_semantics`
 
 **Status:** done — `TypeDescriptor::copy_from(&other)`.
 
@@ -10839,7 +10838,7 @@ in Table 50 above are equal in each of them."
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::equals`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_type_descriptor_has_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_4_3_a_type_descriptor_has_value_semantics`
 
 **Status:** done — `TypeDescriptor::equals(&other)`: all properties of Table 50 equal, the types as types.
 
@@ -10850,8 +10849,8 @@ all of this descriptor's properties are consistent."
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::is_consistent`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::the_descriptor_of_a_union_and_a_map_and_the_names`,
-`crates/types/tests/dynamic_type_descriptors.rs::an_alias_names_its_target_as_the_base_type`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_4_10_the_descriptor_of_a_union_and_a_map_and_the_names`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_1_an_alias_names_its_target_as_the_base_type`
 
 **Status:** done — `TypeDescriptor::is_consistent()` checks each property against the kinds that carry it, and the name.
 
@@ -10868,8 +10867,8 @@ given context."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`,
-`crates/types/tests/dynamic_type_descriptors.rs::a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_5_an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
 
 **Status:** done — `MemberId` is `u32`, `MEMBER_ID_INVALID` is `0x0FFF_FFFF`; the members of an enumeration and a bitmask carry it.
 
@@ -10885,7 +10884,7 @@ meaning as it does in the definition of aggregated types generally."
 
 **Repo:** `crates/types/src/dynamic/annotation.rs::AnnotationType::members`
 
-**Tests:** `crates/types/tests/dynamic_annex_c.rs::an_annotation_type_has_members`
+**Tests:** `crates/types/tests/dynamic_annex_c.rs::xtypes_7_5_2_6_an_annotation_type_has_members`
 
 **Status:** done — `AnnotationType::members`, `member_count`, `get_member_by_index`, `get_member_by_name`, `get_member`, `get_all_members*` and `AnnotationMember`; log: `.agent/REPORT.md`.
 
@@ -10896,7 +10895,7 @@ bitmask shall be considered to be a 'member' of that bitmask with Boolean type."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
 
 **Status:** done — The flags of a bitmask are members of type Boolean; `literal_value` carries the position.
 
@@ -10908,7 +10907,7 @@ the type of the enclosing enumeration itself."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_5_an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`
 
 **Status:** done — The literals of an enumeration are members of the type of the enumeration without a member ID; `literal_value` carries the value.
 
@@ -10919,7 +10918,7 @@ be for the alias's base type."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::an_alias_has_the_members_of_its_base_and_a_bitset_has_none`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_6_an_alias_has_the_members_of_its_base_and_a_bitset_has_none`
 
 **Status:** done — An alias has the members of its base type.
 
@@ -10930,7 +10929,7 @@ have members."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::an_alias_has_the_members_of_its_base_and_a_bitset_has_none`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_6_an_alias_has_the_members_of_its_base_and_a_bitset_has_none`
 
 **Status:** done — A bitset has no members; kinds other than those named have none either.
 
@@ -10941,7 +10940,7 @@ annotations previously applied to this member."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::annotations`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_member_reports_its_annotations`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_6_1_a_member_reports_its_annotations`
 
 **Status:** done — `DynamicTypeMember::annotations()`, `annotation_count()` and `annotation(index)`: the built-in and the declared annotations of the member.
 
@@ -10953,7 +10952,7 @@ object."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::descriptor` (l. 853)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done — returns a new `MemberDescriptor` instead of overwriting an
 argument.
@@ -10966,7 +10965,7 @@ properties, as identified in Table 52 above, are equal."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::equals_at`
 
-**Tests:** `crates/types/tests/dynamic_annex_c.rs::members_of_different_types_are_not_equal`; `crates/types/tests/dynamic_type_builder_factory.rs::equals_includes_the_applied_annotations`
+**Tests:** `crates/types/tests/dynamic_annex_c.rs::xtypes_7_5_2_6_3_members_of_different_types_are_not_equal`; `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_6_3_equals_includes_the_applied_annotations`
 
 **Status:** done — compared are the owner type, name, ID, index, labels, flags, type, annotations and `@verbatim` texts; log: `.agent/REPORT.md`.
 
@@ -10978,7 +10977,7 @@ value that is a member of the descriptor property."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::id` (l. 701)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done
 
@@ -10990,7 +10989,7 @@ string that is a member of the descriptor property."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::name` (l. 658)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done
 
@@ -11005,7 +11004,7 @@ a DynamicTypeMember. MemberDescriptor objects have value semantics".
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::MemberDescriptor` (l. 462)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done
 
@@ -11016,7 +11015,7 @@ of this member. The value must be a well-formed member name."
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::is_consistent_in`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::the_descriptor_of_a_union_and_a_map_and_the_names`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_4_10_the_descriptor_of_a_union_and_a_map_and_the_names`
 
 **Status:** done — `name` of the member; `is_consistent_in` requires an identifier.
 
@@ -11029,8 +11028,8 @@ property must be MEMBER_ID_INVALID, or the descriptor is not consistent."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::id` (l. 701)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`,
-`crates/types/tests/dynamic_type_descriptors.rs::an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_5_an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`
 
 **Status:** done — For structure and union members the effective ID; an enumerator, a bit and a bitfield report `MEMBER_ID_INVALID`.
 
@@ -11041,8 +11040,8 @@ type, this property must be MEMBER_ID_INVALID".
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`,
-`crates/types/tests/dynamic_type_descriptors.rs::a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_5_an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`
 
 **Status:** done — `id` returns `MEMBER_ID_INVALID` for members outside aggregates.
 
@@ -11055,7 +11054,7 @@ current maximum member ID in the type."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_member_with_no_id_gets_the_maximum_plus_one`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_7_5_a_member_with_no_id_gets_the_maximum_plus_one`
 
 **Status:** done — A member without an ID gets the maximum of the existing IDs plus 1.
 
@@ -11067,7 +11066,7 @@ legally type a member".
 
 **Repo:** `crates/types/src/dynamic/type_.rs::dynamic_type` (l. 767)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done — a handle, never nil; an unresolved type is
 `DynamicError::Unresolved`.
@@ -11081,8 +11080,8 @@ that the member takes the 'default default' value for its type."
 **Repo:** `crates/types/src/dynamic/descriptor.rs::MemberDescriptor`,
 `crates/types/src/dynamic/type_.rs::descriptor`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_member_descriptor_has_a_default_string_and_value_semantics`,
-`crates/types/tests/dynamic_type_builder_factory.rs::an_enumeration_and_a_bitmask_take_literals_and_flags`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_7_3_a_member_descriptor_has_a_default_string_and_value_semantics`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_2_an_enumeration_and_a_bitmask_take_literals_and_flags`
 
 **Status:** done — `MemberDescriptor::default_value` is the `@default` as a string (evaluated, without quotation marks); empty means "default default". For a literal of an enumeration it is the value, for a flag the position.
 
@@ -11095,7 +11094,7 @@ the member exists."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::index` (l. 748)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done
 
@@ -11108,7 +11107,7 @@ exists, that member and all those after it shall be shifted up".
 
 **Repo:** `crates/types/src/dynamic/builder.rs::add_member_at`
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_member_added_at_an_index_shifts_the_others`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_7_6_a_member_added_at_an_index_shifts_the_others`
 
 **Status:** done — `add_member_at` and `add_case_at` shift the members from the index on; an index past the end appends.
 
@@ -11122,8 +11121,8 @@ value."
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::MemberDescriptor` (l. 462, field `label`)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`,
-`crates/types/tests/dynamic_type_descriptors.rs::a_union_label_past_32_bits_is_kept`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_7_8_a_union_label_past_32_bits_is_kept`
 
 **Status:** done — `label` is `Vec<i64>` (Table 53, `Int64 [*]`); Figure 29 names `Int32 [*]` (contradiction in the specification, kept in the findings file).
 
@@ -11134,7 +11133,7 @@ apply to this member".
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_union_label_past_32_bits_is_kept`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_7_8_a_union_label_past_32_bits_is_kept`
 
 **Status:** done — A label beyond 32 bits is kept in the descriptor.
 
@@ -11146,8 +11145,8 @@ member of a union type or false if not."
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::is_consistent_in`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_member_descriptor_has_a_default_string_and_value_semantics`,
-`crates/types/tests/dynamic_type_builder_factory.rs::add_member_follows_table_55`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_7_3_a_member_descriptor_has_a_default_string_and_value_semantics`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_7_2_add_member_follows_table_55`
 
 **Status:** done — `is_default_label` of a union member; `is_consistent_in` requires labels when it is not `default:`, and neither labels nor `default:` for other kinds.
 
@@ -11159,7 +11158,7 @@ descriptor with those of another descriptor such that subsequent calls to equals
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::copy_from`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_member_descriptor_has_a_default_string_and_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_7_3_a_member_descriptor_has_a_default_string_and_value_semantics`
 
 **Status:** done — `MemberDescriptor::copy_from(&other)`.
 
@@ -11171,7 +11170,7 @@ above are equal in each of them."
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::equals`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_member_descriptor_has_a_default_string_and_value_semantics`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_7_3_a_member_descriptor_has_a_default_string_and_value_semantics`
 
 **Status:** done — `MemberDescriptor::equals(&other)`.
 
@@ -11184,8 +11183,8 @@ consistent."
 **Repo:** `crates/types/src/dynamic/descriptor.rs::is_consistent_in`,
 `crates/types/src/dynamic/descriptor.rs::is_consistent_for_add`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_member_descriptor_has_a_default_string_and_value_semantics`,
-`crates/types/tests/dynamic_type_builder_factory.rs::add_member_follows_table_55`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_7_3_a_member_descriptor_has_a_default_string_and_value_semantics`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_7_2_add_member_follows_table_55`
 
 **Status:** done — `MemberDescriptor::is_consistent_in(owner)`: id, name, labels and default by the kind of the type the member belongs to; `is_consistent_for_add` allows `MEMBER_ID_INVALID`.
 
@@ -11202,7 +11201,7 @@ comparison by value."
 **Repo:** `crates/types/src/dynamic/type_.rs::DynamicType` (l. 58);
 `crates/types/src/dynamic/type_.rs::equals` (l. 492)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::equality_is_structural_and_not_by_pointer`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_8_equality_is_structural_and_not_by_pointer`
 
 **Status:** done — an `Arc` handle; `equals` compares structurally.
 
@@ -11213,7 +11212,7 @@ annotations that have previously been applied to this type."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::annotations`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_type_reports_its_builtin_and_declared_annotations`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_3_4_a_type_reports_its_builtin_and_declared_annotations`
 
 **Status:** done — `DynamicType::annotations()`, `annotation_count()` and `annotation(index)`.
 
@@ -11226,8 +11225,8 @@ available through this property shall be empty."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::member_by_id` (l. 480)
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`,
-`crates/types/tests/dynamic_type_descriptors.rs::an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags`,
+`crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_5_an_enumerator_has_no_member_id_and_the_enumeration_as_its_type`
 
 **Status:** done — `member_by_id` applies to aggregates only; for enumeration, bitmask and bitset the mapping is empty.
 
@@ -11240,7 +11239,7 @@ considered to be 'members'".
 
 **Repo:** `crates/types/src/dynamic/type_.rs::member_by_name` (l. 472)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done
 
@@ -11255,7 +11254,7 @@ RETCODE_BAD_PARAMETER."
 `crates/types/src/dynamic/factory.rs::add_member_descriptor`,
 `crates/types/src/dynamic/factory.rs::AnnotationTypeBuilder`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::an_annotation_type_is_built_and_applied`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_8_3_an_annotation_type_is_built_and_applied`
 
 **Status:** done — `DynamicTypeBuilderFactory::create_annotation_type(name)` returns an `AnnotationTypeBuilder`; `add_member_descriptor(&MemberDescriptor)` takes the descriptor of an annotation member (name, type, `default_value`) and refuses one that sets key, optional, shared, must understand or labels, a type an attribute cannot have, a duplicate member and a default that is no value of the type, with `RETCODE_BAD_PARAMETER`; `build` returns the `AnnotationType` that `apply_annotation` applies. An annotation type is no `TypeNode` of the model, so `create_type` with `TypeKind::Annotation` names the operation and stays `Unrepresentable`.
 
@@ -11267,7 +11266,7 @@ alias's base type, this operation shall fail with RETCODE_PRECONDITION_NOT_MET."
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::a_member_added_to_an_alias_goes_to_the_base_type`
+**Tests:** `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_8_3_a_member_added_to_an_alias_goes_to_the_base_type`
 
 **Status:** done — `add_member` on an alias adds the member to the base type.
 
@@ -11280,7 +11279,7 @@ with RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::add_member`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::an_enumeration_and_a_bitmask_take_literals_and_flags`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_2_an_enumeration_and_a_bitmask_take_literals_and_flags`
 
 **Status:** done — A flag has to be of type Boolean and have a position inside the bound; otherwise `RETCODE_BAD_PARAMETER`.
 
@@ -11293,7 +11292,7 @@ RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::add_member`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::an_enumeration_and_a_bitmask_take_literals_and_flags`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_2_an_enumeration_and_a_bitmask_take_literals_and_flags`
 
 **Status:** done — A literal has to have the type of the enumeration; its value is `default_value`, positional otherwise; else `RETCODE_BAD_PARAMETER`.
 
@@ -11305,8 +11304,8 @@ this constraint, the operation shall fail with RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::add_member`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`,
-`crates/types/tests/dynamic_type_builder_factory.rs::add_member_follows_table_55`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_7_2_add_member_follows_table_55`
 
 **Status:** done — A structure member is checked by `is_consistent_for_add` (name, id, no label, `@optional` without `@default`); the default has to read in the member's type.
 
@@ -11318,7 +11317,7 @@ constraint, the operation shall fail with RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::add_member`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::add_member_follows_table_55`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_7_2_add_member_follows_table_55`
 
 **Status:** done — A union member needs labels or `default:`; otherwise `RETCODE_BAD_PARAMETER`.
 
@@ -11345,7 +11344,7 @@ DynamicTypeMember objects representing the same member shall compare as equal".
 
 **Repo:** `crates/types/src/dynamic/type_.rs::DynamicTypeMember` (l. 635)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::equality_is_structural_and_not_by_pointer`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_8_equality_is_structural_and_not_by_pointer`
 
 **Status:** done — a member is a view on the immutable model; two views on the
 same member are equal.
@@ -11359,8 +11358,8 @@ equal if and only if all of their respective properties, as identified in Table
 **Repo:** `crates/types/src/dynamic/type_.rs::equals`,
 `crates/types/src/dynamic/type_.rs::equals_ignoring_annotations`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::equals_includes_the_applied_annotations`,
-`crates/types/src/dynamic/type_.rs::tests::equality_is_structural_and_not_by_pointer`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_6_3_equals_includes_the_applied_annotations`,
+`crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_8_equality_is_structural_and_not_by_pointer`
 
 **Status:** done — `DynamicType::equals` compares descriptor, members, base type, discriminator, element and key type, cycles included, and the applied annotations and `@verbatim` texts of the type and of every member (in any order, by `AnnotationDescriptor::equals`). Built-in annotations that restate a compared property (`@key`, `@id`, `@final`, `@optional`, `@bit_bound`, …) count once. `equals_ignoring_annotations` is the comparison without annotations, for the compatibility check of `create_sample`.
 
@@ -11372,7 +11371,7 @@ fail if the specified index is greater than the current annotation count."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::annotation`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_type_reports_its_builtin_and_declared_annotations`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_3_4_a_type_reports_its_builtin_and_declared_annotations`
 
 **Status:** done — `DynamicType::annotation(index)`.
 
@@ -11383,7 +11382,7 @@ current number of annotations applied to the type."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::annotation_count`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::a_type_reports_its_builtin_and_declared_annotations`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_3_4_a_type_reports_its_builtin_and_declared_annotations`
 
 **Status:** done — `DynamicType::annotation_count()`.
 
@@ -11395,7 +11394,7 @@ object."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::descriptor` (l. 189)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_follows_an_alias_and_an_element`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_4_a_view_follows_an_alias_and_an_element`
 
 **Status:** done — returns a new `TypeDescriptor`.
 
@@ -11406,8 +11405,8 @@ the kind indicated by the type's descriptor property."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::kind` (l. 153)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`,
-`crates/types/src/dynamic/type_.rs::tests::a_view_follows_an_alias_and_an_element`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`,
+`crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_4_a_view_follows_an_alias_and_an_element`
 
 **Status:** done
 
@@ -11419,7 +11418,7 @@ the specified member ID, the operation shall fail with RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::member_by_id` (l. 480)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done — `None` instead of `RETCODE_BAD_PARAMETER`.
 
@@ -11431,7 +11430,7 @@ if the specified index is greater than the current member count."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::get_member_by_index`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::the_member_lookups_report_a_bad_parameter`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_1_the_member_lookups_report_a_bad_parameter`
 
 **Status:** done — `DynamicType::get_member_by_index(index)`: an index from the count on is `RETCODE_BAD_PARAMETER`. (The spec says "greater than"; listed in the findings file.)
 
@@ -11442,7 +11441,7 @@ specified name, the operation shall fail with RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::member_by_name` (l. 472)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done — `None` instead of `RETCODE_BAD_PARAMETER`.
 
@@ -11453,7 +11452,7 @@ current number of members."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::member_count` (l. 405)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done
 
@@ -11465,7 +11464,7 @@ name string that is a member of the descriptor property."
 
 **Repo:** `crates/types/src/dynamic/type_.rs::qualified_name`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `get_name` is the fully qualified name, equal to the name of the descriptor (`qualified_name`); `name` remains the simple name.
 
@@ -11482,7 +11481,7 @@ is used to instantiate concrete DynamicType objects."
 **Repo:** `crates/types/src/dynamic/factory.rs::TypeBuilder`,
 `crates/types/src/dynamic/factory.rs::build`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder` is the transitional state of one type with a model of its own; `build()` returns the type over a snapshot, later changes do not reach it.
 
@@ -11494,7 +11493,7 @@ apply_annotation."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_annotation_count`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::annotations_are_applied_to_the_type_and_to_a_member`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_9_1_annotations_are_applied_to_the_type_and_to_a_member`
 
 **Status:** done — `TypeBuilder::get_annotation_count()` and `get_annotation(index)`.
 
@@ -11505,7 +11504,7 @@ from the member ID of a member of this (aggregated) type to the member itself."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::all_members_by_id`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::all_members_by_id()` and `get_member(id)`.
 
@@ -11516,7 +11515,7 @@ from the name of a member of this type to the member itself."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::all_members_by_name`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::all_members_by_name()` and `get_member_by_name(name)`.
 
@@ -11527,7 +11526,7 @@ annotation that corresponds to the specified index, if any."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_annotation`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::annotations_are_applied_to_the_type_and_to_a_member`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_9_1_annotations_are_applied_to_the_type_and_to_a_member`
 
 **Status:** done — `TypeBuilder::get_annotation(index)`.
 
@@ -11538,7 +11537,7 @@ current number of annotations applied to the type."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_annotation_count`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::annotations_are_applied_to_the_type_and_to_a_member`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_9_1_annotations_are_applied_to_the_type_and_to_a_member`
 
 **Status:** done — `TypeBuilder::get_annotation_count()`.
 
@@ -11549,7 +11548,7 @@ of the state of this type."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_descriptor`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::annotations_are_applied_to_the_type_and_to_a_member`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_9_1_annotations_are_applied_to_the_type_and_to_a_member`
 
 **Status:** done — `TypeBuilder::get_descriptor()`.
 
@@ -11560,7 +11559,7 @@ indicates the kind of this type"
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_kind`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::get_kind()`.
 
@@ -11571,7 +11570,7 @@ member that corresponds to the specified member ID, if any."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_member`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::get_member(id)`.
 
@@ -11582,7 +11581,7 @@ member that corresponds to the specified index, if any."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_member_by_index`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::get_member_by_index(index)`.
 
@@ -11593,7 +11592,7 @@ member that corresponds to the specified name, if any."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_member_by_name`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::get_member_by_name(name)`.
 
@@ -11604,7 +11603,7 @@ current number of members."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_member_count`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::get_member_count()`.
 
@@ -11615,7 +11614,7 @@ provides the fully qualified name of this type."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::get_name`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`
 
 **Status:** done — `TypeBuilder::get_name()`.
 
@@ -11627,8 +11626,8 @@ equal if and only if all of their respective properties, as identified in Table
 
 **Repo:** `crates/types/src/dynamic/factory.rs::equals`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`,
-`crates/types/tests/dynamic_type_builder_factory.rs::a_copy_carries_the_state_and_leaves_the_original_alone`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_copy_carries_the_state_and_leaves_the_original_alone`
 
 **Status:** done — `TypeBuilder::equals(&DynamicType)`: the type in progress equals the type.
 
@@ -11641,8 +11640,8 @@ fail with RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::add_member`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::a_structure_is_created_from_a_descriptor_and_members_are_added`,
-`crates/types/tests/dynamic_type_builder_factory.rs::add_member_follows_table_55`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added`,
+`crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_7_2_add_member_follows_table_55`
 
 **Status:** done — `TypeBuilder::add_member(&MemberDescriptor)` after Table 55; numbering without an id is maximum plus 1, the index shifts the others.
 
@@ -11655,7 +11654,7 @@ RETCODE_BAD_PARAMETER."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::apply_annotation`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::annotations_are_applied_to_the_type_and_to_a_member`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_9_1_annotations_are_applied_to_the_type_and_to_a_member`
 
 **Status:** done — `TypeBuilder::apply_annotation(&AnnotationDescriptor)`: built-in annotations set the typed fields, a declared one is copied in with its declaration; an inconsistent descriptor is `RETCODE_BAD_PARAMETER`.
 
@@ -11667,7 +11666,7 @@ identified member."
 
 **Repo:** `crates/types/src/dynamic/factory.rs::apply_annotation_to_member`
 
-**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::annotations_are_applied_to_the_type_and_to_a_member`
+**Tests:** `crates/types/tests/dynamic_type_builder_factory.rs::xtypes_7_5_2_9_1_annotations_are_applied_to_the_type_and_to_a_member`
 
 **Status:** done — `TypeBuilder::apply_annotation_to_member(id, &AnnotationDescriptor)`; an id with no member is `RETCODE_BAD_PARAMETER`.
 
@@ -11681,8 +11680,8 @@ previously created DynamicTypes."
 **Repo:** `crates/types/src/dynamic/builder.rs::finish` (l. 236);
 `crates/types/src/dynamic/builder.rs::finish_as` (l. 244)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::equality_is_structural_and_not_by_pointer`,
-`crates/types/src/dynamic/type_.rs::tests::a_view_follows_an_alias_and_an_element`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_8_equality_is_structural_and_not_by_pointer`,
+`crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_4_a_view_follows_an_alias_and_an_element`
 
 **Status:** done — `finish` consumes the builder; the model is immutable
 afterwards.
@@ -11699,7 +11698,7 @@ objects".
 
 **Repo:** `crates/types/src/dynamic/sample.rs::DynamicDataFactory`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`
 
 **Status:** done — `DynamicDataFactory` has no state.
 
@@ -11711,7 +11710,7 @@ after delete_instance has been called."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::get_instance`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`
 
 **Status:** done — `DynamicDataFactory::get_instance()`.
 
@@ -11722,7 +11721,7 @@ the object(s) previously returned from get_instance."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::delete_instance`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_sample_with_a_loan_out_is_not_deleted`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_3_a_sample_with_a_loan_out_is_not_deleted`
 
 **Status:** done — `DynamicDataFactory::delete_instance()` succeeds.
 
@@ -11734,7 +11733,7 @@ delete_data. Parameter type - The type of the sample to create."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::create_data`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`
 
 **Status:** done — `create_data(&DynamicType)`: every non-optional member at its default (Table 9), optional members absent.
 
@@ -11745,7 +11744,7 @@ any associated resources."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::delete_data`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_sample_with_a_loan_out_is_not_deleted`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_3_a_sample_with_a_loan_out_is_not_deleted`
 
 **Status:** done — `delete_data(DynamicSample)`; a sample with a loan out is `RETCODE_PRECONDITION_NOT_MET`.
 
@@ -11764,12 +11763,12 @@ equals operation".
 `crates/types/src/dynamic/sample.rs::get_complex_value`,
 `crates/types/src/dynamic/sample.rs::share`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_value_from_get_complex_value_is_the_value_in_the_sample`,
-`crates/types/tests/dynamic_sample.rs::a_handle_refers_to_stored_values_and_says_when_it_does_not`,
-`crates/types/tests/dynamic_sample.rs::elements_of_an_array_and_values_of_a_map_are_references`,
-`crates/types/tests/dynamic_sample.rs::a_character_and_a_flag_are_copies`,
-`crates/types/tests/dynamic_sample.rs::a_loan_is_a_reference`,
-`crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_a_value_from_get_complex_value_is_the_value_in_the_sample`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_a_handle_refers_to_stored_values_and_says_when_it_does_not`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_elements_of_an_array_and_values_of_a_map_are_references`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_a_character_and_a_flag_are_copies`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_a_loan_is_a_reference`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`
 
 **Status:** done — `DynamicSample` carries its `DynamicType` and has reference semantics: the value `get_complex_value` or `loan_value` returns is the value inside the sample, and a setter acts both ways; `clone` is the copy (§7.5.2.11.4), `share` another handle on the same sample, `equals` compares types and values after §7.5.2.11.5. A character of a string, a flag of a bitmask and an unselected member of a union have no storage and come as a copy and as `RETCODE_NO_DATA`; a handle whose value was removed reads and writes `RETCODE_NO_DATA`.
 
@@ -11780,7 +11779,7 @@ that defines the values within this sample. Its value shall not be nil."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::type_`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`
 
 **Status:** done — `DynamicSample::type_()` returns the type; there is no sample without one.
 
@@ -11793,8 +11792,8 @@ identified by name, member ID, or index."
 **Repo:** `crates/types/src/dynamic/sample.rs::get_member_id_by_name`,
 `crates/types/src/dynamic/sample.rs::get_member_id_at_index`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`,
-`crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`
 
 **Status:** done — The values of a sample by name, member id or index; which id is which value is fixed per kind in the head of `sample.rs`.
 
@@ -11806,8 +11805,8 @@ index."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::get_member_id_at_index`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — Aggregate: `get_member_id_by_name`, the id of the member, `get_member_id_at_index` over the members present.
 
@@ -11819,8 +11818,8 @@ accessed by index; the mapping from index to member ID is unspecified."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::write_element`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`,
-`crates/types/tests/dynamic_sample.rs::strings_keep_their_bound_and_their_width`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_strings_keep_their_bound_and_their_width`
 
 **Status:** done — Sequence, string: elements by index; the index one past the end appends, up to the bound.
 
@@ -11832,7 +11831,7 @@ strings and can thus be used to look up map values by name."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::write_entry`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_map_is_reached_by_key`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_map_is_reached_by_key`
 
 **Status:** done — Map: `get_member_id_by_name(key)` returns the entry, or the index past the end that remembers the key for the next setter.
 
@@ -11845,7 +11844,7 @@ single-dimensional array"
 
 **Repo:** `crates/types/src/dynamic/sample.rs::flat_get`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::an_array_is_flattened`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_an_array_is_flattened`
 
 **Status:** done — Array: flattened by index, a multi-dimensional one in the order of the IDL.
 
@@ -11859,7 +11858,7 @@ may be accessed by its index."
 **Repo:** `crates/types/src/dynamic/sample.rs::resolve`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::flag_name`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`,
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::tests::a_bitmask_flag_is_a_boolean_by_bit`
 
 **Status:** done — Bitmask: flags as Boolean by name or bit; a bit that no flag names is `RETCODE_BAD_PARAMETER`, because a bitmask value holds the names of the flags that are set.
@@ -11873,7 +11872,7 @@ MEMBER_ID_INVALID, or by 'index' by passing index 0."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::resolve`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`
 
 **Status:** done — Enumeration, primitive type: the value itself, `MEMBER_ID_INVALID`, nil as name, index 0.
 
@@ -11895,8 +11894,8 @@ to other values in a particular DynamicData object."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::get_member_id_by_name`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`,
-`crates/types/tests/dynamic_sample.rs::a_map_is_reached_by_key`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_map_is_reached_by_key`
 
 **Status:** done — `get_member_id_by_name`.
 
@@ -11907,8 +11906,8 @@ to other values in a particular DynamicData object."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::get_member_id_at_index`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`,
-`crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`
 
 **Status:** done — `get_member_id_at_index`; an index past the end (except by one for variable-length collections) is `RETCODE_BAD_PARAMETER`.
 
@@ -11920,7 +11919,7 @@ descriptor for each value in this object, identified by the member ID."
 **Repo:** `crates/types/src/dynamic/sample.rs::get_descriptor`,
 `crates/types/src/dynamic/sample.rs::set_descriptor`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_descriptor_of_a_value_is_its_types`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_2_the_descriptor_of_a_value_is_its_types`
 
 **Status:** done — `get_descriptor(id)` returns the descriptor of the member or, for a collection, one with the element type; `set_descriptor` succeeds for the same descriptor, because the type is frozen.
 
@@ -11931,9 +11930,9 @@ MemberId".
 
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::an_optional_member_is_set_and_removed`,
-`crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`,
-`crates/types/tests/dynamic_sample.rs::an_array_is_flattened`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_3_an_optional_member_is_set_and_removed`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_an_array_is_flattened`
 
 **Status:** done — `clear_value(id)` by the kind of the sample.
 
@@ -11944,7 +11943,7 @@ above action for each value in turn."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_all_values`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::clearing_all_values_and_the_nonkey_values`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_3_clearing_all_values_and_the_nonkey_values`
 
 **Status:** done — `clear_all_values()`: every value at its default (Table 9).
 
@@ -11957,7 +11956,7 @@ of key fields of aggregated types retain their values."
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_nonkey_values`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::zerodds_dyn_data_clear_nonkey_values`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::clearing_all_values_and_the_nonkey_values`,
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_3_clearing_all_values_and_the_nonkey_values`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::tests::clear_nonkey_values_keeps_the_key_members`
 
 **Status:** done — `clear_nonkey_values()` keeps the key members; the ROS 2 interface does the same (`zerodds_dyn_data_clear_nonkey_values`).
@@ -11971,7 +11970,7 @@ optional, set it to its default value."
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_value`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::zerodds_dyn_data_clear_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::an_optional_member_is_set_and_removed`,
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_3_an_optional_member_is_set_and_removed`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::tests::clear_value_removes_an_optional_member_and_a_sequence_element`
 
 **Status:** done — Aggregate: an optional member is removed, any other takes its default.
@@ -11985,8 +11984,8 @@ to the next-lowest index."
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_value`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::zerodds_dyn_data_clear_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`,
-`crates/types/tests/dynamic_sample.rs::a_map_is_reached_by_key`,
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_map_is_reached_by_key`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::tests::clear_value_removes_an_optional_member_and_a_sequence_element`
 
 **Status:** done — String, sequence, map: the element is removed and the rest move down.
@@ -11998,7 +11997,7 @@ indicated element to its default value."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::an_array_is_flattened`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_an_array_is_flattened`
 
 **Status:** done — Array: the element takes its default, the size stays.
 
@@ -12010,7 +12009,7 @@ indicated bit."
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_value`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::write_slot`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`,
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::tests::a_bitmask_flag_is_a_boolean_by_bit`
 
 **Status:** done — Bitmask: the bit is cleared.
@@ -12022,7 +12021,7 @@ to the first value of the enumerated type."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::an_enumeration_is_a_signed_integer`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_3_an_enumeration_is_a_signed_integer`
 
 **Status:** done — Enumeration: the first value.
 
@@ -12033,7 +12032,7 @@ its default value."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::clear_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`
 
 **Status:** done — Primitive type: its default.
 
@@ -12061,8 +12060,8 @@ member takes its default value in the latter sample."
 **Repo:** `crates/types/src/dynamic/sample.rs::equals`,
 `crates/types/src/dynamic/data_equals.rs::values_equal`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::an_optional_member_is_set_and_removed`,
-`crates/types/tests/dynamic_corpus.rs::a_dynamic_data_writes_the_octets_a_json_value_writes`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_3_an_optional_member_is_set_and_removed`,
+`crates/types/tests/dynamic_corpus.rs::xtypes_7_5_2_a_dynamic_data_writes_the_octets_a_json_value_writes`
 
 **Status:** done — `equals`: equal types, members without regard to their order, a left-out non-optional member equal to its default (`DynamicType::values_equal`).
 
@@ -12077,9 +12076,9 @@ enumerated type, it is atomic: return one."
 **Repo:** `crates/types/src/dynamic/sample.rs::get_item_count`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::zerodds_dyn_data_item_count`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_new_sample_has_its_type_and_defaults`,
-`crates/types/tests/dynamic_sample.rs::an_array_is_flattened`,
-`crates/types/tests/dynamic_sample.rs::a_union_member_is_selected_by_being_set`,
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_10_a_new_sample_has_its_type_and_defaults`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_an_array_is_flattened`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_6_a_union_member_is_selected_by_being_set`,
 `crates/rmw-zerodds-shim/src/dynamic.rs::tests::an_atomic_value_has_one_item`
 
 **Status:** done — `get_item_count`: collection (array: product of the bounds), flags set, members of an aggregate, two for a union with a selected member, one for an atomic value.
@@ -12132,8 +12131,8 @@ mapping described above".
 
 **Repo:** `crates/types/src/dynamic/sample.rs::DynamicSample`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`,
-`crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`
 
 **Status:** done — The getters and setters of Annex C as methods of `DynamicSample`, one per type (`get_int32_value`, `set_int32_value`, … `get_complex_value`).
 
@@ -12143,7 +12142,7 @@ mapping described above".
 
 **Repo:** `crates/types/src/dynamic/sample.rs::integer_accessors`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`
 
 **Status:** done — One getter and one setter per primitive type.
 
@@ -12155,7 +12154,7 @@ own expansions qualified by 'string' and 'wstring' respectively."
 **Repo:** `crates/types/src/dynamic/sample.rs::get_string_value`,
 `crates/types/src/dynamic/sample.rs::set_string_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::strings_keep_their_bound_and_their_width`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_strings_keep_their_bound_and_their_width`
 
 **Status:** done — `get_string_value`, `set_string_value`, `get_wstring_value`, `set_wstring_value`; the bound of the string applies.
 
@@ -12167,7 +12166,7 @@ to any signed integer type having at least as many bits as the enumerated type's
 
 **Repo:** `crates/types/src/dynamic/sample.rs::effective_kind`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::an_enumeration_is_a_signed_integer`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_3_an_enumeration_is_a_signed_integer`
 
 **Status:** done — An enumeration reads and sets as a signed integer at least as wide as its `@bit_bound` (default 32); a value with no enumerator is refused.
 
@@ -12179,7 +12178,7 @@ unsigned integer type having at least as many bits as the bitmask's @bit_bound."
 **Repo:** `crates/types/src/dynamic/sample.rs::effective_kind`,
 `crates/types/src/dynamic/sample.rs::store_integer`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`
 
 **Status:** done — A bitmask reads and sets as an unsigned integer at least as wide as its bound; a bit that no flag names is refused.
 
@@ -12191,7 +12190,7 @@ for that type."
 
 **Repo:** `crates/types/src/dynamic/sample.rs::resolve`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`
 
 **Status:** done — An alias is read and set through its base type (`resolve_alias`).
 
@@ -12204,8 +12203,8 @@ Arrays shall also be accessible through these methods."
 **Repo:** `crates/types/src/dynamic/sample.rs::get_integers`,
 `crates/types/src/dynamic/sample.rs::set_values`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`,
-`crates/types/tests/dynamic_sample.rs::an_array_is_flattened`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_an_array_is_flattened`
 
 **Status:** done — The plural forms (`get_int32_values`, `set_int32_values`, …, `get_string_values`) for sequences and arrays, with the promotions of the elements.
 
@@ -12217,8 +12216,8 @@ qualified by 'complex,' catch the remaining cases"
 **Repo:** `crates/types/src/dynamic/sample.rs::get_complex_value`,
 `crates/types/src/dynamic/sample.rs::set_complex_value`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_loan_is_taken_and_returned`,
-`crates/types/tests/dynamic_sample.rs::a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_a_loan_is_taken_and_returned`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_bitmask_has_boolean_flags_and_reads_as_an_unsigned_integer`
 
 **Status:** done — `get_complex_value` and `set_complex_value` for all other cases; the type has to be equal.
 
@@ -12231,9 +12230,9 @@ be used to append new elements to the collection."
 **Repo:** `crates/types/src/dynamic/sample.rs::write_element`,
 `crates/types/src/dynamic/sample.rs::write_entry`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`,
-`crates/types/tests/dynamic_sample.rs::a_map_is_reached_by_key`,
-`crates/types/tests/dynamic_sample.rs::strings_keep_their_bound_and_their_width`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_map_is_reached_by_key`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_strings_keep_their_bound_and_their_width`
 
 **Status:** done — A setter appends to a string, a sequence or a map when the id is the index one past the end; the bound applies.
 
@@ -12247,8 +12246,8 @@ the new map key."
 **Repo:** `crates/types/src/dynamic/sample.rs::get_member_id_at_index`,
 `crates/types/src/dynamic/sample.rs::get_member_id_by_name`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::a_sequence_grows_shrinks_and_is_read_whole`,
-`crates/types/tests/dynamic_sample.rs::a_map_is_reached_by_key`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_sequence_grows_shrinks_and_is_read_whole`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_a_map_is_reached_by_key`
 
 **Status:** done — The id of a new element comes from `get_member_id_at_index` (sequence, string) or `get_member_id_by_name` (map).
 
@@ -12260,8 +12259,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Int8 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12273,8 +12272,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Int16 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12286,8 +12285,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Int32 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12299,8 +12298,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Int64 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12313,8 +12312,8 @@ Float128"
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of UInt8 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12326,8 +12325,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of UInt16 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12339,8 +12338,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of UInt32 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12352,8 +12351,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of UInt64 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12365,8 +12364,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Float32 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12378,8 +12377,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Float64 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12391,8 +12390,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — Float128 has no promotion; a getter or setter of Float128 works only on a Float128 member (and the setter on no other).
 
@@ -12404,8 +12403,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Char8 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12417,8 +12416,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Char16 after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12430,8 +12429,8 @@ integral types. These shall be supported during both 'get' and 'set' operations
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Byte after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12444,8 +12443,8 @@ Float32, Float64, Float128"
 
 **Repo:** `crates/types/src/dynamic/sample.rs::promotes`
 
-**Tests:** `crates/types/tests/dynamic_sample.rs::the_promotion_table_of_the_specification`,
-`crates/types/tests/dynamic_sample.rs::integers_promote_upwards_only`
+**Tests:** `crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_9_the_promotion_table_of_the_specification`,
+`crates/types/tests/dynamic_sample.rs::xtypes_7_5_2_11_1_integers_promote_upwards_only`
 
 **Status:** done — The promotion of Boolean after the list of the spec: a getter of the larger type reads, a setter of the smaller type sets; the other way round is `RETCODE_BAD_PARAMETER`. All 15 by 15 pairs are checked against the list.
 
@@ -12473,8 +12472,8 @@ they specify consistent types (see Clause 7.6.3.4.2 [...]) and compatible QoS".
 
 **Repo:** `crates/dcps/src/runtime.rs::decide_type_consistency` (l. 18903)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_step2_falls_back_to_the_type_name_for_a_peer_without_type_information`,
-`crates/dcps/tests/xtypes_aware_match.rs::appendable_compatible_matches_at_match_time`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_1_step2_falls_back_to_the_type_name_for_a_peer_without_type_information`,
+`crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_1_appendable_compatible_matches_at_match_time`
 
 **Status:** done
 
@@ -12497,7 +12496,7 @@ Topic are the Aggregated Types defined in 7.2.2.4.4, that is, Structure types
 
 **Repo:** —
 
-**Tests:** `crates/zerodds-build/tests/dds_type.rs::an_enumeration_and_a_bitset_are_no_topic_types`
+**Tests:** `crates/zerodds-build/tests/dds_type.rs::xtypes_7_6_2_an_enumeration_and_a_bitset_are_no_topic_types`
 
 **Status:** done — `zerodds-build` generates no `DdsType` implementation for an `enum` and a `bitset`; structures and unions remain topic types.
 
@@ -12508,7 +12507,7 @@ the (Aggregated Type) associated with a Topic."
 
 **Repo:** `crates/wire-codec/src/encode.rs::write_aggregate` (l. 931)
 
-**Tests:** `crates/wire-probe/tests/interop_corpus.rs::every_case_produces_the_bytes_its_readme_records_in_all_four_modes`
+**Tests:** `crates/wire-probe/tests/interop_corpus.rs::xtypes_7_3_1_2_2_every_case_produces_the_bytes_its_readme_records_in_all_four_modes`
 
 **Status:** done
 
@@ -12535,7 +12534,7 @@ policy: DataRepresentationQosPolicy."
 **Repo:** `crates/dcps/src/qos.rs::DataWriterQos` (l. 26, field `data_representation` l. 73);
 `crates/dcps/src/qos.rs::DataReaderQos` (l. 114, field l. 152)
 
-**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::data_representation_defaults_none_and_settable`
+**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::xtypes_7_6_3_1_data_representation_defaults_none_and_settable`
 
 **Status:** done
 
@@ -12548,7 +12547,7 @@ definition by DDS implementations."
 **Repo:** `crates/types/src/qos.rs::DataRepresentationId` (l. 174);
 `crates/rtps/src/publication_data.rs::negotiate` (l. 152)
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::publication_data_roundtrip_preserves_data_representation`
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_publication_data_roundtrip_preserves_data_representation`
 
 **Status:** done — `i16`; an unknown identifier is read and not accepted in the
 negotiation.
@@ -12561,7 +12560,7 @@ the value 1. XCDR2 [...] takes the value 2."
 **Repo:** `crates/types/src/qos.rs::DataRepresentationId` (l. 174);
 `crates/rtps/src/publication_data.rs::DEFAULT_OFFER` (l. 108)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::data_repr_offer_str_uses_spec_ids`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_1_data_repr_offer_str_uses_spec_ids`
 
 **Status:** done
 
@@ -12578,11 +12577,11 @@ representation identifiers."
 `crates/cpp/include/dds/core/policy/CorePolicy.hpp::DataRepresentation`;
 `crates/rtps/src/topic_data.rs::TopicBuiltinTopicData`
 
-**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::data_representation_defaults_none_and_settable`,
-`crates/dcps/tests/topic_data_representation.rs::the_topic_qos_names_a_representation_for_its_writers_and_readers`,
-`crates/zerodds-c-api/tests/qos_data_representation_c.rs::a_set_list_is_the_list_and_an_empty_one_is_kept_empty`,
-`crates/zerodds-c-api/tests/qos_data_representation_c.rs::the_entities_hand_the_representation_back`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_data_representation_and_type_consistency_in_the_qos_sets`
+**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::xtypes_7_6_3_1_data_representation_defaults_none_and_settable`,
+`crates/dcps/tests/topic_data_representation.rs::xtypes_7_6_3_1_1_the_topic_qos_names_a_representation_for_its_writers_and_readers`,
+`crates/zerodds-c-api/tests/qos_data_representation_c.rs::xtypes_7_6_3_1_1_a_set_list_is_the_list_and_an_empty_one_is_kept_empty`,
+`crates/zerodds-c-api/tests/qos_data_representation_c.rs::xtypes_7_6_3_1_1_the_entities_hand_the_representation_back`,
+`crates/cpp/tests/smoke_dds_psm.cpp::xtypes_7_6_3_1_1_data_representation_and_type_consistency_in_the_qos_sets`
 
 **Status:** done — Topic, DataWriter and DataReader have the policy in Rust, in the C structs (`ZeroDdsTopicQos`, `ZeroDdsDataWriterQos`, `ZeroDdsDataReaderQos` end in `ZeroDdsDataRepresentationQosPolicy`: `is_set`, `count`, `ids[8]`; a struct of zeros is the default), in the Java PSM and in the QoS sets of the C++ PSM (`dds::topic::qos::TopicQos`, `dds::pub::qos::DataWriterQos`, `dds::sub::qos::DataReaderQos`; `DataRepresentation::is_set()` tells whether the application gave a list; the C++ PSM refuses a list of more than eight identifiers with `InvalidArgumentError`). The first element of the topic applies to writers, the whole list to readers; it cannot be changed after enable. The built-in topic data carry the field.
 
@@ -12595,7 +12594,7 @@ representation identifiers."
 `crates/cpp/include/dds/core/detail/policy_bridge.hpp`;
 `crates/cpp/include/dds/core/qos_bridge.hpp`
 
-**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::test_data_representation_and_type_consistency_in_the_qos_sets`
+**Tests:** `crates/cpp/tests/smoke_dds_psm.cpp::xtypes_7_6_3_1_1_data_representation_and_type_consistency_in_the_qos_sets`
 
 **Status:** done — The type lists of `dds::topic::qos::TopicQos`, `dds::pub::qos::DataWriterQos` and `dds::sub::qos::DataReaderQos` take `DataRepresentation`, that of `DataReaderQos` also `TypeConsistencyEnforcement`; `qos_bridge.hpp` passes both to the C ABI and reads them back. `TypeConsistencyEnforcement` has the five flags of Annex D (`ignore_sequence_bounds`, `ignore_string_bounds`, `ignore_member_names`, `prevent_type_widening`, `force_type_validation`) with the defaults of §7.6.3.4.1. The PSM class has four kinds, Annex D two (`DISALLOW_TYPE_COERCION`, `ALLOW_TYPE_COERCION`): `ASSIGNABLE_TYPE_CONSISTENCY` is `ALLOW_TYPE_COERCION`, the other three are `DISALLOW_TYPE_COERCION`, and `DISALLOW_TYPE_COERCION` is read back as `EXACT_TYPE_TYPE_CONSISTENCY`. Annex D has the policy on neither Topic nor DataWriter (`TypeConsistencyEnforcement` only in `DataReaderQos`).
 
@@ -12607,8 +12606,8 @@ the whole sequence applies to readers of the Topic."
 
 **Repo:** —
 
-**Tests:** `crates/dcps/tests/topic_data_representation.rs::the_topic_qos_names_a_representation_for_its_writers_and_readers`,
-`crates/dcps/tests/topic_data_representation.rs::the_default_topic_leaves_the_default_representation`
+**Tests:** `crates/dcps/tests/topic_data_representation.rs::xtypes_7_6_3_1_1_the_topic_qos_names_a_representation_for_its_writers_and_readers`,
+`crates/dcps/tests/topic_data_representation.rs::xtypes_7_6_3_1_1_the_default_topic_leaves_the_default_representation`
 
 **Status:** done — `TopicQos::data_representation`; `copy_from_topic_qos` takes it over for writers and readers.
 
@@ -12622,8 +12621,8 @@ corresponding Entity has been enabled."
 **Repo:** `crates/dcps/src/qos.rs::immutable_writer_change` (l. 206);
 `crates/dcps/src/qos.rs::immutable_reader_change` (l. 241)
 
-**Tests:** `crates/dcps/src/entity.rs::tests::immutable_if_enabled_returns_correct_error`,
-`crates/dcps/tests/topic_data_representation.rs::an_enabled_topic_refuses_a_new_representation`
+**Tests:** `crates/dcps/src/entity.rs::tests::dcps_2_2_1_1_immutable_if_enabled_returns_correct_error`,
+`crates/dcps/tests/topic_data_representation.rs::xtypes_7_6_3_1_1_an_enabled_topic_refuses_a_new_representation`
 
 **Status:** done — Request-offer; after enable the policy cannot be changed on writer, reader and topic.
 
@@ -12637,8 +12636,8 @@ identifiers after the first, and implementations may ignore them."
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728);
 `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader` (l. 12220)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::default_offer_is_xcdr1_alone_and_both_is_a_setting`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_default_offer_is_xcdr1_alone_and_both_is_a_setting`
 
 **Status:** done — the writer writes in the first offered representation and
 matches only readers that accept it. The default offers `[XCDR1]` (§7.6.3.1.1); `[XCDR1, XCDR2]` is the setting `wire.data_representation_offer`.
@@ -12653,7 +12652,7 @@ means to configure at run-time the encoding version used by the DataWriter".
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728);
 `crates/zerodds-build/src/lib.rs::encoding_for` (l. 983)
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::runtime_config_data_rep_offer_user_override_xcdr2_only`
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_runtime_config_data_rep_offer_user_override_xcdr2_only`
 
 **Status:** done — through `DataWriterQos::data_representation` and the runtime
 configuration.
@@ -12680,8 +12679,8 @@ encoding in addition to XCDR2 encoding."
 **Repo:** `crates/dcps/src/runtime.rs::reader_accept_repr`;
 `crates/dcps/src/runtime.rs::wire_reader_to_remote_writer`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::reader_accept_repr_requests_xcdr2_and_xcdr`,
-`crates/dcps/src/subscriber.rs::tests::decode_for_encap_dispatches_on_representation_and_endianness`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_1_reader_accept_repr_requests_xcdr2_and_xcdr`,
+`crates/dcps/src/subscriber.rs::tests::xtypes_7_6_3_1_1_decode_for_encap_dispatches_on_representation_and_endianness`
 
 **Status:** done — The reader announces `[XCDR2, XCDR1]` without a setting: it reads both versions (the read paths are tested) and requests XCDR2 and, in addition, XCDR. An element of the configured offer that is neither (XML) follows. The offer `wire.data_representation_offer` (default `[XCDR1]`) is the writers'. The default of the policy is the empty list, which is `[XCDR]`; the clause for readers asks for more, and a reader at the default follows the clause (see "Contradictions within the specification" in the findings file).
 
@@ -12693,9 +12692,9 @@ shall be prepared to receive either valid or merely well-formed XML documents."
 **Repo:** `crates/dcps/src/xml_data.rs::from_xml`,
 `crates/dcps/src/runtime.rs::xml_sample_as_cdr`
 
-**Tests:** `crates/dcps/src/xml_data.rs::tests::a_value_is_written_as_its_document_and_read_back`,
-`crates/dcps/src/xml_data.rs::tests::entities_and_prefixes_are_read`,
-`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::dynamic_data_goes_over_xml`
+**Tests:** `crates/dcps/src/xml_data.rs::tests::xtypes_7_4_4_a_value_is_written_as_its_document_and_read_back`,
+`crates/dcps/src/xml_data.rs::tests::xtypes_7_6_3_1_1_entities_and_prefixes_are_read`,
+`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::xtypes_7_4_4_dynamic_data_goes_over_xml`
 
 **Status:** done — A reader that requests XML (`DataRepresentationQosPolicy` with `XML`, `wire.data_representation_offer=XML`) reads a document in the Valid variant (with the namespace `ddstype://…`, with a prefix) and in the Well-formed variant (without a namespace); prefixes and namespace declarations are skipped, comments and the XML declaration too. The writer sends the Well-formed variant, because the receiver infers the namespace (§7.4.4.2).
 
@@ -12709,9 +12708,9 @@ policies are compatible. Otherwise, they are incompatible."
 `crates/dcps/src/runtime.rs::wire_reader_to_remote_writer` (l. 12732);
 `crates/rtps/src/publication_data.rs::negotiate` (l. 152)
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::runtime_config_data_rep_match_mode_default_is_strict`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::runtime_config_data_rep_match_mode_tolerant_is_selectable`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::runtime_config_data_rep_match_mode_user_strict`
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_default_is_strict`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_tolerant_is_selectable`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_user_strict`
 
 **Status:** done — The writer requires its representation to be in the reader's list; the local reader matches by default (`DataRepMatchMode::Strict`) only a writer whose representation is in its own list. The setting `wire.data_representation_match: tolerant` gives the old behaviour (an overlap suffices) back for peers that send so.
 
@@ -12721,8 +12720,8 @@ policies are compatible. Otherwise, they are incompatible."
 
 **Repo:** —
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::runtime_config_data_rep_match_mode_default_is_strict`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::runtime_config_data_rep_match_mode_tolerant_is_selectable`
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_default_is_strict`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_runtime_config_data_rep_match_mode_tolerant_is_selectable`
 
 **Status:** done — By default the reader matches only if the representation of the writer is in its list; the overlap is the named setting `wire.data_representation_match: tolerant`.
 
@@ -12737,10 +12736,10 @@ element XCDR."
 `crates/rtps/src/publication_data.rs::negotiate`;
 `crates/dcps/src/qos.rs::effective_data_representation`
 
-**Tests:** `crates/types/src/qos.rs::tests::an_empty_list_of_preferences_is_the_single_element_xcdr`,
-`crates/dcps/src/publisher.rs::tests::create_datawriter_rejects_invalid_data_representation_offers`,
-`crates/dcps/src/publisher.rs::tests::qos_emit_xcdr1_only_for_explicit_xcdr1`,
-`crates/zerodds-c-api/tests/qos_data_representation_c.rs::a_zeroed_qos_leaves_the_representation_at_its_default`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr`,
+`crates/dcps/src/publisher.rs::tests::xtypes_7_6_3_1_1_create_datawriter_rejects_invalid_data_representation_offers`,
+`crates/dcps/src/publisher.rs::tests::xtypes_7_6_3_1_1_qos_emit_xcdr1_only_for_explicit_xcdr1`,
+`crates/zerodds-c-api/tests/qos_data_representation_c.rs::xtypes_7_6_3_1_1_a_zeroed_qos_leaves_the_representation_at_its_default`
 
 **Status:** done — An empty list is `[XCDR]` in matching and in the offer; `create_datawriter` accepts an explicitly empty list and the writer then encodes XCDR1. The policy stays `None` by default and the runtime resolves it to its own offer, whose first element is XCDR (`DEFAULT_OFFER = [XCDR1]`, setting `wire.data_representation_offer`); elements after the first have no meaning according to §7.6.3.1.1.
 
@@ -12751,8 +12750,8 @@ element XCDR."
 **Repo:** `crates/rtps/src/publication_data.rs::negotiate` (l. 152);
 `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader` (l. 12220)
 
-**Tests:** `crates/types/src/qos.rs::tests::an_empty_list_of_preferences_is_the_single_element_xcdr`,
-`crates/discovery/tests/representation_and_type_information.rs::negotiation_matches_xcdr2_when_both_support`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr`,
+`crates/discovery/tests/representation_and_type_information.rs::xtypes_7_6_3_1_1_negotiation_matches_xcdr2_when_both_support`
 
 **Status:** done
 
@@ -12763,8 +12762,8 @@ element XCDR."
 **Repo:** `crates/rtps/src/publication_data.rs::negotiate` (l. 152);
 `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader` (l. 12220)
 
-**Tests:** `crates/types/src/qos.rs::tests::an_empty_list_of_preferences_is_the_single_element_xcdr`,
-`crates/discovery/tests/representation_and_type_information.rs::negotiation_matches_xcdr2_when_both_support`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr`,
+`crates/discovery/tests/representation_and_type_information.rs::xtypes_7_6_3_1_1_negotiation_matches_xcdr2_when_both_support`
 
 **Status:** done
 
@@ -12775,9 +12774,9 @@ element XCDR."
 **Repo:** `crates/rtps/src/publication_data.rs::negotiate` (l. 152);
 `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader` (l. 12220)
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::strict_writer_xcdr2_first_reader_xcdr1_only_no_match`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::tolerant_writer_xcdr2_first_reader_xcdr1_only_falls_back`,
-`crates/types/src/qos.rs::tests::an_empty_list_of_preferences_is_the_single_element_xcdr`
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_strict_writer_xcdr2_first_reader_xcdr1_only_no_match`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_tolerant_writer_xcdr2_first_reader_xcdr1_only_falls_back`,
+`crates/types/src/qos.rs::tests::xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr`
 
 **Status:** done — Writer `[XCDR2]` against reader `[XCDR]` does not match, on both sides; a reader `[XCDR1]` and a writer `[XCDR2, XCDR1]` do not match by default, under `tolerant` they do.
 
@@ -12788,8 +12787,8 @@ element XCDR."
 **Repo:** `crates/rtps/src/publication_data.rs::negotiate` (l. 152);
 `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader` (l. 12220)
 
-**Tests:** `crates/types/src/qos.rs::tests::an_empty_list_of_preferences_is_the_single_element_xcdr`,
-`crates/discovery/tests/representation_and_type_information.rs::negotiation_matches_xcdr2_when_both_support`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr`,
+`crates/discovery/tests/representation_and_type_information.rs::xtypes_7_6_3_1_1_negotiation_matches_xcdr2_when_both_support`
 
 **Status:** done
 
@@ -12801,7 +12800,7 @@ DDS implementations and shall be interpreted based on the RTPS vendor ID."
 
 **Repo:** `crates/dcps/src/runtime.rs::user_encap_body` (l. 20061)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::strip_user_encap_rejects_unknown_scheme`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_2_strip_user_encap_rejects_unknown_scheme`
 
 **Status:** done — ZeroDDS defines no identifier of its own; an identifier whose
 first octet is not 0 is refused.
@@ -12816,10 +12815,10 @@ corresponding to the XML Data Representation: XML, with the value {0x00, 0x04}."
 `crates/dcps/src/xml_data.rs::is_xml_payload`,
 `crates/dcps/src/publisher.rs::validate_writer_data_representation`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_writer_registered_with_xml_first_is_accepted`,
-`crates/dcps/src/runtime.rs::tests::data_repr_offer_str_uses_spec_ids`,
-`crates/dcps/src/runtime.rs::tests::an_xml_sample_reaches_the_reader_as_its_cdr_body`,
-`crates/dcps/src/publisher.rs::tests::create_datawriter_rejects_invalid_data_representation_offers`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_5_a_writer_registered_with_xml_first_is_accepted`,
+`crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_1_data_repr_offer_str_uses_spec_ids`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_sample_reaches_the_reader_as_its_cdr_body`,
+`crates/dcps/src/publisher.rs::tests::xtypes_7_6_3_1_1_create_datawriter_rejects_invalid_data_representation_offers`
 
 **Status:** done — `user_encap_body` does not take `{0x00, 0x04}` for CDR; `xml_data::is_xml_payload` recognises it, `delivered_to_user_sample` reads the document through `xml_sample_as_cdr`. A writer whose offer starts with XML is accepted (`check_emittable_offer`, `validate_writer_data_representation`, `parse_data_repr_offer_str` with `XML`) and writes `{0x00, 0x04}` with the two option octets (the number of padding bytes in the two low bits, §7.6.3.1.2).
 
@@ -12832,7 +12831,7 @@ and PL_CDR2 each with big endian or little endian encoding".
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728);
 `crates/wire-codec/src/value.rs::encapsulation_header` (l. 527)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12844,7 +12843,7 @@ and the data representation of the outermost object".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12855,7 +12854,7 @@ and the data representation of the outermost object".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12866,7 +12865,7 @@ CDR_LE | {0x00, 0x01}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12877,7 +12876,7 @@ CDR_BE | {0x00, 0x00}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12888,7 +12887,7 @@ CDR_BE | {0x00, 0x00}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12899,7 +12898,7 @@ PL_CDR_BE | {0x00, 0x02}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12910,7 +12909,7 @@ PL_CDR_LE | {0x00, 0x03}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12921,7 +12920,7 @@ CDR2_BE | {0x00, 0x06}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12932,7 +12931,7 @@ CDR2_LE | {0x00, 0x07}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12943,7 +12942,7 @@ D_CDR2_BE | {0x00, 0x08}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12954,7 +12953,7 @@ D_CDR2_BE | {0x00, 0x08}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12965,7 +12964,7 @@ PL_CDR2_BE | {0x00, 0x0a}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done
 
@@ -12976,7 +12975,7 @@ PL_CDR_LE | {0x00, 0x0b}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap` (l. 728)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`
 
 **Status:** done — the row names `PL_CDR_LE` instead of `PL_CDR2_LE`
 (DDSXTY14-42; listed in the findings file).
@@ -12988,8 +12987,8 @@ PL_CDR_LE | {0x00, 0x0b}".
 
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/src/runtime.rs::tests::an_xml_sample_reaches_the_reader_as_its_cdr_body`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_sample_reaches_the_reader_as_its_cdr_body`
 
 **Status:** done — The XML row of Table 60: `user_payload_encap(XML, …)` returns `{0x00, 0x04, 0x00, 0x00}` for every extensibility and every byte order; a reader reads it.
 
@@ -13002,9 +13001,9 @@ byte options field. [...] The XML encapsulation identifier is also followed by a
 **Repo:** `crates/dcps/src/runtime.rs::user_payload_encap`,
 `crates/dcps/src/runtime.rs::pad_user_payload`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::user_payload_encap_maps_repr_and_extensibility`,
-`crates/dcps/src/runtime.rs::tests::an_xml_sample_reaches_the_reader_as_its_cdr_body`,
-`crates/dcps/src/runtime.rs::tests::an_xml_writer_sends_the_document_of_the_sample`
+**Tests:** `crates/dcps/src/runtime.rs::tests::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_sample_reaches_the_reader_as_its_cdr_body`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_5_an_xml_writer_sends_the_document_of_the_sample`
 
 **Status:** done — Two octets of options follow the identifier, for XCDR and for XML; the two low bits of the options count the padding bytes after the document (`pad_user_payload`), and the reader takes them off (`padding_present`).
 
@@ -13021,9 +13020,9 @@ where the serialized data exactly ended."
 `crates/wire-codec/src/decode.rs::padding_present` (l. 281);
 `crates/wire-codec/src/value.rs::encapsulation_header` (l. 527)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_user_payload_names_its_padding_in_the_options`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_drops_the_padding_the_options_name`,
-`crates/dcps/src/runtime.rs::tests::strip_user_encap_keeps_a_body_whose_counted_padding_is_absent`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_2_a_user_payload_names_its_padding_in_the_options`,
+`crates/dcps/src/runtime.rs::tests::rtps_10_2_strip_user_encap_drops_the_padding_the_options_name`,
+`crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_2_strip_user_encap_keeps_a_body_whose_counted_padding_is_absent`
 
 **Status:** done — The DataWriter pads the payload with zeros to a multiple of four and writes the count into `options`; the receiver evaluates the bits.
 
@@ -13035,7 +13034,7 @@ of padding needed."
 
 **Repo:** —
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::a_user_payload_names_its_padding_in_the_options`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_2_a_user_payload_names_its_padding_in_the_options`
 
 **Status:** done — `runtime.rs::pad_user_payload` appends the padding, and `user_payload_encap` sets the two lowest bits of `options`.
 
@@ -13046,7 +13045,7 @@ of padding needed."
 
 **Repo:** `crates/wire-codec/src/encode.rs::encode`
 
-**Tests:** `crates/wire-codec/tests/encapsulation_options_example.rs::the_options_count_the_padding_of_the_three_objects`
+**Tests:** `crates/wire-codec/tests/encapsulation_options_example.rs::xtypes_7_6_3_1_2_the_options_count_the_padding_of_the_three_objects`
 
 **Status:** done — The test encodes `TypeA`, `TypeB` and `TypeC` with the values of the example in CDR big endian with the encapsulation and reads the octets back: `options` 0x0002, 0x0001, 0x0000 and the padding of zeros. The spec's line for O3 names `O3.member2` twice; `member3` is meant (typing slip of the spec, in the findings file).
 
@@ -13062,8 +13061,8 @@ DDS::DataRepresentationQosPolicy representation;"
 `crates/rtps/src/publication_data.rs::PublicationBuiltinTopicData` (l. 207, field `data_representation` l. 274);
 `crates/rtps/src/subscription_data.rs::SubscriptionBuiltinTopicData` (l. 37)
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::publication_data_emits_data_representation_pid_when_set`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::publication_data_roundtrip_preserves_data_representation`
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_3_publication_data_emits_data_representation_pid_when_set`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_publication_data_roundtrip_preserves_data_representation`
 
 **Status:** done
 
@@ -13079,8 +13078,8 @@ Uses a new pair of built-in endpoints to request the TypeObjects".
 
 **Repo:** `crates/dcps/src/runtime.rs::announced_type_information` (l. 8241)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::issue42_publication_announces_standard_type_information`,
-`crates/dcps/src/runtime.rs::tests::issue42_subscription_announces_standard_type_information`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_2_1_issue42_publication_announces_standard_type_information`,
+`crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_2_1_issue42_subscription_announces_standard_type_information`
 
 **Status:** done
 
@@ -13095,8 +13094,8 @@ TypeIdentifierWithDependencies complete; };"
 `crates/types/src/type_information.rs::TypeIdentifierWithDependencies` (l. 138);
 `crates/types/src/type_information.rs::TypeInformation` (l. 209)
 
-**Tests:** `crates/discovery/tests/representation_and_type_information.rs::type_information_is_built_from_a_keyed_appendable_struct`,
-`crates/types/src/type_information.rs::tests::negative_dependent_typeid_count_roundtrips`
+**Tests:** `crates/discovery/tests/representation_and_type_information.rs::xtypes_7_6_3_2_1_type_information_is_built_from_a_keyed_appendable_struct`,
+`crates/types/src/type_information.rs::tests::xtypes_7_6_3_2_1_negative_dependent_typeid_count_roundtrips`
 
 **Status:** done — the specification writes `TypeIdentfierWithSize` (slip in the
 specification, listed in the findings file).
@@ -13110,7 +13109,7 @@ the COMPLETE Hash TypeIdentifier".
 
 **Repo:** `crates/types/src/type_information.rs::from_minimal_and_complete` (l. 223)
 
-**Tests:** `crates/discovery/tests/representation_and_type_information.rs::type_information_is_built_from_a_keyed_appendable_struct`
+**Tests:** `crates/discovery/tests/representation_and_type_information.rs::xtypes_7_6_3_2_1_type_information_is_built_from_a_keyed_appendable_struct`
 
 **Status:** done
 
@@ -13123,9 +13122,9 @@ it is not being provided."
 
 **Repo:** `crates/types/src/type_information.rs::from_registry`
 
-**Tests:** `crates/types/tests/type_information_dependencies.rs::the_count_is_the_number_of_types_the_topic_type_depends_on`,
-`crates/types/tests/type_information_dependencies.rs::a_dependency_the_registry_lacks_gives_minus_one`,
-`crates/types/tests/type_information_dependencies.rs::a_type_without_dependencies_has_count_zero`
+**Tests:** `crates/types/tests/type_information_dependencies.rs::xtypes_7_6_3_2_1_the_count_is_the_number_of_types_the_topic_type_depends_on`,
+`crates/types/tests/type_information_dependencies.rs::xtypes_7_6_3_2_1_a_dependency_the_registry_lacks_gives_minus_one`,
+`crates/types/tests/type_information_dependencies.rs::xtypes_7_6_3_2_1_a_type_without_dependencies_has_count_zero`
 
 **Status:** done — `TypeInformation::from_registry` fills `dependent_typeid_count` and the lists of both sides with the dependent types and their sizes; `-1` if the registry does not know a type.
 
@@ -13138,7 +13137,7 @@ shall be less or equal to dependent_typeid_count."
 
 **Repo:** `crates/types/src/type_information.rs::add_dependency` (l. 248)
 
-**Tests:** `crates/types/src/type_information.rs::tests::negative_dependent_typeid_count_roundtrips`
+**Tests:** `crates/types/src/type_information.rs::tests::xtypes_7_6_3_2_1_negative_dependent_typeid_count_roundtrips`
 
 **Status:** done — the empty list is announced.
 
@@ -13153,10 +13152,10 @@ Strongly-Connected Component".
 **Repo:** `crates/dcps/src/runtime.rs::announced_type_information`,
 `crates/types/src/type_information.rs::from_component`
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::issue42_an_unregistered_hash_announces_no_type_information`,
-`crates/dcps/src/runtime.rs::tests::a_recursive_topic_type_announces_the_type_information_of_its_component`,
-`crates/types/tests/scc_type_information.rs::a_component_member_announces_both_forms`,
-`crates/types/tests/scc_type_information.rs::what_the_component_reaches_is_listed_once_each`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_2_1_issue42_an_unregistered_hash_announces_no_type_information`,
+`crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_2_1_a_recursive_topic_type_announces_the_type_information_of_its_component`,
+`crates/types/tests/scc_type_information.rs::xtypes_7_6_3_2_1_a_component_member_announces_both_forms`,
+`crates/types/tests/scc_type_information.rs::xtypes_7_6_3_2_1_what_the_component_reaches_is_listed_once_each`
 
 **Status:** done — Direct hash identifiers are announced. A type in an SCC names itself with the identifier of the component and its position, the `SCCIdentifier` (`scc_index = 0`) of its own and of every reached component are among the dependencies, individual identifiers of types of a component are not (`TypeInformation::from_component`, `DcpsRuntime::register_type_component`).
 
@@ -13169,7 +13168,7 @@ TypeLookup Service to retrieve the TypeObject".
 **Repo:** `crates/dcps/src/runtime.rs::send_type_lookup_request` (l. 8277);
 `crates/dcps/src/runtime.rs::send_type_dependencies_request` (l. 8412)
 
-**Tests:** `crates/dcps/tests/typelookup_resolution_e2e.rs::get_types_answers_the_complete_form_of_a_hash`
+**Tests:** `crates/dcps/tests/typelookup_resolution_e2e.rs::xtypes_7_6_3_2_1_get_types_answers_the_complete_form_of_a_hash`
 
 **Status:** done
 
@@ -13179,7 +13178,7 @@ TypeLookup Service to retrieve the TypeObject".
 
 **Repo:** `crates/rtps/src/parameter_list.rs` (`TYPE_NAME` l. 92)
 
-**Tests:** `crates/dcps/tests/shapes_type_wire.rs::shape_type_type_name_matches_interop_convention`
+**Tests:** `crates/dcps/tests/shapes_type_wire.rs::xtypes_7_6_3_2_2_shape_type_type_name_matches_interop_convention`
 
 **Status:** done
 
@@ -13188,12 +13187,11 @@ TypeLookup Service to retrieve the TypeObject".
 **Spec:** §7.6.3.2.2, p. 236 — "@id(0x0072) @optional TypeObjectV1 type; //
 XTYPES 1.1".
 
-**Repo:** —
+**Repo:** `crates/rtps/src/type_v1.rs` (`push`, `identifier_of`), `crates/rtps/src/publication_data.rs` (`type_object_v1`), `crates/rtps/src/parameter_list.rs` (`pid::TYPE_OBJECT_V1` = 0x0072)
 
-**Tests:** —
+**Tests:** `crates/rtps/tests/type_object_v1_discovery.rs::a_publication_carries_its_type_id_and_type`, `crates/rtps/tests/type_object_v1_discovery.rs::a_subscription_carries_its_type_id_and_type`, `crates/rtps/tests/type_object_v1_discovery.rs::the_parameters_have_the_ids_of_annex_d`, `crates/rtps/tests/type_object_v1_discovery.rs::the_members_are_optional_and_left_out_when_absent`
 
-**Status:** `n/a (informative)` — optional member for XTYPES 1.1; ZeroDDS
-neither writes nor reads it, leaving it out is permitted.
+**Status:** done — topic, publication and subscription data carry `type` under PID 0x0072 in both directions; an absent member is left out.
 
 ### §7.6.3.2.2 @id(0x0075) @optional TypeInformation type_information
 
@@ -13203,8 +13201,8 @@ type_information; // XTYPES 1.2".
 **Repo:** `crates/rtps/src/parameter_list.rs` (`TYPE_INFORMATION` l. 195);
 `crates/rtps/src/publication_data.rs::PublicationBuiltinTopicData` (l. 207, field `type_information` l. 268)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::publication_standard_type_information_yields_type_identifier`,
-`crates/dcps/tests/xtypes_aware_match.rs::subscription_standard_type_information_yields_type_identifier`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_2_2_publication_standard_type_information_yields_type_identifier`,
+`crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_2_2_subscription_standard_type_information_yields_type_identifier`
 
 **Status:** done
 
@@ -13233,7 +13231,7 @@ for TypeLookup replies."
 **Repo:** `crates/discovery/src/type_lookup/endpoints.rs::format_service_instance_name` (l. 31);
 `crates/dcps/src/type_lookup_transport.rs::new` (l. 25)
 
-**Tests:** `crates/discovery/tests/type_lookup_service.rs::typelookup_endpoints_4_distinct_guids_per_participant`
+**Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_1_typelookup_endpoints_4_distinct_guids_per_participant`
 
 **Status:** done
 
@@ -13259,7 +13257,7 @@ dds::SampleIdentity relatedRequestId; dds::rpc::RemoteExceptionCode_t remoteEx;
 **Repo:** `crates/types/src/type_lookup.rs::RequestHeader` (l. 742);
 `crates/types/src/type_lookup.rs::ReplyHeader` (l. 797)
 
-**Tests:** `crates/types/tests/type_lookup_vendor_envelope.rs::all_four_service_envelopes_match_cyclone_serializer`
+**Tests:** `crates/types/tests/type_lookup_vendor_envelope.rs::xtypes_7_6_3_3_2_all_four_service_envelopes_match_cyclone_serializer`
 
 **Status:** done — the block begins with "/* END of definitions copied from
 DDS-RPC */" and writes `SampleIndentity_t` (slips in the specification, listed
@@ -13272,7 +13270,7 @@ ENTITYID_TL_SVC_REQ_WRITER = {{00, 03, 00}, c3} | TypeLookup_Request".
 
 **Repo:** `crates/rtps/src/wire_types.rs::TL_SVC_REQ_WRITER` (l. 506)
 
-**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::entity_ids_match_spec_constants`
+**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::xtypes_7_6_3_3_3_entity_ids_match_spec_constants`
 
 **Status:** done
 
@@ -13283,7 +13281,7 @@ ENTITYID_TL_SVC_REQ_READER = {{00, 03, 00}, c4} | TypeLookup_Request".
 
 **Repo:** `crates/rtps/src/wire_types.rs::TL_SVC_REQ_READER` (l. 511)
 
-**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::entity_ids_match_spec_constants`
+**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::xtypes_7_6_3_3_3_entity_ids_match_spec_constants`
 
 **Status:** done
 
@@ -13294,7 +13292,7 @@ ENTITYID_TL_SVC_REPLY_WRITER = {{00, 03, 01}, c3} | TypeLookup_Reply".
 
 **Repo:** `crates/rtps/src/wire_types.rs::TL_SVC_REPLY_WRITER` (l. 516)
 
-**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::entity_ids_match_spec_constants`
+**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::xtypes_7_6_3_3_3_entity_ids_match_spec_constants`
 
 **Status:** done
 
@@ -13305,7 +13303,7 @@ ENTITYID_TL_SVC_REPLY_READER = {{00, 03, 01}, c4} | TypeLookup_Reply".
 
 **Repo:** `crates/rtps/src/wire_types.rs::TL_SVC_REPLY_READER` (l. 521)
 
-**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::entity_ids_match_spec_constants`
+**Tests:** `crates/discovery/src/type_lookup/endpoints.rs::tests::xtypes_7_6_3_3_3_entity_ids_match_spec_constants`
 
 **Status:** done
 
@@ -13320,7 +13318,7 @@ TypeLookupServiceReplyDataWriter is used to implement the TypeLookup Service".
 `crates/dcps/src/runtime.rs::dispatch_type_lookup_datagram` (l. 22895);
 `crates/dcps/src/runtime.rs::send_type_lookup_reply` (l. 23189)
 
-**Tests:** `crates/dcps/tests/type_lookup_e2e.rs::server_handles_inbound_get_types_request_via_dispatch`
+**Tests:** `crates/dcps/tests/type_lookup_e2e.rs::rtps_10_4_server_handles_inbound_get_types_request_via_dispatch`
 
 **Status:** done
 
@@ -13332,8 +13330,8 @@ the DURABILITY policy to DDS_VOLATILE_DURABILITY_QOS."
 
 **Repo:** `crates/dcps/src/type_lookup_transport.rs::Channel::new`
 
-**Tests:** `crates/dcps/src/type_lookup_transport.rs::tests::the_endpoints_are_reliable_keep_all_and_volatile`,
-`crates/dcps/src/type_lookup_transport.rs::tests::the_history_of_a_type_lookup_endpoint_keeps_all`
+**Tests:** `crates/dcps/src/type_lookup_transport.rs::tests::xtypes_7_6_3_3_3_the_endpoints_are_reliable_keep_all_and_volatile`,
+`crates/dcps/src/type_lookup_transport.rs::tests::xtypes_7_6_3_3_3_the_history_of_a_type_lookup_endpoint_keeps_all`
 
 **Status:** done — The four endpoints are RELIABLE (reliable proxies, HEARTBEATs), KEEP_ALL (40 unacknowledged samples stay in the cache) and VOLATILE (a peer that matches after a write is not sent the sample).
 
@@ -13346,7 +13344,7 @@ the DURABILITY policy to DDS_VOLATILE_DURABILITY_QOS."
 **Repo:** `crates/types/src/type_lookup.rs::OPERATION_GET_TYPES` (l. 140);
 `crates/types/src/type_lookup.rs::OPERATION_GET_DEPENDENCIES` (l. 148)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::the_operation_hashes_are_the_ones_the_clause_prints`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_the_operation_hashes_are_the_ones_the_clause_prints`
 
 **Status:** done — the unions name `TypeLookup_getTypes_Hash` instead of
 `…_HashId` (slip in the specification, listed in the findings file).
@@ -13363,8 +13361,8 @@ sequence<TypeIdentifierPair> complete_to_minimal; };"
 `crates/types/src/type_lookup.rs::GetTypesReply` (l. 282);
 `crates/types/src/type_lookup.rs::member_ids` (l. 122)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::member_ids_are_the_hashid_of_their_name`,
-`crates/types/src/type_lookup.rs::tests::get_types_reply_carries_types_and_complete_to_minimal`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_member_ids_are_the_hashid_of_their_name`,
+`crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_get_types_reply_carries_types_and_complete_to_minimal`
 
 **Status:** done
 
@@ -13380,8 +13378,8 @@ continuation_point; };"
 `crates/types/src/type_lookup.rs::GetTypeDependenciesReply` (l. 491);
 `crates/types/src/type_lookup.rs::ContinuationPoint` (l. 407)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::get_type_dependencies_request_reply_roundtrip`,
-`crates/types/src/type_lookup.rs::tests::continuation_point_len_max_plus_one_on_decode_rejected`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_get_type_dependencies_request_reply_roundtrip`,
+`crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_continuation_point_len_max_plus_one_on_decode_rejected`
 
 **Status:** done
 
@@ -13394,9 +13392,9 @@ switch(long) { case DDS_RETCODE_OK: [...] union TypeLookup_Call switch(long) {
 **Repo:** `crates/types/src/type_lookup.rs::TypeLookupCall` (l. 605);
 `crates/types/src/type_lookup.rs::TypeLookupReturn` (l. 670)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::type_lookup_call_roundtrips_both_operations`,
-`crates/types/src/type_lookup.rs::tests::type_lookup_return_roundtrips_both_operations`,
-`crates/types/src/type_lookup.rs::tests::get_types_result_roundtrips_both_arms`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_type_lookup_call_roundtrips_both_operations`,
+`crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_type_lookup_return_roundtrips_both_operations`,
+`crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_get_types_result_roundtrips_both_arms`
 
 **Status:** done — the unions are appendable (default of the specification).
 
@@ -13410,8 +13408,8 @@ return; };"
 **Repo:** `crates/types/src/type_lookup.rs::TypeLookupRequest` (l. 851);
 `crates/types/src/type_lookup.rs::TypeLookupReplyMessage` (l. 886)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::type_lookup_request_and_reply_roundtrip`,
-`crates/types/tests/type_lookup_vendor_envelope.rs::all_four_service_envelopes_match_cyclone_serializer`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_type_lookup_request_and_reply_roundtrip`,
+`crates/types/tests/type_lookup_vendor_envelope.rs::xtypes_7_6_3_3_2_all_four_service_envelopes_match_cyclone_serializer`
 
 **Status:** done — the reply carries a `ReplyHeader`; the specification writes
 `RequestHeader` (defect of the specification, listed in the findings file). Both
@@ -13433,7 +13431,7 @@ implementor prefix."
 
 **Repo:** `crates/types/src/type_lookup.rs::GetTypesRequest` (l. 240)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::an_unknown_member_id_is_skipped_rather_than_refused`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_3_an_unknown_member_id_is_skipped_rather_than_refused`
 
 **Status:** done — ZeroDDS adds no members; an unknown member of another vendor
 is skipped.
@@ -13447,7 +13445,7 @@ availableBuiltinEndpoints."
 
 **Repo:** `crates/rtps/src/participant_data.rs` (`TYPE_LOOKUP_REQUEST_DATA_WRITER` l. 71)
 
-**Tests:** `crates/dcps/tests/type_lookup_e2e.rs::announces_type_lookup_endpoints_in_spdp`
+**Tests:** `crates/dcps/tests/type_lookup_e2e.rs::rtps_8_5_3_2_1_announces_type_lookup_endpoints_in_spdp`
 
 **Status:** done
 
@@ -13458,7 +13456,7 @@ availableBuiltinEndpoints."
 
 **Repo:** `crates/rtps/src/participant_data.rs` (l. 71)
 
-**Tests:** `crates/discovery/src/capabilities.rs::tests::type_lookup_capabilities_require_the_four_distinct_vendor_bits`
+**Tests:** `crates/discovery/src/capabilities.rs::tests::xtypes_7_6_3_3_4_type_lookup_capabilities_require_the_four_distinct_vendor_bits`
 
 **Status:** done
 
@@ -13469,7 +13467,7 @@ availableBuiltinEndpoints."
 
 **Repo:** `crates/rtps/src/participant_data.rs` (l. 73)
 
-**Tests:** `crates/discovery/src/capabilities.rs::tests::type_lookup_capabilities_require_the_four_distinct_vendor_bits`
+**Tests:** `crates/discovery/src/capabilities.rs::tests::xtypes_7_6_3_3_4_type_lookup_capabilities_require_the_four_distinct_vendor_bits`
 
 **Status:** done
 
@@ -13480,7 +13478,7 @@ availableBuiltinEndpoints."
 
 **Repo:** `crates/rtps/src/participant_data.rs` (l. 75)
 
-**Tests:** `crates/discovery/src/capabilities.rs::tests::type_lookup_capabilities_require_the_four_distinct_vendor_bits`
+**Tests:** `crates/discovery/src/capabilities.rs::tests::xtypes_7_6_3_3_4_type_lookup_capabilities_require_the_four_distinct_vendor_bits`
 
 **Status:** done
 
@@ -13491,7 +13489,7 @@ availableBuiltinEndpoints."
 
 **Repo:** `crates/rtps/src/participant_data.rs` (l. 77)
 
-**Tests:** `crates/discovery/src/capabilities.rs::tests::type_lookup_capabilities_require_the_four_distinct_vendor_bits`
+**Tests:** `crates/discovery/src/capabilities.rs::tests::xtypes_7_6_3_3_4_type_lookup_capabilities_require_the_four_distinct_vendor_bits`
 
 **Status:** done
 
@@ -13505,7 +13503,7 @@ TypeObjectServiceReplyDataReader."
 
 **Repo:** `crates/dcps/src/type_lookup_transport.rs::new` (l. 25)
 
-**Tests:** `crates/discovery/tests/type_lookup_service.rs::typelookup_endpoints_4_distinct_guids_per_participant`
+**Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_1_typelookup_endpoints_4_distinct_guids_per_participant`
 
 **Status:** done — ZeroDDS is server and client. The specification names the
 endpoints `TypeObjectService…` here instead of `TypeLookupService…` (listed in
@@ -13522,8 +13520,8 @@ hexadecimal digits."
 **Repo:** `crates/types/src/type_lookup.rs::service_instance_name` (l. 838);
 `crates/discovery/src/type_lookup/endpoints.rs::format_service_instance_name` (l. 31)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::the_service_instance_name_is_the_prefix_and_lowercase_hex`,
-`crates/discovery/tests/type_lookup_service.rs::service_instance_name_format_matches_spec`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_4_the_service_instance_name_is_the_prefix_and_lowercase_hex`,
+`crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_service_instance_name_format_matches_spec`
 
 **Status:** done — 32 hex digits: the GUID has 16 octets. The specification says
 16 characters, its example has 15 and the prefix a space before the dot (listed
@@ -13538,8 +13536,8 @@ TypeInformation".
 **Repo:** `crates/discovery/src/type_lookup/server.rs::handle_get_types` (l. 94);
 `crates/dcps/src/runtime.rs::announced_type_information` (l. 8241)
 
-**Tests:** `crates/discovery/tests/type_lookup_service.rs::server_handle_get_types_happy_path_one_type`,
-`crates/dcps/tests/typelookup_resolution_e2e.rs::get_types_answers_the_complete_form_of_a_hash`
+**Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_server_handle_get_types_happy_path_one_type`,
+`crates/dcps/tests/typelookup_resolution_e2e.rs::xtypes_7_6_3_2_1_get_types_answers_the_complete_form_of_a_hash`
 
 **Status:** done — only what the server's registry holds is announced.
 
@@ -13552,7 +13550,7 @@ TypeLookup_Request and the TypeLookup_Reply shall be set as specified in the
 **Repo:** `crates/types/src/type_lookup.rs::RequestHeader` (l. 742);
 `crates/types/src/type_lookup.rs::ReplyHeader` (l. 797)
 
-**Tests:** `crates/discovery/src/type_lookup/client.rs::reply_correlation_requires_original_peer_and_operation`
+**Tests:** `crates/discovery/src/type_lookup/client.rs::xtypes_7_6_3_3_4_reply_correlation_requires_original_peer_and_operation`
 
 **Status:** done
 
@@ -13567,10 +13565,10 @@ Components".
 **Repo:** `crates/discovery/src/type_lookup/server.rs::component_dependents`;
 `crates/dcps/src/runtime.rs::send_type_dependencies_request`
 
-**Tests:** `crates/dcps/tests/typelookup_dependencies_wire.rs::the_dependencies_of_a_hash_come_over_the_wire`,
-`crates/dcps/tests/typelookup_dependencies_wire.rs::the_dependencies_of_a_component_come_over_the_wire`,
-`crates/discovery/src/type_lookup/client.rs::tests::dependencies_payload_carries_continuation`,
-`crates/discovery/tests/type_lookup_scc_minimal.rs::the_dependencies_of_a_component_are_the_types_its_members_name`
+**Tests:** `crates/dcps/tests/typelookup_dependencies_wire.rs::xtypes_7_6_3_3_4_1_the_dependencies_of_a_hash_come_over_the_wire`,
+`crates/dcps/tests/typelookup_dependencies_wire.rs::xtypes_7_6_3_3_4_1_the_dependencies_of_a_component_come_over_the_wire`,
+`crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_1_dependencies_payload_carries_continuation_point`,
+`crates/discovery/tests/type_lookup_scc_minimal.rs::xtypes_7_6_3_3_4_1_the_dependencies_of_a_component_are_the_types_its_members_name`
 
 **Status:** done — The server answers `getTypeDependencies` for a hash and for the identifier of a component as a whole: the hash identifiers of the types the members name and the `SCCIdentifier`s of the other components reached; its own is not among them. Two runtimes: the request for the dependencies of `Outer` brings `Inner` into the requester's registry and not `Outer`; the one for a component brings the type outside that a member names.
 
@@ -13583,8 +13581,8 @@ TypeLookup_getTypeDependencies_Out received in response to a previous call".
 
 **Repo:** `crates/types/src/type_lookup.rs::GetTypeDependenciesRequest` (l. 442)
 
-**Tests:** `crates/discovery/tests/type_lookup_service.rs::server_continuation_point_paginates_200_dependencies`,
-`crates/types/src/type_lookup.rs::tests::continuation_point_len_zero_encodes_to_four_zero_bytes`
+**Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_1_server_continuation_point_paginates_200_dependencies`,
+`crates/types/src/type_lookup.rs::tests::xtypes_7_6_3_3_4_1_continuation_point_len_zero_encodes_to_four_zero_bytes`
 
 **Status:** done — "not present" is an empty sequence; the member is not
 `@optional`.
@@ -13598,8 +13596,8 @@ complete list of types, otherwise it shall contain an opaque value".
 
 **Repo:** `crates/discovery/src/type_lookup/server.rs::handle_get_type_dependencies` (l. 250)
 
-**Tests:** `crates/discovery/tests/type_lookup_service.rs::server_handle_get_type_dependencies_struct_with_5_deps`,
-`crates/discovery/tests/type_lookup_service.rs::server_continuation_point_paginates_200_dependencies`
+**Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_1_server_handle_get_type_dependencies_struct_with_5_deps`,
+`crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_1_server_continuation_point_paginates_200_dependencies`
 
 **Status:** done
 
@@ -13612,7 +13610,7 @@ Strongly Connected Component".
 
 **Repo:** `crates/dcps/src/runtime.rs::send_type_lookup_request` (l. 8277)
 
-**Tests:** `crates/discovery/tests/type_lookup_requests.rs::a_get_types_request_and_its_reply_round_trip_between_two_stacks`
+**Tests:** `crates/discovery/tests/type_lookup_requests.rs::xtypes_7_6_3_3_4_2_a_get_types_request_and_its_reply_round_trip_between_two_stacks`
 
 **Status:** done
 
@@ -13624,8 +13622,8 @@ TypeIdentifiers the types may contain either MINIMAL or COMPLETE TypeObjects."
 
 **Repo:** `crates/discovery/src/type_lookup/server.rs::handle_get_types` (l. 94)
 
-**Tests:** `crates/discovery/tests/type_lookup_service.rs::server_handle_get_types_happy_path_one_type`,
-`crates/discovery/src/type_lookup/server.rs::tests::handle_get_types_pairs_a_complete_identifier_with_its_minimal_hash`
+**Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_server_handle_get_types_happy_path_one_type`,
+`crates/discovery/src/type_lookup/server.rs::tests::xtypes_7_6_3_3_4_2_handle_get_types_pairs_a_complete_identifier_with_its_minimal_hash`
 
 **Status:** done
 
@@ -13638,7 +13636,7 @@ sent in response to a query for a MINIMAL TypeIdentfier."
 
 **Repo:** `crates/discovery/src/type_lookup/server.rs::handle_get_types` (l. 94)
 
-**Tests:** `crates/discovery/tests/type_lookup_service.rs::typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair`
+**Tests:** `crates/discovery/tests/type_lookup_service.rs::xtypes_7_6_3_3_4_2_typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair`
 
 **Status:** done — the server fills the mapping also for a request with a
 COMPLETE identifier; the comment there cites §7.6.3.3.4.1 instead of
@@ -13652,8 +13650,8 @@ Components atomically. Either include all in the reply or none."
 
 **Repo:** `crates/discovery/src/type_lookup/server.rs::handle_get_types`
 
-**Tests:** `crates/discovery/tests/type_lookup_scc_atomic.rs::an_scc_identifier_gets_every_member_of_the_component`,
-`crates/discovery/tests/type_lookup_scc_atomic.rs::an_unknown_component_or_a_wrong_length_gets_none`
+**Tests:** `crates/discovery/tests/type_lookup_scc_atomic.rs::xtypes_7_6_3_3_4_2_an_scc_identifier_gets_every_member_of_the_component`,
+`crates/discovery/tests/type_lookup_scc_atomic.rs::xtypes_7_6_3_3_4_2_an_unknown_component_or_a_wrong_length_gets_none`
 
 **Status:** done — `getTypes` answers an SCCIdentifier with every TypeObject of the component or with none; an unknown component or a wrong length gets none.
 
@@ -13671,7 +13669,7 @@ DataReaders."
 **Repo:** `crates/dcps/src/qos.rs::DataReaderQos` (l. 114, field `type_consistency` l. 162);
 `crates/types/src/qos.rs::TypeConsistencyEnforcement` (l. 52)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::datareader_qos_exposes_type_consistency_enforcement`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_datareader_qos_exposes_type_consistency_enforcement`
 
 **Status:** done
 
@@ -13684,9 +13682,9 @@ the writer's type."
 
 **Repo:** `crates/types/src/qos.rs::TypeConsistencyKind` (l. 13)
 
-**Tests:** `crates/types/src/qos.rs::tests::type_consistency_kind_has_the_two_values_of_annex_d`,
-`crates/types/src/type_matcher.rs::tests::disallow_type_coercion_needs_equivalent_types`,
-`crates/types/src/type_matcher_vectors.rs::disallow_coercion_rejects_int16_int32`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_6_3_4_1_type_consistency_kind_has_the_two_values_of_annex_d`,
+`crates/types/src/type_matcher.rs::tests::xtypes_7_6_3_4_1_disallow_type_coercion_needs_equivalent_types`,
+`crates/types/src/type_matcher_vectors.rs::xtypes_7_6_3_4_1_disallow_coercion_rejects_int16_int32`
 
 **Status:** done — `TypeConsistencyKind` has the two values of Annex D, `DISALLOW_TYPE_COERCION` and `ALLOW_TYPE_COERCION`; `force_type_validation` is a field of the policy. Under DISALLOW the matching requires equivalent types.
 
@@ -13697,7 +13695,7 @@ DataReader must support the same data type in order for them to communicate."
 
 **Repo:** `crates/types/src/type_matcher.rs::build_config`
 
-**Tests:** `crates/types/src/type_matcher.rs::tests::disallow_type_coercion_needs_equivalent_types`
+**Tests:** `crates/types/src/type_matcher.rs::tests::xtypes_7_6_3_4_1_disallow_type_coercion_needs_equivalent_types`
 
 **Status:** done — `type_matcher.rs::build_config` checks MINIMAL equivalence under §7.3.4.7 under DISALLOW; a reader with DISALLOW does not accept a type of the writer that is assignable but not equivalent.
 
@@ -13709,7 +13707,7 @@ changed after the entity in question has been enabled."
 
 **Repo:** `crates/dcps/src/qos.rs::immutable_reader_change` (l. 241)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::a_readers_type_consistency_policy_survives_its_announcement`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_1_a_readers_type_consistency_policy_survives_its_announcement`
 
 **Status:** done — the writer decides with the policy the reader announces.
 
@@ -13720,7 +13718,7 @@ ALLOW_TYPE_COERCION."
 
 **Repo:** `crates/types/src/qos.rs::TypeConsistencyEnforcement` (l. 67, `Default`)
 
-**Tests:** `crates/types/src/qos.rs::tests::consistency_roundtrip_default`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_6_3_4_1_the_default_policy_is_the_octets_rti_and_fastdds_write`
 
 **Status:** done
 
@@ -13734,7 +13732,7 @@ kind of DISALLOW_TYPE_COERCION".
 `crates/types/src/qos.rs::TypeConsistencyEnforcement`
 
 **Tests:** `crates/rtps/src/subscription_data.rs::tests::a_reader_announcing_no_type_consistency_is_read_as_disallow`,
-`crates/dcps/tests/runtime_config_layering.rs::the_xtypes_defaults_are_the_clauses_and_each_has_a_named_way_back`
+`crates/dcps/tests/runtime_config_layering.rs::xtypes_7_6_3_4_1_the_xtypes_defaults_are_the_clauses_and_each_has_a_named_way_back`
 
 **Status:** done — An endpoint without PID `0x0074` is taken as `DISALLOW_TYPE_COERCION` (`TypeConsistencyEnforcement::not_announced`); `SubscriptionBuiltinTopicData::type_consistency_announced` tells that from an announced DISALLOW. The old behaviour is reachable with `xtypes.type_consistency_absent: allow` (environment `ZERODDS_TYPE_CONSISTENCY_ABSENT`).
 
@@ -13759,8 +13757,8 @@ type to not be assignable to a narrower type."
 
 **Repo:** `crates/types/src/type_matcher.rs::build_config` (l. 119)
 
-**Tests:** `crates/types/src/assignability.rs::tests::prevent_type_widening_refuses_a_reader_that_grew_a_member`,
-`crates/types/src/type_matcher_vectors.rs::prevent_widening_rejects_int16_int32`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_6_3_4_1_prevent_type_widening_refuses_a_reader_that_grew_a_member`,
+`crates/types/src/type_matcher_vectors.rs::xtypes_7_6_3_4_1_prevent_widening_rejects_int16_int32`
 
 **Status:** done
 
@@ -13774,8 +13772,8 @@ L1>= L2."
 **Repo:** `crates/types/src/qos.rs::TypeConsistencyEnforcement` (l. 67);
 `crates/types/src/type_matcher.rs::build_config` (l. 119)
 
-**Tests:** `crates/types/src/type_matcher_vectors.rs::sequence_bounds_ignored_by_default_tce`,
-`crates/types/src/assignability.rs::tests::sequence_writer_bound_exceeds_reader_bound_is_no`
+**Tests:** `crates/types/src/type_matcher_vectors.rs::xtypes_7_6_3_4_1_sequence_bounds_ignored_by_default_tce`,
+`crates/types/src/assignability.rs::tests::xtypes_7_6_3_4_1_sequence_writer_bound_exceeds_reader_bound_is_no`
 
 **Status:** done
 
@@ -13787,8 +13785,8 @@ assignability."
 
 **Repo:** `crates/types/src/qos.rs::TypeConsistencyEnforcement` (l. 67)
 
-**Tests:** `crates/types/src/type_matcher_vectors.rs::string_bounds_ignored_by_default_tce`,
-`crates/types/src/type_matcher_vectors.rs::string_bound_overflow_rejected_when_strict`
+**Tests:** `crates/types/src/type_matcher_vectors.rs::xtypes_7_6_3_4_1_string_bounds_ignored_by_default_tce`,
+`crates/types/src/type_matcher_vectors.rs::xtypes_7_6_3_4_1_string_bound_overflow_rejected_when_strict`
 
 **Status:** done
 
@@ -13801,7 +13799,7 @@ option is set to FALSE (the default), then member names are not ignored."
 **Repo:** `crates/types/src/qos.rs::TypeConsistencyEnforcement` (l. 67);
 `crates/types/src/type_matcher.rs::build_config` (l. 119)
 
-**Tests:** `crates/types/src/assignability.rs::tests::a_member_name_at_two_different_ids_is_refused`
+**Tests:** `crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_member_name_at_two_different_ids_is_refused`
 
 **Status:** done — TRUE disregards the names, as step 1 in §7.6.3.4.2 says. The
 sentence in §7.6.3.4.1 says the opposite for TRUE (contradiction in the
@@ -13817,8 +13815,8 @@ false."
 
 **Repo:** `crates/types/src/type_matcher.rs::build_config`
 
-**Tests:** `crates/types/src/type_matcher.rs::tests::the_flags_apply_only_under_allow_type_coercion`,
-`crates/types/src/type_matcher.rs::tests::disallow_type_coercion_needs_equivalent_types`
+**Tests:** `crates/types/src/type_matcher.rs::tests::xtypes_7_6_3_4_1_the_flags_apply_only_under_allow_type_coercion`,
+`crates/types/src/type_matcher.rs::tests::xtypes_7_6_3_4_1_disallow_type_coercion_needs_equivalent_types`
 
 **Status:** done — Under DISALLOW_TYPE_COERCION `prevent_type_widening`, `ignore_sequence_bounds`, `ignore_string_bounds` and `ignore_member_names` read as true, false, false, false, however they are set; under ALLOW_TYPE_COERCION they apply as set.
 
@@ -13830,7 +13828,7 @@ and DataReader when set to TRUE [...] The default value is false."
 
 **Repo:** `crates/dcps/src/runtime.rs::decide_type_consistency` (l. 18903)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::type_matcher_rejects_incompatible_primitives_under_force_validation`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_1_type_matcher_rejects_incompatible_primitives_under_force_validation`
 
 **Status:** done
 
@@ -13846,9 +13844,9 @@ Publication."
 **Repo:** `crates/dcps/src/runtime.rs::decide_type_consistency` (l. 18903);
 `crates/types/src/type_matcher.rs::build_config` (l. 119)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::final_vs_appendable_mismatch_rejected_at_match_time`,
-`crates/dcps/tests/xtypes_aware_match.rs::appendable_compatible_matches_at_match_time`,
-`crates/types/src/type_matcher.rs::tests::disallow_type_coercion_needs_equivalent_types`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::rtps_8_4_7_5_final_vs_appendable_mismatch_rejected_at_match_time`,
+`crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_1_appendable_compatible_matches_at_match_time`,
+`crates/types/src/type_matcher.rs::tests::xtypes_7_6_3_4_1_disallow_type_coercion_needs_equivalent_types`
 
 **Status:** done — Under ALLOW the assignability with the flags holds, under DISALLOW the equivalence.
 
@@ -13861,8 +13859,8 @@ IDs will impact assignability."
 
 **Repo:** `crates/types/src/type_matcher.rs::build_config`
 
-**Tests:** `crates/types/src/type_matcher.rs::tests::ignore_member_names_lets_only_the_member_ids_decide`,
-`crates/types/src/assignability.rs::tests::a_member_name_at_two_different_ids_is_refused`
+**Tests:** `crates/types/src/type_matcher.rs::tests::xtypes_7_6_3_4_2_ignore_member_names_lets_only_the_member_ids_decide`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_4_4_8_a_member_name_at_two_different_ids_is_refused`
 
 **Status:** done — With `ignore_member_names = true` under ALLOW_TYPE_COERCION only the member ids decide: the same name `x1` at id 1 and id 2 is then assignable, without the flag it is not; under DISALLOW_TYPE_COERCION the flag has no effect.
 
@@ -13875,8 +13873,8 @@ will fail if force_type_validation is true, regardless of the type names."
 
 **Repo:** `crates/dcps/src/runtime.rs::decide_type_consistency` (l. 18903)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_step2_falls_back_to_the_type_name_for_a_peer_without_type_information`,
-`crates/dcps/tests/typelookup_resolution_e2e.rs::an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_1_step2_falls_back_to_the_type_name_for_a_peer_without_type_information`,
+`crates/dcps/tests/typelookup_resolution_e2e.rs::xtypes_7_6_3_4_2_an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace`
 
 **Status:** done
 
@@ -13890,8 +13888,8 @@ Topic and the DataWriter's Topic."
 **Repo:** `crates/dcps/src/runtime.rs::record_inconsistent_topic` (l. 18314);
 `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader` (l. 12220)
 
-**Tests:** `crates/dcps/tests/listener_trigger_c22c.rs::inconsistent_topic_listener_fires_on_qos_mismatch_of_a_name`,
-`crates/dcps/tests/topics_of_one_name.rs::an_inconsistent_qos_is_refused_and_counted`
+**Tests:** `crates/dcps/tests/listener_trigger_c22c.rs::dcps_2_2_2_3_2_inconsistent_topic_listener_fires_on_qos_mismatch_of_a_name`,
+`crates/dcps/tests/topics_of_one_name.rs::dcps_2_2_2_3_2_an_inconsistent_qos_is_refused_and_counted`
 
 **Status:** done — Each side reports `INCONSISTENT_TOPIC` for its own topic. A further type under a name in use is a further topic; a different QoS under the same name is refused and counted.
 
@@ -13905,8 +13903,8 @@ are guaranteed to arrive at the same conclusion."
 **Repo:** `crates/dcps/src/runtime.rs::wire_writer_to_remote_reader` (l. 12220);
 `crates/dcps/src/runtime.rs::wire_reader_to_remote_writer` (l. 12732)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_step2_falls_back_to_the_type_name_for_a_peer_without_type_information`,
-`crates/dcps/tests/xtypes_aware_match.rs::a_readers_type_consistency_policy_survives_its_announcement`,
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_1_step2_falls_back_to_the_type_name_for_a_peer_without_type_information`,
+`crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_1_a_readers_type_consistency_policy_survives_its_announcement`,
 `crates/rtps/src/subscription_data.rs::tests::a_reader_announcing_no_type_consistency_is_read_as_disallow`
 
 **Status:** done — Both sides decide with the policy of the reader; the reader announces it (PID `0x0074`), and a missing PID is taken as DISALLOW as in §7.6.3.4.1.
@@ -13920,7 +13918,7 @@ indicate the type consistency requirements of the corresponding reader:
 **Repo:** `crates/rtps/src/parameter_list.rs` (`TYPE_CONSISTENCY_ENFORCEMENT` l. 198);
 `crates/rtps/src/subscription_data.rs::SubscriptionBuiltinTopicData` (l. 37, field `type_consistency` l. 111)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::a_readers_type_consistency_policy_survives_its_announcement`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_1_a_readers_type_consistency_policy_survives_its_announcement`
 
 **Status:** done — always written, with `kind` as `unsigned short`.
 
@@ -13940,13 +13938,13 @@ type-based subsets of 'the same' network topic".
 `crates/zerodds-c-api/src/participant_ffi.rs::zerodds_dp_create_topic`;
 `crates/java-omgdds/java/src/main/java/org/zerodds/domain/DomainParticipantImpl.java::created`
 
-**Tests:** `crates/dcps/tests/topics_of_one_name.rs::a_second_type_under_one_name_is_a_second_topic`,
-`crates/dcps/tests/topics_of_one_name.rs::an_inconsistent_qos_is_refused_and_counted`,
-`crates/dcps/tests/topics_of_one_name.rs::deleting_one_topic_leaves_the_other_of_its_name`,
-`crates/dcps/tests/topics_of_one_name.rs::a_topic_waits_for_its_own_endpoints_and_not_for_those_of_the_other_of_its_name`,
-`crates/zerodds-c-api/tests/builtin_types_c.rs::lookup_iterates_over_the_topics_of_a_name`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/DomainParticipantOperationsTest.java::aTopicOfAnExistingNameWithOtherPoliciesIsRefused`
+**Tests:** `crates/dcps/tests/topics_of_one_name.rs::dcps_2_2_2_3_2_a_second_type_under_one_name_is_a_second_topic`,
+`crates/dcps/tests/topics_of_one_name.rs::dcps_2_2_2_3_2_an_inconsistent_qos_is_refused_and_counted`,
+`crates/dcps/tests/topics_of_one_name.rs::xtypes_7_6_4_1_deleting_one_topic_leaves_the_other_of_its_name`,
+`crates/dcps/tests/topics_of_one_name.rs::xtypes_7_6_4_1_a_topic_waits_for_its_own_endpoints_and_not_for_those_of_the_other_of_its_name`,
+`crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_7_6_4_1_lookup_iterates_over_the_topics_of_a_name`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/DomainParticipantOperationsTest.java::xtypes_7_6_4_1_a_topic_of_an_existing_name_with_other_policies_is_refused`
 
 **Status:** done — `create_topic` creates a further topic for a further type under a name in use if the QoS is equal; with a differing QoS it is refused and `INCONSISTENT_TOPIC` is counted. `delete_topic` waits for the endpoints of its own topic and not for those of another topic of the same name (the users are counted by name and type name; a MultiTopic names its topics by name alone and counts for all). `zerodds_dp_create_topic` of the C ABI, the C++ PSM (through the C ABI) and the Java PSM (`DomainParticipantImpl`) do the same.
 
@@ -13963,10 +13961,10 @@ nil."
 `crates/cpp/include/dds/domain/detail/DomainParticipantDelegate.hpp::lookup_topicdescription`;
 `crates/java-omgdds/java/src/main/java/org/zerodds/domain/DomainParticipantImpl.java::lookupTopicDescription`
 
-**Tests:** `crates/dcps/tests/topics_of_one_name.rs::lookup_iterates_over_the_topics_of_a_name`,
-`crates/zerodds-c-api/tests/builtin_types_c.rs::lookup_iterates_over_the_topics_of_a_name`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_participant_operations_without_other_coverage`,
-`crates/java-omgdds/java/src/test/java/org/omg/dds/DomainParticipantOperationsTest.java::lookupTopicDescriptionWithAnIndexIteratesTheTopicsOfOneName`
+**Tests:** `crates/dcps/tests/topics_of_one_name.rs::dcps_2_2_2_2_1_12_lookup_iterates_over_the_topics_of_a_name`,
+`crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_7_6_4_1_lookup_iterates_over_the_topics_of_a_name`,
+`crates/cpp/tests/smoke_dds_psm.cpp::psmcxx_2_1_participant_operations_without_other_coverage`,
+`crates/java-omgdds/java/src/test/java/org/omg/dds/DomainParticipantOperationsTest.java::xtypes_7_6_4_2_lookup_topic_description_with_an_index_iterates_the_topics_of_one_name`
 
 **Status:** done — `lookup_topicdescription_at(name, index)` iterates over the topics of a name in the order they were created; an index outside the range is nil. The same holds for `zerodds_dp_lookup_topicdescription_at`, for `dp->lookup_topicdescription(name, index)` of the C++ PSM and for `DomainParticipantImpl.lookupTopicDescription(name, index)` of the Java PSM. The interfaces of the normative namespaces (C++ `dds::domain`, Java `org.omg.dds`) are unchanged; the extension is on the delegate and on the implementation.
 
@@ -13985,8 +13983,8 @@ is enabled."
 **Repo:** `crates/dcps/src/participant.rs::register_builtin_types` (l. 820);
 `crates/dcps/src/builtin_type_set.rs::build` (l. 98)
 
-**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::participant_after_create_has_four_builtin_types_registered`,
-`crates/dcps/tests/builtin_types_auto_register_c44b.rs::builtin_types_are_not_nested`
+**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_participant_after_create_has_four_builtin_types_registered`,
+`crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_builtin_types_are_not_nested`
 
 **Status:** done — The four types are registered in a local type register when the participant is created; they are `@appendable` and not nested (Annex E).
 
@@ -13998,8 +13996,8 @@ classes."
 
 **Repo:** —
 
-**Tests:** `crates/dcps/src/builtin_type_set.rs::tests::each_one_is_an_appendable_non_nested_struct_under_its_spec_name`,
-`crates/types/src/dynamic/builder.rs::tests::the_builtin_types_are_those_of_annex_e`
+**Tests:** `crates/dcps/src/builtin_type_set.rs::tests::xtypes_7_6_5_each_one_is_an_appendable_non_nested_struct_under_its_spec_name`,
+`crates/types/src/dynamic/builder.rs::tests::xtypes_7_6_5_the_builtin_types_are_those_of_annex_e`
 
 **Status:** done — `builtin_type_set.rs::build` declares the four types `@extensibility(APPENDABLE)` without `@nested`, with the member names of Annex E; `builtin_topic_types` in the `DynamicTypeBuilder` defines the same types with the same names.
 
@@ -14013,14 +14011,14 @@ shall also provide additional overloads."
 `crates/zerodds-c-api/src/builtin_type_ffi.rs::zerodds_pub_create_builtin_datawriter`;
 `crates/dcps/src/builtin_types.rs`
 
-**Tests:** `crates/dcps/tests/builtin_types_writers.rs::keyed_string_operations_work_on_the_key`,
-`crates/dcps/tests/builtin_types_writers.rs::bytes_are_written_from_an_offset_and_a_length`,
-`crates/dcps/tests/builtin_types_writers.rs::keyed_bytes_operations_work_on_the_key`,
-`crates/zerodds-c-api/tests/builtin_types_c.rs::a_string_is_written_and_taken`,
-`crates/zerodds-c-api/tests/builtin_types_c.rs::a_keyed_string_has_its_instance_operations`,
-`crates/zerodds-c-api/tests/builtin_types_c.rs::bytes_are_written_from_an_offset_and_a_length`,
-`crates/zerodds-c-api/src/builtin_type_ffi.rs::tests::a_byte_range_is_checked`,
-`crates/cpp/tests/builtin_data_endpoints_via_cargo.rs::the_data_writers_and_readers_of_the_built_in_types_write_and_take`,
+**Tests:** `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_keyed_string_operations_work_on_the_key`,
+`crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_bytes_are_written_from_an_offset_and_a_length`,
+`crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_keyed_bytes_operations_work_on_the_key`,
+`crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_7_6_5_a_string_is_written_and_taken`,
+`crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_7_6_5_a_keyed_string_has_its_instance_operations`,
+`crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_7_6_5_bytes_are_written_from_an_offset_and_a_length`,
+`crates/zerodds-c-api/src/builtin_type_ffi.rs::tests::xtypes_7_6_5_a_byte_range_is_checked`,
+`crates/cpp/CMakeLists.txt::xtypes_7_6_5_the_data_writers_and_readers_of_the_built_in_types_write_and_take`,
 `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
 
 **Status:** done — `dcps::builtin_types` has the aliases `StringDataWriter` etc. and the operations of Annex E; the C ABI has them too (`zerodds_string_writer_write`, `zerodds_keyed_string_writer_*`, `zerodds_bytes_writer_write_w_bytes`, `zerodds_keyed_bytes_writer_*` and the readers `zerodds_*_reader_take_next`). In C++ the four writers and readers are classes over the C ABI (`crates/cpp/include/zerodds/builtin_data_endpoints.hpp`), in Java the interfaces `DataWriter<T>` and `DataReader<T>` of the Java PSM over `String`, `byte[]`, `KeyedString` and `KeyedBytes`. Log: `/root/zerodds-rc7/agent-logs/xt-bind-1018-051712.log` (Linux test host, `builtin_data_endpoints_via_cargo` green) and `.agent/REPORT.md`.
@@ -14032,9 +14030,9 @@ around a single unbounded string."
 
 **Repo:** `crates/dcps/src/builtin_type_set.rs::build` (l. 98)
 
-**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::dds_string_has_unbounded_string_value_member`,
-`crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`,
-`crates/dcps/src/builtin_type_set.rs::tests::each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
+**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_1_dds_string_has_unbounded_string_value_member`,
+`crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`,
+`crates/dcps/src/builtin_type_set.rs::tests::xtypes_7_6_5_each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
 
 **Status:** done — The structure is `@appendable` and not nested, with the members of Annex E; in `dcps::builtin_types` it is a `DdsType` (XCDR1 and XCDR2, both byte orders) with the type-specific operations (see §7.6.5).
 
@@ -14045,9 +14043,9 @@ DDS::String, but it is a keyed type; the key is an additional unbounded string."
 
 **Repo:** `crates/dcps/src/builtin_type_set.rs::build` (l. 98)
 
-**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::find_builtin_type_returns_correct_kind`,
-`crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`,
-`crates/dcps/src/builtin_type_set.rs::tests::each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
+**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_2_find_builtin_type_returns_correct_kind`,
+`crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`,
+`crates/dcps/src/builtin_type_set.rs::tests::xtypes_7_6_5_each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
 
 **Status:** done — The structure is `@appendable` and not nested, with the members of Annex E; in `dcps::builtin_types` it is a `DdsType` (XCDR1 and XCDR2, both byte orders) with the type-specific operations (see §7.6.5).
 
@@ -14058,9 +14056,9 @@ around a single unbounded sequence of bytes."
 
 **Repo:** `crates/dcps/src/builtin_type_set.rs::build` (l. 98)
 
-**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::dds_bytes_has_octet_sequence_value_member`,
-`crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`,
-`crates/dcps/src/builtin_type_set.rs::tests::each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
+**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_3_dds_bytes_has_octet_sequence_value_member`,
+`crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`,
+`crates/dcps/src/builtin_type_set.rs::tests::xtypes_7_6_5_each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
 
 **Status:** done — The structure is `@appendable` and not nested, with the members of Annex E; in `dcps::builtin_types` it is a `DdsType` (XCDR1 and XCDR2, both byte orders) with the type-specific operations (see §7.6.5).
 
@@ -14071,9 +14069,9 @@ but it is a keyed type; the key is an unbounded string."
 
 **Repo:** `crates/dcps/src/builtin_type_set.rs::build` (l. 98)
 
-**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::dds_keyed_bytes_has_key_member`,
-`crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`,
-`crates/dcps/src/builtin_type_set.rs::tests::each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
+**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_4_dds_keyed_bytes_has_key_member`,
+`crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`,
+`crates/dcps/src/builtin_type_set.rs::tests::xtypes_7_6_5_each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
 
 **Status:** done — The structure is `@appendable` and not nested, with the members of Annex E; in `dcps::builtin_types` it is a `DdsType` (XCDR1 and XCDR2, both byte orders) with the type-specific operations (see §7.6.5).
 
@@ -14092,10 +14090,10 @@ subscribe data objects of that type."
 `crates/dcps/src/serialized_type.rs::create_type_support`;
 `crates/dcps/src/participant.rs::create_registered_topic`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::register_type_registers_a_type_under_a_name`,
-`crates/dcps/src/serialized_type.rs::tests::create_type_support_refuses_a_nested_type_and_a_non_aggregate`,
-`crates/dcps/src/serialized_type.rs::tests::a_sample_converts_to_dynamic_data_and_back`,
-`crates/dcps/tests/dynamic_data_writer_reader.rs::a_dynamic_topic_takes_writers_and_readers_of_dynamic_data`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_register_type_registers_a_type_under_a_name`,
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_create_type_support_refuses_a_nested_type_and_a_non_aggregate`,
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_a_sample_converts_to_dynamic_data_and_back`,
+`crates/dcps/tests/dynamic_data_writer_reader.rs::xtypes_7_6_6_a_dynamic_topic_takes_writers_and_readers_of_dynamic_data`
 
 **Status:** done — A type is made with `DynamicTypeBuilderFactory`, `SerializedTypeSupport::create_type_support` makes a type support of it with a copy of the type, `register_type(participant, type_name)` registers it with the participant (the TypeObjects go to the TypeLookup registry), `create_registered_topic` and `create_dynamic_topic` create topics of the type, and `DynamicDataWriter` and `DynamicDataReader` write and read `DynamicData`.
 
@@ -14109,7 +14107,7 @@ interfaces."
 **Repo:** `crates/dcps/src/serialized_type.rs::get_type`,
 `crates/dcps/src/serialized_type.rs::create_sample`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::a_sample_converts_to_dynamic_data_and_back`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_a_sample_converts_to_dynamic_data_and_back`
 
 **Status:** done — `SerializedTypeSupport` converts between the static and the dynamic binding: `get_type`, `create_sample`, `create_dynamic_sample`.
 
@@ -14120,7 +14118,7 @@ DynamicType object corresponding to the TypeSupport's data type."
 
 **Repo:** `crates/dcps/src/serialized_type.rs::get_type`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::create_type_support_refuses_a_nested_type_and_a_non_aggregate`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_create_type_support_refuses_a_nested_type_and_a_non_aggregate`
 
 **Status:** done — `SerializedTypeSupport::get_type()` returns the `DynamicType` of the data type of the type support.
 
@@ -14133,7 +14131,7 @@ DynamicType of this object is not compatible".
 
 **Repo:** `crates/dcps/src/serialized_type.rs::create_sample`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::a_sample_converts_to_dynamic_data_and_back`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_a_sample_converts_to_dynamic_data_and_back`
 
 **Status:** done — `create_sample(&DynamicSample)`: a sample with the contents; a `DynamicData` of another type is refused.
 
@@ -14144,7 +14142,7 @@ contents of an input sample of the TypeSupport's data type."
 
 **Repo:** `crates/dcps/src/serialized_type.rs::create_dynamic_sample`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::a_sample_converts_to_dynamic_data_and_back`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_a_sample_converts_to_dynamic_data_and_back`
 
 **Status:** done — `create_dynamic_sample(&SerializedSample)`: a `DynamicSample` with the contents; a sample of another type is refused.
 
@@ -14156,10 +14154,10 @@ type DynamicData."
 
 **Repo:** `crates/dcps/src/serialized_type.rs::SerializedTypeSupport`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::register_type_registers_a_type_under_a_name`,
-`crates/dcps/src/serialized_type.rs::tests::create_type_support_refuses_a_nested_type_and_a_non_aggregate`,
-`crates/dcps/src/serialized_type.rs::tests::runtime_support_preserves_identity_before_instance_mutation`,
-`crates/dcps/tests/dynamic_data_writer_reader.rs::a_dynamic_topic_takes_writers_and_readers_of_dynamic_data`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_register_type_registers_a_type_under_a_name`,
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_create_type_support_refuses_a_nested_type_and_a_non_aggregate`,
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_1_3_runtime_support_preserves_identity_before_instance_mutation`,
+`crates/dcps/tests/dynamic_data_writer_reader.rs::xtypes_7_6_6_a_dynamic_topic_takes_writers_and_readers_of_dynamic_data`
 
 **Status:** done — `SerializedTypeSupport` is the `DynamicTypeSupport`: `get_type_name`, `register_type`, `get_type`, `create_sample`, `create_dynamic_sample`, the static `create_type_support` and `delete_type_support`; as a `TopicCodec<DynamicSample>` it is the FooTypeSupport for Foo = `DynamicData`, and `DynamicDataWriter` and `DynamicDataReader` are `DataWriter<DynamicSample>` and `DataReader<DynamicSample>`.
 
@@ -14174,8 +14172,8 @@ DDS specification."
 `crates/dcps/src/serialized_type.rs::with_type_name`,
 `crates/dcps/src/participant.rs::create_registered_topic`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::register_type_registers_a_type_under_a_name`,
-`crates/dcps/src/serialized_type.rs::tests::create_type_support_refuses_a_nested_type_and_a_non_aggregate`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_register_type_registers_a_type_under_a_name`,
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_create_type_support_refuses_a_nested_type_and_a_non_aggregate`
 
 **Status:** done — `SerializedTypeSupport::register_type(&participant, type_name)` registers the type with the participant under its name or under `type_name` (`with_type_name`; `string<Char8,256>`) and puts its `TypeObject`s into the TypeLookup registry; the same again is no error, another type under a name in use is `PreconditionNotMet`. `DomainParticipant::create_registered_topic(name, type_name, qos)` creates a topic of the registered type and refuses a name that is not registered. `get_type_name()` returns the name the type is registered under.
 
@@ -14188,7 +14186,7 @@ value."
 
 **Repo:** `crates/dcps/src/serialized_type.rs::create_type_support`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::create_type_support_refuses_a_nested_type_and_a_non_aggregate`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_create_type_support_refuses_a_nested_type_and_a_non_aggregate`
 
 **Status:** done — `create_type_support(&DynamicType)`: a type support with a copy of the type (built from its TypeObjects); a `@nested` type and a type that is no structure or union are refused.
 
@@ -14200,7 +14198,7 @@ having any observable effect."
 
 **Repo:** `crates/dcps/src/serialized_type.rs::delete_type_support`
 
-**Tests:** `crates/dcps/src/serialized_type.rs::tests::create_type_support_refuses_a_nested_type_and_a_non_aggregate`
+**Tests:** `crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_6_create_type_support_refuses_a_nested_type_and_a_non_aggregate`
 
 **Status:** done — `delete_type_support(Option<Arc<..>>)`: nil has no effect, a type support is dropped with its last holder.
 
@@ -14214,9 +14212,9 @@ DynamicData."
 `crates/dcps/src/serialized_type.rs::DynamicDataReader`,
 `crates/dcps/src/participant.rs::create_dynamic_topic`
 
-**Tests:** `crates/dcps/tests/dynamic_data_writer_reader.rs::a_dynamic_topic_takes_writers_and_readers_of_dynamic_data`,
-`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::dynamic_data_goes_over_xcdr`,
-`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::dynamic_data_goes_over_xml`
+**Tests:** `crates/dcps/tests/dynamic_data_writer_reader.rs::xtypes_7_6_6_a_dynamic_topic_takes_writers_and_readers_of_dynamic_data`,
+`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::xtypes_7_6_6_2_dynamic_data_goes_over_xcdr`,
+`crates/dcps/tests/dynamic_data_writer_reader.rs::linux_e2e::xtypes_7_4_4_dynamic_data_goes_over_xml`
 
 **Status:** done — `DynamicDataWriter` is `DataWriter<DynamicSample>`, `DynamicDataReader` `DataReader<DynamicSample>` (`FooDataWriter` and `FooDataReader` with "Foo" = `DynamicData`), over a topic from `DomainParticipant::create_dynamic_topic`; they have no additional properties or operations. The key, the instance and the filters read the value of the `DynamicSample` (`DdsType for DynamicSample`, `TopicCodec<DynamicSample>`). The path with `SerializedSample` (`create_serialized_topic`) stays as it is.
 
@@ -14234,7 +14232,7 @@ brackets, e.g. my_collection[0]."
 
 **Tests:** `crates/sql-filter/src/evaluator.rs::tests::subscripts_reach_the_row_as_written`,
 `crates/sql-filter/src/path.rs::tests::subscripts_are_indices_and_keys`,
-`crates/dcps/src/serialized_type.rs::tests::a_filter_subscripts_a_sequence_and_a_bitmask`
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_7_1_a_filter_subscripts_a_sequence_and_a_bitmask`
 
 **Status:** done — The filter reads `a[0]`: an index in square brackets on an array or a sequence (`sql-filter::path::split_path`, `PathStep`); on a `SerializedTypeSupport` sample it reaches the elements.
 
@@ -14248,7 +14246,7 @@ element [...] e.g. my_map['key']."
 
 **Tests:** `crates/sql-filter/src/evaluator.rs::tests::subscripts_reach_the_row_as_written`,
 `crates/sql-filter/src/path.rs::tests::subscripts_are_indices_and_keys`,
-`crates/dcps/src/serialized_type.rs::tests::a_filter_reaches_a_map_value_and_tells_an_absent_optional_member_from_no_field`
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_7_1_a_filter_reaches_a_map_value_and_tells_an_absent_optional_member_from_no_field`
 
 **Status:** done — The filter reads `a['key']`; on a `SerializedTypeSupport` sample the type decides that a collection is a map, and `m['key']` (for an integer key also `m[3]`) finds the value by its key.
 
@@ -14262,9 +14260,33 @@ the integer literals 1 and 0 shall also be allowed."
 **Repo:** —
 
 **Tests:** `crates/sql-filter/src/evaluator.rs::tests::a_bitmask_flag_compares_with_true_and_with_one_and_zero`,
-`crates/dcps/src/serialized_type.rs::tests::a_filter_subscripts_a_sequence_and_a_bitmask`
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_7_1_a_filter_subscripts_a_sequence_and_a_bitmask`
 
 **Status:** done — A bitmask flag is read as `m['READ']`, is Boolean and is comparable with `TRUE`, 1 and 0.
+
+### §7.6.7.1 Member Names: unions: a branch by its member's name, the discriminator as `#discriminator`
+
+**Spec:** DDS-XTypes 1.4 Beta 1 §7.6.7.1 (resolution of DDSXTY14-1) — "Unions:
+Union members shall be referenced using the name of the member. The union
+discriminator may also be referenced using the name “#discriminator”. The
+evaluation of an expression involving a union member shall also check that the
+value of the discriminator selects the named member; if the discriminator does
+not select the named member, the result of the filter evaluation shall be
+false." 1.3 does not have the bullet.
+
+**Repo:** `crates/sql-filter/src/lexer.rs::tokenize`,
+`crates/sql-filter/src/evaluator.rs::Expr::evaluate`,
+`crates/dcps/src/serialized_type.rs::dynamic_walk`,
+`crates/zerodds-build/src/dds_type.rs::union_filter_items`,
+`crates/derive/src/lib.rs::union`
+
+**Tests:** `crates/sql-filter/src/evaluator.rs::tests::xtypes_1_4_7_6_7_1_a_member_the_discriminator_does_not_select_makes_the_filter_false`,
+`crates/sql-filter/src/lexer.rs::tests::xtypes_1_4_7_6_7_1_the_discriminator_is_the_name_hash_discriminator`,
+`crates/dcps/src/serialized_type.rs::tests::xtypes_1_4_7_6_7_1_a_dynamic_union_branch_the_discriminator_does_not_select`,
+`crates/codec/tests/derive_union_generic_borrowed.rs::xtypes_1_4_7_6_7_1_a_filter_reads_the_selected_branch_and_the_discriminator`,
+`crates/zerodds-build/tests/dds_type.rs::xtypes_7_3_4_7_4_issue_33_a_derived_type_and_its_idl_are_one_type`
+
+**Status:** done — `u.b` reads the branch `b`, `u.#discriminator` the discriminator; an enumerated discriminator compares with the name of its enumerator (Annex B.2 ENUMERATEDVALUE). When the expression names a branch the discriminator does not select, the result of the whole expression is `false`, also under `OR` and `NOT` and also where the evaluation does not reach the branch (`RowAccess::unselected`, checked before the evaluation). Holds for `derive(DdsType)`, the types `zerodds-build` generates and samples with a run-time type (`SerializedTypeSupport`, `DynamicData`); a sample without a model (the joined row of a MultiTopic) takes every name a union does not hold for a branch that is not selected.
 
 ### §7.6.7.2 Optional members against null
 
@@ -14277,9 +14299,9 @@ to null shall never evaluate to true".
 `crates/zerodds-build/src/dds_type.rs::field_value_item`
 
 **Tests:** `crates/sql-filter/src/evaluator.rs::tests::null_follows_the_rules_for_optional_members`,
-`crates/dcps/src/serialized_type.rs::tests::a_filter_reaches_a_map_value_and_tells_an_absent_optional_member_from_no_field`,
-`crates/zerodds-build/tests/dds_type.rs::an_absent_optional_member_is_null_to_a_filter`,
-`crates/zerodds-build/tests/dds_type.rs::the_generated_filter_value_of_an_optional_member_is_null_or_the_value`
+`crates/dcps/src/serialized_type.rs::tests::xtypes_7_6_7_1_a_filter_reaches_a_map_value_and_tells_an_absent_optional_member_from_no_field`,
+`crates/zerodds-build/tests/dds_type.rs::xtypes_7_6_7_2_an_absent_optional_member_is_null_to_a_filter`,
+`crates/zerodds-build/tests/dds_type.rs::xtypes_7_6_7_2_the_generated_filter_value_of_an_optional_member_is_null_or_the_value`
 
 **Status:** done — The literal `null` applies to optional members as in §7.6.7.2: a member without a value equals `null`, one with a value does not, no inequality against `null` is true. The sample knows its type: an absent optional member is `null`, a name the type does not have is no field. The generated `field_value` of an optional scalar or string member returns the value or `null`.
 
@@ -14348,7 +14370,7 @@ ascending order of their memberId values."
 
 **Tests:** `crates/ast-layout/tests/wire_vectors.rs::key_members_come_back_in_member_id_order_not_declaration_order`,
 `crates/ast-layout/tests/wire_vectors.rs::a_type_with_no_key_member_has_no_key_members_and_a_whole_type_holder`,
-`crates/wire-probe/tests/vendor_bytes.rs::a_key_holders_member_order_is_the_one_each_vendor_hashes`
+`crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_6_8_a_key_holders_member_order_is_the_one_each_vendor_hashes`
 
 **Status:** done
 
@@ -14362,9 +14384,10 @@ of FooKeyHolder if they are themselves AggregatedTypes."
 `crates/wire-codec/src/encode.rs::key_holder` (l. 617)
 
 **Tests:** `crates/ast-layout/tests/wire_vectors.rs::nested_keyed_members_contribute_their_own_keys`,
-`crates/wire-probe/tests/silent_drop.rs::a_key_member_behind_a_typedef_keeps_its_nested_keys`
+`crates/wire-probe/tests/silent_drop.rs::xtypes_7_6_8_a_key_member_behind_a_typedef_keeps_its_nested_keys`,
+`crates/zerodds-build/tests/dds_type.rs::xtypes_7_6_8_a_nested_key_member_is_its_own_final_key_holder`
 
-**Status:** done
+**Status:** done — Also in the Rust code of `zerodds-build` and in `derive(DdsType)`: an aggregate inside the key holder is its own holder, `@final`, with only its key members when it has any (`encode_key_holder`/`decode_key_holder`, `zerodds_lang_rules::encode::KEY_HOLDER_SUFFIX`; `HolderPlan` in `zerodds-codec`); a union with a key discriminator with the discriminator alone.
 
 ### §7.6.8 Step 4: PLAIN_CDR2 big endian, alignment 4, zero padding
 
@@ -14390,8 +14413,8 @@ be set to the result of Step 4, extended to 16 bytes."
 
 **Repo:** `crates/ast-layout/src/keyhash.rs::key_hash_form` (l. 85)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::the_key_hash_of_a_small_key_is_the_zero_padded_holder`,
-`crates/dcps/src/dds_type.rs::tests::small_keyed_produces_zero_padded_keyhash`
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_6_8_the_key_hash_of_a_small_key_is_the_zero_padded_holder`,
+`crates/dcps/src/dds_type.rs::tests::xtypes_7_6_8_small_keyed_produces_zero_padded_keyhash`
 
 **Status:** done
 
@@ -14403,7 +14426,7 @@ MD5 Hash of the serialized bytes obtained from Step 4."
 
 **Repo:** `crates/ast-layout/src/keyhash.rs::key_hash_form` (l. 85)
 
-**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::a_key_holder_past_sixteen_octets_is_md5_hashed`,
+**Tests:** `crates/wire-probe/tests/vendor_bytes.rs::xtypes_7_6_8_a_key_holder_past_sixteen_octets_is_md5_hashed`,
 `crates/ast-layout/tests/wire_vectors.rs::a_key_holder_over_sixteen_bytes_is_hashed`,
 `crates/ast-layout/tests/key_maximum.rs::bounded_string_threshold_is_maximum_not_fixed_extent`
 
@@ -14428,7 +14451,7 @@ maximum alignment of 4."
 
 **Repo:** `crates/wire-codec/src/encode.rs::key_hash`
 
-**Tests:** `crates/wire-codec/tests/keyhash_xtypes_7_6_8_examples.rs::example_1_a_four_octet_key_is_padded_with_zeros`
+**Tests:** `crates/wire-codec/tests/keyhash_xtypes_7_6_8_examples.rs::xtypes_7_6_8_example_1_a_four_octet_key_is_padded_with_zeros`
 
 **Status:** done — The test computes example 1 with the values of the specification (`id = 0x12345678`, `x = 10`, `y = 20`): key stream `12 34 56 78`, KeyHash `12 34 56 78` and twelve zeros.
 
@@ -14438,7 +14461,7 @@ maximum alignment of 4."
 
 **Repo:** `crates/wire-codec/src/encode.rs::key_hash`
 
-**Tests:** `crates/wire-codec/tests/keyhash_xtypes_7_6_8_examples.rs::example_2_a_key_of_at_most_28_octets_is_hashed_with_md5`
+**Tests:** `crates/wire-codec/tests/keyhash_xtypes_7_6_8_examples.rs::xtypes_7_6_8_example_2_a_key_of_at_most_28_octets_is_hashed_with_md5`
 
 **Status:** done — The test computes example 2 (`label = "BLUE"`, `id = 0x123456789abcdef0`): the stream has the 20 octets of the specification, the KeyHash is `f9 1a 59 e3 2e 45 35 d9 a6 9c d5 d9 f5 b6 e3 6e` (MD5, the maximum size 28 is above 16).
 
@@ -14448,7 +14471,7 @@ maximum alignment of 4."
 
 **Repo:** `crates/wire-codec/src/encode.rs::key_hash`
 
-**Tests:** `crates/wire-codec/tests/keyhash_xtypes_7_6_8_examples.rs::example_3_the_key_members_are_reordered_by_member_id_and_nested_keys_reduced`
+**Tests:** `crates/wire-codec/tests/keyhash_xtypes_7_6_8_examples.rs::xtypes_7_6_8_example_3_the_key_members_are_reordered_by_member_id_and_nested_keys_reduced`
 
 **Status:** done — The test computes example 3 (`@mutable`, `label` with `@id(40)`, `m_nested` with `@id(30)`): the key members are ordered by member id, the nested key is reduced to `m_long`, the stream has the 13 octets of the specification, the KeyHash is `37 4b 96 e2 e7 27 23 7f 01 6c c4 ce bb 6e b7 1e`. `Foo` declares `string<16>`, the specification's KeyHolder `string<12>` (contradiction in the example, in the findings file); the hash does not depend on the bound as long as the stream is above 16 octets.
 
@@ -14459,7 +14482,7 @@ obtained by first serializing the values of the key members".
 
 **Repo:** `crates/dcps/src/subscriber.rs::lifecycle_instance` (l. 4638)
 
-**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::a_dispose_with_a_foreign_key_hash_disposes_the_instance_of_its_key`
+**Tests:** `crates/dcps/tests/lifecycle_wire_decode.rs::xtypes_7_6_8_a_dispose_with_a_foreign_key_hash_disposes_the_instance_of_its_key`
 
 **Status:** done — the reader decodes the `serializedKey` of a dispose or
 unregister and forms the KeyHash itself; only a marker without a `serializedKey`
@@ -14779,8 +14802,8 @@ XCDR encoding version 2".
 **Repo:** `crates/types/src/type_object/mod.rs::TypeObject` (l. 36);
 `crates/types/src/hash.rs`
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/src/type_object/mod.rs::tests::a_type_object_opens_with_a_dheader_over_the_rest`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_object_opens_with_a_dheader_over_the_rest`
 
 **Status:** done
 
@@ -14790,8 +14813,7 @@ XCDR encoding version 2".
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::EK_MINIMAL` (l. 90)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::equivalence_kind_roundtrip`,
-`crates/types/src/type_identifier/mod.rs::tests::equivalence_hash_wire_is_discriminator_plus_14_bytes`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -14801,8 +14823,7 @@ XCDR encoding version 2".
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::EK_COMPLETE` (l. 92)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::equivalence_kind_roundtrip`,
-`crates/types/src/type_identifier/mod.rs::tests::equivalence_hash_wire_is_discriminator_plus_14_bytes`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -14812,8 +14833,7 @@ XCDR encoding version 2".
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::EK_BOTH` (l. 98)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::equivalence_kind_roundtrip`,
-`crates/types/src/type_identifier/mod.rs::tests::equivalence_hash_wire_is_discriminator_plus_14_bytes`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done
 
@@ -14823,12 +14843,12 @@ XCDR encoding version 2".
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_NONE` (l. 19)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_BOOLEAN = 0x01
 
@@ -14836,12 +14856,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_BOOLEAN` (l. 21)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_BYTE = 0x02
 
@@ -14849,12 +14869,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_BYTE` (l. 23)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_INT16 = 0x03
 
@@ -14862,12 +14882,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_INT16` (l. 25)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_INT32 = 0x04
 
@@ -14875,8 +14895,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_INT32` (l. 27)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::primitive_int32_discriminator_is_spec_value`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done
 
@@ -14886,12 +14906,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_INT64` (l. 29)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_UINT16 = 0x06
 
@@ -14899,12 +14919,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_UINT16` (l. 31)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_UINT32 = 0x07
 
@@ -14912,12 +14932,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_UINT32` (l. 33)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_UINT64 = 0x08
 
@@ -14925,12 +14945,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_UINT64` (l. 35)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_FLOAT32 = 0x09
 
@@ -14938,12 +14958,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_FLOAT32` (l. 37)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_FLOAT64 = 0x0A
 
@@ -14951,12 +14971,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_FLOAT64` (l. 39)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_FLOAT128 = 0x0B
 
@@ -14964,12 +14984,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_FLOAT128` (l. 41)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_INT8 = 0x0C
 
@@ -14977,12 +14997,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_INT8` (l. 43)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_UINT8 = 0x0D
 
@@ -14990,12 +15010,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_UINT8` (l. 45)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_CHAR8 = 0x10
 
@@ -15003,12 +15023,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_CHAR8` (l. 47)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_CHAR16 = 0x11
 
@@ -15016,12 +15036,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_CHAR16` (l. 49)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_STRING8 = 0x20
 
@@ -15029,12 +15049,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_STRING8` (l. 54)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_STRING16 = 0x21
 
@@ -15042,12 +15062,12 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TK_STRING16` (l. 56)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::all_primitives_roundtrip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — the value is read from the code; the round trip checks the
-mapping, not the number. The octet tests against Cyclone contain the identifiers
-of their types' members.
+**Status:** done — the discriminator octet is checked against the value of Annex
+B. The octet tests against Cyclone contain the identifiers of their types'
+members.
 
 ### Annex B TypeKind TK_ALIAS = 0x30
 
@@ -15055,8 +15075,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_ALIAS` (l. 15)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15066,8 +15086,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_ENUM` (l. 18)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15077,8 +15097,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_BITMASK` (l. 20)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15088,8 +15108,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_ANNOTATION` (l. 23)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15099,8 +15119,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_STRUCTURE` (l. 26)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15110,8 +15130,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_UNION` (l. 28)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15121,8 +15141,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_BITSET` (l. 30)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15132,8 +15152,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_SEQUENCE` (l. 33)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15143,8 +15163,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_ARRAY` (l. 35)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15154,8 +15174,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_object/kinds.rs::TK_MAP` (l. 37)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
 **Status:** done — discriminator of `CompleteTypeObject`/`MinimalTypeObject`.
 
@@ -15165,8 +15185,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRING8_SMALL` (l. 63)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::string8_small_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15176,8 +15196,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRING8_LARGE` (l. 65)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::string8_large_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15187,8 +15207,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRING16_SMALL` (l. 67)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::string16_small_and_large_roundtrip`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15198,8 +15218,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRING16_LARGE` (l. 69)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::string16_small_and_large_roundtrip`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15209,8 +15229,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_SEQUENCE_SMALL` (l. 72)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_sequence_of_int32_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15220,8 +15240,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_SEQUENCE_LARGE` (l. 74)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_sequence_large_of_string_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15231,8 +15251,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_ARRAY_SMALL` (l. 77)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_array_small_3d_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15242,8 +15262,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_ARRAY_LARGE` (l. 79)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_array_large_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15253,8 +15273,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_MAP_SMALL` (l. 82)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_map_small_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15264,8 +15284,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_PLAIN_MAP_LARGE` (l. 84)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_map_large_with_nested_map_value_roundtrips`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15276,8 +15296,8 @@ of their types' members.
 
 **Repo:** `crates/types/src/type_identifier/kinds.rs::TI_STRONGLY_CONNECTED_COMPONENT` (l. 87)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::a_component_identifier_is_the_thirty_two_octets_of_annex_b`,
-`crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_sequence_small_minimal_wire_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_a_component_identifier_is_the_thirty_two_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_3_indirect_hash_plain_sequence_small_minimal_wire_vector`
 
 **Status:** done
 
@@ -15289,11 +15309,11 @@ string<MEMBER_NAME_MAX_LENGTH> MemberName; [...] const long TYPE_NAME_MAX_LENGTH
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/annex_b_limits_and_masks.rs::the_limits_are_the_constants_of_annex_b`,
-`crates/types/tests/annex_b_limits_and_masks.rs::a_member_name_holds_at_most_256_octets`,
-`crates/types/tests/annex_b_limits_and_masks.rs::a_member_name_over_256_octets_is_refused_on_reading`,
-`crates/types/tests/annex_b_limits_and_masks.rs::a_type_name_holds_at_most_256_octets`,
-`crates/types/tests/annex_b_limits_and_masks.rs::an_object_with_a_long_type_name_does_not_encode`
+**Tests:** `crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_the_limits_are_the_constants_of_annex_b`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_a_member_name_holds_at_most_256_octets`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_a_member_name_over_256_octets_is_refused_on_reading`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_a_type_name_holds_at_most_256_octets`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_an_object_with_a_long_type_name_does_not_encode`
 
 **Status:** done — A member or type name above 256 octets is refused on writing and on reading; the constants are in `type_object::common`.
 
@@ -15305,8 +15325,8 @@ octet NameHash[4];"
 **Repo:** `crates/types/src/type_identifier/mod.rs::EquivalenceHash` (l. 54);
 `crates/types/src/type_object/common.rs::NameHash` (l. 26)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::equivalence_hash_wire_is_discriminator_plus_14_bytes`,
-`crates/types/tests/compliance_typeobject.rs::md5_empty_string_first_14_bytes_golden_vector`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`,
+`crates/types/tests/compliance_typeobject.rs::xtypes_7_2_2_4_4_4_5_md5_empty_string_first_14_bytes_golden_vector`
 
 **Status:** done
 
@@ -15318,8 +15338,7 @@ INVALID_SBOUND = 0;"
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::TypeIdentifier` (l. 197)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::plain_sequence_large_with_u32_max_bound_roundtrips`,
-`crates/types/src/type_identifier/mod.rs::tests::string8_small_roundtrips`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b`
 
 **Status:** done — 0 stands for unbounded.
 
@@ -15330,7 +15349,7 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_identifier/mod.rs::StronglyConnectedComponentId` (l. 176)
 
-**Tests:** `crates/types/src/type_identifier/mod.rs::tests::a_component_identifier_takes_only_the_two_equivalence_kinds`
+**Tests:** `crates/types/src/type_identifier/mod.rs::tests::xtypes_annex_b_a_component_identifier_takes_only_the_two_equivalence_kinds`
 
 **Status:** done
 
@@ -15340,8 +15359,8 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag` (l. 39)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`
 
 **Status:** done
 
@@ -15351,8 +15370,8 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag` (l. 39)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`
 
 **Status:** done
 
@@ -15362,8 +15381,8 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag` (l. 39)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`
 
 **Status:** done
 
@@ -15373,8 +15392,8 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag` (l. 39)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`
 
 **Status:** done
 
@@ -15384,8 +15403,8 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag` (l. 39)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`
 
 **Status:** done
 
@@ -15395,8 +15414,8 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag` (l. 39)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`
 
 **Status:** done
 
@@ -15406,8 +15425,8 @@ EK_COMPLETE: case EK_MINIMAL: EquivalenceHash hash; };"
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructMemberFlag` (l. 39)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`
 
 **Status:** done
 
@@ -15421,11 +15440,11 @@ EnumeratedLiteralFlag; // D".
 **Repo:** `crates/types/src/type_object/flags.rs`;
 `crates/types/src/from_ast.rs`
 
-**Tests:** `crates/types/tests/annex_b_flags.rs::a_struct_member_carries_t1_t2_o_m_k_x_and_nothing_else`,
-`crates/types/tests/annex_b_flags.rs::union_members_and_the_discriminator_carry_what_annex_b_lists`,
-`crates/types/tests/annex_b_flags.rs::an_enumerated_literal_carries_d_and_the_unused_flags_are_zero`,
-`crates/types/tests/annex_b_flags.rs::a_collection_element_carries_t1_t2_x`,
-`crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/tests/annex_b_flags.rs::xtypes_annex_b_a_struct_member_carries_t1_t2_o_m_k_x_and_nothing_else`,
+`crates/types/tests/annex_b_flags.rs::xtypes_annex_b_union_members_and_the_discriminator_carry_what_annex_b_lists`,
+`crates/types/tests/annex_b_flags.rs::xtypes_annex_b_an_enumerated_literal_carries_d_and_the_unused_flags_are_zero`,
+`crates/types/tests/annex_b_flags.rs::xtypes_annex_b_a_collection_element_carries_t1_t2_x`,
+`crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`
 
 **Status:** done — Structure members carry only T1, T2, O, M, K, X; union members T1, T2, D, X; an enumerated literal only D; collection elements T1, T2, X; alias members, bitflags and bitfields 0. The union discriminator carries M as well (Annex B lists T1, T2, K): §7.2.2.4.4.4.6 requires "always true", Cyclone DDS and Fast DDS write `0x11` (`docs/omg-xtypes-issues.md` §B2); the contradiction is in the findings file. A key member carries M according to §7.2.2.4.4.4.8. Expectation for Cyclone DDS, Fast DDS and OpenDDS for the M on a key member: not measured.
 
@@ -15438,10 +15457,10 @@ TypeFlagMinimalMask = 0x0007; // Selects M, A, F".
 **Repo:** `crates/types/src/type_object/flags.rs::minimal_member_flags`;
 `crates/types/src/type_object/flags.rs::minimal_union_member_flags`
 
-**Tests:** `crates/types/tests/annex_b_flags.rs::the_minimal_object_keeps_the_flags_that_decide_assignability`,
-`crates/types/tests/annex_b_limits_and_masks.rs::the_masks_are_the_constants_of_annex_b`,
-`crates/types/tests/annex_b_limits_and_masks.rs::the_projection_masks_member_and_type_flags`,
-`crates/types/tests/annex_b_limits_and_masks.rs::a_minimal_struct_carries_only_the_extensibility_flags`
+**Tests:** `crates/types/tests/annex_b_flags.rs::xtypes_annex_b_the_minimal_object_keeps_the_flags_that_decide_assignability`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_the_masks_are_the_constants_of_annex_b`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_the_projection_masks_member_and_type_flags`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_a_minimal_struct_carries_only_the_extensibility_flags`
 
 **Status:** done — `MemberFlagMinimalMask = 0x003f` and `TypeFlagMinimalMask = 0x0007` take effect in the MINIMAL projection. The comment in Annex B names D among the selected flags, the value `0x003f` selects T1, T2, X, O, M, K (contradiction in the findings file): a minimal union member and an enumerated literal keep `IS_DEFAULT`, because the minimal union has no other place for the default branch and the assignability reads it.
 
@@ -15451,8 +15470,8 @@ TypeFlagMinimalMask = 0x0007; // Selects M, A, F".
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructTypeFlag` (l. 10)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/src/type_object/mod.rs::tests::minimal_struct_mutable_final_flags`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_struct_mutable_final_flags`
 
 **Status:** done
 
@@ -15462,8 +15481,8 @@ TypeFlagMinimalMask = 0x0007; // Selects M, A, F".
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructTypeFlag` (l. 10)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/src/type_object/mod.rs::tests::minimal_struct_mutable_final_flags`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_struct_mutable_final_flags`
 
 **Status:** done
 
@@ -15473,8 +15492,8 @@ TypeFlagMinimalMask = 0x0007; // Selects M, A, F".
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructTypeFlag` (l. 10)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/src/type_object/mod.rs::tests::minimal_struct_mutable_final_flags`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_struct_mutable_final_flags`
 
 **Status:** done
 
@@ -15484,8 +15503,8 @@ TypeFlagMinimalMask = 0x0007; // Selects M, A, F".
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructTypeFlag` (l. 10)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/src/type_object/mod.rs::tests::minimal_struct_mutable_final_flags`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_struct_mutable_final_flags`
 
 **Status:** done
 
@@ -15495,8 +15514,8 @@ TypeFlagMinimalMask = 0x0007; // Selects M, A, F".
 
 **Repo:** `crates/types/src/type_object/flags.rs::StructTypeFlag` (l. 10)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/src/type_object/mod.rs::tests::minimal_struct_mutable_final_flags`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_struct_mutable_final_flags`
 
 **Status:** done
 
@@ -15508,10 +15527,10 @@ CollectionTypeFlag; // Unused. No flags apply [...] EnumTypeFlag; // Unused".
 
 **Repo:** `crates/types/src/type_object/flags.rs::EnumTypeFlag`
 
-**Tests:** `crates/types/tests/annex_b_flags.rs::an_enumeration_writes_its_extensibility_and_the_other_unused_type_flags_are_zero`,
-`crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/tests/annex_b_flags.rs::xtypes_annex_b_an_enumeration_writes_its_extensibility_and_the_other_unused_type_flags_are_zero`,
+`crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`
 
-**Status:** done — Structure and union carry all flags; collection, annotation, alias, bitmask and bitset 0 ("Unused"). An enumeration writes its extensibility into `enum_flags` although Annex B calls the word unused: Table 18 compares the extensibility of two enumerations, RTI Connext, OpenDDS and Cyclone DDS write the bit (`docs/omg-xtypes-issues.md` §B8); Fast DDS writes 0. The contradiction is in the findings file.
+**Status:** done — Structure and union carry all flags; collection, annotation, alias and bitset 0 ("Unused"). An enumeration writes its extensibility into `enum_flags` although Annex B calls the word unused: Table 18 compares the extensibility of two enumerations, RTI Connext, OpenDDS and Cyclone DDS write the bit (`docs/omg-xtypes-issues.md` §B8); Fast DDS writes 0. The contradiction is in the findings file. A bitmask writes its extensibility into `bitmask_flags` the same way: DDSXTY14-24, resolved in DDS-XTypes 1.4 Beta 1, gives both words "F, A. No flags == A", and CycloneDDS 11.0.1 refuses a bitmask with neither bit (`ddsi_typewrap.c`, `xt_valid_type_flags`; measured: "invalid type object" for ZeroDDS' `Test::B_32` with 0, OMG `dds-xtypes` `union_uint32_bitmask32`).
 
 ### Annex B bodies of the TypeIdentifier and union TypeIdentifier
 
@@ -15525,8 +15544,8 @@ TypeIdentifier switch (octet)`.
 `crates/types/src/type_identifier/mod.rs::PlainCollectionHeader` (l. 122);
 `crates/types/src/type_identifier/mod.rs::StronglyConnectedComponentId` (l. 176)
 
-**Tests:** `crates/types/tests/compliance_typeobject.rs::indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector`,
-`crates/types/src/type_identifier/mod.rs::tests::the_extended_arm_carries_its_body`
+**Tests:** `crates/types/tests/compliance_typeobject.rs::xtypes_7_3_4_6_2_indirect_hash_plain_map_small_minimal_keys_complete_values_wire_vector`,
+`crates/types/src/type_identifier/mod.rs::tests::xtypes_annex_b_the_extended_arm_carries_its_body`
 
 **Status:** done — the individual forms are listed under §7.3.4.2 Table 29.
 
@@ -15537,8 +15556,8 @@ TypeIdentifier switch (octet)`.
 
 **Repo:** —
 
-**Tests:** `crates/types/tests/annex_b_limits_and_masks.rs::an_annotation_string_value_holds_at_most_128_octets`,
-`crates/types/tests/annex_b_limits_and_masks.rs::an_annotation_wstring_value_holds_at_most_128_code_units`
+**Tests:** `crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_an_annotation_string_value_holds_at_most_128_octets`,
+`crates/types/tests/annex_b_limits_and_masks.rs::xtypes_annex_b_an_annotation_wstring_value_holds_at_most_128_code_units`
 
 **Status:** done — A string value above 128 octets and a wstring value above 128 code units are refused on writing and on reading.
 
@@ -15550,11 +15569,11 @@ TK_STRING16: [...] default: ExtendedAnnotationParameterValue extended_value; };"
 
 **Repo:** `crates/types/src/type_object/common.rs::AnnotationParameterValue` (l. 488)
 
-**Tests:** `crates/types/tests/typeobject_annotation_annexb.rs::the_default_value_is_the_annex_b_union_and_never_empty`,
-`crates/types/tests/annotation_parameter_value_union.rs::an_unknown_discriminator_is_the_extended_value`,
-`crates/types/tests/annotation_parameter_value_union.rs::an_extended_value_with_the_discriminator_of_a_case_is_refused`
+**Tests:** `crates/types/tests/typeobject_annotation_annexb.rs::xtypes_annex_b_the_default_value_is_the_annex_b_union_and_never_empty`,
+`crates/types/tests/annotation_parameter_value_union.rs::xtypes_7_2_2_6_an_unknown_discriminator_is_the_extended_value`,
+`crates/types/tests/annotation_parameter_value_union.rs::xtypes_annex_b_an_extended_value_with_the_discriminator_of_a_case_is_refused`
 
-**Status:** done — `AnnotationParameterValue` has every case of the union (`Float128Bits`, `Char16`, `String16`) and the extended case with a DHEADER; an unknown discriminator is the extended value. Under XCDR1 the arm is a parameter list that `PID_LIST_END` closes (the type is MUTABLE and empty); an unknown member in it is stepped over, a must-understand member refuses the value, and members read under XCDR2 for a type of a later revision have no XCDR1 form (`320c16503d2`, tests in `crates/types/tests/type_lookup_xcdr1.rs`).
+**Status:** done — `AnnotationParameterValue` has every case of the union (`Float128Bits`, `Char16`, `String16`) and the extended case with a DHEADER; an unknown discriminator is the extended value. Under XCDR1 the arm is a parameter list that `PID_LIST_END` closes (the type is MUTABLE and empty); an unknown member in it is stepped over, a must-understand member refuses the value, and members read under XCDR2 for a type of a later revision have no XCDR1 form (`d2eaf0438ab`, tests in `crates/types/tests/type_lookup_xcdr1.rs`).
 
 ### Annex B AppliedAnnotationParameter, AppliedAnnotation, AppliedAnnotationSeq
 
@@ -15566,8 +15585,8 @@ param_seq; }`.
 **Repo:** `crates/types/src/type_object/common.rs::AppliedAnnotationParameter` (l. 313);
 `crates/types/src/type_object/common.rs::AppliedAnnotation` (l. 348)
 
-**Tests:** `crates/types/tests/type_object_custom_annotations.rs::the_applied_annotation_octets_are_annex_b`,
-`crates/types/tests/type_object_custom_annotations.rs::a_parameterless_annotation_is_written_without_a_param_seq`
+**Tests:** `crates/types/tests/type_object_custom_annotations.rs::xtypes_annex_b_the_applied_annotation_octets_are_annex_b`,
+`crates/types/tests/type_object_custom_annotations.rs::xtypes_7_3_1_2_5_a_parameterless_annotation_is_written_without_a_param_seq`
 
 **Status:** done
 
@@ -15578,8 +15597,8 @@ placement; string<32> language; string text; };"
 
 **Repo:** `crates/types/src/type_object/common.rs::AppliedVerbatimAnnotation` (l. 207)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::complete_verbatim_placement_variants_roundtrip`,
-`crates/types/src/type_object/common.rs::safe_capacity_tests::verbatim_placement_roundtrip_other_forward_compat`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_complete_verbatim_placement_variants_roundtrip`,
+`crates/types/src/type_object/common.rs::safe_capacity_tests::xtypes_annex_b_verbatim_placement_roundtrip_other_forward_compat`
 
 **Status:** done — `placement` as `VerbatimPlacement` with an unknown value as a
 variant of its own.
@@ -15592,8 +15611,8 @@ AnnotationParameterValue max; @optional string hash_id; };"
 
 **Repo:** `crates/types/src/type_object/common.rs::AppliedBuiltinMemberAnnotations` (l. 640)
 
-**Tests:** `crates/types/tests/type_object_annotations.rs::the_builtin_member_annotations_reach_the_object`,
-`crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/tests/type_object_annotations.rs::xtypes_annex_b_the_builtin_member_annotations_reach_the_object`,
+`crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`
 
 **Status:** done
 
@@ -15610,8 +15629,8 @@ ann_custom; }`, `MinimalMemberDetail { NameHash name_hash; }`.
 `crates/types/src/type_object/complete/struct_type.rs::CompleteStructMember` (l. 28);
 `crates/types/src/type_object/minimal/struct_type.rs::MinimalStructMember` (l. 46)
 
-**Tests:** `crates/types/tests/typeobject_member_annotations.rs::the_complete_object_is_cyclones_octet_for_octet`,
-`crates/types/tests/typeobject_member_annotations.rs::the_minimal_object_is_cyclones_octet_for_octet`
+**Tests:** `crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`,
+`crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_2_the_minimal_object_is_cyclones_octet_for_octet`
 
 **Status:** done
 
@@ -15629,9 +15648,9 @@ AppliedVerbatimAnnotation verbatim; }`, `MinimalTypeDetail { }`,
 `crates/types/src/type_object/complete/struct_type.rs::CompleteStructType` (l. 37);
 `crates/types/src/type_object/minimal/struct_type.rs::MinimalStructType` (l. 92)
 
-**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::a_serialized_type_object_is_cyclones_octet_for_octet`,
-`crates/types/src/type_object/mod.rs::tests::minimal_struct_with_base_type`,
-`crates/types/src/type_object/mod.rs::tests::complete_struct_sensor_with_names_and_annotations`
+**Tests:** `crates/types/tests/typeobject_vendor_dheader.rs::xtypes_7_3_4_5_a_serialized_type_object_is_cyclones_octet_for_octet`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_struct_with_base_type`,
+`crates/types/tests/typeobject_member_annotations.rs::xtypes_7_3_4_5_the_complete_object_is_cyclones_octet_for_octet`
 
 **Status:** done
 
@@ -15646,9 +15665,9 @@ AppliedVerbatimAnnotation verbatim; }`, `MinimalTypeDetail { }`,
 `crates/types/src/type_object/complete/union_type.rs::CompleteUnionType` (l. 47);
 `crates/types/src/type_object/minimal/union_type.rs::MinimalUnionType` (l. 119)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::minimal_union_with_int_discriminator_two_cases`,
-`crates/types/src/type_object/mod.rs::tests::complete_union_roundtrips`,
-`crates/types/tests/typeobject_serialized_size.rs::the_announced_size_opens_with_the_dheader_of_the_appendable_union`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_union_with_int_discriminator_two_cases`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_complete_union_roundtrips`,
+`crates/types/tests/typeobject_serialized_size.rs::xtypes_annex_b_the_announced_size_opens_with_the_dheader_of_the_appendable_union`
 
 **Status:** done — labels are `long`; a `long long` discriminator with a larger
 label cannot be represented this way (limit of the specification).
@@ -15663,9 +15682,9 @@ CompleteAnnotationParameter.name" or "MinimalAnnotationParameter.name_hash"),
 **Repo:** `crates/types/src/type_object/complete/annotation_type.rs::CompleteAnnotationType` (l. 129);
 `crates/types/src/type_object/minimal/annotation_type.rs::MinimalAnnotationType` (l. 141)
 
-**Tests:** `crates/types/tests/typeobject_annotation_annexb.rs::the_complete_object_is_annex_bs_octet_for_octet`,
-`crates/types/tests/typeobject_annotation_annexb.rs::the_minimal_object_is_annex_bs_octet_for_octet`,
-`crates/types/tests/typeobject_annotation_annexb.rs::each_sequence_is_ordered_by_its_own_key`
+**Tests:** `crates/types/tests/typeobject_annotation_annexb.rs::xtypes_annex_b_the_complete_object_is_annex_bs_octet_for_octet`,
+`crates/types/tests/typeobject_annotation_annexb.rs::xtypes_7_3_4_4_the_minimal_object_is_annex_bs_octet_for_octet`,
+`crates/types/tests/typeobject_annotation_annexb.rs::xtypes_7_3_4_5_each_sequence_is_ordered_by_its_own_key`
 
 **Status:** done
 
@@ -15678,10 +15697,15 @@ related_flags; TypeIdentifier related_type; }`, `Complete/MinimalAliasBody`,
 **Repo:** `crates/types/src/type_object/minimal/alias_type.rs::CommonAliasBody` (l. 12);
 `crates/types/src/type_object/complete/alias_type.rs::CompleteAliasType` (l. 36)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::minimal_alias_int64_typedef`,
-`crates/types/src/type_object/mod.rs::tests::complete_alias_typedef`
+**Tests:** `crates/types/tests/typeobject_bitmask_bitset_alias_vendors.rs::xtypes_annex_b_minimal_alias_is_the_vendors_octets`
+(against CycloneDDS 11.0.1 and Fast DDS 3.6.1),
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_alias_int64_typedef`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_complete_alias_typedef`
 
-**Status:** done
+**Status:** done — `MinimalAliasHeader` (empty) and `MinimalAliasBody` are
+appendable, a `DHEADER` each under XCDR2; the minimal codec wrote neither, which
+the round trips did not see. The octets and hash of `typedef long MyLong` are the
+ones CycloneDDS 11.0.1 (`idlc`) and Fast DDS 3.6.1 both write.
 
 ### Annex B Collections: Element, Header, Sequence, Array, Map
 
@@ -15697,15 +15721,13 @@ related_flags; TypeIdentifier related_type; }`, `Complete/MinimalAliasBody`,
 `crates/types/src/type_object/complete/collection_types.rs::CompleteMapType` (l. 131);
 `crates/types/src/type_object/minimal/collection_types.rs::MinimalMapType` (l. 155)
 
-**Tests:** `crates/types/tests/typeobject_collections_annex_b.rs` (six tests,
-against the serializer of Cyclone DDS 11.0.1),
-`crates/types/src/type_object/mod.rs::tests::minimal_sequence_of_floats`,
-`crates/types/src/type_object/mod.rs::tests::minimal_array_3d_doubles`,
-`crates/types/src/type_object/mod.rs::tests::minimal_map_string_to_int64`,
-`crates/types/src/type_object/mod.rs::tests::complete_map_roundtrips`
+**Tests:** `crates/types/tests/typeobject_collections_annex_b.rs::{xtypes_annex_b_a_named_complete_sequence_is_cyclones,
+xtypes_annex_b_an_anonymous_complete_sequence_has_no_detail, xtypes_annex_b_an_annotated_element_carries_its_builtin_annotations,
+xtypes_annex_b_a_complete_array_is_appendable_around_its_header_and_element, xtypes_annex_b_a_complete_map_is_cyclones,
+xtypes_annex_b_the_minimal_collections_are_cyclones_under_both_encodings}`
 
 **Status:** done — header and element are embedded in the types, not named as
-Rust types of their own; the framing is Annex B's (`cb58f485ebd`):
+Rust types of their own; the framing is Annex B's (`daea80937f9`):
 `CompleteCollectionElement`, `CompleteCollectionHeader`, `CompleteArrayHeader`,
 `CompleteArrayType`, `MinimalCollectionElement`, `MinimalCollectionHeader` and
 `MinimalArrayHeader` are appendable (a `DHEADER` each under XCDR2), and the
@@ -15737,9 +15759,9 @@ EnumeratedLiteral.common.value"), `CommonEnumeratedHeader { BitBound bit_bound;
 `crates/types/src/type_object/complete/enum_type.rs::CompleteEnumeratedType` (l. 36);
 `crates/types/src/type_object/minimal/enum_type.rs::MinimalEnumeratedType` (l. 76)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::minimal_enum_color_3_literals`,
-`crates/types/src/type_object/mod.rs::tests::complete_enum_with_literal_names`,
-`crates/types/tests/literal_and_flag_order.rs::enumerated_literals_are_written_in_increasing_value_order`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_7_3_4_5_minimal_enum_color_3_literals`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_complete_enum_with_literal_names`,
+`crates/types/tests/literal_and_flag_order.rs::xtypes_7_3_4_5_enumerated_literals_are_written_in_increasing_value_order`
 
 **Status:** done — The literals are written in increasing order of value.
 
@@ -15753,11 +15775,20 @@ Bitflag.position"), `CommonBitmaskHeader`, `Complete/MinimalBitmaskHeader`,
 **Repo:** `crates/types/src/type_object/minimal/bitmask_type.rs::CommonBitflag` (l. 14);
 `crates/types/src/type_object/complete/bitmask_type.rs::CompleteBitmaskType` (l. 27)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::minimal_bitmask_3_flags`,
-`crates/types/src/type_object/mod.rs::tests::complete_bitmask_roundtrips`,
-`crates/types/tests/literal_and_flag_order.rs::bitmask_flags_are_written_in_increasing_position_order`
+**Tests:** `crates/types/tests/typeobject_bitmask_bitset_alias_vendors.rs::xtypes_annex_b_minimal_bitmask_is_the_vendors_octets`,
+`crates/types/tests/typeobject_bitmask_bitset_alias_vendors.rs::xtypes_annex_b_complete_bitmask_is_the_vendors_octets`,
+`crates/types/tests/typeobject_bitmask_bitset_alias_vendors.rs::xtypes_7_2_4_4_4_5_a_uint32_union_against_the_suites_bitmask_unions`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_7_3_4_5_minimal_bitmask_3_flags`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_complete_bitmask_roundtrips`,
+`crates/types/tests/literal_and_flag_order.rs::xtypes_7_3_4_5_bitmask_flags_are_written_in_increasing_position_order`
 
 **Status:** done — The flags are written in increasing order of position.
+`Complete/MinimalBitmaskType`, their header and every bitflag are appendable, a
+`DHEADER` each under XCDR2, and so is the flag sequence; the codecs wrote none.
+Byte- and hash-verified against CycloneDDS 11.0.1 (`idlc` and the OMG suite client)
+and Fast DDS 3.6.1. CycloneDDS and ZeroDDS write the bitmask's extensibility
+into `bitmask_flags` (DDS-XTypes 1.4 Beta 1: "F, A. No flags == A"), Fast DDS
+writes 0 (1.3: "Unused"); CycloneDDS refuses 0 (see the TypeFlag entry).
 
 ### Annex B Bitset: bitfield, header, type
 
@@ -15769,10 +15800,17 @@ BitsetMemberFlag flags; octet bitcount; TypeKind holder_type; }`,
 **Repo:** `crates/types/src/type_object/minimal/bitset_type.rs::CommonBitfield` (l. 17);
 `crates/types/src/type_object/complete/bitset_type.rs::CompleteBitsetType` (l. 27)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::minimal_bitset_roundtrips`,
-`crates/types/src/type_object/mod.rs::tests::complete_bitset_roundtrips`
+**Tests:** `crates/types/tests/typeobject_bitmask_bitset_alias_vendors.rs::xtypes_annex_b_bitset_is_the_vendors_octets`
+(against Fast DDS 3.6.1),
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_minimal_bitset_roundtrips`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_complete_bitset_roundtrips`
 
-**Status:** done
+**Status:** done — `Complete/MinimalBitsetType`, their header and every bitfield
+are appendable, a `DHEADER` each under XCDR2, and so is the field sequence; the
+codecs wrote none. Byte- and hash-verified against Fast DDS 3.6.1; CycloneDDS 11.0.1
+has no bitset (`idlc`: syntax error). Fast DDS gives a `bitfield<3>` without a
+destination type the holder `TK_UINT8`, IDL 4.2 §7.4.13.4.3.2 `octet` (`TK_BYTE`),
+which `from_ast` writes.
 
 ### Annex B CompleteTypeObject, MinimalTypeObject, ExtendedType
 
@@ -15783,10 +15821,10 @@ MinimalTypeObject switch (octet)`.
 **Repo:** `crates/types/src/type_object/complete/mod.rs::CompleteTypeObject` (l. 44);
 `crates/types/src/type_object/minimal/mod.rs::MinimalTypeObject` (l. 47)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::an_extended_type_kind_keeps_the_member_list_it_arrived_with`,
-`crates/types/src/type_object/mod.rs::tests::a_type_kind_this_revision_does_not_define_survives_the_round_trip`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_an_extended_type_kind_keeps_the_member_list_it_arrived_with`,
+`crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_a_type_kind_this_revision_does_not_define_survives_the_round_trip`
 
-**Status:** done — Under XCDR1 the arm is a parameter list that `PID_LIST_END` closes (the type is MUTABLE and empty); an unknown member in it is stepped over, a must-understand member refuses the value, and members read under XCDR2 for a type of a later revision have no XCDR1 form (`320c16503d2`, tests in `crates/types/tests/type_lookup_xcdr1.rs`).
+**Status:** done — Under XCDR1 the arm is a parameter list that `PID_LIST_END` closes (the type is MUTABLE and empty); an unknown member in it is stepped over, a must-understand member refuses the value, and members read under XCDR2 for a type of a later revision have no XCDR1 form (`d2eaf0438ab`, tests in `crates/types/tests/type_lookup_xcdr1.rs`).
 
 ### Annex B union TypeObject, TypeObjectSeq, StronglyConnectedComponent
 
@@ -15797,8 +15835,8 @@ typedef TypeObjectSeq StronglyConnectedComponent;"
 
 **Repo:** `crates/types/src/type_object/mod.rs::TypeObject` (l. 36)
 
-**Tests:** `crates/types/src/type_object/mod.rs::tests::unknown_equivalence_kind_fails_gracefully`,
-`crates/types/tests/strongly_connected_components.rs::a_component_members_type_object_builds`
+**Tests:** `crates/types/src/type_object/mod.rs::tests::xtypes_annex_b_unknown_equivalence_kind_fails_gracefully`,
+`crates/types/tests/strongly_connected_components.rs::xtypes_7_3_4_9_1_a_component_members_type_object_builds`
 
 **Status:** done
 
@@ -15812,8 +15850,8 @@ typedef TypeObjectSeq StronglyConnectedComponent;"
 `crates/types/src/type_lookup.rs::TypeIdentifierPair` (l. 205);
 `crates/types/src/type_information.rs::TypeInformation` (l. 209)
 
-**Tests:** `crates/types/src/type_lookup.rs::tests::a_reply_pair_names_the_identifier_it_answers`,
-`crates/discovery/tests/representation_and_type_information.rs::type_information_is_built_from_a_keyed_appendable_struct`
+**Tests:** `crates/types/src/type_lookup.rs::tests::xtypes_annex_b_a_reply_pair_names_the_identifier_it_answers`,
+`crates/discovery/tests/representation_and_type_information.rs::xtypes_7_6_3_2_1_type_information_is_built_from_a_keyed_appendable_struct`
 
 **Status:** done — see §7.6.3.2.1 and §7.6.3.3.3.
 
@@ -15831,7 +15869,7 @@ typedef TypeObjectSeq StronglyConnectedComponent;"
 
 **Repo:** `crates/types/src/dynamic/`
 
-**Tests:** `crates/dcps/tests/annex_c_idl_conformance.rs::every_operation_of_annex_c_has_its_counterpart`; `crates/dcps/tests/annex_c_idl_conformance.rs::the_state_of_the_valuetypes_is_in_the_records`; `crates/dcps/tests/annex_c_idl_conformance.rs::the_type_kind_constants_of_the_idl_are_the_rust_constants`
+**Tests:** `crates/dcps/tests/annex_c_idl_conformance.rs::xtypes_7_5_2_every_operation_of_annex_c_has_its_counterpart`; `crates/dcps/tests/annex_c_idl_conformance.rs::xtypes_annex_c_the_state_of_the_valuetypes_is_in_the_records`; `crates/dcps/tests/annex_c_idl_conformance.rs::xtypes_annex_c_the_type_kind_constants_of_the_idl_are_the_rust_constants`
 
 **Status:** done — the test reads the IDL of the annex (`crates/types/tests/fixtures/annex-c-dynamic-language-binding.idl`) and checks that every constant, operation and valuetype state member has a counterpart in the Rust API; log: `.agent/REPORT.md`.
 
@@ -15842,7 +15880,7 @@ TypeKind TK_MAP = 0x62;"
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::TK_NONE`; `TypeKindValue`
 
-**Tests:** `crates/types/tests/dynamic_annex_c.rs::the_type_kind_constants_have_the_numbers_of_annex_c`
+**Tests:** `crates/types/tests/dynamic_annex_c.rs::xtypes_annex_c_the_type_kind_constants_have_the_numbers_of_annex_c`
 
 **Status:** done — `TK_NONE` to `TK_MAP` with the numbers of the annex; log: `.agent/REPORT.md`.
 
@@ -15854,7 +15892,7 @@ string placement; public string text; [...] }";
 
 **Repo:** `crates/types/src/dynamic/type_.rs::verbatim_text_count`
 
-**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::verbatim_text_is_reported_with_its_placement`
+**Tests:** `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_annex_c_verbatim_text_is_reported_with_its_placement`
 
 **Status:** done — `get_verbatim_text_count` and `get_verbatim_text` on `DynamicType` and `DynamicTypeMember`; log: `.agent/REPORT.md`.
 
@@ -15866,7 +15904,7 @@ string placement; public string text; [...] }";
 **Repo:** `crates/types/src/dynamic/descriptor.rs::ExtensibilityKind` (l. 275);
 `crates/types/src/dynamic/descriptor.rs::TryConstructKind` (l. 331)
 
-**Tests:** `crates/types/src/dynamic/descriptor.rs::tests::the_two_renames_round_trip`
+**Tests:** `crates/types/src/dynamic/descriptor.rs::tests::xtypes_annex_c_the_two_renames_round_trip`
 
 **Status:** done
 
@@ -15880,7 +15918,7 @@ ExtensibilityKind extensibility_kind; public boolean is_nested; [...] };"
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::TypeDescriptor` (l. 381)
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`
 
 **Status:** done — Table 50 does not name `extensibility_kind` and `is_nested`
 (listed in the findings file).
@@ -15896,7 +15934,7 @@ boolean is_default_label; [...] };"
 
 **Repo:** `crates/types/src/dynamic/descriptor.rs::MemberDescriptor`
 
-**Tests:** `crates/types/src/dynamic/type_.rs::tests::a_view_reports_what_the_model_holds`; `crates/types/tests/dynamic_type_descriptors.rs::a_union_label_past_32_bits_is_kept`; `crates/types/tests/dynamic_annotation_descriptors.rs::a_member_descriptor_has_a_default_string_and_value_semantics`; `crates/dcps/tests/annex_c_idl_conformance.rs::the_state_of_the_valuetypes_is_in_the_records`
+**Tests:** `crates/types/src/dynamic/type_.rs::tests::xtypes_7_5_2_a_view_reports_what_the_model_holds`; `crates/types/tests/dynamic_type_descriptors.rs::xtypes_7_5_2_7_8_a_union_label_past_32_bits_is_kept`; `crates/types/tests/dynamic_annotation_descriptors.rs::xtypes_7_5_2_7_3_a_member_descriptor_has_a_default_string_and_value_semantics`; `crates/dcps/tests/annex_c_idl_conformance.rs::xtypes_annex_c_the_state_of_the_valuetypes_is_in_the_records`
 
 **Status:** done — `MemberDescriptor` carries `try_construct_kind`, the flags and `default_value` as a string (§7.5.2.7.3, item of its own: done); `label` is `Vec<i64>` as in Table 53; log in `.agent/REPORT.md`.
 
@@ -15907,7 +15945,7 @@ sequence<wstring> WstringSeq;"
 
 **Repo:** `crates/types/src/dynamic/sample.rs::Int32Seq`
 
-**Tests:** `crates/types/tests/dynamic_annex_c.rs::the_typed_sequences_are_the_types_of_the_values_operations`
+**Tests:** `crates/types/tests/dynamic_annex_c.rs::xtypes_annex_c_the_typed_sequences_are_the_types_of_the_values_operations`
 
 **Status:** done — `Int32Seq` to `WstringSeq`; log: `.agent/REPORT.md`.
 
@@ -15968,7 +16006,7 @@ XCDR2_DATA_REPRESENTATION = 2;"
 **Repo:** `crates/rtps/src/publication_data.rs::DEFAULT_OFFER` (l. 108);
 `crates/types/src/qos.rs::DataRepresentationId` (l. 174)
 
-**Tests:** `crates/dcps/src/runtime.rs::tests::data_repr_offer_str_uses_spec_ids`
+**Tests:** `crates/dcps/src/runtime.rs::tests::xtypes_7_6_3_1_1_data_repr_offer_str_uses_spec_ids`
 
 **Status:** done
 
@@ -15982,7 +16020,7 @@ TYPE_CONSISTENCY_ENFORCEMENT_QOS_POLICY_ID = 24;"
 (`qos_policy_id::DATA_REPRESENTATION`,
 `qos_policy_id::TYPE_CONSISTENCY_ENFORCEMENT`)
 
-**Tests:** `crates/dcps/src/psm_constants.rs::tests::the_xtypes_policy_ids_are_those_of_its_idl`
+**Tests:** `crates/dcps/src/psm_constants.rs::tests::xtypes_annex_d_the_xtypes_policy_ids_are_those_of_its_idl`
 
 **Status:** `done` — 23 and 24 as in Annex D.
 
@@ -15994,7 +16032,7 @@ TYPE_CONSISTENCY_ENFORCEMENT_QOS_POLICY_NAME = 'TypeConsistencyEnforcement';"
 
 **Repo:** `crates/dcps/src/psm_constants.rs`
 
-**Tests:** `crates/dcps/src/psm_constants.rs::tests::the_xtypes_policy_names_and_representation_ids_are_those_of_annex_d`
+**Tests:** `crates/dcps/src/psm_constants.rs::tests::xtypes_annex_d_the_xtypes_policy_names_and_representation_ids_are_those_of_annex_d`
 
 **Status:** done — `psm_constants::qos_policy_name` returns `DataRepresentation` and `TypeConsistencyEnforcement`; `psm_constants::data_representation_id` gives `XCDR` 0, `XML` 1 and `XCDR2` 2.
 
@@ -16005,7 +16043,7 @@ DataRepresentationQosPolicy { DataRepresentationIdSeq value; };"
 
 **Repo:** `crates/rtps/src/publication_data.rs::PublicationBuiltinTopicData` (l. 207, field `data_representation` l. 274)
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::publication_data_roundtrip_preserves_data_representation`
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_publication_data_roundtrip_preserves_data_representation`
 
 **Status:** done
 
@@ -16021,9 +16059,9 @@ force_type_validation; };"
 **Repo:** `crates/types/src/qos.rs::TypeConsistencyEnforcement` (l. 52);
 `crates/types/src/qos.rs::from_bytes` (l. 148)
 
-**Tests:** `crates/types/src/qos.rs::tests::consistency_roundtrip_default`,
-`crates/types/src/qos.rs::tests::type_consistency_kind_has_the_two_values_of_annex_d`,
-`crates/dcps/tests/xtypes_aware_match.rs::a_readers_type_consistency_policy_survives_its_announcement`
+**Tests:** `crates/types/src/qos.rs::tests::xtypes_7_6_3_4_1_the_default_policy_is_the_octets_rti_and_fastdds_write`,
+`crates/types/src/qos.rs::tests::xtypes_7_6_3_4_1_type_consistency_kind_has_the_two_values_of_annex_d`,
+`crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_1_a_readers_type_consistency_policy_survives_its_announcement`
 
 **Status:** done — `kind` has two octets, then the five Booleans follow in this order; `TypeConsistencyKind` has the two values of Annex D, an unknown value is refused.
 
@@ -16040,8 +16078,8 @@ type_information; [...] @id(0x0073) DataRepresentationQosPolicy representation;
 `crates/rtps/src/publication_data.rs::PublicationBuiltinTopicData`;
 `crates/rtps/src/subscription_data.rs::SubscriptionBuiltinTopicData`
 
-**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::topic_data_roundtrip_preserves_data_representation_and_type_information`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::publication_data_roundtrip_preserves_data_representation`,
+**Tests:** `crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_annex_d_topic_data_roundtrip_preserves_data_representation_and_type_information`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_1_publication_data_roundtrip_preserves_data_representation`,
 `crates/rtps/tests/type_object_v1_discovery.rs::a_topic_carries_its_type_id_and_type`,
 `crates/rtps/tests/type_object_v1_discovery.rs::a_publication_carries_its_type_id_and_type`,
 `crates/rtps/tests/type_object_v1_discovery.rs::a_subscription_carries_its_type_id_and_type`,
@@ -16059,17 +16097,17 @@ type_information; [...] @id(0x0073) DataRepresentationQosPolicy representation;
 `crates/rtps/src/type_v1.rs`;
 `crates/dcps/src/runtime.rs::announced_type_object_v1`
 
-**Tests:** `crates/types/tests/type_object_v1.rs::a_minimal_object_has_the_octets_the_rules_give`,
-`crates/types/tests/type_object_v1.rs::a_type_id_has_the_octets_of_its_union`,
-`crates/types/tests/type_object_v1.rs::a_library_made_of_every_kind_survives_both_byte_orders`,
-`crates/types/tests/type_object_v1.rs::the_id_of_a_type_is_the_low_64_bits_of_the_md5_of_its_serialization`,
-`crates/types/tests/type_object_v1.rs::a_topic_type_comes_back_as_the_complete_objects_it_was`,
-`crates/types/tests/type_object_v1.rs::an_annotation_and_its_application_cross_both_ways`,
-`crates/types/tests/type_object_v1.rs::what_annex_b_has_no_form_for_is_refused_by_name`,
-`crates/types/tests/type_object_v1.rs::a_type_that_refers_to_itself_has_no_form`,
+**Tests:** `crates/types/tests/type_object_v1.rs::xtypes_annex_d_a_minimal_object_has_the_octets_the_rules_give`,
+`crates/types/tests/type_object_v1.rs::xtypes_annex_d_a_type_id_has_the_octets_of_its_union`,
+`crates/types/tests/type_object_v1.rs::xtypes_annex_d_a_library_made_of_every_kind_survives_both_byte_orders`,
+`crates/types/tests/type_object_v1.rs::xtypes_annex_d_the_id_of_a_type_is_the_low_64_bits_of_the_md5_of_its_serialization`,
+`crates/types/tests/type_object_v1.rs::xtypes_annex_d_a_topic_type_comes_back_as_the_complete_objects_it_was`,
+`crates/types/tests/type_object_v1.rs::xtypes_annex_d_an_annotation_and_its_application_cross_both_ways`,
+`crates/types/tests/type_object_v1.rs::xtypes_annex_d_what_annex_b_has_no_form_for_is_refused_by_name`,
+`crates/types/tests/type_object_v1.rs::xtypes_annex_d_a_type_that_refers_to_itself_has_no_form`,
 `crates/rtps/tests/type_object_v1_discovery.rs::a_parameter_that_does_not_decode_is_left_out_not_a_refusal`,
-`crates/dcps/src/runtime.rs::type_object_v1_tests::the_type_object_v1_is_announced_only_when_asked`,
-`crates/dcps/src/runtime.rs::type_object_v1_tests::the_type_object_v1_of_a_remote_makes_its_types_known`
+`crates/dcps/src/runtime.rs::type_object_v1_tests::xtypes_annex_d_the_type_object_v1_is_announced_only_when_asked`,
+`crates/dcps/src/runtime.rs::type_object_v1_tests::xtypes_annex_d_the_type_object_v1_of_a_remote_makes_its_types_known`
 
 **Status:** done — Annex D writes `TypeIdV1` and `TypeObjectV1` without a definition in 1.3; `TypeObjectV1` is the `TypeObject` of Annex B of XTypes 1.1 and `TypeIdV1` its `_TypeId` (the only identifier of 1.1). The model, the XCDR1 serialization (parameter lists for the mutable structures, plain CDR for the extensible ones; a mutable union as its discriminator and selected member by XTypes 1.3 §7.4.3.5.3 rule (28)), the type ids of 1.1 §7.3.4.1.2 (the low 64 bits of the MD5 over the big-endian serialization) and the conversion from and to Complete TypeObjects are in `zerodds_types::type_object_v1`. Where the text leaves a choice, the module documentation names it: member ids of the union `TypeLibraryElement` by declaration order, `MODULE_ELEMENT` = 24 (the text gives the enumerator no value, the next would be 22 and collides), the `type_id` of the type itself is `NO_TYPE` while it is hashed. The setting `discovery.type_object_v1` (default off) has endpoints and topics add both members; the `TypeObjectV1` of a remote endpoint without `PID_TYPE_INFORMATION` is put into the registry as Complete TypeObjects and gives the endpoint its identifier. What 1.1 cannot carry is not taken along (`try_construct`, `@must_understand` except that of a key, `@autoid(HASH)`, `@verbatim`, `@unit`, `@min`, `@max`, `@hashid`, default values, `@ignore_literal_names`) or gives a named error (`int8`, a bit set with bit fields, a type that reaches itself: its id would be the hash of a serialization that contains it).
 
@@ -16081,8 +16119,8 @@ type_information; [...] @id(0x0073) DataRepresentationQosPolicy representation;
 
 **Repo:** `crates/rtps/src/publication_data.rs::PublicationBuiltinTopicData` (l. 207)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::publication_standard_type_information_yields_type_identifier`,
-`crates/dcps/tests/sedp_data_representation_pid.rs::publication_data_emits_data_representation_pid_when_set`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_2_2_publication_standard_type_information_yields_type_identifier`,
+`crates/dcps/tests/sedp_data_representation_pid.rs::xtypes_7_6_3_1_3_publication_data_emits_data_representation_pid_when_set`
 
 **Status:** done
 
@@ -16094,8 +16132,8 @@ TypeConsistencyEnforcementQosPolicy type_consistency; };"
 
 **Repo:** `crates/rtps/src/subscription_data.rs::SubscriptionBuiltinTopicData` (l. 37)
 
-**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::subscription_standard_type_information_yields_type_identifier`,
-`crates/dcps/tests/xtypes_aware_match.rs::a_readers_type_consistency_policy_survives_its_announcement`
+**Tests:** `crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_2_2_subscription_standard_type_information_yields_type_identifier`,
+`crates/dcps/tests/xtypes_aware_match.rs::xtypes_7_6_3_4_1_a_readers_type_consistency_policy_survives_its_announcement`
 
 **Status:** done
 
@@ -16112,11 +16150,11 @@ type_consistency; };"
 `crates/zerodds-c-api/src/qos_ffi.rs`;
 `crates/cpp/include/dds/core/qos_bridge.hpp`
 
-**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::data_representation_defaults_none_and_settable`,
-`crates/dcps/tests/topic_data_representation.rs::the_topic_qos_names_a_representation_for_its_writers_and_readers`,
-`crates/zerodds-c-api/tests/qos_data_representation_c.rs::the_type_consistency_of_a_reader_is_read_and_a_wrong_kind_is_refused`,
-`crates/zerodds-c-api/tests/qos_data_representation_c.rs::the_entities_hand_the_representation_back`,
-`crates/cpp/tests/smoke_dds_psm.cpp::test_data_representation_and_type_consistency_in_the_qos_sets`
+**Tests:** `crates/dcps/src/qos.rs::data_representation_tests::xtypes_7_6_3_1_data_representation_defaults_none_and_settable`,
+`crates/dcps/tests/topic_data_representation.rs::xtypes_7_6_3_1_1_the_topic_qos_names_a_representation_for_its_writers_and_readers`,
+`crates/zerodds-c-api/tests/qos_data_representation_c.rs::xtypes_annex_d_the_type_consistency_of_a_reader_is_read_and_a_wrong_kind_is_refused`,
+`crates/zerodds-c-api/tests/qos_data_representation_c.rs::xtypes_7_6_3_1_1_the_entities_hand_the_representation_back`,
+`crates/cpp/tests/smoke_dds_psm.cpp::xtypes_7_6_3_1_1_data_representation_and_type_consistency_in_the_qos_sets`
 
 **Status:** done — `TopicQos`, `DataWriterQos` and `DataReaderQos` carry `representation` and `DataReaderQos` `type_consistency`, in Rust, in the C structs, in the Java PSM and in the QoS sets of the C++ PSM; a `TypeConsistencyKind` that Annex D does not know is refused by `zerodds_sub_create_datareader`.
 
@@ -16133,9 +16171,9 @@ KeyedBytes { @key string key; ByteSeq value; };"
 
 **Repo:** `crates/dcps/src/builtin_type_set.rs::build` (l. 98)
 
-**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::dds_string_has_unbounded_string_value_member`,
-`crates/dcps/tests/builtin_types_auto_register_c44b.rs::dds_keyed_bytes_has_key_member`,
-`crates/dcps/src/builtin_type_set.rs::tests::each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
+**Tests:** `crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_1_dds_string_has_unbounded_string_value_member`,
+`crates/dcps/tests/builtin_types_auto_register_c44b.rs::xtypes_7_6_5_4_dds_keyed_bytes_has_key_member`,
+`crates/dcps/src/builtin_type_set.rs::tests::xtypes_7_6_5_each_one_is_an_appendable_non_nested_struct_under_its_spec_name`
 
 **Status:** done — Members as in Annex E, `@extensibility(APPENDABLE)`, not nested.
 
@@ -16159,7 +16197,7 @@ unbounded string. */ };"
 
 **Repo:** `crates/dcps/src/builtin_types.rs::StringTypeSupport`; `crates/zerodds-c-api/src/builtin_type_ffi.rs`; `crates/cpp/include/zerodds/builtin_type_support.hpp`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::StringDataWriter`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::StringDataReader`
 
-**Tests:** `crates/dcps/tests/builtin_type_support.rs::each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::the_type_supports_name_and_register_their_types`; `crates/cpp/tests/builtin_data_endpoints_via_cargo.rs::the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
+**Tests:** `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_annex_e_the_type_supports_name_and_register_their_types`; `crates/cpp/CMakeLists.txt::xtypes_7_6_5_the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
 
 **Status:** done — `StringTypeSupport` with `get_type_name` and `register_type` in Rust, the C ABI, C++ and Java; `StringDataWriter` and `StringDataReader` in Rust (aliases of `DataWriter<…>`, `DataReader<…>`), the C ABI and C++ (classes over the C ABI). In Java the interfaces are `DataWriter<T>` and `DataReader<T>` over `String`, `byte[]`, `KeyedString` and `KeyedBytes` by DDS-Java-PSM 1.0 §7.8.2; log in `.agent/REPORT.md`.
 
@@ -16173,7 +16211,7 @@ unbounded string. */ };"
 
 **Repo:** `crates/dcps/src/builtin_types.rs::KeyedStringDataWriterOperations`
 
-**Tests:** `crates/dcps/tests/builtin_types_writers.rs::keyed_string_operations_work_on_the_key`
+**Tests:** `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_keyed_string_operations_work_on_the_key`
 
 **Status:** done — The operations of Annex E are in the trait `KeyedStringDataWriterOperations` for `DataWriter<…>` (`*_w_key`, each with `_w_timestamp`).
 
@@ -16184,7 +16222,7 @@ unbounded string. */ };"
 
 **Repo:** `crates/dcps/src/builtin_types.rs::KeyedStringTypeSupport`; `crates/zerodds-c-api/src/builtin_type_ffi.rs`; `crates/cpp/include/zerodds/builtin_type_support.hpp`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::KeyedStringDataWriter`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::KeyedStringDataReader`
 
-**Tests:** `crates/dcps/tests/builtin_type_support.rs::each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::the_type_supports_name_and_register_their_types`; `crates/cpp/tests/builtin_data_endpoints_via_cargo.rs::the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
+**Tests:** `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_annex_e_the_type_supports_name_and_register_their_types`; `crates/cpp/CMakeLists.txt::xtypes_7_6_5_the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
 
 **Status:** done — `KeyedStringTypeSupport` with `get_type_name` and `register_type` in Rust, the C ABI, C++ and Java; `KeyedStringDataWriter` and `KeyedStringDataReader` in Rust (aliases of `DataWriter<…>`, `DataReader<…>`), the C ABI and C++ (classes over the C ABI). In Java the interfaces are `DataWriter<T>` and `DataReader<T>` over `String`, `byte[]`, `KeyedString` and `KeyedBytes` by DDS-Java-PSM 1.0 §7.8.2; log in `.agent/REPORT.md`.
 
@@ -16196,7 +16234,7 @@ write_w_bytes_w_timestamp(...)".
 
 **Repo:** `crates/dcps/src/builtin_types.rs::BytesDataWriterOperations`
 
-**Tests:** `crates/dcps/tests/builtin_types_writers.rs::bytes_are_written_from_an_offset_and_a_length`
+**Tests:** `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_bytes_are_written_from_an_offset_and_a_length`
 
 **Status:** done — The operations of Annex E are in the trait `BytesDataWriterOperations` for `DataWriter<…>` (`*_w_key`, each with `_w_timestamp`).
 
@@ -16207,7 +16245,7 @@ interface BytesTypeSupport : TypeSupport { [...] };"
 
 **Repo:** `crates/dcps/src/builtin_types.rs::BytesTypeSupport`; `crates/zerodds-c-api/src/builtin_type_ffi.rs`; `crates/cpp/include/zerodds/builtin_type_support.hpp`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::BytesDataWriter`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::BytesDataReader`
 
-**Tests:** `crates/dcps/tests/builtin_type_support.rs::each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::the_type_supports_name_and_register_their_types`; `crates/cpp/tests/builtin_data_endpoints_via_cargo.rs::the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
+**Tests:** `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_annex_e_the_type_supports_name_and_register_their_types`; `crates/cpp/CMakeLists.txt::xtypes_7_6_5_the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
 
 **Status:** done — `BytesTypeSupport` with `get_type_name` and `register_type` in Rust, the C ABI, C++ and Java; `BytesDataWriter` and `BytesDataReader` in Rust (aliases of `DataWriter<…>`, `DataReader<…>`), the C ABI and C++ (classes over the C ABI). In Java the interfaces are `DataWriter<T>` and `DataReader<T>` over `String`, `byte[]`, `KeyedString` and `KeyedBytes` by DDS-Java-PSM 1.0 §7.8.2; log in `.agent/REPORT.md`.
 
@@ -16220,7 +16258,7 @@ interface BytesTypeSupport : TypeSupport { [...] };"
 
 **Repo:** `crates/dcps/src/builtin_types.rs::KeyedBytesDataWriterOperations`
 
-**Tests:** `crates/dcps/tests/builtin_types_writers.rs::keyed_bytes_operations_work_on_the_key`
+**Tests:** `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_keyed_bytes_operations_work_on_the_key`
 
 **Status:** done — The operations of Annex E are in the trait `KeyedBytesDataWriterOperations` for `DataWriter<…>` (`*_w_key`, each with `_w_timestamp`).
 
@@ -16231,7 +16269,7 @@ interface BytesTypeSupport : TypeSupport { [...] };"
 
 **Repo:** `crates/dcps/src/builtin_types.rs::KeyedBytesTypeSupport`; `crates/zerodds-c-api/src/builtin_type_ffi.rs`; `crates/cpp/include/zerodds/builtin_type_support.hpp`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::KeyedBytesDataWriter`; `crates/cpp/include/zerodds/builtin_data_endpoints.hpp::DDS::KeyedBytesDataReader`
 
-**Tests:** `crates/dcps/tests/builtin_type_support.rs::each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::the_type_supports_name_and_register_their_types`; `crates/cpp/tests/builtin_data_endpoints_via_cargo.rs::the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
+**Tests:** `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_each_type_support_names_its_type`; `crates/dcps/tests/builtin_type_support.rs::xtypes_annex_e_register_type_registers_each_type_under_a_name`; `crates/dcps/tests/builtin_types_writers.rs::xtypes_7_6_5_1_the_four_types_are_topic_types_with_a_string_writer`; `crates/zerodds-c-api/tests/builtin_types_c.rs::xtypes_annex_e_the_type_supports_name_and_register_their_types`; `crates/cpp/CMakeLists.txt::xtypes_7_6_5_the_data_writers_and_readers_of_the_built_in_types_write_and_take`; `crates/java-omgdds/java/src/test/java/org/omg/dds/TypesBuiltinTest.java`
 
 **Status:** done — `KeyedBytesTypeSupport` with `get_type_name` and `register_type` in Rust, the C ABI, C++ and Java; `KeyedBytesDataWriter` and `KeyedBytesDataReader` in Rust (aliases of `DataWriter<…>`, `DataReader<…>`), the C ABI and C++ (classes over the C ABI). In Java the interfaces are `DataWriter<T>` and `DataReader<T>` over `String`, `byte[]`, `KeyedString` and `KeyedBytes` by DDS-Java-PSM 1.0 §7.8.2; log in `.agent/REPORT.md`.
 
@@ -16299,7 +16337,50 @@ the Type System enumerated above are generally supported."
 
 ## Audit-Status
 
-1105 done / 0 partial / 0 open / 93 n/a (informative) / 0 n/a (rejected).
+1107 done / 6 partial / 0 open / 0 blocked / 86 n/a (informative).
 
-Test run: to be added on the Linux test host.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-xtypes-1.3.md`):
 
+* `cargo nextest run --profile merge -p zerodds-ast --all-targets` (job `merge-rust-ast`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-ast-layout --all-targets` (job `merge-rust-ast-layout`) — 51 tests green.
+* `cargo nextest run --profile merge -p zerodds-build --all-targets` (job `merge-rust-build`) — 3 tests green.
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (job `merge-rust-c-api`) — 10 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 102 tests green.
+* `cargo nextest run --profile merge -p zerodds-discovery --all-targets` (job `merge-rust-discovery`) — 17 tests green.
+* `cargo nextest run --profile merge -p zerodds-float128 --all-targets` (job `merge-rust-float128`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (job `merge-rust-idl-lower`) — 162 tests green.
+* `cargo nextest run --profile merge -p zerodds-idl-parse --all-targets` (job `merge-rust-idl-parse`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 57 tests green.
+* `cargo nextest run --profile merge -p rmw-zerodds-shim --all-targets` (job `merge-rust-rmw-zerodds-shim`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 10 tests green.
+* `cargo nextest run --profile merge -p zerodds-sql-filter --all-targets` (job `merge-rust-sql-filter`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-types --all-targets` (job `merge-rust-types`) — 326 tests green.
+* `cargo nextest run --profile merge -p zerodds-wire --all-targets` (job `merge-rust-wire`) — 46 tests green.
+* `cargo nextest run --profile merge -p zerodds-wire-codec --all-targets` (job `merge-rust-wire-codec`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-wire-conformance --all-targets` (job `merge-rust-wire-conformance`) — 31 tests green.
+* `cargo nextest run --profile merge -p zerodds-wire-probe --all-targets` (job `merge-rust-wire-probe`) — 65 tests green.
+* `cargo nextest run --profile merge -p zerodds-wireprobe-c-gen --all-targets` (job `merge-rust-wireprobe-c-gen`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-wireprobe-python-gen --all-targets` (job `merge-rust-wireprobe-python-gen`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-xml --all-targets` (job `merge-rust-xml`) — 57 tests green.
+* `cargo nextest run --profile merge -p zerodds-xml-compose --all-targets` (job `merge-rust-xml-compose`) — 54 tests green.
+* `python3 ci/run_integration.py merge-codegen-c` (job `merge-codegen-c`) — 24 tests green.
+* `python3 ci/run_integration.py merge-codegen-cpp` (job `merge-codegen-cpp`) — 12 tests green.
+* `python3 ci/run_integration.py merge-codegen-csharp` (job `merge-codegen-csharp`) — 1 test green.
+* `python3 ci/run_integration.py merge-codegen-d` (job `merge-codegen-d`) — 1 test green.
+* `python3 ci/run_integration.py merge-codegen-elixir` (job `merge-codegen-elixir`) — 42 tests green.
+* `python3 ci/run_integration.py merge-codegen-go` (job `merge-codegen-go`) — 1 test green.
+* `python3 ci/run_integration.py merge-codegen-java` (job `merge-codegen-java`) — 6 tests green.
+* `python3 ci/run_integration.py merge-codegen-python` (job `merge-codegen-python`) — 1 test green.
+* `python3 ci/run_integration.py merge-codegen-rust` (job `merge-codegen-rust`) — 2 tests green.
+* `python3 ci/run_integration.py merge-codegen-typescript` (job `merge-codegen-typescript`) — 1 test green.
+* `python3 ci/run_integration.py merge-java-omgdds` (job `merge-java-omgdds`) — 2 tests green.
+* `python3 ci/run_integration.py integration-codegen` (job `integration-codegen`) — 4 tests green.
+* `python3 ci/run_integration.py integration-codegen-build` (job `integration-codegen-build`) — 1 test green.
+* `python3 ci/run_integration.py integration-codegen-csharp` (job `integration-codegen-csharp`) — 16 tests green.
+* `python3 ci/run_integration.py integration-codegen-elixir` (job `integration-codegen-elixir`) — 12 tests green.
+* `python3 ci/run_integration.py integration-sdk` (job `integration-sdk`) — 21 tests green.
+
+1169 cited tests green, 0 not green.
+
+Open items: `dds-xtypes-1.3.open.en.md`.

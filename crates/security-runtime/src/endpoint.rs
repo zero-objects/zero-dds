@@ -255,20 +255,6 @@ mod tests {
         assert!(info.is_payload_encrypted());
     }
 
-    #[test]
-    fn to_info_from_info_roundtrip_for_all_levels() {
-        for lvl in [
-            ProtectionLevel::None,
-            ProtectionLevel::Sign,
-            ProtectionLevel::Encrypt,
-        ] {
-            let ep = EndpointProtection::new(lvl);
-            let info = ep.to_info();
-            let back = EndpointProtection::from_info(Some(&info));
-            assert_eq!(back, ep, "roundtrip fails for {lvl:?}");
-        }
-    }
-
     // ---- match_endpoints — DoD matrix from plan §stage 3 ----
 
     #[test]

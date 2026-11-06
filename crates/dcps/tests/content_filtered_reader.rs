@@ -13,7 +13,7 @@ use zerodds_dcps::{
 };
 use zerodds_sql_filter::Value;
 
-/// KEEP_ALL: `a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`
+/// KEEP_ALL: `dcps_2_2_2_2_1_7_a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`
 /// pushes several samples to this keyless (single-instance) topic and
 /// asserts on more than the single newest of them — the default
 /// KEEP_LAST(1) would (correctly) evict the rest.
@@ -68,7 +68,7 @@ fn raw(id: u32, score: i32) -> Vec<u8> {
 }
 
 #[test]
-fn a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts() {
+fn dcps_2_2_2_2_1_7_a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(192, DomainParticipantQos::default());
     let topic = p
@@ -102,7 +102,7 @@ fn a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts() {
 }
 
 #[test]
-fn a_field_the_type_does_not_answer_delivers_nothing() {
+fn dcps_2_2_2_3_3_a_field_the_type_does_not_answer_delivers_nothing() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(193, DomainParticipantQos::default());
     let topic = p

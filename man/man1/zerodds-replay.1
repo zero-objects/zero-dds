@@ -13,6 +13,7 @@ zerodds-replay \- replay recorded ZeroDDS captures to stdout or a live domain
 [\fB\-\-time\-scale\fR \fIF\fR]
 [\fB\-\-topic\fR \fINAME\fR]...
 [\fB\-\-inject\fR [\fB\-\-inject\-domain\fR \fIN\fR]]
+[\fB\-\-representation\fR \fIH\fR]
 .SH DESCRIPTION
 .B zerodds-replay
 reads a capture and re-emits its frames in recorded order, preserving the
@@ -79,6 +80,12 @@ Re-inject frames into a live DDS domain instead of printing to stdout.
 .TP
 .BR \-\-inject\-domain " " \fIN\fR
 DCPS Domain ID for \fB\-\-inject\fR. Default: 0.
+.TP
+.BR \-\-representation " " \fIH\fR
+The representation identifier, two octets in hex (for example \fI0007\fR for
+CDR2_LE), for samples whose capture does not record it (format version 2, or
+a decoded capture made before it was kept). Without it such samples are not
+injected.
 .SH GLOBAL OPTIONS
 .TP
 .BR \-h ", " \-\-help

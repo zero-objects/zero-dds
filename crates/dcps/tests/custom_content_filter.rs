@@ -14,7 +14,7 @@ use zerodds_dcps::{
 };
 use zerodds_sql_filter::Value;
 
-/// KEEP_ALL: `a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`
+/// KEEP_ALL: `dcps_2_2_2_2_1_7_a_reader_on_a_content_filtered_topic_delivers_what_the_filter_accepts`
 /// pushes several samples to this keyless (single-instance) topic and
 /// asserts on more than the single newest of them — the default
 /// KEEP_LAST(1) would (correctly) evict the rest.
@@ -84,7 +84,7 @@ impl ContentFilter<Reading> for DividesId {
         parameters
             .first()
             .and_then(|p| p.parse::<u32>().ok())
-            .is_some_and(|n| n > 0 && sample.id % n == 0)
+            .is_some_and(|n| n > 0 && sample.id.is_multiple_of(n))
     }
 }
 
@@ -95,7 +95,7 @@ fn raw(id: u32, score: i32) -> Vec<u8> {
 }
 
 #[test]
-fn a_registered_filter_class_is_named_announced_and_applied() {
+fn rtps_8_7_3_1_a_registered_filter_class_is_named_announced_and_applied() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(194, DomainParticipantQos::default());
     let topic = p
@@ -151,7 +151,7 @@ fn a_registered_filter_class_is_named_announced_and_applied() {
 }
 
 #[test]
-fn the_registry_refuses_what_it_cannot_serve() {
+fn rtps_8_7_3_4_the_registry_refuses_what_it_cannot_serve() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(195, DomainParticipantQos::default());
     let topic = p

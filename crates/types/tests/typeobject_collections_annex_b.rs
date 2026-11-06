@@ -98,7 +98,7 @@ fn xcdr1_round_trip(object: &TypeObject) -> Vec<u8> {
 }
 
 #[test]
-fn a_named_complete_sequence_is_cyclones() {
+fn xtypes_annex_b_a_named_complete_sequence_is_cyclones() {
     let object = TypeObject::Complete(CompleteTypeObject::Sequence(sequence(Some("::S"))));
     against_cyclone_xcdr2(
         object.clone(),
@@ -108,7 +108,7 @@ fn a_named_complete_sequence_is_cyclones() {
 }
 
 #[test]
-fn an_anonymous_complete_sequence_has_no_detail() {
+fn xtypes_annex_b_an_anonymous_complete_sequence_has_no_detail() {
     let object = TypeObject::Complete(CompleteTypeObject::Sequence(sequence(None)));
     against_cyclone_xcdr2(
         object.clone(),
@@ -118,7 +118,7 @@ fn an_anonymous_complete_sequence_has_no_detail() {
 }
 
 #[test]
-fn an_annotated_element_carries_its_builtin_annotations() {
+fn xtypes_annex_b_an_annotated_element_carries_its_builtin_annotations() {
     let mut s = sequence(Some("::S"));
     s.element.ann_builtin.unit = Some("m".into());
     let object = TypeObject::Complete(CompleteTypeObject::Sequence(s));
@@ -133,7 +133,7 @@ fn an_annotated_element_carries_its_builtin_annotations() {
 }
 
 #[test]
-fn a_complete_array_is_appendable_around_its_header_and_element() {
+fn xtypes_annex_b_a_complete_array_is_appendable_around_its_header_and_element() {
     let object = TypeObject::Complete(CompleteTypeObject::Array(CompleteArrayType {
         collection_flag: CollectionTypeFlag(0),
         bound_seq: vec![2, 3],
@@ -151,7 +151,7 @@ fn a_complete_array_is_appendable_around_its_header_and_element() {
 }
 
 #[test]
-fn a_complete_map_is_cyclones() {
+fn xtypes_annex_b_a_complete_map_is_cyclones() {
     let object = TypeObject::Complete(CompleteTypeObject::Map(CompleteMapType {
         collection_flag: CollectionTypeFlag(0),
         bound: 5,
@@ -170,7 +170,7 @@ fn a_complete_map_is_cyclones() {
 }
 
 #[test]
-fn the_minimal_collections_are_cyclones_under_both_encodings() {
+fn xtypes_annex_b_the_minimal_collections_are_cyclones_under_both_encodings() {
     let cases = [
         (
             TypeObject::Minimal(MinimalTypeObject::Sequence(MinimalSequenceType {

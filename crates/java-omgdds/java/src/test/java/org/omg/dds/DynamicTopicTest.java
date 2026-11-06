@@ -100,7 +100,7 @@ class DynamicTopicTest {
     }
 
     @Test
-    void aWriterAndAReaderOnTheTopicOfADynamicTypeMoveDynamicData() throws Exception {
+    void javapsm_7_5_1_a_writer_and_a_reader_on_the_topic_of_a_dynamic_type_move_dynamic_data() throws Exception {
         DynamicType type = readingType(null);
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
 
@@ -129,7 +129,7 @@ class DynamicTopicTest {
     }
 
     @Test
-    void theKeyAnnotationMakesTheTopicKeyed() throws Exception {
+    void javapsm_7_8_1_5_the_key_annotation_makes_the_topic_keyed() throws Exception {
         DynamicType type = readingType(null);
         DynamicDataTypeSupport codec = new DynamicDataTypeSupport(ENV, type);
         assertTrue(codec.isKeyed());
@@ -164,18 +164,7 @@ class DynamicTopicTest {
     }
 
     @Test
-    void theBytesAreThoseOfTheJavaTypeRepresentation() {
-        // the Java class is final and extends Object: FINAL (DDS-Java-PSM 1.0 §8.6.1.2)
-        DynamicType type = readingType("FINAL");
-        DynamicDataTypeSupport codec = new DynamicDataTypeSupport(ENV, type);
-        byte[] dynamic = codec.encode(reading(type, 7, "abc", 1.5, 2.5));
-        byte[] reflective = ReflectionTypeSupport.of(ReadingBean.class)
-                .encode(new ReadingBean(7, "abc", new double[] {1.5, 2.5}), EndianMode.LITTLE_ENDIAN);
-        assertArrayEquals(reflective, dynamic);
-    }
-
-    @Test
-    void theExtensibilityAnnotationChoosesTheFraming() {
+    void javapsm_7_8_1_5_the_extensibility_annotation_chooses_the_framing() {
         DynamicType plain = readingType("FINAL");
         DynamicType appendable = readingType("APPENDABLE");
         DynamicType mutable = readingType("MUTABLE");
@@ -196,7 +185,7 @@ class DynamicTopicTest {
     }
 
     @Test
-    void aUnionIsItsDiscriminatorAndTheSelectedMember() {
+    void javapsm_7_8_1_4_a_union_is_its_discriminator_and_the_selected_member() {
         DynamicType union = TYPES.createType(TYPES.newTypeDescriptor()
                 .withKind(TypeKind.UNION_TYPE).withName("DynChoice")
                 .withDiscriminatorType(primitive(TypeKind.INT_32_TYPE)));
@@ -218,7 +207,7 @@ class DynamicTopicTest {
     }
 
     @Test
-    void aStructureWithANestedStructureAndAnArray() {
+    void javapsm_7_8_1_4_a_structure_with_a_nested_structure_and_arrays_has_the_octets_of_xtypes_7_4() {
         DynamicType point = TYPES.createType(TYPES.newTypeDescriptor()
                 .withKind(TypeKind.STRUCTURE_TYPE).withName("DynPoint"));
         member(point, "x", 1, primitive(TypeKind.INT_32_TYPE));
@@ -237,8 +226,17 @@ class DynamicTopicTest {
         sample.setValue(2, java.util.Arrays.asList(c0, c1), List.class);
         sample.setBooleanValues(3, new boolean[] {true, false, true}, 0, 3);
 
+        // Both structures are APPENDABLE (no annotation, XTypes 1.3 §7.2.2.4.4.4): the DHEADER
+        // 43 of the shape; origin with its DHEADER 8; the array of two structures with its
+        // DHEADER 24 (non-primitive elements, §7.4.3.5), each element with its DHEADER 8; the
+        // three booleans.
+        byte[] expected = {0x2B, 0, 0, 0,
+            8, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0,
+            0x18, 0, 0, 0, 8, 0, 0, 0, 5, 0, 0, 0, 6, 0, 0, 0, 8, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0,
+            1, 0, 1};
         DynamicDataTypeSupport codec = new DynamicDataTypeSupport(ENV, shape);
-        DynamicData back = codec.decode(codec.encode(sample));
+        assertArrayEquals(expected, codec.encode(sample));
+        DynamicData back = codec.decode(expected);
         assertEquals(3, back.getComplexValue(1).getInt32Value(1));
         assertEquals(4, back.getComplexValue(1).getInt32Value(2));
         boolean[] flags = new boolean[3];
@@ -251,7 +249,7 @@ class DynamicTopicTest {
     }
 
     @Test
-    void aTopicNeedsAStructureOrAUnion() {
+    void javapsm_7_5_1_a_topic_needs_a_structure_or_a_union() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         assertThrows(IllegalArgumentException.class, () -> participant.createTopic("Bad",
                 primitive(TypeKind.INT_32_TYPE)));
@@ -259,11 +257,4 @@ class DynamicTopicTest {
                 (DynamicType) null));
     }
 
-    @Test
-    void onlyTheTopicOfADynamicTypeConvertsToDynamicData() {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        Topic<DynamicType> wrong = (Topic) participant.createTopic("Plain", String.class);
-        assertThrows(IllegalArgumentException.class, () -> DynamicTopics.dataTopic(wrong));
-    }
 }

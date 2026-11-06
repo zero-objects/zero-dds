@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn a_struct_writes_its_fields_with_a_double_colon() {
+    fn xtypes_7_5_1_a_struct_writes_its_fields_with_a_double_colon() {
         let text = decl(&Decl::Struct(StructDecl {
             body_text: zerodds_lang_cst::common::BodyText::none(),
             doc: Doc::none(),
@@ -523,7 +523,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_struct_is_still_a_struct() {
+    fn xtypes_7_5_1_an_empty_struct_is_still_a_struct() {
         // A singleton type, which is what an IDL aggregate with no
         // members is. No refusal is needed: Julia accepts it.
         let text = decl(&Decl::Struct(StructDecl {
@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn a_struct_with_a_supertype_writes_the_subtype_operator() {
+    fn xtypes_7_5_1_a_struct_with_a_supertype_writes_the_subtype_operator() {
         let text = decl(&Decl::Struct(StructDecl {
             body_text: zerodds_lang_cst::common::BodyText::none(),
             doc: Doc::none(),
@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn an_abstract_type_is_one_line() {
+    fn xtypes_7_5_1_an_abstract_type_is_one_line() {
         let text = decl(&Decl::Abstract(AbstractDecl {
             doc: Doc::none(),
             name: Ident::new("Control"),
@@ -558,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enum_writes_its_base_and_every_value() {
+    fn xtypes_7_5_1_an_enum_writes_its_base_and_every_value() {
         let text = decl(&Decl::Enum(EnumDecl {
             doc: Doc::none(),
             name: Ident::new("Mode"),

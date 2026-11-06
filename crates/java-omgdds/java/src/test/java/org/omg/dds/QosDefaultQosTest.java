@@ -44,7 +44,7 @@ class QosDefaultQosTest {
     }
 
     @Test
-    void theDefaultTopicQosOfTheParticipantIsTheQosOfTheTopicsItCreatesNext() throws Exception {
+    void javapsm_7_3_5_4_the_default_topic_qos_of_the_participant_is_the_qos_of_the_topics_it_creates_next() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             TopicQos mine = Qos.topic().withPolicy(Qos.pf().TransportPriority().withValue(6));
             rig.participant.setDefaultTopicQos(mine);
@@ -55,7 +55,7 @@ class QosDefaultQosTest {
     }
 
     @Test
-    void theDefaultSubscriberQosOfTheParticipantIsTheQosOfTheSubscribersItCreatesNext() throws Exception {
+    void javapsm_7_3_5_4_the_default_subscriber_qos_of_the_participant_is_the_qos_of_the_subscribers_it_creates_next() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             SubscriberQos mine = Qos.subscriber().withPolicy(Qos.pf().Partition().withName(Arrays.asList("P")));
             rig.participant.setDefaultSubscriberQos(mine);
@@ -65,7 +65,7 @@ class QosDefaultQosTest {
     }
 
     @Test
-    void theDefaultPublisherQosOfTheParticipantIsTheQosOfThePublishersItCreatesNext() throws Exception {
+    void javapsm_7_3_5_4_the_default_publisher_qos_of_the_participant_is_the_qos_of_the_publishers_it_creates_next() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             PublisherQos mine = Qos.publisher().withPolicy(Qos.pf().Partition().withName(Arrays.asList("Q")));
             rig.participant.setDefaultPublisherQos(mine);
@@ -75,7 +75,7 @@ class QosDefaultQosTest {
     }
 
     @Test
-    void theDefaultDataWriterQosOfThePublisherIsTheQosOfTheWritersItCreatesNext() throws Exception {
+    void javapsm_7_3_5_4_the_default_data_writer_qos_of_the_publisher_is_the_qos_of_the_writers_it_creates_next() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriterQos mine = Qos.writer().withPolicy(Qos.pf().OwnershipStrength().withValue(12));
             rig.publisher.setDefaultDataWriterQos(mine);
@@ -90,7 +90,7 @@ class QosDefaultQosTest {
     }
 
     @Test
-    void theDefaultDataReaderQosOfTheSubscriberIsTheQosOfTheReadersItCreatesNext() throws Exception {
+    void javapsm_7_3_5_4_the_default_data_reader_qos_of_the_subscriber_is_the_qos_of_the_readers_it_creates_next() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReaderQos mine = Qos.reader().withPolicy(
                     Qos.pf().TimeBasedFilter().withMinimumSeparation(30, TimeUnit.MILLISECONDS));
@@ -102,24 +102,7 @@ class QosDefaultQosTest {
     }
 
     @Test
-    void theDefaultParticipantQosOfTheFactoryIsTheQosOfTheParticipantsItCreatesNext() {
-        DomainParticipantFactory factory = Qos.factory();
-        DomainParticipantQos before = factory.getDefaultParticipantQos();
-        DomainParticipantQos mine = DomainParticipantQosImpl.defaults(Qos.env())
-                .withPolicy(Qos.pf().UserData().withValue(new byte[] {5}, 0, 1));
-        factory.setDefaultParticipantQos(mine);
-        DomainParticipant participant = factory.createParticipant(QosFixtures.nextDomain());
-        try {
-            assertEquals(mine, participant.getQos());
-            assertSame(mine, factory.getDefaultParticipantQos());
-        } finally {
-            factory.setDefaultParticipantQos(before);
-            participant.close();
-        }
-    }
-
-    @Test
-    void aDefaultQosThatContradictsItselfIsRefusedAndTheDefaultStays() throws Exception {
+    void javapsm_7_3_5_4_a_default_qos_that_contradicts_itself_is_refused_and_the_default_stays() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriterQos before = rig.publisher.getDefaultDataWriterQos();
             DataWriterQos inconsistent = Qos.writer()

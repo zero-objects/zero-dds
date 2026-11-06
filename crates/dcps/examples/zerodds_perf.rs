@@ -12,6 +12,10 @@
 //! Set `ZERODDS_PERF_DOMAIN` to keep concurrent measurements apart; see
 //! [`perf_domain`]. Without it every run lands on domain 0 together.
 //!
+//! `pub` and `sub` also print the process CPU time over their measurement
+//! window (`# pub-cpu:` / `# sub-cpu:`), which the speed setup
+//! (`tests/perf/speed`) divides by the samples of that window.
+//!
 //! # Output format
 //!
 //! ddsperf-compatible form (so that `llvm_bench_runner.sh` can use the
@@ -73,6 +77,21 @@ fn perf_domain() -> i32 {
         }),
         Err(_) => 0,
     }
+}
+
+/// CPU time of the whole process in nanoseconds, every thread included:
+/// `utime + stime` of `/proc/self/stat` (fields 14 and 15, in clock ticks of
+/// 1/100 s, the `USER_HZ` Linux reports to user space). `None` where there is
+/// no procfs.
+fn process_cpu_ns() -> Option<u64> {
+    let stat = std::fs::read_to_string("/proc/self/stat").ok()?;
+    // The command name in field 2 may hold spaces; the fields after its
+    // closing parenthesis start with field 3.
+    let rest = &stat[stat.rfind(')')? + 2..];
+    let mut fields = rest.split_ascii_whitespace();
+    let utime: u64 = fields.nth(11)?.parse().ok()?;
+    let stime: u64 = fields.next()?.parse().ok()?;
+    Some((utime + stime) * 10_000_000)
 }
 
 /// Reads a `usize` knob from the environment, or `default` when unset or
@@ -317,8 +336,11 @@ fn run_pub(size: usize, runtime: Duration) -> Result<(), Box<dyn std::error::Err
     let writer = publisher.create_datawriter::<ShapeType>(&topic, perf_writer_qos())?;
     println!("{}", perf_qos_banner("pub"));
 
-    // Discovery wait
+    // Discovery wait, then 500 ms more: the writer has matched the reader,
+    // but whether the reader has matched the writer it cannot see, and under
+    // BEST_EFFORT what is written before that is lost to the reader.
     let _ = writer.wait_for_matched_subscription(1, Duration::from_secs(5));
+    std::thread::sleep(Duration::from_millis(500));
 
     // The size goes into OMG `shape.idl`'s `additional_payload_size`
     // sequence and not into the `@key` `color`, as `ddsperf` keeps its
@@ -334,6 +356,7 @@ fn run_pub(size: usize, runtime: Duration) -> Result<(), Box<dyn std::error::Err
     // write is read once per 256 writes.
     let mut sample =
         ShapeType::with_payload("BLUE", 0, 0, 0, vec![b'X'; size.saturating_sub(4 * 4)]);
+    let cpu0 = process_cpu_ns();
     let start = Instant::now();
     let mut total = 0u64;
     let mut last_report = start;
@@ -347,7 +370,7 @@ fn run_pub(size: usize, runtime: Duration) -> Result<(), Box<dyn std::error::Err
             samples_since_report += 1;
         }
         iterations += 1;
-        if iterations % 256 != 0 {
+        if !iterations.is_multiple_of(256) {
             continue;
         }
         if start.elapsed() >= runtime {
@@ -371,9 +394,17 @@ fn run_pub(size: usize, runtime: Duration) -> Result<(), Box<dyn std::error::Err
             samples_since_report = 0;
         }
     }
+    let window = start.elapsed();
+    if let (Some(a), Some(b)) = (cpu0, process_cpu_ns()) {
+        println!(
+            "# pub-cpu: cpu_ns={} window_ns={} samples={total}",
+            b.saturating_sub(a),
+            window.as_nanos()
+        );
+    }
     println!(
         "# pub-done: total={total} runtime={:.3}s",
-        start.elapsed().as_secs_f64()
+        window.as_secs_f64()
     );
     // Under RELIABLE what the reader has not acknowledged is still this
     // writer's to deliver, and a writer that goes away discards it (DDS 1.4
@@ -414,6 +445,18 @@ fn run_sub(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
     // when their measurement windows started.
     let mut first_seq: Option<i32> = None;
     let mut last_seq: i32 = 0;
+    // The CPU window: read every 20 ms while samples keep arriving, from the
+    // first read that saw samples to the last that saw new ones, so the time
+    // before and after the stream is not charged to a sample.
+    let idle_exit = env::var("ZERODDS_PERF_SUB_IDLE_EXIT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(Duration::from_millis);
+    let mut next_cpu_read = start;
+    let mut cpu_seen = 0u64;
+    let mut cpu_first: Option<(u64, u64)> = None;
+    let mut cpu_last: (u64, u64) = (0, 0);
+    let mut last_progress = start;
 
     while start.elapsed() < runtime {
         let mut taken = 0usize;
@@ -442,6 +485,27 @@ fn run_sub(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
             last_report = Instant::now();
             last_total = now_total;
         }
+        let now = Instant::now();
+        if now >= next_cpu_read {
+            next_cpu_read = now + Duration::from_millis(20);
+            let seen = total.load(Ordering::Relaxed);
+            if seen != cpu_seen {
+                cpu_seen = seen;
+                last_progress = now;
+                if let Some(cpu) = process_cpu_ns() {
+                    if cpu_first.is_none() {
+                        cpu_first = Some((cpu, seen));
+                    }
+                    cpu_last = (cpu, seen);
+                }
+            } else if idle_exit
+                .is_some_and(|idle| cpu_seen > 0 && now.duration_since(last_progress) >= idle)
+            {
+                // `ZERODDS_PERF_SUB_IDLE_EXIT_MS`: stop once samples have
+                // stopped for that long, instead of waiting out `runtime`.
+                break;
+            }
+        }
         match poll {
             // The listener's unpark between the `take` and this park is kept
             // by the thread's token, so the next park returns at once; the
@@ -454,6 +518,13 @@ fn run_sub(runtime: Duration) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     let got = total.load(Ordering::Relaxed);
+    if let Some((cpu_a, cnt_a)) = cpu_first {
+        println!(
+            "# sub-cpu: cpu_ns={} cpu_samples={}",
+            cpu_last.0.saturating_sub(cpu_a),
+            cpu_last.1.saturating_sub(cnt_a)
+        );
+    }
     let first = first_seq.unwrap_or(0);
     let span = i64::from(last_seq) - i64::from(first) + 1;
     let missing = span - got as i64;
@@ -604,6 +675,9 @@ fn usage() -> ! {
     eprintln!("  ZERODDS_PERF_MAX_SAMPLES=<n>                  both ends (default 1000)");
     eprintln!(
         "  ZERODDS_PERF_SUB_POLL_US=<us>                 sub polls, sleeping <us> between takes"
+    );
+    eprintln!(
+        "  ZERODDS_PERF_SUB_IDLE_EXIT_MS=<ms>            sub stops <ms> after the last sample"
     );
     eprintln!(
         "                                                (default: takes when its listener wakes it)"

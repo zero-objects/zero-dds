@@ -1,0 +1,141 @@
+.TH ZERODDS-OPCUA-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-opcua-bridged \- der Daemon für OMG DDS-OPCUA Gateway 1.0
+.SH ÜBERSICHT
+.B zerodds-opcua-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-bind\fR \fIADR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-idl\fR \fIDATEI\fR]...
+[\fB\-\-gateway\-config\fR \fIDATEI\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-opcua-bridged
+implementiert OMG DDS-OPCUA Gateway 1.0 (formal/2020-01-01) als laufenden
+Prozess: einen
+.IR opc.tcp -Server,
+der DDS-Topics in seinem AddressSpace bereitstellt (Gateway 1.0 \(sc9,
+einschließlich Historical Access, \(sc9.3.4), einen OPC-UA-Client, der
+konfigurierte fremde Server durchsucht und abonniert und nach DDS bringt
+(\(sc8), und PubSub nach OPC Foundation Part 14 (UADP) über UDP-Multicast in
+beide Richtungen, optional gesichert (Part 14 \(sc8, Build-Feature
+.BR pubsub-security ).
+Die Durchsetzung von
+.B acl.rules
+je Sitzung sichert ein
+.I Write
+gegen den eigenen AddressSpace dieses Servers ab; OTLP-Spans zum Lebenszyklus
+werden exportiert, wenn
+.B metrics.otlp_endpoint
+gesetzt ist.
+.PP
+DDS-Typen werden aus einer vom Betreiber gelieferten
+.IR .idl -Datei
+aufgelöst, nie aus einem kompilierten Rust-Typ, über die reflektive Schicht
+.IR SerializedTypeSupport .
+.PP
+Implementiert
+.IR docs/specs/zerodds-opcua-bridge-1.0.md .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Pfad zur Konfigurationsdatei (YAML). Siehe
+.BR zerodds-opcua-bridged.yaml (5).
+.TP
+.BR \-\-bind =\fIADR\fR
+.IR opc.tcp -Bind-Adresse.
+Standard:
+.IR 0.0.0.0:4840 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-idl =\fIDATEI\fR
+IDL-Datei, die kompiliert wird (wiederholbar); die Typen, die
+.B opcua.gateway_config
+und
+.B opcua.client.servers[].nodes[]
+nennen, müssen in einer dieser Dateien deklariert sein.
+.TP
+.BR \-\-gateway\-config =\fIDATEI\fR
+Pfad zur XML-Gateway-Konfiguration nach Spec \(sc10 (Bridge- und
+Verbindungsdefinitionen).
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listener für Prometheus.
+.TP
+.BR \-V ", " \-\-version
+Versionsangabe.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+SIGTERM/SIGINT beenden den Daemon: Die
+.IR opc.tcp -Accept-Schleife
+und der Metrik-Listener wachen beide auf, jeder Worker-Thread wird
+zusammengeführt (join), dann endet der Prozess mit 0.
+.br
+SIGHUP liest
+.B acl.default_deny
+/
+.B acl.rules
+neu aus denselben Quellen, mit denen der Prozess gestartet ist; eine Datei, die
+nicht lädt, ändert nichts. Eine Änderung von
+.BR domain ", " opcua.server.bind ,
+der Topic-Menge aus IDL und Gateway-Konfiguration (einschließlich jeder
+Überschreibung von
+.IR node_id / browse_path
+und
+.BR opcua.server.historical.topics ),
+.BR acl.users ", " acl.allow_anonymous ,
+.B opcua.pubsub.connections[].security
+oder
+.B metrics.otlp_endpoint
+braucht einen Neustart \(em der Wirkungsbereich von SIGHUP reicht nicht über
+.BR acl.default_deny / acl.rules
+hinaus.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B NOTIFY_SOCKET
+systemd-Benachrichtigung
+.B Type=notify
+über Bereitschaft und Ende, automatisch gesendet, wenn gesetzt.
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden.
+.TP
+.B 1
+Konfigurationsfehler.
+.TP
+.B 2
+.IR opc.tcp -Bind-Fehler
+\(em Adresse belegt.
+.TP
+.B 3
+Fehler bei der DDS-Initialisierung.
+.TP
+.B 4
+Fehler beim Einrichten von SecureChannel oder Zertifikat.
+.SH DATEIEN
+.I /etc/zerodds/opcua-bridged.yaml .
+.SH SIEHE AUCH
+.BR zerodds-opcua-bridged.yaml (5).
+OMG DDS-OPCUA Gateway 1.0 (formal/2020-01-01); OPC Foundation Part 4, Part 6,
+Part 14.
+.SH AUTOREN
+ZeroDDS Contributors.

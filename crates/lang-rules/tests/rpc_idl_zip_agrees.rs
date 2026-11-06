@@ -48,14 +48,14 @@ fn locate_zip() -> Option<PathBuf> {
 
 fn sha256(path: &Path) -> String {
     for tool in [&["sha256sum"][..], &["shasum", "-a", "256"][..]] {
-        if let Ok(out) = Command::new(tool[0]).args(&tool[1..]).arg(path).output() {
-            if out.status.success() {
-                return String::from_utf8_lossy(&out.stdout)
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or_default()
-                    .to_string();
-            }
+        if let Ok(out) = Command::new(tool[0]).args(&tool[1..]).arg(path).output()
+            && out.status.success()
+        {
+            return String::from_utf8_lossy(&out.stdout)
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_string();
         }
     }
     panic!("neither sha256sum nor shasum is available");
@@ -105,10 +105,10 @@ fn names_of_the_zip() -> BTreeSet<String> {
             ["const", "long", name, ..] => Some(*name),
             _ => None,
         };
-        if let Some(name) = name {
-            if name.starts_with("RobotControl_") {
-                names.insert(name.to_string());
-            }
+        if let Some(name) = name
+            && name.starts_with("RobotControl_")
+        {
+            names.insert(name.to_string());
         }
     }
     names

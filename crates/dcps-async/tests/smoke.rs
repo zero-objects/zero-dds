@@ -73,14 +73,14 @@ impl DdsType for Keyed {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn factory_singleton_offline_participant() {
+async fn async_1_factory_singleton_offline_participant() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     assert_eq!(p.domain_id(), 0);
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn writer_write_async_offline() {
+async fn async_1_writer_write_async_offline() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -98,7 +98,7 @@ async fn writer_write_async_offline() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn reader_take_returns_empty_after_timeout() {
+async fn async_1_reader_take_returns_empty_after_timeout() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -114,7 +114,7 @@ async fn reader_take_returns_empty_after_timeout() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn writer_register_dispose_unregister_async() {
+async fn async_1_writer_register_dispose_unregister_async() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -133,7 +133,7 @@ async fn writer_register_dispose_unregister_async() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn subscription_matched_stream_yields_initial_count() {
+async fn async_6_subscription_matched_stream_yields_initial_count() {
     use core::future::poll_fn;
     use futures_core::Stream;
     let f = AsyncDomainParticipantFactory::instance();
@@ -161,7 +161,7 @@ async fn subscription_matched_stream_yields_initial_count() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn write_returns_timeout_after_max_blocking_when_queue_full() {
+async fn async_2_1_write_returns_timeout_after_max_blocking_when_queue_full() {
     // Spec §5.1: On OutOfResources with max_blocking_time = 50ms,
     // AsyncDataWriter::write must return a Timeout after ~50ms (instead
     // of blocking synchronously).
@@ -212,8 +212,81 @@ async fn write_returns_timeout_after_max_blocking_when_queue_full() {
     );
 }
 
+/// DDS 1.4 §2.2.2.4.2.11: a RELIABLE write without room in RESOURCE_LIMITS
+/// returns TIMEOUT after `max_blocking_time`. zerodds-async-1.0 §5: the
+/// `write` future suspends meanwhile, it does not block the thread. On an
+/// executor with one thread a second task keeps running while the write
+/// waits; before, the sync write held the thread on its condition variable
+/// for the whole `max_blocking_time` and the second task ran not once.
+#[tokio::test(flavor = "current_thread")]
+async fn dcps_2_2_2_4_2_11_a_waiting_write_leaves_the_executor_thread_free() {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use zerodds_qos::Duration as QosDuration;
+    use zerodds_qos::ReliabilityKind;
+    use zerodds_qos::ReliabilityQosPolicy;
+
+    let f = AsyncDomainParticipantFactory::instance();
+    let p = f.create_participant_offline(0);
+    let topic = p
+        .create_topic::<RawBytes>("AT_BP_THREAD", TopicQos::default())
+        .expect("topic");
+    let writer = p
+        .create_publisher(PublisherQos::default())
+        .create_datawriter::<RawBytes>(
+            &topic,
+            DataWriterQos {
+                reliability: ReliabilityQosPolicy {
+                    kind: ReliabilityKind::Reliable,
+                    max_blocking_time: QosDuration::from_millis(300),
+                },
+                resource_limits: zerodds_qos::ResourceLimitsQosPolicy {
+                    max_samples: 1,
+                    max_instances: 1,
+                    max_samples_per_instance: 1,
+                },
+                history: zerodds_qos::HistoryQosPolicy {
+                    kind: zerodds_qos::HistoryKind::KeepAll,
+                    depth: 1,
+                },
+                ..Default::default()
+            },
+        )
+        .expect("writer");
+    writer
+        .write(&RawBytes::new(vec![1]))
+        .await
+        .expect("first write");
+
+    let done = AtomicBool::new(false);
+    let turns = AtomicUsize::new(0);
+    let start = std::time::Instant::now();
+    let write = async {
+        let res = writer.write(&RawBytes::new(vec![2])).await;
+        done.store(true, Ordering::SeqCst);
+        res
+    };
+    let other_task = async {
+        while !done.load(Ordering::SeqCst) {
+            turns.fetch_add(1, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+    let (res, ()) = tokio::join!(write, other_task);
+    let elapsed = start.elapsed();
+    assert!(
+        matches!(res, Err(zerodds_dcps_async::DdsError::Timeout)),
+        "{res:?}"
+    );
+    assert!(elapsed >= Duration::from_millis(300), "{elapsed:?}");
+    assert!(
+        turns.load(Ordering::SeqCst) >= 10,
+        "the other task ran {} times in {elapsed:?}",
+        turns.load(Ordering::SeqCst)
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
-async fn data_available_stream_signals_without_consuming() {
+async fn async_6_data_available_stream_signals_without_consuming() {
     // Spec zerodds-async-1.0 §6.1: data_available_stream emits
     // a `()` event per new sample and does NOT consume the
     // samples — the caller must call `take()`/`take_stream()`
@@ -254,7 +327,7 @@ async fn data_available_stream_signals_without_consuming() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn wait_for_matched_subscription_times_out_when_no_reader() {
+async fn async_2_1_wait_for_matched_subscription_times_out_when_no_reader() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -328,7 +401,7 @@ fn encoded(r: &Reading) -> Vec<u8> {
 /// participant: topic, publisher and subscriber creation are the sync
 /// operations, and `as_sync()` hands the same participant back.
 #[tokio::test(flavor = "multi_thread")]
-async fn participant_creates_topic_publisher_and_subscriber() {
+async fn async_1_participant_creates_topic_publisher_and_subscriber() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(7);
     assert_eq!(p.domain_id(), 7);
@@ -357,7 +430,7 @@ async fn participant_creates_topic_publisher_and_subscriber() {
 /// shares the inner state rather than duplicating it: a write through one
 /// handle is visible through the other.
 #[tokio::test(flavor = "multi_thread")]
-async fn async_newtypes_are_clone_send_sync_and_share_state() {
+async fn async_1_newtypes_are_clone_send_sync_and_share_state() {
     fn assert_send_sync<T: Send + Sync>() {}
     assert_send_sync::<zerodds_dcps_async::AsyncDomainParticipant>();
     assert_send_sync::<zerodds_dcps_async::AsyncPublisher>();
@@ -399,7 +472,7 @@ async fn async_newtypes_are_clone_send_sync_and_share_state() {
 /// Spec §2.1.6 — `matched_subscription_count` is a synchronous snapshot,
 /// not a future, and reports the same number as the sync writer.
 #[tokio::test(flavor = "multi_thread")]
-async fn matched_subscription_count_is_a_synchronous_snapshot() {
+async fn async_1_matched_subscription_count_is_a_synchronous_snapshot() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -418,7 +491,7 @@ async fn matched_subscription_count_is_a_synchronous_snapshot() {
 
 /// Spec §2.2.4 — `matched_publication_count` likewise.
 #[tokio::test(flavor = "multi_thread")]
-async fn matched_publication_count_is_a_synchronous_snapshot() {
+async fn async_1_matched_publication_count_is_a_synchronous_snapshot() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -437,7 +510,7 @@ async fn matched_publication_count_is_a_synchronous_snapshot() {
 /// Spec §2.2.3 — `wait_for_matched_publication` resolves `Err(Timeout)`
 /// when `min_count` is never reached, and `Ok` when it already is.
 #[tokio::test(flavor = "multi_thread")]
-async fn wait_for_matched_publication_times_out_without_writer() {
+async fn async_2_2_wait_for_matched_publication_times_out_without_writer() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -464,7 +537,7 @@ async fn wait_for_matched_publication_times_out_without_writer() {
 
 /// Spec §2.2.1 — `take_stream` yields the samples in arrival order.
 #[tokio::test(flavor = "multi_thread")]
-async fn take_stream_yields_pushed_samples() {
+async fn async_1_take_stream_yields_pushed_samples() {
     use futures::StreamExt;
 
     let f = AsyncDomainParticipantFactory::instance();
@@ -502,7 +575,7 @@ async fn take_stream_yields_pushed_samples() {
 /// Spec §2.2.1 — the `Stream<Item = Sample<T>>` form the spec text names:
 /// every item carries its `SampleInfo`.
 #[tokio::test(flavor = "multi_thread")]
-async fn take_stream_with_info_yields_sample_info() {
+async fn async_2_2_take_stream_with_info_yields_sample_info() {
     use futures::StreamExt;
 
     let f = AsyncDomainParticipantFactory::instance();
@@ -532,7 +605,7 @@ async fn take_stream_with_info_yields_sample_info() {
 /// Spec §2.2.2 — `take_with_info` returns `Vec<Sample<T>>`, the spec's
 /// signature, with the metadata attached.
 #[tokio::test(flavor = "multi_thread")]
-async fn take_with_info_carries_sample_info() {
+async fn async_2_2_take_with_info_carries_sample_info() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -567,7 +640,7 @@ async fn take_with_info_carries_sample_info() {
 /// Spec §2.2.2 — `read` is the non-consuming counterpart: the sample stays
 /// in the reader and a later `take` still finds it.
 #[tokio::test(flavor = "multi_thread")]
-async fn read_is_non_consuming() {
+async fn async_2_2_read_is_non_consuming() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -594,7 +667,7 @@ async fn read_is_non_consuming() {
 /// A reader that keeps every sample. The tests below push several samples
 /// of one instance (`id: 1`), and DDS 1.4 §2.2.3's default HISTORY,
 /// KEEP_LAST(1), keeps only the newest of them since the reader enforces
-/// HISTORY (44723842029): the filter test saw `[30]` of `[20, 30]` and the
+/// HISTORY (26f2c6b0c53): the filter test saw `[30]` of `[20, 30]` and the
 /// stream test waited for samples that had been replaced. What they measure
 /// is the filter and the stream, not the history.
 fn keep_all_reader_qos() -> DataReaderQos {
@@ -610,7 +683,7 @@ fn keep_all_reader_qos() -> DataReaderQos {
 /// Spec §2.2 (content filter extension) — a closure-filtered async reader
 /// surfaces only the matching samples.
 #[tokio::test(flavor = "multi_thread")]
-async fn filtered_reader_delivers_only_matching() {
+async fn async_2_2_filtered_reader_delivers_only_matching() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -638,7 +711,7 @@ async fn filtered_reader_delivers_only_matching() {
 /// Spec §2.2 (content filter extension) — the same through a
 /// `ContentFilteredTopic` with an SQL expression and a `%0` parameter.
 #[tokio::test(flavor = "multi_thread")]
-async fn sql_content_filtered_reader_delivers_only_matching() {
+async fn async_2_2_sql_content_filtered_reader_delivers_only_matching() {
     let f = AsyncDomainParticipantFactory::instance();
     let p = f.create_participant_offline(0);
     let topic = p
@@ -676,7 +749,7 @@ async fn sql_content_filtered_reader_delivers_only_matching() {
 /// Spec §6.2 — the writer-side stream yields a full
 /// `PublicationMatchedStatus`, the type the spec names.
 #[tokio::test(flavor = "multi_thread")]
-async fn writer_publication_matched_stream_yields_status() {
+async fn async_6_writer_publication_matched_stream_yields_status() {
     use core::future::poll_fn;
     use futures_core::Stream;
 
@@ -716,7 +789,7 @@ async fn writer_publication_matched_stream_yields_status() {
 /// The claim is about the default build, so that is where it is asserted.
 #[cfg(not(feature = "tokio-glue"))]
 #[test]
-fn futures_complete_on_a_non_tokio_executor() {
+fn async_3_futures_complete_on_a_non_tokio_executor() {
     use std::future::Future;
     use std::sync::{Arc, Condvar, Mutex};
     use std::task::{Context, Poll, Wake, Waker};

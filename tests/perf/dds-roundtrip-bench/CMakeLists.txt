@@ -14,6 +14,9 @@
 #   -DFASTDDS_ROOT=/opt/fastdds
 #   -DRTI_HOME=/opt/rti.com/rti_connext_dds-7.7.0
 #   -DOPENDDS_ROOT=/opt/opendds          (or /opt/opendds-secure for DDS-Security)
+#   -DZERODDS_LIB=/path/to/libzerodds.so (default: ${ZERODDS_REPO}/target/release)
+#   -DZERODDS_BENCH_NOSEC=ON             libzerodds built without `security`,
+#                                        as the packages ship it (tests/perf/speed)
 #
 # Lib-Suffix auto-detect (.so vs .dylib). RTI-arch-dir auto-detect via
 # glob (lib/{x64Linux4gcc8.5.0, arm64Darwin23clang16.0, ...}).
@@ -60,16 +63,25 @@ endif()
 # ============================================================
 # zerodds-roundtrip — C-FFI + gen/zerodds/Roundtrip.hpp
 # ============================================================
-# Lib suffix: .dylib on macOS, .so otherwise.
-if(APPLE)
-    set(ZERODDS_LIB ${ZERODDS_REPO}/target/release/libzerodds.dylib)
-else()
-    set(ZERODDS_LIB ${ZERODDS_REPO}/target/release/libzerodds.so)
+# Lib suffix: .dylib on macOS, .so otherwise. -DZERODDS_LIB takes a library
+# from another target directory (CARGO_TARGET_DIR).
+if(NOT DEFINED ZERODDS_LIB)
+    if(APPLE)
+        set(ZERODDS_LIB ${ZERODDS_REPO}/target/release/libzerodds.dylib)
+    else()
+        set(ZERODDS_LIB ${ZERODDS_REPO}/target/release/libzerodds.so)
+    endif()
 endif()
+# ON: libzerodds without the `security` feature (its default features, as the
+# packages ship it); the apps leave out the zerodds_security_* calls.
+option(ZERODDS_BENCH_NOSEC "libzerodds built without the security feature" OFF)
 set(ZERODDS_HDR ${ZERODDS_REPO}/crates/zerodds-c-api/include/zerodds.h)
 if(EXISTS ${ZERODDS_LIB} AND EXISTS ${ZERODDS_HDR})
     message(STATUS "Found ZeroDDS: ${ZERODDS_LIB}")
     add_executable(zerodds-roundtrip zerodds_app.cpp)
+    if(ZERODDS_BENCH_NOSEC)
+        target_compile_definitions(zerodds-roundtrip PRIVATE ZERODDS_BENCH_NOSEC)
+    endif()
     target_include_directories(zerodds-roundtrip PRIVATE
         ${ZERODDS_REPO}/crates/zerodds-c-api/include
         ${BENCH_DIR}/gen/zerodds
@@ -85,6 +97,9 @@ if(EXISTS ${ZERODDS_LIB} AND EXISTS ${ZERODDS_HDR})
     # which writes and reads XCDR1 only. matrix_sweep.sh picks it for those.
     add_executable(zerodds-xcdr1-roundtrip zerodds_app.cpp)
     target_compile_definitions(zerodds-xcdr1-roundtrip PRIVATE ZERODDS_BENCH_XCDR1)
+    if(ZERODDS_BENCH_NOSEC)
+        target_compile_definitions(zerodds-xcdr1-roundtrip PRIVATE ZERODDS_BENCH_NOSEC)
+    endif()
     target_include_directories(zerodds-xcdr1-roundtrip PRIVATE
         ${ZERODDS_REPO}/crates/zerodds-c-api/include
         ${BENCH_DIR}/gen/zerodds-xcdr1
@@ -168,7 +183,7 @@ if(FASTDDS_INCLUDE AND FASTDDS_LIB AND FASTDDS_GEN)
     #   roundtripPubSubTypes.{hpp,cxx}         (TypeSupport)
     # `-no-typeobjectsupport`: by default fastddsgen v4 generates
     # a TypeObject (roundtripTypeObjectSupport.*) that encodes an all-zero
-    # PLAIN_SEQUENCE_LARGE for `sequence<octet, 8192>` —
+    # PLAIN_SEQUENCE_LARGE for a `sequence<octet, N>` with N > 255 —
     # Cyclone DDS rejects it as "invalid type object"
     # ("ddsi_xt_type_add_typeobj with invalid type object" in the pong log).
     # Without a TypeObject the SEDP match falls back to type name +
@@ -331,6 +346,9 @@ if(EXISTS ${ZERODDS_LIB} AND EXISTS ${ZERODDS_HDR}
         AND EXISTS ${BENCH_DIR}/gen/zerodds/RoundtripRich.hpp)
     add_executable(zerodds-roundtrip-rich zerodds_app.cpp)
     target_compile_definitions(zerodds-roundtrip-rich PRIVATE BENCH_RICH)
+    if(ZERODDS_BENCH_NOSEC)
+        target_compile_definitions(zerodds-roundtrip-rich PRIVATE ZERODDS_BENCH_NOSEC)
+    endif()
     target_include_directories(zerodds-roundtrip-rich PRIVATE
         ${ZERODDS_REPO}/crates/zerodds-c-api/include
         ${BENCH_DIR}/gen/zerodds

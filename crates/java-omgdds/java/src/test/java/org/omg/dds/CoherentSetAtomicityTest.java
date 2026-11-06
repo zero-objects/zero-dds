@@ -28,7 +28,7 @@ class CoherentSetAtomicityTest {
     private static final int SETS = 300;
 
     @Test
-    void aReaderOnAnotherThreadNeverSeesPartOfASet() throws Exception {
+    void javapsm_2_a_reader_on_another_thread_never_sees_part_of_a_set() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1340);
         PublisherQos coherent = Qos.publisher().withPolicy(
                 Qos.policies().Presentation().withTopic().withCoherentAccess(true));

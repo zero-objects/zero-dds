@@ -133,46 +133,47 @@ impl Status {
 mod tests {
     use super::*;
 
+    /// §"Responses" and gRPC's status code table (statuscodes.md): the
+    /// seventeen codes, number and name.
     #[test]
-    fn all_17_codes_round_trip_via_numeric() {
-        for n in 0..=16u8 {
-            let s = Status::from_code(n).expect("ok");
-            assert_eq!(s.code(), n);
+    fn grpc_responses_the_status_codes_are_the_table_of_seventeen() {
+        let table = [
+            (0, "OK"),
+            (1, "CANCELLED"),
+            (2, "UNKNOWN"),
+            (3, "INVALID_ARGUMENT"),
+            (4, "DEADLINE_EXCEEDED"),
+            (5, "NOT_FOUND"),
+            (6, "ALREADY_EXISTS"),
+            (7, "PERMISSION_DENIED"),
+            (8, "RESOURCE_EXHAUSTED"),
+            (9, "FAILED_PRECONDITION"),
+            (10, "ABORTED"),
+            (11, "OUT_OF_RANGE"),
+            (12, "UNIMPLEMENTED"),
+            (13, "INTERNAL"),
+            (14, "UNAVAILABLE"),
+            (15, "DATA_LOSS"),
+            (16, "UNAUTHENTICATED"),
+        ];
+        for (code, name) in table {
+            let s = Status::from_code(code).expect("a code of the table");
+            assert_eq!((s.code(), s.name()), (code, name));
         }
     }
 
     #[test]
-    fn unknown_codes_yield_none() {
+    fn grpc_responses_unknown_codes_yield_none() {
         assert_eq!(Status::from_code(17), None);
         assert_eq!(Status::from_code(255), None);
     }
 
     #[test]
-    fn ok_is_only_status_with_is_ok_true() {
+    fn grpc_responses_ok_is_only_status_with_is_ok_true() {
         assert!(Status::Ok.is_ok());
         for n in 1..=16u8 {
             let s = Status::from_code(n).unwrap_or(Status::Ok);
             assert!(!s.is_ok() || s.code() == 0);
         }
-    }
-
-    #[test]
-    fn well_known_codes_match_spec_values() {
-        // Spec — canonical table.
-        assert_eq!(Status::Ok.code(), 0);
-        assert_eq!(Status::Cancelled.code(), 1);
-        assert_eq!(Status::DeadlineExceeded.code(), 4);
-        assert_eq!(Status::NotFound.code(), 5);
-        assert_eq!(Status::Unimplemented.code(), 12);
-        assert_eq!(Status::Unavailable.code(), 14);
-        assert_eq!(Status::Unauthenticated.code(), 16);
-    }
-
-    #[test]
-    fn names_use_screaming_snake_case() {
-        // By convention from statuscodes.md.
-        assert_eq!(Status::Ok.name(), "OK");
-        assert_eq!(Status::DeadlineExceeded.name(), "DEADLINE_EXCEEDED");
-        assert_eq!(Status::FailedPrecondition.name(), "FAILED_PRECONDITION");
     }
 }

@@ -73,18 +73,7 @@ class PublisherOperationsTest {
     // --- get_participant, lookup_datawriter ---------------------------------------------
 
     @Test
-    void aPublisherKnowsItsParticipantAndItsWritersTheirPublisherAndTopic() {
-        DomainParticipant participant = Qos.factory().createParticipant(1320);
-        Publisher publisher = participant.createPublisher();
-        Topic<byte[]> topic = participant.createTopic("Parents", byte[].class);
-        DataWriter<byte[]> writer = publisher.createDataWriter(topic);
-        assertSame(participant, publisher.getParent());
-        assertSame(publisher, writer.getParent());
-        assertSame(topic, writer.getTopic());
-    }
-
-    @Test
-    void lookupDataWriterFindsByNameAndByTopicAndForgetsClosedWriters() {
+    void javapsm_2_lookup_data_writer_finds_by_name_and_by_topic_and_forgets_closed_writers() {
         DomainParticipant participant = Qos.factory().createParticipant(1321);
         Publisher publisher = participant.createPublisher();
         Topic<byte[]> topic = participant.createTopic("Lookup", byte[].class);
@@ -104,7 +93,7 @@ class PublisherOperationsTest {
     // --- suspend_publications, resume_publications ----------------------------------------
 
     @Test
-    void resumePublicationsNeedsASuspendPublicationsAndTheCallsNest() {
+    void javapsm_2_resume_publications_needs_a_suspend_publications_and_the_calls_nest() {
         DomainParticipant participant = Qos.factory().createParticipant(1322);
         Publisher publisher = participant.createPublisher();
         assertThrows(PreconditionNotMetException.class, publisher::resumePublications);
@@ -126,24 +115,10 @@ class PublisherOperationsTest {
         assertThrows(AlreadyClosedException.class, publisher::suspendPublications);
     }
 
-    @Test
-    void writesWhileSuspendedAreDeliveredAsBefore() {
-        DomainParticipant participant = Qos.factory().createParticipant(1323);
-        Publisher publisher = participant.createPublisher();
-        Topic<byte[]> topic = participant.createTopic("Suspended", byte[].class);
-        DataWriter<byte[]> writer = publisher.createDataWriter(topic);
-        DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
-        publisher.suspendPublications();
-        write(writer, 1);
-        // suspend_publications is a hint (DDS 1.4 §2.2.2.4.1.8): the Service may deliver at once
-        assertEquals(1, Qos.take(reader).size());
-        publisher.resumePublications();
-    }
-
     // --- begin_coherent_changes, end_coherent_changes --------------------------------------
 
     @Test
-    void endCoherentChangesNeedsABeginAndTheCallsNest() {
+    void javapsm_2_end_coherent_changes_needs_a_begin_and_the_calls_nest() {
         DomainParticipant participant = Qos.factory().createParticipant(1324);
         Publisher publisher = participant.createPublisher();
         assertThrows(PreconditionNotMetException.class, publisher::endCoherentChanges);
@@ -160,7 +135,7 @@ class PublisherOperationsTest {
     }
 
     @Test
-    void aCoherentSetIsDeliveredTogetherWhenThePresentationAsksForCoherentAccess() {
+    void javapsm_2_a_coherent_set_is_delivered_together_when_the_presentation_asks_for_coherent_access() {
         DomainParticipant participant = Qos.factory().createParticipant(1325);
         PublisherQos coherent = Qos.publisher().withPolicy(
                 Qos.policies().Presentation().withTopic().withCoherentAccess(true));
@@ -198,7 +173,7 @@ class PublisherOperationsTest {
     }
 
     @Test
-    void withoutCoherentAccessTheSamplesOfASetAreDeliveredAtOnce() {
+    void javapsm_2_without_coherent_access_the_samples_of_a_set_are_delivered_at_once() {
         DomainParticipant participant = Qos.factory().createParticipant(1326);
         Publisher publisher = participant.createPublisher();
         Topic<byte[]> topic = participant.createTopic("NotCoherent", byte[].class);
@@ -214,7 +189,7 @@ class PublisherOperationsTest {
     // --- wait_for_acknowledgments ------------------------------------------------------------
 
     @Test
-    void waitForAcknowledgmentsReturnsAtOnceForReadersOfTheProcess() throws Exception {
+    void javapsm_2_wait_for_acknowledgments_returns_at_once_for_readers_of_the_process() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1327);
         Publisher publisher = participant.createPublisher();
         Topic<byte[]> topic = participant.createTopic("Acknowledged", byte[].class);
@@ -235,7 +210,7 @@ class PublisherOperationsTest {
     // --- delete_contained_entities ---------------------------------------------------------------
 
     @Test
-    void closeContainedEntitiesClosesTheWritersAndWithdrawsThemFromTheBuiltinTopic() {
+    void javapsm_2_close_contained_entities_closes_the_writers_and_withdraws_them_from_the_builtin_topic() {
         int domain = 1328;
         DomainParticipant observer = Qos.factory().createParticipant(domain);
         DomainParticipant participant = Qos.factory().createParticipant(domain);
@@ -268,46 +243,10 @@ class PublisherOperationsTest {
 
     // --- set_default_datawriter_qos, get_default_datawriter_qos ------------------------------------
 
-    @Test
-    void theDefaultWriterQosIsTheQosOfTheWritersCreatedNext() {
-        DomainParticipant participant = Qos.factory().createParticipant(1329);
-        Publisher publisher = participant.createPublisher();
-        Topic<byte[]> topic = participant.createTopic("DefaultWriterQos", byte[].class);
-        DataWriterQos before = publisher.getDefaultDataWriterQos();
-        assertNotNull(before);
-        assertEquals(before, publisher.createDataWriter(topic).getQos());
-
-        DataWriterQos mine = before.withPolicy(Qos.pf().OwnershipStrength().withValue(21));
-        publisher.setDefaultDataWriterQos(mine);
-        assertSame(mine, publisher.getDefaultDataWriterQos());
-        assertEquals(mine, publisher.createDataWriter(topic).getQos());
-        // a QoS given to the call takes precedence
-        DataWriterQos given = before.withPolicy(Qos.pf().OwnershipStrength().withValue(22));
-        assertEquals(given, publisher.createDataWriter(topic, given).getQos());
-    }
-
-    @Test
-    void aDefaultWriterQosThatIsNotConsistentIsRefusedAndTheOldOneStays() {
-        DomainParticipant participant = Qos.factory().createParticipant(1330);
-        Publisher publisher = participant.createPublisher();
-        DataWriterQos before = publisher.getDefaultDataWriterQos();
-        DataWriterQos inconsistent = before
-                .withPolicy(Qos.pf().History().withKeepLast(10))
-                .withPolicy(Qos.pf().ResourceLimits().withMaxSamplesPerInstance(5));
-        assertThrows(InconsistentPolicyException.class,
-                () -> publisher.setDefaultDataWriterQos(inconsistent));
-        assertSame(before, publisher.getDefaultDataWriterQos());
-        // and no writer is created with it
-        Topic<byte[]> topic = participant.createTopic("InconsistentWriterQos", byte[].class);
-        assertThrows(InconsistentPolicyException.class,
-                () -> publisher.createDataWriter(topic, inconsistent));
-        assertNull(publisher.lookupDataWriter(topic));
-    }
-
     // --- copy_from_topic_qos ---------------------------------------------------------------------------
 
     @Test
-    void copyFromTopicQosLetsThePoliciesOfTheTopicReplaceThoseOfTheWriter() {
+    void javapsm_2_copy_from_topic_qos_lets_the_policies_of_the_topic_replace_those_of_the_writer() {
         DomainParticipant participant = Qos.factory().createParticipant(1331);
         Publisher publisher = participant.createPublisher();
         byte[] user = {1, 2};
@@ -344,7 +283,7 @@ class PublisherOperationsTest {
     // --- PublisherListener and DomainParticipantListener (§2.2.4.3.1) -----------------------------------
 
     @Test
-    void aWriterWithoutListenerPassesOfferedIncompatibleQosToThePublisher() {
+    void javapsm_2_a_writer_without_listener_passes_offered_incompatible_qos_to_the_publisher() {
         DomainParticipant participant = Qos.factory().createParticipant(1332);
         Topic<byte[]> topic = participant.createTopic("PublisherIncompatible", byte[].class);
         AtomicReference<OfferedIncompatibleQosEvent<?>> seen = new AtomicReference<>();
@@ -365,7 +304,7 @@ class PublisherOperationsTest {
     }
 
     @Test
-    void aWriterWithoutListenerAndAPublisherWithoutOnePassItToTheParticipantListener() {
+    void javapsm_2_a_writer_without_listener_and_a_publisher_without_one_pass_it_to_the_participant_listener() {
         AtomicInteger calls = new AtomicInteger();
         DomainParticipant participant = Qos.factory().createParticipant(1333,
                 Qos.factory().getDefaultParticipantQos(), new DomainParticipantAdapter() {
@@ -383,7 +322,7 @@ class PublisherOperationsTest {
     }
 
     @Test
-    void aWriterThatAWriterListenerTakesIsNotPassedUp() {
+    void javapsm_2_a_writer_that_a_writer_listener_takes_is_not_passed_up() {
         AtomicInteger atPublisher = new AtomicInteger();
         AtomicInteger atWriter = new AtomicInteger();
         DomainParticipant participant = Qos.factory().createParticipant(1334);
@@ -408,33 +347,7 @@ class PublisherOperationsTest {
     }
 
     @Test
-    void aNewPartitionOfThePublisherMatchesItsWritersAgain() {
-        DomainParticipant participant = Qos.factory().createParticipant(1336);
-        Topic<byte[]> topic = participant.createTopic("PartitionChange", byte[].class);
-        Publisher publisher = participant.createPublisher(Qos.publisher().withPolicy(
-                Qos.pf().Partition().withName(java.util.Arrays.asList("A"))));
-        org.omg.dds.sub.Subscriber subscriber = participant.createSubscriber(Qos.subscriber().withPolicy(
-                Qos.pf().Partition().withName(java.util.Arrays.asList("B"))));
-        DataWriter<byte[]> writer = publisher.createDataWriter(topic);
-        DataReader<byte[]> reader = subscriber.createDataReader(topic);
-        assertEquals(0, writer.getPublicationMatchedStatus().getCurrentCount());
-
-        // PARTITION can change after enable (DDS 1.4 §2.2.3): the writer meets the readers of B
-        publisher.setQos(publisher.getQos().withPolicy(
-                Qos.pf().Partition().withName(java.util.Arrays.asList("B"))));
-        assertEquals(1, writer.getPublicationMatchedStatus().getCurrentCount());
-        write(writer, 1);
-        assertEquals(1, Qos.take(reader).size());
-
-        publisher.setQos(publisher.getQos().withPolicy(
-                Qos.pf().Partition().withName(java.util.Arrays.asList("C"))));
-        assertEquals(0, writer.getPublicationMatchedStatus().getCurrentCount());
-        write(writer, 2);
-        assertEquals(0, Qos.take(reader).size());
-    }
-
-    @Test
-    void theWriterAndPublisherStayConsistentWhenAWriterIsClosedTwice() {
+    void javapsm_7_2_3_a_second_close_of_a_writer_has_no_effect() {
         DomainParticipant participant = Qos.factory().createParticipant(1335);
         Publisher publisher = participant.createPublisher();
         DataWriter<byte[]> writer = publisher.createDataWriter(

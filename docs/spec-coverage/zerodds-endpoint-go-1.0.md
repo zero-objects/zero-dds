@@ -22,9 +22,9 @@ WRITE_DATA, flags, len LE) + Body, byte-identisch zu `crates/xrce` +
 **Repo:** `endpoints/go/endpoint.go` — `XrceWriteFrame`/`XrceReadFrame`,
 Konstanten `XrceSessionNoKey` (`0x80`) und `XrceStreamBestEffort` (`0x01`).
 
-**Tests:** `crates/endpoint-e2e/tests/go.rs::go_raw_udp` (rohes XCDR2 ohne
-XRCE-Frame — eigener Mini-Harness); Framing selbst wird über `go_endpoint_sync`
-und `go_endpoint_async` (§4) live geübt.
+**Tests:** `crates/endpoint-e2e/tests/go.rs::endpoint_go_5_1_the_generated_codec_pings_without_the_xrce_frame` (rohes XCDR2 ohne
+XRCE-Frame — eigener Mini-Harness); Framing selbst wird über `xrce_8_3_5_8_go_sync_app_writes_the_ping_and_reads_the_pong`
+und `xrce_8_3_5_8_go_async_app_writes_the_ping_and_reads_the_pong` (§4) live geübt.
 
 **Status:** done.
 
@@ -39,8 +39,8 @@ der einzige Integrationspunkt); `endpoints/go/sync.go::Client`
 (`NewClient`/`Write`/`Poll`/`Receive`, monotoner `seq`-Zähler, Default-Session
 `XrceSessionNoKey`/`XrceStreamBestEffort`).
 
-**Tests:** `endpoints/go/sync_test.go::TestSyncLoopback`; Live-E2E
-`go_endpoint_sync` (§4).
+**Tests:** `endpoints/go/sync_test.go::Test_endpointgo_2_sync_loopback`; Live-E2E
+`xrce_8_3_5_8_go_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -53,8 +53,8 @@ Sample-Bodies auf einen Channel (push); `AsyncWriter` als Sendeseiten-Gegenstüc
 **Repo:** `endpoints/go/async.go::AsyncReader` (`NewAsyncReader`, `Samples`-Channel,
 Hintergrund-`loop`, `Close`), `AsyncWriter` (`NewAsyncWriter`, `Write`).
 
-**Tests:** `endpoints/go/async_test.go::TestAsyncLoopback` +
-`TestAsyncUDP`; Live-E2E `go_endpoint_async` (§4).
+**Tests:** `endpoints/go/async_test.go::Test_endpointgo_3_async_loopback` +
+`TestAsyncUDP`; Live-E2E `xrce_8_3_5_8_go_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -71,12 +71,10 @@ XRCE-Frame, nutzt nur den generierten `MarshalXCDR`/`UnmarshalXCDRPong`),
 `zeroddsendpoint`-Modul, Modus `sync`/`async` per CLI-Argument).
 
 **Tests:** (Linux)
-- `go_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
+- `endpoint_go_5_1_the_generated_codec_pings_without_the_xrce_frame` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
   UDP-Socket, ohne XRCE-Framing.
-- `go_endpoint_sync` — voller Stack über `zerodds.Client`.
-- `go_endpoint_async` — voller Stack über `zerodds.AsyncReader`/`AsyncWriter`.
-
-3/3 grün (Linux).
+- `xrce_8_3_5_8_go_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über `zerodds.Client`.
+- `xrce_8_3_5_8_go_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über `zerodds.AsyncReader`/`AsyncWriter`.
 
 **Status:** done.
 
@@ -98,10 +96,11 @@ der Producer geht nie in den Kernel.
 `ReliableSender`, `ReliableReceiver`; `ReliableAsyncWriter`
 (gepufferter Channel `in`, `NewReliableAsyncWriter`/`Enqueue`/`Close`/`drain`);
 `endpoints/go/example_reliable` (lauffähige In-Process-Demo, kein Socket);
-`endpoints/go/reliable_app` (live UDP-Sender-App für das E2E).
+`endpoints/go/reliable_app` (UDP-Sender-App mit Peer-Port und Anzahl).
 
 **Tests:** (Linux)
-- `go_reliable_unit_and_golden` (`crates/endpoint-e2e/tests/go_reliable.rs`)
+- `endpoints/go/reliable_test.go` in der Spalte `go` von `tools/endpoints-gate`
+  (Job `integration-endpoints`)
   läuft `go test` mit `-run` auf `endpoints/go/reliable_test.go` — 21
   Testfunktionen: monotone seq (`TestSubmitAssignsMonotonicSeqnrs`),
   Payload-zu-groß (`TestSubmitRejectsPayloadTooLarge`), Window-full
@@ -121,14 +120,11 @@ der Producer geht nie in den Kernel.
   `80 00 01 00 0A 01 05 00 01 00 00 00 80` — identisch zu den Referenz-Goldens),
   Frame-Roundtrip-Parsing (`TestFrameRoundTripParsing`),
   `ReliableAsyncWriter`-Loss-Recovery (`TestReliableAsyncWriterLossRecovery`).
-- `go_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die App
-  (`reliable_app`) retransmittet auf ACKNACK; alle 12 Samples lückenlos in
-  Reihenfolge geliefert.
-- `go_reliable_no_loss` — lossless Baseline; 12/12.
-- `go_reliable_example` — `example_reliable` läuft und meldet
+- `reliable_5_3_go_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig; die App,
+  die der Test aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und `ReliableAsyncWriter` baut, retransmittet auf
+  ACKNACK; alle 12 Samples lückenlos in Reihenfolge geliefert, der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`).
+- `reliable_5_5_go_example_recovers_its_sequence_without_gaps` — `example_reliable` läuft und meldet
   `sequence 0..11 verified in order` + `RELIABLE OK`.
-
-5/5 grün (Linux), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -144,7 +140,7 @@ nimmt, nicht das Warten auf ACKNACK.
 Peer nötig (beliebiger Loopback-Port, nur lokale Dispatch-Kosten unter
 Messung).
 
-**Tests:** (Linux) `go_reliable_latency_bench`
+**Tests:** (Linux) `reliable_5_4_go_the_producer_enqueue_costs_less_than_the_inline_send`
 (`crates/endpoint-e2e/tests/go_reliable.rs`) — Ring-Enqueue **20–25 ns** vs.
 inline `sendto` **4360 ns** (~175–220×).
 
@@ -154,13 +150,13 @@ inline `sendto` **4360 ns** (~175–220×).
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test go`
-3/3 (Ping-Pong: `go_raw_udp`/`go_endpoint_sync`/`go_endpoint_async`);
-`--test go_reliable` 5/5 (`go_reliable_unit_and_golden` — 21 Go-Unit-Tests inkl.
-Byte-Golden, `go_reliable_loss_recovery`, `go_reliable_no_loss`,
-`go_reliable_example`, `go_reliable_latency_bench`); Latenz-Bench Ring-Enqueue
-20–25 ns / inline `sendto` 4360 ns (~175–220×).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-go-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings` (Job `integration-bindings`) — 6 Tests grün.
+* `python3 ci/run_integration.py integration-endpoints` (Job `integration-endpoints`) — 2 Tests grün.
+
+8 zitierte Tests grün, 0 nicht grün.
 
 Offene Punkte: keine.

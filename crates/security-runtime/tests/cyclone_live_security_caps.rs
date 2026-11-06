@@ -1,52 +1,36 @@
-//! WP 4H-b Cyclone live interop — security caps in the SPDP beacon.
+//! Cyclone DDS against an SPDP beacon that carries ZeroDDS' security
+//! capabilities (`zerodds-security-1.2` §14, coverage item CV-22).
 //!
-//! **Opt-in only**, via `--ignored`. Invocation:
+//! **Opt-in** — marked `#[ignore]`, and without `INTEROP_REQUIRE=1` (or
+//! `INTEROP_HOST_AVAILABLE=1`) it reports a skip instead of running. The
+//! interop pillar's job `vendor-live-dcps`
+//! (`ci/interop-omg-weekly.yml`) sets it and has Cyclone's `ddsperf` on the
+//! path:
 //!
 //! ```bash
-//! cargo test -p zerodds-security-runtime --test cyclone_live_security_caps \
-//!     -- --ignored --nocapture
+//! INTEROP_REQUIRE=1 cargo test -p zerodds-security-runtime \
+//!     --test cyclone_live_security_caps -- --ignored --nocapture
 //! ```
 //!
-//! # Goal
+//! `DDSPERF` names the binary when it is not `ddsperf` on the path.
 //!
-//! Evidence for the statement from architecture doc §8.1:
-//! > "Cyclone does not see `<peer_classes>`-like ZeroDDS properties and
-//! >  falls back to `<rtps_protection_kind>` — extra properties are
-//! >  silently ignored."
+//! # What is shown
 //!
-//! Concretely: we send an SPDP beacon **with** security caps in the
-//! `PID_PROPERTY_LIST` and prove that Cyclone does not discard the
-//! beacon (the bidirectional SPDP exchange stays intact).
+//! Architecture document §8.1 says Cyclone does not know ZeroDDS'
+//! capability properties and ignores them. The beacon here carries the
+//! capabilities of a full-encrypt participant in `PID_PROPERTY_LIST`
+//! (`advertise_security_caps`) and announces the SEDP endpoints. Cyclone
+//! accepted it when Cyclone addresses this participant: a datagram from
+//! Cyclone's GUID prefix arrives at the metatraffic unicast locator the
+//! beacon names, which Cyclone learns from the beacon alone. Cyclone's own
+//! multicast beacons do not show that: it sends them whether it took ours
+//! or not.
 //!
-//! # Test flow
+//! The domain is leased (`zerodds-test-domains`), so a run on the CI runner
+//! host and one on another host of the LAN never share it.
 //!
-//! 1. SSH starts `ddsperf -i 42 pub 1Hz` on the lab host (`ZERODDS_LAB_SSH`).
-//! 2. Locally the test binds to `239.255.0.1:17900` (multicast, domain 42)
-//!    and joins the MC group on the LAN interface.
-//! 3. The test periodically sends its own SPDP beacon — **with
-//!    ENCRYPT caps + crypto plugin class in the PropertyList** — to the
-//!    same multicast group.
-//! 4. Pass criterion: we receive Cyclone's own SPDP beacon
-//!    (not our loopback). This shows that, despite our
-//!    extra properties, Cyclone keeps running and serves the multicast channel.
-//!    On parser errors Cyclone would either have segfaulted or
-//!    aborted its beacon loop.
-//!
-//! # Why no full SEDP handshake?
-//!
-//! The DoD sentence for stage 2 reads: "our SPDP is silently
-//! accepted by Cyclone (extra properties ignored)". That is a negative
-//! statement (nothing bad happens). The SEDP handshake is already proven in WP
-//! 1.4; here the SPDP proof suffices.
-//!
-//! # Dependencies
-//!
-//! - `sshpass`, `ssh` available locally
-//! - the lab host reachable over ssh: `ZERODDS_LAB_SSH=user@host`,
-//!   `ZERODDS_LAB_SSH_PASSWORD`
-//! - `ddsperf` on the lab host, `/tmp/cyc.xml` pinned to its interface
-//! - `allmulticast on` on `enp6s18` (otherwise the virtio MC filter)
-//! - this host and the lab host on the same LAN
+//! Before, the test started `ddsperf` over SSH on a lab host and passed when
+//! it saw Cyclone's multicast beacon.
 
 #![allow(
     clippy::expect_used,
@@ -54,12 +38,6 @@
     clippy::panic,
     clippy::print_stderr,
     clippy::print_stdout,
-    clippy::field_reassign_with_default,
-    clippy::manual_flatten,
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
-    clippy::uninlined_format_args,
-    clippy::drop_non_drop,
     missing_docs
 )]
 
@@ -80,46 +58,29 @@ use zerodds_security_runtime::{
     PeerCapabilities, ProtectionLevel, SuiteHint, advertise_security_caps,
 };
 
-/// `user@host` of the lab host this test reaches over ssh:
-/// `ZERODDS_LAB_SSH`.
-fn lab_ssh_target() -> String {
-    std::env::var("ZERODDS_LAB_SSH").expect("ZERODDS_LAB_SSH=user@host of the lab host")
-}
-
-/// The password `sshpass` hands ssh: `ZERODDS_LAB_SSH_PASSWORD`.
-fn lab_ssh_password() -> String {
-    std::env::var("ZERODDS_LAB_SSH_PASSWORD").expect("ZERODDS_LAB_SSH_PASSWORD for sshpass")
-}
-const CYCLONE_DOMAIN: u32 = 42;
-/// Multicast port for domain 42: 7400 + 250 * 42 = 17900.
-const SPDP_MULTICAST_PORT: u16 = 17900;
 const SPDP_MULTICAST_GROUP: Ipv4Addr = Ipv4Addr::new(239, 255, 0, 1);
-const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(8);
+/// How long the test waits for Cyclone's beacon and its directed reply.
+const TEST_TIMEOUT: Duration = Duration::from_secs(15);
 const BEACON_INTERVAL: Duration = Duration::from_millis(500);
 /// Local GuidPrefix — must be != the Cyclone prefix.
 const LOCAL_PREFIX: [u8; 12] = [0xE2; 12];
+
+/// RTPS 2.5 §9.6.1.4.1: the SPDP multicast port of `domain`.
+fn spdp_multicast_port(domain: i32) -> u16 {
+    u16::try_from(7400 + 250 * domain).expect("SPDP port of a leased domain")
+}
 
 struct CycloneSubprocess {
     child: Child,
 }
 
 impl CycloneSubprocess {
-    fn start() -> std::io::Result<Self> {
-        // ddsperf: `-D` is DURATION, the domain is set via `-i`.
-        let remote_cmd = format!(
-            "CYCLONEDDS_URI=file:///tmp/cyc.xml timeout 18 ddsperf -i {CYCLONE_DOMAIN} -D 15 pub 1Hz \
-             > /tmp/cyclone_live_caps.log 2>&1"
-        );
-        let child = Command::new("sshpass")
-            .arg("-p")
-            .arg(lab_ssh_password())
-            .arg("ssh")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg("-o")
-            .arg("ConnectTimeout=5")
-            .arg(lab_ssh_target())
-            .arg(&remote_cmd)
+    /// `ddsperf -i <domain> -D 20 pub 1Hz` on this host (`-i` is the domain,
+    /// `-D` the duration in seconds).
+    fn start(domain: i32) -> std::io::Result<Self> {
+        let binary = std::env::var_os("DDSPERF").unwrap_or_else(|| "ddsperf".into());
+        let child = Command::new(binary)
+            .args(["-i", &domain.to_string(), "-D", "20", "pub", "1Hz"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()?;
@@ -129,52 +90,52 @@ impl CycloneSubprocess {
 
 impl Drop for CycloneSubprocess {
     fn drop(&mut self) {
-        let _ = Command::new("sshpass")
-            .arg("-p")
-            .arg(lab_ssh_password())
-            .arg("ssh")
-            .arg("-o")
-            .arg("StrictHostKeyChecking=no")
-            .arg(lab_ssh_target())
-            .arg("pkill -f 'ddsperf.*-i 42' || true")
-            .output();
         let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
 
+/// The address a packet to another network would leave from: Cyclone sends
+/// to the unicast locator the beacon announces, so it has to be a real
+/// address.
 fn detect_local_interface() -> Ipv4Addr {
-    // macOS + Linux: use the default-route IP.
-    if let Ok(out) = Command::new("ipconfig").args(["getifaddr", "en0"]).output() {
-        if let Ok(s) = core::str::from_utf8(&out.stdout) {
-            if let Ok(ip) = s.trim().parse::<Ipv4Addr>() {
-                return ip;
-            }
-        }
+    let probe = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
+        .and_then(|s| {
+            s.connect(SocketAddrV4::new(Ipv4Addr::new(10, 255, 255, 255), 9))
+                .map(|()| s)
+        })
+        .and_then(|s| s.local_addr());
+    match probe {
+        Ok(std::net::SocketAddr::V4(addr)) => *addr.ip(),
+        _ => Ipv4Addr::UNSPECIFIED,
     }
-    Ipv4Addr::UNSPECIFIED
 }
 
-fn build_secure_beacon_data(local_ip: Ipv4Addr, unicast_port: u16) -> ParticipantBuiltinTopicData {
-    let flags = endpoint_flag::PARTICIPANT_ANNOUNCER | endpoint_flag::PARTICIPANT_DETECTOR;
+fn build_secure_beacon_data(
+    domain: i32,
+    local_ip: Ipv4Addr,
+    unicast_port: u16,
+) -> ParticipantBuiltinTopicData {
+    let flags = endpoint_flag::PARTICIPANT_ANNOUNCER
+        | endpoint_flag::PARTICIPANT_DETECTOR
+        | endpoint_flag::PUBLICATIONS_ANNOUNCER
+        | endpoint_flag::PUBLICATIONS_DETECTOR
+        | endpoint_flag::SUBSCRIPTIONS_ANNOUNCER
+        | endpoint_flag::SUBSCRIPTIONS_DETECTOR;
+    let multicast = Locator::udp_v4(
+        SPDP_MULTICAST_GROUP.octets(),
+        u32::from(spdp_multicast_port(domain)),
+    );
+    let unicast = Locator::udp_v4(local_ip.octets(), u32::from(unicast_port));
     let mut data = ParticipantBuiltinTopicData {
         guid: Guid::new(GuidPrefix::from_bytes(LOCAL_PREFIX), EntityId::PARTICIPANT),
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
-        default_unicast_locators: vec![Locator::udp_v4(local_ip.octets(), u32::from(unicast_port))],
-        default_multicast_locators: vec![Locator::udp_v4(
-            SPDP_MULTICAST_GROUP.octets(),
-            u32::from(SPDP_MULTICAST_PORT),
-        )],
-        metatraffic_unicast_locators: vec![Locator::udp_v4(
-            local_ip.octets(),
-            u32::from(unicast_port),
-        )],
-        metatraffic_multicast_locators: vec![Locator::udp_v4(
-            SPDP_MULTICAST_GROUP.octets(),
-            u32::from(SPDP_MULTICAST_PORT),
-        )],
-        domain_id: Some(CYCLONE_DOMAIN),
+        default_unicast_locators: vec![unicast],
+        default_multicast_locators: vec![multicast],
+        metatraffic_unicast_locators: vec![unicast],
+        metatraffic_multicast_locators: vec![multicast],
+        domain_id: Some(u32::try_from(domain).expect("leased domain")),
         domain_tag: Default::default(),
         builtin_endpoint_set: flags,
         lease_duration: DdsDuration::from_secs(30),
@@ -194,7 +155,7 @@ fn build_secure_beacon_data(local_ip: Ipv4Addr, unicast_port: u16) -> Participan
         entity_name: None,
     };
 
-    // Here the interesting part: full-encrypt PropertyList content.
+    // The capabilities of a full-encrypt participant in the PropertyList.
     let caps = PeerCapabilities {
         auth_plugin_class: Some("DDS:Auth:PKI-DH:1.2".into()),
         access_plugin_class: Some("DDS:Access:Permissions:1.2".into()),
@@ -211,55 +172,84 @@ fn build_secure_beacon_data(local_ip: Ipv4Addr, unicast_port: u16) -> Participan
     data
 }
 
+/// The GUID prefix of an RTPS message's header (RTPS 2.5 §9.4.4: "RTPS",
+/// version, vendor, then the prefix).
+fn rtps_sender(datagram: &[u8]) -> Option<GuidPrefix> {
+    if datagram.len() < 20 || &datagram[..4] != b"RTPS" {
+        return None;
+    }
+    let mut prefix = [0u8; 12];
+    prefix.copy_from_slice(&datagram[8..20]);
+    Some(GuidPrefix::from_bytes(prefix))
+}
+
 #[test]
-#[ignore = "requires SSH access to the lab host (ZERODDS_LAB_SSH) + Cyclone DDS (ddsperf)"]
+#[ignore = "needs Cyclone DDS ddsperf on this host; vendor-live-dcps runs it"]
 fn cyclone_accepts_beacon_with_security_caps() {
+    if std::env::var("INTEROP_REQUIRE").as_deref() != Ok("1")
+        && std::env::var("INTEROP_HOST_AVAILABLE").as_deref() != Ok("1")
+    {
+        eprintln!(
+            "INTEROP-SKIP[cyclone_live_security_caps]: opt in with INTEROP_REQUIRE=1 and ddsperf"
+        );
+        return;
+    }
+    let lease = zerodds_test_domains::lease_domain();
+    let domain = lease.id();
+    let port = spdp_multicast_port(domain);
     let interface = detect_local_interface();
     assert!(
         !interface.is_unspecified(),
-        "could not detect local LAN IP; test needs a real IP on en0"
+        "could not detect a local IPv4 address; Cyclone needs a real one to send to"
     );
-    eprintln!("local interface: {interface}");
+    eprintln!("domain {domain}, interface {interface}");
 
-    // MC-RX: here we see Cyclone's own SPDP beacon.
-    let spdp_sock = UdpSocket::bind(SocketAddrV4::new(
-        Ipv4Addr::UNSPECIFIED,
-        SPDP_MULTICAST_PORT,
-    ))
-    .expect("bind spdp multicast port");
+    // The SPDP multicast port, shared with the Cyclone on this host: without
+    // SO_REUSEADDR on both, the second bind fails.
+    let spdp_sock: UdpSocket = {
+        let s = socket2::Socket::new(
+            socket2::Domain::IPV4,
+            socket2::Type::DGRAM,
+            Some(socket2::Protocol::UDP),
+        )
+        .expect("spdp socket");
+        s.set_reuse_address(true).expect("SO_REUSEADDR");
+        s.bind(&SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port).into())
+            .expect("bind the SPDP multicast port");
+        s.into()
+    };
     spdp_sock
         .set_read_timeout(Some(Duration::from_millis(100)))
         .unwrap();
     spdp_sock
         .join_multicast_v4(&SPDP_MULTICAST_GROUP, &interface)
-        .expect("join spdp multicast group");
-    eprintln!("joined {SPDP_MULTICAST_GROUP}:{SPDP_MULTICAST_PORT}");
+        .expect("join the SPDP multicast group");
 
-    // Unicast socket for default_unicast_locator in the beacon.
+    // The metatraffic unicast locator the beacon announces.
     let unicast_sock =
         UdpSocket::bind(SocketAddrV4::new(interface, 0)).expect("bind unicast socket");
+    unicast_sock
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .unwrap();
     let unicast_port = unicast_sock.local_addr().unwrap().port();
 
-    // Sender socket for our SPDP beacon.
     let sender_sock = UdpSocket::bind(SocketAddrV4::new(interface, 0)).expect("bind sender socket");
     sender_sock.set_multicast_ttl_v4(32).unwrap();
 
-    // Fill the beacon with security caps and send it periodically.
-    let data = build_secure_beacon_data(interface, unicast_port);
+    let data = build_secure_beacon_data(domain, interface, unicast_port);
     let our_prefix = data.guid.prefix;
     assert!(
         !data.properties.is_empty(),
-        "pre-condition: beacon carries security properties"
+        "pre-condition: the beacon carries the security properties"
     );
     eprintln!(
         "outbound beacon carries {} security properties",
         data.properties.len()
     );
     let mut beacon = SpdpBeacon::new(data);
-
     let stop = Arc::new(AtomicBool::new(false));
     let stop_sender = Arc::clone(&stop);
-    let mc_dest = SocketAddrV4::new(SPDP_MULTICAST_GROUP, SPDP_MULTICAST_PORT);
+    let mc_dest = SocketAddrV4::new(SPDP_MULTICAST_GROUP, port);
     let send_handle = thread::spawn(move || {
         while !stop_sender.load(Ordering::Relaxed) {
             if let Ok(d) = beacon.serialize() {
@@ -269,42 +259,45 @@ fn cyclone_accepts_beacon_with_security_caps() {
         }
     });
 
-    let _cyclone = CycloneSubprocess::start().expect("spawn ssh/ddsperf");
-    eprintln!("started remote ddsperf -i {CYCLONE_DOMAIN}");
+    let _cyclone = CycloneSubprocess::start(domain).expect("start ddsperf");
 
-    // Receive loop: search for an SPDP datagram with a
-    // GuidPrefix != ours (Cyclone's beacon).
     let reader = SpdpReader::new();
-    let deadline = Instant::now() + DISCOVERY_TIMEOUT;
-    let mut buf = [0u8; 65_536];
-    let mut cyclone_seen = false;
-
-    while Instant::now() < deadline {
-        match spdp_sock.recv_from(&mut buf) {
-            Ok((n, _addr)) => {
-                if let Ok(disc) = reader.parse_datagram(&buf[..n]) {
-                    if disc.data.guid.prefix != our_prefix {
-                        eprintln!(
-                            "saw Cyclone SPDP from prefix {:?} vendor={:?} props={}",
-                            disc.data.guid.prefix,
-                            disc.sender_vendor,
-                            disc.data.properties.len()
-                        );
-                        cyclone_seen = true;
-                        break;
-                    }
-                }
+    let mut cyclone_prefix: Option<GuidPrefix> = None;
+    let mut addressed_to_us = 0usize;
+    let mut buf = vec![0u8; 65_536];
+    let start = Instant::now();
+    while start.elapsed() < TEST_TIMEOUT && addressed_to_us == 0 {
+        if let Ok(n) = spdp_sock.recv(&mut buf)
+            && let Ok(disc) = reader.parse_datagram(&buf[..n])
+            && disc.sender_prefix != our_prefix
+            && disc.sender_vendor == VendorId::CYCLONE
+        {
+            if cyclone_prefix.is_none() {
+                eprintln!(
+                    "Cyclone's beacon: prefix {:?}, {} properties",
+                    disc.sender_prefix,
+                    disc.data.properties.len()
+                );
             }
-            Err(_) => continue,
+            cyclone_prefix = Some(disc.sender_prefix);
+        }
+        if let Ok(n) = unicast_sock.recv(&mut buf)
+            && let (Some(from), Some(cyclone)) = (rtps_sender(&buf[..n]), cyclone_prefix)
+            && from == cyclone
+        {
+            addressed_to_us += 1;
         }
     }
-
     stop.store(true, Ordering::Relaxed);
     let _ = send_handle.join();
 
+    let cyclone = cyclone_prefix.unwrap_or_else(|| {
+        panic!("no SPDP beacon of Cyclone on domain {domain} within {TEST_TIMEOUT:?}")
+    });
     assert!(
-        cyclone_seen,
-        "Cyclone SPDP beacon not seen within {DISCOVERY_TIMEOUT:?} — Cyclone may have \
-         rejected our beacon or the multicast setup is broken"
+        addressed_to_us >= 1,
+        "Cyclone ({cyclone:?}) sent nothing to the unicast locator of the beacon with the \
+         security properties within {TEST_TIMEOUT:?}: it did not take the participant"
     );
+    eprintln!("Cyclone addressed the participant {addressed_to_us} time(s)");
 }

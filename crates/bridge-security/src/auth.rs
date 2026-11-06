@@ -338,15 +338,15 @@ fn validate_jwt_rs256(
 
     // RFC 7519 §4.1.4 / §4.1.5: a token past `exp` or before `nbf` is
     // not accepted. Both are optional; a present one is enforced.
-    if let Some(exp) = numeric_date(payload_str, "exp")? {
-        if checks.now >= exp.saturating_add(JWT_CLOCK_LEEWAY_SECS) {
-            return Err(AuthError::Rejected("jwt: expired".into()));
-        }
+    if let Some(exp) = numeric_date(payload_str, "exp")?
+        && checks.now >= exp.saturating_add(JWT_CLOCK_LEEWAY_SECS)
+    {
+        return Err(AuthError::Rejected("jwt: expired".into()));
     }
-    if let Some(nbf) = numeric_date(payload_str, "nbf")? {
-        if checks.now.saturating_add(JWT_CLOCK_LEEWAY_SECS) < nbf {
-            return Err(AuthError::Rejected("jwt: not yet valid".into()));
-        }
+    if let Some(nbf) = numeric_date(payload_str, "nbf")?
+        && checks.now.saturating_add(JWT_CLOCK_LEEWAY_SECS) < nbf
+    {
+        return Err(AuthError::Rejected("jwt: not yet valid".into()));
     }
 
     if let Some(expected) = checks.issuer {
@@ -738,7 +738,7 @@ mod tests {
     /// A token signed with a real key, checked with its SPKI PEM: the
     /// signature, `exp`, `nbf`, `iss`, `aud` and a required claim.
     #[test]
-    fn a_signed_jwt_is_checked_for_time_audience_and_claim() {
+    fn grpcbridge_7_2_a_signed_jwt_is_checked_for_time_audience_and_claim() {
         let (pkcs8, spki_pem) = rsa_key();
         let mode = AuthMode::Jwt {
             pkcs1_pubkey_der: jwt_public_key_from_pem(&spki_pem).unwrap(),

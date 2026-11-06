@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Added
 
+- `assignability::KeyMustUnderstand` (`Flagged`, the default, or
+  `ImpliedByKey`) in `AssignabilityConfig` and
+  `TypeMatcher::with_key_must_understand`: where two types are compared
+  for MINIMAL equivalence, `ImpliedByKey` marks every key member
+  `IS_MUST_UNDERSTAND` in both types and in every type they name before
+  the minimal identifiers are compared (DDS-XTypes 1.3 §7.2.2.4.4.4.8,
+  1.4 Beta 1 §7.3.3.4).
+
 - `TK_NONE` to `TK_MAP` and `TypeKindValue` (Annex C), the typed sequences
   `Int32Seq` to `WstringSeq` of the `DynamicData` operations, the operations
   of Annex C under their IDL names on `DynamicType` (`get_descriptor`,
@@ -212,6 +220,30 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- The bitmask, bitset and minimal alias TypeObjects are framed as DDS-XTypes 1.3 Annex B has them
+  (unchanged in 1.4 Beta 1): `MinimalBitmaskType`, `CompleteBitmaskType`, `MinimalBitsetType`,
+  `CompleteBitsetType`, their headers, their flags and bitfields, `MinimalAliasHeader` and
+  `MinimalAliasBody` are appendable, a `DHEADER` each under XCDR2. The codecs wrote them without.
+  A peer's bitmask then read as bound 0, so a `uint32` union discriminator was refused against a
+  32-bit bitmask (XTypes 1.3 Table 15), and CycloneDDS 11.0.1 could not read ZeroDDS' TypeLookup
+  reply for a type with a bitmask (OMG `dds-xtypes` `union_uint32_bitmask32`,
+  `union_uint32_bitmask16`). Byte- and hash-verified against CycloneDDS 11.0.1 (`idlc` and its
+  suite client) and Fast DDS 3.6.1 (`tests/typeobject_bitmask_bitset_alias_vendors.rs`). The
+  MINIMAL and COMPLETE hashes of bitmasks and bitsets, the MINIMAL hash of an alias, and the hashes
+  of the types that refer to them change with it.
+- A bitmask writes its extensibility into `bitmask_flags` (`BitmaskTypeFlag::IS_FINAL`,
+  `IS_APPENDABLE`; `from_ast`, the bitmask builder, `type_object_v1::convert`), as an enumeration
+  does into `enum_flags`: DDS-XTypes 1.4 Beta 1 gives both words "F, A. No flags == A"
+  (DDSXTY14-24), and
+  CycloneDDS 11.0.1 refuses a bitmask whose word holds neither bit ("invalid type object",
+  `ddsi_typewrap.c`, `xt_valid_type_flags`; measured with `union_uint32_bitmask32`). The hashes of
+  bitmasks change with it.
+- `ContinuationPoint::encode_into` refuses a value longer than 32 octets
+  (`sequence<octet, 32>`, DDS-XTypes 1.3 §7.6.3.3.3) instead of cutting it,
+  and `decode_from` names an overlong length as `WireError::OutOfRange` at
+  the offset of the length instead of `UnknownTypeKind`.
+- `UnionBuilder::case_id` gives a case an explicit member id; the others
+  are numbered from zero.
 - The collection TypeObjects are framed as XTypes 1.3 Annex B has them: `CompleteCollectionElement`,
   `CompleteCollectionHeader`, `CompleteArrayHeader`, `CompleteArrayType`, `MinimalCollectionElement`,
   `MinimalCollectionHeader` and `MinimalArrayHeader` are appendable (a `DHEADER` each under XCDR2),

@@ -4,7 +4,7 @@
 //!
 //! The counterpart of the `every_corpus_case_that_renders_also_compiles`
 //! that `swift_end_to_end.rs`, `go_end_to_end.rs` and eight more carry.
-//! The C# column had none: `docs/OPEN-ITEMS.md` records that the six
+//! The C# column had none: the six
 //! oldest columns lost theirs when `zerodds-idl-<lang>` was removed.
 //!
 //! A snapshot says the emitter produced the text it produced last time.
@@ -45,6 +45,8 @@ use zerodds_lang_cst::Language;
 
 #[path = "support/corpus.rs"]
 mod corpus_harness;
+#[path = "support/csharp_together.rs"]
+mod csharp_together;
 #[path = "support/generate.rs"]
 mod generate_harness;
 // -- the corpus ----------------------------------------------------------
@@ -140,7 +142,9 @@ fn roslyn() -> Option<Roslyn> {
 ///
 /// `-nostdlib` with the reference pack named in the response file: the
 /// generated declarations are a library and name nothing but the base
-/// class library.
+/// class library. One `csc.dll` for this case alone: the cases of a share
+/// go through [`csharp_compiles_together`], and this is the check that
+/// names a case when that fails.
 fn csharp_compiles(roslyn: &Roslyn, source: &str, tag: &str) -> Result<(), String> {
     let dir = std::env::temp_dir().join(format!("zd-csharp-corpus-{}-{tag}", std::process::id()));
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -167,6 +171,50 @@ fn csharp_compiles(roslyn: &Roslyn, source: &str, tag: &str) -> Result<(), Strin
     result
 }
 
+/// The cases of one share through one .NET process
+/// (`support/csharp_together.rs`, which compiles each as the command line
+/// above does); when that does not report every case `OK`, every case
+/// through `csc.dll` alone ([`csharp_compiles`]), so that a failure names
+/// its case in the compiler's words. The cases that did not compile, with
+/// Roslyn's message.
+fn csharp_compiles_together(roslyn: &Roslyn, cases: &[(String, String)]) -> Vec<(String, String)> {
+    if cases.is_empty() {
+        return Vec::new();
+    }
+    let started = std::time::Instant::now();
+    let batch: Vec<(String, Vec<(&str, String)>)> = cases
+        .iter()
+        .map(|(name, source)| (name.clone(), vec![("ZdTypes.cs", source.clone())]))
+        .collect();
+    let together = csharp_together::run(
+        &roslyn.csc,
+        &roslyn.references,
+        &csharp_together::Mode::Library,
+        &batch,
+    );
+    let ok = matches!(&together, Ok(failed) if failed.is_empty());
+    // Said on the channel a passing test does not use: how long the one
+    // process took, and why the cases go on alone.
+    eprintln!(
+        "CSHARP_TOGETHER cases={} ok={ok} seconds={:.1}",
+        cases.len(),
+        started.elapsed().as_secs_f64()
+    );
+    match &together {
+        Ok(failed) if failed.is_empty() => return Vec::new(),
+        Ok(failed) => eprintln!("CSHARP_TOGETHER failed: {failed:#?}"),
+        Err(why) => eprintln!("CSHARP_TOGETHER did not run: {why}"),
+    }
+    cases
+        .iter()
+        .filter_map(|(name, source)| {
+            csharp_compiles(roslyn, source, name)
+                .err()
+                .map(|why| (name.clone(), why))
+        })
+        .collect()
+}
+
 #[test]
 fn the_compiler_check_catches_a_deliberate_error() {
     // Without this, a green result below could come from a compiler that
@@ -179,24 +227,61 @@ fn the_compiler_check_catches_a_deliberate_error() {
     let why = csharp_compiles(&roslyn, bad, "deliberate").expect_err("Roslyn accepted a bad unit");
     assert!(why.contains("NoSuchTypeExists"), "{why}");
     // And a good one passes, so the check is not simply always red.
-    csharp_compiles(
+    let good = "public sealed class S { public int X; }\n";
+    csharp_compiles(&roslyn, good, "control").expect("Roslyn rejected a good unit");
+    // The batch: two cases that declare the same class each compile, and
+    // a bad one among them is named alone.
+    let failures = csharp_compiles_together(
         &roslyn,
-        "public sealed class S { public int X; }\n",
-        "control",
+        &[
+            ("first".to_string(), good.to_string()),
+            ("second".to_string(), good.to_string()),
+        ],
+    );
+    assert!(failures.is_empty(), "{failures:#?}");
+    let failures = csharp_compiles_together(
+        &roslyn,
+        &[
+            ("good".to_string(), good.to_string()),
+            ("bad".to_string(), bad.to_string()),
+        ],
+    );
+    assert_eq!(
+        failures
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["bad"],
+        "{failures:#?}"
+    );
+    assert!(failures[0].1.contains("NoSuchTypeExists"), "{failures:#?}");
+    // And the driver itself says so, so that a batch that is always red
+    // does not hide behind the check case by case.
+    let said = csharp_together::run(
+        &roslyn.csc,
+        &roslyn.references,
+        &csharp_together::Mode::Library,
+        &[
+            ("good".to_string(), vec![("ZdTypes.cs", good.to_string())]),
+            ("bad".to_string(), vec![("ZdTypes.cs", bad.to_string())]),
+        ],
     )
-    .expect("Roslyn rejected a good unit");
+    .expect("the driver runs");
+    assert_eq!(
+        said.iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["bad"],
+        "{said:#?}"
+    );
+    assert!(said[0].1.contains("CS0246"), "{said:#?}");
 }
 
-/// The whole corpus through Roslyn, one invocation per case.
-///
-/// `#[ignore]`, because it is one compiler start per corpus case and
-/// each costs about one and a half seconds — some ten minutes for the
-/// corpus as it stands. It is what proves the column rather than samples
-/// it, so it is run with `--include-ignored` and its result is what the
-/// `idl-csharp-corpus` job records.
-#[test]
-#[ignore = "one Roslyn start per corpus case, ~10 minutes; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through Roslyn: every case renders or is refused as
+/// listed, and the cases of `share` (of `shares`) compile, in one .NET
+/// process ([`csharp_compiles_together`]). One Roslyn start per case cost
+/// about 0.5 s on the Linux test host, 196 s for the corpus.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     let Some(roslyn) = roslyn() else {
         eprintln!("SKIPPED: no .NET SDK with a `csc.dll` was found.");
         return;
@@ -204,8 +289,9 @@ fn every_corpus_case_that_renders_also_compiles() {
     let mut failures = Vec::new();
     let mut unexpectedly_fine = Vec::new();
     let mut frontend = Vec::new();
-    let mut checked = 0_usize;
-    for (name, path) in corpus_harness::corpus() {
+    let mut selected = Vec::new();
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus_harness::corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
@@ -237,14 +323,24 @@ fn every_corpus_case_that_renders_also_compiles() {
             }
             (Err(_), Some(_)) => continue,
         };
-        checked += 1;
-        let known = DOES_NOT_COMPILE.iter().find(|(case, _)| *case == name);
-        match (csharp_compiles(&roslyn, &text, &name), known) {
-            (Ok(()), None) | (Err(_), Some(_)) => {}
-            (Ok(()), Some((case, why))) => {
+        rendered += 1;
+        if position % shares == share {
+            selected.push((name, text));
+        }
+    }
+    let checked = selected.len();
+    let rejected = csharp_compiles_together(&roslyn, &selected);
+    for (name, _) in &selected {
+        let known = DOES_NOT_COMPILE
+            .iter()
+            .find(|(case, _)| *case == name.as_str());
+        let why = rejected.iter().find(|(case, _)| case == name);
+        match (why, known) {
+            (None, None) | (Some(_), Some(_)) => {}
+            (None, Some((case, why))) => {
                 unexpectedly_fine.push(format!("{case}: compiles now, but is listed as {why}"));
             }
-            (Err(why), None) => failures.push(format!("{name}: {why}")),
+            (Some((_, why)), None) => failures.push(format!("{name}: {why}")),
         }
     }
     if !frontend.is_empty() {
@@ -260,8 +356,113 @@ fn every_corpus_case_that_renders_also_compiles() {
     );
     assert!(unexpectedly_fine.is_empty(), "{unexpectedly_fine:#?}");
     assert!(
-        checked >= MUST_RENDER,
-        "only {checked} corpus cases reached Roslyn; the gate says nothing \
+        rendered >= MUST_RENDER,
+        "only {rendered} corpus cases reached Roslyn; the gate says nothing \
          below {MUST_RENDER}"
     );
+}
+
+/// Every corpus case that renders compiles under Roslyn.
+///
+/// The corpus in 16 shares of 26 or 27 cases, each share one .NET process
+/// ([`csharp_compiles_together`]) within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares together
+/// are every case. `#[ignore]`: the crate tier has no toolchain for it; the
+/// weekly `integration-codegen-csharp` job runs them with the toolchain.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through Roslyn; runs in integration-codegen-csharp"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 16);
+    }
 }

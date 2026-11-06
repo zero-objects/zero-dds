@@ -58,7 +58,7 @@ fn bytes_in(
 // -- all three agree -------------------------------------------------
 
 #[test]
-fn point_matches_cyclone_rti_and_fastdds() {
+fn xtypes_7_4_3_5_3_point_matches_cyclone_rti_and_fastdds() {
     let idl = "@final struct Point { long x; double y; };";
     let values = json!({ "x": 1, "y": 2.0 });
     assert_eq!(
@@ -72,7 +72,7 @@ fn point_matches_cyclone_rti_and_fastdds() {
 }
 
 #[test]
-fn the_mixed_primitive_struct_matches_all_three() {
+fn xtypes_7_4_3_5_3_the_mixed_primitive_struct_matches_all_three() {
     let idl = "\
 @final struct Mixed {
     boolean b; octet o; short s; unsigned short us;
@@ -111,7 +111,7 @@ fn a_structure_carries_no_trailing_padding() {
 }
 
 #[test]
-fn an_array_of_primitives_matches_all_three() {
+fn xtypes_7_4_3_5_3_an_array_of_primitives_matches_all_three() {
     let idl = "@final struct Arr { long a[3]; double d[2]; };";
     let values = json!({ "a": [1, 2, 3], "d": [1.5, 2.5] });
     assert_eq!(
@@ -125,7 +125,7 @@ fn an_array_of_primitives_matches_all_three() {
 }
 
 #[test]
-fn a_string_member_matches_all_three() {
+fn xtypes_7_4_3_5_3_a_string_member_matches_all_three() {
     let idl = "@final struct Str { string s; long n; };";
     let values = json!({ "s": "abc", "n": 7 });
     assert_eq!(
@@ -135,7 +135,7 @@ fn a_string_member_matches_all_three() {
 }
 
 #[test]
-fn a_sequence_of_a_primitive_matches_all_three() {
+fn xtypes_7_4_3_5_3_a_sequence_of_a_primitive_matches_all_three() {
     let idl = "@final struct SeqL { sequence<long> ids; };";
     let values = json!({ "ids": [1, 2, 3] });
     assert_eq!(
@@ -145,7 +145,7 @@ fn a_sequence_of_a_primitive_matches_all_three() {
 }
 
 #[test]
-fn an_enumeration_matches_all_three() {
+fn xtypes_7_4_3_5_3_an_enumeration_matches_all_three() {
     let idl = "enum Colour { RED, GREEN, BLUE };\n@final struct Enu { Colour c; long x; };";
     let values = json!({ "c": "BLUE", "x": 9 });
     assert_eq!(
@@ -155,7 +155,7 @@ fn an_enumeration_matches_all_three() {
 }
 
 #[test]
-fn a_union_in_a_struct_matches_all_three() {
+fn xtypes_7_4_3_5_3_a_union_in_a_struct_matches_all_three() {
     let idl = "\
 @final union Choice switch (long) {
     case 1: long a;
@@ -297,7 +297,7 @@ fn the_pl_cdr1_parameter_list_reproduces_each_vendor_under_its_dialect() {
 /// from the plan, the probe wrote the derived members alone and returned
 /// success.
 #[test]
-fn an_inherited_member_is_written_ahead_of_the_derived_ones() {
+fn xtypes_7_4_1_1_5_1_an_inherited_member_is_written_ahead_of_the_derived_ones() {
     let base = "struct Base { long base_a; short base_b; };";
     let derived = "struct Sample : Base { double derived_a; octet derived_b; };";
     let values = json!({
@@ -331,7 +331,7 @@ fn an_inherited_member_is_written_ahead_of_the_derived_ones() {
 /// The EMHEADER ids are the only place that rule is visible on the wire,
 /// which is why the `@mutable` pair is the one measured.
 #[test]
-fn member_ids_continue_across_the_inheritance_boundary() {
+fn xtypes_7_4_1_1_5_1_member_ids_continue_across_the_inheritance_boundary() {
     let idl = "\
 @mutable struct Base { long base_a; short base_b; };
 @mutable struct Sample : Base { double derived_a; octet derived_b; };";
@@ -378,7 +378,7 @@ struct Sample : Base { double derived_a; octet derived_b; };";
 /// declarator's dimensions, which made `Matrix` an alias of `long` and
 /// the member one four-byte value where the vendors write twenty-four.
 #[test]
-fn a_typedef_of_an_array_matches_cyclone_and_rti() {
+fn xtypes_7_4_3_5_1_a_typedef_of_an_array_matches_cyclone_and_rti() {
     let idl = "\
 typedef long Matrix[2][3];
 @final struct Sample { Matrix grid; long tail; };";
@@ -400,7 +400,7 @@ typedef long Matrix[2][3];
 /// `u32::try_from(-1).unwrap_or(0)` wrote another enumerator's value and
 /// the probe reported success.
 #[test]
-fn a_negative_enumerator_is_the_twos_complement_rti_wrote() {
+fn xtypes_7_4_3_5_3_a_negative_enumerator_is_the_twos_complement_rti_wrote() {
     let idl = "\
 enum Signed { @value(-1) MINUS, @value(0) ZERO, @value(2147483647) MAX };
 @final struct Sample { Signed first; Signed second; };";
@@ -497,7 +497,7 @@ union Choice switch (Colour) {
 }
 
 #[test]
-fn an_absent_optional_member_is_not_written() {
+fn xtypes_7_4_3_5_2_an_absent_optional_member_is_not_written() {
     let idl = "@mutable struct MutOpt { long a; @optional long b; };";
     let values = json!({ "a": 7 });
     assert_eq!(
@@ -586,7 +586,7 @@ module common {
 // -- where the vendors disagree ---------------------------------------
 
 #[test]
-fn a_collection_of_structs_reproduces_each_vendor_under_its_policy() {
+fn xtypes_7_4_3_5_3_a_collection_of_structs_reproduces_each_vendor_under_its_policy() {
     let idl = "\
 @final struct Cell { long a; long b; };
 @final struct SeqS { sequence<Cell> cells; };";
@@ -644,7 +644,7 @@ enum Colour { RED, GREEN, BLUE };
 }
 
 #[test]
-fn an_array_of_structs_reproduces_each_vendor_under_its_policy() {
+fn xtypes_7_4_3_5_3_an_array_of_structs_reproduces_each_vendor_under_its_policy() {
     let idl = "\
 @final struct Cell { long a; long b; };
 @final struct ArrN { Cell items[2]; };";
@@ -735,7 +735,7 @@ fn a_sixty_four_bit_integer_survives_as_a_string() {
 }
 
 #[test]
-fn the_key_hash_of_a_small_key_is_the_zero_padded_holder() {
+fn xtypes_7_6_8_the_key_hash_of_a_small_key_is_the_zero_padded_holder() {
     // XTypes 1.3 §7.6.8 example 1: `@key long id` with id = 5, holder
     // big-endian and under sixteen bytes, so zero-padded rather than
     // hashed.
@@ -789,7 +789,7 @@ fn the_last_short_pl_cdr1_id_is_the_one_two_vendors_write_short() {
 /// `@mutable` member of `@mutable` type, so Fast DDS has no answer here
 /// and only its sentinel differs from RTI's.
 #[test]
-fn a_nested_parameter_list_numbers_and_terminates_per_level() {
+fn xtypes_7_4_1_2_4_a_nested_parameter_list_numbers_and_terminates_per_level() {
     let idl = "\
 @mutable struct Inner { @id(5) long a; };
 @mutable struct Outer { @id(5) Inner nested; };";
@@ -822,7 +822,8 @@ fn a_nested_parameter_list_numbers_and_terminates_per_level() {
 /// the same bytes in all three implementations — which is the `Alias`
 /// arm of `sequence_length_code`, and it had never been executed.
 #[test]
-fn an_aliased_sequence_element_takes_the_same_length_code_as_the_type_it_aliases() {
+fn xtypes_7_4_3_4_2_an_aliased_sequence_element_takes_the_same_length_code_as_the_type_it_aliases()
+{
     let idl = "\
 typedef long L;
 @mutable struct MT { @id(1) sequence<long> plain; @id(2) sequence<L> aliased; };";
@@ -851,7 +852,7 @@ typedef long L;
 /// three; `fastddsgen` refuses a `boolean` switch outright — *"boolean
 /// switch is malformed"* — so Fast DDS answers only the `char` case.
 #[test]
-fn a_boolean_and_a_char_discriminator_are_one_octet_and_then_the_member() {
+fn xtypes_7_4_1_2_3_a_boolean_and_a_char_discriminator_are_one_octet_and_then_the_member() {
     let boolean = "\
 @final union UB switch (boolean) { case TRUE: long a; default: short b; };
 @final struct SB { UB u; long tail; };";
@@ -916,7 +917,7 @@ fn a_boolean_and_a_char_discriminator_are_one_octet_and_then_the_member() {
 /// its XCDR1 key holder differs from everyone else's, beside
 /// `KeyHolderExtensibility` and `KeyHolderNesting`.
 #[test]
-fn a_key_holders_member_order_is_the_one_each_vendor_hashes() {
+fn xtypes_7_6_8_a_key_holders_member_order_is_the_one_each_vendor_hashes() {
     let idl = "\
 @final struct KeyOrder { @id(5) @key long b; @id(2) @key long a; };
 @final struct KeyMixed { @id(5) @key octet b; @id(2) @key long a; };";
@@ -973,7 +974,7 @@ fn a_key_holders_member_order_is_the_one_each_vendor_hashes() {
 /// encapsulations and Fast DDS all three produce the same sixteen
 /// octets for a twenty-octet holder.
 #[test]
-fn a_key_holder_past_sixteen_octets_is_md5_hashed() {
+fn xtypes_7_6_8_a_key_holder_past_sixteen_octets_is_md5_hashed() {
     let idl = "@final struct KeyBig \
 { @key long a; @key long b; @key long c; @key long d; @key long e; };";
     let values = json!({ "a": 1, "b": 2, "c": 3, "d": 4, "e": 5 });
@@ -997,7 +998,7 @@ fn a_key_holder_past_sixteen_octets_is_md5_hashed() {
 }
 
 #[test]
-fn the_encapsulation_options_carry_the_padding_count() {
+fn xtypes_7_4_3_2_3_the_encapsulation_options_carry_the_padding_count() {
     // XTypes 1.3 §7.4.1.1 pads the serialized data to the next
     // four-byte boundary with zeros, and §7.6.3.1.2 puts the count in
     // the low two bits of the second options byte: those bits "shall be
@@ -1052,7 +1053,7 @@ fn the_encapsulation_options_carry_the_padding_count() {
 }
 
 #[test]
-fn a_reader_that_is_told_the_padding_count_stops_at_the_data() {
+fn xtypes_7_4_3_5_3_a_reader_that_is_told_the_padding_count_stops_at_the_data() {
     // The other half of §7.6.3.1.2, and the half that says "shall".
     // A reader that ignored the count would hand the decoder three
     // bytes of zero as if they were the stream.
@@ -1126,7 +1127,7 @@ fn length_code_values() -> serde_json::Value {
 }
 
 #[test]
-fn every_length_code_matches_the_dialect_s_own_vendor() {
+fn xtypes_7_4_3_4_2_every_length_code_matches_the_dialect_s_own_vendor() {
     let values = length_code_values();
     for (dialect, expected) in [
         (
@@ -1305,7 +1306,7 @@ enum Colour { RED, GREEN, BLUE };
 /// half and set the bit under XCDR2, because the setting hung off
 /// `PlCdr1HeaderPolicy` and XCDR2 never asked it.
 #[test]
-fn the_must_understand_flag_is_the_one_each_vendor_writes_in_both_versions() {
+fn xtypes_7_4_3_4_2_the_must_understand_flag_is_the_one_each_vendor_writes_in_both_versions() {
     let idl = "@mutable struct M { @id(1) @must_understand long a; @id(2) long b; };";
     let values = json!({ "a": 7, "b": -2 });
     for (dialect, xcdr2, xcdr1) in [

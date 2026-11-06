@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    fn tsn_configuration_aggregates_talkers_and_listeners() {
+    fn tsn_1_tsn_configuration_aggregates_talkers_and_listeners() {
         let cfg = TsnConfiguration {
             name: String::from("PerimeterTSN"),
             tsn_talkers: alloc::vec![TsnTalker {

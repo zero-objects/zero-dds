@@ -17,9 +17,9 @@ with Ada.Real_Time;     use Ada.Real_Time;
 with Ada.Streams;
 with GNAT.Sockets;      use GNAT.Sockets;
 with Interfaces;        use Interfaces;
-with Interfaces.C;
 with Deep_Reading;      use Deep_Reading;
 with Reliable;          use Reliable;
+with Reliable_Sample;   use Reliable_Sample;
 
 procedure Example_Reliable is
 
@@ -39,17 +39,6 @@ procedure Example_Reliable is
       end loop;
       return SEA;
    end To_SEA;
-
-   --  A telemetry sample carrying its index in Id (so gap-free delivery is
-   --  observable on the peer side).
-   function Sample (I : Natural) return Frame_Store is
-      Rd : Reading;
-   begin
-      Rd.Id := Interfaces.C.unsigned_long (I);
-      Rd.Value := Interfaces.C.C_float (Float (I) + 0.5);
-      Set_Label (Rd, "reliable");
-      return Marshal (Rd);
-   end Sample;
 
    -----------------------------------------------------------------
    --  Latency micro-bench: producer enqueue->return (decoupled) vs a full

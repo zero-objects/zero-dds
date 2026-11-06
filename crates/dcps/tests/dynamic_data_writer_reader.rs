@@ -51,7 +51,7 @@ fn reading(type_: &DynamicType, id: i32, label: &str, value: f64) -> DynamicSamp
 }
 
 #[test]
-fn a_dynamic_topic_takes_writers_and_readers_of_dynamic_data() {
+fn xtypes_7_6_6_a_dynamic_topic_takes_writers_and_readers_of_dynamic_data() {
     use zerodds_dcps::{
         DataReaderQos, DataWriterQos, DomainParticipantFactory, DomainParticipantQos, PublisherQos,
         SubscriberQos, TopicQos,
@@ -156,14 +156,14 @@ mod linux_e2e {
     }
 
     #[test]
-    fn dynamic_data_goes_over_xcdr() {
+    fn xtypes_7_6_6_2_dynamic_data_goes_over_xcdr() {
         exchange(None);
     }
 
     /// The writer sends the XML document of the sample under
     /// `{0x00, 0x04}`; the reader reads it against its type.
     #[test]
-    fn dynamic_data_goes_over_xml() {
+    fn xtypes_7_4_4_dynamic_data_goes_over_xml() {
         use zerodds_rtps::publication_data::data_representation as dr;
         exchange(Some(vec![dr::XML, dr::XCDR2]));
     }

@@ -680,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn a_struct_writes_its_properties_and_its_public_initialiser() {
+    fn xtypes_7_5_1_a_struct_writes_its_properties_and_its_public_initialiser() {
         let decl = Decl::Aggregate(AggregateDecl {
             doc: Doc::none(),
             visibility: Visibility::Public,
@@ -719,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_initialiser_stays_on_one_line() {
+    fn xtypes_7_5_1_an_empty_initialiser_stays_on_one_line() {
         let init = Init {
             doc: Doc::none(),
             visibility: Visibility::Public,
@@ -732,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn a_parameter_with_a_second_name_writes_both() {
+    fn xtypes_7_5_1_a_parameter_with_a_second_name_writes_both() {
         let param = Param {
             label: Ident::new("`self`"),
             internal_name: Some(Ident::new("zdSelf")),
@@ -742,7 +742,7 @@ mod tests {
     }
 
     #[test]
-    fn a_class_is_written_final() {
+    fn xtypes_7_5_1_a_class_is_written_final() {
         let decl = Decl::Aggregate(AggregateDecl {
             doc: Doc::none(),
             visibility: Visibility::Public,
@@ -762,7 +762,7 @@ mod tests {
     }
 
     #[test]
-    fn an_option_set_writes_its_conformance_and_its_flags() {
+    fn xtypes_7_5_1_an_option_set_writes_its_conformance_and_its_flags() {
         let decl = Decl::Aggregate(AggregateDecl {
             doc: Doc::none(),
             visibility: Visibility::Public,

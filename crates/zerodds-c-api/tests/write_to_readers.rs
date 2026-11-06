@@ -63,7 +63,7 @@ unsafe fn drain(reader: *mut ZeroDdsReader) -> Vec<Vec<u8>> {
 }
 
 #[test]
-fn a_sample_written_to_one_reader_reaches_that_reader_only() {
+fn rpc_7_11_1_4_3_a_sample_written_to_one_reader_reaches_that_reader_only() {
     let lease = zerodds_test_domains::lease_domain();
     let topic = CString::new("CFfiWriteToReaders").unwrap();
     let typ = CString::new("RawBytes").unwrap();

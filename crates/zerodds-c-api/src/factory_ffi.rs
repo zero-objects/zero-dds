@@ -265,7 +265,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn factory_singleton_returns_non_null_stable_ptr() {
+    fn capi_2_1_factory_singleton_returns_non_null_stable_ptr() {
         let f1 = zerodds_dpf_get_instance();
         let f2 = zerodds_dpf_get_instance();
         assert!(!f1.is_null());
@@ -273,13 +273,14 @@ mod tests {
     }
 
     #[test]
-    fn create_and_delete_participant_clean_lifecycle() {
+    fn capi_1_1_create_and_delete_participant_clean_lifecycle() {
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: f from dpf_get_instance (static).
         unsafe {
-            let p = zerodds_dpf_create_participant(f, 0, ptr::null());
+            let p = zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null());
             assert!(!p.is_null(), "participant must be created");
-            let lookup = zerodds_dpf_lookup_participant(f, 0);
+            let lookup = zerodds_dpf_lookup_participant(f, lease.id() as u32);
             assert_eq!(lookup, p, "lookup must return same handle");
             let rc = zerodds_dpf_delete_participant(f, p);
             assert_eq!(rc, crate::ZeroDdsStatus::Ok as c_int);
@@ -287,7 +288,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_with_null_handles_returns_bad_handle() {
+    fn capi_2_1_delete_with_null_handles_returns_bad_handle() {
         let f = zerodds_dpf_get_instance();
         // SAFETY: f static; NULL is explicitly allowed in the delete_participant contract.
         unsafe {

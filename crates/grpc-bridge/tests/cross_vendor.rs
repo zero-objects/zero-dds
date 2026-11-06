@@ -5,16 +5,17 @@
 //!
 //! Spec: `zerodds-grpc-bridge-1.0.md` §10 + §12.3.
 //!
-//! The two live tests start `zerodds-grpc-bridged` themselves on a port
-//! of their own and drive the reference client against it. They are
-//! `#[ignore]` and gated on `GRPC_GRPCURL=1`; with the gate set and no
-//! `grpcurl` installed they fail rather than skipping. Run via:
+//! The live tests start `zerodds-grpc-bridged` themselves on a port of
+//! their own and drive the reference client against it. They are
+//! `#[ignore]` in the crate tier and run in the integration pillar's job
+//! `integration-bridges-vendor`, which installs `grpcurl`
+//! (`tests/integration/provision.sh grpcurl`); a missing `grpcurl` fails
+//! them:
 //! ```bash
-//! GRPC_GRPCURL=1 cargo test -p zerodds-grpc-bridge \
-//!     --features cross-vendor-tests --test cross_vendor -- --ignored
+//! cargo nextest run -p zerodds-grpc-bridge --test cross_vendor --run-ignored all
 //! ```
 
-#![cfg(feature = "cross-vendor-tests")]
+#![cfg(feature = "std")]
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -40,30 +41,12 @@ use std::time::Duration;
 use zerodds_grpc_bridge::reflection::{REFLECTION_PATH, encode_list_services};
 use zerodds_grpc_bridge::service_gen::{ServiceCatalog, TopicService};
 
-/// The `grpcurl` binary, or nothing.
-fn grpcurl_available() -> bool {
-    Command::new("grpcurl").arg("-version").output().is_ok()
-}
-
-/// `GRPC_GRPCURL=1` turns the two live tests from "skip when the binary
-/// is missing" into "fail when the binary is missing".
-///
-/// Both of them used to return early on a missing `grpcurl` and the
-/// runner then printed `ok`, so a host without it reported cross-vendor
-/// interop that never happened. They also expected a daemon someone else
-/// had started on a fixed 127.0.0.1:50051 — on a host where nothing
-/// listened there, `grpcurl` failed, the second test discarded its result
-/// with `let _ = out;` and the first asserted on an empty stdout.
+/// Fails the test when `grpcurl` is not on the PATH.
 fn require_grpcurl() {
     assert!(
-        grpcurl_available(),
-        "GRPC_GRPCURL is set but `grpcurl` was not found. Skipping here \
-         would report interop that never happened."
+        Command::new("grpcurl").arg("-version").output().is_ok(),
+        "`grpcurl` is not on the PATH (tests/integration/provision.sh grpcurl)"
     );
-}
-
-fn enabled() -> bool {
-    std::env::var("GRPC_GRPCURL").is_ok()
 }
 
 fn daemon_binary() -> PathBuf {
@@ -174,12 +157,8 @@ fn run_grpcurl(args: &[&str]) -> String {
 }
 
 #[test]
-#[ignore = "needs the `grpcurl` binary; set GRPC_GRPCURL=1"]
-fn grpcurl_list_services_against_zerodds_daemon() {
-    if !enabled() {
-        eprintln!("[skip] GRPC_GRPCURL not set");
-        return;
-    }
+#[ignore = "needs grpcurl; runs in integration-bridges-vendor"]
+fn grpcbridge_4_6_grpcurl_list_services_against_zerodds_daemon() {
     require_grpcurl();
     let daemon = Daemon::start();
     // grpcurl speaks HTTP/2 and the v1alpha reflection service against
@@ -194,12 +173,8 @@ fn grpcurl_list_services_against_zerodds_daemon() {
 }
 
 #[test]
-#[ignore = "needs the `grpcurl` binary; set GRPC_GRPCURL=1"]
-fn grpcurl_lists_the_reflection_service_itself() {
-    if !enabled() {
-        eprintln!("[skip] GRPC_GRPCURL not set");
-        return;
-    }
+#[ignore = "needs grpcurl; runs in integration-bridges-vendor"]
+fn grpcbridge_4_6_grpcurl_lists_the_reflection_service_itself() {
     require_grpcurl();
     let daemon = Daemon::start();
     // `describe` needs FileContainingSymbol, which this bridge does not
@@ -217,7 +192,7 @@ fn grpcurl_lists_the_reflection_service_itself() {
 }
 
 #[test]
-fn list_services_reflection_payload_is_well_formed() {
+fn grpcbridge_4_6_list_services_reflection_payload_is_well_formed() {
     // Pure-Rust verification of the reflection encoding without
     // requiring grpcurl. Spec §4.6 wire-shape: outer tag 6.
     let mut cat = ServiceCatalog::new();
@@ -250,12 +225,8 @@ fn try_grpcurl(args: &[&str]) -> (bool, String) {
 /// without it), and sends the bearer token as `authorization` metadata.
 /// Without the token the call ends in `Unauthenticated`.
 #[test]
-#[ignore = "needs the `grpcurl` binary; set GRPC_GRPCURL=1"]
-fn grpcurl_over_tls_with_a_bearer_token() {
-    if !enabled() {
-        eprintln!("[skip] GRPC_GRPCURL not set");
-        return;
-    }
+#[ignore = "needs grpcurl; runs in integration-bridges-vendor"]
+fn grpcbridge_7_1_grpcurl_over_tls_with_a_bearer_token() {
     require_grpcurl();
     let dir = std::env::temp_dir().join(format!("zd-grpcurl-tls-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

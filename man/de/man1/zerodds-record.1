@@ -1,0 +1,138 @@
+.TH ZERODDS-RECORD 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-record \- ZeroDDS-Dateien .zddsrec aufzeichnen und untersuchen
+.SH ÜBERSICHT
+.B zerodds-record record
+[\fB\-o\fR \fIDATEI\fR]
+[\fB\-d\fR \fIDOMÄNE\fR]
+[\fB\-t\fR \fITOPIC\fR]...
+[\fB\-\-duration\fR \fIDAUER\fR]
+[\fB\-\-max\-sample\-bytes\fR \fIN\fR]
+[\fB\-\-decode\fR \fB\-\-type\-file\fR \fIIDL\fR]
+[\fB\-\-map\fR \fITOPIC=Typ\fR]...
+[\fB\-\-out\-json\fR \fIDATEI\fR]
+[\fB\-\-out\-sqlite\fR \fIDATEI\fR]
+[\fB\-\-dialect\fR \fINAME\fR]
+.PP
+.B zerodds-record info
+.I DATEI
+.PP
+.B zerodds-record list
+.I DATEI
+.SH BESCHREIBUNG
+.B zerodds-record
+zeichnet laufende DDS-Topics in eine versionierte Binärdatei
+.B .zddsrec
+auf und liest vorhandene Dateien zur Untersuchung.
+.PP
+Der Unterbefehl
+.B record
+startet eine DCPS-Laufzeitumgebung, registriert einen User-Reader je Option
+.B \-\-topic
+und schreibt jedes empfangene Sample in die Ausgabedatei. Die Aufzeichnung
+endet bei
+.B SIGINT
+oder nach Ablauf von
+.BR \-\-duration .
+.PP
+.B info
+parst den Dateikopf und gibt Zeitbasis, Teilnehmer und Topic-Liste aus.
+.B list
+zählt die Frames je Topic.
+.SH OPTIONEN FÜR record
+.TP
+.BR \-o ", " \-\-output " " \fIDATEI\fR
+Ausgabepfad. Standard: \fIcapture\-<unix-ts>.zddsrec\fR.
+.TP
+.BR \-d ", " \-\-domain " " \fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Topic, das abonniert wird (wiederholbar, mindestens eines ist Pflicht).
+.TP
+.BR \-\-duration " " \fIDAUER\fR
+Dauer der Aufzeichnung: \fI5\fR, \fI30s\fR, \fI2m\fR, \fI1h\fR. Standard:
+unbegrenzt (bis SIGINT).
+.TP
+.BR \-\-max\-sample\-bytes " " \fIN\fR
+Obergrenze je Sample gegen DoS. Standard: 1048576.
+.TP
+.BR \-\-config " " \fIPFAD\fR
+Die Basis-Konfigurationsdatei; das danebenliegende
+.IR PFAD .d/
+enthält Drop-ins. Standard: das System-Konfigurationsverzeichnis
+.RI ( /etc/zerodds
+unter Linux,
+.I /usr/local/etc/zerodds
+unter macOS).
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH DEKODIERTE AUSGABE FÜR record
+Die opake Datei
+.B .zddsrec
+wird immer zusätzlich geschrieben.
+.TP
+.BR \-\-decode
+Samples in typisierte Werte dekodieren. Braucht
+.BR \-\-type\-file .
+.TP
+.BR \-\-type\-file " " \fIIDL\fR
+IDL außerhalb der Aufzeichnung, die die Typen liefert.
+.TP
+.BR \-\-map " " \fITOPIC=Typ\fR
+Überschreibt, welcher IDL-Typ ein Topic dekodiert (wiederholbar).
+.TP
+.BR \-\-out\-json " " \fIDATEI\fR
+Dekodierte Samples als NDJSON schreiben.
+.TP
+.BR \-\-out\-sqlite " " \fIDATEI\fR
+Dekodierte Samples in SQLite schreiben, je Topic. Eine vorhandene DATEI wird
+ersetzt, wie bei \fB\-o\fR und \fB\-\-out\-json\fR.
+.TP
+.BR \-\-dialect " " \fINAME\fR
+Der Wire-Dialekt, in dem dekodiert wird: \fIcyclone\fR, \fIrti\fR,
+\fIfastdds\fR, \fIopendds\fR und die anderen, die
+\fBzerodds\-idlc generate \-\-dialect\fR annimmt.
+Standard: \fBwire.codec_dialect\fR aus der Konfiguration, selbst
+\fIspecification\fR, solange nicht gesetzt. Der Decoder leitet den Dialekt
+nicht aus den Bytes ab; ein Sample, das in einem anderen Dialekt geschrieben
+ist, wird gemeldet, nicht angenommen.
+.SH GLOBALE OPTIONEN
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Hilfe und beendet sich.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus und beendet sich.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg.
+.TP
+.B 2
+Fehler beim Parsen der Kommandozeile.
+.TP
+.B 3
+DDS- oder E/A-Fehler.
+.SH DATEIEN
+.TP
+.I capture-<unix-ts>.zddsrec
+Standard-Dateiname der Ausgabe, wenn
+.B \-\-output
+nicht angegeben ist.
+.SH SIEHE AUCH
+.BR zerodds-admin (1),
+.BR zerodds-replay (1)
+.PP
+Spec:
+.I docs/specs/zddsrec-1.0.md
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

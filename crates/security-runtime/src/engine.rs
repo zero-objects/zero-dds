@@ -147,10 +147,10 @@ impl GovernancePolicyEngine {
             None
         };
 
-        if let Some(binding) = iface_rule {
-            if !interface_accepts_class(&class.name, &binding.peer_class_filter) {
-                return Some(PolicyDecision::DROP);
-            }
+        if let Some(binding) = iface_rule
+            && !interface_accepts_class(&class.name, &binding.peer_class_filter)
+        {
+            return Some(PolicyDecision::DROP);
         }
 
         // Start with the class protection.

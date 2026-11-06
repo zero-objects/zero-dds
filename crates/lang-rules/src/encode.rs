@@ -244,6 +244,22 @@ impl core::error::Error for EncodeError {}
 /// one beside it, spells them out.
 pub const SECONDARY_SUFFIX: &str = "_xcdr1";
 
+/// The suffix of a type's codec pair **inside a key holder**:
+/// `encode_key_holder` and `decode_key_holder`.
+///
+/// XTypes 1.3 §7.6.8 step 3 applies steps 1 and 2 to every aggregate a
+/// key holder reaches: the nested holder is `@final`, and holds only the
+/// type's key members when it declares any — of a union keyed by its
+/// discriminator, the discriminator alone. A nested key member written
+/// through the type's data codec carried its DHEADER, its EMHEADERs and
+/// every non-key member (measured: `@key Inner who` over an
+/// `@appendable Inner { long x; string<8> tag; }` gave
+/// `00 00 00 0a 00 00 00 03 …` where `zerodds-wire-codec`'s key holder
+/// gives `00 00 00 03 …`). The pair is planned under the holder's own
+/// key and emitted beside the data codec of every type a key holder
+/// reaches ([`key_holder_types`]).
+pub const KEY_HOLDER_SUFFIX: &str = "_key_holder";
+
 /// The parameter that carries a sample's RTI PL_CDR1 step decision down
 /// to a nested type's encoder.
 ///
@@ -668,8 +684,210 @@ enum Companions {
     Emit,
     /// Only the codec pair.
     Omit,
+    /// Only the codec pair inside a key holder ([`KEY_HOLDER_SUFFIX`]).
+    KeyHolder,
 }
 
+/// The types whose codec pair inside a key holder some key holder of the
+/// model calls ([`KEY_HOLDER_SUFFIX`]): the types of a keyed struct's key
+/// members, every union keyed by its discriminator, and from each of
+/// them on, the types its own holder reaches — a struct's key members, or
+/// all of its members when it declares none; a union's discriminator,
+/// and its branches unless the discriminator is its key; the element of
+/// a collection, the target of a typedef (XTypes 1.3 §7.6.8 steps 1 and
+/// 3).
+#[must_use]
+pub fn key_holder_types(ast: &Ast) -> Vec<Id<TypeNode>> {
+    let mut stack: Vec<Id<TypeNode>> = Vec::new();
+    for (id, node) in ast.types() {
+        if node.name.is_empty() {
+            continue;
+        }
+        if zerodds_ast_layout::keyhash::union_key_discriminator(ast, id).is_some()
+            && matches!(node.kind, TypeKind::Union { .. })
+        {
+            stack.push(id);
+        }
+        if matches!(
+            node.kind,
+            TypeKind::Structure { .. } | TypeKind::Valuetype { .. }
+        ) {
+            stack.extend(holder_member_types(ast, id));
+        }
+    }
+    let mut out: Vec<Id<TypeNode>> = Vec::new();
+    let mut seen: Vec<Id<TypeNode>> = Vec::new();
+    while let Some(id) = stack.pop() {
+        if seen.contains(&id) {
+            continue;
+        }
+        seen.push(id);
+        let Ok(node) = ast.type_(id) else {
+            continue;
+        };
+        match &node.kind {
+            TypeKind::Alias { aliased } => stack.extend(aliased.resolved()),
+            TypeKind::Sequence { element, .. } | TypeKind::Array { element, .. } => {
+                stack.extend(element.resolved());
+            }
+            TypeKind::Map { key, value, .. } => {
+                stack.extend(key.resolved());
+                stack.extend(value.resolved());
+            }
+            TypeKind::Structure { .. } | TypeKind::Valuetype { .. } => {
+                out.push(id);
+                let own = holder_member_types(ast, id);
+                if own.is_empty() {
+                    // A struct that declares no key holds all of its
+                    // members (step 1's "otherwise do not remove any").
+                    for member in ast.all_members_of(id) {
+                        if let Ok(member) = ast.member(member) {
+                            stack.extend(member.type_.resolved());
+                        }
+                    }
+                } else {
+                    stack.extend(own);
+                }
+            }
+            TypeKind::Union {
+                discriminator,
+                cases,
+                ..
+            } => {
+                out.push(id);
+                stack.extend(discriminator.resolved());
+                if zerodds_ast_layout::keyhash::union_key_discriminator(ast, id).is_none() {
+                    for case in cases {
+                        let Ok(case) = ast.case(*case) else {
+                            continue;
+                        };
+                        if let Ok(member) = ast.member(case.member) {
+                            stack.extend(member.type_.resolved());
+                        }
+                    }
+                }
+            }
+            TypeKind::Enumeration { .. } | TypeKind::Bitset { .. } => out.push(id),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// The types of an aggregate's `@key` members; empty when it declares
+/// none.
+fn holder_member_types(ast: &Ast, id: Id<TypeNode>) -> Vec<Id<TypeNode>> {
+    ast.all_members_of(id)
+        .into_iter()
+        .filter_map(|member| ast.member(member).ok())
+        .filter(|member| member.facets.is_key())
+        .filter_map(|member| member.type_.resolved())
+        .collect()
+}
+
+/// The codec pair inside a key holder of `type_` ([`KEY_HOLDER_SUFFIX`]),
+/// planned under the holder's own key: big-endian and the key purpose,
+/// over the dialect of `data_key`.
+///
+/// Below a struct that declares no key a dialect may plan the members as
+/// data (`KeyHolderNesting::KeylessNestedWhole`, RTI under XCDR1); a type
+/// reached there is written by its data codec, which the pair then calls.
+///
+/// zerodds-lint: recursion-depth 2 — through `codec_items`: it is called
+/// from `codec_items` under `Companions::Emit` and calls back under
+/// `Companions::KeyHolder`, which does not call it again.
+fn key_holder_member_fns(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    data_key: LayoutKey,
+) -> Result<Vec<rust::Item>, EncodeError> {
+    let holder = LayoutKey {
+        purpose: Purpose::Key,
+        endianness: zerodds_ast_layout::Endianness::Big,
+        ..data_key
+    };
+    if zerodds_ast_layout::member_key(ast, type_, holder).purpose != Purpose::Key {
+        return Ok(delegating_key_holder_fns(holder));
+    }
+    let mut out = Vec::new();
+    for item in codec_items(ast, type_, holder, Companions::KeyHolder)? {
+        if let rust::Item::Impl(inner) = item {
+            out.extend(inner.items);
+        }
+    }
+    Ok(out)
+}
+
+/// `encode_key_holder` and `decode_key_holder` that call the data codec;
+/// under a [`per_sample`] plan the flagged body too, which threads the
+/// sample's decision as the data codec's body takes it.
+fn delegating_key_holder_fns(holder: LayoutKey) -> Vec<rust::Item> {
+    let call = |method: &str, flagged: bool| {
+        let mut args = vec![rust::Expr::Path(Path::single("w"))];
+        if flagged {
+            args.push(rust::Expr::Path(Path::single(EXTENDED_PARAM)));
+        }
+        vec![rust::Statement::Tail(rust::Expr::MethodCall {
+            receiver: Box::new(rust::Expr::Path(Path::single("self"))),
+            method: Ident::new(method),
+            args,
+        })]
+    };
+    let mut out = Vec::new();
+    if per_sample(holder) {
+        out.push(encode_function(
+            &framed_body(KEY_HOLDER_SUFFIX),
+            &call(&framed_body(""), true),
+            true,
+        ));
+    }
+    out.push(encode_function(
+        &format!("encode{KEY_HOLDER_SUFFIX}"),
+        &call("encode", false),
+        false,
+    ));
+    let decode = decode_function(
+        &format!("decode{KEY_HOLDER_SUFFIX}"),
+        vec![rust::Statement::Tail(rust::Expr::Call {
+            callee: Box::new(rust::Expr::Path(Path::new(&["Self", "decode"]))),
+            args: vec![rust::Expr::Path(Path::single("r"))],
+        })],
+    );
+    out.push(decode);
+    out
+}
+
+/// `pub fn <name>(r: &mut Reader) -> Result<Self, WireError>`.
+fn decode_function(name: &str, statements: Vec<rust::Statement>) -> rust::Item {
+    rust::Item::Function(rust::Function {
+        doc: Doc::none(),
+        attrs: Vec::new(),
+        visibility: Visibility::Public,
+        name: Ident::new(name),
+        generics: Vec::new(),
+        params: vec![rust::Param {
+            name: Some(Ident::new("r")),
+            type_: rust::Type::Ref {
+                target: Box::new(rust::Type::named(Path::single("Reader"))),
+                mutable: true,
+                lifetime: None,
+            },
+            receiver: None,
+        }],
+        returns: Some(rust::Type::generic(
+            Path::single("Result"),
+            vec![
+                rust::Type::named(Path::single("Self")),
+                rust::Type::named(Path::single("WireError")),
+            ],
+        )),
+        body: Some(rust::Block { statements }),
+    })
+}
+
+/// zerodds-lint: recursion-depth 2 — through `key_holder_member_fns`:
+/// only `Companions::Emit` calls it, and its call back here is under
+/// `Companions::KeyHolder`.
 fn codec_items(
     ast: &Ast,
     type_: Id<TypeNode>,
@@ -686,6 +904,7 @@ fn codec_items(
     let codec = match companions {
         Companions::Emit => "",
         Companions::Omit => SECONDARY_SUFFIX,
+        Companions::KeyHolder => KEY_HOLDER_SUFFIX,
     };
     // Asked for a kind with no codec of its own, the generic path below
     // emitted `impl long { … }` or `impl Count { … }` for a
@@ -701,6 +920,13 @@ fn codec_items(
             kind: "a type with no codec of its own; it is written where it is used",
         });
     }
+    // The codec pair inside a key holder, beside the data codec of every
+    // type a key holder reaches ([`KEY_HOLDER_SUFFIX`]).
+    let holder_items = if companions == Companions::Emit && key_holder_types(ast).contains(&type_) {
+        key_holder_member_fns(ast, type_, key)?
+    } else {
+        Vec::new()
+    };
     let mut deps = DepCollector::default();
     let layout =
         zerodds_ast_layout::xcdr::plan(ast, type_, key, &mut deps).map_err(plan_refusal)?;
@@ -726,6 +952,7 @@ fn codec_items(
     if let TypeKind::Enumeration { enumerators } = &node.kind {
         let mut items = enumeration_encode_fns(ast, type_, enumerators, key, codec)?;
         items.push(enumeration_decode_fn(ast, type_, enumerators, key, codec)?);
+        items.extend(holder_items);
         return Ok(vec![rust::Item::Impl(rust::Impl {
             doc: Doc::none(),
             attrs: Vec::new(),
@@ -765,6 +992,7 @@ fn codec_items(
     if matches!(node.kind, TypeKind::Bitset { .. }) {
         let mut items = bitset_encode_fns(ast, type_, &layout, key, codec)?;
         items.push(bitset_decode_fn(ast, type_, &layout, codec)?);
+        items.extend(holder_items);
         let mut out = vec![rust::Item::Impl(rust::Impl {
             doc: Doc::none(),
             attrs: Vec::new(),
@@ -792,7 +1020,12 @@ fn codec_items(
         ..
     } = &node.kind
     {
-        let items = union_codec(
+        // Inside a key holder a union keyed by its discriminator is the
+        // discriminator alone (XTypes 1.3 §7.6.8 step 1), which is the
+        // plan the planner gave it.
+        let discriminator_only = key.purpose == Purpose::Key
+            && zerodds_ast_layout::keyhash::union_key_discriminator(ast, type_).is_some();
+        let mut items = union_codec(
             ast,
             type_,
             &layout,
@@ -801,7 +1034,16 @@ fn codec_items(
             cases,
             key,
             codec,
+            discriminator_only,
         )?;
+        items.extend(holder_items);
+        // A union keyed by its discriminator is a keyed topic type: its
+        // key holder is the discriminator, through the pair above.
+        if companions == Companions::Emit
+            && zerodds_ast_layout::keyhash::union_key_discriminator(ast, type_).is_some()
+        {
+            items.extend(union_key_holder_fns(ast, type_, key)?);
+        }
         let mut out = vec![rust::Item::Impl(rust::Impl {
             doc: Doc::none(),
             attrs: Vec::new(),
@@ -824,10 +1066,14 @@ fn codec_items(
     }
 
     let mut items = encode_fns(ast, type_, &layout, &steps, key, codec)?;
-    items.push(decode_fn(ast, type_, &layout, key, codec)?);
+    items.push(decode_fn(ast, type_, &layout, key, codec, false)?);
+    if has_key_members_read(ast, type_, key) {
+        items.push(decode_fn(ast, type_, &layout, key, codec, true)?);
+    }
     if companions == Companions::Emit {
         items.append(&mut key_holder_fns(ast, type_, key)?);
     }
+    items.extend(holder_items);
 
     let mut out = vec![rust::Item::Impl(rust::Impl {
         doc: Doc::none(),
@@ -878,6 +1124,7 @@ fn union_codec(
     cases: &[Id<zerodds_ast::CaseNode>],
     key: LayoutKey,
     codec: &'static str,
+    discriminator_only: bool,
 ) -> Result<Vec<rust::Item>, EncodeError> {
     let node = ast.type_(type_).map_err(|error| EncodeError::NoLayout {
         detail: alloc_format(&error),
@@ -896,10 +1143,13 @@ fn union_codec(
         Ok(TypeKind::Enumeration { .. }) => MemberWrite::Enumeration {
             bits: zerodds_ast_layout::enumeration_bit_bound(ast, discriminator, key.enum_holder),
         },
+        // The IDL type behind the typedefs, and not a `rust_type` mapping
+        // on one of them: a label is a literal of the discriminator's
+        // type.
         _ => write_of(
             ast,
             node.module,
-            discriminator,
+            crate::default_common::resolve_alias(ast, discriminator),
             key,
             codec,
             Position {
@@ -1092,10 +1342,12 @@ fn union_codec(
             member: member.name.clone(),
             kind: "a union case with an unresolved type",
         })?;
-        let member_write = write_of(
+        // A branch named in `zerodds_build::Config::rust_type` holds its
+        // Rust type as a member does.
+        let member_write = write_of_member(
             ast,
             node.module,
-            member_type,
+            member,
             key,
             codec,
             Position {
@@ -1132,6 +1384,15 @@ fn union_codec(
         };
         let read_member = read_for(&member.name, &member_write)?;
         let build = match case_plan {
+            // The holder of a union keyed by its discriminator carries no
+            // member: the one the discriminator selects takes its default,
+            // as a struct's members outside its holder do.
+            _ if discriminator_only => construct(crate::default_rust::member_default(
+                ast,
+                module_of(ast, type_),
+                member,
+                member_type,
+            )?),
             None => construct(rust::Expr::Try(Box::new(read_member))),
             Some(plan) => {
                 let mut statements = read_header(&plan);
@@ -1195,13 +1456,16 @@ fn union_codec(
             statements.extend(open_header(plan, steps.member(plan, &member.name)?));
         }
         // `value` is the variant's binding, which a `match` on `&self`
-        // makes a reference.
-        statements.push(rust::Statement::Semi(write_expr_for(
-            &member_write,
-            rust::Expr::Path(Path::single("value")),
-            &member.name,
-            true,
-        )?));
+        // makes a reference. The holder of a union keyed by its
+        // discriminator ends at the discriminator.
+        if !discriminator_only {
+            statements.push(rust::Statement::Semi(write_expr_for(
+                &member_write,
+                rust::Expr::Path(Path::single("value")),
+                &member.name,
+                true,
+            )?));
+        }
         if let Some(plan) = &case_plan {
             statements.extend(close_header(plan));
         }
@@ -1209,7 +1473,11 @@ fn union_codec(
         if carries {
             elements.push(rust::Pattern::Binding(Ident::new("discriminator")));
         }
-        elements.push(rust::Pattern::Binding(Ident::new("value")));
+        elements.push(if discriminator_only {
+            rust::Pattern::Wildcard
+        } else {
+            rust::Pattern::Binding(Ident::new("value"))
+        });
         encode_arms.push(rust::MatchArm {
             pattern: rust::Pattern::TupleStruct {
                 path: Path::new(&["Self", &variant]),
@@ -1486,6 +1754,109 @@ fn union_decode_body(
 
 /// Rule (23)'s `PID_SENTINEL` at the end of a PL_CDR1 parameter list,
 /// read and checked: a parameter list that ends anywhere else is refused.
+/// Whether `type_` gets a `decode_keys…` beside its `decode…`: a
+/// structure that declares a `@key` member, read in plan order. A
+/// `@mutable` one is read by member id and has no positional members to
+/// step over; one without a key has no key to read.
+pub fn has_key_members_read(ast: &Ast, type_: Id<TypeNode>, key: LayoutKey) -> bool {
+    key.purpose == Purpose::Data
+        && ast.effective_extensibility(type_) != zerodds_ast::Extensibility::Mutable
+        && ast
+            .type_(type_)
+            .is_ok_and(|node| matches!(node.kind, TypeKind::Structure { .. }))
+        && ast
+            .all_members_of(type_)
+            .iter()
+            .any(|member| ast.member(*member).is_ok_and(|node| node.facets.is_key()))
+}
+
+/// Steps over a member a key-only read does not need (`decode_keys…`,
+/// [`decode_fn`]): by its extent where the stream gives it — a primitive of
+/// fixed width, a `string`, a sequence or an array of such primitives,
+/// anything a DHEADER delimits — and otherwise read as `decode…` reads it
+/// and dropped, so the read goes on at the octet the writer's next member
+/// starts at.
+fn skip_statements(name: &str, kind: &MemberWrite) -> Result<Vec<rust::Statement>, EncodeError> {
+    let step = |method: &str, args: Vec<rust::Expr>| {
+        vec![rust::Statement::Semi(rust::Expr::Try(Box::new(call(
+            method, args,
+        ))))]
+    };
+    let int = |value: i128| rust::Expr::Literal(Literal::int(value));
+    let width = |kind: &MemberWrite| match kind {
+        MemberWrite::Primitive(primitive) => skip_width(*primitive),
+        _ => None,
+    };
+    match kind {
+        MemberWrite::Primitive(primitive) => {
+            if let Some(octets) = skip_width(*primitive) {
+                return Ok(step("skip_primitive", vec![int(octets)]));
+            }
+        }
+        MemberWrite::String { .. } => return Ok(step("skip_string", Vec::new())),
+        MemberWrite::Sequence {
+            delimited: true, ..
+        }
+        | MemberWrite::Array {
+            delimited: true, ..
+        }
+        | MemberWrite::Map {
+            delimited: true, ..
+        } => return Ok(step("skip_delimited", Vec::new())),
+        MemberWrite::Sequence {
+            element,
+            packed,
+            carries_length: false,
+            ..
+        } => {
+            if let Some(octets) = width(element) {
+                return Ok(step(
+                    "skip_sequence",
+                    vec![int(octets), rust::Expr::Literal(Literal::Bool(*packed))],
+                ));
+            }
+        }
+        MemberWrite::Array {
+            element,
+            dims,
+            packed,
+            ..
+        } => {
+            if let Some(octets) = width(element) {
+                return Ok(step(
+                    "skip_array",
+                    vec![
+                        int(dims.iter().product()),
+                        int(octets),
+                        rust::Expr::Literal(Literal::Bool(*packed)),
+                    ],
+                ));
+            }
+        }
+        _ => {}
+    }
+    Ok(vec![let_statement(
+        "_",
+        rust::Expr::Try(Box::new(read_for(name, kind)?)),
+    )])
+}
+
+/// The octets of a primitive a key-only read steps over without reading:
+/// not `char`, `wchar` or `long double`, whose width a dialect or the
+/// platform chooses.
+const fn skip_width(primitive: PrimitiveKind) -> Option<i128> {
+    match primitive {
+        PrimitiveKind::Boolean
+        | PrimitiveKind::Octet
+        | PrimitiveKind::UInt8
+        | PrimitiveKind::Int8 => Some(1),
+        PrimitiveKind::Int16 | PrimitiveKind::UInt16 => Some(2),
+        PrimitiveKind::Int32 | PrimitiveKind::UInt32 | PrimitiveKind::Float32 => Some(4),
+        PrimitiveKind::Int64 | PrimitiveKind::UInt64 | PrimitiveKind::Float64 => Some(8),
+        _ => None,
+    }
+}
+
 fn read_sentinel() -> Vec<rust::Statement> {
     vec![
         let_statement(
@@ -2580,11 +2951,12 @@ fn key_holder_fns(
         mutable: true,
     }];
 
-    // A nested key member is written through the **bare** codec, not
-    // through a versioned one: XTypes 1.3 §7.6.8 step 4 serialises the
-    // holder as PLAIN_CDR2 whatever version the sample goes out in, so
-    // there is no XCDR1 key holder for an XCDR1 codec to call.
-    let codec = "";
+    // A nested key member is written through its codec pair inside a
+    // key holder ([`KEY_HOLDER_SUFFIX`]), not through a data codec:
+    // XTypes 1.3 §7.6.8 step 3 makes the nested holder `@final` and keeps
+    // only its key members, and step 4 serialises the holder as
+    // PLAIN_CDR2 whatever version the sample goes out in.
+    let codec = KEY_HOLDER_SUFFIX;
 
     // Only the key members, in the order `key_members_with` gives —
     // which is the dialect's holder order, and the same order
@@ -2676,7 +3048,20 @@ fn key_holder_fns(
     // hand back a key that is wrong rather than absent. The whole reader
     // refuses instead, and says which member it could not read.
     let mut undescribed = None;
-    for node in &keys {
+    // `keys` names the key members of a nested struct too
+    // (`key_members_with` descends into an aggregate key member). Those
+    // are read as part of that struct, by its own decoder, as the writer
+    // writes them; only this aggregate's own members are read here. A
+    // nested one used to reach `member_of`, find no member of this type
+    // and make the whole reader refuse (`@key Inner who;`).
+    let mut own = Vec::new();
+    for member in ast.all_members_of(type_) {
+        let member = ast.member(member).map_err(|error| EncodeError::NoLayout {
+            detail: alloc_format(&error),
+        })?;
+        own.push(member.node_id);
+    }
+    for node in keys.iter().filter(|node| own.contains(node)) {
         match member_of(ast, type_, *node, key, codec) {
             Some((name, kind)) => {
                 let field = rust::escape_keyword(&name);
@@ -2692,11 +3077,56 @@ fn key_holder_fns(
             None => undescribed = Some(*node),
         }
     }
+    // A type with a member held as a `rust_type` mapping has no `impl
+    // Default` when converting that member's IDL default may fail
+    // (`default_impl`). Its members outside the holder are spelled out
+    // instead, each with its own default and the `?` that rejects the key
+    // when one does not convert.
+    let fallible_default = crate::default_rust::default_of(
+        ast,
+        module_of(ast, type_),
+        type_,
+        &ast.type_(type_)
+            .map_or_else(|_| String::new(), |node| node.name.clone()),
+    )
+    .is_ok_and(|value| contains_try(&value));
     if let Some(node) = undescribed {
         from_holder = vec![rust::Statement::Tail(refused_err(
             "r",
             &format!("a key holder with a member this emitter cannot read ({node:?})"),
         ))];
+    } else if fallible_default {
+        let mut fields = key_fields;
+        for member in ast.all_members_of(type_) {
+            let member_node = ast.member(member).map_err(|error| EncodeError::NoLayout {
+                detail: alloc_format(&error),
+            })?;
+            if keys.contains(&member_node.node_id) {
+                continue;
+            }
+            let member_type =
+                member_node
+                    .type_
+                    .resolved()
+                    .ok_or_else(|| EncodeError::NoWriter {
+                        member: member_node.name.clone(),
+                        kind: "a member with an unresolved type",
+                    })?;
+            let value = crate::default_rust::member_default(
+                ast,
+                module_of(ast, type_),
+                member_node,
+                member_type,
+            )?;
+            fields.push((
+                member_node.node_id,
+                (Ident::new(&rust::escape_keyword(&member_node.name)), value),
+            ));
+        }
+        from_holder.push(rust::Statement::Tail(rust::Expr::Call {
+            callee: Box::new(rust::Expr::Path(Path::single("Ok"))),
+            args: vec![nested_struct_literal(ast, type_, fields, &|| None)],
+        }));
     } else {
         from_holder.push(rust::Statement::Tail(rust::Expr::Call {
             callee: Box::new(rust::Expr::Path(Path::single("Ok"))),
@@ -2788,17 +3218,28 @@ fn key_holder_fns(
 /// The mirror of the encoder, member for member and header for header,
 /// built from the same plan — which is what makes the two agree by
 /// construction rather than by review.
+/// `decode{codec}`, or with `keys_only` `decode_keys{codec}`: the value
+/// with its `@key` members read and every other member at its default,
+/// stepped over where the stream gives its extent ([`skip_statements`]).
+/// A reader learns a sample's instance from it without reading the rest
+/// (XTypes 1.3 §7.6.8). A `@mutable` type, and one that declares no key,
+/// is read whole by both.
 fn decode_fn(
     ast: &Ast,
     type_: Id<TypeNode>,
     layout: &TypeLayout,
     key: LayoutKey,
     codec: &'static str,
+    keys_only: bool,
 ) -> Result<rust::Item, EncodeError> {
-    let statements = if ast.effective_extensibility(type_) == zerodds_ast::Extensibility::Mutable {
+    // A key holder is `@final` whatever the type declares (XTypes 1.3
+    // §7.6.8 step 1): its members sit where the plan put them.
+    let statements = if key.purpose != Purpose::Key
+        && ast.effective_extensibility(type_) == zerodds_ast::Extensibility::Mutable
+    {
         decode_by_member_id(ast, type_, layout, key, codec)?
     } else {
-        decode_in_plan_order(ast, type_, layout, key, codec)?
+        decode_in_plan_order(ast, type_, layout, key, codec, keys_only)?
     };
     // The read side of `encode_fns`'s block: an aggregate value's members
     // align from its own first octet under `ElementPadding::Packed`.
@@ -2812,7 +3253,11 @@ fn decode_fn(
         doc: Doc::none(),
         attrs: Vec::new(),
         visibility: Visibility::Public,
-        name: Ident::new(&format!("decode{codec}")),
+        name: Ident::new(&if keys_only {
+            format!("decode_keys{codec}")
+        } else {
+            format!("decode{codec}")
+        }),
         generics: Vec::new(),
         params: vec![rust::Param {
             name: Some(Ident::new("r")),
@@ -2846,13 +3291,22 @@ fn decode_in_plan_order(
     layout: &TypeLayout,
     key: LayoutKey,
     codec: &'static str,
+    keys_only: bool,
 ) -> Result<Vec<rust::Statement>, EncodeError> {
+    // Under `keys_only`, the members a key-only read steps over: every one
+    // that is not `@key`, of a type that declares any.
+    let declares_keys = keys_only
+        && ast
+            .all_members_of(type_)
+            .iter()
+            .any(|member| ast.member(*member).is_ok_and(|node| node.facets.is_key()));
     // A writer with fewer members than this reader stops early, and
     // §7.2.4.4.8, Table 19, says "each non-optional member in a T1
     // object that is not present in the T2 object takes its default
     // value". Only an `@appendable` type may meet one: Table 19 requires
     // two final types to have the same set of member IDs.
-    let appendable = ast.effective_extensibility(type_) == zerodds_ast::Extensibility::Appendable;
+    let appendable = key.purpose != Purpose::Key
+        && ast.effective_extensibility(type_) == zerodds_ast::Extensibility::Appendable;
     let mut statements = Vec::new();
     if layout.needs_dheader {
         // The DHEADER is what says where the writer's members stopped —
@@ -2894,6 +3348,7 @@ fn decode_in_plan_order(
             let Some(member_type) = member.type_.resolved() else {
                 continue;
             };
+            let stepped_over = declares_keys && !member.facets.is_key();
             let reached = if layout.needs_dheader {
                 rust::Expr::Binary {
                     op: rust::BinaryOp::Ge,
@@ -2907,19 +3362,32 @@ fn decode_in_plan_order(
                     rhs: Box::new(rust::Expr::Literal(Literal::int(0))),
                 }
             };
+            let default = crate::default_rust::member_default(
+                ast,
+                module_of(ast, type_),
+                member,
+                member_type,
+            )?;
+            if stepped_over {
+                statements.push(rust::Statement::Semi(rust::Expr::If {
+                    condition: Box::new(reached),
+                    then: rust::Block {
+                        statements: Vec::new(),
+                    },
+                    otherwise: Some(rust::Block {
+                        statements: skip_statements(&name, &kind)?,
+                    }),
+                }));
+                statements.push(let_statement(&name, default));
+                fields.push((plan.member, field_binding(&name)));
+                continue;
+            }
             statements.push(let_statement(
                 &name,
                 rust::Expr::If {
                     condition: Box::new(reached),
                     then: rust::Block {
-                        statements: vec![rust::Statement::Tail(
-                            crate::default_rust::member_default(
-                                ast,
-                                module_of(ast, type_),
-                                member,
-                                member_type,
-                            )?,
-                        )],
+                        statements: vec![rust::Statement::Tail(default)],
                     },
                     otherwise: Some(rust::Block {
                         statements: vec![rust::Statement::Tail(rust::Expr::Try(Box::new(
@@ -2927,6 +3395,27 @@ fn decode_in_plan_order(
                         )))],
                     }),
                 },
+            ));
+            fields.push((plan.member, field_binding(&name)));
+            continue;
+        }
+        // A member a key-only read does not need, in a positional place.
+        if declares_keys
+            && matches!(plan.header, MemberHeader::NoHeader)
+            && let Some(member) = member_node_of(ast, type_, plan.member)
+            && !member.facets.is_key()
+            && !member.facets.is_optional()
+            && let Some(member_type) = member.type_.resolved()
+        {
+            statements.extend(skip_statements(&name, &kind)?);
+            statements.push(let_statement(
+                &name,
+                crate::default_rust::member_default(
+                    ast,
+                    module_of(ast, type_),
+                    member,
+                    member_type,
+                )?,
             ));
             fields.push((plan.member, field_binding(&name)));
             continue;
@@ -2997,12 +3486,173 @@ fn decode_in_plan_order(
         statements.extend(read_sentinel());
     }
 
+    // The other half of the tail: a newer writer appended members this
+    // reader does not declare, and the DHEADER says where they end.
+    // Without the step the cursor stayed after the reader's last member,
+    // and a type nested in another read the enclosing type's next
+    // member out of the unknown ones — a value nobody sent, and no
+    // error. `skip_to` also refuses an end behind the cursor, a reader
+    // that read past the delimiter. The other columns step the same way
+    // (`emit/decode.rs`, `close_delimiter`), as the union path here does.
+    if appendable && layout.needs_dheader {
+        statements.push(rust::Statement::Semi(rust::Expr::Try(Box::new(call(
+            "skip_to",
+            vec![rust::Expr::Path(Path::single("end"))],
+        )))));
+    }
+
+    // A key holder carries only the key members of a type that declares
+    // any (XTypes 1.3 §7.6.8 step 1); every other member takes its
+    // default, as the root's `key_from_holder_be` gives it.
+    if key.purpose == Purpose::Key {
+        for member in ast.all_members_of(type_) {
+            let member_node = ast.member(member).map_err(|error| EncodeError::NoLayout {
+                detail: alloc_format(&error),
+            })?;
+            if fields.iter().any(|(node, _)| *node == member_node.node_id) {
+                continue;
+            }
+            let member_type =
+                member_node
+                    .type_
+                    .resolved()
+                    .ok_or_else(|| EncodeError::NoWriter {
+                        member: member_node.name.clone(),
+                        kind: "a member with an unresolved type",
+                    })?;
+            let value = crate::default_rust::member_default(
+                ast,
+                module_of(ast, type_),
+                member_node,
+                member_type,
+            )?;
+            fields.push((
+                member_node.node_id,
+                (Ident::new(&rust::escape_keyword(&member_node.name)), value),
+            ));
+        }
+    }
+
     statements.push(rust::Statement::Tail(rust::Expr::Call {
         callee: Box::new(rust::Expr::Path(Path::single("Ok"))),
         args: vec![nested_struct_literal(ast, type_, fields, &|| None)],
     }));
 
     Ok(statements)
+}
+
+/// `key_holder_be`, `key_from_holder_be` and `key_hash` of a union keyed
+/// by its discriminator: the holder is the discriminator alone (XTypes
+/// 1.3 §7.6.8 step 1), written and read by the union's codec pair inside
+/// a key holder ([`KEY_HOLDER_SUFFIX`]); big-endian, PLAIN_CDR2's
+/// alignment cap unless the dialect sets another (`KeyHolderAlignment`).
+fn union_key_holder_fns(
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    data_key: LayoutKey,
+) -> Result<Vec<rust::Item>, EncodeError> {
+    let key = LayoutKey {
+        purpose: Purpose::Key,
+        endianness: zerodds_ast_layout::Endianness::Big,
+        ..data_key
+    };
+    let form =
+        zerodds_ast_layout::keyhash::key_hash_form_for(ast, type_, key).map_err(|error| {
+            EncodeError::NoLayout {
+                detail: alloc_format(&error),
+            }
+        })?;
+    // `let mut holder = Writer::with_max_align(Big, 4); self.encode_key_holder(&mut holder)?;`
+    let fill = || {
+        vec![
+            rust::Statement::Let {
+                name: Ident::new("holder"),
+                type_: None,
+                value: Some(rust::Expr::Call {
+                    callee: Box::new(rust::Expr::Path(Path::new(&["Writer", "with_max_align"]))),
+                    args: vec![
+                        rust::Expr::Path(Path::new(&["zerodds_wire", "Endianness", "Big"])),
+                        rust::Expr::Literal(Literal::int(i128::from(
+                            key.key_holder_alignment.max_alignment(key.encoding),
+                        ))),
+                    ],
+                }),
+                mutable: true,
+            },
+            rust::Statement::Semi(rust::Expr::Try(Box::new(rust::Expr::MethodCall {
+                receiver: Box::new(rust::Expr::Path(Path::single("self"))),
+                method: Ident::new(&format!("encode{KEY_HOLDER_SUFFIX}")),
+                args: vec![rust::Expr::Ref {
+                    target: Box::new(rust::Expr::Path(Path::single("holder"))),
+                    mutable: true,
+                }],
+            }))),
+        ]
+    };
+    let finished = |method: &str| {
+        rust::Statement::Tail(rust::Expr::Call {
+            callee: Box::new(rust::Expr::Path(Path::single("Ok"))),
+            args: vec![rust::Expr::MethodCall {
+                receiver: Box::new(rust::Expr::Path(Path::single("holder"))),
+                method: Ident::new(method),
+                args: Vec::new(),
+            }],
+        })
+    };
+    let by_ref = |name: &str, returns: rust::Type, statements: Vec<rust::Statement>| {
+        rust::Item::Function(rust::Function {
+            doc: Doc::none(),
+            attrs: Vec::new(),
+            visibility: Visibility::Public,
+            name: Ident::new(name),
+            generics: Vec::new(),
+            params: vec![rust::Param {
+                name: None,
+                type_: rust::Type::unit(),
+                receiver: Some(rust::Receiver::Ref),
+            }],
+            returns: Some(rust::Type::generic(
+                Path::single("Result"),
+                vec![returns, rust::Type::named(Path::single("WireError"))],
+            )),
+            body: Some(rust::Block { statements }),
+        })
+    };
+    let mut holder = fill();
+    holder.push(finished("finish"));
+    let mut hash = fill();
+    hash.push(finished(match form {
+        zerodds_ast_layout::keyhash::KeyHashForm::ZeroPadded => "zero_padded",
+        zerodds_ast_layout::keyhash::KeyHashForm::Md5 => "md5",
+    }));
+    Ok(vec![
+        by_ref(
+            "key_holder_be",
+            rust::Type::generic(
+                Path::single("Vec"),
+                vec![rust::Type::Primitive(rust::Primitive::U8)],
+            ),
+            holder,
+        ),
+        decode_function(
+            "key_from_holder_be",
+            vec![rust::Statement::Tail(rust::Expr::Call {
+                callee: Box::new(rust::Expr::Path(Path::new(&[
+                    "Self",
+                    &format!("decode{KEY_HOLDER_SUFFIX}"),
+                ]))),
+                args: vec![rust::Expr::Path(Path::single("r"))],
+            })],
+        ),
+        by_ref(
+            "key_hash",
+            rust::Type::Array {
+                element: Box::new(rust::Type::Primitive(rust::Primitive::U8)),
+                length: Box::new(rust::Expr::Literal(Literal::int(16))),
+            },
+            hash,
+        ),
+    ])
 }
 
 /// A `@mutable` aggregate: the members its headers name, in the order
@@ -3132,6 +3782,29 @@ fn decode_by_member_id(
 /// something. A `match` with a `None` arm was all three, and
 /// `manual_unwrap_or{,_default}` fired once per member.
 fn or_default(bound: &str, value: rust::Expr) -> rust::Expr {
+    // A default with a `?` in it — a `rust_type` mapping converting its IDL
+    // default — cannot sit in an `unwrap_or_else` closure, where the `?`
+    // would be the closure's.
+    if contains_try(&value) {
+        return rust::Expr::Match {
+            scrutinee: Box::new(rust::Expr::Path(Path::single(bound))),
+            arms: vec![
+                rust::MatchArm {
+                    pattern: rust::Pattern::TupleStruct {
+                        path: Path::single("Some"),
+                        elements: vec![rust::Pattern::Binding(Ident::new("value"))],
+                    },
+                    guard: None,
+                    body: rust::Expr::Path(Path::single("value")),
+                },
+                rust::MatchArm {
+                    pattern: rust::Pattern::Path(Path::single("None")),
+                    guard: None,
+                    body: value,
+                },
+            ],
+        };
+    }
     let receiver = Box::new(rust::Expr::Path(Path::single(bound)));
     if is_rust_default(&value) {
         return rust::Expr::MethodCall {
@@ -3154,6 +3827,34 @@ fn or_default(bound: &str, value: rust::Expr) -> rust::Expr {
             params: Vec::new(),
             body: Box::new(value),
         }],
+    }
+}
+
+/// Whether a default value carries a `?`: a `rust_type` mapping that
+/// converts its IDL default and may refuse it.
+///
+/// zerodds-lint: recursion-depth = the default value's nesting, one level
+/// per composite literal; `default_rust` bounds it at 64.
+pub(crate) fn contains_try(value: &rust::Expr) -> bool {
+    match value {
+        rust::Expr::Try(_) => true,
+        rust::Expr::Call { callee, args } => contains_try(callee) || args.iter().any(contains_try),
+        rust::Expr::MethodCall { receiver, args, .. } => {
+            contains_try(receiver) || args.iter().any(contains_try)
+        }
+        rust::Expr::StructLit { fields, base, .. } => {
+            fields.iter().any(|(_, field)| contains_try(field))
+                || base.as_deref().is_some_and(contains_try)
+        }
+        rust::Expr::Array(elements) | rust::Expr::Tuple(elements) => {
+            elements.iter().any(contains_try)
+        }
+        rust::Expr::Repeat { value, .. }
+        | rust::Expr::Cast { value, .. }
+        | rust::Expr::Ref { target: value, .. }
+        | rust::Expr::Deref(value)
+        | rust::Expr::Not(value) => contains_try(value),
+        _ => false,
     }
 }
 
@@ -3891,6 +4592,41 @@ fn write_call(
                 true,
             )
         }
+        // The Rust value written as its IDL type: `to_wire` gets an
+        // `IdlOut` for exactly that type, so the impl's `Idl` is held to
+        // the declaration by the compiler. Always fallible: the impl may
+        // refuse, and so may the bound of a `string<N>`.
+        MemberWrite::Mapped { idl, adapter, .. } => {
+            let sink_arg = match shape {
+                SinkShape::Reference => sink_expr(),
+                SinkShape::Owned => rust::Expr::Ref {
+                    target: Box::new(sink_expr()),
+                    mutable: true,
+                },
+            };
+            let out = idl_out(name, idl, sink_arg)?;
+            let mut args = Vec::new();
+            let function = match adapter {
+                Some(adapter) => {
+                    args.push(adapter_value(adapter));
+                    "to_wire_with"
+                }
+                None => "to_wire",
+            };
+            args.push(by_ref(value));
+            args.push(out);
+            (
+                rust::Expr::Call {
+                    callee: Box::new(rust::Expr::Path(Path::new(&[
+                        "zerodds_wire",
+                        "repr",
+                        function,
+                    ]))),
+                    args,
+                },
+                true,
+            )
+        }
         MemberWrite::Unsupported(kind) => {
             return Err(EncodeError::NoWriter {
                 member: name.to_string(),
@@ -3898,6 +4634,80 @@ fn write_call(
             });
         }
     })
+}
+
+/// What a `rust_type` mapping can stand for: a primitive with an
+/// `IdlOut` constructor of its own, or a narrow `string`.
+const MAPPED_IDL: &str = "a rust_type mapping over an IDL type that is not a primitive or a string";
+
+/// `zerodds_wire::IdlOut::<constructor>(sink)`: where one value of the
+/// IDL type `idl` goes.
+fn idl_out(name: &str, idl: &MemberWrite, sink: rust::Expr) -> Result<rust::Expr, EncodeError> {
+    let constructor = |function: &str, mut args: Vec<rust::Expr>| {
+        args.insert(0, sink.clone());
+        rust::Expr::Call {
+            callee: Box::new(rust::Expr::Path(Path::new(&[
+                "zerodds_wire",
+                "IdlOut",
+                function,
+            ]))),
+            args,
+        }
+    };
+    Ok(match idl {
+        MemberWrite::String { bound: None, .. } => constructor("string", Vec::new()),
+        MemberWrite::String {
+            bound: Some(bound), ..
+        } => constructor(
+            "bounded_string",
+            vec![rust::Expr::Literal(Literal::int(*bound))],
+        ),
+        MemberWrite::Primitive(kind) => match idl_out_name(*kind) {
+            Some(function) => constructor(function, Vec::new()),
+            None => {
+                return Err(EncodeError::NoWriter {
+                    member: name.to_string(),
+                    kind: MAPPED_IDL,
+                });
+            }
+        },
+        _ => {
+            return Err(EncodeError::NoWriter {
+                member: name.to_string(),
+                kind: MAPPED_IDL,
+            });
+        }
+    })
+}
+
+/// The `IdlOut` constructor of an IDL primitive, or `None` for one a
+/// `rust_type` mapping cannot stand for (`wchar`, `long double`).
+const fn idl_out_name(kind: PrimitiveKind) -> Option<&'static str> {
+    Some(match kind {
+        PrimitiveKind::Boolean => "boolean",
+        PrimitiveKind::Octet => "octet",
+        PrimitiveKind::UInt8 => "uint8",
+        PrimitiveKind::Int8 => "int8",
+        PrimitiveKind::Int16 => "int16",
+        PrimitiveKind::UInt16 => "uint16",
+        PrimitiveKind::Int32 => "int32",
+        PrimitiveKind::UInt32 => "uint32",
+        PrimitiveKind::Int64 => "int64",
+        PrimitiveKind::UInt64 => "uint64",
+        PrimitiveKind::Float32 => "float",
+        PrimitiveKind::Float64 => "double",
+        PrimitiveKind::Char => "char",
+        PrimitiveKind::WChar | PrimitiveKind::Float128 => return None,
+    })
+}
+
+/// `&<adapter>`: the adapter value a `rust_type_with` mapping converts
+/// through, a unit struct or a constant.
+fn adapter_value(adapter: &Path) -> rust::Expr {
+    rust::Expr::Ref {
+        target: Box::new(rust::Expr::Path(adapter.clone())),
+        mutable: false,
+    }
 }
 
 /// The digit-count axis as the generated code names it.
@@ -4356,7 +5166,12 @@ fn narrowed(
     narrow: &Narrowing,
     name: &str,
 ) -> Result<rust::Expr, EncodeError> {
-    let fit = match kind {
+    narrowed_with(read, fit_of(kind, name)?, narrow, name)
+}
+
+/// The runtime's narrowing for a shape.
+fn fit_of(kind: &MemberWrite, name: &str) -> Result<&'static str, EncodeError> {
+    Ok(match kind {
         MemberWrite::String { .. } => "fit_string",
         // The bound counts UTF-16 code units and not octets, so the
         // runtime has its own narrowing rather than `fit_string` with
@@ -4383,7 +5198,17 @@ fn narrowed(
                 kind: "a bound on a type that cannot have one",
             });
         }
-    };
+    })
+}
+
+/// [`narrowed`] with the runtime's narrowing named: `fit_str` for a
+/// `string` lent out of the sample rather than read into a `String`.
+fn narrowed_with(
+    read: rust::Expr,
+    fit: &str,
+    narrow: &Narrowing,
+    name: &str,
+) -> Result<rust::Expr, EncodeError> {
     let bound = rust::escape_keyword(name);
     // USE_DEFAULT is the only behaviour that needs a value here; under
     // DISCARD `fit_…` has already returned `Err(WireError::Discarded)`
@@ -4608,6 +5433,11 @@ fn read_whole(name: &str, kind: &MemberWrite) -> Result<rust::Expr, EncodeError>
                 *packed,
             )?],
         ),
+        MemberWrite::Mapped {
+            idl,
+            rust_type,
+            adapter,
+        } => mapped_read(name, idl, rust_type, adapter.as_ref())?,
         MemberWrite::Unsupported(kind) => {
             return Err(EncodeError::NoWriter {
                 member: name.to_string(),
@@ -4615,6 +5445,92 @@ fn read_whole(name: &str, kind: &MemberWrite) -> Result<rust::Expr, EncodeError>
             });
         }
     })
+}
+
+/// The read of a value the generated Rust holds as another type: the IDL
+/// value off the wire — a `string` lent out of the sample, not copied —
+/// then `from_wire`, whose refusal rejects the sample with its reason and
+/// the offset the value began at.
+///
+/// ```text
+/// {
+///     let zd_at = r.position();
+///     let zd_wire = r.read_str()?;
+///     let zd_value: Result<T, WireError> = zerodds_wire::repr::from_wire(zd_wire, zd_at);
+///     zd_value
+/// }
+/// ```
+///
+/// The type is written on the binding because `from_wire` is generic in
+/// it and this column's paths carry no turbofish.
+fn mapped_read(
+    name: &str,
+    idl: &MemberWrite,
+    rust_type: &rust::Type,
+    adapter: Option<&Path>,
+) -> Result<rust::Expr, EncodeError> {
+    let refuse = || EncodeError::NoWriter {
+        member: name.to_string(),
+        kind: MAPPED_IDL,
+    };
+    let (wire, borrowed) = match idl {
+        MemberWrite::String {
+            narrow: Some(narrow),
+            ..
+        } => (
+            narrowed_with(call("read_str", Vec::new()), "fit_str", narrow, name)?,
+            true,
+        ),
+        MemberWrite::String { .. } => (call("read_str", Vec::new()), true),
+        MemberWrite::Primitive(kind) if idl_out_name(*kind).is_some() => {
+            (call(reader_name(*kind), Vec::new()), false)
+        }
+        _ => return Err(refuse()),
+    };
+    let wire_arg = if borrowed {
+        rust::Expr::Path(Path::single("zd_wire"))
+    } else {
+        rust::Expr::Ref {
+            target: Box::new(rust::Expr::Path(Path::single("zd_wire"))),
+            mutable: false,
+        }
+    };
+    let mut args = Vec::new();
+    let function = match adapter {
+        Some(adapter) => {
+            args.push(adapter_value(adapter));
+            "from_wire_with"
+        }
+        None => "from_wire",
+    };
+    args.push(wire_arg);
+    args.push(rust::Expr::Path(Path::single("zd_at")));
+    Ok(rust::Expr::Block(rust::Block {
+        statements: vec![
+            let_statement("zd_at", call("position", Vec::new())),
+            let_statement("zd_wire", rust::Expr::Try(Box::new(wire))),
+            rust::Statement::Let {
+                name: Ident::new("zd_value"),
+                type_: Some(rust::Type::generic(
+                    Path::single("Result"),
+                    vec![
+                        rust_type.clone(),
+                        rust::Type::named(Path::single("WireError")),
+                    ],
+                )),
+                value: Some(rust::Expr::Call {
+                    callee: Box::new(rust::Expr::Path(Path::new(&[
+                        "zerodds_wire",
+                        "repr",
+                        function,
+                    ]))),
+                    args,
+                }),
+                mutable: false,
+            },
+            rust::Statement::Tail(rust::Expr::Path(Path::single("zd_value"))),
+        ],
+    }))
 }
 
 /// The element function a collection's read takes.
@@ -4674,6 +5590,7 @@ fn element_reader(at: &str, element: &MemberWrite) -> Result<rust::Expr, EncodeE
         // `fn(&mut Reader) -> Result<T, WireError>` to name.
         MemberWrite::Bitmask { .. }
         | MemberWrite::External(_)
+        | MemberWrite::Mapped { .. }
         | MemberWrite::Sequence { .. }
         | MemberWrite::Array { .. }
         | MemberWrite::Map { .. } => rust::Expr::Closure {
@@ -5091,6 +6008,21 @@ pub(crate) enum MemberWrite {
         /// header, also inside a sample past RTI's step.
         extended: Extended,
     },
+    /// A value the generated Rust holds as another type
+    /// (`zerodds_build::Config::rust_type`): the IDL type is written and
+    /// read as `idl` says, and the value converts through
+    /// `zerodds_wire::repr` on the way.
+    ///
+    /// Beside [`MemberWrite::External`] and for the same reason: the Rust
+    /// holder changes and the octets do not.
+    Mapped {
+        /// How the IDL type itself is written: a primitive or a `string`.
+        idl: Box<MemberWrite>,
+        /// The Rust type the field holds.
+        rust_type: rust::Type,
+        /// The adapter value, where the Rust type is not `WireRepr` itself.
+        adapter: Option<Path>,
+    },
     /// A kind with no writer yet, named so the error can say which.
     Unsupported(&'static str),
 }
@@ -5160,27 +6092,100 @@ fn member_of(
     // Types this member names are written relative to the module the
     // aggregate itself lands in.
     let from = module_of(ast, type_);
-    let mut write = member.type_.resolved().map_or(
-        MemberWrite::Unsupported("member with an unresolved type"),
-        |target| write_of(ast, from, target, key, codec, position),
-    );
+    let mut write = write_of_member(ast, from, member, key, codec, position);
     // §7.2.2.4.4.4.9 puts an explicit `@default` ahead of Table 9's, and
     // only the member position can carry one — a collection element has
     // no declarator to write it on.
     if let Some(target) = member.type_.resolved() {
-        if let Some(narrow) = narrowing_of_mut(&mut write) {
-            if narrow.behaviour == TryConstruct::UseDefault {
-                narrow.default = crate::default_rust::member_value_default(
+        let mapped = matches!(write, MemberWrite::Mapped { .. });
+        if let Some(narrow) = narrowing_of_mut(&mut write)
+            && narrow.behaviour == TryConstruct::UseDefault
+        {
+            // A mapped value narrows its IDL `string` before `from_wire`
+            // sees it, so its default is the IDL default as a `&str`.
+            narrow.default = if mapped {
+                crate::default_rust::idl_default_value(
+                    ast,
+                    Some(member),
+                    crate::default_common::resolve_alias(ast, target),
+                )
+                .ok()
+            } else {
+                crate::default_rust::member_value_default(
                     ast,
                     module_of(ast, type_),
                     member,
                     target,
                 )
-                .ok();
-            }
+                .ok()
+            };
         }
     }
     Some((member.name.clone(), external_write(ast, member, write)))
+}
+
+/// The write of one member's value, before external storage wraps it: a
+/// member named in `zerodds_build::Config::rust_type` writes the IDL type
+/// behind its declared type and converts, ahead of any typedef mapping on
+/// the way; every other member writes what its type says.
+fn write_of_member(
+    ast: &Ast,
+    from: Id<zerodds_ast::ModuleNode>,
+    member: &zerodds_ast::MemberNode,
+    key: LayoutKey,
+    codec: &'static str,
+    position: Position,
+) -> MemberWrite {
+    let Some(target) = member.type_.resolved() else {
+        return MemberWrite::Unsupported("member with an unresolved type");
+    };
+    match crate::adapter::cst::rust_type_mapping(member.node_id) {
+        Some(mapping) => mapped_write(ast, from, target, key, codec, position, mapping),
+        None => write_of(ast, from, target, key, codec, position),
+    }
+}
+
+/// [`MemberWrite::Mapped`] over the IDL type behind every typedef from
+/// `start`, which has to be a primitive with an `IdlOut` constructor or a
+/// narrow `string`.
+///
+/// The IDL write is the one [`write_of`] gives that type, typedef
+/// mappings on the way left out: the outermost mapping is the one that
+/// stands for the value. A `string<N>`'s `@try_construct(USE_DEFAULT)`
+/// default starts as Table 9's empty text, as a `&str`; a member's
+/// `@default` replaces it in [`member_of`].
+fn mapped_write(
+    ast: &Ast,
+    from: Id<zerodds_ast::ModuleNode>,
+    start: Id<TypeNode>,
+    key: LayoutKey,
+    codec: &'static str,
+    at: Position,
+    mapping: crate::adapter::cst::RustTypeMapping,
+) -> MemberWrite {
+    let idl_type = crate::default_common::resolve_alias(ast, start);
+    let supported = match ast.type_(idl_type).map(|node| &node.kind) {
+        Ok(TypeKind::Primitive(kind)) => idl_out_name(*kind).is_some(),
+        Ok(TypeKind::String {
+            width: CharWidth::Char,
+            ..
+        }) => true,
+        _ => false,
+    };
+    if !supported {
+        return MemberWrite::Unsupported(MAPPED_IDL);
+    }
+    let mut idl = write_of(ast, from, idl_type, key, codec, at);
+    if let Some(narrow) = narrowing_of_mut(&mut idl)
+        && narrow.behaviour == TryConstruct::UseDefault
+    {
+        narrow.default = Some(rust::Expr::Literal(Literal::string("")));
+    }
+    MemberWrite::Mapped {
+        idl: Box::new(idl),
+        rust_type: mapping.rust_type,
+        adapter: mapping.adapter,
+    }
 }
 
 fn external_write(ast: &Ast, member: &zerodds_ast::MemberNode, write: MemberWrite) -> MemberWrite {
@@ -5192,12 +6197,19 @@ fn external_write(ast: &Ast, member: &zerodds_ast::MemberNode, write: MemberWrit
 }
 
 /// The narrowing of a shape, where the shape has one.
+///
+/// zerodds-lint: recursion-depth 2 — the `Mapped` arm descends once, into
+/// the write of the primitive or `string` a mapped value is written as
+/// (`mapped_write` resolves the alias first), which is not mapped.
 fn narrowing_of_mut(write: &mut MemberWrite) -> Option<&mut Narrowing> {
     match write {
         MemberWrite::String { narrow, .. }
         | MemberWrite::WString { narrow, .. }
         | MemberWrite::Sequence { narrow, .. }
         | MemberWrite::Map { narrow, .. } => narrow.as_mut(),
+        // The bound of the IDL `string` a mapped value is written as; its
+        // default is a `&str`, set where the mapping is built.
+        MemberWrite::Mapped { idl, .. } => narrowing_of_mut(idl),
         _ => None,
     }
 }
@@ -5509,10 +6521,17 @@ fn write_of_at(
         // The behaviour was already resolved through the alias chain by
         // `Ast::effective_try_construct`, so the position carries over
         // unchanged.
-        TypeKind::Alias { aliased } => aliased.resolved().map_or_else(
-            || MemberWrite::Unsupported("typedef with an unresolved target"),
-            |aliased| write_of_at(ast, from, aliased, key, codec, at, depth + 1),
-        ),
+        //
+        // A typedef named in `zerodds_build::Config::rust_type` is held as
+        // its Rust type wherever it is used, and written as the IDL type
+        // behind it.
+        TypeKind::Alias { aliased } => match crate::adapter::cst::rust_type_mapping(node.node_id) {
+            Some(mapping) => mapped_write(ast, from, target, key, codec, at, mapping),
+            None => aliased.resolved().map_or_else(
+                || MemberWrite::Unsupported("typedef with an unresolved target"),
+                |aliased| write_of_at(ast, from, aliased, key, codec, at, depth + 1),
+            ),
+        },
         // A union is written the same way, and for the same reason: it
         // has a generated codec of its own, and `union_codec` gives it
         // exactly the `encode(&self, w)` and `decode(r)` that
@@ -5858,6 +6877,17 @@ fn default_impl(ast: &Ast, type_: Id<TypeNode>) -> Result<Option<rust::Item>, En
     // Named from inside its own module, which is the plain name.
     let self_type = rust::Type::named(Path::single(&rust::escape_keyword(&node.name)));
     let value = crate::default_rust::default_of(ast, from, type_, &node.name)?;
+    // A member held as a `rust_type` mapping takes its IDL default through
+    // `from_wire`, which may refuse it — a `NonZeroU32` has no zero. Such a
+    // type has no infallible default, so it gets no `impl Default`; the
+    // decoders that need a member's default convert with a `?` instead.
+    if contains_try(&value) {
+        return Ok(Some(rust::Item::Verbatim(format!(
+            "// `{}`: no `impl Default`. A member's Rust type (`rust_type`) converts its IDL \
+             default through `zerodds_wire::repr::from_default`, which may refuse it.",
+            node.name
+        ))));
+    }
     Ok(Some(rust::Item::Impl(rust::Impl {
         doc: Doc::none(),
         // Where every member's Table 9 value happens to be Rust's own

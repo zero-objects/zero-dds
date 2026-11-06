@@ -14,8 +14,10 @@
 //! proves the AF_PACKET path over a real L2 link nonetheless.
 //!
 //! Needs root (CAP_NET_RAW + CAP_NET_ADMIN), hence `#[ignore]`: skipped on
-//! normal `cargo test`, run in CI via `--ignored` as
-//! root. Runs only with `--features live` on Linux.
+//! normal `cargo test`. No CI runner grants either, so it is a manual test
+//! on the Linux test host as root (`ci/manual-tests.tsv`,
+//! internal/release/rc8-test-suite.md decision 11). Runs only with
+//! `--features live` on Linux.
 
 #![cfg(all(feature = "live", target_os = "linux"))]
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
@@ -96,7 +98,7 @@ fn assert_rtps_prefix(got: &[u8], expected: &[u8]) {
 }
 
 #[test]
-#[ignore = "needs root (CAP_NET_RAW + CAP_NET_ADMIN); CI runs this via --ignored"]
+#[ignore = "needs root (CAP_NET_RAW + CAP_NET_ADMIN): a manual test, ci/manual-tests.tsv"]
 fn rtps_frame_roundtrips_over_veth() {
     let _veth = setup(); // The guard cleans up the pair on drop.
     let timeout = Some(Duration::from_secs(2));

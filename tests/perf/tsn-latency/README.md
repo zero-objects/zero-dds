@@ -54,4 +54,4 @@ LXC container without RT tuning — on isolated/RT-tuned cores
 (`rt-tuning/`) considerably tighter.
 
 **No TSN switch in the path** → no statement about deterministic
-end-to-end latency. For that, see `internal/tsn/hardware-eval.md`.
+end-to-end latency; that needs a TSN switch and TSN-capable NICs.

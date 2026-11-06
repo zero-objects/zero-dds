@@ -22,9 +22,9 @@ WRITE_DATA, flags, len LE) + body, byte-identical to `crates/xrce` +
 **Repo:** `endpoints/go/endpoint.go` — `XrceWriteFrame`/`XrceReadFrame`,
 constants `XrceSessionNoKey` (`0x80`) and `XrceStreamBestEffort` (`0x01`).
 
-**Tests:** `crates/endpoint-e2e/tests/go.rs::go_raw_udp` (raw XCDR2 with no
+**Tests:** `crates/endpoint-e2e/tests/go.rs::endpoint_go_5_1_the_generated_codec_pings_without_the_xrce_frame` (raw XCDR2 with no
 XRCE frame — its own minimal harness); the framing itself is exercised live
-via `go_endpoint_sync` and `go_endpoint_async` (§4).
+via `xrce_8_3_5_8_go_sync_app_writes_the_ping_and_reads_the_pong` and `xrce_8_3_5_8_go_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -39,8 +39,8 @@ the sole integration point); `endpoints/go/sync.go::Client`
 (`NewClient`/`Write`/`Poll`/`Receive`, monotonic `seq` counter, default
 session `XrceSessionNoKey`/`XrceStreamBestEffort`).
 
-**Tests:** `endpoints/go/sync_test.go::TestSyncLoopback`; live E2E
-`go_endpoint_sync` (§4).
+**Tests:** `endpoints/go/sync_test.go::Test_endpointgo_2_sync_loopback`; live E2E
+`xrce_8_3_5_8_go_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -54,8 +54,8 @@ the same framing.
 channel, background `loop`, `Close`), `AsyncWriter` (`NewAsyncWriter`,
 `Write`).
 
-**Tests:** `endpoints/go/async_test.go::TestAsyncLoopback` +
-`TestAsyncUDP`; live E2E `go_endpoint_async` (§4).
+**Tests:** `endpoints/go/async_test.go::Test_endpointgo_3_async_loopback` +
+`TestAsyncUDP`; live E2E `xrce_8_3_5_8_go_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -72,12 +72,10 @@ frame, uses only the generated `MarshalXCDR`/`UnmarshalXCDRPong`),
 `zeroddsendpoint` module, mode `sync`/`async` via CLI argument).
 
 **Tests:** (Linux)
-- `go_raw_udp` — generated `Ping`/`Pong` codec directly over a raw UDP
+- `endpoint_go_5_1_the_generated_codec_pings_without_the_xrce_frame` — generated `Ping`/`Pong` codec directly over a raw UDP
   socket, no XRCE framing.
-- `go_endpoint_sync` — full stack via `zerodds.Client`.
-- `go_endpoint_async` — full stack via `zerodds.AsyncReader`/`AsyncWriter`.
-
-3/3 passed (Linux).
+- `xrce_8_3_5_8_go_sync_app_writes_the_ping_and_reads_the_pong` — full stack via `zerodds.Client`.
+- `xrce_8_3_5_8_go_async_app_writes_the_ping_and_reads_the_pong` — full stack via `zerodds.AsyncReader`/`AsyncWriter`.
 
 **Status:** done.
 
@@ -99,10 +97,11 @@ producer never enters the kernel.
 `ReliableSender`, `ReliableReceiver`; `ReliableAsyncWriter` (buffered channel
 `in`, `NewReliableAsyncWriter`/`Enqueue`/`Close`/`drain`);
 `endpoints/go/example_reliable` (runnable in-process demo, no socket);
-`endpoints/go/reliable_app` (live UDP sender app for the E2E).
+`endpoints/go/reliable_app` (UDP sender app with a peer port and a count).
 
 **Tests:** (Linux)
-- `go_reliable_unit_and_golden` (`crates/endpoint-e2e/tests/go_reliable.rs`)
+- `endpoints/go/reliable_test.go` in the `go` column of `tools/endpoints-gate`
+  (job `integration-endpoints`)
   runs `go test` with `-run` against `endpoints/go/reliable_test.go` — 21 test
   functions: monotonic seq (`TestSubmitAssignsMonotonicSeqnrs`),
   payload-too-large (`TestSubmitRejectsPayloadTooLarge`), window-full
@@ -122,14 +121,11 @@ producer never enters the kernel.
   `80 00 01 00 0A 01 05 00 01 00 00 00 80` — identical to the reference
   goldens), frame round-trip parsing (`TestFrameRoundTripParsing`),
   `ReliableAsyncWriter` loss recovery (`TestReliableAsyncWriterLossRecovery`).
-- `go_reliable_loss_recovery` — peer drops every 3rd sample once; the app
-  (`reliable_app`) retransmits on ACKNACK; all 12 samples delivered gap-free
-  in order.
-- `go_reliable_no_loss` — lossless baseline; 12/12.
-- `go_reliable_example` — `example_reliable` runs and reports
+- `reliable_5_3_go_samples_arrive_in_order_despite_dropped_datagrams` — peer drops every 3rd sample once; the app
+  the test builds from the `Ping` the language's generator writes from the IDL of `crates/endpoint-e2e/src/codegen.rs`, and `ReliableAsyncWriter` retransmits on ACKNACK;
+  all 12 samples delivered gap-free in order, the test reads every sample by the IDL's XCDR2 layout (`assert_reliable_pings`).
+- `reliable_5_5_go_example_recovers_its_sequence_without_gaps` — `example_reliable` runs and reports
   `sequence 0..11 verified in order` + `RELIABLE OK`.
-
-5/5 passed (Linux), 4 of which belong to this section (latency bench in §6).
 
 **Status:** done.
 
@@ -145,7 +141,7 @@ not that it waits for ACKNACK.
 `ReliableAsyncWriter.Enqueue`, no live peer needed (an arbitrary loopback
 port, only local dispatch cost under measurement).
 
-**Tests:** (Linux) `go_reliable_latency_bench`
+**Tests:** (Linux) `reliable_5_4_go_the_producer_enqueue_costs_less_than_the_inline_send`
 (`crates/endpoint-e2e/tests/go_reliable.rs`) — ring enqueue **20–25 ns** vs.
 inline `sendto` **4360 ns** (~175–220×).
 
@@ -155,13 +151,13 @@ inline `sendto` **4360 ns** (~175–220×).
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test go`
-3/3 (ping-pong: `go_raw_udp`/`go_endpoint_sync`/`go_endpoint_async`);
-`--test go_reliable` 5/5 (`go_reliable_unit_and_golden` — 21 Go unit tests
-incl. byte-golden, `go_reliable_loss_recovery`, `go_reliable_no_loss`,
-`go_reliable_example`, `go_reliable_latency_bench`); latency bench ring
-enqueue 20–25 ns / inline `sendto` 4360 ns (~175–220×).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-go-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings` (job `integration-bindings`) — 6 tests green.
+* `python3 ci/run_integration.py integration-endpoints` (job `integration-endpoints`) — 2 tests green.
+
+8 cited tests green, 0 not green.
 
 Open items: none.

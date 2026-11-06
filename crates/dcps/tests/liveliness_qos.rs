@@ -35,7 +35,7 @@ use zerodds_dcps::{
 
 #[serial_test::file_serial(dcps)]
 #[test]
-fn liveliness_default_infinite_keeps_counters_zero() {
+fn dcps_2_2_3_11_liveliness_default_infinite_keeps_counters_zero() {
     // Default lease = INFINITE. The counter must never rise, even if
     // no sample ever arrives. Otherwise the API shape breaks.
     let factory = DomainParticipantFactory::instance();
@@ -76,7 +76,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn reader_with_short_lease_marks_writer_not_alive_when_silent() {
+    fn dcps_2_2_3_11_reader_with_short_lease_marks_writer_not_alive_when_silent() {
         // Reader with a 150ms lease, no writer sends samples →
         // not_alive_count should rise to >=1 within 1s.
         // We need a matched writer (otherwise the
@@ -154,7 +154,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn reader_sees_writer_alive_again_after_resumed_publishing() {
+    fn dcps_2_2_2_4_2_11_reader_sees_writer_alive_again_after_resumed_publishing() {
         // Writer → silence → writer active again. alive_count should
         // count the not-alive → alive transition once.
         let factory = DomainParticipantFactory::instance();
@@ -303,7 +303,7 @@ mod linux {
     /// the writer by the samples it received.
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn an_automatic_writer_that_never_writes_stays_alive_at_a_remote_reader() {
+    fn dcps_2_2_3_11_an_automatic_writer_that_never_writes_stays_alive_at_a_remote_reader() {
         let (_pub_p, _sub_p, writer, reader) = live_pair(
             "LiveAuto",
             LivelinessQosPolicy {
@@ -329,7 +329,7 @@ mod linux {
     /// read and resets them (DDS 1.4 §2.2.4.1).
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn get_liveliness_changed_status_reports_and_resets_the_changes() {
+    fn dcps_2_2_2_5_3_21_get_liveliness_changed_status_reports_and_resets_the_changes() {
         let (_pub_p, _sub_p, _writer, reader) = live_pair(
             "LiveGetStatus",
             LivelinessQosPolicy {
@@ -353,7 +353,7 @@ mod linux {
     /// The call used to set a local timestamp and send nothing.
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn assert_liveliness_keeps_a_manual_writer_alive_at_a_remote_reader() {
+    fn dcps_2_2_2_4_2_22_assert_liveliness_keeps_a_manual_writer_alive_at_a_remote_reader() {
         let (_pub_p, _sub_p, writer, reader) = live_pair(
             "LiveAssertWire",
             LivelinessQosPolicy {
@@ -382,7 +382,7 @@ mod linux {
     /// writes again, the instance is ALIVE with no_writers_generation_count 1.
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn an_instance_whose_writer_lost_its_liveliness_has_no_writers() {
+    fn dcps_2_2_2_5_1_3_an_instance_whose_writer_lost_its_liveliness_has_no_writers() {
         use zerodds_dcps::sample_info::InstanceStateKind;
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain();
@@ -471,7 +471,7 @@ mod linux {
     /// a deleted writer does.
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn a_writer_lost_with_its_participant_counts_as_not_alive() {
+    fn dcps_2_2_4_1_a_writer_lost_with_its_participant_counts_as_not_alive() {
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain();
         let sub_cfg = super::common::isolated_cfg();
@@ -538,7 +538,7 @@ mod linux {
     /// They stayed down until a read or take found the marker.
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn a_lost_writer_raises_data_available_before_any_read() {
+    fn dcps_2_2_4_2_2_a_lost_writer_raises_data_available_before_any_read() {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use zerodds_dcps::Entity;

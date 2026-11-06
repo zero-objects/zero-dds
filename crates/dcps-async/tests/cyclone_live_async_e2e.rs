@@ -1,176 +1,123 @@
-//! zerodds-async-1.0 §8 — E2E against live Cyclone.
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+//! zerodds-async-1.0 §8 — an async reader against a Cyclone DDS writer.
 //!
-//! **Opt-in only** — marked `#[ignore]`. Invocation:
+//! Cyclone's own `ddsperf` publishes its `OneULong` samples (`struct
+//! OneULong { unsigned long seq; }`, `ddsperf -T OU`) on the topic
+//! `DDSPerfRDataOU` of a leased domain (in the default partition: ddsperf
+//! builds a `DDSPerf` partition QoS but creates its publisher without it); an
+//! `AsyncDataReader` of this crate takes them through `take().await`. The
+//! oracle is Cyclone: the samples it wrote arrive, their sequence numbers
+//! rising.
 //!
-//! ```bash
-//! cargo test -p zerodds-dcps-async --test cyclone_live_async_e2e -- --ignored --nocapture
-//! ```
-//!
-//! # Prerequisites
-//!
-//! - `LLVM_HOST_AVAILABLE=1` env or `sshpass` installed locally
-//! - SSH access to the lab host: `ZERODDS_LAB_SSH=user@host` and
-//!   `ZERODDS_LAB_SSH_PASSWORD`
-//! - Cyclone DDS on the Linux bench host with the `ddsperf` binary
-//! - `/tmp/cyc.xml` on the Linux bench host pins Cyclone to `enp6s18`
-//! - a multicast querier on the LAN between this host and the lab host
-//!
-//! # Test flow
-//!
-//! 1. Local: AsyncDomainParticipant + AsyncDataReader on a
-//!    unique test topic (Cyclone `ddsperf` topic names are
-//!    fixed; we test the negative scenario "no sample on the
-//!    wrong topic" as a smoke test for the async discovery path).
-//! 2. Remote: ddsperf pub on the same domain.
-//! 3. Polling via `take().await(timeout)` — at least one tick must
-//!    run through the async path without panicking.
-//! 4. Teardown: SSH pkill of `ddsperf`.
-//!
-//! # Why "#[ignore]"?
-//!
-//! - Cyclone binary not in CI
-//! - SSH access + password are maintenance-heavy
-//! - network dependency (LAN setup)
-//!
-//! The deterministic path is in `smoke.rs::writer_write_async_offline`
-//! without `#[ignore]` and covers the non-Cyclone-specific API.
-//!
-//! # Latency comparison sync vs async (Spec §8)
-//!
-//! The bench path in `benches/write_async_vs_sync.rs` (Spec §9.1)
-//! provides the quantitative answer. This live test only checks
-//! that the async stack is discovery-capable against a real vendor
-//! stack.
+//! `#[ignore]` in the crate tier: it needs `ddsperf` (on `PATH`, or the
+//! executable `DDSPERF` names). It runs in the job `vendor-live-dcps`
+//! (`ci/interop-omg-weekly.yml`, the interop image with Cyclone).
 
-#![allow(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::print_stderr,
-    clippy::print_stdout,
-    clippy::field_reassign_with_default,
-    clippy::manual_flatten,
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
-    clippy::uninlined_format_args,
-    clippy::drop_non_drop,
-    missing_docs
-)]
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
 
 use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use zerodds_dcps::RawBytes;
+use zerodds_dcps::dds_type::{DdsType, DecodeError, EncodeError};
 use zerodds_dcps_async::{AsyncDomainParticipantFactory, DataReaderQos, SubscriberQos, TopicQos};
 
-/// `user@host` of the lab host this test reaches over ssh:
-/// `ZERODDS_LAB_SSH`.
-fn lab_ssh_target() -> String {
-    std::env::var("ZERODDS_LAB_SSH").expect("ZERODDS_LAB_SSH=user@host of the lab host")
+/// `struct OneULong { unsigned long seq; };` of Cyclone's
+/// `ddsperf_types.idl`, `@final`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OneULong {
+    seq: u32,
 }
 
-/// The password `sshpass` hands ssh: `ZERODDS_LAB_SSH_PASSWORD`.
-fn lab_ssh_password() -> String {
-    std::env::var("ZERODDS_LAB_SSH_PASSWORD").expect("ZERODDS_LAB_SSH_PASSWORD for sshpass")
-}
-const CYCLONE_DOMAIN: u32 = 42;
+impl DdsType for OneULong {
+    const TYPE_NAME: &'static str = "OneULong";
+    /// One `unsigned long`: XCDR1 and XCDR2 write it the same way.
+    const XCDR1_MATCHES_XCDR2: bool = true;
 
-/// Checks whether the live host is reachable; otherwise skip without error.
-fn live_host_available() -> bool {
-    if std::env::var("LLVM_HOST_AVAILABLE").is_ok() {
-        return true;
+    fn encode(&self, out: &mut Vec<u8>) -> Result<(), EncodeError> {
+        out.extend_from_slice(&self.seq.to_le_bytes());
+        Ok(())
     }
-    Command::new("sshpass")
-        .arg("-V")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
 
-struct DdsperfPub {
-    child: Child,
-}
+    fn decode(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let seq = bytes.get(..4).ok_or(DecodeError::Invalid {
+            what: "OneULong: fewer than four octets",
+        })?;
+        Ok(Self {
+            seq: u32::from_le_bytes(seq.try_into().unwrap()),
+        })
+    }
 
-impl DdsperfPub {
-    fn start(domain: u32, duration_secs: u32) -> std::io::Result<Self> {
-        let cmd = format!(
-            "CYCLONEDDS_URI=file:///tmp/cyc.xml timeout {} ddsperf -i {} -D {} pub 1Hz \
-             > /tmp/cyc_pub_async_e2e.log 2>&1",
-            duration_secs + 5,
-            domain,
-            duration_secs,
-        );
-        let child = Command::new("sshpass")
-            .arg("-p")
-            .arg(lab_ssh_password())
-            .args(["ssh", "-o", "StrictHostKeyChecking=no"])
-            .arg(lab_ssh_target())
-            .arg(&cmd)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()?;
-        Ok(Self { child })
+    fn decode_be(bytes: &[u8]) -> Result<Self, DecodeError> {
+        let seq = bytes.get(..4).ok_or(DecodeError::Invalid {
+            what: "OneULong: fewer than four octets",
+        })?;
+        Ok(Self {
+            seq: u32::from_be_bytes(seq.try_into().unwrap()),
+        })
     }
 }
 
-impl Drop for DdsperfPub {
+/// `ddsperf`, stopped with the test.
+struct Ddsperf(Child);
+
+impl Drop for Ddsperf {
     fn drop(&mut self) {
-        let _ = Command::new("sshpass")
-            .arg("-p")
-            .arg(lab_ssh_password())
-            .args(["ssh", "-o", "StrictHostKeyChecking=no"])
-            .arg(lab_ssh_target())
-            .arg(format!("pkill -f 'ddsperf -i {CYCLONE_DOMAIN}' || true"))
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        let _ = self.0.kill();
+        let _ = self.0.wait();
     }
 }
 
-#[ignore = "requires the Cyclone DDS lab host (ZERODDS_LAB_SSH, sshpass, multicast)"]
+#[ignore = "needs Cyclone DDS's ddsperf (vendor-live-dcps)"]
 #[tokio::test(flavor = "multi_thread")]
-async fn async_reader_does_not_panic_against_live_cyclone_pub() {
-    if !live_host_available() {
-        eprintln!("skip: LLVM_HOST_AVAILABLE not set and no sshpass — see module docs");
-        return;
-    }
-
-    // Local: AsyncDomainParticipant on the same domain as ddsperf.
-    let f = AsyncDomainParticipantFactory::instance();
-    let p = f
-        .create_participant(CYCLONE_DOMAIN as i32)
-        .expect("create_participant");
-    let topic = p
-        .create_topic::<RawBytes>("DDSPerfTopic", TopicQos::default())
+async fn async_8_an_async_reader_takes_the_samples_of_a_cyclone_writer() {
+    let lease = zerodds_test_domains::lease_domain();
+    let participant = AsyncDomainParticipantFactory::instance()
+        .create_participant(lease.id())
+        .expect("participant");
+    let topic = participant
+        .create_topic::<OneULong>("DDSPerfRDataOU", TopicQos::default())
         .expect("topic");
-    let subr = p.create_subscriber(SubscriberQos::default());
-    let reader = subr
-        .create_datareader::<RawBytes>(&topic, DataReaderQos::default())
+    let reader = participant
+        .create_subscriber(SubscriberQos::default())
+        .create_datareader::<OneULong>(&topic, DataReaderQos::default())
         .expect("reader");
 
-    // Remote: start ddsperf pub (running for 10 s).
-    let _cyclone = DdsperfPub::start(CYCLONE_DOMAIN, 10).expect("start ddsperf");
+    let program = std::env::var("DDSPERF").unwrap_or_else(|_| "ddsperf".into());
+    let _ddsperf = Ddsperf(
+        Command::new(&program)
+            .args([
+                "-i",
+                &lease.id().to_string(),
+                "-T",
+                "OU",
+                "-D",
+                "15",
+                "pub",
+                "20Hz",
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| panic!("{program}: {e}")),
+    );
 
-    // Async take loop: at least one take() tick must pass without a panic.
-    // We do *not* assert that samples arrive (a topic mismatch is
-    // likely, ddsperf publishes on "PingTopic"); we only assert
-    // that the async path is robust against a real vendor stack
-    // (no panic, no hang, no OutOfResources).
-    let start = std::time::Instant::now();
-    let mut ticks = 0usize;
-    while start.elapsed() < Duration::from_secs(8) {
-        let res = reader.take(Duration::from_millis(500)).await;
-        // Whether Ok([]) or Ok([..]) — the path must run through.
-        // Err is only accepted when it is a Timeout (deadline expired).
-        match res {
-            Ok(_) | Err(zerodds_dcps_async::DdsError::Timeout) => ticks += 1,
-            Err(e) => panic!("unexpected error from async take: {e:?}"),
+    let mut seqs = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while seqs.len() < 5 {
+        assert!(
+            Instant::now() < deadline,
+            "{} samples of ddsperf arrived in 15 s: {seqs:?}",
+            seqs.len()
+        );
+        match reader.take(Duration::from_millis(500)).await {
+            Ok(samples) => seqs.extend(samples.into_iter().map(|s| s.seq)),
+            Err(zerodds_dcps_async::DdsError::Timeout) => {}
+            Err(e) => panic!("take: {e:?}"),
         }
     }
-    assert!(ticks > 0, "expected at least 1 take-tick, got 0");
-    eprintln!("async live-cyclone smoke: {ticks} ticks completed without panic");
+    assert!(
+        seqs.windows(2).all(|w| w[0] < w[1]),
+        "the sequence numbers ddsperf wrote rise: {seqs:?}"
+    );
 }

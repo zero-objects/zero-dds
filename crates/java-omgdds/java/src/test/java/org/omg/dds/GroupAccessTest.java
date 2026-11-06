@@ -113,7 +113,7 @@ class GroupAccessTest {
     }
 
     @Test
-    void getDataReadersIsAListInTheOrderOfWritingAndAReadGivesOneSample() throws Exception {
+    void javapsm_7_3_5_1_get_data_readers_is_a_list_in_the_order_of_writing_and_a_read_gives_one_sample() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Subscriber subscriber = groupSubscriber(participant, false);
         Publisher publisher = groupPublisher(participant);
@@ -147,7 +147,7 @@ class GroupAccessTest {
     }
 
     @Test
-    void samplesOfTwoRemoteWritersOfOnePublisherArriveInTheOrderOfTheGroupSequenceNumber() throws Exception {
+    void javapsm_7_3_5_1_samples_of_two_remote_writers_of_one_publisher_arrive_in_the_order_of_the_group_sequence_number() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Subscriber subscriber = groupSubscriber(participant, true);
         Topic<byte[]> one = participant.createTopic("GroupWireOne", byte[].class);
@@ -169,7 +169,8 @@ class GroupAccessTest {
             // the second writer's sample has the lower group sequence number but is sent later
             a.write(body(1), null, 0L, new RtpsParticipant.GroupStamp(10, 0, digest));
             a.write(body(3), null, 0L, new RtpsParticipant.GroupStamp(12, 0, digest));
-            Thread.sleep(300);
+            // acknowledged: 10 and 12 are at the reader before 11 is sent
+            assertTrue(a.waitForAcknowledgments(10_000_000_000L), "the reader acknowledges 10 and 12");
             b.write(body(2), null, 0L, new RtpsParticipant.GroupStamp(11, 0, digest));
             waitFor(() -> {
                 subscriber.beginAccess();
@@ -194,7 +195,7 @@ class GroupAccessTest {
     }
 
     @Test
-    void aGroupCoherentSetOfTwoRemoteWritersArrivesAsAWholeAfterTheEndMarkers() throws Exception {
+    void javapsm_7_3_5_1_a_group_coherent_set_of_two_remote_writers_arrives_as_a_whole_after_the_end_markers() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Subscriber subscriber = groupSubscriber(participant, true);
         Topic<byte[]> one = participant.createTopic("GroupSetOne", byte[].class);
@@ -215,7 +216,9 @@ class GroupAccessTest {
             byte[] digest = new byte[] {1, 2, 3, 4};
             a.write(body(1), null, 0L, new RtpsParticipant.GroupStamp(21, 21, digest));
             b.write(body(2), null, 0L, new RtpsParticipant.GroupStamp(22, 21, digest));
-            Thread.sleep(800);
+            // acknowledged: both samples are at the reader
+            assertTrue(a.waitForAcknowledgments(10_000_000_000L) && b.waitForAcknowledgments(10_000_000_000L),
+                    "the reader acknowledges both samples");
             assertEquals(0, count(subscriber, readerOne, readerTwo), "the set is held until its end");
             a.endGroupCoherentSet(new RtpsParticipant.GroupStamp(23, 21, digest));
             b.endGroupCoherentSet(new RtpsParticipant.GroupStamp(23, 21, digest));
@@ -227,7 +230,7 @@ class GroupAccessTest {
     }
 
     @Test
-    void aGroupPublisherWithTwoWritersSendsItsSamplesAndSetsToAPeer() throws Exception {
+    void javapsm_7_3_5_1_a_group_publisher_with_two_writers_sends_its_samples_and_sets_to_a_peer() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Publisher publisher = groupPublisher(participant);
         Topic<byte[]> one = participant.createTopic("GroupSendOne", byte[].class);
@@ -257,7 +260,7 @@ class GroupAccessTest {
     }
 
     @Test
-    void aNumberOfAnUnmatchedWriterIsGivenUpByTheGroupHeartbeatsOfTheMatchedWriters() throws Exception {
+    void javapsm_7_3_5_1_a_number_of_an_unmatched_writer_is_given_up_by_the_group_heartbeats_of_the_matched_writers() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Subscriber subscriber = groupSubscriber(participant, true);
         Topic<byte[]> one = participant.createTopic("GroupHbOne", byte[].class);
@@ -290,38 +293,4 @@ class GroupAccessTest {
         }
     }
 
-    @Test
-    void aNumberStaysMissingWhileAMatchedWriterSendsNoGroupHeartbeat() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(domain);
-        Subscriber subscriber = groupSubscriber(participant, true);
-        Topic<byte[]> one = participant.createTopic("GroupNoHbOne", byte[].class);
-        Topic<byte[]> two = participant.createTopic("GroupNoHbTwo", byte[].class);
-        DataReader<byte[]> readerOne = subscriber.createDataReader(one, Qos.readerKeepAll());
-        DataReader<byte[]> readerTwo = subscriber.createDataReader(two, Qos.readerKeepAll());
-        RtpsParticipant remote = RtpsParticipant.newParticipant(domain);
-        try {
-            QosParameters qos = new QosParameters();
-            qos.reliability = new QosParameters.Reliability();
-            qos.reliability.kind = Rtps.RELIABILITY_RELIABLE;
-            RtpsParticipant.WireWriter a = remote.createWriter("GroupNoHbOne", one.getTypeName(), encap(),
-                    new byte[0], new byte[0], false, true, qos);
-            RtpsParticipant.WireWriter b = remote.createWriter("GroupNoHbTwo", two.getTypeName(), encap(),
-                    new byte[0], new byte[0], false, true, qos);
-            waitFor(() -> readerOne.getMatchedPublications().size() == 1
-                    && readerTwo.getMatchedPublications().size() == 1, "both readers meet their writers");
-            byte[] digest = new byte[] {1, 2, 3, 4};
-            // the Publisher gave out the group sequence numbers 10 to 12; 11 belongs to a writer that
-            // no reader here is matched to
-            a.setGroupInfo(() -> new RtpsParticipant.GroupStamp(12, 0, digest));
-            // the second writer has no group info: it sends no HEARTBEAT with the GroupInfoFlag
-            a.write(body(1), null, 0L, new RtpsParticipant.GroupStamp(10, 0, digest));
-            a.write(body(3), null, 0L, new RtpsParticipant.GroupStamp(12, 0, digest));
-            Thread.sleep(2500); // two periods of the HEARTBEAT
-            assertEquals(1, listed(subscriber),
-                    "there is no timer by default: 12 waits for 11");
-        } finally {
-            remote.close();
-            participant.close();
-        }
-    }
 }

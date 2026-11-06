@@ -15,7 +15,7 @@
 //! a string-literal union (§7.6), a union arm carries `discriminator`
 //! (§7.5), and a map is a `ReadonlyMap` (§7.9.1).
 //!
-//! [`the_side_tables_and_their_codecs_type_check`] is the other half:
+//! [`ddsts_7_3_1_the_side_tables_and_their_codecs_type_check`] is the other half:
 //! `tsc --strict` over the declarations **and both codec directions**
 //! for each shape, beside the real runtime. A constant that is in the
 //! text and does not compile is not an emission.
@@ -149,7 +149,7 @@ const RUNTIME_IMPORT: &str = "import {\n  \
 // -- §7.3.1 Bounded Strings ----------------------------------------------
 
 #[test]
-fn s_7_3_1_a_bounded_string_states_its_bound() {
+fn ddsts_7_3_1_s_7_3_1_a_bounded_string_states_its_bound() {
     let text = holds(
         "§7.3.1",
         "typedef string<128> TopicName; \
@@ -170,7 +170,7 @@ fn s_7_3_1_a_bounded_string_states_its_bound() {
 ///
 /// `string<1/0>` parses, lowers without a diagnostic and reaches the
 /// materialiser with `eval_integral` failing — the door defect 5 of
-/// `docs/silent-drop-sweep.md` came through for an array length. There
+/// `0b2e8df9f6b:docs/silent-drop-sweep.md` came through for an array length. There
 /// are two places the answer would go missing: the `_BOUND` constant
 /// §7.3.1 asks for is simply not written, and the descriptor's
 /// `DdsTypeRef` carries no `bound` property (§8.2). A consumer of either
@@ -210,7 +210,7 @@ fn s_7_3_1_a_bound_that_does_not_evaluate_is_refused_and_not_read_as_unbounded()
 // -- §7.5 Union Mapping --------------------------------------------------
 
 #[test]
-fn s_7_5_a_union_arm_names_its_discriminator() {
+fn ddsts_7_5_s_7_5_a_union_arm_names_its_discriminator() {
     let text = holds(
         "§7.5",
         "@final union Choice switch (long) { case 1: long one; case 2: long two; \
@@ -229,7 +229,7 @@ fn s_7_5_a_union_arm_names_its_discriminator() {
 }
 
 #[test]
-fn s_7_5_an_enumeration_discriminator_narrows_on_the_enumerator() {
+fn ddsts_7_5_s_7_5_an_enumeration_discriminator_narrows_on_the_enumerator() {
     holds(
         "§7.5",
         "enum Tag { TAG_A, TAG_B, TAG_C }; \
@@ -247,7 +247,7 @@ fn s_7_5_an_enumeration_discriminator_narrows_on_the_enumerator() {
 // -- §7.6 Enum Mapping ---------------------------------------------------
 
 #[test]
-fn s_7_6_an_enumeration_is_a_string_literal_union_with_its_ordinals() {
+fn ddsts_7_6_s_7_6_an_enumeration_is_a_string_literal_union_with_its_ordinals() {
     let text = holds(
         "§7.6",
         "enum Op { @value(0) ADD, @value(1) SUB, @value(7) NEG };",
@@ -266,7 +266,7 @@ fn s_7_6_an_enumeration_is_a_string_literal_union_with_its_ordinals() {
 }
 
 #[test]
-fn s_7_6_implicit_ordinals_are_emitted_too() {
+fn ddsts_7_6_s_7_6_implicit_ordinals_are_emitted_too() {
     holds(
         "§7.6",
         "enum Colour { RED, GREEN, BLUE };",
@@ -280,7 +280,7 @@ fn s_7_6_implicit_ordinals_are_emitted_too() {
 // -- §7.7 Bitset Mapping -------------------------------------------------
 
 #[test]
-fn s_7_7_a_bitset_states_the_width_of_every_bitfield() {
+fn ddsts_7_7_s_7_7_a_bitset_states_the_width_of_every_bitfield() {
     holds(
         "§7.7",
         "bitset Flags { bitfield<3> low; bitfield<5> high; bitfield<40> wide; };",
@@ -298,7 +298,7 @@ fn s_7_7_a_bitset_states_the_width_of_every_bitfield() {
 // -- §7.8 Bitmask Mapping ------------------------------------------------
 
 #[test]
-fn s_7_8_a_bitmask_states_its_bit_bound() {
+fn ddsts_7_8_s_7_8_a_bitmask_states_its_bit_bound() {
     holds(
         "§7.8",
         "bitmask Permissions { READ, WRITE, EXEC }; \
@@ -313,7 +313,7 @@ fn s_7_8_a_bitmask_states_its_bit_bound() {
 // -- §7.9 Sequence and Array Mapping -------------------------------------
 
 #[test]
-fn s_7_9_a_bounded_sequence_and_an_array_state_their_sizes() {
+fn ddsts_7_9_s_7_9_a_bounded_sequence_and_an_array_state_their_sizes() {
     let text = holds(
         "§7.9",
         "typedef sequence<octet, 1024> ByteBuffer; \
@@ -339,7 +339,7 @@ fn s_7_9_a_bounded_sequence_and_an_array_state_their_sizes() {
 // -- §7.9.1 Maps ---------------------------------------------------------
 
 #[test]
-fn s_7_9_1_a_map_is_a_readonly_map_and_states_its_bound() {
+fn ddsts_7_9_1_s_7_9_1_a_map_is_a_readonly_map_and_states_its_bound() {
     let text = holds(
         "§7.9.1",
         "@final struct Index { map<string, long, 1024> by_name; map<long, string> free; };",
@@ -359,7 +359,7 @@ fn s_7_9_1_a_map_is_a_readonly_map_and_states_its_bound() {
 // -- §7.11 Optional and Default Values -----------------------------------
 
 #[test]
-fn s_7_11_a_default_reaches_a_side_table_constant() {
+fn ddsts_7_11_s_7_11_a_default_reaches_a_side_table_constant() {
     let text = holds(
         "§7.11",
         "@final struct Config { @default(5000) long timeout_ms; @default(\"on\") string mode; \
@@ -378,7 +378,7 @@ fn s_7_11_a_default_reaches_a_side_table_constant() {
 }
 
 #[test]
-fn s_7_11_an_optional_member_is_a_question_mark_and_undefined() {
+fn ddsts_7_11_s_7_11_an_optional_member_is_a_question_mark_and_undefined() {
     holds(
         "§7.11",
         "@final struct Frame { long seq; @optional long retry; };",
@@ -395,7 +395,7 @@ fn s_7_11_an_optional_member_is_a_question_mark_and_undefined() {
 /// One test and not one per shape, because `tsc` costs seconds and the
 /// failure names the file it came from.
 #[test]
-fn the_side_tables_and_their_codecs_type_check() {
+fn ddsts_7_3_1_the_side_tables_and_their_codecs_type_check() {
     let shapes: &[(&str, &str, &str)] = &[
         (
             "side-strings",

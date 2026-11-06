@@ -33,7 +33,12 @@ pub const SNAPSHOT_MAGIC: [u8; 8] = *b"ZDDSAST\0";
 /// 4 writes, for a type, a constant and an exception, the interface or
 /// value type it is declared in, when it is not declared directly in a
 /// module.
-pub const SNAPSHOT_VERSION: u16 = 4;
+///
+/// 5 writes, after the annotations of a node, the settings of the IDL4
+/// language mappings' own annotations (`@java_mapping`,
+/// `@csharp_mapping`, `@cpp_mapping`), and an attribute's owner as an
+/// operation's is written, an interface or a value type.
+pub const SNAPSHOT_VERSION: u16 = 5;
 
 /// Appends primitives to a snapshot buffer.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

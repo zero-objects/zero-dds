@@ -15,17 +15,13 @@
 //!
 //! `three_column_gate.rs` asks whether three columns resemble **each
 //! other**. Three columns that moved the same way still resemble each
-//! other. The Rust column is a fixed point instead: 145,740 slots,
-//! pinned case by case in
-//! `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`, already
-//! held against ten foreign systems in `tests/interop-results/`. A new
+//! other. The Rust column is held against the vendors' octets of
+//! `tests/interop-corpus/expected-bytes.tsv` (`expected_bytes.rs`); a new
 //! column is measured against it rather than built beside it, and a cell
 //! that differs names the first octet, which is a fact a person acts on.
-//!
-//! [`the_reference_row_is_the_one_the_baseline_was_taken_with`] closes
-//! the loop the other way: the Rust row this file compares against has
-//! to reproduce that recorded digest, or the reference has moved and
-//! every verdict below is against something else.
+//! The digest of the Rust column that pinned it before
+//! (`rust_column_baseline.txt`) compared the column with its own earlier
+//! output and is gone (rc8-test-suite.md, "Rules").
 //!
 //! ## The whole matrix, not one configuration
 //!
@@ -766,92 +762,6 @@ fn the_comparison_bites() {
         cases.len(),
         caught.len(),
         mutated.compared
-    );
-}
-
-/// The reference this file compares against is the one the recorded
-/// baseline was taken with.
-///
-/// Without this, a change to `zerodds_wire_probe::matrix` would move
-/// every verdict above and nothing would say so: the new columns would
-/// be measured against a reference nobody pinned. The digest is the one
-/// `the_rust_column_is_byte_for_byte_what_it_was` writes, so the two
-/// files cannot part without one of them failing.
-#[test]
-fn the_reference_row_is_the_one_the_baseline_was_taken_with() {
-    let root = repository_root();
-    let path = root
-        .join("crates")
-        .join("wire-probe")
-        .join("tests")
-        .join("fixtures")
-        .join("rust_column_baseline.txt");
-    let recorded = std::fs::read_to_string(&path)
-        .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-    let expected: BTreeMap<&str, &str> = recorded
-        .lines()
-        .filter(|line| !line.starts_with('#'))
-        .filter_map(|line| {
-            let mut parts = line.split('\t');
-            Some((parts.next()?, parts.next()?))
-        })
-        .collect();
-
-    let mut moved: Vec<String> = Vec::new();
-    for case in corpus(&root) {
-        let row = matrix::row(&case);
-        assert_eq!(
-            row.len(),
-            SLOTS_PER_CASE,
-            "{}: the row holds {} slots and the matrix says {SLOTS_PER_CASE}",
-            case.name,
-            row.len()
-        );
-        let mut text = String::new();
-        for (slot, value) in &row {
-            let _ = writeln!(text, "{slot}\t{value}");
-        }
-        if case.name == "recursive-array" {
-            // 57f4d99f changed IDL0014's explanation, not this rejection.
-            // Pin the migration at every slot: restoring only the old reason
-            // must reproduce the previously recorded MD5 exactly. No payload,
-            // slot coordinate, read verdict or other case may move with it.
-            const OLD: &str = "— no sequence, no map and no @optional member — which OMG IDL 4.2 §7.4.1.4.4.4.4 does not admit";
-            const NEW: &str = "— no collection, @optional member or productive @external indirection — which OMG IDL 4.2 §7.4.1.4.4.4.4 and XTypes recursion rules do not admit";
-            // And the place it is reported at: a range of the parser's
-            // tree, read as a range of the file, until a node's range was
-            // moved through `Parse::source_span`; the bytes of the
-            // declaration in `type.idl` since. The second and last thing
-            // that moved.
-            const OLD_AT: &str = "error [IDL0014] at 30..65:";
-            const NEW_AT: &str = "error [IDL0014] at 458..510:";
-            assert_eq!(text.matches(NEW).count(), SLOTS_PER_CASE);
-            assert_eq!(text.matches(NEW_AT).count(), SLOTS_PER_CASE);
-            assert!(row.values().all(|value| value.starts_with('!')));
-            let old_text = text.replace(NEW, OLD).replace(NEW_AT, OLD_AT);
-            let mut old_digest = String::with_capacity(32);
-            for byte in zerodds_wire::md5(old_text.as_bytes()) {
-                let _ = write!(old_digest, "{byte:02x}");
-            }
-            assert_eq!(old_digest, "c4f4f80091a0ae130217407f48f3c32c");
-        }
-        let mut digest = String::with_capacity(32);
-        for byte in zerodds_wire::md5(text.as_bytes()) {
-            let _ = write!(digest, "{byte:02x}");
-        }
-        match expected.get(case.name.as_str()) {
-            Some(was) if *was == digest => {}
-            Some(was) => moved.push(format!("  {}: baseline {was}, matrix {digest}", case.name)),
-            None => moved.push(format!("  {}: not in the baseline", case.name)),
-        }
-    }
-    assert!(
-        moved.is_empty(),
-        "`zerodds_wire_probe::matrix` no longer reproduces the recorded Rust column in {} \
-         case(s). Every verdict in this file is against that row, so a column measured now \
-         would be measured against something nobody pinned:\n{}",
-        moved.len(),
-        moved.join("\n")
     );
 }
 

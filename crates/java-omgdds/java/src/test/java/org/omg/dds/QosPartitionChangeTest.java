@@ -56,7 +56,7 @@ class QosPartitionChangeTest {
     }
 
     @Test
-    void aPublisherThatChangesItsPartitionEndsAndStartsMatches() throws Exception {
+    void javapsm_2_a_publisher_that_changes_its_partition_ends_and_starts_matches() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig(publisherIn("A"), subscriberIn("A"))) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -81,7 +81,7 @@ class QosPartitionChangeTest {
     }
 
     @Test
-    void aSubscriberThatChangesItsPartitionEndsAndStartsMatches() throws Exception {
+    void javapsm_2_a_subscriber_that_changes_its_partition_ends_and_starts_matches() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig(publisherIn("A"), subscriberIn("B"))) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -104,7 +104,7 @@ class QosPartitionChangeTest {
     }
 
     @Test
-    void aChangeThatKeepsTheOverlapIsNoMatchEvent() throws Exception {
+    void javapsm_2_a_change_that_keeps_the_overlap_is_no_match_event() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig(publisherIn("A*"), subscriberIn("AB"))) {
             List<Boolean> matchedEvents = new CopyOnWriteArrayList<>();
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());

@@ -106,11 +106,3 @@ pub use rcu::RcuCell;
 #[cfg(feature = "alloc")]
 pub use tracing::{Histogram, Span, SpanContext, SpanId, SpanKind, SpanStatus, TraceId};
 pub use xml_depth::{NestingTooDeep, XML_NESTING_LIMIT, check_nesting};
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles() {
-        // Smoke test: the crate compiles and the test harness runs.
-    }
-}

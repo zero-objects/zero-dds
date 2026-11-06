@@ -55,10 +55,10 @@ fn read_bridge_ids(props: &AmqpExtValue) -> Option<String> {
     };
     let key = AmqpExtValue::Str(app_keys::BRIDGE_ID.to_string());
     for (k, v) in entries {
-        if *k == key {
-            if let AmqpExtValue::Str(s) = v {
-                return Some(s.clone());
-            }
+        if *k == key
+            && let AmqpExtValue::Str(s) = v
+        {
+            return Some(s.clone());
         }
     }
     None

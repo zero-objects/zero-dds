@@ -92,7 +92,7 @@ class TypesBuiltinTest {
     // --- DDS::String ---------------------------------------------------------
 
     @Test
-    void stringIsTheBuiltInTypeDdsString() {
+    void javapsm_7_8_2_string_is_the_built_in_type_dds_string() {
         TopicTypeSupport<String> support = TypeSupportResolver.resolve(String.class);
         assertEquals("DDS::String", support.getTypeName());
         assertFalse(support.isKeyed());
@@ -109,7 +109,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aStringTopicIsDdsStringAndMovesSamples() throws Exception {
+    void javapsm_7_8_2_a_string_topic_is_dds_string_and_moves_samples() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1600);
         Topic<String> topic = participant.createTopic("TypesStringTopic", String.class);
         assertEquals("DDS::String", topic.getTypeName());
@@ -124,7 +124,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aTruncatedOrInconsistentStringIsRefused() {
+    void javapsm_7_8_2_a_truncated_or_inconsistent_string_is_refused() {
         TopicTypeSupport<String> support = TypeSupportResolver.resolve(String.class);
         assertThrows(Exception.class, () -> support.decode(bytes(7, 0, 0)));
         // The DHEADER announces more octets than the buffer holds.
@@ -135,7 +135,7 @@ class TypesBuiltinTest {
     // --- DDS::KeyedString: the value type -----------------------------------
 
     @Test
-    void keyedStringIsAModifiableValueType() {
+    void javapsm_7_8_2_keyed_string_is_a_modifiable_value_type() {
         KeyedString a = ENV.getSPI().newKeyedString();
         assertNotNull(a);
         assertSame(ENV, a.getEnvironment());
@@ -156,7 +156,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void keyedStringCopyFromCloneAndEquals() {
+    void javapsm_7_8_2_keyed_string_copy_from_clone_and_equals() {
         KeyedString a = keyedString("k", "v");
         KeyedString b = ENV.getSPI().newKeyedString();
         assertNotEquals(a, b);
@@ -180,7 +180,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void keyedStringSurvivesJavaSerialization() throws Exception {
+    void javapsm_7_8_2_keyed_string_survives_java_serialization() throws Exception {
         KeyedString a = keyedString("key", "value");
         KeyedString back = javaSerializationRoundTrip(a);
         assertNotSame(a, back);
@@ -191,7 +191,7 @@ class TypesBuiltinTest {
     // --- DDS::KeyedString: the topic type -----------------------------------
 
     @Test
-    void keyedStringIsTheBuiltInTypeDdsKeyedString() {
+    void javapsm_7_8_2_keyed_string_is_the_built_in_type_dds_keyed_string() {
         TopicTypeSupport<KeyedString> support = TypeSupportResolver.resolve(KeyedString.class);
         assertSame(BuiltinTypeSupports.KeyedStringTypeSupport.INSTANCE, support);
         assertEquals("DDS::KeyedString", support.getTypeName());
@@ -211,7 +211,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void theKeyHashOfAKeyedStringIsTheMd5OfItsKeyInBigEndian() {
+    void javapsm_7_8_2_the_key_hash_of_a_keyed_string_is_the_md5_of_its_key_in_big_endian() {
         TopicTypeSupport<KeyedString> support = TypeSupportResolver.resolve(KeyedString.class);
         // XTypes 1.3 §7.6.8: the key holder is the key member, big-endian: length 2, 'k',
         // NUL = 00 00 00 02 6b 00. A string has no maximum size, so the hash is the MD5 of
@@ -228,7 +228,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aKeyedStringTopicHasOneInstancePerKey() throws Exception {
+    void javapsm_7_8_2_a_keyed_string_topic_has_one_instance_per_key() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1601);
         Topic<KeyedString> topic = participant.createTopic("TypesKeyedStringTopic", KeyedString.class);
         assertEquals("DDS::KeyedString", topic.getTypeName());
@@ -250,7 +250,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aKeyedStringTopicSampleIsANewValueObject() {
+    void javapsm_7_8_2_a_keyed_string_topic_sample_is_a_new_value_object() {
         DomainParticipant participant = Qos.factory().createParticipant(1602);
         Topic<KeyedString> topic = participant.createTopic("TypesKeyedStringNew", KeyedString.class);
         // TypeSupport.newData: a sample for a reader to fill, made through the SPI.
@@ -261,16 +261,21 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aTruncatedKeyedStringIsRefused() {
+    void javapsm_7_8_2_a_truncated_keyed_string_is_refused() {
         TopicTypeSupport<KeyedString> support = TypeSupportResolver.resolve(KeyedString.class);
         assertThrows(Exception.class, () -> support.decode(bytes(15, 0, 0, 0, 2, 0, 0, 0, 'k')));
         assertThrows(XcdrException.class, () -> support.encode(null));
+        // The key "ab" without its NUL: a CDR string ends with one (XTypes 1.3 §7.4.1.1.2).
+        byte[] good = support.encode(KeyedString.newKeyedString(Qos.env()).setKey("ab").setValue("c"));
+        byte[] noNul = good.clone();
+        noNul[10] = 0x7A;
+        assertThrows(XcdrException.class, () -> support.decode(noNul));
     }
 
     // --- DDS::KeyedBytes: the value type ------------------------------------
 
     @Test
-    void keyedBytesIsAModifiableValueType() {
+    void javapsm_7_8_2_keyed_bytes_is_a_modifiable_value_type() {
         KeyedBytes a = ENV.getSPI().newKeyedBytes();
         assertSame(ENV, a.getEnvironment());
         assertEquals("", a.getKey());
@@ -292,7 +297,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void keyedBytesCopyFromCloneAndEquals() {
+    void javapsm_7_8_2_keyed_bytes_copy_from_clone_and_equals() {
         KeyedBytes a = keyedBytes("k", (byte) 1, (byte) 2);
         KeyedBytes b = ENV.getSPI().newKeyedBytes();
         assertNotEquals(a, b);
@@ -313,7 +318,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void keyedBytesSurvivesJavaSerialization() throws Exception {
+    void javapsm_7_8_2_keyed_bytes_survives_java_serialization() throws Exception {
         KeyedBytes a = keyedBytes("key", (byte) 1, (byte) 2, (byte) 3);
         KeyedBytes back = javaSerializationRoundTrip(a);
         assertNotSame(a, back);
@@ -324,7 +329,7 @@ class TypesBuiltinTest {
     // --- DDS::KeyedBytes: the topic type ------------------------------------
 
     @Test
-    void keyedBytesIsTheBuiltInTypeDdsKeyedBytes() {
+    void javapsm_7_8_2_keyed_bytes_is_the_built_in_type_dds_keyed_bytes() {
         TopicTypeSupport<KeyedBytes> support = TypeSupportResolver.resolve(KeyedBytes.class);
         assertSame(BuiltinTypeSupports.KeyedBytesTypeSupport.INSTANCE, support);
         assertEquals("DDS::KeyedBytes", support.getTypeName());
@@ -351,7 +356,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void theKeyHashOfKeyedBytesIsTheMd5OfItsKey() {
+    void javapsm_7_8_2_the_key_hash_of_keyed_bytes_is_the_md5_of_its_key() {
         TopicTypeSupport<KeyedBytes> support = TypeSupportResolver.resolve(KeyedBytes.class);
         // The same key holder as KeyedString: 00 00 00 02 6b 00.
         assertArrayEquals(bytes(0x30, 0x2c, 0xf0, 0xa6, 0x9d, 0xae, 0x0d, 0x47,
@@ -360,7 +365,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aKeyedBytesTopicHasOneInstancePerKey() throws Exception {
+    void javapsm_7_8_2_a_keyed_bytes_topic_has_one_instance_per_key() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1603);
         Topic<KeyedBytes> topic = participant.createTopic("TypesKeyedBytesTopic", KeyedBytes.class);
         assertEquals("DDS::KeyedBytes", topic.getTypeName());
@@ -381,7 +386,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aKeyedBytesTopicSampleIsANewValueObject() {
+    void javapsm_7_8_2_a_keyed_bytes_topic_sample_is_a_new_value_object() {
         DomainParticipant participant = Qos.factory().createParticipant(1604);
         Topic<KeyedBytes> topic = participant.createTopic("TypesKeyedBytesNew", KeyedBytes.class);
         KeyedBytes fresh = topic.getTypeSupport().newData();
@@ -390,7 +395,7 @@ class TypesBuiltinTest {
     }
 
     @Test
-    void aTruncatedKeyedBytesIsRefused() {
+    void javapsm_7_8_2_a_truncated_keyed_bytes_is_refused() {
         TopicTypeSupport<KeyedBytes> support = TypeSupportResolver.resolve(KeyedBytes.class);
         assertThrows(Exception.class,
                 () -> support.decode(bytes(15, 0, 0, 0, 2, 0, 0, 0, 'k', 0, 0, 0, 9, 0, 0, 0, 1)));
@@ -400,7 +405,7 @@ class TypesBuiltinTest {
     // --- DDS::Bytes next to them --------------------------------------------
 
     @Test
-    void bytesAreStillTheBuiltInTypeDdsBytes() {
+    void javapsm_7_8_2_bytes_are_still_the_built_in_type_dds_bytes() {
         TopicTypeSupport<byte[]> support = TypeSupportResolver.resolve(byte[].class);
         assertEquals("DDS::Bytes", support.getTypeName());
         DomainParticipant participant = Qos.factory().createParticipant(1605);

@@ -40,7 +40,7 @@ fn find(ast: &zerodds_ast::Ast, name: &str) -> zerodds_ast_core::Id<zerodds_ast:
 }
 
 #[test]
-fn the_count_is_the_number_of_types_the_topic_type_depends_on() {
+fn xtypes_7_6_3_2_1_the_count_is_the_number_of_types_the_topic_type_depends_on() {
     let ast = model();
     let id = find(&ast, "dep::Derived");
     let own = complete_type_object(&ast, id).expect("object");
@@ -67,7 +67,7 @@ fn the_count_is_the_number_of_types_the_topic_type_depends_on() {
 }
 
 #[test]
-fn a_dependency_the_registry_lacks_gives_minus_one() {
+fn xtypes_7_6_3_2_1_a_dependency_the_registry_lacks_gives_minus_one() {
     let ast = model();
     let id = find(&ast, "dep::Derived");
     let own = complete_type_object(&ast, id).expect("object");
@@ -82,7 +82,7 @@ fn a_dependency_the_registry_lacks_gives_minus_one() {
 }
 
 #[test]
-fn a_type_without_dependencies_has_count_zero() {
+fn xtypes_7_6_3_2_1_a_type_without_dependencies_has_count_zero() {
     let ast = model();
     let id = find(&ast, "dep::Plain");
     let own = complete_type_object(&ast, id).expect("object");

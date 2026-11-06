@@ -7,17 +7,25 @@
 //! (The codec accepts `&dyn CryptographicPlugin`, so the
 //! crypto implementation stays interchangeable — architectural.)
 //!
+//! DDS-Security 1.2 §7.4.7.6, §7.4.7.5, §7.4.7.7 and §10.5.3.3.4:
+//!
 //! ```text
-//! Submessage header (4 bytes):
-//!   +---+---+-------+
-//!   | id|flg| length|
-//!   +---+---+-------+
-//!     u8  u8  u16 (LE if flg & 0x01 is set)
+//! SEC_PREFIX  (0x31): CryptoHeader (20 octets: transformation_kind,
+//!                     transformation_key_id, session_id,
+//!                     initialization_vector_suffix)
+//! SEC_BODY    (0x30): CryptoContent (length + ciphertext); with
+//!                     authentication only the plain submessage stands here
+//! SEC_POSTFIX (0x32): CryptoFooter (common_mac, receiver_specific_macs)
 //! ```
 //!
-//! SEC_PREFIX:   id=0x31, body = TransformIdentifier (16 bytes)
-//! SEC_BODY:     id=0x30, body = u32 length + ciphertext
-//! SEC_POSTFIX:  id=0x32, body = MAC list for receiver-specific MACs
+//! The CryptoHeader names the key the submessage is protected with
+//! (§10.5.2.3: `transformation_key_id` is the `sender_key_id` of the key
+//! material), so only the plugin that holds the key can write it: the
+//! codec checks the frame and leaves the transformation to
+//! [`CryptographicPlugin::encode_data_datawriter_submessage`] and
+//! [`CryptographicPlugin::decode_data_datawriter_submessage`]. Before, the
+//! codec wrote 16 zero octets as SEC_PREFIX body, which no other
+//! implementation reads.
 
 use alloc::vec::Vec;
 
@@ -89,121 +97,71 @@ impl From<SecurityError> for SecurityRtpsError {
     }
 }
 
-/// Encodes a plain submessage blob as a **secured** submessage
-/// sequence (SEC_PREFIX + SEC_BODY + SEC_POSTFIX).
+/// Length of the CryptoHeader in the SEC_PREFIX and the SRTPS_PREFIX
+/// (DDS-Security 1.2 §7.4.7.6.1, §10.5.2.3: 4 + 4 + 4 + 8 octets).
+pub const CRYPTO_HEADER_LEN: usize = 20;
+
+/// Encodes a plain submessage as a **secured** submessage sequence
+/// (SEC_PREFIX + SEC_BODY + SEC_POSTFIX, DDS-Security 1.2 §7.4.7.6 and
+/// §10.5.3.3.4) with the key material the plugin holds under `local`.
 ///
-/// The crypto plugin produces the actual ciphertext; this
-/// module only takes care of the wire framing.
+/// The receiver-specific MACs are those of the key material: the plugin
+/// appends one per reader key it registered under `local`; `remote_list`
+/// is not read.
 ///
 /// # Errors
-/// A passed-through crypto error or a length overflow (u16).
+/// A passed-through crypto error; `Crypto` with `NotImplemented` from a
+/// plugin that does not frame submessages.
 pub fn encode_secured_submessage(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
     remote_list: &[CryptoHandle],
     plaintext: &[u8],
 ) -> Result<Vec<u8>, SecurityRtpsError> {
-    // SEC_PREFIX body: 16-byte TransformIdentifier (TransformKindId(4)
-    // + KeyId(4) + TransformId(8)). Currently all zero — the dynamic
-    // value comes with the DCPS-RTPS handle-map integration.
-    let sec_prefix_body = [0u8; 16];
-
-    // AAD extension per DDS-Security 1.2 §10.5.3 Table 80 (submessage
-    // protection): reserved-4 || SEC_PREFIX CryptoHeader. The plugin's
-    // `mat.aad(extension)` additionally prepends `transformation_kind ||
-    // key_id || session_id`. This protects the SEC_PREFIX header against
-    // tampering.
-    let mut aad_extension = Vec::with_capacity(4 + 16);
-    aad_extension.extend_from_slice(&[0u8; 4]); // reserved-4
-    aad_extension.extend_from_slice(&sec_prefix_body);
-
-    // 1) The crypto plugin encrypts with the spec-conformant AAD.
-    let ciphertext = plugin.encrypt_submessage(local, remote_list, plaintext, &aad_extension)?;
-
-    // 2) Write the SEC_PREFIX submessage.
-    let mut out = Vec::with_capacity(4 + 16 + 4 + 4 + ciphertext.len() + 4);
-    push_header(&mut out, SEC_PREFIX, 16);
-    out.extend_from_slice(&sec_prefix_body);
-
-    // 3) SEC_BODY: u32 length + ciphertext.
-    let ct_len = u32::try_from(ciphertext.len())
-        .map_err(|_| SecurityRtpsError::Truncated("ciphertext > u32"))?;
-    let body_len = u16::try_from(4 + ciphertext.len())
-        .map_err(|_| SecurityRtpsError::Truncated("SEC_BODY > u16"))?;
-    push_header(&mut out, SEC_BODY, body_len);
-    out.extend_from_slice(&ct_len.to_le_bytes());
-    out.extend_from_slice(&ciphertext);
-
-    // 4) SEC_POSTFIX: empty (single-MAC path). Multi-MAC variant:
-    //    `encode_secured_submessage_multi`.
-    push_header(&mut out, SEC_POSTFIX, 0);
-
-    Ok(out)
+    let _ = remote_list;
+    Ok(plugin.encode_data_datawriter_submessage(local, plaintext)?)
 }
 
-/// Decodes a secure-submessage sequence and returns the
-/// plaintext.
+/// Decodes a secure-submessage sequence and returns the plaintext
+/// submessage, with the key material the plugin holds under `remote` (the
+/// sender's key; `local` is not read).
 ///
 /// # Errors
-/// On wire tampering (submessage IDs wrong, lengths inconsistent),
-/// big-endian, or a crypto verify fail.
+/// A first submessage that is no SEC_PREFIX with a CryptoHeader,
+/// big-endian, cut short, or a crypto verify fail.
 pub fn decode_secured_submessage(
     plugin: &dyn CryptographicPlugin,
     local: CryptoHandle,
     remote: CryptoHandle,
     secured_bytes: &[u8],
 ) -> Result<Vec<u8>, SecurityRtpsError> {
-    let mut cur = Cursor::new(secured_bytes);
-
-    // SEC_PREFIX. The body bytes (16-byte TransformIdentifier) are part
-    // of the AAD extension — symmetric to the encoder.
-    let (id, _flags, plen) = read_header(&mut cur, "SEC_PREFIX")?;
-    if id != SEC_PREFIX {
-        return Err(SecurityRtpsError::UnexpectedSubmessageId {
-            pos: 0,
-            expected: SEC_PREFIX,
-            got: id,
-        });
-    }
-    let sec_prefix_body = cur.read_bytes(plen as usize, "SEC_PREFIX body")?;
-    let mut aad_extension = Vec::with_capacity(4 + sec_prefix_body.len());
-    aad_extension.extend_from_slice(&[0u8; 4]);
-    aad_extension.extend_from_slice(sec_prefix_body);
-
-    // SEC_BODY.
-    let (id, _flags, blen) = read_header(&mut cur, "SEC_BODY header")?;
-    if id != SEC_BODY {
-        return Err(SecurityRtpsError::UnexpectedSubmessageId {
-            pos: 1,
-            expected: SEC_BODY,
-            got: id,
-        });
-    }
-    let ct_len_raw = cur.read_u32_le("SEC_BODY length")?;
-    if (ct_len_raw as usize) + 4 != (blen as usize) {
-        return Err(SecurityRtpsError::InconsistentLength);
-    }
-    let ciphertext = cur.read_bytes(ct_len_raw as usize, "SEC_BODY ciphertext")?;
-
-    // SEC_POSTFIX (empty in single-receiver mode; the ID check gives wire integrity).
-    let (id, _flags, postlen) = read_header(&mut cur, "SEC_POSTFIX")?;
-    if id != SEC_POSTFIX {
-        return Err(SecurityRtpsError::UnexpectedSubmessageId {
-            pos: 2,
-            expected: SEC_POSTFIX,
-            got: id,
-        });
-    }
-    cur.skip(postlen as usize, "SEC_POSTFIX body")?;
-
-    let plain = plugin.decrypt_submessage(local, remote, ciphertext, &aad_extension)?;
-    Ok(plain)
+    let _ = local;
+    check_prefix(secured_bytes, SEC_PREFIX, "SEC_PREFIX")?;
+    Ok(plugin.decode_data_datawriter_submessage(remote, secured_bytes)?)
 }
 
-fn push_header(out: &mut Vec<u8>, id: u8, length: u16) {
-    out.push(id);
-    out.push(FLAG_LE);
-    out.extend_from_slice(&length.to_le_bytes());
+/// Checks that `wire` starts with the submessage `id` (SEC_PREFIX or
+/// SRTPS_PREFIX), little-endian, whose body holds a CryptoHeader and fits
+/// in `wire`.
+pub(crate) fn check_prefix(
+    wire: &[u8],
+    id: u8,
+    what: &'static str,
+) -> Result<(), SecurityRtpsError> {
+    let mut cur = Cursor::new(wire);
+    let (got, _flags, len) = read_header(&mut cur, what)?;
+    if got != id {
+        return Err(SecurityRtpsError::UnexpectedSubmessageId {
+            pos: 0,
+            expected: id,
+            got,
+        });
+    }
+    if usize::from(len) < CRYPTO_HEADER_LEN {
+        return Err(SecurityRtpsError::Truncated("CryptoHeader"));
+    }
+    cur.skip(usize::from(len), what)?;
+    Ok(())
 }
 
 struct Cursor<'a> {
@@ -223,25 +181,10 @@ impl<'a> Cursor<'a> {
         Ok(())
     }
 
-    fn read_bytes(&mut self, n: usize, what: &'static str) -> Result<&'a [u8], SecurityRtpsError> {
-        self.need(n, what)?;
-        let out = &self.bytes[self.pos..self.pos + n];
-        self.pos += n;
-        Ok(out)
-    }
-
     fn skip(&mut self, n: usize, what: &'static str) -> Result<(), SecurityRtpsError> {
         self.need(n, what)?;
         self.pos += n;
         Ok(())
-    }
-
-    fn read_u32_le(&mut self, what: &'static str) -> Result<u32, SecurityRtpsError> {
-        self.need(4, what)?;
-        let mut b = [0u8; 4];
-        b.copy_from_slice(&self.bytes[self.pos..self.pos + 4]);
-        self.pos += 4;
-        Ok(u32::from_le_bytes(b))
     }
 }
 
@@ -266,186 +209,164 @@ fn read_header(
 mod tests {
     use super::*;
     use zerodds_security::authentication::{IdentityHandle, SharedSecretHandle};
-    use zerodds_security::error::SecurityErrorKind;
     use zerodds_security_crypto::AesGcmCryptoPlugin;
 
-    fn make_plugin() -> (AesGcmCryptoPlugin, CryptoHandle, CryptoHandle) {
-        let mut p = AesGcmCryptoPlugin::new();
-        let local = p
+    /// A HEARTBEAT submessage (id 0x07, E set, 28 octets).
+    const HEARTBEAT: [u8; 32] = [
+        0x07, 0x01, 0x1c, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x02, 0x00, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x01, 0x00,
+        0x00, 0x00,
+    ];
+
+    /// Sender `a` with its CryptoToken (DDS-Security 1.2 Table 72: the big
+    /// endian CDR of KeyMaterial_AES_GCM_GMAC), receiver `b` that knows the
+    /// sender only from that token.
+    struct Pair {
+        a: AesGcmCryptoPlugin,
+        local_a: CryptoHandle,
+        token_a: Vec<u8>,
+        b: AesGcmCryptoPlugin,
+        a_at_b: CryptoHandle,
+    }
+
+    fn pair() -> Pair {
+        let mut a = AesGcmCryptoPlugin::new();
+        let local_a = a
             .register_local_participant(IdentityHandle(1), &[])
             .unwrap();
-        let remote = p
-            .register_matched_remote_participant(local, IdentityHandle(2), SharedSecretHandle(1))
+        let token_a = a
+            .create_local_participant_crypto_tokens(local_a, CryptoHandle(0))
             .unwrap();
-        (p, local, remote)
-    }
-
-    #[test]
-    fn encode_produces_three_submessages() {
-        let (p, local, remote) = make_plugin();
-        let plain = b"plain-rtps-submessage-bytes";
-        let secured = encode_secured_submessage(&p, local, &[remote], plain).unwrap();
-        // First bytes: SEC_PREFIX header.
-        assert_eq!(secured[0], SEC_PREFIX);
-        // Somewhere in the following bytes are SEC_BODY and SEC_POSTFIX.
-        assert!(secured.contains(&SEC_BODY));
-        assert!(secured.contains(&SEC_POSTFIX));
-    }
-
-    /// §9.5.2 / §7.3.6 — the secured submessage is a sequence of exactly
-    /// three submessages in a fixed order: SEC_PREFIX, then the
-    /// protected content as SEC_BODY, then SEC_POSTFIX. Walk the wire by
-    /// `octetsToNextHeader` and check every header field, so that a
-    /// reordering, a wrong id, a missing endianness flag, or a length
-    /// that does not describe its own body is caught. (Scanning for the
-    /// id bytes is not enough: 0x30 is also the digit `0` and shows up
-    /// in ciphertext by chance.)
-    #[test]
-    fn three_submessages_carry_spec_ids_flags_and_lengths_in_order() {
-        let (p, local, remote) = make_plugin();
-        let plain = b"plain-rtps-submessage-bytes";
-        let secured = encode_secured_submessage(&p, local, &[remote], plain).unwrap();
-
-        /// (id, flags, octetsToNextHeader, body) at `at`.
-        fn submessage(wire: &[u8], at: usize) -> (u8, u8, usize, &[u8]) {
-            let len = u16::from_le_bytes([wire[at + 2], wire[at + 3]]) as usize;
-            (wire[at], wire[at + 1], len, &wire[at + 4..at + 4 + len])
+        let mut b = AesGcmCryptoPlugin::new();
+        let local_b = b
+            .register_local_participant(IdentityHandle(1), &[])
+            .unwrap();
+        let a_at_b = b
+            .register_matched_remote_participant(local_b, IdentityHandle(2), SharedSecretHandle(1))
+            .unwrap();
+        b.set_remote_participant_crypto_tokens(local_b, a_at_b, &token_a)
+            .unwrap();
+        Pair {
+            a,
+            local_a,
+            token_a,
+            b,
+            a_at_b,
         }
+    }
 
-        // 1) SEC_PREFIX: 16-byte TransformIdentifier, no more, no less.
-        let (id, flags, len, prefix_body) = submessage(&secured, 0);
-        assert_eq!(id, SEC_PREFIX, "first submessage id");
-        assert_eq!(id, 0x31, "spec §7.3.6.2 SEC_PREFIX");
-        assert_eq!(flags & 0x01, 0x01, "EndiannessFlag set (little endian)");
-        assert_eq!(len, 16, "TransformIdentifier is 16 bytes");
-        assert_eq!(prefix_body.len(), 16);
+    /// `transformation_kind` and `sender_key_id` of a KeyMaterial_AES_GCM_GMAC
+    /// (§10.5.2.1.1, big endian CDR): the kind, `sequence<octet, 32>
+    /// master_salt`, then the key id.
+    fn kind_and_key_id(keymat: &[u8]) -> ([u8; 4], [u8; 4]) {
+        let salt = u32::from_be_bytes(keymat[4..8].try_into().unwrap()) as usize;
+        (
+            keymat[..4].try_into().unwrap(),
+            keymat[8 + salt..12 + salt].try_into().unwrap(),
+        )
+    }
 
-        // 2) SEC_BODY directly after it: u32 ciphertext length + ciphertext.
-        let body_at = 4 + len;
-        let (id, flags, len, body) = submessage(&secured, body_at);
-        assert_eq!(id, SEC_BODY, "second submessage id");
-        assert_eq!(id, 0x30, "spec §7.3.6.4 SEC_BODY");
-        assert_eq!(flags & 0x01, 0x01, "EndiannessFlag set");
-        let declared = u32::from_le_bytes([body[0], body[1], body[2], body[3]]) as usize;
+    /// The submessages of `wire` as (id, flags, body), read with DDSI-RTPS
+    /// 2.5 §9.4.5.1 (little-endian lengths, E set).
+    fn submessages(wire: &[u8]) -> Vec<(u8, u8, &[u8])> {
+        let mut out = Vec::new();
+        let mut at = 0;
+        while at < wire.len() {
+            let len = usize::from(u16::from_le_bytes([wire[at + 2], wire[at + 3]]));
+            out.push((wire[at], wire[at + 1], &wire[at + 4..at + 4 + len]));
+            at += 4 + len;
+        }
+        assert_eq!(at, wire.len());
+        out
+    }
+
+    /// §7.4.7.6.1, §10.5.2.3, §10.5.2.4, §10.5.2.5: SEC_PREFIX with a
+    /// CryptoHeader of 20 octets whose transformation_kind and
+    /// transformation_key_id are those of the sender's key material, a
+    /// SEC_BODY whose CryptoContent length (big endian) covers the rest of
+    /// the body, a SEC_POSTFIX with the 16-octet common_mac and the length
+    /// of receiver_specific_macs. The receiver that has only the token reads
+    /// the submessage back. Before, the SEC_PREFIX carried 16 zero octets.
+    #[test]
+    fn security_7_4_7_6_the_prefix_carries_the_crypto_header_of_the_senders_key() {
+        let p = pair();
+        let wire = encode_secured_submessage(&p.a, p.local_a, &[], &HEARTBEAT).unwrap();
+        let parts = submessages(&wire);
         assert_eq!(
-            declared + 4,
-            len,
-            "the SEC_BODY length header must describe its own body",
+            parts.iter().map(|(id, _, _)| *id).collect::<Vec<_>>(),
+            [SEC_PREFIX, SEC_BODY, SEC_POSTFIX]
         );
-        assert_eq!(declared, body.len() - 4);
-        assert_ne!(
-            &body[4..],
-            &plain[..],
-            "SEC_BODY carries ciphertext, not the plaintext",
-        );
+        assert!(parts.iter().all(|(_, flags, _)| flags & 0x01 == 0x01));
+        let (kind, key_id) = kind_and_key_id(&p.token_a);
+        let header = parts[0].2;
+        assert_eq!(header.len(), CRYPTO_HEADER_LEN);
+        assert_eq!(header[..4], kind);
+        assert_ne!(kind, [0; 4], "CRYPTO_TRANSFORMATION_KIND_NONE");
+        assert_eq!(header[4..8], key_id);
+        let body = parts[1].2;
+        let content = u32::from_be_bytes(body[..4].try_into().unwrap()) as usize;
+        assert_eq!(content + 4, body.len());
+        let footer = parts[2].2;
+        let macs = u32::from_be_bytes(footer[16..20].try_into().unwrap()) as usize;
+        assert_eq!(footer.len(), 20 + macs * 20);
+        assert!(!wire.windows(HEARTBEAT.len()).any(|w| w == HEARTBEAT));
+        let back = decode_secured_submessage(&p.b, p.a_at_b, p.a_at_b, &wire).unwrap();
+        assert_eq!(back, HEARTBEAT);
+    }
 
-        // 3) SEC_POSTFIX last, empty on the single-receiver path.
-        let post_at = body_at + 4 + len;
-        let (id, flags, len, post_body) = submessage(&secured, post_at);
-        assert_eq!(id, SEC_POSTFIX, "third submessage id");
-        assert_eq!(id, 0x32, "spec §7.3.6.3 SEC_POSTFIX");
-        assert_eq!(flags & 0x01, 0x01, "EndiannessFlag set");
-        assert_eq!(len, 0);
-        assert!(post_body.is_empty());
-
-        // Nothing follows the postfix.
+    #[test]
+    fn the_wire_is_checked_before_the_plugin_reads_it() {
+        let p = pair();
+        let wire = encode_secured_submessage(&p.a, p.local_a, &[], &HEARTBEAT).unwrap();
         assert_eq!(
-            post_at + 4,
-            secured.len(),
-            "the sequence ends with the SEC_POSTFIX",
-        );
-    }
-
-    /// The decoder enforces the same order: a wire whose second
-    /// submessage is not SEC_BODY is rejected at position 1, and one
-    /// whose third is not SEC_POSTFIX at position 2.
-    #[test]
-    fn decoder_rejects_a_reordered_submessage_sequence() {
-        let (p, local, remote) = make_plugin();
-        let secured = encode_secured_submessage(&p, local, &[remote], b"0123456789abcdef").unwrap();
-
-        let mut swapped_body = secured.clone();
-        swapped_body[4 + 16] = SEC_POSTFIX;
-        match decode_secured_submessage(&p, local, remote, &swapped_body) {
-            Err(SecurityRtpsError::UnexpectedSubmessageId { pos, expected, got }) => {
-                assert_eq!((pos, expected, got), (1, SEC_BODY, SEC_POSTFIX));
-            }
-            other => panic!("expected an id error at position 1, got {other:?}"),
-        }
-
-        let body_len = u16::from_le_bytes([secured[4 + 16 + 2], secured[4 + 16 + 3]]) as usize;
-        let post_at = 4 + 16 + 4 + body_len;
-        let mut swapped_post = secured.clone();
-        swapped_post[post_at] = SEC_BODY;
-        match decode_secured_submessage(&p, local, remote, &swapped_post) {
-            Err(SecurityRtpsError::UnexpectedSubmessageId { pos, expected, got }) => {
-                assert_eq!((pos, expected, got), (2, SEC_POSTFIX, SEC_BODY));
-            }
-            other => panic!("expected an id error at position 2, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn roundtrip_matches_plaintext() {
-        let (p, local, remote) = make_plugin();
-        let plain = b"hello secure dds";
-        let secured = encode_secured_submessage(&p, local, &[remote], plain).unwrap();
-        let back = decode_secured_submessage(&p, local, remote, &secured).unwrap();
-        assert_eq!(back, plain);
-    }
-
-    #[test]
-    fn tampered_ciphertext_fails_verify() {
-        let (p, local, remote) = make_plugin();
-        let plain = b"0123456789abcdef";
-        let mut secured = encode_secured_submessage(&p, local, &[remote], plain).unwrap();
-
-        // SEC_BODY starts at offset 4 (PREFIX header) + 16 (PREFIX body) =
-        // 20, then 4 (BODY header) + 4 (u32 ct_len) = 28. Byte 30 lies in
-        // the ciphertext after the nonce.
-        secured[30 + 12] ^= 0x10;
-
-        let err = decode_secured_submessage(&p, local, remote, &secured).unwrap_err();
-        match err {
-            SecurityRtpsError::Crypto(e) => assert_eq!(e.kind, SecurityErrorKind::CryptoFailed),
-            other => panic!("expected Crypto, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn wrong_prefix_id_rejected() {
-        let (p, local, remote) = make_plugin();
-        let mut secured = encode_secured_submessage(&p, local, &[remote], b"abc").unwrap();
-        secured[0] = 0x15; // some other submessage type
-        let err = decode_secured_submessage(&p, local, remote, &secured).unwrap_err();
-        assert!(matches!(
-            err,
+            decode_secured_submessage(&p.b, p.a_at_b, p.a_at_b, &HEARTBEAT).unwrap_err(),
             SecurityRtpsError::UnexpectedSubmessageId {
                 pos: 0,
                 expected: SEC_PREFIX,
-                ..
+                got: 0x07,
             }
+        );
+        let mut big_endian = wire.clone();
+        big_endian[1] &= !0x01;
+        assert_eq!(
+            decode_secured_submessage(&p.b, p.a_at_b, p.a_at_b, &big_endian).unwrap_err(),
+            SecurityRtpsError::BigEndianNotSupported
+        );
+        assert!(matches!(
+            decode_secured_submessage(&p.b, p.a_at_b, p.a_at_b, &wire[..10]),
+            Err(SecurityRtpsError::Truncated(_))
+        ));
+        let mut changed = wire.clone();
+        let in_body = 4 + CRYPTO_HEADER_LEN + 4 + 4 + 2;
+        changed[in_body] ^= 0x01;
+        assert!(matches!(
+            decode_secured_submessage(&p.b, p.a_at_b, p.a_at_b, &changed),
+            Err(SecurityRtpsError::Crypto(_))
         ));
     }
 
+    /// DDSI-RTPS 2.5 §9.4.5.1.1.1 Table 9.14 (DDS-Security 0x30–0x3f),
+    /// DDS-Security 1.2 §7.4.7: a protected submessage is SEC_PREFIX (0x31),
+    /// SEC_BODY (0x30) and SEC_POSTFIX (0x32) in this order, each with E set
+    /// and an octetsToNextHeader that ends where the next one begins.
     #[test]
-    fn big_endian_flag_rejected() {
-        let (p, local, remote) = make_plugin();
-        let mut secured = encode_secured_submessage(&p, local, &[remote], b"x").unwrap();
-        secured[1] = 0x00; // flags = BE
-        let err = decode_secured_submessage(&p, local, remote, &secured).unwrap_err();
-        assert!(matches!(err, SecurityRtpsError::BigEndianNotSupported));
+    fn rtps_9_4_5_1_1_1_three_submessages_carry_spec_ids_flags_and_lengths_in_order() {
+        let p = pair();
+        let wire = encode_secured_submessage(&p.a, p.local_a, &[], &HEARTBEAT).unwrap();
+        // `submessages` follows the lengths and fails unless they end with the wire.
+        let parts = submessages(&wire);
+        let ids: Vec<u8> = parts.iter().map(|(id, _, _)| *id).collect();
+        assert_eq!(ids, [0x31, 0x30, 0x32]);
+        assert!(
+            parts.iter().all(|(_, flags, _)| flags & 0x01 == 0x01),
+            "E set"
+        );
+        assert_eq!(parts[0].2.len(), CRYPTO_HEADER_LEN);
     }
 
+    /// DDSI-RTPS 2.5 §9.4.5.1.1 / DDS-Security 1.2 §7.4.7: the submessage ids.
     #[test]
-    fn truncated_input_rejected() {
-        let (p, local, remote) = make_plugin();
-        let err = decode_secured_submessage(&p, local, remote, &[SEC_PREFIX, 0x01]).unwrap_err();
-        assert!(matches!(err, SecurityRtpsError::Truncated(_)));
-    }
-
-    #[test]
-    fn constants_match_spec() {
+    fn rtps_9_4_5_1_1_1_constants_match_spec() {
         assert_eq!(SEC_BODY, 0x30);
         assert_eq!(SEC_PREFIX, 0x31);
         assert_eq!(SEC_POSTFIX, 0x32);

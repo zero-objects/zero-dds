@@ -17,7 +17,7 @@ Tenant); L1–L4 Pflicht, L5–L6 optional.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Zuordnung der Levels; die Anforderungen sind die Items §2 bis §12.
 
 ## §2 CLI-Surface
 
@@ -59,7 +59,7 @@ trägt, abgelehnt; ENV-Substitution.
 **Tests:** `crates/rmw-zerodds-shim/src/ros2_config.rs::tests` (6),
 `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::topic_shows_the_configured_mangling_and_override`,
 `::check_config_refuses_what_rcl_owns`,
-`crates/dcps/tests/runtime_config_layering.rs::the_rmw_section_is_not_an_unknown_key_for_other_programs`,
+`crates/dcps/tests/runtime_config_layering.rs::ros2bridge_3_the_rmw_section_is_not_an_unknown_key_for_other_programs`,
 `tools/traceability/tests/bridge_config_manpages.rs`.
 
 **Status:** done
@@ -105,14 +105,14 @@ des Gegenübers (Cyclone: `guid`/`seq` vor dem Body; Fast DDS:
 `crates/rtps/src/inline_qos.rs` (`PID_EPROSIMA_RELATED_SAMPLE_IDENTITY`).
 
 **Tests:** `crates/rmw-zerodds-shim/rmw_c/run_ros2_services_test.sh`
-(Linux-Testhost, Humble, `demo_nodes_py` AddTwoInts 2 + 3: Server/Client
+(Linux-Testhost, Humble, demo_nodes_py AddTwoInts 2 + 3: Server/Client
 zerodds↔zerodds, cyclonedds→zerodds, zerodds→cyclonedds,
 fastrtps→zerodds, zerodds→fastrtps je `Result of add_two_ints: 5`),
-`crates/rmw-zerodds-shim/src/lib.rs::tests::{a_service_call_between_two_runtimes_correlates_by_the_related_identity,
-two_clients_in_one_runtime_each_get_their_own_reply}`,
+`crates/rmw-zerodds-shim/src/lib.rs::tests::{ros2bridge_4_2_a_service_call_between_two_runtimes_correlates_by_the_related_identity,
+ros2bridge_4_2_two_clients_in_one_runtime_each_get_their_own_reply}`,
 `crates/rmw-zerodds-shim/src/services.rs::tests::{the_cyclone_header_reads_in_both_byte_orders,
 user_data_keys_read_like_rmw_cyclonedds, a_full_table_drops_its_oldest_entry}`,
-`crates/dcps/src/runtime.rs::tests::the_related_identity_is_0x0083_or_eprosimas_0x800f_from_a_writer_that_means_it`,
+`crates/dcps/src/runtime.rs::tests::rpc_7_8_2_the_related_identity_is_0x0083_or_eprosimas_0x800f_from_a_writer_that_means_it`,
 `crates/rtps/src/inline_qos.rs::tests::the_eprosima_pid_is_found_exactly_and_not_as_0x0083`,
 `crates/rmw-zerodds-shim/src/ros2_config.rs::tests::service_topics_are_the_rq_rr_names_of_the_other_rmws`.
 
@@ -126,13 +126,7 @@ Sondermapping.
 **Repo:** `crates/ros2-rmw/src/action.rs` (Cluster-C Action-Pattern
 mit 5 Topics).
 
-**Tests:** `crates/ros2-rmw/src/action.rs::tests`: `topic_set_has_exactly_5_topics`,
-`goal_topic_uses_rq_prefix_and_send_goal_suffix`,
-`cancel_topic_uses_rq_prefix_and_cancel_suffix`,
-`result_topic_uses_rr_prefix_and_reply_suffix`,
-`feedback_and_status_use_rt_prefix`,
-`handles_action_name_without_leading_slash`;
-`crates/ros2-rmw/tests/cross_vendor.rs::action_topic_set_matches_cyclone_format`.
+**Tests:** `crates/ros2-rmw/src/action.rs::tests`: `ros2bridge_4_3_an_action_names_its_five_endpoints_under_action`.
 
 **Status:** done
 
@@ -146,7 +140,9 @@ Reply → `rr/...Reply`.
 **Repo:** `crates/rmw-zerodds-shim/src/lib.rs` (mangling helper),
 `crates/ros2-rmw/`.
 
-**Tests:** `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::topic_mangle_emits_rt_prefix`.
+**Tests:** `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::topic_mangle_emits_rt_prefix`,
+`crates/ros2-rmw/src/topic_mangling.rs::tests::ros_names_prefix_each_kind_takes_its_prefix`,
+`crates/ros2-rmw/src/service.rs::tests::ros2bridge_4_2_a_service_is_the_topics_rq_request_and_rr_reply`.
 
 **Status:** done
 
@@ -159,10 +155,8 @@ Pose_:1.0`.
 Cluster-C),
 `crates/ros2-rmw/src/type_mapping.rs`.
 
-**Tests:** `crates/ros2-rmw/src/msg_to_idl.rs::tests`: `parse_simple_msg_three_fields`,
-`parse_skips_comments_and_blank_lines`, `parse_array_spec`,
-`parse_constants_are_ignored`, `idl_mapping_primitives`,
-`idl_mapping_qualified_type`, `render_idl_produces_module_and_struct`.
+**Tests:** `crates/ros2-rmw/src/msg_to_idl.rs::tests`: `ros2_msg_fields_are_type_and_name_without_comments_and_constants`, `ros2_msg_arrays_are_static_or_unbounded`, `ros2_msg_field_types_take_the_dds_type_of_the_table`,
+`ros2bridge_5_2_a_message_renders_as_a_struct_in_its_package_module`.
 
 **Status:** done
 
@@ -213,8 +207,8 @@ Security-Participant, gesetzt-aber-invalid → harter Fehler);
 `crates/security-permissions/` deckt Governance/Permissions (DDS-Security
 1.2 §9.4).
 
-**Tests:** `security-runtime` `enclave_dir_resolves_all_sros2_filenames`,
-`enclave_dir_missing_cert_is_io_naming_cert`; `rmw-zerodds-shim`
+**Tests:** `security-runtime` `ros2bridge_7_1_enclave_dir_resolves_all_sros2_filenames`,
+`ros2bridge_7_1_enclave_dir_missing_cert_is_io_naming_cert`; `rmw-zerodds-shim`
 `shim_cli_e2e` (`ZERODDS_SECURITY_DIR`-Pfad).
 
 **Status:** done — SROS2-Enclave wird als Mapping-Layer auf DDS-Security 1.2
@@ -231,10 +225,7 @@ geladen (ADR 0012).
 `check_create_datareader`); das Enclave-Permissions-Material
 (`permissions.p7s`/`governance.p7s`) kommt aus `from_enclave_dir` (§7.1).
 
-**Tests:** `security-permissions` `default_deny_without_explicit_tag`,
-`deny_rule_overrides_allow_for_publish`,
-`deny_rule_overrides_allow_for_subscribe`,
-`deny_only_grant_blocks_specific_topics`, `deny_on_non_matching_topic`.
+**Tests:** `crates/security-permissions/src/xml.rs::tests::security_10_4_1_5_3_4_default_deny_without_explicit_tag`, `crates/security-permissions/src/plugin.rs::tests::{ros2bridge_7_2_deny_on_non_matching_topic, ros2bridge_7_2_deny_writer_when_only_subscribe_granted, ros2bridge_7_2_permit_reader_on_subscribe_allowed_topic, security_10_4_1_5_3_4_allow_rule_and_deny_rule_decide_the_same_xml_differently, security_10_4_1_5_3_4_2_deny_rule_also_binds_the_reader_side}` (Erlaubnis und Verbot pro Topic, Schreiber- und Leserseite).
 
 **Status:** done — Permissions-XML wird via DDS-Security-1.2-Access-Control
 pro Topic durchgesetzt (ADR 0012).
@@ -250,9 +241,8 @@ strukturiert.
 `crates/ros2-rmw/src/json_log.rs` (Cluster-C rcutils + JSON-Sink-
 Wireup).
 
-**Tests:** `crates/ros2-rmw/src/json_log.rs::tests`: `level_strings_match_rcutils`,
-`render_json_simple`, `render_json_escapes_quotes_and_backslash`,
-`render_json_escapes_newline_and_tab`, `render_json_escapes_control_char`.
+**Tests:** `crates/ros2-rmw/src/json_log.rs::tests`: `rcutils_logging_the_five_severities_carry_rcutils_names`,
+`ros2bridge_8_1_a_json_line_is_one_object_with_ts_level_logger_and_msg`, `rfc8259_7_quotes_backslashes_and_control_characters_are_escaped`.
 
 **Status:** done
 
@@ -298,20 +288,34 @@ Signal-Handling übernimmt rcl/rclcpp.
 
 ### §10 RTPS-Peer + FastRTPS/CycloneDDS/Connext
 
-**Spec:** §10 — ZeroDDS-RMW-Shim ist nativer DDS-Peer; getestet mit
-rmw_fastrtps_cpp/rmw_cyclonedds_cpp/rmw_connextdds.
+**Spec:** §10 — ZeroDDS-RMW-Shim ist nativer DDS-Peer; Cross-Vendor mit rmw_fastrtps_cpp, rmw_cyclonedds_cpp und rmw_connextdds; ROS-Distros Humble, Iron, Jazzy, Rolling mit je eigenem Build-Ziel.
 
 **Repo:** `crates/rmw-zerodds-shim/src/lib.rs`,
 `crates/ros2-rmw/`.
 
-**Tests:** `crates/ros2-rmw/tests/cross_vendor.rs::topic_mangling_matches_rmw_dds_common_convention`,
-`crates/ros2-rmw/tests/cross_vendor.rs::service_topic_pair_matches_cyclone_format`,
-`crates/ros2-rmw/tests/cross_vendor.rs::action_topic_set_matches_cyclone_format` (die Live-Fälle darin sind
-`#[ignore]` und an eine ROS-2-Installation gebunden);
-`crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::graph_shows_participant_and_discovery_mode`,
-`crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::doctor_multicast_free_with_peers_ok`.
+**Tests:** `crates/rmw-zerodds-shim/rmw_c/run_qos_translation_test.sh` (Linux-Testhost, Humble, mit `RMW_PUB`/`RMW_SUB`: Topics in beide Richtungen mit rmw_cyclonedds_cpp und rmw_fastrtps_cpp), `crates/rmw-zerodds-shim/rmw_c/run_ros2_services_test.sh` (Services in beide Richtungen mit denselben Partnern); `crates/ros2-rmw/src/topic_mangling.rs::tests::ros_names_prefix_a_topic_loses_its_leading_slash_and_takes_rt`, `crates/ros2-rmw/src/service.rs::tests::ros2bridge_4_2_a_service_is_the_topics_rq_request_and_rr_reply`, `crates/ros2-rmw/src/action.rs::tests::ros2bridge_4_3_an_action_names_its_five_endpoints_under_action`; `crates/rmw-zerodds-shim/tests/shim_cli_e2e.rs::{graph_shows_participant_and_discovery_mode, doctor_multicast_free_with_peers_ok}`.
 
-**Status:** done
+**Status:** partial — Fast DDS und Cyclone DDS sind gemessen; rmw_connextdds und das Build-Ziel Iron fehlen (eigene Items).
+
+### §10.1 Cross-Vendor mit rmw_connextdds
+
+**Spec:** §10 — Cross-Vendor mit `rmw_connextdds` (RTI).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — nicht gemessen; die Spec selbst nennt es „not measured (not installed in the test env)“. Es fehlt ein Lauf von `run_qos_translation_test.sh` und `run_ros2_services_test.sh` gegen rmw_connextdds.
+
+### §10.2 Build-Ziel ROS-Distro Iron
+
+**Spec:** §10 — eigenes Build-Ziel pro Distro: Humble, Iron, Jazzy, Rolling; §11 — Paket `ros-iron-rmw-zerodds-cpp` und Image `zerodds/ros2-iron:1.0`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `packaging/linux/deb/build-rmw-deb.sh` kennt `humble jazzy kilted rolling` und lehnt jeden anderen Namen ab; `ci/release-candidate.yml::ros-rmw-deb` baut dieselben vier. `packaging/docker/ros2-shim/Dockerfile` nennt die Variante `iron`, deren Paketbau das Skript ablehnt (nicht gebaut, aus dem Skript gelesen).
 
 ## §11 Packaging
 
@@ -322,7 +326,7 @@ pro ROS-Distro; `zerodds-ros2-shim` Diagnose-Binary; Configs/Docker;
 Manuals.
 
 **Repo:** `packaging/linux/deb/build-rmw-deb.sh` (`ros-<distro>-rmw-zerodds-cpp`),
-`ci/full.yml` (`ros-rmw-deb`),
+`ci/release-candidate.yml` (`ros-rmw-deb`),
 `packaging/linux/deb/assemble-debs.sh` (`zerodds-ros2`),
 `packaging/linux/rpm/zerodds.spec` (`%files ros2`),
 `packaging/macos/homebrew/zerodds-ros2.rb`,
@@ -337,18 +341,19 @@ Manuals.
 (die ausgelieferte Beispiel-Konfiguration durch den echten Parser, mit den Werten, die sie nennt);
 `tools/traceability/tests/bridge_config_manpages.rs::{every_example_key_is_documented_in_the_man_page, the_man_page_names_no_key_the_example_does_not_declare, the_pre_spec_vocabulary_is_gone_from_pages_and_examples, every_man_page_names_its_parser_and_what_an_unknown_key_does}`
 (die Handbuchseite und die Beispieldatei nennen dieselben Schlüssel);
-`crates/rmw-zerodds-shim/tests/ros2_deb_package.rs::{the_package_is_named_after_the_distro_and_the_distro_is_checked, the_package_carries_the_library_the_index_entries_and_package_xml, the_ros2_image_installs_the_rmw_from_the_package, the_ros2_deb_description_points_at_the_rmw_package, the_endpoint_info_scripts_exit_non_zero_on_a_mismatch}`,
-`crates/rmw-zerodds-shim/tests/ros2_deb_ci_job.rs::{the_ci_job_builds_the_package_in_the_ros_image_and_checks_its_file_list, the_endpoint_info_checks_run_after_the_round_trip}`
-(Paketname, Installationspfad, Dateiliste aus dem ament-Install, CI-Job und Image, ohne ROS-2-Installation prüfbar);
-Ausführer: `ci/full.yml::ros-rmw-deb` (weekly) läuft als Matrix einmal pro Distro (`humble`, `jazzy`, `kilted`, `rolling`) im jeweiligen ROS-2-Image, prüft die Dateiliste des .deb, installiert es mit `dpkg -i` zurück in den ROS-Präfix und tauscht dann mit `packaging/linux/deb/rmw-pubsub-check.py` `std_msgs/String` zwischen zwei Prozessen aus; `packaging/linux/deb/rmw-type-hash-check.py` prüft den Typ-Hash, den ein zweiter Prozess liest (gegen das Paket selbst und in beiden Richtungen gegen `rmw_fastrtps_cpp`, nicht auf Humble), und auf Rolling `packaging/linux/deb/rmw-service-info-check.py` Server und Clients eines Service.
+das Paket selbst prüft der Release-Kandidaten-Job `ros-rmw-deb` (`ci/release-candidate.yml`): eine Matrix einmal pro Distro (`humble`, `jazzy`, `kilted`, `rolling`) im jeweiligen ROS-2-Image, die Dateiliste des .deb, `dpkg -i` zurück in den ROS-Präfix, dann `std_msgs/String` zwischen zwei Prozessen mit `packaging/linux/deb/rmw-pubsub-check.py`; `packaging/linux/deb/rmw-type-hash-check.py` prüft den Typ-Hash, den ein zweiter Prozess liest (gegen das Paket selbst und in beiden Richtungen gegen rmw_fastrtps_cpp, nicht auf Humble), und auf Rolling `packaging/linux/deb/rmw-service-info-check.py` Server und Clients eines Service; auf `main` grün in Pipeline 8827.
 
-**Offen:** `librmw_zerodds_cpp.so` liegt im deb-Paket
-`ros-<distro>-rmw-zerodds-cpp` (`packaging/linux/deb/build-rmw-deb.sh`,
-gebaut aus dem ament-Projekt `crates/rmw-zerodds-shim/ament`, Startwert
-jazzy) und das Image installiert es aus diesem Paket. Nicht gelaufen: der
-wöchentliche Job und der Image-Bau (A18); kein rpm-Paket führt die Bibliothek.
+**Status:** partial — `librmw_zerodds_cpp.so` liegt im deb-Paket `ros-<distro>-rmw-zerodds-cpp` (gebaut aus `crates/rmw-zerodds-shim/ament`), das Image installiert es aus diesem Paket; Diagnose-Binary, Konfiguration und Handbuchseiten sind ausgeliefert. Der Image-Bau ist nicht gelaufen. Es fehlen die Veröffentlichung auf dem `packages.ros.org`-Spiegel (§11.1) und Paket und Image für Iron (§10.2).
 
-**Status:** partial
+### §11.1 Veröffentlichung auf dem packages.ros.org-Spiegel
+
+**Spec:** §11 — ein .deb pro ROS-Distro, `ros-humble-rmw-zerodds-cpp`, `ros-iron-rmw-zerodds-cpp` usw., auf dem `packages.ros.org`-Spiegel.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `packaging/linux/deb/build-rmw-deb.sh` baut das Paket; kein Job und kein Skript lädt es auf `packages.ros.org` hoch.
 
 ## §12 Testing
 
@@ -360,14 +365,14 @@ enclave je ≥ 5 Tests.
 **Repo:** `crates/rmw-zerodds-shim/src/lib.rs` (inline tests),
 `crates/ros2-rmw/`.
 
-**Tests:** `crates/ros2-rmw/src/topic_mangling.rs::tests` (11 Tests, darunter
-`mangle_each_kind_uses_correct_prefix`, `demangle_round_trips_all_kinds`),
-`crates/ros2-rmw/src/service.rs::tests` (5),
-`crates/ros2-rmw/src/action.rs::tests` (6),
-`crates/ros2-rmw/src/msg_to_idl.rs::tests` (7),
-`crates/ros2-rmw/src/json_log.rs::tests` (5),
-`crates/rmw-zerodds-shim/src/lib.rs::tests` (24, darunter `rmw_codes_match_rep_2007`,
-`type_hash_sha256_is_deterministic`, `event_driven_wait_roundtrip_inprocess`);
+**Tests:** `crates/ros2-rmw/src/topic_mangling.rs::tests` (6 Tests, darunter
+`ros_names_prefix_each_kind_takes_its_prefix`, `ros_names_prefix_the_four_prefixes_read_back_as_their_kind`),
+`crates/ros2-rmw/src/service.rs::tests` (2),
+`crates/ros2-rmw/src/action.rs::tests` (1),
+`crates/ros2-rmw/src/msg_to_idl.rs::tests` (4),
+`crates/ros2-rmw/src/json_log.rs::tests` (3),
+`crates/rmw-zerodds-shim/src/lib.rs::tests` (24, darunter `rmw_ret_types_h_the_shim_returns_the_header_codes`,
+`fips180_4_b_1_the_type_name_hash_is_sha_256`, `rmw_h_rmw_wait_wakes_on_arrival_and_times_out_when_empty`);
 `crates/rmw-zerodds-shim/src/ros2_config.rs::tests` (6).
 
 **Status:** done
@@ -389,19 +394,13 @@ rmw_zerodds_cpp`; selftest mit Service-Call.
 
 **Status:** done
 
-### §12.3 Multi-Vendor cross_vendor.rs
+### §12.3 Multi-Vendor
 
-**Spec:** §12.3 — ROS-2-Container mit ZeroDDS-RMW + FastRTPS/Cyclone
-auf gleichem ROS_DOMAIN_ID; Distros Humble/Iron/Jazzy.
+**Spec:** §12.3 — Topics über `run_qos_translation_test.sh` mit `RMW_PUB`/`RMW_SUB` gegen rmw_cyclonedds_cpp und rmw_fastrtps_cpp in beide Richtungen; Services über `run_ros2_services_test.sh`; Security über `run_ros2_security_test.sh`; die Namenskonventionen von rmw_cyclonedds_cpp und rmw_fastrtps_cpp prüfen Unit-Tests von `crates/ros2-rmw` ohne ROS.
 
-**Repo:** `crates/ros2-rmw/tests/cross_vendor.rs` (Cluster-C
-Cross-Vendor-Harness).
+**Repo:** `crates/rmw-zerodds-shim/rmw_c/`, `crates/ros2-rmw/`.
 
-**Tests:** `crates/ros2-rmw/tests/cross_vendor.rs::topic_mangling_matches_rmw_dds_common_convention`,
-`crates/ros2-rmw/tests/cross_vendor.rs::service_topic_pair_matches_cyclone_format`,
-`crates/ros2-rmw/tests/cross_vendor.rs::action_topic_set_matches_cyclone_format`; der Live-Fall
-`ros2_topic_list_includes_chatter` ist `#[ignore]` und läuft nur mit
-installiertem ROS 2.
+**Tests:** `crates/rmw-zerodds-shim/rmw_c/run_qos_translation_test.sh` (`RMW_PUB`/`RMW_SUB`), `crates/rmw-zerodds-shim/rmw_c/run_ros2_services_test.sh`, `crates/rmw-zerodds-shim/rmw_c/run_ros2_security_test.sh` (Linux-Testhost, von Hand; in keinem CI-Job); `crates/ros2-rmw/src/topic_mangling.rs::tests::ros_names_prefix_a_topic_loses_its_leading_slash_and_takes_rt`, `crates/ros2-rmw/src/service.rs::tests::ros2bridge_4_2_a_service_is_the_topics_rq_request_and_rr_reply`, `crates/ros2-rmw/src/action.rs::tests::ros2bridge_4_3_an_action_names_its_five_endpoints_under_action`.
 
 **Status:** done
 
@@ -416,7 +415,7 @@ REP-2007/2008/2009 + SROS2, Wire-Format, Deployment, DDS-Security 1.2.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Verweisliste.
 
 ## §14 Versioning
 
@@ -429,14 +428,24 @@ Major=RMW-API-Breaking.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Regel für die Vergabe der Versionsnummer eines Release, keine Eigenschaft des Daemons.
 
 ---
 
 ## Audit-Status
 
-18 done / 0 partial / 3 open / 3 n/a (informative) / 0 n/a (rejected).
+17 done / 2 partial / 5 open / 0 blocked / 3 n/a (informative).
 
-Test-Lauf: `cargo test -p rmw-zerodds-shim` — Tests grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-ros2-bridge-1.0.md`):
 
-Offene Punkte: siehe `zerodds-ros2-bridge-1.0.open.md`. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (Job `merge-rust-dcps`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p rmw-zerodds-shim --all-targets` (Job `merge-rust-rmw-zerodds-shim`) — 23 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-ros2-rmw --all-targets` (Job `merge-rust-ros2-rmw`) — 12 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (Job `merge-rust-rtps`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-security-permissions --all-targets` (Job `merge-rust-security-permissions`) — 6 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-security-runtime --all-targets` (Job `merge-rust-security-runtime`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (Job `merge-rust-traceability`) — 5 Tests grün.
+
+51 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `zerodds-ros2-bridge-1.0.open.md`.

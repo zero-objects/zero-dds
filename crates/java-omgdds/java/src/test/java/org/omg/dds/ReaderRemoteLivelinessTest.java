@@ -62,7 +62,7 @@ class ReaderRemoteLivelinessTest {
     }
 
     @Test
-    void aRemoteWriterIsAliveWithinItsLeaseAndAliveAgainAfterAnAssertion() throws Exception {
+    void javapsm_2_a_remote_writer_is_alive_within_its_lease_and_alive_again_after_an_assertion() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("WireLiveliness", byte[].class);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);

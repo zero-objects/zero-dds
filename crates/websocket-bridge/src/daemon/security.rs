@@ -124,7 +124,7 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn ws_extracts_bearer_from_headers_case_insensitive() {
+    fn wsbridge_7_2_ws_extracts_bearer_from_headers_case_insensitive() {
         let mut tokens = HashMap::new();
         tokens.insert("tok".to_string(), AuthSubject::new("alice"));
         let auth = AuthMode::Bearer { tokens };
@@ -137,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn ws_missing_authorization_header_returns_missing() {
+    fn wsbridge_7_2_ws_missing_authorization_header_returns_missing() {
         let auth = AuthMode::Bearer {
             tokens: HashMap::new(),
         };
@@ -146,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn ws_none_auth_yields_anonymous_without_header() {
+    fn wsbridge_7_2_ws_none_auth_yields_anonymous_without_header() {
         let s = authenticate_ws(&AuthMode::None, &[], None).unwrap();
         assert_eq!(s.name, "anonymous");
     }
@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn ctx_from_config_with_bearer_tokens() {
+    fn wsbridge_7_2_ctx_from_config_with_bearer_tokens() {
         use super::super::config::DaemonConfig;
         let mut cfg = DaemonConfig::default_for_dev();
         cfg.auth_mode = "bearer".into();
@@ -183,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn ctx_from_config_tls_enabled_without_paths_rejected() {
+    fn ws_10_6_ctx_from_config_tls_enabled_without_paths_rejected() {
         use super::super::config::DaemonConfig;
         let mut cfg = DaemonConfig::default_for_dev();
         cfg.tls_enabled = true;
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn ws_acl_check_allows_listed_user() {
+    fn wsbridge_7_3_ws_acl_check_allows_listed_user() {
         let mut cfg = SecurityConfig::default();
         cfg.topic_acl.insert(
             "Trade".into(),

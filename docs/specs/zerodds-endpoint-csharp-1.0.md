@@ -48,7 +48,7 @@ single receive (`null` if nothing is pending).
 
 - `interface ITransport { void Deliver(byte[] frame); byte[]? Receive(); }`
   — the only integration point; the integrator implements it for
-  their link (e.g. UDP, see `csharp_endpoint_sync`/`csharp_endpoint_async`
+  their link (e.g. UDP, see `xrce_8_3_5_8_csharp_sync_app_writes_the_ping_and_reads_the_pong`/`xrce_8_3_5_8_csharp_async_app_writes_the_ping_and_reads_the_pong`
   in `crates/endpoint-e2e/tests/csharp.rs`).
 - `sealed class Client` with `Client(ITransport transport)`,
   `Write(byte[] sample) -> void`, `Poll() -> byte[]?`.

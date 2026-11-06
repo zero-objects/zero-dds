@@ -4,7 +4,7 @@
 //!
 //! This logic (VLAN selection, Ethernet frame building incl. min-frame
 //! padding, MAC parsing from the sysfs format) needs no syscalls and is
-//! therefore testable on every platform — in contrast to [`crate::socket`],
+//! therefore testable on every platform — in contrast to `crate::socket`,
 //! which requires `AF_PACKET`/`SOCK_RAW` and thus Linux. `socket.rs`
 //! calls these helpers exclusively, so the frame logic has exactly
 //! one tested source.
@@ -37,8 +37,13 @@ pub enum MacParseError {
 /// Selects the VLAN tag for an outbound frame:
 ///
 /// * `target_vid != 0` (from the destination locator) overrides `default_vid`.
-/// * effective `vid == 0` → untagged (`None`).
-/// * otherwise an `Ieee802VlanTag` with the configured `pcp`.
+/// * effective `vid == 0` and `pcp == 0` → untagged (`None`).
+/// * effective `vid == 0` and `pcp != 0` → a priority-tagged frame: an
+///   `Ieee802VlanTag` with the null VID 0 that carries the `pcp` (IEEE
+///   802.1Q-2022 §3 "priority-tagged frame", §9.6 Table 9-2: VID 0 means
+///   the tag carries priority information and no VLAN). An untagged frame
+///   would drop the priority.
+/// * otherwise an `Ieee802VlanTag` with `vid` and the configured `pcp`.
 ///
 /// # Errors
 /// [`VlanError::OutOfRange`] if `pcp`/`vid` are outside the valid
@@ -53,7 +58,7 @@ pub fn outbound_vlan(
     } else {
         default_vid
     };
-    if vid == 0 {
+    if vid == 0 && pcp == 0 {
         return Ok(None);
     }
     Ieee802VlanTag::new(TPID_8021Q, pcp, false, vid)
@@ -107,36 +112,64 @@ mod tests {
     use super::*;
 
     #[test]
-    fn target_vid_overrides_default() {
+    fn tsn_annex_a_target_vid_overrides_default() {
         let vt = outbound_vlan(10, 5, 200).expect("ok").expect("tagged");
         assert_eq!(vt.vid, 200);
         assert_eq!(vt.pcp, 5);
     }
 
     #[test]
-    fn zero_target_falls_back_to_default_vid() {
+    fn tsn_annex_a_zero_target_falls_back_to_default_vid() {
         let vt = outbound_vlan(10, 3, 0).expect("ok").expect("tagged");
         assert_eq!(vt.vid, 10);
         assert_eq!(vt.pcp, 3);
     }
 
     #[test]
-    fn zero_default_and_target_is_untagged() {
+    fn tsn_annex_a_zero_default_and_target_is_untagged() {
         assert_eq!(outbound_vlan(0, 0, 0).expect("ok"), None);
     }
 
     #[test]
-    fn vid_out_of_range_is_error() {
+    fn ieee_802_1q_9_6_a_priority_without_a_vlan_goes_priority_tagged() {
+        // IEEE 802.1Q-2022 §9.6: TPID 0x8100, then the TCI with PCP in the
+        // top three bits, DEI, and the 12-bit VID; VID 0 (Table 9-2, the
+        // null VID) carries the priority alone. PCP 5 → TCI 0xA000.
+        for pcp in 1..=7_u8 {
+            let tag = outbound_vlan(0, pcp, 0)
+                .expect("ok")
+                .expect("priority-tagged");
+            assert_eq!((tag.vid, tag.pcp, tag.dei), (0, pcp, false));
+        }
+        let vlan = outbound_vlan(0, 5, 0).expect("ok");
+        let frame = build_frame([0xAA; 6], [0xBB; 6], vlan, &[1, 2, 3, 4]);
+        assert_eq!(&frame[12..18], &[0x81, 0x00, 0xA0, 0x00, 0x88, 0xB5]);
+        assert_eq!(&frame[18..22], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn ieee_802_1q_9_6_priority_zero_without_a_vlan_stays_untagged() {
+        let frame = build_frame(
+            [0xAA; 6],
+            [0xBB; 6],
+            outbound_vlan(0, 0, 0).expect("ok"),
+            &[1],
+        );
+        assert_eq!(&frame[12..15], &[0x88, 0xB5, 1]);
+    }
+
+    #[test]
+    fn tsn_annex_a_vid_out_of_range_is_error() {
         assert_eq!(outbound_vlan(0, 0, 5000), Err(VlanError::OutOfRange));
     }
 
     #[test]
-    fn pcp_out_of_range_is_error() {
+    fn tsn_annex_a_pcp_out_of_range_is_error() {
         assert_eq!(outbound_vlan(10, 9, 0), Err(VlanError::OutOfRange));
     }
 
     #[test]
-    fn build_frame_untagged_has_14_byte_header() {
+    fn tsn_annex_a_build_frame_untagged_has_14_byte_header() {
         let frame = build_frame([0xAA; 6], [0xBB; 6], None, &[1, 2, 3, 4]);
         // 14-byte header + 4-byte payload = 18, padded to 60.
         assert_eq!(frame.len(), ETH_MIN_FRAME);
@@ -148,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn build_frame_tagged_has_18_byte_header() {
+    fn tsn_annex_a_build_frame_tagged_has_18_byte_header() {
         let vlan = Ieee802VlanTag::new(TPID_8021Q, 6, false, 42).expect("vlan");
         let frame = build_frame([0xAA; 6], [0xBB; 6], Some(vlan), &[9; 100]);
         // 18-byte header + 100-byte payload = 118 (> 60, no padding).
@@ -160,13 +193,13 @@ mod tests {
     }
 
     #[test]
-    fn build_frame_large_payload_not_padded() {
+    fn tsn_annex_a_build_frame_large_payload_not_padded() {
         let frame = build_frame([0; 6], [0; 6], None, &[7; 80]);
         assert_eq!(frame.len(), 14 + 80);
     }
 
     #[test]
-    fn parse_mac_sysfs_standard_format() {
+    fn tsn_annex_a_parse_mac_sysfs_standard_format() {
         assert_eq!(
             parse_mac_sysfs("aa:bb:cc:dd:ee:ff").expect("ok"),
             [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF]
@@ -174,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_mac_sysfs_tolerates_trailing_newline() {
+    fn tsn_annex_a_parse_mac_sysfs_tolerates_trailing_newline() {
         assert_eq!(
             parse_mac_sysfs("00:11:22:33:44:55\n").expect("ok"),
             [0x00, 0x11, 0x22, 0x33, 0x44, 0x55]
@@ -182,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_mac_sysfs_too_few_octets() {
+    fn tsn_annex_a_parse_mac_sysfs_too_few_octets() {
         assert_eq!(
             parse_mac_sysfs("aa:bb:cc"),
             Err(MacParseError::TooFewOctets)
@@ -190,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_mac_sysfs_non_hex() {
+    fn tsn_annex_a_parse_mac_sysfs_non_hex() {
         assert_eq!(
             parse_mac_sysfs("aa:bb:cc:dd:ee:zz"),
             Err(MacParseError::NotHex)

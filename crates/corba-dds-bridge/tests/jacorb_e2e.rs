@@ -129,7 +129,7 @@ fn jaco(classes: &Path, class: &str, props: &[(&str, &str)]) -> Command {
 
 #[test]
 #[ignore = "needs JacORB 3.9 and a Java 8 JDK (Linux test host)"]
-fn jacorb_calls_reach_a_dds_backend_and_dds_samples_reach_a_jacorb_servant() {
+fn corbabridge_10_jacorb_calls_reach_a_dds_backend_and_dds_samples_reach_a_jacorb_servant() {
     let dir = workdir("jacorb-e2e");
     let classes = build(&dir);
 
@@ -185,7 +185,7 @@ fn jacorb_calls_reach_a_dds_backend_and_dds_samples_reach_a_jacorb_servant() {
 /// in `TIMEOUT`.
 #[test]
 #[ignore = "needs JacORB 3.9 and a Java 8 JDK (Linux test host)"]
-fn jacorb_gssup_credentials_pass_csiv2_and_the_acl() {
+fn corbabridge_10_jacorb_gssup_credentials_pass_csiv2_and_the_acl() {
     let dir = workdir("jacorb-gssup");
     let classes = build(&dir);
 
@@ -253,7 +253,7 @@ fn jacorb_gssup_credentials_pass_csiv2_and_the_acl() {
 /// is gone.
 #[test]
 #[ignore = "needs JacORB 3.9 and a Java 8 JDK (Linux test host)"]
-fn the_bridge_rebinds_into_jacorbs_name_server_and_unbinds_on_stop() {
+fn corbabridge_10_the_bridge_rebinds_into_jacorbs_name_server_and_unbinds_on_stop() {
     let dir = workdir("jacorb-ns");
     let classes = build(&dir);
 
@@ -311,7 +311,7 @@ fn the_bridge_rebinds_into_jacorbs_name_server_and_unbinds_on_stop() {
 /// JacORB narrows the root context with a remote `_is_a`, then resolves.
 #[test]
 #[ignore = "needs JacORB 3.9 and a Java 8 JDK (Linux test host)"]
-fn jacorb_resolves_the_bridge_through_zerodds_naming_svc() {
+fn corbabridge_10_jacorb_resolves_the_bridge_through_zerodds_naming_svc() {
     let dir = workdir("jacorb-zd-naming");
     let classes = build(&dir);
 

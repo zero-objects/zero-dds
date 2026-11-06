@@ -222,6 +222,19 @@ impl EnumLiteralFlag {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BitmaskTypeFlag(pub u16);
 
+impl BitmaskTypeFlag {
+    /// `@final`. DDS-XTypes 1.3 Annex B calls the word unused; DDSXTY14-24
+    /// ("enums and bitmasks can have extensibility"), resolved in 1.4 Beta
+    /// 1, gives it "F, A. No flags == A" (`dds-xtypes_typeobject.idl`), as
+    /// for an enumeration (`EnumTypeFlag`, `docs/omg-xtypes-issues.md`
+    /// §B8). CycloneDDS 11.0.1 refuses a bitmask whose word holds
+    /// neither bit (`ddsi_typewrap.c`, `xt_valid_type_flags`: "invalid
+    /// type object").
+    pub const IS_FINAL: u16 = 1 << 0;
+    /// `@appendable`, the default extensibility of a bitmask.
+    pub const IS_APPENDABLE: u16 = 1 << 1;
+}
+
 /// Flags for a bitflag (bitmask member).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BitflagFlag(pub u16);

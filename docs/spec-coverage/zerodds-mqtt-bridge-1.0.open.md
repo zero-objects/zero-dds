@@ -23,7 +23,7 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §10a Broker-Matrix EMQX/HiveMQ
 
-**Status:** `open` — der Teil von §10 und §12.3 jenseits Mosquitto. `crates/mqtt-bridge/tests/cross_vendor.rs` kennt nur Mosquitto.
+**Status:** `open` — der Teil von §10 und §12.3 jenseits Mosquitto. Die Tests mit einem fremden Broker kennen nur Mosquitto.
 
 ## §12.3 Multi-Vendor cross_vendor.rs
 

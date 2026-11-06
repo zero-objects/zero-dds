@@ -30,7 +30,7 @@ protected object, `Reader_Task`).
 **Tests:** `endpoints/ada/test/test_byte_identity.adb::Test_Byte_Identity` — the marks `"negative: a body past Max_Frame refused"`,
 `"negative: the largest body still frames"` and `"ALL OK"` against
 `golden_le.bin`/`golden_be.bin`; driven by
-`crates/endpoint-e2e/tests/ada.rs::ada_endpoint_sync`.
+`crates/endpoint-e2e/tests/ada.rs::xrce_8_3_5_8_ada_sync_app_writes_the_ping_and_reads_the_pong`.
 
 **Status:** done
 
@@ -64,9 +64,9 @@ Success)` — the integrator owns the poll/wait loop."
 **Repo:** `Deep_Reading.Mailbox` (protected FIFO transport, `Deliver`/`Receive`);
 example `example_sync.adb`.
 
-**Tests:** (Linux) `ada_endpoint_sync` (`crates/endpoint-e2e/tests/ada.rs`, Ada
+**Tests:** (Linux) `xrce_8_3_5_8_ada_sync_app_writes_the_ping_and_reads_the_pong` (`crates/endpoint-e2e/tests/ada.rs`, Ada
 app built via gprbuild over the C89 wire core) — together with
-`ada_endpoint_async` (§3) 2/2 passed.
+`xrce_8_3_5_8_ada_async_app_writes_the_ping_and_reads_the_pong` (§3) 2/2 passed.
 
 **Status:** done
 
@@ -83,9 +83,9 @@ calling task blocks on `Mailbox.Receive`."
 `Mailbox.Deliver`); example `example_async.adb` (main task blocks on
 `Inbox.Receive`).
 
-**Tests:** (Linux) `ada_endpoint_async` (`crates/endpoint-e2e/tests/ada.rs`,
+**Tests:** (Linux) `xrce_8_3_5_8_ada_async_app_writes_the_ping_and_reads_the_pong` (`crates/endpoint-e2e/tests/ada.rs`,
 Ada app built via gprbuild over the C89 wire core) — together with
-`ada_endpoint_sync` (§2) 2/2 passed.
+`xrce_8_3_5_8_ada_sync_app_writes_the_ping_and_reads_the_pong` (§2) 2/2 passed.
 
 **Status:** done
 
@@ -132,11 +132,12 @@ and performs all the I/O (send, heartbeat, ACKNACK-driven retransmit)."
 `example_reliable.adb` (drain task via `GNAT.Sockets`).
 
 **Tests:** (Linux)
-- `ada_reliable_loss_recovery` — peer drops every 3rd datagram; app retransmits
+- `reliable_5_3_ada_samples_arrive_in_order_despite_dropped_datagrams` — peer drops every 3rd datagram; app retransmits
   on ACKNACK; all 12 samples delivered gap-free in order.
-- `ada_reliable_baseline` — lossless; 12/12.
-- Latency micro-bench: producer `Enqueue`→return **87 ns** vs inline
-  frame+`sendto` **7338 ns** (~84×).
+- `reliable_5_4_ada_the_producer_enqueue_costs_less_than_the_inline_send` — the
+  bench mode of `example_reliable.adb` (`bench`) measures producer
+  `Enqueue`→return against an inline frame+`sendto` and prints both figures; the
+  test checks that the enqueue is the lower one (job `integration-bindings-gnat-beam`).
 
 **Status:** done
 
@@ -144,10 +145,13 @@ and performs all the I/O (send, heartbeat, ACKNACK-driven retransmit)."
 
 ## Audit-Status
 
-7 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+7 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test ada`
-2/2 (ping-pong); `--test ada_reliable` 3/3 (unit+golden, loss recovery, baseline);
-latency bench decoupled 87 ns / inline 7338 ns.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-ada-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings-gnat-beam` (job `integration-bindings-gnat-beam`) — 3 tests green.
+* `python3 ci/run_integration.py integration-endpoints` (job `integration-endpoints`) — 6 tests green.
+
+9 cited tests green, 0 not green.
 
 Open items: none.

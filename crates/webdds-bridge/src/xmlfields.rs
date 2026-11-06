@@ -94,10 +94,8 @@ pub fn parse(xml: &str) -> Result<FlatFields, ParseError> {
                     }
                     current_text.clear();
                 } else if depth == 2 {
-                    if !current_is_list {
-                        if let Some(tag) = current_tag.take() {
-                            out.scalars.insert(tag, current_text.trim().to_string());
-                        }
+                    if !current_is_list && let Some(tag) = current_tag.take() {
+                        out.scalars.insert(tag, current_text.trim().to_string());
                     }
                     current_tag = None;
                     current_text.clear();

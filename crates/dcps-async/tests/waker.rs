@@ -86,9 +86,10 @@ fn wait_for_wake(hits: &AtomicUsize, timeout: Duration) -> usize {
 /// §3.1 + §3.2 — a waker registered on the reader slot is woken by the
 /// arrival of a sample, not by a timer.
 #[tokio::test(flavor = "multi_thread")]
-async fn reader_slot_waker_is_woken_on_sample_arrival() {
+async fn async_2_1_reader_slot_waker_is_woken_on_sample_arrival() {
     let factory = AsyncDomainParticipantFactory::instance();
-    let p = factory.create_participant(0).expect("participant");
+    let lease = zerodds_test_domains::lease_domain();
+    let p = factory.create_participant(lease.id()).expect("participant");
     let topic = p
         .create_topic::<RawBytes>("AsyncWakerSlot", TopicQos::default())
         .expect("topic");
@@ -141,9 +142,10 @@ async fn reader_slot_waker_is_woken_on_sample_arrival() {
 /// `Pending` branch: the very waker handed in through `Context` is the one
 /// that gets woken when a sample lands.
 #[tokio::test(flavor = "multi_thread")]
-async fn take_stream_poll_next_registers_the_callers_waker() {
+async fn async_2_2_take_stream_poll_next_registers_the_callers_waker() {
     let factory = AsyncDomainParticipantFactory::instance();
-    let p = factory.create_participant(0).expect("participant");
+    let lease = zerodds_test_domains::lease_domain();
+    let p = factory.create_participant(lease.id()).expect("participant");
     let topic = p
         .create_topic::<RawBytes>("AsyncWakerStream", TopicQos::default())
         .expect("topic");

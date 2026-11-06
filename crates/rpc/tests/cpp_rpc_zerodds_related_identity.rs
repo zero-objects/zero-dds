@@ -212,7 +212,7 @@ int main() {
 /// number, comes back as the sequence number of the new sample, and a take
 /// reports the identity of the DATA and its related identity.
 #[test]
-fn the_zerodds_binding_sends_and_reads_the_related_sample_identity() {
+fn rpc_7_8_2_the_zerodds_binding_sends_and_reads_the_related_sample_identity() {
     let root = repository_root();
     let dir = std::env::temp_dir().join(format!(
         "zerodds-rpc-related-{}-{:?}",

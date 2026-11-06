@@ -436,10 +436,9 @@ fn discriminant_literal(ast: &Ast, discriminator: Id<TypeNode>, value: i128) -> 
     if matches!(
         ast.type_(resolved).map(|node| node.kind.clone()),
         Ok(TypeKind::Enumeration { .. })
-    ) {
-        if let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved) {
-            return Node::enumerator_constant(ast, resolved, &enumerator);
-        }
+    ) && let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved)
+    {
+        return Node::enumerator_constant(ast, resolved, &enumerator);
     }
     if matches!(
         resolved_primitive(ast, resolved),
@@ -657,12 +656,11 @@ fn calls_in_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::Call { callee, args } => {
             // A defaulter call is `zd_def_*(...)` and nothing else this
             // generator emits looks like one.
-            if let Expr::Name(name) = callee.as_ref() {
-                if name.as_str().starts_with("zd_def_")
-                    && !out.iter().any(|seen| seen == name.as_str())
-                {
-                    out.push(name.as_str().to_string());
-                }
+            if let Expr::Name(name) = callee.as_ref()
+                && name.as_str().starts_with("zd_def_")
+                && !out.iter().any(|seen| seen == name.as_str())
+            {
+                out.push(name.as_str().to_string());
             }
             calls_in_expr(callee, out);
             for arg in args {

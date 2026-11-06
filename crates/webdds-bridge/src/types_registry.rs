@@ -319,6 +319,13 @@ impl TypeRegistry {
             )));
         };
 
+        // The generation is read before the first look into the registry
+        // and before the request goes out. Read after the request, a
+        // reply that lands in between (a peer in the same process answers
+        // within the send) is already counted, the generation never moves
+        // again, and the wait ran into the bound with the type in the
+        // registry.
+        let mut last_generation = current_generation(runtime);
         match self.resolve_discovered(runtime, type_name, hash) {
             Ok(r) => return Ok(r),
             Err(TypeResolveError::NotYetResolved) => {}
@@ -328,15 +335,30 @@ impl TypeRegistry {
         let mut peer_prefix = [0u8; 12];
         peer_prefix.copy_from_slice(&endpoint.endpoint_guid[..12]);
         let peer = zerodds_rtps::wire_types::GuidPrefix(peer_prefix);
-        let _ = runtime.send_type_lookup_request(peer, &[endpoint.type_identifier.clone()]);
+        let ask = || {
+            runtime
+                .send_type_lookup_request(peer, std::slice::from_ref(&endpoint.type_identifier))
+                .ok()
+                .flatten()
+                .is_some()
+        };
+        // The request is one datagram (`send_type_lookup_request`), and
+        // the runtime's own call sites ask again on every matching pass.
+        // So does this wait: a request that did not go out (the peer's
+        // locator not known yet) or whose reply never came is sent again.
+        let mut asked = ask();
+        let mut asked_at = std::time::Instant::now();
 
         let deadline = std::time::Instant::now() + timeout;
-        let mut last_generation = current_generation(runtime);
         loop {
             if std::time::Instant::now() >= deadline {
                 return Err(TypeResolveError::TimedOut(type_name.to_string()));
             }
             std::thread::sleep(core::time::Duration::from_millis(10));
+            if !asked || asked_at.elapsed() >= TYPE_LOOKUP_RESEND {
+                asked = ask();
+                asked_at = std::time::Instant::now();
+            }
             let generation = current_generation(runtime);
             if generation == last_generation {
                 continue;
@@ -374,6 +396,10 @@ impl TypeRegistry {
         Ok(resolved)
     }
 }
+
+/// How long [`TypeRegistry::resolve_named`] waits for a reply before it
+/// sends the `getTypes` request again.
+const TYPE_LOOKUP_RESEND: core::time::Duration = core::time::Duration::from_millis(500);
 
 /// The TypeLookup registry's generation counter, or `0` on a poisoned
 /// lock (treated as "unknown", so the caller's first comparison always

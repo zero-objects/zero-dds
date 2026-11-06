@@ -21,7 +21,15 @@
 
 "use strict";
 
-const { Endianness, Reader, Writer, WstringLengthPolicy } = require("./zdwire.js");
+const {
+  Endianness,
+  ParameterRole,
+  Reader,
+  Status,
+  Writer,
+  WstringLengthPolicy,
+  bitPatternInt,
+} = require("./zdwire.js");
 
 let checks = 0;
 let failures = 0;
@@ -180,6 +188,81 @@ expectThrows("a wstring length past the buffer", () => {
     WstringLengthPolicy.OctetsTerminated2,
   );
 });
+
+// -- the operations no corpus case reaches ----------------------------------
+//
+// The five the generated code reaches only in a dialect or with a member no
+// corpus case carries: `writePidExtended`, `writeUnionOverlay`,
+// `readerClearDiscard`, `readerSave` and `readerRestore`
+// (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+// vectors, each against an oracle outside this code.
+{
+  // The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+  // recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv).
+  const writer = new Writer(Endianness.Little, 8);
+  const header = writer.writePidExtended(0, ParameterRole.Member, false);
+  writer.writeI32(-1234567);
+  writer.finishPid(header);
+  expect(
+    "writePidExtended: Cyclone's recorded parameter",
+    hex(writer.finish()),
+    "017f0800" + "00000000" + "04000000" + "7929edff",
+  );
+}
+{
+  // A `short` read through a four-octet and a one-octet `default:` branch:
+  // Cyclone DDS 11.0.1 writes the union's storage, the member's octets with
+  // zeros above (`combined-everything`, crates/wire-codec/src/encode.rs
+  // `write_selected_branch`).
+  const writer = new Writer(Endianness.Little, 4);
+  const pattern = bitPatternInt(-2n, 2);
+  writer.writeUnionOverlay(pattern, 4);
+  writer.writeUnionOverlay(pattern, 1);
+  expect("writeUnionOverlay: the storage at the branch's width", hex(writer.finish()), "feff0000" + "fe");
+}
+{
+  // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+  // Table 9's value, so the call site asks for DISCARD and takes it back.
+  // Any other refusal is not a narrowing and stays.
+  const discarded = new Reader(unhex("01020304"), Endianness.Little, 4);
+  discarded.readerRefuse(Status.Discarded);
+  expect("readerClearDiscard takes back a Discarded", discarded.readerClearDiscard(), true);
+  expect("the status after readerClearDiscard", discarded.readerStatus(), Status.Ok);
+  const refused = new Reader(unhex("01020304"), Endianness.Little, 4);
+  refused.readerRefuse(Status.OutOfRange);
+  expect("readerClearDiscard leaves an OutOfRange", refused.readerClearDiscard(), false);
+  expect("an OutOfRange stays", refused.readerStatus(), Status.OutOfRange);
+}
+{
+  // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+  // DHEADER and the pairs, without a count. The reader counts the pairs, goes
+  // back and reads them again; a refusal made while counting goes back with
+  // the cursor.
+  const reader = new Reader(
+    unhex("10000000" + "01000000" + "0a000000" + "02000000" + "14000000"),
+    Endianness.Little,
+    4,
+  );
+  const extent = reader.readDheader();
+  const end = reader.readerPosition() + extent;
+  const mark = reader.readerSave();
+  let pairs = 0;
+  while (reader.readerPosition() < end && reader.readerStatus() === Status.Ok) {
+    reader.readI32();
+    reader.readI32();
+    pairs += 1;
+  }
+  reader.readerRefuse(Status.OutOfRange);
+  reader.readerRestore(mark);
+  expect("the counting pass finds two pairs", pairs, 2);
+  expect(
+    "the pairs read again",
+    [reader.readI32(), reader.readI32(), reader.readI32(), reader.readI32()].join(","),
+    "1,10,2,20",
+  );
+  expect("the end of the map", reader.readerPosition(), 20);
+  expect("readerRestore takes the refusal back", reader.readerStatus(), Status.Ok);
+}
 
 if (failures !== 0) {
   console.log(`${failures} of ${checks} checks failed`);

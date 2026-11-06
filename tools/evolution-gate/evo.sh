@@ -23,7 +23,7 @@
 # ## What this replaces
 #
 # `/root/evo-work/evo.sh` on the Linux test host, which produced the 969
-# foreign rows `docs/interop-evidence.md` §2.5 counts. That copy read
+# foreign rows `0b2e8df9f6b:docs/interop-evidence.md` §2.5 counts. That copy read
 # its probes out of a checkout under `/root/evo-work/zerodds`; this one
 # reads them out of the checkout it is in.
 set -uo pipefail

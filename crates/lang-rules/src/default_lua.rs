@@ -428,10 +428,9 @@ fn discriminant_literal(ast: &Ast, discriminator: Id<TypeNode>, value: i128) -> 
     if matches!(
         ast.type_(resolved).map(|node| node.kind.clone()),
         Ok(TypeKind::Enumeration { .. })
-    ) {
-        if let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved) {
-            return Lua::enumerator_constant(ast, resolved, &enumerator);
-        }
+    ) && let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved)
+    {
+        return Lua::enumerator_constant(ast, resolved, &enumerator);
     }
     if matches!(
         resolved_primitive(ast, resolved),
@@ -619,13 +618,12 @@ fn calls_in_expr(expr: &Expr, out: &mut Vec<String>) {
         Expr::Call { func, args } => {
             // A defaulter call is `ZD.zd_def_*()` and nothing else this
             // generator emits looks like one.
-            if let Place::Field { base, name } = func.as_ref() {
-                if matches!(base.as_ref(), Place::Name(root) if root.as_str() == CODECS)
-                    && name.as_str().starts_with("zd_def_")
-                    && !out.iter().any(|seen| seen == name.as_str())
-                {
-                    out.push(name.as_str().to_string());
-                }
+            if let Place::Field { base, name } = func.as_ref()
+                && matches!(base.as_ref(), Place::Name(root) if root.as_str() == CODECS)
+                && name.as_str().starts_with("zd_def_")
+                && !out.iter().any(|seen| seen == name.as_str())
+            {
+                out.push(name.as_str().to_string());
             }
             calls_in_place(func, out);
             for arg in args {

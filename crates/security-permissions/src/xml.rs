@@ -1008,7 +1008,7 @@ mod tests {
     /// "FALSE"); `must_interpret` takes "true", "false", "TRUE" or "FALSE".
     /// `name` on `<grant>` is the XSD's.
     #[test]
-    fn the_permissions_document_is_extended_by_must_interpret() {
+    fn security_10_4_1_6_the_permissions_document_is_extended_by_must_interpret() {
         let grant = |grant_attributes: &str, inside: &str, publish_attributes: &str| {
             parse_permissions_xml(&alloc::format!(
                 r#"<dds><permissions><grant {grant_attributes}><subject_name>CN=alice</subject_name>{VALIDITY}
@@ -1047,7 +1047,7 @@ mod tests {
     /// The RFC 2253 and the OpenSSL one-line form name the same subject,
     /// in any order of the attributes; an escaped comma stays in the value.
     #[test]
-    fn a_subject_name_reads_in_both_forms_and_any_order() {
+    fn security_10_4_1_5_3_1_1_a_subject_name_reads_in_both_forms_and_any_order() {
         let rfc = subject_name_attributes("CN=alice, O=Example\\, Inc., C=DE").unwrap();
         let openssl = subject_name_attributes("/C=DE/O=Example, Inc./CN=alice").unwrap();
         assert_eq!(rfc, openssl);
@@ -1060,7 +1060,7 @@ mod tests {
     /// the certificate's counts; a document without one gives nothing. Every
     /// grant counted for every identity.
     #[test]
-    fn only_the_grant_of_the_subject_counts() {
+    fn security_10_4_1_5_3_1_only_the_grant_of_the_subject_counts() {
         let xml = alloc::format!(
             r#"<dds><permissions>
             <grant name="a"><subject_name>CN=alice,C=DE</subject_name>{VALIDITY}
@@ -1088,7 +1088,7 @@ mod tests {
     /// §10.4.1.5.3.2.1: a `subject_name_expression` matches attribute by
     /// attribute with `fnmatch()`, `FNM_PATHNAME`; it was not read.
     #[test]
-    fn a_subject_name_expression_matches_by_fnmatch() {
+    fn security_10_4_1_5_3_2_a_subject_name_expression_matches_by_fnmatch() {
         let xml = alloc::format!(
             r#"<dds><permissions><grant name="agv">
                <subject_name_expression>CN=AGV/*, O=ACME</subject_name_expression>{VALIDITY}
@@ -1117,7 +1117,7 @@ mod tests {
     /// in the document": an allow before a deny for the same topic allows.
     /// Every deny beat every allow.
     #[test]
-    fn the_first_matching_rule_decides() {
+    fn security_10_4_1_5_3_4_the_first_matching_rule_decides() {
         let allow_then_deny = grant(
             "<allow_rule><domains><id>0</id></domains><publish><topics><topic>Square</topic></topics></publish></allow_rule>\
              <deny_rule><domains><id>0</id></domains><publish><topics><topic>*</topic></topics></publish></deny_rule>",
@@ -1141,7 +1141,7 @@ mod tests {
     /// §10.4.1.5.3.4.2.1: the domains of a deny rule scope it; it held for
     /// every domain.
     #[test]
-    fn a_deny_rule_holds_only_in_its_domains() {
+    fn security_10_4_1_5_3_4_a_deny_rule_holds_only_in_its_domains() {
         let g = grant(
             "<deny_rule><domains><id>5</id></domains><publish><topics><topic>T</topic></topics></publish></deny_rule>",
             "<default>ALLOW</default>",
@@ -1157,7 +1157,7 @@ mod tests {
     /// one. §10.4.1.5.3.4.2.4: a deny rule needs one of them ("*" without
     /// the element). The partitions of all rules held for each.
     #[test]
-    fn partitions_of_allow_and_deny_rules() {
+    fn security_10_4_1_5_3_4_partitions_of_allow_and_deny_rules() {
         let g = grant(
             "<allow_rule><domains><id>0</id></domains>\
                <publish><topics><topic>A</topic></topics><partitions><partition>P*</partition></partitions></publish>\
@@ -1194,7 +1194,7 @@ mod tests {
     /// one of them in a deny rule's (every tag without it). They were read
     /// at the grant level and not applied.
     #[test]
-    fn data_tags_of_allow_and_deny_rules() {
+    fn security_10_4_1_5_3_4_data_tags_of_allow_and_deny_rules() {
         let g = grant(
             "<allow_rule><domains><id>0</id></domains><publish><topics><topic>T</topic></topics>\
                <data_tags><tag><name>k</name><value>v</value></tag></data_tags></publish>\
@@ -1243,7 +1243,7 @@ mod tests {
     /// §10.4.1.5.3.4.1.2: `<relay>` is an action of its own; it was not
     /// read.
     #[test]
-    fn relay_is_an_action_of_its_own() {
+    fn security_10_4_1_5_3_4_1_2_relay_is_an_action_of_its_own() {
         let g = grant(
             "<allow_rule><domains><id>0</id></domains><relay><topics><topic>T</topic></topics></relay></allow_rule>",
             "<default>DENY</default>",
@@ -1256,7 +1256,7 @@ mod tests {
     /// decides; a deny rule without publish or subscribe refuses, one with
     /// them leaves it to the default.
     #[test]
-    fn joining_follows_the_first_rule_for_the_domain() {
+    fn security_10_4_3_joining_follows_the_first_rule_for_the_domain() {
         let allow = grant(
             "<allow_rule><domains><id>0</id></domains></allow_rule>",
             "<default>DENY</default>",
@@ -1307,7 +1307,7 @@ mod tests {
     /// XSD needs `must_interpret="false"` (§10.4.1.6). A grant without
     /// `<validity>` was unbounded, and the grant-level forms were taken.
     #[test]
-    fn a_document_outside_the_xsd_is_refused() {
+    fn security_10_4_1_5_1_a_document_outside_the_xsd_is_refused() {
         let rule = "<allow_rule><domains><id>0</id></domains><publish><topics><topic>T</topic></topics></publish></allow_rule>";
         assert!(parse_permissions_xml(&doc(rule, "<default>DENY</default>")).is_ok());
         let no_validity = alloc::format!(
@@ -1359,7 +1359,7 @@ mod tests {
 
     /// §10.4.1.5.3.4: without `<default>` the grant denies.
     #[test]
-    fn default_deny_without_explicit_tag() {
+    fn security_10_4_1_5_3_4_default_deny_without_explicit_tag() {
         let g = grant(
             "<allow_rule><domains><id>0</id></domains><publish><topics><topic>T</topic></topics></publish></allow_rule>",
             "",
@@ -1369,13 +1369,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_xml() {
+    fn security_10_4_1_5_1_rejects_invalid_xml() {
         let err = parse_permissions_xml("<not-closed").unwrap_err();
         assert!(matches!(err, PermissionsError::InvalidXml(_)));
     }
 
     #[test]
-    fn missing_subject_name_is_malformed() {
+    fn security_10_4_1_5_1_missing_subject_name_is_malformed() {
         let xml = alloc::format!(
             r#"<dds><permissions><grant name="g">{VALIDITY}<allow_rule><domains><id>0</id></domains></allow_rule></grant></permissions></dds>"#
         );
@@ -1409,7 +1409,7 @@ mod tests {
     /// An `xs:dateTime` with a zone is converted to UTC, with a fraction
     /// of a second too. The offset was dropped.
     #[test]
-    fn iso_parser_applies_the_zone() {
+    fn security_10_4_1_5_3_3_iso_parser_applies_the_zone() {
         let utc = parse_iso_seconds("2000-01-01T00:00:00Z").unwrap();
         assert_eq!(parse_iso_seconds("2000-01-01T02:00:00+02:00"), Some(utc));
         assert_eq!(parse_iso_seconds("1999-12-31T19:00:00-05:00"), Some(utc));
@@ -1420,7 +1420,7 @@ mod tests {
     /// and a `<default>` that is neither ALLOW nor DENY, make the document
     /// invalid. They were read as no end and as ALLOW.
     #[test]
-    fn an_unreadable_validity_or_default_is_refused() {
+    fn security_10_4_1_5_3_3_an_unreadable_validity_or_default_is_refused() {
         let rule = "<allow_rule><domains><id>0</id></domains><publish><topics><topic>T</topic></topics></publish></allow_rule>";
         let with = |validity: &str, default: &str| {
             alloc::format!(
@@ -1437,7 +1437,7 @@ mod tests {
     }
 
     #[test]
-    fn validity_window_enforced() {
+    fn security_10_4_1_5_3_3_validity_window_enforced() {
         let xml = r#"<dds><permissions><grant name="g">
     <subject_name>CN=alice</subject_name>
     <validity>
@@ -1458,7 +1458,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_ranges_of_a_rule() {
+    fn security_10_4_1_5_3_4_domain_ranges_of_a_rule() {
         let g = grant(
             "<allow_rule><domains><id>5</id><id_range><min>10</min><max>20</max></id_range></domains>\
                <publish><topics><topic>T</topic></topics></publish></allow_rule>",

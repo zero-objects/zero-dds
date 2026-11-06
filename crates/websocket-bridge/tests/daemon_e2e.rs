@@ -55,6 +55,9 @@ impl Drop for Reaped {
     }
 }
 
+/// The tests here speak the JSON text frames, which a client asks for with
+/// the `+json` subprotocol (zerodds-ws-bridge-1.0 §4.3); without it the
+/// daemon sends binary frames.
 fn build_handshake_request(host: &str, path: &str, key: &str) -> String {
     format!(
         "GET {path} HTTP/1.1\r\n\
@@ -63,6 +66,7 @@ fn build_handshake_request(host: &str, path: &str, key: &str) -> String {
          Connection: Upgrade\r\n\
          Sec-WebSocket-Key: {key}\r\n\
          Sec-WebSocket-Version: 13\r\n\
+         Sec-WebSocket-Protocol: zerodds-ws-bridge-1.0+json\r\n\
          \r\n"
     )
 }
@@ -127,11 +131,40 @@ fn read_frame_from(stream: &mut TcpStream) -> Frame {
     }
 }
 
-fn make_test_config(port_hint: u16) -> DaemonConfig {
+/// `TradeE2E`'s IDL, in a file of this test process: the JSON text frames
+/// (§4.3) read and write its samples.
+const TRADE_IDL: &str = "@final struct TradeE2E { string sym; long seq; };";
+
+fn trade_idl_file() -> String {
+    let path = std::env::temp_dir().join(format!("zerodds-ws-trade-{}.idl", std::process::id()));
+    std::fs::write(&path, TRADE_IDL).expect("write the IDL file");
+    path.display().to_string()
+}
+
+/// A `TradeE2E` sample as XCDR1 little endian (`CDR_LE`, the header
+/// `test_inject_user_alive` gives an injected sample): the string's length
+/// with its NUL, the characters and the NUL, padding to four, the long
+/// (DDS-XTypes 1.3 §7.4.1.1).
+fn trade(sym: &str, seq: i32) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(&u32::try_from(sym.len() + 1).unwrap().to_le_bytes());
+    out.extend_from_slice(sym.as_bytes());
+    out.push(0);
+    while out.len() % 4 != 0 {
+        out.push(0);
+    }
+    out.extend_from_slice(&seq.to_le_bytes());
+    out
+}
+
+/// The daemon's configuration on a leased DDS domain (the host's share of
+/// the band, `zerodds-test-domains`); the lease is held while the test runs.
+fn make_test_config(port_hint: u16) -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let listen = format!("127.0.0.1:{port_hint}");
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.listen = listen;
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.topics.push(TopicConfig {
         name: "TradeE2E".to_string(),
         type_name: "TradeE2E".to_string(),
@@ -140,13 +173,14 @@ fn make_test_config(port_hint: u16) -> DaemonConfig {
         reliability: "reliable".to_string(),
         durability: "volatile".to_string(),
         history_depth: 10,
+        idl_file: trade_idl_file(),
     });
-    cfg
+    (cfg, lease)
 }
 
 #[test]
-fn handshake_roundtrip_succeeds() {
-    let cfg = make_test_config(0);
+fn wsbridge_2_handshake_roundtrip_succeeds() {
+    let (cfg, _lease) = make_test_config(0);
     let mut handle = server::start(cfg).expect("daemon start");
     let addr = handle.local_addr.clone();
 
@@ -156,8 +190,8 @@ fn handshake_roundtrip_succeeds() {
 }
 
 #[test]
-fn rejects_non_upgrade_request() {
-    let cfg = make_test_config(0);
+fn wsbridge_2_rejects_non_upgrade_request() {
+    let (cfg, _lease) = make_test_config(0);
     let mut handle = server::start(cfg).expect("daemon start");
     let addr = handle.local_addr.clone();
 
@@ -181,7 +215,7 @@ fn rejects_non_upgrade_request() {
 // Single-daemon pump test with synthetic reader injection — no
 // multicast needed, hence stable on macOS and in CI containers too.
 #[test]
-fn cross_daemon_publish_pump_delivers_to_subscriber() {
+fn wsbridge_2_cross_daemon_publish_pump_delivers_to_subscriber() {
     // L3 outbound pump proof (daemon reader → WS notify):
     // * Single-daemon setup, one WS client connects and sends
     //   `subscribe` for TradeE2E.
@@ -199,8 +233,7 @@ fn cross_daemon_publish_pump_delivers_to_subscriber() {
     // verified separately via the Cyclone interop harness; in
     // CI containers the multicast loopback is not available.
 
-    let mut cfg = make_test_config(0);
-    cfg.domain = 199;
+    let (cfg, _lease) = make_test_config(0);
 
     let mut handle = server::start(cfg).expect("daemon start");
 
@@ -220,7 +253,7 @@ fn cross_daemon_publish_pump_delivers_to_subscriber() {
         .user_readers
         .get("TradeE2E")
         .expect("daemon registered user_reader for TradeE2E");
-    let payload = b"{\"sym\":\"AAPL\"}".to_vec();
+    let payload = trade("AAPL", 0);
 
     // Inject loop: there is a gap between frame-decode (counter++) and the
     // Router::subscribe mutation. We inject the sample repeatedly with
@@ -256,15 +289,15 @@ fn cross_daemon_publish_pump_delivers_to_subscriber() {
         }
         frame_opt.expect("no notify frame within 3 s")
     };
+    // §4.3: a publish frame with the sample, as JSON, in `data`.
     let text = std::str::from_utf8(&frame.payload).unwrap_or("<bin>");
-    assert!(
-        text.contains("\"op\":\"notify\""),
-        "expected notify frame, got: {text}"
-    );
-    assert!(
-        text.contains("TradeE2E"),
-        "expected topic in payload, got: {text}"
-    );
+    for part in [
+        "\"op\":\"publish\"",
+        "\"topic\":\"TradeE2E\"",
+        "\"data\":{\"seq\":0,\"sym\":\"AAPL\"}",
+    ] {
+        assert!(text.contains(part), "{part} in {text}");
+    }
     handle.shutdown();
 }
 
@@ -276,8 +309,8 @@ fn cross_daemon_publish_pump_delivers_to_subscriber() {
 /// Graceful shutdown via DaemonHandle::shutdown() lets Drop-on-Exit
 /// join all threads cleanly (§9.2).
 #[test]
-fn graceful_shutdown_completes_within_5s() {
-    let cfg = make_test_config(0);
+fn wsbridge_9_2_graceful_shutdown_completes_within_5s() {
+    let (cfg, _lease) = make_test_config(0);
     let mut handle = server::start(cfg).expect("daemon start");
     // Connect a single client to ensure connection-tracking is exercised.
     let _stream = ws_client_connect(&handle.local_addr, "/topics/trade");
@@ -294,8 +327,8 @@ fn graceful_shutdown_completes_within_5s() {
 /// The catalog/healthz/metrics endpoint returns a JSON body with the
 /// configured topics (§5.2 + §8.2).
 #[test]
-fn admin_endpoint_serves_catalog_metrics_healthz() {
-    let mut cfg = make_test_config(0);
+fn wsbridge_5_2_admin_endpoint_serves_catalog_metrics_healthz() {
+    let (mut cfg, _lease) = make_test_config(0);
     cfg.metrics_enabled = true;
     cfg.metrics_addr = "127.0.0.1:0".to_string();
     let mut handle = server::start(cfg).expect("daemon start");
@@ -347,8 +380,8 @@ fn admin_endpoint_serves_catalog_metrics_healthz() {
 
 /// Increment frame in/out counters on an active connection (§8.2).
 #[test]
-fn metrics_counters_track_frames_in_and_out() {
-    let mut cfg = make_test_config(0);
+fn wsbridge_8_2_metrics_counters_track_frames_in_and_out() {
+    let (mut cfg, _lease) = make_test_config(0);
     cfg.metrics_enabled = true;
     cfg.metrics_addr = "127.0.0.1:0".to_string();
     let mut handle = server::start(cfg).expect("daemon start");
@@ -358,7 +391,9 @@ fn metrics_counters_track_frames_in_and_out() {
 
     let mut stream = ws_client_connect(&handle.local_addr, "/topics/trade");
     // Send a publish frame.
-    let publish_frame = Frame::text("{\"op\":\"publish\",\"topic\":\"TradeE2E\",\"data\":\"hi\"}");
+    let publish_frame = Frame::text(
+        "{\"op\":\"publish\",\"topic\":\"TradeE2E\",\"data\":{\"sym\":\"hi\",\"seq\":1}}",
+    );
     let bytes = encode(&publish_frame.with_mask([0xAA, 0xBB, 0xCC, 0xDD])).expect("encode publish");
     stream.write_all(&bytes).expect("send publish");
 
@@ -386,7 +421,7 @@ fn metrics_counters_track_frames_in_and_out() {
 /// the direction a topic does not carry gets an error frame, not silence.
 #[test]
 fn direction_in_writes_into_dds_and_out_reads_from_it() {
-    let mut cfg = make_test_config(0);
+    let (mut cfg, _lease) = make_test_config(0);
     cfg.topics.clear();
     for (name, direction) in [("IntoDds", "in"), ("OutOfDds", "out")] {
         cfg.topics.push(TopicConfig {
@@ -397,6 +432,7 @@ fn direction_in_writes_into_dds_and_out_reads_from_it() {
             reliability: "reliable".to_string(),
             durability: "volatile".to_string(),
             history_depth: 10,
+            idl_file: String::new(),
         });
     }
     let mut handle = server::start(cfg).expect("daemon start");
@@ -408,12 +444,12 @@ fn direction_in_writes_into_dds_and_out_reads_from_it() {
     let mut stream = ws_client_connect(&handle.local_addr, "/");
     for (op, reason) in [
         (
-            "{\"op\":\"publish\",\"topic\":\"OutOfDds\",\"data\":\"x\"}",
-            "not-bridged-into-dds",
+            "{\"op\":\"publish\",\"topic\":\"OutOfDds\",\"data\":{}}",
+            "OutOfDds is not bridged into DDS",
         ),
         (
-            "{\"op\":\"subscribe\",\"topic\":\"IntoDds\"}",
-            "not-bridged-out-of-dds",
+            "{\"op\":\"subscribe\",\"topics\":[\"IntoDds\"]}",
+            "IntoDds is not bridged out of DDS",
         ),
     ] {
         let bytes = encode(&Frame::text(op).with_mask([1, 2, 3, 4])).expect("encode");
@@ -430,8 +466,7 @@ fn direction_in_writes_into_dds_and_out_reads_from_it() {
 /// connection's 500 ms reader timeout to expire.
 #[test]
 fn subscriber_delivery_does_not_wait_for_reader_timeout() {
-    let mut cfg = make_test_config(0);
-    cfg.domain = 198;
+    let (cfg, _lease) = make_test_config(0);
     let mut handle = server::start(cfg).expect("daemon start");
 
     let mut sub_stream = ws_client_connect(&handle.local_addr, "/topics/trade");
@@ -450,9 +485,10 @@ fn subscriber_delivery_does_not_wait_for_reader_timeout() {
         // Sleep 40 ms so the daemon's reader loop is parked inside its 500 ms read().
         std::thread::sleep(Duration::from_millis(40));
         let t0 = std::time::Instant::now();
-        let payload = format!("{{\"seq\":{seq}}}").into_bytes();
         assert!(
-            handle.runtime.test_inject_user_alive(reader_eid, payload),
+            handle
+                .runtime
+                .test_inject_user_alive(reader_eid, trade("X", seq)),
             "inject sample"
         );
         let frame = read_frame_from(&mut sub_stream);
@@ -473,8 +509,9 @@ fn subscriber_delivery_does_not_wait_for_reader_timeout() {
 /// The binary parked forever and was still running 3 s after SIGTERM.
 #[cfg(unix)]
 #[test]
-fn the_binary_exits_0_on_sigterm() {
+fn wsbridge_9_2_the_binary_exits_0_on_sigterm() {
     use std::process::{Command, Stdio};
+    let lease = zerodds_test_domains::lease_domain();
     // sd_notify: the packaged units are Type=notify.
     let dir = std::env::temp_dir().join(format!("zd-notify-e2e-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -491,7 +528,8 @@ fn the_binary_exits_0_on_sigterm() {
     };
     let mut child = Reaped(
         Command::new(env!("CARGO_BIN_EXE_zerodds-ws-bridged"))
-            .args(["--set", "listen=127.0.0.1:0", "--set", "domain=99"])
+            .args(["--set", "listen=127.0.0.1:0", "--set"])
+            .arg(format!("domain={}", lease.id()))
             .env("NOTIFY_SOCKET", &sock_path)
             .stdout(Stdio::null())
             .stderr(Stdio::piped())

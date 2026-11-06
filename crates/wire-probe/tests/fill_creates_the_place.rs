@@ -9,7 +9,7 @@
 //! structure with no member to write — emitted no statement, the entry
 //! was never inserted, and Fast DDS serialised a map one entry short of
 //! the sample. Sixteen rows of `tests/interop-results/` recorded that as
-//! a Fast DDS divergence; `docs/open-rows-breakdown.md` cause **E**.
+//! a Fast DDS divergence; `0b2e8df9f6b:docs/open-rows-breakdown.md` cause **E**.
 //!
 //! The corpus reaches two of these shapes. The rest are here because
 //! the defect is a property of the *emitter*, not of the two cases that

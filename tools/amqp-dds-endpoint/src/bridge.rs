@@ -225,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_attach_to_metrics_recognised() {
+    fn ddsamqp_c_2_8_dispatch_attach_to_metrics_recognised() {
         let h = host_with(&[]);
         assert_eq!(
             dispatch_attach(&h, addresses::METRICS),
@@ -234,7 +234,7 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_attach_to_audit_recognised() {
+    fn ddsamqp_c_2_8_dispatch_attach_to_audit_recognised() {
         let h = host_with(&[]);
         assert_eq!(
             dispatch_attach(&h, addresses::AUDIT),
@@ -276,7 +276,7 @@ mod tests {
     // --- Catalog-Producer ---
 
     #[test]
-    fn produce_catalog_transfers_returns_one_per_topic() {
+    fn ddsamqp_7_4_4_produce_catalog_transfers_returns_one_per_topic() {
         let h = host_with(&[("AddrA", "TopicA"), ("AddrB", "TopicB")]);
         let samples = produce_catalog_transfers(&h);
         assert_eq!(samples.len(), 2);
@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn produce_catalog_transfers_empty_for_empty_host() {
+    fn ddsamqp_7_4_4_produce_catalog_transfers_empty_for_empty_host() {
         let h = host_with(&[]);
         assert!(produce_catalog_transfers(&h).is_empty());
     }
@@ -302,7 +302,7 @@ mod tests {
     // --- Encode-Catalog-Sample ---
 
     #[test]
-    fn encode_catalog_sample_produces_described_composite() {
+    fn ddsamqp_c_1_8_encode_catalog_sample_produces_described_composite() {
         let h = host_with(&[("X", "T")]);
         let mut samples = produce_catalog_transfers(&h);
         let body = encode_catalog_sample(samples.remove(0)).unwrap();

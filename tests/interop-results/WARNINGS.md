@@ -9,9 +9,9 @@ The severity is the one the diagnostic claims and never the one its exit status 
 
 ## What no cell here can say
 
-A front end is not the only program a probe runs. Every probe in `tools/wireprobe` then compiles, and every one of them writes its compiler's output to a `cc.log` inside a `mktemp -d` that a `trap … EXIT` removes, reads back `error:` lines and reads them only when the build failed. `wireprobe-ros` compiles with `-w` and `wireprobe-jacorb` with `javac -nowarn`; `wireprobe-zerodds-c` compiles this project's own generated C with `-Werror`.
+A front end is not the only program a probe runs. Every probe in `tools/wireprobe` then compiles; `tools/wireprobe/diagnostics.sh` keeps what the compiler said, on success as well as on failure, and the byte sweeps write it to `sources/toolchain-warnings.tsv`, which this page reads beside the front ends' `sources/warnings.tsv`. `wireprobe-zerodds-c` compiles this project's own generated C with `-Werror`.
 
-So a system with no row below is a system whose **front end** was quiet, and nothing more. The compiler stage has never been listened to, and the one warning that would have caught the `wchar` fill defect at its source — gcc's default `-Wmultichar` — was printed on every probe build that carried the literal and deleted with the directory it was printed into. `docs/compiler-diagnostics-followup.md` is the entry for it.
+So a system with no row below is a system whose front end and compiler printed nothing the sweeps recorded, and nothing more.
 
 58 distinct warning texts over 555 case-and-system pairs. 5 of them change what a row of [`write.md`](write.md) says.
 

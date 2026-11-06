@@ -875,7 +875,7 @@ mod tests {
     }
 
     #[test]
-    fn wlp_tick_emits_again_after_period() {
+    fn rtps_8_4_13_5_wlp_tick_emits_again_after_period() {
         let mut e = ep();
         let _ = e.tick(Duration::ZERO).unwrap();
         let dg = e.tick(Duration::from_millis(400)).unwrap();
@@ -894,7 +894,7 @@ mod tests {
     }
 
     #[test]
-    fn wlp_assert_participant_emits_manual_pulse() {
+    fn rtps_8_4_13_5_wlp_assert_participant_emits_manual_pulse() {
         // Tick period 1h so the AUTOMATIC path does not interfere.
         let mut e = with_reader(WlpEndpoint::new(
             GuidPrefix::from_bytes([1; 12]),
@@ -967,7 +967,7 @@ mod tests {
     }
 
     #[test]
-    fn wlp_handle_datagram_updates_peer_state() {
+    fn rtps_8_4_13_2_wlp_handle_datagram_updates_peer_state() {
         let mut sender = ep();
         let mut receiver = WlpEndpoint::new(
             GuidPrefix::from_bytes([99; 12]),
@@ -993,7 +993,7 @@ mod tests {
     }
 
     #[test]
-    fn wlp_secure_sender_uses_secure_entity_and_is_received() {
+    fn security_7_5_2_wlp_secure_sender_uses_secure_entity_and_is_received() {
         // Regression H-6: with set_secure(true) the endpoint sends over the
         // secure-WLP entity (0xff0200c2); the receiver accepts both
         // entities. Without the dual-entity demux a peer with
@@ -1032,7 +1032,7 @@ mod tests {
     /// history; a participant with writers of both kinds beats on both, and a
     /// reader proxy of each kind belongs to the writer of its kind.
     #[test]
-    fn the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own() {
+    fn security_7_5_2_the_plain_and_the_secure_writer_beat_with_sequence_numbers_of_their_own() {
         let mut e = ep();
         e.set_channels(true, true);
         let writers_and_sns = |out: Vec<OutboundDatagram>| {
@@ -1081,7 +1081,7 @@ mod tests {
     }
 
     #[test]
-    fn wlp_handle_datagram_ignores_non_wlp_traffic() {
+    fn rtps_8_4_13_2_wlp_handle_datagram_ignores_non_wlp_traffic() {
         // An SPDP DATA submessage must NOT be counted as WLP.
         let header = RtpsHeader::new(VendorId::ZERODDS, GuidPrefix::from_bytes([5; 12]));
         let data = DataSubmessage {
@@ -1347,7 +1347,7 @@ mod tests {
     /// and the `kind`. The history holds the last sample of each kind: five
     /// AUTOMATIC and two MANUAL_BY_PARTICIPANT samples leave two.
     #[test]
-    fn the_history_holds_the_last_sample_of_each_kind() {
+    fn rtps_8_4_13_3_the_history_holds_the_last_sample_of_each_kind() {
         let mut e = ep();
         for i in 0..5 {
             e.pending.push_back(PendingPulse {
@@ -1372,7 +1372,7 @@ mod tests {
     /// HEARTBEAT that says what the history holds; asking again it gets the
     /// two held samples once more — and nothing of the superseded one.
     #[test]
-    fn a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request() {
+    fn rtps_8_4_13_a_late_reader_is_told_by_heartbeat_and_gets_the_held_samples_on_request() {
         let mut e = WlpEndpoint::new(own(), VendorId::ZERODDS, Duration::from_secs(3600));
         e.assert_participant();
         e.assert_participant();
@@ -1399,7 +1399,7 @@ mod tests {
     /// §8.4.2.2.3: the writer sends HEARTBEATs "until the Reader has either
     /// acknowledged receiving all available samples or has disappeared".
     #[test]
-    fn the_writer_heartbeats_until_the_reader_has_acknowledged() {
+    fn rtps_8_4_13_1_the_writer_heartbeats_until_the_reader_has_acknowledged() {
         let mut e = with_reader(WlpEndpoint::new(
             own(),
             VendorId::ZERODDS,
@@ -1419,7 +1419,7 @@ mod tests {
     /// a participant that announces none gets nothing, and one that is
     /// forgotten gets no more.
     #[test]
-    fn only_a_participant_with_a_message_reader_gets_a_proxy() {
+    fn rtps_8_4_13_1_only_a_participant_with_a_message_reader_gets_a_proxy() {
         use zerodds_rtps::participant_data::endpoint_flag;
         let mut e = WlpEndpoint::new(own(), VendorId::ZERODDS, Duration::from_millis(300));
         let other = GuidPrefix::from_bytes([77; 12]);
@@ -1451,7 +1451,7 @@ mod tests {
     /// MANUAL_BY_PARTICIPANT writer sends one MANUAL_BY_PARTICIPANT sample;
     /// calls before the tick share it.
     #[test]
-    fn refreshes_before_the_tick_share_one_manual_by_participant_sample() {
+    fn rtps_8_4_13_5_refreshes_before_the_tick_share_one_manual_by_participant_sample() {
         let mut e = with_reader(WlpEndpoint::new(
             own(),
             VendorId::ZERODDS,
@@ -1492,7 +1492,7 @@ mod tests {
     /// is a best-effort proxy; without the field, or without the flag, it is
     /// RELIABLE.
     #[test]
-    fn the_reader_is_treated_as_builtin_endpoint_qos_says() {
+    fn rtps_8_4_13_the_reader_is_treated_as_builtin_endpoint_qos_says() {
         use zerodds_rtps::participant_data::{builtin_endpoint_qos, endpoint_flag};
         let reliable_of = |qos: Option<u32>| {
             let mut e = WlpEndpoint::new(own(), VendorId::ZERODDS, Duration::from_secs(3600));
@@ -1520,7 +1520,7 @@ mod tests {
     /// A MANUAL_BY_PARTICIPANT sample written is reported once, for the
     /// `manualLivelinessCount` of the SPDP announcement.
     #[test]
-    fn a_written_manual_sample_is_reported_once() {
+    fn rtps_8_5_3_2_a_written_manual_sample_is_reported_once() {
         let mut e = with_reader(WlpEndpoint::new(
             own(),
             VendorId::ZERODDS,
@@ -1629,7 +1629,8 @@ mod tests {
     }
 
     #[test]
-    fn a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it() {
+    fn rtps_8_4_13_3_a_heartbeat_announcing_a_pulse_not_received_is_answered_with_a_request_for_it()
+    {
         // Cyclone's shape: one pulse, sent before this participant was
         // known, announced as first=1, last=1 in a Final HEARTBEAT.
         let mut r = reader();
@@ -1654,7 +1655,8 @@ mod tests {
     }
 
     #[test]
-    fn once_the_pulse_arrived_a_final_heartbeat_gets_no_answer_and_a_plain_one_the_ack() {
+    fn rtps_8_4_13_3_once_the_pulse_arrived_a_final_heartbeat_gets_no_answer_and_a_plain_one_the_ack()
+     {
         let mut sender = ep();
         let mut r = reader();
         let data = data_datagram(sender.tick(Duration::ZERO).unwrap()).unwrap();
@@ -1697,7 +1699,7 @@ mod tests {
     }
 
     #[test]
-    fn the_secure_writer_is_answered_by_the_secure_reader() {
+    fn security_7_5_2_the_secure_writer_is_answered_by_the_secure_reader() {
         let mut r = reader();
         let w = EntityId::BUILTIN_PARTICIPANT_MESSAGE_SECURE_WRITER;
         let (_, a) = acknack_of(&r.heartbeat_responses(&heartbeat(remote(), w, 1, 1, true))[0].1);

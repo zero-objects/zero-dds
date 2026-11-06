@@ -999,14 +999,14 @@ fn reject_outside_service_grammar(ast: &Ast, iface: &InterfaceNode) -> Result<()
     }
     // Productions (1) and (2): file-scoped directives are kept on the
     // root module because they leave no node of their own.
-    if let Ok(module) = ast.module(ast.root_module()) {
-        if let Some(corba) = module.facets.corba.as_ref() {
-            if let Some(first) = corba.imports.first() {
-                return refuse("an `import` directive", first.clone());
-            }
-            if let Some(first) = corba.repository_directives.first() {
-                return refuse("a `typeid`/`typeprefix` directive", first.clone());
-            }
+    if let Ok(module) = ast.module(ast.root_module())
+        && let Some(corba) = module.facets.corba.as_ref()
+    {
+        if let Some(first) = corba.imports.first() {
+            return refuse("an `import` directive", first.clone());
+        }
+        if let Some(first) = corba.repository_directives.first() {
+            return refuse("a `typeid`/`typeprefix` directive", first.clone());
         }
     }
     // Production (9): an interface body holds attributes and operations

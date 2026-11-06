@@ -213,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn session_key_aes128_gcm_truncated_to_16_byte() {
+    fn security_10_5_3_3_3_session_key_aes128_gcm_truncated_to_16_byte() {
         // Suite::Aes128Gcm has key_len=16 — the caller truncates the
         // 32-byte HMAC output to the first 16 bytes.
         let mk = [0xAA; 16];
@@ -274,7 +274,7 @@ mod tests {
         let key = [0x0b; 20];
         let master_salt = b"Hi T";
         let tag: &[u8] = b"";
-        let sid = [b'h', b'e', b'r', b'e'];
+        let sid = *b"here";
         let out = derive_with_tag(&key, master_salt, tag, &sid);
         let expected: [u8; 32] = [
             0xb0, 0x34, 0x4c, 0x61, 0xd8, 0xdb, 0x38, 0x53, 0x5c, 0xa8, 0xaf, 0xce, 0xaf, 0x0b,

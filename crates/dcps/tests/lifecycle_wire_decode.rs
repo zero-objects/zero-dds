@@ -107,7 +107,7 @@ fn mk_pair() -> (
 }
 
 #[test]
-fn reader_push_lifecycle_disposed_sets_instance_state() {
+fn dcps_2_2_2_5_1_3_reader_push_lifecycle_disposed_sets_instance_state() {
     // Direct test of the __push_lifecycle path, called by the live
     // channel on a wire-lifecycle sample.
     let (w, r) = mk_pair();
@@ -137,7 +137,7 @@ fn reader_push_lifecycle_disposed_sets_instance_state() {
 }
 
 #[test]
-fn reader_push_lifecycle_unregistered_sets_instance_state() {
+fn dcps_2_2_2_5_1_3_reader_push_lifecycle_unregistered_sets_instance_state() {
     let (w, r) = mk_pair();
     let s = KeyedRecord { id: 8, value: 100 };
     w.write(&s).expect("write");
@@ -172,7 +172,7 @@ fn reader_push_lifecycle_unregistered_sets_instance_state() {
 /// an instance of its own, without a key holder, and every `take` after it
 /// failed.
 #[test]
-fn a_dispose_with_a_foreign_key_hash_disposes_the_instance_of_its_key() {
+fn xtypes_7_6_8_a_dispose_with_a_foreign_key_hash_disposes_the_instance_of_its_key() {
     let (w, r) = mk_pair();
     let s = KeyedRecord { id: 5, value: 9 };
     w.write(&s).expect("write");

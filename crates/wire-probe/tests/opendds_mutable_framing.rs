@@ -24,7 +24,7 @@
 //! clause-by-clause dialect had a conformance defect and the vendor
 //! dialects did not, and the fix is [`Dialect::Specification`] taking
 //! the clause rather than a compatibility flag on top of a default that
-//! was already right. [`the_clause_reaches_only_the_specification_dialect`]
+//! was already right. [`xtypes_7_2_2_4_4_4_8_the_clause_reaches_only_the_specification_dialect`]
 //! is that split as a test.
 //!
 //! The three others are compatibility flags and no dialect selects any
@@ -39,11 +39,11 @@
 //!
 //! | mutation | what goes red |
 //! |---|---|
-//! | `member_must_understand` dropping the `is_key` term | [`the_key_rows_are_reproduced`] |
-//! | `MustUnderstandPolicy::writes_flag` answering `false` for `DeclaredAndKey` | [`the_key_rows_are_reproduced`] |
+//! | `member_must_understand` dropping the `is_key` term | [`xtypes_7_2_2_4_4_4_8_the_key_rows_are_reproduced`] |
+//! | `MustUnderstandPolicy::writes_flag` answering `false` for `DeclaredAndKey` | [`xtypes_7_2_2_4_4_4_8_the_key_rows_are_reproduced`] |
 //! | `length_code`'s early return for a policy that reuses no leading word deleted | [`the_length_code_rows_are_reproduced`] |
-//! | `MutableUnionFraming::first_branch_id` answering 1 for `BranchesFromZero` | [`the_union_rows_are_reproduced`], [`the_numbering_and_the_sentinel_are_separated_by_the_rows`], [`the_peers_octets_read_back_under_the_setting`] |
-//! | `writes_the_sentinel` answering `true` for `BranchesFromZero` | the same three. The row-level separation is inside [`the_union_rows_are_reproduced`]: the four XCDR2 rows stay right under this mutation because version 2 has no sentinel to suppress, and the four XCDR1 rows go four octets long. That is what lets one axis carry two questions |
+//! | `MutableUnionFraming::first_branch_id` answering 1 for `BranchesFromZero` | [`xtypes_7_4_3_5_3_the_union_rows_are_reproduced`], [`the_numbering_and_the_sentinel_are_separated_by_the_rows`], [`the_peers_octets_read_back_under_the_setting`] |
+//! | `writes_the_sentinel` answering `true` for `BranchesFromZero` | the same three. The row-level separation is inside [`xtypes_7_4_3_5_3_the_union_rows_are_reproduced`]: the four XCDR2 rows stay right under this mutation because version 2 has no sentinel to suppress, and the four XCDR1 rows go four octets long. That is what lets one axis carry two questions |
 //! | `ShortPidRange::highest_short_id` answering `0x3f00` for `AllFourteenBits` | [`the_short_pid_rows_are_reproduced`] and [`the_peers_octets_read_back_under_the_setting`] — the second because the **reader** takes the same threshold, and a reader holding the clause's constant reports `@id(16383)` as a reserved parameter and drops the member |
 //! | `must_understand` removed from `LayoutKey::offset_key` | [`the_planner_settings_are_in_the_offset_key`] **only**, and that is the finding rather than a gap: every other check here plans afresh through `encode`, and what the field protects is the plan **cache**. It had been missing for as long as the field existed |
 //! | `union_framing` removed from `LayoutKey::offset_key` | the same one check, for the same reason |
@@ -243,7 +243,7 @@ fn reproduced_only_by(rows: &[(&str, &str, &str)], column: &Column) -> usize {
 
 // `@key` implies the must-understand attribute. §7.2.2.4.4.4.8.
 #[test]
-fn the_key_rows_are_reproduced() {
+fn xtypes_7_2_2_4_4_4_8_the_key_rows_are_reproduced() {
     let compared = reproduced_only_by(
         &[
             ("evolution-mutable-key", "xcdr2", "be"),
@@ -266,7 +266,7 @@ fn the_key_rows_are_reproduced() {
 // made `Dialect::Cyclone` conform would break three columns that are
 // right today.
 #[test]
-fn the_clause_reaches_only_the_specification_dialect() {
+fn xtypes_7_2_2_4_4_4_8_the_clause_reaches_only_the_specification_dialect() {
     // The key members (§7.2.2.4.4.4.8) and, beyond what OpenDDS writes,
     // the discriminator of a `@mutable` union (§7.2.2.4.4.4.6).
     assert_eq!(
@@ -376,7 +376,7 @@ fn the_four_positions_are_four_pairs() {
 
 // OpenDDS's `@mutable` union: branches numbered from 0, no sentinel.
 #[test]
-fn the_union_rows_are_reproduced() {
+fn xtypes_7_4_3_5_3_the_union_rows_are_reproduced() {
     let compared = reproduced_only_by(
         &[
             ("union-mutable", "xcdr1", "be"),
@@ -681,11 +681,10 @@ fn unhex(text: &str) -> Vec<u8> {
 // sixteen axes. One check over all sixteen axes and all nine surfaces
 // replaced the five.
 
-// The four new configurations are named the same in all four lists.
+// The four new configurations are named the same in all three lists.
 #[test]
 fn the_configurations_are_named_the_same_everywhere() {
-    const LISTS: [&str; 4] = [
-        "crates/wire-probe/tests/three_column_gate.rs",
+    const LISTS: [&str; 3] = [
         "tools/interop-results/src/rust_column.rs",
         "crates/wire-probe/src/matrix.rs",
         "tools/wireprobe/wireprobe-zerodds-c-gen/src/bin/wireprobe-c-matrix.rs",

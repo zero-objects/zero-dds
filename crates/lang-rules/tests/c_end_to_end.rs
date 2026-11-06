@@ -86,7 +86,7 @@ fn render(decls: Vec<zerodds_lang_cst::c::Decl>) -> String {
 // -- the declarations ----------------------------------------------------
 
 #[test]
-fn a_struct_of_primitives_becomes_a_c_struct() {
+fn xtypes_7_2_2_2_a_struct_of_primitives_becomes_a_c_struct() {
     let generated = declarations("struct Pose { long x; double y; boolean active; };");
     assert!(
         generated.contains("typedef struct Pose Pose;"),
@@ -98,7 +98,7 @@ fn a_struct_of_primitives_becomes_a_c_struct() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_c_type() {
+fn xtypes_7_5_1_1_1_every_idl_primitive_reaches_a_c_type() {
     let generated = declarations(
         "struct P {
            boolean a; octet b; char c; wchar d;
@@ -131,7 +131,7 @@ fn every_idl_primitive_reaches_a_c_type() {
 }
 
 #[test]
-fn a_module_becomes_a_prefix_because_c_has_no_namespaces() {
+fn idl_7_5_2_a_module_becomes_a_prefix_because_c_has_no_namespaces() {
     let generated = declarations(
         "module common { module util { struct Location { double x; }; }; };
          struct Robot { ::common::util::Location at; };",
@@ -147,7 +147,7 @@ fn a_module_becomes_a_prefix_because_c_has_no_namespaces() {
 }
 
 #[test]
-fn a_sequence_becomes_a_length_and_a_buffer() {
+fn xtypes_7_5_1_a_sequence_becomes_a_length_and_a_buffer() {
     // Not a NUL-terminated run: a `sequence<octet>` may contain a zero,
     // and a terminator would cut the sample short without saying so.
     let generated = declarations("struct Bag { sequence<long> ids; string name; };");
@@ -160,7 +160,7 @@ fn a_sequence_becomes_a_length_and_a_buffer() {
 }
 
 #[test]
-fn two_collections_of_the_same_shape_are_one_declaration() {
+fn xtypes_7_2_2_4_3_two_collections_of_the_same_shape_are_one_declaration() {
     // The names are structural, so `sequence<long>` twice is one C type
     // and not two that differ only in a counter.
     let generated = declarations("struct Two { sequence<long> a; sequence<long> b; };");
@@ -193,7 +193,7 @@ fn an_array_keeps_its_dimensions_outermost_first() {
 }
 
 #[test]
-fn an_enumeration_becomes_an_integer_and_constants_not_a_c_enum() {
+fn xtypes_7_5_1_2_1_1_an_enumeration_becomes_an_integer_and_constants_not_a_c_enum() {
     // A C enumeration constant is an `int` (C11 §6.7.2.2) and
     // `@bit_bound(32)` admits values an `int` cannot hold, so the holder
     // is written out rather than left to the implementation.
@@ -208,7 +208,7 @@ fn an_enumeration_becomes_an_integer_and_constants_not_a_c_enum() {
 }
 
 #[test]
-fn a_union_becomes_a_discriminator_beside_a_union() {
+fn xtypes_7_5_1_4_a_union_becomes_a_discriminator_beside_a_union() {
     let generated = declarations(
         "enum Mode { IDLE, ACTIVE };
          union Payload switch (Mode) {
@@ -222,7 +222,7 @@ fn a_union_becomes_a_discriminator_beside_a_union() {
 }
 
 #[test]
-fn an_optional_member_is_a_pointer_and_null_is_the_absent_one() {
+fn xtypes_7_5_1_2_4_1_an_optional_member_is_a_pointer_and_null_is_the_absent_one() {
     // XTypes 1.3 §7.5.1.2.4.1: "Optional members shall be represented
     // using pointers. [...] a member of type X shall instead be mapped
     // as type pointer-to-X. [...] A NULL pointer shall indicate an
@@ -239,7 +239,7 @@ fn an_optional_member_is_a_pointer_and_null_is_the_absent_one() {
 }
 
 #[test]
-fn a_derived_struct_holds_the_base_as_its_first_member_parent() {
+fn xtypes_7_5_1_4_1_3_a_derived_struct_holds_the_base_as_its_first_member_parent() {
     // XTypes 1.3 §7.5.1.4.1.3: "The language binding shall be generated as
     // if an instance of the base type were the first member of the subtype
     // with the name 'parent'". The plan still puts the base's members on
@@ -275,7 +275,7 @@ fn a_derived_struct_holds_the_base_as_its_first_member_parent() {
 }
 
 #[test]
-fn a_bitmask_becomes_an_integer_and_one_constant_per_bit() {
+fn xtypes_7_5_1_2_2_a_bitmask_becomes_an_integer_and_one_constant_per_bit() {
     let generated = declarations("@bit_bound(16) bitmask Flags { READY, @position(4) MOVING };");
     assert!(generated.contains("typedef uint16_t Flags;"), "{generated}");
     // XTypes 1.3 §7.5.1.2.2: the flags are the literals of an enumeration
@@ -295,7 +295,7 @@ fn a_bitmask_becomes_an_integer_and_one_constant_per_bit() {
 }
 
 #[test]
-fn a_bitset_becomes_separate_integers_not_c_bitfields() {
+fn idl_7_4_13_a_bitset_becomes_separate_integers_not_c_bitfields() {
     // C leaves the allocation order of bitfields to the implementation,
     // and the order on the wire is the declaration's. The packing is the
     // codec's, where it can be seen.
@@ -325,7 +325,7 @@ fn a_native_declaration_becomes_an_opaque_typedef() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { sequence<A> ys; };";
     assert_eq!(declarations(idl), declarations(idl));
 }
@@ -339,7 +339,7 @@ fn a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
 }
 
 #[test]
-fn a_type_is_declared_before_it_is_used() {
+fn xtypes_7_5_2_a_type_is_declared_before_it_is_used() {
     // The Rust materialiser can walk the model in declaration order; C
     // cannot, because a translation unit that names a struct before
     // declaring it does not compile.
@@ -402,14 +402,14 @@ fn a_mutable_member_carries_the_length_code_the_plan_chose() {
 }
 
 #[test]
-fn a_mutable_struct_under_xcdr1_ends_with_a_sentinel() {
+fn xtypes_7_4_2_a_mutable_struct_under_xcdr1_ends_with_a_sentinel() {
     let generated = codec("@mutable struct S { long a; };", Encoding::PlCdr1);
     assert!(generated.contains("zdw_write_pid"), "{generated}");
     assert!(generated.contains("zdw_write_sentinel(w);"), "{generated}");
 }
 
 #[test]
-fn an_optional_member_is_written_only_when_it_is_there() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_is_written_only_when_it_is_there() {
     let generated = codec(
         "@mutable struct S { @optional long maybe; };",
         Encoding::PlCdr2,
@@ -444,7 +444,7 @@ fn a_sequence_of_a_primitive_carries_no_delimiter_and_one_of_a_struct_does() {
 }
 
 #[test]
-fn a_union_selects_its_branch_by_the_discriminator() {
+fn xtypes_7_2_2_4_4_3_a_union_selects_its_branch_by_the_discriminator() {
     let generated = codec(
         "union Choice switch (long) { case 1: case 2: long whole; default: double rest; };",
         Encoding::PlainCdr2,
@@ -458,7 +458,7 @@ fn a_union_selects_its_branch_by_the_discriminator() {
 }
 
 #[test]
-fn a_union_member_the_stream_does_not_carry_takes_its_default() {
+fn xtypes_7_2_2_4_4_4_7_a_union_member_the_stream_does_not_carry_takes_its_default() {
     // M11. §7.2.4.4.8, Table 19, the UNION_TYPE row: "If the
     // discriminator value does not select any member in O2, then: If the
     // discriminator value selects a member m1 in O1, then m1 is set to
@@ -536,7 +536,7 @@ fn an_array_encoder_takes_the_array_and_everything_else_an_address() {
 }
 
 #[test]
-fn a_keyed_type_gets_a_holder_and_an_unkeyed_one_does_not() {
+fn xtypes_7_4_5_a_keyed_type_gets_a_holder_and_an_unkeyed_one_does_not() {
     let keyed = model("@final struct S { @key long id; long payload; };");
     let root = keyed
         .types()
@@ -631,7 +631,7 @@ fn a_key_holder_under_rti_states_the_short_header_decision_it_never_receives() {
 }
 
 #[test]
-fn the_data_and_key_encoders_do_not_share_a_name() {
+fn xtypes_7_4_3_the_data_and_key_encoders_do_not_share_a_name() {
     // A key holder is a different plan over the same types — only the
     // `@key` members — so it needs its own set of functions.
     let ast = model("@final struct S { @key long id; long payload; };");
@@ -647,7 +647,7 @@ fn the_data_and_key_encoders_do_not_share_a_name() {
 }
 
 #[test]
-fn a_bitset_that_inherits_packs_the_base_at_the_low_positions() {
+fn idl_7_4_13_a_bitset_that_inherits_packs_the_base_at_the_low_positions() {
     // Fast DDS is the only implementation that parses `bitset Derived :
     // Base`, and it flattens the chain into one `std::bitset<N>` with
     // the base's bitfields at the least significant end in declaration
@@ -679,7 +679,7 @@ fn a_bitset_that_inherits_packs_the_base_at_the_low_positions() {
 // -- the decoder ---------------------------------------------------------
 
 #[test]
-fn the_encoder_and_the_decoder_do_not_share_a_name() {
+fn xtypes_7_4_3_the_encoder_and_the_decoder_do_not_share_a_name() {
     // Both directions are emitted into one translation unit by the
     // vendor-bytes gate, and a name they shared would be a redefinition
     // rather than a diagnosis.
@@ -696,7 +696,7 @@ fn the_encoder_and_the_decoder_do_not_share_a_name() {
 }
 
 #[test]
-fn a_decoder_reads_a_primitive_through_the_runtime_and_not_by_hand() {
+fn xtypes_7_4_3_a_decoder_reads_a_primitive_through_the_runtime_and_not_by_hand() {
     // Every byte-level rule stays in `runtime/c`. A decoder that
     // assembled an integer out of `zdw_read_u8` would be a second
     // implementation of the byte order in the generated code, where no
@@ -753,7 +753,7 @@ fn an_enumeration_decoder_assigns_the_declared_value_and_not_the_pattern() {
 }
 
 #[test]
-fn an_unknown_enumerator_is_refused_rather_than_handed_back_as_a_number() {
+fn xtypes_7_2_2_4_1_1_an_unknown_enumerator_is_refused_rather_than_handed_back_as_a_number() {
     let generated = decoder(
         "enum Colour { RED, GREEN };
          @final struct S { Colour c; };",
@@ -866,7 +866,7 @@ fn a_mutable_aggregate_is_driven_by_its_headers_and_not_by_the_plan() {
 }
 
 #[test]
-fn a_mutable_aggregate_under_xcdr1_stops_at_the_sentinel() {
+fn xtypes_7_4_2_a_mutable_aggregate_under_xcdr1_stops_at_the_sentinel() {
     let generated = decoder("@mutable struct S { long a; };", Encoding::PlCdr1);
     assert!(generated.contains("zd_p.end"), "{generated}");
     assert!(generated.contains("break;"), "{generated}");
@@ -963,7 +963,7 @@ fn an_optional_member_outside_a_mutable_type_writes_its_marker() {
 }
 
 #[test]
-fn a_mutable_member_that_did_not_arrive_takes_its_default() {
+fn xtypes_7_2_2_4_4_4_7_a_mutable_member_that_did_not_arrive_takes_its_default() {
     // §7.4.1.2.3: "if the receiver's member is not optional, it
     // logically takes its default value". This used to refuse with
     // ZDW_TRUNCATED, which is the one exchange `@mutable` exists for —
@@ -977,7 +977,7 @@ fn a_mutable_member_that_did_not_arrive_takes_its_default() {
 }
 
 #[test]
-fn every_table_nine_row_has_a_c_default() {
+fn xtypes_7_2_2_4_4_4_7_every_table_nine_row_has_a_c_default() {
     // One member per row of Table 9, behind a `@mutable` type so each
     // can go missing. The values are the ones Cyclone, RTI and Fast DDS
     // all hand back for the same IDL — `evo-mutable-defaults`.
@@ -1049,7 +1049,7 @@ fn an_appendable_tail_the_writer_did_not_have_takes_its_default() {
 }
 
 #[test]
-fn an_explicit_default_beats_table_nine() {
+fn xtypes_7_2_2_4_4_4_9_an_explicit_default_beats_table_nine() {
     // §7.2.2.4.4.4.9: the implicit default is the type's only where the
     // declaration gives no explicit one. Substituting zero for a
     // `@default(42)` would be a silently wrong value.
@@ -1078,7 +1078,7 @@ fn a_bitset_that_inherits_reads_the_whole_chain_too() {
 }
 
 #[test]
-fn a_long_double_is_one_c_type_in_the_declaration_and_in_both_codecs() {
+fn xtypes_7_2_2_2_a_long_double_is_one_c_type_in_the_declaration_and_in_both_codecs() {
     // The declaration, the encoder's parameter, the decoder's
     // destination, the defaulter's destination and a sequence's element
     // storage are five places that name the C type of one member. They
@@ -1119,7 +1119,7 @@ fn a_long_double_is_one_c_type_in_the_declaration_and_in_both_codecs() {
 }
 
 #[test]
-fn every_defaulter_the_decoder_calls_is_also_defined() {
+fn xtypes_7_2_2_4_4_4_9_every_defaulter_the_decoder_calls_is_also_defined() {
     // The invariant, checked structurally rather than case by case: a
     // `zd_def_*` the decoder calls and does not define is a translation
     // unit that does not compile, and the interop corpus is where that
@@ -1195,7 +1195,7 @@ fn called_defaulters(text: &str) -> Vec<String> {
 // -- what the model holds and C does not ---------------------------------
 
 #[test]
-fn a_member_of_type_any_is_refused_by_name_rather_than_emitted() {
+fn xtypes_7_3_1_a_member_of_type_any_is_refused_by_name_rather_than_emitted() {
     // `any` is in the model because Building Block Any is one of
     // IDL 4.2's fifteen. What it holds is decided at run time, so there
     // is no C type for it and no wire form to generate against.

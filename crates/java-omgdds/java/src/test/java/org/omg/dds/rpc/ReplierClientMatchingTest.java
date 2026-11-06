@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.omg.dds.rpc;
 
+import org.zerodds.testing.Waits;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -117,8 +118,9 @@ class ReplierClientMatchingTest {
     }
 
     @Test
-    void aRequestHeldForItsClientIsAnsweredWhenTheClientBecomesMatched() throws Exception {
+    void rpc_7_6_2_2_1_a_request_held_for_its_client_is_answered_when_the_client_becomes_matched() throws Exception {
         Wires wires = new Wires();
+        java.util.concurrent.atomic.AtomicBoolean handled = new java.util.concurrent.atomic.AtomicBoolean();
         DomainParticipant participant = participant(wires);
         ReplierParams params = ReplierParams.create()
                 .domainParticipant(participant)
@@ -131,6 +133,7 @@ class ReplierClientMatchingTest {
                         for (Sample<byte[]> request : replier.receiveRequests()) {
                             replier.sendReply(request.getData(), request.identity());
                         }
+                        handled.set(true);
                     }
                 });
         Replier<byte[], byte[]> replier = RPCRuntime.over(participant).createReplier(params);
@@ -141,16 +144,13 @@ class ReplierClientMatchingTest {
                 wires.requests.add(new TakenSample(new byte[] {7}, new SampleIdentity(client, 1)));
             }
             wires.onRequest.run();
-            Thread.sleep(200);
+            Waits.until(handled::get, "the replier has answered what it received");
             assertTrue(wires.replies.isEmpty(),
                     "the request is held while the reply writer has not discovered the client");
 
             // Discovery completes the client matching; no further sample arrives.
             wires.replyReaders = 1;
-            long end = System.currentTimeMillis() + 3_000;
-            while (wires.replies.isEmpty() && System.currentTimeMillis() < end) {
-                Thread.sleep(10);
-            }
+            Waits.until(() -> !wires.replies.isEmpty(), "the held request is answered");
             assertEquals(1, wires.replies.size(), "the held request is answered once the client is matched");
             assertTrue(Arrays.equals(new byte[] {7}, wires.replies.get(0)));
         } finally {

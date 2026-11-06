@@ -91,7 +91,7 @@ fn bench_write_throughput(c: &mut Criterion) {
 /// `bench-compare` in CI checks each side against the previous baseline
 /// of the SAME host — which is the comparison that carries information.
 /// The absolute §11.4 budget stays asserted in
-/// `tests/perf_targets.rs::same_host_publish_beats_a_fifth_of_udp_publish`.
+/// `tests/perf_targets.rs::flatdata_11_4_same_host_publish_beats_a_fifth_of_udp_publish`.
 fn bench_publish_flat_vs_udp(c: &mut Criterion) {
     let mut group = c.benchmark_group("flat_vs_udp_publish_1kb");
     group.throughput(Throughput::Bytes(Pose1k::WIRE_SIZE as u64));

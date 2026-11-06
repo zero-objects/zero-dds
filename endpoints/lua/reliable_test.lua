@@ -267,13 +267,13 @@ if #arg >= 1 then
   if goldHb and goldAn then
     local hb = rel.heartbeatFrame(rel.SESSION_NOKEY, rel.STREAM_NONE, 1, 1, 3, 0x80)
     local an = rel.acknackFrame(rel.SESSION_NOKEY, rel.STREAM_NONE, 1, 1, 0, 0, 0x80)
-    check(hb == goldHb, "byte_golden_heartbeat")
-    check(an == goldAn, "byte_golden_acknack")
+    check(hb == goldHb, "endpointlua_5_byte_golden_heartbeat")
+    check(an == goldAn, "endpointlua_5_byte_golden_acknack")
     -- round-trip: parse the golden bytes and check the decoded fields.
     local phb = rel.parseHeartbeat(goldHb)
-    check(phb ~= nil and phb.first == 1 and phb.last == 3 and phb.streamId == 0x80, "golden_heartbeat_parse")
+    check(phb ~= nil and phb.first == 1 and phb.last == 3 and phb.streamId == 0x80, "endpointlua_5_golden_heartbeat_parse")
     local pan = rel.parseAcknack(goldAn)
-    check(pan ~= nil and pan.firstUnacked == 1 and pan.streamId == 0x80, "golden_acknack_parse")
+    check(pan ~= nil and pan.firstUnacked == 1 and pan.streamId == 0x80, "endpointlua_5_golden_acknack_parse")
   else
     print("skip byte-golden: goldens not found in " .. dir)
   end

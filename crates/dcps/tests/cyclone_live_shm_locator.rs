@@ -31,7 +31,6 @@ use zerodds_rtps::wire_types::{GuidPrefix, VendorId};
 #[path = "common/cross_vendor.rs"]
 mod cross_vendor;
 
-const DOMAIN: u32 = 42;
 const TOPIC: &str = "ZeroddsShmLocatorProbe";
 
 /// A reliable KEEP_ALL Cyclone reader of `struct ZeroddsShmLocatorProbe {
@@ -87,18 +86,22 @@ fn samples_received(output: &str) -> u64 {
 
 #[test]
 #[ignore = "live cyclone interop — opt-in via --ignored, requires the cyclonedds Python binding"]
-fn a_cyclone_reader_takes_the_samples_of_a_writer_announcing_the_shm_locator() {
+fn flatdata_10_4_a_cyclone_reader_takes_the_samples_of_a_writer_announcing_the_shm_locator() {
     if !cross_vendor::require_or_skip("cyclone_live_shm_locator") {
         return;
     }
+    // A leased domain (zerodds-test-domains), as cyclone_live_wlp.rs in the
+    // same job: every job of the runner host and every host of the LAN may
+    // use a fixed number.
+    let lease = zerodds_test_domains::lease_domain();
     let mut cyclone = cross_vendor::start_cyclone_python(
         "cyclone-shm-locator-reader",
         READER,
-        &[DOMAIN.to_string(), "20".to_string()],
+        &[lease.id().to_string(), "20".to_string()],
     )
     .expect("start the Cyclone Python reader");
     let rt = DcpsRuntime::start(
-        DOMAIN as i32,
+        lease.id(),
         GuidPrefix::from_bytes([0xAC; 12]),
         RuntimeConfig {
             spdp_period: Duration::from_millis(500),

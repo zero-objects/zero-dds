@@ -381,10 +381,10 @@ impl Parser<'_> {
             Token::Name(name) => {
                 // The constants of DDS-XML 1.0 §7.2.2.1, when no `<const>`
                 // of that name is declared.
-                if self.table.lookup(&name, self.scope).is_none() {
-                    if let Some(v) = builtin(&name) {
-                        return Ok(v);
-                    }
+                if self.table.lookup(&name, self.scope).is_none()
+                    && let Some(v) = builtin(&name)
+                {
+                    return Ok(v);
                 }
                 let (scoped, def) = self.table.lookup(&name, self.scope).ok_or_else(|| {
                     XmlError::UnresolvedReference(format!(

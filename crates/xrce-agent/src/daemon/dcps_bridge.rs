@@ -210,12 +210,11 @@ impl ReaderQueue {
             self.samples.push_back(sample);
             return true;
         }
-        if let Some(min) = self.minimum_separation {
-            if let Some(last) = self.last_accepted.get(&sample.instance) {
-                if now.duration_since(*last) < min {
-                    return true;
-                }
-            }
+        if let Some(min) = self.minimum_separation
+            && let Some(last) = self.last_accepted.get(&sample.instance)
+            && now.duration_since(*last) < min
+        {
+            return true;
         }
         if let History::KeepLast(depth) = self.history {
             let depth = usize::try_from(depth).unwrap_or(usize::MAX);
@@ -224,14 +223,13 @@ impl ReaderQueue {
                 .iter()
                 .filter(|s| s.instance == sample.instance)
                 .count();
-            if held >= depth {
-                if let Some(pos) = self
+            if held >= depth
+                && let Some(pos) = self
                     .samples
                     .iter()
                     .position(|s| s.instance == sample.instance)
-                {
-                    self.samples.remove(pos);
-                }
+            {
+                self.samples.remove(pos);
             }
         }
         if self.samples.len() >= READER_QUEUE_CAP {
@@ -334,6 +332,15 @@ fn he_timestamp(t: SourceTime) -> zerodds_rtps::header_extension::HeTimestamp {
         seconds: u32::from_ne_bytes(d.seconds.to_ne_bytes()),
         fraction: d.fraction,
     }
+}
+
+/// A source timestamp as the client sees it, (seconds, nanoseconds)
+/// (`PolledSample::source_time`), from the RTPS `Time_t`, whose fraction
+/// counts 2⁻³² s (DDSI-RTPS 2.5 §9.3.2.1). The fraction was once handed on
+/// as nanoseconds, which put the sub-second part up to 4.29 times too late.
+fn source_time_of(t: zerodds_rtps::header_extension::HeTimestamp) -> (i32, u32) {
+    let time = zerodds_dcps::time::he_timestamp_to_time(t);
+    (time.sec, time.nanosec)
 }
 
 /// The `StatusInfo` bits (RTPS 2.5 §9.6.3.9) of a dispose and/or unregister
@@ -593,8 +600,7 @@ impl RealDdsPort {
                             representation,
                             big_endian,
                             0u8,
-                            source_timestamp
-                                .map(|t| (i32::from_ne_bytes(t.seconds.to_ne_bytes()), t.fraction)),
+                            source_timestamp.map(source_time_of),
                         ),
                         // DDS-XRCE 1.0 Annex A: `SampleInfoFlags` carries the
                         // instance state, so a dispose or unregister goes to
@@ -620,9 +626,7 @@ impl RealDdsPort {
                                 1,
                                 true,
                                 state,
-                                source_timestamp.map(|t| {
-                                    (i32::from_ne_bytes(t.seconds.to_ne_bytes()), t.fraction)
-                                }),
+                                source_timestamp.map(source_time_of),
                             )
                         }
                         _ => continue, // coherent-set markers: nothing to emit
@@ -799,6 +803,12 @@ impl DdsPort for RealDdsPort {
             destination_order: qos.destination_order,
             transport_priority: qos.transport_priority,
             durability_service: qos.durability_service,
+            // A client's sample is XCDR2 (`write` reads it as version 2), so
+            // the writer offers XCDR2 and its header says so (DDS-XTypes 1.3
+            // §7.6.3.1.2, Table 60), not the runtime's default offer.
+            data_representation_offer: Some(vec![
+                zerodds_rtps::publication_data::data_representation::XCDR2,
+            ]),
             ..Default::default()
         };
         // §7.8.3.1: created disabled, registered (and so announced) by
@@ -913,6 +923,7 @@ impl DdsPort for RealDdsPort {
                 resource_limits,
                 max_blocking_time,
             } => {
+                let extensibility = self.wire_extensibility_of(key);
                 let rt = self.runtime_for(domain_id)?;
                 rt.register_user_writer_as(eid, cfg, GroupTopicQos::default())
                     .map_err(|e| DdsPortError::DdsError(format!("register_user_writer: {e:?}")))
@@ -924,6 +935,9 @@ impl DdsPort for RealDdsPort {
                                     resource_limits,
                                     max_blocking_time,
                                 )
+                            })
+                            .and_then(|()| {
+                                rt.set_user_writer_wire_extensibility(eid, extensibility)
                             })
                             .map_err(|e| {
                                 rt.remove_user_writer(eid);
@@ -1015,6 +1029,10 @@ impl DdsPort for RealDdsPort {
             return Ok(WriteOutcome::Disposed);
         }
 
+        // The body is in the byte order of the client's submessage; the
+        // header has to name it (DDSI-RTPS 2.5 §10.5).
+        rt.set_user_writer_byte_order_override(eid, big_endian)
+            .map_err(|e| DdsPortError::DdsError(format!("byte order of the writer: {e:?}")))?;
         match (key_material, stamp) {
             (Some((key_hash, _)), stamp) => rt
                 .write_user_sample_keyed(eid, payload, key_hash, stamp)
@@ -1135,6 +1153,29 @@ impl DdsPort for RealDdsPort {
 }
 
 impl RealDdsPort {
+    /// The extensibility the writer `key` frames its samples with: the one of
+    /// its topic's type (DDS-XTypes 1.3 §7.6.3.1.2, Table 60: `@appendable`
+    /// is `D_CDR2`, `@mutable` `PL_CDR2`). A topic of unknown type is
+    /// forwarded opaque and keeps `@final`: the agent cannot tell the body's
+    /// framing.
+    fn wire_extensibility_of(&self, key: ObjectKey) -> zerodds_types::qos::ExtensibilityForRepr {
+        use zerodds_dcps::Extensibility;
+        use zerodds_types::qos::ExtensibilityForRepr as Ext;
+        let Some(EndpointKind::Writer(_, topic, _)) = self.endpoints.get(&key) else {
+            return Ext::Final;
+        };
+        match self
+            .topics
+            .get(topic)
+            .and_then(|t| t.type_support.as_ref())
+            .map(|ts| ts.extensibility())
+        {
+            Some(Extensibility::Appendable) => Ext::Appendable,
+            Some(Extensibility::Mutable) => Ext::Mutable,
+            Some(Extensibility::Final) | None => Ext::Final,
+        }
+    }
+
     /// Tears down one endpoint's DCPS-side state: `remove_user_writer`/
     /// `remove_user_reader` (drops the RTPS writer/reader slot, rebuilds
     /// intra-runtime routes, and — the part that matters for a remote
@@ -1206,12 +1247,29 @@ mod tests {
         [b; zerodds_xrce::header::CLIENT_KEY_LEN]
     }
 
+    #[test]
+    fn rtps_9_3_2_1_the_source_time_fraction_is_turned_into_nanoseconds() {
+        use zerodds_rtps::header_extension::HeTimestamp;
+        // 2^31 / 2^32 s is half a second.
+        let half = HeTimestamp {
+            seconds: 1_700_000_000,
+            fraction: 1 << 31,
+        };
+        assert_eq!(source_time_of(half), (1_700_000_000, 500_000_000));
+        // And back: what he_timestamp writes, source_time_of reads.
+        let written = he_timestamp(SourceTime {
+            seconds: 12,
+            nanoseconds: 250_000_000,
+        });
+        assert_eq!(source_time_of(written), (12, 250_000_000));
+    }
+
     fn oid(raw: u16, kind: ObjectKind) -> ObjectId {
         ObjectId::new(raw, kind).unwrap()
     }
 
     #[test]
-    fn create_writer_before_topic_rejected() {
+    fn xrce_7_8_3_1_create_writer_before_topic_rejected() {
         let mut p = RealDdsPort::new(RuntimeConfig::default());
         let writer = (ck(1), oid(1, ObjectKind::DataWriter));
         let topic = (ck(1), oid(2, ObjectKind::Topic));
@@ -1226,7 +1284,7 @@ mod tests {
     /// registration — the cross-runtime delivery itself is covered by
     /// `tests/e2e_udp_loopback.rs`).
     #[test]
-    fn full_chain_against_a_real_leased_domain() {
+    fn xrce_7_4_full_chain_against_a_real_leased_domain() {
         let lease = zerodds_test_domains::lease_domain();
         let domain = lease.id();
         let mut p = RealDdsPort::new(RuntimeConfig::default());
@@ -1277,7 +1335,7 @@ mod tests {
     /// `enable` announces it; deleting it takes it away again, and an
     /// endpoint deleted before `enable` never was announced.
     #[test]
-    fn an_endpoint_is_announced_only_when_it_is_enabled() {
+    fn xrce_7_8_3_1_an_endpoint_is_announced_only_when_it_is_enabled() {
         let lease = zerodds_test_domains::lease_domain();
         let mut p = RealDdsPort::new(RuntimeConfig::default());
         let client = ck(7);
@@ -1341,7 +1399,7 @@ mod tests {
     /// path, exercised against a real leased domain end to end (not
     /// `NullDdsPort`, which can never have a `KeyHash` to work with).
     #[test]
-    fn known_keyed_type_gets_a_real_keyhash_and_honors_dispose() {
+    fn xrce_7_8_4_1_known_keyed_type_gets_a_real_keyhash_and_honors_dispose() {
         let ast = Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@final struct Point { @key long id; long value; };",
@@ -1448,7 +1506,7 @@ mod tests {
     /// topic of unknown type has none, so nothing is written (no plain update
     /// in its place), and its samples cannot be told apart either.
     #[test]
-    fn dispose_on_a_topic_of_unknown_type_is_refused() {
+    fn xrce_7_8_4_1_dispose_on_a_topic_of_unknown_type_is_refused() {
         let lease = zerodds_test_domains::lease_domain();
         let mut p = RealDdsPort::new(RuntimeConfig::default());
         let client = ck(9);
@@ -1507,7 +1565,7 @@ mod tests {
     /// own, and a Publisher whose ENTITY_FACTORY does not enable what it
     /// creates refuses its DataWriters.
     #[test]
-    fn a_publisher_is_a_dds_entity_of_its_participants_domain() {
+    fn xrce_7_5_a_publisher_is_a_dds_entity_of_its_participants_domain() {
         let lease = zerodds_test_domains::lease_domain();
         let mut p = RealDdsPort::new(RuntimeConfig::default());
         let client = ck(8);
@@ -1580,7 +1638,7 @@ mod tests {
     /// of the discovery data of a runtime, so a participant with USER_DATA has
     /// a runtime of its own, shared only by participants with the same value.
     #[test]
-    fn a_participant_qos_is_applied_to_the_participant() {
+    fn xrce_7_1_a_participant_qos_is_applied_to_the_participant() {
         let lease = zerodds_test_domains::lease_domain();
         let mut p = RealDdsPort::new(RuntimeConfig::default());
         let client = ck(9);
@@ -1671,7 +1729,7 @@ mod tests {
     /// (it takes 2) every XCDR2 sample failed to decode and the filter
     /// dropped it.
     #[test]
-    fn a_content_filter_admits_an_xcdr2_sample() {
+    fn xrce_7_8_5_1_a_content_filter_admits_an_xcdr2_sample() {
         let ast = Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@final struct Point { @key long id; long value; };",
@@ -1701,12 +1759,118 @@ mod tests {
         assert!(!filter.admits(&sample(8, 1)));
     }
 
+    /// DDS-XTypes 1.3 §7.6.3.1.2, Table 60, and DDSI-RTPS 2.5 §10.5: a
+    /// client's sample goes out under the header of its type and its byte
+    /// order. Before, the writer offered the runtime's default and framed
+    /// every body `@final`: a `@mutable` sample went out as `CDR2_LE` or
+    /// `CDR_LE` with member headers in it (OPEN-ITEMS 60). The octets are the
+    /// vendors' of `struct Sample { long a; double b; short c; }`
+    /// (`tests/interop-corpus/expected-bytes.tsv`, a = -1234567, b = pi,
+    /// c = -2), little-endian ones written out from them.
+    #[test]
+    #[allow(clippy::panic)]
+    fn xtypes_7_6_3_1_2_a_client_sample_goes_out_under_the_header_of_its_type() {
+        let lease = zerodds_test_domains::lease_domain();
+        let domain = lease.id();
+        let mut p = RealDdsPort::new(RuntimeConfig::default());
+        let client = ck(9);
+        let participant = (client, oid(1, ObjectKind::Participant));
+        let publisher = (client, oid(2, ObjectKind::Publisher));
+        p.create_participant(participant, domain).unwrap();
+        p.create_publisher(publisher, participant, ContainerSpec::default())
+            .unwrap();
+        let cases: [(&str, &str, bool, &str, [u8; 2]); 2] = [
+            (
+                "Mutable",
+                "@mutable struct Sample { long a; double b; short c; };",
+                false,
+                "1a000000000000207929edff01000030182d4454fb21094002000010feff",
+                [0x00, 0x0b], // PL_CDR2_LE
+            ),
+            (
+                "Appendable",
+                "@appendable struct Sample { long a; double b; short c; };",
+                true,
+                "0000000effed2979400921fb54442d18fffe",
+                [0x00, 0x08], // D_CDR2_BE
+            ),
+        ];
+        for (index, (name, idl, big_endian, octets, identifier)) in cases.into_iter().enumerate() {
+            let raw = u16::try_from(10 + 2 * index).unwrap();
+            let topic = (client, oid(raw, ObjectKind::Topic));
+            let writer = (client, oid(raw + 1, ObjectKind::DataWriter));
+            let ast =
+                Arc::new(zerodds_wire_probe::encode::model_from_idl(idl, "sample.idl").unwrap());
+            let type_ = zerodds_types::dynamic::DynamicType::find(&ast, "Sample").unwrap();
+            let root = zerodds_types::from_ast::complete_type_object(&ast, type_.id()).unwrap();
+            let topic_name = format!("Representation{name}");
+            p.create_topic(
+                topic,
+                participant,
+                TopicSpec {
+                    topic_name: topic_name.clone(),
+                    type_name: "Sample".into(),
+                    known_type: Some(crate::daemon::dds_port::KnownType {
+                        root,
+                        dependencies: Vec::new(),
+                    }),
+                },
+            )
+            .unwrap();
+            p.create_writer(writer, topic, publisher, EndpointQos::writer_default())
+                .unwrap();
+            p.enable(writer).unwrap();
+            let rt = Arc::clone(p.runtimes.get(&domain).expect("the domain's runtime"));
+            let (reader, rx) = rt
+                .register_user_reader(UserReaderConfig {
+                    topic_name,
+                    type_name: "Sample".into(),
+                    reliable: true,
+                    data_representation_offer: Some(vec![0, 2]),
+                    ..Default::default()
+                })
+                .unwrap();
+            let Some(EndpointKind::Writer(eid, _, _)) = p.endpoints.get(&writer).copied() else {
+                panic!("{name}: the writer is not an endpoint");
+            };
+            let deadline = Instant::now() + std::time::Duration::from_secs(10);
+            while rt.user_writer_matched_reader_guids(eid).is_empty()
+                || rt.user_reader_matched_writer_guids(reader).is_empty()
+            {
+                assert!(
+                    Instant::now() < deadline,
+                    "{name}: writer and reader did not match"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            let body: Vec<u8> = (0..octets.len() / 2)
+                .map(|i| u8::from_str_radix(&octets[2 * i..2 * i + 2], 16).unwrap())
+                .collect();
+            assert_eq!(
+                p.write(writer, &body, big_endian, false, false, None)
+                    .unwrap(),
+                WriteOutcome::Written
+            );
+            match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                Ok(UserSample::Alive {
+                    payload,
+                    representation_identifier,
+                    ..
+                }) => {
+                    assert_eq!(representation_identifier, identifier, "{name}");
+                    assert_eq!(payload.as_ref(), body.as_slice(), "{name}");
+                }
+                other => panic!("{name}: {other:?}"),
+            }
+        }
+    }
+
     /// The BigHelloWorld measurement: two 50 kB samples one second apart,
     /// written by an XRCE client's DataWriter (DDS defaults: RELIABLE,
     /// KEEP_LAST 1) and read by another client's DataReader (BEST_EFFORT,
     /// KEEP_LAST 1) on the same agent. Both must reach the reader queue.
     #[test]
-    fn two_large_samples_reach_a_default_reader_on_the_same_agent() {
+    fn xrce_7_4_two_large_samples_reach_a_default_reader_on_the_same_agent() {
         let lease = zerodds_test_domains::lease_domain();
         let mut p = RealDdsPort::new(RuntimeConfig::default());
         let (a, b) = (ck(5), ck(6));

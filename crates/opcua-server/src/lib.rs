@@ -2,12 +2,12 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! Native OPC-UA Client/Server (OPC Foundation **Part 4 — Services**) on top
-//! of the SecureChannel/UACP transport ([`zerodds-opcua-uacp`]).
+//! of the SecureChannel/UACP transport ([`zerodds_opcua_uacp`]).
 //!
 //! Crate `zerodds-opcua-server`. Safety classification: **STANDARD**.
 //!
 //! This is the request/response counterpart to the native UADP PubSub stack
-//! ([`zerodds-opcua-pubsub`]) — completing OPC-UA the same way ZeroDDS ships
+//! ([`zerodds_opcua_pubsub`]) — completing OPC-UA the same way ZeroDDS ships
 //! full CORBA/MQTT/AMQP stacks. It provides:
 //!
 //! - [`services`] — the service messages: Session lifecycle (CreateSession /

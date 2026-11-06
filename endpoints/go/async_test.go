@@ -39,7 +39,7 @@ func sampleBody(id uint32) []byte {
 	return w.Buf
 }
 
-func TestAsyncLoopback(t *testing.T) {
+func Test_endpointgo_3_async_loopback(t *testing.T) {
 	const N = 5
 	tr := &memTransport{}
 	w := NewAsyncWriter(tr, XrceObjectID(0x001, uint16(ObjkDataWriter)))

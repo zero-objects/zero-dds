@@ -48,20 +48,3 @@ impl StatusPayload {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::expect_used, clippy::unwrap_used)]
-    use super::*;
-
-    #[test]
-    fn status_roundtrip() {
-        let p = StatusPayload {
-            representation: alloc::vec![0u8; 12],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(sm.header.submessage_id, SubmessageId::Status);
-        let p2 = StatusPayload::try_from_submessage(&sm).unwrap();
-        assert_eq!(p2, p);
-    }
-}

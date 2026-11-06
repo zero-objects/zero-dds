@@ -706,12 +706,12 @@ impl HeaderExtension {
     /// # Errors
     /// `ValueOutOfRange` on mismatch.
     pub fn validate_message_length(&self, actual_message_length: u32) -> Result<(), WireError> {
-        if let Some(declared) = self.message_length {
-            if declared != actual_message_length {
-                return Err(WireError::ValueOutOfRange {
-                    message: "HeaderExtension messageLength mismatch",
-                });
-            }
+        if let Some(declared) = self.message_length
+            && declared != actual_message_length
+        {
+            return Err(WireError::ValueOutOfRange {
+                message: "HeaderExtension messageLength mismatch",
+            });
         }
         Ok(())
     }

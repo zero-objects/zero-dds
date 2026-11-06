@@ -2,9 +2,10 @@
 //
 // OpenSplice Community Edition 6.9 roundtrip bench app, classic C++ API
 // (SACPP). Apples-to-apples with the Cyclone/Fast-DDS/OpenDDS/ZeroDDS apps:
-// the same topics, the same QoS (RELIABLE, KEEP_LAST 64), the same
-// event-driven pong (a DataReaderListener echoes from on_data_available)
-// and the same ping measurement and output line.
+// the same topics, the same QoS (bench::qos_from_env(); unset: RELIABLE,
+// KEEP_LAST 64), the same event-driven pong (a DataReaderListener echoes
+// from on_data_available), the same ping measurement and output line, and
+// the throughput modes of bench_common.hpp.
 //
 // IDL: roundtrip_ospl.idl -> RoundtripBench::Roundtrip (idlpp -S -l cpp),
 // roundtrip.idl without annotations. OpenSplice writes and reads XCDR1
@@ -15,6 +16,7 @@
 
 #include "ccpp_dds_dcps.h"
 #include "ccpp_roundtrip_ospl.h"
+#include "bench_common.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -59,7 +61,23 @@ struct Endpoints {
     DDS::Subscriber_var sub;
     DDS::DataWriterQos dw_qos;
     DDS::DataReaderQos dr_qos;
+    bench::QosSpec q;
 };
+
+// Reliability, history and RESOURCE_LIMITS of both sides from
+// bench::qos_from_env(); unset: RELIABLE, KEEP_LAST(64), OpenSplice's
+// RESOURCE_LIMITS.
+template <class Qos>
+void apply_bench_qos(Qos& qos, const bench::QosSpec& q) {
+    qos.reliability.kind = q.reliable ? DDS::RELIABLE_RELIABILITY_QOS : DDS::BEST_EFFORT_RELIABILITY_QOS;
+    qos.history.kind = q.keep_all ? DDS::KEEP_ALL_HISTORY_QOS : DDS::KEEP_LAST_HISTORY_QOS;
+    qos.history.depth = q.keep_all ? 1 : q.depth;
+    if (q.has_limits()) {
+        qos.resource_limits.max_samples = q.max_samples;
+        qos.resource_limits.max_instances = 1;
+        qos.resource_limits.max_samples_per_instance = q.max_samples;
+    }
+}
 
 bool setup(Endpoints& e) {
     e.dpf = DDS::DomainParticipantFactory::get_instance();
@@ -82,14 +100,11 @@ bool setup(Endpoints& e) {
         std::cerr << "opensplice-app: topic/publisher/subscriber creation failed\n";
         return false;
     }
+    e.q = bench::qos_from_env();
     e.pub->get_default_datawriter_qos(e.dw_qos);
-    e.dw_qos.reliability.kind = DDS::RELIABLE_RELIABILITY_QOS;
-    e.dw_qos.history.kind = DDS::KEEP_LAST_HISTORY_QOS;
-    e.dw_qos.history.depth = 64;
+    apply_bench_qos(e.dw_qos, e.q);
     e.sub->get_default_datareader_qos(e.dr_qos);
-    e.dr_qos.reliability.kind = DDS::RELIABLE_RELIABILITY_QOS;
-    e.dr_qos.history.kind = DDS::KEEP_LAST_HISTORY_QOS;
-    e.dr_qos.history.depth = 64;
+    apply_bench_qos(e.dr_qos, e.q);
     return true;
 }
 
@@ -243,7 +258,9 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     for (size_t i = 0; i < payload_size; ++i) msg.payload[static_cast<DDS::ULong>(i)] = 0xAB;
 
     uint64_t total = warmup + samples;
-    for (uint64_t seq = 0; seq < total; ++seq) {
+    uint64_t sent = 0;
+    const uint64_t ping_deadline = bench::ping_deadline();
+    for (uint64_t seq = 0; seq < total && !bench::ping_past(ping_deadline); ++seq, ++sent) {
         msg.sequence_id = static_cast<DDS::ULong>(seq);
         msg.t_send_ns = now_ns();
         w->write(msg, DDS::HANDLE_NIL);
@@ -254,8 +271,87 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     dr->set_listener(NULL, DDS::STATUS_MASK_NONE);
     {
         std::lock_guard<std::mutex> lk(st.mu);
+        bench::print_ping_sent(sent);
         print_quantiles(st.rtts, payload_size);
     }
+    e.dp->delete_contained_entities();
+    e.dpf->delete_participant(e.dp.in());
+    return 0;
+}
+
+// --- Throughput (tests/perf/speed): one writer, one reader, own processes ---
+
+class TputListener : public DataListener {
+public:
+    explicit TputListener(bench::TputSub& st) : st_(st) {}
+    void on_data_available(DDS::DataReader_ptr reader) override {
+        RoundtripBench::RoundtripDataReader_var r = RoundtripBench::RoundtripDataReader::_narrow(reader);
+        for (;;) {
+            RoundtripBench::RoundtripSeq samples;
+            DDS::SampleInfoSeq infos;
+            if (r->take(samples, infos, DDS::LENGTH_UNLIMITED, DDS::ANY_SAMPLE_STATE,
+                        DDS::ANY_VIEW_STATE, DDS::ANY_INSTANCE_STATE) != DDS::RETCODE_OK) {
+                return;
+            }
+            DDS::ULong n = samples.length();
+            for (DDS::ULong i = 0; i < n; ++i) {
+                if (infos[i].valid_data) st_.on_sample(samples[i].sequence_id, samples[i].payload.length());
+            }
+            r->return_loan(samples, infos);
+            if (n == 0) return;
+        }
+    }
+private:
+    bench::TputSub& st_;
+};
+
+int run_tput_sub(uint64_t max_s) {
+    Endpoints e;
+    if (!setup(e)) return 1;
+    bench::print_qos("tput-sub", e.q);
+    bench::TputSub st;
+    TputListener* listener = new TputListener(st);
+    DDS::DataReaderListener_var listener_var = listener;
+    DDS::DataReader_var dr = e.sub->create_datareader(e.t_req.in(), e.dr_qos, listener,
+                                                      DDS::DATA_AVAILABLE_STATUS);
+    if (!dr.in()) { std::cerr << "opensplice-app: datareader creation failed\n"; return 1; }
+    bench::tput_sub_wait_and_report(st, max_s);
+    dr->set_listener(NULL, DDS::STATUS_MASK_NONE);
+    e.dp->delete_contained_entities();
+    e.dpf->delete_participant(e.dp.in());
+    return 0;
+}
+
+int run_tput_pub(size_t payload_size, uint64_t seconds) {
+    Endpoints e;
+    if (!setup(e)) return 1;
+    bench::print_qos("tput-pub", e.q);
+    DDS::DataWriter_var dw = e.pub->create_datawriter(e.t_req.in(), e.dw_qos, NULL,
+                                                      DDS::STATUS_MASK_NONE);
+    RoundtripBench::RoundtripDataWriter_var w = RoundtripBench::RoundtripDataWriter::_narrow(dw.in());
+    if (!dw.in()) { std::cerr << "opensplice-app: datawriter creation failed\n"; return 1; }
+    bench::tput_wait_matched([&] {
+        DDS::PublicationMatchedStatus ps;
+        return dw->get_publication_matched_status(ps) == DDS::RETCODE_OK && ps.current_count >= 1;
+    });
+
+    RoundtripBench::Roundtrip msg;
+    msg.payload.length(static_cast<DDS::ULong>(payload_size));
+    for (size_t i = 0; i < payload_size; ++i) msg.payload[static_cast<DDS::ULong>(i)] = 0xAB;
+    auto r = bench::tput_pub_run(seconds, [&](uint32_t seq) {
+        msg.sequence_id = static_cast<DDS::ULong>(seq);
+        return w->write(msg, DDS::HANDLE_NIL) == DDS::RETCODE_OK;
+    });
+    int acked = -1;
+    uint64_t ack_ns = 0;
+    if (e.q.reliable) {
+        uint64_t t = now_ns();
+        DDS::Duration_t max_wait = {30, 0};
+        acked = dw->wait_for_acknowledgments(max_wait) == DDS::RETCODE_OK ? 1 : 0;
+        ack_ns = now_ns() - t;
+    }
+    bench::print_tput_pub(r, payload_size, acked, ack_ns);
+    bench::tput_linger();
     e.dp->delete_contained_entities();
     e.dpf->delete_participant(e.dp.in());
     return 0;
@@ -268,7 +364,9 @@ int main(int argc, char** argv) {
         std::cerr <<
             "Usage:\n"
             "  opensplice-roundtrip pong [max_runtime_s]\n"
-            "  opensplice-roundtrip ping --payload N [--samples N] [--warmup N]\n";
+            "  opensplice-roundtrip ping --payload N [--samples N] [--warmup N]\n"
+            "  opensplice-roundtrip tput-sub --seconds MAX\n"
+            "  opensplice-roundtrip tput-pub --payload N --seconds S\n";
         return 2;
     }
     std::string mode = argv[1];
@@ -285,8 +383,14 @@ int main(int argc, char** argv) {
             if      (flag == "--payload") payload = static_cast<size_t>(v);
             else if (flag == "--samples") samples = v;
             else if (flag == "--warmup")  warmup  = v;
+            else if (flag == "--max-seconds") bench::ping_max_seconds() = v;
         }
         return run_ping(payload, warmup, samples);
+    } else if (mode == "tput-sub") {
+        return run_tput_sub(bench::parse_tput_args(argc, argv, 2).seconds);
+    } else if (mode == "tput-pub") {
+        bench::TputArgs a = bench::parse_tput_args(argc, argv, 2);
+        return run_tput_pub(a.payload, a.seconds);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

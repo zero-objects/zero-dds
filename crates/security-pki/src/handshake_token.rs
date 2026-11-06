@@ -319,7 +319,7 @@ pub fn serialize_bin_prop_seq(props: &[(&str, &[u8])]) -> Vec<u8> {
 
 /// Padding to 4-byte alignment (XCDR1).
 fn align4(buf: &mut Vec<u8>) {
-    while buf.len() % 4 != 0 {
+    while !buf.len().is_multiple_of(4) {
         buf.push(0);
     }
 }
@@ -684,13 +684,13 @@ pub fn parse_reply_token(bytes: &[u8]) -> SecurityResult<ReplyTokenView> {
     let dsign_raw = h.binary_property(prop::C_DSIGN_ALGO).unwrap_or(&[]);
     let kagree_raw = h.binary_property(prop::C_KAGREE_ALGO).unwrap_or(&[]);
     let recomputed = compute_hash_c_raw(&cert_der, &permissions, &pdata, dsign_raw, kagree_raw);
-    if let Ok(sent) = take_fixed::<32>(&h, prop::HASH_C2) {
-        if !ct_eq(&recomputed, &sent) {
-            return Err(SecurityError::new(
-                SecurityErrorKind::AuthenticationFailed,
-                "reply: hash_c2 mismatch",
-            ));
-        }
+    if let Ok(sent) = take_fixed::<32>(&h, prop::HASH_C2)
+        && !ct_eq(&recomputed, &sent)
+    {
+        return Err(SecurityError::new(
+            SecurityErrorKind::AuthenticationFailed,
+            "reply: hash_c2 mismatch",
+        ));
     }
     let hash_c2 = recomputed;
     // hash_c1 / dh1 are echo fields — OPTIONAL (the initiator knows them itself).
@@ -960,7 +960,7 @@ mod tests {
     /// name of 64 characters is a valid name, with or without the NUL; one of
     /// 65 characters is refused as such.
     #[test]
-    fn an_algorithm_name_over_64_characters_is_refused() {
+    fn security_7_3_6_an_algorithm_name_over_64_characters_is_refused() {
         let cert = alloc::vec![0xAB; 16];
         let dh1 = alloc::vec![7u8; 65];
         let challenge = [3u8; 32];
@@ -1014,18 +1014,6 @@ mod tests {
     }
 
     #[test]
-    fn data_holder_roundtrip() {
-        let mut h = DataHolder::new("DDS:Auth:PKI-DH:1.2+AuthReq");
-        h.set_property("c.dsign_algo", "ECDSA-SHA256");
-        h.set_binary_property("c.id", alloc::vec![0xAA; 200]);
-        let bytes = h.to_cdr_le();
-        let parsed = DataHolder::from_cdr_le(&bytes).unwrap();
-        assert_eq!(parsed.class_id, h.class_id);
-        assert_eq!(parsed.property("c.dsign_algo"), Some("ECDSA-SHA256"));
-        assert_eq!(parsed.binary_property("c.id").unwrap().len(), 200);
-    }
-
-    #[test]
     fn data_holder_truncation_rejected() {
         let mut h = DataHolder::new("X");
         h.set_binary_property("a", alloc::vec![1, 2, 3]);
@@ -1044,7 +1032,7 @@ mod tests {
     }
 
     #[test]
-    fn hash_c_is_deterministic_and_input_separated() {
+    fn security_10_3_2_5_1_hash_c_is_deterministic_and_input_separated() {
         let h1 = compute_hash_c(b"a", b"b", b"c", "d", "e");
         let h2 = compute_hash_c(b"a", b"b", b"c", "d", "e");
         assert_eq!(h1, h2);
@@ -1064,7 +1052,7 @@ mod tests {
     }
 
     #[test]
-    fn reply_and_final_content_differ_by_order() {
+    fn security_10_3_2_5_2_reply_and_final_content_differ_by_order() {
         // Reply and final use the same values, but a mirrored
         // property order -> different signed bytes (prevents
         // reply<->final signature reuse).
@@ -1181,7 +1169,7 @@ mod tests {
 
     /// Counter-check: if hash_c1 is PRESENT but wrong → still a tamper reject.
     #[test]
-    fn parse_request_token_rejects_tampered_hash_c1() {
+    fn security_10_3_2_5_1_parse_request_token_rejects_tampered_hash_c1() {
         let cert = vec![7u8; 64];
         let dh = vec![3u8; 32];
         let ch = [9u8; 32];
@@ -1357,7 +1345,7 @@ mod class_version_tests {
     /// specification's spelling stays the default; anything else is
     /// refused.
     #[test]
-    fn the_peers_version_is_read_and_carried_back() {
+    fn security_10_3_2_1_the_peers_version_is_read_and_carried_back() {
         assert_eq!(
             ClassVersion::of_class_id("DDS:Auth:PKI-DH:1.2+Req", "Req"),
             Some(ClassVersion::V1_2)

@@ -224,7 +224,8 @@ fn serve(pki: &Pki, offer: &'static str, password: &'static str) -> (String, mps
             );
         }
         let _ = tx.send(seen);
-        std::thread::sleep(Duration::from_millis(300));
+        // Held open until the client closes its end.
+        let _ = tls.read(&mut [0u8; 1]);
     });
     (addr, rx)
 }
@@ -267,7 +268,7 @@ fn params(pki: &Pki, addr: String, sasl: SaslCredentials, with_client_cert: bool
 }
 
 #[test]
-fn external_authenticates_with_the_tls_client_certificate_and_alpn_amqp() {
+fn amqpbridge_7_1_external_authenticates_with_the_tls_client_certificate_and_alpn_amqp() {
     let pki = pki();
     let (addr, seen) = serve(&pki, "EXTERNAL", "");
     let r = broker::connect(&params(&pki, addr, SaslCredentials::External, true));
@@ -280,7 +281,7 @@ fn external_authenticates_with_the_tls_client_certificate_and_alpn_amqp() {
 }
 
 #[test]
-fn scram_sha_256_authenticates_and_a_wrong_password_is_refused() {
+fn amqpbridge_7_2_scram_sha_256_authenticates_and_a_wrong_password_is_refused() {
     let pki = pki();
     let (addr, seen) = serve(&pki, "SCRAM-SHA-256", "correct horse");
     let ok = broker::connect(&params(
@@ -327,7 +328,7 @@ fn scram_sha_256_authenticates_and_a_wrong_password_is_refused() {
 /// The broker offers only EXTERNAL; a client configured for SCRAM stops
 /// with both names instead of trying another mechanism.
 #[test]
-fn a_mechanism_the_broker_does_not_offer_is_refused_by_name() {
+fn amqpbridge_7_2_a_mechanism_the_broker_does_not_offer_is_refused_by_name() {
     let pki = pki();
     let (addr, _seen) = serve(&pki, "EXTERNAL", "");
     let err = broker::connect(&params(

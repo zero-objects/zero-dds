@@ -294,17 +294,17 @@ impl AmqpClient {
             if body.is_empty() {
                 continue;
             }
-            if let Ok((desc, _, _)) = decode_performative(&body) {
-                if desc == descriptor::TRANSFER {
-                    payload = data_payload_from_transfer(&body);
-                    // Settle the delivery (delivery-id 0 for the first one).
-                    self.write_frame(
-                        FrameType::Amqp,
-                        0,
-                        &disposition_accept(0, None).map_err(map_codec)?,
-                    )?;
-                    break;
-                }
+            if let Ok((desc, _, _)) = decode_performative(&body)
+                && desc == descriptor::TRANSFER
+            {
+                payload = data_payload_from_transfer(&body);
+                // Settle the delivery (delivery-id 0 for the first one).
+                self.write_frame(
+                    FrameType::Amqp,
+                    0,
+                    &disposition_accept(0, None).map_err(map_codec)?,
+                )?;
+                break;
             }
         }
         self.detach_link(handle)?;
@@ -401,10 +401,10 @@ impl AmqpClient {
             if body.is_empty() {
                 continue;
             }
-            if let Ok((desc, _, _)) = decode_performative(&body) {
-                if desc == want {
-                    return Ok(());
-                }
+            if let Ok((desc, _, _)) = decode_performative(&body)
+                && desc == want
+            {
+                return Ok(());
             }
         }
         Err(proto("did not see the awaited performative"))
@@ -581,7 +581,7 @@ mod tests {
     /// this delivery — not on one for another delivery, and not on the
     /// non-terminal `received`.
     #[test]
-    fn send_to_accepted_returns_on_the_accepting_disposition() {
+    fn amqp10_3_4_2_send_to_accepted_returns_on_the_accepting_disposition() {
         let (result, peer) = client_against(vec![
             (7, delivery_state::ACCEPTED, true),
             (0, delivery_state::RECEIVED, false),

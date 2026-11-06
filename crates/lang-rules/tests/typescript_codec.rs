@@ -58,7 +58,7 @@ fn encoder(idl: &str, type_name: &str) -> String {
 }
 
 #[test]
-fn a_structure_of_primitives_becomes_a_typescript_encoder() {
+fn ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder() {
     let text = encoder(
         "@final struct Pose { long x; double y; boolean active; };",
         "Pose",
@@ -76,7 +76,7 @@ fn a_structure_of_primitives_becomes_a_typescript_encoder() {
 }
 
 #[test]
-fn a_sequence_counts_and_loops() {
+fn ddsts_2_1_a_sequence_counts_and_loops() {
     let text = encoder("@final struct S { sequence<long> many; };", "S");
     assert!(
         text.contains(".length"),
@@ -86,7 +86,7 @@ fn a_sequence_counts_and_loops() {
 }
 
 #[test]
-fn a_wide_integer_is_a_bigint_literal() {
+fn ddsts_2_1_a_wide_integer_is_a_bigint_literal() {
     let text = encoder("@final struct S { unsigned long long big; };", "S");
     assert!(text.contains("writeU64"), "no 64-bit write:\n{text}");
 }

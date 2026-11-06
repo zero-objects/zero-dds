@@ -145,7 +145,7 @@ pub fn encodeBaseObjectRequest(out: []u8, request_id: [2]u8, object_id_word: u16
 /// Subscriber/DataWriter/DataReader, `null` for every other kind --
 /// byte-oracled in `crates/xrce/src/object_repr.rs` against real eProsima
 /// Micro-XRCE-DDS Client 3.0.1 CREATE traffic (Topic's own
-/// participant_id: commit 31c62df2a63). This -- not the single-level
+/// participant_id: commit bd30deaef0b). This -- not the single-level
 /// form a previous version of this port wrote -- is the only form a real
 /// agent accepts. Returns the bytes written.
 pub fn encodeObjectVariantForKind(out: []u8, object_id_word: u16, name: []const u8, parent_id_word: ?u16) usize {
@@ -676,7 +676,7 @@ test "fixture: WRITE_DATA byte identity" {
 // object_id=pack(raw=0x010,kind=topic), the real two-level
 // ObjectVariant::ByReference("HelloWorldTopic") under
 // parent=pack(raw=0x001,kind=participant), sequence_nr=4. OBJK_TOPIC's own
-// representation carries its participant's ObjectId (commit 31c62df2a63,
+// representation carries its participant's ObjectId (commit bd30deaef0b,
 // "xrce: OBJK_TOPIC_Representation carries its participant's ObjectId"),
 // the same trailing field OBJK_PUBLISHER's representation carries above --
 // this fixture is generated the same way (endpoints/golden-gen), not a

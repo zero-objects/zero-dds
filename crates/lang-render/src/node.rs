@@ -425,7 +425,7 @@ mod tests {
     use zerodds_lang_cst::node::{VarKind, escape_decl};
 
     #[test]
-    fn a_const_declaration_ends_in_a_semicolon() {
+    fn xtypes_7_5_1_a_const_declaration_ends_in_a_semicolon() {
         let text = stat(&Stat::Declare {
             doc: Doc::none(),
             kind: VarKind::Const,
@@ -436,7 +436,7 @@ mod tests {
     }
 
     #[test]
-    fn an_object_literal_writes_every_key_bare() {
+    fn xtypes_7_5_1_an_object_literal_writes_every_key_bare() {
         let text = expr(&Expr::Object(alloc::vec![
             (Ident::new("x"), Expr::int(1)),
             (Ident::new("class"), Expr::int(2)),
@@ -445,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn a_for_loop_counts_from_zero_with_no_off_by_one_correction() {
+    fn xtypes_7_5_1_a_for_loop_counts_from_zero_with_no_off_by_one_correction() {
         let text = stat(&Stat::For {
             counter: Ident::new("i"),
             bound: Expr::name("n"),
@@ -455,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn a_function_declaration_has_no_type_annotation_anywhere() {
+    fn xtypes_7_5_1_a_function_declaration_has_no_type_annotation_anywhere() {
         let text = stat(&Stat::Function(Function {
             doc: Doc::none(),
             name: Ident::new("zd_enc_p_long"),
@@ -467,7 +467,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nul_is_written_as_the_named_escape_because_javascript_has_one() {
+    fn xtypes_7_5_1_a_nul_is_written_as_the_named_escape_because_javascript_has_one() {
         assert_eq!(string_text("a\0b"), "a\\0b");
         assert_eq!(string_text("a\"b\\c"), "a\\\"b\\\\c");
         assert_eq!(string_text("hä"), "hä");

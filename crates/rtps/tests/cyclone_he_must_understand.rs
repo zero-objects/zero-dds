@@ -1,11 +1,4 @@
-//! WP 1.C — Cyclone interop negative test for a HeaderExtension with
-//! an unknown must-understand PID.
-//!
-//! **Opt-in only** — marked `#[ignore]`. Invocation:
-//!
-//! ```bash
-//! cargo test -p zerodds-rtps --test cyclone_he_must_understand -- --ignored --nocapture
-//! ```
+//! WP 1.C — a HeaderExtension with an unknown must-understand PID.
 //!
 //! # Spec background
 //!
@@ -14,28 +7,13 @@
 //! (0x4000) is set, and the receiver does not know this PID,
 //! it MUST discard the whole RTPS message.
 //!
-//! # Test flow (unseen Cyclone machine)
+//! # What is checked here
 //!
-//! 1. Local: we produce an RTPS message consisting of
-//!    - RtpsHeader (ZeroDDS VendorId)
-//!    - a HeaderExtension with a ParameterList containing a `must_understand`
-//!      PID that Cyclone does not know (e.g. PID 0xC042 — vendor-
-//!      specific + must-understand).
-//!    - followed by a DATA submessage with a regular
-//!      DCPSParticipant payload (SPDP builtin topic).
-//!
-//! 2. Send this message via UDP multicast to Cyclone.
-//!
-//! 3. Expectation: Cyclone does **not** discover this participant
-//!    (whole-message reject).
-//!
-//! 4. Comparison run: same message without the must-understand PID →
-//!    Cyclone discovers correctly.
-//!
-//! Without a Cyclone live setup this test only verifies that our
-//! encoder produces the correct wire form, that our decoder would itself
-//! also reject, and that the hex dump matches
-//! what we need for debugging verification against Cyclone.
+//! The message in question — RtpsHeader (ZeroDDS VendorId) plus a
+//! HeaderExtension whose ParameterList carries PID 0xC042 (vendor-specific
+//! and must-understand) — is built, its wire form is checked, and the
+//! ZeroDDS decoder refuses it. Whether Cyclone discards the same message
+//! on a live wire is checked by no test.
 
 #![allow(
     clippy::expect_used,
@@ -132,21 +110,4 @@ fn the_decoder_refuses_a_header_extension_with_an_unknown_must_understand_pid() 
     pl.push(Parameter::new(MUST_UNDERSTAND_BIT | 0x8042, vec![0; 4]));
     let res = pl.validate_must_understand(|pid| pid == 0x0015);
     assert!(res.is_err(), "whole-message reject required (§9.4.2.11.2)");
-}
-
-#[test]
-#[ignore = "needs live Cyclone DDS instance + multicast network setup"]
-fn cyclone_live_rejects_he_with_unknown_must_understand_pid() {
-    // Live test against Cyclone DDS:
-    // 1. Build the RTPS datagram with HE.P + must-understand vendor PID.
-    // 2. Send via UDP to the SPDP multicast address (239.255.0.1:7400 +
-    //    port computation for the domain).
-    // 3. Expectation: Cyclone discards the message, the participant does
-    //    NOT appear in `ddsperf -D <DOMAIN>` discovery.
-    //
-    // The implementation needs the same multicast setup as
-    // `crates/discovery/tests/cyclone_live_sedp.rs`. As long as the lab
-    // setup is not available in CI, this test stays
-    // `#[ignore]`.
-    let _ = build_he_with_unknown_must_understand_pid();
 }

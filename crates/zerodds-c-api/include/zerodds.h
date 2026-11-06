@@ -38,7 +38,7 @@ typedef struct zerodds_ZeroDdsQueryCondition zerodds_ZeroDdsQueryCondition;
  * against the run-time zerodds_abi_revision() and fails fast on a
  * mismatch. Kept in sync with ZERODDS_ABI_REVISION in
  * crates/zerodds-c-api/src/lib.rs by
- * tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree.
+ * tests/abi_compat.rs::deployment_1_2_the_header_macro_and_the_exported_revision_agree.
  */
 #ifndef ZERODDS_ABI_REVISION
 #define ZERODDS_ABI_REVISION 1
@@ -72,13 +72,14 @@ typedef int (*zerodds_Option_ZeroDdsDecodeReprFn)(const uint8_t *buf, size_t len
 
 typedef int (*zerodds_Option_ZeroDdsEncodeFn)(const void *sample, uint8_t *out_buf, size_t out_cap, size_t *out_len);
 
-typedef struct zerodds_Option_ZeroDdsEndpointCallback zerodds_Option_ZeroDdsEndpointCallback;
+struct zerodds_ZeroDdsEndpointInfo;
+typedef void (*zerodds_Option_ZeroDdsEndpointCallback)(void *user_data, const struct zerodds_ZeroDdsEndpointInfo *info);
 
 typedef int (*zerodds_Option_ZeroDdsKeyHashFn)(const void *sample, uint8_t *out_hash);
 
 typedef void (*zerodds_Option_ZeroDdsSampleFreeFn)(void *sample);
 
-typedef struct zerodds_Option_ZeroDdsTopicCallback zerodds_Option_ZeroDdsTopicCallback;
+typedef void (*zerodds_Option_ZeroDdsTopicCallback)(void *user_data, const char *topic_name, const char *type_name);
 
 /**
  * A DataReader of the built-in subscriber.
@@ -354,6 +355,13 @@ typedef struct zerodds_ZeroDdsSampleOrigin {
    * The writer's RTPS sequence number of the sample, `-1` when unknown.
    */
   int64_t sequence_number;
+  /**
+   * The representation identifier of the sample's encapsulation header
+   * (DDSI-RTPS 2.5 §10.5), e.g. `{0x00, 0x09}` for D_CDR2_LE: the
+   * `representation` and `big_endian` arguments of the callback reduce
+   * it to the XCDR version and the byte order.
+   */
+  uint8_t representation_identifier[2];
 } zerodds_ZeroDdsSampleOrigin;
 
 /**
@@ -2017,14 +2025,68 @@ typedef struct zerodds_ZeroDdsTypeSupport {
   zerodds_Option_ZeroDdsDecodeReprFn decode_repr;
 } zerodds_ZeroDdsTypeSupport;
 
+/**
+ * Per-endpoint discovery info passed to a [`ZeroDdsEndpointCallback`]. All
+ * pointers are valid only for the duration of the one callback invocation.
+ * Powers ROS-2 `rmw_get_publishers_info_by_topic` / `..subscriptions..`
+ * (`ros2 topic info -v`). QoS is best-effort from what discovery carries.
+ */
+typedef struct zerodds_ZeroDdsEndpointInfo {
+  /**
+   * NUL-terminated DDS topic name (raw, un-demangled).
+   */
+  const char *topic_name;
+  /**
+   * NUL-terminated IDL type name (raw).
+   */
+  const char *type_name;
+  /**
+   * Pointer to the 16-byte endpoint GUID (12-byte participant prefix +
+   * 4-byte entity id). Bytes 0..12 identify the owning participant.
+   */
+  const uint8_t *endpoint_guid;
+  /**
+   * 1 = RELIABLE, 0 = BEST_EFFORT.
+   */
+  uint8_t reliable;
+  /**
+   * 1 = TRANSIENT_LOCAL or stronger, 0 = VOLATILE.
+   */
+  uint8_t transient_local;
+  /**
+   * Deadline period in nanoseconds (0 = INFINITE).
+   */
+  uint64_t deadline_ns;
+  /**
+   * Lifespan in nanoseconds (0 = INFINITE; a subscription has none).
+   */
+  uint64_t lifespan_ns;
+  /**
+   * Liveliness lease in nanoseconds (0 = INFINITE).
+   */
+  uint64_t liveliness_lease_ns;
+  /**
+   * USER_DATA the endpoint announced (DDS 1.4 §2.2.3.1),
+   * `user_data_len` octets; NULL when it announced none. ROS 2 RMWs
+   * from Iron on put `typehash=RIHS01_…;` there.
+   */
+  const uint8_t *user_data;
+  /**
+   * Octets at `user_data`.
+   */
+  uintptr_t user_data_len;
+} zerodds_ZeroDdsEndpointInfo;
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
 
 /**
- * The DDS 1.4 defaults: RELIABLE, VOLATILE, KEEP_LAST(1), infinite
- * deadline, lifespan and lease, AUTOMATIC liveliness, no RESOURCE_LIMITS,
- * and a writer's `max_blocking_time` of 100 ms.
+ * The DDS 1.4 defaults of a DataWriter: RELIABLE, VOLATILE, KEEP_LAST(1),
+ * infinite deadline, lifespan and lease, AUTOMATIC liveliness, no
+ * RESOURCE_LIMITS, and a `max_blocking_time` of 100 ms. A DataReader's
+ * RELIABILITY default is BEST_EFFORT (§2.2.3.14); a caller that creates a
+ * reader from this value sets it.
  */
 struct zerodds_ZeroDdsEndpointQos zerodds_endpoint_qos_default(void);
 
@@ -2254,7 +2316,7 @@ int zerodds_runtime_wait_for_peers(struct zerodds_ZeroDdsRuntime *runtime,
  * `runtime` must come from `zerodds_runtime_create` or be NULL.
  */
 int zerodds_runtime_for_each_publication(struct zerodds_ZeroDdsRuntime *runtime,
-                                         struct zerodds_Option_ZeroDdsTopicCallback callback,
+                                         zerodds_Option_ZeroDdsTopicCallback callback,
                                          void *user_data);
 
 /**
@@ -2265,7 +2327,7 @@ int zerodds_runtime_for_each_publication(struct zerodds_ZeroDdsRuntime *runtime,
  * `runtime` must come from `zerodds_runtime_create` or be NULL.
  */
 int zerodds_runtime_for_each_subscription(struct zerodds_ZeroDdsRuntime *runtime,
-                                          struct zerodds_Option_ZeroDdsTopicCallback callback,
+                                          zerodds_Option_ZeroDdsTopicCallback callback,
                                           void *user_data);
 
 /**
@@ -2325,7 +2387,7 @@ int zerodds_reader_guid(struct zerodds_ZeroDdsReader *reader, uint8_t *out_guid)
  * `runtime` must come from `zerodds_runtime_create` or be NULL.
  */
 int zerodds_runtime_for_each_publication_endpoint(struct zerodds_ZeroDdsRuntime *runtime,
-                                                  struct zerodds_Option_ZeroDdsEndpointCallback callback,
+                                                  zerodds_Option_ZeroDdsEndpointCallback callback,
                                                   void *user_data);
 
 /**
@@ -2336,7 +2398,7 @@ int zerodds_runtime_for_each_publication_endpoint(struct zerodds_ZeroDdsRuntime 
  * `runtime` must come from `zerodds_runtime_create` or be NULL.
  */
 int zerodds_runtime_for_each_subscription_endpoint(struct zerodds_ZeroDdsRuntime *runtime,
-                                                   struct zerodds_Option_ZeroDdsEndpointCallback callback,
+                                                   zerodds_Option_ZeroDdsEndpointCallback callback,
                                                    void *user_data);
 
 /**
@@ -2985,9 +3047,8 @@ void zerodds_reader_return_loan(void *loan_handle);
  * The caller writes the sample into the returned pointer and
  * then commits it via [`zerodds_writer_commit_loan`].
  *
- * Returns 0 (Ok) on success + fills `*out_ptr` and `*out_len`.
- * On today's malloc-backed path `*out_len = len`; for
- * SHM-backed loans `*out_len > len` is possible (slot boundary).
+ * Returns 0 (Ok) on success and fills `*out_ptr` and `*out_len`, which is
+ * `len`.
  *
  * # Safety
  * `writer` valid; `out_ptr`/`out_len` non-null.
@@ -3088,7 +3149,8 @@ int zerodds_reader_release_shm(struct zerodds_ZeroDdsReader *reader, uint32_t sl
  * change-generation futex / iceoryx2 listener), no busy-poll. Lets a consumer
  * (e.g. the ROS-2 RMW `rmw_wait` doorbell) park on raw-data arrival instead of
  * polling. A spurious wake is harmless — re-check with `zerodds_reader_take_shm`.
- * Returns `Ok` when woken or timed out, `PreconditionNotMet` if no raw source.
+ * Returns `Ok` when woken, `NoData` when `timeout_ms` elapsed first,
+ * `PreconditionNotMet` if the reader has no raw source.
  *
  * # Safety
  * `reader` from `zerodds_reader_create` or NULL.
@@ -5562,10 +5624,15 @@ int zerodds_cft_set_schema(struct zerodds_ZeroDdsContentFilteredTopic *cft,
 /**
  * Like [`zerodds_cft_set_schema`] but additionally declares the payload's type
  * `extensibility` (XTypes 1.3 §7.3.1.2.1): `0 = @final`, `1 = @appendable`,
- * `2 = @mutable`. For `@appendable`/`@mutable` the XCDR2 stream is prefixed
- * with a 4-byte DHEADER (§7.4.3.4.2) before the first member, so the
- * positional decoder skips 4 bytes; for `@final` the first member is at
- * offset 0. Any other value is rejected.
+ * `2 = @mutable`. For `@appendable` the XCDR2 stream is prefixed with a
+ * 4-byte DHEADER (§7.4.3.4.2) before the first member, so the positional
+ * decoder skips 4 bytes; for `@final` the first member is at offset 0. A
+ * `@mutable` body carries every member with its id (an EMHEADER under
+ * XCDR2, §7.4.3.4.2; a parameter header under XCDR1, §7.4.1.2): the `n`-th
+ * schema member (from 0) is looked up under id `n`, the id
+ * `@autoid(SEQUENTIAL)`, the default, gives it when no member carries an
+ * `@id` (§7.3.1.2.1.1); for other ids use `zerodds_cft_set_type_object`.
+ * Any other value is rejected.
  *
  * Filter literals are passed as-is (see [`zerodds_cft_set_schema`]).
  *

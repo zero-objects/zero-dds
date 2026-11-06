@@ -14,8 +14,8 @@ Implementation:
 - `endpoints/swift/Tests/ZeroddsTests/ZeroddsTests.swift` — SwiftPM XCTest
   (byte-golden + sync/async loopback over `MemTransport`).
 - `crates/endpoint-e2e/tests/swift.rs` — ping-pong E2E over real UDP;
-  `crates/endpoint-e2e/tests/swift_reliable.rs` — reliable-stream E2E, unit
-  runner, example, latency bench.
+  `crates/endpoint-e2e/tests/swift_reliable.rs` — reliable-stream E2E,
+  latency comparison.
 
 **Toolchain note (applies to every section):** `swiftc` is not available on
 `Linux` (the Linux bench host). Every test below is **verified locally on
@@ -33,8 +33,8 @@ WRITE_DATA, flags, len LE) + body, byte-identical to `crates/xrce` +
 `xrceWriteFrame`/`xrceReadFrame`, constants `xrceSessionNoKey` (`0x80`) and
 `xrceStreamBestEffort` (`0x01`).
 
-**Tests:** framing is exercised live via `swift_endpoint_sync`/
-`swift_endpoint_async` (§4); the wire core itself (`Writer`/`Reader`, cap-4
+**Tests:** framing is exercised live via `xrce_8_3_5_8_swift_sync_app_writes_the_ping_and_reads_the_pong`/
+`xrce_8_3_5_8_swift_async_app_writes_the_ping_and_reads_the_pong` (§4); the wire core itself (`Writer`/`Reader`, cap-4
 alignment, `f32`/`f64` via `.bitPattern`) via `ZeroddsTests.testByteIdentity`
 (`endpoints/swift/Tests/ZeroddsTests/ZeroddsTests.swift`, `swift test`)
 against `testdata/golden_le.bin`/`golden_be.bin` — LE **and** BE
@@ -55,7 +55,7 @@ protocol (`deliver`/`receive`, the sole integration point); `Client`
 `NSLock`-guarded in-memory FIFO.
 
 **Tests:** `ZeroddsTests.testSyncLoopback` (`swift test`, 5 samples over
-`MemTransport`); live E2E `swift_endpoint_sync` (§4).
+`MemTransport`); live E2E `xrce_8_3_5_8_swift_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done — measured on macOS and on the Linux test host
 (swiftc 6.3.3, `swift test`: 39 tests, 0 failures).
@@ -72,7 +72,7 @@ consumer iterates with `for await`, `onTermination` cancels the task.
 (§5).
 
 **Tests:** `ZeroddsTests.testAsyncLoopback` (`swift test`, 5 samples over
-`MemTransport`, `for await`); live E2E `swift_endpoint_async` (§4).
+`MemTransport`, `for await`); live E2E `xrce_8_3_5_8_swift_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done — measured on macOS and on the Linux test host
 (swiftc 6.3.3, `swift test`: 39 tests, 0 failures).
@@ -92,11 +92,8 @@ the generated module are compiled separately (`Zerodds` object +
 implements `Transport` over a raw, non-blocking UDP socket.
 
 **Tests:** (local, macOS, this run)
-- `swift_endpoint_sync` — full stack via `Client`.
-- `swift_endpoint_async` — full stack via `AsyncReader`.
-
-2/2 passed (`cargo test -p zerodds-endpoint-e2e --test swift`, local macOS;
-not on the Linux test host — the Linux test host carries swiftc 6.3.3, measured there)..
+- `xrce_8_3_5_8_swift_sync_app_writes_the_ping_and_reads_the_pong` — full stack via `Client`.
+- `xrce_8_3_5_8_swift_async_app_writes_the_ping_and_reads_the_pong` — full stack via `AsyncReader`.
 
 **Status:** done — measured on macOS and on the Linux test host
 (swiftc 6.3.3, x86_64-unknown-linux-gnu).
@@ -126,37 +123,34 @@ mirroring `crates/xrce/src/reliable.rs`'s `#[cfg(test)]`, not `XCTest` —
 plain `swiftc`/`swift`, prints `UNIT OK`).
 
 **Tests:** (local, macOS, this run)
-- `swift_reliable_unit` (`crates/endpoint-e2e/tests/swift_reliable.rs`)
+- `endpoints/swift/reliable_tests.swift` in the `swift` column of `tools/endpoints-gate`
+  (job `integration-bindings-swift`)
   compiles `reliable_tests.swift` against the `ZeroddsReliable` module and
   runs it — 16 `run()` test scenarios: monotonic seq
-  (`submit_assigns_monotonic_seqnrs`), payload-too-large
-  (`submit_rejects_payload_too_large`), window-full
-  (`submit_rejects_when_window_full`), heartbeat first/silence/none
-  (`pending_heartbeat_fires_first_time`/
-  `pending_heartbeat_silenced_until_period_elapsed`/
-  `pending_heartbeat_none_when_window_empty`), ACKNACK partial/full clear
-  (`recv_acknack_clears_acked_seqnrs`/
-  `recv_acknack_full_clear_when_no_bits_set`), receiver in-order/reorder/
-  dedup/buffer-full (`recv_data_buffers_in_order`/
-  `recv_data_reorders_out_of_order`/`recv_data_drops_duplicates`/
-  `recv_data_rejects_when_buffer_full`), pending-ACKNACK bitmap
-  (`pending_acknack_marks_missing_slots`), reset
-  (`reset_clears_state_completely`), byte-golden
-  (`byte_golden_heartbeat_acknack`: `heartbeatFrame(1,3,0x80)` ==
+  (`endpointswift_5_submit_assigns_monotonic_seqnrs`), payload-too-large
+  (`endpointswift_5_submit_rejects_payload_too_large`), window-full
+  (`endpointswift_5_submit_rejects_when_window_full`), heartbeat first/silence/none
+  (`endpointswift_5_pending_heartbeat_fires_first_time`/
+  `endpointswift_5_pending_heartbeat_silenced_until_period_elapsed`/
+  `endpointswift_5_pending_heartbeat_none_when_window_empty`), ACKNACK partial/full clear
+  (`endpointswift_5_recv_acknack_clears_acked_seqnrs`/
+  `endpointswift_5_recv_acknack_full_clear_when_no_bits_set`), receiver in-order/reorder/
+  dedup/buffer-full (`endpointswift_5_recv_data_buffers_in_order`/
+  `endpointswift_5_recv_data_reorders_out_of_order`/`endpointswift_5_recv_data_drops_duplicates`/
+  `endpointswift_5_recv_data_rejects_when_buffer_full`), pending-ACKNACK bitmap
+  (`endpointswift_5_pending_acknack_marks_missing_slots`), reset
+  (`endpointswift_5_reset_clears_state_completely`), byte-golden
+  (`endpointswift_5_byte_golden_heartbeat_acknack`: `heartbeatFrame(1,3,0x80)` ==
   `80 00 01 00 0B 01 05 00 01 00 03 00 80`, `acknackFrame(1,0,0x80)` ==
   `80 00 01 00 0A 01 05 00 01 00 00 00 80` — identical to the reference
   goldens), in-process end-to-end loss recovery
-  (`end_to_end_sender_receiver_with_loss_recovery`).
-- `swift_reliable_loss_recovery` — peer drops every 3rd sample once; the app
+  (`endpointswift_5_end_to_end_sender_receiver_with_loss_recovery`).
+- `reliable_5_3_swift_samples_arrive_in_order_despite_dropped_datagrams` — peer drops every 3rd sample once; the app
   retransmits directly via `ReliableSender`/ACKNACK; all 12 samples
   delivered gap-free in order.
-- `swift_reliable_no_loss` — lossless baseline; 12/12.
-- `swift_reliable_example` — `example_reliable.swift` runs and reports
+- `endpoints/swift/example_reliable.swift` in the `swift` column of `tools/endpoints-gate`
+  (job `integration-bindings-swift`) — `example_reliable.swift` runs and reports
   `sequence 0..11 verified in order`.
-
-5/5 passed (`cargo test -p zerodds-endpoint-e2e --test swift_reliable`,
-local macOS), 4 of which belong to this section (latency bench in §6). Not
-on the Linux test host — the Linux test host carries swiftc 6.3.3, measured there).
 
 **Status:** done — measured on macOS and on the Linux test host
 (swiftc 6.3.3, x86_64-unknown-linux-gnu).
@@ -173,7 +167,7 @@ not that it waits for ACKNACK.
 (`modeBench`) — 4000 iterations of inline `sendto` (UDP) vs. 4000 iterations
 of `AsyncWriter.write` after 100 warmup iterations, no live peer needed.
 
-**Tests:** (local, macOS, this run) `swift_reliable_latency_bench`
+**Tests:** (local, macOS, this run) `reliable_5_4_swift_the_producer_enqueue_costs_less_than_the_inline_send`
 (`crates/endpoint-e2e/tests/swift_reliable.rs`) — two measurement runs: ring
 enqueue **426–560 ns** vs. inline `sendto` **3829–3871 ns** (~7–9×). The
 test asserts `decoupled_ns < inline_ns` (no fixed factor, only the
@@ -187,19 +181,11 @@ on a developer machine); the direction (decoupled beats inline) is stable.
 
 ## Audit status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run (local macOS, verified this session):
-`cargo test -p zerodds-endpoint-e2e --test swift` 2/2
-(`swift_endpoint_sync`/`swift_endpoint_async`); `--test swift_reliable` 5/5
-(`swift_reliable_unit` — 16 Swift unit-test scenarios incl. byte-golden,
-`swift_reliable_loss_recovery`, `swift_reliable_no_loss`,
-`swift_reliable_example`, `swift_reliable_latency_bench`); additionally
-`swift test` (SwiftPM XCTest) 3/3 (`testByteIdentity`, `testSyncLoopback`,
-`testAsyncLoopback`). Latency bench ring enqueue 426–560 ns / inline
-`sendto` 3829–3871 ns (~7–9×, two measurement runs).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-swift-1.0.md`):
 
-Open items: no functional gap. Measured: every test runs locally on macOS
-only — `Linux` has no `swiftc`, so there is no Linux/CI evidence for this
-SDK (unlike Go/Zig/Nim, which run on the Linux test host). That is a toolchain
-boundary, not a spec gap.
+* `python3 ci/run_integration.py integration-bindings-swift` (job `integration-bindings-swift`) — 20 tests green.
+
+20 cited tests green, 0 not green.
+

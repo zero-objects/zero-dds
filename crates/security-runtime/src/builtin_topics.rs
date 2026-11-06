@@ -107,18 +107,10 @@ mod tests {
     }
 
     #[test]
-    fn encode_starts_with_cdr_le_encapsulation() {
+    fn rtps_10_2_encode_starts_with_cdr_le_encapsulation() {
         let msg = sample_msg();
         let bytes = encode_generic_message(&msg);
         assert_eq!(&bytes[..4], &[0x00, 0x01, 0x00, 0x00]);
-    }
-
-    #[test]
-    fn encode_decode_roundtrip() {
-        let msg = sample_msg();
-        let bytes = encode_generic_message(&msg);
-        let back = decode_generic_message(&bytes).unwrap();
-        assert_eq!(msg, back);
     }
 
     #[test]

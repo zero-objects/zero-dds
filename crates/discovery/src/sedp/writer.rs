@@ -665,13 +665,6 @@ mod tests {
     }
 
     #[test]
-    fn announce_without_proxies_returns_no_datagrams() {
-        let mut w = SedpPublicationsWriter::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
-        let dgs = w.announce(&sample_pub()).unwrap();
-        assert!(dgs.is_empty(), "no proxies → no fan-out");
-    }
-
-    #[test]
     fn announce_with_one_proxy_produces_one_datagram_with_cdr_body() {
         let mut w = SedpPublicationsWriter::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
         let remote = Guid::new(
@@ -712,7 +705,7 @@ mod tests {
     /// of them; announcing one again replaces its change, and its dispose,
     /// once every reader acknowledged it, leaves the writer.
     #[test]
-    fn every_endpoint_keeps_one_change_for_a_reader_that_matches_later() {
+    fn rtps_8_5_4_4_every_endpoint_keeps_one_change_for_a_reader_that_matches_later() {
         let mut w = SedpPublicationsWriter::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
         let mut first = None;
         for n in 0..300u32 {
@@ -968,7 +961,7 @@ mod tests {
                             d.key_flag,
                             d.inline_qos
                                 .as_ref()
-                                .and_then(zerodds_rtps::inline_qos::find_key_hash)
+                                .and_then(zerodds_rtps::inline_qos::InlineQos::key_hash)
                                 .is_some(),
                         ))
                     } else {

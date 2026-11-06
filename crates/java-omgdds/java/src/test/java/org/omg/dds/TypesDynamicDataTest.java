@@ -101,7 +101,7 @@ class TypesDynamicDataTest {
     // --- The accessors of the primitive kinds --------------------------------
 
     @Test
-    void everyPrimitiveKindIsReadBackWhatWasSet() {
+    void javapsm_7_8_1_4_every_primitive_kind_is_read_back_what_was_set() {
         DynamicType type = wide();
         DynamicData data = DATA.newDynamicData(type)
                 .setInt32Value(1, 5)
@@ -138,7 +138,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aSmallerSignedKindIsPromotedToTheLargerAccessor() {
+    void javapsm_7_8_1_4_a_smaller_signed_kind_is_promoted_to_the_larger_accessor() {
         DynamicData data = DATA.newDynamicData(wide())
                 .setInt16Value(2, (short) -2)
                 .setFloat32Value(4, 1.5f);
@@ -155,7 +155,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aValueOutsideTheRangeOfTheMemberIsRefused() {
+    void javapsm_7_8_1_4_a_value_outside_the_range_of_the_member_is_refused() {
         DynamicData data = DATA.newDynamicData(wide());
         assertThrows(IllegalArgumentException.class, () -> data.setInt64Value(1, 1L << 40));
         assertThrows(IllegalArgumentException.class, () -> data.setInt32Value(2, 70000));
@@ -166,7 +166,7 @@ class TypesDynamicDataTest {
     // --- Descriptors and member ids ------------------------------------------
 
     @Test
-    void descriptorsAndMemberIdsFollowTheType() {
+    void javapsm_7_8_1_4_descriptors_and_member_ids_follow_the_type() {
         DynamicData data = DATA.newDynamicData(wide());
         List<MemberDescriptor> descriptors = data.getDescriptors();
         assertEquals(12, descriptors.size());
@@ -189,7 +189,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void membersByNameAreTheMembersById() {
+    void javapsm_7_8_1_4_members_by_name_are_the_members_by_id() {
         DynamicData data = DATA.newDynamicData(wide());
         data.setValue("name", "by name", String.class);
         assertEquals("by name", data.getStringValue(9));
@@ -204,7 +204,7 @@ class TypesDynamicDataTest {
     // --- Clearing values (XTypes 1.3 §7.5.2.11.3) -------------------------
 
     @Test
-    void clearingANonOptionalMemberSetsItToItsDefault() {
+    void javapsm_7_8_1_4_clearing_a_non_optional_member_sets_it_to_its_default() {
         DynamicData data = DATA.newDynamicData(wide())
                 .setInt32Value(1, 5).setInt16Value(2, (short) 3).setStringValue(9, "x")
                 .setBooleanValue(8, true).setFloat64Value(5, 2.5)
@@ -224,7 +224,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void clearingAnOptionalMemberRemovesIt() {
+    void javapsm_7_8_1_4_clearing_an_optional_member_removes_it() {
         DynamicData data = DATA.newDynamicData(wide()).setInt32Value(12, 9);
         assertEquals(9, data.getInt32Value(12));
         data.clearValue(12);
@@ -232,7 +232,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void clearAllValuesClearsEveryMemberAndClearNonkeyValuesKeepsTheKey() {
+    void javapsm_7_8_1_4_clear_all_values_clears_every_member_and_clear_nonkey_values_keeps_the_key() {
         DynamicType type = wide();
         DynamicData data = DATA.newDynamicData(type)
                 .setInt32Value(1, 5).setInt16Value(2, (short) 3).setStringValue(9, "x")
@@ -253,7 +253,7 @@ class TypesDynamicDataTest {
     // --- The loan (XTypes 1.3 §7.5.2.11.7) ----------------------------------
 
     @Test
-    void aLoanedStructureIsTheNestedValueAndChangesToItAreChangesToTheSample() {
+    void javapsm_7_8_1_4_a_loaned_structure_is_the_nested_value_and_changes_to_it_are_changes_to_the_sample() {
         DynamicData data = DATA.newDynamicData(wide());
         DynamicData nested = innerData(1);
         data.setComplexValue(11, nested);
@@ -271,7 +271,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void theLoanIsReturnedOnlyOnceAndOnlyBySampleItCameFrom() {
+    void javapsm_7_8_1_4_the_loan_is_returned_only_once_and_only_by_sample_it_came_from() {
         DynamicData data = DATA.newDynamicData(wide());
         data.setComplexValue(11, innerData(1));
         DynamicData other = DATA.newDynamicData(wide());
@@ -287,7 +287,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aValueThatDoesNotExistIsNotLoaned() {
+    void javapsm_7_8_1_4_a_value_that_does_not_exist_is_not_loaned() {
         DynamicData data = DATA.newDynamicData(wide());
         assertNull(data.loanValue(11));
         assertNull(data.loanValue(1));
@@ -298,7 +298,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aLoanedPrimitiveIsWrittenBackOnReturn() {
+    void javapsm_7_8_1_4_a_loaned_primitive_is_written_back_on_return() {
         DynamicData data = DATA.newDynamicData(wide()).setInt32Value(1, 5);
         DynamicData loan = data.loanValue(1);
         assertEquals(TypeKind.INT_32_TYPE, loan.getType().getKind());
@@ -313,7 +313,7 @@ class TypesDynamicDataTest {
     // --- clone and equals (XTypes 1.3 §7.5.2.11.4 and §7.5.2.11.5) ----------
 
     @Test
-    void cloneIsAnEqualSampleThatSharesNoValue() {
+    void javapsm_7_8_1_4_clone_is_an_equal_sample_that_shares_no_value() {
         DynamicType type = wide();
         DynamicData data = DATA.newDynamicData(type)
                 .setInt32Value(1, 5).setStringValue(9, "x")
@@ -341,7 +341,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aClonedArrayValueIsACopy() {
+    void javapsm_7_8_1_4_a_cloned_array_value_is_a_copy() {
         DynamicData data = DATA.newDynamicData(wide())
                 .setInt32Values(10, new int[] {1, 2, 3}, 0, 3);
         DynamicData copy = data.clone();
@@ -353,7 +353,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void sampleAreEqualWhenTypeAndValuesAreWithoutRegardToTheOrderOfTheMembers() {
+    void javapsm_7_8_1_4_sample_are_equal_when_type_and_values_are_without_regard_to_the_order_of_the_members() {
         DynamicType type = wide();
         DynamicData a = DATA.newDynamicData(type).setInt32Value(1, 5).setStringValue(9, "x");
         DynamicData b = DATA.newDynamicData(type).setStringValue(9, "x").setInt32Value(1, 5);
@@ -374,7 +374,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aNonOptionalMemberOmittedByOneSampleEqualsItsDefaultInTheOther() {
+    void javapsm_7_8_1_4_a_non_optional_member_omitted_by_one_sample_equals_its_default_in_the_other() {
         DynamicType type = wide();
         DynamicData omitted = DATA.newDynamicData(type).setInt32Value(1, 5);
         DynamicData withDefaults = DATA.newDynamicData(type).setInt32Value(1, 5)
@@ -392,7 +392,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void nestedValuesAreComparedByValue() {
+    void javapsm_7_8_1_4_nested_values_are_compared_by_value() {
         DynamicType type = wide();
         DynamicData a = DATA.newDynamicData(type).setComplexValue(11, innerData(1));
         DynamicData b = DATA.newDynamicData(type).setComplexValue(11, innerData(1));
@@ -416,7 +416,7 @@ class TypesDynamicDataTest {
     private static final BigInteger TWO_POW_64 = BigInteger.ONE.shiftLeft(64);
 
     @Test
-    void anUnsignedKindIsReadAsTheSignedKindOfTheSameSizeAndAsTheOneSizeUp() {
+    void javapsm_7_8_1_4_an_unsigned_kind_is_read_as_the_signed_kind_of_the_same_size_and_as_the_one_size_up() {
         DynamicData data = DATA.newDynamicData(unsigned())
                 .setInt16Value(1, (short) -1)       // UInt16 65535, as its Int16 bit pattern
                 .setInt32Value(2, -1)               // UInt32 4294967295, as its Int32 pattern
@@ -435,7 +435,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void anUnsignedKindIsSetThroughTheOneSizeUpAsALogicalValue() {
+    void javapsm_7_8_1_4_an_unsigned_kind_is_set_through_the_one_size_up_as_a_logical_value() {
         DynamicData data = DATA.newDynamicData(unsigned());
         data.setInt32Value(1, 65535);
         assertEquals((short) -1, data.getInt16Value(1));
@@ -458,7 +458,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void unsignedMembersAreEncodedAndDecodedWithTheirFullRange() {
+    void javapsm_7_8_1_4_unsigned_members_are_encoded_and_decoded_with_their_full_range() {
         DynamicType type = unsigned();
         DynamicData data = DATA.newDynamicData(type)
                 .setInt32Value(1, 65535)
@@ -485,15 +485,20 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aSequenceOfUnsigned64IsReadAsBigIntegers() {
+    void javapsm_7_8_1_4_a_sequence_of_unsigned64_is_read_as_big_integers() {
         DynamicType type = struct("TypesUnsignedSeq");
         type.addMember(descriptor("v", 1, TYPES.createSequenceType(prim(TypeKind.UINT_64_TYPE))));
         BigInteger max = TWO_POW_64.subtract(BigInteger.ONE);
         DynamicData data = DATA.newDynamicData(type)
                 .setBigIntegerValues(1, Arrays.asList(max, BigInteger.valueOf(5)));
 
+        // APPENDABLE: the DHEADER 20, the count 2, the two values (aligned to 4)
+        byte[] expected = {0x14, 0, 0, 0, 2, 0, 0, 0,
+            (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+            5, 0, 0, 0, 0, 0, 0, 0};
         DynamicDataTypeSupport codec = new DynamicDataTypeSupport(ENV, type);
-        DynamicData back = codec.decode(codec.encode(data));
+        assertArrayEquals(expected, codec.encode(data));
+        DynamicData back = codec.decode(expected);
         assertEquals(Arrays.asList(max, BigInteger.valueOf(5)),
                 back.getBigIntegerValues(new ArrayList<BigInteger>(), 1));
         long[] bits = new long[2];
@@ -513,7 +518,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aFloat128MemberIsABigDecimalOnTheWireAndBack() {
+    void javapsm_7_8_1_4_a_float128_member_is_a_big_decimal_on_the_wire_and_back() {
         DynamicType type = quad();
         DynamicData data = DATA.newDynamicData(type).setBigDecimalValue(1, new BigDecimal("1.5"));
         DynamicDataTypeSupport codec = new DynamicDataTypeSupport(ENV, type);
@@ -534,14 +539,22 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void aFloat128MemberKeepsADigitStringADoubleCannotHold() {
+    void javapsm_7_8_1_4_a_float128_member_keeps_a_value_a_double_cannot_hold() {
         // 2^100 + 1 has 101 significant bits: exact in a binary128 (113 bits), not in a double.
         BigDecimal value = new BigDecimal(BigInteger.ONE.shiftLeft(100).add(BigInteger.ONE));
         assertNotEquals(0, value.compareTo(new BigDecimal(value.doubleValue())));
         DynamicType type = quad();
         DynamicDataTypeSupport codec = new DynamicDataTypeSupport(ENV, type);
-        DynamicData back = codec.decode(codec.encode(
-                DATA.newDynamicData(type).setBigDecimalValue(1, value)));
+        // binary128 of 2^100 + 1: exponent 100 + 16383 = 0x4063, the fraction bit 2^-100 is the
+        // bit 12 of the 112-bit fraction; big-endian 40 63 00 .. 00 10 00, little-endian reversed,
+        // after the DHEADER 16 of the APPENDABLE structure
+        byte[] expected = new byte[20];
+        expected[0] = 16;
+        expected[4 + 1] = 0x10;
+        expected[4 + 14] = 0x63;
+        expected[4 + 15] = 0x40;
+        assertArrayEquals(expected, codec.encode(DATA.newDynamicData(type).setBigDecimalValue(1, value)));
+        DynamicData back = codec.decode(expected);
         assertEquals(0, value.compareTo(back.getBigDecimalValue(1)));
         assertEquals("1267650600228229401496703205377",
                 back.getBigDecimalValue(1).toBigInteger().toString());
@@ -555,7 +568,7 @@ class TypesDynamicDataTest {
     }
 
     @Test
-    void samplesWithTheSameFloat128ValueAreEqualWhateverTheScale() {
+    void javapsm_7_8_1_4_samples_with_the_same_float128_value_are_equal_whatever_the_scale() {
         DynamicType type = quad();
         assertEquals(DATA.newDynamicData(type).setBigDecimalValue(1, new BigDecimal("1.5")),
                 DATA.newDynamicData(type).setBigDecimalValue(1, new BigDecimal("1.50")));

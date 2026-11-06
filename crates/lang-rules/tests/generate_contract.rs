@@ -82,7 +82,7 @@ fn mode_ast() -> zerodds_ast::Ast {
 /// asked for, would be a silently dropped declaration and not a passing
 /// backend.
 #[test]
-fn one_idl_becomes_every_wired_language() {
+fn xtypes_7_5_1_one_idl_becomes_every_wired_language() {
     let ast = mode_ast();
     for language in Language::ALL {
         let text = zerodds_lang_rules::generate::declarations(&ast, language)
@@ -130,7 +130,7 @@ fn one_idl_becomes_every_wired_language() {
 /// asked the same function the code asks would pass whatever it
 /// answered.
 #[test]
-fn one_idl_becomes_a_full_codec_in_every_wired_language() {
+fn xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language() {
     let ast = reading_ast();
     let key = zerodds_ast_layout::LayoutKey::data(
         zerodds_ast_layout::Encoding::PlainCdr2,

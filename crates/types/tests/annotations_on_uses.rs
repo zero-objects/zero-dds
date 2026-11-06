@@ -135,7 +135,7 @@ fn mark(sequence: &OptionalAppliedAnnotationSeq) -> AnnotationParameterValue {
 /// sequence and a map has no detail, which Annex B says is "not present for
 /// anonymous" (and Cyclone DDS 11.0.1 does not fill).
 #[test]
-fn an_annotation_on_an_element_is_in_the_complete_collection_object() {
+fn xtypes_7_2_2_6_an_annotation_on_an_element_is_in_the_complete_collection_object() {
     let ast = model(ANNOTATED);
     let registry = registry_of(&ast);
     let holder = complete_type_object(&ast, type_of(&ast, "Holder")).expect("Holder builds");
@@ -210,7 +210,7 @@ fn a_collection_without_an_annotation_stays_plain() {
 /// assignability" (§7.3.4.4), so the annotation changes nothing in it:
 /// the object, and therefore the hash, is that of the unannotated twin.
 #[test]
-fn the_minimal_form_is_the_one_the_unannotated_declaration_has() {
+fn xtypes_7_2_2_6_the_minimal_form_is_the_one_the_unannotated_declaration_has() {
     let annotated = model(ANNOTATED);
     let plain = model(PLAIN);
     for name in ["Holder", "Choice"] {
@@ -243,7 +243,7 @@ fn the_minimal_form_is_the_one_the_unannotated_declaration_has() {
 /// `minimal_type_object` builds, annotated collection included: the hash
 /// of the collection object does not leak into the minimal identifier.
 #[test]
-fn the_complete_object_projects_onto_the_same_minimal_object() {
+fn xtypes_7_2_2_6_the_complete_object_projects_onto_the_same_minimal_object() {
     let ast = model(ANNOTATED);
     let registry = registry_of(&ast);
     let id = type_of(&ast, "Holder");
@@ -258,7 +258,7 @@ fn the_complete_object_projects_onto_the_same_minimal_object() {
 /// The annotations written on a union's discriminator land in the
 /// discriminator's `ann_custom`, and the union's own stays empty.
 #[test]
-fn an_annotation_on_the_discriminator_is_in_the_discriminator_member() {
+fn xtypes_7_3_1_2_5_an_annotation_on_the_discriminator_is_in_the_discriminator_member() {
     let ast = model(ANNOTATED);
     let choice = complete_type_object(&ast, type_of(&ast, "Choice")).expect("Choice builds");
     let CompleteTypeObject::Union(choice) = choice else {
@@ -307,7 +307,7 @@ fn the_declaration_is_in_the_dependency_closure() {
 /// An annotation the file does not declare is ignored (IDL 4.2
 /// §7.4.15.4.2), so the collection it sits on stays plain.
 #[test]
-fn an_undeclared_annotation_leaves_the_collection_plain() {
+fn xtypes_7_2_2_6_an_undeclared_annotation_leaves_the_collection_plain() {
     let ast = model("@final struct S { sequence<@Unknown long, 4> xs; };");
     let object = complete_type_object(&ast, type_of(&ast, "S")).expect("S builds");
     let CompleteTypeObject::Struct(node) = &object else {
@@ -326,7 +326,7 @@ fn an_undeclared_annotation_leaves_the_collection_plain() {
 /// The objects rebuild into a model that has the applications where they
 /// were written: on the element, on the key, on the discriminator.
 #[test]
-fn the_applications_come_back_into_the_model() {
+fn xtypes_7_2_2_6_the_applications_come_back_into_the_model() {
     let ast = model(ANNOTATED);
     let registry = registry_of(&ast);
 

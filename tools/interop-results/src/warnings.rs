@@ -547,13 +547,12 @@ pub const CLASSIFICATION: &[Meaning] = &[
 /// What a text means, or `None` when nothing claims it.
 #[must_use]
 pub fn meaning(text: &str) -> Option<&'static Meaning> {
-    if let Some(tag) = warning_tag(text) {
-        if let Some(found) = COMPILER_CLASSIFICATION
+    if let Some(tag) = warning_tag(text)
+        && let Some(found) = COMPILER_CLASSIFICATION
             .iter()
             .find(|meaning| meaning.needle == tag)
-        {
-            return Some(found);
-        }
+    {
+        return Some(found);
     }
     CLASSIFICATION
         .iter()
@@ -724,20 +723,14 @@ pub fn document(diagnostics: &Diagnostics, systems: &[crate::systems::System]) -
          supported` and **exits 0**, on all ten `fixed` cases.\n\n\
          ## What no cell here can say\n\n\
          A front end is not the only program a probe runs. Every probe in \
-         `tools/wireprobe` then compiles, and every one of them writes its \
-         compiler's output to a `cc.log` inside a `mktemp -d` that a \
-         `trap … EXIT` removes, reads back `error:` lines and reads them \
-         only when the build failed. `wireprobe-ros` compiles with `-w` \
-         and `wireprobe-jacorb` with `javac -nowarn`; \
-         `wireprobe-zerodds-c` compiles this project's own generated C \
-         with `-Werror`.\n\n\
-         So a system with no row below is a system whose **front end** was \
-         quiet, and nothing more. The compiler stage has never been \
-         listened to, and the one warning that would have caught the \
-         `wchar` fill defect at its source — gcc's default \
-         `-Wmultichar` — was printed on every probe build that carried the \
-         literal and deleted with the directory it was printed into. \
-         `docs/compiler-diagnostics-followup.md` is the entry for it.\n\n",
+         `tools/wireprobe` then compiles; `tools/wireprobe/diagnostics.sh` \
+         keeps what the compiler said, on success as well as on failure, \
+         and the byte sweeps write it to `sources/toolchain-warnings.tsv`, \
+         which this page reads beside the front ends' \
+         `sources/warnings.tsv`. `wireprobe-zerodds-c` compiles this \
+         project's own generated C with `-Werror`.\n\n\
+         So a system with no row below is a system whose front end and \
+         compiler printed nothing the sweeps recorded, and nothing more.\n\n",
     );
 
     if rows.is_empty() {
@@ -770,10 +763,10 @@ pub fn document(diagnostics: &Diagnostics, systems: &[crate::systems::System]) -
     let mut untagged: BTreeSet<&str> = BTreeSet::new();
     for row in &ordered {
         let class = meaning(&row.text).map_or("**unclassified**", |meaning| meaning.class.word());
-        if class == "**unclassified**" {
-            if let Some(tag) = warning_tag(&row.text) {
-                untagged.insert(tag);
-            }
+        if class == "**unclassified**"
+            && let Some(tag) = warning_tag(&row.text)
+        {
+            untagged.insert(tag);
         }
         // A compiler names the switch or code that identifies its
         // diagnostic, and that identity is what

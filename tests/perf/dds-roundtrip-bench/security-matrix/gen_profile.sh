@@ -59,7 +59,7 @@ XML
 # CMS signer = the Permissions CA DIRECTLY (not an EE "authority" cert), otherwise
 # cyclone: PKCS7_get0_signers: signer certificate not found. text/ (PKCS7_TEXT)
 # for cyclone/fastdds/zerodds, raw/ as a reserve for OpenDDS (this version
-# also accepts text/). See README + cross-vendor-matrix-findings.md.
+# also accepts text/). See README.
 SIGN="-signer $CERTS/permissions_ca.pem -inkey $CERTS/permissions_ca_key.pem"
 openssl smime -sign -in "$OUT/governance.xml" -text -out "$OUT/text/governance.p7s" $SIGN
 openssl smime -sign -in "$OUT/governance.xml"       -out "$OUT/raw/governance.p7s"  $SIGN

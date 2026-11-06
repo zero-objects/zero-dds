@@ -48,8 +48,6 @@ static int32_t resolve_domain() {
 }
 
 // Coherent-spec QoS — matches Cyclone+FastDDS+ZeroDDS.
-constexpr int32_t kHistoryDepth = 64;
-
 #ifdef BENCH_RICH
 using Sample = RoundtripBench::RoundtripRich;
 constexpr const char* kProgram   = "rti-app-rich";
@@ -159,11 +157,21 @@ dds::core::policy::DataRepresentation xcdr2_only() {
     return dds::core::policy::DataRepresentation(seq);
 }
 
+// Reliability, history and RESOURCE_LIMITS of both sides from
+// bench::qos_from_env(); unset: RELIABLE, KEEP_LAST(64), RTI's
+// RESOURCE_LIMITS.
+template <class Qos>
+void apply_bench_qos(Qos& qos, const bench::QosSpec& q) {
+    using namespace dds::core::policy;
+    qos << (q.reliable ? Reliability::Reliable() : Reliability::BestEffort());
+    qos << (q.keep_all ? History::KeepAll() : History::KeepLast(q.depth));
+    if (q.has_limits()) qos << ResourceLimits(q.max_samples, 1, q.max_samples);
+}
+
 dds::pub::qos::DataWriterQos make_dw_qos() {
     using namespace dds::core::policy;
     dds::pub::qos::DataWriterQos qos;
-    qos << Reliability::Reliable();
-    qos << History::KeepLast(kHistoryDepth);
+    apply_bench_qos(qos, bench::qos_from_env());
     // Cross-Vendor: RTI default ist XCDR1; Cyclone/FastDDS/ZeroDDS
     // default is XCDR2. Wire match needs XCDR2 on the RTI side.
     qos << xcdr2_only();
@@ -173,8 +181,7 @@ dds::pub::qos::DataWriterQos make_dw_qos() {
 dds::sub::qos::DataReaderQos make_dr_qos() {
     using namespace dds::core::policy;
     dds::sub::qos::DataReaderQos qos;
-    qos << Reliability::Reliable();
-    qos << History::KeepLast(kHistoryDepth);
+    apply_bench_qos(qos, bench::qos_from_env());
     // Reader side: RTI must offer XCDR2 (analogous to writer) AND
     // ALLOW_TYPE_COERCION so that type-hash differences between
     // vendors are tolerated (RTI default = EXACT_TYPE,
@@ -196,7 +203,12 @@ public:
         auto samples = reader.take();
         for (const auto& s : samples) {
             if (s.info().valid()) {
-                w_.write(s.data());
+                // A write refused within max_blocking_time (KEEP_ALL with
+                // unacknowledged samples) is a lost echo, not the end.
+                try {
+                    w_.write(s.data());
+                } catch (const dds::core::Exception&) {
+                }
             }
         }
     }
@@ -269,17 +281,99 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     populate(msg, payload_size);
 
     uint64_t total = warmup + samples;
-    for (uint64_t seq = 0; seq < total; ++seq) {
+    uint64_t sent = 0;
+    const uint64_t ping_deadline = bench::ping_deadline();
+    for (uint64_t seq = 0; seq < total && !bench::ping_past(ping_deadline); ++seq, ++sent) {
         msg.sequence_id = static_cast<uint32_t>(seq);
         msg.t_send_ns = now_ns();
-        dw.write(msg);
+        try {
+            dw.write(msg);
+        } catch (const dds::core::Exception&) {
+        }
         std::unique_lock<std::mutex> lk(st.mu);
         st.cv.wait_for(lk, std::chrono::milliseconds(50),
                        [&] { return st.received > seq; });
     }
 
     dr.listener(nullptr, dds::core::status::StatusMask::none());
+    bench::print_ping_sent(sent);
     print_quantiles(st.rtts, payload_size);
+    return 0;
+}
+
+// --- Throughput (tests/perf/speed): one writer, one reader, own processes ---
+
+class TputListener : public dds::sub::NoOpDataReaderListener<Sample>
+{
+public:
+    explicit TputListener(bench::TputSub& st) : st_(st) {}
+
+    void on_data_available(dds::sub::DataReader<Sample>& reader) override
+    {
+        for (;;) {
+            auto samples = reader.take();
+            if (samples.length() == 0) break;
+            for (const auto& s : samples) {
+                if (s.info().valid()) st_.on_sample(s.data().sequence_id, s.data().payload.size());
+            }
+        }
+    }
+
+private:
+    bench::TputSub& st_;
+};
+
+int run_tput_sub(uint64_t max_s) {
+    using namespace dds;
+    bench::print_qos("tput-sub", bench::qos_from_env());
+    domain::DomainParticipant dp(resolve_domain(), make_dp_qos());
+    topic::Topic<Sample> t_req(dp, kReqTopic);
+    sub::Subscriber sub_(dp);
+    sub::DataReader<Sample> dr(sub_, t_req, make_dr_qos());
+    bench::TputSub st;
+    TputListener listener(st);
+    dr.listener(&listener, dds::core::status::StatusMask::data_available());
+    bench::tput_sub_wait_and_report(st, max_s);
+    dr.listener(nullptr, dds::core::status::StatusMask::none());
+    return 0;
+}
+
+int run_tput_pub(size_t payload_size, uint64_t seconds) {
+    using namespace dds;
+    bench::QosSpec q = bench::qos_from_env();
+    bench::print_qos("tput-pub", q);
+    domain::DomainParticipant dp(resolve_domain(), make_dp_qos());
+    topic::Topic<Sample> t_req(dp, kReqTopic);
+    pub::Publisher pub_(dp);
+    pub::DataWriter<Sample> dw(pub_, t_req, make_dw_qos());
+    bench::tput_wait_matched([&] { return dw.publication_matched_status().current_count() >= 1; });
+
+    Sample msg;
+    populate(msg, payload_size);
+    auto r = bench::tput_pub_run(seconds, [&](uint32_t seq) {
+        msg.sequence_id = seq;
+        try {
+            dw.write(msg);
+            return true;
+        } catch (const dds::core::Exception&) {
+            return false;
+        }
+    });
+    int acked = -1;
+    uint64_t ack_ns = 0;
+    if (q.reliable) {
+        uint64_t t = now_ns();
+        try {
+            dw.wait_for_acknowledgments(dds::core::Duration::from_secs(30));
+            acked = 1;
+        } catch (const dds::core::Exception& ex) {
+            std::cerr << "tput-pub: wait_for_acknowledgments: " << ex.what() << "\n";
+            acked = 0;
+        }
+        ack_ns = now_ns() - t;
+    }
+    bench::print_tput_pub(r, payload_size, acked, ack_ns);
+    bench::tput_linger();
     return 0;
 }
 
@@ -299,7 +393,9 @@ int main(int argc, char** argv) {
         std::cerr <<
             "Usage:\n"
             "  " << kProgram << " pong [max_runtime_s]\n"
-            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n";
+            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n"
+            "  " << kProgram << " tput-sub --seconds MAX\n"
+            "  " << kProgram << " tput-pub --payload N --seconds S\n";
         return 2;
     }
     // RTI logger to WARNING — otherwise the modern-C++ PSM swallows the
@@ -314,6 +410,11 @@ int main(int argc, char** argv) {
     } else if (mode == "ping") {
         bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
         return run_ping(a.payload, a.warmup, a.samples);
+    } else if (mode == "tput-sub") {
+        return run_tput_sub(bench::parse_tput_args(argc, argv, 2).seconds);
+    } else if (mode == "tput-pub") {
+        bench::TputArgs a = bench::parse_tput_args(argc, argv, 2);
+        return run_tput_pub(a.payload, a.seconds);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

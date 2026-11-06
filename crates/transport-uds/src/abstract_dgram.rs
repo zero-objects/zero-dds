@@ -270,7 +270,10 @@ impl Transport for UdsAbstractDgramTransport {
         buf.truncate(rc as usize);
         let source = decode_source(&addr_storage, addr_len, &self.config.address);
         let data: std::sync::Arc<[u8]> = std::sync::Arc::from(buf.into_boxed_slice());
-        Ok(ReceivedDatagram { source, data })
+        Ok(ReceivedDatagram {
+            source,
+            data: data.into(),
+        })
     }
 
     fn local_locator(&self) -> Locator {
@@ -487,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn filesystem_bind_creates_socket_file() {
+    fn uds_2_4_filesystem_bind_creates_socket_file() {
         let tmp = tempfile::tempdir().unwrap();
         let t = UdsAbstractDgramTransport::bind(id(1), fs_cfg(tmp.path())).unwrap();
         assert!(fs_path(tmp.path(), id(1)).exists());
@@ -496,14 +499,14 @@ mod tests {
     }
 
     #[test]
-    fn abstract_bind_does_not_create_file() {
+    fn uds_2_3_abstract_bind_does_not_create_file() {
         // The abstract namespace should create no filesystem files.
         let _t = UdsAbstractDgramTransport::bind(id(2), abs_cfg("test-abs-nofs")).unwrap();
         // No FS check needed — we are abstract by definition.
     }
 
     #[test]
-    fn filesystem_send_recv_roundtrip() {
+    fn uds_2_4_filesystem_send_recv_roundtrip() {
         let tmp = tempfile::tempdir().unwrap();
         let rx = UdsAbstractDgramTransport::bind(id(10), fs_cfg(tmp.path())).unwrap();
         let tx = UdsAbstractDgramTransport::bind(id(11), fs_cfg(tmp.path())).unwrap();
@@ -537,7 +540,7 @@ mod tests {
     }
 
     #[test]
-    fn abstract_send_recv_roundtrip() {
+    fn uds_2_3_abstract_send_recv_roundtrip() {
         let prefix = unique_prefix("zerodds-test-roundtrip");
         let rx = UdsAbstractDgramTransport::bind(id(20), abs_cfg_shared(&prefix)).unwrap();
         let tx = UdsAbstractDgramTransport::bind(id(21), abs_cfg_shared(&prefix)).unwrap();
@@ -548,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn abstract_preserves_message_boundaries() {
+    fn uds_2_3_abstract_preserves_message_boundaries() {
         // Two sends → two recvs, no framing coalescing.
         let prefix = unique_prefix("zerodds-test-boundaries");
         let rx = UdsAbstractDgramTransport::bind(id(30), abs_cfg_shared(&prefix)).unwrap();
@@ -576,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_times_out_when_idle() {
+    fn uds_4_4_an_abstract_socket_recv_times_out_when_idle() {
         let t = UdsAbstractDgramTransport::bind(id(60), abs_cfg("zerodds-test-timeout")).unwrap();
         let r = t.recv();
         assert_eq!(r, Err(RecvError::Timeout));
@@ -600,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn local_locator_reflects_bind_id() {
+    fn uds_2_3_local_locator_reflects_bind_id() {
         let t = UdsAbstractDgramTransport::bind(id(70), abs_cfg("zerodds-test-local")).unwrap();
         assert_eq!(
             <UdsAbstractDgramTransport as Transport>::local_locator(&t),

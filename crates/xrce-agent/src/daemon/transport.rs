@@ -222,13 +222,13 @@ fn apply_events<P: DdsPort>(
     for ev in engine.drain_events() {
         match ev {
             SessionEvent::NoClient { client } => {
-                if let (Some(peer), Ok(mut t)) = (peer, peers.lock()) {
-                    if t.strike(peer) {
-                        eprintln!(
-                            "[zerodds-xrce-agentd] {peer}: too many messages to a ClientKey                              without a ProxyClient ({client:02x?}), connection closed"
-                        );
-                        close = true;
-                    }
+                if let (Some(peer), Ok(mut t)) = (peer, peers.lock())
+                    && t.strike(peer)
+                {
+                    eprintln!(
+                        "[zerodds-xrce-agentd] {peer}: too many messages to a ClientKey                              without a ProxyClient ({client:02x?}), connection closed"
+                    );
+                    close = true;
                 }
             }
             SessionEvent::ClientRegistered { client, .. } => {
@@ -837,7 +837,7 @@ mod tests {
     /// connection." The agent drops such a message (StatusValue has no
     /// NOCLIENT) and counts it per peer; at the threshold the peer is blocked.
     #[test]
-    fn messages_to_an_unknown_client_key_close_the_connection_at_the_threshold() {
+    fn xrce_7_8_1_messages_to_an_unknown_client_key_close_the_connection_at_the_threshold() {
         let peer: SocketAddr = "127.0.0.1:40000".parse().unwrap();
         let other: SocketAddr = "127.0.0.1:40001".parse().unwrap();
         let peers = new_peer_table_with(3);
@@ -858,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn peer_table_resolves_bound_address() {
+    fn xrce_8_3_2_1_peer_table_resolves_bound_address() {
         let mut t = PeerTable::default();
         t.bind(addr(1), [1, 2, 3, 4]);
         let header = MessageHeader::without_client_key(
@@ -872,7 +872,7 @@ mod tests {
     }
 
     #[test]
-    fn peer_table_resolves_header_client_key_directly() {
+    fn xrce_7_8_1_peer_table_resolves_header_client_key_directly() {
         let t = PeerTable::default();
         let header = MessageHeader::with_client_key(
             SessionId(0),
@@ -885,7 +885,7 @@ mod tests {
     }
 
     #[test]
-    fn peer_table_bootstraps_from_create_client_payload() {
+    fn xrce_8_3_2_1_peer_table_bootstraps_from_create_client_payload() {
         let t = PeerTable::default();
         let header = MessageHeader::without_client_key(
             SessionId(0x80),
@@ -916,7 +916,7 @@ mod tests {
     /// `uxr_create_session` saw no STATUS_AGENT ("Error at create
     /// session", measured on the Linux host).
     #[test]
-    fn a_client_registering_again_is_answered_at_its_new_address() {
+    fn xrce_8_3_2_1_a_client_registering_again_is_answered_at_its_new_address() {
         let mut t = PeerTable::default();
         t.bind(addr(40_000), [0xAA, 0xAA, 0xBB, 0xBB]);
         t.bind(addr(30_000), [0xAA, 0xAA, 0xBB, 0xBB]);
@@ -940,7 +940,7 @@ mod tests {
     /// connection; when the connection closes its route goes. The ticker's
     /// output for a TCP client went over UDP to the TCP address.
     #[test]
-    fn a_tcp_client_gets_the_messages_of_the_agent_over_its_connection() {
+    fn xrce_11_3_2_a_tcp_client_gets_the_messages_of_the_agent_over_its_connection() {
         let listener = TcpListener::bind(addr(0)).expect("bind tcp");
         let server_addr = listener.local_addr().unwrap();
         let engine = Arc::new(Mutex::new(SessionEngine::new(
@@ -1058,7 +1058,7 @@ mod tests {
     /// `clientKey` from address 2 is the client registered there; a frame
     /// to another station is not taken; the line's close drops both.
     #[test]
-    fn the_clients_of_a_serial_line_are_told_apart_by_their_address() {
+    fn xrce_annex_c_1_the_clients_of_a_serial_line_are_told_apart_by_their_address() {
         let engine = Arc::new(Mutex::new(SessionEngine::new(
             NullDdsPort::new(),
             SessionEngineConfig::default(),
@@ -1126,7 +1126,7 @@ mod tests {
     /// CREATE_CLIENT arrives, the listener answers STATUS_AGENT, and the
     /// peer table now resolves that address to the registered client.
     #[test]
-    fn udp_listener_answers_create_client_over_loopback() {
+    fn xrce_8_2_2_udp_listener_answers_create_client_over_loopback() {
         let server_socket = UdpSocket::bind(addr(0)).expect("bind server");
         let server_addr = server_socket.local_addr().unwrap();
         let engine = Arc::new(Mutex::new(SessionEngine::new(
@@ -1239,7 +1239,7 @@ mod tests {
     /// selects the Root, not the whole id 0xFFFD. Over a real UDP socket,
     /// without a CREATE_CLIENT before.
     #[test]
-    fn the_udp_listener_answers_get_info_before_a_session() {
+    fn xrce_7_8_2_2_the_udp_listener_answers_get_info_before_a_session() {
         use zerodds_xrce::object_id::{OBJECTID_AGENT, ObjectId};
         use zerodds_xrce::object_kind::ObjectKind;
         let server_socket = UdpSocket::bind(addr(0)).expect("bind server");
@@ -1279,7 +1279,7 @@ mod tests {
 
     /// The same over TCP (§11.3).
     #[test]
-    fn the_tcp_listener_answers_get_info_before_a_session() {
+    fn xrce_7_8_2_2_the_tcp_listener_answers_get_info_before_a_session() {
         use zerodds_xrce::object_id::OBJECTID_AGENT;
         let listener = TcpListener::bind(addr(0)).expect("bind tcp");
         let server_addr = listener.local_addr().unwrap();

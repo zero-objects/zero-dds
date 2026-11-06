@@ -511,7 +511,7 @@ mod tests {
     // ---- §7.4.2.2 @DDSRequestTopic / @DDSReplyTopic ----------------
 
     #[test]
-    fn dds_request_and_reply_topics_lower_and_resolve() {
+    fn rpc_7_3_1_1_dds_request_and_reply_topics_lower_and_resolve() {
         let idl = alloc::format!(
             r#"{RPC_ANNOTATION_DECLS}
                @DDSRequestTopic("MyReqTopic")
@@ -525,7 +525,7 @@ mod tests {
 
     // ---- §7.3.1.4 Pair of Types: @RPCRequestType / @RPCReplyType ----
     #[test]
-    fn the_pair_annotations_lower_and_resolve() {
+    fn rpc_7_3_1_4_the_pair_annotations_lower_and_resolve() {
         let idl = alloc::format!(
             r"{RPC_ANNOTATION_DECLS}
               @RPCRequestType @RPCReplyType
@@ -537,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn the_spec_annotations_need_no_declaration() {
+    fn rpc_7_3_1_4_the_spec_annotations_need_no_declaration() {
         // DDS-RPC 1.0 §7.3.1.4, §7.4.2.2, §7.10.1: `@DDSRequestTopic`,
         // `@DDSReplyTopic` and `@Qos` are defined by the specification, so
         // a file uses them without declaring them. Before they were

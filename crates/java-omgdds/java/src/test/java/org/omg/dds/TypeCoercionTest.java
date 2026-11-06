@@ -76,31 +76,31 @@ class TypeCoercionTest {
     }
 
     @Test
-    void anAppendedMemberIsAssignableInBothDirections() {
+    void javapsm_2_an_appended_member_is_assignable_in_both_directions() {
         assertTrue(TypeAssignability.assignableFrom(type(Reading.class), type(Writing.class)));
         assertTrue(TypeAssignability.assignableFrom(type(Writing.class), type(Reading.class)));
     }
 
     @Test
-    void aMemberOfTheSameIdAndAnotherTypeIsNotAssignable() {
+    void javapsm_2_a_member_of_the_same_id_and_another_type_is_not_assignable() {
         assertFalse(TypeAssignability.assignableFrom(type(Reading.class), type(Clashing.class)));
     }
 
     @Test
-    void differentExtensibilityIsNotAssignable() {
+    void javapsm_2_different_extensibility_is_not_assignable() {
         assertFalse(TypeAssignability.assignableFrom(type(FinalReading.class), type(Reading.class)));
         assertFalse(TypeAssignability.assignableFrom(type(Reading.class), type(FinalReading.class)));
     }
 
     @Test
-    void aFinalSenderIsNotStronglyAssignable() {
+    void javapsm_2_a_final_sender_is_not_strongly_assignable() {
         // a final type is not delimited (7.2.4.2), so the type of a member must not be one
         assertFalse(TypeAssignability.strongly(type(Reading.class), type(FinalReading.class)));
         assertTrue(TypeAssignability.strongly(type(Reading.class), type(Writing.class)));
     }
 
     @Test
-    void aDerivedTypeIsDeclaredAsItsBase() {
+    void javapsm_2_a_derived_type_is_declared_as_its_base() {
         assertTrue(TypeAssignability.declared(type(Reading.class), type(Derived.class)));
         assertFalse(TypeAssignability.declared(type(Derived.class), type(Reading.class)));
         assertFalse(TypeAssignability.declared(type(Reading.class), type(Writing.class)));
@@ -123,7 +123,7 @@ class TypeCoercionTest {
     }
 
     @Test
-    void anAssignableReaderTakesTheSamplesOfAnotherTypeName() throws Exception {
+    void javapsm_2_an_assignable_reader_takes_the_samples_of_another_type_name() throws Exception {
         Writing w = new Writing();
         w.id = 7;
         w.name = "seven";
@@ -137,7 +137,7 @@ class TypeCoercionTest {
     }
 
     @Test
-    void anExactReaderDoesNotTakeThem() throws Exception {
+    void javapsm_2_an_exact_reader_does_not_take_them() throws Exception {
         Writing w = new Writing();
         w.id = 7;
         w.name = "seven";
@@ -148,7 +148,7 @@ class TypeCoercionTest {
     }
 
     @Test
-    void anAssignableReaderDoesNotTakeAClashingType() throws Exception {
+    void javapsm_2_an_assignable_reader_does_not_take_a_clashing_type() throws Exception {
         Clashing c = new Clashing();
         c.id = "x";
         c.name = "y";
@@ -159,7 +159,7 @@ class TypeCoercionTest {
     }
 
     @Test
-    void aDeclaredReaderTakesADerivedType() throws Exception {
+    void javapsm_2_a_declared_reader_takes_a_derived_type() throws Exception {
         Derived d = new Derived();
         d.id = 3;
         d.name = "three";

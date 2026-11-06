@@ -17,7 +17,7 @@ L1–L4 mandatory, L5–L6 optional.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — assignment of the levels; the requirements are the items §2 to §12.
 
 ## §2 CLI surface
 
@@ -30,15 +30,15 @@ of their file key; exit codes 0–5.
 
 **Repo:** `crates/corba-dds-bridge/src/bin/zerodds-corba-bridged.rs`
 (thin CLI), `crates/corba-dds-bridge/src/bridge_daemon.rs::run`
-(exit codes 2 bind, 3 DDS, 4 TLS), `man/man1/zerodds-corba-bridged.1`.
+(exit codes 2 bind, 3 DDS, 4 TLS, 5 NameService), `man/man1/zerodds-corba-bridged.1`.
 
-**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::{version_flag_emits_one_line,
-unknown_arg_yields_exit_1, dump_iors_writes_stringified_ior,
-a_certificate_that_does_not_load_is_exit_4}`.
+**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::{corbabridge_2_version_flag_emits_one_line,
+corbabridge_2_unknown_arg_yields_exit_1, corbabridge_2_dump_iors_writes_stringified_ior,
+corbabridge_2_a_certificate_that_does_not_load_is_exit_4, corbabridge_2_a_port_in_use_is_exit_2,
+corbabridge_2_a_name_service_that_does_not_answer_is_exit_5}`.
 
-**Status:** partial — exit code 5 (NameService) does not occur while
-the NameService registration is not built (§4.1); exit codes 2 and 3
-are set in the code but have no test of their own.
+**Status:** partial — exit code 3 (DDS) is set in the code but has no
+test of its own.
 
 ## §3 Config-file format
 
@@ -55,8 +55,8 @@ built is refused.
 `packaging/linux/configs/corba-bridged.yaml.example`,
 `man/man5/zerodds-corba-bridged.yaml.5`.
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{the_shipped_example_reads_as_it_says,
-what_the_daemon_does_not_build_is_refused}`,
+**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{corbabridge_3_the_shipped_example_reads_as_it_says,
+corbabridge_3_what_the_daemon_does_not_build_is_refused}`,
 `crates/config/tests/layering.rs::environment_references_expand_before_the_parse`.
 
 **Status:** done
@@ -72,21 +72,23 @@ SSLIOP; `ior_file`; NameService bind.
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`
 (`build_ior`, `ior_lines`, `corba.iiop.advertise_host`).
 
-**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::dump_iors_writes_stringified_ior`,
-`crates/corba-dds-bridge/tests/cross_vendor.rs::catior_reads_the_ior_the_daemon_prints`
-(omniORB `catior` reads the IOR the daemon prints; behind
-`--features cross-vendor-tests` and `#[ignore]`, measured on the Linux test host),
-`crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
+**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_2_dump_iors_writes_stringified_ior`,
+`crates/corba-dds-bridge/tests/cross_vendor.rs::corbabridge_4_1_catior_reads_the_ior_the_daemon_prints`
+(omniORB `catior` reads the IOR the daemon prints; `#[ignore]`, runs in the
+job `integration-bridges-vendor-corba`),
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
 (omniORB calls through the IOR from `ior_file`).
 
-`crates/corba-dds-bridge/src/bridge_daemon.rs::tests::the_ior_carries_code_sets_and_the_ssl_component`,
+`crates/corba-dds-bridge/src/bridge_daemon.rs::tests::corbabridge_4_1_the_ior_carries_code_sets_and_the_ssl_component`,
 `crates/corba-ior/src/components.rs::tests::a_code_sets_encapsulation_pads_after_the_byte_order_octet`
 (the encapsulation aligns from its byte-order octet; `catior` called the
 unpadded form "Broken component with tag 1").
 
 **Status:** partial — `TAG_CODE_SETS` and `TAG_SSL_SEC_TRANS` built,
-`catior` reads both; no `TAG_ORB_TYPE` (no OMG-assigned ORB type);
-`publish_to_naming: true` is refused (NameService not built).
+`catior` reads both; no `TAG_ORB_TYPE` (no OMG-assigned ORB type). The
+NameService bind is checked by
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_10_the_bridge_rebinds_into_omninames_and_unbinds_on_stop`
+and `crates/corba-dds-bridge/tests/jacorb_e2e.rs::corbabridge_10_the_bridge_rebinds_into_jacorbs_name_server_and_unbinds_on_stop`.
 
 ### §4.2 GIOP frame format header + body
 
@@ -97,11 +99,11 @@ unpadded form "Broken component with tag 1").
 (header read, `max_message_size`, `MessageError`), codec in
 `crates/corba-giop/`.
 
-**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::a_request_to_an_unknown_object_is_object_not_exist`,
+**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_4_2_a_request_to_an_unknown_object_is_object_not_exist`,
 `crates/corba-giop/src/header.rs::{magic_bytes_match_spec,
 header_size_is_12_bytes, round_trip_big_endian_request_header}`,
 `crates/corba-giop/src/message_type.rs::message_type_values_match_spec_table_15_1`,
-`crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`.
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`.
 
 **Status:** done
 
@@ -111,35 +113,40 @@ header_size_is_12_bytes, round_trip_big_endian_request_header}`,
 (`u64 request_id` + arguments, XCDR1 in the GIOP byte order) →
 correlated reply sample (`request_id`, `reply_status`, `reserved`,
 body) → GIOP reply; `TIMEOUT`, `OBJECT_NOT_EXIST`, `BAD_OPERATION`,
-`NO_PERMISSION`, `NO_IMPLEMENT` (GIOP < 1.2), `TRANSIENT`, `MARSHAL`;
-`CancelRequest`.
+`NO_PERMISSION`, `NO_IMPLEMENT` (GIOP < 1.2), `TRANSIENT`, `MARSHAL`
+(also for a reply sample that is not plain CDR); `CancelRequest`.
 
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`
-(`on_request`, `on_reply`, `timeout_loop`, `system_exception_body`).
+(`on_request`, `on_reply`, `plain_cdr`, `timeout_loop`, `system_exception_body`).
 
-**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
+**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
 (omniORB 4.3.3 on the Linux test host: `add` → 42 through a DDS backend, `never` →
 `TIMEOUT`, wrong operation → `BAD_OPERATION`),
-`crates/corba-dds-bridge/tests/bridge_e2e.rs::a_request_to_an_unknown_object_is_object_not_exist`,
-`crates/corba-dds-bridge/src/bridge_daemon.rs::tests::a_system_exception_body_is_the_giop_layout`.
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_4_2_a_request_to_an_unknown_object_is_object_not_exist`,
+`crates/corba-dds-bridge/src/bridge_daemon.rs::tests::corbabridge_4_3_a_system_exception_body_is_the_giop_layout`,
+`crates/corba-dds-bridge/tests/plain_cdr_e2e.rs::corbabridge_4_3_a_reply_sample_that_is_not_plain_cdr_is_marshal`
+(a reply sample under `PL_CDR_LE` becomes `MARSHAL`), `NO_PERMISSION` in
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_9_2_a_sighup_applies_the_new_acl_and_a_broken_file_keeps_the_old_one`.
 
-**Status:** partial — `NO_PERMISSION`, `NO_IMPLEMENT`, `TRANSIENT` on a
-DDS write error, `MARSHAL` and `CancelRequest` are built but have no
-test of their own; a `correlation_id` other than `request_id` is
-refused.
+**Status:** partial — `NO_IMPLEMENT`, `TRANSIENT` on a DDS write error and
+`CancelRequest` are built but have no test of their own; a `correlation_id`
+other than `request_id` is refused.
 
 ### §4.4 Notify mapping DDS→CORBA
 
 **Spec:** §4.4 — DDS sample on `notify_topic` → oneway GIOP 1.2
-request to every target in `targets` (`corbaloc:` or IOR); an XCDR2
-sample is dropped and counted; reconnect after an error.
+request to every target in `targets` (`corbaloc:` or IOR); a sample that
+is not plain CDR (XCDR2, `PL_CDR`) is dropped and counted; reconnect after an
+error.
 
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`
 (`Notifier`, `resolve_target`).
 
-**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
-(three DDS samples reach an omniORB servant as `on_value`),
-`crates/corba-dds-bridge/src/bridge_daemon.rs::tests::corbaloc_and_ior_targets_resolve`.
+**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
+(three DDS samples reach an omniORB servant as oneway calls of on_value),
+`crates/corba-dds-bridge/src/bridge_daemon.rs::tests::corbabridge_4_4_corbaloc_and_ior_targets_resolve`,
+`crates/corba-dds-bridge/tests/plain_cdr_e2e.rs::corbabridge_4_4_a_notify_sample_that_is_not_plain_cdr_is_not_sent`
+(a sample under `PL_CDR_LE` does not go out).
 
 **Status:** done
 
@@ -149,9 +156,9 @@ sample is dropped and counted; reconnect after an error.
 
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs::object_key`.
 
-**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::the_shutdown_answers_pending_requests_then_closes_the_connection`
+**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_4_5_the_shutdown_answers_pending_requests_then_closes_the_connection`
 (the test addresses the mapped operation through `object_key`),
-`crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
 (omniORB addresses through the key in the IOR).
 
 **Status:** done
@@ -165,9 +172,9 @@ reassembly.
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`
 (`write_giop`, `Reassembly`).
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{outbound_fragments_end_on_8_octet_boundaries,
-a_fragmented_message_is_put_back_together}`,
-`crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
+**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{corbabridge_4_6_outbound_fragments_end_on_8_octet_boundaries,
+corbabridge_4_6_a_fragmented_message_is_put_back_together}`,
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
 (`echo` of 200 000 bytes, `fragment_size` 16384, fragmented in both
 directions, against omniORB 4.3.3).
 
@@ -178,15 +185,11 @@ directions, against omniORB 4.3.3).
 **Spec:** §4.7 — `LocateReply` with `OBJECT_HERE`/`UNKNOWN_OBJECT`/
 `OBJECT_FORWARD`.
 
-**Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs::serve_connection`
-(`LocateRequest` branch).
+**Repo:** —
 
 **Tests:** —
 
-**Status:** partial — `OBJECT_HERE` and `UNKNOWN_OBJECT` are built but
-untested in the daemon (`tests/cross_vendor.rs::locate_request_handler_classifies_known_and_unknown`
-checks the library's `src/locate.rs`, not the daemon);
-`OBJECT_FORWARD` is not built.
+**Status:** open — `OBJECT_HERE` and `UNKNOWN_OBJECT` are built in the daemon (`crates/corba-dds-bridge/src/bridge_daemon.rs::serve_connection`, branch `LocateRequest`), but without a test; `OBJECT_FORWARD` is not built.
 
 ## §5 Topic mapping
 
@@ -197,7 +200,7 @@ checks the library's `src/locate.rs`, not the daemon);
 
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs::slug`.
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::the_slug_of_section_5_1`.
+**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::corbabridge_5_1_the_slug_of_an_operation`.
 
 **Status:** done
 
@@ -210,7 +213,7 @@ fixed layout of §4.3.
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`
 (`on_request`, `on_reply`: fixed layout).
 
-**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
+**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
 (the DDS backend declares request and reply type after the layout).
 
 **Status:** partial — IDL generation per mapping and the exception
@@ -228,8 +231,8 @@ Partition; `BEST_EFFORT` only for notify.
 (`qos.reliability`, `qos.durability`; `best_effort` refused for
 request-reply).
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{the_shipped_example_reads_as_it_says,
-what_the_daemon_does_not_build_is_refused}`.
+**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{corbabridge_3_the_shipped_example_reads_as_it_says,
+corbabridge_3_what_the_daemon_does_not_build_is_refused}`.
 
 **Status:** partial — reliability and durability go to the DDS
 entities; a replay per request hash for `TRANSIENT_LOCAL`, lifespan,
@@ -246,12 +249,12 @@ deadline and partition are not built.
 (`TlsShared`, `accept_loop`),
 `crates/corba-dds-bridge/src/daemon_runtime.rs::build_corba_tls_config`.
 
-**Tests:** `crates/corba-dds-bridge/tests/security_e2e.rs::{build_corba_tls_config_loads_self_signed,
-build_corba_tls_config_with_mtls_succeeds,
-build_corba_tls_config_rejects_missing_cert}`,
-`crates/corba-dds-bridge/tests/bridge_e2e.rs::a_certificate_that_does_not_load_is_exit_4`.
+**Tests:** `crates/corba-dds-bridge/tests/security_e2e.rs::{corbabridge_7_1_build_corba_tls_config_loads_self_signed,
+corbabridge_7_1_build_corba_tls_config_with_mtls_succeeds,
+corbabridge_7_1_build_corba_tls_config_rejects_missing_cert}`,
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_2_a_certificate_that_does_not_load_is_exit_4`.
 
-`crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_over_ssliop_passes_the_acl_with_the_allowed_certificate_only`
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_7_1_omniorb_over_ssliop_passes_the_acl_with_the_allowed_certificate_only`
 (omniORB 4.3.3 with `libomnisslTP4`, `clientTransportRule * ssl`, port from
 `TAG_SSL_SEC_TRANS`, client certificate required; the Linux test host).
 
@@ -262,17 +265,11 @@ build_corba_tls_config_rejects_missing_cert}`,
 **Spec:** §7.2 — `SAS_ContextElement`, EstablishTrustInClient/Target,
 GSSUP user/password fallback.
 
-**Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`
-(`csiv2.enabled: true` is refused).
+**Repo:** —
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::what_the_daemon_does_not_build_is_refused`.
+**Tests:** —
 
-**Status:** open — CSIv2 is not built in the daemon. The building
-blocks `crates/corba-csiv2/` and
-`crates/corba-dds-bridge/src/csiv2_wire.rs` are not wired to the
-daemon. Plan: read the `SAS_ContextElement` from each request's service
-context, check GSSUP against a user file and pass the subject to the
-ACL of §7.3.
+**Status:** open — CSIv2 is not built in the daemon; `csiv2.enabled: true` is refused (`crates/corba-dds-bridge/src/bridge_daemon.rs`, test `corbabridge_3_what_the_daemon_does_not_build_is_refused`). The building blocks `crates/corba-csiv2/` and `crates/corba-dds-bridge/src/csiv2_wire.rs` are not wired to the daemon.
 
 ### §7.3 ACL per mapping
 
@@ -284,14 +281,15 @@ a rule with a matching subject lists the `repo_id` in `allow_invoke`
 (`subject_allowed`, `on_request`),
 `crates/bridge-security/src/ctx.rs::extract_mtls_subject`.
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::acl_rules_match_subjects_and_repo_id_prefixes`.
+**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::corbabridge_7_3_acl_rules_match_subjects_and_repo_id_prefixes`.
 
-`crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_over_ssliop_passes_the_acl_with_the_allowed_certificate_only`
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_7_1_omniorb_over_ssliop_passes_the_acl_with_the_allowed_certificate_only`
 (certificate A passes and runs into `TIMEOUT`, certificate B of the same
 CA gets `NO_PERMISSION`; omniORB 4.3.3, Linux test host).
 
 The subject is the subject DN per RFC 4514
-(`crates/bridge-security/src/ctx.rs::mtls_subject_from_der`, checked against
+(`mtls_subject_from_der` in `crates/bridge-security/src/ctx.rs`, test
+`crates/bridge-security/src/ctx.rs::tests::corbabridge_7_3_the_mtls_subject_is_the_dn_and_the_acl_also_takes_the_fingerprint`, checked against
 `openssl x509 -nameopt RFC2253`); a rule may name the fingerprint
 `mtls:<SHA-256>` instead (as the omniORB test does). The GSSUP username of
 §7.2 depends on CSIv2 (§7.2, open).
@@ -305,14 +303,11 @@ The subject is the subject DN per RFC 4514
 **Spec:** §8.1 — JSON log with `timestamp`, `level`, `event` and the
 fields of the event; `--log-level`.
 
-**Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`
-(`log`, `event_level`, `level_rank`).
+**Repo:** —
 
 **Tests:** —
 
-**Status:** partial — one JSON line per event on stderr with `level`,
-`event` and the event fields, filtered by `log_level`; `timestamp` is
-missing, and no test checks the form of a line.
+**Status:** open — `crates/corba-dds-bridge/src/bridge_daemon.rs` (`log`, `event_level`, `level_rank`) writes one JSON line per event to stderr with `level`, `event` and the event fields, filtered by `log_level`; `timestamp` is missing, and no test checks the form of a line.
 
 ### §8.2 Prometheus metrics
 
@@ -324,9 +319,9 @@ missing, and no test checks the form of a line.
 `crates/corba-dds-bridge/src/bin/zerodds-corba-bridged.rs`
 (`metrics_addr_for`).
 
-**Tests:** `crates/corba-dds-bridge/src/daemon_runtime.rs::tests::{metrics_register_idempotent,
-admin_endpoint_serves_metrics_path}`,
-`crates/corba-dds-bridge/tests/bridge_e2e.rs::the_metrics_of_section_8_2_count_a_timed_out_request`
+**Tests:** `crates/corba-dds-bridge/src/daemon_runtime.rs::tests::{corbabridge_8_2_metrics_register_idempotent,
+corbabridge_8_2_admin_endpoint_serves_metrics_path}`,
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_8_2_the_metrics_of_section_8_2_count_a_timed_out_request`
 (through `--metrics`: a request without a backend counts as
 `system_exception`, timeout, reply sent, sample published; LocateRequest;
 red without the count on the timeout path).
@@ -342,7 +337,7 @@ exchange (`giop.request`, `dds.publish`, `dds.subscribe`, `giop.reply`).
 **Repo:** `crates/corba-dds-bridge/src/daemon_runtime.rs`
 (`otlp_config_from_env`, `spawn_otlp_flush_loop`).
 
-**Tests:** `crates/corba-dds-bridge/src/daemon_runtime.rs::tests::otlp_config_parses_endpoint`.
+**Tests:** `crates/corba-dds-bridge/src/daemon_runtime.rs::tests::corbabridge_8_3_otlp_config_parses_endpoint`.
 
 **Status:** partial — the exporter starts from the environment, but
 `bridge_daemon.rs` creates no spans.
@@ -357,12 +352,15 @@ IIOP/SSLIOP bind → NameService rebind → signal handler.
 **Repo:** `crates/corba-dds-bridge/src/bin/zerodds-corba-bridged.rs`,
 `crates/corba-dds-bridge/src/bridge_daemon.rs::run`.
 
-**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`,
-`crates/corba-dds-bridge/tests/bridge_e2e.rs::a_request_to_an_unknown_object_is_object_not_exist`.
+**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_9_1_the_port_is_bound_before_an_ior_is_published`
+(bind before the IORs are published; before, the daemon wrote the IOR file
+and the NameService entry ahead of the bind, and a TAO client got
+`TRANSIENT`),
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_10_the_bridge_rebinds_into_omninames_and_unbinds_on_stop`,
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`,
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_4_2_a_request_to_an_unknown_object_is_object_not_exist`.
 
-**Status:** partial — the NameService rebind does not occur while
-`publish_to_naming` is not built; the other steps run in the order of
-the spec.
+**Status:** done
 
 ### §9.2 Shutdown SIGTERM/SIGINT/SIGHUP
 
@@ -374,12 +372,12 @@ pending ones get their reply or `TIMEOUT`, the rest `TRANSIENT` after
 (`drain`, `DRAIN_LIMIT`, `Conn`),
 `crates/corba-dds-bridge/src/daemon_runtime.rs::install_signal_watcher`.
 
-**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::the_shutdown_answers_pending_requests_then_closes_the_connection`
+**Tests:** `crates/corba-dds-bridge/tests/bridge_e2e.rs::corbabridge_4_5_the_shutdown_answers_pending_requests_then_closes_the_connection`
 (request during the drain → `TRANSIENT`, pending request → `TIMEOUT`,
 then `CloseConnection` and EOF; red without `drain`).
 
-`crates/corba-dds-bridge/tests/bridge_e2e.rs::{a_sighup_applies_the_new_acl_and_a_broken_file_keeps_the_old_one,
-a_sighup_serves_new_connections_with_the_new_certificate}` (SIGHUP to the
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::{corbabridge_9_2_a_sighup_applies_the_new_acl_and_a_broken_file_keeps_the_old_one,
+corbabridge_9_2_a_sighup_serves_new_connections_with_the_new_certificate}` (SIGHUP to the
 binary; both red without `apply_reload`).
 
 **Status:** partial — the branch after 30 s (`drain_expired`) has no
@@ -392,17 +390,25 @@ test.
 **Spec:** §10 — the daemon is a normal RTPS peer; CORBA side against
 TAO/JacORB/omniORB/Ice-Java CORBA compat.
 
-**Repo:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs`,
-`crates/corba-dds-bridge/tests/omniorb/{Calc.idl, calc_client.cc,
-listener_server.cc}`.
+**Repo:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs`, `crates/corba-dds-bridge/tests/jacorb_e2e.rs`, `crates/corba-dds-bridge/tests/tao_e2e.rs`,
+`crates/corba-dds-bridge/tests/omniorb/`, `crates/corba-dds-bridge/tests/jacorb/`, `crates/corba-dds-bridge/tests/tao/` (client and servant per ORB).
 
-**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`
-(`#[ignore]`, needs omniidl, g++ and libomniORB4; green on the Linux test host
-against omniORB 4.3.3),
-`crates/corba-dds-bridge/tests/cross_vendor.rs::catior_reads_the_ior_the_daemon_prints`.
+**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::{corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant,
+corbabridge_10_the_bridge_rebinds_into_omninames_and_unbinds_on_stop,
+corbabridge_10_omniorb_nameclt_binds_lists_resolves_and_unbinds_on_zerodds_naming_svc}`,
+`crates/corba-dds-bridge/tests/jacorb_e2e.rs::{corbabridge_10_jacorb_calls_reach_a_dds_backend_and_dds_samples_reach_a_jacorb_servant,
+corbabridge_10_jacorb_gssup_credentials_pass_csiv2_and_the_acl,
+corbabridge_10_the_bridge_rebinds_into_jacorbs_name_server_and_unbinds_on_stop,
+corbabridge_10_jacorb_resolves_the_bridge_through_zerodds_naming_svc}`,
+`crates/corba-dds-bridge/tests/tao_e2e.rs::{corbabridge_10_tao_calls_reach_a_dds_backend_and_dds_samples_reach_a_tao_servant,
+corbabridge_10_tao_resolves_the_bridge_through_zerodds_naming_svc}`,
+`crates/corba-dds-bridge/tests/cross_vendor.rs::corbabridge_4_1_catior_reads_the_ior_the_daemon_prints`.
+All `#[ignore]`; omniORB 4.3 and JacORB 3.9 in the job
+`integration-bridges-vendor-corba`, TAO (from the OpenDDS build of the
+interop image) in the job `vendor-live-corba-tao`.
 
-**Status:** partial — measured against omniORB. TAO, JacORB and
-Ice-Java are not measured; the rest is the `open` item §10/§12.
+**Status:** partial — measured against omniORB, JacORB and TAO; Ice-Java
+not.
 
 ## §11 Packaging
 
@@ -420,7 +426,7 @@ manuals; IOR backup.
 `man/man1/zerodds-corba-bridged.1`,
 `man/man5/zerodds-corba-bridged.yaml.5`.
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::the_shipped_example_reads_as_it_says`
+**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::corbabridge_3_the_shipped_example_reads_as_it_says`
 (the shipped example configuration through the real loader),
 `tools/traceability/tests/bridge_config_manpages.rs::{every_example_key_is_documented_in_the_man_page,
 the_man_page_names_no_key_the_example_does_not_declare,
@@ -439,13 +445,13 @@ csiv2/dds_pump/request_correlator with ≥ 5 tests each.
 **Repo:** `crates/corba-dds-bridge/src/bridge_daemon.rs`,
 `crates/corba-giop/`, `crates/corba-iiop/`, `crates/corba-ior/`.
 
-**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{the_shipped_example_reads_as_it_says,
-the_slug_of_section_5_1, what_the_daemon_does_not_build_is_refused,
-a_system_exception_body_is_the_giop_layout,
-outbound_fragments_end_on_8_octet_boundaries,
-a_fragmented_message_is_put_back_together,
-corbaloc_and_ior_targets_resolve,
-acl_rules_match_subjects_and_repo_id_prefixes}`.
+**Tests:** `crates/corba-dds-bridge/src/bridge_daemon.rs::tests::{corbabridge_3_the_shipped_example_reads_as_it_says,
+corbabridge_5_1_the_slug_of_an_operation, corbabridge_3_what_the_daemon_does_not_build_is_refused,
+corbabridge_4_3_a_system_exception_body_is_the_giop_layout,
+corbabridge_4_6_outbound_fragments_end_on_8_octet_boundaries,
+corbabridge_4_6_a_fragmented_message_is_put_back_together,
+corbabridge_4_4_corbaloc_and_ior_targets_resolve,
+corbabridge_7_3_acl_rules_match_subjects_and_repo_id_prefixes}`.
 
 **Status:** partial — the daemon has eight unit tests in one module;
 the clause's split with ≥ 5 tests per module does not exist, and
@@ -459,11 +465,11 @@ process, round trip through the bridge.
 **Repo:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs`,
 `crates/corba-dds-bridge/tests/bridge_e2e.rs`.
 
-**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`,
-`crates/corba-dds-bridge/tests/bridge_e2e.rs::{a_request_to_an_unknown_object_is_object_not_exist,
-the_shutdown_answers_pending_requests_then_closes_the_connection,
-a_certificate_that_does_not_load_is_exit_4,
-dump_iors_writes_stringified_ior}`.
+**Tests:** `crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`,
+`crates/corba-dds-bridge/tests/bridge_e2e.rs::{corbabridge_4_2_a_request_to_an_unknown_object_is_object_not_exist,
+corbabridge_4_5_the_shutdown_answers_pending_requests_then_closes_the_connection,
+corbabridge_2_a_certificate_that_does_not_load_is_exit_4,
+corbabridge_2_dump_iors_writes_stringified_ior}`.
 
 **Status:** done
 
@@ -474,27 +480,27 @@ bridge in a compose.
 
 **Repo:** `crates/corba-dds-bridge/tests/cross_vendor.rs`.
 
-**Tests:** `crates/corba-dds-bridge/tests/cross_vendor.rs::{omniidl_smoke_check_present,
-catior_reads_the_ior_the_daemon_prints}` — both behind
-`--features cross-vendor-tests` and `#[ignore]`.
+**Tests:** `crates/corba-dds-bridge/tests/cross_vendor.rs::corbabridge_4_1_catior_reads_the_ior_the_daemon_prints`
+(`#[ignore]`, job `integration-bridges-vendor-corba`); TAO client:
+`crates/corba-dds-bridge/tests/tao_e2e.rs::corbabridge_10_tao_calls_reach_a_dds_backend_and_dds_samples_reach_a_tao_servant`
+(job `vendor-live-corba-tao`).
 
 **Status:** partial — the DDS side behind the bridge is ZeroDDS; a
-Cyclone DDS backend and a TAO client are not measured. Cross-ref: the
-`open` item below.
+Cyclone DDS backend is not measured. Cross-ref: the item below.
 
 ### §10/§12 Cross-vendor harness — TAO, JacORB, Ice-Java, Cyclone
 
 **Spec:** §10 + §12.3 — the CORBA side against TAO, JacORB and
 Ice-Java; a Cyclone DDS backend behind the bridge.
 
-**Repo:** —
+**Repo:** `crates/corba-dds-bridge/tests/jacorb_e2e.rs`, `crates/corba-dds-bridge/tests/tao_e2e.rs`, `crates/corba-dds-bridge/tests/omniorb_e2e.rs`.
 
-**Tests:** —
+**Tests:** `crates/corba-dds-bridge/tests/jacorb_e2e.rs::corbabridge_10_jacorb_calls_reach_a_dds_backend_and_dds_samples_reach_a_jacorb_servant`,
+`crates/corba-dds-bridge/tests/tao_e2e.rs::corbabridge_10_tao_calls_reach_a_dds_backend_and_dds_samples_reach_a_tao_servant`,
+`crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_4_1_omniorb_calls_reach_a_dds_backend_and_dds_samples_reach_an_omniorb_servant`.
 
-**Status:** open — measured is omniORB with a ZeroDDS backend
-(`tests/omniorb_e2e.rs`). Plan: run the same cases with a TAO and a
-JacORB client from `crates/corba-interop/competitors/` and with a
-Cyclone DDS backend after the layout of §4.3 on the Linux test host.
+**Status:** partial — omniORB, JacORB and TAO are measured (§10);
+Ice-Java and a Cyclone DDS backend after the layout of §4.3 are not.
 
 ## §13 Cross-references
 
@@ -508,7 +514,7 @@ OMG GIOP/IIOP/CSIv2/SSLIOP; wire format; deployment.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — reference list.
 
 ## §14 Versioning
 
@@ -521,19 +527,25 @@ major=wire-protocol changes.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — rule for assigning the version number of a release, not a property of the daemon.
 
 ---
 
 ## Audit status
 
-11 done / 13 partial / 2 open / 3 n/a (informative) / 0 n/a (rejected).
+12 done / 11 partial / 3 open / 0 blocked / 3 n/a (informative).
 
-Test run: `cargo test -p zerodds-corba-dds-bridge` — 51 lib tests,
-6 `bridge_e2e`, 9 `security_e2e` green, 0 failed (macOS).
-`tests/omniorb_e2e.rs` (`#[ignore]`) and `tests/cross_vendor.rs`
-(`--features cross-vendor-tests`, `#[ignore]`) run on the Linux test host against
-omniORB 4.3.3.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-corba-bridge-1.0.md`):
 
-Open points and the reasons for the `partial` items:
-`zerodds-corba-bridge-1.0.open.en.md`. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-bridge-security --all-targets` (job `merge-rust-bridge-security`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-config --all-targets` (job `merge-rust-config`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-corba-dds-bridge --all-targets` (job `merge-rust-corba-dds-bridge`) — 29 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-giop --all-targets` (job `merge-rust-corba-giop`) — 4 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ior --all-targets` (job `merge-rust-corba-ior`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (job `merge-rust-traceability`) — 25 tests green.
+* `python3 ci/run_integration.py integration-bridges-vendor-corba` (job `integration-bridges-vendor-corba`) — 9 tests green.
+* job `vendor-live-corba-tao` — 2 tests green.
+
+72 cited tests green, 0 not green.
+
+Open items: `zerodds-corba-bridge-1.0.open.en.md`.

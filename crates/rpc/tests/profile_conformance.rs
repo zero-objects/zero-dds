@@ -183,7 +183,7 @@ fn enhanced_mapping_uses_two_topics_with_xtypes_aliasing() {
 // ============================================================================
 
 #[test]
-fn function_call_processing_dispatches_to_correct_operation() {
+fn rpc_7_7_1_1_function_call_processing_dispatches_to_correct_operation() {
     // Spec §7.9.2.1: function-call-style processing via the generated
     // dispatcher. We verify that `dispatch_request` resolves the
     // opcode and calls the correct operation.

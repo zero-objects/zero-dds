@@ -38,14 +38,14 @@ int Probe::destroyed = 0;
 using dds::core::external;
 using dds::core::external_locked_error;
 
-void default_constructor() {
+void xtypes_7_5_1_2_3_3_1_default_constructor() {
     external<Probe> e;
     CHECK(!e);
     CHECK(e.get() == nullptr);
     CHECK(!e.is_locked());
 }
 
-void constructor_from_a_pointer() {
+void xtypes_7_5_1_2_3_3_2_constructor_from_a_pointer() {
     Probe *p = new Probe(3);
     external<Probe> e(p);
     CHECK(e.get() == p);
@@ -61,7 +61,7 @@ void constructor_from_a_pointer() {
     CHECK(refused);  // locked_ can only be true for a non-NULL pointer
 }
 
-void constructor_from_a_shared_pointer() {
+void xtypes_7_5_1_2_3_3_3_constructor_from_a_shared_pointer() {
     auto shared = std::make_shared<Probe>(5);
     external<Probe> e(shared);
     CHECK(e.get() == shared.get());
@@ -69,7 +69,7 @@ void constructor_from_a_shared_pointer() {
     CHECK(!e.is_locked());
 }
 
-void copy_constructor() {
+void xtypes_7_5_1_2_3_3_4_copy_constructor() {
     external<Probe> a(new Probe(1));
     external<Probe> shared(a);
     CHECK(shared.get() == a.get());  // not locked: the reference is shared
@@ -82,7 +82,7 @@ void copy_constructor() {
     CHECK(!deep.is_locked());  // either way the new object is not locked
 }
 
-void destructor() {
+void xtypes_7_5_1_2_3_3_6_destructor() {
     Probe::destroyed = 0;
     {
         external<Probe> a(new Probe(1));
@@ -95,7 +95,7 @@ void destructor() {
     CHECK(Probe::destroyed == 1);  // the last reference releases the object
 }
 
-void accessors() {
+void xtypes_7_5_1_2_3_3_7_accessors() {
     external<Probe> e(new Probe(7));
     const external<Probe> &c = e;
     CHECK((*e).value == 7);
@@ -115,7 +115,7 @@ void accessors() {
     CHECK(refused);
 }
 
-void comparison_and_bool() {
+void xtypes_7_5_1_2_3_3_11_comparison_and_bool() {
     external<Probe> a(new Probe(1));
     external<Probe> same(a);
     external<Probe> other(new Probe(1));
@@ -129,7 +129,7 @@ void comparison_and_bool() {
     CHECK(!static_cast<bool>(empty1));
 }
 
-void lock_and_is_locked() {
+void xtypes_7_5_1_2_3_3_14_lock_and_is_locked() {
     external<Probe> e(new Probe(1));
     CHECK(!e.is_locked());
     e.lock();
@@ -145,7 +145,7 @@ void lock_and_is_locked() {
 }
 
 // Table 46, row by row.
-void assignment_destination_locked_is_an_error() {
+void xtypes_7_5_1_2_3_3_5_assignment_destination_locked_is_an_error() {
     external<Probe> dst(new Probe(1), true);
     external<Probe> src(new Probe(2));
     bool refused = false;
@@ -158,7 +158,7 @@ void assignment_destination_locked_is_an_error() {
     CHECK(dst->value == 1);
 }
 
-void assignment_source_empty_resets_the_destination() {
+void xtypes_7_5_1_2_3_3_5_assignment_source_empty_resets_the_destination() {
     external<Probe> dst(new Probe(1));
     external<Probe> src;
     dst = src;
@@ -169,7 +169,7 @@ void assignment_source_empty_resets_the_destination() {
     CHECK(!dst2);
 }
 
-void assignment_empty_destination_locked_source_creates_and_deep_copies() {
+void xtypes_7_5_1_2_3_3_5_assignment_empty_destination_locked_source_creates_and_deep_copies() {
     external<Probe> src(new Probe(9), true);
     external<Probe> dst;
     dst = src;
@@ -178,7 +178,7 @@ void assignment_empty_destination_locked_source_creates_and_deep_copies() {
     CHECK(dst->value == 9);
 }
 
-void assignment_existing_destination_locked_source_reuses_and_deep_copies() {
+void xtypes_7_5_1_2_3_3_5_assignment_existing_destination_locked_source_reuses_and_deep_copies() {
     external<Probe> src(new Probe(9), true);
     external<Probe> dst(new Probe(1));
     Probe *existing = dst.get();
@@ -188,7 +188,7 @@ void assignment_existing_destination_locked_source_reuses_and_deep_copies() {
     CHECK(dst.get() != src.get());
 }
 
-void assignment_unlocked_source_is_a_shallow_copy() {
+void xtypes_7_5_1_2_3_3_5_assignment_unlocked_source_is_a_shallow_copy() {
     external<Probe> src(new Probe(9));
     external<Probe> dst(new Probe(1));
     dst = src;
@@ -201,18 +201,18 @@ void assignment_unlocked_source_is_a_shallow_copy() {
 }  // namespace
 
 int main() {
-    default_constructor();
-    constructor_from_a_pointer();
-    constructor_from_a_shared_pointer();
-    copy_constructor();
-    destructor();
-    accessors();
-    comparison_and_bool();
-    lock_and_is_locked();
-    assignment_destination_locked_is_an_error();
-    assignment_source_empty_resets_the_destination();
-    assignment_empty_destination_locked_source_creates_and_deep_copies();
-    assignment_existing_destination_locked_source_reuses_and_deep_copies();
-    assignment_unlocked_source_is_a_shallow_copy();
+    xtypes_7_5_1_2_3_3_1_default_constructor();
+    xtypes_7_5_1_2_3_3_2_constructor_from_a_pointer();
+    xtypes_7_5_1_2_3_3_3_constructor_from_a_shared_pointer();
+    xtypes_7_5_1_2_3_3_4_copy_constructor();
+    xtypes_7_5_1_2_3_3_6_destructor();
+    xtypes_7_5_1_2_3_3_7_accessors();
+    xtypes_7_5_1_2_3_3_11_comparison_and_bool();
+    xtypes_7_5_1_2_3_3_14_lock_and_is_locked();
+    xtypes_7_5_1_2_3_3_5_assignment_destination_locked_is_an_error();
+    xtypes_7_5_1_2_3_3_5_assignment_source_empty_resets_the_destination();
+    xtypes_7_5_1_2_3_3_5_assignment_empty_destination_locked_source_creates_and_deep_copies();
+    xtypes_7_5_1_2_3_3_5_assignment_existing_destination_locked_source_reuses_and_deep_copies();
+    xtypes_7_5_1_2_3_3_5_assignment_unlocked_source_is_a_shallow_copy();
     return failures == 0 ? 0 : 1;
 }

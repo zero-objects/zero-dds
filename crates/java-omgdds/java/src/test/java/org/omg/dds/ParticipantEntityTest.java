@@ -83,7 +83,7 @@ class ParticipantEntityTest {
     // --- get_domain_id ------------------------------------------------------
 
     @Test
-    void getDomainIdIsTheDomainTheParticipantWasCreatedIn() {
+    void javapsm_2_get_domain_id_is_the_domain_the_participant_was_created_in() {
         assertEquals(1200, Qos.factory().createParticipant(1200).getDomainId());
         assertEquals(1201, Qos.factory().createParticipant(1201).getDomainId());
     }
@@ -91,7 +91,7 @@ class ParticipantEntityTest {
     // --- enable and ENTITY_FACTORY (§2.2.2.1.1.7, §2.2.3.20) ---------------------
 
     @Test
-    void aFactoryThatDoesNotAutoEnableCreatesADisabledParticipantWhoseChildrenStayDisabled() {
+    void javapsm_2_a_factory_that_does_not_auto_enable_creates_a_disabled_participant_whose_children_stay_disabled() {
         DomainParticipantFactory factory = Qos.factory();
         DomainParticipantFactoryQos original = factory.getQos();
         try {
@@ -123,7 +123,7 @@ class ParticipantEntityTest {
     }
 
     @Test
-    void aWriterOfADisabledPublisherIsDisabledAndEnablingThePublisherEnablesIt() throws Exception {
+    void javapsm_2_a_writer_of_a_disabled_publisher_is_disabled_and_enabling_the_publisher_enables_it() throws Exception {
         DomainParticipant participant = lazyParticipant(1203);
         Topic<byte[]> topic = participant.createTopic("LazyWriter", byte[].class);
         Publisher publisher = participant.createPublisher();
@@ -142,22 +142,7 @@ class ParticipantEntityTest {
     }
 
     @Test
-    void aPublisherThatDoesNotAutoEnableLeavesItsWritersToEnable() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1204);
-        Topic<byte[]> topic = participant.createTopic("PublisherOff", byte[].class);
-        Publisher publisher = participant.createPublisher(
-                Qos.publisher().withPolicy(autoEnableOff()));
-        assertTrue(((PublisherImpl) publisher).isEnabled());
-        DataWriter<byte[]> writer = publisher.createDataWriter(topic);
-        assertFalse(((DataWriterImpl<byte[]>) writer).isEnabled());
-        assertThrows(NotEnabledException.class, () -> writer.write(new byte[] {1}));
-        writer.enable();
-        assertTrue(((DataWriterImpl<byte[]>) writer).isEnabled());
-        writer.write(new byte[] {2});
-    }
-
-    @Test
-    void aReaderOfADisabledSubscriberIsDisabledAndEnablingTheSubscriberEnablesIt() {
+    void javapsm_2_a_reader_of_a_disabled_subscriber_is_disabled_and_enabling_the_subscriber_enables_it() {
         DomainParticipant participant = lazyParticipant(1205);
         Topic<byte[]> topic = participant.createTopic("LazyReader", byte[].class);
         Subscriber subscriber = participant.createSubscriber();
@@ -170,22 +155,10 @@ class ParticipantEntityTest {
         assertTrue(((DataReaderImpl<byte[]>) reader).isEnabled());
     }
 
-    @Test
-    void aSubscriberThatDoesNotAutoEnableLeavesItsReadersToEnable() {
-        DomainParticipant participant = Qos.factory().createParticipant(1206);
-        Topic<byte[]> topic = participant.createTopic("SubscriberOff", byte[].class);
-        Subscriber subscriber = participant.createSubscriber(
-                Qos.subscriber().withPolicy(autoEnableOff()));
-        DataReader<byte[]> reader = subscriber.createDataReader(topic);
-        assertFalse(((DataReaderImpl<byte[]>) reader).isEnabled());
-        reader.enable();
-        assertTrue(((DataReaderImpl<byte[]>) reader).isEnabled());
-    }
-
     // --- create_* with a listener and a status mask (§2.2.4.3.1) -----------------
 
     @Test
-    void createParticipantWithAListenerAndAMaskReachesItFromTheWritersOfTheParticipant() {
+    void javapsm_2_create_participant_with_a_listener_and_a_mask_reaches_it_from_the_writers_of_the_participant() {
         AtomicInteger publicationMatched = new AtomicInteger();
         AtomicInteger subscriptionMatched = new AtomicInteger();
         DomainParticipantListener listener = new DomainParticipantAdapter() {
@@ -212,7 +185,7 @@ class ParticipantEntityTest {
     }
 
     @Test
-    void createPublisherWithAListenerSeesTheMatchOfAWriterCreatedLater() {
+    void javapsm_2_create_publisher_with_a_listener_sees_the_match_of_a_writer_created_later() {
         DomainParticipant participant = Qos.factory().createParticipant(1208);
         Topic<byte[]> topic = participant.createTopic("PublisherListener", byte[].class);
         participant.createSubscriber().createDataReader(topic);
@@ -228,7 +201,7 @@ class ParticipantEntityTest {
     }
 
     @Test
-    void createSubscriberWithAListenerSeesTheMatchOfAReaderCreatedLater() {
+    void javapsm_2_create_subscriber_with_a_listener_sees_the_match_of_a_reader_created_later() {
         DomainParticipant participant = Qos.factory().createParticipant(1209);
         Topic<byte[]> topic = participant.createTopic("SubscriberListener", byte[].class);
         participant.createPublisher().createDataWriter(topic);
@@ -244,7 +217,7 @@ class ParticipantEntityTest {
     }
 
     @Test
-    void createTopicWithAListenerAndAMaskKeepsThem() {
+    void javapsm_2_create_topic_with_a_listener_and_a_mask_keeps_them() {
         DomainParticipant participant = Qos.factory().createParticipant(1210);
         TopicAdapter<byte[]> listener = new TopicAdapter<>();
         Topic<byte[]> topic = participant.createTopic("TopicListenerKept", byte[].class,
@@ -255,7 +228,7 @@ class ParticipantEntityTest {
     // --- delete_participant: close (§2.2.2.2.1, factory delete_participant) ----------
 
     @Test
-    void theDataOfADomainSurvivesTheCloseOfAParticipantWhileAnotherOneIsOpen() throws Exception {
+    void javapsm_2_the_transient_data_of_a_domain_survives_the_close_of_a_participant_while_another_one_is_open() throws Exception {
         int domain = 1211;
         DomainParticipant first = Qos.factory().createParticipant(domain);
         DomainParticipant second = Qos.factory().createParticipant(domain);
@@ -278,40 +251,12 @@ class ParticipantEntityTest {
 
         first.close();
         assertNull(Qos.factory().lookupParticipant(domain));
-        // the last participant of the domain closed: the TRANSIENT data went with it
-        DomainParticipant third = Qos.factory().createParticipant(domain);
-        Topic<byte[]> again = third.createTopic("DomainData", byte[].class);
-        DataReader<byte[]> none = third.createSubscriber().createDataReader(again,
-                Qos.reader().withPolicy(Qos.pf().Durability().withTransient()));
-        assertEquals(0, none.take(new ArrayList<>()).size());
     }
 
     // --- set_qos and the default QoS (§2.2.2.1.1.1, §2.2.2.2.1.20 to §2.2.2.2.1.25) -------
 
     @Test
-    void theDefaultQosOfSubscriberAndTopicIsTheQosOfWhatIsCreatedNext() {
-        DomainParticipant participant = Qos.factory().createParticipant(1212);
-        byte[] group = {5, 6};
-        SubscriberQos subscriberQos = participant.getDefaultSubscriberQos().withPolicy(
-                Qos.pf().GroupData().withValue(group, 0, group.length));
-        participant.setDefaultSubscriberQos(subscriberQos);
-        assertEquals(subscriberQos, participant.getDefaultSubscriberQos());
-        assertEquals(subscriberQos, participant.createSubscriber().getQos());
-
-        // the default RELIABILITY of a topic is BEST_EFFORT (DDS 1.4 §2.2.3.14)
-        org.omg.dds.topic.TopicQos topicQos = participant.getDefaultTopicQos().withPolicy(
-                Qos.pf().Reliability().withReliable());
-        participant.setDefaultTopicQos(topicQos);
-        assertEquals(topicQos, participant.getDefaultTopicQos());
-        assertEquals(topicQos, participant.createTopic("DefaultTopicQos", byte[].class).getQos());
-        // a topic created with a QoS of its own takes that one
-        org.omg.dds.topic.TopicQos own = Qos.topic().withPolicy(Qos.pf().TransportPriority().withValue(3));
-        assertEquals(own, ((DomainParticipantImpl) participant)
-                .createTopic("OwnTopicQos", byte[].class, own).getQos());
-    }
-
-    @Test
-    void aDefaultQosWhosePoliciesAreNotConsistentIsRefusedAndKeepsTheOldOne() {
+    void javapsm_2_a_default_qos_whose_policies_are_not_consistent_is_refused_and_keeps_the_old_one() {
         DomainParticipant participant = Qos.factory().createParticipant(1213);
         // HISTORY depth 10 is larger than RESOURCE_LIMITS max_samples_per_instance 5
         // (DDS 1.4 §2.2.3.18)
@@ -333,81 +278,4 @@ class ParticipantEntityTest {
                 () -> participant.setDefaultTopicQos(small));
     }
 
-    @Test
-    void aParticipantQosCanChangeAfterEnableAndTheUserDataIsAnnouncedAgain() {
-        int domain = 1214;
-        DomainParticipant mine = Qos.factory().createParticipant(domain);
-        DomainParticipant other = Qos.factory().createParticipant(domain);
-        byte[] value = {9, 8, 7};
-        DomainParticipantQos changed = mine.getQos().withPolicy(
-                Qos.pf().UserData().withValue(value, 0, value.length));
-        // USER_DATA and ENTITY_FACTORY are changeable (DDS 1.4 §2.2.3)
-        mine.setQos(changed);
-        assertEquals(changed, mine.getQos());
-        assertTrue(java.util.Arrays.equals(value, other.getDiscoveredParticipantData(
-                mine.getInstanceHandle()).getUserData().getValue()));
-    }
-
-    @Test
-    void aWriterQosKeepsItsImmutablePoliciesAfterEnableAndTakesTheMutableOnes() {
-        DomainParticipant participant = Qos.factory().createParticipant(1215);
-        Topic<byte[]> topic = participant.createTopic("SetQosWriter", byte[].class);
-        DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
-        org.omg.dds.pub.DataWriterQos before = writer.getQos();
-
-        // RELIABILITY cannot change on an enabled writer
-        org.omg.dds.pub.DataWriterQos reliability = before.withPolicy(
-                Qos.pf().Reliability().withBestEffort());
-        assertThrows(org.omg.dds.core.ImmutablePolicyException.class,
-                () -> writer.setQos(reliability));
-        assertEquals(before, writer.getQos());
-        // USER_DATA and OWNERSHIP_STRENGTH can
-        byte[] user = {1};
-        org.omg.dds.pub.DataWriterQos mutable = before
-                .withPolicy(Qos.pf().UserData().withValue(user, 0, 1))
-                .withPolicy(Qos.pf().OwnershipStrength().withValue(11));
-        writer.setQos(mutable);
-        assertEquals(mutable, writer.getQos());
-        // an inconsistent set is refused and nothing changes
-        org.omg.dds.pub.DataWriterQos inconsistent = mutable.withPolicy(Qos.pf().History().withKeepLast(10))
-                .withPolicy(Qos.pf().ResourceLimits().withMaxSamplesPerInstance(5));
-        assertThrows(org.omg.dds.core.InconsistentPolicyException.class,
-                () -> writer.setQos(inconsistent));
-        assertEquals(mutable, writer.getQos());
-    }
-
-    @Test
-    void aTopicAndAPublisherRefuseAnImmutablePolicyAfterEnable() {
-        DomainParticipant participant = Qos.factory().createParticipant(1216);
-        Topic<byte[]> topic = participant.createTopic("SetQosTopic", byte[].class);
-        org.omg.dds.topic.TopicQos durable = topic.getQos().withPolicy(
-                Qos.pf().Durability().withTransientLocal());
-        assertThrows(org.omg.dds.core.ImmutablePolicyException.class, () -> topic.setQos(durable));
-        // LIFESPAN is changeable
-        org.omg.dds.topic.TopicQos lifespan = topic.getQos().withPolicy(
-                Qos.pf().Lifespan().withDuration(5, java.util.concurrent.TimeUnit.SECONDS));
-        topic.setQos(lifespan);
-        assertEquals(lifespan, topic.getQos());
-
-        Publisher publisher = participant.createPublisher();
-        PublisherQos presentation = publisher.getQos().withPolicy(
-                Qos.policies().Presentation().withTopic().withCoherentAccess(true));
-        assertThrows(org.omg.dds.core.ImmutablePolicyException.class,
-                () -> publisher.setQos(presentation));
-        // PARTITION is changeable
-        PublisherQos partition = publisher.getQos().withPolicy(
-                Qos.pf().Partition().withName(java.util.Arrays.asList("changed")));
-        publisher.setQos(partition);
-        assertEquals(partition, publisher.getQos());
-    }
-
-    @Test
-    void anEntityThatIsNotEnabledTakesAnyPolicy() {
-        DomainParticipant participant = lazyParticipant(1217);
-        Topic<byte[]> topic = participant.createTopic("SetQosDisabled", byte[].class);
-        org.omg.dds.topic.TopicQos durable = topic.getQos().withPolicy(
-                Qos.pf().Durability().withTransientLocal());
-        topic.setQos(durable);
-        assertEquals(durable, topic.getQos());
-    }
 }

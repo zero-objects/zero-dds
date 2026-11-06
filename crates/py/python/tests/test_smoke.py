@@ -12,7 +12,7 @@ import pytest
 import zerodds
 
 
-def test_version_exposed():
+def py_1_1_version_exposed():
     """`__version__` is exposed even without `_core` (fallback in `__init__.py`)."""
     assert isinstance(zerodds.__version__, str)
     assert len(zerodds.__version__) > 0
@@ -23,7 +23,7 @@ _NO_CORE_REASON = "zerodds._core not compiled — maturin develop needed"
 
 
 @pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
-def test_factory_singleton_and_offline_participant():
+def py_1_2_1_factory_singleton_and_offline_participant():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(99)
     assert p.domain_id == 99
@@ -31,7 +31,7 @@ def test_factory_singleton_and_offline_participant():
 
 
 @pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
-def test_bytes_topic_and_reader_are_creatable_offline():
+def py_1_2_3_bytes_topic_and_reader_are_creatable_offline():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(100)
     topic = p.create_bytes_topic("Chatter")
@@ -46,7 +46,7 @@ def test_bytes_topic_and_reader_are_creatable_offline():
 
 
 @pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
-def test_shape_topic_matches_vendor_interop_type_name():
+def py_1_2_4_shape_topic_matches_vendor_interop_type_name():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(101)
     topic = p.create_shape_topic("Square")
@@ -56,7 +56,7 @@ def test_shape_topic_matches_vendor_interop_type_name():
 
 
 @pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
-def test_shape_constructor_and_repr():
+def py_1_2_9_shape_constructor_and_repr():
     s = zerodds.Shape("RED", 10, 20, 30)
     assert s.color == "RED"
     assert s.x == 10
@@ -66,18 +66,18 @@ def test_shape_constructor_and_repr():
 
 
 @pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
-def test_shape_default_shapesize_is_30():
+def py_1_2_9_shape_default_shapesize_is_30():
     s = zerodds.Shape("BLUE", 5, 6)
     assert s.shapesize == 30
 
 
 @pytest.mark.skipif(_NO_CORE, reason=_NO_CORE_REASON)
-def test_pub_sub_roundtrip_live():
+def py_1_2_1_pub_sub_roundtrip_live(leased_domain):
     """§5.1 — single-process Python ↔ Python over the live runtime: two
     participants on one domain, SPDP/SEDP match, one sample read back."""
     factory = zerodds.DomainParticipantFactory.instance()
-    pub_p = factory.create_participant_fast(200)
-    sub_p = factory.create_participant_fast(200)
+    pub_p = factory.create_participant_fast(leased_domain)
+    sub_p = factory.create_participant_fast(leased_domain)
     topic_pub = pub_p.create_bytes_topic("PyChatter")
     topic_sub = sub_p.create_bytes_topic("PyChatter")
     writer = pub_p.create_publisher().create_bytes_writer(topic_pub)

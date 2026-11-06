@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! The corpus pass of the CORBA column, shared by `corba_column.rs` and
-//! `corba_column_headline.rs`.
+//! The corpus pass of the CORBA column, run by `corba_column_headline.rs`.
 
 use zerodds_wire_probe::corba_idl::corba_idl;
 use zerodds_wire_probe::encode::model_from_idl;

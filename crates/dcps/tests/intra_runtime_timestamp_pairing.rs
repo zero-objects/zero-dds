@@ -200,7 +200,7 @@ fn three_rapid_writes_pair_correctly(history: HistoryQosPolicy, expected_len: us
 /// `write(sample)`, which resolves SOURCE_TIMESTAMP from `time_source`
 /// and silently ignored the explicit value entirely.
 #[test]
-fn write_w_timestamp_stamps_the_sample_with_the_given_timestamp_not_the_clock() {
+fn dcps_2_2_2_4_2_12_write_w_timestamp_stamps_the_sample_with_the_given_timestamp_not_the_clock() {
     let (clock, writer, reader) = intra_runtime_rig(HistoryQosPolicy {
         kind: HistoryKind::KeepLast,
         depth: 1,
@@ -473,7 +473,7 @@ fn remote_path_pairs_content_with_its_own_timestamp() {
 /// `intra_runtime_rig`'s writes are stamped with. The participant had no
 /// get_current_time; the free function reads the system clock.
 #[test]
-fn get_current_time_is_the_clock_writes_are_stamped_with() {
+fn dcps_2_2_2_2_1_32_get_current_time_is_the_clock_writes_are_stamped_with() {
     let clock = TestClock::new(Time::new(6_000, 0));
     let cfg = RuntimeConfig {
         time_source: Arc::new(clock.clone()),

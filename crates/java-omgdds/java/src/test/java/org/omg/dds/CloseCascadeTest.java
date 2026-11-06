@@ -42,7 +42,7 @@ class CloseCascadeTest {
     }
 
     @Test
-    void publisherCloseClosesItsWriters() {
+    void javapsm_7_2_3_publisher_close_closes_its_writers() {
         DomainParticipant participant =
                 Qos.factory().createParticipant(nextDom());
         Topic<byte[]> topic = participant.createTopic("cascade", byte[].class);
@@ -61,15 +61,19 @@ class CloseCascadeTest {
     }
 
     @Test
-    void participantCloseClosesContainedEntities() {
+    void javapsm_7_2_3_participant_close_closes_contained_entities() {
         DomainParticipant participant =
                 Qos.factory().createParticipant(nextDom());
         Topic<byte[]> topic = participant.createTopic("pcascade", byte[].class);
         Publisher pub = participant.createPublisher();
         Subscriber sub = participant.createSubscriber();
+        DataWriter<byte[]> writer = pub.createDataWriter(topic);
+        DataReader<byte[]> reader = sub.createDataReader(topic);
 
         participant.close();
         assertTrue(TopicImpl.isClosed(topic), "Participant.close closes its Topics");
+        assertTrue(Qos.isClosed(writer), "and the DataWriters of its Publishers");
+        assertTrue(Qos.isClosed(reader), "and the DataReaders of its Subscribers");
         // Closing an entity makes every operation on it fail (§7.3.2, Table 7.1).
         assertThrows(AlreadyClosedException.class, () -> participant.createPublisher());
         assertThrows(AlreadyClosedException.class, () -> pub.createDataWriter(topic));

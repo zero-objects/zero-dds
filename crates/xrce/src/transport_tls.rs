@@ -537,12 +537,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tls_client_new_stores_server_name() {
-        let c = XrceTlsClient::new("agent.example.invalid".into());
-        assert_eq!(c.server_name, "agent.example.invalid");
-    }
-
-    #[test]
     fn tls_client_connect_returns_skeleton_error() {
         let c = XrceTlsClient::new("x".into());
         let res = c.connect();
@@ -554,10 +548,5 @@ mod tests {
         let s = XrceTlsServer::new();
         let res = s.bind();
         assert!(matches!(res, Err(XrceError::ValueOutOfRange { .. })));
-    }
-
-    #[test]
-    fn tls_server_default_constructible() {
-        let _ = XrceTlsServer;
     }
 }

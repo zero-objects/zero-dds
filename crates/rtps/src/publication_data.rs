@@ -958,7 +958,7 @@ impl PublicationBuiltinTopicData {
             .and_then(|p| decode_octet_seq(&p.value, little_endian))
             .unwrap_or_default();
 
-        let type_information = pl.find(pid::TYPE_INFORMATION).map(|p| p.value.clone());
+        let type_information = pl.find(pid::TYPE_INFORMATION).map(|p| p.value.to_vec());
         let (type_id_v1, type_object_v1) = crate::type_v1::read(&pl, little_endian);
         let data_max_size_serialized = crate::participant_data::four_octets(
             &pl,
@@ -1052,33 +1052,32 @@ impl PublicationBuiltinTopicData {
         // identifier stays None and the raw blob is retained — the match layer
         // (`wire_reader_to_remote_writer`) then emits a loud signal rather than
         // dropping the assignability check silently.
-        if type_identifier == zerodds_types::TypeIdentifier::None {
-            if let Some(ti_bytes) = &type_information {
-                let endianness = if little_endian {
-                    zerodds_wire::Endianness::Little
-                } else {
-                    zerodds_wire::Endianness::Big
-                };
-                if let Ok(ti) = zerodds_types::type_information::TypeInformation::from_bytes(
-                    ti_bytes, endianness,
-                ) {
-                    if let Some(id) = ti.preferred_type_identifier() {
-                        type_identifier = id;
-                    }
-                }
+        if type_identifier == zerodds_types::TypeIdentifier::None
+            && let Some(ti_bytes) = &type_information
+        {
+            let endianness = if little_endian {
+                zerodds_wire::Endianness::Little
+            } else {
+                zerodds_wire::Endianness::Big
+            };
+            if let Ok(ti) =
+                zerodds_types::type_information::TypeInformation::from_bytes(ti_bytes, endianness)
+                && let Some(id) = ti.preferred_type_identifier()
+            {
+                type_identifier = id;
             }
         }
 
         // XTypes 1.1 announced the type as a `TypeObjectV1` and 1.3 keeps the
         // member (§7.6.3.2.2): an endpoint without `PID_TYPE_INFORMATION`
         // that has one is identified by it.
-        if type_identifier == zerodds_types::TypeIdentifier::None && type_information.is_none() {
-            if let Some(id) = type_object_v1
+        if type_identifier == zerodds_types::TypeIdentifier::None
+            && type_information.is_none()
+            && let Some(id) = type_object_v1
                 .as_ref()
                 .and_then(crate::type_v1::identifier_of)
-            {
-                type_identifier = id;
-            }
+        {
+            type_identifier = id;
         }
 
         let data_representation = pl
@@ -1888,7 +1887,7 @@ mod tests {
         let data = sample_data();
         let with = data.inline_qos(0x28).unwrap();
         assert_eq!(
-            with.find(pid::TRANSPORT_PRIORITY).map(|p| p.value.clone()),
+            with.find(pid::TRANSPORT_PRIORITY).map(|p| p.value.to_vec()),
             Some(0x28_i32.to_le_bytes().to_vec())
         );
         let without = data.inline_qos(0).unwrap();
@@ -2418,7 +2417,7 @@ mod tests {
         let pl = ParameterList::from_bytes(&bytes[4..], true).unwrap();
         assert_eq!(
             pl.find(pid::TYPE_MAX_SIZE_SERIALIZED)
-                .map(|p| p.value.clone()),
+                .map(|p| p.value.to_vec()),
             Some(1028i32.to_le_bytes().to_vec())
         );
         // CDR string: length 15 with the terminator, the characters, NUL;
@@ -2426,7 +2425,7 @@ mod tests {
         let mut name = 15u32.to_le_bytes().to_vec();
         name.extend_from_slice(b"Chatter writer\0\0");
         assert_eq!(
-            pl.find(pid::ENTITY_NAME).map(|p| p.value.clone()),
+            pl.find(pid::ENTITY_NAME).map(|p| p.value.to_vec()),
             Some(name)
         );
         let back = PublicationBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
@@ -2453,7 +2452,7 @@ mod tests {
         let bytes = d.to_pl_cdr_le().unwrap();
         let pl = ParameterList::from_bytes(&bytes[4..], true).unwrap();
         assert_eq!(
-            pl.find(pid::GROUP_GUID).map(|p| p.value.clone()),
+            pl.find(pid::GROUP_GUID).map(|p| p.value.to_vec()),
             Some(publisher.to_bytes().to_vec())
         );
         assert_eq!(

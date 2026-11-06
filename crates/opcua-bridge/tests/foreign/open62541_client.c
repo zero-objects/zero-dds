@@ -2,7 +2,8 @@
  * Copyright 2026 ZeroDDS Contributors
  *
  * A small OPC-UA client against libopen62541's public C API, driving the
- * three operations `open62541_interop.rs` measures against a running
+ * three operations the scenario `bridge-opcua` of the integration pillar
+ * (tests/integration/tests/bridges.rs) measures against a running
  * `zerodds-opcua-bridged`: Browse, Read, Write. See README.md in this
  * directory for build prerequisites and exactly what each step does.
  *

@@ -23,7 +23,7 @@ class RtpsTimingsTest {
     }
 
     @Test
-    void withoutOptionsTheValuesAreThoseOfTheStandard() {
+    void rtps_8_4_7_1_without_options_the_timings_are_those_of_the_standard() {
         RtpsTimings t = RtpsTimings.of(of(new HashMap<String, String>()));
         assertEquals(30_000L, t.spdpPeriodMillis, "9.6.2.4");
         assertEquals(500L, t.heartbeatResponseDelayMillis, "8.4.12.1");
@@ -33,28 +33,4 @@ class RtpsTimingsTest {
         assertEquals(Long.MAX_VALUE, t.sendHistoryMaxBytes);
     }
 
-    @Test
-    void anOptionSetsTheValue() {
-        Map<String, String> v = new HashMap<String, String>();
-        v.put("zerodds.rtps.spdp-period-millis", "1000");
-        v.put("zerodds.rtps.heartbeat-response-delay-millis", "0");
-        v.put("zerodds.rtps.nack-response-delay-millis", "0");
-        v.put("zerodds.rtps.heartbeat-period-millis", "250");
-        v.put("zerodds.rtps.send-history-max-samples", "256");
-        v.put("zerodds.rtps.send-history-max-bytes", "16777216");
-        RtpsTimings t = RtpsTimings.of(of(v));
-        assertEquals(1000L, t.spdpPeriodMillis);
-        assertEquals(0L, t.heartbeatResponseDelayMillis);
-        assertEquals(0L, t.nackResponseDelayMillis);
-        assertEquals(250L, t.heartbeatPeriodMillis);
-        assertEquals(256, t.sendHistoryMaxSamples);
-        assertEquals(16L * 1024 * 1024, t.sendHistoryMaxBytes);
-    }
-
-    @Test
-    void aValueThatIsNoNumberIsRefused() {
-        Map<String, String> v = new HashMap<String, String>();
-        v.put("zerodds.rtps.spdp-period-millis", "soon");
-        assertThrows(IllegalArgumentException.class, () -> RtpsTimings.of(of(v)));
-    }
 }

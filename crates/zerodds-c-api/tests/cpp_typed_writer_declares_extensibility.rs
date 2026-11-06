@@ -39,7 +39,7 @@
 //! itself**: nothing is linked, nothing is published, and the recorded
 //! argument is the assertion. The mapping from that argument to the four
 //! octets on the wire is
-//! `runtime.rs::user_payload_encap_maps_repr_and_extensibility`.
+//! `runtime.rs::rtps_10_2_user_payload_encap_maps_repr_and_extensibility`.
 
 #![allow(
     clippy::expect_used,

@@ -31,7 +31,6 @@
     "tests/interop-results/**",
     "crates/java-omgdds/java/src/main/java/org/zerodds/typelookup/generated/**",
     "crates/zerodds-c-api/include/zerodds.h",
-    "crates/rmw-zerodds-shim/include/rmw_zerodds.h",
-    "diagrams/LINK-INVENTORY.md"
+    "crates/rmw-zerodds-shim/include/rmw_zerodds.h"
   ]
 }

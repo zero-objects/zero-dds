@@ -111,6 +111,19 @@ The following CI pipeline runs on every PR and must be green for a merge. Safety
 | `cargo fmt -- --check` | Formatting | ✓ |
 | `cargo deny check` | License + security audit | ✓ |
 
+The safe-profile build of §3.1 and the safe-specific lints of §3.2 run in
+the integration pillar's job `integration-safe`
+(`tests/integration/safe_profile.sh`, `ci/integration_scenarios.py`), weekly
+and on a release candidate: the build of `safe-crates-only`, then one clippy
+run per dependency of `safe-crates-only`, with `--features safety` where the
+crate has that feature (`zerodds-wire` has none; it is `no_std` without one).
+The job took 31 and 35 s on the CI runner (jobs 227684, 227794). It does not
+run on every merge: the safe crates are the core crates, and the merge
+pipeline of a change to `zerodds-rtps` already took 1237 s (pipeline 8532),
+more than the 10 minutes a merge pipeline may take
+(`internal/release/rc8-test-suite.md`, decision 4). The "✓" of the two rows
+above holds for the weekly and release-candidate runs.
+
 ### 3.3 Test jobs
 
 | Job | Content | Blocking? |
@@ -227,7 +240,7 @@ fn heartbeat_validates_sn_ordering() {
 
 Ferrocene is the qualified Rust compiler required for formal safety certification of the safe subset. Ferrocene is TÜV-Süd-qualified per ISO 26262 ASIL D, IEC 61508 SIL 3, IEC 62304 Class C, and supports qualification efforts up to SIL 4 and DO-178C DAL C.
 
-**Current plan status:** Ferrocene integration is an **expansion-era topic** (Track B in `06_roadmap.md` §8.1). In the bootstrap and proof eras the safe subset is built with stable Rust. The architectural discipline (no_panic, no_alloc-in-hot-path, structural separation) is in force from day 1 and enforceable by stable Rust — Ferrocene adds the formal qualification but does not change the code style.
+**Current plan status:** Ferrocene integration is an **expansion-era topic**. In the bootstrap and proof eras the safe subset is built with stable Rust. The architectural discipline (no_panic, no_alloc-in-hot-path, structural separation) is in force from day 1 and enforceable by stable Rust — Ferrocene adds the formal qualification but does not change the code style.
 
 So that the switch to Ferrocene is possible later without refactoring cost, the following rules already apply in the bootstrap era:
 
@@ -265,7 +278,7 @@ Further targets are negotiated with Ferrous Systems as an engineering partnershi
 
 ## 6 Audit path (expansion era)
 
-The formal safety audit is an **expansion-era topic** (Track C in `06_roadmap.md` §8.1). The preparation for it, however, runs along already in the bootstrap and proof eras.
+The formal safety audit is an **expansion-era topic**. The preparation for it, however, runs along already in the bootstrap and proof eras.
 
 ### 6.1 Bootstrap and proof era preparation
 

@@ -1,0 +1,127 @@
+.TH ZERODDS-AMQP-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-amqp-bridged \- Bridge-Daemon von DDS nach AMQP 1.0
+.SH ÜBERSICHT
+.B zerodds-amqp-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-broker\fR \fIURL\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fIDDS=ADR\fR]...
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-amqp-bridged
+verbindet DDS-Topics mit AMQP-1.0-Endpunkten. Unterstützt SASL ANONYMOUS,
+PLAIN, EXTERNAL, TLS, Links mit Sender-/Receiver-Settle-Modi und Routing
+anhand von Properties. Implementiert
+.IR docs/specs/zerodds-amqp-bridge-daemon-1.0.md .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+YAML-Konfiguration (Spec \(sc3). Siehe
+.BR zerodds-amqp-bridged.yaml (5).
+.TP
+.BR \-\-broker =\fIURL\fR
+URL des AMQP-Brokers
+.RI ( amqp:// ", " amqps:// ).
+.TP
+.BR \-\-container\-id =\fIID\fR
+AMQP-Container-ID.
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID.
+.TP
+.BR \-\-sasl\-mechanism =\fINAME\fR
+Eines von
+.IR PLAIN ", " SCRAM\-SHA\-256 ", " EXTERNAL ", " ANONYMOUS ", " XOAUTH2 .
+.TP
+.BR \-\-user =\fIBENUTZER\fR
+SASL-Benutzername.
+.TP
+.BR \-\-password =\fIPASSWORT\fR
+SASL-Passwort.
+.TP
+.BR \-\-tls\-ca =\fIDATEI\fR
+TLS-CA-Zertifikat.
+.TP
+.BR \-\-tls\-cert =\fIDATEI\fR
+TLS-Client-Zertifikat.
+.TP
+.BR \-\-tls\-key =\fIDATEI\fR
+TLS-Client-Schlüssel.
+.TP
+.BR \-\-topic =\fIDDS=ADR\fR
+Topic-Zuordnung auf der Kommandozeile, überschreibt die Konfiguration.
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listen-Adresse für Prometheus.
+.PP
+Test-Hooks. Echte Optionen, dokumentiert, weil das Programm sie annimmt und
+eine Option, die niemand findet, auch niemand pflegt.
+.TP
+.BR \-\-once
+Eine Verbindung bedienen, dann beenden.
+.TP
+.BR \-\-connect\-timeout\-ms =\fIN\fR
+Den Verbindungsaufbau nach \fIN\fR Millisekunden aufgeben.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+SIGTERM und SIGINT beenden den Daemon nach dem Leeren der Warteschlangen.
+SIGHUP liest die Konfiguration neu: Ein in der Topic-ACL entzogenes Recht gilt
+sofort, das TLS-Material ab dem nächsten Verbindungsaufbau; ein neu gewährtes
+Recht, geänderte Topics, Broker-Adresse oder Domäne brauchen einen Neustart und
+werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.TP
+.B AMQP_PASSWORD
+Das SASL-Passwort; die Einstellung
+.BR amqp.sasl.password ,
+über den Dateien, unter
+.BR \-\-set .
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden, oder
+.B \-\-check\-config
+hat die Konfiguration als gültig befunden.
+.TP
+.B 1
+Ungültige Konfiguration: ein Wert, die Broker-URL, die SASL-Einstellungen, die
+TLS-Dateien.
+.TP
+.B 2
+Mit
+.BR \-\-once
+ist die Verbindung zum Broker verloren gegangen; mit
+.BR \-\-check\-config
+war eine Konfigurationsdatei nicht lesbar oder nicht parsebar.
+.TP
+.B 3
+Der DDS-Teilnehmer oder einer seiner Endpunkte konnte nicht angelegt werden.
+.SH DATEIEN
+.I /etc/zerodds/amqp-bridged.yaml .
+.SH SIEHE AUCH
+.BR zerodds-amqp-bridged.yaml (5).
+.SH AUTOREN
+ZeroDDS Contributors.

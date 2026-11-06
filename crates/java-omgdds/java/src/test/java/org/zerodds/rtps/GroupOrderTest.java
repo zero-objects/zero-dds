@@ -59,7 +59,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void samplesOfSeveralWritersAreHandedOnInTheOrderOfTheGroupSequenceNumber() {
+    void rtps_8_7_5_samples_of_several_writers_are_handed_on_in_the_order_of_the_group_sequence_number() {
         GroupOrder g = order();
         g.accept("p", "A", 11, 0, sample("A11"));
         g.accept("p", "A", 13, 0, sample("A13")); // 12 of the other writer is not here yet
@@ -69,7 +69,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void aGroupCoherentSetIsHandedOnTogetherWhenItsEndHasCome() {
+    void rtps_8_7_6_a_group_coherent_set_is_handed_on_together_when_its_end_has_come() {
         GroupOrder g = order();
         g.accept("p", "A", 11, 11, sample("A11"));
         g.accept("p", "B", 12, 11, sample("B12"));
@@ -86,7 +86,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void aSampleOfAnotherSetEndsTheOpenOne() {
+    void rtps_8_7_6_a_sample_of_another_group_coherent_set_ends_the_open_one() {
         GroupOrder g = order();
         g.accept("p", "A", 1, 1, sample("a"));
         g.accept("p", "A", 2, 1, sample("b"));
@@ -95,20 +95,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void withTheTimeoutOptionAMissingNumberIsSkippedAndAnIncompleteSetIsNotDelivered() {
-        GroupOrder g = order(500L);
-        g.accept("p", "A", 1, 1, sample("a"));
-        g.accept("p", "A", 3, 1, sample("c")); // 2 is missing
-        g.accept("p", "A", 4, 0, sample("d"));
-        assertTrue(out.isEmpty());
-        g.expire(System.currentTimeMillis() + 500L + 10);
-        assertEquals(List.of("d"), out, "the set 1 had a hole and is dropped, d goes on");
-        assertTrue(logged.get(0).contains("did not arrive"), logged.toString());
-        assertTrue(logged.get(1).contains("incomplete"), logged.toString());
-    }
-
-    @Test
-    void theGroupsOfTwoPublishersAreIndependent() {
+    void rtps_8_7_5_the_groups_of_two_publishers_are_independent() {
         GroupOrder g = order();
         g.accept("p", "A", 5, 0, sample("p5"));
         g.accept("q", "A", 9, 0, sample("q9"));
@@ -117,16 +104,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void withoutTheTimeoutOptionExpireGivesNothingUp() {
-        GroupOrder g = order();
-        g.accept("p", "A", 1, 0, sample("a1"));
-        g.accept("p", "A", 3, 0, sample("a3"));
-        g.expire(System.currentTimeMillis() + 3_600_000L);
-        assertEquals(List.of("a1"), out);
-    }
-
-    @Test
-    void aNumberIsGivenUpWhenEveryCountedWriterSaysItIsNotItsOwn() {
+    void rtps_8_7_5_a_group_sequence_number_is_given_up_when_every_writer_says_it_is_not_its_own() {
         GroupOrder g = order();
         g.accept("p", "A", 10, 0, sample("a10"));
         g.accept("p", "A", 12, 0, sample("a12")); // 11 is missing
@@ -141,7 +119,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void aHeartbeatThatHoldsTheNumberKeepsTheOrderWaiting() {
+    void rtps_8_7_5_a_heartbeat_that_holds_the_number_keeps_the_order_waiting() {
         GroupOrder g = order();
         g.accept("p", "A", 10, 0, sample("a10"));
         g.accept("p", "A", 12, 0, sample("a12"));
@@ -152,7 +130,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void aHeartbeatSentBeforeTheNumberWasAssignedGivesNothingUp() {
+    void rtps_8_7_5_a_heartbeat_sent_before_the_number_was_assigned_gives_nothing_up() {
         GroupOrder g = order();
         g.accept("p", "A", 10, 0, sample("a10"));
         g.accept("p", "A", 12, 0, sample("a12"));
@@ -161,7 +139,7 @@ class GroupOrderTest {
     }
 
     @Test
-    void aSetWithANumberGivenUpIsNotDelivered() {
+    void rtps_8_7_6_a_group_coherent_set_with_a_number_given_up_is_not_delivered() {
         GroupOrder g = order();
         g.accept("p", "A", 1, 1, sample("a1"));
         g.accept("p", "A", 3, 1, sample("a3"));

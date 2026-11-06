@@ -267,27 +267,25 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    /// OASIS AMQP 1.0 §2.2: the protocol header `"AMQP" %d0 %d1 %d0 %d0`
+    /// (protocol id 0, version 1.0.0).
     #[test]
-    fn protocol_header_round_trip_amqp() {
-        let p = AmqpProtocol::Amqp;
-        let bytes = p.as_bytes();
-        assert_eq!(&bytes[0..4], b"AMQP");
-        assert_eq!(bytes[4], 0x00);
-        assert_eq!(bytes[5], 1);
-        let mut r = Cursor::new(bytes.to_vec());
+    fn amqp10_2_2_the_amqp_protocol_header_is_amqp_0_1_0_0() {
+        assert_eq!(AmqpProtocol::Amqp.as_bytes(), *b"AMQP\x00\x01\x00\x00");
+        let mut r = Cursor::new(b"AMQP\x00\x01\x00\x00".to_vec());
         let hdr = read_protocol_header(&mut r).unwrap();
-        assert_eq!(hdr.protocol, AmqpProtocol::Amqp);
-        assert_eq!(hdr.major, 1);
+        assert_eq!((hdr.protocol, hdr.major), (AmqpProtocol::Amqp, 1));
     }
 
+    /// §5.3.1 (SASL negotiation): the SASL header has protocol id 3.
     #[test]
-    fn protocol_header_round_trip_sasl() {
-        let p = AmqpProtocol::Sasl;
-        let bytes = p.as_bytes();
-        assert_eq!(bytes[4], 0x03);
-        let mut r = Cursor::new(bytes.to_vec());
-        let hdr = read_protocol_header(&mut r).unwrap();
-        assert_eq!(hdr.protocol, AmqpProtocol::Sasl);
+    fn amqp10_5_3_1_the_sasl_protocol_header_is_amqp_3_1_0_0() {
+        assert_eq!(AmqpProtocol::Sasl.as_bytes(), *b"AMQP\x03\x01\x00\x00");
+        let mut r = Cursor::new(b"AMQP\x03\x01\x00\x00".to_vec());
+        assert_eq!(
+            read_protocol_header(&mut r).unwrap().protocol,
+            AmqpProtocol::Sasl
+        );
     }
 
     #[test]
@@ -317,12 +315,14 @@ mod tests {
         ));
     }
 
+    /// §2.3.1: SIZE (header and body), DOFF 2, type 0x00, channel, body.
     #[test]
-    fn frame_round_trip_minimal() {
+    fn amqp10_2_3_1_a_frame_is_its_header_then_the_body() {
+        let octets = b"\x00\x00\x00\x0d\x02\x00\x00\x00hello";
         let mut buf: Vec<u8> = Vec::new();
         write_frame(&mut buf, FrameType::Amqp, 0, b"hello").unwrap();
-        let mut r = Cursor::new(buf);
-        let f = read_frame(&mut r, 1024).unwrap();
+        assert_eq!(buf, octets);
+        let f = read_frame(&mut Cursor::new(octets.to_vec()), 1024).unwrap();
         assert_eq!(f.header.frame_type, FrameType::Amqp);
         assert_eq!(f.header.channel, 0);
         assert_eq!(f.body, b"hello");
@@ -356,12 +356,14 @@ mod tests {
         assert!(f.body.is_empty());
     }
 
+    /// §5.3.1: a SASL frame has type 0x01.
     #[test]
-    fn sasl_frame_type_round_trip() {
+    fn amqp10_5_3_1_a_sasl_frame_has_type_0x01() {
+        let octets = b"\x00\x00\x00\x09\x02\x01\x00\x00x";
         let mut buf: Vec<u8> = Vec::new();
         write_frame(&mut buf, FrameType::Sasl, 0, b"x").unwrap();
-        let mut r = Cursor::new(buf);
-        let f = read_frame(&mut r, 1024).unwrap();
+        assert_eq!(buf, octets);
+        let f = read_frame(&mut Cursor::new(octets.to_vec()), 1024).unwrap();
         assert_eq!(f.header.frame_type, FrameType::Sasl);
         assert_eq!(f.body, b"x");
     }

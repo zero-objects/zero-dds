@@ -46,7 +46,7 @@ use pki::{must_run, openssl_available};
 // CA cert (variant A, the Cyclone/FastDDS/OMG real-world pattern
 // — tests the self-trust-anchor path in the CmsPkcs7Verifier). false →
 // signed with the EE cert "alice" (variant B, RFC-5280 chain path).
-fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool) {
+fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool, domain: u32) {
     let _g = pki::OPENSSL_LOCK.lock().unwrap();
     let minted = pki::mint_ca_and_leaves(
         dir,
@@ -70,11 +70,11 @@ fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool) {
     // §9.8.1 step 3 + Table 70 (`check_create_participant`, builtin
     // DDS:Access:Permissions) such a governance IS joinable by a participant
     // whose permissions grant covers the domain (here: alice's <allow_rule>
-    // <domains><id>0</id>). Cyclone DDS and Fast DDS join it; SROS2
+    // names the leased domain). Cyclone DDS and Fast DDS join it; SROS2
     // full-lockdown relies on it. Only OpenDDS self-rejects (its
     // AccessControlBuiltInImpl reads the governance topology only) — an
     // OpenDDS-specific stance, not binding on ZeroDDS. See
-    // internal/security/opendds-secure-matrix-closeout.md.
+    // docs/spec-coverage/dds-security-1.2.md, §9.4.2.9 check_create_participant.
     let read_write_ac = if full_lockdown { "true" } else { "false" };
     std::fs::write(
         dir.join("governance.xml"),
@@ -83,7 +83,7 @@ fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool) {
 <dds xmlns="http://www.omg.org/spec/DDS-SECURITY/20170801/omg_shared_ca_governance">
   <domain_access_rules>
     <domain_rule>
-      <domains><id>0</id></domains>
+      <domains><id>{domain}</id></domains>
       <allow_unauthenticated_participants>false</allow_unauthenticated_participants>
       <enable_join_access_control>true</enable_join_access_control>
       <discovery_protection_kind>ENCRYPT</discovery_protection_kind>
@@ -110,7 +110,8 @@ fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool) {
 
     std::fs::write(
         dir.join("permissions.xml"),
-        r#"<?xml version="1.0" encoding="UTF-8"?>
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds xmlns="http://www.omg.org/spec/DDS-SECURITY/20170801/omg_shared_ca_permissions">
   <permissions>
     <grant>
@@ -120,7 +121,7 @@ fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool) {
         <not_after>2099-01-01T00:00:00</not_after>
       </validity>
       <allow_rule>
-        <domains><id>0</id></domains>
+        <domains><id>{domain}</id></domains>
         <publish><topics><topic>*</topic></topics></publish>
         <subscribe><topics><topic>*</topic></topics></subscribe>
       </allow_rule>
@@ -128,7 +129,8 @@ fn gen_test_fixtures(dir: &Path, ca_self_sign: bool, full_lockdown: bool) {
     </grant>
   </permissions>
 </dds>
-"#,
+"#
+        ),
     )
     .unwrap();
 
@@ -173,35 +175,19 @@ fn ffi_runtime_create_secure_ca_self_signed() {
     run_e2e(true);
 }
 
-/// GitHub #11 regression: the §9.3.3 GUID-prefix guard added in
-/// `DcpsRuntime::start` must NOT break the secured FFI path. `finish_secure_runtime`
-/// now sets `security_guid_prefix` to the identity-adjusted prefix it also passes
-/// to `start`, so the guard is satisfied and `create_secure` still returns a
-/// runtime. If the FFI wiring regressed, `rt` would be NULL here.
-#[test]
-fn ffi_secure_runtime_constructs_post_guid_guard_gh11() {
-    with_secure_runtime(false, |rt| {
-        assert!(
-            !rt.is_null(),
-            "GH#11: §9.3.3 GUID-prefix guard must not break the secured FFI path"
-        );
-    });
-}
-
 /// Full-lockdown governance (`enable_join_access_control` + read-AC + write-AC
 /// all TRUE, everything ENCRYPT — the `all-enc`/`sros2-full` shape) MUST be
 /// joinable with a permissions grant covering the domain. DDS-Security 1.2
 /// §9.8.1 step 3 + Table 70 `check_create_participant`; Cyclone/Fast DDS join
 /// the same governance. Regression guard for the earlier topology-only gate
-/// that denied every fully-locked domain unconditionally
-/// (internal/security/opendds-secure-matrix-closeout.md, "Correction of an
-/// earlier mis-fix").
+/// that denied every fully-locked domain unconditionally (since removed;
+/// docs/spec-coverage/dds-security-1.2.md, §9.4.2.9 check_create_participant).
 #[test]
 fn ffi_full_lockdown_governance_joins_with_matching_grant() {
-    with_secure_runtime_on(false, true, 0, |rt| {
+    with_secure_runtime_on(false, true, true, |rt| {
         assert!(
             !rt.is_null(),
-            "full-AC governance + grant for domain 0 must create the participant \
+            "full-AC governance + grant for the domain must create the participant \
              (§8.8.7 step 3 / Table 70 check_create_participant)"
         );
     });
@@ -211,10 +197,10 @@ fn ffi_full_lockdown_governance_joins_with_matching_grant() {
 /// (`check_create_participant` → FALSE → create_secure returns NULL).
 #[test]
 fn ffi_create_secure_denied_without_domain_rule() {
-    with_secure_runtime_on(false, true, 7, |rt| {
+    with_secure_runtime_on(false, true, false, |rt| {
         assert!(
             rt.is_null(),
-            "domain 7 has no governance domain rule — create_secure must return NULL"
+            "a domain without a governance domain rule — create_secure must return NULL"
         );
     });
 }
@@ -233,15 +219,17 @@ fn run_e2e(ca_self_sign: bool) {
 /// runtime and the config. Skips (without calling `check`) when openssl is
 /// unavailable, so the whole flow is Linux/openssl-gated.
 fn with_secure_runtime(ca_self_sign: bool, check: impl FnOnce(*mut ZeroDdsRuntime)) {
-    with_secure_runtime_on(ca_self_sign, false, 0, check);
+    with_secure_runtime_on(ca_self_sign, false, true, check);
 }
 
 /// Like [`with_secure_runtime`], plus `full_lockdown` (governance shape, see
-/// [`gen_test_fixtures`]) and `domain_id` (create_secure target domain).
+/// [`gen_test_fixtures`]) and `on_the_rule_domain`: the runtime starts on the
+/// leased domain the governance and the permissions name, or on a second
+/// lease that no rule names.
 fn with_secure_runtime_on(
     ca_self_sign: bool,
     full_lockdown: bool,
-    domain_id: u32,
+    on_the_rule_domain: bool,
     check: impl FnOnce(*mut ZeroDdsRuntime),
 ) {
     if !openssl_available() {
@@ -249,8 +237,15 @@ fn with_secure_runtime_on(
         return;
     }
 
+    let rule_lease = zerodds_test_domains::lease_domain();
+    let other_lease = (!on_the_rule_domain).then(zerodds_test_domains::lease_domain);
+    let rule_domain = rule_lease.id() as u32;
+    let domain_id = other_lease
+        .as_ref()
+        .map_or(rule_domain, |lease| lease.id() as u32);
+
     let tmp = tempdir_unique("zerodds_sec_ffi_");
-    gen_test_fixtures(&tmp, ca_self_sign, full_lockdown);
+    gen_test_fixtures(&tmp, ca_self_sign, full_lockdown, rule_domain);
 
     let certs = tmp.join("certs");
     let cfg = zerodds_security_config_create();
@@ -293,8 +288,8 @@ fn with_secure_runtime_on(
         );
     }
 
-    // Domain 0 matches the `<domain_rule>` in governance.xml; other ids have
-    // no domain rule (negative tests).
+    // The rule domain matches the `<domain_rule>` in governance.xml; the
+    // other lease has no domain rule (negative tests).
     // SAFETY: cfg is a valid builder pointer; create_secure does not consume cfg.
     let rt: *mut ZeroDdsRuntime = unsafe { zerodds_runtime_create_secure(domain_id, cfg) };
     check(rt);

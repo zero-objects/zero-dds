@@ -13,6 +13,22 @@ No new content: every entry appears there as an item with its evidence.
 
 **Status:** `open` — neither `crates/rmw-zerodds-shim/` nor `crates/ros2-rmw/` names `OTEL_EXPORTER_OTLP_ENDPOINT` or emits a span.
 
+## §10 RTPS peer + FastRTPS/CycloneDDS/Connext
+
+**Status:** `partial` — Fast DDS and Cyclone DDS are measured; rmw_connextdds and the Iron build target are missing (own items).
+
+## §10.1 Cross-vendor with rmw_connextdds
+
+**Status:** `open` — not measured; the spec itself says "not measured (not installed in the test env)". A run of `run_qos_translation_test.sh` and `run_ros2_services_test.sh` against rmw_connextdds is missing.
+
+## §10.2 Build target for the ROS distro Iron
+
+**Status:** `open` — `packaging/linux/deb/build-rmw-deb.sh` knows `humble jazzy kilted rolling` and refuses any other name; `ci/release-candidate.yml::ros-rmw-deb` builds the same four. `packaging/docker/ros2-shim/Dockerfile` names the variant `iron`, whose package build the script refuses (not built, read from the script).
+
 ## §11 librmw_zerodds_cpp.so + diagnostics binary
 
-**Status:** `partial` — no description in the main file.
+**Status:** `partial` — `librmw_zerodds_cpp.so` is in the deb package `ros-<distro>-rmw-zerodds-cpp` (built from `crates/rmw-zerodds-shim/ament`), and the image installs it from that package; the diagnostics binary, configuration and manual pages ship. The weekly job `ros-rmw-deb` and the image build have not run. Missing: publication on the `packages.ros.org` mirror (§11.1) and package and image for Iron (§10.2).
+
+## §11.1 Publication on the packages.ros.org mirror
+
+**Status:** `open` — `packaging/linux/deb/build-rmw-deb.sh` builds the package; no job and no script uploads it to `packages.ros.org`.

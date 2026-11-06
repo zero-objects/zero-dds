@@ -302,10 +302,10 @@ pub fn negotiate_representation(
         reader_accepted
     };
     for w in offered {
-        if accepted.contains(w) {
-            if let Some(kind) = DataRepresentationId::from_i16(*w) {
-                return RepresentationNegotiation::Accepted(kind);
-            }
+        if accepted.contains(w)
+            && let Some(kind) = DataRepresentationId::from_i16(*w)
+        {
+            return RepresentationNegotiation::Accepted(kind);
         }
     }
     RepresentationNegotiation::NoOverlap
@@ -361,7 +361,7 @@ mod tests {
     /// `NoOverlap` for all three, which means two endpoints that touch
     /// neither policy do not match through this function.
     #[test]
-    fn an_empty_list_of_preferences_is_the_single_element_xcdr() {
+    fn xtypes_7_6_3_1_1_an_empty_list_of_preferences_is_the_single_element_xcdr() {
         let xcdr = DataRepresentationId::Xcdr1 as i16;
         assert_eq!(
             negotiate_representation(&[], &[xcdr]),
@@ -384,16 +384,14 @@ mod tests {
     }
     use super::*;
 
+    /// DDS-XTypes 1.3 §7.6.3.4.3: `TypeConsistencyEnforcementQosPolicy` is
+    /// the `TypeConsistencyKind` (`@bit_bound(16)`, two octets) and five
+    /// `boolean`s in declaration order — `ignore_sequence_bounds`,
+    /// `ignore_string_bounds`, `ignore_member_names`,
+    /// `prevent_type_widening`, `force_type_validation` — padded to eight
+    /// octets, the body the vendors' default below has.
     #[test]
-    fn consistency_roundtrip_default() {
-        let c = TypeConsistencyEnforcement::default();
-        let bytes = c.to_bytes_le();
-        let decoded = TypeConsistencyEnforcement::from_bytes_le(&bytes);
-        assert_eq!(decoded, c);
-    }
-
-    #[test]
-    fn consistency_flags_all_set() {
+    fn xtypes_7_6_3_4_3_the_flags_sit_in_declaration_order() {
         let c = TypeConsistencyEnforcement {
             kind: TypeConsistencyKind::AllowTypeCoercion,
             ignore_sequence_bounds: false,
@@ -402,9 +400,9 @@ mod tests {
             prevent_type_widening: true,
             force_type_validation: true,
         };
-        let bytes = c.to_bytes_le();
-        let decoded = TypeConsistencyEnforcement::from_bytes_le(&bytes);
-        assert_eq!(decoded, c);
+        let octets = [0x01, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x00];
+        assert_eq!(c.to_bytes_le(), octets);
+        assert_eq!(TypeConsistencyEnforcement::from_bytes_le(&octets), c);
     }
 
     /// The octets two vendors actually write. RTI Connext 7.7.0 and
@@ -412,7 +410,7 @@ mod tests {
     /// body of eight and this content —
     /// `crates/discovery/tests/fixtures/vendor-discovery/{rti,fastdds}.frames`.
     #[test]
-    fn the_default_policy_is_the_octets_rti_and_fastdds_write() {
+    fn xtypes_7_6_3_4_1_the_default_policy_is_the_octets_rti_and_fastdds_write() {
         assert_eq!(
             TypeConsistencyEnforcement::default().to_bytes_le(),
             alloc::vec![0x01, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00],
@@ -425,25 +423,25 @@ mod tests {
         );
     }
 
-    /// A body written big-endian reads back as the same policy.
+    /// The same policy in a big-endian parameter list: the kind's two
+    /// octets swap, the booleans do not.
     #[test]
-    fn the_policy_survives_a_big_endian_parameter_list() {
+    fn xtypes_7_6_3_4_3_a_big_endian_body_swaps_the_kind_only() {
         let c = TypeConsistencyEnforcement {
-            kind: TypeConsistencyKind::DisallowTypeCoercion,
+            kind: TypeConsistencyKind::AllowTypeCoercion,
             ignore_sequence_bounds: false,
             ignore_string_bounds: true,
             ignore_member_names: true,
             prevent_type_widening: false,
             force_type_validation: true,
         };
-        assert_eq!(
-            TypeConsistencyEnforcement::from_bytes(&c.to_bytes(false), false),
-            c
-        );
+        let octets = [0x00, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00];
+        assert_eq!(c.to_bytes(false), octets);
+        assert_eq!(TypeConsistencyEnforcement::from_bytes(&octets, false), c);
     }
 
     #[test]
-    fn negotiate_xcdr2_preferred() {
+    fn xtypes_7_4_negotiate_xcdr2_preferred() {
         let result = negotiate_representation(&[2, 0], &[0, 2]);
         assert_eq!(
             result,
@@ -516,7 +514,7 @@ mod tests {
     /// `DISALLOW_TYPE_COERCION` and `ALLOW_TYPE_COERCION`. A third value
     /// on the wire is refused and not mapped to one of them.
     #[test]
-    fn type_consistency_kind_has_the_two_values_of_annex_d() {
+    fn xtypes_7_6_3_4_1_type_consistency_kind_has_the_two_values_of_annex_d() {
         assert_eq!(
             TypeConsistencyKind::from_u32(0),
             Ok(TypeConsistencyKind::DisallowTypeCoercion)

@@ -2,10 +2,11 @@
 // Copyright 2026 ZeroDDS Contributors
 //
 // Sample consumer for the `org.zerodds.idlc` Gradle plugin (../plugin).
-// `./gradlew run` generates `Robot.java` from `idl/Robot.idl` via
+// `gradle run` generates `Robot.java` from `idl/Robot.idl` via
 // `generateIdl`, compiles it (Gradle wires `compileJava dependsOn
-// generateIdl` automatically), then runs Main, which round-trips a
-// `Robot.Pose` through the generated encode/decode.
+// generateIdl` automatically), then runs Main, which holds the octets of a
+// `Robot.Pose` from the generated type support to DDS-XTypes 1.3 §7.4.
+// build-integration/java-gradle/check.sh does all of it (job merge-java-gradle).
 
 plugins {
     id("java")
@@ -18,10 +19,10 @@ repositories {
     mavenLocal() // org.zerodds:omgdds — `mvn install` crates/java-omgdds/java first, see ../../java-maven/README.md
 }
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
-    }
+// The JDK Gradle runs on compiles for Java 17: a toolchain of a fixed version is a JDK a
+// runner may not have (the CI image carries one JDK).
+tasks.withType<JavaCompile>().configureEach {
+    options.release.set(17)
 }
 
 sourceSets {

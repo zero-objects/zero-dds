@@ -554,19 +554,19 @@ impl CodecTarget for Python {
     /// function against Java's static and is decided here rather than in
     /// the walk.
     fn runtime_static(method: &str, args: Vec<Self::Expr>) -> Self::Expr {
-        if method == "pid_is_user_member" {
-            if let [py::Expr::Path(header)] = args.as_slice() {
-                let mut segments: Vec<String> = header
-                    .segments()
-                    .iter()
-                    .map(|segment| segment.as_str().to_string())
-                    .collect();
-                segments.push("is_user_member".to_string());
-                return py::Expr::Call {
-                    func: Path::new(&segments.iter().map(String::as_str).collect::<Vec<&str>>()),
-                    args: Vec::new(),
-                };
-            }
+        if method == "pid_is_user_member"
+            && let [py::Expr::Path(header)] = args.as_slice()
+        {
+            let mut segments: Vec<String> = header
+                .segments()
+                .iter()
+                .map(|segment| segment.as_str().to_string())
+                .collect();
+            segments.push("is_user_member".to_string());
+            return py::Expr::Call {
+                func: Path::new(&segments.iter().map(String::as_str).collect::<Vec<&str>>()),
+                args: Vec::new(),
+            };
         }
         py::Expr::Call {
             func: Self::runtime_name(method),

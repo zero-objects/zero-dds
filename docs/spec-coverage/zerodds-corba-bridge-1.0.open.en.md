@@ -7,19 +7,19 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §2 zerodds-corba-bridged CLI
 
-**Status:** `partial` — exit code 5 (NameService) does not occur while the NameService registration is not built (§4.1); exit codes 2 and 3 are set in the code but have no test of their own.
+**Status:** `partial` — exit code 3 (DDS) is set in the code but has no test of its own.
 
 ## §4.1 IOR generation IIOP/SSLIOP/Components
 
-**Status:** `partial` — `TAG_CODE_SETS` and `TAG_SSL_SEC_TRANS` built, `catior` reads both; no `TAG_ORB_TYPE` (no OMG-assigned ORB type); `publish_to_naming: true` is refused (NameService not built).
+**Status:** `partial` — `TAG_CODE_SETS` and `TAG_SSL_SEC_TRANS` built, `catior` reads both; no `TAG_ORB_TYPE` (no OMG-assigned ORB type). The NameService bind is checked by `crates/corba-dds-bridge/tests/omniorb_e2e.rs::corbabridge_10_the_bridge_rebinds_into_omninames_and_unbinds_on_stop` and `crates/corba-dds-bridge/tests/jacorb_e2e.rs::corbabridge_10_the_bridge_rebinds_into_jacorbs_name_server_and_unbinds_on_stop`.
 
 ## §4.3 Request-reply mapping CORBA→DDS
 
-**Status:** `partial` — `NO_PERMISSION`, `NO_IMPLEMENT`, `TRANSIENT` on a DDS write error, `MARSHAL` and `CancelRequest` are built but have no test of their own; a `correlation_id` other than `request_id` is refused.
+**Status:** `partial` — `NO_IMPLEMENT`, `TRANSIENT` on a DDS write error and `CancelRequest` are built but have no test of their own; a `correlation_id` other than `request_id` is refused.
 
 ## §4.7 LocateRequest/Reply OBJECT_HERE/UNKNOWN/FORWARD
 
-**Status:** `partial` — `OBJECT_HERE` and `UNKNOWN_OBJECT` are built but untested in the daemon (`tests/cross_vendor.rs::locate_request_handler_classifies_known_and_unknown` checks the library's `src/locate.rs`, not the daemon); `OBJECT_FORWARD` is not built.
+**Status:** `open` — `OBJECT_HERE` and `UNKNOWN_OBJECT` are built in the daemon (`crates/corba-dds-bridge/src/bridge_daemon.rs::serve_connection`, branch `LocateRequest`), but without a test; `OBJECT_FORWARD` is not built.
 
 ## §5.2 Type discovery via idl-rust codegen
 
@@ -31,19 +31,15 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §7.2 CSIv2 SAS_ContextElement + GSSUP
 
-**Status:** `open` — CSIv2 is not built in the daemon. The building blocks `crates/corba-csiv2/` and `crates/corba-dds-bridge/src/csiv2_wire.rs` are not wired to the daemon. Plan: read the `SAS_ContextElement` from each request's service context, check GSSUP against a user file and pass the subject to the ACL of §7.3.
+**Status:** `open` — CSIv2 is not built in the daemon; `csiv2.enabled: true` is refused (`crates/corba-dds-bridge/src/bridge_daemon.rs`, test `corbabridge_3_what_the_daemon_does_not_build_is_refused`). The building blocks `crates/corba-csiv2/` and `crates/corba-dds-bridge/src/csiv2_wire.rs` are not wired to the daemon.
 
 ## §8.1 Structured JSON logging
 
-**Status:** `partial` — one JSON line per event on stderr with `level`, `event` and the event fields, filtered by `log_level`; `timestamp` is missing, and no test checks the form of a line.
+**Status:** `open` — `crates/corba-dds-bridge/src/bridge_daemon.rs` (`log`, `event_level`, `level_rank`) writes one JSON line per event to stderr with `level`, `event` and the event fields, filtered by `log_level`; `timestamp` is missing, and no test checks the form of a line.
 
 ## §8.3 OTLP spans
 
 **Status:** `partial` — the exporter starts from the environment, but `bridge_daemon.rs` creates no spans.
-
-## §9.1 Startup sequence
-
-**Status:** `partial` — the NameService rebind does not occur while `publish_to_naming` is not built; the other steps run in the order of the spec.
 
 ## §9.2 Shutdown SIGTERM/SIGINT/SIGHUP
 
@@ -51,7 +47,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §10 RTPS peer + TAO/JacORB/omniORB/Ice-Java
 
-**Status:** `partial` — measured against omniORB. TAO, JacORB and Ice-Java are not measured; the rest is the `open` item §10/§12.
+**Status:** `partial` — measured against omniORB, JacORB and TAO; Ice-Java not.
 
 ## §12.1 Unit tests per module
 
@@ -59,8 +55,8 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §12.3 Multi-vendor cross_vendor.rs
 
-**Status:** `partial` — the DDS side behind the bridge is ZeroDDS; a Cyclone DDS backend and a TAO client are not measured. Cross-ref: the `open` item below.
+**Status:** `partial` — the DDS side behind the bridge is ZeroDDS; a Cyclone DDS backend is not measured. Cross-ref: the item below.
 
 ## §10/§12 Cross-vendor harness — TAO, JacORB, Ice-Java, Cyclone
 
-**Status:** `open` — measured is omniORB with a ZeroDDS backend (`tests/omniorb_e2e.rs`). Plan: run the same cases with a TAO and a JacORB client from `crates/corba-interop/competitors/` and with a Cyclone DDS backend after the layout of §4.3 on the Linux test host.
+**Status:** `partial` — omniORB, JacORB and TAO are measured (§10); Ice-Java and a Cyclone DDS backend after the layout of §4.3 are not.

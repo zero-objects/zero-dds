@@ -11,7 +11,7 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §6.2 Windows
 
-**Status:** `partial` — im Nightly 6555 (`windows-smoke`, `c704c3ccfaa`) liefen 39 von 40 Lib-Tests von `transport-shm` auf Windows grün; der fehlgeschlagene ist §6.3.
+**Status:** `partial` — im Nightly 6555 (`windows-smoke`, `81d8500d495`) liefen 39 von 40 Lib-Tests von `transport-shm` auf Windows grün; der fehlgeschlagene ist §6.3.
 
 ## §6.3 Nachweis der Windows-Cleanup-Semantik
 

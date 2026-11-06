@@ -9,9 +9,12 @@
 //!
 //! `ShmUserTransport` wraps that:
 //! - Its own `local_id` (16-byte SHM segment ID, derived from GuidPrefix).
-//! - Per discovered peer (lazy on first `send`): opens an owner segment
-//!   for send + a consumer segment for recv, spawns a recv thread that
-//!   pushes from the consumer segment into a central `inbound` queue.
+//! - Per discovered peer: opens an owner segment for send + a consumer
+//!   segment for recv, spawns a recv thread that pushes from the consumer
+//!   segment into a central `inbound` queue. The runtime opens the pair
+//!   when SPDP reports the peer (`Transport::add_destination`), and a
+//!   `send` to a peer without one opens it; `forget_destination` closes it
+//!   when the peer leaves.
 //! - `Transport::send(dest, data)`: routes to the owner segment of the
 //!   peer encoded in the `dest` locator.
 //! - `Transport::recv()`: pops from the central queue (filled by the
@@ -45,17 +48,19 @@ pub struct ShmUserTransport {
     local_locator: Locator,
     config: ShmConfig,
     state: Arc<Mutex<AdapterState>>,
+    /// Held while a pair is opened, so that two threads opening the pair of
+    /// one peer at once (two SPDP receive paths, a send) open it once: a
+    /// second consumer on the single-consumer ring would race the first
+    /// one's `tail`.
+    opening: Mutex<()>,
     inbound_cv: Arc<Condvar>,
     stop: Arc<std::sync::atomic::AtomicBool>,
 }
 
 struct AdapterState {
     /// peer-id → owner segment (for `send` to this peer).
-    /// Lazy-created on first send per peer.
     owners: HashMap<[u8; 16], Arc<PosixShmTransport>>,
     /// peer-id → consumer segment + its recv thread.
-    /// Lazy-created on first send per peer (or via an explicit
-    /// `register_peer` call for inbound-only).
     consumers: HashMap<[u8; 16], ConsumerEntry>,
     /// Central inbound queue. Per-peer recv threads push in,
     /// `Transport::recv` pops out.
@@ -64,6 +69,8 @@ struct AdapterState {
 
 struct ConsumerEntry {
     consumer: Arc<PosixShmTransport>,
+    /// Ends this peer's receive thread alone ([`Transport::forget_destination`]).
+    stop: Arc<std::sync::atomic::AtomicBool>,
     join: thread::JoinHandle<()>,
 }
 
@@ -91,6 +98,7 @@ impl ShmUserTransport {
                 consumers: HashMap::new(),
                 inbound: std::collections::VecDeque::with_capacity(128),
             })),
+            opening: Mutex::new(()),
             inbound_cv: Arc::new(Condvar::new()),
             stop: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
@@ -103,16 +111,21 @@ impl ShmUserTransport {
         // No join here — Drop waits implicitly via the JoinHandle.
     }
 
-    /// Lazy-create the owner+consumer pair for a peer.
+    /// The owner+consumer pair for a peer, opened if it is not yet.
     /// Owner = "I write to the peer", consumer = "I read from the peer".
     fn ensure_pair(&self, peer_id: [u8; 16]) -> Result<Arc<PosixShmTransport>, SendError> {
         // Fast path: owner already present.
-        if let Ok(st) = self.state.lock() {
-            if let Some(o) = st.owners.get(&peer_id) {
-                return Ok(Arc::clone(o));
-            }
+        if let Some(owner) = self.owner_of(peer_id) {
+            return Ok(owner);
         }
-        // Slow path: open_owner + open_consumer + start recv thread.
+        // Slow path: open_owner + open_consumer + start recv thread, once
+        // per peer; whoever waited here finds the pair the other opened.
+        let _opening = self.opening.lock().map_err(|_| SendError::Io {
+            message: "shm adapter open lock poisoned",
+        })?;
+        if let Some(owner) = self.owner_of(peer_id) {
+            return Ok(owner);
+        }
         let owner = PosixShmTransport::open_owner(self.local_id, peer_id, self.config.clone())
             .map_err(|_| SendError::Io {
                 message: "shm open_owner failed",
@@ -129,6 +142,8 @@ impl ShmUserTransport {
         let state_cl = Arc::clone(&self.state);
         let cv_cl = Arc::clone(&self.inbound_cv);
         let stop_cl = Arc::clone(&self.stop);
+        let peer_stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let peer_stop_cl = Arc::clone(&peer_stop);
         let consumer_for_thread = Arc::clone(&consumer_arc);
         let join = thread::Builder::new()
             .name(format!(
@@ -136,7 +151,9 @@ impl ShmUserTransport {
                 peer_id[0], peer_id[1]
             ))
             .spawn(move || {
-                while !stop_cl.load(std::sync::atomic::Ordering::Relaxed) {
+                while !stop_cl.load(std::sync::atomic::Ordering::Relaxed)
+                    && !peer_stop_cl.load(std::sync::atomic::Ordering::Relaxed)
+                {
                     match consumer_for_thread.recv() {
                         Ok(dg) => {
                             if let Ok(mut st) = state_cl.lock() {
@@ -160,11 +177,20 @@ impl ShmUserTransport {
                 peer_id,
                 ConsumerEntry {
                     consumer: consumer_arc,
+                    stop: peer_stop,
                     join,
                 },
             );
         }
         Ok(owner_arc)
+    }
+
+    /// The owner segment of the pair with `peer_id`, if it is open.
+    fn owner_of(&self, peer_id: [u8; 16]) -> Option<Arc<PosixShmTransport>> {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|st| st.owners.get(&peer_id).map(Arc::clone))
     }
 }
 
@@ -210,6 +236,45 @@ impl Transport for ShmUserTransport {
             if wait.timed_out() && guard.inbound.is_empty() {
                 return Err(RecvError::Timeout);
             }
+        }
+    }
+
+    /// Opens the pair with the peer behind an SHM locator it announced: the
+    /// ring this adapter writes into and the one it reads from, with the
+    /// thread that reads it. A datagram the peer sends is received from
+    /// then on, whether this side has sent the peer anything or not.
+    /// Nothing for another kind, for this adapter's own locator, and after
+    /// `close`. A pair that does not open is opened again by the next
+    /// `send` to the peer.
+    fn add_destination(&self, dest: &Locator) {
+        if dest.kind != LocatorKind::Shm
+            || dest.address == self.local_id
+            || self.stop.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        let _ = self.ensure_pair(dest.address);
+    }
+
+    /// Closes the pair with the peer behind `dest`: its receive thread
+    /// ends and is joined, and the owner segment goes with the last
+    /// sender that still holds it. A later `send` to the peer opens it
+    /// anew.
+    fn forget_destination(&self, dest: &Locator) {
+        if dest.kind != LocatorKind::Shm {
+            return;
+        }
+        let entry = match self.state.lock() {
+            Ok(mut st) => {
+                st.owners.remove(&dest.address);
+                st.consumers.remove(&dest.address)
+            }
+            Err(_) => None,
+        };
+        if let Some(entry) = entry {
+            entry.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            entry.consumer.interrupt_recv();
+            let _ = entry.join.join();
         }
     }
 
@@ -322,5 +387,33 @@ mod tests {
             a.send(&b.local_locator(), b"y"),
             Err(SendError::Io { .. })
         ));
+    }
+
+    /// `add_destination` opens the pair with a peer's SHM locator once, and
+    /// nothing for the adapter's own locator or another kind;
+    /// `forget_destination` closes it and ends the peer's receive thread,
+    /// which waits without a timeout (`Transport::forget_destination`: the
+    /// state kept per destination goes).
+    #[test]
+    fn forget_destination_closes_the_pair_add_destination_opened() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = ShmUserTransport::new(id(4), config(tmp.path()));
+        let b = ShmUserTransport::new(id(5), config(tmp.path()));
+        a.add_destination(&b.local_locator());
+        a.add_destination(&b.local_locator());
+        a.add_destination(&a.local_locator());
+        a.add_destination(&Locator::udp_v4([127, 0, 0, 1], 7411));
+        assert_eq!(a.state.lock().unwrap().consumers.len(), 1);
+        assert_eq!(a.state.lock().unwrap().owners.len(), 1);
+
+        let started = Instant::now();
+        a.forget_destination(&b.local_locator());
+        assert!(
+            started.elapsed() < Duration::from_millis(500),
+            "{:?}",
+            started.elapsed()
+        );
+        let st = a.state.lock().unwrap();
+        assert!(st.consumers.is_empty() && st.owners.is_empty());
     }
 }

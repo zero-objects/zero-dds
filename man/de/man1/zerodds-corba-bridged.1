@@ -1,0 +1,147 @@
+.TH ZERODDS-CORBA-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-corba-bridged \- Bridge-Daemon von DDS nach CORBA GIOP/IIOP
+.SH ÜBERSICHT
+.B zerodds-corba-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-set\fR \fIPFAD=WERT\fR]...
+[\fB\-\-check\-config\fR]
+[\fB\-\-iiop\-bind\fR \fIADR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fIREPO_ID=TOPIC\fR]...
+[\fB\-\-dump\-iors\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-corba-bridged
+bildet CORBA-Operationen auf DDS-Request/Reply-Topic-Paare ab und DDS-Samples
+auf Oneway-CORBA-Aufrufe. Es bedient IIOP und, mit einem Zertifikat, SSLIOP;
+es schreibt eine IOR je Zuordnung. GIOP 1.0 bis 1.2 werden angenommen; eine
+zugeordnete Operation braucht GIOP 1.2.
+Mit
+.BR corba.csiv2.enabled
+wird der SAS-Kontext
+.I EstablishContext
+jedes Requests gegen eine GSSUP-Passwortdatei geprüft (CORBA 3.4 Teil 2
+\(sc10/\(sc24); ein abgelehnter bekommt
+.B NO_PERMISSION
+mit angehängtem SAS-
+.BR ContextError ,
+zusätzlich zu SSLIOP-Client-Zertifikaten und der ACL.
+Mit
+.BR corba.ior.publish_to_naming
+wird die IOR jeder Zuordnung beim Start per
+.B rebind
+in
+.B corba.ior.naming_service
+(eine
+.IR corbaname: "- oder " corbaloc: -URL)
+eingetragen und bei einem sauberen Ende per
+.B unbind
+entfernt.
+.B corba.naming.serve
+(ein NameService im selben Prozess, der den Transport dieses Daemons
+mitbenutzt) ist nicht gebaut.
+Implementiert
+.IR docs/specs/zerodds-corba-bridge-1.0.md .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Basisdatei, dazu \fIDATEI\fR.d/. Ohne diese Option:
+.I corba-bridged.yaml
+und
+.I corba-bridged.d/
+im Systemverzeichnis. Siehe
+.BR zerodds-corba-bridged.yaml (5).
+.TP
+.BR \-\-set =\fIPFAD=WERT\fR
+Ein Wert über allen Dateien; wiederholbar. Jede Option unten außer
+\fB\-\-dump\-iors\fR ist eine Kurzform für \fB\-\-set\fR ihres Schlüssels in der
+Datei.
+.TP
+.BR \-\-check\-config
+Prüft die Konfiguration, gibt jeden Wert mit seiner Herkunft aus, Ende mit
+0 (gültig) oder 1 (ungültig).
+.TP
+.BR \-\-iiop\-bind =\fIADR\fR
+IIOP-Listen-Adresse. Standard:
+.IR 0.0.0.0:6833 .
+.TP
+.BR \-\-ssliop\-bind =\fIADR\fR
+SSLIOP-Listen-Adresse; schaltet SSLIOP ein. Standard:
+.IR 0.0.0.0:6834 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID.
+.TP
+.BR \-\-orb\-id =\fIID\fR
+ORB-Identität.
+.TP
+.BR \-\-tls\-cert =\fIDATEI\fR
+SSLIOP-Server-Zertifikat (PEM); nur zusammen mit \fB\-\-tls\-key\fR.
+.TP
+.BR \-\-tls\-key =\fIDATEI\fR
+SSLIOP-Server-Schlüssel (PEM).
+.TP
+.BR \-\-topic =\fIREPO_ID=TOPIC\fR
+Eine weitere Zuordnung, wiederholbar.
+.TP
+.BR \-\-dump\-iors
+Gibt eine Zeile je Zuordnung aus,
+.IR "repo_id operation IOR:..." ,
+und beendet sich.
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listen-Adresse für Prometheus.
+.PP
+Test-Hooks. Echte Optionen, dokumentiert, weil das Programm sie annimmt und
+eine Option, die niemand findet, auch niemand pflegt.
+.TP
+.BR \-\-idle\-timeout\-ms =\fIN\fR
+Nach \fIN\fR Millisekunden beenden, wie bei SIGTERM.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.SH SIGNALE
+SIGTERM und SIGINT beenden den Daemon: Requests, die dann ankommen, bekommen
+.BR TRANSIENT ,
+offene Requests bekommen höchstens 30 s lang ihre Antwort oder ihr
+.BR TIMEOUT ,
+dann bekommt jede Verbindung CloseConnection.
+SIGHUP liest die Konfiguration neu: Die ACL und das SSLIOP-Zertifikat gelten ab
+dann (das Zertifikat für neue Verbindungen); geänderte Zuordnungen, Binds oder
+Domäne brauchen einen Neustart und werden protokolliert. Eine Konfiguration,
+die nicht lädt, ändert nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.TP
+.B ZERODDS_CORBA_ADVERTISE_HOST
+Der Host, den die IORs nennen, wenn
+.B corba.iiop.bind
+eine Wildcard-Adresse ist; die Einstellung
+.BR corba.iiop.advertise_host ,
+über den Dateien, unter
+.BR \-\-set .
+Standard
+.IR 127.0.0.1 .
+.SH EXIT-STATUS
+0 normales Ende, 1 Konfiguration, 2 Bind, 3 DDS, 4 TLS.
+.SH DATEIEN
+.IR /etc/zerodds/corba-bridged.yaml ,
+die Datei, die
+.B corba.ior.ior_file
+nennt.
+.SH SIEHE AUCH
+.BR zerodds-corba-bridged.yaml (5).
+.SH STANDARDS
+CORBA 3.3, GIOP 1.2, SSLIOP.
+.SH AUTOREN
+ZeroDDS Contributors.

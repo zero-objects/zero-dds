@@ -11,7 +11,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §6.2 Windows
 
-**Status:** `partial` — in nightly 6555 (`windows-smoke`, `c704c3ccfaa`) 39 of 40 `transport-shm` lib tests ran green on Windows; the failing one is §6.3.
+**Status:** `partial` — in nightly 6555 (`windows-smoke`, `81d8500d495`) 39 of 40 `transport-shm` lib tests ran green on Windows; the failing one is §6.3.
 
 ## §6.3 Evidence for the Windows cleanup semantics
 

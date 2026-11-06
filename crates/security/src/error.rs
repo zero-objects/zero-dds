@@ -125,7 +125,7 @@ mod tests {
 
     /// DDS-Security 1.2 §9.2.1 Table 28: message, code and minor_code.
     #[test]
-    fn a_security_exception_has_message_code_and_minor_code() {
+    fn security_9_2_1_a_security_exception_has_message_code_and_minor_code() {
         let e = SecurityError::new(SecurityErrorKind::CryptoFailed, "tag mismatch");
         assert_eq!(
             (e.detail.as_ref(), e.code, e.minor_code),

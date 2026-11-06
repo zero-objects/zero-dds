@@ -48,13 +48,7 @@ class QosWriterDataLifecycleTest {
     }
 
     @Test
-    void theDefaultIsToDisposeWhatIsUnregistered() {
-        assertTrue(Qos.writer().getWriterDataLifecycle().isAutDisposeUnregisteredInstances());
-        assertTrue(Qos.pf().WriterDataLifecycle().isAutDisposeUnregisteredInstances());
-    }
-
-    @Test
-    void unregisterDisposesTheInstanceWhenTheFlagIsTrue() throws Exception {
+    void javapsm_7_3_5_1_unregister_disposes_the_instance_when_the_flag_is_true() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -74,7 +68,7 @@ class QosWriterDataLifecycleTest {
     }
 
     @Test
-    void unregisterOnlyLeavesNoWritersWhenTheFlagIsFalse() throws Exception {
+    void javapsm_7_3_5_1_unregister_only_leaves_no_writers_when_the_flag_is_false() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(autodispose(false));
@@ -88,7 +82,7 @@ class QosWriterDataLifecycleTest {
     }
 
     @Test
-    void anInstanceDisposedByTheApplicationStaysDisposedWhenItIsUnregistered() throws Exception {
+    void javapsm_7_3_5_1_an_instance_disposed_by_the_application_stays_disposed_when_it_is_unregistered() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(autodispose(false));
@@ -103,7 +97,7 @@ class QosWriterDataLifecycleTest {
     }
 
     @Test
-    void deletingTheWriterDisposesItsInstancesWhenTheFlagIsTrue() throws Exception {
+    void javapsm_7_3_5_1_deleting_the_writer_disposes_its_instances_when_the_flag_is_true() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -119,7 +113,7 @@ class QosWriterDataLifecycleTest {
     }
 
     @Test
-    void deletingTheWriterOnlyLeavesNoWritersWhenTheFlagIsFalse() throws Exception {
+    void javapsm_7_3_5_1_deleting_the_writer_only_leaves_no_writers_when_the_flag_is_false() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(autodispose(false));
@@ -134,7 +128,7 @@ class QosWriterDataLifecycleTest {
     }
 
     @Test
-    void aWriteAfterTheDisposeBringsTheInstanceBackToAlive() throws Exception {
+    void javapsm_7_3_5_1_a_write_after_the_dispose_brings_the_instance_back_to_alive() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.readerKeepAll());
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());

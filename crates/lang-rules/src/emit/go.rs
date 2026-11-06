@@ -508,10 +508,10 @@ impl CodecTarget for Go {
                 value: Box::new(inner(value)),
             });
         }
-        if type_ == go::Type::Primitive(go::Primitive::Bool) {
-            if let GoExpr::Plain(go::Expr::Literal(Literal::Int(text))) = &value {
-                return plain(go::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_ == go::Type::Primitive(go::Primitive::Bool)
+            && let GoExpr::Plain(go::Expr::Literal(Literal::Int(text))) = &value
+        {
+            return plain(go::Expr::Literal(Literal::Bool(text != "0")));
         }
         plain(go::Expr::Convert {
             type_: Box::new(type_),

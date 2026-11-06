@@ -29,7 +29,7 @@ const BAD_PARAMETER: i32 = -6;
 const NO_DATA: i32 = -7;
 
 #[test]
-fn a_query_condition_takes_a_new_expression_and_new_parameters() {
+fn capi_14_4_a_query_condition_takes_a_new_expression_and_new_parameters() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CQueryUpdate").unwrap();
     let type_name = CString::new("RawBytes").unwrap();

@@ -78,7 +78,7 @@ fn bound_pair(reg: &mut TypeRegistry, ext: Extensibility) -> (TypeIdentifier, Ty
 /// structure is not delimited, so two such elements that are assignable
 /// without being equivalent do not make their sequences assignable.
 #[test]
-fn a_sequence_of_final_structs_needs_equivalent_elements() {
+fn xtypes_7_2_4_3_a_sequence_of_final_structs_needs_equivalent_elements() {
     let mut reg = TypeRegistry::new();
     let (w, r) = bound_pair(&mut reg, Extensibility::Final);
     let cfg = AssignabilityConfig::default();
@@ -91,7 +91,7 @@ fn a_sequence_of_final_structs_needs_equivalent_elements() {
 /// §7.2.4.2: an `@appendable` type is delimited with encoding version 2
 /// and not with version 1; a `@mutable` one in both.
 #[test]
-fn appendable_elements_are_delimited_under_xcdr2_only() {
+fn xtypes_7_2_4_2_appendable_elements_are_delimited_under_xcdr2_only() {
     let mut reg = TypeRegistry::new();
     let (w, r) = bound_pair(&mut reg, Extensibility::Appendable);
     let xcdr2 = AssignabilityConfig::default();
@@ -121,7 +121,7 @@ fn appendable_elements_are_delimited_under_xcdr2_only() {
 /// Collections of delimited elements are delimited (§7.2.4.2), so a
 /// sequence of sequences of strings needs nothing beyond assignability.
 #[test]
-fn a_collection_of_delimited_elements_is_delimited() {
+fn xtypes_7_2_4_2_a_collection_of_delimited_elements_is_delimited() {
     let reg = TypeRegistry::new();
     let cfg = AssignabilityConfig::default();
     yes(
@@ -134,7 +134,7 @@ fn a_collection_of_delimited_elements_is_delimited() {
 
 /// Table 17, ARRAY_TYPE and MAP_TYPE.
 #[test]
-fn array_elements_and_map_keys_and_values_are_strongly_assignable() {
+fn xtypes_7_2_4_3_array_elements_and_map_keys_and_values_are_strongly_assignable() {
     let mut reg = TypeRegistry::new();
     let (w, r) = bound_pair(&mut reg, Extensibility::Final);
     let cfg = AssignabilityConfig::default();
@@ -164,7 +164,7 @@ fn array_elements_and_map_keys_and_values_are_strongly_assignable() {
 /// is strongly assignable. A `@mutable` outer type asks no more than
 /// assignability.
 #[test]
-fn members_of_appendable_and_final_types_are_strongly_assignable() {
+fn xtypes_7_2_4_3_members_of_appendable_and_final_types_are_strongly_assignable() {
     let mut reg = TypeRegistry::new();
     let (w_inner, r_inner) = bound_pair(&mut reg, Extensibility::Final);
     let cfg = AssignabilityConfig::default();
@@ -194,7 +194,7 @@ fn members_of_appendable_and_final_types_are_strongly_assignable() {
 /// Table 19, `@appendable` and `@final`: members of the same index have
 /// "the same setting for the 'optional' attribute".
 #[test]
-fn members_of_the_same_index_agree_on_optional() {
+fn xtypes_7_2_4_4_8_members_of_the_same_index_agree_on_optional() {
     let cfg = AssignabilityConfig::default();
     for ext in [Extensibility::Appendable, Extensibility::Final] {
         let mut reg = TypeRegistry::new();
@@ -218,7 +218,7 @@ fn members_of_the_same_index_agree_on_optional() {
 /// must_understand is true in either T1 or T2 appear […] in both". A
 /// member that is `@optional` is not one of them, however it is marked.
 #[test]
-fn an_optional_must_understand_member_may_be_missing() {
+fn xtypes_7_2_4_4_8_an_optional_must_understand_member_may_be_missing() {
     let cfg = AssignabilityConfig::default();
     let mut reg = TypeRegistry::new();
     let with_extra = |optional: bool| {
@@ -265,7 +265,7 @@ fn keyed_inner(key_bound: u8, ext: Extensibility) -> MinimalTypeObject {
 /// not refused when that nested type is the type of an ordinary member:
 /// the key designation of the member's type is erased.
 #[test]
-fn a_nested_types_key_bound_does_not_count_for_a_non_key_member() {
+fn xtypes_7_2_4_4_8_a_nested_types_key_bound_does_not_count_for_a_non_key_member() {
     let cfg = AssignabilityConfig::default();
     let mut reg = TypeRegistry::new();
     let w_inner = register(&mut reg, keyed_inner(16, Extensibility::Appendable));
@@ -299,7 +299,7 @@ fn a_nested_types_key_bound_does_not_count_for_a_non_key_member() {
 /// reader's union has no member for is refused, where the ordinary union
 /// rule (an `@appendable` union may grow) accepts the pair.
 #[test]
-fn every_value_of_a_union_key_member_must_select_a_member_in_the_reader() {
+fn xtypes_7_2_4_4_8_every_value_of_a_union_key_member_must_select_a_member_in_the_reader() {
     let cfg = AssignabilityConfig::default();
     let mut reg = TypeRegistry::new();
     let u_w = register(
@@ -344,7 +344,7 @@ fn every_value_of_a_union_key_member_must_select_a_member_in_the_reader() {
 /// Table 18: "T1.extensibility == T2.extensibility". An enumeration whose
 /// flag word names no extensibility is APPENDABLE (§7.3.1.2.1.8).
 #[test]
-fn an_enum_without_an_extensibility_flag_is_appendable() {
+fn xtypes_7_2_4_4_7_an_enum_without_an_extensibility_flag_is_appendable() {
     let cfg = AssignabilityConfig::default();
     let mut reg = TypeRegistry::new();
     let enum_with = |flags: u16| {

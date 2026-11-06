@@ -107,12 +107,11 @@ enum Resolved<'a> {
 
 /// Resolves a DataType NodeId to a built-in type or a custom description.
 fn resolve_kind<'a>(dt: &NodeId, meta: &'a DataSetMetaData) -> Result<Resolved<'a>, DecodeError> {
-    if dt.namespace_index == 0 {
-        if let NodeIdentifier::Numeric(id) = dt.identifier_type {
-            if (1..=25).contains(&id) {
-                return Ok(Resolved::Builtin(builtin_type_from_value(id as u8)?));
-            }
-        }
+    if dt.namespace_index == 0
+        && let NodeIdentifier::Numeric(id) = dt.identifier_type
+        && (1..=25).contains(&id)
+    {
+        return Ok(Resolved::Builtin(builtin_type_from_value(id as u8)?));
     }
     if let Some(s) = meta
         .structure_data_types
@@ -340,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_plain_custom_struct() {
+    fn uapubsub_7_2_4_decodes_plain_custom_struct() {
         // RawData: x=1.5, y=-2.0 back to back (no tags).
         let mut w = UaWriter::new();
         VariantValue::Double(1.5).encode(&mut w).unwrap();
@@ -366,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_optional_fields_via_mask() {
+    fn uapubsub_7_2_4_decodes_optional_fields_via_mask() {
         // Struct Opt{ a:Int32 (mandatory), b:Int32 (optional), c:Int32 (optional) }
         let mut m = DataSetMetaData::new(
             "ds",
@@ -416,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_union_switch() {
+    fn uapubsub_7_2_4_decodes_union_switch() {
         // Union U{ i:Int32 | d:Double }; switch=2 → d selected.
         let mut m = DataSetMetaData::new(
             "ds",
@@ -458,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn decodes_nested_struct_and_array() {
+    fn uapubsub_7_2_4_decodes_nested_struct_and_array() {
         // Outer{ name:String, points:Point[] }, Point{x:Int32,y:Int32}.
         let mut m = DataSetMetaData::new(
             "ds",

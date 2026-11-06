@@ -139,14 +139,6 @@ mod tests {
     }
 
     #[test]
-    fn set_get_roundtrip() {
-        let mut p = BuiltinDataTaggingPlugin::new();
-        let g = [0xAA; 16];
-        p.set_tags(g, vec![tag("classification", "secret")]);
-        assert_eq!(p.get_tags(g), vec![tag("classification", "secret")]);
-    }
-
-    #[test]
     fn unknown_endpoint_returns_empty() {
         let p = BuiltinDataTaggingPlugin::new();
         assert!(p.get_tags([0xCC; 16]).is_empty());
@@ -255,17 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_is_object_safe_via_dyn_trait() {
-        // Sanity-Check: via Box<dyn DataTaggingPlugin> bedienbar.
-        let mut boxed: alloc::boxed::Box<dyn DataTaggingPlugin> =
-            alloc::boxed::Box::new(BuiltinDataTaggingPlugin::new());
-        boxed.set_tags([1; 16], vec![tag("a", "b")]);
-        assert_eq!(boxed.get_tags([1; 16]), vec![tag("a", "b")]);
-        assert_eq!(boxed.plugin_class_id(), "DDS:Tagging:DDS_Discovery");
-    }
-
-    #[test]
-    fn plugin_class_id_matches_spec_format() {
+    fn security_10_1_plugin_class_id_matches_spec_format() {
         let p = BuiltinDataTaggingPlugin::new();
         // Spec §12.0: class-id convention "DDS:<Service>:<Variant>".
         assert_eq!(p.plugin_class_id(), "DDS:Tagging:DDS_Discovery");

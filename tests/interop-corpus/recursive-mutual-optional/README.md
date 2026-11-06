@@ -2,7 +2,7 @@
 
 **Construct** — two types on one cycle, one member `@optional` and one not
 
-XTypes 1.3 §7.3.1.2.1.3: `A.tail` holds a `B` optionally and `B.head` holds an `A` with no annotation; the absent `tail` is what ends a value. `Holder` is `@appendable` and holds a `B`, so a type outside the cycle reaches into it. Three findings came out of this case: a `@mutable` member's length code planned outside the `@optional` barrier and refused the type (`64159547c8d`); a type that holds a member of a recursive component got no TypeIdentifier (`198ad0f4dda`); and its first version named members `b` and `a` beside types `B` and `A`, which OMG IDL 4.2 §7.2.3.1 refuses.
+XTypes 1.3 §7.3.1.2.1.3: `A.tail` holds a `B` optionally and `B.head` holds an `A` with no annotation; the absent `tail` is what ends a value. `Holder` is `@appendable` and holds a `B`, so a type outside the cycle reaches into it. Three findings came out of this case: a `@mutable` member's length code planned outside the `@optional` barrier and refused the type (`e3ef9a95346`); a type that holds a member of a recursive component got no TypeIdentifier (`71365c86b93`); and its first version named members `b` and `a` beside types `B` and `A`, which OMG IDL 4.2 §7.2.3.1 refuses.
 
 ## The axis
 

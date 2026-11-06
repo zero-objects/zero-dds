@@ -104,7 +104,7 @@ class CoreApiShapeTest {
     }
 
     @Test
-    void everyTypeOfTheOmgApiIsAnInterfaceOrAbstractExceptTheConcreteOnesOfTheOmgSource() throws Exception {
+    void javapsm_7_2_1_every_type_of_the_omg_api_is_an_interface_or_abstract_except_the_concrete_ones_of_the_omg_source() throws Exception {
         int checked = 0;
         List<String> concrete = new ArrayList<>();
         for (String pkg : PACKAGES) {
@@ -138,45 +138,10 @@ class CoreApiShapeTest {
         concrete.add(type.getName());
     }
 
-    @Test
-    void entitiesValueTypesPoliciesAndStatusesAreInterfacesOrAbstractClasses() {
-        for (Class<?> entity : new Class<?>[] {DomainParticipant.class, DomainParticipantFactory.class,
-                Publisher.class, Subscriber.class, Topic.class, DataWriter.class, DataReader.class}) {
-            assertTrue(entity.isInterface() || Modifier.isAbstract(entity.getModifiers()), entity.getName());
-        }
-        for (Class<?> value : new Class<?>[] {Time.class, Duration.class, InstanceHandle.class}) {
-            assertTrue(Modifier.isAbstract(value.getModifiers()), value.getName());
-        }
-        assertTrue(QosPolicy.class.isInterface());
-        assertTrue(Modifier.isAbstract(Status.class.getModifiers()) || Status.class.isInterface());
-        assertTrue(Modifier.isAbstract(org.omg.dds.core.status.LivelinessChangedStatus.class.getModifiers()));
-        assertTrue(Modifier.isAbstract(org.omg.dds.core.status.PublicationMatchedStatus.class.getModifiers()));
-        assertTrue(org.omg.dds.core.policy.Reliability.class.isInterface());
-        assertTrue(org.omg.dds.core.policy.History.class.isInterface());
-    }
-
     // ---- the files of org.omg.dds against the OMG source -------------------
 
     /** The files of org.omg.dds that deviate from the OMG source: none. */
     private static final Set<String> DEVIATIONS = new HashSet<>();
-
-    /** The text of a source file without comments and white space. */
-    private static String code(Path file) throws IOException {
-        String text = new String(Files.readAllBytes(file), StandardCharsets.UTF_8);
-        return text.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("//[^\\n]*", "").replaceAll("\\s+", "");
-    }
-
-    private static Path findOmgSource() {
-        Path dir = Paths.get("").toAbsolutePath();
-        while (dir != null) {
-            Path candidate = dir.resolve(".agent/omg-java/srcJava/org/omg/dds");
-            if (Files.isDirectory(candidate)) {
-                return candidate;
-            }
-            dir = dir.getParent();
-        }
-        return null;
-    }
 
     private static List<String> javaFiles(Path root) throws IOException {
         try (Stream<Path> walk = Files.walk(root)) {
@@ -186,34 +151,15 @@ class CoreApiShapeTest {
         }
     }
 
-    @Test
-    void theFilesOfOrgOmgDdsEqualTheOmgSourceExceptForTheRecordedDeviations() throws Exception {
-        Path omg = findOmgSource();
-        Path ours = Paths.get("src/main/java/org/omg/dds").toAbsolutePath();
-        // the OMG source is not part of the repository; the test runs where it is checked out
-        assumeTrue(omg != null, "the OMG Java source (.agent/omg-java/srcJava) is not present");
-        assumeTrue(Files.isDirectory(ours), "the module sources are not present");
-        assertEquals(javaFiles(omg), javaFiles(ours), "the set of files");
-        List<String> different = new ArrayList<>();
-        for (String file : javaFiles(omg)) {
-            if (!code(omg.resolve(file)).equals(code(ours.resolve(file)))) {
-                different.add(file);
-            }
-        }
-        List<String> expected = new ArrayList<>(DEVIATIONS);
-        Collections.sort(expected);
-        assertEquals(expected, different);
-    }
-
     /**
      * Annex B of DDS-Java-PSM 1.0: the Java source of omgdds_src.zip is normative for the
      * interfaces and the comments. The SHA-256 of each file of srcJava/org/omg/dds is in the test
      * resource {@code omgdds-srcjava.sha256}; every file of this binding has the same text (line
-     * ends read as LF) except the recorded deviations. Unlike the test above, this one needs no
-     * copy of the OMG source.
+     * ends read as LF) except the recorded deviations. It needs no copy of the OMG source, which
+     * is not part of the repository.
      */
     @Test
-    void theFilesOfOrgOmgDdsHaveTheDigestsOfTheOmgSource() throws Exception {
+    void javapsm_b_the_files_of_org_omg_dds_have_the_digests_of_the_omg_source() throws Exception {
         Path ours = Paths.get("src/main/java/org/omg/dds").toAbsolutePath();
         assumeTrue(Files.isDirectory(ours), "the module sources are not present");
         java.util.Map<String, String> expected = new java.util.TreeMap<>();

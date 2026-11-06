@@ -18,7 +18,7 @@ use alloc::vec::Vec;
 use zerodds_opcua_gateway::dds_to_ua::walker::{
     BitmaskDef, DdsType, EnumDef, MemberDef, StructDef, UnionCase, UnionDef,
 };
-use zerodds_types::dynamic::{DynamicType, DynamicTypeMember, TypeKind};
+use zerodds_types::dynamic::{DynamicType, DynamicTypeMember, LENGTH_UNLIMITED, TypeKind};
 
 /// A `DynamicType` this module cannot map onto [`DdsType`] — named rather
 /// than approximated, so a config referencing such a type fails loudly at
@@ -268,7 +268,7 @@ fn sequence(ty: &DynamicType, depth: usize) -> Result<DdsType, ConvertError> {
         .map_err(|e| ConvertError::Unresolved(format!("{}: {e:?}", ty.qualified_name())))?;
     Ok(DdsType::Sequence {
         element: Box::new(convert(&element, depth + 1)?),
-        bound: descriptor.bound.first().copied(),
+        bound: collection_bound(&descriptor.bound),
     })
 }
 
@@ -288,8 +288,21 @@ fn map(ty: &DynamicType, depth: usize) -> Result<DdsType, ConvertError> {
     Ok(DdsType::Map {
         key: Box::new(convert(&key, depth + 1)?),
         value: Box::new(convert(&value, depth + 1)?),
-        bound: descriptor.bound.first().copied(),
+        bound: collection_bound(&descriptor.bound),
     })
+}
+
+/// The bound of a sequence or a map, `None` when it has none.
+///
+/// DDS-XTypes 1.3 §7.5.2.4.2 (Table 50): the `TypeDescriptor` of an
+/// unbounded collection carries `LENGTH_UNLIMITED` as its bound, which the
+/// OPC UA side must see as "no bound" (ArrayDimensions `[0]`), not as
+/// 4294967295 elements.
+fn collection_bound(bound: &[u32]) -> Option<u32> {
+    bound
+        .first()
+        .copied()
+        .filter(|&value| value != LENGTH_UNLIMITED)
 }
 
 fn members(ty: &DynamicType) -> Result<Vec<DynamicTypeMember>, ConvertError> {
@@ -319,7 +332,7 @@ mod tests {
     }
 
     #[test]
-    fn primitive_members_map_1_to_1() {
+    fn opcuabridge_12_1_primitive_members_map_1_to_1() {
         let ast = ast_of("struct P { boolean a; long b; double c; string d; };");
         let dt = DynamicType::find(&ast, "P").expect("type");
         let converted = to_dds_type(&dt).expect("convert");
@@ -344,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn nested_struct_recurses() {
+    fn opcuabridge_12_1_nested_struct_recurses() {
         let ast = ast_of("struct Inner { long v; }; struct Outer { Inner i; };");
         let dt = DynamicType::find(&ast, "Outer").expect("type");
         let DdsType::Struct(s) = to_dds_type(&dt).expect("convert") else {
@@ -387,6 +400,26 @@ mod tests {
         assert!(matches!(**element, DdsType::Struct(_)));
     }
 
+    /// DDS-XTypes 1.3 §7.5.2.4.2 (Table 50): an unbounded collection's
+    /// descriptor carries `LENGTH_UNLIMITED`, which is no bound and not a
+    /// bound of 4294967295; the gateway gives it ArrayDimensions `[0]`.
+    #[test]
+    fn xtypes_7_5_2_4_2_an_unbounded_sequence_or_map_has_no_bound() {
+        let ast = ast_of("struct Holder { sequence<long> s; map<string, long> m; };");
+        let dt = DynamicType::find(&ast, "Holder").expect("type");
+        let DdsType::Struct(s) = to_dds_type(&dt).expect("convert") else {
+            panic!("expected struct");
+        };
+        let DdsType::Sequence { bound, .. } = &s.members[0].member_type else {
+            panic!("expected sequence");
+        };
+        assert_eq!(*bound, None);
+        let DdsType::Map { bound, .. } = &s.members[1].member_type else {
+            panic!("expected map");
+        };
+        assert_eq!(*bound, None);
+    }
+
     #[test]
     fn array_member_carries_dimensions() {
         let ast = ast_of("struct S { long grid[3][4]; };");
@@ -415,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn union_carries_discriminator_and_cases() {
+    fn opcuabridge_12_1_union_carries_discriminator_and_cases() {
         let ast = ast_of("union U switch (long) { case 0: long a; case 1: default: short b; };");
         let dt = DynamicType::find(&ast, "U").expect("type");
         let DdsType::Union(u) = to_dds_type(&dt).expect("convert") else {
@@ -427,7 +460,7 @@ mod tests {
     }
 
     #[test]
-    fn fixed_point_type_is_a_named_unmapped_error() {
+    fn opcuabridge_5_3_fixed_point_type_is_a_named_unmapped_error() {
         // `fixed<P,S>` is CORBA-only in this codebase's own IDL surface;
         // this test documents the refusal shape without depending on a
         // parseable `fixed` declaration (float128 is a stand-in that also

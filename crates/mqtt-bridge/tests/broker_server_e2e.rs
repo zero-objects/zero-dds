@@ -24,7 +24,7 @@ fn start() -> zerodds_mqtt_bridge::server::ServerHandle {
 const TO: Duration = Duration::from_secs(3);
 
 #[test]
-fn publish_subscribe_qos1() {
+fn mqtt5_4_publish_subscribe_qos1() {
     let server = start();
     let addr = server.local_addr().to_string();
 
@@ -45,7 +45,7 @@ fn publish_subscribe_qos1() {
 }
 
 #[test]
-fn retained_message_delivered_to_late_subscriber() {
+fn mqtt5_4_retained_message_delivered_to_late_subscriber() {
     let server = start();
     let addr = server.local_addr().to_string();
 
@@ -67,7 +67,7 @@ fn retained_message_delivered_to_late_subscriber() {
 }
 
 #[test]
-fn wildcard_plus_and_hash() {
+fn mqtt5_4_wildcard_plus_and_hash() {
     let server = start();
     let addr = server.local_addr().to_string();
 
@@ -87,7 +87,7 @@ fn wildcard_plus_and_hash() {
 }
 
 #[test]
-fn qos2_exactly_once_delivery() {
+fn mqtt5_4_qos2_exactly_once_delivery() {
     let server = start();
     let addr = server.local_addr().to_string();
 
@@ -110,7 +110,7 @@ fn qos2_exactly_once_delivery() {
 }
 
 #[test]
-fn cross_version_v5_publishes_v311_subscribes() {
+fn mqtt5_4_cross_version_v5_publishes_v311_subscribes() {
     let server = start();
     let addr = server.local_addr().to_string();
 
@@ -132,7 +132,7 @@ fn cross_version_v5_publishes_v311_subscribes() {
 }
 
 #[test]
-fn cross_version_v311_publishes_v5_subscribes() {
+fn mqtt5_4_cross_version_v311_publishes_v5_subscribes() {
     let server = start();
     let addr = server.local_addr().to_string();
 
@@ -167,7 +167,7 @@ fn cross_version_v311_publishes_v5_subscribes() {
 /// in-process broker does not drop a silent client; the 1.5x expiry rule
 /// is held by `keep_alive::tests::small_keep_alive_expires_after_1_5x`.
 #[test]
-fn pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive() {
+fn mqtt5_4_pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive() {
     let server = start();
     let addr = server.local_addr().to_string();
 

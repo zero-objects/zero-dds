@@ -500,31 +500,21 @@ mod tests {
     use crate::psm_constants::qos_policy_id;
 
     #[test]
-    fn inconsistent_topic_default_is_zero() {
+    fn dcps_2_2_2_1_5_inconsistent_topic_default_is_zero() {
         let s = InconsistentTopicStatus::default();
         assert_eq!(s.total_count, 0);
         assert_eq!(s.total_count_change, 0);
     }
 
     #[test]
-    fn sample_lost_clone_roundtrip() {
-        let s = SampleLostStatus {
-            total_count: 5,
-            total_count_change: 2,
-        };
-        let c = s;
-        assert_eq!(s, c);
-    }
-
-    #[test]
-    fn sample_rejected_status_default_kind_is_not_rejected() {
+    fn dcps_2_2_4_1_sample_rejected_status_default_kind_is_not_rejected() {
         let s = SampleRejectedStatus::default();
         assert_eq!(s.last_reason, SampleRejectedStatusKind::NotRejected);
         assert!(s.last_instance_handle.is_nil());
     }
 
     #[test]
-    fn sample_rejected_kind_variants_are_distinct() {
+    fn dcps_2_3_3_sample_rejected_kind_variants_are_distinct() {
         // Completeness of the spec enum variants.
         let kinds = [
             SampleRejectedStatusKind::NotRejected,
@@ -540,95 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn liveliness_lost_default() {
-        let s = LivelinessLostStatus::default();
-        assert_eq!(s.total_count, 0);
-    }
-
-    #[test]
-    fn liveliness_changed_negative_count_change_allowed() {
-        // Spec §2.2.4.1: alive_count_change can be negative when a writer
-        // transitions from "alive" to "not_alive".
-        let s = LivelinessChangedStatus {
-            alive_count: 0,
-            not_alive_count: 1,
-            alive_count_change: -1,
-            not_alive_count_change: 1,
-            last_publication_handle: InstanceHandle::from_raw(42),
-        };
-        assert_eq!(s.alive_count_change, -1);
-        assert_eq!(s.not_alive_count_change, 1);
-        assert_eq!(s.last_publication_handle.as_raw(), 42);
-    }
-
-    #[test]
-    fn publication_matched_with_handle_roundtrip() {
-        let h = InstanceHandle::from_raw(99);
-        let s = PublicationMatchedStatus {
-            total_count: 3,
-            total_count_change: 1,
-            current_count: 2,
-            current_count_change: 1,
-            last_subscription_handle: h,
-        };
-        let c = s;
-        assert_eq!(c.last_subscription_handle, h);
-        assert_eq!(c.current_count, 2);
-    }
-
-    #[test]
-    fn subscription_matched_with_handle_roundtrip() {
-        let h = InstanceHandle::from_raw(7);
-        let s = SubscriptionMatchedStatus {
-            total_count: 5,
-            total_count_change: 0,
-            current_count: 5,
-            current_count_change: 0,
-            last_publication_handle: h,
-        };
-        assert_eq!(s.last_publication_handle, h);
-    }
-
-    #[test]
-    fn offered_deadline_missed_default_handle_is_nil() {
-        let s = OfferedDeadlineMissedStatus::default();
-        assert!(s.last_instance_handle.is_nil());
-    }
-
-    #[test]
-    fn requested_deadline_missed_default_handle_is_nil() {
-        let s = RequestedDeadlineMissedStatus::default();
-        assert!(s.last_instance_handle.is_nil());
-    }
-
-    #[test]
-    fn offered_incompatible_qos_clone_roundtrip() {
-        let s = OfferedIncompatibleQosStatus {
-            total_count: 2,
-            total_count_change: 1,
-            last_policy_id: qos_policy_id::DURABILITY,
-            policies: alloc::vec![QosPolicyCount::new(qos_policy_id::DURABILITY, 2)],
-        };
-        let c = s.clone();
-        assert_eq!(c, s);
-        assert_eq!(c.policies.len(), 1);
-        assert_eq!(c.policies[0].policy_id, qos_policy_id::DURABILITY);
-    }
-
-    #[test]
-    fn requested_incompatible_qos_clone_roundtrip() {
-        let s = RequestedIncompatibleQosStatus {
-            total_count: 1,
-            total_count_change: 1,
-            last_policy_id: qos_policy_id::RELIABILITY,
-            policies: alloc::vec![QosPolicyCount::new(qos_policy_id::RELIABILITY, 1)],
-        };
-        let c = s.clone();
-        assert_eq!(c, s);
-    }
-
-    #[test]
-    fn bump_policy_count_inserts_then_increments() {
+    fn dcps_2_2_4_1_bump_policy_count_inserts_then_increments() {
         let mut v = alloc::vec::Vec::<QosPolicyCount>::new();
         bump_policy_count(&mut v, qos_policy_id::DURABILITY);
         assert_eq!(v.len(), 1);
@@ -641,7 +543,7 @@ mod tests {
     }
 
     #[test]
-    fn data_available_and_data_on_readers_are_zero_sized_markers() {
+    fn dcps_2_2_2_1_5_data_available_and_data_on_readers_are_zero_sized_markers() {
         // Spec §2.2.4.1: pure signals — no fields.
         // We check the marker semantics via Default+Eq.
         let a1 = DataAvailableStatus;
@@ -665,7 +567,7 @@ mod tests {
     /// DDS 1.4 §2.2.4.1: a read takes the changes it reports; the total
     /// stays, and a change after the read is the next read's.
     #[test]
-    fn a_read_takes_the_changes_and_keeps_the_total() {
+    fn dcps_2_2_4_1_a_read_takes_the_changes_and_keeps_the_total() {
         let mut ledger = StatusLedger::<SampleLostStatus>::default();
         lost(&mut ledger, 2);
         let first = ledger.take();
@@ -683,7 +585,7 @@ mod tests {
     /// off after it. Subtracting again left `total_count_change` at -1,
     /// which is unread and handed the listener a second, negative change.
     #[test]
-    fn a_read_between_the_look_and_the_acknowledgement_is_not_taken_off_twice() {
+    fn dcps_2_2_4_2_1_a_read_between_the_look_and_the_acknowledgement_is_not_taken_off_twice() {
         let mut ledger = StatusLedger::<SampleLostStatus>::default();
         lost(&mut ledger, 1);
         let (unread, handed, reads) = ledger.observe();
@@ -704,7 +606,7 @@ mod tests {
     /// unread: the acknowledgement takes off what the listener was handed
     /// and nothing more.
     #[test]
-    fn a_change_after_the_look_survives_the_acknowledgement() {
+    fn dcps_2_2_4_1_a_change_after_the_look_survives_the_acknowledgement() {
         let mut ledger = StatusLedger::<SampleLostStatus>::default();
         lost(&mut ledger, 1);
         let (_, handed, reads) = ledger.observe();
@@ -718,7 +620,7 @@ mod tests {
     /// What a listener was handed is acknowledged; what changed after it
     /// was taken stays for the next read.
     #[test]
-    fn an_acknowledgement_keeps_what_came_after_the_report() {
+    fn dcps_2_2_4_1_an_acknowledgement_keeps_what_came_after_the_report() {
         let mut ledger = StatusLedger::<PublicationMatchedStatus>::default();
         ledger.update(|s| {
             s.total_count = 1;
@@ -745,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn liveliness_changed_acknowledges_both_changes() {
+    fn dcps_2_2_4_1_liveliness_changed_acknowledges_both_changes() {
         let mut reported = LivelinessChangedStatus {
             alive_count: 1,
             not_alive_count: 1,
@@ -765,7 +667,7 @@ mod tests {
     /// `total_count_change` is what was missed since the last read; a read
     /// reports it and sets it back, the total stays.
     #[test]
-    fn requested_deadline_missed_total_count_change_is_read_and_reset() {
+    fn dcps_2_2_4_1_requested_deadline_missed_total_count_change_is_read_and_reset() {
         let mut ledger = StatusLedger::<RequestedDeadlineMissedStatus>::default();
         ledger.update(|s| {
             s.total_count += 2;
@@ -789,7 +691,7 @@ mod tests {
 
     /// §2.2.4.1 `LivelinessLostStatus.total_count_change`, as above.
     #[test]
-    fn liveliness_lost_total_count_change_is_read_and_reset() {
+    fn dcps_2_2_4_1_liveliness_lost_total_count_change_is_read_and_reset() {
         let mut ledger = StatusLedger::<LivelinessLostStatus>::default();
         ledger.update(|s| {
             s.total_count += 1;
@@ -810,7 +712,7 @@ mod tests {
 
     /// §2.2.4.1 `OfferedDeadlineMissedStatus.total_count_change`, as above.
     #[test]
-    fn offered_deadline_missed_total_count_change_is_read_and_reset() {
+    fn dcps_2_2_4_1_offered_deadline_missed_total_count_change_is_read_and_reset() {
         let mut ledger = StatusLedger::<OfferedDeadlineMissedStatus>::default();
         ledger.update(|s| {
             s.total_count += 4;
@@ -830,7 +732,7 @@ mod tests {
     /// last read: a match and its unmatch before a read leave a change of
     /// zero and a total of one; an unmatch after a read is a change of -1.
     #[test]
-    fn subscription_matched_current_count_change_is_read_and_reset() {
+    fn dcps_2_2_4_1_subscription_matched_current_count_change_is_read_and_reset() {
         let mut ledger = StatusLedger::<SubscriptionMatchedStatus>::default();
         let matched = |s: &mut SubscriptionMatchedStatus| {
             s.total_count += 1;

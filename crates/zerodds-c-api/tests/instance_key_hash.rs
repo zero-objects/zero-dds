@@ -21,7 +21,7 @@ const OK: i32 = 0;
 const BAD_PARAMETER: i32 = -6;
 
 #[test]
-fn the_key_hash_of_a_registered_instance_comes_back_and_an_unknown_handle_is_refused() {
+fn capi_14_7_the_key_hash_of_a_registered_instance_comes_back_and_an_unknown_handle_is_refused() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CInstanceKeyHash").unwrap();
     let type_name = CString::new("RawBytes").unwrap();

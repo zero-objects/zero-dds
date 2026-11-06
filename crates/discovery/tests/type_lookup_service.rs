@@ -33,7 +33,6 @@ use zerodds_types::type_lookup::{
 };
 use zerodds_types::type_object::TypeObject;
 use zerodds_types::{EquivalenceHash, MinimalTypeObject, PrimitiveKind, TypeIdentifier};
-use zerodds_wire::{Endianness, Reader, Writer};
 
 fn sample_struct(name: &str) -> MinimalTypeObject {
     MinimalTypeObject::Struct(
@@ -44,7 +43,7 @@ fn sample_struct(name: &str) -> MinimalTypeObject {
 }
 
 #[test]
-fn server_handle_get_types_happy_path_one_type() {
+fn xtypes_7_6_3_3_4_server_handle_get_types_happy_path_one_type() {
     let mut server = TypeLookupServer::new();
     let m = sample_struct("::Foo");
     let h = zerodds_types::compute_minimal_hash(&m).unwrap();
@@ -61,18 +60,6 @@ fn server_handle_get_types_happy_path_one_type() {
         reply.types[0].type_identifier,
         TypeIdentifier::EquivalenceHashMinimal(h)
     );
-}
-
-#[test]
-fn server_handle_get_types_unknown_returns_empty_no_error() {
-    let server = TypeLookupServer::new();
-    let req = GetTypesRequest {
-        type_ids: vec![TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash(
-            [0xAB; 14],
-        ))],
-    };
-    let reply = server.handle_get_types(&req);
-    assert!(reply.types.is_empty());
 }
 
 #[test]
@@ -105,7 +92,7 @@ fn server_handle_get_types_with_100_types_no_pagination() {
 }
 
 #[test]
-fn server_handle_get_type_dependencies_struct_with_5_deps() {
+fn xtypes_7_6_3_3_4_1_server_handle_get_type_dependencies_struct_with_5_deps() {
     let mut server = TypeLookupServer::new();
     let mut builder = TypeObjectBuilder::struct_type("::Root");
     let mut dep_hashes = Vec::new();
@@ -134,7 +121,7 @@ fn server_handle_get_type_dependencies_struct_with_5_deps() {
 }
 
 #[test]
-fn server_continuation_point_paginates_200_dependencies() {
+fn xtypes_7_6_3_3_4_1_server_continuation_point_paginates_200_dependencies() {
     let mut server = TypeLookupServer::new().with_page_size(100);
     let mut builder = TypeObjectBuilder::struct_type("::Big");
     for i in 0..200u32 {
@@ -236,14 +223,6 @@ fn server_handle_get_types_empty_request() {
 }
 
 #[test]
-fn client_request_types_assigns_unique_ids() {
-    let mut client = TypeLookupClient::new();
-    let id1 = client.request_types(vec![], Box::new(|_| {}));
-    let id2 = client.request_types(vec![], Box::new(|_| {}));
-    assert_ne!(id1, id2);
-}
-
-#[test]
 fn client_handle_reply_invokes_correct_callback() {
     let last_id: Arc<Mutex<Option<RequestId>>> = Arc::new(Mutex::new(None));
     let captured: Arc<Mutex<usize>> = Arc::new(Mutex::new(0));
@@ -275,17 +254,7 @@ fn client_handle_reply_invokes_correct_callback() {
 }
 
 #[test]
-fn client_handle_reply_unknown_id_does_not_panic() {
-    let mut client = TypeLookupClient::new();
-    let consumed = client.handle_reply(
-        RequestId(42),
-        TypeLookupReply::Types(GetTypesReply::default()),
-    );
-    assert!(!consumed);
-}
-
-#[test]
-fn service_instance_name_format_matches_spec() {
+fn xtypes_7_6_3_3_4_service_instance_name_format_matches_spec() {
     let prefix = GuidPrefix::from_bytes([
         0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22, 0x33, 0x44,
     ]);
@@ -299,7 +268,7 @@ fn service_instance_name_format_matches_spec() {
 }
 
 #[test]
-fn typelookup_endpoints_4_distinct_guids_per_participant() {
+fn xtypes_7_6_3_3_1_typelookup_endpoints_4_distinct_guids_per_participant() {
     let prefix = GuidPrefix::from_bytes([0x77; 12]);
     let e = TypeLookupEndpoints::new(prefix);
     let guids = e.all_guids();
@@ -338,15 +307,15 @@ fn cross_plugin_server_emits_reply_client_parses_typeobject() {
 
     // Wire roundtrip: request bytes → server.
     let req_bytes = request_types_payload(&[TypeIdentifier::EquivalenceHashMinimal(h)]).unwrap();
-    let mut r = Reader::new(&req_bytes, Endianness::Little);
+    let mut r = zerodds_types::framing::xcdr2_reader(&req_bytes);
     let req = GetTypesRequest::decode_from(&mut r).unwrap();
     let reply = server.handle_get_types(&req);
 
     // Wire roundtrip: reply bytes → client.
-    let mut w = Writer::new(Endianness::Little);
+    let mut w = zerodds_types::framing::xcdr2_writer();
     reply.encode_into(&mut w).unwrap();
     let reply_bytes = w.finish();
-    let mut r = Reader::new(&reply_bytes, Endianness::Little);
+    let mut r = zerodds_types::framing::xcdr2_reader(&reply_bytes);
     let decoded_reply = GetTypesReply::decode_from(&mut r).unwrap();
 
     // Callback fires.
@@ -355,7 +324,7 @@ fn cross_plugin_server_emits_reply_client_parses_typeobject() {
 }
 
 #[test]
-fn typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair() {
+fn xtypes_7_6_3_3_4_2_typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair() {
     // Spec §7.6.3.3.4 §a: when client requests Complete and server has
     // both, server includes a complete_to_minimal mapping. We test
     // that both hash variants are independently resolvable.
@@ -387,7 +356,7 @@ fn typeidentifier_with_minimal_hash_yields_complete_to_minimal_pair() {
 }
 
 #[test]
-fn dependencies_payload_carries_continuation_point() {
+fn xtypes_7_6_3_3_4_1_dependencies_payload_carries_continuation_point() {
     let cp = ContinuationPoint(vec![0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     let bytes = request_dependencies_payload(
         &[TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash(
@@ -396,7 +365,7 @@ fn dependencies_payload_carries_continuation_point() {
         cp.clone(),
     )
     .unwrap();
-    let mut r = Reader::new(&bytes, Endianness::Little);
+    let mut r = zerodds_types::framing::xcdr2_reader(&bytes);
     let decoded = GetTypeDependenciesRequest::decode_from(&mut r).unwrap();
     assert_eq!(decoded.continuation_point, cp);
 }

@@ -142,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tree_names_every_type_and_its_members() {
+    fn deployment_1_3_the_tree_names_every_type_and_its_members() {
         let out = tree(&model(
             "module m { struct Inner { long a; }; struct S { @key long id; Inner inner; }; };",
         ));

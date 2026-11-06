@@ -357,7 +357,7 @@ fn identifier_of(root: &zerodds_types::CompleteTypeObject) -> zerodds_types::Typ
 /// and stores the object; a name it does not know, and the name without its
 /// module, are STATUS_ERR_UNKNOWN_REFERENCE and store nothing.
 #[test]
-fn a_type_by_reference_names_a_known_type_by_its_fully_qualified_name() {
+fn xrce_7_7_3_1_2_a_type_by_reference_names_a_known_type_by_its_fully_qualified_name() {
     let root = type_object(
         "module MyModule { @final struct ShapeType { @key string color; long x; }; };",
         "spec-items-session-module.idl",
@@ -424,7 +424,8 @@ fn a_type_by_reference_names_a_known_type_by_its_fully_qualified_name() {
 ///   STATUS_OK, the topic has the type `Alpha`;
 /// - neither member: STATUS_ERR_INVALID_DATA, no topic is created.
 #[test]
-fn a_binary_topic_takes_its_type_from_the_type_identifier_and_needs_one_of_the_two() {
+fn xrce_7_7_3_7_3_a_binary_topic_takes_its_type_from_the_type_identifier_and_needs_one_of_the_two()
+{
     use zerodds_wire::{Endianness as WireEndianness, Writer};
     let idl = "@final struct Alpha { @key long id; }; @final struct Beta { string text; };";
     let alpha = type_object(idl, "spec-items-session-topic.idl", "Alpha");
@@ -538,7 +539,7 @@ fn client_with_topic(e: &mut SessionEngine<RecordingPort>, client: Key) {
 /// and it was created on the topic `Square` with the partition of its
 /// Subscriber.
 #[test]
-fn a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader() {
+fn xrce_7_7_3_1_2_a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader() {
     let mut e = SessionEngine::new(RecordingPort::default(), config());
     let client = [0x53; CLIENT_KEY_LEN];
     client_with_topic(&mut e, client);
@@ -601,7 +602,7 @@ fn a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader() {
 /// STATUS_OK; the DDS side gets a reader on the topic `Square` that is
 /// reliable, keeps the last 7 samples and has the filter expression `x > 100`.
 #[test]
-fn a_data_reader_in_xml_has_its_qos_and_its_content_filter() {
+fn xrce_7_7_3_1_2_a_data_reader_in_xml_has_its_qos_and_its_content_filter() {
     let mut e = SessionEngine::new(RecordingPort::default(), config());
     let client = [0x54; CLIENT_KEY_LEN];
     client_with_topic(&mut e, client);
@@ -651,7 +652,7 @@ fn a_data_reader_in_xml_has_its_qos_and_its_content_filter() {
 /// ClientKey is answered STATUS_AGENT with STATUS_ERR_RESOURCES; the agent
 /// holds no second client and drops the messages of its key.
 #[test]
-fn create_client_over_max_clients_is_a_resource_error() {
+fn xrce_7_7_7_create_client_over_max_clients_is_a_resource_error() {
     let mut e = SessionEngine::new(
         NullDdsPort::new(),
         SessionEngineConfig {
@@ -690,7 +691,7 @@ fn create_client_over_max_clients_is_a_resource_error() {
 /// `max_objects_per_client`: with two objects held, the third CREATE is
 /// answered STATUS_ERR_RESOURCES and the object is not stored.
 #[test]
-fn create_over_max_objects_per_client_is_a_resource_error() {
+fn xrce_7_7_7_create_over_max_objects_per_client_is_a_resource_error() {
     let mut e = SessionEngine::new(
         NullDdsPort::new(),
         SessionEngineConfig {
@@ -732,7 +733,7 @@ fn create_over_max_objects_per_client_is_a_resource_error() {
 /// arrives the 65 messages 0 to 64 are released, and the participant of the
 /// refused CREATE does not exist.
 #[test]
-fn a_full_reorder_buffer_of_a_reliable_stream_is_a_resource_error() {
+fn xrce_7_7_7_a_full_reorder_buffer_of_a_reliable_stream_is_a_resource_error() {
     let mut e = SessionEngine::new(NullDdsPort::new(), config());
     let client = [0x64; CLIENT_KEY_LEN];
     connect(&mut e, client);
@@ -795,7 +796,7 @@ fn a_full_reorder_buffer_of_a_reliable_stream_is_a_resource_error() {
 /// holds a CREATE of a participant, 255 more of four octets follow, the 257th
 /// is answered STATUS_ERR_RESOURCES, and the participant is not created.
 #[test]
-fn a_fragment_run_over_its_limit_is_a_resource_error() {
+fn xrce_7_7_7_a_fragment_run_over_its_limit_is_a_resource_error() {
     let mut e = SessionEngine::new(NullDdsPort::new(), config());
     let client = [0x65; CLIENT_KEY_LEN];
     connect(&mut e, client);
@@ -849,7 +850,7 @@ fn a_fragment_run_over_its_limit_is_a_resource_error() {
 /// STATUS_ERR_UNKNOWN_REFERENCE. After a DELETE of an object it did create
 /// (STATUS_OK), a second DELETE of it is STATUS_ERR_UNKNOWN_REFERENCE too.
 #[test]
-fn delete_of_an_object_that_does_not_exist_is_an_unknown_reference() {
+fn xrce_7_8_3_4_delete_of_an_object_that_does_not_exist_is_an_unknown_reference() {
     let mut e = SessionEngine::new(NullDdsPort::new(), config());
     let client = [0x66; CLIENT_KEY_LEN];
     connect(&mut e, client);
@@ -888,7 +889,7 @@ fn delete_of_an_object_that_does_not_exist_is_an_unknown_reference() {
 /// reliable stream. The HEARTBEAT is sent in a message of STREAMID_NONE and
 /// in a message of the reliable stream itself.
 #[test]
-fn the_acknack_of_the_agent_is_on_streamid_none() {
+fn xrce_8_3_5_11_the_acknack_of_the_agent_is_on_streamid_none() {
     let mut e = SessionEngine::new(NullDdsPort::new(), config());
     let client = [0x67; CLIENT_KEY_LEN];
     connect(&mut e, client);
@@ -944,7 +945,7 @@ fn the_acknack_of_the_agent_is_on_streamid_none() {
 /// has `StreamId::NONE`, whether the TIMESTAMP came in a message of
 /// STREAMID_NONE or of a reliable stream.
 #[test]
-fn the_timestamp_reply_of_the_agent_is_on_streamid_none() {
+fn xrce_8_3_5_16_the_timestamp_reply_of_the_agent_is_on_streamid_none() {
     let mut e = SessionEngine::new(NullDdsPort::new(), config());
     let client = [0x68; CLIENT_KEY_LEN];
     connect(&mut e, client);

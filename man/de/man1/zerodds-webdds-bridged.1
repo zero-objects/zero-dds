@@ -1,0 +1,165 @@
+.TH ZERODDS-WEBDDS-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-webdds-bridged \- Gateway-Daemon für OMG Web-Enabled DDS 1.0 (REST + SOAP)
+.SH ÜBERSICHT
+.B zerodds-webdds-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-listen\fR \fIADR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-type\fR \fINAME\fR=\fIDATEI\fR]...
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-webdds-bridged
+stellt DDS-Applications, Participants, Topics, Publisher, Subscriber, Data
+Writer und Data Reader als HTTP-Ressourcen bereit, nach OMG Web-Enabled
+DDS 1.0. Bedient das REST-PSM unter
+.IR /dds/rest1 ,
+das SIMPLE-WSDL-SOAP-PSM unter
+.I /soap
+und die WSDL-Beschreibung sowohl der festen Operationen des Objektmodells als
+auch jedes in der Konfiguration genannten IDL-
+.I interface
+unter
+.IR /wsdl ,
+alles auf dem einen HTTP-Port.
+.PP
+Der Wire-Typ eines Topics wird aus einer in der Konfiguration genannten
+.IR .idl -Datei
+(\fItypes:\fR) aufgelöst oder aus der TypeLookup-Discovery eines Gegenübers
+\(em nie durch Raten aus opaken Bytes. Sample-Inhalte (write/read) sind die
+XML-Darstellung aus DDS-WEB, konvertiert über den eigenen Deskriptor des Typs.
+.PP
+Jeder REST-Request braucht einen
+.BR Accept -Header,
+der
+.I application/dds-web+xml
+nennt (genau diesen \(em DDS-WEB 1.0 definiert keine andere Darstellung):
+fehlt er, ist das 400, nennt er nichts davon, 406, und ein
+.BR Content-Type ,
+der etwas anderes nennt, ist 415.
+.PP
+Ein Inhalt von
+.BR create_participant / create_publisher / create_subscriber
+und sein Gegenstück
+.B update_*
+kann verschachtelte
+.IR publishers / subscribers / data_writers / data_readers
+tragen (OMG DDS-WEB 1.0 \(sc7.4.3.1/\(sc7.4.3.2/\(sc7.4.4.7/\(sc7.4.4.8/
+\(sc7.4.4.11/\(sc7.4.4.12): Der Daemon gleicht die lebenden DCPS-Entitäten bei
+jedem Aufruf über den Namen mit ihnen ab. Ein Element
+.I qos
+oder
+.I qos_profile
+in irgendeinem davon und jeder Inhalt von
+.B update_*
+auf oberster Ebene werden auf dieselbe Weise aufgelöst: Ein Inline-
+.I <qos>
+wird mit der aktuellen QoS der Entität zusammengeführt, und ein Verweis
+.I <qos_profile>name</qos_profile>
+wird zuerst über die eigenen QosLibrary/QosProfile-Metadaten des Daemons
+aufgelöst, wobei ein daneben vorhandenes Inline-
+.I <qos>
+die Werte des genannten Profils überschreibt. Bei
+.B update_*
+lässt ein
+.I fehlendes
+Container-Element (etwa kein
+.IR <publishers> )
+diese Art enthaltener Entitäten unberührt; ein
+.I leeres
+löscht jede davon.
+.PP
+Implementiert
+.IR "OMG Web-Enabled DDS 1.0, formal/2014-12-01" .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Pfad zur Konfigurationsdatei (YAML). Siehe
+.BR zerodds-webdds-bridged.yaml (5).
+.TP
+.BR \-\-listen =\fIADR\fR
+HTTP-Bind-Adresse. Standard:
+.IR 127.0.0.1:8080 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-type =\fINAME\fR=\fIDATEI\fR
+Überschreibung der Typquelle (wiederholbar):
+.I NAME
+ist der IDL-Scoped-Name
+(\fIMod::Type\fR), zugleich der Name des DDS-Wire-Typs;
+.I DATEI
+ist die
+.IR .idl -Datei,
+in der er deklariert ist.
+.TP
+.BR \-\-tls\-cert =\fIDATEI\fR
+TLS-Server-Zertifikat, PEM; schaltet
+.IR https://
+ein.
+.TP
+.BR \-\-tls\-key =\fIDATEI\fR
+TLS-Server-Schlüssel, PEM.
+.TP
+.BR \-\-auth\-token =\fIGEHEIMNIS\fR
+Authentifizierung mit Bearer-Token.
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listener für Prometheus (\fI/metrics\fR).
+.TP
+.BR \-V ", " \-\-version
+Versionsangabe.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+SIGTERM beendet den Daemon: Neue Verbindungen werden nicht mehr angenommen,
+eine offene Verbindung beendet ihren aktuellen Request/Response und schließt.
+.PP
+SIGHUP liest die Konfiguration neu: Die ACL je Application und die
+Authentifizierungs-Einstellungen gelten ab dann, TLS-Zertifikat und
+-Schlüssel werden vom konfigurierten Pfad neu gelesen. Geänderte
+Listen-Adresse oder Domäne brauchen einen Neustart und werden protokolliert.
+Eine Konfiguration, die nicht lädt, ändert nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden.
+.TP
+.B 1
+Konfigurationsfehler.
+.TP
+.B 2
+Bind-Fehler \(em Adresse belegt.
+.TP
+.B 3
+Fehler bei der DDS-Discovery.
+.TP
+.B 4
+Fehler beim Einrichten von TLS.
+.SH DATEIEN
+.I /etc/zerodds/webdds-bridged.yaml .
+.SH SIEHE AUCH
+.BR zerodds-webdds-bridged.yaml (5).
+OMG Web-Enabled DDS 1.0, formal/2014-12-01.
+.SH AUTOREN
+ZeroDDS Contributors.

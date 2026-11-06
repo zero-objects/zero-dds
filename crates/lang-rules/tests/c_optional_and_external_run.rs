@@ -135,7 +135,8 @@ const OPTIONALS: &str =
     "@final struct S { long a; @optional long b; @optional string c; long d; };";
 
 #[test]
-fn an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer() {
+fn xtypes_7_5_1_2_4_1_an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer()
+ {
     let out = run(
         "optional",
         OPTIONALS,
@@ -193,7 +194,7 @@ fn an_optional_member_is_written_with_its_marker_and_read_back_through_a_pointer
 }
 
 #[test]
-fn an_optional_string_is_the_pointer_it_already_is() {
+fn xtypes_7_5_1_2_4_1_an_optional_string_is_the_pointer_it_already_is() {
     let out = run(
         "optional-string",
         OPTIONALS,
@@ -232,7 +233,7 @@ fn an_optional_string_is_the_pointer_it_already_is() {
 }
 
 #[test]
-fn an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers() {
+fn xtypes_7_5_1_2_4_4_an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers() {
     // §7.5.1.2.4.4: `@optional long array_member[10]` is
     // `int32_t (*array_member)[10]`; here with three elements.
     let out = run(
@@ -275,7 +276,7 @@ fn an_optional_array_is_a_pointer_to_the_array_and_not_an_array_of_pointers() {
 }
 
 #[test]
-fn an_external_member_that_is_not_optional_may_not_be_null_at_a_write() {
+fn xtypes_7_5_1_2_3_1_1_an_external_member_that_is_not_optional_may_not_be_null_at_a_write() {
     // §7.5.1.2.3.1.1.
     let out = run(
         "external-null",

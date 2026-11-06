@@ -178,7 +178,7 @@ fn all_or_report(failures: Vec<String>) {
 }
 
 #[test]
-fn every_column_places_the_six_slots_in_its_declarations() {
+fn ddsts_9_2_every_column_places_the_six_slots_in_its_declarations() {
     let mut failures = Vec::new();
     for (language, name, comment, body) in COLUMNS {
         let ast = model(&six(name, comment));
@@ -195,7 +195,7 @@ fn every_column_places_the_six_slots_in_its_declarations() {
 }
 
 #[test]
-fn every_column_ends_its_source_file_with_the_end_file_text() {
+fn ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text() {
     // `generate::source` writes the codec after the declarations; the
     // `END_FILE` text belongs after it, and the `BEGIN_FILE` text before
     // everything the declarations hold.
@@ -229,7 +229,7 @@ fn every_column_ends_its_source_file_with_the_end_file_text() {
 }
 
 #[test]
-fn a_directive_reaches_its_own_column_and_no_other() {
+fn ddsts_9_1_a_directive_reaches_its_own_column_and_no_other() {
     for (language, name, comment, _) in COLUMNS {
         let marker = if *comment == "(**)" {
             "(* vb-mine *)".to_string()
@@ -252,7 +252,7 @@ fn a_directive_reaches_its_own_column_and_no_other() {
 }
 
 #[test]
-fn the_wildcard_reaches_every_column() {
+fn ddsts_9_1_the_wildcard_reaches_every_column() {
     let ast = model("@verbatim(text = \"// vb-everyone\")\nstruct Pose { long zdmark; };");
     for (language, ..) in COLUMNS {
         let generated = generate::declarations(&ast, *language)
@@ -265,7 +265,7 @@ fn the_wildcard_reaches_every_column() {
 }
 
 #[test]
-fn ada_writes_its_file_text_outside_the_package() {
+fn xtypes_7_2_2_4_8_ada_writes_its_file_text_outside_the_package() {
     // Context clauses stand before `package`; that is where an Ada file
     // starts, so it is where `BEGIN_FILE` goes.
     let key = LayoutKey::data(Encoding::PlainCdr2, Endianness::Little);

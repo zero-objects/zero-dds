@@ -68,7 +68,7 @@ fn write_xml(name: &str) -> String {
 }
 
 #[test]
-fn a_provider_answers_the_qos_of_every_entity_kind_with_inheritance() {
+fn capi_14_1_a_provider_answers_the_qos_of_every_entity_kind_with_inheritance() {
     let uri = CString::new(write_xml("all")).unwrap();
     let profile = CString::new("L::Child").unwrap();
     // SAFETY: strings are NUL-terminated; the provider is destroyed once.
@@ -155,7 +155,7 @@ fn a_provider_answers_the_qos_of_every_entity_kind_with_inheritance() {
 }
 
 #[test]
-fn a_data_uri_and_an_http_uri_name_the_document_too() {
+fn capi_14_1_a_data_uri_and_an_http_uri_name_the_document_too() {
     use std::io::{Read, Write};
     // The document in a data: URI, percent-encoded (RFC 2397).
     let encoded: String = XML.bytes().map(|b| format!("%{b:02X}")).collect();
@@ -189,7 +189,8 @@ fn a_data_uri_and_an_http_uri_name_the_document_too() {
 }
 
 #[test]
-fn an_unknown_scheme_is_unsupported_and_a_missing_file_or_a_closed_https_port_is_bad_parameter() {
+fn capi_14_1_an_unknown_scheme_is_unsupported_and_a_missing_file_or_a_closed_https_port_is_bad_parameter()
+ {
     let http = CString::new("gopher://example.org/qos.xml").unwrap();
     let https = CString::new("https://127.0.0.1:1/qos.xml").unwrap();
     let missing = CString::new("file:///nonexistent/zerodds_qos.xml").unwrap();

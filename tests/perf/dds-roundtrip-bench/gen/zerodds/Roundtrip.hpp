@@ -56,7 +56,7 @@ static void zd_enc_p_unsigned_long(zerodds::wire::Writer& w, const std::uint32_t
 
 static void zd_enc_p_unsigned_long_long(zerodds::wire::Writer& w, const std::uint64_t& v);
 
-static void zd_enc_seq_b8192_octet(zerodds::wire::Writer& w, const std::vector<::zerodds::wire::Octet>& v);
+static void zd_enc_seq_b65536_octet(zerodds::wire::Writer& w, const std::vector<::zerodds::wire::Octet>& v);
 
 static void zd_enc_RoundtripBench_Roundtrip(zerodds::wire::Writer& w, const ::RoundtripBench::Roundtrip& v);
 
@@ -72,10 +72,10 @@ static void zd_enc_p_unsigned_long_long(zerodds::wire::Writer& w, const std::uin
     w.write_u64(v);
 }
 
-static void zd_enc_seq_b8192_octet(zerodds::wire::Writer& w, const std::vector<::zerodds::wire::Octet>& v) {
+static void zd_enc_seq_b65536_octet(zerodds::wire::Writer& w, const std::vector<::zerodds::wire::Octet>& v) {
     static_cast<void>(w);
     static_cast<void>(v);
-    w.check_sequence_bound(v.size(), 8192u);
+    w.check_sequence_bound(v.size(), 65536u);
     zerodds::wire::DHeader d = zerodds::wire::no_dheader();
     w.write_u32(v.size());
     w.write_octets(v.data(), v.size());
@@ -88,19 +88,19 @@ static void zd_enc_RoundtripBench_Roundtrip(zerodds::wire::Writer& w, const ::Ro
     zerodds::wire::DHeader d = zerodds::wire::no_dheader();
     zd_enc_p_unsigned_long(w, v.sequence_id);
     zd_enc_p_unsigned_long_long(w, v.t_send_ns);
-    zd_enc_seq_b8192_octet(w, v.payload);
+    zd_enc_seq_b65536_octet(w, v.payload);
     w.finish_dheader(d);
 }
 
-static void zd_def_seq_b8192_octet(std::vector<::zerodds::wire::Octet>& v);
+static void zd_def_seq_b65536_octet(std::vector<::zerodds::wire::Octet>& v);
 
-static void zd_def_seq_b8192_octet(std::vector<::zerodds::wire::Octet>& v) { v.clear(); }
+static void zd_def_seq_b65536_octet(std::vector<::zerodds::wire::Octet>& v) { v.clear(); }
 
 static void zd_dec_p_unsigned_long(zerodds::wire::Reader& r, std::uint32_t& v, zerodds::wire::TryConstruct zd_tc);
 
 static void zd_dec_p_unsigned_long_long(zerodds::wire::Reader& r, std::uint64_t& v, zerodds::wire::TryConstruct zd_tc);
 
-static void zd_dec_seq_b8192_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc);
+static void zd_dec_seq_b65536_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc);
 
 static void zd_dec_RoundtripBench_Roundtrip(zerodds::wire::Reader& r, ::RoundtripBench::Roundtrip& v, zerodds::wire::TryConstruct zd_tc);
 
@@ -118,7 +118,7 @@ static void zd_dec_p_unsigned_long_long(zerodds::wire::Reader& r, std::uint64_t&
     v = r.read_u64();
 }
 
-static void zd_dec_seq_b8192_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc) {
+static void zd_dec_seq_b65536_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc) {
     static_cast<void>(r);
     static_cast<void>(v);
     static_cast<void>(zd_tc);
@@ -127,16 +127,16 @@ static void zd_dec_seq_b8192_octet(zerodds::wire::Reader& r, std::vector<::zerod
         r.reader_refuse(zerodds::wire::Status::ImpossibleLength);
         return;
     }
-    bool zd_over = zd_n > 8192u;
+    bool zd_over = zd_n > 65536u;
     v.resize(zd_n);
     r.read_octets(v.data(), zd_n);
     if (zd_over) {
         if (zd_tc == zerodds::wire::TryConstruct::Trim) {
-            v.resize(8192u);
+            v.resize(65536u);
             return;
         } else {
             if (zd_tc == zerodds::wire::TryConstruct::UseDefault) {
-                zd_def_seq_b8192_octet(v);
+                zd_def_seq_b65536_octet(v);
                 return;
             } else {
                 r.reader_refuse(zerodds::wire::Status::Discarded);
@@ -152,7 +152,7 @@ static void zd_dec_RoundtripBench_Roundtrip(zerodds::wire::Reader& r, ::Roundtri
     static_cast<void>(zd_tc);
     zd_dec_p_unsigned_long(r, v.sequence_id, zerodds::wire::TryConstruct::Discard);
     zd_dec_p_unsigned_long_long(r, v.t_send_ns, zerodds::wire::TryConstruct::Discard);
-    zd_dec_seq_b8192_octet(r, v.payload, zerodds::wire::TryConstruct::Discard);
+    zd_dec_seq_b65536_octet(r, v.payload, zerodds::wire::TryConstruct::Discard);
 }
 
 
@@ -160,15 +160,15 @@ static void zd_dec_RoundtripBench_Roundtrip(zerodds::wire::Reader& r, ::Roundtri
 // choose to write in. DDS-XTypes 1.3 §7.6.3.1.2.
 namespace xcdr1 {
 
-static void zd_def_seq_b8192_octet(std::vector<::zerodds::wire::Octet>& v);
+static void zd_def_seq_b65536_octet(std::vector<::zerodds::wire::Octet>& v);
 
-static void zd_def_seq_b8192_octet(std::vector<::zerodds::wire::Octet>& v) { v.clear(); }
+static void zd_def_seq_b65536_octet(std::vector<::zerodds::wire::Octet>& v) { v.clear(); }
 
 static void zd_dec_p_unsigned_long(zerodds::wire::Reader& r, std::uint32_t& v, zerodds::wire::TryConstruct zd_tc);
 
 static void zd_dec_p_unsigned_long_long(zerodds::wire::Reader& r, std::uint64_t& v, zerodds::wire::TryConstruct zd_tc);
 
-static void zd_dec_seq_b8192_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc);
+static void zd_dec_seq_b65536_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc);
 
 static void zd_dec_RoundtripBench_Roundtrip(zerodds::wire::Reader& r, ::RoundtripBench::Roundtrip& v, zerodds::wire::TryConstruct zd_tc);
 
@@ -186,7 +186,7 @@ static void zd_dec_p_unsigned_long_long(zerodds::wire::Reader& r, std::uint64_t&
     v = r.read_u64();
 }
 
-static void zd_dec_seq_b8192_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc) {
+static void zd_dec_seq_b65536_octet(zerodds::wire::Reader& r, std::vector<::zerodds::wire::Octet>& v, zerodds::wire::TryConstruct zd_tc) {
     static_cast<void>(r);
     static_cast<void>(v);
     static_cast<void>(zd_tc);
@@ -195,16 +195,16 @@ static void zd_dec_seq_b8192_octet(zerodds::wire::Reader& r, std::vector<::zerod
         r.reader_refuse(zerodds::wire::Status::ImpossibleLength);
         return;
     }
-    bool zd_over = zd_n > 8192u;
+    bool zd_over = zd_n > 65536u;
     v.resize(zd_n);
     r.read_octets(v.data(), zd_n);
     if (zd_over) {
         if (zd_tc == zerodds::wire::TryConstruct::Trim) {
-            v.resize(8192u);
+            v.resize(65536u);
             return;
         } else {
             if (zd_tc == zerodds::wire::TryConstruct::UseDefault) {
-                zd_def_seq_b8192_octet(v);
+                zd_def_seq_b65536_octet(v);
                 return;
             } else {
                 r.reader_refuse(zerodds::wire::Status::Discarded);
@@ -220,7 +220,7 @@ static void zd_dec_RoundtripBench_Roundtrip(zerodds::wire::Reader& r, ::Roundtri
     static_cast<void>(zd_tc);
     zd_dec_p_unsigned_long(r, v.sequence_id, zerodds::wire::TryConstruct::Discard);
     zd_dec_p_unsigned_long_long(r, v.t_send_ns, zerodds::wire::TryConstruct::Discard);
-    zd_dec_seq_b8192_octet(r, v.payload, zerodds::wire::TryConstruct::Discard);
+    zd_dec_seq_b65536_octet(r, v.payload, zerodds::wire::TryConstruct::Discard);
 }
 
 
@@ -254,7 +254,7 @@ inline constexpr std::uint8_t zd_type_object_RoundtripBench_Roundtrip[] = {
     0x01, 0x00, 0x08, 0x00, 0x0a, 0x00, 0x00, 0x00, 0x74, 0x5f, 0x73, 0x65,
     0x6e, 0x64, 0x5f, 0x6e, 0x73, 0x00, 0x00, 0x00, 0x22, 0x00, 0x00, 0x00,
     0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x81, 0xf3, 0x01, 0x00, 0x00, 0x00,
-    0x00, 0x20, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
     0x70, 0x61, 0x79, 0x6c, 0x6f, 0x61, 0x64, 0x00, 0x00, 0x00,
 };
 

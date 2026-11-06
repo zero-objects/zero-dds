@@ -152,7 +152,7 @@ fn gen_fixtures(dir: &Path, domain: i32) {
 }
 
 struct Peer {
-    rt: Arc<DcpsRuntime>,
+    rt: common::ShutsDown,
     prefix: GuidPrefix,
     profile: Arc<SecurityProfile>,
 }
@@ -202,7 +202,7 @@ fn start(
     let prefix = rt_cfg
         .security_guid_prefix
         .expect("identity-adjusted prefix");
-    let rt = DcpsRuntime::start(domain, prefix, rt_cfg).expect("runtime");
+    let rt = common::ShutsDown(DcpsRuntime::start(domain, prefix, rt_cfg).expect("runtime"));
     rt.enable_security_builtins_with_auth(
         VendorId::ZERODDS,
         profile.pki.clone(),
@@ -251,7 +251,7 @@ fn reader_cfg() -> UserReaderConfig {
 /// subscriber reads them.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn a_relay_only_reader_is_matched_and_cannot_read_the_payload() {
+fn security_7_1_1_4_a_relay_only_reader_is_matched_and_cannot_read_the_payload() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the relay test cannot run");
         return;
@@ -370,7 +370,8 @@ fn a_relay_only_reader_is_matched_and_cannot_read_the_payload() {
 /// Carol as Mallory's own.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn a_relay_forwards_what_it_cannot_read_and_the_reader_takes_it_as_the_originals() {
+fn security_7_1_1_4_a_relay_forwards_what_it_cannot_read_and_the_reader_takes_it_as_the_originals()
+{
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the relay test cannot run");
         return;

@@ -30,7 +30,7 @@ fn random_bytes(rng: &mut XorShift32, len: usize) -> Vec<u8> {
 }
 
 #[test]
-fn fuzz_coap_decode_no_panic() {
+fn coap_11_1_fuzz_coap_decode_no_panic() {
     let mut rng = XorShift32::new(0x434F_4150);
     for i in 0..3_000 {
         let len = match i % 8 {
@@ -49,12 +49,12 @@ fn fuzz_coap_decode_no_panic() {
 }
 
 #[test]
-fn empty_input_returns_err_not_panic() {
+fn coapbridge_12_1_empty_input_returns_err_not_panic() {
     assert!(decode(&[]).is_err());
 }
 
 #[test]
-fn single_byte_inputs_no_panic() {
+fn coapbridge_12_1_single_byte_inputs_no_panic() {
     for b in 0u8..=255 {
         let _ = decode(&[b]);
     }

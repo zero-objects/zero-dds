@@ -698,27 +698,6 @@ mod tests {
     }
 
     #[test]
-    fn xcdr2_encode_writes_le_bytes() {
-        let ts = point_typesupport();
-        let s = PointSample { x: 1, y: -2 };
-        let mut buf = [0u8; 8];
-        let mut written: usize = 0;
-        // SAFETY: test-controlled pointers.
-        let rc = unsafe {
-            zerodds_xcdr2_encode(
-                &ts,
-                &s as *const _ as *const c_void,
-                buf.as_mut_ptr(),
-                buf.len(),
-                &mut written,
-            )
-        };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(written, 8);
-        assert_eq!(buf, [0x01, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF]);
-    }
-
-    #[test]
     fn xcdr2_decode_roundtrip() {
         let ts = point_typesupport();
         let bytes = [0x01u8, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF];

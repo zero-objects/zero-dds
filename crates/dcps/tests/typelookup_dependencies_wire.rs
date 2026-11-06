@@ -46,7 +46,7 @@ fn wait_until(timeout: Duration, mut pred: impl FnMut() -> bool) -> bool {
     false
 }
 
-fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
+fn two_runtimes(domain: i32) -> (common::ShutsDown, common::ShutsDown) {
     let prefix_a = GuidPrefix::from_bytes([0x3A; 12]);
     let prefix_b = {
         let mut p = [0x4B; 12];
@@ -54,8 +54,8 @@ fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
         GuidPrefix::from_bytes(p)
     };
     let cfg = RuntimeConfig::default();
-    let rt_a = DcpsRuntime::start(domain, prefix_a, cfg.clone()).expect("rt_a");
-    let rt_b = DcpsRuntime::start(domain, prefix_b, cfg).expect("rt_b");
+    let rt_a = common::ShutsDown(DcpsRuntime::start(domain, prefix_a, cfg.clone()).expect("rt_a"));
+    let rt_b = common::ShutsDown(DcpsRuntime::start(domain, prefix_b, cfg).expect("rt_b"));
     for rt in [&rt_a, &rt_b] {
         assert!(
             wait_until(TIMEOUT, || !rt.discovered_participants().is_empty()),
@@ -76,7 +76,7 @@ fn holds_minimal(rt: &Arc<DcpsRuntime>, hash: &EquivalenceHash) -> bool {
 /// dependencies of `Outer` is answered with `Inner`, which the requester
 /// then fetches; `Outer` itself is not part of the answer.
 #[test]
-fn the_dependencies_of_a_hash_come_over_the_wire() {
+fn xtypes_7_6_3_3_4_1_the_dependencies_of_a_hash_come_over_the_wire() {
     let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
     let inner = TypeObject::Minimal(MinimalTypeObject::Struct(
@@ -124,7 +124,7 @@ fn the_dependencies_of_a_hash_come_over_the_wire() {
 /// the identifier of the component, the reply the types its members refer to
 /// outside the component.
 #[test]
-fn the_dependencies_of_a_component_come_over_the_wire() {
+fn xtypes_7_6_3_3_4_1_the_dependencies_of_a_component_come_over_the_wire() {
     let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
     let parsed = zerodds_idl_parse::parse(

@@ -3,14 +3,19 @@
 //
 // Deep example (async): the same sensor-telemetry flow, but the subscriber does
 // not own the run-loop. A reader thread drains the transport into a
-// BlockingQueue of decoded bodies; the consumer blocks on take() — the idiomatic
-// java.util.concurrent model. Every field is decoded.
+// BlockingQueue of decoded bodies; the consumer blocks on poll() with a timeout —
+// the idiomatic java.util.concurrent model. Every field is decoded. A sample that
+// does not arrive within the timeout ends the run with an error.
 
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public final class ExampleAsync {
+
+    /** How long the consumer waits for each sample. */
+    static final long TIMEOUT_S = 10;
 
     static final class Reading {
         final long   id;
@@ -71,7 +76,13 @@ public final class ExampleAsync {
         reader.start();
 
         for (int got = 0; got < total; got++) {
-            Reading rd = Reading.decode(inbox.take());
+            byte[] body = inbox.poll(TIMEOUT_S, TimeUnit.SECONDS);
+            if (body == null) {
+                System.err.println("incomplete: got " + got + " of " + total
+                                   + " samples within " + TIMEOUT_S + " s");
+                System.exit(1);
+            }
+            Reading rd = Reading.decode(body);
             System.out.printf("async reading %d: id=0x%x value=%.1f label=\"%s\"%n",
                               got, rd.id, rd.value, rd.label);
         }

@@ -20,6 +20,12 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+# The crate tier runs the tests of this package once more with these
+# features (internal/release/rc8-test-suite.md, "Crate tier"): the secured SecureChannel of the client and
+# server (Part 4 §5.6.2) is opt-in.
+[package.metadata.crate-tier]
+feature-runs = ["crypto"]
+
 [features]
 default = ["std"]
 std = ["alloc", "zerodds-opcua-uacp/std", "zerodds-opcua-pubsub/std", "zerodds-opcua-gateway/std"]
@@ -35,3 +41,5 @@ zerodds-opcua-gateway = { version = "1.0.0-rc.7", path = "../opcua-gateway", def
 [dev-dependencies]
 # A real OS CSPRNG for the secured-handshake end-to-end test (test only).
 rand = { version = "0.8", default-features = false, features = ["std", "std_rng", "getrandom"] }
+# Reads the RSA-2048 test keys of tests/fixtures (PKCS #8 DER).
+rsa = { version = "0.9", default-features = false }

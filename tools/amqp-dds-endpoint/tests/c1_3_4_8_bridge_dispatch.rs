@@ -49,7 +49,7 @@ fn host_with_topics(specs: &[(&str, &str, LinkDirection)]) -> InMemoryDdsHost {
 }
 
 #[test]
-fn c1_3_amqp_producer_publishes_to_dds_via_bridge() {
+fn ddsamqp_2_1_amqp_producer_publishes_to_dds_via_bridge() {
     // Spec §C.1.3 — client sends an AMQP sample, the bridge forwards
     // to a DDS DataWriter.
     let host = host_with_topics(&[("Sensor", "SensorTopic", LinkDirection::DirProducerToDds)]);
@@ -91,7 +91,7 @@ fn c1_3_amqp_producer_publishes_to_dds_via_bridge() {
 }
 
 #[test]
-fn c1_4_dds_publish_flows_to_amqp_consumer_callback() {
+fn ddsamqp_2_1_dds_publish_flows_to_amqp_consumer_callback() {
     // Spec §C.1.4 — a DDS DataReader gets a sample (=DDS-side
     // publish), the AMQP receiver link gets a transfer.
     let host = host_with_topics(&[("Pose", "PoseTopic", LinkDirection::DirDdsToConsumer)]);
@@ -128,7 +128,7 @@ fn c1_4_dds_publish_flows_to_amqp_consumer_callback() {
 }
 
 #[test]
-fn c1_8_catalog_receiver_gets_one_sample_per_topic() {
+fn ddsamqp_c_1_8_catalog_receiver_gets_one_sample_per_topic() {
     // Spec §C.1.8 — receiver on `$catalog` gets one per
     // configured topic mapping one sample.
     let host = host_with_topics(&[
@@ -159,7 +159,7 @@ fn c1_8_catalog_receiver_gets_one_sample_per_topic() {
 }
 
 #[test]
-fn c1_3_unknown_address_attaches_with_unknown_address_outcome() {
+fn ddsamqp_c_1_3_unknown_address_attaches_with_unknown_address_outcome() {
     // Spec §C.1.3 + §7.5.1 — attach to an unconfigured
     // address returns UnknownAddress (the caller maps it to
     // amqp:not-found).
@@ -169,7 +169,7 @@ fn c1_3_unknown_address_attaches_with_unknown_address_outcome() {
 }
 
 #[test]
-fn c2_2_bridge_outbound_publish_flows_to_dds() {
+fn ddsamqp_2_1_bridge_outbound_publish_flows_to_dds() {
     // Spec §C.2.2 — bridge sends a sender link after outbound
     // Broker side (AMQP). The broker forwards, a second
     // The bridge endpoint connects as the receiver side and calls
@@ -232,7 +232,7 @@ fn c2_2_bridge_outbound_publish_flows_to_dds() {
 }
 
 #[test]
-fn c2_3_bridge_inbound_from_broker_flows_to_dds() {
+fn ddsamqp_2_1_bridge_inbound_from_broker_flows_to_dds() {
     // Spec §C.2.3 — Receiver-Link Broker-to-Bridge: Broker
     // sends an AMQP transfer, bridge calls dispatch_transfer →
     // DDS-DataWriter.

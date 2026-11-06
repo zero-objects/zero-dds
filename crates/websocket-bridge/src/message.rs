@@ -342,7 +342,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fragment_empty_message_yields_one_frame() {
+    fn ws_6_1_fragment_empty_message_yields_one_frame() {
         let f = fragment_message(true, b"", 100, [0; 4]).expect("ok");
         assert_eq!(f.len(), 1);
         assert!(f[0].fin);
@@ -350,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_message_within_limit_single_frame() {
+    fn ws_6_1_fragment_message_within_limit_single_frame() {
         let f = fragment_message(false, b"hello", 100, [0; 4]).expect("ok");
         assert_eq!(f.len(), 1);
         assert!(f[0].fin);
@@ -358,7 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_message_splits_into_text_plus_continuations() {
+    fn ws_6_1_fragment_message_splits_into_text_plus_continuations() {
         let f = fragment_message(true, b"abcdefghij", 3, [0; 4]).expect("ok");
         assert_eq!(f.len(), 4);
         assert_eq!(f[0].opcode, Opcode::Text);
@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_text_rejects_invalid_utf8() {
+    fn ws_6_1_fragment_text_rejects_invalid_utf8() {
         let bad = [0xff, 0xfe];
         assert_eq!(
             fragment_message(true, &bad, 100, [0; 4]),
@@ -379,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_zero_limit_rejected() {
+    fn ws_6_1_fragment_zero_limit_rejected() {
         assert_eq!(
             fragment_message(false, b"x", 0, [0; 4]),
             Err(SendError::InvalidFrameLimit)
@@ -387,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_with_mask_sets_mask_field() {
+    fn ws_6_1_fragment_with_mask_sets_mask_field() {
         let f = fragment_message(false, b"x", 100, [1, 2, 3, 4]).expect("ok");
         assert_eq!(f[0].masking_key, Some([1, 2, 3, 4]));
     }
@@ -405,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn reassembler_single_frame_message_complete() {
+    fn ws_6_2_reassembler_single_frame_message_complete() {
         let mut r = Reassembler::new();
         let msg = r
             .feed(&binary_frame(true, Opcode::Text, b"hello".to_vec()))
@@ -416,7 +416,7 @@ mod tests {
     }
 
     #[test]
-    fn reassembler_continuation_sequence_reassembles() {
+    fn ws_6_2_reassembler_continuation_sequence_reassembles() {
         let mut r = Reassembler::new();
         let p1 = r
             .feed(&binary_frame(false, Opcode::Text, b"hel".to_vec()))
@@ -434,7 +434,7 @@ mod tests {
     }
 
     #[test]
-    fn reassembler_continuation_without_preceding_text_rejected() {
+    fn ws_6_2_reassembler_continuation_without_preceding_text_rejected() {
         let mut r = Reassembler::new();
         assert_eq!(
             r.feed(&binary_frame(true, Opcode::Continuation, b"x".to_vec())),
@@ -443,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn reassembler_interleaved_text_during_pending_rejected() {
+    fn ws_6_2_reassembler_interleaved_text_during_pending_rejected() {
         let mut r = Reassembler::new();
         let _ = r
             .feed(&binary_frame(false, Opcode::Text, b"hel".to_vec()))
@@ -455,21 +455,21 @@ mod tests {
     }
 
     #[test]
-    fn reassembler_rejects_invalid_utf8_in_text() {
+    fn ws_6_2_reassembler_rejects_invalid_utf8_in_text() {
         let mut r = Reassembler::new();
         let result = r.feed(&binary_frame(true, Opcode::Text, alloc::vec![0xff]));
         assert!(matches!(result, Err(ReceiveError::InvalidUtf8(_))));
     }
 
     #[test]
-    fn reassembler_rejects_message_above_limit() {
+    fn ws_6_2_reassembler_rejects_message_above_limit() {
         let mut r = Reassembler::with_limit(5);
         let result = r.feed(&binary_frame(true, Opcode::Binary, alloc::vec![0; 10]));
         assert_eq!(result, Err(ReceiveError::MessageTooLarge));
     }
 
     #[test]
-    fn reassembler_passes_through_control_frames() {
+    fn ws_6_2_reassembler_passes_through_control_frames() {
         let mut r = Reassembler::new();
         let msg = r
             .feed(&binary_frame(true, Opcode::Ping, b"abc".to_vec()))
@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn reassembler_has_pending_during_continuation() {
+    fn ws_6_2_reassembler_has_pending_during_continuation() {
         let mut r = Reassembler::new();
         let _ = r
             .feed(&binary_frame(false, Opcode::Binary, b"x".to_vec()))
@@ -489,7 +489,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_send_then_reassemble_round_trip() {
+    fn ws_6_2_fragment_send_then_reassemble_round_trip() {
         let original = b"the quick brown fox jumps";
         let frames = fragment_message(true, original, 4, [0; 4]).expect("ok");
         let mut r = Reassembler::new();
@@ -504,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn server_fails_connection_with_1007_on_malformed_utf8_from_client() {
+    fn ws_8_2_server_fails_connection_with_1007_on_malformed_utf8_from_client() {
         // Spec §8.2: "When a server receives a Text-frame from the
         // client that contains malformed UTF-8 data [...] the server
         // MUST fail the WebSocket Connection." §7.4.1 gives 1007
@@ -541,7 +541,7 @@ mod tests {
     }
 
     #[test]
-    fn client_fails_connection_with_1007_on_malformed_utf8_from_server() {
+    fn ws_8_1_client_fails_connection_with_1007_on_malformed_utf8_from_server() {
         // Spec §8.1, the mirror image: a server frame is unmasked and
         // the client fails the connection with the same status code.
         let server_frame = Frame {
@@ -565,7 +565,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_utf8_split_across_continuation_frames_still_yields_1007() {
+    fn ws_8_2_malformed_utf8_split_across_continuation_frames_still_yields_1007() {
         // §8.1/§8.2 apply to a fragmented text message too — the
         // streaming validator catches the invalid sequence at the
         // fragment boundary.
@@ -598,7 +598,7 @@ mod tests {
     }
 
     #[test]
-    fn receive_error_close_codes_match_spec_7_4_1() {
+    fn ws_8_2_receive_error_close_codes_match_spec_7_4_1() {
         assert_eq!(
             ReceiveError::UnexpectedContinuation.close_code().to_u16(),
             1002

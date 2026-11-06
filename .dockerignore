@@ -58,9 +58,6 @@ wheels/
 
 # Output reports and temporary spec coverage generation.
 mutants-out/
-diagrams/LINK-INVENTORY.md
-diagrams/OLD-CONTENT-AUDIT.md
-diagrams/REMAINDER.md
 
 # Not sources of any image: the interop matrix (GBs of recorded runs), the
 # internal notes (never part of a published artifact), the public mirror

@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn the_policy_refuses_what_cannot_work_and_offers_per_connection() {
+    fn ddsamqp_2_1_the_policy_refuses_what_cannot_work_and_offers_per_connection() {
         let dir = std::env::temp_dir().join(format!("amqp-auth-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("users");

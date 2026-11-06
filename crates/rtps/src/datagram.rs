@@ -389,7 +389,8 @@ pub fn decode_datagram(bytes: &[u8]) -> Result<ParsedDatagram, WireError> {
 pub fn decode_datagram_shared(
     datagram: &alloc::sync::Arc<[u8]>,
 ) -> Result<ParsedDatagram, WireError> {
-    decode_datagram_from(datagram, Some(datagram))
+    let datagram = crate::payload::Payload::whole(alloc::sync::Arc::clone(datagram));
+    decode_datagram_from(&datagram, Some(&datagram))
 }
 
 /// [`decode_datagram_shared`] into `frames`, which is cleared first and
@@ -402,13 +403,30 @@ pub fn decode_datagram_shared_into(
     datagram: &alloc::sync::Arc<[u8]>,
     frames: Vec<SubmessageFrame>,
 ) -> Result<ParsedDatagram, WireError> {
+    let datagram = crate::payload::Payload::whole(alloc::sync::Arc::clone(datagram));
+    decode_datagram_payload_into(&datagram, frames)
+}
+
+/// [`decode_datagram_shared_into`] for a datagram that is a [`Payload`]:
+/// the range of a receive buffer it was received into, or an allocation
+/// of its own.
+///
+/// [`Payload`]: crate::payload::Payload
+///
+/// # Errors
+/// As [`decode_datagram`].
+pub fn decode_datagram_payload_into(
+    datagram: &crate::payload::Payload,
+    frames: Vec<SubmessageFrame>,
+) -> Result<ParsedDatagram, WireError> {
     decode_datagram_into(datagram, Some(datagram), frames)
 }
 
-/// The decoder behind both; `shared`, when given, is `bytes` as an `Arc`.
+/// The decoder behind both; `shared`, when given, is `bytes` as a
+/// [`crate::payload::Payload`] the serializedPayloads are ranges of.
 fn decode_datagram_from(
     bytes: &[u8],
-    shared: Option<&alloc::sync::Arc<[u8]>>,
+    shared: Option<&crate::payload::Payload>,
 ) -> Result<ParsedDatagram, WireError> {
     decode_datagram_into(bytes, shared, Vec::new())
 }
@@ -527,7 +545,7 @@ pub fn skipped_must_understand_submessages() -> usize {
 /// [`decode_datagram_from`] into `submessages`.
 fn decode_datagram_into(
     bytes: &[u8],
-    shared: Option<&alloc::sync::Arc<[u8]>>,
+    shared: Option<&crate::payload::Payload>,
     mut submessages: Vec<SubmessageFrame>,
 ) -> Result<ParsedDatagram, WireError> {
     let header = RtpsHeader::from_bytes(bytes)?;
@@ -684,7 +702,7 @@ fn decode_datagram_into(
 /// sample would be absorbed as addressed to others.
 fn ignore_directed_write_before_2_4(
     version: crate::wire_types::ProtocolVersion,
-    inline_qos: &mut Option<crate::parameter_list::ParameterList>,
+    inline_qos: Option<&mut crate::parameter_list::ParameterList>,
 ) {
     if (version.major, version.minor) >= (2, 4) {
         return;
@@ -720,7 +738,7 @@ fn decode_submessage(
     header: &RtpsHeader,
     submessages: &[SubmessageFrame],
     bytes: &[u8],
-    shared: Option<&alloc::sync::Arc<[u8]>>,
+    shared: Option<&crate::payload::Payload>,
     id_byte: u8,
     flags: u8,
     little_endian: bool,
@@ -731,7 +749,7 @@ fn decode_submessage(
     Ok(Some(match SubmessageId::from_u8(id_byte) {
         Ok(SubmessageId::Data) => {
             let d = match shared {
-                Some(datagram) => DataSubmessage::read_body_shared(
+                Some(datagram) => DataSubmessage::read_body_in(
                     datagram,
                     body_start..body_end,
                     little_endian,
@@ -739,14 +757,25 @@ fn decode_submessage(
                 )?,
                 None => DataSubmessage::read_body_with_flags(body, little_endian, flags)?,
             };
-            if d.inline_qos.as_ref().is_some_and(|pl| {
-                pl.validate_must_understand_in_data_pipeline(header.vendor_id)
-                    .is_err()
-            }) {
+            // The short form holds PID_KEY_HASH and PID_STATUS_INFO only,
+            // neither with FLAG_MUST_UNDERSTAND, and no PID_DIRECTED_WRITE.
+            if d.inline_qos
+                .as_ref()
+                .and_then(crate::inline_qos::InlineQos::parsed)
+                .is_some_and(|pl| {
+                    pl.validate_must_understand_in_data_pipeline(header.vendor_id)
+                        .is_err()
+                })
+            {
                 return Ok(None);
             }
             let mut d = d;
-            ignore_directed_write_before_2_4(header.protocol_version, &mut d.inline_qos);
+            ignore_directed_write_before_2_4(
+                header.protocol_version,
+                d.inline_qos
+                    .as_mut()
+                    .and_then(crate::inline_qos::InlineQos::parsed_mut),
+            );
             ParsedSubmessage::Data(d)
         }
         Ok(SubmessageId::Heartbeat) => {
@@ -792,7 +821,7 @@ fn decode_submessage(
                 return Ok(None);
             }
             let mut fragment = fragment;
-            ignore_directed_write_before_2_4(header.protocol_version, &mut fragment.inline_qos);
+            ignore_directed_write_before_2_4(header.protocol_version, fragment.inline_qos.as_mut());
             ParsedSubmessage::DataFrag(fragment)
         }
         Ok(SubmessageId::HeartbeatFrag) => ParsedSubmessage::HeartbeatFrag(
@@ -1118,10 +1147,7 @@ mod tests {
         assert_eq!(into, shared);
         for s in shared {
             if let ParsedSubmessage::Data(d) = s {
-                assert!(alloc::sync::Arc::ptr_eq(
-                    d.serialized_payload.buffer(),
-                    &datagram
-                ));
+                assert!(d.serialized_payload.is_range_of(&datagram));
             }
         }
     }
@@ -1274,7 +1300,7 @@ mod tests {
     fn encode_decode_single_data_datagram() {
         let h = header();
         let d = data_msg(1, b"hello");
-        let bytes = encode_data_datagram(h, &[d.clone()]).unwrap();
+        let bytes = encode_data_datagram(h, core::slice::from_ref(&d)).unwrap();
         let parsed = decode_datagram(&bytes).unwrap();
         assert_eq!(parsed.header, h);
         assert_eq!(parsed.submessages.len(), 1);
@@ -1308,7 +1334,7 @@ mod tests {
     fn encode_decode_empty_payload() {
         let h = header();
         let d = data_msg(42, b"");
-        let bytes = encode_data_datagram(h, &[d.clone()]).unwrap();
+        let bytes = encode_data_datagram(h, core::slice::from_ref(&d)).unwrap();
         let parsed = decode_datagram(&bytes).unwrap();
         assert_eq!(parsed.submessages.len(), 1);
         match &parsed.submessages[0].submessage {
@@ -2257,7 +2283,7 @@ mod tests {
             reader_id: EntityId::user_reader_with_key([0xA, 0xB, 0xC]),
             writer_id: EntityId::user_writer_with_key([0x1, 0x2, 0x3]),
             writer_sn: SequenceNumber(1),
-            inline_qos: Some(pl),
+            inline_qos: Some(pl.into()),
             data_flag: true,
             key_flag: false,
             non_standard_flag: false,
@@ -2303,7 +2329,7 @@ mod tests {
             reader_id: EntityId::user_reader_with_key([0xA, 0xB, 0xC]),
             writer_id: EntityId::user_writer_with_key([0x1, 0x2, 0x3]),
             writer_sn: SequenceNumber(2),
-            inline_qos: Some(pl),
+            inline_qos: Some(pl.into()),
             data_flag: true,
             key_flag: false,
             non_standard_flag: false,
@@ -2338,7 +2364,7 @@ mod tests {
             reader_id: EntityId::user_reader_with_key([0xA, 0xB, 0xC]),
             writer_id: EntityId::user_writer_with_key([0x1, 0x2, 0x3]),
             writer_sn: SequenceNumber(3),
-            inline_qos: Some(pl),
+            inline_qos: Some(pl.into()),
             data_flag: true,
             key_flag: false,
             non_standard_flag: false,
@@ -3166,7 +3192,7 @@ mod tests {
         let mut d = data_msg(3, b"directed");
         let mut pl = crate::parameter_list::ParameterList::new();
         pl.push(crate::inline_qos::directed_write_param(target.to_bytes()));
-        d.inline_qos = Some(pl);
+        d.inline_qos = Some(pl.into());
         let (body, flags) = d.write_body(true);
         for (minor, kept) in [(3u8, false), (4, true), (5, true)] {
             let mut h = header();
@@ -3186,6 +3212,7 @@ mod tests {
             let found = data
                 .inline_qos
                 .as_ref()
+                .and_then(crate::inline_qos::InlineQos::parsed)
                 .and_then(|pl| crate::inline_qos::find_directed_write(pl).unwrap());
             assert_eq!(found.is_some(), kept, "protocol version 2.{minor}");
         }

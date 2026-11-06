@@ -267,7 +267,7 @@ mod tests {
     use crate::option::{CoapOption, numbers};
 
     #[test]
-    fn encodes_minimum_get_request_to_4_byte_header() {
+    fn coap_3_encodes_minimum_get_request_to_4_byte_header() {
         // RFC 7252 §3 — smallest message: GET without token / options /
         // payload.
         let m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 0x1234);
@@ -281,27 +281,25 @@ mod tests {
     }
 
     #[test]
-    fn encode_decode_round_trip_preserves_header_fields() {
-        // Header round-trip.
-        for t in [
-            MessageType::Confirmable,
-            MessageType::NonConfirmable,
-            MessageType::Acknowledgement,
-            MessageType::Reset,
+    fn coap_3_the_header_of_each_message_type_is_the_octets_of_the_layout() {
+        // RFC 7252 §3: Ver 01, T, TKL in the first octet, then Code and
+        // Message ID (network byte order), then the Token.
+        for (t, first) in [
+            (MessageType::Confirmable, 0x44),
+            (MessageType::NonConfirmable, 0x54),
+            (MessageType::Acknowledgement, 0x64),
+            (MessageType::Reset, 0x74),
         ] {
+            let octets = [first, 0x02, 0xAA, 0x55, 1, 2, 3, 4];
             let mut m = CoapMessage::new(t, CoapCode::POST, 0xAA55);
             m.token = alloc::vec![1, 2, 3, 4];
-            let bytes = encode(&m).expect("encode");
-            let parsed = decode(&bytes).expect("decode");
-            assert_eq!(parsed.message_type, t);
-            assert_eq!(parsed.code, CoapCode::POST);
-            assert_eq!(parsed.message_id, 0xAA55);
-            assert_eq!(parsed.token, alloc::vec![1, 2, 3, 4]);
+            assert_eq!(encode(&m).expect("encode"), octets);
+            assert_eq!(decode(&octets).expect("decode"), m);
         }
     }
 
     #[test]
-    fn token_length_above_8_is_rejected_on_encode() {
+    fn coap_3_token_length_above_8_is_rejected_on_encode() {
         // Spec §3 TKL 0..=8.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 0);
         m.token = alloc::vec![0; 9];
@@ -309,20 +307,20 @@ mod tests {
     }
 
     #[test]
-    fn header_too_short_decode_fails() {
+    fn coapbridge_4_1_header_too_short_decode_fails() {
         assert_eq!(decode(&[]), Err(CodecError::HeaderTooShort));
         assert_eq!(decode(&[0; 3]), Err(CodecError::HeaderTooShort));
     }
 
     #[test]
-    fn unsupported_version_decode_fails() {
+    fn coap_3_unsupported_version_decode_fails() {
         // Spec §3 — version != 1.
         let bytes = [0b1000_0000_u8, 0, 0, 0]; // Ver=2.
         assert_eq!(decode(&bytes), Err(CodecError::UnsupportedVersion(2)));
     }
 
     #[test]
-    fn reserved_token_length_9_through_15_decode_fails() {
+    fn coap_3_reserved_token_length_9_through_15_decode_fails() {
         // Spec §3.
         for tkl in 9..=15u8 {
             let bytes = [0b0100_0000 | tkl, 0, 0, 0];
@@ -331,14 +329,14 @@ mod tests {
     }
 
     #[test]
-    fn token_truncated_decode_fails() {
+    fn coap_3_token_truncated_decode_fails() {
         // TKL=4 but only 2 token bytes present.
         let bytes = [0b0100_0100_u8, 1, 0, 0, 0xAA, 0xBB];
         assert_eq!(decode(&bytes), Err(CodecError::TokenTruncated));
     }
 
     #[test]
-    fn single_short_option_encodes_in_one_byte_header() {
+    fn coap_3_1_single_short_option_encodes_in_one_byte_header() {
         // RFC 7252 §3.1 — Delta=1, Length=2 → 1 byte.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
         m.options = alloc::vec![CoapOption {
@@ -353,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn option_delta_extended_13_uses_one_extra_byte() {
+    fn coap_3_1_option_delta_extended_13_uses_one_extra_byte() {
         // Spec §3.1 — Delta = 20 → nibble=13, ext=7.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
         m.options = alloc::vec![CoapOption {
@@ -371,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn option_delta_extended_14_uses_two_extra_bytes() {
+    fn coap_3_1_option_delta_extended_14_uses_two_extra_bytes() {
         // Spec §3.1 — Delta = 1000 → nibble=14, ext = 1000-269 = 731.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
         m.options = alloc::vec![CoapOption {
@@ -386,7 +384,7 @@ mod tests {
     }
 
     #[test]
-    fn option_length_extended_13_uses_one_extra_byte() {
+    fn coap_3_1_option_length_extended_13_uses_one_extra_byte() {
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
         m.options = alloc::vec![CoapOption {
             number: 1,
@@ -406,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn delta_encoding_sums_across_multiple_options() {
+    fn coap_3_1_delta_encoding_sums_across_multiple_options() {
         // Spec §3.1 — delta-encoding basis.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
         m.options = alloc::vec![
@@ -432,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn payload_marker_separates_options_from_payload() {
+    fn coap_3_payload_marker_separates_options_from_payload() {
         // Spec §3 — 0xFF payload marker.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::CONTENT, 1);
         m.payload = alloc::vec![1, 2, 3, 4];
@@ -446,14 +444,14 @@ mod tests {
     }
 
     #[test]
-    fn payload_marker_without_payload_is_format_error() {
+    fn coap_3_payload_marker_without_payload_is_format_error() {
         // Spec §3 — "MUST be processed as a message format error".
         let bytes = [0b0100_0000_u8, CoapCode::GET.to_byte(), 0, 0, 0xFFu8];
         assert_eq!(decode(&bytes), Err(CodecError::PayloadMarkerWithoutPayload));
     }
 
     #[test]
-    fn representation_carries_content_format_per_spec_5_5() {
+    fn coap_5_5_representation_carries_content_format_per_spec_5_5() {
         // Spec §5.5.1: a payload is a representation; §5.5.3 says the
         // Content-Format option is what names its media type. The
         // option travels with the payload across encode/decode.
@@ -476,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn diagnostic_payload_of_error_response_carries_no_content_format() {
+    fn coap_5_5_diagnostic_payload_of_error_response_carries_no_content_format() {
         // Spec §5.5.2: "If no Content-Format option is given, the
         // payload of responses indicating a client or server error is
         // a brief human-readable diagnostic message" in UTF-8.
@@ -499,8 +497,9 @@ mod tests {
     }
 
     #[test]
-    fn full_observe_request_encode_decode_round_trip() {
-        // RFC 7641 §2 — Observe-register request with Uri-Path.
+    fn coap_5_10_an_observe_registration_is_the_octets_of_the_layout() {
+        // RFC 7641 §2: Observe 0 registers; RFC 7252 §3.1 option deltas,
+        // §3.2 the value 0 of a uint option in zero octets.
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 0xBEEF);
         m.token = alloc::vec![0x42];
         m.options = alloc::vec![
@@ -508,20 +507,23 @@ mod tests {
             CoapOption::uri_path("sensors"),
             CoapOption::uri_path("temp"),
         ];
-        let bytes = encode(&m).expect("encode");
-        let parsed = decode(&bytes).expect("decode");
+        let mut octets = alloc::vec![0x41, 0x01, 0xBE, 0xEF, 0x42, 0x60, 0x57];
+        octets.extend_from_slice(b"sensors");
+        octets.push(0x04);
+        octets.extend_from_slice(b"temp");
+        assert_eq!(encode(&m).expect("encode"), octets);
+        let parsed = decode(&octets).expect("decode");
         assert_eq!(parsed.token, alloc::vec![0x42]);
-        assert_eq!(parsed.options.len(), 3);
-        // Order: Observe (6), Uri-Path (11), Uri-Path (11).
-        assert_eq!(parsed.options[0].number, numbers::OBSERVE);
-        assert_eq!(parsed.options[1].number, numbers::URI_PATH);
-        assert_eq!(parsed.options[2].number, numbers::URI_PATH);
-        // Decoded values are Opaque (the decoder does not know the
-        // format semantics); the caller converts.
+        let seen: Vec<_> = parsed.options.iter().map(|o| o.number).collect();
+        assert_eq!(
+            seen,
+            [numbers::OBSERVE, numbers::URI_PATH, numbers::URI_PATH]
+        );
+        assert_eq!(parsed.options[1].value.to_wire_bytes(), b"sensors");
     }
 
     #[test]
-    fn options_are_sorted_on_encode() {
+    fn coap_3_1_options_are_sorted_on_encode() {
         // Spec §3.1 — "instances MUST appear in order of their Option
         // Numbers".
         let mut m = CoapMessage::new(MessageType::Confirmable, CoapCode::GET, 1);
@@ -538,12 +540,11 @@ mod tests {
     }
 
     #[test]
-    fn empty_message_round_trip() {
-        // Spec §4.1 — Code 0.00 = Empty Message (Reset/ACK).
+    fn coapbridge_4_1_an_empty_acknowledgement_is_four_octets() {
+        // RFC 7252 §4.1: Code 0.00, no Token, no options, no payload.
         let m = CoapMessage::new(MessageType::Acknowledgement, CoapCode::EMPTY, 0xABCD);
-        let bytes = encode(&m).expect("encode");
-        assert_eq!(bytes.len(), 4);
-        let parsed = decode(&bytes).expect("decode");
-        assert_eq!(parsed, m);
+        let octets = [0x60, 0x00, 0xAB, 0xCD];
+        assert_eq!(encode(&m).expect("encode"), octets);
+        assert_eq!(decode(&octets).expect("decode"), m);
     }
 }

@@ -2677,7 +2677,7 @@ mod tests {
     /// case, for `c++ -std=c++17 -fsyntax-only -Wall -Wextra -Wpedantic
     /// -Werror -I runtime/cpp/include` to read.
     #[test]
-    fn every_corpus_case_renders_or_names_its_refusal() {
+    fn idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal() {
         let dump = std::env::var("ZERODDS_CPP_OUT").ok();
         if let Some(directory) = &dump {
             std::fs::create_dir_all(directory).expect("the dump directory");
@@ -2733,7 +2733,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_member_is_a_plain_pointer_and_not_a_second_field() {
+    fn xtypes_7_5_1_2_4_2_an_optional_member_is_a_plain_pointer_and_not_a_second_field() {
         let text = header(
             "@appendable struct S { @optional long a; long b; };",
             "t.idl",
@@ -2750,7 +2750,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_is_a_namespace_and_not_a_prefix() {
+    fn idl4cpp_7_2_2_a_module_is_a_namespace_and_not_a_prefix() {
         let text =
             header("module a { module b { struct P { long x; }; }; };", "t.idl").expect("renders");
         assert!(text.contains("namespace a {"), "{text}");
@@ -2759,7 +2759,7 @@ mod tests {
     }
 
     #[test]
-    fn a_reference_across_modules_is_written_from_the_root() {
+    fn idl_7_5_2_a_reference_across_modules_is_written_from_the_root() {
         let text = header(
             "module a { struct P { long x; }; }; module b { struct Q { a::P p; }; };",
             "t.idl",
@@ -2769,7 +2769,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs() {
+    fn psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs() {
         let text = header(
             "struct S { sequence<long> items; map<long, double> m; };",
             "t.idl",
@@ -2788,7 +2788,7 @@ mod tests {
     }
 
     #[test]
-    fn a_structure_has_swap_as_a_member_and_in_its_namespace() {
+    fn psmcxx_7_12_a_structure_has_swap_as_a_member_and_in_its_namespace() {
         let text = header("struct S { long a; long b; };", "t.idl").expect("renders");
         // DDS-PSM-Cxx 1.0 7.12: `swap` as a member and next to the type.
         assert!(text.contains("zd_other.a"), "{text}");
@@ -2800,7 +2800,7 @@ mod tests {
     }
 
     #[test]
-    fn an_array_nests_with_the_outer_dimension_outermost() {
+    fn idl4cpp_7_2_4_1_an_array_nests_with_the_outer_dimension_outermost() {
         let text = header("struct S { long a[2][3]; };", "t.idl").expect("renders");
         assert!(
             text.contains("std::array<std::array<std::int32_t, 3>, 2> a = {};"),
@@ -2809,7 +2809,7 @@ mod tests {
     }
 
     #[test]
-    fn a_union_is_a_class_with_a_discriminator_and_one_field_per_case() {
+    fn psmcxx_7_4_4_a_union_is_a_class_with_a_discriminator_and_one_field_per_case() {
         let text = header(
             "union U switch (long) { case 1: long a; case 2: long b; };",
             "t.idl",
@@ -2843,7 +2843,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_takes_an_underlying_type_from_its_bit_bound() {
+    fn xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound() {
         let narrow = header("@bit_bound(8) enum E { A, B };", "t.idl").expect("renders");
         assert!(narrow.contains("enum class E : std::uint8_t {"), "{narrow}");
         let wide = header("enum W { A, B };", "t.idl").expect("renders");
@@ -2851,7 +2851,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_double_is_the_runtime_type_and_never_the_compiler_s() {
+    fn xtypes_7_5_1_1_2_a_long_double_is_the_runtime_type_and_never_the_compiler_s() {
         let text = header("struct S { long double d; double e; };", "t.idl").expect("renders");
         // IDL4 to C++ 1.0 §7.2.4.3.1: built-in members start at their
         // default value, which `= {}` value-initializes.
@@ -2861,7 +2861,7 @@ mod tests {
     }
 
     #[test]
-    fn the_tag_keeps_apart_what_the_cpp_spelling_collapses() {
+    fn xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses() {
         let ast = model(
             "struct S { octet a; uint8 b; double c; long double d; string e; wstring f; };",
             "t.idl",
@@ -2905,7 +2905,7 @@ mod tests {
     /// with the fixed-width types of `<cstdint>`, which are the C99 column
     /// of the table, and no `int` or `long`.
     #[test]
-    fn the_integers_are_spelled_with_the_c99_types_of_table_43() {
+    fn xtypes_7_5_1_1_2_the_integers_are_spelled_with_the_c99_types_of_table_43() {
         let text = header(
             "struct S { int8 a; uint8 b; short c; unsigned short d; long e; unsigned long f; \
              long long g; unsigned long long h; };",
@@ -2945,7 +2945,7 @@ mod tests {
     }
 
     #[test]
-    fn an_any_member_is_refused_by_name_at_any_depth() {
+    fn idl_7_2_3_an_any_member_is_refused_by_name_at_any_depth() {
         let bare = header("struct S { any a; };", "t.idl").expect_err("refused");
         assert!(bare.contains("C++ has no form for `any`"), "{bare}");
         let nested = header("struct S { sequence<any> a; };", "t.idl").expect_err("refused");

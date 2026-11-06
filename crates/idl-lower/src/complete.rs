@@ -85,10 +85,10 @@ impl Lowering<'_> {
             .facets(any)
             .and_then(|facets| facets.xtypes.as_ref())
             .and_then(|x| x.default_nested);
-        if already.is_none() {
-            if let Some(facets) = self.ast.facets_mut(any) {
-                facets.xtypes_mut().default_nested = Some(value);
-            }
+        if already.is_none()
+            && let Some(facets) = self.ast.facets_mut(any)
+        {
+            facets.xtypes_mut().default_nested = Some(value);
         }
     }
 
@@ -242,21 +242,21 @@ impl Lowering<'_> {
             .ok()
             .map_or_else(|| span_of(None), |node| span_of(node.facets.source.span));
 
-        if let Some(written) = declared {
-            if written == 0 || written > MAX_BIT_BOUND {
-                self.diagnose_at(
-                    DiagnosticCode::InvalidBound,
-                    span,
-                    &alloc::format!(
-                        "`@bit_bound({written})` on a bitmask, and §7.4.13.4.3.3 says it \
+        if let Some(written) = declared
+            && (written == 0 || written > MAX_BIT_BOUND)
+        {
+            self.diagnose_at(
+                DiagnosticCode::InvalidBound,
+                span,
+                &alloc::format!(
+                    "`@bit_bound({written})` on a bitmask, and §7.4.13.4.3.3 says it \
                          must be lower than or equal to {MAX_BIT_BOUND}"
-                    ),
-                    "OMG IDL 4.2 §7.4.13.4.3.3",
-                );
-                // Every count and position below would be measured
-                // against a bound the clause does not admit.
-                return;
-            }
+                ),
+                "OMG IDL 4.2 §7.4.13.4.3.3",
+            );
+            // Every count and position below would be measured
+            // against a bound the clause does not admit.
+            return;
         }
 
         let bits: Vec<_> = self.ast.bits_of(id).to_vec();
@@ -278,26 +278,56 @@ impl Lowering<'_> {
             );
         }
 
+        // The position each value has, written or following the one
+        // before it: "A non-annotated bit value will always be assumed as
+        // just following the one which is before" (§7.4.13.4.3.3, note).
+        let mut taken: Vec<(u16, String)> = Vec::new();
         for bit in bits {
             let Ok(node) = self.ast.bit_value(bit) else {
                 continue;
             };
-            let Some(position) = node.position else {
+            let Some(position) = self.ast.effective_bit_position(bit) else {
                 continue;
             };
+            let name = node.name.clone();
+            let written = node.position.is_some();
+            let bit_span = span_of(node.facets.source.span);
             if position >= bound {
-                let name = node.name.clone();
-                let bit_span = span_of(node.facets.source.span);
+                let how = if written {
+                    alloc::format!("`@position({position})` on `{name}`")
+                } else {
+                    alloc::format!(
+                        "`{name}`, which follows the value before it at position {position},"
+                    )
+                };
                 self.diagnose_at(
                     DiagnosticCode::InvalidBound,
                     bit_span,
                     &alloc::format!(
-                        "`@position({position})` on `{name}` in a bitmask of {bound} bits; \
+                        "{how} in a bitmask of {bound} bits; \
                          §7.4.13.4.3.3 puts the possible positions at 0 up to {}",
                         bound - 1
                     ),
                     "OMG IDL 4.2 §7.4.13.4.3.3",
                 );
+            }
+            // "Although it is not recommended, annotated bit values can be
+            // declared unordered. In any cases, no duplicates are allowed."
+            // Before this check the later value overwrote the earlier one's
+            // bit in the model, and two names meant one flag on the wire.
+            if let Some((_, first)) = taken.iter().find(|(at, _)| *at == position) {
+                let first = first.clone();
+                self.diagnose_at(
+                    DiagnosticCode::DuplicateMemberId,
+                    bit_span,
+                    &alloc::format!(
+                        "`{name}` takes position {position} of the bitmask, which `{first}` \
+                         already has; §7.4.13.4.3.3 allows no duplicates"
+                    ),
+                    "OMG IDL 4.2 §7.4.13.4.3.3",
+                );
+            } else {
+                taken.push((position, name));
             }
         }
     }
@@ -401,7 +431,14 @@ impl Lowering<'_> {
     /// `typeid` sets a declaration's repository id outright; `typeprefix`
     /// sets the prefix its derived id is built from. CORBA 3.3 §10.7.
     fn apply_repository_directives(&mut self) {
-        for (candidates, text, is_prefix) in core::mem::take(&mut self.repository_directives) {
+        // The explicit ids given so far, with whether a `#pragma ID` gave
+        // each: OMG IDL 4.2 §7.4.6.4.1.3, "both mechanisms must return the
+        // same repository id for the same IDL element otherwise an error
+        // should be raised".
+        let mut explicit: Vec<(AnyId, String, bool)> = Vec::new();
+        for (candidates, text, is_prefix, from_pragma) in
+            core::mem::take(&mut self.repository_directives)
+        {
             let Some((name, any)) = self.first_that_resolves(&candidates) else {
                 // A directive naming nothing is reported by validation,
                 // not silently applied to whatever is nearest.
@@ -411,17 +448,77 @@ impl Lowering<'_> {
                 );
                 continue;
             };
+            if is_prefix {
+                self.prefixes.push((name, text));
+                continue;
+            }
+            if let Some((_, earlier, earlier_pragma)) =
+                explicit.iter().find(|(known, _, _)| *known == any)
+                && *earlier != text
+            {
+                let (first, second) = (
+                    if *earlier_pragma {
+                        "#pragma ID"
+                    } else {
+                        "typeid"
+                    },
+                    if from_pragma { "#pragma ID" } else { "typeid" },
+                );
+                let message = alloc::format!(
+                    "`{}` is given the repository id \"{earlier}\" by {first} and \"{text}\" by \
+                     {second}; one element has one repository id",
+                    name.segments().join("::")
+                );
+                let span = self.span_of_any(any);
+                self.diagnose_at(
+                    DiagnosticCode::ConflictingAnnotations,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.6.4.1.3",
+                );
+                continue;
+            }
+            explicit.push((any, text.clone(), from_pragma));
             let Some(facets) = self.ast.facets_mut(any) else {
                 continue;
             };
             let corba = facets.corba_mut();
-            if is_prefix {
-                self.prefixes.push((name, text));
-            } else {
-                corba.repository_id = Some(zerodds_ast_core::RepositoryId(text));
-                corba.repository_id_origin = Some(RepositoryIdOrigin::PragmaId);
-            }
+            corba.repository_id = Some(zerodds_ast_core::RepositoryId(text));
+            corba.repository_id_origin = Some(RepositoryIdOrigin::PragmaId);
         }
+        // A `typeprefix` and a `#pragma prefix` for one scope.
+        let conflicts: Vec<(ScopedName, String, String)> = self
+            .prefixes
+            .iter()
+            .filter_map(|(scope, text)| {
+                self.pragma_prefixes
+                    .iter()
+                    .find(|(other, other_text)| other == scope && other_text != text)
+                    .map(|(_, other_text)| (scope.clone(), text.clone(), other_text.clone()))
+            })
+            .collect();
+        for (scope, typeprefix, pragma) in conflicts {
+            let shown = if scope.segments().is_empty() {
+                alloc::string::String::from("the specification scope")
+            } else {
+                alloc::format!("`{}`", scope.segments().join("::"))
+            };
+            let message = alloc::format!(
+                "{shown} is given the prefix \"{typeprefix}\" by typeprefix and \"{pragma}\" by \
+                 #pragma prefix; both mechanisms must give one element one repository id"
+            );
+            self.diagnose_at(
+                DiagnosticCode::ConflictingAnnotations,
+                zerodds_idl_cst::Span::new(0, 0),
+                &message,
+                "OMG IDL 4.2 §7.4.6.4.1.3",
+            );
+        }
+    }
+
+    /// The source range of a declaration, as a diagnostic points at it.
+    fn span_of_any(&self, any: AnyId) -> zerodds_idl_cst::Span {
+        span_of(self.ast.facets(any).and_then(|facets| facets.source.span))
     }
 
     /// The first of a directive's candidate scopes that names something.
@@ -1077,22 +1174,39 @@ impl Lowering<'_> {
         // caller's default belongs at the root of the chain; written into
         // each link it would give a derived structure an extensibility its
         // base does not have.
+        //
+        // Every type that carries an extensibility takes the caller's
+        // default: the aggregates and the enumerations and bitmasks, whose
+        // TypeObject flags hold it (DDS-XTypes 1.3 §7.3.4.5, Annex B
+        // `EnumTypeFlag`, `BitmaskTypeFlag`; Table 21 admits
+        // `@extensibility` on them). CycloneDDS's `idlc` applies its
+        // default to them as well; with this filling only the aggregates,
+        // the enumerations under a caller's `@final` default kept the
+        // appendable position in their flags and their TypeIdentifiers
+        // were not Cyclone's (`crates/types/tests/type_object_bridge.rs`).
         let derives = matches!(node.kind, TypeKind::Structure { base: Some(_), .. });
-        let filled = self.pragma_extensibility.or(if is_aggregate && !derives {
-            self.options.default_extensibility
-        } else {
-            None
-        });
+        let carries_extensibility = is_aggregate
+            || matches!(
+                node.kind,
+                TypeKind::Enumeration { .. } | TypeKind::Bitmask { .. }
+            );
+        let filled = self
+            .pragma_extensibility
+            .or(if carries_extensibility && !derives {
+                self.options.default_extensibility
+            } else {
+                None
+            });
         if let Some(extensibility) = filled {
             let declared = self
                 .ast
                 .facets(any)
                 .and_then(|facets| facets.xtypes.as_ref())
                 .and_then(|x| x.extensibility);
-            if declared.is_none() {
-                if let Some(facets) = self.ast.facets_mut(any) {
-                    facets.xtypes_mut().extensibility = Some(extensibility);
-                }
+            if declared.is_none()
+                && let Some(facets) = self.ast.facets_mut(any)
+            {
+                facets.xtypes_mut().extensibility = Some(extensibility);
             }
         }
 

@@ -140,7 +140,7 @@ mod tests {
     /// The values of §7.3.7 to §7.3.9, §8.1 to §8.3 as the specification prints
     /// them.
     #[test]
-    fn the_constants_are_the_ones_of_the_specification() {
+    fn security_7_3_8_the_constants_are_the_ones_of_the_specification() {
         assert_eq!(CRYPTO_ALGORITHM_INVALID_ID, 0x00);
         assert_eq!(CRYPTO_ALGORITHM_COMPATIBILITY_MODE, 0x8000_0000);
         assert_eq!(CRYPTO_ALGORITHM_SET_ALL, 0xffff_ffff);
@@ -210,7 +210,7 @@ mod tests {
 
     /// §7.3.17: `int_holder_value = 256*256*r[0] + 256*r[1] + r[2]`.
     #[test]
-    fn the_key_revision_int_holder_follows_the_formula() {
+    fn security_7_3_17_the_key_revision_int_holder_follows_the_formula() {
         assert_eq!(key_revision_to_int(CRYPTO_TRANSFORM_KEY_REVISION_NONE), 0);
         assert_eq!(key_revision_to_int([0, 0, 1]), 1);
         assert_eq!(key_revision_to_int([0, 1, 0]), 256);

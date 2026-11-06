@@ -58,6 +58,9 @@ pub struct BufferedSample {
     pub representation: u8,
     /// `true` = big-endian.
     pub big_endian: bool,
+    /// The representation identifier of the header the sample came under
+    /// (DDSI-RTPS 2.5 §10.5): which of CDR2, D_CDR2 or PL_CDR2 it is.
+    pub representation_identifier: [u8; 2],
     /// Source timestamp from the writer's INFO_TS submessage
     /// (DDSI-RTPS §8.7.3), if any — `None` when the writer sent none, in
     /// which case the caller uses its own receipt-time clock instead of
@@ -240,6 +243,31 @@ impl DdsBridge {
             .runtime
             .register_user_writer_kind(cfg, keyed)
             .map_err(|e| DdsBridgeError::Register(std::format!("{e:?}")))?;
+        if let Some(ts) = &type_support {
+            // The bodies `write` takes are XCDR2 of the topic type: the
+            // writer offers XCDR2 and frames them under the header of the
+            // type's extensibility (DDS-XTypes 1.3 §7.6.3.1.2, Table 60:
+            // CDR2, D_CDR2 or PL_CDR2), not under the one of a @final type.
+            use zerodds_dcps::dds_type::Extensibility;
+            use zerodds_types::qos::ExtensibilityForRepr as Ext;
+            let map = |e| DdsBridgeError::Register(std::format!("{e:?}"));
+            self.runtime
+                .set_user_writer_data_rep_override(
+                    entity_id,
+                    Some(vec![
+                        zerodds_rtps::publication_data::data_representation::XCDR2,
+                    ]),
+                )
+                .map_err(map)?;
+            let ext = match ts.extensibility() {
+                Extensibility::Final => Ext::Final,
+                Extensibility::Appendable => Ext::Appendable,
+                Extensibility::Mutable => Ext::Mutable,
+            };
+            self.runtime
+                .set_user_writer_wire_extensibility(entity_id, ext)
+                .map_err(map)?;
+        }
         let handle = WriterHandle { entity_id };
         self.writers
             .insert(topic_name.to_string(), (handle, type_support));
@@ -314,6 +342,7 @@ fn spawn_pump(
                 payload,
                 representation,
                 big_endian,
+                representation_identifier,
                 source_timestamp,
                 ..
             } = sample
@@ -336,6 +365,7 @@ fn spawn_pump(
                     representation,
                 ),
                 big_endian,
+                representation_identifier,
                 source_timestamp,
             });
         }
@@ -388,6 +418,7 @@ mod tests {
             writer_strength: 0,
             representation,
             big_endian: false,
+            representation_identifier: [0x00, if representation == 0 { 0x01 } else { 0x07 }],
             source_timestamp: None,
             reception_timestamp: None,
             source_sequence_number: -1,
@@ -410,7 +441,7 @@ mod tests {
     /// takes 2: the buffer carries the latter, or every XCDR2 sample fails
     /// to decode in the bridge.
     #[test]
-    fn the_pump_names_xcdr2_the_way_read_body_takes_it() {
+    fn opcuabridge_6_1_the_pump_names_xcdr2_the_way_read_body_takes_it() {
         let buffer = Arc::new(Mutex::new(Vec::new()));
         let replaced = Arc::new(AtomicU64::new(0));
         let (tx, rx) = std::sync::mpsc::channel();
@@ -455,38 +486,77 @@ mod tests {
 
     use super::*;
 
+    /// DDS-XTypes 1.3 §7.6.3.1.2, Table 60, with DDSI-RTPS 2.5 §10.5: a
+    /// sample the bridge writes goes out under the header of its type's
+    /// extensibility, CDR2_LE (0x0007) for `@final`, D_CDR2_LE (0x0009)
+    /// for `@appendable`, PL_CDR2_LE (0x000b) for `@mutable`.
     #[test]
-    fn reader_and_writer_round_trip_bytes() {
+    fn xtypes_7_6_3_1_2_a_bridge_sample_goes_out_under_the_header_of_its_type() {
+        use zerodds_types::dynamic::DynamicData;
         let lease = zerodds_test_domains::lease_domain();
-        let domain = lease.id();
-        let mut bridge = DdsBridge::start(
-            domain,
-            "zerodds-opcua-bridged-test",
-            RuntimeConfig::default(),
-        )
-        .expect("start");
-        bridge
-            .writer("T", "Opaque", false, false, None)
-            .expect("writer");
-        let reader = bridge
-            .reader("T", "Opaque", false, false, None)
-            .expect("reader");
-        bridge.write("T", &[1, 2, 3, 4]).expect("write");
-
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
-        let mut got = Vec::new();
-        while got.is_empty() && std::time::Instant::now() < deadline {
-            got = reader.poll();
-            if got.is_empty() {
-                std::thread::sleep(std::time::Duration::from_millis(20));
+        let ast = Arc::new(
+            zerodds_wire_probe::encode::model_from_idl(
+                "@final struct F { long x; };\n@appendable struct A { long x; };\n\
+                 @mutable struct M { long x; };\n",
+                "header_test.idl",
+            )
+            .expect("idl parses"),
+        );
+        let mut writer =
+            DdsBridge::start(lease.id(), "opcua-header-writer", RuntimeConfig::default())
+                .expect("start");
+        let mut reader =
+            DdsBridge::start(lease.id(), "opcua-header-reader", RuntimeConfig::default())
+                .expect("start");
+        for (name, identifier) in [
+            ("F", [0x00, 0x07]),
+            ("A", [0x00, 0x09]),
+            ("M", [0x00, 0x0b]),
+        ] {
+            let ts = crate::idl::type_support_for(&[Arc::clone(&ast)], name).expect("support");
+            let w = writer
+                .writer(name, name, false, true, Some(Arc::clone(&ts)))
+                .expect("writer");
+            let r = reader
+                .reader(name, name, false, true, Some(Arc::clone(&ts)))
+                .expect("reader");
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while writer.runtime.user_writer_matched_count(w.entity_id) < 1 {
+                let left = deadline.saturating_duration_since(std::time::Instant::now());
+                assert!(!left.is_zero(), "{name}: the reader matched");
+                writer.runtime.wait_match_event(left);
             }
+            let sample = ts
+                .from_dynamic_data(DynamicData::Aggregate(vec![(
+                    "x".to_string(),
+                    DynamicData::Integer {
+                        kind: Some(zerodds_ast::PrimitiveKind::Int32),
+                        value: 5,
+                    },
+                )]))
+                .expect("sample");
+            writer
+                .write(name, &ts.write_body(&sample, 2, false).expect("body"))
+                .expect("write");
+            let got = loop {
+                let got = r.poll();
+                if !got.is_empty() {
+                    break got;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "{name}: the sample arrived"
+                );
+                // The reader's pump fills a buffer the bridge drains by
+                // polling; this is the interval of that poll.
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            };
+            assert_eq!(got[0].representation_identifier, identifier, "{name}");
         }
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].body, vec![1, 2, 3, 4]);
     }
 
     #[test]
-    fn write_against_unknown_topic_is_reported() {
+    fn opcuabridge_6_2_write_against_unknown_topic_is_reported() {
         let lease = zerodds_test_domains::lease_domain();
         let bridge = DdsBridge::start(
             lease.id(),

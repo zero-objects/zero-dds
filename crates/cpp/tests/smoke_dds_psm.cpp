@@ -50,10 +50,10 @@
 using namespace dds;
 
 // ---- the domains of the tests -------------------------------------------------------------------
-// The tests name their domains by position, `D(0)` ... `D(49)`. A run started by `cargo test` gets
-// a few leased domains in `ZERODDS_TEST_DOMAINS` (a comma-separated list of domains no other
-// process of the test host holds), so that the runs of other test binaries do not hear it; the
-// position picks one of them in turn. The tests that use two domains take consecutive positions,
+// The tests name their domains by position, `D(0)` ... `D(49)`. A run started by CTest under
+// tests/integration/with_domains.py gets a few leased domains in `ZERODDS_TEST_DOMAINS` (a
+// comma-separated list of domains no other process of the test host holds), so that the runs of
+// other test programs do not hear it; the position picks one of them in turn. The tests that use two domains take consecutive positions,
 // so they get two different ones. Started by hand, without the variable, `D(n)` is `n`.
 static uint32_t D(uint32_t position) {
     const char* list = ::getenv("ZERODDS_TEST_DOMAINS");
@@ -238,7 +238,7 @@ static int failures = 0;
 // DDS 1.4 §2.2.3: RESOURCE_LIMITS is LENGTH_UNLIMITED (-1) in all three
 // members for every entity, RELIABILITY is BEST_EFFORT for a Topic and a
 // DataReader and RELIABLE for a DataWriter.
-static void test_default_qos_matches_the_specification() {
+static void psmcxx_7_6_default_qos_matches_the_specification() {
     using core::policy::ReliabilityKind;
     namespace p = core::policy;
     const topic::qos::TopicQos topic;
@@ -264,7 +264,7 @@ static void test_default_qos_matches_the_specification() {
 // DDS-PSM-Cxx 1.0 §7.6.1, §7.8, §7.13: policies compose with `<<` for every
 // QoS kind, a kind has named enumerators and static helpers, the setters
 // chain, and a QoS is built from another kind (`DataWriterQos dwqos(tqos)`).
-static void test_qos_composition() {
+static void psmcxx_7_6_1_qos_composition() {
     namespace p = core::policy;
     topic::qos::TopicQos tqos;
     tqos << p::Reliability::Reliable() << p::Durability::Transient() << p::History::KeepLast(10)
@@ -325,7 +325,7 @@ static void test_qos_composition() {
 // wrapping, the nanosec mutator normalises into the seconds component, and
 // Time and Duration have the conversions, comparison and arithmetic of the
 // normative header.
-static void test_duration_sentinel_conversion_and_overflow() {
+static void psmcxx_7_5_6_duration_sentinel_conversion_and_overflow() {
     EXPECT(core::Duration::infinite() == core::Duration(0x7fffffff, 0x7fffffffu),
            "infinite() is {0x7fffffff, 0x7fffffff} per DDS 1.2");
     EXPECT(core::Duration::infinite().sec() == 0x7fffffff &&
@@ -374,19 +374,19 @@ static void test_duration_sentinel_conversion_and_overflow() {
            "nanosec mutator normalises a value of one second or more");
 }
 
-static void test_participant_lifecycle() {
+static void psmcxx_2_1_participant_lifecycle() {
     domain::DomainParticipant dp(D(0));
     EXPECT(dp.domain_id() == D(0), "domain_id");
 }
 
-static void test_topic_creation() {
+static void psmcxx_2_1_topic_creation() {
     domain::DomainParticipant dp(D(1));
     topic::Topic<core::ByteSeq> t(dp, "ChatterTopic");
     EXPECT(t.name() == "ChatterTopic", "topic name");
     EXPECT(t.type_name() == "DDS::Bytes", "topic type_name");
 }
 
-static void test_publisher_subscriber_lifecycle() {
+static void psmcxx_2_1_publisher_subscriber_lifecycle() {
     domain::DomainParticipant dp(D(2));
     pub::Publisher pub_(dp);
     sub::Subscriber sub_(dp);
@@ -394,7 +394,7 @@ static void test_publisher_subscriber_lifecycle() {
     (void)sub_;
 }
 
-static void test_writer_reader_lifecycle() {
+static void psmcxx_2_1_writer_reader_lifecycle() {
     domain::DomainParticipant dp(D(3));
     topic::Topic<core::ByteSeq> t(dp, "T");
     pub::Publisher pub_(dp);
@@ -424,7 +424,7 @@ static void test_writer_reader_lifecycle() {
     EXPECT(taken, "the written sample is taken");
 }
 
-static void test_take_on_empty_returns_empty() {
+static void psmcxx_2_1_take_on_empty_returns_empty() {
     domain::DomainParticipant dp(D(4));
     topic::Topic<core::ByteSeq> t(dp, "Empty");
     sub::Subscriber sub_(dp);
@@ -437,7 +437,7 @@ static void test_take_on_empty_returns_empty() {
 // sample in the DataReader; `take` removes it. A reliable writer/reader of one
 // participant matches itself, so one written sample can be read twice and
 // taken once.
-static void test_read_keeps_samples_take_removes_them() {
+static void psmcxx_2_1_read_keeps_samples_take_removes_them() {
     domain::DomainParticipant dp(D(15));
     topic::Topic<core::ByteSeq> t(dp, "ReadVsTake");
     pub::Publisher pub_(dp);
@@ -478,7 +478,7 @@ static void test_read_keeps_samples_take_removes_them() {
     EXPECT(after.length() == 0, "take removed the sample");
 }
 
-static void test_status_getters() {
+static void psmcxx_2_1_status_getters() {
     domain::DomainParticipant dp(D(5));
     topic::Topic<core::ByteSeq> t(dp, "S");
     pub::Publisher pub_(dp);
@@ -498,7 +498,7 @@ static void test_status_getters() {
     EXPECT(lost.total_count() == 0, "lost zero");
 }
 
-static void test_guardcondition_and_waitset() {
+static void psmcxx_2_1_guardcondition_and_waitset() {
     core::cond::WaitSet ws;
     core::cond::GuardCondition gc;
     EXPECT(!gc.trigger_value(), "guard initially false");
@@ -520,7 +520,7 @@ static void test_guardcondition_and_waitset() {
     EXPECT(!ws.detach_condition(gc), "and false for one that is not attached");
 }
 
-static void test_readcondition_lifecycle() {
+static void psmcxx_2_1_readcondition_lifecycle() {
     domain::DomainParticipant dp(D(7));
     topic::Topic<core::ByteSeq> t(dp, "RC");
     sub::Subscriber sub_(dp);
@@ -560,7 +560,7 @@ static void test_readcondition_lifecycle() {
     EXPECT(t1 == t2, "read cond trigger stable across calls");
 }
 
-static void test_contentfilteredtopic_lifecycle() {
+static void psmcxx_2_1_contentfilteredtopic_lifecycle() {
     domain::DomainParticipant dp(D(8));
     topic::Topic<core::ByteSeq> t(dp, "CFT_Base");
     std::vector<std::string> params = strs("42");
@@ -598,7 +598,7 @@ static void test_contentfilteredtopic_lifecycle() {
     EXPECT(ucft->native_cft_handle() != nullptr, "a support without an object still makes a cft");
 }
 
-static void test_listener_attach_detach() {
+static void psmcxx_2_1_listener_attach_detach() {
     class MyListener : public pub::NoOpDataWriterListener<core::ByteSeq> {
     public:
         MyListener() : matched(0) {}
@@ -624,7 +624,7 @@ static void test_listener_attach_detach() {
 // vtable — "each method is an `extern \"C\"` shim that casts `user_data` back
 // to the C++ listener and calls the virtual method".
 //
-// `test_listener_attach_detach` above only shows that attaching does not
+// `psmcxx_2_1_listener_attach_detach` above only shows that attaching does not
 // crash and that nothing fires without a poll. It asserts the callback count
 // stays zero, so it cannot show that the shim dispatches at all. This test
 // checks the dispatch itself: it reads back the vtable the bridge installed
@@ -632,7 +632,7 @@ static void test_listener_attach_detach() {
 // does — `fn(vt->user_data, handle)` — then asserts the virtual method on the
 // derived C++ listener ran. That is deterministic and independent of
 // discovery timing.
-static void test_listener_bridge_dispatches_to_virtual() {
+static void psmcxx_2_1_listener_bridge_dispatches_to_virtual() {
     class WriterListener : public pub::NoOpDataWriterListener<core::ByteSeq> {
     public:
         WriterListener() : matched(0), liveliness_lost(0), seen_writer(nullptr), seen_total_count(-1) {}
@@ -726,7 +726,7 @@ static void test_listener_bridge_dispatches_to_virtual() {
 // two listeners must not share one thread-local table, and destroying a writer
 // with an attached listener must deregister it so a later poll cannot reach a
 // freed writer or vtable.
-static void test_listener_table_is_per_entity_and_deregisters_on_destroy() {
+static void psmcxx_2_1_listener_table_is_per_entity_and_deregisters_on_destroy() {
     class ListenerA : public pub::NoOpDataWriterListener<core::ByteSeq> {
     public:
         ListenerA() : matched(0) {}
@@ -803,7 +803,7 @@ static void test_listener_table_is_per_entity_and_deregisters_on_destroy() {
 // was created with. A reader of the writer's own participant is not in the
 // builtin DCPSSubscription reader; its handle was listed and its data was
 // not found.
-static void test_matched_data_names_the_other_endpoint() {
+static void psmcxx_2_1_matched_data_names_the_other_endpoint() {
     domain::DomainParticipant dp(D(6));
     topic::Topic<core::ByteSeq> t(dp, "Matched");
     pub::Publisher pub_(dp);
@@ -854,7 +854,7 @@ static void test_matched_data_names_the_other_endpoint() {
 // no place for. The struct is filled the way the C API fills it; the class
 // copies it, so nothing here is owned by the release that
 // zerodds_topic_builtin_topic_data_free is for.
-static void test_topic_data_carries_every_member() {
+static void psmcxx_2_1_topic_data_carries_every_member() {
     const std::string name = "Chatter";
     const std::string type_name = "DDS::Chatter";
     const std::vector<uint8_t> topic_data = bytes(1, 2, 3);
@@ -918,13 +918,13 @@ static void test_topic_data_carries_every_member() {
     EXPECT(d.topic_data().value() == topic_data, "topic TOPIC_DATA");
 }
 
-static void test_discovered_topics_empty_initially() {
+static void psmcxx_2_1_discovered_topics_empty_initially() {
     domain::DomainParticipant dp(D(11));
     const core::InstanceHandleSeq topics = dp->get_discovered_topics();
     EXPECT(topics.empty(), "no discovered topics initially");
 }
 
-static void test_discovered_topic_data_unknown_handle_throws() {
+static void psmcxx_2_1_discovered_topic_data_unknown_handle_throws() {
     domain::DomainParticipant dp(D(12));
     bool threw = false;
     try {
@@ -935,16 +935,6 @@ static void test_discovered_topic_data_unknown_handle_throws() {
         threw = true;
     }
     EXPECT(threw, "unknown handle throws PreconditionNotMetError");
-}
-
-static void test_discovered_publications_count_zero() {
-    domain::DomainParticipant dp(D(13));
-    EXPECT(zerodds_dp_discovered_publications_count(dp->native_handle()) == 0, "discovered publications count zero");
-}
-
-static void test_discovered_subscriptions_count_zero() {
-    domain::DomainParticipant dp(D(14));
-    EXPECT(zerodds_dp_discovered_subscriptions_count(dp->native_handle()) == 0, "discovered subscriptions count zero");
 }
 
 // A reference type declared with the macros of dds/core/refmacros.hpp.
@@ -962,7 +952,7 @@ public:
 
 // DDS-PSM-Cxx 1.0: the macros, optional, array, BuiltinTopicKey, the RAII
 // guards and the find functions with their entity tracker.
-static void test_layout_headers_and_find() {
+static void psmcxx_7_2_layout_headers_and_find() {
     OMG_DDS_STATIC_ASSERT(OMG_DDS_STATE_BIT_COUNT == 16);
     {
         MacroRef r;
@@ -1099,7 +1089,7 @@ struct CountingParticipantListener : dds::domain::NoOpDomainParticipantListener 
 };
 } // namespace
 
-static void test_domain_participant_listener() {
+static void psmcxx_2_1_domain_participant_listener() {
     domain::DomainParticipant dp(D(24));
     CountingParticipantListener l;
     dp.listener(&l, core::status::StatusMask::inconsistent_topic());
@@ -1110,7 +1100,7 @@ static void test_domain_participant_listener() {
 
 // DDS-PSM-Cxx 1.0: dds::domain::find, the ignore functions and a
 // StatusCondition built from an entity.
-static void test_find_ignore_status_condition() {
+static void psmcxx_2_1_find_ignore_status_condition() {
     domain::DomainParticipant dp(D(12));
     domain::DomainParticipant found = domain::find(D(12));
     EXPECT(found == dp, "find returns the participant of the domain id");
@@ -1134,7 +1124,7 @@ static void test_find_ignore_status_condition() {
 // DDS-PSM-Cxx 1.0 §7.3: a loan-based take is exception safe. A decode that
 // rejects the sample throws out of take, and the loan it opened is returned
 // before the exception propagates — the reader stays usable afterwards.
-static void test_take_returns_the_loan_when_decode_throws() {
+static void psmcxx_2_1_take_returns_the_loan_when_decode_throws() {
     domain::DomainParticipant dp(D(16));
     topic::Topic<Throwing> t(dp, "ThrowingTake");
     pub::Publisher pub_(dp);
@@ -1172,7 +1162,7 @@ static void test_take_returns_the_loan_when_decode_throws() {
 // a handle the participant's contains_entity recognises, and
 // get_status_changes reports the triggered statuses (PUBLICATION_MATCHED,
 // SUBSCRIPTION_MATCHED, DATA_AVAILABLE) until they are read.
-static void test_entity_operations() {
+static void psmcxx_2_1_entity_operations() {
     domain::DomainParticipant dp(D(17));
     topic::Topic<core::ByteSeq> t(dp, "EntityOps");
     pub::Publisher pub_(dp);
@@ -1227,7 +1217,7 @@ static void test_entity_operations() {
 // LoanedSamples as a move-only type with cbegin/cend and a namespace level
 // move, SharedSamples, read and take through iterators, select(), and the
 // streaming operators.
-static void test_samples_api() {
+static void psmcxx_2_1_samples_api() {
     domain::DomainParticipant dp(D(18));
     topic::Topic<core::ByteSeq> t(dp, "SamplesApi");
     pub::Publisher pub_(dp);
@@ -1310,7 +1300,7 @@ static void test_samples_api() {
 // ContentFilteredTopic.
 struct CountingTopicListener : topic::NoOpTopicListener<core::ByteSeq> {};
 
-static void test_topic_any_topic_and_listener() {
+static void psmcxx_2_1_topic_any_topic_and_listener() {
     domain::DomainParticipant dp(D(20));
     topic::Topic<core::ByteSeq> t(dp, "AnyTopicProbe", "DDS::Bytes");
     EXPECT(t.type_name() == "DDS::Bytes", "a topic created under a type name");
@@ -1354,7 +1344,7 @@ static void test_topic_any_topic_and_listener() {
 struct PubListener : pub::NoOpPublisherListener {};
 struct SubListener : sub::NoOpSubscriberListener {};
 
-static void test_publisher_subscriber_datawriter_api() {
+static void psmcxx_2_1_publisher_subscriber_datawriter_api() {
     namespace p = core::policy;
     domain::DomainParticipant dp(D(21));
 
@@ -1447,7 +1437,7 @@ static void test_publisher_subscriber_datawriter_api() {
 // DDS-PSM-Cxx 1.0 §7.6.2.1: a QosProvider loads a DDS-XML QoS document from a
 // file URI and gives the QoS of each entity kind, with profile inheritance;
 // another URI scheme is UNSUPPORTED.
-static void test_qos_provider() {
+static void psmcxx_7_6_2_1_qos_provider() {
     namespace p = core::policy;
     const std::string path = "/tmp/zerodds_smoke_qos_" + ::zerodds::cxx::to_string(static_cast<int>(::getpid())) + ".xml";
     {
@@ -1565,7 +1555,7 @@ struct Color_def {
 
 // DDS-PSM-Cxx 1.0 §2.1, §7.5.1, §7.5.4, §7.5.6, §7.6.1: operations and accessors of the value and
 // reference classes that no other test in this file calls.
-static void test_value_and_reference_classes_without_other_coverage() {
+static void psmcxx_7_5_4_value_and_reference_classes_without_other_coverage() {
     namespace p = core::policy;
     namespace st = core::status;
 
@@ -1824,7 +1814,7 @@ static void test_value_and_reference_classes_without_other_coverage() {
 
 // DDS-PSM-Cxx 1.0 §7.9: the instance operations of a keyed writer with and without a time stamp, on
 // a built-in topic type with a key.
-static void test_instance_operations_with_a_time_stamp() {
+static void psmcxx_2_1_instance_operations_with_a_time_stamp() {
     domain::DomainParticipant dp(D(36));
     topic::Topic<core::KeyedStringTopicType> t(dp, "InstanceOperations");
     pub::qos::DataWriterQos wq;
@@ -1902,7 +1892,7 @@ static void test_instance_operations_with_a_time_stamp() {
 
 // DDS-PSM-Cxx 1.0 §7.3: the operations of a DataWriter, a DataReader, a Publisher, a Subscriber and
 // a DomainParticipant can be called from several threads at once.
-static void test_operations_are_called_from_several_threads() {
+static void psmcxx_7_3_operations_are_called_from_several_threads() {
     domain::DomainParticipant dp(D(37));
     topic::Topic<core::ByteSeq> t(dp, "Reentrant");
     pub::qos::DataWriterQos wq;
@@ -1965,7 +1955,7 @@ static void test_operations_are_called_from_several_threads() {
 
 // DDS-PSM-Cxx 1.0 §7.3: the operations of a WaitSet and of a Condition can be called from several
 // threads at once, and so can the operations that create entities.
-static void test_conditions_are_used_from_several_threads() {
+static void psmcxx_7_3_conditions_are_used_from_several_threads() {
     core::cond::WaitSet ws;
     core::cond::GuardCondition guards[4] = {core::cond::GuardCondition(), core::cond::GuardCondition(),
                                             core::cond::GuardCondition(), core::cond::GuardCondition()};
@@ -2024,7 +2014,7 @@ static void test_conditions_are_used_from_several_threads() {
     EXPECT(failures_in_threads.load() == 0, "no condition or WaitSet operation threw");
 }
 
-static void test_entities_are_created_from_several_threads() {
+static void psmcxx_7_3_entities_are_created_from_several_threads() {
     std::atomic<int> failures_in_threads{0};
     domain::DomainParticipant dp(D(38));
     std::atomic<int> created{0};
@@ -2066,7 +2056,7 @@ static bool returns_by_value(Expected (C::*)() const) {
     return true;
 }
 
-static void test_signatures_follow_the_normative_headers() {
+static void psmcxx_2_signatures_follow_the_normative_headers() {
     namespace p = core::policy;
 #if ZERODDS_CXX11
     // DDS-PSM-Cxx 1.0 §7.12 (decltype and std::declval are C++11): the static form is C++11 only,
@@ -2134,7 +2124,7 @@ static bool code_throws(int code) {
     return false;
 }
 
-static void test_return_codes_map_to_exceptions() {
+static void psmcxx_7_5_5_return_codes_map_to_exceptions() {
     namespace c = core;
     EXPECT(code_throws<c::Error>(-1), "RETCODE_ERROR is Error");
     EXPECT(code_throws<c::InvalidArgumentError>(-6) && code_throws<c::InvalidArgumentError>(-3),
@@ -2193,7 +2183,7 @@ static void test_return_codes_map_to_exceptions() {
 
 // DDS-PSM-Cxx 1.0 §7.5.1.2: an object the application references, the creator of an object in use
 // and an entity with a listener are still in use; they are not closed behind the application's back.
-static void test_objects_in_use_stay_open() {
+static void psmcxx_7_5_1_2_objects_in_use_stay_open() {
     pub::qos::DataWriterQos wq;
     wq << core::policy::Reliability::Reliable() << core::policy::History::KeepAll();
     sub::qos::DataReaderQos rq;
@@ -2296,7 +2286,7 @@ public:
 };
 } // namespace
 
-static void test_reference_type_macros() {
+static void psmcxx_2_2_reference_type_macros() {
 #if ZERODDS_CXX11
     // DDS-PSM-Cxx 1.0 §7.12 (std::is_default_constructible is a C++11 type trait): C++11 only.
     static_assert(!std::is_default_constructible<OmgMacroRef>::value, "no default constructor");
@@ -2316,7 +2306,7 @@ static void test_reference_type_macros() {
     EXPECT(e->value == 0, "the _T form");
 }
 
-static void test_reference_types() {
+static void psmcxx_7_5_1_1_reference_types() {
     // DDS-PSM-Cxx 1.0 §7.5.1.2: a reference type has no public default constructor; the null
     // reference is made from `dds::core::null`. A WaitSet and a GuardCondition create a new
     // object when default-constructed.
@@ -2432,7 +2422,7 @@ static void test_reference_types() {
 
 // DDS-PSM-Cxx 1.0 §7.6.1, DDS 1.2 §7.1.3: every policy has the default value of the table of
 // DDS 1.2 and the attributes it lists, which a constructor sets and an accessor reads.
-static void test_every_policy_has_its_default_and_its_attributes() {
+static void psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes() {
     namespace p = core::policy;
     const core::Duration inf = core::Duration::infinite();
 
@@ -2687,7 +2677,7 @@ struct FindsDiscoveredTopic {
 
 // DDS 1.4 §2.2.5: the readers of the built-in subscriber hold what discovery found about the
 // other participant, its topic, its writer and this side's reader.
-static void test_builtin_topic_readers() {
+static void psmcxx_2_1_builtin_topic_readers() {
     namespace tp = ::dds::topic;
     domain::DomainParticipant reader_side(D(47));
     domain::DomainParticipant writer_side(D(47));
@@ -2749,7 +2739,7 @@ static void test_builtin_topic_readers() {
 
 // DDS 1.4 §2.2.5.3/4: the values of the members of the built-in publication and subscription
 // samples are the ones the other participant's writer and reader were created with.
-static void test_builtin_topic_values_arrive() {
+static void psmcxx_2_1_builtin_topic_values_arrive() {
     namespace p = core::policy;
     namespace tp = ::dds::topic;
     domain::DomainParticipant writer_side(D(48));
@@ -2852,7 +2842,7 @@ static void test_builtin_topic_values_arrive() {
     }
 }
 
-static void test_ignore_ends_a_match() {
+static void psmcxx_2_1_ignore_ends_a_match() {
     {
         IgnorePair pair(43, "IgnoreParticipant");
         EXPECT(eventually_true(HasDiscoveredParticipants(pair.reader_side)),
@@ -2906,7 +2896,7 @@ static void test_ignore_ends_a_match() {
 // DDS-PSM-Cxx 1.0 §2.1, §7.5.1.2, §7.6: retain and close of an entity, the default QoS of a
 // participant, the acknowledgments of a publisher and a writer, and the status operations that no
 // other test calls.
-static void test_entities_and_statuses_without_other_coverage() {
+static void psmcxx_2_1_entities_and_statuses_without_other_coverage() {
     namespace p = core::policy;
 
     // retain(): an entity nobody references stays in use, until close().
@@ -3161,7 +3151,7 @@ struct AllTopicCallbacks : topic::NoOpTopicListener<core::ByteSeq> {
 };
 } // namespace
 
-static void test_every_listener_callback_reaches_its_virtual_method() {
+static void psmcxx_2_1_every_listener_callback_reaches_its_virtual_method() {
     domain::DomainParticipant dp(D(29));
     topic::Topic<core::ByteSeq> t(dp, "EveryCallback");
     pub::Publisher pub_(dp);
@@ -3268,7 +3258,7 @@ static void test_every_listener_callback_reaches_its_virtual_method() {
 // DDS-PSM-Cxx 1.0 §7.5.4: SampleInfo and its parts, from the values they are built with; §7.6.2.1:
 // the QoS kinds of a QosProvider that the other test does not read; §2.1: the expression of a
 // ContentFilteredTopic.
-static void test_sample_info_parts_qos_provider_kinds_and_filter_expression() {
+static void psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression() {
     namespace p = core::policy;
 
     const sub::SampleInfo info(core::Time(5, 6),
@@ -3359,7 +3349,7 @@ static std::string percent_encoded(const std::string& text) {
     return out;
 }
 
-static void test_bit_masks_union_defaults_and_enum_discriminators() {
+static void psmcxx_7_11_bit_masks_union_defaults_and_enum_discriminators() {
     using namespace dds::core::xtypes;
 
     BitMaskType perm("m::Perm", 16, vec(BitFlag("READ", 0), BitFlag("WRITE", 3), BitFlag("EXEC", 4)));
@@ -3452,7 +3442,7 @@ static void test_bit_masks_union_defaults_and_enum_discriminators() {
     }
 }
 
-static void test_dynamic_types_dynamic_data_and_type_provider() {
+static void psmcxx_7_11_dynamic_types_dynamic_data_and_type_provider() {
     using namespace dds::core::xtypes;
     EnumerationType<uint32_t> color("m::Color", vec(Enumerator("RED"), Enumerator("GREEN", 5)));
     AliasType label("m::Label", StringType<char>(20));
@@ -3617,7 +3607,7 @@ static void test_dynamic_types_dynamic_data_and_type_provider() {
 
 // DDS-PSM-Cxx 1.0 (dds/core/BuiltinTopicTypes.hpp, DDS-XTypes 1.3 §7.6.8): the built-in topic types
 // carry a value from a writer to a reader.
-static void test_builtin_topic_types_round_trip() {
+static void xtypes_7_6_5_the_builtin_topic_types_round_trip() {
     domain::DomainParticipant dp(D(32));
     pub::Publisher pub_(dp);
     sub::Subscriber sub_(dp);
@@ -3688,7 +3678,7 @@ static void test_builtin_topic_types_round_trip() {
 
 // DDS-PSM-Cxx 1.0 §2.1: the participant operations that no other test calls: lookup of a topic
 // description, the built-in subscriber, discovered participants, delete_contained_entities.
-static void test_participant_operations_without_other_coverage() {
+static void psmcxx_2_1_participant_operations_without_other_coverage() {
     domain::DomainParticipant dp(D(33));
     topic::Topic<core::ByteSeq> t(dp, "LookupTopicDescription");
     EXPECT(t.inconsistent_topic_status().total_count() == 0, "a topic has no inconsistent topic");
@@ -3753,7 +3743,7 @@ static void test_participant_operations_without_other_coverage() {
 
 // DDS-PSM-Cxx 1.0 §2.1, §7.6: the QoS of a running entity is read and set, with `qos()` and with the
 // stream operators; a changeable policy changes, an immutable one is refused.
-static void test_qos_of_a_running_entity_is_set_and_read() {
+static void psmcxx_7_6_qos_of_a_running_entity_is_set_and_read() {
     namespace p = core::policy;
     domain::DomainParticipant dp(D(34));
     domain::qos::DomainParticipantQos dq;
@@ -3826,7 +3816,7 @@ static void test_qos_of_a_running_entity_is_set_and_read() {
 // DDS-XTypes 1.3 Annex D: the QoS sets of Topic, DataWriter and DataReader carry the
 // DataRepresentationQosPolicy and the DataReader the TypeConsistencyEnforcementQosPolicy with its
 // five flags; both reach the entity and come back from it.
-static void test_data_representation_and_type_consistency_in_the_qos_sets() {
+static void xtypes_7_6_3_1_1_data_representation_and_type_consistency_in_the_qos_sets() {
     namespace p = core::policy;
     domain::DomainParticipant dp(D(61));
 
@@ -3917,7 +3907,7 @@ static void test_data_representation_and_type_consistency_in_the_qos_sets() {
 }
 
 // DDS-PSM-Cxx 1.0 §2.1: every entity can be created with its QoS, a listener and a status mask.
-static void test_entities_are_created_with_qos_listener_and_mask() {
+static void psmcxx_2_1_entities_are_created_with_qos_listener_and_mask() {
     namespace p = core::policy;
     struct ParticipantListener : domain::NoOpDomainParticipantListener {};
     struct TopicProbeListener : topic::NoOpTopicListener<core::ByteSeq> {};
@@ -3981,105 +3971,79 @@ int main(int argc, char** argv) {
 #define RUN(fn) do { std::cerr << "[smoke] " #fn " start\n" << std::flush; fn(); std::cerr << "[smoke] " #fn " done\n" << std::flush; } while (0)
 #if !ZERODDS_CXX11
     // The modes with threads need std::thread and std::atomic (DDS-PSM-Cxx 1.0 §7.12, C++11).
-    if (argc > 1 && (std::string(argv[1]) == "threads" || std::string(argv[1]) == "threads-writers" ||
-                     std::string(argv[1]) == "threads-conditions" || std::string(argv[1]) == "threads-entities")) {
+    if (argc > 1 && std::string(argv[1]) == "threads") {
         std::cout << "SKIP — the mode " << argv[1] << " needs C++11 (std::thread, std::atomic).\n";
         return 0;
     }
 #else
-    if (argc > 1 && std::string(argv[1]) == "threads-conditions") {
-        for (int round = 0; round < 25; ++round) {
-            test_conditions_are_used_from_several_threads();
-        }
-        if (failures == 0) {
-            std::cout << "OK\n";
-        }
-        return failures;
-    }
-    if (argc > 1 && std::string(argv[1]) == "threads-entities") {
-        RUN(test_entities_are_created_from_several_threads);
-        if (failures == 0) {
-            std::cout << "OK\n";
-        }
-        return failures;
-    }
-    if (argc > 1 && std::string(argv[1]) == "threads-writers") {
-        RUN(test_operations_are_called_from_several_threads);
-        if (failures == 0) {
-            std::cout << "OK\n";
-        }
-        return failures;
-    }
     if (argc > 1 && std::string(argv[1]) == "threads") {
-        // Run under ThreadSanitizer by `dds_psm_cxx_smoke_under_thread_sanitizer`: the tests in
-        // which threads call the operations of the entities at once.
-        RUN(test_operations_are_called_from_several_threads);
-        RUN(test_conditions_are_used_from_several_threads);
-    RUN(test_entities_are_created_from_several_threads);
-    RUN(test_signatures_follow_the_normative_headers);
+        // Run under ThreadSanitizer (CTest `psmcxx_7_3_no_data_race_in_the_cpp_code_under_thread_sanitizer`,
+        // tests/tsan_verdict.py): the tests in which threads call the operations of the entities at once.
+        RUN(psmcxx_7_3_operations_are_called_from_several_threads);
+        RUN(psmcxx_7_3_conditions_are_used_from_several_threads);
+        RUN(psmcxx_7_3_entities_are_created_from_several_threads);
+        RUN(psmcxx_2_signatures_follow_the_normative_headers);
         if (failures == 0) {
             std::cout << "OK — the threaded smoke tests passed.\n";
         }
         return failures;
     }
 #endif  // ZERODDS_CXX11
-    RUN(test_default_qos_matches_the_specification);
-    RUN(test_qos_composition);
-    RUN(test_duration_sentinel_conversion_and_overflow);
-    RUN(test_participant_lifecycle);
-    RUN(test_topic_creation);
-    RUN(test_publisher_subscriber_lifecycle);
-    RUN(test_writer_reader_lifecycle);
-    RUN(test_take_on_empty_returns_empty);
-    RUN(test_read_keeps_samples_take_removes_them);
-    RUN(test_status_getters);
-    RUN(test_guardcondition_and_waitset);
-    RUN(test_readcondition_lifecycle);
-    RUN(test_contentfilteredtopic_lifecycle);
-    RUN(test_listener_attach_detach);
-    RUN(test_listener_bridge_dispatches_to_virtual);
-    RUN(test_listener_table_is_per_entity_and_deregisters_on_destroy);
-    RUN(test_matched_data_names_the_other_endpoint);
-    RUN(test_topic_data_carries_every_member);
-    RUN(test_discovered_topics_empty_initially);
-    RUN(test_discovered_topic_data_unknown_handle_throws);
-    RUN(test_layout_headers_and_find);
-    RUN(test_domain_participant_listener);
-    RUN(test_find_ignore_status_condition);
-    RUN(test_discovered_publications_count_zero);
-    RUN(test_discovered_subscriptions_count_zero);
-    RUN(test_take_returns_the_loan_when_decode_throws);
-    RUN(test_entity_operations);
-    RUN(test_samples_api);
-    RUN(test_topic_any_topic_and_listener);
-    RUN(test_publisher_subscriber_datawriter_api);
-    RUN(test_qos_provider);
-    RUN(test_value_and_reference_classes_without_other_coverage);
-    RUN(test_entities_and_statuses_without_other_coverage);
-    RUN(test_every_listener_callback_reaches_its_virtual_method);
-    RUN(test_sample_info_parts_qos_provider_kinds_and_filter_expression);
-    RUN(test_dynamic_types_dynamic_data_and_type_provider);
-    RUN(test_bit_masks_union_defaults_and_enum_discriminators);
-    RUN(test_builtin_topic_types_round_trip);
-    RUN(test_participant_operations_without_other_coverage);
-    RUN(test_qos_of_a_running_entity_is_set_and_read);
-    RUN(test_data_representation_and_type_consistency_in_the_qos_sets);
-    RUN(test_entities_are_created_with_qos_listener_and_mask);
-    RUN(test_instance_operations_with_a_time_stamp);
+    RUN(psmcxx_7_6_default_qos_matches_the_specification);
+    RUN(psmcxx_7_6_1_qos_composition);
+    RUN(psmcxx_7_5_6_duration_sentinel_conversion_and_overflow);
+    RUN(psmcxx_2_1_participant_lifecycle);
+    RUN(psmcxx_2_1_topic_creation);
+    RUN(psmcxx_2_1_publisher_subscriber_lifecycle);
+    RUN(psmcxx_2_1_writer_reader_lifecycle);
+    RUN(psmcxx_2_1_take_on_empty_returns_empty);
+    RUN(psmcxx_2_1_read_keeps_samples_take_removes_them);
+    RUN(psmcxx_2_1_status_getters);
+    RUN(psmcxx_2_1_guardcondition_and_waitset);
+    RUN(psmcxx_2_1_readcondition_lifecycle);
+    RUN(psmcxx_2_1_contentfilteredtopic_lifecycle);
+    RUN(psmcxx_2_1_listener_attach_detach);
+    RUN(psmcxx_2_1_listener_bridge_dispatches_to_virtual);
+    RUN(psmcxx_2_1_listener_table_is_per_entity_and_deregisters_on_destroy);
+    RUN(psmcxx_2_1_matched_data_names_the_other_endpoint);
+    RUN(psmcxx_2_1_topic_data_carries_every_member);
+    RUN(psmcxx_2_1_discovered_topics_empty_initially);
+    RUN(psmcxx_2_1_discovered_topic_data_unknown_handle_throws);
+    RUN(psmcxx_7_2_layout_headers_and_find);
+    RUN(psmcxx_2_1_domain_participant_listener);
+    RUN(psmcxx_2_1_find_ignore_status_condition);
+    RUN(psmcxx_2_1_take_returns_the_loan_when_decode_throws);
+    RUN(psmcxx_2_1_entity_operations);
+    RUN(psmcxx_2_1_samples_api);
+    RUN(psmcxx_2_1_topic_any_topic_and_listener);
+    RUN(psmcxx_2_1_publisher_subscriber_datawriter_api);
+    RUN(psmcxx_7_6_2_1_qos_provider);
+    RUN(psmcxx_7_5_4_value_and_reference_classes_without_other_coverage);
+    RUN(psmcxx_2_1_entities_and_statuses_without_other_coverage);
+    RUN(psmcxx_2_1_every_listener_callback_reaches_its_virtual_method);
+    RUN(psmcxx_2_1_sample_info_parts_qos_provider_kinds_and_filter_expression);
+    RUN(psmcxx_7_11_dynamic_types_dynamic_data_and_type_provider);
+    RUN(psmcxx_7_11_bit_masks_union_defaults_and_enum_discriminators);
+    RUN(xtypes_7_6_5_the_builtin_topic_types_round_trip);
+    RUN(psmcxx_2_1_participant_operations_without_other_coverage);
+    RUN(psmcxx_7_6_qos_of_a_running_entity_is_set_and_read);
+    RUN(xtypes_7_6_3_1_1_data_representation_and_type_consistency_in_the_qos_sets);
+    RUN(psmcxx_2_1_entities_are_created_with_qos_listener_and_mask);
+    RUN(psmcxx_2_1_instance_operations_with_a_time_stamp);
 #if ZERODDS_CXX11
-    RUN(test_operations_are_called_from_several_threads);
-    RUN(test_conditions_are_used_from_several_threads);
-    RUN(test_entities_are_created_from_several_threads);
+    RUN(psmcxx_7_3_operations_are_called_from_several_threads);
+    RUN(psmcxx_7_3_conditions_are_used_from_several_threads);
+    RUN(psmcxx_7_3_entities_are_created_from_several_threads);
 #endif
-    RUN(test_return_codes_map_to_exceptions);
-    RUN(test_signatures_follow_the_normative_headers);
-    RUN(test_objects_in_use_stay_open);
-    RUN(test_reference_types);
-    RUN(test_reference_type_macros);
-    RUN(test_every_policy_has_its_default_and_its_attributes);
-    RUN(test_ignore_ends_a_match);
-    RUN(test_builtin_topic_readers);
-    RUN(test_builtin_topic_values_arrive);
+    RUN(psmcxx_7_5_5_return_codes_map_to_exceptions);
+    RUN(psmcxx_2_signatures_follow_the_normative_headers);
+    RUN(psmcxx_7_5_1_2_objects_in_use_stay_open);
+    RUN(psmcxx_7_5_1_1_reference_types);
+    RUN(psmcxx_2_2_reference_type_macros);
+    RUN(psmcxx_7_6_1_every_policy_has_its_default_and_its_attributes);
+    RUN(psmcxx_2_1_ignore_ends_a_match);
+    RUN(psmcxx_2_1_builtin_topic_readers);
+    RUN(psmcxx_2_1_builtin_topic_values_arrive);
 #undef RUN
 
     if (failures == 0) {

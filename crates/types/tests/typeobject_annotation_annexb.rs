@@ -135,7 +135,7 @@ const COMPLETE: &str = "\
 050000006c6f7564000100";
 
 fn unhex(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "an odd number of hex digits");
+    assert!(s.len().is_multiple_of(2), "an odd number of hex digits");
     (0..s.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
@@ -171,7 +171,7 @@ fn model() -> (
 
 /// The encoder writes Annex B's octets, and nothing else.
 #[test]
-fn the_minimal_object_is_annex_bs_octet_for_octet() {
+fn xtypes_7_3_4_4_the_minimal_object_is_annex_bs_octet_for_octet() {
     let (ast, id) = model();
     let object = annotation_type_object(&ast, id, Form::Minimal).expect("minimal");
     let bytes = TypeObject::Minimal(match object {
@@ -185,7 +185,7 @@ fn the_minimal_object_is_annex_bs_octet_for_octet() {
 
 /// The same for the complete form.
 #[test]
-fn the_complete_object_is_annex_bs_octet_for_octet() {
+fn xtypes_annex_b_the_complete_object_is_annex_bs_octet_for_octet() {
     let (ast, id) = model();
     let object = annotation_type_object(&ast, id, Form::Complete).expect("complete");
     let bytes = TypeObject::Complete(match object {
@@ -217,7 +217,7 @@ fn annex_bs_octets_decode_into_the_two_objects() {
 /// The two sequences are ordered by different keys, and each is in its
 /// own key's order rather than the declaration's.
 #[test]
-fn each_sequence_is_ordered_by_its_own_key() {
+fn xtypes_7_3_4_5_each_sequence_is_ordered_by_its_own_key() {
     let (ast, id) = model();
 
     let minimal = annotation_type_object(&ast, id, Form::Minimal).expect("minimal");
@@ -284,7 +284,7 @@ fn a_parameter_begins_with_its_flags_and_has_no_member_id() {
 /// `default 3`; `loud` declares none, and takes its type's default per
 /// §7.3.1.2.4 and Table 9 — `FALSE` for a `boolean`.
 #[test]
-fn the_default_value_is_the_annex_b_union_and_never_empty() {
+fn xtypes_annex_b_the_default_value_is_the_annex_b_union_and_never_empty() {
     use zerodds_types::type_object::common::AnnotationParameterValue;
     use zerodds_types::type_object::common::NameHash;
     let (ast, id) = model();
@@ -370,7 +370,7 @@ fn the_minimal_header_is_a_dheader_of_zero() {
 /// without the outer header reads as a length of zero and the whole object
 /// as parameterless.
 #[test]
-fn every_appendable_and_sequence_carries_its_own_length() {
+fn xtypes_7_3_4_5_every_appendable_and_sequence_carries_its_own_length() {
     fn announced(octets: &[u8], at: usize) -> usize {
         u32::from_le_bytes([octets[at], octets[at + 1], octets[at + 2], octets[at + 3]]) as usize
     }

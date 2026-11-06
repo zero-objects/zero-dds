@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
   # A push or a pull request runs the quick checks only: rustfmt, clippy,
-  # silent-drop, interop corpus, cargo-deny and no_std, about seven runner
-  # minutes. The jobs that build or test the workspace, compare large
+  # silent-drop, cargo-deny and no_std. The interop corpus test runs in
+  # `build-test` with the rest of the workspace. The jobs that build or test the workspace, compare large
   # result sets or measure coverage carry
   # `if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'`
   # and run weekly and by hand. The workspace tests run on the maintainers'
@@ -97,31 +97,6 @@ jobs:
       # drift between the three.
       - run: bash tools/staged-tree-guard.sh --head
 
-  # ---------------------------------------------------------------------------
-  # interop corpus — the 316 IDL cases of tests/interop-corpus/, through the
-  # reflective encoder in all four {xcdr1, xcdr2} x {le, be} combinations and
-  # through all three vendor emitters, compared against the bytes each case's
-  # README records.
-  #
-  # Why a job of its own rather than leaving it to build-test: it is the gate
-  # the corpus never had. docs/codec-coverage-report.md measured the cost of
-  # that — the C++ emitter at 0 of 846 regions under every harness in the tree,
-  # `cargo test --workspace` included, while feeding the Fast DDS column of the
-  # interop matrix. A corpus no pipeline runs is documentation.
-  #
-  # It is a plain `cargo test`, so it needs nothing the other jobs do not have,
-  # and it takes well under a second: the walk is in process, not 1264
-  # invocations of the probe binary.
-  # ---------------------------------------------------------------------------
-  interop-corpus:
-    name: interop corpus (316 cases x 4 modes x 3 emitters)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test -p zerodds-wire-probe --test interop_corpus
-
   # The result tree and the two tables generated from it: 3,350 rows,
   # twelve columns, 14,831 committed result binaries. Rebuilds every
   # column a machine with a Rust toolchain and nothing else can reach and
@@ -130,7 +105,8 @@ jobs:
   # ORBs are hand-built, the two ROS 2 type supports need a ROS
   # installation — are named in the output with the row count they leave
   # unverified, never skipped silently and never a failure for being
-  # absent. The same two commands run in .gitlab-ci.yml.
+  # absent. The same two commands run in .gitlab-ci.yml. `build-test`
+  # excludes the package, so its tests run here only.
   interop-results:
     name: interop results (3,350 rows x 12 systems)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -157,7 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      # rust-toolchain.toml pins 1.88.0; the cargo-deny-action Docker image
+      # rust-toolchain.toml pins 1.97.1; the cargo-deny-action Docker image
       # only has 1.85.0-musl pre-installed. The rust-version input forces
       # the action to rustup-install the pinned version before cargo-deny.
       # `--all-features`, as the GitLab `deny` job: optional features carry
@@ -167,7 +143,7 @@ jobs:
         with:
           command: check
           arguments: --all-features
-          rust-version: "1.88.0"
+          rust-version: "1.97.1"
 
   # ---------------------------------------------------------------------------
   # jscpd — copy/paste-detection gate (catches code duplication).
@@ -250,7 +226,6 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Build & test matrix — Full profile on Linux x86_64 and ARM64.
-  # Phase-0 scope per docs/architecture/06_roadmap.md §3.
   # Windows, macOS, QNX, and embedded targets land with later phases.
   # ---------------------------------------------------------------------------
   build-test:
@@ -314,10 +289,13 @@ jobs:
       # zerodds-matrix repository, which is cloned beside this one where
       # they run. This job checks out this repository alone; the three
       # refuse with that reason rather than pass on nothing.
+      # `--exclude zerodds-interop-results`: the job `interop-results` runs
+      # that package's tests.
       - name: Test (non-DCPS workspace, parallel)
         if: ${{ !matrix.cross }}
         run: >-
-          cargo test --workspace --exclude zerodds-dcps --target ${{ matrix.target }}
+          cargo test --workspace --exclude zerodds-dcps --exclude zerodds-interop-results
+          --target ${{ matrix.target }}
           -- --skip every_language_has_a_cell_generator
           --skip the_matrix_cells_are_the_recorded_rows
           --skip the_shape_with_no_storage_is_left_to_the_clause
@@ -374,7 +352,7 @@ jobs:
         with:
           targets: thumbv7em-none-eabihf
       - uses: Swatinem/rust-cache@v2
-      # The same two steps as the GitLab job `no-std` (ci/full.yml).
+      # The same two steps as the GitLab job `no-std` (ci/weekly-checks.yml).
       - name: Build safe-subset crates for bare-metal
         run: |
           cargo build --target thumbv7em-none-eabihf \
@@ -433,7 +411,7 @@ jobs:
         # `wire-conformance`, because that crate drives the generator
         # from its `build.rs` and cargo-llvm-cov leaves build scripts
         # out of the report by default. With it, 353 of 693. Measured in
-        # docs/codec-coverage-report.md §"What cannot be measured".
+        # 0b2e8df9f6b:docs/codec-coverage-report.md §"What cannot be measured".
         #
         # `--lib --bins` was dropped with it: the integration tests are
         # where the codec evidence lives — `tests/interop_corpus.rs`
@@ -469,7 +447,7 @@ jobs:
           rm -rf target/llvm-cov-target
           df -h /
       # Branch coverage is nightly-only (`-Z coverage-options=branch`) and
-      # rust-toolchain.toml pins 1.88.0, so it cannot come from the step
+      # rust-toolchain.toml pins 1.97.1, so it cannot come from the step
       # above. It runs here on its own nightly, non-gating: a nightly lint
       # firing under the workflow's `-D warnings` must not turn the mirror
       # red, and the number is a diagnostic rather than a threshold. The

@@ -439,8 +439,8 @@ fi
 # ## Why the merge is not conditional on `--cases`
 #
 # It was, and a vendor subset is a subset for the same reason a case
-# subset is. `record.sh --vendors rti` — the command
-# `docs/OPEN-ITEMS.md` names for re-recording RTI after a probe change —
+# subset is. `record.sh --vendors rti` — the documented command for
+# re-recording RTI after a probe change —
 # took `vendor-corpus.tsv` from 5536 rows to 1388 and deleted Cyclone's,
 # Fast DDS's and OpenDDS's 4148 in one `mv`. It reported "1388 rows
 # into …" and exited 0, and the tree verifies afterwards, because the

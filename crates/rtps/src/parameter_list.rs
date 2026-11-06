@@ -451,6 +451,169 @@ pub fn is_standard_pid(masked_pid: u16) -> bool {
     )
 }
 
+/// The octets a value of up to this many takes in place
+/// ([`ParameterValue`]): `PID_KEY_HASH` (16), `PID_STATUS_INFO` (4),
+/// `PID_RELATED_SAMPLE_IDENTITY` (24), the coherent-set and group
+/// sequence numbers.
+pub const INLINE_VALUE: usize = 24;
+
+/// The value of a [`Parameter`]: its octets, without the padding to the
+/// next four-byte boundary (the encoder inserts it).
+///
+/// A value of up to [`INLINE_VALUE`] octets is held in place, a longer one
+/// in a vector. As a `Vec<u8>` every value was an allocation of its own:
+/// on the receiving side for every parameter of every DATA's in-line QoS,
+/// on the writing side for every in-line QoS parameter a writer built.
+#[derive(Clone)]
+pub struct ParameterValue(ValueRepr);
+
+#[derive(Clone)]
+enum ValueRepr {
+    Inline { len: u8, octets: [u8; INLINE_VALUE] },
+    Heap(Vec<u8>),
+}
+
+impl ParameterValue {
+    /// A copy of `octets`.
+    #[must_use]
+    pub fn new(octets: &[u8]) -> Self {
+        if octets.len() <= INLINE_VALUE {
+            let mut inline = [0u8; INLINE_VALUE];
+            inline[..octets.len()].copy_from_slice(octets);
+            // `len` is at most INLINE_VALUE, which fits a `u8`.
+            Self(ValueRepr::Inline {
+                len: octets.len() as u8,
+                octets: inline,
+            })
+        } else {
+            Self(ValueRepr::Heap(octets.to_vec()))
+        }
+    }
+
+    /// The octets.
+    #[must_use]
+    pub fn as_slice(&self) -> &[u8] {
+        match &self.0 {
+            ValueRepr::Inline { len, octets } => &octets[..usize::from(*len)],
+            ValueRepr::Heap(octets) => octets,
+        }
+    }
+
+    /// The octets as a vector of their own.
+    #[must_use]
+    pub fn into_vec(self) -> Vec<u8> {
+        match self.0 {
+            ValueRepr::Inline { .. } => self.as_slice().to_vec(),
+            ValueRepr::Heap(octets) => octets,
+        }
+    }
+}
+
+impl Default for ParameterValue {
+    fn default() -> Self {
+        Self::new(&[])
+    }
+}
+
+impl core::ops::Deref for ParameterValue {
+    type Target = [u8];
+
+    fn deref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl AsRef<[u8]> for ParameterValue {
+    fn as_ref(&self) -> &[u8] {
+        self.as_slice()
+    }
+}
+
+impl core::fmt::Debug for ParameterValue {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        core::fmt::Debug::fmt(self.as_slice(), f)
+    }
+}
+
+impl PartialEq for ParameterValue {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for ParameterValue {}
+
+impl core::hash::Hash for ParameterValue {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.as_slice().hash(state);
+    }
+}
+
+impl PartialEq<[u8]> for ParameterValue {
+    fn eq(&self, other: &[u8]) -> bool {
+        self.as_slice() == other
+    }
+}
+
+impl PartialEq<&[u8]> for ParameterValue {
+    fn eq(&self, other: &&[u8]) -> bool {
+        self.as_slice() == *other
+    }
+}
+
+impl PartialEq<Vec<u8>> for ParameterValue {
+    fn eq(&self, other: &Vec<u8>) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl<const N: usize> PartialEq<[u8; N]> for ParameterValue {
+    fn eq(&self, other: &[u8; N]) -> bool {
+        self.as_slice() == other
+    }
+}
+
+/// Takes the vector over where it is longer than [`INLINE_VALUE`].
+impl From<Vec<u8>> for ParameterValue {
+    fn from(octets: Vec<u8>) -> Self {
+        if octets.len() <= INLINE_VALUE {
+            Self::new(&octets)
+        } else {
+            Self(ValueRepr::Heap(octets))
+        }
+    }
+}
+
+impl From<&[u8]> for ParameterValue {
+    fn from(octets: &[u8]) -> Self {
+        Self::new(octets)
+    }
+}
+
+impl From<&Vec<u8>> for ParameterValue {
+    fn from(octets: &Vec<u8>) -> Self {
+        Self::new(octets)
+    }
+}
+
+impl<const N: usize> From<[u8; N]> for ParameterValue {
+    fn from(octets: [u8; N]) -> Self {
+        Self::new(&octets)
+    }
+}
+
+impl<const N: usize> From<&[u8; N]> for ParameterValue {
+    fn from(octets: &[u8; N]) -> Self {
+        Self::new(octets)
+    }
+}
+
+impl From<ParameterValue> for Vec<u8> {
+    fn from(value: ParameterValue) -> Self {
+        value.into_vec()
+    }
+}
+
 /// A single parameter (tag + bytes value).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
@@ -458,14 +621,17 @@ pub struct Parameter {
     pub id: u16,
     /// Raw value (without padding bytes; the encoder inserts padding up
     /// to the 4-byte boundary).
-    pub value: Vec<u8>,
+    pub value: ParameterValue,
 }
 
 impl Parameter {
     /// Constructor.
     #[must_use]
-    pub fn new(id: u16, value: Vec<u8>) -> Self {
-        Self { id, value }
+    pub fn new(id: u16, value: impl Into<ParameterValue>) -> Self {
+        Self {
+            id,
+            value: value.into(),
+        }
     }
 
     /// Spec Table 9.6 — sets the must-understand bit (`0x4000`) on the
@@ -713,7 +879,7 @@ impl ParameterList {
                     pos,
                 ));
             }
-            if length % 4 != 0 {
+            if !length.is_multiple_of(4) {
                 return Err(WireError::ValueOutOfRange {
                     message: "ParameterList length not 4-byte aligned",
                 });
@@ -738,7 +904,7 @@ impl ParameterList {
             }
             parameters.push(Parameter {
                 id,
-                value: bytes[pos..pos + length].to_vec(),
+                value: ParameterValue::new(&bytes[pos..pos + length]),
             });
             pos += length;
         }
@@ -777,7 +943,7 @@ fn write_u16(out: &mut Vec<u8>, v: u16, le: bool) {
     out.extend_from_slice(&bytes);
 }
 
-fn read_u16(bytes: &[u8], le: bool) -> u16 {
+pub(crate) fn read_u16(bytes: &[u8], le: bool) -> u16 {
     let mut buf = [0u8; 2];
     buf.copy_from_slice(&bytes[..2]);
     if le {
@@ -1281,5 +1447,32 @@ mod tests {
                 0x01, 0x00, 0x00, 0x00, // PID_SENTINEL
             ]
         );
+    }
+
+    #[test]
+    fn a_value_of_up_to_inline_value_octets_is_held_in_place() {
+        // Multiples of four: the list pads a value to the next four-octet
+        // boundary, and a parsed value keeps the padding.
+        for len in [0, 4, 16, INLINE_VALUE, INLINE_VALUE + 4, 64] {
+            let octets: Vec<u8> = (1u8..).take(len).collect();
+            let value = ParameterValue::new(&octets);
+            assert_eq!(
+                matches!(value.0, ValueRepr::Inline { .. }),
+                len <= INLINE_VALUE,
+                "{len} octets"
+            );
+            assert_eq!(value, octets);
+            assert_eq!(ParameterValue::from(octets.clone()), value);
+            assert_eq!(value.clone().into_vec(), octets);
+
+            let mut pl = ParameterList::new();
+            pl.push(Parameter::new(0x0050, value));
+            let decoded = ParameterList::from_bytes(&pl.to_bytes(true), true).unwrap();
+            assert_eq!(decoded, pl, "{len} octets");
+            assert_eq!(decoded.parameters[0].value, octets);
+        }
+        let longer = ParameterValue::new(&[7; INLINE_VALUE + 1]);
+        assert!(matches!(longer.0, ValueRepr::Heap(_)));
+        assert_eq!(longer, [7; INLINE_VALUE + 1]);
     }
 }

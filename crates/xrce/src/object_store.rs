@@ -241,7 +241,7 @@ mod tests {
     }
 
     #[test]
-    fn create_inserts_new_object() {
+    fn xrce_7_8_3_1_create_inserts_new_object() {
         let mut store = ObjectStore::new();
         let id = ObjectId::new(0x010, ObjectKind::Participant).unwrap();
         let r = store
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn create_strict_on_existing_returns_conflict() {
+    fn xrce_7_6_create_strict_on_existing_returns_conflict() {
         let mut store = ObjectStore::new();
         let id = ObjectId::new(0x010, ObjectKind::Topic).unwrap();
         store
@@ -281,7 +281,7 @@ mod tests {
     }
 
     #[test]
-    fn create_reuse_returns_equal_marker() {
+    fn xrce_7_7_7_create_reuse_returns_equal_marker() {
         let mut store = ObjectStore::new();
         let id = ObjectId::new(0x011, ObjectKind::Topic).unwrap();
         let first = ObjectVariant::ByReference("the_topic".into());
@@ -311,7 +311,7 @@ mod tests {
     /// Table 5: with reuse and replace, an equal representation is reused and
     /// an unequal one replaces the object (and counts as a new version).
     #[test]
-    fn create_reuse_and_replace_replaces_an_unequal_object() {
+    fn xrce_7_8_3_1_create_reuse_and_replace_replaces_an_unequal_object() {
         let mut store = ObjectStore::new();
         let id = ObjectId::new(0x013, ObjectKind::Topic).unwrap();
         let first = ObjectVariant::ByReference("the_topic".into());
@@ -337,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn create_replace_increments_version() {
+    fn xrce_7_8_3_1_create_replace_increments_version() {
         let mut store = ObjectStore::new();
         let id = ObjectId::new(0x012, ObjectKind::DataWriter).unwrap();
         store
@@ -394,7 +394,7 @@ mod tests {
     }
 
     #[test]
-    fn create_invalid_object_id_rejected() {
+    fn xrce_7_6_create_invalid_object_id_rejected() {
         let mut store = ObjectStore::new();
         let r = store.create(
             crate::object_id::OBJECTID_INVALID,

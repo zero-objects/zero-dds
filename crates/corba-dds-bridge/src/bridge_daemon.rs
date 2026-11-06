@@ -608,14 +608,14 @@ impl DaemonConfig {
         if let Some(v) = metrics.string("listen")? {
             cfg.metrics_listen = v;
         }
-        if let Some((v, origin)) = metrics.scalar("path")? {
-            if v != "/metrics" {
-                return Err(invalid(
-                    "metrics.path",
-                    origin.clone(),
-                    "the admin endpoint serves /metrics, /catalog and /healthz",
-                ));
-            }
+        if let Some((v, origin)) = metrics.scalar("path")?
+            && v != "/metrics"
+        {
+            return Err(invalid(
+                "metrics.path",
+                origin.clone(),
+                "the admin endpoint serves /metrics, /catalog and /healthz",
+            ));
         }
         for (path, item) in root.items("mappings")? {
             cfg.mappings.push(read_mapping(&path, item)?);
@@ -711,14 +711,14 @@ fn read_mapping(path: &str, item: &zerodds_config::Node) -> Result<Mapping, Conf
         m.request_topic = read_topic_ref(&e.section("request_topic")?, format!("{base}::Request"))?;
         m.reply_topic = read_topic_ref(&e.section("reply_topic")?, format!("{base}::Reply"))?;
         m.notify_topic = read_topic_ref(&e.section("notify_topic")?, format!("{base}::Notify"))?;
-        if let Some((v, origin)) = e.scalar("correlation_id")? {
-            if v != "request_id" {
-                return Err(invalid(
-                    format!("{path}.correlation_id"),
-                    origin.clone(),
-                    "the correlation field is the first member, request_id; another field needs the type, which the bridge does not have",
-                ));
-            }
+        if let Some((v, origin)) = e.scalar("correlation_id")?
+            && v != "request_id"
+        {
+            return Err(invalid(
+                format!("{path}.correlation_id"),
+                origin.clone(),
+                "the correlation field is the first member, request_id; another field needs the type, which the bridge does not have",
+            ));
         }
         if let Some(v) = e.parse::<u64>("timeout_ms", "milliseconds")? {
             m.timeout_ms = v;
@@ -1382,10 +1382,10 @@ fn sas_service_context(
     endianness: Endianness,
 ) -> ServiceContextList {
     let mut list = ServiceContextList::default();
-    if let Some(m) = sas_reply {
-        if let Some(sc) = crate::csiv2_wire::service_context_for(m, endianness) {
-            list.0.push(sc);
-        }
+    if let Some(m) = sas_reply
+        && let Some(sc) = crate::csiv2_wire::service_context_for(m, endianness)
+    {
+        list.0.push(sc);
     }
     list
 }
@@ -2237,8 +2237,25 @@ fn serve_connection(
     }
 }
 
+/// Whether a sample's body is plain XCDR1, the GIOP body of §4.3 and §4.4:
+/// the representation identifier `CDR_BE` or `CDR_LE` (DDS-XTypes 1.3
+/// §7.6.3.1.2, Table 60). `PL_CDR` (an `@mutable` type in XCDR1) carries a
+/// parameter list, and XCDR2 aligns 8-octet members at 4; neither is the
+/// body a GIOP 1.2 peer reads.
+fn plain_cdr(identifier: [u8; 2]) -> bool {
+    identifier[0] == 0 && identifier[1] <= 0x01
+}
+
+/// The log text for a sample [`plain_cdr`] refuses.
+fn not_plain_cdr(identifier: [u8; 2]) -> String {
+    format!(
+        "representation identifier 0x{:02x}{:02x}; the GIOP body is plain CDR",
+        identifier[0], identifier[1]
+    )
+}
+
 /// A reply sample on a reply topic (§4.3 step 7).
-fn on_reply(d: &Dispatch, payload: &[u8], big_endian: bool, representation: u8) {
+fn on_reply(d: &Dispatch, payload: &[u8], big_endian: bool, identifier: [u8; 2]) {
     let endianness = if big_endian {
         Endianness::Big
     } else {
@@ -2281,23 +2298,19 @@ fn on_reply(d: &Dispatch, payload: &[u8], big_endian: bool, representation: u8) 
     if let Some(om) = d.spec.as_ref().and_then(|s| s.ops.get(p.mapping)) {
         om.received.inc();
     }
-    let (status, body) = match (status, representation) {
-        (_, r) if r != 0 => {
-            // XCDR2 aligns 8-byte members at 4: not the GIOP body.
+    let (status, body) = match (status, plain_cdr(identifier)) {
+        (_, false) => {
             log(
                 "reply_malformed",
-                &[
-                    ("id", &id.to_string()),
-                    ("err", "XCDR2 sample; the reply type is XCDR1"),
-                ],
+                &[("id", &id.to_string()), ("err", &not_plain_cdr(identifier))],
             );
             (
                 ReplyStatusType::SystemException,
                 system_exception_body("MARSHAL", 0, Completion::Maybe, endianness),
             )
         }
-        (0, _) => (ReplyStatusType::NoException, payload[16..].to_vec()),
-        (1, _) => (ReplyStatusType::UserException, payload[16..].to_vec()),
+        (0, true) => (ReplyStatusType::NoException, payload[16..].to_vec()),
+        (1, true) => (ReplyStatusType::UserException, payload[16..].to_vec()),
         (2, _) => (ReplyStatusType::SystemException, payload[16..].to_vec()),
         (other, _) => {
             log(
@@ -2773,6 +2786,31 @@ pub fn run_with_reload(
         naming_servant,
     });
 
+    // Listeners: IIOP, and SSLIOP when enabled — bound before an IOR is
+    // written or published (§9.1 steps 5 and 6), so that a client that
+    // reads one finds the port accepting. The accept threads start below.
+    let iiop = TcpListener::bind(&cfg.iiop_bind)
+        .map_err(|e| err(2, format!("bind {}: {e}", cfg.iiop_bind)))?;
+    log(
+        "listening",
+        &[("addr", &cfg.iiop_bind), ("transport", "iiop")],
+    );
+    let tls = if cfg.ssliop_enabled {
+        let server = ssliop_server_config(cfg).map_err(|e| err(4, e))?;
+        if let Ok(mut r) = dispatch.reloadable.write() {
+            r.tls = Some(Arc::clone(&server));
+        }
+        let l = TcpListener::bind(&cfg.ssliop_bind)
+            .map_err(|e| err(2, format!("bind {}: {e}", cfg.ssliop_bind)))?;
+        log(
+            "listening",
+            &[("addr", &cfg.ssliop_bind), ("transport", "ssliop")],
+        );
+        Some((l, server))
+    } else {
+        None
+    };
+
     // IORs (§4.1).
     let lines =
         ior_lines(cfg, &cfg.iiop_advertise_host).map_err(|e| err(1, format!("IOR: {e}")))?;
@@ -2802,7 +2840,8 @@ pub fn run_with_reload(
                 );
                 names
             }
-            Err(e) => return Err(err(1, format!("corba.ior.naming_service: {e}"))),
+            // §2: exit 5, NameService bind error.
+            Err(e) => return Err(err(5, format!("corba.ior.naming_service: {e}"))),
         }
     } else {
         Vec::new()
@@ -2816,11 +2855,11 @@ pub fn run_with_reload(
                 if let UserSample::Alive {
                     payload,
                     big_endian,
-                    representation,
+                    representation_identifier,
                     ..
                 } = s
                 {
-                    on_reply(&d, payload.as_ref(), big_endian, representation);
+                    on_reply(&d, payload.as_ref(), big_endian, representation_identifier);
                 }
             }
         });
@@ -2846,19 +2885,19 @@ pub fn run_with_reload(
                 let UserSample::Alive {
                     payload,
                     big_endian,
-                    representation,
+                    representation_identifier,
                     ..
                 } = s
                 else {
                     continue;
                 };
-                if representation != 0 {
+                if !plain_cdr(representation_identifier) {
                     metrics.errors_total.inc();
                     log(
                         "notify_sample_refused",
                         &[
                             ("topic", &m.notify_topic.dds_name),
-                            ("err", "XCDR2 sample; the GIOP body needs XCDR1"),
+                            ("err", &not_plain_cdr(representation_identifier)),
                         ],
                     );
                     continue;
@@ -2904,28 +2943,6 @@ pub fn run_with_reload(
         std::thread::spawn(move || timeout_loop(&d, &sd));
     }
 
-    // Listeners: IIOP, and SSLIOP when enabled.
-    let iiop = TcpListener::bind(&cfg.iiop_bind)
-        .map_err(|e| err(2, format!("bind {}: {e}", cfg.iiop_bind)))?;
-    log(
-        "listening",
-        &[("addr", &cfg.iiop_bind), ("transport", "iiop")],
-    );
-    let tls = if cfg.ssliop_enabled {
-        let server = ssliop_server_config(cfg).map_err(|e| err(4, e))?;
-        if let Ok(mut r) = dispatch.reloadable.write() {
-            r.tls = Some(Arc::clone(&server));
-        }
-        let l = TcpListener::bind(&cfg.ssliop_bind)
-            .map_err(|e| err(2, format!("bind {}: {e}", cfg.ssliop_bind)))?;
-        log(
-            "listening",
-            &[("addr", &cfg.ssliop_bind), ("transport", "ssliop")],
-        );
-        Some((l, server))
-    } else {
-        None
-    };
     {
         let d = Arc::clone(&dispatch);
         let sd = Arc::clone(shutdown);
@@ -2939,10 +2956,10 @@ pub fn run_with_reload(
     zerodds_dcps::cli::notify_service_manager("READY=1");
     while !shutdown.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(100));
-        if let Some(r) = &reload {
-            if r.flag.swap(false, Ordering::SeqCst) {
-                apply_reload(&dispatch, cfg, &*r.load);
-            }
+        if let Some(r) = &reload
+            && r.flag.swap(false, Ordering::SeqCst)
+        {
+            apply_reload(&dispatch, cfg, &*r.load);
         }
     }
     zerodds_dcps::cli::notify_service_manager("STOPPING=1");
@@ -2956,13 +2973,13 @@ pub fn run_with_reload(
     drain(&dispatch, DRAIN_LIMIT);
     timers_stop.store(true, Ordering::SeqCst);
     dispatch.in_flight.changed.notify_all();
-    if !cfg.naming_persist_file.is_empty() {
-        if let Some(graph) = &naming_graph {
-            let _ = zerodds_corba_cosnaming::persist::save(
-                &graph.root(),
-                std::path::Path::new(&cfg.naming_persist_file),
-            );
-        }
+    if !cfg.naming_persist_file.is_empty()
+        && let Some(graph) = &naming_graph
+    {
+        let _ = zerodds_corba_cosnaming::persist::save(
+            &graph.root(),
+            std::path::Path::new(&cfg.naming_persist_file),
+        );
     }
     log("shutdown", &[]);
     Ok(())
@@ -3026,10 +3043,9 @@ fn drain(d: &Dispatch, limit: Duration) {
             Endianness::Little,
             false,
             &Message::CloseConnection(zerodds_corba_giop::CloseConnection),
-        ) {
-            if let Ok(mut w) = c.writer.lock() {
-                let _ = w.write_all(&bytes).and_then(|()| w.flush());
-            }
+        ) && let Ok(mut w) = c.writer.lock()
+        {
+            let _ = w.write_all(&bytes).and_then(|()| w.flush());
         }
         let _ = c.sock.shutdown(std::net::Shutdown::Both);
     }
@@ -3210,7 +3226,7 @@ mod tests {
 
     /// The shipped example, through the same reader.
     #[test]
-    fn the_shipped_example_reads_as_it_says() {
+    fn corbabridge_3_the_shipped_example_reads_as_it_says() {
         let c = load(include_str!(
             "../../../packaging/linux/configs/corba-bridged.yaml.example"
         ))
@@ -3233,7 +3249,7 @@ mod tests {
     }
 
     #[test]
-    fn the_slug_of_section_5_1() {
+    fn corbabridge_5_1_the_slug_of_an_operation() {
         assert_eq!(
             slug("IDL:zerodds/MarketData/Quote:1.0", "request_quote"),
             "MarketData::Quote::request_quote"
@@ -3250,7 +3266,7 @@ mod tests {
     }
 
     #[test]
-    fn what_the_daemon_does_not_build_is_refused() {
+    fn corbabridge_3_what_the_daemon_does_not_build_is_refused() {
         for (yaml, needle) in [
             (
                 "corba:\n  csiv2:\n    target_supports: [integrity]\n",
@@ -3388,7 +3404,7 @@ mod tests {
     }
 
     #[test]
-    fn a_system_exception_body_is_the_giop_layout() {
+    fn corbabridge_4_3_a_system_exception_body_is_the_giop_layout() {
         let b = system_exception_body("TIMEOUT", 7, Completion::Maybe, Endianness::Little);
         let id = b"IDL:omg.org/CORBA/TIMEOUT:1.0";
         assert_eq!(
@@ -3408,7 +3424,7 @@ mod tests {
     /// message stream, header included (GIOP 1.2 §15.4.9), and the pieces
     /// put back together are the message.
     #[test]
-    fn outbound_fragments_end_on_8_octet_boundaries() {
+    fn corbabridge_4_6_outbound_fragments_end_on_8_octet_boundaries() {
         struct Sink(Arc<Mutex<Vec<u8>>>);
         impl Write for Sink {
             fn write(&mut self, b: &[u8]) -> io::Result<usize> {
@@ -3453,7 +3469,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fragmented_message_is_put_back_together() {
+    fn corbabridge_4_6_a_fragmented_message_is_put_back_together() {
         // GIOP 1.2 LE Request split into a first message and one Fragment.
         let body: Vec<u8> = (0..40u8).collect();
         let mut first = b"GIOP\x01\x02\x03\x00".to_vec();
@@ -3474,7 +3490,7 @@ mod tests {
     /// §4.1: the profile carries TAG_CODE_SETS and, with SSLIOP,
     /// TAG_SSL_SEC_TRANS naming the SSL port and what it requires.
     #[test]
-    fn the_ior_carries_code_sets_and_the_ssl_component() {
+    fn corbabridge_4_1_the_ior_carries_code_sets_and_the_ssl_component() {
         use zerodds_corba_ior::component_tags::ComponentId;
         use zerodds_corba_ior::components::{StructuredComponent, TaggedComponent};
         let yaml = "corba:\n  iiop:\n    bind: \"127.0.0.1:7001\"\n  ssliop:\n    enabled: true\n    bind: \"127.0.0.1:7002\"\n    cert_file: c.pem\n    key_file: k.pem\n    ca_file: ca.pem\n    require_client_cert: true\n\
@@ -3614,7 +3630,7 @@ mod tests {
     }
 
     #[test]
-    fn corbaloc_and_ior_targets_resolve() {
+    fn corbabridge_4_4_corbaloc_and_ior_targets_resolve() {
         let t = resolve_target("corbaloc:iiop:1.2@127.0.0.1:2809/Listener").unwrap();
         assert_eq!(
             (t.host.as_str(), t.port, t.object_key.as_slice()),
@@ -3629,7 +3645,7 @@ mod tests {
     }
 
     #[test]
-    fn acl_rules_match_subjects_and_repo_id_prefixes() {
+    fn corbabridge_7_3_acl_rules_match_subjects_and_repo_id_prefixes() {
         let c = load("acl:\n  default_deny: true\n  rules:\n    - subject: \"CN=trader\"\n      allow_invoke: [\"IDL:zerodds/MarketData/*\"]\n").unwrap();
         assert!(subject_allowed(
             &c,

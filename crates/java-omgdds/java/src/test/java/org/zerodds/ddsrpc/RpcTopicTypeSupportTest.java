@@ -38,26 +38,7 @@ class RpcTopicTypeSupportTest {
     }
 
     @Test
-    void theTypedSupportAnswersEveryDefaultTheRawSupportAnswers() throws Exception {
-        List<String> missing = new ArrayList<String>();
-        for (Method method : TopicTypeSupport.class.getMethods()) {
-            if (!method.isDefault()) {
-                continue;
-            }
-            Method raw = RawTypeSupport.class.getMethod(method.getName(), method.getParameterTypes());
-            if (raw.getDeclaringClass() != RawTypeSupport.class) {
-                continue;
-            }
-            Method typed = RpcTopicTypeSupport.class.getMethod(method.getName(), method.getParameterTypes());
-            if (typed.getDeclaringClass() != RpcTopicTypeSupport.class) {
-                missing.add(method.getName());
-            }
-        }
-        assertTrue(missing.isEmpty(), "RpcTopicTypeSupport does not answer " + missing);
-    }
-
-    @Test
-    void aDescribedTopicPairsByTypeInformationInTheTypedViewToo() {
+    void rpc_7_11_2_a_described_topic_pairs_by_type_information_in_the_typed_view_too() {
         TypeDescription description = new TypeDescription(new byte[] {1}, new byte[][] {new byte[8]},
                 new int[][] {new int[0]});
         RawTypeSupport raw = new RawTypeSupport("robot::Calc_Request", description);

@@ -94,7 +94,7 @@ class CoreConcurrencyTest {
     }
 
     @Test
-    void severalThreadsCreateEntitiesAndSetTheQosOfOnePublisherAndSubscriber() throws Exception {
+    void javapsm_7_2_4_several_threads_create_entities_and_set_the_qos_of_one_publisher_and_subscriber() throws Exception {
         final Set<Object> created = Collections.newSetFromMap(new IdentityHashMap<Object, Boolean>());
         List<Callable<List<Object>>> tasks = new ArrayList<>();
         final Set<String> partitions = new HashSet<>();
@@ -130,7 +130,7 @@ class CoreConcurrencyTest {
     }
 
     @Test
-    void severalThreadsWriteTakeAndRegisterOnOneWriterAndReader() throws Exception {
+    void javapsm_7_2_4_several_threads_write_take_and_register_on_one_writer_and_reader() throws Exception {
         final DataWriter<byte[]> writer = publisher.createDataWriter(topic);
         final DataReader<byte[]> reader = subscriber.createDataReader(topic, Qos.readerKeepAll());
         final AtomicInteger taken = new AtomicInteger();
@@ -181,7 +181,7 @@ class CoreConcurrencyTest {
     }
 
     @Test
-    void closingAWriterWhileOthersWriteLeavesOnlyAlreadyClosed() throws Exception {
+    void javapsm_7_2_4_closing_a_writer_while_others_write_leaves_only_already_closed() throws Exception {
         final DataWriter<byte[]> writer = publisher.createDataWriter(topic);
         final DataReader<byte[]> reader = subscriber.createDataReader(topic);
         List<Callable<Object>> tasks = new ArrayList<>();
@@ -227,7 +227,7 @@ class CoreConcurrencyTest {
     }
 
     @Test
-    void conditionsAreAttachedAndDetachedWhileAThreadWaits() throws Exception {
+    void javapsm_7_2_4_conditions_are_attached_and_detached_while_a_thread_waits() throws Exception {
         final WaitSet waitSet = WaitSet.newWaitSet(Qos.env());
         final GuardCondition guard = GuardCondition.newGuardCondition(Qos.env());
         waitSet.attachCondition(guard);

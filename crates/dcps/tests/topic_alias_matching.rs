@@ -42,7 +42,7 @@ fn aliases(names: &[&str]) -> RpcDiscoveryExt {
 }
 
 #[test]
-fn a_reader_on_an_alias_matches_the_writer_over_the_wire() {
+fn rpc_7_4_3_a_reader_on_an_alias_matches_the_writer_over_the_wire() {
     let cfg = isolated_cfg();
     let domain = unique_domain();
     let factory = DomainParticipantFactory::instance();

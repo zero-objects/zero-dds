@@ -127,35 +127,35 @@ mod tests {
     }
 
     #[test]
-    fn empty_args_default() {
+    fn opcuabridge_2_empty_args_default() {
         assert!(parse(&[]).unwrap().bind.is_none());
     }
 
     #[test]
-    fn bind_addr_parsed() {
+    fn opcuabridge_2_bind_addr_parsed() {
         let p = parse(&args(&["--bind", "0.0.0.0:4840"])).unwrap();
         assert_eq!(p.bind.as_deref(), Some("0.0.0.0:4840"));
     }
 
     #[test]
-    fn equals_form() {
+    fn opcuabridge_2_equals_form() {
         let p = parse(&args(&["--bind=127.0.0.1:4841"])).unwrap();
         assert_eq!(p.bind.as_deref(), Some("127.0.0.1:4841"));
     }
 
     #[test]
-    fn domain_parses_int() {
+    fn opcuabridge_2_domain_parses_int() {
         assert_eq!(parse(&args(&["--domain", "12"])).unwrap().domain, Some(12));
     }
 
     #[test]
-    fn idl_is_repeatable() {
+    fn opcuabridge_2_idl_is_repeatable() {
         let p = parse(&args(&["--idl", "a.idl", "--idl", "b.idl"])).unwrap();
         assert_eq!(p.idl, vec!["a.idl".to_string(), "b.idl".to_string()]);
     }
 
     #[test]
-    fn unknown_flag_rejected() {
+    fn opcuabridge_2_unknown_flag_rejected() {
         assert!(matches!(
             parse(&args(&["--nope"])).unwrap_err(),
             CliError::UnknownFlag(_)
@@ -163,13 +163,13 @@ mod tests {
     }
 
     #[test]
-    fn sets_render_idl_as_appends() {
+    fn opcuabridge_2_sets_render_idl_as_appends() {
         let p = parse(&args(&["--idl", "a.idl"])).unwrap();
         assert_eq!(p.sets().unwrap(), vec!["+opcua.idl=a.idl".to_string()]);
     }
 
     #[test]
-    fn help_short_form() {
+    fn opcuabridge_2_help_short_form() {
         assert!(parse(&args(&["-h"])).unwrap().help);
     }
 }

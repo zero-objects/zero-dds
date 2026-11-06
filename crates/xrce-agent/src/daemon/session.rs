@@ -897,17 +897,18 @@ impl<P: DdsPort> SessionEngine<P> {
         // dropping the message silently. The agent drops it and counts it
         // (`SessionEvent::NoClient`); the delete_client of a ProxyClient that
         // is not there is answered, §7.8.2.3 gives it its own status.
-        if let Some(c) = resolved_client {
-            if !self.agent.has_client(ClientKey(c)) && self.drops_for_unknown_client(submessages) {
-                self.events.push(SessionEvent::NoClient { client: c });
-                self.events.push(SessionEvent::MessageRefused {
-                    client: resolved_client,
-                    session_id: header.session_id.0,
-                    stream_id: header.stream_id.0,
-                    reason: "the ClientKey names no ProxyClient (DDS-XRCE 1.0 §7.8.1)".into(),
-                });
-                return out;
-            }
+        if let Some(c) = resolved_client
+            && !self.agent.has_client(ClientKey(c))
+            && self.drops_for_unknown_client(submessages)
+        {
+            self.events.push(SessionEvent::NoClient { client: c });
+            self.events.push(SessionEvent::MessageRefused {
+                client: resolved_client,
+                session_id: header.session_id.0,
+                stream_id: header.stream_id.0,
+                reason: "the ClientKey names no ProxyClient (DDS-XRCE 1.0 §7.8.1)".into(),
+            });
+            return out;
         }
         if let Some(reason) = self.refusal(resolved_client, header, submessages) {
             self.events.push(SessionEvent::MessageRefused {
@@ -984,12 +985,11 @@ impl<P: DdsPort> SessionEngine<P> {
             // delivered out of order. In addition, duplicate messages shall
             // be discarded." A best-effort stream has no retransmission, so
             // a message that is not newer than the last one is dropped.
-            if header.stream_id.is_best_effort() {
-                if let Some(client) = resolved_client {
-                    if !self.take_best_effort(client, header) {
-                        return out;
-                    }
-                }
+            if header.stream_id.is_best_effort()
+                && let Some(client) = resolved_client
+                && !self.take_best_effort(client, header)
+            {
+                return out;
             }
             self.process_message_submessages(
                 resolved_client,
@@ -1687,17 +1687,17 @@ impl<P: DdsPort> SessionEngine<P> {
         let big_endian = matches!(e, Endianness::Big);
         // The container a CREATE names may be an object of the agent's
         // definitions the client has not made (§7.3).
-        if let Some(parent) = extra.parent {
-            if let Err(code) = self.ensure_predefined(client, parent) {
-                out.push(status_reply(
-                    client,
-                    header,
-                    base.request_id,
-                    base.object_id,
-                    code,
-                ));
-                return;
-            }
+        if let Some(parent) = extra.parent
+            && let Err(code) = self.ensure_predefined(client, parent)
+        {
+            out.push(status_reply(
+                client,
+                header,
+                base.request_id,
+                base.object_id,
+                code,
+            ));
+            return;
         }
         let code = self.create_core(client, base.object_id, variant, extra, big_endian, mode);
         out.push(status_reply(
@@ -1730,10 +1730,10 @@ impl<P: DdsPort> SessionEngine<P> {
         let Ok(kind) = oid.kind() else {
             return ResultStatusCode::InvalidData;
         };
-        if let Ok(n) = self.agent.object_count(ClientKey(client)) {
-            if n >= self.config.max_objects_per_client {
-                return ResultStatusCode::Resources;
-            }
+        if let Ok(n) = self.agent.object_count(ClientKey(client))
+            && n >= self.config.max_objects_per_client
+        {
+            return ResultStatusCode::Resources;
         }
         // What the DDS side needs is read before anything is stored: a
         // representation no DDS entity can be made from is refused with
@@ -2494,27 +2494,26 @@ impl<P: DdsPort> SessionEngine<P> {
                     self.resolve_topic(client, description.topic.as_ref(), container_participant)?;
                 // The QoS of the Topic is what the endpoint takes where its
                 // own representation states nothing.
-                if let Some(known) = self.topics.get(&(client, topic)) {
-                    if !known.qos.is_empty() {
-                        description = entity_repr::endpoint_for_topic(
-                            variant,
-                            role,
-                            big_endian,
-                            &self.profiles,
-                            Some(&known.qos),
-                        )?;
-                    }
+                if let Some(known) = self.topics.get(&(client, topic))
+                    && !known.qos.is_empty()
+                {
+                    description = entity_repr::endpoint_for_topic(
+                        variant,
+                        role,
+                        big_endian,
+                        &self.profiles,
+                        Some(&known.qos),
+                    )?;
                 }
                 if let (Some(named), Some(known)) = (
                     description.type_name.as_deref(),
                     self.topics.get(&(client, topic)),
-                ) {
-                    if named != known.type_name {
-                        return Err(ReprError::Malformed(format!(
-                            "the endpoint names type `{named}`, its topic `{}` has type `{}`",
-                            known.topic_name, known.type_name
-                        )));
-                    }
+                ) && named != known.type_name
+                {
+                    return Err(ReprError::Malformed(format!(
+                        "the endpoint names type `{named}`, its topic `{}` has type `{}`",
+                        known.topic_name, known.type_name
+                    )));
                 }
                 // Table 6: the agent locates the XRCE Publisher (DataWriter)
                 // or Subscriber (DataReader) identified by publisher_id /
@@ -4397,11 +4396,9 @@ impl<P: DdsPort> SessionEngine<P> {
                     .last_timestamp
                     .get(&client)
                     .is_none_or(|last| now.saturating_sub(*last) >= interval);
-                if due {
-                    if let Some(ob) = self.request_timestamp(client) {
-                        out.push(ob);
-                        self.last_timestamp.insert(client, now);
-                    }
+                if due && let Some(ob) = self.request_timestamp(client) {
+                    out.push(ob);
+                    self.last_timestamp.insert(client, now);
                 }
             }
         }
@@ -4426,22 +4423,21 @@ impl<P: DdsPort> SessionEngine<P> {
 
         let stream_keys: Vec<(ClientKeyOrd, u8)> = self.reliable.keys().copied().collect();
         for (client, stream_id) in stream_keys {
-            if let Some(rs) = self.reliable.get_mut(&(client, stream_id)) {
-                if let Some(hb) = rs.pending_heartbeat(now) {
-                    if let Ok(sm) = hb.into_submessage() {
-                        let mut h = reply_header(
-                            client,
-                            &default_header(),
-                            self.session_ids.get(&client).copied(),
-                        );
-                        h.stream_id = StreamId::NONE;
-                        out.push(Outbound {
-                            client,
-                            header: h,
-                            submessages: vec![sm],
-                        });
-                    }
-                }
+            if let Some(rs) = self.reliable.get_mut(&(client, stream_id))
+                && let Some(hb) = rs.pending_heartbeat(now)
+                && let Ok(sm) = hb.into_submessage()
+            {
+                let mut h = reply_header(
+                    client,
+                    &default_header(),
+                    self.session_ids.get(&client).copied(),
+                );
+                h.stream_id = StreamId::NONE;
+                out.push(Outbound {
+                    client,
+                    header: h,
+                    submessages: vec![sm],
+                });
             }
         }
 
@@ -4841,7 +4837,7 @@ mod tests {
     }
 
     #[test]
-    fn create_client_happy_path_registers_and_replies_ok() {
+    fn xrce_7_4_create_client_happy_path_registers_and_replies_ok() {
         let mut e = engine();
         let out = e.handle_message(
             None,
@@ -4866,7 +4862,7 @@ mod tests {
     /// CREATE_CLIENT is the reference of the `session_time_offset`; a client
     /// that sends none (Annex A) gets the time the agent made the session.
     #[test]
-    fn the_client_timestamp_is_the_session_timestamp() {
+    fn xrce_7_7_2_the_client_timestamp_is_the_session_timestamp() {
         use zerodds_xrce::encoding::{RepresentationTimestamps, with_representation_timestamps};
         let client = [0x70; CLIENT_KEY_LEN];
         let stamp = TimePoint {
@@ -4911,7 +4907,7 @@ mod tests {
     /// it as `SessionEvent::NoClient`. The `delete_client` of a ProxyClient
     /// that is not there is answered (§7.8.2.3), a GET_INFO is processed.
     #[test]
-    fn a_message_to_an_unknown_client_key_is_dropped_and_counted() {
+    fn xrce_7_8_1_a_message_to_an_unknown_client_key_is_dropped_and_counted() {
         let mut e = engine();
         let client = [0x72; CLIENT_KEY_LEN];
         let out = e.handle_message(
@@ -4952,7 +4948,7 @@ mod tests {
     /// §8.3.5.4 says `STATUS` for a DELETE. The `STATUS` is the default;
     /// `delete_client_reply: status_agent` answers with a `STATUS_AGENT`.
     #[test]
-    fn delete_client_is_answered_with_status_unless_status_agent_is_named() {
+    fn xrce_8_5_delete_client_is_answered_with_status_unless_status_agent_is_named() {
         for (status_agent, expected) in [
             (false, SubmessageId::Status),
             (true, SubmessageId::StatusAgent),
@@ -5000,7 +4996,7 @@ mod tests {
     /// writes the `ResultStatus` too; a failure carries it in either form. The
     /// client reads all three.
     #[test]
-    fn the_status_agent_payload_is_annex_a_unless_the_result_status_is_named() {
+    fn xrce_8_3_5_5_the_status_agent_payload_is_annex_a_unless_the_result_status_is_named() {
         let reply = |with: bool, version: [u8; 2]| {
             let mut e = SessionEngine::new(
                 NullDdsPort::new(),
@@ -5055,7 +5051,7 @@ mod tests {
     /// §7.8.2.1: "Check that the major version (xrce_version[0]) matches
     /// XRCE_VERSION_MAJOR. If it does not match, ... STATUS_ERR_INCOMPATIBLE."
     #[test]
-    fn create_client_rejects_wrong_major_version() {
+    fn xrce_7_7_7_create_client_rejects_wrong_major_version() {
         let mut e = engine();
         let bad_version = [0x02, 0x00]; // major=2, this agent only speaks major=1
         let out = e.handle_message(
@@ -5078,7 +5074,7 @@ mod tests {
     /// §7.8.2.1: a reconnect with the *same* session_id "shall not
     /// perform any action" — the client's existing objects survive.
     #[test]
-    fn create_client_same_session_id_reconnect_keeps_object_store() {
+    fn xrce_7_8_2_1_create_client_same_session_id_reconnect_keeps_object_store() {
         let mut e = engine();
         let client = [3; CLIENT_KEY_LEN];
         e.handle_message(
@@ -5145,7 +5141,7 @@ mod tests {
     /// ProxyClient "shall not perform any action": the reliable stream goes
     /// on, a message at sequence number 0 is the duplicate it is.
     #[test]
-    fn a_create_client_for_the_same_session_leaves_the_streams_alone() {
+    fn xrce_7_8_2_1_a_create_client_for_the_same_session_leaves_the_streams_alone() {
         assert_eq!(
             objects_after_a_second_create_client(engine(), [0x61; CLIENT_KEY_LEN]),
             1
@@ -5155,7 +5151,7 @@ mod tests {
     /// With `restart_on_same_session` the streams start again (a client
     /// process that restarts with the same ClientKey and session_id).
     #[test]
-    fn a_create_client_for_the_same_session_can_restart_the_streams() {
+    fn xrce_7_8_2_1_a_create_client_for_the_same_session_can_restart_the_streams() {
         let e = SessionEngine::new(
             NullDdsPort::new(),
             SessionEngineConfig {
@@ -5173,7 +5169,7 @@ mod tests {
     /// STATUS_ERR_INVALID_DATA, and §8.3.5.1 has the agent answer a
     /// CREATE_CLIENT with a STATUS_AGENT.
     #[test]
-    fn a_wrong_cookie_is_answered_with_a_status_agent() {
+    fn xrce_7_8_2_1_a_wrong_cookie_is_answered_with_a_status_agent() {
         let mut sm = create_client_sm([0x63; CLIENT_KEY_LEN], 0x81, XRCE_VERSION);
         sm.body[0] ^= 0xFF;
         let mut e = engine();
@@ -5186,7 +5182,7 @@ mod tests {
     /// STATUS_ERR_UNKNOWN_REFERENCE; of one it holds, STATUS_OK, and the
     /// ProxyClient is gone (a second DELETE then fails).
     #[test]
-    fn delete_client_needs_a_proxy_client() {
+    fn xrce_7_7_7_delete_client_needs_a_proxy_client() {
         let mut e = engine();
         let client = [0x64; CLIENT_KEY_LEN];
         let delete = |request: u8| {
@@ -5241,7 +5237,7 @@ mod tests {
     /// same actions as if there had not been a ProxyClient" — the old
     /// object store is gone.
     #[test]
-    fn create_client_different_session_id_resets_object_store() {
+    fn xrce_7_8_2_1_create_client_different_session_id_resets_object_store() {
         let mut e = engine();
         let client = [4; CLIENT_KEY_LEN];
         e.handle_message(
@@ -5285,7 +5281,7 @@ mod tests {
     /// `TimePoint` a stub would produce (which would make TimeSync
     /// unable to compute any clock offset at all).
     #[test]
-    fn timestamp_reply_echoes_originate_and_uses_real_wall_clock() {
+    fn xrce_8_3_5_16_timestamp_reply_echoes_originate_and_uses_real_wall_clock() {
         let mut e = engine();
         let client = [5; CLIENT_KEY_LEN];
         e.handle_message(
@@ -5391,7 +5387,7 @@ mod tests {
     /// already 1000s into its run) must NOT finalize until the budget has
     /// actually elapsed relative to *that* start.
     #[test]
-    fn read_data_elapsed_time_is_measured_from_the_real_request_time() {
+    fn xrce_7_3_read_data_elapsed_time_is_measured_from_the_real_request_time() {
         let mut e = engine();
         let client = [6; CLIENT_KEY_LEN];
         let process_uptime = Duration::from_secs(1000);
@@ -5452,7 +5448,8 @@ mod tests {
     /// all (a client that got no explicit rejection would otherwise have
     /// no way to know its filter was ignored).
     #[test]
-    fn read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered() {
+    fn xrce_7_7_7_read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered()
+    {
         let mut e = engine();
         let client = [7; CLIENT_KEY_LEN];
         e.handle_message(
@@ -5555,7 +5552,7 @@ mod tests {
     /// used to cancel the currently active read operation without sending
     /// any more samples". It started a read without a limit.
     #[test]
-    fn max_samples_zero_cancels_the_active_read() {
+    fn xrce_7_8_5_1_max_samples_zero_cancels_the_active_read() {
         let client = [21; CLIENT_KEY_LEN];
         let (mut e, reader) = reading_engine(ReadWithoutDeliveryControl::Once, client);
         let unlimited = limited(zerodds_xrce::MAX_SAMPLES_UNLIMITED);
@@ -5585,7 +5582,7 @@ mod tests {
     /// one already in the DDS DataReader cache." It returned the first of
     /// three and later the next one that arrived.
     #[test]
-    fn a_read_without_delivery_control_returns_the_cache_once() {
+    fn xrce_8_3_5_9_a_read_without_delivery_control_returns_the_cache_once() {
         let client = [22; CLIENT_KEY_LEN];
         let (mut e, reader) = reading_engine(ReadWithoutDeliveryControl::Once, client);
         for b in 1..=3u8 {
@@ -5654,7 +5651,7 @@ mod tests {
     /// asked for. FORMAT_DATA_SEQ: one DATA with the count and the samples
     /// back to back (Annex B.5.2).
     #[test]
-    fn a_read_for_data_seq_is_answered_with_one_data_seq() {
+    fn xrce_7_7_2_a_read_for_data_seq_is_answered_with_one_data_seq() {
         use zerodds_xrce::submessages::data::AnyData;
         let data = data_for_format(DataFormat::DataSeq);
         assert_eq!(data.len(), 1);
@@ -5669,7 +5666,7 @@ mod tests {
     /// counts the samples delivered from the reader (1, 2, 3), the state is
     /// zero.
     #[test]
-    fn a_read_for_sample_is_answered_with_a_sample_each() {
+    fn xrce_7_7_14_a_read_for_sample_is_answered_with_a_sample_each() {
         use zerodds_xrce::submessages::data::AnyData;
         let data = data_for_format(DataFormat::Sample);
         assert_eq!(data.len(), 3);
@@ -5686,7 +5683,7 @@ mod tests {
     /// FORMAT_SAMPLE_SEQ: the count, then SampleInfo (12 octets) and the
     /// data of each sample (Annex B.5.4).
     #[test]
-    fn a_read_for_sample_seq_is_answered_with_one_sample_seq() {
+    fn xrce_7_7_2_a_read_for_sample_seq_is_answered_with_one_sample_seq() {
         use zerodds_xrce::sample_info::SampleInfo;
         use zerodds_xrce::submessages::data::AnyData;
         let data = data_for_format(DataFormat::SampleSeq);
@@ -5708,7 +5705,7 @@ mod tests {
     /// octets) and data of each sample (Annex B.5.5); the sequence number of
     /// a sample is `info_base.sequence_number + seq_number_delta`.
     #[test]
-    fn a_read_for_packed_samples_is_answered_with_one_packed_samples() {
+    fn xrce_7_7_1_a_read_for_packed_samples_is_answered_with_one_packed_samples() {
         use zerodds_xrce::sample_info::SampleInfoDelta;
         use zerodds_xrce::submessages::data::AnyData;
         let data = data_for_format(DataFormat::PackedSamples);
@@ -5739,7 +5736,7 @@ mod tests {
     /// length is 16 bits), a packed one 256 (the range of `seq_number_delta`);
     /// a sample that does not fit one alone is reported with its length.
     #[test]
-    fn the_sequence_formats_split_at_the_size_of_a_submessage() {
+    fn xrce_7_7_2_the_sequence_formats_split_at_the_size_of_a_submessage() {
         let mut e = engine();
         let client = [25; CLIENT_KEY_LEN];
         let reader = ObjectId::new(0x002, ObjectKind::DataReader).unwrap();
@@ -5811,7 +5808,7 @@ mod tests {
     /// time after the start of the session. FORMAT_SAMPLE sends them;
     /// FORMAT_DATA has no SampleInfo and sends no marker.
     #[test]
-    fn the_sample_info_is_what_the_datareader_gave() {
+    fn xrce_7_7_2_the_sample_info_is_what_the_datareader_gave() {
         use zerodds_xrce::sample_info::SampleInfoFlags as F;
         use zerodds_xrce::submessages::data::AnyData;
         let mut e = engine();
@@ -5862,7 +5859,7 @@ mod tests {
     /// `read_without_delivery_control: next-sample`: the next sample there
     /// is, without a time limit, as Micro-XRCE-DDS 3.0.1 reads.
     #[test]
-    fn next_sample_waits_for_one_sample() {
+    fn xrce_8_3_5_9_next_sample_waits_for_one_sample() {
         let client = [23; CLIENT_KEY_LEN];
         let (mut e, reader) = reading_engine(ReadWithoutDeliveryControl::NextSample, client);
         let out = e.handle_message(
@@ -5893,7 +5890,7 @@ mod tests {
     /// attained or else a new READ_DATA message for the same object_id is
     /// received": the new read replaces the active one.
     #[test]
-    fn a_new_read_data_replaces_the_active_read() {
+    fn xrce_8_3_5_9_a_new_read_data_replaces_the_active_read() {
         let client = [27; CLIENT_KEY_LEN];
         let (mut e, reader) = reading_engine(ReadWithoutDeliveryControl::Once, client);
         let unlimited = limited(zerodds_xrce::MAX_SAMPLES_UNLIMITED);
@@ -5924,7 +5921,7 @@ mod tests {
     /// samples were taken at every pump and what the read did not deliver
     /// before `max_samples` ended it was gone, also for the next read.
     #[test]
-    fn a_read_takes_only_the_samples_it_delivers() {
+    fn xrce_7_8_5_1_a_read_takes_only_the_samples_it_delivers() {
         let client = [24; CLIENT_KEY_LEN];
         let (mut e, reader) = reading_engine(ReadWithoutDeliveryControl::Once, client);
         for b in 1..=5u8 {
@@ -5953,7 +5950,7 @@ mod tests {
     /// choose the StreamId unconstrained." DATA went on STREAMID_NONE; the
     /// agent takes the built-in best-effort stream.
     #[test]
-    fn streamid_none_lets_the_agent_choose_the_stream() {
+    fn xrce_7_8_5_1_streamid_none_lets_the_agent_choose_the_stream() {
         let client = [25; CLIENT_KEY_LEN];
         let (mut e, reader) = reading_engine(ReadWithoutDeliveryControl::Once, client);
         e.submit_sample(client, reader, vec![9]).unwrap();
@@ -5973,7 +5970,7 @@ mod tests {
     /// submessageLength, §8.3.4.3) is reported and answered with STATUS
     /// STATUS_ERR_RESOURCES; it was skipped without a word.
     #[test]
-    fn a_sample_too_large_for_data_is_reported() {
+    fn xrce_7_7_7_a_sample_too_large_for_data_is_reported() {
         let client = [26; CLIENT_KEY_LEN];
         let (mut e, reader) = reading_engine(ReadWithoutDeliveryControl::Once, client);
         let _ = e.drain_events();
@@ -6023,7 +6020,7 @@ mod tests {
     /// at 0 (a fresh `ReliableStreamState`'s `expected_seq`) since this
     /// also has to clear the receiver-side in-order gate.
     #[test]
-    fn multi_fragment_create_reassembles_correctly() {
+    fn xrce_8_3_5_14_multi_fragment_create_reassembles_correctly() {
         let mut e = engine();
         let client = [11; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6075,7 +6072,7 @@ mod tests {
     /// each at a multiple of 4 (§8.3.3), runs both. Only the first ran,
     /// the second was dropped without a word.
     #[test]
-    fn a_fragmented_run_of_two_submessages_runs_both() {
+    fn xrce_8_3_5_14_a_fragmented_run_of_two_submessages_runs_both() {
         let mut e = engine();
         let client = [12; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6131,7 +6128,7 @@ mod tests {
     /// submessages". A run that holds none is answered with STATUS
     /// `InvalidData` against `OBJECTID_CLIENT`; it is not accepted silently.
     #[test]
-    fn a_fragment_run_without_a_submessage_is_answered_invalid_data() {
+    fn xrce_8_3_5_14_a_fragment_run_without_a_submessage_is_answered_invalid_data() {
         let mut e = engine();
         let client = [13; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6161,7 +6158,7 @@ mod tests {
     /// Linux host: the second 50 kB sample's 101 fragments all arrived in
     /// order, and the reassembly never completed).
     #[test]
-    fn a_second_fragmented_message_reassembles_like_the_first() {
+    fn xrce_8_3_5_14_a_second_fragmented_message_reassembles_like_the_first() {
         let mut e = engine();
         let client = [15; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6208,7 +6205,7 @@ mod tests {
     /// With the assembler's derived Default (TTL 0) every tick discarded
     /// the run in progress.
     #[test]
-    fn a_tick_between_fragments_keeps_the_reassembly() {
+    fn xrce_8_3_5_14_a_tick_between_fragments_keeps_the_reassembly() {
         let mut e = engine();
         let client = [16; CLIENT_KEY_LEN];
         let t0 = Duration::from_secs(3);
@@ -6258,7 +6255,8 @@ mod tests {
     /// actually gotten through — a spec-compliant sender would see its
     /// own already-delivered messages permanently NACK'd.
     #[test]
-    fn out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack() {
+    fn xrce_8_3_2_3_out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack()
+    {
         let mut e = engine();
         let client = [14; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6288,7 +6286,7 @@ mod tests {
         e.handle_message(
             Some(client),
             &reliable_header(2),
-            &[sm2.clone()],
+            std::slice::from_ref(&sm2),
             Duration::ZERO,
         );
         assert_eq!(
@@ -6349,7 +6347,7 @@ mod tests {
     /// incrementing sequence numbers — previously every reply on every
     /// stream carried `sequence_nr = 0` unconditionally.
     #[test]
-    fn reliable_outbound_messages_get_real_incrementing_sequence_numbers() {
+    fn xrce_7_8_2_1_reliable_outbound_messages_get_real_incrementing_sequence_numbers() {
         let mut e = engine();
         let client = [12; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6394,7 +6392,7 @@ mod tests {
     /// `handle_acknack` only updated bookkeeping and never retransmitted
     /// anything.
     #[test]
-    fn acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes() {
+    fn xrce_8_3_5_11_acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes() {
         let mut e = engine();
         let client = [13; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6439,7 +6437,7 @@ mod tests {
     /// DDS-XRCE 1.0 §8.3.5.12: the HEARTBEAT of a reliable output stream
     /// goes on STREAMID_NONE and names the stream in its payload.
     #[test]
-    fn a_heartbeat_of_the_agent_is_on_streamid_none() {
+    fn xrce_8_3_5_12_a_heartbeat_of_the_agent_is_on_streamid_none() {
         let mut e = engine();
         let client = [16; CLIENT_KEY_LEN];
         e.handle_message(
@@ -6495,7 +6493,7 @@ mod tests {
     /// now split into `FRAGMENT` submessages that reassemble back to the
     /// exact original bytes.
     #[test]
-    fn a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments() {
+    fn xrce_7_8_5_1_a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments() {
         let mut e = engine();
         let client = [15; CLIENT_KEY_LEN];
         let mtu = 32u16; // header(4) + FRAGMENT header(4) = 8B overhead -> 24B/fragment
@@ -6714,7 +6712,7 @@ mod tests {
     /// the client happened to define: with one `OBJK_TYPE` for `A`, a
     /// topic of type `B` used to be created with `A`'s TypeObject.
     #[test]
-    fn a_topic_gets_the_type_its_type_name_names() {
+    fn xrce_7_7_3_3_2_a_topic_gets_the_type_its_type_name_names() {
         let mut e = SessionEngine::new(TypeRecordingPort::default(), test_config());
         let client = [0x31; CLIENT_KEY_LEN];
         let now = Duration::ZERO;
@@ -6771,7 +6769,7 @@ mod tests {
     /// the topic "Square" with default QoS, in the Publisher {0xBB, 0xB3},
     /// object_id {0xDD, 0xD5}. The topic is found by its name.
     #[test]
-    fn annex_b_2_3_create_of_a_binary_data_writer() {
+    fn xrce_7_7_3_10_2_annex_b_2_3_create_of_a_binary_data_writer() {
         let mut e = engine();
         let client = [0x36; CLIENT_KEY_LEN];
         connect(&mut e, client);
@@ -6826,7 +6824,7 @@ mod tests {
     /// in this reading; the deadline's presence octet is byte 35, which the
     /// table calls padding.
     #[test]
-    fn annex_b_2_4_create_of_a_binary_data_writer_with_qos() {
+    fn xrce_7_7_3_10_2_annex_b_2_4_create_of_a_binary_data_writer_with_qos() {
         let mut e = engine();
         let client = [0x37; CLIENT_KEY_LEN];
         connect(&mut e, client);
@@ -6880,7 +6878,7 @@ mod tests {
     /// alone; the agent finds the type it knows with that TypeIdentifier. A
     /// TypeIdentifier no known type has is STATUS_ERR_UNKNOWN_REFERENCE.
     #[test]
-    fn a_topic_can_name_its_type_by_type_identifier() {
+    fn xrce_7_7_3_7_3_a_topic_can_name_its_type_by_type_identifier() {
         use zerodds_wire::{Endianness as WireEndianness, Writer};
         let ast = std::sync::Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
@@ -6977,7 +6975,7 @@ mod tests {
     /// with STATUS_ERR_INVALID_DATA (the request_id when its two octets are
     /// there) and reported.
     #[test]
-    fn a_create_without_a_base_object_request_is_answered() {
+    fn xrce_7_7_7_a_create_without_a_base_object_request_is_answered() {
         let mut e = engine();
         let client = [0x65; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -7013,7 +7011,7 @@ mod tests {
     /// kind in its low bits creates the object of the discriminator's kind
     /// under the same prefix; the STATUS names that object_id.
     #[test]
-    fn the_object_id_is_the_prefix_and_the_kind_of_the_representation() {
+    fn xrce_7_6_the_object_id_is_the_prefix_and_the_kind_of_the_representation() {
         let mut e = engine();
         let client = [0x66; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -7064,7 +7062,7 @@ mod tests {
     /// the object is created under. The same XML under another participant
     /// is a mismatch, under the same one a match.
     #[test]
-    fn reuse_compares_the_container_of_the_representation() {
+    fn xrce_7_8_3_1_reuse_compares_the_container_of_the_representation() {
         let mut e = engine();
         let client = [0x67; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -7099,7 +7097,7 @@ mod tests {
     /// object once it is created, and an object whose enabling fails is not
     /// created: STATUS_ERR_DDS_ERROR, nothing stored, the DDS side deleted.
     #[test]
-    fn a_dds_entity_is_enabled_when_the_creation_has_succeeded() {
+    fn xrce_7_7_7_a_dds_entity_is_enabled_when_the_creation_has_succeeded() {
         let mut e = SessionEngine::new(TypeRecordingPort::default(), test_config());
         let client = [0x69; CLIENT_KEY_LEN];
         e.handle_message(
@@ -7189,7 +7187,7 @@ mod tests {
     /// (`STATUS_OK`), the DDS side included. The same XML under another
     /// participant does not match.
     #[test]
-    fn a_create_with_reuse_and_replace_updates_the_object() {
+    fn xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object() {
         let mut e = recording_engine();
         let client = [0x91; CLIENT_KEY_LEN];
         open_session(&mut e, client);
@@ -7249,7 +7247,7 @@ mod tests {
     /// `STATUS_ERR_UNKNOWN_REFERENCE`; Table 5 creates it. The default is
     /// Table 5; `update_of_missing_object: refuse` the update.
     #[test]
-    fn the_update_of_a_missing_object_creates_it_or_is_refused() {
+    fn xrce_7_8_3_1_the_update_of_a_missing_object_creates_it_or_is_refused() {
         for (refuse, expected) in [
             (false, ResultStatusCode::Ok),
             (true, ResultStatusCode::UnknownReference),
@@ -7297,7 +7295,7 @@ mod tests {
     /// `update` permission on the object; a replace without `reuse` needs
     /// `delete`.
     #[test]
-    fn an_update_needs_the_permission_to_update() {
+    fn xrce_7_7_7_an_update_needs_the_permission_to_update() {
         for (granted, update_expected, replace_expected) in [
             (
                 Operation::Update,
@@ -7374,7 +7372,7 @@ mod tests {
     /// cannot be made leaves the old object, in the store and on the DDS
     /// side, and answers with the error.
     #[test]
-    fn a_replace_that_fails_returns_the_object_to_its_previous_configuration() {
+    fn xrce_7_8_3_1_a_replace_that_fails_returns_the_object_to_its_previous_configuration() {
         let ast = alloc::sync::Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@final struct HelloWorld { unsigned long index; };",
@@ -7497,7 +7495,7 @@ mod tests {
     /// DDS entities are made and enabled with it, and the domain is the one of
     /// the definition.
     #[test]
-    fn a_participant_definition_creates_the_objects_inside_it() {
+    fn xrce_7_4_a_participant_definition_creates_the_objects_inside_it() {
         let mut e = recording_engine();
         let client = [0x71; CLIENT_KEY_LEN];
         open_session(&mut e, client);
@@ -7539,7 +7537,7 @@ mod tests {
     /// A nested object that cannot be made is a failure of the whole: nothing
     /// of the participant is left, in the store or on the DDS side.
     #[test]
-    fn a_participant_definition_with_a_broken_part_creates_nothing() {
+    fn xrce_7_7_3_6_2_a_participant_definition_with_a_broken_part_creates_nothing() {
         let mut e = recording_engine();
         let client = [0x72; CLIENT_KEY_LEN];
         open_session(&mut e, client);
@@ -7564,7 +7562,7 @@ mod tests {
     /// DomainParticipant (or its Domain) defines, or from `<topic name=…
     /// register_type_ref=…>` with a registration of the participant.
     #[test]
-    fn a_topic_is_created_by_name_or_by_register_type_ref() {
+    fn xrce_7_6_a_topic_is_created_by_name_or_by_register_type_ref() {
         let mut e = recording_engine();
         let client = [0x73; CLIENT_KEY_LEN];
         open_session(&mut e, client);
@@ -7621,7 +7619,7 @@ mod tests {
     /// as `<datawriter_qos base_name="…">` over a profile of the agent, with
     /// policies of its own on top.
     #[test]
-    fn a_data_writer_states_its_qos_over_a_profile() {
+    fn xrce_7_7_3_10_1_a_data_writer_states_its_qos_over_a_profile() {
         let mut config = test_config();
         config
             .profiles
@@ -7672,7 +7670,7 @@ mod tests {
     /// including nested DataWriter objects"; the CREATE of the Publisher makes
     /// them, and a DataWriter that fails fails the CREATE.
     #[test]
-    fn a_publisher_with_nested_data_writers_creates_them() {
+    fn xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them() {
         let mut e = recording_engine();
         let client = [0x77; CLIENT_KEY_LEN];
         open_session(&mut e, client);
@@ -7741,7 +7739,7 @@ mod tests {
     /// already known to the Agent". A second `<types>` names the first one's
     /// type as a member; a name that is no type is STATUS_ERR_UNKNOWN_REFERENCE.
     #[test]
-    fn a_types_string_references_a_type_created_before() {
+    fn xrce_7_7_3_3_2_a_types_string_references_a_type_created_before() {
         let mut e = recording_engine();
         let client = [0x79; CLIENT_KEY_LEN];
         open_session(&mut e, client);
@@ -7784,7 +7782,7 @@ mod tests {
     /// a single `<qos_profile>`, whose `base_name` may be written with one
     /// colon.
     #[test]
-    fn type_and_qos_profile_xml_follow_their_clauses() {
+    fn xrce_7_7_3_2_2_type_and_qos_profile_xml_follow_their_clauses() {
         let mut e = recording_engine();
         let client = [0x78; CLIENT_KEY_LEN];
         open_session(&mut e, client);
@@ -7858,7 +7856,7 @@ mod tests {
     /// another client refers to them with REPRESENTATION_BY_REFERENCE, for as
     /// long as the object of the ConfigurationClient exists.
     #[test]
-    fn what_a_configuration_client_defines_is_referenced_by_another_client() {
+    fn xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client() {
         let mut e = recording_engine();
         let (config, user) = ([0x75; CLIENT_KEY_LEN], [0x76; CLIENT_KEY_LEN]);
         open_session(&mut e, config);
@@ -8016,7 +8014,7 @@ mod tests {
     /// WRITE_DATA names the ObjectId of the name (§9.3); the agent makes the
     /// DomainParticipant with everything inside it, and the write succeeds.
     #[test]
-    fn a_client_writes_through_a_preconfigured_data_writer_without_a_create() {
+    fn xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create() {
         let mut e = system_engine(
             Vec::new(),
             crate::daemon::access::AccessController::default(),
@@ -8059,7 +8057,7 @@ mod tests {
     /// §8.4.3: a client reads through a preconfigured DataReader with
     /// READ_DATA, and DATA comes back with the request_id of the READ_DATA.
     #[test]
-    fn a_client_reads_through_a_preconfigured_data_reader_without_a_create() {
+    fn xrce_7_3_a_client_reads_through_a_preconfigured_data_reader_without_a_create() {
         let mut e = system_engine(
             Vec::new(),
             crate::daemon::access::AccessController::default(),
@@ -8090,7 +8088,7 @@ mod tests {
     /// creation or reuse of the corresponding XRCE objects." A second
     /// CREATE_CLIENT of the same session reuses them.
     #[test]
-    fn a_create_client_makes_the_objects_configured_for_the_client() {
+    fn xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client() {
         let (client, other) = ([0x83; CLIENT_KEY_LEN], [0x84; CLIENT_KEY_LEN]);
         let mut e = system_engine(
             vec![(client, "Apps::App".to_string())],
@@ -8130,7 +8128,7 @@ mod tests {
     /// that names them: without the permission to create, the WRITE_DATA is
     /// `STATUS_ERR_DENIED`.
     #[test]
-    fn a_preconfigured_object_is_made_only_for_a_client_allowed_to_create_it() {
+    fn xrce_7_3_a_preconfigured_object_is_made_only_for_a_client_allowed_to_create_it() {
         let access = deny_all_but(KEY_A, vec![Operation::WriteData]);
         let mut e = system_engine(Vec::new(), access);
         open_session(&mut e, KEY_A);
@@ -8145,7 +8143,7 @@ mod tests {
     /// and nothing is stored (the default); with `forward_unknown_topic_types`
     /// it is created and its samples are forwarded opaque.
     #[test]
-    fn a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to() {
+    fn xrce_7_7_3_7_3_a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to() {
         for (refuse, expected) in [
             (true, ResultStatusCode::UnknownReference),
             (false, ResultStatusCode::Ok),
@@ -8198,7 +8196,7 @@ mod tests {
     /// STATUS_ERR_INCOMPATIBLE and nothing is stored; `unsupported_qos: ignore`
     /// creates the object without it.
     #[test]
-    fn qos_the_agent_cannot_apply_is_refused_unless_ignoring_is_named() {
+    fn xrce_7_1_qos_the_agent_cannot_apply_is_refused_unless_ignoring_is_named() {
         for (ignore, expected) in [
             (false, ResultStatusCode::Incompatible),
             (true, ResultStatusCode::Ok),
@@ -8251,7 +8249,7 @@ mod tests {
     /// unlimited; the example of Annex B.4.2 (30000 for 30 seconds) reads as
     /// milliseconds, which is the setting `max_elapsed_time_unit: milliseconds`.
     #[test]
-    fn max_elapsed_time_is_in_seconds_or_in_the_milliseconds_of_the_example() {
+    fn xrce_7_8_5_1_max_elapsed_time_is_in_seconds_or_in_the_milliseconds_of_the_example() {
         assert_eq!(elapsed_time_limit(0, false), Duration::MAX);
         assert_eq!(elapsed_time_limit(0, true), Duration::MAX);
         assert_eq!(elapsed_time_limit(30, false), Duration::from_secs(30));
@@ -8268,7 +8266,7 @@ mod tests {
     /// one the agent does not hold is STATUS_ERR_UNKNOWN_REFERENCE; white space
     /// at the edges is collapsed away.
     #[test]
-    fn an_object_reference_must_be_an_element_name_reference() {
+    fn xrce_7_7_3_1_1_an_object_reference_must_be_an_element_name_reference() {
         let mut e = engine();
         let client = [0x73; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -8302,7 +8300,7 @@ mod tests {
 
     /// `type_files:` types are known to every client.
     #[test]
-    fn a_configured_type_is_known_to_every_client() {
+    fn xrce_7_7_3_7_3_a_configured_type_is_known_to_every_client() {
         let ast = alloc::sync::Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@final struct HelloWorld { unsigned long index; string message; };",
@@ -8353,7 +8351,7 @@ mod tests {
     /// The eProsima ShapesDemo client creates everything by reference;
     /// `xml_profile_files:` holds the profiles (`agent.refs`).
     #[test]
-    fn references_resolve_against_the_profile_files() {
+    fn xrce_7_3_references_resolve_against_the_profile_files() {
         // A DataWriter by reference is not a format the specification has for
         // it (§7.7.3.1); the eProsima client's way needs the setting.
         let mut config = SessionEngineConfig {
@@ -8416,7 +8414,7 @@ mod tests {
     /// A format outside that is STATUS_ERR_INVALID_DATA; `representation_formats:
     /// any` admits it.
     #[test]
-    fn the_formats_of_each_kind_are_enforced() {
+    fn xrce_7_7_3_1_the_formats_of_each_kind_are_enforced() {
         use ObjectKind as K;
         let by_ref = ObjectVariant::ByReference("x".into());
         let xml = ObjectVariant::ByXmlString(String::new());
@@ -8510,7 +8508,7 @@ mod tests {
     /// §8.3.2: a best-effort receiver takes only a message newer than the
     /// last; every message on a best-effort stream gets the next number.
     #[test]
-    fn best_effort_messages_get_increasing_sequence_numbers() {
+    fn xrce_8_2_3_best_effort_messages_get_increasing_sequence_numbers() {
         let mut e = engine();
         let client = [0x41; CLIENT_KEY_LEN];
         let mut out: Vec<Outbound> = (0..3).map(|_| outbound_on(client, 0x01)).collect();
@@ -8619,7 +8617,7 @@ mod tests {
     /// DDS-XRCE 1.0 §7.8.2.1: a client whose ClientKey is not configured in
     /// the agent is answered with STATUS_ERR_DENIED and gets no session.
     #[test]
-    fn a_client_key_not_configured_in_the_agent_is_denied() {
+    fn xrce_7_4_a_client_key_not_configured_in_the_agent_is_denied() {
         let mut e = engine_with(crate::daemon::access::AccessController {
             authorized_clients: vec![KEY_A],
             ..Default::default()
@@ -8642,7 +8640,7 @@ mod tests {
 
     /// Without configured ClientKeys the agent accepts every key.
     #[test]
-    fn without_configured_client_keys_every_key_is_accepted() {
+    fn xrce_7_8_1_without_configured_client_keys_every_key_is_accepted() {
         let mut e = engine();
         assert_eq!(
             agent_status_of(&connect(&mut e, KEY_B)),
@@ -8654,7 +8652,7 @@ mod tests {
     /// An agent that requires a property denies a client without it, or
     /// with another value, and accepts one that carries it.
     #[test]
-    fn client_properties_are_checked_against_what_the_agent_requires() {
+    fn xrce_7_7_7_client_properties_are_checked_against_what_the_agent_requires() {
         use crate::daemon::handshake::Property;
         let prop = |v: &str| Property {
             name: "auth".to_string(),
@@ -8692,7 +8690,7 @@ mod tests {
     /// its properties big-endian; the agent reads them as such and checks
     /// the required one against them.
     #[test]
-    fn a_big_endian_create_client_with_properties_is_read_right() {
+    fn xrce_7_8_2_1_a_big_endian_create_client_with_properties_is_read_right() {
         use crate::daemon::handshake::Property;
         let mut e = engine_with(crate::daemon::access::AccessController {
             required_properties: vec![("auth".to_string(), "token".to_string())],
@@ -8723,7 +8721,7 @@ mod tests {
     /// DDS-XRCE 1.0 §7.8.2.1: a PropertySeq the agent cannot read fails
     /// the check; the session is not created and the client is told.
     #[test]
-    fn an_unreadable_property_seq_is_refused_with_invalid_data() {
+    fn xrce_7_8_2_1_an_unreadable_property_seq_is_refused_with_invalid_data() {
         let mut body = Vec::new();
         body.extend_from_slice(b"XRCE");
         body.extend_from_slice(&XRCE_VERSION);
@@ -8783,7 +8781,7 @@ mod tests {
     /// DDS-XRCE 1.0 §7.4, §7.8.3.1: a CREATE the client has no permission
     /// for is answered with STATUS_ERR_DENIED and nothing is stored.
     #[test]
-    fn create_without_permission_is_denied_and_stores_nothing() {
+    fn xrce_7_4_create_without_permission_is_denied_and_stores_nothing() {
         let mut e = engine_with(deny_all_but(KEY_A, vec![Operation::GetInfo]));
         connect(&mut e, KEY_A);
         let out = participant_create(&mut e, KEY_A);
@@ -8797,7 +8795,7 @@ mod tests {
 
     /// §7.4: the rules name the DDS domain an application may join.
     #[test]
-    fn a_rule_can_limit_the_domains_a_client_joins() {
+    fn xrce_7_4_a_rule_can_limit_the_domains_a_client_joins() {
         use crate::daemon::access::{AccessController, Effect, Rule};
         let mut e = engine_with(AccessController {
             rules: vec![Rule {
@@ -8875,7 +8873,7 @@ mod tests {
     /// no permission for are answered with STATUS_ERR_DENIED; the object
     /// stays.
     #[test]
-    fn get_info_and_delete_without_permission_are_denied() {
+    fn xrce_7_4_get_info_and_delete_without_permission_are_denied() {
         let mut e = engine_with(deny_all_but(KEY_A, vec![Operation::Create]));
         connect(&mut e, KEY_A);
         assert_eq!(
@@ -8906,7 +8904,7 @@ mod tests {
     /// answered with STATUS_ERR_DENIED and nothing reaches the DDS side;
     /// §7.8.5.1: the same for READ_DATA, and no read becomes active.
     #[test]
-    fn write_and_read_without_permission_are_denied() {
+    fn xrce_7_4_write_and_read_without_permission_are_denied() {
         let mut e = engine_with(deny_all_but(KEY_A, vec![Operation::Create]));
         connect(&mut e, KEY_A);
         create_participant_topic_reader(&mut e, KEY_A);
@@ -8936,7 +8934,7 @@ mod tests {
     /// With the permission the same READ_DATA is not denied (no STATUS
     /// ERR_DENIED, the read becomes active).
     #[test]
-    fn read_with_permission_is_not_denied() {
+    fn xrce_7_8_5_1_read_with_permission_is_not_denied() {
         let mut e = engine_with(deny_all_but(
             KEY_A,
             vec![Operation::Create, Operation::ReadData],
@@ -8963,7 +8961,7 @@ mod tests {
     /// §7.8.3.1, Table 5: replacing an existing object deletes it first,
     /// which needs the permission to delete.
     #[test]
-    fn replacing_an_object_needs_the_permission_to_delete_it() {
+    fn xrce_7_8_3_2_replacing_an_object_needs_the_permission_to_delete_it() {
         let mut e = engine_with(deny_all_but(KEY_A, vec![Operation::Create]));
         connect(&mut e, KEY_A);
         assert_eq!(
@@ -9019,7 +9017,7 @@ mod tests {
     /// another kind is invalid data; an id of a participant the client does
     /// not hold is STATUS_ERR_UNKNOWN_REFERENCE. Nothing is stored.
     #[test]
-    fn a_publisher_or_subscriber_needs_an_existing_participant() {
+    fn xrce_7_5_a_publisher_or_subscriber_needs_an_existing_participant() {
         let mut e = SessionEngine::new(TypeRecordingPort::default(), test_config());
         let client = [0x41; CLIENT_KEY_LEN];
         client_with_participant(&mut e, client);
@@ -9074,7 +9072,7 @@ mod tests {
     /// DomainParticipant, with the policies of their representation
     /// (PRESENTATION, ENTITY_FACTORY, PARTITION).
     #[test]
-    fn a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies() {
+    fn xrce_7_5_a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies() {
         let mut e = SessionEngine::new(TypeRecordingPort::default(), test_config());
         let client = [0x42; CLIENT_KEY_LEN];
         client_with_participant(&mut e, client);
@@ -9120,7 +9118,7 @@ mod tests {
     /// DDS: a DataWriter and its topic belong to the participant of the
     /// Publisher. A Publisher of another participant is refused.
     #[test]
-    fn an_endpoint_and_its_topic_belong_to_one_participant() {
+    fn xrce_7_7_3_10_an_endpoint_and_its_topic_belong_to_one_participant() {
         let mut e = SessionEngine::new(TypeRecordingPort::default(), test_config());
         let client = [0x43; CLIENT_KEY_LEN];
         client_with_participant(&mut e, client);
@@ -9217,7 +9215,7 @@ mod tests {
     /// not the client's: nothing is processed, nothing is answered, and the
     /// agent reports it.
     #[test]
-    fn a_message_of_a_replaced_session_is_not_processed() {
+    fn xrce_8_2_2_a_message_of_a_replaced_session_is_not_processed() {
         let mut e = engine();
         let client = [0x51; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -9246,7 +9244,7 @@ mod tests {
     /// §8.3.2.1: 0x00 and 0x80 "indicate the lack of a session". A registered
     /// client's CREATE in such a header belongs to no session.
     #[test]
-    fn a_message_without_a_session_is_not_processed_unless_it_is_a_create_client() {
+    fn xrce_8_2_2_a_message_without_a_session_is_not_processed_unless_it_is_a_create_client() {
         let mut e = engine();
         let client = [0x52; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -9268,7 +9266,7 @@ mod tests {
 
     /// §8.3.2.1: a client cannot ask for a session that is none.
     #[test]
-    fn a_create_client_for_a_session_id_of_no_session_is_refused() {
+    fn xrce_8_2_2_a_create_client_for_a_session_id_of_no_session_is_refused() {
         let mut e = engine();
         for none in [0x00u8, 0x80] {
             let out = e.handle_message(
@@ -9286,7 +9284,7 @@ mod tests {
     /// be delivered out of order. In addition, duplicate messages shall be
     /// discarded." STREAMID_NONE has no order.
     #[test]
-    fn best_effort_streams_drop_duplicates_and_older_messages() {
+    fn xrce_8_3_2_3_best_effort_streams_drop_duplicates_and_older_messages() {
         let mut e = engine();
         let client = [0x55; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -9337,7 +9335,7 @@ mod tests {
     /// best-effort streams start over, and so do all reliable streams —
     /// stream 255 as well.
     #[test]
-    fn reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream() {
+    fn xrce_8_2_2_reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream() {
         let mut e = engine();
         let client = [0x56; CLIENT_KEY_LEN];
         connected(&mut e, client, 0x81);
@@ -9593,7 +9591,7 @@ mod tests {
     /// (§8.3.5.1 BaseObjectReply), and one request with several samples gets
     /// one STATUS.
     #[test]
-    fn a_successful_write_is_answered_with_status_ok() {
+    fn xrce_7_7_7_a_successful_write_is_answered_with_status_ok() {
         use zerodds_xrce::submessages::write_data::WriteDataPayload;
         let mut e = engine_with_writer(SplitPort::new(4));
         let out = send_write(
@@ -9618,7 +9616,7 @@ mod tests {
     /// serialized samples back to back with no length; the topic's type says
     /// where each ends. Each sample is written, in order.
     #[test]
-    fn a_data_seq_is_split_by_the_type_and_written_sample_by_sample() {
+    fn xrce_7_7_2_a_data_seq_is_split_by_the_type_and_written_sample_by_sample() {
         use zerodds_xrce::submessages::write_data::WriteDataPayloadDataSeq;
         let mut e = engine_with_writer(SplitPort::new(4));
         let out = send_write(
@@ -9649,7 +9647,7 @@ mod tests {
     /// apply to that sample; the source time is the session time plus the
     /// offset (§7.7.2).
     #[test]
-    fn a_sample_seq_carries_state_and_time_per_sample() {
+    fn xrce_7_7_2_a_sample_seq_carries_state_and_time_per_sample() {
         use zerodds_xrce::sample_info::SampleInfoFlags as F;
         use zerodds_xrce::submessages::write_data::WriteDataPayloadSampleSeq;
         let mut e = engine_with_writer(SplitPort::new(4));
@@ -9714,7 +9712,7 @@ mod tests {
     /// 4-octet SampleInfoDelta before each sample; §7.7.2: the offset of a
     /// sample is the base offset plus its delta (tenths of a second).
     #[test]
-    fn packed_samples_resolve_their_deltas_against_the_base() {
+    fn xrce_7_7_1_packed_samples_resolve_their_deltas_against_the_base() {
         use zerodds_xrce::sample_info::{SampleInfoDelta, SampleInfoFlags as F};
         use zerodds_xrce::submessages::write_data::WriteDataPayloadPackedSamples;
         let mut e = engine_with_writer(SplitPort::new(4));
@@ -9770,7 +9768,7 @@ mod tests {
     /// FORMAT_SAMPLE: the session_time_offset stamps the sample (§7.8.4.1:
     /// "allowing sending timestamps"); FORMAT_DATA has none and is not stamped.
     #[test]
-    fn a_sample_is_stamped_with_the_session_time_plus_its_offset() {
+    fn xrce_7_8_4_1_a_sample_is_stamped_with_the_session_time_plus_its_offset() {
         use zerodds_xrce::submessages::write_data::{WriteDataPayload, WriteDataPayloadSample};
         let mut e = engine_with_writer(SplitPort::new(4));
         let out = send_write(
@@ -9808,7 +9806,7 @@ mod tests {
     /// the bytes cannot hold, bytes left behind the last sample, a truncated
     /// sample.
     #[test]
-    fn a_sequence_that_does_not_split_writes_nothing() {
+    fn xrce_7_8_4_1_a_sequence_that_does_not_split_writes_nothing() {
         use zerodds_xrce::submessages::write_data::WriteDataPayloadDataSeq;
         let mut e = engine_with_writer(SplitPort::new(4));
         for (count, elements) in [
@@ -9843,7 +9841,7 @@ mod tests {
     /// sequence format is answered with STATUS_ERR_INVALID_DATA, not
     /// guessed at.
     #[test]
-    fn a_sequence_of_a_topic_of_unknown_type_is_refused() {
+    fn xrce_7_8_4_1_a_sequence_of_a_topic_of_unknown_type_is_refused() {
         use zerodds_xrce::submessages::write_data::WriteDataPayloadDataSeq;
         let mut e = engine_with_writer(NullDdsPort::new());
         let out = send_write(
@@ -9863,7 +9861,7 @@ mod tests {
     /// (the topic's type is unknown) is answered with a STATUS and written
     /// nowhere; it used to be written as a plain update with only an event.
     #[test]
-    fn a_dispose_the_agent_cannot_identify_is_answered_with_a_status() {
+    fn xrce_7_8_4_1_a_dispose_the_agent_cannot_identify_is_answered_with_a_status() {
         use zerodds_xrce::sample_info::SampleInfoFlags as F;
         use zerodds_xrce::submessages::write_data::WriteDataPayloadSample;
         let mut e = engine_with_writer(NullDdsPort::new());
@@ -9909,7 +9907,7 @@ mod tests {
     /// an INFO that echoes request_id and object_id, with STATUS_OK, the
     /// AGENT_ActivityInfo (the addresses) and the AGENT_Representation.
     #[test]
-    fn get_info_of_the_agent_in_a_session_returns_activity_and_representation() {
+    fn xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation() {
         use zerodds_xrce::object_id::OBJECTID_AGENT;
         use zerodds_xrce::transport_locator::TransportLocatorMedium;
         let locator = TransportLocator::Medium(TransportLocatorMedium {
@@ -9957,7 +9955,7 @@ mod tests {
     /// GET_INFO(OBJK_AGENT) in a header without a session reaches the Root and
     /// is answered; any other object has no ProxyClient to ask.
     #[test]
-    fn get_info_without_a_session_is_answered_for_the_agent_only() {
+    fn xrce_7_7_12_get_info_without_a_session_is_answered_for_the_agent_only() {
         use zerodds_xrce::object_id::OBJECTID_AGENT;
         let mut e = engine();
         let out = e.handle_message(
@@ -9987,7 +9985,7 @@ mod tests {
     /// names the version of the client; another major version is answered
     /// with an INFO of STATUS_ERR_INCOMPATIBLE, with or without a session.
     #[test]
-    fn get_info_of_the_agent_checks_the_version_in_client_info() {
+    fn xrce_7_7_7_get_info_of_the_agent_checks_the_version_in_client_info() {
         use zerodds_xrce::handshake::ClientRepresentation;
         use zerodds_xrce::object_id::OBJECTID_AGENT;
         use zerodds_xrce::object_info::ObjectConfig;
@@ -10047,7 +10045,7 @@ mod tests {
     /// its first four octets when they are there) and reported, not dropped
     /// without a word.
     #[test]
-    fn a_request_that_cannot_be_read_is_answered_invalid_data() {
+    fn xrce_7_7_7_a_request_that_cannot_be_read_is_answered_invalid_data() {
         let mut e = engine();
         connect(&mut e, KEY_A);
         e.drain_events();
@@ -10095,7 +10093,7 @@ mod tests {
     /// four timestamps give the offset of the client's clock and the round
     /// trip.
     #[test]
-    fn the_agent_sends_a_timestamp_and_reads_the_reply() {
+    fn xrce_8_3_5_15_the_agent_sends_a_timestamp_and_reads_the_reply() {
         let mut e = engine();
         connect(&mut e, KEY_A);
         assert!(e.request_timestamp(KEY_B).is_none(), "no session");
@@ -10145,7 +10143,7 @@ mod tests {
     /// `timestamp_interval`: a TIMESTAMP to each client at the first tick and
     /// then every interval; none without an interval.
     #[test]
-    fn tick_sends_a_timestamp_every_interval() {
+    fn xrce_8_3_5_15_tick_sends_a_timestamp_every_interval() {
         let timestamps = |out: &[Outbound]| {
             out.iter()
                 .filter(|ob| ob.submessages[0].header.submessage_id == SubmessageId::Timestamp)
@@ -10170,7 +10168,7 @@ mod tests {
     /// §8.3.5.3: the ObjectKind of the object_id selects the Root, not the
     /// whole id 0xFFFD.
     #[test]
-    fn any_object_id_of_kind_agent_is_the_root_in_a_session() {
+    fn xrce_7_8_3_3_any_object_id_of_kind_agent_is_the_root_in_a_session() {
         let mut e = engine();
         connect(&mut e, KEY_A);
         let other = ObjectId::new(0x010, ObjectKind::Agent).unwrap();
@@ -10190,7 +10188,7 @@ mod tests {
     /// was created with (kind, representation, trailing field) as `config`, and
     /// nothing as `activity` for a kind that has none; the mask selects.
     #[test]
-    fn get_info_of_an_object_returns_the_object_variant_it_was_created_with() {
+    fn xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with() {
         let mut e = engine();
         connect(&mut e, KEY_A);
         let xml = "<dds><participant><domain_id>7</domain_id></participant></dds>";
@@ -10243,7 +10241,7 @@ mod tests {
     /// §7.8.3.3: an object that does not exist is STATUS_ERR_UNKNOWN_REFERENCE
     /// — in the INFO (§8.3.5.7.2), echoing the request.
     #[test]
-    fn get_info_of_a_missing_object_is_an_info_with_unknown_reference() {
+    fn xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference() {
         let mut e = engine();
         connect(&mut e, KEY_A);
         let out = e.handle_message(
@@ -10261,7 +10259,7 @@ mod tests {
 
     /// A GET_INFO without the InfoMask is invalid data, answered as an INFO.
     #[test]
-    fn get_info_without_an_info_mask_is_invalid_data() {
+    fn xrce_7_7_12_get_info_without_an_info_mask_is_invalid_data() {
         let mut e = engine();
         connect(&mut e, KEY_A);
         let short = GetInfoPayload {
@@ -10284,7 +10282,7 @@ mod tests {
     /// §7.7.12 DATAWRITER_ActivityInfo: the agent counts the samples written
     /// through a writer and keeps the sequence number of the last message.
     #[test]
-    fn get_info_of_a_data_writer_reports_its_activity() {
+    fn xrce_7_7_12_get_info_of_a_data_writer_reports_its_activity() {
         use zerodds_xrce::submessages::write_data::WriteDataPayload;
         let mut e = engine_with_writer(SplitPort::new(4));
         for seq in [3u16, 9] {
@@ -10327,7 +10325,7 @@ mod tests {
     /// DATAREADER_ActivityInfo: without a read delivering on a reliable
     /// stream the client has acknowledged nothing.
     #[test]
-    fn get_info_of_a_data_reader_reports_its_activity() {
+    fn xrce_7_7_12_get_info_of_a_data_reader_reports_its_activity() {
         let mut e = engine();
         connect(&mut e, KEY_A);
         create_participant_topic_reader(&mut e, KEY_A);

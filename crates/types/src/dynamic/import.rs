@@ -85,10 +85,9 @@ impl DynamicTypeBuilder {
                 def.name == annotation.name() && def.module != self.ast.builtin_module()
             })
             .map(|(id, _)| id)
+            && !annotation.is_builtin()
         {
-            if !annotation.is_builtin() {
-                return Ok(existing);
-            }
+            return Ok(existing);
         }
         let mut importer = Importer {
             src: annotation.ast(),
@@ -656,11 +655,11 @@ impl Importer<'_> {
             .annotation_def(def)
             .map_err(|e| DynamicError::model(&e))?;
         let name = node.name.clone();
-        if node.module == self.src.builtin_module() {
-            if let Some(builtin) = dst.ast.builtin_annotation(&name) {
-                self.defs.push((def, builtin));
-                return Ok(builtin);
-            }
+        if node.module == self.src.builtin_module()
+            && let Some(builtin) = dst.ast.builtin_annotation(&name)
+        {
+            self.defs.push((def, builtin));
+            return Ok(builtin);
         }
         let members = node.members.clone();
         let made = dst

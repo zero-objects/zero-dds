@@ -32,7 +32,7 @@
 //! `test` block that references them all, and `--test-no-exec` stops
 //! before the link step — which on macOS fails for reasons that have
 //! nothing to do with the file under test. That the pair is not vacuous
-//! is itself a test: `the_zig_check_catches_what_build_obj_misses`.
+//! is itself a test: `xtypes_7_5_1_the_zig_check_catches_what_build_obj_misses`.
 //!
 //! `print_stderr` is allowed here on purpose, as it is in the sibling
 //! columns' harnesses. A skipped compiler check and a corpus case the
@@ -108,7 +108,7 @@ fn a_struct_of_primitives_becomes_a_zig_struct() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_zig_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_zig_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -131,7 +131,7 @@ fn every_idl_primitive_reaches_a_zig_type() {
 }
 
 #[test]
-fn no_generated_type_has_a_target_dependent_width() {
+fn xtypes_7_2_2_2_no_generated_type_has_a_target_dependent_width() {
     // `isize`, `usize` and the `c_*` family follow the target (Zig
     // language reference, "Primitive Types"). A member declared with one
     // would change size between a 64-bit host and a 32-bit
@@ -151,7 +151,7 @@ fn no_generated_type_has_a_target_dependent_width() {
 }
 
 #[test]
-fn a_long_double_is_an_f128_because_zig_has_one() {
+fn xtypes_7_2_2_2_a_long_double_is_an_f128_because_zig_has_one() {
     // The one place this column differs from Go's and Python's, which
     // hold the decimal in a string: Zig's `f128` is a real IEEE 754
     // quadruple with the 113 bits of significand an IDL `long double`
@@ -166,7 +166,7 @@ fn a_long_double_is_an_f128_because_zig_has_one() {
 }
 
 #[test]
-fn a_long_double_constant_is_written_as_a_number_and_not_as_text() {
+fn xtypes_7_2_2_2_a_long_double_constant_is_written_as_a_number_and_not_as_text() {
     // The Go column refuses this constant by name, because its holder is
     // a string and CORBA gives a `long double` literal no spelling that
     // survives a `float64`. Zig's `comptime_float` is evaluated at f128,
@@ -179,7 +179,7 @@ fn a_long_double_constant_is_written_as_a_number_and_not_as_text() {
 }
 
 #[test]
-fn an_optional_member_becomes_a_question_mark_and_defaults_to_null() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_question_mark_and_defaults_to_null() {
     // DDS-XTypes 1.3 §7.2.2.4.4.4.7. Zig's zero value is whatever the
     // constructor wrote, and a `long` that arrived as 0 is not
     // distinguishable from one that did not arrive unless the type says
@@ -191,7 +191,7 @@ fn an_optional_member_becomes_a_question_mark_and_defaults_to_null() {
 }
 
 #[test]
-fn an_external_member_becomes_a_pointer_and_the_optional_goes_outside_it() {
+fn xtypes_7_2_2_4_9_an_external_member_becomes_a_pointer_and_the_optional_goes_outside_it() {
     // `@external` says the member is stored outside the containing
     // object (DDS-XTypes 1.3 Table 21), which in Zig is a pointer and
     // needs no invented box type. The pointer goes on first and the
@@ -221,7 +221,7 @@ fn an_external_member_becomes_a_pointer_and_the_optional_goes_outside_it() {
 }
 
 #[test]
-fn a_member_named_after_a_zig_keyword_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_a_zig_keyword_is_escaped_and_keeps_its_idl_name() {
     // A keyword cannot be an identifier anywhere: measured on Zig
     // 0.14.1, `struct { align: u8 }` is
     // `expected type expression, found 'align'`.
@@ -255,7 +255,7 @@ fn a_member_named_after_a_primitive_keeps_the_idl_spelling() {
 }
 
 #[test]
-fn a_declaration_named_after_a_primitive_is_escaped_because_zig_refuses_it() {
+fn idl_7_2_3_a_declaration_named_after_a_primitive_is_escaped_because_zig_refuses_it() {
     // The other half of the same rule. `pub const u8 = i32;` is
     // `error: name shadows primitive 'u8'` — unlike Go, where shadowing
     // a predeclared identifier compiles and is merely unwise.
@@ -266,7 +266,7 @@ fn a_declaration_named_after_a_primitive_is_escaped_because_zig_refuses_it() {
 }
 
 #[test]
-fn two_members_that_would_reach_one_zig_name_are_refused_by_name() {
+fn idl_7_2_3_two_members_that_would_reach_one_zig_name_are_refused_by_name() {
     // Not the case-only pair — IDL 4.2 §7.2.3.1 already forbids `value`
     // beside `Value` in one scope, and the frontend reports it. What is
     // left is the pair the keyword escape makes: `align` escapes to
@@ -280,7 +280,7 @@ fn two_members_that_would_reach_one_zig_name_are_refused_by_name() {
 }
 
 #[test]
-fn a_sequence_becomes_a_slice_and_a_string_a_const_slice_of_octets() {
+fn xtypes_7_2_2_3_a_sequence_becomes_a_slice_and_a_string_a_const_slice_of_octets() {
     let generated = generate("struct Bag { sequence<long> ids; string name; wstring wide; };");
     assert!(generated.contains("ids: []i32,"), "{generated}");
     assert!(generated.contains("name: []const u8,"), "{generated}");
@@ -290,7 +290,7 @@ fn a_sequence_becomes_a_slice_and_a_string_a_const_slice_of_octets() {
 }
 
 #[test]
-fn a_fixed_holds_its_decimal_as_text() {
+fn xtypes_7_2_2_3_a_fixed_holds_its_decimal_as_text() {
     let generated = generate("struct S { fixed<9,2> price; };");
     assert!(generated.contains("price: []const u8,"), "{generated}");
 }
@@ -304,7 +304,7 @@ fn an_array_nests_outermost_dimension_first() {
 }
 
 #[test]
-fn a_map_becomes_a_slice_of_entries_and_never_a_hash_map() {
+fn xtypes_7_2_2_4_3_a_map_becomes_a_slice_of_entries_and_never_a_hash_map() {
     // A `map<K,V>` goes on the wire as an ordered sequence of pairs
     // (DDS-XTypes 1.3 §7.4.1.1.4). `std.AutoHashMap` iterates in bucket
     // order, which follows the hash and the insertion history, so one
@@ -388,7 +388,7 @@ fn a_union_becomes_a_struct_with_a_discriminator_and_one_field_per_branch() {
 /// same `member_field`, and the mirror in `idl-lower` is what lets it
 /// see the annotation at all.
 #[test]
-fn an_external_union_branch_becomes_a_pointer() {
+fn xtypes_7_2_2_4_9_an_external_union_branch_becomes_a_pointer() {
     let generated = generate(
         "struct Inner { long a; };
          union Payload switch (long) {
@@ -517,7 +517,7 @@ fn a_native_declaration_becomes_an_opaque_pointer() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_a_zig_file_does_not_nest() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_a_zig_file_does_not_nest() {
     // A Zig file is a struct and does not nest. Nothing is capitalised
     // on the way: Zig's visibility is the `pub` keyword and not the
     // first letter, so a rename here would be a rename with no cause.
@@ -545,7 +545,7 @@ fn a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
 }
 
 #[test]
-fn every_declaration_is_pub_because_a_types_file_exists_to_be_imported() {
+fn idl_7_5_2_every_declaration_is_pub_because_a_types_file_exists_to_be_imported() {
     let generated = generate(
         "module m { struct S { long a; }; enum E { A }; const long N = 1; };
          native H; typedef long T; bitmask B { X };",
@@ -562,7 +562,7 @@ fn every_declaration_is_pub_because_a_types_file_exists_to_be_imported() {
 }
 
 #[test]
-fn the_file_ends_in_the_block_that_forces_zig_to_analyse_it() {
+fn xtypes_7_5_1_the_file_ends_in_the_block_that_forces_zig_to_analyse_it() {
     // Without it, `zig build-obj` over a generated types file reports
     // success for a file whose declarations it never looked at.
     let generated = generate("struct S { long a; };");
@@ -596,13 +596,13 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_catalogue_covers_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_catalogue_covers_produces_output() {
     // The catalogue says a rule covers it; this says the rule reaches
     // text.
     let sources = [
@@ -671,7 +671,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -759,7 +759,7 @@ fn scratch() -> std::path::PathBuf {
 ///
 /// `zig build-obj` is deliberately not used: Zig analyses container-level
 /// declarations lazily, so a types file nothing references passes it
-/// untouched. `the_zig_check_catches_what_build_obj_misses` measures
+/// untouched. `xtypes_7_5_1_the_zig_check_catches_what_build_obj_misses` measures
 /// that.
 fn zig_checks(source: &str) -> Result<(), String> {
     let dir = scratch();
@@ -797,7 +797,7 @@ fn zig_available() -> bool {
 }
 
 #[test]
-fn the_zig_check_catches_what_build_obj_misses() {
+fn xtypes_7_5_1_the_zig_check_catches_what_build_obj_misses() {
     // A gate nobody has seen fail is a gate nobody should trust. Two
     // deliberate errors:
     //
@@ -875,7 +875,7 @@ fn the_zig_check_catches_what_build_obj_misses() {
 /// here declare a `Pose` and a `T`, and Zig allows one declaration per
 /// name in a container.
 #[test]
-fn the_generated_zig_compiles() {
+fn xtypes_7_3_1_the_generated_zig_compiles() {
     if !zig_available() {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the compiler is exactly the failure this test
@@ -931,7 +931,7 @@ fn the_generated_zig_compiles() {
 /// reader of a generated file runs it, so a file that moves under it is
 /// a diff nobody asked for.
 #[test]
-fn the_generated_zig_is_already_formatted() {
+fn xtypes_7_3_1_the_generated_zig_is_already_formatted() {
     if !zig_available() {
         eprintln!("SKIPPED: `zig` is not on the path, so the layout was not checked.");
         return;
@@ -966,26 +966,28 @@ fn the_generated_zig_is_already_formatted() {
 
 /// The whole corpus through the compiler, one file per case.
 ///
-/// `#[ignore]`, because it is 378 pairs of compiler invocations and
-/// takes minutes. It is what proves the column rather than samples it,
-/// so it is run with `--include-ignored` on a host that has Zig and its
-/// result is what `docs/language-columns-status.md` records.
-#[test]
-#[ignore = "378 pairs of `zig` invocations; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// `share` of `shares`: every case renders in every share (`MUST_RENDER`
+/// holds over the whole corpus), and only the cases at
+/// `position % shares == share` reach the compiler.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         zig_available(),
         "the explicitly selected zig gate requires its compiler"
     );
     let mut failures = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
         }
         let text = try_generate(&source, &path.display().to_string())
             .unwrap_or_else(|why| panic!("accepted corpus case {name} failed generation: {why}"));
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         if let Err(why) = zig_checks(&text) {
             failures.push(format!("{name}: {why}"));
@@ -998,8 +1000,8 @@ fn every_corpus_case_that_renders_also_compiles() {
         failures.len()
     );
     assert!(
-        checked >= MUST_RENDER,
-        "too few corpus cases reached the selected gate: {checked}"
+        rendered >= MUST_RENDER,
+        "too few corpus cases rendered: {rendered}"
     );
 }
 
@@ -1117,4 +1119,397 @@ fn decoder_text(idl: &str, root_name: &str) -> String {
         .map(zerodds_lang_render::zig::decl)
         .collect::<Vec<String>>()
         .join("\n")
+}
+
+/// The corpus through the Zig compiler, in shares.
+///
+/// The corpus in 64 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen-julia-zig-nim` job runs them
+/// with the toolchain, a share per CPU.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_17() {
+        super::every_corpus_case_that_renders_also_compiles(16, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_18() {
+        super::every_corpus_case_that_renders_also_compiles(17, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_19() {
+        super::every_corpus_case_that_renders_also_compiles(18, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_20() {
+        super::every_corpus_case_that_renders_also_compiles(19, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_21() {
+        super::every_corpus_case_that_renders_also_compiles(20, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_22() {
+        super::every_corpus_case_that_renders_also_compiles(21, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_23() {
+        super::every_corpus_case_that_renders_also_compiles(22, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_24() {
+        super::every_corpus_case_that_renders_also_compiles(23, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_25() {
+        super::every_corpus_case_that_renders_also_compiles(24, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_26() {
+        super::every_corpus_case_that_renders_also_compiles(25, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_27() {
+        super::every_corpus_case_that_renders_also_compiles(26, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_28() {
+        super::every_corpus_case_that_renders_also_compiles(27, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_29() {
+        super::every_corpus_case_that_renders_also_compiles(28, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_30() {
+        super::every_corpus_case_that_renders_also_compiles(29, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_31() {
+        super::every_corpus_case_that_renders_also_compiles(30, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_32() {
+        super::every_corpus_case_that_renders_also_compiles(31, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_33() {
+        super::every_corpus_case_that_renders_also_compiles(32, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_34() {
+        super::every_corpus_case_that_renders_also_compiles(33, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_35() {
+        super::every_corpus_case_that_renders_also_compiles(34, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_36() {
+        super::every_corpus_case_that_renders_also_compiles(35, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_37() {
+        super::every_corpus_case_that_renders_also_compiles(36, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_38() {
+        super::every_corpus_case_that_renders_also_compiles(37, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_39() {
+        super::every_corpus_case_that_renders_also_compiles(38, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_40() {
+        super::every_corpus_case_that_renders_also_compiles(39, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_41() {
+        super::every_corpus_case_that_renders_also_compiles(40, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_42() {
+        super::every_corpus_case_that_renders_also_compiles(41, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_43() {
+        super::every_corpus_case_that_renders_also_compiles(42, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_44() {
+        super::every_corpus_case_that_renders_also_compiles(43, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_45() {
+        super::every_corpus_case_that_renders_also_compiles(44, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_46() {
+        super::every_corpus_case_that_renders_also_compiles(45, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_47() {
+        super::every_corpus_case_that_renders_also_compiles(46, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_48() {
+        super::every_corpus_case_that_renders_also_compiles(47, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_49() {
+        super::every_corpus_case_that_renders_also_compiles(48, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_50() {
+        super::every_corpus_case_that_renders_also_compiles(49, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_51() {
+        super::every_corpus_case_that_renders_also_compiles(50, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_52() {
+        super::every_corpus_case_that_renders_also_compiles(51, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_53() {
+        super::every_corpus_case_that_renders_also_compiles(52, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_54() {
+        super::every_corpus_case_that_renders_also_compiles(53, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_55() {
+        super::every_corpus_case_that_renders_also_compiles(54, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_56() {
+        super::every_corpus_case_that_renders_also_compiles(55, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_57() {
+        super::every_corpus_case_that_renders_also_compiles(56, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_58() {
+        super::every_corpus_case_that_renders_also_compiles(57, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_59() {
+        super::every_corpus_case_that_renders_also_compiles(58, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_60() {
+        super::every_corpus_case_that_renders_also_compiles(59, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_61() {
+        super::every_corpus_case_that_renders_also_compiles(60, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_62() {
+        super::every_corpus_case_that_renders_also_compiles(61, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_63() {
+        super::every_corpus_case_that_renders_also_compiles(62, 64);
+    }
+
+    #[test]
+    #[ignore = "a sixty-fourth of the corpus through the Zig compiler; runs in integration-codegen-julia-zig-nim"]
+    fn share_64() {
+        super::every_corpus_case_that_renders_also_compiles(63, 64);
+    }
 }

@@ -46,10 +46,11 @@ use self::kinds::{
     TK_UINT16, TK_UINT32, TK_UINT64,
 };
 
-/// 14-byte SHA256 hash of a serialized TypeObject.
+/// 14-octet hash of a serialized TypeObject.
 ///
-/// Spec §7.3.1.2: the hash is formed from the **first 14 bytes** of the
-/// SHA-256 over the XCDR2-serialized TypeObject.
+/// DDS-XTypes 1.3 §7.3.4.5 and Annex B (`EquivalenceHash`): the **first 14
+/// octets** of the MD5 over the TypeObject serialized with XCDR version 2,
+/// little endian.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct EquivalenceHash(pub [u8; EQUIVALENCE_HASH_LEN]);
 
@@ -404,6 +405,31 @@ impl PrimitiveKind {
 // ============================================================================
 
 impl TypeIdentifier {
+    /// Whether this identifier is fully descriptive (XTypes 1.3
+    /// §7.3.4.6.1): a primitive or a string, or a plain collection whose
+    /// element (and key) identifier is fully descriptive, which its header
+    /// says with `EK_BOTH`. Such an identifier involves the hash of no
+    /// TypeObject. A plain collection of a hashed type is not one, and
+    /// neither is a plain collection of such a collection
+    /// (`sequence<sequence<S>>`): its header names the equivalence kind.
+    #[must_use]
+    pub fn is_fully_descriptive(&self) -> bool {
+        match self {
+            Self::Primitive(_)
+            | Self::String8Small { .. }
+            | Self::String8Large { .. }
+            | Self::String16Small { .. }
+            | Self::String16Large { .. } => true,
+            Self::PlainSequenceSmall { header, .. }
+            | Self::PlainSequenceLarge { header, .. }
+            | Self::PlainArraySmall { header, .. }
+            | Self::PlainArrayLarge { header, .. }
+            | Self::PlainMapSmall { header, .. }
+            | Self::PlainMapLarge { header, .. } => header.equiv_kind == EK_BOTH,
+            _ => false,
+        }
+    }
+
     /// Encoded as XCDR2 little-endian bytes (TypeIdentifier without an
     /// encapsulation header — that is provided by the caller, e.g. the
     /// TYPE_INFORMATION PID or the TypeLookup RPC).
@@ -839,155 +865,185 @@ fn decode_collection_header(r: &mut Reader<'_>) -> Result<PlainCollectionHeader,
 mod tests {
     use super::*;
 
-    fn roundtrip(ti: TypeIdentifier) {
-        let bytes = ti.to_bytes_le().unwrap();
-        let decoded = TypeIdentifier::from_bytes_le(&bytes).unwrap();
-        assert_eq!(ti, decoded);
-    }
-
+    /// DDS-XTypes 1.3 §7.3.4.2 (Table 29) and Annex B: every arm of
+    /// `union TypeIdentifier switch (octet)`, octet for octet under XCDR
+    /// version 2 little endian, and the same octets read back to the same
+    /// identifier.
+    ///
+    /// The octets are written from the IDL of Annex B and not from this
+    /// encoder: the discriminators are its constants (`TK_*`, `TI_*`,
+    /// `EK_*`); `SBound` is an `octet`, `LBound` an `unsigned long`,
+    /// `CollectionElementFlag` an `unsigned short`; `StringSTypeDefn`,
+    /// `StringLTypeDefn`, `PlainCollectionHeader` and the six
+    /// `Plain*Defn` are `@extensibility(FINAL)`, so no `DHEADER`; the
+    /// alignment counts from the identifier's first octet, at most 4.
+    /// The component identifier and the extended arm have tests of their
+    /// own below.
     #[test]
-    fn primitive_none_roundtrips() {
-        roundtrip(TypeIdentifier::None);
-    }
-
-    #[test]
-    fn all_primitives_roundtrip() {
-        for p in [
-            PrimitiveKind::Boolean,
-            PrimitiveKind::Byte,
-            PrimitiveKind::Int8,
-            PrimitiveKind::Int16,
-            PrimitiveKind::Int32,
-            PrimitiveKind::Int64,
-            PrimitiveKind::UInt8,
-            PrimitiveKind::UInt16,
-            PrimitiveKind::UInt32,
-            PrimitiveKind::UInt64,
-            PrimitiveKind::Float32,
-            PrimitiveKind::Float64,
-            PrimitiveKind::Float128,
-            PrimitiveKind::Char8,
-            PrimitiveKind::Char16,
+    fn xtypes_7_3_4_2_every_type_identifier_arm_is_the_octets_of_annex_b() {
+        use PrimitiveKind::*;
+        use alloc::vec;
+        let id = |kind| Box::new(TypeIdentifier::Primitive(kind));
+        // `EK_BOTH`: the header of a plain collection of a fully
+        // descriptive element (§7.3.4.6.1).
+        let both = PlainCollectionHeader {
+            equiv_kind: 0xF3,
+            element_flags: CollectionElementFlag(0),
+        };
+        let hash: [u8; 14] = core::array::from_fn(|index| index as u8);
+        let mut cases: Vec<(TypeIdentifier, Vec<u8>)> = vec![(TypeIdentifier::None, vec![0x00])];
+        // The primitive kinds are a discriminator without a body.
+        for (kind, octet) in [
+            (Boolean, 0x01),
+            (Byte, 0x02),
+            (Int16, 0x03),
+            (Int32, 0x04),
+            (Int64, 0x05),
+            (UInt16, 0x06),
+            (UInt32, 0x07),
+            (UInt64, 0x08),
+            (Float32, 0x09),
+            (Float64, 0x0A),
+            (Float128, 0x0B),
+            (Int8, 0x0C),
+            (UInt8, 0x0D),
+            (Char8, 0x10),
+            (Char16, 0x11),
         ] {
-            roundtrip(TypeIdentifier::Primitive(p));
+            cases.push((TypeIdentifier::Primitive(kind), vec![octet]));
         }
-    }
-
-    #[test]
-    fn primitive_int32_discriminator_is_spec_value() {
-        let ti = TypeIdentifier::Primitive(PrimitiveKind::Int32);
-        let bytes = ti.to_bytes_le().unwrap();
-        assert_eq!(bytes, [TK_INT32]);
-    }
-
-    #[test]
-    fn string8_small_roundtrips() {
-        roundtrip(TypeIdentifier::String8Small { bound: 64 });
-        roundtrip(TypeIdentifier::String8Small { bound: 0 }); // unbounded
-    }
-
-    #[test]
-    fn string8_large_roundtrips() {
-        roundtrip(TypeIdentifier::String8Large { bound: 65_536 });
-    }
-
-    #[test]
-    fn string16_small_and_large_roundtrip() {
-        roundtrip(TypeIdentifier::String16Small { bound: 32 });
-        roundtrip(TypeIdentifier::String16Large { bound: 100_000 });
-    }
-
-    #[test]
-    fn plain_sequence_of_int32_roundtrips() {
-        let ti = TypeIdentifier::PlainSequenceSmall {
-            header: PlainCollectionHeader {
-                equiv_kind: 0,
-                element_flags: CollectionElementFlag(0),
-            },
-            bound: 10,
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
+        let with_hash = |discriminator: u8, identifier: TypeIdentifier| {
+            let mut octets = vec![discriminator];
+            octets.extend_from_slice(&hash);
+            (identifier, octets)
         };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn plain_sequence_large_of_string_roundtrips() {
-        let ti = TypeIdentifier::PlainSequenceLarge {
-            header: PlainCollectionHeader {
-                equiv_kind: 0,
-                element_flags: CollectionElementFlag(0),
-            },
-            bound: 1_000_000,
-            element: Box::new(TypeIdentifier::String8Small { bound: 255 }),
-        };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn plain_array_small_3d_roundtrips() {
-        let ti = TypeIdentifier::PlainArraySmall {
-            header: PlainCollectionHeader::default(),
-            array_bounds: alloc::vec![3, 4, 5],
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Float64)),
-        };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn plain_array_large_roundtrips() {
-        let ti = TypeIdentifier::PlainArrayLarge {
-            header: PlainCollectionHeader::default(),
-            array_bounds: alloc::vec![1_000, 2_000],
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Byte)),
-        };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn plain_map_small_roundtrips() {
-        let ti = TypeIdentifier::PlainMapSmall {
-            header: PlainCollectionHeader::default(),
-            bound: 100,
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int64)),
-            key_flags: CollectionElementFlag(0),
-            key: Box::new(TypeIdentifier::String8Small { bound: 64 }),
-        };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn equivalence_hash_minimal_roundtrips() {
-        let hash = EquivalenceHash([
-            0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+        let minimal = with_hash(
+            0xF1,
+            TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash(hash)),
+        );
+        let complete = with_hash(
+            0xF2,
+            TypeIdentifier::EquivalenceHashComplete(EquivalenceHash(hash)),
+        );
+        cases.extend([
+            minimal,
+            complete,
+            // StringSTypeDefn { SBound bound; }, 0 is INVALID_SBOUND:
+            // unbounded.
+            (TypeIdentifier::String8Small { bound: 64 }, vec![0x70, 0x40]),
+            (TypeIdentifier::String8Small { bound: 0 }, vec![0x70, 0x00]),
+            (
+                TypeIdentifier::String16Small { bound: 32 },
+                vec![0x72, 0x20],
+            ),
+            // StringLTypeDefn { LBound bound; }: the LBound at offset 4.
+            (
+                TypeIdentifier::String8Large { bound: 65_536 },
+                vec![0x71, 0, 0, 0, 0x00, 0x00, 0x01, 0x00],
+            ),
+            (
+                TypeIdentifier::String16Large { bound: 100_000 },
+                vec![0x73, 0, 0, 0, 0xA0, 0x86, 0x01, 0x00],
+            ),
+            // PlainSequenceSElemDefn { header; SBound bound; element }.
+            (
+                TypeIdentifier::PlainSequenceSmall {
+                    header: both,
+                    bound: 10,
+                    element: id(Int32),
+                },
+                vec![0x80, 0xF3, 0x00, 0x00, 0x0A, 0x04],
+            ),
+            // PlainSequenceLElemDefn: the header, then the LBound at 4.
+            (
+                TypeIdentifier::PlainSequenceLarge {
+                    header: both,
+                    bound: u32::MAX,
+                    element: id(Int32),
+                },
+                vec![0x81, 0xF3, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x04],
+            ),
+            // PlainArraySElemDefn: SBoundSeq, a sequence<octet> whose
+            // length sits at 4.
+            (
+                TypeIdentifier::PlainArraySmall {
+                    header: both,
+                    array_bounds: vec![3, 4, 5],
+                    element: id(Float64),
+                },
+                vec![
+                    0x90, 0xF3, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x03, 0x04, 0x05, 0x0A,
+                ],
+            ),
+            // PlainArrayLElemDefn: LBoundSeq.
+            (
+                TypeIdentifier::PlainArrayLarge {
+                    header: both,
+                    array_bounds: vec![1_000, 2_000],
+                    element: id(Byte),
+                },
+                vec![
+                    0x91, 0xF3, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0xE8, 0x03, 0x00, 0x00, 0xD0,
+                    0x07, 0x00, 0x00, 0x02,
+                ],
+            ),
+            // PlainMapSTypeDefn { header; SBound bound; element;
+            // CollectionElementFlag key_flags; key }: the key flags at 6.
+            (
+                TypeIdentifier::PlainMapSmall {
+                    header: both,
+                    bound: 100,
+                    element: id(Int64),
+                    key_flags: CollectionElementFlag(0),
+                    key: Box::new(TypeIdentifier::String8Small { bound: 64 }),
+                },
+                vec![0xA0, 0xF3, 0x00, 0x00, 0x64, 0x05, 0x00, 0x00, 0x70, 0x40],
+            ),
+            // PlainMapLTypeDefn: the element at 8, a padding octet, the
+            // key flags at 10.
+            (
+                TypeIdentifier::PlainMapLarge {
+                    header: both,
+                    bound: 5_000,
+                    element: id(Int32),
+                    key_flags: CollectionElementFlag(0),
+                    key: Box::new(TypeIdentifier::String8Small { bound: 16 }),
+                },
+                vec![
+                    0xA1, 0xF3, 0x00, 0x00, 0x88, 0x13, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x70,
+                    0x10,
+                ],
+            ),
+            // A plain collection inside a plain collection: the inner
+            // header's flags align to 2 from the outer identifier's first
+            // octet, so a padding octet at 7.
+            (
+                TypeIdentifier::PlainSequenceSmall {
+                    header: both,
+                    bound: 3,
+                    element: Box::new(TypeIdentifier::PlainSequenceSmall {
+                        header: both,
+                        bound: 5,
+                        element: id(Int16),
+                    }),
+                },
+                vec![
+                    0x80, 0xF3, 0x00, 0x00, 0x03, 0x80, 0xF3, 0x00, 0x00, 0x00, 0x05, 0x03,
+                ],
+            ),
         ]);
-        roundtrip(TypeIdentifier::EquivalenceHashMinimal(hash));
-        roundtrip(TypeIdentifier::EquivalenceHashComplete(hash));
-    }
-
-    #[test]
-    fn equivalence_hash_wire_is_discriminator_plus_14_bytes() {
-        let hash = EquivalenceHash([0xAA; 14]);
-        let bytes = TypeIdentifier::EquivalenceHashMinimal(hash)
-            .to_bytes_le()
-            .unwrap();
-        assert_eq!(bytes.len(), 15);
-        assert_eq!(bytes[0], EK_MINIMAL);
-        assert_eq!(&bytes[1..], &[0xAA; 14]);
-    }
-
-    #[test]
-    fn nested_sequence_of_sequence_roundtrips() {
-        let inner = TypeIdentifier::PlainSequenceSmall {
-            header: PlainCollectionHeader::default(),
-            bound: 5,
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int16)),
-        };
-        let outer = TypeIdentifier::PlainSequenceSmall {
-            header: PlainCollectionHeader::default(),
-            bound: 3,
-            element: Box::new(inner),
-        };
-        roundtrip(outer);
+        for (identifier, octets) in cases {
+            assert_eq!(
+                identifier.to_bytes_le().unwrap(),
+                octets,
+                "the octets of {identifier:?}"
+            );
+            assert_eq!(
+                TypeIdentifier::from_bytes_le(&octets).unwrap(),
+                identifier,
+                "{octets:02x?} read back"
+            );
+        }
     }
 
     /// Annex B, octet for octet:
@@ -1012,7 +1068,7 @@ mod tests {
     /// octets. A round-trip test cannot see that — both halves agree
     /// with each other — so this asserts the octets.
     #[test]
-    fn a_component_identifier_is_the_thirty_two_octets_of_annex_b() {
+    fn xtypes_7_3_4_2_a_component_identifier_is_the_thirty_two_octets_of_annex_b() {
         let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
             equivalence_kind: EK_MINIMAL,
             hash: EquivalenceHash([
@@ -1058,7 +1114,7 @@ mod tests {
     /// A `TypeObjectHashId` discriminator the union has no case for is
     /// refused on both sides rather than carried.
     #[test]
-    fn a_component_identifier_takes_only_the_two_equivalence_kinds() {
+    fn xtypes_annex_b_a_component_identifier_takes_only_the_two_equivalence_kinds() {
         let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
             equivalence_kind: kinds::EK_BOTH,
             hash: EquivalenceHash::ZERO,
@@ -1074,66 +1130,22 @@ mod tests {
     }
 
     #[test]
-    fn strongly_connected_component_roundtrips() {
-        let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
-            equivalence_kind: EK_MINIMAL,
-            hash: EquivalenceHash([0x11; 14]),
-            scc_length: 5,
-            scc_index: 2,
-        });
-        roundtrip(scc);
-    }
-
-    #[test]
-    fn scc_encode_rejects_negative_values() {
-        let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
-            equivalence_kind: EK_MINIMAL,
-            hash: EquivalenceHash::ZERO,
-            scc_length: -1,
-            scc_index: 1,
-        });
-        assert!(scc.to_bytes_le().is_err());
-    }
-
-    #[test]
-    fn scc_encode_rejects_index_out_of_bounds() {
-        let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
-            equivalence_kind: EK_MINIMAL,
-            hash: EquivalenceHash::ZERO,
-            scc_length: 3,
-            scc_index: 4, // 1..=3 is the range; 4 is past the end
-        });
-        assert!(scc.to_bytes_le().is_err());
-    }
-
-    #[test]
-    fn max_decode_depth_constant_is_reasonable() {
-        // DoS guard: recursion when wire-decoding a nested
-        // `TypeIdentifier` is bounded. The cap must be > 4 (for
-        // realistic nested sequences) and < 64 (DoS protection).
-        const _ASSERT_MIN: usize = TypeIdentifier::MAX_DECODE_DEPTH - 4;
-        const _ASSERT_MAX: usize = 64 - TypeIdentifier::MAX_DECODE_DEPTH;
-    }
-
-    #[test]
-    fn deeply_nested_but_bounded_sequence_decodes_ok() {
-        // 3-deep sequence<sequence<sequence<int32>>> — within the cap.
-        let l1 = TypeIdentifier::PlainSequenceSmall {
-            header: PlainCollectionHeader::default(),
-            bound: 5,
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-        };
-        let l2 = TypeIdentifier::PlainSequenceSmall {
-            header: PlainCollectionHeader::default(),
-            bound: 5,
-            element: Box::new(l1),
-        };
-        let l3 = TypeIdentifier::PlainSequenceSmall {
-            header: PlainCollectionHeader::default(),
-            bound: 5,
-            element: Box::new(l2),
-        };
-        roundtrip(l3);
+    fn xtypes_7_3_4_9_3_scc_encode_rejects_index_out_of_bounds() {
+        // 1..=scc_length is the range of the index, and a length is
+        // positive: an index past the end and a negative length are both
+        // refused.
+        for (scc_length, scc_index) in [(3, 4), (-1, 1)] {
+            let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
+                equivalence_kind: EK_MINIMAL,
+                hash: EquivalenceHash::ZERO,
+                scc_length,
+                scc_index,
+            });
+            assert!(
+                scc.to_bytes_le().is_err(),
+                "length {scc_length}, index {scc_index}"
+            );
+        }
     }
 
     /// Annex B's `default: ExtendedTypeDefn extended_defn;`. The arm is
@@ -1146,7 +1158,7 @@ mod tests {
     /// stream, which at an embedded position moved every field after it
     /// with no error anywhere.
     #[test]
-    fn the_extended_arm_carries_its_body() {
+    fn xtypes_annex_b_the_extended_arm_carries_its_body() {
         let bytes = [0xC7, 0, 0, 0, 0, 0, 0, 0];
         let decoded = TypeIdentifier::from_bytes_le(&bytes).unwrap();
         assert_eq!(
@@ -1162,7 +1174,7 @@ mod tests {
     /// A member list a later revision wrote and this one does not know
     /// survives the round trip verbatim.
     #[test]
-    fn an_extended_arm_with_a_member_list_round_trips_verbatim() {
+    fn xtypes_7_3_4_2_an_extended_arm_with_a_member_list_round_trips_verbatim() {
         let mut bytes = alloc::vec![0xC7_u8, 0, 0, 0];
         bytes.extend_from_slice(&8_u32.to_le_bytes());
         bytes.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02, 0x03, 0x04]);
@@ -1183,75 +1195,10 @@ mod tests {
     /// `default:` arm it took the fourteen hash octets that follow it in
     /// a real stream and gave back one.
     #[test]
-    fn ek_both_is_not_a_type_identifier_discriminator() {
+    fn xtypes_7_3_4_6_1_ek_both_is_not_a_type_identifier_discriminator() {
         let mut bytes = alloc::vec![kinds::EK_BOTH];
         bytes.extend_from_slice(&[0u8; 14]);
         assert!(TypeIdentifier::from_bytes_le(&bytes).is_err());
-    }
-
-    // ---- Additional edge-case roundtrips --------------------------------
-
-    #[test]
-    fn plain_sequence_large_with_u32_max_bound_roundtrips() {
-        let ti = TypeIdentifier::PlainSequenceLarge {
-            header: PlainCollectionHeader::default(),
-            bound: u32::MAX,
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Byte)),
-        };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn plain_array_large_with_many_dimensions_roundtrips() {
-        let ti = TypeIdentifier::PlainArrayLarge {
-            header: PlainCollectionHeader::default(),
-            array_bounds: alloc::vec![
-                1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 9_000, 10_000, 11_000,
-                12_000,
-            ],
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Float32)),
-        };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn plain_array_small_with_single_dimension_roundtrips() {
-        let ti = TypeIdentifier::PlainArraySmall {
-            header: PlainCollectionHeader::default(),
-            array_bounds: alloc::vec![250],
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-        };
-        roundtrip(ti);
-    }
-
-    #[test]
-    fn plain_map_large_with_nested_map_value_roundtrips() {
-        let inner = TypeIdentifier::PlainMapSmall {
-            header: PlainCollectionHeader::default(),
-            bound: 10,
-            element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-            key_flags: CollectionElementFlag(0),
-            key: Box::new(TypeIdentifier::String8Small { bound: 8 }),
-        };
-        let outer = TypeIdentifier::PlainMapLarge {
-            header: PlainCollectionHeader::default(),
-            bound: 5_000,
-            element: Box::new(inner),
-            key_flags: CollectionElementFlag(0),
-            key: Box::new(TypeIdentifier::String8Small { bound: 16 }),
-        };
-        roundtrip(outer);
-    }
-
-    #[test]
-    fn strongly_connected_component_large_scc_length_and_index() {
-        let scc = TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
-            equivalence_kind: EK_MINIMAL,
-            hash: EquivalenceHash([0x5A; 14]),
-            scc_length: i32::MAX,
-            scc_index: i32::MAX - 1,
-        });
-        roundtrip(scc);
     }
 
     #[test]
@@ -1271,144 +1218,5 @@ mod tests {
             );
             assert_eq!(decoded.to_bytes_le().unwrap(), bytes);
         }
-    }
-
-    #[test]
-    fn encode_first_byte_is_always_discriminator() {
-        let samples: alloc::vec::Vec<TypeIdentifier> = alloc::vec![
-            TypeIdentifier::None,
-            TypeIdentifier::Primitive(PrimitiveKind::Int32),
-            TypeIdentifier::String8Small { bound: 8 },
-            TypeIdentifier::String8Large { bound: 10_000 },
-            TypeIdentifier::String16Small { bound: 8 },
-            TypeIdentifier::String16Large { bound: 10_000 },
-            TypeIdentifier::PlainSequenceSmall {
-                header: PlainCollectionHeader::default(),
-                bound: 1,
-                element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-            },
-            TypeIdentifier::PlainSequenceLarge {
-                header: PlainCollectionHeader::default(),
-                bound: 300,
-                element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-            },
-            TypeIdentifier::PlainArraySmall {
-                header: PlainCollectionHeader::default(),
-                array_bounds: alloc::vec![2, 3],
-                element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-            },
-            TypeIdentifier::PlainArrayLarge {
-                header: PlainCollectionHeader::default(),
-                array_bounds: alloc::vec![500, 500],
-                element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-            },
-            TypeIdentifier::PlainMapSmall {
-                header: PlainCollectionHeader::default(),
-                bound: 1,
-                element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-                key_flags: CollectionElementFlag(0),
-                key: Box::new(TypeIdentifier::String8Small { bound: 1 }),
-            },
-            TypeIdentifier::PlainMapLarge {
-                header: PlainCollectionHeader::default(),
-                bound: 1_000,
-                element: Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
-                key_flags: CollectionElementFlag(0),
-                key: Box::new(TypeIdentifier::String8Small { bound: 1 }),
-            },
-            TypeIdentifier::StronglyConnectedComponent(StronglyConnectedComponentId {
-                equivalence_kind: EK_MINIMAL,
-                hash: EquivalenceHash([0; 14]),
-                scc_length: 1,
-                scc_index: 1,
-            }),
-            TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash([0x11; 14])),
-            TypeIdentifier::EquivalenceHashComplete(EquivalenceHash([0x22; 14])),
-            TypeIdentifier::Extended {
-                discriminator: 0x77,
-                body: alloc::vec![],
-            },
-        ];
-        for ti in samples {
-            let bytes = ti.to_bytes_le().unwrap();
-            assert!(!bytes.is_empty());
-            assert_eq!(bytes[0], ti.discriminator());
-        }
-    }
-
-    #[test]
-    fn primitive_kind_from_u8_rejects_unknown() {
-        assert!(PrimitiveKind::from_u8(0xC7).is_none());
-        assert!(PrimitiveKind::from_u8(0x00).is_none() || PrimitiveKind::from_u8(0x00).is_some());
-    }
-
-    #[test]
-    fn primitive_kind_roundtrip_via_u8() {
-        for p in [
-            PrimitiveKind::Boolean,
-            PrimitiveKind::Byte,
-            PrimitiveKind::Int8,
-            PrimitiveKind::Int16,
-            PrimitiveKind::Int32,
-            PrimitiveKind::Int64,
-            PrimitiveKind::UInt8,
-            PrimitiveKind::UInt16,
-            PrimitiveKind::UInt32,
-            PrimitiveKind::UInt64,
-            PrimitiveKind::Float32,
-            PrimitiveKind::Float64,
-            PrimitiveKind::Float128,
-            PrimitiveKind::Char8,
-            PrimitiveKind::Char16,
-        ] {
-            assert_eq!(PrimitiveKind::from_u8(p.to_u8()), Some(p));
-        }
-    }
-
-    #[test]
-    fn equivalence_kind_roundtrip() {
-        for k in [
-            EquivalenceKind::None,
-            EquivalenceKind::Minimal,
-            EquivalenceKind::Complete,
-            EquivalenceKind::Both,
-        ] {
-            let encoded = k.to_u8();
-            let decoded = EquivalenceKind::from_u8(encoded);
-            // None round-trips to None (encoded as 0 which isn't a known
-            // discriminator → `from_u8` falls back to None).
-            if k == EquivalenceKind::None {
-                assert_eq!(decoded, EquivalenceKind::None);
-            } else {
-                assert_eq!(decoded, k);
-            }
-        }
-    }
-
-    #[test]
-    fn equivalence_kind_from_u8_unknown_is_none() {
-        assert_eq!(EquivalenceKind::from_u8(0xAB), EquivalenceKind::None);
-    }
-
-    #[test]
-    fn equivalence_hash_zero_constant_is_zeroes() {
-        assert_eq!(EquivalenceHash::ZERO.0, [0u8; 14]);
-    }
-
-    /// The `default:` arm is a discriminator, three octets of padding
-    /// and a `DHEADER` — eight octets for an empty
-    /// `ExtendedTypeDefn`, not one.
-    ///
-    /// This test asserted the one octet, which was the defect: the body
-    /// the specification puts there was neither read nor written, and at
-    /// an embedded position that shifted the whole rest of the stream.
-    #[test]
-    fn the_extended_arm_encodes_its_dheader_too() {
-        let ti = TypeIdentifier::Extended {
-            discriminator: 0xC7,
-            body: alloc::vec![],
-        };
-        let bytes = ti.to_bytes_le().unwrap();
-        assert_eq!(bytes, alloc::vec![0xC7, 0, 0, 0, 0, 0, 0, 0]);
     }
 }

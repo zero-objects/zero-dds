@@ -519,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_has_expected_entity_id() {
+    fn security_7_5_4_2_writer_has_expected_entity_id() {
         let w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         assert_eq!(
             w.guid().entity_id,
@@ -528,24 +528,12 @@ mod tests {
     }
 
     #[test]
-    fn reader_has_expected_entity_id() {
+    fn security_7_5_4_2_reader_has_expected_entity_id() {
         let r = VolatileSecureMessageReader::new(local_prefix(), VendorId::ZERODDS);
         assert_eq!(
             r.guid().entity_id,
             EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER
         );
-    }
-
-    #[test]
-    fn writer_starts_with_zero_proxies() {
-        let w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
-        assert_eq!(w.reader_proxy_count(), 0);
-    }
-
-    #[test]
-    fn reader_starts_with_zero_proxies() {
-        let r = VolatileSecureMessageReader::new(local_prefix(), VendorId::ZERODDS);
-        assert_eq!(r.writer_proxy_count(), 0);
     }
 
     #[test]
@@ -573,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn write_with_heartbeat_piggybacks_heartbeat_submessage() {
+    fn security_7_5_4_2_write_with_heartbeat_piggybacks_heartbeat_submessage() {
         use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
         let mut w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let remote = Guid::new(
@@ -623,7 +611,7 @@ mod tests {
     /// a reader matched after two messages gets the third and neither of the
     /// first two.
     #[test]
-    fn identity_is_the_writers_and_a_late_reader_gets_no_old_message() {
+    fn security_7_5_4_2_identity_is_the_writers_and_a_late_reader_gets_no_old_message() {
         use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
         let mut w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let proxy = |prefix: GuidPrefix| {
@@ -665,10 +653,10 @@ mod tests {
         for dg in &third {
             let parsed = decode_datagram(&dg.bytes).unwrap();
             for frame in parsed.submessages {
-                if let ParsedSubmessage::Data(d) = frame.submessage {
-                    if d.reader_id == late.entity_id {
-                        seen_by_late.push(d.writer_sn.0);
-                    }
+                if let ParsedSubmessage::Data(d) = frame.submessage
+                    && d.reader_id == late.entity_id
+                {
+                    seen_by_late.push(d.writer_sn.0);
                 }
             }
         }
@@ -761,38 +749,7 @@ mod tests {
     }
 
     #[test]
-    fn add_remove_reader_proxy_roundtrip() {
-        let mut w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
-        let remote = Guid::new(
-            remote_prefix(),
-            EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER,
-        );
-        w.add_reader_proxy(ReaderProxy::new(remote, alloc::vec![], alloc::vec![], true));
-        assert_eq!(w.reader_proxy_count(), 1);
-        assert!(w.remove_reader_proxy(remote).is_some());
-        assert_eq!(w.reader_proxy_count(), 0);
-    }
-
-    #[test]
-    fn add_remove_writer_proxy_roundtrip() {
-        let mut r = VolatileSecureMessageReader::new(local_prefix(), VendorId::ZERODDS);
-        let remote = Guid::new(
-            remote_prefix(),
-            EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_WRITER,
-        );
-        r.add_writer_proxy(WriterProxy::new(
-            remote,
-            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
-            alloc::vec![],
-            true,
-        ));
-        assert_eq!(r.writer_proxy_count(), 1);
-        assert!(r.remove_writer_proxy(remote).is_some());
-        assert_eq!(r.writer_proxy_count(), 0);
-    }
-
-    #[test]
-    fn reader_decodes_data_with_known_writer() {
+    fn security_7_5_4_2_reader_decodes_data_with_known_writer() {
         let mut r = VolatileSecureMessageReader::new(local_prefix(), VendorId::ZERODDS);
         let remote = Guid::new(
             remote_prefix(),
@@ -823,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_drops_data_from_unknown_writer() {
+    fn security_7_5_4_2_reader_drops_data_from_unknown_writer() {
         let mut r = VolatileSecureMessageReader::new(local_prefix(), VendorId::ZERODDS);
         // No writer proxy registered → handle_data must return empty
         let msg = sample_msg();
@@ -874,7 +831,7 @@ mod tests {
     /// submessages of that writer only — DATA, HEARTBEAT, GAP — and no
     /// submessage of another builtin or of an application topic.
     #[test]
-    fn a_volatile_datagram_holds_the_submessages_of_its_writer_only() {
+    fn security_7_5_12_a_volatile_datagram_holds_the_submessages_of_its_writer_only() {
         use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
         let mut w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         w.add_reader_proxy(ReaderProxy::new(
@@ -915,7 +872,7 @@ mod tests {
     /// goes as DATA to that participant's reader only; the writer's other
     /// readers get a GAP for its number.
     #[test]
-    fn writer_sends_a_directed_message_to_its_destination_only() {
+    fn security_7_5_4_4_writer_sends_a_directed_message_to_its_destination_only() {
         use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
         let mut w = VolatileSecureMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let third = GuidPrefix::from_bytes([3; 12]);
@@ -959,7 +916,7 @@ mod tests {
     }
 
     #[test]
-    fn the_implied_content_filter() {
+    fn security_7_5_4_4_the_implied_content_filter() {
         let local = local_prefix();
         let mut m = sample_msg();
         assert!(
@@ -985,7 +942,7 @@ mod tests {
     /// The reader takes what is addressed to its participant and counts
     /// the rest, which a writer without the filter still sends it.
     #[test]
-    fn reader_does_not_take_a_message_for_another_participant() {
+    fn security_7_5_4_4_reader_does_not_take_a_message_for_another_participant() {
         let mut r = VolatileSecureMessageReader::new(local_prefix(), VendorId::ZERODDS);
         r.add_writer_proxy(WriterProxy::new(
             Guid::new(

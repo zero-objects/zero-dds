@@ -24,7 +24,7 @@ use std::time::Duration;
 use zerodds_amqp_endpoint::ConnectionState;
 
 #[test]
-fn c1_1_connection_open_with_tls_active_advertises_plain() {
+fn ddsamqp_2_1_connection_open_with_tls_active_advertises_plain() {
     let server = TestServer::spawn(test_handler_cfg_with_tls(true));
     let port = server.port;
 

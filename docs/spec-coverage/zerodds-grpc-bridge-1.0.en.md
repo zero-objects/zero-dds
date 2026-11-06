@@ -17,7 +17,7 @@ L1–L4 mandatory, L5–L6 optional.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — assignment of the levels; the requirements are the items §2 to §12.
 
 ## §2 CLI surface
 
@@ -29,8 +29,8 @@ exit codes 0/1/2/3/4.
 
 **Repo:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs`.
 
-**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`,
-`::http2_unknown_service_yields_status_5`.
+**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`,
+`::grpcbridge_2_http2_unknown_service_yields_status_5`.
 
 **Status:** done
 
@@ -44,13 +44,13 @@ substitution.
 **Repo:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs` (config
 parser), `crates/grpc-bridge/src/server.rs`.
 
-**Tests:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests`: `config_default_has_default_bind`,
-`parse_minimal_grpc_config`, `parse_topics_array`, `parse_invalid_yaml_returns_err`,
-`example_yaml_parses_without_error`, `example_yaml_key_fields_match_intent`,
-`example_yaml_topics_reach_the_daemon`, `example_yaml_has_no_unknown_top_level_keys`,
-`unknown_top_level_key_does_not_abort_the_parse`;
+**Tests:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests`: `grpcbridge_3_config_default_has_default_bind`,
+`grpcbridge_3_parse_minimal_grpc_config`, `grpcbridge_3_parse_topics_array`, `grpcbridge_3_parse_invalid_yaml_returns_err`,
+`grpcbridge_3_example_yaml_parses_without_error`, `grpcbridge_3_example_yaml_key_fields_match_intent`,
+`grpcbridge_3_example_yaml_topics_reach_the_daemon`, `grpcbridge_3_example_yaml_has_no_unknown_top_level_keys`,
+`grpcbridge_3_unknown_top_level_key_does_not_abort_the_parse`;
 `crates/config/tests/layering.rs::a_hash_inside_quotes_is_part_of_the_value`; ENV substitution is covered by
-`crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests::env_substitution_applies_before_the_parse`.
+`crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests::grpcbridge_3_env_substitution_applies_before_the_parse`.
 
 **Status:** done
 
@@ -64,7 +64,7 @@ mode (`bind=127.0.0.1`); SETTINGS frame, GOAWAY on shutdown.
 **Repo:** `crates/grpc-bridge/src/server.rs`,
 `crates/grpc-bridge/src/frame.rs`.
 
-**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`.
+**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`.
 
 **Status:** done
 
@@ -79,14 +79,14 @@ messages.
 `crates/grpc-bridge/src/service_gen.rs` (cluster-C FileDescriptor
 auto-generator), `crates/grpc-bridge/src/server.rs`.
 
-**Tests:** `crates/grpc-bridge/src/service_gen.rs::tests`: `pascal_simple`,
-`pascal_dotted`, `pascal_mixed_separators`, `pascal_empty_falls_back`,
-`topic_service_paths`, `matches_path_publish`, `render_proto_contains_methods`,
-`catalog_registration_dedup`, `catalog_find_by_path`,
-`catalog_fully_qualified_names`;
-`crates/grpc-bridge/src/path.rs::tests::parses_standard_grpc_path`,
-`crates/grpc-bridge/src/path.rs::tests::parses_dotted_service_name`;
-`crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`.
+**Tests:** `crates/grpc-bridge/src/service_gen.rs::tests`: `grpcbridge_4_2_pascal_simple`,
+`grpcbridge_4_2_pascal_dotted`, `grpcbridge_4_2_pascal_mixed_separators`, `grpcbridge_4_2_pascal_empty_falls_back`,
+`grpcbridge_4_2_topic_service_paths`, `grpcbridge_4_2_matches_path_publish`, `grpcbridge_4_2_render_proto_contains_methods`,
+`grpcbridge_4_2_catalog_registration_dedup`, `grpcbridge_4_2_catalog_find_by_path`,
+`grpcbridge_4_2_catalog_fully_qualified_names`;
+`crates/grpc-bridge/src/path.rs::tests::grpc_requests_parses_standard_grpc_path`,
+`crates/grpc-bridge/src/path.rs::tests::grpc_requests_parses_dotted_service_name`;
+`crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`.
 
 **Status:** done
 
@@ -100,7 +100,7 @@ sample.
 **Repo:** `crates/grpc-bridge/src/server.rs`,
 `crates/grpc-bridge/src/metadata.rs`, `crates/grpc-bridge/src/timeout.rs`.
 
-**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`.
+**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`.
 
 **Status:** done
 
@@ -113,7 +113,10 @@ sample payload; compr 0=identity / 1=compressed (gzip/deflate via
 **Repo:** `crates/grpc-bridge/src/frame.rs`.
 
 **Tests:** inline `#[cfg(test)] mod tests` in `crates/grpc-bridge/src/frame.rs`;
-`crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`.
+`crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`;
+`crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests::xtypes_7_6_3_1_2_cdr_payload_carries_the_header_the_sample_came_under`,
+`crates/grpc-bridge/tests/dds_bridge_e2e.rs::xtypes_7_6_3_1_2_a_stream_message_carries_the_header_the_sample_came_under`
+(`Sample.cdr_payload` keeps the encapsulation header the sample came under, DDS-XTypes 1.3 Table 60).
 
 **Status:** done
 
@@ -124,7 +127,7 @@ sample payload; compr 0=identity / 1=compressed (gzip/deflate via
 **Repo:** `crates/grpc-bridge/src/status.rs`.
 
 **Tests:** inline `#[cfg(test)] mod tests` in `crates/grpc-bridge/src/status.rs`;
-`crates/grpc-bridge/tests/bridge_e2e.rs::http2_unknown_service_yields_status_5`.
+`crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_unknown_service_yields_status_5`.
 
 **Status:** done
 
@@ -138,13 +141,12 @@ services + sample message types.
 wired).
 
 **Tests:** `crates/grpc-bridge/src/reflection.rs::tests`:
-`empty_catalog_yields_empty_list_services_response`, `one_service_in_list`,
-`error_response_encodes_code_and_message`, `varint_basics`,
-`reflection_path_constant_matches_grpcurl_default`;
-`crates/grpc-bridge/tests/cross_vendor.rs::list_services_reflection_payload_is_well_formed` plus the two grpcurl
-runs `crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_list_services_against_zerodds_daemon` and
-`crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_lists_the_reflection_service_itself` (`#[ignore]`, gated on
-`GRPC_GRPCURL=1`).
+`grpcbridge_4_6_empty_catalog_yields_empty_list_services_response`, `grpcbridge_4_6_one_service_in_list`,
+`grpcbridge_4_6_error_response_encodes_code_and_message`, `grpcbridge_4_6_varint_basics`,
+`grpcbridge_4_6_reflection_path_constant_matches_grpcurl_default`;
+`crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_list_services_reflection_payload_is_well_formed` plus the two grpcurl
+runs `crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_grpcurl_list_services_against_zerodds_daemon` and
+`crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_grpcurl_lists_the_reflection_service_itself` (job `integration-bridges-vendor`).
 
 **Status:** done
 
@@ -157,11 +159,11 @@ runs `crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_list_services_against_ze
 
 **Repo:** `crates/grpc-bridge/src/path.rs`.
 
-**Tests:** `crates/grpc-bridge/src/service_gen.rs::tests::pascal_simple`,
-`crates/grpc-bridge/src/service_gen.rs::tests::pascal_dotted`,
-`crates/grpc-bridge/src/service_gen.rs::tests::pascal_mixed_separators`,
-`crates/grpc-bridge/src/service_gen.rs::tests::pascal_empty_falls_back`,
-`crates/grpc-bridge/src/service_gen.rs::tests::topic_service_paths`;
+**Tests:** `crates/grpc-bridge/src/service_gen.rs::tests::grpcbridge_4_2_pascal_simple`,
+`crates/grpc-bridge/src/service_gen.rs::tests::grpcbridge_4_2_pascal_dotted`,
+`crates/grpc-bridge/src/service_gen.rs::tests::grpcbridge_4_2_pascal_mixed_separators`,
+`crates/grpc-bridge/src/service_gen.rs::tests::grpcbridge_4_2_pascal_empty_falls_back`,
+`crates/grpc-bridge/src/service_gen.rs::tests::grpcbridge_4_2_topic_service_paths`;
 `crates/grpc-bridge/src/path.rs::tests` (7 tests) covers the path form
 itself.
 
@@ -177,11 +179,11 @@ sidekick).
 `crates/grpc-bridge/src/service_gen.rs` (cluster-C type discovery via
 reflection + catalog RPC + HTTP-GET sidekick).
 
-**Tests:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests::build_catalog_emits_topics`,
-`crates/grpc-bridge/src/daemon_runtime.rs::tests::catalog_render_json_is_valid_shape`;
-`crates/grpc-bridge/src/service_gen.rs::tests::catalog_registration_dedup`,
-`::catalog_find_by_path`, `::catalog_fully_qualified_names`;
-`crates/grpc-bridge/src/reflection.rs::tests::one_service_in_list`.
+**Tests:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests::grpcbridge_5_2_build_catalog_emits_topics`,
+`crates/grpc-bridge/src/daemon_runtime.rs::tests::grpcbridge_5_2_catalog_render_json_is_valid_shape`;
+`crates/grpc-bridge/src/service_gen.rs::tests::grpcbridge_4_2_catalog_registration_dedup`,
+`::grpcbridge_4_2_catalog_find_by_path`, `::grpcbridge_4_2_catalog_fully_qualified_names`;
+`crates/grpc-bridge/src/reflection.rs::tests::grpcbridge_4_6_one_service_in_list`.
 
 **Status:** done
 
@@ -197,7 +199,7 @@ map; `partition_filter` as a subscribe field.
 `crates/grpc-bridge/src/qos_translation.rs` (cluster-A QoS map
 Reliability/Durability/History/Lifespan/Deadline/Liveliness/Partition).
 
-**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`
+**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`
 (reliable round-trip); a QoS matrix in
 `crates/grpc-bridge/src/qos_translation.rs::tests`.
 
@@ -214,13 +216,13 @@ Reliability/Durability/History/Lifespan/Deadline/Liveliness/Partition).
 `crates/grpc-bridge/src/daemon_runtime.rs::build_grpc_tls_config_with`
 (`grpc.tls.client_ca_file`, `grpc.tls.require_client_cert`).
 
-**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::mtls_serves_h2_and_the_certificate_is_the_subject`
+**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_7_1_mtls_serves_h2_and_the_certificate_is_the_subject`
 (ALPN `h2` read at the client),
-`::a_sighup_serves_the_next_connection_with_the_new_certificate`;
-against grpc-go `crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_over_tls_with_a_bearer_token`
+`::grpcbridge_7_1_a_sighup_serves_the_next_connection_with_the_new_certificate`;
+against grpc-go `crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_7_1_grpcurl_over_tls_with_a_bearer_token`
 (grpcurl 1.9.3, Linux test host);
-`crates/grpc-bridge/tests/security_e2e.rs::build_grpc_tls_config_sets_alpn_h2`,
-`::build_grpc_tls_config_with_client_ca_for_mtls`, `::build_grpc_tls_config_rejects_missing_cert`.
+`crates/grpc-bridge/tests/security_e2e.rs::grpcbridge_7_1_build_grpc_tls_config_sets_alpn_h2`,
+`::grpcbridge_7_1_build_grpc_tls_config_with_client_ca_for_mtls`, `::grpcbridge_7_1_build_grpc_tls_config_rejects_missing_cert`.
 
 **Status:** done
 
@@ -238,11 +240,11 @@ Also `bearer` with `auth.bearer_token`/`auth.bearer_subject`. The mTLS
 subject is the certificate's subject DN (RFC 4514, `CN=alice`); an ACL
 rule may name the fingerprint `mtls:<SHA-256>` instead.
 
-**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::bearer_and_acl_are_checked_per_call`,
-`::jwt_checks_signature_time_audience_and_scope`,
-`::mtls_serves_h2_and_the_certificate_is_the_subject`,
-`::jwt_without_a_key_and_mtls_without_tls_do_not_start`;
-`crates/bridge-security/src/auth.rs::tests::a_signed_jwt_is_checked_for_time_audience_and_claim`.
+**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_7_2_bearer_and_acl_are_checked_per_call`,
+`::grpcbridge_7_2_jwt_checks_signature_time_audience_and_scope`,
+`::grpcbridge_7_1_mtls_serves_h2_and_the_certificate_is_the_subject`,
+`::grpcbridge_7_2_jwt_without_a_key_and_mtls_without_tls_do_not_start`;
+`crates/bridge-security/src/auth.rs::tests::grpcbridge_7_2_a_signed_jwt_is_checked_for_time_audience_and_claim`.
 
 **Status:** done
 
@@ -255,9 +257,9 @@ resolution.
 (`Publish` = write, `Subscribe` = read on the DDS topic,
 `PERMISSION_DENIED`); `topics[].acl` in `DaemonConfig::from_config`.
 
-**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::bearer_and_acl_are_checked_per_call`,
-`::jwt_checks_signature_time_audience_and_scope` (JWT `sub` as the subject),
-`::mtls_serves_h2_and_the_certificate_is_the_subject` (certificate as the subject).
+**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_7_2_bearer_and_acl_are_checked_per_call`,
+`::grpcbridge_7_2_jwt_checks_signature_time_audience_and_scope` (JWT `sub` as the subject),
+`::grpcbridge_7_1_mtls_serves_h2_and_the_certificate_is_the_subject` (certificate as the subject).
 
 **Status:** done
 
@@ -285,10 +287,10 @@ configuration or a fixed set: a service that is not mapped counts as
 RFC 7540 §7 names (the daemon sends none). The older `zerodds_grpc_*` from
 `crates/grpc-bridge/src/daemon_runtime.rs` stay alongside.
 
-**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::the_metrics_of_section_8_2_count_calls_failures_and_resets`
+**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_8_2_the_metrics_of_section_8_2_count_calls_failures_and_resets`
 (status per call, auth failures by reason, RST_STREAM(CANCEL), with
 `dds-runtime` Publish → DDS → Subscribe);
-`crates/grpc-bridge/src/daemon_runtime.rs::tests::admin_endpoint_serves_metrics_path`.
+`crates/grpc-bridge/src/daemon_runtime.rs::tests::grpcbridge_8_2_admin_endpoint_serves_metrics_path`.
 
 **Status:** done
 
@@ -302,7 +304,7 @@ traceparent header.
 `zerodds-observability-otlp`), `crates/grpc-bridge/src/server.rs` (span emit
 per RPC).
 
-**Tests:** `crates/grpc-bridge/src/daemon_runtime.rs::tests::otlp_config_parses_endpoint` — the endpoint from
+**Tests:** `crates/grpc-bridge/src/daemon_runtime.rs::tests::grpcbridge_8_3_otlp_config_parses_endpoint` — the endpoint from
 `OTEL_EXPORTER_OTLP_ENDPOINT` is read. Nothing tests the traceparent
 parsing — see §8.3a.
 
@@ -330,7 +332,7 @@ HTTP/2 bind → signal handler.
 **Repo:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs`,
 `crates/grpc-bridge/src/server.rs`.
 
-**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`.
+**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`.
 
 **Status:** done
 
@@ -345,9 +347,9 @@ finishes first, then GOAWAY with the last answered stream id and NO_ERROR;
 the idle close after 5 s sends GOAWAY too), `::apply_reload` (TLS material,
 auth, ACL; a file that does not load changes nothing).
 
-**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::sigterm_sends_goaway_with_the_last_stream_and_exits_0`,
-`::a_sighup_applies_the_new_token_and_a_broken_file_keeps_it`,
-`::a_sighup_serves_the_next_connection_with_the_new_certificate`.
+**Tests:** `crates/grpc-bridge/tests/daemon_security_e2e.rs::grpcbridge_9_2_sigterm_sends_goaway_with_the_last_stream_and_exits_0`,
+`::grpcbridge_9_2_a_sighup_applies_the_new_token_and_a_broken_file_keeps_it`,
+`::grpcbridge_7_1_a_sighup_serves_the_next_connection_with_the_new_certificate`.
 
 **Status:** done
 
@@ -360,11 +362,10 @@ grpc-go/java/grpcurl/ghz/Bloom-RPC/tonic.
 
 **Repo:** `crates/grpc-bridge/src/server.rs`.
 
-**Tests:** `crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_list_services_against_zerodds_daemon`,
-`crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_lists_the_reflection_service_itself` (both `#[ignore]`, gated
-on `GRPC_GRPCURL=1`, feature `cross-vendor-tests`),
-`crates/grpc-bridge/tests/cross_vendor.rs::list_services_reflection_payload_is_well_formed`;
-`crates/grpc-bridge/tests/dds_bridge_e2e.rs::dds_publish_then_subscribe_roundtrip`
+**Tests:** `crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_grpcurl_list_services_against_zerodds_daemon`,
+`crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_grpcurl_lists_the_reflection_service_itself` (job `integration-bridges-vendor`),
+`crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_list_services_reflection_payload_is_well_formed`;
+`crates/grpc-bridge/tests/dds_bridge_e2e.rs::grpcbridge_4_3_dds_publish_reaches_every_subscribe_stream`
 for the RTPS side. grpc-go, grpc-java, ghz, BloomRPC and tonic have not been
 run against the daemon — see §10a.
 
@@ -399,7 +400,7 @@ manuals.
 `packaging/linux/configs/grpc-bridged.yaml.example`,
 `man/man1/zerodds-grpc-bridged.1`, `man/man5/zerodds-grpc-bridged.yaml.5`.
 
-**Tests:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests::{example_yaml_parses_without_error, example_yaml_key_fields_match_intent, example_yaml_topics_reach_the_daemon, example_yaml_has_no_unknown_top_level_keys}`,
+**Tests:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs::tests::{grpcbridge_3_example_yaml_parses_without_error, grpcbridge_3_example_yaml_key_fields_match_intent, grpcbridge_3_example_yaml_topics_reach_the_daemon, grpcbridge_3_example_yaml_has_no_unknown_top_level_keys}`,
 `crates/config/tests/layering.rs::a_hash_inside_quotes_is_part_of_the_value`
 (the shipped example configuration through the real parser, with the values it states);
 `tools/traceability/tests/bridge_config_manpages.rs::{every_example_key_is_documented_in_the_man_page, the_man_page_names_no_key_the_example_does_not_declare, the_pre_spec_vocabulary_is_gone_from_pages_and_examples, every_man_page_names_its_parser_and_what_an_unknown_key_does}`
@@ -418,16 +419,16 @@ manuals.
 plus `crates/http2/`, `crates/hpack/`.
 
 **Tests:** Inline `#[cfg(test)] mod tests` per module:
-`crates/grpc-bridge/src/frame.rs::tests::round_trip_message` (9),
-`crates/grpc-bridge/src/metadata.rs::tests::decode_base64_round_trip` (18),
-`crates/grpc-bridge/src/path.rs::tests::parses_standard_grpc_path` (7),
-`crates/grpc-bridge/src/server.rs::tests::encode_response_includes_status_and_trailers` (4),
-`crates/grpc-bridge/src/status.rs::tests::all_17_codes_round_trip_via_numeric` (5),
-`crates/grpc-bridge/src/timeout.rs::tests::timeout_unit_round_trip_for_all` (11),
-`crates/grpc-bridge/src/qos_translation.rs::tests::default_for_topic_reliable_only` (7);
-plus `crates/grpc-bridge/tests/fuzz_smoke.rs` (`fuzz_decode_message_no_panic`,
-`fuzz_parse_path_no_panic`, `fuzz_decode_timeout_no_panic`,
-`empty_inputs_no_panic`, `message_oversized_length_no_oom`).
+`crates/grpc-bridge/src/frame.rs::tests::grpc_requests_a_length_prefixed_message_is_read_from_its_octets` (9),
+`crates/grpc-bridge/src/metadata.rs::tests::grpc_metadata_base64_reads_the_vectors_of_rfc_4648` (18),
+`crates/grpc-bridge/src/path.rs::tests::grpc_requests_parses_standard_grpc_path` (7),
+`crates/grpc-bridge/src/server.rs::tests::grpcbridge_12_1_encode_response_includes_status_and_trailers` (4),
+`crates/grpc-bridge/src/status.rs::tests::grpc_responses_the_status_codes_are_the_table_of_seventeen` (5),
+`crates/grpc-bridge/src/timeout.rs::tests::grpc_requests_the_timeout_units_are_h_m_s_m_u_n` (11),
+`crates/grpc-bridge/src/qos_translation.rs::tests::grpcbridge_12_1_default_for_topic_reliable_only` (7);
+plus `crates/grpc-bridge/tests/fuzz_smoke.rs` (`grpcbridge_12_1_fuzz_decode_message_no_panic`,
+`grpcbridge_12_1_fuzz_parse_path_no_panic`, `grpcbridge_12_1_fuzz_decode_timeout_no_panic`,
+`grpcbridge_12_1_empty_inputs_no_panic`, `grpcbridge_12_1_message_oversized_length_no_oom`).
 
 **Status:** done
 
@@ -438,8 +439,8 @@ round-trip + reflection.
 
 **Repo:** `crates/grpc-bridge/src/bin/zerodds-grpc-bridged.rs`.
 
-**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::http2_roundtrip_publish_topic`,
-`::http2_unknown_service_yields_status_5`.
+**Tests:** `crates/grpc-bridge/tests/bridge_e2e.rs::grpcbridge_2_http2_roundtrip_publish_topic`,
+`::grpcbridge_2_http2_unknown_service_yields_status_5`.
 
 **Status:** done
 
@@ -451,10 +452,10 @@ gRPC bridge in compose.
 **Repo:** `crates/grpc-bridge/tests/cross_vendor.rs` (cluster-C cross-vendor
 harness).
 
-**Tests:** `crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_list_services_against_zerodds_daemon`,
-`crates/grpc-bridge/tests/cross_vendor.rs::grpcurl_lists_the_reflection_service_itself`,
-`crates/grpc-bridge/tests/cross_vendor.rs::list_services_reflection_payload_is_well_formed`;
-`crates/grpc-bridge/tests/dds_bridge_e2e.rs::dds_publish_then_subscribe_roundtrip`.
+**Tests:** `crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_grpcurl_list_services_against_zerodds_daemon`,
+`crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_grpcurl_lists_the_reflection_service_itself`,
+`crates/grpc-bridge/tests/cross_vendor.rs::grpcbridge_4_6_list_services_reflection_payload_is_well_formed`;
+`crates/grpc-bridge/tests/dds_bridge_e2e.rs::grpcbridge_4_3_dds_publish_reaches_every_subscribe_stream`.
 No tonic client appears in it — see §10a.
 
 **Status:** partial — grpcurl and the DDS side are covered, a tonic client is
@@ -470,7 +471,7 @@ gRPC-PROTOCOL.md, RFC 7540/7541, wire format, deployment, sister daemons.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — reference list.
 
 ## §14 Versioning
 
@@ -483,14 +484,22 @@ change (HTTP/3 + gRPC-over-QUIC).
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — rule for assigning the version number of a release, not a property of the daemon.
 
 ---
 
 ## Audit status
 
-20 done / 3 partial / 3 open / 3 n/a (informative) / 0 n/a (rejected).
+20 done / 3 partial / 3 open / 0 blocked / 3 n/a (informative).
 
-Test run: `cargo test -p zerodds-grpc-bridge` — tests green, 0 failed.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-grpc-bridge-1.0.md`):
 
-Open items: see `zerodds-grpc-bridge-1.0.open.en.md`. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-bridge-security --all-targets` (job `merge-rust-bridge-security`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-config --all-targets` (job `merge-rust-config`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-grpc-bridge --all-targets` (job `merge-rust-grpc-bridge`) — 59 tests green.
+* `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (job `merge-rust-traceability`) — 4 tests green.
+* `python3 ci/run_integration.py integration-bridges-vendor` (job `integration-bridges-vendor`) — 3 tests green.
+
+68 cited tests green, 0 not green.
+
+Open items: `zerodds-grpc-bridge-1.0.open.en.md`.

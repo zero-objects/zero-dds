@@ -11,6 +11,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	zerodds "zeroddsendpoint"
@@ -50,9 +51,12 @@ func main() {
 	tr := &loopback{}
 	c := zerodds.NewClient(tr, zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
 	_ = c.Write(sample(0x42, "sync-hello"))
-	if body, ok, _ := c.Receive(time.Second); ok {
-		fmt.Printf("sync: received id=0x%X\n", zerodds.NewReader(body, zerodds.Little, zerodds.Xcdr2).GetU32())
+	body, ok, _ := c.Receive(time.Second)
+	if !ok {
+		fmt.Fprintln(os.Stderr, "sync: the sample did not arrive within 1 s")
+		os.Exit(1)
 	}
+	fmt.Printf("sync: received id=0x%X\n", zerodds.NewReader(body, zerodds.Little, zerodds.Xcdr2).GetU32())
 
 	// --- asynchronous (goroutine + channel) ---
 	tr2 := &loopback{}
@@ -67,8 +71,8 @@ func main() {
 		case body := <-r.Samples:
 			fmt.Printf("async: received id=0x%X\n", zerodds.NewReader(body, zerodds.Little, zerodds.Xcdr2).GetU32())
 		case <-time.After(2 * time.Second):
-			fmt.Println("async: timeout")
-			return
+			fmt.Fprintf(os.Stderr, "async: got %d of 3 samples within 2 s\n", i)
+			os.Exit(1)
 		}
 	}
 	fmt.Println("ALL OK")

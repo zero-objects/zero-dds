@@ -5,8 +5,7 @@
 //! `crates/dcps/src/interop.rs` carries a `ShapeType` written by hand:
 //! its module docs quote the OMG `dds-rtps` suite's `srcCxx/shape.idl`
 //! and a CDR layout worked out on paper. Every live interop test
-//! publishes and subscribes that type — `fastdds_live_pub`,
-//! `fastdds_live_sub`, `liveliness_qos`, `lifespan_qos`,
+//! publishes and subscribes that type — `liveliness_qos`, `lifespan_qos`,
 //! `time_based_filter_qos`, `shapes_api_e2e` — and `shapes_type_wire.rs`
 //! checks it against byte sequences that were *also* derived by hand.
 //! Hand against hand: a defect in this project's own IDL front end could

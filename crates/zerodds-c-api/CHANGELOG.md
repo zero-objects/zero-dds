@@ -5,6 +5,30 @@ SemVer.
 
 ## [Unreleased]
 
+### Fixed
+
+- `zerodds.h` declares the callbacks of the four `zerodds_runtime_for_each_*`
+  (`zerodds_Option_ZeroDdsTopicCallback`,
+  `zerodds_Option_ZeroDdsEndpointCallback`) as function pointers and
+  `zerodds_ZeroDdsEndpointInfo` as the struct it is. cbindgen rendered both
+  callbacks as incomplete structs passed by value and left the info struct
+  out, so C could not call the four functions through the header.
+  `tests/integration/for_each_c.sh` (job `integration-sdk`) compiles a C
+  program against the header with `-Werror` and enumerates a writer and a
+  reader of two runtimes with all four.
+
+- `zerodds_runtime_create_ros_defaults` refuses a domain id beyond `i32` and
+  returns NULL, as `zerodds_runtime_create` does; it passed `domain_id as i32`
+  to the runtime.
+
+- A ContentFilteredTopic over a `@mutable` type with a positional schema
+  (`zerodds_cft_set_schema_ex`, extensibility `2`) read the members at the
+  offsets of an `@appendable` body: behind the DHEADER, where a PL_CDR2 body
+  has an EMHEADER and a PL_CDR1 body a parameter header (DDS-XTypes 1.3
+  §7.4.3.4.2, §7.4.1.2). The filter now finds each member by its id, the
+  `n`-th schema member under id `n` (`@autoid(SEQUENTIAL)`), in the parameter
+  headers of any vendor. A member the body does not carry does not pass.
+
 ### Added (DDS-Security 1.2 §11)
 
 - Authentication and Cryptographic plugins of an application in C, C++ and
@@ -26,6 +50,17 @@ SemVer.
   (`validate_local_permissions` and `check_create_participant` first).
 
 ### Changed
+
+- The two vendor tests of `writer_dispose_sample_vendors.rs` run in the
+  interop pillar: `vendor-live-capi-cyclone` (now part of `all`) and the new
+  `vendor-live-capi-fastdds`, which builds the Fast DDS reader of
+  `tools/dispose-reader`. The Cyclone reader announces its
+  TypeConsistencyEnforcement, so Cyclone writes PID 0x0074: with the default
+  policy it leaves it out, ZeroDDS then reads DISALLOW_TYPE_COERCION (DDS-XTypes
+  1.3 §7.6.3.4.1), and the binding's type differs from the IDL's by the
+  must-understand flag of the key member (§7.2.2.4.4.4.8), so the writer
+  refused the reader as an INCONSISTENT_TOPIC. The tests wait for the reader's
+  `STATE` lines instead of 1.5 s and 0.5 s.
 
 - `zerodds_topic_get_instance_handle` is the handle of the `DCPSTopic` entry of the topic's participant: the
   key of an entry includes the participant (DDS 1.4 §2.2.5).

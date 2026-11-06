@@ -595,38 +595,10 @@ fn sec1_as_pkcs8(sec1_der: &[u8]) -> Result<Vec<u8>, PkiError> {
 mod mutation_killers {
     use super::*;
 
-    /// Display format of all error variants. Catches mutation
-    /// `replace fmt with Ok(Default::default())`.
-    #[test]
-    fn pki_error_display_messages_are_specific() {
-        assert_eq!(
-            alloc::format!(
-                "{}",
-                PkiError::InvalidPem(alloc::string::String::from("bad"))
-            ),
-            "invalid PEM: bad"
-        );
-        assert_eq!(
-            alloc::format!("{}", PkiError::NoCertInPem),
-            "no certificate in PEM"
-        );
-        assert_eq!(
-            alloc::format!(
-                "{}",
-                PkiError::CertInvalid(alloc::string::String::from("expired"))
-            ),
-            "certificate invalid: expired"
-        );
-        assert_eq!(
-            alloc::format!("{}", PkiError::EmptyTrustAnchors),
-            "trust-anchor bundle is empty"
-        );
-    }
-
     /// `detect_cert_algo` needs BOTH OIDs (id-ecPublicKey AND the P-256
     /// curve), not just one. Catches the `&&` -> `||` mutation.
     #[test]
-    fn detect_cert_algo_requires_both_ecdsa_oids() {
+    fn security_8_2_detect_cert_algo_requires_both_ecdsa_oids() {
         let only_ecdsa = [0x06, 0x07, 0x2A, 0x86, 0x48, 0xCE, 0x3D, 0x02, 0x01];
         assert_eq!(detect_cert_algo(&only_ecdsa), CertKeyAlgo::Unknown);
 

@@ -29,7 +29,7 @@ const IDL: &str = r#"
     @verbatim(language = "c", placement = BEGIN_DECLARATION, text = "/* top */")
     struct Machine {
         @key @id(7) long serial;
-        @optional @Widgets(widgets = 3) double load;
+        @optional @Widgets(widgets = 3, label = "spare") double load;
     };
 "#;
 
@@ -37,7 +37,7 @@ const IDL: &str = r#"
 /// it, the ones XTypes defines (`@mutable`) as well as the declared one,
 /// each as a descriptor with its type and string values.
 #[test]
-fn a_type_reports_its_builtin_and_declared_annotations() {
+fn xtypes_7_5_2_3_4_a_type_reports_its_builtin_and_declared_annotations() {
     let ast = model(IDL);
     let machine = DynamicType::find(&ast, "Machine").unwrap();
     let count = machine.annotation_count();
@@ -64,7 +64,7 @@ fn a_type_reports_its_builtin_and_declared_annotations() {
 
 /// §7.5.2.8.5: an index past the end is RETCODE_BAD_PARAMETER.
 #[test]
-fn an_index_past_the_end_is_a_bad_parameter() {
+fn xtypes_7_5_2_1_an_index_past_the_end_is_a_bad_parameter() {
     let ast = model(IDL);
     let machine = DynamicType::find(&ast, "Machine").unwrap();
     let past = machine.annotation_count();
@@ -82,7 +82,7 @@ fn an_index_past_the_end_is_a_bad_parameter() {
 
 /// §7.5.2.6.1: a member reports the annotations applied to it.
 #[test]
-fn a_member_reports_its_annotations() {
+fn xtypes_7_5_2_6_1_a_member_reports_its_annotations() {
     let ast = model(IDL);
     let machine = DynamicType::find(&ast, "Machine").unwrap();
     let serial = machine.member_by_name("serial").unwrap();
@@ -119,7 +119,7 @@ fn a_member_reports_its_annotations() {
 /// Annex C `get_verbatim_text`: the placement in the spelling of IDL
 /// §8.3.5.1, the text and the language.
 #[test]
-fn verbatim_text_is_reported_with_its_placement() {
+fn xtypes_annex_c_verbatim_text_is_reported_with_its_placement() {
     let ast = model(IDL);
     let machine = DynamicType::find(&ast, "Machine").unwrap();
     assert_eq!(machine.verbatim_text_count(), 1);
@@ -142,7 +142,7 @@ fn verbatim_text_is_reported_with_its_placement() {
 /// §7.5.2.3.1 to §7.5.2.3.3 and Annex C: the value operations, `copy_from`,
 /// `equals` and `is_consistent`.
 #[test]
-fn an_annotation_descriptor_has_value_semantics() {
+fn xtypes_7_5_2_1_an_annotation_descriptor_has_value_semantics() {
     let ast = model(IDL);
     let widgets = AnnotationType::find(&ast, "Widgets").expect("the annotation type");
 
@@ -199,7 +199,7 @@ fn an_annotation_descriptor_has_value_semantics() {
 /// copy_from and equals follow Table 53, and `is_consistent_in` applies
 /// the rules that need the owner.
 #[test]
-fn a_member_descriptor_has_a_default_string_and_value_semantics() {
+fn xtypes_7_5_2_7_3_a_member_descriptor_has_a_default_string_and_value_semantics() {
     let ast = model(
         "struct Defaults { @default(5) long five; long none; };
          union U switch (long) { case 1: long a; default: double b; };",
@@ -238,7 +238,7 @@ fn a_member_descriptor_has_a_default_string_and_value_semantics() {
 
 /// §7.5.2.4.3 and §7.5.2.4.6: the type descriptor.
 #[test]
-fn a_type_descriptor_has_value_semantics() {
+fn xtypes_7_5_2_4_3_a_type_descriptor_has_value_semantics() {
     let ast = model("struct A { long x; }; @appendable struct B { long x; };");
     let a = DynamicType::find(&ast, "A").unwrap().descriptor().unwrap();
     let b = DynamicType::find(&ast, "B").unwrap().descriptor().unwrap();
@@ -251,7 +251,7 @@ fn a_type_descriptor_has_value_semantics() {
 /// Annex C `get_all_members_by_name` and `get_all_members`, and the
 /// Result forms of the three lookups.
 #[test]
-fn the_member_lookups_report_a_bad_parameter() {
+fn xtypes_7_5_2_1_the_member_lookups_report_a_bad_parameter() {
     let ast = model("struct S { @id(3) long x; long y; }; enum E { P, Q };");
     let s = DynamicType::find(&ast, "S").unwrap();
     assert_eq!(s.all_members_by_name().len(), 2);
@@ -281,7 +281,7 @@ fn the_member_lookups_report_a_bad_parameter() {
 /// inconsistent; §7.5.2.4.10 and §7.5.2.7.9: so is a name that is no
 /// identifier.
 #[test]
-fn the_descriptor_of_a_union_and_a_map_and_the_names() {
+fn xtypes_7_5_2_4_10_the_descriptor_of_a_union_and_a_map_and_the_names() {
     let ast = model(
         "union U switch (long) { case 1: long a; };
          struct S { map<string, long> table; };",

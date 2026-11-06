@@ -21,32 +21,30 @@ struct PoseDifferent {
 }
 
 #[test]
-fn derive_generates_wire_size() {
+fn flatdata_1_2_derive_generates_wire_size() {
     assert_eq!(PoseDerived::WIRE_SIZE, 24);
     assert_eq!(PoseDifferent::WIRE_SIZE, 8);
 }
 
+/// zerodds-flatdata-1.0 §1.2: "Der `TYPE_HASH` ist
+/// `sha256(<TypeName>{<field-name>:<field-ty>,...})[..16]`". The expected
+/// octets are the first 16 of SHA-256 over `PoseDerived{x:i64,y:i64,z:i64}`,
+/// computed outside the crate (`shasum -a 256`).
 #[test]
-fn derive_generates_type_hash_nonzero() {
-    // Trivial sanity check: the hash is not all 0x00 (which would
-    // mean the caller hash and the derive hash collide).
-    assert_ne!(PoseDerived::TYPE_HASH, [0u8; 16]);
+fn flatdata_1_2_derive_generates_type_hash_nonzero() {
+    assert_eq!(
+        PoseDerived::TYPE_HASH,
+        [
+            0x0e, 0x80, 0x9f, 0x18, 0x63, 0x8e, 0x26, 0xa6, 0xca, 0x8a, 0xb2, 0x9c, 0xb5, 0x95,
+            0x52, 0x57
+        ]
+    );
 }
 
 #[test]
-fn derive_generates_distinct_hash_per_layout() {
+fn flatdata_1_2_derive_generates_distinct_hash_per_layout() {
     // Different structs → different hashes.
     assert_ne!(PoseDerived::TYPE_HASH, PoseDifferent::TYPE_HASH);
-}
-
-#[test]
-fn derive_as_bytes_roundtrip() {
-    let p = PoseDerived { x: 1, y: 2, z: 3 };
-    let bytes = p.as_bytes();
-    assert_eq!(bytes.len(), 24);
-    // SAFETY: bytes comes from exactly this Pose instance.
-    let p2: PoseDerived = unsafe { PoseDerived::from_bytes_unchecked(bytes) };
-    assert_eq!(p, p2);
 }
 
 // Tuple-struct variant.
@@ -55,7 +53,7 @@ fn derive_as_bytes_roundtrip() {
 struct Tuple(u64, u64);
 
 #[test]
-fn derive_works_for_tuple_struct() {
+fn flatdata_1_2_derive_works_for_tuple_struct() {
     assert_eq!(Tuple::WIRE_SIZE, 16);
     let t = Tuple(0xAA, 0xBB);
     assert_eq!(t.as_bytes().len(), 16);
@@ -68,7 +66,7 @@ fn derive_works_for_tuple_struct() {
 struct WrappedPose(PoseDerived);
 
 #[test]
-fn derive_accepts_repr_transparent() {
+fn flatdata_1_2_derive_accepts_repr_transparent() {
     assert_eq!(WrappedPose::WIRE_SIZE, PoseDerived::WIRE_SIZE);
     // The hash is distinct from the inner type because the layout string
     // includes the outer type name.
@@ -85,7 +83,7 @@ struct PoseReordered {
 }
 
 #[test]
-fn derive_detects_field_reorder() {
+fn flatdata_1_2_derive_detects_field_reorder() {
     assert_ne!(PoseDerived::TYPE_HASH, PoseReordered::TYPE_HASH);
 }
 
@@ -100,7 +98,7 @@ struct PoseUnsigned {
 }
 
 #[test]
-fn derive_detects_field_type_change() {
+fn flatdata_1_2_derive_detects_field_type_change() {
     assert_eq!(PoseDerived::WIRE_SIZE, PoseUnsigned::WIRE_SIZE);
     assert_ne!(PoseDerived::TYPE_HASH, PoseUnsigned::TYPE_HASH);
 }
@@ -115,7 +113,7 @@ struct PoseRenamed {
 }
 
 #[test]
-fn derive_detects_type_rename() {
+fn flatdata_1_2_derive_detects_type_rename() {
     assert_ne!(PoseDerived::TYPE_HASH, PoseRenamed::TYPE_HASH);
 }
 
@@ -129,7 +127,7 @@ struct PoseDerived2 {
 }
 
 #[test]
-fn derive_hash_is_deterministic_for_identical_layout() {
+fn flatdata_1_2_derive_hash_is_deterministic_for_identical_layout() {
     // PoseDerived and PoseDerived2 are structurally identical in the
     // layout string, BUT the type name is part of the signature — hence
     // different hashes (this is the intended behavior:
@@ -142,8 +140,16 @@ fn derive_hash_is_deterministic_for_identical_layout() {
 #[repr(C)]
 struct Marker;
 
+/// A unit struct has no fields: its signature is `Marker{()}`, and the
+/// hash is the first 16 octets of SHA-256 over it (`shasum -a 256`).
 #[test]
-fn derive_works_for_unit_struct() {
+fn flatdata_1_2_derive_works_for_unit_struct() {
     assert_eq!(Marker::WIRE_SIZE, 0);
-    assert_ne!(Marker::TYPE_HASH, [0u8; 16]);
+    assert_eq!(
+        Marker::TYPE_HASH,
+        [
+            0x22, 0x91, 0xde, 0x7b, 0x58, 0x82, 0x80, 0x74, 0x7c, 0x1f, 0xfa, 0xf9, 0xa4, 0xd5,
+            0x47, 0x1d
+        ]
+    );
 }

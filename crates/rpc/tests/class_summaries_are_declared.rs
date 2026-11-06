@@ -29,7 +29,7 @@ fn repository_root() -> PathBuf {
 
 /// §7.11.1.4.1, §7.11.1.5 and §7.4.2.3: the C++ runtime declares all 29.
 #[test]
-fn the_cpp_runtime_declares_every_class_of_the_two_summaries() {
+fn rpc_7_11_the_cpp_runtime_declares_every_class_of_the_two_summaries() {
     // The classes are declared by the normative headers of §7.11.1 (shipped
     // unchanged), by `rpc.hpp` (Service, Client, RPCRuntime) and by the types
     // `base.hpp` gives them.
@@ -83,7 +83,7 @@ fn the_cpp_runtime_declares_every_class_of_the_two_summaries() {
 
 /// §7.11.2.2.1 and §7.11.2.3: the Java package declares all of them.
 #[test]
-fn the_java_package_declares_every_type_of_the_two_summaries() {
+fn rpc_7_11_the_java_package_declares_every_type_of_the_two_summaries() {
     let package = repository_root().join("runtime/java/src/main/java/org/omg/dds/rpc");
     assert!(
         package.is_dir(),

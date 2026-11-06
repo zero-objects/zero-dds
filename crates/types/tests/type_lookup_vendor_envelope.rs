@@ -1,13 +1,12 @@
 //! Exact installed Cyclone descriptor serialization, captured 2026-09-12.
-//! Provenance and reproducible C helper: internal/release/evidence/
-//! rc7-recovery-2026-09-10/root/cyclone-typelookup-oracle*.
+//! Provenance and reproducible C helper: fixtures/cyclone-typelookup-oracle.{txt,c}.
 #![allow(clippy::unwrap_used)]
 
 use zerodds_types::framing::{xcdr2_reader, xcdr2_writer};
 use zerodds_types::type_lookup::*;
 
 #[test]
-fn all_four_service_envelopes_match_cyclone_serializer() {
+fn xtypes_7_6_3_3_2_all_four_service_envelopes_match_cyclone_serializer() {
     let fixtures: Vec<Vec<u8>> = include_str!("fixtures/cyclone-typelookup-11.log")
         .lines()
         .map(|line| {

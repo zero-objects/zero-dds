@@ -23,7 +23,7 @@ fn default_features() -> String {
 
 /// Module layout — `default = ["std"]`, and `tokio-glue` is not part of it.
 #[test]
-fn default_feature_set_is_std_only() {
+fn async_4_default_feature_set_is_std_only() {
     let defaults = default_features();
     assert!(defaults.contains("std"), "{defaults}");
     assert!(
@@ -37,7 +37,7 @@ fn default_feature_set_is_std_only() {
 /// `tokio-glue` feature, and no other runtime crate is a dependency at
 /// all. `futures-core` is a trait crate, not a runtime.
 #[test]
-fn no_async_runtime_is_a_hard_dependency() {
+fn async_3_no_async_runtime_is_a_hard_dependency() {
     let deps = MANIFEST
         .split("[dependencies]")
         .nth(1)

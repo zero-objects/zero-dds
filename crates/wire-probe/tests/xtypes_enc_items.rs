@@ -56,7 +56,7 @@ fn bytes_in(
 /// parameter is its id, its length and the value; the list ends with
 /// `PID_LIST_END` (`0x3F02` with `FLAG_MUST_UNDERSTAND`, Table 34).
 #[test]
-fn an_absent_optional_member_has_no_parameter_under_pl_cdr() {
+fn xtypes_7_4_3_5_2_an_absent_optional_member_has_no_parameter_under_pl_cdr() {
     let idl = "@mutable struct MutOpt { long a; @optional long b; };";
     let absent = probe(
         idl,
@@ -117,7 +117,7 @@ fn an_absent_optional_member_has_no_parameter_under_pl_cdr() {
 /// at LC2 without the flag. Under version 1 the discriminator's parameter
 /// id is `0x4000`, `whole`'s is `0x0001`, and the list ends with `0x7F02`.
 #[test]
-fn the_discriminator_of_a_mutable_union_is_must_understand() {
+fn xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_mutable_union_is_must_understand() {
     let idl = "@mutable union Choice switch (long) {
                    case 1: long whole;
                    default: double frac;
@@ -171,7 +171,7 @@ fn the_discriminator_of_a_mutable_union_is_must_understand() {
 /// `u = {_d: 2, b: 5}`: `00000002 0005`. Both are at most sixteen octets,
 /// so the KeyHash is the holder zero-padded (§7.6.8 step 5).
 #[test]
-fn a_union_as_the_type_of_a_key_member_is_in_the_holder_whole() {
+fn xtypes_7_2_2_4_7_a_union_as_the_type_of_a_key_member_is_in_the_holder_whole() {
     let idl = "@final union Alt switch (long) { case 1: long a; case 2: short b; };
                @final struct S { @key Alt u; long other; };";
     let ast = model_from_idl(idl, "probe.idl").expect("the model");
@@ -204,7 +204,7 @@ fn a_union_as_the_type_of_a_key_member_is_in_the_holder_whole() {
 /// Table 33 serializes a bitmask as the unsigned integer of its bound, so
 /// the construction is reading the bytes of the bitmask as that integer.
 #[test]
-fn an_unsigned_integer_is_built_from_the_flags_of_a_bitmask() {
+fn xtypes_7_2_4_4_4_an_unsigned_integer_is_built_from_the_flags_of_a_bitmask() {
     let cases = [
         (
             8,
@@ -287,7 +287,7 @@ fn an_unsigned_integer_is_built_from_the_flags_of_a_bitmask() {
 /// order to prevent data misinterpretations resulting from truncations."
 /// Table 16: O2 can construct T1 iff `O2.length <= T1.length`.
 #[test]
-fn a_string_longer_than_the_bound_of_the_reader_constructs_no_object() {
+fn xtypes_7_2_4_4_5_1_a_string_longer_than_the_bound_of_the_reader_constructs_no_object() {
     let writer = "@final struct W { string<10> s; };";
     let reader = "@final struct R { string<5> s; };";
     let long = probe(
@@ -333,7 +333,7 @@ fn a_string_longer_than_the_bound_of_the_reader_constructs_no_object() {
 /// §7.4.3.2.3 and rule (1): these two octets, then the options, then the
 /// object.
 #[test]
-fn the_header_names_the_identifiers_of_table_39_when_asked() {
+fn xtypes_7_4_3_2_3_the_header_names_the_identifiers_of_table_39_when_asked() {
     let rows = [
         (Encoding::PlainCdr2, Endianness::Big, [0x00, 0x10]),
         (Encoding::PlainCdr2, Endianness::Little, [0x00, 0x11]),
@@ -379,7 +379,7 @@ fn the_header_names_the_identifiers_of_table_39_when_asked() {
 /// Table 60 stays the default, because Cyclone DDS, RTI Connext and
 /// Fast DDS write its identifiers, and a reader takes both tables.
 #[test]
-fn the_default_header_is_table_60_and_both_tables_are_read() {
+fn xtypes_7_4_3_4_the_default_header_is_table_60_and_both_tables_are_read() {
     let idl = "@appendable struct S { long a; };";
     let ast = model_from_idl(idl, "probe.idl").expect("the model");
     let value = json!({ "a": 7 });

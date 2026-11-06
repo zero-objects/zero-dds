@@ -293,7 +293,7 @@ fn a_decoder_returns_the_sample_it_built() {
 /// A `map` entry is a two-slot list while it is being read and a tuple
 /// once both halves are there, because a tuple cannot be written into.
 #[test]
-fn a_map_entry_is_written_into_as_a_list_and_answered_as_a_tuple() {
+fn xtypes_7_2_2_4_3_a_map_entry_is_written_into_as_a_list_and_answered_as_a_tuple() {
     let text = decoder("@final struct S { map<long, long> m; };", "S");
     assert!(
         text.contains("[None, None]"),
@@ -312,7 +312,7 @@ fn a_map_entry_is_written_into_as_a_list_and_answered_as_a_tuple() {
 /// An `@optional` member is `None` when it is absent, and `is not None`
 /// is what asks — not `!=`, which a dataclass's `__eq__` answers.
 #[test]
-fn an_optional_member_is_tested_against_none_by_identity() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_is_tested_against_none_by_identity() {
     let text = encoder("@final struct S { @optional long a; };", "S");
     assert!(
         text.contains("is not None"),
@@ -356,7 +356,7 @@ fn a_character_label_is_written_as_the_character() {
 /// Every aggregate the corpus has, through both directions, to the end
 /// of the walk and past CPython's parser.
 #[test]
-fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
+fn xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
     for (idl, root) in [
         ("@final struct S { long a; };", "S"),
         ("@appendable struct S { long a; string b; };", "S"),

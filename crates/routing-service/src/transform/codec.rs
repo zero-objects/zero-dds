@@ -7,11 +7,10 @@
 //! Operates on the CDR **body** (without the encapsulation header) exactly as
 //! the runtime user byte-path delivers it, mirroring the `zerodds-wire` body
 //! layout (align origin 0; max alignment 8 for XCDR1, 4 for XCDR2;
-//! Cyclone/FastDDS byte-compatible). The encapsulation header is stripped on
-//! receive, so the source endianness is not recoverable from the body — the
-//! codec assumes **little-endian** (the universal DDS default on LE hosts) and
-//! re-encodes little-endian. Byte pass-through routes (no filter/transform)
-//! never decode and so are endianness-agnostic.
+//! Cyclone/FastDDS byte-compatible). The byte order is the one the
+//! encapsulation header of the sample named (DDSI-RTPS 2.5 §10.5, DDS-XTypes
+//! 1.3 §7.4.1, "the endianness of the serialized data"); a body is written
+//! back in the order it was read in.
 //!
 //! The XCDR2 alignment cap is the reader's and the writer's own
 //! `max_align`, set at construction; `zerodds-wire` has no `.xcdr2()`
@@ -81,22 +80,23 @@ fn align_for(kind: ScalarKind, xcdr2: bool) -> usize {
     }
 }
 
-/// Decodes a body into the shape's ordered values.
+/// Decodes a body of `xcdr2` (else XCDR1) in `endianness` into the shape's
+/// ordered values.
 ///
 /// # Errors
 /// [`RoutingError::Transform`] on truncated/invalid input.
 pub fn decode(
     shape: &TypeShape,
     body: &[u8],
-    representation: u8,
+    xcdr2: bool,
+    endianness: Endianness,
 ) -> crate::error::Result<Vec<DynValue>> {
-    let xcdr2 = representation != 0;
     let max_align = if xcdr2 {
         XCDR2_MAX_ALIGN
     } else {
         XCDR1_MAX_ALIGN
     };
-    let mut r = Reader::with_max_align(body, Endianness::Little, max_align);
+    let mut r = Reader::with_max_align(body, endianness, max_align);
     if xcdr2 && shape.appendable {
         // DHEADER (object size) — read and discard; members follow.
         r.read_u32().map_err(|_| dec_err("dheader"))?;
@@ -124,25 +124,26 @@ pub fn decode(
     Ok(out)
 }
 
-/// Encodes the shape's values back into a CDR body.
+/// Encodes the shape's values back into a CDR body of `xcdr2` (else
+/// XCDR1) in `endianness`.
 ///
 /// # Errors
 /// [`RoutingError::Transform`] on a value/kind mismatch.
 pub fn encode(
     shape: &TypeShape,
     values: &[DynValue],
-    representation: u8,
+    xcdr2: bool,
+    endianness: Endianness,
 ) -> crate::error::Result<Vec<u8>> {
     if values.len() != shape.members.len() {
         return Err(enc_err("value/member count mismatch"));
     }
-    let xcdr2 = representation != 0;
     let max_align = if xcdr2 {
         XCDR2_MAX_ALIGN
     } else {
         XCDR1_MAX_ALIGN
     };
-    let mut w = Writer::with_max_align(Endianness::Little, max_align);
+    let mut w = Writer::with_max_align(endianness, max_align);
     // Appendable XCDR2: reserve a DHEADER, fill members, then patch the
     // size. `write_dheader` aligns to 4, reserves the four bytes and hands
     // back the handle `finish_dheader` patches — XTypes 1.3 §7.4.3.4.2 —
@@ -178,70 +179,98 @@ pub fn encode(
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
+    //! The oracle is the vendors' octets of the interop corpus case
+    //! `struct-final` / `struct-appendable` (`@final`/`@appendable struct
+    //! Sample { long a; double b; short c; }` with a = -1234567, b = pi,
+    //! c = -2), from `tests/interop-corpus/expected-bytes.tsv`: the octets
+    //! Cyclone, RTI, Fast DDS and OpenDDS write in each cell below.
     use super::*;
     use crate::transform::shape::Member;
 
-    fn shape_final() -> TypeShape {
+    fn shape(appendable: bool) -> TypeShape {
+        let member = |name: &str, kind| Member {
+            name: name.into(),
+            kind,
+        };
         TypeShape {
-            name: "T".into(),
+            name: "Sample".into(),
             members: vec![
-                Member {
-                    name: "a".into(),
-                    kind: ScalarKind::U32,
-                },
-                Member {
-                    name: "b".into(),
-                    kind: ScalarKind::String,
-                },
-                Member {
-                    name: "c".into(),
-                    kind: ScalarKind::F64,
-                },
+                member("a", ScalarKind::I32),
+                member("b", ScalarKind::F64),
+                member("c", ScalarKind::I16),
             ],
-            appendable: false,
+            appendable,
+        }
+    }
+
+    fn values() -> Vec<DynValue> {
+        vec![
+            DynValue::I32(-1_234_567),
+            DynValue::F64(core::f64::consts::PI),
+            DynValue::I16(-2),
+        ]
+    }
+
+    fn hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// (appendable, xcdr2, endianness, the vendors' octets)
+    fn cells() -> [(bool, bool, Endianness, Vec<u8>); 8] {
+        use Endianness::{Big, Little};
+        [
+            (
+                false,
+                false,
+                Big,
+                hex("ffed297900000000400921fb54442d18fffe"),
+            ),
+            (
+                false,
+                false,
+                Little,
+                hex("7929edff00000000182d4454fb210940feff"),
+            ),
+            (false, true, Big, hex("ffed2979400921fb54442d18fffe")),
+            (false, true, Little, hex("7929edff182d4454fb210940feff")),
+            (
+                true,
+                false,
+                Big,
+                hex("ffed297900000000400921fb54442d18fffe"),
+            ),
+            (
+                true,
+                false,
+                Little,
+                hex("7929edff00000000182d4454fb210940feff"),
+            ),
+            (true, true, Big, hex("0000000effed2979400921fb54442d18fffe")),
+            (
+                true,
+                true,
+                Little,
+                hex("0e0000007929edff182d4454fb210940feff"),
+            ),
+        ]
+    }
+
+    #[test]
+    fn xtypes_7_4_1_every_vendor_cell_reads_as_its_values_in_its_byte_order() {
+        for (appendable, xcdr2, endianness, octets) in cells() {
+            let read = decode(&shape(appendable), &octets, xcdr2, endianness).unwrap();
+            assert_eq!(read, values(), "{appendable} {xcdr2} {endianness:?}");
         }
     }
 
     #[test]
-    fn roundtrip_xcdr1() {
-        let sh = shape_final();
-        let vals = vec![
-            DynValue::U32(0x1122_3344),
-            DynValue::Str("hi".into()),
-            DynValue::F64(3.5),
-        ];
-        let body = encode(&sh, &vals, 0).unwrap();
-        let back = decode(&sh, &body, 0).unwrap();
-        assert_eq!(vals, back);
-    }
-
-    #[test]
-    fn roundtrip_xcdr2() {
-        let sh = shape_final();
-        let vals = vec![
-            DynValue::U32(7),
-            DynValue::Str("world".into()),
-            DynValue::F64(-1.25),
-        ];
-        let body = encode(&sh, &vals, 2).unwrap();
-        let back = decode(&sh, &body, 2).unwrap();
-        assert_eq!(vals, back);
-    }
-
-    #[test]
-    fn roundtrip_xcdr2_appendable_dheader() {
-        let mut sh = shape_final();
-        sh.appendable = true;
-        let vals = vec![
-            DynValue::U32(42),
-            DynValue::Str("x".into()),
-            DynValue::F64(2.0),
-        ];
-        let body = encode(&sh, &vals, 2).unwrap();
-        // DHEADER (first 4 bytes LE) must equal the remaining body length.
-        let dh = u32::from_le_bytes([body[0], body[1], body[2], body[3]]) as usize;
-        assert_eq!(dh, body.len() - 4);
-        let back = decode(&sh, &body, 2).unwrap();
-        assert_eq!(vals, back);
+    fn xtypes_7_4_1_the_values_are_written_as_every_vendor_cell() {
+        for (appendable, xcdr2, endianness, octets) in cells() {
+            let written = encode(&shape(appendable), &values(), xcdr2, endianness).unwrap();
+            assert_eq!(written, octets, "{appendable} {xcdr2} {endianness:?}");
+        }
     }
 }

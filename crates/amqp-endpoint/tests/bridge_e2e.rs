@@ -45,7 +45,7 @@ fn pick_port_listener() -> (TcpListener, String) {
 /// AMQP 1.0 peer without the SASL layer. The daemon must not continue
 /// unauthenticated; it stops with the reason.
 #[test]
-fn a_broker_without_the_sasl_layer_is_refused_by_name() {
+fn amqp10_0_2_a_broker_without_the_sasl_layer_is_refused_by_name() {
     let (listener, addr) = pick_port_listener();
     let (tx, rx) = mpsc::channel::<Vec<u8>>();
     std::thread::spawn(move || {
@@ -54,7 +54,8 @@ fn a_broker_without_the_sasl_layer_is_refused_by_name() {
         let _ = s.read_exact(&mut hdr);
         let _ = s.write_all(&AMQP_PROTOCOL_HEADER);
         let _ = tx.send(hdr.to_vec());
-        std::thread::sleep(Duration::from_millis(500));
+        // Held open until the daemon closes its end.
+        let _ = s.read(&mut [0u8; 1]);
     });
     let out = Command::new(daemon_binary())
         .args([
@@ -80,7 +81,7 @@ fn a_broker_without_the_sasl_layer_is_refused_by_name() {
 /// PLAIN sends the password in the clear; towards a remote broker the
 /// daemon refuses it without TLS (spec §7.2).
 #[test]
-fn plain_without_tls_is_refused_towards_a_remote_broker() {
+fn amqpbridge_2_plain_without_tls_is_refused_towards_a_remote_broker() {
     let out = Command::new(daemon_binary())
         .args([
             "--broker",
@@ -100,7 +101,7 @@ fn plain_without_tls_is_refused_towards_a_remote_broker() {
 }
 
 #[test]
-fn daemon_with_no_broker_fails_with_exit_2() {
+fn amqpbridge_2_daemon_with_no_broker_fails_with_exit_2() {
     // Connect to a port that's almost certainly closed.
     let (listener, addr) = pick_port_listener();
     drop(listener); // free the port.
@@ -122,7 +123,7 @@ fn daemon_with_no_broker_fails_with_exit_2() {
 }
 
 #[test]
-fn version_flag_emits_one_line_and_exits_zero() {
+fn amqpbridge_2_version_flag_emits_one_line_and_exits_zero() {
     let out = Command::new(daemon_binary())
         .arg("--version")
         .output()
@@ -134,7 +135,7 @@ fn version_flag_emits_one_line_and_exits_zero() {
 }
 
 #[test]
-fn missing_broker_url_fails_with_exit_1() {
+fn amqpbridge_2_missing_broker_url_fails_with_exit_1() {
     let mut child = Command::new(daemon_binary())
         .args(["--once"])
         .stderr(Stdio::null())

@@ -13,7 +13,6 @@ use alloc::ffi::CString;
 use alloc::vec::Vec;
 use core::ffi::{c_char, c_int};
 use core::ptr;
-use core::slice;
 
 use zerodds_dcps::instance_handle::InstanceHandle;
 
@@ -211,7 +210,7 @@ unsafe fn free_octets(octets: &mut ZeroDdsUserDataQosPolicy) {
     if !octets.value.is_null() && octets.value_len > 0 {
         // SAFETY: value/value_len are the Box<[u8]> leak_octets leaked.
         drop(unsafe {
-            alloc::boxed::Box::from_raw(slice::from_raw_parts_mut(
+            alloc::boxed::Box::from_raw(ptr::slice_from_raw_parts_mut(
                 octets.value.cast_mut(),
                 octets.value_len,
             ))
@@ -258,7 +257,7 @@ unsafe fn free_partition(partition: &mut ZeroDdsPartitionQosPolicy) {
         // SAFETY: names/names_len are the Box<[*const c_char]> leak_partition
         // leaked, each element a CString::into_raw.
         let ptrs = unsafe {
-            alloc::boxed::Box::from_raw(slice::from_raw_parts_mut(
+            alloc::boxed::Box::from_raw(ptr::slice_from_raw_parts_mut(
                 partition.names.cast_mut(),
                 partition.names_len,
             ))
@@ -571,7 +570,7 @@ pub unsafe extern "C" fn zerodds_builtin_userdata_free(p: *const u8, len: usize)
     }
     // SAFETY: see fn # Safety doc — p+len from dp_get_discovered_participant_data
     // Box::leak roundtrip.
-    let _ = unsafe { Box::from_raw(slice::from_raw_parts_mut(p as *mut u8, len)) };
+    let _ = unsafe { Box::from_raw(ptr::slice_from_raw_parts_mut(p as *mut u8, len)) };
 }
 
 /// Returns the `TopicBuiltinTopicData` for an InstanceHandle. The names
@@ -661,6 +660,7 @@ mod tests {
         zerodds_dpf_create_participant, zerodds_dpf_delete_participant, zerodds_dpf_get_instance,
     };
     use crate::participant_ffi::zerodds_dp_delete_contained_entities;
+    use core::slice;
 
     fn mk(domain: u32) -> *mut ZeroDdsDomainParticipant {
         let f = zerodds_dpf_get_instance();
@@ -877,7 +877,8 @@ mod tests {
     /// caller must not read the struct, and must not release it.
     #[test]
     fn discovered_topic_data_unknown_handle_returns_error() {
-        let p = mk(64);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         // SAFETY: every member is an integer, an array of them or a raw
         // pointer; all-zero is a valid value of each.
         let mut data = unsafe { core::mem::zeroed::<ZeroDdsTopicBuiltinTopicData>() };
@@ -891,8 +892,9 @@ mod tests {
     }
 
     #[test]
-    fn discovered_topics_empty_initially() {
-        let p = mk(61);
+    fn capi_2_2_discovered_topics_empty_initially() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let mut buf = [0u64; 16];
         let mut count = 0usize;
         // SAFETY: p from mk; buf+count stack-local.
@@ -906,7 +908,8 @@ mod tests {
     /// with `cap > 0` is refused (`docs/specs/zerodds-c-api-1.0.md` §2.8).
     #[test]
     fn discovered_topics_length_query_and_null_contract() {
-        let p = mk(65);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let mut count = 0usize;
         // SAFETY: p from mk; count stack-local.
         unsafe {
@@ -920,8 +923,9 @@ mod tests {
     }
 
     #[test]
-    fn discovered_publications_count_starts_zero() {
-        let p = mk(62);
+    fn capi_7_1_discovered_publications_count_starts_zero() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         // SAFETY: p from mk.
         unsafe {
             assert_eq!(zerodds_dp_discovered_publications_count(p), 0);
@@ -931,8 +935,9 @@ mod tests {
     }
 
     #[test]
-    fn discovered_participant_data_unknown_handle_returns_error() {
-        let p = mk(63);
+    fn capi_7_1_discovered_participant_data_unknown_handle_returns_error() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk(lease.id() as u32);
         let mut data = ZeroDdsParticipantBuiltinTopicData {
             guid: [0u8; 16],
             user_data: ptr::null(),

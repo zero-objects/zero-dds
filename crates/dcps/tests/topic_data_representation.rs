@@ -11,7 +11,7 @@ use zerodds_dcps::{
 };
 
 #[test]
-fn the_topic_qos_names_a_representation_for_its_writers_and_readers() {
+fn xtypes_7_6_3_1_1_the_topic_qos_names_a_representation_for_its_writers_and_readers() {
     let topic = TopicQos {
         data_representation: Some(vec![2, 0]),
         ..TopicQos::default()
@@ -43,7 +43,7 @@ fn an_empty_list_is_the_single_element_xcdr() {
 }
 
 #[test]
-fn the_default_topic_leaves_the_default_representation() {
+fn xtypes_7_6_3_1_1_the_default_topic_leaves_the_default_representation() {
     assert_eq!(TopicQos::default().data_representation, None);
     let mut writer = DataWriterQos::default();
     Publisher::copy_from_topic_qos(&mut writer, &TopicQos::default()).unwrap();
@@ -51,7 +51,7 @@ fn the_default_topic_leaves_the_default_representation() {
 }
 
 #[test]
-fn an_enabled_topic_refuses_a_new_representation() {
+fn xtypes_7_6_3_1_1_an_enabled_topic_refuses_a_new_representation() {
     let participant = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic = participant

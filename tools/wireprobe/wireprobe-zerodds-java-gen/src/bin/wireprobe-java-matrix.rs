@@ -292,7 +292,7 @@ fn run(options: &Options) -> Result<(), String> {
         let (case, unit) = units[unit_index];
         let outcome = measure(&cases[case], unit, &runtime, &cache, &build);
         let seen = done.fetch_add(1, Ordering::Relaxed) + 1;
-        if seen % 500 == 0 {
+        if seen.is_multiple_of(500) {
             eprintln!(
                 "wireprobe-java-matrix: {seen}/{} unit(s) after {:.0}s",
                 distinct.len(),

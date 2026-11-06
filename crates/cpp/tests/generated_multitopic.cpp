@@ -3,6 +3,7 @@
 // `SELECT * FROM Order NATURAL JOIN Customer WHERE amount > %0`, and a DataReader<Sale> on it.
 #include "multitopic_probe.hpp"
 #include "dds/dds.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -22,8 +23,7 @@ static int g_failures = 0;
 
 int main(int argc, char** argv) {
     using namespace dds;
-    const uint32_t domain_id = argc > 1 ? static_cast<uint32_t>(std::atoi(argv[1])) : 0;
-    domain::DomainParticipant dp(domain_id);
+    domain::DomainParticipant dp(test_domain(argc, argv));
     topic::Topic<mt::Order> orders(dp, "Order");
     topic::Topic<mt::Customer> customers(dp, "Customer");
 
@@ -77,6 +77,10 @@ int main(int argc, char** argv) {
     order_writer.write(o2);
 
     // Only the order above the parameter joins with its customer.
+    // A DataReader on a MultiTopic has no ReadCondition here: the C API's
+    // MultiTopic reader takes part in no WaitSet (OPEN-ITEMS, "MultiTopic"). So
+    // this reader is polled until the join arrives or the deadline passes; the
+    // other programs wait on a ReadCondition (test_support.hpp).
     std::vector<mt::Sale> got;
     const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
     while (got.empty() && std::chrono::steady_clock::now() < until) {

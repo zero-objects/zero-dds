@@ -64,7 +64,7 @@ fn with_adder<F: FnOnce(&mut AmiClient)>(f: F) {
 /// (three open at once). `perform_all` works them off; each callback records its
 /// result, correctly correlated.
 #[test]
-fn ami_callback_multiple_outstanding() {
+fn corbarust_5_ami_callback_multiple_outstanding() {
     with_adder(|client| {
         let results: Arc<Mutex<Vec<(u32, i32)>>> = Arc::new(Mutex::new(Vec::new()));
         let inputs = [(2, 3), (10, 20), (100, 1)];
@@ -96,7 +96,7 @@ fn ami_callback_multiple_outstanding() {
 /// Polling model: `send_poll` returns a `request_id`, `get_reply` blocks until
 /// exactly that reply is in and returns the decoded value.
 #[test]
-fn ami_polling_get_reply() {
+fn corbarust_5_ami_polling_get_reply() {
     with_adder(|client| {
         let id1 = client.send_poll("add", &two_longs(7, 8)).unwrap();
         let id2 = client.send_poll("add", &two_longs(40, 2)).unwrap();
@@ -111,7 +111,7 @@ fn ami_polling_get_reply() {
 /// Mixed: a callback request and a polling request open at the same time.
 /// `get_reply` drives the connection and delivers the callback along the way.
 #[test]
-fn ami_mixed_callback_and_polling() {
+fn corbarust_5_ami_mixed_callback_and_polling() {
     with_adder(|client| {
         let cb_result = Arc::new(Mutex::new(None));
         let sink = Arc::clone(&cb_result);
@@ -139,7 +139,7 @@ fn ami_mixed_callback_and_polling() {
 /// Exception path: an unknown operation → system exception (BAD_OPERATION); the
 /// callback gets `Err`, the poller likewise.
 #[test]
-fn ami_exception_path() {
+fn corbarust_5_ami_exception_path() {
     with_adder(|client| {
         let got_err = Arc::new(Mutex::new(false));
         let sink = Arc::clone(&got_err);
@@ -165,7 +165,7 @@ fn ami_exception_path() {
 
 /// `get_reply` on an unknown/consumed `request_id` → error (no hang).
 #[test]
-fn ami_get_reply_unknown_id_errors() {
+fn corbarust_5_ami_get_reply_unknown_id_errors() {
     with_adder(|client| {
         assert!(client.get_reply(999).is_err());
     });

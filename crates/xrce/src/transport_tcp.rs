@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_loopback_create_client_roundtrip() {
+    fn xrce_11_3_2_tcp_loopback_create_client_roundtrip() {
         let (server, addr) = loopback_pair();
         let server_thread = thread::spawn(move || {
             let (mut client, _) = server.accept().unwrap();
@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_loopback_three_message_chain() {
+    fn xrce_11_3_2_tcp_loopback_three_message_chain() {
         let (server, addr) = loopback_pair();
         let server_thread = thread::spawn(move || {
             let (mut client, _) = server.accept().unwrap();
@@ -421,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn tcp_length_prefix_size_constant() {
+    fn xrce_11_3_3_tcp_length_prefix_size_constant() {
         assert_eq!(TCP_LENGTH_PREFIX_SIZE, 2);
     }
 
@@ -433,7 +433,7 @@ mod tests {
     /// and the receiver still recovers exactly two messages, delimited by
     /// the length prefix and in send order.
     #[test]
-    fn rfc793_byte_stream_is_delimited_by_the_length_prefix_not_by_writes() {
+    fn xrce_8_2_1_rfc793_byte_stream_is_delimited_by_the_length_prefix_not_by_writes() {
         let (server, addr) = loopback_pair();
         let m1 = message_with(ResetPayload.into_submessage().unwrap());
         let m2 = message_with(
@@ -475,7 +475,7 @@ mod tests {
     /// arrives as one message, because the reader consumes from the byte
     /// stream until the announced length is complete.
     #[test]
-    fn rfc793_frame_split_across_two_writes_is_reassembled() {
+    fn xrce_11_3_3_rfc793_frame_split_across_two_writes_is_reassembled() {
         let (server, addr) = loopback_pair();
         let msg = message_with(
             WriteDataPayload {

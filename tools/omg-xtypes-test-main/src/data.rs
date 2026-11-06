@@ -244,17 +244,15 @@ fn complete_at(
             // The branch first, so a union inside a union is filled in
             // before its own discriminator is read back.
             let named: Option<String> = object.keys().find(|k| *k != "_d").cloned();
-            if let Some(name) = &named {
-                if let Some(case_member) = union_member(ast, type_, name) {
-                    if let Some(member_type) = case_member.resolved() {
-                        if let Some(held) = object.get(name) {
-                            out.insert(
-                                name.clone(),
-                                complete_at(ast, member_type, held, depth + 1)?,
-                            );
-                        }
-                    }
-                }
+            if let Some(name) = &named
+                && let Some(case_member) = union_member(ast, type_, name)
+                && let Some(member_type) = case_member.resolved()
+                && let Some(held) = object.get(name)
+            {
+                out.insert(
+                    name.clone(),
+                    complete_at(ast, member_type, held, depth + 1)?,
+                );
             }
             if let Some(held) = object.get("_d") {
                 // A file that writes the discriminator out writes it as
@@ -551,19 +549,19 @@ fn discriminant_for(ast: &zerodds_ast::Ast, union: Id<TypeNode>, name: &str) -> 
             wanted = Some(*case);
         }
         for label in &node.labels {
-            if let Some(expr) = label.expr() {
-                if let Ok(value) = ast.eval_integral(expr) {
-                    claimed.push(value);
-                }
+            if let Some(expr) = label.expr()
+                && let Ok(value) = ast.eval_integral(expr)
+            {
+                claimed.push(value);
             }
         }
     }
     let wanted = ast.case(wanted?).ok()?;
     for label in &wanted.labels {
-        if let Some(expr) = label.expr() {
-            if let Ok(value) = ast.eval_integral(expr) {
-                return i64::try_from(value).ok();
-            }
+        if let Some(expr) = label.expr()
+            && let Ok(value) = ast.eval_integral(expr)
+        {
+            return i64::try_from(value).ok();
         }
     }
     // A `default:`-only branch: any value no explicit label claims

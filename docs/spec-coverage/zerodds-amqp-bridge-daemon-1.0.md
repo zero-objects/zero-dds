@@ -17,7 +17,7 @@ Tenant); L1–L4 Pflicht, L5–L6 optional.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Zuordnung der Levels; die Anforderungen sind die Items §2 bis §12.
 
 ## §2 CLI-Surface
 
@@ -29,11 +29,11 @@ Tenant); L1–L4 Pflicht, L5–L6 optional.
 
 **Repo:** `crates/amqp-endpoint/src/bin/zerodds-amqp-bridged.rs`.
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_e2e.rs::version_flag_emits_one_line_and_exits_zero`,
-`::missing_broker_url_fails_with_exit_1`,
-`::daemon_with_no_broker_fails_with_exit_2`,
-`::a_broker_without_the_sasl_layer_is_refused_by_name` (Exit 5),
-`::plain_without_tls_is_refused_towards_a_remote_broker` (Exit 1).
+**Tests:** `crates/amqp-endpoint/tests/bridge_e2e.rs::amqpbridge_2_version_flag_emits_one_line_and_exits_zero`,
+`::amqpbridge_2_missing_broker_url_fails_with_exit_1`,
+`::amqpbridge_2_daemon_with_no_broker_fails_with_exit_2`,
+`::amqp10_0_2_a_broker_without_the_sasl_layer_is_refused_by_name` (Exit 5),
+`::amqpbridge_2_plain_without_tls_is_refused_towards_a_remote_broker` (Exit 1).
 
 **Status:** done
 
@@ -47,7 +47,7 @@ ENV-Substitution `${VAR}` und `${VAR:-default}`.
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`DaemonConfig::from_config`, `read_topic`),
 `crates/config/src/parse.rs` (gemeinsamer Parser, flache Flow-Maps).
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::{the_spec_example_loads, what_the_daemon_would_not_honour_is_refused, the_shipped_example_reads_as_it_says, values_the_shared_parser_reads_reach_the_daemon}`;
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::{amqpbridge_3_the_spec_example_loads, amqpbridge_3_what_the_daemon_would_not_honour_is_refused, amqpbridge_3_the_shipped_example_reads_as_it_says, amqpbridge_3_values_the_shared_parser_reads_reach_the_daemon}`;
 `crates/config/tests/layering.rs::{a_flat_flow_map_is_a_map, a_hash_inside_quotes_is_part_of_the_value, environment_references_expand_before_the_parse}`.
 
 **Status:** done
@@ -61,7 +61,7 @@ channel-max/idle-time-out/properties/desired-+offered-capabilities.
 
 **Repo:** `crates/amqp-endpoint/src/broker.rs` (`connect`, `open_body`), `crates/amqp-endpoint/src/bridge_daemon.rs::run`.
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::dds_samples_arrive_in_the_queue_as_pass_through_messages`
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_3_dds_samples_arrive_in_the_queue_as_pass_through_messages`
 (RabbitMQ nimmt das `open` an), `crates/amqp-endpoint/tests/broker_tls_sasl.rs` (Test-Server liest das `open`).
 
 **Status:** done
@@ -74,9 +74,9 @@ settle-modes, properties, desired-capabilities; eine Session pro Link.
 **Repo:** `crates/amqp-endpoint/src/broker.rs` (`BrokerWriter::begin`, `attach`), `crates/amqp-endpoint/src/bridge_daemon.rs` (`link_spec`,
 `LinkState`, `begin_all`).
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::a_refused_link_leaves_the_others_running_and_catalog_and_ttl_arrive`
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_2_a_refused_link_leaves_the_others_running_and_catalog_and_ttl_arrive`
 (RabbitMQ beendet die Session der abgewiesenen Adresse, die anderen laufen
-weiter), `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::after_the_broker_closes_the_connection_the_bridge_reconnects`.
+weiter), `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_9_3_after_the_broker_closes_the_connection_the_bridge_reconnects`.
 
 **Status:** done
 
@@ -89,9 +89,9 @@ Encapsulation-Header; mehrteilig über `max-frame-size`.
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`encode_message`, `drain`), `crates/amqp-endpoint/src/broker.rs` (`BrokerWriter::transfer`),
 `crates/amqp-endpoint/src/properties.rs`.
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::{a_sample_round_trips_through_the_message_form, an_xcdr1_sample_keeps_its_header_and_says_so}`;
-`crates/amqp-endpoint/src/broker.rs::tests::a_message_above_the_frame_size_is_split_and_reassembled`;
-gegen RabbitMQ 4.0.5 `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::{dds_samples_arrive_in_the_queue_as_pass_through_messages, a_sample_larger_than_the_frame_size_crosses_in_both_directions}`.
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::{amqpbridge_4_3_a_sample_round_trips_through_the_message_form, amqpbridge_4_3_an_xcdr1_sample_keeps_its_header_and_says_so}`;
+`crates/amqp-endpoint/src/broker.rs::tests::amqpbridge_4_3_a_message_above_the_frame_size_is_split_and_reassembled`;
+gegen RabbitMQ 4.0.5 `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::{amqpbridge_4_3_dds_samples_arrive_in_the_queue_as_pass_through_messages, amqpbridge_4_3_a_sample_larger_than_the_frame_size_crosses_in_both_directions}`.
 
 **Status:** done
 
@@ -103,9 +103,9 @@ DISPOSITION `accepted`/`rejected`/`released`.
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`deliver`, `decode_message`, `split_encapsulation`),
 `crates/amqp-endpoint/src/broker.rs` (`BrokerReader::next_event`, Reassemblierung).
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::a_message_published_by_pika_reaches_a_dds_reader_and_a_bad_body_does_not`
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_4_a_message_from_pika_reaches_a_reader_and_a_bad_body_does_not`
 (accepted und rejected, Queue danach leer),
-`crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::a_sample_larger_than_the_frame_size_crosses_in_both_directions`
+`crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_3_a_sample_larger_than_the_frame_size_crosses_in_both_directions`
 (Schleifensperre und mehrteiliger Empfang).
 
 **Status:** done
@@ -116,8 +116,8 @@ DISPOSITION `accepted`/`rejected`/`released`.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs::on_inbound` (`Inbound::Disposition`), `crates/amqp-endpoint/src/broker.rs` (`decode_outcome`).
 
-**Tests:** `crates/amqp-endpoint/src/broker.rs::tests::outcomes_round_trip_through_their_described_form`;
-`accepted` gegen RabbitMQ in `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::dds_samples_arrive_in_the_queue_as_pass_through_messages`.
+**Tests:** `crates/amqp-endpoint/src/broker.rs::tests::amqp10_3_4_the_outcomes_are_their_described_lists`;
+`accepted` gegen RabbitMQ in `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_3_dds_samples_arrive_in_the_queue_as_pass_through_messages`.
 `released`/`modified`/`rejected` vom Broker sind nicht gegen einen Broker
 gemessen.
 
@@ -130,7 +130,7 @@ gemessen.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs::read_topic`.
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::what_the_daemon_would_not_honour_is_refused`;
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::amqpbridge_3_what_the_daemon_would_not_honour_is_refused`;
 RabbitMQ-v2-Adressen (`/queues/…`) in `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs`.
 
 **Status:** done
@@ -142,7 +142,7 @@ RabbitMQ-v2-Adressen (`/queues/…`) in `crates/amqp-endpoint/tests/bridge_rabbi
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`catalog_message`, `DaemonConfig::catalog_json`,
 `catalog_address`).
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::a_refused_link_leaves_the_others_running_and_catalog_and_ttl_arrive`
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_2_a_refused_link_leaves_the_others_running_and_catalog_and_ttl_arrive`
 (`pika` liest den Catalog aus `/queues/zd_bridge_catalog`).
 
 **Status:** done
@@ -157,8 +157,8 @@ Liveliness/Partition.
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`read_topic`: BEST_EFFORT → settled; `encode_message`:
 durable, ttl; `OutLink::cap`), `crates/amqp-endpoint/src/broker.rs::BrokerWriter::heartbeat`.
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::the_spec_example_loads` (BEST_EFFORT → settled);
-`crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::a_refused_link_leaves_the_others_running_and_catalog_and_ttl_arrive`
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::amqpbridge_3_the_spec_example_loads` (BEST_EFFORT → settled);
+`crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_2_a_refused_link_leaves_the_others_running_and_catalog_and_ttl_arrive`
 (LIFESPAN 60 s → `expiration` 60000).
 
 **Offen:** Deadline-Annotation, Partition-Filter; KEEP_ALL verwirft über
@@ -173,7 +173,7 @@ durable, ttl; `OutLink::cap`), `crates/amqp-endpoint/src/broker.rs::BrokerWriter
 
 **Repo:** `crates/amqp-endpoint/src/broker.rs` (`Wire::Tls`, `ALPN_AMQP`), `crates/amqp-endpoint/src/bridge_daemon.rs::tls_config`.
 
-**Tests:** `crates/amqp-endpoint/tests/broker_tls_sasl.rs::external_authenticates_with_the_tls_client_certificate_and_alpn_amqp`
+**Tests:** `crates/amqp-endpoint/tests/broker_tls_sasl.rs::amqpbridge_7_1_external_authenticates_with_the_tls_client_certificate_and_alpn_amqp`
 (der Server liest `amqp` als ausgehandeltes Protokoll).
 
 **Status:** done
@@ -184,7 +184,7 @@ durable, ttl; `OutLink::cap`), `crates/amqp-endpoint/src/broker.rs::BrokerWriter
 
 **Repo:** `crates/amqp-endpoint/src/broker.rs::connect`.
 
-**Tests:** wie §7.1.
+**Tests:** `crates/amqp-endpoint/tests/broker_tls_sasl.rs::amqpbridge_7_1_external_authenticates_with_the_tls_client_certificate_and_alpn_amqp` (der Server liest `amqp` als ausgehandeltes Protokoll).
 
 **Status:** done
 
@@ -196,10 +196,10 @@ gegen Loopback.
 **Repo:** `crates/amqp-endpoint/src/broker.rs` (`sasl`, `scram_client_final`), `crates/amqp-endpoint/src/bridge_daemon.rs` (`DaemonConfig::sasl`,
 Prüfungen in `run`).
 
-**Tests:** `crates/amqp-endpoint/src/broker.rs::tests::scram_client_final_matches_the_rfc_7677_example`;
-`crates/amqp-endpoint/tests/broker_tls_sasl.rs::{scram_sha_256_authenticates_and_a_wrong_password_is_refused, external_authenticates_with_the_tls_client_certificate_and_alpn_amqp, a_mechanism_the_broker_does_not_offer_is_refused_by_name}`;
+**Tests:** `crates/amqp-endpoint/src/broker.rs::tests::amqpbridge_7_2_scram_client_final_matches_the_rfc_7677_example`;
+`crates/amqp-endpoint/tests/broker_tls_sasl.rs::{amqpbridge_7_2_scram_sha_256_authenticates_and_a_wrong_password_is_refused, amqpbridge_7_1_external_authenticates_with_the_tls_client_certificate_and_alpn_amqp, amqpbridge_7_2_a_mechanism_the_broker_does_not_offer_is_refused_by_name}`;
 PLAIN gegen RabbitMQ in `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs`;
-`crates/amqp-endpoint/tests/bridge_e2e.rs::{plain_without_tls_is_refused_towards_a_remote_broker, a_broker_without_the_sasl_layer_is_refused_by_name}`.
+`crates/amqp-endpoint/tests/bridge_e2e.rs::{amqpbridge_2_plain_without_tls_is_refused_towards_a_remote_broker, amqp10_0_2_a_broker_without_the_sasl_layer_is_refused_by_name}`.
 XOAUTH2 ist nicht gegen einen Broker gemessen; SCRAM-SHA-512 ist nicht gebaut.
 
 **Status:** partial — XOAUTH2 nicht gegen einen Broker gemessen; SCRAM-SHA-512 nicht gebaut.
@@ -209,7 +209,7 @@ XOAUTH2 ist nicht gegen einen Broker gemessen; SCRAM-SHA-512 ist nicht gebaut.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`allowed`, `acl.rules`, `acl.default_deny`).
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::the_shipped_example_reads_as_it_says` (Regeln
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::amqpbridge_3_the_shipped_example_reads_as_it_says` (Regeln
 gelesen). Kein Test prüft, dass eine verweigerte Richtung keine Daten
 bewegt.
 
@@ -223,7 +223,7 @@ bewegt.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`log`, `event_level`, `LOG_LEVEL`).
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::every_event_has_a_level_and_the_threshold_orders_them`.
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::amqpbridge_8_1_every_event_has_a_level_and_the_threshold_orders_them`.
 
 **Offen:** die Zeilen gehen auf stderr, ohne `timestamp`, `container_id`,
 `delivery_id`, `latency_us`.
@@ -237,7 +237,7 @@ bewegt.
 `crates/amqp-endpoint/src/bridge_daemon.rs` (Zählstellen).
 
 **Tests:** `crates/amqp-endpoint/src/daemon_runtime.rs::tests`,
-`crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::the_metrics_of_section_8_2_count_transfers_dispositions_and_samples`
+`crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_8_2_the_metrics_count_transfers_dispositions_and_samples`
 (Linux-Testhost, RabbitMQ 4.0.5: 3 Samples hinaus, eine gute und eine kaputte
 Nachricht herein; Transfers, Samples und Dispositionen pro Topic,
 `rejected{reason="amqp:decode-error"}` 1).
@@ -254,7 +254,7 @@ TRANSFER-Roundtrip-Span.
 `zerodds-observability-otlp`),
 `crates/amqp-endpoint/src/link.rs` (Span-Emit pro TRANSFER).
 
-**Tests:** `crates/amqp-endpoint/src/daemon_runtime.rs::tests::otlp_config_parses_endpoint` — der Endpoint aus
+**Tests:** `crates/amqp-endpoint/src/daemon_runtime.rs::tests::amqpbridge_8_3_otlp_config_parses_endpoint` — der Endpoint aus
 `OTEL_EXPORTER_OTLP_ENDPOINT` wird gelesen. Dass pro TRANSFER ein Span
 entsteht, prüft kein Test — siehe §8.3a.
 
@@ -281,9 +281,9 @@ Session + Attach → Signal-Handler.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs::run`, `crates/amqp-endpoint/src/bin/zerodds-amqp-bridged.rs`.
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs` (alle Fälle starten die Bridge über `run`).
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_3_dds_samples_arrive_in_the_queue_as_pass_through_messages`, `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_4_a_message_from_pika_reaches_a_reader_and_a_bad_body_does_not` (RabbitMQ 4.0, `#[ignore]`, Linux-Testhost).
 
-**Status:** done
+**Status:** partial — jeder Fall von `bridge_rabbitmq_e2e.rs` startet die Bridge über `run` und überträgt Daten; kein Test prüft die Reihenfolge der Schritte.
 
 ### §9.2 Shutdown SIGTERM/SIGINT/SIGHUP
 
@@ -295,7 +295,7 @@ TLS+ACL-Reload.
 (ACL und das TLS-Material des nächsten Connects; entzogene Rechte gelten
 sofort, neu erteilte nach einem Neustart).
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::a_reload_that_withdraws_the_read_right_stops_the_topic`
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_9_2_a_reload_that_withdraws_the_read_right_stops_the_topic`
 (RabbitMQ 4.0, Linux-Testhost); kein Test für den Drain; der Stopp über das Flag
 läuft in jedem Fall von `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs`.
 
@@ -307,7 +307,7 @@ läuft in jedem Fall von `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs`.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs` (`next_delay`, Requeue in `run` und `out_link_down`).
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::after_the_broker_closes_the_connection_the_bridge_reconnects`
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_9_3_after_the_broker_closes_the_connection_the_bridge_reconnects`
 (`rabbitmqctl close_all_connections`, beide Samples kommen in Reihenfolge an).
 
 **Status:** done
@@ -320,9 +320,7 @@ läuft in jedem Fall von `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs`.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs`, `crates/amqp-endpoint/src/broker.rs`, `crates/amqp-endpoint/src/coexistence.rs`.
 
-**Tests:** gegen RabbitMQ 4.0.5 (Linux-Testhost) `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs`, 5 Fälle; die Bridge-Kette
-in `crates/amqp-endpoint/tests/e2e_multi_bridge_hop.rs`. Artemis,
-Qpid-Dispatch, Solace, Azure ServiceBus: nicht gemessen — siehe §10a.
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_3_dds_samples_arrive_in_the_queue_as_pass_through_messages`, `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_4_a_message_from_pika_reaches_a_reader_and_a_bad_body_does_not`, `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_3_a_sample_larger_than_the_frame_size_crosses_in_both_directions` (RabbitMQ 4.0.5, Linux-Testhost); Artemis, Qpid-Dispatch, Solace, Azure ServiceBus: nicht gemessen (§10a).
 
 **Status:** partial — RabbitMQ 4.0.5 gemessen, die vier weiteren Broker nicht (§10a).
 ### §10a Broker-Matrix Artemis/Qpid-Dispatch/Solace/Azure ServiceBus
@@ -353,7 +351,7 @@ Manuals.
 `man/man1/zerodds-amqp-bridged.1`,
 `man/man5/zerodds-amqp-bridged.yaml.5`.
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::the_shipped_example_reads_as_it_says`
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::amqpbridge_3_the_shipped_example_reads_as_it_says`
 (die ausgelieferte Beispiel-Konfiguration durch den echten Parser, mit den Werten, die sie nennt);
 `tools/traceability/tests/bridge_config_manpages.rs::{every_example_key_is_documented_in_the_man_page, the_man_page_names_no_key_the_example_does_not_declare, the_pre_spec_vocabulary_is_gone_from_pages_and_examples, every_man_page_names_its_parser_and_what_an_unknown_key_does}`
 (die Handbuchseite und die Beispieldatei nennen dieselben Schlüssel).
@@ -369,8 +367,7 @@ dds_pump/acl je ≥ 5 Tests.
 
 **Repo:** `crates/amqp-endpoint/src/bridge_daemon.rs`, `crates/amqp-endpoint/src/broker.rs`, die Module unter `crates/amqp-endpoint/src/`.
 
-**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests` (8), `crates/amqp-endpoint/src/broker.rs::tests` (7), die Modultests der Bibliothek
-(`cargo test -p zerodds-amqp-endpoint --lib`: 248).
+**Tests:** `crates/amqp-endpoint/src/bridge_daemon.rs::tests::amqpbridge_3_the_spec_example_loads`, `crates/amqp-endpoint/src/link.rs::tests::amqpbridge_12_1_deliver_without_credit_yields_error`, `crates/amqp-endpoint/src/sasl.rs::tests::amqp10_5_plain_fails_on_wrong_credentials`, `crates/amqp-endpoint/src/dds_bridge.rs::tests::amqpbridge_12_1_accept_all_returns_accepted_for_every_operation`, `crates/amqp-endpoint/src/bridge_security.rs::tests::amqpbridge_12_1_amqp_acl_address_check`; Anzahl Tests je Modul: link 13, sasl 18, dds_bridge 8, bridge_security 5, config_xml 13, bridge_daemon 8.
 
 **Status:** done
 
@@ -380,7 +377,7 @@ dds_pump/acl je ≥ 5 Tests.
 
 **Repo:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs`, `crates/amqp-endpoint/tests/broker_tls_sasl.rs`, `crates/amqp-endpoint/tests/bridge_e2e.rs`.
 
-**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs` (5, `#[ignore]`, Linux-Testhost), `crates/amqp-endpoint/tests/broker_tls_sasl.rs` (3), `crates/amqp-endpoint/tests/bridge_e2e.rs` (5).
+**Tests:** `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_3_dds_samples_arrive_in_the_queue_as_pass_through_messages`, `crates/amqp-endpoint/tests/bridge_rabbitmq_e2e.rs::amqpbridge_4_4_a_message_from_pika_reaches_a_reader_and_a_bad_body_does_not`, `crates/amqp-endpoint/tests/broker_tls_sasl.rs::amqpbridge_7_2_scram_sha_256_authenticates_and_a_wrong_password_is_refused`, `crates/amqp-endpoint/tests/bridge_e2e.rs::amqp10_0_2_a_broker_without_the_sasl_layer_is_refused_by_name` (die RabbitMQ-Fälle sind `#[ignore]`, Linux-Testhost).
 
 **Status:** done
 
@@ -406,7 +403,7 @@ OMG-DDS-AMQP-1.0, ISO/IEC 19464:2014, Wire-Format, Deployment.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Verweisliste.
 
 ## §14 Versioning
 
@@ -419,14 +416,22 @@ Protocol-Change (AMQP-1.0→2).
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Regel für die Vergabe der Versionsnummer eines Release, keine Eigenschaft des Daemons.
 
 ---
 
 ## Audit-Status
 
-16 done / 8 partial / 3 open / 3 n/a (informative) / 0 n/a (rejected).
+15 done / 9 partial / 3 open / 0 blocked / 3 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-amqp-endpoint` — Tests grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-amqp-bridge-daemon-1.0.md`):
 
-Offene Punkte: siehe `zerodds-amqp-bridge-daemon-1.0.open.md`. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-amqp-endpoint --all-targets` (Job `merge-rust-amqp-endpoint`) — 23 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-config --all-targets` (Job `merge-rust-config`) — 3 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (Job `merge-rust-traceability`) — 4 Tests grün.
+* `python3 ci/run_integration.py integration-bridges-vendor-amqp` (Job `integration-bridges-vendor-amqp`) — 7 Tests grün.
+* Job `vendor-live-dispose-bridges` — 2 Tests grün.
+
+39 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `zerodds-amqp-bridge-daemon-1.0.open.md`.

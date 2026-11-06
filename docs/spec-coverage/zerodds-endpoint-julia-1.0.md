@@ -24,8 +24,8 @@ WRITE_DATA, flags, len LE) + Body, byte-identisch zu `crates/xrce` +
 **Repo:** `endpoints/julia/zerodds.jl::write_frame`/`read_frame`, Konstanten
 `SESSION_NOKEY` (`0x80`) und `STREAM_BEST_EFFORT` (`0x01`).
 
-**Tests:** Framing wird live über `julia_endpoint_sync` und
-`julia_endpoint_async` (§4) geübt — kein separater roher-UDP-Test wie bei
+**Tests:** Framing wird live über `xrce_8_3_5_8_julia_sync_app_writes_the_ping_and_reads_the_pong` und
+`xrce_8_3_5_8_julia_async_app_writes_the_ping_and_reads_the_pong` (§4) geübt — kein separater roher-UDP-Test wie bei
 Go/C (Julia hat keinen isolierten Framing-only-Testpfad).
 
 **Status:** done.
@@ -40,7 +40,7 @@ Closures, der einzige Integrationspunkt); `endpoints/julia/zerodds.jl::Client`
 (`Client(t)`, `write!`, `poll`, monotoner `seq`-Zähler, Default-Session
 `SESSION_NOKEY`/`STREAM_BEST_EFFORT`).
 
-**Tests:** Live-E2E `julia_endpoint_sync`
+**Tests:** Live-E2E `xrce_8_3_5_8_julia_sync_app_writes_the_ping_and_reads_the_pong`
 (`crates/endpoint-e2e/tests/julia.rs`) — voller Stack (generierte
 `Ping`/`Pong`-Typen + `ZeroDDS.Client`) über einen echten UDP-Socket gegen den
 Rust-XRCE-Peer.
@@ -58,7 +58,7 @@ sync `Client`).
 Empfangs-`Task`, `Samples`-Channel `ch`, `running::Ref{Bool}`-Flag, `recv` =
 `take!`, `stop!` setzt `running[] = false`).
 
-**Tests:** Live-E2E `julia_endpoint_async`
+**Tests:** Live-E2E `xrce_8_3_5_8_julia_async_app_writes_the_ping_and_reads_the_pong`
 (`crates/endpoint-e2e/tests/julia.rs`) — voller Stack über
 `ZeroDDS.start_reader`/`ZeroDDS.Client.write!` gegen den Rust-XRCE-Peer.
 
@@ -78,10 +78,8 @@ serialisiert den ersten `recvfrom`-Arm gegen den libuv-Datagram-Drop, bevor
 der erste `send` läuft).
 
 **Tests:** (Linux)
-- `julia_endpoint_sync` — voller Stack über `ZeroDDS.Client`.
-- `julia_endpoint_async` — voller Stack über `ZeroDDS.start_reader`.
-
-2/2 grün (Linux).
+- `xrce_8_3_5_8_julia_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über `ZeroDDS.Client`.
+- `xrce_8_3_5_8_julia_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über `ZeroDDS.start_reader`.
 
 **Status:** done.
 
@@ -107,35 +105,31 @@ Payload als Sentinel für „keine weiteren Samples"), `run_bench` (§6);
 Socket).
 
 **Tests:** (Linux)
-- `julia_reliable_unit_and_golden`
-  (`crates/endpoint-e2e/tests/julia_reliable.rs`) läuft
+- `endpoints/julia/reliable_test.jl` in der Spalte `julia` von `tools/endpoints-gate`
+  (Job `integration-bindings-jvm-julia`) läuft
   `julia reliable_test.jl <golden_dir>` — 26 `check(...)`-Assertions:
-  monotone seq (`submit_assigns_monotonic_seq_0`/`_1`,
-  `submit_two_in_flight`), Payload-zu-groß
-  (`submit_rejects_payload_too_large`), Window-full
-  (`submit_rejects_when_window_full`), Heartbeat first/body/silence/nach-
-  Periode/leer (`heartbeat_fires_first_time`,
-  `heartbeat_body_first_last_stream`, `heartbeat_silenced_before_period`,
-  `heartbeat_fires_after_period`, `heartbeat_none_when_window_empty`),
-  ACKNACK Teil-/Voll-Clear (`acknack_clears_acked_keeps_missing`,
-  `acknack_full_clear_when_no_bits_set`), Receiver In-Order/Reorder/Dedup/
-  Buffer-full (`recv_data_buffers_in_order`, `recv_data_reorder_blocks_on_gap`,
-  `recv_data_reorder_delivers`, `recv_data_drops_duplicates`,
-  `recv_data_rejects_when_buffer_full`), Pending-ACKNACK-Bitmap
-  (`pending_acknack_marks_missing_slots`), Reset (`reset_clears_state`),
-  In-Process-End-to-End-Loss-Recovery (`e2e_drain_blocks_on_lost_s1`,
-  `e2e_s1_retransmittable`, `e2e_delivers_all_after_retransmit`),
+  monotone seq (`endpointjulia_5_submit_assigns_monotonic_seq_0`/`_1`,
+  `endpointjulia_5_submit_two_in_flight`), Payload-zu-groß
+  (`endpointjulia_5_submit_rejects_payload_too_large`), Window-full
+  (`endpointjulia_5_submit_rejects_when_window_full`), Heartbeat first/body/silence/nach-
+  Periode/leer (`endpointjulia_5_heartbeat_fires_first_time`,
+  `endpointjulia_5_heartbeat_body_first_last_stream`, `endpointjulia_5_heartbeat_silenced_before_period`,
+  `endpointjulia_5_heartbeat_fires_after_period`, `endpointjulia_5_heartbeat_none_when_window_empty`),
+  ACKNACK Teil-/Voll-Clear (`endpointjulia_5_acknack_clears_acked_keeps_missing`,
+  `endpointjulia_5_acknack_full_clear_when_no_bits_set`), Receiver In-Order/Reorder/Dedup/
+  Buffer-full (`endpointjulia_5_recv_data_buffers_in_order`, `endpointjulia_5_recv_data_reorder_blocks_on_gap`,
+  `endpointjulia_5_recv_data_reorder_delivers`, `endpointjulia_5_recv_data_drops_duplicates`,
+  `endpointjulia_5_recv_data_rejects_when_buffer_full`), Pending-ACKNACK-Bitmap
+  (`endpointjulia_5_pending_acknack_marks_missing_slots`), Reset (`endpointjulia_5_reset_clears_state`),
+  In-Process-End-to-End-Loss-Recovery (`endpointjulia_5_e2e_drain_blocks_on_lost_s1`,
+  `endpointjulia_5_e2e_s1_retransmittable`, `endpointjulia_5_e2e_delivers_all_after_retransmit`),
   Byte-Golden gegen die per `zerodds-xrce` erzeugten Referenz-Goldens
-  (`byte_golden_heartbeat`, `byte_golden_acknack`) sowie deren
-  Parse-Rundreise (`golden_heartbeat_parse`, `golden_acknack_parse`).
+  (`endpointjulia_5_byte_golden_heartbeat`, `endpointjulia_5_byte_golden_acknack`) sowie deren
+  Parse-Rundreise (`endpointjulia_5_golden_heartbeat_parse`, `endpointjulia_5_golden_acknack_parse`).
   Erwartet `stdout` enthält `ALL OK`.
-- `julia_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die
+- `reliable_5_3_julia_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig; die
   App (`reliable_app.jl` `run_reliable`) retransmittiert auf ACKNACK; alle 12
   Samples lückenlos in Reihenfolge geliefert.
-- `julia_reliable_no_loss` — lossless Baseline; 12/12.
-
-3 von 4 Tests dieses Abschnitts (Latenz-Bench in §6); zusammen mit §6
-4/4 grün (Linux).
 
 **Status:** done.
 
@@ -154,7 +148,7 @@ ist Lock+Condvar-basiert, kein wait-free SPSC-Ring — im Spec-Text als
 bekannte Grenze dokumentiert (`reliable_app.jl` Kopfkommentar), das Enqueue
 bleibt trotzdem deutlich unter dem inline-Syscall.
 
-**Tests:** (Linux) `julia_reliable_producer_latency`
+**Tests:** (Linux) `reliable_5_4_julia_the_producer_enqueue_costs_less_than_the_inline_send`
 (`crates/endpoint-e2e/tests/julia_reliable.rs`) — Channel-Enqueue **80–106 ns**
 vs. inline `send` **6.1–6.5 µs** (~60–75×).
 
@@ -164,14 +158,13 @@ vs. inline `send` **6.1–6.5 µs** (~60–75×).
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
-julia` 2/2 (Ping-Pong: `julia_endpoint_sync`/`julia_endpoint_async`);
-`--test julia_reliable` 4/4 (`julia_reliable_unit_and_golden` — 26
-`check(...)`-Assertions inkl. Byte-Golden, `julia_reliable_loss_recovery`,
-`julia_reliable_no_loss`, `julia_reliable_producer_latency`); Latenz-Bench
-Channel-Enqueue 80–106 ns / inline `send` 6.1–6.5 µs (~60–75×).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-julia-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings-jvm-julia` (Job `integration-bindings-jvm-julia`) — 29 Tests grün.
+
+29 zitierte Tests grün, 0 nicht grün.
 
 Offene Punkte: keine. Bekannte Grenze (kein Spec-Verstoß): Julias `Channel`
 ist Lock+Condvar-basiert, kein wait-free SPSC-Ring (§6).

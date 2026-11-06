@@ -429,10 +429,10 @@ impl ParticipantBuiltinTopicData {
         ));
 
         // USER_DATA — opaque sequence<octet>, only if set.
-        if !self.user_data.is_empty() {
-            if let Ok(v) = crate::publication_data::encode_octet_seq_le(&self.user_data) {
-                params.push(Parameter::new(pid::USER_DATA, v));
-            }
+        if !self.user_data.is_empty()
+            && let Ok(v) = crate::publication_data::encode_octet_seq_le(&self.user_data)
+        {
+            params.push(Parameter::new(pid::USER_DATA, v));
         }
 
         // IDENTITY_TOKEN / PERMISSIONS_TOKEN / IDENTITY_STATUS_TOKEN
@@ -510,10 +510,10 @@ impl ParticipantBuiltinTopicData {
         // encoder must not fail if the bytes conform to MAX_PROPERTIES;
         // on overflow silently omit it, so the SPDP-beacon encoding
         // never fails. The caller must apply caps before filling.
-        if !self.properties.is_empty() {
-            if let Ok(bytes) = self.properties.encode(true) {
-                params.push(Parameter::new(pid::PROPERTY_LIST, bytes));
-            }
+        if !self.properties.is_empty()
+            && let Ok(bytes) = self.properties.encode(true)
+        {
+            params.push(Parameter::new(pid::PROPERTY_LIST, bytes));
         }
 
         // Encapsulation header: 4 byte (PL_CDR_LE + options=0).
@@ -652,10 +652,10 @@ impl ParticipantBuiltinTopicData {
                 qos.to_be_bytes().to_vec(),
             ));
         }
-        if !self.properties.is_empty() {
-            if let Ok(bytes) = self.properties.encode(false) {
-                params.push(Parameter::new(pid::PROPERTY_LIST, bytes));
-            }
+        if !self.properties.is_empty()
+            && let Ok(bytes) = self.properties.encode(false)
+        {
+            params.push(Parameter::new(pid::PROPERTY_LIST, bytes));
         }
 
         // Encapsulation-Header: PL_CDR_BE (0x0002) + options=0.
@@ -819,9 +819,11 @@ impl ParticipantBuiltinTopicData {
         // Pass the raw token bytes through (parsing is done by the
         // security layer). Identity/Permissions/IdentityStatus are
         // optional; legacy peers do not send them.
-        let identity_token = pl.find(pid::IDENTITY_TOKEN).map(|p| p.value.clone());
-        let permissions_token = pl.find(pid::PERMISSIONS_TOKEN).map(|p| p.value.clone());
-        let identity_status_token = pl.find(pid::IDENTITY_STATUS_TOKEN).map(|p| p.value.clone());
+        let identity_token = pl.find(pid::IDENTITY_TOKEN).map(|p| p.value.to_vec());
+        let permissions_token = pl.find(pid::PERMISSIONS_TOKEN).map(|p| p.value.to_vec());
+        let identity_status_token = pl
+            .find(pid::IDENTITY_STATUS_TOKEN)
+            .map(|p| p.value.to_vec());
         // PID_PARTICIPANT_SECURITY_INFO (0x1005) — decode error → silent None.
         let participant_security_info = pl.find(pid::PARTICIPANT_SECURITY_INFO).and_then(|p| {
             use crate::participant_security_info::ParticipantSecurityInfo;

@@ -836,17 +836,16 @@ impl Publisher {
         if topic_qos.durability_service != default {
             if qos.durability_service != default
                 && qos.durability_service != topic_qos.durability_service
+                && let Some(rt) = self.inner.runtime.as_ref()
             {
-                if let Some(rt) = self.inner.runtime.as_ref() {
-                    rt.config.observability.record(
-                        &zerodds_foundation::observability::Event::new(
-                            zerodds_foundation::observability::Level::Warn,
-                            zerodds_foundation::observability::Component::Dcps,
-                            "writer.durability_service.overridden_by_topic",
-                        )
-                        .with_attr("topic", topic),
-                    );
-                }
+                rt.config.observability.record(
+                    &zerodds_foundation::observability::Event::new(
+                        zerodds_foundation::observability::Level::Warn,
+                        zerodds_foundation::observability::Component::Dcps,
+                        "writer.durability_service.overridden_by_topic",
+                    )
+                    .with_attr("topic", topic),
+                );
             }
             effective.durability_service = topic_qos.durability_service;
         }
@@ -1036,30 +1035,30 @@ impl crate::entity::Entity for Publisher {
         // DDS 1.4 §2.2.2.1.1.1: "In all other cases, none of the policies is
         // modified." ENTITY_FACTORY changed before the PARTITION check, and
         // stayed changed when that refused.
-        if let Some(rt) = self.inner.runtime.as_ref() {
-            if current.partition != qos.partition || current.group_data != qos.group_data {
-                let writers = self
-                    .inner
-                    .writer_entity_ids
-                    .lock()
-                    .map(|ids| ids.clone())
-                    .unwrap_or_default();
-                // DDS-Security 1.2 §7.4.5: an enabled publisher keeps its
-                // PARTITION while it holds a durable writer of a read
-                // protected topic.
-                if enabled && current.partition != qos.partition {
-                    for eid in &writers {
-                        rt.check_user_writer_partition_change(*eid)?;
-                    }
-                }
-                // Every writer may move into the new partitions before any
-                // does: a refusal leaves the publisher as it was.
+        if let Some(rt) = self.inner.runtime.as_ref()
+            && (current.partition != qos.partition || current.group_data != qos.group_data)
+        {
+            let writers = self
+                .inner
+                .writer_entity_ids
+                .lock()
+                .map(|ids| ids.clone())
+                .unwrap_or_default();
+            // DDS-Security 1.2 §7.4.5: an enabled publisher keeps its
+            // PARTITION while it holds a durable writer of a read
+            // protected topic.
+            if enabled && current.partition != qos.partition {
                 for eid in &writers {
-                    rt.check_user_group_partition(*eid, &qos.partition.names)?;
+                    rt.check_user_writer_partition_change(*eid)?;
                 }
-                for eid in writers {
-                    rt.update_user_group_qos(eid, &qos.partition.names, &qos.group_data.value)?;
-                }
+            }
+            // Every writer may move into the new partitions before any
+            // does: a refusal leaves the publisher as it was.
+            for eid in &writers {
+                rt.check_user_group_partition(*eid, &qos.partition.names)?;
+            }
+            for eid in writers {
+                rt.update_user_group_qos(eid, &qos.partition.names, &qos.group_data.value)?;
             }
         }
         self.inner
@@ -1079,6 +1078,48 @@ impl crate::entity::Entity for Publisher {
         alloc::sync::Arc::clone(&self.inner.entity_state)
     }
 }
+
+/// A value a [`DataWriter`] of `T` writes that is not a `T`
+/// ([`DataWriter::write_as`]): one of the same IDL type that the writer's
+/// `T` cannot hold, such as a type whose fields borrow for less than the
+/// program's life. `zerodds-codec` implements it for a derived type
+/// (`zerodds_codec::write`).
+pub trait WriteAs<T: DdsType> {
+    /// The serialized body, as `T` encodes it: XCDR1 or XCDR2, big- or
+    /// little-endian.
+    ///
+    /// # Errors
+    /// What the encoder refuses.
+    fn encode_as(
+        &self,
+        out: &mut Vec<u8>,
+        xcdr1: bool,
+        big_endian: bool,
+    ) -> core::result::Result<(), crate::dds_type::EncodeError>;
+
+    /// The KeyHash and the key holder (XTypes 1.3 §7.6.8); `None` for a
+    /// type without a key.
+    ///
+    /// # Errors
+    /// The key does not encode.
+    fn key_material_as(
+        &self,
+    ) -> core::result::Result<Option<crate::dds_type::KeyMaterial>, crate::dds_type::EncodeError>;
+}
+
+/// What [`DataWriter::write_sample`] writes.
+enum Written<'v, T: DdsType> {
+    Typed(&'v T),
+    As(&'v dyn WriteAs<T>),
+}
+
+impl<T: DdsType> Clone for Written<'_, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: DdsType> Copy for Written<'_, T> {}
 
 /// Typed DataWriter — sends samples to all matched readers of the topic.
 ///
@@ -1388,13 +1429,12 @@ impl WriterStatus {
         &self,
         mut status: crate::status::OfferedDeadlineMissedStatus,
     ) -> crate::status::OfferedDeadlineMissedStatus {
-        if let (Some(rt), Some(eid)) = (&self.runtime, self.entity_id) {
-            if let Some(handle) = rt
+        if let (Some(rt), Some(eid)) = (&self.runtime, self.entity_id)
+            && let Some(handle) = rt
                 .user_writer_missed_deadline_instance(eid)
                 .and_then(|key| self.instances.lookup(&key))
-            {
-                status.last_instance_handle = handle;
-            }
+        {
+            status.last_instance_handle = handle;
         }
         status
     }
@@ -1614,18 +1654,17 @@ impl<T: DdsType> WriterInner<T> {
         }
         if let Err(error) =
             backend.unregister_instance(self.topic.name(), key_hash, std::time::SystemTime::now())
+            && let Some(rt) = self.runtime.as_ref()
         {
-            if let Some(rt) = self.runtime.as_ref() {
-                rt.config.observability.record(
-                    &zerodds_foundation::observability::Event::new(
-                        zerodds_foundation::observability::Level::Warn,
-                        zerodds_foundation::observability::Component::Dcps,
-                        "writer.durability.store_failed",
-                    )
-                    .with_attr("topic", self.topic.name())
-                    .with_attr("error", alloc::format!("{error}").as_str()),
-                );
-            }
+            rt.config.observability.record(
+                &zerodds_foundation::observability::Event::new(
+                    zerodds_foundation::observability::Level::Warn,
+                    zerodds_foundation::observability::Component::Dcps,
+                    "writer.durability.store_failed",
+                )
+                .with_attr("topic", self.topic.name())
+                .with_attr("error", alloc::format!("{error}").as_str()),
+            );
         }
     }
 
@@ -2258,7 +2297,7 @@ impl<T: DdsType> DataWriter<T> {
         sample: &T,
         source_ts_override: Option<Time>,
     ) -> Result<()> {
-        self.write_sample(sample, source_ts_override, None)
+        self.write_sample(Written::Typed(sample), source_ts_override, None)
             .map(|_| ())
     }
 
@@ -2277,12 +2316,24 @@ impl<T: DdsType> DataWriter<T> {
         sample: &T,
         related: zerodds_rtps::inline_qos::SampleIdentityBytes,
     ) -> Result<i64> {
-        self.write_sample(sample, None, Some(related))
+        self.write_sample(Written::Typed(sample), None, Some(related))
+    }
+
+    /// [`Self::write`] of a value that is not a `T` but writes `T`'s IDL
+    /// type: one whose fields borrow, which `T` (the type with `'static`
+    /// borrows) cannot hold for less than the program's life
+    /// ([`WriteAs`], `zerodds_codec::write`). It goes out as a `T` would.
+    ///
+    /// # Errors
+    /// As [`Self::write`].
+    pub fn write_as(&self, value: &dyn WriteAs<T>) -> Result<()> {
+        self.write_sample(Written::As(value), None, None)
+            .map(|_| ())
     }
 
     fn write_sample(
         &self,
-        sample: &T,
+        sample: Written<'_, T>,
         source_ts_override: Option<Time>,
         related: Option<zerodds_rtps::inline_qos::SampleIdentityBytes>,
     ) -> Result<i64> {
@@ -2320,11 +2371,22 @@ impl<T: DdsType> DataWriter<T> {
                 }),
             _ => self.inner.emit_xcdr1,
         };
-        let enc =
-            self.inner
-                .topic
-                .codec()
-                .encode(sample, &mut buf, emit_xcdr1, self.inner.big_endian);
+        let enc = match sample {
+            Written::Typed(sample) => {
+                self.inner
+                    .topic
+                    .codec()
+                    .encode(sample, &mut buf, emit_xcdr1, self.inner.big_endian)
+            }
+            Written::As(value) => value.encode_as(&mut buf, emit_xcdr1, self.inner.big_endian),
+        };
+        // The key of a value that is not a `T`, taken once.
+        let key_as = match sample {
+            Written::Typed(_) => None,
+            Written::As(value) => value.key_material_as().map_err(|e| DdsError::WireError {
+                message: e.to_string(),
+            })?,
+        };
         enc.map_err(|e| DdsError::WireError {
             message: e.to_string(),
         })?;
@@ -2336,22 +2398,29 @@ impl<T: DdsType> DataWriter<T> {
         // One key materialization per write: the registration, the
         // durability backend and the live write all use it.
         #[cfg(feature = "std")]
-        let key_hash = match self
-            .inner
-            .last_key
-            .key_hash(self.inner.topic.codec(), sample)
-        {
+        let key_hash = match match sample {
+            Written::Typed(sample) => self
+                .inner
+                .last_key
+                .key_hash(self.inner.topic.codec(), sample),
+            Written::As(_) => key_as.as_ref().map(|(hash, _)| *hash),
+        } {
             Some(kh) => {
                 // The tracker is handed the holder only when the instance is
                 // new or comes back to life: a copy of the one the hash was
                 // taken from.
                 self.register_on_write(
                     kh,
-                    || {
-                        self.inner
+                    || match sample {
+                        Written::Typed(sample) => self
+                            .inner
                             .last_key
                             .holder_of(kh)
-                            .unwrap_or_else(|| self.holder_of(sample))
+                            .unwrap_or_else(|| self.holder_of(sample)),
+                        Written::As(_) => key_as
+                            .as_ref()
+                            .map(|(_, holder)| holder.clone())
+                            .unwrap_or_default(),
                     },
                     || source_ts_override.unwrap_or_else(|| self.wall_now()),
                 )?;
@@ -2378,7 +2447,9 @@ impl<T: DdsType> DataWriter<T> {
         // serialized chunk over iceoryx (best-effort; the RTPS path below
         // still runs for non-iox peers).
         #[cfg(all(feature = "std", feature = "cyclone-iox", target_os = "linux"))]
-        crate::cyclone_iox_integration::publish(self.inner.topic.name(), sample);
+        if let Written::Typed(sample) = sample {
+            crate::cyclone_iox_integration::publish(self.inner.topic.name(), sample);
+        }
         // Spec §2.2.3.5 DurabilityServiceQosPolicy: also store the sample
         // in the backend (Transient/Persistent) so that late-joiner
         // readers can still obtain it after the writer's history cleanup.
@@ -2437,11 +2508,16 @@ impl<T: DdsType> DataWriter<T> {
                         eid,
                         &buf,
                         key,
-                        &|| {
-                            self.inner
+                        &|| match sample {
+                            Written::Typed(sample) => self
+                                .inner
                                 .last_key
                                 .holder_of(key)
-                                .unwrap_or_else(|| self.holder_of(sample))
+                                .unwrap_or_else(|| self.holder_of(sample)),
+                            Written::As(_) => key_as
+                                .as_ref()
+                                .map(|(_, holder)| holder.clone())
+                                .unwrap_or_default(),
                         },
                         he_ts_override,
                     )
@@ -2466,9 +2542,10 @@ impl<T: DdsType> DataWriter<T> {
             let max_samples = qos.resource_limits.max_samples;
             let reliable = qos.reliability.kind == ReliabilityKind::Reliable;
             let max_block = qos.reliability.max_blocking_time;
+            // `fraction` counts 2^-32 s (DDSI-RTPS 2.5 §9.3.2); read as
+            // nanoseconds it made the default 100 ms a wait of 429.5 ms.
             let max_block_dur = core::time::Duration::from_nanos(
-                u64::try_from(max_block.seconds).unwrap_or(0) * 1_000_000_000
-                    + u64::from(max_block.fraction),
+                u64::try_from(max_block.to_nanos()).unwrap_or(u64::MAX),
             );
 
             let mut q = self
@@ -2484,14 +2561,22 @@ impl<T: DdsType> DataWriter<T> {
                         what: "datawriter queue full (best-effort or no max_blocking_time)",
                     });
                 }
+                // The caller waits elsewhere (`without_waiting_for_room`):
+                // the wait below ends at once.
+                if !crate::runtime::writes_wait_for_room() {
+                    return Err(DdsError::Timeout);
+                }
                 // Reliable + max_blocking_time > 0 → wait_timeout on the condvar.
-                let deadline = std::time::Instant::now() + max_block_dur;
+                // A deadline past what an `Instant` holds (INFINITE) never
+                // comes; the wait is then renewed in steps of an hour.
+                let deadline = std::time::Instant::now().checked_add(max_block_dur);
                 loop {
                     let now = std::time::Instant::now();
-                    if now >= deadline {
-                        return Err(DdsError::Timeout);
-                    }
-                    let remaining = deadline - now;
+                    let remaining = match deadline {
+                        Some(deadline) if now >= deadline => return Err(DdsError::Timeout),
+                        Some(deadline) => deadline - now,
+                        None => core::time::Duration::from_secs(3600),
+                    };
                     let (g, _) =
                         self.inner
                             .drain_signal
@@ -2584,10 +2669,10 @@ impl<T: DdsType> DataWriter<T> {
     ) -> Result<crate::builtin_topics::SubscriptionBuiltinTopicData> {
         self.inner.entity_state.check_enabled()?;
         #[cfg(feature = "std")]
-        if let (Some(rt), Some(eid)) = (&self.inner.runtime, self.inner.entity_id) {
-            if let Some(data) = rt.user_writer_matched_subscription_data(eid, handle) {
-                return Ok(crate::builtin_topics::SubscriptionBuiltinTopicData::from_wire(&data));
-            }
+        if let (Some(rt), Some(eid)) = (&self.inner.runtime, self.inner.entity_id)
+            && let Some(data) = rt.user_writer_matched_subscription_data(eid, handle)
+        {
+            return Ok(crate::builtin_topics::SubscriptionBuiltinTopicData::from_wire(&data));
         }
         let _ = handle;
         Err(DdsError::BadParameter {
@@ -3008,9 +3093,8 @@ impl<T: DdsType> DataWriter<T> {
     /// Registers an instance with the DataWriter and returns its stable
     /// [`InstanceHandle`]. Spec §2.2.2.4.2.5 `register_instance`.
     ///
-    /// For non-keyed topics the call returns [`HANDLE_NIL`] (each sample
-    /// is its own "instance"; the spec explicitly says register/
-    /// unregister/dispose are optional here).
+    /// A topic without a key has one instance (DDS 1.4 §2.2.1.2.2); the call
+    /// returns its handle (`tests/keyless_instance.rs`).
     ///
     /// # Errors
     /// Currently the call cannot fail. Later (live mode) resource limits
@@ -3053,7 +3137,8 @@ impl<T: DdsType> DataWriter<T> {
     }
 
     /// Turns a sample value into its corresponding local
-    /// [`InstanceHandle`], or [`HANDLE_NIL`] if unknown / non-keyed.
+    /// [`InstanceHandle`], or [`HANDLE_NIL`] if unknown. A topic without a
+    /// key has one instance, whose handle it is once registered.
     /// Spec §2.2.2.4.2.14 `lookup_instance`.
     #[cfg(feature = "std")]
     #[must_use]
@@ -3195,10 +3280,10 @@ impl<T: DdsType> DataWriter<T> {
         }
         self.inner.instances.dispose(resolved, Some(timestamp));
         // Disposed after the writer unregistered it: no live writer is left.
-        if state.writer_count == 0 {
-            if let Some(kh) = self.inner.instances.key_hash_for_handle(resolved) {
-                self.start_store_cleanup(kh);
-            }
+        if state.writer_count == 0
+            && let Some(kh) = self.inner.instances.key_hash_for_handle(resolved)
+        {
+            self.start_store_cleanup(kh);
         }
         Ok(())
     }
@@ -3406,10 +3491,8 @@ impl<T: DdsType> crate::entity::Entity for DataWriter<T> {
         qos.check_consistency()?;
         let enabled = self.inner.entity_state.is_enabled();
         if let Ok(mut current) = self.inner.qos.lock() {
-            if enabled {
-                if let Some(policy) = crate::qos::immutable_writer_change(&current, &qos) {
-                    return Err(crate::entity::immutable_if_enabled(policy));
-                }
+            if enabled && let Some(policy) = crate::qos::immutable_writer_change(&current, &qos) {
+                return Err(crate::entity::immutable_if_enabled(policy));
             }
             // The changeable policies the runtime holds reach the writer
             // slot and the SEDP publication (DDS 1.4 §2.2.3); a refusal
@@ -3743,6 +3826,7 @@ mod tests {
                 crate::runtime::UserReaderConfig {
                     topic_name: topic.name().into(),
                     type_name: CountingKey::TYPE_NAME.into(),
+                    reliable: true,
                     ..crate::runtime::UserReaderConfig::default()
                 },
                 true,
@@ -3883,7 +3967,7 @@ mod tests {
     }
 
     #[test]
-    fn qos_emit_xcdr1_only_for_explicit_xcdr1() {
+    fn xtypes_7_6_3_1_1_qos_emit_xcdr1_only_for_explicit_xcdr1() {
         use zerodds_rtps::publication_data::data_representation as dr;
         let mk = |rep: Option<Vec<i16>>| {
             let q = DataWriterQos {
@@ -3894,7 +3978,7 @@ mod tests {
         };
         // Only these reach `qos_emit_xcdr1` — XML/unknown offers are
         // rejected at `create_datawriter` (see
-        // `create_datawriter_rejects_invalid_data_representation_offers`), so
+        // `xtypes_7_6_3_1_1_create_datawriter_rejects_invalid_data_representation_offers`), so
         // there is no fallback for them here. An empty list is `[XCDR]`.
         assert!(mk(Some(vec![])), "[] is [XCDR1]");
         // Absent (None) → the first element of DEFAULT_OFFER, which is XCDR1.
@@ -3917,7 +4001,7 @@ mod tests {
     }
 
     #[test]
-    fn create_datawriter_rejects_invalid_data_representation_offers() {
+    fn xtypes_7_6_3_1_1_create_datawriter_rejects_invalid_data_representation_offers() {
         use zerodds_rtps::publication_data::data_representation as dr;
         let p = offline_publisher();
         let mk = |rep: Option<Vec<i16>>| {
@@ -3941,7 +4025,7 @@ mod tests {
     }
 
     #[test]
-    fn publisher_creates_datawriter_for_matching_type() {
+    fn dcps_2_2_2_3_2_publisher_creates_datawriter_for_matching_type() {
         let p = offline_publisher();
         let w = p
             .create_datawriter::<RawBytes>(&mk_topic(), DataWriterQos::default())
@@ -3956,7 +4040,7 @@ mod tests {
     /// endpoint: two writers of two types on one publisher must carry two
     /// different type names. One erased writer would carry one.
     #[test]
-    fn datawriter_type_name_follows_the_topic_type() {
+    fn dcps_2_2_2_3_6_2_datawriter_type_name_follows_the_topic_type() {
         use crate::interop::ShapeType;
         let participant = DomainParticipantFactory::instance()
             .create_participant_offline(0, DomainParticipantQos::default());
@@ -3985,7 +4069,7 @@ mod tests {
     /// DATA's inline QoS, which a writer without a runtime does not have.
     /// The write is refused, not sent without the identity.
     #[test]
-    fn write_related_without_a_runtime_is_refused() {
+    fn rpc_7_8_2_write_related_without_a_runtime_is_refused() {
         let writer = offline_publisher()
             .create_datawriter::<RawBytes>(&mk_topic(), DataWriterQos::default())
             .unwrap();
@@ -4008,7 +4092,7 @@ mod tests {
     /// Every sample has to be queued — a lost one, or a panic out of a
     /// poisoned lock, is the failure this states is impossible.
     #[test]
-    fn two_writers_of_one_publisher_write_concurrently() {
+    fn dcps_2_2_2_4_5_two_writers_of_one_publisher_write_concurrently() {
         const PER_THREAD: usize = 200;
         let publisher = Arc::new(offline_publisher());
         let a = Arc::new(
@@ -4047,7 +4131,7 @@ mod tests {
     /// rejects the match (entityKind mismatch). Before the fix, WithKey
     /// (0x02) was hard-coded.
     #[test]
-    fn live_datawriter_entity_kind_is_nokey_for_keyless_type() {
+    fn rtps_8_2_7_live_datawriter_entity_kind_is_nokey_for_keyless_type() {
         use zerodds_rtps::wire_types::EntityKind;
         let domain_lease = zerodds_test_domains::lease_domain();
         let participant = DomainParticipantFactory::instance()
@@ -4078,7 +4162,7 @@ mod tests {
     /// default depth (1) regardless of QoS — and the retain path would not
     /// cap at the requested 2.
     #[test]
-    fn create_datawriter_wires_history_keep_last_depth() {
+    fn dcps_2_2_3_18_create_datawriter_wires_history_keep_last_depth() {
         use crate::qos::{DurabilityKind, DurabilityQosPolicy, HistoryKind, HistoryQosPolicy};
         let domain_lease = zerodds_test_domains::lease_domain();
         let participant = DomainParticipantFactory::instance()
@@ -4291,7 +4375,7 @@ mod tests {
     }
 
     #[test]
-    fn datawriter_write_queues_encoded_sample() {
+    fn dcps_2_2_2_4_2_11_datawriter_write_queues_encoded_sample() {
         let p = offline_publisher();
         let w = p
             .create_datawriter::<RawBytes>(&mk_topic(), DataWriterQos::default())
@@ -4310,7 +4394,7 @@ mod tests {
     /// every sample of both must be there afterwards and none may cross
     /// into the other writer's queue.
     #[test]
-    fn two_datawriters_on_one_publisher_write_concurrently() {
+    fn dcps_2_2_2_4_5_two_datawriters_on_one_publisher_write_concurrently() {
         const N: usize = 200;
         let p = offline_publisher();
         let w1 = Arc::new(
@@ -4348,28 +4432,10 @@ mod tests {
 
     use core::sync::atomic::{AtomicU32, Ordering};
 
-    #[test]
-    fn datawriter_set_listener_stores_arc_and_mask() {
-        struct L;
-        impl crate::listener::DataWriterListener for L {}
-        let p = offline_publisher();
-        let w = p
-            .create_datawriter::<RawBytes>(&mk_topic(), DataWriterQos::default())
-            .unwrap();
-        assert!(w.get_listener().is_none());
-        w.set_listener(Some(Arc::new(L)), crate::psm_constants::status::ANY);
-        assert!(w.get_listener().is_some());
-        // The mask is mirrored to the EntityState.
-        assert_eq!(
-            w.inner.entity_state.listener_mask(),
-            crate::psm_constants::status::ANY
-        );
-    }
-
     /// Offline there is no runtime: a poll reads nothing and calls no
     /// listener, and the getters answer the default status.
     #[test]
-    fn an_offline_writer_polls_nothing_and_reads_the_default_status() {
+    fn dcps_2_2_2_4_2_16_an_offline_writer_polls_nothing_and_reads_the_default_status() {
         struct Cnt(AtomicU32);
         impl crate::listener::DataWriterListener for Cnt {
             fn on_publication_matched(
@@ -4399,15 +4465,7 @@ mod tests {
     // ---- §2.2.2.4.1.8 / .9 suspend/resume_publications ----
 
     #[test]
-    fn suspend_publications_sets_flag() {
-        let p = offline_publisher();
-        assert!(!p.is_suspended());
-        p.suspend_publications().unwrap();
-        assert!(p.is_suspended());
-    }
-
-    #[test]
-    fn resume_publications_clears_flag() {
+    fn dcps_2_2_2_4_1_9_resume_publications_clears_flag() {
         let p = offline_publisher();
         p.suspend_publications().unwrap();
         p.resume_publications().unwrap();
@@ -4417,9 +4475,11 @@ mod tests {
     /// Each suspend wants its own resume (§2.2.2.4.1.8: "must be matched by
     /// a corresponding call to resume_publications").
     #[test]
-    fn two_suspends_want_two_resumes() {
+    fn dcps_2_2_2_4_1_8_two_suspends_want_two_resumes() {
         let p = offline_publisher();
+        assert!(!p.is_suspended());
         p.suspend_publications().unwrap();
+        assert!(p.is_suspended());
         p.suspend_publications().unwrap();
         p.resume_publications().unwrap();
         assert!(p.is_suspended());
@@ -4432,7 +4492,7 @@ mod tests {
     /// return the error PRECONDITION_NOT_MET." It did nothing and returned
     /// nothing.
     #[test]
-    fn resume_without_suspend_is_precondition_not_met() {
+    fn dcps_2_2_2_4_1_9_resume_without_suspend_is_precondition_not_met() {
         let p = offline_publisher();
         assert!(matches!(
             p.resume_publications(),
@@ -4448,7 +4508,7 @@ mod tests {
     /// end_coherent_changes." The inner end used to close the set, and the
     /// outer one returned PRECONDITION_NOT_MET.
     #[test]
-    fn nested_coherent_changes_end_with_the_last_end() {
+    fn dcps_2_2_2_4_1_10_nested_coherent_changes_end_with_the_last_end() {
         let p = offline_publisher();
         p.begin_coherent_changes().unwrap();
         p.begin_coherent_changes().unwrap();
@@ -4464,25 +4524,10 @@ mod tests {
 
     // ---- §2.2.2.4.1.13 copy_from_topic_qos ----
 
-    #[test]
-    fn copy_from_topic_qos_copies_durability_and_reliability() {
-        use crate::qos::{DurabilityKind, ReliabilityKind, TopicQos};
-        let mut topic = TopicQos::default();
-        topic.durability.kind = DurabilityKind::TransientLocal;
-        topic.reliability.kind = ReliabilityKind::Reliable;
-
-        let mut dw = DataWriterQos::default();
-        // Set something different so that we can see the change.
-        dw.durability.kind = DurabilityKind::Volatile;
-        Publisher::copy_from_topic_qos(&mut dw, &topic).unwrap();
-        assert_eq!(dw.durability.kind, DurabilityKind::TransientLocal);
-        assert_eq!(dw.reliability.kind, ReliabilityKind::Reliable);
-    }
-
     // ---- §2.2.3.19 RESOURCE_LIMITS Reliable-Block ----
 
     #[test]
-    fn write_blocks_until_drain_when_reliable_max_samples_reached() {
+    fn dcps_2_2_2_4_2_11_write_blocks_until_drain_when_reliable_max_samples_reached() {
         use crate::qos::{HistoryQosPolicy, ResourceLimitsQosPolicy};
         let p = offline_publisher();
         let qos = DataWriterQos {
@@ -4530,8 +4575,12 @@ mod tests {
         );
     }
 
+    /// DDS 1.4 §2.2.2.4.2.11: a RELIABLE write without room blocks for
+    /// `max_blocking_time` and then returns TIMEOUT. The fraction of the
+    /// duration counts 2^-32 s (DDSI-RTPS 2.5 §9.3.2); read as nanoseconds,
+    /// 100 ms became a wait of 429.5 ms.
     #[test]
-    fn write_returns_timeout_when_reliable_drain_too_slow() {
+    fn dcps_2_2_2_4_2_11_write_returns_timeout_after_max_blocking_time() {
         use crate::qos::ResourceLimitsQosPolicy;
         let p = offline_publisher();
         let qos = DataWriterQos {
@@ -4542,20 +4591,30 @@ mod tests {
             },
             reliability: crate::qos::ReliabilityQosPolicy {
                 kind: ReliabilityKind::Reliable,
-                max_blocking_time: zerodds_qos::Duration::from_millis(50_i32),
+                max_blocking_time: zerodds_qos::Duration::from_millis(100_i32),
             },
             ..DataWriterQos::default()
         };
         let w = p.create_datawriter::<RawBytes>(&mk_topic(), qos).unwrap();
         let s = RawBytes::new(b"x".to_vec());
         w.write(&s).unwrap();
-        // The second write has Reliable + 50ms block; without a drain → timeout.
+        // The second write has Reliable + 100 ms block; without a drain → timeout.
+        let began = std::time::Instant::now();
         let res = w.write(&s);
+        let waited = began.elapsed();
         assert!(matches!(res, Err(DdsError::Timeout)));
+        assert!(
+            waited >= core::time::Duration::from_millis(100),
+            "{waited:?}"
+        );
+        assert!(
+            waited < core::time::Duration::from_millis(400),
+            "{waited:?}"
+        );
     }
 
     #[test]
-    fn write_returns_oor_when_best_effort_queue_full() {
+    fn dcps_2_2_2_4_2_11_write_returns_oor_when_best_effort_queue_full() {
         use crate::qos::ResourceLimitsQosPolicy;
         let p = offline_publisher();
         let qos = DataWriterQos {
@@ -4594,9 +4653,11 @@ mod tests {
     /// Every policy TopicQos and DataWriterQos both carry is copied, not
     /// only the two the operation used to copy.
     #[test]
-    fn copy_from_topic_qos_copies_every_policy_both_carry() {
-        use crate::qos::TopicQos;
+    fn dcps_2_2_2_4_1_17_copy_from_topic_qos_copies_every_policy_both_carry() {
+        use crate::qos::{DurabilityKind, ReliabilityKind, TopicQos};
         let mut topic = TopicQos::default();
+        topic.durability.kind = DurabilityKind::TransientLocal;
+        topic.reliability.kind = ReliabilityKind::Reliable;
         topic.deadline.period = zerodds_qos::Duration::from_millis(250);
         topic.latency_budget.duration = zerodds_qos::Duration::from_millis(5);
         topic.lifespan.duration = zerodds_qos::Duration::from_millis(900);
@@ -4608,7 +4669,11 @@ mod tests {
         topic.destination_order.kind = crate::qos::DestinationOrderKind::BySourceTimestamp;
         topic.ownership.kind = crate::qos::OwnershipKind::Exclusive;
         let mut dw = DataWriterQos::default();
+        // Set something different so that the change shows.
+        dw.durability.kind = DurabilityKind::Volatile;
         Publisher::copy_from_topic_qos(&mut dw, &topic).unwrap();
+        assert_eq!(dw.durability.kind, DurabilityKind::TransientLocal);
+        assert_eq!(dw.reliability.kind, ReliabilityKind::Reliable);
         assert_eq!(dw.deadline, topic.deadline);
         assert_eq!(dw.latency_budget, topic.latency_budget);
         assert_eq!(dw.lifespan, topic.lifespan);
@@ -4622,7 +4687,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_from_topic_qos_does_not_touch_writer_only_policies() {
+    fn dcps_2_2_2_4_1_17_copy_from_topic_qos_does_not_touch_writer_only_policies() {
         use crate::qos::TopicQos;
         let topic = TopicQos::default();
         let mut dw = DataWriterQos::default();

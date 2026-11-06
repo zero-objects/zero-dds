@@ -226,12 +226,12 @@ pub fn builtin_endpoint_kinds_asked(
     eid: EntityId,
     is_writer: bool,
 ) -> Result<(ProtectionKind, ProtectionKind), crate::SecurityGateError> {
-    if let Some(topic) = builtin_topic_name(eid) {
-        if gate.application_access_control()? {
-            let request = zerodds_security::access_control::EndpointRequest::new(0, topic);
-            let config = gate.endpoint_security_config(!is_writer, &request)?;
-            return Ok(kinds_of_endpoint_config(&config));
-        }
+    if let Some(topic) = builtin_topic_name(eid)
+        && gate.application_access_control()?
+    {
+        let request = zerodds_security::access_control::EndpointRequest::new(0, topic);
+        let config = gate.endpoint_security_config(!is_writer, &request)?;
+        return Ok(kinds_of_endpoint_config(&config));
     }
     builtin_endpoint_kinds(gate, eid)
 }
@@ -263,7 +263,7 @@ mod tests {
     /// §7.5.13 Table 21: the values, column by column, with the governance of
     /// the domain deciding the two "set to match" columns.
     #[test]
-    fn table_21_has_the_values_of_the_spec() {
+    fn security_7_5_13_table_21_has_the_values_of_the_spec() {
         let protected = gate("ENCRYPT", "NONE");
         let open = gate("NONE", "ENCRYPT");
         for eid in [
@@ -323,7 +323,7 @@ mod tests {
 
     /// §7.5.4.2 Table 17: the volatile topic has all four attributes `false`.
     #[test]
-    fn table_17_has_the_values_of_the_spec() {
+    fn security_7_5_4_2_table_17_has_the_values_of_the_spec() {
         let a = volatile_topic_security_attributes();
         assert!(!a.is_read_protected);
         assert!(!a.is_write_protected);
@@ -335,7 +335,7 @@ mod tests {
     /// Table 21: none where the submessages are not protected, the domain's
     /// kind for discovery and liveliness, ENCRYPT for the TypeLookup endpoints.
     #[test]
-    fn the_kinds_follow_table_21() {
+    fn security_7_5_13_the_kinds_follow_table_21() {
         let g = gate("SIGN", "ENCRYPT");
         let kinds = |eid| builtin_endpoint_kinds(&g, eid).unwrap();
         assert_eq!(
@@ -369,7 +369,7 @@ mod tests {
     /// `is_submessage_protected` Table 21 fixes to true. The plugin here
     /// protects nothing; the fixed endpoints are protected all the same.
     #[test]
-    fn the_plugin_is_not_asked_for_the_endpoints_table_21_fixes() {
+    fn security_9_8_4_the_plugin_is_not_asked_for_the_endpoints_table_21_fixes() {
         use zerodds_security::access_control::PermissionsHandle;
         use zerodds_security::mock::MockAccessControlPlugin;
         let g = gate("ENCRYPT", "ENCRYPT");

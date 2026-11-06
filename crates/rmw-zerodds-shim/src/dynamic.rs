@@ -1532,15 +1532,14 @@ pub unsafe extern "C" fn zerodds_dyn_data_clear_value(d: *mut ZddsDynData, id: u
     if matches!(
         d.ty.resolve_alias().map(|resolved| resolved.kind()),
         Ok(zerodds_types::dynamic::TypeKind::Sequence)
-    ) {
-        if let DynamicData::Collection(items) = &mut d.value {
-            let index = usize::try_from(id).unwrap_or(usize::MAX);
-            if index >= items.len() {
-                return ERR;
-            }
-            items.remove(index);
-            return OK;
+    ) && let DynamicData::Collection(items) = &mut d.value
+    {
+        let index = usize::try_from(id).unwrap_or(usize::MAX);
+        if index >= items.len() {
+            return ERR;
         }
+        items.remove(index);
+        return OK;
     }
     let fresh: DynamicData = if d.value.members().is_some() {
         let Some(member) = d.ty.member_by_id(u32::try_from(id).unwrap_or(u32::MAX)) else {

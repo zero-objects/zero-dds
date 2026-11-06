@@ -21,9 +21,10 @@ use crate::object_cache::{ObjectCache, ObjectId};
 pub type TransactionId = u64;
 
 /// Consistency level (Spec §B.7.4.2).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConsistencyLevel {
     /// `OPTIMISTIC` — conflict check at commit time.
+    #[default]
     Optimistic,
     /// `READ_COMMITTED` — like OPTIMISTIC, but reads only see
     /// `Committed` objects.
@@ -31,12 +32,6 @@ pub enum ConsistencyLevel {
     /// `SERIALIZABLE` — strictly serialized (the caller serializes
     /// transactions, not the cache).
     Serializable,
-}
-
-impl Default for ConsistencyLevel {
-    fn default() -> Self {
-        Self::Optimistic
-    }
 }
 
 /// Transaction state.
@@ -146,16 +141,15 @@ impl Transaction {
             return Err(TransactionError::NotActive(self.state));
         }
         for (id, expected) in &self.snapshot {
-            if let Some(o) = cache.get(id) {
-                if o.version > *expected
-                    && (matches!(
-                        self.level,
-                        ConsistencyLevel::Optimistic | ConsistencyLevel::ReadCommitted
-                    ))
-                {
-                    self.state = TransactionState::Aborted;
-                    return Err(TransactionError::OptimisticConflict { id: id.clone() });
-                }
+            if let Some(o) = cache.get(id)
+                && o.version > *expected
+                && (matches!(
+                    self.level,
+                    ConsistencyLevel::Optimistic | ConsistencyLevel::ReadCommitted
+                ))
+            {
+                self.state = TransactionState::Aborted;
+                return Err(TransactionError::OptimisticConflict { id: id.clone() });
             }
         }
         cache.commit_all();

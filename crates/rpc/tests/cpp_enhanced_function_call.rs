@@ -164,7 +164,7 @@ fn build_program(compiler: &str, root: &Path, program: &str) -> PathBuf {
 /// §7.5.1.2, §7.11.1.5: the generated client and service over the Enhanced
 /// topic types, and the codec between them.
 #[test]
-fn the_generated_enhanced_client_calls_the_generated_enhanced_service() {
+fn rpc_7_2_2_3_the_generated_enhanced_client_calls_the_generated_enhanced_service() {
     let Some(compiler) = compiler() else {
         println!("no C++ compiler on this machine — the Enhanced binding is not measured here");
         return;

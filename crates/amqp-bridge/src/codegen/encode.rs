@@ -753,7 +753,7 @@ mod tests {
     }
 
     #[test]
-    fn base64_matches_rfc_4648_test_vectors() {
+    fn ddsamqp_8_1_2_base64_matches_rfc_4648_test_vectors() {
         assert_eq!(base64(b""), "");
         assert_eq!(base64(b"f"), "Zg==");
         assert_eq!(base64(b"fo"), "Zm8=");
@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn an_octet_sequence_is_base64_in_json_and_binary_on_the_wire() {
+    fn ddsamqp_8_1_2_an_octet_sequence_is_base64_in_json_and_binary_on_the_wire() {
         let plan = make_plan(
             BodyForm::List,
             alloc::vec![field("blob", FieldEncoding::Binary)],
@@ -795,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_is_its_symbolic_name_in_both_modes() {
+    fn ddsamqp_8_1_2_an_enumeration_is_its_symbolic_name_in_both_modes() {
         let encoding = FieldEncoding::Enumeration {
             name: "probe::Colour".to_string(),
             literals: alloc::vec!["RED".to_string(), "GREEN".to_string()],
@@ -1028,7 +1028,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nan_and_an_infinity_are_refused_rather_than_written() {
+    fn ddsamqp_8_1_2_a_nan_and_an_infinity_are_refused_rather_than_written() {
         let plan = make_plan(
             BodyForm::List,
             alloc::vec![field("x", FieldEncoding::Double)],
@@ -1085,7 +1085,7 @@ mod tests {
     }
 
     #[test]
-    fn a_time_is_milliseconds_on_the_wire_and_two_keys_in_json() {
+    fn ddsamqp_8_1_2_a_time_is_milliseconds_on_the_wire_and_two_keys_in_json() {
         let plan = make_plan(BodyForm::List, alloc::vec![field("t", FieldEncoding::Time)]);
         let sample = alloc::vec![Some(SampleValue::Time {
             sec: 3,
@@ -1112,7 +1112,7 @@ mod tests {
     }
 
     #[test]
-    fn the_json_escapes_are_rfc_8259s() {
+    fn ddsamqp_8_1_2_the_json_escapes_are_rfc_8259s() {
         let mut out = String::new();
         json_string("a\"b\\c\nd\te\u{1}f", &mut out);
         assert_eq!(out, "\"a\\\"b\\\\c\\nd\\te\\u0001f\"");

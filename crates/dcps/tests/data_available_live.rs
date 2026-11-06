@@ -96,7 +96,7 @@ fn take_until(
 /// A reader in another participant of this process, a listener and no
 /// wait: the listener is called for what arrives.
 #[test]
-fn a_live_readers_listener_hears_samples_nobody_waited_for() {
+fn dcps_2_2_4_2_2_a_live_readers_listener_hears_samples_nobody_waited_for() {
     let lease = common::lease_domain();
     let cfg = common::isolated_cfg();
     let factory = DomainParticipantFactory::instance();
@@ -251,7 +251,7 @@ fn a_listener_set_later_hears_of_samples_that_came_before_it() {
 /// A subscriber listener for DATA_ON_READERS and no reader listener: the
 /// subscriber is told (DDS 1.4 §2.2.4.4).
 #[test]
-fn a_subscriber_listener_hears_data_on_its_readers() {
+fn dcps_2_2_2_5_6_a_subscriber_listener_hears_data_on_its_readers() {
     let lease = common::lease_domain();
     let cfg = common::isolated_cfg();
     let factory = DomainParticipantFactory::instance();

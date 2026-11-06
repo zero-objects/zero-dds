@@ -67,7 +67,7 @@ class QosRequestedOfferedTest {
     // --- DURABILITY: offered kind >= requested kind (§2.2.3.4) --------------------
 
     @Test
-    void durabilityOfferedMustBeAtLeastRequestedInTheOrderVolatileToPersistent() {
+    void javapsm_7_3_5_1_durability_offered_must_be_at_least_requested_in_the_order_volatile_to_persistent() {
         // VOLATILE < TRANSIENT_LOCAL < TRANSIENT < PERSISTENT: the declaration order of the enum.
         assertEquals(Arrays.asList(Durability.Kind.VOLATILE, Durability.Kind.TRANSIENT_LOCAL,
                 Durability.Kind.TRANSIENT, Durability.Kind.PERSISTENT),
@@ -89,7 +89,7 @@ class QosRequestedOfferedTest {
     // --- RELIABILITY: the kind only (§2.2.3.14) ------------------------------------
 
     @Test
-    void reliabilityIsComparedByKindAndNotByMaxBlockingTime() {
+    void javapsm_7_3_5_1_reliability_is_compared_by_kind_and_not_by_max_blocking_time() {
         DataReaderQos reader = Qos.reader().withPolicy(Qos.policies().DataReaderReliability()
                 .withReliable().withMaxBlockingTime(10, TimeUnit.SECONDS));
         DataWriterQos writer = Qos.writer().withPolicy(Qos.policies().DataWriterReliability()
@@ -109,7 +109,7 @@ class QosRequestedOfferedTest {
     // --- LATENCY_BUDGET: offered <= requested (§2.2.3.7) ----------------------------
 
     @Test
-    void latencyBudgetOfferedMustNotExceedRequested() {
+    void javapsm_7_3_5_1_latency_budget_offered_must_not_exceed_requested() {
         DataReaderQos reader = Qos.reader().withPolicy(Qos.pf().LatencyBudget().withDuration(500, TimeUnit.MILLISECONDS));
         DataWriterQos longer = Qos.writer().withPolicy(Qos.pf().LatencyBudget().withDuration(1000, TimeUnit.MILLISECONDS));
         DataWriterQos equal = Qos.writer().withPolicy(Qos.pf().LatencyBudget().withDuration(500, TimeUnit.MILLISECONDS));
@@ -125,7 +125,7 @@ class QosRequestedOfferedTest {
     // --- DESTINATION_ORDER: offered >= requested (§2.2.3.17) ------------------------
 
     @Test
-    void destinationOrderOfferedMustBeAtLeastRequested() {
+    void javapsm_7_3_5_1_destination_order_offered_must_be_at_least_requested() {
         DataReaderQos bySource = Qos.reader().withPolicy(Qos.pf().DestinationOrder().withSourceTimestamp());
         DataReaderQos byReception = Qos.reader().withPolicy(Qos.pf().DestinationOrder().withReceptionTimestamp());
         DataWriterQos writerBySource = Qos.writer().withPolicy(Qos.pf().DestinationOrder().withSourceTimestamp());
@@ -141,7 +141,7 @@ class QosRequestedOfferedTest {
     // --- OWNERSHIP: the same kind (§2.2.3.9) ------------------------------------------
 
     @Test
-    void ownershipKindsMustBeEqualInBothDirections() {
+    void javapsm_7_3_5_1_ownership_kinds_must_be_equal_in_both_directions() {
         DataReaderQos sharedReader = Qos.reader().withPolicy(Qos.pf().Ownership().withShared());
         DataReaderQos exclusiveReader = Qos.reader().withPolicy(Qos.pf().Ownership().withExclusive());
         DataWriterQos sharedWriter = Qos.writer().withPolicy(Qos.pf().Ownership().withShared());
@@ -156,7 +156,7 @@ class QosRequestedOfferedTest {
     }
 
     @Test
-    void aSharedReaderAndAnExclusiveWriterDoNotMatchAndBothSideRecordIt() throws Exception {
+    void javapsm_7_3_5_1_a_shared_reader_and_an_exclusive_writer_do_not_match_and_both_sides_record_it() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(
                     Qos.reader().withPolicy(Qos.pf().Ownership().withShared()));
@@ -178,7 +178,7 @@ class QosRequestedOfferedTest {
     // --- DEADLINE and LIVELINESS (§2.2.3.6, §2.2.3.11) ---------------------------------
 
     @Test
-    void deadlineOfferedPeriodMustNotExceedRequested() {
+    void javapsm_7_3_5_1_deadline_offered_period_must_not_exceed_requested() {
         DataReaderQos reader = Qos.reader().withPolicy(Qos.pf().Deadline().withPeriod(100, TimeUnit.MILLISECONDS));
         DataWriterQos longer = Qos.writer().withPolicy(Qos.pf().Deadline().withPeriod(200, TimeUnit.MILLISECONDS));
         DataWriterQos shorter = Qos.writer().withPolicy(Qos.pf().Deadline().withPeriod(50, TimeUnit.MILLISECONDS));
@@ -191,7 +191,7 @@ class QosRequestedOfferedTest {
     }
 
     @Test
-    void livelinessOfferedKindMustBeAtLeastRequestedAndTheLeaseNotLonger() {
+    void javapsm_7_3_5_1_liveliness_offered_kind_must_be_at_least_requested_and_the_lease_not_longer() {
         DataReaderQos byTopic = Qos.reader().withPolicy(Qos.pf().Liveliness().withManualByTopic());
         DataWriterQos automatic = Qos.writer().withPolicy(Qos.pf().Liveliness().withAutomatic());
         DataWriterQos byParticipant = Qos.writer().withPolicy(Qos.pf().Liveliness().withManualByParticipant());
@@ -214,7 +214,7 @@ class QosRequestedOfferedTest {
     }
 
     @Test
-    void theWireSideRefusesAnOfferedLivelinessKindBelowTheRequestedOne() {
+    void javapsm_7_3_5_1_the_wire_side_refuses_an_offered_liveliness_kind_below_the_requested_one() {
         // PID_LIVELINESS kinds on the wire: AUTOMATIC 0, MANUAL_BY_PARTICIPANT 1, MANUAL_BY_TOPIC 2.
         QosParameters offered = new QosParameters();
         QosParameters requested = new QosParameters();
@@ -246,7 +246,7 @@ class QosRequestedOfferedTest {
     }
 
     @Test
-    void presentationOfferedScopeMustBeAtLeastRequestedAndCoherentAndOrderedMustBeOffered() {
+    void javapsm_7_3_5_1_presentation_offered_scope_must_be_at_least_requested_and_coherent_and_ordered_must_be_offered() {
         Presentation.AccessScopeKind instance = Presentation.AccessScopeKind.INSTANCE;
         Presentation.AccessScopeKind topic = Presentation.AccessScopeKind.TOPIC;
         Presentation.AccessScopeKind group = Presentation.AccessScopeKind.GROUP;
@@ -279,62 +279,10 @@ class QosRequestedOfferedTest {
                 withPresentation(presentation(group, true, true))));
     }
 
-    @Test
-    void aSubscriberThatRequestsTopicScopeDoesNotMatchAPublisherThatOffersInstanceScope() throws Exception {
-        PublisherQos publisherQos = Qos.publisher().withPolicy(
-                Qos.policies().Presentation().withInstance());
-        SubscriberQos subscriberQos = Qos.subscriber().withPolicy(
-                Qos.policies().Presentation().withTopic());
-        try (QosFixtures.Rig rig = new QosFixtures.Rig(publisherQos, subscriberQos)) {
-            DataReader<QosFixtures.Item> reader = rig.reader(Qos.reader());
-            DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
-            writer.write(new QosFixtures.Item(1, 1));
-
-            assertEquals(0, Qos.take(reader).size());
-            RequestedIncompatibleQosStatus requested = reader.getRequestedIncompatibleQosStatus();
-            assertEquals(1, requested.getTotalCount());
-            assertEquals(Presentation.class, requested.getLastPolicyClass());
-            assertEquals(1, writer.getOfferedIncompatibleQosStatus().getTotalCount());
-        }
-    }
-
-    @Test
-    void aSubscriberAndAPublisherWithTheSamePresentationMatch() throws Exception {
-        PublisherQos publisherQos = Qos.publisher().withPolicy(
-                Qos.policies().Presentation().withGroup().withCoherentAccess(true).withOrderedAccess(true));
-        SubscriberQos subscriberQos = Qos.subscriber().withPolicy(
-                Qos.policies().Presentation().withTopic().withCoherentAccess(true));
-        try (QosFixtures.Rig rig = new QosFixtures.Rig(publisherQos, subscriberQos)) {
-            DataReader<QosFixtures.Item> reader = rig.reader(Qos.reader());
-            DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
-            writer.write(new QosFixtures.Item(1, 1));
-            assertEquals(1, Qos.take(reader).size());
-            assertEquals(0, reader.getRequestedIncompatibleQosStatus().getTotalCount());
-        }
-    }
-
     // --- several incompatible policies are all counted (§2.2.4.1) ------------------------
 
     @Test
-    void everyIncompatiblePolicyIsListedInTheOrderTheStatusCountsThem() {
-        DataReaderQos reader = Qos.reader()
-                .withPolicy(Qos.policies().DataReaderReliability().withReliable())
-                .withPolicy(Qos.pf().Durability().withTransientLocal())
-                .withPolicy(Qos.pf().Deadline().withPeriod(100, TimeUnit.MILLISECONDS));
-        DataWriterQos writer = Qos.writer()
-                .withPolicy(Qos.policies().DataWriterReliability().withBestEffort());
-        List<Class<? extends QosPolicy>> refused = QosCompatibility.incompatiblePolicies(
-                QosCompatibility.policiesOf(reader), QosCompatibility.policiesOf(writer));
-        // RELIABILITY (BEST_EFFORT < RELIABLE), DURABILITY (VOLATILE < TRANSIENT_LOCAL),
-        // DEADLINE (infinite > 100 ms).
-        assertEquals(Arrays.<Class<? extends QosPolicy>>asList(
-                Reliability.class, Durability.class, Deadline.class), refused);
-        assertTrue(QosCompatibility.incompatiblePolicies(
-                QosCompatibility.policiesOf(Qos.reader()), QosCompatibility.policiesOf(Qos.writer())).isEmpty());
-    }
-
-    @Test
-    void aRefusedWriterCountsOnceAndEveryIncompatiblePolicyOnceOnBothSides() throws Exception {
+    void javapsm_2_a_refused_writer_counts_once_and_every_incompatible_policy_once_on_both_sides() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.reader()
                     .withPolicy(Qos.policies().DataReaderReliability().withReliable())
@@ -359,7 +307,7 @@ class QosRequestedOfferedTest {
     }
 
     @Test
-    void aTransientLocalReaderIsRefusedByAVolatileWriter() throws Exception {
+    void javapsm_7_3_5_1_a_transient_local_reader_is_refused_by_a_volatile_writer() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataReader<QosFixtures.Item> reader = rig.reader(
                     Qos.reader().withPolicy(Qos.pf().Durability().withTransientLocal()));

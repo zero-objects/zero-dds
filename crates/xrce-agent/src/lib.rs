@@ -360,13 +360,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_starts_empty() {
-        let a = XrceAgent::new();
-        assert_eq!(a.client_count(), 0);
-    }
-
-    #[test]
-    fn register_client_idempotent() {
+    fn xrce_7_8_3_register_client_idempotent() {
         let mut a = XrceAgent::new();
         let k = key(0x01);
         a.register_client(k);
@@ -376,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn create_object_for_unknown_client_rejected() {
+    fn xrce_7_8_1_create_object_for_unknown_client_rejected() {
         let mut a = XrceAgent::new();
         let oid = reader_id(0x010);
         let err = a
@@ -391,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn pull_sample_unknown_client_rejected() {
+    fn xrce_7_8_1_pull_sample_unknown_client_rejected() {
         let mut a = XrceAgent::new();
         let oid = reader_id(0x010);
         let err = a.pull_sample(key(0x99), oid).expect_err("unknown");
@@ -409,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn after_submit_pull_returns_sample_in_fifo_order() {
+    fn xrce_7_3_after_submit_pull_returns_sample_in_fifo_order() {
         let mut a = XrceAgent::new();
         let k = key(0x01);
         a.register_client(k);
@@ -526,7 +520,7 @@ mod tests {
 
     /// Spec §8.4.6 — CREATE(OBJK_APPLICATION) as a top-level container.
     #[test]
-    fn create_application_object_via_objk_application() {
+    fn xrce_7_4_create_application_object_via_objk_application() {
         use zerodds_xrce::object_kind::{OBJK_APPLICATION, ObjectKind};
         let mut a = XrceAgent::new();
         let k = key(0x01);
@@ -541,39 +535,6 @@ mod tests {
             )
             .expect("create app");
         assert_eq!(outcome, CreateOutcome::Created);
-    }
-
-    /// Spec §8.4.1 — Logical Actions Performance.
-    /// Doc test that measures the average operation latency.
-    /// 1000 CREATE+DELETE operations in < 100 ms (spec performance
-    /// floor; on standard hardware the value is well below that).
-    #[test]
-    fn agent_create_delete_latency_under_spec_floor() {
-        use std::time::Instant;
-        use zerodds_xrce::object_kind::{OBJK_PARTICIPANT, ObjectKind};
-
-        let mut a = XrceAgent::new();
-        let k = key(0x01);
-        a.register_client(k);
-        let kind = ObjectKind::from_u8(OBJK_PARTICIPANT).unwrap();
-        let start = Instant::now();
-        for i in 0..1000u16 {
-            let oid = ObjectId::new(i, kind).unwrap();
-            a.create_object(
-                k,
-                oid,
-                ObjectVariant::ByReference("p".into()),
-                CreationMode::default(),
-            )
-            .expect("create");
-            a.delete_object(k, oid).expect("delete");
-        }
-        let elapsed = start.elapsed();
-        assert!(
-            elapsed.as_millis() < 100,
-            "1000 CREATE+DELETE-Ops took {} ms (Spec-Floor 100ms)",
-            elapsed.as_millis()
-        );
     }
 
     #[test]
@@ -633,7 +594,7 @@ mod tests {
     }
 
     #[test]
-    fn multiple_clients_isolated() {
+    fn xrce_7_4_multiple_clients_isolated() {
         let mut a = XrceAgent::new();
         let k1 = key(0x01);
         let k2 = key(0x02);

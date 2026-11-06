@@ -3,38 +3,33 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs.rs](https://docs.rs/zerodds-corba-dds-bridge/badge.svg)](https://docs.rs/zerodds-corba-dds-bridge)
 
-Bidirectional CORBA-Object ↔ DDS-Topic bridge: GIOP request → DDS
-sample (servant mode) and DDS sample → GIOP request (forwarder mode).
-Many-to-many `BridgeMapping` with `BridgeServant` + `LifecycleSync` and
-wire helpers to `corba-giop` + `corba-ior`. `no_std + alloc`,
+The DDS↔CORBA bridge daemon `zerodds-corba-bridged`
+(`docs/specs/zerodds-corba-bridge-1.0.md`): a GIOP request to a mapped
+object key and operation becomes a sample on the mapping's request topic,
+and the sample on its reply topic becomes the GIOP reply (§4.3); a sample on
+a notify topic becomes a oneway GIOP request to each target (§4.4). IIOP and
+SSLIOP listeners, CSIv2, the NameService, LocateRequest.
 `forbid(unsafe_code)`. Safety classification: **STANDARD**.
 
 ## Spec mapping
 
 | Spec | Section |
 |------|-----------|
-| OMG CORBA 3.3 Part 1 | §11 POA servant (bridge path) |
-| OMG CORBA 3.3 Part 2 | §15 GIOP request, §13.6 IOR object_key |
-| OMG DDS 1.4 | §2.2.2.2.1 register/unregister_instance |
+| `zerodds-corba-bridge-1.0` | §3 configuration, §4 GIOP/IIOP, §6 QoS, §7 security, §8 operations, §9 lifecycle |
+| OMG CORBA 3.3 Part 2 | §15 GIOP, §13.6 IOR |
 
 ## What's included
 
-- **`BridgeMapping`** + **`BridgeRoute`** — many-to-many CORBA-Object
-  ↔ DDS-Topic.
-- **`Direction`** — `CorbaToDds` / `DdsToCorba` / `Bidirectional`.
-- **`OperationMapping`** + **`TopicQosRef`**.
-- **`BridgeServant`** — a `corba-poa::Servant`-compatible
-  bridge servant.
-- **`LifecycleSync`** + **`LifecycleEvent`** — CORBA activate ↔
-  DDS register_instance.
-- **`wire::decode_giop_request_bytes`** + **`wire::object_key_from_ior`**
-  — cross-crate hooks to `corba-giop` + `corba-ior`.
-
-## What's not covered
-
-- DDS reader/writer instantiation: resolved at the caller layer via
-  the `DdsPublishSink` trait (against `dcps`).
-- Wire encoding of the reply sides: caller-layer.
+- **`bridge_daemon`** — the configuration (§3), the IIOP and SSLIOP
+  listeners, the request/reply and notify mappings, LocateRequest (§4.7)
+  and the DDS side.
+- **`BridgeMapping`**, **`BridgeRoute`**, **`OperationMapping`**,
+  **`TopicQosRef`**, **`Direction`** — mappings as code, as the dds-chat
+  tutorial and the dds-warehouse demo write them; the daemon reads its
+  mappings from its configuration.
+- **`bridge_security`**, **`csiv2_wire`** — TLS for SSLIOP, CSIv2 (§7).
+- **`naming_client`** — binds the IORs in a NameService.
+- **`daemon_runtime`** — metrics, health, shutdown (§8, §9).
 
 ## Example
 
@@ -198,7 +193,6 @@ Sources: [`etc/jacorb_properties.template`](https://github.com/JacORB/JacORB/blo
 
 ## See also
 
-- [`zerodds-corba-poa`](../corba-poa/README.md) — Servant trait.
 - [`zerodds-corba-giop`](../corba-giop/README.md) — GIOP request.
 - [`zerodds-corba-ior`](../corba-ior/README.md) — IOR / object_key.
 - [Architecture](../../docs/architecture/02_architecture.md)

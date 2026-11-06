@@ -70,7 +70,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn fragment_roundtrip_carries_last_flag() {
+    fn xrce_8_3_5_14_fragment_roundtrip_carries_last_flag() {
         let p = FragmentPayload {
             data: alloc::vec![1, 2, 3, 4],
             last_fragment: true,
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[test]
-    fn fragment_intermediate_has_no_last_flag() {
+    fn xrce_8_3_5_14_fragment_intermediate_has_no_last_flag() {
         let p = FragmentPayload {
             data: alloc::vec![0xFF; 100],
             last_fragment: false,

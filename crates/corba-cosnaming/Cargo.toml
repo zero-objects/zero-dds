@@ -78,3 +78,10 @@ signal-hook = { workspace = true, optional = true }
 # (otherwise SIGKILL -> corrupt .profraw under cargo-llvm-cov).
 [target.'cfg(unix)'.dev-dependencies]
 libc = { workspace = true, features = ["std"] }
+
+# The contract with zerodds-bridge-security (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-bridge-security only with `daemon`.
+[[test]]
+name = "contract_bridge_security"
+path = "tests/contract_bridge_security.rs"
+required-features = ["daemon"]

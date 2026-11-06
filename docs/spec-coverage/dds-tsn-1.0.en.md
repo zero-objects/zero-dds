@@ -4,7 +4,7 @@
 ptc/2024-05-16; not tracked in the repo for IP/copyright reasons). Public spec
 page: <https://www.omg.org/spec/DDS-TSN/>.
 
-**Repo:** `crates/transport-tsn/` — PIM configuration model (§7.2) + XML/JSON/YANG PSM (§7.3) + DDSI-RTPS Ethernet PSM (Annex A), pure-Rust no_std+alloc. Live AF_PACKET transport under feature `live`. 93 lib tests green (default), 105 with `--features live` (+12 platform-neutral `live_frame` tests) + veth roundtrip integration test (CI, root).
+**Repo:** `crates/transport-tsn/` — PIM configuration model (§7.2) + XML/JSON/YANG PSM (§7.3) + DDSI-RTPS Ethernet PSM (Annex A), pure-Rust no_std+alloc. Live AF_PACKET transport under feature `live`. The platform-neutral `live_frame` tests run with the default features; the veth roundtrip integration test needs `--features live` and root.
 
 **Context:** DDS-TSN brings DDS onto IEEE 802.1 Time-Sensitive Networking.
 ZeroDDS implements the **PIM configuration model** (§7.2 wire-relevant
@@ -41,12 +41,12 @@ TsnConfiguration}` (DataWriter/DataReader -> talker/listener);
 ETHERTYPE_RTPS}` (RTPS in the Ethernet frame).
 
 **Tests:** DataWriter/DataReader as talker/listener:
-`crates/transport-tsn/src/stream.rs::tests::tsn_configuration_aggregates_talkers_and_listeners`;
+`crates/transport-tsn/src/stream.rs::tests::tsn_1_tsn_configuration_aggregates_talkers_and_listeners`;
 RTPS over TSN Ethernet:
-`crates/transport-tsn/src/ethernet_psm.rs::tests::round_trip_with_vlan`,
-`crates/transport-tsn/src/ethernet_psm.rs::tests::rtps_ethertype_constant`;
+`crates/transport-tsn/src/ethernet_psm.rs::tests::tsn_1_round_trip_with_vlan`,
+`crates/transport-tsn/src/ethernet_psm.rs::tests::tsn_1_rtps_ethertype_constant`;
 handover to the TSN network:
-`crates/transport-tsn/src/pim/yang.rs::tests::config_transform_assigns_sequential_datawriter_ids`.
+`crates/transport-tsn/src/pim/yang.rs::tests::tsn_1_config_transform_assigns_sequential_datawriter_ids`.
 
 **Status:** done
 
@@ -108,7 +108,7 @@ StreamIdentifier, TsnConfiguration}`.
 different_vlan_streams_do_not_match, time_aware_talker_can_be_time_critical,
 talker_carries_optional_network_requirements_per_tab_7_15,
 listener_carries_optional_network_requirements_per_tab_7_24,
-tsn_configuration_aggregates_talkers_and_listeners}` (6).
+tsn_1_tsn_configuration_aggregates_talkers_and_listeners}` (6).
 
 **Status:** done
 
@@ -249,10 +249,10 @@ QosProfile; a DomainParticipant optionally inherits from another.
 **Repo:** `crates/transport-tsn/src/pim/application.rs` (schema models for
 the application library + factory).
 
-**Tests:** `crates/transport-tsn/src/pim/application.rs::tests::{qos_profile_holds_six_qos_categories_per_spec_tab_72,
-domain_carries_registered_types_and_topics,
-domain_participant_inheritance_chain_is_optional,
-application_holds_multiple_dp_refs}` (4).
+**Tests:** `crates/transport-tsn/src/pim/application.rs::tests::{tsn_7_2_1_qos_profile_holds_six_qos_categories_per_spec_tab_72,
+tsn_7_2_1_domain_carries_registered_types_and_topics,
+tsn_7_2_1_domain_participant_inheritance_chain_is_optional,
+tsn_7_2_1_application_holds_multiple_dp_refs}` (4).
 
 **Status:** done
 
@@ -265,10 +265,10 @@ of application instances.
 
 **Repo:** `crates/transport-tsn/src/pim/deployment.rs`.
 
-**Tests:** `crates/transport-tsn/src/pim/deployment.rs::tests::{node_holds_mac_and_optional_ips,
-deployment_with_one_app_validates,
-deployment_without_apps_is_invalid_per_spec_mult_1_star,
-deployment_configuration_can_reference_tsn_block}` (4).
+**Tests:** `crates/transport-tsn/src/pim/deployment.rs::tests::{tsn_7_2_2_node_holds_mac_and_optional_ips,
+tsn_7_2_2_deployment_with_one_app_validates,
+tsn_7_2_2_deployment_without_apps_is_invalid_per_spec_mult_1_star,
+tsn_7_2_2_deployment_configuration_can_reference_tsn_block}` (4).
 
 **Status:** done
 
@@ -286,12 +286,12 @@ a `<dds_tsn>` root element with the six libraries (Tab 7.1-7.14).
 **Repo:** `crates/transport-tsn/src/pim/xml.rs::parse_dds_tsn_xml` — loader
 for `<dds_tsn>` per the spec XSD (Tab 7.1-7.14).
 
-**Tests:** `crates/transport-tsn/src/pim/xml.rs::tests::{parses_full_sample_into_six_libraries,
-qos_profile_carries_named_qos_categories, domain_carries_registered_types_and_topics,
-node_with_mac_and_ipv4_parses, deployment_with_tsn_configuration_ref,
-missing_root_yields_unexpected_root_error, missing_required_attribute_is_diagnostic,
-invalid_mac_is_diagnostic, parse_mac_accepts_dash_separator,
-parse_mac_rejects_short_input}` (10).
+**Tests:** `crates/transport-tsn/src/pim/xml.rs::tests::{tsn_7_3_1_parses_full_sample_into_six_libraries,
+tsn_7_3_1_qos_profile_carries_named_qos_categories, tsn_7_3_1_domain_carries_registered_types_and_topics,
+tsn_7_3_1_node_with_mac_and_ipv4_parses, tsn_7_3_1_deployment_with_tsn_configuration_ref,
+tsn_7_3_1_missing_root_yields_unexpected_root_error, tsn_7_3_1_missing_required_attribute_is_diagnostic,
+tsn_7_3_1_invalid_mac_is_diagnostic, tsn_7_3_1_parse_mac_accepts_dash_separator,
+tsn_7_3_1_parse_mac_rejects_short_input}` (10).
 
 **Status:** done
 
@@ -304,9 +304,9 @@ node MACs in canonical spelling.
 **Repo:** `crates/transport-tsn/src/pim/json.rs::render_dds_tsn_json` —
 renderer in the spec JSON schema.
 
-**Tests:** `crates/transport-tsn/src/pim/json.rs::tests::{render_includes_six_top_level_arrays,
-render_qos_profile_emits_named_categories, render_node_emits_mac_in_canonical_form,
-render_escapes_special_chars}` (4).
+**Tests:** `crates/transport-tsn/src/pim/json.rs::tests::{tsn_7_3_2_render_includes_six_top_level_arrays,
+tsn_7_3_2_render_qos_profile_emits_named_categories, tsn_7_3_2_render_node_emits_mac_in_canonical_form,
+tsn_7_3_2_render_escapes_special_chars}` (4).
 
 **Status:** done
 
@@ -339,18 +339,18 @@ RFC 7950 YANG source parsing (reading textual `.yang` modules) is
 caller-layer; the spec requires producing the YANG group representation,
 not parsing foreign `.yang` files.
 
-**Tests:** `crates/transport-tsn/src/pim/yang.rs::tests::{stream_id_yang_string_is_mac_plus_16bit_id,
-stream_id_uses_node_mac_and_datawriter_id, talker_stream_rank_is_one_per_spec,
-ethernet_data_frame_maps_mac_and_vlan_from_stream,
-ipv4_data_frame_maps_tuple_including_dscp, absent_data_frame_yields_none,
-interval_is_period_as_reduced_fraction_of_second, traffic_spec_maps_all_fields,
-time_aware_unspecified_sets_zero_offsets, time_aware_present_maps_offsets,
-user_to_network_requirements_present_when_talker_has_them,
-user_to_network_requirements_absent_when_talker_has_none,
-end_station_interface_carries_node_mac_and_ifname,
-listener_maps_node_mac_and_requirements,
-config_transform_assigns_sequential_datawriter_ids,
-yang_json_contains_normative_keys, yang_json_groups_has_both_arrays}` (17).
+**Tests:** `crates/transport-tsn/src/pim/yang.rs::tests::{tsn_7_3_3_stream_id_yang_string_is_mac_plus_16bit_id,
+tsn_7_3_3_stream_id_uses_node_mac_and_datawriter_id, tsn_7_3_3_talker_stream_rank_is_one_per_spec,
+tsn_7_3_3_ethernet_data_frame_maps_mac_and_vlan_from_stream,
+tsn_7_3_3_ipv4_data_frame_maps_tuple_including_dscp, tsn_7_3_3_absent_data_frame_yields_none,
+tsn_7_3_3_interval_is_period_as_reduced_fraction_of_second, tsn_7_3_3_traffic_spec_maps_all_fields,
+tsn_7_3_3_time_aware_unspecified_sets_zero_offsets, tsn_7_3_3_time_aware_present_maps_offsets,
+tsn_7_3_3_user_to_network_requirements_present_when_talker_has_them,
+tsn_7_3_3_user_to_network_requirements_absent_when_talker_has_none,
+tsn_7_3_3_end_station_interface_carries_node_mac_and_ifname,
+tsn_7_3_3_listener_maps_node_mac_and_requirements,
+tsn_1_config_transform_assigns_sequential_datawriter_ids,
+tsn_7_3_3_yang_json_contains_normative_keys, tsn_7_3_3_yang_json_groups_has_both_arrays}` (17).
 
 **Status:** done
 
@@ -372,7 +372,7 @@ tests that hold without TSN:
 `crates/rtps/src/header.rs::tests::{header_layout_first_four_bytes_are_rtps_magic,
 header_protocol_version_at_bytes_4_5, header_total_size_is_20_bytes,
 header_roundtrip}`; that the TSN path carries the same header:
-`crates/transport-tsn/src/ethernet_psm.rs::tests::round_trip_with_vlan`.
+`crates/transport-tsn/src/ethernet_psm.rs::tests::tsn_1_round_trip_with_vlan`.
 
 **Status:** done
 
@@ -390,7 +390,7 @@ frame-size bound via the fragment layer);
 two_fragments_complete_in_order, fragments_complete_out_of_order,
 last_fragment_shorter_than_fragment_size, sample_too_large_drops_without_alloc}`;
 `crates/transport-tsn/src/traffic.rs::tests::bytes_per_second_calculation_for_1ms_interval_1500_byte_frame`;
-`crates/transport-tsn/src/ethernet_psm.rs::tests::truncated_input_is_error`.
+`crates/transport-tsn/src/ethernet_psm.rs::tests::tsn_8_2_truncated_input_is_error`.
 
 **Status:** done
 
@@ -404,9 +404,9 @@ and an IEEE 802.1Q VLAN tag carrying the PCP priority.
 DEFAULT/EF/AF11/AF21/AF31/AF41 constants + ToS-octet round-trip); VLAN-tag
 insertion in `vlan_tag.rs`.
 
-**Tests:** `crates/transport-tsn/src/dscp.rs::tests::{dscp_well_known_constants_match_rfc,
-dscp_above_63_rejected, tos_octet_round_trip_preserves_dscp,
-from_tos_ignores_ecn_bits}` (4);
+**Tests:** `crates/transport-tsn/src/dscp.rs::tests::{tsn_8_3_dscp_well_known_constants_match_rfc,
+tsn_8_3_dscp_above_63_rejected, tsn_8_3_tos_octet_round_trip_preserves_dscp,
+tsn_8_3_from_tos_ignores_ecn_bits}` (4);
 `crates/transport-tsn/src/vlan_tag.rs::tests::{wire_layout_matches_spec_bit_packing,
 wire_round_trip_preserves_all_fields, pcp_values_0_through_7_accepted,
 pcp_above_7_rejected}`.
@@ -421,10 +421,10 @@ EtherType, without an IP and UDP layer.
 
 **Repo:** `crates/transport-tsn/src/ethernet_psm.rs`.
 
-**Tests:** `crates/transport-tsn/src/ethernet_psm.rs::tests::{rtps_ethertype_constant,
-header_without_vlan_is_14_bytes, header_with_vlan_is_18_bytes,
-round_trip_without_vlan, round_trip_with_vlan, truncated_input_is_error,
-ipv4_ethertype_parsed_without_vlan_branch}` (7).
+**Tests:** `crates/transport-tsn/src/ethernet_psm.rs::tests::{tsn_1_rtps_ethertype_constant,
+tsn_8_4_header_without_vlan_is_14_bytes, tsn_8_4_header_with_vlan_is_18_bytes,
+tsn_8_4_round_trip_without_vlan, tsn_1_round_trip_with_vlan, tsn_8_2_truncated_input_is_error,
+tsn_8_4_ipv4_ethertype_parsed_without_vlan_branch}` (7).
 
 **Status:** done
 
@@ -446,19 +446,24 @@ directly in the Ethernet frame over an `AF_PACKET`/`SOCK_RAW` socket; the
 platform-neutral frame logic (VLAN selection, frame build + min-frame
 padding, sysfs MAC parsing) lives in `live_frame.rs`.
 
-**Tests:** `crates/transport-tsn/src/ethernet_psm.rs::tests::{rtps_ethertype_constant,
-header_without_vlan_is_14_bytes, header_with_vlan_is_18_bytes,
-round_trip_without_vlan, round_trip_with_vlan, truncated_input_is_error,
-ipv4_ethertype_parsed_without_vlan_branch}` (7);
-`crates/transport-tsn/src/live_frame.rs::tests::{target_vid_overrides_default,
-zero_target_falls_back_to_default_vid, zero_default_and_target_is_untagged,
-vid_out_of_range_is_error, pcp_out_of_range_is_error,
-build_frame_untagged_has_14_byte_header, build_frame_tagged_has_18_byte_header,
-build_frame_large_payload_not_padded, parse_mac_sysfs_standard_format,
-parse_mac_sysfs_tolerates_trailing_newline, parse_mac_sysfs_too_few_octets,
-parse_mac_sysfs_non_hex}` (12, platform-neutral, feature `live`);
+**Tests:** `crates/transport-tsn/src/ethernet_psm.rs::tests::{tsn_1_rtps_ethertype_constant,
+tsn_8_4_header_without_vlan_is_14_bytes, tsn_8_4_header_with_vlan_is_18_bytes,
+tsn_8_4_round_trip_without_vlan, tsn_1_round_trip_with_vlan, tsn_8_2_truncated_input_is_error,
+tsn_8_4_ipv4_ethertype_parsed_without_vlan_branch}` (7);
+`crates/transport-tsn/src/live_frame.rs::tests::{tsn_annex_a_target_vid_overrides_default,
+tsn_annex_a_zero_target_falls_back_to_default_vid, tsn_annex_a_zero_default_and_target_is_untagged,
+tsn_annex_a_vid_out_of_range_is_error, tsn_annex_a_pcp_out_of_range_is_error,
+tsn_annex_a_build_frame_untagged_has_14_byte_header, tsn_annex_a_build_frame_tagged_has_18_byte_header,
+tsn_annex_a_build_frame_large_payload_not_padded, tsn_annex_a_parse_mac_sysfs_standard_format,
+tsn_annex_a_parse_mac_sysfs_tolerates_trailing_newline, tsn_annex_a_parse_mac_sysfs_too_few_octets,
+tsn_annex_a_parse_mac_sysfs_non_hex, ieee_802_1q_9_6_a_priority_without_a_vlan_goes_priority_tagged,
+ieee_802_1q_9_6_priority_zero_without_a_vlan_stays_untagged}` (14, platform-neutral, feature `live`);
 `crates/transport-tsn/tests/veth_loopback.rs` — a real RTPS roundtrip over a
-veth pair (root, CI `tsn-live` job, see `internal/ci/tsn-live.md`).
+veth pair; `tests/integration/tests/dcps_tsn.rs::{dcps_over_tsn_veth,
+dcps_over_tsn_priority_tagged}` — DCPS over a veth pair, `tcpdump` reports
+EtherType 0x88B5 and the 802.1Q tag (VLAN 42 with priority 5; priority 5
+without a VLAN as a priority-tagged frame, VID 0). All three need root:
+manual tests on the Linux test host (`ci/manual-tests.tsv`).
 
 **Status:** done
 
@@ -478,15 +483,15 @@ veth pair (root, CI `tsn-live` job, see `internal/ci/tsn-live.md`).
 
 ## Audit status
 
-20 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
+20 done / 0 partial / 0 open / 0 blocked / 4 n/a (informative).
 
-Test run: `cargo test -p zerodds-transport-tsn` — 93 lib tests green,
-0 failed; with `--features live` 105 (+12 `live_frame`). Modules with
-tests: `config`, `data_frame`, `dscp`, `ethernet_psm`, `live_frame`
-(live), `mac`, `network_requirements`, `pim::application`,
-`pim::deployment`, `pim::json`, `pim::xml`, `pim::yang`, `stream`,
-`time_aware`, `traffic`, `vlan_tag`. Plus `tests/veth_loopback.rs`
-(live, root, CI).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-tsn-1.0.md`):
 
-No open items: §7.2 PIM full, §7.3 all three PSMs (XML/JSON/YANG) done,
-Annex A incl. live transport.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 9 tests green.
+* `cargo nextest run --profile merge -p zerodds-transport-tsn --all-targets` (job `merge-rust-transport-tsn`) — 96 tests green.
+* `cargo nextest run --profile integration -p zerodds-integration --features tsn --test dcps_tsn` — manual test by decision 11 (`ci/manual-tests.tsv`), last green at `7d49f9388ca`, not in CI — 2 tests green.
+* `cargo nextest run --profile integration -p zerodds-transport-tsn --features live --test veth_loopback --run-ignored all` — manual test by decision 11 (`ci/manual-tests.tsv`), last green at `7d49f9388ca`, not in CI — 1 test green.
+
+108 cited tests green, 0 not green.
+
+Open items: none.

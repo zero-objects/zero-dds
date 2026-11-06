@@ -255,16 +255,22 @@ impl Drop for CftReaderHold {
 }
 
 /// Payload extensibility for the untyped CFT positional decoder
-/// (XTypes 1.3 §7.3.1.2.1). Determines the byte offset at which the first
-/// schema member starts in an XCDR2 stream.
+/// (XTypes 1.3 §7.3.1.2.1). Determines how the schema members are found in
+/// the body.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CftExtensibility {
     /// `@final` — no DHEADER; the first member starts at offset 0.
     #[default]
     Final,
-    /// `@appendable`/`@mutable` — a 4-byte DHEADER (UInt32 object length,
-    /// XCDR2 §7.4.3.4.2) precedes the members; the schema starts at offset 4.
+    /// `@appendable` — under XCDR2 a 4-byte DHEADER (UInt32 object length,
+    /// §7.4.3.4.2) precedes the members; under XCDR1 the body is plain.
     Appendable,
+    /// `@mutable` — every member comes with its member id: an EMHEADER
+    /// under XCDR2 (PL_CDR2, §7.4.3.4.2), a parameter header under XCDR1
+    /// (PL_CDR1, §7.4.1.2). The schema's members are found by id, the
+    /// `n`-th member (from 0) under id `n`: the ids `@autoid(SEQUENTIAL)`,
+    /// the default, gives a type whose members carry no `@id` (§7.3.1.2.1.1).
+    Mutable,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -566,6 +572,11 @@ impl zerodds_sql_filter::RowAccess for TypedRow<'_> {
         use zerodds_dcps::dds_type::DdsType;
         self.0.field_value(path)
     }
+
+    fn unselected(&self, path: &str) -> bool {
+        use zerodds_dcps::dds_type::DdsType;
+        self.0.field_unselected(path)
+    }
 }
 
 /// `RowAccess` over a raw CDR payload using a positional `CftField` schema.
@@ -580,10 +591,61 @@ struct CdrRow<'a> {
     big_endian: bool,
 }
 
+/// One schema member's value at the reader's position.
+fn read_cft_value(
+    r: &mut zerodds_wire::Reader<'_>,
+    kind: CftFieldKind,
+) -> Option<zerodds_sql_filter::Value> {
+    use zerodds_sql_filter::Value;
+    Some(match kind {
+        CftFieldKind::Bool => Value::Bool(r.read_u8().ok()? != 0),
+        CftFieldKind::Int32 => Value::Int(i64::from(r.read_u32().ok()? as i32)),
+        CftFieldKind::Int64 => Value::Int(r.read_u64().ok()? as i64),
+        CftFieldKind::Float32 => Value::Float(f64::from(f32::from_bits(r.read_u32().ok()?))),
+        CftFieldKind::Float64 => Value::Float(f64::from_bits(r.read_u64().ok()?)),
+        CftFieldKind::StringField => Value::String(r.read_string().ok()?),
+    })
+}
+
+/// Moves the reader of a PL_CDR2 body to the value of the member with
+/// `member_id`: past the DHEADER, from EMHEADER to EMHEADER, each member
+/// stepped over by the extent its length code gives (DDS-XTypes 1.3
+/// §7.4.3.4.2). `None` when the body has no such member.
+fn seek_pl_cdr2_member(r: &mut zerodds_wire::Reader<'_>, member_id: u32) -> Option<()> {
+    let length = r.read_dheader().ok()?;
+    let end = r.position().checked_add(length)?;
+    while r.position() < end {
+        r.align_to(4).ok()?;
+        let header = r.read_emheader().ok()?;
+        if header.member_id == member_id {
+            return Some(());
+        }
+        let next = r.position().checked_add(header.extent)?;
+        r.skip_to(next).ok()?;
+    }
+    None
+}
+
+/// Moves the reader of a PL_CDR1 body to the value of the member with
+/// `member_id`, from parameter header to parameter header in either header
+/// form and with any vendor's flags (DDS-XTypes 1.3 §7.4.1.2), up to the
+/// `PID_LIST_END`. `None` when the list has no such member.
+fn seek_pl_cdr1_member(r: &mut zerodds_wire::Reader<'_>, member_id: u32) -> Option<()> {
+    loop {
+        let header = r.read_pid().ok()?;
+        if header.end {
+            return None;
+        }
+        if header.pid == member_id {
+            return Some(());
+        }
+        r.skip_parameter(header).ok()?;
+    }
+}
+
 impl zerodds_sql_filter::RowAccess for CdrRow<'_> {
     fn get(&self, path: &str) -> Option<zerodds_sql_filter::Value> {
-        use zerodds_sql_filter::Value;
-        use zerodds_wire::{Endianness, Reader};
+        use zerodds_wire::{Endianness, PlCdr1Reading, Reader};
         // XCDR2 little-endian over the bare body (no encap header). The
         // same-runtime dispatch hands the reader the CDR body directly.
         //
@@ -601,56 +663,40 @@ impl zerodds_sql_filter::RowAccess for CdrRow<'_> {
             Endianness::Little
         };
         let mut r =
-            Reader::with_max_align(self.payload, endianness, if self.xcdr1 { 8 } else { 4 });
-        // For an @appendable/@mutable aggregate the XCDR2 stream begins with a
-        // 4-byte DHEADER (UInt32 object length, XTypes 1.3 §7.4.3.4.2) before
-        // the first member; consume it so the schema offsets line up. A @final
-        // type has no DHEADER (offset 0).
-        if !self.xcdr1 && matches!(self.extensibility, CftExtensibility::Appendable) {
-            r.read_u32().ok()?;
-        }
-        for field in self.schema {
-            let want = field.name == path;
-            match field.kind {
-                CftFieldKind::Bool => {
-                    let v = r.read_u8().ok()?;
-                    if want {
-                        return Some(Value::Bool(v != 0));
+            Reader::with_max_align(self.payload, endianness, if self.xcdr1 { 8 } else { 4 })
+                // Any vendor's parameter headers (PL_CDR1).
+                .with_pl_cdr1_reading(PlCdr1Reading::Tolerant);
+        match self.extensibility {
+            // Every member of a @mutable body carries its id: the member is
+            // looked up by it, not read at the position the members before
+            // it would leave it at.
+            CftExtensibility::Mutable => {
+                let index = self.schema.iter().position(|field| field.name == path)?;
+                let member_id = u32::try_from(index).ok()?;
+                if self.xcdr1 {
+                    seek_pl_cdr1_member(&mut r, member_id)?;
+                } else {
+                    seek_pl_cdr2_member(&mut r, member_id)?;
+                }
+                read_cft_value(&mut r, self.schema[index].kind)
+            }
+            CftExtensibility::Final | CftExtensibility::Appendable => {
+                // For an @appendable aggregate the XCDR2 stream begins with a
+                // 4-byte DHEADER (UInt32 object length, XTypes 1.3
+                // §7.4.3.4.2) before the first member; consume it so the
+                // schema offsets line up. A @final type has no DHEADER.
+                if !self.xcdr1 && self.extensibility == CftExtensibility::Appendable {
+                    r.read_u32().ok()?;
+                }
+                for field in self.schema {
+                    let value = read_cft_value(&mut r, field.kind)?;
+                    if field.name == path {
+                        return Some(value);
                     }
                 }
-                CftFieldKind::Int32 => {
-                    let v = r.read_u32().ok()? as i32;
-                    if want {
-                        return Some(Value::Int(v as i64));
-                    }
-                }
-                CftFieldKind::Int64 => {
-                    let v = r.read_u64().ok()? as i64;
-                    if want {
-                        return Some(Value::Int(v));
-                    }
-                }
-                CftFieldKind::Float32 => {
-                    let v = f32::from_bits(r.read_u32().ok()?);
-                    if want {
-                        return Some(Value::Float(v as f64));
-                    }
-                }
-                CftFieldKind::Float64 => {
-                    let v = f64::from_bits(r.read_u64().ok()?);
-                    if want {
-                        return Some(Value::Float(v));
-                    }
-                }
-                CftFieldKind::StringField => {
-                    let v = r.read_string().ok()?;
-                    if want {
-                        return Some(Value::String(v));
-                    }
-                }
+                None
             }
         }
-        None
     }
 }
 
@@ -750,5 +796,153 @@ pub unsafe fn handle_ref<T>(p: *mut T) -> Option<&'static T> {
     } else {
         // SAFETY: NULL check above + caller contract.
         Some(unsafe { &*p })
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
+mod tests {
+    //! The positional filter over a `@mutable` type. The oracle is the
+    //! vendors' octets of the interop corpus case `struct-mutable`
+    //! (`@mutable struct Sample { long a; double b; short c; }` with
+    //! a = -1234567, b = pi, c = -2) in `tests/interop-corpus/expected-bytes.tsv`.
+    use super::{CftExtensibility, CftField, CftFieldKind, CftFilter};
+
+    fn hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    fn filter(expression: &str) -> CftFilter {
+        CftFilter {
+            expr: zerodds_sql_filter::parse(expression).expect("filter"),
+            params: std::sync::Arc::default(),
+            // The members of the type without `c`: a @mutable member is
+            // found by its id, the members before it need not be listed in
+            // full.
+            schema: alloc::vec![
+                CftField {
+                    name: "a".into(),
+                    kind: CftFieldKind::Int32,
+                },
+                CftField {
+                    name: "b".into(),
+                    kind: CftFieldKind::Float64,
+                },
+            ],
+            extensibility: CftExtensibility::Mutable,
+            typed: None,
+        }
+    }
+
+    /// (representation 0 = XCDR1 / 1 = XCDR2, big endian, the octets, who
+    /// writes them).
+    fn cells() -> [(u8, bool, Vec<u8>, &'static str); 10] {
+        [
+            (
+                1,
+                false,
+                hex("1a000000000000207929edff01000030182d4454fb21094002000010feff"),
+                "specification",
+            ),
+            (
+                1,
+                true,
+                hex("0000001a20000000ffed297930000001400921fb54442d1810000002fffe"),
+                "specification",
+            ),
+            (
+                0,
+                false,
+                hex(
+                    "017f080000000000040000007929edff017f08000100000008000000182d4454fb210940017f08000200000004000000feff0000027f0000",
+                ),
+                "cyclone",
+            ),
+            (
+                0,
+                false,
+                hex("000004007929edff01000800182d4454fb21094002000200feff0000023f0000"),
+                "fastdds",
+            ),
+            (
+                0,
+                false,
+                hex("00c004007929edff01c00800182d4454fb21094002c00200feff0000023f0000"),
+                "opendds",
+            ),
+            (
+                0,
+                false,
+                hex("000004007929edff01000800182d4454fb21094002000400feff0000027f0000"),
+                "rti",
+            ),
+            (
+                0,
+                true,
+                hex(
+                    "7f0100080000000000000004ffed29797f0100080000000100000008400921fb54442d187f0100080000000200000004fffe00007f020000",
+                ),
+                "cyclone",
+            ),
+            (
+                0,
+                true,
+                hex("00000004ffed297900010008400921fb54442d1800020002fffe00003f020000"),
+                "fastdds",
+            ),
+            (
+                0,
+                true,
+                hex("c0000004ffed2979c0010008400921fb54442d18c0020002fffe00003f020000"),
+                "opendds",
+            ),
+            (
+                0,
+                true,
+                hex("00000004ffed297900010008400921fb54442d1800020004fffe00007f020000"),
+                "rti",
+            ),
+        ]
+    }
+
+    #[test]
+    fn xtypes_7_4_3_4_2_a_mutable_member_is_found_by_its_id_in_every_vendors_body() {
+        let passing = filter("a < 0 AND b > 3.14 AND b < 3.15");
+        let failing = filter("a > 0");
+        for (representation, big_endian, octets, vendor) in cells() {
+            assert!(
+                passing.accepts(&octets, representation, big_endian),
+                "{vendor} {representation} {big_endian}: a and b read by id"
+            );
+            assert!(
+                !failing.accepts(&octets, representation, big_endian),
+                "{vendor} {representation} {big_endian}"
+            );
+        }
+    }
+
+    #[test]
+    fn xtypes_7_4_3_4_2_a_member_the_body_does_not_carry_does_not_pass() {
+        // id 2 is `c`, id 5 is in none of the bodies.
+        let mut absent = filter("x = 1");
+        absent.schema = (0..6)
+            .map(|index| CftField {
+                name: if index == 5 {
+                    "x".into()
+                } else {
+                    alloc::format!("m{index}")
+                },
+                kind: CftFieldKind::Int32,
+            })
+            .collect();
+        for (representation, big_endian, octets, vendor) in cells() {
+            assert!(
+                !absent.accepts(&octets, representation, big_endian),
+                "{vendor} {representation} {big_endian}"
+            );
+        }
     }
 }

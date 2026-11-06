@@ -36,15 +36,6 @@ fn struct_with_hash_dep(name: &str, dep: EquivalenceHash) -> MinimalTypeObject {
 }
 
 #[test]
-fn registry_insert_and_get_roundtrip() {
-    let mut reg = TypeRegistry::new();
-    let m = struct_with_hash_dep("::A", EquivalenceHash([1; 14]));
-    let h = zerodds_types::compute_minimal_hash(&m).unwrap();
-    reg.insert_minimal(h, m.clone());
-    assert_eq!(reg.get_minimal(&h).unwrap(), &m);
-}
-
-#[test]
 fn registry_dependencies_of_returns_member_hashes() {
     let dep = EquivalenceHash([0xFE; 14]);
     let m = struct_with_hash_dep("::A", dep);

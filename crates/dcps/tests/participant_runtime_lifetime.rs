@@ -52,10 +52,15 @@ fn transient_local_reliable() -> (DataWriterQos, DataReaderQos) {
     )
 }
 
-fn take_for(reader: &zerodds_dcps::subscriber::DataReader<RawBytes>, window: Duration) -> Vec<u8> {
+/// What the reader takes until it holds `count` samples or `window` is up.
+fn take_until(
+    reader: &zerodds_dcps::subscriber::DataReader<RawBytes>,
+    count: usize,
+    window: Duration,
+) -> Vec<u8> {
     let mut got = Vec::new();
     let until = Instant::now() + window;
-    while Instant::now() < until {
+    while got.len() < count && Instant::now() < until {
         let _ = reader.wait_for_data(Duration::from_millis(100));
         if let Ok(samples) = reader.take() {
             got.extend(samples.into_iter().map(|s| s.data[0]));
@@ -108,7 +113,7 @@ fn a_writer_keeps_its_runtime_after_the_participant_handle_drops() {
     for n in 1..=5u8 {
         writer.write(&RawBytes::new(vec![n])).expect("write");
     }
-    let mut got = take_for(&reader, Duration::from_secs(3));
+    let mut got = take_until(&reader, 5, Duration::from_secs(3));
     got.sort_unstable();
     assert_eq!(got, vec![1, 2, 3, 4, 5]);
 }

@@ -105,10 +105,10 @@ impl Orb {
 
     /// Spec §8.2.4 — `shutdown(wait_for_completion)`.
     pub fn shutdown(&self, _wait_for_completion: bool) {
-        if let Ok(mut g) = self.state.lock() {
-            if *g == OrbState::Running {
-                *g = OrbState::ShuttingDown;
-            }
+        if let Ok(mut g) = self.state.lock()
+            && *g == OrbState::Running
+        {
+            *g = OrbState::ShuttingDown;
         }
     }
 
@@ -161,10 +161,10 @@ impl Orb {
     /// CCM 4.0 §2 CP8 — activates a messaging policy on the ORB.
     /// Cross-ref `corba-ccm::orb_extensions::MessagingPolicy`.
     pub fn with_messaging_policy(&self, p: MessagingPolicy) {
-        if let Ok(mut g) = self.messaging_policies.lock() {
-            if !g.contains(&p) {
-                g.push(p);
-            }
+        if let Ok(mut g) = self.messaging_policies.lock()
+            && !g.contains(&p)
+        {
+            g.push(p);
         }
     }
 

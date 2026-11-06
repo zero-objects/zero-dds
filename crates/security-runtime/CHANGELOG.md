@@ -52,11 +52,31 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ### Fixed
 
+- `SecurityGate` frames submessages and messages as DDS-Security 1.2 §7.4.7
+  does (through `zerodds-security-rtps`, see there), and protects the
+  submessages of a topic by its `metadata_protection_kind`
+  (§10.4.1.2.6.6); it read the `data_protection_kind`, which is about the
+  SerializedPayload (§10.4.1.2.6.7).
+
+- `psk_crypto_config_from_properties` reads the alternative passphrases from
+  `dds.sec.crypto.rtps_psk_secret_passphrase_alt` (DDS-Security 1.2 Table 86)
+  and `dds.sec.crypto.rtps_psk_secret_passphrase_extra` (Table 71), and from the
+  `org.zerodds.sec.crypto.` names it read before; each one set adds its own.
+  It read only `org.zerodds.sec.crypto.rtps_psk_secret_passphrase_alt`.
+
 - The endpoints of the two log topics follow the builtin rule of §10.6 for
   their key material, their announced mask and read/write protection.
 
 
 ### Changed
+
+- The tests behind the feature `pkcs11` run in CI: the crate tier has a
+  feature run `pkcs11` (`[package.metadata.crate-tier]`), and the SoftHSM test
+  (`pkcs11_softhsm::security_9_3_1_a_token_key_signs_a_handshake_message_the_certificate_verifies`)
+  runs in the integration job `integration-security`, which installs SoftHSM
+  and OpenSC and names the module in `ZERODDS_TEST_PKCS11_MODULE`. Without the
+  variable the test fails; it printed a skip and passed before, and only
+  `deny` built the feature.
 
 - `SharedSecurityGate` decides every check through a `Box<dyn AccessControlPlugin>`
   (`set_access_control` for a plugin of the application) and hands the

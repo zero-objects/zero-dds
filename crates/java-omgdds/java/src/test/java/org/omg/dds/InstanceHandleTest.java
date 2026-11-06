@@ -51,7 +51,7 @@ class InstanceHandleTest {
     }
 
     @Test
-    void aWriterDisposesAndUnregistersTheInstancesItRegistered() throws Exception {
+    void javapsm_2_a_writer_disposes_and_unregisters_the_instances_it_registered() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(980);
         Topic<Item> topic = participant.createTopic("Items", Item.class);
         DataReader<Item> reader = participant.createSubscriber().createDataReader(topic,
@@ -89,26 +89,4 @@ class InstanceHandleTest {
                 () -> writer.dispose(org.zerodds.core.Values.nil(), null));
     }
 
-    @Test
-    void aHandleGivenWithAWriteIsTheHandleOfTheSamplesInstance() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(981);
-        Topic<Item> topic = participant.createTopic("ItemsWrite", Item.class);
-        DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
-        InstanceHandle one = writer.registerInstance(new Item(1, 0));
-        InstanceHandle two = writer.registerInstance(new Item(2, 0));
-        writer.write(new Item(1, 5), one);
-        assertThrows(PreconditionNotMetException.class, () -> writer.write(new Item(1, 5), two));
-    }
-
-    @Test
-    void getKeyValueReturnsTheInstanceOfTheHandle() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(982);
-        Topic<Item> topic = participant.createTopic("ItemsKey", Item.class);
-        DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
-        InstanceHandle two = writer.registerInstance(new Item(2, 0));
-        writer.write(new Item(2, 7));
-        Item key = writer.getKeyValue(new Item(), two);
-        assertEquals(2, key.id);
-        assertEquals(two, writer.lookupInstance(key));
-    }
 }

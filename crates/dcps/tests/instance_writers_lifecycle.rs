@@ -122,7 +122,7 @@ use zerodds_rtps::history_cache::ChangeKind;
 /// instance stays ALIVE and no invalid sample reports a change that did not
 /// happen; the second unregister ends it.
 #[test]
-fn an_unregister_of_one_of_two_writers_leaves_the_instance_alive() {
+fn dcps_2_2_2_5_1_3_an_unregister_of_one_of_two_writers_leaves_the_instance_alive() {
     let r = reader("TwoWriters", false);
     write(&r, W1, 0, 1);
     assert_eq!(r.take_with_info().unwrap().len(), 1);
@@ -147,7 +147,7 @@ fn an_unregister_of_one_of_two_writers_leaves_the_instance_alive() {
 /// only if the DataWriter that 'owns' the instance explicitly disposes
 /// it". The weaker writer's dispose is not taken; the owner's is.
 #[test]
-fn only_the_owner_disposes_an_exclusive_instance() {
+fn dcps_2_2_2_5_1_3_only_the_owner_disposes_an_exclusive_instance() {
     let r = reader("OwnedDispose", true);
     write(&r, W1, 10, 1);
     write(&r, W2, 5, 2);
@@ -175,7 +175,7 @@ fn only_the_owner_disposes_an_exclusive_instance() {
 /// §2.2.3.23.3: "if the current owner of an instance unregisters it, then
 /// it will relinquish ownership". The weaker writer writes it next.
 #[test]
-fn an_owner_that_unregisters_gives_up_the_instance() {
+fn dcps_2_2_2_4_2_7_an_owner_that_unregisters_gives_up_the_instance() {
     let r = reader("OwnedUnregister", true);
     write(&r, W1, 10, 1);
     write(&r, W2, 5, 2);
@@ -195,7 +195,7 @@ fn an_owner_that_unregisters_gives_up_the_instance() {
 /// before its instance was disposed is read as NOT_ALIVE_DISPOSED, and an
 /// ALIVE-only mask no longer selects it.
 #[test]
-fn the_instance_state_of_a_sample_is_that_of_its_instance_when_read() {
+fn dcps_2_2_2_5_1_3_the_instance_state_of_a_sample_is_that_of_its_instance_when_read() {
     use zerodds_dcps::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
     let r = reader("SnapshotState", false);
     write(&r, W1, 0, 1);
@@ -219,7 +219,7 @@ fn the_instance_state_of_a_sample_is_that_of_its_instance_when_read() {
 /// instance relative to the DataReader … at the time the collection was
 /// obtained". The first read sees NEW, the second NOT_NEW.
 #[test]
-fn the_view_state_of_a_sample_is_that_of_its_instance_when_read() {
+fn dcps_2_2_2_5_1_8_the_view_state_of_a_sample_is_that_of_its_instance_when_read() {
     use zerodds_dcps::sample_info::ViewStateKind;
     let r = reader("SnapshotView", false);
     write(&r, W1, 0, 1);
@@ -236,7 +236,7 @@ fn the_view_state_of_a_sample_is_that_of_its_instance_when_read() {
 /// and has the writer's source timestamp. It had HANDLE_NIL and the
 /// reader's clock.
 #[test]
-fn a_dispose_marker_names_its_writer_and_its_source_time() {
+fn dcps_2_2_2_5_5_a_dispose_marker_names_its_writer_and_its_source_time() {
     let r = reader("MarkerSource", false);
     write(&r, W1, 0, 1);
     let data = r.take_with_info().unwrap();
@@ -275,11 +275,11 @@ fn a_dispose_marker_names_its_writer_and_its_source_time() {
     );
 }
 
-/// The unregister half of `a_dispose_marker_names_its_writer_and_its_source_time`
+/// The unregister half of `dcps_2_2_2_5_5_a_dispose_marker_names_its_writer_and_its_source_time`
 /// (§2.2.2.4.2.8 `unregister_instance_w_timestamp`): the marker of the last
 /// writer leaving names that writer and carries its source timestamp.
 #[test]
-fn an_unregister_marker_names_its_writer_and_its_source_time() {
+fn dcps_2_2_2_5_5_an_unregister_marker_names_its_writer_and_its_source_time() {
     let r = reader("UnregisterMarkerSource", false);
     write(&r, W1, 0, 1);
     let data = r.take_with_info().unwrap();
@@ -324,7 +324,7 @@ fn an_unregister_marker_names_its_writer_and_its_source_time() {
 /// taken, the one after it is. The owner kept the instance, and the weaker
 /// writer stayed shut out.
 #[test]
-fn an_owner_that_missed_its_deadline_gives_the_instance_up() {
+fn dcps_2_2_3_9_2_an_owner_that_missed_its_deadline_gives_the_instance_up() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let t = p
@@ -362,7 +362,7 @@ fn an_owner_that_missed_its_deadline_gives_the_instance_up() {
 /// sample is taken, and a writer stronger than the new strength takes the
 /// instance over. The owner's own sample was refused.
 #[test]
-fn an_owner_that_lowers_its_strength_keeps_the_instance_until_a_stronger_one() {
+fn dcps_2_2_3_9_2_an_owner_that_lowers_its_strength_keeps_the_instance_until_a_stronger_one() {
     let r = reader("OwnerStrength", true);
     write(&r, W1, 10, 1);
     assert_eq!(r.take_with_info().unwrap().len(), 1);

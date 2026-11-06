@@ -132,7 +132,7 @@ impl PlCdr1Framing {
     /// `pad_declared_optional_length`, which Cyclone answers `false` and
     /// the clause `true`.
     /// `zerodds_wire_probe::value`'s
-    /// `the_default_framing_is_the_default_dialects` holds all six
+    /// `xtypes_7_4_1_2_the_default_framing_is_the_default_dialects` holds all six
     /// against `zerodds_ast_layout::Dialect::default`. It is there and
     /// not here because this crate depends on neither the layout crate
     /// nor the probe, and a constant nothing compares is a constant that
@@ -257,7 +257,7 @@ impl FixedDigits {
                 // the total nibble count even (whole octets).
                 if string_digits == 0 {
                     1
-                } else if string_digits % 2 == 0 {
+                } else if string_digits.is_multiple_of(2) {
                     string_digits + 1
                 } else {
                     string_digits
@@ -874,7 +874,8 @@ impl WstringLengthPolicy {
     /// both.
     #[must_use]
     pub const fn admits_length(self, declared: usize) -> bool {
-        if matches!(self.counts, WstringLengthCounts::Octets) && declared % self.unit.octets() != 0
+        if matches!(self.counts, WstringLengthCounts::Octets)
+            && !declared.is_multiple_of(self.unit.octets())
         {
             return false;
         }
@@ -1970,6 +1971,91 @@ impl Writer {
         }
         self.write_string(value);
         Ok(())
+    }
+
+    /// A string whose text a `Display` impl writes straight into the
+    /// buffer, and whose length is patched in afterwards, as a DHEADER's
+    /// is.
+    ///
+    /// The octets are [`Self::write_string`]'s: a four-octet length that
+    /// counts the terminator, the text, a NUL (XTypes 1.3 §7.4.1.1.2). No
+    /// `String` stands between the value and the wire. The checks run on
+    /// the text the impl wrote: at most `bound` octets where the member is
+    /// a `string<bound>`, and no NUL inside it, which every C peer would
+    /// stop at. A refusal leaves the buffer as it was before the call.
+    ///
+    /// # Errors
+    /// [`WireError::OutOfRange`] for a text over the bound, for a NUL
+    /// inside it, for one a four-octet length cannot count, and for a
+    /// `Display` impl that reported an error.
+    pub(crate) fn write_string_display<T: core::fmt::Display + ?Sized>(
+        &mut self,
+        value: &T,
+        bound: Option<usize>,
+    ) -> Result<(), WireError> {
+        /// Appends what a formatter writes to the sample's own buffer.
+        struct Append<'b>(&'b mut Vec<u8>);
+        impl core::fmt::Write for Append<'_> {
+            fn write_str(&mut self, text: &str) -> core::fmt::Result {
+                self.0.extend_from_slice(text.as_bytes());
+                Ok(())
+            }
+        }
+
+        let before = self.out.len();
+        let spans_before = self.padding.as_ref().map(Vec::len);
+        self.align_to(4);
+        let length_at = self.out.len();
+        self.extend(&[0u8; 4]);
+        let text_at = self.out.len();
+        let formatted = core::fmt::write(&mut Append(&mut self.out), format_args!("{value}"));
+        let text = &self.out[text_at..];
+        let checked = if formatted.is_err() {
+            Err(WireError::OutOfRange {
+                at: text_at,
+                expected: alloc::string::String::from(
+                    "a Display impl that writes its text without an error",
+                ),
+            })
+        } else if let Some(bound) = bound.filter(|bound| text.len() > *bound) {
+            Err(WireError::OutOfRange {
+                at: text_at,
+                expected: format!(
+                    "at most {bound} octets in a bounded string, and this one has {}",
+                    text.len()
+                ),
+            })
+        } else if let Some(offset) = text.iter().position(|byte| *byte == 0) {
+            Err(WireError::OutOfRange {
+                at: text_at + offset,
+                expected: alloc::string::String::from(
+                    "no NUL inside a string a C peer would stop at",
+                ),
+            })
+        } else {
+            // The length counts the terminator.
+            u32::try_from(text.len() + 1).map_err(|_| WireError::OutOfRange {
+                at: length_at,
+                expected: alloc::string::String::from(
+                    "a string whose length a four-octet field can count",
+                ),
+            })
+        };
+        match checked {
+            Ok(length) => {
+                self.out.push(0);
+                let bytes = self.order4(length);
+                self.out[length_at..length_at + 4].copy_from_slice(&bytes);
+                Ok(())
+            }
+            Err(error) => {
+                self.out.truncate(before);
+                if let (Some(spans), Some(kept)) = (self.padding.as_mut(), spans_before) {
+                    spans.truncate(kept);
+                }
+                Err(error)
+            }
+        }
     }
 
     /// A `wstring`: a four-octet length, then UTF-16 code units, in the
@@ -3219,7 +3305,7 @@ mod tests {
     /// 2^32.
     #[test]
     #[cfg(target_pointer_width = "64")]
-    fn an_infallible_finish_dheader_over_4_gib_is_deferred_and_not_truncated() {
+    fn xtypes_7_4_3_4_1_an_infallible_finish_dheader_over_4_gib_is_deferred_and_not_truncated() {
         let mut w = Writer::little_endian();
         let header = w.write_dheader();
         w.write_u32(7);
@@ -3245,7 +3331,7 @@ mod tests {
     }
 
     #[test]
-    fn a_dheader_below_4_gib_is_patched_and_nothing_is_deferred() {
+    fn xtypes_7_4_3_4_1_a_dheader_below_4_gib_is_patched_and_nothing_is_deferred() {
         let mut w = Writer::little_endian();
         let header = w.write_dheader();
         w.write_u32(7);

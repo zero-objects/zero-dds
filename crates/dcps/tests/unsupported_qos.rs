@@ -16,7 +16,7 @@ use zerodds_dcps::{
 /// DATA_REPRESENTATION id is a value the service does not support: the
 /// writer is not created, and the return code is UNSUPPORTED (2).
 #[test]
-fn a_data_representation_the_service_does_not_emit_is_unsupported() {
+fn dcps_2_2_1_1_a_data_representation_the_service_does_not_emit_is_unsupported() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic = p

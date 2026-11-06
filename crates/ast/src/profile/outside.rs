@@ -117,10 +117,10 @@ impl Ast {
                 continue;
             }
             let reach = self.reachable_types(id);
-            if let Some(seed) = seeds.iter().position(|seed| reach.contains(seed.node)) {
-                if !named_elsewhere.contains(&node.node_id) {
-                    doomed.push((id, node.node_id, seed));
-                }
+            if let Some(seed) = seeds.iter().position(|seed| reach.contains(seed.node))
+                && !named_elsewhere.contains(&node.node_id)
+            {
+                doomed.push((id, node.node_id, seed));
             }
         }
 
@@ -160,10 +160,10 @@ impl Ast {
     fn types_named_outside_the_type_graph(&self) -> BTreeSet<NodeId> {
         let mut named: BTreeSet<NodeId> = BTreeSet::new();
         let mut note = |reference: &zerodds_ast_core::Ref<crate::TypeNode>| {
-            if let Some(id) = reference.resolved() {
-                if let Ok(node) = self.types.get(id) {
-                    named.insert(node.node_id);
-                }
+            if let Some(id) = reference.resolved()
+                && let Ok(node) = self.types.get(id)
+            {
+                named.insert(node.node_id);
             }
         };
         for (_, constant) in self.constants.iter() {

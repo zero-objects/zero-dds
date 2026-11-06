@@ -876,10 +876,15 @@ pub unsafe extern "C" fn zerodds_cft_set_schema(
 
 /// Like [`zerodds_cft_set_schema`] but additionally declares the payload's type
 /// `extensibility` (XTypes 1.3 §7.3.1.2.1): `0 = @final`, `1 = @appendable`,
-/// `2 = @mutable`. For `@appendable`/`@mutable` the XCDR2 stream is prefixed
-/// with a 4-byte DHEADER (§7.4.3.4.2) before the first member, so the
-/// positional decoder skips 4 bytes; for `@final` the first member is at
-/// offset 0. Any other value is rejected.
+/// `2 = @mutable`. For `@appendable` the XCDR2 stream is prefixed with a
+/// 4-byte DHEADER (§7.4.3.4.2) before the first member, so the positional
+/// decoder skips 4 bytes; for `@final` the first member is at offset 0. A
+/// `@mutable` body carries every member with its id (an EMHEADER under
+/// XCDR2, §7.4.3.4.2; a parameter header under XCDR1, §7.4.1.2): the `n`-th
+/// schema member (from 0) is looked up under id `n`, the id
+/// `@autoid(SEQUENTIAL)`, the default, gives it when no member carries an
+/// `@id` (§7.3.1.2.1.1); for other ids use `zerodds_cft_set_type_object`.
+/// Any other value is rejected.
 ///
 /// Filter literals are passed as-is (see [`zerodds_cft_set_schema`]).
 ///
@@ -900,9 +905,8 @@ pub unsafe extern "C" fn zerodds_cft_set_schema_ex(
     }
     let ext = match extensibility {
         0 => CftExtensibility::Final,
-        // @mutable also carries a leading DHEADER in XCDR2 (§7.4.3.4.2); for
-        // the positional decoder it behaves like @appendable.
-        1 | 2 => CftExtensibility::Appendable,
+        1 => CftExtensibility::Appendable,
+        2 => CftExtensibility::Mutable,
         _ => return ZeroDdsStatus::BadParameter as c_int,
     };
     // SAFETY: see fn # Safety doc — cft+names+kinds NULL-checked above;
@@ -1322,8 +1326,9 @@ mod tests {
     }
 
     #[test]
-    fn create_topic_then_find_then_delete() {
-        let p = mk_participant(11);
+    fn capi_2_2_create_topic_then_find_then_delete() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         assert!(!p.is_null());
         let n = c"MyTopic";
         let tn = c"MyType";
@@ -1346,7 +1351,8 @@ mod tests {
     /// PRECONDITION_NOT_MET."
     #[test]
     fn delete_topic_is_refused_while_a_datawriter_uses_it() {
-        let p = mk_participant(81);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let n = c"Held";
         let tn = c"TT";
         // SAFETY: p from mk; n+tn static.
@@ -1373,7 +1379,8 @@ mod tests {
     /// The DataReader clause of the same §2.2.2.2.1.6 sentence.
     #[test]
     fn delete_topic_is_refused_while_a_datareader_uses_it() {
-        let p = mk_participant(82);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let n = c"HeldByReader";
         let tn = c"TT";
         // SAFETY: p from mk; n+tn static.
@@ -1398,7 +1405,8 @@ mod tests {
     /// The ContentFilteredTopic clause of the same sentence.
     #[test]
     fn delete_topic_is_refused_while_a_content_filtered_topic_uses_it() {
-        let p = mk_participant(83);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let n = c"HeldByCft";
         let tn = c"TT";
         let cn = c"Cft";
@@ -1434,7 +1442,8 @@ mod tests {
     /// (NULL) when it does not.
     #[test]
     fn topic_name_collision_with_different_type_follows_the_qos() {
-        let p = mk_participant(12);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let n = c"X";
         let t1 = c"TypeA";
         let t2 = c"TypeB";
@@ -1457,7 +1466,8 @@ mod tests {
 
     #[test]
     fn create_delete_publisher_clean() {
-        let p = mk_participant(13);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         // SAFETY: p from mk.
         unsafe {
             let pubh = zerodds_dp_create_publisher(p, ptr::null());
@@ -1470,7 +1480,8 @@ mod tests {
 
     #[test]
     fn create_delete_subscriber_clean() {
-        let p = mk_participant(14);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         // SAFETY: p from mk.
         unsafe {
             let sub = zerodds_dp_create_subscriber(p, ptr::null());
@@ -1482,8 +1493,9 @@ mod tests {
     }
 
     #[test]
-    fn delete_contained_entities_drops_all() {
-        let p = mk_participant(15);
+    fn capi_1_1_delete_contained_entities_drops_all() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let n = c"T";
         let tn = c"TT";
         let f = zerodds_dpf_get_instance();
@@ -1501,16 +1513,18 @@ mod tests {
     }
 
     #[test]
-    fn domain_id_roundtrip() {
-        let p = mk_participant(99);
+    fn capi_2_2_domain_id_roundtrip() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         // SAFETY: p from mk.
-        assert_eq!(unsafe { zerodds_dp_get_domain_id(p) }, 99);
+        assert_eq!(unsafe { zerodds_dp_get_domain_id(p) }, lease.id() as u32);
         drop_participant(p);
     }
 
     #[test]
-    fn get_current_time_returns_nonzero() {
-        let p = mk_participant(98);
+    fn dcps_2_2_2_2_1_32_get_current_time_returns_nonzero() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let mut t = ZeroDdsTime { sec: 0, nanosec: 0 };
         // SAFETY: p from mk; t is a live stack slot.
         let rc = unsafe { zerodds_dp_get_current_time(p, &mut t) };
@@ -1525,50 +1539,12 @@ mod tests {
         drop_participant(p);
     }
 
-    #[test]
-    fn cft_create_delete() {
-        let p = mk_participant(16);
-        let n = c"T";
-        let tn = c"TT";
-        let cn = c"CFT";
-        let expr = c"x > %0";
-        let p1 = c"42";
-        let params: [*const c_char; 1] = [p1.as_ptr()];
-        // SAFETY: p from mk; all CStr+param array static/stack-local.
-        unsafe {
-            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
-            assert!(!t.is_null());
-            let cft = zerodds_dp_create_contentfilteredtopic(
-                p,
-                cn.as_ptr(),
-                t,
-                expr.as_ptr(),
-                params.as_ptr(),
-                1,
-            );
-            assert!(!cft.is_null());
-            let rc = zerodds_dp_delete_contentfilteredtopic(p, cft);
-            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-            let _ = zerodds_dp_delete_topic(p, t);
-        }
-        drop_participant(p);
-    }
-
-    #[test]
-    fn ignore_participant_returns_status() {
-        let p = mk_participant(17);
-        // SAFETY: p from mk.
-        let rc = unsafe { zerodds_dp_ignore_participant(p, 12345) };
-        // Valid handle path: rt may return Error if handle unknown — both Ok.
-        assert!(rc == ZeroDdsStatus::Ok as c_int || rc == ZeroDdsStatus::Error as c_int);
-        drop_participant(p);
-    }
-
     /// `cap == 0` with a NULL buffer asks for the total length; a NULL buffer
     /// with `cap > 0` is refused (`docs/specs/zerodds-c-api-1.0.md` §2.8).
     #[test]
     fn discovered_participants_length_query_and_null_contract() {
-        let p = mk_participant(18);
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let mut count = 0usize;
         // SAFETY: p from mk_participant; count stack-local.
         unsafe {

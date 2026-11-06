@@ -57,7 +57,7 @@ fn gen_self_signed() -> (String, String) {
 }
 
 #[test]
-fn build_corba_tls_config_loads_self_signed() {
+fn corbabridge_7_1_build_corba_tls_config_loads_self_signed() {
     let (cert, key) = gen_self_signed();
     let c = write_temp("corba_cert.pem", cert.as_bytes());
     let k = write_temp("corba_key.pem", key.as_bytes());
@@ -67,7 +67,7 @@ fn build_corba_tls_config_loads_self_signed() {
 }
 
 #[test]
-fn build_corba_tls_config_with_mtls_succeeds() {
+fn corbabridge_7_1_build_corba_tls_config_with_mtls_succeeds() {
     let (cert, key) = gen_self_signed();
     let c = write_temp("corba_cert2.pem", cert.as_bytes());
     let k = write_temp("corba_key2.pem", key.as_bytes());
@@ -77,7 +77,7 @@ fn build_corba_tls_config_with_mtls_succeeds() {
 }
 
 #[test]
-fn build_corba_tls_config_rejects_missing_cert() {
+fn corbabridge_7_1_build_corba_tls_config_rejects_missing_cert() {
     let bad = PathBuf::from("/tmp/zerodds-corba-nonexistent-cert.pem");
     let bad_key = PathBuf::from("/tmp/zerodds-corba-nonexistent-key.pem");
     let err = build_corba_tls_config(bad, bad_key, None).unwrap_err();

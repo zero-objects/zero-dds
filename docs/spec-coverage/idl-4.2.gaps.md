@@ -70,17 +70,23 @@ und in `format` einen anderen:
 | | Kategorie | Proben |
 |---|---|---|
 | A | nicht erkannt — das Frontend weist ab | 14 → 13 → **0** |
-| B | akzeptiert, obwohl die Spezifikation eine Zurückweisung verlangt | 19 → **2** |
-| C | erkannt, nicht emittiert | 12 → 75 → **74** |
+| B | akzeptiert, obwohl die Spezifikation eine Zurückweisung verlangt | 19 → 2 → 3 → **1** |
+| C | erkannt, nicht emittiert | 12 → 75 → 74 → 70 → **65** |
 | D | emittiert, aber kein `.idl` im Baum enthält es | 33 → 26 → **0** |
 | E | `--strict` ohne Wirkung | 4 → **0** |
 | F | `format` nimmt an, was `check` abweist | 21 → **0** |
 | G | `format` weist ab, was `check` annimmt | 3 → **0** |
 
 A ist leer: die drei Grammatikformen aus A.1 bis A.3 und die acht
-Präprozessorformen aus A.5 gehen durch `check`. C ist um 63 Proben
+Präprozessorformen aus A.5 gehen durch `check`. B hat eine Zeile, und
+nur außerhalb von `--strict`: eine Annotation, die ohne Wert
+für ein Member ohne Default angewandt wird, liest das Frontend so, wie
+DDS-XTypes 1.3 §7.3.1.2.5 sie liest, mit einer Warnung, und unter
+`--strict` weist es sie ab, wie OMG IDL 4.2 §7.4.15.4.2 es verlangt
+(§B.5); die zwei Sichtbarkeitsregeln aus B.2 sind seit `a9e6a2627de`
+geschlossen. C ist um 63 Proben
 gewachsen, ohne dass etwas übersehen wurde: die C-Spalte lehnt jede
-`interface` ab, seit `7b651ac2643` eine Interface-Bindung verweigert, was
+`interface` ab, seit `fbbed5a2230` eine Interface-Bindung verweigert, was
 sie nicht vollständig abbilden kann, und die Rust-Spalte lehnt den
 Objekttyp ab, den ein Port oder Konnektor trägt (§C unten); die Union
 ohne `default:` ist aus C heraus (§C). G kam aus A.5 und ist leer:
@@ -109,29 +115,40 @@ je Unterbefehl — das ist der Beleg, den diese Seite zitiert.
 
 | Spalte | `ok` | `err` | `-` |
 |---|---|---|---|
-| `check` | 324 | 33 | — |
-| `strict` | 321 | 36 | — |
-| `lint` | 324 | 33 | — |
-| `format` | 321 | 36 | — |
-| `trip` | 321 | — | 36 |
-| `dump` | 324 | 33 | — |
-| `deps` | 324 | 33 | — |
-| `rust` | 307 | 50 | — |
-| `c` | 249 | 108 | — |
+| `check` | 323 | 34 | — |
+| `strict` | 319 | 38 | — |
+| `lint` | 323 | 34 | — |
+| `format` | 323 | 34 | — |
+| `trip` | 323 | — | 34 |
+| `dump` | 323 | 34 | — |
+| `deps` | 323 | 34 | — |
+| `rust` | 281 | 76 | — |
+| `c` | 258 | 99 | — |
 
-`check`, `lint`, `dump` und `deps` stimmen Probe für Probe überein: alle
-vier gehen über `analyse()`. `format` steht drei Proben darunter, das ist
-G. `strict` steht drei Proben darunter — die drei Vendordirektiven aus E.
+`check`, `lint`, `format`, `dump` und `deps` stimmen Probe für Probe
+überein: alle gehen über `analyse()`, `format`, seit G geschlossen ist.
+`strict` steht vier Proben darunter — die drei Vendordirektiven aus E und
+das ausgelassene Annotationsmember aus B.5.
 `trip` ist überall dort `-`, wo `check` oder `format` die Datei
 abgewiesen hat, und `ok` sonst: kein stiller Verlust im Formatierer.
 
-`rust` und `c` stehen darunter, und das ist Kategorie C: 50
-beziehungsweise 108 Proben, die das Frontend erkennt und ein Backend
-bewusst nicht emittiert.
+`rust` und `c` stehen darunter. Von ihren 76 beziehungsweise 99 `err`
+fallen 34 auf Proben, die schon `check` abweist; die übrigen 42
+beziehungsweise 65 Zellen über 65 Proben sind Kategorie C: das Frontend
+erkennt das Konstrukt, ein Backend emittiert es bewusst nicht.
+
+Gemessen an der Spalte `expect` von `cases.tsv` — was OMG IDL 4.2 von
+jeder Probe verlangt — weichen 118 der 3213 Zellen ab: 66 in `c`, 43 in
+`rust`, 3 in `strict` (die drei Vendordirektiven aus E, die `--strict`
+gewollt abweist) und je 1 in den übrigen sechs Spalten (das ausgelassene
+Annotationsmember aus B.5). Gemessen im CI-Job 232251 (Pipeline 9275),
+aufgezeichnet in `expected.tsv`; gezählt aus `cases.tsv` und
+`expected.tsv`, eine Zelle weicht ab, wenn `expect` `accept` ist und die
+Zelle nicht `ok`, oder `expect` `reject` und die Zelle `ok`.
 
 Die Fixture-Zahlen in den Tabellen dieser Seite sind vom Stand vor der
 Neuaufzeichnung, gezählt über 748 Dateien; `expected.tsv` trägt sie über
-die 821 Dateien, die der Baum jetzt hat.
+die 842 Dateien, die der Baum im CI-Job 232251 hatte.
 
 ---
 
@@ -141,7 +158,7 @@ Die Spezifikation erlaubt es, `zerodds-idlc check` weist es ab.
 
 ### A.1 `(17) <literal>` — benachbarte String-Literale (geschlossen)
 
-**Jetzt:** `ok` in allen neun Spalten (`5cd950c38f2`). Beleg:
+**Jetzt:** `ok` in allen neun Spalten (`811b31a6685`). Beleg:
 `crates/idl-lower/tests/idl_4_2_grammar.rs`. Der Befund, wie er stand:
 
 **Spec:** §7.2.6.3 — „Adjacent string literals are concatenated.
@@ -158,7 +175,7 @@ gefolgt von `[IDL0001] expected a declaration`.
 
 ### A.2 `(64) <type_declarator>` — `<constr_type_dcl>` in einem `typedef` (geschlossen)
 
-**Jetzt:** `ok` in allen neun Spalten (`5cd950c38f2`). Beleg:
+**Jetzt:** `ok` in allen neun Spalten (`811b31a6685`). Beleg:
 `crates/idl-lower/tests/idl_4_2_grammar.rs`. Der Befund, wie er stand:
 
 **Spec:** §7.4.1.4.4.7 „Naming Data Types", Produktion 64 —
@@ -176,7 +193,7 @@ direkt im `typedef`.
 
 ### A.3 `(112) <export> ::+ …` — `typeid`, `typeprefix` und `import` im Interface-Body (geschlossen)
 
-**Jetzt:** `check` bis `deps` und `rust` `ok` (`5cd950c38f2`); `c` weist
+**Jetzt:** `check` bis `deps` und `rust` `ok` (`811b31a6685`); `c` weist
 ab wie jedes `interface` (Kategorie C). Beleg:
 `crates/idl-lower/tests/idl_4_2_grammar.rs`. Der Befund, wie er stand:
 
@@ -257,7 +274,7 @@ Annotation als unbekannt behandeln (1 rot).
 ### A.5 §7.3 — der Präprozessor ist nicht der aus ISO/IEC 14882:2003 (geschlossen)
 
 **Jetzt:** alle acht Proben `ok` in `check`, `lint`, `dump`, `deps`,
-`rust` und `c` (`f05fd8b6991`): funktionsartige Makros, `#`, `##` mit
+`rust` und `c` (`9303a2a33cf`): funktionsartige Makros, `#`, `##` mit
 Platzhaltern, der Rescan mit Hide-Sets, `#if` über einen vollständigen
 Konstantenausdruck, `__LINE__`, `__FILE__`, Zeilenfortsetzung. Neuer Code
 `IDL0022`. Beleg: `crates/idl-parse/tests/preprocessor_iso_14882.rs`.
@@ -346,69 +363,65 @@ ersten beiden rot, `_ => (false, …)` statt `_ => return` den dritten.
 `scope-7.2.6.3-wide-to-narrow`, `scope-7.2.6.3-narrow-to-wide` — alle
 drei jetzt `err` in allen neun Spalten.
 
-### B.2 §7.5.2 — drei Sichtbarkeitsregeln (eine geschlossen, zwei bewusst offen)
+### B.2 §7.5.2 — drei Sichtbarkeitsregeln (geschlossen)
 
 **Spec:** §7.5.2 — „The name of a module, structure, union, map,
 interface, value type, event type, exception or home may not be redefined
-within the immediate scope of the module, …". Die Spezifikation gibt
-beide Fälle als Beispiel mit dem Kommentar `// Error`.
+within the immediate scope of the module, …", mit dem Beispiel
+`interface I { void i (in short j); // Error: i clashes with the interface
+name I };`; und „An identifier from a surrounding scope is introduced into
+a scope if it is used in that scope. An identifier is not introduced into
+a scope by merely being visible in that scope." Die Spezifikation gibt
+alle drei Fälle als Beispiel mit dem Kommentar `// Error`.
 
 | IDL | Spec sagt | vorher | jetzt |
 |---|---|---|---|
 | `module Ma { typedef short Ma; };` | Error (Beispiel §7.5.2) | 0 Fehler | **[IDL0008]** |
-| `interface Ia { void ia(in short jj); };` | Error (Beispiel §7.5.2) | 0 Fehler | 0 Fehler — offen |
-| `module Inner2 { typedef Inner1::Ss1 Ss2; typedef string inner1; };` | Error (Beispiel §7.5.2) | 0 Fehler | 0 Fehler — offen |
+| `interface Ia { void ia(in short jj); };` | Error (Beispiel §7.5.2) | 0 Fehler | **[IDL0008]** |
+| `module Inner2 { typedef Inner1::Ss1 Ss2; typedef string inner1; };` | Error (Beispiel §7.5.2) | 0 Fehler | **[IDL0008]** |
 
-**Die erste ist geschlossen.** `check_redefines_enclosing_scope` in
+**Der Name des eigenen Scopes.** `check_redefines_enclosing_scope` in
 `crates/idl-lower/src/lower.rs`, gerufen aus `check_collision`, vergleicht
 den Namen einer Deklaration mit dem Namen des Scopes, in dem sie steht —
 case-insensitiv, weil §7.2.3 jeden Bezeichnervergleich in IDL so macht.
+Seit `a9e6a2627de` geht auch eine Operation durch `check_collision`; das
+Beispiel der Klausel nennt die Operation `i` im Interface `I` ausdrücklich
+einen Fehler.
 
-**Nur der unmittelbare Scope**, und das ist die ganze Sicherheit der
-Regel: `module Ma { module Mb { typedef short Ma; }; };` bleibt zulässig,
-weil `Ma` nicht der Name des Scopes `Mb` ist. Der Unterschied zwischen
-dieser Regel und einer, die gültiges IDL bricht, liegt genau darin.
-
-Die Regel bestätigt eine Entscheidung, die der Baum schon getroffen
-hatte: Commit `aab2fe27404` hielt fest, dass
-`module common { struct common { … } }` kein zulässiges IDL ist, und
-korrigierte Kommentare in den Java- und TypeScript-Adaptern, die das
-Gegenteil behaupteten. Der Interop-Fall
-`tests/interop-corpus/resolve-module-named-as-type/type.idl` misst, welche
-Vendoren ihn abweisen; er steht jetzt auf der Ausnahmeliste des
+**Nur der unmittelbare Scope**: `module Ma { module Mb { typedef short Ma;
+}; };` bleibt zulässig, weil `Ma` nicht der Name des Scopes `Mb` ist. Die
+Vendoren gehen hier auseinander; die Einstellung
+`name_of_the_enclosing_scope: Admitted` lässt die Deklaration stehen, wie
+Fast DDS und RTI Connext sie lesen. Commit `4051da478d0` hielt fest, dass
+`module common { struct common { … } }` kein zulässiges IDL ist; der
+Interop-Fall `tests/interop-corpus/resolve-module-named-as-type/type.idl`
+misst, welche Vendoren ihn abweisen, und steht auf der Ausnahmeliste des
 Korpus-Tests.
 
-**Zwei bleiben offen, und zwar begründet.**
+**Die eingeführten Bezeichner.** Seit `a9e6a2627de` führt ein relativer
+Name seinen ersten Bezeichner in den Scope ein, in dem er benutzt wird
+(`ScopeStack::introduce`), ein mit `::` verankerter Name keinen;
+`check_introduced` weist eine spätere Deklaration ab, die einen so
+eingeführten Namen case-insensitiv wieder belegt. Die Gegenproben
+`scope-7.5.2-not-introduced-ok` und `scope-7.5.2-rooted-no-introduce`
+gehen weiter durch, jetzt aus dem richtigen Grund.
 
-- **Die Operation, die mit dem Interface-Namen kollidiert.** §7.5.2 zählt
-  für die Redefinitionsregel „module, structure, union, map, interface,
-  value type, event type, exception or home" auf — Operationen stehen
-  nicht darin; der Fall stammt aus dem Introduction-Beispiel. Ob die
-  Regel für jeden `<export>` gilt oder nur für Operationen, ist
-  Auslegung, und zu weit greifen bricht CORBA-Interfaces.
-- **Die „identifier introduction"-Regel.** Sie verlangt, jede
-  Namensbenutzung pro Scope case-insensitiv zu verfolgen. Das ist das
-  höchste Über-Reichweiten-Risiko der ganzen Liste. Die beiden
-  Gegenproben (`scope-7.5.2-not-introduced-ok`,
-  `scope-7.5.2-rooted-no-introduce`) gehen heute durch — richtig, aber
-  aus dem falschen Grund, weil die Regel gar nicht existiert. Eine
-  Umsetzung braucht deutlich mehr Gegenproben als diese zwei.
-
-Was §7.5.2 sonst **hält**: Modul-Wiedereröffnung, Redefinition in einem
+Was §7.5.2 sonst hält: Modul-Wiedereröffnung, Redefinition in einem
 verschachtelten Scope, `enum`-Namen im umgebenden Scope
-(`scope-7.5.2-enum-name-in-scope` wird korrekt abgewiesen), und die
-Case-Kollisionsregel aus §7.2.3, die sogar Bezeichner gegen Keywords
-prüft.
+(`scope-7.5.2-enum-name-in-scope` wird abgewiesen), und die
+Case-Kollisionsregel aus §7.2.3, die Bezeichner auch gegen Keywords prüft.
 
 **Tests:** `crates/idl-lower/tests/validation.rs` —
 `a_declaration_may_not_reuse_the_name_of_its_own_scope` und
-`only_the_immediate_scope_is_compared`.
-Mutation: die Bedingung abschalten (1 rot); den Scope-Namen durch den
-Deklarationsnamen ersetzen, also jede Deklaration treffen (33 rot).
+`only_the_immediate_scope_is_compared`;
+`crates/idl-lower/tests/idl_4_2_rules.rs` —
+`idl_7_5_2_a_used_identifier_is_introduced_and_a_visible_one_is_not` und
+`idl_7_5_2_only_the_first_identifier_of_a_relative_name_is_introduced`;
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_annex_a_every_probe_of_the_gap_scan_gets_the_specifications_answer`.
 
-**Proben:** `scope-7.5.2-redefine-own-name` — jetzt `err`;
-`scope-7.5.2-op-clashes-iface` und `scope-7.5.2-introduced-ident` bleiben
-`ok`.
+**Proben:** `scope-7.5.2-redefine-own-name`,
+`scope-7.5.2-op-clashes-iface` und `scope-7.5.2-introduced-ident` — `err`
+in `check`, `strict`, `lint`, `format`, `dump` und `deps`, `-` in `trip`.
 
 ### B.3 §7.4.1.4.4 — direkte Rekursion (geschlossen)
 
@@ -530,7 +543,7 @@ schließlich „malformed definitions shall be treated as an error".
 
 | IDL | vorher | jetzt |
 |---|---|---|
-| `@annotation Aa { long v; };` + `@Aa struct …` — Pflichtmember ohne Wert | 0 Fehler | **[IDL0007]** |
+| `@annotation Aa { long v; };` + `@Aa struct …` — Pflichtmember ohne Wert | 0 Fehler | **[IDL0007]** unter `--strict`, sonst eine Warnung [IDL0007] |
 | `@Aa("x")` auf `long v default 0` — Typ passt nicht | 0 Fehler | **[IDL0007]** |
 | `@Aa(nosuch = 1)` — Membername existiert nicht | 0 Fehler | **[IDL0007]** |
 | `@Aa(1)` auf eine Annotation mit zwei Membern | 0 Fehler | **[IDL0007]** |
@@ -584,9 +597,28 @@ Regel plus `none_of_the_four_rules_reaches_an_unknown_annotation` und
 Mutation: jede der vier Bedingungen einzeln abschalten (je 1 rot), den
 Aufruf ganz entfernen (4 rot).
 
-**Proben:** `sem-7.4.15-missing-required`,
-`sem-7.4.15-param-type-mismatch`, `sem-7.4.15-unknown-param-name`,
-`sem-7.4.15-shorthand-two-members` — alle vier jetzt `err`.
+**Die erste Regel hat eine zweite Lesart, und beide bleiben.** DDS-XTypes
+1.3 §7.3.1.2.5 (in 1.4 Beta 1 unverändert, §7.3.1.3) beantwortet dieselbe
+Anwendung andersherum: „If an omitted member does not have a specified
+default, it will take the default value specified for its type in Clause
+7.2.2.4.4.4.7." `7116bd01501` folgte diesem Satz und strich den Fehler,
+womit `sem-7.4.15-missing-required` in allen neun Spalten `ok` wurde,
+`--strict` eingeschlossen. Seitdem:
+
+- unter `--strict` (`Dialect::STRICT`, OMG IDL 4.2 und nichts sonst) wird
+  die Anwendung abgewiesen, [IDL0007], mit §7.4.15.4.2;
+- in den Vendordialekten, die IDL für DDS lesen, bleibt sie stehen, und
+  das Member nimmt den Default seines Typs an, mit einer Warnung
+  [IDL0007], die beide Klauseln nennt.
+
+Tests: `crates/idl-lower/tests/validation.rs`,
+`an_annotation_member_with_no_default_needs_a_value_under_omg_idl` und
+`an_annotation_member_with_no_default_takes_the_default_of_its_type`.
+
+**Proben:** `sem-7.4.15-missing-required` — `err` unter `strict`, `ok`
+mit Warnung in den übrigen Spalten; `sem-7.4.15-param-type-mismatch`,
+`sem-7.4.15-unknown-param-name`, `sem-7.4.15-shorthand-two-members` —
+`err`.
 `sem-7.4.15-unknown-annotation` und `-unknown-annotation-args` bleiben
 `ok`; sie sind die Gegenproben und kein Befund.
 
@@ -625,24 +657,39 @@ auch im toten Zweig melden (1 rot).
 
 ## C — erkannt, nicht emittiert
 
-Alle elf Zeilen sind **bewusst abgelehnt**: das Backend nennt in jedem
+Alle sieben Zeilen sind **bewusst abgelehnt**: das Backend nennt in jedem
 Fall den Grund und, wo es einen gibt, die Klausel. Das ist keine Lücke im
 Sinne von „übersehen", muss aber unterscheidbar sein, weil eine
 Anwendung, die das Konstrukt benutzt, nichts bekommt.
 
 | Konstrukt | Produktion | Rust | C | Grund, wie ihn das Werkzeug nennt | Fixtures |
 |---|---|---|---|---|---|
-| `any` als Member | 69, 70 | — | — | `NoLanguageForm { construct: "any" }`, in C zusätzlich `NoWriter { … "'any', which DDS-XTypes has no encoding for; only CORBA CDR writes one, as a TypeCode ahead of the value" }` | 9 |
-| `typedef any` | 70 | — | — | dito | 1 |
-| `any` als Annotationsmember | 223, 224 | ok | — | wie oben | – |
-| `Object` | 117, 118 | — | — | `NoLanguageForm { construct: "Object" }` | 4 |
-| `ValueBase` | 131, 132 | — | — | `NoLanguageForm { construct: "ValueBase" }` | 1 |
+| `any` als Member | 69, 70 | ok\* | ok\* | mit Warnung ausgelassen: „… reaches `any`, for which DDS-XTypes 1.3 has no type …; no code is generated for it" | 9 |
+| `typedef any` | 70 | ok\* | ok\* | dito | 1 |
+| `Object` | 117, 118 | ok\* | ok\* | dito, für `Object` | 4 |
+| `ValueBase` | 131, 132 | ok\* | ok\* | dito, für `ValueBase` | 1 |
 | `fixed<9,2>` | 42 | — | ok | `NoWriter { member: "m", kind: "fixed" }` | 17 |
 | `valuetype Va string;` (Value Box) | 125, 126 | ok | — | `NoWriter { … "boxed value, whose presence flag has no settled wire form" }` | 1 |
-| `abstract valuetype` | 125, 127 | ok | — | `NoLanguageForm { … "an aggregate with no members — C23 §6.7.2.1p8 leaves a structure with no named member undefined" }` | 0 |
-| `abstract eventtype` (Definition) | 166, 168 | ok | — | dito | – |
-| `abstract eventtype` (Forward + Definition) | 167 | ok | — | dito | 1 |
-| `struct Sa { };` (leerer Struct, BB Extended Data-Types) | 195 | ok | — | dito | 3 |
+
+\* `generate` endet mit 0, und der Lauf zeichnet `ok` auf, aber die
+Deklaration bekommt keinen Code. Seit `6032922671c` wird eine Deklaration,
+die `any`, `ValueBase`, `native` oder eine Objektreferenz hält,
+ausgelassen und gemeldet, wie DDS-XTypes 1.3 §7.3.1.1.1 es für ein
+Konstrukt außerhalb des Extensible DDS Profile verlangt („ignore them or
+issue a warning rather than halting with an error"). Die acht Zellen sind
+im CI-Job 230857 von `err` auf `ok` gegangen.
+
+**Geschlossen:** `any` als Annotationsmember (Produktionen 223, 224, Probe
+`bb15-224-member-any-type`). OMG IDL 4.2 gibt dem Member den Typ `any`;
+`60dbe311174` wies es in allen acht Spalten von `check` bis `rust` mit
+DDS-XTypes 1.3 §7.2.2.6 ab („The types permitted for an
+AnnotationParameter are: Primitive types, String types …, Enumerated
+types"). `any` ist der Baustein Any, außerhalb des Extensible DDS
+Profile, und §7.3.1.1.1 lässt ein solches Konstrukt legal und verlangt
+vom Compiler eine Warnung statt eines Abbruchs. Die Deklaration wird
+jetzt gelesen, mit einer Warnung [IDL0007], dass sie im Typsystem keine
+Darstellung hat; die Probe ist in allen neun Spalten `ok`. Test:
+`crates/idl-lower/tests/validation.rs::an_annotation_member_of_type_any_is_read_and_warned_about`.
 
 **Geschlossen:** die Union ohne `default:`, deren Default-Diskriminator
 keinen Zweig trifft (Probe `bb1-050-union-no-default`, Produktionen 49,
@@ -651,12 +698,19 @@ keinen Zweig trifft (Probe `bb1-050-union-no-default`, Produktionen 49,
 wählt (IDL 4.2 §7.4.1.4.4.4), und eine Variante, deren Fall den
 Diskriminator nicht festlegt (mehrere Labels, `default:`), trägt ihn vor
 dem Member. Test:
-`crates/lang-rules/tests/rust_corpus_compiles.rs::a_union_keeps_its_discriminator_through_rustc_and_back`.
+`crates/lang-rules/tests/rust_corpus_compiles.rs::xtypes_7_2_2_4_4_3_a_union_keeps_its_discriminator_through_rustc_and_back`.
 
-Die letzten vier hängen an einer einzigen Ursache: C hat keine Form für
-einen Aggregat-Typ ohne Member, und `abstract valuetype`,
-`abstract eventtype` und der leere Struct aus Produktion 195 laufen alle
-darauf zu. Rust emittiert alle vier.
+**Geschlossen:** `abstract valuetype` (Produktionen 125, 127),
+`abstract eventtype` (166 bis 168) und der leere Struct aus Produktion 195,
+die C23 §6.7.2.1p8 aus der C-Spalte hielt: ein Aggregat ohne Member bekommt
+ein Member, das für keines steht und nicht serialisiert wird (`uint8_t
+zd_no_members`). Die vier Proben sind in der C-Spalte `ok` (`scan.sh` auf dem
+Linux-Testrechner auf `9d93667a201`, in `expected.tsv` nachgetragen), die
+erzeugten Header mit ihrem TypeSupport übersetzen mit `-std=c99 -Wpedantic
+-Werror`, und die C-Spalte schreibt und liest die Oktette von `empty-struct`,
+`empty-struct-as-base` und `empty-struct-in-sequence` aus
+`tests/interop-corpus/expected-bytes.tsv`
+(`tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs`).
 
 Die 17 Fixtures mit `fixed<…>` und die 9 mit `any` sind der Hinweis, dass
 diese beiden Konstrukte im Baum vorkommen, aber nicht durch die
@@ -664,31 +718,53 @@ Rust-Emission gehen.
 
 ### C.2 Die Interface-Familie in C, der Objekttyp an Ports und Konnektoren in Rust
 
-63 weitere Proben, alle mit Begründung abgelehnt:
+64 weitere Proben, alle mit Begründung abgelehnt:
 
-- **C, 62 Proben** — jede Probe mit einem `interface`, auch einer, die
+- **C, 64 Proben** — jede Probe mit einem `interface`, auch einer, die
   nur an einer Komponente, einem Home oder einem Porttyp hängt: „C has no
   complete DDS-RPC 1.0 binding for an interface, and this model
   declares 1 …", mit der Liste der Spalten, die es können. Seit
-  `7b651ac2643` verweigert eine Interface-Bindung, was sie nicht
+  `fbbed5a2230` verweigert eine Interface-Bindung, was sie nicht
   vollständig abbilden kann, statt einen Teil zu erzeugen. Proben:
   `bb3-074` bis `bb3-095`, `bb4-097-export-*`, `bb5-103-value-supports`,
-  `bb6-113-typeid`, `bb6-114-typeprefix`, `bb6-119-local-interface`,
-  `bb6-120-oneway`, `bb6-123-op-with-context`, `bb7-129`, `bb7-130`,
+  `bb6-112-export-*`, `bb6-113-typeid`, `bb6-114-typeprefix`, `bb6-119-local-interface`,
+  `bb6-120-oneway`, `bb6-123-op-with-context`, `bb7-129`,
+  `bb7-130-multi-supports`,
   `bb8-135` bis `bb8-143`, `bb9-145` bis `bb9-150`, `bb10-155` bis
   `bb10-165`, `bb11-173` bis `bb11-182`, `ann-8.3.6.1-service*`,
   `ann-8.3.6.2-oneway`, `ann-8.3.6.3-ami*`,
-  `scope-7.5.2-op-clashes-iface`, `scope-7.5.3-type-name-lookup`.
+  `scope-7.5.3-type-name-lookup`.
 - **Rust, 12 Proben** — ein Port (`provides`, `uses`, `port`,
   `mirrorport`), ein Porttyp oder Konnektor hält eine Objektreferenz, und
   die Rust-Spalte hat für `Object` keine Form:
   `NoLanguageForm { construct: "Object", language: "Rust" }`. Proben:
   `bb8-141-provides`, `bb8-143-uses`, `bb10-157-interface-type-obj`,
   `bb10-158-uses-multiple`, `bb11-173` bis `bb11-182`.
+- **Rust, 30 Proben** — die Rust-Spalte schreibt ein `interface` als
+  DDS-RPC-1.0-Dienst, und `1627b386b56` ließ sie abweisen, was die
+  Dienstgrammatik von DDS-RPC 1.0 §7.3.1.1 aus IDL 3.5 entfernt hat:
+  Produktionen (1) `import`, (2) `typeid`, `typeprefix`, `component`,
+  `home`, `eventtype`, (7) jede Interface-Form außer `interface`
+  (`local`, `abstract`), (9) ein Typ, eine Konstante oder eine Exception
+  im Rumpf eines Interface, (87) `oneway` und `context`. Die Meldung etwa
+  „Ia::op: a `oneway` operation is outside the DDS-RPC 1.0 §7.3.1.1
+  service grammar". Vorher verschwand eine Konstante in einem Interface
+  ohne Meldung. Gemessen im CI-Job 230857 (Pipeline 9119), eine Zeile je
+  Probe. Proben: `ann-8.3.6.2-oneway`, `bb4-097-export-type-dcl`,
+  `-const-dcl`, `-except-dcl`, `bb6-112-export-import`, `-typeid`,
+  `-typeprefix`, `bb6-113-typeid`, `bb6-114-typeprefix`,
+  `bb6-119-local-interface`, `bb6-120-oneway`, `bb6-123-op-with-context`,
+  `bb7-129-abstract-interface`, `bb7-130-multi-supports`, `bb8-135`, `bb8-136`, `bb8-138`,
+  `bb8-140`, `bb9-145`, `bb9-147`, `bb9-149`, `bb9-150-factory-dcl`,
+  `-factory-raises`, `bb10-155`, `bb10-159` bis `bb10-161`, `bb10-163`,
+  `bb10-165`, `scope-7.5.3-type-name-lookup`.
 
-Nicht bestimmt: welcher Commit nach dem letzten Aufzeichnen die zwölf
-Rust-Proben von `ok` auf `err` gebracht hat; die Ablehnung von `Object`
-selbst besteht länger.
+  Gegen OMG IDL 4.2 sind alle 30 `accept`. Die Ablehnung ist die
+  DDS-RPC-Lesart eines Interface; DDS-XTypes 1.3 §7.3.1.1.1 verlangt von
+  einem Compiler, ein Konstrukt, das er nicht unterstützt, zu ignorieren
+  oder davor zu warnen, „rather than halting with an error". Welche der
+  beiden für `generate --lang rust` gilt, wenn das Interface einer Datei
+  außerhalb der Dienstgrammatik liegt, ist offen (OPEN-ITEMS 31).
 
 ---
 
@@ -954,14 +1030,31 @@ Exit-Codes:
 | | |
 |---|---|
 | 0 | gemessen; die Lücke ist genau die aus `expected.tsv` |
-| 1 | eine Probe, die durchkam, kommt nicht mehr durch — die Lücke ist gewachsen |
+| 1 | eine Zelle hat sich von dem entfernt, was OMG IDL 4.2 von der Probe verlangt — die Lücke ist gewachsen |
 | 2 | nichts gemessen: kein `zerodds-idlc`. Nie ein Pass. |
-| 3 | eine Probe kommt jetzt durch, die `expected.tsv` als scheiternd führt — die Lücke ist geschrumpft und diese Seite ist veraltet |
+| 3 | eine Zelle hat sich dem genähert, was OMG IDL 4.2 verlangt — die Lücke ist geschrumpft und diese Seite ist veraltet |
 | 4 | `cases.tsv` und `expected.tsv` nennen verschiedene Proben |
 
-Laufzeit auf einem M1: 36 Sekunden für 356 Proben über 748
-`.idl`-Dateien. Vor der Matrix waren es 16 Sekunden bei zwei gemessenen
-Unterbefehlen; die elf Aufrufe je Probe kosten den Rest.
+`expected.tsv` ist die eigene Aufnahme dieses Baums und nicht der Richter
+über eine Änderung. In welche Richtung sich eine geänderte Zelle bewegt
+hat, liest der Lauf an der Spalte `expect` von `cases.tsv` ab: eine
+`accept`-Probe stimmt, wo eine Spalte `ok` sagt (der Rundlauf `ok`), eine
+`reject`-Probe, wo sie `err` sagt (der Rundlauf `-`). Zu jeder geänderten
+Zelle gibt der Lauf die ersten Zeilen aus, die der Unterbefehl schrieb,
+damit ein CI-Log sagt, warum eine Probe sich bewegt hat.
+
+**Ein Gate.** Der Lauf lief vorher in keinem CI-Job,
+und die Aufnahme lag 58 Zellen neben `main`, ohne dass eine Pipeline rot
+wurde. Er läuft jetzt in der Push-Spur als `merge-idl-gap-scan`, wenn ein
+Push `zerodds-idlc`, ein Paket, von dem es direkt abhängt, oder die
+Dateien des Laufs selbst ändert (`ci/merge_lane.py`, `gap_scan`), und
+wöchentlich als `idl-gap-scan` (`ci/weekly-checks.yml`) für jede Änderung
+darunter. Exit 1, 2, 3 und 4 lassen den Job scheitern.
+
+Laufzeit: die Proben laufen parallel, eine je CPU (`GAP_SCAN_JOBS`). Auf
+dem CI-Runner brauchte der Lauf 7 Sekunden und der Job 30 Sekunden mit
+einem warmen Build von `zerodds-idlc` (Job 230868); auf einem M1, seriell,
+waren es 36 Sekunden für 356 Proben über 748 `.idl`-Dateien.
 
 Exit 3 ist nicht bloß Kosmetik. Eine Negativliste, die eine geschlossene
 Lücke weiter als offen führt, ist schlechter als keine: sie kostet

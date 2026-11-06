@@ -17,7 +17,7 @@ Verwandte Seiten: [README.md](README.md) · [architecture.md](architecture.md) �
 | Dienste | recorder, recorder-decode, durability-store, durability-store-file, -sqlite, -postgres, -lakehouse, durability-service, durability-service-bin, routing-service |
 | Test, Prüfung, Build | wire-conformance, wire-probe, conformance, endpoint-e2e, test-domains, chaos-clock-skew, safe-crates-only, lint, zerodds-build |
 
-Workspace-Version aller Crates: `1.0.0-rc.7`, Edition 2024, `rust-version = "1.88"` (`Cargo.toml` im Wurzelverzeichnis). Crates ohne eigenen Eintrag in `[workspace] members` (transport*, sql-filter, inspect-endpoint, iceoryx-cyclone, recorder) sind über Pfadabhängigkeiten von `dcps` bzw. `discovery` Mitglieder.
+Workspace-Version aller Crates: `1.0.0-rc.7`, Edition 2024, `rust-version = "1.97"` (`Cargo.toml` im Wurzelverzeichnis). Crates ohne eigenen Eintrag in `[workspace] members` (transport*, sql-filter, inspect-endpoint, iceoryx-cyclone, recorder) sind über Pfadabhängigkeiten von `dcps` bzw. `discovery` Mitglieder.
 
 ## Typsystem und Wire
 

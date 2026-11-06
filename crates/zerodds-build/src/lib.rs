@@ -44,6 +44,30 @@
 //! and `zerodds-wire` into the consumer's `[dependencies]`; the option's
 //! own documentation says why that is not a default worth taking.
 //!
+//! ## A Rust type for an IDL type
+//!
+//! An IDL `typedef string UtcTimestamp;` is a `String` in the generated
+//! Rust, and so is a text that is no timestamp. [`Config::rust_type`]
+//! names a Rust type that stands for a typedef, a struct member or a union
+//! branch, and the generated code holds that type instead:
+//!
+//! ```no_run
+//! fn main() -> Result<(), zerodds_build::Error> {
+//!     zerodds_build::Config::new()
+//!         .rust_type("app::UtcTimestamp", "crate::time::UtcTimestamp")
+//!         .rust_type("app::Track.id", "core::num::NonZeroU32")
+//!         .compile(&["idl/app.idl"])
+//! }
+//! ```
+//!
+//! The Rust type implements `zerodds_wire::WireRepr` with `Idl` the IDL
+//! type's Rust spelling (`str` for a `string`, `u32` for an `unsigned
+//! long`); one from another crate goes through an adapter
+//! ([`Config::rust_type_with`], `zerodds_wire::DisplayFromStr` for a
+//! `Display + FromStr` type). The octets, the `TypeObject`, the
+//! `TypeIdentifier` and the key hash stay the IDL's; a value the Rust type
+//! refuses on the way in rejects the sample with that reason.
+//!
 //! ## Where it goes
 //!
 //! **At the crate root.** The generated modules name types across module
@@ -66,6 +90,7 @@
 use std::path::{Path, PathBuf};
 
 mod dds_type;
+mod rust_type;
 
 use zerodds_ast::facet::Extensibility;
 use zerodds_ast::{Ast, TypeKind, TypeNode};
@@ -73,7 +98,9 @@ use zerodds_ast_core::Id;
 use zerodds_ast_layout::key::{Encoding, Endianness, LayoutKey, Purpose};
 use zerodds_ast_layout::{AxisFlag, Dialect, DialectLowering, DialectSettings, PlCdr1Reading};
 use zerodds_idl_compose::{ComposeOptions, PathLoader, compose_with};
-use zerodds_lang_rules::adapter::cst::{RustMapFormScope, nest_by_module, rust_item_pairs};
+use zerodds_lang_rules::adapter::cst::{
+    RustMapFormScope, RustTypeScope, nest_by_module, rust_item_pairs,
+};
 
 /// How the generated Rust holds an IDL `map` ([`Config::rust_map`]).
 pub use zerodds_lang_rules::adapter::cst::RustMapForm;
@@ -121,6 +148,16 @@ pub enum Error {
     /// Cargo sets `OUT_DIR` for a build script. Reaching this means the
     /// caller is not one, and has to say where the output goes.
     NoOutDir,
+    /// A [`Config::rust_type`] or [`Config::rust_type_with`] call that the
+    /// IDL does not support: a path that names no typedef, struct member
+    /// or union branch of the compiled units, a declaration whose IDL type
+    /// no Rust type can stand for, or a Rust type that is no type path.
+    RustType {
+        /// The IDL path as given.
+        idl_path: String,
+        /// What is wrong with it.
+        detail: String,
+    },
     /// A value given to [`Config::axis`] is not one its axis recognises.
     ///
     /// `axis` is infallible — it only appends to a list — so this is
@@ -148,6 +185,9 @@ impl core::fmt::Display for Error {
             Self::Codegen { path, detail } => write!(f, "{}: {detail}", path.display()),
             Self::Write { path, detail } => write!(f, "{}: {detail}", path.display()),
             Self::NoOutDir => write!(f, "OUT_DIR is not set and no out_dir() was given"),
+            Self::RustType { idl_path, detail } => {
+                write!(f, "rust_type(\"{idl_path}\"): {detail}")
+            }
             Self::Axis {
                 flag,
                 value: _,
@@ -210,6 +250,7 @@ pub struct Config {
     axis_overrides: Vec<(AxisFlag, String)>,
     pl_cdr1_reading: PlCdr1Reading,
     rust_map: RustMapForm,
+    rust_types: Vec<rust_type::RustTypeOverride>,
 }
 
 impl Default for Config {
@@ -236,6 +277,7 @@ impl Config {
             axis_overrides: Vec::new(),
             pl_cdr1_reading: PlCdr1Reading::default(),
             rust_map: RustMapForm::default(),
+            rust_types: Vec::new(),
         }
     }
 
@@ -424,6 +466,12 @@ impl Config {
     /// a peer that asks over the TypeLookup service — a type with no
     /// object cannot be resolved remotely, and the peer finds that out
     /// at discovery time rather than here.
+    ///
+    /// The module is `type_objects_<unit>`, and inside it each constant
+    /// sits in the IDL modules its type is declared in:
+    /// `type_objects_robot::common::Pose` for `module common { struct
+    /// Pose { … }; };` in `Robot.idl`. Two modules may each declare a type
+    /// of the same simple name.
     pub fn typeobject(&mut self, enabled: bool) -> &mut Self {
         self.typeobject = enabled;
         self
@@ -465,8 +513,7 @@ impl Config {
     /// Turning it on implies nothing else: the identifier and the object
     /// are written into the impl, not read out of the
     /// [`Self::type_identifier_constants`] or [`Self::typeobject`]
-    /// modules, whose constants are keyed by a type's **simple** name
-    /// and would collide between two modules declaring one name.
+    /// modules, which are switched on and off on their own.
     pub fn dds_type_impls(&mut self, enabled: bool) -> &mut Self {
         self.dds_type_impls = enabled;
         self
@@ -493,6 +540,133 @@ impl Config {
     pub fn rust_map(&mut self, form: RustMapForm) -> &mut Self {
         self.rust_map = form;
         self
+    }
+
+    /// Hold an IDL declaration as another Rust type in the generated code.
+    ///
+    /// `idl_path` names a typedef (`app::UtcTimestamp`), a struct member
+    /// (`app::Event.at`) or a union branch (`app::Choice.stamp`), by the
+    /// IDL scoped name; `rust_type` is the Rust type that stands for it,
+    /// as a path that resolves where the generated file is included —
+    /// `crate::time::UtcTimestamp`, `core::num::NonZeroU32`. The type
+    /// implements `zerodds_wire::WireRepr` with `Idl` the IDL type's
+    /// Rust spelling: `str` for a `string`, `u32` for an `unsigned long`.
+    ///
+    /// ```no_run
+    /// fn main() -> Result<(), zerodds_build::Error> {
+    ///     zerodds_build::Config::new()
+    ///         .rust_type("app::UtcTimestamp", "crate::time::UtcTimestamp")
+    ///         .rust_type("app::Track.id", "core::num::NonZeroU32")
+    ///         .compile(&["idl/app.idl"])
+    /// }
+    /// ```
+    ///
+    /// The generated struct holds the Rust type, in an `Option` for an
+    /// `@optional` member and a `Box` for an `@external` one, and a typedef
+    /// is an alias of it wherever it is used — a member, a sequence, array
+    /// or map element, a union branch. Encode writes the IDL value through
+    /// `to_wire`; decode reads it — a `string` lent out of the sample —
+    /// and converts through `from_wire`, and a value the Rust type refuses
+    /// rejects the sample with that reason. The `TypeObject`, the
+    /// `TypeIdentifier`, assignability and the key hash are the IDL's, and
+    /// a peer in another language reads the same octets.
+    ///
+    /// A member mapping wins over a typedef mapping of the member's type.
+    /// The IDL type behind the declaration is a `string` or a primitive
+    /// other than `wchar` and `long double`. A Rust type whose `Idl` is
+    /// not that type does not compile: the generated file states every
+    /// mapping as `zerodds_wire::repr::idl_type_is::<T, Idl>()`. The
+    /// generated types derive `Debug`, `Clone` and `PartialEq`, so the
+    /// Rust type implements them; a type whose default would need a value
+    /// the Rust type refuses — a `NonZeroU32` for Table 9's zero — gets no
+    /// `impl Default`, and a sample that leaves such a member out is
+    /// rejected.
+    ///
+    /// A later call for the same path replaces an earlier one.
+    ///
+    /// # Errors
+    /// [`Self::compile`] and [`Self::compile_bundle`] refuse, as
+    /// [`Error::RustType`], a path that names no typedef, struct member
+    /// or union branch of the units they compile, a declaration of
+    /// another IDL type, and a Rust type that is no type path.
+    pub fn rust_type(
+        &mut self,
+        idl_path: impl Into<String>,
+        rust_type: impl Into<String>,
+    ) -> &mut Self {
+        self.push_rust_type(idl_path.into(), rust_type.into(), None)
+    }
+
+    /// [`Self::rust_type`] for a type that does not implement
+    /// `zerodds_wire::WireRepr` itself — one from another crate — with
+    /// `adapter` the path of a value that implements
+    /// `zerodds_wire::WireReprWith` for it: a unit struct or a constant.
+    /// `zerodds_wire::DisplayFromStr` is the adapter for any `Display +
+    /// FromStr` type on an IDL `string`.
+    ///
+    /// ```no_run
+    /// fn main() -> Result<(), zerodds_build::Error> {
+    ///     zerodds_build::Config::new()
+    ///         .rust_type_with(
+    ///             "app::Track.source",
+    ///             "std::net::Ipv4Addr",
+    ///             "zerodds_wire::DisplayFromStr",
+    ///         )
+    ///         .compile(&["idl/app.idl"])
+    /// }
+    /// ```
+    ///
+    /// # Errors
+    /// As [`Self::rust_type`], and an adapter that is no path.
+    pub fn rust_type_with(
+        &mut self,
+        idl_path: impl Into<String>,
+        rust_type: impl Into<String>,
+        adapter: impl Into<String>,
+    ) -> &mut Self {
+        self.push_rust_type(idl_path.into(), rust_type.into(), Some(adapter.into()))
+    }
+
+    fn push_rust_type(
+        &mut self,
+        idl_path: String,
+        rust_type: String,
+        adapter: Option<String>,
+    ) -> &mut Self {
+        self.rust_types.retain(|given| given.idl_path != idl_path);
+        self.rust_types.push(rust_type::RustTypeOverride {
+            idl_path,
+            rust_type,
+            adapter,
+        });
+        self
+    }
+
+    /// The overrides of `rust_type` that no compiled unit declared, as
+    /// [`Error::RustType`] for the first.
+    fn every_rust_type_found(&self, found: &[bool]) -> Result<(), Error> {
+        match self
+            .rust_types
+            .iter()
+            .zip(found)
+            .find(|(_, found)| !**found)
+        {
+            Some((given, _)) => Err(Error::RustType {
+                idl_path: given.idl_path.clone(),
+                detail: String::from(
+                    "names no typedef, struct member or union branch of the compiled units \
+                     (an IDL scoped name: `module::Type`, `module::Struct.member`)",
+                ),
+            }),
+            None => Ok(()),
+        }
+    }
+
+    /// The `rust_type` overrides one unit declares, resolved against its
+    /// model.
+    fn rust_types_of(&self, ast: &Ast) -> Result<rust_type::Resolved, Error> {
+        rust_type::resolve(ast, &self.rust_types)
+            .map_err(|(idl_path, detail)| Error::RustType { idl_path, detail })
     }
 
     /// Compile several units into **one** Rust module.
@@ -555,13 +729,10 @@ impl Config {
                 } else {
                     zerodds_idl_compose::NameOfTheEnclosingScope::Refused
                 },
-                // The front end carries `@key` on a union discriminator by
-                // default (DDS-XTypes 1.3 Table 21). This build asks for the
-                // refusal: the Rust union codec has no key holder to emit
-                // for a keyed discriminator (`dds_type.rs`), so carrying it
-                // would fail later, in the generator, with a message about
-                // methods instead of about the declaration.
-                key_on_union_discriminator: zerodds_idl_compose::KeyOnUnionDiscriminator::Refused,
+                // `@key` on a union discriminator is carried (DDS-XTypes 1.3
+                // Table 21, §7.2.2.4.4.4.8): the union is a keyed topic
+                // type and its key holder is the discriminator.
+                key_on_union_discriminator: zerodds_idl_compose::KeyOnUnionDiscriminator::Carried,
                 // A build reads the IDL it was pointed at, which may be a
                 // vendor's. Refusing an extension here would fail the
                 // build over a portability question nobody asked;
@@ -596,7 +767,9 @@ impl Config {
         }
 
         self.leave_out_what_xtypes_has_no_type_for(&bundle, &mut composed.ast)?;
-        let code = self.render_with_stem(&bundle, &composed.ast, name)?;
+        let rust_types = self.rust_types_of(&composed.ast)?;
+        self.every_rust_type_found(&rust_types.found)?;
+        let code = self.render_with_stem(&bundle, &composed.ast, name, rust_types)?;
         let target = out_dir.join(format!("{name}.rs"));
         std::fs::write(&target, code).map_err(|error| Error::Write {
             path: target,
@@ -621,13 +794,23 @@ impl Config {
     /// the IDL beside it.
     pub fn compile(&self, idls: &[impl AsRef<Path>]) -> Result<(), Error> {
         let out_dir = self.resolve_out_dir()?;
+        let mut found = vec![false; self.rust_types.len()];
         for idl in idls {
-            self.compile_one(idl.as_ref(), &out_dir)?;
+            for (any, here) in found
+                .iter_mut()
+                .zip(self.compile_one(idl.as_ref(), &out_dir)?)
+            {
+                *any |= here;
+            }
         }
-        Ok(())
+        // A `rust_type` path is checked against every unit of the call: one
+        // unit of several need not declare it, but one of them has to.
+        self.every_rust_type_found(&found)
     }
 
-    fn compile_one(&self, idl: &Path, out_dir: &Path) -> Result<(), Error> {
+    /// Compile one unit, answering per `rust_type` override whether the
+    /// unit declares its path.
+    fn compile_one(&self, idl: &Path, out_dir: &Path) -> Result<Vec<bool>, Error> {
         let loader = PathLoader::new(self.include_dirs.clone());
         let path = idl.to_string_lossy().into_owned();
         let mut composed = compose_with(
@@ -659,13 +842,10 @@ impl Config {
                 } else {
                     zerodds_idl_compose::NameOfTheEnclosingScope::Refused
                 },
-                // The front end carries `@key` on a union discriminator by
-                // default (DDS-XTypes 1.3 Table 21). This build asks for the
-                // refusal: the Rust union codec has no key holder to emit
-                // for a keyed discriminator (`dds_type.rs`), so carrying it
-                // would fail later, in the generator, with a message about
-                // methods instead of about the declaration.
-                key_on_union_discriminator: zerodds_idl_compose::KeyOnUnionDiscriminator::Refused,
+                // `@key` on a union discriminator is carried (DDS-XTypes 1.3
+                // Table 21, §7.2.2.4.4.4.8): the union is a keyed topic
+                // type and its key holder is the discriminator.
+                key_on_union_discriminator: zerodds_idl_compose::KeyOnUnionDiscriminator::Carried,
                 // A build reads the IDL it was pointed at, which may be a
                 // vendor's. Refusing an extension here would fail the
                 // build over a portability question nobody asked;
@@ -705,12 +885,15 @@ impl Config {
             .and_then(|s| s.to_str())
             .unwrap_or("generated");
         self.leave_out_what_xtypes_has_no_type_for(idl, &mut composed.ast)?;
-        let code = self.render_with_stem(idl, &composed.ast, stem)?;
+        let rust_types = self.rust_types_of(&composed.ast)?;
+        let found = rust_types.found.clone();
+        let code = self.render_with_stem(idl, &composed.ast, stem, rust_types)?;
         let target = out_dir.join(format!("{stem}.rs"));
         std::fs::write(&target, code).map_err(|error| Error::Write {
             path: target,
             detail: error.to_string(),
-        })
+        })?;
+        Ok(found)
     }
 
     /// Leave out the declarations DDS-XTypes 1.3 has no type for, and say
@@ -753,8 +936,17 @@ impl Config {
 
     /// The Rust module for one model: the types and their codecs, folded
     /// into the module tree once.
-    fn render_with_stem(&self, idl: &Path, ast: &Ast, stem: &str) -> Result<String, Error> {
+    fn render_with_stem(
+        &self,
+        idl: &Path,
+        ast: &Ast,
+        stem: &str,
+        rust_types: rust_type::Resolved,
+    ) -> Result<String, Error> {
         let _map_form = RustMapFormScope::enter(self.rust_map);
+        // Every walk below spells a type or a member's codec; the ones a
+        // `rust_type` call named are held as the Rust type it gave.
+        let _rust_types = RustTypeScope::enter(rust_types.mappings);
         let graph = ModelGraph::of(ast);
         let applied = apply(&graph, &rust::catalogue()).map_err(|error| Error::Codegen {
             path: idl.to_path_buf(),
@@ -886,6 +1078,10 @@ impl Config {
             items,
         };
         let mut code = zerodds_lang_render::rust::file(&file);
+        // Each `rust_type` mapping, held to the IDL type it stands for: a
+        // Rust type whose `WireRepr::Idl` is another type fails the build
+        // here, at a line that names both.
+        code.push_str(&rust_types.assertions);
         if self.typeobject {
             code.push_str(&type_objects_module(ast, stem));
         }
@@ -915,7 +1111,8 @@ impl Config {
 /// hand-written `DdsType` impl carries as `TYPE_IDENTIFIER`.
 ///
 /// Named after the unit for the same reason `type_objects_module` is:
-/// two units in one scope must not collide.
+/// two units in one scope must not collide. Inside it, a type's constant
+/// sits in one `pub mod` per IDL module, as `type_objects_module`'s does.
 ///
 /// A type whose identifier this module cannot spell as a constant —
 /// today that is everything but an equivalence hash and a strongly
@@ -923,9 +1120,7 @@ impl Config {
 /// out silently, so a reader who misses a constant finds the reason in
 /// the same place the constant would be.
 fn type_identifiers_module(ast: &Ast, stem: &str) -> String {
-    use core::fmt::Write as _;
-
-    let mut body = String::new();
+    let mut entries = Vec::new();
     for (id, node) in ast.types() {
         if node.name.is_empty() || !has_codec(&node.kind) {
             continue;
@@ -935,64 +1130,63 @@ fn type_identifiers_module(ast: &Ast, stem: &str) -> String {
             id,
             zerodds_types::from_ast::Form::Complete,
         ) else {
-            let _ = writeln!(
-                body,
-                "    // `{}`: its identifier could not be computed from the model.",
-                node.name
-            );
+            entries.push((
+                module_segments(ast, id),
+                format!(
+                    "// `{}`: its identifier could not be computed from the model.\n",
+                    node.name
+                ),
+            ));
             continue;
         };
-        match identifier {
+        let text = match identifier {
             zerodds_types::TypeIdentifier::EquivalenceHashComplete(hash) => {
                 let octets: Vec<String> = hash.0.iter().map(|b| format!("0x{b:02x}")).collect();
-                let _ = write!(
-                    body,
-                    "    /// Complete equivalence hash of `{}`, XTypes 1.3 \u{a7}7.3.4.6.\n    \
-                     pub const {}: zerodds_types::TypeIdentifier =\n        \
+                format!(
+                    "/// Complete equivalence hash of `{}`, XTypes 1.3 \u{a7}7.3.4.6.\n\
+                     pub const {}: zerodds_types::TypeIdentifier =\n    \
                      zerodds_types::TypeIdentifier::EquivalenceHashComplete(\
                      zerodds_types::EquivalenceHash([{}]));\n",
                     node.name,
                     constant_name(&node.name),
                     octets.join(", ")
-                );
+                )
             }
             // A type in a strongly connected component is identified by the
             // component's hash and its own position (§7.3.4.9.3).
             zerodds_types::TypeIdentifier::StronglyConnectedComponent(scc) => {
                 let octets: Vec<String> = scc.hash.0.iter().map(|b| format!("0x{b:02x}")).collect();
-                let _ = write!(
-                    body,
-                    "    /// Complete component identifier of `{}`, XTypes 1.3 \u{a7}7.3.4.9.3.\n    \
-                     pub const {}: zerodds_types::TypeIdentifier =\n        \
-                     zerodds_types::TypeIdentifier::StronglyConnectedComponent(\n            \
-                     zerodds_types::StronglyConnectedComponentId {{\n                \
-                     equivalence_kind: 0x{:02X},\n                hash: \
-                     zerodds_types::EquivalenceHash([{}]),\n                scc_length: {},\n                \
-                     scc_index: {},\n            }});\n",
+                format!(
+                    "/// Complete component identifier of `{}`, XTypes 1.3 \u{a7}7.3.4.9.3.\n\
+                     pub const {}: zerodds_types::TypeIdentifier =\n    \
+                     zerodds_types::TypeIdentifier::StronglyConnectedComponent(\n        \
+                     zerodds_types::StronglyConnectedComponentId {{\n            \
+                     equivalence_kind: 0x{:02X},\n            hash: \
+                     zerodds_types::EquivalenceHash([{}]),\n            scc_length: {},\n            \
+                     scc_index: {},\n        }});\n",
                     node.name,
                     constant_name(&node.name),
                     scc.equivalence_kind,
                     octets.join(", "),
                     scc.scc_length,
                     scc.scc_index
-                );
+                )
             }
-            other => {
-                let _ = writeln!(
-                    body,
-                    "    // `{}`: {other:?} is not an equivalence hash and this module \
-                     does not spell it as a constant yet.",
-                    node.name
-                );
-            }
-        }
+            other => format!(
+                "// `{}`: {other:?} is not an equivalence hash and this module \
+                 does not spell it as a constant yet.\n",
+                node.name
+            ),
+        };
+        entries.push((module_segments(ast, id), text));
     }
-    if body.is_empty() {
+    if entries.is_empty() {
         return String::new();
     }
     format!(
-        "\n#[allow(dead_code, non_upper_case_globals)]\npub mod type_identifiers_{} {{\n{body}}}\n",
-        constant_name(stem).to_lowercase()
+        "\n#[allow(dead_code, non_upper_case_globals, non_snake_case)]\npub mod type_identifiers_{} {{\n{}}}\n",
+        constant_name(stem).to_lowercase(),
+        nested_by_module(&entries, 1)
     )
 }
 
@@ -1008,14 +1202,21 @@ fn type_identifiers_module(ast: &Ast, stem: &str) -> String {
 /// distinguishes them, because it is what already distinguishes the two
 /// output files.
 ///
+/// **One `pub mod` per IDL module inside it**, `type_objects_robot::v1::Part`
+/// and not `type_objects_robot::Part`. A constant is named after its
+/// type's simple name, and `module v1 { struct Part … }; module v2 {
+/// struct Part … };` is two types with one simple name: in one flat
+/// module that was `error[E0428]` twice over, and a unit that declared
+/// both did not compile at all. The IDL scope is what keeps the two
+/// apart, so the module tree here is the IDL's, the same one the
+/// generated types sit in.
+///
 /// A type whose object cannot be built is left out rather than emitted
 /// empty. An empty blob is a `TypeObject` that resolves to nothing, and
 /// a peer that received one would report a type mismatch instead of a
 /// missing type — the second is true and the first is not.
 fn type_objects_module(ast: &Ast, stem: &str) -> String {
-    use core::fmt::Write as _;
-
-    let mut body = String::new();
+    let mut entries = Vec::new();
     for (id, node) in ast.types() {
         if node.name.is_empty() || !has_codec(&node.kind) {
             continue;
@@ -1028,21 +1229,84 @@ fn type_objects_module(ast: &Ast, stem: &str) -> String {
             continue;
         };
         let octets: Vec<String> = bytes.iter().map(|b| format!("0x{b:02x}")).collect();
-        let _ = write!(
-            body,
-            "    /// Minimal TypeObject for `{}`, XCDR2-LE.\n    pub const {}: &[u8] = &[{}];\n",
-            node.name,
-            constant_name(&node.name),
-            octets.join(", ")
-        );
+        entries.push((
+            module_segments(ast, id),
+            format!(
+                "/// Minimal TypeObject for `{}`, XCDR2-LE.\npub const {}: &[u8] = &[{}];\n",
+                node.name,
+                constant_name(&node.name),
+                octets.join(", ")
+            ),
+        ));
     }
-    if body.is_empty() {
+    if entries.is_empty() {
         return String::new();
     }
     format!(
-        "\n#[allow(dead_code, non_upper_case_globals)]\npub mod type_objects_{} {{\n{body}}}\n",
-        constant_name(stem).to_lowercase()
+        "\n#[allow(dead_code, non_upper_case_globals, non_snake_case)]\npub mod type_objects_{} {{\n{}}}\n",
+        constant_name(stem).to_lowercase(),
+        nested_by_module(&entries, 1)
     )
+}
+
+/// The IDL modules a type is declared in, outermost first, spelled as the
+/// generated `pub mod`s are.
+///
+/// Empty for a type at file scope, and for one the model has no module
+/// chain for: such a type cannot be named from the file root either, and
+/// the constant beside the file-scope ones is the one place left for it.
+fn module_segments(ast: &Ast, id: Id<TypeNode>) -> Vec<String> {
+    zerodds_lang_rules::adapter::cst::path_from_file_root(ast, id)
+        .map(|path| {
+            let mut segments: Vec<String> = path.split("::").map(str::to_string).collect();
+            segments.pop();
+            segments
+        })
+        .unwrap_or_default()
+}
+
+/// Items grouped into one `pub mod` per module path, in the order the
+/// first item of each module came, indented `depth` levels.
+///
+/// zerodds-lint: recursion-depth 64 (one level per IDL module; the module
+/// chain is cut at `MAX_MODULE_DEPTH` in `lang-rules/src/adapter/cst.rs`,
+/// which `module_segments` reads)
+fn nested_by_module(entries: &[(Vec<String>, String)], depth: usize) -> String {
+    use core::fmt::Write as _;
+
+    let indent = "    ".repeat(depth);
+    let mut out = String::new();
+    // Items at this level first, then each module once, in first-seen order.
+    for (segments, text) in entries {
+        if segments.is_empty() {
+            for line in text.lines() {
+                out.push_str(&indent);
+                out.push_str(line);
+                out.push('\n');
+            }
+        }
+    }
+    let mut seen: Vec<&str> = Vec::new();
+    for (segments, _) in entries {
+        let Some(first) = segments.first() else {
+            continue;
+        };
+        if seen.contains(&first.as_str()) {
+            continue;
+        }
+        seen.push(first);
+        let inner: Vec<(Vec<String>, String)> = entries
+            .iter()
+            .filter(|(other, _)| other.first() == Some(first))
+            .map(|(other, text)| (other[1..].to_vec(), text.clone()))
+            .collect();
+        let _ = write!(
+            out,
+            "{indent}/// The IDL module `{first}`.\n{indent}pub mod {first} {{\n{}{indent}}}\n",
+            nested_by_module(&inner, depth + 1)
+        );
+    }
+    out
 }
 
 /// A type name as a Rust constant name.
@@ -1211,7 +1475,7 @@ mod tests {
     /// struct that holds an `any` has no type identifier and no wire form;
     /// the rest of the unit still builds.
     #[test]
-    fn a_struct_holding_an_any_is_left_out_and_the_rest_of_the_unit_builds() {
+    fn xtypes_7_3_1_1_1_a_struct_holding_an_any_is_left_out_and_the_rest_of_the_unit_builds() {
         let dir = scratch("any");
         let idl = dir.join("Mixed.idl");
         std::fs::write(

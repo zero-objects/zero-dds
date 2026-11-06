@@ -45,7 +45,7 @@ fn operations(body: &str) -> Vec<String> {
 }
 
 #[test]
-fn the_file_parses_as_omg_idl() {
+fn security_11_2_the_file_parses_as_omg_idl() {
     let parsed = parse_with(IDL, Dialect::STRICT);
     assert!(
         !parsed.has_errors(),
@@ -55,7 +55,7 @@ fn the_file_parses_as_omg_idl() {
 }
 
 #[test]
-fn no_operation_has_an_out_parameter() {
+fn security_11_2_no_operation_has_an_out_parameter() {
     for line in IDL.lines() {
         let code = line.split("//").next().unwrap_or("");
         assert!(
@@ -72,7 +72,7 @@ fn expect(interface: &str, names: &[&str]) {
 
 /// Table 29.
 #[test]
-fn authentication_has_the_operations_of_table_29() {
+fn security_11_2_authentication_has_the_operations_of_table_29() {
     expect(
         "Authentication",
         &[
@@ -109,7 +109,7 @@ fn the_authentication_listener_has_the_operations_of_table_31() {
 
 /// Table 39 and Table 40.
 #[test]
-fn access_control_has_the_operations_of_table_39() {
+fn security_11_2_access_control_has_the_operations_of_table_39() {
     expect(
         "AccessControl",
         &[
@@ -149,7 +149,7 @@ fn access_control_has_the_operations_of_table_39() {
 
 /// Table 42.
 #[test]
-fn crypto_key_factory_has_the_operations_of_table_42() {
+fn security_11_2_crypto_key_factory_has_the_operations_of_table_42() {
     expect(
         "CryptoKeyFactory",
         &[

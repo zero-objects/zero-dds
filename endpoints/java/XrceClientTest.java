@@ -72,7 +72,7 @@ public final class XrceClientTest {
     // 0x010,kind=TOPIC), the real two-level ObjectVariant::ByReference
     // ("HelloWorldTopic") under parent=pack(raw=0x001,kind=PARTICIPANT),
     // request_id=5, sequence_nr=4. OBJK_TOPIC's own representation
-    // carries its participant's ObjectId (commit 31c62df2a63, "xrce:
+    // carries its participant's ObjectId (commit bd30deaef0b, "xrce:
     // OBJK_TOPIC_Representation carries its participant's ObjectId"),
     // the same trailing field OBJK_PUBLISHER's representation carries
     // above -- matches

@@ -210,7 +210,7 @@ mod tests {
     /// `dds_dcps_samples_written_total`, after which the rendered
     /// default registry contains the increment with the topic label (default policy `Full`).
     #[test]
-    fn write_increments_samples_written_and_renders() {
+    fn monitor_7_write_increments_samples_written_and_renders() {
         let topic = "CrossLayerTest.MonitorWireup";
         inc_sample_written(topic);
         let out = default_registry().render_prometheus();

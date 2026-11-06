@@ -10,8 +10,7 @@
 //! injected into the HistoryCache on the first match and delivered over
 //! the existing reliable-reader path.
 //!
-//! Linux-only: macOS loopback multicast is unreliable for DDS discovery
-//! (see `fastdds_qos_matrix.rs` with the same guard).
+//! Linux-only: macOS loopback multicast is unreliable for DDS discovery.
 
 #![cfg(target_os = "linux")]
 #![allow(
@@ -129,7 +128,7 @@ fn fast_runtime_cfg() -> RuntimeConfig {
 /// the reader starts. The reader then matches and must see all 3 samples
 /// (via the backend-replay path in `wire_writer_to_remote_reader`).
 #[test]
-fn transient_late_joiner_receives_backend_replay() {
+fn dcps_2_2_3_4_transient_late_joiner_receives_backend_replay() {
     let factory = DomainParticipantFactory::instance();
     let cfg = fast_runtime_cfg();
     let domain = common::unique_domain();
@@ -245,7 +244,7 @@ fn reliable_persistent_reader() -> DataReaderQos {
 ///
 /// A dedicated topic name prevents cross-test contamination in the backend.
 #[test]
-fn persistent_late_joiner_receives_backend_replay() {
+fn dcps_2_2_3_4_persistent_late_joiner_receives_backend_replay() {
     // Unique tmpdir per run so the backend does not replay old samples.
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -324,7 +323,7 @@ fn persistent_late_joiner_receives_backend_replay() {
 /// `create_datawriter`. It once ran without a store, and every sample it was
 /// asked to keep was lost without a word.
 #[test]
-fn a_persistent_writer_without_a_store_is_refused() {
+fn dcps_2_2_3_4_a_persistent_writer_without_a_store_is_refused() {
     let blocker =
         std::env::temp_dir().join(format!("zerodds-durability-blocker-{}", std::process::id()));
     std::fs::write(&blocker, b"a file where the store directory would go").unwrap();

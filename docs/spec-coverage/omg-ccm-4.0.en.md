@@ -1026,7 +1026,7 @@ trait; the configuration phase itself lives in
 `crates/corba-ccm/src/lifecycle.rs::{StandardConfigurator,
 ConfiguratorRegistry}` (§6.10).
 
-**Tests:** `crates/corba-rust/tests/snapshot_codegen.rs::a_component_trait_carries_the_configuration_complete_lifecycle_operation`,
+**Tests:** `crates/corba-rust/tests/codegen_mapping.rs::ccm_6_9_a_component_trait_carries_the_configuration_complete_lifecycle_operation`,
 `crates/corba-ccm/src/lifecycle.rs::tests::{
 configurator_set_get_roundtrip, configurator_registry_register_and_lookup}`.
 
@@ -1503,22 +1503,21 @@ validation_fails_on_unknown_impl_reference}`.
 
 ## Audit status
 
-71 done / 0 partial / 0 open / 4 n/a (informative) / 0 n/a (rejected).
+71 done / 0 partial / 0 open / 0 blocked / 4 n/a (informative).
 
-Test run:
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document omg-ccm-4.0.md`):
 
-* `cargo test -p zerodds-ccm` — 19 lib tests + 34 tests in
-  `tests/equivalent_idl.rs` + 1 doc test green.
-* `cargo test -p zerodds-corba-ccm` — 201 lib tests + 3 tests in
-  `tests/pi_service_contexts.rs` + 1 doc test green.
-* `cargo test -p zerodds-corba-ccm-lib --lib` — 23 tests green.
-* `cargo test -p zerodds-corba-ccm-ejb --lib` — 25 tests green.
-* `cargo test -p zerodds-corba-dnc --lib` — 30 tests green.
-* `cargo test -p zerodds-corba-codegen --lib` — 38 tests green
-  (skeleton/stub generator).
-* `cargo test -p zerodds-corba-rust --test snapshot_codegen` — 15 tests green.
-* `cargo test -p zerodds-corba-ir --lib` — 19 tests green.
-* `cargo test -p zerodds-corba-codegen` — 93 tests green (the Annex A.1
-  binding for Java).
+* `cargo nextest run --profile merge -p zerodds-ccm --all-targets` (job `merge-rust-ccm`) — 39 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ccm --all-targets` (job `merge-rust-corba-ccm`) — 96 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ccm-ejb --all-targets` (job `merge-rust-corba-ccm-ejb`) — 13 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-ccm-lib --all-targets` (job `merge-rust-corba-ccm-lib`) — 10 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-codegen --all-targets` (job `merge-rust-corba-codegen`) — 11 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-cos-event --all-targets` (job `merge-rust-corba-cos-event`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-cosnaming --all-targets` (job `merge-rust-corba-cosnaming`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-corba-csiv2 --all-targets` (job `merge-rust-corba-csiv2`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-corba-dnc --all-targets` (job `merge-rust-corba-dnc`) — 27 tests green.
+* `cargo nextest run --profile merge -p zerodds-corba-rust --all-targets` (job `merge-rust-corba-rust`) — 1 test green.
 
-Open items: none. Decision records: none.
+201 cited tests green, 0 not green.
+
+Open items: none.

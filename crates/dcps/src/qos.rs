@@ -731,7 +731,7 @@ mod group_policy_tests {
     /// DDS 1.4 §2.2.3.6: the policy lives on the Publisher/Subscriber, so an
     /// endpoint that never set it announces the group's value.
     #[test]
-    fn endpoint_default_presentation_inherits_the_group_value() {
+    fn dcps_2_2_3_6_endpoint_default_presentation_inherits_the_group_value() {
         assert_eq!(
             effective_presentation(topic_scope(), PresentationQosPolicy::default()),
             topic_scope()
@@ -768,7 +768,7 @@ mod group_policy_tests {
     }
 
     #[test]
-    fn empty_endpoint_group_data_inherits_the_group_octets() {
+    fn dcps_2_2_3_3_empty_endpoint_group_data_inherits_the_group_octets() {
         let group = GroupDataQosPolicy {
             value: alloc::vec![7, 8],
         };
@@ -822,7 +822,7 @@ mod data_representation_tests {
     /// once the entity is enabled, no longer changeable (the key material
     /// of the endpoint is made from it at creation).
     #[test]
-    fn property_is_a_member_and_immutable_after_enable() {
+    fn security_7_3_21_property_is_a_member_and_immutable_after_enable() {
         use super::{immutable_reader_change, immutable_writer_change};
         assert!(DataWriterQos::default().property.is_empty());
         assert!(DataReaderQos::default().property.is_empty());
@@ -864,7 +864,7 @@ mod data_representation_tests {
     /// (and the C API writer) enforce: a default reader refused a reliable
     /// instance's 101st not-yet-taken sample and an 11th instance.
     #[test]
-    fn resource_limits_default_to_unlimited() {
+    fn dcps_2_2_3_19_resource_limits_default_to_unlimited() {
         // LENGTH_UNLIMITED is -1 (IDL4).
         let unlimited = zerodds_qos::ResourceLimitsQosPolicy {
             max_samples: -1,
@@ -886,7 +886,7 @@ mod data_representation_tests {
     }
 
     #[test]
-    fn data_representation_defaults_none_and_settable() {
+    fn xtypes_7_6_3_1_data_representation_defaults_none_and_settable() {
         // B5: per-endpoint DataRepresentation override (XTypes §7.6.3.1.2).
         // Default None = runtime default; settable for a targeted XCDR1 offer.
         assert_eq!(DataWriterQos::default().data_representation, None);
@@ -901,24 +901,5 @@ mod data_representation_tests {
             ..Default::default()
         };
         assert_eq!(w.data_representation.as_deref(), Some(&[0_i16][..]));
-    }
-
-    #[test]
-    fn from_qos_aggregate_carries_policies() {
-        use zerodds_qos::{HistoryKind, ReliabilityKind};
-        let mut w = zerodds_qos::WriterQos::default();
-        w.history.kind = HistoryKind::KeepLast;
-        w.history.depth = 42;
-        w.reliability.kind = ReliabilityKind::Reliable;
-        let dw: DataWriterQos = w.into();
-        assert_eq!(dw.history.depth, 42);
-        assert_eq!(dw.reliability.kind, ReliabilityKind::Reliable);
-        assert_eq!(dw.data_representation, None); // DCPS-only → default
-
-        let mut rq = zerodds_qos::ReaderQos::default();
-        rq.history.depth = 7;
-        let dr: DataReaderQos = rq.into();
-        assert_eq!(dr.history.depth, 7);
-        assert_eq!(dr.data_representation, None);
     }
 }

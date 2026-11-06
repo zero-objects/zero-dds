@@ -466,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn scalar_topic_gets_one_leaf_at_the_empty_path() {
+    fn opcuabridge_5_2_scalar_topic_gets_one_leaf_at_the_empty_path() {
         let mut space = AddressSpace::new();
         let topic = materialize_instance(&mut space, 2, 0, "Temperature", &DdsType::Float64, false);
         assert_eq!(topic.leaves.len(), 1);
@@ -476,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn struct_topic_gets_one_leaf_per_member() {
+    fn opcuabridge_5_2_struct_topic_gets_one_leaf_per_member() {
         let mut space = AddressSpace::new();
         let topic = materialize_instance(&mut space, 2, 0, "Shape", &shape(), false);
         assert_eq!(topic.leaves.len(), 2);
@@ -485,7 +485,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_sample_sets_the_right_node_values() {
+    fn opcuabridge_6_1_apply_sample_sets_the_right_node_values() {
         let mut space = AddressSpace::new();
         let topic = materialize_instance(&mut space, 2, 0, "Shape", &shape(), false);
         let fields = vec![
@@ -508,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn unmatched_path_is_reported_not_dropped() {
+    fn opcuabridge_5_3_unmatched_path_is_reported_not_dropped() {
         let mut space = AddressSpace::new();
         let topic = materialize_instance(&mut space, 2, 0, "Shape", &shape(), false);
         let fields = vec![FlatField {
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn objects_folder_is_browsable_after_materializing_a_topic() {
+    fn opcuabridge_5_2_objects_folder_is_browsable_after_materializing_a_topic() {
         // Without a NodeMeta entry for OBJECTS_FOLDER itself, a Browse
         // starting from it (any client's default entry point) refuses
         // with Bad_NodeIdUnknown even though the Organizes reference to
@@ -533,7 +533,7 @@ mod tests {
     }
 
     #[test]
-    fn two_topics_do_not_collide() {
+    fn opcuabridge_5_2_two_topics_do_not_collide() {
         let mut space = AddressSpace::new();
         let a = materialize_instance(&mut space, 2, 0, "A", &DdsType::Int32, false);
         let b = materialize_instance(&mut space, 2, 0, "B", &DdsType::Int32, true);
@@ -542,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn node_id_override_replaces_the_default_root_identity() {
+    fn opcuabridge_5_2_node_id_override_replaces_the_default_root_identity() {
         let mut space = AddressSpace::new();
         let custom = NodeId::numeric(2, 12345);
         let topic = materialize_instance_with_override(
@@ -562,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn node_id_override_colliding_with_an_existing_node_is_refused() {
+    fn opcuabridge_5_2_node_id_override_colliding_with_an_existing_node_is_refused() {
         let mut space = AddressSpace::new();
         materialize_instance(&mut space, 2, 0, "A", &DdsType::Int32, false);
         let existing = sample_node_id(2, "A", "");
@@ -584,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_browse_path_segment_is_refused() {
+    fn opcuabridge_5_2_empty_browse_path_segment_is_refused() {
         let mut space = AddressSpace::new();
         let err = materialize_instance_with_override(
             &mut space,
@@ -602,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_path_organizes_the_root_from_the_objects_folder() {
+    fn opcuabridge_5_2_browse_path_organizes_the_root_from_the_objects_folder() {
         let mut space = AddressSpace::new();
         let topic = materialize_instance_with_override(
             &mut space,
@@ -640,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn historical_depth_marks_every_leaf_historizing() {
+    fn opcuabridge_5_4_historical_depth_marks_every_leaf_historizing() {
         let mut space = AddressSpace::new();
         let topic = materialize_instance_with_override(
             &mut space,
@@ -671,14 +671,14 @@ mod tests {
     }
 
     #[test]
-    fn no_historical_depth_leaves_a_leaf_non_historizing() {
+    fn opcuabridge_5_4_no_historical_depth_leaves_a_leaf_non_historizing() {
         let mut space = AddressSpace::new();
         let topic = materialize_instance(&mut space, 2, 0, "Plain", &DdsType::Int32, false);
         assert!(!space.is_historizing(&topic.sample_root));
     }
 
     #[test]
-    fn dds_to_ua_leaf_is_read_only_ua_to_dds_leaf_is_writable() {
+    fn opcuabridge_5_2_dds_to_ua_leaf_is_read_only_ua_to_dds_leaf_is_writable() {
         let mut space = AddressSpace::new();
         let read_only = materialize_instance(&mut space, 2, 0, "FromDds", &DdsType::Int32, false);
         let writable = materialize_instance(&mut space, 2, 0, "ToDds", &DdsType::Int32, true);

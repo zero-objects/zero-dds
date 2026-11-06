@@ -48,7 +48,7 @@ fn participant() -> zerodds_dcps::DomainParticipant {
 
 /// §2.2.2.3.6.2: the default name of the TypeSupport is the type's own.
 #[test]
-fn the_type_support_names_its_type() {
+fn dcps_2_2_2_3_6_1_the_type_support_names_its_type() {
     assert_eq!(TypeSupport::<First>::new().get_type_name(), "test::First");
     assert_eq!(
         TypeSupport::<RawBytes>::new().get_type_name(),
@@ -62,7 +62,7 @@ fn the_type_support_names_its_type() {
 /// operation returns OK. The application may pass nil as the value for the
 /// type_name."
 #[test]
-fn the_same_type_support_registers_again_under_the_same_or_another_name() {
+fn dcps_2_2_2_3_6_1_the_same_type_support_registers_again_under_the_same_or_another_name() {
     let p = participant();
     let support = TypeSupport::<First>::new();
     support.register_type(&p, None).unwrap();
@@ -80,7 +80,7 @@ fn the_same_type_support_registers_again_under_the_same_or_another_name() {
 /// register two different TypeSupport with the same DomainParticipant … the
 /// operation will fail and return PRECONDITION_NOT_MET."
 #[test]
-fn one_type_name_is_not_two_type_supports() {
+fn dcps_2_2_2_3_6_1_one_type_name_is_not_two_type_supports() {
     let p = participant();
     TypeSupport::<First>::new()
         .register_type(&p, Some("Shared"))
@@ -104,7 +104,7 @@ fn one_type_name_is_not_two_type_supports() {
 /// registered with the Service"; the Topic is bound to the type under the
 /// name it was registered with.
 #[test]
-fn a_topic_is_bound_to_the_registered_type() {
+fn dcps_2_2_2_2_1_5_a_topic_is_bound_to_the_registered_type() {
     let p = participant();
     assert!(matches!(
         p.create_topic_of_registered_type::<First>("Bound", "Alias", TopicQos::default()),

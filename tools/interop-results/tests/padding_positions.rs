@@ -46,6 +46,7 @@ fn verdicts() -> Vec<PaddingVerdict> {
 /// the octet rule calls padding and the layout does not is a value
 /// difference that has been counted as harmless.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn the_octet_rule_and_the_layout_agree_on_every_row() {
     let found = verdicts();
     let split: Vec<&PaddingVerdict> = found.iter().filter(|row| !row.agreed()).collect();
@@ -79,6 +80,7 @@ fn the_octet_rule_and_the_layout_agree_on_every_row() {
 /// offsets §7.4.1 puts fill at. TAO had no row here at all before,
 /// because its recorded zeros were a fresh kernel page.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn the_layout_criterion_classifies_group_g_and_nothing_else() {
     let found = verdicts();
     let padding: Vec<&PaddingVerdict> = found.iter().filter(|row| row.layout_rule).collect();

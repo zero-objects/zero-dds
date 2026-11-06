@@ -198,14 +198,14 @@ mod tests {
     // --- §7.1.4.1 char ---
 
     #[test]
-    fn ascii_validates() {
+    fn ddsamqp_7_1_4_1_ascii_validates() {
         for b in 0x00..=0x7F {
             assert_eq!(validate_char_ascii(b), Ok(b));
         }
     }
 
     #[test]
-    fn non_ascii_rejected() {
+    fn ddsamqp_7_1_4_1_non_ascii_rejected() {
         for b in 0x80..=0xFFu8 {
             assert_eq!(validate_char_ascii(b), Err(b));
         }
@@ -214,7 +214,7 @@ mod tests {
     // --- §7.1.6.1 Identifier ---
 
     #[test]
-    fn rfc4122_v4_uuid_recognised() {
+    fn ddsamqp_7_1_6_1_rfc4122_v4_uuid_recognised() {
         // Standard v4 UUID: byte[6] = 0x40..=0x4F, byte[8] = 0x80..=0xBF.
         let bytes = [
             0xAA, 0xBB, 0xCC, 0xDD, 0x11, 0x22, 0x4A, 0xBC, 0x82, 0x34, 0x56, 0x78, 0x9A, 0xBC,
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn arbitrary_16_bytes_not_recognised_as_uuid() {
+    fn ddsamqp_7_1_6_1_arbitrary_16_bytes_not_recognised_as_uuid() {
         // InstanceHandle / GUID / TypeIdentifier: random bytes,
         // typically not a valid UUID version.
         let bytes = [0x00; 16];
@@ -232,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_16byte_routes_binary_for_non_uuid() {
+    fn ddsamqp_7_1_6_1_encode_16byte_routes_binary_for_non_uuid() {
         let bytes = [0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let v = encode_16byte_identifier(bytes, false);
         match v {
@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_16byte_routes_uuid_when_marked() {
+    fn ddsamqp_7_1_6_1_encode_16byte_routes_uuid_when_marked() {
         let bytes = [0u8; 16];
         let v = encode_16byte_identifier(bytes, true);
         assert!(matches!(v, AmqpExtValue::Uuid(_)));
@@ -251,7 +251,7 @@ mod tests {
     // --- §7.2.1 Descriptor ---
 
     #[test]
-    fn truncated_descriptor_first_8_bytes_be() {
+    fn ddsamqp_7_2_1_truncated_descriptor_first_8_bytes_be() {
         // 14-byte hash; the first 8 bytes as BE u64.
         let hash = [
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
@@ -261,20 +261,20 @@ mod tests {
     }
 
     #[test]
-    fn truncated_descriptor_too_short_errors() {
+    fn ddsamqp_7_2_1_truncated_descriptor_too_short_errors() {
         let hash = [0u8; 7];
         assert!(compute_truncated_descriptor(&hash).is_err());
     }
 
     #[test]
-    fn full_descriptor_symbol_format() {
+    fn ddsamqp_7_2_1_full_descriptor_symbol_format() {
         let bytes = [0xDE, 0xAD, 0xBE, 0xEF];
         let s = make_full_descriptor_symbol(&bytes);
         assert_eq!(s, "dds:type:deadbeef");
     }
 
     #[test]
-    fn route_descriptor_truncated() {
+    fn ddsamqp_7_2_1_route_descriptor_truncated() {
         let hash = [
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
         ];
@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn route_descriptor_full() {
+    fn ddsamqp_7_2_1_route_descriptor_full() {
         let hash = [
             0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E,
         ];
@@ -297,7 +297,7 @@ mod tests {
     // --- §7.2.3 Union ---
 
     #[test]
-    fn union_with_branch_has_two_elements() {
+    fn ddsamqp_7_2_3_union_with_branch_has_two_elements() {
         let u = make_union_body(
             AmqpExtValue::Int(1),
             Some(AmqpExtValue::Str("hello".into())),
@@ -312,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn union_empty_branch_omits_value() {
+    fn ddsamqp_7_2_3_union_empty_branch_omits_value() {
         let u = make_union_body(AmqpExtValue::Int(99), None);
         match u {
             AmqpExtValue::List(items) => {
@@ -336,7 +336,7 @@ mod tests {
     // --- §7.1.2 Long Double ---
 
     #[test]
-    fn long_double_narrowing_is_identity_on_f64() {
+    fn ddsamqp_7_1_1_long_double_narrowing_is_identity_on_f64() {
         let v = 1.234_567_890_123_456_7;
         assert_eq!(narrow_long_double_to_double(v), v);
     }

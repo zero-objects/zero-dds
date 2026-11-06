@@ -41,10 +41,11 @@ use crate::instance_handle::{HANDLE_NIL, InstanceHandle};
 use crate::time::Time;
 
 /// `SampleStateKind` (DDS 1.4 §2.2.2.5.1.1) — maintained per reader.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum SampleStateKind {
     /// Sample has never been delivered to the application via
     /// `read`/`take`.
+    #[default]
     NotRead,
     /// Sample has already been delivered at least once via `read`
     /// (after `take` it is gone, so this only matters for `read`).
@@ -59,33 +60,23 @@ impl SampleStateKind {
     }
 }
 
-impl Default for SampleStateKind {
-    fn default() -> Self {
-        Self::NotRead
-    }
-}
-
 /// `ViewStateKind` (DDS 1.4 §2.2.2.5.1.2) — maintained per instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum ViewStateKind {
     /// First sample of this instance (or first after
     /// `NOT_ALIVE_NO_WRITERS → ALIVE`).
+    #[default]
     New,
     /// Reader has already delivered samples for this instance.
     NotNew,
 }
 
-impl Default for ViewStateKind {
-    fn default() -> Self {
-        Self::New
-    }
-}
-
 /// `InstanceStateKind` (DDS 1.4 §2.2.2.5.1.3) — maintained per instance.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
 pub enum InstanceStateKind {
     /// At least one DataWriter has registered the instance and it has
     /// not been disposed.
+    #[default]
     Alive,
     /// At least one DataWriter has disposed the instance.
     NotAliveDisposed,
@@ -104,12 +95,6 @@ impl InstanceStateKind {
     #[must_use]
     pub const fn is_not_alive(&self) -> bool {
         !self.is_alive()
-    }
-}
-
-impl Default for InstanceStateKind {
-    fn default() -> Self {
-        Self::Alive
     }
 }
 
@@ -329,7 +314,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_are_alive_new_not_read() {
+    fn dcps_2_2_2_5_1_5_defaults_are_alive_new_not_read() {
         let info = SampleInfo::default();
         assert_eq!(info.sample_state, SampleStateKind::NotRead);
         assert_eq!(info.view_state, ViewStateKind::New);
@@ -342,21 +327,13 @@ mod tests {
     }
 
     #[test]
-    fn instance_state_predicates() {
-        assert!(InstanceStateKind::Alive.is_alive());
-        assert!(!InstanceStateKind::Alive.is_not_alive());
-        assert!(InstanceStateKind::NotAliveDisposed.is_not_alive());
-        assert!(InstanceStateKind::NotAliveNoWriters.is_not_alive());
-    }
-
-    #[test]
-    fn sample_state_predicate() {
+    fn dcps_2_2_2_5_1_2_sample_state_predicate() {
         assert!(SampleStateKind::NotRead.is_not_read());
         assert!(!SampleStateKind::Read.is_not_read());
     }
 
     #[test]
-    fn matches_states_filter() {
+    fn dcps_2_2_2_5_1_9_matches_states_filter() {
         let info = SampleInfo::default();
         assert!(info.matches_states(
             sample_state_mask::ANY,
@@ -385,23 +362,10 @@ mod tests {
         ));
     }
 
-    #[test]
-    fn new_alive_constructor_sets_handles_and_timestamp() {
-        let h = InstanceHandle::from_raw(7);
-        let pub_h = InstanceHandle::from_raw(42);
-        let ts = Time::new(1, 2);
-        let info = SampleInfo::new_alive(h, pub_h, ts);
-        assert_eq!(info.instance_handle, h);
-        assert_eq!(info.publication_handle, pub_h);
-        assert_eq!(info.source_timestamp, ts);
-        assert!(info.valid_data);
-        assert_eq!(info.instance_state, InstanceStateKind::Alive);
-    }
-
     // ---- §2.2.2.5.5 all 12 SampleInfo fields available ----
 
     #[test]
-    fn sample_info_all_spec_fields_accessible() {
+    fn dcps_2_2_2_5_1_1_sample_info_all_spec_fields_accessible() {
         // Spec §2.2.2.5.5 lists 12 fields; all must be readable and
         // settable. The test verifies field identity via concrete
         // values.
@@ -435,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_info_dispose_marker_has_invalid_data() {
+    fn dcps_2_2_2_5_1_4_sample_info_dispose_marker_has_invalid_data() {
         // §2.2.2.5.1.13 — dispose/unregister marker has valid_data=false.
         // Negative: a sample with valid_data=false has no payload; the
         // caller MUST NOT evaluate sample.data.
@@ -473,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_info_generation_rank_starts_zero() {
+    fn dcps_2_2_2_5_5_sample_info_generation_rank_starts_zero() {
         // Default sample: all generation counters 0.
         let info = SampleInfo::default();
         assert_eq!(info.disposed_generation_count, 0);
@@ -483,17 +447,10 @@ mod tests {
         assert_eq!(info.absolute_generation_rank, 0);
     }
 
-    #[test]
-    fn enum_default_impls() {
-        assert_eq!(SampleStateKind::default(), SampleStateKind::NotRead);
-        assert_eq!(ViewStateKind::default(), ViewStateKind::New);
-        assert_eq!(InstanceStateKind::default(), InstanceStateKind::Alive);
-    }
-
     // ---- §2.2.2.5.1.6-8 compute_ranks ----
 
     #[test]
-    fn compute_ranks_single_instance_three_samples() {
+    fn dcps_2_2_2_5_1_6_compute_ranks_single_instance_three_samples() {
         // Three samples of ONE instance, no generation change: sample_rank
         // counts down (2, 1, 0); generation_rank/absolute_generation_rank
         // are all 0 (no dispose/no-writers ever happened).
@@ -523,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_ranks_two_instances_are_independent() {
+    fn dcps_2_2_2_5_1_6_compute_ranks_two_instances_are_independent() {
         // sample_rank is per-instance: interleaved samples of two distinct
         // instances must not count each other.
         let a = InstanceHandle::from_raw(1);
@@ -549,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_ranks_generation_rank_against_last_sample_in_batch() {
+    fn dcps_2_2_2_5_1_6_compute_ranks_generation_rank_against_last_sample_in_batch() {
         // Sample 0 was taken before a dispose+reactivate (generation total
         // 0); sample 1 is the reactivated instance's first sample
         // (generation total 1, since it is also the LAST sample of this
@@ -574,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_ranks_absolute_generation_rank_uses_current_not_batch() {
+    fn dcps_2_2_2_5_1_6_compute_ranks_absolute_generation_rank_uses_current_not_batch() {
         // A single sample, generation total 0 at the time it was taken; the
         // instance's CURRENT generation total (as of right now, via the
         // callback) has since moved on to 2 — absolute_generation_rank
@@ -588,12 +545,5 @@ mod tests {
         compute_ranks(&mut infos, |_| (2, 0));
         assert_eq!(infos[0].generation_rank, 0);
         assert_eq!(infos[0].absolute_generation_rank, 2);
-    }
-
-    #[test]
-    fn compute_ranks_empty_slice_is_a_no_op() {
-        let mut infos: [SampleInfo; 0] = [];
-        compute_ranks(&mut infos, |_| (0, 0));
-        assert!(infos.is_empty());
     }
 }

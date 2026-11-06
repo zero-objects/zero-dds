@@ -11,7 +11,7 @@ Implementation: `crates/transport-tcp/` — Length-Prefix-Framing
 (`framing.rs`), 16-Byte-Handshake (`handshake.rs`), Connection-Pool
 (`tcp_transport.rs`).
 
-Offene Punkte und Decision-Records: [`zerodds-tcp-transport-1.0.open.md`](zerodds-tcp-transport-1.0.open.md).
+Offene Punkte: `zerodds-tcp-transport-1.0.open.md`.
 
 ## §1 Scope und Spec-Status
 
@@ -25,10 +25,10 @@ Offene Punkte und Decision-Records: [`zerodds-tcp-transport-1.0.open.md`](zerodd
 gebunden in `crates/transport-tcp/src/tcp_transport.rs`
 (`locator_to_socket`, `TcpTransport::local_locator`).
 
-**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::locator_kinds_are_zerodds_vendor_range_values`
+**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::rtps_9_3_2_4_locator_kinds_are_zerodds_vendor_range_values`
 (prüft die beiden Zahlwerte `0x01F0_0004` und `0x01F0_0005` direkt),
-`crates/transport-tcp/src/tcp_transport.rs::tests::locator_to_socket_v4_maps_tcp`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::locator_to_socket_v4_rejects_udp`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_1_1_locator_to_socket_v4_maps_tcp`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_1_1_locator_to_socket_v4_rejects_udp`,
 `crates/rtps/src/wire_types.rs::tests::locator_kind_roundtrip`.
 
 **Status:** partial — der Transport führt die Werte des Herstellerbereichs `0x01F0_0004` und `0x01F0_0005` (DDSI-RTPS 2.5 §9.3.2.4 reserviert 3 bis `0x01ffffff` für Hersteller); die Werte 4 und 8 der Spec-Zeile schreibt `set_tcp_kinds_fast_dds` (Fast DDS, DDS-TCP-PSM), gelesen werden beide. Rest: die Werte 4 und 8 sind nicht der Vorgabewert.
@@ -45,12 +45,12 @@ umschreiben, zusammenfassen oder aufteilen.
 `crates/transport-tcp/src/tcp_transport.rs` (`accept_one` reicht jeden
 gelesenen Frame als `ReceivedDatagram` weiter).
 
-**Tests:** `crates/transport-tcp/tests/loopback.rs::loopback_single_frame_end_to_end`
+**Tests:** `crates/transport-tcp/tests/loopback.rs::tcp_1_2_loopback_single_frame_end_to_end`
 (zwei Frames über eine echte TCP-Verbindung, byte-gleich und in
 Reihenfolge zurück),
-`crates/transport-tcp/tests/loopback.rs::concurrent_senders_to_one_server`
+`crates/transport-tcp/tests/loopback.rs::tcp_1_2_concurrent_senders_to_one_server`
 (100 Frames aus zwei Prozess-Threads, kein Verlust),
-`crates/transport-tcp/src/framing.rs::tests::roundtrip_small_frame`.
+`crates/transport-tcp/src/framing.rs::tests::tcp_1_2_roundtrip_small_frame`.
 
 **Status:** done
 
@@ -67,7 +67,7 @@ keine Implementierungs-Anforderung.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Abgrenzung des Geltungsbereichs; die Anforderungen stehen in den Items ab §2.
 
 ## §2 Wire-Format
 
@@ -91,10 +91,10 @@ stehen ohne Trenner hintereinander.
 **Repo:** `crates/transport-tcp/src/framing.rs`
 (`write_frame`, `read_frame`, `FRAME_HEADER_LEN = 4`).
 
-**Tests:** `crates/transport-tcp/src/framing.rs::tests::roundtrip_small_frame`
+**Tests:** `crates/transport-tcp/src/framing.rs::tests::tcp_1_2_roundtrip_small_frame`
 (prüft die vier Header-Bytes gegen `5u32.to_be_bytes()`),
-`crates/transport-tcp/src/framing.rs::tests::roundtrip_empty_frame`,
-`crates/transport-tcp/src/framing.rs::tests::two_frames_back_to_back`.
+`crates/transport-tcp/src/framing.rs::tests::tcp_2_1_roundtrip_empty_frame`,
+`crates/transport-tcp/src/framing.rs::tests::tcp_2_1_two_frames_back_to_back`.
 
 **Status:** done
 
@@ -109,13 +109,13 @@ Das gilt auch, wenn schon das Längenfeld gesplittet ankommt.
 (`read_exact_or_eof` — `read_exact` füllt Header und Body vollständig,
 unabhängig davon, wie viele `read`-Aufrufe das kostet).
 
-**Tests:** `crates/transport-tcp/src/framing.rs::tests::reassembles_message_split_across_two_writes`
+**Tests:** `crates/transport-tcp/src/framing.rs::tests::tcp_2_2_reassembles_message_split_across_two_writes`
 (Längen-Präfix plus erste Hälfte im ersten Write, Rest plus Folgeframe im
 zweiten; der Reader liefert genau eine Nachricht und danach den
 Folgeframe),
-`crates/transport-tcp/src/framing.rs::tests::reassembles_frame_split_across_reads`
+`crates/transport-tcp/src/framing.rs::tests::tcp_2_2_reassembles_frame_split_across_reads`
 (4096-Byte-Payload bei Chunk-Größen 1, 3, 4, 5 und 4095),
-`crates/transport-tcp/tests/loopback.rs::frame_split_across_two_writes_is_reassembled`
+`crates/transport-tcp/tests/loopback.rs::tcp_2_2_frame_split_across_two_writes_is_reassembled`
 (dieselbe Teilung über einen echten TCP-Socket, mit 80 ms Pause zwischen
 den beiden Writes; der Server liefert genau einen Frame).
 
@@ -133,10 +133,10 @@ MiB. Größere Samples werden auf RTPS-Ebene per `DATA_FRAG`
 Sendepfad in `crates/transport-tcp/src/tcp_transport.rs`
 (`SendError::PayloadTooLarge`).
 
-**Tests:** `crates/transport-tcp/src/framing.rs::tests::rejects_oversized_announcement`
+**Tests:** `crates/transport-tcp/src/framing.rs::tests::tcp_2_3_rejects_oversized_announcement`
 (`MAX_FRAME_SIZE + 1` wird abgelehnt, bevor gelesen wird),
-`crates/transport-tcp/src/tcp_transport.rs::tests::send_oversized_payload_returns_payload_too_large`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::accept_one_frame_too_large_errors`.
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_2_3_send_oversized_payload_returns_payload_too_large`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_2_3_accept_one_frame_too_large_errors`.
 
 **Status:** done
 
@@ -152,9 +152,9 @@ ist dagegen der reguläre Verbindungsabbau.
 `crates/transport-tcp/src/tcp_transport.rs` (`accept_one` beendet die
 Frame-Pumpe bei `UnexpectedEof` mit `Ok(())`).
 
-**Tests:** `crates/transport-tcp/src/framing.rs::tests::unexpected_eof_mid_header`,
-`crates/transport-tcp/src/framing.rs::tests::unexpected_eof_mid_payload`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::accept_one_reads_one_frame_then_eof`.
+**Tests:** `crates/transport-tcp/src/framing.rs::tests::tcp_2_4_unexpected_eof_mid_header`,
+`crates/transport-tcp/src/framing.rs::tests::tcp_2_4_unexpected_eof_mid_payload`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_2_4_accept_one_reads_one_frame_then_eof`.
 
 **Status:** done
 
@@ -171,7 +171,7 @@ Client                                    Server
 
 **Spec:** §3 — 16 Byte big-endian: Magic `"ZDDS"` (4), `v_major` (1),
 `v_minor` (1), `vendor_id` (2), `flags` (4, reserviert), `logical_port`
-(4). ZeroDDS-Version ist `(1,0)`, die VendorId `[0x01, 0x0F]`. Ein
+(4). ZeroDDS-Version ist `(1,0)`, die VendorId `[0x01, 0xF0]` (`VendorId::ZERODDS` aus `zerodds-rtps`). Ein
 falsches Magic MUSS die Verbindung scheitern lassen.
 
 **Repo:** `crates/transport-tcp/src/handshake.rs`
@@ -179,11 +179,11 @@ falsches Magic MUSS die Verbindung scheitern lassen.
 `HANDSHAKE_MAGIC_REQUEST`, `HANDSHAKE_WIRE_SIZE = 16`,
 `VENDOR_ID_ZERODDS`).
 
-**Tests:** `crates/transport-tcp/src/handshake.rs::tests::request_wire_layout_is_sixteen_bytes_big_endian`
+**Tests:** `crates/transport-tcp/src/handshake.rs::tests::tcp_3_1_request_wire_layout_is_sixteen_bytes_big_endian`
 (vergleicht alle 16 Bytes gegen das Literal des Diagramms, inklusive
 `logical_port = 7400` als `00 00 1C E8`),
-`crates/transport-tcp/src/handshake.rs::tests::request_roundtrip`,
-`crates/transport-tcp/src/handshake.rs::tests::request_rejects_wrong_magic`.
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_1_request_roundtrip`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_1_request_rejects_wrong_magic`.
 
 **Status:** done
 
@@ -198,11 +198,11 @@ Accept). Ein anderes Magic MUSS als `BadResponse` scheitern.
 (`BindConnectionResponse`, `ResponseStatus`, `encode_response`,
 `decode_response`, `HANDSHAKE_MAGIC_ACCEPT`, `HANDSHAKE_MAGIC_REJECT`).
 
-**Tests:** `crates/transport-tcp/src/handshake.rs::tests::response_wire_layout_is_sixteen_bytes_big_endian`
+**Tests:** `crates/transport-tcp/src/handshake.rs::tests::tcp_3_2_response_wire_layout_is_sixteen_bytes_big_endian`
 (alle 16 Bytes für Accept und für Reject mit `reason_code = 3`),
-`crates/transport-tcp/src/handshake.rs::tests::response_roundtrip_accept`,
-`crates/transport-tcp/src/handshake.rs::tests::response_roundtrip_reject`,
-`crates/transport-tcp/src/handshake.rs::tests::client_handshake_errors_on_bad_response_magic`.
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_2_response_roundtrip_accept`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_2_response_roundtrip_reject`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_2_client_handshake_errors_on_bad_response_magic`.
 
 **Status:** done
 
@@ -216,12 +216,12 @@ werden, damit ein neuerer Peer den Reject trotzdem verarbeiten kann.
 **Repo:** `crates/transport-tcp/src/handshake.rs`
 (`RejectReason`, `RejectReason::from_code`, `RejectReason::as_code`).
 
-**Tests:** `crates/transport-tcp/src/handshake.rs::tests::reject_reason_roundtrip_known_codes`,
-`crates/transport-tcp/src/handshake.rs::tests::reject_reason_unknown_code_maps_to_unknown`,
-`crates/transport-tcp/src/handshake.rs::tests::server_rejects_version_mismatch`,
-`crates/transport-tcp/src/handshake.rs::tests::client_handshake_rejects_on_resource_limit`,
-`crates/transport-tcp/src/handshake.rs::tests::client_handshake_rejects_on_logical_port_conflict`,
-`crates/transport-tcp/src/handshake.rs::tests::client_handshake_rejects_on_vendor_not_accepted`.
+**Tests:** `crates/transport-tcp/src/handshake.rs::tests::tcp_3_3_reject_reason_roundtrip_known_codes`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_3_reject_reason_unknown_code_maps_to_unknown`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_3_server_rejects_version_mismatch`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_3_client_handshake_rejects_on_resource_limit`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_3_client_handshake_rejects_on_logical_port_conflict`,
+`crates/transport-tcp/src/handshake.rs::tests::tcp_3_3_client_handshake_rejects_on_vendor_not_accepted`.
 
 **Status:** partial — Codec und Client-Verarbeitung sind für alle fünf
 Codes vorhanden und getestet. `server_handshake` erzeugt jedoch nur
@@ -242,10 +242,10 @@ Reject droppen beide Seiten die Verbindung.
 (`PeerConn::ensure_connected` ruft `client_handshake` direkt nach
 `connect`; `accept_one` ruft `server_handshake` vor der Frame-Pumpe).
 
-**Tests:** `crates/transport-tcp/src/handshake.rs::tests::full_roundtrip_accept_via_paired_cursors`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::accept_one_rejects_peer_without_handshake`
+**Tests:** `crates/transport-tcp/src/handshake.rs::tests::tcp_3_4_full_roundtrip_accept_via_paired_cursors`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_3_4_accept_one_rejects_peer_without_handshake`
 (HTTP-Probe wird mit `TcpTransportError::Handshake` abgewiesen),
-`crates/transport-tcp/tests/loopback.rs::loopback_single_frame_end_to_end`
+`crates/transport-tcp/tests/loopback.rs::tcp_1_2_loopback_single_frame_end_to_end`
 (Handshake und Frames über eine echte Verbindung).
 
 **Status:** done
@@ -261,7 +261,7 @@ ignorieren statt die Verbindung abzulehnen.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — `crates/transport-tcp/src/handshake.rs` dekodiert `flags` und gibt es weiter; weder Server noch Client lehnen gesetzte Bits ab.
 
 ### §3.6 Logical-Port-Claim
 
@@ -274,7 +274,7 @@ die Verbindung sonst dem beanspruchten Port zuordnen.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — `server_handshake` prüft `logical_port` nicht und ordnet die Verbindung keinem Port zu; `LogicalPortConflict` wird nur kodiert und dekodiert.
 
 ### §3.7 ResourceLimit-Reject bei erreichtem Peer-Limit
 
@@ -287,7 +287,7 @@ Verbindungsfehler unterscheiden.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — `TcpTransport::serve` schließt die Verbindung über `MAX_PEERS` nach dem Accept und zählt sie (`refused_connections`); ein Handshake mit `ResourceLimit` geht nicht auf die Leitung.
 
 ### §3.8 Zeitbudget im Accept-Pfad
 
@@ -300,10 +300,10 @@ würde sonst `16 × slice` Sekunden des Accept-Threads binden.
 Deadline-Prüfung nach `server_handshake`; nach Accept werden die Timeouts
 wieder aufgehoben).
 
-**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::accept_one_gives_up_on_a_stalling_handshake_peer`
+**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::tcp_3_8_accept_one_gives_up_on_a_stalling_handshake_peer`
 (Peer sendet ein Handshake-Byte und schweigt, hält die Verbindung aber
 offen; `accept_one` kehrt mit `Handshake(_)` in unter 3 s zurück),
-`crates/transport-tcp/src/tcp_transport.rs::tests::accept_one_rejects_peer_without_handshake`.
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_3_4_accept_one_rejects_peer_without_handshake`.
 
 **Status:** done
 
@@ -320,7 +320,7 @@ die solche Verbindungen annimmt.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — ein Peer ohne Handshake wird mit `HandshakeError::BadMagic` abgewiesen (`crates/transport-tcp/src/handshake.rs`); eine Client- und Server-Betriebsart ohne §3 fehlt.
 
 ### §4.2 Auto-Detect am ersten Frame-Byte
 
@@ -333,7 +333,7 @@ vorab konfigurieren.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — der Server erwartet immer den ZeroDDS-Handshake; eine Unterscheidung von `'Z'` und `'R'` am ersten Byte fehlt.
 
 ## §5 Connection-Pool
 
@@ -348,10 +348,10 @@ gehalten werden.
 (`PeerConn::ensure_connected`, `TcpTransport::send` — Schritt 1 nimmt den
 Pool-Lock nur für Lookup/Insert, Schritt 2 den Peer-Lock für die I/O).
 
-**Tests:** `crates/transport-tcp/tests/loopback.rs::loopback_single_frame_end_to_end`
+**Tests:** `crates/transport-tcp/tests/loopback.rs::tcp_1_2_loopback_single_frame_end_to_end`
 (zwei Sends über dieselbe wiederverwendete Verbindung),
-`crates/transport-tcp/tests/loopback.rs::reconnect_after_peer_restart`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::send_unsupported_locator_does_not_pollute_pool`.
+`crates/transport-tcp/tests/loopback.rs::tcp_5_1_reconnect_after_peer_restart`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_1_send_unsupported_locator_does_not_pollute_pool`.
 
 **Status:** done
 
@@ -366,11 +366,11 @@ setzt den Backoff zurück.
 (`PeerConn::bump_backoff`, `INITIAL_BACKOFF_MS = 50`,
 `MAX_BACKOFF_MS = 5_000`, Rücksetzung in `ensure_connected`).
 
-**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::peer_conn_bump_backoff_sequence`
+**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_2_peer_conn_bump_backoff_sequence`
 (50 → 100 → … → 5000, dann konstant),
-`crates/transport-tcp/src/tcp_transport.rs::tests::peer_conn_backoff_throttles_connect`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::backoff_resets_after_successful_connect`,
-`crates/transport-tcp/tests/loopback.rs::backoff_prevents_tight_loop_on_dead_peer`
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_2_peer_conn_backoff_throttles_connect`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_2_backoff_resets_after_successful_connect`,
+`crates/transport-tcp/tests/loopback.rs::tcp_5_2_backoff_prevents_tight_loop_on_dead_peer`
 (zweiter Send an einen toten Port kehrt in unter 20 ms zurück).
 
 **Status:** done
@@ -384,8 +384,8 @@ Schlüssel verdrängt; ein bereits enthaltenes Ziel löst keine Eviction aus.
 **Repo:** `crates/transport-tcp/src/tcp_transport.rs`
 (`MAX_PEERS`, Eviction-Zweig in `Transport::send`).
 
-**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::max_peers_eviction_removes_first_key_on_new_peer`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::max_peers_no_eviction_for_existing_peer`.
+**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_3_max_peers_eviction_removes_first_key_on_new_peer`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_3_max_peers_no_eviction_for_existing_peer`.
 
 **Status:** done
 
@@ -400,10 +400,10 @@ Condvar und wacht beim Push auf, ohne Poll-Schleife.
 (`MAX_INBOUND_QUEUE`, `push_inbound`, `dropped_frames`,
 `Transport::recv` mit `Condvar::wait`).
 
-**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::inbound_overflow_drops_oldest_and_counts`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::dropped_frames_zero_on_fresh_transport`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::recv_wakes_on_push_from_other_thread`,
-`crates/transport-tcp/src/tcp_transport.rs::tests::push_preserves_fifo_order`.
+**Tests:** `crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_4_inbound_overflow_drops_oldest_and_counts`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_4_dropped_frames_zero_on_fresh_transport`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_4_recv_wakes_on_push_from_other_thread`,
+`crates/transport-tcp/src/tcp_transport.rs::tests::tcp_5_4_push_preserves_fifo_order`.
 
 **Status:** done
 
@@ -420,7 +420,7 @@ ZeroDDS-eigene Handshake aus §3 bleibt Default.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — kein Handshake-Dialekt mit den Submessages `0x71`/`0x72`; `set_tcp_kinds_fast_dds` betrifft nur die Locator-Kinds (§1.1).
 
 ### §6.2 RTI-TLS-orientierter Handshake
 
@@ -432,16 +432,19 @@ sein; der ZeroDDS-eigene Handshake aus §3 bleibt Default.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — keine Betriebsart mit dem TLS-orientierten Bring-up von RTI.
 
 ---
 
 ## Audit-Status
 
-13 done / 2 partial / 7 open / 1 n/a (informative) / 0 n/a (rejected).
+13 done / 2 partial / 7 open / 0 blocked / 1 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-transport-tcp` — 58 Tests (lib) + 6
-Tests (`tests/loopback.rs`) grün, 0 failed. Gemessen auf macOS 15
-(Apple-Clang-Toolchain, Rust-Host `aarch64-apple-darwin`).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-tcp-transport-1.0.md`):
 
-Offene Punkte und Decision-Records: [`zerodds-tcp-transport-1.0.open.md`](zerodds-tcp-transport-1.0.open.md).
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (Job `merge-rust-rtps`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-transport-tcp --all-targets` (Job `merge-rust-transport-tcp`) — 45 Tests grün.
+
+46 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `zerodds-tcp-transport-1.0.open.md`.

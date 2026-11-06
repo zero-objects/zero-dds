@@ -868,3 +868,27 @@ fn a_declaration_scope_round_trips() {
         assert!(loaded.find_by_scoped_name(&scoped).is_ok(), "{name}");
     }
 }
+
+/// A module loaded from a snapshot is among its parent's children, as
+/// `ensure_module` put it there: a walk down from the root reaches it,
+/// and `ensure_module` finds it rather than making a second one.
+#[test]
+fn a_loaded_module_is_a_child_of_its_parent() {
+    let mut ast = Ast::new();
+    let root = ast.root_module();
+    let outer = ast.ensure_module(root, "outer").expect("outer");
+    let inner = ast.ensure_module(outer, "inner").expect("inner");
+    let bytes = ast.to_snapshot().expect("snapshot");
+    let mut loaded = Ast::from_snapshot(&bytes).expect("loads");
+    let children = |ast: &Ast, id| {
+        ast.module(id)
+            .expect("a module")
+            .children
+            .iter()
+            .filter_map(|child| child.as_module())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(children(&loaded, root), vec![outer]);
+    assert_eq!(children(&loaded, outer), vec![inner]);
+    assert_eq!(loaded.ensure_module(root, "outer").expect("outer"), outer);
+}

@@ -305,20 +305,35 @@ mod tests {
         assert!(gw.unprotect_request(&genuine).unwrap().is_ok());
     }
 
+    fn octets(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// RFC 8613 Appendix C.4 and C.7: the daemon reads the protected request
+    /// of Test Vector 4 and answers it with the octets of Test Vector 7 (the
+    /// settings are the server context of Appendix C.1.2).
     #[test]
-    fn response_protection_round_trips_to_the_client() {
-        use crate::oscore::message::unprotect_response_message;
+    fn rfc8613_c_7_the_response_to_test_vector_4_is_test_vector_7() {
         let gw = OscoreGateway::new(settings());
-        let outer =
-            protect_request_message(&client_ctx(), &[], None, &[0x15], &inner_get()).unwrap();
-        let (_, ex) = gw.unprotect_request(&outer).unwrap().unwrap();
-        let mut resp = CoapMessage::new(MessageType::Acknowledgement, CoapCode::CONTENT, 7);
-        resp.token = vec![0x42];
-        resp.payload = b"data".to_vec();
-        let protected = gw.protect_response(&ex, &resp).unwrap();
-        let back =
-            unprotect_response_message(&client_ctx(), &[0x01], &[], &[0x15], &protected).unwrap();
-        assert_eq!(back.payload, b"data");
+        let request = crate::codec::decode(&octets(
+            "44025d1f00003974396c6f63616c686f7374620914ff612f1092f1776f1c1668b3825e",
+        ))
+        .unwrap();
+        let (inner, ex) = gw.unprotect_request(&request).unwrap().unwrap();
+        assert_eq!(
+            crate::codec::encode(&inner).unwrap(),
+            octets("44015d1f00003974396c6f63616c686f737483747631")
+        );
+        let response =
+            crate::codec::decode(&octets("64455d1f00003974ff48656c6c6f20576f726c6421")).unwrap();
+        let protected = gw.protect_response(&ex, &response).unwrap();
+        assert_eq!(
+            crate::codec::encode(&protected).unwrap(),
+            octets("64445d1f0000397490ffdbaad1e9a7e7b2a813d3c31524378303cdafae119106")
+        );
     }
 
     #[test]

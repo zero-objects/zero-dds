@@ -20,6 +20,12 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+# The crate tier runs the tests of this package once more with these
+# features (internal/release/rc8-test-suite.md, "Crate tier"): the JSON mapping (Part 14 §7.2.5) and the
+# message security (§5.3.5, §8.3) are opt-in.
+[package.metadata.crate-tier]
+feature-runs = ["json,security"]
+
 [features]
 default = ["std"]
 std = ["alloc", "zerodds-opcua-gateway/std"]

@@ -740,7 +740,7 @@ impl SubscriptionBuiltinTopicData {
             // §7.6.3.4.1: no PID 0x0074 means DISALLOW_TYPE_COERCION.
             .unwrap_or(zerodds_types::qos::TypeConsistencyEnforcement::not_announced());
 
-        let type_information = pl.find(pid::TYPE_INFORMATION).map(|p| p.value.clone());
+        let type_information = pl.find(pid::TYPE_INFORMATION).map(|p| p.value.to_vec());
         let (type_id_v1, type_object_v1) = crate::type_v1::read(&pl, little_endian);
         let entity_name = match pl.find(pid::ENTITY_NAME) {
             Some(p) => Some(crate::publication_data::decode_cdr_string(
@@ -812,32 +812,31 @@ impl SubscriptionBuiltinTopicData {
         // identity for the writer-side assignability guard. Parse failure
         // leaves it None with the raw blob retained for a loud signal at the
         // match layer.
-        if type_identifier == zerodds_types::TypeIdentifier::None {
-            if let Some(ti_bytes) = &type_information {
-                let endianness = if little_endian {
-                    zerodds_wire::Endianness::Little
-                } else {
-                    zerodds_wire::Endianness::Big
-                };
-                if let Ok(ti) = zerodds_types::type_information::TypeInformation::from_bytes(
-                    ti_bytes, endianness,
-                ) {
-                    if let Some(id) = ti.preferred_type_identifier() {
-                        type_identifier = id;
-                    }
-                }
+        if type_identifier == zerodds_types::TypeIdentifier::None
+            && let Some(ti_bytes) = &type_information
+        {
+            let endianness = if little_endian {
+                zerodds_wire::Endianness::Little
+            } else {
+                zerodds_wire::Endianness::Big
+            };
+            if let Ok(ti) =
+                zerodds_types::type_information::TypeInformation::from_bytes(ti_bytes, endianness)
+                && let Some(id) = ti.preferred_type_identifier()
+            {
+                type_identifier = id;
             }
         }
 
         // See `PublicationBuiltinTopicData`: the `TypeObjectV1` identifies the
         // type of an endpoint that announces no `PID_TYPE_INFORMATION`.
-        if type_identifier == zerodds_types::TypeIdentifier::None && type_information.is_none() {
-            if let Some(id) = type_object_v1
+        if type_identifier == zerodds_types::TypeIdentifier::None
+            && type_information.is_none()
+            && let Some(id) = type_object_v1
                 .as_ref()
                 .and_then(crate::type_v1::identifier_of)
-            {
-                type_identifier = id;
-            }
+        {
+            type_identifier = id;
         }
 
         let data_representation = pl

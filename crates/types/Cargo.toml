@@ -21,7 +21,7 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-# Empty marker for safe-profile lints (internal/safety-flag-drift.md).
+# Empty marker for safe-profile lints (docs/architecture/04_safety_by_architecture.md §3).
 safety = []
 default = ["std", "dynamic"]
 std = ["alloc"]
@@ -72,3 +72,10 @@ zerodds-idl-lower = { version = "1.0.0-rc.7", path = "../idl-lower" }
 zerodds-wire-codec = { version = "1.0.0-rc.7", path = "../wire-codec", features = ["serde-json"] }
 zerodds-ast-layout = { version = "1.0.0-rc.7", path = "../ast-layout" }
 serde_json = { version = "1.0" }
+
+# The contract with zerodds-wire-codec (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-wire-codec only with `dynamic`.
+[[test]]
+name = "contract_wire_codec"
+path = "tests/contract_wire_codec.rs"
+required-features = ["dynamic"]

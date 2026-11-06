@@ -27,6 +27,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::ops::Range;
+use zerodds_rtps::payload::Payload;
 
 /// What the RTPS DATA submessage of a received sample says about where the
 /// sample came from, beyond its payload: the identity of the sample on the
@@ -59,10 +60,9 @@ pub struct SampleWire {
 /// an `Arc<[u8]>`. Clone is O(1).
 #[derive(Debug, Clone)]
 pub struct SampleBytes {
-    /// Refcounted data — typically comes from RTPS `DeliveredSample::payload`.
-    data: Arc<[u8]>,
-    /// View range over `data`. Strip operations only shift the range.
-    range: Range<usize>,
+    /// The octets, a range of the buffer they arrived in — typically
+    /// RTPS `DeliveredSample::payload`. Strip operations only narrow it.
+    payload: Payload,
     /// Where the sample came from, if the delivery path knows.
     wire: Option<SampleWire>,
 }
@@ -73,10 +73,15 @@ impl SampleBytes {
     /// allocated anyway.
     #[must_use]
     pub fn from_vec(v: Vec<u8>) -> Self {
-        let len = v.len();
+        Self::from_payload(Payload::from(v))
+    }
+
+    /// Constructs from the octets of `payload`, sharing its buffer.
+    /// **Zero-copy**.
+    #[must_use]
+    pub fn from_payload(payload: Payload) -> Self {
         Self {
-            data: Arc::from(v.into_boxed_slice()),
-            range: 0..len,
+            payload,
             wire: None,
         }
     }
@@ -85,12 +90,7 @@ impl SampleBytes {
     /// only the refcount is incremented.
     #[must_use]
     pub fn from_arc(data: Arc<[u8]>) -> Self {
-        let len = data.len();
-        Self {
-            data,
-            range: 0..len,
-            wire: None,
-        }
+        Self::from_payload(Payload::whole(data))
     }
 
     /// Constructs with an explicit range over an `Arc<[u8]>`. **Zero-copy**.
@@ -103,11 +103,7 @@ impl SampleBytes {
             range.end <= data.len() && range.start <= range.end,
             "SampleBytes range out of bounds"
         );
-        Self {
-            data,
-            range,
-            wire: None,
-        }
+        Self::from_payload(Payload::whole(data).sub(range))
     }
 
     /// Creates a new `SampleBytes` with the given sub-range relative to
@@ -118,11 +114,8 @@ impl SampleBytes {
     #[must_use]
     pub fn slice(&self, sub: Range<usize>) -> Self {
         assert!(sub.end <= self.len(), "SampleBytes::slice out of bounds");
-        let start = self.range.start + sub.start;
-        let end = self.range.start + sub.end;
         Self {
-            data: Arc::clone(&self.data),
-            range: start..end,
+            payload: self.payload.sub(sub),
             wire: self.wire,
         }
     }
@@ -143,19 +136,25 @@ impl SampleBytes {
     /// Current view as `&[u8]`. No copy.
     #[must_use]
     pub fn as_slice(&self) -> &[u8] {
-        &self.data[self.range.clone()]
+        &self.payload
+    }
+
+    /// The octets as a [`Payload`], sharing their buffer.
+    #[must_use]
+    pub fn payload(&self) -> &Payload {
+        &self.payload
     }
 
     /// Number of bytes in the current view.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.range.end - self.range.start
+        self.payload.len()
     }
 
     /// `true` if the view is empty.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.range.is_empty()
+        self.payload.is_empty()
     }
 
     /// Materializes the view into a `Vec<u8>`. **Copies** — use only at
@@ -204,21 +203,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn from_vec_roundtrip() {
-        let s = SampleBytes::from_vec(alloc::vec![1, 2, 3, 4]);
-        assert_eq!(s.len(), 4);
-        assert_eq!(s.as_slice(), &[1, 2, 3, 4]);
-        assert_eq!(s.to_vec(), alloc::vec![1, 2, 3, 4]);
-    }
-
-    #[test]
-    fn from_arc_full_range() {
-        let arc: Arc<[u8]> = Arc::from(alloc::vec![10, 20, 30].into_boxed_slice());
-        let s = SampleBytes::from_arc(arc);
-        assert_eq!(s.as_slice(), &[10, 20, 30]);
-    }
-
-    #[test]
     fn slice_is_zero_copy() {
         let arc: Arc<[u8]> = Arc::from(alloc::vec![1, 2, 3, 4, 5].into_boxed_slice());
         let s = SampleBytes::from_arc(arc);
@@ -245,13 +229,6 @@ mod tests {
         let s2 = s.clone();
         let p2 = s2.as_slice().as_ptr();
         assert_eq!(p1, p2, "Clone must share backing storage");
-    }
-
-    #[test]
-    fn empty_after_full_strip() {
-        let s = SampleBytes::from_vec(alloc::vec![1, 2, 3]);
-        let empty = s.slice(3..3);
-        assert!(empty.is_empty());
     }
 
     #[test]

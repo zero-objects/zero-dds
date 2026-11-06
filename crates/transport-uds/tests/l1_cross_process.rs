@@ -50,7 +50,7 @@ fn cfg(base: &std::path::Path, t: Duration) -> UdsConfig {
 }
 
 #[test]
-fn l1_datagram_crosses_process_boundary() {
+fn uds_3_1_l1_datagram_crosses_process_boundary() {
     // If we were spawned as the sender child, run the sender path.
     if let Ok(base) = env::var(SENDER_ENV) {
         let base = std::path::PathBuf::from(base);
@@ -71,7 +71,7 @@ fn l1_datagram_crosses_process_boundary() {
     let exe = env::current_exe().expect("current_exe");
     let child = Command::new(exe)
         .env(SENDER_ENV, tmp.path())
-        .args(["--exact", "l1_datagram_crosses_process_boundary"])
+        .args(["--exact", "uds_3_1_l1_datagram_crosses_process_boundary"])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

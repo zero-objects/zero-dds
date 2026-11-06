@@ -92,7 +92,7 @@ fn every_declaration_carries_the_export_marker_that_makes_it_reachable() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_nim_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_nim_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -127,7 +127,7 @@ fn every_idl_primitive_reaches_a_nim_type() {
 }
 
 #[test]
-fn no_generated_type_has_an_implementation_defined_width() {
+fn xtypes_7_2_2_2_no_generated_type_has_an_implementation_defined_width() {
     // Nim's `int` and `uint` are "the same size as a pointer" (Nim
     // manual, "Pre-defined integer types"), so a member declared with
     // one would change size between a build for amd64 and one for a
@@ -152,7 +152,7 @@ fn no_generated_type_has_an_implementation_defined_width() {
 }
 
 #[test]
-fn an_idl_char_is_a_uint8_and_never_a_nim_char() {
+fn xtypes_7_2_2_2_1_2_an_idl_char_is_a_uint8_and_never_a_nim_char() {
     // Nim's `char` is exactly one byte, which is the right width, and it
     // is a distinct ordinal type with no arithmetic: `c + 1` does not
     // compile, so a codec adding an offset to an octet would need a
@@ -166,7 +166,7 @@ fn an_idl_char_is_a_uint8_and_never_a_nim_char() {
 }
 
 #[test]
-fn a_long_double_is_a_string_and_never_a_float64() {
+fn xtypes_7_2_2_2_1_2_a_long_double_is_a_string_and_never_a_float64() {
     // Nim has `float32`, `float64` and no binary128. A `float64` has 53
     // bits of significand; an IDL `long double` is a binary128 with 113.
     // Writing one into a `float64` loses sixty bits at the assignment,
@@ -176,7 +176,7 @@ fn a_long_double_is_a_string_and_never_a_float64() {
 }
 
 #[test]
-fn an_optional_member_becomes_an_option_and_the_others_do_not() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_an_option_and_the_others_do_not() {
     // DDS-XTypes 1.3 §7.2.2.4.4.4.7. Nim's zero value is
     // indistinguishable from a written zero, so a `long` that arrived as
     // 0 and one that did not arrive at all would be the same value;
@@ -193,7 +193,7 @@ fn an_optional_member_becomes_an_option_and_the_others_do_not() {
 }
 
 #[test]
-fn an_external_member_is_held_by_reference_whether_or_not_it_recurses() {
+fn xtypes_7_2_2_4_9_an_external_member_is_held_by_reference_whether_or_not_it_recurses() {
     // DDS-XTypes 1.3 Table 21: the member is held outside the containing
     // object, and the indirection is the language mapping's — it changes
     // no octet. `ref` and not `ptr`: a `ref` is traced, so the runtime
@@ -226,7 +226,7 @@ fn an_external_member_is_held_by_reference_whether_or_not_it_recurses() {
 }
 
 #[test]
-fn a_recursive_optional_external_member_is_finite() {
+fn xtypes_7_2_2_4_9_a_recursive_optional_external_member_is_finite() {
     // `tests/interop-corpus/recursive-optional-external`, which is the
     // case that measured this. Nim's `Option[T]` stores its `T` inline,
     // so `Option[m_Node]` inside `m_Node` is an object containing
@@ -263,7 +263,7 @@ fn a_recursive_optional_external_member_is_finite() {
 }
 
 #[test]
-fn the_options_import_appears_exactly_when_an_option_does() {
+fn xtypes_7_2_2_4_4_4_7_the_options_import_appears_exactly_when_an_option_does() {
     // `Option` is `std/options` and not a built-in, so a file using one
     // has to import the module — and a file that does not would take an
     // `imported and not used` warning for nothing.
@@ -277,7 +277,7 @@ fn the_options_import_appears_exactly_when_an_option_does() {
 }
 
 #[test]
-fn a_member_named_after_a_nim_keyword_is_stropped_and_keeps_its_spelling() {
+fn idl_7_2_3_a_member_named_after_a_nim_keyword_is_stropped_and_keeps_its_spelling() {
     // Backticks, which is Nim's own syntax for using a keyword as a
     // name. The trailing underscore the Go and Python columns append is
     // not available: Nim's identifier production is
@@ -292,7 +292,7 @@ fn a_member_named_after_a_nim_keyword_is_stropped_and_keeps_its_spelling() {
 }
 
 #[test]
-fn a_name_that_only_normalises_onto_a_keyword_is_stropped_too() {
+fn idl_7_2_3_a_name_that_only_normalises_onto_a_keyword_is_stropped_too() {
     // Nim's lexer looks a symbol up in the keyword table by the
     // normalised key — first character's case kept, the rest lower-cased
     // with the underscores removed — so `t_ype` *is* the keyword `type`
@@ -318,7 +318,7 @@ fn a_trailing_underscore_is_repaired_because_nim_has_no_name_for_it() {
 }
 
 #[test]
-fn two_members_nim_cannot_tell_apart_are_refused_by_name() {
+fn idl_7_2_3_two_members_nim_cannot_tell_apart_are_refused_by_name() {
     // The column's central hazard, and it is unique among these
     // languages. Nim compares identifiers after normalisation: the first
     // character keeps its case, the rest is lower-cased and every
@@ -364,7 +364,7 @@ fn two_declarations_that_flatten_onto_one_module_scope_name_are_refused() {
 }
 
 #[test]
-fn a_sequence_becomes_a_seq_and_a_string_a_string() {
+fn xtypes_7_2_2_4_3_a_sequence_becomes_a_seq_and_a_string_a_string() {
     let generated = generate("struct Bag { sequence<long> ids; string name; };");
     assert!(generated.contains("ids*: seq[int32]"), "{generated}");
     assert!(generated.contains("name*: string"), "{generated}");
@@ -384,7 +384,7 @@ fn an_array_nests_outermost_dimension_first() {
 }
 
 #[test]
-fn a_map_becomes_a_seq_of_entries_and_never_a_table() {
+fn xtypes_7_2_2_4_3_a_map_becomes_a_seq_of_entries_and_never_a_table() {
     // A `std/tables` table iterates in bucket order, which depends on
     // the hash of the keys and on the capacity. A `map<K,V>` goes on the
     // wire as a sequence of pairs (DDS-XTypes 1.3 §7.4.1.1.4), so a
@@ -420,7 +420,7 @@ fn a_typedef_becomes_a_transparent_alias_and_not_a_distinct_type() {
 }
 
 #[test]
-fn an_enum_becomes_one_enum_with_every_ordinal_written_out() {
+fn xtypes_7_2_2_4_1_1_an_enum_becomes_one_enum_with_every_ordinal_written_out() {
     // Nim's enum fields take explicit ordinals, so unlike the C and Go
     // columns there is no defined integer type and no constant per
     // enumerator. Every ordinal is written because `@value` admits gaps
@@ -442,7 +442,7 @@ fn an_enum_becomes_one_enum_with_every_ordinal_written_out() {
 }
 
 #[test]
-fn an_enumerator_that_does_not_ascend_is_refused_by_name() {
+fn xtypes_7_2_2_4_1_1_an_enumerator_that_does_not_ascend_is_refused_by_name() {
     // "The ordinal values have to be in ascending order" (Nim manual,
     // "Enumeration types"). `@value` does not have to. Refused rather
     // than renumbered: an enumerator whose number changed would be a
@@ -579,7 +579,9 @@ fn a_string_constant_is_written_in_ascii_one_escape_per_octet() {
     // A Nim `\xHH` escape inserts one byte, and a Nim `string` is a run
     // of octets with no encoding of its own, so the UTF-8 octets are
     // what put the same bytes in the string that the source had.
-    let generated = generate("const string TAG = \"a\\u00e4b\";");
+    // `\xe4` and not `\u00e4`: OMG IDL 4.2 §7.2.6.2.2 admits `\u` in a
+    // `wchar` or `wstring` literal only.
+    let generated = generate("const string TAG = \"a\\xe4b\";");
     assert!(generated.contains("TAG*: string = "), "{generated}");
     assert!(generated.is_ascii(), "the file is not ASCII\n{generated}");
 }
@@ -626,7 +628,7 @@ fn a_native_declaration_becomes_an_opaque_pointer_alias() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_a_nim_module_is_a_file() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_a_nim_module_is_a_file() {
     // Nim's unit of scope is the module and a module *is* a file: there
     // is no syntax for nesting one inside another, so nested IDL modules
     // cannot nest here.
@@ -655,7 +657,7 @@ fn a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
 }
 
 #[test]
-fn one_type_section_holds_every_declaration() {
+fn idl_7_5_2_one_type_section_holds_every_declaration() {
     // Nim groups declarations into sections, and within one `type`
     // section the declarations may name each other in any order,
     // including mutually. That is what lets this column walk the model
@@ -669,7 +671,7 @@ fn one_type_section_holds_every_declaration() {
 }
 
 #[test]
-fn a_type_may_name_itself_inside_the_one_section() {
+fn idl_7_5_2_a_type_may_name_itself_inside_the_one_section() {
     let generated = generate("struct Node { sequence<Node> children; };");
     assert!(generated.contains("Node* = object"), "{generated}");
     assert!(generated.contains("children*: seq[Node]"), "{generated}");
@@ -733,13 +735,13 @@ fn the_whole_output_is_ascii_including_the_prose_in_its_comments() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_table_claims_for_nim_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_table_claims_for_nim_produces_output() {
     // The table says a rule covers it; this says the rule reaches text.
     let sources = [
         ("struct S { long a; };", "S* = object"),
@@ -803,7 +805,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -918,7 +920,7 @@ fn nim_available() -> bool {
 /// second and the sources are checked as separate files anyway — they
 /// cannot be concatenated, since two of them declare a `S`.
 #[test]
-fn the_generated_nim_compiles() {
+fn xtypes_7_3_1_the_generated_nim_compiles() {
     if !nim_available() {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the compiler is exactly the failure this test
@@ -940,10 +942,6 @@ fn the_generated_nim_compiles() {
 }
 
 /// The sources the compile gate covers, one per construct.
-///
-/// Public to this file and named, because `write_the_samples` writes the
-/// same list to disk for a host that has Nim and does not have this test
-/// suite.
 const SAMPLES: &[&str] = &[
     "struct Pose { long x; double y; boolean active; };",
     "struct P { boolean a; octet b; char c; wchar d; int8 e; uint8 f; short g; \
@@ -986,54 +984,30 @@ const SAMPLES: &[&str] = &[
      };",
 ];
 
-/// Write the sample output where a host with a Nim toolchain can read
-/// it.
-///
-/// `#[ignore]`, because it writes files. It exists so that the compile
-/// proof can be carried out on a machine that has Nim without carrying
-/// this crate's build there: `ZD_NIM_SAMPLES=<dir> cargo test -p
-/// zerodds-lang-rules --test nim_end_to_end -- --ignored
-/// write_the_samples`.
-#[test]
-#[ignore = "writes files; set ZD_NIM_SAMPLES and run with --ignored"]
-fn write_the_samples() {
-    let dir = std::env::var("ZD_NIM_SAMPLES").expect("the selected export needs ZD_NIM_SAMPLES");
-    let root = std::path::Path::new(&dir);
-    std::fs::create_dir_all(root).expect("the sample directory");
-    for (index, idl) in SAMPLES.iter().enumerate() {
-        let text = generate(idl);
-        let path = root.join(format!("sample_{:02}.nim", index + 1));
-        std::fs::write(&path, text).expect("a sample file");
-    }
-    eprintln!(
-        "{} Nim sample(s) written to {}",
-        SAMPLES.len(),
-        root.display()
-    );
-}
-
 /// The whole corpus through `nim check`, one file per case.
 ///
-/// `#[ignore]`, because it is 378 invocations of a compiler and takes
-/// minutes. It is what proves the column rather than samples it, so it
-/// is run with `--include-ignored` on a host that has Nim and its result
-/// is what `docs/language-columns-status.md` records.
-#[test]
-#[ignore = "378 `nim check` invocations; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// `share` of `shares`: every case renders in every share (`MUST_RENDER`
+/// holds over the whole corpus), and only the cases at
+/// `position % shares == share` reach the compiler.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         nim_available(),
         "the explicitly selected nim gate requires its compiler"
     );
     let mut failures = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
         }
         let text = try_generate(&source, &path.display().to_string())
             .unwrap_or_else(|why| panic!("accepted corpus case {name} failed generation: {why}"));
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         if let Err(why) = nim_checks(&text) {
             failures.push(format!("{name}: {why}"));
@@ -1046,7 +1020,208 @@ fn every_corpus_case_that_renders_also_compiles() {
         failures.len()
     );
     assert!(
-        checked >= MUST_RENDER,
-        "too few corpus cases reached the selected gate: {checked}"
+        rendered >= MUST_RENDER,
+        "too few corpus cases rendered: {rendered}"
     );
+}
+
+/// The corpus through `nim check`, in shares.
+///
+/// The corpus in 32 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen-julia-zig-nim` job runs them
+/// with the toolchain, a share per CPU.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_17() {
+        super::every_corpus_case_that_renders_also_compiles(16, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_18() {
+        super::every_corpus_case_that_renders_also_compiles(17, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_19() {
+        super::every_corpus_case_that_renders_also_compiles(18, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_20() {
+        super::every_corpus_case_that_renders_also_compiles(19, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_21() {
+        super::every_corpus_case_that_renders_also_compiles(20, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_22() {
+        super::every_corpus_case_that_renders_also_compiles(21, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_23() {
+        super::every_corpus_case_that_renders_also_compiles(22, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_24() {
+        super::every_corpus_case_that_renders_also_compiles(23, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_25() {
+        super::every_corpus_case_that_renders_also_compiles(24, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_26() {
+        super::every_corpus_case_that_renders_also_compiles(25, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_27() {
+        super::every_corpus_case_that_renders_also_compiles(26, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_28() {
+        super::every_corpus_case_that_renders_also_compiles(27, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_29() {
+        super::every_corpus_case_that_renders_also_compiles(28, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_30() {
+        super::every_corpus_case_that_renders_also_compiles(29, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_31() {
+        super::every_corpus_case_that_renders_also_compiles(30, 32);
+    }
+
+    #[test]
+    #[ignore = "a thirty-second of the corpus through `nim check`; runs in integration-codegen-julia-zig-nim"]
+    fn share_32() {
+        super::every_corpus_case_that_renders_also_compiles(31, 32);
+    }
 }

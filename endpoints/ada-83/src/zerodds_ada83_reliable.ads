@@ -10,8 +10,9 @@
 --  (crates/xrce), endpoints/c and the modern Ada endpoints.
 --
 --  State machine only -- no I/O, no sockets. This mirrors the C split
---  (`zerodds_endpoint.c` reliable core vs. `reliable_udp_app.c` POSIX sockets):
---  a driver app owns the transport and the poll loop and calls into this core.
+--  (`zerodds_endpoint.c` is the reliable core, the application owns the POSIX
+--  sockets): a driver app owns the transport and the poll loop and calls into
+--  this core.
 --
 --  The window base is the OLDEST unacked sequence, compared with RFC-1982 Seq_Lt
 --  (never a numeric min), so HEARTBEAT/ACKNACK stay correct across the 16-bit

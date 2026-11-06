@@ -358,14 +358,14 @@ mod tests {
     }
 
     #[test]
-    fn message_id_is_24_bytes_guid_then_seqnum() {
+    fn ddsamqp_8_2_message_id_is_24_bytes_guid_then_seqnum() {
         let mid = message_id([0u8; 16], 1);
         assert_eq!(mid.len(), 24);
         assert_eq!(&mid[16..24], &[0u8, 0, 0, 0, 0, 0, 0, 1]);
     }
 
     #[test]
-    fn message_id_distinguishes_consecutive_samples_same_instance() {
+    fn ddsamqp_8_2_message_id_distinguishes_consecutive_samples_same_instance() {
         // Spec rationale: across two samples of the same key the
         // message-id should differ, otherwise Service Bus dedup
         // fires incorrectly (Round-12-P0.3).
@@ -375,17 +375,18 @@ mod tests {
         assert_ne!(m1, m2);
     }
 
+    /// Spec §7.7: the `dds:operation` values `write`, `register`,
+    /// `unregister` and `dispose`.
     #[test]
-    fn dds_operation_round_trips_via_str() {
-        for op in [
-            DdsOperation::Write,
-            DdsOperation::Register,
-            DdsOperation::Unregister,
-            DdsOperation::Dispose,
+    fn ddsamqp_7_7_the_operations_are_write_register_unregister_dispose() {
+        for (op, name) in [
+            (DdsOperation::Write, "write"),
+            (DdsOperation::Register, "register"),
+            (DdsOperation::Unregister, "unregister"),
+            (DdsOperation::Dispose, "dispose"),
         ] {
-            let s = op.as_str();
-            let back = DdsOperation::parse(s).unwrap();
-            assert_eq!(op, back);
+            assert_eq!(op.as_str(), name);
+            assert_eq!(DdsOperation::parse(name).unwrap(), op);
         }
     }
 
@@ -395,7 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn produce_properties_keyhash_yields_group_id() {
+    fn ddsamqp_7_6_produce_properties_keyhash_yields_group_id() {
         let mut hdr = header();
         hdr.keyhash = Some(b"\x00\x00\x00\x07".to_vec());
         let p = produce_properties(&hdr);
@@ -406,13 +407,13 @@ mod tests {
     }
 
     #[test]
-    fn produce_properties_unkeyed_omits_group_id() {
+    fn ddsamqp_7_6_3_produce_properties_unkeyed_omits_group_id() {
         let p = produce_properties(&header());
         assert!(p.group_id.is_none());
     }
 
     #[test]
-    fn produce_properties_lifespan_sets_expiry() {
+    fn ddsamqp_7_4_7_produce_properties_lifespan_sets_expiry() {
         let mut hdr = header();
         hdr.source_timestamp_ms = 1000;
         hdr.lifespan_remaining_ms = Some(5000);
@@ -421,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn application_properties_default_minimal_set() {
+    fn ddsamqp_7_7_1_application_properties_default_minimal_set() {
         // Default header: only dds:domain-id and dds:instance-handle.
         let m = produce_application_properties(&header());
         let entries = match m {
@@ -444,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn application_properties_register_sets_operation() {
+    fn ddsamqp_7_7_1_application_properties_register_sets_operation() {
         let mut hdr = header();
         hdr.operation = DdsOperation::Register;
         let m = produce_application_properties(&hdr);
@@ -461,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn application_properties_truncated_type_id_present() {
+    fn ddsamqp_2_5_application_properties_truncated_type_id_present() {
         let mut hdr = header();
         hdr.type_id_hex = Some("deadbeefcafebabe1234567890ab".to_string());
         let m = produce_application_properties(&hdr);
@@ -476,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn application_properties_multi_partition_uses_list() {
+    fn ddsamqp_8_3_application_properties_multi_partition_uses_list() {
         let mut hdr = header();
         hdr.partitions = alloc::vec!["alpha".into(), "beta".into()];
         let m = produce_application_properties(&hdr);
@@ -496,7 +497,7 @@ mod tests {
     }
 
     #[test]
-    fn application_properties_single_partition_uses_string() {
+    fn ddsamqp_8_3_application_properties_single_partition_uses_string() {
         let mut hdr = header();
         hdr.partitions = alloc::vec!["solo".into()];
         let m = produce_application_properties(&hdr);
@@ -513,7 +514,7 @@ mod tests {
     }
 
     #[test]
-    fn application_properties_nsec_set_when_nonzero() {
+    fn ddsamqp_8_3_application_properties_nsec_set_when_nonzero() {
         let mut hdr = header();
         hdr.source_nsec_remainder = 123_456;
         let m = produce_application_properties(&hdr);
@@ -547,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn type_id_inspector_match_returns_match() {
+    fn ddsamqp_7_2_1_3_type_id_inspector_match_returns_match() {
         let p = props_with(alloc::vec![(
             app_keys::TYPE_ID,
             AmqpExtValue::Str("deadbeefcafebabe1234567890ab".to_string()),
@@ -557,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn type_id_inspector_case_insensitive_match() {
+    fn ddsamqp_7_2_1_3_type_id_inspector_case_insensitive_match() {
         let p = props_with(alloc::vec![(
             app_keys::TYPE_ID,
             AmqpExtValue::Str("DEADBEEFCAFEBABE".to_string()),
@@ -567,14 +568,14 @@ mod tests {
     }
 
     #[test]
-    fn type_id_inspector_absent_returns_absent() {
+    fn ddsamqp_7_2_1_3_type_id_inspector_absent_returns_absent() {
         let p = props_with(alloc::vec![(app_keys::DOMAIN_ID, AmqpExtValue::Uint(42),)]);
         let r = inspect_dds_type_id(&p, "deadbeefcafebabe");
         assert_eq!(r, TypeIdCheck::Absent);
     }
 
     #[test]
-    fn type_id_inspector_mismatch_detects_collision() {
+    fn ddsamqp_7_2_1_3_type_id_inspector_mismatch_detects_collision() {
         // Spec §7.2.1.3: descriptor matched (8-byte ulong), but
         // dds:type-id differs → hash-truncation collision.
         let p = props_with(alloc::vec![(
@@ -592,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    fn type_id_inspector_accepts_symbol_form() {
+    fn ddsamqp_7_2_1_3_type_id_inspector_accepts_symbol_form() {
         let p = props_with(alloc::vec![(
             app_keys::TYPE_ID,
             AmqpExtValue::Symbol("dds:type:abc".to_string()),
@@ -602,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn type_id_inspector_non_map_yields_absent() {
+    fn ddsamqp_7_2_1_3_type_id_inspector_non_map_yields_absent() {
         let r = inspect_dds_type_id(&AmqpExtValue::Null, "x");
         assert_eq!(r, TypeIdCheck::Absent);
     }

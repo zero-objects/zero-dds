@@ -23,7 +23,7 @@ Repo-Pfad, Test-Pfad und Status (`done` / `partial` / `open` / `n/a`).
 Grammatik (357 Proben, neun Spalten je Unterbefehl) steht in
 [`idl-4.2.gaps.md`](idl-4.2.gaps.md); diese Seite ist die Positivliste.
 
-**Offene Punkte:** siehe [`idl-4.2.open.md`](idl-4.2.open.md).
+**Offene Punkte:** keine.
 
 ---
 
@@ -165,18 +165,13 @@ der vier grossgeschriebenen `TRUE`, `FALSE`, `Object`, `ValueBase`.
 **Spec:** §7.2.5, S. 20 — Tabelle 7-7 (Punctuation) und Tabelle 7-8 (die
 Präprozessor-Token `#`, `##`, `!`, `||`, `&&`).
 
-**Repo:** `crates/idl-cst/src/lex.rs::lex_punct`,
-`crates/idl-parse/src/preprocess/pptoken.rs::PUNCTUATORS`.
+**Repo:** `crates/idl-cst/src/lex.rs::lex_punct`, `crates/idl-cst/src/lex.rs::scan_escape`, `crates/idl-parse/src/preprocess/pptoken.rs::PUNCTUATORS`.
 
-**Tests:** `crates/idl-cst/tests/lexer.rs::a_hash_that_is_not_at_the_start_of_a_line_is_punctuation`,
-`crates/idl-cst/tests/lexer.rs::an_illegal_byte_run_produces_one_error_token_not_one_per_byte`,
-`crates/idl-parse/tests/parse.rs::every_operator_of_the_ladder_parses`,
-`crates/idl-parse/tests/parse.rs::a_leading_double_colon_is_the_global_scope`.
+**Tests:** `crates/idl-cst/tests/lexer.rs::idl_7_2_5_every_punctuation_character_of_table_7_7_is_recognised`,
+`crates/idl-cst/tests/lexer.rs::idl_7_2_5_the_iso_latin_1_letters_of_table_7_2_stand_in_a_string_literal`,
+`crates/idl-parse/tests/preprocess.rs::idl_7_2_5_the_preprocessor_tokens_of_table_7_8_take_effect`.
 
-**Status:** `partial` — die Operatorleiter und `#` sind einzeln belegt; ein
-Test über alle 28 Zeichen aus Tabelle 7-7 und alle fünf aus Tabelle 7-8
-existiert nicht. Auch die iso-8859-1-Buchstaben aus Tabelle 7-2 sind
-nicht einzeln probiert.
+**Status:** `done` — die 22 Zeichen aus Tabelle 7-7, die eigene Token sind, werden zu ihrer eigenen Art; Apostroph, Anführungszeichen und Backslash begrenzen und escapen Literale; die fünf Token aus Tabelle 7-8 wirken im Präprozessor (`#`, `##`, `!`, `||`, `&&`); die ISO-Latin-1-Buchstaben aus Tabelle 7-2 behalten ihren Wert in Zeichen- und String-Literalen.
 
 ### §7.2.6 Literals
 
@@ -230,7 +225,7 @@ Character; der Wertebereich ist ISO 10646.
 
 **Tests:** `crates/idl-cst/tests/lexer.rs::wide_literals_are_their_own_kinds`,
 `crates/idl-cst/tests/lexer.rs::a_char_literal_the_type_cannot_hold_is_an_error_token`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends` —
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends` —
 `lexer.rs:203: assert_eq!(kinds("L'x'")[0], TokenKind::WCharLiteral);`.
 
 **Status:** done
@@ -241,17 +236,13 @@ Character; der Wertebereich ist ISO 10646.
 `character literals`: dezimale, oktale und hexadezimale Form sowie die
 `\u`-/`\U`-Form für Wide Characters.
 
-**Repo:** `crates/idl-cst/src/lex.rs::scan_escape`.
+**Repo:** `crates/idl-cst/src/lex.rs::scan_escape`, `crates/idl-lower/src/expr.rs::literal` (die `\u`-Escape in einem schmalen Literal).
 
-**Tests:** `crates/idl-cst/tests/lexer.rs::character_and_string_literals_resolve_their_escapes`,
-`crates/idl-cst/tests/lexer.rs::a_string_literal_value_has_its_escapes_resolved`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
-(`lex-7.2.6.2-char-escape-octal`, `lex-7.2.6.2-char-escape-hex`,
-`lex-7.2.6.2-wchar-escape-unicode`).
+**Tests:** `crates/idl-cst/tests/lexer.rs::idl_7_2_6_2_2_every_escape_sequence_of_table_7_9_has_its_value`,
+`crates/idl-cst/tests/lexer.rs::character_and_string_literals_resolve_their_escapes`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_2_6_2_2_a_unicode_escape_is_refused_in_a_narrow_literal`.
 
-**Status:** `partial` — die dezimalen und hexadezimalen Formen sind im
-Lexer-Test belegt, die `\u`-/`\U`-Form nur als `.idl`-Fixture unter
-`tools/idlc/tests/idl-4.2-gaps/`, nicht als Rust-Test.
+**Status:** `done` — jede Escape-Sequenz aus Tabelle 7-9 hat ihren Wert, auch `\ooo` mit ein bis drei Ziffern, `\xhh` mit einer oder zwei und `\uhhhh` mit ein bis vier (die Beispiele `\u002E` und `\u3BC` des Absatzes), und eine Ziffernfolge endet am ersten Zeichen, das keine Ziffer ist; eine `\u`-Escape in einem `char`- oder `string`-Literal ist ein Fehler (`IDL0019`).
 
 ### §7.2.6.3 String Literals und Adjacent Concatenation
 
@@ -288,7 +279,7 @@ Exponent und mit führendem oder nachgestelltem Punkt.
 `crates/idl-lower/tests/floating_constant_arithmetic.rs::a_difference_of_two_literals_evaluates`,
 `crates/idl-lower/tests/floating_constant_arithmetic.rs::the_arithmetic_is_double`,
 `crates/idl-lower/tests/floating_constant_arithmetic.rs::a_large_value_keeps_its_exponent`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`lex-7.2.6.4-float-leading-dot`, `lex-7.2.6.4-float-trailing-dot`) —
 `lexer.rs:144: assert_eq!(kinds(text)[0], TokenKind::FloatLiteral, "{text}");`.
 
@@ -305,7 +296,7 @@ Fixed-Point-Literal; `f`/`F` ist die Gleitkommaform.
 **Tests:** `crates/idl-cst/tests/lexer.rs::a_d_suffix_makes_a_fixed_point_literal`,
 `crates/idl-lower/tests/lowering.rs::a_fixed_constant_takes_its_type_from_its_literal`,
 `crates/idl-lower/tests/completion.rs::a_fixed_type_carries_its_digits_and_scale`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`lex-7.2.6.5-fixed-literal`) —
 `lexer.rs:157: assert_eq!(kinds(text)[0], TokenKind::FixedLiteral, "{text}");`.
 
@@ -381,7 +372,7 @@ objektartige und funktionsartige Makros, `#` als Stringize-Operator,
 **Tests:** `crates/idl-parse/tests/preprocessor_iso_14882.rs::a_function_like_macro_substitutes_its_arguments`,
 `crates/idl-parse/tests/preprocessor_iso_14882.rs::stringize_spells_the_argument`,
 `crates/idl-parse/tests/preprocessor_iso_14882.rs::token_paste_joins_two_tokens`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`lex-7.3-define-function`, `lex-7.3-token-paste`) —
 `preprocessor_iso_14882.rs:137: "struct Sa { long m ; } ;"`.
 
@@ -418,7 +409,7 @@ die reservierten Namen der ISO-Norm dürfen nicht neu definiert werden.
 `crates/idl-parse/tests/preprocess.rs::a_define_without_a_name_is_diagnosed`,
 `crates/idl-parse/tests/preprocess.rs::an_undefined_name_is_left_alone`,
 `crates/idl-parse/tests/preprocessor_iso_14882.rs::the_predefined_names_cannot_be_defined`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`lex-7.3-undef`) —
 `preprocess.rs:41: assert!(expanded.contains("MAX"), "{expanded}");`.
 
@@ -454,7 +445,7 @@ Zeilennummer und Dateiname für die folgenden Tokens.
 **Repo:** `crates/idl-parse/src/preprocess/mod.rs::line_control`.
 
 **Tests:** `crates/idl-parse/tests/preprocessor_iso_14882.rs::hash_line_renumbers_and_renames`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`lex-7.3-line-directive`) —
 `preprocessor_iso_14882.rs:259: "const long K = 100 ; const string F = \"robot.idl\" ;"`.
 
@@ -562,26 +553,17 @@ auditiert.
 `enum_dcl`, `enumerator`, `array_declarator`, `simple_type_spec`,
 `native_type`, `forward_dcl`.
 
-**Repo:** `crates/idl-parse/src/decl.rs::parse_definition` und die
-Produktionsfunktionen daneben (`parse_module`, `parse_const`,
-`parse_typedef`, `parse_struct_def`, `parse_union_case`, `parse_enum_def`,
-`parse_native`), `crates/idl-parse/src/type_spec.rs::parse_type_spec`.
+**Repo:** `crates/idl-parse/src/decl.rs::parse_definition` und die Produktionsfunktionen daneben (`parse_module`, `parse_const`, `parse_typedef`, `parse_struct_def`, `parse_union_case`, `parse_enum_def`, `parse_native`), `crates/idl-parse/src/type_spec.rs::parse_type_spec`.
 
 **Tests:** `crates/idl-parse/tests/parse.rs::each_declaration_form_is_recognised`,
 `crates/idl-parse/tests/parse.rs::several_declarators_share_one_type`,
 `crates/idl-parse/tests/parse.rs::a_forward_declaration_is_its_own_form`,
 `crates/idl-parse/tests/parse.rs::an_array_declarator_is_only_known_at_the_bracket`,
-`crates/idl-lower/tests/validation.rs::an_enumeration_with_no_enumerator_is_refused`,
-`crates/idl-lower/tests/validation.rs::a_bitmask_with_no_bit_value_is_refused`,
-`crates/idl-lower/tests/validation.rs::a_union_with_no_case_is_refused`,
-`crates/idl-lower/tests/validation.rs::the_two_bodies_the_grammar_does_let_be_empty_stay_empty`,
-`crates/idl-lower/tests/idl_4_2_grammar.rs::every_constructed_form_can_be_defined_inside_a_typedef`.
+`crates/idl-lower/tests/idl_4_2_grammar.rs::every_constructed_form_can_be_defined_inside_a_typedef`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_1_4_4_6_a_native_type_is_used_by_its_name_wherever_a_type_is`,
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_annex_a_every_probe_of_the_gap_scan_gets_the_specifications_answer`.
 
-**Status:** `partial` — die Produktionen sind erkannt, aber Produktion 62
-erlaubt `native_type` auch als Member-Typ-Spec
-(`<type_spec> ::+ <native_type> | …`); `struct S { native H; };` ist nicht
-abgedeckt, `parse_type_spec` hat keinen `Native`-Zweig. Die Lücke ist in
-[`idl-4.2.gaps.md`](idl-4.2.gaps.md) §A gemessen.
+**Status:** `done` — die Produktionen (1) bis (68) sind erkannt; die Proben des Gap-Scans für jede von ihnen bekommen die Antwort der Spezifikation. Regel (62) ist `<simple_declarator> ::= <identifier>`: ein nativer Typ wird mit Regel (61) deklariert und über seinen Namen benutzt wie jeder deklarierte Typ; der Native-Test führt das durch ein Member, einen `typedef` und eine Operation.
 
 ### §7.4.1.4.1 IDL Specification
 
@@ -702,18 +684,26 @@ floating point numbers; the double type represents IEEE double-precision
 floating point numbers. The long double data type represents an IEEE
 double-extended floating-point number".
 
-**Repo:** `crates/idl-lower/src/lower.rs::primitive_of` (Arme `Float32`,
-`Float64`, `Float128`), `crates/float128/src/lib.rs::Float128`.
+**Repo:** `crates/idl-lower/src/lower.rs::primitive_of` (Arme `Float32`, `Float64`, `Float128`), `crates/float128/src/lib.rs::Float128`, `crates/float128/src/arith.rs` (die vier Grundrechenarten in binary128), `crates/ast/src/model.rs::eval_long_double_at`.
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
-`crates/idl-lower/tests/floating_constant_arithmetic.rs::long_double_arithmetic_is_refused_and_a_long_double_literal_is_not`.
+`crates/idl-lower/tests/floating_constant_arithmetic.rs::idl_7_4_1_4_2_long_double_arithmetic_runs_in_binary128`,
+`crates/float128/tests/gcc_binary128_ops.rs::ieee754_5_4_1_the_four_operations_round_as_gcc_float128_does`.
 
-**Status:** `open` — `float` und `double` sind modelliert und getestet.
-`long double` bildet der Baum als `Float128` ab, aber Rust stable hat kein
-`f128`; die Arithmetik eines `long double`-Ausdrucks wird deshalb abgewiesen
-(`EvalError::LongDouble`), und die Klausel verlangt den vollen
-IEEE-double-extended-Wert mit mindestens 15 Exponenten- und 64
-Mantissenbits.
+**Status:** `done` — `float` ist IEEE binary32, `double` binary64, `long double` binary128; ein konstanter Ausdruck in `long double` wird in binary128 ausgewertet (Item darunter).
+
+### §7.4.1.4.4.2.2 long double als IEEE double-extended
+
+**Spec:** §7.4.1.4.4.2.2, S. 34 — "The long double data type represents an IEEE double-extended floating-point number, which has an exponent of at least 15 bits in length and a signed fraction of at least 64 bits".
+
+**Repo:** `crates/float128/src/lib.rs` (`Float128`), `crates/float128/src/arith.rs` (`add`, `sub`, `mul`, `div`, jeweils einmal zum nächsten Wert gerundet, bei Gleichstand gerade), `crates/ast/src/model.rs::eval_long_double_root`, `crates/idl-lower/src/lower.rs` (`primitive_of`, Arm `Float128`).
+
+**Tests:** `crates/idl-lower/tests/floating_constant_arithmetic.rs::idl_7_4_1_4_2_long_double_arithmetic_runs_in_binary128`,
+`crates/float128/tests/gcc_binary128_ops.rs::ieee754_5_4_1_the_four_operations_round_as_gcc_float128_does`,
+`crates/float128/tests/oracle.rs::our_parser_reads_what_gcc_prints`,
+`crates/float128/tests/binary128.rs::x87_carries_sixty_four_significand_bits_and_says_when_it_cannot`.
+
+**Status:** `done` — `long double` ist IEEE binary128: 15 Bit Exponent und 113 Bit Signifikand, mehr als die 15 und 64 Bit, die der Absatz verlangt. Konstante Ausdrücke in `long double` laufen in binary128 in `zerodds-float128`, das keinen Typ `f128` des Compilers braucht: `1.0 + 1e-20` behält seine letzte Ziffer, die dieselbe Summe in `double` verliert; ein Teilausdruck außerhalb des binary128-Bereichs ist `EvalError::Overflow`. Addition, Subtraktion, Multiplikation und Division ergeben für 6072 Operandenpaare die Bits, die GCCs `__float128` ergibt (Orakel `crates/float128/tests/oracle/quad_ops.c`).
 
 ### §7.4.1.4.4.2.3 char Type
 
@@ -827,7 +817,7 @@ ISO 10646.
 **Tests:** `crates/idl-lower/tests/validation.rs::a_zero_string_bound_is_rejected`,
 `crates/idl-lower/tests/idl_4_2_grammar.rs::adjacent_wide_string_literals_are_one_literal`,
 `crates/ast/tests/node_space.rs::narrow_and_wide_strings_are_distinct_kinds`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`bb1-006-const-wstring`) —
 `idl_4_2_grammar.rs:74: ConstValue::WString("abcd".chars().map(u32::from).collect())`.
 
@@ -935,11 +925,11 @@ Element enthalten, das einen Wert terminiert; die Forward Declaration
 `crates/ast-layout/src/xcdr.rs::types_that_close_an_inadmissible_cycle`,
 `crates/idl-compose/src/lib.rs::compose_source_with`.
 
-**Tests:** `crates/idl-compose/tests/recursion.rs::a_cycle_with_no_terminator_on_it_is_refused`,
-`crates/idl-compose/tests/recursion.rs::a_cycle_with_a_terminator_on_it_is_admitted`,
-`crates/idl-compose/tests/recursion.rs::the_diagnostic_names_the_type_and_the_clause`,
-`crates/idl-compose/tests/recursion.rs::the_interop_corpus_case_for_this_is_refused_and_its_neighbours_are_not`,
-`crates/idl-compose/tests/recursion.rs::a_forward_declared_cycle_is_reported_once`,
+**Tests:** `crates/idl-compose/tests/recursion.rs::idl_7_4_1_4_4_4_4_a_cycle_with_no_terminator_on_it_is_refused`,
+`crates/idl-compose/tests/recursion.rs::idl_7_4_1_4_4_4_4_a_cycle_with_a_terminator_on_it_is_admitted`,
+`crates/idl-compose/tests/recursion.rs::idl_7_4_1_4_4_4_4_the_diagnostic_names_the_type_and_the_clause`,
+`crates/idl-compose/tests/recursion.rs::idl_7_4_1_4_4_4_4_the_interop_corpus_case_for_this_is_refused_and_its_neighbours_are_not`,
+`crates/idl-compose/tests/recursion.rs::idl_7_4_1_4_4_4_4_a_forward_declared_cycle_is_reported_once`,
 `crates/idl-lower/tests/lowering.rs::a_forward_declaration_on_its_own_is_forward`,
 `crates/idl-lower/tests/lowering.rs::the_definition_completes_the_forward_node_rather_than_adding_a_second`,
 `crates/idl-lower/tests/validation.rs::a_forward_declaration_never_defined_is_rejected`,
@@ -953,14 +943,12 @@ Element enthalten, das einen Wert terminiert; die Forward Declaration
 **Spec:** §7.4.1.4.4.6, S. 43 — `native <identifier> ;` deklariert einen
 nativen Typ; die Verwendung als Member-Typ-Spec steht in Produktion 62.
 
-**Repo:** `crates/idl-lower/src/lower.rs::native`,
-`crates/idl-parse/src/decl.rs::parse_native`.
+**Repo:** `crates/idl-lower/src/lower.rs::native`, `crates/idl-parse/src/decl.rs::parse_native`.
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::a_native_declaration_becomes_a_native_type`,
-`crates/idl-parse/tests/parse.rs::each_declaration_form_is_recognised`.
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_1_4_4_6_a_native_type_is_used_by_its_name_wherever_a_type_is`.
 
-**Status:** `partial` — die Deklaration ist belegt, die Verwendung als
-Member-Typ (`struct S { native H; };`) nicht; siehe das Item zu §7.4.1.3.
+**Status:** `done` — `native Handle;` deklariert einen Typ der Art `Native`, und ein Member, ein `typedef` und ein Parameter eines lokalen Interfaces, die ihn nennen, lösen auf ihn auf.
 
 ### §7.4.1.4.4.7 Naming Data Types (Produktion 64)
 
@@ -1104,10 +1092,10 @@ jedes geerbte Element ist im abgeleiteten Interface sichtbar.
 **Repo:** `crates/idl-lower/src/lower.rs::interface_bases`,
 `crates/ast/src/node/interface.rs::InterfaceNode`.
 
-**Tests:** `crates/lang-rules/tests/inherited_operations.rs::the_cpp_class_reaches_the_bases_operation_through_its_base_clause`,
-`crates/lang-rules/tests/inherited_operations.rs::the_java_interface_reaches_the_bases_operation_through_extends`,
-`crates/lang-rules/tests/inherited_operations.rs::the_rust_trait_reaches_the_bases_operation_through_a_supertrait`,
-`crates/lang-rules/tests/inherited_operations.rs::every_incomplete_language_refuses_rather_than_flattens_or_drops` —
+**Tests:** `crates/lang-rules/tests/inherited_operations.rs::idl_7_4_3_4_3_2_the_cpp_class_reaches_the_bases_operation_through_its_base_clause`,
+`crates/lang-rules/tests/inherited_operations.rs::idl_7_4_3_4_3_2_the_java_interface_reaches_the_bases_operation_through_extends`,
+`crates/lang-rules/tests/inherited_operations.rs::idl_7_4_3_4_3_2_the_rust_trait_reaches_the_bases_operation_through_a_supertrait`,
+`crates/lang-rules/tests/inherited_operations.rs::idl_7_4_3_4_3_2_every_incomplete_language_refuses_rather_than_flattens_or_drops` —
 `inherited_operations.rs:102: assert!(out.contains("class Derived : public Base {"), "{out}");`.
 
 **Status:** done
@@ -1118,16 +1106,12 @@ jedes geerbte Element ist im abgeleiteten Interface sichtbar.
 keinen Namen zweimal nennen; die Vererbung ist transitiv; `virtual` und
 nicht-`virtual` werden unterschieden.
 
-**Repo:** —
+**Repo:** `crates/idl-lower/src/validate.rs::interface_inheritance_rules`, `crates/idl-lower/src/scope.rs::ScopeStack::find`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_3_4_3_2_1_a_direct_base_is_named_once_and_no_operation_is_redefined`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_1_an_inherited_identifier_is_visible_under_every_global_name`.
 
-**Status:** `open` — es gibt weder eine Diagnose für ein doppelt genanntes
-Basis-Interface noch einen transitiven Gang im Frontend; der Abgleich
-`inheritance_rules` in `crates/idl-lower/src/validate.rs` gilt nur für
-`TypeKind::Structure`. Das Schlüsselwort `virtual` kommt im heutigen Baum
-nirgends vor. Die Abflachung in `crates/lang-rules` geschieht je Spalte,
-nicht im Frontend.
+**Status:** `done` — die Raute aus Figure 7-1 und `E: A, B` werden angenommen; eine zweimal genannte direkte Basis, eine in einem abgeleiteten Interface neu definierte Operation oder ein Attribut (`make_it_so` des Absatzes) und zwei verschiedene geerbte Operationen eines Namens werden abgewiesen (`IDL0021`); die Elemente einer direkten oder indirekten Basis sind im abgeleiteten Interface sichtbar. IDL 4.2 kennt kein Schlüsselwort `virtual`.
 
 ### §7.4.3.4.3.3.1 Operations
 
@@ -1135,22 +1119,13 @@ nicht im Frontend.
 `inout`; `oneway`; `raises ( <exception_identifier> { "," … } * )`;
 `context ( "<string_literal>" { "," … } * )`.
 
-**Repo:** `crates/idl-lower/src/lower.rs::operation`,
-`crates/ast/src/model.rs::add_context`,
-`crates/ast/src/node/interface.rs::OperationNode`.
+**Repo:** `crates/idl-lower/src/lower.rs::operation`, `crates/ast/src/model.rs::add_context`, `crates/ast/src/node/interface.rs::OperationNode`.
 
-**Tests:** `crates/idl-lower/tests/conformance.rs::every_fixture_lowers_to_exactly_the_diagnostics_it_should`,
-`crates/idl-lower/tests/conformance.rs::the_expected_diagnostics_are_the_ones_the_fixtures_actually_earn`,
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_3_4_3_3_1_an_operation_keeps_its_directions_raises_and_context`,
 `crates/corba-codegen/tests/model_connection.rs::oneway_survives_lowering`,
-`crates/corba-codegen/tests/model_connection.rs::a_raises_clause_reaches_the_stub`,
-`crates/ast/tests/node_space.rs::a_oneway_operation_is_flagged_and_a_normal_one_is_not`.
+`crates/corba-codegen/tests/model_connection.rs::a_raises_clause_reaches_the_stub`.
 
-**Status:** `partial` — `oneway` und `raises` sind getestet. Für die
-Richtungen `in`/`out`/`inout` und für die `context (…)`-Klausel gibt es
-keinen Test, der über das Frontend geht: die `context`-Klausel wird
-geparst und gelowert (`OperationNode::contexts`), aber keine committete
-`.idl`-Datei des Baums enthält eine, und `ParamDirection` wird nur in
-handgebauten Modell-Tests geprüft.
+**Status:** `done` — eine aus IDL abgesenkte Operation behält `in`, `out` und `inout` je Parameter, ihre `raises`-Klausel aufgelöst auf die Exception und die Strings ihrer `context`-Klausel in Reihenfolge.
 
 ### §7.4.3.4.3.3.2 Attributes
 
@@ -1158,20 +1133,13 @@ handgebauten Modell-Tests geprüft.
 <type_spec> <identifier> ;` mit `readonly`, sowie `getraises`/`setraises`
 als eigene Attributformen.
 
-**Repo:** `crates/idl-lower/src/lower.rs::attribute`,
-`crates/idl-cst/src/token.rs::TokenKind`.
+**Repo:** `crates/idl-lower/src/lower.rs::attribute`, `crates/ast/src/model.rs::add_attribute_raises`.
 
-**Tests:** `crates/idl-parse/tests/parse.rs::an_interface_with_operations_and_attributes_parses`,
-`crates/idl-lower/tests/validation.rs::an_attribute_named_like_its_type_collides`,
-`crates/lang-rules/tests/interface_bindings.rs::an_attribute_implies_the_operations_of_seven_five_one_one_three`,
-`crates/idl-lower/tests/conformance.rs::every_fixture_parses_with_no_diagnostics_beyond_the_extensions_it_declares`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_3_4_3_3_2_an_attribute_keeps_its_getraises_and_setraises`,
+`crates/idl-parse/tests/parse.rs::an_interface_with_operations_and_attributes_parses`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_5_1_1_3_an_attribute_implies_the_operations_of_seven_five_one_one_three`.
 
-**Status:** `partial` — `readonly attribute` und die Ableitung der
-Operationen sind belegt; `getraises` und `setraises` werden geparst und
-gelowert (`add_attribute_raises`), aber kein Test behauptet etwas über
-sie. Nur die Fixture
-`crates/idl-parse/tests/fixtures/spec_features/attr_raises.idl` führt sie
-durch die Pipeline, ohne Aussage über ihr Ergebnis.
+**Status:** `done` — `getraises` und `setraises` erreichen `get_raises` und `set_raises` des Attributs, aufgelöst auf ihre Exceptions; das `raises` eines `readonly`-Attributs erreicht `get_raises` und lässt `set_raises` leer.
 
 ### §7.4.3.4.3.4 Forward Declaration
 
@@ -1187,7 +1155,7 @@ Forward Declaration; die spätere Definition ergänzt denselben Knoten.
 `crates/idl-lower/tests/lowering.rs::a_reference_taken_against_a_forward_interface_survives_the_definition`,
 `crates/idl-lower/tests/lowering.rs::a_second_full_interface_definition_is_a_duplicate_not_a_completion`,
 `crates/idl-lower/tests/spans.rs::an_unfinished_forward_interface_points_at_the_declaration_too`,
-`crates/lang-rules/tests/interface_bindings.rs::a_forward_declaration_without_a_definition_is_e002` —
+`crates/lang-rules/tests/interface_bindings.rs::ddsts_11_7_a_forward_declaration_without_a_definition_is_e002` —
 `lowering.rs:1070: assert_eq!(lowered.ast.operations_of(id).len(), 1);`.
 
 **Status:** done
@@ -1230,19 +1198,13 @@ stehen, an der `<type_spec>` steht, und löst zu einer Objektreferenz auf.
 gilt nicht als mehrdeutig; zwei verschiedene Deklarationen desselben
 Namens in der Sichtbarkeit dagegen schon.
 
-**Repo:** `crates/lang-rules/src/adapter/interface.rs::Service::is_remote`,
-`crates/idl-lower/src/scope.rs::ScopeStack::lookup_candidates`.
+**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::find`, `crates/idl-lower/src/lower.rs::use_scoped` (`AmbiguousName`).
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::all_operations_flattened_keeps_a_non_readonly_attributes_setter`,
-`crates/ast/tests/resolve_profile_query.rs::an_ambiguous_name_reports_every_candidate`,
-`crates/ast/tests/resolve_profile_query.rs::a_duplicate_scoped_name_is_reported_as_ambiguous_with_both_nodes`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_4_4_a_name_declared_in_two_bases_is_ambiguous_unless_qualified`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_1_an_inherited_identifier_is_visible_under_every_global_name`,
+`crates/lang-rules/tests/interface_bindings.rs::idl_7_4_4_4_all_operations_flattened_keeps_a_non_readonly_attributes_setter`.
 
-**Status:** `partial` — die Abflachung über einen Diamanten und die
-Mehrdeutigkeitsmeldung auf Modellebene sind belegt. Eine Diagnose im
-Frontend für die Ambiguität aus zwei vererbten, *verschieden* deklarierten
-Elementen gibt es nicht: `inheritance_rules` in
-`crates/idl-lower/src/validate.rs` kennt nur `TypeKind::Structure` als
-Vererbungsträger.
+**Status:** `done` — das Beispiel des Absatzes: `typedef L1 L2;` in `C: B, A` wird als mehrdeutig gemeldet (`IDL0009`), `A::L1` löst auf `long` auf und `B::L1` auf `short`; eine über zwei Wege einer Raute erreichte Deklaration ist eine und keine Mehrdeutigkeit.
 
 ### §7.4.4.4 Attribut und Operation mit demselben Namen
 
@@ -1251,12 +1213,9 @@ einen Namespace innerhalb des Interface-Rumpfs.
 
 **Repo:** `crates/idl-lower/src/lower.rs::one_namespace_per_scope`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_4_4_an_attribute_and_an_operation_of_one_name_collide`.
 
-**Status:** `open` — `one_namespace_per_scope` sammelt Attribut- und
-Operationsnamen in *eine* Namensliste, aber kein Test lässt ein Attribut
-und eine Operation desselben Namens in einem Interface entstehen. Die
-naheliegende Gegenprobe fehlt.
+**Status:** `done` — ein Attribut und eine Operation desselben Namens in einem Interface, auch nur in der Schreibweise verschieden, sind `IDL0008`.
 
 ### §7.4.4.5 Specific Keywords
 
@@ -1276,18 +1235,21 @@ zusätzlichen Keywords gibt; es gibt nichts zu prüfen.
 
 ### §7.4.5.3 Syntax
 
-**Spec:** §7.4.5.3, S. 54 — (125)–(131): `valuetype_dcl`,
-`valuetype_header`, `valuetype_body`, `state_member`, `init_dcl`.
+**Spec:** §7.4.5.3, S. 54 — (98)–(110): `value_dcl`, `value_def`,
+`value_header`, `value_element` (ein `<export>`, ein `<state_member>` oder ein
+`<init_dcl>`), `state_member`, `init_dcl`, `value_forward_dcl`.
 
 **Repo:** `crates/idl-lower/src/lower.rs::valuetype`,
 `crates/idl-lower/src/lower.rs::valuetype_kind`.
 
 **Tests:** `crates/idl-lower/tests/dialects.rs::a_valuetype_keeps_its_modifier_bases_and_supported_interfaces`,
 `crates/idl-parse/tests/parse.rs::each_declaration_form_is_recognised`,
-`crates/idl-lower/tests/conformance.rs::every_fixture_lowers_to_exactly_the_diagnostics_it_should` —
+`crates/idl-lower/tests/conformance.rs::every_fixture_lowers_to_exactly_the_diagnostics_it_should`,
+`crates/idl-lower/tests/dialects.rs::idl_7_4_5_3_an_attribute_in_a_value_type_body_is_an_attribute_of_it`,
+`crates/corba-rust/tests/compile_check.rs::idl_7_4_5_3_a_value_types_attributes_are_methods_of_its_trait` —
 `dialects.rs:550: assert_eq!(state.len(), 2, "a state member was lost");`.
 
-**Status:** done
+**Status:** `done` — ein Attribut im Rumpf eines Value Types (Regel (105), `<export>`) ist ein Attribut des Value Types (`AttributeNode::parent` ist ein `AnyId`); `zerodds-corba-rust` deklariert Getter und, außer bei `readonly`, Setter im Trait des Value Types, der Compiler bestätigt beides und den fehlenden Setter.
 
 ### §7.4.5.4.1 Concrete (Stateful) Value Types
 
@@ -1338,16 +1300,12 @@ Type, nicht zum Struct-Member.
 **Spec:** §7.4.5.4.1.3.2, S. 55–56 — `factory <identifier> ( … ) ;` wird zu
 einer Operation des Value Type.
 
-**Repo:** `crates/idl-lower/src/lower.rs::template_formals` (Initialiser
-im `valuetype`-Zweig), `crates/idl-parse/src/decl.rs::parse_factory`.
+**Repo:** `crates/idl-lower/src/lower.rs::valuetype_operation`, `crates/idl-parse/src/decl.rs::parse_factory`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::a_valuetype_initialiser_becomes_an_operation_of_it`,
-`crates/ccm/tests/equivalent_idl.rs::a_factory_is_emitted_with_create_failure_first_in_its_raises` —
-`dialects.rs:569: assert_eq!(state.len(), 1, "the operation was counted as state");`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_5_4_1_3_2_a_factory_is_an_initializer_of_its_value_type`,
+`crates/idl-lower/tests/dialects.rs::a_valuetype_initialiser_becomes_an_operation_of_it`.
 
-**Status:** `partial` — kein Test prüft, dass die `factory`-Deklaration
-als Operation des Value Type erscheint; der zitierte Test prüft nur, dass
-sie nicht als State-Member gezählt wird.
+**Status:** `done` — `factory create(in long initial, in string name) raises (Bad);` und `factory empty();` sind die Initialisierer des Value Types in Reihenfolge, mit ihren `in`-Parametern und der `raises`-Klausel, und zählen nicht als Zustand.
 
 ### §7.4.5.4.2 Forward Declarations
 
@@ -1359,7 +1317,7 @@ Definition vervollständigt.
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::a_forward_declared_valuetype_is_completed_by_its_definition`,
 `crates/idl-lower/tests/lowering.rs::a_valuetype_forward_that_is_never_defined_is_still_reported`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`bb5-110-value-forward`) —
 `lowering.rs:1361: assert_eq!(declared.len(), 1, "{source:?}: two nodes for one name");`.
 
@@ -1436,16 +1394,11 @@ und `derived_repository_id`, `crates/corba-codegen/src/repository_id.rs`.
 **Spec:** §7.4.6.4.1.3, S. 60 — zwei Deklarationen, die dieselbe
 Repository-Id ergeben, sind ein Konflikt.
 
-**Repo:** `crates/idl-lower/src/complete.rs::derived_repository_id`,
-`crates/corba-codegen/src/repository_id.rs`.
+**Repo:** `crates/idl-lower/src/complete.rs::apply_repository_directives`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::a_directive_naming_nothing_is_still_reported`,
-`crates/corba-codegen/tests/model_connection.rs::a_types_repository_id_is_the_models_and_not_a_second_derivation`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_6_4_1_3_a_pragma_and_a_typeid_disagreeing_on_one_element_conflict`.
 
-**Status:** `partial` — die Herleitung ist eindeutig (ein Präfix, ein
-`typeid`); ein eigener Konflikt-Test für zwei Deklarationen mit derselben
-abgeleiteten Id existiert nicht. Der vorhandene Test prüft die negative
-Seite (ein Verweis auf nichts wird gemeldet).
+**Status:** `done` — ein `#pragma ID` und ein `typeid`, die einem Element zwei verschiedene Repository-Ids geben, und ein `#pragma prefix` und ein `typeprefix`, die einem Scope zwei Präfixe geben, sind `IDL0013`; übereinstimmende werden angenommen.
 
 ### §7.4.6.4.1.4 Imports
 
@@ -1473,7 +1426,7 @@ Interface ohne Endpunkte.
 **Tests:** `crates/idl-lower/tests/dialects.rs::each_component_form_reaches_its_own_interface_kind`,
 `crates/idl-lower/tests/lowering.rs::a_forward_interface_keeps_the_form_its_header_wrote`,
 `crates/corba-codegen/tests/annex_a1_traits.rs::table_a2_reads_local_and_abstract_off_the_interface_declaration`,
-`crates/lang-rules/tests/interface_bindings.rs::a_local_interface_is_refused_by_the_seam` —
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_3_1_1_a_local_interface_is_refused_by_the_seam` —
 `interface_bindings.rs:742: assert!(interface_cpp::cpp_interface_items(&ast).is_err());`.
 
 **Status:** done — ein `local interface` hat keine Endpunkte: die Dienst-Bindung weist ihn ab (DDS-RPC 1.0 §7.3.1.1 Produktion 7) und keine Sprache schreibt eine Klasse dafür.
@@ -1483,46 +1436,34 @@ Interface ohne Endpunkte.
 **Spec:** §7.4.6.4.4, S. 62–63 — ein nativer Typ darf an jeder Stelle
 stehen, an der ein Typ verlangt wird.
 
-**Repo:** `crates/idl-parse/src/decl.rs::parse_native`,
-`crates/idl-lower/src/lower.rs::native`.
+**Repo:** `crates/idl-lower/src/validate.rs::native_parameters_stay_local`, `crates/idl-lower/src/lower.rs::NativeInRemoteInterface`.
 
-**Tests:** `crates/idl-lower/tests/lowering.rs::a_native_declaration_becomes_a_native_type`,
-`crates/idl-lower/tests/conformance.rs::the_xtypes_specifications_own_idl_lowers_completely`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_6_4_4_a_native_parameter_is_refused_in_a_remote_interface`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_1_4_4_6_a_native_type_is_used_by_its_name_wherever_a_type_is`.
 
-**Status:** `partial` — die Deklaration ist belegt, die Verwendung *als
-Member-Typ-Spec* (Produktion 62) nicht; siehe das Item zu §7.4.1.3.
+**Status:** `done` — ein nativer Parameter in einer Operation eines Interfaces, abstrakten Interfaces, einer Komponente oder eines Homes ist `IDL0019`, in einem lokalen Interface wird er angenommen. TAO und JacORB nehmen den entfernten Fall an (`crates/corba-codegen/tests/orb-corpus/recorded/`), omniORB weist ihn ab; `Options::native_in_remote_interfaces` lässt ihn für einen Aufrufer zu, der sie nachbildet.
 
 ### §7.4.6.4.6 Context Expressions
 
 **Spec:** §7.4.6.4.6, S. 63 — `context ( "<string>" { "," <string> } * )`
 an einer Operation; die Zeichenketten sind Ausdrücke.
 
-**Repo:** `crates/idl-lower/src/lower.rs::operation`,
-`crates/ast/src/model.rs::add_context`,
-`crates/ast/src/node/interface.rs::OperationNode`.
+**Repo:** `crates/idl-lower/src/lower.rs::operation` (`OperationNode::contexts`), `crates/idl-lower/src/validate.rs::context_expressions_are_well_formed`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_3_4_3_3_1_an_operation_keeps_its_directions_raises_and_context`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_6_4_6_a_context_string_is_not_empty_and_ends_in_at_most_one_star`.
 
-**Status:** `open` — die Klausel ist geparst und gelowert
-(`OperationNode::contexts`), aber es gibt dazu keinen Test: keine
-committete `.idl`-Datei des Baums schreibt ein `context`, und die Erhebung
-unter `tools/idl-4.2-gap-scan/` führt die Probe `bb6-123-op-with-context`
-mit `fixtures = 0`.
+**Status:** `done` — die Strings einer `context`-Klausel erreichen die Operation in Reihenfolge; ein leerer String, ein alleinstehendes `*`, zwei `*` und ein `*`, das nicht am Ende steht, sind `IDL0001`.
 
 ### §7.4.6.4.7 CORBA Module
 
-**Spec:** §7.4.6.4.7, S. 63–64 — das Modul `CORBA` ist vordefiniert; es
-trägt `Object`, `ValueBase` und die Standardausnahmen.
+**Spec:** §7.4.6.4.7, S. 63–64 — "Names defined by the CORBA specification are in a module named CORBA. In an IDL specification, however, IDL keywords such as Object must not be preceded by a "CORBA::" prefix." "The file orb.idl contains the IDL definitions for the CORBA module. Except for CORBA::TypeCode, the file orb.idl must be included in IDL files that use names defined in the CORBA module. IDL files that use CORBA::TypeCode may obtain its definition by including either the file orb.idl or the file TypeCode.idl."
 
-**Repo:** —
+**Repo:** `crates/idl-parse/src/preprocess/mod.rs::builtin_include`, `crates/idl-parse/src/preprocess/corba/` (`orb.idl` und die `CORBA_*.idl`-Dateien, die es einbindet, wie die OMG sie mit CORBA 3.3 veröffentlicht; `TypeCode.idl`).
 
-**Tests:** —
+**Tests:** `crates/idl-compose/tests/corba_module.rs::idl_7_4_6_4_7_the_corba_module_comes_from_orb_idl_and_typecode_idl`.
 
-**Status:** `open` — es gibt kein `module CORBA` in irgendeiner
-committeten `.idl`-Datei des Baums, kein Symbol in
-`crates/idl-parse/src` oder `crates/idl-lower/src` und keine Probe.
-`Object` und `ValueBase` sind als eingebaute Typnamen erreichbar
-(§7.4.2.5), aber nicht über ein Modul, dessen Inhalt man auflösen könnte.
+**Status:** `done` — `#include <orb.idl>` bringt das Modul CORBA, `#include <TypeCode.idl>` bringt `CORBA::TypeCode`; das Beispiel des Absatzes ergibt seine drei Antworten (`CORBA::Object` ist ein Fehler, ein bloßes `TypeCode` ist undefiniert, `CORBA::TypeCode` wird aufgelöst); ohne `orb.idl` ist ein Name des Moduls undefiniert. Eine `orb.idl`, die der Loader des Aufrufers findet, wird statt der eingebauten gelesen.
 
 ### §7.4.6.5 Specific Keywords
 
@@ -1592,64 +1533,50 @@ interface`.
 **Spec:** §7.4.7.4.3, S. 67–68 — die Regeln, welche Kombinationen aus
 `abstract`, `custom`, `truncatable`, Basis und `supports` zulässig sind.
 
-**Repo:** —
+**Repo:** `crates/idl-lower/src/validate.rs::value_inheritance_rules`, `crates/idl-lower/src/validate.rs::interface_inheritance_rules` (abstrakte Interfaces).
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_7_4_3_a_value_type_has_one_concrete_base_first_and_supports_one_interface`.
 
-**Status:** `open` — es gibt keine Prüfung dieser Kombinationen. Der
-einzige Abgleich von Vererbung im Frontend, `inheritance_rules` in
-`crates/idl-lower/src/validate.rs`, gilt ausschliesslich für
-`TypeKind::Structure { base }`; ein `Valuetype` trägt dort keine Basis.
+**Status:** `done` — das Beispiel des Absatzes (`V3` zulässig, `V4` unzulässig) und die Zellen von Tabelle 7-19: eine konkrete Basis, an erster Stelle; ein abstrakter Value Type erbt nur abstrakte; ein unterstütztes Interface, das nicht abstrakt ist und von denen der Basen abgeleitet ist; kein Boxed Value als Basis; ein abstraktes Interface erbt nur abstrakte Interfaces (`IDL0021`).
 
 ### §7.4.7.4.4 Custom Marshaling
 
-**Spec:** §7.4.7.4.4, S. 68–69 — `custom valuetype`; die
-Marshaling-Operationen sind Teil der Definition.
+**Spec:** §7.4.7.4.4, S. 68–69 — "Once a value type has been marked as custom, it needs to provide an implementation that marshals and unmarshals the value type. [...] It is the responsibility of the implementation to marshal the state of all of its base types." "Custom value types can never be safely truncated to base".
 
-**Repo:** `crates/idl-lower/src/lower.rs::valuetype_kind` (setzt
-`ValuetypeKind::Custom`), `crates/corba-codegen/src/skeleton.rs`.
+**Repo:** `crates/idl-lower/src/lower.rs::valuetype_kind` (setzt `ValuetypeKind::Custom`), `crates/idl-lower/src/validate.rs::value_inheritance_rules`, `crates/corba-rust/src/valuetype_emit.rs::emit_custom_marshal` (der Trait `<Name>CustomMarshal`), `emit_value_struct` (`ValueMarshal` und die Factory rufen ihn).
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::a_valuetype_keeps_its_modifier_bases_and_supported_interfaces`,
-`crates/idl-lower/tests/lowering.rs::the_other_valuetype_forms_are_unaffected_by_the_box`.
+**Tests:** `crates/corba-rust/tests/compile_check.rs::idl_7_4_7_4_4_a_custom_valuetype_is_marshaled_by_the_application`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_7_4_5_truncatable_needs_a_stateful_base_and_custom_stays_custom`,
+`crates/idl-lower/tests/dialects.rs::a_valuetype_keeps_its_modifier_bases_and_supported_interfaces`.
 
-**Status:** `partial` — das Schlüsselwort `custom` wird erkannt und im
-Modell als `ValuetypeKind::Custom` geführt. Die Marshal-/Unmarshal-
-Operationen werden nicht als solche erkannt und nicht auf
-Skelett-Operationen abgebildet; der Test prüft die Variante, nicht die
-Regel.
+**Status:** `done` — der erzeugte Code eines `custom valuetype` deklariert `<Name>CustomMarshal` mit `marshal` und `unmarshal` über dem CDR-Strom; das erzeugte `ValueMarshal` und die registrierte Factory rufen ihn, statt den deklarierten Zustand zu schreiben und zu lesen, sodass der Code der Anwendung auch den Zustand der Basen schreibt. Mit `cargo check` übersetzt: mit der Implementierung der Anwendung übersetzt der Code, ohne sie meldet der Compiler das fehlende `PointCustomMarshal` (E0277). `truncatable` an einem custom-Werttyp und ein nicht-custom-Werttyp unter einem custom-Werttyp werden abgewiesen.
 
 ### §7.4.7.4.5 Truncatable
 
 **Spec:** §7.4.7.4.5, S. 69 — `truncatable` erlaubt das Abschneiden einer
 unbekannten Erweiterung beim Marshalisieren.
 
-**Repo:** `crates/idl-lower/src/lower.rs::valuetype_kind`,
-`crates/corba-codegen/src/traits.rs`.
+**Repo:** `crates/idl-lower/src/lower.rs::truncatable_is_for_a_plain_value`, `crates/idl-lower/src/validate.rs::value_inheritance_rules`, `crates/corba-rust/src/value_wire.rs` (Chunked-Kodierung und Abschneiden), `crates/corba-rust/src/valuetype_emit.rs` (Basis-Repository-Ids).
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::a_valuetype_keeps_its_modifier_bases_and_supported_interfaces`,
-`crates/corba-codegen/tests/annex_a1_traits.rs::table_a8_reads_abstract_and_truncatable_off_the_declaration`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_7_4_5_truncatable_needs_a_stateful_base_and_custom_stays_custom`,
+`crates/corba-rust/src/value_wire.rs::tests::corbarust_4_3_an_unknown_most_derived_type_truncates_to_its_base`,
+`crates/corba-rust/tests/codegen_mapping.rs::corbarust_4_1_a_truncatable_valuetype_lists_its_base_ids`.
 
-**Status:** `partial` — `truncatable` wird als Modifikator erfasst und in
-Tabelle A.8 ausgewertet. Das Abschneiden selbst wird in
-`crates/corba-codegen/src/skeleton.rs` nicht als solches geführt und hat
-keinen Test.
+**Status:** `done` — `truncatable` an einem custom oder abstrakten Value Type und an einem ohne zustandsbehaftete Basis wird abgewiesen, ebenso ein nicht-custom Value Type, der von einem custom erbt (`IDL0021`); die Rust-CORBA-Abbildung schreibt einen abschneidbaren Wert mit seinen Basis-Ids, und ein Leser, der den am weitesten abgeleiteten Typ nicht kennt, schneidet auf seine Basis ab (die Oktette, die JacORB schreibt).
 
 ### §7.4.7.4.6 Value Base
 
-**Spec:** §7.4.7.4.6, S. 69–70 — `ValueBase` ist der eingebaute
-Basistyp eines `custom valuetype`.
+**Spec:** §7.4.7.4.6, S. 69–70 — "In a CORBA context, all value types have a conventional base type called ValueBase. [...] That root may be used in an IDL specification wherever a value type may be used." "In each language mapping ValueBase will be mapped to an appropriate base type that supports the marshaling/unmarshaling protocol as well as the model for custom marshaling."
 
-**Repo:** `crates/ast/src/node/type_.rs::TypeKind::ValueBase`,
-`crates/corba-codegen/tests/orb_agreement.rs`.
+**Repo:** `crates/ast/src/node/type_.rs::TypeKind::ValueBase`, `crates/corba-rust/src/valuetype_emit.rs` (der Zustandsträger jedes Werttyps implementiert `zerodds_corba_rust::ValueBase` und `value_wire::ValueMarshal`; ein custom-Werttyp `<Name>CustomMarshal`).
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::a_valuebase_parameter_reaches_the_model_as_valuebase`,
 `crates/idl-lower/tests/lowering.rs::valuebase_is_reachable_in_every_position_rule_132_gives_it`,
-`crates/idl-lower/tests/lowering.rs::none_of_the_three_built_in_type_names_leaves_a_broken_reference`.
+`crates/idl-lower/tests/lowering.rs::none_of_the_three_built_in_type_names_leaves_a_broken_reference`,
+`crates/corba-rust/tests/compile_check.rs::corbarust_3_the_generated_code_compiles_with_the_data_column`,
+`crates/corba-rust/tests/compile_check.rs::idl_7_4_7_4_4_a_custom_valuetype_is_marshaled_by_the_application`.
 
-**Status:** `partial` — im Modell ist `ValueBase` vorhanden und an jeder
-Position erreichbar; kein Sprachbackend emittiert eine Form dafür. Die
-Probe `bb7-132-valuebase` steht in `expected.tsv` für Rust *und* C auf
-`err` (`NoLanguageForm { construct: "ValueBase" }`).
+**Status:** `done` — `ValueBase` wird überall angenommen, wo ein Werttyp steht (Regel 132), und erreicht das Modell als `TypeKind::ValueBase`. Der Basistyp der CORBA-Abbildung nach Rust ist der Trait `zerodds_corba_rust::ValueBase` mit `ValueMarshal` für das Marshaling-Protokoll und `<Name>CustomMarshal` für custom marshaling; der erzeugte Code übersetzt. Die Form von `ValueBase` in der C++-Abbildung ist IDL4-C++ §A.1.8.5 (`idl4-cpp-1.0.md`). Die DDS-Spalten von `zerodds-idlc` (Probe `bb7-132-valuebase`, `NoLanguageForm`) sind kein CORBA-Kontext.
 
 ---
 
@@ -1667,8 +1594,8 @@ Probe `bb7-132-valuebase` steht in `expected.tsv` für Rust *und* C auf
 **Tests:** `crates/idl-lower/tests/dialects.rs::each_component_form_reaches_its_own_interface_kind`,
 `crates/idl-lower/tests/dialects.rs::each_port_form_reaches_its_own_component_role`,
 `crates/idl-lower/tests/conformance.rs::every_fixture_parses_with_no_diagnostics_beyond_the_extensions_it_declares`,
-`tools/idlc/tests/idl_4_2_gaps.rs::the_fixture_directory_holds_exactly_the_named_fixtures` —
-`dialects.rs:103: ComponentRole::Receptacle { multiple, .. } => assert!(!multiple),`.
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_4_8_3_the_fixture_directory_holds_exactly_the_named_fixtures` —
+`dialects.rs:103: ComponentRole::Receptacle { multiple.. } => assert!(!multiple),`.
 
 **Status:** done
 
@@ -1693,21 +1620,14 @@ Probe `bb7-132-valuebase` steht in `expected.tsv` für Rust *und* C auf
 Facet, `uses` einen Receptacle; beide nennen das Interface, das sie
 tragen.
 
-**Repo:** `crates/idl-lower/src/lower.rs::port`,
-`crates/ast/src/facet/corba.rs::ComponentRole::{Facet, Receptacle}`,
-`crates/ccm/src/transform.rs::transform_component`.
+**Repo:** `crates/idl-lower/src/lower.rs::port`, `crates/idl-lower/src/validate.rs::component_model_rules`, `crates/ast/src/facet/corba.rs::ComponentRole::{Facet, Receptacle}`, `crates/ccm/src/transform.rs::transform_component`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::each_port_form_reaches_its_own_component_role`,
-`crates/idl-lower/tests/lowering.rs::a_ports_role_resolves_the_interface_or_event_behind_it`,
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_8_4_2_1_a_facet_or_receptacle_names_an_interface_or_object`,
+`crates/idl-lower/tests/dialects.rs::each_port_form_reaches_its_own_component_role`,
 `crates/ccm/tests/equivalent_idl.rs::provides_yields_a_provide_operation_returning_the_facet`,
-`crates/ccm/tests/equivalent_idl.rs::uses_simplex_yields_connect_disconnect_and_get_connection`,
-`crates/ccm/tests/equivalent_idl.rs::uses_multiple_returns_a_cookie_and_the_plural_getter`.
+`crates/ccm/tests/equivalent_idl.rs::uses_simplex_yields_connect_disconnect_and_get_connection`.
 
-**Status:** `partial` — im Modell und in der CCM-Umschreibung getestet. Beide
-Backends lehnen das Konstrukt ab, weil der von einem Port getragene
-`Object`-Typ keine Sprachform hat (`NoLanguageForm { construct: "Object",
-language: "Rust" }`, dieselbe Meldung für C); das ist in
-[`idl-4.2.gaps.md`](idl-4.2.gaps.md) §C.2 festgehalten.
+**Status:** `done` — `provides` und `uses` erreichen ihre Rollen mit aufgelöstem Interface; ein Interface-Typ, der eine Komponente ist, ist `IDL0019`. Die Formen einer Komponente in einer Programmiersprache sind Sache der Sprachabbildungen (IDL4 to Java/C#/C++ §7.9: intermediäres IDL, hier `crates/ccm`).
 
 ### §7.4.8.4.2.3 Component Attributes
 
@@ -1773,20 +1693,12 @@ language: "Rust" }`, dieselbe Meldung für C); das ist in
 `home <identifier> …`, `home <identifier> for <scoped_name> …` und die
 Klausel `manages <component> ;`.
 
-**Repo:** `crates/idl-lower/src/lower.rs::manages_clause`
-(`zerodds_ast::HomeManages`).
+**Repo:** `crates/idl-lower/src/lower.rs::manages_clause`, `crates/idl-lower/src/validate.rs::component_model_rules`.
 
-**Tests:** `crates/idl-lower/tests/lowering.rs::a_home_resolves_what_it_manages_and_the_key_it_manages_by`,
-`crates/idl-lower/tests/dialects.rs::a_home_records_what_it_manages_and_the_key_it_does_so_by`,
-`crates/ccm/tests/equivalent_idl.rs::a_keyless_home_yields_an_implicit_inheriting_keylesscmhome`,
-`crates/ccm/tests/equivalent_idl.rs::a_keyed_home_yields_the_four_operations_and_inherits_nothing`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_9_4_1_a_home_derives_from_a_home_and_manages_a_component`,
+`crates/idl-lower/tests/lowering.rs::a_home_resolves_what_it_manages_and_the_key_it_manages_by`.
 
-**Status:** `partial` — `home` mit `manages` und die Vererbung sind
-abgedeckt. `abstract home` und `home <identifier> for <scoped_name>` sind
-es nicht: das Keyword `abstract` erreicht in
-`crates/idl-parse/src/decl.rs::parse_interface` eine
-`expect(TokenKind::Interface)`-Stelle, und die Zeichenkette `home for`
-kommt im Baum nicht vor.
+**Status:** `done` — Regeln (146) und (147): die eine Basis eines Homes löst auf ein Home auf und was es verwaltet auf eine Komponente; eine Basis, die kein Home ist, ist `IDL0021`, ein verwalteter Typ, der keine Komponente ist, `IDL0019`. IDL 4.2 kennt kein `abstract home` und kein `home … for`.
 
 ### §7.4.9.4.2 Home Body — factory, finder, primarykey
 
@@ -1836,7 +1748,7 @@ Operationen des Homes; `primary key` nennt den Schlüsseltyp.
 `crates/idl-lower/tests/dialects.rs::each_template_parameter_kind_is_distinguished`,
 `crates/ccm/tests/equivalent_idl.rs::the_first_event_type_of_a_chain_inherits_event_base`,
 `crates/ccm/tests/equivalent_idl.rs::one_event_type_yields_one_consumer_interface_however_many_ports_name_it`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends` —
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends` —
 `equivalent_idl.rs:492: assert_eq!(bases.len(), 1, "EventBase was not added");`.
 
 **Status:** done
@@ -1894,17 +1806,11 @@ Home-Header.
 **Spec:** §7.4.10.4.4.2, S. 80 — eine Komponente darf `Object` als
 Object-Root tragen.
 
-**Repo:** `crates/idl-parse/src/decl.rs::parse_port` (Sonderfall
-`TokenKind::Object`), `crates/idl-lower/src/lower.rs::port`.
+**Repo:** `crates/idl-parse/src/decl.rs::parse_port`, `crates/idl-lower/src/lower.rs::port` (die generische Objektreferenz aus Regel (117)).
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_8_4_2_1_a_facet_or_receptacle_names_an_interface_or_object`.
 
-**Status:** `open` — die Form wird geparst und gelowert
-(`ComponentRole::Facet` mit `Ref::Broken`), aber es gibt keinen Test: die
-einzige Stelle im Baum, die `provides Object` schreibt, ist die Fixture
-`crates/idl-parse/tests/fixtures/spec_features/ccm_components.idl`, und
-die wird nur auf Parse-Diagnosen geprüft. Beide Backends lehnen die Probe
-`bb8-141-provides` ab, weil `Object` keine Sprachform hat.
+**Status:** `done` — `provides Object root;` und `uses multiple Object many;` sind ein Facet und ein mehrfaches Receptacle, deren Port die Objektreferenz ohne Interface hält (`TypeKind::ObjectRef { interface: None }`).
 
 ### §7.4.10.5 Specific Keywords
 
@@ -1940,37 +1846,26 @@ die wird nur auf Parse-Diagnosen geprüft. Beide Backends lehnen die Probe
 **Spec:** §7.4.11.4.1.1, S. 83 — `porttype <identifier> [ :
 <porttype_name> … ] { <porttype_export> * }`.
 
-**Repo:** `crates/idl-lower/src/lower.rs::interface` (`InterfaceKind::PortType`),
-`crates/lang-rules/src/adapter/interface.rs::Service::is_remote`.
+**Repo:** `crates/idl-lower/src/lower.rs::interface` (`InterfaceKind::PortType`), `crates/idl-lower/src/lower.rs::port`, `crates/idl-lower/src/validate.rs::component_model_rules`, `crates/idl-lower/src/validate.rs::port_types_have_no_cycle`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::each_component_form_reaches_its_own_interface_kind`,
-`crates/idl-lower/tests/lowering.rs::every_component_model_forward_keeps_its_own_form`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_11_4_1_1_a_port_type_holds_ports_and_does_not_embed_itself`,
+`crates/idl-lower/tests/lowering.rs::every_component_model_forward_keeps_its_own_form`,
+`crates/ccm/tests/equivalent_idl.rs::idl_7_4_11_4_2_an_extended_port_is_the_basic_ports_of_its_port_type`.
 
-**Status:** `partial` — im Modell vorhanden und als `InterfaceKind::PortType`
-getestet; `Service::is_remote` schliesst `PortType` von jeder
-DDS-RPC-Bindung aus. Kein Sprachbackend emittiert eine
-Porttyp-Bindung (die Proben `bb11-173` und `bb11-174` stehen auf `err`),
-und es gibt keinen Test, der behauptet, dass `ComponentRole::PortTypeRole`
-das Modell erreicht.
+**Status:** `done` — ein Port Type mit Facets, Receptacles und eingebetteten Ports wird angenommen, `port` und `mirrorport` erreichen `ComponentRole::PortTypeRole` und `ConnectorRole`; ein Port Type ohne Port (`IDL0001`), ein Port, der keinen Port Type nennt (`IDL0019`), und ein Zyklus von Port Types (`IDL0021`) werden abgewiesen. Ein erweiterter Port ist die Gruppe der Basis-Ports seines Port Types: `zerodds-ccm` bildet sie als `<port>_<basic port>` auf die äquivalente Schnittstelle ab, `mirrorport` vertauscht Facets und Receptacles (§7.4.11.4.2).
 
 ### §7.4.11.4.3 Connectors
 
 **Spec:** §7.4.11.4.3, S. 84 — `connector <identifier> …` beschreibt eine
 Brücke; `<provides>`/`<uses>` mit `port`/`mirrorport` bilden sie.
 
-**Repo:** `crates/idl-lower/src/lower.rs::port`
-(`ComponentRole::ConnectorRole`), `crates/ccm/src/transform.rs::transform_component`.
+**Repo:** `crates/idl-lower/src/lower.rs::port` (`ComponentRole::ConnectorRole`), `crates/idl-lower/src/validate.rs::component_model_rules`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::each_component_form_reaches_its_own_interface_kind`,
-`crates/idl-lower/tests/lowering.rs::every_component_model_forward_keeps_its_own_form`,
-`tools/idlc/tests/idl_4_2_gaps.rs::the_fixture_directory_holds_exactly_the_named_fixtures`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_11_4_3_a_connector_has_exports_and_derives_from_a_connector`,
+`crates/idl-lower/tests/dialects.rs::each_component_form_reaches_its_own_interface_kind`,
+`crates/ccm/tests/equivalent_idl.rs::idl_7_4_11_4_3_a_connector_maps_through_its_ports_as_a_component`.
 
-**Status:** `partial` — `connector` ist im Modell als
-`InterfaceKind::Connector` vorhanden; die `port`/`mirrorport`-Mitglieder
-werden geparst und gelowert, aber die CCM-Umschreibung verwirft sie
-bewusst (`crates/ccm/src/transform.rs`, Zeile 255 ff., mit dem Kommentar,
-die Zuordnung über den Porttyp sei nicht §6 dieser Specification). Kein
-Test behauptet etwas über `ComponentRole::ConnectorRole`.
+**Status:** `done` — ein Connector, der von einem Connector ableitet, mit `port`- und `mirrorport`-Membern in ihren Rollen, wird angenommen, ebenso einer, dessen Exporte nur Attribute sind (Regel (183)); ein Connector mit leerem Rumpf (`IDL0001`) und einer, der von einer Komponente ableitet (`IDL0021`), werden abgewiesen. `zerodds-ccm` bildet einen Connector über seine Ports wie eine Komponente ab.
 
 ### §7.4.11.5 Specific Keywords
 
@@ -2001,7 +1896,7 @@ Test behauptet etwas über `ComponentRole::ConnectorRole`.
 **Tests:** `crates/idl-lower/tests/dialects.rs::a_template_modules_parameters_reach_its_facet`,
 `crates/idl-lower/tests/dialects.rs::each_template_parameter_kind_is_distinguished`,
 `crates/idl-lower/tests/conformance.rs::every_fixture_parses_with_no_diagnostics_beyond_the_extensions_it_declares`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`bb12-185-template-module`) —
 `dialects.rs:170: assert_eq!(params.len(), 2);`.
 
@@ -2092,12 +1987,16 @@ ist in diesem Baustein zulässig.
 `crates/idl-lower/src/validate.rs::validate_type`.
 
 **Tests:** `crates/idl-lower/tests/validation.rs::the_two_bodies_the_grammar_does_let_be_empty_stay_empty`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`.
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`,
+`tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs::specification`
+(die C-Spalte schreibt und liest die Oktette von `empty-struct`,
+`empty-struct-as-base` und `empty-struct-in-sequence`, auf die sich die
+Hersteller einigen).
 
-**Status:** `partial` — der leere Struct wird akzeptiert und das Modell
-trägt ihn; das C-Backend weist ihn ab (`NoLanguageForm`, C23 §6.7.2.1p8
-lässt eine Struktur ohne benanntes Mitglied undefiniert). Rust emittiert
-ihn.
+**Status:** done — der leere Struct wird akzeptiert und das Modell trägt
+ihn; Rust emittiert ihn, und C, wo C23 §6.7.2.1p8 eine Struktur ohne
+benanntes Mitglied undefiniert lässt, gibt ihm ein Member, das für keines
+steht und nicht serialisiert wird (`uint8_t zd_no_members`).
 
 ### §7.4.13.4.2 Union Discriminators
 
@@ -2188,12 +2087,10 @@ dass annotierte Bit-Werte ungeordnet sein dürfen, aber keine Dubletten.
 
 **Repo:** `crates/idl-lower/src/complete.rs::check_bitmask_bounds`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_13_4_3_3_a_bit_position_taken_twice_is_refused`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_13_4_3_3_a_following_bit_value_past_the_bound_is_refused`.
 
-**Status:** `open` — `check_bitmask_bounds` prüft `@bit_bound`, die Anzahl
-der Werte und den Bereich von `@position`, aber nicht, dass zwei
-`@position`-Werte gleich sind. `bitmask B { @position(1) A, @position(1) C };`
-wird akzeptiert; der spätere Wert überschreibt den früheren im Modell.
+**Status:** `done` — das Beispiel des Absatzes: `flagx` folgt auf `flag3` an Position 4, die `flag4` hat, und ist `IDL0016`; ungeordnete Werte ohne Doppelung werden angenommen, und ein folgender Wert jenseits der Schranke ist `IDL0014`.
 
 ### §7.4.13.4.4 Integers restricted to holding 8-bits of information
 
@@ -2221,7 +2118,7 @@ gleichem Wertebereich.
 
 **Tests:** `crates/idl-lower/tests/lowering.rs::each_primitive_keyword_reaches_its_model_kind`,
 `crates/ast/tests/node_space.rs::every_primitive_of_the_spec_table_is_representable`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends`
 (`bb13-212-int64`) —
 `lowering.rs:333: ("int64", PrimitiveKind::Int64),`.
 
@@ -2233,18 +2130,12 @@ gleichem Wertebereich.
 den Wertebereich und den gleichwertigen Core-Typ; `int8`/`uint8` haben
 kein Core-Gegenstück (Spalte "N/A").
 
-**Repo:** `crates/idl-lower/src/validate.rs::primitive_range`.
+**Repo:** `crates/idl-lower/src/validate.rs::primitive_range`, `crates/idl-lower/src/validate.rs::constant_values_fit_their_type`.
 
-**Tests:** `crates/idl-lower/tests/validation.rs::a_case_label_outside_the_discriminators_range_is_rejected`,
-`crates/idl-lower/tests/validation.rs::a_case_label_inside_the_range_is_accepted`,
-`crates/idl-lower/tests/floating_constant_arithmetic.rs::a_value_beyond_the_declared_range_is_refused`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_1_4_3_a_constant_outside_its_types_range_is_refused`,
+`crates/idl-lower/tests/validation.rs::a_case_label_outside_the_discriminators_range_is_rejected`.
 
-**Status:** `partial` — die Tabelle `primitive_range` bildet genau die
-Spalten aus Tabelle 7-26 ab, wird aber nur für Case-Labels eines
-Diskriminators gelesen. Der Wertebereich einer *Konstante* wird nicht
-geprüft: `value_disagrees_with` vergleicht nur die Form des Literalwerts,
-nicht seinen Zahlwert; `const octet K = 300;` und `const int8 K = 200;`
-gehen durch.
+**Status:** `done` — die Bereiche aus Tabelle 7-26 gelten für Case-Labels und für Konstanten: `const short s = 655592;` und `const octet o = -54;` (die Beispiele aus §7.4.1.4.3), `const int8 i = 200;` und die anderen Enden sind `IDL0019`, die Enden selbst werden angenommen.
 
 ### §7.4.13.5 Specific Keywords
 
@@ -2271,19 +2162,11 @@ gehen durch.
 **Spec:** §7.4.14.3, S. 97 — (216) `<type_spec> ::+ <template_type_spec>`
 erlaubt `sequence<…>` und `string<…>` dort, wo ein Typ verlangt wird.
 
-**Repo:** `crates/idl-parse/src/type_spec.rs::parse_type_spec`,
-`crates/idl-parse/src/decl.rs::parse_member_list`.
+**Repo:** `crates/idl-parse/src/type_spec.rs::parse_type_spec`, `crates/idl-lower/src/lower.rs::type_ref_of`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::a_sequence_type_formal_parameter_parses_and_carries_its_element`,
-`crates/idl-lower/tests/dialects.rs::a_bounded_sequence_parameter_keeps_its_bound`,
-`crates/idl-lower/tests/lowering.rs::a_sequence_member_carries_its_element_type`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_14_3_rule_216_a_template_type_stands_anonymous_at_a_member`.
 
-**Status:** `open` — die Klausel ist nicht als eigene Form geprüft. Der
-Pfad, den sie öffnen würde (`struct S { sequence<long> m; };`), ist im
-heutigen Parser nicht erreichbar: `parse_member` verlangt einen
-`Declarator`, und `sequence<long> m;` wird als Deklarator gelesen. Der
-Test `a_sequence_member_carries_its_element_type` prüft die
-Template-Modul-Form, nicht die anonyme.
+**Status:** `done` — `sequence<long>`, `sequence<long, 5>`, `string<8>`, `wstring<4>`, `fixed<5, 2>` und `map<long, string>` an einem Member geschrieben sind anonyme Typen ihrer Art.
 
 ### §7.4.14.3 Rule (217) — array_declarator als declarator
 
@@ -2291,18 +2174,12 @@ Template-Modul-Form, nicht die anonyme.
 <complex_declarator> | <array_declarator>`, sodass `long a[3][4];` ohne
 `typedef` entsteht.
 
-**Repo:** `crates/idl-parse/src/decl.rs::parse_member_list`,
-`crates/idl-parse/src/parser.rs` (Array-Declarator-Erkennung an der
-eckigen Klammer).
+**Repo:** `crates/idl-parse/src/decl.rs::parse_member_list`, `crates/idl-lower/src/lower.rs::declared`.
 
-**Tests:** `crates/idl-parse/tests/parse.rs::an_array_declarator_is_only_known_at_the_bracket`,
-`crates/idl-lower/tests/lowering.rs::a_typedef_declarator_keeps_its_array_dimensions`,
-`crates/idl-lower/tests/lowering.rs::dimensions_belong_to_the_declarator_and_not_to_the_typedef`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_14_3_rule_217_an_array_declarator_stands_at_a_member`,
+`crates/idl-parse/tests/parse.rs::an_array_declarator_is_only_known_at_the_bracket`.
 
-**Status:** `partial` — die Array-Dimensionen werden am Deklarator
-erkannt und dem Deklarator zugeordnet; getestet ist das über den
-`typedef`-Weg. Die anonyme Form `struct S { long arr[3]; };` hat keinen
-eigenen Test.
+**Status:** `done` — `long arr[3][4];` an einem Member ist ein Array der Dimensionen 3 und 4, und in `long plain, row[2];` ist nur `row` ein Array.
 
 ### §7.4.14.4 Verschachtelte Templates und `>>`
 
@@ -2310,18 +2187,12 @@ eigenen Test.
 white space must be used to separate the two `>` tokens ending the
 declaration so they are not parsed as a single `>>` token."
 
-**Repo:** `crates/idl-parse/src/parser.rs::split_shift_right`,
-`crates/idl-parse/src/type_spec.rs::close_type_arguments`.
+**Repo:** `crates/idl-parse/src/parser.rs::split_shift_right`, `crates/idl-parse/src/type_spec.rs::close_type_arguments`.
 
-**Tests:** `crates/idl-parse/tests/parse.rs::a_nested_sequence_splits_the_shift_token_and_still_round_trips`,
-`crates/idl-parse/tests/parse.rs::three_deep_nesting_splits_as_far_as_it_needs_to`,
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_14_4_nested_templates_close_with_two_brackets`,
 `crates/idl-parse/tests/parse.rs::shift_right_in_an_expression_is_not_split`.
 
-**Status:** `partial` — die Verschachtelung funktioniert auch ohne
-Whitespace (`sequence<sequence<long>>`), was die Klausel nicht fordert. Der
-umgekehrte Fall, die vom Spec verlangte Schreibweise mit Whitespace
-(`sequence<sequence<long> >`), wird von keinem Test berührt: der
-Split-Zweig wird nur für das einzelne `>>`-Token ausgelöst.
+**Status:** `done` — `sequence<sequence<long> >`, die Schreibweise, die der Absatz verlangt, und `sequence<sequence<long>>` sind beide eine Sequenz von Sequenzen; `16 >> 2` in einem Ausdruck bleibt eine Verschiebung und ist 4.
 
 ### §7.4.14.5 Specific keywords
 
@@ -2359,9 +2230,9 @@ Block Core Data Types. It is actually orthogonal to all others."
 
 **Repo:** `crates/idl-lower/src/annotation.rs::enumerated_parameter`.
 
-**Tests:** `tools/idlc/tests/annotation_arguments.rs::a_builtin_with_an_enumerated_parameter_reads_it_without_resolving_it`,
-`tools/idlc/tests/annotation_arguments.rs::a_verbatim_directive_still_reaches_the_model_whole`,
-`tools/idlc/tests/annotation_arguments.rs::the_rti_fixture_that_carried_both_defects_now_passes` —
+**Tests:** `tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_2_a_builtin_with_an_enumerated_parameter_reads_it_without_resolving_it`,
+`tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_2_a_verbatim_directive_still_reaches_the_model_whole`,
+`tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_2_the_rti_fixture_that_carried_both_defects_now_passes` —
 `annotation_arguments.rs:145: assert!(found.is_empty(), "{source:?} was refused: {found:?}");`.
 
 **Status:** done
@@ -2402,17 +2273,20 @@ given a value".
 zugelassenen Deklarationsformen), `crates/idl-lower/src/scope.rs::ScopeStack::push_container`,
 `crates/idl-lower/src/annotation.rs::check_annotation_application`.
 
-**Tests:** `tools/idlc/tests/annotation_arguments.rs::an_annotation_body_may_declare_the_types_its_members_use`,
-`tools/idlc/tests/annotation_arguments.rs::the_user_annotation_fixture_passes`,
+**Tests:** `tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_4_1_an_annotation_body_may_declare_the_types_its_members_use`,
+`tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_4_1_the_user_annotation_fixture_passes`,
+`crates/idl-lower/tests/validation.rs::an_annotation_member_with_no_default_needs_a_value_under_omg_idl`,
 `crates/idl-lower/tests/validation.rs::an_annotation_member_with_no_default_takes_the_default_of_its_type`,
 `crates/idl-lower/tests/validation.rs::an_annotations_declared_members_reach_the_model`,
 `crates/idl-parse/tests/parse.rs::the_declarations_rule_221_does_list_are_still_taken`,
 `crates/idl-parse/tests/parse.rs::an_annotation_body_admits_only_what_rule_221_lists` —
-`validation.rs:883: "@annotation Aa { long v; };\n@Aa struct Sa { long m; };",`.
+`validation.rs:904: "@annotation Aa { long v; };\n@Aa struct Sa { long m; };",`.
 
-**Status:** `partial` — das Front-End gibt einem Annotationsmember ohne Default und ohne
-Wert den Default seines Typs (XTypes 1.3 §7.3.1.2.5); IDL 4.2 verlangt hier einen
-Wert. Die beiden Specs widersprechen sich (in `internal/spec-coverage/dds-xtypes-1.3-audit-findings.md` geführt).
+**Status:** `done` — unter `--strict` (OMG IDL 4.2 und nichts sonst) weist das
+Front-End ein Annotationsmember ohne Default und ohne Wert ab, wie §7.4.15.4.2 es
+verlangt; in den Vendordialekten gibt es ihm mit einer Warnung den Default seines
+Typs (XTypes 1.3 §7.3.1.2.5). Die beiden Specs widersprechen sich; ein
+Issue-Entwurf dazu fehlt noch.
 
 ### §7.4.15.4.2 Applying Annotations
 
@@ -2431,15 +2305,16 @@ und `apply_one` (nur für aufgelöste Deklarationen aufgerufen).
 `crates/idl-lower/tests/validation.rs::an_argument_naming_no_member_is_refused`,
 `crates/idl-lower/tests/validation.rs::the_short_form_is_only_for_an_annotation_with_one_member`,
 `crates/idl-lower/tests/validation.rs::none_of_the_four_rules_reaches_an_unknown_annotation`,
-`tools/idlc/tests/annotation_arguments.rs::an_unknown_annotation_is_ignored_whatever_it_is_given`,
-`tools/idlc/tests/annotation_arguments.rs::a_name_outside_an_unknown_annotation_still_has_to_resolve`,
-`tools/idlc/tests/annotation_arguments.rs::a_literal_argument_of_an_unknown_annotation_still_reaches_the_model`,
-`tools/idlc/tests/strict.rs::strict_does_not_refuse_an_unknown_annotation`,
+`tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_4_2_an_unknown_annotation_is_ignored_whatever_it_is_given`,
+`tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_4_2_a_name_outside_an_unknown_annotation_still_has_to_resolve`,
+`tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_4_2_a_literal_argument_of_an_unknown_annotation_still_reaches_the_model`,
+`tools/idlc/tests/strict.rs::idl_7_4_15_4_2_strict_does_not_refuse_an_unknown_annotation`,
 `crates/idl-lower/tests/dialects.rs::strict_does_not_refuse_an_unknown_annotation`,
-`crates/ast/tests/node_space.rs::the_value_member_shorthand_is_recorded` —
+`crates/ast/tests/node_space.rs::the_value_member_shorthand_is_recorded`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_15_4_2_an_annotation_prefixing_a_typedefs_type_annotates_the_typedef` —
 `validation.rs:915: "@annotation Aa { long v default 0; };\n@Aa(nosuch = 1) struct Sa { long m; };",`.
 
-**Status:** done
+**Status:** `done` — auch der Typ eines `typedef` lässt sich so annotieren (`typedef @max(100) long Length;`); die Annotation gilt für jeden deklarierten Alias.
 
 ### §7.4.15.5 Specific Keywords
 
@@ -2466,16 +2341,12 @@ designed as independent as possible, they are linked by some
 dependencies. The following figure represents the graph of their
 relationships (actually a lattice)."
 
-**Repo:** —
+**Repo:** `crates/idl-parse/src/building_block.rs::BuildingBlock` (`relies_on`, `closure`, `rules`).
 
-**Tests:** —
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_7_4_16_each_building_block_relies_on_what_its_subclause_lists`,
+`crates/idl-parse/src/building_block.rs::tests::idl_annex_a_every_rule_belongs_to_one_building_block`.
 
-**Status:** `open` — es gibt im heutigen Baum keine Abbildung dieses
-Gitters. `crates/ast/src/profile/mod.rs::Profile` ist eine flache
-Enumeration anderer Specificationen (`Idl42Core`, `XTypes13`, `Corba33`,
-`Ros2`, `DdsXml`, `FlatData`, `Vendor`), und zwischen den Profilen gibt es
-keine Kante. Der einzige Ort, an dem die Namen der Bausteine vorkommen,
-ist die Prosa in `docs/idl-building-blocks.md`.
+**Status:** `done` — die fünfzehn Bausteine mit den Kanten aus Figure 7-2; der Abschluss jedes Bausteins ist, was sein Unterabschnitt "Dependencies with other Building Blocks" direkt und transitiv nennt, und jede Regel aus Annex A gehört zu einem Baustein.
 
 ---
 
@@ -2541,15 +2412,13 @@ Root, aktuellem Scope, `"::"` und dem Bezeichner.
 **Spec:** §7.5.1, S. 103–104 — "Ambiguous declarations shall be treated as
 errors"; die Klausel nennt das Beispiel zweier geerbter `string_t`.
 
-**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::lookup_candidates`.
+**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::find`, `crates/idl-lower/src/lower.rs::report_ambiguous`.
 
-**Tests:** `crates/ast/tests/resolve_profile_query.rs::an_ambiguous_name_reports_every_candidate`,
-`crates/ast/tests/resolve_profile_query.rs::a_duplicate_scoped_name_is_reported_as_ambiguous_with_both_nodes`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_1_an_attribute_typed_by_an_ambiguous_name_is_an_error`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_4_4_a_name_declared_in_two_bases_is_ambiguous_unless_qualified`,
+`crates/ast/tests/resolve_profile_query.rs::an_ambiguous_name_reports_every_candidate`.
 
-**Status:** `partial` — die Mehrdeutigkeitsmeldung auf Modellebene ist
-belegt und nennt alle Kandidaten. Das Spec-Beispiel (§7.5.1: `interface C:
-A, B` mit einem Attribut, dessen Typ in beiden Basen unterschiedlich
-belegt ist) wird von keinem Test getrieben.
+**Status:** `done` — das Beispiel des Absatzes: `attribute string_t Title;` in `C: A, B` ist `IDL0009`, `A::string_t` und `B::string_t` werden angenommen.
 
 ### §7.5.1 Sichtbarkeit durch Inheritance und mehrere globale Namen
 
@@ -2560,15 +2429,11 @@ conflict with each other"; "Inheritance introduces multiple global IDL
 names for the inherited identifiers … the exception is known by the global
 names `::A::E` and `::B::E`".
 
-**Repo:** —
+**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::find`, `crates/idl-lower/src/scope.rs::ScopeStack::find_in`, `crates/idl-lower/src/lower.rs::use_scoped`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_1_an_inherited_identifier_is_visible_under_every_global_name`.
 
-**Status:** `open` — es gibt keinen Test, der prüft, dass ein aus einer
-Basis geerbter Bezeichner unter zwei globalen Namen auflösbar ist und
-dass zwei Wege zu derselben Deklaration kein Konflikt sind. Die
-Abflachung in `crates/lang-rules` ist eine Sprachspalte, keine Aussage
-über die Namen.
+**Status:** `done` — das Beispiel des Absatzes: die Exception `E` aus `A` wird in `B: A` über ihren einfachen Namen und als `::B::E` gefunden, und in `D: B, C` (eine Raute über `A`) ohne Konflikt; jedes `raises` löst auf die eine Deklaration auf.
 
 ### §7.5.2 Scope-Arten und ihr Beginn und Ende
 
@@ -2641,17 +2506,13 @@ für die zweite, offene Regel dieser Klausel.
 introduced into a scope if it is used in that scope. An identifier is not
 introduced into a scope by merely being visible in that scope."
 
-**Repo:** —
+**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::introduce`, `crates/idl-lower/src/lower.rs::check_introduced`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_2_a_used_identifier_is_introduced_and_a_visible_one_is_not`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_2_a_name_is_searched_in_the_inherited_scope_before_the_enclosing_one`,
+`tools/idlc/tests/idl_4_2_gaps.rs::idl_annex_a_every_probe_of_the_gap_scan_gets_the_specifications_answer`.
 
-**Status:** `open` — es gibt keine `use`-Unterstützung und keine
-Gegenprüfung, die den Namen in den einführenden Scope überträgt. Die
-Erhebung unter `tools/idl-4.2-gap-scan/` führt die Probe
-`scope-7.5.2-introduced-ident` mit `expect=reject`, gemessen wird aber
-`ok`; die beiden Gegenproben `scope-7.5.2-not-introduced-ok` und
-`scope-7.5.2-rooted-no-introduce` gehen heute durch, richtig, aber aus dem
-falschen Grund, weil die Regel gar nicht existiert.
+**Status:** `done` — das Beispiel des Absatzes: `typedef string inner1;` in `Inner2` wird angenommen, solange `Inner1` nur sichtbar ist, und ist `IDL0008`, nachdem `typedef Inner1::S1 S2;` es eingeführt hat; `typedef string S1;` bleibt angenommen. Die Suchreihenfolge des zweiten Beispiels gilt: `ArgType` in Zeile l5 ist `M::B::ArgType` (string), gefunden im geerbten Scope.
 
 ### §7.5.2 Nur das erste Glied eines qualifizierten Namens wird eingeführt
 
@@ -2662,13 +2523,11 @@ in the example above, which introduces **Inner1** into the scope of
 **::X::Y::Z** does not cause **X** to be introduced, but a qualified name of
 the form **X::Y::Z** does."
 
-**Repo:** —
+**Repo:** `crates/idl-lower/src/lower.rs::use_scoped`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_2_only_the_first_identifier_of_a_relative_name_is_introduced`.
 
-**Status:** `open` — dieselbe fehlende Regel wie im Item darüber. Die Probe
-`scope-7.5.2-rooted-no-introduce` geht durch, misst aber nichts: ohne
-Einführungs-Tracking kann sie nicht fehlschlagen.
+**Status:** `done` — `X::Y::Z` führt `X` ein (ein späteres `x` ist `IDL0008`), nicht `Y` oder `Z`; `::X::Y::Z` führt nichts ein.
 
 ### §7.5.2 Enum-Wertnamen im umgebenden Scope
 
@@ -2712,15 +2571,12 @@ scope of a module, interface or value type, it may not be redefined except
 within the scope of a nested module, interface or value type, or within the
 scope of a derived interface or value type."
 
-**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::bind`.
+**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::bind`, `crates/idl-lower/src/scope.rs::ScopeStack::find`.
 
-**Tests:** `crates/idl-lower/tests/lowering.rs::a_name_declared_in_two_openings_of_one_module_collides`,
-`crates/idl-lower/tests/keys_and_inheritance.rs::a_member_name_of_the_base_chain_cannot_be_declared_again`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_3_a_derived_interface_may_redefine_a_type_of_its_base`,
+`crates/idl-lower/tests/lowering.rs::a_name_declared_in_two_openings_of_one_module_collides`.
 
-**Status:** `partial` — die Sperre gilt für zwei Öffnungen desselben Moduls
-und für die Strukturvererbung. Der in der Klausel genannte Ausnahmefall,
-die Wiederverwendung in einem abgeleiteten Interface, ist nicht als
-positiver Fall getestet; die Klausel fordert ihn.
+**Status:** `done` — das abgeleitete Interface `B` aus dem Beispiel des Absatzes definiert `ArgType` und `S` neu; in `B::S` ist `ArgType` `long` und `A::ArgType` `string`; eine zweite Deklaration in einem Scope bleibt `IDL0008`.
 
 ### §7.5.3 Potential Scope
 
@@ -2731,15 +2587,11 @@ may not be redefined within its scope or potential scope"; ferner die
 Note, dass eine Redefinition *nach* der Benutzung in einem Modul zulässig
 ist.
 
-**Repo:** —
+**Repo:** `crates/idl-lower/src/scope.rs::ScopeStack::introduce`, `crates/idl-lower/src/scope.rs::ScopeStack::push_body`, `crates/idl-lower/src/lower.rs::check_introduced`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_5_3_a_type_may_not_be_redefined_within_its_potential_scope`.
 
-**Status:** `open` — der Begriff Potential Scope hat im Baum keine Entsprechung.
-`crates/idl-lower/src/scope.rs` führt einen Scope-Stack ohne
-Verwendungszählung, also ohne die Buchführung, aus der die Regel
-folgen würde. Auch die positive Note der Klausel (Redefinition nach
-Benutzung in einem Modul) hat keinen Test.
+**Status:** `done` — das Beispiel des Absatzes: `ArgType` und `I`, benutzt in einer Struktur des Interfaces `A`, sind in `A` eingeführt, daher sind `typedef string ArgType;` und `enum I` dort `IDL0008`, `typedef short Y;` und das Member `long I;` nicht; die Neudefinition der Anmerkung nach einer Benutzung in einer Struktur eines Moduls wird angenommen, `x` bleibt `long`, `y` ist `string`.
 
 ---
 
@@ -2789,16 +2641,10 @@ einschränken und das Default-Verhalten dokumentieren.
 
 **Repo:** `crates/idl-lower/src/annotation.rs::apply_one`.
 
-**Tests:** `tools/idlc/tests/annotation_arguments.rs::an_unknown_annotation_is_ignored_whatever_it_is_given`,
-`tools/idlc/tests/strict.rs::strict_does_not_refuse_an_unknown_annotation`,
-`tools/idlc/tests/strict.rs::every_subcommand_refuses_every_vendor_extension_under_strict`,
-`crates/idl-lower/tests/annotations.rs::every_spelling_of_one_builtin_says_the_same_thing` —
-`annotations.rs:1001: assert!(xtypes_of_member(&ast, "S", 0).is_key, "{source:?}");`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_8_2_2_every_standardized_annotation_is_read_in_its_declared_syntax`,
+`crates/idl-lower/tests/annotations.rs::every_spelling_of_one_builtin_says_the_same_thing`.
 
-**Status:** `partial` — kein Test prüft die vier Anforderungen des
-Absatzes an eine Spezifikation, die eine standardisierte Annotation
-verwendet; die zitierten Tests prüfen nur, dass unbekannte Annotationen
-ignoriert werden und dass die Schreibweise zählt.
+**Status:** `done` — die vierundzwanzig Annotationen aus §8.3 werden in der Syntax ihrer Deklarationen gelesen, jeder Parameter beim Namen und die Kurzform, wo jeder Parameter einen Vorgabewert hat, und erreichen das Modell; ein Element ohne Annotation behält den Vorgabewert, den die benutzende Spezifikation (DDS-XTypes 1.3 §7.3.1.2.1) nennt.
 
 ### §8.3.1.1 `@id` Annotation
 
@@ -2933,15 +2779,12 @@ default TRUE; };`"; nur der Diskriminator einer Union darf ein Key sein.
 **Spec:** §8.3.2.2, S. 113 — "`@annotation must_understand { boolean value
 default TRUE; };`".
 
-**Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (Zweig
-`must_understand`).
+**Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (der Zweig `must_understand`), `crates/types/src/assignability.rs` (die Leserseite).
 
-**Tests:** `crates/idl-lower/tests/annotations.rs::the_member_flags_each_reach_their_own_field`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_8_3_2_2_must_understand_is_true_by_its_compact_form_and_false_without_it`,
+`crates/types/src/assignability.rs::tests::xtypes_7_2_3_a_mutable_writer_member_the_reader_lacks_and_must_understand_is_no`.
 
-**Status:** `partial` — das Flag erreicht das Member-Facet; die Bedeutung des
-Flags (ein Middleware-Empfänger, der die Erweiterung nicht versteht, muss
-die Nachricht zurückweisen) ist eine XTypes-Anforderung und wird hier nur
-als Flag geprüft. Das ist der Umfang der Klausel 8.
+**Status:** `done` — `@must_understand` und `@must_understand(TRUE)` setzen das Flag, `(FALSE)` und die fehlende Annotation nicht; ein so markiertes Writer-Member, das der Leser nicht kennt, macht die Typen nicht zuweisbar, die Empfängerseite von "it cannot be unknown to the recipient".
 
 ### §8.3.2.3 `@default_literal` Annotation
 
@@ -2960,30 +2803,23 @@ markiert den Enumerator, nicht das `enum`.
 
 **Spec:** §8.3.3.1, S. 113–114 — "`@annotation default { any value; };`".
 
-**Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (Zweig
-`default`), `crates/ast/src/facet/xtypes.rs::XTypesFacet::default_value`.
+**Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (der Zweig `default`), `crates/idl-lower/src/validate.rs::annotated_values_fit_their_element`.
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_8_3_3_1_a_default_is_kept_and_must_fit_the_element`.
 
-**Status:** `partial` — die Annotation ist in der Builtin-Tabelle und der
-Zweig `default` setzt `XTypesFacet::default_value`. Kein Rust-Test behauptet
-etwas über dieses Feld; die Erhebung führt die Probe
-`ann-8.3.3.1-default` mit `ok`, und `crates/idl-lower/tests/annotations.rs`
-hat keinen Fall dafür.
+**Status:** `done` — der Wert erreicht `XTypesFacet::default_value` eines Members und eines `typedef`; ein Wert, der nicht vom Typ des Elements ist oder außerhalb seines Bereichs liegt, ist `IDL0007`.
 
 ### §8.3.3.2 `@range` Annotation
 
 **Spec:** §8.3.3.2, S. 114 — "`@annotation range { any min; any max; };`"
 mit der Bedingung `max >= min`.
 
-**Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (Zweig `range`),
-`crates/ast/src/facet/xtypes.rs::XTypesFacet`.
+**Repo:** `crates/idl-lower/src/annotation.rs::range_annotation`, `crates/idl-lower/src/validate.rs::ranges_are_ordered`, `crates/idl-lower/src/validate.rs::annotated_values_fit_their_element`.
 
-**Tests:** `crates/idl-lower/tests/annotations.rs::a_unit_and_a_range_reach_their_fields`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_8_3_3_2_a_range_whose_max_is_below_its_min_is_refused`,
+`crates/idl-lower/tests/annotations.rs::a_unit_and_a_range_reach_their_fields`.
 
-**Status:** `partial` — `min`/`max` werden gelesen und ins Facet geschrieben;
-die Bedingung `max >= min` wird nicht geprüft und hat keinen Test.
-`@range(5, 1)` wird akzeptiert.
+**Status:** `done` — `@range(5, 1)`, `@range(min = 5, max = 1)`, `@min(2.5) @max(1.5)` und ein Bereich an einem `typedef` mit max unter min sind `IDL0007`; gleiche Enden werden angenommen; ein Bereichsende außerhalb des Typs des Elements ist `IDL0007`.
 
 ### §8.3.3.3 `@min` und §8.3.3.4 `@max`
 
@@ -3077,7 +2913,7 @@ sechs Placements), `crates/idl-lower/src/annotation.rs::apply_one` (Zweig
 `crates/idl-lower/tests/annotations.rs::repeated_verbatim_directives_accumulate_in_declaration_order`,
 `crates/idl-lower/tests/annotations.rs::a_verbatim_directive_for_an_unknown_language_is_kept_as_written`,
 `crates/idl-lower/tests/annotations.rs::an_unknown_verbatim_placement_is_reported`,
-`tools/idlc/tests/annotation_arguments.rs::a_verbatim_directive_still_reaches_the_model_whole` —
+`tools/idlc/tests/annotation_arguments.rs::idl_7_4_15_2_a_verbatim_directive_still_reaches_the_model_whole` —
 `annotation_arguments.rs:175: assert_eq!(verbatim.len(), 1, "{verbatim:?}");`.
 
 **Status:** done
@@ -3102,18 +2938,12 @@ default TRUE; };`"; "This annotation may only concern operations without
 any return value (**void** return type) and without any **out** or
 **inout** parameters."
 
-**Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (Zweig
-`oneway`), `crates/idl-lower/src/annotation.rs::enumerated_parameter`.
+**Repo:** `crates/idl-lower/src/annotation.rs::apply_one` (der Zweig `oneway`), `crates/idl-lower/src/validate.rs::oneway_operations_return_nothing`.
 
-**Tests:** `tools/idlc/tests/annotation_arguments.rs::a_builtin_with_an_enumerated_parameter_reads_it_without_resolving_it`.
+**Tests:** `crates/idl-lower/tests/idl_4_2_rules.rs::idl_8_3_6_2_a_oneway_operation_returns_nothing_and_takes_in_parameters_only`,
+`crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_6_4_5_a_oneway_operation_has_no_raises_clause`.
 
-**Status:** `partial` — `@oneway` ist in der Builtin-Tabelle, die Erhebung
-führt die Probe `ann-8.3.6.2-oneway` mit `ok`. Kein Rust-Test schreibt
-`@oneway` in eine `.idl`-Zeile und prüft das Facet
-(`crates/ast/tests/node_space.rs::a_oneway_operation_is_flagged_and_a_normal_one_is_not`
-prüft die Schlüsselwort-Form, nicht die Annotation-Form). Die
-Nebenspannung der Klausel — void-Rückgabetyp und keine `out`/`inout`-Parameter
-— wird nirgends geprüft.
+**Status:** `done` — `@oneway` in einer `.idl`-Zeile setzt das Flag der Operation, `@oneway(FALSE)` lässt sie zweiseitig; eine One-way-Operation mit Ergebnis, einem `out`- oder `inout`-Parameter oder einer `raises`-Klausel ist `IDL0007`, in der Annotations- und in der Schlüsselwortform.
 
 ### §8.3.6.3 `@ami` Annotation
 
@@ -3138,18 +2968,11 @@ building blocks, called *profiles*. Profiles are just sets of building
 blocks, possibly complemented with groups of annotations."; "These profiles
 are not normative for the related middleware solutions."
 
-**Repo:** `crates/ast/src/profile/mod.rs::Profile`,
-`crates/ast/src/profile/verdict.rs::ALL_PROFILES`.
+**Repo:** `crates/idl-parse/src/building_block.rs` (`IdlProfile`, `AnnotationGroup`, `outside_profile`), `tools/idlc/src/main.rs` (`--idl-profile`), `crates/idl-compose/src/lib.rs::outside_idl_profile`.
 
-**Tests:** `crates/ast/tests/profile_table.rs::the_construct_table_is_total_over_profiles_and_constructs`,
-`crates/ast/tests/profile_table.rs::the_facet_table_is_total_over_profiles_and_properties`,
-`crates/ast/tests/resolve_profile_query.rs::every_profile_accepts_a_model_of_plain_primitives`,
-`crates/ast/tests/resolve_profile_query.rs::a_map_is_valid_under_xtypes_and_invalid_under_corba_33`.
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `partial` — die Profilmechanik existiert und ist tabellarisch
-total geprüft, aber sie beschreibt *andere* Specificationen (`XTypes13`,
-`Corba33`, `Ros2`, `DdsXml`, `FlatData`, `Vendor`). Die sieben Profile
-dieser Klausel sind keine davon.
+**Status:** `done` — die sieben Profile aus Klausel 9 als Mengen von Bausteinen und Annotationsgruppen, jedes unter dem Gitter abgeschlossen, jedes mit Annotations, wo es eine Gruppe hat (§8.1); eine Datei wird mit `zerodds-idlc --idl-profile <P>` gegen eines geprüft (`IDL0023`), auf Anforderung, weil §9.1 die Profile nicht normativ nennt.
 
 ### §9.2.1 Plain CORBA Profile
 
@@ -3157,107 +2980,84 @@ dieser Klausel sind keine davon.
 Interfaces – Basic, Interfaces – Full, Value Types, CORBA-Specific –
 Interfaces und CORBA-Specific – Value Types.
 
-**Repo:** —
+**Repo:** `crates/idl-parse/src/building_block.rs::IdlProfile`, `crates/idl-parse/src/building_block.rs::outside_profile`.
 
-**Tests:** —
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_2_1_the_plain_corba_profile`,
+`crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `open` — es gibt keine Abbildung dieses Profils im Baum. Weder
-`Profile` noch `IdlFeatures` (früher `crates/idl/src/features/mod.rs`,
-heute entfernt) kennen eine solche Building-Block-Kombination; der
-einzige Ort, an dem der Name des Profils vorkommt, ist die Prosa in
-`docs/idl-building-blocks.md`.
+**Status:** `done` — das Profil Plain CORBA ist die Liste aus §9.2.1; dagegen geprüft Interfaces, Value Types, `any`, `typeid`, lokale und abstrakte Interfaces liegen innen; ein an einem Member geschriebener `string` (Regel (216)), ein Array an einem Member, eine Komponente, ein `map`, `int8` und eine Annotation liegen außen (`IDL0023`).
 
 ### §9.2.2 Minimum CORBA Profile
 
 **Spec:** §9.2.2, S. 119–120 — "As opposed to Plain CORBA Profile, it does
 not embed **Any** nor **Valuetypes**."
 
-**Repo:** —
+**Repo:** `crates/idl-parse/src/building_block.rs::IdlProfile`, `crates/idl-parse/src/building_block.rs::outside_profile`.
 
-**Tests:** —
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_2_2_the_minimum_corba_profile`,
+`crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `open` — wie §9.2.1; kein Symbol, kein Test.
+**Status:** `done` — das Profil Minimum CORBA ist die Liste aus §9.2.2; dagegen geprüft `any`, ein Value Type und ein abstrakter Value Type liegen außen, Interfaces mit eingebetteten Typen und einer Context-Klausel innen (`IDL0023`).
 
 ### §9.2.3 CCM Profile
 
 **Spec:** §9.2.3, S. 120 — das Profil ergänzt Components – Basic und
 CCM-Specific um die sieben CORBA-Bausteine.
 
-**Repo:** `crates/idl-parse/src/dialect.rs`,
-`crates/idl-lower/src/lower.rs::interface_bases` (die `supports`- und
-Komponenten-Zweige).
+**Repo:** `crates/idl-parse/src/building_block.rs::IdlProfile`, `crates/idl-parse/src/building_block.rs::outside_profile`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::each_component_form_reaches_its_own_interface_kind`,
-`crates/idl-lower/tests/dialects.rs::each_port_form_reaches_its_own_component_role`,
-`crates/idl-lower/tests/dialects.rs::a_home_records_what_it_manages_and_the_key_it_does_so_by`.
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_2_3_the_ccm_profile`,
+`crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `partial` — die Bausteine des Profils sind einzeln erkannt und
-getestet. Das Profil selbst — eine benannte, schaltbare Kombination — gibt
-es nicht; es gibt keinen Mechanismus, der die Bausteine gemeinsam an- und
-abschaltet.
+**Status:** `done` — das Profil CCM ist die Liste aus §9.2.3; dagegen geprüft Komponenten mit Facets, mehrfachen Receptacles, Event-Ports und `supports` sowie Event Types liegen innen; ein `home` liegt außen, weil der Absatz Components – Homes nicht nennt, obwohl die Regeln (162) bis (165) von CCM-Specific den Home-Header erweitern; ein Port Type liegt außen (`IDL0023`).
 
 ### §9.2.4 CCM with Generic Interaction Support Profile
 
 **Spec:** §9.2.4, S. 120 — dieses Profil ergänzt Components – Ports and
 Connectors und Template Modules um das CCM-Profil.
 
-**Repo:** `crates/idl-lower/src/lower.rs::port`,
-`crates/idl-lower/src/lower.rs::template_module_inst`.
+**Repo:** `crates/idl-parse/src/building_block.rs::IdlProfile`, `crates/idl-parse/src/building_block.rs::outside_profile`.
 
-**Tests:** `crates/idl-lower/tests/dialects.rs::each_component_form_reaches_its_own_interface_kind`,
-`crates/idl-lower/tests/dialects.rs::a_template_modules_parameters_reach_its_facet`.
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_2_4_the_ccm_with_generic_interaction_support_profile`,
+`crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `partial` — beide zusätzlichen Bausteine sind implementiert und
-getestet; die words `GIS` und `Generic Interaction Support` kommen im
-Frontend nicht vor. Wie bei §9.2.3 gibt es keinen Profilschalter.
+**Status:** `done` — das Profil CCM with Generic Interaction Support ist die Liste aus §9.2.4; dagegen geprüft Port Types, Connectors mit `port` und `mirrorport` und Template-Module liegen innen, `uint16` liegt außen (`IDL0023`).
 
 ### §9.3.1 Plain DDS Profile
 
 **Spec:** §9.3.1, S. 121 — "It is made of: Building Block Core Data Types;
 Building Block Anonymous Types."
 
-**Repo:** `crates/idl-parse/src/dialect.rs`.
+**Repo:** `crates/idl-parse/src/building_block.rs::IdlProfile`, `crates/idl-parse/src/building_block.rs::outside_profile`.
 
-**Tests:** `crates/idl-lower/tests/validation.rs::a_file_using_the_whole_language_reports_nothing`.
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_3_1_the_plain_dds_profile`,
+`crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `open` — kein Profil mit dieser Zusammensetzung. Die beiden
-Bausteine sind einzeln getestet, die Anonymous Types sind es nicht
-(siehe §7.4.14.3), und es gibt keine Prüfung, die die beiden zusammen von
-einem CORBA-Frontend unterscheidet.
+**Status:** `done` — das Profil Plain DDS ist die Liste aus §9.3.1; dagegen geprüft Strukturen, Unions und Enumerationen mit anonymen Strings, Sequenzen und Arrays liegen innen; `any`, ein `map`, eine Annotation, ein Interface und eine Struktur mit Basis liegen außen (`IDL0023`).
 
 ### §9.3.2 Extensible DDS Profile
 
 **Spec:** §9.3.2, S. 121 — dieses Profil ergänzt Extended Data-Types,
 Anonymous Types, Annotations und die vier Annotations-Gruppen.
 
-**Repo:** `crates/ast/src/profile/mod.rs::Profile`,
-`crates/idl-lower/src/annotation.rs::apply_one`.
+**Repo:** `crates/idl-parse/src/building_block.rs::IdlProfile`, `crates/idl-parse/src/building_block.rs::outside_profile`.
 
-**Tests:** `crates/ast/tests/resolve_profile_query.rs::a_map_is_valid_under_xtypes_and_invalid_under_corba_33`,
-`crates/idl-lower/tests/conformance.rs::the_xtypes_specifications_own_idl_lowers_completely`.
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_3_2_the_extensible_dds_profile`,
+`crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `partial` — der XTypes-Anteil des Profils ist als
-`Profile::XTypes13` modelliert und tabellarisch geprüft; die vier
-Annotations-Gruppen dieser Klausel (General Purpose, Data Modeling, Data
-Implementation, Code Generation) existieren als solche nicht, die
-Annotationen sind eine flache Builtin-Tabelle (§8.1).
+**Status:** `done` — das Profil Extensible DDS ist die Liste aus §9.3.2; dagegen geprüft die Annotationen der vier Gruppen, Maps, Bitsets, Bitmasks, `int8` und Benutzerannotationen liegen innen; `@range` und `@default` (Units and Ranges) und ein Interface liegen außen (`IDL0023`).
 
 ### §9.3.3 RPC over DDS Profile
 
 **Spec:** §9.3.3, S. 121 — das Profil ergänzt Interfaces – Basic und die
 Gruppe der Interfaces-Annotationen.
 
-**Repo:** `crates/lang-rules/src/adapter/interface.rs::Service::is_remote`,
-`crates/lang-rules/src/generate.rs::COMPLETE_DECLARATIONS_LANGUAGES`.
+**Repo:** `crates/idl-parse/src/building_block.rs::IdlProfile`, `crates/idl-parse/src/building_block.rs::outside_profile`.
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::the_seam_reads_every_part_of_an_interface`,
-`crates/lang-rules/tests/inherited_operations.rs::every_incomplete_language_refuses_rather_than_flattens_or_drops`,
-`crates/lang-rules/tests/inherited_operations.rs::c_python_and_node_now_refuse_instead_of_silently_answering_empty`.
+**Tests:** `crates/idl-parse/tests/building_blocks.rs::idl_9_3_3_the_rpc_over_dds_profile`,
+`crates/idl-parse/tests/building_blocks.rs::idl_9_1_every_profile_is_its_clauses_list_closed_under_the_lattice`.
 
-**Status:** `partial` — die Binding-Regel für Interfaces ist implementiert
-und getestet, einschliesslich der Liste der Sprachen, die sie nicht
-vollständig abbilden können. Das Profil als schaltbare Bausteinmenge gibt
-es nicht.
+**Status:** `done` — das Profil RPC over DDS ist die Liste aus §9.3.3; dagegen geprüft ein `@service`-Interface mit `@oneway`, Attributen und `@final`-Strukturen liegt innen; `@key` (Data Modeling), ein Value Type und eine in einem Interface deklarierte Struktur (Interfaces – Full) liegen außen (`IDL0023`).
 
 ---
 
@@ -3268,30 +3068,36 @@ es nicht.
 **Spec:** Annex A, S. 123–132 — "This annex gathers all the rules from all
 the building blocks"; die Produktionen (1)–(227) sind durchnummeriert.
 
-**Repo:** `crates/idl-parse/src/decl.rs`, `crates/idl-parse/src/type_spec.rs`,
-`crates/idl-parse/src/parser.rs`, `tools/idl-4.2-gap-scan/cases.tsv`.
+**Repo:** `crates/idl-parse/src/decl.rs`, `crates/idl-parse/src/type_spec.rs`, `crates/idl-parse/src/parser.rs`, `tools/idl-4.2-gap-scan/cases.tsv`.
 
-**Tests:** `crates/idl-lower/tests/idl_4_2_grammar.rs::adjacent_string_literals_are_one_literal`,
-`crates/idl-lower/tests/idl_4_2_grammar.rs::a_struct_defined_inside_a_typedef_is_declared_and_aliased`,
-`crates/idl-lower/tests/idl_4_2_grammar.rs::every_constructed_form_can_be_defined_inside_a_typedef`,
-`crates/idl-lower/tests/idl_4_2_grammar.rs::typeprefix_and_import_inside_an_interface_body_parse`,
-`crates/idl-lower/tests/conformance.rs::every_fixture_round_trips_byte_for_byte`,
-`crates/idl-lower/tests/conformance.rs::every_fixture_survives_a_snapshot_round_trip`,
-`tools/idlc/tests/idl_4_2_gaps.rs::every_idl_4_2_section_d_fixture_passes_check_and_both_backends`.
+**Tests:** `tools/idlc/tests/idl_4_2_gaps.rs::idl_annex_a_every_probe_of_the_gap_scan_gets_the_specifications_answer`,
+`crates/idl-parse/src/building_block.rs::tests::idl_annex_a_every_rule_belongs_to_one_building_block`,
+`crates/idl-lower/tests/idl_4_2_grammar.rs::every_constructed_form_can_be_defined_inside_a_typedef`.
 
-**Status:** `partial` — Annex A ist in `tools/idl-4.2-gap-scan/cases.tsv`
-enumerate und die Sollwerte in `expected.tsv` festgeschrieben, nicht in
-einem Rust-Test: 161 der 227 Produktionen tragen eine Probe, 66 keine.
-Die Messung dieser Zeilen steht in [`idl-4.2.gaps.md`](idl-4.2.gaps.md);
-der Werkzeuglauf ist `tools/idl-4.2-gap-scan/scan.sh`.
+**Status:** `done` — jede der 227 Produktionen trägt eine Grammatik-Probe in `tools/idl-4.2-gap-scan/cases.tsv`, und ein Rust-Test führt alle 357 Proben durch das Front End und hält jede an ihre Spalte `expect`, die Antwort der Spezifikation (nur OMG IDL 4.2, die Herstellerproben mit ihren Dialekten).
 
 ---
 
 ## Audit-Status
 
-189 Items: 130 done / 35 partial / 17 open / 7 n/a (informative).
+183 done / 0 partial / 0 open / 0 blocked / 7 n/a (informative).
 
-Die Zitate nennen den Test, der das jeweilige Item hält. Der Testlauf
-selbst wurde in diesem Durchgang nicht ausgeführt; dieser Durchgang prüft
-Pfade und Testnamen gegen den heutigen Baum mit
-`python3 website/_tools/verify_coverage_items.py --check`.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9310 von `main` (`python3 ci/coverage_results.py --document idl-4.2.md`):
+
+* `cargo nextest run --profile merge -p zerodds-ast --all-targets` (Job `merge-rust-ast`) — 23 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-ccm --all-targets` (Job `merge-rust-ccm`) — 24 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-corba-codegen --all-targets` (Job `merge-rust-corba-codegen`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-corba-rust --all-targets` (Job `merge-rust-corba-rust`) — 5 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-float128 --all-targets` (Job `merge-rust-float128`) — 3 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-compose --all-targets` (Job `merge-rust-idl-compose`) — 6 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-cst --all-targets` (Job `merge-rust-idl-cst`) — 33 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (Job `merge-rust-idl-lower`) — 273 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-parse --all-targets` (Job `merge-rust-idl-parse`) — 68 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 12 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 8 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-types --all-targets` (Job `merge-rust-types`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-wireprobe-c-gen --all-targets` (Job `merge-rust-wireprobe-c-gen`) — 2 Tests grün.
+
+465 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

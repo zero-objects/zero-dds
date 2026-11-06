@@ -35,8 +35,8 @@ ist eine Eigenschaft der Kodierung und nicht der Zielsprache.
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (`codec_from`,
 `CodecOptions`).
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_final_struct_of_primitives_encodes_as_a_run_of_writes`,
-`crates/lang-rules/tests/one_walk_two_targets.rs::both_backends_write_the_same_members_in_the_same_order`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_4_3_a_final_struct_of_primitives_encodes_as_a_run_of_writes`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::xtypes_7_4_3_both_backends_write_the_same_members_in_the_same_order`
 
 **Status:** done
 
@@ -47,8 +47,8 @@ Reihenfolge unter derselben Rahmung entgegen.
 
 **Repo:** `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::the_decoder_mirrors_the_encoder_member_for_member`,
-`crates/lang-rules/tests/one_walk_two_targets.rs::the_walk_asks_for_one_unary_operator_and_no_others`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_4_3_the_decoder_mirrors_the_encoder_member_for_member`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::xtypes_7_4_3_the_walk_asks_for_one_unary_operator_and_no_others`
 
 **Status:** done — der Walk fragt nach einem unären Operator (`!`) und nach keinem anderen;
 ein Bitmask-Leser behält die deklarierten Bits mit einem einfachen `&`, ohne `~`.
@@ -61,8 +61,8 @@ sprachabhängig bleibt, ist ihre Schreibweise.
 **Repo:** `crates/lang-rules/src/emit/mod.rs` (`CodecTarget`, `Scalar`,
 `Handle`, `runtime_static`).
 
-**Tests:** `crates/lang-rules/tests/one_walk_two_targets.rs::the_difference_between_the_two_is_spelling`,
-`crates/lang-rules/tests/one_walk_two_targets.rs::a_sequence_is_one_loop_and_two_ways_of_asking_its_length`
+**Tests:** `crates/lang-rules/tests/one_walk_two_targets.rs::xtypes_7_4_3_the_difference_between_the_two_is_spelling`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::xtypes_7_4_3_a_sequence_is_one_loop_and_two_ways_of_asking_its_length`
 
 **Status:** done
 
@@ -76,8 +76,8 @@ APPENDABLE die vorangestellte `uint32`-Body-Länge (DHEADER), FINAL keine.
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (Rahmungszweige aus dem
 Layout-Plan `crates/ast-layout/src/key.rs`).
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_appendable_struct_carries_the_dheader_the_plan_asks_for`,
-`crates/lang-rules/tests/codec.rs::the_extensibility_the_source_wrote_decides_the_framing`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_3_an_appendable_struct_carries_the_dheader_the_plan_asks_for`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_3_the_extensibility_the_source_wrote_decides_the_framing`
 
 **Status:** done
 
@@ -90,9 +90,9 @@ LC=4 nimmt ein NEXTINT, LC=6/7 zählen in 4- bzw. 8-Byte-Einheiten.
 `crates/lang-rules/src/emit/mod.rs` (`CodecTarget` liefert die
 Schreibweise).
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_mutable_struct_writes_an_emheader_per_member`,
-`crates/lang-rules/tests/codec.rs::the_length_code_policy_is_visible_in_the_output`,
-`crates/lang-rules/tests/one_walk_two_targets.rs::a_mutable_aggregate_opens_and_closes_a_header_in_both`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_4_3_4_2_a_mutable_struct_writes_an_emheader_per_member`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_4_3_4_2_the_length_code_policy_is_visible_in_the_output`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::xtypes_7_4_3_4_2_a_mutable_aggregate_opens_and_closes_a_header_in_both`
 
 **Status:** done
 
@@ -104,8 +104,8 @@ und ist erst nach ihm bekannt; sie muss nachgetragen werden.
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (Patch-Stelle je
 geöffnetem Header), `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::every_parameter_header_the_decoder_opens_it_also_closes`,
-`crates/lang-rules/tests/runtime_agreement.rs::the_generator_emits_a_patch_for_every_framing_header_it_opens`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_4_3_every_parameter_header_the_decoder_opens_it_also_closes`,
+`crates/lang-rules/tests/runtime_agreement.rs::xtypes_7_4_3_the_generator_emits_a_patch_for_every_framing_header_it_opens`
 
 **Status:** done
 
@@ -117,8 +117,8 @@ die Liste mit `PID_SENTINEL`.
 **Repo:** `crates/lang-rules/src/emit/encode.rs`,
 `crates/lang-rules/src/emit/decode.rs` (XCDR1-Zweige).
 
-**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::a_mutable_struct_under_xcdr1_ends_with_a_sentinel`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_mutable_aggregate_under_xcdr1_stops_at_the_sentinel`
+**Tests:** `crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_4_2_a_mutable_struct_under_xcdr1_ends_with_a_sentinel`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_4_2_a_mutable_aggregate_under_xcdr1_stops_at_the_sentinel`
 
 **Status:** done
 
@@ -132,9 +132,9 @@ Union-Member nie. Die Abwesenheit wird kodiert, nicht weggelassen.
 **Repo:** `crates/lang-rules/src/emit/encode.rs`,
 `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_optional_member_writes_its_marker_from_the_option_and_not_from_a_literal`,
-`crates/lang-rules/tests/codec.rs::an_optional_member_under_xcdr1_marks_the_absence_with_a_declared_length_of_zero`,
-`crates/lang-rules/tests/codec.rs::an_optional_member_of_a_mutable_type_omits_the_whole_parameter`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_writes_its_marker_from_the_option_and_not_from_a_literal`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_under_xcdr1_marks_the_absence_with_a_declared_length_of_zero`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_of_a_mutable_type_omits_the_whole_parameter`
 
 **Status:** done
 
@@ -146,9 +146,9 @@ primitiver Elemente trägt keinen.
 
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (Sammlungszweig).
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_collection_of_aggregates_is_delimited_and_one_of_primitives_is_not`,
-`crates/lang-rules/tests/codec.rs::a_sequence_writes_its_elements_by_their_own_writer`,
-`crates/lang-rules/tests/codec.rs::a_collection_directly_inside_a_collection_is_emitted`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_collection_of_aggregates_is_delimited_and_one_of_primitives_is_not`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_sequence_writes_its_elements_by_their_own_writer`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_collection_directly_inside_a_collection_is_emitted`
 
 **Status:** done
 
@@ -160,8 +160,8 @@ Schreiber, der sie überschreitet, ist nicht konform.
 **Repo:** `crates/lang-rules/src/emit/encode.rs`,
 `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`,
-`crates/lang-rules/tests/codec.rs::a_bounded_string_is_written_through_the_form_that_refuses_an_overrun`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_bounded_sequence_checks_its_bound_and_an_unbounded_one_has_none`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_a_bounded_string_is_written_through_the_form_that_refuses_an_overrun`
 
 **Status:** done
 
@@ -172,7 +172,7 @@ im Datenstrom.
 
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (Array-Zweig).
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_array_writes_no_length_because_its_count_is_in_the_type`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_3_an_array_writes_no_length_because_its_count_is_in_the_type`
 
 **Status:** done
 
@@ -184,9 +184,9 @@ im Datenstrom.
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (`codec_name` je
 Enumeration), `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_enum_member_is_written_through_the_enumerations_own_codec`,
-`crates/lang-rules/tests/codec.rs::the_enumerations_codec_writes_the_width_its_bit_bound_calls_for`,
-`crates/lang-rules/tests/codec.rs::the_enumeration_codec_takes_the_integer_the_plan_gives_it`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_1_1_an_enum_member_is_written_through_the_enumerations_own_codec`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_1_1_the_enumerations_codec_writes_the_width_its_bit_bound_calls_for`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_1_1_the_enumeration_codec_takes_the_integer_the_plan_gives_it`
 
 **Status:** done
 
@@ -197,7 +197,7 @@ wird zu seinem `base_type` aufgelöst.
 
 **Repo:** `crates/lang-rules/src/emit/encode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_typedef_is_written_as_what_it_aliases`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_2_a_typedef_is_written_as_what_it_aliases`
 
 **Status:** done
 
@@ -209,8 +209,8 @@ und trägt `must_understand=true`.
 **Repo:** `crates/lang-rules/src/emit/encode.rs`,
 `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_mutable_decoder_dispatches_on_the_member_id_and_a_positional_one_does_not`,
-`crates/lang-rules/tests/codec.rs::a_union_case_label_that_does_not_evaluate_is_refused`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_3_a_mutable_decoder_dispatches_on_the_member_id_and_a_positional_one_does_not`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_3_a_union_case_label_that_does_not_evaluate_is_refused`
 
 **Status:** done
 
@@ -221,7 +221,7 @@ durch dessen eigene Kodierung geschrieben, mit dessen eigener Rahmung.
 
 **Repo:** `crates/lang-rules/src/emit/encode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_nested_aggregate_encodes_itself`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_a_nested_aggregate_encodes_itself`
 
 **Status:** done
 
@@ -237,10 +237,10 @@ erster Enum-Literal.
 Spalte; §7.5.1 unten), aufgerufen aus
 `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_appendable_tail_the_writer_did_not_have_takes_its_default`,
-`crates/lang-rules/tests/codec.rs::an_appendable_tail_takes_an_explicit_default_over_table_nine`,
-`crates/lang-rules/tests/codec.rs::an_appendable_tail_of_an_enumeration_takes_its_first_literal`,
-`crates/lang-rules/tests/codec.rs::an_explicit_default_beats_table_nine_at_the_member_position`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_7_an_appendable_tail_the_writer_did_not_have_takes_its_default`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_9_an_appendable_tail_takes_an_explicit_default_over_table_nine`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_9_an_appendable_tail_of_an_enumeration_takes_its_first_literal`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_4_4_4_9_an_explicit_default_beats_table_nine_at_the_member_position`
 
 **Status:** done
 
@@ -252,9 +252,9 @@ Spalte; §7.5.1 unten), aufgerufen aus
 **Repo:** `crates/lang-rules/src/emit/decode.rs`,
 `crates/wire/src/try_construct.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::an_absent_annotation_is_discard_and_a_bare_one_is_use_default`,
-`crates/lang-rules/tests/codec.rs::a_bounded_member_narrows_after_the_whole_value_is_off_the_wire`,
-`crates/lang-rules/tests/codec.rs::an_element_and_its_collection_narrow_separately`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_2_2_7_an_absent_annotation_is_discard_and_a_bare_one_is_use_default`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_7_a_bounded_member_narrows_after_the_whole_value_is_off_the_wire`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_2_2_7_an_element_and_its_collection_narrow_separately`
 
 **Status:** done
 
@@ -269,11 +269,11 @@ serialisiert; ist er höchstens 16 Byte groß, ist er selbst der Hash
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (Key-Zweig),
 `crates/wire/src/digest.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_keyed_type_gets_a_key_hash_over_its_key_members_only`,
-`crates/lang-rules/tests/codec.rs::a_holder_of_sixteen_bytes_or_fewer_is_the_hash_and_a_longer_one_is_md5ed`,
-`crates/lang-rules/tests/codec.rs::the_holder_is_big_endian_and_plain_cdr2_aligned_whatever_the_sample_is`,
-`crates/lang-rules/tests/codec.rs::an_unbounded_key_is_md5ed_because_its_length_is_not_known_until_the_sample_is`,
-`crates/lang-rules/tests/runtime_agreement.rs::the_key_hash_sequence_produces_a_stable_sixteen_bytes`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_4_5_a_keyed_type_gets_a_key_hash_over_its_key_members_only`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_4_5_a_holder_of_sixteen_bytes_or_fewer_is_the_hash_and_a_longer_one_is_md5ed`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_4_5_the_holder_is_big_endian_and_plain_cdr2_aligned_whatever_the_sample_is`,
+`crates/lang-rules/tests/codec.rs::xtypes_7_4_5_an_unbounded_key_is_md5ed_because_its_length_is_not_known_until_the_sample_is`,
+`crates/lang-rules/tests/runtime_agreement.rs::xtypes_7_4_5_the_key_hash_sequence_produces_a_stable_sixteen_bytes`
 
 **Status:** done
 
@@ -283,8 +283,8 @@ serialisiert; ist er höchstens 16 Byte groß, ist er selbst der Hash
 
 **Repo:** `crates/lang-rules/src/emit/encode.rs`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_type_with_no_key_gets_no_key_hash`,
-`crates/lang-rules/tests/c_end_to_end.rs::a_keyed_type_gets_a_holder_and_an_unkeyed_one_does_not`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_4_5_a_type_with_no_key_gets_no_key_hash`,
+`crates/lang-rules/tests/c_end_to_end.rs::xtypes_7_4_5_a_keyed_type_gets_a_holder_and_an_unkeyed_one_does_not`
 
 **Status:** done
 
@@ -298,8 +298,8 @@ ohne Gegenstück ist ein Linkfehler statt einer Konformitätsaussage.
 **Repo:** `crates/lang-rules/src/emit/encode.rs`,
 `crates/lang-rules/src/emit/decode.rs`, `runtime/c/include/`.
 
-**Tests:** `crates/lang-rules/tests/runtime_agreement.rs::every_call_the_generator_emits_exists_in_the_runtime`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::the_operations_the_walks_emit_all_exist_in_the_reference_runtime`
+**Tests:** `crates/lang-rules/tests/runtime_agreement.rs::xtypes_7_4_every_call_the_generator_emits_exists_in_the_runtime`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_4_the_operations_the_walks_emit_all_exist_in_the_reference_runtime`
 
 **Status:** done
 
@@ -311,9 +311,9 @@ festlegt, muss auch in den Oktetten stehen.
 **Repo:** `crates/lang-rules/src/encode.rs` (Rust-Spalte),
 `crates/wire/src/writer.rs`.
 
-**Tests:** `crates/lang-rules/tests/runtime_agreement.rs::the_sequence_a_final_struct_generates_writes_the_bytes_the_plan_says`,
-`crates/lang-rules/tests/runtime_agreement.rs::the_sequence_an_appendable_struct_generates_frames_its_members`,
-`crates/lang-rules/tests/runtime_agreement.rs::the_sequence_a_mutable_struct_generates_carries_its_member_ids`
+**Tests:** `crates/lang-rules/tests/runtime_agreement.rs::xtypes_7_4_3_the_sequence_a_final_struct_generates_writes_the_bytes_the_plan_says`,
+`crates/lang-rules/tests/runtime_agreement.rs::xtypes_7_4_3_the_sequence_an_appendable_struct_generates_frames_its_members`,
+`crates/lang-rules/tests/runtime_agreement.rs::xtypes_7_4_3_the_sequence_a_mutable_struct_generates_carries_its_member_ids`
 
 **Status:** done
 
@@ -325,8 +325,8 @@ darf nicht ausgelassen werden; er muss benannt werden.
 **Repo:** `crates/lang-rules/src/emit/encode.rs` (Fehlerpfade),
 `tools/silent-drop-allowlist.tsv`.
 
-**Tests:** `crates/lang-rules/tests/codec.rs::a_member_with_no_writer_is_reported_rather_than_left_out`,
-`crates/lang-rules/tests/unevaluated.rs::an_array_length_that_does_not_evaluate_is_refused_by_the_codec_too`
+**Tests:** `crates/lang-rules/tests/codec.rs::xtypes_7_4_a_member_with_no_writer_is_reported_rather_than_left_out`,
+`crates/lang-rules/tests/unevaluated.rs::xtypes_7_4_an_array_length_that_does_not_evaluate_is_refused_by_the_codec_too`
 
 **Status:** done
 
@@ -343,8 +343,8 @@ Renderer und — für die Kodierung — ein Codec-Backend.
 `crates/lang-rules/src/emit/`; die Aufstellung in
 `docs/language-columns-status.md`.
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::the_type_only_columns_are_each_missing_a_part_a_codec_backend_rests_on`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_the_type_only_columns_are_each_missing_a_part_a_codec_backend_rests_on`
 
 **Status:** done
 
@@ -357,10 +357,9 @@ eine Liste.
 **Repo:** `runtime/`, `endpoints/`,
 `crates/lang-rules/tests/every_language_has_its_parts.rs`.
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -372,7 +371,7 @@ stillschweigend verlorene Deklaration.
 
 **Repo:** `crates/lang-rules/src/generate.rs` (`declarations`).
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -385,7 +384,7 @@ Typen auch Encoder und Decoder für jedes `struct`, `union` und
 **Repo:** `crates/lang-rules/src/generate.rs` (`source`),
 `crates/lang-rules/src/emit/encode.rs` (`codec_name`).
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`
 
 **Status:** done
 
@@ -398,9 +397,9 @@ abzählbar; eine Zelle ohne Deckung muss sagen, warum.
 neue Sprache bricht den Build, bis jedes Konstrukt eine Entscheidung
 trägt).
 
-**Tests:** `crates/lang-rules/tests/adapter.rs::the_coverage_table_has_a_cell_for_every_construct_and_language`,
-`crates/lang-rules/tests/adapter.rs::the_table_reports_what_is_covered_and_what_is_not`,
-`crates/lang-rules/tests/adapter.rs::an_uncovered_cell_says_why_rather_than_only_that`
+**Tests:** `crates/lang-rules/tests/adapter.rs::xtypes_7_2_2_4_the_coverage_table_has_a_cell_for_every_construct_and_language`,
+`crates/lang-rules/tests/adapter.rs::xtypes_7_2_2_4_the_table_reports_what_is_covered_and_what_is_not`,
+`crates/lang-rules/tests/adapter.rs::xtypes_7_2_2_4_an_uncovered_cell_says_why_rather_than_only_that`
 
 **Status:** done
 
@@ -412,9 +411,9 @@ trägt).
 **Repo:** `crates/lang-rules/src/rule/mod.rs`,
 `crates/lang-rules/src/apply.rs`.
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_catalogue_validates_against_the_rule_format`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`,
-`crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_validates_against_the_rule_format`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`
 
 **Status:** done
 
@@ -428,14 +427,14 @@ erreicht jede Sprache.
 
 **Repo:** `crates/lang-rules/src/verbatim.rs`.
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::the_wildcard_reaches_all_four_columns`,
-`crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_places_all_six_slots_in_spec_order`,
-`crates/lang-rules/tests/verbatim_end_to_end.rs::a_directive_for_an_unknown_language_is_not_emitted`,
-`crates/lang-rules/tests/verbatim_end_to_end.rs::repeated_directives_keep_their_declaration_order`,
-`crates/lang-rules/tests/verbatim_every_column.rs::the_wildcard_reaches_every_column`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::xtypes_7_2_2_4_8_the_wildcard_reaches_all_four_columns`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::xtypes_7_2_2_4_8_2_cpp_places_all_six_slots_in_spec_order`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::xtypes_7_2_2_4_8_a_directive_for_an_unknown_language_is_not_emitted`,
+`crates/lang-rules/tests/verbatim_end_to_end.rs::ddsts_9_4_repeated_directives_keep_their_declaration_order`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_the_wildcard_reaches_every_column`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -449,8 +448,8 @@ benennt, müssen in jeder Sprachbindung existieren.
 **Repo:** `crates/lang-rules/src/generate.rs`,
 `crates/lang-rules/tests/dcps_psm_idl.rs`.
 
-**Tests:** `crates/lang-rules/tests/dcps_psm_idl.rs::the_dcps_psm_idl_declares_the_types_the_clause_names`,
-`crates/lang-rules/tests/dcps_psm_idl.rs::every_language_declares_the_dcps_psm`
+**Tests:** `crates/lang-rules/tests/dcps_psm_idl.rs::xtypes_7_5_the_dcps_psm_idl_declares_the_types_the_clause_names`,
+`crates/lang-rules/tests/dcps_psm_idl.rs::xtypes_7_5_every_language_declares_the_dcps_psm`
 
 **Status:** done
 
@@ -465,24 +464,26 @@ Ausgabe ist eine Sprachbindung.
 `language_names`, `source`), `tools/idlc/src/main.rs`
 (`--lang`, `--out`, `--encoding`, `--endian`).
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
 ## §7.4 Gemessene Oktette
 
-### §7.4 Drei Spalten stimmen über den Korpus überein
+### §7.4 Die Rust-, C- und Python-Spalte schreiben die Oktette der Tabelle
 
 **Spec:** §7.4 — zwei unabhängige Lesungen derselben Klausel müssen
-dieselben Oktette hervorbringen.
+dieselben Oktette hervorbringen: die Oktette jeder Spalte gegen
+`tests/interop-corpus/expected-bytes.tsv`, die Oktette anderer
+Implementierungen, in der Krate der Spalte.
 
-**Repo:** `crates/wire-probe/src/lib.rs`,
+**Repo:** `crates/wire-probe/src/expected.rs`, `crates/wire-probe/src/matrix.rs`,
 `tools/wireprobe/`.
 
-**Tests:** `crates/wire-probe/tests/three_column_gate.rs::the_three_columns_agree`,
-`crates/wire-probe/tests/three_column_gate.rs::the_c_column_covers_the_same_configurations`,
-`crates/wire-probe/tests/three_column_gate.rs::the_rust_column_is_byte_for_byte_what_it_was`
+**Tests:** `crates/wire-probe/tests/expected_bytes.rs` (die Rust-Spalte, ein Test je Dialekt),
+`tools/wireprobe/wireprobe-zerodds-c-gen/tests/expected_bytes.rs` und `tools/wireprobe/wireprobe-zerodds-python-gen/tests/expected_bytes.rs` (ein Test je Konfiguration von `zerodds_wire_probe::matrix::CONFIGURATIONS` außer den zwei Überschreibungen, in C ein Modul je Konfiguration mit einem Test je Kodierung, für die die Tabelle Zeilen hat),
+`tools/wireprobe/wireprobe-zerodds-c-gen/tests/configurations.rs::the_c_column_covers_the_same_configurations`
 
 **Status:** done
 
@@ -492,11 +493,10 @@ dieselben Oktette hervorbringen.
 gemessen, nicht neben den anderen gebaut: drei Spalten, die sich
 gemeinsam bewegt haben, ähneln einander weiterhin.
 
-**Repo:** `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`
-(145 740 Slots, Fall für Fall), `crates/wire-probe/src/matrix.rs`.
+**Repo:** `crates/wire-probe/src/matrix.rs` (die Rust-Spalte, die
+`crates/wire-probe/tests/expected_bytes.rs` gegen die Oktette der Hersteller hält).
 
-**Tests:** `crates/wire-probe/tests/reference_columns.rs::the_reference_row_is_the_one_the_baseline_was_taken_with`,
-`crates/wire-probe/tests/reference_columns.rs::the_comparison_bites`,
+**Tests:** `crates/wire-probe/tests/reference_columns.rs::the_comparison_bites`,
 `crates/wire-probe/tests/reference_columns.rs::every_configuration_reaches_the_driver_as_flags`,
 `crates/wire-probe/tests/typescript_column_gate.rs::the_typescript_column_writes_what_the_rust_column_recorded`
 
@@ -515,9 +515,9 @@ Fremdtreiber.
 
 **Repo:** `tests/interop-corpus/`, `crates/wire-probe/src/canonical.rs`.
 
-**Tests:** `crates/wire-probe/tests/interop_corpus.rs::every_case_produces_the_bytes_its_readme_records_in_all_four_modes`,
-`crates/wire-probe/tests/interop_corpus.rs::every_case_goes_through_all_three_emitters`,
-`crates/wire-probe/tests/interop_corpus.rs::every_case_emits_a_keyhash_and_an_encapsulated_payload`
+**Tests:** `crates/wire-probe/tests/interop_corpus.rs::xtypes_7_3_1_2_2_every_case_produces_the_bytes_its_readme_records_in_all_four_modes`,
+`crates/wire-probe/tests/interop_corpus.rs::xcdr2conformance_7_4_every_case_goes_through_all_three_emitters`,
+`crates/wire-probe/tests/interop_corpus.rs::xtypes_7_4_3_3_every_case_emits_a_keyhash_and_an_encapsulated_payload`
 
 **Status:** done
 
@@ -528,8 +528,8 @@ Fremdtreiber.
 **Repo:** `crates/wire-probe/src/canonical.rs`,
 `crates/lang-rules/src/emit/decode.rs`.
 
-**Tests:** `crates/wire-probe/tests/decode_round_trip.rs::every_case_comes_back_the_value_that_went_in`,
-`crates/wire-probe/tests/decode_round_trip.rs::no_prefix_of_a_payload_reads_as_a_shorter_sample`,
+**Tests:** `crates/wire-probe/tests/expected_bytes.rs::specification`,
+`crates/wire-probe/tests/decode_round_trip.rs::xcdr2conformance_7_4_no_prefix_of_a_payload_reads_as_a_shorter_sample`,
 `crates/wire-probe/tests/probe_agreement.rs::every_corpus_case_is_read_the_same_way_by_all_three_probes`
 
 **Status:** done
@@ -538,15 +538,17 @@ Fremdtreiber.
 
 ## Audit-Status
 
-35 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+35 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed
-(20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored`
-verlangen). `cargo test -p zerodds-wire-probe --no-fail-fast` — 350 grün,
-4 failed: `csharp_column_gate`, `java_column_gate` und `java_round_trip`
-scheitern daran, dass die C#- bzw. Java-Sonde auf diesem Rechner nicht
-übersetzt, und `union_label_match::the_shape_with_no_storage_is_left_to_the_clause`
-ist ein bestehender Befund; keine der vier ist in diesem Dokument als
-Nachweis zitiert.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-bindings-conformance-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 72 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-wire-probe --all-targets` (Job `merge-rust-wire-probe`) — 22 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-wireprobe-c-gen --all-targets` (Job `merge-rust-wireprobe-c-gen`) — 11 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-wireprobe-python-gen --all-targets` (Job `merge-rust-wireprobe-python-gen`) — 10 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-c` (Job `merge-codegen-c`) — 3 Tests grün.
+
+120 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

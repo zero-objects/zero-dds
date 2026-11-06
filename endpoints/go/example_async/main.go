@@ -9,9 +9,15 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	zerodds "zeroddsendpoint"
 )
+
+// How long the subscriber waits for the samples; a missing one ends the run
+// with an error instead of an endless wait.
+const timeout = 10 * time.Second
 
 // Reading mirrors an IDL `@final struct Reading { uint32 id; float value; string label; }`.
 type Reading struct {
@@ -67,20 +73,24 @@ func main() {
 		}
 	}
 
-	// Subscriber: range the Samples channel; decode each; graceful stop at `total`.
+	// Subscriber: receive from the Samples channel; decode each; graceful stop
+	// at `total`, an error when the samples do not arrive within `timeout`.
 	reader := zerodds.NewAsyncReader(tr)
-	got := 0
-	for body := range reader.Samples {
-		r := decodeReading(body)
-		fmt.Printf("async reading %d: id=0x%x value=%.1f label=%q\n", got, r.ID, r.Value, r.Label)
-		got++
-		if got == total {
-			reader.Close()
-			break
+	defer reader.Close()
+	deadline := time.After(timeout)
+	for got := 0; got < total; got++ {
+		select {
+		case body, open := <-reader.Samples:
+			if !open {
+				fmt.Fprintf(os.Stderr, "incomplete: the reader stopped after %d of %d samples\n", got, total)
+				os.Exit(1)
+			}
+			r := decodeReading(body)
+			fmt.Printf("async reading %d: id=0x%x value=%.1f label=%q\n", got, r.ID, r.Value, r.Label)
+		case <-deadline:
+			fmt.Fprintf(os.Stderr, "incomplete: got %d of %d samples within %v\n", got, total, timeout)
+			os.Exit(1)
 		}
-	}
-	if got != total {
-		panic(fmt.Sprintf("got %d/%d", got, total))
 	}
 	fmt.Println("ALL OK")
 }

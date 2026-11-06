@@ -333,21 +333,25 @@ fn codec(e: crate::codec::CodecError) -> io::Error {
 mod tests {
     use super::*;
 
+    /// MQTT 3.1.1 §2.2: byte 1 is the packet type in bits 7-4 and its
+    /// flags, then the Remaining Length (§2.2.3), then that many octets.
     #[test]
-    fn frame_and_read_round_trip() {
+    fn mqtt311_2_2_a_frame_is_type_and_flags_remaining_length_and_body() {
         let body = b"\x00\x04test";
         let framed = frame_packet(byte0(ControlPacketType::Publish, 0), body).expect("frame");
+        assert_eq!(framed, b"\x30\x06\x00\x04test");
         let mut cursor = std::io::Cursor::new(framed);
         let (b0, got) = read_packet(&mut cursor).expect("read");
-        assert_eq!(b0 >> 4, ControlPacketType::Publish.to_bits());
+        assert_eq!(b0, 0x30);
         assert_eq!(got, body);
     }
 
     #[test]
-    fn read_packet_handles_multibyte_remaining_length() {
+    fn mqtt311_2_1_read_packet_handles_multibyte_remaining_length() {
         let body = std::vec![0xABu8; 200];
         let framed = frame_packet(byte0(ControlPacketType::Publish, 0), &body).expect("frame");
-        // 200 needs a 2-byte VBI.
+        // §2.2.3: 200 is the two-octet Variable Byte Integer 0xC8 0x01.
+        assert_eq!(framed[..3], [0x30, 0xC8, 0x01]);
         let mut cursor = std::io::Cursor::new(framed);
         let (_, got) = read_packet(&mut cursor).expect("read");
         assert_eq!(got.len(), 200);

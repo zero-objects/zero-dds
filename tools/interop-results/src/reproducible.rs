@@ -15,7 +15,7 @@
 //! Fast CDR 1.0.24's `serializeArray` over a multi-byte numeric element
 //! writes the address of its pointer argument when the byte order is
 //! not the host's. Every verify since they were recorded passed on
-//! them, and `docs/open-rows-breakdown.md` counted them as a wire
+//! them, and `0b2e8df9f6b:docs/open-rows-breakdown.md` counted them as a wire
 //! behaviour of the ROS type support that no setting could reproduce —
 //! because they are not reproducible at all.
 //!

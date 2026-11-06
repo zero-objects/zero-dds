@@ -71,6 +71,18 @@ pub enum ComponentRole {
     ConnectorRole,
 }
 
+/// What an operation in a `home` body is: a `factory` or a `finder`
+/// declaration (OMG IDL 4.2 §7.4.10, rules (175) and (176)). CCM 4.0
+/// §6.7.2.1 and §6.7.2.2 map both onto operations of the home's explicit
+/// interface that return the managed component.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum HomeOperation {
+    /// `factory <identifier> ( … )`.
+    Factory,
+    /// `finder <identifier> ( … )`.
+    Finder,
+}
+
 /// Whether a valuetype state member is `public` or `private`.
 ///
 /// IDL 4.2 §7.4.4, rule (106): a state member is written with one of the
@@ -203,6 +215,9 @@ pub struct CorbaFacet {
     /// a plain valuetype onto neither, so dropping the keyword makes the
     /// clause unapplicable.
     pub is_event_type: bool,
+    /// On an operation of a `home`, whether it is a `factory` or a
+    /// `finder` declaration.
+    pub home_operation: Option<HomeOperation>,
     /// Formal parameters, on a template module.
     pub template_params: Vec<TemplateParam>,
     /// Actual arguments, on a template module instantiation.

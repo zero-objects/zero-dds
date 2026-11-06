@@ -49,9 +49,10 @@ fn reliable_keepall_reader() -> DataReaderQos {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn take_stream_delivers_all_samples_no_loss() {
+async fn async_2_2_take_stream_delivers_all_samples_no_loss() {
     let factory = AsyncDomainParticipantFactory::instance();
-    let p = factory.create_participant(0).expect("participant");
+    let lease = zerodds_test_domains::lease_domain();
+    let p = factory.create_participant(lease.id()).expect("participant");
     let topic = p
         .create_topic::<RawBytes>("AsyncThroughput", TopicQos::default())
         .expect("topic");

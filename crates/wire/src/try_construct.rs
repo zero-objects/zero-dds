@@ -118,6 +118,39 @@ pub fn fit_string(
     }
 }
 
+/// [`fit_string`] over a string lent out of the sample's bytes.
+///
+/// The same rule and the same refusals; a trim is a shorter slice of the
+/// same octets, ending at a character boundary at or before the bound.
+///
+/// # Errors
+/// As [`fit_string`].
+pub fn fit_str(
+    at: usize,
+    value: &str,
+    bound: usize,
+    behaviour: TryConstruct,
+) -> Result<Narrowed<&str>, WireError> {
+    if value.len() <= bound {
+        return Ok(Narrowed::Value(value));
+    }
+    match behaviour {
+        TryConstruct::Discard => Err(WireError::Discarded {
+            at,
+            expected: format!("at most {bound} octets"),
+            found: format!("{} of them", value.len()),
+        }),
+        TryConstruct::UseDefault => Ok(Narrowed::Default),
+        TryConstruct::Trim => {
+            let mut end = bound;
+            while end > 0 && !value.is_char_boundary(end) {
+                end -= 1;
+            }
+            Ok(Narrowed::Value(&value[..end]))
+        }
+    }
+}
+
 /// A sequence that has been read whole, against the receiver's bound.
 ///
 /// Table 17, the `SEQUENCE_TYPE` row: "An object O2 of type T2 can

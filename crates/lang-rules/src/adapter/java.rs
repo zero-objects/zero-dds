@@ -471,29 +471,28 @@ pub fn accessor(base: java::Expr, field: &str) -> java::Expr {
 /// entry) is assigned as before.
 #[must_use]
 pub fn assign(place: java::Expr, value: java::Expr) -> java::Statement {
-    if mapping() == JavaMapping::Psm {
-        if let java::Expr::MethodCall {
+    if mapping() == JavaMapping::Psm
+        && let java::Expr::MethodCall {
             receiver: Some(receiver),
             name,
             args,
         } = &place
+    {
+        if args.is_empty() && name.as_str().starts_with("get") {
+            return java::Statement::Expr(java::Expr::MethodCall {
+                receiver: Some(receiver.clone()),
+                name: Ident::new(&format!("set{}", &name.as_str()["get".len()..])),
+                args: vec![value],
+            });
+        }
+        if name.as_str() == "slot"
+            && is_sequences(receiver)
+            && let [sequence, at] = args.as_slice()
         {
-            if args.is_empty() && name.as_str().starts_with("get") {
-                return java::Statement::Expr(java::Expr::MethodCall {
-                    receiver: Some(receiver.clone()),
-                    name: Ident::new(&format!("set{}", &name.as_str()["get".len()..])),
-                    args: vec![value],
-                });
-            }
-            if name.as_str() == "slot"
-                && is_sequences(receiver)
-                && let [sequence, at] = args.as_slice()
-            {
-                return java::Statement::Expr(sequences_call(
-                    "put",
-                    vec![sequence.clone(), at.clone(), value],
-                ));
-            }
+            return java::Statement::Expr(sequences_call(
+                "put",
+                vec![sequence.clone(), at.clone(), value],
+            ));
         }
     }
     java::Statement::Expr(java::Expr::Binary {
@@ -3515,7 +3514,7 @@ mod tests {
     /// directory is the second half of the check — a file that does not
     /// compile is a materialiser defect, not a corpus defect.
     #[test]
-    fn every_corpus_case_renders_or_names_its_failure() {
+    fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
         let cases = corpus();
         assert!(
             cases.len() > 300,
@@ -3550,7 +3549,7 @@ mod tests {
     }
 
     #[test]
-    fn every_idl_primitive_reaches_the_java_type_that_holds_it() {
+    fn idl4java_7_2_4_1_1_every_idl_primitive_reaches_the_java_type_that_holds_it() {
         let generated = declarations(
             "@final struct P {
                boolean a; octet b; char c; wchar d;
@@ -3581,7 +3580,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sequence_and_an_array_are_both_java_arrays() {
+    fn javapsm_9_1_2_a_sequence_and_an_array_are_both_java_arrays() {
         let generated = declarations(
             "@final struct P { sequence<long> s; long a[3]; long g[2][3]; sequence<string> t; };",
         );
@@ -3595,7 +3594,7 @@ mod tests {
     }
 
     #[test]
-    fn a_map_is_a_java_util_map_over_a_generated_entry_class() {
+    fn idl4java_7_14_3_1_a_map_is_a_java_util_map_over_a_generated_entry_class() {
         let generated = declarations("@final struct P { map<long, string> m; };");
         // The tag is the IDL kind's spelling and not the Java type's:
         // `long` is an `int` here, and the tag is the IDL kind's spelling.
@@ -3632,7 +3631,7 @@ mod tests {
     }
 
     #[test]
-    fn a_map_keyed_by_a_structure_is_a_java_util_map_over_a_class_with_equals() {
+    fn idl4java_7_14_3_1_a_map_keyed_by_a_structure_is_a_java_util_map_over_a_class_with_equals() {
         let generated = declarations("struct K { long a; }; @final struct P { map<K, long> m; };");
         assert!(
             generated.contains("class ZdMap_K_long extends"),
@@ -3674,13 +3673,13 @@ mod tests {
     }
 
     #[test]
-    fn two_maps_of_one_shape_are_one_entry_class() {
+    fn xtypes_7_2_2_4_3_two_maps_of_one_shape_are_one_entry_class() {
         let generated = declarations("@final struct P { map<long, long> a; map<long, long> b; };");
         assert_eq!(generated.matches("class ZdEntry_long_long {").count(), 1);
     }
 
     #[test]
-    fn two_maps_of_one_java_shape_and_two_idl_shapes_are_two_entry_classes() {
+    fn xtypes_7_2_2_4_3_two_maps_of_one_java_shape_and_two_idl_shapes_are_two_entry_classes() {
         // `uint8` and `unsigned short` are both a Java `int` and one and
         // two bytes on the wire. One entry class for both would put one
         // of them out at the other's width.
@@ -3697,7 +3696,7 @@ mod tests {
     }
 
     #[test]
-    fn an_optional_member_is_boxed_and_a_primitive_one_too() {
+    fn xtypes_7_5_1_2_4_3_an_optional_member_is_boxed_and_a_primitive_one_too() {
         let generated = declarations(
             "@mutable struct P {
                @optional long a; @optional string b; @optional long long c;
@@ -3719,7 +3718,7 @@ mod tests {
     }
 
     #[test]
-    fn a_user_annotation_is_an_interface_with_its_defaults_and_a_group() {
+    fn xtypes_7_5_1_2_6_1_a_user_annotation_is_an_interface_with_its_defaults_and_a_group() {
         // §7.5.1.2.6.1: `public @interface <TypeName>` with the members of
         // the IDL annotation, a default only where the IDL gives one, and
         // `public @interface <TypeName>Group { <TypeName>[] value(); }`.
@@ -3747,7 +3746,8 @@ mod tests {
     }
 
     #[test]
-    fn an_applied_annotation_sits_on_the_java_element_and_several_go_through_the_group() {
+    fn xtypes_7_5_1_2_6_1_an_applied_annotation_sits_on_the_java_element_and_several_go_through_the_group()
+     {
         let generated = declarations(
             "@annotation Note { string text default \"none\"; long level; };\n\
              @Note(level = 3) @final struct P { @Note(text = \"a\", level = 1) \
@@ -3767,7 +3767,7 @@ mod tests {
     }
 
     #[test]
-    fn an_annotation_on_a_module_and_on_a_constant_reaches_the_java_element() {
+    fn xtypes_7_5_1_2_6_1_an_annotation_on_a_module_and_on_a_constant_reaches_the_java_element() {
         let generated = declarations(
             "@annotation Note { long level; };\n\
              @Note(level = 5) module M { @Note(level = 6) const long LIMIT = 3; \
@@ -3784,7 +3784,7 @@ mod tests {
     }
 
     #[test]
-    fn an_external_member_is_an_object_reference_and_a_primitive_one_is_boxed() {
+    fn xtypes_7_5_1_2_3_4_an_external_member_is_an_object_reference_and_a_primitive_one_is_boxed() {
         let generated = declarations(
             "@final struct P { @external short a; @external long b; @external string c; \
              @external sequence<long> d; @external boolean e; };",
@@ -3809,7 +3809,7 @@ mod tests {
     }
 
     #[test]
-    fn a_union_is_a_class_with_a_discriminator_and_one_field_per_case() {
+    fn idl4java_7_2_4_3_2_a_union_is_a_class_with_a_discriminator_and_one_field_per_case() {
         // Two cases of one type: a field each, which is what a class can
         // hold and an overlay could not.
         let generated = declarations(
@@ -3831,7 +3831,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one() {
+    fn xtypes_7_5_1_2_1_3_an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one() {
         let generated = declarations(
             "enum Colour { RED, GREEN, BLUE };
              @final struct P { Colour c; };",
@@ -3860,7 +3860,7 @@ mod tests {
     }
 
     #[test]
-    fn a_construct_with_no_java_data_form_is_named_and_not_left_out() {
+    fn xtypes_7_4_a_construct_with_no_java_data_form_is_named_and_not_left_out() {
         // The member is not dropped and no `Object` is substituted for
         // it: a class missing a field that reports success is the defect
         // this materialiser is arranged against.
@@ -3875,7 +3875,7 @@ mod tests {
     }
 
     #[test]
-    fn an_explicit_enumerator_value_is_written_out() {
+    fn xtypes_7_5_1_2_1_3_an_explicit_enumerator_value_is_written_out() {
         let generated = declarations("enum E { @value(-1) LOW, @value(70000) HIGH };");
         assert!(
             generated.contains("public static final int _LOW = -1;"),
@@ -3888,7 +3888,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bitmask_takes_the_holder_its_bound_calls_for() {
+    fn xtypes_7_5_1_2_2_a_bitmask_takes_the_holder_its_bound_calls_for() {
         let narrow =
             declarations("@bit_bound(8) bitmask Small { @position(0) A, @position(7) B };");
         assert!(
@@ -3903,7 +3903,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bitset_is_a_class_of_one_field_per_bitfield() {
+    fn idl4java_7_14_3_2_a_bitset_is_a_class_of_one_field_per_bitfield() {
         let generated = declarations(
             "bitset Packed { bitfield<3> low; bitfield<5> high; };
              @final struct P { Packed value; };",
@@ -3917,7 +3917,7 @@ mod tests {
     }
 
     #[test]
-    fn a_fixed_is_a_bigdecimal() {
+    fn idl4java_7_2_4_2_4_a_fixed_is_a_bigdecimal() {
         let generated = declarations(
             "typedef fixed<9,3> Money;
              @final struct P { Money amount; };",
@@ -3929,7 +3929,7 @@ mod tests {
     }
 
     #[test]
-    fn a_typedef_declares_nothing_and_says_so() {
+    fn idl4java_7_2_4_6_a_typedef_declares_nothing_and_says_so() {
         let generated = declarations(
             "typedef sequence<long> Row;
              @final struct P { Row r; };",
@@ -3939,7 +3939,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_is_a_nested_class_and_two_modules_do_not_collide() {
+    fn idl4java_7_2_2_a_module_is_a_nested_class_and_two_modules_do_not_collide() {
         let generated = declarations(
             "module a { @final struct P { long x; }; };
              module b { @final struct P { double y; }; };
@@ -3952,7 +3952,7 @@ mod tests {
     }
 
     #[test]
-    fn a_module_reopened_beside_a_nested_one_is_one_class() {
+    fn idl4java_7_2_2_a_module_reopened_beside_a_nested_one_is_one_class() {
         // `module common { struct Robot; module util { … } }` — the
         // arrangement that produced two classes of one name when the
         // grouping was by module id rather than by path.
@@ -3974,7 +3974,7 @@ mod tests {
     }
 
     #[test]
-    fn an_identifier_that_is_a_java_keyword_is_escaped() {
+    fn idl4java_7_1_1_0_an_identifier_that_is_a_java_keyword_is_escaped() {
         let generated = declarations(
             "module package {
                enum class { template, virtual, friend };
@@ -3994,14 +3994,14 @@ mod tests {
     }
 
     #[test]
-    fn a_name_that_would_capture_the_qualified_references_is_refused() {
+    fn idl_7_2_3_a_name_that_would_capture_the_qualified_references_is_refused() {
         let failure = render("module java { @final struct P { long x; }; };", "test.idl")
             .expect_err("a module named java is refused");
         assert!(failure.contains("java"), "{failure}");
     }
 
     #[test]
-    fn a_declaration_named_after_the_outer_class_is_refused() {
+    fn idl_7_5_2_a_declaration_named_after_the_outer_class_is_refused() {
         let failure = render("@final struct ZdTypes { long x; };", "test.idl")
             .expect_err("a type named after the outer class is refused");
         assert!(failure.contains("ZdTypes"), "{failure}");

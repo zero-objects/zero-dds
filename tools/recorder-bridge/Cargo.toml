@@ -8,7 +8,7 @@ repository.workspace = true
 authors.workspace = true
 description = "Live recorder daemon: subscribes to a configured set of DDS topics and writes received samples to a .zddsrec file."
 homepage = "https://zerodds.org"
-documentation = "https://docs.rs/zerodds-recorder-bridge"
+documentation = "https://zerodds.org/docs/tools/recorder-bridge.html"
 readme = "README.md"
 keywords = ["dds", "recording", "diagnostics", "monitoring", "cli"]
 categories = ["command-line-utilities", "development-tools::debugging"]
@@ -23,4 +23,8 @@ path = "src/main.rs"
 
 [dependencies]
 zerodds-recorder = { version = "1.0.0-rc.7", path = "../../crates/recorder" }
-zerodds = { version = "1.0.0-rc.7", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }
+# The runtime the readers live in: a sample comes with the representation
+# identifier of its encapsulation header, which the recording keeps.
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../../crates/dcps" }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../../crates/rtps" }
+zerodds-cli-common = { version = "1.0.0-rc.7", path = "../cli-common" }

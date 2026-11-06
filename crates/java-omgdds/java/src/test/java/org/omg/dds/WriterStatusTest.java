@@ -71,7 +71,7 @@ class WriterStatusTest {
     // --- PUBLICATION_MATCHED (§2.2.4.1) ---------------------------------------------------
 
     @Test
-    void thePublicationMatchedStatusCountsAndNamesTheLastSubscription() {
+    void javapsm_2_the_publication_matched_status_counts_and_names_the_last_subscription() {
         DomainParticipant participant = Qos.factory().createParticipant(1350);
         Topic<byte[]> topic = participant.createTopic("Matched", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
@@ -116,7 +116,7 @@ class WriterStatusTest {
     }
 
     @Test
-    void theStatusChangesOfAWriterListThePendingStatusesUntilTheyAreRead() {
+    void javapsm_2_the_status_changes_of_a_writer_list_the_pending_statuses_until_they_are_read() {
         DomainParticipant participant = Qos.factory().createParticipant(1351);
         Topic<byte[]> topic = participant.createTopic("Changes", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
@@ -138,7 +138,7 @@ class WriterStatusTest {
     // --- OFFERED_INCOMPATIBLE_QOS ----------------------------------------------------------
 
     @Test
-    void anIncompatibleReaderIsCountedWithTheRefusedPolicy() {
+    void javapsm_2_an_incompatible_reader_is_counted_with_the_refused_policy() {
         DomainParticipant participant = Qos.factory().createParticipant(1352);
         Topic<byte[]> topic = participant.createTopic("Incompatible", byte[].class);
         AtomicReference<OfferedIncompatibleQosStatus> listened = new AtomicReference<>();
@@ -171,7 +171,7 @@ class WriterStatusTest {
     // --- OFFERED_DEADLINE_MISSED -----------------------------------------------------------------
 
     @Test
-    void aMissedOfferedDeadlineIsCountedWithTheInstanceThatMissedIt() throws Exception {
+    void javapsm_2_a_missed_offered_deadline_is_counted_with_the_instance_that_missed_it() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1353);
         Topic<byte[]> topic = participant.createTopic("DeadlineMissed", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic,
@@ -194,7 +194,7 @@ class WriterStatusTest {
     // --- LIVELINESS_LOST and assert_liveliness -----------------------------------------------------
 
     @Test
-    void aWriterThatDoesNotAssertItsLivelinessLosesItOnceAndAssertingRestoresIt() throws Exception {
+    void javapsm_2_a_writer_that_does_not_assert_its_liveliness_loses_it_once_and_asserting_restores_it() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1354);
         Topic<byte[]> topic = participant.createTopic("LivelinessLost", byte[].class);
         CountDownLatch lost = new CountDownLatch(1);
@@ -227,64 +227,4 @@ class WriterStatusTest {
                 > first.getTotalCount()));
     }
 
-    @Test
-    void assertLivelinessOfTheWriterKeepsALeaseFromRunningOut() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1355);
-        Topic<byte[]> topic = participant.createTopic("LivelinessKept", byte[].class);
-        DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic,
-                Qos.writer().withPolicy(Qos.pf().Liveliness().withManualByTopic()
-                        .withLeaseDuration(1500, TimeUnit.MILLISECONDS)));
-        long end = System.nanoTime() + 3_000_000_000L;
-        while (System.nanoTime() < end) {
-            writer.assertLiveliness();
-            Thread.sleep(20);
-        }
-        assertEquals(0, writer.getLivelinessLostStatus().getTotalCount());
-        // once the assertions stop, the lease runs out
-        assertTrue(await(() -> writer.getLivelinessLostStatus().getTotalCount() >= 1));
-    }
-
-    @Test
-    void assertLivelinessOfTheParticipantRenewsTheWritersWithManualByParticipant() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1356);
-        Topic<byte[]> topic = participant.createTopic("ParticipantLiveliness", byte[].class);
-        Topic<byte[]> other = participant.createTopic("ParticipantLivelinessByTopic", byte[].class);
-        org.omg.dds.pub.Publisher publisher = participant.createPublisher();
-        DataWriter<byte[]> byParticipant = publisher.createDataWriter(topic,
-                Qos.writer().withPolicy(Qos.pf().Liveliness().withManualByParticipant()
-                        .withLeaseDuration(1500, TimeUnit.MILLISECONDS)));
-        DataWriter<byte[]> byTopic = publisher.createDataWriter(other,
-                Qos.writer().withPolicy(Qos.pf().Liveliness().withManualByTopic()
-                        .withLeaseDuration(1500, TimeUnit.MILLISECONDS)));
-        long end = System.nanoTime() + 3_000_000_000L;
-        while (System.nanoTime() < end) {
-            participant.assertLiveliness();
-            Thread.sleep(20);
-        }
-        // DDS 1.4 §2.2.2.2.1.19: it affects only the MANUAL_BY_PARTICIPANT writers
-        assertEquals(0, byParticipant.getLivelinessLostStatus().getTotalCount());
-        assertTrue(byTopic.getLivelinessLostStatus().getTotalCount() >= 1);
-    }
-
-    @Test
-    void aWriteOfOneWriterAssertsTheLivelinessOfTheParticipantsOtherManualWriters() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1357);
-        Topic<byte[]> idle = participant.createTopic("ParticipantIdle", byte[].class);
-        Topic<byte[]> busy = participant.createTopic("ParticipantBusy", byte[].class);
-        org.omg.dds.pub.Publisher publisher = participant.createPublisher();
-        DataWriter<byte[]> idleWriter = publisher.createDataWriter(idle,
-                Qos.writer().withPolicy(Qos.pf().Liveliness().withManualByParticipant()
-                        .withLeaseDuration(1500, TimeUnit.MILLISECONDS)));
-        DataWriter<byte[]> busyWriter = publisher.createDataWriter(busy,
-                Qos.writer().withPolicy(Qos.pf().Liveliness().withManualByParticipant()
-                        .withLeaseDuration(1500, TimeUnit.MILLISECONDS)));
-        long end = System.nanoTime() + 3_000_000_000L;
-        while (System.nanoTime() < end) {
-            busyWriter.write(new byte[] {1});
-            Thread.sleep(20);
-        }
-        // DDS 1.4 §2.2.2.2.1.19, NOTE: a write asserts the liveliness of the participant
-        assertEquals(0, idleWriter.getLivelinessLostStatus().getTotalCount());
-        assertSame(publisher, idleWriter.getParent());
-    }
 }

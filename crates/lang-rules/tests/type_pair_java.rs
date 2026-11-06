@@ -180,7 +180,7 @@ fn input() -> String {
 }
 
 #[test]
-fn the_generated_pair_declares_the_support_and_uses_the_runtimes_headers() {
+fn rpc_7_3_1_4_the_generated_pair_declares_the_support_and_uses_the_runtimes_headers() {
     let units = units(&input());
     let types = &units[0].1;
     let services = &units[1].1;
@@ -261,7 +261,7 @@ fn a_type_that_refers_to_a_common_type_has_its_codec() {
 }
 
 #[test]
-fn the_enhanced_pair_has_no_header_and_selects_the_enhanced_mapping() {
+fn rpc_7_3_1_4_the_enhanced_pair_has_no_header_and_selects_the_enhanced_mapping() {
     let units = units(
         "module pairs {
            @RPCRequestType struct Req { long x; };

@@ -39,7 +39,7 @@ fn find<'a>(doc: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
 }
 
 #[test]
-fn idl_types_are_described_with_members_keys_enumerators_and_aliases() {
+fn capi_14_2_idl_types_are_described_with_members_keys_enumerators_and_aliases() {
     let idl = "module m { enum Color { RED, @value(5) GREEN }; typedef string<8> Label; \
                @final struct Track { @key long id; Label lbl; sequence<double, 4> xs; \
                @optional Color shade; long grid[2][3]; }; \
@@ -81,7 +81,7 @@ fn idl_types_are_described_with_members_keys_enumerators_and_aliases() {
 }
 
 #[test]
-fn a_dds_xml_type_library_is_described_like_the_idl_it_stands_for() {
+fn capi_14_2_a_dds_xml_type_library_is_described_like_the_idl_it_stands_for() {
     // Only the spellings of DDS-XML 1.0 (`dds-xml_type_definitions_nonamespace.xsd`): `int32`,
     // `string`, `type="nonBasic"` with `nonBasicTypeName` for a named type, `extensibility`
     // from `final|append|mutable`.
@@ -109,7 +109,7 @@ fn a_dds_xml_type_library_is_described_like_the_idl_it_stands_for() {
 }
 
 #[test]
-fn a_document_that_cannot_be_read_and_an_unknown_scheme_are_refused() {
+fn capi_14_2_a_document_that_cannot_be_read_and_an_unknown_scheme_are_refused() {
     assert_eq!(load("gopher://example.org/t.idl").unwrap_err(), UNSUPPORTED);
     assert_eq!(
         load("file:///nonexistent/zerodds_types.idl").unwrap_err(),
@@ -125,7 +125,7 @@ fn a_document_that_cannot_be_read_and_an_unknown_scheme_are_refused() {
 }
 
 #[test]
-fn bitmasks_unions_with_a_default_and_enum_discriminators_are_described() {
+fn psmcxx_2_1_bitmasks_unions_with_a_default_and_enum_discriminators_are_described() {
     let idl = "module m { enum E { X, Y, Z }; \
                @bit_bound(16) bitmask Perm { READ, @position(3) WRITE, EXEC }; \
                union Wide switch (long) { case 1: long a; case 2: case 5: string b; default: double c; }; \

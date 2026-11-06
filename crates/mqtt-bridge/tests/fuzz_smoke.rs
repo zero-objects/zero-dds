@@ -51,7 +51,7 @@ fn fuzz_decoder<F: FnMut(&[u8])>(seed: u32, iterations: usize, mut f: F) {
 }
 
 #[test]
-fn fuzz_decode_publish_no_panic() {
+fn mqttbridge_12_1_fuzz_decode_publish_no_panic() {
     fuzz_decoder(0x4D51_5054, 3_000, |bytes| {
         let _ = decode_publish(bytes);
     });

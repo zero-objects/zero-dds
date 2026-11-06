@@ -10,8 +10,8 @@ Covers, over real (live) DomainParticipant/DataWriter/DataReader:
   - ContentFilteredTopic predicate filtering — §2.2.2.5.4.
   - BytesWriter lifecycle method presence — §2.2.2.4.2.
 
-Live discovery uses `create_participant`; each test runs on its own domain
-to avoid cross-test bleed.
+Live discovery uses `create_participant`; each test runs on a domain of its
+own, leased (`leased_domain`, conftest.py).
 """
 
 from __future__ import annotations
@@ -27,14 +27,6 @@ pytestmark = pytest.mark.skipif(
     not getattr(zerodds, "_CORE_AVAILABLE", False),
     reason="zerodds._core not compiled — maturin develop needed",
 )
-
-_DOM = [40]
-
-
-def _domain() -> int:
-    _DOM[0] += 1
-    return _DOM[0]
-
 
 def _drain_info(reader, timeout=3.0):
     out = []
@@ -57,10 +49,10 @@ def _drain_info(reader, timeout=3.0):
 # ---------------------------------------------------------------------------
 
 
-def test_bytes_take_with_info_returns_sample_info():
+def py_1_2_8_bytes_take_with_info_returns_sample_info(leased_domain):
     """§2.2.2.5.3.5 — take_with_info yields (bytes, SampleInfo) with an
     ALIVE instance_state for live data."""
-    p = _core.DomainParticipantFactory.instance().create_participant(_domain())
+    p = _core.DomainParticipantFactory.instance().create_participant(leased_domain)
     t = p.create_bytes_topic("InfoT")
     w = p.create_publisher().create_bytes_writer(t)
     r = p.create_subscriber().create_bytes_reader(t)
@@ -77,19 +69,15 @@ def test_bytes_take_with_info_returns_sample_info():
     assert info.view_state in ("New", "NotNew")
 
 
-def test_sample_info_exposed_in_module():
-    assert hasattr(_core, "SampleInfo")
-
-
 # ---------------------------------------------------------------------------
 # Keyed lifecycle — dispose → NOT_ALIVE_DISPOSED
 # ---------------------------------------------------------------------------
 
 
-def test_keyed_dispose_observed_as_not_alive_disposed():
+def test_keyed_dispose_observed_as_not_alive_disposed(leased_domain):
     """§2.2.2.4.2.10 dispose + §2.2.2.5.1.13 — the reader observes a
     NotAliveDisposed marker (valid_data False) carrying only the key."""
-    p = _core.DomainParticipantFactory.instance().create_participant(_domain())
+    p = _core.DomainParticipantFactory.instance().create_participant(leased_domain)
     t = p.create_keyed_topic("KeyT")
     w = p.create_publisher().create_keyed_writer(t)
     r = p.create_subscriber().create_keyed_reader(t)
@@ -116,9 +104,9 @@ def test_keyed_dispose_observed_as_not_alive_disposed():
     assert 1 in {s.id for (s, _info) in disposed}
 
 
-def test_keyed_register_instance_returns_real_handle():
+def py_2_4_keyed_register_instance_returns_real_handle(leased_domain):
     """§2.2.2.4.2.5 — register_instance returns a non-nil per-key handle."""
-    p = _core.DomainParticipantFactory.instance().create_participant(_domain())
+    p = _core.DomainParticipantFactory.instance().create_participant(leased_domain)
     t = p.create_keyed_topic("KeyRegT")
     w = p.create_publisher().create_keyed_writer(t)
     h1 = w.register_instance(_core.KeyedReading(id=5))
@@ -134,10 +122,10 @@ def test_keyed_register_instance_returns_real_handle():
 # ---------------------------------------------------------------------------
 
 
-def test_reader_liveliness_changed_status_getter():
+def test_reader_liveliness_changed_status_getter(leased_domain):
     """§2.2.4.2.14 — the reader exposes liveliness_changed_status as a
     (alive_now, alive_count, not_alive_count) tuple."""
-    p = _core.DomainParticipantFactory.instance().create_participant(_domain())
+    p = _core.DomainParticipantFactory.instance().create_participant(leased_domain)
     t = p.create_bytes_topic("LiveStatusT")
     r = p.create_subscriber().create_bytes_reader(t)
     st = r.liveliness_changed_status()
@@ -151,10 +139,10 @@ def test_reader_liveliness_changed_status_getter():
 # ---------------------------------------------------------------------------
 
 
-def test_content_filtered_topic_filters_samples():
+def py_1_2_6_content_filtered_topic_filters_samples(leased_domain):
     """§2.2.2.5.4 — a CFT predicate over the raw payload discards
     non-matching samples on the reader's take path."""
-    p = _core.DomainParticipantFactory.instance().create_participant(_domain())
+    p = _core.DomainParticipantFactory.instance().create_participant(leased_domain)
     t = p.create_bytes_topic("CftT")
 
     def keep(raw: bytes) -> bool:
@@ -181,8 +169,8 @@ def test_content_filtered_topic_filters_samples():
     assert all(b[0] % 2 == 0 for b in out)
 
 
-def test_cft_empty_name_rejected():
-    p = _core.DomainParticipantFactory.instance().create_participant(_domain())
+def test_cft_empty_name_rejected(leased_domain):
+    p = _core.DomainParticipantFactory.instance().create_participant(leased_domain)
     t = p.create_bytes_topic("CftBadT")
     with pytest.raises(Exception):
         p.create_bytes_contentfilteredtopic("", t, lambda b: True)
@@ -193,8 +181,8 @@ def test_cft_empty_name_rejected():
 # ---------------------------------------------------------------------------
 
 
-def test_bytes_writer_lifecycle_methods_present():
-    p = _core.DomainParticipantFactory.instance().create_participant_offline(_domain())
+def py_1_2_7_bytes_writer_lifecycle_methods_present():
+    p = _core.DomainParticipantFactory.instance().create_participant_offline(40)
     t = p.create_bytes_topic("ByteLifeT")
     w = p.create_publisher().create_bytes_writer(t)
     for m in ("register_instance", "dispose", "unregister_instance", "lookup_instance"):

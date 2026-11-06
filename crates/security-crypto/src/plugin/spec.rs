@@ -2380,7 +2380,7 @@ mod tests {
     /// zero everywhere else; a nil identity or permissions handle is a
     /// failure.
     #[test]
-    fn register_local_participant_fills_the_adjusted_algorithm_info() {
+    fn security_9_5_1_8_register_local_participant_fills_the_adjusted_algorithm_info() {
         let mut p = plugin();
         let mut config = pconfig(AXK_ENC);
         config.is_discovery_protected = true;
@@ -2439,7 +2439,7 @@ mod tests {
     /// Table 78 (and the plugin's configuration): the plugin accepts only the
     /// algorithms of the resulting supported_mask.
     #[test]
-    fn the_plugin_accepts_only_the_supported_algorithms() {
+    fn security_9_5_1_8_1_the_plugin_accepts_only_the_supported_algorithms() {
         let mut p = plugin();
         let mut config = pconfig(AXK_ENC);
         config.algorithm_info.symmetric_cipher.supported_mask = CBIT_AES256_GCM;
@@ -2478,7 +2478,7 @@ mod tests {
     /// setting of the RTPS Protection Kind", 128 or 256 bits by the
     /// property.
     #[test]
-    fn the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width() {
+    fn security_9_5_1_8_the_participant_key_is_gcm_or_gmac_by_the_protection_kind_and_width() {
         for (attrs, cipher, expected) in [
             (AXK_ENC, None, Suite::Aes256Gcm),
             (0, None, Suite::Aes256Gmac),
@@ -2507,7 +2507,7 @@ mod tests {
     /// of the ParticipantKeyMaterial; under origin authentication a new
     /// receiver-specific key for each remote participant, without it none.
     #[test]
-    fn the_participant2participant_material_matches_the_participant_key() {
+    fn security_9_5_1_8_the_participant2participant_material_matches_the_participant_key() {
         let mut a = side(AXK_ENC | AXK_ORIGIN, &[]);
         let second =
             a.p.register_matched_remote_participant(
@@ -2592,7 +2592,7 @@ mod tests {
     /// of the submessages first; `adjusted_algorithm_info.required_mask` has
     /// the algorithms used.
     #[test]
-    fn a_datawriter_has_one_or_two_key_materials() {
+    fn security_9_5_1_8_a_datawriter_has_one_or_two_key_materials() {
         let mut a = side(AXK_ENC, &[]);
         let mut reg = |cfg: EndpointSecurityConfig, props: &[Property]| {
             let (w, info) =
@@ -2658,7 +2658,7 @@ mod tests {
     /// the cryptographic material needed to verify and decode the RTPS
     /// SubMessage but not the CryptoContent".
     #[test]
-    fn a_relay_only_reader_gets_the_submessage_key_alone() {
+    fn security_9_5_1_8_a_relay_only_reader_gets_the_submessage_key_alone() {
         let mut a = side(AXK_ENC, &[]);
         let (w, _) =
             a.p.register_local_datawriter(
@@ -2700,7 +2700,7 @@ mod tests {
     /// specific key of its own; the Reader2WriterKeyMaterial has the kind,
     /// salt, key and key id of the ReaderKeyMaterial.
     #[test]
-    fn the_endpoints_get_receiver_specific_keys_under_origin_authentication() {
+    fn security_9_5_1_8_the_endpoints_get_receiver_specific_keys_under_origin_authentication() {
         let mut a = side(AXK_ENC, &[]);
         let cfg = econfig(true, false, SUB_ENC | SUB_ORIGIN);
         let (w, _) =
@@ -2773,7 +2773,7 @@ mod tests {
     /// `decode_datawriter_submessage`; a DataReader's through the reader
     /// operations with the category DATAREADER_SUBMESSAGE.
     #[test]
-    fn submessages_go_through_preprocess_and_decode() {
+    fn security_9_5_1_7_submessages_go_through_preprocess_and_decode() {
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
         let cfg = econfig(true, false, SUB_ENC | SUB_ORIGIN);
@@ -2850,7 +2850,7 @@ mod tests {
     /// recognized kinds", and fails for a key that no handle of the sender
     /// is associated with.
     #[test]
-    fn preprocess_refuses_unknown_kinds_and_unknown_keys() {
+    fn security_9_5_1_10_preprocess_refuses_unknown_kinds_and_unknown_keys() {
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
         let cfg = econfig(true, false, SUB_ENC);
@@ -2914,7 +2914,7 @@ mod tests {
     /// `decode_serialized_payload`, with the payload key of a writer that has
     /// two; a writer whose payload is not protected transforms nothing.
     #[test]
-    fn the_serialized_payload_goes_through_the_interface() {
+    fn security_9_5_1_10_the_serialized_payload_goes_through_the_interface() {
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
         let both = econfig(true, true, SUB_ENC | PAYLOAD_ENC);
@@ -3044,7 +3044,7 @@ mod tests {
     /// the key of one remote writer does not decode what another writer, or
     /// a reader that is not the one matched, sends or receives.
     #[test]
-    fn a_key_is_taken_only_from_the_entities_it_is_associated_with() {
+    fn security_9_5_1_10_a_key_is_taken_only_from_the_entities_it_is_associated_with() {
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
         let cfg = econfig(true, true, SUB_ENC | PAYLOAD_ENC);
@@ -3098,7 +3098,7 @@ mod tests {
     /// algorithm as well as the protection"; "If the kind is not the
     /// expected one, the operation shall fail".
     #[test]
-    fn a_kind_other_than_the_expected_one_is_refused() {
+    fn security_10_5_3_3_1_a_kind_other_than_the_expected_one_is_refused() {
         let mut a = side(0, &[]);
         let mut b = side(AXK_ENC, &[]);
         // The sender signs, the receiver expects encryption.
@@ -3295,7 +3295,7 @@ mod tests {
     /// §9.5.1.10.4, Table 80, 1): `encode_rtps_message` and
     /// `decode_rtps_message` with the INFO_SRC form, GCM and GMAC.
     #[test]
-    fn an_rtps_message_goes_through_the_interface_without_aad() {
+    fn security_9_5_1_10_an_rtps_message_goes_through_the_interface_without_aad() {
         for attrs in [AXK_ENC, 0, AXK_ENC | AXK_ORIGIN, AXK_ORIGIN] {
             let mut a = side(attrs, &[]);
             let mut b = side(attrs, &[]);
@@ -3348,7 +3348,8 @@ mod tests {
     /// goes in, a tampered header fails, and `messageLength` and
     /// `messageChecksum` of the extension describe the encoded message.
     #[test]
-    fn an_rtps_message_goes_through_the_interface_with_aad_and_a_header_extension() {
+    fn security_10_5_3_3_1_an_rtps_message_goes_through_the_interface_with_aad_and_a_header_extension()
+     {
         let aad = [Property::local(PROP_RTPS_AAD, "true")];
         for attrs in [AXK_ENC, 0, AXK_ENC | AXK_ORIGIN] {
             let mut a = side(attrs, &aad);
@@ -3420,7 +3421,7 @@ mod tests {
     /// readers into the encoded submessage and replaces those of the call
     /// before, the common MAC and the content staying.
     #[test]
-    fn the_receiver_specific_macs_follow_the_list_index() {
+    fn security_9_5_1_10_the_receiver_specific_macs_follow_the_list_index() {
         let n = RECEIVER_MACS_PER_MESSAGE + 4;
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
@@ -3538,7 +3539,7 @@ mod tests {
     /// pre-shared key material of §10.5.2.1.3; the flags A and P; refused
     /// without a configured passphrase.
     #[test]
-    fn transform_with_psk_uses_the_pre_shared_key() {
+    fn security_9_5_1_10_transform_with_psk_uses_the_pre_shared_key() {
         let props = [
             Property::local(PROP_DOMAIN_ID, "201"),
             Property::local(
@@ -3639,7 +3640,7 @@ mod tests {
     /// receiver-specific key. It is used after `activate_key_revision`; the
     /// receiver decodes both revisions.
     #[test]
-    fn a_key_revision_keeps_the_key_id_and_changes_the_keys() {
+    fn security_9_4_2_4_a_key_revision_keeps_the_key_id_and_changes_the_keys() {
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
         let cfg = econfig(true, true, SUB_ENC | PAYLOAD_ENC | SUB_ORIGIN);
@@ -3757,7 +3758,7 @@ mod tests {
     /// revised with the entities' and the revised participant token carries
     /// the new revision.
     #[test]
-    fn the_participant_key_is_revised_with_the_entities() {
+    fn security_9_5_1_6_the_participant_key_is_revised_with_the_entities() {
         let mut a = side(AXK_ENC | AXK_ORIGIN, &[]);
         let mut b = side(AXK_ENC | AXK_ORIGIN, &[]);
         send_participant_key(&mut a, &mut b);
@@ -3795,7 +3796,7 @@ mod tests {
 
     /// §9.5.1.8.7: the key material of the volatile endpoints is not revised.
     #[test]
-    fn the_volatile_endpoints_are_not_revised() {
+    fn security_9_5_1_8_the_volatile_endpoints_are_not_revised() {
         let mut a = side(AXK_ENC, &[]);
         let cfg = econfig(true, false, SUB_ENC);
         let (vw, _) =
@@ -3814,7 +3815,7 @@ mod tests {
     /// §9.5.1.8.9 to §9.5.1.8.11: the unregister operations release the key
     /// material; an unknown handle is a failure.
     #[test]
-    fn unregistering_releases_the_key_material_and_the_matches() {
+    fn security_9_5_1_8_unregistering_releases_the_key_material_and_the_matches() {
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
         let cfg = econfig(true, true, SUB_ENC | PAYLOAD_ENC);
@@ -3879,7 +3880,7 @@ mod tests {
     /// §9.5.1.9.7: `return_crypto_tokens` takes back tokens this plugin
     /// issued, once.
     #[test]
-    fn crypto_tokens_are_returned_once() {
+    fn security_9_5_1_9_crypto_tokens_are_returned_once() {
         let mut a = side(AXK_ENC, &[]);
         let t =
             a.p.create_local_participant_crypto_tokens(a.local, a.remote, 0)
@@ -3904,7 +3905,7 @@ mod tests {
     /// SharedSecret, made by the registration of the remote endpoint; the
     /// list has one element; nothing is exchanged.
     #[test]
-    fn the_volatile_endpoints_use_the_key_of_the_shared_secret() {
+    fn security_9_5_1_8_the_volatile_endpoints_use_the_key_of_the_shared_secret() {
         let mut a = side(AXK_ENC, &[]);
         let mut b = side(AXK_ENC, &[]);
         let cfg = econfig(true, false, SUB_ENC);
@@ -3995,7 +3996,7 @@ mod tests {
     /// Table 81: the InitializationVectorSuffix is an initially random value
     /// that changes with each operation under the same key.
     #[test]
-    fn the_initialization_vector_suffix_starts_random_and_counts() {
+    fn security_10_5_3_3_2_the_initialization_vector_suffix_starts_random_and_counts() {
         let suffix = |h: &[u8]| u64::from_be_bytes(h[12..20].try_into().unwrap());
         let mut starts = Vec::new();
         for _ in 0..4 {

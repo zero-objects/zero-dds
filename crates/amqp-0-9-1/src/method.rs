@@ -757,193 +757,286 @@ pub fn tx_rollback() -> Vec<u8> {
 mod tests {
     use super::*;
 
+    // The expected octets of each method are written from the protocol's
+    // XML definitions (`amqp0-9-1.xml`, RabbitMQ's `amqp0-9-1.extended.xml`
+    // for `basic.nack` and the `confirm` class): class-id and method-id as
+    // shorts, then the fields in their order, a shortstr as one length
+    // octet and the octets, adjacent bits in one octet from the low bit
+    // (§4.2.5.2), an empty table as the long-uint 0.
+
+    /// `class-id method-id` followed by `args`.
+    fn method(class: u16, method: u16, args: &[u8]) -> Vec<u8> {
+        let mut out = class.to_be_bytes().to_vec();
+        out.extend_from_slice(&method.to_be_bytes());
+        out.extend_from_slice(args);
+        out
+    }
+
+    /// §1.4 (connection.start-ok 10/11): client-properties (table),
+    /// mechanism (shortstr), response (longstr), locale (shortstr); the
+    /// PLAIN response is `\0user\0password` (RFC 4616).
     #[test]
-    fn start_ok_carries_plain_response() {
-        let p = connection_start_ok("zerodds", "secret").unwrap();
-        assert_eq!(method_id(&p).unwrap(), id::CONNECTION_START_OK);
-        // The PLAIN response \0zerodds\0secret must appear verbatim.
-        let needle = b"\x00zerodds\x00secret";
-        assert!(
-            p.windows(needle.len()).any(|w| w == needle),
-            "PLAIN response must be present"
+    fn amqp091_1_4_start_ok_is_properties_mechanism_plain_response_and_locale() {
+        let mut args = vec![0x00, 0x00, 0x00, 0x24];
+        args.extend_from_slice(b"\x07productS\x00\x00\x00\x07ZeroDDS");
+        args.extend_from_slice(b"\x07versionS\x00\x00\x00\x031.0");
+        args.extend_from_slice(b"\x05PLAIN");
+        args.extend_from_slice(b"\x00\x00\x00\x0f\x00zerodds\x00secret");
+        args.extend_from_slice(b"\x05en_US");
+        assert_eq!(
+            connection_start_ok("zerodds", "secret").unwrap(),
+            method(10, 11, &args)
         );
     }
 
+    /// §1.4 (connection.tune 10/30, tune-ok 10/31): channel-max (short),
+    /// frame-max (long), heartbeat (short).
     #[test]
-    fn tune_ok_roundtrips_params() {
-        let tune = {
-            // simulate a connection.tune payload: class/method + params.
-            let mut w = Writer::new();
-            w.u16(10).u16(30).u16(2047).u32(131072).u16(60);
-            w.into_bytes()
-        };
-        assert_eq!(connection_tune_params(&tune).unwrap(), (2047, 131072, 60));
-        let ok = connection_tune_ok(2047, 131072, 60);
-        assert_eq!(method_id(&ok).unwrap(), id::CONNECTION_TUNE_OK);
+    fn amqp091_1_4_tune_and_tune_ok_carry_channel_max_frame_max_heartbeat() {
+        let args = [0x07, 0xff, 0x00, 0x02, 0x00, 0x00, 0x00, 0x3c];
+        assert_eq!(
+            connection_tune_params(&method(10, 30, &args)).unwrap(),
+            (2047, 131_072, 60)
+        );
+        assert_eq!(connection_tune_ok(2047, 131_072, 60), method(10, 31, &args));
     }
 
+    /// §1.4 (connection.open 10/40): virtual-host (shortstr), reserved-1
+    /// (shortstr), reserved-2 (bit).
     #[test]
-    fn queue_declare_and_publish_ids() {
+    fn amqp091_1_4_open_is_the_virtual_host_and_two_reserved_fields() {
         assert_eq!(
-            method_id(&queue_declare("zd", true).unwrap()).unwrap(),
-            id::QUEUE_DECLARE
-        );
-        assert_eq!(
-            method_id(&basic_publish("", "zd").unwrap()).unwrap(),
-            id::BASIC_PUBLISH
-        );
-        assert_eq!(
-            method_id(&basic_get("zd", true).unwrap()).unwrap(),
-            id::BASIC_GET
+            connection_open("/").unwrap(),
+            method(10, 40, &[0x01, b'/', 0x00, 0x00])
         );
     }
 
+    /// §1.5 (channel 20): open 10 (reserved shortstr), flow 20 and
+    /// flow-ok 21 (active bit), close 40 (reply-code, reply-text,
+    /// class-id, method-id), close-ok 41.
     #[test]
-    fn content_header_roundtrip() {
-        let h = content_header(class::BASIC, 11);
-        assert_eq!(content_header_body_size(&h).unwrap(), 11);
+    fn amqp091_1_5_channel_open_flow_and_close_are_their_fields() {
+        assert_eq!(channel_open().unwrap(), method(20, 10, &[0x00]));
+        assert_eq!(channel_flow(true), method(20, 20, &[0x01]));
+        assert_eq!(channel_flow_ok(false), method(20, 21, &[0x00]));
+        assert_eq!(
+            channel_close(200, "bye").unwrap(),
+            method(20, 40, &[0x00, 0xc8, 0x03, b'b', b'y', b'e', 0, 0, 0, 0])
+        );
+        assert_eq!(channel_close_ok(), method(20, 41, &[]));
     }
 
+    /// §1.6 (exchange 40): declare 10 (reserved-1 short, exchange, type,
+    /// bits passive durable reserved-2 reserved-3 no-wait, arguments),
+    /// delete 20 (reserved-1, exchange, bits if-unused no-wait).
     #[test]
-    fn channel_close_and_flow_ids() {
+    fn amqp091_1_6_exchange_declare_and_delete_are_their_fields() {
+        let mut declare = vec![0x00, 0x00, 0x05];
+        declare.extend_from_slice(b"zd.ex\x05topic");
+        declare.extend_from_slice(&[0x02, 0x00, 0x00, 0x00, 0x00]);
         assert_eq!(
-            method_id(&channel_close(200, "bye").unwrap()).unwrap(),
-            id::CHANNEL_CLOSE
+            exchange_declare("zd.ex", "topic", true).unwrap(),
+            method(40, 10, &declare)
         );
         assert_eq!(
-            method_id(&channel_close_ok()).unwrap(),
-            id::CHANNEL_CLOSE_OK
-        );
-        assert_eq!(method_id(&channel_flow(true)).unwrap(), id::CHANNEL_FLOW);
-        assert_eq!(
-            method_id(&channel_flow_ok(false)).unwrap(),
-            id::CHANNEL_FLOW_OK
-        );
-    }
-
-    #[test]
-    fn exchange_declare_carries_type() {
-        let p = exchange_declare("zd.ex", "topic", true).unwrap();
-        assert_eq!(method_id(&p).unwrap(), id::EXCHANGE_DECLARE);
-        // The "topic" type string must appear on the wire.
-        let needle = b"\x05topic";
-        assert!(p.windows(needle.len()).any(|w| w == needle));
-        assert_eq!(
-            method_id(&exchange_delete("zd.ex", true).unwrap()).unwrap(),
-            id::EXCHANGE_DELETE
+            exchange_delete("zd.ex", true).unwrap(),
+            method(40, 20, b"\x00\x00\x05zd.ex\x01")
         );
     }
 
+    /// §1.7 (queue 50): declare 10, bind 20, purge 30, delete 40, unbind 50
+    /// with their fields; unbind has no no-wait bit.
     #[test]
-    fn queue_bind_unbind_purge_delete_ids() {
+    fn amqp091_1_7_queue_declare_bind_purge_delete_unbind_are_their_fields() {
         assert_eq!(
-            method_id(&queue_bind("q", "ex", "rk").unwrap()).unwrap(),
-            id::QUEUE_BIND
+            queue_declare("zd", true).unwrap(),
+            method(50, 10, b"\x00\x00\x02zd\x02\x00\x00\x00\x00")
         );
         assert_eq!(
-            method_id(&queue_unbind("q", "ex", "rk").unwrap()).unwrap(),
-            id::QUEUE_UNBIND
+            queue_bind("q", "ex", "rk").unwrap(),
+            method(50, 20, b"\x00\x00\x01q\x02ex\x02rk\x00\x00\x00\x00\x00")
         );
         assert_eq!(
-            method_id(&queue_purge("q").unwrap()).unwrap(),
-            id::QUEUE_PURGE
+            queue_purge("q").unwrap(),
+            method(50, 30, b"\x00\x00\x01q\x00")
         );
         assert_eq!(
-            method_id(&queue_delete("q").unwrap()).unwrap(),
-            id::QUEUE_DELETE
-        );
-    }
-
-    #[test]
-    fn queue_op_ok_count_parsed() {
-        // simulate a queue.purge-ok: class/method + message-count.
-        let mut w = Writer::new();
-        w.u16(50).u16(31).u32(7);
-        assert_eq!(queue_op_ok_message_count(&w.into_bytes()).unwrap(), 7);
-    }
-
-    #[test]
-    fn basic_consume_cancel_qos_ids() {
-        assert_eq!(
-            method_id(&basic_consume("q", "ctag", false).unwrap()).unwrap(),
-            id::BASIC_CONSUME
+            queue_delete("q").unwrap(),
+            method(50, 40, b"\x00\x00\x01q\x00")
         );
         assert_eq!(
-            method_id(&basic_cancel("ctag", false).unwrap()).unwrap(),
-            id::BASIC_CANCEL
-        );
-        assert_eq!(method_id(&basic_qos(0, 1, false)).unwrap(), id::BASIC_QOS);
-        assert_eq!(method_id(&basic_reject(3, true)).unwrap(), id::BASIC_REJECT);
-        assert_eq!(
-            method_id(&basic_nack(3, false, true)).unwrap(),
-            id::BASIC_NACK
+            queue_unbind("q", "ex", "rk").unwrap(),
+            method(50, 50, b"\x00\x00\x01q\x02ex\x02rk\x00\x00\x00\x00")
         );
     }
 
+    /// §1.7: declare-ok 11 names the queue; purge-ok 31 and delete-ok 41
+    /// carry the message-count (long).
     #[test]
-    fn basic_deliver_tag_skips_consumer_tag() {
-        // class/method + consumer-tag(shortstr) + delivery-tag(longlong) + …
-        let mut w = Writer::new();
-        w.u16(60).u16(60);
-        w.short_str("ctag").unwrap();
-        w.u64(42).u8(0); // delivery-tag, redelivered
-        assert_eq!(basic_deliver_delivery_tag(&w.into_bytes()).unwrap(), 42);
-    }
-
-    #[test]
-    fn consume_ok_tag_parsed() {
-        let mut w = Writer::new();
-        w.u16(60).u16(21);
-        w.short_str("server-tag").unwrap();
-        assert_eq!(basic_consume_ok_tag(&w.into_bytes()).unwrap(), "server-tag");
-    }
-
-    #[test]
-    fn confirm_and_tx_ids() {
+    fn amqp091_1_7_declare_ok_names_the_queue_purge_ok_and_delete_ok_count() {
+        let declare_ok = method(50, 11, b"\x02zd\x00\x00\x00\x03\x00\x00\x00\x01");
+        assert_eq!(queue_declare_ok_name(&declare_ok).unwrap(), "zd");
         assert_eq!(
-            method_id(&confirm_select(false)).unwrap(),
-            id::CONFIRM_SELECT
+            queue_op_ok_message_count(&method(50, 31, &[0, 0, 0, 7])).unwrap(),
+            7
         );
-        assert_eq!(method_id(&tx_select()).unwrap(), id::TX_SELECT);
-        assert_eq!(method_id(&tx_commit()).unwrap(), id::TX_COMMIT);
-        assert_eq!(method_id(&tx_rollback()).unwrap(), id::TX_ROLLBACK);
+        assert_eq!(
+            queue_op_ok_message_count(&method(50, 41, &[0, 0, 1, 0])).unwrap(),
+            256
+        );
     }
 
+    /// §1.8 (basic.publish 60/40): reserved-1, exchange, routing-key, bits
+    /// mandatory immediate.
     #[test]
-    fn ack_delivery_tag_parsed() {
-        let mut w = Writer::new();
-        w.u16(60).u16(80).u64(99).u8(0);
-        assert_eq!(basic_ack_delivery_tag(&w.into_bytes()).unwrap(), 99);
+    fn amqp091_1_8_publish_is_its_fields() {
+        assert_eq!(
+            basic_publish("", "zd").unwrap(),
+            method(60, 40, b"\x00\x00\x00\x02zd\x00")
+        );
     }
 
+    /// §4.2.6.1: a content header is class-id, weight 0, body-size
+    /// (longlong), property-flags; without properties the flags are 0.
     #[test]
-    fn content_properties_roundtrip() {
+    fn amqp091_4_2_6_1_a_content_header_without_properties_has_flags_zero() {
+        let wire = [
+            0x00, 0x3c, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0x0b, 0x00, 0x00,
+        ];
+        assert_eq!(content_header(class::BASIC, 11), wire);
+        assert_eq!(
+            content_header_with_props(class::BASIC, 11, &ContentProperties::default()).unwrap(),
+            wire
+        );
+        assert_eq!(content_header_body_size(&wire).unwrap(), 11);
+        assert!(ContentProperties::default().is_empty());
+    }
+
+    /// §4.2.6.1 with the basic class's properties of the XML definitions:
+    /// one flag bit per property from bit 15 down (content-type 15,
+    /// headers 13, delivery-mode 12, priority 11, message-id 7, timestamp
+    /// 6, app-id 3), the present properties in that order.
+    #[test]
+    fn amqp091_4_2_6_1_the_properties_follow_their_flag_bits_in_order() {
+        let mut wire = vec![0x00, 0x3c, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0x11];
+        wire.extend_from_slice(&[0xb8, 0xc8]);
+        wire.extend_from_slice(b"\x10application/json");
+        wire.extend_from_slice(b"\x00\x00\x00\x0e\x05traceS\x00\x00\x00\x03abc");
+        wire.extend_from_slice(&[0x02, 0x05]);
+        wire.extend_from_slice(b"\x05msg-1");
+        wire.extend_from_slice(&[0x00, 0x00, 0x00, 0x00, 0x65, 0x53, 0xf1, 0x00]);
+        wire.extend_from_slice(b"\x07zerodds");
         let props = ContentProperties {
             content_type: Some("application/json".into()),
-            delivery_mode: Some(2), // persistent
+            headers: Some(vec![("trace".into(), FieldValue::str("abc"))]),
+            delivery_mode: Some(2),
             priority: Some(5),
             message_id: Some("msg-1".into()),
             timestamp: Some(1_700_000_000),
             app_id: Some("zerodds".into()),
-            headers: Some(vec![
-                ("trace".into(), FieldValue::str("abc")),
-                ("retry".into(), FieldValue::I32(3)),
-            ]),
             ..ContentProperties::default()
         };
-        let h = content_header_with_props(class::BASIC, 17, &props).unwrap();
-        let (body_size, decoded) = parse_content_header(&h).unwrap();
-        assert_eq!(body_size, 17);
-        assert_eq!(decoded, props, "all properties must survive the round-trip");
+        assert_eq!(
+            content_header_with_props(class::BASIC, 17, &props).unwrap(),
+            wire
+        );
+        assert_eq!(parse_content_header(&wire).unwrap(), (17, props));
     }
 
+    /// §1.8: get 70 (reserved-1, queue, no-ack bit), ack 80
+    /// (delivery-tag, multiple bit), reject 90 (delivery-tag, requeue
+    /// bit), nack 120 (delivery-tag, bits multiple requeue; RabbitMQ).
     #[test]
-    fn content_header_no_props_matches_legacy() {
-        // content_header_with_props(empty) must equal the legacy content_header.
-        let legacy = content_header(class::BASIC, 11);
-        let new =
-            content_header_with_props(class::BASIC, 11, &ContentProperties::default()).unwrap();
-        assert_eq!(legacy, new);
-        assert!(ContentProperties::default().is_empty());
+    fn amqp091_1_8_get_ack_reject_nack_are_their_fields() {
+        assert_eq!(
+            basic_get("zd", true).unwrap(),
+            method(60, 70, b"\x00\x00\x02zd\x01")
+        );
+        assert_eq!(
+            basic_ack(99, false),
+            method(60, 80, &[0, 0, 0, 0, 0, 0, 0, 99, 0x00])
+        );
+        assert_eq!(
+            basic_reject(3, true),
+            method(60, 90, &[0, 0, 0, 0, 0, 0, 0, 3, 0x01])
+        );
+        assert_eq!(
+            basic_nack(3, false, true),
+            method(60, 120, &[0, 0, 0, 0, 0, 0, 0, 3, 0x02])
+        );
+    }
+
+    /// §1.8: get-ok 71 and a broker's ack 80 (publisher confirm) begin with
+    /// the delivery-tag (longlong).
+    #[test]
+    fn amqp091_1_8_get_ok_and_ack_begin_with_the_delivery_tag() {
+        let get_ok = method(
+            60,
+            71,
+            b"\x00\x00\x00\x00\x00\x00\x00\x2a\x00\x00\x02zd\x00\x00\x00\x00",
+        );
+        assert_eq!(basic_get_ok_delivery_tag(&get_ok).unwrap(), 42);
+        let ack = method(60, 80, &[0, 0, 0, 0, 0, 0, 0, 99, 0x00]);
+        assert_eq!(basic_ack_delivery_tag(&ack).unwrap(), 99);
+    }
+
+    /// §1.8: qos 10 (prefetch-size long, prefetch-count short, global
+    /// bit), consume 20 (reserved-1, queue, consumer-tag, bits no-local
+    /// no-ack exclusive no-wait, arguments), cancel 30 (consumer-tag,
+    /// no-wait bit).
+    #[test]
+    fn amqp091_1_8_qos_consume_and_cancel_are_their_fields() {
+        assert_eq!(
+            basic_qos(0, 1, false),
+            method(60, 10, &[0, 0, 0, 0, 0x00, 0x01, 0x00])
+        );
+        assert_eq!(
+            basic_consume("q", "ctag", true).unwrap(),
+            method(60, 20, b"\x00\x00\x01q\x04ctag\x02\x00\x00\x00\x00")
+        );
+        assert_eq!(
+            basic_cancel("ctag", false).unwrap(),
+            method(60, 30, b"\x04ctag\x00")
+        );
+    }
+
+    /// §1.8: consume-ok 21 returns the consumer-tag; deliver 60 is
+    /// consumer-tag, delivery-tag, redelivered, exchange, routing-key.
+    #[test]
+    fn amqp091_1_8_consume_ok_and_deliver_carry_their_tags() {
+        let consume_ok = method(60, 21, b"\x0aserver-tag");
+        assert_eq!(basic_consume_ok_tag(&consume_ok).unwrap(), "server-tag");
+        let deliver = method(
+            60,
+            60,
+            b"\x04ctag\x00\x00\x00\x00\x00\x00\x00\x2a\x00\x00\x02zd",
+        );
+        assert_eq!(basic_deliver_delivery_tag(&deliver).unwrap(), 42);
+    }
+
+    /// RabbitMQ's `confirm` class (85, `amqp0-9-1.extended.xml`): select 10
+    /// with its no-wait bit.
+    #[test]
+    fn amqp091_confirm_select_is_class_85_method_10_with_no_wait() {
+        assert_eq!(confirm_select(false), method(85, 10, &[0x00]));
+        assert_eq!(confirm_select(true), method(85, 10, &[0x01]));
+    }
+
+    /// §1.9 (tx 90): select 10, commit 20, rollback 30, no fields.
+    #[test]
+    fn amqp091_1_9_tx_select_commit_and_rollback_have_no_fields() {
+        assert_eq!(tx_select(), method(90, 10, &[]));
+        assert_eq!(tx_commit(), method(90, 20, &[]));
+        assert_eq!(tx_rollback(), method(90, 30, &[]));
+    }
+
+    /// The class and method of a payload are its first two shorts.
+    #[test]
+    fn amqp091_1_4_a_method_payload_begins_with_class_and_method() {
+        assert_eq!(
+            method_id(&[0x00, 0x3c, 0x00, 0x50, 0xff]).unwrap(),
+            (60, 80)
+        );
+        assert_eq!(method_id(&[0x00, 0x3c]), Err(WireError::Truncated));
     }
 }

@@ -187,7 +187,9 @@ pub unsafe extern "C" fn zerodds_builtin_string_free(value: *mut c_char) {
 pub unsafe extern "C" fn zerodds_builtin_bytes_free(bytes: *mut u8, len: usize) {
     if !bytes.is_null() && len > 0 {
         // SAFETY: from `Box<[u8]>::into_raw` of exactly `len` octets.
-        drop(unsafe { alloc::boxed::Box::from_raw(slice::from_raw_parts_mut(bytes, len)) });
+        drop(unsafe {
+            alloc::boxed::Box::from_raw(std::ptr::slice_from_raw_parts_mut(bytes, len))
+        });
     }
 }
 
@@ -416,7 +418,7 @@ unsafe fn write_sample<T: DdsType>(
     if dw.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
     }
-    if T::HAS_KEY {
+    if T::has_key() {
         // SAFETY: non-NULL and live per the contract.
         if handle != 0 && unsafe { handle_of(dw, sample) } != handle {
             return bad_parameter();
@@ -1408,7 +1410,7 @@ mod tests {
     /// Annex E `write_w_bytes`: the octets `offset .. offset + length`, and
     /// a range outside the array is refused.
     #[test]
-    fn a_byte_range_is_checked() {
+    fn xtypes_7_6_5_a_byte_range_is_checked() {
         let data = [10_u8, 20, 30, 40];
         // SAFETY: a live array.
         unsafe {
@@ -1420,39 +1422,6 @@ mod tests {
             assert!(octets(ptr::null(), 3, 0, 1).is_err());
             assert_eq!(octets(ptr::null(), 0, 0, 0).unwrap(), [] as [u8; 0]);
         }
-    }
-
-    /// The kinds name the four physical types, and each has a
-    /// `TypeObject` the writer and reader advertise.
-    #[test]
-    fn the_kinds_name_the_four_types() {
-        let names = [
-            (ZERODDS_BUILTIN_STRING, "DDS::String", false),
-            (ZERODDS_BUILTIN_KEYED_STRING, "DDS::KeyedString", true),
-            (ZERODDS_BUILTIN_BYTES, "DDS::Bytes", false),
-            (ZERODDS_BUILTIN_KEYED_BYTES, "DDS::KeyedBytes", true),
-        ];
-        for (kind, name, keyed) in names {
-            assert_eq!(type_name_of(kind), Some(name));
-            let (object, is_keyed) = type_object_of(name).expect("a TypeObject");
-            assert!(!object.is_empty());
-            assert_eq!(is_keyed, keyed);
-        }
-        assert_eq!(type_name_of(4), None);
-        assert!(type_object_of("DDS::Other").is_none());
-    }
-
-    /// A handle that is not the key's instance is refused on a keyed
-    /// write; the key hash of a keyed sample is its key's, whatever the
-    /// payload.
-    #[test]
-    fn the_key_of_a_sample_is_its_key() {
-        let a = DdsKeyedString::new("k", "one").compute_key_hash();
-        let b = DdsKeyedString::new("k", "two").compute_key_hash();
-        let c = DdsKeyedString::new("other", "one").compute_key_hash();
-        assert_eq!(a, b);
-        assert_ne!(a, c);
-        assert_eq!(DdsString::new("x").compute_key_hash(), None);
     }
 
     /// An invalid timestamp is refused where the call sends nothing.

@@ -16,11 +16,13 @@
 //! The previous version of this test used `zerodds-idl-rust` for the
 //! first, which is not in this tree.
 //!
-//! ## Why it is `#[ignore]`
+//! ## One workspace, one `cargo check`
 //!
-//! It shells out to `cargo check` against path dependencies, which
-//! needs a populated registry and a writable target directory. Run it
-//! with `--include-ignored`.
+//! Every case is a member crate of one workspace under the test target
+//! directory, checked with one `cargo check --workspace` into a target
+//! directory of its own that the next run reuses: the dependencies are
+//! checked once, not once per case. A case that does not compile names
+//! its package in the compiler's message.
 
 #![allow(
     clippy::expect_used,
@@ -32,7 +34,7 @@
 )]
 
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use zerodds_ast::Ast;
@@ -130,125 +132,35 @@ fn data_column(ast: &Ast) -> String {
     zerodds_lang_render::rust::file(&file)
 }
 
-fn compile_generated(name: &str, idl: &str) {
-    let ast = model(idl);
-    let data = data_column(&ast);
-    let service =
-        generate_corba_rust_module(&ast, &CorbaRustGenOptions::default()).expect("corba-rust gen");
-    // Inner attributes are only legal at the start of a crate, and the
-    // service column writes some; the data column goes first.
-    let service: String = service
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("#!["))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let source = format!(
-        "#![allow(dead_code, unused_imports, unused_variables, clippy::all)]\n\
-         use zerodds_wire::{{Reader, Writer, WireError}};\n\
-         {data}\n{service}"
-    );
-
-    let tmp = std::env::temp_dir().join(format!("zerodds_corba_rust_compile_{name}"));
-    let _ = std::fs::remove_dir_all(&tmp);
-    std::fs::create_dir_all(tmp.join("src")).expect("mkdir");
-
-    let root = workspace_root();
-    let manifest = format!(
-        r#"[package]
-name = "compile_test_corba_{name}"
-version = "0.0.0"
-edition = "2024"
-
-[lib]
-path = "src/lib.rs"
-
-[dependencies]
-zerodds-corba-rust = {{ path = "{root}/crates/corba-rust" }}
-zerodds-corba-rt = {{ path = "{root}/crates/corba-rt" }}
-zerodds-wire = {{ path = "{root}/crates/wire" }}
-zerodds-float128 = {{ path = "{root}/crates/float128" }}
-
-[workspace]
-"#,
-        root = root.display()
-    );
-    std::fs::File::create(tmp.join("Cargo.toml"))
-        .expect("create Cargo.toml")
-        .write_all(manifest.as_bytes())
-        .expect("write Cargo.toml");
-    std::fs::File::create(tmp.join("src/lib.rs"))
-        .expect("create lib.rs")
-        .write_all(source.as_bytes())
-        .expect("write lib.rs");
-
-    let output = Command::new(env!("CARGO"))
-        .arg("check")
-        .arg("--manifest-path")
-        .arg(tmp.join("Cargo.toml"))
-        .arg("--offline")
-        .output()
-        .expect("cargo invocation");
-    assert!(
-        output.status.success(),
-        "the generated code does not compile (exit {:?})\n--- cargo ---\n{}\n--- source ---\n{source}",
-        output.status.code(),
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn workspace_root() -> PathBuf {
-    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    manifest
-        .ancestors()
-        .find(|path| path.join("Cargo.lock").exists())
-        .map_or(manifest.clone(), std::path::Path::to_path_buf)
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_simple_interface() {
-    compile_generated(
+/// The cases: the name of the member crate and its IDL.
+const CASES: &[(&str, &str)] = &[
+    (
         "simple_interface",
         r"interface Calculator {
             long add(in long a, in long b);
         };",
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_valuetype_state() {
-    compile_generated(
+    ),
+    (
         "valuetype_state",
         r"valuetype Point {
             public long x;
             public long y;
         };",
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_ami() {
+    ),
     // CORBA Messaging §22: `@ami` → an AmiHandler trait, `sendc_`,
     // `sendp_` and a poller. Covers return+in, void+no-out, and
     // return+in+out.
-    compile_generated(
+    (
         "ami",
         r"interface Bank {
             @ami long deposit(in long amount);
             @ami void close();
             @ami long transfer(in long amount, out long balance);
         };",
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_valuetype_inheritance() {
+    ),
     // §15.3.4 state flattening: `ExtendedValue` carries `version` from
     // the base and `name` of its own, and marshals them in that order.
-    compile_generated(
+    (
         "valuetype_inheritance",
         r"valuetype Base {
             public long version;
@@ -256,13 +168,8 @@ fn compile_check_valuetype_inheritance() {
         valuetype Extended : Base {
             public string name;
         };",
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_interface_inheritance() {
-    compile_generated(
+    ),
+    (
         "iface_inheritance",
         r"interface Base {
             void ping();
@@ -270,29 +177,19 @@ fn compile_check_interface_inheritance() {
         interface Derived : Base {
             long get_id();
         };",
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_interface_raises() {
-    compile_generated(
+    ),
+    (
         "iface_raises",
         r#"exception NotFound { string what; };
         interface Vault {
             string lookup(in string key) raises (NotFound);
         };"#,
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_aggregates_across_the_boundary() {
+    ),
     // The property this file exists for: a `struct` the data column
     // declares, used as a parameter and a return by the service column.
     // The two have to name it the same way and agree that it has an
     // inherent `encode` and `decode`.
-    compile_generated(
+    (
         "aggregates",
         r"struct Reading { long id; double value; };
         interface Sensor {
@@ -300,12 +197,7 @@ fn compile_check_aggregates_across_the_boundary() {
             void push(in long n, out Reading r);
             long count(in sequence<Reading> batch);
         };",
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_enum_across_the_boundary() {
+    ),
     // The case that found the enumeration hole in the data column.
     // `zerodds_lang_rules::encode::rust_codec` walks a type's layout
     // *members*; an enumeration has none, so it produced
@@ -320,28 +212,270 @@ fn compile_check_enum_across_the_boundary() {
     // form. Invisible until an operation took an enumeration as a
     // parameter, because an argument has no enclosing aggregate to be a
     // member of. Fixed in `encode.rs`; this is the case that says so.
-    compile_generated(
+    (
         "enum_boundary",
         r"enum Health { OK, DEGRADED };
         interface Monitor {
             Health status();
             void set(in Health h);
         };",
-    );
-}
-
-#[test]
-#[ignore = "shells out to cargo check; run with --include-ignored"]
-fn compile_check_enum_member_of_a_struct() {
+    ),
     // An enumeration as a *member*: the data column writes the member
     // through its holder, and the field it declares for it is the
     // enumeration, not an integer.
-    compile_generated(
+    (
         "enum_member",
         r"enum Health { OK, DEGRADED };
         struct Status { Health h; long n; };
         interface Monitor {
             Status current();
         };",
+    ),
+];
+
+/// The source of one member crate: the data column, then the service
+/// column.
+fn source(idl: &str) -> String {
+    let ast = model(idl);
+    let data = data_column(&ast);
+    let service =
+        generate_corba_rust_module(&ast, &CorbaRustGenOptions::default()).expect("corba-rust gen");
+    // Inner attributes are only legal at the start of a crate, and the
+    // service column writes some; the data column goes first.
+    let service: String = service
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("#!["))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "#![allow(dead_code, unused_imports, unused_variables, clippy::all)]\n\
+         use zerodds_wire::{{Reader, Writer, WireError}};\n\
+         {data}\n{service}"
+    )
+}
+
+fn write(path: &Path, text: &str) {
+    std::fs::create_dir_all(path.parent().expect("a parent")).expect("mkdir");
+    std::fs::File::create(path)
+        .and_then(|mut file| file.write_all(text.as_bytes()))
+        .expect("write");
+}
+
+fn workspace_root() -> PathBuf {
+    let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    manifest
+        .ancestors()
+        .find(|path| path.join("Cargo.lock").exists())
+        .map_or(manifest.clone(), std::path::Path::to_path_buf)
+}
+
+/// `cargo check` over a workspace of one member crate per entry of
+/// `members` (name, source) under `CARGO_TARGET_TMPDIR/<workspace>`, into
+/// the target directory every workspace of this file shares.
+fn check(workspace: &str, members: &[(&str, String)]) -> std::process::Output {
+    let root = workspace_root();
+    let base = Path::new(env!("CARGO_TARGET_TMPDIR")).join("corba-rust-compile-check");
+    let dir = base.join(workspace);
+    let names: Vec<String> = members
+        .iter()
+        .map(|(name, _)| format!("\"{name}\""))
+        .collect();
+    write(
+        &dir.join("Cargo.toml"),
+        &format!(
+            "[workspace]\nresolver = \"3\"\nmembers = [{}]\n",
+            names.join(", ")
+        ),
+    );
+    // The versions the repository locked, so that `--offline` finds them.
+    std::fs::copy(root.join("Cargo.lock"), dir.join("Cargo.lock")).expect("copy Cargo.lock");
+    for (name, source) in members {
+        write(
+            &dir.join(name).join("Cargo.toml"),
+            &format!(
+                r#"[package]
+name = "compile_check_{name}"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-corba-rust = {{ path = "{root}/crates/corba-rust" }}
+zerodds-corba-rt = {{ path = "{root}/crates/corba-rt" }}
+zerodds-wire = {{ path = "{root}/crates/wire" }}
+zerodds-float128 = {{ path = "{root}/crates/float128" }}
+"#,
+                root = root.display()
+            ),
+        );
+        write(&dir.join(name).join("src/lib.rs"), source);
+    }
+    Command::new(env!("CARGO"))
+        .arg("check")
+        .arg("--workspace")
+        .arg("--offline")
+        .arg("--quiet")
+        .arg("--manifest-path")
+        .arg(dir.join("Cargo.toml"))
+        .arg("--target-dir")
+        .arg(base.join("target"))
+        .output()
+        .expect("cargo invocation")
+}
+
+/// zerodds-corba-rust 1.1 §3, §3.1, §4.1, §5 and §9: the code generated
+/// for each case compiles together with the data column, and every name
+/// in it resolves.
+#[test]
+fn corbarust_3_the_generated_code_compiles_with_the_data_column() {
+    let members: Vec<(&str, String)> = CASES
+        .iter()
+        .map(|(name, idl)| (*name, source(idl)))
+        .collect();
+    let output = check("generated", &members);
+    assert!(
+        output.status.success(),
+        "the generated code does not compile (exit {:?})\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// The check above can fail: a member with a type error is reported by
+/// the compiler, with its package.
+#[test]
+fn the_compile_check_reports_a_type_error() {
+    let output = check(
+        "deliberate-error",
+        &[(
+            "deliberate_error",
+            "pub fn answer() -> i32 { \"forty-two\" }\n".to_string(),
+        )],
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "a type error must fail the check");
+    assert!(stderr.contains("E0308"), "{stderr}");
+    assert!(
+        stderr.contains("compile_check_deliberate_error"),
+        "{stderr}"
+    );
+}
+
+/// OMG IDL 4.2 §7.4.7.4.4 and CORBA 3.3 part 1 §9.5.1: the state of a
+/// `custom` valuetype is marshaled by code the application provides,
+/// and that code writes the state of the bases too. The compiler is the
+/// oracle: with the application's `PointCustomMarshal` on `PointValue`
+/// the generated code compiles; without it, the generated
+/// `ValueMarshal` and the registered factory name the trait that is not
+/// implemented.
+#[test]
+fn idl_7_4_7_4_4_a_custom_valuetype_is_marshaled_by_the_application() {
+    let generated = source(
+        r"valuetype Base { public long version; };
+        custom valuetype Point : Base { public long x; public long y; };",
+    );
+    assert!(
+        generated.contains("pub trait PointCustomMarshal"),
+        "{generated}"
+    );
+    assert!(
+        !generated.contains("pub trait BaseCustomMarshal"),
+        "only the custom valuetype has one: {generated}"
+    );
+    // The application's marshaling: its own order, the base's state
+    // included.
+    let application = r"
+impl PointCustomMarshal for PointValue {
+    fn marshal(&self, os: &mut zerodds_wire::Writer) -> ::core::result::Result<(), zerodds_wire::WireError> {
+        os.write_i32(self.y);
+        os.write_i32(self.x);
+        os.write_i32(self.version);
+        Ok(())
+    }
+    fn unmarshal(is: &mut zerodds_wire::Reader<'_>) -> ::core::result::Result<Self, zerodds_wire::WireError> {
+        let y = is.read_i32()?;
+        let x = is.read_i32()?;
+        let version = is.read_i32()?;
+        Ok(Self { version, x, y })
+    }
+}
+";
+    let with = check(
+        "custom-marshal",
+        &[("custom_marshal", format!("{generated}{application}"))],
+    );
+    assert!(
+        with.status.success(),
+        "with the application's marshaling the code compiles (exit {:?})\n{}",
+        with.status.code(),
+        String::from_utf8_lossy(&with.stderr)
+    );
+    let without = check(
+        "custom-marshal-missing",
+        &[("custom_marshal_missing", generated)],
+    );
+    let stderr = String::from_utf8_lossy(&without.stderr);
+    assert!(
+        !without.status.success(),
+        "without the application's marshaling the code must not compile"
+    );
+    assert!(
+        stderr.contains("E0277") && stderr.contains("PointCustomMarshal"),
+        "{stderr}"
+    );
+}
+
+/// OMG IDL 4.2 §7.4.5.3, rule (105): a value type body holds attributes
+/// beside its state and operations, and they map as an interface's do —
+/// a getter, and a setter unless the attribute is `readonly`. The
+/// compiler is the oracle: code that reads both attributes and writes the
+/// writable one compiles against the generated trait; code that writes the
+/// `readonly` one does not, for want of the method.
+#[test]
+fn idl_7_4_5_3_a_value_types_attributes_are_methods_of_its_trait() {
+    let generated = source(
+        r"valuetype Account {
+            public long balance;
+            attribute string owner;
+            readonly attribute long id;
+        };",
+    );
+    let application = r"
+pub fn touch<T: Account>(account: &T) {
+    let _ = account.balance();
+    let _ = account.owner();
+    let _ = account.set_owner(::core::default::Default::default());
+    let _ = account.id();
+}
+";
+    let with = check(
+        "value-attribute",
+        &[("value_attribute", format!("{generated}{application}"))],
+    );
+    assert!(
+        with.status.success(),
+        "the attributes are methods of the trait (exit {:?})\n{}",
+        with.status.code(),
+        String::from_utf8_lossy(&with.stderr)
+    );
+    let readonly = r"
+pub fn write_id<T: Account>(account: &T) {
+    let _ = account.set_id(7);
+}
+";
+    let without = check(
+        "value-attribute-readonly",
+        &[("value_attribute_readonly", format!("{generated}{readonly}"))],
+    );
+    let stderr = String::from_utf8_lossy(&without.stderr);
+    assert!(
+        !without.status.success(),
+        "a readonly attribute has no setter"
+    );
+    assert!(
+        stderr.contains("E0599") && stderr.contains("set_id"),
+        "{stderr}"
     );
 }

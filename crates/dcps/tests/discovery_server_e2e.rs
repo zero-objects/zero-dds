@@ -39,6 +39,7 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
+        reliable: true,
         ..Default::default()
     }
 }
@@ -56,7 +57,8 @@ fn client_cfg(server: &Locator) -> RuntimeConfig {
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn clients_discover_each_other_through_the_server() {
-    let domain = 95;
+    let lease = zerodds_test_domains::lease_domain();
+    let domain = lease.id();
     let host = [0x71u8; 4];
     let mk = |tag: u8| {
         let mut p = [tag; 12];
@@ -65,12 +67,16 @@ fn clients_discover_each_other_through_the_server() {
     };
 
     // The server: multicast-free + SPDP relay on. No user endpoints.
-    let server = DcpsRuntime::start(domain, mk(0x51), RuntimeConfig::discovery_server()).unwrap();
+    let server = common::ShutsDown(
+        DcpsRuntime::start(domain, mk(0x51), RuntimeConfig::discovery_server()).unwrap(),
+    );
     let server_loc = server.spdp_unicast_locator();
 
     // Two clients that know ONLY the server (not each other).
-    let a = DcpsRuntime::start(domain, mk(0xA1), client_cfg(&server_loc)).unwrap();
-    let b = DcpsRuntime::start(domain, mk(0xB2), client_cfg(&server_loc)).unwrap();
+    let a =
+        common::ShutsDown(DcpsRuntime::start(domain, mk(0xA1), client_cfg(&server_loc)).unwrap());
+    let b =
+        common::ShutsDown(DcpsRuntime::start(domain, mk(0xB2), client_cfg(&server_loc)).unwrap());
 
     // A must discover B's participant through the server's SPDP relay.
     let b_prefix = b.guid_prefix;
@@ -133,3 +139,6 @@ fn clients_discover_each_other_through_the_server() {
         "user data did not flow A->B after discovery-server bridging"
     );
 }
+
+#[path = "common/mod.rs"]
+mod common;

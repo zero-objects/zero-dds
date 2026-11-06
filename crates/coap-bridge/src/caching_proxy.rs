@@ -292,14 +292,14 @@ mod tests {
 
     // §5.6 Cache
     #[test]
-    fn empty_cache_returns_miss() {
+    fn coap_2_3_empty_cache_returns_miss() {
         let c = CoapCache::new(10);
         assert_eq!(c.lookup(b"key"), CacheLookup::Miss);
         assert!(c.is_empty());
     }
 
     #[test]
-    fn store_then_fresh_lookup() {
+    fn coap_2_3_store_then_fresh_lookup() {
         let c = CoapCache::new(10);
         c.store(
             b"key".to_vec(),
@@ -312,7 +312,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_with_etag_yields_validation_path() {
+    fn coap_2_3_stale_with_etag_yields_validation_path() {
         let c = CoapCache::new(10);
         c.store(
             b"key".to_vec(),
@@ -328,7 +328,7 @@ mod tests {
     }
 
     #[test]
-    fn stale_without_etag_yields_miss() {
+    fn coap_2_3_stale_without_etag_yields_miss() {
         let c = CoapCache::new(10);
         c.store(
             b"key".to_vec(),
@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn cap_evicts_oldest() {
+    fn coap_2_3_cap_evicts_oldest() {
         let c = CoapCache::new(2);
         c.store(
             b"a".to_vec(),
@@ -365,7 +365,7 @@ mod tests {
     }
 
     #[test]
-    fn evict_expired_without_etag_keeps_revalidatable() {
+    fn coap_2_3_evict_expired_without_etag_keeps_revalidatable() {
         let c = CoapCache::new(10);
         c.store(
             b"a".to_vec(),
@@ -387,7 +387,7 @@ mod tests {
 
     // §5.7 Proxy
     #[test]
-    fn proxy_config_default_is_forward_coap_to_coap() {
+    fn coap_2_3_proxy_config_default_is_forward_coap_to_coap() {
         let c = ProxyConfig::default();
         assert_eq!(c.mode, ProxyMode::Forward);
         assert!(c.coap_to_coap);
@@ -397,50 +397,64 @@ mod tests {
 
     // §10.1 HTTP-Status-Mapping
     #[test]
-    fn http_200_maps_to_coap_2_05() {
+    fn coap_10_http_200_maps_to_coap_2_05() {
         assert_eq!(http_status_to_coap(200), Some((2, 5)));
     }
 
     #[test]
-    fn http_404_maps_to_coap_4_04() {
+    fn coap_10_http_404_maps_to_coap_4_04() {
         assert_eq!(http_status_to_coap(404), Some((4, 4)));
     }
 
     #[test]
-    fn http_500_maps_to_coap_5_00() {
+    fn coap_10_http_500_maps_to_coap_5_00() {
         assert_eq!(http_status_to_coap(500), Some((5, 0)));
     }
 
     #[test]
-    fn http_unknown_returns_none() {
+    fn coap_10_http_unknown_returns_none() {
         assert!(http_status_to_coap(999).is_none());
     }
 
     #[test]
-    fn coap_to_http_round_trip() {
-        for h in [200u16, 201, 204, 400, 401, 403, 404, 405, 412, 500, 503] {
-            let (c, d) = http_status_to_coap(h).expect("ok");
-            assert_eq!(coap_to_http_status(c, d), Some(h));
+    fn coap_10_the_status_codes_map_both_ways() {
+        // RFC 7252 §12.1.2 names the CoAP codes after the HTTP ones.
+        for (h, c) in [
+            (200u16, (2u8, 5u8)),
+            (201, (2, 1)),
+            (204, (2, 4)),
+            (400, (4, 0)),
+            (401, (4, 1)),
+            (403, (4, 3)),
+            (404, (4, 4)),
+            (405, (4, 5)),
+            (412, (4, 12)),
+            (500, (5, 0)),
+            (503, (5, 3)),
+        ] {
+            assert_eq!(http_status_to_coap(h), Some(c));
+            assert_eq!(coap_to_http_status(c.0, c.1), Some(h));
         }
     }
 
     // §10.2 HTTP-Method-Mapping
     #[test]
-    fn http_get_maps_to_coap_1() {
+    fn coap_10_http_get_maps_to_coap_1() {
         assert_eq!(http_method_to_coap("GET"), Some(1));
         assert_eq!(http_method_to_coap("get"), Some(1));
     }
 
     #[test]
-    fn http_unknown_method_returns_none() {
+    fn coap_10_http_unknown_method_returns_none() {
         assert!(http_method_to_coap("HEAD").is_none());
         assert!(http_method_to_coap("PATCH").is_none());
     }
 
     #[test]
-    fn coap_method_round_trip() {
-        for m in ["GET", "POST", "PUT", "DELETE"] {
-            let d = http_method_to_coap(m).expect("ok");
+    fn coap_10_the_methods_map_both_ways() {
+        // RFC 7252 §12.1.1: GET 0.01, POST 0.02, PUT 0.03, DELETE 0.04.
+        for (m, d) in [("GET", 1u8), ("POST", 2), ("PUT", 3), ("DELETE", 4)] {
+            assert_eq!(http_method_to_coap(m), Some(d));
             assert_eq!(coap_method_to_http(d), Some(m));
         }
     }

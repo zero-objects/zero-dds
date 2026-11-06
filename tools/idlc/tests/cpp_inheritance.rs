@@ -107,7 +107,7 @@ fn compilers() -> Vec<&'static str> {
 }
 
 #[test]
-fn a_derived_struct_inherits_and_the_octet_is_its_own_type() {
+fn xtypes_7_5_1_1_2_a_derived_struct_inherits_and_the_octet_is_its_own_type() {
     let found = compilers();
     if found.is_empty() {
         eprintln!("SKIPPED: neither clang++ nor g++ on the path.");

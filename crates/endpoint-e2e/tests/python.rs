@@ -66,19 +66,16 @@ import pingpong_gen as pg
 import zerodds_wire as zd_wire
 import zerodds_endpoint as ze
 
-
 def encode_ping():
     """The shared Ping, through the generated encoder (XCDR2 LE, MAXALIGN 4)."""
     w = zd_wire.Writer(zd_wire.Endianness.LITTLE, 4, zd_wire.PlCdr1Framing(), False)
     pg.zd_enc_Ping(w, pg.Ping(seq=1, msg="hello from app"))
     return w.finish()
 
-
 def decode_pong(body):
     """A Pong body, through the generated decoder."""
     r = zd_wire.Reader(body, zd_wire.Endianness.LITTLE, 4, zd_wire.PlCdr1Framing(), False)
     return pg.zd_dec_Pong(r, zd_wire.TryConstruct.DISCARD)
-
 
 class UdpTransport(object):
     """Real-UDP transport for the endpoint SDK: deliver()/receive()."""
@@ -97,12 +94,10 @@ class UdpTransport(object):
         except (socket.timeout, BlockingIOError):
             return None
 
-
 def _open(peer_port):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("127.0.0.1", 0))
     return sock, ("127.0.0.1", peer_port)
-
 
 def run_raw(port):
     # Bare XCDR2 sample straight from the generated marshal, no XRCE frame.
@@ -112,7 +107,6 @@ def run_raw(port):
     data, _ = sock.recvfrom(4096)
     pong = decode_pong(data)
     print("PONG seq=%d reply=%s" % (pong.seq, pong.reply))
-
 
 def run_sync(port):
     sock, peer = _open(port)
@@ -129,7 +123,6 @@ def run_sync(port):
         raise SystemExit("sync: no pong")
     pong = decode_pong(body)
     print("PONG seq=%d reply=%s" % (pong.seq, pong.reply))
-
 
 def run_async(port):
     import asyncio
@@ -166,7 +159,6 @@ def run_async(port):
 
     asyncio.run(main())
 
-
 def main():
     mode = sys.argv[1]
     port = int(sys.argv[2])
@@ -179,7 +171,6 @@ def main():
     else:
         raise SystemExit("unknown mode: " + mode)
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
@@ -213,10 +204,15 @@ fn spawn(mode: &str, port: u16) -> Child {
 
 // ---- 1) raw codegen over a plain UDP socket ----
 
+/// zerodds-endpoint-python-1.0 §5 item 1: the Python app sends the `Ping` of the generated codec as a
+/// bare XCDR2 datagram, without the XRCE frame; the test reads it with the
+/// XCDR2 reader (DDS-XTypes 1.3 §7.4) and answers with a bare `Pong`, which
+/// the app decodes and prints.
 #[test]
-fn python_raw_udp() {
+#[ignore = "needs the Python toolchain; runs in integration-bindings"]
+fn endpoint_python_5_1_the_generated_codec_pings_without_the_xrce_frame() {
     if !python_available() {
-        eprintln!("SKIP python_raw_udp: `python3` not on PATH");
+        eprintln!("SKIP python raw udp: `python3` not on PATH");
         return;
     }
     use std::net::UdpSocket;
@@ -256,12 +252,22 @@ fn endpoint_case(mode: &str) {
     ping_pong(&peer, child, &format!("python/{mode}"));
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Python app sends its `Ping`
+/// through the endpoint SDK's sync API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn python_endpoint_sync() {
+#[ignore = "needs the Python toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_python_sync_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("sync");
 }
 
+/// DDS-XRCE 1.0 §8.3.5.8 and §8.3.5.10: the Python app sends its `Ping`
+/// through the endpoint SDK's async API as a `WRITE_DATA`; the Rust peer
+/// decodes the frame with `zerodds-xrce` and the body with the XCDR2 reader
+/// (DDS-XTypes 1.3 §7.4), and the app reads the `Pong` the peer sends as `DATA`.
 #[test]
-fn python_endpoint_async() {
+#[ignore = "needs the Python toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_python_async_app_writes_the_ping_and_reads_the_pong() {
     endpoint_case("async");
 }

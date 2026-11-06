@@ -1,0 +1,31 @@
+# The HDDS row of the speed setup (tests/perf/speed/speed.py, row `hdds`):
+# src/main.rs says why it is a Rust app. HDDS and its IDL code generator are
+# pinned here; HDDS is dual licensed Apache-2.0 OR MIT (LICENSE of
+# git.hdds.io/hdds/hdds at v1.1.5), hddsgen likewise (its Cargo.toml).
+# Built by tests/perf/speed/build.sh on the speed host, not by the
+# workspace (excluded in the root Cargo.toml; `[workspace]` below).
+[package]
+name = "hdds-roundtrip"
+version = "0.0.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "hdds-roundtrip"
+path = "src/main.rs"
+
+[dependencies]
+# v1.1.5, 2026-05-24: the newest tag of git.hdds.io/hdds/hdds (its master
+# is v1.1.4-sprint15).
+hdds = { git = "https://git.hdds.io/hdds/hdds.git", tag = "v1.1.5" }
+libc = "0.2"
+
+[build-dependencies]
+# hddsgen 1.2.0: master of git.hdds.io/hdds/hdds_gen, which has no tags.
+hddsgen = { git = "https://git.hdds.io/hdds/hdds_gen.git", rev = "14fbe7d7253557c3b197e04b6c7bfc359c6b54cd" }
+
+[profile.release]
+debug = false

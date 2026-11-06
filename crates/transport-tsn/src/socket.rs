@@ -264,7 +264,10 @@ impl Transport for TsnTransport {
             let vid = hdr.vlan_tag.map(|vt| vt.vid).or(aux_vid).unwrap_or(0);
             let source = Locator::tsn(hdr.source.0, vid);
             let data: std::sync::Arc<[u8]> = std::sync::Arc::from(&frame[consumed..]);
-            return Ok(ReceivedDatagram { source, data });
+            return Ok(ReceivedDatagram {
+                source,
+                data: data.into(),
+            });
         }
     }
 

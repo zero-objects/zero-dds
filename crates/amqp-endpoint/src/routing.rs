@@ -203,7 +203,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bare_address_resolves_to_default_domain() {
+    fn ddsamqp_2_2_bare_address_resolves_to_default_domain() {
         let r = AddressRouter::new();
         let res = r.resolve("tracking").expect("resolve");
         assert_eq!(res.topic, "tracking");
@@ -212,7 +212,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_url_parses_id_and_topic() {
+    fn ddsamqp_2_2_domain_url_parses_id_and_topic() {
         let r = AddressRouter::new();
         let res = r.resolve("domain://7/Sensor").expect("resolve");
         assert_eq!(res.domain_id, 7);
@@ -220,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_url_with_single_partition_parses() {
+    fn ddsamqp_2_2_domain_url_with_single_partition_parses() {
         let r = AddressRouter::new();
         let res = r
             .resolve("domain://3/Topic?partition=zone-a")
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_url_with_multi_partition_parses() {
+    fn ddsamqp_2_1_domain_url_with_multi_partition_parses() {
         let r = AddressRouter::new();
         let res = r
             .resolve("domain://3/Topic?partition=alpha&partition=beta&partition=gamma")
@@ -242,7 +242,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_url_with_percent_encoded_partition() {
+    fn ddsamqp_2_1_domain_url_with_percent_encoded_partition() {
         let r = AddressRouter::new();
         let res = r
             .resolve("domain://0/Topic?partition=zone%2Fa")
@@ -251,7 +251,7 @@ mod tests {
     }
 
     #[test]
-    fn static_alias_overrides_implicit_resolution() {
+    fn ddsamqp_2_2_static_alias_overrides_implicit_resolution() {
         let mut r = AddressRouter::new();
         r.add_route(
             "alias",
@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn wildcard_alias_matches() {
+    fn ddsamqp_2_2_wildcard_alias_matches() {
         let mut r = AddressRouter::new();
         r.add_route(
             "sensor.*",
@@ -284,7 +284,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_domain_url_yields_error() {
+    fn ddsamqp_2_2_malformed_domain_url_yields_error() {
         let r = AddressRouter::new();
         assert!(matches!(
             r.resolve("domain://not-a-number/Topic"),
@@ -293,13 +293,13 @@ mod tests {
     }
 
     #[test]
-    fn empty_address_yields_no_route() {
+    fn ddsamqp_2_2_empty_address_yields_no_route() {
         let r = AddressRouter::new();
         assert!(matches!(r.resolve(""), Err(ResolutionError::NoRoute(_))));
     }
 
     #[test]
-    fn conflict_resolution_uri_wins_when_both_present() {
+    fn ddsamqp_2_1_conflict_resolution_uri_wins_when_both_present() {
         // Spec §7.8: the URI form wins over the app property.
         let uri = alloc::vec!["uri-a".to_string(), "uri-b".to_string()];
         let prop = alloc::vec!["prop-only".to_string()];
@@ -307,14 +307,14 @@ mod tests {
     }
 
     #[test]
-    fn conflict_resolution_property_used_when_uri_empty() {
+    fn ddsamqp_2_2_conflict_resolution_property_used_when_uri_empty() {
         let uri: alloc::vec::Vec<String> = alloc::vec::Vec::new();
         let prop = alloc::vec!["from-prop".to_string()];
         assert_eq!(effective_partitions(&uri, &prop), prop);
     }
 
     #[test]
-    fn conflict_resolution_both_empty() {
+    fn ddsamqp_2_2_conflict_resolution_both_empty() {
         let uri: alloc::vec::Vec<String> = alloc::vec::Vec::new();
         let prop: alloc::vec::Vec<String> = alloc::vec::Vec::new();
         assert!(effective_partitions(&uri, &prop).is_empty());

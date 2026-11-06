@@ -240,7 +240,7 @@ fn run_probe(binary: &Path, set_rc: &str, profile_rc: &str) -> Vec<String> {
 }
 
 #[test]
-fn the_zerodds_binding_carries_the_rpc_qos_to_the_c_api() {
+fn rpc_7_10_1_the_zerodds_binding_carries_the_rpc_qos_to_the_c_api() {
     let root = repository_root();
     let dir = std::env::temp_dir().join(format!(
         "zerodds-rpc-qos-{}-{:?}",

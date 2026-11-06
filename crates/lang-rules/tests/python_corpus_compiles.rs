@@ -4,7 +4,7 @@
 //!
 //! The counterpart of the `every_corpus_case_that_renders_also_compiles`
 //! that `swift_end_to_end.rs`, `go_end_to_end.rs` and eight more carry.
-//! The Python column had none: `docs/OPEN-ITEMS.md` records that the six
+//! The Python column had none: the six
 //! oldest columns lost theirs when `zerodds-idl-<lang>` was removed.
 //!
 //! **Executed, not only compiled.** `python3 -m py_compile` answers one
@@ -152,14 +152,10 @@ fn the_interpreter_check_catches_a_deliberate_error() {
 
 /// The whole corpus through CPython, one interpreter start per case.
 ///
-/// `#[ignore]`, because it is one interpreter start per corpus case and
-/// each costs about a seventh of a second — a minute for the corpus as
-/// it stands. It is what proves the column rather than samples it, so it
-/// is run with `--include-ignored` and its result is what the
-/// `idl-python-corpus` job records.
-#[test]
-#[ignore = "one CPython start per corpus case, ~1 minute; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// `share` of `shares`: every case renders in every share (the refusal
+/// lists and `MUST_RENDER` hold over the whole corpus), and only the
+/// cases at `position % shares == share` reach the tool.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     if !python_available() {
         eprintln!("SKIPPED: `python3` is not on the path.");
         return;
@@ -168,7 +164,8 @@ fn every_corpus_case_that_renders_also_compiles() {
     let mut unexpectedly_fine = Vec::new();
     let mut frontend = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus_harness::corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus_harness::corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
@@ -197,6 +194,10 @@ fn every_corpus_case_that_renders_also_compiles() {
             }
             (Err(_), Some(_)) => continue,
         };
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         let known = DOES_NOT_COMPILE.iter().find(|(case, _)| *case == name);
         match (python_runs(&text, &name), known) {
@@ -224,8 +225,28 @@ fn every_corpus_case_that_renders_also_compiles() {
     );
     assert!(unexpectedly_fine.is_empty(), "{unexpectedly_fine:#?}");
     assert!(
-        checked >= MUST_RENDER,
-        "only {checked} corpus cases reached the interpreter; the gate says nothing \
+        rendered >= MUST_RENDER,
+        "only {rendered} corpus cases rendered; the gate says nothing \
          below {MUST_RENDER}"
     );
+}
+
+/// The corpus through CPython, in shares.
+///
+/// The corpus in 2 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: one interpreter start per case is no unit
+/// test; the weekly `integration-codegen` job runs them, eight shares at a time.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a half of the corpus through CPython; runs in integration-codegen"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 2);
+    }
+
+    #[test]
+    #[ignore = "a half of the corpus through CPython; runs in integration-codegen"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 2);
+    }
 }

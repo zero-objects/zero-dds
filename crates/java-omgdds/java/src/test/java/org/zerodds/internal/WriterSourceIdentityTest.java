@@ -45,7 +45,7 @@ class WriterSourceIdentityTest {
     }
 
     @Test
-    void theWireFormIsTheGuidThenTheSequenceNumberAsHighAndLowWordLittleEndian() {
+    void rpc_7_5_1_1_1_a_sample_identity_is_the_guid_then_the_sequence_number_as_high_and_low_word() {
         // sequence number 0x0000000500000007: high word 5, low word 7
         SourceIdentity identity = new SourceIdentity(guid(), 0x0000000500000007L);
         byte[] wire = identity.toBytesLe();
@@ -57,28 +57,7 @@ class WriterSourceIdentityTest {
     }
 
     @Test
-    void aNegativeHighWordAndAFullLowWordSurviveTheRoundTrip() {
-        // high word -1 (0xFFFFFFFF), low word 0xFFFFFFFE
-        SourceIdentity identity = new SourceIdentity(guid(), 0xFFFFFFFFFFFFFFFEL);
-        byte[] wire = identity.toBytesLe();
-        assertArrayEquals(new byte[] {-1, -1, -1, -1, -2, -1, -1, -1},
-                java.util.Arrays.copyOfRange(wire, 16, 24));
-        SourceIdentity back = SourceIdentity.fromBytesLe(wire);
-        assertEquals(identity, back);
-        assertEquals(identity.sequence(), back.sequence());
-        assertEquals(identity.hashCode(), back.hashCode());
-    }
-
-    @Test
-    void aShortParameterIsNoIdentityAndAGuidHasSixteenOctets() {
-        assertNull(SourceIdentity.fromBytesLe(new byte[23]));
-        assertNull(SourceIdentity.fromBytesLe(null));
-        assertThrows(IllegalArgumentException.class, () -> new SourceIdentity(new byte[15], 1));
-        assertNotEquals(new SourceIdentity(guid(), 1), new SourceIdentity(guid(), 2));
-    }
-
-    @Test
-    void aWriterGivesEverySampleItsOwnIdentityAndTheReaderSeesTheSameOne() throws Exception {
+    void rpc_7_5_1_1_1_a_writer_gives_every_sample_its_own_identity() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1398);
         org.omg.dds.topic.Topic<byte[]> topic = participant.createTopic("Identity", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);

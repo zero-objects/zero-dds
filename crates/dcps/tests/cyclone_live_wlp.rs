@@ -9,9 +9,13 @@
 //!
 //! # Test flow
 //!
-//! 1. A ZeroDDS runtime starts on domain 42, sending AUTOMATIC WLP
-//!    heartbeats every 200 ms.
-//! 2. The test starts its own local `ddsperf -i 42 sub` process.
+//! 1. A ZeroDDS runtime starts on a domain leased for the test
+//!    (`zerodds-test-domains`), sending AUTOMATIC WLP heartbeats every
+//!    200 ms. On the fixed domain 42 it saw no Cyclone participant within
+//!    5 s on the CI runner host (pipeline 8967, job 229696); a fixed number is not
+//!    arbitrated between the jobs of a host and the hosts of the LAN, a
+//!    lease is.
+//! 2. The test starts its own local `ddsperf -i <domain> sub` process.
 //! 3. Cyclone wrote one ParticipantMessageData when its participant was
 //!    created, before it knew ours, and announces it in the HEARTBEATs of
 //!    its WLP writer (`first=1, last=1`); it writes no further pulse,
@@ -24,7 +28,7 @@
 //!
 //! Until the WLP reader answered HEARTBEATs this test passed only because
 //! the cache counted ZeroDDS's own pulse, looped back by the multicast
-//! group; with that skipped (2989d6c1ee0) it failed, and the capture above
+//! group; with that skipped (c5aa6d5ad6a) it failed, and the capture above
 //! showed why.
 //!
 //! # Prerequisites
@@ -62,12 +66,17 @@ mod cross_vendor;
 
 #[test]
 #[ignore = "live cyclone interop — opt-in via --ignored, requires local ddsperf"]
-fn cyclone_live_wlp_handshake() {
+fn rtps_8_4_13_3_cyclone_live_wlp_handshake() {
     if !cross_vendor::require_or_skip("cyclone_live_wlp") {
         return;
     }
-    let mut cyclone =
-        cross_vendor::start_cyclone_ddsperf_sub(42, 30).expect("start local Cyclone ddsperf");
+    let lease = zerodds_test_domains::lease_domain();
+    let domain = lease.id();
+    let mut cyclone = cross_vendor::start_cyclone_ddsperf_sub(
+        u32::try_from(domain).expect("a leased domain is not negative"),
+        30,
+    )
+    .expect("start local Cyclone ddsperf");
     // Aggressive WLP period so that Cyclone sees us as alive within a
     // few seconds.
     let cfg = RuntimeConfig {
@@ -77,7 +86,9 @@ fn cyclone_live_wlp_handshake() {
         participant_lease_duration: Duration::from_millis(600),
         ..RuntimeConfig::default()
     };
-    let rt = DcpsRuntime::start(42, GuidPrefix::from_bytes([0xAA; 12]), cfg).expect("start");
+    let rt = common::ShutsDown(
+        DcpsRuntime::start(domain, GuidPrefix::from_bytes([0xAA; 12]), cfg).expect("start"),
+    );
 
     eprintln!("ZeroDDS WLP endpoint live; waiting up to 5 s for Cyclone's pulse");
     // The Cyclone participant SPDP announced, and whether the WLP cache
@@ -109,3 +120,6 @@ fn cyclone_live_wlp_handshake() {
         "no Cyclone participant in the WLP cache after 5 s ({discovered} discovered over SPDP)"
     );
 }
+
+#[path = "common/mod.rs"]
+mod common;

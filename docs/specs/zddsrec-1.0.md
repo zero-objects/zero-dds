@@ -18,7 +18,7 @@ Endianness: **little-endian** for all multi-byte integers.
 ```
 +========== Header ==========+
 | Magic    "ZDDS"  (4 byte)  |
-| Version  u32     (LE)      |  // = 2 for this spec
+| Version  u32     (LE)      |  // = 3 for this spec
 | TimeBase i64     (LE) ns   |  // UNIX epoch anchor
 | ParticipantCount u32 (LE)  |
 | TopicCount       u32 (LE)  |
@@ -37,6 +37,8 @@ Endianness: **little-endian** for all multi-byte integers.
 | ParticipantIdx u32 (LE)    |
 | TopicIdx       u32 (LE)    |
 | SampleKind     u8          |  // 0=Alive 1=Disposed 2=Unregistered
+| ReprPresent    u8          |  // from version 3: 1 = ReprId names the payload
+| ReprId         2 bytes     |  // from version 3: representation identifier
 | PayloadLen     u32 (LE)    |
 | Payload        bytes       |
 +============================+
@@ -46,6 +48,15 @@ Endianness: **little-endian** for all multi-byte integers.
 
 EOF: no explicit marker — the reader stops when the cursor reaches the
 end of the file.
+
+`Payload` is the serialized body without the 4-octet encapsulation header
+(DDSI-RTPS 2.5 §10.5). `ReprId` is the representation identifier of that
+header as the writer sent it (e.g. `00 09` for `D_CDR2_LE`, DDS-XTypes 1.3
+Table 60): the body alone does not say whether it is XCDR1 or XCDR2, plain,
+delimited or a parameter list, or in which byte order, and a replay has to
+send it under the header it came with. `ReprPresent` 0 (`ReprId` then
+`00 00`) marks a frame whose identifier is not known, such as a dispose
+without payload.
 
 ## Indices
 
@@ -101,9 +112,11 @@ Other values: the reader returns a `BadSampleKind(b)` error.
 
 ## Versioning
 
-`Version = ZDDSREC_VERSION` (= 1). The reader rejects with
+`Version = ZDDSREC_VERSION` (= 3). The reader rejects with
 `UnsupportedVersion(v)` for `v > ZDDSREC_VERSION` — older
-versions can be read on the reader side in the compatibility path.
+versions can be read on the reader side in the compatibility path: a
+version 1 or 2 frame has no `ReprPresent`/`ReprId`, and reads as one
+whose identifier is not known.
 
 Backward-incompatible changes raise the major version. Additive
 changes that remain read-only backward-compatible with default values

@@ -43,10 +43,13 @@ fn auth_token_option(token: &[u8]) -> CoapOption {
     CoapOption::new(COAP_OPTION_AUTH_TOKEN, OptionValue::Opaque(token.to_vec()))
 }
 
-fn make_secure_cfg(with_acl: bool) -> DaemonConfig {
+/// The configuration on a leased DDS domain (the host's share of the band,
+/// `zerodds-test-domains`); the lease is held while the test runs.
+fn make_secure_cfg(with_acl: bool) -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.bind = "127.0.0.1:0".to_string();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.auth_mode = "bearer".into();
     cfg.auth_bearer_token = Some("secret-coap-token".into());
     cfg.auth_bearer_subject = Some("alice".into());
@@ -76,13 +79,16 @@ fn make_secure_cfg(with_acl: bool) -> DaemonConfig {
         cfg.topic_acl
             .insert("Forbidden".into(), (vec!["bob".into()], vec!["bob".into()]));
     }
-    cfg
+    (cfg, lease)
 }
 
-fn make_open_cfg() -> DaemonConfig {
+/// The configuration on a leased DDS domain (the host's share of the band,
+/// `zerodds-test-domains`); the lease is held while the test runs.
+fn make_open_cfg() -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.bind = "127.0.0.1:0".to_string();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.auth_mode = "none".into();
     cfg.topics.push(TopicConfig {
         dds_name: "T".to_string(),
@@ -93,7 +99,7 @@ fn make_open_cfg() -> DaemonConfig {
         durability: "volatile".to_string(),
         history_depth: 10,
     });
-    cfg
+    (cfg, lease)
 }
 
 fn client_socket() -> UdpSocket {
@@ -110,8 +116,8 @@ fn recv_msg(socket: &UdpSocket) -> CoapMessage {
 }
 
 #[test]
-fn auth_bearer_token_in_option_is_accepted() {
-    let cfg = make_secure_cfg(true);
+fn coapbridge_7_3_auth_bearer_token_in_option_is_accepted() {
+    let (cfg, _lease) = make_secure_cfg(true);
     let h = server::start(cfg).expect("start");
     let addr = h.local_addr.clone();
     let client = client_socket();
@@ -131,8 +137,8 @@ fn auth_bearer_token_in_option_is_accepted() {
 }
 
 #[test]
-fn auth_missing_bearer_token_yields_4_01_unauthorized() {
-    let cfg = make_secure_cfg(false);
+fn coapbridge_7_3_auth_missing_bearer_token_yields_4_01_unauthorized() {
+    let (cfg, _lease) = make_secure_cfg(false);
     let h = server::start(cfg).expect("start");
     let addr = h.local_addr.clone();
     let client = client_socket();
@@ -152,7 +158,7 @@ fn auth_missing_bearer_token_yields_4_01_unauthorized() {
 
 #[test]
 fn auth_invalid_bearer_token_yields_4_01() {
-    let cfg = make_secure_cfg(false);
+    let (cfg, _lease) = make_secure_cfg(false);
     let h = server::start(cfg).expect("start");
     let addr = h.local_addr.clone();
     let client = client_socket();
@@ -171,8 +177,8 @@ fn auth_invalid_bearer_token_yields_4_01() {
 }
 
 #[test]
-fn acl_write_deny_yields_4_03_forbidden() {
-    let cfg = make_secure_cfg(true);
+fn coapbridge_7_3_acl_write_deny_yields_4_03_forbidden() {
+    let (cfg, _lease) = make_secure_cfg(true);
     let h = server::start(cfg).expect("start");
     let addr = h.local_addr.clone();
     let client = client_socket();
@@ -192,8 +198,8 @@ fn acl_write_deny_yields_4_03_forbidden() {
 }
 
 #[test]
-fn acl_observe_register_deny_yields_4_03() {
-    let cfg = make_secure_cfg(true);
+fn coapbridge_7_3_acl_observe_register_deny_yields_4_03() {
+    let (cfg, _lease) = make_secure_cfg(true);
     let h = server::start(cfg).expect("start");
     let addr = h.local_addr.clone();
     let client = client_socket();
@@ -216,7 +222,7 @@ fn acl_observe_register_deny_yields_4_03() {
 fn auth_none_open_topic_works_unauthenticated() {
     // Sanity: with auth.mode=none the daemon must keep the open path
     // unbroken (no regression for non-authenticated deployments).
-    let cfg = make_open_cfg();
+    let (cfg, _lease) = make_open_cfg();
     let h = server::start(cfg).expect("start");
     let addr = h.local_addr.clone();
     let client = client_socket();
@@ -235,9 +241,9 @@ fn auth_none_open_topic_works_unauthenticated() {
 /// §9.2 SIGHUP: the reloaded ACL decides the next request — alice's POST
 /// to `forbidden` is 4.03 until the reloaded configuration grants it (2.04).
 #[test]
-fn sighup_applies_the_reloaded_acl() {
+fn coapbridge_9_2_sighup_applies_the_reloaded_acl() {
     use std::sync::atomic::Ordering;
-    let cfg = make_secure_cfg(true);
+    let (cfg, _lease) = make_secure_cfg(true);
     let mut granted = cfg.clone();
     granted.topic_acl.insert(
         "Forbidden".into(),

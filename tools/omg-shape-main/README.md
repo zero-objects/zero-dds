@@ -128,7 +128,7 @@ The same binary, on a Mac carrying a load average between 24 and 87,
 fails cases it passes on the Linux test host: at load 39 the whole `Lifespan`
 family reports `DATA_NOT_CORRECT`, and `Test_Reliability_4/5` and
 `Test_History_0/1` fail there **also at the commit before this work**
-(`git checkout 2222a0a7e43 -- crates/… tools/omg-shape-main/src`, rebuilt,
+(`git checkout c167a7c3866 -- crates/… tools/omg-shape-main/src`, rebuilt,
 measured). Measured: at the default `--write-period` of 33 ms a RELIABLE
 reader on that host loses 405 of 1146 samples, at `--write-period 200`
 none of 264. A macOS host also had a foreign DDS participant holding

@@ -7,7 +7,7 @@ Verwandte Seiten: [README.md](README.md) · [architecture.md](architecture.md) �
 ## Kurzfassung
 
 - `tools/` hat 61 Einträge: 31 Rust-Crates, 11 einzelne Skripte bzw. Dateien, 19 Verzeichnisse mit Skripten, Fällen und Vorlagen.
-- CI-Gates mit Fundstelle: `silent-drop-guard.sh`, `staged-tree-guard.sh`, `man-gate`, `endpoints-gate`, `byte-gate/verify.sh`, `interop-results` (`--verify`, `verify-record.sh`), `wireprobe/three-column-gate`, `pairwise-run`, `bench-suite` (`regression`), `zerodds-lint`.
+- CI-Gates mit Fundstelle: `silent-drop-guard.sh`, `staged-tree-guard.sh`, `man-gate`, `endpoints-gate`, `byte-gate/verify.sh`, `interop-results` (`--verify`, `verify-record.sh`), `pairwise-run`, `bench-suite` (`regression`), `zerodds-lint`.
 - `man/man1` enthält 20 Seiten, `man/man5` 8 Seiten. Sieben installierte Programme haben keine Manpage (`zerodds-lint`, `-traceability`, `-secure-permissions`, `-chaos`, `-perf`, `-dashboard`, `-recorder-bridge`).
 - `tools/man-gate --list` meldet 0 Abweichungen (Optionsnamen und Exit-Codes aller Seiten gegen die Programme).
 
@@ -22,7 +22,7 @@ Einordnung: **A** = Anwenderwerkzeug (paketiert oder für Nutzer gedacht), **G**
 | `admin` | `zerodds-admin` | A | Operator-CLI: Domain live untersuchen, DDS-XML offline prüfen | `zerodds-admin domain inspect 0` |
 | `amqp-dds-endpoint` | `amqp-dds-endpoint` | T | AMQP-1.0-Server nach Spec §9.2, XML-Konfiguration | `amqp-dds-endpoint [--config F] [--listen A]` |
 | `bench` | `zerodds-bench` | A | Latenz/Durchsatz im Prozess | `zerodds-bench latency` |
-| `bench-suite` | `regression`, `roundtrip-1us`, `roundtrip-typed` | G/T | `regression`: prozessübergreifendes Roundtrip-Gate ohne externe Hosts (CI-Job `bench-regression`, `ci/full.yml`); die beiden anderen: Latenzvergleich mit Vendor-Apps | `cargo run -p zerodds-bench-suite --bin regression` |
+| `bench-suite` | `regression`, `roundtrip-1us`, `roundtrip-typed` | G/T | `regression`: prozessübergreifendes Roundtrip-Gate ohne externe Hosts, der geprüfte Stand gegen einen Build des letzten Release-Tags im selben Zeitfenster (CI-Jobs `speed-regression-1` und `-2` in `ci/jobs/speed-pillar.yml`, auf einem exklusiven Host); die beiden anderen: Latenzvergleich mit Vendor-Apps | `python3 tests/integration/with_domains.py 3 -- cargo run --release -p zerodds-bench-suite --bin regression -- --reference <Release-Build>/roundtrip-1us` |
 | `cargo-dag` | `cargo-dag` | B | Publish-Reihenfolge der Workspace-Crates | `cargo-dag . --only-publishable` |
 | `chaos` | `zerodds-chaos` | A | UDP-Störproxy, netem, Partitionen, Link-Flaps | `zerodds-chaos proxy --listen … --forward …` |
 | `cli-common` | — | L | gemeinsame CLI-Hilfen (`parse_duration`, Signal-Handler, GUID-Präfix) für record/bench/monitor/spy/snitch/pcap/mq | |
@@ -31,7 +31,7 @@ Einordnung: **A** = Anwenderwerkzeug (paketiert oder für Nutzer gedacht), **G**
 | `iceoryx2-oracle-consumer` | `iceoryx2-oracle-consumer` | T | iceoryx2-Subscriber ohne ZeroDDS-Abhängigkeit; prüft, dass ZeroDDS echtes iceoryx2 schreibt | neben einem ZeroDDS-Publisher starten |
 | `idlc` | `zerodds-idlc` | A | IDL-4.2-Prüfer, Formatierer, Codegenerator (21 Sprachen); `tests/` enthält CI-Skripte (`csharp-support`, `java-typelookup`) | `zerodds-idlc check a.idl` |
 | `interop-matrix` | `interop-matrix` | T | JSON → HTML-Matrix, `--fail-on-red` | `interop-matrix in.json --out m.html` |
-| `interop-results` | `interop-results` + Skripte | G | Ergebnisbaum `tests/interop-results/`, Ledger und Tabellen; `--verify` ist der CI-Befehl (GitHub `ci.yml`, `ci/full.yml` Jobs `interop-results`, `interop-results-record`); Skripte `record.sh`, `verify-record.sh`, `regenerate.sh`, `*-sweep.sh` | `cargo run -p zerodds-interop-results --bin interop-results -- --verify` |
+| `interop-results` | `interop-results` + Skripte | G | Ergebnisbaum `tests/interop-results/`, Ledger und Tabellen; `--verify` ist der CI-Befehl (GitHub `ci.yml`, Job `interop-results` in `ci/weekly-old-suite.yml`); Skripte `record.sh`, `verify-record.sh`, `regenerate.sh`, `*-sweep.sh` | `cargo run -p zerodds-interop-results --bin interop-results -- --verify` |
 | `isolation-smoke` | `isolation-smoke` | T | Sender/Empfänger für `testing/isolation/` (UDP, UDS) | `isolation-smoke --transport=udp --role=receiver …` |
 | `monitor` | `zerodds-monitor` | A | Metrik-Snapshot, `/metrics`-Server | `zerodds-monitor serve` |
 | `mq` | `zerodds-mq` | A | Rohsamples zwischen zwei Domains | `zerodds-mq -t T --src-domain 0 --dst-domain 1` |
@@ -59,21 +59,21 @@ Die Unterverzeichnisse `tools/wireprobe/*-gen` (22 Crates, Generatoren je Sprach
 |---|---|---|---|
 | `annotate-snippets.js` | B | ordnet Code-Blöcken der Website passende Demo-Verzeichnisse zu | manuell (in `scripts/mirror-exclude.txt` gelistet) |
 | `dcps-shapes-interop.sh` | T | ZeroDDS ↔ Fremd-DDS, ein Shape-Topic, beide Richtungen, vier Stacks; Fall gilt nur bei Empfängerzählung > 0 | `./tools/dcps-shapes-interop.sh [B D …]`; vorher `cargo build -p zerodds-dcps --example omg_shapes --example classic_shapes` |
-| `endpoints-gate` | G | baut und testet die committeten Suiten aller Bindings unter `endpoints/` | `tools/endpoints-gate [--langs go,zig] [--list] [--require …]`; CI: Job `endpoints-gate` in `ci/full.yml`, `ci/run_merge_scope.py` |
+| `endpoints-gate` | G | baut und testet die committeten Suiten aller Bindings unter `endpoints/` | `tools/endpoints-gate [--langs go,zig] [--list] [--require …]`; CI: die Jobs `integration-endpoints` und `integration-endpoints-mutation` der Integrations-Säule (`ci/integration_scenarios.py`), `ci/run_merge_scope.py` |
 | `interop-env.sh` | T | Umgebung der Vendor-Toolchains für die Probes (ersetzt das verlorene `/root/tc-env.sh`); fehlende Toolchain → Variable ungesetzt, eine Zeile Meldung | `. tools/interop-env.sh` |
 | `interop-gate` | T | alle Interop-Tests in einem Befehl, ein Ergebnis pro Test; gedacht für Zeiten ohne CI-Runner | `tools/interop-gate [--tests a,b] [--require …] [--list]`; keine CI-Fundstelle |
 | `interop-vendors.sh` | T | Orte der Fremd-Toolchains als Umgebungsvariablen mit Messhost-Vorgabe; fehlende Toolchain wird mit Zeilenzahl gemeldet, nie still übersprungen | von den Interop-Harnesses in `tools/` gesourct |
-| `man-gate` | G | vergleicht Langoptionen und Exit-Codes aus `--help` der gebauten Binaries (`target/debug`) mit `man/man1/*.1` | `tools/man-gate` (Exit 1 bei Differenz, 2 wenn ein Binary fehlt), `--list`; CI: Job `man-pages` in `ci/full.yml` (wöchentliche Regeln) |
+| `man-gate` | G | vergleicht Langoptionen und Exit-Codes aus `--help` der gebauten Binaries (`target/debug`) mit `man/man1/*.1` | `tools/man-gate` (Exit 1 bei Differenz, 2 wenn ein Binary fehlt), `--list`; CI: Job `man-pages` in `ci/weekly-checks.yml` |
 | `ros-extensibility-scan.sh` | T | prüft, ob ein ROS-2-Typ eine Extensibility deklariert (Grundlage für FINAL im RMW); Exit ≠ 0 bei Fund | manuell |
 | `silent-drop-allowlist.tsv` | G | Allowlist mit Begründung pro Fundstelle für `silent-drop-guard.sh` (Schlüssel: Muster, Datei, Zeilentext) | Daten |
-| `silent-drop-guard.sh` | G | sucht elf Muster stiller Datenverluste, schlägt bei jeder Fundstelle außerhalb der Allowlist fehl | `bash tools/silent-drop-guard.sh`; `scripts/pre-commit.sh`, `.github/workflows/ci.yml`, `ci/full.yml` |
-| `staged-tree-guard.sh` | G | baut den Index-Stand statt des Arbeitsverzeichnisses | `bash tools/staged-tree-guard.sh [--head]`; `scripts/pre-commit.sh`, `.github/workflows/ci.yml` (`--head`), `ci/full.yml` |
+| `silent-drop-guard.sh` | G | sucht elf Muster stiller Datenverluste, schlägt bei jeder Fundstelle außerhalb der Allowlist fehl | `bash tools/silent-drop-guard.sh`; `scripts/pre-commit.sh`, `.github/workflows/ci.yml`, Job `merge-static` (`ci/merge-jobs.yml`) |
+| `staged-tree-guard.sh` | G | baut den Index-Stand statt des Arbeitsverzeichnisses | `bash tools/staged-tree-guard.sh [--head]`; `scripts/pre-commit.sh`, `.github/workflows/ci.yml` (`--head`) |
 
 ### Verzeichnisse mit Skripten, Fällen und Vorlagen
 
 | Eintrag | Art | Zweck | Aufruf |
 |---|---|---|---|
-| `byte-gate/` | G/T | Bytes der Vendor-Serialisierer für einen Typ und ein Sample, XCDR1/XCDR2 × LE/BE; Ergebnis `crates/ast-layout/tests/fixtures/vendor_bytes.md` und `.rows.tsv` | `tools/byte-gate/gate.sh`; CI: `bash tools/byte-gate/verify.sh` (Job `interop-vendor-bytes`, `ci/full.yml`) |
+| `byte-gate/` | G/T | Bytes der Vendor-Serialisierer für einen Typ und ein Sample, XCDR1/XCDR2 × LE/BE; Ergebnis `crates/ast-layout/tests/fixtures/vendor_bytes.md` und `.rows.tsv` | `tools/byte-gate/gate.sh`; CI: `bash tools/byte-gate/verify.sh` (Jobs `interop-vendor-bytes-*`, `ci/weekly-old-suite.yml`) |
 | `corba-oracle/` | T | ORBs lesen von ZeroDDS geschriebene GIOP-Bytes (`corba-read.sh`), Sweep (`corba-sweep.sh`), `targeted/` | `tools/corba-oracle/corba-read.sh read.tsv` |
 | `dds-roundtrip-codegen/` | — | leeres Verzeichnis | |
 | `evolution-gate/` | T | Typ-Evolution: alter Typ schreibt, neuer liest und umgekehrt (`evo.sh`, `cases/`, `smoke/`) | `tools/evolution-gate/evo.sh …`; keine CI-Fundstelle |
@@ -90,7 +90,7 @@ Die Unterverzeichnisse `tools/wireprobe/*-gen` (22 Crates, Generatoren je Sprach
 | `unspecified-reach/` | T | vier Harnesses zu Konstrukten, die der Standard nicht festlegt; Ergebnis `crates/ast-layout/tests/fixtures/unspecified_constructs.md` | `bitset-bytes.sh`, `fixed-bytes.sh`, `front-ends.sh`, `map-length.sh` |
 | `wire-capture/` | T | zweite Messebene: was Implementierungen auf den Socket legen (Fill-Lauf, Korpuslauf mit 107 Fällen, 9 Implementierungen laut README) | `capture-rtps-session.sh`, `check-run.py`, `decode-rtps.py`, `decode-giop.py` |
 | `wire-oracle/` | T | zweiter Byte-Gate-Fallsatz und ORB-Einzelfälle (JacORB, omniORB) | `gate.sh --cases …`, `fixed-orbs.sh` |
-| `wireprobe/` | G/T | Probe-Sammlung für den Interop-Korpus: Vendor-Probes (`wireprobe-cyclone`, `-fastdds`, `-rti`, `-opendds`, `-hdds`, `-ros`, `-tao`, `-omniorb`, `-jacorb`), ZeroDDS-Sprachprobes (`wireprobe-zerodds-<lang>` + `-gen`-Crates), Endpoint-Probes (`wireprobe-endpoint-*`), Vorlagen (`*-template.*`), Treiber (`wireprobe-batch`, `wireprobe-pairwise`, `wireprobe-bytes`) und Gates (`three-column-gate`, `endpoint-mutation-gate`); kein README | CI: `bash tools/wireprobe/three-column-gate --full` (Job `three-column-gate-full`, `ci/full.yml`), `ci/zd-test.sh` |
+| `wireprobe/` | G/T | Probe-Sammlung für den Interop-Korpus: Vendor-Probes (`wireprobe-cyclone`, `-fastdds`, `-rti`, `-opendds`, `-hdds`, `-ros`, `-tao`, `-omniorb`, `-jacorb`), ZeroDDS-Sprachprobes (`wireprobe-zerodds-<lang>` + `-gen`-Crates), Endpoint-Probes (`wireprobe-endpoint-*`), Vorlagen (`*-template.*`), Treiber (`wireprobe-batch`, `wireprobe-pairwise`, `wireprobe-bytes`, `three-column-gate`: die C- und die Python-Spalte ganz, für `interop-results`) und das Gate `endpoint-mutation-gate`; kein README | von Hand: `bash tools/wireprobe/three-column-gate --full` (aus `interop-results/record.sh`); CI: `ci/zd-test.sh` |
 | `xtypes-1.3-gap-scan/` | T | misst die XTypes-1.3-Lücke; `probe/` ist ein Rust-Programm (stdin → Messwerte) | `roster.py [--check]`, `scan.sh [--record\|--report]` |
 
 ## (b) Manpages
@@ -172,7 +172,7 @@ Keine offen. `tools/man-gate --list` vergleicht Optionsnamen und Exit-Codes alle
 | `linux/systemd/` | Units für die sechs Bridges, `zerodds-router.service`, `zerodds-durability-svc.service`; `zerodds-sysusers.conf`, `zerodds-tmpfiles.conf` |
 | `linux/configs/` | Beispielkonfigurationen `*-bridged.yaml.example` (sechs Bridges), `ros2.yaml.example`, `router.json.example` |
 | `macos/homebrew/` | `zerodds.rb` (alle Binaries, Manpages, Dienst `zerodds-ws-bridged`), `zerodds-ros2.rb`, je eine reine Service-Formel pro Bridge (kein eigenes Archiv; das Binary kommt aus `zerodds`) |
-| `macos/bundle/` | `build-bundle.sh` packt `zerodds-<v>-<target>.tar.gz` (das Layout, das `zerodds.rb` installiert) plus `.sha256`; aufgerufen vom Job `macos-bundle` (`ci/full.yml`) |
+| `macos/bundle/` | `build-bundle.sh` packt `zerodds-<v>-<target>.tar.gz` (das Layout, das `zerodds.rb` installiert) plus `.sha256`; aufgerufen vom Job `macos-bundle` (`ci/jobs/macos-bundle.yml`) |
 | `macos/launchd/` | `org.zerodds.<bridge>-bridged.plist` für die sechs Bridges, jeweils `--config /usr/local/etc/zerodds/<stem>.yaml` |
 | `macos/pkg/` | `build-pkg.sh` baut ein `.pkg` mit Binaries und Manpages unter `/usr/local` |
 | `windows/msi/` | `zerodds.wxs` (WiX; `bin`, `lib`, `include`, PATH-Eintrag) |

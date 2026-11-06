@@ -6,21 +6,16 @@
 use std::sync::OnceLock;
 
 /// When is `PID_VENDOR_TRACE_CONTEXT` embedded into outgoing samples?
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TraceContextEmission {
     /// On every sample, whether sampled or not.
     Always,
     /// Only when the current span context carries `sampled=true`
     /// (default — respects the OTel sampler decision).
+    #[default]
     Sampled,
     /// Never.
     Never,
-}
-
-impl Default for TraceContextEmission {
-    fn default() -> Self {
-        Self::Sampled
-    }
 }
 
 /// Stable short hash (FNV-1a, 64-bit → 16 hex chars) for the
@@ -38,9 +33,10 @@ fn short_hash(s: &str) -> String {
 /// Policy for the `topic` label of the DCPS metrics (spec §9, §2.3) — bounds the
 /// Prometheus label cardinality of end-user topic names. Dyn-free (enum instead
 /// of `Box<dyn Fn>`), `Copy`, deterministic.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum TopicLabelPolicy {
     /// Topic name unchanged (default — 1.0 behavior).
+    #[default]
     Full,
     /// Truncate the topic label to at most `n` characters.
     Truncate(usize),
@@ -48,12 +44,6 @@ pub enum TopicLabelPolicy {
     Hashed,
     /// Omit the `topic` label entirely (maximum cardinality protection).
     Drop,
-}
-
-impl Default for TopicLabelPolicy {
-    fn default() -> Self {
-        Self::Full
-    }
 }
 
 impl TopicLabelPolicy {
@@ -71,20 +61,15 @@ impl TopicLabelPolicy {
 
 /// Policy for GUID-bearing span attributes (spec §9, §5) — controls the
 /// exposure of endpoint GUIDs on export. Dyn-free, `Copy`, deterministic.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum GuidLabelPolicy {
     /// GUID as hex (default — sensible on trusted networks).
+    #[default]
     Full,
     /// Stable short hash of the GUID.
     Hashed,
     /// Omit the GUID attribute.
     Omit,
-}
-
-impl Default for GuidLabelPolicy {
-    fn default() -> Self {
-        Self::Full
-    }
 }
 
 impl GuidLabelPolicy {

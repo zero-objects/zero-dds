@@ -40,10 +40,13 @@ use std::process::Command;
 use zerodds_coap_bridge::daemon::config::{DaemonConfig, TopicConfig};
 use zerodds_coap_bridge::daemon::server;
 
-fn make_test_config(bind: &str) -> DaemonConfig {
+/// The configuration on a leased DDS domain (the host's share of the band,
+/// `zerodds-test-domains`); the lease is held while the test runs.
+fn make_test_config(bind: &str) -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.bind = bind.to_string();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.topics.push(TopicConfig {
         dds_name: "Trade".to_string(),
         dds_type: "Trade".to_string(),
@@ -53,7 +56,7 @@ fn make_test_config(bind: &str) -> DaemonConfig {
         durability: "volatile".to_string(),
         history_depth: 10,
     });
-    cfg
+    (cfg, lease)
 }
 
 /// The libcoap client under every name Debian and upstream give it.
@@ -79,12 +82,12 @@ fn libcoap_client() -> Option<String> {
 }
 
 #[test]
-#[ignore = "requires libcoap (apt install libcoap3-bin) — run via cargo test --features cross-vendor-tests -- --ignored"]
-fn libcoap_post_to_zerodds_daemon_returns_2_04_changed() {
+#[ignore = "needs libcoap (coap-client); runs in integration-bridges-vendor"]
+fn coapbridge_10_libcoap_post_to_zerodds_daemon_returns_2_04_changed() {
     // Run with `--ignored` means measure: a missing client fails instead
     // of reporting interop that never happened.
     let bin = libcoap_client().expect("no libcoap client found; install libcoap3-bin");
-    let cfg = make_test_config("127.0.0.1:0");
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let port = handle.local_addr.rsplit(':').next().expect("port");
 
@@ -119,12 +122,12 @@ fn libcoap_post_to_zerodds_daemon_returns_2_04_changed() {
 }
 
 #[test]
-#[ignore = "requires libcoap-bin"]
-fn libcoap_get_well_known_core_returns_catalog() {
+#[ignore = "needs libcoap (coap-client); runs in integration-bridges-vendor"]
+fn coapbridge_10_libcoap_get_well_known_core_returns_catalog() {
     // Run with `--ignored` means measure: a missing client fails instead
     // of reporting interop that never happened.
     let bin = libcoap_client().expect("no libcoap client found; install libcoap3-bin");
-    let cfg = make_test_config("127.0.0.1:0");
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let port = handle.local_addr.rsplit(':').next().expect("port");
     let url = format!("coap://127.0.0.1:{port}/.well-known/core");
@@ -146,12 +149,12 @@ fn libcoap_get_well_known_core_returns_catalog() {
 }
 
 #[test]
-#[ignore = "requires libcoap-bin + a publish source — composite via docker-compose"]
-fn libcoap_observe_receives_notification() {
+#[ignore = "needs libcoap (coap-client); runs in integration-bridges-vendor"]
+fn coapbridge_10_libcoap_observe_receives_notification() {
     // Run with `--ignored` means measure: a missing client fails instead
     // of reporting interop that never happened.
     let bin = libcoap_client().expect("no libcoap client found; install libcoap3-bin");
-    let cfg = make_test_config("127.0.0.1:0");
+    let (cfg, _lease) = make_test_config("127.0.0.1:0");
     let mut handle = server::start(cfg).expect("daemon start");
     let port = handle.local_addr.rsplit(':').next().expect("port");
     let url = format!("coap://127.0.0.1:{port}/trade");

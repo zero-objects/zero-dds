@@ -19,7 +19,7 @@ type TemplateArgument = (
     alloc::vec::Vec<alloc::sync::Arc<SyntaxNode>>,
     alloc::sync::Arc<SyntaxNode>,
 );
-use crate::scope::ScopeStack;
+use crate::scope::{Found, ScopeStack};
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -133,6 +133,9 @@ pub struct Options {
     /// file can never reproduce the octets the other two wrote, so the
     /// refusal cannot live in the front end alone.
     pub name_of_the_enclosing_scope: NameOfTheEnclosingScope,
+    /// Whether an operation of a remote interface may take a native
+    /// parameter. See [`NativeInRemoteInterface`].
+    pub native_in_remote_interfaces: NativeInRemoteInterface,
     /// Which vendors' extensions this lowering admits. Spec §3.5.
     ///
     /// Two `#pragma` families change the model rather than decorate it:
@@ -209,9 +212,28 @@ impl Default for Options {
             hashed_name_spelling: HashedNameSpelling::default(),
             key_on_union_discriminator: KeyOnUnionDiscriminator::default(),
             name_of_the_enclosing_scope: NameOfTheEnclosingScope::default(),
+            native_in_remote_interfaces: NativeInRemoteInterface::default(),
             dialect: zerodds_idl_parse::Dialect::ALL_VENDORS,
         }
     }
+}
+
+/// Whether an operation of a remote interface may take a native parameter.
+///
+/// An axis because the object request brokers split on it: over the
+/// corpus row `crates/corba-codegen/tests/orb-corpus/rows/04-native.idl`
+/// (`native Handle; interface Special { void in_v(in Handle v); … };`)
+/// `tao_idl` and JacORB's `idl` write stubs and omniORB's `omniidl` stops
+/// with "Unsupported IDL construct found in input (native)"
+/// (`crates/corba-codegen/tests/orb-corpus/recorded/`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum NativeInRemoteInterface {
+    /// Refused. OMG IDL 4.2 §7.4.6.4.4: "In a CORBA context, native type
+    /// parameters are not permitted in operations of remote interfaces."
+    #[default]
+    Refused,
+    /// Taken, as TAO and JacORB take it.
+    Admitted,
 }
 
 /// Whether a declaration may reuse the name of its immediate scope.
@@ -476,7 +498,10 @@ pub(crate) struct Lowering<'a> {
     /// The name is kept as every scope it could denote, innermost first
     /// — §7.5's lookup — because a directive inside a module may name a
     /// sibling, its own module, or anything further out.
-    pub(crate) repository_directives: Vec<(Vec<ScopedName>, String, bool)>,
+    /// The last element says whether the directive was a `#pragma ID` or
+    /// `#pragma prefix` rather than `typeid` or `typeprefix`: IDL 4.2
+    /// §7.4.6.4.1.3 holds the two mechanisms to one answer.
+    pub(crate) repository_directives: Vec<(Vec<ScopedName>, String, bool, bool)>,
     /// Every range a module's body was written in, with the module's
     /// scoped name — one entry per opening, since a module may be reopened.
     /// `#pragma prefix` and the type name of a `#pragma keylist` are read
@@ -656,12 +681,13 @@ impl Lowering<'_> {
                 }
             }
             "ID" => {
-                if let (Some(name), Some(id)) = (rest.first(), rest.get(1).copied()) {
-                    if let Some(text) = unquote(id) {
-                        let candidates = self.pragma_candidates(span, name);
-                        self.record_repository_directive("typeid", &text);
-                        self.repository_directives.push((candidates, text, false));
-                    }
+                if let (Some(name), Some(id)) = (rest.first(), rest.get(1).copied())
+                    && let Some(text) = unquote(id)
+                {
+                    let candidates = self.pragma_candidates(span, name);
+                    self.record_repository_directive("typeid", &text);
+                    self.repository_directives
+                        .push((candidates, text, false, true));
                 }
             }
             // Cyclone DDS says keys the way RTI says `keylist`.
@@ -1019,6 +1045,17 @@ impl Lowering<'_> {
         let Ok(module) = self.ast.ensure_module(parent, &name) else {
             return;
         };
+        // The module's name is an identifier of the scope it is declared
+        // in, the first identifier of every qualified name that goes
+        // through it (`Inner1::S1`), which §7.5.2 looks up from the
+        // scope that writes it and introduces there. Once: "An
+        // identifier declaring a module is considered to be defined by
+        // its first occurrence in a scope."
+        if self.scopes.lookup_here(&name).is_none()
+            && let Ok(node_id) = self.ast.module(module).map(|m| m.node_id)
+        {
+            self.scopes.bind(&name, AnyId::Module(module, node_id));
+        }
         if let Some(parameters) = node
             .children()
             .into_iter()
@@ -1216,7 +1253,7 @@ impl Lowering<'_> {
     fn instantiate(
         &mut self,
         template: &Arc<SyntaxNode>,
-        formals: &[(String, bool)],
+        formals: &[Formal],
         actuals: &[Actual],
         module: Id<zerodds_ast::ModuleNode>,
         instance: &str,
@@ -1233,6 +1270,20 @@ impl Lowering<'_> {
             self.definition(&child);
         }
         self.scopes.pop();
+    }
+
+    /// An actual argument of the instantiation `module` is, rule (192).
+    fn record_template_arg(
+        &mut self,
+        module: Id<zerodds_ast::ModuleNode>,
+        arg: zerodds_ast::TemplateArg,
+    ) {
+        let Ok(node_id) = self.ast.module(module).map(|m| m.node_id) else {
+            return;
+        };
+        if let Some(facets) = self.ast.facets_mut(AnyId::Module(module, node_id)) {
+            facets.corba_mut().template_args.push(arg);
+        }
     }
 
     /// The stored body of the template a name denotes.
@@ -1286,12 +1337,12 @@ impl Lowering<'_> {
     /// binds the actual type under the formal's name.
     fn bind_actual(
         &mut self,
-        formal: &(String, bool),
+        formal: &Formal,
         actual: &Actual,
         module: Id<zerodds_ast::ModuleNode>,
         at: &Arc<SyntaxNode>,
     ) {
-        let (name, is_const) = (formal.0.clone(), formal.1);
+        let (name, is_const) = (formal.name.clone(), formal.is_const);
         // (193) hands on what the enclosing instantiation already bound,
         // so there is nothing to evaluate: the actual is a node of the
         // model and the formal takes the same one under its own name.
@@ -1313,19 +1364,30 @@ impl Lowering<'_> {
                 );
                 return;
             };
-            let type_ = Ref::Pending(PendingRef::ScopedName(ScopedName::absolute(Vec::new())));
-            if let Ok(id) = self.ast.add_const(module, &name, type_, expr) {
-                if let Ok(node_id) = self.ast.constant(id).map(|c| c.node_id) {
-                    self.record_origin(AnyId::Const(id, node_id), at.span());
-                    self.record_declaration_scope(AnyId::Const(id, node_id), at.span());
-                    self.scopes.bind(&name, AnyId::Const(id, node_id));
-                }
+            // The constant has the formal's `<const_type>` (rule (188)),
+            // and it is the binding of the formal, not a declaration of
+            // the instance: "Once instantiated, the resulting module is
+            // exactly as a classical module" (§7.4.12.4.2). The instance
+            // records it among its actual arguments, by its expression.
+            let type_ = self
+                .type_ref(&formal.node)
+                .unwrap_or_else(|| Ref::Broken(broken_cause()));
+            if let Ok(id) = self.ast.add_const(module, &name, type_, expr)
+                && let Ok(node_id) = self.ast.constant(id).map(|c| c.node_id)
+            {
+                self.record_origin(AnyId::Const(id, node_id), at.span());
+                self.record_declaration_scope(AnyId::Const(id, node_id), at.span());
+                self.scopes.bind(&name, AnyId::Const(id, node_id));
+                self.record_template_arg(module, zerodds_ast::TemplateArg::Const(expr));
             }
             return;
         }
         let type_ref = self.type_ref_of(actual);
         match type_ref.resolved() {
-            Some(id) => self.bind(&name, id),
+            Some(id) => {
+                self.bind(&name, id);
+                self.record_template_arg(module, zerodds_ast::TemplateArg::Type(Ref::Resolved(id)));
+            }
             None => self.diagnose_at(
                 DiagnosticCode::UnresolvedName,
                 at.span(),
@@ -1357,11 +1419,13 @@ impl Lowering<'_> {
         };
 
         self.one_namespace_per_scope(node);
+        self.scopes.push_body();
         for child in node.children() {
             if child.kind() == CstKind::Member {
                 self.member(&child, id);
             }
         }
+        self.scopes.pop();
     }
 
     fn exception(&mut self, node: &Arc<SyntaxNode>) {
@@ -1382,6 +1446,7 @@ impl Lowering<'_> {
             self.apply_waiting_annotations(AnyId::Exception(id, node_id));
         }
         self.one_namespace_per_scope(node);
+        self.scopes.push_body();
         for child in node.children() {
             if child.kind() == CstKind::Member {
                 let annotations = self.annotations_of(&child);
@@ -1398,6 +1463,7 @@ impl Lowering<'_> {
                 }
             }
         }
+        self.scopes.pop();
     }
 
     fn member(&mut self, node: &Arc<SyntaxNode>, aggregate: Id<TypeNode>) {
@@ -1417,18 +1483,18 @@ impl Lowering<'_> {
             let Ok(node_id) = self.ast.member(id).map(|m| m.node_id) else {
                 continue;
             };
-            if let Some(visibility) = visibility {
-                if let Some(facets) = self.ast.facets_mut(AnyId::Member(id, node_id)) {
-                    facets.corba_mut().state_visibility = Some(visibility);
-                }
+            if let Some(visibility) = visibility
+                && let Some(facets) = self.ast.facets_mut(AnyId::Member(id, node_id))
+            {
+                facets.corba_mut().state_visibility = Some(visibility);
             }
             // The name is stored stripped (§7.2.3.2); whether the
             // declaration spelled it `_name` survives only here, for
             // the one dialect whose member-id hash reads the spelling.
-            if declarator_is_escaped(&at) {
-                if let Some(facets) = self.ast.facets_mut(AnyId::Member(id, node_id)) {
-                    facets.xtypes_mut().escaped = true;
-                }
+            if declarator_is_escaped(&at)
+                && let Some(facets) = self.ast.facets_mut(AnyId::Member(id, node_id))
+            {
+                facets.xtypes_mut().escaped = true;
             }
             self.apply_annotations(&annotations, AnyId::Member(id, node_id));
         }
@@ -1502,11 +1568,11 @@ impl Lowering<'_> {
             },
             declarator.span(),
         );
-        if !written.is_empty() {
-            if let Some(id) = array.resolved() {
-                let any = AnyId::Type(id, self.node_id_of(id));
-                self.apply_use_site(&written, any, UseSite::Element);
-            }
+        if !written.is_empty()
+            && let Some(id) = array.resolved()
+        {
+            let any = AnyId::Type(id, self.node_id_of(id));
+            self.apply_use_site(&written, any, UseSite::Element);
         }
         array
     }
@@ -1543,31 +1609,31 @@ impl Lowering<'_> {
             return;
         };
         for child in node.children() {
-            if child.kind() == CstKind::Enumerator {
-                if let Some(name) = first_ident(&child) {
-                    // No explicit value here: `@value(n)` is applied
-                    // with the other annotations, and a positional one
-                    // is filled in by the completion pass. Spec §5.
-                    let result = self.ast.add_enumerator(id, &name, None);
-                    let Some(enumerator) = self.report_model(result, child.span()) else {
-                        continue;
-                    };
-                    let annotations = self.annotations_of(&child);
-                    let Ok(node_id) = self.ast.enumerator(enumerator).map(|e| e.node_id) else {
-                        continue;
-                    };
-                    // The enumerator goes into the scope enclosing the
-                    // enumeration, not into one of its own. OMG IDL 4.2
-                    // §7.4.1.4.2: `module M { enum Size { small, medium,
-                    // large }; }; const M::Size MYSIZE = M::medium;`.
-                    // This is what lets `case RED:` name an enumerator,
-                    // and what makes two enumerations sharing a literal
-                    // name the collision §7.2.3 says it is.
-                    self.check_collision(&name, &child);
-                    self.scopes
-                        .bind(&name, AnyId::Enumerator(enumerator, node_id));
-                    self.apply_annotations(&annotations, AnyId::Enumerator(enumerator, node_id));
-                }
+            if child.kind() == CstKind::Enumerator
+                && let Some(name) = first_ident(&child)
+            {
+                // No explicit value here: `@value(n)` is applied
+                // with the other annotations, and a positional one
+                // is filled in by the completion pass. Spec §5.
+                let result = self.ast.add_enumerator(id, &name, None);
+                let Some(enumerator) = self.report_model(result, child.span()) else {
+                    continue;
+                };
+                let annotations = self.annotations_of(&child);
+                let Ok(node_id) = self.ast.enumerator(enumerator).map(|e| e.node_id) else {
+                    continue;
+                };
+                // The enumerator goes into the scope enclosing the
+                // enumeration, not into one of its own. OMG IDL 4.2
+                // §7.4.1.4.2: `module M { enum Size { small, medium,
+                // large }; }; const M::Size MYSIZE = M::medium;`.
+                // This is what lets `case RED:` name an enumerator,
+                // and what makes two enumerations sharing a literal
+                // name the collision §7.2.3 says it is.
+                self.check_collision(&name, &child);
+                self.scopes
+                    .bind(&name, AnyId::Enumerator(enumerator, node_id));
+                self.apply_annotations(&annotations, AnyId::Enumerator(enumerator, node_id));
             }
         }
     }
@@ -1581,18 +1647,18 @@ impl Lowering<'_> {
             return;
         };
         for child in node.children() {
-            if child.kind() == CstKind::BitValue {
-                if let Some(name) = first_ident(&child) {
-                    let result = self.ast.add_bit_value(id, &name, None);
-                    let Some(bit) = self.report_model(result, child.span()) else {
-                        continue;
-                    };
-                    let annotations = self.annotations_of(&child);
-                    let Ok(node_id) = self.ast.bit_value(bit).map(|b| b.node_id) else {
-                        continue;
-                    };
-                    self.apply_annotations(&annotations, AnyId::BitValue(bit, node_id));
-                }
+            if child.kind() == CstKind::BitValue
+                && let Some(name) = first_ident(&child)
+            {
+                let result = self.ast.add_bit_value(id, &name, None);
+                let Some(bit) = self.report_model(result, child.span()) else {
+                    continue;
+                };
+                let annotations = self.annotations_of(&child);
+                let Ok(node_id) = self.ast.bit_value(bit).map(|b| b.node_id) else {
+                    continue;
+                };
+                self.apply_annotations(&annotations, AnyId::BitValue(bit, node_id));
             }
         }
     }
@@ -1632,6 +1698,7 @@ impl Lowering<'_> {
         }
         self.one_namespace_per_scope(node);
 
+        self.scopes.push_body();
         for child in node.children() {
             if child.kind() != CstKind::UnionCase {
                 continue;
@@ -1707,10 +1774,10 @@ impl Lowering<'_> {
             self.record_origin(AnyId::Case(case, node_id), child.span());
             // The same trace of the escape spelling a struct member
             // keeps, for the same one consumer.
-            if declarator_is_escaped(&declarator) {
-                if let Some(facets) = self.ast.facets_mut(AnyId::Case(case, node_id)) {
-                    facets.xtypes_mut().escaped = true;
-                }
+            if declarator_is_escaped(&declarator)
+                && let Some(facets) = self.ast.facets_mut(AnyId::Case(case, node_id))
+            {
+                facets.xtypes_mut().escaped = true;
             }
             self.apply_annotations(&annotations, AnyId::Case(case, node_id));
             // Mirror the case's XTypes facet onto the member behind it.
@@ -1741,6 +1808,7 @@ impl Lowering<'_> {
                 }
             }
         }
+        self.scopes.pop();
     }
 
     /// `typedef <type> <declarator>, ...;`
@@ -1782,6 +1850,9 @@ impl Lowering<'_> {
                 element
             }
         };
+        // The annotations prefixing the typedef's type (OMG IDL 4.2
+        // §7.4.15.4.2) annotate what each declarator declares.
+        let type_annotations = self.prefix_annotations_of(node);
         for declarator in node
             .children()
             .iter()
@@ -1791,7 +1862,13 @@ impl Lowering<'_> {
                 continue;
             };
             let aliased = self.declarator_type(&element, declarator);
-            let _ = self.declare_type(&name, TypeKind::Alias { aliased }, declarator);
+            let declared = self.declare_type(&name, TypeKind::Alias { aliased }, declarator);
+            if let Some(id) = declared
+                && !type_annotations.is_empty()
+                && let Ok(node_id) = self.ast.type_(id).map(|t| t.node_id)
+            {
+                self.apply_annotations(&type_annotations, AnyId::Type(id, node_id));
+            }
         }
     }
 
@@ -1811,8 +1888,11 @@ impl Lowering<'_> {
         };
         // A forward declaration is a completeness state, not a kind: the
         // definition completes this node rather than replacing it, so
-        // references taken now stay valid. Spec §3.2 of the AST.
-        if self.scopes.lookup(&name).is_some() {
+        // references taken now stay valid. Spec §3.2 of the AST. Only this
+        // scope's own declarations count: a name declared farther out is
+        // not this declaration, and a forward declaration here declares
+        // a new one.
+        if self.scopes.lookup_here(&name).is_some() {
             return;
         }
         // *Which* node, though, is the keyword's decision. Every forward
@@ -1824,11 +1904,11 @@ impl Lowering<'_> {
         // twice. `struct S;` and `union U;` were right all along, which
         // is what made it invisible.
         if let Some(kind) = forward_interface_kind(node) {
-            if let Ok(id) = self.ast.add_forward_interface(module, &name, kind) {
-                if let Ok(node_id) = self.ast.interface(id).map(|node| node.node_id) {
-                    self.record_origin(AnyId::Interface(id, node_id), node.span());
-                    self.scopes.bind(&name, AnyId::Interface(id, node_id));
-                }
+            if let Ok(id) = self.ast.add_forward_interface(module, &name, kind)
+                && let Ok(node_id) = self.ast.interface(id).map(|node| node.node_id)
+            {
+                self.record_origin(AnyId::Interface(id, node_id), node.span());
+                self.scopes.bind(&name, AnyId::Interface(id, node_id));
             }
             return;
         }
@@ -1994,7 +2074,9 @@ impl Lowering<'_> {
         }
 
         self.one_namespace_per_scope(node);
+        let bases = self.base_paths(node, false);
         self.scopes.push_container(&name);
+        self.scopes.set_bases(bases);
         for child in node.children() {
             match child.kind() {
                 CstKind::Operation => self.operation(&child, id),
@@ -2005,6 +2087,33 @@ impl Lowering<'_> {
             }
         }
         self.scopes.pop();
+    }
+
+    /// `truncatable` on a `custom` or an `abstract` value type.
+    ///
+    /// OMG IDL 4.2 §7.4.7.4.5: "Because custom values require an exact type
+    /// match between the sending and receiving context, truncatable may
+    /// not be specified for a custom value type", and truncation is for "A
+    /// stateful value that derives from another stateful value", which an
+    /// abstract value type is not. The model holds one modifier
+    /// ([`ValuetypeKind`]), so the second one would be dropped without a
+    /// word; it is reported instead.
+    fn truncatable_is_for_a_plain_value(&mut self, node: &Arc<SyntaxNode>, kind: ValuetypeKind) {
+        if !writes_truncatable(node) {
+            return;
+        }
+        let what = match kind {
+            ValuetypeKind::Custom => "a custom value type",
+            ValuetypeKind::Abstract => "an abstract value type, which has no state",
+            ValuetypeKind::Regular | ValuetypeKind::Truncatable => return,
+        };
+        let message = alloc::format!("`truncatable` is written on {what}; it may not be");
+        self.diagnose_at(
+            DiagnosticCode::InvalidInheritance,
+            node.span(),
+            &message,
+            "OMG IDL 4.2 §7.4.7.4.5",
+        );
     }
 
     /// The base interfaces of an interface, and the ones it supports.
@@ -2033,13 +2142,10 @@ impl Lowering<'_> {
                 .syntax_tokens()
                 .iter()
                 .any(|(_, token)| token.kind() == TokenKind::Supports);
-            let names: Vec<Ref<zerodds_ast::InterfaceNode>> = clause
-                .children()
-                .into_iter()
-                .filter(|child| child.kind() == CstKind::ScopedName)
-                .filter_map(|scoped| self.scoped_name_of(&scoped))
-                .map(|name| self.interface_ref(&name))
-                .collect();
+            let mut names: Vec<Ref<zerodds_ast::InterfaceNode>> = Vec::new();
+            for (scoped, name) in self.scoped_names_with_nodes(&clause) {
+                names.push(self.interface_ref(&scoped, &name));
+            }
             if is_supports {
                 supports.extend(names);
             } else {
@@ -2070,15 +2176,31 @@ impl Lowering<'_> {
             return;
         };
         let target = self
-            .scoped_names_of(node)
+            .scoped_names_with_nodes(node)
             .into_iter()
             .next()
-            .or_else(|| self.scoped_name_of(node));
+            .or_else(|| {
+                node.descendants()
+                    .into_iter()
+                    .find(|child| child.kind() == CstKind::ScopedName)
+                    .and_then(|scoped| self.scoped_name_of(&scoped).map(|name| (scoped, name)))
+            });
 
-        let type_ = target.as_ref().map_or_else(
-            || Ref::Broken(broken_cause()),
-            |name| self.named_type_ref(name),
-        );
+        // Rule (157), `<interface_type> ::+ "Object"`: the root of every
+        // interface stands where a facet or receptacle names one. The port
+        // holds the generic object reference, the model's form of rule
+        // (117); there is no interface node for its role to point at.
+        let object_root = node
+            .syntax_tokens()
+            .iter()
+            .any(|(_, token)| token.kind() == TokenKind::Object);
+        let type_ = match &target {
+            Some((scoped, name)) => self.named_type_ref(scoped, name),
+            None if object_root => {
+                self.builtin_ref("Object", TypeKind::ObjectRef { interface: None })
+            }
+            None => Ref::Broken(broken_cause()),
+        };
         let Ok(id) = self.ast.add_attribute(interface, &port_name, type_, false) else {
             return;
         };
@@ -2091,10 +2213,10 @@ impl Lowering<'_> {
             .syntax_tokens()
             .iter()
             .any(|(_, token)| token.kind() == TokenKind::Multiple);
-        let interface_ref = target.as_ref().map_or_else(
-            || Ref::Broken(broken_cause()),
-            |name| self.interface_ref(name),
-        );
+        let interface_ref = match &target {
+            Some((scoped, name)) => self.interface_ref(scoped, name),
+            None => Ref::Broken(broken_cause()),
+        };
         let event_ref = type_ref_of_port(self.ast, id);
         let role = match keyword {
             Some(TokenKind::Provides) => Some(zerodds_ast::ComponentRole::Facet {
@@ -2121,10 +2243,10 @@ impl Lowering<'_> {
             Some(TokenKind::Mirrorport) => Some(zerodds_ast::ComponentRole::ConnectorRole),
             _ => None,
         };
-        if let Some(role) = role {
-            if let Some(facets) = self.ast.facets_mut(AnyId::Attribute(id, node_id)) {
-                facets.corba_mut().component_role = Some(role);
-            }
+        if let Some(role) = role
+            && let Some(facets) = self.ast.facets_mut(AnyId::Attribute(id, node_id))
+        {
+            facets.corba_mut().component_role = Some(role);
         }
         self.ast.reindex_pending(AnyId::Attribute(id, node_id));
     }
@@ -2135,12 +2257,14 @@ impl Lowering<'_> {
         node: &Arc<SyntaxNode>,
         interface: Id<zerodds_ast::InterfaceNode>,
     ) {
-        let names = self.scoped_names_of(node);
-        let Some(component) = names.first() else {
+        let names = self.scoped_names_with_nodes(node);
+        let Some((component_node, component)) = names.first() else {
             return;
         };
-        let component_ref = self.interface_ref(component);
-        let primary_key = names.get(1).map(|name| self.named_type_ref(name));
+        let component_ref = self.interface_ref(component_node, component);
+        let primary_key = names
+            .get(1)
+            .map(|(key_node, name)| self.named_type_ref(key_node, name));
         let Ok(node_id) = self.ast.interface(interface).map(|i| i.node_id) else {
             return;
         };
@@ -2178,8 +2302,12 @@ impl Lowering<'_> {
             return;
         };
         self.record_repository_directive(if is_prefix { "typeprefix" } else { "typeid" }, &text);
-        self.repository_directives
-            .push((self.directive_candidates(node, &name), text, is_prefix));
+        self.repository_directives.push((
+            self.directive_candidates(node, &name),
+            text,
+            is_prefix,
+            false,
+        ));
     }
 
     /// Note on the root module that a `typeid`/`typeprefix` directive was
@@ -2303,12 +2431,16 @@ impl Lowering<'_> {
         self.ast.reindex_pending(AnyId::Module(module, node_id));
     }
 
-    /// Every scoped name written directly under a node.
-    pub(crate) fn scoped_names_of(&self, node: &Arc<SyntaxNode>) -> Vec<ScopedName> {
+    /// Every scoped name written directly under a node, with the node
+    /// that writes it, which says whether it starts with `::`.
+    pub(crate) fn scoped_names_with_nodes(
+        &self,
+        node: &Arc<SyntaxNode>,
+    ) -> Vec<(Arc<SyntaxNode>, ScopedName)> {
         node.children()
             .into_iter()
             .filter(|child| child.kind() == CstKind::ScopedName)
-            .filter_map(|scoped| self.scoped_name_of(&scoped))
+            .filter_map(|scoped| self.scoped_name_of(&scoped).map(|name| (scoped, name)))
             .collect()
     }
 
@@ -2318,34 +2450,60 @@ impl Lowering<'_> {
         joined_string_literals(node.syntax_tokens(), TokenKind::StringLiteral)
     }
 
+    /// What a name written as `name` denotes, by [`Self::use_scoped`]: the
+    /// declaration of a simple name, or the absolute path of a qualified
+    /// one. Only the first identifier is looked up in the scopes; the
+    /// last one alone named whatever declaration of that name was
+    /// closest, so `raises (A::E)` took an `E` of the current scope.
+    fn written_name(&mut self, node: &Arc<SyntaxNode>, name: &ScopedName) -> Used {
+        let anchored = is_root_anchored(node);
+        self.use_scoped(name.segments(), anchored, node.span())
+    }
+
     /// A reference to an exception by name, resolved if already bound.
-    fn exception_ref(&self, name: &ScopedName) -> Ref<zerodds_ast::ExceptionNode> {
-        if let Some(segment) = name.segments().last() {
-            if let Some(AnyId::Exception(id, _)) = self.scopes.lookup(segment) {
-                return Ref::Resolved(id);
-            }
+    fn exception_ref(
+        &mut self,
+        node: &Arc<SyntaxNode>,
+        name: &ScopedName,
+    ) -> Ref<zerodds_ast::ExceptionNode> {
+        match self.written_name(node, name) {
+            Used::Resolved(AnyId::Exception(id, _)) => Ref::Resolved(id),
+            Used::Path(path) => Ref::Pending(PendingRef::ScopedName(path)),
+            Used::Ambiguous => Ref::Broken(broken_cause()),
+            Used::Resolved(_) | Used::Unknown => Ref::Pending(PendingRef::ScopedName(name.clone())),
         }
-        Ref::Pending(PendingRef::ScopedName(name.clone()))
     }
 
     /// A reference to a named type, resolved if already bound.
-    fn named_type_ref(&self, name: &ScopedName) -> Ref<TypeNode> {
-        if let Some(segment) = name.segments().last() {
-            if let Some(found) = self.scopes.lookup(segment).and_then(AnyId::as_type) {
-                return Ref::Resolved(found);
-            }
+    fn named_type_ref(&mut self, node: &Arc<SyntaxNode>, name: &ScopedName) -> Ref<TypeNode> {
+        match self.written_name(node, name) {
+            Used::Resolved(found) => found.as_type().map_or_else(
+                || {
+                    self.ast.scoped_name_of(found).map_or_else(
+                        || Ref::Pending(PendingRef::ScopedName(name.clone())),
+                        |scoped| Ref::Pending(PendingRef::ScopedName(scoped)),
+                    )
+                },
+                Ref::Resolved,
+            ),
+            Used::Path(path) => Ref::Pending(PendingRef::ScopedName(path)),
+            Used::Ambiguous => Ref::Broken(broken_cause()),
+            Used::Unknown => Ref::Pending(PendingRef::ScopedName(name.clone())),
         }
-        Ref::Pending(PendingRef::ScopedName(name.clone()))
     }
 
     /// A reference to an interface by name, resolved if already bound.
-    fn interface_ref(&self, name: &ScopedName) -> Ref<zerodds_ast::InterfaceNode> {
-        if let Some(segment) = name.segments().last() {
-            if let Some(AnyId::Interface(id, _)) = self.scopes.lookup(segment) {
-                return Ref::Resolved(id);
-            }
+    fn interface_ref(
+        &mut self,
+        node: &Arc<SyntaxNode>,
+        name: &ScopedName,
+    ) -> Ref<zerodds_ast::InterfaceNode> {
+        match self.written_name(node, name) {
+            Used::Resolved(AnyId::Interface(id, _)) => Ref::Resolved(id),
+            Used::Path(path) => Ref::Pending(PendingRef::ScopedName(path)),
+            Used::Ambiguous => Ref::Broken(broken_cause()),
+            Used::Resolved(_) | Used::Unknown => Ref::Pending(PendingRef::ScopedName(name.clone())),
         }
-        Ref::Pending(PendingRef::ScopedName(name.clone()))
     }
 
     fn operation(&mut self, node: &Arc<SyntaxNode>, interface: Id<zerodds_ast::InterfaceNode>) {
@@ -2372,6 +2530,22 @@ impl Lowering<'_> {
         if let Some(node_id) = node_id {
             self.record_origin(AnyId::Operation(id, node_id), node.span());
             self.apply_annotations(&annotations, AnyId::Operation(id, node_id));
+            // Rules (175) and (176): a home's `factory` and `finder`
+            // declarations, which CCM 4.0 §6.7.2 maps apart from its
+            // other operations.
+            let home_operation =
+                node.syntax_tokens()
+                    .iter()
+                    .find_map(|(_, token)| match token.kind() {
+                        TokenKind::Factory => Some(zerodds_ast::HomeOperation::Factory),
+                        TokenKind::Finder => Some(zerodds_ast::HomeOperation::Finder),
+                        _ => None,
+                    });
+            if home_operation.is_some()
+                && let Some(facets) = self.ast.facets_mut(AnyId::Operation(id, node_id))
+            {
+                facets.corba_mut().home_operation = home_operation;
+            }
         }
 
         self.one_namespace_per_scope(node);
@@ -2387,8 +2561,8 @@ impl Lowering<'_> {
             .into_iter()
             .filter(|child| child.kind() == CstKind::RaisesClause)
         {
-            for name in self.scoped_names_of(&raises) {
-                let reference = self.exception_ref(&name);
+            for (scoped, name) in self.scoped_names_with_nodes(&raises) {
+                let reference = self.exception_ref(&scoped, &name);
                 let _ = self.ast.add_raises(id, reference);
             }
         }
@@ -2431,13 +2605,27 @@ impl Lowering<'_> {
     }
 
     fn attribute(&mut self, node: &Arc<SyntaxNode>, interface: Id<zerodds_ast::InterfaceNode>) {
+        self.attribute_of(node, AttributeOwner::Interface(interface));
+    }
+
+    /// An attribute of an interface, or of a value type: OMG IDL 4.2 rule
+    /// (105) admits `<attr_dcl>` among a value type's exports.
+    fn attribute_of(&mut self, node: &Arc<SyntaxNode>, owner: AttributeOwner) {
         let readonly = node
             .syntax_tokens()
             .iter()
             .any(|(_, token)| token.kind() == TokenKind::Readonly);
         // `attribute long a, b;` declares two attributes of one type.
         for (name, type_, at) in self.declared(node) {
-            let Ok(id) = self.ast.add_attribute(interface, &name, type_, readonly) else {
+            let added = match owner {
+                AttributeOwner::Interface(interface) => {
+                    self.ast.add_attribute(interface, &name, type_, readonly)
+                }
+                AttributeOwner::Value(valuetype) => self
+                    .ast
+                    .add_valuetype_attribute(valuetype, &name, type_, readonly),
+            };
+            let Ok(id) = added else {
                 continue;
             };
             let annotations = self.annotations_of(node);
@@ -2455,8 +2643,8 @@ impl Lowering<'_> {
                     .syntax_tokens()
                     .iter()
                     .any(|(_, token)| token.kind() == TokenKind::Setraises);
-                for name in self.scoped_names_of(&raises) {
-                    let reference = self.exception_ref(&name);
+                for (scoped, name) in self.scoped_names_with_nodes(&raises) {
+                    let reference = self.exception_ref(&scoped, &name);
                     let _ = self.ast.add_attribute_raises(id, reference, setter);
                 }
             }
@@ -2468,6 +2656,7 @@ impl Lowering<'_> {
             return;
         };
         let kind = valuetype_kind(node);
+        self.truncatable_is_for_a_plain_value(node, kind);
         let clauses: Vec<Arc<SyntaxNode>> = node
             .children()
             .into_iter()
@@ -2482,11 +2671,11 @@ impl Lowering<'_> {
                 .syntax_tokens()
                 .iter()
                 .any(|(_, token)| token.kind() == TokenKind::Supports);
-            for scoped in self.scoped_names_of(&clause) {
+            for (node, scoped) in self.scoped_names_with_nodes(&clause) {
                 if supports {
-                    supported.push(self.interface_ref(&scoped));
+                    supported.push(self.interface_ref(&node, &scoped));
                 } else {
-                    bases.push(self.named_type_ref(&scoped));
+                    bases.push(self.named_type_ref(&node, &scoped));
                 }
             }
         }
@@ -2504,7 +2693,7 @@ impl Lowering<'_> {
         // completeness state. Declaring one complete made the definition
         // that follows a `DuplicateName` instead of the body it is.
         if !has_body(node) {
-            if self.scopes.lookup(&name).is_some() {
+            if self.scopes.lookup_here(&name).is_some() {
                 return;
             }
             let Some(module) = self.scopes.current_module() else {
@@ -2513,11 +2702,10 @@ impl Lowering<'_> {
             if let Ok(id) = self.ast.add_forward_type(module, &name, declared) {
                 self.record_origin(AnyId::Type(id, self.node_id_of(id)), node.span());
                 self.record_declaration_scope(AnyId::Type(id, self.node_id_of(id)), node.span());
-                if is_event_type(node) {
-                    if let Some(facets) = self.ast.facets_mut(AnyId::Type(id, self.node_id_of(id)))
-                    {
-                        facets.corba_mut().is_event_type = true;
-                    }
+                if is_event_type(node)
+                    && let Some(facets) = self.ast.facets_mut(AnyId::Type(id, self.node_id_of(id)))
+                {
+                    facets.corba_mut().is_event_type = true;
                 }
                 self.bind(&name, id);
             }
@@ -2530,15 +2718,19 @@ impl Lowering<'_> {
         // `eventtype` and `valuetype` lower to the same kind of node, so
         // the keyword is the only thing left that tells them apart, and
         // CCM 4.0 §6.6.1.1 maps the two differently.
-        if is_event_type(node) {
-            if let Some(facets) = self.ast.facets_mut(AnyId::Type(id, self.node_id_of(id))) {
-                facets.corba_mut().is_event_type = true;
-            }
+        if is_event_type(node)
+            && let Some(facets) = self.ast.facets_mut(AnyId::Type(id, self.node_id_of(id)))
+        {
+            facets.corba_mut().is_event_type = true;
         }
         self.one_namespace_per_scope(node);
+        // OMG IDL 4.2 §7.4.7.4.3: "The name scoping and name collision
+        // rules for value types are identical to those for interfaces."
+        let bases = self.base_paths(node, false);
         // The body's own scope, so a `raises` clause and a parameter
         // type inside an initialiser resolve the way an interface's do.
         self.scopes.push_container(&name);
+        self.scopes.set_bases(bases);
         for child in node.children() {
             match child.kind() {
                 CstKind::Member => self.member(&child, id),
@@ -2552,18 +2744,7 @@ impl Lowering<'_> {
                 // diagnostic.
                 CstKind::Operation => self.valuetype_operation(&child, id),
                 // Rule (105)'s `<export>` also admits an attribute.
-                // `AttributeNode::parent` is an `Id<InterfaceNode>`, so
-                // the model has no place to put one declared here — and
-                // an arm that did nothing dropped the declaration with
-                // no diagnostic. Named instead: a gap that reports is a
-                // gap, a gap that is silent is an acceptance claim.
-                CstKind::AttributeDecl => self.diagnose_at(
-                    DiagnosticCode::Unsupported,
-                    child.span(),
-                    "an attribute declared in a valuetype body has no model form yet; \
-                     the model attaches an attribute to an interface",
-                    "OMG IDL 4.2 §7.4.5",
-                ),
+                CstKind::AttributeDecl => self.attribute_of(&child, AttributeOwner::Value(id)),
                 // The clause was read into `bases` and `supported`
                 // above, before the body's scope was pushed.
                 CstKind::InheritanceClause => {}
@@ -2628,8 +2809,8 @@ impl Lowering<'_> {
             .into_iter()
             .filter(|child| child.kind() == CstKind::RaisesClause)
         {
-            for scoped in self.scoped_names_of(&raises) {
-                let reference = self.exception_ref(&scoped);
+            for (node, scoped) in self.scoped_names_with_nodes(&raises) {
+                let reference = self.exception_ref(&node, &scoped);
                 let _ = self.ast.add_raises(id, reference);
             }
         }
@@ -3168,33 +3349,191 @@ impl Lowering<'_> {
         if segments.is_empty() {
             return None;
         }
-        if segments.len() == 1 {
-            if let Some(found) = self.scopes.lookup(&segments[0]) {
+        match self.use_scoped(&segments, is_root_anchored(&scoped), scoped.span()) {
+            Used::Resolved(found) => {
                 if let Some(as_type) = found.as_type() {
                     return Some(Ref::Resolved(as_type));
                 }
-                // Found, and not a type. An interface named where a
-                // type is expected is an object reference — §7.4.6 —
-                // and `Ast::resolve_all_by_name` has the rule for that;
-                // what it needs is a key it can look the declaration up
-                // by. The written segment is *relative* to the scope
-                // that wrote it, so recording it as an absolute name
-                // asks the index for `::I` when the declaration is
-                // `m::I`, and the reference breaks with `NotFound`.
-                //
-                // Measured: `module m { interface I {}; struct S { I r; };
-                // };` broke, `interface I {}; struct S { I r; };` did
-                // not, and `m::I` written out did not — the failure was
-                // exactly the unqualified form inside a module, which is
-                // how interface-typed members are normally written.
+                // Found, and not a type: an interface named where a type
+                // is expected is an object reference — §7.4.6 — which
+                // `Ast::resolve_all_by_name` derives from the name.
                 if let Some(scoped) = self.ast.scoped_name_of(found) {
                     return Some(Ref::Pending(PendingRef::ScopedName(scoped)));
                 }
+            }
+            Used::Path(path) => return Some(Ref::Pending(PendingRef::ScopedName(path))),
+            Used::Ambiguous => return Some(Ref::Broken(broken_cause())),
+            Used::Unknown => {}
+        }
+        if segments.len() == 1
+            && let Some(found) = self.scopes.lookup(&segments[0])
+        {
+            if let Some(as_type) = found.as_type() {
+                return Some(Ref::Resolved(as_type));
+            }
+            // Found, and not a type. An interface named where a
+            // type is expected is an object reference — §7.4.6 —
+            // and `Ast::resolve_all_by_name` has the rule for that;
+            // what it needs is a key it can look the declaration up
+            // by. The written segment is *relative* to the scope
+            // that wrote it, so recording it as an absolute name
+            // asks the index for `::I` when the declaration is
+            // `m::I`, and the reference breaks with `NotFound`.
+            //
+            // Measured: `module m { interface I {}; struct S { I r; };
+            // };` broke, `interface I {}; struct S { I r; };` did
+            // not, and `m::I` written out did not — the failure was
+            // exactly the unqualified form inside a module, which is
+            // how interface-typed members are normally written.
+            if let Some(scoped) = self.ast.scoped_name_of(found) {
+                return Some(Ref::Pending(PendingRef::ScopedName(scoped)));
             }
         }
         Some(Ref::Pending(PendingRef::ScopedName(ScopedName::absolute(
             segments,
         ))))
+    }
+
+    /// What a scoped name written in the current scope denotes, and the
+    /// bookkeeping a use does on the way.
+    ///
+    /// OMG IDL 4.2 §7.5.2: the first identifier of a name not written
+    /// with a leading `::` is looked up from the innermost scope
+    /// outwards, through the bases of every interface and value type on
+    /// the way ([`ScopeStack::find`]), and is introduced into the scope
+    /// it is written in ([`ScopeStack::introduce`]): "Only the first
+    /// identifier in a qualified name is introduced into the current
+    /// scope … A qualified name of the form ::X::Y::Z does not cause X to
+    /// be introduced, but a qualified name of the form X::Y::Z does."
+    ///
+    /// A qualified name continues from the declaration its first
+    /// identifier denotes, so `M::B` written inside `module N` names
+    /// `::M::B` and not whatever a `B` in scope happens to be. An
+    /// ambiguous first identifier is reported here (§7.4.4.4, §7.5.1).
+    pub(crate) fn use_scoped(&mut self, segments: &[String], anchored: bool, at: Span) -> Used {
+        let Some(first) = segments.first() else {
+            return Used::Unknown;
+        };
+        let mut current = if anchored {
+            match self
+                .ast
+                .find_by_scoped_name(&ScopedName::absolute(alloc::vec![first.clone()]))
+            {
+                Ok(found) => found,
+                Err(_) => return Used::Path(ScopedName::absolute(segments.to_vec())),
+            }
+        } else {
+            let (found, position) = self.scopes.find(first);
+            match found {
+                Found::One(node) => {
+                    if let Some(position) = position {
+                        self.scopes.introduce(first, node, position);
+                    }
+                    node
+                }
+                Found::Ambiguous(candidates) => {
+                    self.report_ambiguous(first, &candidates, at);
+                    return Used::Ambiguous;
+                }
+                Found::Nothing => return Used::Unknown,
+            }
+        };
+        // Each further identifier is a declaration of the one before it —
+        // or, for an interface or value type, of one of its bases: §7.5.1,
+        // "Inheritance introduces multiple global IDL names for the
+        // inherited identifiers", so the exception `E` of `A` is also
+        // `::B::E` when `B` derives from `A`.
+        for (index, segment) in segments.iter().enumerate().skip(1) {
+            let Some(path) = self.ast.scoped_name_of(current) else {
+                return Used::Unknown;
+            };
+            let mut next = path.segments().to_vec();
+            next.push(segment.clone());
+            let candidate = ScopedName::absolute(next);
+            if let Ok(found) = self.ast.find_by_scoped_name(&candidate) {
+                current = found;
+                continue;
+            }
+            match self.scopes.find_in(path.segments(), segment) {
+                Found::One(found) => current = found,
+                Found::Ambiguous(candidates) => {
+                    self.report_ambiguous(segment, &candidates, at);
+                    return Used::Ambiguous;
+                }
+                Found::Nothing => {
+                    let mut rest = candidate.segments().to_vec();
+                    rest.extend_from_slice(&segments[index + 1..]);
+                    return Used::Path(ScopedName::absolute(rest));
+                }
+            }
+        }
+        Used::Resolved(current)
+    }
+
+    /// Report a name that denotes two different inherited declarations.
+    fn report_ambiguous(&mut self, name: &str, candidates: &[AnyId], at: Span) {
+        let names: Vec<String> = candidates
+            .iter()
+            .filter_map(|candidate| self.ast.scoped_name_of(*candidate))
+            .map(|scoped| alloc::format!("`::{}`", scoped.segments().join("::")))
+            .collect();
+        let message = alloc::format!(
+            "`{name}` is declared in more than one base and none of the declarations is closer \
+             than the others ({}); qualify it with the name of the base it means",
+            names.join(", ")
+        );
+        self.diagnose_at(
+            DiagnosticCode::AmbiguousName,
+            at,
+            &message,
+            "OMG IDL 4.2 §7.4.4.4, §7.5.1",
+        );
+    }
+
+    /// The absolute paths the names of an inheritance clause denote,
+    /// for [`ScopeStack::set_bases`]; a name that denotes nothing yet is
+    /// left out.
+    fn base_paths(&mut self, node: &Arc<SyntaxNode>, supports: bool) -> Vec<Vec<String>> {
+        let mut paths = Vec::new();
+        for clause in node
+            .children()
+            .into_iter()
+            .filter(|child| child.kind() == CstKind::InheritanceClause)
+        {
+            let is_supports = clause
+                .syntax_tokens()
+                .iter()
+                .any(|(_, token)| token.kind() == TokenKind::Supports);
+            if is_supports != supports {
+                continue;
+            }
+            for scoped in clause
+                .children()
+                .into_iter()
+                .filter(|child| child.kind() == CstKind::ScopedName)
+            {
+                let anchored = is_root_anchored(&scoped);
+                let Some(name) = self.scoped_name_of(&scoped) else {
+                    continue;
+                };
+                let path = if anchored {
+                    Some(name.segments().to_vec())
+                } else {
+                    match self.scopes.find(&name.segments()[0]).0 {
+                        Found::One(found) => self.ast.scoped_name_of(found).map(|start| {
+                            let mut path = start.segments().to_vec();
+                            path.extend_from_slice(&name.segments()[1..]);
+                            path
+                        }),
+                        Found::Ambiguous(_) | Found::Nothing => None,
+                    }
+                };
+                if let Some(path) = path {
+                    paths.push(path);
+                }
+            }
+        }
+        paths
     }
 
     /// The scoped name written under a node, absolute or relative as
@@ -3754,14 +4093,13 @@ impl Lowering<'_> {
                     .children()
                     .iter()
                     .any(|inner| inner.kind() == CstKind::Declarator)
+                && let Some(name) = first_ident(&child)
             {
-                if let Some(name) = first_ident(&child) {
-                    declared.push(DeclaredName {
-                        name,
-                        span: child.span(),
-                        child_index,
-                    });
-                }
+                declared.push(DeclaredName {
+                    name,
+                    span: child.span(),
+                    child_index,
+                });
             }
             child_index += 1;
         }
@@ -3793,7 +4131,47 @@ impl Lowering<'_> {
                 .map(|u| u.name.as_str())
                 .find(|other| *other != name && other.eq_ignore_ascii_case(name));
 
-            if let Some(clash) = clash_declared {
+            // The same name declared twice: for the members of an
+            // aggregate and the parameters of an operation the model
+            // refuses that itself, but nothing else did for the operations
+            // and attributes of an interface, which §7.4.4.4 keeps in one
+            // namespace ("It is illegal to … redefine an operation or
+            // attribute name"): `attribute long level; void level();`
+            // passed.
+            let repeated = node.kind() == CstKind::InterfaceDecl
+                && declared[..index].iter().any(|d| d.name == *name);
+            // §7.5.2: "The name of a module, structure, union, map,
+            // interface, value type, event type, exception or home may not
+            // be redefined within the immediate scope" of it — the clause's
+            // own example is `interface I { void i (in short j); };`,
+            // "Error: i clashes with the interface name I". The same axis
+            // as for a declaration that reuses the name of its scope.
+            let names_the_interface = node.kind() == CstKind::InterfaceDecl
+                && self.options.name_of_the_enclosing_scope == NameOfTheEnclosingScope::Refused
+                && first_ident(node).is_some_and(|scope| scope.eq_ignore_ascii_case(name));
+            if names_the_interface {
+                let message = alloc::format!(
+                    "`{name}` is the name of the interface it is declared in; OMG IDL 4.2 \
+                     §7.5.2 does not admit redefining that name within its immediate scope"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::DuplicateName,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.5.2",
+                );
+            } else if repeated {
+                let message = alloc::format!(
+                    "`{name}` is declared twice in this interface; its operations and \
+                     attributes share one namespace"
+                );
+                self.diagnose_at(
+                    DiagnosticCode::DuplicateName,
+                    span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.4.4, §7.2.3.1",
+                );
+            } else if let Some(clash) = clash_declared {
                 // Two declared names in the same scope differing only in case — always an error
                 let message = alloc::format!(
                     "`{name}` and `{clash}` are in one scope and differ only in case; IDL has a \
@@ -3932,7 +4310,34 @@ impl Lowering<'_> {
             self.duplicate(name, at);
             return;
         }
+        self.check_introduced(name, at);
         self.check_redefines_enclosing_scope(name, at);
+    }
+
+    /// A declaration may not take a name a use has already introduced
+    /// into its scope.
+    ///
+    /// OMG IDL 4.2 §7.5.2, with its example: after `typedef Inner1::S1
+    /// S2;` in `module Inner2`, `typedef string inner1;` is an error,
+    /// "because the identifier Inner1 referring to the module Inner1 has
+    /// been introduced in the scope of module Inner2". §7.5.3 extends it
+    /// over the potential scope: "A type may not be redefined within its
+    /// scope or potential scope". Case-insensitively, as every collision
+    /// in IDL (§7.2.3).
+    fn check_introduced(&mut self, name: &str, at: &Arc<SyntaxNode>) {
+        let Some((introduced, _)) = self.scopes.introduced_here(name) else {
+            return;
+        };
+        let message = alloc::format!(
+            "`{name}` is declared in a scope a use of `{introduced}` has already introduced \
+             that name into; the name may not change its meaning within the scope"
+        );
+        self.diagnose_at(
+            DiagnosticCode::DuplicateName,
+            at.span(),
+            &message,
+            "OMG IDL 4.2 §7.5.2, §7.5.3",
+        );
     }
 
     /// A declaration may not reuse the name of the scope it is written
@@ -3988,7 +4393,7 @@ impl Lowering<'_> {
     }
 }
 
-fn broken_cause() -> zerodds_ast_core::BreakCause {
+pub(crate) fn broken_cause() -> zerodds_ast_core::BreakCause {
     zerodds_ast_core::BreakCause::NotFound {
         what: PendingRef::ScopedName(ScopedName::absolute(Vec::new())),
     }
@@ -4279,12 +4684,34 @@ fn primitive_of(kinds: &[TokenKind]) -> Option<PrimitiveKind> {
     })
 }
 
+/// What an attribute is declared in.
+#[derive(Clone, Copy)]
+enum AttributeOwner {
+    /// An interface's body.
+    Interface(Id<zerodds_ast::InterfaceNode>),
+    /// A value type's body, rule (105).
+    Value(Id<TypeNode>),
+}
+
 /// Whether a scoped name was written anchored at the global scope.
 ///
 /// Rule (4) `<scoped_name> ::+ "::" <identifier>`: the leading `::` says
 /// the root and nothing else, so a name that carries it is not looked up
 /// outwards from where it was written.
-fn is_root_anchored(node: &Arc<SyntaxNode>) -> bool {
+/// What [`Lowering::use_scoped`] found a written name to denote.
+#[derive(Debug, Clone)]
+pub(crate) enum Used {
+    /// A simple name, and the declaration it denotes.
+    Resolved(AnyId),
+    /// The absolute path to look the name up by.
+    Path(ScopedName),
+    /// Ambiguous, and reported.
+    Ambiguous,
+    /// Nothing visible denotes the first identifier yet.
+    Unknown,
+}
+
+pub(crate) fn is_root_anchored(node: &Arc<SyntaxNode>) -> bool {
     let scoped = if node.kind() == CstKind::ScopedName {
         Some(node.clone())
     } else {
@@ -4355,6 +4782,19 @@ fn interface_kind(node: &Arc<SyntaxNode>) -> InterfaceKind {
 }
 
 /// Which valuetype form a declaration wrote. IDL 4.2 §7.4.4.
+/// Whether a value type writes `truncatable` in its inheritance clause.
+fn writes_truncatable(node: &Arc<SyntaxNode>) -> bool {
+    node.children()
+        .into_iter()
+        .filter(|child| child.kind() == CstKind::InheritanceClause)
+        .any(|clause| {
+            clause
+                .syntax_tokens()
+                .iter()
+                .any(|(_, token)| token.kind() == TokenKind::Truncatable)
+        })
+}
+
 fn valuetype_kind(node: &Arc<SyntaxNode>) -> ValuetypeKind {
     let mut kind = ValuetypeKind::Regular;
     for (_, token) in node.syntax_tokens() {
@@ -4481,7 +4921,7 @@ enum Actual {
 ///
 /// Each is its name and whether it is the `const` alternative, which is
 /// the only one whose actual is a value rather than a type.
-fn template_formals(body: &Arc<SyntaxNode>) -> Vec<(String, bool)> {
+fn template_formals(body: &Arc<SyntaxNode>) -> Vec<Formal> {
     body.children()
         .into_iter()
         .find(|child| child.kind() == CstKind::TemplateParameters)
@@ -4493,10 +4933,25 @@ fn template_formals(body: &Arc<SyntaxNode>) -> Vec<(String, bool)> {
                     let name = first_ident(&parameter)?;
                     let is_const =
                         template_param_kind(&parameter) == zerodds_ast::TemplateParamKind::Const;
-                    Some((name, is_const))
+                    Some(Formal {
+                        name,
+                        is_const,
+                        node: parameter,
+                    })
                 })
                 .collect()
         })
+}
+
+/// One formal parameter of a template module, rule (187).
+struct Formal {
+    /// Its name.
+    name: String,
+    /// Whether it is `const <const_type>`.
+    is_const: bool,
+    /// The parameter as written, whose `<const_type>` a constant actual
+    /// takes.
+    node: Arc<SyntaxNode>,
 }
 
 fn template_param_kind(node: &Arc<SyntaxNode>) -> zerodds_ast::TemplateParamKind {

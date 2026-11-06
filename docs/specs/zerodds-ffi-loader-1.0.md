@@ -502,7 +502,8 @@ Per test:
 3. Verify N received samples with byte-exact CDR agreement.
 4. Clean up both.
 
-CI: GitLab pipeline job `cross-lang-matrix` runs on every push.
+CI: the job `integration-bindings-ffi` runs on every push that changes the C API or a
+binding, and weekly.
 
 ## §6 Packaging
 

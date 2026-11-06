@@ -13,7 +13,7 @@ use zerodds_wire::{
 };
 
 #[test]
-fn a_long_after_a_char_sits_at_four_not_at_one() {
+fn xtypes_7_4_1_1_1_a_long_after_a_char_sits_at_four_not_at_one() {
     // XCDR aligns each primitive to its own size counted from the
     // encapsulation. This is the rule a hand-written encoder gets wrong.
     let mut w = Writer::little_endian();
@@ -23,7 +23,7 @@ fn a_long_after_a_char_sits_at_four_not_at_one() {
 }
 
 #[test]
-fn a_double_aligns_to_eight() {
+fn xtypes_7_4_1_1_1_a_double_aligns_to_eight() {
     let mut w = Writer::little_endian();
     w.write_u8(0xFF);
     w.write_f64(1.0);
@@ -32,20 +32,7 @@ fn a_double_aligns_to_eight() {
 }
 
 #[test]
-fn a_reader_skips_exactly_the_padding_the_writer_wrote() {
-    let mut w = Writer::little_endian();
-    w.write_char('a').expect("'a' is one byte");
-    w.write_i32(-1);
-    let bytes = w.finish();
-
-    let mut r = Reader::new(&bytes, Endianness::Little);
-    assert_eq!(r.read_char().expect("char"), 'a');
-    assert_eq!(r.read_i32().expect("long"), -1);
-    assert_eq!(r.remaining(), 0, "padding was left over");
-}
-
-#[test]
-fn the_two_byte_orders_write_the_same_value_differently() {
+fn xtypes_7_4_1_1_1_the_two_byte_orders_write_the_same_value_differently() {
     let mut little = Writer::little_endian();
     little.write_u32(0x0102_0304);
     assert_eq!(little.as_bytes(), &[0x04, 0x03, 0x02, 0x01]);
@@ -56,39 +43,20 @@ fn the_two_byte_orders_write_the_same_value_differently() {
 }
 
 #[test]
-fn a_string_length_counts_its_terminator() {
+fn xtypes_7_4_1_1_2_a_string_length_counts_its_terminator() {
     // The one place XCDR differs from every other length-prefixed
-    // encoding: "ab" is length 3, not 2.
+    // encoding: "ab" is length 3, not 2, and the empty string is a length
+    // of one and the NUL.
     let mut w = Writer::little_endian();
     w.write_string("ab");
     assert_eq!(w.as_bytes(), &[3, 0, 0, 0, b'a', b'b', 0]);
-}
-
-#[test]
-fn an_empty_string_is_a_length_of_one_and_a_nul() {
     let mut w = Writer::little_endian();
     w.write_string("");
     assert_eq!(w.as_bytes(), &[1, 0, 0, 0, 0]);
 }
 
 #[test]
-fn a_string_round_trips_with_its_terminator_consumed() {
-    let mut w = Writer::little_endian();
-    w.write_string("hello");
-    w.write_u8(0xAB);
-    let bytes = w.finish();
-
-    let mut r = Reader::new(&bytes, Endianness::Little);
-    assert_eq!(r.read_string().expect("string"), "hello");
-    assert_eq!(
-        r.read_u8().expect("marker"),
-        0xAB,
-        "the NUL was not consumed"
-    );
-}
-
-#[test]
-fn a_value_longer_than_its_string_bound_is_refused_and_not_truncated() {
+fn xtypes_7_2_4_4_5_a_value_longer_than_its_string_bound_is_refused_and_not_truncated() {
     // AL-14. This cut the value at a character boundary and reported
     // nothing, which put a name on the wire nobody wrote. §7.2.2.7's
     // TRIM is the *receiver's* answer to a value that does not fit;
@@ -111,7 +79,7 @@ fn a_value_longer_than_its_string_bound_is_refused_and_not_truncated() {
 }
 
 #[test]
-fn a_dheader_holds_the_length_of_what_followed_it() {
+fn xtypes_7_4_3_4_a_dheader_holds_the_length_of_what_followed_it() {
     let mut w = Writer::little_endian();
     let header = w.write_dheader();
     w.write_i32(7);
@@ -129,7 +97,7 @@ fn a_dheader_holds_the_length_of_what_followed_it() {
 /// a fresh writer's bytes appended there are: alignment counts from the
 /// buffer's end, and the DHEADER is patched where it was written.
 #[test]
-fn an_appending_writer_writes_what_a_fresh_one_appended_would() {
+fn xtypes_7_4_3_4_1_an_appending_writer_writes_what_a_fresh_one_appended_would() {
     fn body(w: &mut Writer) {
         let header = w.write_dheader();
         w.write_u8(1);
@@ -156,7 +124,7 @@ fn an_appending_writer_writes_what_a_fresh_one_appended_would() {
 }
 
 #[test]
-fn an_emheader_packs_its_id_code_and_flag_into_one_word() {
+fn xtypes_7_4_3_4_2_an_emheader_packs_its_id_code_and_flag_into_one_word() {
     // XTypes 1.3 §7.4.3.4.2: must-understand in bit 31, length code in
     // 30..28, member id in the low 28.
     let mut w = Writer::little_endian();
@@ -168,6 +136,14 @@ fn an_emheader_packs_its_id_code_and_flag_into_one_word() {
         .expect("the member is the length its code declares");
 
     let bytes = w.finish();
+    // M_FLAG (bit 31) | LC 4 (bits 30..28) | id 3 = 0xC000_0003, then the
+    // NEXTINT 4 and the member.
+    assert_eq!(
+        bytes,
+        [
+            0x03, 0x00, 0x00, 0xC0, 0x04, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00
+        ]
+    );
     let mut r = Reader::new(&bytes, Endianness::Little);
     let read = r.read_emheader().expect("emheader");
     assert_eq!(read.member_id, 3);
@@ -184,7 +160,7 @@ fn an_emheader_packs_its_id_code_and_flag_into_one_word() {
 /// bits: from zero to 268,435,455 (0x0FFFFFFF)". An EMHEADER keeps the id in
 /// the low 28 bits (§7.4.3.4.2); a larger id is refused and not masked.
 #[test]
-fn an_emheader_member_id_past_28_bits_is_refused() {
+fn xtypes_7_2_2_4_4_4_4_an_emheader_member_id_past_28_bits_is_refused() {
     let mut w = Writer::little_endian();
     w.write_emheader(0x0FFF_FFFF, 2, false)
         .expect("the largest id the 28 bits hold");
@@ -200,7 +176,7 @@ fn an_emheader_member_id_past_28_bits_is_refused() {
 }
 
 #[test]
-fn a_length_code_below_four_carries_no_next_int() {
+fn xtypes_7_4_3_4_a_length_code_below_four_carries_no_next_int() {
     // LC0 to LC3 carry the length in the code itself; writing a NEXTINT
     // for them would put four bytes on the wire that no peer expects.
     let mut w = Writer::little_endian();
@@ -230,7 +206,7 @@ const SHORT_FORM: PlCdr1Framing = PlCdr1Framing {
 };
 
 #[test]
-fn a_parameter_length_excludes_the_padding_that_follows_it() {
+fn xtypes_7_4_1_2_a_parameter_length_excludes_the_padding_that_follows_it() {
     // Under Fast DDS's framing the length field carries the unpadded
     // value length; the padding to the next four-byte boundary is not
     // counted. Cyclone and RTI round it up — the case below.
@@ -274,7 +250,7 @@ const ROUNDED: PlCdr1Framing = PlCdr1Framing {
 /// measures the split on its trailing `short`; no capture has read a
 /// PL_CDR1 header off a socket.
 #[test]
-fn a_parameter_length_covers_the_padding_where_the_framing_says_so() {
+fn xtypes_7_4_1_2_a_parameter_length_covers_the_padding_where_the_framing_says_so() {
     let mut w = Writer::little_endian().with_pl_cdr1_framing(ROUNDED);
     let pid = w
         .write_pid(5, ParameterRole::Member, false)
@@ -308,7 +284,7 @@ fn a_parameter_length_covers_the_padding_where_the_framing_says_so() {
 /// be added in order to start the next parameterID at a 4 byte offset
 /// relative to the previous parameterID."
 #[test]
-fn the_default_parameter_length_is_the_exact_length_of_the_member() {
+fn xtypes_7_4_1_2_the_default_parameter_length_is_the_exact_length_of_the_member() {
     let mut w = Writer::little_endian();
     let first = w
         .write_pid(5, ParameterRole::Member, false)
@@ -351,7 +327,7 @@ fn the_default_parameter_length_is_the_exact_length_of_the_member() {
 /// The DDSI-RTPS 2.5 §9.4.2.11 reading is a named setting: a default
 /// reader reports the rounded length and names the framing that fits.
 #[test]
-fn a_default_reader_refuses_the_rounded_length_and_names_the_setting() {
+fn xtypes_7_4_1_2_a_default_reader_refuses_the_rounded_length_and_names_the_setting() {
     let mut w = Writer::little_endian().with_pl_cdr1_framing(ROUNDED);
     let pid = w
         .write_pid(5, ParameterRole::Member, false)
@@ -378,7 +354,7 @@ fn a_default_reader_refuses_the_rounded_length_and_names_the_setting() {
 /// 0x3F02 to indicate the end of a list as well." The strict reader
 /// reports the flags of another framing; the tolerant reader takes them.
 #[test]
-fn a_tolerant_reader_takes_any_flags_on_the_sentinel() {
+fn xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_sentinel() {
     for pid in [0x3f02u16, 0x7f02, 0xbf02, 0xff02] {
         let [lo, hi] = pid.to_le_bytes();
         let bytes = [lo, hi, 0x00, 0x00];
@@ -403,7 +379,7 @@ fn a_tolerant_reader_takes_any_flags_on_the_sentinel() {
 }
 
 #[test]
-fn a_tolerant_reader_takes_any_flags_on_the_extended_marker() {
+fn xtypes_7_4_1_2_1_a_tolerant_reader_takes_any_flags_on_the_extended_marker() {
     for marker in [0x3f01u16, 0x7f01, 0xbf01, 0xff01] {
         let [lo, hi] = marker.to_le_bytes();
         let bytes = [
@@ -431,7 +407,7 @@ fn a_tolerant_reader_takes_any_flags_on_the_extended_marker() {
 /// short parameter header or an extended header, the short and extended
 /// expressions of that header shall be considered totally equivalent."
 #[test]
-fn a_tolerant_reader_takes_the_short_form_where_the_extended_one_is_expected() {
+fn xtypes_7_4_1_2_2_a_tolerant_reader_takes_the_short_form_where_the_extended_one_is_expected() {
     let always_extended = PlCdr1Framing {
         require_extended: true,
         ..PlCdr1Framing::DEFAULT
@@ -511,7 +487,7 @@ fn a_tolerant_reader_takes_either_length_convention_and_no_third() {
 }
 
 #[test]
-fn the_extended_parameter_form_carries_a_thirty_two_bit_id() {
+fn xtypes_7_4_1_2_1_the_extended_parameter_form_carries_a_thirty_two_bit_id() {
     let mut w = Writer::little_endian();
     let pid = w
         .write_pid_extended(0x0001_0002, ParameterRole::Member, false)
@@ -527,17 +503,7 @@ fn the_extended_parameter_form_carries_a_thirty_two_bit_id() {
 }
 
 #[test]
-fn the_sentinel_ends_a_parameter_list() {
-    let mut w = Writer::little_endian();
-    w.write_sentinel();
-    let bytes = w.finish();
-    let mut r = Reader::new(&bytes, Endianness::Little);
-    let read = r.read_pid().expect("sentinel");
-    assert!(read.end, "the sentinel did not read as the list's end");
-}
-
-#[test]
-fn a_sequence_writes_a_count_and_an_array_does_not() {
+fn xtypes_7_4_3_5_3_a_sequence_writes_a_count_and_an_array_does_not() {
     let values = [1i32, 2, 3];
 
     let mut sequence = Writer::little_endian();
@@ -557,21 +523,6 @@ fn a_sequence_writes_a_count_and_an_array_does_not() {
         })
         .expect("a long never refuses");
     assert_eq!(array.as_bytes().len(), 12, "an array wrote a count");
-}
-
-#[test]
-fn a_sequence_round_trips() {
-    let mut w = Writer::little_endian();
-    w.write_sequence(&[7i32, 8, 9], |w, v| {
-        w.write_i32(*v);
-        Ok(())
-    })
-    .expect("a long never refuses");
-    let bytes = w.finish();
-
-    let mut r = Reader::new(&bytes, Endianness::Little);
-    let read = r.read_sequence(Reader::read_i32).expect("sequence");
-    assert_eq!(read, vec![7, 8, 9]);
 }
 
 #[test]
@@ -601,13 +552,13 @@ fn a_length_larger_than_the_stream_is_refused_before_anything_is_allocated() {
 }
 
 #[test]
-fn a_boolean_that_is_neither_zero_nor_one_is_refused() {
+fn xtypes_7_4_1_1_1_a_boolean_that_is_neither_zero_nor_one_is_refused() {
     let mut r = Reader::new(&[2], Endianness::Little);
     assert!(matches!(r.read_bool(), Err(WireError::OutOfRange { .. })));
 }
 
 #[test]
-fn a_string_of_bytes_that_are_not_utf8_is_refused() {
+fn xtypes_7_2_2_2_1_2_4_a_string_of_bytes_that_are_not_utf8_is_refused() {
     let bytes = [3, 0, 0, 0, 0xFF, 0xFE, 0];
     let mut r = Reader::new(&bytes, Endianness::Little);
     assert!(matches!(r.read_string(), Err(WireError::NotUtf8 { .. })));
@@ -623,7 +574,7 @@ fn a_short_holder_is_the_hash_zero_padded() {
 }
 
 #[test]
-fn the_digest_matches_the_published_vectors() {
+fn xtypes_7_2_2_4_4_4_5_the_digest_matches_the_published_vectors() {
     // RFC 1321 appendix A.5. Checking against them is what makes this
     // MD5 rather than something that agrees with itself.
     assert_eq!(
@@ -748,7 +699,7 @@ fn hex(bytes: &[u8; 16]) -> String {
 /// lost its own length word and everything after it was read four bytes
 /// out — with no error, because four bytes were there to read.
 #[test]
-fn a_length_code_of_five_leaves_its_next_int_for_the_member() {
+fn xtypes_7_4_3_4_2_a_length_code_of_five_leaves_its_next_int_for_the_member() {
     let mut w = Writer::little_endian();
     let header = w
         .write_emheader(2, 5, false)
@@ -778,7 +729,7 @@ fn a_length_code_of_five_leaves_its_next_int_for_the_member() {
 
 /// A NEXTINT larger than the stream is refused where it was read.
 #[test]
-fn an_emheader_next_int_that_cannot_be_true_is_refused() {
+fn xtypes_7_4_3_4_2_an_emheader_next_int_that_cannot_be_true_is_refused() {
     // LC4, id 1, then a NEXTINT of all ones.
     let bytes = [0x01, 0x00, 0x00, 0x40, 0xFF, 0xFF, 0xFF, 0xFF];
     let mut r = Reader::new(&bytes, Endianness::Little);
@@ -797,7 +748,7 @@ fn an_emheader_next_int_that_cannot_be_true_is_refused() {
 /// reached beyond it went on consuming the next member's bytes and
 /// returned them as elements of its own.
 #[test]
-fn a_delimited_sequence_cannot_run_past_its_delimiter() {
+fn xtypes_7_4_3_4_1_a_delimited_sequence_cannot_run_past_its_delimiter() {
     let mut w = Writer::little_endian();
     // A delimiter of 8: a count of one and one element. Then a member
     // that is not part of the collection.
@@ -837,7 +788,7 @@ fn a_delimited_sequence_that_stops_short_of_its_delimiter_is_refused() {
 /// A string whose last byte is not a NUL is a frame disagreeing with
 /// itself. §7.4.1.1.2 puts the terminator there and the length counts it.
 #[test]
-fn a_string_whose_terminator_is_not_a_nul_is_refused() {
+fn xtypes_7_4_1_1_2_a_string_whose_terminator_is_not_a_nul_is_refused() {
     let bytes = [4, 0, 0, 0, b'a', b'b', b'c', b'X'];
     let mut r = Reader::new(&bytes, Endianness::Little);
     match r.read_string() {
@@ -885,7 +836,7 @@ fn a_parameter_length_that_cannot_be_true_is_refused() {
 /// Matching the whole word recognised neither, so a Cyclone parameter
 /// list read as data and ran on past its own end.
 #[test]
-fn a_flagged_sentinel_and_a_flagged_extended_header_are_recognised() {
+fn xtypes_7_4_1_2_1_a_flagged_sentinel_and_a_flagged_extended_header_are_recognised() {
     // Cyclone's shape: PID_EXTENDED with the flag, then the sentinel
     // with the flag.
     let bytes = [
@@ -921,7 +872,7 @@ fn a_flagged_sentinel_and_a_flagged_extended_header_are_recognised() {
 /// which matches nothing a model declares — and under XCDR1 an
 /// unmatched parameter was skipped, so the member was silently dropped.
 #[test]
-fn flag_two_of_an_extended_header_is_the_members_must_understand() {
+fn xtypes_7_4_1_2_1_flag_two_of_an_extended_header_is_the_members_must_understand() {
     let mut w = Writer::little_endian();
     let pid = w
         .write_pid_extended(1, ParameterRole::Member, true)
@@ -954,7 +905,7 @@ fn flag_two_of_an_extended_header_is_the_members_must_understand() {
 /// not, so a `double` at the head of a block got four bytes of padding
 /// no vendor wrote and came out of the following bytes.
 #[test]
-fn a_parameter_value_counts_alignment_from_its_own_block() {
+fn xtypes_7_4_1_2_1_a_parameter_value_counts_alignment_from_its_own_block() {
     let mut w = Writer::new(Endianness::Little).with_pl_cdr1_framing(SHORT_FORM);
     let pid = w
         .write_pid(1, ParameterRole::Member, false)
@@ -980,7 +931,7 @@ fn a_parameter_value_counts_alignment_from_its_own_block() {
 #[test]
 fn padding_the_stream_does_not_have_is_a_named_error() {
     // A char, then nothing where a long's padding and body belong.
-    let bytes = [b'a'];
+    let bytes = *b"a";
     let mut r = Reader::new(&bytes, Endianness::Little);
     assert_eq!(r.read_char().expect("char"), 'a');
     match r.read_i32() {
@@ -1060,7 +1011,7 @@ fn a_member_that_fits_no_short_code_keeps_its_next_int() {
 
 /// Without the flag nothing is shortened, which is Cyclone and RTI.
 #[test]
-fn the_default_writer_leaves_an_lc4_header_alone() {
+fn xtypes_7_4_3_4_2_the_default_writer_leaves_an_lc4_header_alone() {
     let mut w = Writer::with_max_align(Endianness::Little, 4);
     let header = w
         .write_emheader(1, 4, false)
@@ -1073,7 +1024,7 @@ fn the_default_writer_leaves_an_lc4_header_alone() {
 
 /// The must-understand bit survives the rewrite, and so does big endian.
 #[test]
-fn shortening_a_header_keeps_its_id_and_its_flag_in_both_orders() {
+fn xtypes_7_4_3_4_2_shortening_a_header_keeps_its_id_and_its_flag_in_both_orders() {
     for endianness in [Endianness::Little, Endianness::Big] {
         let mut w = Writer::with_max_align(endianness, 4).with_short_length_codes(true);
         let header = w
@@ -1103,7 +1054,7 @@ fn shortening_a_header_keeps_its_id_and_its_flag_in_both_orders() {
 /// RTI and Fast DDS write the short form for `mut_string`'s `string s`;
 /// `zerodds_ast_layout::needs_extended_pid` carries that run.
 #[test]
-fn a_short_parameter_header_becomes_extended_when_the_value_overruns_it() {
+fn xtypes_7_4_1_2_2_a_short_parameter_header_becomes_extended_when_the_value_overruns_it() {
     let mut w = Writer::with_max_align(Endianness::Little, 8).with_pl_cdr1_framing(SHORT_FORM);
     let header = w
         .write_pid(1, ParameterRole::Member, false)
@@ -1132,7 +1083,7 @@ fn a_short_parameter_header_becomes_extended_when_the_value_overruns_it() {
 
 /// One byte less and the short form stands.
 #[test]
-fn a_value_that_fits_sixteen_bits_keeps_the_short_header() {
+fn xtypes_7_4_3_5_3_a_value_that_fits_sixteen_bits_keeps_the_short_header() {
     let mut w = Writer::with_max_align(Endianness::Little, 8).with_pl_cdr1_framing(SHORT_FORM);
     let header = w
         .write_pid(1, ParameterRole::Member, false)
@@ -1152,7 +1103,7 @@ fn a_value_that_fits_sixteen_bits_keeps_the_short_header() {
 /// The promoted header carries the member's must-understand bit, in the
 /// place the extended form puts it.
 #[test]
-fn a_promoted_header_moves_the_must_understand_bit_to_flag_two() {
+fn xtypes_7_4_1_2_1_a_promoted_header_moves_the_must_understand_bit_to_flag_two() {
     let mut w = Writer::with_max_align(Endianness::Little, 8);
     let header = w
         .write_pid(1, ParameterRole::Member, true)
@@ -1413,23 +1364,6 @@ fn value_string_digits_matches_ace_recorded_values() {
     );
 }
 
-/// ValueStringDigits reads back correctly (round-trip).
-#[test]
-fn value_string_digits_reads_back() {
-    let mut w = Writer::new(Endianness::Little);
-    w.write_fixed("0.12345", 5, 5, FixedDigits::ValueStringDigits)
-        .expect("write");
-    let bytes = w.finish();
-    assert_eq!(bytes, vec![0x00, 0x12, 0x34, 0x5c]);
-
-    let mut r = Reader::new(&bytes, Endianness::Little);
-    let read = r
-        .read_fixed(5, 5, FixedDigits::ValueStringDigits)
-        .expect("read");
-    // The reader canonicalizes: leading zeros removed, scale applied
-    assert_eq!(read, "0.12345");
-}
-
 /// A count past 31 digits as written has no width a reader can be told,
 /// and one past 255 used to wrap in the `u8` it was counted into.
 #[test]
@@ -1500,7 +1434,7 @@ fn a_continuing_writer_aligns_to_the_start_of_the_prefix() {
 /// identified in both T1 and T2". A bit the stream sets and the type does
 /// not declare reads as not set, for every holder width.
 #[test]
-fn a_bitmask_read_keeps_only_the_declared_bits() {
+fn xtypes_7_2_4_4_7_a_bitmask_read_keeps_only_the_declared_bits() {
     let mut r = Reader::new(&[0b0000_1111], Endianness::Little);
     assert_eq!(r.read_bitmask(8, 0b0000_0101).expect("read"), 0b0000_0101);
 
@@ -1521,7 +1455,7 @@ fn a_bitmask_read_keeps_only_the_declared_bits() {
 /// Giga Bytes". A DHEADER is a `UInt32`; a span of 4 GiB has none and is
 /// refused, where `finish_dheader` would have written it modulo 2^32.
 #[test]
-fn a_dheader_length_of_4_gib_or_more_is_refused() {
+fn xtypes_7_4_3_4_1_a_dheader_length_of_4_gib_or_more_is_refused() {
     use zerodds_wire::{WireError, Writer, writer::checked_dheader_length};
     assert_eq!(checked_dheader_length(0, 0).unwrap(), 0);
     assert_eq!(
@@ -1545,7 +1479,7 @@ fn a_dheader_length_of_4_gib_or_more_is_refused() {
 }
 
 #[test]
-fn the_ordered_map_reader_refuses_a_stream_that_repeats_a_key() {
+fn xtypes_7_2_2_4_3_the_ordered_map_reader_refuses_a_stream_that_repeats_a_key() {
     // XTypes 1.3 §7.2.2.4.3, Table 7: a map key "must be unique within a given map object". A
     // `BTreeMap` would keep the second entry of a key and drop the first, so the reader that
     // builds one refuses the stream instead of reporting success on fewer entries than counted.

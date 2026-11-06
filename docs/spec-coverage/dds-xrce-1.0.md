@@ -110,8 +110,8 @@ including the associated behaviors."
 
 **Status:** `n/a (informative)` — Zuordnung: Items zu §8.3.5 (alle Submessages
 außer CREATE, INFO, WRITE_DATA, DELETE), §7.8.5, §8.4.3, §8.4.14. GET_INFO ohne
-Sitzung und InfoMask (65cd1820a04), die Formate von DATA (d5fbdbe672e),
-`MAX_SAMPLES_ZERO` (2fa0800f55a) und vorkonfigurierte DataReader (b6e55cfa859)
+Sitzung und InfoMask (ca0cf7e08bf), die Formate von DATA (fd5253ca805),
+`MAX_SAMPLES_ZERO` (8bcb1d00161) und vorkonfigurierte DataReader (2ba972cd270)
 sind in diesen Items geführt.
 
 ### §2 Write Access profile
@@ -126,8 +126,8 @@ including the associated behaviors."
 **Tests:** —
 
 **Status:** `n/a (informative)` — Zuordnung: Items zu §8.3.5, §7.8.4, §8.4.2,
-§8.4.14. STATUS auf WRITE_DATA (dc0209b38fe), die Sequenzformate von WRITE_DATA
-(4f1fb9f5f4f) und vorkonfigurierte DataWriter (b6e55cfa859) sind in diesen Items
+§8.4.14. STATUS auf WRITE_DATA (869304e6b63), die Sequenzformate von WRITE_DATA
+(f40bd568ad1) und vorkonfigurierte DataWriter (2ba972cd270) sind in diesen Items
 geführt.
 
 ### §2 Configure Entities profile
@@ -145,8 +145,8 @@ submessage and the associated behaviors."
 **Status:** `n/a (informative)` — Zuordnung: Items zu §7.8.2, §7.8.3, §7.7.3 und
 Table 6. Eine Submessage DELETE_CLIENT gibt es in Table 10 nicht;
 `delete_client` läuft über DELETE (§8.3.5.4). Die Prüfung des Participant für
-Publisher und Subscriber (dd55e9c9df1) und die DDS-XML-Formen der
-Repräsentationen (3aea52dd70a, 9239562286c) sind in diesen Items geführt.
+Publisher und Subscriber (505c2e56d24) und die DDS-XML-Formen der
+Repräsentationen (9d5c64dc398, b97657ef4ec) sind in diesen Items geführt.
 
 ### §2 Configure QoS profile
 
@@ -160,7 +160,7 @@ the associated behaviors for object kind OBJK_QOSPROFILE."
 
 **Status:** `n/a (informative)` — Zuordnung: Items zu §7.7.3.2, Table 6
 OBJK_QOSPROFILE und §8.4.7. Die DDS-XML-Form des QosProfile ist umgesetzt
-(3aea52dd70a, 9239562286c); welche Policies der Agent anwendet, steht in den
+(9d5c64dc398, b97657ef4ec); welche Policies der Agent anwendet, steht in den
 Items zu §7.1.
 
 ### §2 Configure types profile
@@ -189,8 +189,8 @@ the GET_INFO and INFO submessage and the associated behaviors."
 
 **Status:** `n/a (informative)` — Zuordnung: Items zu §7.8.2.2, §7.8.3.3,
 §8.3.5.3, §8.3.5.7 und §7.7.13. GET_INFO liefert den Agent (auch ohne Sitzung),
-die Objekte des Client und die für ihn konfigurierten Objekte (65cd1820a04,
-b6e55cfa859). Eine Abfrage der Topics und Typen des Global Data Space hat der
+die Objekte des Client und die für ihn konfigurierten Objekte (ca0cf7e08bf,
+2ba972cd270). Eine Abfrage der Topics und Typen des Global Data Space hat der
 Agent nicht; in `session.rs`, `dds_port.rs` und `dcps_bridge.rs` ist kein Code
 dafür.
 
@@ -451,7 +451,7 @@ proxy in order to produce and consume data in the DDS Global Data Space."
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort`,
 `runtime_for`: ein `DcpsRuntime` je Domain)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
 **Status:** `done` — der Test schreibt und liest über einen `DomainParticipant`
 von `zerodds-dcps` ohne XRCE auf der anderen Seite.
@@ -476,17 +476,17 @@ Topic may be published or subscribed to on any DDS with any QoS."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`apply_qos_profile`, `qos_policy`, `TopicQos`, `participant_qos_of`); `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`create_writer`, `create_reader`, `create_participant_with`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_qos_of_a_topic_is_the_default_of_its_endpoints`, `crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_qos_of_an_xml_participant_is_applied`, `crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_participant_qos_profile_reference_is_applied`, `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_participant_qos_is_applied_to_the_participant`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_the_qos_of_a_topic_is_the_default_of_its_endpoints`, `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_the_qos_of_an_xml_participant_is_applied`, `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_a_participant_qos_profile_reference_is_applied`, `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_1_a_participant_qos_is_applied_to_the_participant`
 
-**Status:** done — jede Policy, die die DDS-Entität hat, wird angewandt: am Endpunkt RELIABILITY, DURABILITY, DURABILITY_SERVICE, HISTORY, DEADLINE, LATENCY_BUDGET, LIFESPAN, LIVELINESS, OWNERSHIP, OWNERSHIP_STRENGTH, DESTINATION_ORDER, TRANSPORT_PRIORITY, TIME_BASED_FILTER, PARTITION, USER_DATA, TOPIC_DATA, RESOURCE_LIMITS; am Publisher und Subscriber PARTITION, GROUP_DATA, PRESENTATION, ENTITY_FACTORY; am Topic als Vorgabe seiner Endpunkte (`TopicQos`); am DomainParticipant USER_DATA (eigene Runtime) und ENTITY_FACTORY, aus dem `qos_profile_reference` der Binärform und aus `<domain_participant_qos>` der XML-Form (b4cd825c268, 2c715803843). Was die Runtime nicht kann, wird nicht angenommen und ignoriert: `STATUS_ERR_INCOMPATIBLE`, es sei denn `unsupported_qos: ignore` (Einstellung für die Profildateien anderer Hersteller).
+**Status:** done — jede Policy, die die DDS-Entität hat, wird angewandt: am Endpunkt RELIABILITY, DURABILITY, DURABILITY_SERVICE, HISTORY, DEADLINE, LATENCY_BUDGET, LIFESPAN, LIVELINESS, OWNERSHIP, OWNERSHIP_STRENGTH, DESTINATION_ORDER, TRANSPORT_PRIORITY, TIME_BASED_FILTER, PARTITION, USER_DATA, TOPIC_DATA, RESOURCE_LIMITS; am Publisher und Subscriber PARTITION, GROUP_DATA, PRESENTATION, ENTITY_FACTORY; am Topic als Vorgabe seiner Endpunkte (`TopicQos`); am DomainParticipant USER_DATA (eigene Runtime) und ENTITY_FACTORY, aus dem `qos_profile_reference` der Binärform und aus `<domain_participant_qos>` der XML-Form (0b67c04800c, 3906abf91b8). Was die Runtime nicht kann, wird nicht angenommen und ignoriert: `STATUS_ERR_INCOMPATIBLE`, es sei denn `unsupported_qos: ignore` (Einstellung für die Profildateien anderer Hersteller).
 ### §7.1 QoS, die der Agent nicht anwenden kann
 **Spec:** §7.1, S. 17 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`plan_not_applied`, `create_core`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`apply_qos_profile`); `crates/xrce-agent/src/daemon/config.rs` (`unsupported_qos`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::qos_the_agent_cannot_apply_is_refused_unless_ignoring_is_named`, `crates/xrce-agent/src/daemon/config.rs::tests::unsupported_qos_is_refused_unless_ignoring_is_named`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_1_qos_the_agent_cannot_apply_is_refused_unless_ignoring_is_named`, `crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_1_unsupported_qos_is_refused_unless_ignoring_is_named`
 
-**Status:** done — eine QoS, die der Agent nicht anwenden kann (WRITER_DATA_LIFECYCLE mit autodispose aus, READER_DATA_LIFECYCLE mit Autopurge-Verzögerung, ein Element eines Herstellerdialekts), macht das CREATE zu `STATUS_ERR_INCOMPATIBLE`; nichts wird gespeichert. `unsupported_qos: ignore` legt das Objekt ohne sie an und meldet, was fehlt (`SessionEvent::RepresentationNotApplied`). Eine Policy ohne Bedeutung für die Art des Endpunkts (TIME_BASED_FILTER eines Writers) gehört nicht zu dessen QoS und wird nicht gemeldet. 2c715803843.
+**Status:** done — eine QoS, die der Agent nicht anwenden kann (WRITER_DATA_LIFECYCLE mit autodispose aus, READER_DATA_LIFECYCLE mit Autopurge-Verzögerung, ein Element eines Herstellerdialekts), macht das CREATE zu `STATUS_ERR_INCOMPATIBLE`; nichts wird gespeichert. `unsupported_qos: ignore` legt das Objekt ohne sie an und meldet, was fehlt (`SessionEvent::RepresentationNotApplied`). Eine Policy ohne Bedeutung für die Art des Endpunkts (TIME_BASED_FILTER eines Writers) gehört nicht zu dessen QoS und wird nicht gemeldet. 3906abf91b8.
 
 ---
 
@@ -534,7 +534,7 @@ establish and maintain the presence of the XRCE Client in the DDS data-space."
 `apply_dds_create`); `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::create_writer`, `create_reader`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
 **Status:** `done`
 
@@ -550,16 +550,16 @@ or dynamically created by an XRCE Client."
 `make_client_applications`); `crates/xrce-agent/src/daemon/config.rs` (Schlüssel
 `xml_profile_files`, `client_applications`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::references_resolve_against_the_profile_files`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_reference_is_read_like_the_profile_it_names`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_references_resolve_against_the_profile_files`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_3_a_reference_is_read_like_the_profile_it_names`
 
 **Status:** `done` — vom Client angelegte Ressourcen: CREATE. Konfigurierte
 Ressourcen: die Dateien nach §9.3 (`<types>`, `<qos_library>`,
 `<domain_library>`, `<domain_participant_library>`, `<application_library>`) aus
 `xml_profile_files:` werden unter der ObjectId aus dem MD5 ihres Namens
-bereitgestellt (03371b4965c, dc63d65691f, 3aea52dd70a, b6e55cfa859).
+bereitgestellt (468aa0940da, 452ffeb7f84, 9d5c64dc398, 2ba972cd270).
 
 ### §7.3 Schreiben über eine vorkonfigurierte Ressource ohne CREATE
 
@@ -571,12 +571,12 @@ The Client does not have to create a resource."
 (`SessionEngine::ensure_predefined`, aufgerufen von `handle_write_data`,
 `handle_read_data`, `handle_get_info` und `handle_create`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_reads_through_a_preconfigured_data_reader_without_a_create`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_preconfigured_object_is_made_only_for_a_client_allowed_to_create_it`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_reads_through_a_preconfigured_data_reader_without_a_create`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_preconfigured_object_is_made_only_for_a_client_allowed_to_create_it`
 
 **Status:** `done` — WRITE_DATA auf die ObjectId eines konfigurierten DataWriter
-legt den DomainParticipant mit allem darin für den Client an (b6e55cfa859); die
+legt den DomainParticipant mit allem darin für den Client an (2ba972cd270); die
 Zugriffsregeln gelten dabei. Eine ObjectId ohne Konfiguration ergibt
 `STATUS_ERR_UNKNOWN_REFERENCE`.
 
@@ -590,8 +590,8 @@ it wakes up."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`,
 `pump_read`); `crates/xrce-agent/src/lib.rs` (`XrceAgent::pull_sample`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::read_data_elapsed_time_is_measured_from_the_real_request_time`,
-`crates/xrce-agent/src/lib.rs::tests::after_submit_pull_returns_sample_in_fifo_order`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_read_data_elapsed_time_is_measured_from_the_real_request_time`,
+`crates/xrce-agent/src/lib.rs::tests::xrce_7_3_after_submit_pull_returns_sample_in_fifo_order`
 
 **Status:** `done`
 
@@ -603,7 +603,7 @@ participants use the DDS-RTPS protocol."
 
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
 **Status:** `done`
 
@@ -632,7 +632,7 @@ It functions as a factory for all the Objects managed by the XRCE Agent."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine`);
 `crates/xrce-agent/src/lib.rs` (`XrceAgent`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`
 
 **Status:** `done`
 
@@ -644,7 +644,7 @@ application that interacts with the XRCE Agent using the XRCE protocol."
 **Repo:** `crates/xrce-agent/src/lib.rs` (`XrceAgent::register_client`, ein
 `ObjectStore` je `ClientKey`)
 
-**Tests:** `crates/xrce-agent/src/lib.rs::tests::multiple_clients_isolated`
+**Tests:** `crates/xrce-agent/src/lib.rs::tests::xrce_7_4_multiple_clients_isolated`
 
 **Status:** `done`
 
@@ -659,13 +659,13 @@ Client."
 ClientKey, ObjectKind `application`); `crates/xrce-agent/src/daemon/session.rs`
 (`SessionEngine::permit`)
 
-**Tests:** `crates/xrce-agent/src/lib.rs::tests::create_application_object_via_objk_application`,
-`crates/xrce-agent/src/lib.rs::tests::multiple_clients_isolated`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_without_permission_is_denied_and_stores_nothing`
+**Tests:** `crates/xrce-agent/src/lib.rs::tests::xrce_7_4_create_application_object_via_objk_application`,
+`crates/xrce-agent/src/lib.rs::tests::xrce_7_4_multiple_clients_isolated`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_without_permission_is_denied_and_stores_nothing`
 
 **Status:** `done` — eine Application liegt im Objektspeicher ihres Client; ihre
-Rechte sind die Regeln des Client im AccessController (d66ada44616,
-515bcc677f3). Aus dem Code gelesen: die Prüfung nimmt den ClientKey und den
+Rechte sind die Regeln des Client im AccessController (1c430db8a67,
+5f7a8652d95). Aus dem Code gelesen: die Prüfung nimmt den ClientKey und den
 ObjectKind des Objekts; ein Test mit einer Application als verweigertem Objekt
 gibt es nicht.
 
@@ -682,13 +682,13 @@ je unter der ObjectId ihres Namens);
 `crates/xrce-agent/src/daemon/definitions.rs` (`ApplicationDef`,
 `ParticipantDef`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_creates_the_objects_inside_it`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_participant_definition_creates_the_objects_inside_it`
 
 **Status:** `done` — eine Application aus `<application_library>` legt ihre
 DomainParticipants mit allem darin an, auch für einen Client, dem sie in
-`client_applications:` zugeordnet ist (3aea52dd70a, b6e55cfa859).
+`client_applications:` zugeordnet ist (9d5c64dc398, 2ba972cd270).
 
 ### §7.4 AccessController
 
@@ -705,20 +705,20 @@ write, and so on."
 `crates/xrce-agent/src/daemon/config.rs` (Schlüssel `authorized_client_keys`,
 `required_client_properties`, `access_rules`)
 
-**Tests:** `crates/xrce-agent/src/daemon/access.rs::tests::a_controller_without_rules_restricts_nothing`,
-`crates/xrce-agent/src/daemon/access.rs::tests::the_first_matching_rule_decides_and_no_match_denies`,
-`crates/xrce-agent/src/daemon/access.rs::tests::domains_kinds_and_topic_prefixes_narrow_a_rule`,
-`crates/xrce-agent/src/daemon/access.rs::tests::only_configured_client_keys_are_authorized`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_key_not_configured_in_the_agent_is_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_without_permission_is_denied_and_stores_nothing`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_and_delete_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::write_and_read_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_rule_can_limit_the_domains_a_client_joins`
+**Tests:** `crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_a_controller_without_rules_restricts_nothing`,
+`crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_the_first_matching_rule_decides_and_no_match_denies`,
+`crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_domains_kinds_and_topic_prefixes_narrow_a_rule`,
+`crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_only_configured_client_keys_are_authorized`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_client_key_not_configured_in_the_agent_is_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_without_permission_is_denied_and_stores_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_get_info_and_delete_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_write_and_read_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_rule_can_limit_the_domains_a_client_joins`
 
 **Status:** `done` — Regeln je Client für Operation, ObjectKind, DDS-Domain und
 Topic; eine Operation ohne passende Regel wird mit `STATUS_ERR_DENIED`
 beantwortet, sobald eine Regel existiert, ohne Regeln beschränkt der Controller
-nichts (d66ada44616, 515bcc677f3).
+nichts (1c430db8a67, 5f7a8652d95).
 
 ### §7.4 DomainParticipant als Proxy
 
@@ -730,8 +730,8 @@ domain."
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::create_participant_with`, `runtime_for`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::full_chain_against_a_real_leased_domain`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::two_large_samples_reach_a_default_reader_on_the_same_agent`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_full_chain_against_a_real_leased_domain`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_two_large_samples_reach_a_default_reader_on_the_same_agent`
 
 **Status:** `done` — alle XRCE-DomainParticipants einer Domain teilen einen
 `DcpsRuntime`, ausgenommen ein Participant mit USER_DATA (eigener Runtime je
@@ -755,13 +755,13 @@ Topic, QosProfile und Qos als Werte.
 (`RealDdsPort::create_participant_with`, `create_publisher`,
 `create_subscriber`, `create_writer`, `create_reader`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_publisher_is_a_dds_entity_of_its_participants_domain`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_5_a_publisher_is_a_dds_entity_of_its_participants_domain`
 
 **Status:** `done` — DataWriter und DataReader sind DDS-Endpunkte im
 `DcpsRuntime`, Publisher und Subscriber haben je eine eigene DDS-Entität im
-Participant (dd55e9c9df1), das Topic liegt als Name und Typ im Zustand des
+Participant (505c2e56d24), das Topic liegt als Name und Typ im Zustand des
 `RealDdsPort`, QosProfile und Qos gehen als Werte ein.
 
 ### §7.5 Publisher und Subscriber als DDS-Entität
@@ -774,18 +774,18 @@ Participant (dd55e9c9df1), das Topic liegt als Name und Typ im Zustand des
 `container_for`); `crates/xrce-agent/src/daemon/session.rs`
 (`DdsCreate::Container`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_publisher_is_a_dds_entity_of_its_participants_domain`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_or_subscriber_needs_an_existing_participant`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::publisher_and_subscriber_need_their_participant_and_endpoints_need_them`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::a_publisher_that_does_not_autoenable_refuses_its_writers`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_5_a_publisher_is_a_dds_entity_of_its_participants_domain`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_or_subscriber_needs_an_existing_participant`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_5_publisher_and_subscriber_need_their_participant_and_endpoints_need_them`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_5_a_publisher_that_does_not_autoenable_refuses_its_writers`
 
 **Status:** `done` — Publisher und Subscriber sind eine Gruppen-Entität im
 Participant ihrer Domain; PRESENTATION und ENTITY_FACTORY aus den XML-Formen
 wirken (ENTITY_FACTORY `autoenable_created_entities: false` verweigert die
 Endpunkte darunter), PARTITION und GROUP_DATA erreichen die Endpunkte über deren
 `EndpointQos`. Ein Participant, der nicht existiert, ergibt
-`STATUS_ERR_UNKNOWN_REFERENCE` (dd55e9c9df1). GROUP_DATA wird mit dem Endpunkt
+`STATUS_ERR_UNKNOWN_REFERENCE` (505c2e56d24). GROUP_DATA wird mit dem Endpunkt
 angekündigt, nicht mit einer eigenen Ankündigung des Publisher.
 
 ---
@@ -801,8 +801,8 @@ the scope of an Agent and a ClientKey."
 `crates/xrce-agent/src/lib.rs` (`XrceAgent::register_client`, ein Objektspeicher
 je `ClientKey`)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_strict_on_existing_returns_conflict`,
-`crates/xrce-agent/src/lib.rs::tests::multiple_clients_isolated`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_6_create_strict_on_existing_returns_conflict`,
+`crates/xrce-agent/src/lib.rs::tests::xrce_7_4_multiple_clients_isolated`
 
 **Status:** `done`
 
@@ -815,14 +815,14 @@ time the object is created."
 **Repo:** `crates/xrce/src/object_id.rs` (`ObjectId::from_reference`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_create`, `ensure_predefined`)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::from_reference_matches_the_examples_of_the_spec`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_object_id_is_the_prefix_and_the_kind_of_the_representation`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_7_6_from_reference_matches_the_examples_of_the_spec`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_the_object_id_is_the_prefix_and_the_kind_of_the_representation`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** `done` — die vom Client gewählte `ObjectId` wird übernommen; die im
 Agent konfigurierte `ObjectId` ist die aus dem MD5 des Namens nach §9.3 und
-Table 16 (03371b4965c, b6e55cfa859).
+Table 16 (468aa0940da, 2ba972cd270).
 
 ### §7.6 OBJECTID_INVALID {0x00, 0x00}
 
@@ -833,13 +833,13 @@ OBJECTID_INVALID and represents an invalid object."
 `OBJECTID_SESSION` = 0xFFFF); `crates/xrce/src/object_store.rs`
 (`ObjectStore::create` weist `OBJECTID_INVALID` ab)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::invalid_object_id_is_all_zeros`,
-`crates/xrce/src/object_id.rs::tests::reserved_object_ids_per_spec_7_6_and_annex_a`,
-`crates/xrce/src/object_store.rs::tests::create_invalid_object_id_rejected`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_7_6_invalid_object_id_is_all_zeros`,
+`crates/xrce/src/object_id.rs::tests::xrce_7_6_reserved_object_ids_per_spec_7_6_and_annex_a`,
+`crates/xrce/src/object_store.rs::tests::xrce_7_6_create_invalid_object_id_rejected`
 
 **Status:** `done` — `OBJECTID_INVALID` ist `{0x00, 0x00}`, `0xFFFF` ist
-`OBJECTID_SESSION` aus Annex A (f63fa2d1218); die Konstanten der SDKs in
-`endpoints/` folgen (5530a71bb29).
+`OBJECTID_SESSION` aus Annex A (daf2a618f74); die Konstanten der SDKs in
+`endpoints/` folgen (6f674508b96).
 
 ### §7.6 OBJECTID_CLIENT {0xFF, 0xFE}
 
@@ -849,7 +849,7 @@ and represents the XRCE ProxyClient object."
 **Repo:** `crates/xrce/src/object_id.rs` (`OBJECTID_CLIENT`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_delete`)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::client_singleton_has_kind_client`,
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_7_6_client_singleton_has_kind_client`,
 `crates/xrce-client/src/lib.rs::tests::disconnect_sends_delete_client_and_clears_state`
 
 **Status:** `done`
@@ -877,13 +877,13 @@ configuration file or similar means."
 `crates/xrce-agent/src/daemon/profiles.rs` (`AgentProfiles`);
 `crates/xrce-agent/src/daemon/definitions.rs` (`SystemDefinitions`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::references_resolve_against_the_profile_files`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_is_created_by_name_or_by_register_type_ref`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_reference_is_read_like_the_profile_it_names`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_references_resolve_against_the_profile_files`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_a_topic_is_created_by_name_or_by_register_type_ref`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_3_a_reference_is_read_like_the_profile_it_names`
 
 **Status:** `done` — ein Name löst sich gegen die Dateien des Agent auf:
 `profile_name` einer Profildatei und die Namen nach DDS-XML (`Library::Element`,
-Table 15) der Bibliotheken von §9.3 (dc63d65691f, 3aea52dd70a).
+Table 15) der Bibliotheken von §9.3 (452ffeb7f84, 9d5c64dc398).
 
 ---
 
@@ -900,14 +900,14 @@ representation the encoding shall follow the rules defined in in
 `encoding.rs`: `UnannotatedTypes`, `RepresentationTimestamps`);
 `crates/xrce-agent/src/daemon/binary_forms.rs` (XCDR2-Leser der Binärformen)
 
-**Tests:** `crates/xrce/tests/foreign_frames.rs::every_client_datagram_decodes_and_writes_back`,
-`crates/xrce/tests/foreign_frames.rs::every_agent_datagram_decodes_and_writes_back`,
-`crates/xrce/tests/unannotated_types.rs::the_default_is_appendable_with_a_dheader`
+**Tests:** `crates/xrce/tests/foreign_frames.rs::xrce_7_7_every_client_datagram_decodes_and_writes_back`,
+`crates/xrce/tests/foreign_frames.rs::xrce_7_7_every_agent_datagram_decodes_and_writes_back`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_the_default_is_appendable_with_a_dheader`
 
 **Status:** `done` — die Payloads der Submessages und die Typen von Annex A
 werden nach XCDR2 gelesen und geschrieben. Typen ohne `@extensibility` sind
 APPENDABLE mit DHEADER; die FINAL-Form der Referenzimplementierung ist die
-Einstellung `unannotated_types: final` (f2ace917b5a). Erweiterungen über Annex A
+Einstellung `unannotated_types: final` (7f85e76debd). Erweiterungen über Annex A
 hinaus stehen in den Items der einzelnen Typen, darunter `requested_mtu` hinter
 `properties` der CLIENT_Representation. Die klassische CDR-Form der Binärobjekte
 des eProsima-Client bleibt als Rückfall (`entity_repr.rs`, `Cdr`).
@@ -921,26 +921,26 @@ des eProsima-Client bleibt als Rückfall (`entity_repr.rs`, `Cdr`).
 `crates/xrce/src/submessages/read_data.rs`; `crates/xrce/src/object_info.rs`;
 `crates/xrce-agent/src/daemon/binary_forms.rs`
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::padding_counts_from_the_start_of_the_payload`,
-`crates/xrce/src/handshake.rs::tests::a_big_endian_client_representation_with_properties_reads_back`,
-`crates/xrce/src/transport_locator.rs::tests::padding_is_counted_from_the_start_of_the_payload`,
-`crates/xrce/src/transport_locator.rs::tests::by_default_the_union_and_its_case_have_a_dheader`,
-`crates/xrce/src/submessages/read_data.rs::tests::the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`,
-`crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`,
-`crates/xrce/src/object_info.rs::tests::agent_activity_info_has_a_dheader_and_a_locator_sequence`,
-`crates/xrce/src/object_info.rs::tests::object_info_puts_the_activity_before_the_config`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::annex_a_topic_has_a_dheader`,
-`crates/xrce/tests/unannotated_types.rs::both_forms_are_read_in_either_setting`
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_7_padding_counts_from_the_start_of_the_payload`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_7_a_big_endian_client_representation_with_properties_reads_back`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_7_7_padding_is_counted_from_the_start_of_the_payload`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_7_7_by_default_the_union_and_its_case_have_a_dheader`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_agent_activity_info_has_a_dheader_and_a_locator_sequence`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_object_info_puts_the_activity_before_the_config`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_annex_a_topic_has_a_dheader`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_both_forms_are_read_in_either_setting`
 
 **Status:** `done` — die Abweichungen sind behoben: `PropertySeq` mit auf 4
-ausgerichteten Längen (65cd1820a04); `TransportLocator` mit Ausrichtung, DHEADER
-und numerischen Ports (c304e509660); `content_filter_expression` als
-XCDR2-String und `DataDeliveryControl` mit DHEADER (1663f8f6240);
+ausgerichteten Längen (ca0cf7e08bf); `TransportLocator` mit Ausrichtung, DHEADER
+und numerischen Ports (299b3a41398); `content_filter_expression` als
+XCDR2-String und `DataDeliveryControl` mit DHEADER (b589558e671);
 `AGENT_ActivityInfo`, `DATAREADER_ActivityInfo`, `DATAWRITER_ActivityInfo`,
-`ObjectInfo` und `ActivityInfoVariant` nach Annex A (65cd1820a04); die
-Binärformen von Annex A als XCDR2 mit DHEADER (c67ce23c724);
+`ObjectInfo` und `ActivityInfoVariant` nach Annex A (ca0cf7e08bf); die
+Binärformen von Annex A als XCDR2 mit DHEADER (f548fee2522);
 `CLIENT_Representation`, `AGENT_Representation`, `ObjectInfo` und die Locatoren
-in der Byte-Reihenfolge des E-Flag (b43d5e6b848).
+in der Byte-Reihenfolge des E-Flag (b9255734bfb).
 
 ---
 
@@ -956,9 +956,9 @@ FORMAT_SAMPLE, FORMAT_SAMPLE_SEQ, and FORMAT_PACKED."
 **Repo:** `crates/xrce/src/submessages/write_data.rs` (`DataFormat`,
 `AnyWriteData`); `crates/xrce/src/submessages/data.rs` (`AnyData`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::any_write_data_dispatches_every_format`,
-`crates/xrce/src/submessages/data.rs::tests::any_data_dispatches_every_format`,
-`crates/xrce/src/submessages/read_data.rs::tests::the_data_format_octet_has_the_values_of_annex_a`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_any_write_data_dispatches_every_format`,
+`crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_any_data_dispatches_every_format`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_1_the_data_format_octet_has_the_values_of_annex_a`
 
 **Status:** `done` — der Code ordnet wie Table 1 und Annex A zu (`SampleDataSeq`
 zu FORMAT_DATA_SEQ, `Sample` zu FORMAT_SAMPLE; Werte 0x00, 0x02, 0x08, 0x0A,
@@ -978,8 +978,8 @@ rules defined in clause 7.4 of [DDS-XTYPES]."
 (`WriteDataPayload::encode_body`, `try_from_submessage`);
 `crates/xrce/src/submessages/data.rs` (`DataPayload`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_matches_the_annex_b_example`,
-`crates/xrce/src/submessages/data.rs::tests::data_base_object_request_precedes_the_sample`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_write_data_matches_the_annex_b_example`,
+`crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_data_base_object_request_precedes_the_sample`
 
 **Status:** done — `serialized_data` läuft ohne eigene Länge bis zum Ende der
 Submessage, wie in Annex B.3.1 (`submessageLength = 6`). Annex A definiert
@@ -994,8 +994,8 @@ SAMPLE_STATE_READ, };"
 
 **Repo:** `crates/xrce/src/sample_info.rs` (`SampleInfoFlags`)
 
-**Tests:** `crates/xrce/src/sample_info.rs::tests::sample_info_flags_bit_positions`,
-`crates/xrce/src/sample_info.rs::tests::sample_info_flags_all_four_bits_independent`
+**Tests:** `crates/xrce/src/sample_info.rs::tests::xrce_7_7_1_sample_info_flags_bit_positions`,
+`crates/xrce/src/sample_info.rs::tests::xrce_7_7_1_sample_info_flags_all_four_bits_independent`
 
 **Status:** done
 
@@ -1008,8 +1008,8 @@ session_time_offset; // milliseconds up to 53 days };"
 **Repo:** `crates/xrce/src/sample_info.rs` (`SampleInfo`,
 `WIRE_SIZE = 12`)
 
-**Tests:** `crates/xrce/src/sample_info.rs::tests::sample_info_matches_annex_b_5_3_layout`,
-`crates/xrce/src/sample_info.rs::tests::sample_info_roundtrip_be`
+**Tests:** `crates/xrce/src/sample_info.rs::tests::xrce_7_7_1_sample_info_matches_annex_b_5_3_layout`,
+`crates/xrce/src/sample_info.rs::tests::xrce_7_7_1_sample_info_roundtrip_be`
 
 **Status:** done — `state`, 3 Byte Füllung, zwei `unsigned long`. Annex A
 (S. 115) definiert `SampleInfo` anders; das ist ein eigenes Item zu Annex A.
@@ -1023,8 +1023,8 @@ info; SampleData data; };"
 (`WriteDataPayloadSample`); `crates/xrce/src/submessages/data.rs`
 (`DataPayloadSample`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_sample_matches_annex_b_5_3_layout`,
-`crates/xrce/src/submessages/data.rs::tests::data_sample_matches_annex_b_5_3_layout`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_write_data_sample_matches_annex_b_5_3_layout`,
+`crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_data_sample_matches_annex_b_5_3_layout`
 
 **Status:** done
 
@@ -1037,8 +1037,8 @@ octet seq_number_delta; DeciSecond timestamp_delta; // In 1/10 of seconds };"
 **Repo:** `crates/xrce/src/sample_info.rs` (`SampleInfoDelta`,
 `WIRE_SIZE = 4`)
 
-**Tests:** `crates/xrce/src/sample_info.rs::tests::sample_info_delta_roundtrip`,
-`crates/xrce/src/sample_info.rs::tests::sample_info_delta_decode_short_is_eof`
+**Tests:** `crates/xrce/src/sample_info.rs::tests::xrce_7_7_1_sample_info_delta_roundtrip`,
+`crates/xrce/src/sample_info.rs::tests::xrce_7_7_1_sample_info_delta_decode_short_is_eof`
 
 **Status:** done
 
@@ -1052,13 +1052,13 @@ SampleInfoDelta info_delta; SampleData data; };"
 (`SampleInfoDelta::decode`); `crates/xrce-agent/src/daemon/session.rs`
 (`SessionEngine::split_write_items`, `SessionEngine::data_submessages`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_packed_samples_matches_annex_b_5_5_layout`,
-`crates/xrce-agent/src/daemon/session.rs::tests::packed_samples_resolve_their_deltas_against_the_base`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_write_data_packed_samples_matches_annex_b_5_5_layout`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_packed_samples_resolve_their_deltas_against_the_base`
 
 **Status:** done — das Layout je Element ist abgebildet; im Codec bleiben die Elemente
 ein Block (`elements`), weil `SampleData` keine Länge trägt. Der Agent trennt
-sie beim WRITE_DATA nach dem Typ des Topic (`split_write_items`, 4f1fb9f5f4f)
-und schreibt sie beim READ_DATA (`data_submessages`, d5fbdbe672e).
+sie beim WRITE_DATA nach dem Typ des Topic (`split_write_items`, f40bd568ad1)
+und schreibt sie beim READ_DATA (`data_submessages`, fd5253ca805).
 
 ### §7.7.1 PackedSamples
 
@@ -1069,12 +1069,12 @@ SampleInfo info_base; sequence<SampleDelta> sample_delta_seq; };"
 (`WriteDataPayloadPackedSamples`); `crates/xrce/src/submessages/data.rs`
 (`DataPayloadPackedSamples`)
 
-**Tests:** `crates/xrce/src/submessages/data.rs::tests::data_packed_samples_matches_annex_b_5_5_layout`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_packed_samples_is_answered_with_one_packed_samples`,
-`crates/xrce-agent/src/daemon/session.rs::tests::packed_samples_resolve_their_deltas_against_the_base`
+**Tests:** `crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_data_packed_samples_matches_annex_b_5_5_layout`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_a_read_for_packed_samples_is_answered_with_one_packed_samples`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_packed_samples_resolve_their_deltas_against_the_base`
 
-**Status:** done — der Agent liest die Form beim WRITE_DATA (4f1fb9f5f4f) und schreibt sie
-beim READ_DATA (d5fbdbe672e).
+**Status:** done — der Agent liest die Form beim WRITE_DATA (f40bd568ad1) und schreibt sie
+beim READ_DATA (fd5253ca805).
 
 ---
 
@@ -1093,7 +1093,7 @@ PackedSamples packed_samples; };"
 **Repo:** `crates/xrce/src/submessages/write_data.rs` (`AnyWriteData`,
 Diskriminator aus den Flags über `DataFormat::from_flag_bits`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::any_write_data_dispatches_every_format`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_any_write_data_dispatches_every_format`
 
 **Status:** done — der Diskriminator steht in den Flags der Submessage
 (§8.3.5.8.1), nicht im Payload.
@@ -1105,7 +1105,7 @@ Contains the data for a single sample without additional sample information."
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs` (`WriteDataPayload`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_roundtrip_format_data`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_2_write_data_roundtrip_format_data`
 
 **Status:** done
 
@@ -1118,15 +1118,15 @@ Contains a sequence of data samples."
 (`WriteDataPayloadDataSeq`); `crates/xrce-agent/src/daemon/session.rs`
 (`SessionEngine::split_write_items`, `SessionEngine::data_submessages`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_data_seq_matches_annex_b_5_2_layout`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_data_seq_is_answered_with_one_data_seq`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_sequence_formats_split_at_the_size_of_a_submessage`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_2_write_data_data_seq_matches_annex_b_5_2_layout`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_data_seq_is_answered_with_one_data_seq`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_the_sequence_formats_split_at_the_size_of_a_submessage`
 
 **Status:** done — Zahl der Elemente und die Elemente als ein Block. Der Agent trennt die
 Elemente beim WRITE_DATA nach dem Typ des Topic und schreibt jedes einzeln
-(4f1fb9f5f4f); beim READ_DATA schreibt er eine DATA_SEQ je Submessage
-(d5fbdbe672e). Annahme, nicht gemessen: die Elemente stehen ohne Füllung
+(f40bd568ad1); beim READ_DATA schreibt er eine DATA_SEQ je Submessage
+(fd5253ca805). Annahme, nicht gemessen: die Elemente stehen ohne Füllung
 hintereinander, jedes ab Ausrichtungsursprung 0 gelesen (Annex B.5.2 zeigt nur
 Elemente von 4 Byte).
 
@@ -1140,17 +1140,17 @@ client_timestamp attribute in CLIENT_Representation".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`data_submessages`, `source_offset_ms`, `handle_write_data`); `crates/xrce/src/sample_info.rs` (`SampleInfo`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_sample_info_is_what_the_datareader_gave`, `crates/xrce-agent/src/daemon/session.rs::tests::the_client_timestamp_is_the_session_timestamp`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_the_sample_info_is_what_the_datareader_gave`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_the_client_timestamp_is_the_session_timestamp`
 
-**Status:** done — Zustand, Sequenznummer und Versatz werden übertragen. Beim WRITE_DATA ist der Versatz die Zeit nach dem Beginn der Sitzung und wird zum Quellzeitstempel (4f1fb9f5f4f). Beim READ_DATA sendet der Agent FORMAT_SAMPLE mit dem Quellzeitstempel des Writers als Versatz und dem Zustand des DataReaders (8be8c6101ca). Der Beginn der Sitzung ist das `client_timestamp` des CREATE_CLIENT (0f32e029a31).
+**Status:** done — Zustand, Sequenznummer und Versatz werden übertragen. Beim WRITE_DATA ist der Versatz die Zeit nach dem Beginn der Sitzung und wird zum Quellzeitstempel (f40bd568ad1). Beim READ_DATA sendet der Agent FORMAT_SAMPLE mit dem Quellzeitstempel des Writers als Versatz und dem Zustand des DataReaders (5c2466a4563). Der Beginn der Sitzung ist das `client_timestamp` des CREATE_CLIENT (8b73c291192).
 ### §7.7.2 Inhalt der SampleInfo und Bezugspunkt des Zeitstempels
 **Spec:** §7.7.2, Table 1, S. 25 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/dds_port.rs` (`PolledSample`, `DdsPort::poll_samples`); `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`spawn_reader_pump`, `ReaderQueue::push`); `crates/xrce-agent/src/daemon/session.rs` (`data_submessages`, `session_start`); `crates/xrce-client/src/lib.rs` (`session_time_offset_ms`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_sample_info_is_what_the_datareader_gave`, `crates/xrce-agent/src/daemon/session.rs::tests::the_client_timestamp_is_the_session_timestamp`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_the_sample_info_is_what_the_datareader_gave`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_the_client_timestamp_is_the_session_timestamp`
 
-**Status:** done — `DdsPort::poll_samples` liefert `PolledSample` (Nutzdaten, `SampleInfoFlags`, Quellzeitstempel): `VIEW_STATE_NEW` für das erste Sample einer Instanz, `INSTANCE_STATE_DISPOSED`/`_UNREGISTERED` für ein dispose oder unregister, das der DataReader meldet (ein Sample ohne Daten), `SAMPLE_STATE_READ` nie (ein Sample wird einmal übergeben). FORMAT_DATA und FORMAT_DATA_SEQ haben keine SampleInfo und senden keine Marker. Bezugspunkt ist das `client_timestamp` (`representation_timestamps: present`) oder die Uhr des Agent; der Client schreibt die Millisekunden seit `connect` als Versatz. 8be8c6101ca, 0f32e029a31.
+**Status:** done — `DdsPort::poll_samples` liefert `PolledSample` (Nutzdaten, `SampleInfoFlags`, Quellzeitstempel): `VIEW_STATE_NEW` für das erste Sample einer Instanz, `INSTANCE_STATE_DISPOSED`/`_UNREGISTERED` für ein dispose oder unregister, das der DataReader meldet (ein Sample ohne Daten), `SAMPLE_STATE_READ` nie (ein Sample wird einmal übergeben). FORMAT_DATA und FORMAT_DATA_SEQ haben keine SampleInfo und senden keine Marker. Bezugspunkt ist das `client_timestamp` (`representation_timestamps: present`) oder die Uhr des Agent; der Client schreibt die Millisekunden seit `connect` als Versatz. 5c2466a4563, 8b73c291192.
 ### §7.7.2 Table 1 FORMAT_SAMPLE_SEQ
 
 **Spec:** §7.7.2, Table 1, S. 25 — "FORMAT_SAMPLE_SEQ struct SampleSeq [...]
@@ -1161,12 +1161,12 @@ additional sample information."
 (`WriteDataPayloadSampleSeq`); `crates/xrce-agent/src/daemon/session.rs`
 (`SessionEngine::split_write_items`, `SessionEngine::data_submessages`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_sample_seq_matches_annex_b_5_4_layout`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_seq_carries_state_and_time_per_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_seq_is_answered_with_one_sample_seq`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_2_write_data_sample_seq_matches_annex_b_5_4_layout`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_sample_seq_carries_state_and_time_per_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_sample_seq_is_answered_with_one_sample_seq`
 
 **Status:** done — der Agent liest die Form beim WRITE_DATA (Zustand und Zeit je Sample,
-4f1fb9f5f4f) und schreibt sie beim READ_DATA (d5fbdbe672e). Was die
+f40bd568ad1) und schreibt sie beim READ_DATA (fd5253ca805). Was die
 SampleInfo beim Lesen enthält, steht im `open`-Item zu §7.7.2.
 
 ### §7.7.2 Table 1 FORMAT_PACKED_SAMPLES und resulting_info
@@ -1181,17 +1181,17 @@ info_base. session_time_offset + info_delta.timestamp_delta"
 **Repo:** `crates/xrce/src/sample_info.rs` (`SampleInfoDelta::resolve`);
 `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::data_submessages`)
 
-**Tests:** `crates/xrce/src/sample_info.rs::tests::sample_info_delta_resolve_adds_to_base`,
-`crates/xrce/src/sample_info.rs::tests::sample_info_delta_resolve_wraps_on_overflow`,
-`crates/xrce-agent/src/daemon/session.rs::tests::packed_samples_resolve_their_deltas_against_the_base`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_packed_samples_is_answered_with_one_packed_samples`
+**Tests:** `crates/xrce/src/sample_info.rs::tests::xrce_7_7_2_sample_info_delta_resolve_adds_to_base`,
+`crates/xrce/src/sample_info.rs::tests::xrce_7_7_2_sample_info_delta_resolve_wraps_on_overflow`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_packed_samples_resolve_their_deltas_against_the_base`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_a_read_for_packed_samples_is_answered_with_one_packed_samples`
 
 **Status:** done — `resolve` rechnet `timestamp_delta` (Zehntelsekunden) mit 100 in
 Millisekunden um; die Formel der Spec addiert Größen in Millisekunden und
 Zehntelsekunden ohne Umrechnung. Der Agent liest die Form beim WRITE_DATA und
 schreibt sie beim READ_DATA mit höchstens 256 Elementen je Submessage (Bereich
 von `seq_number_delta`, ein `octet`); `timestamp_delta` und `state` schreibt er
-als 0 (4f1fb9f5f4f, d5fbdbe672e).
+als 0 (f40bd568ad1, fd5253ca805).
 
 ---
 
@@ -1205,9 +1205,9 @@ appropriate object representation for that kind."
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::encode_for_kind`, `decode_for_kind`, `ObjectVariantExtra`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
-`crates/xrce/src/object_repr.rs::tests::participant_representation_matches_the_captured_create_bytes`,
-`crates/xrce/src/object_repr.rs::tests::subscriber_representation_matches_the_captured_create_bytes`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_participant_representation_matches_the_captured_create_bytes`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_subscriber_representation_matches_the_captured_create_bytes`
 
 **Status:** done — `ObjectKind` als Oktett, danach die Repräsentation der Art
 und ihr nachgestelltes Feld (`domain_id` oder die `ObjectId` des Containers).
@@ -1221,9 +1221,9 @@ value of the RepresentationFormat."
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant`,
 `encode_with_pad`, `decode_with_pad`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::by_reference_roundtrip_le`,
-`crates/xrce/src/object_repr.rs::tests::by_xml_string_roundtrip_be`,
-`crates/xrce/src/object_repr.rs::tests::in_binary_roundtrip`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_by_reference_roundtrip_le`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_by_xml_string_roundtrip_be`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_in_binary_roundtrip`
 
 **Status:** done
 
@@ -1239,8 +1239,8 @@ REPRESENTATION_IN_BINARY." Annex A, S. 106: 0x01, 0x02, 0x03.
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`repr_disc`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::discriminator_returns_correct_byte`,
-`crates/xrce/src/object_repr.rs::tests::unknown_discriminator_rejected`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_1_discriminator_returns_correct_byte`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_1_unknown_discriminator_rejected`
 
 **Status:** done
 
@@ -1255,14 +1255,14 @@ OBJK_RepresentationBinAndXML_Base."
 **Repo:** `crates/xrce/src/object_repr.rs` (`decode_for_kind`); `crates/xrce-agent/src/daemon/session.rs`
 (`format_is_allowed`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`
 
 **Status:** done — `decode_for_kind` liest alle drei Diskriminatoren; der Agent lässt je
 Art nur die Formate der Spec zu: Participant und Topic alle drei, Type,
 QosProfile und Application Referenz und XML, Publisher, Subscriber, DataWriter
 und DataReader Binär und XML. Ein anderes Format ist STATUS_ERR_INVALID_DATA
-(bdf3f6ee966). Die Einstellung steht im Item „Erlaubte Formate je Art“.
+(0429eab4fb2). Die Einstellung steht im Item „Erlaubte Formate je Art“.
 
 ### §7.7.3.1 Erlaubte Formate je Art
 
@@ -1271,9 +1271,9 @@ und DataReader Binär und XML. Ein anderes Format ist STATUS_ERR_INVALID_DATA
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`format_is_allowed`, Prüfung in `SessionEngine::handle_create`);
 `crates/xrce-agent/src/daemon/config.rs` (Schlüssel `representation_formats`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`,
-`crates/xrce-agent/src/daemon/session.rs::tests::references_resolve_against_the_profile_files`,
-`crates/xrce-agent/src/daemon/config.rs::tests::the_representation_formats_can_be_widened`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_references_resolve_against_the_profile_files`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_7_3_1_the_representation_formats_can_be_widened`
 
 **Status:** done — normative Lesart (§7.7.3.1, Annex A) als Vorgabe: ein CREATE in einem
 Format, das die Union der Art nicht hat, ist STATUS_ERR_INVALID_DATA mit einem
@@ -1281,7 +1281,7 @@ Ereignis `CreateRefused`. Die andere Lesart ist die Einstellung
 `representation_formats: spec | any` (Vorgabe `spec`); `any` lässt alle Formate
 zu, etwa für den Micro-XRCE-DDS-Client, der Publisher, Subscriber, DataWriter
 und DataReader per `*_ref` anlegt (nicht gemessen, der Mitschnitt hat nur XML
-und Binär). Beide Lesarten sind getestet (bdf3f6ee966).
+und Binär). Beide Lesarten sind getestet (0429eab4fb2).
 
 ### §7.7.3.1 OBJK_Representation3Formats
 
@@ -1295,8 +1295,8 @@ REPRESENTATION_IN_BINARY : sequence<octet> binary_representation; };"
 `encode_with_pad`: Länge, Zeichen und NUL für die Zeichenketten, Länge
 und Oktette für die Sequenz)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::topic_representation_matches_the_captured_create_bytes`,
-`crates/xrce/src/object_repr.rs::tests::in_binary_roundtrip`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_1_topic_representation_matches_the_captured_create_bytes`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_in_binary_roundtrip`
 
 **Status:** done — die Grenze `REFERENCE_MAX_LEN` ist ein eigenes Item.
 
@@ -1310,7 +1310,7 @@ string<REFERENCE_MAX_LEN> object_reference; case REPRESENTATION_AS_XML_STRING
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::ByReference`,
 `ByXmlString`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::object_variant_xml_form_supports_topic_qosprofile_application`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_1_object_variant_xml_form_supports_topic_qosprofile_application`
 
 **Status:** done — die Kodierung der beiden Fälle; dass `IN_BINARY` hier nicht
 vorkommen darf, steht im `open`-Item „Erlaubte Formate je Art nicht geprüft“.
@@ -1325,7 +1325,7 @@ string string_representation; };"
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::InBinary`,
 `ByXmlString`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::subscriber_representation_matches_the_captured_create_bytes`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_subscriber_representation_matches_the_captured_create_bytes`
 
 **Status:** done — wie oben für `BY_REFERENCE`.
 
@@ -1339,7 +1339,7 @@ OBJK_Representation3Formats representation; };"
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`encode_for_kind`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
 
 **Status:** done
 
@@ -1351,10 +1351,10 @@ OBJK_Representation3Formats representation; };"
 **Repo:** `crates/xrce/src/object_repr.rs` (`REFERENCE_MAX_LEN`, Prüfung in
 `ObjectVariant::encode_with_pad` und `decode_with_pad`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::a_reference_longer_than_reference_max_len_is_refused`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_1_a_reference_longer_than_reference_max_len_is_refused`
 
 **Status:** done — Lesen und Schreiben weisen eine Referenz mit mehr als 128 Zeichen ab;
-128 Zeichen sind erlaubt (d96b535312c).
+128 Zeichen sind erlaubt (58aad3ce5d7).
 
 ### §7.7.3.1 Weitere Formate wie JSON
 
@@ -1379,16 +1379,16 @@ name to a description already known to the XRCE Agent."
 (`AgentProfiles::entity`, `AgentProfiles::qos_profile`); `crates/xrce-agent/src/daemon/definitions.rs`
 (`SystemDefinitions`); `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::references_resolve_against_the_profile_files`,
-`crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_reference_is_read_like_the_profile_it_names`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_references_resolve_against_the_profile_files`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_3_a_reference_is_read_like_the_profile_it_names`
 
 **Status:** done — Participant, Topic, Publisher, Subscriber, DataWriter und DataReader
 lösen sich gegen `profile_name` einer Profildatei im Format von Fast DDS auf;
 QosProfile (`Lib::Profile`), Application (`Lib::App`) und DomainParticipant
 (`Lib::Participant`) gegen die Bibliotheken der Dateien und gegen die
-Definitionen anderer Clients (dc63d65691f, 3aea52dd70a, b6e55cfa859). Eine
+Definitionen anderer Clients (452ffeb7f84, 9d5c64dc398, 2ba972cd270). Eine
 unbekannte Referenz ist STATUS_ERR_UNKNOWN_REFERENCE. Publisher, Subscriber,
 DataWriter und DataReader per Referenz gibt es nur mit
 `representation_formats: any`. Typ und Domain stehen in den Items zu
@@ -1401,9 +1401,9 @@ formatted as defined by the XSD simpleType elementNameReference defined in the
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`element_name_reference`); `crates/xrce-agent/src/daemon/session.rs` (`handle_create`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::element_name_references_follow_the_xsd_pattern`, `crates/xrce-agent/src/daemon/session.rs::tests::an_object_reference_must_be_an_element_name_reference`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_1_1_element_name_references_follow_the_xsd_pattern`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_1_an_object_reference_must_be_an_element_name_reference`
 
-**Status:** done — der Agent prüft den `object_reference` eines CREATE nach dem XSD-Typ `elementNameReference` (`dds-xml_qos_definitions_nonamespace.xsd`): `whiteSpace collapse`, dann das Muster `((::)?[a-zA-Z0-9_.])+`. Eine Zeichenkette anderer Form ist STATUS_ERR_INVALID_DATA, eine wohlgeformte, die der Agent nicht kennt, STATUS_ERR_UNKNOWN_REFERENCE; Referenzen der Form `Library::Name` werden gegen die Bibliotheken von DDS-XML aufgelöst (3aea52dd70a, dc63d65691f). a515c614d98.
+**Status:** done — der Agent prüft den `object_reference` eines CREATE nach dem XSD-Typ `elementNameReference` (`dds-xml_qos_definitions_nonamespace.xsd`): `whiteSpace collapse`, dann das Muster `((::)?[a-zA-Z0-9_.])+`. Eine Zeichenkette anderer Form ist STATUS_ERR_INVALID_DATA, eine wohlgeformte, die der Agent nicht kennt, STATUS_ERR_UNKNOWN_REFERENCE; Referenzen der Form `Library::Name` werden gegen die Bibliotheken von DDS-XML aufgelöst (9d5c64dc398, 452ffeb7f84). 1b9eed094c3.
 ### §7.7.3.1.1 Vorkonfiguration offline oder über das Protokoll
 
 **Spec:** §7.7.3.1.1, S. 28 — "The pre-configuration may be done off-line
@@ -1413,16 +1413,16 @@ protocol in combination with the REPRESENTATION_AS_XML_STRING."
 **Repo:** `crates/xrce-agent/src/daemon/profiles.rs` (`AgentProfiles::load`, `AgentProfiles::add_profiles`);
 `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::definition_to_register`, `rebuild_profiles`)
 
-**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::the_eprosima_refs_file_indexes_every_entity_profile`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::types_and_qos_libraries_in_a_dds_document_are_read`,
-`crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`
+**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_7_7_3_1_1_the_eprosima_refs_file_indexes_every_entity_profile`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_7_7_3_1_1_types_and_qos_libraries_in_a_dds_document_are_read`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`
 
 **Status:** done — offline über `xml_profile_files:` (`<types>`, `<qos_library>`,
 `<domain_library>`, `<domain_participant_library>`, `<application_library>`;
-dc63d65691f). Über das Protokoll: ein CREATE mit XML von QosProfile, Type,
+452ffeb7f84). Über das Protokoll: ein CREATE mit XML von QosProfile, Type,
 Application oder DomainParticipant legt eine Definition an, die andere Clients
 per Referenz nutzen, solange das Objekt des anlegenden Clients besteht
-(3aea52dd70a).
+(9d5c64dc398).
 
 ### §7.7.3.1.1 Beispiel einer Referenz
 
@@ -1445,9 +1445,9 @@ Type, QosProfile, Domain, DomainParticipan, and Application."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`format_is_allowed`); `crates/xrce-agent/src/daemon/config.rs` (Schlüssel
 `representation_formats`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`,
-`crates/xrce-agent/src/daemon/session.rs::tests::references_resolve_against_the_profile_files`,
-`crates/xrce-agent/src/daemon/config.rs::tests::the_representation_formats_can_be_widened`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_references_resolve_against_the_profile_files`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_7_3_1_the_representation_formats_can_be_widened`
 
 **Status:** done — Vorgabe ist die Lesart von Annex A: Referenz für Participant und Topic
 (`OBJK_Representation3_Base`) sowie Type, QosProfile und Application
@@ -1455,7 +1455,7 @@ Type, QosProfile, Domain, DomainParticipan, and Application."
 DataReader haben nur Binär und XML. Die Spec widerspricht sich: OBJK_TOPIC_Representation
 hat eine Referenz (§7.7.3.7.1, S. 33), §8.4.10 und §8.4.11 (S. 82–83) nennen sie
 auch für DataWriter und DataReader. Die andere Lesart ist die Einstellung
-`representation_formats: any` (bdf3f6ee966); beide sind getestet.
+`representation_formats: any` (0429eab4fb2); beide sind getestet.
 
 ### §7.7.3.1.2 XML nach DDS-XML
 **Spec:** §7.7.3.1.2, S. 28–29 — "The string shall contain an XML element
@@ -1464,17 +1464,17 @@ is defined for each Object kind in clauses 7.7.3.2 to 7.7.3.11."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs`; `crates/xrce-agent/src/daemon/definitions.rs`
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`, `crates/xrce-agent/tests/spec_items_session.rs::a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`, `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`
 
-**Status:** done — Type, QosProfile, Application, DomainParticipant (mit den enthaltenen Objekten), Topic, Publisher, Subscriber, DataWriter und DataReader werden nach DDS-XML gelesen (3aea52dd70a, 9239562286c). Ein `<types>` darf auf bereits bekannte Typen verweisen (Item zu §7.7.3.3.2). Eine Domain mit CREATE anzulegen definiert die Spec nicht (§7.7.3.4).
+**Status:** done — Type, QosProfile, Application, DomainParticipant (mit den enthaltenen Objekten), Topic, Publisher, Subscriber, DataWriter und DataReader werden nach DDS-XML gelesen (9d5c64dc398, b97657ef4ec). Ein `<types>` darf auf bereits bekannte Typen verweisen (Item zu §7.7.3.3.2). Eine Domain mit CREATE anzulegen definiert die Spec nicht (§7.7.3.4).
 ### §7.7.3.1.2 Formen von DDS-XML für Entitäten
 **Spec:** §7.7.3.1.2, S. 28–29 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint_from_xml`, `container_from_xml`, `topic_from_xml`, `apply_qos_profile`); `crates/xrce-agent/src/daemon/definitions.rs`
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`, `crates/xrce-agent/tests/spec_items_session.rs::a_data_reader_in_xml_has_its_qos_and_its_content_filter`, `crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_qos_of_a_topic_is_the_default_of_its_endpoints`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`, `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_data_reader_in_xml_has_its_qos_and_its_content_filter`, `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_the_qos_of_a_topic_is_the_default_of_its_endpoints`
 
-**Status:** done — gelesen und getestet: `register_type_ref`, `topic_ref` als Name des Topic, `<datawriter_qos>`/`<datareader_qos>` mit `base_name`, `qos_profile_ref`, `<publisher_qos>`, `<subscriber_qos>`, `<topic_qos>`, `<domain_participant_qos>`, `<content_filter>` und die Bibliotheken `<qos_library>`, `<domain_library>`, `<domain_participant_library>`, `<application_library>` (3aea52dd70a, 9239562286c, 2c715803843, 0f85937a436).
+**Status:** done — gelesen und getestet: `register_type_ref`, `topic_ref` als Name des Topic, `<datawriter_qos>`/`<datareader_qos>` mit `base_name`, `qos_profile_ref`, `<publisher_qos>`, `<subscriber_qos>`, `<topic_qos>`, `<domain_participant_qos>`, `<content_filter>` und die Bibliotheken `<qos_library>`, `<domain_library>`, `<domain_participant_library>`, `<application_library>` (9d5c64dc398, b97657ef4ec, 3906abf91b8, 02c704651e4).
 ### §7.7.3.1.2 XML für die Konfiguration aus der Ferne
 
 **Spec:** §7.7.3.1.2, S. 29 — "This format is intended for remotely
@@ -1501,17 +1501,17 @@ using the XCDR version 2 format defined in [DDS-XTYPES]."
 XCDR2-Leser); `crates/xrce-agent/src/daemon/entity_repr.rs` (`Cdr`: die Strukturen des
 eProsima-Micro-XRCE-DDS-Client 3.0.1 als weitere Lesart)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::annex_a_topic_has_a_dheader`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::the_36_octet_example_of_the_clause_is_a_topic`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_topic_names_its_topic_and_type`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_big_endian_binary_topic_reads_back`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_blob_of_no_form_is_refused_naming_each_reading`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_annex_a_topic_has_a_dheader`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_the_36_octet_example_of_the_clause_is_a_topic`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_the_captured_binary_topic_names_its_topic_and_type`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_big_endian_binary_topic_reads_back`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_blob_of_no_form_is_refused_naming_each_reading`
 
 **Status:** done — die `sequence<octet>` wird als XCDR2 der Struktur der Art gelesen, in
 beiden Formen der Spec (Annex A mit DHEADER, die Abschnitte als FINAL); ein
 Blob, der keine der Formen ist, wird mit Nennung jeder Lesart abgewiesen. Die
 Strukturen von eProsima (klassisches CDR) bleiben als weitere Lesart
-(c67ce23c724).
+(f548fee2522).
 
 ### §7.7.3.1.3 Binärformen nach §7.7.3 und Annex A
 
@@ -1521,19 +1521,19 @@ Strukturen von eProsima (klassisches CDR) bleiben als weitere Lesart
 `endpoint`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`, `topic`, `container`,
 `endpoint`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::participant_binary_in_both_forms`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::annex_a_topic_has_a_dheader`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::publisher_binary_of_annex_a`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::reader_binary_of_the_clause`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_writer_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_clause_binary_reader_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_participant_is_read`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_participant_binary_in_both_forms`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_annex_a_topic_has_a_dheader`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_publisher_binary_of_annex_a`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_reader_binary_of_the_clause`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_an_annex_a_binary_writer_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_clause_binary_reader_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_spec_binary_participant_is_read`
 
 **Status:** done — Participant, Topic, Publisher, Subscriber, DataWriter und DataReader
 werden in der Form von Annex A (DHEADER) und der Form der Abschnitte gelesen:
 `string topic_name` bei DataWriter und DataReader, `TypeIdentifier` und
-`type_reference` beim Topic, die Binärform des Participant (c67ce23c724).
+`type_reference` beim Topic, die Binärform des Participant (f548fee2522).
 
 ### §7.7.3.1.3 Beispiel OBJK_Topic_Binary mit 36 Byte
 
@@ -1542,14 +1542,14 @@ werden in der Form von Annex A (DHEADER) und der Form der Abschnitte gelesen:
 
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`topic`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`topic`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::the_36_octet_example_of_the_clause_is_a_topic`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_topic_names_its_topic_and_type`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_the_36_octet_example_of_the_clause_is_a_topic`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_spec_binary_topic_names_its_topic_and_type`
 
 **Status:** done — der Test dekodiert die 36 Byte des Beispiels als Topic mit
 `type_reference` „MyTypes::ShapeType“. Die Zeichen des Beispiels lauten
-'S','q','u','e','r','e'; `binary_forms` liest sie so (92633850a97), der Text der
+'S','q','u','e','r','e'; `binary_forms` liest sie so (743676fca9f), der Text der
 Spec nennt das Topic „Square“. Zusätzlich liest `entity_repr` dieselbe Struktur
-mit „Square“ als 36-Byte-Blob (c67ce23c724).
+mit „Square“ als 36-Byte-Blob (f548fee2522).
 
 ---
 
@@ -1563,7 +1563,7 @@ OBJK_RepresentationRefAndXML_Base { };"
 **Repo:** `crates/xrce/src/object_repr.rs` (`decode_for_kind`, kein
 nachgestelltes Feld für `ObjectKind::QosProfile`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
 
 **Status:** done — Kodierung; die Wirkung steht in den folgenden Items.
 
@@ -1577,12 +1577,12 @@ QosProfile within the library."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`, Zweig OBJK_QOSPROFILE); `crates/xrce-agent/src/daemon/profiles.rs`
 (`AgentProfiles::qos_profile`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`
 
 **Status:** done — CREATE(`OBJK_QOSPROFILE`) mit REPRESENTATION_BY_REFERENCE löst „Lib::Profile“
 gegen die QoS-Bibliotheken der Dateien und der Definitionen anderer Clients
 auf; ein Name in keiner Bibliothek ist STATUS_ERR_UNKNOWN_REFERENCE
-(3aea52dd70a).
+(9d5c64dc398).
 
 ### §7.7.3.2.2 XML mit einer qos_library und einem qos_profile
 
@@ -1593,11 +1593,11 @@ complexType qosLibrary [...]. The <qos_library> element shall contain a single
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::definition_to_register`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::type_and_qos_profile_xml_follow_their_clauses`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_2_2_type_and_qos_profile_xml_follow_their_clauses`
 
 **Status:** done — die `<qos_library>` mit genau einem `<qos_profile>` wird gelesen und als
 Definition gespeichert; eine Bibliothek mit zwei Profilen ist
-STATUS_ERR_INVALID_DATA (9239562286c).
+STATUS_ERR_INVALID_DATA (b97657ef4ec).
 
 ### §7.7.3.2.2 Verweis auf andere QosProfiles
 
@@ -1608,10 +1608,10 @@ representation may reference other QoS profiles already known to the Agent.
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::definition_to_register`); `crates/xrce-agent/src/daemon/profiles.rs`
 (`AgentProfiles::qos_profile`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::type_and_qos_profile_xml_follow_their_clauses`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_2_2_type_and_qos_profile_xml_follow_their_clauses`
 
 **Status:** done — `base_name` mit einem Doppelpunkt („Q:One“) wird wie „Q::One“ gelesen;
-das Profil erbt vom Profil, das der Agent kennt (9239562286c). Das Beispiel
+das Profil erbt vom Profil, das der Agent kennt (b97657ef4ec). Das Beispiel
 schreibt `base_name` mit einem Doppelpunkt, §7.7.3.2.1 verlangt „::“.
 
 ---
@@ -1625,9 +1625,9 @@ OBJK_RepresentationRefAndXML_Base { };"
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`decode_for_kind`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_binary_complete_type_object_is_named_by_its_own_type_name`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_3_a_binary_complete_type_object_is_named_by_its_own_type_name`
 
 **Status:** done — Kodierung. `REPRESENTATION_IN_BINARY` für `OBJK_TYPE` ist mit der
 Vorgabe `representation_formats: spec` STATUS_ERR_INVALID_DATA (Item „Erlaubte
@@ -1642,9 +1642,9 @@ the enclosing modules."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`, `find_type_definition`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`
 
-**Status:** done — CREATE(`OBJK_TYPE`) mit REPRESENTATION_BY_REFERENCE löst den Namen (`MyModule::ShapeType`) gegen die Typen des Clients, der Dateien (`<types>`), der Definitionen anderer Clients und von `type_files:` auf; ein unbekannter Name, auch ohne Modul, ist STATUS_ERR_UNKNOWN_REFERENCE (3aea52dd70a, 0f85937a436).
+**Status:** done — CREATE(`OBJK_TYPE`) mit REPRESENTATION_BY_REFERENCE löst den Namen (`MyModule::ShapeType`) gegen die Typen des Clients, der Dateien (`<types>`), der Definitionen anderer Clients und von `type_files:` auf; ein unbekannter Name, auch ohne Modul, ist STATUS_ERR_UNKNOWN_REFERENCE (9d5c64dc398, 02c704651e4).
 ### §7.7.3.3.2 XML mit types, ein Typ mit nested=false
 
 **Spec:** §7.7.3.3.2, S. 30 — "the string_representation field shall contain a
@@ -1656,13 +1656,13 @@ XRCE Type being created."
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`types`, `nested_flags`);
 `crates/xrce-agent/src/daemon/session.rs` (`DdsCreate::Types`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::type_and_qos_profile_xml_follow_their_clauses`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_gets_the_type_its_type_name_names`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_xml_type_library_compiles_to_named_complete_types`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_2_2_type_and_qos_profile_xml_follow_their_clauses`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_3_2_a_topic_gets_the_type_its_type_name_names`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_3_2_an_xml_type_library_compiles_to_named_complete_types`
 
 **Status:** done — `<types>` wird nach DDS-XML gelesen und übersetzt; alle benannten Typen
 werden registriert. Bei mehreren Typen muss genau einer `nested` nicht tragen,
-sonst STATUS_ERR_INVALID_DATA (9239562286c). Ein Topic findet seinen Typ über
+sonst STATUS_ERR_INVALID_DATA (b97657ef4ec). Ein Topic findet seinen Typ über
 den Namen (`SessionEngine::resolve_type`).
 
 ### §7.7.3.3.2 Annotation nested
@@ -1671,11 +1671,11 @@ den Namen (`SessionEngine::resolve_type`).
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`types`, `nested_flags`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::type_and_qos_profile_xml_follow_their_clauses`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_2_2_type_and_qos_profile_xml_follow_their_clauses`
 
 **Status:** done — `nested_flags` liest die Annotation je Typ (auch in Modulen); zwei Typen
 ohne `nested="true"` sind STATUS_ERR_INVALID_DATA, ein Typ ohne und einer mit
-`nested="true"` ist STATUS_OK (9239562286c).
+`nested="true"` ist STATUS_OK (b97657ef4ec).
 
 ### §7.7.3.3.2 Verweis auf bekannte Typen
 **Spec:** §7.7.3.3.2, S. 30 — "The string_representation may reference other
@@ -1683,7 +1683,7 @@ Types already known to the Agent."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`types`); `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`, `ObjectKind::Type`); `crates/xml/src/typeobject_bridge.rs` (`bridge_library_complete_with_known`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_types_string_may_reference_types_the_agent_knows`, `crates/xrce-agent/src/daemon/session.rs::tests::a_types_string_references_a_type_created_before`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_3_2_a_types_string_may_reference_types_the_agent_knows`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_3_2_a_types_string_references_a_type_created_before`
 
 **Status:** done — `types` übergibt `zerodds_xml::bridge_library_complete_with_known(lib, known)` die dem Agenten bekannten Typen: die vom selben Client angelegten, die aus `type_files:` und die der Profildateien. Ein Verweis auf einen von ihnen wird zu dessen `EquivalenceHashComplete`, der bekannte Typ wird nicht noch einmal definiert. Ein Name, der weder in der Zeichenkette steht noch bekannt ist, ist STATUS_ERR_UNKNOWN_REFERENCE. Nicht geprüft: ob ein Verweis auf einen Typ gelingt, den ein anderer Client binär (nicht als XML `<types>`) angelegt hat; die Typen aus XML-`<types>` gehören den Definitionen des Agenten (§9.2).
 
@@ -1699,16 +1699,16 @@ OBJK_RepresentationRefAndXML_Base { };"
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Die Spec gibt Domain keinen Wert von `ObjectKind` und keinen Fall in `ObjectVariant` (§7.7.5, S. 39; Annex A, S. 103 und S. 111): ein CREATE kann keine Domain benennen, es gibt nichts, was erfüllt werden kann. Kind 0x0F ist `OBJK_OTHER` (f63fa2d1218). Domains kommen aus `<domain_library>` der Dateien und sind als `Library::Domain` referenzierbar (`domain_ref`, `domain_reference`).
+**Status:** `n/a (informative)` — Die Spec gibt Domain keinen Wert von `ObjectKind` und keinen Fall in `ObjectVariant` (§7.7.5, S. 39; Annex A, S. 103 und S. 111): ein CREATE kann keine Domain benennen, es gibt nichts, was erfüllt werden kann. Kind 0x0F ist `OBJK_OTHER` (daf2a618f74). Domains kommen aus `<domain_library>` der Dateien und sind als `Library::Domain` referenzierbar (`domain_ref`, `domain_reference`).
 ### §7.7.3.4.1 Referenz auf eine Domain „Lib::Domain“
 **Spec:** §7.7.3.4.1, S. 31 — "the object_reference field shall contain the
 fully qualified name of an XRCE Domain definition known to the Agent."
 
 **Repo:** `crates/xrce-agent/src/daemon/definitions.rs` (`domain`, `domain_scope`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_domain_reference_is_resolved_against_the_domain_libraries`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_4_1_a_domain_reference_is_resolved_against_the_domain_libraries`
 
-**Status:** done — eine Domain ist als „Lib::Domain“ referenzierbar: `domain_ref` des DomainParticipant in XML und `domain_reference` der Binärform werden gegen die `<domain_library>` der Dateien aufgelöst (dc63d65691f, b4cd825c268). Als `object_reference` eines CREATE kann sie nicht stehen, weil die Spec der Domain keine ObjectKind gibt (§7.7.3.4).
+**Status:** done — eine Domain ist als „Lib::Domain“ referenzierbar: `domain_ref` des DomainParticipant in XML und `domain_reference` der Binärform werden gegen die `<domain_library>` der Dateien aufgelöst (452ffeb7f84, 0b67c04800c). Als `object_reference` eines CREATE kann sie nicht stehen, weil die Spec der Domain keine ObjectKind gibt (§7.7.3.4).
 ### §7.7.3.4.2 XML mit domain_library und einer domain
 **Spec:** §7.7.3.4.2, S. 31 — "The XML shall contain a single
 <domain_library> top-level XML element [...]. The <domain_library> element
@@ -1717,9 +1717,9 @@ may reference Types already known to the XRCE Agent."
 
 **Repo:** `crates/xrce-agent/src/daemon/definitions.rs` (`add_domain_library`)
 
-**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`
+**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`
 
-**Status:** done — die `<domain_library>` mit ihren `<domain>` wird aus den Dateien gelesen (auch als Wurzel; `base_name`, `register_type`, `topic`; dc63d65691f). Eine Domain als Inhalt eines CREATE definiert die Spec nicht (§7.7.3.4).
+**Status:** done — die `<domain_library>` mit ihren `<domain>` wird aus den Dateien gelesen (auch als Wurzel; `base_name`, `register_type`, `topic`; 452ffeb7f84). Eine Domain als Inhalt eines CREATE definiert die Spec nicht (§7.7.3.4).
 
 ---
 
@@ -1735,8 +1735,8 @@ struct OBJK_APPLICATION_Representation : OBJK_RepresentationRefAndXML_Base {
 **Repo:** `crates/xrce/src/object_repr.rs` (`decode_for_kind`);
 `crates/xrce-agent/src/lib.rs` (`XrceAgent::create_object`)
 
-**Tests:** `crates/xrce-agent/src/lib.rs::tests::create_application_object_via_objk_application`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`
+**Tests:** `crates/xrce-agent/src/lib.rs::tests::xrce_7_4_create_application_object_via_objk_application`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`
 
 **Status:** done — Kodierung und Speicherung. Der Satz nennt `OBJK_TYPE_Representation`
 statt `OBJK_APPLICATION_Representation`. Ein CREATE in Binär ist
@@ -1750,13 +1750,13 @@ fully qualified name of an XRCE Application definition known to the Agent."
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`application_definition`); `crates/xrce-agent/src/daemon/definitions.rs`
 (`SystemDefinitions::application`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`
 
 **Status:** done — „Lib::App“ wird gegen die `<application_library>` der Dateien und der
 Definitionen anderer Clients aufgelöst; das CREATE legt den DomainParticipant
 der Application mit allem darin an. Eine unbekannte Application ist
-STATUS_ERR_UNKNOWN_REFERENCE (3aea52dd70a, b6e55cfa859).
+STATUS_ERR_UNKNOWN_REFERENCE (9d5c64dc398, 2ba972cd270).
 
 ### §7.7.3.5.2 XML mit application_library und einer application
 
@@ -1769,13 +1769,13 @@ known to the XRCE Agent."
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`application_definition`); `crates/xrce-agent/src/daemon/definitions.rs`
 (`SystemDefinitions::add_application_library`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::what_cannot_be_planned_is_refused`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_what_cannot_be_planned_is_refused`
 
 **Status:** done — die `<application_library>` mit einer `<application>` wird gelesen; ihre
 Participants verweisen auf Typen, QoS-Profile, Domains und DomainParticipants
-der Definitionen (3aea52dd70a). Das Beispiel (S. 32) legt im Subscriber ein
+der Definitionen (9d5c64dc398). Das Beispiel (S. 32) legt im Subscriber ein
 `<data_writer name="MyReader" topic_ref="Circle">` an, obwohl nur „Square“
 definiert ist; der Code weist ein `topic_ref` auf ein Topic, das der
 Participant nicht hat, ab.
@@ -1792,7 +1792,7 @@ OBJK_Representation3_Base { short domain_id; };"
 **Repo:** `crates/xrce/src/object_repr.rs` (`encode_for_kind`:
 Ausrichtung auf 2 vor `domain_id`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::participant_representation_matches_the_captured_create_bytes`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_participant_representation_matches_the_captured_create_bytes`
 
 **Status:** done
 
@@ -1807,14 +1807,14 @@ library."
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`, `participant_definition`); `crates/xrce-agent/src/daemon/definitions.rs`
 (`SystemDefinitions::participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_reference_is_read_like_the_profile_it_names`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_3_a_reference_is_read_like_the_profile_it_names`
 
 **Status:** done — die Referenz löst sich gegen `<participant profile_name>` einer
 Profildatei und gegen die `<domain_participant_library>` auf („Lib::Participant“,
 bei einer Application „Lib::App::Participant“); die Domain kommt aus der
 Definition (`domain_id` oder `domain_ref`) oder aus dem Profil
-(3aea52dd70a, b6e55cfa859).
+(9d5c64dc398, 2ba972cd270).
 
 ### §7.7.3.6.2 XML mit domain_participant_library
 
@@ -1827,14 +1827,14 @@ DomainParticipants already known to the XRCE Agent."
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant_definition`, `participant_source`);
 `crates/xrce-agent/src/daemon/definitions.rs` (`SystemDefinitions::add_participant_library`, `plan_participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_creates_the_objects_inside_it`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_with_a_broken_part_creates_nothing`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_participant_definition_creates_the_objects_inside_it`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_6_2_a_participant_definition_with_a_broken_part_creates_nothing`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`
 
 **Status:** done — die `<domain_participant_library>` mit einem `<domain_participant>` wird
 gelesen; das CREATE legt die enthaltenen Topics, Publisher, Subscriber und
 Endpunkte mit an (ObjectId aus dem Namen) und aktiviert sie mit dem Participant.
-Schlägt ein Teil fehl, bleibt nichts zurück (3aea52dd70a).
+Schlägt ein Teil fehl, bleibt nichts zurück (9d5c64dc398).
 
 ### §7.7.3.6.3 OBJK_DomainParticipant_Binary
 
@@ -1844,13 +1844,13 @@ qos_profile_reference; };"
 
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`participant`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::participant_binary_in_both_forms`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_participant_is_read`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_participant_binary_in_both_forms`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_spec_binary_participant_is_read`
 
 **Status:** done — drei Lesarten des Blobs: Annex A (DHEADER, ohne `domain_id`), die Form
 der Abschnitte (`long domain_id` zuerst, FINAL) und die zwei Oktette `00 00` des
 eProsima-Client. `domain_id` der Binärform und die der Repräsentation (`short`)
-müssen übereinstimmen, sonst STATUS_ERR_INVALID_DATA (c67ce23c724).
+müssen übereinstimmen, sonst STATUS_ERR_INVALID_DATA (f548fee2522).
 
 ### §7.7.3.6.3 domain_reference
 **Spec:** §7.7.3.6.3, S. 33 — "Any XRCE Topic and Type definitions contained in
@@ -1860,17 +1860,17 @@ objects contained by the DomainParticipant."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`); `crates/xrce-agent/src/daemon/definitions.rs` (`domain_scope`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_domain_reference_is_resolved_against_the_domain_libraries`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_4_1_a_domain_reference_is_resolved_against_the_domain_libraries`
 
-**Status:** done — `domain_reference` wird gegen die Domains der `<domain_library>` aufgelöst; die `domain_id` der Domain gilt für den Participant und muss mit `long domain_id` der Binärform übereinstimmen; ein Name in keiner Bibliothek ist STATUS_ERR_UNKNOWN_REFERENCE (b4cd825c268). Topics und Typen der Domain stehen im Geltungsbereich des Participant (4a57a1fa4ce, siehe das nächste Item).
+**Status:** done — `domain_reference` wird gegen die Domains der `<domain_library>` aufgelöst; die `domain_id` der Domain gilt für den Participant und muss mit `long domain_id` der Binärform übereinstimmen; ein Name in keiner Bibliothek ist STATUS_ERR_UNKNOWN_REFERENCE (0b67c04800c). Topics und Typen der Domain stehen im Geltungsbereich des Participant (f59909a7f2b, siehe das nächste Item).
 ### §7.7.3.6.3 Topics und Typen der Domain bei der Binärform
 **Spec:** §7.7.3.6.3, S. 33 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`ParticipantDescription::scope`); `crates/xrce-agent/src/daemon/session.rs` (`participant_scopes`); `crates/xrce-agent/src/daemon/definitions.rs` (`SystemDefinitions::domain_scope`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_domain_reference_is_resolved_against_the_domain_libraries`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_4_1_a_domain_reference_is_resolved_against_the_domain_libraries`
 
-**Status:** done — bei der Binärform mit `domain_reference` stehen die `register_type` und Topics der Domain im Geltungsbereich des Participant wie beim XML-Participant mit `domain_ref`; ein Topic des Participant findet sie über den Namen (4a57a1fa4ce).
+**Status:** done — bei der Binärform mit `domain_reference` stehen die `register_type` und Topics der Domain im Geltungsbereich des Participant wie beim XML-Participant mit `domain_ref`; ein Topic des Participant findet sie über den Namen (f59909a7f2b).
 ### §7.7.3.6.3 qos_profile_reference
 
 **Spec:** §7.7.3.6.3, S. 33 — "If specified, the corresponding DDS
@@ -1880,7 +1880,7 @@ DomainPaticipant shall be created using the DDS default Qos."
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`, `participant_qos_of`); `crates/xrce-agent/src/daemon/dds_port.rs`
 (`DdsPort::create_participant_with`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_participant_qos_profile_reference_is_applied`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_a_participant_qos_profile_reference_is_applied`
 
 **Status:** done — das Participant-QoS des Profils (`<domain_participant_qos>`) gilt je
 Participant: ENTITY_FACTORY beim Participant (bei `autoenable_created_entities`
@@ -1891,7 +1891,7 @@ steht nicht im XSD von DDS-XML 1.0: `crates/xml` weist die Datei beim Lesen ab
 Profil sie trotzdem, ist es STATUS_ERR_INCOMPATIBLE. Es gibt keine Policy, die das
 Schema im Participant-QoS erlaubt und die der Agent nicht anwenden kann (USER_DATA
 und ENTITY_FACTORY werden beide angewendet). Ein Profil ohne Participant-QoS wendet nichts an;
-ohne Referenz gilt das DDS-Default-QoS (b4cd825c268).
+ohne Referenz gilt das DDS-Default-QoS (0b67c04800c).
 
 ---
 
@@ -1905,8 +1905,8 @@ OBJK_Representation3_Base { ObjectId participant_id; };"
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`,
 `ObjectVariantExtra::parent`: `ObjectId` ohne Ausrichtung hinter der Variante)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::topic_representation_matches_the_captured_create_bytes`,
-`crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_1_topic_representation_matches_the_captured_create_bytes`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
 
 **Status:** done
 
@@ -1920,15 +1920,15 @@ DomainParticipant."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::plan_dds_create`,
 Zweig `ObjectKind::Topic`; `participant_of_create`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_is_created_by_name_or_by_register_type_ref`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::null_port_rejects_topic_before_participant`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_a_topic_is_created_by_name_or_by_register_type_ref`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_7_3_7_null_port_rejects_topic_before_participant`
 
 **Status:** done — Art und Existenz des Participant werden geprüft (falsche Art:
 STATUS_ERR_INVALID_DATA, fehlender Participant: STATUS_ERR_UNKNOWN_REFERENCE),
 das Topic wird mit ihm angelegt. Getestet sind das Anlegen unter dem Participant
 und die Reihenfolge auf Port-Ebene; einen Test des Fehlerwegs eines Topic auf
-Sitzungsebene gibt es nicht (dd55e9c9df1).
+Sitzungsebene gibt es nicht (505c2e56d24).
 
 ### §7.7.3.7.1 Referenz auf den Namen eines Topic im Participant
 
@@ -1943,15 +1943,15 @@ DomainParticipant."
 `crates/xrce-agent/src/daemon/definitions.rs` (`SystemDefinitions::scope_of`:
 Topics des Participant und seiner Domain)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_topic_is_created_by_name_or_by_register_type_ref`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_reference_is_read_like_the_profile_it_names`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_a_topic_is_created_by_name_or_by_register_type_ref`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_3_a_reference_is_read_like_the_profile_it_names`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`
 
 **Status:** done — der Name wird gegen die Topics des Participant und seiner
 Domain aufgelöst; ein Name, den beide und die Profildateien nicht haben, ergibt
 STATUS_ERR_UNKNOWN_REFERENCE. Der CREATE-Test nennt ein Topic des Participant;
 die Topics der Domain prüft der Test von `definitions.rs` an der Planung eines
-Participant (3aea52dd70a).
+Participant (9d5c64dc398).
 
 ### §7.7.3.7.2 XML mit einem topic
 **Spec:** §7.7.3.7.2, S. 34 — "the string_representation field shall contain a
@@ -1962,18 +1962,18 @@ known to the XRCE Agent."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`topic_from_xml`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_qos_of_a_topic_is_the_default_of_its_endpoints`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_the_qos_of_a_topic_is_the_default_of_its_endpoints`
 
-**Status:** done — `<topic name=… register_type_ref=…/>` (das Beispiel der Spec) wird gelesen: die Registrierung wird im Participant und in seiner Domain gesucht, ihr Typ unter den dem Agent bekannten Typen; eine Registrierung, die der Participant nicht hat, ergibt STATUS_ERR_UNKNOWN_REFERENCE. Die Attributform (`type_name`) und `<dataType>` von Fast DDS bleiben lesbar. QoS und QosProfile-Verweise des Topic werden angewandt (nächstes Item). 3aea52dd70a.
+**Status:** done — `<topic name=… register_type_ref=…/>` (das Beispiel der Spec) wird gelesen: die Registrierung wird im Participant und in seiner Domain gesucht, ihr Typ unter den dem Agent bekannten Typen; eine Registrierung, die der Participant nicht hat, ergibt STATUS_ERR_UNKNOWN_REFERENCE. Die Attributform (`type_name`) und `<dataType>` von Fast DDS bleiben lesbar. QoS und QosProfile-Verweise des Topic werden angewandt (nächstes Item). 9d5c64dc398.
 ### §7.7.3.7.2 QoS eines Topic und QosProfile-Verweise
 **Spec:** §7.7.3.7.2, S. 34 — "The string_representation may reference XRCE Types or
 QosProfiles already known to the XRCE Agent."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`TopicQos`, `topic_from_xml`, `endpoint_for_topic`); `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_qos_of_a_topic_is_the_default_of_its_endpoints`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_the_qos_of_a_topic_is_the_default_of_its_endpoints`
 
-**Status:** done — `<topic_qos base_name=…>` und `qos_profile`/`qos_profile_ref` des `<topic>` werden gelesen; was das Topic sagt, ist die Vorgabe der Endpunkte, die für es angelegt werden (DDS 1.4 §2.2.2.3.1), die Darstellung des Endpunkts selbst hat Vorrang; TOPIC_DATA gehört dazu. 2c715803843.
+**Status:** done — `<topic_qos base_name=…>` und `qos_profile`/`qos_profile_ref` des `<topic>` werden gelesen; was das Topic sagt, ist die Vorgabe der Endpunkte, die für es angelegt werden (DDS 1.4 §2.2.2.3.1), die Darstellung des Endpunkts selbst hat Vorrang; TOPIC_DATA gehört dazu. 3906abf91b8.
 ### §7.7.3.7.3 OBJK_Topic_Binary
 
 **Spec:** §7.7.3.7.3, S. 34 — "struct OBJK_Topic_Binary { string<256>
@@ -1983,12 +1983,12 @@ DDS:XTypes::TypeIdentifier type_identifier; };"
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`topic`, `TopicBinary`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`topic`, Zweig `InBinary`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::the_36_octet_example_of_the_clause_is_a_topic`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::annex_a_topic_has_a_dheader`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::string_bounds_are_checked`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_topic_names_its_topic_and_type`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_topic_names_its_topic_and_type`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_big_endian_binary_topic_reads_back`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_the_36_octet_example_of_the_clause_is_a_topic`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_annex_a_topic_has_a_dheader`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_7_3_string_bounds_are_checked`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_spec_binary_topic_names_its_topic_and_type`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_the_captured_binary_topic_names_its_topic_and_type`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_big_endian_binary_topic_reads_back`
 
 **Status:** done — XCDR2 nach §7.7.3.1.3: `topic_name`, optionales
 `type_reference`, optionales `type_identifier` (`TypeIdentifier`), `string<256>`
@@ -1996,7 +1996,7 @@ geprüft. Die Spec gibt die Struktur doppelt an: Annex A als APPENDABLE mit
 DHEADER, die Klausel als FINAL ohne. Beide Fassungen werden gelesen (Annex A
 zuerst, die Form des Blobs entscheidet, kein Schalter), danach die Struktur des
 eProsima-Client. Die 36 Oktette des Beispiels der Klausel schreiben „Squere“
-(der Text: „Square“); der Test erwartet die Oktette. c67ce23c724, 92633850a97.
+(der Text: „Square“); der Test erwartet die Oktette. f548fee2522, 743676fca9f.
 
 ### §7.7.3.7.3 type_identifier
 
@@ -2008,16 +2008,16 @@ the DDS-XTYPES TypeIdentifier for the data-type. See clause 7.3.2 of
 `TypeIdentifier::decode_from`); `crates/xrce-agent/src/daemon/session.rs`
 (`type_name_of`, `plan_dds_create`, Zweig Topic)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::a_topic_with_a_type_identifier_reads_it_and_one_without_a_type_is_refused`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::string_bounds_are_checked`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_topic_may_name_its_type_by_identifier`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_can_name_its_type_by_type_identifier`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_7_3_a_topic_with_a_type_identifier_reads_it_and_one_without_a_type_is_refused`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_7_3_string_bounds_are_checked`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_7_3_a_spec_binary_topic_may_name_its_type_by_identifier`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_topic_can_name_its_type_by_type_identifier`
 
 **Status:** done — ein vorhandenes `type_identifier` wird als
 XTypes-`TypeIdentifier` gelesen und mit den COMPLETE-Identifiern der dem Agent
 bekannten Typen (`OBJK_TYPE` des Client, `type_files:`) verglichen; ein
 Identifier ohne Treffer ergibt STATUS_ERR_UNKNOWN_REFERENCE. Die Grenzen
-`string<256>` werden geprüft. c67ce23c724.
+`string<256>` werden geprüft. f548fee2522.
 
 ### §7.7.3.7.3 Nicht beide fehlen, type_identifier hat Vorrang
 **Spec:** §7.7.3.7.3, S. 34 — "Either type_reference or type_identifier may be
@@ -2027,9 +2027,9 @@ precedence."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`); `crates/xrce-agent/src/daemon/binary_forms.rs` (`topic`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_binary_topic_takes_its_type_from_the_type_identifier_and_needs_one_of_the_two`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_7_3_a_binary_topic_takes_its_type_from_the_type_identifier_and_needs_one_of_the_two`
 
-**Status:** done — fehlen beide Member, ergibt das STATUS_ERR_INVALID_DATA (f87b3c3d0b2, c67ce23c724); mit `type_identifier` allein wird der Typ gefunden; sind beide da, hat der Identifier Vorrang (0f85937a436).
+**Status:** done — fehlen beide Member, ergibt das STATUS_ERR_INVALID_DATA (dc2fb4c0cf5, f548fee2522); mit `type_identifier` allein wird der Typ gefunden; sind beide da, hat der Identifier Vorrang (02c704651e4).
 ### §7.7.3.7.3 type_reference auf einen bekannten Typ
 
 **Spec:** §7.7.3.7.3, S. 34 — "The type_reference, if present, shall contain
@@ -2040,15 +2040,15 @@ create operation executed on the XRCE ProxyClient; see 7.8.3.1."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::resolve_type`,
 `find_type_definition`, `apply_dds_create`, Zweig Topic)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_topic_gets_the_type_its_type_name_names`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_configured_type_is_known_to_every_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_3_2_a_topic_gets_the_type_its_type_name_names`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_configured_type_is_known_to_every_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`
 
 **Status:** done — der Typ wird zuerst unter den `OBJK_TYPE` des Client
 (früheres CREATE), dann unter `type_files:` (Vorkonfiguration) gesucht; ein
 Topic erhält die Definition des Typs, den sein Name nennt (Test mit zwei Typen
 des Client). Ein unbekannter Typ ergibt STATUS_ERR_UNKNOWN_REFERENCE (Item
-unten). e4d37a6aff6.
+unten). 70963ac46ec.
 
 ### §7.7.3.7.3 Topic mit unbekanntem Typ
 
@@ -2058,15 +2058,15 @@ unten). e4d37a6aff6.
 `SessionEngineConfig::forward_unknown_topic_types`);
 `crates/xrce-agent/src/daemon/config.rs` (Schlüssel `unknown_topic_types`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`,
-`crates/xrce-agent/src/daemon/config.rs::tests::unknown_topic_types_are_refused_unless_forwarding_is_named`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_7_3_7_3_unknown_topic_types_are_refused_unless_forwarding_is_named`
 
 **Status:** done — Standard ist die Spec: ein Topic, dessen Typ der Agent nicht
 kennt, ergibt STATUS_ERR_UNKNOWN_REFERENCE, nichts wird abgelegt. Benannte
 Einstellung: Agent-Schlüssel `unknown_topic_types: forward` legt das Topic an
 und meldet `SessionEvent::UnknownTypeForwarding`; Samples gehen dann ohne
 Schlüssel und ohne `TypeInformation` hinaus (der eProsima-Client nennt Typen,
-die der Agent nicht hält). e4d37a6aff6, 0da6aef56b5.
+die der Agent nicht hält). 70963ac46ec, 969c784c93b.
 
 ---
 
@@ -2080,7 +2080,7 @@ OBJK_RepresentationBinAndXML_Base { ObjectId participant_id; };"
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`,
 `ObjectVariantExtra::parent`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`
 
 **Status:** done — Kodierung; die Prüfung steht im nächsten Item.
 
@@ -2094,13 +2094,13 @@ Publisher shall belong to the specified DomainParticipant."
 Publisher/Subscriber; `participant_of_create`; `apply_dds_create`:
 `DdsPort::create_publisher`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_or_subscriber_needs_an_existing_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_or_subscriber_needs_an_existing_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`
 
 **Status:** done — Art und Existenz des Participant werden geprüft (fehlender
 Participant: STATUS_ERR_UNKNOWN_REFERENCE, andere Art: STATUS_ERR_INVALID_DATA,
 nichts wird abgelegt); der Publisher wird als DDS-Publisher unter dem
-Participant angelegt. dd55e9c9df1.
+Participant angelegt. 505c2e56d24.
 
 ### §7.7.3.8.1 XML mit einem publisher
 
@@ -2114,15 +2114,15 @@ previously created or configured on the XRCE Agent."
 `container_from_xml`: `<publisher_qos>`, `<qos>`, eingebettete `<data_writer>`);
 `crates/xrce-agent/src/daemon/session.rs` (`create_embedded`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_empty_container_xml_is_a_default_container`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_container_reads_presentation_and_entity_factory`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_1_an_empty_container_xml_is_a_default_container`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_1_a_container_reads_presentation_and_entity_factory`
 
 **Status:** done — `<publisher>` mit `<publisher_qos base_name=…>` (PARTITION,
 GROUP_DATA, PRESENTATION, ENTITY_FACTORY werden angewandt) und `<qos>` von Fast
 DDS; Richtlinien, die ein Publisher nicht hat, werden in `not_applied` benannt.
 Das Beispiel (S. 35) schließt `<publisher name="MyPublisher"/>` vor seinen
-Kindelementen. 3aea52dd70a, 9239562286c.
+Kindelementen. 9d5c64dc398, b97657ef4ec.
 
 ### §7.7.3.8.1 publisher_qos und eingebettete DataWriter
 
@@ -2132,12 +2132,12 @@ Kindelementen. 3aea52dd70a, 9239562286c.
 `ContainerDescription::embedded`); `crates/xrce-agent/src/daemon/session.rs`
 (`create_embedded`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`
 
 **Status:** done — eingebettete `<data_writer>` werden mit der ObjectId ihres
 Namens (§9.3) unter dem Publisher angelegt; scheitert einer (im Test: ein Topic,
 das der Participant nicht hat, STATUS_ERR_UNKNOWN_REFERENCE), scheitert das
-CREATE des Publisher und es bleibt nichts zurück. 9239562286c.
+CREATE des Publisher und es bleibt nichts zurück. b97657ef4ec.
 
 ### §7.7.3.8.2 OBJK_Publisher_Binary
 
@@ -2149,14 +2149,14 @@ OBJK_PUBLISHER_QosBinary qos; };"
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`container`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`container`, Zweig `InBinary`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::publisher_binary_of_annex_a`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_publisher_gives_its_partitions`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_publisher_has_default_qos`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_publisher_binary_of_annex_a`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_2_an_annex_a_binary_publisher_gives_its_partitions`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_2_the_captured_binary_publisher_has_default_qos`
 
 **Status:** done — `partitions` und `group_data` werden angewandt,
 `publisher_name` wird gelesen und nicht verwendet. Annex A (APPENDABLE, DHEADER)
 wird zuerst gelesen, danach die Fassung der Klausel ohne DHEADER, die auch der
-eProsima-Client sendet. c67ce23c724.
+eProsima-Client sendet. f548fee2522.
 
 ---
 
@@ -2169,7 +2169,7 @@ OBJK_RepresentationBinAndXML_Base { ObjectId participant_id; };"
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::subscriber_representation_matches_the_captured_create_bytes`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_subscriber_representation_matches_the_captured_create_bytes`
 
 **Status:** done — Kodierung.
 
@@ -2183,11 +2183,11 @@ Subscriber shall belong to the specified DomainParticipant."
 Publisher/Subscriber; `participant_of_create`; `apply_dds_create`:
 `DdsPort::create_subscriber`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_or_subscriber_needs_an_existing_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_or_subscriber_needs_an_existing_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`
 
 **Status:** done — wie beim Publisher (derselbe Zweig, beide Arten in den
-Tests). dd55e9c9df1.
+Tests). 505c2e56d24.
 
 ### §7.7.3.9.1 XML mit einem subscriber
 **Spec:** §7.7.3.9.1, S. 35–36 — "the string_representation field shall
@@ -2197,17 +2197,17 @@ nested DataReader objects."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`container_from_xml`); `crates/xrce-agent/src/daemon/session.rs` (`create_embedded`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`
 
-**Status:** done — der Code liest `<subscriber>` in denselben Zweigen wie `<publisher>` (3aea52dd70a); der Test legt ein `<subscriber>` mit `<subscriber_qos>` und Inhalt an (0f85937a436).
+**Status:** done — der Code liest `<subscriber>` in denselben Zweigen wie `<publisher>` (9d5c64dc398); der Test legt ein `<subscriber>` mit `<subscriber_qos>` und Inhalt an (02c704651e4).
 ### §7.7.3.9.1 subscriber_qos und eingebettete DataReader
 **Spec:** §7.7.3.9.1, S. 36 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`create_embedded`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`container_from_xml`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_subscriber_in_xml_has_its_qos_and_its_nested_data_reader`
 
-**Status:** done — der Code legt die `<data_reader>` eines `<subscriber>` wie die `<data_writer>` eines `<publisher>` an (9239562286c); der Test legt ein Subscriber mit eingebettetem `<data_reader>` per CREATE an und prüft Partition und Reader (0f85937a436).
+**Status:** done — der Code legt die `<data_reader>` eines `<subscriber>` wie die `<data_writer>` eines `<publisher>` an (b97657ef4ec); der Test legt ein Subscriber mit eingebettetem `<data_reader>` per CREATE an und prüft Partition und Reader (02c704651e4).
 ### §7.7.3.9.2 OBJK_Subscriber_Binary
 
 **Spec:** §7.7.3.9.2, S. 36 — "struct OBJK_SUBSCRIBER_QosBinary { @optional
@@ -2219,12 +2219,12 @@ OBJK_SUBSCRIBER_QosBinary qos; };"
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`container`, dieselbe
 Leseroutine wie für den Publisher)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::publisher_binary_of_annex_a`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_publisher_gives_its_partitions`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_publisher_has_default_qos`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_publisher_binary_of_annex_a`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_2_an_annex_a_binary_publisher_gives_its_partitions`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_2_the_captured_binary_publisher_has_default_qos`
 
 **Status:** done — die Tests lesen die Form des Publisher, die Leseroutine ist
-dieselbe. c67ce23c724.
+dieselbe. f548fee2522.
 
 ---
 
@@ -2237,8 +2237,8 @@ OBJK_RepresentationBinAndXML_Base { ObjectId publisher_id; };"
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
-`crates/xrce/src/object_repr.rs::tests::annex_b_2_3_writer_variant_reads_as_the_blob_and_its_publisher`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_10_annex_b_2_3_writer_variant_reads_as_the_blob_and_its_publisher`
 
 **Status:** done — Kodierung.
 
@@ -2251,9 +2251,9 @@ shall belong to the specified Publisher."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`, Zweig
 DataWriter/DataReader)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_endpoint_and_its_topic_belong_to_one_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_an_endpoint_and_its_topic_belong_to_one_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`
 
 **Status:** done — Art und Existenz des Publisher werden geprüft (fehlender
 Publisher: STATUS_ERR_UNKNOWN_REFERENCE), DataWriter und Topic müssen zu einem
@@ -2271,19 +2271,19 @@ representation of a DataWriter allows specifying Qos policies."
 `endpoint_from_xml`: Attributform, Form von Fast DDS, `topic_ref` als Name,
 `<datawriter_qos>` / `<data_writer_qos>`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_data_writer_states_its_qos_over_a_profile`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_attribute_form_still_reads`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_eprosima_element_form_names_topic_type_and_kind`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_qos_profile_reference_applies_the_profile`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_1_a_data_writer_states_its_qos_over_a_profile`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_1_the_attribute_form_still_reads`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_1_the_eprosima_element_form_names_topic_type_and_kind`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_1_a_qos_profile_reference_applies_the_profile`
 
 **Status:** done — gelesen werden die Form von DDS-XML (`<data_writer name=…
 topic_ref=…>`, `<datawriter_qos base_name=…>`), die Attributform (`topic_ref`
 als ObjectId in Hex, `qos_profile`, `reliability`) und die Form von Fast DDS.
 Eine BY_REFERENCE-Darstellung hat ein DataWriter nach §7.7.3.1 nicht; der
 Agent-Schlüssel `representation_formats: any` lässt sie zu (der eProsima-Client
-benutzt sie). 3aea52dd70a, bdf3f6ee966.
+benutzt sie). 9d5c64dc398, 0429eab4fb2.
 
 ### §7.7.3.10.1 topic_ref als Name und data_writer_qos
 
@@ -2293,15 +2293,15 @@ benutzt sie). 3aea52dd70a, bdf3f6ee966.
 `datawriter_qos` / `data_writer_qos`); `crates/xrce-agent/src/daemon/session.rs`
 (`resolve_topic`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_data_writer_states_its_qos_over_a_profile`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_1_a_data_writer_states_its_qos_over_a_profile`
 
 **Status:** done — `topic_ref="Square"` wird als Name eines Topic des
 Participant aufgelöst (`0x…` bleibt die ObjectId); `<datawriter_qos
 base_name=…>` wendet das Profil an, Richtlinien des Elements gehen darüber. Die
 Schreibweise `<data_writer_qos>` der Klausel liest der Code ebenfalls; die Tests
 benutzen `<datawriter_qos>`. Das Beispiel (S. 36) nennt den Container „XRCE
-Susbcriber“. 3aea52dd70a.
+Susbcriber“. 9d5c64dc398.
 
 ### §7.7.3.10.2 OBJK_DataWriter_Binary
 
@@ -2313,12 +2313,12 @@ ownership_strength; };"
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint`, Zweig `InBinary`,
 `apply_endpoint_binary`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_writer_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_writer_is_reliable_keep_last_transient_local`,
-`crates/xrce-agent/src/daemon/session.rs::tests::annex_b_2_3_create_of_a_binary_data_writer`,
-`crates/xrce-agent/src/daemon/session.rs::tests::annex_b_2_4_create_of_a_binary_data_writer_with_qos`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_an_annex_a_binary_writer_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_captured_binary_writer_is_reliable_keep_last_transient_local`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_2_annex_b_2_3_create_of_a_binary_data_writer`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_2_annex_b_2_4_create_of_a_binary_data_writer_with_qos`
 
 **Status:** done — `topic_name`, `endpoint_qos` und `ownership_strength`
 (`unsigned long`). Annex A (APPENDABLE, `qos` optional) und die Klausel (FINAL,
@@ -2326,8 +2326,8 @@ ownership_strength; };"
 entscheidet (kein Schalter); danach die Struktur des eProsima-Client (`ObjectId
 topic_id`, `ownership_strength` mit 64 Bit). Die Beispiele Annex B.2.3 und B.2.4
 sind Byte für Byte getestet. Die Fassung der Klausel ist für den DataWriter
-nicht eigens getestet, für den DataReader (Item unten) schon. c67ce23c724,
-33df0df0945.
+nicht eigens getestet, für den DataReader (Item unten) schon. f548fee2522,
+b91241aebb1.
 
 ### §7.7.3.10.2 EndpointQosFlags
 
@@ -2340,15 +2340,15 @@ is_ownership_exclusive, @position(3) is_durability_transient_local,
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`spec_flags`,
 `apply_endpoint_binary`; `flags`, `endpoint_qos_from_binary`)
 
-**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_writer_is_reliable_keep_last_transient_local`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_binary_writer_with_every_optional_member_reads_back`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_writer_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_clause_binary_reader_names_its_topic_and_qos`
+**Tests:** `crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_captured_binary_writer_is_reliable_keep_last_transient_local`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_a_binary_writer_with_every_optional_member_reads_back`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_an_annex_a_binary_writer_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_clause_binary_reader_names_its_topic_and_qos`
 
 **Status:** done — Bit 1 ist je Fassung `is_history_keep_last` (Klausel,
 eProsima-Client) oder `is_history_keep_all` (Annex A, S. 110); die Fassung des
 Blobs entscheidet (`EndpointBinary::bit1_is_keep_all`). Die Tests prüfen beide
-Lesarten. c67ce23c724.
+Lesarten. f548fee2522.
 
 ### §7.7.3.10.2 OBJK_Endpoint_QosBinary
 
@@ -2361,13 +2361,13 @@ sequence<octet> user_data; };"
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`apply_endpoint_binary`,
 `endpoint_qos_from_binary`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_binary_writer_with_every_optional_member_reads_back`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_binary_endpoint_without_qos_gets_the_role_defaults`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_a_binary_writer_with_every_optional_member_reads_back`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_a_binary_endpoint_without_qos_gets_the_role_defaults`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`
 
 **Status:** done — `qos_flags`, `history_depth`, `deadline_msec`,
-`lifespan_msec` und `user_data` (alle außer den Flags optional). c67ce23c724.
+`lifespan_msec` und `user_data` (alle außer den Flags optional). f548fee2522.
 
 ---
 
@@ -2380,8 +2380,8 @@ OBJK_RepresentationBinAndXML_Base { ObjectId subscriber_id; };"
 
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
-`crates/xrce/src/object_repr.rs::tests::annex_b_2_6_reader_with_default_qos`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_11_annex_b_2_6_reader_with_default_qos`
 
 **Status:** done — Kodierung.
 
@@ -2394,8 +2394,8 @@ will belong to the specified Subscriber."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`, Zweig
 DataWriter/DataReader)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_reads_through_a_preconfigured_data_reader_without_a_create`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_reads_through_a_preconfigured_data_reader_without_a_create`
 
 **Status:** done — Art und Existenz des Subscriber werden geprüft; der
 DataReader erbt PARTITION und GROUP_DATA des Subscriber.
@@ -2408,18 +2408,18 @@ DataReader may also contain time-based and content-based filters."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint_from_xml`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_data_reader_in_xml_has_its_qos_and_its_content_filter`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_data_reader_in_xml_has_its_qos_and_its_content_filter`
 
-**Status:** done — getestet sind die Attributform, die Form von Fast DDS mit `timeBasedFilter`, ein `<data_reader topic_ref=…>` aus der Konfigurationsdatei und `<data_reader_qos>` mit `<content_filter>` (0f85937a436). Eine BY_REFERENCE-Darstellung hat ein DataReader nach §7.7.3.1 nicht; `representation_formats: any` lässt sie zu.
+**Status:** done — getestet sind die Attributform, die Form von Fast DDS mit `timeBasedFilter`, ein `<data_reader topic_ref=…>` aus der Konfigurationsdatei und `<data_reader_qos>` mit `<content_filter>` (02c704651e4). Eine BY_REFERENCE-Darstellung hat ein DataReader nach §7.7.3.1 nicht; `representation_formats: any` lässt sie zu.
 ### §7.7.3.11.1 data_reader_qos und content_filter
 **Spec:** §7.7.3.11.1, S. 38 — "<content_filter name="MyFilter">
 <expression> x &gt; 5 </expression> </content_filter>"
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint_from_xml`, `apply_qos_profile`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_data_reader_in_xml_has_its_qos_and_its_content_filter`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_data_reader_in_xml_has_its_qos_and_its_content_filter`
 
-**Status:** done — `<content_filter><expression>` setzt den Filter des Reader (das Attribut `name` wird nicht verwendet), `<datareader_qos>`/`<data_reader_qos>` wenden Profil und eigene Richtlinien an; der Test liest beide aus XML und prüft QoS und Filter am DDS-Port (0f85937a436, 3aea52dd70a).
+**Status:** done — `<content_filter><expression>` setzt den Filter des Reader (das Attribut `name` wird nicht verwendet), `<datareader_qos>`/`<data_reader_qos>` wenden Profil und eigene Richtlinien an; der Test liest beide aus XML und prüft QoS und Filter am DDS-Port (02c704651e4, 9d5c64dc398).
 ### §7.7.3.11.2 OBJK_DataReader_Binary
 
 **Spec:** §7.7.3.11.2, S. 38–39 — "struct OBJK_DataReader_Binary { string
@@ -2430,16 +2430,16 @@ timebasedfilter_msec; @optional string contentbased_filter; };"
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint`, Zweig `InBinary`,
 `apply_endpoint_binary`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::reader_binary_of_the_clause`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_clause_binary_reader_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_reader_is_reliable_keep_last_transient_local`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_reader_binary_of_the_clause`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_clause_binary_reader_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_11_2_the_captured_binary_reader_is_reliable_keep_last_transient_local`
 
 **Status:** done — `topic_name`, `endpoint_qos`, `timebasedfilter_msec` und
 `contentbased_filter` (als Filter des Reader angewandt). Fassung der Klausel und
 Annex A werden wie beim DataWriter gelesen; Annex B.2.6 und B.2.7 sind Byte für
 Byte getestet. Im Beispiel B.2.7 nennt der Text fünf Minuten, die Tabelle 180000
-ms; gelesen werden die Oktette. c67ce23c724, 33df0df0945.
+ms; gelesen werden die Oktette. f548fee2522, b91241aebb1.
 
 ---
 
@@ -2452,8 +2452,8 @@ pair. [...] typedef octet ObjectId [2];"
 
 **Repo:** `crates/xrce/src/object_id.rs` (`ObjectId::to_bytes`, `ObjectId::from_bytes`)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::bytes_are_big_endian`,
-`crates/xrce/src/object_info.rs::tests::base_object_request_roundtrip`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_7_7_4_bytes_are_big_endian`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_4_base_object_request_roundtrip`
 
 **Status:** done — die beiden Oktette in Reihenfolge, unabhängig vom E-Flag.
 
@@ -2472,12 +2472,12 @@ OBJK_TYPE = 0x0A; OBJK_QOSPROFILE = 0x0B; OBJK_APPLICATION = 0x0C; OBJK_AGENT =
 
 **Repo:** `crates/xrce/src/object_kind.rs` (Konstanten `OBJK_*`, `ObjectKind::from_u8`)
 
-**Tests:** `crates/xrce/src/object_kind.rs::tests::all_spec_kinds_roundtrip`,
-`crates/xrce/src/object_kind.rs::tests::raw_const_values_match_spec`,
-`crates/xrce/src/object_kind.rs::tests::unknown_byte_rejected`
+**Tests:** `crates/xrce/src/object_kind.rs::tests::xrce_7_7_5_all_spec_kinds_roundtrip`,
+`crates/xrce/src/object_kind.rs::tests::xrce_7_7_5_raw_const_values_match_spec`,
+`crates/xrce/src/object_kind.rs::tests::xrce_7_7_5_unknown_byte_rejected`
 
 **Status:** done — 13 Werte: die zwölf des Textes und `OBJK_OTHER = 0x0F` (Annex
-A). Der Text nennt 14 Arten und listet 12. f63fa2d1218.
+A). Der Text nennt 14 Arten und listet 12. daf2a618f74.
 
 ---
 
@@ -2493,13 +2493,13 @@ object_id[1] = (objectid_prefix[1]&0xF0) + object_kind"
 **Repo:** `crates/xrce/src/object_id.rs` (`ObjectId::new`, `ObjectId::kind`,
 `ObjectId::from_reference`)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::new_packs_kind_into_lower_4_bits`,
-`crates/xrce/src/object_id.rs::tests::bytes_are_big_endian`,
-`crates/xrce/src/object_id.rs::tests::from_reference_matches_the_examples_of_the_spec`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_7_7_6_new_packs_kind_into_lower_4_bits`,
+`crates/xrce/src/object_id.rs::tests::xrce_7_7_4_bytes_are_big_endian`,
+`crates/xrce/src/object_id.rs::tests::xrce_7_6_from_reference_matches_the_examples_of_the_spec`
 
 **Status:** done — der Präfix ist im Code die 12-Bit-Zahl `raw_id`; ein Typ
 `ObjectIdPrefix` fehlt. `ObjectId::from_reference` bildet den Präfix aus den
-ersten 12 Bit des MD5 (§9.3, 03371b4965c). `ObjectId::new_with_mask` und
+ersten 12 Bit des MD5 (§9.3, 468aa0940da). `ObjectId::new_with_mask` und
 `kind_mask` deuten Bit 15 als „vom Client vergeben“; das steht nicht in der Spec
 und wird von der Sitzung nicht benutzt.
 
@@ -2518,8 +2518,8 @@ STATUS_OK, @value(0x01) STATUS_OK_MATCHED, @value(0x80) STATUS_ERR_DDS_ERROR,
 
 **Repo:** `crates/xrce/src/object_info.rs` (`ResultStatusCode`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::result_status_code_all_ten_spec_values_roundtrip`,
-`crates/xrce/src/object_info.rs::tests::result_status_code_unknown_byte_rejected`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_7_result_status_code_all_ten_spec_values_roundtrip`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_7_result_status_code_unknown_byte_rejected`
 
 **Status:** done
 
@@ -2531,18 +2531,18 @@ implementation_status; };"
 **Repo:** `crates/xrce/src/object_info.rs` (`ResultStatus`, `encode_into`, `decode_at`);
 `crates/xrce/src/encoding.rs` (`UnannotatedTypes`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::result_status_roundtrip`,
-`crates/xrce/src/object_info.rs::tests::result_status_decode_short_returns_eof`,
-`crates/xrce/tests/unannotated_types.rs::the_default_is_appendable_with_a_dheader`,
-`crates/xrce/tests/unannotated_types.rs::the_final_setting_writes_the_reference_implementations_octets`,
-`crates/xrce/tests/unannotated_types.rs::both_forms_are_read_in_either_setting`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_7_result_status_roundtrip`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_7_result_status_decode_short_returns_eof`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_the_default_is_appendable_with_a_dheader`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_7_the_final_setting_writes_the_reference_implementations_octets`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_both_forms_are_read_in_either_setting`
 
 **Status:** done — Annex A gibt `ResultStatus` kein `@extensibility`: Standard
 ist APPENDABLE mit DHEADER nach DDS-XTypes 1.3 §7.3.1.2.1.8 (6 Oktette, im
 `BaseObjectReply` 10). Die Oktette der Referenzimplementierung (2 und 6, ohne
 DHEADER) schreibt die Einstellung `encoding::UnannotatedTypes::Final`
 (Agent-Schlüssel `unannotated_types: final`); beide Fassungen werden in jeder
-Einstellung gelesen. f2ace917b5a, 3874ad8d6a6.
+Einstellung gelesen. 7f85e76debd, 220857a1e90.
 
 ### §7.7.7 Table 2 STATUS_OK
 
@@ -2551,12 +2551,12 @@ operation".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`status_reply`, `agent_status_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_successful_write_is_answered_with_status_ok`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_successful_write_is_answered_with_status_ok`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done — auch ein erfolgreiches WRITE_DATA wird mit STATUS_OK
-beantwortet (dc0209b38fe); der eProsima-Agent antwortet darauf nicht.
+beantwortet (869304e6b63); der eProsima-Agent antwortet darauf nicht.
 
 ### §7.7.7 Table 2 STATUS_OK_MATCHED
 
@@ -2568,13 +2568,13 @@ operation."
 **Repo:** `crates/xrce/src/object_store.rs` (`CreateOutcome::Reused`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_create`)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_reuse_returns_equal_marker`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_7_7_create_reuse_returns_equal_marker`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`
 
 **Status:** done — eine Darstellung, die der des vorhandenen Objekts gleicht,
 ergibt bei `reuse` STATUS_OK_MATCHED und ändert nichts. Table 5 schreibt
 STATUS_OK_MATCHES, `StatusValue` in Annex A und im Code heißt STATUS_OK_MATCHED
-(nur der Name). 8b949a13ef5.
+(nur der Name). 3b066516f69.
 
 ### §7.7.7 Table 2 STATUS_ERR_DDS_ERROR
 
@@ -2586,11 +2586,11 @@ resource related to the operation."
 `apply_dds_create`); `crates/xrce-agent/src/daemon/dds_port.rs`
 (`DdsPortError::DdsError`, `DdsPort::enable`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_dds_entity_is_enabled_when_the_creation_has_succeeded`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_dds_entity_is_enabled_when_the_creation_has_succeeded`
 
 **Status:** done — kann die DDS-Seite eines CREATE nicht freigegeben (`enable`)
 oder angelegt werden, ist die Antwort STATUS_ERR_DDS_ERROR, nichts wird abgelegt
-und die DDS-Seite gelöscht. e4d37a6aff6.
+und die DDS-Seite gelöscht. 70963ac46ec.
 
 ### §7.7.7 Table 2 STATUS_ERR_MISMATCH
 
@@ -2602,12 +2602,12 @@ was not possible to change the state of the resource."
 **Repo:** `crates/xrce/src/object_store.rs` (`CreateOutcome::Reused { equal: false }`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_create`)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_reuse_returns_equal_marker`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_7_7_create_reuse_returns_equal_marker`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`
 
 **Status:** done — `reuse` ohne `replace` und eine ungleiche Darstellung ergeben
 STATUS_ERR_MISMATCH; mit `replace` wird das Objekt ersetzt (Table 5).
-8b949a13ef5.
+3b066516f69.
 
 ### §7.7.7 Table 2 STATUS_ERR_ALREADY_EXISTS
 
@@ -2616,7 +2616,7 @@ create operation due to the fact that the resource already existed."
 
 **Repo:** `crates/xrce/src/object_store.rs` (`CreateOutcome::Conflict`)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_strict_on_existing_returns_conflict`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_6_create_strict_on_existing_returns_conflict`
 
 **Status:** done
 
@@ -2629,16 +2629,16 @@ operation due to lack of permissions."
 `crates/xrce-agent/src/daemon/session.rs` (Prüfung vor CREATE, DELETE,
 GET_INFO, WRITE_DATA, READ_DATA)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_client_key_not_configured_in_the_agent_is_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_without_permission_is_denied_and_stores_nothing`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_and_delete_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::write_and_read_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::client_properties_are_checked_against_what_the_agent_requires`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_update_needs_the_permission_to_update`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_client_key_not_configured_in_the_agent_is_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_without_permission_is_denied_and_stores_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_get_info_and_delete_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_write_and_read_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_client_properties_are_checked_against_what_the_agent_requires`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_an_update_needs_the_permission_to_update`
 
 **Status:** done — ein ClientKey, der nicht in `authorized_client_keys` steht,
 eine fehlende Client-Property und eine Operation ohne Recht ergeben
-STATUS_ERR_DENIED; nichts wird abgelegt. d66ada44616, 515bcc677f3.
+STATUS_ERR_DENIED; nichts wird abgelegt. 1c430db8a67, 5f7a8652d95.
 
 ### §7.7.7 Table 2 STATUS_ERR_UNKNOWN_REFERENCE
 
@@ -2649,11 +2649,11 @@ Agent."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`dds_port_error_status`,
 `handle_delete`, `handle_get_info`, `participant_of_create`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::full_chain_against_a_real_leased_domain`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::null_port_rejects_topic_before_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_or_subscriber_needs_an_existing_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
-`crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_full_chain_against_a_real_leased_domain`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_7_3_7_null_port_rejects_topic_before_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_or_subscriber_needs_an_existing_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`
 
 **Status:** done — die Tests prüfen `DdsPortError::UnknownReference`, einen
 fehlenden Participant, ein fehlendes Objekt in GET_INFO und das Löschen des
@@ -2668,15 +2668,15 @@ to wrong on invalid input parameter data."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`,
 `handle_read_data`, `refuse_unreadable`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_request_that_cannot_be_read_is_answered_invalid_data`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_without_a_base_object_request_is_answered`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_request_that_cannot_be_read_is_answered_invalid_data`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_without_a_base_object_request_is_answered`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`
 
 **Status:** done — ein nicht lesbarer Body von CREATE, READ_DATA, WRITE_DATA,
 DELETE und GET_INFO, eine Darstellung in einem Format, das die Art nicht hat,
-und ein nicht erfüllbarer Filter ergeben STATUS_ERR_INVALID_DATA. 133a0db3c4f,
-bdf3f6ee966.
+und ein nicht erfüllbarer Filter ergeben STATUS_ERR_INVALID_DATA. 97de94f63e4,
+0429eab4fb2.
 
 ### §7.7.7 Table 2 STATUS_ERR_INCOMPATIBLE
 
@@ -2686,8 +2686,8 @@ operation due to an incompatibility between the Client and the Agent."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`,
 `handle_get_info`: Version in `client_info`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_rejects_wrong_major_version`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_checks_the_version_in_client_info`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_create_client_rejects_wrong_major_version`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_the_agent_checks_the_version_in_client_info`
 
 **Status:** done
 
@@ -2697,9 +2697,9 @@ operation due to a resource error on the Agent."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`, `create_core`, `handle_message`, `emit_possibly_fragmented`, `data_submessages`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::create_client_over_max_clients_is_a_resource_error`, `crates/xrce-agent/tests/spec_items_session.rs::create_over_max_objects_per_client_is_a_resource_error`, `crates/xrce-agent/tests/spec_items_session.rs::a_full_reorder_buffer_of_a_reliable_stream_is_a_resource_error`, `crates/xrce-agent/tests/spec_items_session.rs::a_fragment_run_over_its_limit_is_a_resource_error`, `crates/xrce-agent/src/daemon/session.rs::tests::a_sample_too_large_for_data_is_reported`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_7_create_client_over_max_clients_is_a_resource_error`, `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_7_create_over_max_objects_per_client_is_a_resource_error`, `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_7_a_full_reorder_buffer_of_a_reliable_stream_is_a_resource_error`, `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_7_a_fragment_run_over_its_limit_is_a_resource_error`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_sample_too_large_for_data_is_reported`
 
-**Status:** done — der Agent sendet den Wert bei `max_clients`, `max_objects_per_client`, vollem Puffer des Empfängers, einer FRAGMENT-Zusammensetzung über der Grenze und einem Sample, das nicht in ein DATA passt; jeder dieser Wege hat einen Test (2fa0800f55a, 0f85937a436). Ein INFO, das nicht kodiert werden kann, hat keinen Test.
+**Status:** done — der Agent sendet den Wert bei `max_clients`, `max_objects_per_client`, vollem Puffer des Empfängers, einer FRAGMENT-Zusammensetzung über der Grenze und einem Sample, das nicht in ein DATA passt; jeder dieser Wege hat einen Test (8bcb1d00161, 02c704651e4). Ein INFO, das nicht kodiert werden kann, hat keinen Test.
 
 ---
 
@@ -2712,8 +2712,8 @@ RequestId request_id; ObjectId object_id; };"
 
 **Repo:** `crates/xrce/src/object_info.rs` (`BaseObjectRequest`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::base_object_request_roundtrip`,
-`crates/xrce/src/object_info.rs::tests::base_object_request_decode_short_returns_eof`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_4_base_object_request_roundtrip`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_8_base_object_request_decode_short_returns_eof`
 
 **Status:** done — FINAL, 4 Oktette ohne DHEADER.
 
@@ -2729,7 +2729,7 @@ is known by Client and Agent to no longer be active."
 `crates/xrce-agent/src/daemon/session.rs` (`status_reply`)
 
 **Tests:** `crates/xrce-client/src/lib.rs::tests::full_lifecycle_creates_unique_request_ids_and_real_submessages`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done
 
@@ -2742,11 +2742,11 @@ ObjectIdPrefix for the created object."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`: `ObjectId` aus
 Präfix der Anfrage und Art der Darstellung)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_object_id_is_the_prefix_and_the_kind_of_the_representation`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_the_object_id_is_the_prefix_and_the_kind_of_the_representation`
 
 **Status:** done — für die Bildung der `ObjectId` beim CREATE siehe das Item zu
-§7.8.3.1 „input_objectid“. e4d37a6aff6.
+§7.8.3.1 „input_objectid“. 70963ac46ec.
 
 ---
 
@@ -2759,8 +2759,8 @@ BaseObjectRequest related_request; ResultStatus result; };"
 
 **Repo:** `crates/xrce/src/object_info.rs` (`BaseObjectReply`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::base_object_reply_roundtrip`,
-`crates/xrce/tests/unannotated_types.rs::both_forms_are_read_in_either_setting`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_9_base_object_reply_roundtrip`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_both_forms_are_read_in_either_setting`
 
 **Status:** done — FINAL: `related_request` (4 Oktette) und `result`; das
 `ResultStatus` darin trägt seinen DHEADER (Item `ResultStatus`).
@@ -2774,7 +2774,7 @@ created object."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`status_reply`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done
 
@@ -2787,8 +2787,8 @@ value that corresponds to the type of error encountered."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`: Abbildung von
 `CreateOutcome` auf den Status)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`
 
 **Status:** done — der Text nennt die Member `status` und
 `implementation_status`; die Struktur hat `result`.
@@ -2804,7 +2804,7 @@ that returned it."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`status_reply`: Wert 0);
 `crates/xrce-client/src/lib.rs` (`handle_status` wertet ihn nicht aus)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::result_status_roundtrip`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_7_result_status_roundtrip`
 
 **Status:** done
 
@@ -2820,7 +2820,7 @@ BaseObjectReply".
 
 **Repo:** `crates/xrce/src/object_info.rs` (`RelatedObjectRequest`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::related_object_request_is_base_object_request`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_10_related_object_request_is_base_object_request`
 
 **Status:** done — die Spec schreibt den `typedef` in umgekehrter Reihenfolge;
 gemeint ist `typedef BaseObjectRequest RelatedObjectRequest`.
@@ -2838,11 +2838,11 @@ replace; };"
 `crates/xrce/src/submessages/create.rs` (`CREATE_FLAG_REUSE`,
 `CREATE_FLAG_REPLACE`)
 
-**Tests:** `crates/xrce/src/submessages/create.rs::tests::create_roundtrip_carries_reuse_replace_flags`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`
+**Tests:** `crates/xrce/src/submessages/create.rs::tests::xrce_7_7_11_create_roundtrip_carries_reuse_replace_flags`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`
 
 **Status:** done — auf der Leitung als Flags von CREATE (§8.3.5.2.1); `reuse`
-und `replace` wirken nach Table 5 (8b949a13ef5).
+und `replace` wirken nach Table 5 (3b066516f69).
 
 ---
 
@@ -2857,15 +2857,15 @@ INFO_CONFIGURATION, @position(1) INFO_ACTIVITY };"
 `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`, `object_info`:
 Configuration und Activity nach der Maske)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::info_mask_bits_and_wire_form`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_writer_reports_its_activity`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_an_info_mask_is_invalid_data`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_12_info_mask_bits_and_wire_form`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_writer_reports_its_activity`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_an_info_mask_is_invalid_data`
 
 **Status:** done — `InfoMask` ist eine 32-Bit-Bitmaske (`INFO_CONFIGURATION` Bit
 0, `INFO_ACTIVITY` Bit 1, ohne `@bit_bound` nach XTypes 32 Bit) und wird aus dem
 GET_INFO gelesen; ein GET_INFO ohne Maske ergibt STATUS_ERR_INVALID_DATA.
-65cd1820a04.
+ca0cf7e08bf.
 
 ### §7.7.12 AGENT_ActivityInfo
 
@@ -2875,14 +2875,14 @@ AGENT_ActivityInfo { short availability; TransportLocatorSeq address_seq; };"
 **Repo:** `crates/xrce/src/object_info.rs` (`ActivityInfoVariant::Agent`);
 `crates/xrce-agent/src/daemon/session.rs` (`agent_object_info`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::agent_activity_info_has_a_dheader_and_a_locator_sequence`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_a_session_is_answered_for_the_agent_only`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_agent_activity_info_has_a_dheader_and_a_locator_sequence`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_a_session_is_answered_for_the_agent_only`
 
 **Status:** done — `@extensibility(APPENDABLE)`: Diskriminator `OBJK_AGENT`
 (0x0D; Annex A schreibt `OBJECTID_AGENT`, einen ObjectId mit zwei Oktetten und
 keinen Wert von `ObjectKind`), DHEADER, `short availability` und
-`TransportLocatorSeq` aus den Listenern des Agent. 65cd1820a04, c304e509660.
+`TransportLocatorSeq` aus den Listenern des Agent. ca0cf7e08bf, 299b3a41398.
 
 ### §7.7.12 DATAREADER_ActivityInfo
 
@@ -2893,16 +2893,16 @@ DATAREADER_ActivityInfo { short highest_acked_num; };"
 Z. 524, `encode_into` Z. 574, `decode_at` Z. 633);
 `crates/xrce-agent/src/daemon/session.rs` (`object_info` Z. 3002)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::data_reader_activity_info_is_a_dheader_and_a_short`,
-`crates/xrce/src/object_info.rs::tests::appended_members_of_an_activity_are_skipped`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_reader_reports_its_activity`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_12_data_reader_activity_info_is_a_dheader_and_a_short`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_appended_members_of_an_activity_are_skipped`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_reader_reports_its_activity`
 
 **Status:** `done` — DHEADER und `short highest_acked_num`; Member, die eine
 neuere Fassung anhängt, überspringt der Leser über das DHEADER. Der Agent sendet
 die Aktivität im INFO auf ein GET_INFO eines DataReader: `highest_acked_num` ist
 die höchste vom Client bestätigte Sequenznummer des Reliable Streams, auf dem
 das READ_DATA liefert, sonst 0. Die Spec definiert den Wert nicht; gegen keinen
-anderen Agent gemessen. Commit 65cd1820a04.
+anderen Agent gemessen. Commit ca0cf7e08bf.
 
 ### §7.7.12 DATAWRITER_ActivityInfo
 
@@ -2915,14 +2915,14 @@ Z. 529, `encode_into` Z. 574, `decode_at` Z. 633);
 `crates/xrce-agent/src/daemon/session.rs` (`object_info` Z. 3002,
 `dds_write_and_report` Z. 3282)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::data_writer_activity_info_is_a_dheader_a_long_long_and_a_short`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_writer_reports_its_activity`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_12_data_writer_activity_info_is_a_dheader_a_long_long_and_a_short`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_writer_reports_its_activity`
 
 **Status:** `done` — DHEADER, `unsigned long long sample_seq_num` (auf 4
 ausgerichtet) und `short stream_seq_num`. Der Agent zählt je DataWriter die
 geschriebenen Samples (`sample_seq_num`) und merkt sich die Sequenznummer im
 Header der letzten WRITE_DATA-Nachricht (`stream_seq_num`). Die Spec definiert
-beide Werte nicht; gegen keinen anderen Agent gemessen. Commit 65cd1820a04.
+beide Werte nicht; gegen keinen anderen Agent gemessen. Commit ca0cf7e08bf.
 
 ### §7.7.12 ActivityInfoVariant als Union
 
@@ -2933,10 +2933,10 @@ DATAREADER_ActivityInfo data_reader; };"
 **Repo:** `crates/xrce/src/object_info.rs` (`ActivityInfoVariant` Z. 512,
 `discriminator` Z. 540, `encode_into` Z. 574, `decode_at` Z. 633)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::agent_activity_info_has_a_dheader_and_a_locator_sequence`,
-`crates/xrce/src/object_info.rs::tests::activity_info_decode_unknown_discriminator_rejected`,
-`crates/xrce/src/object_info.rs::tests::activity_info_decode_truncated_rejected`,
-`crates/xrce/src/object_info.rs::tests::appended_members_of_an_activity_are_skipped`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_agent_activity_info_has_a_dheader_and_a_locator_sequence`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_activity_info_decode_unknown_discriminator_rejected`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_activity_info_decode_truncated_rejected`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_appended_members_of_an_activity_are_skipped`
 
 **Status:** `done` — der Diskriminator ist das Oktett der `ObjectKind`
 (OBJK_DATAWRITER 0x05, OBJK_DATAREADER 0x06); die Member tragen das DHEADER; ein
@@ -2944,7 +2944,7 @@ unbekannter Diskriminator ist ein Fehler. Annex A (S. 113) hat zusätzlich den
 Fall des Agent und schreibt `OBJECTID_AGENT`, eine ObjectId aus zwei Oktetten
 und kein Wert von `ObjectKind`; der Code nimmt `OBJK_AGENT` (0x0D) als
 Diskriminator von `AGENT_ActivityInfo`. Der IDL der Klausel fehlt das Wort
-`switch`. Commit 65cd1820a04.
+`switch`. Commit ca0cf7e08bf.
 
 ---
 
@@ -2960,17 +2960,17 @@ Z. 794, `decode_at` Z. 834, `ObjectConfig` Z. 690);
 `crates/xrce-agent/src/daemon/session.rs` (`object_info` Z. 3002, `answer_info`
 Z. 2962)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::object_info_puts_the_activity_before_the_config`,
-`crates/xrce/src/object_info.rs::tests::the_config_of_a_topic_is_the_object_variant_it_was_created_with`,
-`crates/xrce/src/object_info.rs::tests::the_config_of_the_agent_is_its_agent_representation`,
-`crates/xrce/src/object_info.rs::tests::an_empty_object_info_is_two_presence_octets`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_an_object_returns_the_object_variant_it_was_created_with`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_object_info_puts_the_activity_before_the_config`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_13_the_config_of_a_topic_is_the_object_variant_it_was_created_with`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_13_the_config_of_the_agent_is_its_agent_representation`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_13_an_empty_object_info_is_two_presence_octets`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with`
 
 **Status:** `done` — `activity` vor `config`, je ein Merker-Oktett für die
 beiden `@optional`; `config` ist ein `ObjectVariant` mit seiner `ObjectKind`
 (beim Agent die `AGENT_Representation`, bei einem Objekt die Repräsentation, mit
 der es angelegt wurde). Die Ausrichtung zählt ab dem Beginn der Payload, die
-Byte-Reihenfolge folgt dem E-Flag. Commits 65cd1820a04, b43d5e6b848.
+Byte-Reihenfolge folgt dem E-Flag. Commits ca0cf7e08bf, b9255734bfb.
 
 ---
 
@@ -2987,14 +2987,14 @@ min_pace_period; // milliseconds };"
 Z. 60, `encode_into` Z. 79, `decode` Z. 93, `DeliveryControlForm` Z. 127);
 `crates/xrce-client/src/lib.rs` (`XrceClient::set_delivery_control_form` Z. 372)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::read_data_matches_the_captured_read_data_example`,
-`crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_14_read_data_matches_the_captured_read_data_example`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`
 
 **Status:** `done` — vier `unsigned short` in dieser Reihenfolge, mit DHEADER
 (APPENDABLE). Die Form ohne DHEADER, die der Mitschnitt von eProsima zeigt, ist
 die benannte Einstellung `DeliveryControlForm::Bare`
 (`XrceClient::set_delivery_control_form`); der Leser nimmt beide Formen. Commit
-1663f8f6240.
+b589558e671.
 
 ### §7.7.14 DHEADER von DataDeliveryControl
 
@@ -3004,13 +3004,13 @@ DHEADER.
 **Repo:** `crates/xrce/src/submessages/read_data.rs`
 (`ReadSpecification::encode_into` Z. 151, `decode` Z. 204)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`,
-`crates/xrce/src/submessages/read_data.rs::tests::read_data_matches_the_captured_read_data_example`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_14_read_data_matches_the_captured_read_data_example`
 
 **Status:** `done` — geschrieben wird ein DHEADER mit der Länge 8, auf 4
 ausgerichtet. Annex B.4.2 setzt im DHEADER zusätzlich das Bit 31 (0x80000008),
 das XCDR2 im DHEADER nicht kennt; der Leser nimmt es nicht als Teil der Länge.
-Gelesen wird mit und ohne DHEADER. Commit 1663f8f6240.
+Gelesen wird mit und ohne DHEADER. Commit b589558e671.
 
 ### §7.7.14 ReadSpecification
 
@@ -3022,14 +3022,14 @@ content_filter_expression; @optional DataDeliveryControl delivery_control;
 **Repo:** `crates/xrce/src/submessages/read_data.rs` (`ReadSpecification`
 Z. 114, `encode_into` Z. 151, `decode` Z. 204, `ReadDataPayload` Z. 312)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::read_data_matches_the_captured_read_data_example`,
-`crates/xrce/src/submessages/read_data.rs::tests::read_data_full_spec_roundtrip`,
-`crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_14_read_data_matches_the_captured_read_data_example`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_14_read_data_full_spec_roundtrip`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`
 
 **Status:** `done` — Reihenfolge der Felder, Merker der beiden `@optional`,
 Werte von `data_format` nach Annex A und XCDR2-Zeichenkette (siehe die Items zu
 data_format, content_filter_expression und DataDeliveryControl). Commit
-1663f8f6240.
+b589558e671.
 
 ### §7.7.14 Werte von data_format
 
@@ -3043,18 +3043,18 @@ Z. 69, `from_raw` Z. 78); `crates/xrce/src/submessages/read_data.rs`
 (`ReadSpecification::encode_into` Z. 151);
 `crates/xrce-agent/src/daemon/session.rs` (`data_submessages` Z. 3581)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::the_data_format_octet_has_the_values_of_annex_a`,
-`crates/xrce/src/submessages/read_data.rs::tests::read_spec_rejects_reserved_data_format`,
-`crates/xrce/src/submessages/write_data.rs::tests::data_format_raw_roundtrip`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_data_seq_is_answered_with_one_data_seq`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_is_answered_with_a_sample_each`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_seq_is_answered_with_one_sample_seq`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_packed_samples_is_answered_with_one_packed_samples`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_1_the_data_format_octet_has_the_values_of_annex_a`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_14_read_spec_rejects_reserved_data_format`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_14_data_format_raw_roundtrip`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_data_seq_is_answered_with_one_data_seq`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_14_a_read_for_sample_is_answered_with_a_sample_each`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_sample_seq_is_answered_with_one_sample_seq`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_a_read_for_packed_samples_is_answered_with_one_packed_samples`
 
 **Status:** `done` — `DataFormat::raw` gibt 0x00, 0x02, 0x08, 0x0A und 0x0E;
 `from_raw` liest dieselben Werte, Bits außerhalb von FORMAT_MASK (0x0E) und
 reservierte Kombinationen sind `ValueOutOfRange`. Der Agent liefert DATA im
-verlangten Format. Commits 1663f8f6240, d5fbdbe672e.
+verlangten Format. Commits b589558e671, fd5253ca805.
 
 ### §7.7.14 Kodierung von content_filter_expression
 
@@ -3064,13 +3064,13 @@ verlangten Format. Commits 1663f8f6240, d5fbdbe672e.
 **Repo:** `crates/xrce/src/submessages/read_data.rs`
 (`ReadSpecification::encode_into` Z. 151, `decode` Z. 204)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`,
-`crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`
 
 **Status:** `done` — XCDR2-Zeichenkette: Länge als `unsigned long`, auf 4
 ausgerichtet (ab Beginn der Payload), zählt das NUL mit; das NUL folgt den
 Zeichen. Annex B.4.2 (Füllbyte 15, Länge 6 für "x>100") ist durch einen Test mit
-den Bytes festgehalten. Commit 1663f8f6240.
+den Bytes festgehalten. Commit b589558e671.
 
 ---
 
@@ -3087,13 +3087,13 @@ is associated with a set of permissions for the client within the agent."
 `crates/xrce-agent/src/daemon/access.rs` (`AccessController::permits` Z. 212,
 `Rule` Z. 125)
 
-**Tests:** `crates/xrce-agent/src/lib.rs::tests::multiple_clients_isolated`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::peer_table_resolves_header_client_key_directly`,
-`crates/xrce-agent/src/daemon/access.rs::tests::a_controller_without_rules_restricts_nothing`,
-`crates/xrce-agent/src/daemon/access.rs::tests::the_first_matching_rule_decides_and_no_match_denies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_without_permission_is_denied_and_stores_nothing`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_and_delete_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::write_and_read_without_permission_are_denied`
+**Tests:** `crates/xrce-agent/src/lib.rs::tests::xrce_7_4_multiple_clients_isolated`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_1_peer_table_resolves_header_client_key_directly`,
+`crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_a_controller_without_rules_restricts_nothing`,
+`crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_the_first_matching_rule_decides_and_no_match_denies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_without_permission_is_denied_and_stores_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_get_info_and_delete_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_write_and_read_without_permission_are_denied`
 
 **Status:** `done` — der ClientKey identifiziert den Client. Die Rechte stehen
 im AccessController (§7.4): Regeln je ClientKey für Operation, ObjectKind,
@@ -3101,7 +3101,7 @@ DDS-Domain und Topic (Konfigurationsschlüssel `access_rules`); die erste
 passende Regel entscheidet, ohne Treffer wird verweigert, ohne Regelwerk ist
 alles erlaubt. Eine Operation ohne Recht ergibt STATUS_ERR_DENIED. Die Regeln
 werden beim Start gelesen; ein Neuladen mit SIGHUP ändert sie nicht. Commits
-d66ada44616, 515bcc677f3.
+1c430db8a67, 5f7a8652d95.
 
 ### §7.8.1 ClientKey ist geheim und in Client und Agent konfiguriert
 
@@ -3114,17 +3114,17 @@ are outside the scope of this specification."
 `crates/xrce-agent/src/daemon/config.rs` (`authorized_client_keys`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client` Z. 1227)
 
-**Tests:** `crates/xrce-agent/src/daemon/access.rs::tests::only_configured_client_keys_are_authorized`,
-`crates/xrce-agent/src/daemon/access.rs::tests::a_client_key_is_read_in_wire_order`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_key_not_configured_in_the_agent_is_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::without_configured_client_keys_every_key_is_accepted`
+**Tests:** `crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_only_configured_client_keys_are_authorized`,
+`crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_8_1_a_client_key_is_read_in_wire_order`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_client_key_not_configured_in_the_agent_is_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_1_without_configured_client_keys_every_key_is_accepted`
 
 **Status:** `done` — Konfigurationsschlüssel `authorized_client_keys` (vier
 Oktette in der Reihenfolge der Übertragung); ein ClientKey außerhalb der Liste
 ergibt STATUS_ERR_DENIED und keine Sitzung, ohne Liste nimmt der Agent jeden
 Schlüssel an. Der Client trägt seinen ClientKey ein (`XrceClient::new`). Der
 Schutz des ClientKey auf dem Transport nach §8.3.2.4 sind die Listener `kind:
-dtls` und `kind: tls`. Commits d66ada44616, 515bcc677f3, 01470e273bc.
+dtls` und `kind: tls`. Commits 1c430db8a67, 5f7a8652d95, eb44fbbf575.
 
 ### §7.8.1 ClientKey wird nicht interpretiert
 
@@ -3132,7 +3132,7 @@ dtls` und `kind: tls`. Commits d66ada44616, 515bcc677f3, 01470e273bc.
 
 **Repo:** `crates/xrce/src/header.rs` (`ClientKey` Z. 110)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::client_representation_decodes_the_captured_create_client_prefix`
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_8_1_client_representation_decodes_the_captured_create_client_prefix`
 
 **Status:** `done`
 
@@ -3148,9 +3148,9 @@ operation shall fail."
 `crates/xrce-agent/src/daemon/session.rs` (`create_core` Z. 1583,
 `handle_delete` Z. 2733)
 
-**Tests:** `crates/xrce-agent/src/lib.rs::tests::create_object_for_unknown_client_rejected`,
-`crates/xrce-agent/src/lib.rs::tests::pull_sample_unknown_client_rejected`,
-`crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`
+**Tests:** `crates/xrce-agent/src/lib.rs::tests::xrce_7_8_1_create_object_for_unknown_client_rejected`,
+`crates/xrce-agent/src/lib.rs::tests::xrce_7_8_1_pull_sample_unknown_client_rejected`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`
 
 **Status:** `done` — ein Vorgang für einen ClientKey ohne ProxyClient wird nicht
 ausgeführt; die Sitzung antwortet mit `STATUS_ERR_UNKNOWN_REFERENCE`.
@@ -3163,9 +3163,9 @@ connection to the client."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_message`, `drops_for_unknown_client`, `SessionEvent::NoClient`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_message_to_an_unknown_client_key_is_dropped_and_counted`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_1_a_message_to_an_unknown_client_key_is_dropped_and_counted`
 
-**Status:** done — §7.8.1 lässt zwei Wege: `STATUS_ERR_NOCLIENT` oder stilles Verwerfen. `StatusValue` (Annex A) hat den Wert nicht, der Agent verwirft die Nachricht ohne Antwort und meldet `SessionEvent::NoClient`; `create_client` und `get_info` sind ausgenommen, `delete_client` bekommt seine Antwort nach §7.8.2.3. 7356cbaaa8c.
+**Status:** done — §7.8.1 lässt zwei Wege: `STATUS_ERR_NOCLIENT` oder stilles Verwerfen. `StatusValue` (Annex A) hat den Wert nicht, der Agent verwirft die Nachricht ohne Antwort und meldet `SessionEvent::NoClient`; `create_client` und `get_info` sind ausgenommen, `delete_client` bekommt seine Antwort nach §7.8.2.3. 458b32f4346.
 ### §7.8.1 Zähler für STATUS_ERR_NOCLIENT und Schließen der Verbindung
 **Spec:** §7.8.1, S. 45 — "The Agent shall maintain a counter on the number of
 times the STATUS_ERR_NOCLIENT was sent on an established connection, and once
@@ -3175,9 +3175,9 @@ client transport endpoint that was previously closed."
 
 **Repo:** `crates/xrce-agent/src/daemon/transport.rs` (`PeerTable::strike`, `PeerTable::is_blocked`, `apply_events`); `crates/xrce-agent/src/daemon/config.rs` (`no_client_threshold`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::messages_to_an_unknown_client_key_close_the_connection_at_the_threshold`, `crates/xrce-agent/src/daemon/config.rs::tests::the_no_client_threshold_can_be_set`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_1_messages_to_an_unknown_client_key_close_the_connection_at_the_threshold`, `crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_8_1_the_no_client_threshold_can_be_set`
 
-**Status:** done — der Agent zählt die Nachrichten je Peer an einen unbekannten ClientKey; bei `no_client_threshold` (Vorgabe 16, 0 nie) wird die TCP-Verbindung geschlossen und ein UDP-Peer nicht mehr gelesen. 7356cbaaa8c.
+**Status:** done — der Agent zählt die Nachrichten je Peer an einen unbekannten ClientKey; bei `no_client_threshold` (Vorgabe 16, 0 nie) wird die TCP-Verbindung geschlossen und ein UDP-Peer nicht mehr gelesen. 458b32f4346.
 
 ---
 
@@ -3194,14 +3194,14 @@ ProxyClient object associated with each client."
 `handle_create_client` Z. 1168; Prüfungen Z. 1227 und Z. 1240);
 `crates/xrce-agent/src/daemon/access.rs` (`AccessController`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_key_not_configured_in_the_agent_is_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::client_properties_are_checked_against_what_the_agent_requires`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_client_key_not_configured_in_the_agent_is_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_client_properties_are_checked_against_what_the_agent_requires`
 
 **Status:** `done` — der ProxyClient wird angelegt. Authentifiziert wird durch
 den AccessController: konfigurierte ClientKeys (`authorized_client_keys`) und
 geforderte Properties mit Name und Wert (`required_client_properties`), sonst
-STATUS_ERR_DENIED und keine Sitzung. Commits d66ada44616, 515bcc677f3.
+STATUS_ERR_DENIED und keine Sitzung. Commits 1c430db8a67, 5f7a8652d95.
 
 ### §7.8.2 Table 3 Operationen der Root
 
@@ -3224,7 +3224,7 @@ agent_info (AGENT_Representation): a representation of the Agent."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`
 Z. 1168, `agent_status_reply` Z. 4331)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`
 
 **Status:** `done` — STATUS_AGENT trägt `ResultStatus` und
 `AGENT_Representation` (Item zu §8.3.5.5).
@@ -3242,11 +3242,11 @@ PropertySeq properties; };"
 (`representation_timestamps`); `crates/xrce-client/src/lib.rs`
 (`XrceClient::set_representation_timestamps` Z. 364)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::by_default_the_representations_have_no_timestamp`,
-`crates/xrce/src/handshake.rs::tests::the_prose_form_has_a_time_t_after_the_vendor_id`,
-`crates/xrce/src/handshake.rs::tests::client_representation_decodes_the_captured_create_client_prefix`,
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_by_default_the_representations_have_no_timestamp`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_the_prose_form_has_a_time_t_after_the_vendor_id`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_1_client_representation_decodes_the_captured_create_client_prefix`,
 `crates/xrce-client/src/lib.rs::tests::the_representation_timestamp_is_an_option_of_the_client`,
-`crates/xrce-agent/src/daemon/config.rs::tests::the_form_of_the_representations_can_be_set`
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_8_2_1_the_form_of_the_representations_can_be_set`
 
 **Status:** `done` — die Spec widerspricht sich: der Text (§7.8.2.1, §8.3.5.1.2)
 nennt `Time_t client_timestamp` nach `xrce_vendor_id`; das IDL von Annex A
@@ -3258,7 +3258,7 @@ Einstellung `representation_timestamps: absent | present` (Agent-Schlüssel),
 `XrceClient::set_representation_timestamps` und die Option `representation
 timestamps` im XRCE-Client jedes SDK. Der `Time_t` folgt `UnannotatedTypes` (im
 Standard ein DHEADER mit der Länge 8). Die Tests prüfen die Bytes beider Formen.
-Commits 711f93fd460, a8e8f6953a4.
+Commits f8bdf3cd878, 571ee6893d1.
 
 ### §7.8.2.1 AGENT_Representation mit agent_timestamp
 
@@ -3270,15 +3270,15 @@ agent_timestamp; @optional PropertySeq properties; };"
 `encode_form` Z. 554, `decode_form` Z. 599); `crates/xrce/src/encoding.rs`
 (`RepresentationTimestamps` Z. 214)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::the_agent_representation_follows_the_setting_the_same_way`,
-`crates/xrce/src/handshake.rs::tests::agent_representation_decodes_the_captured_status_agent_body`,
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_the_agent_representation_follows_the_setting_the_same_way`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_agent_representation_decodes_the_captured_status_agent_body`,
 `crates/xrce-client/src/lib.rs::tests::the_representation_timestamp_is_an_option_of_the_client`
 
 **Status:** `done` — wie beim Item zu `client_timestamp`: Standard ist die Form
 von Annex A (S. 106) ohne `agent_timestamp`; die Form mit dem Zeitstempel ist
 die Einstellung `representation_timestamps: present`. Der Agent liest die
 Einstellung beim Start (`server.rs`, `set_representation_timestamps`). Commits
-711f93fd460, a8e8f6953a4.
+f8bdf3cd878, 571ee6893d1.
 
 ### §7.8.2.1 Prüfung von xrce_cookie
 
@@ -3290,13 +3290,13 @@ and set the returnValue StatusValue to STATUS_ERR_INVALID_DATA."
 Z. 455); `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`
 Z. 1175)
 
-**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::refuses_a_payload_whose_cookie_is_not_xrce`,
-`crates/xrce/src/handshake.rs::tests::client_representation_rejects_wrong_cookie`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_wrong_cookie_is_answered_with_a_status_agent`
+**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::xrce_7_8_2_1_refuses_a_payload_whose_cookie_is_not_xrce`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_client_representation_rejects_wrong_cookie`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_wrong_cookie_is_answered_with_a_status_agent`
 
 **Status:** `done` — das Cookie wird geprüft; ein falsches ergibt ein
 STATUS_AGENT mit STATUS_ERR_INVALID_DATA, es wird kein Client registriert.
-Commit ed2ca7b49a9.
+Commit d7aec9c2d78.
 
 ### §7.8.2.1 Antwort auf ein falsches Cookie als STATUS
 
@@ -3306,12 +3306,12 @@ send a STATUS_AGENT message in response".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`
 Z. 1175–1192, `agent_status_reply` Z. 4331)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_wrong_cookie_is_answered_with_a_status_agent`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_unreadable_property_seq_is_refused_with_invalid_data`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_wrong_cookie_is_answered_with_a_status_agent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_an_unreadable_property_seq_is_refused_with_invalid_data`
 
 **Status:** `done` — die Antwort ist ein STATUS_AGENT (§8.3.5.1) mit dem
 ClientKey des Headers, wenn der Header einen hat, sonst aus Nullen. Commit
-ed2ca7b49a9.
+d7aec9c2d78.
 
 ### §7.8.2.1 Prüfung der Hauptversion
 
@@ -3322,7 +3322,7 @@ and set the returnValue StatusValue to STATUS_ERR_INCOMPATIBLE."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`
 Z. 1212)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_rejects_wrong_major_version`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_create_client_rejects_wrong_major_version`
 
 **Status:** `done`
 
@@ -3337,11 +3337,11 @@ STATUS_ERR_DENIED."
 Z. 1227, `deny_create_client` Z. 1337); `crates/xrce-agent/src/daemon/access.rs`
 (`AccessController::client_authorized` Z. 193)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_client_key_not_configured_in_the_agent_is_denied`,
-`crates/xrce-agent/src/daemon/access.rs::tests::only_configured_client_keys_are_authorized`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_client_key_not_configured_in_the_agent_is_denied`,
+`crates/xrce-agent/src/daemon/access.rs::tests::xrce_7_4_only_configured_client_keys_are_authorized`
 
 **Status:** `done` — ein ClientKey außerhalb von `authorized_client_keys` ergibt
-STATUS_ERR_DENIED; es entsteht keine Sitzung. Commits d66ada44616, 515bcc677f3.
+STATUS_ERR_DENIED; es entsteht keine Sitzung. Commits 1c430db8a67, 5f7a8652d95.
 
 ### §7.8.2.1 Prüfung der properties
 
@@ -3356,16 +3356,16 @@ value."
 (`decode_properties` Z. 266); `crates/xrce-agent/src/daemon/session.rs`
 (`handle_create_client` Z. 1240)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::client_properties_are_checked_against_what_the_agent_requires`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_unreadable_property_seq_is_refused_with_invalid_data`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_big_endian_create_client_with_properties_is_read_right`,
-`crates/xrce/src/handshake.rs::tests::a_malformed_property_seq_is_an_error_not_absent_properties`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_client_properties_are_checked_against_what_the_agent_requires`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_an_unreadable_property_seq_is_refused_with_invalid_data`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_big_endian_create_client_with_properties_is_read_right`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_a_malformed_property_seq_is_an_error_not_absent_properties`
 
 **Status:** `done` — verlangt der Agent Properties
 (`required_client_properties`, Name und Wert), antwortet er ohne sie oder mit
 anderem Wert mit STATUS_ERR_DENIED. Eine nicht lesbare PropertySeq ist ein
 Fehler und wird mit STATUS_ERR_INVALID_DATA beantwortet; sie gilt nicht als
-"keine Properties". Commits 515bcc677f3, 65cd1820a04.
+"keine Properties". Commits 5f7a8652d95, ca0cf7e08bf.
 
 ### §7.8.2.1 Bestehender ProxyClient mit gleicher session_id
 
@@ -3376,12 +3376,12 @@ returnValue StatusValue to STATUS_OK."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`
 Z. 1274 `same_session`, Z. 1302–1332)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_same_session_id_reconnect_keeps_object_store`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_for_the_same_session_leaves_the_streams_alone`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_create_client_same_session_id_reconnect_keeps_object_store`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_create_client_for_the_same_session_leaves_the_streams_alone`
 
 **Status:** `done` — Objektspeicher und Streams bleiben, die Antwort ist
 STATUS_OK. Die Variante, die die Streams zurücksetzt, ist die Einstellung des
-folgenden Items. Commit ed2ca7b49a9.
+folgenden Items. Commit d7aec9c2d78.
 
 ### §7.8.2.1 Streams bei gleicher session_id
 
@@ -3391,10 +3391,10 @@ folgenden Items. Commit ed2ca7b49a9.
 Z. 1290, `SessionEngineConfig::restart_on_same_session`);
 `crates/xrce-agent/src/daemon/config.rs` (`same_session_create_client`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_for_the_same_session_leaves_the_streams_alone`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_for_the_same_session_can_restart_the_streams`,
-`crates/xrce-agent/src/daemon/config.rs::tests::a_create_client_for_the_same_session_can_restart_the_streams`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_create_client_for_the_same_session_leaves_the_streams_alone`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_create_client_for_the_same_session_can_restart_the_streams`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_8_2_1_a_create_client_for_the_same_session_can_restart_the_streams`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** `done` — Standard `keep` (Spec): ein CREATE_CLIENT mit der
 session_id des bestehenden ProxyClient "shall not perform any action", die
@@ -3403,7 +3403,7 @@ restart`: der Agent verwirft die Zustände der Reliable Streams, der
 Fragmentierung, den Rückstau und die Zähler der Best-Effort-Streams. Das
 brauchen die Prozesse von eProsima, die ClientKey und `session_id`
 wiederverwenden und bei der Sequenznummer 0 beginnen (Mitschnitt; der
-Replay-Test setzt `restart`). Commit ed2ca7b49a9.
+Replay-Test setzt `restart`). Commit d7aec9c2d78.
 
 ### §7.8.2.1 Bestehender ProxyClient mit anderer session_id
 
@@ -3415,7 +3415,7 @@ ProxyClient associated with the client_key."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`
 Z. 1275)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_different_session_id_resets_object_store`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_create_client_different_session_id_resets_object_store`
 
 **Status:** `done`
 
@@ -3427,9 +3427,9 @@ STATUS_ERR_RESOURCES."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::create_client_over_max_clients_is_a_resource_error`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_7_create_client_over_max_clients_is_a_resource_error`
 
-**Status:** done — `handle_create_client` prüft `max_clients` und antwortet mit STATUS_ERR_RESOURCES; ein erneutes CREATE_CLIENT eines vorhandenen Clients bleibt STATUS_OK (0f85937a436).
+**Status:** done — `handle_create_client` prüft `max_clients` und antwortet mit STATUS_ERR_RESOURCES; ein erneutes CREATE_CLIENT eines vorhandenen Clients bleibt STATUS_OK (02c704651e4).
 ### §7.8.2.1 Löschen setzt den Zustand der Kommunikation zurück
 
 **Spec:** §7.8.2.1, S. 47 — "deletion of an existing ProxyClient resets any
@@ -3439,8 +3439,8 @@ were cached pending acknowledgments shall be discarded."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`
 Z. 1275–1301, `handle_delete` Z. 2733)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_different_session_id_resets_object_store`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_create_client_different_session_id_resets_object_store`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** `done`
 
@@ -3455,8 +3455,8 @@ STATUS_OK. Return a representation of the XRCE Agent in the agent_info."
 Z. 1302–1332); `crates/xrce/src/reliable.rs` (`ReliableStreamState::new`:
 `next_seq = 0`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`,
-`crates/xrce-agent/src/daemon/session.rs::tests::reliable_outbound_messages_get_real_incrementing_sequence_numbers`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_reliable_outbound_messages_get_real_incrementing_sequence_numbers`
 
 **Status:** `done`
 
@@ -3497,11 +3497,11 @@ representation of the Agent."
 `crates/xrce/src/submessages/get_info.rs` (`GetInfoPayload::with_client_info`
 Z. 45)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_checks_the_version_in_client_info`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_info_mask_selects_activity_and_configuration`,
-`crates/xrce/src/object_info.rs::tests::info_mask_bits_and_wire_form`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_the_agent_checks_the_version_in_client_info`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_the_info_mask_selects_activity_and_configuration`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_info_mask_bits_and_wire_form`
 
 **Status:** `done` — INFO mit `ResultStatus` und dem `ObjectInfo` des Agent.
 `info_mask` ist ein 32-Bit-Merker (`InfoMask`), den der Agent aus dem GET_INFO
@@ -3509,8 +3509,8 @@ liest; er wählt `activity` und `config`. `client_info`: `GET_INFO_Payload`
 (§8.3.5.3.2, Annex A) hat dafür kein Member, §7.8.2.2 und Figure 10 (§8.4.4)
 nennen es. Standard ist die Payload von Annex A;
 `GetInfoPayload::with_client_info` hängt `client_info` hinter die InfoMask, der
-Agent liest es, wenn es da ist (Item zu `client_info`). Commits 65cd1820a04,
-5798b040952.
+Agent liest es, wenn es da ist (Item zu `client_info`). Commits ca0cf7e08bf,
+fd2e9a5bcfd.
 
 ### §7.8.2.2 get_info vor create_client und über eine andere Verbindung
 
@@ -3523,16 +3523,16 @@ connection".
 Z. 43); `crates/xrce-agent/src/daemon/session.rs` (`refusal` Z. 936,
 `handle_submessage` Z. 1141, `handle_get_info` Z. 2838)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_udp_listener_answers_get_info_before_a_session`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_tcp_listener_answers_get_info_before_a_session`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_a_session_is_answered_for_the_agent_only`
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_udp_listener_answers_get_info_before_a_session`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_tcp_listener_answers_get_info_before_a_session`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_a_session_is_answered_for_the_agent_only`
 
 **Status:** `done` — der Responder auf dem Port der Discovery und die
 Sitzungs-Engine auf den Listenern für UDP und TCP beantworten
 GET_INFO(OBJK_AGENT) ohne Sitzung; auch ein anderer Transport als der der
 folgenden Sitzung ist möglich. Für den Listener der seriellen Leitung gibt es
-keinen eigenen Test. Commits 65cd1820a04, 67ead4d9708.
+keinen eigenen Test. Commits ca0cf7e08bf, a8f300b7bcf.
 
 ### §7.8.2.2 GET_INFO ohne Sitzung an einem Listener
 
@@ -3541,15 +3541,15 @@ keinen eigenen Test. Commits 65cd1820a04, 67ead4d9708.
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`refusal` Z. 936,
 `handle_submessage` Z. 1141, `handle_get_info` Z. 2838)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::the_udp_listener_answers_get_info_before_a_session`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_tcp_listener_answers_get_info_before_a_session`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_a_session_is_answered_for_the_agent_only`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_udp_listener_answers_get_info_before_a_session`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_tcp_listener_answers_get_info_before_a_session`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_a_session_is_answered_for_the_agent_only`
 
 **Status:** `done` — `handle_submessage` reicht ein GET_INFO ohne aufgelösten
 Client oder mit Header ohne Sitzung an `handle_get_info(None, ...)`;
 `GET_INFO(OBJK_AGENT)` vor CREATE_CLIENT wird auf den Listenern für UDP und TCP
 beantwortet, jede andere Art mit `STATUS_ERR_UNKNOWN_REFERENCE`. Commits
-65cd1820a04, 67ead4d9708.
+ca0cf7e08bf, a8f300b7bcf.
 
 ### §7.8.2.2 client_info mit CLIENT_Representation und CLIENTKEY_INVALID
 
@@ -3565,10 +3565,10 @@ CLIENT_Representation shall be set to the value CLIENTKEY_INVALID".
 Z. 113); `crates/xrce-client/src/lib.rs` (`XrceClient::request_agent_info`
 Z. 622)
 
-**Tests:** `crates/xrce/src/submessages/get_info.rs::tests::client_info_follows_the_info_mask`,
+**Tests:** `crates/xrce/src/submessages/get_info.rs::tests::xrce_7_8_2_2_client_info_follows_the_info_mask`,
 `crates/xrce-client/src/discovery.rs::tests::client_info_names_the_version_and_hides_the_client_key`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_checks_the_version_in_client_info`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::a_client_of_another_major_version_is_answered_incompatible`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_the_agent_checks_the_version_in_client_info`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_a_client_of_another_major_version_is_answered_incompatible`,
 `crates/xrce-client/src/lib.rs::tests::request_agent_info_works_before_the_session_and_sends_the_mask`
 
 **Status:** `done` — `client_info` ist ein `ObjectInfo` hinter der InfoMask,
@@ -3579,7 +3579,7 @@ liest es: eine andere Hauptversion ergibt INFO mit STATUS_ERR_INCOMPATIBLE
 (Figure 10), eine nicht lesbare oder keine CLIENT_Representation
 STATUS_ERR_INVALID_DATA. Der Client sendet es nur auf
 `AgentDiscovery::with_client_info`; `XrceClient::request_agent_info` sendet das
-GET_INFO von Annex A. Commits 65cd1820a04, 5798b040952.
+GET_INFO von Annex A. Commits ca0cf7e08bf, fd2e9a5bcfd.
 
 ### §7.8.2.2 agent_info mit AGENT_Representation und AGENT_ActivityInfo
 
@@ -3591,15 +3591,15 @@ agent_info shall contain an AGENT_Representation".
 Z. 4242); `crates/xrce-agent/src/daemon/discovery.rs` (`build_info_reply`
 Z. 107)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_info_mask_selects_activity_and_configuration`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_the_info_mask_selects_activity_and_configuration`
 
 **Status:** `done` — `activity` trägt `ActivityInfoVariant::Agent`
 (`AGENT_ActivityInfo`, Layout siehe §7.7.12), `config` die
 `AGENT_Representation`. Der Text vertauscht die beiden Member: `config` ist
 `ObjectVariant`, `activity` `ActivityInfoVariant`; der Code folgt Annex A.
-Commit 65cd1820a04.
+Commit ca0cf7e08bf.
 
 ### §7.8.2.2 AGENT_Representation in agent_info
 
@@ -3609,14 +3609,14 @@ Commit 65cd1820a04.
 Z. 4242, `handle_get_info` Z. 2838); `crates/xrce-agent/src/daemon/discovery.rs`
 (`build_info_reply` Z. 107)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_info_mask_selects_activity_and_configuration`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_the_info_mask_selects_activity_and_configuration`
 
 **Status:** `done` — `config` ist `ObjectConfig::Agent(AgentRepresentation)` mit
 Version und Vendor des Agent, soweit die InfoMask `config` verlangt; damit wählt
 ein Client nach §8.4.4 einen Agent aus. `properties` ist leer. Commit
-65cd1820a04.
+ca0cf7e08bf.
 
 ### §7.8.2.2 address_seq meldet die Adressen
 **Spec:** §7.8.2.2, S. 48 — "ActivityInfoVariant member address_seq shall be
@@ -3625,17 +3625,17 @@ reached and can receive calls to create_client."
 
 **Repo:** `crates/xrce-agent/src/daemon/server.rs` (`listener_locators`)
 
-**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_maps_udp_tcp_and_ipv6`, `crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_names_the_secured_and_the_serial_listeners`
+**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_maps_udp_tcp_and_ipv6`, `crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_names_the_secured_and_the_serial_listeners`
 
-**Status:** done — `address_seq` trägt die Adressen der Listener: UDP und TCP mit IPv4 als `ADDRESS_FORMAT_MEDIUM`, mit IPv6 als `ADDRESS_FORMAT_LARGE` (§11.2.1, §11.3.1), als `TransportLocatorSeq` im `AGENT_ActivityInfo` mit DHEADER; DTLS, TLS und eine serielle Leitung als `ADDRESS_FORMAT_STRING` (nächstes Item). c304e509660, 65cd1820a04, 8d2b85bfeb6.
+**Status:** done — `address_seq` trägt die Adressen der Listener: UDP und TCP mit IPv4 als `ADDRESS_FORMAT_MEDIUM`, mit IPv6 als `ADDRESS_FORMAT_LARGE` (§11.2.1, §11.3.1), als `TransportLocatorSeq` im `AGENT_ActivityInfo` mit DHEADER; DTLS, TLS und eine serielle Leitung als `ADDRESS_FORMAT_STRING` (nächstes Item). 299b3a41398, ca0cf7e08bf, 0ac394aa5bf.
 ### §7.8.2.2 address_seq nennt die Listener mit DTLS und TLS
 **Spec:** §7.8.2.2, S. 48 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/server.rs` (`listener_locators`)
 
-**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_names_the_secured_and_the_serial_listeners`
+**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_names_the_secured_and_the_serial_listeners`
 
-**Status:** done — die Listener `kind: dtls` und `kind: tls` werden als `ADDRESS_FORMAT_STRING`-Locator gemeldet (`dtls://host:port`, `tls://host:port`), eine serielle Leitung als `serial://device?address=n`: `TransportLocatorFormat` hat dafür keinen eigenen Wert, und ein einfacher Locator desselben Hosts brächte einen Client dazu, ohne den Schutz nach §8.3.2.4 zu verbinden. 8d2b85bfeb6.
+**Status:** done — die Listener `kind: dtls` und `kind: tls` werden als `ADDRESS_FORMAT_STRING`-Locator gemeldet (`dtls://host:port`, `tls://host:port`), eine serielle Leitung als `serial://device?address=n`: `TransportLocatorFormat` hat dafür keinen eigenen Wert, und ein einfacher Locator desselben Hosts brächte einen Client dazu, ohne den Schutz nach §8.3.2.4 zu verbinden. 0ac394aa5bf.
 ### §7.8.2.2 properties für eine Authentifizierung
 
 **Spec:** §7.8.2.2, S. 48 — "The properties field of type PropertySeq [...] may
@@ -3656,8 +3656,8 @@ returnValue StatusValue shall be set to STATUS_OK."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete` Z. 2733)
 
 **Tests:** `crates/xrce-client/src/lib.rs::tests::disconnect_sends_delete_client_and_clears_state`,
-`crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** `done`
 
@@ -3671,12 +3671,12 @@ STATUS_ERR_UNKNOWN_REFERENCE."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete` Z. 2733:
 `deletes_client`, `deleted_clients`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`
 
 **Status:** `done` — `DELETE(OBJECTID_CLIENT)` für einen ClientKey ohne
 ProxyClient ergibt `STATUS_ERR_UNKNOWN_REFERENCE`. Dieselbe Anfrage noch einmal,
 die die Sitzung beendet hat, ist eine Wiederholung und bekommt `STATUS_OK`.
-Commits ed2ca7b49a9, ffa31fc59af.
+Commits d7aec9c2d78, 09a995c86f4.
 
 ---
 
@@ -3690,7 +3690,7 @@ by the ClientKey."
 
 **Repo:** `crates/xrce-agent/src/lib.rs` (`XrceAgent::clients` Z. 102)
 
-**Tests:** `crates/xrce-agent/src/lib.rs::tests::register_client_idempotent`
+**Tests:** `crates/xrce-agent/src/lib.rs::tests::xrce_7_8_3_register_client_idempotent`
 
 **Status:** `done`
 
@@ -3716,7 +3716,7 @@ parameter."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create` Z. 1452,
 `create_core` Z. 1583, `status_reply` Z. 4293)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** `done`
 
@@ -3730,12 +3730,12 @@ to construct the 'input' ObjectId."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create` Z. 1531:
 `ObjectId::new(request.object_id.raw_id_12(), kind)`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_object_id_is_the_prefix_and_the_kind_of_the_representation`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_the_object_id_is_the_prefix_and_the_kind_of_the_representation`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** `done` — die `ObjectId` besteht aus dem Präfix des Requests (12 Bit)
 und der Art des Diskriminators der Repräsentation; das STATUS nennt sie. Commit
-e4d37a6aff6.
+70963ac46ec.
 
 ### §7.8.3.1 object_id mit anderem Halbbyte
 
@@ -3744,12 +3744,12 @@ e4d37a6aff6.
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`
 Z. 1531–1544)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_object_id_is_the_prefix_and_the_kind_of_the_representation`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_the_object_id_is_the_prefix_and_the_kind_of_the_representation`
 
 **Status:** `done` — das untere Halbbyte der `object_id` des Requests wird nicht
 gelesen: auch mit einer anderen Art darin legt `handle_create` das Objekt der
 Art des Diskriminators unter demselben Präfix an (im Test ein Participant unter
-der `object_id` einer Publisher-Art). Commit e4d37a6aff6.
+der `object_id` einer Publisher-Art). Commit 70963ac46ec.
 
 ### §7.8.3.1 Table 5: Objekt existiert nicht
 
@@ -3759,7 +3759,7 @@ object according to Table 6."
 **Repo:** `crates/xrce/src/object_store.rs` (`ObjectStore::create` Z. 152,
 `CreateOutcome::Created` Z. 175)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_inserts_new_object`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_8_3_1_create_inserts_new_object`
 
 **Status:** `done`
 
@@ -3771,7 +3771,7 @@ Set the StatusValue within returnValue to: STATUS_ERR_ALREADY_EXISTS."
 **Repo:** `crates/xrce/src/object_store.rs` (`CreateOutcome::Conflict` Z. 208);
 `crates/xrce-agent/src/daemon/session.rs` (`create_core` Z. 1692)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_strict_on_existing_returns_conflict`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_6_create_strict_on_existing_returns_conflict`
 
 **Status:** `done`
 
@@ -3784,11 +3784,11 @@ object as specified by the delete operation. Create object according to Table
 **Repo:** `crates/xrce/src/object_store.rs` (`CreateOutcome::Replaced` Z. 206);
 `crates/xrce-agent/src/daemon/session.rs` (`create_core` Z. 1700)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_replace_increments_version`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_replace_that_fails_returns_the_object_to_its_previous_configuration`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_8_3_1_create_replace_increments_version`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_a_replace_that_fails_returns_the_object_to_its_previous_configuration`
 
 **Status:** `done` — dazu gehört, dass ein fehlschlagendes Ersetzen das Objekt
-in die vorige Konfiguration zurückführt (§7.8.3.2). Commit e4d37a6aff6.
+in die vorige Konfiguration zurückführt (§7.8.3.2). Commit 70963ac46ec.
 
 ### §7.8.3.1 Table 5: reuse=TRUE, replace=FALSE, existiert
 
@@ -3800,14 +3800,14 @@ STATUS_ERR_MISMATCH."
 **Repo:** `crates/xrce/src/object_store.rs` (`CreateOutcome::Reused` Z. 180);
 `crates/xrce-agent/src/daemon/session.rs` (`create_core` Z. 1688–1693)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_reuse_returns_equal_marker`,
-`crates/xrce-agent/src/daemon/session.rs::tests::reuse_compares_the_container_of_the_representation`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_7_7_create_reuse_returns_equal_marker`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_reuse_compares_the_container_of_the_representation`
 
 **Status:** `done` — gleich: `STATUS_OK_MATCHED`, ungleich:
 `STATUS_ERR_MISMATCH`, in beiden Fällen ohne Änderung. Table 5 schreibt
 `STATUS_OK_MATCHES`; `StatusValue` in Annex A und `ResultStatusCode::OkMatched`
 (0x01) heißen `STATUS_OK_MATCHED`. Verglichen werden Repräsentation, Container
-und Domain (Item unten). Commit e4d37a6aff6.
+und Domain (Item unten). Commit 70963ac46ec.
 
 ### §7.8.3.1 Vergleich mit participant_id, publisher_id, domain_id
 
@@ -3817,13 +3817,13 @@ und Domain (Item unten). Commit e4d37a6aff6.
 `same_extra`, `ObjectVariantExtra`); `crates/xrce/src/object_store.rs`
 (`ObjectStore::create` Z. 152)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::reuse_compares_the_container_of_the_representation`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_reuse_compares_the_container_of_the_representation`
 
 **Status:** `done` — der Vergleich bei `reuse` schließt den Container
 (participant_id, publisher_id, subscriber_id) und die domain_id ein, die der
 Objektspeicher nicht hält (`ObjectVariantExtra` je Objekt in der Sitzung).
 Dieselbe XML-Zeichenkette unter einem anderen Container ergibt
-`STATUS_ERR_MISMATCH`. Commit e4d37a6aff6.
+`STATUS_ERR_MISMATCH`. Commit 70963ac46ec.
 
 ### §7.8.3.1 Table 5: reuse=TRUE, replace=TRUE, existiert
 
@@ -3836,12 +3836,12 @@ Table 6. Set the StatusValue within returnValue to: STATUS_OK."
 **Repo:** `crates/xrce/src/object_store.rs` (`ObjectStore::create` Z. 177–192);
 `crates/xrce-agent/src/daemon/session.rs` (`create_core` Z. 1672–1681)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_reuse_and_replace_replaces_an_unequal_object`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_8_3_1_create_reuse_and_replace_replaces_an_unequal_object`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`
 
 **Status:** `done` — bei Gleichheit `STATUS_OK_MATCHED` ohne Änderung, bei
 Ungleichheit wird das Objekt gelöscht und neu angelegt (`STATUS_OK`), die
-DDS-Seite eingeschlossen. Commit 8b949a13ef5.
+DDS-Seite eingeschlossen. Commit 3b066516f69.
 
 ### §7.8.3.1 reuse und replace ersetzen ein ungleiches Objekt
 
@@ -3850,10 +3850,10 @@ DDS-Seite eingeschlossen. Commit 8b949a13ef5.
 **Repo:** `crates/xrce/src/object_store.rs` (`ObjectStore::create` Z. 177–192);
 `crates/xrce-agent/src/daemon/session.rs` (`create_core` Z. 1672–1681)
 
-**Tests:** `crates/xrce/src/object_store.rs::tests::create_reuse_and_replace_replaces_an_unequal_object`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_update_of_a_missing_object_creates_it_or_is_refused`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_update_needs_the_permission_to_update`
+**Tests:** `crates/xrce/src/object_store.rs::tests::xrce_7_8_3_1_create_reuse_and_replace_replaces_an_unequal_object`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_the_update_of_a_missing_object_creates_it_or_is_refused`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_an_update_needs_the_permission_to_update`
 
 **Status:** `done` — `ObjectStore::create` behandelt `reuse` mit und ohne
 `replace` verschieden: ohne `replace` ergibt ein ungleiches Objekt
@@ -3863,7 +3863,7 @@ Berechtigung `update` im AccessController, ohne vorhandenes Objekt wird angelegt
 (Table 5); `update_of_missing_object: refuse` liefert
 `STATUS_ERR_UNKNOWN_REFERENCE` (§7.8.3.2). Die beiden Lesarten widersprechen
 sich in der Spec; Standard ist Table 5, getestet in
-`the_update_of_a_missing_object_creates_it_or_is_refused`. Commit 8b949a13ef5.
+`xrce_7_8_3_1_the_update_of_a_missing_object_creates_it_or_is_refused`. Commit 3b066516f69.
 
 ### §7.8.3.1 Alle Repräsentationen mit Referenz und XML
 
@@ -3876,8 +3876,8 @@ REPRESENTATION_BY_REFERENCE and the REPRESENTATION_AS_XML_STRING."
 `handle_create` Z. 1508); `crates/xrce-agent/src/daemon/config.rs`
 (`representation_formats`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`,
-`crates/xrce-agent/src/daemon/config.rs::tests::the_representation_formats_can_be_widened`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_7_3_1_the_representation_formats_can_be_widened`
 
 **Status:** `done` — die Spec widerspricht sich: der Text sagt, alle
 Repräsentationen hätten `REPRESENTATION_BY_REFERENCE` und
@@ -3890,7 +3890,7 @@ Publisher, Subscriber, DataWriter und DataReader binär oder XML
 STATUS_ERR_INVALID_DATA. Die benannte Einstellung `representation_formats: any`
 nimmt jedes Format an, für Clients, die Publisher, Subscriber, DataWriter und
 DataReader per Referenz anlegen; gegen einen solchen Client nicht gemessen.
-Commits bdf3f6ee966, f0995555d4a.
+Commits 0429eab4fb2, 23d8f50c712.
 
 ### §7.8.3.1 Eingebettete Objekte
 
@@ -3903,15 +3903,15 @@ well."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`create_nested` Z. 1833,
 `create_embedded` Z. 1785, `create_core` Z. 1743–1759)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_creates_the_objects_inside_it`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_with_a_broken_part_creates_nothing`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_participant_definition_creates_the_objects_inside_it`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_6_2_a_participant_definition_with_a_broken_part_creates_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`
 
 **Status:** `done` — ein DomainParticipant oder eine Application legt die
 Objekte an, die ihre Definition enthält (DDS-XML), ebenso ein Publisher oder
 Subscriber seine eingebetteten DataWriter und DataReader. Schlägt ein Kind fehl,
 scheitert das Ganze: was angelegt war, wird entfernt (`remove_with_nested`) und
-das vorige Objekt kommt zurück. Commits 3aea52dd70a, 9239562286c.
+das vorige Objekt kommt zurück. Commits 9d5c64dc398, b97657ef4ec.
 ### §7.8.3.1 Proxy legt die DDS-Entität an
 
 **Spec:** §7.8.3.1, S. 50 — "Some of the XRCE objects may be defined by this
@@ -3925,12 +3925,12 @@ XRCE Object will automatically trigger the creation of the proxy DDS Entity."
 `DdsPort::create_writer`, `DdsPort::create_reader`);
 `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_publisher_is_a_dds_entity_of_its_participants_domain`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_5_a_publisher_is_a_dds_entity_of_its_participants_domain`
 
-**Status:** `done` — Commits `dd55e9c9df1`. Participant, Topic, Publisher, Subscriber,
+**Status:** `done` — Commits `505c2e56d24`. Participant, Topic, Publisher, Subscriber,
 DataWriter und DataReader haben eine DDS-Entität. Publisher und Subscriber legen
 `DdsPort::create_publisher` und `create_subscriber` an (PRESENTATION,
 ENTITY_FACTORY, PARTITION, GROUP_DATA werden angewendet). QosProfile, Type und
@@ -3944,11 +3944,11 @@ considered a failure to create the proxy XRCE object as well."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`create_core`,
 `apply_dds_create`, `remove_with_nested`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_dds_entity_is_enabled_when_the_creation_has_succeeded`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_with_a_broken_part_creates_nothing`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_dds_entity_is_enabled_when_the_creation_has_succeeded`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_6_2_a_participant_definition_with_a_broken_part_creates_nothing`
 
-**Status:** `done` — Commits `e4d37a6aff6`, `3aea52dd70a`. Scheitert `apply_dds_create`
+**Status:** `done` — Commits `70963ac46ec`, `9d5c64dc398`. Scheitert `apply_dds_create`
 oder `DdsPort::enable`, löscht `create_core` die DDS-Seite und den
 Speichereintrag und antwortet mit dem Code des Fehlers. Scheitert ein
 eingebettetes Objekt, entfällt das ganze Objekt (`remove_with_nested`).
@@ -3962,9 +3962,9 @@ the creation has succeeded."
 
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`enable`, `create_participant_with`); `crates/xrce-agent/src/daemon/session.rs` (`create_core`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_participant_qos_is_applied_to_the_participant`, `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::an_endpoint_is_announced_only_when_it_is_enabled`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_1_a_participant_qos_is_applied_to_the_participant`, `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_8_3_1_an_endpoint_is_announced_only_when_it_is_enabled`
 
-**Status:** done — DataWriter, DataReader und DomainParticipant werden erst mit `DdsPort::enable` beim `DcpsRuntime` registriert und damit entdeckt; `create_core` ruft `enable` auf, wenn das Objekt gespeichert ist und nichts mehr scheitern kann. Ein Objekt, das beim Anlegen oder in `enable` scheitert, wird nie angekündigt. e4d37a6aff6, 232eb724129.
+**Status:** done — DataWriter, DataReader und DomainParticipant werden erst mit `DdsPort::enable` beim `DcpsRuntime` registriert und damit entdeckt; `create_core` ruft `enable` auf, wenn das Objekt gespeichert ist und nichts mehr scheitern kann. Ein Objekt, das beim Anlegen oder in `enable` scheitert, wird nie angekündigt. 70963ac46ec, 348ad4265e7.
 ### §7.8.3.1 DomainParticipant wird deaktiviert angelegt
 **Spec:** §7.8.3.1, S. 50 — "This means that all DDS entities shall be created
 disabled [...] and enabled (if so configured by their QoS) only after it has
@@ -3972,9 +3972,9 @@ been determined that the creation has succeeded."
 
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`create_participant_with`, `enable`, `runtime_for`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_participant_qos_is_applied_to_the_participant`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_1_a_participant_qos_is_applied_to_the_participant`
 
-**Status:** done — `create_participant_with` startet keinen Runtime mehr; es merkt sich den Participant (bei USER_DATA den Platz eines eigenen Runtime), `enable` startet ihn, wenn das CREATE gelingt. Eine Domain-ID über 232 wird beim CREATE abgewiesen. 232eb724129.
+**Status:** done — `create_participant_with` startet keinen Runtime mehr; es merkt sich den Participant (bei USER_DATA den Platz eines eigenen Runtime), `enable` startet ihn, wenn das CREATE gelingt. Eine Domain-ID über 232 wird beim CREATE abgewiesen. 348ad4265e7.
 ### §7.8.3.1 Erfolg ergibt STATUS_OK
 
 **Spec:** §7.8.3.1, S. 50 — "If the creation succeeds the Agent shall set the
@@ -3983,7 +3983,7 @@ StatusValue within returnStatus to STATUS_OK.."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`,
 `create_core`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done — Eine erfolgreiche Anlage ist STATUS_OK; bei `reuse` mit
 gleicher Darstellung STATUS_OK_MATCHED (Table 5 schreibt STATUS_OK_MATCHES,
@@ -3998,10 +3998,10 @@ create an XRCE QosProfile in accordance to the representation defined in
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`,
 `definition_to_register`, `rebuild_profiles`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::type_and_qos_profile_xml_follow_their_clauses`,
-`crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_2_2_type_and_qos_profile_xml_follow_their_clauses`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`
 
-**Status:** `done` — Commits `3aea52dd70a`, `9239562286c`. Das Objekt hat keine
+**Status:** `done` — Commits `9d5c64dc398`, `b97657ef4ec`. Das Objekt hat keine
 DDS-Entität. Ein `<qos_library>` mit einem `<qos_profile>` ist dem Agenten als
 Definition bekannt, solange das Objekt besteht; andere Clients legen es per
 REPRESENTATION_BY_REFERENCE an. Eine Referenz löst sich gegen die Profildateien
@@ -4013,7 +4013,7 @@ create an XRCE Type in accordance to the representation defined in 7.7.3.3."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`types`); `crates/xrce-agent/src/daemon/session.rs` (`find_type_definition`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`
 
 **Status:** done — XML `<types>` (genau ein nicht verschachtelter Typ) und ein binäres `TypeObject` legen Typen an; eine Referenz löst sich gegen die dem Agenten bekannten Typen auf, und ein Typ darf auf einen bereits bekannten Typ verweisen (Item zu §7.7.3.3.2).
 ### §7.8.3.1 Table 6 OBJK_APPLICATION
@@ -4026,10 +4026,10 @@ definition in accordance to the representation defined in 7.7.3.5."
 `create_nested`, `ensure_predefined`);
 `crates/xrce-agent/src/daemon/definitions.rs` (`plan_participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`
 
-**Status:** `done` — Commits `9239562286c`, `b6e55cfa859`. `create_nested` legt die
+**Status:** `done` — Commits `b97657ef4ec`, `2ba972cd270`. `create_nested` legt die
 DomainParticipants der Application mit den Objekten in ihnen unter den ObjectIds
 ihrer Namen an (Table 16); ein zweites Anlegen verwendet die vorhandenen Objekte
 wieder.
@@ -4047,15 +4047,15 @@ representation defined in 7.7.3.6."
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`);
 `crates/xrce-agent/src/daemon/binary_forms.rs` (`participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_creates_the_objects_inside_it`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_with_a_broken_part_creates_nothing`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::full_chain_against_a_real_leased_domain`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_participant_qos_is_applied_to_the_participant`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_participant_domain_comes_from_the_wire_unless_the_xml_names_one`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_domain_reference_is_resolved_against_the_domain_libraries`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_participant_qos_profile_reference_is_applied`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_participant_definition_creates_the_objects_inside_it`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_6_2_a_participant_definition_with_a_broken_part_creates_nothing`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_full_chain_against_a_real_leased_domain`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_1_a_participant_qos_is_applied_to_the_participant`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_8_3_1_the_participant_domain_comes_from_the_wire_unless_the_xml_names_one`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_4_1_a_domain_reference_is_resolved_against_the_domain_libraries`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_a_participant_qos_profile_reference_is_applied`
 
-**Status:** `done` — Commits `3aea52dd70a`, `b4cd825c268`. Der Participant bindet den
+**Status:** `done` — Commits `9d5c64dc398`, `0b67c04800c`. Der Participant bindet den
 `DcpsRuntime` seiner Domain. Die Entitäten in der Definition werden mit ihm
 angelegt; scheitert eine, entfällt der ganze Participant. `domain_reference` und
 `qos_profile_reference` der Binärform werden aufgelöst.
@@ -4073,12 +4073,12 @@ by the participant_id."
 `participant_of_create`); `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::create_topic`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dds_port.rs::tests::null_port_rejects_topic_before_participant`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_is_created_by_name_or_by_register_type_ref`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`
+**Tests:** `crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_7_3_7_null_port_rejects_topic_before_participant`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_a_topic_is_created_by_name_or_by_register_type_ref`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`
 
-**Status:** `done` — Commits `0da6aef56b5`. Das Topic ist im `DcpsRuntime` Name und Typ
+**Status:** `done` — Commits `969c784c93b`. Das Topic ist im `DcpsRuntime` Name und Typ
 seiner Endpunkte. Ein Typ, den der Agent nicht kennt, folgt dem Agent-Schlüssel
 `unknown_topic_types`: `refuse` (Standard) antwortet
 STATUS_ERR_UNKNOWN_REFERENCE und legt nichts an, `forward` legt das Topic an und
@@ -4096,12 +4096,12 @@ DomainParticipant identified by the participant_id."
 `participant_of_create`, `DdsCreate::Container`);
 `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::create_publisher`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_or_subscriber_needs_an_existing_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_publisher_is_a_dds_entity_of_its_participants_domain`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_or_subscriber_needs_an_existing_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_5_a_publisher_is_a_dds_entity_of_its_participants_domain`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_5_publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
 
-**Status:** `done` — Commits `dd55e9c9df1`. Ein Participant, den der Client nicht hat,
+**Status:** `done` — Commits `505c2e56d24`. Ein Participant, den der Client nicht hat,
 ergibt STATUS_ERR_UNKNOWN_REFERENCE; eine `participant_id` anderer Art
 STATUS_ERR_INVALID_DATA; nichts wird gespeichert. Der DDS-Publisher entsteht
 unter dem Participant mit PRESENTATION, ENTITY_FACTORY, PARTITION und
@@ -4115,11 +4115,11 @@ GROUP_DATA.
 `participant_of_create`, `DdsCreate::Container`);
 `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::create_subscriber`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_or_subscriber_needs_an_existing_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_or_subscriber_needs_an_existing_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_5_a_publisher_and_a_subscriber_get_a_dds_entity_with_their_policies`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_5_publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
 
-**Status:** `done` — Commits `dd55e9c9df1`. Wie beim Publisher, für den Subscriber.
+**Status:** `done` — Commits `505c2e56d24`. Wie beim Publisher, für den Subscriber.
 
 ### §7.8.3.1 Table 6 OBJK_DATAWRITER
 
@@ -4133,12 +4133,12 @@ Publisher identified by the publisher_id."
 `DdsCreate::Endpoint`); `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::create_writer`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::create_writer_before_topic_rejected`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::annex_b_2_3_create_of_a_binary_data_writer`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_endpoint_and_its_topic_belong_to_one_participant`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_data_writer_states_its_qos_over_a_profile`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_8_3_1_create_writer_before_topic_rejected`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_2_annex_b_2_3_create_of_a_binary_data_writer`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_an_endpoint_and_its_topic_belong_to_one_participant`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_1_a_data_writer_states_its_qos_over_a_profile`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_5_publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
 
 **Status:** done — Der Writer erbt PARTITION und GROUP_DATA des Publisher. Ein
 Publisher, den der Client nicht hat, ergibt STATUS_ERR_UNKNOWN_REFERENCE;
@@ -4155,10 +4155,10 @@ shall fail and return STATUS_ERR_UNKNOWN_REFERENCE."
 `DdsCreate::Endpoint`); `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::create_reader`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_endpoint_and_its_topic_belong_to_one_participant`,
-`crates/xrce-agent/src/daemon/dds_port.rs::tests::publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_an_endpoint_and_its_topic_belong_to_one_participant`,
+`crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_5_publisher_and_subscriber_need_their_participant_and_endpoints_need_them`
 
 **Status:** done — Die Zeile der Spec schreibt `OBJK_DATEREADER` und
 `DATAWRITER_Representation`; gemeint sind `OBJK_DATAREADER` und
@@ -4175,10 +4175,10 @@ successful STATUS_OK shall be returned".
 `crates/xrce/src/object_store.rs` (`ObjectStore::create`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::update_object`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`,
 `crates/xrce-client/src/lib.rs::tests::update_object_sends_a_create_with_reuse_and_replace`
 
-**Status:** `done` — Commits `8b949a13ef5`. Table 14 und §8.4.13 bilden update auf CREATE
+**Status:** `done` — Commits `3b066516f69`. Table 14 und §8.4.13 bilden update auf CREATE
 mit `reuse` und `replace` ab. Eine gleiche Darstellung (Container und
 `domain_id` eingeschlossen) ergibt STATUS_OK_MATCHED und ändert nichts; eine
 abweichende ersetzt das Objekt samt DDS-Seite (STATUS_OK).
@@ -4191,9 +4191,9 @@ STATUS_ERR_UNKNOWN_REFERENCE shall be returned."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`create_core`);
 `crates/xrce-agent/src/daemon/config.rs` (`update_of_missing_object`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_update_of_a_missing_object_creates_it_or_is_refused`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_the_update_of_a_missing_object_creates_it_or_is_refused`
 
-**Status:** `done` — Commits `8b949a13ef5`. Die Spec widerspricht sich: §7.8.3.2 verlangt
+**Status:** `done` — Commits `3b066516f69`. Die Spec widerspricht sich: §7.8.3.2 verlangt
 STATUS_ERR_UNKNOWN_REFERENCE, Table 5 und §8.4.13 lassen dasselbe CREATE das
 Objekt anlegen. Standard ist Table 5 (anlegen); der Agent-Schlüssel
 `update_of_missing_object: refuse` liefert STATUS_ERR_UNKNOWN_REFERENCE.
@@ -4208,9 +4208,9 @@ configuration."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`create_core`,
 `refuse_create`, `restore_previous`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_replace_that_fails_returns_the_object_to_its_previous_configuration`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_a_replace_that_fails_returns_the_object_to_its_previous_configuration`
 
-**Status:** `done` — Commits `e4d37a6aff6`. Eine Darstellung, aus der sich kein Objekt
+**Status:** `done` — Commits `70963ac46ec`. Eine Darstellung, aus der sich kein Objekt
 bilden lässt, wird vor jeder Änderung mit ihrem STATUS abgewiesen
 (STATUS_ERR_INVALID_DATA für eine fehlerhafte Darstellung,
 STATUS_ERR_UNKNOWN_REFERENCE für eine Referenz, die sich nicht auflöst).
@@ -4226,10 +4226,10 @@ restrictions, STATUS_ERR_DENIED shall be returned."
 `crates/xrce-agent/src/daemon/access.rs` (`Operation::Update`,
 `AccessController::permits`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::an_update_needs_the_permission_to_update`,
-`crates/xrce-agent/src/daemon/session.rs::tests::replacing_an_object_needs_the_permission_to_delete_it`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_an_update_needs_the_permission_to_update`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_2_replacing_an_object_needs_the_permission_to_delete_it`
 
-**Status:** `done` — Commits `515bcc677f3`, `8b949a13ef5`. Ein update (CREATE mit `reuse`
+**Status:** `done` — Commits `5f7a8652d95`, `3b066516f69`. Ein update (CREATE mit `reuse`
 und `replace`) braucht die Berechtigung `Operation::Update`, ein replace ohne
 `reuse` die Berechtigung `Operation::Delete`; sonst STATUS_ERR_DENIED.
 
@@ -4243,12 +4243,12 @@ configuration and activity data for an existing object."
 `object_info`, `answer_info`); `crates/xrce/src/object_info.rs` (`ObjectInfo`);
 `crates/xrce/src/submessages/info.rs` (`InfoPayload`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_writer_reports_its_activity`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_reader_reports_its_activity`,
-`crates/xrce-agent/src/daemon/session.rs::tests::any_object_id_of_kind_agent_is_the_root_in_a_session`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_writer_reports_its_activity`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_reader_reports_its_activity`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_3_any_object_id_of_kind_agent_is_the_root_in_a_session`
 
-**Status:** `done` — Commits `65cd1820a04`. Die Antwort ist ein INFO mit `activity`
+**Status:** `done` — Commits `ca0cf7e08bf`. Die Antwort ist ein INFO mit `activity`
 (DataWriter, DataReader) und `config` (die ObjectVariant, mit der das Objekt
 angelegt wurde); die InfoMask wählt aus. `sample_seq_num`, `stream_seq_num` und
 `highest_acked_num` zählt der Agent selbst; die Spec definiert die Werte nicht,
@@ -4262,10 +4262,10 @@ STATUS_ERR_UNKNOWN_REFERENCE shall be returned."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`,
 `answer_info`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_udp_listener_answers_get_info_before_a_session`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_udp_listener_answers_get_info_before_a_session`
 
-**Status:** `done` — Commits `65cd1820a04`. Der Agent antwortet mit einem INFO, dessen
+**Status:** `done` — Commits `ca0cf7e08bf`. Der Agent antwortet mit einem INFO, dessen
 ResultStatus STATUS_ERR_UNKNOWN_REFERENCE ist und das `request_id` und
 `object_id` der Anfrage trägt (§8.3.5.7.2: die Antwort auf GET_INFO ist INFO).
 
@@ -4277,9 +4277,9 @@ permission restrictions STATUS_ERR_DENIED shall be returned."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`);
 `crates/xrce-agent/src/daemon/access.rs` (`Operation::GetInfo`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_and_delete_without_permission_are_denied`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_get_info_and_delete_without_permission_are_denied`
 
-**Status:** `done` — Commits `515bcc677f3`. Ohne Berechtigung `Operation::GetInfo`
+**Status:** `done` — Commits `5f7a8652d95`. Ohne Berechtigung `Operation::GetInfo`
 antwortet der Agent mit einem INFO mit STATUS_ERR_DENIED; das Objekt bleibt.
 
 ### §7.8.3.4 delete eines Objekts
@@ -4289,13 +4289,13 @@ object is successfully deleted STATUS_OK shall be returned."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete`)
 
-**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::delete_fixture_decodes_and_removes_the_object_create_added`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`
+**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::xrce_7_8_3_4_delete_fixture_decodes_and_removes_the_object_create_added`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`
 
 **Status:** done — Die Spec gibt dem Eingang `object_id` den Typ
 `ObjectIdPrefix`. DELETE(OBJECTID_CLIENT) beendet die Sitzung und löscht den
-ProxyClient (`ed2ca7b49a9`).
+ProxyClient (`d7aec9c2d78`).
 
 ### §7.8.3.4 delete ohne Objekt
 **Spec:** §7.8.3.4, S. 53 — "If the object does not exist
@@ -4303,9 +4303,9 @@ STATUS_ERR_UNKNOWN_REFERENCE shall be returned."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::delete_of_an_object_that_does_not_exist_is_an_unknown_reference`, `crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_8_3_4_delete_of_an_object_that_does_not_exist_is_an_unknown_reference`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`
 
-**Status:** done — `handle_delete` antwortet STATUS_ERR_UNKNOWN_REFERENCE, wenn kein Objekt entfernt wurde; für DELETE(OBJECTID_CLIENT) ohne ProxyClient (`ed2ca7b49a9`) und für ein gewöhnliches Objekt (0f85937a436).
+**Status:** done — `handle_delete` antwortet STATUS_ERR_UNKNOWN_REFERENCE, wenn kein Objekt entfernt wurde; für DELETE(OBJECTID_CLIENT) ohne ProxyClient (`d7aec9c2d78`) und für ein gewöhnliches Objekt (02c704651e4).
 ### §7.8.3.4 delete ohne Rechte
 
 **Spec:** §7.8.3.4, S. 53 — "If the object cannot be deleted due to permission
@@ -4314,10 +4314,10 @@ restrictions, STATUS_ERR_DENIED shall be returned."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete`);
 `crates/xrce-agent/src/daemon/access.rs` (`Operation::Delete`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_and_delete_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::replacing_an_object_needs_the_permission_to_delete_it`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_get_info_and_delete_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_2_replacing_an_object_needs_the_permission_to_delete_it`
 
-**Status:** `done` — Commits `515bcc677f3`. Ohne Berechtigung `Operation::Delete`
+**Status:** `done` — Commits `5f7a8652d95`. Ohne Berechtigung `Operation::Delete`
 antwortet der Agent STATUS_ERR_DENIED; das Objekt bleibt.
 
 ---
@@ -4347,13 +4347,13 @@ items (FORMAT_DATA) as well as sequences (batches) of data items
 `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::write`,
 `RealDdsPort::sample_length`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/tests/endpoint_client_fixtures.rs::write_data_fixture_decodes_into_the_sample_bytes_the_client_sent`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_seq_carries_state_and_time_per_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::packed_samples_resolve_their_deltas_against_the_base`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/tests/endpoint_client_fixtures.rs::xrce_7_8_4_1_write_data_fixture_decodes_into_the_sample_bytes_the_client_sent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_sample_seq_carries_state_and_time_per_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_packed_samples_resolve_their_deltas_against_the_base`
 
-**Status:** `done` — Commits `4f1fb9f5f4f`. FORMAT_DATA, FORMAT_SAMPLE, FORMAT_DATA_SEQ,
+**Status:** `done` — Commits `f40bd568ad1`. FORMAT_DATA, FORMAT_SAMPLE, FORMAT_DATA_SEQ,
 FORMAT_SAMPLE_SEQ und FORMAT_PACKED_SAMPLES werden geschrieben. Die Elemente
 einer Sequenz liegen ohne Länge hintereinander (Annex A `sequence<SampleData>`);
 der Typ des Topic (`DdsPort::sample_length`) trennt sie. Annahme, nicht gegen
@@ -4368,11 +4368,11 @@ wird ab Ausrichtungsursprung 0 gelesen (Annex B.5.2 zeigt nur 4-Byte-Elemente).
 `handle_write_data`); `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::sample_length`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sequence_that_does_not_split_writes_nothing`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sequence_of_a_topic_of_unknown_type_is_refused`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_sequence_that_does_not_split_writes_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_sequence_of_a_topic_of_unknown_type_is_refused`
 
-**Status:** `done` — Commits `4f1fb9f5f4f`. Die drei Sequenzformate werden Sample für
+**Status:** `done` — Commits `f40bd568ad1`. Die drei Sequenzformate werden Sample für
 Sample geschrieben. Eine Sequenz, die sich nicht trennen lässt (Anzahl größer
 als die Bytes, Bytes hinter dem letzten Sample, abgeschnittenes Sample),
 schreibt nichts und ergibt STATUS_ERR_INVALID_DATA. Dasselbe gilt für ein Topic
@@ -4386,9 +4386,9 @@ shall be returned."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_successful_write_is_answered_with_status_ok`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_successful_write_is_answered_with_status_ok`
 
-**Status:** `done` — Commits `dc0209b38fe`. Ein erfolgreiches WRITE_DATA wird mit einem
+**Status:** `done` — Commits `869304e6b63`. Ein erfolgreiches WRITE_DATA wird mit einem
 STATUS beantwortet, der `request_id` und DataWriter der Anfrage nennt; mehrere
 Samples in einer Anfrage ergeben einen STATUS. Der Mitschnitt des Agents von
 eProsima enthält keine Antwort auf WRITE_DATA; der Text der Spec (§8.3.5.8,
@@ -4404,7 +4404,7 @@ be returned."
 `crates/xrce-agent/src/daemon/session.rs` (`dds_write_and_report`,
 `dds_port_error_status`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::full_chain_against_a_real_leased_domain`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_full_chain_against_a_real_leased_domain`
 
 **Status:** done — `RealDdsPort::write` gibt für einen Writer, den es nicht
 gibt, `DdsPortError::UnknownReference` zurück; die Sitzung antwortet
@@ -4419,9 +4419,9 @@ STATUS_ERR_DENIED shall be returned."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`,
 `permit`); `crates/xrce-agent/src/daemon/access.rs` (`Operation::WriteData`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::write_and_read_without_permission_are_denied`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_write_and_read_without_permission_are_denied`
 
-**Status:** `done` — Commits `515bcc677f3`. Ohne Berechtigung `Operation::WriteData`
+**Status:** `done` — Commits `5f7a8652d95`. Ohne Berechtigung `Operation::WriteData`
 antwortet der Agent STATUS_ERR_DENIED; nichts erreicht die DDS-Seite.
 
 ### §7.8.4.1 Ungültige Daten
@@ -4434,11 +4434,11 @@ STATUS_ERR_INVALID_DATA shall be returned."
 `refuse_unreadable`, `dds_port_error_status`);
 `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::write`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_request_that_cannot_be_read_is_answered_invalid_data`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sequence_that_does_not_split_writes_nothing`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_dispose_the_agent_cannot_identify_is_answered_with_a_status`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_request_that_cannot_be_read_is_answered_invalid_data`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_sequence_that_does_not_split_writes_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_dispose_the_agent_cannot_identify_is_answered_with_a_status`
 
-**Status:** `done` — Commits `133a0db3c4f`, `4f1fb9f5f4f`. Ein WRITE_DATA, dessen Body
+**Status:** `done` — Commits `97de94f63e4`, `f40bd568ad1`. Ein WRITE_DATA, dessen Body
 sich nicht lesen lässt, eine Sequenz, die sich nicht trennen lässt, und ein
 dispose ohne bestimmbare Instanz ergeben STATUS_ERR_INVALID_DATA. Liest der
 bekannte Typ des Topic einen Payload nicht, gibt `RealDdsPort::write`
@@ -4456,11 +4456,11 @@ and unregister."
 `source_time_of`); `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::write`, `he_timestamp`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_sample_is_stamped_with_the_session_time_plus_its_offset`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_seq_carries_state_and_time_per_sample`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::known_keyed_type_gets_a_real_keyhash_and_honors_dispose`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_sample_is_stamped_with_the_session_time_plus_its_offset`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_sample_seq_carries_state_and_time_per_sample`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_8_4_1_known_keyed_type_gets_a_real_keyhash_and_honors_dispose`
 
-**Status:** `done` — Commits `4f1fb9f5f4f`. Die Merker für dispose und unregister und
+**Status:** `done` — Commits `f40bd568ad1`. Die Merker für dispose und unregister und
 `session_time_offset` werden aus SampleInfo (FORMAT_SAMPLE, FORMAT_SAMPLE_SEQ)
 und SampleInfoDelta (FORMAT_PACKED_SAMPLES) gelesen; der Zeitstempel erreicht
 den DDS-Writer als Quellzeit.
@@ -4473,10 +4473,10 @@ den DDS-Writer als Quellzeit.
 `handle_create_client`); `crates/xrce-agent/src/daemon/dcps_bridge.rs`
 (`RealDdsPort::write`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_sample_is_stamped_with_the_session_time_plus_its_offset`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_seq_carries_state_and_time_per_sample`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_sample_is_stamped_with_the_session_time_plus_its_offset`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_sample_seq_carries_state_and_time_per_sample`
 
-**Status:** `done` — Commits `4f1fb9f5f4f`. Die Quellzeit ist die Sitzungszeit plus
+**Status:** `done` — Commits `f40bd568ad1`. Die Quellzeit ist die Sitzungszeit plus
 `session_time_offset`. Die Sitzungszeit ist die Uhr des Agents, als die Sitzung
 angelegt wurde: Annex A `CLIENT_Representation` hat kein `client_timestamp`. Mit
 `representation_timestamps: present` liest der Agent ein `client_timestamp`,
@@ -4491,17 +4491,17 @@ identified in the associated data."
 
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::write`); `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::dispose_on_a_topic_of_unknown_type_is_refused`, `crates/xrce-agent/src/daemon/session.rs::tests::a_dispose_the_agent_cannot_identify_is_answered_with_a_status`, `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_8_4_1_dispose_on_a_topic_of_unknown_type_is_refused`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_dispose_the_agent_cannot_identify_is_answered_with_a_status`, `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
-**Status:** done — für einen bekannten Typ mit Schlüssel ruft der Agent `write_user_lifecycle` mit dem Merker DISPOSED und dem echten KeyHash auf (4f1fb9f5f4f). Die Spec verlangt das dispose „for the instance identified in the associated data“; ein Typ ohne Schlüssel oder ein unbekannter Typ identifiziert keine Instanz, die Daten sind für den Agent nicht deutbar: STATUS_ERR_INVALID_DATA (nächstes Item).
+**Status:** done — für einen bekannten Typ mit Schlüssel ruft der Agent `write_user_lifecycle` mit dem Merker DISPOSED und dem echten KeyHash auf (f40bd568ad1). Die Spec verlangt das dispose „for the instance identified in the associated data“; ein Typ ohne Schlüssel oder ein unbekannter Typ identifiziert keine Instanz, die Daten sind für den Agent nicht deutbar: STATUS_ERR_INVALID_DATA (nächstes Item).
 ### §7.8.4.1 dispose ohne bekannten Typ
 **Spec:** §7.8.4.1, S. 54 — wie oben.
 
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::write`); `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::dispose_on_a_topic_of_unknown_type_is_refused`, `crates/xrce-agent/src/daemon/session.rs::tests::a_dispose_the_agent_cannot_identify_is_answered_with_a_status`, `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_8_4_1_dispose_on_a_topic_of_unknown_type_is_refused`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_dispose_the_agent_cannot_identify_is_answered_with_a_status`, `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
-**Status:** done — für ein Topic unbekannten Typs oder eines Typs ohne `@key` kann der Agent die Instanz nicht aus den Daten bestimmen (`SerializedTypeSupport::key_material` ist `None`); eine Instanz, die die Spec identifiziert sehen will, gibt es nicht. `RealDdsPort::write` schreibt nichts und gibt `DdsPortError::InvalidType` zurück; die Sitzung antwortet STATUS_ERR_INVALID_DATA, den Status der Spec für Daten, die der Agent nicht deuten kann, und meldet `SessionEvent::DdsPortFailed` (4f1fb9f5f4f).
+**Status:** done — für ein Topic unbekannten Typs oder eines Typs ohne `@key` kann der Agent die Instanz nicht aus den Daten bestimmen (`SerializedTypeSupport::key_material` ist `None`); eine Instanz, die die Spec identifiziert sehen will, gibt es nicht. `RealDdsPort::write` schreibt nichts und gibt `DdsPortError::InvalidType` zurück; die Sitzung antwortet STATUS_ERR_INVALID_DATA, den Status der Spec für Daten, die der Agent nicht deuten kann, und meldet `SessionEvent::DdsPortFailed` (f40bd568ad1).
 ### §7.8.4.1 unregister
 **Spec:** §7.8.4.1, S. 54 — "Similarly there is a Sample where the SampleInfo
 has the 'unregister' flag set, the XRCE Agent shall call the unregister
@@ -4510,9 +4510,9 @@ the associated data."
 
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::write`); `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::dispose_on_a_topic_of_unknown_type_is_refused`, `crates/xrce-agent/src/daemon/session.rs::tests::a_dispose_the_agent_cannot_identify_is_answered_with_a_status`, `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_8_4_1_dispose_on_a_topic_of_unknown_type_is_refused`, `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_dispose_the_agent_cannot_identify_is_answered_with_a_status`, `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
-**Status:** done — für einen bekannten Typ mit Schlüssel ruft der Agent `write_user_lifecycle` mit dem Merker UNREGISTERED auf; der native Reader des e2e-Tests sieht die Abmeldung (4f1fb9f5f4f). Für einen Typ ohne Schlüssel oder ohne bekannten Typ gilt wie beim dispose STATUS_ERR_INVALID_DATA.
+**Status:** done — für einen bekannten Typ mit Schlüssel ruft der Agent `write_user_lifecycle` mit dem Merker UNREGISTERED auf; der native Reader des e2e-Tests sieht die Abmeldung (f40bd568ad1). Für einen Typ ohne Schlüssel oder ohne bekannten Typ gilt wie beim dispose STATUS_ERR_INVALID_DATA.
 
 ---
 
@@ -4538,11 +4538,11 @@ STATUS_OK shall be returned."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`,
 `pump_read`, `data_submessages`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::read_data_elapsed_time_is_measured_from_the_real_request_time`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_data_seq_is_answered_with_one_data_seq`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_read_data_elapsed_time_is_measured_from_the_real_request_time`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_data_seq_is_answered_with_one_data_seq`
 
-**Status:** `done` — Commits `2fa0800f55a`, `d5fbdbe672e`. Der Erfolg ist DATA
+**Status:** `done` — Commits `8bcb1d00161`, `fd5253ca805`. Der Erfolg ist DATA
 (§8.3.5.10) im verlangten `data_format`.
 
 ### §7.8.5.1 read ohne Objekt
@@ -4554,7 +4554,7 @@ STATUS_ERR_UNKNOWN_REFERENCE shall be returned."
 `crates/xrce-agent/src/daemon/dds_port.rs` (`NullDdsPort::set_read_filter`);
 `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort::set_read_filter`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dds_port.rs::tests::null_port_rejects_content_filter_but_accepts_clearing_it`
+**Tests:** `crates/xrce-agent/src/daemon/dds_port.rs::tests::xrce_7_8_5_1_null_port_rejects_content_filter_but_accepts_clearing_it`
 
 **Status:** done — Ein Reader, den es nicht gibt, ergibt aus
 `DdsPort::set_read_filter` `DdsPortError::UnknownReference`; `handle_read_data`
@@ -4569,10 +4569,10 @@ shall be returned."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`,
 `permit`); `crates/xrce-agent/src/daemon/access.rs` (`Operation::ReadData`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::write_and_read_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/session.rs::tests::read_with_permission_is_not_denied`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_write_and_read_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_read_with_permission_is_not_denied`
 
-**Status:** `done` — Commits `515bcc677f3`. Ohne Berechtigung `Operation::ReadData`
+**Status:** `done` — Commits `5f7a8652d95`. Ohne Berechtigung `Operation::ReadData`
 antwortet der Agent STATUS_ERR_DENIED und startet kein Lesen.
 
 ### §7.8.5.1 Table 9 preferred_stream_id
@@ -4587,10 +4587,10 @@ resource-management."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`,
 `pump_read`, `ActiveRead`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::streamid_none_lets_the_agent_choose_the_stream`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_streamid_none_lets_the_agent_choose_the_stream`
 
-**Status:** `done` — Commits `2fa0800f55a`. DATA geht auf dem gewünschten Stream; für
+**Status:** `done` — Commits `8bcb1d00161`. DATA geht auf dem gewünschten Stream; für
 STREAMID_NONE wählt der Agent STREAMID_BUILTIN_BEST_EFFORTS.
 
 ### §7.8.5.1 STREAMID_NONE als gewünschter Stream
@@ -4599,9 +4599,9 @@ STREAMID_NONE wählt der Agent STREAMID_BUILTIN_BEST_EFFORTS.
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::streamid_none_lets_the_agent_choose_the_stream`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_streamid_none_lets_the_agent_choose_the_stream`
 
-**Status:** `done` — Commits `2fa0800f55a`. Der Agent wählt den eingebauten
+**Status:** `done` — Commits `8bcb1d00161`. Der Agent wählt den eingebauten
 Best-Effort-Stream 0x01; DATA geht nicht auf STREAMID_NONE.
 
 ### §7.8.5.1 Table 9 data_format
@@ -4615,14 +4615,14 @@ information that appears in the SampleInfo".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`data_submessages`,
 `pump_read`, `ActiveRead`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_data_seq_is_answered_with_one_data_seq`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_is_answered_with_a_sample_each`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_seq_is_answered_with_one_sample_seq`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_packed_samples_is_answered_with_one_packed_samples`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_sequence_formats_split_at_the_size_of_a_submessage`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_data_seq_is_answered_with_one_data_seq`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_14_a_read_for_sample_is_answered_with_a_sample_each`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_sample_seq_is_answered_with_one_sample_seq`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_a_read_for_packed_samples_is_answered_with_one_packed_samples`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_the_sequence_formats_split_at_the_size_of_a_submessage`,
 `crates/xrce-client/src/lib.rs::tests::poll_hands_over_the_data_of_every_format`
 
-**Status:** `done` — Commits `d5fbdbe672e`. DATA kommt in FORMAT_DATA, FORMAT_SAMPLE,
+**Status:** `done` — Commits `fd5253ca805`. DATA kommt in FORMAT_DATA, FORMAT_SAMPLE,
 FORMAT_DATA_SEQ, FORMAT_SAMPLE_SEQ oder FORMAT_PACKED_SAMPLES, wie verlangt; die
 Sequenzformate teilen sich bei der Größe einer Submessage (PACKED_SAMPLES
 höchstens 256 Samples). Die SampleInfo-Werte kennt nur der Agent:
@@ -4642,12 +4642,12 @@ which the filter evaluates to TRUE shall be returned to the XRCE Client."
 `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`);
 `crates/xrce/src/submessages/read_data.rs` (`ReadSpecification`)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::a_content_filter_admits_an_xcdr2_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
-`crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`,
-`crates/xrce/src/submessages/read_data.rs::tests::the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_8_5_1_a_content_filter_admits_an_xcdr2_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`
 
-**Status:** `done` — Commits `1663f8f6240`. Die Kodierung auf der Leitung ist ein
+**Status:** `done` — Commits `b589558e671`. Die Kodierung auf der Leitung ist ein
 XCDR2-String mit NUL. Ein Filter, den der Agent nicht anwenden kann, ergibt ein
 STATUS und liefert keine ungefilterten Daten.
 
@@ -4663,9 +4663,9 @@ number of samples returned."
 (`ReadStream::pull_pending_samples`, `ReadStream::capacity`);
 `crates/xrce-agent/src/daemon/session.rs` (`pump_read`)
 
-**Tests:** `crates/xrce/src/continuous_read.rs::tests::max_samples_cap_enforced`,
-`crates/xrce/src/continuous_read.rs::tests::the_capacity_is_what_the_stream_still_delivers`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_takes_only_the_samples_it_delivers`
+**Tests:** `crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_max_samples_cap_enforced`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_the_capacity_is_what_the_stream_still_delivers`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_a_read_takes_only_the_samples_it_delivers`
 
 **Status:** done — Die Grenze wird gezählt; der Agent nimmt aus dem DataReader
 nur die Samples, die das Lesen noch liefert. Der Text zu `MAX_SAMPLES_UNLIMITED`
@@ -4679,10 +4679,10 @@ sagt „there is limit“; §8.3.5.9.2 (S. 71) sagt „no limit“, dem folgt de
 `MAX_SAMPLES_UNLIMITED`); `crates/xrce-agent/src/daemon/session.rs`
 (`handle_read_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::max_samples_zero_cancels_the_active_read`,
-`crates/xrce/src/continuous_read.rs::tests::max_samples_zero_ends_the_read_and_unlimited_has_no_limit`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_max_samples_zero_cancels_the_active_read`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_max_samples_zero_ends_the_read_and_unlimited_has_no_limit`
 
-**Status:** `done` — Commits `2fa0800f55a`. 0 beendet das laufende Lesen des DataReader
+**Status:** `done` — Commits `8bcb1d00161`. 0 beendet das laufende Lesen des DataReader
 ohne weiteres DATA; 0xFFFF liest ohne Grenze.
 
 ### §7.8.5.1 Table 9 max_elapsed_time
@@ -4692,9 +4692,9 @@ value MAX_ELAPSED_TIME_UNLIMITED = 0 indicates there is no maximum".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`elapsed_time_limit`, `handle_read_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::max_elapsed_time_is_in_seconds_or_in_the_milliseconds_of_the_example`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_max_elapsed_time_is_in_seconds_or_in_the_milliseconds_of_the_example`
 
-**Status:** done — der Agent liest `max_elapsed_time` als Sekunden (Table 9, die Definition; 0 ist MAX_ELAPSED_TIME_UNLIMITED) und misst ab dem Zeitpunkt der Anfrage. Annex B.4.2 (Beispiel) schreibt für 30 Sekunden 30000; diese Lesart ist die Einstellung `max_elapsed_time_unit: milliseconds`. e94545ab3bd.
+**Status:** done — der Agent liest `max_elapsed_time` als Sekunden (Table 9, die Definition; 0 ist MAX_ELAPSED_TIME_UNLIMITED) und misst ab dem Zeitpunkt der Anfrage. Annex B.4.2 (Beispiel) schreibt für 30 Sekunden 30000; diese Lesart ist die Einstellung `max_elapsed_time_unit: milliseconds`. 0db56a58a0e.
 ### §7.8.5.1 max_elapsed_time in Millisekunden nach Annex B.4.2
 **Spec:** Annex B.4.2, S. 152 — "over a time window not to exceed 30 seconds"
 mit `max_elapsed_time = 30000 = 0x7530`; dagegen Table 9, S. 55: "Maximum
@@ -4702,9 +4702,9 @@ amount of time in seconds".
 
 **Repo:** `crates/xrce-agent/src/daemon/config.rs` (`max_elapsed_time_unit`); `crates/xrce-agent/src/daemon/session.rs` (`SessionEngineConfig::max_elapsed_time_in_milliseconds`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::max_elapsed_time_is_in_seconds_or_in_the_milliseconds_of_the_example`, `crates/xrce-agent/src/daemon/config.rs::tests::the_unit_of_max_elapsed_time_can_be_set`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_max_elapsed_time_is_in_seconds_or_in_the_milliseconds_of_the_example`, `crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_8_5_1_the_unit_of_max_elapsed_time_can_be_set`
 
-**Status:** done — die Lesart des Annex-B-Beispiels (Millisekunden) ist die Einstellung `max_elapsed_time_unit: milliseconds`. e94545ab3bd.
+**Status:** done — die Lesart des Annex-B-Beispiels (Millisekunden) ist die Einstellung `max_elapsed_time_unit: milliseconds`. 0db56a58a0e.
 ### §7.8.5.1 Table 9 max_bytes_per_sec
 
 **Spec:** §7.8.5.1, Table 9, S. 55 — "Maximum rate in bytes per second at which
@@ -4713,7 +4713,7 @@ the data may be returned to the read operation."
 **Repo:** `crates/xrce/src/continuous_read.rs` (`ReadStream`,
 `ReadStream::pull_pending_samples`)
 
-**Tests:** `crates/xrce/src/continuous_read.rs::tests::rate_limit_partitions_samples_over_time`
+**Tests:** `crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_rate_limit_partitions_samples_over_time`
 
 **Status:** done — Das Feld heißt im IDL `max_bytes_per_second`.
 
@@ -4726,7 +4726,7 @@ it possible for the client to go into a sleep cycle between messages."
 **Repo:** `crates/xrce/src/continuous_read.rs`
 (`ReadStream::pull_pending_samples`)
 
-**Tests:** `crates/xrce/src/continuous_read.rs::tests::pacing_throttles_per_period`
+**Tests:** `crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_pacing_throttles_per_period`
 
 **Status:** done
 
@@ -4788,8 +4788,8 @@ XRCE message."
 `crates/xrce/src/transport_tcp.rs` (`XrceTcpClient::send_message`,
 `recv_message`)
 
-**Tests:** `crates/xrce/src/transport_udp.rs::tests::rfc768_udp_delivers_one_datagram_per_message_with_boundaries_intact`,
-`crates/xrce/src/transport_tcp.rs::tests::rfc793_byte_stream_is_delimited_by_the_length_prefix_not_by_writes`
+**Tests:** `crates/xrce/src/transport_udp.rs::tests::xrce_8_2_1_rfc768_udp_delivers_one_datagram_per_message_with_boundaries_intact`,
+`crates/xrce/src/transport_tcp.rs::tests::xrce_8_2_1_rfc793_byte_stream_is_delimited_by_the_length_prefix_not_by_writes`
 
 **Status:** done
 
@@ -4804,7 +4804,7 @@ transport heading or prefix that may precede it."
 (`participant`, `topic`, `container`, `endpoint`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`Cdr`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::message_two_submessages_padded_correctly`
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_2_1_message_two_submessages_padded_correctly`
 
 **Status:** done — Die Codecs der Payloads richten relativ zum Beginn ihrer
 Struktur aus; diese Beginne liegen auf Vielfachen von 4. Die Binärformen nach
@@ -4820,12 +4820,12 @@ between a client and an agent that has been established with a handshake."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::connect`, `handle_status_agent`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::udp_listener_answers_create_client_over_loopback`,
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_2_2_udp_listener_answers_create_client_over_loopback`,
 `crates/xrce-client/src/lib.rs::tests::connect_sends_a_real_create_client_and_moves_to_connecting`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_wrong_cookie_is_answered_with_a_status_agent`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_wrong_cookie_is_answered_with_a_status_agent`
 
 **Status:** done — Der Agent beantwortet CREATE_CLIENT mit STATUS_AGENT; ein
-falsches Cookie ergibt STATUS_AGENT mit STATUS_ERR_INVALID_DATA (`ed2ca7b49a9`).
+falsches Cookie ergibt STATUS_AGENT mit STATUS_ERR_INVALID_DATA (`d7aec9c2d78`).
 
 ### §8.2.2 Bis zu 256 Streams je Sitzung
 
@@ -4835,10 +4835,10 @@ best-effort message streams. Each session may have up to 256 streams."
 **Repo:** `crates/xrce/src/header.rs` (`StreamId`);
 `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::reliable`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::stream_id_classification`,
-`crates/xrce-agent/src/daemon/session.rs::tests::reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_2_2_stream_id_classification`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`
 
-**Status:** `done` — Commits `619184de8a1`. `StreamId` hat 256 Werte; der Agent führt den
+**Status:** `done` — Commits `d4aad7c50b6`. `StreamId` hat 256 Werte; der Agent führt den
 Zustand je `(client, stream)`, auch für Stream 255 (RESET löscht alle).
 
 ### §8.2.2 Höchstens eine aktive Sitzung
@@ -4850,10 +4850,10 @@ sessions."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`,
 `refusal`, `session_ids`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_different_session_id_resets_object_store`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_message_of_a_replaced_session_is_not_processed`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_create_client_different_session_id_resets_object_store`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_message_of_a_replaced_session_is_not_processed`
 
-**Status:** `done` — Commits `619184de8a1`. Eine neue `session_id` ersetzt die alte
+**Status:** `done` — Commits `d4aad7c50b6`. Eine neue `session_id` ersetzt die alte
 Sitzung; Nachrichten mit der alten `session_id` werden nicht verarbeitet (siehe
 das nächste Item).
 
@@ -4864,11 +4864,11 @@ das nächste Item).
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`SessionEngine::refusal`,
 `handle_message`, `SessionEvent::MessageRefused`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_message_of_a_replaced_session_is_not_processed`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_for_a_session_id_of_no_session_is_refused`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_message_of_a_replaced_session_is_not_processed`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_create_client_for_a_session_id_of_no_session_is_refused`
 
-**Status:** `done` — Commits `619184de8a1`. Eine Nachricht, deren `session_id` nicht die
+**Status:** `done` — Commits `d4aad7c50b6`. Eine Nachricht, deren `session_id` nicht die
 aktive Sitzung des Clients ist, wird nicht verarbeitet und nicht beantwortet;
 der Agent meldet `SessionEvent::MessageRefused`. Die Werte 0x00 und 0x80 (keine
 Sitzung) nimmt der Agent nur für CREATE_CLIENT und für GET_INFO (§7.8.2.2) an.
@@ -4883,7 +4883,7 @@ independent of each other."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`reliable`,
 `best_effort_seq` je `(client, stream)`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::best_effort_messages_get_increasing_sequence_numbers`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_3_best_effort_messages_get_increasing_sequence_numbers`
 
 **Status:** done
 
@@ -4896,10 +4896,10 @@ headers and payload."
 **Repo:** `crates/xrce/src/submessages/` (`into_submessage` aller Payloads mit
 `FLAG_E_LITTLE_ENDIAN`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_flags_are_e_le_and_format_data`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_8_2_3_write_data_flags_are_e_le_and_format_data`
 
 **Status:** done — ZeroDDS sendet little-endian; beim Empfang folgt jede Payload dem
-E-Flag ihrer Submessage (`b43d5e6b848`, `c304e509660`). Die Gleichheit der
+E-Flag ihrer Submessage (`b9255734bfb`, `299b3a41398`). Die Gleichheit der
 Byte-Reihenfolge innerhalb eines Stream prüft der Code nicht.
 
 ### §8.2.4 Client beginnt die Sitzung
@@ -4920,7 +4920,7 @@ accepts requests to establish sessions from XRCE clients."
 
 **Repo:** `crates/xrce-agent/src/daemon/transport.rs` (`run_udp_listener`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::udp_listener_answers_create_client_over_loopback`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_2_2_udp_listener_answers_create_client_over_loopback`
 
 **Status:** done
 
@@ -4937,12 +4937,12 @@ underlying XRCE Transport."
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`Message`, `Message::new`, `encode`,
 `decode`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::message_encode_decode_roundtrip_with_key`,
-`crates/xrce/tests/foreign_frames.rs::every_client_datagram_decodes_and_writes_back`,
-`crates/xrce/tests/wire_roundtrips.rs::a_message_without_a_submessage_is_refused`
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_1_message_encode_decode_roundtrip_with_key`,
+`crates/xrce/tests/foreign_frames.rs::xrce_7_7_every_client_datagram_decodes_and_writes_back`,
+`crates/xrce/tests/wire_roundtrips.rs::xrce_8_3_1_a_message_without_a_submessage_is_refused`
 
 **Status:** done — Header und Submessages. Eine Nachricht ohne Submessage lehnen
-`Message::new`, `encode` und `decode` ab (`619184de8a1`, siehe das Item
+`Message::new`, `encode` und `decode` ab (`d4aad7c50b6`, siehe das Item
 unten).
 
 ### §8.3.1 Nachricht ohne Submessage
@@ -4952,10 +4952,10 @@ unten).
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`Message::new`, `Message::encode`,
 `Message::decode`; Fehler `ValueOutOfRange`)
 
-**Tests:** `crates/xrce/tests/wire_roundtrips.rs::a_message_without_a_submessage_is_refused`
+**Tests:** `crates/xrce/tests/wire_roundtrips.rs::xrce_8_3_1_a_message_without_a_submessage_is_refused`
 
 **Status:** done — `Message::new` und `encode` mit einer leeren Liste sowie `decode` eines
-reinen Header liefern einen Fehler (`619184de8a1`). Die beiden Tests, die den
+reinen Header liefern einen Fehler (`d4aad7c50b6`). Die beiden Tests, die den
 früheren Zustand festschrieben, prüfen jetzt die Ablehnung.
 
 ### §8.3.2 Layout des Header
@@ -4965,9 +4965,9 @@ früheren Zustand festschrieben, prüfen jetzt die Ablehnung.
 
 **Repo:** `crates/xrce/src/header.rs` (`MessageHeader`, `write_to`, `read_from`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::header_layout_bytes_no_key`,
-`crates/xrce/src/header.rs::tests::header_layout_bytes_with_key`,
-`crates/xrce/src/header.rs::tests::header_decode_truncated_with_key`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_3_2_header_layout_bytes_no_key`,
+`crates/xrce/src/header.rs::tests::xrce_8_3_2_header_layout_bytes_with_key`,
+`crates/xrce/src/header.rs::tests::xrce_8_3_2_header_decode_truncated_with_key`
 
 **Status:** done
 
@@ -4980,7 +4980,7 @@ also determines whether the Header includes a clientKey or not."
 **Repo:** `crates/xrce/src/header.rs` (`SessionId`);
 `crates/xrce-agent/src/daemon/session.rs` (`session_ids`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::session_id_127_carries_client_key`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_3_2_1_session_id_127_carries_client_key`
 
 **Status:** done
 
@@ -4993,8 +4993,8 @@ sessionId is scoped by the clientKey."
 **Repo:** `crates/xrce/src/header.rs` (`SessionId::carries_client_key`,
 `MessageHeader::with_client_key`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::header_with_client_key_wire_size_8`,
-`crates/xrce/src/header.rs::tests::header_constructor_rejects_inconsistent_with_key`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_3_2_1_header_with_client_key_wire_size_8`,
+`crates/xrce/src/header.rs::tests::xrce_8_3_2_1_header_constructor_rejects_inconsistent_with_key`
 
 **Status:** done
 
@@ -5007,8 +5007,8 @@ sessionId is scoped by the source address of the message."
 **Repo:** `crates/xrce/src/header.rs` (`MessageHeader::without_client_key`);
 `crates/xrce-agent/src/daemon/transport.rs` (`PeerTable`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::header_no_client_key_wire_size_4`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::peer_table_resolves_bound_address`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_3_2_1_header_no_client_key_wire_size_4`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_3_2_1_peer_table_resolves_bound_address`
 
 **Status:** done
 
@@ -5020,8 +5020,8 @@ address of the message (see clause 8.3.2.4)."
 
 **Repo:** `crates/xrce-agent/src/daemon/transport.rs` (`PeerTable::resolve`, `bind`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::peer_table_bootstraps_from_create_client_payload`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::a_client_registering_again_is_answered_at_its_new_address`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_3_2_1_peer_table_bootstraps_from_create_client_payload`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_3_2_1_a_client_registering_again_is_answered_at_its_new_address`
 
 **Status:** done
 
@@ -5036,15 +5036,15 @@ referred to as SESSION_ID_NONE_WITH_CLIENT_KEY."
 `crates/xrce-agent/src/daemon/session.rs` (`refusal`, `handle_create_client`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::connect`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::only_0x00_and_0x80_are_the_no_session_values`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_for_a_session_id_of_no_session_is_refused`,
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_3_2_1_only_0x00_and_0x80_are_the_no_session_values`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_create_client_for_a_session_id_of_no_session_is_refused`,
 `crates/xrce-client/src/lib.rs::tests::create_client_travels_in_a_header_without_a_session`
 
 **Status:** done — der Client sendet CREATE_CLIENT in einem Header mit 0x00 (Sitzung
 0 bis 127) oder 0x80; der Agent verarbeitet in einem solchen Header nur
 CREATE_CLIENT (und GET_INFO, §7.8.2.2) und verweigert ein CREATE_CLIENT, das
-0x00 oder 0x80 als `session_id` erbittet (`619184de8a1`).
+0x00 oder 0x80 als `session_id` erbittet (`d4aad7c50b6`).
 
 ### §8.3.2.1 SESSION_ID_NONE_WITHOUT_CLIENT_KEY = 0x80
 
@@ -5057,14 +5057,14 @@ value is referred to as SESSION_ID_NONE_WITHOUT_CLIENT_KEY."
 `crates/xrce-agent/src/daemon/session.rs` (`refusal`);
 `crates/xrce-agent/src/daemon/discovery.rs` (`build_info_reply`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::only_0x00_and_0x80_are_the_no_session_values`,
-`crates/xrce/src/header.rs::tests::header_roundtrip_no_key`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_3_2_1_only_0x00_and_0x80_are_the_no_session_values`,
+`crates/xrce/src/header.rs::tests::xrce_8_3_2_1_header_roundtrip_no_key`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
 `crates/xrce-client/src/lib.rs::tests::create_client_travels_in_a_header_without_a_session`
 
 **Status:** done — CREATE_CLIENT eines Client mit `session_id` 128 bis 255 geht in einem
 Header mit 0x80 ohne `clientKey`; INFO der Discovery nutzt 0x80
-(`619184de8a1`).
+(`d4aad7c50b6`).
 
 ### §8.3.2.1 Werte für „keine Sitzung“ im Header
 
@@ -5075,16 +5075,16 @@ Header mit 0x80 ohne `clientKey`; INFO der Discovery nutzt 0x80
 `SessionEvent::MessageRefused`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::connect`, `send_control`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_message_of_a_replaced_session_is_not_processed`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_for_a_session_id_of_no_session_is_refused`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_message_without_a_session_is_not_processed_unless_it_is_a_create_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_message_of_a_replaced_session_is_not_processed`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_a_create_client_for_a_session_id_of_no_session_is_refused`,
 `crates/xrce-client/src/lib.rs::tests::create_client_travels_in_a_header_without_a_session`
 
 **Status:** done — `XrceClient::connect` sendet CREATE_CLIENT mit `SESSION_ID_NONE_*` im
 Header (0x00 mit `clientKey`, 0x80 ohne); der Agent verarbeitet in einem
 Header ohne Sitzung nur CREATE_CLIENT und GET_INFO, verweigert 0x00 und 0x80
 als erbetene `session_id` und verwirft Nachrichten einer ersetzten Sitzung
-(`619184de8a1`).
+(`d4aad7c50b6`).
 
 ### §8.3.2.2 Streams im Rahmen der Sitzung
 
@@ -5094,7 +5094,7 @@ als erbetene `session_id` und verwirft Nachrichten einer ersetzten Sitzung
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`reliable`,
 `best_effort_seq` mit dem Schlüssel `(client, stream)`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::best_effort_messages_get_increasing_sequence_numbers`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_3_best_effort_messages_get_increasing_sequence_numbers`
 
 **Status:** done
 
@@ -5106,7 +5106,7 @@ submessages that do not belong to any stream."
 
 **Repo:** `crates/xrce/src/header.rs` (`StreamId::NONE`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::stream_id_classification`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_2_2_stream_id_classification`
 
 **Status:** done — die Regeln je Submessage stehen bei §8.3.5.11, §8.3.5.12,
 §8.3.5.15 und §8.3.5.16.
@@ -5118,7 +5118,7 @@ submessages that do not belong to any stream."
 
 **Repo:** `crates/xrce/src/header.rs` (`StreamId::is_best_effort`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::stream_id_classification`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_2_2_stream_id_classification`
 
 **Status:** done
 
@@ -5131,7 +5131,7 @@ be interpreted as a flag that indicates the reliability of the stream."
 
 **Repo:** `crates/xrce/src/header.rs` (`StreamId::is_reliable`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::stream_id_classification`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_2_2_stream_id_classification`
 
 **Status:** done
 
@@ -5146,8 +5146,8 @@ streamId with value 128 (0x80)."
 `BUILTIN_RELIABLE`); `crates/xrce-client/src/lib.rs`
 (`send_maybe_fragmented`: Stream 0x80 oder 0x01)
 
-**Tests:** `crates/xrce/src/header.rs::tests::stream_id_classification`,
-`crates/xrce-agent/src/daemon/session.rs::tests::reliable_outbound_messages_get_real_incrementing_sequence_numbers`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_2_2_stream_id_classification`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_reliable_outbound_messages_get_real_incrementing_sequence_numbers`
 
 **Status:** done — der Zustand eines Stream entsteht beim ersten Gebrauch.
 
@@ -5160,11 +5160,11 @@ duplicate messages."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_message`: Prüfung der
 Reihenfolge nur für Best-Effort- und Reliable-Streams)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::best_effort_streams_drop_duplicates_and_older_messages`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_best_effort_streams_drop_duplicates_and_older_messages`
 
 **Status:** done — auf STREAMID_NONE prüft der Agent weder Reihenfolge noch Duplikate;
 die Spec erlaubt das Verwerfen von Duplikaten dort, verlangt es nicht
-(`619184de8a1`).
+(`d4aad7c50b6`).
 
 ### §8.3.2.3 Reihenfolge und Duplikate auf den übrigen Streams
 
@@ -5177,15 +5177,15 @@ discarded."
 `crates/xrce-agent/src/daemon/session.rs` (`handle_message`,
 `take_best_effort`); `crates/xrce-client/src/lib.rs` (`ingest_message`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::recv_data_reorders_out_of_order`,
-`crates/xrce/src/reliable.rs::tests::recv_data_drops_duplicates`,
-`crates/xrce-agent/src/daemon/session.rs::tests::out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`,
-`crates/xrce-agent/src/daemon/session.rs::tests::best_effort_streams_drop_duplicates_and_older_messages`,
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_2_3_recv_data_reorders_out_of_order`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_2_3_recv_data_drops_duplicates`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_best_effort_streams_drop_duplicates_and_older_messages`,
 `crates/xrce-client/src/lib.rs::tests::a_best_effort_stream_discards_duplicate_and_older_messages`
 
 **Status:** done — Reliable Streams ordnen und verwerfen Duplikate über `recv_data` und
 `drain_in_order`; Best-Effort-Streams verwerfen Duplikate und ältere
-Nachrichten im Agent und im Client (`619184de8a1`, siehe das Item unten).
+Nachrichten im Agent und im Client (`d4aad7c50b6`, siehe das Item unten).
 
 ### §8.3.2.3 Reihenfolge und Duplikate auf Best-Effort-Streams
 
@@ -5196,12 +5196,12 @@ Nachrichten im Agent und im Client (`619184de8a1`, siehe das Item unten).
 `crates/xrce-client/src/lib.rs` (`ingest_message`, `best_effort_in`,
 `ClientEvent::BestEffortMessageDiscarded`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::best_effort_streams_drop_duplicates_and_older_messages`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_best_effort_streams_drop_duplicates_and_older_messages`,
 `crates/xrce-client/src/lib.rs::tests::a_best_effort_stream_discards_duplicate_and_older_messages`
 
 **Status:** done — eine Nachricht, die nicht neuer ist als die letzte des Stream (RFC 1982,
 16 Bit, auch über den Zählerüberlauf), wird verworfen und als Ereignis
-gemeldet; jeder Stream zählt für sich (`619184de8a1`).
+gemeldet; jeder Stream zählt für sich (`d4aad7c50b6`).
 
 ### §8.3.2.3 Serial Number Arithmetic mit 16 Bit
 
@@ -5214,9 +5214,9 @@ set to 16. This implies that the maximum number of outstanding
 **Repo:** `crates/xrce/src/serial_number.rs` (`SerialNumber16`,
 `wrapping_lt`, `wrapping_cmp`)
 
-**Tests:** `crates/xrce/src/serial_number.rs::tests::lt_across_wrap_boundary`,
-`crates/xrce/src/serial_number.rs::tests::undefined_pair_at_exactly_half_window`,
-`crates/xrce/src/serial_number.rs::tests::wrap_around_does_not_break_lt_for_consecutive_numbers`
+**Tests:** `crates/xrce/src/serial_number.rs::tests::xrce_8_3_2_3_lt_across_wrap_boundary`,
+`crates/xrce/src/serial_number.rs::tests::xrce_8_3_2_3_undefined_pair_at_exactly_half_window`,
+`crates/xrce/src/serial_number.rs::tests::xrce_8_3_2_3_wrap_around_does_not_break_lt_for_consecutive_numbers`
 
 **Status:** done — der Sender hält höchstens 16 Nachrichten offen
 (`SENDER_WINDOW_CAP`).
@@ -5228,7 +5228,7 @@ endian format."
 
 **Repo:** `crates/xrce/src/header.rs` (`write_to`)
 
-**Tests:** `crates/xrce/src/header.rs::tests::header_layout_bytes_no_key`
+**Tests:** `crates/xrce/src/header.rs::tests::xrce_8_3_2_header_layout_bytes_no_key`
 
 **Status:** done
 
@@ -5240,7 +5240,7 @@ contain the ClientKey associated with the XRCE Client."
 
 **Repo:** `crates/xrce-client/src/lib.rs` (`header_client_key`)
 
-**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::every_fixture_shares_the_same_client_key_and_session_id`
+**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::xrce_8_3_2_4_every_fixture_shares_the_same_client_key_and_session_id`
 
 **Status:** done
 
@@ -5254,7 +5254,7 @@ been exchanged as part of the session establishment."
 
 **Repo:** `crates/xrce-agent/src/daemon/transport.rs` (`PeerTable::bind`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::peer_table_bootstraps_from_create_client_payload`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_3_2_1_peer_table_bootstraps_from_create_client_payload`
 
 **Status:** done — über den Austausch im CREATE_CLIENT; eine Vorkonfiguration
 je Quelladresse gibt es nicht.
@@ -5268,13 +5268,13 @@ security mechanisms provided by the XRCE transport."
 `ListenerConfig::Tls`); `crates/xrce-agent/src/daemon/transport/secure.rs`;
 `crates/xrce/src/transport_dtls.rs`, `crates/xrce/src/transport_tls.rs`
 
-**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::tls::a_client_that_trusts_the_agents_certificate_opens_a_session`,
-`crates/xrce-agent/tests/secure_listeners.rs::tls::a_plain_text_create_client_on_the_tls_port_is_not_answered`,
-`crates/xrce-agent/tests/secure_listeners.rs::dtls::a_client_that_trusts_the_agents_certificate_opens_a_session`,
-`crates/xrce-agent/tests/secure_listeners.rs::dtls::a_plain_text_create_client_on_the_dtls_port_is_not_answered`
+**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::tls::xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session`,
+`crates/xrce-agent/tests/secure_listeners.rs::tls::xrce_8_3_2_4_a_plain_text_create_client_on_the_tls_port_is_not_answered`,
+`crates/xrce-agent/tests/secure_listeners.rs::dtls::xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session`,
+`crates/xrce-agent/tests/secure_listeners.rs::dtls::xrce_8_3_2_4_a_plain_text_create_client_on_the_dtls_port_is_not_answered`
 
 **Status:** done — Listener `kind: dtls` und `kind: tls` mit Zertifikat und Schlüssel aus
-PEM-Dateien (`01470e273bc`); auf diesem Port wird Klartext nicht beantwortet.
+PEM-Dateien (`eb44fbbf575`); auf diesem Port wird Klartext nicht beantwortet.
 Die Features `dtls` und `tls` gehören nicht zu `daemon`; ein Binary braucht
 `--features dtls,tls`. Gesicherte Listener erscheinen nicht in GET_INFO(AGENT)
 und der Multicast-Discovery. Der DTLS-Handshake eines Peer läuft im
@@ -5289,8 +5289,8 @@ payload." Payload "up to to 64 KB".
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`Submessage`,
 `Submessage::new`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::message_decode_rejects_truncated_body`,
-`crates/xrce/src/submessages/mod.rs::tests::message_encode_decode_roundtrip_no_key_single_sm`
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_3_message_decode_rejects_truncated_body`,
+`crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_3_message_encode_decode_roundtrip_no_key_single_sm`
 
 **Status:** done
 
@@ -5304,8 +5304,8 @@ beginning of the next submessage."
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`Message::encode`,
 `Message::decode`: `UnalignedSubmessage`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::message_two_submessages_padded_correctly`,
-`crates/xrce/tests/foreign_frames.rs::every_client_datagram_decodes_and_writes_back`
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_2_1_message_two_submessages_padded_correctly`,
+`crates/xrce/tests/foreign_frames.rs::xrce_7_7_every_client_datagram_decodes_and_writes_back`
 
 **Status:** done — nach der letzten Submessage schreibt der Code keine
 Füllung, eProsima schreibt sie; der Decoder nimmt beides an.
@@ -5318,7 +5318,7 @@ Füllung, eProsima schreibt sie; der Decoder nimmt beides an.
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`SubmessageHeader`,
 `to_bytes`, `from_bytes`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::submessage_header_roundtrip`
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_4_submessage_header_roundtrip`
 
 **Status:** done
 
@@ -5329,7 +5329,7 @@ submessage. The kinds of submessages are defined in 8.3.5."
 
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`SubmessageId::from_u8`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::submessage_id_rejects_unknown_byte`
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_4_1_submessage_id_rejects_unknown_byte`
 
 **Status:** done — eine unbekannte `submessageId` verwirft die ganze
 Nachricht.
@@ -5348,12 +5348,12 @@ Specific submessage kinds may define additional flag bits."
 (`encode_with`/`decode_with`); `crates/xrce-agent/src/daemon/session.rs`,
 `crates/xrce-client/src/lib.rs` (lesen mit `body_endianness`)
 
-**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::acknack_be_roundtrip`,
-`crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_be_roundtrip`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_big_endian_binary_topic_reads_back`,
-`crates/xrce/src/submessages/create_client.rs::tests::create_client_follows_the_e_flag`
+**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_4_2_acknack_be_roundtrip`,
+`crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_4_2_heartbeat_be_roundtrip`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_big_endian_binary_topic_reads_back`,
+`crates/xrce/src/submessages/create_client.rs::tests::xrce_8_3_4_2_create_client_follows_the_e_flag`
 
-**Status:** done — alle Payloads folgen dem Bit (`b43d5e6b848`, `c304e509660`, siehe das
+**Status:** done — alle Payloads folgen dem Bit (`b9255734bfb`, `299b3a41398`, siehe das
 Item unten). Der Agent schreibt seine eigenen Antworten little-endian mit
 E=1; jede Submessage nennt ihre Byte-Reihenfolge selbst.
 
@@ -5368,17 +5368,17 @@ E=1; jede Submessage nennt ihre Byte-Reihenfolge selbst.
 Flags); `crates/xrce/src/submessages/create_client.rs`
 (`CreateClientPayload::into_submessage_with`)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::a_big_endian_client_representation_with_properties_reads_back`,
-`crates/xrce/src/handshake.rs::tests::a_big_endian_agent_representation_with_properties_reads_back`,
-`crates/xrce/src/submessages/create_client.rs::tests::create_client_follows_the_e_flag`,
-`crates/xrce/src/transport_locator.rs::tests::medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_big_endian_create_client_with_properties_is_read_right`,
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_7_a_big_endian_client_representation_with_properties_reads_back`,
+`crates/xrce/src/handshake.rs::tests::xrce_8_3_4_2_a_big_endian_agent_representation_with_properties_reads_back`,
+`crates/xrce/src/submessages/create_client.rs::tests::xrce_8_3_4_2_create_client_follows_the_e_flag`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_8_3_4_2_medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_big_endian_create_client_with_properties_is_read_right`,
 `crates/xrce-client/src/lib.rs::tests::a_big_endian_status_agent_is_read_with_its_properties`
 
 **Status:** done — `ClientRepresentation`, `AgentRepresentation`, `PropertySeq`,
 `ObjectInfo`, `ActivityInfoVariant` und die Ports der `TransportLocator` werden
-in der Byte-Reihenfolge des E-Flag gelesen und geschrieben (`b43d5e6b848`,
-`c304e509660`). Der Agent schreibt das INFO, das er baut, weiter
+in der Byte-Reihenfolge des E-Flag gelesen und geschrieben (`b9255734bfb`,
+`299b3a41398`). Der Agent schreibt das INFO, das er baut, weiter
 little-endian mit E=1.
 
 ### §8.3.4.3 submessageLength ohne Header, little-endian
@@ -5389,7 +5389,7 @@ encoded using little endian format, independent of the value of the flags."
 
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`SubmessageHeader::to_bytes`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::submessage_header_length_is_always_le_even_with_be_body`
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_4_3_submessage_header_length_is_always_le_even_with_be_body`
 
 **Status:** done
 
@@ -5418,8 +5418,8 @@ ACKNACK 10, HEARTBEAT 11, RESET 12, FRAGMENT 13, TIMESTAMP 14, TIMESTAMP_REPLY
 
 **Repo:** `crates/xrce/src/submessages/mod.rs` (`SubmessageId`)
 
-**Tests:** `crates/xrce/tests/profile_conformance.rs::spec_1_2_submessage_ids_match_spec_assignment`,
-`crates/xrce/src/submessages/mod.rs::tests::submessage_id_roundtrip_all_16_values`
+**Tests:** `crates/xrce/tests/profile_conformance.rs::xrce_8_3_5_spec_1_2_submessage_ids_match_spec_assignment`,
+`crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_5_submessage_id_roundtrip_all_16_values`
 
 **Status:** done — der Text davor nennt 13 Arten, Table 10 und Figure 7
 zeigen 16.
@@ -5443,7 +5443,7 @@ XRCE Agent calling the create_client operation on the XRCE Root object, see
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`
 
 **Status:** done
 
@@ -5455,13 +5455,13 @@ in response, see 8.3.5.5."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`agent_status_reply`,
 `handle_create_client`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_client_rejects_wrong_major_version`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_wrong_cookie_is_answered_with_a_status_agent`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_create_client_rejects_wrong_major_version`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_wrong_cookie_is_answered_with_a_status_agent`
 
 **Status:** done — jeder Ausgang antwortet mit STATUS_AGENT; ein falsches Cookie oder eine
 nicht lesbare Payload ergibt STATUS_AGENT mit `STATUS_ERR_INVALID_DATA`
-(`ed2ca7b49a9`).
+(`d7aec9c2d78`).
 
 ### §8.3.5.1 Flags von CREATE_CLIENT
 
@@ -5471,11 +5471,11 @@ any additional flag bits beyond the common ones specified in 8.3.4.2."
 **Repo:** `crates/xrce/src/submessages/create_client.rs`
 (`CreateClientPayload::into_submessage`)
 
-**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::create_client_roundtrip_via_submessage`,
-`crates/xrce/src/submessages/create_client.rs::tests::annex_b_1_create_client_example_bytes`
+**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::xrce_8_3_5_1_create_client_roundtrip_via_submessage`,
+`crates/xrce/src/submessages/create_client.rs::tests::xrce_8_3_5_1_annex_b_1_create_client_example_bytes`
 
 **Status:** done — der Code setzt nur das E-Flag. Annex B.1 nennt 0x07 („reuse, replace“),
-die CREATE_CLIENT nicht hat; der Test zu Annex B.1 (`d4d590690f6`) prüft die
+die CREATE_CLIENT nicht hat; der Test zu Annex B.1 (`be97b3247a6`) prüft die
 Bytes der `CLIENT_Representation`, nicht dieses Flag.
 
 ### §8.3.5.1 Payload CREATE_CLIENT_Payload
@@ -5491,24 +5491,24 @@ CREATE_CLIENT_Payload { CLIENT_Representation client_representation; };"
 Agent-Schlüssel `representation_timestamps` in
 `crates/xrce-agent/src/daemon/config.rs`; `XrceClient::set_representation_timestamps`
 
-**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::decodes_the_committed_fixture_member_by_member`,
-`crates/xrce/src/submessages/create_client.rs::tests::annex_b_1_create_client_example_bytes`,
-`crates/xrce/src/handshake.rs::tests::client_representation_decodes_the_captured_create_client_prefix`,
-`crates/xrce/src/handshake.rs::tests::by_default_the_representations_have_no_timestamp`,
-`crates/xrce/src/handshake.rs::tests::the_prose_form_has_a_time_t_after_the_vendor_id`,
+**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::xrce_8_3_5_1_decodes_the_committed_fixture_member_by_member`,
+`crates/xrce/src/submessages/create_client.rs::tests::xrce_8_3_5_1_annex_b_1_create_client_example_bytes`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_1_client_representation_decodes_the_captured_create_client_prefix`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_by_default_the_representations_have_no_timestamp`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_the_prose_form_has_a_time_t_after_the_vendor_id`,
 `crates/xrce-client/src/lib.rs::tests::the_representation_timestamp_is_an_option_of_the_client`,
-`crates/xrce-agent/src/daemon/config.rs::tests::the_form_of_the_representations_can_be_set`
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_7_8_2_1_the_form_of_the_representations_can_be_set`
 
 **Status:** done — Annex A und die Bytes von Annex B.1 haben kein `client_timestamp`; das
 ist die Voreinstellung. Die Prosa von §7.8.2.1 und §8.3.5.1.2 nennt ein
 `Time_t` hinter `xrce_vendor_id`; diese Form ist die Einstellung
 `representation_timestamps: present` (Rust:
 `encoding::RepresentationTimestamps::Present`; SDKs: Option `representation
-timestamps`) (`711f93fd460`, `a8e8f6953a4`). Beide Formen sind in `zerodds-xrce`
+timestamps`) (`f8bdf3cd878`, `571ee6893d1`). Beide Formen sind in `zerodds-xrce`
 und im Client mit Bytes getestet. Zwei Byte nach `properties` liest und
 schreibt der Code als `requested_mtu`, wie eProsima sie sendet; die Spec
 kennt das Feld nicht. `PropertySeq` ist nach Annex A ausgerichtet
-(`65cd1820a04`).
+(`ca0cf7e08bf`).
 
 ### §8.3.5.2 CREATE vom Client
 
@@ -5530,7 +5530,7 @@ flags and payload."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done
 
@@ -5542,12 +5542,12 @@ response, see 8.3.5.6."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`, `status_reply`,
 `refuse_unreadable`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_without_a_base_object_request_is_answered`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_without_a_base_object_request_is_answered`
 
 **Status:** done — jede Anfrage erhält STATUS: eine Payload ohne `BaseObjectRequest` und
 eine nicht lesbare Darstellung ergeben `STATUS_ERR_INVALID_DATA`
-(`e4d37a6aff6`, `133a0db3c4f`).
+(`70963ac46ec`, `97de94f63e4`).
 
 ### §8.3.5.2 CREATE ohne BaseObjectRequest
 
@@ -5556,11 +5556,11 @@ eine nicht lesbare Darstellung ergeben `STATUS_ERR_INVALID_DATA`
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`,
 `SessionEvent::CreateRefused`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_create_without_a_base_object_request_is_answered`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_without_a_base_object_request_is_answered`
 
 **Status:** done — ein CREATE von weniger als 4 Byte ergibt STATUS mit
 `STATUS_ERR_INVALID_DATA` für `OBJECTID_INVALID` (mit dem `request_id`, wenn
-seine zwei Byte da sind) und ein Ereignis `CreateRefused` (`e4d37a6aff6`).
+seine zwei Byte da sind) und ein Ereignis `CreateRefused` (`70963ac46ec`).
 
 ### §8.3.5.2 Flags reuse und replace
 
@@ -5571,8 +5571,8 @@ CreationMode replace field."
 **Repo:** `crates/xrce/src/submessages/create.rs` (`CREATE_FLAG_REUSE`,
 `CREATE_FLAG_REPLACE`)
 
-**Tests:** `crates/xrce/src/submessages/create.rs::tests::create_roundtrip_carries_reuse_replace_flags`,
-`crates/xrce/src/submessages/create.rs::tests::create_default_flags_have_no_reuse_no_replace`
+**Tests:** `crates/xrce/src/submessages/create.rs::tests::xrce_7_7_11_create_roundtrip_carries_reuse_replace_flags`,
+`crates/xrce/src/submessages/create.rs::tests::xrce_8_3_5_2_create_default_flags_have_no_reuse_no_replace`
 
 **Status:** done
 
@@ -5584,8 +5584,8 @@ ObjectVariant object_representation; };"
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`:
 `BaseObjectRequest::decode`, `ObjectVariant::decode_for_kind`)
 
-**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::create_fixture_decodes_into_an_object_the_agent_accepts`,
-`crates/xrce/src/object_repr.rs::tests::participant_representation_matches_the_captured_create_bytes`
+**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::xrce_8_3_5_2_create_fixture_decodes_into_an_object_the_agent_accepts`,
+`crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_participant_representation_matches_the_captured_create_bytes`
 
 **Status:** done
 
@@ -5604,7 +5604,7 @@ Client to get information about a resource identified by its object_id."
 
 **Status:** done — `request_get_info` fragt nach einem Objekt der Sitzung,
 `request_agent_info` nach dem Agent, auch ohne Sitzung; ein INFO wird als
-`ClientEvent::Info` ausgewertet (`65cd1820a04`).
+`ClientEvent::Info` ausgewertet (`ca0cf7e08bf`).
 
 ### §8.3.5.3 Ziel nach der ObjectKind der object_id
 
@@ -5621,14 +5621,14 @@ operation on the XRCE ProxyClient object".
 Sitzung); `crates/xrce-agent/src/daemon/discovery.rs`
 (`run_discovery_responder`)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_a_session_is_answered_for_the_agent_only`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_an_object_returns_the_object_variant_it_was_created_with`
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_a_session_is_answered_for_the_agent_only`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with`
 
 **Status:** done — die Root antwortet auf jede `object_id` der Art `OBJK_AGENT`, auch
 ohne Sitzung; die Arten 0x01 bis 0x0C gehen an den ProxyClient
-(`65cd1820a04`). Die Spec verweist für die Root auf §7.8.3.3 statt §7.8.2.2,
+(`ca0cf7e08bf`). Die Spec verweist für die Root auf §7.8.3.3 statt §7.8.2.2,
 die Liste nennt „OBJK“ statt `OBJK_TOPIC`.
 
 ### §8.3.5.3 Unterscheidung nach dem Halbbyte der Art
@@ -5638,13 +5638,13 @@ die Liste nennt „OBJK“ statt `OBJK_TOPIC`.
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`);
 `crates/xrce-agent/src/daemon/discovery.rs` (`run_discovery_responder`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::any_object_id_of_kind_agent_is_the_root_in_a_session`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_udp_listener_answers_get_info_before_a_session`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_tcp_listener_answers_get_info_before_a_session`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_3_any_object_id_of_kind_agent_is_the_root_in_a_session`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_udp_listener_answers_get_info_before_a_session`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_tcp_listener_answers_get_info_before_a_session`
 
 **Status:** done — `handle_get_info` und der Responder prüfen die Art der `object_id` und
 nicht den Wert 0xFFFD; eine `ObjectId` `0x010` der Art `OBJK_AGENT` wird von
-der Root beantwortet (`65cd1820a04`, `67ead4d9708`).
+der Root beantwortet (`ca0cf7e08bf`, `a8f300b7bcf`).
 
 ### §8.3.5.3 INFO als Antwort auf GET_INFO
 
@@ -5654,13 +5654,13 @@ response to this message, see 8.3.5.6."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`, `answer_info`,
 `InfoPayload`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`
 
 **Status:** done — jede Antwort auf GET_INFO ist ein INFO; für ein unbekanntes Objekt
 trägt es `STATUS_ERR_UNKNOWN_REFERENCE`, ohne Recht `STATUS_ERR_DENIED`
-(`65cd1820a04`). Der Verweis lautet auf §8.3.5.6 statt §8.3.5.7.
+(`ca0cf7e08bf`). Der Verweis lautet auf §8.3.5.6 statt §8.3.5.7.
 
 ### §8.3.5.3 Flags von GET_INFO
 
@@ -5670,7 +5670,7 @@ additional flag bits beyond the common ones specified in 8.3.4.2."
 **Repo:** `crates/xrce/src/submessages/get_info.rs`
 (`GetInfoPayload::into_submessage`)
 
-**Tests:** `crates/xrce/src/submessages/get_info.rs::tests::get_info_roundtrip`
+**Tests:** `crates/xrce/src/submessages/get_info.rs::tests::xrce_8_3_5_3_get_info_roundtrip`
 
 **Status:** done
 
@@ -5683,13 +5683,13 @@ InfoMask info_mask; };"
 `BaseObjectRequest::decode`, `GetInfoPayload::parse`);
 `crates/xrce/src/object_info.rs` (`InfoMask`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_an_info_mask_is_invalid_data`,
-`crates/xrce/src/object_info.rs::tests::info_mask_bits_and_wire_form`,
-`crates/xrce/src/submessages/get_info.rs::tests::get_info_roundtrip`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_an_info_mask_is_invalid_data`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_info_mask_bits_and_wire_form`,
+`crates/xrce/src/submessages/get_info.rs::tests::xrce_8_3_5_3_get_info_roundtrip`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`
 
 **Status:** done — der Agent liest `BaseObjectRequest` und `info_mask`; fehlt die Maske,
-antwortet er mit INFO und `STATUS_ERR_INVALID_DATA` (`65cd1820a04`). Das
+antwortet er mit INFO und `STATUS_ERR_INVALID_DATA` (`ca0cf7e08bf`). Das
 `client_info` aus Figure 10 (§8.4.4) steht hinter der `InfoMask`
 (`GetInfoPayload::with_client_info`), weil Annex A dafür kein Mitglied hat.
 
@@ -5714,12 +5714,12 @@ delete_client operation. Otherwise it shall call the delete operation."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`
 
 **Status:** done — der Code nimmt die Art aus der `object_id`; ein `ObjectVariant` hat
 DELETE_Payload nicht. `delete_client` ohne ProxyClient ergibt
-`STATUS_ERR_UNKNOWN_REFERENCE` (`ed2ca7b49a9`).
+`STATUS_ERR_UNKNOWN_REFERENCE` (`d7aec9c2d78`).
 
 ### §8.3.5.4 STATUS als Antwort auf DELETE
 
@@ -5728,7 +5728,7 @@ response, see 8.3.5.6."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete`, `status_reply`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done — der Code antwortet auf jedes DELETE mit STATUS, auch auf
 `delete_client`, wie der Text der Klausel es sagt. Table 14 (S. 86) nennt für
@@ -5741,7 +5741,7 @@ DELETE_Payload : BaseObjectRequest { };"
 
 **Repo:** `crates/xrce/src/submessages/delete.rs` (`DeletePayload`)
 
-**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::delete_fixture_decodes_and_removes_the_object_create_added`
+**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::xrce_7_8_3_4_delete_fixture_decodes_and_removes_the_object_create_added`
 
 **Status:** done
 
@@ -5753,11 +5753,11 @@ contain the returnStatus to the create_client operation invocation".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`agent_status_reply`; `SessionEngine::handle_create_client`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_wrong_cookie_is_answered_with_a_status_agent`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_client_rejects_wrong_major_version`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_wrong_cookie_is_answered_with_a_status_agent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_create_client_rejects_wrong_major_version`
 
-**Status:** `done` — Commits `ed2ca7b49a9`. auch jeder Fehler von CREATE_CLIENT (falsches
+**Status:** `done` — Commits `d7aec9c2d78`. auch jeder Fehler von CREATE_CLIENT (falsches
 Cookie, `session_id` ohne Sitzung, falsche Hauptversion, ClientKey nicht
 zugelassen, keine Ressourcen) wird als STATUS_AGENT beantwortet, nicht als
 STATUS.
@@ -5769,11 +5769,11 @@ STATUS.
 **Repo:** `crates/xrce/src/submessages/status_agent.rs`
 (`StatusAgentPayload::into_submessage`)
 
-**Tests:** `crates/xrce/src/submessages/status_agent.rs::tests::status_agent_roundtrip`,
+**Tests:** `crates/xrce/src/submessages/status_agent.rs::tests::xrce_8_3_5_5_status_agent_roundtrip`,
 `crates/xrce-client/src/lib.rs::tests::a_big_endian_status_agent_is_read_with_its_properties`
 
 **Status:** done — der Agent schreibt die Submessage mit gesetztem E-Flag und
-ohne weiteres Flag; der Client liest auch E=0 (§8.3.4.2, `b43d5e6b848`).
+ohne weiteres Flag; der Client liest auch E=0 (§8.3.4.2, `b9255734bfb`).
 
 ### §8.3.5.5 Payload STATUS_AGENT_Payload
 **Spec:** §8.3.5.5.2, S. 66–67 — "struct STATUS_AGENT_Payload {
@@ -5783,9 +5783,9 @@ to with the StatusValue that corresponds to the type of error encountered."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`agent_status_reply`); `crates/xrce/src/submessages/status_agent.rs` (`StatusAgentPayload::result_and_position`); `crates/xrce-client/src/lib.rs` (`handle_status_agent`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_status_agent_payload_is_annex_a_unless_the_result_status_is_named`, `crates/xrce-agent/src/daemon/config.rs::tests::the_payload_of_status_agent_can_be_set`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_5_the_status_agent_payload_is_annex_a_unless_the_result_status_is_named`, `crates/xrce-agent/src/daemon/config.rs::tests::xrce_8_3_5_5_the_payload_of_status_agent_can_be_set`
 
-**Status:** done — die IDL von Annex A ist `STATUS_AGENT_Payload { AGENT_Representation agent_info; }`: ein erfolgreiches CREATE_CLIENT wird mit der `AGENT_Representation` allein beantwortet (`agent_timestamp` nur mit `representation_timestamps: present`). Die Form des Textes und des Mitschnitts von eProsima mit einem `ResultStatus` davor ist die Einstellung `status_agent: with_result_status`; ein Fehler trägt das `ResultStatus`, das der Text ihm gibt, in beiden Formen, weil die IDL keinen Platz dafür hat. Der Client liest beide (am Cookie unterschieden); der Replay setzt die Einstellung. f514e3eae4b.
+**Status:** done — die IDL von Annex A ist `STATUS_AGENT_Payload { AGENT_Representation agent_info; }`: ein erfolgreiches CREATE_CLIENT wird mit der `AGENT_Representation` allein beantwortet (`agent_timestamp` nur mit `representation_timestamps: present`). Die Form des Textes und des Mitschnitts von eProsima mit einem `ResultStatus` davor ist die Einstellung `status_agent: with_result_status`; ein Fehler trägt das `ResultStatus`, das der Text ihm gibt, in beiden Formen, weil die IDL keinen Platz dafür hat. Der Client liest beide (am Cookie unterschieden); der Replay setzt die Einstellung. ceff32b54a4.
 ### §8.3.5.5 request_id und object_id im STATUS_AGENT
 **Spec:** §8.3.5.5.2, S. 67 — "The request_id and object_id within the
 BaseObjectReply shall match the namesake fields in the BaseObjectRequest of the
@@ -5804,8 +5804,8 @@ corresponding CREATE_CLIENT message."
 **Repo:** `crates/xrce/src/handshake.rs` (`XRCE_COOKIE`,
 `AgentRepresentation::encode_into`)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::agent_representation_roundtrip_no_properties`,
-`crates/xrce/src/handshake.rs::tests::agent_representation_decodes_the_captured_status_agent_body`
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_8_3_5_5_agent_representation_roundtrip_no_properties`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_agent_representation_decodes_the_captured_status_agent_body`
 
 **Status:** done
 
@@ -5818,7 +5818,7 @@ Client."
 **Repo:** `crates/xrce/src/handshake.rs` (`XRCE_VERSION`);
 `crates/xrce-agent/src/daemon/session.rs` (`agent_status_reply`)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::agent_representation_decodes_the_captured_status_agent_body`
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_agent_representation_decodes_the_captured_status_agent_body`
 
 **Status:** done
 
@@ -5829,9 +5829,9 @@ Agent in response to a CREATE or DELETE."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`status_reply`; `handle_create`, `handle_delete`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`,
-`crates/xrce-agent/src/daemon/session.rs::tests::delete_client_needs_a_proxy_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_without_a_base_object_request_is_answered`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_delete_client_needs_a_proxy_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_without_a_base_object_request_is_answered`
 
 **Status:** done
 
@@ -5843,12 +5843,12 @@ read_data operation is anything other than STATUS_OK."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`; `refuse_unreadable`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_request_that_cannot_be_read_is_answered_invalid_data`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_too_large_for_data_is_reported`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_request_that_cannot_be_read_is_answered_invalid_data`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_sample_too_large_for_data_is_reported`
 
 **Status:** done — Fehler beim Setzen des Filters, eine nicht lesbare Anfrage
-(`133a0db3c4f`) und ein Sample, das in keine Submessage passt, werden als STATUS
+(`97de94f63e4`) und ein Sample, das in keine Submessage passt, werden als STATUS
 beantwortet.
 
 ### §8.3.5.6 STATUS trägt den Rückgabewert der Operation
@@ -5859,7 +5859,7 @@ message."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`status_reply`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done
 
@@ -5873,14 +5873,14 @@ corresponding request message."
 **Repo:** `crates/xrce/src/object_info.rs` (`BaseObjectReply`, `ResultStatus`);
 `crates/xrce/src/submessages/status.rs` (`StatusPayload`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::base_object_reply_roundtrip`,
-`crates/xrce/tests/unannotated_types.rs::the_final_setting_writes_the_reference_implementations_octets`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_9_base_object_reply_roundtrip`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_7_the_final_setting_writes_the_reference_implementations_octets`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done — `ResultStatus` hat in Annex A keine `@extensibility` und ist
 APPENDABLE: in der Vorgabe trägt es ein DHEADER (`BaseObjectReply` 10 Byte), mit
 `unannotated_types: final` sind es 6 Byte wie im Mitschnitt; beide Formen werden
-gelesen (`f2ace917b5a`, `3874ad8d6a6`).
+gelesen (`7f85e76debd`, `220857a1e90`).
 
 ### §8.3.5.7 INFO auf GET_INFO
 
@@ -5890,12 +5890,12 @@ Agent to the XRCE Client in response to a GET_INFO message."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`, `answer_info`);
 `crates/xrce-agent/src/daemon/discovery.rs` (`build_info_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_udp_listener_answers_get_info_before_a_session`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_tcp_listener_answers_get_info_before_a_session`
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_udp_listener_answers_get_info_before_a_session`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_tcp_listener_answers_get_info_before_a_session`
 
-**Status:** `done` — Commits `65cd1820a04`, `67ead4d9708`. in der Sitzung, vor einer
+**Status:** `done` — Commits `ca0cf7e08bf`, `a8f300b7bcf`. in der Sitzung, vor einer
 Sitzung an UDP- und TCP-Listener und über die Discovery-Gruppe.
 
 ### §8.3.5.7 Flags von INFO
@@ -5904,11 +5904,11 @@ Sitzung an UDP- und TCP-Listener und über die Discovery-Gruppe.
 
 **Repo:** `crates/xrce/src/submessages/info.rs` (`InfoPayload::into_submessage_with`)
 
-**Tests:** `crates/xrce/src/submessages/info.rs::tests::info_roundtrip`,
-`crates/xrce/src/submessages/info.rs::tests::info_payload_is_the_reply_and_the_object_info`
+**Tests:** `crates/xrce/src/submessages/info.rs::tests::xrce_8_3_5_7_info_roundtrip`,
+`crates/xrce/src/submessages/info.rs::tests::xrce_8_3_5_7_info_payload_is_the_reply_and_the_object_info`
 
 **Status:** done — das E-Flag nennt die Byte-Reihenfolge der Payload; der Agent
-schreibt E=1 (`65cd1820a04`).
+schreibt E=1 (`ca0cf7e08bf`).
 
 ### §8.3.5.7 Payload INFO_Payload
 
@@ -5921,14 +5921,14 @@ parameters of the get_info operation."
 `crates/xrce/src/object_info.rs` (`BaseObjectReply`, `ObjectInfo`, `ActivityInfoVariant`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`, `object_info`, `agent_object_info`)
 
-**Tests:** `crates/xrce/src/submessages/info.rs::tests::info_payload_is_the_reply_and_the_object_info`,
-`crates/xrce/src/object_info.rs::tests::object_info_puts_the_activity_before_the_config`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_writer_reports_its_activity`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_reader_reports_its_activity`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_info_mask_selects_activity_and_configuration`
+**Tests:** `crates/xrce/src/submessages/info.rs::tests::xrce_8_3_5_7_info_payload_is_the_reply_and_the_object_info`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_object_info_puts_the_activity_before_the_config`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_writer_reports_its_activity`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_reader_reports_its_activity`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_the_info_mask_selects_activity_and_configuration`
 
-**Status:** `done` — Commits `65cd1820a04`. `BaseObjectReply` und `ObjectInfo` (activity
+**Status:** `done` — Commits `ca0cf7e08bf`. `BaseObjectReply` und `ObjectInfo` (activity
 vor config, `@optional` als Präsenz-Oktett) nach Annex A; `activity` und
 `config` folgen der `InfoMask`. Die Werte `highest_acked_num` (DataReader) sowie
 `stream_seq_num` und `sample_seq_num` (DataWriter) zählt der Agent selbst; die
@@ -5943,12 +5943,12 @@ type of error encountered."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`, `answer_info`);
 `crates/xrce-agent/src/daemon/discovery.rs` (`build_info_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_an_info_mask_is_invalid_data`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_and_delete_without_permission_are_denied`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::a_get_info_without_a_mask_is_answered_with_an_error_info`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_an_info_mask_is_invalid_data`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_get_info_and_delete_without_permission_are_denied`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_8_3_5_7_a_get_info_without_a_mask_is_answered_with_an_error_info`
 
-**Status:** `done` — Commits `65cd1820a04`. ein Fehler von GET_INFO (UNKNOWN_REFERENCE,
+**Status:** `done` — Commits `ca0cf7e08bf`. ein Fehler von GET_INFO (UNKNOWN_REFERENCE,
 INVALID_DATA, DENIED) wird als INFO mit dem Status gesendet, nicht als STATUS.
 
 ### §8.3.5.7 request_id und object_id des GET_INFO
@@ -5960,12 +5960,12 @@ BaseObjectRequest of the corresponding GET_INFO message."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`: `InfoRequest::base`, `answer_info`);
 `crates/xrce-agent/src/daemon/discovery.rs` (`build_info_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
-`crates/xrce-agent/src/daemon/session.rs::tests::any_object_id_of_kind_agent_is_the_root_in_a_session`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::any_object_id_of_kind_agent_is_the_root`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_3_any_object_id_of_kind_agent_is_the_root_in_a_session`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_8_3_5_7_any_object_id_of_kind_agent_is_the_root`
 
-**Status:** `done` — Commits `65cd1820a04`. die Tests prüfen `request_id` und `object_id`
+**Status:** `done` — Commits `ca0cf7e08bf`. die Tests prüfen `request_id` und `object_id`
 im INFO, auch für eine `object_id` der Art OBJK_AGENT außer 0xFFFD.
 
 ### §8.3.5.8 WRITE_DATA vom Client
@@ -5976,8 +5976,8 @@ Client to write data using an XRCE DataWriter object within the XRCE Agent."
 **Repo:** `crates/xrce-client/src/lib.rs` (`XrceClient::request_write`,
 `XrceClient::request_write_sample`); `crates/xrce/src/submessages/write_data.rs`
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_matches_the_annex_b_example`,
-`crates/endpoint-e2e/tests/xrce_write_framing.rs::rust_endpoint_frames_conformant_write_data`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_write_data_matches_the_annex_b_example`,
+`crates/endpoint-e2e/tests/xrce_write_framing.rs::xrce_8_3_5_8_rust_endpoint_frames_a_conformant_write_data`
 
 **Status:** done — `xrce_write_framing.rs` prüft die Rahmen der Endpoint-SDKs
 weiterer Sprachen gegen denselben Decoder.
@@ -5990,10 +5990,10 @@ XRCE Agent calling the write operation on an XRCE DataWriter object (see
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_successful_write_is_answered_with_status_ok`,
-`crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_successful_write_is_answered_with_status_ok`,
+`crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
-**Status:** `done` — Commits `dc0209b38fe`. `write` wird aufgerufen; ein Schreiben ohne
+**Status:** `done` — Commits `869304e6b63`. `write` wird aufgerufen; ein Schreiben ohne
 Fehler wird mit STATUS_OK beantwortet, ein Fehler mit dessen Status. Die Antwort
 folgt dem Text von §8.3.5.8; der Mitschnitt des eProsima-Agent zeigt keine
 Antwort auf WRITE_DATA, eine Einstellung dafür gibt es nicht.
@@ -6008,8 +6008,8 @@ write the data to the DDS domain."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`, `dds_write_and_report`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`
 
 **Status:** done
 
@@ -6022,8 +6022,8 @@ and 3 shall be set to indicate the DataFormat used for the payload."
 **Repo:** `crates/xrce/src/submessages/write_data.rs`
 (`DataFormat::to_flag_bits`, `DataFormat::from_flag_bits`, `DataFormat::FORMAT_MASK`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_sample_flags_carry_format_sample`,
-`crates/xrce/src/submessages/write_data.rs::tests::write_data_rejects_reserved_format`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_8_3_5_8_write_data_sample_flags_carry_format_sample`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_8_3_5_8_write_data_rejects_reserved_format`
 
 **Status:** done
 
@@ -6036,9 +6036,9 @@ little-endian.
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs` (`DataFormat`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_flags_are_e_le_and_format_data`,
-`crates/xrce/src/submessages/write_data.rs::tests::data_format_raw_roundtrip`,
-`crates/xrce/src/submessages/write_data.rs::tests::any_write_data_dispatches_every_format`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_8_2_3_write_data_flags_are_e_le_and_format_data`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_14_data_format_raw_roundtrip`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_any_write_data_dispatches_every_format`
 
 **Status:** done
 
@@ -6053,16 +6053,16 @@ payload representations extend BaseObjectRequest".
 `WriteDataPayloadPackedSamples`);
 `crates/xrce-agent/src/daemon/session.rs` (`split_write_items`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_base_object_request_precedes_the_sample`,
-`crates/xrce/src/submessages/write_data.rs::tests::write_data_sample_seq_matches_annex_b_5_4_layout`,
-`crates/xrce/src/submessages/write_data.rs::tests::write_data_packed_samples_matches_annex_b_5_5_layout`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_seq_carries_state_and_time_per_sample`,
-`crates/xrce-agent/src/daemon/session.rs::tests::packed_samples_resolve_their_deltas_against_the_base`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sequence_that_does_not_split_writes_nothing`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sequence_of_a_topic_of_unknown_type_is_refused`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_8_3_5_8_write_data_base_object_request_precedes_the_sample`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_2_write_data_sample_seq_matches_annex_b_5_4_layout`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_write_data_packed_samples_matches_annex_b_5_5_layout`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_data_seq_is_split_by_the_type_and_written_sample_by_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_sample_seq_carries_state_and_time_per_sample`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_packed_samples_resolve_their_deltas_against_the_base`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_sequence_that_does_not_split_writes_nothing`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_4_1_a_sequence_of_a_topic_of_unknown_type_is_refused`
 
-**Status:** `done` — Commits `4f1fb9f5f4f`. Codec und Verarbeitung im Agent: die Samples
+**Status:** `done` — Commits `f40bd568ad1`. Codec und Verarbeitung im Agent: die Samples
 der drei Sequenzformate werden nach dem Typ des Topics getrennt und einzeln
 geschrieben, mit `SampleInfo` je Sample. Für ein Topic unbekannten Typs ist eine
 Sequenz nicht teilbar und wird mit STATUS_ERR_INVALID_DATA beantwortet, ohne
@@ -6078,7 +6078,7 @@ within the XRCE Agent."
 
 **Repo:** `crates/xrce-client/src/lib.rs` (`XrceClient::request_read`)
 
-**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::read_data_fixture_decodes_into_a_real_read_specification`
+**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::xrce_8_3_5_9_read_data_fixture_decodes_into_a_real_read_specification`
 
 **Status:** done
 
@@ -6092,8 +6092,8 @@ parameters to the read operation shall be obtained from the payload."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`, `pump_read`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::read_data_elapsed_time_is_measured_from_the_real_request_time`,
-`crates/xrce-agent/src/daemon/session.rs::tests::read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_read_data_elapsed_time_is_measured_from_the_real_request_time`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`
 
 **Status:** done
 
@@ -6105,7 +6105,7 @@ DataReader is identified by the object_id field in the payload."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`pump_read`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
 **Status:** done
 
@@ -6119,10 +6119,10 @@ continuous_read_options attained".
 **Repo:** `crates/xrce/src/continuous_read.rs` (`ReadStream`);
 `crates/xrce-agent/src/daemon/session.rs` (`tick`, `pump_read`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::read_data_elapsed_time_is_measured_from_the_real_request_time`,
-`crates/xrce/src/continuous_read.rs::tests::max_samples_cap_enforced`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_read_data_elapsed_time_is_measured_from_the_real_request_time`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_max_samples_cap_enforced`
 
-**Status:** `done` — Commits `2fa0800f55a`. `continuous_read_options` gibt es in der IDL
+**Status:** `done` — Commits `8bcb1d00161`. `continuous_read_options` gibt es in der IDL
 nicht; das Gegenstück ist `delivery_control` (Item „Lesen ohne und mit
 continuous_read_options“ unten).
 
@@ -6133,7 +6133,7 @@ object_id is received from the XRCE Client."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`: `self.reads.insert`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_new_read_data_replaces_the_active_read`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_a_new_read_data_replaces_the_active_read`
 
 **Status:** done — das neue Lesen ersetzt das laufende; DATA trägt danach nur die
 `request_id` des neuen.
@@ -6158,7 +6158,7 @@ Table 9.
 **Repo:** `crates/xrce/src/submessages/read_data.rs`
 (`ReadDataPayload::into_submessage`, `ReadDataPayload::into_submessage_with`)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::read_data_minimal_roundtrip`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_8_3_5_9_read_data_minimal_roundtrip`
 
 **Status:** done
 
@@ -6171,13 +6171,13 @@ ReadSpecification read_specification; };"
 `ReadSpecification`, `DataDeliveryControl`, `DeliveryControlForm`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::set_delivery_control_form`)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::read_data_base_object_request_precedes_the_spec`,
-`crates/xrce/src/submessages/read_data.rs::tests::read_data_matches_the_captured_read_data_example`,
-`crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`,
-`crates/xrce/src/submessages/read_data.rs::tests::the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`,
-`crates/xrce/src/submessages/read_data.rs::tests::the_data_format_octet_has_the_values_of_annex_a`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_8_3_5_9_read_data_base_object_request_precedes_the_spec`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_14_read_data_matches_the_captured_read_data_example`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_1_the_data_format_octet_has_the_values_of_annex_a`
 
-**Status:** `done` — Commits `1663f8f6240`. `BaseObjectRequest` und `ReadSpecification`
+**Status:** `done` — Commits `b589558e671`. `BaseObjectRequest` und `ReadSpecification`
 nach Annex A (`data_format` 0x00/0x02/0x08/0x0A/0x0E,
 `content_filter_expression` als XCDR2-String, `DataDeliveryControl` mit
 DHEADER). Der Widerspruch zwischen Annex B.4.2 (DHEADER) und dem Mitschnitt von
@@ -6199,14 +6199,14 @@ elapsed."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`);
 `crates/xrce/src/continuous_read.rs` (`ReadStream::once`, `ReadStream::new`, `ReadStream::pull_pending_samples`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_read_without_delivery_control_returns_the_cache_once`,
-`crates/xrce/src/continuous_read.rs::tests::a_read_without_delivery_control_returns_the_cache_once`,
-`crates/xrce-agent/src/daemon/session.rs::tests::next_sample_waits_for_one_sample`,
-`crates/xrce/src/continuous_read.rs::tests::pacing_throttles_per_period`,
-`crates/xrce/src/continuous_read.rs::tests::max_elapsed_time_finalizes`,
-`crates/xrce/src/continuous_read.rs::tests::max_samples_cap_enforced`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_a_read_without_delivery_control_returns_the_cache_once`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_8_3_5_9_a_read_without_delivery_control_returns_the_cache_once`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_next_sample_waits_for_one_sample`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_pacing_throttles_per_period`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_8_3_5_9_max_elapsed_time_finalizes`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_max_samples_cap_enforced`
 
-**Status:** `done` — Commits `2fa0800f55a`. die IDL kennt `continuous_read_options`,
+**Status:** `done` — Commits `8bcb1d00161`. die IDL kennt `continuous_read_options`,
 `pace_period`, `max_total_samples` und `max_total_elapsed_time` nicht; der Code
 nimmt das Vorhandensein von `delivery_control` als Merker (`max_samples`,
 `max_elapsed_time`, `min_pace_period`). Mit `delivery_control` liest er
@@ -6222,10 +6222,10 @@ gelesen: nächstes Sample ohne Zeitgrenze) ist die benannte Einstellung
 **Repo:** `crates/xrce/src/continuous_read.rs` (`ReadStream::pull_pending_samples`);
 `crates/xrce-agent/src/daemon/session.rs` (`pump_read`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_read_without_delivery_control_returns_the_cache_once`,
-`crates/xrce-agent/src/daemon/session.rs::tests::next_sample_waits_for_one_sample`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_a_read_without_delivery_control_returns_the_cache_once`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_9_next_sample_waits_for_one_sample`
 
-**Status:** `done` — Commits `2fa0800f55a`. ohne `delivery_control` liefert der Agent
+**Status:** `done` — Commits `8bcb1d00161`. ohne `delivery_control` liefert der Agent
 alle Samples im Cache und beendet das Lesen; ein später eintreffendes Sample
 liefert er nicht (Vorgabe `once`). Mit `read_without_delivery_control:
 next-sample` liefert er das nächste eintreffende Sample.
@@ -6239,9 +6239,9 @@ time interval between samples."
 **Repo:** `crates/xrce/src/continuous_read.rs` (`ReadStream::capacity`,
 `ReadStream::pull_pending_samples`: 0 ohne Mindestabstand)
 
-**Tests:** `crates/xrce/src/continuous_read.rs::tests::max_samples_cap_enforced`,
-`crates/xrce/src/continuous_read.rs::tests::rate_limit_partitions_samples_over_time`,
-`crates/xrce/src/continuous_read.rs::tests::pacing_throttles_per_period`
+**Tests:** `crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_max_samples_cap_enforced`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_rate_limit_partitions_samples_over_time`,
+`crates/xrce/src/continuous_read.rs::tests::xrce_7_8_5_1_pacing_throttles_per_period`
 
 **Status:** done — die Spec gibt `MIN_PACE_PERIOD_NONE` keinen Wert; der Code
 nimmt 0.
@@ -6257,9 +6257,9 @@ DATA message."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`,
 `pump_read`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
-`crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_too_large_for_data_is_reported`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`,
+`crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_sample_too_large_for_data_is_reported`
 
 **Status:** done
 
@@ -6273,8 +6273,8 @@ or until it is explicitly cancelled."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`tick`, `pump_read`, `handle_read_data`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::read_data_elapsed_time_is_measured_from_the_real_request_time`,
-`crates/xrce-agent/src/daemon/session.rs::tests::max_samples_zero_cancels_the_active_read`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_read_data_elapsed_time_is_measured_from_the_real_request_time`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_max_samples_zero_cancels_the_active_read`
 
 **Status:** done — bis zur Endbedingung oder zum Abbruch mit `MAX_SAMPLES_ZERO`.
 
@@ -6287,8 +6287,8 @@ message."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`pump_read`: `ActiveRead::request_id`;
 `data_submessages`: `BaseObjectRequest`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce/src/submessages/data.rs::tests::data_base_object_request_precedes_the_sample`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_data_base_object_request_precedes_the_sample`
 
 **Status:** done
 
@@ -6301,8 +6301,8 @@ the flags of the WRITE_DATA submessage."
 `DataPayloadSample::flags`, `DataPayloadDataSeq::flags`, `DataPayloadSampleSeq::flags`,
 `DataPayloadPackedSamples::flags`)
 
-**Tests:** `crates/xrce/src/submessages/data.rs::tests::data_uses_id_9`,
-`crates/xrce/src/submessages/data.rs::tests::data_sample_rejects_non_sample_format`
+**Tests:** `crates/xrce/src/submessages/data.rs::tests::xrce_8_3_5_10_data_uses_id_9`,
+`crates/xrce/src/submessages/data.rs::tests::xrce_8_3_5_10_data_sample_rejects_non_sample_format`
 
 **Status:** done
 
@@ -6315,13 +6315,13 @@ also match the DataFormat encoded in the flags".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`: `ActiveRead::format`;
 `data_submessages`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_data_seq_is_answered_with_one_data_seq`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_is_answered_with_a_sample_each`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_seq_is_answered_with_one_sample_seq`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_packed_samples_is_answered_with_one_packed_samples`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_sequence_formats_split_at_the_size_of_a_submessage`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_data_seq_is_answered_with_one_data_seq`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_14_a_read_for_sample_is_answered_with_a_sample_each`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_sample_seq_is_answered_with_one_sample_seq`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_1_a_read_for_packed_samples_is_answered_with_one_packed_samples`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_the_sequence_formats_split_at_the_size_of_a_submessage`
 
-**Status:** `done` — Commits `d5fbdbe672e`. der Agent sendet DATA in dem `data_format`,
+**Status:** `done` — Commits `fd5253ca805`. der Agent sendet DATA in dem `data_format`,
 das das READ_DATA verlangt (FORMAT_DATA, _SAMPLE, _DATA_SEQ, _SAMPLE_SEQ,
 _PACKED_SAMPLES); die Sequenzformate teilen sich an der Größe einer Submessage.
 
@@ -6336,11 +6336,11 @@ representations extend RelatedObjectRequest."
 `DataPayloadPackedSamples`, `AnyData`);
 `crates/xrce-agent/src/daemon/session.rs` (`data_submessages`)
 
-**Tests:** `crates/xrce/src/submessages/data.rs::tests::any_data_dispatches_every_format`,
-`crates/xrce/src/submessages/data.rs::tests::data_sample_seq_matches_annex_b_5_4_layout`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_seq_is_answered_with_one_sample_seq`
+**Tests:** `crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_any_data_dispatches_every_format`,
+`crates/xrce/src/submessages/data.rs::tests::xrce_8_3_5_10_data_sample_seq_matches_annex_b_5_4_layout`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_2_a_read_for_sample_seq_is_answered_with_one_sample_seq`
 
-**Status:** `done` — Commits `d5fbdbe672e`. Codec und Agent. In der Liste fehlt nach
+**Status:** `done` — Commits `fd5253ca805`. Codec und Agent. In der Liste fehlt nach
 `DATA_Payload_Sample` die schließende Klammer (S. 73). Die `SampleInfo` füllt
 der Agent mit dem, was er kennt: `sequence_number` zählt die gelieferten
 Samples, `session_time_offset` ist der Lieferzeitpunkt, `state` ist 0, weil
@@ -6370,7 +6370,7 @@ only send ACKNACK messages in response to HEARTBEAT messages."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_heartbeat`;
 keine andere Stelle des Agent erzeugt ACKNACK)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`
 
 **Status:** done
 
@@ -6381,9 +6381,9 @@ STREAM_ID_NONE".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_heartbeat`); `crates/xrce-client/src/lib.rs` (`handle_heartbeat`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::the_acknack_of_the_agent_is_on_streamid_none`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_8_3_5_11_the_acknack_of_the_agent_is_on_streamid_none`
 
-**Status:** done — `handle_heartbeat` des Agent und `XrceClient::handle_heartbeat` setzen `StreamId::NONE` im Header des ACKNACK, der Payload nennt den Stream (0f85937a436).
+**Status:** done — `handle_heartbeat` des Agent und `XrceClient::handle_heartbeat` setzen `StreamId::NONE` im Header des ACKNACK, der Payload nennt den Stream (02c704651e4).
 ### §8.3.5.11 Flags von ACKNACK
 
 **Spec:** §8.3.5.11.1, S. 74 — keine zusätzlichen Flags.
@@ -6391,7 +6391,7 @@ STREAM_ID_NONE".
 **Repo:** `crates/xrce/src/submessages/acknack.rs`
 (`AckNackPayload::into_submessage`)
 
-**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::acknack_roundtrip_via_submessage`
+**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_5_11_acknack_roundtrip_via_submessage`
 
 **Status:** done
 
@@ -6403,17 +6403,17 @@ first_unacked_seq_num; octet[2] nack_bitmap; octet stream_id; };"
 **Repo:** `crates/xrce/src/submessages/acknack.rs` (`AckNackPayload`,
 `ACKNACK_BODY_SIZE` = 5 Oktette der Member; `encode_body`, `decode_body`)
 
-**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::acknack_le_roundtrip`,
-`crates/xrce/src/submessages/acknack.rs::tests::acknack_be_roundtrip`,
-`crates/xrce/tests/unannotated_types.rs::the_default_is_appendable_with_a_dheader`,
-`crates/xrce/tests/unannotated_types.rs::the_final_setting_writes_the_reference_implementations_octets`,
-`crates/xrce/tests/unannotated_types.rs::both_forms_are_read_in_either_setting`
+**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_5_11_acknack_le_roundtrip`,
+`crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_4_2_acknack_be_roundtrip`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_the_default_is_appendable_with_a_dheader`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_7_the_final_setting_writes_the_reference_implementations_octets`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_both_forms_are_read_in_either_setting`
 
-**Status:** `done` — Commits `f2ace917b5a`. `ACKNACK_Payload` hat in Annex A keine
+**Status:** `done` — Commits `7f85e76debd`. `ACKNACK_Payload` hat in Annex A keine
 `@extensibility` und ist APPENDABLE (DDS-XTypes 1.3 §7.3.1.2.1.8): in der
 Vorgabe DHEADER (4 Byte) und 5 Byte Member; mit `unannotated_types: final` sind
 es 5 Byte wie im Mitschnitt von eProsima; beide Formen werden gelesen, in allen
-SDKs (`a293d8fc5e9`, `b590f6539d0`). Der Text nennt `short`, Annex A `unsigned
+SDKs (`6bb66e420b7`, `82fa0a977e2`). Der Text nennt `short`, Annex A `unsigned
 short` für `first_unacked_seq_num`; beide haben 2 Oktette.
 
 ### §8.3.5.11 first_unacked_seq_num
@@ -6424,8 +6424,8 @@ all sequence numbers up to but not including it have been received."
 **Repo:** `crates/xrce/src/reliable.rs` (`ReliableStreamState::pending_acknack`:
 `expected_seq`; `ReliableStreamState::recv_acknack`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::pending_acknack_marks_missing_slots`,
-`crates/xrce/src/reliable.rs::tests::recv_acknack_clears_acked_seqnrs`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_pending_acknack_marks_missing_slots`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_recv_acknack_clears_acked_seqnrs`
 
 **Status:** done — das Beispiel darunter sagt „up to and including 99“ für
 den Wert 100.
@@ -6442,8 +6442,8 @@ numbers 100, 103, and 114 are missing."
 `crates/xrce-agent/src/daemon/session.rs` (`handle_acknack`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::handle_acknack`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::end_to_end_sender_receiver_with_loss_recovery`,
-`crates/xrce-agent/src/daemon/session.rs::tests::acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_end_to_end_sender_receiver_with_loss_recovery`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_11_acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
 
 **Status:** done — Bit i steht für `first_unacked_seq_num + i`, `nack_bitmap[0]`
 für die Bits 0 bis 7. Die Spec legt nicht fest, welches Oktett von `octet[2]`
@@ -6459,7 +6459,7 @@ ACKNACK is directed."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_acknack`:
 `self.reliable.get_mut(&(client, ack.stream_id))`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_11_acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
 
 **Status:** done
 
@@ -6487,10 +6487,7 @@ XRCE Client is active and not in a sleep cycle."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Erwartung. Der Code sendet HEARTBEAT in `tick`
-alle `DEFAULT_HEARTBEAT_PERIOD` (500 ms), solange unbestätigte Nachrichten
-bestehen und die Sitzung nicht abgelaufen ist, ohne Rücksicht auf eine
-Ruhephase.
+**Status:** open — eine Erwartung, die das Produkt erfüllen kann. `crates/xrce/src/reliable.rs` sendet HEARTBEAT in `tick` alle `DEFAULT_HEARTBEAT_PERIOD` (500 ms), solange unbestätigte Nachrichten bestehen und die Sitzung nicht abgelaufen ist, ohne Rücksicht auf eine Ruhephase des Client.
 
 ### §8.3.5.12 HEARTBEAT auf STREAMID_NONE
 
@@ -6501,7 +6498,7 @@ STREAM_ID_NONE".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`tick`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::tick`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_heartbeat_of_the_agent_is_on_streamid_none`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_12_a_heartbeat_of_the_agent_is_on_streamid_none`,
 `crates/xrce-client/src/lib.rs::tests::a_heartbeat_of_the_client_is_on_streamid_none`
 
 **Status:** done — der Header von HEARTBEAT trägt STREAMID_NONE, die Payload den
@@ -6514,7 +6511,7 @@ Stream, den es meldet.
 **Repo:** `crates/xrce/src/submessages/heartbeat.rs`
 (`HeartbeatPayload::into_submessage`)
 
-**Tests:** `crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_roundtrip_via_submessage`
+**Tests:** `crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_5_12_heartbeat_roundtrip_via_submessage`
 
 **Status:** done
 
@@ -6526,8 +6523,8 @@ first_unacked_seq_nr; short last_unacked_seq_nr; octet stream_id; };"
 **Repo:** `crates/xrce/src/submessages/heartbeat.rs` (`HeartbeatPayload`,
 `HEARTBEAT_BODY_SIZE` = 5)
 
-**Tests:** `crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_le_roundtrip`,
-`crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_be_roundtrip`
+**Tests:** `crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_5_12_heartbeat_le_roundtrip`,
+`crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_4_2_heartbeat_be_roundtrip`
 
 **Status:** done — Annex A schreibt `@extensibility(FINAL)`: 5 Byte ohne
 DHEADER. Annex A nennt die Member `first_unacked_seq_num` und
@@ -6545,8 +6542,8 @@ the sending side."
 **Repo:** `crates/xrce/src/reliable.rs` (`ReliableStreamState::pending_heartbeat`:
 `window_base` und das größte offene `seq`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::pending_heartbeat_fires_first_time`,
-`crates/xrce/src/reliable.rs::tests::heartbeat_window_end_with_hole_is_serial_max_not_count`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_5_12_pending_heartbeat_fires_first_time`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_12_heartbeat_window_end_with_hole_is_serial_max_not_count`
 
 **Status:** done — der Satz zu `last_unacked_seq_nr` wiederholt den zu
 `first_unacked_seq_nr`; der Code setzt die letzte offene Nummer.
@@ -6559,7 +6556,7 @@ HEARTBEAT is directed."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_heartbeat`:
 Zustand je `hb.stream_id`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`
 
 **Status:** done
 
@@ -6573,10 +6570,10 @@ header."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_reset`);
 `crates/xrce/src/reliable.rs` (`ReliableStreamState::reset`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`,
-`crates/xrce/src/reliable.rs::tests::reset_clears_state_completely`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_13_reset_clears_state_completely`
 
-**Status:** `done` — Commits `619184de8a1`. RESET setzt zurück: alle Reliable Streams
+**Status:** `done` — Commits `d4aad7c50b6`. RESET setzt zurück: alle Reliable Streams
 (auch Stream 255), die Reassemblierung von FRAGMENT, die laufenden Lesevorgänge,
 den Rückstau auf volle Sender-Fenster und die Zähler der Best-Effort-Streams,
 ein- und ausgehend. Die Objekte des ProxyClient und seine `session_id` bleiben;
@@ -6588,9 +6585,9 @@ ob „all state“ sie meint, legt die Spec nicht fest.
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_reset`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_2_reset_clears_reads_backlog_best_effort_counters_and_every_reliable_stream`
 
-**Status:** `done` — Commits `619184de8a1`. `handle_reset` beendet laufende READ_DATA,
+**Status:** `done` — Commits `d4aad7c50b6`. `handle_reset` beendet laufende READ_DATA,
 leert den Rückstau und setzt die Zähler der Best-Effort-Streams zurück; der Test
 ruft RESET über die Sitzung.
 
@@ -6601,8 +6598,8 @@ RESET submessage shall have an empty payload."
 
 **Repo:** `crates/xrce/src/submessages/reset.rs` (`ResetPayload`)
 
-**Tests:** `crates/xrce/src/submessages/reset.rs::tests::reset_roundtrip_empty_body`,
-`crates/xrce/src/submessages/reset.rs::tests::reset_rejects_nonempty_body`
+**Tests:** `crates/xrce/src/submessages/reset.rs::tests::xrce_8_3_5_13_reset_roundtrip_empty_body`,
+`crates/xrce/src/submessages/reset.rs::tests::xrce_8_3_5_13_reset_rejects_nonempty_body`
 
 **Status:** done
 
@@ -6614,15 +6611,15 @@ of other submessages whose length exceeds the transport MTU."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`emit_possibly_fragmented`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::send_maybe_fragmented`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
 `crates/xrce-client/src/lib.rs::tests::write_above_mtu_splits_into_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_fragment_run_without_a_submessage_is_answered_invalid_data`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_14_a_fragment_run_without_a_submessage_is_answered_invalid_data`
 
 **Status:** done — die MTU kommt aus dem Feld `requested_mtu`, das eProsima
 anhängt; fehlt es, gelten 508 Byte. FRAGMENT nur auf Reliable Streams
 (§8.3.5.14): auf einem Best-Effort-Stream sendet der Agent eine zu große
 Submessage ungeteilt und meldet `SessionEvent::ReliableSendOverflowed`. Ein Lauf
-ohne Submessage wird abgelehnt (`1933142acaf`).
+ohne Submessage wird abgelehnt (`622d2496da0`).
 
 ### §8.3.5.14 FRAGMENT nur auf Reliable Streams
 
@@ -6633,9 +6630,9 @@ reliable streams."
 auf Best-Effort-Streams ganz gesendet); `crates/xrce-client/src/lib.rs`
 (`send_maybe_fragmented`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
 `crates/xrce-client/src/lib.rs::tests::write_above_mtu_splits_into_fragments`,
-`crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+`crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
 **Status:** done — Agent und Client zerlegen nur auf Reliable Streams; eine
 Submessage über der MTU geht auf einem Best-Effort-Stream ganz hinaus (Ereignis
@@ -6650,8 +6647,8 @@ submessage shall have the 'Last Fragment' flag set 1."
 
 **Repo:** `crates/xrce/src/submessages/fragment.rs` (`FRAGMENT_FLAG_LAST`)
 
-**Tests:** `crates/xrce/src/submessages/fragment.rs::tests::fragment_roundtrip_carries_last_flag`,
-`crates/xrce/src/submessages/fragment.rs::tests::fragment_intermediate_has_no_last_flag`
+**Tests:** `crates/xrce/src/submessages/fragment.rs::tests::xrce_8_3_5_14_fragment_roundtrip_carries_last_flag`,
+`crates/xrce/src/submessages/fragment.rs::tests::xrce_8_3_5_14_fragment_intermediate_has_no_last_flag`
 
 **Status:** done
 
@@ -6670,13 +6667,13 @@ fragment."
 (`decode_submessages`)
 
 **Tests:**
-`crates/xrce-agent/src/daemon/session.rs::tests::multi_fragment_create_reassembles_correctly`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_second_fragmented_message_reassembles_like_the_first`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_fragmented_run_of_two_submessages_runs_both`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_14_multi_fragment_create_reassembles_correctly`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_14_a_second_fragmented_message_reassembles_like_the_first`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_14_a_fragmented_run_of_two_submessages_runs_both`
 
 **Status:** done — die Bytes werden in der Reihenfolge des Stream
 zusammengesetzt und unter dem Header der Nachricht mit dem letzten Fragment
-verarbeitet, jede Submessage des Laufs (9b18d126ef3).
+verarbeitet, jede Submessage des Laufs (8e0bfe868aa).
 
 ### §8.3.5.14 Alle Submessages der zusammengesetzten Folge
 
@@ -6686,16 +6683,16 @@ verarbeitet, jede Submessage des Laufs (9b18d126ef3).
 `crates/xrce-agent/src/daemon/session.rs` (`process_message_submessages`);
 `crates/xrce-client/src/lib.rs` (`XrceClient`, `ClientEvent::FragmentDiscarded`)
 
-**Tests:** `crates/xrce/src/submessages/mod.rs::tests::a_submessage_run_decodes_every_submessage_past_the_padding`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_fragmented_run_of_two_submessages_runs_both`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_fragment_run_without_a_submessage_is_answered_invalid_data`,
+**Tests:** `crates/xrce/src/submessages/mod.rs::tests::xrce_8_3_5_14_a_submessage_run_decodes_every_submessage_past_the_padding`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_14_a_fragmented_run_of_two_submessages_runs_both`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_14_a_fragment_run_without_a_submessage_is_answered_invalid_data`,
 `crates/xrce-client/src/lib.rs::tests::a_fragment_run_without_a_submessage_is_reported`
 
 **Status:** done — Agent und Client nehmen jede Submessage des zusammengesetzten
-Laufs, auf Vielfachen von 4 (§8.3.3) (9b18d126ef3). Ein Lauf ohne Submessage
+Laufs, auf Vielfachen von 4 (§8.3.3) (8e0bfe868aa). Ein Lauf ohne Submessage
 oder ohne Folge von Submessages ergibt beim Agent STATUS
 `STATUS_ERR_INVALID_DATA`, beim Client `ClientEvent::FragmentDiscarded`
-(1933142acaf).
+(622d2496da0).
 
 ### §8.3.5.14 Flags von FRAGMENT
 
@@ -6704,7 +6701,7 @@ the 'Last Fragment' bit, indicates the last fragment in the sequence."
 
 **Repo:** `crates/xrce/src/submessages/fragment.rs` (`FragmentPayload::flags`)
 
-**Tests:** `crates/xrce/src/submessages/fragment.rs::tests::fragment_roundtrip_carries_last_flag`
+**Tests:** `crates/xrce/src/submessages/fragment.rs::tests::xrce_8_3_5_14_fragment_roundtrip_carries_last_flag`
 
 **Status:** done
 
@@ -6718,8 +6715,8 @@ submessage is received."
 **Repo:** `crates/xrce/src/fragment.rs` (`FragmentAssembler`);
 `crates/xrce-agent/src/daemon/session.rs` (`FragmentRun`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_tick_between_fragments_keeps_the_reassembly`,
-`crates/xrce/src/fragment.rs::tests::out_of_order_reassembly`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_14_a_tick_between_fragments_keeps_the_reassembly`,
+`crates/xrce/src/fragment.rs::tests::xrce_8_3_5_14_out_of_order_reassembly`
 
 **Status:** done — ein unvollständiger Lauf wird nach 10 s verworfen
 (`DEFAULT_GC_TTL`) und als Ereignis gemeldet.
@@ -6737,12 +6734,12 @@ timestamp of the sender of the message at the time the message is sent."
 `handle_timestamp_reply`); `crates/xrce-client/src/lib.rs`
 (`XrceClient::send_timestamp`, `send_timestamp_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::the_agent_sends_a_timestamp_and_reads_the_reply`,
-`crates/xrce-agent/src/daemon/session.rs::tests::tick_sends_a_timestamp_every_interval`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_15_the_agent_sends_a_timestamp_and_reads_the_reply`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_15_tick_sends_a_timestamp_every_interval`,
 `crates/xrce-client/src/lib.rs::tests::the_client_sends_and_reads_timestamps`
 
 **Status:** done — Agent und Client senden TIMESTAMP auf `STREAMID_NONE` mit der
-Uhrzeit des Senders (2b718de0166). Der Agent sendet ungefragt im Abstand des
+Uhrzeit des Senders (b224ed97138). Der Agent sendet ungefragt im Abstand des
 Agent-Schlüssels `timestamp_interval_secs`; Vorgabe 0 (keine), weil die
 eProsima-Clients keine TIMESTAMP erwarten. Die TIMESTAMP_REPLY des Client ergibt
 das Ereignis `ClockSynchronised`.
@@ -6755,15 +6752,15 @@ TIMESTAMP_Payload { Time_t transmit_timestamp; };"
 **Repo:** `crates/xrce/src/submessages/timestamp.rs` (`TimestampPayload`,
 `TimePoint`, `TimePoint::encode_into`, `TimePoint::decode_at`)
 
-**Tests:** `crates/xrce/src/submessages/timestamp.rs::tests::timestamp_roundtrip_via_submessage`,
-`crates/xrce/src/submessages/timestamp.rs::tests::time_t_roundtrip_be`,
-`crates/xrce/src/submessages/timestamp.rs::tests::a_timestamp_body_has_the_dheader_of_an_appendable_time_t`
+**Tests:** `crates/xrce/src/submessages/timestamp.rs::tests::xrce_8_3_5_15_timestamp_roundtrip_via_submessage`,
+`crates/xrce/src/submessages/timestamp.rs::tests::xrce_8_3_5_15_time_t_roundtrip_be`,
+`crates/xrce/src/submessages/timestamp.rs::tests::xrce_8_3_5_15_a_timestamp_body_has_the_dheader_of_an_appendable_time_t`
 
 **Status:** done — `TIMESTAMP_Payload` ist `@extensibility(FINAL)`; `Time_t` hat
 in Annex A keine Angabe und ist APPENDABLE (Body: DHEADER 8 und 8 Oktette). Die
 8 Oktette der Referenzimplementierung schreibt die Einstellung
 `unannotated_types: final` (Rust `UnannotatedTypes::Final`); beide Formen werden
-gelesen (f2ace917b5a, 3874ad8d6a6).
+gelesen (7f85e76debd, 220857a1e90).
 
 ### §8.3.5.16 TIMESTAMP_REPLY als Antwort
 
@@ -6772,8 +6769,8 @@ to a timestamp information message."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_timestamp`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::timestamp_reply_echoes_originate_and_uses_real_wall_clock`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_agent_sends_a_timestamp_and_reads_the_reply`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_16_timestamp_reply_echoes_originate_and_uses_real_wall_clock`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_15_the_agent_sends_a_timestamp_and_reads_the_reply`,
 `crates/xrce-client/src/lib.rs::tests::the_client_sends_and_reads_timestamps`
 
 **Status:** done — der Agent beantwortet TIMESTAMP, der Client beantwortet die
@@ -6786,9 +6783,9 @@ STREAM_ID_NONE".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_timestamp`); `crates/xrce-client/src/lib.rs` (`send_control`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::the_timestamp_reply_of_the_agent_is_on_streamid_none`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_8_3_5_16_the_timestamp_reply_of_the_agent_is_on_streamid_none`
 
-**Status:** done — der Code setzt `StreamId::NONE` in der Antwort des Agent und des Client; der Test prüft den Header der TIMESTAMP_REPLY des Agent (0f85937a436).
+**Status:** done — der Code setzt `StreamId::NONE` in der Antwort des Agent und des Client; der Test prüft den Header der TIMESTAMP_REPLY des Agent (02c704651e4).
 ### §8.3.5.16 Flags und Payload TIMESTAMP_REPLY_Payload
 
 **Spec:** §8.3.5.16.1–§8.3.5.16.2, S. 76 — keine zusätzlichen Flags; "struct
@@ -6798,14 +6795,14 @@ Time_t originate_timestamp; };"
 **Repo:** `crates/xrce/src/submessages/timestamp_reply.rs`
 (`TimestampReplyPayload`)
 
-**Tests:** `crates/xrce/src/submessages/timestamp_reply.rs::tests::timestamp_reply_roundtrip_le`,
-`crates/xrce/src/submessages/timestamp_reply.rs::tests::timestamp_reply_roundtrip_via_submessage`,
-`crates/xrce/src/transport_udp.rs::tests::loopback_roundtrip_timestamp_reply`
+**Tests:** `crates/xrce/src/submessages/timestamp_reply.rs::tests::xrce_8_3_5_16_timestamp_reply_roundtrip_le`,
+`crates/xrce/src/submessages/timestamp_reply.rs::tests::xrce_8_3_5_16_timestamp_reply_roundtrip_via_submessage`,
+`crates/xrce/src/transport_udp.rs::tests::xrce_8_3_5_16_loopback_roundtrip_timestamp_reply`
 
 **Status:** done — `TIMESTAMP_REPLY_Payload` ist `@extensibility(FINAL)` mit
 drei `Time_t`, jedes APPENDABLE (DHEADER 8, zusammen 36 Oktette); mit
 `unannotated_types: final` drei mal 8 Oktette; beide Formen werden gelesen
-(f2ace917b5a).
+(7f85e76debd).
 
 ### §8.3.5.16 Bedeutung der drei Zeitstempel
 
@@ -6818,8 +6815,8 @@ at which the related TIMESTAMP message was received."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_timestamp`,
 `wall_clock_now`, `handle_timestamp_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::timestamp_reply_echoes_originate_and_uses_real_wall_clock`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_agent_sends_a_timestamp_and_reads_the_reply`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_16_timestamp_reply_echoes_originate_and_uses_real_wall_clock`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_15_the_agent_sends_a_timestamp_and_reads_the_reply`
 
 **Status:** done — `originate_timestamp` ist die `transmit_timestamp` der
 TIMESTAMP; `transmit_timestamp` und `receive_timestamp` der Antwort des Agent
@@ -6858,11 +6855,11 @@ STATUS_AGENT, WRITE_DATA, DELETE.
 (`client_applications`); `crates/xrce/src/object_id.rs`
 (`ObjectId::from_reference`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_preconfigured_object_is_made_only_for_a_client_allowed_to_create_it`,
-`crates/xrce-agent/src/daemon/config.rs::tests::client_applications_are_read`,
-`crates/xrce/src/object_id.rs::tests::from_reference_matches_the_examples_of_the_spec`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_preconfigured_object_is_made_only_for_a_client_allowed_to_create_it`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_8_4_2_client_applications_are_read`,
+`crates/xrce/src/object_id.rs::tests::xrce_7_6_from_reference_matches_the_examples_of_the_spec`
 
 **Status:** done — WRITE_DATA auf die `ObjectId` einer konfigurierten Ressource
 (MD5 des Namens, §9.3) legt den DomainParticipant mit allem darin für den Client
@@ -6871,7 +6868,7 @@ an; der AccessController (§7.4) gilt dabei. Der Text nennt ein
 `CLIENT_Representation` (Annex A) und §8.3.5.1.1 haben beides nicht. Auslöser
 ist der Agent-Schlüssel `client_applications:` (ClientKey, Application- oder
 DomainParticipant-Referenz); das CREATE_CLIENT legt die Objekte an, ein zweites
-CREATE_CLIENT derselben Sitzung nutzt sie weiter (03371b4965c, b6e55cfa859).
+CREATE_CLIENT derselben Sitzung nutzt sie weiter (468aa0940da, 2ba972cd270).
 
 ### §8.4.3 Empfangen über einen vorkonfigurierten DataReader
 
@@ -6884,13 +6881,13 @@ Figure 9: CREATE_CLIENT(reuse=1), STATUS_AGENT, READ_DATA, DATA, DELETE.
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`,
 `ensure_predefined`, `make_client_applications`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_client_reads_through_a_preconfigured_data_reader_without_a_create`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_reads_through_a_preconfigured_data_reader_without_a_create`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`
 
 **Status:** done — READ_DATA auf die `ObjectId` des konfigurierten DataReader
 legt ihn an, DATA kommt mit der `request_id` des READ_DATA. Dieselbe Abweichung
 vom Text (`application_object_id`, `reuse`) und derselbe Agent-Schlüssel
-`client_applications:` wie bei §8.4.2 (b6e55cfa859).
+`client_applications:` wie bei §8.4.2 (2ba972cd270).
 
 ### §8.4.4 Discovery eines Agent über GET_INFO
 
@@ -6907,11 +6904,11 @@ STATUS_ERR_INCOMPATIBLE, dann CREATE_CLIENT und STATUS_AGENT.
 `crates/xrce-agent/src/daemon/session.rs` (`client_info_status`,
 `handle_get_info`); `crates/xrce/src/discovery.rs` (`MulticastDiscovery`)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_info_mask_selects_activity_and_configuration`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::a_client_of_another_major_version_is_answered_incompatible`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_discovery_group_is_the_one_given`,
-`crates/xrce/src/discovery.rs::tests::loopback_send_recv_roundtrip`
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_the_info_mask_selects_activity_and_configuration`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_a_client_of_another_major_version_is_answered_incompatible`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_8_4_4_the_discovery_group_is_the_one_given`,
+`crates/xrce/src/discovery.rs::tests::xrce_8_4_4_loopback_send_recv_roundtrip`
 
 **Status:** done — der Agent beantwortet `GET_INFO(OBJECTID_AGENT)` auf dem Port
 der Discovery mit INFO (AGENT_Representation und AGENT_ActivityInfo nach der
@@ -6920,7 +6917,7 @@ InfoMask), mit und ohne Sitzung; die Multicast-Adresse ist einstellbar
 `CLIENT_Representation` der Figure 10; Annex A ist die Vorgabe, die Figure 10
 ist eine Erweiterung hinter der InfoMask (`GetInfoPayload::with_client_info`,
 Client: `AgentDiscovery::with_client_info`), die ein Agent ohne sie überliest
-(5798b040952, 65cd1820a04).
+(fd2e9a5bcfd, ca0cf7e08bf).
 
 ### §8.4.4 Discovery auf Seite des Client
 
@@ -6941,7 +6938,7 @@ Client: `AgentDiscovery::with_client_info`), die ein Agent ohne sie überliest
 **Status:** done — der Client sendet GET_INFO an eine Liste von Adressen im
 festen Takt, wertet das INFO aus und verbindet sich mit dem ersten Agent, der
 passt (UDP, TCP). Die Tests erreichen die Agents über Unicast auf Loopback; der
-Empfang auf einer Multicast-Gruppe ist nicht getestet (5798b040952).
+Empfang auf einer Multicast-Gruppe ist nicht getestet (fd2e9a5bcfd).
 
 ### §8.4.4 INFO mit STATUS_ERR_INCOMPATIBLE
 
@@ -6951,15 +6948,15 @@ Empfang auf einer Multicast-Gruppe ist nicht getestet (5798b040952).
 `handle_get_info`); `crates/xrce-agent/src/daemon/discovery.rs`
 (`build_info_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::a_client_of_another_major_version_is_answered_incompatible`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_checks_the_version_in_client_info`,
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_a_client_of_another_major_version_is_answered_incompatible`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_the_agent_checks_the_version_in_client_info`,
 `crates/xrce-client/src/discovery.rs::tests::client_info_names_the_version_and_hides_the_client_key`
 
 **Status:** done — enthält das GET_INFO eine `CLIENT_Representation` mit anderer
 Hauptversion als die des Agent, ist die Antwort ein INFO mit
 `STATUS_ERR_INCOMPATIBLE`; eine unlesbare Angabe ergibt
 `STATUS_ERR_INVALID_DATA`. Die `client_info` ist die Erweiterung hinter der
-InfoMask des Items oben (5798b040952).
+InfoMask des Items oben (fd2e9a5bcfd).
 
 ### §8.4.4 Auswahl unter mehreren Agents
 
@@ -6986,7 +6983,7 @@ Client."
 `agent_status_reply`)
 
 **Tests:** `crates/xrce-client/src/lib.rs::tests::full_lifecycle_creates_unique_request_ids_and_real_submessages`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`
 
 **Status:** done
 
@@ -7005,14 +7002,14 @@ necessary Types, Qos, and DDS Entities."
 (`application_definition`); `crates/xrce-agent/src/daemon/definitions.rs`
 (`SystemDefinitions::add_application_library`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`
 
 **Status:** done — CREATE(OBJK_APPLICATION) mit einer `<application_library>`
 legt die DomainParticipants der Application mit Topics, Publishern, Subscribern
 und Endpunkten an; BY_REFERENCE nennt eine Application der Definitionen des
-Agent (3aea52dd70a, b6e55cfa859).
+Agent (9d5c64dc398, 2ba972cd270).
 
 ### §8.4.7 Festlegen eines QosProfile
 
@@ -7027,14 +7024,14 @@ Objekte angelegt.
 `ObjectKind::QosProfile`, `definition_to_register`, `rebuild_profiles`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`apply_qos_profile`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::type_and_qos_profile_xml_follow_their_clauses`,
-`crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_qos_profile_reference_applies_the_profile`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_2_2_type_and_qos_profile_xml_follow_their_clauses`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_1_a_qos_profile_reference_applies_the_profile`
 
 **Status:** done — das Profil gehört zu den Definitionen des Agent, solange das
 Objekt besteht; ein späteres CREATE nennt es als `Bibliothek::Profil`
 (`qos_profile_ref`, `base_name`). In Figure 13 sind Client und Agent vertauscht
-(3aea52dd70a).
+(9d5c64dc398).
 
 ### §8.4.8 Festlegen von Typen
 **Spec:** §8.4.8, S. 81 — "An XRCE Client uses the CREATE message to create an
@@ -7045,7 +7042,7 @@ describe the DDS-XTYPES Type including any referenced types."
 
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`types`)
 
-**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`
+**Tests:** `crates/xrce-agent/tests/spec_items_session.rs::xrce_7_7_3_1_2_a_type_by_reference_names_a_known_type_by_its_fully_qualified_name`
 
 **Status:** done — ein Typ als `<types>` wird übersetzt und ist unter seinem Namen bekannt; er darf auf Typen verweisen, die der Agent schon kennt (Item zu §7.7.3.3.2 „Verweis auf bekannte Typen“).
 ### §8.4.9 Anlegen eines Topic
@@ -7059,14 +7056,14 @@ REPRESENTATION_AS_XML_STRING to fully define the Topic."
 **Repo:** `crates/xrce-agent/src/daemon/entity_repr.rs` (`topic`,
 `topic_from_xml`); `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_topic_gets_the_type_its_type_name_names`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_3_2_a_topic_gets_the_type_its_type_name_names`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_topic_of_an_unknown_type_is_refused_when_the_agent_is_told_to`
 
 **Status:** done — die XML-Form im ersten Test, die binäre Form aus dem
 eProsima-Mitschnitt im zweiten. Ein Topic eines Typs, den der Agent nicht kennt,
 ergibt `STATUS_ERR_UNKNOWN_REFERENCE` (Agent-Schlüssel `unknown_topic_types:
-refuse`, Vorgabe; `forward` legt es an), dritter Test (0da6aef56b5).
+refuse`, Vorgabe; `forward` legt es an), dritter Test (969c784c93b).
 
 ### §8.4.10 Anlegen eines DataWriter und Schreiben
 
@@ -7083,17 +7080,17 @@ Session).
 `endpoint_from_xml`); `crates/xrce-agent/src/daemon/session.rs`
 (`plan_dds_create`, `format_is_allowed`, `handle_write_data`, `handle_delete`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::references_resolve_against_the_profile_files`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_references_resolve_against_the_profile_files`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`
 
 **Status:** done — XML im ersten Test, die binäre Form im zweiten. Annex A und
 §7.7.3.1 geben dem DataWriter nur Binär und XML; §8.4.10 nennt auch
 `REPRESENTATION_BY_REFERENCE`. Annex A ist die Vorgabe (die Referenz ergibt
 `STATUS_ERR_INVALID_DATA`, vierter Test); der Agent-Schlüssel
-`representation_formats: any` lässt die Referenz zu (dritter Test) (bdf3f6ee966,
-f0995555d4a). Der Text schreibt `DATAREADER_Representation` für den DataWriter;
+`representation_formats: any` lässt die Referenz zu (dritter Test) (0429eab4fb2,
+23d8f50c712). Der Text schreibt `DATAREADER_Representation` für den DataWriter;
 Figure 16 nennt `DELETE_RESOURCE`, eine solche Submessage gibt es nicht (gemeint
 ist DELETE).
 
@@ -7109,15 +7106,15 @@ Figure 17: CREATE, STATUS, READ, DATA.
 `endpoint_from_xml`); `crates/xrce-agent/src/daemon/session.rs`
 (`plan_dds_create`, `format_is_allowed`, `handle_read_data`, `pump_read`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_creates_the_dds_entities_the_real_clients_describe`,
-`crates/xrce-agent/src/daemon/session.rs::tests::references_resolve_against_the_profile_files`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_formats_of_each_kind_are_enforced`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_5_replay_creates_the_dds_entities_the_real_clients_describe`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_references_resolve_against_the_profile_files`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_1_the_formats_of_each_kind_are_enforced`
 
 **Status:** done — Binär und XML wie beim DataWriter; die Referenz auf einen
 DataReader ist nach Annex A und §7.7.3.1 nicht vorgesehen und nur mit dem
 Agent-Schlüssel `representation_formats: any` zulässig (dritter und vierter
-Test) (bdf3f6ee966). Die Einleitung sagt „to publish data“ für den DataReader.
+Test) (0429eab4fb2). Die Einleitung sagt „to publish data“ für den DataReader.
 
 ### §8.4.12 Information über eine Ressource
 
@@ -7131,16 +7128,16 @@ ObjectVariant is the appropriate for the specified ObjectId."
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`,
 `object_info`, `ensure_predefined`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_writer_reports_its_activity`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_reader_reports_its_activity`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_writer_reports_its_activity`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_reader_reports_its_activity`
 
 **Status:** done — GET_INFO auf ein Objekt des Client ergibt ein INFO mit der
 `ObjectVariant`, mit der es angelegt wurde (mit `ObjectKind`), und der Aktivität
-eines DataWriter oder DataReader nach der InfoMask (65cd1820a04). GET_INFO auf
+eines DataWriter oder DataReader nach der InfoMask (ca0cf7e08bf). GET_INFO auf
 die `ObjectId` eines QoS-Profils oder Typs aus den Definitionen des Agent legt
-das Objekt für den Client an (`ensure_predefined`, b6e55cfa859); dieser Zweig
+das Objekt für den Client an (`ensure_predefined`, 2ba972cd270); dieser Zweig
 hat keinen eigenen Test.
 
 ### §8.4.13 Ändern einer Ressource
@@ -7155,10 +7152,10 @@ and responds with a STATUS message."
 `CreateOutcome::Replaced`); `crates/xrce-agent/src/daemon/session.rs`
 (`handle_create`); `crates/xrce-client/src/lib.rs` (`XrceClient::update_object`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`,
-`crates/xrce-agent/src/daemon/session.rs::tests::the_update_of_a_missing_object_creates_it_or_is_refused`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_replace_that_fails_returns_the_object_to_its_previous_configuration`,
-`crates/xrce/src/object_store.rs::tests::create_reuse_and_replace_replaces_an_unequal_object`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_the_update_of_a_missing_object_creates_it_or_is_refused`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_3_1_a_replace_that_fails_returns_the_object_to_its_previous_configuration`,
+`crates/xrce/src/object_store.rs::tests::xrce_7_8_3_1_create_reuse_and_replace_replaces_an_unequal_object`,
 `crates/xrce-client/src/lib.rs::tests::update_object_sends_a_create_with_reuse_and_replace`
 
 **Status:** done — CREATE mit `reuse` und `replace` ersetzt ein ungleiches
@@ -7166,7 +7163,7 @@ Objekt (Table 5); schlägt die DDS-Seite fehl, gilt wieder die alte
 Konfiguration. Das Update eines fehlenden Objekts widerspricht sich in der Spec:
 §7.8.3.2 verlangt `STATUS_ERR_UNKNOWN_REFERENCE`, Table 5 und §8.4.13 legen es
 an. Vorgabe ist Table 5; der Agent-Schlüssel `update_of_missing_object: refuse`
-gibt `STATUS_ERR_UNKNOWN_REFERENCE` (8b949a13ef5, e4d37a6aff6).
+gibt `STATUS_ERR_UNKNOWN_REFERENCE` (3b066516f69, 70963ac46ec).
 
 ### §8.4.14 Zuverlässigkeit je Stream, nur auf zuverlässigen Streams
 
@@ -7178,8 +7175,8 @@ value being between 0x80 and 0xFF."
 `crates/xrce-agent/src/daemon/session.rs` (`reliable` je `(client, stream)`,
 `handle_message`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::constructor_panics_on_best_effort_stream`,
-`crates/xrce-agent/src/daemon/session.rs::tests::best_effort_messages_get_increasing_sequence_numbers`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_4_14_constructor_panics_on_best_effort_stream`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_2_3_best_effort_messages_get_increasing_sequence_numbers`
 
 **Status:** done
 
@@ -7193,7 +7190,7 @@ a Stream each execute its own protocol state machine."
 `submit`, `pending_heartbeat`, `recv_acknack`; Empfänger `recv_data`,
 `drain_in_order`, `pending_acknack`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::end_to_end_sender_receiver_with_loss_recovery`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_end_to_end_sender_receiver_with_loss_recovery`
 
 **Status:** done — beide Hälften liegen in einem Zustand je Stream; Agent und
 Client benutzen je Richtung eine davon.
@@ -7206,8 +7203,8 @@ use Serial Number Arithmetic as specified in clause 8.3.2.3 sequenceNr."
 **Repo:** `crates/xrce/src/reliable.rs` (`serial_min_in_flight`,
 `serial_max_in_flight`); `crates/xrce/src/serial_number.rs`
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::heartbeat_window_across_wrap_reports_rfc1982_order`,
-`crates/xrce/src/reliable.rs::tests::acknack_retransmit_of_lost_sample_across_wrap`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_4_14_heartbeat_window_across_wrap_reports_rfc1982_order`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_acknack_retransmit_of_lost_sample_across_wrap`
 
 **Status:** done
 
@@ -7223,9 +7220,9 @@ updates the HiguestAcknowledgedSequenceNumber." Figure 20: "receive(ACKNACK)
 **Repo:** `crates/xrce/src/reliable.rs` (`submit`, `recv_acknack`);
 `crates/xrce-agent/src/daemon/session.rs` (`handle_acknack`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::submit_assigns_monotonic_seqnrs`,
-`crates/xrce/src/reliable.rs::tests::recv_acknack_clears_acked_seqnrs`,
-`crates/xrce-agent/src/daemon/session.rs::tests::acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_4_14_1_submit_assigns_monotonic_seqnrs`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_recv_acknack_clears_acked_seqnrs`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_5_11_acknack_nack_triggers_retransmission_of_the_exact_buffered_bytes`
 
 **Status:** done — der Sender hält die offenen Nachrichten statt zweier
 Zahlen; `window_base` entspricht der höchsten bestätigten Nummer plus eins.
@@ -7243,9 +7240,9 @@ HighestAcknowledgedSequenceNumber matches the HighestSentSequenceNumber."
 `DEFAULT_HEARTBEAT_PERIOD`); `crates/xrce-agent/src/daemon/session.rs`
 (`tick`); `crates/xrce-client/src/lib.rs` (`XrceClient::tick`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::pending_heartbeat_fires_first_time`,
-`crates/xrce/src/reliable.rs::tests::pending_heartbeat_silenced_until_period_elapsed`,
-`crates/xrce/src/reliable.rs::tests::pending_heartbeat_none_when_window_empty`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_3_5_12_pending_heartbeat_fires_first_time`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_1_pending_heartbeat_silenced_until_period_elapsed`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_1_pending_heartbeat_none_when_window_empty`
 
 **Status:** done — alle 500 ms. Figure 20 schreibt den Übergang nach
 „Initial“ mit `HiguestReceivedSeqNumber`, der Text mit der höchsten bestätigten
@@ -7263,8 +7260,8 @@ HighestAnnouncedSequenceNumber may be adjusted."
 **Repo:** `crates/xrce/src/reliable.rs` (`recv_data`, `drain_in_order`,
 `pending_acknack`)
 
-**Tests:** `crates/xrce/src/reliable.rs::tests::recv_data_buffers_in_order`,
-`crates/xrce/src/reliable.rs::tests::pending_acknack_marks_missing_slots`
+**Tests:** `crates/xrce/src/reliable.rs::tests::xrce_8_4_14_2_recv_data_buffers_in_order`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_3_5_11_pending_acknack_marks_missing_slots`
 
 **Status:** done — die höchste angekündigte Nummer wird nicht gespeichert; sie
 geht als `hint_last_seen` in das ACKNACK auf den HEARTBEAT ein.
@@ -7292,7 +7289,7 @@ sends ACKNACK messages in response to receiving a HEARTBEAT."
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_heartbeat`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_3_2_3_out_of_order_reliable_messages_wait_for_the_gap_and_report_a_truthful_acknack`
 
 **Status:** done — wie im Item zu §8.3.5.11.
 
@@ -7308,12 +7305,12 @@ STATUS_AGENT".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create_client`,
 `agent_status_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::create_client_happy_path_registers_and_replies_ok`,
-`crates/xrce-agent/src/daemon/session.rs::tests::create_client_rejects_wrong_major_version`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_wrong_cookie_is_answered_with_a_status_agent`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_create_client_happy_path_registers_and_replies_ok`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_create_client_rejects_wrong_major_version`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_a_wrong_cookie_is_answered_with_a_status_agent`
 
 **Status:** done — ein falsches Cookie wird mit STATUS_AGENT und
-`STATUS_ERR_INVALID_DATA` beantwortet (ed2ca7b49a9). Die Überschrift der Table
+`STATUS_ERR_INVALID_DATA` beantwortet (d7aec9c2d78). Die Überschrift der Table
 14 lautet „Predefined XRCE Objects from parsing the Example XML configuration
 XML file“, wie die von Table 16.
 
@@ -7325,10 +7322,10 @@ XML file“, wie die von Table 16.
 (`run_discovery_responder`); `crates/xrce-agent/src/daemon/session.rs`
 (`handle_get_info`)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_without_a_session_is_answered_for_the_agent_only`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_udp_listener_answers_get_info_before_a_session`
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_the_agent_in_a_session_returns_activity_and_representation`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_without_a_session_is_answered_for_the_agent_only`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_7_8_2_2_the_udp_listener_answers_get_info_before_a_session`
 
 **Status:** done
 
@@ -7338,9 +7335,9 @@ STATUS_AGENT".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`delete_client_reply`); `crates/xrce-agent/src/daemon/config.rs` (`delete_client_reply`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::delete_client_is_answered_with_status_unless_status_agent_is_named`, `crates/xrce-agent/src/daemon/config.rs::tests::the_reply_to_delete_client_can_be_set`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_8_5_delete_client_is_answered_with_status_unless_status_agent_is_named`, `crates/xrce-agent/src/daemon/config.rs::tests::xrce_8_5_the_reply_to_delete_client_can_be_set`
 
-**Status:** done — `DELETE(OBJECTID_CLIENT)` wird mit STATUS beantwortet (§8.3.5.4; in der IDL von Annex A trägt nur STATUS ein `ResultStatus`); das STATUS_AGENT von Table 14 ist die Einstellung `delete_client_reply: status_agent`. Der Client nimmt ein STATUS_AGENT, das ohne ausstehendes CREATE_CLIENT eintrifft, für die Antwort auf sein DELETE. a44974c49d7.
+**Status:** done — `DELETE(OBJECTID_CLIENT)` wird mit STATUS beantwortet (§8.3.5.4; in der IDL von Annex A trägt nur STATUS ein `ResultStatus`); das STATUS_AGENT von Table 14 ist die Einstellung `delete_client_reply: status_agent`. Der Client nimmt ein STATUS_AGENT, das ohne ausstehendes CREATE_CLIENT eintrifft, für die Antwort auf sein DELETE. 9aeb3465b72.
 ### §8.5 Table 14 create
 
 **Spec:** §8.5, Table 14, S. 86 — "XRCE ProxyClient / create / CREATE (flags for
@@ -7348,7 +7345,7 @@ creation) / STATUS".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_create`)
 
-**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done
 
@@ -7361,13 +7358,13 @@ reuse) / STATUS".
 `crates/xrce-agent/src/daemon/session.rs` (`handle_create`);
 `crates/xrce-client/src/lib.rs` (`XrceClient::update_object`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_create_with_reuse_and_replace_updates_the_object`,
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_create_with_reuse_and_replace_updates_the_object`,
 `crates/xrce-client/src/lib.rs::tests::update_object_sends_a_create_with_reuse_and_replace`,
-`crates/xrce/src/object_store.rs::tests::create_reuse_and_replace_replaces_an_unequal_object`
+`crates/xrce/src/object_store.rs::tests::xrce_7_8_3_1_create_reuse_and_replace_replaces_an_unequal_object`
 
 **Status:** done — wie im Item zu §8.4.13, einschließlich der Einstellung
 `update_of_missing_object`. Die Table nennt nur „flags for reuse“, §8.4.13 setzt
-`reuse` und `replace`; der Update ist CREATE mit beiden (8b949a13ef5).
+`reuse` und `replace`; der Update ist CREATE mit beiden (3b066516f69).
 
 ### §8.5 Table 14 get_info des ProxyClient
 
@@ -7377,13 +7374,13 @@ INFO".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_get_info`,
 `object_info`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_a_data_writer_reports_its_activity`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_an_object_returns_the_object_variant_it_was_created_with`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_a_missing_object_is_an_info_with_unknown_reference`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_12_get_info_of_a_data_writer_reports_its_activity`
 
 **Status:** done — GET_INFO auf ein Objekt ergibt INFO, auf eine unbekannte
 `ObjectId` ein INFO mit `STATUS_ERR_UNKNOWN_REFERENCE`, ohne Recht
-`STATUS_ERR_DENIED` (65cd1820a04, d7338ca58f2).
+`STATUS_ERR_DENIED` (ca0cf7e08bf, d7338ca58f2).
 
 ### §8.5 Table 14 delete
 
@@ -7392,8 +7389,8 @@ STATUS".
 
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_delete`)
 
-**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::delete_fixture_decodes_and_removes_the_object_create_added`,
-`crates/xrce-agent/tests/replay_foreign_session.rs::replay_matches_the_real_agents_create_client_create_and_delete_replies`
+**Tests:** `crates/xrce-agent/tests/endpoint_client_fixtures.rs::xrce_7_8_3_4_delete_fixture_decodes_and_removes_the_object_create_added`,
+`crates/xrce-agent/tests/replay_foreign_session.rs::xrce_7_6_replay_matches_the_real_agents_create_client_create_and_delete_replies`
 
 **Status:** done
 
@@ -7405,12 +7402,12 @@ FRAGMENT / STATUS".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_write_data`,
 `process_message_submessages`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_successful_write_is_answered_with_status_ok`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_a_successful_write_is_answered_with_status_ok`
 
 **Status:** done — WRITE_DATA direkt und in FRAGMENT; ein erfolgreiches
 WRITE_DATA ergibt STATUS mit `STATUS_OK`, ein Fehler den Fehlercode
-(dc0209b38fe). Der eProsima-Agent antwortet auf ein erfolgreiches WRITE_DATA
+(869304e6b63). Der eProsima-Agent antwortet auf ein erfolgreiches WRITE_DATA
 nicht; der Agent folgt dem Text der Spec.
 
 ### §8.5 Table 14 read
@@ -7421,9 +7418,9 @@ FRAGMENT, STATUS".
 **Repo:** `crates/xrce-agent/src/daemon/session.rs` (`handle_read_data`,
 `pump_read`, `emit_possibly_fragmented`)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
-`crates/xrce-agent/src/daemon/session.rs::tests::read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_5_1_a_sample_above_the_clients_mtu_on_a_reliable_stream_splits_into_fragments`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_read_data_with_an_unhonorable_content_filter_is_rejected_not_silently_unfiltered`
 
 **Status:** done
 
@@ -7491,8 +7488,8 @@ REPRESENTATION_BY_REFERENCE."
 `rebuild_profiles`, `ensure_predefined`);
 `crates/xrce-agent/src/daemon/profiles.rs` (`AgentProfiles::predefined_objects`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`
 
 **Status:** done — ein ConfigurationClient legt QosProfile, Application und
 DomainParticipant mit CREATE (XML) an; ein anderer Client erzeugt sie mit
@@ -7501,7 +7498,7 @@ besteht (der Test deckt QosProfile und Application). Type und DomainParticipant
 laufen über denselben Weg (`definition_to_register`), ohne eigenen Test. Ein
 Domain hat keine `ObjectKind` (§7.7.5, Annex A) und kommt aus den Dateien.
 Figure 22 nennt die Antwort auf CREATE_CLIENT `STATUS_CLIENT`; die Submessage
-heißt STATUS_AGENT (3aea52dd70a, b6e55cfa859).
+heißt STATUS_AGENT (9d5c64dc398, 2ba972cd270).
 
 ### §9.2 Anderes Netz oder anderer Transport
 
@@ -7527,13 +7524,13 @@ in the [DDS-XML] machine-readable file dds-xml_system_example.xsd."
 `crates/xrce-agent/src/daemon/definitions.rs`
 (`SystemDefinitions::add_document`)
 
-**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::types_and_qos_libraries_in_a_dds_document_are_read`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::the_example_file_of_the_spec_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_7_7_3_1_1_types_and_qos_libraries_in_a_dds_document_are_read`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16`
 
 **Status:** done — `xml_profile_files:` nimmt ein Dokument mit der Wurzel
 `<dds>` (oder eine Bibliothek als Wurzel) und liest `<types>`, `<qos_library>`,
 `<domain_library>`, `<domain_participant_library>` und `<application_library>`
-(dc63d65691f, 3aea52dd70a). Die Schemadatei liegt nicht im Cache; geprüft ist
+(452ffeb7f84, 9d5c64dc398). Die Schemadatei liegt nicht im Cache; geprüft ist
 gegen §9.3.1.
 
 ### §9.3 Domain-, Application- und DomainParticipant-Libraries der Konfigurationsdatei
@@ -7544,13 +7541,13 @@ gegen §9.3.1.
 (`AgentProfiles::add_profiles`); `crates/xrce-agent/src/daemon/definitions.rs`
 (`add_domain_library`, `add_participant_library`, `add_application_library`)
 
-**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::a_library_can_be_the_root_and_a_clash_of_ids_is_refused`
+**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_a_library_can_be_the_root_and_a_clash_of_ids_is_refused`
 
 **Status:** done — die drei Libraries werden gelesen, auch als Wurzel des
 Dokuments, mit `base_name`-Vererbung. Andere Elemente von `<dds>` stehen nur im
-Startprotokoll (`AgentProfiles::unused`) (dc63d65691f, 3aea52dd70a).
+Startprotokoll (`AgentProfiles::unused`) (452ffeb7f84, 9d5c64dc398).
 
 ### §9.3 Ein XRCE-Objekt je Element, für alle Clients per Referenz
 
@@ -7565,16 +7562,16 @@ representation format REPRESENTATION_BY_REFERENCE."
 (`ensure_predefined`, `predefined_index`); `crates/xrce/src/object_id.rs`
 (`ObjectId::from_reference`)
 
-**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::the_example_file_of_the_spec_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::a_library_can_be_the_root_and_a_clash_of_ids_is_refused`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce/src/object_id.rs::tests::from_reference_matches_the_examples_of_the_spec`
+**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_a_library_can_be_the_root_and_a_clash_of_ids_is_refused`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce/src/object_id.rs::tests::xrce_7_6_from_reference_matches_the_examples_of_the_spec`
 
 **Status:** done — der Agent kennt jedes Element von Table 15 als Objekt mit der
 `ObjectId` aus dem MD5 der Referenz (§9.3, Table 16); jeder Client erhält es mit
 CREATE und `REPRESENTATION_BY_REFERENCE` oder beim ersten Zugriff auf die
 `ObjectId`. Zwei Objekte oberster Ebene mit derselben `ObjectId` weist das Laden
-der Datei ab (03371b4965c, b6e55cfa859).
+der Datei ab (468aa0940da, 2ba972cd270).
 
 ### §9.3 Table 15 <types>
 
@@ -7588,17 +7585,17 @@ names of enclosing modules. For example: 'MyModule::MyNestedModule::MyStructType
 `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`, Zweig
 `ObjectKind::Type`)
 
-**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::types_and_qos_libraries_in_a_dds_document_are_read`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::the_example_file_of_the_spec_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_xml_type_library_compiles_to_named_complete_types`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_configured_type_is_known_to_every_client`
+**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_7_7_3_1_1_types_and_qos_libraries_in_a_dds_document_are_read`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_3_2_an_xml_type_library_compiles_to_named_complete_types`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_7_3_a_configured_type_is_known_to_every_client`
 
 **Status:** done — die Typen sind für alle Clients unter ihrem vollständigen
 Namen mit Modulen bekannt (`ShapesDemoTypes::ShapeType`); ein Topic findet sie
 über `type_name`. CREATE mit `OBJK_TYPE` und `REPRESENTATION_BY_REFERENCE` nimmt
 einen bekannten Namen an (`plan_dds_create`, ohne eigenen Test). Verweise eines
-`<types>` auf andere bekannte Typen: Item zu §7.7.3.3.2 (dc63d65691f,
-3aea52dd70a).
+`<types>` auf andere bekannte Typen: Item zu §7.7.3.3.2 (452ffeb7f84,
+9d5c64dc398).
 
 ### §9.3 Table 15 <qos_profile>
 
@@ -7613,14 +7610,14 @@ Library. For example: 'MyProfileLibrary::MyQosProfile'"
 `crates/xrce-agent/src/daemon/session.rs` (`plan_dds_create`, Zweig
 `ObjectKind::QosProfile`)
 
-**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::types_and_qos_libraries_in_a_dds_document_are_read`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::the_example_file_of_the_spec_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_qos_profile_reference_applies_the_profile`,
-`crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`
+**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_7_7_3_1_1_types_and_qos_libraries_in_a_dds_document_are_read`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_1_a_qos_profile_reference_applies_the_profile`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`
 
 **Status:** done — ein Endpunkt nennt das Profil mit `Bibliothek::Profil`;
 CREATE mit `OBJK_QOSPROFILE` legt ein Profil an, das spätere CREATE benutzen
-(3aea52dd70a). Die Zeile schreibt „XRCE Types“ für das QosProfile.
+(9d5c64dc398). Die Zeile schreibt „XRCE Types“ für das QosProfile.
 
 ### §9.3 Table 15 <domain>
 
@@ -7634,15 +7631,15 @@ example: 'MyDomainLibrary::MyDomain'"
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`participant`: `domain_ref`,
 `domain_reference`)
 
-**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_domain_reference_is_resolved_against_the_domain_libraries`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::the_example_file_of_the_spec_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_4_1_a_domain_reference_is_resolved_against_the_domain_libraries`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16`
 
 **Status:** done — `<domain_library>` wird gelesen; ein Domain ist unter
 `Bibliothek::Domain` benannt und wird von `domain_ref` (XML) und
 `domain_reference` (binär) eines DomainParticipant aufgelöst. Der Domain hat
 keine `ObjectKind` (§7.7.5, Annex A): ein CREATE kann ihn nicht nennen, er hat
-keine `ObjectId` (dc63d65691f, b4cd825c268).
+keine `ObjectId` (452ffeb7f84, 0b67c04800c).
 
 ### §9.3 Table 15 <topic> in <domain>
 
@@ -7654,12 +7651,12 @@ example: 'ExampleTopic'"
 **Repo:** `crates/xrce-agent/src/daemon/definitions.rs` (`DomainDef::topics`,
 `SystemDefinitions::scope_of`, `ParticipantScope::topic`)
 
-**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`
+**Tests:** `crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`
 
 **Status:** done — die Topics eines Domain stehen im Geltungsbereich jedes
 DomainParticipant, der den Domain nennt (§7.7.3.7.1); ein DataWriter oder
 DataReader findet sie unter ihrem Namen, auch über `base_name` eines Domain
-(3aea52dd70a).
+(9d5c64dc398).
 
 ### §9.3 Table 15 <application>
 
@@ -7675,11 +7672,11 @@ enclosing Application Library. For example:
 (`AgentProfiles::predefined_objects`); `crates/xrce/src/object_id.rs`
 (`ObjectId::from_reference`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::what_a_configuration_client_defines_is_referenced_by_another_client`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_create_client_makes_the_objects_configured_for_the_client`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_what_a_configuration_client_defines_is_referenced_by_another_client`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_create_client_makes_the_objects_configured_for_the_client`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`
 
-**Status:** `done` — Commits `dc63d65691f`, `b6e55cfa859`. `<application_library>` wird
+**Status:** `done` — Commits `452ffeb7f84`, `2ba972cd270`. `<application_library>` wird
 gelesen, auch als Wurzel einer Datei. Die Application ist unter
 „Bibliothek::Application“ bekannt (Beispiel „Apps::App“), ihre ObjectId stammt
 aus dem MD5 dieser Zeichenkette. Ein anderer Client erzeugt sie mit
@@ -7698,12 +7695,12 @@ which includes the names of enclosing DomainParticipant Library. For example:
 `plan_participant`); `crates/xrce-agent/src/daemon/session.rs` (`create_nested`,
 `ensure_predefined`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_participant_definition_creates_the_objects_inside_it`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::a_library_can_be_the_root_and_a_clash_of_ids_is_refused`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_4_a_participant_definition_creates_the_objects_inside_it`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_a_library_can_be_the_root_and_a_clash_of_ids_is_refused`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`
 
-**Status:** `done` — Commits `dc63d65691f`, `3aea52dd70a`, `b6e55cfa859`.
+**Status:** `done` — Commits `452ffeb7f84`, `9d5c64dc398`, `2ba972cd270`.
 `<domain_participant_library>` wird gelesen, auch als Wurzel einer Datei. Der
 Participant ist unter „Bibliothek::Participant“ bekannt, in einer Application
 unter „Bibliothek::Application::Participant“ (Table 16:
@@ -7721,11 +7718,11 @@ any objects in the same DomainParticipant. For example: 'ExampleTopic'"
 Topics des Participant und seiner Domain);
 `crates/xrce-agent/src/daemon/session.rs` (`create_nested`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_topic_is_created_by_name_or_by_register_type_ref`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::a_participant_library_and_inheritance`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_6_a_topic_is_created_by_name_or_by_register_type_ref`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_4_2_a_participant_library_and_inheritance`
 
-**Status:** `done` — Commits `3aea52dd70a`, `9239562286c`. Ein Topic im Participant ist
+**Status:** `done` — Commits `9d5c64dc398`, `b97657ef4ec`. Ein Topic im Participant ist
 ein Objekt mit der ObjectId seines Namens (Beispiel „Square“ {0xce, 0xb2}). Die
 Objekte desselben Participant nennen es mit diesem Namen (`topic_ref="Square"`
 eines DataWriter wird zur ObjectId des Topic); ein Name, den der Participant
@@ -7745,11 +7742,11 @@ the scope of a DomainParticipant."
 `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`container_for` prüft, dass Topic
 und Publisher/Subscriber zum selben Participant gehören)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::what_cannot_be_planned_is_refused`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_what_cannot_be_planned_is_refused`
 
-**Status:** `done` — Commits `3aea52dd70a`, `9239562286c`. Publisher und Subscriber
+**Status:** `done` — Commits `9d5c64dc398`, `b97657ef4ec`. Publisher und Subscriber
 sind Objekte mit der ObjectId ihres Namens (Beispiel „MyPublisher“ {0x13,
 0xe3}), ohne Bibliothek davor, und gelten im Bereich ihres Participant. Zwei
 Participants desselben Client, die eine Entität gleichen Namens definieren,
@@ -7769,12 +7766,12 @@ the scope of a Publisher or Subscriber."
 `create_nested`, `ensure_predefined`);
 `crates/xrce-agent/src/daemon/definitions.rs` (`plan_participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_publisher_with_nested_data_writers_creates_them`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_client_reads_through_a_preconfigured_data_reader_without_a_create`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_8_1_a_publisher_with_nested_data_writers_creates_them`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_writes_through_a_preconfigured_data_writer_without_a_create`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_3_a_client_reads_through_a_preconfigured_data_reader_without_a_create`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`
 
-**Status:** `done` — Commits `3aea52dd70a`, `9239562286c`, `b6e55cfa859`. DataWriter
+**Status:** `done` — Commits `9d5c64dc398`, `b97657ef4ec`, `2ba972cd270`. DataWriter
 und DataReader sind Objekte mit der ObjectId ihres Namens (Beispiel
 „MySquareWriter“ {0x1c, 0xc5}) und hängen unter ihrem Publisher oder Subscriber
 (§9.3.1; Table 15 nennt `<domain_participant>` als Elternelement). Ein Client
@@ -7795,9 +7792,9 @@ ObjectIdPrefix {0x03, 0xe2}.
 Zeichenkette ohne NUL, die ersten zwei Bytes, die unteren 4 Bit durch die
 ObjectKind ersetzt)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::from_reference_matches_the_examples_of_the_spec`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_7_6_from_reference_matches_the_examples_of_the_spec`
 
-**Status:** `done` — Commits `03371b4965c`. „MyWriter“ ergibt den MD5
+**Status:** `done` — Commits `468aa0940da`. „MyWriter“ ergibt den MD5
 0x03e26181adfef529038bf0dce7cab871 (Test mit dem Crate `md-5`; nachgerechnet
 auch mit Python `hashlib`, gemessen), das ObjectIdPrefix {0x03, 0xe2} und mit
 der Art DataWriter die ObjectId {0x03, 0xe5}. Der letzte Satz der Spec schreibt
@@ -7817,7 +7814,7 @@ name="MyQosLibrary">`, `<application_library name="MyApplications">` mit
 **Repo:** `crates/xrce-agent/src/daemon/profiles.rs`
 (`AgentProfiles::add_profiles` liest die Datei)
 
-**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::the_example_file_of_the_spec_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16`
 
 **Status:** `n/a (informative)` — Beispiel. Der Test lädt die Datei mit
 ergänzter Domain und ergänztem Typ. `domain_ref` nennt
@@ -7835,11 +7832,11 @@ Zwölf Zeilen mit Referenz, ObjectPrefix und ObjectId, z. B.
 **Repo:** `crates/xrce/src/object_id.rs` (`ObjectId::from_reference`);
 `crates/xrce-agent/src/daemon/profiles.rs` (`AgentProfiles::predefined_objects`)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::from_reference_matches_the_examples_of_the_spec`,
-`crates/xrce-agent/src/daemon/profiles.rs::tests::the_example_file_of_the_spec_defines_the_objects_of_table_16`,
-`crates/xrce-agent/src/daemon/definitions.rs::tests::the_example_file_defines_the_objects_of_table_16`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_7_6_from_reference_matches_the_examples_of_the_spec`,
+`crates/xrce-agent/src/daemon/profiles.rs::tests::xrce_9_3_the_example_file_of_the_spec_defines_the_objects_of_table_16`,
+`crates/xrce-agent/src/daemon/definitions.rs::tests::xrce_7_7_3_5_2_the_example_file_defines_the_objects_of_table_16`
 
-**Status:** `done` — Commits `03371b4965c`, `dc63d65691f`. Der Test in `object_id.rs`
+**Status:** `done` — Commits `468aa0940da`, `452ffeb7f84`. Der Test in `object_id.rs`
 rechnet alle zwölf Zeilen der Table 16 aus ihrer eigenen Zeichenkette nach
 (Prefix, ObjectId, Art im unteren Halbbyte). Die Tests des Agent prüfen die
 ObjectIds der Objekte, die er aus der Datei ableitet. Zwei Zeichenketten der
@@ -7884,8 +7881,8 @@ these entities to read and write data on the DDS Global Data Space."
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`RealDdsPort` Z. 310,
 `runtime_for` Z. 396)
 
-**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
-`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::full_chain_against_a_real_leased_domain`
+**Tests:** `crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`,
+`crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_full_chain_against_a_real_leased_domain`
 
 **Status:** done — der erste Test schreibt und liest gegen einen eigenen
 DCPS-Participant im selben Prozess.
@@ -7898,9 +7895,9 @@ further configuration."
 
 **Repo:** `crates/xrce-agent/src/daemon/dcps_bridge.rs` (`runtime_instance`, `runtime_for`)
 
-**Tests:** `crates/xrce-agent/tests/two_agents.rs::two_clients_on_two_agents_exchange_a_sample_through_dds`
+**Tests:** `crates/xrce-agent/tests/two_agents.rs::xrce_10_2_two_clients_on_two_agents_exchange_a_sample_through_dds`
 
-**Status:** done — zwei Daemons in einer Domain, ein DataWriter über den ersten, ein DataReader über den zweiten: das Sample kommt mit gleichen Bytes an. Die GUID-Präfixe der Runtimes waren aus Domain und Host allein abgeleitet, zwei Agents auf einem Host entdeckten sich nicht; sie tragen Prozess und Zähler (3068f2df50c). Der Test ist geschrieben, nicht ausgeführt.
+**Status:** done — zwei Daemons in einer Domain, ein DataWriter über den ersten, ein DataReader über den zweiten: das Sample kommt mit gleichen Bytes an. Die GUID-Präfixe der Runtimes waren aus Domain und Host allein abgeleitet, zwei Agents auf einem Host entdeckten sich nicht; sie tragen Prozess und Zähler (a03a6c8cbc2). Der Test ist geschrieben, nicht ausgeführt.
 ### §10.3 Mehrere Clients an einem Agent wie mit eigenen Entitäten
 
 **Spec:** §10.3, S. 94 — "Multiple XRCE Client applications may be connected to
@@ -7918,7 +7915,7 @@ ein `DcpsRuntime` je Domain für alle Clients, ein weiterer je Domain und
 USER_DATA über `own_runtime_slot`; `create_writer` Z. 654, `create_reader` Z.
 716)
 
-**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::two_large_samples_reach_a_default_reader_on_the_same_agent`
+**Tests:** `crates/xrce-agent/src/daemon/dcps_bridge.rs::tests::xrce_7_4_two_large_samples_reach_a_default_reader_on_the_same_agent`
 
 **Status:** `done` — der Writer eines Client erreicht den Reader eines anderen
 Client im selben `DcpsRuntime`. Eigene GUID und QoS des Participant sind je
@@ -7951,8 +7948,7 @@ deployment is an implementation decision".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Entscheidung der Implementierung; der Agent
-hat keine Seite als Client.
+**Status:** open — eine optionale Bereitstellung, die eine Client-Seite im Agent verlangt; `crates/xrce-agent` hat keine Seite als Client.
 
 ### §10.5 Direkte Kommunikation zwischen Anwendungen
 
@@ -8024,12 +8020,12 @@ VPN)."
 `crates/xrce-agent/src/daemon/config.rs` (`ListenerConfig::Tls`,
 `ListenerConfig::Dtls`)
 
-**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::tls::a_client_that_trusts_the_agents_certificate_opens_a_session`,
-`crates/xrce-agent/tests/secure_listeners.rs::dtls::a_client_that_trusts_the_agents_certificate_opens_a_session`
+**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::tls::xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session`,
+`crates/xrce-agent/tests/secure_listeners.rs::dtls::xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session`
 
 **Status:** `n/a (informative)` — Erwartung an den Transport. Der Agent hat
 unter den Features `tls` und `dtls` die Listener `kind: tls` und `kind: dtls`
-mit Zertifikat und Schlüssel des Agent (`01470e273bc`): der Client prüft den
+mit Zertifikat und Schlüssel des Agent (`eb44fbbf575`): der Client prüft den
 Agent, die Nachrichten laufen verschlüsselt (Item zu §8.3.2.4 „Schutz des
 ClientKey durch den Transport“). Die Listener `udp`, `tcp` und `serial` sind
 nicht gesichert. Die Tests laufen nur mit dem jeweiligen Feature.
@@ -8074,13 +8070,13 @@ be deployed on a private network (VPN)".
 (`run_dtls_listener`); `crates/xrce/src/transport_dtls.rs` (`WebrtcDtls`,
 `WebrtcDtlsServer`)
 
-**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::dtls::a_client_that_trusts_the_agents_certificate_opens_a_session`,
-`crates/xrce-agent/tests/secure_listeners.rs::dtls::a_plain_text_create_client_on_the_dtls_port_is_not_answered`,
-`crates/xrce/tests/dtls_e2e.rs::dtls_handshake_and_roundtrip`
+**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::dtls::xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session`,
+`crates/xrce-agent/tests/secure_listeners.rs::dtls::xrce_8_3_2_4_a_plain_text_create_client_on_the_dtls_port_is_not_answered`,
+`crates/xrce/tests/dtls_e2e.rs::xrce_11_2_dtls_handshake_and_roundtrip`
 
 **Status:** `n/a (informative)` — Hinweis. Der Agent hat unter dem Feature
 `dtls` den Listener `kind: dtls` (DTLS 1.2 mit dem Zertifikat des Agent,
-`01470e273bc`); ein CREATE_CLIENT im Klartext auf diesem Port wird nicht
+`eb44fbbf575`); ein CREATE_CLIENT im Klartext auf diesem Port wird nicht
 beantwortet. Die Tests laufen nur mit diesem Feature.
 
 ### §11.2.1 UDP v4 mit ADDRESS_FORMAT_MEDIUM
@@ -8095,11 +8091,11 @@ unsigned short port; };"
 `crates/xrce/src/transport_locator.rs` (`TransportLocatorMedium`,
 `TransportLocator::encode_member`)
 
-**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_maps_udp_tcp_and_ipv6`,
-`crates/xrce/src/transport_locator.rs::tests::medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
-`crates/xrce/src/transport_locator.rs::tests::a_udp_locator_carries_the_default_agent_port`
+**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_maps_udp_tcp_and_ipv6`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_8_3_4_2_medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_11_2_1_a_udp_locator_carries_the_default_agent_port`
 
-**Status:** `done` — Commits `c304e509660`. ein UDP-Listener mit IPv4-Adresse wird als
+**Status:** `done` — Commits `299b3a41398`. ein UDP-Listener mit IPv4-Adresse wird als
 `TransportLocator::Medium` (Diskriminator ADDRESS_FORMAT_MEDIUM) gemeldet: vier
 Oktette Adresse, ein Füllbyte, der Port als `unsigned short` in der
 Byte-Reihenfolge des E-Flags.
@@ -8116,10 +8112,10 @@ port field shall contain the UDP/IP v6 port number."
 `crates/xrce/src/transport_locator.rs` (`TransportLocatorLarge`,
 `TransportLocator::encode_member`)
 
-**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_maps_udp_tcp_and_ipv6`,
-`crates/xrce/src/transport_locator.rs::tests::large_has_three_padding_octets_and_a_32_bit_port`
+**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_maps_udp_tcp_and_ipv6`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_11_2_1_large_has_three_padding_octets_and_a_32_bit_port`
 
-**Status:** `done` — Commits `c304e509660`. ein UDP-Listener mit IPv6-Adresse wird als
+**Status:** `done` — Commits `299b3a41398`. ein UDP-Listener mit IPv6-Adresse wird als
 `TransportLocator::Large` gemeldet: 16 Oktette Adresse, drei Füllbytes, der Port
 als `unsigned long`.
 
@@ -8134,8 +8130,8 @@ Client."
 428, `PeerTable`, `Route::Udp`); `crates/xrce/src/transport_udp.rs`
 (`XrceUdpSender::bind` Z. 54)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::udp_listener_answers_create_client_over_loopback`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::a_client_registering_again_is_answered_at_its_new_address`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_2_2_udp_listener_answers_create_client_over_loopback`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_8_3_2_1_a_client_registering_again_is_answered_at_its_new_address`
 
 **Status:** done — die Antwort geht an die Adresse, unter der sich der Client
 zuletzt mit CREATE_CLIENT gemeldet hat; ohne Eintrag an die Quelladresse.
@@ -8148,8 +8144,8 @@ port number it shall listen to."
 **Repo:** `crates/xrce-agent/src/daemon/config.rs` (`ListenerConfig::Udp`,
 Vorgabe `0.0.0.0:2018`)
 
-**Tests:** `crates/xrce-agent/src/daemon/config.rs::tests::default_config_has_one_udp_listener_on_2018`,
-`crates/xrce-agent/src/daemon/config.rs::tests::a_listener_can_be_written_as_one_string`
+**Tests:** `crates/xrce-agent/src/daemon/config.rs::tests::xrce_11_2_2_default_config_has_one_udp_listener_on_2018`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_11_2_2_a_listener_can_be_written_as_one_string`
 
 **Status:** done — die Spec nennt keinen Standardport. `agent_default_port`
 in `crates/xrce/src/transport_udp.rs` (Z. 27) rechnet 7400 + 4 · Domain; der
@@ -8163,8 +8159,8 @@ UDP/IP address and port of the XRCE Agent."
 **Repo:** `crates/xrce/src/transport_udp.rs` (`XrceUdpSender::bind` Z. 54);
 `crates/xrce-client/src/lib.rs` (`ClientTransport` Z. 89)
 
-**Tests:** `crates/xrce/src/transport_udp.rs::tests::loopback_roundtrip_create_client`,
-`crates/xrce-agent/tests/e2e_udp_loopback.rs::e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
+**Tests:** `crates/xrce/src/transport_udp.rs::tests::xrce_11_2_2_loopback_roundtrip_create_client`,
+`crates/xrce-agent/tests/e2e_udp_loopback.rs::xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments`
 
 **Status:** done — `XrceClient` bekommt die Adresse über seinen
 `ClientTransport`; `crates/xrce-client` selbst hat keinen UDP-Transport, der
@@ -8179,8 +8175,8 @@ contain exactly one XRCE message."
 **Repo:** `crates/xrce/src/transport_udp.rs` (`send_message` Z. 67,
 `recv_message` Z. 89)
 
-**Tests:** `crates/xrce/src/transport_udp.rs::tests::rfc768_udp_delivers_one_datagram_per_message_with_boundaries_intact`,
-`crates/xrce/src/transport_udp.rs::tests::rfc768_datagram_larger_than_udp_payload_limit_is_rejected`
+**Tests:** `crates/xrce/src/transport_udp.rs::tests::xrce_8_2_1_rfc768_udp_delivers_one_datagram_per_message_with_boundaries_intact`,
+`crates/xrce/src/transport_udp.rs::tests::xrce_11_2_3_rfc768_datagram_larger_than_udp_payload_limit_is_rejected`
 
 **Status:** done
 
@@ -8196,12 +8192,12 @@ and port number they shall listen to. By default, they shall be the address
 (`bind_discovery_socket` Z. 146); `crates/xrce-agent/src/daemon/config.rs`
 (`discovery_address`, `discovery_port`)
 
-**Tests:** `crates/xrce/src/discovery.rs::tests::discovery_constants_match_spec`,
-`crates/xrce/src/discovery.rs::tests::the_discovery_port_is_bound_shared`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_discovery_group_is_the_one_given`,
-`crates/xrce-agent/src/daemon/config.rs::tests::the_discovery_group_can_be_set`
+**Tests:** `crates/xrce/src/discovery.rs::tests::xrce_11_2_4_discovery_constants_match_spec`,
+`crates/xrce/src/discovery.rs::tests::xrce_11_2_4_the_discovery_port_is_bound_shared`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_8_4_4_the_discovery_group_is_the_one_given`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_11_2_4_the_discovery_group_can_be_set`
 
-**Status:** `done` — Commits `5798b040952`. Vorgabe Gruppe 239.255.0.2 und Port 7400;
+**Status:** `done` — Commits `fd2e9a5bcfd`. Vorgabe Gruppe 239.255.0.2 und Port 7400;
 `discovery.address:` und `discovery.port:` stellen beide ein (Item unten).
 
 ### §11.2.4 Einstellung der Multicast-Adresse
@@ -8213,10 +8209,10 @@ Schlüssel `discovery.address`); `crates/xrce-agent/src/daemon/discovery.rs`
 (`bind_discovery_socket` Z. 146); `crates/xrce-agent/src/daemon/server.rs`
 (Aufruf Z. 400)
 
-**Tests:** `crates/xrce-agent/src/daemon/config.rs::tests::the_discovery_group_can_be_set`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::the_discovery_group_is_the_one_given`
+**Tests:** `crates/xrce-agent/src/daemon/config.rs::tests::xrce_11_2_4_the_discovery_group_can_be_set`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_8_4_4_the_discovery_group_is_the_one_given`
 
-**Status:** `done` — Commits `5798b040952`. der Agent tritt der eingestellten Gruppe
+**Status:** `done` — Commits `fd2e9a5bcfd`. der Agent tritt der eingestellten Gruppe
 bei; eine Adresse, die keine IPv4-Multicast-Adresse ist, lehnen die
 Konfiguration und `bind_discovery_socket` ab. Beim Client ist die
 Multicast-Adresse ein Eintrag der Kandidatenliste von `discover_over_udp`.
@@ -8236,7 +8232,7 @@ periodic message once it receives a suitable response from an Agent."
 `crates/xrce-client/src/discovery.rs::tests::a_suitable_answer_ends_the_search`,
 `crates/xrce-client/src/discovery.rs::tests::the_search_over_udp_finds_the_agent_that_answers`
 
-**Status:** `done` — Commits `5798b040952`. `GET_INFO(OBJECTID_AGENT)` ohne Sitzung und
+**Status:** `done` — Commits `fd2e9a5bcfd`. `GET_INFO(OBJECTID_AGENT)` ohne Sitzung und
 ohne ClientKey geht beim ersten Aufruf und danach je Periode an alle Adressen
 der Liste (Multicast-Adresse und Port oder Unicast-Kandidaten); eine passende
 Antwort (INFO mit `STATUS_OK` und gleicher Hauptversion) beendet das Senden, ein
@@ -8254,10 +8250,10 @@ TransportLocators."
 Z. 43, `build_info_reply` Z. 107); `crates/xrce-agent/src/daemon/server.rs`
 (`listener_locators` Z. 438)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_maps_udp_tcp_and_ipv6`
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_maps_udp_tcp_and_ipv6`
 
-**Status:** `done` — Commits `65cd1820a04`, `c304e509660`. INFO mit
+**Status:** `done` — Commits `ca0cf7e08bf`, `299b3a41398`. INFO mit
 `AGENT_ActivityInfo.address_seq` als `TransportLocatorSeq` der UDP- und
 TCP-Listener (Medium für IPv4, Large für IPv6) und mit der
 `AGENT_Representation`. Listener mit DTLS oder TLS und die serielle Leitung
@@ -8279,7 +8275,7 @@ Agent."
 **Tests:** `crates/xrce-client/src/discovery.rs::tests::get_info_goes_to_the_candidates_every_period`,
 `crates/xrce-client/src/discovery.rs::tests::the_search_over_udp_finds_the_agent_that_answers`
 
-**Status:** `done` — Commits `5798b040952`. der Client bekommt eine Liste von
+**Status:** `done` — Commits `fd2e9a5bcfd`. der Client bekommt eine Liste von
 Kandidatenadressen, sendet `GET_INFO` periodisch an alle und hört bei einer
 passenden Antwort auf.
 
@@ -8295,13 +8291,13 @@ prefix ahead of the XRCE message as defined in 11.3.3."
 (`run_tls_listener`); `crates/xrce/src/transport_tls.rs` (`RustlsTlsClient`,
 `RustlsTlsServer`)
 
-**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::tls::a_client_that_trusts_the_agents_certificate_opens_a_session`,
-`crates/xrce-agent/tests/secure_listeners.rs::tls::a_plain_text_create_client_on_the_tls_port_is_not_answered`,
-`crates/xrce/tests/tls_e2e.rs::tls_handshake_and_message_roundtrip`
+**Tests:** `crates/xrce-agent/tests/secure_listeners.rs::tls::xrce_8_3_2_4_a_client_that_trusts_the_agents_certificate_opens_a_session`,
+`crates/xrce-agent/tests/secure_listeners.rs::tls::xrce_8_3_2_4_a_plain_text_create_client_on_the_tls_port_is_not_answered`,
+`crates/xrce/tests/tls_e2e.rs::xrce_11_3_tls_handshake_and_message_roundtrip`
 
 **Status:** `n/a (informative)` — Hinweis; die Länge steht im Item zu §11.3.3.
 Der Agent hat unter dem Feature `tls` den Listener `kind: tls` (TLS mit dem
-Zertifikat des Agent, `01470e273bc`); das 2-Byte-Längenpräfix steht im
+Zertifikat des Agent, `eb44fbbf575`); das 2-Byte-Längenpräfix steht im
 verschlüsselten Strom. Die Tests laufen nur mit diesem Feature.
 
 ### §11.3.1 TCP v4 mit ADDRESS_FORMAT_MEDIUM
@@ -8313,10 +8309,10 @@ ADDRESS_FORMAT_MEDIUM."
 **Repo:** `crates/xrce-agent/src/daemon/server.rs` (`listener_locators` Z. 438);
 `crates/xrce/src/transport_locator.rs` (`TransportLocatorMedium`)
 
-**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_maps_udp_tcp_and_ipv6`,
-`crates/xrce/src/transport_locator.rs::tests::medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`
+**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_maps_udp_tcp_and_ipv6`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_8_3_4_2_medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`
 
-**Status:** `done` — Commits `c304e509660`. ein TCP-Listener mit IPv4-Adresse wird als
+**Status:** `done` — Commits `299b3a41398`. ein TCP-Listener mit IPv4-Adresse wird als
 `TransportLocator::Medium` (ADDRESS_FORMAT_MEDIUM) gemeldet; der Diskriminator
 0x04 besteht nicht mehr.
 
@@ -8330,10 +8326,10 @@ and the port field shall contain the TCP/IP v6 port number."
 **Repo:** `crates/xrce-agent/src/daemon/server.rs` (`listener_locators` Z. 438);
 `crates/xrce/src/transport_locator.rs` (`TransportLocatorLarge`)
 
-**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::listener_locators_maps_udp_tcp_and_ipv6`,
-`crates/xrce/src/transport_locator.rs::tests::large_has_three_padding_octets_and_a_32_bit_port`
+**Tests:** `crates/xrce-agent/src/daemon/server.rs::tests::xrce_7_8_2_2_listener_locators_maps_udp_tcp_and_ipv6`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_11_2_1_large_has_three_padding_octets_and_a_32_bit_port`
 
-**Status:** `done` — Commits `c304e509660`. ein TCP-Listener mit IPv6-Adresse wird als
+**Status:** `done` — Commits `299b3a41398`. ein TCP-Listener mit IPv6-Adresse wird als
 `TransportLocator::Large` gemeldet, mit der Portnummer in `locator_port`.
 
 ### §11.3.2 Agent als TCP-Server, Client als TCP-Client
@@ -8348,9 +8344,9 @@ Client as the TCP Client."
 `XrceTcpClient::connect` Z. 52); `crates/xrce-agent/src/daemon/transport.rs`
 (`run_tcp_listener` Z. 550, `run_tcp_connection` Z. 485)
 
-**Tests:** `crates/xrce/src/transport_tcp.rs::tests::tcp_loopback_create_client_roundtrip`,
-`crates/xrce/src/transport_tcp.rs::tests::tcp_loopback_three_message_chain`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::a_tcp_client_gets_the_messages_of_the_agent_over_its_connection`
+**Tests:** `crates/xrce/src/transport_tcp.rs::tests::xrce_11_3_2_tcp_loopback_create_client_roundtrip`,
+`crates/xrce/src/transport_tcp.rs::tests::xrce_11_3_2_tcp_loopback_three_message_chain`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_11_3_2_a_tcp_client_gets_the_messages_of_the_agent_over_its_connection`
 
 **Status:** done — die Rollen sind im Transport und am TCP-Listener des Agent
 geprüft; der Agent sendet über die Verbindung auch ohne Anfrage (Items unten).
@@ -8362,7 +8358,7 @@ geprüft; der Agent sendet über die Verbindung auch ohne Anfrage (Items unten).
 **Repo:** `crates/xrce-agent/src/daemon/transport.rs` (`run_tcp_listener` Z.
 550, `run_tcp_connection` Z. 485)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::a_tcp_client_gets_the_messages_of_the_agent_over_its_connection`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_11_3_2_a_tcp_client_gets_the_messages_of_the_agent_over_its_connection`
 
 **Status:** done — der Test startet den Listener, registriert einen Client über
 TCP und erhält STATUS_AGENT. `XrceTcpServer` benutzt der Agent nicht.
@@ -8375,9 +8371,9 @@ and from the Client."
 **Repo:** `crates/xrce-agent/src/daemon/transport.rs` (`run_ticker` Z. 410,
 `deliver` Z. 367, `Route`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::a_tcp_client_gets_the_messages_of_the_agent_over_its_connection`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_11_3_2_a_tcp_client_gets_the_messages_of_the_agent_over_its_connection`
 
-**Status:** `done` — Commits `2d3b8106888`. ein Thread (`run_ticker`, transport.rs
+**Status:** `done` — Commits `d1cfe57959b`. ein Thread (`run_ticker`, transport.rs
 Z. 410) ruft `tick` für alle Listener auf; `deliver` (Z. 367) sendet jede
 Nachricht über den Weg, auf dem sich ihr Client registriert hat: den Socket
 eines UDP-Listeners oder die Warteschlange des Schreibers einer TCP-Verbindung
@@ -8391,7 +8387,7 @@ port number it shall listen to."
 
 **Repo:** `crates/xrce-agent/src/daemon/config.rs` (`ListenerConfig::Tcp`)
 
-**Tests:** `crates/xrce-agent/src/daemon/config.rs::tests::a_listener_can_be_written_as_one_string`
+**Tests:** `crates/xrce-agent/src/daemon/config.rs::tests::xrce_11_2_2_a_listener_can_be_written_as_one_string`
 
 **Status:** done
 
@@ -8403,10 +8399,10 @@ TCP/IP address and port of the XRCE Agent."
 **Repo:** `crates/xrce/src/transport_tcp.rs` (`XrceTcpClient::connect` Z. 52);
 `crates/xrce-client/src/discovery.rs` (`TcpTransport`, `connect_over_tcp`)
 
-**Tests:** `crates/xrce/src/transport_tcp.rs::tests::tcp_loopback_create_client_roundtrip`,
+**Tests:** `crates/xrce/src/transport_tcp.rs::tests::xrce_11_3_2_tcp_loopback_create_client_roundtrip`,
 `crates/xrce-client/src/discovery.rs::tests::the_search_over_tcp_connects_to_the_agent_that_accepts`
 
-**Status:** `done` — Commits `5798b040952`. `crates/xrce-client` hat mit `TcpTransport`
+**Status:** `done` — Commits `fd2e9a5bcfd`. `crates/xrce-client` hat mit `TcpTransport`
 einen `ClientTransport` über TCP (Feature `std`); `connect_over_tcp` verbindet
 sich mit den vorkonfigurierten Adressen und sendet CREATE_CLIENT.
 
@@ -8419,9 +8415,9 @@ the length of the XRCE message that follows encoded as little endian."
 **Repo:** `crates/xrce/src/transport_tcp.rs` (`TCP_LENGTH_PREFIX_SIZE` Z. 37,
 `XrceTcpClient::send_message` Z. 70, `recv_message` Z. 103)
 
-**Tests:** `crates/xrce/src/transport_tcp.rs::tests::tcp_length_prefix_size_constant`,
-`crates/xrce/src/transport_tcp.rs::tests::rfc793_byte_stream_is_delimited_by_the_length_prefix_not_by_writes`,
-`crates/xrce/src/transport_tcp.rs::tests::rfc793_frame_split_across_two_writes_is_reassembled`
+**Tests:** `crates/xrce/src/transport_tcp.rs::tests::xrce_11_3_3_tcp_length_prefix_size_constant`,
+`crates/xrce/src/transport_tcp.rs::tests::xrce_8_2_1_rfc793_byte_stream_is_delimited_by_the_length_prefix_not_by_writes`,
+`crates/xrce/src/transport_tcp.rs::tests::xrce_11_3_3_rfc793_frame_split_across_two_writes_is_reassembled`
 
 **Status:** done
 
@@ -8436,8 +8432,8 @@ boundary."
 **Repo:** `crates/xrce/src/transport_tcp.rs` (`send_message`: `msg.encode()`
 vor der Länge)
 
-**Tests:** `crates/xrce/src/transport_tcp.rs::tests::tcp_loopback_three_message_chain`,
-`crates/xrce/src/submessages/mod.rs::tests::message_two_submessages_padded_correctly`
+**Tests:** `crates/xrce/src/transport_tcp.rs::tests::xrce_11_3_2_tcp_loopback_three_message_chain`,
+`crates/xrce/src/submessages/mod.rs::tests::xrce_8_2_1_message_two_submessages_padded_correctly`
 
 **Status:** done — die Nachricht wird ohne Kenntnis der Länge kodiert. §8.2.1
 nennt für den Anfang der Nachricht eine Ausrichtung auf 16 Byte, §11.3.3 eine
@@ -8454,8 +8450,8 @@ to. By default they shall be the address 239.255.0.2 and the port 7400."
 Art der Listener); `crates/xrce-agent/src/daemon/discovery.rs`
 (`bind_discovery_socket` Z. 146)
 
-**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`,
-`crates/xrce/src/discovery.rs::tests::discovery_constants_match_spec`
+**Tests:** `crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`,
+`crates/xrce/src/discovery.rs::tests::xrce_11_2_4_discovery_constants_match_spec`
 
 **Status:** done — der Locator eines TCP-Listener in der Antwort ist im Item zu
 §11.3.1 behandelt.
@@ -8474,7 +8470,7 @@ periodic message once it receives a suitable response from an Agent."
 `crates/xrce-client/src/discovery.rs::tests::a_suitable_answer_ends_the_search`,
 `crates/xrce-client/src/discovery.rs::tests::the_search_over_udp_finds_the_agent_that_answers`
 
-**Status:** `done` — Commits `5798b040952`. wie im Item zu §11.2.4: der Client sucht
+**Status:** `done` — Commits `fd2e9a5bcfd`. wie im Item zu §11.2.4: der Client sucht
 den Agent mit `GET_INFO` an die Multicast-Adresse und verbindet sich danach über
 TCP (Item unten).
 
@@ -8492,7 +8488,7 @@ suitable response from an Agent."
 
 **Tests:** `crates/xrce-client/src/discovery.rs::tests::the_search_over_tcp_connects_to_the_agent_that_accepts`
 
-**Status:** `done` — Commits `5798b040952`. der Client versucht je Periode, sich mit
+**Status:** `done` — Commits `fd2e9a5bcfd`. der Client versucht je Periode, sich mit
 jeder Adresse der Liste zu verbinden; auf eine Verbindung sendet er
 CREATE_CLIENT und hört bei einem `STATUS_AGENT` mit `STATUS_OK` auf.
 
@@ -8549,14 +8545,14 @@ the type shall be considered appendable."
 `with_unannotated_types`, `begin_unannotated`, `end_unannotated`);
 `crates/xrce-agent/src/daemon/config.rs` (`unannotated_types`)
 
-**Tests:** `crates/xrce/tests/unannotated_types.rs::the_default_is_appendable_with_a_dheader`,
-`crates/xrce/tests/unannotated_types.rs::the_final_setting_writes_the_reference_implementations_octets`,
-`crates/xrce/tests/unannotated_types.rs::both_forms_are_read_in_either_setting`,
-`crates/xrce/tests/unannotated_types.rs::the_reference_implementations_octets_are_read_in_the_default_setting`,
-`crates/xrce/src/transport_locator.rs::tests::by_default_the_union_and_its_case_have_a_dheader`,
-`crates/xrce-agent/src/daemon/config.rs::tests::the_extensibility_of_unannotated_types_can_be_set`
+**Tests:** `crates/xrce/tests/unannotated_types.rs::xrce_7_7_the_default_is_appendable_with_a_dheader`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_7_the_final_setting_writes_the_reference_implementations_octets`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_both_forms_are_read_in_either_setting`,
+`crates/xrce/tests/unannotated_types.rs::xrce_annex_a_the_reference_implementations_octets_are_read_in_the_default_setting`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_7_7_by_default_the_union_and_its_case_have_a_dheader`,
+`crates/xrce-agent/src/daemon/config.rs::tests::xrce_annex_a_the_extensibility_of_unannotated_types_can_be_set`
 
-**Status:** `done` — Commits `f2ace917b5a`, `3874ad8d6a6`, `cd542d21c14`. Ohne
+**Status:** `done` — Commits `7f85e76debd`, `220857a1e90`, `5f31939a719`. Ohne
 `@extensibility` gilt APPENDABLE (DDS-XTypes 1.3 §7.3.1.2.1.8): `Time_t`,
 `ResultStatus`, `Property`, `TransportLocator` und `ACKNACK_Payload` tragen in
 XCDR2 einen DHEADER; das ist die Vorgabe. Die Oktette des Mitschnitts von
@@ -8564,7 +8560,7 @@ eProsima (STATUS 6 Byte Payload, ACKNACK 5 Byte, aus
 `tools/wire-capture/xrce-sessions/agent-to-client.hex` gelesen) sind die
 benannte Einstellung FINAL: Agent-Schlüssel `unannotated_types: final`, Rust-API
 `zerodds_xrce::encoding::UnannotatedTypes::Final`; jedes SDK hat die Option
-„unannotated types“ (`b590f6539d0`). Die Leser nehmen beide Formen an.
+„unannotated types“ (`82fa0a977e2`). Die Leser nehmen beide Formen an.
 
 ### Annex A OBJK_OTHER = 0x0F
 
@@ -8573,10 +8569,10 @@ benannte Einstellung FINAL: Agent-Schlüssel `unannotated_types: final`, Rust-AP
 **Repo:** `crates/xrce/src/object_kind.rs` (`OBJK_OTHER` Z. 43,
 `ObjectKind::Other`, `ObjectKind::from_u8`)
 
-**Tests:** `crates/xrce/src/object_kind.rs::tests::all_spec_kinds_roundtrip`,
-`crates/xrce/src/object_kind.rs::tests::raw_const_values_match_spec`
+**Tests:** `crates/xrce/src/object_kind.rs::tests::xrce_7_7_5_all_spec_kinds_roundtrip`,
+`crates/xrce/src/object_kind.rs::tests::xrce_7_7_5_raw_const_values_match_spec`
 
-**Status:** `done` — Commits `f63fa2d1218`. der Wert 0x0F heißt `OBJK_OTHER` wie in
+**Status:** `done` — Commits `daf2a618f74`. der Wert 0x0F heißt `OBJK_OTHER` wie in
 Annex A; `OBJK_DOMAIN` besteht nicht mehr. Die Spec gibt der Domain keine
 ObjectKind (Item zu §7.7.3.4).
 
@@ -8586,8 +8582,8 @@ ObjectKind (Item zu §7.7.3.4).
 
 **Repo:** `crates/xrce/src/object_id.rs` (`OBJECTID_AGENT` Z. 44)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::agent_singleton_has_kind_agent`,
-`crates/xrce-agent/src/daemon/discovery.rs::tests::discovery_responder_answers_get_info_on_agent`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_annex_a_agent_singleton_has_kind_agent`,
+`crates/xrce-agent/src/daemon/discovery.rs::tests::xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent`
 
 **Status:** done
 
@@ -8598,10 +8594,10 @@ ObjectKind (Item zu §7.7.3.4).
 **Repo:** `crates/xrce/src/object_id.rs` (`OBJECTID_SESSION` Z. 42,
 `OBJECTID_INVALID` Z. 40)
 
-**Tests:** `crates/xrce/src/object_id.rs::tests::session_object_id_is_all_ones`,
-`crates/xrce/src/object_id.rs::tests::reserved_object_ids_per_spec_7_6_and_annex_a`
+**Tests:** `crates/xrce/src/object_id.rs::tests::xrce_annex_a_session_object_id_is_all_ones`,
+`crates/xrce/src/object_id.rs::tests::xrce_7_6_reserved_object_ids_per_spec_7_6_and_annex_a`
 
-**Status:** `done` — Commits `f63fa2d1218`. `OBJECTID_SESSION` ist {0xFF, 0xFF};
+**Status:** `done` — Commits `daf2a618f74`. `OBJECTID_SESSION` ist {0xFF, 0xFF};
 `OBJECTID_INVALID` ist {0x00, 0x00} (§7.6). Die Spec sagt nicht, wofür
 `OBJECTID_SESSION` steht; der Code benutzt die Konstante nicht.
 
@@ -8629,13 +8625,13 @@ TransportLocatorLarge medium_locator; [...] };"
 **Repo:** `crates/xrce/src/transport_locator.rs` (`fmt_disc` Z. 50,
 `TransportLocator::encode_into`, `decode_at`)
 
-**Tests:** `crates/xrce/src/transport_locator.rs::tests::medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
-`crates/xrce/src/transport_locator.rs::tests::large_has_three_padding_octets_and_a_32_bit_port`,
-`crates/xrce/src/transport_locator.rs::tests::small_is_two_address_octets_and_a_one_octet_port`,
-`crates/xrce/src/transport_locator.rs::tests::string_length_is_aligned_to_four`,
-`crates/xrce/src/transport_locator.rs::tests::unknown_discriminator_rejected`
+**Tests:** `crates/xrce/src/transport_locator.rs::tests::xrce_8_3_4_2_medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_11_2_1_large_has_three_padding_octets_and_a_32_bit_port`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_small_is_two_address_octets_and_a_one_octet_port`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_string_length_is_aligned_to_four`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_unknown_discriminator_rejected`
 
-**Status:** `done` — Commits `c304e509660`. die vier Werte 0 bis 3; der Diskriminator
+**Status:** `done` — Commits `299b3a41398`. die vier Werte 0 bis 3; der Diskriminator
 ist ein Oktett vor dem Member, in der Vorgabe hinter dem DHEADER der Union (Item
 zu Annex A „Typen ohne @extensibility“). Annex A nennt das Member für LARGE
 `medium_locator`; auf der Leitung hat der Name keine Wirkung.
@@ -8647,9 +8643,9 @@ zu Annex A „Typen ohne @extensibility“). Annex A nennt das Member für LARGE
 **Repo:** `crates/xrce/src/transport_locator.rs` (`fmt_disc` hat nur 0x00 bis
 0x03)
 
-**Tests:** `crates/xrce/src/transport_locator.rs::tests::unknown_discriminator_rejected`
+**Tests:** `crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_unknown_discriminator_rejected`
 
-**Status:** `done` — Commits `c304e509660`. `fmt_disc::TCP` und `fmt_disc::SERIAL`
+**Status:** `done` — Commits `299b3a41398`. `fmt_disc::TCP` und `fmt_disc::SERIAL`
 sowie `TransportLocator::Tcp` und `Serial` sind entfernt; der Test weist die
 Diskriminatoren 4 und 5 ab. TCP-Listener werden als Medium oder Large gemeldet,
 die serielle Leitung gar nicht.
@@ -8662,9 +8658,9 @@ address[2]; octet locator_port; };"
 **Repo:** `crates/xrce/src/transport_locator.rs` (`TransportLocatorSmall`:
 `address: [u8; 2]`, `port: u8`)
 
-**Tests:** `crates/xrce/src/transport_locator.rs::tests::small_is_two_address_octets_and_a_one_octet_port`
+**Tests:** `crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_small_is_two_address_octets_and_a_one_octet_port`
 
-**Status:** `done` — Commits `c304e509660`. zwei Oktette Adresse und ein Oktett Port,
+**Status:** `done` — Commits `299b3a41398`. zwei Oktette Adresse und ein Oktett Port,
 ohne Füllbytes.
 
 ### Annex A TransportLocatorMedium
@@ -8675,10 +8671,10 @@ unsigned short locator_port; };"
 **Repo:** `crates/xrce/src/transport_locator.rs` (`TransportLocatorMedium`,
 `encode_member`)
 
-**Tests:** `crates/xrce/src/transport_locator.rs::tests::medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
-`crates/xrce/src/transport_locator.rs::tests::a_udp_locator_carries_the_default_agent_port`
+**Tests:** `crates/xrce/src/transport_locator.rs::tests::xrce_8_3_4_2_medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_11_2_1_a_udp_locator_carries_the_default_agent_port`
 
-**Status:** `done` — Commits `c304e509660`. wie im Item zu §11.2.1: ein Füllbyte nach
+**Status:** `done` — Commits `299b3a41398`. wie im Item zu §11.2.1: ein Füllbyte nach
 der Adresse, der Port als Zahl in der Byte-Reihenfolge des E-Flags.
 
 ### Annex A TransportLocatorLarge
@@ -8689,10 +8685,10 @@ unsigned long locator_port; };"
 **Repo:** `crates/xrce/src/transport_locator.rs` (`TransportLocatorLarge`,
 `TransportLocator::encode_into`, `TransportLocator::decode_at`)
 
-**Tests:** `crates/xrce/src/transport_locator.rs::tests::large_has_three_padding_octets_and_a_32_bit_port`,
-`crates/xrce/src/transport_locator.rs::tests::a_locator_sequence_is_a_count_and_aligned_locators`
+**Tests:** `crates/xrce/src/transport_locator.rs::tests::xrce_11_2_1_large_has_three_padding_octets_and_a_32_bit_port`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_a_locator_sequence_is_a_count_and_aligned_locators`
 
-**Status:** `done` — Commits `c304e509660`, `f2ace917b5a`. 16 Adressoktette, drei
+**Status:** `done` — Commits `299b3a41398`, `7f85e76debd`. 16 Adressoktette, drei
 Füllbytes, der Port als `unsigned long` in der Byte-Reihenfolge des E-Flags.
 Union und Struktur des Falls tragen ohne `@extensibility` je einen DHEADER
 (APPENDABLE nach DDS-XTypes 1.3 §7.3.1.2.1.8); der Agent-Schlüssel
@@ -8706,11 +8702,11 @@ der Einstellung `Final`, der Test der Folge in der Vorgabe.
 **Repo:** `crates/xrce/src/transport_locator.rs` (`TransportLocator::String`,
 `TRANSPORT_LOCATOR_STRING_MAX`, `TransportLocator::encode_into`)
 
-**Tests:** `crates/xrce/src/transport_locator.rs::tests::string_length_is_aligned_to_four`,
-`crates/xrce/src/transport_locator.rs::tests::a_long_string_locator_is_not_cut_at_256`,
-`crates/xrce/src/transport_locator.rs::tests::a_string_without_its_nul_is_refused`
+**Tests:** `crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_string_length_is_aligned_to_four`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_a_long_string_locator_is_not_cut_at_256`,
+`crates/xrce/src/transport_locator.rs::tests::xrce_annex_a_a_string_without_its_nul_is_refused`
 
-**Status:** `done` — Commits `c304e509660`. die Länge ist ein `unsigned long`, auf 4
+**Status:** `done` — Commits `299b3a41398`. die Länge ist ein `unsigned long`, auf 4
 ausgerichtet und in der Byte-Reihenfolge des E-Flags; danach die Zeichen mit
 NUL. Die Obergrenze beträgt 65 535 Byte (die Größe einer Submessage), nicht
 mehr 256.
@@ -8723,15 +8719,15 @@ typedef sequence<Property> PropertySeq;"
 **Repo:** `crates/xrce/src/handshake.rs` (`Property`, `encode_properties`,
 `decode_properties`, `decode_property`, `MAX_PROPERTIES`)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::a_property_has_a_dheader_by_default`,
-`crates/xrce/src/handshake.rs::tests::a_big_endian_client_representation_with_properties_reads_back`,
-`crates/xrce/src/handshake.rs::tests::a_big_endian_agent_representation_with_properties_reads_back`,
-`crates/xrce/src/handshake.rs::tests::padding_counts_from_the_start_of_the_payload`,
-`crates/xrce/src/handshake.rs::tests::max_properties_cap_enforced_on_decode`,
-`crates/xrce/src/handshake.rs::tests::a_malformed_property_seq_is_an_error_not_absent_properties`,
-`crates/xrce-agent/src/daemon/session.rs::tests::an_unreadable_property_seq_is_refused_with_invalid_data`
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_annex_a_a_property_has_a_dheader_by_default`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_7_a_big_endian_client_representation_with_properties_reads_back`,
+`crates/xrce/src/handshake.rs::tests::xrce_8_3_4_2_a_big_endian_agent_representation_with_properties_reads_back`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_7_padding_counts_from_the_start_of_the_payload`,
+`crates/xrce/src/handshake.rs::tests::xrce_annex_a_max_properties_cap_enforced_on_decode`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_a_malformed_property_seq_is_an_error_not_absent_properties`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_8_2_1_an_unreadable_property_seq_is_refused_with_invalid_data`
 
-**Status:** `done` — Commits `65cd1820a04`, `f2ace917b5a`, `b43d5e6b848`. die Zahl der
+**Status:** `done` — Commits `ca0cf7e08bf`, `7f85e76debd`, `b9255734bfb`. die Zahl der
 Elemente und die Längen der Zeichenketten sind `unsigned long`, ab dem Anfang
 der Payload auf 4 ausgerichtet; die Zahl liegt in `CLIENT_Representation` auf
 Versatz 16. Jede `Property` trägt ohne `@extensibility` einen DHEADER (Vorgabe),
@@ -8750,12 +8746,12 @@ XrceVendorId xrce_vendor_id; ClientKey client_key; SessionId session_id;
 **Repo:** `crates/xrce/src/handshake.rs` (`ClientRepresentation`, `encode_with`,
 `decode_with`, `encode_into`, `decode_at`)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::client_representation_decodes_the_captured_create_client_prefix`,
-`crates/xrce/src/handshake.rs::tests::client_representation_roundtrip_with_properties`,
-`crates/xrce/src/handshake.rs::tests::by_default_the_representations_have_no_timestamp`,
-`crates/xrce/src/handshake.rs::tests::the_prose_form_has_a_time_t_after_the_vendor_id`
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_8_1_client_representation_decodes_the_captured_create_client_prefix`,
+`crates/xrce/src/handshake.rs::tests::xrce_annex_a_client_representation_roundtrip_with_properties`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_by_default_the_representations_have_no_timestamp`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_the_prose_form_has_a_time_t_after_the_vendor_id`
 
-**Status:** `done` — Commits `65cd1820a04`, `b43d5e6b848`, `711f93fd460`. der Code folgt
+**Status:** `done` — Commits `ca0cf7e08bf`, `b9255734bfb`, `f8bdf3cd878`. der Code folgt
 der Form von Annex A; `@optional` ist ein Oktett 0 oder 1, `properties` liegt
 wie im Item oben. Der Text in §7.8.2.1 nennt zusätzlich ein `Time_t
 client_timestamp` hinter `xrce_vendor_id`; IDL und Bytes von Annex B.1 haben es
@@ -8775,11 +8771,11 @@ xrce_vendor_id; @optional PropertySeq properties; };"
 **Repo:** `crates/xrce/src/handshake.rs` (`AgentRepresentation`, `encode_with`,
 `decode_with`, `encode_into`, `decode_at`)
 
-**Tests:** `crates/xrce/src/handshake.rs::tests::agent_representation_decodes_the_captured_status_agent_body`,
-`crates/xrce/src/handshake.rs::tests::agent_representation_roundtrip_no_properties`,
-`crates/xrce/src/handshake.rs::tests::the_agent_representation_follows_the_setting_the_same_way`
+**Tests:** `crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_agent_representation_decodes_the_captured_status_agent_body`,
+`crates/xrce/src/handshake.rs::tests::xrce_8_3_5_5_agent_representation_roundtrip_no_properties`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_the_agent_representation_follows_the_setting_the_same_way`
 
-**Status:** `done` — Commits `65cd1820a04`, `b43d5e6b848`, `711f93fd460`. die Form mit
+**Status:** `done` — Commits `ca0cf7e08bf`, `b9255734bfb`, `f8bdf3cd878`. die Form mit
 `agent_timestamp` (§7.8.2.1) ist dieselbe benannte Einstellung wie bei
 `CLIENT_Representation` (`representation_timestamps`, Vorgabe `absent` nach
 Annex A).
@@ -8794,12 +8790,12 @@ OBJK_DomainParticipant_Binary { @optional string<128> domain_reference;
 `ParticipantBinary`); `crates/xrce-agent/src/daemon/entity_repr.rs`
 (`participant`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::participant_binary_in_both_forms`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_participant_is_read`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_domain_reference_is_resolved_against_the_domain_libraries`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_participant_qos_profile_reference_is_applied`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_participant_binary_in_both_forms`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_spec_binary_participant_is_read`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_4_1_a_domain_reference_is_resolved_against_the_domain_libraries`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_1_a_participant_qos_profile_reference_is_applied`
 
-**Status:** `done` — Commits `c67ce23c724`, `b4cd825c268`. der Blob wird als XCDR2 gelesen:
+**Status:** `done` — Commits `f548fee2522`, `0b67c04800c`. der Blob wird als XCDR2 gelesen:
 Annex A (DHEADER, zwei `@optional`-Referenzen), dann die Form von §7.7.3.6.3
 (`long domain_id` zuerst), dann die zwei Referenzen ohne DHEADER, die der
 Client von eProsima sendet. `domain_reference` wird gegen die Domains der
@@ -8819,13 +8815,13 @@ type_reference; @optional DDS:XTypes::TypeIdentifier type_identifier; };"
 `TopicBinary`, `Form::AnnexA`, `Form::Clauses`); `crates/xrce-agent/src/daemon/entity_repr.rs`
 (`topic`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::annex_a_topic_has_a_dheader`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::the_36_octet_example_of_the_clause_is_a_topic`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::a_topic_with_a_type_identifier_reads_it_and_one_without_a_type_is_refused`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::string_bounds_are_checked`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_topic_names_its_topic_and_type`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_annex_a_topic_has_a_dheader`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_the_36_octet_example_of_the_clause_is_a_topic`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_7_3_a_topic_with_a_type_identifier_reads_it_and_one_without_a_type_is_refused`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_7_3_string_bounds_are_checked`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_spec_binary_topic_names_its_topic_and_type`
 
-**Status:** `done` — Commits `c67ce23c724`. gelesen wird die Form von Annex A (DHEADER
+**Status:** `done` — Commits `f548fee2522`. gelesen wird die Form von Annex A (DHEADER
 vor den Elementen) und die FINAL-Form von §7.7.3.7.3 (ohne DHEADER, die 36
 Oktette des Beispiels in §7.7.3.1.3); §7.7.3.7.3 gibt keine Erweiterbarkeit an.
 `string<256>` wird geprüft. Ein `type_identifier` hat Vorrang vor
@@ -8843,11 +8839,11 @@ OBJK_Publisher_Binary_Qos qos; };"
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`container`,
 `ContainerBinary`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`container`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::publisher_binary_of_annex_a`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_publisher_gives_its_partitions`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_publisher_has_default_qos`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_publisher_binary_of_annex_a`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_2_an_annex_a_binary_publisher_gives_its_partitions`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_2_the_captured_binary_publisher_has_default_qos`
 
-**Status:** `done` — Commits `c67ce23c724`. die Form von Annex A (DHEADER, `publisher_name`,
+**Status:** `done` — Commits `f548fee2522`. die Form von Annex A (DHEADER, `publisher_name`,
 `qos` mit `partitions` und `group_data`) wird gelesen; scheitert sie, liest
 `container` die Form ohne DHEADER von §7.7.3.8.2, die der Client von eProsima
 sendet. Der Name der QoS-Struktur lautet in §7.7.3.8.2
@@ -8863,10 +8859,10 @@ OBJK_Subscriber_Binary_Qos qos; };"
 `ContainerBinary`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`container`
 mit `element` = `subscriber`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::publisher_binary_of_annex_a`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_publisher_gives_its_partitions`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_publisher_binary_of_annex_a`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_8_2_an_annex_a_binary_publisher_gives_its_partitions`
 
-**Status:** `done` — Commits `c67ce23c724`. dieselbe Funktion und dasselbe Layout wie beim
+**Status:** `done` — Commits `f548fee2522`. dieselbe Funktion und dasselbe Layout wie beim
 Publisher; die Tests lesen den Blob des Publishers, ein Test mit einem eigenen
 Blob des Subscribers fehlt.
 
@@ -8879,13 +8875,13 @@ Blob des Subscribers fehlt.
 `spec_flags`, `flags`); `crates/xrce-agent/src/daemon/binary_forms.rs`
 (`EndpointBinary::bit1_is_keep_all`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::reader_binary_of_the_clause`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_writer_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_clause_binary_reader_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_writer_is_reliable_keep_last_transient_local`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_reader_binary_of_the_clause`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_an_annex_a_binary_writer_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_clause_binary_reader_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_captured_binary_writer_is_reliable_keep_last_transient_local`
 
-**Status:** `done` — Commits `c67ce23c724`. Annex A (Bit 1 = `is_history_keep_all`) und
+**Status:** `done` — Commits `f548fee2522`. Annex A (Bit 1 = `is_history_keep_all`) und
 §7.7.3.10.2 (Bit 1 = `is_history_keep_last`) widersprechen sich. Das Bit wird
 nach der Form gelesen, in der der Blob lesbar ist: Form von Annex A zuerst, dann
 die Form der Klausel; die klassische CDR-Struktur von eProsima (`qos_flags`
@@ -8900,9 +8896,9 @@ ownership_strength; };"
 
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`endpoint_qos`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_ownership_strength`, `crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_annex_a_writer_binary_of_annex_a_with_ownership_strength`, `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`
 
-**Status:** done — die XCDR2-Formen lesen `ownership_strength` als `unsigned long`; die klassische CDR-Struktur von eProsima liest 64 Bit. Der Test liest ein vorhandenes `ownership_strength` in einem XCDR2-Blob in beiden Byte-Reihenfolgen (2d6689d3ed6).
+**Status:** done — die XCDR2-Formen lesen `ownership_strength` als `unsigned long`; die klassische CDR-Struktur von eProsima liest 64 Bit. Der Test liest ein vorhandenes `ownership_strength` in einem XCDR2-Blob in beiden Byte-Reihenfolgen (ffa5e2770b1).
 ### Annex A OBJK_DataReader_Binary_Qos
 
 **Spec:** Annex A, S. 110 — "@extensibility(FINAL) struct
@@ -8913,11 +8909,11 @@ timebasedfilter_msec; @optional string contentbased_filter; };"
 `EndpointQosBinary::timebasedfilter_msec`, `contentbased_filter`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`apply_endpoint_binary`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::reader_binary_of_the_clause`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_clause_binary_reader_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_reader_binary_of_the_clause`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_clause_binary_reader_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`
 
-**Status:** `done` — Commits `c67ce23c724`, `33df0df0945`. `timebasedfilter_msec` wird als
+**Status:** `done` — Commits `f548fee2522`, `b91241aebb1`. `timebasedfilter_msec` wird als
 `unsigned long` gelesen (Wert 50 im Test), `contentbased_filter` als `string`
 („x>100“ im Beispiel B.2.7). Die klassische CDR-Struktur von eProsima bleibt
 als Rückfall.
@@ -8931,12 +8927,12 @@ qos; };"
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`endpoint`,
 `EndpointBinary`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::an_annex_a_binary_writer_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_writer_is_reliable_keep_last_transient_local`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_blob_of_no_form_is_refused_naming_each_reading`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_an_annex_a_binary_writer_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_captured_binary_writer_is_reliable_keep_last_transient_local`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_blob_of_no_form_is_refused_naming_each_reading`
 
-**Status:** `done` — Commits `c67ce23c724`, `33df0df0945`. gelesen werden drei Formen in
+**Status:** `done` — Commits `f548fee2522`, `b91241aebb1`. gelesen werden drei Formen in
 dieser Reihenfolge: Annex A (DHEADER, `topic_name`, `@optional qos`), die Form
 von §7.7.3.10.2 (ohne DHEADER, `endpoint_qos` als Pflichtfeld) und die
 klassische CDR-Struktur von eProsima (`ObjectId` des Topics statt `topic_name`).
@@ -8952,12 +8948,12 @@ OBJK_DataReader_Binary_Qos qos; };"
 **Repo:** `crates/xrce-agent/src/daemon/binary_forms.rs` (`endpoint` mit
 `writer = false`); `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint`)
 
-**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::reader_binary_of_the_clause`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_clause_binary_reader_names_its_topic_and_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_captured_binary_reader_is_reliable_keep_last_transient_local`
+**Tests:** `crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_reader_binary_of_the_clause`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_clause_binary_reader_names_its_topic_and_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_11_2_the_captured_binary_reader_is_reliable_keep_last_transient_local`
 
-**Status:** `done` — Commits `c67ce23c724`, `33df0df0945`. dieselben drei Formen wie beim
+**Status:** `done` — Commits `f548fee2522`, `b91241aebb1`. dieselben drei Formen wie beim
 DataWriter; Annex A mit Filter ist durch B.2.7 gelesen, die Form der Klausel
 durch den Test mit Tiefe 5 und `timebasedfilter_msec` 50.
 
@@ -8972,11 +8968,11 @@ OBJK_CLIENT : CLIENT_Representation client; [...] };"
 `ObjectConfig::Client`, `ObjectInfo::config`); `crates/xrce-agent/src/daemon/session.rs`
 (`agent_object_info`, `client_object_info`)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::the_config_of_the_agent_is_its_agent_representation`,
-`crates/xrce/src/submessages/get_info.rs::tests::client_info_follows_the_info_mask`,
-`crates/xrce-agent/src/daemon/session.rs::tests::get_info_of_the_agent_checks_the_version_in_client_info`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_13_the_config_of_the_agent_is_its_agent_representation`,
+`crates/xrce/src/submessages/get_info.rs::tests::xrce_7_8_2_2_client_info_follows_the_info_mask`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_7_get_info_of_the_agent_checks_the_version_in_client_info`
 
-**Status:** `done` — Commits `65cd1820a04`. die Fälle `OBJK_AGENT` und `OBJK_CLIENT`
+**Status:** `done` — Commits `ca0cf7e08bf`. die Fälle `OBJK_AGENT` und `OBJK_CLIENT`
 stehen in `ObjectConfig`, dem `config` von `ObjectInfo` (INFO) und dem
 `client_info` von GET_INFO; Kind-Oktett und Darstellung folgen aufeinander.
 Die Aufzählung `ObjectVariant` für CREATE hat diese zwei Fälle nicht: eine
@@ -8993,11 +8989,11 @@ OBJK_DATAWRITER : [...] case OBJK_DATAREADER : [...] };"
 `ActivityInfoVariant::discriminator`: Agent 0x0D, DataWriter 0x05, DataReader
 0x06)
 
-**Tests:** `crates/xrce/src/object_info.rs::tests::agent_activity_info_has_a_dheader_and_a_locator_sequence`,
-`crates/xrce/src/object_info.rs::tests::data_reader_activity_info_is_a_dheader_and_a_short`,
-`crates/xrce/src/object_info.rs::tests::data_writer_activity_info_is_a_dheader_a_long_long_and_a_short`
+**Tests:** `crates/xrce/src/object_info.rs::tests::xrce_7_7_agent_activity_info_has_a_dheader_and_a_locator_sequence`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_data_reader_activity_info_is_a_dheader_and_a_short`,
+`crates/xrce/src/object_info.rs::tests::xrce_7_7_12_data_writer_activity_info_is_a_dheader_a_long_long_and_a_short`
 
-**Status:** `done` — Commits `65cd1820a04`. der Diskriminator ist ein `ObjectKind`
+**Status:** `done` — Commits `ca0cf7e08bf`. der Diskriminator ist ein `ObjectKind`
 (ein Oktett); `OBJECTID_AGENT` ist eine `ObjectId` aus zwei Oktetten und kein
 Wert von `ObjectKind`, der Text von Annex A lässt sich nicht wörtlich nehmen.
 Der Fall des Agent hat den Diskriminator `OBJK_AGENT` (0x0D). Die Member
@@ -9012,9 +9008,9 @@ tragen den DHEADER (`AGENT_ActivityInfo`: `availability`, `address_seq` als
 **Repo:** `crates/xrce/src/submessages/write_data.rs`
 (`DataFormat::FORMAT_MASK`, `DataFormat::from_flag_bits`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_rejects_reserved_format`,
-`crates/xrce/src/submessages/write_data.rs::tests::data_format_raw_roundtrip`,
-`crates/xrce/src/submessages/read_data.rs::tests::the_data_format_octet_has_the_values_of_annex_a`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_8_3_5_8_write_data_rejects_reserved_format`,
+`crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_14_data_format_raw_roundtrip`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_1_the_data_format_octet_has_the_values_of_annex_a`
 
 **Status:** `done`
 
@@ -9031,9 +9027,9 @@ SampleInfoFlags state; SampleInfoDetail detail; };"
 
 **Repo:** `crates/xrce/src/sample_info.rs` (`SampleInfo`, `info_format`); `crates/xrce/src/encoding.rs` (`SampleInfoForm`)
 
-**Tests:** `crates/xrce/src/sample_info.rs::tests::the_union_of_annex_a_is_read_by_its_discriminator`, `crates/xrce/src/sample_info.rs::tests::the_flat_form_ignores_the_padding_octet`
+**Tests:** `crates/xrce/src/sample_info.rs::tests::xrce_annex_a_the_union_of_annex_a_is_read_by_its_discriminator`, `crates/xrce/src/sample_info.rs::tests::xrce_annex_a_the_flat_form_ignores_the_padding_octet`
 
-**Status:** done — `SampleInfo` ist der `state` mit der `SampleInfoDetail`-Union von Annex A: `FORMAT_EMPTY`, `FORMAT_SEQNUM`, `FORMAT_TIMESTAMP`, `FORMAT_SEQN_TIMS`. Die Union gibt den Fall `FORMAT_TIMESTAMP` zweimal an und lässt `FORMAT_EMPTY` in `FORMAT_SEQNUM` durchfallen; gelesen wird die gemeinte Form (nichts, Sequenznummer, Versatz, beide). `FORMAT_SEQN_TIMS` sind die 12 Oktette der flachen Struktur von §7.7.1 und der Bilder von Annex B.5.3 bis B.5.5, der Diskriminator im ersten Füll-Oktett. Vorgabe `SampleInfoForm::AnnexA`; die flache Form (`sample_info: flat`) ist für einen Client, der Nullen als Füllung sendet (die Union liest sie als `FORMAT_EMPTY`). 8be8c6101ca.
+**Status:** done — `SampleInfo` ist der `state` mit der `SampleInfoDetail`-Union von Annex A: `FORMAT_EMPTY`, `FORMAT_SEQNUM`, `FORMAT_TIMESTAMP`, `FORMAT_SEQN_TIMS`. Die Union gibt den Fall `FORMAT_TIMESTAMP` zweimal an und lässt `FORMAT_EMPTY` in `FORMAT_SEQNUM` durchfallen; gelesen wird die gemeinte Form (nichts, Sequenznummer, Versatz, beide). `FORMAT_SEQN_TIMS` sind die 12 Oktette der flachen Struktur von §7.7.1 und der Bilder von Annex B.5.3 bis B.5.5, der Diskriminator im ersten Füll-Oktett. Vorgabe `SampleInfoForm::AnnexA`; die flache Form (`sample_info: flat`) ist für einen Client, der Nullen als Füllung sendet (die Union liest sie als `FORMAT_EMPTY`). 5c2466a4563.
 ### Annex A ACKNACK_Payload mit unsigned short
 
 **Spec:** Annex A, S. 119 — "struct ACKNACK_Payload { unsigned short
@@ -9042,13 +9038,13 @@ first_unacked_seq_num; octet nack_bitmap[2]; octet stream_id; };"
 **Repo:** `crates/xrce/src/submessages/acknack.rs` (`AckNackPayload`,
 `encode_body`, `decode_body`)
 
-**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::acknack_le_roundtrip`,
-`crates/xrce/src/submessages/acknack.rs::tests::acknack_be_roundtrip`,
-`crates/xrce/tests/unannotated_types.rs::the_default_is_appendable_with_a_dheader`,
-`crates/xrce/tests/unannotated_types.rs::the_final_setting_writes_the_reference_implementations_octets`,
-`crates/xrce/src/reliable.rs::tests::acknack_retransmit_of_lost_sample_across_wrap`
+**Tests:** `crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_5_11_acknack_le_roundtrip`,
+`crates/xrce/src/submessages/acknack.rs::tests::xrce_8_3_4_2_acknack_be_roundtrip`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_the_default_is_appendable_with_a_dheader`,
+`crates/xrce/tests/unannotated_types.rs::xrce_7_7_7_the_final_setting_writes_the_reference_implementations_octets`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_acknack_retransmit_of_lost_sample_across_wrap`
 
-**Status:** `done` — Commits `f2ace917b5a`. §8.3.5.11.2 schreibt `short`; die Bytes des
+**Status:** `done` — Commits `7f85e76debd`. §8.3.5.11.2 schreibt `short`; die Bytes des
 Feldes sind gleich. Die Struktur trägt in Annex A kein `@extensibility`: sie
 ist APPENDABLE und hat in der Vorgabe einen DHEADER (9 Oktette); die 5 Oktette
 des Referenzagenten schreibt `unannotated_types: final`, beide Formen werden
@@ -9063,9 +9059,9 @@ stream_id; };"
 **Repo:** `crates/xrce/src/submessages/heartbeat.rs` (`HeartbeatPayload`,
 `encode_body`, `decode_body`)
 
-**Tests:** `crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_le_roundtrip`,
-`crates/xrce/src/submessages/heartbeat.rs::tests::heartbeat_be_roundtrip`,
-`crates/xrce/src/reliable.rs::tests::heartbeat_window_across_wrap_reports_rfc1982_order`
+**Tests:** `crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_5_12_heartbeat_le_roundtrip`,
+`crates/xrce/src/submessages/heartbeat.rs::tests::xrce_8_3_4_2_heartbeat_be_roundtrip`,
+`crates/xrce/src/reliable.rs::tests::xrce_8_4_14_heartbeat_window_across_wrap_reports_rfc1982_order`
 
 **Status:** `done` — die Struktur ist ausdrücklich `@extensibility(FINAL)`, der
 Rumpf hat 5 Oktette ohne DHEADER. §8.3.5.12.2 schreibt `short first_unacked_seq_nr`
@@ -9085,10 +9081,10 @@ FALSE".
 **Repo:** `crates/xrce/src/handshake.rs` (`ClientRepresentation::encode`);
 `crates/xrce/src/submessages/create_client.rs` (`CreateClientPayload`)
 
-**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::annex_b_1_create_client_example_bytes`,
-`crates/xrce/src/handshake.rs::tests::the_prose_form_has_a_time_t_after_the_vendor_id`
+**Tests:** `crates/xrce/src/submessages/create_client.rs::tests::xrce_8_3_5_1_annex_b_1_create_client_example_bytes`,
+`crates/xrce/src/handshake.rs::tests::xrce_7_8_2_1_the_prose_form_has_a_time_t_after_the_vendor_id`
 
-**Status:** `done` — Commits `d4d590690f6`, `711f93fd460`. der Test bildet Header und die
+**Status:** `done` — Commits `be97b3247a6`, `f8bdf3cd878`. der Test bildet Header und die
 Bytes 8–21 nach. Der Text nennt `request_id` und `client_timestamp`, die das
 Layout nicht enthält; mit der Einstellung `representation_timestamps: present`
 schreibt der Code das `Time_t` des Textes, der zweite Test prüft diese Form mit
@@ -9104,7 +9100,7 @@ NUL), `domain_id` 0.
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::encode_for_kind`,
 `ObjectVariant::decode_for_kind_at`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::participant_representation_matches_the_captured_create_bytes`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_participant_representation_matches_the_captured_create_bytes`
 
 **Status:** `n/a (informative)` — Beispiel. Der Test prüft die Form aus dem
 Mitschnitt von eProsima: Länge auf Byte 16–19, Zeichen ab Byte 20. Das Beispiel
@@ -9123,10 +9119,10 @@ Oktette für die `@optional` und `domain_id`.
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`);
 `crates/xrce-agent/src/daemon/binary_forms.rs` (`participant`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::annex_b_2_2_participant_variant`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::a_spec_binary_participant_is_read`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_annex_b_2_2_annex_b_2_2_participant_variant`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_1_3_a_spec_binary_participant_is_read`
 
-**Status:** `done` — Commits `33df0df0945`, `c67ce23c724`. der DHEADER `0x80000002` steht
+**Status:** `done` — Commits `b91241aebb1`, `f548fee2522`. der DHEADER `0x80000002` steht
 an der Stelle, an der eProsima die Länge von `binary_representation` sendet;
 der Code liest ihn dort als DHEADER (Bit 31 ist kein Teil der Länge), die zwei
 `@optional`-Oktette und die `domain_id` danach.
@@ -9139,10 +9135,10 @@ der Code liest ihn dort als DHEADER (Bit 31 ist kein Teil der Länge), die zwei
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`);
 `crates/xrce-agent/src/daemon/binary_forms.rs` (`endpoint`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::annex_b_2_3_writer_variant_reads_as_the_blob_and_its_publisher`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_10_annex_b_2_3_writer_variant_reads_as_the_blob_and_its_publisher`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`
 
-**Status:** `done` — Commits `c67ce23c724`. der Blob mit `topic_name` und `qos?` = 0 und
+**Status:** `done` — Commits `f548fee2522`. der Blob mit `topic_name` und `qos?` = 0 und
 die `publisher_id` danach werden gelesen. Der Text nennt den Publisher
 `subscriber_id`.
 
@@ -9157,11 +9153,11 @@ Füllung, Byte 36–39 `deadline` = 120000.
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::annex_b_2_4_writer_with_qos_in_both_readings_of_the_padding`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`,
-`crates/xrce-agent/src/daemon/binary_forms.rs::tests::writer_binary_of_annex_a_with_qos`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_annex_b_2_4_annex_b_2_4_writer_with_qos_in_both_readings_of_the_padding`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`,
+`crates/xrce-agent/src/daemon/binary_forms.rs::tests::xrce_7_7_3_1_3_writer_binary_of_annex_a_with_qos`
 
-**Status:** `done` — Commits `33df0df0945`. gelesen als XCDR2 der gedruckten IDL. Byte 35,
+**Status:** `done` — Commits `b91241aebb1`. gelesen als XCDR2 der gedruckten IDL. Byte 35,
 das die Tabelle Füllung nennt, ist das Oktett für `@optional deadline_msec`
 (1); der Wert beginnt auf Byte 36. Das Füllbyte 43 vor `publisher_id` wird
 sowohl im DHEADER gezählt (24) als auch außerhalb (23) gelesen. Der Text nennt
@@ -9179,11 +9175,11 @@ topic_ref="Square"><data_writer_qos base_name="MyQosLib::MyProfile">
 `topic_ref` als Name, `<data_writer_qos>` und `<datawriter_qos>` mit
 `base_name`)
 
-**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::a_data_writer_states_its_qos_over_a_profile`
+**Tests:** `crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_3_10_1_a_data_writer_states_its_qos_over_a_profile`
 
 **Status:** `n/a (informative)` — Beispiel. Der Code löst `topic_ref="Square"`
 als Name auf und liest `<data_writer_qos base_name="…">` über einem Profil des
-Agenten (`3aea52dd70a`); der Test hat die Form des Beispiels, nicht seine Bytes.
+Agenten (`9d5c64dc398`); der Test hat die Form des Beispiels, nicht seine Bytes.
 Im Bild ist der Diskriminator 0x01, in Table 22 0x02; der Text nennt 180 und 181
 Zeichen und „MyQosLib:MyProfile“ mit einem Doppelpunkt.
 
@@ -9195,10 +9191,10 @@ Zeichen und „MyQosLib:MyProfile“ mit einem Doppelpunkt.
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::annex_b_2_6_reader_with_default_qos`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_7_7_3_11_annex_b_2_6_reader_with_default_qos`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`
 
-**Status:** `done` — Commits `33df0df0945`. gelesen wird der DHEADER 12 (`0x8000000C`
+**Status:** `done` — Commits `b91241aebb1`. gelesen wird der DHEADER 12 (`0x8000000C`
 wie bei B.2.3). Der Text druckt den DHEADER als {0xB5, 0x00, 0x00, 0x00}; das
 passt nicht zu den 26 Oktetten der Nachricht, der Code weist den gedruckten Wert
 ab. Table 23 setzt den Diskriminator auf 0x05 (`OBJK_DATAWRITER`) für
@@ -9213,10 +9209,10 @@ DEADLINE policy set to a period of 5 minutes", `qos_flags` 0x0002, `deadline`
 **Repo:** `crates/xrce/src/object_repr.rs` (`ObjectVariant::decode_for_kind_at`);
 `crates/xrce-agent/src/daemon/entity_repr.rs` (`endpoint`)
 
-**Tests:** `crates/xrce/src/object_repr.rs::tests::annex_b_2_7_reader_with_qos_and_filter`,
-`crates/xrce-agent/src/daemon/entity_repr.rs::tests::the_annex_b_binary_examples_read_as_their_qos`
+**Tests:** `crates/xrce/src/object_repr.rs::tests::xrce_annex_b_2_7_annex_b_2_7_reader_with_qos_and_filter`,
+`crates/xrce-agent/src/daemon/entity_repr.rs::tests::xrce_7_7_3_10_2_the_annex_b_binary_examples_read_as_their_qos`
 
-**Status:** `done` — Commits `33df0df0945`. gelesen als XCDR2 der gedruckten IDL; Byte 35
+**Status:** `done` — Commits `b91241aebb1`. gelesen als XCDR2 der gedruckten IDL; Byte 35
 ist das Oktett für `deadline_msec`, vor der `subscriber_id` steht kein Füllbyte.
 180000 ms sind 3 Minuten (gelesen), der Text nennt 5; Bild und Table 24 nennen
 am Ende `publisher_id` statt `subscriber_id`.
@@ -9228,7 +9224,7 @@ am Ende `publisher_id` statt `subscriber_id`.
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs` (`WriteDataPayload`)
 
-**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::write_data_matches_the_annex_b_example`
+**Tests:** `crates/xrce/src/submessages/write_data.rs::tests::xrce_7_7_1_write_data_matches_the_annex_b_example`
 
 **Status:** `done` — der Test bildet flags, Länge und Rumpf Byte für Byte nach.
 Table 25 heißt „READ_DATA (single sample)“.
@@ -9239,9 +9235,9 @@ Table 25 heißt „READ_DATA (single sample)“.
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs`; `crates/xrce/src/submessages/data.rs`; `crates/xrce/src/submessages/read_data.rs`; `crates/xrce/src/sample_info.rs`
 
-**Tests:** `crates/xrce/tests/annex_b_examples.rs::b_3_2_write_data_with_a_sequence_without_sample_info`
+**Tests:** `crates/xrce/tests/annex_b_examples.rs::xrce_annex_b_3_2_b_3_2_write_data_with_a_sequence_without_sample_info`
 
-**Status:** done — das Beispiel ist mit seinen Bytes getestet: Kennung 0x07, flags 0x09, Länge 16 (das Bild nennt die Länge 6 von B.3.1), vier Werte 20, 17, 26, 36 (8be8c6101ca).
+**Status:** done — das Beispiel ist mit seinen Bytes getestet: Kennung 0x07, flags 0x09, Länge 16 (das Bild nennt die Länge 6 von B.3.1), vier Werte 20, 17, 26, 36 (5c2466a4563).
 ### Annex B.3.3 WRITE_DATA mit Zeitstempel
 
 **Spec:** Annex B.3.3, S. 143–146 — "Byte 12 info.state = 0x00 [...] Byte 13
@@ -9253,9 +9249,8 @@ info. Detail.session_time_offset Bytes 20-21 serialized_data".
 **Tests:** —
 
 **Status:** `n/a (informative)` — Beispiel in der Form von Annex A mit
-`SampleInfoDetail`. Der Code liest `SampleInfo` nach §7.7.1 mit 12 Byte und
-liest dieses Beispiel nicht (offenes Item „Annex A SampleInfo mit
-SampleInfoDetail“). `submessageLength` lautet „13 = 0x000D“ mit {0x06, 0x00},
+`SampleInfoDetail`. Die Form von Annex A ist im Item „Annex A SampleInfo mit
+SampleInfoDetail“ geführt. `submessageLength` lautet „13 = 0x000D“ mit {0x06, 0x00},
 der Rumpf hat 14 Byte.
 
 ### Annex B.3.4 WRITE_DATA mit einem disposed Sample
@@ -9267,8 +9262,7 @@ Info.detail.discriminator = FORMAT_NONE [...] Bytes 14-19 Serialized_data".
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Beispiel in der Form von Annex A; der Code
-liest es nicht (wie B.3.3). Bild und Table nennen FORMAT_EMPTY und
+**Status:** `n/a (informative)` — Beispiel in der Form von Annex A (wie B.3.3). Bild und Table nennen FORMAT_EMPTY und
 FORMAT_NONE; `submessageLength` lautet 6, der Rumpf hat 12 Byte.
 
 ### Annex B.4.1 READ_DATA für ein Sample
@@ -9278,9 +9272,9 @@ FORMAT_NONE; `submessageLength` lautet 6, der Rumpf hat 12 Byte.
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs`; `crates/xrce/src/submessages/data.rs`; `crates/xrce/src/submessages/read_data.rs`; `crates/xrce/src/sample_info.rs`
 
-**Tests:** `crates/xrce/tests/annex_b_examples.rs::b_4_1_read_data_for_a_sample`
+**Tests:** `crates/xrce/tests/annex_b_examples.rs::xrce_annex_b_4_1_b_4_1_read_data_for_a_sample`
 
-**Status:** done — das Beispiel ist mit allen acht Oktetten der Payload getestet; Kennung 0x08 (das Bild nennt 0x07), Länge 8 (das Bild nennt 7) (8be8c6101ca).
+**Status:** done — das Beispiel ist mit allen acht Oktetten der Payload getestet; Kennung 0x08 (das Bild nennt 0x07), Länge 8 (das Bild nennt 7) (5c2466a4563).
 ### Annex B.4.2 READ_DATA mit Filter und DataDeliveryControl
 
 **Spec:** Annex B.4.2, S. 150–153 — `data_format` 0x08, `content_filter`
@@ -9291,10 +9285,10 @@ FORMAT_NONE; `submessageLength` lautet 6, der Rumpf hat 12 Byte.
 **Repo:** `crates/xrce/src/submessages/read_data.rs` (`ReadDataPayload`,
 `ReadSpecification`, `DataDeliveryControl`)
 
-**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::annex_b_4_2_read_data_with_filter_and_delivery_control`,
-`crates/xrce/src/submessages/read_data.rs::tests::the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`
+**Tests:** `crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control`,
+`crates/xrce/src/submessages/read_data.rs::tests::xrce_7_7_the_content_filter_is_a_string_with_a_nul_and_an_aligned_length`
 
-**Status:** `done` — Commits `1663f8f6240`. `data_format` 0x08 (FORMAT_DATA_SEQ),
+**Status:** `done` — Commits `b589558e671`. `data_format` 0x08 (FORMAT_DATA_SEQ),
 `content_filter_expression` als XCDR2-String, `DataDeliveryControl` mit DHEADER;
 der Test liest die Bytes des Bildes (Bit 31 des DHEADER zählt nicht zur Länge)
 und schreibt den einfachen DHEADER 8. Table 30 legt DHEADER und `max_samples`
@@ -9309,18 +9303,18 @@ DHEADER schreibt `XrceClient::set_delivery_control_form(DeliveryControlForm::Bar
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs`; `crates/xrce/src/submessages/data.rs`; `crates/xrce/src/submessages/read_data.rs`; `crates/xrce/src/sample_info.rs`
 
-**Tests:** `crates/xrce/tests/annex_b_examples.rs::b_5_1_data_with_one_sample`
+**Tests:** `crates/xrce/tests/annex_b_examples.rs::xrce_annex_b_5_1_b_5_1_data_with_one_sample`
 
-**Status:** done — das Beispiel (Big-Endian, flags 0x00) ist mit seinen Bytes dekodiert und erneut kodiert (8be8c6101ca).
+**Status:** done — das Beispiel (Big-Endian, flags 0x00) ist mit seinen Bytes dekodiert und erneut kodiert (5c2466a4563).
 ### Annex B.5.2 DATA mit einer Folge ohne SampleInfo
 **Spec:** Annex B.5.2, S. 155–157 — `submessageLength` 16, `data_seq.length` = 2,
 zwei `long`.
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs`; `crates/xrce/src/submessages/data.rs`; `crates/xrce/src/submessages/read_data.rs`; `crates/xrce/src/sample_info.rs`
 
-**Tests:** `crates/xrce/tests/annex_b_examples.rs::b_5_2_data_with_a_sequence_without_sample_info`
+**Tests:** `crates/xrce/tests/annex_b_examples.rs::xrce_annex_b_5_2_b_5_2_data_with_a_sequence_without_sample_info`
 
-**Status:** done — das Beispiel ist getestet: Kennung 0x09 (das Bild nennt 0x08), flags 0x08 (E-Flag gelöscht, FORMAT_DATA_SEQ; das Bild nennt 0x00), `sequenceNr` {0x0A,0x00} = 10 (der Text nennt 1), `request_id` {AA,01} nach der Tabelle (der Text nennt {AA,02}) (8be8c6101ca).
+**Status:** done — das Beispiel ist getestet: Kennung 0x09 (das Bild nennt 0x08), flags 0x08 (E-Flag gelöscht, FORMAT_DATA_SEQ; das Bild nennt 0x00), `sequenceNr` {0x0A,0x00} = 10 (der Text nennt 1), `request_id` {AA,01} nach der Tabelle (der Text nennt {AA,02}) (5c2466a4563).
 ### Annex B.5.3 DATA mit einem Sample und SampleInfo
 
 **Spec:** Annex B.5.3, S. 157–159 — IDL mit `SampleInfoDetail`; Bild: "info.state
@@ -9329,12 +9323,12 @@ zwei `long`.
 **Repo:** `crates/xrce/src/submessages/data.rs` (`DataPayloadSample`);
 `crates/xrce/src/sample_info.rs` (`SampleInfo`)
 
-**Tests:** `crates/xrce/src/submessages/data.rs::tests::data_sample_matches_annex_b_5_3_layout`,
-`crates/xrce/src/sample_info.rs::tests::sample_info_matches_annex_b_5_3_layout`,
-`crates/xrce-agent/src/daemon/session.rs::tests::a_read_for_sample_is_answered_with_a_sample_each`
+**Tests:** `crates/xrce/src/submessages/data.rs::tests::xrce_7_7_1_data_sample_matches_annex_b_5_3_layout`,
+`crates/xrce/src/sample_info.rs::tests::xrce_7_7_1_sample_info_matches_annex_b_5_3_layout`,
+`crates/xrce-agent/src/daemon/session.rs::tests::xrce_7_7_14_a_read_for_sample_is_answered_with_a_sample_each`
 
 **Status:** `done` — die Tests bilden das Bild des Beispiels nach. Das Bild hat
-die Form von §7.7.1, die IDL darüber die von Annex A (offenes Item „Annex A
+die Form von §7.7.1, die IDL darüber die von Annex A (Item „Annex A
 SampleInfo mit SampleInfoDetail“).
 
 ### Annex B.5.4 DATA mit einer Folge mit SampleInfo
@@ -9343,9 +9337,9 @@ SampleInfo mit SampleInfoDetail“).
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs`; `crates/xrce/src/submessages/data.rs`; `crates/xrce/src/submessages/read_data.rs`; `crates/xrce/src/sample_info.rs`
 
-**Tests:** `crates/xrce/tests/annex_b_examples.rs::b_5_4_data_with_a_sequence_with_sample_info`
+**Tests:** `crates/xrce/tests/annex_b_examples.rs::xrce_annex_b_5_4_b_5_4_data_with_a_sequence_with_sample_info`
 
-**Status:** done — das Beispiel ist mit den 12 Oktetten der SampleInfo je Element getestet (Länge 40; flags 0x0A statt 0x00; `SampleInfoForm::Flat`) (8be8c6101ca).
+**Status:** done — das Beispiel ist mit den 12 Oktetten der SampleInfo je Element getestet (Länge 40; flags 0x0A statt 0x00; `SampleInfoForm::Flat`) (5c2466a4563).
 ### Annex B.5.5 DATA mit PackedSamples
 **Spec:** Annex B.5.5, S. 161–163 — `submessageLength` 36, `info_base` (12
 Byte), `sample_delta_seq.length` = 2, je Element `info_delta` (4 Byte) und
@@ -9353,9 +9347,9 @@ Byte), `sample_delta_seq.length` = 2, je Element `info_delta` (4 Byte) und
 
 **Repo:** `crates/xrce/src/submessages/write_data.rs`; `crates/xrce/src/submessages/data.rs`; `crates/xrce/src/submessages/read_data.rs`; `crates/xrce/src/sample_info.rs`
 
-**Tests:** `crates/xrce/tests/annex_b_examples.rs::b_5_5_data_with_packed_samples`
+**Tests:** `crates/xrce/tests/annex_b_examples.rs::xrce_annex_b_5_5_b_5_5_data_with_packed_samples`
 
-**Status:** done — das Beispiel ist nach dem Bild getestet: `request_id`/`object_id`, `info_base` (12), Anzahl, zwei `SampleInfoDelta` mit Daten, 36 Oktette; Table 34 listet `info_base` auf Byte 8 bis 19 ohne `request_id` und `object_id`, was zu keinem von beiden passt (8be8c6101ca).
+**Status:** done — das Beispiel ist nach dem Bild getestet: `request_id`/`object_id`, `info_base` (12), Anzahl, zwei `SampleInfoDelta` mit Daten, 36 Oktette; Table 34 listet `info_base` auf Byte 8 bis 19 ohne `request_id` und `object_id`, was zu keinem von beiden passt (5c2466a4563).
 
 ---
 
@@ -9373,10 +9367,10 @@ except that it does not provide security."
 `crates/xrce-agent/src/daemon/transport.rs` (`SerialLine::take_frame`, `serial::run_serial_listener`,
 Feature `serial`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::the_framer_takes_frames_split_and_back_to_back_and_skips_noise`,
-`crates/xrce-agent/src/daemon/transport.rs::tests::the_clients_of_a_serial_line_are_told_apart_by_their_address`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_the_framer_takes_frames_split_and_back_to_back_and_skips_noise`,
+`crates/xrce-agent/src/daemon/transport.rs::tests::xrce_annex_c_1_the_clients_of_a_serial_line_are_told_apart_by_their_address`
 
-**Status:** `done` — Commits `cf109e295c0`. Rahmen nach C.1.1 bis C.1.3 in
+**Status:** `done` — Commits `8dae8498ba1`. Rahmen nach C.1.1 bis C.1.3 in
 `zerodds-xrce`, im Agent und in den Endpoint-SDKs (C, C++, Java, Python,
 Ada-native). Micro-XRCE-DDS 3.0.1 rahmt ebenso, rechnet `frameCheck` aber als
 CRC-16/ARC nur über die Payload (`StreamFramingProtocol.cpp`,
@@ -9393,7 +9387,7 @@ die beiden Adressen, 16 Bit für `payloadLength` und `frameCheck`.
 
 **Repo:** `crates/xrce/src/transport_serial.rs` (`encode_frame_with`, `FrameAssembler::push`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
 
 **Status:** done — `7E | sourceAddress | remoteAddress | payloadLength |
 payload | frameCheck`; der Rahmen endet nach `payloadLength` Oktetten Payload
@@ -9406,7 +9400,7 @@ which has a hexadecimal value of 0x7E."
 
 **Repo:** `crates/xrce/src/transport_serial.rs` (`FLAG_BYTE`, `encode_frame_with`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
 
 **Status:** done
 
@@ -9418,7 +9412,7 @@ the frame sender."
 **Repo:** `crates/xrce/src/transport_serial.rs` (`SerialFrame::source`); `crates/xrce-agent/src/daemon/transport.rs` (`PeerTable::resolve_on_line`,
 `bind_line`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::the_clients_of_a_serial_line_are_told_apart_by_their_address`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_annex_c_1_the_clients_of_a_serial_line_are_told_apart_by_their_address`
 
 **Status:** done — der Agent sendet mit seiner Adresse (`address:`, Vorgabe 0,
 die Adresse, an die die Micro-XRCE-DDS-Beispiele senden). Ein Rahmen gehört dem
@@ -9433,7 +9427,7 @@ the frame recipient."
 **Repo:** `crates/xrce/src/transport_serial.rs` (`SerialFrame::remote`); `crates/xrce-agent/src/daemon/transport.rs` (`SerialLine::take_frame`,
 `Route::Serial`)
 
-**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::the_clients_of_a_serial_line_are_told_apart_by_their_address`
+**Tests:** `crates/xrce-agent/src/daemon/transport.rs::tests::xrce_annex_c_1_the_clients_of_a_serial_line_are_told_apart_by_their_address`
 
 **Status:** done — der Agent nimmt nur Rahmen an seine Adresse; seine
 Nachrichten an einen Client tragen dessen Adresse.
@@ -9446,7 +9440,7 @@ encoded using little endian format."
 
 **Repo:** `crates/xrce/src/transport_serial.rs` (`encode_frame_with`, `FrameAssembler::push`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
 
 **Status:** done
 
@@ -9457,8 +9451,8 @@ encoded using little endian format."
 **Repo:** `crates/xrce/src/transport_serial.rs` (`encode_message`, `decode_frame`,
 `SerialFramer::push_bytes`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::the_framer_takes_frames_split_and_back_to_back_and_skips_noise`,
-`crates/xrce/src/transport_serial.rs::tests::decode_frame_returns_the_rest_after_the_frame`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_the_framer_takes_frames_split_and_back_to_back_and_skips_noise`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_5_decode_frame_returns_the_rest_after_the_frame`
 
 **Status:** done — die Grenze ist 65 535 Oktette, was `payloadLength` fasst;
 eine längere Payload weist `encode_frame` mit `FrameTooLong` ab.
@@ -9472,8 +9466,8 @@ described in [IETF RFC-1662] using the polynomials: x 16 + x 12 + x 5 + 1."
 
 **Repo:** `crates/xrce/src/transport_serial.rs` (`fcs16`, `FrameCheck::compute`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::the_frame_check_is_the_fcs16_of_rfc_1662`,
-`crates/xrce/src/transport_serial.rs::tests::a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_6_the_frame_check_is_the_fcs16_of_rfc_1662`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
 
 **Status:** done — FCS-16 nach RFC 1662 (gespiegelt `0x8408`, Init `0xFFFF`,
 komplementiert) über Adressen, `payloadLength` und Payload; 0x906E für
@@ -9486,7 +9480,7 @@ endian format."
 
 **Repo:** `crates/xrce/src/transport_serial.rs` (`encode_frame_with`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_1_a_frame_carries_the_addresses_the_length_and_a_little_endian_check`
 
 **Status:** done
 
@@ -9502,8 +9496,8 @@ on the next byte."
 **Repo:** `crates/xrce/src/transport_serial.rs` (`ESCAPE_BYTE`, `STUFF_XOR`, `encode_frame_with`,
 `FrameAssembler::push`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::flag_and_escape_octets_are_stuffed_everywhere_after_the_flag`,
-`crates/xrce/src/transport_serial.rs::tests::escape_errors_and_short_frames_are_refused`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_2_flag_and_escape_octets_are_stuffed_everywhere_after_the_flag`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_2_escape_errors_and_short_frames_are_refused`
 
 **Status:** done — gestopft wird alles nach dem Flag, auch Adressen, Länge und
 `frameCheck`. Nach `0x7D` weist der Code jedes Byte ab, das nicht zu `0x7E` oder
@@ -9518,8 +9512,8 @@ computed CRC."
 **Repo:** `crates/xrce/src/transport_serial.rs` (`FrameAssembler::push`); `crates/xrce-agent/src/daemon/transport.rs`
 (`run_serial_listener`: Meldung „frame dropped“ mit dem Grund)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::a_frame_with_a_wrong_check_is_refused`,
-`crates/xrce/src/transport_serial.rs::tests::the_frame_check_of_micro_xrce_dds_is_taken_when_chosen`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_3_a_frame_with_a_wrong_check_is_refused`,
+`crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_3_the_frame_check_of_micro_xrce_dds_is_taken_when_chosen`
 
 **Status:** done
 
@@ -9530,7 +9524,7 @@ before the payload is completely read."
 
 **Repo:** `crates/xrce/src/transport_serial.rs` (`SerialFramer::push_bytes`, `decode_frame_inner_with`)
 
-**Tests:** `crates/xrce/src/transport_serial.rs::tests::a_begin_flag_inside_a_frame_drops_it_and_begins_the_next`
+**Tests:** `crates/xrce/src/transport_serial.rs::tests::xrce_annex_c_1_3_a_begin_flag_inside_a_frame_drops_it_and_begins_the_next`
 
 **Status:** done — der Rahmen wird mit `BeginFlagInFrame` verworfen, und das
 Flag beginnt den nächsten Rahmen.
@@ -9539,10 +9533,19 @@ Flag beginnt den nächsten Rahmen.
 
 ## Audit-Status
 
-490 done / 0 partial / 0 open / 79 n/a (informative) / 0 n/a (rejected).
+490 done / 0 partial / 2 open / 0 blocked / 77 n/a (informative).
 
-Test-Lauf: die Tests der Items liefen auf dem Linux-Testhost in den Runden 1 bis 6 (`zerodds-xrce`, `zerodds-xrce-agent`, `zerodds-xrce-client` mit und ohne Standard-Features, `zerodds-endpoint-e2e`, `tools/endpoints-gate` 24 von 24); die Items, die erst danach geändert wurden, sind von keinem Lauf bestätigt. Dieses Dokument hat keinen Test ausgeführt.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document dds-xrce-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-endpoint-e2e --all-targets` (Job `merge-rust-endpoint-e2e`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-xrce --all-targets` (Job `merge-rust-xrce`) — 222 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-xrce-agent --all-targets` (Job `merge-rust-xrce-agent`) — 11 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-xrce-client --all-targets` (Job `merge-rust-xrce-client`) — 24 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-xrce-agent --all-targets --features daemon,dtls,tls` (Job `merge-rust-xrce-agent-features-daemon-dtls-tls`) — 222 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-xrce --all-targets --features dtls,tls` (Job `merge-rust-xrce-features-dtls-tls`) — 2 Tests grün.
+
+482 zitierte Tests grün, 0 nicht grün.
 
 Formen anderer DDS-Produkte in DDS-XML: die Leser von `crates/xml` folgen den Schemas von DDS-XML 1.0 und weisen eine fremde Form ab (`<domainparticipant_qos>`, das Attribut `qos_profile_ref`, `baseType`, die IDL-Namen `long` und `octet` als `type`, und weitere), mit einem Fehler, der die Form und die der Spec nennt. Die Agent-Einstellung `vendor_forms: accept` liest sie (nötig für Profildateien von eProsima) und listet beim Start jede gelesene Form; Standard ist `refuse`. Geprüft ist das nur durch Lesen des Codes und der Tests; kein Lauf auf diesem Rechner.
 
-Offene Punkte: keine.
+Offene Punkte: `dds-xrce-1.0.open.md`.

@@ -176,13 +176,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_no_params_yields_defaults() {
+    fn ws_9_parse_no_params_yields_defaults() {
         let p = parse_offer("permessage-deflate").unwrap();
         assert_eq!(p, PermessageDeflateParams::default());
     }
 
     #[test]
-    fn parse_no_takeover_flags() {
+    fn ws_9_parse_no_takeover_flags() {
         let p = parse_offer(
             "permessage-deflate; server_no_context_takeover; client_no_context_takeover",
         )
@@ -192,7 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_window_bits() {
+    fn ws_9_parse_window_bits() {
         let p =
             parse_offer("permessage-deflate; server_max_window_bits=12; client_max_window_bits=10")
                 .unwrap();
@@ -201,13 +201,13 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_window_bits() {
+    fn ws_9_rejects_invalid_window_bits() {
         assert!(parse_offer("permessage-deflate; server_max_window_bits=7").is_err());
         assert!(parse_offer("permessage-deflate; server_max_window_bits=16").is_err());
     }
 
     #[test]
-    fn rejects_unknown_param() {
+    fn ws_9_rejects_unknown_param() {
         assert!(matches!(
             parse_offer("permessage-deflate; foo"),
             Err(NegotiationError::UnknownParam(_))
@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_boolean_with_value() {
+    fn ws_9_rejects_boolean_with_value() {
         assert!(matches!(
             parse_offer("permessage-deflate; server_no_context_takeover=yes"),
             Err(NegotiationError::BooleanWithValue(_))
@@ -223,13 +223,13 @@ mod tests {
     }
 
     #[test]
-    fn render_default_is_bare_extension_name() {
+    fn ws_9_render_default_is_bare_extension_name() {
         let s = render_accept(&PermessageDeflateParams::default());
         assert_eq!(s, "permessage-deflate");
     }
 
     #[test]
-    fn render_includes_params() {
+    fn ws_9_render_includes_params() {
         let p = PermessageDeflateParams {
             server_no_takeover: true,
             client_no_takeover: false,
@@ -243,7 +243,7 @@ mod tests {
     }
 
     #[test]
-    fn tail_round_trip() {
+    fn ws_9_tail_round_trip() {
         let raw = b"hello";
         let with_tail = append_tail(raw);
         assert_eq!(with_tail, b"hello\x00\x00\xff\xff");
@@ -252,12 +252,12 @@ mod tests {
     }
 
     #[test]
-    fn strip_tail_no_op_when_absent() {
+    fn ws_9_strip_tail_no_op_when_absent() {
         assert_eq!(strip_tail(b"hello"), b"hello");
     }
 
     #[test]
-    fn parameterless_client_max_window_bits_accepted() {
+    fn ws_9_parameterless_client_max_window_bits_accepted() {
         let p = parse_offer("permessage-deflate; client_max_window_bits").unwrap();
         assert_eq!(p.client_max_window_bits, 15);
     }

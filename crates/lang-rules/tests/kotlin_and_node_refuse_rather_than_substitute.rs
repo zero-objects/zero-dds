@@ -68,6 +68,31 @@ fn model(idl: &str) -> Ast {
     ast
 }
 
+/// IDL the frontend refuses with `IDL0007` alone, to a resolved model
+/// all the same: the column's own refusal is the second line of defence
+/// and is measured on the model the frontend built before it refused.
+fn model_the_frontend_refuses(idl: &str) -> Ast {
+    let parsed = zerodds_idl_parse::parse(idl);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "the source does not parse: {:?}",
+        parsed.diagnostics()
+    );
+    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "test.idl");
+    assert!(
+        !lowered.diagnostics.is_empty()
+            && lowered
+                .diagnostics
+                .iter()
+                .all(|d| d.code.as_str() == "IDL0007"),
+        "the frontend refuses the value with IDL0007 and nothing else: {:?}",
+        lowered.diagnostics
+    );
+    let mut ast: Ast = lowered.ast;
+    ast.resolve_all_by_name().expect("the model resolves");
+    ast
+}
+
 /// The member `name` of the structure `S`, with the type it is declared
 /// with.
 fn member_of(ast: &Ast, name: &str) -> (MemberNode, Id<TypeNode>) {
@@ -122,11 +147,13 @@ fn a_kotlin_array_dimension_that_does_not_evaluate_is_refused() {
 /// NUL.
 ///
 /// An IDL `char` is one octet, so the only route to a point outside the
-/// Unicode scalar values is an out-of-range `@default` on one — which
-/// the frontend accepts, measured here by the assertion in [`model`].
+/// Unicode scalar values is an out-of-range `@default` on one. The
+/// frontend refuses it (OMG IDL 4.2 §8.3.3.1: the value of a `char` is a
+/// character literal), and the column still has to refuse it on the
+/// model built before that refusal.
 #[test]
 fn a_kotlin_char_default_that_is_not_a_scalar_value_is_refused() {
-    let ast = model("struct S { @default(0xD800) char c; };");
+    let ast = model_the_frontend_refuses("struct S { @default(0xD800) char c; };");
     let (member, type_) = member_of(&ast, "c");
     let answer = zerodds_lang_rules::default_kotlin::member_default(
         &ast,

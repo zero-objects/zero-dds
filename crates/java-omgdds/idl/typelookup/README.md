@@ -25,7 +25,7 @@ TypeLookup endpoints (DDS-XTypes 1.4 Beta 1 §7.6.3.3.3); CDR_LE is the setting
 reads them as their header followed by their call or return, each with the
 generated codec of the encoding. Both files come from the current
 `zerodds-idlc` through `scripts/generate-typelookup.sh`. Against the codecs of
-`31574259c75` the differences are the generator's own since then: an octet is a
+`2e8f74034fe` the differences are the generator's own since then: an octet is a
 Java `byte` (CORBA 3.3 part 3 §1.5.2) where it was an `int`, the octet constant
 `EK_MINIMAL` is `(byte) 0xF1`, an enumeration is a class after §1.5.9
 (`RemoteExceptionCode`), the classes have `equals` and `hashCode`, and the RPC

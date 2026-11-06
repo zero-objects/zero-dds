@@ -48,7 +48,7 @@ fn cfg(flink_dir: &std::path::Path) -> ShmConfig {
 }
 
 #[test]
-fn l1_shm_datagram_crosses_process_boundary() {
+fn shm_2_3_l1_shm_datagram_crosses_process_boundary() {
     // Child role: join as owner? No — the owner created the segment
     // in the parent. Child joins as **sender** only if we invert
     // the model; but this transport is SpSc with sender=Owner.
@@ -98,7 +98,10 @@ fn l1_shm_datagram_crosses_process_boundary() {
     };
     let child = command
         .env(CHILD_ENV_FLINK, tmp.path())
-        .args(["--exact", "l1_shm_datagram_crosses_process_boundary"])
+        .args([
+            "--exact",
+            "shm_2_3_l1_shm_datagram_crosses_process_boundary",
+        ])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()

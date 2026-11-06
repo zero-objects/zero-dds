@@ -44,7 +44,7 @@ fn server_observes_incoming_request_contexts() {
     let (body, _e) = conn
         .invoke(&ior, "ping", Endianness::Big, &encode_string_body("hi"))
         .expect("call succeeds despite the observer");
-    assert_eq!(decode_string_body(&body), "hi");
+    assert_eq!(decode_string_body(&body).unwrap(), "hi");
 
     acceptor.shutdown();
     assert!(

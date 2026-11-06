@@ -1,6 +1,6 @@
 # 0010 — CoAP-OSCORE (RFC 8613) — accepted, implemented (supersedes 0007)
 
-- **Status:** accepted (supersedes [0007](0007-coap-oscore-rejected-rc1.md))
+- **Status:** accepted (supersedes 0007, removed; `0b2e8df9f6b:docs/adr/0007-coap-oscore-rejected-rc1.md`)
 - **Date:** 2026-06-11
 - **Context:** `crates/coap-bridge`, spec `zerodds-coap-bridge-1.0` §7.2,
   spec completeness program (group F2 — "extra mile")
@@ -71,4 +71,4 @@ Positive:
 - RFC 8613 — OSCORE (in particular §3.2 Key Derivation, Appendix C test vectors)
 - RFC 5869 — HKDF; RFC 8152 — COSE; RFC 8949 — CBOR
 - `crates/coap-bridge/src/oscore/mod.rs` — implementation + test vectors
-- [0007](0007-coap-oscore-rejected-rc1.md) — previous (superseded) decision
+- 0007 — previous (superseded) decision, `0b2e8df9f6b:docs/adr/0007-coap-oscore-rejected-rc1.md`

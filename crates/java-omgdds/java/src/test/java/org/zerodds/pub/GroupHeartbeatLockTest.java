@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.zerodds.pub;
 
+import org.zerodds.testing.Waits;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -23,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GroupHeartbeatLockTest {
 
     @Test
-    void theHeartbeatWaitsForTheChangeOfANumberThatIsAssigned() throws Exception {
+    void rtps_8_7_5_a_heartbeat_announces_no_group_sequence_number_before_its_change_is_entered() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(231);
         try {
             PublisherImpl publisher = (PublisherImpl) participant.createPublisher(Qos.publisher().withPolicy(
@@ -58,7 +59,9 @@ class GroupHeartbeatLockTest {
                 }
             });
             heartbeat.start();
-            heartbeat.join(500);
+            // the HEARTBEAT waits on the lock under which the number was assigned
+            Waits.until(() -> heartbeat.getState() == Thread.State.BLOCKED
+                    || heartbeat.getState() == Thread.State.WAITING, "the HEARTBEAT waits for the lock");
             assertTrue(heartbeat.isAlive(), "the HEARTBEAT must not announce a number before its change is entered");
             assertNull(seen.get());
             entered.countDown();

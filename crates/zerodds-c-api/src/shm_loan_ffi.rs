@@ -323,18 +323,18 @@ pub(crate) unsafe fn try_loan(
     // Iceoryx writer: hand out a heap buffer the caller fills; commit copies it
     // into an iceoryx slot and sends.
     #[cfg(feature = "delivery-iceoryx")]
-    if let Ok(mut iw) = ice_writers().lock() {
-        if let Some(entry) = iw.get_mut(&key(rt, eid)) {
-            let mut buf = vec![0u8; len];
-            let ptr = buf.as_mut_ptr();
-            entry.loans.insert(ptr as usize, buf);
-            // SAFETY: out pointers NULL-checked by the caller.
-            unsafe {
-                *out_ptr = ptr;
-                *out_len = len;
-            }
-            return Some(ZeroDdsStatus::Ok as c_int);
+    if let Ok(mut iw) = ice_writers().lock()
+        && let Some(entry) = iw.get_mut(&key(rt, eid))
+    {
+        let mut buf = vec![0u8; len];
+        let ptr = buf.as_mut_ptr();
+        entry.loans.insert(ptr as usize, buf);
+        // SAFETY: out pointers NULL-checked by the caller.
+        unsafe {
+            *out_ptr = ptr;
+            *out_len = len;
         }
+        return Some(ZeroDdsStatus::Ok as c_int);
     }
     let mut w = writers().lock().ok()?;
     let entry = w.get_mut(&key(rt, eid))?;
@@ -376,17 +376,17 @@ pub(crate) unsafe fn try_commit(
 ) -> Option<c_int> {
     // Iceoryx writer: send the filled heap buffer over iceoryx2 (no RTPS).
     #[cfg(feature = "delivery-iceoryx")]
-    if let Ok(mut iw) = ice_writers().lock() {
-        if let Some(entry) = iw.get_mut(&key(rt, eid)) {
-            let Some(buf) = entry.loans.remove(&(ptr as usize)) else {
-                return Some(ZeroDdsStatus::BadParameter as c_int);
-            };
-            let n = len.min(buf.len());
-            return Some(match entry.publisher.send(&buf[..n]) {
-                Ok(()) => ZeroDdsStatus::Ok as c_int,
-                Err(_) => ZeroDdsStatus::Error as c_int,
-            });
-        }
+    if let Ok(mut iw) = ice_writers().lock()
+        && let Some(entry) = iw.get_mut(&key(rt, eid))
+    {
+        let Some(buf) = entry.loans.remove(&(ptr as usize)) else {
+            return Some(ZeroDdsStatus::BadParameter as c_int);
+        };
+        let n = len.min(buf.len());
+        return Some(match entry.publisher.send(&buf[..n]) {
+            Ok(()) => ZeroDdsStatus::Ok as c_int,
+            Err(_) => ZeroDdsStatus::Error as c_int,
+        });
     }
     let (backend, handle) = {
         let mut w = writers().lock().ok()?;
@@ -402,15 +402,15 @@ pub(crate) unsafe fn try_commit(
     // receive the sample (`zerodds-delivery-modes-1.0` §3.1/§5). The raw modes
     // are same-host only and would put non-portable bytes on the wire — they
     // skip the publish entirely (no wire, no double delivery).
-    if publishes_to_wire(configured_mode(rt, eid)) {
-        if let Ok((rptr, n)) = backend.slot_read_ptr(handle) {
-            // SAFETY: rptr is the slot data area, valid for n bytes (= sample_size).
-            let bytes = unsafe { core::slice::from_raw_parts(rptr, n) };
-            return Some(match rt.write_user_sample_borrowed(eid, bytes) {
-                Ok(()) => ZeroDdsStatus::Ok as c_int,
-                Err(e) => crate::write_status(&e),
-            });
-        }
+    if publishes_to_wire(configured_mode(rt, eid))
+        && let Ok((rptr, n)) = backend.slot_read_ptr(handle)
+    {
+        // SAFETY: rptr is the slot data area, valid for n bytes (= sample_size).
+        let bytes = unsafe { core::slice::from_raw_parts(rptr, n) };
+        return Some(match rt.write_user_sample_borrowed(eid, bytes) {
+            Ok(()) => ZeroDdsStatus::Ok as c_int,
+            Err(e) => crate::write_status(&e),
+        });
     }
     Some(ZeroDdsStatus::Ok as c_int)
 }
@@ -420,14 +420,14 @@ pub(crate) unsafe fn try_commit(
 pub(crate) fn try_discard(rt: &Arc<DcpsRuntime>, eid: EntityId, ptr: *mut u8) -> Option<c_int> {
     // Iceoryx writer: drop the heap loan buffer (nothing sent).
     #[cfg(feature = "delivery-iceoryx")]
-    if let Ok(mut iw) = ice_writers().lock() {
-        if let Some(entry) = iw.get_mut(&key(rt, eid)) {
-            return Some(if entry.loans.remove(&(ptr as usize)).is_some() {
-                ZeroDdsStatus::Ok as c_int
-            } else {
-                ZeroDdsStatus::BadParameter as c_int
-            });
-        }
+    if let Ok(mut iw) = ice_writers().lock()
+        && let Some(entry) = iw.get_mut(&key(rt, eid))
+    {
+        return Some(if entry.loans.remove(&(ptr as usize)).is_some() {
+            ZeroDdsStatus::Ok as c_int
+        } else {
+            ZeroDdsStatus::BadParameter as c_int
+        });
     }
     let mut w = writers().lock().ok()?;
     let entry = w.get_mut(&key(rt, eid))?;
@@ -497,27 +497,27 @@ pub(crate) unsafe fn try_take(
     // Iceoryx reader: receive the next sample (copied into an owned buffer held
     // until release).
     #[cfg(feature = "delivery-iceoryx")]
-    if let Ok(mut ir) = ice_readers().lock() {
-        if let Some(entry) = ir.get_mut(&key(rt, eid)) {
-            return match entry.subscriber.receive() {
-                Ok(Some(buf)) => {
-                    let slot = entry.next_slot;
-                    entry.next_slot = entry.next_slot.wrapping_add(1);
-                    let n = buf.len();
-                    let p = buf.as_ptr();
-                    entry.pending.insert(slot, buf);
-                    // SAFETY: out pointers NULL-checked by the caller.
-                    unsafe {
-                        *out_ptr = p;
-                        *out_len = n;
-                        *out_slot = slot;
-                    }
-                    ZeroDdsStatus::Ok as c_int
+    if let Ok(mut ir) = ice_readers().lock()
+        && let Some(entry) = ir.get_mut(&key(rt, eid))
+    {
+        return match entry.subscriber.receive() {
+            Ok(Some(buf)) => {
+                let slot = entry.next_slot;
+                entry.next_slot = entry.next_slot.wrapping_add(1);
+                let n = buf.len();
+                let p = buf.as_ptr();
+                entry.pending.insert(slot, buf);
+                // SAFETY: out pointers NULL-checked by the caller.
+                unsafe {
+                    *out_ptr = p;
+                    *out_len = n;
+                    *out_slot = slot;
                 }
-                Ok(None) => ZeroDdsStatus::NoData as c_int,
-                Err(_) => ZeroDdsStatus::Error as c_int,
-            };
-        }
+                ZeroDdsStatus::Ok as c_int
+            }
+            Ok(None) => ZeroDdsStatus::NoData as c_int,
+            Err(_) => ZeroDdsStatus::Error as c_int,
+        };
     }
     let Ok(r) = readers().lock() else {
         return ZeroDdsStatus::Error as c_int;
@@ -548,14 +548,14 @@ pub(crate) unsafe fn try_take(
 pub(crate) fn try_release(rt: &Arc<DcpsRuntime>, eid: EntityId, slot_index: u32) -> c_int {
     // Iceoryx reader: drop the held received buffer for this slot id.
     #[cfg(feature = "delivery-iceoryx")]
-    if let Ok(mut ir) = ice_readers().lock() {
-        if let Some(entry) = ir.get_mut(&key(rt, eid)) {
-            return if entry.pending.remove(&slot_index).is_some() {
-                ZeroDdsStatus::Ok as c_int
-            } else {
-                ZeroDdsStatus::PreconditionNotMet as c_int
-            };
-        }
+    if let Ok(mut ir) = ice_readers().lock()
+        && let Some(entry) = ir.get_mut(&key(rt, eid))
+    {
+        return if entry.pending.remove(&slot_index).is_some() {
+            ZeroDdsStatus::Ok as c_int
+        } else {
+            ZeroDdsStatus::PreconditionNotMet as c_int
+        };
     }
     let Ok(r) = readers().lock() else {
         return ZeroDdsStatus::Error as c_int;

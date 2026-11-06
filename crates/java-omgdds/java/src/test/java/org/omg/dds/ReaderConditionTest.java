@@ -66,7 +66,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void aReadConditionIsTrueWhileTheReaderHoldsASampleInItsStates() throws Exception {
+    void javapsm_2_a_read_condition_is_true_while_the_reader_holds_a_sample_in_its_states() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -103,7 +103,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void aQueryConditionNeedsOneSampleThatIsInTheStatesAndSatisfiesTheExpression() throws Exception {
+    void javapsm_2_a_query_condition_needs_one_sample_that_is_in_the_states_and_satisfies_the_expression() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -119,7 +119,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void theQueryParametersAreTheCurrentOnesWhenTheTriggerValueIsEvaluated() throws Exception {
+    void javapsm_2_the_query_parameters_are_the_current_ones_when_the_trigger_value_is_evaluated() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -136,7 +136,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void aClosedConditionIsGoneAndAClosedConditionOnAWaitSetNeverTriggers() throws Exception {
+    void javapsm_2_a_closed_condition_is_gone_and_a_closed_condition_on_a_wait_set_never_triggers() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -153,7 +153,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void closeContainedEntitiesClosesTheConditionsOfTheReaderAndNotTheReader() throws Exception {
+    void javapsm_2_close_contained_entities_closes_the_conditions_of_the_reader_and_not_the_reader() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -171,7 +171,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void closingTheReaderClosesItsConditions() throws Exception {
+    void javapsm_2_closing_the_reader_closes_its_conditions() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         ReadCondition<Keyed> condition = reader.createReadCondition(sampleStates(SampleState.NOT_READ));
@@ -184,7 +184,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void theWaitSetListsWhatIsAttachedAndADetachedConditionDoesNotEndAWait() throws Exception {
+    void javapsm_2_the_wait_set_lists_what_is_attached_and_a_detached_condition_does_not_end_a_wait() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         ReadCondition<Keyed> readCondition = reader.createReadCondition(sampleStates(SampleState.NOT_READ));
@@ -213,7 +213,7 @@ class ReaderConditionTest {
     }
 
     @Test
-    void aStatusConditionTriggersOnlyOnTheStatusesItIsEnabledFor() throws Exception {
+    void javapsm_2_a_status_condition_triggers_only_on_the_statuses_it_is_enabled_for() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         org.omg.dds.core.StatusCondition<DataReader<Keyed>> condition = reader.getStatusCondition();

@@ -89,7 +89,7 @@ fn the_padding_allowance_has_nothing_left_to_forgive() {
 /// The six octets it was built for, put back, and it goes red.
 ///
 /// A gate nobody has seen fail is a gate nobody has seen. These are the
-/// rows `sources/ros-corpus.tsv` carried at `b0bc71313`, verbatim:
+/// rows `sources/ros-corpus.tsv` carried at `8bf4c51ea`, verbatim:
 /// `sequence-bounded-full` and its twin under `--endian be`, whose
 /// `values.json` is the same file twice and whose three `long` came out
 /// as a heap address and the stack word after it.

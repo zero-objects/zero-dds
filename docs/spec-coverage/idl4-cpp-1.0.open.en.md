@@ -23,7 +23,11 @@ No new content: every entry appears there as an item with its evidence.
 
 ## 7.2.4.1 Basic Types (Tab.7.2/7.3)
 
-**Status:** `partial` — `long -> std::int32_t` is asserted (array, interface and verbatim tests), and `octet`/`uint8` as well as `wchar`/ `unsigned short` collapse onto one type (tag test). The remaining table widths (`short -> int16_t`, `long long -> int64_t`, `char`, `wchar`, `boolean`, `octet`, `float`) have no assertion of their own. `long double` is deliberately mapped to `zerodds::wire::Float128` instead of the platform-dependent C++ `long double` (§7.2.4.1.2). `cpp_primitive` is exhaustive, so a missing primitive is a compile error.
+**Status:** `partial` — `long -> std::int32_t` is asserted (array, interface and verbatim tests), and `octet`/`uint8` as well as `wchar`/ `unsigned short` collapse onto one type (tag test). The remaining table widths (`short -> int16_t`, `long long -> int64_t`, `char`, `wchar`, `boolean`, `octet`, `float`) have no assertion of their own. `long double` is mapped to `zerodds::wire::Float128` instead of the C++ `long double` (§7.2.4.1.2, own item). `cpp_primitive` is exhaustive, so a missing primitive is a compile error.
+
+## 7.2.4.1.2 long double -> long double
+
+**Status:** `open` — `cpp_primitive` (`crates/lang-rules/src/adapter/cpp.rs`) maps `long double` to `zerodds::wire::Float128`.
 
 ## 7.2.4.2.1 omg::types::sequence/bounded_sequence
 
@@ -71,7 +75,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## 7.3 Any -> omg::types::Any
 
-**Status:** `open` — `any` is refused in `crates/lang-rules/src/adapter/cpp.rs` (`cpp_value_type`, `TypeKind::Any`) with `NoLanguageForm` (test `an_any_member_is_refused_by_name_at_any_depth`, also for `sequence<any>`). No `omg::types::Any`.
+**Status:** `open` — `any` is refused in `crates/lang-rules/src/adapter/cpp.rs` (`cpp_value_type`, `TypeKind::Any`) with `NoLanguageForm` (test `idl_7_2_3_an_any_member_is_refused_by_name_at_any_depth`, also for `sequence<any>`). No `omg::types::Any`.
 
 ## 7.4 Interfaces -> C++ classes
 
@@ -83,7 +87,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## 7.4.2 Interface Forward Declaration
 
-**Status:** `open` — interface forward declarations are not emitted; the data-type adapter writes `Forward` only for `Structure`, `Union` and `Valuetype`. `interface Foo;` without a definition is refused by `crates/lang-rules/src/adapter/interface.rs` as `ForwardWithoutDefinition` (test `crates/lang-rules/tests/interface_bindings.rs::a_forward_declaration_without_a_definition_is_e002`).
+**Status:** `open` — interface forward declarations are not emitted; the data-type adapter writes `Forward` only for `Structure`, `Union` and `Valuetype`. `interface Foo;` without a definition is refused by `crates/lang-rules/src/adapter/interface.rs` as `ForwardWithoutDefinition` (test `crates/lang-rules/tests/interface_bindings.rs::ddsts_11_7_a_forward_declaration_without_a_definition_is_e002`).
 
 ## 7.5 Embedded declarations and static constexpr
 
@@ -93,9 +97,25 @@ No new content: every entry appears there as an item with its evidence.
 
 **Status:** `partial` — `valuetype` is treated like a `struct`: its members become fields. The required public/protected pure-virtual accessor/modifier methods, the `<ValueTypeName>_factory` class, the public-virtual inheritance and the operations of a supported interface are missing.
 
+## 7.9/7.10 Components – Basic and Homes
+
+**Status:** `open` — the transformation into equivalent IDL exists (`crates/ccm/src/transform.rs`, tests in `crates/ccm/tests/equivalent_idl.rs`), the C++ path of `zerodds-idlc` does not apply it: `tools/idlc` and `crates/lang-rules` do not depend on `zerodds-ccm`.
+
+## 7.12/7.13 Components – Ports/Connectors and Template Modules
+
+**Status:** `partial` — an instantiation of a template module becomes an ordinary module in the model, which the C++ column maps. Ports and connectors are not translated into intermediate IDL; own item.
+
+## 7.12 Ports and connectors as intermediate IDL
+
+**Status:** `open` — the C++ column does not translate `porttype`, `port`, `mirrorport` and `connector` into intermediate IDL.
+
 ## 7.14.1 Structures with Single Inheritance
 
-**Status:** `partial` — base members are copied flat into the derived struct (`all_members_of`), not as `struct Child : Base` with public inheritance; the `swap` function for inherited members is missing. The flat form is deliberate so the member order matches the wire plan.
+**Status:** `partial` — base members are copied flat into the derived struct (`all_members_of`), not as `struct Child : Base` with public inheritance; the `swap` function for inherited members is missing. The flat form keeps the member order of the wire plan; own item.
+
+## 7.14.1 Public inheritance and swap of the inherited members
+
+**Status:** `open` — `all_members_of` (`crates/lang-rules/src/adapter/cpp.rs`) copies the base members flat into the derived structure; no base class, no `swap` for inherited members.
 
 ## 7.14.2 Union Discriminators
 
@@ -123,7 +143,7 @@ No new content: every entry appears there as an item with its evidence.
 
 ## 7.17.1 General Purpose: @optional
 
-**Status:** `open` — no mapping writes `std::optional<T>`: the default mapping (`psm`) writes `dds::core::optional<T>` (DDS-PSM-Cxx), the option `native` a pointer `T *` (DDS-XTypes 1.3 §7.5.1.2.4.2), the option `classic` `zerodds::classic::Optional<T>`. The form of IDL4 to C++ 1.0 §7.17.1 is missing as a named option. Evidence of the forms that exist: `crates/lang-rules/src/adapter/cpp_psm.rs` (`dds::core::optional<T>`), `crates/lang-rules/src/adapter/cpp.rs` (`T *`), `crates/lang-rules/src/adapter/cpp_classic.rs` (`zerodds::classic::Optional<T>`); tests `crates/lang-rules/src/adapter/cpp.rs::tests::an_optional_member_is_a_plain_pointer_and_not_a_second_field`, `crates/cpp/tests/generated_psm_roundtrip.cpp`.
+**Status:** `open` — no mapping writes `std::optional<T>`: the default mapping (`psm`) writes `dds::core::optional<T>` (DDS-PSM-Cxx), the option `native` a pointer `T *` (DDS-XTypes 1.3 §7.5.1.2.4.2), the option `classic` `zerodds::classic::Optional<T>`. The form of IDL4 to C++ 1.0 §7.17.1 is missing as a named option. Evidence of the forms that exist: `crates/lang-rules/src/adapter/cpp_psm.rs` (`dds::core::optional<T>`), `crates/lang-rules/src/adapter/cpp.rs` (`T *`), `crates/lang-rules/src/adapter/cpp_classic.rs` (`zerodds::classic::Optional<T>`); tests `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_2_4_2_an_optional_member_is_a_plain_pointer_and_not_a_second_field`, `crates/cpp/tests/generated_psm_roundtrip.cpp`.
 
 ## 7.17.1 General Purpose: @value, @position, @id, @autoid, @extensibility
 
@@ -153,6 +173,10 @@ No new content: every entry appears there as an item with its evidence.
 
 **Status:** `partial` — `@oneway` (no reply topic, `future<void>` async) and `@service` (service name) are handled through the DDS-RPC binding; `@ami` has no path of its own. Tab.7.20 explicitly calls the impact platform-specific.
 
+## 8.1 @cpp_mapping Annotation
+
+**Status:** `open` — the annotation is not evaluated; the form of structures is chosen by the option `--cpp-mapping` per run (default `psm`: a class with accessors), not by `@cpp_mapping` per structure, and the default value of the annotation is `STRUCT_WITH_PUBLIC_MEMBERS`.
+
 ## 8.1.1 CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS
 
 **Status:** `open` — no path emits the annotated struct as a class with private members, accessors/modifiers and an initialising constructor. `@cpp_mapping` is not read by `crates/lang-rules/src/adapter/cpp.rs`.
@@ -160,3 +184,15 @@ No new content: every entry appears there as an item with its evidence.
 ## A.1 CORBA-Specific Mappings
 
 **Status:** `open` — no `CORBA::traits<>`/`CORBA::servant_traits<>` in the C++ column and no `omg::types`. `crates/corba-codegen/src/traits.rs` is a Rust CORBA generator, not this C++ binding.
+
+## Annex C: Compatibility Rules for C++98 and C++03
+
+**Status:** `open` — an optional mapping; the PSM column (`--cpp-mapping psm`) targets C++17 (§7.1.3) and has no form for C++98 or C++03.
+
+## Annex D: IDL4 Mapping Rules for Classic C++ Mapping Specifications
+
+**Status:** `partial` — ZeroDDS has a classic mapping per [OMG-C++] (`--cpp-mapping classic`, C++03), to which Annex D applies. The map class does not follow D.2.1.3.1 (own item); the other rules of D.2 are not checked one by one against the mapping. D.3 concerns the C++11 mapping [OMG-C++11], which ZeroDDS does not have.
+
+## Annex D.2.1.3.1 Maps in the classic mapping
+
+**Status:** `open` — `zerodds::Map` (`runtime/cpp/include/zerodds/map.hpp`) has `get_size`, `get_max_size`, `set_max_size`, `insert` and `erase` with `DDS::ReturnCode_t`, but not `maximum()`, `length()`, `clear()`, `insert_or_assign` and the returns as `Boolean`.

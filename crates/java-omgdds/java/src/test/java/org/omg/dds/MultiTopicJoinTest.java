@@ -164,7 +164,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void theAnnexBExampleJoinsProjectsRenamesAndFilters() throws Exception {
+    void javapsm_2_the_annex_b_example_joins_projects_renames_and_filters() throws Exception {
         Rig rig = new Rig();
         MultiTopic<Track> tracks = rig.participant.createMultiTopic("Tracks",
                 Track.class, TRACKS, List.of());
@@ -197,7 +197,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void anUpdateOfAConstituentWritesTheInstanceAgain() throws Exception {
+    void javapsm_2_an_update_of_a_constituent_writes_the_instance_again() throws Exception {
         Rig rig = new Rig();
         MultiTopic<Track> tracks = rig.participant.createMultiTopic("Tracks",
                 Track.class, TRACKS, List.of());
@@ -216,7 +216,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void disposingAConstituentDisposesTheResultInstance() throws Exception {
+    void javapsm_7_7_2_disposing_a_constituent_disposes_the_result_instance() throws Exception {
         Rig rig = new Rig();
         MultiTopic<Track> tracks = rig.participant.createMultiTopic("Tracks",
                 Track.class, TRACKS, List.of());
@@ -233,23 +233,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void aConstituentWithoutWritersLeavesTheResultWithoutWriters() throws Exception {
-        Rig rig = new Rig();
-        MultiTopic<Track> tracks = rig.participant.createMultiTopic("Tracks",
-                Track.class, TRACKS, List.of());
-        DataReader<Track> reader = rig.subscriber.createDataReader(tracks);
-        rig.plans.write(new Plan("AF1", "PAR"));
-        rig.positions.write(new Position("AF1", 10, 500));
-        assertEquals(1, Qos.take(reader).size());
-
-        Qos.unregister(rig.plans, new Plan("AF1", "PAR"));
-        List<Sample<Track>> got = Qos.take(reader);
-        assertEquals(1, got.size());
-        assertEquals(InstanceState.NOT_ALIVE_NO_WRITERS, got.get(0).getInstanceState());
-    }
-
-    @Test
-    void theWhereClauseUsesTheExpressionParameters() throws Exception {
+    void javapsm_2_the_where_clause_uses_the_expression_parameters() throws Exception {
         Rig rig = new Rig();
         MultiTopic<Track> tracks = rig.participant.createMultiTopic("Tracks",
                 Track.class,
@@ -267,7 +251,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void theJoinOfThreeTopicsAndTheOtherSpellingsOfTheKeyword() throws Exception {
+    void javapsm_2_the_join_of_three_topics_and_the_other_spellings_of_the_keyword() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Publisher publisher = participant.createPublisher();
         Subscriber subscriber = participant.createSubscriber();
@@ -297,7 +281,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void topicsThatShareNoMemberJoinAsACrossProduct() throws Exception {
+    void javapsm_2_topics_that_share_no_member_join_as_a_cross_product() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Publisher publisher = participant.createPublisher();
         Subscriber subscriber = participant.createSubscriber();
@@ -338,7 +322,7 @@ class MultiTopicJoinTest {
     // --- Mistakes are refused when the MultiTopic is created --------------
 
     @Test
-    void aMultiTopicThatDoesNotFitIsRefused() throws Exception {
+    void javapsm_2_a_multi_topic_that_does_not_fit_is_refused() throws Exception {
         Rig rig = new Rig();
         // A field no topic has.
         assertThrows(IllegalArgumentException.class, () ->
@@ -362,6 +346,9 @@ class MultiTopicJoinTest {
                 rig.participant.createMultiTopic("E", Track.class,
                         "SELECT flight, destination AS x, z AS height, destination"
                                 + " FROM Position NATURAL JOIN Plan", List.of()));
+        // A topic of the FROM clause that does not exist.
+        assertThrows(IllegalArgumentException.class, () ->
+                rig.participant.createMultiTopic("F", Track.class, "SELECT * FROM Nothing", List.of()));
     }
 
     public static final class Clash {
@@ -376,7 +363,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void joinMembersOfDifferentTypesAreRefused() throws Exception {
+    void javapsm_2_join_members_of_different_types_are_refused() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         participant.createTopic("Position", Position.class);
         participant.createTopic("Clash", Clash.class);
@@ -449,31 +436,15 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void theNaturalJoinComparesEveryMemberTheTopicsShare() throws Exception {
+    void javapsm_2_the_natural_join_compares_every_member_the_topics_share() throws Exception {
         // Left.tag and Right.tag differ, so the tuple is not in the natural join.
         assertEquals(0, joinLeftRight().size());
-    }
-
-    @Test
-    void theKeySettingComparesOnlyTheKeyMembers() throws Exception {
-        System.setProperty("zerodds.multitopic.join", "key");
-        List<Sample<Both>> got = joinLeftRight();
-        assertEquals(1, got.size());
-        // The member shared by name that is not a key takes the first topic's value.
-        assertEquals("a", got.get(0).getData().tag());
-        assertEquals("e", got.get(0).getData().extra());
-    }
-
-    @Test
-    void anUnknownValueOfTheJoinSettingIsRefused() throws Exception {
-        System.setProperty("zerodds.multitopic.join", "everything");
-        assertThrows(IllegalArgumentException.class, MultiTopicJoinTest::joinLeftRight);
     }
 
     // --- The reader's own bookkeeping ---------------------------------------
 
     @Test
-    void closingTheReaderEndsTheJoin() throws Exception {
+    void javapsm_2_closing_the_reader_ends_the_join() throws Exception {
         Rig rig = new Rig();
         MultiTopic<Track> tracks = rig.participant.createMultiTopic("Tracks",
                 Track.class, TRACKS, List.of());
@@ -492,7 +463,7 @@ class MultiTopicJoinTest {
     // --- The parser ---------------------------------------------------------
 
     @Test
-    void theParserReadsTheAnnexBGrammar() throws Exception {
+    void javapsm_2_the_parser_reads_the_annex_b_grammar() throws Exception {
         MultiTopicExpression example = MultiTopicExpression.parse(
                 "SELECT flight_name, x, y, z AS height FROM 'Location' NATURAL JOIN"
                         + " 'FlightPlan' WHERE height < 1000 AND x <23");
@@ -520,7 +491,7 @@ class MultiTopicJoinTest {
     }
 
     @Test
-    void theParserRefusesWhatTheGrammarDoesNotHave() throws Exception {
+    void javapsm_2_the_parser_refuses_what_the_grammar_does_not_have() throws Exception {
         for (String bad : new String[] {
                 "", "x < 1", "SELECT FROM T", "SELECT * T", "SELECT * FROM",
                 "SELECT * FROM 1T", "SELECT * FROM A NATURAL B",

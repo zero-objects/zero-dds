@@ -20,7 +20,6 @@
     missing_docs
 )]
 
-use std::sync::Arc;
 use std::time::Duration;
 
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig};
@@ -42,18 +41,18 @@ fn sample_type() -> MinimalTypeObject {
     )
 }
 
-fn runtime_with_random_port(domain: i32, prefix_byte: u8) -> Arc<DcpsRuntime> {
+fn runtime_with_random_port(domain: i32, prefix_byte: u8) -> common::ShutsDown {
     use zerodds_rtps::wire_types::GuidPrefix;
     let cfg = RuntimeConfig {
         spdp_period: Duration::from_secs(60),
         ..RuntimeConfig::default()
     };
     let prefix = GuidPrefix::from_bytes([prefix_byte; 12]);
-    DcpsRuntime::start(domain, prefix, cfg).expect("runtime start")
+    common::ShutsDown(DcpsRuntime::start(domain, prefix, cfg).expect("runtime start"))
 }
 
 #[test]
-fn announces_type_lookup_endpoints_in_spdp() {
+fn rtps_8_5_3_2_1_announces_type_lookup_endpoints_in_spdp() {
     let rt = runtime_with_random_port(common::unique_domain(), 1);
     let mask = rt.announced_builtin_endpoint_set();
     assert_eq!(
@@ -85,7 +84,7 @@ fn type_lookup_request_to_unknown_peer_returns_none() {
 }
 
 #[test]
-fn server_handles_inbound_get_types_request_via_dispatch() {
+fn rtps_10_4_server_handles_inbound_get_types_request_via_dispatch() {
     // The server runs the default configuration and is asked the way the
     // measured vendors ask, in CDR2_LE. It answers in the default encoding.
     let (payload, hash) = get_types_reply(
@@ -104,7 +103,7 @@ fn server_handles_inbound_get_types_request_via_dispatch() {
 /// A request in CDR_LE is read like one in CDR2_LE: the identifier names
 /// the encoding. The reply keeps the default encoding.
 #[test]
-fn a_get_types_request_in_cdr_le_is_answered() {
+fn rtps_10_4_a_get_types_request_in_cdr_le_is_answered() {
     let (payload, hash) = get_types_reply(
         RuntimeConfig::default(),
         zerodds_types::type_lookup::TypeLookupEncoding::Xcdr1,
@@ -117,7 +116,7 @@ fn a_get_types_request_in_cdr_le_is_answered() {
 /// `wire.type_lookup_encoding = xcdr1` answers in CDR_LE, the reading of
 /// XTypes 1.3 Table 60 and DDSI-RTPS 2.5 Table 10.2.
 #[test]
-fn the_setting_xcdr1_answers_in_cdr_le() {
+fn rtps_10_4_the_setting_xcdr1_answers_in_cdr_le() {
     let config = RuntimeConfig {
         type_lookup_encoding: zerodds_types::type_lookup::TypeLookupEncoding::Xcdr1,
         ..RuntimeConfig::default()
@@ -135,7 +134,7 @@ fn the_setting_xcdr1_answers_in_cdr_le() {
 /// The requests the runtime sends take the same setting: CDR2_LE by
 /// default, CDR_LE under `xcdr1`.
 #[test]
-fn a_request_is_written_in_the_configured_encoding() {
+fn rtps_10_4_a_request_is_written_in_the_configured_encoding() {
     use zerodds_types::type_lookup::{
         GetTypesRequest, RequestHeader, TypeLookupCall, TypeLookupEncoding, TypeLookupRequest,
     };

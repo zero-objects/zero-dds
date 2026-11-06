@@ -463,7 +463,7 @@ fn text_that_is_not_one_whole_token_of_that_kind_has_no_value() {
 ///
 /// This kept the *last octet* of the UTF-8 encoding, so `'ä'` — C3 A4 —
 /// became U+00A4 and not U+00E4, with nothing said. Found by
-/// `docs/corba-dialect-followup.md` item 4, printing the model back as
+/// `0b2e8df9f6b:docs/corba-dialect-followup.md` item 4, printing the model back as
 /// CORBA IDL. `lex_char` carries the reading and why it is the broadest
 /// of the three §7.4.1.1.2 leaves open.
 #[test]
@@ -514,6 +514,132 @@ fn a_leading_zero_before_a_point_is_a_decimal_number_and_not_an_octal_one() {
         TokenValue::Int {
             value: 0o123,
             radix: Radix::Octal
+        }
+    );
+}
+
+// -- OMG IDL 4.2 §7.2.5 and §7.2.6.2.2 -----------------------------------
+
+/// Table 7-7: every punctuation character IDL uses. The twenty-two that are
+/// tokens of their own lex to their own kind; the apostrophe, the double
+/// quote and the backslash are the delimiters and the escape character of
+/// the literals (§7.2.6.2, §7.2.6.3) and lex as part of one.
+#[test]
+fn idl_7_2_5_every_punctuation_character_of_table_7_7_is_recognised() {
+    let own = [
+        (";", TokenKind::Semicolon),
+        ("{", TokenKind::LBrace),
+        ("}", TokenKind::RBrace),
+        (":", TokenKind::Colon),
+        (",", TokenKind::Comma),
+        ("=", TokenKind::Equals),
+        ("+", TokenKind::Plus),
+        ("-", TokenKind::Minus),
+        ("(", TokenKind::LParen),
+        (")", TokenKind::RParen),
+        ("<", TokenKind::Less),
+        (">", TokenKind::Greater),
+        ("[", TokenKind::LBracket),
+        ("]", TokenKind::RBracket),
+        ("|", TokenKind::Pipe),
+        ("^", TokenKind::Caret),
+        ("&", TokenKind::Ampersand),
+        ("*", TokenKind::Star),
+        ("/", TokenKind::Slash),
+        ("%", TokenKind::Percent),
+        ("~", TokenKind::Tilde),
+        ("@", TokenKind::At),
+    ];
+    for (text, kind) in own {
+        assert_eq!(kinds(&format!("a {text} b"))[1], kind, "`{text}`");
+    }
+    // The other three of the table's twenty-five.
+    assert_eq!(kinds(r"'\''")[0], TokenKind::CharLiteral);
+    assert_eq!(kinds(r#""\"""#)[0], TokenKind::StringLiteral);
+    assert_eq!(
+        lex(r#""\\""#)[0].value,
+        TokenValue::Text {
+            value: "\\".to_string()
+        }
+    );
+}
+
+/// Table 7-2: string and character literals use the ISO Latin-1 character
+/// set, whose letters the table lists beside the ASCII ones. Each of them
+/// survives in a string literal's value.
+#[test]
+fn idl_7_2_5_the_iso_latin_1_letters_of_table_7_2_stand_in_a_string_literal() {
+    let letters = "ÀàÁáÂâÃãÄäÅåÆæÇçÈèÉéÊêËëÌìÍíÎîÏïÑñÒòÓóÔôÕõÖöØøÙùÚúÛûÜüßÿ";
+    let source = format!("\"{letters}\"");
+    let tokens = lex(&source);
+    assert_eq!(tokens[0].kind, TokenKind::StringLiteral);
+    assert_eq!(
+        tokens[0].value,
+        TokenValue::Text {
+            value: letters.to_string()
+        }
+    );
+    for letter in letters.chars() {
+        let tokens = lex(&format!("'{letter}'"));
+        assert_eq!(tokens[0].kind, TokenKind::CharLiteral, "{letter}");
+        assert_eq!(
+            tokens[0].value,
+            TokenValue::Char {
+                value: u32::from(letter)
+            },
+            "{letter}"
+        );
+    }
+}
+
+/// Table 7-9, every escape sequence: the eleven named ones, `\ooo` with one
+/// to three octal digits, `\xhh` with one or two hexadecimal digits, and
+/// `\uhhhh` with one to four — the clause's own examples `.` (the
+/// period) and `\u3BC` (mu). "A sequence of octal or hexadecimal digits is
+/// terminated by the first character that is not an octal digit or a
+/// hexadecimal digit."
+#[test]
+fn idl_7_2_6_2_2_every_escape_sequence_of_table_7_9_has_its_value() {
+    let char_of = |source: &str| match &lex(source)[0].value {
+        TokenValue::Char { value } => *value,
+        other => panic!("{source}: {other:?}"),
+    };
+    for (escape, value) in [
+        (r"'\n'", 0x0A),
+        (r"'\t'", 0x09),
+        (r"'\v'", 0x0B),
+        (r"'\b'", 0x08),
+        (r"'\r'", 0x0D),
+        (r"'\f'", 0x0C),
+        (r"'\a'", 0x07),
+        (r"'\\'", 0x5C),
+        (r"'\?'", 0x3F),
+        (r"'\''", 0x27),
+        (r#"'\"'"#, 0x22),
+        (r"'\7'", 0o7),
+        (r"'\17'", 0o17),
+        (r"'\101'", 0o101),
+        (r"'\xA'", 0x0A),
+        (r"'\x41'", 0x41),
+        (r"L'.'", 0x2E),
+        (r"L'\u3BC'", 0x3BC),
+        (r"L'\u7'", 0x7),
+        (r"L'￿'", 0xFFFF),
+    ] {
+        assert_eq!(char_of(escape), value, "{escape}");
+    }
+    assert_eq!(lex(r"L'.'")[0].kind, TokenKind::WCharLiteral);
+    // The digits stop at the first character that is not one.
+    assert_eq!(
+        lex(r#""\1018""#)[0].value,
+        TokenValue::Text {
+            value: "A8".to_string()
+        }
+    );
+    assert_eq!(
+        lex(r#""\x41G""#)[0].value,
+        TokenValue::Text {
+            value: "AG".to_string()
         }
     );
 }

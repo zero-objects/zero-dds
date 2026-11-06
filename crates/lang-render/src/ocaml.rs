@@ -1411,7 +1411,7 @@ mod tests {
     }
 
     #[test]
-    fn a_record_writes_one_field_per_line_with_a_trailing_semicolon() {
+    fn xtypes_7_5_1_a_record_writes_one_field_per_line_with_a_trailing_semicolon() {
         let text = decl(&Decl::Types(TypeGroup::one(record(
             "pose",
             alloc::vec![
@@ -1423,7 +1423,7 @@ mod tests {
     }
 
     #[test]
-    fn a_group_of_two_joins_them_with_and() {
+    fn xtypes_7_5_1_a_group_of_two_joins_them_with_and() {
         // The only way OCaml writes a cycle: a type name resolves
         // against what precedes it and against its own group.
         let group = TypeGroup {
@@ -1439,7 +1439,7 @@ mod tests {
     }
 
     #[test]
-    fn a_postfix_type_needs_no_brackets_at_any_depth() {
+    fn xtypes_7_5_1_a_postfix_type_needs_no_brackets_at_any_depth() {
         let nested = Type::option(Type::array(Type::array(Type::Primitive(Primitive::Int32))));
         assert_eq!(type_(&nested), "int32 array array option");
         let other = Type::array(Type::option(Type::Primitive(Primitive::String)));
@@ -1447,7 +1447,7 @@ mod tests {
     }
 
     #[test]
-    fn a_tuple_is_always_bracketed_because_star_binds_loosest() {
+    fn xtypes_7_5_1_a_tuple_is_always_bracketed_because_star_binds_loosest() {
         let tuple = Type::array(Type::Tuple(alloc::vec![
             Type::Primitive(Primitive::Int32),
             Type::Primitive(Primitive::String),
@@ -1456,7 +1456,7 @@ mod tests {
     }
 
     #[test]
-    fn a_variant_writes_a_leading_bar_per_constructor() {
+    fn xtypes_7_5_1_a_variant_writes_a_leading_bar_per_constructor() {
         let text = decl(&Decl::Types(TypeGroup::one(TypeDecl {
             body_text: zerodds_lang_cst::common::BodyText::none(),
             doc: Doc::none(),

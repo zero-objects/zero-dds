@@ -58,15 +58,14 @@ pub fn stable_prefix(marker: u8) -> GuidPrefix {
     )
 }
 
-/// Computes the Participant GUID (16 bytes: 12 prefix + 4 EntityId
-/// `00 00 00 C1` for `ENTITYID_PARTICIPANT`).
+/// Computes the Participant GUID: the 12 prefix octets and
+/// `ENTITYID_PARTICIPANT`, `{{00,00,01},c1}` (DDSI-RTPS 2.5 §9.3.1.3,
+/// Table 9.2). It once wrote `00 00 00 C1`, an entity key the table does not
+/// name; `tests/contract_rtps.rs` checks it against the table.
 #[must_use]
 pub fn participant_guid(prefix: GuidPrefix) -> [u8; 16] {
-    let mut g = [0u8; 16];
-    g[..12].copy_from_slice(&prefix.0);
-    g[12..15].copy_from_slice(&[0, 0, 0]);
-    g[15] = 0xC1;
-    g
+    zerodds_rtps::wire_types::Guid::new(prefix, zerodds_rtps::wire_types::EntityId::PARTICIPANT)
+        .to_bytes()
 }
 
 /// Unix time in nanoseconds (i64; -1 on system clock failure).
@@ -133,17 +132,17 @@ fn install_inner(stop: Arc<AtomicBool>) {
         *g = Some(stop);
     }
     extern "C" fn handler(_: i32) {
-        if let Ok(g) = HOOK.lock() {
-            if let Some(s) = g.as_ref() {
-                s.store(true, Ordering::Relaxed);
-            }
+        if let Ok(g) = HOOK.lock()
+            && let Some(s) = g.as_ref()
+        {
+            s.store(true, Ordering::Relaxed);
         }
     }
     // SAFETY: libc::signal takes a C-ABI function pointer; `handler`
     // is `extern "C"` and matches the libc signature.
     unsafe {
-        libc::signal(libc::SIGINT, handler as usize);
-        libc::signal(libc::SIGTERM, handler as usize);
+        libc::signal(libc::SIGINT, handler as *const () as usize);
+        libc::signal(libc::SIGTERM, handler as *const () as usize);
     }
 }
 
@@ -177,7 +176,85 @@ pub fn raw_reader_config_typed(topic: &str, type_name: &str) -> UserReaderConfig
     UserReaderConfig {
         topic_name: topic.to_string(),
         type_name: type_name.to_string(),
+        // RELIABLE, unlike the DataReader default of DDS 1.4 §2.2.3.14
+        // (BEST_EFFORT): a monitor takes every sample a reliable writer
+        // repairs. By the RxO rule of RELIABILITY it matches no BEST_EFFORT
+        // writer.
+        reliable: true,
         ..Default::default()
+    }
+}
+
+/// The two readers a monitoring tool attaches per `(topic, type_name)` so
+/// that it sees every writer: by the RxO rule of RELIABILITY (DDS 1.4
+/// §2.2.3.14, offered ≥ requested) a RELIABLE reader matches only RELIABLE
+/// writers, whose repairs it takes, and a BEST_EFFORT reader matches every
+/// writer. `(config, reliable)` pairs, the RELIABLE one first. What the
+/// BEST_EFFORT reader takes from a RELIABLE writer the RELIABLE reader has
+/// too; [`WriterReliability::keep`] tells the two apart.
+#[must_use]
+pub fn monitor_reader_configs(topic: &str, type_name: &str) -> [(UserReaderConfig, bool); 2] {
+    let reliable = raw_reader_config_typed(topic, type_name);
+    let best_effort = UserReaderConfig {
+        reliable: false,
+        ..raw_reader_config_typed(topic, type_name)
+    };
+    [(reliable, true), (best_effort, false)]
+}
+
+/// The reliability of the writers a monitoring tool's readers see, as
+/// discovery reports them (`DcpsRuntime::discovered_publication_endpoints`).
+#[derive(Debug, Default)]
+pub struct WriterReliability {
+    known: std::collections::HashMap<[u8; 16], bool>,
+}
+
+impl WriterReliability {
+    /// Nothing known yet.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Whether `writer` is RELIABLE. A writer not known yet is looked up in
+    /// discovery again: a sample of a writer arrives only after the writer
+    /// was discovered. A writer discovery does not know is taken as
+    /// BEST_EFFORT.
+    pub fn is_reliable(
+        &mut self,
+        runtime: &zerodds_dcps::runtime::DcpsRuntime,
+        writer: [u8; 16],
+    ) -> bool {
+        if let Some(reliable) = self.known.get(&writer) {
+            return *reliable;
+        }
+        for endpoint in runtime.discovered_publication_endpoints() {
+            self.known.insert(endpoint.endpoint_guid, endpoint.reliable);
+        }
+        self.known.get(&writer).copied().unwrap_or(false)
+    }
+
+    /// Whether to keep `sample`, taken by a reader that is RELIABLE or not
+    /// ([`monitor_reader_configs`]): a RELIABLE reader keeps everything; the
+    /// BEST_EFFORT reader keeps what a BEST_EFFORT writer wrote, and drops
+    /// what a RELIABLE writer wrote, which the RELIABLE reader keeps.
+    pub fn keep(
+        &mut self,
+        runtime: &zerodds_dcps::runtime::DcpsRuntime,
+        reader_reliable: bool,
+        sample: &zerodds_dcps::runtime::UserSample,
+    ) -> bool {
+        use zerodds_dcps::runtime::UserSample;
+        if reader_reliable {
+            return true;
+        }
+        match sample {
+            UserSample::Alive { writer_guid, .. }
+            | UserSample::Lifecycle { writer_guid, .. }
+            | UserSample::CoherentSetEnd { writer_guid, .. } => {
+                !self.is_reliable(runtime, *writer_guid)
+            }
+        }
     }
 }
 
@@ -361,14 +438,6 @@ mod tests {
         let p = stable_prefix(0xFE);
         assert_eq!(p.host_id(), zerodds_dcps::participant::host_id_bytes());
         assert_eq!(p.0[6..10], std::process::id().to_le_bytes());
-    }
-
-    #[test]
-    fn participant_guid_has_participant_eid() {
-        let prefix = stable_prefix(0x42);
-        let g = participant_guid(prefix);
-        assert_eq!(&g[..12], &prefix.0[..]);
-        assert_eq!(&g[12..], &[0, 0, 0, 0xC1]);
     }
 
     #[test]

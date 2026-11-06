@@ -11,8 +11,12 @@
 //! browser itself is the codec, and that is what this crate exposes.
 //!
 //! What is exposed here:
-//!   * an XCDR1/XCDR2 encoder and decoder for primitives, strings and bytes;
-//!   * the endianness constants and the version string.
+//!   * an XCDR1/XCDR2 encoder and decoder for primitives, strings and bytes,
+//!     the encoding version a parameter of each: `MAXALIGN` is 8 under
+//!     XCDR1 and 4 under XCDR2 (DDS-XTypes 1.3 §7.4.1.1.1, §7.4.3.2.2
+//!     Table 37). Without it, version 1, the default data representation
+//!     (§7.6.3.1.1);
+//!   * the endianness and encoding constants and the version string.
 //!
 //! The bytes are `zerodds-wire`'s: `Writer` and `Reader` are the same runtime
 //! the generated Rust encoders call, so a value encoded in the browser is the
@@ -76,6 +80,36 @@ fn endianness_from_u8(value: u8) -> Result<Endianness, u8> {
     }
 }
 
+/// Encoding version 1 (XCDR1, `MAXALIGN` 8), the default.
+#[wasm_bindgen(js_name = encodingXcdr1)]
+pub fn encoding_xcdr1() -> u8 {
+    1
+}
+
+/// Encoding version 2 (XCDR2, `MAXALIGN` 4).
+#[wasm_bindgen(js_name = encodingXcdr2)]
+pub fn encoding_xcdr2() -> u8 {
+    2
+}
+
+/// `MAXALIGN` of an encoding version (DDS-XTypes 1.3 §7.4.3.2.2 Table 37):
+/// 8 for version 1, 4 for version 2; absent is version 1, the default data
+/// representation (§7.6.3.1.1).
+///
+/// # Errors
+/// The version itself, for anything other than 1 or 2.
+fn max_align_of(version: Option<u8>) -> Result<usize, u8> {
+    match version.unwrap_or(1) {
+        1 => Ok(8),
+        2 => Ok(4),
+        other => Err(other),
+    }
+}
+
+fn invalid_encoding(version: u8) -> JsError {
+    JsError::new(&format!("invalid encoding version {version}"))
+}
+
 fn invalid_endianness(tag: u8) -> JsError {
     JsError::new(&format!("invalid endianness {tag}"))
 }
@@ -92,11 +126,21 @@ pub struct CdrEncoder {
 
 #[wasm_bindgen]
 impl CdrEncoder {
+    /// `encoding`: 1 (XCDR1, the default when absent) or 2 (XCDR2).
     #[wasm_bindgen(constructor)]
-    pub fn new(endianness: u8) -> Result<CdrEncoder, JsError> {
+    pub fn new(endianness: u8, encoding: Option<u8>) -> Result<CdrEncoder, JsError> {
         Ok(Self {
-            inner: Writer::new(endianness_from_u8(endianness).map_err(invalid_endianness)?),
+            inner: Writer::with_max_align(
+                endianness_from_u8(endianness).map_err(invalid_endianness)?,
+                max_align_of(encoding).map_err(invalid_encoding)?,
+            ),
         })
+    }
+
+    /// The alignment cap of the encoding: 8 (XCDR1) or 4 (XCDR2).
+    #[wasm_bindgen(js_name = maxAlign)]
+    pub fn max_align(&self) -> usize {
+        self.inner.max_align()
     }
 
     #[wasm_bindgen(js_name = writeU8)]
@@ -151,18 +195,31 @@ impl CdrEncoder {
 pub struct CdrDecoder {
     bytes: Vec<u8>,
     endianness: Endianness,
+    max_align: usize,
     position: usize,
 }
 
 #[wasm_bindgen]
 impl CdrDecoder {
+    /// `encoding`: 1 (XCDR1, the default when absent) or 2 (XCDR2).
     #[wasm_bindgen(constructor)]
-    pub fn new(bytes: Vec<u8>, endianness: u8) -> Result<CdrDecoder, JsError> {
+    pub fn new(
+        bytes: Vec<u8>,
+        endianness: u8,
+        encoding: Option<u8>,
+    ) -> Result<CdrDecoder, JsError> {
         Ok(Self {
             bytes,
             endianness: endianness_from_u8(endianness).map_err(invalid_endianness)?,
+            max_align: max_align_of(encoding).map_err(invalid_encoding)?,
             position: 0,
         })
+    }
+
+    /// The alignment cap of the encoding: 8 (XCDR1) or 4 (XCDR2).
+    #[wasm_bindgen(js_name = maxAlign)]
+    pub fn max_align(&self) -> usize {
+        self.max_align
     }
 
     /// Runs `read` on a reader parked at the current position, and advances
@@ -175,7 +232,7 @@ impl CdrDecoder {
     where
         F: FnOnce(&mut Reader<'_>) -> Result<T, WireError>,
     {
-        let mut reader = Reader::new(&self.bytes, self.endianness);
+        let mut reader = Reader::with_max_align(&self.bytes, self.endianness, self.max_align);
         reader.skip_to(self.position)?;
         let value = read(&mut reader)?;
         self.position = self.bytes.len() - reader.remaining();
@@ -231,71 +288,169 @@ impl CdrDecoder {
 #[cfg(test)]
 #[allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 mod tests {
-    use super::{CdrDecoder, CdrEncoder, Endianness, endianness_from_u8};
+    use super::{CdrDecoder, CdrEncoder, Endianness, endianness_from_u8, max_align_of};
+    use alloc::string::String;
     use alloc::vec;
+    use alloc::vec::Vec;
 
-    /// The same sequence the JS smoke test drives through the generated
-    /// bindings, so a break shows up in `cargo test` and not only after a
-    /// `wasm-pack build`.
+    /// The octets the vendors write for `primitive-mixed` of
+    /// tests/interop-corpus (every primitive in one `@final` struct), from
+    /// tests/interop-corpus/expected-bytes.tsv: the row of `encoding`,
+    /// `endian` whose dialects name `dialect`.
+    fn expected(encoding: &str, endian: &str, dialect: &str) -> Vec<u8> {
+        let table = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/interop-corpus/expected-bytes.tsv"
+        ))
+        .expect("tests/interop-corpus/expected-bytes.tsv");
+        let row = table
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .map(|line| line.split('\t').collect::<Vec<_>>())
+            .find(|f| {
+                f.len() == 6
+                    && f[0] == "primitive-mixed"
+                    && f[1] == "values"
+                    && f[2] == encoding
+                    && f[3] == endian
+                    && f[4].split(',').any(|d| d == dialect)
+            })
+            .unwrap_or_else(|| panic!("no row primitive-mixed {encoding} {endian} {dialect}"));
+        (0..row[5].len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&row[5][i..i + 2], 16).expect("hex"))
+            .collect()
+    }
+
+    /// `primitive-mixed`'s values (tests/interop-corpus/primitive-mixed/values.json)
+    /// through the encoder: a `char` and `octet`s as one octet each, the `wchar`
+    /// as its UTF-16 unit, the signed values and the floats as their bit patterns.
+    fn encode_primitive_mixed(endianness: u8, encoding: u8) -> Vec<u8> {
+        let mut enc = CdrEncoder::new(endianness, Some(encoding)).expect("encoder");
+        enc.write_u8(1); // flag
+        enc.write_u8(171); // raw_octet
+        enc.write_u8(254); // unsigned_byte
+        enc.write_u8((-13i8) as u8); // signed_byte
+        enc.write_u8(b'Z'); // letter
+        enc.write_u16(0x00e4); // wide_letter 'ä'
+        enc.write_u16((-12345i16) as u16); // short_signed
+        enc.write_u16(48879); // short_unsigned
+        enc.write_u32((-1_234_567i32) as u32); // long_signed
+        enc.write_u32(3_735_928_559); // long_unsigned
+        enc.write_u64((-987_654_321_987i64) as u64); // llong_signed
+        enc.write_u64(16_045_690_984_833_335_998); // llong_unsigned
+        enc.write_u32((-3.75f32).to_bits()); // single_float
+        enc.write_u64(core::f64::consts::PI.to_bits()); // double_float
+        enc.finish()
+    }
+
+    /// DDS-XTypes 1.3 §7.4.1.1.1 and §7.4.3.2.2 Table 37: under XCDR2 `MAXALIGN`
+    /// is 4, so the `long long` after two `long`s at offset 20 and the `double`
+    /// at 44 take no padding. The octets are the specification row of the
+    /// table, which Cyclone DDS, RTI Connext, Fast DDS and OpenDDS agree on.
     #[test]
-    fn primitive_roundtrip_little_endian() {
-        let mut enc = CdrEncoder::new(0).expect("little-endian encoder");
-        enc.write_u8(0x42);
-        enc.write_u16(0xbeef);
-        enc.write_u32(0xcafe_babe);
-        enc.write_u64(0x1122_3344_5566_7788);
-        enc.write_string("Hallo, ZeroDDS!");
-        let bytes = enc.finish();
+    fn xtypes_7_4_3_2_2_xcdr2_caps_the_alignment_at_four_as_the_vendors_write_it() {
+        let octets = encode_primitive_mixed(1, 2);
+        assert_eq!(octets, expected("xcdr2", "be", "specification"));
 
-        let mut dec = CdrDecoder::new(bytes, 0).expect("little-endian decoder");
-        assert_eq!(dec.read_u8().expect("u8"), 0x42);
-        assert_eq!(dec.read_u16().expect("u16"), 0xbeef);
-        assert_eq!(dec.read_u32().expect("u32"), 0xcafe_babe);
-        assert_eq!(dec.read_u64().expect("u64"), 0x1122_3344_5566_7788);
-        assert_eq!(dec.read_string().expect("string"), "Hallo, ZeroDDS!");
+        let mut dec = CdrDecoder::new(octets, 1, Some(2)).expect("decoder");
+        assert_eq!(dec.max_align(), 4);
+        for _ in 0..5 {
+            dec.read_u8().expect("octet");
+        }
+        assert_eq!(dec.read_u16().expect("wchar"), 0x00e4);
+        dec.read_u16().expect("short");
+        dec.read_u16().expect("ushort");
+        dec.read_u32().expect("long");
+        assert_eq!(dec.read_u32().expect("ulong"), 3_735_928_559);
+        assert_eq!(dec.position(), 20);
+        assert_eq!(dec.read_u64().expect("llong"), (-987_654_321_987i64) as u64);
+        assert_eq!(dec.read_u64().expect("ullong"), 16_045_690_984_833_335_998);
+        assert_eq!(dec.read_u32().expect("float"), (-3.75f32).to_bits());
+        assert_eq!(dec.position(), 40);
+        assert_eq!(
+            dec.read_u64().expect("double"),
+            core::f64::consts::PI.to_bits()
+        );
         assert_eq!(dec.remaining(), 0);
     }
 
-    /// The byte order reaches the wire: the same value comes out reversed.
+    /// The same values under XCDR1 (`MAXALIGN` 8, and the default when no
+    /// version is given): four octets of padding before the `long long` and
+    /// before the `double`, as Cyclone DDS, Fast DDS and OpenDDS write it in
+    /// both byte orders.
     #[test]
-    fn u32_byte_order_is_the_streams() {
-        let mut big = CdrEncoder::new(1).expect("big-endian encoder");
+    fn xtypes_7_4_3_2_2_xcdr1_aligns_eight_octet_values_to_eight_as_the_vendors_write_it() {
+        assert_eq!(
+            encode_primitive_mixed(1, 1),
+            expected("xcdr1", "be", "cyclone")
+        );
+        assert_eq!(
+            encode_primitive_mixed(0, 1),
+            expected("xcdr1", "le", "cyclone")
+        );
+        let default = CdrEncoder::new(0, None).expect("encoder without a version");
+        assert_eq!(default.max_align(), 8);
+
+        let octets = expected("xcdr1", "le", "cyclone");
+        let mut dec = CdrDecoder::new(octets, 0, None).expect("decoder");
+        for _ in 0..5 {
+            dec.read_u8().expect("octet");
+        }
+        for _ in 0..3 {
+            dec.read_u16().expect("16-bit");
+        }
+        dec.read_u32().expect("long");
+        dec.read_u32().expect("ulong");
+        assert_eq!(dec.read_u64().expect("llong"), (-987_654_321_987i64) as u64);
+        assert_eq!(dec.position(), 32);
+    }
+
+    /// An encoding version other than 1 and 2 is refused, not guessed.
+    #[test]
+    fn xtypes_7_4_3_2_2_an_unknown_encoding_version_is_refused() {
+        assert_eq!(max_align_of(None), Ok(8));
+        assert_eq!(max_align_of(Some(1)), Ok(8));
+        assert_eq!(max_align_of(Some(2)), Ok(4));
+        assert_eq!(max_align_of(Some(0)), Err(0));
+        assert_eq!(max_align_of(Some(3)), Err(3));
+    }
+
+    /// DDS-XTypes 1.3 §7.4.1.1.1: the byte order of the stream decides the
+    /// order of a value's octets.
+    #[test]
+    fn xtypes_7_4_1_1_1_the_byte_order_reaches_the_wire() {
+        let mut big = CdrEncoder::new(1, None).expect("big-endian encoder");
         big.write_u32(0x0102_0304);
         assert_eq!(big.finish(), vec![0x01, 0x02, 0x03, 0x04]);
 
-        let mut little = CdrEncoder::new(0).expect("little-endian encoder");
+        let mut little = CdrEncoder::new(0, None).expect("little-endian encoder");
         little.write_u32(0x0102_0304);
         assert_eq!(little.finish(), vec![0x04, 0x03, 0x02, 0x01]);
     }
 
-    /// An alignment call before an already-aligning write changes nothing —
-    /// the position after a `write_u8` plus `align(2)` is the position
-    /// `write_u16` would have reached on its own.
+    /// DDS-XTypes 1.3 §7.4.1.1.2: a string is its length with the NUL, the
+    /// characters and the NUL.
     #[test]
-    fn align_is_idempotent_against_the_typed_writes() {
-        let mut with_align = CdrEncoder::new(0).expect("encoder");
-        with_align.write_u8(1);
-        with_align.align(2);
-        with_align.write_u16(2);
-
-        let mut without = CdrEncoder::new(0).expect("encoder");
-        without.write_u8(1);
-        without.write_u16(2);
-
-        assert_eq!(with_align.position(), 4);
-        assert_eq!(with_align.finish(), without.finish());
+    fn xtypes_7_4_1_1_2_a_string_is_its_length_its_characters_and_a_nul() {
+        let mut enc = CdrEncoder::new(0, Some(2)).expect("encoder");
+        enc.write_string("AB");
+        let octets = enc.finish();
+        assert_eq!(octets, vec![3, 0, 0, 0, b'A', b'B', 0]);
+        let mut dec = CdrDecoder::new(octets, 0, Some(2)).expect("decoder");
+        assert_eq!(dec.read_string().expect("string"), String::from("AB"));
     }
 
     /// `write_bytes` puts the octets down unframed, and `read_bytes` takes
     /// exactly as many back.
     #[test]
     fn raw_bytes_pass_through_unframed() {
-        let mut enc = CdrEncoder::new(0).expect("encoder");
+        let mut enc = CdrEncoder::new(0, None).expect("encoder");
         enc.write_bytes(&[0xde, 0xad, 0xbe, 0xef]);
         let bytes = enc.finish();
         assert_eq!(bytes, vec![0xde, 0xad, 0xbe, 0xef]);
 
-        let mut dec = CdrDecoder::new(bytes, 0).expect("decoder");
+        let mut dec = CdrDecoder::new(bytes, 0, None).expect("decoder");
         assert_eq!(
             dec.read_bytes(4).expect("bytes"),
             vec![0xde, 0xad, 0xbe, 0xef]
@@ -320,7 +475,7 @@ mod tests {
     /// `with_reader`: the public method's error type is a `JsError`.
     #[test]
     fn truncated_stream_reports_rather_than_invents() {
-        let mut dec = CdrDecoder::new(vec![0x01, 0x02], 0).expect("decoder");
+        let mut dec = CdrDecoder::new(vec![0x01, 0x02], 0, None).expect("decoder");
         assert_eq!(dec.read_u8().expect("u8"), 0x01);
         assert!(dec.with_reader(|r| r.read_u32()).is_err());
     }

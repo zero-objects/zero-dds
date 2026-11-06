@@ -315,18 +315,17 @@ impl StatelessMessageReader {
         })?;
         let mut out = Vec::new();
         for sub in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = sub.submessage {
-                if d.reader_id == self.guid.entity_id
-                    || d.writer_id == EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER
-                {
-                    // D=0 carries no `ParticipantGenericMessage`. Decoding
-                    // the key holder as one produced a handshake message
-                    // built from whatever the key bytes were.
-                    if !d.data_flag {
-                        continue;
-                    }
-                    out.push(decode_generic_message(&d.serialized_payload)?);
+            if let ParsedSubmessage::Data(d) = sub.submessage
+                && (d.reader_id == self.guid.entity_id
+                    || d.writer_id == EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER)
+            {
+                // D=0 carries no `ParticipantGenericMessage`. Decoding
+                // the key holder as one produced a handshake message
+                // built from whatever the key bytes were.
+                if !d.data_flag {
+                    continue;
                 }
+                out.push(decode_generic_message(&d.serialized_payload)?);
             }
         }
         Ok(out)
@@ -370,7 +369,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_has_expected_entity_id() {
+    fn security_7_5_3_2_writer_has_expected_entity_id() {
         let w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         assert_eq!(
             w.guid().entity_id,
@@ -380,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_has_expected_entity_id() {
+    fn security_7_5_3_2_reader_has_expected_entity_id() {
         let r = StatelessMessageReader::new(local_prefix(), VendorId::ZERODDS);
         assert_eq!(
             r.guid().entity_id,
@@ -396,25 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn write_to_one_proxy_produces_one_datagram() {
-        let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
-        let remote = Guid::new(
-            remote_prefix(),
-            EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER,
-        );
-        w.add_reader_proxy(ReaderProxy::new(
-            remote,
-            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
-            alloc::vec![],
-            false,
-        ));
-        let dgs = w.write(&sample_msg(1)).unwrap();
-        assert_eq!(dgs.len(), 1);
-        assert_eq!(dgs[0].targets.len(), 1);
-    }
-
-    #[test]
-    fn write_to_two_proxies_produces_two_datagrams() {
+    fn security_7_5_3_2_write_to_two_proxies_produces_two_datagrams() {
         let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let remote_a = Guid::new(
             GuidPrefix::from_bytes([2; 12]),
@@ -463,31 +444,12 @@ mod tests {
         assert_eq!(w.reader_proxy_count(), 1);
     }
 
-    #[test]
-    fn remove_reader_proxy_returns_proxy() {
-        let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
-        let remote = Guid::new(
-            remote_prefix(),
-            EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_READER,
-        );
-        w.add_reader_proxy(ReaderProxy::new(
-            remote,
-            alloc::vec![],
-            alloc::vec![],
-            false,
-        ));
-        let removed = w.remove_reader_proxy(remote);
-        assert!(removed.is_some());
-        assert_eq!(w.reader_proxy_count(), 0);
-        assert!(w.remove_reader_proxy(remote).is_none());
-    }
-
     /// DDS-Security 1.2 §7.5.3.3: `source_guid` of a message identity is the
     /// GUID of the BuiltinParticipantStatelessMessageWriter, and
     /// `sequence_number` starts at one and rises for each different message,
     /// across all peers.
     #[test]
-    fn message_identities_are_the_writers_and_rise_by_one() {
+    fn security_7_5_3_3_message_identities_are_the_writers_and_rise_by_one() {
         let mut w = StatelessMessageWriter::new(GuidPrefix::from_bytes([7; 12]), VendorId::ZERODDS);
         let a = w.next_message_identity();
         let b = w.next_message_identity();
@@ -504,7 +466,7 @@ mod tests {
     /// application-defined topic": a datagram of the stateless writer holds
     /// submessages of that writer only.
     #[test]
-    fn a_stateless_datagram_holds_the_submessages_of_its_writer_only() {
+    fn security_7_5_12_a_stateless_datagram_holds_the_submessages_of_its_writer_only() {
         use zerodds_rtps::datagram::{ParsedSubmessage, decode_datagram};
         let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         w.add_reader_proxy(ReaderProxy::new(
@@ -536,7 +498,7 @@ mod tests {
     }
 
     #[test]
-    fn write_increments_sequence_number() {
+    fn security_7_5_3_2_write_increments_sequence_number() {
         let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let remote = Guid::new(
             remote_prefix(),
@@ -566,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn write_carries_writer_entity_id_on_wire() {
+    fn security_7_5_3_2_write_carries_writer_entity_id_on_wire() {
         let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let remote = Guid::new(
             remote_prefix(),
@@ -596,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_handle_data_decodes_generic_message() {
+    fn security_7_5_3_2_reader_handle_data_decodes_generic_message() {
         let mut r = StatelessMessageReader::new(local_prefix(), VendorId::ZERODDS);
         let msg = sample_msg(42);
         let payload = encode_generic_message(&msg);
@@ -634,32 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_writer_proxy_management() {
-        let mut r = StatelessMessageReader::new(local_prefix(), VendorId::ZERODDS);
-        let remote = Guid::new(
-            remote_prefix(),
-            EntityId::BUILTIN_PARTICIPANT_STATELESS_MESSAGE_WRITER,
-        );
-        r.add_writer_proxy(WriterProxy::new(
-            remote,
-            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
-            alloc::vec![],
-            false,
-        ));
-        // Idempotency
-        r.add_writer_proxy(WriterProxy::new(
-            remote,
-            alloc::vec![],
-            alloc::vec![],
-            false,
-        ));
-        assert_eq!(r.writer_proxy_count(), 1);
-        assert!(r.remove_writer_proxy(remote).is_some());
-        assert_eq!(r.writer_proxy_count(), 0);
-    }
-
-    #[test]
-    fn end_to_end_writer_to_reader_loopback() {
+    fn security_7_5_3_2_end_to_end_writer_to_reader_loopback() {
         // Writer builds the datagram, reader decodes it back.
         let mut w = StatelessMessageWriter::new(local_prefix(), VendorId::ZERODDS);
         let mut r = StatelessMessageReader::new(remote_prefix(), VendorId::ZERODDS);

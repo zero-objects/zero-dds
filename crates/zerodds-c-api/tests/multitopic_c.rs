@@ -92,7 +92,7 @@ unsafe fn encode(t: *const ZeroDdsDynType, json: &str) -> Vec<u8> {
 }
 
 #[test]
-fn a_multitopic_joins_two_topics_and_is_not_deleted_while_a_reader_exists() {
+fn psmcxx_2_1_a_multitopic_joins_two_topics_and_is_not_deleted_while_a_reader_exists() {
     let lease = zerodds_test_domains::lease_domain();
     // SAFETY: every pointer comes from the call above its use and is checked; the participant is
     // deleted once at the end.

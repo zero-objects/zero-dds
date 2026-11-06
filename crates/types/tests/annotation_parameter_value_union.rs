@@ -33,7 +33,7 @@ fn model(idl: &str) -> Ast {
 /// `TK_CHAR16` (0x11) and a `wchar`: two octets, aligned to two, so one
 /// octet of padding after the discriminator (Table 31, §7.4.1.1.1).
 #[test]
-fn a_wchar_value_is_tk_char16_and_two_octets() {
+fn xtypes_7_2_2_6_a_wchar_value_is_tk_char16_and_two_octets() {
     let value = V::Char16('a');
     assert_eq!(value.kind(), 0x11);
     let bytes = value.to_bytes().unwrap();
@@ -45,7 +45,7 @@ fn a_wchar_value_is_tk_char16_and_two_octets() {
 /// the number of characters, then the UTF-16 code units, no terminator
 /// (§7.4.1.1.2).
 #[test]
-fn a_wstring_value_is_tk_string16_with_an_octet_length() {
+fn xtypes_7_2_2_6_a_wstring_value_is_tk_string16_with_an_octet_length() {
     let value = V::String16("ab".into());
     assert_eq!(value.kind(), 0x21);
     let bytes = value.to_bytes().unwrap();
@@ -59,7 +59,7 @@ fn a_wstring_value_is_tk_string16_with_an_octet_length() {
 /// `TK_FLOAT128` (0x0B) and a `long double`: sixteen octets of IEEE 754
 /// binary128. 1.5 is sign 0, exponent 0x3FFF, the top fraction bit set.
 #[test]
-fn a_long_double_value_is_tk_float128_and_sixteen_octets() {
+fn xtypes_7_2_2_6_a_long_double_value_is_tk_float128_and_sixteen_octets() {
     let bits: u128 = 0x3FFF_8000_0000_0000_0000_0000_0000_0000;
     let value = V::Float128Bits(bits);
     assert_eq!(value.kind(), 0x0B);
@@ -75,7 +75,7 @@ fn a_long_double_value_is_tk_float128_and_sixteen_octets() {
 /// `ExtendedAnnotationParameterValue`: `@extensibility(MUTABLE)` and
 /// empty, so a `DHEADER` of zero. It is read and kept, not refused.
 #[test]
-fn an_unknown_discriminator_is_the_extended_value() {
+fn xtypes_7_2_2_6_an_unknown_discriminator_is_the_extended_value() {
     let bytes = [0x7F, 0, 0, 0, 0, 0, 0, 0];
     let value = V::from_bytes(&bytes).unwrap();
     assert_eq!(
@@ -95,7 +95,7 @@ fn an_unknown_discriminator_is_the_extended_value() {
 
 /// A discriminator that has a case cannot be written as the extended one.
 #[test]
-fn an_extended_value_with_the_discriminator_of_a_case_is_refused() {
+fn xtypes_annex_b_an_extended_value_with_the_discriminator_of_a_case_is_refused() {
     let value = V::Extended {
         kind: 0x11,
         body: Vec::new(),
@@ -107,7 +107,7 @@ fn an_extended_value_with_the_discriminator_of_a_case_is_refused() {
 /// and a `wstring` parameter builds a `CompleteTypeObject`, and each
 /// default is the value the declaration wrote.
 #[test]
-fn an_annotation_with_long_double_wchar_and_wstring_parameters_builds() {
+fn xtypes_7_2_2_6_an_annotation_with_long_double_wchar_and_wstring_parameters_builds() {
     let ast = model(
         r#"
 @annotation Wide {

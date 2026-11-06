@@ -39,7 +39,7 @@ def check(cond, name):
 # --- sender ------------------------------------------------------------
 
 
-def test_submit_assigns_monotonic_seqnrs():
+def endpointpython_5_submit_assigns_monotonic_seqnrs():
     s = ReliableSender()
     st0, seq0 = s.submit(b"\x01\x02")
     st1, seq1 = s.submit(b"\x03\x04")
@@ -48,7 +48,7 @@ def test_submit_assigns_monotonic_seqnrs():
     check(s.in_flight_count() == 2, "submit_two_in_flight")
 
 
-def test_submit_rejects_payload_too_large():
+def endpointpython_5_submit_rejects_payload_too_large():
     s = ReliableSender()
     status, _ = s.submit(bytes(MAX_PAYLOAD + 1))
     check(status == "too_large", "submit_rejects_payload_too_large")
@@ -70,7 +70,7 @@ def test_write_frame_refuses_body_above_16_bit_length():
         check(True, "write_frame_refuses_body_above_16_bit_length")
 
 
-def test_submit_rejects_when_window_full():
+def endpointpython_5_submit_rejects_when_window_full():
     s = ReliableSender()
     for _ in range(SENDER_WINDOW):
         s.submit(b"\x00")
@@ -78,7 +78,7 @@ def test_submit_rejects_when_window_full():
     check(status == "window_full", "submit_rejects_when_window_full")
 
 
-def test_pending_heartbeat():
+def endpointpython_5_pending_heartbeat():
     s = ReliableSender()
     s.submit(b"\x01")
     hb = s.pending_heartbeat(0.0)
@@ -93,7 +93,7 @@ def test_pending_heartbeat():
     check(s2.pending_heartbeat(0.0) is None, "heartbeat_none_when_window_empty")
 
 
-def test_recv_acknack_clears_acked_keeps_missing():
+def endpointpython_5_recv_acknack_clears_acked_keeps_missing():
     s = ReliableSender()
     s.submit(b"\xa0")  # seq 0
     s.submit(b"\xa1")  # seq 1
@@ -106,7 +106,7 @@ def test_recv_acknack_clears_acked_keeps_missing():
     )
 
 
-def test_recv_acknack_full_clear_when_no_bits_set():
+def endpointpython_5_recv_acknack_full_clear_when_no_bits_set():
     s = ReliableSender()
     for _ in range(5):
         s.submit(b"\x00")
@@ -117,7 +117,7 @@ def test_recv_acknack_full_clear_when_no_bits_set():
 # --- receiver ------------------------------------------------------------
 
 
-def test_recv_data_buffers_in_order():
+def endpointpython_5_recv_data_buffers_in_order():
     r = ReliableReceiver()
     r.recv_data(0, b"\x0a")
     r.recv_data(1, b"\x0b")
@@ -128,7 +128,7 @@ def test_recv_data_buffers_in_order():
     )
 
 
-def test_recv_data_reorders_out_of_order():
+def endpointpython_5_recv_data_reorders_out_of_order():
     r = ReliableReceiver()
     r.recv_data(2, b"\x16")
     r.recv_data(0, b"\x14")
@@ -142,7 +142,7 @@ def test_recv_data_reorders_out_of_order():
     )
 
 
-def test_recv_data_drops_duplicates():
+def endpointpython_5_recv_data_drops_duplicates():
     r = ReliableReceiver()
     r.recv_data(0, b"\x01")
     r.drain_in_order()
@@ -150,7 +150,7 @@ def test_recv_data_drops_duplicates():
     check(r.out_of_order_count() == 0, "recv_data_drops_duplicates")
 
 
-def test_recv_data_rejects_when_buffer_full():
+def endpointpython_5_recv_data_rejects_when_buffer_full():
     r = ReliableReceiver()
     for i in range(1, RECEIVER_BUFFER + 1):  # expected=0, seqs 1..64
         r.recv_data(i, b"\x01")
@@ -158,7 +158,7 @@ def test_recv_data_rejects_when_buffer_full():
     check(ok is False, "recv_data_rejects_when_buffer_full")
 
 
-def test_pending_acknack_marks_missing_slots():
+def endpointpython_5_pending_acknack_marks_missing_slots():
     r = ReliableReceiver()
     r.recv_data(1, b"\x01")
     r.recv_data(3, b"\x03")
@@ -172,7 +172,7 @@ def test_pending_acknack_marks_missing_slots():
     )
 
 
-def test_reset_clears_state():
+def endpointpython_5_reset_clears_state():
     s = ReliableSender()
     r = ReliableReceiver()
     s.submit(b"\x01\x02")
@@ -188,7 +188,7 @@ def test_reset_clears_state():
 # --- end-to-end loss recovery (mirror reliable.rs) -----------------------
 
 
-def test_end_to_end_sender_receiver_with_loss_recovery():
+def endpointpython_5_end_to_end_sender_receiver_with_loss_recovery():
     sender = ReliableSender()
     receiver = ReliableReceiver()
     _st0, s0 = sender.submit(b"\x0a")
@@ -251,7 +251,7 @@ def test_acknack_unannotated_types():
         check(True, "acknack_unknown_mode_refused")
 
 
-def test_byte_golden(gold_dir):
+def endpointpython_5_byte_golden(gold_dir):
     hb_path = os.path.join(gold_dir, "golden_heartbeat_le.bin")
     an_path = os.path.join(gold_dir, "golden_acknack_le.bin")
     if not (os.path.isfile(hb_path) and os.path.isfile(an_path)):
@@ -277,25 +277,25 @@ def test_byte_golden(gold_dir):
 
 
 def main():
-    test_submit_assigns_monotonic_seqnrs()
-    test_submit_rejects_payload_too_large()
+    endpointpython_5_submit_assigns_monotonic_seqnrs()
+    endpointpython_5_submit_rejects_payload_too_large()
     test_write_frame_refuses_body_above_16_bit_length()
-    test_submit_rejects_when_window_full()
-    test_pending_heartbeat()
-    test_recv_acknack_clears_acked_keeps_missing()
-    test_recv_acknack_full_clear_when_no_bits_set()
-    test_recv_data_buffers_in_order()
-    test_recv_data_reorders_out_of_order()
-    test_recv_data_drops_duplicates()
-    test_recv_data_rejects_when_buffer_full()
-    test_pending_acknack_marks_missing_slots()
+    endpointpython_5_submit_rejects_when_window_full()
+    endpointpython_5_pending_heartbeat()
+    endpointpython_5_recv_acknack_clears_acked_keeps_missing()
+    endpointpython_5_recv_acknack_full_clear_when_no_bits_set()
+    endpointpython_5_recv_data_buffers_in_order()
+    endpointpython_5_recv_data_reorders_out_of_order()
+    endpointpython_5_recv_data_drops_duplicates()
+    endpointpython_5_recv_data_rejects_when_buffer_full()
+    endpointpython_5_pending_acknack_marks_missing_slots()
     test_acknack_dheader_and_legacy()
     test_acknack_unannotated_types()
-    test_reset_clears_state()
-    test_end_to_end_sender_receiver_with_loss_recovery()
+    endpointpython_5_reset_clears_state()
+    endpointpython_5_end_to_end_sender_receiver_with_loss_recovery()
 
     if len(sys.argv) > 1:
-        test_byte_golden(sys.argv[1])
+        endpointpython_5_byte_golden(sys.argv[1])
     else:
         print("skip byte-golden: no golden dir arg")
 

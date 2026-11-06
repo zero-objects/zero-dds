@@ -55,8 +55,7 @@ impl<'a> Ctx<'a> {
     fn deref(&self, path: &[String], ty: &Ty) -> (Vec<String>, Ty) {
         let mut path = path.to_vec();
         let mut ty = ty.clone();
-        loop {
-            let Ty::Named(n) = &ty else { break };
+        while let Ty::Named(n) = &ty {
             let full = self.t.resolve(&path, n);
             match self.t.decl(&full) {
                 Decl::Typedef {
@@ -101,7 +100,7 @@ impl<'a> Ctx<'a> {
                     } => {
                         // An array or sequence typedef is its array type.
                         let base = self.ty(self.t.path_of(&full), inner);
-                        format!("{base}{}", "[]".repeat(dims.len().max(0)))
+                        format!("{base}{}", "[]".repeat(dims.len()))
                     }
                     _ => self.class_name(&full),
                 }

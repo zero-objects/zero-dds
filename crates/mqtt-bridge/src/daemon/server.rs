@@ -404,7 +404,11 @@ pub fn start_with_reload(
         let h = thread::spawn(move || {
             while !stop_c.load(Ordering::SeqCst) {
                 match rx.recv_timeout(Duration::from_millis(200)) {
-                    Ok(UserSample::Alive { payload, .. }) => {
+                    Ok(UserSample::Alive {
+                        payload,
+                        representation_identifier,
+                        ..
+                    }) => {
                         // Spec §7.3 — ACL read check per sample that we
                         // hand out to MQTT.
                         if !authorize(
@@ -416,9 +420,14 @@ pub fn start_with_reload(
                             errs.inc();
                             continue;
                         }
-                        let len = payload.len() as u64;
+                        // Spec §4.2: the encapsulation header, then the
+                        // CDR bytes, as the sample travelled over RTPS.
+                        let mut message = Vec::with_capacity(payload.len() + 4);
+                        message.extend_from_slice(&encapsulation(representation_identifier));
+                        message.extend_from_slice(&payload);
+                        let len = message.len() as u64;
                         if let Ok(mut c) = client_c.lock() {
-                            if let Err(e) = c.publish(&mqtt_topic_c, &payload, mqtt_qos, retain) {
+                            if let Err(e) = c.publish(&mqtt_topic_c, &message, mqtt_qos, retain) {
                                 errs.inc();
                                 eprintln!(
                                     "[zerodds-mqtt-bridged] publish err on {dds_topic_c}: {e}"
@@ -465,7 +474,7 @@ pub fn start_with_reload(
     // read. It used to block in `next_event` under the lock for the whole
     // read timeout (5 s), and every publish of the pump threads waited for
     // it: a DDS sample took 4.5 s to reach the broker (measured,
-    // `a_reload_that_withdraws_the_read_right_stops_the_samples`).
+    // `mqttbridge_9_2_a_reload_that_withdraws_the_read_right_stops_the_samples`).
     let wait_socket = client.lock().ok().and_then(|c| c.socket_clone().ok());
     // The wait polls: a stop or the §9.2 drain is seen within 200 ms, not
     // after the 5 s read timeout of the connect (the clone shares the
@@ -510,7 +519,7 @@ pub fn start_with_reload(
             // grabs the lock again immediately (especially on macOS, where the
             // OS mutex schedules unfairly), and the pump thread hangs
             // permanently on `client_c.lock()`. Verified via the
-            // `dds_publish_pumps_to_mqtt_broker` E2E test.
+            // `mqttbridge_2_dds_publish_pumps_to_mqtt_broker` E2E test.
             thread::sleep(Duration::from_millis(1));
             match event {
                 Ok(Some(InboundEvent::Publish {
@@ -537,7 +546,30 @@ pub fn start_with_reload(
                         continue;
                     }
                     if let Some(eid) = writers_arc.get(&dds_topic) {
-                        match runtime_in.write_user_sample(*eid, payload) {
+                        // Spec §4.2: the payload is the encapsulation header
+                        // and the CDR bytes; the header names the
+                        // representation and the byte order of the DDS write.
+                        let (identifier, body) = match split_encapsulation(&payload) {
+                            Ok(parts) => parts,
+                            Err(e) => {
+                                metrics_in.errors_total.inc();
+                                eprintln!("[zerodds-mqtt-bridged] refused PUBLISH on {topic}: {e}");
+                                continue;
+                            }
+                        };
+                        // The writer's header names what the PUBLISH's
+                        // header named: version, format and byte order.
+                        let _ = runtime_in.set_user_writer_data_rep_override(
+                            *eid,
+                            Some(vec![offer_of(identifier)]),
+                        );
+                        let _ = runtime_in
+                            .set_user_writer_byte_order_override(*eid, identifier[1] & 0x01 == 0);
+                        let _ = runtime_in.set_user_writer_wire_extensibility(
+                            *eid,
+                            wire_extensibility_of(identifier),
+                        );
+                        match runtime_in.write_user_sample(*eid, body.to_vec()) {
                             Ok(()) => {
                                 metrics_in.dds_samples_in_total.inc();
                             }
@@ -820,6 +852,65 @@ fn map_client_err(e: super::client::ClientError) -> ServerError {
             ServerError::BrokerConnect("the broker did not answer in time".to_string())
         }
         super::client::ClientError::Codec(m) => ServerError::BrokerConnect(format!("codec: {m}")),
+    }
+}
+
+/// The encapsulation header of a serialized payload (DDSI-RTPS 2.5 §10.5,
+/// DDS-XTypes 1.3 §7.6.3.1.2): the representation identifier the sample came
+/// under, and options. The CDR bytes are passed on unchanged, so the
+/// identifier is too; it names the XCDR version, the format (plain,
+/// delimited, parameter list) and the byte order. This is what
+/// zerodds-mqtt-bridge-1.0 §4.2 puts in front of the CDR bytes of a PUBLISH.
+fn encapsulation(representation_identifier: [u8; 2]) -> [u8; 4] {
+    [
+        representation_identifier[0],
+        representation_identifier[1],
+        0,
+        0,
+    ]
+}
+
+/// The representation identifier and the CDR bytes of a PUBLISH payload
+/// (zerodds-mqtt-bridge-1.0 §4.2: the encapsulation header, then the CDR
+/// bytes).
+///
+/// # Errors
+/// A payload shorter than the header, or an identifier that is not a CDR
+/// representation (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table 60).
+fn split_encapsulation(payload: &[u8]) -> Result<([u8; 2], &[u8]), String> {
+    if payload.len() < 4 {
+        return Err("a payload shorter than the encapsulation header".into());
+    }
+    let identifier = [payload[0], payload[1]];
+    match u16::from_be_bytes(identifier) {
+        0x0000..=0x0003 | 0x0006..=0x000b => Ok((identifier, &payload[4..])),
+        other => Err(format!(
+            "encapsulation {other:#06x} is not a CDR representation"
+        )),
+    }
+}
+
+/// The data representation an identifier names (DDS-XTypes 1.3 Table 60):
+/// `CDR`, `PL_CDR` are XCDR1, the others XCDR2.
+fn offer_of(identifier: [u8; 2]) -> i16 {
+    use zerodds_rtps::publication_data::data_representation as dr;
+    if identifier[1] <= 0x03 {
+        dr::XCDR
+    } else {
+        dr::XCDR2
+    }
+}
+
+/// The extensibility the DDS writer frames a body under `identifier` with
+/// (DDS-XTypes 1.3 Table 60): a parameter list (`PL_CDR`, `PL_CDR2`) is
+/// `@mutable`, a delimited body (`D_CDR2`) `@appendable`, anything else
+/// `@final`.
+fn wire_extensibility_of(identifier: [u8; 2]) -> zerodds_types::qos::ExtensibilityForRepr {
+    use zerodds_types::qos::ExtensibilityForRepr as Ext;
+    match identifier[1] & !0x01 {
+        0x02 | 0x0a => Ext::Mutable,
+        0x08 => Ext::Appendable,
+        _ => Ext::Final,
     }
 }
 

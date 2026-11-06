@@ -34,6 +34,7 @@ extern crate alloc;
 #[cfg(test)]
 extern crate std;
 
+pub mod building_block;
 mod decl;
 pub mod diagnostic;
 pub mod dialect;
@@ -42,6 +43,9 @@ pub mod preprocess;
 mod suffix;
 mod type_spec;
 
+pub use building_block::{
+    AnnotationGroup, BlockUse, BuildingBlock, GroupUse, IdlProfile, blocks_used, outside_profile,
+};
 pub use diagnostic::{Diagnostic, DiagnosticCode, Severity, refused_by_a_clause};
 pub use dialect::{Dialect, VendorFlag};
 pub use parser::{Parse, Parser, parse, parse_preprocessed, parse_preprocessed_with, parse_with};

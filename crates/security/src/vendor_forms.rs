@@ -98,7 +98,7 @@ mod tests {
     /// §7.3.3.1: the spec form has the NUL for every peer; the two vendor
     /// forms are named settings.
     #[test]
-    fn the_spec_form_has_the_nul_for_every_peer() {
+    fn security_7_3_3_1_the_spec_form_has_the_nul_for_every_peer() {
         assert_eq!(AlgoNameNul::default(), AlgoNameNul::Spec);
         assert!(AlgoNameNul::Spec.nul_for(false));
         assert!(AlgoNameNul::Spec.nul_for(true));

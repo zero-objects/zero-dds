@@ -932,17 +932,17 @@ mod tests {
     }
 
     #[test]
-    fn method_call_dispatch() {
+    fn uacs_5_12_2_method_call_dispatch() {
         let mut a = AddressSpace::new();
         let m = NodeId::numeric(1, 100);
         a.register_method(m.clone(), |args| {
             // Echo: double the first Int32 input.
-            if let Some(Variant { value, .. }) = args.first() {
-                if let Some(VariantValue::Int32(x)) = value.first() {
-                    return MethodOutcome::good(alloc::vec![Variant::scalar(VariantValue::Int32(
-                        x * 2
-                    ))]);
-                }
+            if let Some(Variant { value, .. }) = args.first()
+                && let Some(VariantValue::Int32(x)) = value.first()
+            {
+                return MethodOutcome::good(alloc::vec![Variant::scalar(VariantValue::Int32(
+                    x * 2
+                ))]);
             }
             MethodOutcome::fault(0x8000_0000)
         });
@@ -986,7 +986,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_forward_and_inverse() {
+    fn uacs_5_9_2_browse_forward_and_inverse() {
         let a = graph();
         let boiler = NodeId::numeric(1, 1);
         // Forward, all references → HasComponent(Temp) + HasTypeDefinition(58).
@@ -1000,7 +1000,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_subtype_filter_excludes_non_hierarchical() {
+    fn uacs_5_9_2_browse_subtype_filter_excludes_non_hierarchical() {
         let a = graph();
         let boiler = NodeId::numeric(1, 1);
         // HierarchicalReferences + subtypes → HasComponent only (not the
@@ -1018,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn browse_node_class_mask_filters_targets() {
+    fn uacs_5_9_2_browse_node_class_mask_filters_targets() {
         let a = graph();
         let boiler = NodeId::numeric(1, 1);
         // Only Variables (mask 2) → just Temperature.

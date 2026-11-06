@@ -29,6 +29,10 @@ function decodeReading(body) {
   return new Reading(r.getU32(), r.getF32(), r.getString());
 }
 
+// How long the subscriber waits for the samples; a missing one ends the run
+// with an error instead of an endless wait.
+const TIMEOUT_MS = 10000;
+
 async function main() {
   const total = 5;
   const t = new z.MemTransport();
@@ -43,6 +47,10 @@ async function main() {
   // Subscriber: iterate the async stream; decode; stop at total.
   const reader = new z.AsyncReader(t);
   let got = 0;
+  const deadline = setTimeout(() => {
+    console.error(`incomplete: got ${got} of ${total} samples within ${TIMEOUT_MS / 1000} s`);
+    process.exit(1);
+  }, TIMEOUT_MS);
   for await (const body of reader.stream()) {
     const r = decodeReading(body);
     console.log(`async reading ${got}: id=0x${r.id.toString(16)} value=${r.value.toFixed(1)} label="${r.label}"`);
@@ -52,6 +60,7 @@ async function main() {
       break;
     }
   }
+  clearTimeout(deadline);
   console.log('ALL OK');
 }
 

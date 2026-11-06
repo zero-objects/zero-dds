@@ -740,10 +740,10 @@ fn builtin_applications(ast: &Ast, facets: &Facets, at: &str) -> Vec<Applied> {
             _ => {}
         }
     }
-    if let Some(expr) = x.default_value {
-        if let Some(text) = expr_text(ast, expr, at) {
-            out.push(valued("default", "value", text));
-        }
+    if let Some(expr) = x.default_value
+        && let Some(text) = expr_text(ast, expr, at)
+    {
+        out.push(valued("default", "value", text));
     }
     if let Some(range) = x.range {
         let mut values = Vec::new();

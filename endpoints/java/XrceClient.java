@@ -315,7 +315,7 @@ public final class XrceClient {
      * DataWriter/DataReader, {@code null} for every other kind --
      * byte-oracled in crates/xrce/src/object_repr.rs against real
      * eProsima Micro-XRCE-DDS Client 3.0.1 CREATE traffic (Topic's own
-     * participant_id: commit 31c62df2a63). {@code reference} is a
+     * participant_id: commit bd30deaef0b). {@code reference} is a
      * NUL-terminated object_reference string (Sec 7.7.3.1.1).
      */
     public static byte[] frameCreate(int sessionId, byte[] clientKey, int seq, int requestId,

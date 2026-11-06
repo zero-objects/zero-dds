@@ -1,8 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Live AMQP 1.0 interop: ZeroDDS `AmqpClient` → RabbitMQ 4.0 → reference consumer.
+//! AMQP 1.0 against RabbitMQ: the ZeroDDS client `AmqpClient` on one side,
+//! a RabbitMQ node of each test alone on the other, and pika (AMQP 0-9-1)
+//! as the reference client that reads and writes the queue.
+//!
+//! The tests need `rabbitmq-server` and python3 with pika; they run in the
+//! integration pillar's job `integration-bridges-vendor-amqp`, where a missing
+//! program fails them:
+//!
+//! ```bash
+//! cargo nextest run -p zerodds-amqp-endpoint --test rabbitmq_amqp10_e2e --run-ignored all
+//! ```
 
-#![cfg(feature = "std")]
+#![cfg(all(feature = "std", unix))]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -11,128 +21,88 @@
     clippy::uninlined_format_args
 )]
 
-use std::process::Command;
+#[path = "../../amqp-0-9-1/tests/support/rabbitmq.rs"]
+mod rabbitmq;
 
+use rabbitmq::RabbitNode;
 use zerodds_amqp_endpoint::client::AmqpClient;
 
-/// Declares a queue (RabbitMQ 1.0 does not declare topology) + drains+returns
-/// the next body via the `pika` 0.9.1 reference client — a cross-protocol read
-/// of what the ZeroDDS 1.0 client published. Returns the consumed payload.
-fn pika_declare_then_get(queue: &str) -> String {
-    let py = format!(
-        r#"
-import pika
-p = pika.PlainCredentials("zerodds","zerodds")
-c = pika.BlockingConnection(pika.ConnectionParameters("localhost", credentials=p))
-ch = c.channel()
-ch.queue_declare(queue="{q}", durable=True)
-import sys
-mode = sys.argv[1] if len(sys.argv)>1 else "declare"
-if mode == "get":
-    _,_,body = ch.basic_get(queue="{q}", auto_ack=True)
-    print(body.decode() if body else "<none>")
-c.close()
-"#,
-        q = queue
-    );
-    run_pika(&py, "declare");
-    run_pika(&py, "get")
+fn connect(node: &RabbitNode, container: &str) -> AmqpClient {
+    AmqpClient::connect_plain(node.addr(), "guest", "guest", container)
+        .expect("SASL PLAIN, open and begin with RabbitMQ")
 }
 
-/// Run one `pika` script and return its stdout.
-///
-/// The exit status is checked. It was not, and a host without the `pika`
-/// module ran the reference client not at all: the script failed, the
-/// helper returned an empty string, and the assertion that followed
-/// reported the ZeroDDS client as broken. A cross-protocol test whose
-/// reference side can silently not run is not a cross-protocol test.
-fn run_pika(script: &str, mode: &str) -> String {
-    let out = Command::new("python3")
-        .arg("-c")
-        .arg(script)
-        .arg(mode)
-        .output()
-        .expect("run python3");
-    assert!(
-        out.status.success(),
-        "the pika reference client failed ({mode}): {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    String::from_utf8_lossy(&out.stdout).trim().to_string()
+/// pika takes one message of `queue` within ten seconds; `<none>` if none
+/// came.
+fn pika_take(node: &RabbitNode, queue: &str) -> String {
+    node.pika(&format!(
+        "res = []\n\
+         def got(ch_, m, p, b):\n\
+         \x20   res.append(b.decode())\n\
+         \x20   ch.stop_consuming()\n\
+         ch.basic_consume(queue='{queue}', on_message_callback=got, auto_ack=True)\n\
+         c.call_later(10, ch.stop_consuming)\n\
+         ch.start_consuming()\n\
+         print(res[0] if res else '<none>')"
+    ))
 }
 
+/// Part 1 §0.2 and Part 5 §5.3: SASL PLAIN, open, begin, a sender attach
+/// and a transfer; pika (AMQP 0-9-1) reads the message from the queue.
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
-fn zerodds_amqp10_publish_consumed_by_pika() {
-    if std::env::var("AMQP_RABBITMQ").is_err() {
-        eprintln!("AMQP_RABBITMQ not set — skipping live RabbitMQ 1.0 e2e");
-        return;
-    }
-    let queue = "zd_a10";
-    // Declare the queue first (drains nothing yet — just ensures it exists).
-    let _ = pika_declare_then_get(queue);
-
-    // ZeroDDS AMQP 1.0 client: SASL-PLAIN + open + attach(sender) + transfer.
-    let mut client =
-        AmqpClient::connect_plain("127.0.0.1:5672", "zerodds", "zerodds", "zerodds-a10")
-            .expect("connect+SASL+open to RabbitMQ 1.0");
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqp10_0_2_a_message_the_client_sends_is_read_by_pika() {
+    let node = RabbitNode::start();
+    let _ = node.pika("ch.queue_declare(queue='zd_a10', durable=True)");
+    let mut client = connect(&node, "zerodds-a10");
     client
-        .send_to(&format!("/queues/{queue}"), b"zerodds-1.0->rmq")
+        .send_to("/queues/zd_a10", b"zerodds-1.0->rmq")
         .expect("publish over AMQP 1.0");
     client.close();
-
-    // Cross-protocol verify: consume via pika (AMQP 0.9.1).
-    let got = pika_declare_then_get(queue);
-    assert_eq!(
-        got, "zerodds-1.0->rmq",
-        "RabbitMQ should deliver the ZeroDDS-1.0 message to a 0.9.1 consumer"
-    );
-    eprintln!("AMQP 1.0 cross-protocol OK: ZeroDDS-1.0 → RabbitMQ → pika-0.9.1");
+    assert_eq!(pika_take(&node, "zd_a10"), "zerodds-1.0->rmq");
 }
 
-/// Publishes one message to `queue` via the pika 0.9.1 reference client.
-fn pika_publish(queue: &str, payload: &str) {
-    let py = format!(
-        r#"
-import pika
-p = pika.PlainCredentials("zerodds","zerodds")
-c = pika.BlockingConnection(pika.ConnectionParameters("localhost", credentials=p))
-ch = c.channel()
-ch.queue_declare(queue="{q}", durable=True)
-ch.basic_publish(exchange="", routing_key="{q}", body=b"{body}")
-c.close()
-"#,
-        q = queue,
-        body = payload
-    );
-    let _ = run_pika(&py, "publish");
-}
-
+/// Part 1 §0.2 and Part 2 §2.6.7: a receiver attach and link credit; the
+/// client reads the message pika published.
 #[test]
-#[ignore = "needs live RabbitMQ 4.0 on localhost:5672 (Linux test host); set AMQP_RABBITMQ=1"]
-fn zerodds_amqp10_consumes_pika_published() {
-    if std::env::var("AMQP_RABBITMQ").is_err() {
-        eprintln!("AMQP_RABBITMQ not set — skipping live RabbitMQ 1.0 consume e2e");
-        return;
-    }
-    let queue = "zd_a10_rx";
-    // Reference publisher (AMQP 0.9.1) puts a message on the queue.
-    pika_publish(queue, "pika-0.9.1->zerodds");
-
-    // ZeroDDS AMQP 1.0 client consumes it.
-    let mut client =
-        AmqpClient::connect_plain("127.0.0.1:5672", "zerodds", "zerodds", "zerodds-a10rx")
-            .expect("connect+SASL+open to RabbitMQ 1.0");
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqp10_0_2_the_client_receives_what_pika_published() {
+    let node = RabbitNode::start();
+    let _ = node.pika(
+        "ch.queue_declare(queue='zd_a10_rx', durable=True)\n\
+         ch.basic_publish(exchange='', routing_key='zd_a10_rx', body=b'pika-0.9.1->zerodds')",
+    );
+    let mut client = connect(&node, "zerodds-a10rx");
     let got = client
-        .recv_from(&format!("/queues/{queue}"))
+        .recv_from("/queues/zd_a10_rx")
         .expect("receive over AMQP 1.0");
     client.close();
+    assert_eq!(got.as_deref(), Some(&b"pika-0.9.1->zerodds"[..]));
+}
 
-    assert_eq!(
-        got.as_deref()
-            .map(|b| String::from_utf8_lossy(b).to_string()),
-        Some("pika-0.9.1->zerodds".to_string()),
-        "ZeroDDS-1.0 must consume the message a 0.9.1 producer published"
-    );
-    eprintln!("AMQP 1.0 cross-protocol OK: pika-0.9.1 → RabbitMQ → ZeroDDS-1.0");
+/// Part 3 §3.4.2: `send_to_accepted` returns once the broker settled the
+/// delivery as `accepted`, so the queue holds the message by then; pika
+/// reads each one straight afterwards.
+#[test]
+#[ignore = "needs RabbitMQ and pika; runs in integration-bridges-vendor-amqp"]
+fn amqp10_3_4_2_an_accepted_send_is_in_the_queue_when_it_returns() {
+    let node = RabbitNode::start();
+    let _ = node.pika("ch.queue_declare(queue='zd_accepted', durable=True)");
+    let mut client = connect(&node, "zd-acc");
+    for n in 0..5 {
+        let body = format!("accepted-{n}");
+        client
+            .send_to_accepted("/queues/zd_accepted", body.as_bytes())
+            .unwrap();
+        let depth = node.pika(
+            "q = ch.queue_declare(queue='zd_accepted', durable=True, passive=True)\n\
+             print(q.method.message_count)",
+        );
+        assert_eq!(
+            depth,
+            (n + 1).to_string(),
+            "send {n} returned before the queue held it"
+        );
+    }
+    client.close();
 }

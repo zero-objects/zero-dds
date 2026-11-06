@@ -71,7 +71,16 @@ if(ZERODDS_BUILD_TESTS)
     add_executable(zerodds_wire_cpp_corpus_bytes "${CMAKE_CURRENT_SOURCE_DIR}/tests/corpus_bytes.cpp")
     target_link_libraries(zerodds_wire_cpp_corpus_bytes PRIVATE zerodds::zerodds-wire-cpp)
 
+    # dds::core::external<T> of DDS-XTypes 1.3 §7.5.1.2.3.3, header-only.
+    add_executable(zerodds_wire_cpp_external_selftest "${CMAKE_CURRENT_SOURCE_DIR}/tests/external_selftest.cpp")
+    target_include_directories(zerodds_wire_cpp_external_selftest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    if(NOT MSVC)
+        target_compile_options(zerodds_wire_cpp_external_selftest PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+
     if(BUILD_TESTING)
+        add_test(NAME xtypes_7_5_1_2_3_3_the_template_does_what_every_operation_and_every_row_of_table_46_says
+                 COMMAND zerodds_wire_cpp_external_selftest)
         add_test(NAME zerodds_wire_cpp_selftest COMMAND zerodds_wire_cpp_selftest)
         add_test(NAME zerodds_wire_cpp_corpus_bytes
             COMMAND zerodds_wire_cpp_corpus_bytes "${CMAKE_CURRENT_SOURCE_DIR}/../../tests"

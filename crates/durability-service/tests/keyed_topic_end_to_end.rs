@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! e2e: a KEYED TRANSIENT topic served through `serve_typed` — two instances,
-//! `KEEP_LAST(2)` per instance, one instance disposed. Proves the fixes for
-//! the "always unkeyed" defect: `keyed` is derived from the discovered
-//! writer's RTPS entityKind (not hardcoded `false`), samples are stored and
-//! replayed **per instance** (not one shared fake instance), and a
-//! dispose/unregister marker reaches the store (`unregister`) and the replay
-//! writer (`write_user_lifecycle`) instead of being dropped.
+//! A keyed topic served through `serve_typed`: two instances,
+//! `KEEP_LAST(2)` per instance, one instance disposed. DDS 1.4 §2.2.3.5:
+//! the history depth of DURABILITY_SERVICE applies per instance, and the
+//! samples of an instance without writers go after `service_cleanup_delay`
+//! (zero here). The service stores and replays per instance, and a dispose
+//! reaches the store (`unregister`) and the replay writer.
 //!
 //! Own test binary = isolated process (process-global DDS state).
 
@@ -61,6 +60,7 @@ fn keyed_reader_cfg(topic: &str) -> UserReaderConfig {
             kind: LivelinessKind::Automatic,
             ..Default::default()
         },
+        reliable: true,
         ..Default::default()
     }
 }
@@ -78,7 +78,7 @@ fn instance_b() -> [u8; 16] {
 }
 
 #[test]
-fn keyed_topic_keeps_last_2_per_instance_and_disposes() {
+fn dcps_2_2_3_5_keep_last_applies_per_instance_and_a_disposed_instance_is_purged() {
     let domain = zerodds_test_domains::unique_domain();
     let topic = "KeyedReadings";
     let store: Arc<dyn DurabilityStore> =
@@ -137,9 +137,7 @@ fn keyed_topic_keeps_last_2_per_instance_and_disposes() {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-    } // app participant dropped -> original writer gone
-
-    std::thread::sleep(Duration::from_millis(300));
+    } // app participant dropped -> its runtime is shut down, the writer gone
 
     // The store itself: exactly 2 samples of instance A survive (KEEP_LAST(2)
     // per instance, not a single shared "instance 0" — the pre-fix behavior).
@@ -168,8 +166,17 @@ fn keyed_topic_keeps_last_2_per_instance_and_disposes() {
     // Dispose reaches the store (previously dropped unconditionally): with
     // `cleanup_delay: ZERO`, instance B is purge-eligible the instant
     // `cleanup` runs. Calling it directly (not waiting for the daemon's own
-    // 30 s sweep) proves `unregister` was actually called for it.
-    let purged = store.cleanup(std::time::SystemTime::now()).unwrap();
+    // 30 s sweep) proves `unregister` was actually called for it. The dispose
+    // follows the samples and may reach the store after them; until it does,
+    // `cleanup` purges nothing.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let purged = loop {
+        let purged = store.cleanup(std::time::SystemTime::now()).unwrap();
+        if purged > 0 || Instant::now() >= deadline {
+            break purged;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
     assert_eq!(
         purged, 1,
         "disposing instance B must make it purge-eligible"

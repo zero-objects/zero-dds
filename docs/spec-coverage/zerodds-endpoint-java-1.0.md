@@ -5,7 +5,7 @@ Reliable-Stream-Kontraktdetails in `docs/spec-coverage/reliable-endpoint-1.0.md`
 Hier der Transport; das Marshalling erzeugt der gemeinsame Codegen
 (`crates/lang-rules`, Spalte `Language::Java`) und nicht mehr ein
 Java-eigener Generator. Die frühere Codegen-Coverage `zerodds-xcdr2-java`
-ist mit `crates/idl-java` entfallen (Commit `d045e43ea86`).
+ist mit `crates/idl-java` entfallen (Commit `fa2ed8b0a9c`).
 
 Implementation:
 
@@ -21,9 +21,10 @@ Implementation:
 - `endpoints/java/org/zerodds/endpoint/AsyncReliableWriter.java` —
   async-entkoppelter reliable Writer (`BlockingQueue` + Drain-`Thread`).
 - `crates/endpoint-e2e/tests/java.rs` — Ping-Pong-E2E; `crates/endpoint-e2e/tests/java_reliable.rs` —
-  reliable-Stream-E2E + Unit/Golden + Latenz-Bench.
+  reliable-Stream-E2E + Latenz-Vergleich.
 - `endpoints/java/EndpointTest.java` — Byte-Golden für WRITE_DATA/serial/DATA/HEARTBEAT-Read/ACKNACK
-  (manuell gegen `cargo run -p zerodds-endpoint-golden` gefahren, nicht über `cargo test` verdrahtet).
+  (in der Spalte `java` von `tools/endpoints-gate` gegen die Goldens aus
+  `cargo run -p zerodds-endpoint-golden`).
 
 ## §1 XRCE-Framing
 
@@ -37,18 +38,16 @@ Konstanten `SESSION_NOKEY` (`0x80`)/`STREAM_BEST_EFFORT` (`0x01`),
 `serialFrame`/`serialDeframe`/`fcs16`, `heartbeatRead`,
 `acknackFrame`.
 
-**Tests:** `crates/endpoint-e2e/tests/java.rs::java_endpoint_golden` fährt
-`endpoints/java/EndpointTest.java` gegen echte, mit `zerodds-endpoint-golden`
-erzeugte Rust-Goldens. Das ist das Java-Gegenstück zu `endpoints/c/Makefile`s
-`make test GOLDEN_DIR=…`: der Test erzeugt die fünf Golden-Dateien
-(`golden_xrce_le.bin`, `golden_serial_le.bin`, `golden_data_le.bin`,
-`golden_heartbeat_le.bin`, `golden_acknack_le.bin`), übersetzt `EndpointTest`
-mit `Zdw` und `ZdwEndpoint` und prüft `ALL OK` sowie den Exit-Code. Anders als
-`ReliableSelfTest` trägt `EndpointTest` keine fest verdrahteten Ersatz-Goldens,
-deshalb lässt der Test ein Fehlschlagen der Golden-Erzeugung fehlschlagen statt
-den Vergleich still zu überspringen.
+**Tests:** `endpoints/java/EndpointTest.java` in der Spalte `java` von
+`tools/endpoints-gate` (Job `integration-endpoints`, `java EndpointTest
+"$goldens"`) gegen die fünf mit `zerodds-endpoint-golden` erzeugten
+Golden-Dateien (`golden_xrce_le.bin`, `golden_serial_le.bin`,
+`golden_data_le.bin`, `golden_heartbeat_le.bin`, `golden_acknack_le.bin`).
+Anders als `ReliableSelfTest` trägt `EndpointTest` keine fest verdrahteten
+Ersatz-Goldens. Der Rahmen des SDK gegen den Decoder von `zerodds-xrce`:
+`crates/endpoint-e2e/tests/xrce_write_framing.rs::xrce_8_3_5_8_java_endpoint_frames_a_conformant_write_data`.
 
-Lauf auf dem Linux-Testhost (`tools/endpoints-gate`, Stand `2fa0800f55a`):
+Lauf auf dem Linux-Testhost (`tools/endpoints-gate`, Stand `8bcb1d00161`):
 
 ```
 XRCE WRITE_DATA byte-identical (52 bytes)
@@ -67,7 +66,7 @@ writer maximal body framed
 ALL OK
 ```
 
-Das Framing wird zusätzlich live über `java_endpoint_sync`/`java_endpoint_async`
+Das Framing wird zusätzlich live über `xrce_8_3_5_8_java_sync_app_writes_the_ping_and_reads_the_pong`/`xrce_8_3_5_8_java_async_app_writes_the_ping_and_reads_the_pong`
 (§4) geübt.
 
 **Status:** done
@@ -84,7 +83,7 @@ volles Feld-Decode (`Reading{id,value,label}`); `sync`-Modus in
 `crates/endpoint-e2e/tests/java.rs::MAIN_JAVA_TAIL` — blockierendes
 `DatagramSocket.receive()` gegen den echten Rust-Peer.
 
-**Tests:** `java_endpoint_sync` (§4).
+**Tests:** `xrce_8_3_5_8_java_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -101,7 +100,7 @@ volles Feld-Decode (`Reading{id,value,label}`); `sync`-Modus in
 `crates/endpoint-e2e/tests/java.rs::MAIN_JAVA_TAIL` — Reader-`Thread` liest vom
 echten `DatagramSocket`, Consumer blockiert auf `take()`.
 
-**Tests:** `java_endpoint_async` (§4).
+**Tests:** `xrce_8_3_5_8_java_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -119,12 +118,9 @@ sie sonst von außen nicht erreichbar wären. Kompiliert gegen `runtime/java`
 (`org.zerodds.wire.*`) — die frühere Runtime `crates/java-omgdds` +
 `crates/idl-java/runtime` ist mit dem IDL-Transplantat entfallen.
 
-**Tests:** (dieses Environment, OpenJDK 21, `cargo test -p zerodds-endpoint-e2e --test java`)
-- `java_endpoint_sync` — voller Stack über blockierendes `DatagramSocket.receive()`.
-- `java_endpoint_async` — voller Stack über Reader-`Thread`/`LinkedBlockingQueue`.
-- `java_endpoint_golden` — `EndpointTest.java` gegen die Rust-Goldens (§1).
-
-3 passed, 0 failed (lokal verifiziert).
+**Tests:** (`crates/endpoint-e2e/tests/java.rs`, Job `integration-bindings`)
+- `xrce_8_3_5_8_java_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über blockierendes `DatagramSocket.receive()`.
+- `xrce_8_3_5_8_java_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über Reader-`Thread`/`LinkedBlockingQueue`.
 
 **Status:** done.
 
@@ -149,8 +145,9 @@ in den Kernel.
 `zdw-reliable-drain`, `submit`/`offer`/`finish`/`delivered`); Beispiel-App
 `endpoints/java/ExampleReliable.java` (echter UDP-Peer, kein In-Process-Stub).
 
-**Tests:** (dieses Environment, `cargo test -p zerodds-endpoint-e2e --test java_reliable`)
-- `java_reliable_unit_and_golden` — kompiliert und läuft
+**Tests:**
+- `endpoints/java/ReliableSelfTest.java` in der Spalte `java` von `tools/endpoints-gate`
+  (Job `integration-endpoints`) — kompiliert und läuft
   `endpoints/java/ReliableSelfTest.java`: 33 `check()`-Assertionen über 17
   Testszenarien (Sender: monotone seq, in-flight count, payload-too-large,
   window-full, heartbeat first/silence/after-500ms, no-heartbeat-when-empty,
@@ -163,12 +160,9 @@ in den Kernel.
   `80 00 01 00 0b 01 05 00 01 00 03 00 80`, `AckNackFrame(1,0)` ==
   `80 00 01 00 0a 01 05 00 01 00 00 00 80` — identisch zu den
   Referenz-Goldens (gleiche Bytes wie `endpoints/go`). Ausgabe: `ALL OK`.
-- `java_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die
-  App (`ExampleReliable`, `AsyncReliableWriter`) retransmittet auf ACKNACK;
-  alle 12 Samples lückenlos in Reihenfolge geliefert.
-- `java_reliable_no_loss_baseline` — lossless Baseline; 12/12.
-
-3/3 grün (lokal verifiziert; Latenz-Bench in §6).
+- `reliable_5_3_java_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig; die
+  App, die der Test aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und `AsyncReliableWriter` baut, retransmittet
+  auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge geliefert, der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`).
 
 **Status:** done.
 
@@ -185,14 +179,17 @@ vs. 20000 Iterationen `BlockingQueue.offer` (Drain-`Thread` hält die Queue
 leer, wie `AsyncReliableWriter`s echter Drain-`Thread`), kein Live-Peer
 nötig.
 
-**Tests:** (dieses Environment, `java_reliable_latency_bench`)
+**Tests:** `reliable_5_4_java_the_producer_enqueue_costs_less_than_the_inline_send`
+(`crates/endpoint-e2e/tests/java_reliable.rs`, Job `integration-bindings`):
+der Test prüft, dass der Queue-Enqueue-Median unter dem inline-send-Median
+liegt. Früher gemessen:
 
 ```
 producer latency: queue-enqueue median = 84 ns, inline-send median = 5917 ns (70x)
 ```
 
 Median über 20000 Iterationen je Pfad, lokal gemessen (macOS, kein
-Codepit-Lauf) — Größenordnung deckt sich mit `endpoints/go`s
+Lauf auf dem Linux-Testhost) — Größenordnung deckt sich mit `endpoints/go`s
 Linux-verifizierten 20–25 ns / 4360 ns (~175–220×); der Absolutwert ist
 maschinen-/lastabhängig, das Verhältnis (Enqueue deutlich unter Syscall)
 ist der Beleg.
@@ -203,15 +200,12 @@ ist der Beleg.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf (dieses Environment — macOS, OpenJDK 21, `javac`/`java` auf PATH —
-**nicht** Linux-verifiziert): `cargo test -p zerodds-endpoint-e2e --test java`
-→ 3 passed, 0 failed (`java_endpoint_sync`, `java_endpoint_async`,
-`java_endpoint_golden`); `--test java_reliable` → 4 passed, 0 failed
-(`java_reliable_loss_recovery`, `java_reliable_no_loss_baseline`,
-`java_reliable_unit_and_golden` — 33 Java-Unit-Assertionen über 17 Szenarien
-inkl. Byte-Golden, `java_reliable_latency_bench` — Queue-Enqueue 83 ns gegen
-inline `send` 6542 ns, ~79×).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-java-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `python3 ci/run_integration.py integration-bindings` (Job `integration-bindings`) — 5 Tests grün.
+
+5 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

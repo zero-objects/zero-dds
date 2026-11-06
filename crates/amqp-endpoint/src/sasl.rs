@@ -267,24 +267,27 @@ impl SaslState {
 mod tests {
     use super::*;
 
+    /// The mechanism names of the SASL registry: `PLAIN` (RFC 4616),
+    /// `ANONYMOUS` (RFC 4505), `EXTERNAL` (RFC 4422 Appendix A).
     #[test]
-    fn name_round_trips() {
-        for m in [
-            SaslMechanism::Plain,
-            SaslMechanism::Anonymous,
-            SaslMechanism::External,
+    fn amqp10_5_3_3_1_the_mechanism_names_are_plain_anonymous_external() {
+        for (m, name) in [
+            (SaslMechanism::Plain, "PLAIN"),
+            (SaslMechanism::Anonymous, "ANONYMOUS"),
+            (SaslMechanism::External, "EXTERNAL"),
         ] {
-            assert_eq!(SaslMechanism::from_name(m.name()), Some(m));
+            assert_eq!(m.name(), name);
+            assert_eq!(SaslMechanism::from_name(name), Some(m));
         }
     }
 
     #[test]
-    fn unknown_name_yields_none() {
+    fn ddsamqp_10_2_unknown_name_yields_none() {
         assert!(SaslMechanism::from_name("UNKNOWN").is_none());
     }
 
     #[test]
-    fn select_outbound_prefers_external() {
+    fn ddsamqp_2_1_select_outbound_prefers_external() {
         let offered = [
             SaslMechanism::Plain,
             SaslMechanism::Anonymous,
@@ -297,7 +300,7 @@ mod tests {
     }
 
     #[test]
-    fn select_outbound_falls_back_to_plain_with_tls() {
+    fn ddsamqp_2_1_select_outbound_falls_back_to_plain_with_tls() {
         let offered = [SaslMechanism::Plain, SaslMechanism::Anonymous];
         assert_eq!(
             SaslState::select_outbound(&offered, true),
@@ -306,7 +309,7 @@ mod tests {
     }
 
     #[test]
-    fn select_outbound_skips_plain_without_tls() {
+    fn ddsamqp_2_1_select_outbound_skips_plain_without_tls() {
         let offered = [SaslMechanism::Plain, SaslMechanism::Anonymous];
         assert_eq!(
             SaslState::select_outbound(&offered, false),
@@ -315,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn select_outbound_anonymous_only() {
+    fn ddsamqp_10_2_select_outbound_anonymous_only() {
         let offered = [SaslMechanism::Anonymous];
         assert_eq!(
             SaslState::select_outbound(&offered, false),
@@ -324,7 +327,7 @@ mod tests {
     }
 
     #[test]
-    fn select_outbound_no_acceptable_mechanism() {
+    fn ddsamqp_2_1_select_outbound_no_acceptable_mechanism() {
         // Broker offers only PLAIN, no TLS active → no
         // acceptable mechanism.
         let offered = [SaslMechanism::Plain];
@@ -332,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_offered_only_when_tls_active() {
+    fn ddsamqp_2_1_plain_offered_only_when_tls_active() {
         let s = SaslState::new(true);
         assert!(s.offered.contains(&SaslMechanism::Plain));
         let s = SaslState::new(false);
@@ -340,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn plain_authenticates_on_correct_credentials() {
+    fn amqp10_5_plain_authenticates_on_correct_credentials() {
         let mut s = SaslState::new(true);
         s.authenticate_plain("alice", "secret", |u, p| u == "alice" && p == "secret");
         assert!(matches!(
@@ -350,14 +353,14 @@ mod tests {
     }
 
     #[test]
-    fn plain_fails_on_wrong_credentials() {
+    fn amqp10_5_plain_fails_on_wrong_credentials() {
         let mut s = SaslState::new(true);
         s.authenticate_plain("alice", "wrong", |_, _| false);
         assert!(matches!(s.outcome, Some(SaslOutcome::Failed { .. })));
     }
 
     #[test]
-    fn plain_without_tls_yields_auth_failed() {
+    fn ddsamqp_2_1_plain_without_tls_yields_auth_failed() {
         let mut s = SaslState::new(false);
         s.authenticate_plain("a", "b", |_, _| true);
         // Spec OASIS AMQP 1.0 §5.3.3.6 — code `auth` (1) for
@@ -371,35 +374,29 @@ mod tests {
         ));
     }
 
+    /// AMQP 1.0 §5.3.3.6: ok 0, auth 1, sys 2, sys-perm 3, sys-temp 4, in
+    /// both directions.
     #[test]
-    fn sasl_code_wire_values_match_spec() {
-        assert_eq!(SaslCode::Ok.to_u8(), 0);
-        assert_eq!(SaslCode::Auth.to_u8(), 1);
-        assert_eq!(SaslCode::Sys.to_u8(), 2);
-        assert_eq!(SaslCode::SysPerm.to_u8(), 3);
-        assert_eq!(SaslCode::SysTemp.to_u8(), 4);
-    }
-
-    #[test]
-    fn sasl_code_from_u8_round_trip() {
-        for c in [
-            SaslCode::Ok,
-            SaslCode::Auth,
-            SaslCode::Sys,
-            SaslCode::SysPerm,
-            SaslCode::SysTemp,
+    fn amqp10_5_3_3_6_the_sasl_codes_are_0_to_4() {
+        for (c, value) in [
+            (SaslCode::Ok, 0),
+            (SaslCode::Auth, 1),
+            (SaslCode::Sys, 2),
+            (SaslCode::SysPerm, 3),
+            (SaslCode::SysTemp, 4),
         ] {
-            assert_eq!(SaslCode::from_u8(c.to_u8()).expect("ok"), c);
+            assert_eq!(c.to_u8(), value);
+            assert_eq!(SaslCode::from_u8(value).expect("a code"), c);
         }
     }
 
     #[test]
-    fn sasl_code_unknown_value_rejected() {
+    fn amqp10_5_sasl_code_unknown_value_rejected() {
         assert!(SaslCode::from_u8(99).is_err());
     }
 
     #[test]
-    fn outcome_authenticated_wire_code_is_ok() {
+    fn ddsamqp_2_1_outcome_authenticated_wire_code_is_ok() {
         let o = SaslOutcome::Authenticated {
             subject: "u".into(),
         };
@@ -408,14 +405,14 @@ mod tests {
     }
 
     #[test]
-    fn outcome_auth_failed_helper_uses_auth_code() {
+    fn ddsamqp_2_1_outcome_auth_failed_helper_uses_auth_code() {
         let o = SaslOutcome::auth_failed("bad credentials");
         assert_eq!(o.wire_code(), SaslCode::Auth);
         assert!(!o.is_ok());
     }
 
     #[test]
-    fn anonymous_authenticates_without_credentials() {
+    fn amqp10_5_anonymous_authenticates_without_credentials() {
         let mut s = SaslState::new(false);
         s.authenticate_anonymous();
         assert!(matches!(
@@ -425,7 +422,7 @@ mod tests {
     }
 
     #[test]
-    fn external_uses_transport_subject() {
+    fn amqp10_5_external_uses_transport_subject() {
         let mut s = SaslState::new(true);
         s.authenticate_external("CN=alice");
         assert!(matches!(

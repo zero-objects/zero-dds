@@ -8,7 +8,7 @@
 //! ## Why the types are generated and not written here
 //!
 //! `tools/omg-shape-main` took its single `ShapeType` from a
-//! hand-written Rust struct until commit `98b4800bdc3`. That is the
+//! hand-written Rust struct until commit `1cddee56333`. That is the
 //! wrong side of the measurement: a defect in the generator then cannot
 //! fail the suite, and a defect in the hand form is charged to us. Both
 //! were real there — the hand-written type left

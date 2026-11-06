@@ -86,6 +86,59 @@ impl RustUnion<'_> {
     }
 }
 
+/// One case of a union as the Rust enum holds it, for code generated
+/// beside the type (`zerodds-build`'s `DdsType` impl).
+#[derive(Debug, Clone)]
+pub struct UnionVariant<'a> {
+    /// The case's member.
+    pub member: &'a MemberNode,
+    /// The enum variant's name.
+    pub variant: String,
+    /// The values of its explicit labels, in declaration order.
+    pub labels: Vec<i128>,
+    /// Whether the variant holds the discriminator ahead of the member:
+    /// `V(D, T)` for a case with several labels and the `default:` case.
+    pub carries_discriminator: bool,
+}
+
+/// A union as the Rust enum holds it, for code generated beside the type.
+#[derive(Debug, Clone)]
+pub struct UnionVariants<'a> {
+    /// The discriminator's type, aliases unwrapped.
+    pub discriminator: Id<TypeNode>,
+    /// The cases, in declaration order.
+    pub cases: Vec<UnionVariant<'a>>,
+    /// The variant that holds a discriminator selecting no member, when
+    /// the union has one.
+    pub no_member: Option<&'static str>,
+}
+
+/// `union_type`'s variants as the Rust column declares them.
+///
+/// # Errors
+/// As the column's shape: a label that does not evaluate, a case with no
+/// label, or an unresolved discriminator or member type.
+pub fn union_variants(
+    ast: &Ast,
+    union_type: Id<TypeNode>,
+) -> Result<UnionVariants<'_>, &'static str> {
+    let shape = shape(ast, union_type)?;
+    Ok(UnionVariants {
+        discriminator: shape.discriminator,
+        cases: shape
+            .cases
+            .iter()
+            .map(|case| UnionVariant {
+                member: case.member,
+                variant: case.variant.clone(),
+                labels: case.labels.clone(),
+                carries_discriminator: case.carries_discriminator(),
+            })
+            .collect(),
+        no_member: shape.no_member.then_some(NO_MEMBER),
+    })
+}
+
 /// `union_type`'s shape, or why it has none in this column.
 ///
 /// # Errors

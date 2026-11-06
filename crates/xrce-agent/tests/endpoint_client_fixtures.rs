@@ -73,7 +73,7 @@ fn create_client_fixture_decodes_into_a_real_client_representation() {
 /// outer `ObjectKind` byte + `DATAWRITER_Representation.publisher_id`),
 /// and the agent really accepts and stores what it decodes.
 #[test]
-fn create_fixture_decodes_into_an_object_the_agent_accepts() {
+fn xrce_8_3_5_2_create_fixture_decodes_into_an_object_the_agent_accepts() {
     let bytes = fixture("xrce_client_create.bin");
     let msg = Message::decode(&bytes).expect("decodes");
     assert_eq!(msg.submessages.len(), 1);
@@ -112,7 +112,7 @@ fn create_fixture_decodes_into_an_object_the_agent_accepts() {
 
 /// A second `CREATE`, `xrce_client_create_topic.bin`: `OBJK_TOPIC`'s
 /// own `..._Representation` carries a trailing `participant_id` exactly
-/// like `OBJK_PUBLISHER`'s carries its own parent (commit `31c62df2a63`,
+/// like `OBJK_PUBLISHER`'s carries its own parent (commit `bd30deaef0b`,
 /// `xrce: OBJK_TOPIC_Representation carries its participant's
 /// ObjectId`) — checked here against the same kind of independent
 /// fixture the `DataWriter` case above already is, so a decoder that
@@ -161,7 +161,7 @@ fn create_topic_fixture_decodes_into_an_object_the_agent_accepts() {
 /// §7.8.3/§8.3.5.3 `DELETE`: removes the exact object `CREATE` above
 /// added.
 #[test]
-fn delete_fixture_decodes_and_removes_the_object_create_added() {
+fn xrce_7_8_3_4_delete_fixture_decodes_and_removes_the_object_create_added() {
     let mut agent = XrceAgent::new();
     agent.register_client(client_key());
     let writer = ObjectId::new(0x001, ObjectKind::DataWriter).unwrap();
@@ -191,7 +191,7 @@ fn delete_fixture_decodes_and_removes_the_object_create_added() {
 /// §7.8.5/§8.3.5.9.2 `READ_DATA`: request id, target `DataReader`, and a
 /// minimal `ReadSpecification` (no filter, no delivery control).
 #[test]
-fn read_data_fixture_decodes_into_a_real_read_specification() {
+fn xrce_8_3_5_9_read_data_fixture_decodes_into_a_real_read_specification() {
     let bytes = fixture("xrce_client_read_data.bin");
     let msg = Message::decode(&bytes).expect("decodes");
     assert_eq!(msg.submessages.len(), 1);
@@ -216,7 +216,7 @@ fn read_data_fixture_decodes_into_a_real_read_specification() {
 /// `DataWriter` (the same one `CREATE`/`DELETE` above use), opaque
 /// sample bytes.
 #[test]
-fn write_data_fixture_decodes_into_the_sample_bytes_the_client_sent() {
+fn xrce_7_8_4_1_write_data_fixture_decodes_into_the_sample_bytes_the_client_sent() {
     let bytes = fixture("xrce_client_write_data.bin");
     let msg = Message::decode(&bytes).expect("decodes");
     assert_eq!(msg.submessages.len(), 1);
@@ -236,7 +236,7 @@ fn write_data_fixture_decodes_into_the_sample_bytes_the_client_sent() {
 /// carries SESSION_ID_NONE_WITH_CLIENT_KEY (0x00, DDS-XRCE 1.0 §8.3.2.1) and
 /// the session it asks for (0x01) is in its CLIENT_Representation.
 #[test]
-fn every_fixture_shares_the_same_client_key_and_session_id() {
+fn xrce_8_3_2_4_every_fixture_shares_the_same_client_key_and_session_id() {
     for name in [
         "xrce_client_create_client.bin",
         "xrce_client_create.bin",

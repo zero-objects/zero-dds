@@ -62,6 +62,8 @@ pub(crate) struct ListenerDispatcher {
     pending: Mutex<Pending>,
     wake: Condvar,
     stop: AtomicBool,
+    /// The thread, until [`Self::join`] takes it.
+    thread: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl ListenerDispatcher {
@@ -73,15 +75,21 @@ impl ListenerDispatcher {
             pending: Mutex::new(Pending::default()),
             wake: Condvar::new(),
             stop: AtomicBool::new(false),
+            thread: Mutex::new(None),
         });
         let runner = Arc::clone(&dispatcher);
         let spawned = std::thread::Builder::new()
             .name("zerodds-listeners".into())
             .spawn(move || runner.run());
-        if spawned.is_err() {
+        match spawned {
+            Ok(handle) => {
+                if let Ok(mut thread) = dispatcher.thread.lock() {
+                    *thread = Some(handle);
+                }
+            }
             // No thread: the getters and `drive_listeners()` still
             // dispatch, which is what the API did before this existed.
-            dispatcher.stop.store(true, Ordering::Release);
+            Err(_) => dispatcher.stop.store(true, Ordering::Release),
         }
         dispatcher
     }
@@ -106,7 +114,6 @@ impl ListenerDispatcher {
         }
     }
 
-    /// Ends the thread after the pass it is in.
     /// A listener was set or replaced on an entity of `runtime`: one pass,
     /// so a status that changed while no listener was there to take it is
     /// handed to the new one now. Without it the change waited for the
@@ -119,9 +126,23 @@ impl ListenerDispatcher {
         }
     }
 
+    /// Ends the thread after the pass it is in.
     pub(crate) fn stop(&self) {
         self.stop.store(true, Ordering::Release);
         self.notify();
+    }
+
+    /// After [`Self::stop`]: waits until the thread has ended, so a
+    /// listener call in progress has returned and none follows. On the
+    /// thread itself (a listener that deleted its participant) it returns
+    /// at once; the thread ends when the listener returns.
+    pub(crate) fn join(&self) {
+        let handle = self.thread.lock().ok().and_then(|mut thread| thread.take());
+        if let Some(handle) = handle
+            && handle.thread().id() != std::thread::current().id()
+        {
+            let _ = handle.join();
+        }
     }
 
     fn run(self: Arc<Self>) {

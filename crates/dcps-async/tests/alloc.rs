@@ -22,7 +22,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 const N: u64 = 200;
 
 #[test]
-fn async_write_adds_no_extra_heap_vs_sync() {
+fn async_9_write_adds_no_extra_heap_vs_sync() {
     let _profiler = dhat::Profiler::builder().testing().build();
 
     // --- sync writer (offline) ---

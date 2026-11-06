@@ -218,7 +218,7 @@ mod tests {
     /// the request reader, with only the reply writer — not complete;
     /// with both — complete.
     #[test]
-    fn the_client_waits_for_both_service_endpoints() {
+    fn rpc_7_6_2_the_client_waits_for_both_service_endpoints() {
         assert!(!service_matching_complete(&[], &[], "", false));
         assert!(!service_matching_complete(
             &[service_reader(None)],
@@ -243,7 +243,7 @@ mod tests {
     /// A reply writer of another service instance is not the one the
     /// request reader names.
     #[test]
-    fn the_two_endpoints_must_name_each_other() {
+    fn rpc_7_6_2_1_2_the_two_endpoints_must_name_each_other() {
         let other_writer = peer([9; 16], Some([8; 16]), None);
         assert!(!service_matching_complete(
             &[service_reader(None)],
@@ -256,7 +256,7 @@ mod tests {
     /// §7.6.2.1.1: the instance name is the service's, announced by the
     /// service; the client addresses the instance of its own name.
     #[test]
-    fn the_client_addresses_the_instance_it_names() {
+    fn rpc_7_6_2_2_2_the_client_addresses_the_instance_it_names() {
         let readers = [service_reader(Some("calc-A"))];
         let writers = [service_writer(Some("calc-A"))];
         assert!(service_matching_complete(
@@ -271,7 +271,7 @@ mod tests {
     /// A service that announced no extension never completes under the
     /// spec's algorithm, and does under the named alternative.
     #[test]
-    fn an_unannounced_service_completes_only_when_accepted() {
+    fn rpc_7_6_2_1_1_an_unannounced_service_completes_only_when_accepted() {
         let reader = peer(REQUEST_READER, None, None);
         let writer = peer(REPLY_WRITER, None, None);
         assert!(!service_matching_complete(
@@ -286,7 +286,7 @@ mod tests {
     /// Figure 7.3: the service unmasks a client's request writer when its
     /// reply writer has discovered the reader that writer names.
     #[test]
-    fn the_service_unmasks_a_client_once_both_its_endpoints_are_discovered() {
+    fn rpc_7_6_2_the_service_unmasks_a_client_once_both_its_endpoints_are_discovered() {
         let client_writer = peer(REQUEST_WRITER, Some(REPLY_READER), None);
         assert!(!client_matching_complete(&client_writer, &[], false));
         let client_reader = peer(REPLY_READER, Some(REQUEST_WRITER), None);
@@ -304,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn an_unannounced_client_is_unmasked_only_when_accepted() {
+    fn rpc_7_6_2_2_1_an_unannounced_client_is_unmasked_only_when_accepted() {
         let client_writer = peer(REQUEST_WRITER, None, None);
         assert!(!client_matching_complete(&client_writer, &[], false));
         assert!(client_matching_complete(&client_writer, &[], true));
@@ -312,7 +312,7 @@ mod tests {
 
     /// §7.6.2.1: an absent related key reads as `GUID_UNKNOWN`.
     #[test]
-    fn an_absent_related_key_reads_as_guid_unknown() {
+    fn rpc_7_6_2_1_1_an_absent_related_key_reads_as_guid_unknown() {
         let none = peer(REQUEST_READER, None, None);
         assert_eq!(
             PublicationBuiltinTopicDataExt::from_peer(&none).related_datareader_key,
@@ -329,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn the_extension_carries_the_three_members_of_the_spec() {
+    fn rpc_7_6_2_1_1_the_extension_carries_the_three_members_of_the_spec() {
         let publication = PublicationBuiltinTopicDataExt {
             service_instance_name: Some("calc".into()),
             related_datareader_key: REQUEST_READER,

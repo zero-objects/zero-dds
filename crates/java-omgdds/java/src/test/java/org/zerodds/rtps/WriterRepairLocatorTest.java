@@ -64,7 +64,7 @@ class WriterRepairLocatorTest {
     }
 
     @Test
-    void theRepairGoesToTheLocatorTheReaderAnnouncedAndNotToTheSourceOfItsAckNack() throws Exception {
+    void rtps_8_4_9_2_8_the_repair_goes_to_the_locator_the_reader_announced_and_not_to_the_source_of_its_acknack() throws Exception {
         try (TestDomains.Lease lease = TestDomains.lease()) {
             RtpsParticipant publisher = RtpsParticipant.newParticipant(lease.id());
             RtpsParticipant staying = RtpsParticipant.newParticipant(lease.id());
@@ -87,9 +87,23 @@ class WriterRepairLocatorTest {
                 byte[] readerEntity = proxy.readerEntityId;
                 int port = (int) proxy.locator.port;
                 leaving.close();
+                // The port is free once the receiving thread of the closed participant has
+                // left its channel (a DatagramChannel releases its socket then): bind as soon
+                // as it is, within 10 s.
                 announced = new DatagramSocket(null);
                 announced.setReuseAddress(true);
-                announced.bind(new InetSocketAddress(port));
+                long end = System.nanoTime() + 10_000_000_000L;
+                while (true) {
+                    try {
+                        announced.bind(new InetSocketAddress(port));
+                        break;
+                    } catch (java.net.BindException taken) {
+                        if (System.nanoTime() > end) {
+                            throw taken;
+                        }
+                        java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L);
+                    }
+                }
                 source = new DatagramSocket(new InetSocketAddress(InetAddress.getByAddress(proxy.locator.ipv4()), 0));
 
                 writer.write("asked for again".getBytes(StandardCharsets.UTF_8));

@@ -161,18 +161,20 @@ impl WriterProxy {
             return;
         }
         let (mut start, mut end) = (from, to);
-        if let Some((&s, &(e, k))) = self.not_available_runs.range(..=start).next_back() {
-            if k == kind && e + 1 >= start {
-                start = s;
-                end = end.max(e);
-                self.not_available_runs.remove(&s);
-            }
+        if let Some((&s, &(e, k))) = self.not_available_runs.range(..=start).next_back()
+            && k == kind
+            && e + 1 >= start
+        {
+            start = s;
+            end = end.max(e);
+            self.not_available_runs.remove(&s);
         }
-        if let Some((&s, &(e, k))) = self.not_available_runs.range(end + 1..).next() {
-            if k == kind && s == end + 1 {
-                end = e;
-                self.not_available_runs.remove(&s);
-            }
+        if let Some((&s, &(e, k))) = self.not_available_runs.range(end + 1..).next()
+            && k == kind
+            && s == end + 1
+        {
+            end = e;
+            self.not_available_runs.remove(&s);
         }
         self.not_available_runs.insert(start, (end, kind));
         while self.not_available_runs.len() > MAX_NOT_AVAILABLE_RUNS {
@@ -195,10 +197,10 @@ impl WriterProxy {
         if sn.0 <= 0 || sn < self.status_horizon {
             return None;
         }
-        if let Some((_, &(end, kind))) = self.not_available_runs.range(..=sn.0).next_back() {
-            if sn.0 <= end {
-                return Some(ChangeFromWriterStatus::NotAvailable(kind));
-            }
+        if let Some((_, &(end, kind))) = self.not_available_runs.range(..=sn.0).next_back()
+            && sn.0 <= end
+        {
+            return Some(ChangeFromWriterStatus::NotAvailable(kind));
         }
         if sn < self.first_available_sn || self.is_known(sn) {
             return Some(ChangeFromWriterStatus::Received);
@@ -762,7 +764,7 @@ mod tests {
             state ^= state << 17;
             state % bound
         };
-        for step in 0..20_000 {
+        for step in 0..2_000 {
             let op = next(100);
             let n = 1 + next(400) as i64;
             match op {

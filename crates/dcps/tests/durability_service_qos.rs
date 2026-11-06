@@ -120,7 +120,7 @@ fn transient_local_writer_has_no_durability_backend() {
 }
 
 #[test]
-fn transient_writer_has_in_memory_backend() {
+fn dcps_2_2_3_4_transient_writer_has_in_memory_backend() {
     let w = writer_with_durability(DurabilityKind::Transient);
     assert!(
         w.durability_backend().is_some(),
@@ -153,7 +153,7 @@ fn volatile_write_does_not_touch_backend() {
 }
 
 #[test]
-fn transient_backend_outlives_writer_cache_keep_last_eviction() {
+fn dcps_2_2_3_4_transient_backend_outlives_writer_cache_keep_last_eviction() {
     // Setup: writer with Transient + KeepLast(1) — the writer cache holds
     // only 1 sample, but the backend persists all of them. Spec §2.2.3.5:
     // the backend is the single source of truth for late-joiner replay

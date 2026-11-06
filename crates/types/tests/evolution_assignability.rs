@@ -287,7 +287,7 @@ fn the_rules_and_the_recorded_bytes_disagree_only_where_must_understand_says_so(
 }
 
 #[test]
-fn every_evolution_case_gets_a_verdict_and_the_verdicts_are_recorded() {
+fn xtypes_7_2_4_every_evolution_case_gets_a_verdict_and_the_verdicts_are_recorded() {
     // The table, printed, so a change in it is visible in the run and
     // not only in an assertion that flipped. Every case is named, so a
     // case added to the corpus without a verdict fails the count above
@@ -316,7 +316,7 @@ fn every_evolution_case_gets_a_verdict_and_the_verdicts_are_recorded() {
 }
 
 #[test]
-fn a_type_is_assignable_to_itself() {
+fn xtypes_7_2_4_a_type_is_assignable_to_itself() {
     // The identity §7.2.4.1 gives, checked through the same path the
     // corpus cases take rather than through a hand-built TypeObject.
     let ast = model(

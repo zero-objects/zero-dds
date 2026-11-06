@@ -1,0 +1,133 @@
+.TH ZERODDS-ADMIN 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-admin \- ZeroDDS-Betriebswerkzeug für laufende Domänen und DDS-XML-Konfigurationen
+.SH ÜBERSICHT
+.B zerodds-admin
+.I Gruppe Verb
+[\fIArgumente\fR]
+[\fB\-\-json\fR]
+[\fB\-\-timeout\-ms\fR \fIT\fR]
+.SH BESCHREIBUNG
+.B zerodds-admin
+ist die Bedienoberfläche für den Betrieb von ZeroDDS. Es hat zwei Familien
+von Unterbefehlen: Die
+.BR live -Gruppen
+treten einer laufenden DDS-Domäne über RTPS bei und berichten, was auf der
+Leitung ist; die
+.BR offline -Gruppen
+laden eine DDS-XML-Deployment-Datei und analysieren sie, ohne das Netz zu
+berühren.
+.PP
+Jeder Befehl, der Daten ausgibt, akzeptiert
+.B \-\-json
+für maschinenlesbare Ausgabe.
+.SH UNTERBEFEHLE
+.SS Live (tritt der Domäne über RTPS bei)
+.TP
+.B domain inspect \fIID\fR
+Prüft die Domäne \fIID\fR und listet die gefundenen Teilnehmer, jeweils mit
+ihren Writer- und Reader-Endpunkten (Topic-Name, IDL-Typ, RELIABLE oder
+BEST_EFFORT, TRANSIENT_LOCAL oder VOLATILE), gruppiert nach Teilnehmer-GUID.
+.TP
+.B discovery snapshot \fIID\fR
+Prüft die Domäne \fIID\fR und gibt einen rohen SPDP/SEDP-Schnappschuss aus:
+die Teilnehmerliste und die Anzahl gefundener Publications und Subscriptions.
+.SS Offline (DDS-XML, kein Netz)
+.TP
+.B config inspect \fIDATEI.xml\fR
+Lädt ein DDS-XML-Deployment und stellt eine nach Domain-ID geordnete
+Topologie dar (Teilnehmer und ihre Writer/Reader, gruppiert nach der
+aufgelösten Domain-ID).
+.TP
+.B qos validate \fIDATEI.xml\fR
+Prüft, ob das DDS-XML wohlgeformt ist, und parst jede Bibliothek (qos /
+domain / participant). Endet bei einem Parse-Fehler mit einem Wert ungleich
+null.
+.TP
+.B qos check \fIDATEI.xml\fR
+Prüft die Request-vs-Offered-Kompatibilität (RxO) der QoS jedes
+Writer\(muReader-Paars, das ein Topic teilt (Kompatibilitätsmatrix aus DDS 1.4
+\(sc2.2.3). Inline-QoS und die Vererbung über \fBqos_profile_ref\fR werden
+beide aufgelöst. Endet mit 1, wenn ein Paar inkompatibel ist.
+.SH OPTIONEN
+.TP
+.B \-\-json
+Gibt maschinenlesbares JSON statt Text aus.
+.TP
+.B \-\-skip\-unknown
+Offline-Befehle: lässt aus, was die DDS-XML-1.0-Schemas nicht definieren
+(die Elemente und Attribute der Datei eines anderen Produkts), und listet jede
+Auslassung mit ihrem Pfad auf der Standardfehlerausgabe. Ohne diese Option ist
+das erste solche Element ein Fehler.
+.TP
+.B \-\-vendor\-forms
+Offline-Befehle: liest die Formen, die andere DDS-Produkte schreiben (etwa
+.B <topic_filter>
+als Element,
+.BR qos_profile_ref ,
+.BR <participant_qos> ,
+IDL-Typnamen), und listet jede mit ihrem Pfad auf der Standardfehlerausgabe.
+Ohne diese Option ist die erste solche Form ein Fehler, der die Form nennt,
+die DDS-XML 1.0 verwendet.
+.TP
+.BR \-\-timeout\-ms " " \fIT\fR
+Beobachtungsfenster in Millisekunden für die Live-Gruppen. Standard: 2000.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Aufrufhilfe.
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus und beendet sich.
+.TP
+.BR \-\-config " " \fIPFAD\fR
+Die Basis-Konfigurationsdatei; das danebenliegende
+.IR PFAD .d/
+enthält Drop-ins. Standard: das System-Konfigurationsverzeichnis
+.RI ( /etc/zerodds
+unter Linux,
+.I /usr/local/etc/zerodds
+unter macOS).
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg / alle QoS-Paare kompatibel.
+.TP
+.B 1
+Prüfung fehlgeschlagen (inkompatible QoS, Parse-Fehler) oder Fehler bei der
+Domänenprüfung.
+.TP
+.B 2
+Fehler beim Parsen der Kommandozeile / ungültiger Aufruf.
+.SH BEISPIELE
+Eine laufende Domäne untersuchen und die Topologie als JSON holen:
+.PP
+.RS
+.nf
+zerodds-admin domain inspect 0 --json
+.fi
+.RE
+.PP
+Inkompatible QoS in einem Deployment vor dem Ausrollen finden:
+.PP
+.RS
+.nf
+zerodds-admin qos check deployment.xml
+.fi
+.RE
+.SH SIEHE AUCH
+.BR zerodds-xmlc (1),
+.BR zerodds-snitch (1),
+.BR zerodds-spy (1),
+.BR zerodds-monitor (1)
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

@@ -44,12 +44,15 @@ mod linux_only {
     }
 
     #[test]
-    fn two_participants_exchange_automatic_wlp_heartbeats() {
+    fn rtps_8_4_13_two_participants_exchange_automatic_wlp_heartbeats() {
         let cfg = fast_cfg();
         let domain = super::common::unique_domain();
-        let a =
-            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x70; 12]), cfg.clone()).expect("a");
-        let b = DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x71; 12]), cfg).expect("b");
+        let a = super::common::ShutsDown(
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x70; 12]), cfg.clone()).expect("a"),
+        );
+        let b = super::common::ShutsDown(
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x71; 12]), cfg).expect("b"),
+        );
 
         let a_prefix = GuidPrefix::from_bytes([0x70; 12]);
         let b_prefix = GuidPrefix::from_bytes([0x71; 12]);
@@ -69,7 +72,7 @@ mod linux_only {
     }
 
     #[test]
-    fn manual_by_participant_pulse_arrives_at_peer() {
+    fn rtps_8_4_13_5_manual_by_participant_pulse_arrives_at_peer() {
         // Tick period large enough that no AUTOMATIC slips in between;
         // this way we measure only the manual-pulse delivery.
         let cfg = RuntimeConfig {
@@ -80,9 +83,12 @@ mod linux_only {
             ..RuntimeConfig::default()
         };
         let domain = super::common::unique_domain();
-        let a =
-            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x80; 12]), cfg.clone()).expect("a");
-        let b = DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x81; 12]), cfg).expect("b");
+        let a = super::common::ShutsDown(
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x80; 12]), cfg.clone()).expect("a"),
+        );
+        let b = super::common::ShutsDown(
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x81; 12]), cfg).expect("b"),
+        );
 
         // Wait until SPDP discovery has completed on both sides (otherwise
         // the manual pulse may go out before B is even listening).
@@ -112,9 +118,12 @@ mod linux_only {
             ..RuntimeConfig::default()
         };
         let domain = super::common::unique_domain();
-        let a =
-            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x90; 12]), cfg.clone()).expect("a");
-        let b = DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x91; 12]), cfg).expect("b");
+        let a = super::common::ShutsDown(
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x90; 12]), cfg.clone()).expect("a"),
+        );
+        let b = super::common::ShutsDown(
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes([0x91; 12]), cfg).expect("b"),
+        );
         thread::sleep(Duration::from_millis(300));
         a.assert_liveliness();
 

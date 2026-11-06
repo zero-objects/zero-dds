@@ -27,15 +27,23 @@ use zerodds_rtps::wire_types::GuidPrefix;
 use zerodds_security_crypto::AesGcmCryptoPlugin;
 use zerodds_security_runtime::SharedSecurityGate;
 
-const DOMAIN: i32 = 71;
+/// The domain of every participant in this file, leased for the process
+/// (`crates/test-domains`): a fixed one is shared with every other run of
+/// this test on the LAN.
+fn domain() -> i32 {
+    static DOMAIN: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *DOMAIN.get_or_init(zerodds_test_domains::unique_domain)
+}
 
 /// The suite's topic profiles, in the suite's order — the unprotected rule
 /// first.
-const GOVERNANCE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+fn governance() -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds>
   <domain_access_rules>
     <domain_rule>
-      <domains><id>71</id></domains>
+      <domains><id>{domain}</id></domains>
       <allow_unauthenticated_participants>FALSE</allow_unauthenticated_participants>
       <enable_join_access_control>TRUE</enable_join_access_control>
       <discovery_protection_kind>NONE</discovery_protection_kind>
@@ -80,15 +88,19 @@ const GOVERNANCE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
       </topic_access_rules>
     </domain_rule>
   </domain_access_rules>
-</dds>"#;
+</dds>"#,
+        domain = domain()
+    )
+}
 
 fn permissions(rules: &str) -> String {
     format!(
         r#"<dds><permissions><grant name="g">
              <subject_name>/C=DE/ST=Hessen/O=ZeroDDS/CN=CN_TEST_ZERODDS_A</subject_name><validity><not_before>1970-01-01T00:00:00</not_before><not_after>2100-01-01T00:00:00</not_after></validity>
-             <allow_rule><domains><id>71</id></domains>{rules}</allow_rule>
+             <allow_rule><domains><id>{domain}</id></domains>{rules}</allow_rule>
              <default>DENY</default>
-           </grant></permissions></dds>"#
+           </grant></permissions></dds>"#,
+        domain = domain()
     )
 }
 
@@ -117,10 +129,10 @@ fn join_only() -> String {
     permissions("")
 }
 
-fn runtime(prefix: u8, permissions_xml: &str) -> Arc<DcpsRuntime> {
+fn runtime(prefix: u8, permissions_xml: &str) -> common::ShutsDown {
     let gate = Arc::new(SharedSecurityGate::new(
-        DOMAIN as u32,
-        zerodds_security_permissions::parse_governance_xml(GOVERNANCE).expect("governance"),
+        domain() as u32,
+        zerodds_security_permissions::parse_governance_xml(&governance()).expect("governance"),
         Box::new(AesGcmCryptoPlugin::new()),
     ));
     gate.set_permissions(
@@ -138,7 +150,7 @@ fn runtime(prefix: u8, permissions_xml: &str) -> Arc<DcpsRuntime> {
         spdp_multicast_send: false,
         ..RuntimeConfig::default()
     };
-    DcpsRuntime::start(DOMAIN, guid_prefix, cfg).expect("runtime")
+    common::ShutsDown(DcpsRuntime::start(domain(), guid_prefix, cfg).expect("runtime"))
 }
 
 fn writer_cfg(topic: &str) -> UserWriterConfig {
@@ -153,6 +165,7 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
+        reliable: true,
         ..Default::default()
     }
 }
@@ -167,7 +180,7 @@ fn assert_denied(result: &Result<impl Sized, DdsError>, case: &str) {
 
 /// The six cases the OMG suite requires a refusal for.
 #[test]
-fn the_six_omg_suite_refusals_reach_the_runtime() {
+fn security_7_3_25_the_six_omg_suite_refusals_reach_the_runtime() {
     let rt = runtime(0x71, &write_only());
     assert_denied(
         &rt.register_user_reader(reader_cfg("PD_RA_OM_OD")),
@@ -203,7 +216,7 @@ fn the_six_omg_suite_refusals_reach_the_runtime() {
 /// and the uncontrolled topic needs no grant at all — a gate that refuses
 /// everything is not access control.
 #[test]
-fn the_granted_direction_and_the_open_topic_still_create() {
+fn security_9_4_2_9_the_granted_direction_and_the_open_topic_still_create() {
     let rt = runtime(0x74, &write_only());
     rt.register_user_writer(writer_cfg("PD_WA_OM_OD"))
         .expect("publish is granted");
@@ -228,10 +241,10 @@ fn the_granted_direction_and_the_open_topic_still_create() {
 /// wiring error, and a wiring error that comes up as an open domain is the
 /// silent drop this check exists to prevent.
 #[test]
-fn an_unarmed_gate_refuses_instead_of_creating() {
+fn security_9_8_6_an_unarmed_gate_refuses_instead_of_creating() {
     let gate = Arc::new(SharedSecurityGate::new(
-        DOMAIN as u32,
-        zerodds_security_permissions::parse_governance_xml(GOVERNANCE).expect("governance"),
+        domain() as u32,
+        zerodds_security_permissions::parse_governance_xml(&governance()).expect("governance"),
         Box::new(AesGcmCryptoPlugin::new()),
     ));
     assert!(!gate.has_permissions().expect("lock"));
@@ -242,7 +255,7 @@ fn an_unarmed_gate_refuses_instead_of_creating() {
         spdp_multicast_send: false,
         ..RuntimeConfig::default()
     };
-    let rt = DcpsRuntime::start(DOMAIN, guid_prefix, cfg).expect("runtime");
+    let rt = common::ShutsDown(DcpsRuntime::start(domain(), guid_prefix, cfg).expect("runtime"));
     assert_denied(
         &rt.register_user_writer(writer_cfg("PD_RWA_EM_ED")),
         "unarmed gate, access-controlled topic",
@@ -259,7 +272,9 @@ fn a_plaintext_participant_is_not_access_controlled() {
         spdp_multicast_send: false,
         ..RuntimeConfig::default()
     };
-    let rt = DcpsRuntime::start(DOMAIN, GuidPrefix::from_bytes([0x78; 12]), cfg).expect("runtime");
+    let rt = common::ShutsDown(
+        DcpsRuntime::start(domain(), GuidPrefix::from_bytes([0x78; 12]), cfg).expect("runtime"),
+    );
     rt.register_user_writer(writer_cfg("PD_RWA_EM_ED"))
         .expect("no gate, no access control");
     rt.register_user_reader(reader_cfg("PD_RWA_EM_ED"))
@@ -268,8 +283,8 @@ fn a_plaintext_participant_is_not_access_controlled() {
 
 fn participant_with(prefix: u8, permissions_xml: &str) -> zerodds_dcps::DomainParticipant {
     let gate = Arc::new(SharedSecurityGate::new(
-        DOMAIN as u32,
-        zerodds_security_permissions::parse_governance_xml(GOVERNANCE).expect("governance"),
+        domain() as u32,
+        zerodds_security_permissions::parse_governance_xml(&governance()).expect("governance"),
         Box::new(AesGcmCryptoPlugin::new()),
     ));
     gate.set_permissions(
@@ -283,7 +298,11 @@ fn participant_with(prefix: u8, permissions_xml: &str) -> zerodds_dcps::DomainPa
         ..RuntimeConfig::default()
     };
     zerodds_dcps::DomainParticipantFactory::instance()
-        .create_participant_with_config(DOMAIN, zerodds_dcps::DomainParticipantQos::default(), cfg)
+        .create_participant_with_config(
+            domain(),
+            zerodds_dcps::DomainParticipantQos::default(),
+            cfg,
+        )
         .expect("participant")
 }
 
@@ -327,3 +346,6 @@ fn a_topic_is_created_only_where_check_create_topic_permits() {
             .expect("the permissions publish or subscribe the topic");
     }
 }
+
+#[path = "common/mod.rs"]
+mod common;

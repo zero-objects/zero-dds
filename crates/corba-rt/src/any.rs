@@ -131,7 +131,7 @@ impl WString {
     pub fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let at = r.position();
         let octets = r.read_u32()? as usize;
-        if octets % 2 != 0 {
+        if !octets.is_multiple_of(2) {
             return Err(WireError::OutOfRange {
                 at,
                 expected: format!("an even wstring octet count, not {octets}"),

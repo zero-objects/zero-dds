@@ -324,8 +324,10 @@ impl<'a> ValueStreamWriter<'a> {
     }
 
     /// Writes a chunked value-tag (CDR §15.3.4.2 + §15.3.4.3 —
-    /// "chunked encoding"). Wire tag = 0x7FFF_FF0A
-    /// (chunked flag + multi-repo-id flag, both set).
+    /// "chunked encoding"). Wire tag = 0x7FFF_FF0E: the chunked flag
+    /// (0x08) and type information "a list of repository ids" (0x06),
+    /// CORBA 3.3 part 2 §9.3.4.1; 0x7FFF_FF0A would announce a single id
+    /// with no count before it.
     ///
     /// After the tag come:
     /// 1. `i32 count` + `string id[N]` (multi-repo-id-list).
@@ -342,7 +344,7 @@ impl<'a> ValueStreamWriter<'a> {
             !repository_ids.is_empty(),
             "Spec §15.3.4.2: list-of-repository-ids must contain >=1 entry"
         );
-        self.inner.write_u32(0x7FFF_FF0A);
+        self.inner.write_u32(0x7FFF_FF0E);
         let count: i32 = repository_ids.len() as i32;
         self.inner.write_u32(count as u32);
         for id in repository_ids {
@@ -439,7 +441,13 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
                 }
                 Ok(ValueTagHeader::List(ids))
             }
+            // Chunked, one repository id and no count (§9.3.4.1).
             0x7FFF_FF0A => {
+                let id = self.inner.read_string()?;
+                Ok(ValueTagHeader::ChunkedList(alloc::vec![id]))
+            }
+            // Chunked, a count and the list of repository ids.
+            0x7FFF_FF0E => {
                 let count = self.inner.read_u32()? as usize;
                 if count > self.inner.remaining() / 4 {
                     return Err(WireError::ImpossibleLength {
@@ -456,7 +464,7 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
             }
             _ => Err(WireError::refused(
                 self.inner.position(),
-                "a value tag of 0, 0x7FFFFF02, 0x7FFFFF06 or 0x7FFFFF0A",
+                "a value tag of 0, 0x7FFFFF02, 0x7FFFFF06, 0x7FFFFF0A or 0x7FFFFF0E",
             )),
         }
     }
@@ -484,8 +492,8 @@ pub enum ValueTagHeader {
     /// List of Repository IDs (`0x7FFFFF06`) — Spec §15.3.4.2,
     /// used to enumerate truncation candidates.
     List(Vec<String>),
-    /// Chunked encoding with a Repository ID list (`0x7FFFFF0A`) —
-    /// Spec §15.3.4.3.
+    /// Chunked encoding with type information (§15.3.4.3): one Repository
+    /// ID (`0x7FFFFF0A`) or a counted list (`0x7FFFFF0E`).
     ChunkedList(Vec<String>),
 }
 
@@ -613,26 +621,27 @@ pub trait AsyncCorbaChannel {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod value_stream_tests {
     use super::*;
-    use zerodds_wire::{Endianness, Reader, Writer};
+    use zerodds_wire::{Endianness, Reader};
 
-    // -------------------------------------------------------------
-    // Buffer-cap hardening — a wire-supplied Repository-ID-list count
-    // must be rejected cleanly (no OOM, no panic) before
-    // `Vec::with_capacity` runs. Mirrors the established
-    // `len > reader.remaining()` guard in
-    // crates/cdr/src/composite.rs.
-    // -------------------------------------------------------------
+    /// Octets from a hex string; blanks separate the fields.
+    fn octets(hex: &str) -> alloc::vec::Vec<u8> {
+        let digits: String = hex.chars().filter(|c| !c.is_whitespace()).collect();
+        (0..digits.len() / 2)
+            .map(|i| u8::from_str_radix(&digits[2 * i..2 * i + 2], 16).unwrap())
+            .collect()
+    }
+
+    // A count of repository ids from the wire is refused before
+    // `Vec::with_capacity` when the rest of the stream cannot hold that
+    // many strings (each needs at least its 4-octet length): no
+    // allocation, no panic. The guard of `crates/cdr/src/composite.rs`.
 
     #[test]
-    fn value_tag_list_rejects_oversized_count() {
-        let mut w = Writer::new(Endianness::Big);
-        w.write_u32(0x7FFF_FF06); // list-of-repository-ids tag
-        // Announce a huge id count, but supply no id bytes.
-        w.write_u32(1_000_000_000);
-        let bytes = w.finish();
+    fn corbarust_9_a_list_count_the_stream_cannot_hold_is_refused() {
+        // Tag `0x7fffff06`, count 1 000 000 000, no strings.
+        let bytes = octets("7fffff06 3b9aca00");
         let mut r = Reader::new(&bytes, Endianness::Big);
-        let mut vsr = ValueStreamReader::new(&mut r);
-        let res = vsr.read_value_tag_full();
+        let res = ValueStreamReader::new(&mut r).read_value_tag_full();
         assert!(
             matches!(res, Err(WireError::ImpossibleLength { .. })),
             "expected clean rejection, got {res:?}"
@@ -640,14 +649,10 @@ mod value_stream_tests {
     }
 
     #[test]
-    fn value_tag_chunked_list_rejects_oversized_count() {
-        let mut w = Writer::new(Endianness::Big);
-        w.write_u32(0x7FFF_FF0A); // chunked list-of-repository-ids tag
-        w.write_u32(1_000_000_000);
-        let bytes = w.finish();
+    fn corbarust_9_a_chunked_list_count_the_stream_cannot_hold_is_refused() {
+        let bytes = octets("7fffff0e 3b9aca00");
         let mut r = Reader::new(&bytes, Endianness::Big);
-        let mut vsr = ValueStreamReader::new(&mut r);
-        let res = vsr.read_value_tag_full();
+        let res = ValueStreamReader::new(&mut r).read_value_tag_full();
         assert!(
             matches!(res, Err(WireError::ImpossibleLength { .. })),
             "expected clean rejection, got {res:?}"
@@ -655,14 +660,16 @@ mod value_stream_tests {
     }
 
     #[test]
-    fn value_tag_list_within_bound_still_round_trips() {
-        let mut w = Writer::new(Endianness::Big);
-        let mut vsw = ValueStreamWriter::new(&mut w);
-        vsw.write_value_tag_multi(&["IDL:demo/A:1.0", "IDL:demo/B:1.0"]);
-        let bytes = w.finish();
+    fn corbarust_9_a_list_count_within_the_stream_is_read() {
+        // Two CDR strings of 15 octets; the second length on octet 28.
+        let bytes = octets(
+            "7fffff06 00000002 0000000f 49444c3a64656d6f2f413a312e3000 00 \
+             0000000f 49444c3a64656d6f2f423a312e3000",
+        );
         let mut r = Reader::new(&bytes, Endianness::Big);
-        let mut vsr = ValueStreamReader::new(&mut r);
-        let header = vsr.read_value_tag_full().unwrap();
+        let header = ValueStreamReader::new(&mut r)
+            .read_value_tag_full()
+            .unwrap();
         assert_eq!(
             header,
             ValueTagHeader::List(alloc::vec![

@@ -15,7 +15,7 @@ mod common;
 use zerodds_amqp_endpoint::link::{LinkRole, LinkSession, SettlementMode};
 
 #[test]
-fn c1_6_best_effort_settled_does_not_track_pending() {
+fn ddsamqp_7_4_1_best_effort_settled_does_not_track_pending() {
     let mut link = LinkSession::new("L".into(), 0, LinkRole::Sender, SettlementMode::Settled);
     link.grant_credit(5);
 
@@ -28,7 +28,7 @@ fn c1_6_best_effort_settled_does_not_track_pending() {
 }
 
 #[test]
-fn c1_6_settle_call_on_pre_settled_link_is_no_op() {
+fn ddsamqp_c_1_6_settle_call_on_pre_settled_link_is_no_op() {
     let mut link = LinkSession::new("L".into(), 0, LinkRole::Sender, SettlementMode::Settled);
     link.grant_credit(1);
     link.deliver().unwrap();

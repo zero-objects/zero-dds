@@ -87,7 +87,7 @@ fn what_the_runtime_exports() -> BTreeSet<String> {
 }
 
 #[test]
-fn the_backend_names_nothing_the_runtime_does_not_export() {
+fn ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export() {
     let written = names_the_backend_writes();
     assert!(
         written.len() > 20,
@@ -123,7 +123,7 @@ fn the_backend_names_nothing_the_runtime_does_not_export() {
 /// reaches what the corpus has — but a large gap between the two is
 /// worth seeing, because it is where the next column's work is.
 #[test]
-fn what_the_runtime_carries_and_the_backend_has_not_reached() {
+fn xtypes_7_4_what_the_runtime_carries_and_the_backend_has_not_reached() {
     let written = names_the_backend_writes();
     let exported = what_the_runtime_exports();
     let unreached: Vec<&String> = exported.difference(&written).collect();

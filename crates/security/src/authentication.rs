@@ -792,14 +792,14 @@ mod tests {
     }
 
     #[test]
-    fn stub_can_be_boxed() {
+    fn security_9_3_2_11_stub_can_be_boxed() {
         let _: AuthPluginBox = Box::new(StubAuth);
     }
 
     /// Table 30: each outcome of a handshake step is one ValidationResult_t;
     /// a message is carried by the two outcomes that send one.
     #[test]
-    fn a_handshake_outcome_is_the_validation_result_of_table_30() {
+    fn security_9_3_2_11_a_handshake_outcome_is_the_validation_result_of_table_30() {
         let token = alloc::vec![1u8, 2, 3];
         let cases = [
             (
@@ -843,7 +843,7 @@ mod tests {
     /// §9.3.2.11.7: the shared secret is retrieved after VALIDATION_OK or
     /// VALIDATION_OK_FINAL_MESSAGE, and after nothing else.
     #[test]
-    fn only_ok_and_ok_final_message_succeed() {
+    fn security_9_3_2_11_1_only_ok_and_ok_final_message_succeed() {
         let results = [
             (ValidationResult::Ok, true),
             (ValidationResult::OkFinalMessage, true),

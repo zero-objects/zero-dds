@@ -11,7 +11,7 @@
 //! gracefully to an ephemeral port (still multicast-discovered) instead of
 //! failing silently.
 //!
-//! This test brings up **40 participants** (> 32) in one process on one host,
+//! This test brings up **34 participants** (two past the 32nd) in one process on one host,
 //! same domain, and proves (a) every runtime starts (no silent bind failure),
 //! (b) discovery scales past 32, and (c) a participant at a high index still
 //! exchanges user data.
@@ -21,13 +21,14 @@
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig, UserWriterConfig};
 use zerodds_rtps::wire_types::GuidPrefix;
 
-const N: usize = 40; // > 32 (the Fast DDS landmine)
+// 33 peers are the fewest that show discovery past 32 (the Fast DDS
+// landmine), so 34 participants.
+const N: usize = 34;
 
 fn writer_cfg(topic: &str) -> UserWriterConfig {
     UserWriterConfig {
@@ -41,27 +42,31 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
+        reliable: true,
         ..Default::default()
     }
 }
 
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
-fn forty_participants_on_one_host_no_landmine() {
-    let domain = 91;
-    // 40 same-host participants: identical host-id bytes [2..6], unique tail.
+fn more_than_thirty_three_participants_on_one_host_no_landmine() {
+    let lease = zerodds_test_domains::lease_domain();
+    let domain = lease.id();
+    // N same-host participants: identical host-id bytes [2..6], unique tail.
     let host = [0x5Au8; 4];
-    let mut rts: Vec<Arc<DcpsRuntime>> = Vec::with_capacity(N);
+    let mut rts: Vec<common::ShutsDown> = Vec::with_capacity(N);
     for i in 0..N {
         let mut p = [0u8; 12];
         p[2..6].copy_from_slice(&host);
         p[6] = 0xC0;
         p[10] = (i as u8).wrapping_add(1);
         p[11] = ((i >> 8) as u8).wrapping_add(1);
-        let rt = DcpsRuntime::start(domain, GuidPrefix::from_bytes(p), RuntimeConfig::default())
-            .unwrap_or_else(|e| {
-                panic!("participant {i} failed to start (silent landmine?): {e:?}")
-            });
+        let rt = common::ShutsDown(
+            DcpsRuntime::start(domain, GuidPrefix::from_bytes(p), RuntimeConfig::default())
+                .unwrap_or_else(|e| {
+                    panic!("participant {i} failed to start (silent landmine?): {e:?}")
+                }),
+        );
         rts.push(rt);
     }
     assert_eq!(rts.len(), N, "all {N} participants must start");
@@ -117,3 +122,6 @@ fn forty_participants_on_one_host_no_landmine() {
         "user data did not reach the {N}th participant (comms broken past index 32)"
     );
 }
+
+#[path = "common/mod.rs"]
+mod common;

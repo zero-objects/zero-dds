@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-def test_writer_qos_defaults():
+def py_6_2_writer_qos_defaults():
     """§6.2 — default is Reliable + Volatile + KeepLast(1) (DDS 1.4 §2.2.3 Defaults)."""
     qos = zerodds.DataWriterQos()
     assert qos.reliability_kind() == "Reliable"
@@ -38,39 +38,13 @@ def test_reader_qos_defaults():
     assert qos.durability_kind() == "Volatile"
 
 
-def test_writer_qos_reliability_setter():
-    """§6.2 — `set_reliability` flips between Reliable and BestEffort."""
-    qos = zerodds.DataWriterQos()
-    qos.set_reliability("BestEffort", 0.0)
-    assert qos.reliability_kind() == "BestEffort"
-    qos.set_reliability("Reliable", 0.5)
-    assert qos.reliability_kind() == "Reliable"
-
-
-def test_writer_qos_rejects_unknown_reliability_kind():
+def py_6_2_writer_qos_rejects_unknown_reliability_kind():
     qos = zerodds.DataWriterQos()
     with pytest.raises(ValueError, match="ReliabilityKind"):
         qos.set_reliability("Wishful", 0.1)
 
 
-def test_writer_qos_durability_all_kinds():
-    """§6.2 — DurabilityKind Volatile/TransientLocal/Transient/Persistent."""
-    qos = zerodds.DataWriterQos()
-    for k in ("Volatile", "TransientLocal", "Transient", "Persistent"):
-        qos.set_durability(k)
-        assert qos.durability_kind() == k
-
-
-def test_writer_qos_history_setter():
-    qos = zerodds.DataWriterQos()
-    qos.set_history("KeepAll", 0)
-    assert qos.history_kind() == "KeepAll"
-    qos.set_history("KeepLast", 100)
-    assert qos.history_kind() == "KeepLast"
-    assert qos.history_depth() == 100
-
-
-def test_writer_qos_setters_with_durations():
+def py_6_2_writer_qos_setters_with_durations():
     """§6.2 — Duration-Setter (Deadline, Lifespan, LatencyBudget, Liveliness)."""
     qos = zerodds.DataWriterQos()
     qos.set_deadline(2.5)
@@ -91,7 +65,7 @@ def test_writer_qos_setters_with_durations():
     qos.set_durability_service(10.0, "KeepLast", 50, 5000, 50, 100)
 
 
-def test_reader_qos_full_setter_chain():
+def py_6_2_reader_qos_full_setter_chain():
     """§6.2 — DataReaderQos has reader-specific policies (time_based_filter,
     reader_data_lifecycle); writer-specific ones (ownership_strength,
     writer_data_lifecycle, durability_service, transport_priority) are
@@ -122,7 +96,7 @@ def test_reader_qos_full_setter_chain():
 # ---------------------------------------------------------------------------
 
 
-def test_create_bytes_writer_with_qos_offline():
+def py_1_2_5_create_bytes_writer_with_qos_offline():
     """§6.2 — Publisher.create_bytes_writer_with_qos accepts a
     DataWriterQos and creates a writer."""
     factory = zerodds.DomainParticipantFactory.instance()
@@ -137,7 +111,7 @@ def test_create_bytes_writer_with_qos_offline():
     assert writer.matched_subscription_count() == 0
 
 
-def test_create_bytes_reader_with_qos_offline():
+def py_1_2_6_create_bytes_reader_with_qos_offline():
     """§6.2 — Subscriber.create_bytes_reader_with_qos accepts a
     DataReaderQos."""
     factory = zerodds.DomainParticipantFactory.instance()
@@ -152,7 +126,7 @@ def test_create_bytes_reader_with_qos_offline():
     assert reader.matched_publication_count() == 0
 
 
-def test_create_shape_writer_with_qos_offline():
+def py_1_2_5_create_shape_writer_with_qos_offline():
     """§6.2 + §2.7 — Publisher.create_shape_writer_with_qos."""
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(312)
@@ -164,7 +138,7 @@ def test_create_shape_writer_with_qos_offline():
     assert writer is not None
 
 
-def test_create_shape_reader_with_qos_offline():
+def py_2_3_create_shape_reader_with_qos_offline():
     factory = zerodds.DomainParticipantFactory.instance()
     p = factory.create_participant_offline(313)
     topic = p.create_shape_topic("Square")

@@ -65,7 +65,7 @@ fn key_flags(ti: &TypeIdentifier) -> u16 {
 }
 
 #[test]
-fn the_element_of_a_collection_carries_its_external_and_its_try_construct() {
+fn xtypes_7_2_2_4_9_the_element_of_a_collection_carries_its_external_and_its_try_construct() {
     let ast = model(
         "typedef string<5> String5;
         @final struct S {

@@ -767,7 +767,7 @@ mod tests {
     /// Every construct of the data model has its form in the document, and
     /// the document reads back as the value it was written from.
     #[test]
-    fn a_value_is_written_as_its_document_and_read_back() {
+    fn xtypes_7_4_4_a_value_is_written_as_its_document_and_read_back() {
         let support = rich_support();
         let value = rich_value();
         let xml = to_xml(&support, &value).unwrap();
@@ -792,7 +792,7 @@ mod tests {
     /// An optional member without a value is left out, and the document
     /// without it is a document of the type.
     #[test]
-    fn an_absent_optional_member_is_not_in_the_document() {
+    fn xtypes_7_4_4_an_absent_optional_member_is_not_in_the_document() {
         let support = rich_support();
         let mut value = rich_value();
         if let DynamicData::Aggregate(entries) = &mut value {
@@ -806,7 +806,7 @@ mod tests {
     /// The path of a sample on the wire: the CDR body decodes to a value,
     /// the value is the document, and the document is the CDR body again.
     #[test]
-    fn the_document_of_a_cdr_body_is_that_body_again() {
+    fn xtypes_7_4_4_the_document_of_a_cdr_body_is_that_body_again() {
         let support = rich_support();
         let sample = support.from_dynamic_data(rich_value()).unwrap();
         let xml = to_xml(&support, sample.data()).unwrap();
@@ -818,7 +818,7 @@ mod tests {
 
     /// An instance key is the document of the `@key` members.
     #[test]
-    fn the_key_document_holds_the_key_members_only() {
+    fn xtypes_7_4_4_the_key_document_holds_the_key_members_only() {
         let support = rich_support();
         assert_eq!(
             to_xml_key(&support, &rich_value()).unwrap(),
@@ -827,7 +827,7 @@ mod tests {
     }
 
     #[test]
-    fn a_document_that_is_none_of_the_types_is_refused() {
+    fn xtypes_7_4_4_a_document_that_is_none_of_the_types_is_refused() {
         let support = rich_support();
         for xml in [
             "<Other><id>1</id></Other>",
@@ -858,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn entities_and_prefixes_are_read() {
+    fn xtypes_7_6_3_1_1_entities_and_prefixes_are_read() {
         let node = parse_document("<?xml version=\"1.0\"?><my:A xmlns:my=\"ddstype://www.omg.org/M\"><my:b>x &amp; &lt;y&gt; &#65;</my:b><!-- c --></my:A>").unwrap();
         assert_eq!(node.name, "A");
         assert_eq!(node.children[0].name, "b");

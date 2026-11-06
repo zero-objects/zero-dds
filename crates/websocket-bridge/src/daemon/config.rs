@@ -108,6 +108,11 @@ pub struct TopicConfig {
     pub durability: String,
     /// `qos.history.depth:`.
     pub history_depth: i32,
+    /// `idl_file:` — the IDL file that declares `type`; the JSON text
+    /// frames (§4.3) read and write the topic's samples with it. Empty:
+    /// none, and a JSON-mode client cannot subscribe to or publish on the
+    /// topic.
+    pub idl_file: String,
 }
 
 impl DaemonConfig {
@@ -246,9 +251,18 @@ fn read_topic(
         t.name = name.trim().to_string();
     } else {
         let entry = Section::of(Some(item), path)?;
-        entry.only(&["name", "type", "direction", "ws_path", "qos", "acl"])?;
+        entry.only(&[
+            "name",
+            "type",
+            "idl_file",
+            "direction",
+            "ws_path",
+            "qos",
+            "acl",
+        ])?;
         t.name = entry.string("name")?.unwrap_or_default();
         t.type_name = entry.string("type")?.unwrap_or_default();
+        t.idl_file = entry.string("idl_file")?.unwrap_or_default();
         if let Some(v) = entry.choice("direction", &["in", "out", "bidir"])? {
             t.direction = v;
         }
@@ -341,7 +355,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn slug_strips_double_colon() {
+    fn wsbridge_5_1_slug_strips_double_colon() {
         assert_eq!(default_ws_path("Chat::Message"), "/topics/chat/message");
     }
 
@@ -369,7 +383,7 @@ listen: \"0.0.0.0:1234\"
     }
 
     #[test]
-    fn slug_replaces_unsafe_chars() {
+    fn wsbridge_5_1_slug_replaces_unsafe_chars() {
         assert_eq!(default_ws_path("My Topic!"), "/topics/my_topic_");
     }
 
@@ -385,7 +399,7 @@ listen: \"0.0.0.0:1234\"
     }
 
     #[test]
-    fn parse_minimal_config() {
+    fn wsbridge_12_1_parse_minimal_config() {
         let yaml = "\
 listen: \"0.0.0.0:8080\"
 domain: 0

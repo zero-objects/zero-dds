@@ -97,7 +97,7 @@ const COLUMNS: [(Language, &str, &str, &str); 9] = [
 ];
 
 #[test]
-fn every_case_is_cleared_before_the_selected_one_is_read() {
+fn xtypes_7_2_2_4_4_3_every_case_is_cleared_before_the_selected_one_is_read() {
     let ast = union_ast();
     let key = zerodds_ast_layout::LayoutKey::data(
         zerodds_ast_layout::Encoding::PlainCdr2,

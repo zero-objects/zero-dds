@@ -112,12 +112,50 @@ Implementation:
 
 **Tests:** `crates/corba-cos-transactions/src/recovery.rs::{durable_commit_logs_decision_then_completion, durable_rollback_decision_logged, recovery_completes_in_doubt_commit, recovery_completes_in_doubt_rollback, replay_completion_returns_logged_decision, replay_completion_presumed_abort_for_unknown, preparing_state_is_presumed_abort, single_resource_durable_one_phase}`.
 
-**Status:** done
+**Status:** partial — force-writing the decision, recovery and presumed-abort are built and checked against `InMemoryLog`; a log that survives a process crash is missing (A.2.1).
+
+### A.2.1 Persistent transaction and heuristic log
+
+**Spec:** Non-goals — "Recoverable 2PC with a persistent log (recovery after a crash)"; Annex A — "Persistent heuristic logging is a non-goal".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `TransactionLog` has only the implementation `InMemoryLog` (`crates/corba-cos-transactions/src/recovery.rs`); after a crash the log is empty.
+
+## Non-goals of the spec
+
+### Non-goal — nested transactions
+
+**Spec:** Non-goals — "Nested transactions with sub-coordinator federation — the `PropagationContext` carries `parents`, but the sub-transaction semantics (§OTS 10.4) are only structural in v1.0".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `PropagationContext.parents` is encoded and decoded (`crates/corba-cos-transactions/src/propagation.rs`); sub-coordinator, sub-transaction commit and rollback are missing.
+
+### Non-goal — coordinator/terminator call over GIOP
+
+**Spec:** Non-goals — "Live coordinator/terminator object ref callback over GIOP (distributed 2PC over real IORs) — the `*_ior` fields are carried (nil for a flat tx)".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — the `*_ior` fields are carried and are nil for a flat transaction; a remote participant cannot call coordinator and terminator over GIOP.
 
 ---
 
 ## Audit status
 
-10 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+9 done / 1 partial / 3 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-corba-cos-transactions` — 30 unit + 3 `ots_distributed` + 3 `jacorb_live_capture` green, 0 failed.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-corba-cos-transactions-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-corba-cos-transactions --all-targets` (job `merge-rust-corba-cos-transactions`) — 31 tests green.
+
+31 cited tests green, 0 not green.
+
+Open items: `zerodds-corba-cos-transactions-1.0.open.en.md`.

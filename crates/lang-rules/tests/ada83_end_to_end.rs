@@ -8,7 +8,7 @@
 //! where one is on the path. What is not attempted here is full
 //! parity with that file's dozens of unit tests: this column's own
 //! distinguishing decisions are covered below, and the corpus gate is
-//! the test that proves breadth. `docs/OPEN-ITEMS.md`-style honesty
+//! the test that proves breadth. The same honesty
 //! applies to the corpus gate's own threshold: it names what does not
 //! yet render and does not round up.
 #![allow(
@@ -1012,18 +1012,18 @@ fn the_generated_ada_compiles_under_strict_ada_83() {
     }
 }
 
-/// The whole corpus through GNAT under `-gnat83`, one package per
-/// case.
-#[test]
-#[ignore = "one `gnatmake` invocation per corpus case; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through GNAT under `-gnat83`, one package per case:
+/// every case renders or is refused as documented, and the cases of `share`
+/// (of `shares`) compile. 162 s for the corpus on the Linux test host.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         gnat_available(),
         "the explicitly selected ada83 gate requires its compiler"
     );
     let mut failures = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
@@ -1043,6 +1043,10 @@ fn every_corpus_case_that_renders_also_compiles() {
             }
             Err(why) => panic!("accepted corpus case {name} failed generation: {why}"),
         };
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         if let Err(why) = gnat_compiles(&text, &name) {
             failures.push(format!("{name}: {why}"));
@@ -1055,7 +1059,112 @@ fn every_corpus_case_that_renders_also_compiles() {
         failures.len()
     );
     assert!(
-        checked >= MUST_RENDER,
-        "too few corpus cases reached the selected gate: {checked}"
+        rendered >= MUST_RENDER,
+        "too few corpus cases reached the selected gate: {rendered}"
     );
+}
+
+/// Every corpus case that renders compiles under GNAT with `-gnat83`.
+///
+/// The corpus in 16 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen-ada-lua-ocaml` job runs them
+/// with the toolchain, eight shares at a time.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 16);
+    }
+
+    #[test]
+    #[ignore = "a sixteenth of the corpus through GNAT under -gnat83; runs in integration-codegen-ada-lua-ocaml"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 16);
+    }
 }

@@ -10,7 +10,7 @@
 # Build from the repository root:
 #   docker build -f packaging/docker/py-runtime/Dockerfile -t zerodds/py-runtime:rc7 .
 
-FROM rust:1.88-bookworm AS chef
+FROM rust:1.97.1-bookworm AS chef
 # iceoryx2-pal-posix (pulled into the workspace recipe via the
 # iceoryx2-oracle-consumer tool) runs bindgen in its build script, which needs
 # libclang. The slim rust image doesn't ship it — GH-hosted runners do, which is

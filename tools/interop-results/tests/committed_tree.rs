@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Does the committed tree still say what a run says?
+//! What the committed tree and a run of it must say.
 //!
-//! This is the comparison the whole exercise rests on. The tables are a
-//! rendering of `ledger.tsv`; `ledger.tsv` is built from the source
-//! TSVs and from a fresh run of this project's own columns; and the
-//! `.bin` files are that ledger's bytes. If any of the four can drift
-//! from any other, a figure in a table and a figure a gate prints can
-//! disagree, which is the defect this tree exists to remove.
+//! The tables are a rendering of `ledger.tsv`; `ledger.tsv` is built from
+//! the source TSVs and from a fresh run of this project's own columns;
+//! and the `.bin` files are that ledger's bytes. That the committed tree,
+//! the ledger, the two tables, `SYSTEMS.md`, `WARNINGS.md`, `REFUSALS.md`
+//! and the page are what a run writes is checked by
+//! `interop-results --verify` (the weekly job `interop-results`), once,
+//! and not again here. These tests hold the invariants the comparison
+//! cannot see: a cell with no word, a column that ran and carries no
+//! bytes, a cell with two answers, a link to nothing, a machine's name on
+//! the page.
 //!
-//! What this test does **not** do is re-run the foreign systems. It
-//! cannot: RTI is licensed, the ORBs are hand-built and the ROS type
-//! supports need a ROS installation. Their bytes are re-derived by
-//! `tools/interop-results/vendor-corpus-sweep.sh` and its two siblings
-//! on a machine that has them, and the comparison that proves *those*
-//! did not move is the CI job. What this test proves is that the tree
-//! and the two tables are what the committed record says, which is what
-//! a clone with a Rust toolchain and nothing else can check.
+//! What this does **not** do is re-run the foreign systems. It cannot:
+//! RTI is licensed, the ORBs are hand-built and the ROS type supports
+//! need a ROS installation. Their bytes are re-derived by
+//! `tools/interop-results/vendor-corpus-sweep.sh` and its two siblings on
+//! a machine that has them.
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use std::path::PathBuf;
 
 use zerodds_interop_results as results;
 use zerodds_interop_results::assemble::{self, Inputs};
-use zerodds_interop_results::ledger::{self, Outcome, RowIds};
+use zerodds_interop_results::ledger::{Outcome, RowIds};
 use zerodds_interop_results::page;
 use zerodds_interop_results::systems::SYSTEMS;
 use zerodds_interop_results::tables::{self, Direction};
-use zerodds_interop_results::tree;
 use zerodds_interop_results::warnings;
 
 fn built() -> (Vec<results::Case>, assemble::Built, PathBuf) {
@@ -37,126 +37,6 @@ fn built() -> (Vec<results::Case>, assemble::Built, PathBuf) {
     let inputs = Inputs::read(&results_root.join("sources")).expect("the sources");
     let built = assemble::build(&cases, &inputs).expect("the ledger");
     (cases, built, results_root)
-}
-
-/// Every byte in the tree is a byte the ledger carries.
-#[test]
-fn the_committed_bytes_are_the_ones_a_run_produces() {
-    let (_, built, results_root) = built();
-    let differences = tree::verify(&results_root, &built.ledger).expect("the comparison");
-    assert!(
-        differences.is_empty(),
-        "{} cell(s) in the tree are not what a run produces; the first few are:\n{}",
-        differences.len(),
-        differences
-            .iter()
-            .take(10)
-            .cloned()
-            .collect::<Vec<_>>()
-            .join("\n")
-    );
-}
-
-/// The ledger and the two tables are what a run writes.
-#[test]
-fn the_committed_documents_are_the_ones_a_run_writes() {
-    let (cases, built, results_root) = built();
-    let committed =
-        std::fs::read_to_string(results_root.join("ledger.tsv")).expect("the committed ledger");
-    assert_eq!(
-        committed,
-        ledger::render(&built.ledger),
-        "ledger.tsv is not what a run writes; run tools/interop-results/regenerate.sh"
-    );
-
-    let text = std::fs::read_to_string(results_root.join("row-ids.tsv")).unwrap_or_default();
-    let mut ids = RowIds::read(&text).expect("the row-id registry");
-    let before = ids.by_key.len();
-    for direction in [Direction::Write, Direction::Read] {
-        let fresh = tables::render(direction, &built.ledger, &cases, &built.sweeps, &mut ids);
-        let path = results_root.join(tables::file(direction));
-        let committed = std::fs::read_to_string(&path).expect("a committed table");
-        assert_eq!(
-            committed.len(),
-            fresh.len(),
-            "{} is not what a run writes; run tools/interop-results/regenerate.sh",
-            tables::file(direction)
-        );
-        assert!(
-            committed == fresh,
-            "{} is not what a run writes; run tools/interop-results/regenerate.sh",
-            tables::file(direction)
-        );
-    }
-    assert_eq!(
-        ids.by_key.len(),
-        before,
-        "{} row(s) have no number in row-ids.tsv; run tools/interop-results/regenerate.sh",
-        ids.by_key.len() - before
-    );
-}
-
-/// `SYSTEMS.md` and `WARNINGS.md` are what a run writes too.
-///
-/// Both carry generated arithmetic — the ORB cell counts in one, the
-/// warning case counts in the other — and a generated figure that no
-/// run recomputes is a figure that goes stale the next time a case is
-/// added or a vendor is upgraded.
-#[test]
-fn the_two_generated_documents_are_the_ones_a_run_writes() {
-    let root = results::repository_root();
-    let results_root = results::results_root(&root);
-    let cases = results::corpus(&root).expect("the corpus");
-    let inputs = Inputs::read(&results_root.join("sources")).expect("the sources");
-    let built = assemble::build(&cases, &inputs).expect("the ledger");
-    for (name, fresh) in [
-        ("SYSTEMS.md", tables::systems_document(&built.ledger)),
-        (
-            "WARNINGS.md",
-            warnings::document(&inputs.diagnostics, &SYSTEMS),
-        ),
-    ] {
-        let committed = std::fs::read_to_string(results_root.join(name)).unwrap_or_else(|error| {
-            panic!("{name}: {error}; run tools/interop-results/regenerate.sh")
-        });
-        assert!(
-            committed == fresh,
-            "{name} is not what a run writes; run tools/interop-results/regenerate.sh"
-        );
-    }
-}
-
-/// `matrix.html` is what a run writes, and it is deterministic.
-///
-/// The page carries the acceptance answer, the dialect matrix and every
-/// per-system figure, all derived. It is also the page a bug report is
-/// answered with, so a figure on it that no run recomputes is a figure
-/// somebody quotes at a reporter after it stopped being true.
-#[test]
-fn the_page_is_the_one_a_run_writes() {
-    let root = results::repository_root();
-    let (cases, built, results_root) = built();
-    let documents = page::documents(&root, &cases).expect("the documents the page quotes");
-    let mut ids = RowIds::read(
-        &std::fs::read_to_string(results_root.join("row-ids.tsv")).unwrap_or_default(),
-    )
-    .expect("the row numbers");
-    let fresh = page::render(
-        &built.ledger,
-        &cases,
-        &built.sweeps,
-        &mut ids,
-        &documents,
-        "",
-    )
-    .expect("the page");
-    let committed = std::fs::read_to_string(results_root.join(page::FILE))
-        .unwrap_or_else(|error| panic!("{}: {error}; run --page", page::FILE));
-    assert!(
-        committed == fresh,
-        "{} is not what a run writes; run `cargo run -p zerodds-interop-results -- --page`",
-        page::FILE
-    );
 }
 
 /// The page names nothing that belongs to the machines it was measured
@@ -332,6 +212,7 @@ fn a_row_keeps_its_number() {
 /// twelve columns answers every row with one of the eleven words, and
 /// every word links to a file.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn every_cell_says_something() {
     let (cases, built, _) = built();
     let expected = cases.len() * results::ENCODINGS.len() * results::ORDERS.len() * SYSTEMS.len();
@@ -406,6 +287,7 @@ fn every_link_resolves() {
 /// exist; a zero here has to mean "declared absent", never "nobody
 /// looked".
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn a_column_that_ran_carries_bytes() {
     let (_, built, _) = built();
     for system in &SYSTEMS {
@@ -444,6 +326,7 @@ fn a_column_that_ran_carries_bytes() {
 /// twice, and a reader would have no way to know which decision the
 /// table printed.
 #[test]
+#[ignore = "builds the results from the whole corpus, 22 to 75 s in the test profile; runs in the weekly job interop-results under the cargo profile corpus"]
 fn a_cell_carries_one_answer() {
     let (_, built, _) = built();
     // One case legitimately encodes to nothing, and the guard below cannot

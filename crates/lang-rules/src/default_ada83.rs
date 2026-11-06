@@ -705,12 +705,12 @@ fn calls_in_stmt(statement: &ada83::Stmt, out: &mut Vec<String>) {
 fn calls_in_expr(expr: &ada83::Expr, out: &mut Vec<String>) {
     match expr {
         ada83::Expr::Call { name, args } => {
-            if name.segments().len() == 1 {
-                if let Some(first) = name.segments().first() {
-                    let text = first.as_str();
-                    if text.starts_with("zd83_def_") && !out.iter().any(|seen| seen == text) {
-                        out.push(text.to_string());
-                    }
+            if name.segments().len() == 1
+                && let Some(first) = name.segments().first()
+            {
+                let text = first.as_str();
+                if text.starts_with("zd83_def_") && !out.iter().any(|seen| seen == text) {
+                    out.push(text.to_string());
                 }
             }
             for arg in args {

@@ -476,7 +476,7 @@ fn align(rows: &[Row]) -> Vec<Vec<Alignment>> {
 /// peer that writes four octets for an `@bit_bound(8)` enumeration
 /// writes four octets whatever the reason, and a reader of this
 /// project's one octet is four octets out of step from there on. The
-/// cause belongs in `docs/wire-axes-followup.md`; the row belongs in
+/// cause belongs in `docs/peer-defects.md`; the row belongs in
 /// the count, and it needs a setting. `EnumHolderWidth` and
 /// `UnionLabelMatch` are those settings, and they are named for the
 /// defect they reproduce so that nobody reads them as a reading of the
@@ -496,9 +496,8 @@ struct NotAsked {
 /// peer in this group determines them**: RTI Connext 7.7.0 and omniORB
 /// 4.3.3 both advance the stream pointer over an alignment gap without
 /// assigning it, so what a reader receives is whatever was in the
-/// caller's buffer. `docs/wire-axes-followup.md`, group G, names the
-/// function and line in each and carries the two experiments that
-/// establish it.
+/// caller's buffer. `docs/peer-defects.md` names the function and line
+/// in each and the measurements that establish it.
 ///
 /// Three criteria decide the group and all three are checked, not
 /// asserted — see [`not_asked`]. The layout criterion is the one that
@@ -512,8 +511,8 @@ const PADDING_CONTENT: NotAsked = NotAsked {
           caller's buffer, which is why omniORB delivers different octets between two runs. \
           Every differing octet is at an offset this project's own layout puts fill at, no \
           row differs in length, and decoding the peer's octets returns the case's sample",
-    measured: "docs/wire-axes-followup.md, group G — the source line in each implementation, \
-               the installed version, and the two experiments; \
+    measured: "docs/peer-defects.md, the omniORB and TAO entries — the source line in each \
+               implementation, the installed version, and the measurements; \
                tools/interop-results/tests/padding_positions.rs holds the layout criterion, \
                the octet rule and the decode against each other over the whole corpus",
 };

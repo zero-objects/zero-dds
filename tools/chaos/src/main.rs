@@ -346,10 +346,10 @@ fn run_partition(argv: &[String]) -> ExitCode {
                 i += 2;
             }
             "--duration" => {
-                if let Some(v) = argv.get(i + 1) {
-                    if let Ok(d) = parse_duration_ms(v) {
-                        duration = Some(d);
-                    }
+                if let Some(v) = argv.get(i + 1)
+                    && let Ok(d) = parse_duration_ms(v)
+                {
+                    duration = Some(d);
                 }
                 i += 2;
             }
@@ -399,18 +399,18 @@ fn run_flap(argv: &[String]) -> ExitCode {
                 i += 2;
             }
             "--interval" => {
-                if let Some(v) = argv.get(i + 1) {
-                    if let Ok(d) = parse_duration_ms(v) {
-                        interval = d;
-                    }
+                if let Some(v) = argv.get(i + 1)
+                    && let Ok(d) = parse_duration_ms(v)
+                {
+                    interval = d;
                 }
                 i += 2;
             }
             "--total" => {
-                if let Some(v) = argv.get(i + 1) {
-                    if let Ok(d) = parse_duration_ms(v) {
-                        total = d;
-                    }
+                if let Some(v) = argv.get(i + 1)
+                    && let Ok(d) = parse_duration_ms(v)
+                {
+                    total = d;
                 }
                 i += 2;
             }

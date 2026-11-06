@@ -183,8 +183,10 @@ pub struct AttributeNode {
     /// non-empty setter list is representable here and rejected by
     /// profile validation, not by the model. Spec §8.2.
     pub set_raises: Vec<Ref<ExceptionNode>>,
-    /// The interface this attribute belongs to.
-    pub parent: Id<InterfaceNode>,
+    /// The interface this attribute belongs to, or the value type: OMG
+    /// IDL 4.2 rule (105) admits an attribute in a value type's body as
+    /// it admits an operation.
+    pub parent: AnyId,
     /// Per-source information. Spec §4.
     pub facets: Facets,
 }

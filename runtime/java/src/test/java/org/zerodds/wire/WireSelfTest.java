@@ -1102,6 +1102,77 @@ public final class WireSelfTest {
         }, "a wstring length past the buffer");
     }
 
+    /**
+     * The five operations the generated code reaches only in a dialect or with
+     * a member no corpus case carries: {@code writePidExtended},
+     * {@code writeUnionOverlay}, {@code readerClearDiscard},
+     * {@code readerSave} and {@code readerRestore}
+     * (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+     * vectors, each against an oracle outside this code.
+     */
+    private static void theOperationsNoCorpusCaseReaches() {
+        // The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+        // recorded it, XCDR1 little endian
+        // (tests/interop-corpus/expected-bytes.tsv).
+        Writer pid = new Writer(Endianness.LITTLE, 8, null, false);
+        Writer.Pid header = pid.writePidExtended(0, ParameterRole.MEMBER, false);
+        pid.writeI32(-1234567);
+        pid.finishPid(header);
+        bytesEqual(pid.finish(), "017f0800" + "00000000" + "04000000" + "7929edff",
+                "writePidExtended: Cyclone's recorded parameter");
+
+        // A `short` read through a four-octet and a one-octet `default:`
+        // branch: Cyclone DDS 11.0.1 writes the union's storage, the member's
+        // octets with zeros above (`combined-everything`,
+        // crates/wire-codec/src/encode.rs `write_selected_branch`).
+        Writer overlay = new Writer(Endianness.LITTLE, 4, null, false);
+        long pattern = Writer.bitPatternInt(-2, 2);
+        overlay.writeUnionOverlay(pattern, 4);
+        overlay.writeUnionOverlay(pattern, 1);
+        bytesEqual(overlay.finish(), "feff0000" + "fe",
+                "writeUnionOverlay: the storage at the branch's width");
+
+        // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+        // Table 9's value, so the call site asks for DISCARD and takes it
+        // back. Any other refusal is not a narrowing and stays.
+        byte[] four = {1, 2, 3, 4};
+        Reader discarded = new Reader(four, Endianness.LITTLE, 4, null);
+        discarded.readerRefuse(Reader.Status.DISCARDED);
+        check(discarded.readerClearDiscard(), "readerClearDiscard takes back a DISCARDED");
+        equal(discarded.readerStatus(), Reader.Status.OK, "the status after readerClearDiscard");
+        Reader refused = new Reader(four, Endianness.LITTLE, 4, null);
+        refused.readerRefuse(Reader.Status.OUT_OF_RANGE);
+        check(!refused.readerClearDiscard(), "readerClearDiscard leaves an OUT_OF_RANGE");
+        equal(refused.readerStatus(), Reader.Status.OUT_OF_RANGE, "an OUT_OF_RANGE stays");
+
+        // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+        // DHEADER and the pairs, without a count. The reader counts the
+        // pairs, goes back and reads them again; a refusal made while
+        // counting goes back with the cursor.
+        byte[] map = {
+            0x10, 0, 0, 0, 1, 0, 0, 0, 0x0a, 0, 0, 0, 2, 0, 0, 0, 0x14, 0, 0, 0
+        };
+        Reader reader = new Reader(map, Endianness.LITTLE, 4, null);
+        int extent = reader.readDheader();
+        int end = reader.readerPosition() + extent;
+        Reader.Mark mark = reader.readerSave();
+        int pairs = 0;
+        while (reader.readerPosition() < end && reader.readerStatus() == Reader.Status.OK) {
+            reader.readI32();
+            reader.readI32();
+            pairs++;
+        }
+        reader.readerRefuse(Reader.Status.OUT_OF_RANGE);
+        reader.readerRestore(mark);
+        equal(pairs, 2, "the counting pass finds two pairs");
+        equal(reader.readI32(), 1, "the first key, read again");
+        equal(reader.readI32(), 10, "the first value, read again");
+        equal(reader.readI32(), 2, "the second key, read again");
+        equal(reader.readI32(), 20, "the second value, read again");
+        equal(reader.readerPosition(), 20, "the end of the map");
+        equal(reader.readerStatus(), Reader.Status.OK, "readerRestore takes the refusal back");
+    }
+
     public static void main(String[] args) {
         anEightByteFieldAfterAOneByteFieldSitsWhereMaxalignSays();
         anOctetIsAByteWrittenAsItsEightBits();
@@ -1122,6 +1193,7 @@ public final class WireSelfTest {
         theEncapsulationHeaderIsAlwaysBigEndian();
         theBitBoundedKindsTakeTheHoldersTheirClausesGive();
         aReaderRefusesWhatCannotBeTrue();
+        theOperationsNoCorpusCaseReaches();
         if (failures != 0) {
             System.out.println(failures + " expectation(s) did not hold");
             System.exit(1);

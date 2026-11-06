@@ -78,6 +78,32 @@ class WireEntityBehaviourTest {
         assertTrue(condition.getAsBoolean(), what);
     }
 
+    /**
+     * Runs {@code body} with the lines the RTPS participants log, and returns once a line
+     * holds {@code expected}: the participant has decided the pair the line names.
+     */
+    private static void awaitLogLine(java.util.function.Predicate<String> expected, String what,
+            ThrowingRunnable body) throws Exception {
+        List<String> lines = new java.util.concurrent.CopyOnWriteArrayList<>();
+        java.util.function.Consumer<String> before = RtpsParticipant.LOG;
+        RtpsParticipant.LOG = line -> {
+            lines.add(line);
+            if (before != null) {
+                before.accept(line);
+            }
+        };
+        try {
+            body.run();
+            waitFor(() -> lines.stream().anyMatch(expected), what);
+        } finally {
+            RtpsParticipant.LOG = before;
+        }
+    }
+
+    private interface ThrowingRunnable {
+        void run() throws Exception;
+    }
+
     private static byte[] encap() {
         return SerializedSample.encapsulation(2, ByteArrayTypeSupport.INSTANCE.getExtensibility(),
                 EndianMode.LITTLE_ENDIAN);
@@ -88,7 +114,7 @@ class WireEntityBehaviourTest {
     }
 
     @Test
-    void aChangedQosOfAWriterReachesTheReaderOfAnotherProcessOverSedp() throws Exception {
+    void javapsm_2_a_changed_qos_of_a_writer_reaches_the_reader_of_another_process_over_sedp() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("WireQosUpdate", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
@@ -111,7 +137,7 @@ class WireEntityBehaviourTest {
     }
 
     @Test
-    void aRemoteWriterIsDescribedByTheMatchedPublicationData() throws Exception {
+    void javapsm_2_a_remote_writer_is_described_by_the_matched_publication_data() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("WireMatchedData", byte[].class);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
@@ -150,7 +176,7 @@ class WireEntityBehaviourTest {
     }
 
     @Test
-    void anAssignableReaderTakesARemoteWriterOfAnotherTypeNameByItsTypeObject() throws Exception {
+    void javapsm_2_an_assignable_reader_takes_a_remote_writer_of_another_type_name_by_its_type_object() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<Reading> topic = participant.createTopic("WireCoercion", Reading.class);
         DataReader<Reading> reader = Qos.reader(participant.createSubscriber(), topic,
@@ -201,7 +227,7 @@ class WireEntityBehaviourTest {
     }
 
     @Test
-    void anExactReaderDoesNotTakeThatRemoteWriter() throws Exception {
+    void javapsm_2_an_exact_reader_does_not_take_that_remote_writer() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<Reading> topic = participant.createTopic("WireNoCoercion", Reading.class);
         DataReader<Reading> reader = Qos.reader(participant.createSubscriber(), topic,
@@ -213,10 +239,13 @@ class WireEntityBehaviourTest {
             ReflectionTypeSupport<Writing> support = ReflectionTypeSupport.of(Writing.class);
             QosParameters qos = new QosParameters();
             qos.typeObject = TypeObjects.announce(Qos.env(), support);
-            remote.createWriter("WireNoCoercion", support.getTypeName(), SerializedSample.encapsulation(
-                    2, support.getExtensibility(), EndianMode.LITTLE_ENDIAN), new byte[0], new byte[0],
-                    false, true, qos);
-            Thread.sleep(2000);
+            // the reader's participant logs its decision on the pair (RtpsParticipant.typesMatch)
+            awaitLogLine(line -> line.startsWith("SEDP no match: local READER")
+                            && line.contains("type='" + support.getTypeName() + "'"),
+                    "the participant of the reader decides against the writer of the other type",
+                    () -> remote.createWriter("WireNoCoercion", support.getTypeName(),
+                            SerializedSample.encapsulation(2, support.getExtensibility(),
+                                    EndianMode.LITTLE_ENDIAN), new byte[0], new byte[0], false, true, qos));
             assertEquals(0, reader.getMatchedPublications().size());
         } finally {
             remote.close();
@@ -225,7 +254,7 @@ class WireEntityBehaviourTest {
     }
 
     @Test
-    void aCoherentSetOfARemoteWriterReachesACoherentAccessReaderAsAWhole() throws Exception {
+    void javapsm_7_3_5_1_a_coherent_set_of_a_remote_writer_reaches_a_coherent_access_reader_as_a_whole() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<byte[]> topic = participant.createTopic("WireCoherent", byte[].class);
         Subscriber subscriber = participant.createSubscriber(Qos.subscriber().withPolicy(
@@ -242,7 +271,8 @@ class WireEntityBehaviourTest {
                     "the reader meets the writer of the other participant");
             writer.write(body(1), null, 1L);
             writer.write(body(2), null, 1L);
-            Thread.sleep(1000);
+            // acknowledged: the reader has received both samples
+            assertTrue(writer.waitForAcknowledgments(10_000_000_000L), "the reader acknowledges both samples");
             assertEquals(0, reader.read(new ArrayList<>()).size(),
                     "the set is not complete: the reader holds it back");
             writer.endCoherentSet(1L);
@@ -256,7 +286,7 @@ class WireEntityBehaviourTest {
     }
 
     @Test
-    void aWriterTakesARemoteReaderOfAnotherTypeNameThatAllowsCoercionAndHasAnAssignableType()
+    void javapsm_2_a_writer_takes_a_remote_reader_of_another_type_name_that_allows_coercion_and_has_an_assignable_type()
             throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(domain);
         Topic<Writing> topic = participant.createTopic("WireWriterCoercion", Writing.class);
@@ -277,9 +307,11 @@ class WireEntityBehaviourTest {
             exact.typeConsistency = new QosParameters.TypeConsistency();
             exact.typeConsistency.kind = 0;
             exact.typeObject = allowing.typeObject;
-            remote.createTypedReader("WireWriterCoercion", reading.getTypeName(), false,
-                    new int[] {2}, new byte[0], sample -> { }, exact);
-            Thread.sleep(2000);
+            awaitLogLine(line -> line.startsWith("SEDP no match: local WRITER")
+                            && line.contains("type='" + reading.getTypeName() + "'"),
+                    "the participant of the writer decides against the exact reader",
+                    () -> remote.createTypedReader("WireWriterCoercion", reading.getTypeName(), false,
+                            new int[] {2}, new byte[0], sample -> { }, exact));
             assertEquals(1, writer.getMatchedSubscriptions().size(),
                     "a reader that does not allow coercion is not taken");
         } finally {

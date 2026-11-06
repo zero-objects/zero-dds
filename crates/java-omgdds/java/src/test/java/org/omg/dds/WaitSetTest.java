@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.omg.dds;
 
+import org.zerodds.testing.Waits;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -53,7 +54,7 @@ class WaitSetTest {
     }
 
     @Test
-    void aGuardConditionIsFalseAtFirstAndTheWaitSetKnowsWhatIsAttached() {
+    void javapsm_2_a_guard_condition_is_false_at_first_and_the_wait_set_knows_what_is_attached() {
         GuardCondition guard = GuardCondition.newGuardCondition(ENV);
         assertFalse(guard.getTriggerValue());
         WaitSet waitSet = WaitSet.newWaitSet(ENV);
@@ -67,25 +68,22 @@ class WaitSetTest {
     }
 
     @Test
-    void aWaitWithATimeoutEndsInATimeoutException() {
+    void javapsm_2_a_wait_with_a_timeout_ends_in_a_timeout_exception() {
         WaitSet waitSet = WaitSet.newWaitSet(ENV);
         waitSet.attachCondition(GuardCondition.newGuardCondition(ENV));
         assertThrows(TimeoutException.class, () -> waitSet.waitForConditions(30, TimeUnit.MILLISECONDS));
     }
 
     @Test
-    void aGuardConditionSetFromAnotherThreadEndsABlockedWaitAndIsReported() throws Exception {
+    void javapsm_2_a_guard_condition_set_from_another_thread_ends_a_blocked_wait_and_is_reported() throws Exception {
         GuardCondition guard = GuardCondition.newGuardCondition(ENV);
         GuardCondition other = GuardCondition.newGuardCondition(ENV);
         WaitSet waitSet = WaitSet.newWaitSet(ENV);
         waitSet.attachCondition(guard);
         waitSet.attachCondition(other);
+        Thread waiter = Thread.currentThread();
         Thread setter = new Thread(() -> {
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                return;
-            }
+            Waits.untilWaitingIn(waiter, "waitForConditions");
             guard.setTriggerValue(true);
         });
         setter.start();
@@ -99,7 +97,7 @@ class WaitSetTest {
     }
 
     @Test
-    void aSecondThreadWaitingOnTheSameWaitSetIsRefused() throws Exception {
+    void javapsm_2_a_second_thread_waiting_on_the_same_wait_set_is_refused() throws Exception {
         WaitSet waitSet = WaitSet.newWaitSet(ENV);
         GuardCondition guard = GuardCondition.newGuardCondition(ENV);
         waitSet.attachCondition(guard);
@@ -110,7 +108,7 @@ class WaitSetTest {
         });
         first.start();
         blocked.await();
-        Thread.sleep(100);
+        Waits.untilWaitingIn(first, "waitForConditions");
         AtomicReference<Throwable> second = new AtomicReference<>();
         Thread other = new Thread(() -> {
             try {
@@ -127,7 +125,7 @@ class WaitSetTest {
     }
 
     @Test
-    void aStatusConditionTriggersOnTheStatusItIsEnabledForAndHasItsEntityAsParent() throws Exception {
+    void javapsm_2_a_status_condition_triggers_on_the_status_it_is_enabled_for_and_has_its_entity_as_parent() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(940);
         Topic<byte[]> topic = participant.createTopic("WaitStatus", byte[].class);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
@@ -138,12 +136,9 @@ class WaitSetTest {
         assertFalse(condition.getTriggerValue());
         WaitSet waitSet = WaitSet.newWaitSet(ENV);
         waitSet.attachCondition(condition);
+        Thread waiter = Thread.currentThread();
         Thread writerThread = new Thread(() -> {
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                return;
-            }
+            Waits.untilWaitingIn(waiter, "waitForConditions");
             participant.createPublisher().createDataWriter(topic);
         });
         writerThread.start();
@@ -158,7 +153,7 @@ class WaitSetTest {
     }
 
     @Test
-    void aReadConditionFollowsTheStatesOfTheSamplesAndWakesTheWaitSet() throws Exception {
+    void javapsm_2_a_read_condition_follows_the_states_of_the_samples_and_wakes_the_wait_set() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(941);
         Topic<byte[]> topic = participant.createTopic("WaitRead", byte[].class);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
@@ -175,11 +170,12 @@ class WaitSetTest {
         assertFalse(notRead.getTriggerValue());
         WaitSet waitSet = WaitSet.newWaitSet(ENV);
         waitSet.attachCondition(notRead);
+        Thread waiter = Thread.currentThread();
         Thread writerThread = new Thread(() -> {
+            Waits.untilWaitingIn(waiter, "waitForConditions");
             try {
-                Thread.sleep(50);
                 writer.write(new byte[] {1});
-            } catch (InterruptedException | TimeoutException e) {
+            } catch (TimeoutException e) {
                 // the test fails on the wait
             }
         });

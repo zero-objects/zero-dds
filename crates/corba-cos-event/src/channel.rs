@@ -223,12 +223,12 @@ impl PushConsumer for ProxyPushConsumer {
                 dead.push(Arc::clone(c));
             }
         }
-        if !dead.is_empty() {
-            if let Ok(mut state) = self.inner.state.lock() {
-                state
-                    .consumers
-                    .retain(|c| !dead.iter().any(|d| Arc::ptr_eq(d, c)));
-            }
+        if !dead.is_empty()
+            && let Ok(mut state) = self.inner.state.lock()
+        {
+            state
+                .consumers
+                .retain(|c| !dead.iter().any(|d| Arc::ptr_eq(d, c)));
         }
         Ok(())
     }

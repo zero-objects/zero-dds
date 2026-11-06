@@ -425,8 +425,8 @@ network flow endpoints, content filter),
 - Services: `run_ros2_services_test.sh` (AddTwoInts, graph queries), the same
   partners, server on both sides.
 - Security: `run_ros2_security_test.sh` (§7.1).
-- `crates/ros2-rmw/tests/cross_vendor.rs` checks the wire conventions of
-  `rmw_cyclonedds_cpp` without ROS; the live parts carry `#[ignore]`.
+- The unit tests of `crates/ros2-rmw` check the topic, service and action
+  names of `rmw_cyclonedds_cpp` and `rmw_fastrtps_cpp` without ROS.
 
 ROS distro: measured on Humble. `ci/jobs/rmw-distro-build.yml` describes
 builds for Humble, Iron and Jazzy, no pipeline includes the file; Iron

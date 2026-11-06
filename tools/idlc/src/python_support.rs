@@ -35,23 +35,21 @@ pub fn source(ast: &Ast, encoding: Encoding) -> Result<Option<String>, String> {
                 .map(|(id, node)| AnyId::Interface(id, node.node_id)),
         );
     for name in names {
-        if let Some(scoped) = ast.scoped_name_of(name) {
-            if let Some(first) = scoped.segments().first() {
-                if [
-                    "ZD_TOPIC_DESCRIPTORS",
-                    "_zd_make_topic_descriptors",
-                    "_ZdTopicDescriptor",
-                    "_zd_module",
-                ]
-                .contains(&first.as_str())
-                    || first.starts_with("_zd_topic_key_")
-                    || first.starts_with("zd_keyread_")
-                {
-                    return Err(format!(
-                        "generated Python descriptor name collides with {first}"
-                    ));
-                }
-            }
+        if let Some(scoped) = ast.scoped_name_of(name)
+            && let Some(first) = scoped.segments().first()
+            && ([
+                "ZD_TOPIC_DESCRIPTORS",
+                "_zd_make_topic_descriptors",
+                "_ZdTopicDescriptor",
+                "_zd_module",
+            ]
+            .contains(&first.as_str())
+                || first.starts_with("_zd_topic_key_")
+                || first.starts_with("zd_keyread_"))
+        {
+            return Err(format!(
+                "generated Python descriptor name collides with {first}"
+            ));
         }
     }
     let mut declarations = BTreeMap::<String, String>::new();
@@ -162,10 +160,10 @@ pub fn source(ast: &Ast, encoding: Encoding) -> Result<Option<String>, String> {
                 };
                 let name = method.name.as_str().to_string();
                 let text = zerodds_lang_render::python::statement(&function);
-                if let Some(previous) = declarations.insert(name.clone(), text.clone()) {
-                    if previous != text {
-                        return Err(format!("conflicting Python key encoder: {name}"));
-                    }
+                if let Some(previous) = declarations.insert(name.clone(), text.clone())
+                    && previous != text
+                {
+                    return Err(format!("conflicting Python key encoder: {name}"));
                 }
             }
             let finish = match zerodds_ast_layout::keyhash::key_hash_form_for(ast, id, key)
@@ -195,10 +193,10 @@ pub fn source(ast: &Ast, encoding: Encoding) -> Result<Option<String>, String> {
                         };
                         let name = method.name.as_str().to_string();
                         let text = zerodds_lang_render::python::statement(&function);
-                        if let Some(previous) = declarations.insert(name.clone(), text.clone()) {
-                            if previous != text {
-                                return Err(format!("conflicting Python key decoder: {name}"));
-                            }
+                        if let Some(previous) = declarations.insert(name.clone(), text.clone())
+                            && previous != text
+                        {
+                            return Err(format!("conflicting Python key decoder: {name}"));
                         }
                     }
                     holder_decoder = zerodds_lang_rules::emit::decode::key_holder_decoder_name::<

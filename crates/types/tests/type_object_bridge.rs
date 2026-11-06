@@ -1,174 +1,174 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! A type through its wire form and back, reading the same octets.
+//! The TypeObjects of the interop corpus against the ones CycloneDDS writes.
 //!
-//! `crate::from_ast` writes a type as the `CompleteTypeObject` a peer is
-//! told over discovery; `dynamic::to_ast` reads one back into a model.
-//! The two are inverses only if a `DynamicData` decoded against the
-//! **rebuilt** model is the same value, and re-encodes to the same
-//! octets, as one decoded against the model the IDL lowered to.
+//! `tests/interop-corpus/cyclone-type-objects.tsv` holds the MINIMAL and
+//! COMPLETE TypeObjects Cyclone's `idlc` writes for the type of every corpus
+//! case it compiles, with their TypeIdentifiers
+//! (`tools/expected-bytes/type_objects.py`, from one commit of
+//! `zerodds-matrix`), and `tests/interop-corpus/expected-bytes.tsv` the
+//! octets Cyclone writes for each case's sample. Both are Cyclone's own
+//! output; nothing here compares this project's encoder with its own
+//! decoder.
 //!
-//! That is what this measures, over every case of
-//! `tests/interop-corpus/` whose type XTypes §7.3 can carry at all:
-//!
-//! 1. the case's IDL lowers to a model, and the sample encodes;
-//! 2. every type in the model is registered as a `CompleteTypeObject`;
-//! 3. the topic type's object goes back through `to_ast` into a *second*
-//!    model, built out of nothing but what a peer would have been sent;
-//! 4. the same bytes are decoded against that second model, and encoded
-//!    again;
-//! 5. the two byte strings are compared, octet for octet.
-//!
-//! ## What this is and is not
-//!
-//! It is not the foreign measurement. Both objects are this tree's, so
-//! it cannot catch a `TypeObject` this project writes and reads
-//! consistently and every vendor reads differently — that needs a peer,
-//! and `crates/types/src/type_lookup.rs` is what fetches one. See
-//! `dynamic::to_ast`'s module note.
-//!
-//! It is the strongest measurement that runs with nothing installed, and
-//! it catches the thing a hand-written bridge always gets wrong: a
-//! property that reaches the wire form and does not come back.
-//! Extensibility, a member id, an `@optional` flag, a bound, an array's
-//! dimensions, an enumerator's value, a bit position, a bitfield's width
-//! — drop any one of them on the way back and the second model frames
-//! the same value differently, at some offset, in some mode.
+//! - The TypeIdentifiers this project computes for a case's type, from its
+//!   IDL read as Cyclone's `idlc` reads it, are Cyclone's (XTypes 1.3
+//!   §7.3.4.6.5, §7.3.4.6.6: the MD5 of the serialized TypeObject,
+//!   §7.3.4.5), but where a construct of the case parts them: the four
+//!   readings [`Constructs`] names, each with its clause.
+//! - The model rebuilt from Cyclone's COMPLETE TypeObject and its
+//!   dependencies (`dynamic::dynamic_type`) writes the case's sample as
+//!   Cyclone does (§7.3.4.3: back to IDL without loss): every property of
+//!   the type that reaches the wire — extensibility, member ids, `@optional`,
+//!   `@key`, bounds, dimensions, enumerator values, bit positions — has to
+//!   come back from the TypeObject for the octets to be the same. In XCDR2
+//!   and XCDR1, little endian: the byte order is no property of a type.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use zerodds_ast::Ast;
-use zerodds_ast_layout::{Encoding, Endianness};
-use zerodds_types::dynamic::DynamicData;
-use zerodds_types::from_ast::{FromAstError, complete_type_object, register_all};
+use zerodds_ast::{Ast, Extensibility, TypeKind};
+use zerodds_ast_layout::{Dialect, Encoding, Endianness};
+use zerodds_types::from_ast::{FromAstError, complete_type_object, minimal_type_object};
+use zerodds_types::hash::{compute_complete_hash, compute_minimal_hash, hash_bytes};
 use zerodds_types::resolve::TypeRegistry;
+use zerodds_types::type_identifier::EquivalenceHash;
+use zerodds_types::{CompleteTypeObject, TypeObject};
+use zerodds_wire_codec::encode;
 use zerodds_wire_codec::value::ProbeRequest;
-use zerodds_wire_codec::{decode, encode};
 
-/// The four combinations the corpus runs in.
-const MODES: [(Encoding, Endianness); 4] = [
-    (Encoding::PlainCdr2, Endianness::Little),
-    (Encoding::PlainCdr2, Endianness::Big),
-    (Encoding::PlainCdr1, Endianness::Little),
-    (Encoding::PlainCdr1, Endianness::Big),
-];
-
-struct Case {
-    name: String,
-    type_name: String,
-    idl: String,
-    values: Value,
-}
-
-fn repository_root() -> PathBuf {
+fn corpus_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .and_then(Path::parent)
-        .expect("the repository root, two levels above crates/types")
-        .to_path_buf()
+        .join("../../tests/interop-corpus")
+        .canonicalize()
+        .expect("tests/interop-corpus")
 }
 
-/// The corpus cases that never reach a model, because the IDL front end
-/// refuses the file.
-///
-/// `resolve-module-named-as-type` is `module common { struct common
-/// { … }; }`. OMG IDL 4.2 §7.5.2 does not admit a name redefined within
-/// the immediate scope of the construct that carries it, and prints
-/// `module M { typedef short M; }` as the clause's own `// Error`
-/// example. The case is in the corpus deliberately — it measures which
-/// vendors refuse the file and which resolve it anyway — and
-/// `tools/idlc/tests/corpus.rs` carries it as an `Intended` diagnostic
-/// for that reason. `dynamic_corpus.rs::NOT_LOWERED` is the same list,
-/// beside the same corpus.
-const NOT_LOWERED: [&str; 1] = ["resolve-module-named-as-type"];
-
-fn corpus() -> Vec<Case> {
-    let directory = repository_root().join("tests").join("interop-corpus");
-    let mut paths: Vec<PathBuf> = std::fs::read_dir(&directory)
-        .unwrap_or_else(|error| panic!("{}: {error}", directory.display()))
-        .map(|entry| entry.expect("a corpus entry").path())
-        .filter(|path| path.join("type").is_file())
-        .collect();
-    paths.sort();
-    // Exact, so that a name that leaves the corpus — or starts lowering,
-    // and belongs back in the walk — is reported rather than silently
-    // skipped.
-    let mut dropped: Vec<String> = Vec::new();
-    paths.retain(|path| {
-        let name = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or_default()
-            .to_string();
-        if NOT_LOWERED.contains(&name.as_str()) {
-            dropped.push(name);
-            return false;
-        }
-        true
-    });
-    assert_eq!(
-        dropped,
-        NOT_LOWERED.to_vec(),
-        "the cases the front end refuses are not the cases named"
-    );
-    paths
-        .into_iter()
-        .map(|directory| {
-            let name = directory
-                .file_name()
-                .and_then(|name| name.to_str())
-                .expect("a case name")
-                .to_string();
-            let read = |file: &str| {
-                std::fs::read_to_string(directory.join(file))
-                    .unwrap_or_else(|error| panic!("{name}/{file}: {error}"))
-            };
-            let values_text = read("values.json");
-            Case {
-                type_name: read("type").trim().to_string(),
-                idl: read("type.idl"),
-                values: serde_json::from_str(&values_text)
-                    .unwrap_or_else(|error| panic!("{name}/values.json: {error}")),
-                name,
-            }
-        })
+fn unhex(text: &str) -> Vec<u8> {
+    assert!(text.len().is_multiple_of(2), "odd hex length");
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).expect("hex"))
         .collect()
 }
 
-fn model(case: &Case) -> Ast {
-    let parsed = zerodds_idl_parse::parse(&case.idl);
-    assert!(
-        !parsed.has_errors(),
-        "{}: {:?}",
-        case.name,
-        parsed.diagnostics()
-    );
-    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), &format!("{}/type.idl", case.name));
-    assert!(
-        lowered.diagnostics.is_empty(),
-        "{}: {:?}",
-        case.name,
-        lowered.diagnostics
-    );
-    let mut ast = lowered.ast;
-    let report = ast
-        .resolve_all_by_name()
-        .unwrap_or_else(|error| panic!("{}: {error}", case.name));
-    assert!(report.is_clean(), "{}: {:?}", case.name, report.broken);
-    ast
-}
-
 fn hex(bytes: &[u8]) -> String {
-    use std::fmt::Write as _;
     let mut out = String::with_capacity(bytes.len() * 2);
     for byte in bytes {
         let _ = write!(out, "{byte:02x}");
     }
     out
+}
+
+fn hash_of(text: &str) -> EquivalenceHash {
+    EquivalenceHash(unhex(text).try_into().expect("a 14-octet hash"))
+}
+
+/// Cyclone's TypeObjects of one case.
+#[derive(Default)]
+struct CycloneTypes {
+    topic_minimal: Option<EquivalenceHash>,
+    topic_complete: Option<EquivalenceHash>,
+    /// Every COMPLETE object of the case's mapping, the topic type's among
+    /// them, by its identifier.
+    complete: BTreeMap<[u8; 14], CompleteTypeObject>,
+}
+
+/// `cyclone-type-objects.tsv`, by case. Each COMPLETE object is read back
+/// from Cyclone's octets and its identifier checked: MD5 of the octets.
+fn cyclone_types() -> BTreeMap<String, CycloneTypes> {
+    let path = corpus_root().join("cyclone-type-objects.tsv");
+    let text = std::fs::read_to_string(&path).expect("cyclone-type-objects.tsv");
+    let mut out: BTreeMap<String, CycloneTypes> = BTreeMap::new();
+    for line in text.lines().filter(|line| !line.starts_with('#')).skip(1) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(fields.len(), 5, "{line}");
+        let (case, equivalence, role, hash, octets) =
+            (fields[0], fields[1], fields[2], fields[3], fields[4]);
+        let types = out.entry(case.to_string()).or_default();
+        let hash = hash_of(hash);
+        match (equivalence, role) {
+            ("minimal", "topic") => types.topic_minimal = Some(hash),
+            ("complete", "topic") => types.topic_complete = Some(hash),
+            _ => {}
+        }
+        if equivalence == "complete" {
+            let octets = unhex(octets);
+            assert_eq!(hash_bytes(&octets), hash, "{case}: MD5 of the octets");
+            let object = match TypeObject::from_bytes_le(&octets) {
+                Ok(TypeObject::Complete(object)) => object,
+                other => panic!(
+                    "{case}: Cyclone's COMPLETE object {}: {other:?}",
+                    hex(&hash.0)
+                ),
+            };
+            types.complete.insert(hash.0, object);
+        }
+    }
+    out
+}
+
+/// Cyclone's octets of a case's sample, little endian, by case and
+/// encoding (`expected-bytes.tsv`, the rows of the `cyclone` dialect).
+fn cyclone_octets() -> BTreeMap<(String, Encoding), Vec<u8>> {
+    let path = corpus_root().join("expected-bytes.tsv");
+    let text = std::fs::read_to_string(&path).expect("expected-bytes.tsv");
+    let mut out = BTreeMap::new();
+    for line in text.lines().filter(|line| !line.starts_with('#')).skip(1) {
+        let fields: Vec<&str> = line.split('\t').collect();
+        assert_eq!(fields.len(), 6, "{line}");
+        if fields[1] != "values"
+            || fields[3] != "le"
+            || !fields[4].split(',').any(|dialect| dialect == "cyclone")
+        {
+            continue;
+        }
+        let encoding = match fields[2] {
+            "xcdr1" => Encoding::PlainCdr1,
+            "xcdr2" => Encoding::PlainCdr2,
+            other => panic!("encoding {other}"),
+        };
+        out.insert((fields[0].to_string(), encoding), unhex(fields[5]));
+    }
+    out
+}
+
+fn read(case: &str, file: &str) -> String {
+    let path = corpus_root().join(case).join(file);
+    std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{case}/{file}: {error}"))
+}
+
+/// The case's IDL read as Cyclone's `idlc` reads it: a type whose
+/// extensibility the source does not say is `@final`, its default (XTypes
+/// 1.3 §7.3.1.2.1.8 leaves the default to the IDL compiler's options; the
+/// flags of Cyclone's objects say `IS_FINAL` for every such type,
+/// enumerations and bitmasks included). The front end's
+/// `default_extensibility` fills every type that carries one.
+fn model_as_cyclone_reads_it(case: &str) -> Ast {
+    let idl = read(case, "type.idl");
+    let parsed = zerodds_idl_parse::parse(&idl);
+    assert!(!parsed.has_errors(), "{case}: {:?}", parsed.diagnostics());
+    let options = zerodds_idl_lower::Options {
+        default_extensibility: Some(Extensibility::Final),
+        ..zerodds_idl_lower::Options::default()
+    };
+    let lowered =
+        zerodds_idl_lower::lower_with(&parsed.syntax(), &format!("{case}/type.idl"), options);
+    assert!(
+        lowered.diagnostics.is_empty(),
+        "{case}: {:?}",
+        lowered.diagnostics
+    );
+    let mut ast = lowered.ast;
+    let report = ast
+        .resolve_all_by_name()
+        .unwrap_or_else(|error| panic!("{case}: {error}"));
+    assert!(report.is_clean(), "{case}: {:?}", report.broken);
+    ast
 }
 
 /// The type of one case, by the scoped name the case names.
@@ -183,188 +183,173 @@ fn find(ast: &Ast, name: &str) -> Option<zerodds_ast_core::Id<zerodds_ast::TypeN
         .and_then(zerodds_ast::AnyId::as_type)
 }
 
+/// Where this project's TypeObjects and Cyclone's part, by the construct
+/// in the IDL, measured over the corpus. Each is a reading of XTypes 1.3
+/// that this project follows and Cyclone's `idlc` does not:
+///
+/// - a union: the discriminator's `IS_MUST_UNDERSTAND`, which §7.2.2.4.4.4.6
+///   says "shall always" be set (`docs/omg-xtypes-issues.md` §B2: no
+///   measured implementation sets it). Both forms.
+/// - a `@key` member: its `IS_MUST_UNDERSTAND`, §7.2.2.4.4.4.8: key members
+///   "shall always have their must understand attribute set to true".
+///   Both forms.
+/// - a `@hashid` member: the COMPLETE object carries it in
+///   `AppliedBuiltinMemberAnnotations::hash_id` (Annex B), so that the type
+///   goes back to its IDL (§7.3.4.3); Cyclone writes none.
+/// - `@nested`, `@default_nested` or `@autoid(HASH)`: the MINIMAL object's
+///   type flags are masked with Annex B's `TypeFlagMinimalMask`, which
+///   takes `IS_NESTED` and `IS_AUTOID_HASH` out; Cyclone keeps them.
+struct Constructs {
+    union: bool,
+    key: bool,
+    hashid: bool,
+    nested_or_autoid_hash: bool,
+}
+
+impl Constructs {
+    fn of(ast: &Ast, idl: &str) -> Self {
+        let text: String = idl
+            .lines()
+            .map(|line| line.split("//").next().unwrap_or_default())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
+        Self {
+            union: ast
+                .types()
+                .any(|(_, node)| matches!(node.kind, TypeKind::Union { .. })),
+            key: text.contains("@key") || text.contains("#pragma keylist"),
+            hashid: text.contains("@hashid"),
+            nested_or_autoid_hash: text.contains("@nested")
+                || text.contains("@default_nested")
+                || compact.contains("@autoid(HASH)"),
+        }
+    }
+
+    fn complete_differs(&self) -> bool {
+        self.union || self.key || self.hashid
+    }
+
+    fn minimal_differs(&self) -> bool {
+        self.union || self.key || self.nested_or_autoid_hash
+    }
+}
+
 #[test]
-fn a_type_survives_its_own_wire_form() {
-    let cases = corpus();
-    assert!(!cases.is_empty(), "the corpus is empty");
-
-    let mut compared = 0usize;
-    let mut unrepresentable: BTreeSet<String> = BTreeSet::new();
+fn xtypes_7_3_4_6_the_type_identifiers_of_the_corpus_types_are_cyclones() {
+    let cyclone = cyclone_types();
+    assert!(cyclone.len() >= 333, "{} cases", cyclone.len());
     let mut moved: Vec<String> = Vec::new();
-
-    for case in &cases {
-        let ast = model(case);
-        let Some(type_) = find(&ast, &case.type_name) else {
-            panic!("{}: `{}` is not in the model", case.name, case.type_name);
+    let mut same = 0usize;
+    for (case, types) in &cyclone {
+        let ast = model_as_cyclone_reads_it(case);
+        let type_name = read(case, "type").trim().to_string();
+        let Some(type_) = find(&ast, &type_name) else {
+            panic!("{case}: `{type_name}` is not in the model");
         };
-
-        // What a peer would be sent: this type's object, and every other
-        // type in the model in the registry behind it so that a member's
-        // hashed identifier resolves.
-        let object = match complete_type_object(&ast, type_) {
-            Ok(object) => object,
-            // §7.3 has no `TypeIdentifier` for `fixed`, a `valuetype`, a
-            // value box, `native`, `any`, `ValueBase` or an object
-            // reference, and no single-type identifier for a recursive
-            // type. A case whose topic type is one of those has no wire
-            // form to come back from, and the refusal is the answer
-            // rather than the failure.
-            Err(
-                FromAstError::Unrepresentable { .. }
-                | FromAstError::Recursive { .. }
-                | FromAstError::OutOfRange { .. },
-            ) => {
-                unrepresentable.insert(case.name.clone());
-                continue;
-            }
-            Err(error) => panic!("{}: {error}", case.name),
-        };
-        let mut registry = TypeRegistry::new();
-        let skipped = match register_all(&ast, &mut registry) {
-            Ok(skipped) => skipped,
-            // One type in the file has no wire form and the topic type
-            // may not need it. The rebuild below is what says whether it
-            // did: an identifier it cannot resolve is the loud form.
-            Err(FromAstError::OutOfRange { .. }) => {
-                unrepresentable.insert(case.name.clone());
-                continue;
-            }
-            Err(error) => panic!("{}: {error}", case.name),
-        };
-        // What `register_all` skipped is a type XTypes cannot carry. If
-        // the topic type needed one of them, the rebuild below reports
-        // it as an unresolvable identifier, which is the loud form.
-        let _ = skipped;
-
-        let rebuilt = match zerodds_types::dynamic::dynamic_type(&object, &registry) {
-            Ok(view) => view,
-            Err(error) => {
-                moved.push(format!(
-                    "  {}: the object does not rebuild: {error}",
-                    case.name
-                ));
-                continue;
-            }
-        };
-        let rebuilt_ast = rebuilt.ast().clone();
-        let rebuilt_name = rebuilt.qualified_name();
-
-        for (encoding, endianness) in MODES {
-            let request = ProbeRequest::new(&case.type_name, encoding, endianness);
-            let Ok(bytes) = encode::<Value>(&ast, &request, &case.values) else {
-                // The two samples the value contract refuses; see
-                // `dynamic_corpus.rs::REFUSED`.
-                continue;
-            };
-
-            // The same bytes, read against the model that came back out
-            // of the wire form and against nothing else.
-            let rebuilt_request = ProbeRequest::new(&rebuilt_name, encoding, endianness);
-            let data: DynamicData = match decode(&rebuilt_ast, &rebuilt_request, &bytes) {
-                Ok(value) => value,
-                Err(error) => {
-                    moved.push(format!(
-                        "  {} {encoding:?}/{endianness:?}: the rebuilt type does not read the \
-                         bytes: {error}",
-                        case.name
-                    ));
-                    continue;
-                }
-            };
-            let native: DynamicData = decode(&ast, &request, &bytes)
-                .unwrap_or_else(|error| panic!("{} {encoding:?}: {error}", case.name));
-
-            match (
-                encode::<DynamicData>(&rebuilt_ast, &rebuilt_request, &data),
-                encode::<DynamicData>(&ast, &request, &native),
-            ) {
-                (Ok(left), Ok(right)) if left == right => compared += 1,
-                (Ok(left), Ok(right)) => moved.push(format!(
-                    "  {} {encoding:?}/{endianness:?}: the rebuilt type wrote {}, the lowered \
-                     type wrote {}",
-                    case.name,
-                    hex(&left),
-                    hex(&right)
+        let complete = complete_type_object(&ast, type_)
+            .map_err(|error: FromAstError| error.to_string())
+            .and_then(|object| compute_complete_hash(&object).map_err(|e| format!("{e:?}")))
+            .unwrap_or_else(|error| panic!("{case}: our COMPLETE TypeObject: {error}"));
+        let minimal = minimal_type_object(&ast, type_)
+            .map_err(|error: FromAstError| error.to_string())
+            .and_then(|object| compute_minimal_hash(&object).map_err(|e| format!("{e:?}")))
+            .unwrap_or_else(|error| panic!("{case}: our MINIMAL TypeObject: {error}"));
+        let constructs = Constructs::of(&ast, &read(case, "type.idl"));
+        for (form, ours, theirs, differs) in [
+            (
+                "COMPLETE",
+                complete,
+                types.topic_complete,
+                constructs.complete_differs(),
+            ),
+            (
+                "MINIMAL",
+                minimal,
+                types.topic_minimal,
+                constructs.minimal_differs(),
+            ),
+        ] {
+            let theirs = theirs.expect("Cyclone's identifier");
+            match (ours == theirs, differs) {
+                (true, false) => same += 1,
+                (false, true) => {}
+                (true, true) => moved.push(format!(
+                    "  {case} {form}: Cyclone's identifier, where a construct of the case \
+                     should part them"
                 )),
-                (left, right) => moved.push(format!(
-                    "  {} {encoding:?}/{endianness:?}: rebuilt {left:?}, lowered {right:?}",
-                    case.name
+                (false, false) => moved.push(format!(
+                    "  {case} {form}: ours {}, Cyclone's {}",
+                    hex(&ours.0),
+                    hex(&theirs.0)
                 )),
             }
         }
     }
-
     assert!(
         moved.is_empty(),
-        "a type does not survive its own wire form in {} places:\n{}",
+        "{} identifiers moved against Cyclone's:\n{}",
         moved.len(),
         moved.join("\n")
     );
-    // A floor and not an equality, so that a corpus case added later
-    // does not turn this red; a *drop* is the walk quietly doing less.
-    // 1,316 when this was written: 331 cases with a wire form, in four
-    // modes, less the eight slots of the two samples the value contract
-    // refuses.
-    assert!(
-        compared >= 1316,
-        "{compared} comparisons, and 1316 were made when this was written"
-    );
-
-    // Exact, so that a construct that gains a wire form — or loses one —
-    // is named rather than absorbed.
-    let expected: BTreeSet<String> = UNREPRESENTABLE
-        .iter()
-        .map(|name| (*name).to_string())
-        .collect();
-    assert_eq!(
-        unrepresentable, expected,
-        "the set of cases XTypes §7.3 has no TypeIdentifier for moved"
-    );
+    // 263 COMPLETE and 266 MINIMAL identifiers of 333 cases the same as
+    // Cyclone's when this was written.
+    assert!(same >= 529, "{same} identifiers the same as Cyclone's");
 }
 
-/// The cases whose type has no `CompleteTypeObject` to come back from.
-///
-/// Two reasons, both XTypes §7.3's own and both refused by name in
-/// `crate::from_ast`. Listed rather than counted: a case that gains a
-/// wire form is a gap that closed and has to be seen.
-///
-/// **`fixed<P,S>` has no kind.** §7.3.4.2 tabulates no fixed-point type,
-/// the IDL-to-type-system table of §7.3.1 maps none, and DDSXTY14-28 is
-/// the report asking for one. Ten cases: the eight `fixed-*` and the two
-/// collections of one.
-///
-/// **A case label wider than an `i32`.** §7.3.4.5.3.2 writes
-/// `CommonUnionMember::label_seq` as a sequence of `int32`, so a union
-/// switching on `unsigned long`, `long long` or `unsigned long long`
-/// cannot announce a label outside that range — `union-discriminator-
-/// ulong` labels on `0xFFFFFFFF`. The type is serialisable and its
-/// *description* is not, which is a hole in §7.3 and not in this tree:
-/// the six cases still encode and decode, and `dynamic_corpus.rs`
-/// measures them.
-// `recursive-union-branch` is unrepresentable today and should not be:
-// the strongly-connected-component identifier covers a struct that
-// reaches itself, and a recursion whose back edge runs through a union
-// branch does not get one from `from_ast` yet. Measured on this tree;
-// the import that brought the case pinned this list without it. Same
-// family as the docs/OPEN-ITEMS.md `@external` entry. Cyclone's own
-// front end does not terminate on this case either (89 CPU minutes,
-// 12.8G RSS before the kill), which is a vendor finding, not a licence.
-const UNREPRESENTABLE: [&str; 17] = [
-    "array-1d-fixed",
-    "array-1d-fixed-unannotated",
-    "fixed-basic",
-    "fixed-basic-unannotated",
-    "fixed-scale-equals-digits",
-    "fixed-scale-equals-digits-unannotated",
-    "fixed-scales",
-    "fixed-scales-unannotated",
-    "recursive-union-branch",
-    "sequence-fixed",
-    "sequence-fixed-unannotated",
-    "union-discriminator-longlong",
-    "union-discriminator-longlong-unannotated",
-    "union-discriminator-ulong",
-    "union-discriminator-ulong-unannotated",
-    "union-discriminator-ulonglong",
-    "union-discriminator-ulonglong-unannotated",
-];
+#[test]
+fn xtypes_7_3_4_3_a_type_rebuilt_from_cyclones_type_object_writes_cyclones_octets() {
+    let cyclone = cyclone_types();
+    let octets = cyclone_octets();
+    let mut compared = 0usize;
+    let mut moved: Vec<String> = Vec::new();
+    for (case, types) in &cyclone {
+        let topic = types.topic_complete.expect("a topic type");
+        let mut registry = TypeRegistry::new();
+        for (hash, object) in &types.complete {
+            registry.insert_complete(EquivalenceHash(*hash), object.clone());
+        }
+        let object = &types.complete[&topic.0];
+        let rebuilt = match zerodds_types::dynamic::dynamic_type(object, &registry) {
+            Ok(view) => view,
+            Err(error) => {
+                moved.push(format!(
+                    "  {case}: Cyclone's object does not rebuild: {error}"
+                ));
+                continue;
+            }
+        };
+        let values: Value = serde_json::from_str(&read(case, "values.json"))
+            .unwrap_or_else(|error| panic!("{case}/values.json: {error}"));
+        for encoding in [Encoding::PlainCdr2, Encoding::PlainCdr1] {
+            let Some(expected) = octets.get(&(case.clone(), encoding)) else {
+                continue;
+            };
+            let request = ProbeRequest::in_dialect(
+                &rebuilt.qualified_name(),
+                encoding,
+                Endianness::Little,
+                Dialect::Cyclone,
+            );
+            match encode::<Value>(rebuilt.ast(), &request, &values) {
+                Ok(written) if &written == expected => compared += 1,
+                Ok(written) => moved.push(format!(
+                    "  {case} {encoding:?}: the rebuilt type wrote {}, Cyclone {}",
+                    hex(&written),
+                    hex(expected)
+                )),
+                Err(error) => moved.push(format!(
+                    "  {case} {encoding:?}: the rebuilt type does not write the sample: {error}"
+                )),
+            }
+        }
+    }
+    assert!(
+        moved.is_empty(),
+        "{} of Cyclone's cells are not written by the type rebuilt from its TypeObject:\n{}",
+        moved.len(),
+        moved.join("\n")
+    );
+    // 630 when this was written: the little-endian cells of the 333 cases.
+    assert!(compared >= 630, "{compared} cells compared");
+}

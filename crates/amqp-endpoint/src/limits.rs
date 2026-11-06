@@ -41,7 +41,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_match_spec_implementation_note() {
+    fn ddsamqp_7_10_defaults_match_spec_implementation_note() {
         let l = ResourceLimits::default();
         assert_eq!(l.max_connections, 1024);
         assert_eq!(l.max_sessions_per_connection, 8);

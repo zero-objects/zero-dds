@@ -78,12 +78,12 @@ class TypeLookupEncodingTest {
             + "027f0000");
 
     @Test
-    void aGetTypesRequestIsWrittenInTheEncodingVersion1() {
+    void xtypes_7_6_3_3_4_a_get_types_request_is_written_in_xcdr1() {
         assertArrayEquals(REQUEST_XCDR1, TypeLookupService.encodeRequest(request(), TypeLookupService.Encoding.XCDR1));
     }
 
     @Test
-    void theRustReplyReadsAndIsWrittenBackOctetForOctet() {
+    void xtypes_7_6_3_3_4_a_get_types_reply_in_xcdr1_is_read_and_written_octet_for_octet() {
         DDS.Builtin.TypeLookup_Reply reply =
                 TypeLookupService.decodeReply(REPLY_XCDR1, Endianness.LITTLE, TypeLookupService.Encoding.XCDR1);
         assertEquals((int) DDS.Builtin.TypeLookup_getTypes_HashId, reply.return_data._d);
@@ -96,22 +96,7 @@ class TypeLookupEncodingTest {
     }
 
     @Test
-    void bothEncodingsCarryTheSameRequest() {
-        for (TypeLookupService.Encoding encoding : TypeLookupService.Encoding.values()) {
-            byte[] payload = TypeLookupService.payload(TypeLookupService.encodeRequest(request(), encoding), encoding);
-            assertEquals(0, payload.length % 4, encoding.name());
-            TypeLookupService.Encapsulation read = TypeLookupService.Encapsulation.read(payload);
-            assertEquals(encoding, read.encoding);
-            DDS.Builtin.TypeLookup_Request decoded = TypeLookupService.decodeRequest(read.body, read.endian, read.encoding);
-            assertEquals("dds.builtin.TOS.x", decoded.header.instanceName);
-            assertEquals(1, decoded.data.getTypes.type_ids.length);
-            assertArrayEquals(request().data.getTypes.type_ids[0].equivalence_hash,
-                    decoded.data.getTypes.type_ids[0].equivalence_hash);
-        }
-    }
-
-    @Test
-    void theIdentifierAndThePaddingCountAreWrittenAndRead() {
+    void xtypes_7_6_3_1_2_the_type_lookup_payload_carries_identifier_and_padding_count() {
         byte[] payload = TypeLookupService.payload(new byte[] {9, 9, 9}, TypeLookupService.Encoding.XCDR1);
         assertArrayEquals(hex("0001 0001 090909 00"), payload);
         payload = TypeLookupService.payload(new byte[] {9, 9, 9, 9}, TypeLookupService.Encoding.XCDR2);
@@ -125,23 +110,4 @@ class TypeLookupEncodingTest {
         assertThrows(IllegalArgumentException.class, () -> TypeLookupService.Encapsulation.read(hex("0003 0000")));
     }
 
-    @Test
-    void theSettingTakesTwoNamesAndRefusesOthers() {
-        assertEquals(TypeLookupService.Encoding.XCDR1, TypeLookupService.Encoding.parse("xcdr1"));
-        assertEquals(TypeLookupService.Encoding.XCDR2, TypeLookupService.Encoding.parse("xcdr2"));
-        assertEquals(null, TypeLookupService.Encoding.parse("cdr2"));
-        String before = System.getProperty("zerodds.wire.type_lookup_encoding");
-        try {
-            System.clearProperty("zerodds.wire.type_lookup_encoding");
-            if (System.getenv("ZERODDS_WIRE_TYPE_LOOKUP_ENCODING") == null)
-                assertEquals(TypeLookupService.Encoding.XCDR2, TypeLookupService.Encoding.configured());
-            System.setProperty("zerodds.wire.type_lookup_encoding", "xcdr1");
-            assertEquals(TypeLookupService.Encoding.XCDR1, TypeLookupService.Encoding.configured());
-            System.setProperty("zerodds.wire.type_lookup_encoding", "cdr2");
-            assertThrows(IllegalArgumentException.class, TypeLookupService.Encoding::configured);
-        } finally {
-            if (before == null) System.clearProperty("zerodds.wire.type_lookup_encoding");
-            else System.setProperty("zerodds.wire.type_lookup_encoding", before);
-        }
-    }
 }

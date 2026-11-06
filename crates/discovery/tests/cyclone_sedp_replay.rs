@@ -112,7 +112,7 @@ fn cyclone_participant() -> DiscoveredParticipant {
 }
 
 #[test]
-fn cyclone_sedp_publication_fixture_flows_through_stack() {
+fn rtps_8_5_4_2_cyclone_sedp_publication_fixture_flows_through_stack() {
     // Local stack with the prefix Cyclone targets in the fixture.
     let mut stack = SedpStack::new(
         GuidPrefix::from_bytes(LOCAL_PREFIX_FROM_FIXTURE),
@@ -181,7 +181,7 @@ fn cyclone_fixture_without_discovery_is_dropped_as_unknown_src() {
 }
 
 #[test]
-fn replay_after_participant_lost_stops_accepting_publications() {
+fn rtps_8_5_5_2_replay_after_participant_lost_stops_accepting_publications() {
     let mut stack = SedpStack::new(
         GuidPrefix::from_bytes(LOCAL_PREFIX_FROM_FIXTURE),
         VendorId::ZERODDS,

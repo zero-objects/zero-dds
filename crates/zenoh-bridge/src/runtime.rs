@@ -1037,14 +1037,13 @@ fn reverse_deliver(
             // 0 = XCDR1, 2 = XCDR2 — not the 10-value representation-identifier
             // `representation_id` names; only these two ids are valid overrides.
             let rep_id: i16 = if decoded.xcdr2 { 2 } else { 0 };
-            if let Ok(mut last) = last_repr.lock() {
-                if *last != (decoded.xcdr2, decoded.big_endian) {
-                    let _ = runtime
-                        .set_user_writer_data_rep_override(writer_eid, Some(alloc::vec![rep_id]));
-                    let _ =
-                        runtime.set_user_writer_byte_order_override(writer_eid, decoded.big_endian);
-                    *last = (decoded.xcdr2, decoded.big_endian);
-                }
+            if let Ok(mut last) = last_repr.lock()
+                && *last != (decoded.xcdr2, decoded.big_endian)
+            {
+                let _ = runtime
+                    .set_user_writer_data_rep_override(writer_eid, Some(alloc::vec![rep_id]));
+                let _ = runtime.set_user_writer_byte_order_override(writer_eid, decoded.big_endian);
+                *last = (decoded.xcdr2, decoded.big_endian);
             }
             // Keyed topic: derive the real per-instance key hash from the
             // decoded body (see the `TopicSpec::keyed`/`type_support` docs) —

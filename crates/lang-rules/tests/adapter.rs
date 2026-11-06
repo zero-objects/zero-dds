@@ -136,7 +136,7 @@ fn a_member_links_to_its_aggregate_and_to_its_type() {
 // -- the coverage table, spec §4.1 ---------------------------------------
 
 #[test]
-fn the_coverage_table_has_a_cell_for_every_construct_and_language() {
+fn xtypes_7_2_2_4_the_coverage_table_has_a_cell_for_every_construct_and_language() {
     // Total by construction: `coverage_of` is exhaustive over both, so
     // reaching every cell is what proves the table has no hole.
     let mut cells = 0;
@@ -157,7 +157,7 @@ fn the_coverage_table_has_a_cell_for_every_construct_and_language() {
 }
 
 #[test]
-fn the_table_reports_what_is_covered_and_what_is_not() {
+fn xtypes_7_2_2_4_the_table_reports_what_is_covered_and_what_is_not() {
     // The number is not the point; that it is stated rather than
     // implied is. A table listing only what is done reads as done.
     let covered = covered_count();
@@ -169,7 +169,7 @@ fn the_table_reports_what_is_covered_and_what_is_not() {
 }
 
 #[test]
-fn an_uncovered_cell_says_why_rather_than_only_that() {
+fn xtypes_7_2_2_4_an_uncovered_cell_says_why_rather_than_only_that() {
     for construct in ConstructKind::ALL {
         for language in Language::ALL {
             let coverage = coverage_of(construct, language);

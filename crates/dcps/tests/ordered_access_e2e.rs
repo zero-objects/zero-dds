@@ -168,11 +168,11 @@ fn interleaved_first_batch(scope: PresentationAccessScope, ordered: bool) -> Vec
 /// §2.2.2.5.3.16: `take_next_instance` returns the samples of one instance
 /// whatever PRESENTATION says ("all the samples belong to a single
 /// instance"); the write order across instances shows on the plain take
-/// (`topic_scope_ordered_access_keeps_write_order_on_the_plain_take`). Under
+/// (`dcps_2_2_2_5_3_8_topic_scope_ordered_access_keeps_write_order_on_the_plain_take`). Under
 /// TOPIC or GROUP scope with `ordered_access` it returned the samples of
 /// every instance.
 #[test]
-fn take_next_instance_returns_one_instance_under_ordered_access() {
+fn dcps_2_2_2_5_3_16_take_next_instance_returns_one_instance_under_ordered_access() {
     for scope in [
         PresentationAccessScope::Topic,
         PresentationAccessScope::Group,
@@ -218,7 +218,7 @@ fn without_ordered_access_the_reader_still_cycles_per_instance() {
 /// `ordered_access = true` with INSTANCE scope changes nothing (§2.2.3.6: the
 /// policy pair only takes effect above INSTANCE scope).
 #[test]
-fn ordered_access_under_instance_scope_is_inert() {
+fn dcps_2_2_3_6_ordered_access_under_instance_scope_is_inert() {
     let batch = interleaved_first_batch(PresentationAccessScope::Instance, true);
     let first_id = batch[0].id;
     assert!(batch.iter().all(|t| t.id == first_id));
@@ -288,7 +288,7 @@ fn interleaved_plain_take(scope: PresentationAccessScope, ordered: bool) -> Vec<
 /// instances. The OMG `dds-rtps` `Test_OrderedAccess_10` runs both subscribers
 /// against one publisher and requires them to differ.
 #[test]
-fn instance_scope_ordered_access_groups_the_plain_take_by_instance() {
+fn dcps_2_2_2_5_3_8_instance_scope_ordered_access_groups_the_plain_take_by_instance() {
     let batch = interleaved_plain_take(PresentationAccessScope::Instance, true);
     assert_eq!(batch.len(), 4, "all four samples are delivered: {batch:?}");
     let ids: Vec<u32> = batch.iter().map(|t| t.id).collect();
@@ -307,7 +307,7 @@ fn instance_scope_ordered_access_groups_the_plain_take_by_instance() {
 /// very same call. Without this the test above would also pass on an
 /// implementation that groups by instance unconditionally.
 #[test]
-fn topic_scope_ordered_access_keeps_write_order_on_the_plain_take() {
+fn dcps_2_2_2_5_3_8_topic_scope_ordered_access_keeps_write_order_on_the_plain_take() {
     let seqs: Vec<u32> = interleaved_plain_take(PresentationAccessScope::Topic, true)
         .iter()
         .map(|t| t.seq)
@@ -321,7 +321,7 @@ fn topic_scope_ordered_access_keeps_write_order_on_the_plain_take() {
 /// `ordered_access` FALSE. The plain take interleaved the instances in
 /// write order.
 #[test]
-fn the_default_presentation_groups_the_plain_take_by_instance() {
+fn dcps_2_2_2_5_3_8_the_default_presentation_groups_the_plain_take_by_instance() {
     let batch = interleaved_plain_take(PresentationAccessScope::Instance, false);
     assert_eq!(batch.len(), 4, "all four samples are delivered: {batch:?}");
     let ids: Vec<u32> = batch.iter().map(|t| t.id).collect();
@@ -333,7 +333,7 @@ fn the_default_presentation_groups_the_plain_take_by_instance() {
 
 /// §2.2.2.5.3.8 rule 2: TOPIC scope without `ordered_access` groups too.
 #[test]
-fn topic_scope_without_ordered_access_groups_the_plain_take() {
+fn dcps_2_2_2_5_3_8_topic_scope_without_ordered_access_groups_the_plain_take() {
     let batch = interleaved_plain_take(PresentationAccessScope::Topic, false);
     assert_eq!(batch.len(), 4, "all four samples are delivered: {batch:?}");
     let ids: Vec<u32> = batch.iter().map(|t| t.id).collect();
@@ -345,7 +345,7 @@ fn topic_scope_without_ordered_access_groups_the_plain_take() {
 
 /// §2.2.2.5.3.8 rule 3: GROUP scope without `ordered_access` groups too.
 #[test]
-fn group_scope_without_ordered_access_groups_the_plain_take() {
+fn dcps_2_2_2_5_3_8_group_scope_without_ordered_access_groups_the_plain_take() {
     let batch = interleaved_plain_take(PresentationAccessScope::Group, false);
     assert_eq!(batch.len(), 4, "all four samples are delivered: {batch:?}");
     let ids: Vec<u32> = batch.iter().map(|t| t.id).collect();
@@ -360,7 +360,7 @@ fn group_scope_without_ordered_access_groups_the_plain_take() {
 /// most one sample." Each take inside `begin_access`/`end_access` returns
 /// one sample, and the takes follow the write order across the instances.
 #[test]
-fn group_scope_ordered_access_takes_one_sample_at_a_time() {
+fn dcps_2_2_2_5_3_8_group_scope_ordered_access_takes_one_sample_at_a_time() {
     let domain = unique_domain();
     let participant = DomainParticipantFactory::instance()
         .create_participant_with_config(domain, DomainParticipantQos::default(), isolated_cfg())

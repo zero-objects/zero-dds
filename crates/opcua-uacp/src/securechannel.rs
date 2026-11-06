@@ -1180,8 +1180,39 @@ fn frame_chunk(
 mod tests {
     use super::*;
 
+    fn ua_string(s: &str) -> Vec<u8> {
+        let mut out = i32::try_from(s.len()).unwrap().to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    /// The RequestHeader of OPC 10000-4 §7.32 a `RequestHeader::new(null,
+    /// handle)` carries: AuthenticationToken (the null NodeId, OPC 10000-6
+    /// §5.2.2.9 Two Byte form), Timestamp 0, RequestHandle,
+    /// ReturnDiagnostics 0, AuditEntryId (an empty String), TimeoutHint 0,
+    /// AdditionalHeader (the null ExtensionObject, §5.2.2.15).
+    fn null_request_header(handle: u32) -> Vec<u8> {
+        let mut out = alloc::vec![0x00, 0x00];
+        out.extend_from_slice(&0_i64.to_le_bytes());
+        out.extend_from_slice(&handle.to_le_bytes());
+        out.extend_from_slice(&[0, 0, 0, 0]);
+        out.extend_from_slice(&ua_string(""));
+        out.extend_from_slice(&[0, 0, 0, 0]);
+        out.extend_from_slice(&[0x00, 0x00, 0x00]);
+        out
+    }
+
+    /// OPC 10000-6 §6.7.2: an OpenSecureChannel chunk under SecurityPolicy
+    /// None is the message header (Table 57: "OPN", 'F', MessageSize,
+    /// SecureChannelId), the asymmetric security header (Table 58: the
+    /// policy URI, a null SenderCertificate and a null
+    /// ReceiverCertificateThumbprint), the sequence header (Table 60:
+    /// SequenceNumber 1, RequestId), then the body: the TypeId
+    /// OpenSecureChannelRequest_Encoding_DefaultBinary i=446 (NodeIds.csv)
+    /// and the request fields of Table 64.
     #[test]
-    fn open_secure_channel_round_trip_none() {
+    fn uacs_6_7_2_an_open_secure_channel_chunk_under_policy_none_is_the_octets_of_tables_57_to_64()
+    {
         let req = OpenSecureChannelRequest {
             request_header: RequestHeader::new(NodeId::numeric(0, 0), 1),
             client_protocol_version: 0,
@@ -1190,33 +1221,49 @@ mod tests {
             client_nonce: Vec::new(),
             requested_lifetime: 3_600_000,
         };
-        let body = req.encode().expect("encode");
+        let mut body = alloc::vec![0x01, 0x00, 0xBE, 0x01];
+        body.extend_from_slice(&null_request_header(1));
+        body.extend_from_slice(&0_u32.to_le_bytes()); // ClientProtocolVersion
+        body.extend_from_slice(&0_i32.to_le_bytes()); // RequestType Issue
+        body.extend_from_slice(&1_i32.to_le_bytes()); // SecurityMode None
+        body.extend_from_slice(&(-1_i32).to_le_bytes()); // ClientNonce null
+        body.extend_from_slice(&3_600_000_u32.to_le_bytes());
+        assert_eq!(req.encode().expect("encode"), body);
+
+        let mut inner = 0_u32.to_le_bytes().to_vec(); // SecureChannelId
+        inner.extend_from_slice(&ua_string(SECURITY_POLICY_NONE));
+        inner.extend_from_slice(&(-1_i32).to_le_bytes());
+        inner.extend_from_slice(&(-1_i32).to_le_bytes());
+        inner.extend_from_slice(&1_u32.to_le_bytes());
+        inner.extend_from_slice(&1_u32.to_le_bytes());
+        inner.extend_from_slice(&body);
+        let mut expected = b"OPNF".to_vec();
+        expected.extend_from_slice(&u32::try_from(8 + inner.len()).unwrap().to_le_bytes());
+        expected.extend_from_slice(&inner);
 
         let mut ch = SecureChannel::new(0, 0);
-        let chunk = ch.open_chunk(1, &body).expect("chunk");
-
-        let parsed = parse_chunk(&chunk).expect("parse");
+        assert_eq!(ch.open_chunk(1, &body).expect("chunk"), expected);
+        let parsed = parse_chunk(&expected).expect("parse");
         assert_eq!(parsed.message_type, MessageType::OpenSecureChannel);
         assert_eq!(parsed.sequence_header.request_id, 1);
-        assert_eq!(
-            parsed
-                .asymmetric_header
-                .as_ref()
-                .unwrap()
-                .security_policy_uri,
-            SECURITY_POLICY_NONE
-        );
-
-        // Body: TypeId then fields.
         let mut br = UaReader::new(&parsed.body);
-        let type_id = NodeId::decode(&mut br).expect("type id");
-        assert_eq!(type_id, node_ids::OPEN_SECURE_CHANNEL_REQUEST);
-        let back = OpenSecureChannelRequest::decode_body(&mut br).expect("body");
-        assert_eq!(back, req);
+        assert_eq!(
+            NodeId::decode(&mut br).expect("type id"),
+            node_ids::OPEN_SECURE_CHANNEL_REQUEST
+        );
+        assert_eq!(
+            OpenSecureChannelRequest::decode_body(&mut br).expect("body"),
+            req
+        );
     }
 
+    /// OPC 10000-6 Table 64, the response: the TypeId i=449, the
+    /// ResponseHeader of OPC 10000-4 §7.33 (Timestamp, RequestHandle,
+    /// ServiceResult, an empty DiagnosticInfo, the StringTable, the null
+    /// AdditionalHeader), ServerProtocolVersion, the SecurityToken
+    /// (SecureChannelId, TokenId, CreatedAt, RevisedLifetime), ServerNonce.
     #[test]
-    fn open_response_round_trip() {
+    fn uacs_6_7_4_an_open_secure_channel_response_is_the_fields_of_table_64() {
         let resp = OpenSecureChannelResponse {
             response_header: ResponseHeader::new(1, 0),
             server_protocol_version: 0,
@@ -1228,8 +1275,21 @@ mod tests {
             },
             server_nonce: Vec::new(),
         };
-        let body = resp.encode().expect("encode");
-        let mut br = UaReader::new(&body);
+        let mut expected = alloc::vec![0x01, 0x00, 0xC1, 0x01];
+        expected.extend_from_slice(&0_i64.to_le_bytes());
+        expected.extend_from_slice(&1_u32.to_le_bytes());
+        expected.extend_from_slice(&0_u32.to_le_bytes());
+        expected.push(0x00); // DiagnosticInfo, no field
+        expected.extend_from_slice(&0_i32.to_le_bytes()); // StringTable
+        expected.extend_from_slice(&[0x00, 0x00, 0x00]);
+        expected.extend_from_slice(&0_u32.to_le_bytes());
+        expected.extend_from_slice(&42_u32.to_le_bytes());
+        expected.extend_from_slice(&7_u32.to_le_bytes());
+        expected.extend_from_slice(&132_000_000_000_000_000_i64.to_le_bytes());
+        expected.extend_from_slice(&600_000_u32.to_le_bytes());
+        expected.extend_from_slice(&(-1_i32).to_le_bytes());
+        assert_eq!(resp.encode().expect("encode"), expected);
+        let mut br = UaReader::new(&expected);
         assert_eq!(
             NodeId::decode(&mut br).expect("id"),
             node_ids::OPEN_SECURE_CHANNEL_RESPONSE
@@ -1240,11 +1300,20 @@ mod tests {
         );
     }
 
+    /// OPC 10000-6 §6.7.2 for a MSG chunk: the message header (Table 57,
+    /// "MSG", 'F'), the symmetric security header (Table 59: TokenId), the
+    /// sequence header (Table 60), the body.
     #[test]
-    fn message_chunk_round_trip() {
+    fn uacs_6_7_2_a_message_chunk_is_header_token_id_sequence_header_and_body() {
         let mut ch = SecureChannel::new(42, 7);
-        let chunk = ch.message_chunk(5, &[0xAA, 0xBB]).expect("chunk");
-        let parsed = parse_chunk(&chunk).expect("parse");
+        let mut expected = b"MSGF".to_vec();
+        expected.extend_from_slice(&26_u32.to_le_bytes());
+        for v in [42_u32, 7, 1, 5] {
+            expected.extend_from_slice(&v.to_le_bytes());
+        }
+        expected.extend_from_slice(&[0xAA, 0xBB]);
+        assert_eq!(ch.message_chunk(5, &[0xAA, 0xBB]).expect("chunk"), expected);
+        let parsed = parse_chunk(&expected).expect("parse");
         assert_eq!(parsed.message_type, MessageType::Message);
         assert_eq!(parsed.channel_id, 42);
         assert_eq!(parsed.token_id, Some(7));
@@ -1253,7 +1322,7 @@ mod tests {
     }
 
     #[test]
-    fn chunked_message_round_trips_across_c_and_f() {
+    fn uacs_6_7_2_2_a_message_above_the_send_buffer_is_cut_into_c_chunks_and_a_final_f() {
         // Part 6 §6.7.1: a Message larger than the negotiated buffer is broken
         // into MessageChunks; §6.7.2.2 Table 57 marks all but the last `C`.
         let mut sender = SecureChannel::new(42, 7);
@@ -1294,7 +1363,7 @@ mod tests {
     }
 
     #[test]
-    fn abort_chunk_reports_the_error_and_keeps_the_channel() {
+    fn uacs_6_7_abort_chunk_reports_the_error_and_keeps_the_channel() {
         // Part 6 §6.7.3 Table 63 — the abort body is `Error` + `Reason`.
         let mut sender = SecureChannel::new(9, 3);
         let mut receiver = SecureChannel::new(9, 3);
@@ -1333,7 +1402,7 @@ mod tests {
     }
 
     #[test]
-    fn split_messages_splits_by_message_size() {
+    fn uacs_6_7_split_messages_splits_by_message_size() {
         let mut ch = SecureChannel::new(1, 1);
         let a = ch.message_chunk(1, &[0xAA]).expect("a");
         let b = ch.message_chunk(2, &[0xBB, 0xCC]).expect("b");
@@ -1349,8 +1418,10 @@ mod tests {
         assert!(split_messages(&broken).is_err());
     }
 
+    /// OPC 10000-4 §7.33 with a StringTable: its Int32 count, then the
+    /// Strings (OPC 10000-6 §5.2.5).
     #[test]
-    fn response_header_with_string_table_round_trips() {
+    fn uacs_7_33_a_response_header_carries_its_string_table_as_an_array() {
         let h = ResponseHeader {
             timestamp: 5,
             request_handle: 9,
@@ -1358,9 +1429,18 @@ mod tests {
             string_table: alloc::vec![String::from("a"), String::from("b")],
             additional_header: null_extension_object(),
         };
+        let mut expected = 5_i64.to_le_bytes().to_vec();
+        expected.extend_from_slice(&9_u32.to_le_bytes());
+        expected.extend_from_slice(&0x8000_0000_u32.to_le_bytes());
+        expected.push(0x00);
+        expected.extend_from_slice(&2_i32.to_le_bytes());
+        expected.extend_from_slice(&ua_string("a"));
+        expected.extend_from_slice(&ua_string("b"));
+        expected.extend_from_slice(&[0x00, 0x00, 0x00]);
         let mut w = UaWriter::new();
         h.encode(&mut w).expect("enc");
-        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(w.as_slice(), expected.as_slice());
+        let mut r = UaReader::new(&expected);
         assert_eq!(ResponseHeader::decode(&mut r).expect("dec"), h);
     }
 }

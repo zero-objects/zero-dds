@@ -83,15 +83,20 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn best_effort_clock_stream_has_no_gap_jitter() {
-    let domain = 93;
+    let lease = zerodds_test_domains::lease_domain();
+    let domain = lease.id();
     let host = [0x4Bu8; 4];
     let mk_prefix = |tag: u8| {
         let mut p = [tag; 12];
         p[2..6].copy_from_slice(&host);
         GuidPrefix::from_bytes(p)
     };
-    let rt_pub = DcpsRuntime::start(domain, mk_prefix(0xC1), RuntimeConfig::default()).unwrap();
-    let rt_sub = DcpsRuntime::start(domain, mk_prefix(0xC2), RuntimeConfig::default()).unwrap();
+    let rt_pub = common::ShutsDown(
+        DcpsRuntime::start(domain, mk_prefix(0xC1), RuntimeConfig::default()).unwrap(),
+    );
+    let rt_sub = common::ShutsDown(
+        DcpsRuntime::start(domain, mk_prefix(0xC2), RuntimeConfig::default()).unwrap(),
+    );
 
     let topic = "A4SimClock";
     let w = rt_pub.register_user_writer(writer_cfg(topic)).unwrap();
@@ -110,22 +115,30 @@ fn best_effort_clock_stream_has_no_gap_jitter() {
         "reader/writer did not match before the clock burst"
     );
 
-    // Subscriber thread: timestamp every arrival.
+    // Subscriber thread: every arrival with its tick number (the payload)
+    // and its time, so that a failure says which ticks went missing.
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let stop_rx = Arc::clone(&stop);
+    let started = Instant::now();
     let sub = std::thread::spawn(move || {
-        let mut arrivals: Vec<Instant> = Vec::with_capacity(TOTAL as usize);
+        let mut arrivals: Vec<(u32, Instant)> = Vec::with_capacity(TOTAL as usize);
+        let tick = |payload: &[u8]| {
+            payload
+                .get(..4)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map_or(u32::MAX, u32::from_le_bytes)
+        };
         while !stop_rx.load(std::sync::atomic::Ordering::Relaxed) {
-            match rx.recv_timeout(Duration::from_millis(100)) {
-                Ok(UserSample::Alive { .. }) => arrivals.push(Instant::now()),
-                Ok(_) => {}
-                Err(_) => {}
+            if let Ok(UserSample::Alive { payload, .. }) =
+                rx.recv_timeout(Duration::from_millis(100))
+            {
+                arrivals.push((tick(payload.as_ref()), Instant::now()));
             }
         }
         // Drain any stragglers.
         while let Ok(s) = rx.try_recv() {
-            if matches!(s, UserSample::Alive { .. }) {
-                arrivals.push(Instant::now());
+            if let UserSample::Alive { payload, .. } = s {
+                arrivals.push((tick(payload.as_ref()), Instant::now()));
             }
         }
         arrivals
@@ -149,20 +162,63 @@ fn best_effort_clock_stream_has_no_gap_jitter() {
     let received = arrivals.len() as u64;
     assert!(
         received >= TOTAL / 2,
-        "received only {received}/{TOTAL} clock ticks — best-effort loopback should keep most"
+        "received only {received}/{TOTAL} clock ticks — best-effort loopback should keep most; \
+         missing ticks {}; first arrival {}",
+        missing_ticks(&arrivals),
+        arrivals.first().map_or_else(
+            || "none".to_string(),
+            |(tick, at)| format!("tick {tick} after {:?}", at.duration_since(started))
+        )
     );
 
     // (b) the worst inter-arrival gap must be far below Fast DDS' 0.5 s pathology.
     let mut worst = Duration::ZERO;
+    let mut worst_before = u32::MAX;
     for w2 in arrivals.windows(2) {
-        let gap = w2[1].duration_since(w2[0]);
+        let gap = w2[1].1.duration_since(w2[0].1);
         if gap > worst {
             worst = gap;
+            worst_before = w2[1].0;
         }
     }
     assert!(
         worst < MAX_GAP,
-        "worst inter-arrival gap {worst:?} exceeds {MAX_GAP:?} (Fast DDS-style clock stall); \
-         received {received}/{TOTAL}"
+        "worst inter-arrival gap {worst:?} exceeds {MAX_GAP:?} (Fast DDS-style clock stall), \
+         before tick {worst_before}; received {received}/{TOTAL}"
     );
 }
+
+/// The ticks that did not arrive, as ranges (`3-7, 12`).
+fn missing_ticks(arrivals: &[(u32, Instant)]) -> String {
+    let mut seen = vec![false; TOTAL as usize];
+    for (tick, _) in arrivals {
+        if let Some(slot) = seen.get_mut(*tick as usize) {
+            *slot = true;
+        }
+    }
+    let mut ranges = Vec::new();
+    let mut index = 0;
+    while index < seen.len() {
+        if seen[index] {
+            index += 1;
+            continue;
+        }
+        let first = index;
+        while index < seen.len() && !seen[index] {
+            index += 1;
+        }
+        ranges.push(if index - 1 == first {
+            format!("{first}")
+        } else {
+            format!("{first}-{}", index - 1)
+        });
+    }
+    if ranges.is_empty() {
+        "none".to_string()
+    } else {
+        ranges.join(", ")
+    }
+}
+
+#[path = "common/mod.rs"]
+mod common;

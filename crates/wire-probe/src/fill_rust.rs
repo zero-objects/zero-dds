@@ -315,17 +315,16 @@ fn literal(
     let mut out = format!("{} {{ ", rust_path(ast, type_));
     let mut written = 0usize;
 
-    if let Ok(node) = ast.type_(type_) {
-        if let TypeKind::Structure {
+    if let Ok(node) = ast.type_(type_)
+        && let TypeKind::Structure {
             base: Some(base), ..
         } = &node.kind
-        {
-            let base = base.resolved().ok_or_else(|| ProbeError::NoLayout {
-                detail: format!("{path}: the base type is unresolved"),
-            })?;
-            let _ = write!(out, "base: {}", literal(ast, base, value, path)?);
-            written += 1;
-        }
+    {
+        let base = base.resolved().ok_or_else(|| ProbeError::NoLayout {
+            detail: format!("{path}: the base type is unresolved"),
+        })?;
+        let _ = write!(out, "base: {}", literal(ast, base, value, path)?);
+        written += 1;
     }
 
     let members: Vec<contract::Member> = contract::members(ast, type_)

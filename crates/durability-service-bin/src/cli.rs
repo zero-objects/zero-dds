@@ -125,38 +125,33 @@ mod tests {
         parts.iter().map(|s| (*s).to_string()).collect()
     }
 
+    /// `zerodds-durability-svc.yaml(5)`: every flag is a `--set` of the key
+    /// it names (`--domain N` is `--set domain=N`, `--topic NAME` is
+    /// `--set +durability.topics=NAME`), in the order the daemon applies
+    /// them; no flag, no `--set`.
     #[test]
-    fn empty_args_default() {
-        assert!(parse(&[]).unwrap().domain.is_none());
-    }
-
-    #[test]
-    fn domain_parses_int() {
-        assert_eq!(parse(&args(&["--domain", "12"])).unwrap().domain, Some(12));
-    }
-
-    #[test]
-    fn topic_repeats() {
-        let p = parse(&args(&["--topic", "A", "--topic", "B"])).unwrap();
-        assert_eq!(p.topics, vec!["A".to_string(), "B".to_string()]);
-    }
-
-    #[test]
-    fn sets_maps_topic_to_plus_durability_topics() {
-        let p = parse(&args(&["--topic", "A"])).unwrap();
-        assert_eq!(p.sets(), vec!["+durability.topics=A".to_string()]);
-    }
-
-    #[test]
-    fn unknown_flag_rejected() {
+    fn every_flag_is_a_set_of_the_key_the_manual_names() {
+        assert!(parse(&[]).unwrap().sets().is_empty());
+        let p = parse(&args(&[
+            "--domain", "12", "--store", "file", "--path", "/var/x", "--auto", "--topic", "A",
+            "--topic", "B",
+        ]))
+        .unwrap();
+        assert_eq!(
+            p.sets(),
+            [
+                "domain=12",
+                "store=file",
+                "path=/var/x",
+                "auto=true",
+                "+durability.topics=A",
+                "+durability.topics=B"
+            ]
+        );
+        assert!(parse(&args(&["-h"])).unwrap().help);
         assert!(matches!(
             parse(&args(&["--nope"])).unwrap_err(),
             CliError::UnknownFlag(_)
         ));
-    }
-
-    #[test]
-    fn help_short_form() {
-        assert!(parse(&args(&["-h"])).unwrap().help);
     }
 }

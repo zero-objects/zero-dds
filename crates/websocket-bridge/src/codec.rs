@@ -232,7 +232,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn smallest_text_frame_encodes_to_2_byte_header_plus_payload() {
+    fn ws_5_2_smallest_text_frame_encodes_to_2_byte_header_plus_payload() {
         // RFC 6455 §5.2 — payload-len <= 125 ⇒ 2 byte header.
         let bytes = encode(&Frame::text("hi")).expect("encode");
         assert_eq!(bytes.len(), 4);
@@ -244,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn medium_payload_uses_extended_16_bit_length() {
+    fn ws_5_2_medium_payload_uses_extended_16_bit_length() {
         // Spec §5.2 — len 126..=65535 ⇒ marker 126 + 2 byte BE.
         let payload = alloc::vec![0xAA; 200];
         let f = Frame::binary(payload.clone());
@@ -256,7 +256,7 @@ mod tests {
     }
 
     #[test]
-    fn large_payload_uses_extended_64_bit_length() {
+    fn ws_5_2_large_payload_uses_extended_64_bit_length() {
         // Spec §5.2 — len > 65535 ⇒ marker 127 + 8 byte BE with MSB=0.
         let payload = alloc::vec![0xBB; 70_000];
         let f = Frame::binary(payload.clone());
@@ -270,78 +270,85 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_unmasked_text() {
-        let f = Frame::text("hello world");
-        let bytes = encode(&f).expect("encode");
-        let (parsed, consumed) = decode(&bytes).expect("decode");
-        assert_eq!(parsed, f);
-        assert_eq!(consumed, bytes.len());
-    }
-
-    #[test]
-    fn round_trip_masked_payload_unmasked_on_decode() {
-        // Spec §5.3 — payload XOR'd with key on encode, XOR'd back on
-        // decode.
-        let f = Frame::text("masked!").with_mask([0x12, 0x34, 0x56, 0x78]);
-        let bytes = encode(&f).expect("encode");
-        // Wire bytes differ from plaintext.
-        assert_ne!(&bytes[6..], b"masked!");
-        let (parsed, _) = decode(&bytes).expect("decode");
-        assert_eq!(parsed.payload, b"masked!");
-        assert_eq!(parsed.masking_key, Some([0x12, 0x34, 0x56, 0x78]));
-    }
-
-    #[test]
-    fn round_trip_medium_and_large_payloads() {
-        for size in [126, 200, 65535, 65536, 100_000] {
-            let f = Frame::binary(alloc::vec![0xAB; size]);
-            let bytes = encode(&f).expect("encode");
-            let (parsed, _) = decode(&bytes).expect("decode");
-            assert_eq!(parsed.payload.len(), size);
-        }
-    }
-
-    #[test]
-    fn ping_frame_round_trip() {
-        let f = Frame::ping(alloc::vec![1, 2, 3]);
-        let bytes = encode(&f).expect("encode");
-        let (parsed, _) = decode(&bytes).expect("decode");
-        assert_eq!(parsed.opcode, Opcode::Ping);
-        assert_eq!(parsed.payload, alloc::vec![1, 2, 3]);
-    }
-
-    #[test]
-    fn pong_frame_round_trip() {
-        // Spec §5.5.3: "The Pong frame contains an opcode of 0xA."
-        let f = Frame::pong(alloc::vec![1, 2, 3]);
-        let bytes = encode(&f).expect("encode");
-        assert_eq!(bytes[0] & 0x0F, 0xA, "opcode 0xA on the wire");
-        let (parsed, _) = decode(&bytes).expect("decode");
-        assert_eq!(parsed.opcode, Opcode::Pong);
-        assert_eq!(parsed.payload, alloc::vec![1, 2, 3]);
-        assert!(parsed.fin, "a control frame is never fragmented");
-    }
-
-    #[test]
-    fn pong_carries_the_application_data_of_the_ping_it_answers() {
-        // Spec §5.5.3: "A Pong frame sent in response to a Ping frame
-        // must have identical 'Application data' as found in the
-        // message body of the Ping frame being replied to."
-        let ping_wire = encode(&Frame::ping(b"heartbeat-17".to_vec())).expect("encode");
-        let (ping, _) = decode(&ping_wire).expect("decode");
-        let pong_wire = encode(&Frame::pong(ping.payload.clone())).expect("encode");
-        let (pong, _) = decode(&pong_wire).expect("decode");
-        assert_eq!(pong.opcode, Opcode::Pong);
-        assert_eq!(pong.payload, ping.payload);
-    }
-
-    #[test]
-    fn close_frame_carries_status_code() {
-        let f = Frame::close(1000, "");
-        let bytes = encode(&f).expect("encode");
-        let (parsed, _) = decode(&bytes).expect("decode");
+    fn ws_5_5_1_close_frame_carries_status_code() {
+        // §5.5.1: the body of a Close frame starts with the status code,
+        // two octets in network byte order; 1000 is 0x03e8 (§7.4.1).
+        let wire = [0x88, 0x02, 0x03, 0xe8];
+        assert_eq!(encode(&Frame::close(1000, "")).expect("encode"), wire);
+        let (parsed, consumed) = decode(&wire).expect("decode");
         assert_eq!(parsed.opcode, Opcode::Close);
-        assert_eq!(&parsed.payload[..2], &1000u16.to_be_bytes());
+        assert_eq!(parsed.payload, [0x03, 0xe8]);
+        assert_eq!(consumed, wire.len());
+    }
+
+    // RFC 6455 §5.7: the examples, decoded and encoded.
+    const HELLO: &[u8] = b"Hello";
+    const MASK: [u8; 4] = [0x37, 0xfa, 0x21, 0x3d];
+    const MASKED_HELLO: [u8; 5] = [0x7f, 0x9f, 0x4d, 0x51, 0x58];
+
+    fn decoded(wire: &[u8]) -> Frame {
+        let (frame, consumed) = decode(wire).expect("decode");
+        assert_eq!(consumed, wire.len());
+        frame
+    }
+
+    #[test]
+    fn ws_5_7_a_single_frame_text_message_unmasked_and_masked() {
+        let unmasked = [&[0x81, 0x05][..], HELLO].concat();
+        assert_eq!(encode(&Frame::text("Hello")).expect("encode"), unmasked);
+        assert_eq!(decoded(&unmasked), Frame::text("Hello"));
+        // §5.3: the masked payload is the payload XOR the key.
+        let masked = [&[0x81, 0x85][..], &MASK[..], &MASKED_HELLO[..]].concat();
+        let frame = Frame::text("Hello").with_mask(MASK);
+        assert_eq!(encode(&frame).expect("encode"), masked);
+        assert_eq!(decoded(&masked), frame);
+    }
+
+    #[test]
+    fn ws_5_7_a_fragmented_text_message() {
+        // §5.4: "Hel" with FIN 0 and the text opcode, "lo" with FIN 1 and
+        // the continuation opcode.
+        let first = [0x01, 0x03, 0x48, 0x65, 0x6c];
+        let last = [0x80, 0x02, 0x6c, 0x6f];
+        let mut hel = Frame::text("Hel");
+        hel.fin = false;
+        let mut lo = Frame::text("lo");
+        lo.opcode = Opcode::Continuation;
+        assert_eq!(encode(&hel).expect("encode"), first);
+        assert_eq!(encode(&lo).expect("encode"), last);
+        assert_eq!(decoded(&first), hel);
+        assert_eq!(decoded(&last), lo);
+    }
+
+    #[test]
+    fn ws_5_7_an_unmasked_ping_and_the_masked_pong_with_its_body() {
+        // §5.5.2, §5.5.3: the Pong carries the Application data of the
+        // Ping it answers.
+        let ping_wire = [&[0x89, 0x05][..], HELLO].concat();
+        let pong_wire = [&[0x8a, 0x85][..], &MASK[..], &MASKED_HELLO[..]].concat();
+        let ping = decoded(&ping_wire);
+        assert_eq!(ping, Frame::ping(HELLO.to_vec()));
+        assert_eq!(encode(&ping).expect("encode"), ping_wire);
+        let pong = Frame::pong(ping.payload.clone()).with_mask(MASK);
+        assert_eq!(encode(&pong).expect("encode"), pong_wire);
+        assert_eq!(decoded(&pong_wire), pong);
+    }
+
+    #[test]
+    fn ws_5_7_a_256_and_a_65536_octet_binary_frame() {
+        // §5.2: 126 and a 16-bit length, 127 and a 64-bit length.
+        for (header, size) in [
+            (alloc::vec![0x82, 0x7e, 0x01, 0x00], 256usize),
+            (
+                alloc::vec![0x82, 0x7f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00],
+                65_536,
+            ),
+        ] {
+            let data: Vec<u8> = (0..size).map(|i| (i % 251) as u8).collect();
+            let wire = [header, data.clone()].concat();
+            assert_eq!(encode(&Frame::binary(data.clone())).expect("encode"), wire);
+            assert_eq!(decoded(&wire), Frame::binary(data));
+        }
     }
 
     #[test]
@@ -351,20 +358,20 @@ mod tests {
     }
 
     #[test]
-    fn extended_16_bit_length_truncated_fails() {
+    fn ws_5_2_extended_16_bit_length_truncated_fails() {
         // Marker 126 without the 2 length bytes.
         assert_eq!(decode(&[0x81, 0x7E]), Err(CodecError::HeaderTooShort));
     }
 
     #[test]
-    fn extended_64_bit_length_msb_set_rejected() {
+    fn ws_5_2_extended_64_bit_length_msb_set_rejected() {
         // Spec §5.2 — MSB MUST be 0.
         let bytes = [0x82u8, 0x7F, 0x80, 0, 0, 0, 0, 0, 0, 0];
         assert_eq!(decode(&bytes), Err(CodecError::PayloadLengthMsbSet));
     }
 
     #[test]
-    fn non_minimal_16_bit_length_rejected() {
+    fn ws_5_2_non_minimal_16_bit_length_rejected() {
         // Spec §5.2 — "minimal number of bytes MUST be used".
         // Marker 126 with value 100 is non-minimal.
         let bytes = [0x82u8, 0x7E, 0, 100, 0xAA, 0xBB];
@@ -372,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn non_minimal_64_bit_length_rejected() {
+    fn ws_5_2_non_minimal_64_bit_length_rejected() {
         // Marker 127 with value 65000 is non-minimal (would be 16-bit).
         let mut bytes = alloc::vec![0x82u8, 0x7F];
         bytes.extend_from_slice(&65000u64.to_be_bytes());
@@ -380,14 +387,14 @@ mod tests {
     }
 
     #[test]
-    fn control_frame_with_long_payload_rejected_on_encode() {
+    fn ws_5_5_control_frame_with_long_payload_rejected_on_encode() {
         // Spec §5.5 — control frame payload <= 125.
         let f = Frame::ping(alloc::vec![0; 200]);
         assert_eq!(encode(&f), Err(CodecError::ControlFrameTooLong));
     }
 
     #[test]
-    fn fragmented_control_frame_rejected_on_encode() {
+    fn ws_5_5_fragmented_control_frame_rejected_on_encode() {
         // Spec §5.5 — control frames MUST NOT be fragmented (FIN=1).
         let mut f = Frame::ping(alloc::vec![1, 2]);
         f.fin = false;
@@ -409,28 +416,18 @@ mod tests {
     }
 
     #[test]
-    fn rsv_bits_propagate_to_decoded_frame() {
+    fn ws_5_2_rsv_bits_propagate_to_decoded_frame() {
         // Spec §5.2 — RSV1-3 are not a codec validation topic
         // (extension negotiation), but must be passed through 1:1.
+        // FIN 0x80, RSV1 0x40, RSV3 0x10, opcode 0x2.
+        let wire = [0xd2, 0x01, 0x01];
         let mut f = Frame::binary(alloc::vec![1]);
         f.rsv1 = true;
         f.rsv3 = true;
-        let bytes = encode(&f).expect("encode");
-        let (parsed, _) = decode(&bytes).expect("decode");
+        assert_eq!(encode(&f).expect("encode"), wire);
+        let (parsed, _) = decode(&wire).expect("decode");
         assert!(parsed.rsv1);
         assert!(!parsed.rsv2);
         assert!(parsed.rsv3);
-    }
-
-    #[test]
-    fn fin_zero_text_frame_round_trip() {
-        // Spec §5.4 — fragmentation: FIN=0 + text opcode → the caller
-        // sends continuation frames with FIN=1 for the last one.
-        let mut f = Frame::text("part-1");
-        f.fin = false;
-        let bytes = encode(&f).expect("encode");
-        let (parsed, _) = decode(&bytes).expect("decode");
-        assert!(!parsed.fin);
-        assert_eq!(parsed.opcode, Opcode::Text);
     }
 }

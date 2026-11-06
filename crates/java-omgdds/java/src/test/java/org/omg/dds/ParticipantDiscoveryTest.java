@@ -60,7 +60,7 @@ class ParticipantDiscoveryTest {
     // --- get_discovered_participants and get_discovered_participant_data ----------
 
     @Test
-    void theDiscoveredParticipantsAreTheOtherParticipantsOfTheDomainAndTheirUserData() {
+    void javapsm_2_the_discovered_participants_are_the_other_participants_of_the_domain_and_their_user_data() {
         int domain = 1260;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         byte[] value = {4, 5, 6};
@@ -80,7 +80,7 @@ class ParticipantDiscoveryTest {
     }
 
     @Test
-    void aClosedParticipantIsNotDiscoveredAnyMore() {
+    void javapsm_2_a_closed_participant_is_not_discovered_any_more() {
         int domain = 1262;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -94,7 +94,7 @@ class ParticipantDiscoveryTest {
     // --- get_discovered_topics and get_discovered_topic_data ------------------------
 
     @Test
-    void theTopicsOfOtherParticipantsOfTheDomainAreDiscovered() {
+    void javapsm_2_the_topics_of_other_participants_of_the_domain_are_discovered() {
         int domain = 1263;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -114,7 +114,7 @@ class ParticipantDiscoveryTest {
     }
 
     @Test
-    void aTopicOfAnIgnoredParticipantIsNotDiscovered() {
+    void javapsm_2_a_topic_of_an_ignored_participant_is_not_discovered() {
         int domain = 1264;
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -129,7 +129,7 @@ class ParticipantDiscoveryTest {
     // --- get_builtin_subscriber ------------------------------------------------------
 
     @Test
-    void theBuiltinSubscriberHoldsOneReaderPerBuiltinTopic() {
+    void javapsm_2_the_builtin_subscriber_holds_one_reader_per_builtin_topic() {
         DomainParticipant participant = Qos.factory().createParticipant(1265);
         Subscriber builtin = participant.getBuiltinSubscriber();
         Set<DataReader<?>> readers = new HashSet<>();
@@ -157,7 +157,7 @@ class ParticipantDiscoveryTest {
     }
 
     @Test
-    void aBuiltinReaderHasTheEntitiesThatExistedBeforeAndNoneOfItsOwnParticipant() {
+    void javapsm_2_a_builtin_reader_has_the_entities_that_existed_before_and_none_of_its_own_participant() {
         int domain = 1266;
         DomainParticipant early = Qos.factory().createParticipant(domain);
         byte[] value = {1, 2};
@@ -219,7 +219,7 @@ class ParticipantDiscoveryTest {
     }
 
     @Test
-    void theBuiltinReaderSeesTheUserDataChangeOfAnotherParticipant() {
+    void javapsm_2_the_builtin_reader_sees_the_user_data_change_of_another_participant() {
         int domain = 1267;
         DomainParticipant observer = Qos.factory().createParticipant(domain);
         DomainParticipant other = withUserData(domain, new byte[] {1});

@@ -10,14 +10,3 @@
 /// CloseConnection body — empty per spec §15.4.7.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct CloseConnection;
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn body_is_unit() {
-        let _ = CloseConnection;
-    }
-}

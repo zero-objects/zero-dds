@@ -2689,21 +2689,21 @@ impl CryptographicPlugin for AesGcmCryptoPlugin {
             .write()
             .map_err(|_| poisoned())?
             .insert(handle, data_placeholder);
-        if let Some(provider) = &self.secret_provider {
-            if let Some(secret) = provider.get_shared_secret(shared_secret) {
-                // Cross-vendor: if the provider knows the handshake challenges,
-                // derive the Kx key per DDS-Security §9.5.3.5 (cyclone-
-                // identical). Otherwise (PSK/mock without challenges) fall back to the
-                // proprietary HKDF — stays ZeroDDS<->ZeroDDS consistent.
-                let kx = match provider.get_shared_secret_challenges(shared_secret) {
-                    Some((c1, c2)) => KeyMaterial::from_kx_shared_secret(&secret, &c1, &c2)?,
-                    None => KeyMaterial::from_shared_secret_kx(self.local_suite, &secret)?,
-                };
-                self.kx_slots
-                    .write()
-                    .map_err(|_| poisoned())?
-                    .insert(handle, kx);
-            }
+        if let Some(provider) = &self.secret_provider
+            && let Some(secret) = provider.get_shared_secret(shared_secret)
+        {
+            // Cross-vendor: if the provider knows the handshake challenges,
+            // derive the Kx key per DDS-Security §9.5.3.5 (cyclone-
+            // identical). Otherwise (PSK/mock without challenges) fall back to the
+            // proprietary HKDF — stays ZeroDDS<->ZeroDDS consistent.
+            let kx = match provider.get_shared_secret_challenges(shared_secret) {
+                Some((c1, c2)) => KeyMaterial::from_kx_shared_secret(&secret, &c1, &c2)?,
+                None => KeyMaterial::from_shared_secret_kx(self.local_suite, &secret)?,
+            };
+            self.kx_slots
+                .write()
+                .map_err(|_| poisoned())?
+                .insert(handle, kx);
         }
         Ok(handle)
     }
@@ -3307,7 +3307,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plugin_class_id_matches_spec() {
+    fn security_10_1_plugin_class_id_matches_spec() {
         let p = AesGcmCryptoPlugin::new();
         assert_eq!(p.plugin_class_id(), "DDS:Crypto:AES-GCM-GMAC:1.2");
     }
@@ -3331,7 +3331,7 @@ mod tests {
     /// refused it as "invalid message"; the padding is not part of the
     /// ciphertext the reader takes back.
     #[test]
-    fn sec_body_is_padded_to_four_for_any_ciphertext_length() {
+    fn security_7_4_6_2_2_sec_body_is_padded_to_four_for_any_ciphertext_length() {
         let header = [0, 0, 0, 4, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
         let tag = [0xAB; 16];
         for len in 1..=8 {
@@ -3358,7 +3358,7 @@ mod tests {
     }
 
     #[test]
-    fn cyclone_volatile_submessage_roundtrips() {
+    fn security_7_4_6_2_3_cyclone_volatile_submessage_roundtrips() {
         // VolatileSecure-Kx-Key (cyclone calculate_kx_keys) + cyclone-Wire-Format
         // seal -> assemble(SEC_PREFIX/BODY/POSTFIX) -> parse -> open.
         let mat = KeyMaterial::from_kx_shared_secret(
@@ -3397,7 +3397,7 @@ mod tests {
     }
 
     #[test]
-    fn cyclone_kx_key_matches_both_directions() {
+    fn security_9_8_9_1_cyclone_kx_key_matches_both_directions() {
         // Both peers derive the same Kx key (symmetric) -> A seals, B opens.
         let secret = b"shared-secret-from-ecdh-handshake";
         let (c1, c2) = ([0xAAu8; 32], [0xBBu8; 32]);
@@ -3453,7 +3453,7 @@ mod tests {
     }
 
     #[test]
-    fn encrypt_decrypt_roundtrip() {
+    fn security_8_1_encrypt_decrypt_roundtrip() {
         let mut p = AesGcmCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3472,7 +3472,7 @@ mod tests {
     }
 
     #[test]
-    fn decrypt_rejects_tampered_ciphertext() {
+    fn security_8_1_1_decrypt_rejects_tampered_ciphertext() {
         let mut p = AesGcmCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3490,7 +3490,7 @@ mod tests {
     }
 
     #[test]
-    fn two_encrypts_produce_different_ciphertexts() {
+    fn security_8_1_1_two_encrypts_produce_different_ciphertexts() {
         let mut p = AesGcmCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3504,7 +3504,7 @@ mod tests {
     }
 
     #[test]
-    fn cross_plugin_interop_via_tokens() {
+    fn security_9_5_1_1_cross_plugin_interop_via_tokens() {
         // Alice encrypts, sends a token to Bob, Bob decodes.
         let mut alice = AesGcmCryptoPlugin::new();
         let mut bob = AesGcmCryptoPlugin::new();
@@ -3546,7 +3546,7 @@ mod tests {
     }
 
     #[test]
-    fn serialized_payload_cross_plugin_via_tokens() {
+    fn security_10_5_2_4_serialized_payload_cross_plugin_via_tokens() {
         // §9.5.3.3.1 data_protection: Alice encode_serialized_payload (innere
         // payload layer), token to Bob, Bob decode_serialized_payload (key_id).
         let mut alice = AesGcmCryptoPlugin::new();
@@ -3638,7 +3638,7 @@ mod tests {
     // -------------------------------------------------------------
 
     #[test]
-    fn default_plugin_uses_aes256() {
+    fn security_10_5_1_1_default_plugin_uses_aes256() {
         // §10.5.1: a missing symmetric_cipher_algorithm is AUTO, and AUTO is
         // AES256-GCM.
         let p = AesGcmCryptoPlugin::new();
@@ -3652,7 +3652,7 @@ mod tests {
     }
 
     #[test]
-    fn aes256_encrypt_decrypt_roundtrip() {
+    fn security_8_1_aes256_encrypt_decrypt_roundtrip() {
         let mut p = AesGcmCryptoPlugin::with_suite(Suite::Aes256Gcm);
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3687,7 +3687,7 @@ mod tests {
     }
 
     #[test]
-    fn tokens_carry_suite_tag_so_cross_suite_interop_works() {
+    fn security_9_5_1_1_tokens_carry_suite_tag_so_cross_suite_interop_works() {
         // Alice = 256, Bob = 128. Alice serializes her 256-bit key
         // via a token. Bob receives the token — it contains
         // the spec-conformant suite tag 0x04 (AES256_GCM, §10.5 Tab.79),
@@ -3729,7 +3729,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_token_with_unknown_suite_id() {
+    fn security_10_5_2_1_1_rejects_token_with_unknown_suite_id() {
         let mut p = AesGcmCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3755,7 +3755,7 @@ mod tests {
     /// payload plain and appends a 16-octet tag; the slot carried
     /// HMAC-SHA256 with a 32-octet one.
     #[test]
-    fn gmac_only_suite_roundtrip_without_encryption() {
+    fn security_8_1_gmac_only_suite_roundtrip_without_encryption() {
         let mut p = AesGcmCryptoPlugin::with_suite(Suite::Aes128Gmac);
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3808,7 +3808,7 @@ mod tests {
     }
 
     #[test]
-    fn encrypts_remaining_decrements_per_call() {
+    fn security_8_1_1_encrypts_remaining_decrements_per_call() {
         let mut p = AesGcmCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3820,7 +3820,7 @@ mod tests {
     }
 
     #[test]
-    fn rotate_key_resets_counter_and_changes_key() {
+    fn security_9_8_9_5_rotate_key_resets_counter_and_changes_key() {
         let mut p = AesGcmCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -3852,7 +3852,7 @@ mod tests {
     /// all the way onto the wire, and the receiver must keep the two
     /// generations apart instead of silently mixing them.
     #[test]
-    fn key_rotation_changes_the_wire_key_id_and_the_derived_session_key() {
+    fn security_7_3_19_key_rotation_changes_the_wire_key_id_and_the_derived_session_key() {
         let mut alice = AesGcmCryptoPlugin::new();
         let mut bob = AesGcmCryptoPlugin::new();
         let alice_local = alice
@@ -3993,7 +3993,7 @@ mod tests {
     }
 
     #[test]
-    fn with_secret_provider_derives_same_kx_key_for_both_sides() {
+    fn security_10_5_2_1_2_with_secret_provider_derives_same_kx_key_for_both_sides() {
         // Alice & Bob know the same 32-byte DH shared secret. Both
         // register via register_matched_remote_participant — both
         // HKDF-derive the same **Kx key** (KeyExchange channel) and
@@ -4152,7 +4152,7 @@ mod tests {
     }
 
     #[test]
-    fn data_token_exchange_does_not_clobber_kx_key() {
+    fn security_9_5_1_9_data_token_exchange_does_not_clobber_kx_key() {
         let (mut alice, mut bob) = dual_key_pair(0x33);
         let al = alice
             .register_local_participant(IdentityHandle(1), &[])
@@ -4207,7 +4207,7 @@ mod tests {
     /// them in: SIGN gives AES-256-GMAC, ENCRYPT AES-256-GCM, and a writer
     /// with two different kinds gets a submessage and a payload key.
     #[test]
-    fn the_key_material_of_an_endpoint_follows_its_protection_kinds() {
+    fn security_10_4_1_2_1_the_key_material_of_an_endpoint_follows_its_protection_kinds() {
         use zerodds_security::crypto::{
             ENDPOINT_DATA_PROTECTION_KIND as DATA, ENDPOINT_METADATA_PROTECTION_KIND as META,
         };
@@ -4259,7 +4259,7 @@ mod tests {
     /// it, or with `AUTO`, the default of the participant applies, and the
     /// default of that is `AES256-GCM`.
     #[test]
-    fn the_key_width_follows_symmetric_cipher_algorithm() {
+    fn security_10_5_1_1_the_key_width_follows_symmetric_cipher_algorithm() {
         use zerodds_security::crypto::{
             ENDPOINT_DATA_PROTECTION_KIND as DATA, ENDPOINT_METADATA_PROTECTION_KIND as META,
         };
@@ -4347,7 +4347,7 @@ mod tests {
     /// the `common_mac`. The expected tags were computed with Python
     /// (`hmac`, `cryptography` AESGCM) from that formula, not with this code.
     #[test]
-    fn the_receiver_specific_mac_is_the_one_of_the_spec() {
+    fn security_10_4_1_2_2_the_receiver_specific_mac_is_the_one_of_the_spec() {
         let session_id = [0, 0, 0, 5];
         let iv_suffix = [0, 0, 0, 0, 0, 0, 0, 9];
         let common_mac = [0x33u8; 16];
@@ -4382,7 +4382,7 @@ mod tests {
     /// occur if and only if the length of the master_receiver_specific_key
     /// is also zero"; Table 74: the key has the length of the sender key.
     #[test]
-    fn a_receiver_specific_key_id_and_key_go_together() {
+    fn security_10_5_2_1_1_a_receiver_specific_key_id_and_key_go_together() {
         let salt = [0x22u8; 16];
         let key = [0x44u8; 16];
         let none = keymat(2, &salt, [1, 2, 3, 4], &key, None);
@@ -4408,7 +4408,7 @@ mod tests {
     /// sender key cannot make a message another reader accepts, and a
     /// message without the MAC, or with a changed one, is refused.
     #[test]
-    fn a_reader_checks_the_origin_of_a_submessage_by_its_own_key() {
+    fn security_10_4_1_2_2_a_reader_checks_the_origin_of_a_submessage_by_its_own_key() {
         use zerodds_security::crypto::{
             ENDPOINT_DATA_PROTECTION_KIND as DATA, ENDPOINT_METADATA_PROTECTION_KIND as META,
         };
@@ -4597,7 +4597,7 @@ mod tests {
             (p, remote)
         };
         let relay_token = w.endpoint_relay_token(writer).expect("a relay token");
-        let (relay, from_w) = receiver(&[relay_token.clone()]);
+        let (relay, from_w) = receiver(std::slice::from_ref(&relay_token));
         assert_eq!(
             relay
                 .decode_data_by_key_id_from(from_w, &submessage)
@@ -4700,7 +4700,7 @@ mod tests {
     /// whose `content` is longer than the submessage is refused, as is one that
     /// cannot hold the length of the content.
     #[test]
-    fn a_secure_body_with_too_small_a_length_is_invalid() {
+    fn security_7_4_6_3_3_a_secure_body_with_too_small_a_length_is_invalid() {
         let mut prefix = alloc::vec![0, 0, 0, 0x04];
         prefix.extend_from_slice(&[0u8; 16]);
         let postfix = [0u8; 16];
@@ -4724,7 +4724,7 @@ mod tests {
     /// §7.4.6.4.3: a SEC_PREFIX whose submessageLength is too small for the
     /// CryptoHeader (20 octets) is invalid.
     #[test]
-    fn a_secure_prefix_with_too_small_a_length_is_invalid() {
+    fn security_7_4_6_4_3_a_secure_prefix_with_too_small_a_length_is_invalid() {
         let short = [0u8, 0, 0, 0x04, 1, 2, 3];
         let mut body = 0u32.to_be_bytes().to_vec();
         body.extend_from_slice(&[]);
@@ -4735,7 +4735,7 @@ mod tests {
     /// §7.4.6.5.3: a SEC_POSTFIX with no SEC_PREFIX before it is invalid, and
     /// so is one whose body cannot hold the common_mac (16 octets).
     #[test]
-    fn a_secure_postfix_without_a_prefix_is_invalid() {
+    fn security_7_4_6_5_3_a_secure_postfix_without_a_prefix_is_invalid() {
         let alone = submessage(SEC_POSTFIX_ID, &[0u8; 16]);
         let err = parse_secure_submessages(&alone).unwrap_err();
         assert!(err.detail.contains("SEC_PREFIX"), "{err}");
@@ -4803,7 +4803,7 @@ mod tests {
     /// fails. A message with the flag P (pre-shared key) is refused as
     /// such.
     #[test]
-    fn a_message_with_the_flag_a_is_checked_with_its_header() {
+    fn security_7_4_6_6_a_message_with_the_flag_a_is_checked_with_its_header() {
         let (mut alice, mut bob) = dual_key_pair(0x66);
         let al = alice
             .register_local_participant(IdentityHandle(1), &[])
@@ -4851,7 +4851,7 @@ mod tests {
     /// "correspond to the values passed as input to the encode_rtps_message
     /// operation"), the checksum of the kind the flags name.
     #[test]
-    fn the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message() {
+    fn security_7_4_6_6_the_header_extension_is_adjusted_for_the_aad_and_the_decoded_message() {
         // E | L | T | C=01 (CRC-32C): messageLength(4), timestamp(8),
         // checksum(4).
         let mut he = alloc::vec![HEADER_EXTENSION_ID, 0x27, 16, 0];
@@ -4908,7 +4908,7 @@ mod tests {
     /// another, and its SRTPS messages verify there. Kind 0x01 was read as
     /// HMAC-SHA256, and a `master_salt` other than 32 octets was refused.
     #[test]
-    fn an_aes128_gmac_key_with_a_short_salt_crosses_instances() {
+    fn security_8_1_an_aes128_gmac_key_with_a_short_salt_crosses_instances() {
         let shared = alloc::vec![0x44u8; 32];
         let pa = ArcA::new(MemProvider::new());
         let pb = ArcA::new(MemProvider::new());
@@ -4959,7 +4959,7 @@ mod tests {
     /// new session key derived; the receiver follows it from the
     /// CryptoHeader. The SessionId never changed.
     #[test]
-    fn the_session_id_changes_after_max_blocks_per_session() {
+    fn security_10_5_3_3_2_the_session_id_changes_after_max_blocks_per_session() {
         let (mut alice, mut bob) = dual_key_pair(0x77);
         alice.set_max_blocks_per_session(2);
         let al = alice
@@ -5004,7 +5004,7 @@ mod tests {
     /// the keys of one side have distinct ids, and none has 0, the id of
     /// the Kx key.
     #[test]
-    fn the_local_keys_have_distinct_nonzero_key_ids() {
+    fn security_10_5_2_2_the_local_keys_have_distinct_nonzero_key_ids() {
         let mut p = AesGcmCryptoPlugin::new();
         let local = p
             .register_local_participant(IdentityHandle(1), &[])
@@ -5026,7 +5026,7 @@ mod tests {
     /// survives the keymat and the CryptoHeader of what the key protects
     /// carries it, and the same key id under another revision is another key.
     #[test]
-    fn the_key_revision_is_carried_in_the_keymat_and_the_header() {
+    fn security_7_3_17_the_key_revision_is_carried_in_the_keymat_and_the_header() {
         let rng = SystemRandom::new();
         let mut mat = KeyMaterial::new_random(Suite::Aes256Gcm, &rng).unwrap();
         mat.key_revision = [0, 0, 22];
@@ -5051,7 +5051,7 @@ mod tests {
     /// is two keys, the same key id of another sender a third, and a revision
     /// no token delivered is no key at all.
     #[test]
-    fn a_key_is_found_by_sender_key_id_and_revision() {
+    fn security_7_3_20_2_a_key_is_found_by_sender_key_id_and_revision() {
         let plugin = AesGcmCryptoPlugin::new();
         let rng = SystemRandom::new();
         let key_with = |revision: [u8; 3]| {
@@ -5080,7 +5080,7 @@ mod tests {
     }
 
     #[test]
-    fn srtps_cyclone_cross_instance_roundtrip() {
+    fn security_7_4_6_3_4_srtps_cyclone_cross_instance_roundtrip() {
         // Cyclone-conformant message-level SRTPS: alice encodes with the local key
         // (CryptoHeader with key_id in the SRTPS_PREFIX), bob decodes by key_id
         // (remote_by_key_id via the participant token). Cross-instance = the real
@@ -5168,7 +5168,7 @@ mod tests {
     /// refused; the kind is not under the tag, so the tag alone does not
     /// show the change.
     #[test]
-    fn a_header_kind_other_than_the_keys_is_refused() {
+    fn security_10_5_3_3_5_a_header_kind_other_than_the_keys_is_refused() {
         let (mut alice, mut bob) = dual_key_pair(0x56);
         let al = alice
             .register_local_participant(IdentityHandle(1), &[])

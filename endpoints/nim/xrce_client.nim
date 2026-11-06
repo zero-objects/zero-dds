@@ -160,7 +160,7 @@ proc encodeObjectVariantForKind*(objectId: ObjectId, name: string,
   ## for every other kind — byte-oracled in
   ## `crates/xrce/src/object_repr.rs` against real eProsima Micro-XRCE-DDS
   ## Client 3.0.1 CREATE traffic (Topic's own participant_id: commit
-  ## 31c62df2a63). This — not `encodeByReference` alone — is the only
+  ## bd30deaef0b). This — not `encodeByReference` alone — is the only
   ## form a real agent accepts.
   let n = uint32(name.len + 1)
   result = @[byte(rawWord(objectId) and 0x0F'u16),

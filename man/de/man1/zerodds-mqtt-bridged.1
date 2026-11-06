@@ -1,0 +1,131 @@
+.TH ZERODDS-MQTT-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-mqtt-bridged \- Bridge-Daemon von DDS nach MQTT 5
+.SH ÜBERSICHT
+.B zerodds-mqtt-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-broker\fR \fIURL\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fIDDS:MQTT\fR]...
+[\fB\-\-log\-level\fR \fISTUFE\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-mqtt-bridged
+spiegelt DDS-Topics auf Topics eines MQTT-5-Brokers und umgekehrt.
+Implementiert
+.IR docs/specs/zerodds-mqtt-bridge-1.0.md .
+Spricht mit jedem MQTT-5-Broker (Mosquitto, EMQX, HiveMQ) über TCP/TLS,
+verbindet sich mit exponentiellem Back-off automatisch neu, unterstützt MQTT-QoS
+je Route (0/1/2), Retain, MessageExpiry, ContentType und UserProperties.
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Die Konfigurationsdatei (YAML), mit Drop-ins im danebenliegenden
+.IR DATEI .d/.
+Ohne diese Option wird die Systemdatei gelesen, wenn es sie gibt:
+.I /etc/zerodds/mqtt-bridged.yaml
+mit
+.I /etc/zerodds/mqtt-bridged.d/
+(unter macOS unter
+.IR /usr/local/etc/zerodds );
+ohne diese Datei gelten die eingebauten Standardwerte.
+Siehe
+.BR zerodds-mqtt-bridged.yaml (5).
+.TP
+.BR \-\-broker =\fIURL\fR
+URL des MQTT-Brokers
+.RI ( mqtt:// ", " mqtts:// ", " ws:// ", " wss:// ).
+.TP
+.BR \-\-client\-id =\fIID\fR
+MQTT-Client-ID.
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-username =\fIBENUTZER\fR
+MQTT-Benutzername.
+.TP
+.BR \-\-password =\fIPASSWORT\fR
+MQTT-Passwort.
+.TP
+.BR \-\-tls\-ca =\fIDATEI\fR
+CA-Zertifikat.
+.TP
+.BR \-\-tls\-cert =\fIDATEI\fR
+Client-Zertifikat.
+.TP
+.BR \-\-tls\-key =\fIDATEI\fR
+Client-Schlüssel.
+.TP
+.BR \-\-topic =\fIDDS:MQTT\fR
+Topic-Überschreibung (wiederholbar).
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Log-Stufe überschreiben. Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listen-Adresse für Prometheus.
+.TP
+.BR \-V ", " \-\-version
+Versionsangabe.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+.B SIGTERM
+geordnetes Beenden,
+.B SIGHUP
+liest die Konfiguration neu: Die Topic-ACL gilt ab dann, ein entzogenes
+Leserecht stoppt die Samples dieses Topics sofort; Sitzungen bleiben bestehen.
+Geänderte Topics, Broker-Adresse oder Client-ID, Broker-TLS,
+Authentifizierungsmodus oder Domäne brauchen einen Neustart und werden
+protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.TP
+.B MQTT_PASSWORD
+Das Broker-Passwort; die Einstellung
+.BR mqtt.password ,
+über den Dateien, unter
+.BR \-\-set .
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden (SIGTERM/SIGINT).
+.TP
+.B 1
+Konfigurationsfehler.
+.TP
+.B 2
+Fehler beim Verbinden mit dem Broker.
+.TP
+.B 3
+Fehler bei der DDS-Discovery.
+.TP
+.B 4
+TLS-Fehler.
+.TP
+.B 5
+Authentifizierungsfehler.
+.SH DATEIEN
+.I /etc/zerodds/mqtt-bridged.yaml ", " /var/log/zerodds/mqtt-bridged.log .
+.SH SIEHE AUCH
+.BR zerodds-mqtt-bridged.yaml (5),
+.BR mosquitto (8).
+.SH STANDARDS
+MQTT v5 (OASIS), DDS 1.4, RTPS 2.5.
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>.

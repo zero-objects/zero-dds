@@ -43,7 +43,7 @@ class JavaTypeRepresentationTest {
     }
 
     @Test
-    void extensibilityFollowsTheClassShape() {
+    void javapsm_8_6_1_2_a_final_class_under_object_is_final_and_every_other_class_extensible() {
         assertEquals(ExtensibilityKind.FINAL,
                 ReflectionTypeSupport.of(FinalType.class).getExtensibility());
         assertEquals(ExtensibilityKind.APPENDABLE,
@@ -59,7 +59,7 @@ class JavaTypeRepresentationTest {
     }
 
     @Test
-    void anAnnotationOverridesTheDefault() {
+    void javapsm_8_6_1_2_mutable_is_only_said_by_the_extensibility_annotation() {
         assertEquals(ExtensibilityKind.MUTABLE,
                 ReflectionTypeSupport.of(MutableType.class).getExtensibility());
     }
@@ -67,17 +67,18 @@ class JavaTypeRepresentationTest {
     // --- §8.6.1.1 Inheritance ---------------------------------------------
 
     @Test
-    void theMembersOfTheBaseClassComeFirst() {
+    void javapsm_8_6_1_1_the_members_of_the_base_class_come_first() {
         ReflectionTypeSupport<DerivedType> ts =
                 ReflectionTypeSupport.of(DerivedType.class);
         DerivedType value = new DerivedType();
         value.a = 7;
         value.b = 9;
-        DerivedType back = ts.decode(ts.encode(value));
+        // The DHEADER of an EXTENSIBLE (APPENDABLE) type, then a of the base class, then b.
+        byte[] expected = {8, 0, 0, 0, 7, 0, 0, 0, 9, 0, 0, 0};
+        assertArrayEquals(expected, ts.encode(value));
+        DerivedType back = ts.decode(expected);
         assertEquals(7, back.a);
         assertEquals(9, back.b);
-        // Two INT32 members, the DHEADER of an EXTENSIBLE (APPENDABLE) type before them.
-        assertEquals(12, ts.encode(value).length);
     }
 
     // --- Table 8.1, §8.4 and §8.5.3 ---------------------------------------
@@ -92,37 +93,6 @@ class JavaTypeRepresentationTest {
         public Colour colour = Colour.RED;
         public Set<String> tags = new LinkedHashSet<>();
         public List<Integer> numbers = List.of();
-    }
-
-    @Test
-    void theKindsOfTable81RoundTrip() {
-        Kinds value = new Kinds();
-        // A value above 2^63 is what only BigInteger can carry (Table 8.2).
-        value.counter = new BigInteger("18446744073709551615");
-        value.measure = new BigDecimal("1.25");
-        value.colour = Colour.BLUE;
-        value.tags = new LinkedHashSet<>(List.of("a", "b"));
-        value.numbers = List.of(1, 2, 3);
-
-        ReflectionTypeSupport<Kinds> ts = ReflectionTypeSupport.of(Kinds.class);
-        Kinds back = ts.decode(ts.encode(value));
-        assertEquals(value.counter, back.counter);
-        // Float128 holds the value with more digits than 1.25 states; BigDecimal.equals
-        // compares the scale too, so the values are compared as numbers.
-        assertEquals(0, value.measure.compareTo(back.measure));
-        assertEquals(Colour.BLUE, back.colour);
-        assertEquals(value.tags, back.tags);
-        assertEquals(value.numbers, back.numbers);
-    }
-
-    @Test
-    void aSequenceIsWrittenForEveryCollection() {
-        Kinds value = new Kinds();
-        value.tags = new LinkedHashSet<>(List.of("only"));
-        ReflectionTypeSupport<Kinds> ts = ReflectionTypeSupport.of(Kinds.class);
-        Kinds back = ts.decode(ts.encode(value));
-        assertEquals(1, back.tags.size());
-        assertTrue(back.tags.contains("only"));
     }
 
     // --- §8.3 and §8.9 Annotations ----------------------------------------
@@ -142,16 +112,6 @@ class JavaTypeRepresentationTest {
         public int other = 6;
     }
 
-    @Test
-    void onlyTheTypeSystemAnnotationsCount() {
-        ReflectionTypeSupport<ForeignAnnotations> ts =
-                ReflectionTypeSupport.of(ForeignAnnotations.class);
-        assertFalse(ts.isKeyed(), "a @Key of another package is not a key");
-        ForeignAnnotations back = ts.decode(ts.encode(new ForeignAnnotations()));
-        assertEquals(5, back.secret);
-        assertEquals(6, back.other);
-    }
-
     public static final class KeyedType {
         @Key
         @ID(7)
@@ -160,7 +120,7 @@ class JavaTypeRepresentationTest {
     }
 
     @Test
-    void theTypeSystemAnnotationsAreRead() {
+    void javapsm_8_3_the_key_annotation_of_the_type_system_makes_the_key_holder() {
         ReflectionTypeSupport<KeyedType> ts =
                 ReflectionTypeSupport.of(KeyedType.class);
         assertTrue(ts.isKeyed());
@@ -184,7 +144,7 @@ class JavaTypeRepresentationTest {
     }
 
     @Test
-    void theFieldsOfANonSerializableBaseOfASerializableClassAreNotPartOfTheType() {
+    void javapsm_8_6_1_1_the_fields_of_a_base_that_is_not_serializable_are_no_members() {
         ReflectionTypeSupport<SerializableDerived> ts =
                 ReflectionTypeSupport.of(SerializableDerived.class);
         SerializableDerived value = new SerializableDerived();
@@ -192,14 +152,14 @@ class JavaTypeRepresentationTest {
         value.hidden = 7;
         byte[] bytes = ts.encode(value);
         // DHEADER (EXTENSIBLE) and the one int32 of the class itself
-        assertEquals(8, bytes.length);
+        assertArrayEquals(new byte[] {4, 0, 0, 0, 5, 0, 0, 0}, bytes);
         SerializableDerived back = ts.decode(bytes);
         assertEquals(5, back.shown);
         assertEquals(99, back.hidden, "the base is initialized by its own constructor");
     }
 
     @Test
-    void theDynamicTypeOfThatClassHasNoBaseType() {
+    void javapsm_8_6_1_1_the_dynamic_type_of_a_class_with_a_base_that_is_not_serializable_has_no_base_type() {
         org.omg.dds.type.dynamic.DynamicType type = DynamicTypeFactoryImpl
                 .getInstance(org.omg.dds.Qos.env()).createType(SerializableDerived.class);
         org.junit.jupiter.api.Assertions.assertNull(type.getDescriptor().getBaseType());

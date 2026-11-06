@@ -552,10 +552,9 @@ fn discriminant_literal(ast: &Ast, discriminator: Id<TypeNode>, value: i128) -> 
     if matches!(
         ast.type_(resolved).map(|node| node.kind.clone()),
         Ok(TypeKind::Enumeration { .. })
-    ) {
-        if let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved) {
-            return enumerator_expr(ast, resolved, &enumerator);
-        }
+    ) && let Some(enumerator) = crate::emit::default_enumerator_name(ast, resolved)
+    {
+        return enumerator_expr(ast, resolved, &enumerator);
     }
     match resolved_primitive(ast, resolved) {
         Some(PrimitiveKind::Boolean) => swift::Expr::Literal(Literal::Bool(value != 0)),

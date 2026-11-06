@@ -214,7 +214,7 @@ fn first_sentence(text: &str) -> String {
         out.push(character);
         // A full stop inside backticks is part of a name, not the end
         // of a sentence: `@id(1)` and `3.14` both carry one.
-        if character == '.' && ticks % 2 == 0 {
+        if character == '.' && ticks.is_multiple_of(2) {
             let next = text[index + 1..].chars().next();
             if next.is_none() || next == Some(' ') {
                 break;

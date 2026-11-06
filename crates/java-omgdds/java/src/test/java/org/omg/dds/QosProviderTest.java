@@ -162,7 +162,7 @@ class QosProviderTest {
     // --- the source -----------------------------------------------------------------------
 
     @Test
-    void aFileUriIsReadAndTheProviderIsObtainedFromTheEnvironment() throws IOException {
+    void javapsm_7_3_5_4_a_file_uri_is_read_and_the_provider_is_obtained_from_the_environment() throws IOException {
         String uri = write("library.xml", LIBRARY);
         assertTrue(uri.startsWith("file:"), uri);
         QosProvider viaStatic = QosProvider.newQosProvider(uri, "Lib::Base", Qos.env());
@@ -174,7 +174,7 @@ class QosProviderTest {
     }
 
     @Test
-    void anotherSchemeIsUnsupported() {
+    void javapsm_7_3_5_4_another_scheme_than_file_is_unsupported() {
         assertThrows(UnsupportedOperationException.class,
                 () -> QosProvider.newQosProvider("http://example.org/qos.xml", "P", Qos.env()));
         assertThrows(UnsupportedOperationException.class,
@@ -184,7 +184,7 @@ class QosProviderTest {
     }
 
     @Test
-    void aUriThatIsNoUriAndAFileThatIsNotThereAreRefused() {
+    void javapsm_7_3_5_4_a_uri_that_is_no_uri_and_a_file_that_is_not_there_are_refused() {
         assertThrows(IllegalArgumentException.class,
                 () -> QosProvider.newQosProvider("not a uri with spaces", null, Qos.env()));
         assertThrows(IllegalArgumentException.class,
@@ -196,7 +196,7 @@ class QosProviderTest {
     // --- profiles ---------------------------------------------------------------------------
 
     @Test
-    void aProfileIsSelectedByQualifiedNameByUniqueNameOrAsTheFirst() throws IOException {
+    void javapsm_7_3_5_4_a_profile_is_selected_by_qualified_name_by_unique_name_or_as_the_first() throws IOException {
         assertEquals(42, provider("Lib::Base").getDataWriterQos().getOwnershipStrength().getValue());
         assertEquals(42, provider("Base").getDataWriterQos().getOwnershipStrength().getValue());
         assertEquals(42, provider(null).getDataWriterQos().getOwnershipStrength().getValue());
@@ -206,7 +206,7 @@ class QosProviderTest {
     }
 
     @Test
-    void aProfileNameThatTwoProfilesShareIsNotUnique() throws IOException {
+    void javapsm_7_3_5_4_a_profile_name_that_two_profiles_share_is_not_unique() throws IOException {
         String uri = write("twice.xml", """
                 <dds>
                   <qos_library name="L1"><qos_profile name="P"><topic_qos/></qos_profile></qos_library>
@@ -228,7 +228,7 @@ class QosProviderTest {
     // --- the QoS of every entity kind -------------------------------------------------------
 
     @Test
-    void theQosOfEveryEntityKindCarriesTheValuesOfTheDocument() throws IOException {
+    void javapsm_7_3_5_4_the_qos_of_every_entity_kind_carries_the_values_of_the_document() throws IOException {
         QosProvider base = provider("Lib::Base");
 
         org.omg.dds.domain.DomainParticipantQos participant = base.getDomainParticipantQos();
@@ -263,7 +263,7 @@ class QosProviderTest {
     }
 
     @Test
-    void theWriterAndReaderQosCarryTheValuesOfTheDocumentAndKeepTheDefaultsOfWhatItLeavesOut() throws IOException {
+    void javapsm_7_3_5_4_the_writer_and_reader_qos_carry_the_values_of_the_document_and_keep_the_defaults_of_what_it_leaves_out() throws IOException {
         QosProvider base = provider("Lib::Base");
         DataWriterQos writer = base.getDataWriterQos();
         assertEquals(Reliability.Kind.RELIABLE, writer.getReliability().getKind());
@@ -300,7 +300,7 @@ class QosProviderTest {
     }
 
     @Test
-    void aProfileWithoutAnElementOfAKindHasNoQosOfThatKind() throws IOException {
+    void javapsm_7_3_5_4_a_profile_without_an_element_of_a_kind_has_no_qos_of_that_kind() throws IOException {
         QosProvider base = provider("Lib::Base");
         // the document has no domain_participant_factory_qos
         assertThrows(IllegalArgumentException.class, base::getDomainParticipantFactoryQos);
@@ -309,7 +309,7 @@ class QosProviderTest {
     }
 
     @Test
-    void theFactoryQosHasItsOwnElement() throws IOException {
+    void javapsm_7_3_5_4_the_factory_qos_has_its_own_element() throws IOException {
         String uri = write("factory.xml", """
                 <dds><qos_library name="L"><qos_profile name="P">
                   <domain_participant_factory_qos>
@@ -324,7 +324,7 @@ class QosProviderTest {
     // --- inheritance -----------------------------------------------------------------------------
 
     @Test
-    void aProfileInheritsFromItsBaseAndOverridesFieldByField() throws IOException {
+    void javapsm_7_3_5_4_a_profile_inherits_from_its_base_and_overrides_field_by_field() throws IOException {
         QosProvider child = provider("Lib::Child");
         DataWriterQos w = child.getDataWriterQos();
         assertEquals(7, w.getOwnershipStrength().getValue(), "overridden");
@@ -341,7 +341,7 @@ class QosProviderTest {
     }
 
     @Test
-    void aQosElementInheritsFromAnElementOfTheSameKindByName() throws IOException {
+    void javapsm_7_3_5_4_a_qos_element_inherits_from_an_element_of_the_same_kind_by_name() throws IOException {
         QosProvider child = provider("Lib::Child");
         DataWriterQos w2 = child.getDataWriterQos("w2");
         assertEquals(8, w2.getOwnershipStrength().getValue());
@@ -350,7 +350,7 @@ class QosProviderTest {
     }
 
     @Test
-    void anIdCanNameAnotherProfileOrAnElementOfIt() throws IOException {
+    void javapsm_7_3_5_4_an_id_can_name_another_profile_or_an_element_of_it() throws IOException {
         QosProvider base = provider("Lib::Base");
         assertEquals(7, base.getDataWriterQos("Lib::Child").getOwnershipStrength().getValue());
         assertEquals(7, base.getDataWriterQos("Child").getOwnershipStrength().getValue());
@@ -360,7 +360,7 @@ class QosProviderTest {
     }
 
     @Test
-    void aCycleAndABaseDefinedLaterAndAMissingBaseAreRefused() throws IOException {
+    void javapsm_7_3_5_4_a_cycle_and_a_base_defined_later_and_a_missing_base_are_refused() throws IOException {
         String cycle = write("cycle.xml", """
                 <dds><qos_library name="L">
                   <qos_profile name="A" base_name="B"><topic_qos/></qos_profile>
@@ -393,7 +393,7 @@ class QosProviderTest {
     // --- what is wrong in a document is said --------------------------------------------------------
 
     @Test
-    void anythingTheSchemaDoesNotKnowIsRefusedAndNotIgnored() throws IOException {
+    void javapsm_7_3_5_4_anything_the_schema_does_not_know_is_refused_and_not_ignored() throws IOException {
         String[] bodies = {
             "<topic_qos><reliability><kind>RELIABLE</kind></reliability></topic_qos>",  // not a schema literal
             "<topic_qos><reliability><kinds>RELIABLE_RELIABILITY_QOS</kinds></reliability></topic_qos>",
@@ -414,7 +414,7 @@ class QosProviderTest {
     }
 
     @Test
-    void aDocumentThatIsNotWellFormedOrHasADocumentTypeIsRefused() throws IOException {
+    void javapsm_7_3_5_4_a_document_that_is_not_well_formed_or_has_a_document_type_is_refused() throws IOException {
         assertThrows(IllegalArgumentException.class, () -> QosProvider.newQosProvider(
                 write("broken.xml", "<dds><qos_library name=\"L\">"), null, Qos.env()));
         assertThrows(IllegalArgumentException.class, () -> QosProvider.newQosProvider(
@@ -428,7 +428,7 @@ class QosProviderTest {
     // --- applying what the provider gives -------------------------------------------------------------
 
     @Test
-    void entitySetQosWithAnUriAndAProfileAppliesTheQosOfThatProfile() throws Exception {
+    void javapsm_2_entity_set_qos_with_an_uri_and_a_profile_applies_the_qos_of_that_profile() throws Exception {
         String uri = write("library.xml", LIBRARY);
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
@@ -456,7 +456,7 @@ class QosProviderTest {
     }
 
     @Test
-    void entitiesAreCreatedFromTheQosOfAProvider() throws Exception {
+    void javapsm_7_3_5_4_entities_are_created_from_the_qos_of_a_provider() throws Exception {
         QosProvider live = provider("Lib::Live");
         QosProvider base = provider("Lib::Base");
         try (QosFixtures.Rig rig = new QosFixtures.Rig(live.getPublisherQos(), live.getSubscriberQos())) {

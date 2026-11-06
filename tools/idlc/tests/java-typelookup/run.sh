@@ -5,10 +5,13 @@ set -euo pipefail
 repo=$(cd "$(dirname "$0")/../../../.." && pwd)
 cd "$repo"
 artifacts=${1:-"$repo/target/java-typelookup-gate"}
-# Domain42 is reserved by zerodds-test-domains and stays below ephemeral ports.
-# CI serializes this job via dcps-multicast. Standalone callers must ensure
-# exclusive use of their explicitly selected domain (or the default42).
-domain=${2:-42}
+# The domain: the second argument, else the first one tests/integration/with_domains.py
+# leased (ZERODDS_TEST_DOMAINS; the job integration-java-typelookup runs under it),
+# else 42, which zerodds-test-domains reserves and which lies below the ephemeral
+# ports. A caller without a lease must ensure exclusive use of the domain.
+leased=${ZERODDS_TEST_DOMAINS:-}
+domain=${2:-${leased%%,*}}
+domain=${domain:-42}
 case "$domain" in ''|*[!0-9]*) echo "Invalid DDS domain: $domain" >&2; exit 2;; esac
 if (( domain > 231 )); then echo "DDS domain exceeds UDP port range" >&2; exit 2; fi
 mkdir -p "$artifacts"
@@ -33,7 +36,9 @@ cargo build -p zerodds-idlc --locked --jobs 1
 "$cargo_target/debug/zerodds-idlc" generate --lang java --java-mapping omg --encoding xcdr2 \
     --out "$run/fixture" crates/java-omgdds/java/src/test/idl/typelookup-pagination.idl
 # Keep the existing binding tests required, now on the real Java8 API surface.
-MAVEN_OPTS="${MAVEN_OPTS:-} -Xmx768m" mvn -B -f crates/java-omgdds/java/pom.xml -Pjava8 -DargLine=-Xmx256m clean verify
+# The test that needs the gRPC bridge daemon runs in integration-java-psm.
+MAVEN_OPTS="${MAVEN_OPTS:-} -Xmx768m" mvn -B --no-transfer-progress -f crates/java-omgdds/java/pom.xml -Pjava8 \
+    -DexcludedGroups=bridge-daemon -DargLine=-Xmx256m clean verify
 artifact="$repo/crates/java-omgdds/java/target/omgdds-$version.jar"
 test -s "$artifact"
 jar tf "$artifact" > "$run/jar-entries.txt"

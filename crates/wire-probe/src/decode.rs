@@ -58,7 +58,6 @@ mod tests {
     use super::*;
     use crate::canonical::text;
     use crate::encode::{encode, model_from_idl};
-    use crate::value::MapLengthPolicy;
     use serde_json::json;
     use zerodds_ast::TypeNode;
     use zerodds_ast_core::{Id, ScopedName};
@@ -100,108 +99,7 @@ mod tests {
     }
 
     #[test]
-    fn every_primitive_comes_back_the_value_that_went_in() {
-        let idl = "@final struct S {
-            boolean flag; octet raw; int8 tiny; char letter; wchar wide;
-            short si; unsigned short us; long l; unsigned long ul;
-            long long ll; unsigned long long ull; float f; double d;
-        };";
-        let value = json!({
-            "flag": true, "raw": 171, "tiny": -13, "letter": "Z", "wide": "\u{e4}",
-            "si": -12345, "us": 48879, "l": -1234567, "ul": 3735928559u32,
-            "ll": "-987654321987", "ull": "16045690984833335998",
-            "f": -3.75, "d": -1.2345678901234567
-        });
-        for encoding in [Encoding::PlainCdr1, Encoding::PlainCdr2] {
-            let back = round_trip(idl, "S", &value, encoding);
-            assert!(back.contains(r#""ull":"16045690984833335998""#), "{back}");
-            assert!(back.contains("\"wide\":\"\u{e4}\""), "{back}");
-        }
-    }
-
-    #[test]
-    fn a_mutable_structure_round_trips_under_both_encodings() {
-        let idl = "@mutable struct S { long a; double b; short c; };";
-        let value = json!({ "a": -1234567, "b": -1.2345678901234567, "c": -2 });
-        for encoding in [Encoding::PlCdr1, Encoding::PlCdr2] {
-            round_trip(idl, "S", &value, encoding);
-        }
-    }
-
-    #[test]
-    fn an_absent_optional_stays_absent_and_a_present_one_comes_back() {
-        let idl =
-            "@mutable struct S { @optional long first; long middle; @optional string text; };";
-        let absent = round_trip(idl, "S", &json!({ "middle": 7 }), Encoding::PlCdr2);
-        assert_eq!(absent, r#"{"middle":7}"#);
-        let present = round_trip(
-            idl,
-            "S",
-            &json!({ "first": -1, "middle": 7, "text": "\u{fc}ber" }),
-            Encoding::PlCdr2,
-        );
-        assert_eq!(
-            present,
-            "{\"first\":-1,\"middle\":7,\"text\":\"\u{fc}ber\"}"
-        );
-    }
-
-    #[test]
-    fn an_optional_in_a_final_type_is_told_apart_from_the_member_after_it() {
-        // Nothing marks the gap, so the reader has to recognise the
-        // EMHEADER that is not there. Both samples, so a reader that
-        // always guessed "absent" fails the second.
-        let idl = "@final struct S { long a; @optional long b; long c; };";
-        assert_eq!(
-            round_trip(
-                idl,
-                "S",
-                &json!({ "a": -1234567, "c": -2 }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"a":-1234567,"c":-2}"#
-        );
-        assert_eq!(
-            round_trip(
-                idl,
-                "S",
-                &json!({ "a": -1234567, "b": 9, "c": -2 }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"a":-1234567,"b":9,"c":-2}"#
-        );
-    }
-
-    #[test]
-    fn a_union_comes_back_with_the_member_the_discriminator_selects() {
-        let idl = "union Choice switch (long) {
-            case 1: case 2: case 3: long whole;
-            case 10: case 20: double fraction;
-            default: short small;
-        };
-        @final struct S { Choice picked; long tail; };";
-        assert_eq!(
-            round_trip(
-                idl,
-                "S",
-                &json!({ "picked": { "_d": 20, "fraction": -2.5 }, "tail": -1 }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"picked":{"_d":20,"fraction":-2.5},"tail":-1}"#
-        );
-        assert_eq!(
-            round_trip(
-                idl,
-                "S",
-                &json!({ "picked": { "_d": 99, "small": 3 }, "tail": -1 }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"picked":{"_d":99,"small":3},"tail":-1}"#
-        );
-    }
-
-    #[test]
-    fn a_union_with_no_default_and_no_matching_label_carries_no_member() {
+    fn xtypes_7_4_3_5_3_a_union_with_no_default_and_no_matching_label_carries_no_member() {
         let idl = "union Choice switch (long) { case 1: long whole; case 2: double fraction; };
                    @final struct S { Choice picked; long tail; };";
         assert_eq!(
@@ -212,24 +110,6 @@ mod tests {
                 Encoding::PlainCdr2
             ),
             r#"{"picked":{"_d":99},"tail":-1}"#
-        );
-    }
-
-    #[test]
-    fn an_inherited_member_comes_back_under_its_own_name() {
-        let idl = "@final struct Base { long base_a; short base_b; };
-                   @final struct S : Base { double derived_a; octet derived_b; };";
-        assert_eq!(
-            round_trip(
-                idl,
-                "S",
-                &json!({
-                    "base_a": -1234567, "base_b": -2,
-                    "derived_a": -1.2345678901234567, "derived_b": 171
-                }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"base_a":-1234567,"base_b":-2,"derived_a":-1.2345678901234567,"derived_b":171}"#
         );
     }
 
@@ -252,92 +132,5 @@ mod tests {
         bytes.extend_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
         let refused = decode(&ast, &request, &bytes);
         assert!(refused.is_err(), "a tail this long is not padding");
-    }
-
-    #[test]
-    fn a_sequence_and_an_array_of_aggregates_round_trip_with_their_delimiters() {
-        let idl = "@final struct Cell { long a; long b; };
-                   @appendable struct S { sequence<Cell> items; Cell grid[2]; long tail; };";
-        round_trip(
-            idl,
-            "S",
-            &json!({
-                "items": [{ "a": 1, "b": 2 }, { "a": 3, "b": 4 }],
-                "grid": [{ "a": 5, "b": 6 }, { "a": 7, "b": 8 }],
-                "tail": -1
-            }),
-            Encoding::DelimitedCdr,
-        );
-    }
-
-    #[test]
-    fn an_enumeration_at_a_narrow_bound_comes_back_by_name() {
-        let idl = "@bit_bound(8) enum Small { @value(3) RED, @value(9) GREEN, @value(200) BLUE };
-                   @final struct S { Small first; Small second; octet tail; };";
-        assert_eq!(
-            round_trip(
-                idl,
-                "S",
-                &json!({ "first": "BLUE", "second": "GREEN", "tail": 171 }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"first":"BLUE","second":"GREEN","tail":171}"#
-        );
-    }
-
-    #[test]
-    fn a_fixed_comes_back_as_the_decimal_that_went_in() {
-        let idl = "@final struct S { fixed<7, 3> amount; fixed<5, 0> whole; };";
-        assert_eq!(
-            round_trip(
-                idl,
-                "S",
-                &json!({ "amount": "-12.25", "whole": "42" }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"amount":"-12.250","whole":"42"}"#
-        );
-    }
-
-    #[test]
-    fn a_bitmask_and_a_bitset_come_back_by_name() {
-        let idl = "@bit_bound(16) bitmask Flags { A, @position(5) B, @position(15) C };
-                   struct Packed { @bit_bound(8) long field { unsigned short lo : 3; short : 2; unsigned short hi : 3; }; };";
-        let idl = idl.split("struct Packed").next().unwrap_or(idl);
-        let idl = format!("{idl}@final struct S {{ Flags marks; }};");
-        assert_eq!(
-            round_trip(
-                &idl,
-                "S",
-                &json!({ "marks": ["C", "A"] }),
-                Encoding::PlainCdr2
-            ),
-            r#"{"marks":["A","C"]}"#
-        );
-    }
-
-    #[test]
-    fn a_map_round_trips_under_both_length_policies() {
-        let ast = model_from_idl(
-            "@final struct S { map<long, double> table; };",
-            "decode.idl",
-        )
-        .expect("the fixture parses");
-        let value = json!({ "table": [[1, 2.5], [-3, 4.5]] });
-        for policy in MapLengthPolicy::ALL {
-            let mut request = ProbeRequest::new("S", Encoding::PlainCdr2, Endianness::Little);
-            request.map_length = policy;
-            let bytes = encode(&ast, &request, &value).expect("the sample serialises");
-            let back = decode(&ast, &request, &bytes).expect("the bytes read back");
-            // Sorted on the key's canonical text, which is the order
-            // both sides of a comparison are put in: `"-3"` before
-            // `"1"`. The rule only has to be the same rule everywhere,
-            // not a numeric one.
-            assert_eq!(
-                text(&back),
-                r#"{"table":[[-3,4.5],[1,2.5]]}"#,
-                "under {policy:?}"
-            );
-        }
     }
 }

@@ -755,10 +755,10 @@ impl CodecTarget for Swift {
                 }],
             });
         }
-        if type_ == swift::Type::Primitive(swift::Primitive::Bool) {
-            if let SwiftExpr::Plain(swift::Expr::Literal(Literal::Int(text))) = &value {
-                return plain(swift::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_ == swift::Type::Primitive(swift::Primitive::Bool)
+            && let SwiftExpr::Plain(swift::Expr::Literal(Literal::Int(text))) = &value
+        {
+            return plain(swift::Expr::Literal(Literal::Bool(text != "0")));
         }
         plain(Self::convert(type_, inner(value)))
     }

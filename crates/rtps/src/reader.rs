@@ -52,16 +52,16 @@ impl BestEffortReader {
         let parsed = decode_datagram(datagram)?;
         let mut out = Vec::new();
         for frame in parsed.submessages {
-            if let ParsedSubmessage::Data(d) = frame.submessage {
-                if matches_reader(&d.reader_id, &self.guid.entity_id) {
-                    out.push(DeliveredSample {
-                        writer_id: d.writer_id,
-                        writer_sn: d.writer_sn,
-                        // The DATA's octets as an `Arc` of their own; this
-                        // phase-0 reader is not on the user receive path.
-                        payload: d.serialized_payload.to_arc(),
-                    });
-                }
+            if let ParsedSubmessage::Data(d) = frame.submessage
+                && matches_reader(&d.reader_id, &self.guid.entity_id)
+            {
+                out.push(DeliveredSample {
+                    writer_id: d.writer_id,
+                    writer_sn: d.writer_sn,
+                    // The DATA's octets as an `Arc` of their own; this
+                    // phase-0 reader is not on the user receive path.
+                    payload: d.serialized_payload.to_arc(),
+                });
             }
             // Other submessages (HEARTBEAT/ACKNACK/GAP/Unknown) are
             // ignored in phase 0. The reliable path comes with phase 1.

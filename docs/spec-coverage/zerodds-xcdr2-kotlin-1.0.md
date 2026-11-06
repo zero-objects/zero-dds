@@ -12,8 +12,8 @@ Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden W
 
 **Repo:** `crates/lang-cst/src/kotlin/`, `crates/lang-render/src/kotlin.rs`
 
-**Tests:** `crates/lang-render/src/kotlin.rs::tests` (7 Tests), darunter `a_data_class_indents_by_four_and_ends_every_property_but_the_last_in_a_comma`, `an_int_array_is_the_specialised_form_and_a_named_type_is_boxed`, `the_array_literal_factory_matches_the_array_type`, `a_constructor_call_writes_no_new`, `a_nul_is_written_as_a_unicode_escape_because_kotlin_has_no_backslash_zero`;
-querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/kotlin.rs::tests` (7 Tests), darunter `xtypes_7_5_1_a_data_class_indents_by_four_and_ends_every_property_but_the_last_in_a_comma`, `xtypes_7_5_1_an_int_array_is_the_specialised_form_and_a_named_type_is_boxed`, `xtypes_7_5_1_the_array_literal_factory_matches_the_array_type`, `xtypes_7_5_1_a_constructor_call_writes_no_new`, `xtypes_7_5_1_a_nul_is_written_as_a_unicode_escape_because_kotlin_has_no_backslash_zero`;
+querschnittlich `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/rule/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/kotlin`, Endpoint-SDK `endpoints/kotlin`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,8 +78,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::every_idl_primitive_reaches_a_kotlin_type`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::a_struct_of_primitives_becomes_a_kotlin_data_class`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_2_every_idl_primitive_reaches_a_kotlin_type`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_2_a_struct_of_primitives_becomes_a_kotlin_data_class`
 
 **Status:** done
 
@@ -89,8 +89,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_long_double_is_a_float128_because_kotlin_has_no_binary128`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::a_fixed_holds_its_decimal_as_a_string`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_2_a_long_double_is_a_float128_because_kotlin_has_no_binary128`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_2_a_fixed_holds_its_decimal_as_a_string`
 
 **Status:** done
 
@@ -100,8 +100,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::an_optional_member_becomes_a_nullable_type_and_defaults_to_null`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::an_external_member_needs_no_indirection`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_nullable_type_and_defaults_to_null`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_4_4_7_an_external_member_needs_no_indirection`
 
 **Status:** done
 
@@ -111,8 +111,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_map_becomes_an_array_of_a_generated_entry_class`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::a_sequence_of_an_aggregate_is_a_boxed_array`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_3_a_map_becomes_an_array_of_a_generated_entry_class`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_3_a_sequence_of_an_aggregate_is_a_boxed_array`
 
 **Status:** done
 
@@ -122,8 +122,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::an_enum_becomes_an_object_of_constants_with_every_value_written_out`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::an_enum_typed_member_is_a_plain_int`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_becomes_an_object_of_constants_with_every_value_written_out`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_typed_member_is_a_plain_int`
 
 **Status:** done
 
@@ -133,8 +133,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_bitmask_becomes_no_declaration_of_its_own_and_one_const_val_per_bit`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::a_wide_bitmask_packs_its_bits_in_a_long`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_1_2_a_bitmask_becomes_no_declaration_of_its_own_and_one_const_val_per_bit`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_1_2_a_wide_bitmask_packs_its_bits_in_a_long`
 
 **Status:** done
 
@@ -144,9 +144,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_member_named_after_a_hard_keyword_is_escaped_and_keeps_its_idl_name`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::a_member_named_after_a_soft_keyword_keeps_the_idl_spelling`,
-`crates/lang-rules/tests/kotlin_end_to_end.rs::two_members_that_would_reach_one_kotlin_name_are_refused_by_name`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::idl_7_2_3_a_member_named_after_a_hard_keyword_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::idl_7_2_3_a_member_named_after_a_soft_keyword_keeps_the_idl_spelling`,
+`crates/lang-rules/tests/kotlin_end_to_end.rs::idl_7_2_3_two_members_that_would_reach_one_kotlin_name_are_refused_by_name`
 
 **Status:** done
 
@@ -156,7 +156,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::a_module_flattens_onto_the_name_because_a_kotlin_file_has_one_package`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::idl_7_5_2_a_module_flattens_onto_the_name_because_a_kotlin_file_has_one_package`
 
 **Status:** done
 
@@ -166,7 +166,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::the_generated_kotlin_compiles`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_4_3_the_generated_kotlin_compiles`
 
 **Status:** done
 
@@ -178,7 +178,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -188,7 +188,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::the_generated_kotlin_compiles`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_4_3_the_generated_kotlin_compiles`
 
 **Status:** done
 
@@ -198,7 +198,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -208,7 +208,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/kotlin.rs`, `crates/lang-rules/src/adapter/kotlin.rs`
 
-**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::every_construct_the_catalogue_covers_produces_output`
+**Tests:** `crates/lang-rules/tests/kotlin_end_to_end.rs::xtypes_7_2_2_4_every_construct_the_catalogue_covers_produces_output`
 
 **Status:** done
 
@@ -218,9 +218,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/kotlin.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -232,8 +232,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -243,8 +243,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-kotlin-gen/`, `tools/wireprobe/wireprobe-zerodds-kotlin`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -252,8 +251,15 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 ## Audit-Status
 
-22 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+22 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-kotlin-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (Job `merge-rust-lang-render`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 11 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-kotlin` (Job `merge-codegen-kotlin`) — 23 Tests grün.
+
+43 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

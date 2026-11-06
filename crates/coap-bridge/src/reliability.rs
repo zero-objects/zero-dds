@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn send_then_ack_clears_pending() {
+    fn coap_4_2_send_then_ack_clears_pending() {
         let mut t = ReliabilityTracker::new();
         t.send_confirmable(42, alloc::vec![1, 2], alloc::vec![0; 10], 0);
         assert_eq!(t.pending_count(), 1);
@@ -385,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn rst_clears_pending() {
+    fn coap_4_2_rst_clears_pending() {
         let mut t = ReliabilityTracker::new();
         t.send_confirmable(42, alloc::vec![], alloc::vec![], 0);
         assert!(t.receive_rst(42));
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_before_timeout_does_nothing() {
+    fn coap_4_2_tick_before_timeout_does_nothing() {
         let mut t = ReliabilityTracker::new();
         t.send_confirmable(42, alloc::vec![], alloc::vec![0; 10], 0);
         let out = t.tick(100);
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn tick_after_timeout_retransmits() {
+    fn coap_4_2_tick_after_timeout_retransmits() {
         let mut t = ReliabilityTracker::new();
         t.send_confirmable(42, alloc::vec![], alloc::vec![0; 5], 0);
         let out = t.tick(initial_interval() + 1);
@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn exhausting_retransmits_times_out() {
+    fn coap_4_2_exhausting_retransmits_times_out() {
         let mut t = ReliabilityTracker::new();
         t.send_confirmable(42, alloc::vec![], alloc::vec![0; 5], 0);
         let mut now = 0u64;
@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn interval_doubles_per_retransmit() {
+    fn coap_4_2_interval_doubles_per_retransmit() {
         let mut t = ReliabilityTracker::new();
         t.send_confirmable(42, alloc::vec![], alloc::vec![0; 5], 0);
         let _ = t.tick(initial_interval() + 1);
@@ -441,7 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn transmission_parameters_match_spec_4_8_table_2() {
+    fn coap_4_8_transmission_parameters_match_spec_4_8_table_2() {
         // RFC 7252 §4.8, Table 2 — the normative default values.
         assert_eq!(ACK_TIMEOUT_MS, 2_000, "ACK_TIMEOUT is 2 seconds");
         assert_eq!(
@@ -456,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn derived_transmission_parameters_follow_spec_4_8_2_formulas() {
+    fn coap_4_8_derived_transmission_parameters_follow_spec_4_8_2_formulas() {
         // RFC 7252 §4.8.2 states each derived value as a formula over
         // the Table 2 parameters; the constants must be that formula,
         // not a separately maintained number.
@@ -484,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn backoff_schedule_follows_ack_timeout_and_random_factor() {
+    fn coap_4_8_backoff_schedule_follows_ack_timeout_and_random_factor() {
         // Spec §4.2: the first timeout is ACK_TIMEOUT scaled by
         // ACK_RANDOM_FACTOR, and each retransmit doubles it. With the
         // Table 2 defaults that is 3000, 6000, 12000, 24000 ms, and
@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_message_id_within_exchange_lifetime_is_detected() {
+    fn coap_4_2_duplicate_message_id_within_exchange_lifetime_is_detected() {
         // Spec §4.5: a repeat of the same Message ID from the same
         // endpoint inside EXCHANGE_LIFETIME is a duplicate and is not
         // processed a second time.
@@ -534,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_entry_expires_after_its_lifetime() {
+    fn coap_4_2_duplicate_entry_expires_after_its_lifetime() {
         let mut d = DuplicateDetector::new();
         let ep = b"10.0.0.1:5683";
         let _ = d.receive(ep, 1, DedupKind::Confirmable, 0);
@@ -556,7 +556,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_detection_is_per_endpoint() {
+    fn coap_4_2_duplicate_detection_is_per_endpoint() {
         let mut d = DuplicateDetector::new();
         let _ = d.receive(b"a", 5, DedupKind::Confirmable, 0);
         assert_eq!(
@@ -567,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_table_cap_bounds_memory() {
+    fn coap_4_2_duplicate_table_cap_bounds_memory() {
         let mut d = DuplicateDetector::with_cap(2);
         let _ = d.receive(b"a", 1, DedupKind::NonConfirmable, 0);
         let _ = d.receive(b"a", 2, DedupKind::Confirmable, 0);
@@ -576,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn nstart_caps_outstanding_interactions_per_server() {
+    fn coap_4_2_nstart_caps_outstanding_interactions_per_server() {
         // Spec §4.7: NSTART = 1 — one outstanding interaction per
         // server until it is ACKed, RST or has timed out.
         let mut o = OutstandingInteractions::new();

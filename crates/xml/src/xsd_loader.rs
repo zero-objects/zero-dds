@@ -42,19 +42,14 @@ pub const MAX_DATA_URI_BODY: usize = 1024 * 1024;
 pub const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 
 /// Strict vs lax validation mode.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ValidationMode {
     /// Strict validation: namespace mandatory + unknown elements
     /// rejected.
     Strict,
     /// Lax: namespace optional, unknown elements ignored.
+    #[default]
     Lax,
-}
-
-impl Default for ValidationMode {
-    fn default() -> Self {
-        Self::Lax
-    }
 }
 
 /// Loads XML type libraries from a URI.

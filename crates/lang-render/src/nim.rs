@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn an_object_indents_its_fields_by_two_under_the_type_section() {
+    fn xtypes_7_5_1_an_object_indents_its_fields_by_two_under_the_type_section() {
         // Two levels: one for the declaration inside `type`, one for the
         // fields inside the object. Nim has no closing delimiter, so the
         // dedent is the end of the block.
@@ -601,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn an_object_with_no_fields_is_a_bare_object() {
+    fn xtypes_7_5_1_an_object_with_no_fields_is_a_bare_object() {
         // Legal Nim, so no refusal is needed for a struct with no
         // members. A body holding only the comment would not be.
         let text = section(&Section::Type(vec![TypeDecl {
@@ -615,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    fn an_enumeration_writes_one_field_per_line_with_no_export_marker() {
+    fn xtypes_7_5_1_an_enumeration_writes_one_field_per_line_with_no_export_marker() {
         let text = section(&Section::Type(vec![TypeDecl {
             text: zerodds_lang_cst::nim::TypeText::default(),
             doc: Doc::none(),
@@ -638,13 +638,13 @@ mod tests {
     }
 
     #[test]
-    fn an_empty_section_writes_nothing_because_the_keyword_alone_is_a_syntax_error() {
+    fn xtypes_7_5_1_an_empty_section_writes_nothing_because_the_keyword_alone_is_a_syntax_error() {
         assert_eq!(section(&Section::Type(Vec::new())), "");
         assert_eq!(section(&Section::Const(Vec::new())), "");
     }
 
     #[test]
-    fn a_const_carries_its_declared_type_before_the_value() {
+    fn xtypes_7_5_1_a_const_carries_its_declared_type_before_the_value() {
         let text = section(&Section::Const(vec![ConstDecl {
             doc: Doc::none(),
             name: Ident::new("LIMIT"),

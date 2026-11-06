@@ -55,7 +55,7 @@ fn c1_contexts() -> (SecurityContext, SecurityContext) {
 
 // C.4 — OSCORE request, client, keys of C.1. Sender Sequence Number 20.
 #[test]
-fn c4_protected_request_is_byte_exact() {
+fn coapbridge_7_2_c4_protected_request_is_byte_exact() {
     let (client, server) = c1_contexts();
     let unprotected = hex("44015d1f00003974396c6f63616c686f737483747631");
     let expected = hex("44025d1f00003974396c6f63616c686f7374620914ff612f1092f1776f1c1668b3825e");
@@ -72,7 +72,7 @@ fn c4_protected_request_is_byte_exact() {
 
 // C.5 — OSCORE request, client, keys of C.2 (no Master Salt, Sender ID 0x00).
 #[test]
-fn c5_protected_request_is_byte_exact() {
+fn coapbridge_7_2_c5_protected_request_is_byte_exact() {
     let ms = hex("0102030405060708090a0b0c0d0e0f10");
     let client = SecurityContext::derive(
         &ms,
@@ -104,7 +104,7 @@ fn c5_protected_request_is_byte_exact() {
 
 // C.6 — OSCORE request, client, keys of C.3 (ID Context carried as kid context).
 #[test]
-fn c6_protected_request_with_kid_context_is_byte_exact() {
+fn coapbridge_7_2_c6_protected_request_with_kid_context_is_byte_exact() {
     let ms = hex("0102030405060708090a0b0c0d0e0f10");
     let salt = hex("9e7ca92223786340");
     let idc = hex("37cbf3210017a2d3");
@@ -141,7 +141,7 @@ fn c6_protected_request_with_kid_context_is_byte_exact() {
 // C.7 — OSCORE response, server, no Partial IV (request nonce reuse). Response
 // to the C.4 request: request kid = empty, request Partial IV = 0x14.
 #[test]
-fn c7_protected_response_is_byte_exact() {
+fn coapbridge_7_2_c7_protected_response_is_byte_exact() {
     let (client, server) = c1_contexts();
     let unprotected = hex("64455d1f00003974ff48656c6c6f20576f726c6421");
     let expected = hex("64445d1f0000397490ffdbaad1e9a7e7b2a813d3c31524378303cdafae119106");
@@ -157,7 +157,7 @@ fn c7_protected_response_is_byte_exact() {
 
 // C.8 — OSCORE response, server, with the server's own Partial IV 0x00.
 #[test]
-fn c8_protected_response_with_partial_iv_is_byte_exact() {
+fn coapbridge_7_2_c8_protected_response_with_partial_iv_is_byte_exact() {
     let (client, server) = c1_contexts();
     let unprotected = hex("64455d1f00003974ff48656c6c6f20576f726c6421");
     let expected = hex("64445d1f00003974920100ff4d4c13669384b67354b2b6175ff4b8658c666a6cf88e");

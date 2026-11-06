@@ -22,14 +22,19 @@
 //! ```
 //!
 //! On the receiver side `decode_secured_submessage` does the step
-//! in reverse: extract SEC_BODY, send it through the crypto plugin,
-//! return the plaintext.
+//! in reverse: check the frame, hand it to the crypto plugin, return the
+//! plaintext.
 //!
-//! - Submessage IDs + flags per spec §7.3.6.
-//! - `encode_secured_submessage` + `decode_secured_submessage` with a
-//!   `&mut dyn CryptographicPlugin` callback — so AES-GCM, HMAC,
-//!   or future backends are interchangeable.
-//! - SRTPS wrap (§9.5 RTPS message protection): `SRTPS_PREFIX` + `SRTPS_POSTFIX` codec.
+//! - Submessage IDs + flags per spec §7.4.7.
+//! - The SEC_PREFIX and the SRTPS_PREFIX carry the CryptoHeader of the
+//!   key they are protected with (§7.4.7.6.1, §10.5.2.3), which only the
+//!   plugin holding the key can write: the codec checks the frame and
+//!   leaves the transformation to the plugin's
+//!   `encode_data_datawriter_submessage` / `encode_rtps_message_cyclone`
+//!   and their decoders, so AES-GCM or future backends are
+//!   interchangeable.
+//! - SRTPS wrap (§10.5.3.3.4.6 RTPS message protection): `SRTPS_PREFIX` +
+//!   `SRTPS_POSTFIX`.
 //! - Little-endian submessage header (`0x01` flag).
 //!
 //! ## Non-goals
@@ -48,8 +53,8 @@ pub mod header_aad;
 mod srtps;
 
 pub use codec::{
-    SEC_BODY, SEC_POSTFIX, SEC_PREFIX, SRTPS_POSTFIX, SRTPS_PREFIX, SecurityRtpsError,
-    decode_secured_submessage, encode_secured_submessage,
+    CRYPTO_HEADER_LEN, SEC_BODY, SEC_POSTFIX, SEC_PREFIX, SRTPS_POSTFIX, SRTPS_PREFIX,
+    SecurityRtpsError, decode_secured_submessage, encode_secured_submessage,
 };
 pub use header_aad::{build_rtps_header_aad, build_submessage_aad};
 pub use srtps::{

@@ -477,15 +477,70 @@ mod tests {
         }
     }
 
-    #[test]
-    fn endpoint_description_round_trip() {
-        let e = endpoint();
-        let back: EndpointDescription = from_binary(&to_binary(&e).expect("enc")).expect("dec");
-        assert_eq!(back, e);
+    fn ua_string(s: &str) -> Vec<u8> {
+        let mut out = i32::try_from(s.len()).expect("len").to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    /// The EndpointDescription of `endpoint()` in the field order of OPC
+    /// 10000-4 §7.14 (endpointUrl, server, serverCertificate, securityMode,
+    /// securityPolicyUri, userIdentityTokens, transportProfileUri,
+    /// securityLevel), the ApplicationDescription of §7.2 (applicationUri,
+    /// productUri, applicationName, applicationType, gatewayServerUri,
+    /// discoveryProfileUri, discoveryUrls) and the UserTokenPolicy of §7.41
+    /// (policyId, tokenType, issuedTokenType, issuerEndpointUrl,
+    /// securityPolicyUri); the enumerations as Int32 (SERVER 0, §7.4;
+    /// SIGNANDENCRYPT 3, §7.20; ANONYMOUS 0, §7.42).
+    fn endpoint_octets() -> Vec<u8> {
+        let mut out = ua_string("opc.tcp://host:4840");
+        out.extend_from_slice(&ua_string("urn:host:app"));
+        out.extend_from_slice(&ua_string("urn:vendor:product"));
+        out.push(0x03);
+        out.extend_from_slice(&ua_string("en"));
+        out.extend_from_slice(&ua_string("App"));
+        out.extend_from_slice(&0_i32.to_le_bytes());
+        out.extend_from_slice(&ua_string(""));
+        out.extend_from_slice(&ua_string(""));
+        out.extend_from_slice(&1_i32.to_le_bytes());
+        out.extend_from_slice(&ua_string("opc.tcp://host:4840"));
+        out.extend_from_slice(&[0x02, 0x00, 0x00, 0x00, 0xDE, 0xAD]);
+        out.extend_from_slice(&3_i32.to_le_bytes());
+        out.extend_from_slice(&ua_string(
+            "http://opcfoundation.org/UA/SecurityPolicy#Basic256Sha256",
+        ));
+        out.extend_from_slice(&1_i32.to_le_bytes());
+        out.extend_from_slice(&ua_string("anon"));
+        out.extend_from_slice(&0_i32.to_le_bytes());
+        out.extend_from_slice(&ua_string(""));
+        out.extend_from_slice(&ua_string(""));
+        out.extend_from_slice(&ua_string(""));
+        out.extend_from_slice(&ua_string(
+            "http://opcfoundation.org/UA-Profile/Transport/uatcp-uasc-uabinary",
+        ));
+        out.push(3);
+        out
     }
 
     #[test]
-    fn writer_group_data_type_round_trip() {
+    fn uacs_7_14_an_endpoint_description_is_its_fields_in_the_order_of_7_14() {
+        let e = endpoint();
+        assert_eq!(to_binary(&e).expect("encode"), endpoint_octets());
+        let back: EndpointDescription = from_binary(&endpoint_octets()).expect("decode");
+        assert_eq!(back, e);
+    }
+
+    /// OPC 10000-14 §6.2.6.7: the WriterGroupDataType is the
+    /// PubSubGroupDataType fields (Name, Enabled, SecurityMode,
+    /// SecurityGroupId, SecurityKeyServices, MaxNetworkMessageSize,
+    /// GroupProperties) followed by WriterGroupId, PublishingInterval,
+    /// KeepAliveTime (Duration, a Double), Priority, LocaleIds,
+    /// HeaderLayoutUri, TransportSettings, MessageSettings and the
+    /// DataSetWriters (§6.2.4.6: Name, Enabled, DataSetWriterId,
+    /// DataSetFieldContentMask, KeyFrameCount, DataSetName,
+    /// DataSetWriterProperties, TransportSettings, MessageSettings).
+    #[test]
+    fn uapubsub_6_2_6_7_a_writer_group_is_its_fields_in_the_order_of_6_2_6_7() {
         let g = WriterGroupDataType {
             name: String::from("wg1"),
             enabled: true,
@@ -516,12 +571,44 @@ mod tests {
                 message_settings: ext_none(),
             }],
         };
-        let back: WriterGroupDataType = from_binary(&to_binary(&g).expect("enc")).expect("dec");
+        let null_ext = [0x00, 0x00, 0x00];
+        let mut expected = ua_string("wg1");
+        expected.push(0x01);
+        expected.extend_from_slice(&2_i32.to_le_bytes());
+        expected.extend_from_slice(&ua_string("sg1"));
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&endpoint_octets());
+        expected.extend_from_slice(&1500_u32.to_le_bytes());
+        expected.extend_from_slice(&0_i32.to_le_bytes());
+        expected.extend_from_slice(&42_u16.to_le_bytes());
+        expected.extend_from_slice(&100.0_f64.to_le_bytes());
+        expected.extend_from_slice(&5000.0_f64.to_le_bytes());
+        expected.push(7);
+        expected.extend_from_slice(&2_i32.to_le_bytes());
+        expected.extend_from_slice(&ua_string("en"));
+        expected.extend_from_slice(&ua_string("de"));
+        expected.extend_from_slice(&ua_string(
+            "http://opcfoundation.org/UA/PubSub/HeaderLayout/UADP-Dynamic",
+        ));
+        expected.extend_from_slice(&null_ext);
+        expected.extend_from_slice(&null_ext);
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&ua_string("w1"));
+        expected.push(0x01);
+        expected.extend_from_slice(&5_u16.to_le_bytes());
+        expected.extend_from_slice(&0x20_u32.to_le_bytes());
+        expected.extend_from_slice(&10_u32.to_le_bytes());
+        expected.extend_from_slice(&ua_string("ds1"));
+        expected.extend_from_slice(&0_i32.to_le_bytes());
+        expected.extend_from_slice(&null_ext);
+        expected.extend_from_slice(&null_ext);
+        assert_eq!(to_binary(&g).expect("encode"), expected);
+        let back: WriterGroupDataType = from_binary(&expected).expect("decode");
         assert_eq!(back, g);
     }
 
     #[test]
-    fn security_mode_discriminant_rejected() {
+    fn uapubsub_7_10_security_mode_discriminant_rejected() {
         // i32 = 9 is not a valid MessageSecurityMode.
         let mut w = UaWriter::new();
         w.write_i32(9);

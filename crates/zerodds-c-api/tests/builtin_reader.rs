@@ -63,7 +63,8 @@ unsafe fn read_until(
 }
 
 #[test]
-fn the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found() {
+fn psmcxx_2_1_the_builtin_readers_hold_the_participant_topic_publication_and_subscription_discovery_found()
+ {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CBuiltinReader").unwrap();
     let type_name = CString::new("RawBytes").unwrap();

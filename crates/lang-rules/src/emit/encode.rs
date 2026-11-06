@@ -941,14 +941,14 @@ fn body_of<T: CodecTarget>(
             for level in 0..lengths.len() {
                 access = T::index(access, T::name(&format!("i{level}")));
             }
-            if let [length] = lengths.as_slice() {
-                if let Some(bulk) = bulk_write::<T>(ast, element, int::<T>(*length)) {
-                    return Ok(Some(T::block(vec![
-                        dheader_declaration::<T>(delimited),
-                        bulk,
-                        finish_dheader::<T>(),
-                    ])));
-                }
+            if let [length] = lengths.as_slice()
+                && let Some(bulk) = bulk_write::<T>(ast, element, int::<T>(*length))
+            {
+                return Ok(Some(T::block(vec![
+                    dheader_declaration::<T>(delimited),
+                    bulk,
+                    finish_dheader::<T>(),
+                ])));
             }
             let mut inner = T::block(vec![
                 element_write::<T>(ast, element, key, access.clone()).unwrap_or_else(|| {
@@ -1107,6 +1107,9 @@ fn aggregate_body<T: CodecTarget>(
     // as in the reference's `write_aggregate`.
     let packed = key.element_padding == ElementPadding::Packed;
     let mut statements = Vec::new();
+    if layout.members.is_empty() {
+        statements.extend(T::no_members(true));
+    }
     if packed {
         statements.push(begin_packed::<T>());
     }

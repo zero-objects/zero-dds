@@ -7,7 +7,8 @@
 #   make            build the objects and the two test binaries
 #   make test       build and run the self-test
 #   make corpus     build and run the interop-corpus byte comparison
-#   make check      both, which is what CI runs
+#   make external   build and run the dds::core::external<T> self-test
+#   make check      all three, which is what CI runs
 #   make clean
 #
 # The warning set is the gate, not a suggestion. `-Wconversion` and
@@ -34,7 +35,7 @@ LIB     := $(BUILD)/libzerodds_wire.a
 # against a checkout somewhere else.
 CORPUS_ROOT ?= ../../tests
 
-.PHONY: all test corpus check clean
+.PHONY: all test corpus external check clean
 
 all: $(LIB) $(BUILD)/selftest $(BUILD)/corpus_bytes
 
@@ -53,6 +54,9 @@ $(BUILD)/selftest: tests/selftest.cpp $(LIB) include/zerodds/wire.hpp include/ze
 $(BUILD)/corpus_bytes: tests/corpus_bytes.cpp $(LIB) include/zerodds/wire.hpp | $(BUILD)
 	$(CXX) $(CXXFLAGS) $(INCLUDES) $< $(LIB) -o $@
 
+$(BUILD)/external_selftest: tests/external_selftest.cpp include/dds/core/external.hpp | $(BUILD)
+	$(CXX) $(CXXFLAGS) $(INCLUDES) $< -o $@
+
 # Silent and exit 0 is the pass. A self-test that printed a summary would
 # make a failure something a reader has to look for.
 test: $(BUILD)/selftest
@@ -61,7 +65,10 @@ test: $(BUILD)/selftest
 corpus: $(BUILD)/corpus_bytes
 	@$(BUILD)/corpus_bytes $(CORPUS_ROOT)
 
-check: test corpus
+external: $(BUILD)/external_selftest
+	@$(BUILD)/external_selftest
+
+check: test corpus external
 
 clean:
 	rm -rf $(BUILD)

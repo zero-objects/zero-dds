@@ -317,10 +317,10 @@ fn parse_offered_mechanisms(body: &AmqpExtValue) -> Vec<SaslMechanism> {
     if let AmqpExtValue::List(items) = body {
         if let Some(AmqpExtValue::Array(arr)) = items.first() {
             for sym in arr {
-                if let AmqpExtValue::Symbol(s) = sym {
-                    if let Some(m) = SaslMechanism::from_name(s) {
-                        out.push(m);
-                    }
+                if let AmqpExtValue::Symbol(s) = sym
+                    && let Some(m) = SaslMechanism::from_name(s)
+                {
+                    out.push(m);
                 }
             }
         } else if let Some(AmqpExtValue::Symbol(s)) = items.first() {
@@ -372,10 +372,10 @@ fn build_sasl_init(mech: SaslMechanism, cfg: &ClientConfig) -> AmqpExtValue {
 }
 
 fn extract_outcome_code(body: &AmqpExtValue) -> Option<u8> {
-    if let AmqpExtValue::List(items) = body {
-        if let Some(AmqpExtValue::Ubyte(code)) = items.first() {
-            return Some(*code);
-        }
+    if let AmqpExtValue::List(items) = body
+        && let Some(AmqpExtValue::Ubyte(code)) = items.first()
+    {
+        return Some(*code);
     }
     None
 }
@@ -383,10 +383,10 @@ fn extract_outcome_code(body: &AmqpExtValue) -> Option<u8> {
 fn extract_container_id(performative_body: &[u8]) -> Option<String> {
     let (_descriptor, body, _) =
         zerodds_amqp_bridge::performatives::decode_performative(performative_body).ok()?;
-    if let AmqpExtValue::List(items) = body {
-        if let Some(AmqpExtValue::Str(s)) = items.first() {
-            return Some(s.clone());
-        }
+    if let AmqpExtValue::List(items) = body
+        && let Some(AmqpExtValue::Str(s)) = items.first()
+    {
+        return Some(s.clone());
     }
     None
 }
@@ -419,17 +419,17 @@ pub fn connect_with_reconnect(
                 last: None,
             }));
         }
-        if let Some(max) = reconnect.max_attempts {
-            if attempt >= max {
-                // `ReconnectExhausted`, because the cap being reached is
-                // its own outcome — and with the reason the last attempt
-                // failed, which the bare count dropped: a caller saw how
-                // often the connect was tried and never why.
-                return Err(ClientError::ReconnectExhausted {
-                    attempts: attempt,
-                    last: last_err.map(Box::new),
-                });
-            }
+        if let Some(max) = reconnect.max_attempts
+            && attempt >= max
+        {
+            // `ReconnectExhausted`, because the cap being reached is
+            // its own outcome — and with the reason the last attempt
+            // failed, which the bare count dropped: a caller saw how
+            // often the connect was tried and never why.
+            return Err(ClientError::ReconnectExhausted {
+                attempts: attempt,
+                last: last_err.map(Box::new),
+            });
         }
         match connect_outbound(cfg) {
             Ok(ok) => return Ok(ok),
@@ -466,13 +466,13 @@ mod tests {
     // --- Backoff ---
 
     #[test]
-    fn backoff_starts_at_initial() {
+    fn ddsamqp_2_2_backoff_starts_at_initial() {
         let r = ReconnectConfig::default();
         assert_eq!(r.next_backoff_ms(0), 1_000);
     }
 
     #[test]
-    fn backoff_doubles_until_cap() {
+    fn ddsamqp_2_2_backoff_doubles_until_cap() {
         let r = ReconnectConfig::default();
         assert_eq!(r.next_backoff_ms(1), 2_000);
         assert_eq!(r.next_backoff_ms(2), 4_000);
@@ -484,7 +484,7 @@ mod tests {
     }
 
     #[test]
-    fn backoff_respects_custom_cap() {
+    fn ddsamqp_2_2_backoff_respects_custom_cap() {
         let r = ReconnectConfig {
             initial_ms: 100,
             multiplier: 3,
@@ -499,7 +499,7 @@ mod tests {
     }
 
     #[test]
-    fn backoff_with_unit_multiplier_stays_at_initial() {
+    fn ddsamqp_2_2_backoff_with_unit_multiplier_stays_at_initial() {
         let r = ReconnectConfig {
             initial_ms: 500,
             multiplier: 1,
@@ -513,7 +513,7 @@ mod tests {
     // --- SASL parsing ---
 
     #[test]
-    fn parse_offered_mechanisms_array_form() {
+    fn ddsamqp_2_2_parse_offered_mechanisms_array_form() {
         let body = AmqpExtValue::List(vec![AmqpExtValue::Array(vec![
             AmqpExtValue::Symbol("PLAIN".into()),
             AmqpExtValue::Symbol("ANONYMOUS".into()),
@@ -525,14 +525,14 @@ mod tests {
     }
 
     #[test]
-    fn parse_offered_mechanisms_single_symbol() {
+    fn ddsamqp_2_2_parse_offered_mechanisms_single_symbol() {
         let body = AmqpExtValue::List(vec![AmqpExtValue::Symbol("EXTERNAL".into())]);
         let mechs = parse_offered_mechanisms(&body);
         assert_eq!(mechs, vec![SaslMechanism::External]);
     }
 
     #[test]
-    fn parse_offered_mechanisms_unknown_filtered() {
+    fn ddsamqp_2_2_parse_offered_mechanisms_unknown_filtered() {
         let body = AmqpExtValue::List(vec![AmqpExtValue::Array(vec![
             AmqpExtValue::Symbol("BOGUS".into()),
             AmqpExtValue::Symbol("ANONYMOUS".into()),
@@ -544,7 +544,7 @@ mod tests {
     // --- SASL-init build ---
 
     #[test]
-    fn sasl_init_plain_includes_credentials() {
+    fn ddsamqp_2_2_sasl_init_plain_includes_credentials() {
         let mut c = cfg("x:1");
         c.plain_credentials = Some(("alice".into(), "secret".into()));
         let body = build_sasl_init(SaslMechanism::Plain, &c);
@@ -562,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn sasl_init_anonymous_uses_marker() {
+    fn ddsamqp_2_2_sasl_init_anonymous_uses_marker() {
         let body = build_sasl_init(SaslMechanism::Anonymous, &cfg("x:1"));
         let items = match body {
             AmqpExtValue::List(v) => v,
@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn sasl_init_external_has_empty_response() {
+    fn ddsamqp_2_2_sasl_init_external_has_empty_response() {
         let body = build_sasl_init(SaslMechanism::External, &cfg("x:1"));
         let items = match body {
             AmqpExtValue::List(v) => v,
@@ -586,7 +586,7 @@ mod tests {
     /// E2E: we set up a mini AMQP server in a thread,
     /// connect as client, verify Open/Open roundtrip.
     #[test]
-    fn outbound_connect_to_local_server() {
+    fn ddsamqp_2_2_outbound_connect_to_local_server() {
         // We use our own handler::handle_connection
         // as server.
         use crate::handler::{HandlerConfig, handle_connection};
@@ -633,7 +633,7 @@ mod tests {
     }
 
     #[test]
-    fn reconnect_exhausts_with_max_attempts() {
+    fn ddsamqp_2_2_reconnect_exhausts_with_max_attempts() {
         // Connect to a non-existent address; max_attempts=2.
         let cfg = cfg("127.0.0.1:1"); // port 1 fast garantiert reject
         let metrics = Arc::new(MetricsHub::new());
@@ -655,7 +655,7 @@ mod tests {
     }
 
     #[test]
-    fn reconnect_aborts_on_shutdown_signal() {
+    fn ddsamqp_2_2_reconnect_aborts_on_shutdown_signal() {
         let cfg = cfg("127.0.0.1:1");
         let metrics = Arc::new(MetricsHub::new());
         let shutdown = Arc::new(AtomicBool::new(false));

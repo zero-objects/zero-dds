@@ -346,13 +346,13 @@ impl<T: FlatStruct> FlatReader<T> {
         // Spec §6.1: type-hash cross-validation. If the backend provides a
         // hash, it must match `T::TYPE_HASH`; otherwise it is schema drift and
         // we reject the read without dereferencing any slot.
-        if let Some(backend_hash) = SlotBackend::type_hash(&*self.alloc) {
-            if backend_hash != self.expected_type_hash {
-                return Err(SlotError::SampleTooLarge {
-                    sample: 0,
-                    slot_capacity: 0,
-                });
-            }
+        if let Some(backend_hash) = SlotBackend::type_hash(&*self.alloc)
+            && backend_hash != self.expected_type_hash
+        {
+            return Err(SlotError::SampleTooLarge {
+                sample: 0,
+                slot_capacity: 0,
+            });
         }
         let count = self.alloc.slot_count()?;
         let last_seen = self.last_sn.load(core::sync::atomic::Ordering::Relaxed);
@@ -504,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_write_then_reader_read() {
+    fn flatdata_6_1_writer_write_then_reader_read() {
         let alloc = fresh_alloc(4);
         // 1 active reader (bit 0).
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_does_not_re_read_same_slot() {
+    fn flatdata_6_1_reader_does_not_re_read_same_slot() {
         let alloc = fresh_alloc(4);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
         let reader = FlatReader::<Pose>::new(Arc::clone(&alloc), 0);
@@ -531,7 +531,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_loan_commit_pattern() {
+    fn flatdata_8_2_writer_loan_commit_pattern() {
         let alloc = fresh_alloc(2);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
         let reader = FlatReader::<Pose>::new(Arc::clone(&alloc), 0);
@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_loan_in_place_zero_copy() {
+    fn flatdata_4_1_writer_loan_in_place_zero_copy() {
         // True zero-copy: fill the `&mut Pose` view directly in the slot,
         // commit_in_place (no staging copy), reader gets the value.
         let alloc = fresh_alloc(2);
@@ -572,7 +572,7 @@ mod tests {
     }
 
     #[test]
-    fn loan_drop_without_commit_releases_slot() {
+    fn flatdata_8_2_loan_drop_without_commit_releases_slot() {
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
 
@@ -586,7 +586,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_recycles_slot_after_read() {
+    fn flatdata_4_1_reader_recycles_slot_after_read() {
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
         let reader = FlatReader::<Pose>::new(Arc::clone(&alloc), 0);
@@ -603,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn flat_sample_ref_deref() {
+    fn flatdata_9_2_flat_sample_ref_deref() {
         let p = Pose { x: 1, y: 2, z: 3 };
         let r = FlatSampleRef::new(p);
         assert_eq!(r.x, 1);
@@ -611,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn read_ref_holds_slot_until_drop() {
+    fn flatdata_9_1_read_ref_holds_slot_until_drop() {
         // Spec §9.2/§9.3: read_ref defers the reader bit to FlatSampleRef::Drop,
         // so a single-slot segment stays un-recyclable while the ref is alive.
         let alloc = fresh_alloc(1);
@@ -639,7 +639,7 @@ mod tests {
     }
 
     #[test]
-    fn read_ref_into_inner_releases_slot() {
+    fn flatdata_9_3_read_ref_into_inner_releases_slot() {
         // into_inner consumes the ref → its Drop runs → slot released.
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
@@ -656,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_rejects_type_hash_mismatch() {
+    fn flatdata_6_1_reader_rejects_type_hash_mismatch() {
         // Spec §6.1: the reader checks `T::TYPE_HASH` against the
         // hash stored on the backend; a mismatch → schema-drift reject.
         let wrong_hash = [0xBB; 16];
@@ -667,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_accepts_matching_type_hash() {
+    fn flatdata_6_1_reader_accepts_matching_type_hash() {
         // Spec §6.1: with a correct hash on the backend → no reject;
         // with no sample → Ok(None).
         let alloc = Arc::new(InMemorySlotAllocator::new(0, 4, 64).with_type_hash(Pose::TYPE_HASH));
@@ -689,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn read_blocking_wakes_on_commit() {
+    fn flatdata_4_1_read_blocking_wakes_on_commit() {
         // Spec §4.2: read_blocking parks on the notify and is woken by the
         // writer's commit — no busy-poll, returns well before the 5s timeout.
         use std::time::Duration;
@@ -720,7 +720,7 @@ mod tests {
     }
 
     #[test]
-    fn read_blocking_times_out_without_writer() {
+    fn flatdata_4_1_read_blocking_times_out_without_writer() {
         use std::time::Duration;
         let alloc = fresh_alloc(2);
         let reader = FlatReader::<Pose>::new(Arc::clone(&alloc), 0);
@@ -731,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn write_bp_best_effort_drops_when_full() {
+    fn flatdata_5_1_write_bp_best_effort_drops_when_full() {
         use std::time::Duration;
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
@@ -760,7 +760,7 @@ mod tests {
     }
 
     #[test]
-    fn write_bp_reliable_blocks_until_reader_frees() {
+    fn flatdata_5_1_write_bp_reliable_blocks_until_reader_frees() {
         // Spec §10.5: Reliable parks until a reader consumes the slot.
         use std::time::Duration;
         let alloc = fresh_alloc(1);
@@ -790,7 +790,7 @@ mod tests {
     }
 
     #[test]
-    fn write_bp_reliable_times_out() {
+    fn flatdata_5_1_write_bp_reliable_times_out() {
         use std::time::Duration;
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
@@ -810,7 +810,7 @@ mod tests {
     /// Spec §5.1 — the straggler timeout is 60 s unless the writer is told
     /// otherwise.
     #[test]
-    fn straggler_timeout_defaults_to_sixty_seconds() {
+    fn flatdata_5_1_straggler_timeout_defaults_to_sixty_seconds() {
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1);
         assert_eq!(writer.straggler_timeout(), Duration::from_secs(60));
@@ -825,7 +825,7 @@ mod tests {
     /// pool forever. Once the sample is older than the timeout, the next
     /// write takes the slot.
     #[test]
-    fn write_reclaims_a_slot_held_past_the_straggler_timeout() {
+    fn flatdata_5_1_write_reclaims_a_slot_held_past_the_straggler_timeout() {
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1)
             .with_straggler_timeout(Duration::from_millis(10));
@@ -850,7 +850,7 @@ mod tests {
 
     /// Spec §5.1 — the same reclaim applies to the explicit loan path.
     #[test]
-    fn loan_slot_reclaims_a_slot_held_past_the_straggler_timeout() {
+    fn flatdata_5_1_loan_slot_reclaims_a_slot_held_past_the_straggler_timeout() {
         let alloc = fresh_alloc(1);
         let writer = FlatWriter::<Pose>::new(Arc::clone(&alloc), 0b1)
             .with_straggler_timeout(Duration::from_millis(10));

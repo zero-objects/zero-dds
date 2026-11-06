@@ -1,0 +1,9 @@
+// TypeCode.idl — the file OMG IDL 4.2 §7.4.6.4.7 and CORBA 3.3 part 1
+// §7.19 name for an IDL file that uses CORBA::TypeCode without the rest
+// of the CORBA module. Its contents are "implementation dependent"; this
+// implementation defines CORBA::TypeCode by the definitions orb.idl
+// brings, of which TypeCode is one.
+#ifndef _TYPECODE_IDL_
+#define _TYPECODE_IDL_
+#include <orb.idl>
+#endif // _TYPECODE_IDL_

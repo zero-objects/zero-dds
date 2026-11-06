@@ -50,6 +50,11 @@ class AsyncReader(object):
             yield ze.xrce_read_frame(frame)
 
 
+# How long the consumer waits for the samples; a missing one ends the run
+# with an error instead of an endless wait.
+TIMEOUT_S = 10.0
+
+
 async def run():
     total = 5
     transport = ze.MemTransport()
@@ -60,16 +65,26 @@ async def run():
 
     reader = AsyncReader(transport)
     got = 0
-    async for body in reader.stream():
-        r = Reading.decode(body)
-        print('async reading %d: id=0x%x value=%.1f label="%s"'
-              % (got, r.id, r.value, r.label))
-        got += 1
-        if got == total:
-            break
+
+    async def consume():
+        nonlocal got
+        async for body in reader.stream():
+            r = Reading.decode(body)
+            print('async reading %d: id=0x%x value=%.1f label="%s"'
+                  % (got, r.id, r.value, r.label))
+            got += 1
+            if got == total:
+                break
+
+    try:
+        await asyncio.wait_for(consume(), TIMEOUT_S)
+    except asyncio.TimeoutError:
+        sys.stderr.write("incomplete: got %d of %d samples within %.0f s\n"
+                         % (got, total, TIMEOUT_S))
+        return 1
     print("ALL OK")
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
-    sys.exit(0)
+    sys.exit(asyncio.run(run()))

@@ -174,7 +174,7 @@ mod tests {
     /// The constants are the ones of RFC 5114 §2.3, byte for byte: the text
     /// of the RFC is the oracle.
     #[test]
-    fn the_constants_are_the_ones_printed_in_rfc_5114_2_3() {
+    fn security_8_3_the_constants_are_the_ones_printed_in_rfc_5114_2_3() {
         assert_eq!(P_HEX, rfc_value("p"));
         assert_eq!(G_HEX, rfc_value("g"));
         assert_eq!(Q_HEX, rfc_value("q"));
@@ -185,7 +185,7 @@ mod tests {
     /// RFC 5114 §2.3: `p` has 2048 bits, `q` has 256 bits and divides `p - 1`,
     /// and `g` has order `q` (`g^q mod p == 1`, `g != 1`).
     #[test]
-    fn the_group_has_the_structure_of_rfc_5114_2_3() {
+    fn security_8_3_the_group_has_the_structure_of_rfc_5114_2_3() {
         let (p, g, q) = (modulus(), U2048::from_be_hex(G_HEX), order());
         assert_eq!(p.bits_vartime(), 2048);
         assert_eq!(q.bits_vartime(), 256);

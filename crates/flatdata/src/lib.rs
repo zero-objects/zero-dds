@@ -134,24 +134,30 @@ mod tests {
     }
 
     #[test]
-    fn wire_size_matches_size_of() {
+    fn flatdata_1_1_wire_size_matches_size_of() {
         assert_eq!(Pose::WIRE_SIZE, core::mem::size_of::<Pose>());
         assert_eq!(Pose::WIRE_SIZE, 24);
     }
 
+    /// zerodds-flatdata-1.0 §1.1: `as_bytes` is the value's memory as
+    /// `#[repr(C)]` lays it out (the Rust reference, "The C
+    /// representation": fields in declaration order, each at the next
+    /// offset its alignment allows), and `from_bytes_unchecked` reads that
+    /// memory back.
     #[test]
-    fn as_bytes_roundtrip() {
-        let p = Pose { x: 1, y: 2, z: 3 };
-        let bytes = p.as_bytes();
-        assert_eq!(bytes.len(), 24);
-        // SAFETY: bytes come from exactly this Pose instance, so the
-        // type-hash is trivially consistent.
-        let p2: Pose = unsafe { Pose::from_bytes_unchecked(bytes) };
-        assert_eq!(p, p2);
-    }
-
-    #[test]
-    fn type_hash_is_consistent() {
-        assert_eq!(Pose::TYPE_HASH, [0x42; 16]);
+    fn flatdata_1_1_as_bytes_roundtrip() {
+        let p = Pose {
+            x: 1,
+            y: -2,
+            z: 0x0102_0304_0506_0708,
+        };
+        let mut layout = Vec::new();
+        layout.extend_from_slice(&1i64.to_ne_bytes());
+        layout.extend_from_slice(&(-2i64).to_ne_bytes());
+        layout.extend_from_slice(&0x0102_0304_0506_0708i64.to_ne_bytes());
+        assert_eq!(p.as_bytes(), layout.as_slice());
+        // SAFETY: the bytes are a whole Pose of this layout.
+        let back: Pose = unsafe { Pose::from_bytes_unchecked(&layout) };
+        assert_eq!(back, p);
     }
 }

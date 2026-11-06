@@ -34,7 +34,7 @@ impl DomainParticipantListener for Told {
 }
 
 #[test]
-fn a_nil_listener_does_not_pass_the_status_up_and_does_not_reset_it() {
+fn dcps_2_2_2_1_1_3_a_nil_listener_does_not_pass_the_status_up_and_does_not_reset_it() {
     let p = ParticipantGuard::new(
         DomainParticipantFactory::instance()
             .create_participant_with_config(
@@ -79,7 +79,7 @@ fn a_nil_listener_does_not_pass_the_status_up_and_does_not_reset_it() {
 /// DDS 1.4 §2.2.2.2.2.1 `create_participant(domain_id, qos, a_listener,
 /// mask)`.
 #[test]
-fn create_participant_takes_a_listener_and_a_mask() {
+fn dcps_2_2_2_2_2_1_create_participant_takes_a_listener_and_a_mask() {
     let lease = common::lease_domain();
     let told = Arc::new(Told::default());
     let p = ParticipantGuard::new(

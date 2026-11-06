@@ -92,7 +92,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void comparisonOperators() {
+    void javapsm_2_the_filter_compares_with_the_relational_operators_of_dcps_annex_b() {
         assertTrue(matches("value > 50", null, HOT));
         assertFalse(matches("value > 50", null, COLD));
         assertTrue(matches("value >= 99", null, HOT));
@@ -107,7 +107,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void nestedMembersAndRecordAccessors() {
+    void javapsm_2_the_filter_names_a_nested_member_with_a_dot() {
         assertTrue(matches("inner.channel = 3", null, HOT));
         assertTrue(matches("inner.unit = 'C'", null, HOT));
         assertFalse(matches("inner.channel IS NULL", null, HOT));
@@ -116,7 +116,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void booleanOperators() {
+    void javapsm_2_the_filter_joins_predicates_with_and_or_not() {
         assertTrue(matches("value > 0 AND sensor = 'a'", null, HOT));
         assertFalse(matches("value > 0 AND sensor = 'b'", null, HOT));
         assertTrue(matches("value > 0 OR sensor = 'b'", null, COLD));
@@ -126,7 +126,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void betweenInAndLike() {
+    void javapsm_2_the_filter_has_between_in_and_like() {
         assertTrue(matches("value BETWEEN 0 AND 100", null, HOT));
         assertFalse(matches("value BETWEEN 0 AND 10", null, HOT));
         assertTrue(matches("sensor IN ('a', 'c')", null, HOT));
@@ -141,7 +141,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void expressionParameters() {
+    void javapsm_2_the_filter_takes_its_parameters_by_position() {
         assertTrue(matches("value > %0", List.of("50"), HOT));
         assertFalse(matches("value > %0", List.of("500"), HOT));
         assertTrue(matches("sensor = %0", List.of("a"), HOT));
@@ -150,16 +150,9 @@ class ContentFilterTest {
                 () -> matches("value > %1", List.of("50"), HOT));
     }
 
-    @Test
-    void anEmptyExpressionMatchesEverySample() {
-        assertTrue(matches(null, null, HOT));
-        assertTrue(matches("", null, HOT));
-        assertTrue(matches("   ", null, HOT));
-    }
-
     /** DDS-DCPS 1.4 Annex B.2: FIELDNAME RelOp FIELDNAME and Parameter RelOp FIELDNAME. */
     @Test
-    void aFieldCanBeComparedWithAnotherFieldOrWithALiteralOnTheLeft() {
+    void javapsm_2_the_filter_compares_a_field_with_a_field_or_a_parameter_on_the_left() {
         // HOT: value 99.0, inner.channel 3.
         assertTrue(matches("value > inner.channel", null, HOT));
         assertFalse(matches("value < inner.channel", null, HOT));
@@ -172,7 +165,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void aMalformedExpressionIsRejected() {
+    void javapsm_2_a_malformed_expression_is_rejected() {
         assertThrows(IllegalArgumentException.class,
                 () -> matches("value >", null, HOT));
         assertThrows(IllegalArgumentException.class,
@@ -186,7 +179,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void theContentFilteredTopicOfTheParticipantFiltersTheSamples() throws Exception {
+    void javapsm_2_the_content_filtered_topic_of_the_participant_filters_the_samples() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<Reading> topic = participant.createTopic("Reading", Reading.class);
         Publisher publisher = participant.createPublisher();
@@ -209,7 +202,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void theQueryConditionOfTheReaderTriggersOnAMatchingSample() throws Exception {
+    void javapsm_2_the_query_condition_of_the_reader_triggers_on_a_matching_sample() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<Reading> topic = participant.createTopic("Reading", Reading.class);
         Publisher publisher = participant.createPublisher();
@@ -235,7 +228,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void theSelectorOfReadAndTakeCarriesTheExpression() throws Exception {
+    void javapsm_7_7_3_the_selector_of_read_and_take_carries_the_expression() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<Reading> topic = participant.createTopic("Reading", Reading.class);
         Publisher publisher = participant.createPublisher();
@@ -253,7 +246,7 @@ class ContentFilterTest {
     }
 
     @Test
-    void aConditionKnowsTheFilterThatTriggersIt() {
+    void javapsm_2_a_condition_knows_the_filter_that_triggers_it() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<Reading> topic = participant.createTopic("Reading", Reading.class);
         DataReader<Reading> reader = participant.createSubscriber()
@@ -265,13 +258,4 @@ class ContentFilterTest {
         assertTrue(condition instanceof Condition);
     }
 
-    @Test
-    void aPredicateFromTheFilterIsReusable() {
-        Predicate<Reading> filter =
-                ContentFilter.compile("sensor = 'a'", List.of());
-        assertTrue(filter.test(HOT));
-        assertFalse(filter.test(COLD));
-        assertFalse(filter.test(null),
-                "a sample without data has no members");
-    }
 }

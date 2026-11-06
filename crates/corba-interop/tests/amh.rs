@@ -41,7 +41,7 @@ fn pair() -> (AmiClient, AmhEndpoint) {
 /// Server parks two requests and answers them **deferred + out-of-order**; the
 /// client correlates the replies by request_id.
 #[test]
-fn amh_deferred_out_of_order_replies() {
+fn corbarust_6_amh_deferred_out_of_order_replies() {
     let (mut client, server) = pair();
 
     let id_slow = client.send_poll("slow", &u32_body(1)).unwrap();
@@ -70,7 +70,7 @@ fn amh_deferred_out_of_order_replies() {
 
 /// Server answers a parked request with an exception via the handler.
 #[test]
-fn amh_deferred_exception() {
+fn corbarust_6_amh_deferred_exception() {
     let (mut client, server) = pair();
     let id = client.send_poll("boom", &u32_body(0)).unwrap();
     let req = server.accept_request().unwrap().unwrap();

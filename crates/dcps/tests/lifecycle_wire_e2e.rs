@@ -157,7 +157,7 @@ mod linux {
     }
 
     #[test]
-    fn dispose_propagates_over_wire_to_reader() {
+    fn dcps_2_2_2_4_2_13_dispose_propagates_over_wire_to_reader() {
         // Default WriterQos => autodispose=true; dispose sends a wire marker.
         let (writer, reader) =
             pair_with_writer_qos(unique_domain(), "DisposeWire", DataWriterQos::default());
@@ -190,7 +190,7 @@ mod linux {
     }
 
     #[test]
-    fn unregister_with_autodispose_false_propagates_unregister_only() {
+    fn dcps_2_2_2_4_2_7_unregister_with_autodispose_false_propagates_unregister_only() {
         let qos = DataWriterQos {
             writer_data_lifecycle: WriterDataLifecycleQosPolicy {
                 autodispose_unregistered_instances: false,
@@ -284,7 +284,7 @@ mod linux {
     /// instance. Uses `ShapeType` on purpose — its key is a string, so its
     /// KeyHolder and its XCDR2-LE body genuinely differ.
     #[test]
-    fn dispose_marker_carries_the_key_fields_of_a_string_keyed_type() {
+    fn rtps_8_7_4_dispose_marker_carries_the_key_fields_of_a_string_keyed_type() {
         use zerodds_dcps::interop::ShapeType;
 
         let factory = DomainParticipantFactory::instance();
@@ -352,7 +352,7 @@ mod linux {
     /// §2.2.3.21); `writer.unregister_on_delete` off is the publisher that
     /// sends no marker, as Connext and Fast DDS do there.
     #[test]
-    fn instance_goes_no_writers_when_its_last_writer_disappears() {
+    fn dcps_2_2_2_5_1_3_instance_goes_no_writers_when_its_last_writer_disappears() {
         use zerodds_dcps::interop::ShapeType;
 
         let factory = DomainParticipantFactory::instance();
@@ -501,7 +501,7 @@ mod linux {
     /// hands out the marker. They stayed down until a read or take found the
     /// marker.
     #[test]
-    fn a_writer_that_leaves_raises_data_available_before_any_read() {
+    fn dcps_2_2_4_2_2_a_writer_that_leaves_raises_data_available_before_any_read() {
         use std::sync::Arc;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use zerodds_dcps::Entity;

@@ -172,15 +172,28 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_le() {
-        let l = sample();
-        let bytes = l.to_bytes_le().expect("encode");
-        let l2 = ShmLocator::from_bytes_le(&bytes).expect("decode");
-        assert_eq!(l, l2);
+    fn flatdata_3_1_roundtrip_le() {
+        // zerodds-flatdata-1.0 §3.1: hostname-hash, uid, slot_count and
+        // slot_size as little-endian u32 at 0x00 to 0x0c, then the path as
+        // a CDR string (DDS-XTypes 1.3 §7.4.3.5.3: a u32 length that counts
+        // the terminating NUL, the octets, the NUL), padded to 4.
+        let l = ShmLocator {
+            hostname_hash: 0x1122_3344,
+            uid: 1000,
+            slot_count: 16,
+            slot_size: 128,
+            segment_path: "/zdds".into(),
+        };
+        let octets = [
+            0x44, 0x33, 0x22, 0x11, 0xE8, 0x03, 0, 0, 16, 0, 0, 0, 128, 0, 0, 0, 6, 0, 0, 0, b'/',
+            b'z', b'd', b'd', b's', 0, 0, 0,
+        ];
+        assert_eq!(l.to_bytes_le().expect("encode"), octets);
+        assert_eq!(ShmLocator::from_bytes_le(&octets).expect("decode"), l);
     }
 
     #[test]
-    fn truncated_header_errors() {
+    fn flatdata_3_1_truncated_header_errors() {
         assert_eq!(
             ShmLocator::from_bytes_le(&[0u8; 19]),
             Err(LocatorError::TruncatedHeader)
@@ -188,32 +201,32 @@ mod tests {
     }
 
     #[test]
-    fn path_too_long_errors() {
+    fn flatdata_3_1_path_too_long_errors() {
         let mut l = sample();
         l.segment_path = "x".repeat(MAX_PATH_LEN + 1);
         assert_eq!(l.to_bytes_le(), Err(LocatorError::PathTooLong));
     }
 
     #[test]
-    fn fnv1a_known_value() {
+    fn flatdata_3_1_fnv1a_known_value() {
         // Official FNV-1a test vector: hash("hello") = 0x4f9f2cab.
         assert_eq!(fnv1a_32(b"hello"), 0x4f9f_2cab);
     }
 
     #[test]
-    fn same_host_match_positive() {
+    fn flatdata_3_2_same_host_match_positive() {
         let l = sample();
         assert!(is_same_host("node1.local", 1000, &l));
     }
 
     #[test]
-    fn same_host_mismatch_uid() {
+    fn flatdata_3_2_same_host_mismatch_uid() {
         let l = sample();
         assert!(!is_same_host("node1.local", 999, &l));
     }
 
     #[test]
-    fn same_host_mismatch_hostname() {
+    fn flatdata_3_2_same_host_mismatch_hostname() {
         let l = sample();
         assert!(!is_same_host("node2.local", 1000, &l));
     }

@@ -1270,15 +1270,15 @@ fn rust_codec_pairs(
         for item in crate::encode::rust_codec(ast, id, key).map_err(codec_error)? {
             pairs.push((node.module, item));
         }
-        if rpc {
-            if let Ok(items) = crate::encode::rust_codec_pair(
+        if rpc
+            && let Ok(items) = crate::encode::rust_codec_pair(
                 ast,
                 id,
                 crate::emit::interface_rust::rpc_layout_key_xcdr1(),
-            ) {
-                for item in items {
-                    pairs.push((node.module, item));
-                }
+            )
+        {
+            for item in items {
+                pairs.push((node.module, item));
             }
         }
     }

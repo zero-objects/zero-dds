@@ -167,10 +167,10 @@ impl DaemonHandle {
         }
         self.bridge.stop();
         self.healthy.store(false, Ordering::SeqCst);
-        if let Some(addr) = self.admin_addr.as_deref() {
-            if let Ok(addr) = addr.parse::<SocketAddr>() {
-                let _ = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200));
-            }
+        if let Some(addr) = self.admin_addr.as_deref()
+            && let Ok(addr) = addr.parse::<SocketAddr>()
+        {
+            let _ = std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200));
         }
         if let Some(j) = self.admin_thread.take() {
             let _ = j.join();
@@ -381,10 +381,10 @@ pub fn start_with_reload(
             .spawn(move || {
                 while !stop_r.load(Ordering::SeqCst) {
                     thread::sleep(Duration::from_millis(100));
-                    if flag_r.swap(false, Ordering::SeqCst) {
-                        if let Some(l) = &load {
-                            reload(&started, l(), &live_r);
-                        }
+                    if flag_r.swap(false, Ordering::SeqCst)
+                        && let Some(l) = &load
+                    {
+                        reload(&started, l(), &live_r);
                     }
                 }
             });
@@ -803,21 +803,20 @@ fn note_discovery(
     // attention, not a silent choice between them — flagged regardless of
     // whether the type resolved above (that path only picks `primary`,
     // which never surfaces a mismatch on the OTHER side).
-    if let (Some(p), Some(s)) = (&sides.publication, &sides.subscription) {
-        if let (Some(pub_kind), Some(sub_kind)) = (
+    if let (Some(p), Some(s)) = (&sides.publication, &sides.subscription)
+        && let (Some(pub_kind), Some(sub_kind)) = (
             topic_kind_from_guid(p.endpoint_guid),
             topic_kind_from_guid(s.endpoint_guid),
-        ) {
-            if pub_kind != sub_kind {
-                eprintln!(
-                    "[{SERVICE_NAME}] auto-discovery: {topic_name}'s publication and \
+        )
+        && pub_kind != sub_kind
+    {
+        eprintln!(
+            "[{SERVICE_NAME}] auto-discovery: {topic_name}'s publication and \
                      subscription endpoints disagree on keyed-ness by GUID entity kind \
                      (publication={pub_kind:?}, subscription={sub_kind:?}, DDSI-RTPS 2.5 \
                      §9.3.1.2 Table 9.1) — bridging by the publication's, as this daemon \
                      always does when both sides are seen in one pass"
-                );
-            }
-        }
+        );
     }
     let mut spec = TopicSpec {
         dds_topic: topic_name.to_string(),

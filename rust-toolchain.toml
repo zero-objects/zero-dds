@@ -1,52 +1,56 @@
 # Toolchain pinning.
 #
-# Bootstrap and proof era: stable Rust 1.88.0, see
+# Bootstrap and proof era: stable Rust 1.97.1, see
 # 04_safety_by_architecture.md §5.
 # In the expansion era (Track B) this is switched to a Ferrocene
 # channel. The switch is isolated as a 1-line config change in this
 # file.
 #
-# ### Why 1.88.0?
+# ### Why 1.97.1?
 #
-# 1.88.0 is the rustc version on which **Ferrocene 25.08.0** is based
-# (qualified ISO 26262 ASIL-D / IEC 61508 SIL-3 / IEC 62304). This
-# keeps the Track B switch a 1-line change; no backward
-# MSRV migration needed.
+# 1.97.1 is the rustc version on which **Ferrocene 26.08** is based
+# (qualified ISO 26262 ASIL D / IEC 61508 SIL 3 / IEC 62304 Class C).
+# Branch `release/1.97` of github.com/ferrocene/ferrocene carries
+# `src/version` 1.97.1 and `ferrocene/version` 26.08.1. This keeps the
+# Track B switch a 1-line change; no backward MSRV migration needed.
 #
-# The previous pin was 1.85 (chosen before the Ferrocene 25.05 release) —
-# upstream crates (`home@0.5.12`, `icu_*@2.2.0`) have since raised MSRV
-# to 1.86/1.88, hence the bump to the nearest
-# Ferrocene-aligned channel.
+# ### Ferrocene release map
 #
-# ### Ferrocene release map (as of 2026-05)
+# Source: the release notes in `ferrocene/doc/release-notes/src/` on
+# branch `release/1.97` (https://public-docs.ferrocene.dev/main/release-notes/).
+# Each release contains the upstream Rust changes of the listed range.
 #
-# Source: https://public-docs.ferrocene.dev/main/release-notes/
+# | Ferrocene | rustc           |
+# |-----------|-----------------|
+# | 26.08.0   | 1.96.0 – 1.97.1 | ← us
+# | 26.05.0   | 1.93.0 – 1.95.0 |
+# | 26.02.0   | 1.91.0 – 1.92.0 |
+# | 25.11.0   | 1.89.0 – 1.90.0 |
+# | 25.08.0   | 1.87.0 – 1.88.0 |
 #
-# | Ferrocene | rustc          | Status                  |
-# |-----------|----------------|-------------------------|
-# | 26.02.0   | 1.91 + 1.92    | qualified (latest)      |
-# | 25.11.0   | 1.89 + 1.90    | qualified               |
-# | 25.08.0   | 1.87 + **1.88**| qualified ← us          |
-# | 25.05.0   | 1.86           | qualified               |
-# | 25.02.0   | 1.82 + 1.83    | qualified               |
-# | 24.11.0   | older          | qualified (LTS-style)   |
+# ### Ferrocene 26.08 — compilation targets
 #
-# ### Ferrocene 25.08.0 — qualified compilation targets
+# Source: `ferrocene/doc/user-manual/src/targets/index.rst` and
+# `ferrocene/doc/release-notes/src/26.08.0.rst` on branch `release/1.97`
+# (https://public-docs.ferrocene.dev/main/user-manual/targets/).
 #
-# Source: https://public-docs.ferrocene.dev/main/user-manual/targets/
+# **Qualified (ISO 26262 ASIL D / IEC 61508 SIL 3 / IEC 62304 Class C):**
+#   * `x86_64-unknown-linux-gnu`    — x86-64 Linux glibc (host platform)
+#   * `aarch64-unknown-none`        — Armv8-A bare-metal  ┐ only when
+#   * `armv7r-none-eabihf`          — Armv7-R bare-metal  │ cross-compiled
+#   * `thumbv7em-none-eabi`         — Armv7E-M soft-float │ from
+#   * `thumbv7em-none-eabihf`       — Armv7E-M hard-float ┘ x86_64-unknown-linux-gnu
+#   * `aarch64-unknown-qnx`         — Armv8-A QNX
+#   * `x86_64-pc-qnx`               — x86-64 QNX
 #
-# **Qualified (ISO 26262 ASIL-D / IEC 61508 SIL-3 / IEC 62304):**
-#   * `aarch64-unknown-none`        — Armv8-A bare-metal hard-float
-#   * `aarch64-unknown-linux-gnu`   — Armv8-A Linux glibc (Host)
-#   * `aarch64-rhivos2-linux-gnu`   — Armv8-A RHIVOS 2 Linux glibc
-#   * `aarch64-unknown-nto-qnx710`  — Armv8-A QNX Neutrino 7.1
-#   * `thumbv7em-none-eabi`         — Armv7E-M bare-metal soft-float
-#   * `thumbv7em-none-eabihf`       — Armv7E-M bare-metal hard-float
-#   * `x86_64-unknown-linux-gnu`    — x86-64 Linux glibc (Host)
-#   * `x86_64-pc-nto-qnx710`        — x86-64 QNX Neutrino 7.1
-#
-# **Quality Managed (host-only, not safety-certified):**
+# **Quality managed (production use, not qualified):**
 #   * `aarch64-apple-darwin`        — Apple Silicon macOS (dev hosts)
+#
+# **Supported only:** `x86_64-pc-windows-msvc` among others.
+#
+# `aarch64-unknown-linux-gnu` is not in the Ferrocene 26.08 target list
+# (neither qualified, quality managed nor supported). It stays in the
+# list below because ZeroDDS builds for it with the upstream toolchain.
 #
 # The ZeroDDS target list below contains only those we actively
 # build / test against. The `rt-linux` crate (RT scheduler) is built on x86_64+aarch64
@@ -54,13 +58,16 @@
 # workspace default is x86_64-unknown-linux-gnu.
 
 [toolchain]
-channel = "1.88.0"
+channel = "1.97.1"
 components = ["rustfmt", "clippy", "rust-src", "llvm-tools-preview"]
 targets = [
-    # Qualified Linux hosts (Ferrocene 25.08.0).
+    # Ferrocene 26.08 qualified host.
     "x86_64-unknown-linux-gnu",
+    # Not a Ferrocene 26.08 target; built with the upstream toolchain
+    # (rt-linux, aarch64 cross build in CI).
     "aarch64-unknown-linux-gnu",
-    # Qualified embedded — no-std smoke test + future embedded builds.
+    # Qualified embedded (cross from x86_64 Linux) — no-std smoke test
+    # + future embedded builds.
     "thumbv7em-none-eabihf",
 ]
 # Minimal profile — do not sync rust-docs/rust-analyzer/etc. as well.

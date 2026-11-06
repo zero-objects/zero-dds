@@ -650,7 +650,7 @@ mehr, ein unbekanntes Handle meldet das statt still zu schlucken.
 TimerEventT event);`.
 
 **Repo:** `crates/corba-ccm/src/time_psm.rs::event_time(&TimerEventT)
--> u64` (UTO-Aequivalent als Nanosekunden seit Unix-Epoch).
+-> u64` (UTO-Äquivalent als Nanosekunden seit Unix-Epoch).
 
 **Tests:** `crates/corba-ccm/src/time_psm.rs::tests::event_time_extracts_utc_from_timer_event_t`.
 
@@ -693,13 +693,13 @@ abgedeckt.
 
 ### App. A — Secure Time Source Criteria
 
-**Spec:** Appendix A — Implementation-Hinweise für Secure-Time-Source.
+**Spec:** App. A, S. A-1 (PDF) — "Appropriate documented handling of the criteria presented here is mandatory for conformance to the Basic Time Service conformance point." A.1: "If these criteria are not satisfactorily addressed in an ORB, then it must return the TimeUnavailable exception upon invocation of the secure_universal_time operation".
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Appendix A explizit als Implementation-Guideline (non-normativ) deklariert.
+**Status:** open — eine dokumentierte Behandlung der Kriterien fehlt; `TimeService::secure_universal_time` (`crates/time-service/src/service.rs`) liefert die Zeit, wenn der Aufrufer die Quelle über `secure_source` als sicher markiert.
 
 ---
 
@@ -707,14 +707,13 @@ abgedeckt.
 
 ### App. B — Administration
 
-**Spec:** App. B (PDF) — Administration of the Time Service
-(non-normativ).
+**Spec:** App. B, S. B-1 (PDF) — "Only administrators authorized by the system security policy may set the time and specify the source of time"; Operationen, die die Zeit setzen, eine Quelle als maßgeblich bestimmen oder die Genauigkeit ändern, "must be protected against unauthorized invocation. They must also be mandatorily audited"; "Time Service implementors must state whether or not their implementation is secure."
 
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** open — `TimeService::with_source` und das Feld `secure_source` (`crates/time-service/src/service.rs`) sind ohne Berechtigungsprüfung und ohne Audit zugänglich; eine Erklärung zur Sicherheit der Implementierung fehlt.
 
 ### App. C — IDL Listing
 
@@ -726,7 +725,7 @@ in §1.3 + §2.x).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Zusammenfassung des IDL aus §1.3 und §2; die Definitionen sind dort einzeln geführt.
 
 ### App. D — Notes
 
@@ -736,7 +735,7 @@ in §1.3 + §2.x).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Hinweise für Anwender.
 
 ### App. E — Examples
 
@@ -746,7 +745,7 @@ in §1.3 + §2.x).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Beispiele für Erweiterungen.
 
 ### App. F — References
 
@@ -756,18 +755,19 @@ in §1.3 + §2.x).
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Verweisliste.
 
 ---
 
 ## Audit-Status
 
-43 done / 0 partial / 0 open / 6 n/a (informative) / 0 n/a (rejected).
+43 done / 0 partial / 2 open / 0 blocked / 4 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-time-service -p zerodds-corba-ccm` — 35 + 36
-Tests grün (Basic Time Service in `time-service`: Module `service`,
-`time_base`, `tio`, `uto`; Timer Event Service-Lifecycle in
-`corba-ccm/timer.rs`: `crates/corba-ccm/src/timer.rs::tests::one_shot_fires_once`,
-`crates/corba-ccm/src/timer.rs::tests::periodic_fires_multiple_times`,
-`crates/corba-ccm/src/timer.rs::tests::cancel_stops_periodic`,
-`crates/corba-ccm/src/timer.rs::tests::cancel_unknown_returns_false`).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document omg-time-1.1.md`):
+
+* `cargo nextest run --profile merge -p zerodds-corba-ccm --all-targets` (Job `merge-rust-corba-ccm`) — 17 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-time-service --all-targets` (Job `merge-rust-time-service`) — 35 Tests grün.
+
+52 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `omg-time-1.1.open.md`.

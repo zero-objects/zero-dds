@@ -849,9 +849,8 @@ sixteen, so Step 5.2 applies and the hash is
 §9.6.4.8 Step 1 says `FooKeyHolder` "shall have extensibility kind
 'FINAL'", so Example 1's bytes are the specification's answer and RTI's
 XCDR1 form is a dialect. ZeroDDS writes the specification's answer —
-`extensibility_of` returns `Final` under `Purpose::Key`. Whether
-`Dialect` should carry RTI's XCDR1 key holder as a fourth answer is open;
-`docs/OPEN-ITEMS.md` has it.
+`extensibility_of` returns `Final` under `Purpose::Key`. RTI's XCDR1 key
+holder is `KeyHolderExtensibility::AsDeclared` (`crates/ast-layout/src/key.rs`).
 
 ### 6. How deep Step 1's member removal reaches
 
@@ -1088,7 +1087,7 @@ frontend in `crates/idl-lower/src/complete.rs`, and `Dialect` is a
 `LayoutKey` policy that the planner consults after the ids already
 exist. Making it selectable means a member-id policy the lowering pass
 can see, which is a public-API change to `lower`. Recorded in
-`docs/OPEN-ITEMS.md`.
+`internal/release/OPEN-ITEMS.md`.
 
 Cyclone's `@hashid("")` is likewise not a dialect. It changes bytes, but
 only for a construct whose sole meaning is "the same as `@hashid`" — no
@@ -1581,7 +1580,7 @@ jacorb   BE   02 00e4 02 1234          (UTF-16 units)
 The split runs along the specification boundary and not along a vendor
 one: the ORBs on one side, the DDS stacks on the other. Nothing in `WstringLengthPolicy` reaches the
 ORB form, so a topic with a scalar `wchar` cannot be exchanged with any
-of the three in either direction — `docs/corba-dialect-followup.md`
+of the three in either direction — `0b2e8df9f6b:docs/corba-dialect-followup.md`
 item 1.
 
 ### omniORB writes a byte-order mark, which §7.4.1.1.2 forbids

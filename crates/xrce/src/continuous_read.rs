@@ -327,7 +327,7 @@ mod tests {
     /// returns what is in the cache; a sample after it is not delivered.
     /// It returned the first of two and waited for later ones.
     #[test]
-    fn a_read_without_delivery_control_returns_the_cache_once() {
+    fn xrce_8_3_5_9_a_read_without_delivery_control_returns_the_cache_once() {
         let mut rs = ReadStream::once(s_id(), t_id(), Duration::ZERO);
         assert_eq!(rs.capacity(Duration::ZERO), usize::MAX);
         rs.push_sample(PendingSample::new(alloc::vec![1, 2]));
@@ -344,7 +344,7 @@ mod tests {
     /// `MAX_SAMPLES_UNLIMITED` has no limit. 0 was taken as no limit and
     /// 0xFFFF as 65 535.
     #[test]
-    fn max_samples_zero_ends_the_read_and_unlimited_has_no_limit() {
+    fn xrce_7_8_5_1_max_samples_zero_ends_the_read_and_unlimited_has_no_limit() {
         let zero = DeliveryControl {
             max_samples: MAX_SAMPLES_ZERO,
             ..Default::default()
@@ -370,7 +370,7 @@ mod tests {
     /// The caller takes no more from the DataReader than the stream
     /// delivers: the rest of `max_samples`, one at a time under a rate cap.
     #[test]
-    fn the_capacity_is_what_the_stream_still_delivers() {
+    fn xrce_7_8_5_1_the_capacity_is_what_the_stream_still_delivers() {
         let dc = DeliveryControl {
             max_samples: 3,
             ..Default::default()
@@ -393,7 +393,7 @@ mod tests {
     }
 
     #[test]
-    fn max_samples_cap_enforced() {
+    fn xrce_7_8_5_1_max_samples_cap_enforced() {
         let dc = DeliveryControl {
             max_samples: 3,
             ..Default::default()
@@ -408,7 +408,7 @@ mod tests {
     }
 
     #[test]
-    fn rate_limit_partitions_samples_over_time() {
+    fn xrce_7_8_5_1_rate_limit_partitions_samples_over_time() {
         let dc = DeliveryControl {
             max_samples: MAX_SAMPLES_UNLIMITED,
             max_elapsed_time: Duration::MAX,
@@ -428,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn max_elapsed_time_finalizes() {
+    fn xrce_8_3_5_9_max_elapsed_time_finalizes() {
         let dc = DeliveryControl {
             max_samples: MAX_SAMPLES_UNLIMITED,
             max_elapsed_time: Duration::from_secs(1),
@@ -459,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn pacing_throttles_per_period() {
+    fn xrce_7_8_5_1_pacing_throttles_per_period() {
         let dc = DeliveryControl {
             max_samples: MAX_SAMPLES_UNLIMITED,
             max_elapsed_time: Duration::MAX,

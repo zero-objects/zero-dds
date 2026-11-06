@@ -19,6 +19,10 @@
 //! [16B source_guid][8B source_sequence LE][payload]
 //! ```
 //!
+//! `representation` and `big_endian` hold the representation identifier of
+//! the sample's encapsulation header
+//! (`zerodds_durability_store::identifier_columns`).
+//!
 //! The topic and instance components are hex-encoded so the mapping is
 //! lossless and filesystem-safe (unlike a lossy sanitizer). The per-sample
 //! header persists `created_at`, so the store survives a process restart with
@@ -40,7 +44,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use zerodds_durability_store::{
     Contract, Cursor, DurabilitySample, DurabilityStore, Page, Result, Selector, StoreError,
-    StoreStats, TopicMeta,
+    StoreStats, TopicMeta, identifier_columns, identifier_from_columns,
 };
 use zerodds_qos::policies::history::HistoryKind;
 
@@ -79,7 +83,7 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn unhex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     let b = s.as_bytes();
@@ -263,10 +267,10 @@ impl FileStore {
         if let Ok(rd) = std::fs::read_dir(dir) {
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().into_owned();
-                if let Some(stem) = name.strip_suffix(".bin") {
-                    if let Ok(seq) = stem.parse::<u64>() {
-                        out.push((seq, e.path()));
-                    }
+                if let Some(stem) = name.strip_suffix(".bin")
+                    && let Ok(seq) = stem.parse::<u64>()
+                {
+                    out.push((seq, e.path()));
                 }
             }
         }
@@ -278,12 +282,11 @@ impl FileStore {
         let mut out = Vec::new();
         if let Ok(rd) = std::fs::read_dir(self.topic_dir(topic)) {
             for e in rd.flatten() {
-                if e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    if let Some(bytes) = unhex(&e.file_name().to_string_lossy()) {
-                        if let Ok(k) = <[u8; 16]>::try_from(bytes.as_slice()) {
-                            out.push(k);
-                        }
-                    }
+                if e.file_type().map(|t| t.is_dir()).unwrap_or(false)
+                    && let Some(bytes) = unhex(&e.file_name().to_string_lossy())
+                    && let Ok(k) = <[u8; 16]>::try_from(bytes.as_slice())
+                {
+                    out.push(k);
                 }
             }
         }
@@ -305,8 +308,7 @@ impl FileStore {
             instance_key: key,
             sequence: seq,
             payload: raw[HEADER_LEN..].to_vec(),
-            representation: raw[8],
-            big_endian: raw[9] != 0,
+            representation_identifier: identifier_from_columns(raw[8], raw[9] != 0),
             created_at: time_of(nanos),
             source_guid,
             source_sequence,
@@ -389,8 +391,9 @@ impl DurabilityStore for FileStore {
 
         let mut buf = Vec::with_capacity(HEADER_LEN + sample.payload.len());
         buf.extend_from_slice(&nanos_of(sample.created_at).to_le_bytes());
-        buf.push(sample.representation);
-        buf.push(u8::from(sample.big_endian));
+        let (representation, big_endian) = identifier_columns(sample.representation_identifier);
+        buf.push(representation);
+        buf.push(u8::from(big_endian));
         buf.extend_from_slice(&sample.source_guid);
         buf.extend_from_slice(&sample.source_sequence.to_le_bytes());
         buf.extend_from_slice(&sample.payload);
@@ -408,10 +411,10 @@ impl DurabilityStore for FileStore {
         for key in instances {
             let dir = self.instance_dir(topic, &key);
             for (seq, path) in Self::list_samples(&dir) {
-                if let Some(s) = Self::read_sample(topic, key, seq, &path) {
-                    if selector.matches(&s) {
-                        matched.push(s);
-                    }
+                if let Some(s) = Self::read_sample(topic, key, seq, &path)
+                    && selector.matches(&s)
+                {
+                    matched.push(s);
                 }
             }
         }
@@ -463,11 +466,11 @@ impl DurabilityStore for FileStore {
                 let Ok(nanos) = content.trim().parse::<u64>() else {
                     continue;
                 };
-                if let Some(deadline) = time_of(nanos).checked_add(delay) {
-                    if now >= deadline {
-                        let _ = std::fs::remove_dir_all(inst_entry.path());
-                        removed += 1;
-                    }
+                if let Some(deadline) = time_of(nanos).checked_add(delay)
+                    && now >= deadline
+                {
+                    let _ = std::fs::remove_dir_all(inst_entry.path());
+                    removed += 1;
                 }
             }
         }

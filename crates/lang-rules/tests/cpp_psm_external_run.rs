@@ -53,7 +53,8 @@ const HEAD: &str = "#pragma once\n#include <array>\n#include <cstdint>\n#include
                     #include \"zerodds/psm/convert.hpp\"\n";
 
 #[test]
-fn a_psm_external_member_is_dds_core_external_and_an_unset_one_is_refused_at_a_write() {
+fn xtypes_7_5_1_2_3_3_a_psm_external_member_is_dds_core_external_and_an_unset_one_is_refused_at_a_write()
+ {
     let dir = std::env::temp_dir().join(format!("zd-psm-external-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a work directory");
     std::fs::write(

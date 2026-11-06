@@ -26,7 +26,7 @@
 //!    list asks for.
 //! 3. §9.3.1 / §9.4.1.2 — an **incomplete** list fails the create and
 //!    names the absent property. It does not fall back to plaintext:
-//!    that is the silent-drop class `docs/silent-drop-sweep.md` names.
+//!    that is the silent-drop class `0b2e8df9f6b:docs/silent-drop-sweep.md` names.
 //! 4. §9.3.1 — the property values are URIs. All three `file:` spellings
 //!    in the wild resolve to the path they name.
 //!
@@ -215,7 +215,7 @@ fn expected_prefix(cert_pem_path: &Path) -> GuidPrefix {
 /// all.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn a_complete_dds_sec_property_list_creates_a_secured_participant() {
+fn security_7_3_21_a_complete_dds_sec_property_list_creates_a_secured_participant() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — dds.sec.* property security test cannot run");
         return;
@@ -379,7 +379,7 @@ fn a_participant_without_security_properties_stays_plaintext() {
 /// it does not produce a participant that quietly runs unencrypted
 /// because one path was missing.
 #[test]
-fn an_incomplete_property_list_fails_the_create_and_names_the_property() {
+fn security_9_1_2_an_incomplete_property_list_fails_the_create_and_names_the_property() {
     let lease = common::lease_domain();
     let factory = DomainParticipantFactory::instance();
     let full = [
@@ -450,7 +450,7 @@ fn an_incomplete_property_list_fails_the_create_and_names_the_property() {
 /// positive half is the live test above, which creates a working
 /// participant from `file://`-prefixed absolute paths.
 #[test]
-fn every_file_uri_spelling_is_resolved_on_the_participant_path() {
+fn security_10_3_1_every_file_uri_spelling_is_resolved_on_the_participant_path() {
     let lease = common::lease_domain();
     let factory = DomainParticipantFactory::instance();
     // (the value as written, the path it must resolve to). The

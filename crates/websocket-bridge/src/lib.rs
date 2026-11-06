@@ -47,9 +47,8 @@
 //!   `ws://` / `wss://` URI parser (§3).
 //! - [`StreamingValidator`] / [`validate_utf8`] / [`Utf8Error`] —
 //!   text-frame UTF-8 validator (§8.1).
-//! - [`SubscriptionRegistry`] / [`Notification`] / [`BridgeOp`] /
-//!   [`BridgeError`] / [`parse_op`] / [`render_notification`] —
-//!   WebSocket↔DDS topic bridge.
+//! - the WebSocket↔DDS topic bridge: the daemon `zerodds-ws-bridged`
+//!   (module `daemon`, feature `daemon`; `docs/specs/zerodds-ws-bridge-1.0.md`).
 //!
 //! ## Example
 //!
@@ -88,7 +87,6 @@ pub mod close;
 pub mod codec;
 #[cfg(feature = "daemon")]
 pub mod daemon;
-pub mod dds_bridge;
 pub mod frame;
 pub mod handshake;
 pub mod masking;
@@ -100,9 +98,6 @@ pub mod utf8;
 
 pub use close::{CloseCode, ClosePayload, decode_close_payload, encode_close_payload};
 pub use codec::{CodecError, decode, encode};
-pub use dds_bridge::{
-    BridgeError, BridgeOp, Notification, SubscriptionRegistry, parse_op, render_notification,
-};
 pub use frame::{Frame, Opcode};
 pub use handshake::{
     ClientHandshake, HandshakeError, ServerHandshake, build_server_response, compute_accept,

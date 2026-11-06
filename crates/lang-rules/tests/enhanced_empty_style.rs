@@ -53,7 +53,7 @@ fn the_default_reading_gives_the_operation_a_dummy_member() {
 }
 
 #[test]
-fn the_empty_structure_reading_gives_it_no_member() {
+fn rpc_7_5_1_2_1_3_the_empty_structure_reading_gives_it_no_member() {
     let text = rust(ServiceMapping::EnhancedEmptyStructures);
     assert!(
         !body_of(&text, "pub struct Calc_ping_In").contains("dummy"),

@@ -163,29 +163,11 @@ fn late_joiner_receives(
     got
 }
 
+/// KEEP_LAST(1) replays the newest sample, and does so per instance: three
+/// instances written four times each come back as their fourth samples.
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
-fn keep_last_one_replays_only_the_newest_sample() {
-    let samples: Vec<Keyed> = (1..=5).map(|n| Keyed { id: 0, n }).collect();
-    let got = late_joiner_receives(
-        "TlDepthOne",
-        HistoryQosPolicy {
-            kind: HistoryKind::KeepLast,
-            depth: 1,
-        },
-        &samples,
-        1,
-    );
-    assert_eq!(
-        got,
-        vec![Keyed { id: 0, n: 5 }],
-        "KEEP_LAST(1) keeps the newest"
-    );
-}
-
-#[cfg_attr(target_os = "macos", ignore)]
-#[test]
-fn keep_last_one_replays_the_newest_sample_of_every_instance() {
+fn dcps_2_2_3_4_keep_last_one_replays_only_the_newest_sample() {
     let mut samples = Vec::new();
     for n in 1..=4 {
         for id in 0..3 {
@@ -209,7 +191,7 @@ fn keep_last_one_replays_the_newest_sample_of_every_instance() {
             Keyed { id: 1, n: 4 },
             Keyed { id: 2, n: 4 }
         ],
-        "KEEP_LAST(1) is per instance"
+        "KEEP_LAST(1) keeps the newest of every instance"
     );
 }
 

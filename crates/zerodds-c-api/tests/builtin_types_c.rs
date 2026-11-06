@@ -60,7 +60,7 @@ fn a_topic_of_a_built_in_type_has_its_physical_name() {
 /// the type, `register_type` registers it under the given name or under its
 /// own, and a topic is created from the name.
 #[test]
-fn the_type_supports_name_and_register_their_types() {
+fn xtypes_annex_e_the_type_supports_name_and_register_their_types() {
     use zerodds::builtin_type_ffi::{
         zerodds_builtin_type_support_get_type_name, zerodds_dp_register_builtin_type,
     };
@@ -158,7 +158,7 @@ unsafe fn zerodds_dp_create_topic_of(
 /// `StringDataWriter::write` to a `StringDataReader` of the same
 /// participant: the string comes back as it was written.
 #[test]
-fn a_string_is_written_and_taken() {
+fn xtypes_7_6_5_a_string_is_written_and_taken() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("BuiltinString").unwrap();
     let value = CString::new("hello, world").unwrap();
@@ -217,7 +217,7 @@ unsafe fn take_string(
 /// the key, a write under another key's handle is refused, and the key of
 /// the instance is read back from its handle.
 #[test]
-fn a_keyed_string_has_its_instance_operations() {
+fn xtypes_7_6_5_a_keyed_string_has_its_instance_operations() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("BuiltinKeyedString").unwrap();
     let (a, b) = (CString::new("a").unwrap(), CString::new("b").unwrap());
@@ -303,7 +303,7 @@ fn a_keyed_string_has_its_instance_operations() {
 /// write_bytes_w_key` take the octets `offset .. offset + length`; a range
 /// outside the array is refused.
 #[test]
-fn bytes_are_written_from_an_offset_and_a_length() {
+fn xtypes_7_6_5_bytes_are_written_from_an_offset_and_a_length() {
     let lease = zerodds_test_domains::lease_domain();
     let bytes_topic = CString::new("BuiltinBytes").unwrap();
     let keyed_topic = CString::new("BuiltinKeyedBytes").unwrap();
@@ -389,7 +389,7 @@ fn bytes_are_written_from_an_offset_and_a_length() {
 /// is another topic, and `lookup_topicdescription` iterates over the
 /// topics of the name in creation order.
 #[test]
-fn lookup_iterates_over_the_topics_of_a_name() {
+fn xtypes_7_6_4_1_lookup_iterates_over_the_topics_of_a_name() {
     use zerodds::extra_ffi::{
         zerodds_dp_lookup_topicdescription, zerodds_dp_lookup_topicdescription_at,
     };

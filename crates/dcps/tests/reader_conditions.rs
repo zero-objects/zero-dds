@@ -96,7 +96,7 @@ fn reader_on(
 }
 
 #[test]
-fn a_read_condition_follows_the_states_of_the_readers_samples() {
+fn dcps_2_2_2_5_3_5_a_read_condition_follows_the_states_of_the_readers_samples() {
     let (_p, reader) = reader_on(193, "ReadConditionStates");
     let not_read = reader
         .create_readcondition(
@@ -136,7 +136,7 @@ fn a_read_condition_follows_the_states_of_the_readers_samples() {
 }
 
 #[test]
-fn a_query_condition_triggers_for_the_samples_its_expression_holds_for() {
+fn dcps_2_2_2_5_3_6_a_query_condition_triggers_for_the_samples_its_expression_holds_for() {
     let (_p, reader) = reader_on(194, "QueryConditionTrigger");
     let high = reader
         .create_querycondition(
@@ -177,7 +177,7 @@ fn a_query_condition_triggers_for_the_samples_its_expression_holds_for() {
 }
 
 #[test]
-fn delete_readcondition_takes_only_the_readers_own_conditions() {
+fn dcps_2_2_2_5_3_7_delete_readcondition_takes_only_the_readers_own_conditions() {
     let (_p, reader) = reader_on(195, "DeleteReadCondition");
     let (_q, other) = reader_on(196, "DeleteReadConditionOther");
     let mine = reader
@@ -230,7 +230,7 @@ fn delete_readcondition_takes_only_the_readers_own_conditions() {
 }
 
 #[test]
-fn delete_contained_entities_deletes_every_condition_the_reader_made() {
+fn dcps_2_2_2_2_1_18_delete_contained_entities_deletes_every_condition_the_reader_made() {
     let (_p, reader) = reader_on(197, "DeleteContainedConditions");
     let read = reader
         .create_readcondition(
@@ -263,7 +263,7 @@ fn delete_contained_entities_deletes_every_condition_the_reader_made() {
 }
 
 #[test]
-fn a_waitset_returns_a_read_condition_of_a_reader_with_data() {
+fn dcps_2_2_2_5_3_5_a_waitset_returns_a_read_condition_of_a_reader_with_data() {
     let (_p, reader) = reader_on(198, "ReadConditionWaitSet");
     let condition = reader
         .create_readcondition(

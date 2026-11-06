@@ -209,7 +209,8 @@ fn the_bridge_rebinds_into_a_real_naming_svc_and_unbinds_on_stop() {
         .spawn()
         .expect("spawn zerodds-naming-svc");
     let _naming_guard = Guard(naming_child);
-    std::thread::sleep(Duration::from_millis(500));
+    // The bridge rebinds at its start: the NameService listens first.
+    drop(connect(naming_port));
 
     // 2. The bridge, configured to rebind into it.
     let bridge_bin = PathBuf::from(env!("CARGO_BIN_EXE_zerodds-corba-bridged"));
@@ -267,8 +268,8 @@ fn the_bridge_rebinds_into_a_real_naming_svc_and_unbinds_on_stop() {
     );
 
     // 4. Stop the bridge cleanly (SIGTERM) and confirm it unbound.
+    // `Guard::drop` waits for the exit, after the unbind and the save.
     drop(bridge_guard);
-    std::thread::sleep(Duration::from_millis(300));
     let req_body = wire::encode_name_request(&name, Endianness::Little).unwrap();
     let reply = call(&mut naming_stream, 2, ROOT_OBJECT_KEY, "resolve", req_body);
     assert_eq!(
@@ -308,7 +309,9 @@ fn the_bridge_rebinds_over_ssliop() {
         .spawn()
         .expect("spawn zerodds-naming-svc");
     let _naming_guard = Guard(naming_child);
-    std::thread::sleep(Duration::from_millis(500));
+    // The bridge rebinds at its start: the NameService listens first.
+    drop(connect(naming_iiop_port));
+    drop(connect(naming_ssliop_port));
 
     let bridge_bin = PathBuf::from(env!("CARGO_BIN_EXE_zerodds-corba-bridged"));
     let bridge_port = pick_port();
@@ -372,7 +375,8 @@ fn the_bridge_rebinds_through_a_rir_initial_reference() {
         .spawn()
         .expect("spawn zerodds-naming-svc");
     let _naming_guard = Guard(naming_child);
-    std::thread::sleep(Duration::from_millis(500));
+    // The bridge rebinds at its start: the NameService listens first.
+    drop(connect(naming_port));
 
     let bridge_bin = PathBuf::from(env!("CARGO_BIN_EXE_zerodds-corba-bridged"));
     let bridge_port = pick_port();
@@ -506,8 +510,8 @@ fn the_bridge_serves_its_own_nameservice() {
         "an object key neither a mapping nor a NameService key stays OBJECT_NOT_EXIST"
     );
 
+    // `Guard::drop` waits for the exit, after the unbind and the save.
     drop(bridge_guard);
-    std::thread::sleep(Duration::from_millis(300));
     assert!(
         persist_path.exists(),
         "corba.naming.persist_file must be saved on a clean stop"

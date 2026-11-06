@@ -26,13 +26,14 @@ class ZeroddsIdlcPlugin : Plugin<Project> {
 
         val defaultOutputDir = project.layout.buildDirectory.dir("generated/sources/zerodds-idlc")
 
-        val generateIdl = project.tasks.register("generateIdl", GenerateIdlTask::class.java) { task ->
-            task.idlFiles.setFrom(extension.idlFiles)
-            task.includeDirs.setFrom(extension.includeDirs)
-            task.backend.set(extension.backend)
-            task.executable.set(extension.executable)
-            task.extraArgs.set(extension.extraArgs)
-            task.outputDir.set(extension.outputDir.orElse(defaultOutputDir))
+        // `kotlin-dsl` gives an Action its argument as the receiver (SAM with receiver).
+        val generateIdl = project.tasks.register("generateIdl", GenerateIdlTask::class.java) {
+            idlFiles.setFrom(extension.idlFiles)
+            includeDirs.setFrom(extension.includeDirs)
+            backend.set(extension.backend)
+            executable.set(extension.executable)
+            extraArgs.set(extension.extraArgs)
+            outputDir.set(extension.outputDir.orElse(defaultOutputDir))
         }
 
         project.plugins.withId("java") {
@@ -40,8 +41,8 @@ class ZeroddsIdlcPlugin : Plugin<Project> {
             val mainSourceSet = javaExtension.sourceSets.getByName("main")
             mainSourceSet.java.srcDir(generateIdl.map { it.outputDir })
 
-            project.tasks.named("compileJava") { compileJava ->
-                compileJava.dependsOn(generateIdl)
+            project.tasks.named("compileJava") {
+                dependsOn(generateIdl)
             }
         }
     }

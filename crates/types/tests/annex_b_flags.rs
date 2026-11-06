@@ -31,7 +31,7 @@ use zerodds_ast_core::Id;
 use zerodds_types::from_ast::{complete_type_object, minimal_type_object};
 use zerodds_types::type_identifier::TypeIdentifier;
 use zerodds_types::type_object::flags::{
-    EnumTypeFlag, StructMemberFlag, UnionDiscriminatorFlag, UnionMemberFlag,
+    BitmaskTypeFlag, EnumTypeFlag, StructMemberFlag, UnionDiscriminatorFlag, UnionMemberFlag,
 };
 use zerodds_types::type_object::{CompleteTypeObject, MinimalTypeObject};
 
@@ -112,7 +112,7 @@ fn element_flags(identifier: &TypeIdentifier) -> u16 {
 /// Annex B: `StructMemberFlag` is T1, T2, O, M, K, X: none of the other flags
 /// (`D`) is set, and the flags a member declares are set.
 #[test]
-fn a_struct_member_carries_t1_t2_o_m_k_x_and_nothing_else() {
+fn xtypes_annex_b_a_struct_member_carries_t1_t2_o_m_k_x_and_nothing_else() {
     let ast = model();
     let CompleteTypeObject::Struct(s) = complete(&ast, "S") else {
         panic!()
@@ -152,7 +152,7 @@ fn a_struct_member_carries_t1_t2_o_m_k_x_and_nothing_else() {
 /// Annex B: `UnionMemberFlag` is T1, T2, D, X; `UnionDiscriminatorFlag` is
 /// T1, T2, K, and carries `M` as well (see the header of this file).
 #[test]
-fn union_members_and_the_discriminator_carry_what_annex_b_lists() {
+fn xtypes_annex_b_union_members_and_the_discriminator_carry_what_annex_b_lists() {
     let ast = model();
     let CompleteTypeObject::Union(u) = complete(&ast, "U") else {
         panic!()
@@ -208,7 +208,7 @@ fn union_members_and_the_discriminator_carry_what_annex_b_lists() {
 /// Annex B: `EnumeratedLiteralFlag` is D and nothing else; the flags of an
 /// alias member, a bitflag and a bitfield are "unused. No flags apply".
 #[test]
-fn an_enumerated_literal_carries_d_and_the_unused_flags_are_zero() {
+fn xtypes_annex_b_an_enumerated_literal_carries_d_and_the_unused_flags_are_zero() {
     let ast = model();
     let CompleteTypeObject::Enumerated(marked) = complete(&ast, "Marked") else {
         panic!()
@@ -241,7 +241,7 @@ fn an_enumerated_literal_carries_d_and_the_unused_flags_are_zero() {
 
 /// Annex B: `CollectionElementFlag` is T1, T2, X.
 #[test]
-fn a_collection_element_carries_t1_t2_x() {
+fn xtypes_annex_b_a_collection_element_carries_t1_t2_x() {
     let ast = model();
     let CompleteTypeObject::Struct(s) = complete(&ast, "S") else {
         panic!()
@@ -263,7 +263,7 @@ fn a_collection_element_carries_t1_t2_x() {
 /// value 0x003f does not, and the minimal union has no label for the default
 /// branch other than this flag).
 #[test]
-fn the_minimal_object_keeps_the_flags_that_decide_assignability() {
+fn xtypes_annex_b_the_minimal_object_keeps_the_flags_that_decide_assignability() {
     let ast = model();
     let MinimalTypeObject::Struct(s) = minimal_type_object(&ast, type_id(&ast, "S")).expect("m")
     else {
@@ -306,10 +306,14 @@ fn the_minimal_object_keeps_the_flags_that_decide_assignability() {
 /// Annex B declares `EnumTypeFlag` unused; Table 18 compares the
 /// extensibility of two enumerations and RTI Connext, OpenDDS and Cyclone DDS
 /// write it into `enum_flags` (`docs/omg-xtypes-issues.md` §B8), as this does.
-/// The other type kinds of the list that declare "Unused. No flags apply"
-/// have zero flags.
+/// DDS-XTypes 1.4 Beta 1 gives `EnumTypeFlag` and `BitmaskTypeFlag` "F, A.
+/// No flags == A", and CycloneDDS 11.0.1 refuses a bitmask whose word holds
+/// neither (`ddsi_typewrap.c`, `xt_valid_type_flags`), so a bitmask writes
+/// its extensibility too. The other type kinds of the list that declare
+/// "Unused. No flags apply" have zero flags.
 #[test]
-fn an_enumeration_writes_its_extensibility_and_the_other_unused_type_flags_are_zero() {
+fn xtypes_annex_b_an_enumeration_writes_its_extensibility_and_the_other_unused_type_flags_are_zero()
+{
     let ast = model();
     let flags_of = |name: &str| match complete(&ast, name) {
         CompleteTypeObject::Enumerated(e) => e.enum_flags.0,
@@ -325,7 +329,11 @@ fn an_enumeration_writes_its_extensibility_and_the_other_unused_type_flags_are_z
     let CompleteTypeObject::Bitmask(bits) = complete(&ast, "Bits") else {
         panic!()
     };
-    assert_eq!(bits.bitmask_flags.0, 0);
+    assert_eq!(
+        bits.bitmask_flags.0,
+        BitmaskTypeFlag::IS_APPENDABLE,
+        "the default of a bitmask"
+    );
     let CompleteTypeObject::Bitset(bs) = complete(&ast, "Bs") else {
         panic!()
     };

@@ -176,9 +176,9 @@ Gelesen wird die Form dort, wo die Deklaration, die sie trägt, gerade fertig ge
 
 **Spec:** Der deklarierte Typ; der Ausdruck wird gegen ihn geprüft, nicht zur Ableitung benutzt. Die Dimension ist der ausgewertete Konstantenausdruck.
 
-**Repo:** `idl-lower/src/lower.rs` (`constant`, `array_dimensions`), `idl-lower/src/expr.rs`, `ast/src/model.rs` (`eval_integral`, `eval_const`). Ein Gleitkommaausdruck wird in `double` ausgewertet (IDL 4.2 §7.4.1.4.2); `long double`-Arithmetik wird benannt abgelehnt (`EvalError::LongDouble`), weil der Baum keine Arithmetik dieser Breite hat. Ein Festkommaausdruck wird exakt nach Tabelle 7-11 ausgewertet und auf 31 signifikante Stellen gekappt, ohne Rundung (`ast/src/decimal.rs`).
+**Repo:** `idl-lower/src/lower.rs` (`constant`, `array_dimensions`), `idl-lower/src/expr.rs`, `ast/src/model.rs` (`eval_integral`, `eval_const`). Ein Gleitkommaausdruck wird in `double` ausgewertet (IDL 4.2 §7.4.1.4.2); ein `long double`-Ausdruck und ein `double`- oder `float`-Ausdruck mit einem `long double`-Operanden wird in IEEE binary128 ausgewertet (`eval_long_double_at`, `zerodds-float128`). Ein Festkommaausdruck wird exakt nach Tabelle 7-11 ausgewertet und auf 31 signifikante Stellen gekappt, ohne Rundung (`ast/src/decimal.rs`).
 
-**Tests:** `a_constant_takes_its_declared_type_not_the_expressions`, `an_array_dimension_is_the_evaluated_constant_expression`, `a_multi_dimensional_array_keeps_its_dimensions_in_order`, `a_bounded_string_and_sequence_carry_their_bound_expressions`, `crates/idl-lower/tests/floating_constant_arithmetic.rs::the_arithmetic_is_double`, `crates/idl-lower/tests/floating_constant_arithmetic.rs::long_double_arithmetic_is_refused_and_a_long_double_literal_is_not`, `crates/idl-lower/tests/fixed_constant_arithmetic.rs::a_quotient_is_exact_or_cut_without_rounding`.
+**Tests:** `a_constant_takes_its_declared_type_not_the_expressions`, `an_array_dimension_is_the_evaluated_constant_expression`, `a_multi_dimensional_array_keeps_its_dimensions_in_order`, `a_bounded_string_and_sequence_carry_their_bound_expressions`, `crates/idl-lower/tests/floating_constant_arithmetic.rs::the_arithmetic_is_double`, `crates/idl-lower/tests/floating_constant_arithmetic.rs::idl_7_4_1_4_2_long_double_arithmetic_runs_in_binary128`, `crates/idl-lower/tests/fixed_constant_arithmetic.rs::a_quotient_is_exact_or_cut_without_rounding`.
 
 **Status:** done
 
@@ -206,9 +206,9 @@ Gelesen wird die Form dort, wo die Deklaration, die sie trägt, gerade fertig ge
 
 **Spec:** Stabile, greppbare Codes; keine Diagnose ohne Spec-Referenz; eine Regel ohne Absatz ist ZeroDDS-Policy und sagt das.
 
-**Repo:** `idl-parse/src/diagnostic.rs` (`IDL0001`–`IDL0022`, `Diagnostic::file`), `idl-parse/src/preprocess/mod.rs` (`SourceMap::original`, `Preprocessed::locate`), `idl-lower/src/validate.rs` (`rule_name`), `idl-lower/src/lower.rs` (`dedup`). Ein Bereich verweist auf die Datei, in der er steht, nicht auf den expandierten Text.
+**Repo:** `idl-parse/src/diagnostic.rs` (`IDL0001`–`IDL0023`, `Diagnostic::file`), `idl-parse/src/preprocess/mod.rs` (`SourceMap::original`, `Preprocessed::locate`), `idl-lower/src/validate.rs` (`rule_name`), `idl-lower/src/lower.rs` (`dedup`). Ein Bereich verweist auf die Datei, in der er steht, nicht auf den expandierten Text.
 
-**Tests:** `every_diagnostic_carries_a_code_and_a_specification_reference`, `every_diagnostic_names_a_specification_paragraph`, `every_diagnostic_points_at_a_byte_range`, `every_diagnostic_code_has_its_own_string`, `a_preprocessor_diagnostic_comes_before_the_parsers`, `tools/idlc/tests/diagnostic_positions.rs::comments_above_an_error_do_not_move_it`, `tools/idlc/tests/diagnostic_positions.rs::an_error_in_an_include_names_the_include`.
+**Tests:** `every_diagnostic_carries_a_code_and_a_specification_reference`, `every_diagnostic_names_a_specification_paragraph`, `every_diagnostic_points_at_a_byte_range`, `every_diagnostic_code_has_its_own_string`, `a_preprocessor_diagnostic_comes_before_the_parsers`, `tools/idlc/tests/diagnostic_positions.rs::idlfrontend_7_comments_above_an_error_do_not_move_it`, `tools/idlc/tests/diagnostic_positions.rs::idlfrontend_7_an_error_in_an_include_names_the_include`.
 
 **Status:** done
 
@@ -228,12 +228,16 @@ Zwei Fixtures verdienen eine Diagnose, benannt und begründet in `EXPECTED`: `cc
 
 ## Audit-Status
 
-21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-idl-cst -p zerodds-idl-parse -p zerodds-idl-lower` — 422 bestanden, 0 fehlgeschlagen.
-Gesamt über die sechs Crates des Bogens (`ast-core`, `ast`, `ast-layout`, `idl-cst`, `idl-parse`, `idl-lower`): 744 bestanden.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-idl-frontend-1.0.md`):
 
-**Offene Punkte:**
+* `cargo nextest run --profile merge -p zerodds-idl-compose --all-targets` (Job `merge-rust-idl-compose`) — 5 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-cst --all-targets` (Job `merge-rust-idl-cst`) — 17 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (Job `merge-rust-idl-lower`) — 150 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-parse --all-targets` (Job `merge-rust-idl-parse`) — 32 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
 
-- Ein Item dieses Bogens steht in `docs/OPEN-ITEMS.md` und nicht hier: DDS-XTypes 1.3 hat keine eigene Coverage-Seite, seit die Demolition sie entfernt hat (`internal/spec-coverage/legacy-audit.md` §B.2). §3.6 liegt deshalb in diesem Dokument, und Tabelle 22 desselben Unterabschnitts — `struct A { … }; //@annotation` als *Deklaration* einer Annotation — liegt in keinem.
-- Die Sprach-CSTs (`zerodds-lang-cst-1.0`) sind noch nicht gebaut; ihre Coverage ist ein eigenes Dokument.
+206 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

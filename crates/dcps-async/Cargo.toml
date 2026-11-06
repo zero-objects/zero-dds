@@ -17,6 +17,11 @@ publish = true
 [lints]
 workspace = true
 
+# The crate tier runs the tests of `tokio-glue` in a feature run of their own
+# (internal/release/rc8-test-suite.md, "Crate tier").
+[package.metadata.crate-tier]
+feature-runs = ["tokio-glue"]
+
 [features]
 default = ["std"]
 std = []

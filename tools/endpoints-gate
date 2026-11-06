@@ -12,7 +12,7 @@
 # ## Why
 #
 # `grep -rln "endpoints/" ci/ .github/` answered nothing, and
-# docs/OPEN-ITEMS.md recorded what that cost: nineteen jobs checked the
+# the open-items log recorded what that cost: nineteen jobs checked the
 # byte-identity of the native endpoint SDKs and none of them survived the
 # rebuild. Twelve of the twenty-one bindings — c, ada, ada-83, ada-native,
 # kotlin, node, fsharp, swift, julia, lua, ocaml, elixir — carried a committed
@@ -341,7 +341,12 @@ run_go() {
     # `go vet` is this toolchain's warning level: the compiler has errors and
     # no warnings, and vet is where everything that would be a warning
     # elsewhere is reported.
-    ( cd "$tree/go" && "$GO" vet ./... && "$GO" build ./... && "$GO" test ./... -v ) || return 1
+    # The three examples run as well as build: each counts what it received
+    # and exits non-zero on a shortfall (the weekly endpoints-go job ran them,
+    # and this column replaces it).
+    ( cd "$tree/go" && "$GO" vet ./... && "$GO" build ./... && "$GO" test ./... -v \
+      && "$GO" run ./example && "$GO" run ./example_sync \
+      && "$GO" run ./example_async ) || return 1
 }
 
 run_java() {
@@ -358,7 +363,9 @@ run_java() {
       && java NestedTest "$goldens/golden_nested_le.bin" "$goldens/golden_nested_be.bin" \
       && java ReliableSelfTest \
       && java AsyncReliableOverflowTest \
-      && java XrceClientTest ) || return 1
+      && java XrceClientTest \
+      && java ExampleSync \
+      && java ExampleAsync ) || return 1
 }
 
 # --depwarn=error is this toolchain's -Werror: the deprecation warning is
@@ -478,11 +485,14 @@ run_node() {
     # `node --check` is the parse this toolchain has in place of -Werror, and
     # `--throw-deprecation` turns a deprecation notice into a thrown error
     # rather than a line on standard error that nothing would read.
+    # The three in-process examples run, the two that want a peer are parsed.
     ( cd "$tree/node" \
       && node --test --test-reporter=tap \
       && node --throw-deprecation reliable_selftest.js \
-      && for f in example.js example_sync.js example_async.js \
-                  example_reliable.js example_ping_pong.js; do
+      && for f in example.js example_sync.js example_async.js; do
+             node --throw-deprecation "$f" || exit 1
+         done \
+      && for f in example_reliable.js example_ping_pong.js; do
              node --check "$f" || exit 1
          done ) || return 1
 }
@@ -516,7 +526,9 @@ run_python() {
       && "$PYTHON" test_mutable.py "$goldens/golden_mutable_le.bin" "$goldens/golden_mutable_be.bin" \
       && "$PYTHON" test_endpoint.py "$goldens" \
       && "$PYTHON" reliable_test.py "$goldens" \
-      && "$PYTHON" test_xrce_client.py ) || return 1
+      && "$PYTHON" test_xrce_client.py \
+      && "$PYTHON" example_sync.py \
+      && "$PYTHON" example_async.py ) || return 1
 }
 
 run_rust() {
@@ -525,6 +537,10 @@ run_rust() {
     # member and cargo resolves it against the real Cargo.lock.
     cargo test -p zerodds-endpoint-rust || return 1
     cargo build -q -p zerodds-endpoint-rust --examples || return 1
+    # The two deep examples are the evidence of zerodds-endpoint-rust-1.0
+    # §2 and §3: each asserts every sample arrived and prints ALL OK.
+    cargo run -q -p zerodds-endpoint-rust --example example_sync || return 1
+    cargo run -q -p zerodds-endpoint-rust --example example_async || return 1
 }
 
 run_swift() {
@@ -663,7 +679,7 @@ for lang in $langs; do
         STATUS[$lang]=SKIP
         REASON[$lang]="toolchain absent:${missing:- unknown}"
         skipped=$((skipped + 1))
-        echo "  SKIP — no${missing:- toolchain} in PATH"
+        echo "  SKIP $lang — no${missing:- toolchain} in PATH"
     elif [ "$code" != 0 ]; then
         STATUS[$lang]=FAIL
         REASON[$lang]="exit $code"

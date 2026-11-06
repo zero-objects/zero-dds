@@ -132,7 +132,7 @@ impl Settings {
 /// of 6.
 pub fn decode_settings(payload: &[u8]) -> Result<Vec<Setting>, Http2Error> {
     use crate::error::ErrorCode;
-    if payload.len() % 6 != 0 {
+    if !payload.len().is_multiple_of(6) {
         return Err(Http2Error::Protocol(ErrorCode::FrameSizeError));
     }
     let mut out = Vec::with_capacity(payload.len() / 6);

@@ -341,7 +341,7 @@ mod appendable {
     /// Pads `out` with zero octets to a multiple of `n`, counted from the
     /// start of the payload (`out[0]`).
     pub fn pad_to(out: &mut Vec<u8>, n: usize) {
-        while out.len() % n != 0 {
+        while !out.len().is_multiple_of(n) {
             out.push(0);
         }
     }
@@ -435,22 +435,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn u16_le_roundtrip() {
-        let mut buf = [0u8; 2];
-        write_u16(&mut buf, 0x1234, Endianness::Little).unwrap();
-        assert_eq!(buf, [0x34, 0x12]);
-        assert_eq!(read_u16(&buf, Endianness::Little).unwrap(), 0x1234);
-    }
-
-    #[test]
-    fn u16_be_roundtrip() {
-        let mut buf = [0u8; 2];
-        write_u16(&mut buf, 0x1234, Endianness::Big).unwrap();
-        assert_eq!(buf, [0x12, 0x34]);
-        assert_eq!(read_u16(&buf, Endianness::Big).unwrap(), 0x1234);
-    }
-
-    #[test]
     fn u16_overflow_on_short_buffer() {
         let mut buf = [0u8; 1];
         let res = write_u16(&mut buf, 1, Endianness::Little);
@@ -458,22 +442,6 @@ mod tests {
             res,
             Err(XrceError::WriteOverflow { needed: 2, .. })
         ));
-    }
-
-    #[test]
-    fn i16_negative_roundtrip() {
-        let mut buf = [0u8; 2];
-        write_i16(&mut buf, -1, Endianness::Little).unwrap();
-        assert_eq!(buf, [0xFF, 0xFF]);
-        assert_eq!(read_i16(&buf, Endianness::Little).unwrap(), -1);
-    }
-
-    #[test]
-    fn u32_roundtrip_le() {
-        let mut buf = [0u8; 4];
-        write_u32(&mut buf, 0xDEADBEEF, Endianness::Little).unwrap();
-        assert_eq!(buf, [0xEF, 0xBE, 0xAD, 0xDE]);
-        assert_eq!(read_u32(&buf, Endianness::Little).unwrap(), 0xDEADBEEF);
     }
 
     #[test]

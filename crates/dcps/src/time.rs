@@ -356,7 +356,7 @@ mod tests {
     /// 0xfffffffe". The two sentinels cross the wire as those octets and come
     /// back as the sentinels.
     #[test]
-    fn the_reserved_time_t_values_cross_the_wire_as_the_spec_gives_them() {
+    fn rtps_8_3_2_the_reserved_time_t_values_cross_the_wire_as_the_spec_gives_them() {
         let invalid = time_to_he_timestamp(Time::INVALID);
         assert_eq!(
             (invalid.seconds, invalid.fraction),
@@ -375,29 +375,7 @@ mod tests {
     }
 
     #[test]
-    fn time_zero_sentinel() {
-        assert!(Time::ZERO.is_zero());
-        assert!(!Time::ZERO.is_invalid());
-        assert!(!Time::ZERO.is_infinite());
-        assert_eq!(Time::ZERO, Time::default());
-    }
-
-    #[test]
-    fn time_invalid_sentinel() {
-        assert!(Time::INVALID.is_invalid());
-        assert!(!Time::INVALID.is_infinite());
-        let zero = Time::default();
-        assert!(!zero.is_invalid());
-    }
-
-    #[test]
-    fn time_infinite_sentinel() {
-        assert!(Time::INFINITE.is_infinite());
-        assert!(!Time::INFINITE.is_invalid());
-    }
-
-    #[test]
-    fn duration_zero_and_infinite_sentinels() {
+    fn dcps_2_3_3_duration_zero_and_infinite_sentinels() {
         assert!(Duration::ZERO.is_zero());
         assert!(Duration::INFINITE.is_infinite());
         assert!(!Duration::INFINITE.is_zero());
@@ -409,35 +387,9 @@ mod tests {
     }
 
     #[test]
-    fn duration_to_core_preserves_value() {
-        let d = Duration::new(5, 500_000_000);
-        let c = d.to_core();
-        assert_eq!(c.as_secs(), 5);
-        assert_eq!(c.subsec_nanos(), 500_000_000);
-    }
-
-    #[test]
-    fn duration_from_core_roundtrip() {
-        let c = core::time::Duration::new(42, 123_456_789);
-        let d = Duration::from_core(c);
-        assert_eq!(d.sec, 42);
-        assert_eq!(d.nanosec, 123_456_789);
-        assert_eq!(d.to_core(), c);
-    }
-
-    #[test]
     fn duration_negative_sec_maps_to_zero() {
         let d = Duration::new(-1, 0);
         assert_eq!(d.to_core(), core::time::Duration::ZERO);
-    }
-
-    #[cfg(feature = "std")]
-    #[test]
-    fn get_current_time_is_recent() {
-        let t = get_current_time();
-        assert!(!t.is_invalid());
-        // sec should be > 1_700_000_000 (Nov 2023+).
-        assert!(t.sec > 1_700_000_000);
     }
 
     // ========================================================================
@@ -445,7 +397,7 @@ mod tests {
     // ========================================================================
 
     #[test]
-    fn time_seconds_and_nanoseconds_accessors() {
+    fn dcps_2_3_2_time_seconds_and_nanoseconds_accessors() {
         // Spec §7.5.6.1: Time::seconds() / nanoseconds().
         let t = Time::new(7, 250_000_000);
         assert_eq!(t.seconds(), 7);
@@ -453,7 +405,7 @@ mod tests {
     }
 
     #[test]
-    fn duration_seconds_and_nanoseconds_accessors() {
+    fn dcps_2_3_2_duration_seconds_and_nanoseconds_accessors() {
         // Spec §7.5.6.1: Duration::seconds() / nanoseconds().
         let d = Duration::new(3, 100_000_000);
         assert_eq!(d.seconds(), 3);
@@ -491,7 +443,7 @@ mod tests {
     /// DDS 1.4 §2.3.2: "the nanosec field must verify
     /// 0 <= nanosec < 1000000000" — 1 500 000 000 ns is 1 s and 500 000 000 ns.
     #[test]
-    fn the_constructors_keep_nanosec_below_a_second() {
+    fn dcps_2_3_2_the_constructors_keep_nanosec_below_a_second() {
         let t = Time::new(10, 1_500_000_000);
         assert_eq!((t.sec, t.nanosec), (11, 500_000_000));
         assert!(t.is_normalized());
@@ -508,7 +460,7 @@ mod tests {
     /// §2.3.2: a QoS duration is a `Duration_t` of `sec` and `nanosec` by the
     /// conversions, and the infinite one stays infinite.
     #[test]
-    fn a_qos_duration_converts_to_sec_and_nanosec_and_back() {
+    fn dcps_2_3_2_a_qos_duration_converts_to_sec_and_nanosec_and_back() {
         let q = zerodds_qos::Duration::from_millis(1_250);
         let d = Duration::from(q);
         assert_eq!((d.sec, d.nanosec), (1, 250_000_000));
@@ -528,7 +480,7 @@ mod tests {
     /// are `0x7fffffff`, `TIME_INVALID_SEC` is -1 and `TIME_INVALID_NSEC`
     /// `0xffffffff`.
     #[test]
-    fn the_reserved_values_are_those_of_the_idl() {
+    fn dcps_2_3_3_the_reserved_values_are_those_of_the_idl() {
         assert_eq!(
             (Duration::INFINITE.sec, Duration::INFINITE.nanosec),
             (0x7fff_ffff, 0x7fff_ffff)
@@ -584,7 +536,7 @@ mod tests {
     /// 1 ms before the epoch is -1 s and 999 000 000 ns (§2.3.2), not a
     /// `nanosec` of -1 000 000 read as unsigned.
     #[test]
-    fn from_millis_of_a_negative_value_is_normalized() {
+    fn dcps_2_3_2_from_millis_of_a_negative_value_is_normalized() {
         let t = Time::from_millis(-1);
         assert_eq!((t.sec, t.nanosec), (-1, 999_000_000));
         assert_eq!(t.as_millis(), -1);

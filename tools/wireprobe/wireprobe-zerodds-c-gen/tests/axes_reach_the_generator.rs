@@ -296,8 +296,8 @@ fn a_configuration_that_changes_the_octets_changes_the_generated_c() {
                     // this arm firing over a case the generator *should*
                     // carry is a finding, and the count is what makes it
                     // visible. `recursive-mutual` and
-                    // `recursive-self-sequence` are the two today, and
-                    // `docs/OPEN-ITEMS.md` holds why.
+                    // `recursive-self-sequence` are the two today; their
+                    // READMEs under `tests/interop-corpus/` say why.
                     if sources[index].starts_with('!') && sources[offset].starts_with('!') {
                         refused_both += 1;
                         continue;

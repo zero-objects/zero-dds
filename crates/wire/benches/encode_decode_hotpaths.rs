@@ -1,7 +1,7 @@
 //! Criterion benches for the XCDR writer and reader hot paths.
 //!
 //! Successor of `crates/cdr/benches/encode_decode_hotpaths.rs`, which was
-//! removed together with `zerodds-cdr` in d045e43ea86. The runtime the
+//! removed together with `zerodds-cdr` in fa2ed8b0a9c. The runtime the
 //! generated codecs call now lives in `zerodds-wire`, so the hot paths
 //! moved here with it.
 //!

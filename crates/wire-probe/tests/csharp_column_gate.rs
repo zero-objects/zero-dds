@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! The C# column, held against the octets the Rust column recorded.
+//! The C# column, held against the octets other implementations wrote.
 //!
 //! `tools/interop-results/csharp-record.sh` runs the whole corpus and
 //! takes about half an hour; this runs the handful that separate the
-//! things a column can get wrong, and runs on every `cargo test`. The
+//! things a column can get wrong, and runs in the C# codegen jobs. The
 //! full sweep is what a change to `runtime/csharp` or to `emit/csharp.rs`
 //! should be measured with; this is what keeps the column from rotting
 //! between those runs.
@@ -12,8 +12,7 @@
 //! # What each case is here for
 //!
 //! Not a sample of the corpus — a set chosen so that a defect has
-//! somewhere to show, and the same set the Java gate uses so the two
-//! columns' failures are comparable line for line:
+//! somewhere to show:
 //!
 //! - **`primitive-mixed`** in both encodings. XCDR1's MAXALIGN is eight
 //!   and XCDR2's is four, so the same fourteen members are 56 octets in
@@ -33,36 +32,28 @@
 //! - **`union-discriminator-boolean`**, whose labels are where a `bool`
 //!   discriminator has no C# literal: the IDL evaluator gives 0 and 1,
 //!   and `(bool)1` is not a cast C# has.
-//! - **`primitive-longdouble`**, six binary128 values of which five no
-//!   `double` can hold — and none of which a `decimal` can.
 //! - **`fixed-scales`**, whose `fixed<31,10>` value has thirty
 //!   significant digits: the measurement that says a `decimal` is not a
 //!   holder for an IDL `fixed`.
 //!
-//! # Why it compares against the Rust column and not against a constant
+//! # What it compares against
 //!
-//! A hard-coded expectation here would be a third opinion about the
-//! wire. `tests/interop-results/<case>/zerodds-rust/` is what the Rust
-//! column produced and what every other column in the ledger is held
-//! against; a C# run that differs from it is a disagreement between two
-//! implementations of DDS-XTypes 1.3 §7.4, and that is the finding.
+//! The octets of `tests/interop-corpus/expected-bytes.tsv` (decision 3 of
+//! `internal/release/rc8-test-suite.md`): what another implementation wrote
+//! for the case, the probe run under that vendor's dialect. No column of
+//! this project is read. `primitive-longdouble` has no row there (no
+//! measured vendor writes a binary128) and `fixed-scales` one, omniORB's
+//! XCDR1; the long double goes, the `fixed` is measured in XCDR1.
+//!
+//! One test per case, each under the 25 s of a test with the toolchain;
+//! they need `dotnet` and run in the C# codegen jobs
+//! (`ci/integration_scenarios.py`, `CODEGEN["csharp"]`).
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stdout)]
 
 use std::path::PathBuf;
 use std::process::Command;
 
-/// The cases, and the configuration each is measured in.
-const CASES: [(&str, &str); 9] = [
-    ("primitive-mixed", "plain-cdr2"),
-    ("primitive-mixed", "plain-cdr1"),
-    ("primitive-mixed-descending-alignment", "plain-cdr1"),
-    ("sequence-primitives-nonempty", "plain-cdr2"),
-    ("bitmask-bitbound-32", "plain-cdr2"),
-    ("array-1d-enum", "plain-cdr2"),
-    ("union-discriminator-boolean", "plain-cdr2"),
-    ("primitive-longdouble", "plain-cdr2"),
-    ("fixed-scales", "plain-cdr2"),
-];
+use zerodds_wire_probe::expected::{row_of, table};
 
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -85,85 +76,93 @@ fn dotnet_is_here() -> bool {
     }
 }
 
-#[test]
-fn the_csharp_column_writes_what_the_rust_column_recorded() {
+/// The C# probe writes `case` in `encoding` (`plain-cdr1` or
+/// `plain-cdr2`, little-endian) as the first dialect of the table's row
+/// writes it.
+fn writes_the_octets_of_the_table(case: &str, encoding: &str) {
     if !dotnet_is_here() {
         return;
     }
     let root = repository_root();
-    let probe = root.join("tools/wireprobe/wireprobe-zerodds-csharp");
-    let mut checked = 0;
-    let mut failures = Vec::new();
-
-    for (case, encoding) in CASES {
-        let directory = root.join("tests/interop-corpus").join(case);
-        let recorded = root
-            .join("tests/interop-results")
-            .join(case)
-            .join("zerodds-rust")
-            .join(format!("{encoding}.le.bin"));
-        let expected = match std::fs::read(&recorded) {
-            Ok(bytes) => bytes,
-            // A case the Rust column does not record is not a C#
-            // failure, and saying so beats asserting against nothing.
-            Err(error) => {
-                failures.push(format!("{case} {encoding}: no recorded octets ({error})"));
-                continue;
-            }
-        };
-        // The corpus names its root in `type`; reading it off the IDL
-        // takes the last declaration, which is the wrong root wherever a
-        // case declares two.
-        let type_name = std::fs::read_to_string(directory.join("type"))
-            .expect("the corpus case names its root")
-            .trim()
-            .to_string();
-
-        let run = Command::new(&probe)
-            .current_dir(&root)
-            .args(["--idl", &directory.join("type.idl").to_string_lossy()])
-            .args(["--type", &type_name])
-            .args(["--values", &directory.join("values.json").to_string_lossy()])
-            .args(["--encoding", encoding, "--endian", "le"])
-            .output();
-        let output = match run {
-            Ok(output) => output,
-            Err(error) => {
-                failures.push(format!(
-                    "{case} {encoding}: the probe did not start ({error})"
-                ));
-                continue;
-            }
-        };
-        if !output.status.success() {
-            failures.push(format!(
-                "{case} {encoding}: {}",
-                String::from_utf8_lossy(&output.stderr)
-                    .lines()
-                    .next()
-                    .unwrap_or("refused")
-            ));
-            continue;
-        }
-        let produced = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        let want: String = expected.iter().map(|byte| format!("{byte:02x}")).collect();
-        if produced != want {
-            failures.push(format!(
-                "{case} {encoding}:\n    c#   {produced}\n    rust {want}"
-            ));
-            continue;
-        }
-        checked += 1;
-    }
-
+    let table = table(&root).expect("tests/interop-corpus/expected-bytes.tsv");
+    let xcdr = if encoding == "plain-cdr1" {
+        "xcdr1"
+    } else {
+        "xcdr2"
+    };
+    let (row, dialect) = row_of(&table, case, xcdr, "le")
+        .unwrap_or_else(|| panic!("{case}: the table has no {xcdr} le row"));
+    let directory = root.join("tests/interop-corpus").join(case);
+    // The corpus names its root in `type`; reading it off the IDL takes
+    // the last declaration, which is the wrong root wherever a case
+    // declares two.
+    let type_name = std::fs::read_to_string(directory.join("type"))
+        .expect("the corpus case names its root")
+        .trim()
+        .to_string();
+    let output = Command::new(root.join("tools/wireprobe/wireprobe-zerodds-csharp"))
+        .current_dir(&root)
+        .args(["--idl", &directory.join("type.idl").to_string_lossy()])
+        .args(["--type", &type_name])
+        .args(["--values", &directory.join("values.json").to_string_lossy()])
+        .args([
+            "--encoding",
+            encoding,
+            "--endian",
+            "le",
+            "--dialect",
+            dialect,
+        ])
+        .output()
+        .expect("the C# probe starts");
     assert!(
-        failures.is_empty(),
-        "the C# column disagrees with the recorded octets:\n  {}",
-        failures.join("\n  ")
+        output.status.success(),
+        "{case} {encoding} under {dialect}: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
+    let produced = String::from_utf8_lossy(&output.stdout).trim().to_string();
     assert_eq!(
-        checked,
-        CASES.len(),
-        "every case has to be measured, not skipped into a pass"
+        produced, row.hex,
+        "{case} {encoding}: the C# column against {dialect}'s octets"
     );
+}
+
+#[test]
+fn xtypes_7_4_primitive_mixed_xcdr2() {
+    writes_the_octets_of_the_table("primitive-mixed", "plain-cdr2");
+}
+
+#[test]
+fn xtypes_7_4_primitive_mixed_xcdr1_aligns_eight_octets() {
+    writes_the_octets_of_the_table("primitive-mixed", "plain-cdr1");
+}
+
+#[test]
+fn xtypes_7_4_primitive_mixed_descending_alignment_xcdr1() {
+    writes_the_octets_of_the_table("primitive-mixed-descending-alignment", "plain-cdr1");
+}
+
+#[test]
+fn xtypes_7_4_a_sequence_is_its_count_and_its_elements() {
+    writes_the_octets_of_the_table("sequence-primitives-nonempty", "plain-cdr2");
+}
+
+#[test]
+fn xtypes_7_4_a_bitmask_of_bit_bound_32() {
+    writes_the_octets_of_the_table("bitmask-bitbound-32", "plain-cdr2");
+}
+
+#[test]
+fn xtypes_7_4_an_array_of_an_enumeration() {
+    writes_the_octets_of_the_table("array-1d-enum", "plain-cdr2");
+}
+
+#[test]
+fn xtypes_7_4_a_union_with_a_boolean_discriminator() {
+    writes_the_octets_of_the_table("union-discriminator-boolean", "plain-cdr2");
+}
+
+#[test]
+fn a_fixed_of_thirty_one_digits_as_omniorb_writes_it() {
+    writes_the_octets_of_the_table("fixed-scales", "plain-cdr1");
 }

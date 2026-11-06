@@ -109,7 +109,7 @@ fn runtime_methods() -> BTreeSet<String> {
 }
 
 #[test]
-fn every_call_the_generator_emits_exists_in_the_runtime() {
+fn xtypes_7_4_every_call_the_generator_emits_exists_in_the_runtime() {
     // The generator writes these as text and nothing checks them until
     // the output is compiled. A name that is close but wrong —
     // `write_int32` for `write_i32` — would pass every test the
@@ -159,7 +159,7 @@ fn every_call_the_generator_emits_exists_in_the_runtime() {
 }
 
 #[test]
-fn the_generator_emits_a_patch_for_every_framing_header_it_opens() {
+fn xtypes_7_4_3_the_generator_emits_a_patch_for_every_framing_header_it_opens() {
     // A DHEADER written and never patched leaves a length of zero on the
     // wire, and a reader that trusts it stops before the first member.
     let appendable = codec(
@@ -193,7 +193,7 @@ fn the_generator_emits_a_patch_for_every_framing_header_it_opens() {
 // -- the bytes the generated sequence produces ---------------------------
 
 #[test]
-fn the_sequence_a_final_struct_generates_writes_the_bytes_the_plan_says() {
+fn xtypes_7_4_3_the_sequence_a_final_struct_generates_writes_the_bytes_the_plan_says() {
     // `@final struct Point { long x; double y; }` plans to 16 bytes:
     // the long at 0, four bytes of padding, the double at 8.
     let mut w = Writer::little_endian();
@@ -211,7 +211,7 @@ fn the_sequence_a_final_struct_generates_writes_the_bytes_the_plan_says() {
 }
 
 #[test]
-fn the_sequence_an_appendable_struct_generates_frames_its_members() {
+fn xtypes_7_4_3_the_sequence_an_appendable_struct_generates_frames_its_members() {
     // The DHEADER is patched with what followed it, which is what lets a
     // reader skip members it does not know.
     let mut w = Writer::little_endian();
@@ -229,7 +229,7 @@ fn the_sequence_an_appendable_struct_generates_frames_its_members() {
 }
 
 #[test]
-fn the_sequence_a_mutable_struct_generates_carries_its_member_ids() {
+fn xtypes_7_4_3_the_sequence_a_mutable_struct_generates_carries_its_member_ids() {
     // A reader takes members by id, in whatever order they arrive; the
     // id in the header is what makes that possible.
     let mut w = Writer::little_endian();
@@ -259,7 +259,7 @@ fn the_sequence_a_mutable_struct_generates_carries_its_member_ids() {
 }
 
 #[test]
-fn the_key_hash_sequence_produces_a_stable_sixteen_bytes() {
+fn xtypes_7_4_5_the_key_hash_sequence_produces_a_stable_sixteen_bytes() {
     // The same key gives the same handle every time, and two different
     // keys give different ones — which is the whole point of it.
     let hash_of = |id: i32| {

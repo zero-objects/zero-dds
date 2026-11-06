@@ -202,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn liveliness_protected_sets_0x40_per_spec_9_4_1_3() {
+    fn security_7_3_24_liveliness_protected_sets_0x40_per_spec_9_4_1_3() {
         use ProtectionLevel::{Encrypt, None};
         let v = attrs::IS_VALID;
         let pay = attrs::IS_PAYLOAD_PROTECTED;
@@ -216,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn key_protected_follows_data_encrypt_per_spec_10_4_1_2_6() {
+    fn security_7_3_24_key_protected_follows_data_encrypt_per_spec_10_4_1_2_6() {
         use ProtectionLevel::{Encrypt, None, Sign};
         let v = attrs::IS_VALID;
         let sub = attrs::IS_SUBMESSAGE_PROTECTED;
@@ -239,7 +239,7 @@ mod tests {
     /// same protection level; the middleware passes the masks on and looks at
     /// the valid bit only.
     #[test]
-    fn the_plugin_reads_back_what_it_announces() {
+    fn security_7_3_24_the_plugin_reads_back_what_it_announces() {
         for level in [
             ProtectionLevel::None,
             ProtectionLevel::Sign,
@@ -286,7 +286,7 @@ mod tests {
     /// the participant's width for AUTO and none; a name outside Table 22 is
     /// refused.
     #[test]
-    fn an_endpoint_requires_the_algorithm_it_names() {
+    fn security_7_3_15_an_endpoint_requires_the_algorithm_it_names() {
         use zerodds_rtps::security_algo_info::symmetric_bit;
         let mask = |value, bits| endpoint_cipher_required_mask(value, bits).unwrap();
         assert_eq!(mask(None, 256), symmetric_bit::AES256);

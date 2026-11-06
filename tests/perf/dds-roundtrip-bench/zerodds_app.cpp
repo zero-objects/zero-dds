@@ -220,6 +220,33 @@ static zerodds_ZeroDdsRuntime* make_runtime() {
 #endif // ZERODDS_BENCH_NOSEC
 }
 
+// The endpoint QoS of both sides from bench::qos_from_env(); unset:
+// RELIABLE, KEEP_LAST(64) and no RESOURCE_LIMITS, the QoS the other stacks'
+// apps use (the app created its endpoints with zerodds_*_create_kind before,
+// which is KEEP_LAST(1)).
+zerodds_ZeroDdsEndpointQos endpoint_qos(const bench::QosSpec& q) {
+    zerodds_ZeroDdsEndpointQos qos = zerodds_endpoint_qos_default();
+    qos.reliable = q.reliable ? 1 : 0;
+    qos.history_keep_all = q.keep_all ? 1 : 0;
+    qos.history_depth = static_cast<uint32_t>(q.keep_all ? 1 : q.depth);
+    if (q.has_limits()) {
+        qos.max_samples = q.max_samples;
+        qos.max_instances = 1;
+        qos.max_samples_per_instance = q.max_samples;
+    }
+    return qos;
+}
+
+zerodds_ZeroDdsWriter* make_writer(zerodds_ZeroDdsRuntime* rt, const char* topic) {
+    zerodds_ZeroDdsEndpointQos qos = endpoint_qos(bench::qos_from_env());
+    return zerodds_writer_create_qos(rt, topic, kTypeName, 0, &qos);
+}
+
+zerodds_ZeroDdsReader* make_reader(zerodds_ZeroDdsRuntime* rt, const char* topic) {
+    zerodds_ZeroDdsEndpointQos qos = endpoint_qos(bench::qos_from_env());
+    return zerodds_reader_create_qos(rt, topic, kTypeName, 0, &qos);
+}
+
 // Decodes a received wire sample into a typed roundtrip.
 // `repr` comes from the data callback (0=XCDR1, 1=XCDR2) and `big_endian`
 // from the encapsulation header (DDSI-RTPS 2.5 §10.5); both control the
@@ -273,8 +300,8 @@ int run_pong(uint64_t max_runtime_s) {
     if (zerodds_runtime_wait_for_peers(rt, 1, 30000) != 0) {
         std::cerr << "pong: wait_for_peers timeout\n"; return 1;
     }
-    auto* dr = zerodds_reader_create_kind(rt, kReqTopic, kTypeName, 1, 0);
-    auto* dw = zerodds_writer_create_kind(rt, kEchoTopic, kTypeName, 1, 0);
+    auto* dr = make_reader(rt, kReqTopic);
+    auto* dw = make_writer(rt, kEchoTopic);
     if (!dr || !dw) { std::cerr << "reader/writer create failed\n"; return 1; }
     if (zerodds_writer_wait_for_matched(dw, 1, 5000) != 0) {
         std::cerr << "pong: writer wait_for_matched timeout\n"; return 1;
@@ -340,8 +367,8 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     if (zerodds_runtime_wait_for_peers(rt, 1, 30000) != 0) {
         std::cerr << "ping: wait_for_peers timeout\n"; return 1;
     }
-    auto* dw = zerodds_writer_create_kind(rt, kReqTopic, kTypeName, 1, 0);
-    auto* dr = zerodds_reader_create_kind(rt, kEchoTopic, kTypeName, 1, 0);
+    auto* dw = make_writer(rt, kReqTopic);
+    auto* dr = make_reader(rt, kEchoTopic);
     if (!dr || !dw) { std::cerr << "reader/writer create failed\n"; return 1; }
     if (zerodds_writer_wait_for_matched(dw, 1, 5000) != 0) {
         std::cerr << "ping: writer wait_for_matched timeout\n"; return 1;
@@ -367,7 +394,9 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     // offer is set at the top of run_ping.
 
     uint64_t total = warmup + samples;
-    for (uint64_t seq = 0; seq < total; ++seq) {
+    uint64_t sent = 0;
+    const uint64_t ping_deadline = bench::ping_deadline();
+    for (uint64_t seq = 0; seq < total && !bench::ping_past(ping_deadline); ++seq, ++sent) {
         msg.sequence_id = static_cast<uint32_t>(seq);
         {
             std::lock_guard<std::mutex> lk(ctx.mu);
@@ -376,7 +405,9 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
         msg.t_send_ns = now_ns();
         auto encoded = ::dds::topic::topic_type_support<Sample>::encode(msg);
         int wrc = zerodds_writer_write(dw, encoded.data(), encoded.size());
-        if (wrc != 0) { std::cerr << "ping: writer_write rc=" << wrc << "\n"; return 1; }
+        // A write refused within max_blocking_time (KEEP_ALL with
+        // unacknowledged samples) is a lost echo, not the end of the run.
+        if (wrc != 0) continue;
 
         // Wait for the echo — condition variable, no spin. Max 50ms.
         std::unique_lock<std::mutex> lk(ctx.mu);
@@ -391,12 +422,77 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     }
 
     zerodds_reader_set_data_callback(dr, nullptr, nullptr);
+    bench::print_ping_sent(sent);
     print_quantiles(rtts, payload_size);
     std::cout << "ping: unknown_src_count=" << zerodds_reader_unknown_src_count(dr) << "\n";
 
     zerodds_phase_dump();
     zerodds_writer_destroy(dw);
     zerodds_reader_destroy(dr);
+    zerodds_runtime_destroy(rt);
+    return 0;
+}
+
+// =====================================================================
+// Throughput (tests/perf/speed): one writer, one reader, own processes.
+// The reader decodes every sample in the data callback, as the other
+// stacks' apps take and decode in their listeners; the writer encodes per
+// write, as their write() serializes.
+// =====================================================================
+extern "C" void tput_on_data(void* user_data, const uint8_t* payload,
+                             size_t len, uint8_t repr, uint8_t big_endian) {
+    // No C++ exception may escape into the Rust recv thread.
+    try {
+        auto sample = decode_sample(payload, len, repr, big_endian);
+        static_cast<bench::TputSub*>(user_data)->on_sample(sample.sequence_id,
+                                                           sample.payload.size());
+    } catch (...) {
+    }
+}
+
+int run_tput_sub(uint64_t max_s) {
+    refuse_unsupported_data_repr_offer();
+    bench::print_qos("tput-sub", bench::qos_from_env());
+    auto* rt = make_runtime();
+    if (!rt) { std::cerr << "runtime_create failed\n"; return 1; }
+    auto* dr = make_reader(rt, kReqTopic);
+    if (!dr) { std::cerr << "reader create failed\n"; return 1; }
+    bench::TputSub st;
+    zerodds_reader_set_data_callback(dr, tput_on_data, &st);
+    bench::tput_sub_wait_and_report(st, max_s);
+    zerodds_reader_set_data_callback(dr, nullptr, nullptr);
+    zerodds_reader_destroy(dr);
+    zerodds_runtime_destroy(rt);
+    return 0;
+}
+
+int run_tput_pub(size_t payload_size, uint64_t seconds) {
+    refuse_unsupported_data_repr_offer();
+    bench::QosSpec q = bench::qos_from_env();
+    bench::print_qos("tput-pub", q);
+    auto* rt = make_runtime();
+    if (!rt) { std::cerr << "runtime_create failed\n"; return 1; }
+    auto* dw = make_writer(rt, kReqTopic);
+    if (!dw) { std::cerr << "writer create failed\n"; return 1; }
+    bench::tput_wait_matched([&] { return zerodds_writer_wait_for_matched(dw, 1, 10000) == 0; });
+
+    Sample msg;
+    populate(msg, payload_size);
+    auto r = bench::tput_pub_run(seconds, [&](uint32_t seq) {
+        msg.sequence_id = seq;
+        auto encoded = ::dds::topic::topic_type_support<Sample>::encode(msg);
+        return zerodds_writer_write(dw, encoded.data(), encoded.size()) == 0;
+    });
+    int acked = -1;
+    uint64_t ack_ns = 0;
+    if (q.reliable) {
+        uint64_t t = now_ns();
+        acked = zerodds_writer_wait_for_acknowledgments(dw, 30000000000ull) == 0 ? 1 : 0;
+        ack_ns = now_ns() - t;
+    }
+    bench::print_tput_pub(r, payload_size, acked, ack_ns);
+    bench::tput_linger();
+    zerodds_writer_destroy(dw);
     zerodds_runtime_destroy(rt);
     return 0;
 }
@@ -408,7 +504,9 @@ int main(int argc, char** argv) {
         std::cerr <<
             "Usage:\n"
             "  " << kProgram << " pong [max_runtime_s]\n"
-            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n";
+            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n"
+            "  " << kProgram << " tput-sub --seconds MAX\n"
+            "  " << kProgram << " tput-pub --payload N --seconds S\n";
         return 2;
     }
     std::string mode = argv[1];
@@ -418,6 +516,11 @@ int main(int argc, char** argv) {
     } else if (mode == "ping") {
         bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
         return run_ping(a.payload, a.warmup, a.samples);
+    } else if (mode == "tput-sub") {
+        return run_tput_sub(bench::parse_tput_args(argc, argv, 2).seconds);
+    } else if (mode == "tput-pub") {
+        bench::TputArgs a = bench::parse_tput_args(argc, argv, 2);
+        return run_tput_pub(a.payload, a.seconds);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

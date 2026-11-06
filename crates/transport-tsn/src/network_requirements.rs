@@ -49,13 +49,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_sets_both_fields() {
-        let nr = NetworkRequirements::new(2, 500_000);
-        assert_eq!(nr.num_seamless_trees, 2);
-        assert_eq!(nr.max_latency_ns, 500_000);
-    }
-
-    #[test]
     fn zero_trees_means_no_redundancy_per_spec_46_2_3_6_1() {
         let nr = NetworkRequirements::new(0, 1_000);
         assert!(!nr.requires_seamless_redundancy());

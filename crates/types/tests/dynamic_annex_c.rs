@@ -31,7 +31,7 @@ fn model(idl: &str) -> Arc<Ast> {
 /// 0x62;" — the constants have the numbers of the annex, and every kind
 /// has exactly one of them.
 #[test]
-fn the_type_kind_constants_have_the_numbers_of_annex_c() {
+fn xtypes_annex_c_the_type_kind_constants_have_the_numbers_of_annex_c() {
     let annex: [(&str, u8, u8, TypeKind); 28] = [
         ("TK_NONE", TK_NONE, 0x00, TypeKind::NoType),
         ("TK_BOOLEAN", TK_BOOLEAN, 0x01, TypeKind::Boolean),
@@ -74,7 +74,7 @@ fn the_type_kind_constants_have_the_numbers_of_annex_c() {
 /// Annex C: the typed sequences are the types of the `*_values`
 /// operations of `DynamicData`.
 #[test]
-fn the_typed_sequences_are_the_types_of_the_values_operations() {
+fn xtypes_annex_c_the_typed_sequences_are_the_types_of_the_values_operations() {
     use zerodds_types::dynamic::{
         BooleanSeq, ByteSeq, CharSeq, DynamicSample, Float32Seq, Float64Seq, Float128Seq, Int8Seq,
         Int16Seq, Int32Seq, Int64Seq, StringSeq, UInt8Seq, UInt16Seq, UInt32Seq, UInt64Seq,
@@ -140,7 +140,7 @@ fn the_typed_sequences_are_the_types_of_the_values_operations() {
 /// for a collection with no bound. The value that stands for no bound is
 /// `LENGTH_UNLIMITED` (§7.5.2.2.3 to §7.5.2.2.5).
 #[test]
-fn the_bound_of_an_unbounded_collection_is_one_value() {
+fn xtypes_7_5_2_4_2_the_bound_of_an_unbounded_collection_is_one_value() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let long = factory.get_primitive_type(TypeKind::Int32).unwrap();
     for builder in [
@@ -179,7 +179,7 @@ fn the_bound_of_an_unbounded_collection_is_one_value() {
 /// the same meaning as it does in the definition of aggregated types
 /// generally."
 #[test]
-fn an_annotation_type_has_members() {
+fn xtypes_7_5_2_6_an_annotation_type_has_members() {
     let ast = model(
         r#"
         @annotation Scaled { long scale default 10; string label; boolean flag; };
@@ -284,7 +284,7 @@ fn struct_of(name: &str, members: &[&str]) -> DynamicType {
 /// they belong to the same type and all of their respective properties
 /// [...] are equal."
 #[test]
-fn members_of_different_types_are_not_equal() {
+fn xtypes_7_5_2_6_3_members_of_different_types_are_not_equal() {
     let one = struct_of("A", &["x", "y"]);
     let same = struct_of("A", &["x", "y"]);
     let other_name = struct_of("B", &["x", "y"]);

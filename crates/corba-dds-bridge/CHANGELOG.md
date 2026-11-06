@@ -2,6 +2,50 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Removed
+
+- The library modules `locate`, `notify`, `qos_translation`, `servant`,
+  `sync` and `wire`, with `BridgeServant` at the crate root. Neither the
+  daemon nor another crate or example used them: `bridge_daemon` answers
+  LocateRequest (spec §4.7), maps requests, replies and notifications
+  (§4.3, §4.4) and the QoS (§6) itself, and the modules described other
+  designs (a POA servant, CosNotification structured events, a lifecycle
+  sync, best-effort as oneway) that the spec does not have. Their 24 tests
+  checked them against themselves; so did the 6 of `mapping`, which stays
+  because two examples describe their mappings with it. The dependency on
+  `zerodds-corba-poa` goes.
+
+### Fixed
+
+- The TAO programs of `tests/tao_e2e.rs` start with at most 1024 open
+  files. TAO 2.5.24 sizes its tables by the limit; in the interop image
+  (1073741816) a client's transport cache was not allocated and the first
+  invocation ended with `SIGSEGV` in `Transport_Cache_Manager_T::bind_i`
+  (gdb, pipeline 8912). Both tests pass there again (pipeline 8917) and run
+  in `vendor-live-corba-tao` (OPEN-ITEMS 101).
+
+- A DDS sample whose representation identifier is not `CDR_BE` or `CDR_LE`
+  (DDS-XTypes 1.3 §7.6.3.1.2, Table 60) is no GIOP body (spec §4.3, §4.4):
+  a reply sample is answered `MARSHAL`, a notify sample is dropped and
+  counted. The daemon refused only XCDR2 and let a `PL_CDR` sample (an
+  `@mutable` type in XCDR1, a parameter list) through as the body
+  (OPEN-ITEMS 60).
+- The IIOP and SSLIOP listeners are bound before the IORs are written to
+  `ior_file` and bound in the NameService (spec §9.1 steps 5 and 6). The
+  daemon published them first; a TAO client that resolved the name at once
+  got `TRANSIENT`.
+- A NameService that does not answer within `corba.ior.naming_retry_ms`
+  ends the start with exit code 5 (spec §2), not 1.
+
+### Removed
+
+- The feature `cross-vendor-tests`: `tests/cross_vendor.rs` builds with
+  `std`; its `catior` test is `#[ignore]` in the crate tier and runs with the
+  omniORB and JacORB tests in the integration pillar's job
+  `integration-bridges-vendor-corba`, the TAO tests in `vendor-live-corba-tao`.
+
 ## [1.0.0-rc.1] — 2026-05-07
 
 Initial release materialization of the `zerodds-corba-dds-bridge` crate.

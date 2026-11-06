@@ -90,10 +90,11 @@ impl SharedSecurityGate {
         let domain = self.domain_id()?;
         let tag = self.domain_tag()?;
         let mut state = self.psk.lock().map_err(poisoned)?;
-        if let Some((id, t, plugin)) = &state.built {
-            if *id == domain && *t == tag {
-                return Ok(Arc::clone(plugin));
-            }
+        if let Some((id, t, plugin)) = &state.built
+            && *id == domain
+            && *t == tag
+        {
+            return Ok(Arc::clone(plugin));
         }
         let mut config = state.template.clone().ok_or_else(|| {
             SecurityGateError::PolicyViolation(String::from(
@@ -171,7 +172,7 @@ mod tests {
     /// P and is read by a gate with the same passphrase, the DomainId and
     /// DomainTag being the gate's; another passphrase does not read it.
     #[test]
-    fn the_gate_protects_a_message_with_the_pre_shared_key() {
+    fn security_9_4_2_4_the_gate_protects_a_message_with_the_pre_shared_key() {
         let a = gate("5612:Open Sesame", PskProtection::Encrypt);
         let b = gate("5612:Open Sesame", PskProtection::Encrypt);
         assert!(a.has_rtps_psk());

@@ -23,9 +23,9 @@
 //! Two of the assertions below exist because of a specific way this
 //! column could be wrong, and they name it:
 //!
-//! - [`an_idl_long_is_a_d_int_and_an_idl_long_long_is_a_d_long`]. Both
+//! - [`xtypes_7_2_2_2_an_idl_long_is_a_d_int_and_an_idl_long_long_is_a_d_long`]. Both
 //!   languages have a type called `long` and they are different widths.
-//! - [`an_array_reverses_its_dimensions_because_d_reads_them_right_to_left`].
+//! - [`xtypes_7_2_2_4_3_an_array_reverses_its_dimensions_because_d_reads_them_right_to_left`].
 //!   `int[3][2]` is two arrays of three in D and three arrays of two in
 //!   C.
 // `print_stderr` is `warn` in the workspace lint table and `-D warnings`
@@ -105,7 +105,7 @@ fn a_struct_of_primitives_becomes_a_d_struct_and_never_a_class() {
 }
 
 #[test]
-fn an_idl_long_is_a_d_int_and_an_idl_long_long_is_a_d_long() {
+fn xtypes_7_2_2_2_an_idl_long_is_a_d_int_and_an_idl_long_long_is_a_d_long() {
     // The single most likely defect in this column. IDL 4.2 §7.4.1.4.4.2
     // makes an IDL `long` 32 bits and an IDL `long long` 64; the D
     // language specification makes a D `int` 32 and a D `long` 64. A
@@ -131,7 +131,7 @@ fn an_idl_long_is_a_d_int_and_an_idl_long_long_is_a_d_long() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_d_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_d_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -166,7 +166,7 @@ fn every_idl_primitive_reaches_a_d_type() {
 }
 
 #[test]
-fn an_idl_character_becomes_an_integer_and_never_a_d_char() {
+fn xtypes_7_2_2_2_1_2_an_idl_character_becomes_an_integer_and_never_a_d_char() {
     // D's `char` is one octet *of a UTF-8 sequence* and its `wchar` one
     // UTF-16 code unit. An IDL `char` is an octet and an IDL `wchar` a
     // 16-bit code unit with no encoding attached: an arbitrary octet
@@ -180,7 +180,7 @@ fn an_idl_character_becomes_an_integer_and_never_a_d_char() {
 }
 
 #[test]
-fn a_long_double_is_a_string_and_never_a_real() {
+fn xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_real() {
     // D's `real` is 80-bit x87 extended on x86 and a plain `double` — 53
     // bits of significand — on AArch64. An IDL `long double` is a
     // binary128 with 113. `real` would lose a different number of bits
@@ -195,7 +195,7 @@ fn a_long_double_is_a_string_and_never_a_real() {
 }
 
 #[test]
-fn no_generated_type_is_target_dependent_or_unimplemented() {
+fn xtypes_7_2_2_2_no_generated_type_is_target_dependent_or_unimplemented() {
     // `real` is the target's largest float; `cent` and `ucent` are
     // reserved and implemented by no D compiler.
     let generated =
@@ -222,7 +222,7 @@ fn a_sequence_becomes_a_dynamic_array_and_a_string_a_string() {
 }
 
 #[test]
-fn an_array_reverses_its_dimensions_because_d_reads_them_right_to_left() {
+fn xtypes_7_2_2_4_3_an_array_reverses_its_dimensions_because_d_reads_them_right_to_left() {
     // The second most likely defect in this column. `long grid[2][3]` is
     // two rows of three (IDL 4.2 §7.4.1.4.4.4). In D `int[3][2]` is two
     // arrays of three — the suffixes read right to left — where C's
@@ -243,7 +243,7 @@ fn a_one_dimensional_array_keeps_its_length() {
 }
 
 #[test]
-fn a_sequence_of_arrays_and_an_array_of_sequences_stay_apart() {
+fn xtypes_7_2_2_4_3_a_sequence_of_arrays_and_an_array_of_sequences_stay_apart() {
     // `int[3][]` is a dynamic array of `int[3]`; `int[][2]` is two
     // dynamic arrays. Both read right to left.
     let generated = generate("typedef long Row[3]; struct S { sequence<Row> rows; };");
@@ -252,7 +252,7 @@ fn a_sequence_of_arrays_and_an_array_of_sequences_stay_apart() {
 }
 
 #[test]
-fn a_map_becomes_a_slice_of_entries_and_never_an_associative_array() {
+fn xtypes_7_2_2_4_3_a_map_becomes_a_slice_of_entries_and_never_an_associative_array() {
     // A D associative array has no defined iteration order, and a
     // `map<K,V>` goes on the wire as a sequence of pairs
     // (DDS-XTypes 1.3 §7.4.1.1.4). A `V[K]` would give a different octet
@@ -307,7 +307,7 @@ fn an_optional_sequence_parenthesises_its_template_argument() {
 }
 
 #[test]
-fn an_external_member_becomes_a_pointer_whatever_its_type_is() {
+fn xtypes_7_2_2_4_9_an_external_member_becomes_a_pointer_whatever_its_type_is() {
     // `@external` says the member is stored outside the containing
     // object (DDS-XTypes 1.3 Table 21). It changes no octet on the wire
     // and is a statement about where the binding keeps the value; in D a
@@ -339,7 +339,7 @@ fn an_external_member_becomes_a_pointer_whatever_its_type_is() {
 }
 
 #[test]
-fn an_optional_external_member_is_one_pointer_and_not_a_nullable_pointer() {
+fn xtypes_7_3_1_2_1_4_an_optional_external_member_is_one_pointer_and_not_a_nullable_pointer() {
     // Measured on `tests/interop-corpus/recursive-optional-external`,
     // which declares `@optional @external Node next` inside `Node`. Held
     // inline as `Nullable!(m_Node)` the struct contains itself and
@@ -415,7 +415,7 @@ fn field_type(line: &str) -> Option<&str> {
 }
 
 #[test]
-fn no_generated_struct_holds_itself_by_value_anywhere_in_the_corpus() {
+fn xtypes_7_2_2_4_9_no_generated_struct_holds_itself_by_value_anywhere_in_the_corpus() {
     // The shape LDC refuses. A struct that stores itself has no size,
     // and the error names a Phobos template rather than the member —
     // `unable to determine fields of m_Node because of forward
@@ -492,7 +492,7 @@ fn an_enum_is_one_declaration_with_its_base_and_every_value_written_out() {
 }
 
 #[test]
-fn a_union_becomes_a_struct_with_a_discriminator_and_an_anonymous_union() {
+fn xtypes_7_2_2_4_4_3_a_union_becomes_a_struct_with_a_discriminator_and_an_anonymous_union() {
     // The branches overlay, which is the shape the wire form has: only
     // the branch `_d` selects is written (DDS-XTypes 1.3 §7.4.1.1.5.2).
     // This is the C column's answer; the Go column puts the branches
@@ -635,7 +635,7 @@ fn a_native_declaration_becomes_an_opaque_pointer() {
 }
 
 #[test]
-fn a_member_named_after_a_d_keyword_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_a_d_keyword_is_escaped_and_keeps_its_idl_name() {
     // D has no raw-identifier syntax — nothing like Rust's `r#type` or
     // C#'s `@class` — so the trailing underscore is the whole mechanism,
     // and the IDL spelling goes in the UDA because
@@ -656,7 +656,7 @@ fn a_member_named_after_a_d_keyword_is_escaped_and_keeps_its_idl_name() {
 }
 
 #[test]
-fn a_member_named_after_a_d_type_keyword_is_escaped_too() {
+fn idl_7_2_3_a_member_named_after_a_d_type_keyword_is_escaped_too() {
     // `int`, `real`, `ubyte` and `immutable` are D keywords and none of
     // the four is an IDL keyword, so all four can be written in a source
     // and all four have to move. `string` and `union` are D keywords too
@@ -680,7 +680,7 @@ fn a_member_named_after_the_generated_import_is_escaped() {
 }
 
 #[test]
-fn two_members_that_would_reach_one_d_name_are_refused_by_name() {
+fn idl_7_2_3_two_members_that_would_reach_one_d_name_are_refused_by_name() {
     // Not the case-only pair — IDL 4.2 §7.2.3.1 already forbids `value`
     // beside `Value` in one scope, and the frontend reports it. What is
     // left is the pair the keyword escape makes: `version` escapes to
@@ -741,13 +741,13 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_catalogue_covers_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_catalogue_covers_produces_output() {
     // The catalogue says a rule covers it; this says the rule reaches
     // text.
     let sources = [
@@ -819,7 +819,7 @@ const REFUSED: &[(&str, &str)] = &[(
 )];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -1051,7 +1051,7 @@ const SAMPLES: &[(&str, &str)] = &[
 /// One invocation per sample rather than one file, because two samples
 /// may declare the same name and D allows a name once per module.
 #[test]
-fn the_generated_d_compiles() {
+fn xtypes_7_3_1_the_generated_d_compiles() {
     // Generated first and unconditionally. A sample source that stopped
     // parsing would otherwise be invisible on a host with no D compiler:
     // the skip below would return before anything ran the generator over
@@ -1092,25 +1092,25 @@ fn the_generated_d_compiles() {
     }
 }
 
-/// The whole corpus through the D front end, one module per case.
-///
-/// `#[ignore]`, because it is one invocation of a compiler per corpus
-/// case and takes minutes. It is what proves the column rather than
-/// samples it, so it is run with `--include-ignored` on a host that has
-/// a D compiler.
-#[test]
-#[ignore = "one D front-end invocation per corpus case; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through the D front end, one invocation per case: every
+/// case renders, and the cases of `share` (of `shares`) compile. 16.4 s for
+/// the corpus on the Linux test host.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     let compiler = d_compiler().expect("the explicitly selected compiler must be installed");
     let mut failures = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
         }
         let text = try_generate(&source, &path.display().to_string())
             .unwrap_or_else(|why| panic!("accepted corpus case {name} failed generation: {why}"));
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         if let Err(why) = d_compiles(compiler, &text) {
             failures.push(format!("{name}: {why}"));
@@ -1123,7 +1123,34 @@ fn every_corpus_case_that_renders_also_compiles() {
         failures.len()
     );
     assert!(
-        checked >= MUST_RENDER,
-        "too few corpus cases reached the selected gate: {checked}"
+        rendered >= MUST_RENDER,
+        "too few corpus cases reached the selected gate: {rendered}"
     );
+}
+
+/// Every corpus case that renders compiles under the D front end.
+///
+/// The corpus in 3 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen-java-psm-d` job runs them
+/// with the toolchain, eight shares at a time.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a third of the corpus through the D front end; runs in integration-codegen-java-psm-d"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 3);
+    }
+
+    #[test]
+    #[ignore = "a third of the corpus through the D front end; runs in integration-codegen-java-psm-d"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 3);
+    }
+
+    #[test]
+    #[ignore = "a third of the corpus through the D front end; runs in integration-codegen-java-psm-d"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 3);
+    }
 }

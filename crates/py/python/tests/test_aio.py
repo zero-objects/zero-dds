@@ -28,7 +28,7 @@ def _make_writer_reader(domain: int = 250):
     return writer, reader
 
 
-def test_async_wrappers_are_constructible():
+def py_6_3_async_wrappers_are_constructible():
     """§6.3 — wrapper constructors accept the respective inner PyClasses."""
     writer, reader = _make_writer_reader(251)
     async_w = zaio.AsyncBytesWriter(writer)
@@ -48,14 +48,14 @@ def test_async_passthrough_status_getters():
     assert async_r.subscription_matched_status() == (0, 0, 0, 0, 0)
 
 
-def test_async_take_returns_list_passthrough():
+def py_6_3_async_take_returns_list_passthrough():
     """§6.3 — `take()` is non-blocking and returns a list."""
     _w, reader = _make_writer_reader(253)
     async_r = zaio.AsyncBytesReader(reader)
     assert async_r.take() == []
 
 
-def test_async_wait_for_data_uses_event_loop():
+def py_6_3_async_wait_for_data_uses_event_loop():
     """§6.3 — async wait does not block the event loop; another
     coroutine can run in parallel. Verified by a parallel
     `asyncio.sleep` task that completes within the wait window."""
@@ -80,7 +80,7 @@ def test_async_wait_for_data_uses_event_loop():
     assert completed_in_parallel == [True], "parallel task did not run — event loop blocked?"
 
 
-def test_async_waitset_wait_raises_timeout():
+def py_6_3_async_waitset_wait_raises_timeout():
     """§6.3 + §1.2.13 — AsyncWaitSet.wait raises `TimeoutError` if
     no condition flips within the timeout."""
     gc = zerodds.GuardCondition()

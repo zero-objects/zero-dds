@@ -308,7 +308,7 @@ mod tests {
     /// this probe, since the other tests open and close descriptors in
     /// parallel.
     #[test]
-    fn a_mapping_holds_no_file_descriptor() {
+    fn shm_6_1_a_mapping_holds_no_file_descriptor() {
         let exe = std::env::current_exe().unwrap();
         let runner = std::env::var("ZERODDS_TEST_RUNNER").unwrap_or_default();
         let mut runner = runner.split_whitespace();
@@ -337,7 +337,7 @@ mod tests {
         );
     }
 
-    /// The probe of `a_mapping_holds_no_file_descriptor`; a no-op unless
+    /// The probe of `shm_6_1_a_mapping_holds_no_file_descriptor`; a no-op unless
     /// that test runs it.
     #[test]
     fn descriptor_probe() {
@@ -363,7 +363,7 @@ mod tests {
     /// Both sides see each other's writes; the flink names the object, the
     /// owner's drop takes name and flink, a non-owner's drop neither.
     #[test]
-    fn create_open_share_and_the_owner_unlinks() {
+    fn shm_6_1_create_open_share_and_the_owner_unlinks() {
         let dir = tempfile::tempdir().unwrap();
         let flink = dir.path().join("pair.shm");
         let os_id = name("pair");

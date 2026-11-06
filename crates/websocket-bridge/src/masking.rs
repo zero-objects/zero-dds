@@ -142,7 +142,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn client_masks_and_server_does_not_per_spec_5_1() {
+    fn ws_5_1_client_masks_and_server_does_not_per_spec_5_1() {
         use crate::frame::Frame;
         // Spec §5.1: a frame from the client is masked, a frame from
         // the server is not, and each end rejects the other case.
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn masking_violation_fails_the_connection_with_1002() {
+    fn ws_5_1_masking_violation_fails_the_connection_with_1002() {
         // Spec §5.1 demands the connection be closed; §7.4.1 gives
         // 1002 "Protocol error" as its status code.
         assert_eq!(
@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_mask_is_symmetric() {
+    fn ws_5_3_apply_mask_is_symmetric() {
         // Spec §5.3 — XOR is self-inverse.
         let key = [0x01, 0x02, 0x03, 0x04];
         let original: alloc::vec::Vec<u8> = (0..16).collect();
@@ -191,7 +191,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_mask_xors_with_key_modulo_4() {
+    fn ws_5_3_apply_mask_xors_with_key_modulo_4() {
         // Spec §5.3 — index modulo 4.
         let key = [0xFF, 0x00, 0xFF, 0x00];
         let mut data = [0xAA; 8];
@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn apply_mask_handles_partial_key_alignment() {
+    fn ws_5_3_apply_mask_handles_partial_key_alignment() {
         // Spec §5.3 — a payload length that is not a multiple of 4 must
         // work correctly.
         let key = [0x01, 0x02, 0x03, 0x04];
@@ -215,20 +215,20 @@ mod tests {
     }
 
     #[test]
-    fn empty_payload_is_unchanged() {
+    fn ws_5_3_empty_payload_is_unchanged() {
         let mut data: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
         apply_mask(&mut data, [1, 2, 3, 4]);
         assert!(data.is_empty());
     }
 
     #[test]
-    fn generate_masking_key_returns_4_bytes() {
+    fn ws_5_3_generate_masking_key_returns_4_bytes() {
         let k = generate_masking_key();
         assert_eq!(k.len(), 4);
     }
 
     #[test]
-    fn generate_masking_key_returns_distinct_values_across_calls() {
+    fn ws_5_3_generate_masking_key_returns_distinct_values_across_calls() {
         // Spec §5.3 requires unpredictability; minimal sanity: the counter
         // produces distinct values.
         let k1 = generate_masking_key();
@@ -237,14 +237,14 @@ mod tests {
     }
 
     #[test]
-    fn insecure_splitmix_provider_implements_trait() {
+    fn ws_5_3_insecure_splitmix_provider_implements_trait() {
         let mut p = InsecureSplitmixProvider;
         let k = p.next_key();
         assert_eq!(k.len(), 4);
     }
 
     #[test]
-    fn closure_provider_calls_user_supplied_fn() {
+    fn ws_5_3_closure_provider_calls_user_supplied_fn() {
         let mut p = ClosureMaskingKeyProvider(|| [9, 9, 9, 9]);
         assert_eq!(p.next_key(), [9, 9, 9, 9]);
     }

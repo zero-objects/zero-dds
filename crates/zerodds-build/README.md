@@ -102,6 +102,58 @@ Every `.idl` path passed to `compile()`, plus every file it transitively
 `#include`s, is reported via `cargo:rerun-if-changed` — editing an included
 `.idl` triggers a rebuild, not just editing the top-level file.
 
+## A Rust type for an IDL type
+
+An IDL `typedef string UtcTimestamp;` is a `String` in the generated
+Rust, and so is a text that is no timestamp. `rust_type` names a Rust
+type that stands for a typedef, a struct member or a union branch, and the
+generated code holds that type instead (GitHub #33):
+
+```rust,no_run
+// build.rs
+fn main() -> Result<(), zerodds_build::Error> {
+    zerodds_build::Config::new()
+        .rust_type("app::UtcTimestamp", "crate::time::UtcTimestamp")
+        .rust_type("app::Track.id", "core::num::NonZeroU32")
+        .rust_type_with("app::Track.source", "std::net::Ipv4Addr", "zerodds_wire::DisplayFromStr")
+        .dds_type_impls(true)
+        .compile(&["idl/app.idl"])
+}
+```
+
+- The path is the IDL scoped name: a typedef (`app::UtcTimestamp`), a
+  struct member (`app::Track.id`) or a union branch (`app::Choice.stamp`).
+  A member mapping wins over a typedef mapping of the member's type.
+- The Rust type implements `zerodds_wire::WireRepr`, whose `Idl` is the
+  IDL type's Rust spelling: `str` for a `string`, `u32` for an `unsigned
+  long`. `zerodds-wire` carries the impls for `core::num::NonZero*`,
+  `String` and `Cow<'_, str>`; a type from another crate goes through an
+  adapter (`rust_type_with`), `zerodds_wire::DisplayFromStr` for a
+  `Display + FromStr` type on a `string`. The IDL type is a `string` or a
+  primitive other than `wchar` and `long double`.
+- The generated type holds the Rust type wherever the declaration is used:
+  a member, a sequence, array or map element, a union branch, `Option` for
+  `@optional`, `Box` for `@external`. A typedef is an alias of it.
+- Encode writes the IDL value through `to_wire`; decode reads it — a
+  `string` lent out of the sample, not copied — and converts through
+  `from_wire`. A value the Rust type refuses rejects the sample with that
+  reason.
+- The octets, the `TypeObject`, the `TypeIdentifier`, assignability and
+  the key hash are the IDL's. A C or C++ peer built from the same IDL
+  reads the same samples.
+- A path that names no typedef, struct member or union branch of the
+  compiled units, a declaration of another IDL type and a Rust type that
+  is no type path fail the build with `Error::RustType`. A Rust type whose
+  `Idl` is not the IDL type fails to compile: the generated file states
+  every mapping as `zerodds_wire::repr::idl_type_is::<T, Idl>()`.
+- The generated types derive `Debug`, `Clone` and `PartialEq`, so the
+  Rust type implements them. A type with a member whose Rust type refuses
+  the IDL default (a `NonZeroU32` for Table 9's zero) gets no `impl
+  Default`, and a sample that leaves such a member out — an older
+  `@appendable` writer, a key-only sample — is rejected.
+
+`examples/rust-type/` builds a date-time group and a `NonZeroU32` this way.
+
 ## `Config`
 
 | `Config` method | what it sets |
@@ -117,6 +169,8 @@ Every `.idl` path passed to `compile()`, plus every file it transitively
 | `dds_type_impls(bool)` | `impl zerodds_dcps::DdsType` per type (default: off) |
 | `dialect(Dialect)` | reproduce one peer's answers to every wire axis at once (default: `Dialect::default()`, the specification) |
 | `axis(AxisFlag, value)` | override one answer of the dialect; several calls apply in the order given |
+| `rust_type(idl_path, rust_type)` | hold a typedef, struct member or union branch as a Rust type that implements `zerodds_wire::WireRepr` |
+| `rust_type_with(idl_path, rust_type, adapter)` | the same through an adapter value that implements `zerodds_wire::WireReprWith` |
 
 The CLI exposes `--out` and `--default-extensibility`, as well as its own
 `--lang`, `--encoding` and `--endian` options. Include directories, macro

@@ -21,8 +21,9 @@ use zerodds_dcps::runtime::RuntimeConfig;
 
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
-fn an_explicit_config_keeps_the_user_data_of_the_qos() {
-    let domain = 173;
+fn dcps_2_2_3_1_an_explicit_config_keeps_the_user_data_of_the_qos() {
+    let lease = zerodds_test_domains::lease_domain();
+    let domain = lease.id();
     let mut qos = DomainParticipantQos::default();
     qos.user_data.value = b"cli-config".to_vec();
     let announcer = DomainParticipantFactory::create(domain)

@@ -54,7 +54,7 @@ fn operations(calls: &Arc<Mutex<Vec<MockAccessCall>>>) -> Vec<String> {
 }
 
 #[test]
-fn the_access_control_operations_are_called_in_the_order_of_figures_22_and_24() {
+fn security_9_8_1_the_access_control_operations_are_called_in_the_order_of_figures_22_and_24() {
     let lease = common::lease_domain();
     let domain = lease.id();
     let gate = Arc::new(SharedSecurityGate::new(
@@ -174,7 +174,7 @@ fn the_access_control_operations_are_called_in_the_order_of_figures_22_and_24() 
 /// the AccessControl plugin gave, and registers the volatile message writer
 /// and reader with the property `dds.sec.builtin_endpoint_name`.
 #[test]
-fn the_cryptographic_plugin_registers_the_participant_and_the_volatile_endpoints() {
+fn security_9_8_1_the_cryptographic_plugin_registers_the_participant_and_the_volatile_endpoints() {
     let lease = common::lease_domain();
     let domain = lease.id();
     let (crypto, log) = recording_crypto::RecordingCrypto::new();

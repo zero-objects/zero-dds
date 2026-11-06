@@ -72,7 +72,7 @@ fn alloc_vec(n: u8) -> Vec<u8> {
 /// nothing of an open coherent set and every sample of it once
 /// `end_coherent_changes` closes the set.
 #[test]
-fn group_coherent_reader_sees_the_set_only_after_end_coherent_changes() {
+fn dcps_2_2_2_4_1_10_group_coherent_reader_sees_the_set_only_after_end_coherent_changes() {
     let domain = unique_domain();
     let factory = DomainParticipantFactory::instance();
     let participant = factory
@@ -146,7 +146,7 @@ fn group_coherent_reader_sees_the_set_only_after_end_coherent_changes() {
 /// released by its own `end_coherent_changes` while the second is still open
 /// and still invisible.
 #[test]
-fn two_coherent_sets_are_released_one_at_a_time() {
+fn dcps_2_2_2_4_1_10_two_coherent_sets_are_released_one_at_a_time() {
     let domain = unique_domain();
     let factory = DomainParticipantFactory::instance();
     let participant = factory
@@ -194,7 +194,7 @@ fn two_coherent_sets_are_released_one_at_a_time() {
 /// §2.2.2.4.1.9: `end_coherent_changes` without a preceding
 /// `begin_coherent_changes` is a precondition violation, not a silent no-op.
 #[test]
-fn end_coherent_changes_without_begin_is_precondition_not_met() {
+fn dcps_2_2_2_4_1_11_end_coherent_changes_without_begin_is_precondition_not_met() {
     let domain = unique_domain();
     let factory = DomainParticipantFactory::instance();
     let participant = factory
@@ -273,7 +273,7 @@ fn without_coherent_access_the_samples_stay_visible_during_the_transaction() {
 /// span two instances. The OMG `dds-rtps` `Test_CoherentSets_10` and `_19` run
 /// exactly this configuration and count the samples per released set.
 #[test]
-fn instance_scope_coherent_reader_still_waits_for_end_coherent_changes() {
+fn dcps_2_2_2_4_1_10_instance_scope_coherent_reader_still_waits_for_end_coherent_changes() {
     let domain = unique_domain();
     let factory = DomainParticipantFactory::instance();
     let participant = factory
@@ -322,7 +322,7 @@ fn instance_scope_coherent_reader_still_waits_for_end_coherent_changes() {
 /// scope. The samples are presented as they arrive, before the set is
 /// closed. The default `per_instance` is the test above.
 #[test]
-fn instance_scope_with_no_coherence_presents_the_samples_as_they_arrive() {
+fn dcps_2_2_3_6_instance_scope_with_no_coherence_presents_the_samples_as_they_arrive() {
     use zerodds_dcps::runtime::PresentationInstanceCoherence;
 
     let domain = unique_domain();

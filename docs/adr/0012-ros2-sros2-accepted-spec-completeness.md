@@ -1,6 +1,6 @@
 # 0012 — ROS-2 SROS2 enclaves + permissions XML — accepted, implemented (supersedes 0008)
 
-- **Status:** accepted (supersedes [0008](0008-ros2-sros2-rejected-rc1.md))
+- **Status:** accepted (supersedes 0008, removed; `0b2e8df9f6b:docs/adr/0008-ros2-sros2-rejected-rc1.md`)
 - **Date:** 2026-06-12
 - **Context:** `crates/security-runtime`, `crates/rmw-zerodds-shim`,
   spec `zerodds-ros2-bridge-1.0` §7.1 + §7.2,
@@ -64,5 +64,5 @@ Positive:
 - `crates/security-runtime/src/profile.rs` — `from_enclave_dir` / `from_env`
 - `crates/rmw-zerodds-shim/src/lib.rs` — `ZERODDS_SECURITY_DIR` wireup
 - `docs/spec-coverage/zerodds-ros2-bridge-1.0.md` §7.1, §7.2
-- [0008](0008-ros2-sros2-rejected-rc1.md) — previous (superseded) decision
+- 0008 — previous (superseded) decision, `0b2e8df9f6b:docs/adr/0008-ros2-sros2-rejected-rc1.md`
 - [0010](0010-coap-oscore-accepted-spec-completeness.md) — same policy (OSCORE)

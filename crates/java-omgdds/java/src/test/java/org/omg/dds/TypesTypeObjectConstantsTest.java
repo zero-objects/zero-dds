@@ -102,7 +102,7 @@ class TypesTypeObjectConstantsTest {
     }
 
     @Test
-    void memberIdsAreNestedFinalClassesOfIntConstants() throws Exception {
+    void javapsm_7_8_3_member_ids_are_nested_final_classes_of_int_constants() throws Exception {
         // This is the example of the clause.
         assertEquals(201, MapType.MemberId.BOUND_MAPTYPE_MEMBER_ID);
         assertEquals(200, MapType.MemberId.KEY_ELEMENT_TYPE_MAPTYPE_MEMBER_ID);
@@ -133,7 +133,7 @@ class TypesTypeObjectConstantsTest {
     }
 
     @Test
-    void theConstantsOfTheTopLevelAreMovedIntoTheInterfaces() {
+    void javapsm_7_8_3_the_constants_of_the_top_level_are_moved_into_the_interfaces() {
         // DDS-XTypes 1.3 §7.2.2.4.4.4.4: a member id has 28 bits, from 0 to 0x0FFFFFFF; the
         // sentinel for a missing id is the last of them, as in crates/types (MEMBER_ID_INVALID).
         assertEquals(0x0FFFFFFF, Member.MEMBER_ID_INVALID);
@@ -157,7 +157,7 @@ class TypesTypeObjectConstantsTest {
     }
 
     @Test
-    void theInterfacesTheConstantsLiveInAreTheOnesOfTheTopLevelTypes() {
+    void javapsm_7_8_3_the_interfaces_the_constants_live_in_are_the_ones_of_the_top_level_types() {
         // The constant is a field of the interface: it is reached as Member.MEMBER_ID_INVALID
         // and not as a member of a holder class.
         for (Field f : Member.class.getDeclaredFields()) {

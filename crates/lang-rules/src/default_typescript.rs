@@ -992,16 +992,16 @@ fn calls_in_expr(expr: &ts::Expr, out: &mut Vec<String>) {
             // Unqualified only: a defaulter is a module-level function
             // of the generated file and this generator built every call
             // to one with `defaulter_name`.
-            if let ts::Expr::Path(path) = callee.as_ref() {
-                if path.segments().len() == 1 {
-                    let name = path
-                        .segments()
-                        .first()
-                        .map(|segment| segment.as_str().to_string())
-                        .unwrap_or_default();
-                    if name.starts_with("zd_def_") && !out.iter().any(|seen| seen == &name) {
-                        out.push(name);
-                    }
+            if let ts::Expr::Path(path) = callee.as_ref()
+                && path.segments().len() == 1
+            {
+                let name = path
+                    .segments()
+                    .first()
+                    .map(|segment| segment.as_str().to_string())
+                    .unwrap_or_default();
+                if name.starts_with("zd_def_") && !out.iter().any(|seen| seen == &name) {
+                    out.push(name);
                 }
             }
             calls_in_expr(callee, out);

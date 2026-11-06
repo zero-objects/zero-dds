@@ -214,7 +214,10 @@ impl PermissionsAccessControl {
     /// `InvalidConfiguration` for a class that is not of PluginClassName
     /// `DDS:Access:Permissions` and MajorVersion 1: a peer would not read it.
     pub fn set_token_class_id(&mut self, class: &str) -> SecurityResult<()> {
-        if !class_id::same_class_and_major_version(class, class_id::ACCESS_PERMISSIONS_V12) {
+        if !class_id::same_permissions_class_and_major_version(
+            class,
+            class_id::ACCESS_PERMISSIONS_V12,
+        ) {
             return Err(SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,
                 alloc::format!(
@@ -513,7 +516,7 @@ impl PermissionsAccessControl {
     /// the operation shall return FALSE."
     fn token_matches(&self, slot: &Slot) -> bool {
         slot.token_class_id.as_deref().is_none_or(|remote| {
-            class_id::same_class_and_major_version(&self.token_class_id, remote)
+            class_id::same_permissions_class_and_major_version(&self.token_class_id, remote)
         })
     }
 
@@ -1649,7 +1652,7 @@ mod tests {
     }
 
     #[test]
-    fn permit_on_exact_match() {
+    fn security_9_4_2_3_permit_on_exact_match() {
         let (ac, h) = build_alice();
         let d = ac
             .check_create_datawriter(h, &EndpointRequest::new(0, "Chatter"))
@@ -1658,7 +1661,7 @@ mod tests {
     }
 
     #[test]
-    fn permit_on_wildcard_match() {
+    fn security_10_4_1_5_3_4_1_3_permit_on_wildcard_match() {
         let (ac, h) = build_alice();
         let d = ac
             .check_create_datawriter(h, &EndpointRequest::new(0, "sensor_temp"))
@@ -1667,7 +1670,7 @@ mod tests {
     }
 
     #[test]
-    fn deny_on_non_matching_topic() {
+    fn ros2bridge_7_2_deny_on_non_matching_topic() {
         let (ac, h) = build_alice();
         let d = ac
             .check_create_datawriter(h, &EndpointRequest::new(0, "actuator_x"))
@@ -1676,7 +1679,7 @@ mod tests {
     }
 
     #[test]
-    fn deny_writer_when_only_subscribe_granted() {
+    fn ros2bridge_7_2_deny_writer_when_only_subscribe_granted() {
         let (ac, h) = build_alice();
         let d = ac
             .check_create_datawriter(h, &EndpointRequest::new(0, "Echo"))
@@ -1685,7 +1688,7 @@ mod tests {
     }
 
     #[test]
-    fn permit_reader_on_subscribe_allowed_topic() {
+    fn ros2bridge_7_2_permit_reader_on_subscribe_allowed_topic() {
         let (ac, h) = build_alice();
         let d = ac
             .check_create_datareader(h, &EndpointRequest::new(0, "Echo"))
@@ -1694,7 +1697,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_class_id_matches_spec() {
+    fn security_9_4_2_9_plugin_class_id_matches_spec() {
         let ac = PermissionsAccessControl::new();
         assert_eq!(ac.plugin_class_id(), "DDS:Access:Permissions:1.2");
     }
@@ -1766,7 +1769,7 @@ mod tests {
     }
 
     #[test]
-    fn allow_rule_and_deny_rule_decide_the_same_xml_differently() {
+    fn security_10_4_1_5_3_4_allow_rule_and_deny_rule_decide_the_same_xml_differently() {
         let (ac, h) = build_bob();
         let internal = |topic| EndpointRequest::new(7, topic).in_partitions(&["internal"]);
         // Allow rule hits.
@@ -1793,7 +1796,7 @@ mod tests {
     }
 
     #[test]
-    fn deny_rule_also_binds_the_reader_side() {
+    fn security_10_4_1_5_3_4_2_deny_rule_also_binds_the_reader_side() {
         let (ac, h) = build_bob();
         assert_eq!(
             ac.check_create_datareader(h, &EndpointRequest::new(7, "sensor/temp"))
@@ -1808,7 +1811,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_match_inherits_the_deny_decision() {
+    fn security_10_4_1_5_3_4_2_remote_match_inherits_the_deny_decision() {
         let (ac, h) = build_bob();
         assert_eq!(
             ac.check_remote_datawriter(h, &EndpointRequest::new(7, "sensor/secret"))
@@ -1824,7 +1827,7 @@ mod tests {
     }
 
     #[test]
-    fn partition_scope_narrows_an_otherwise_permitted_topic() {
+    fn security_9_8_4_partition_scope_narrows_an_otherwise_permitted_topic() {
         let (ac, h) = build_bob();
         assert_eq!(
             ac.check_create_datawriter(
@@ -1856,7 +1859,7 @@ mod tests {
     }
 
     #[test]
-    fn partition_check_never_widens_a_denied_topic() {
+    fn security_10_4_1_5_3_4_1_4_partition_check_never_widens_a_denied_topic() {
         let (ac, h) = build_bob();
         assert_eq!(
             ac.check_create_datawriter(
@@ -1869,7 +1872,7 @@ mod tests {
     }
 
     #[test]
-    fn grant_without_partitions_covers_only_the_default_partition() {
+    fn security_10_4_1_5_3_4_1_4_grant_without_partitions_covers_only_the_default_partition() {
         let (ac, h) = build_alice();
         assert_eq!(
             ac.check_create_datawriter(h, &EndpointRequest::new(0, "Chatter").in_partitions(&[]))
@@ -1892,7 +1895,7 @@ mod tests {
     // -----------------------------------------------------------------
 
     #[test]
-    fn check_create_participant_honours_the_domain_range() {
+    fn security_9_4_2_9_check_create_participant_honours_the_domain_range() {
         let mut ac = PermissionsAccessControl::new();
         let allow_first = BOB_XML.replace(
             "<deny_rule><domains><id_range><min>7</min><max>9</max></id_range></domains>\n      \
@@ -1930,7 +1933,7 @@ mod tests {
     /// domain decides; a deny rule with publish or subscribe actions in
     /// front leaves it to the default, DENY here.
     #[test]
-    fn a_deny_rule_with_actions_first_leaves_joining_to_the_default() {
+    fn security_10_4_3_a_deny_rule_with_actions_first_leaves_joining_to_the_default() {
         let (ac, h) = build_bob();
         assert_eq!(
             ac.check_create_participant(h, &pr(7)).unwrap(),
@@ -2138,7 +2141,7 @@ mod tests {
     /// read or write access control open; the grant allows publishing or
     /// subscribing it otherwise; a topic no rule covers is refused.
     #[test]
-    fn check_create_topic_follows_governance_and_grant() {
+    fn security_9_4_2_9_check_create_topic_follows_governance_and_grant() {
         let (ac, h) = carol();
         let topic = |name| {
             ac.check_create_topic(h, &TopicRequest::new(0, name))
@@ -2178,7 +2181,7 @@ mod tests {
     /// Table 70: the topic checks of a remote participant also compare the
     /// PluginClassName and MajorVersion of the PermissionsToken.
     #[test]
-    fn a_remote_token_of_another_class_or_major_version_is_refused() {
+    fn security_9_4_2_9_a_remote_token_of_another_class_or_major_version_is_refused() {
         let (mut ac, _) = carol();
         let carol_doc = parse_permissions_xml(CAROL_XML).unwrap();
         let same = ac.register_remote(carol_doc.clone(), "DDS:Access:Permissions:1.0");
@@ -2233,7 +2236,7 @@ mod tests {
     /// refused where the governance asks for access control and permitted
     /// where it does not.
     #[test]
-    fn the_nil_handle_is_refused_on_a_controlled_topic_only() {
+    fn security_9_4_2_9_the_nil_handle_is_refused_on_a_controlled_topic_only() {
         let (ac, _) = carol();
         let nil = PermissionsHandle::NIL;
         assert_eq!(
@@ -2264,7 +2267,7 @@ mod tests {
 
     /// Table 70: the operations on instances and matches return TRUE.
     #[test]
-    fn instance_and_match_checks_return_true() {
+    fn security_9_4_2_9_instance_and_match_checks_return_true() {
         let (ac, h) = carol();
         let ep = EndpointRequest::new(0, "Secret").with_data_tags(&[("class", "secret")]);
         let key = [1u8, 2, 3];
@@ -2313,7 +2316,7 @@ mod tests {
 
     /// Table 70 `get_participant_security_config` with §10.4.1.2.5.
     #[test]
-    fn the_participant_config_follows_the_domain_rule() {
+    fn security_9_4_2_4_the_participant_config_follows_the_domain_rule() {
         use zerodds_security::access_control::{
             participant_attributes_mask as m, plugin_participant_attributes_mask as p,
         };
@@ -2387,7 +2390,7 @@ mod tests {
     /// default to the open document: join access control, no unauthenticated
     /// participants stay as written.
     #[test]
-    fn without_allowed_algorithms_every_algorithm_is_supported() {
+    fn security_9_4_2_4_without_allowed_algorithms_every_algorithm_is_supported() {
         let governance = r#"<dds><domain_access_rules><domain_rule>
           <domains><id>0</id></domains>
           <allow_unauthenticated_participants>true</allow_unauthenticated_participants>
@@ -2435,7 +2438,7 @@ mod tests {
     /// the identity certificate, with the compatibility mode bit for two or
     /// more; one the governance does not allow is an error.
     #[test]
-    fn the_identity_certificates_algorithms_must_be_allowed() {
+    fn security_9_4_2_4_the_identity_certificates_algorithms_must_be_allowed() {
         use zerodds_security::algorithm::{
             CBIT_ECDSA_P256_SHA256, CBIT_ECDSA_P384_SHA384, CRYPTO_ALGORITHM_COMPATIBILITY_MODE,
         };
@@ -2497,7 +2500,7 @@ mod tests {
 
     /// §10.4.1.2.6.2 to §10.4.1.2.6.7: the topic and endpoint configs.
     #[test]
-    fn the_topic_and_endpoint_configs_follow_the_topic_rule() {
+    fn security_9_4_2_6_the_topic_and_endpoint_configs_follow_the_topic_rule() {
         use zerodds_security::access_control::{
             endpoint_attributes_mask as m, plugin_endpoint_attributes_mask as p,
         };
@@ -2579,7 +2582,7 @@ mod tests {
     /// §9.4.2.9.20 to §9.4.2.9.29: what was not issued cannot be returned,
     /// and what was is returned once.
     #[test]
-    fn returned_tokens_and_configs_must_have_been_issued() {
+    fn security_9_4_2_9_returned_tokens_and_configs_must_have_been_issued() {
         let (mut ac, h) = carol();
         let token = ac.get_permissions_token(h).unwrap();
         ac.return_permissions_token(token.clone()).unwrap();
@@ -2665,7 +2668,7 @@ mod tests {
     /// Table 65: the PermissionsToken has the class `DDS:Access:Permissions:1.2`;
     /// the opt-in setting names 1.0; a class of another plugin is refused.
     #[test]
-    fn the_permissions_token_class_is_1_2_unless_named() {
+    fn security_9_4_2_9_the_permissions_token_class_is_1_2_unless_named() {
         let (mut ac, h) = carol();
         assert_eq!(ac.plugin_class_id(), "DDS:Access:Permissions:1.2");
         assert_eq!(
@@ -2723,7 +2726,7 @@ mod tests {
     /// §9.4.2.10: the listener is told which handle is revoked, and the
     /// handle is gone afterwards.
     #[test]
-    fn revoking_permissions_tells_the_listener() {
+    fn security_9_4_2_9_revoking_permissions_tells_the_listener() {
         let (mut ac, h) = carol();
         let listener = Arc::new(Revocations(std::sync::Mutex::new(Vec::new())));
         ac.set_listener(listener.clone()).unwrap();
@@ -2788,7 +2791,7 @@ mod tests {
     /// `<relay>` action; a grant to publish or subscribe does not do. A topic
     /// without access control is open to everyone, no rule refuses.
     #[test]
-    fn relaying_needs_the_relay_action_where_the_topic_is_controlled() {
+    fn security_9_4_2_9_relaying_needs_the_relay_action_where_the_topic_is_controlled() {
         use zerodds_security::access_control::RelayRole;
         let mut ac = PermissionsAccessControl::new()
             .with_governance(parse_governance_xml(GOVERNANCE).unwrap());
@@ -2860,7 +2863,7 @@ mod tests {
     /// Table 70 `validate_remote_permissions` needs the permissions CA and
     /// the credential of the authentication.
     #[test]
-    fn a_remote_validation_without_ca_or_credential_is_refused() {
+    fn security_9_4_2_9_a_remote_validation_without_ca_or_credential_is_refused() {
         let mut ac = PermissionsAccessControl::new();
         let token = DataHolder::new("DDS:Access:Permissions:1.2");
         let credential = DataHolder::new("DDS:Auth:PKI-DH:1.0");

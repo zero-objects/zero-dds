@@ -14,7 +14,7 @@ use zerodds_dcps::{
 };
 
 #[test]
-fn the_subscriber_sums_the_sample_lost_status_of_its_readers() {
+fn dcps_2_2_2_5_2_12_the_subscriber_sums_the_sample_lost_status_of_its_readers() {
     let lease = common::lease_domain();
     let p = common::ParticipantGuard::new(
         DomainParticipantFactory::instance()

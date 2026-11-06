@@ -5,7 +5,7 @@
 # carry no url and no sha256 (they are pure service formulae over the binary
 # the meta formula installs), so only a template that names an artifact is
 # resolved against the distribution directory. Called by release.yml ->
-# publish-homebrew-tap and by the `macos-bundle` job (ci/full.yml).
+# publish-homebrew-tap and by the `macos-bundle` job (ci/jobs/macos-bundle.yml).
 # Spec: zerodds-deployment-1.0.md §3.2.1.
 set -euo pipefail
 TAP_DIR="${1:?tap-dir required}"

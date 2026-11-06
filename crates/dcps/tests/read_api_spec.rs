@@ -131,7 +131,7 @@ fn rec(id: u32, value: u32) -> Rec {
 /// three state masks only, and what is returned changes state as for `read`
 /// (`take_w_condition` removes it).
 #[test]
-fn a_plain_read_condition_selects_by_its_state_masks() {
+fn dcps_2_2_2_5_1_9_a_plain_read_condition_selects_by_its_state_masks() {
     let r = rig();
     feed(&r.writer, &r.reader, &[rec(1, 1), rec(2, 2)]);
     let not_read = r
@@ -190,7 +190,7 @@ fn a_plain_read_condition_selects_by_its_state_masks() {
 /// DataReader"; any other is PRECONDITION_NOT_MET, for `read_w_condition`
 /// and for `take_w_condition`, with a ReadCondition and a QueryCondition.
 #[test]
-fn a_condition_of_another_reader_is_precondition_not_met() {
+fn dcps_2_2_2_5_3_10_a_condition_of_another_reader_is_precondition_not_met() {
     let r = rig();
     let other = r
         .subscriber
@@ -251,7 +251,7 @@ fn a_condition_of_another_reader_is_precondition_not_met() {
 /// §2.2.2.5.3.12 and .13: the next not-previously-accessed sample, one at a
 /// time, in arrival order; NO_DATA when there is none.
 #[test]
-fn read_next_sample_and_take_next_sample_give_one_unaccessed_sample() {
+fn dcps_2_2_2_5_3_12_read_next_sample_and_take_next_sample_give_one_unaccessed_sample() {
     let r = rig();
     assert!(matches!(r.reader.read_next_sample(), Err(DdsError::NoData)));
     assert!(matches!(r.reader.take_next_sample(), Err(DdsError::NoData)));
@@ -279,7 +279,7 @@ fn read_next_sample_and_take_next_sample_give_one_unaccessed_sample() {
 /// handle above `previous` that has samples the condition accepts; the
 /// iteration ends in NO_DATA.
 #[test]
-fn next_instance_w_condition_walks_the_instances_the_condition_accepts() {
+fn dcps_2_2_2_5_3_18_next_instance_w_condition_walks_the_instances_the_condition_accepts() {
     let r = rig();
     feed(
         &r.writer,
@@ -362,7 +362,7 @@ fn next_instance_w_condition_walks_the_instances_the_condition_accepts() {
 /// `return_loan` has no loan to give back and leaves the reader as it is;
 /// after the reader is deleted it is an error as every operation is.
 #[test]
-fn return_loan_leaves_the_reader_as_it_is() {
+fn dcps_2_2_2_5_3_20_return_loan_leaves_the_reader_as_it_is() {
     let r = rig();
     feed(&r.writer, &r.reader, &[rec(1, 1), rec(2, 2)]);
     let samples = r.reader.read_selected(&ReadSelection::ANY).unwrap();
@@ -384,7 +384,7 @@ fn return_loan_leaves_the_reader_as_it_is() {
 /// was created with: the Topic, or the ContentFilteredTopic of
 /// `create_datareader_with_cft`, whose related Topic `topic()` still gives.
 #[test]
-fn get_topicdescription_is_the_description_the_reader_was_created_with() {
+fn dcps_2_2_2_5_3_27_get_topicdescription_is_the_description_the_reader_was_created_with() {
     let r = rig();
     let plain = r.reader.get_topicdescription().unwrap();
     assert_eq!(plain.kind(), TopicDescriptionKind::Topic);

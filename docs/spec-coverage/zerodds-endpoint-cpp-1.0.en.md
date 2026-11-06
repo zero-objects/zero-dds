@@ -19,7 +19,7 @@ best-effort stream `0x01`.
 `ZDW_XRCE_STREAM_BEST_EFFORT`. The C++ SDK does not re-implement the
 framing — it binds the C89 wire core directly.
 
-**Tests:** `crates/endpoint-e2e/tests/cpp.rs::run_sync` / `run_async` frame
+**Tests:** `crates/endpoint-e2e/tests/cpp.rs::xrce_8_3_5_8_cpp_sync_app_writes_the_ping_and_reads_the_pong` / `xrce_8_3_5_8_cpp_async_app_writes_the_ping_and_reads_the_pong` frame
 and deframe every ping/pong over real UDP.
 
 **Status:** done.
@@ -35,18 +35,18 @@ frame hook), marshalling via the C++98 facade `zerodds::Writer` /
 **Repo:** `endpoints/c/include/zerodds_endpoint.h` (`zdw_transport`,
 `zdw_endpoint_send`/`recv`); `endpoints/cpp/include/zerodds_wire.hpp`
 (`zerodds::Writer`/`Reader`, a C++98 facade over the C89 core); C++ call
-site `crates/endpoint-e2e/tests/cpp.rs::run_sync` (UDP callbacks
+site `crates/endpoint-e2e/tests/cpp.rs::xrce_8_3_5_8_cpp_sync_app_writes_the_ping_and_reads_the_pong` (UDP callbacks
 `udp_deliver` / `udp_receive`, 100 ms poll loop for up to 100 iterations);
 `endpoints/cpp/example_sync.cpp` (sensor-telemetry deep example
 `Reading{id,value,label}`, C++98 poll loop over an in-memory FIFO, full
 field decode).
 
-**Tests:** (Linux, g++/gcc gated) `cpp_endpoint_sync` — live ping-pong E2E
-against the shared Rust XRCE peer over real UDP; plus `cpp_raw_udp` (bare
+**Tests:** (Linux, g++/gcc gated) `xrce_8_3_5_8_cpp_sync_app_writes_the_ping_and_reads_the_pong` — live ping-pong E2E
+against the shared Rust XRCE peer over real UDP; plus `endpoint_c_3_4_cpp_generated_codec_pings_without_the_xrce_frame` (bare
 XCDR2, no XRCE framing, a direct codec call through the generated types
 `topic_type_support<Ping>`/`<Pong>` from `idl-cpp`) as codec build
-integration for the same app compilation. 2/2 passed. Loud skip only when
-no compiler is on `PATH`.
+integration for the same app compilation. `#[ignore]`d in the crate tier,
+run in the job `integration-bindings`, where a SKIP line fails the job.
 
 **Status:** done.
 
@@ -64,10 +64,10 @@ writer, both thin C++17 facades over the audited C reactor
 `zdw_async_writer_init` / `zdw_async_write`); `endpoints/cpp/example_async.cpp`
 (sensor-telemetry deep example, C++17 reactor).
 
-**Tests:** (Linux, g++/gcc gated) `crates/endpoint-e2e/tests/cpp.rs::run_async`
+**Tests:** (Linux, g++/gcc gated) `crates/endpoint-e2e/tests/cpp.rs::xrce_8_3_5_8_cpp_async_app_writes_the_ping_and_reads_the_pong`
 — `AsyncReader` dispatches the received pong to a lambda, `AsyncWriter`
 sends the ping; live ping-pong E2E against the Rust peer over real UDP;
-test name `cpp_endpoint_async`. 1/1 passed. Loud skip only when no compiler
+test name `xrce_8_3_5_8_cpp_async_app_writes_the_ping_and_reads_the_pong`. Loud skip only when no compiler
 is on `PATH`.
 
 **Status:** done.
@@ -100,22 +100,23 @@ byte-golden + latency bench).
 
 **Tests:** (Linux, g++12)
 
-- `cpp_reliable_unit_and_golden` — 12 unit checks (sender: monotonic seq,
+- `reliable_5_1_cpp_state_machine_passes_the_reference_cases_and_the_goldens` — 12 unit checks (sender: monotonic seq,
   payload-too-large, window-full, heartbeat first/silence/period; receiver:
   acknack-clear, acknack-full-clear, in-order, reorder, duplicate-drop,
   buffer-full, pending-acknack bitmap, reset) + byte-golden
   (`acknack_frame(0x80, NONE, 1, 1, 0, 0, 0x80)` == `golden_acknack_le.bin`,
   `heartbeat_frame(0x80, NONE, 1, 1, 3, 0x80)` == `golden_heartbeat_le.bin`,
   13 bytes each, byte-identical to the Rust-generated goldens) + a latency
-  bench (median over K=20000 iterations: `AsyncWriter::enqueue`, no-op drain
+  bench (median over K=20000 iterations: `AsyncWriter.enqueue()`, no-op drain
   hooks, no syscall, vs `write_frame` + inline `send` to a bound loopback
-  sink) → `ALL OK`.
-- `cpp_reliable_loss_recovery` — the Rust peer drops every 3rd datagram; the
+  sink; the test checks that the enqueue median stays below the inline
+  median) → `ALL OK`. The `cpp` column of `tools/endpoints-gate` does not
+  build `test/test_reliable_cpp.cpp`; this test is its only run.
+- `reliable_5_3_cpp_samples_arrive_in_order_despite_dropped_datagrams` — the Rust peer drops every 3rd datagram; the
   app retransmits on ACKNACK; 12/12 samples delivered gap-free in order.
-- `cpp_reliable_lossless_baseline` — lossless; 12/12.
-- `cpp_reliable_example` — in-process demo → `RELIABLE OK N=16`.
+- `reliable_5_5_cpp_example_recovers_its_sequence_without_gaps` — in-process demo → `RELIABLE OK N=16`.
 
-4/4 passed. Latency measured: 31–40 ns (`enqueue`) vs 3427 ns (inline
+Measured earlier: 31–40 ns (`enqueue`) vs 3427 ns (inline
 `sendto`), ~85–110× depending on the run (run-to-run variance, not a single
 value).
 
@@ -139,26 +140,24 @@ only when the toolchain is missing.
 
 **Repo:** All five required artifacts present, evidenced in §4:
 `test_reliable_cpp.cpp` (unit + byte-golden + latency bench),
-`crates/endpoint-e2e/tests/cpp_reliable.rs` (loss recovery + lossless
-baseline against the Rust peer), `example_reliable.cpp` (a runnable
-example, not a stub). Loud skip only when `g++`/`gcc` is missing from
+`crates/endpoint-e2e/tests/cpp_reliable.rs` (loss recovery against the
+Rust peer), `example_reliable.cpp` (a runnable example, not a stub). Loud skip only when `g++`/`gcc` is missing from
 `PATH`.
 
-**Tests:** see §4 (`cpp_reliable_unit_and_golden`, `cpp_reliable_loss_recovery`,
-`cpp_reliable_lossless_baseline`, `cpp_reliable_example`) and §2/§3
-(`cpp_raw_udp`, `cpp_endpoint_sync`, `cpp_endpoint_async`).
+**Tests:** see §4 (`reliable_5_1_cpp_state_machine_passes_the_reference_cases_and_the_goldens`, `reliable_5_3_cpp_samples_arrive_in_order_despite_dropped_datagrams`,
+`reliable_5_5_cpp_example_recovers_its_sequence_without_gaps`) and §2/§3
+(`endpoint_c_3_4_cpp_generated_codec_pings_without_the_xrce_frame`, `xrce_8_3_5_8_cpp_sync_app_writes_the_ping_and_reads_the_pong`, `xrce_8_3_5_8_cpp_async_app_writes_the_ping_and_reads_the_pong`).
 
 **Status:** done.
 
 ## Audit status
 
-5 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+5 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run (Linux, g++12, verified): `cargo test -p zerodds-endpoint-e2e
---test cpp` → 3/3 (`cpp_raw_udp`, `cpp_endpoint_sync`, `cpp_endpoint_async`);
-`--test cpp_reliable` → 4/4 (`cpp_reliable_unit_and_golden` incl.
-12-checks+byte-golden+bench, `cpp_reliable_loss_recovery`,
-`cpp_reliable_lossless_baseline`, `cpp_reliable_example`); latency bench
-enqueue 31–40 ns / inline sendto 3427 ns.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-cpp-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings` (job `integration-bindings`) — 6 tests green.
+
+6 cited tests green, 0 not green.
 
 Open items: none.

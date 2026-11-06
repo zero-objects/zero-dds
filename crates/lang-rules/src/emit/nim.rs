@@ -667,10 +667,10 @@ impl CodecTarget for Nim {
                 value: Box::new(value_of(value)),
             });
         }
-        if type_ == nim::Type::Primitive(nim::Primitive::Bool) {
-            if let NimExpr::Plain(nim::Expr::Literal(Literal::Int(text))) = &value {
-                return plain(nim::Expr::Literal(Literal::Bool(text != "0")));
-            }
+        if type_ == nim::Type::Primitive(nim::Primitive::Bool)
+            && let NimExpr::Plain(nim::Expr::Literal(Literal::Int(text))) = &value
+        {
+            return plain(nim::Expr::Literal(Literal::Bool(text != "0")));
         }
         if type_ == nim::Type::Primitive(nim::Primitive::Int64) {
             return plain(nim::Expr::call(

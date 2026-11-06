@@ -103,7 +103,7 @@ mod tests {
     }
 
     #[test]
-    fn adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity() {
+    fn security_7_4_3_adjusted_prefix_sets_high_bit_and_is_deterministic_per_identity() {
         use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair};
         let mk_cert = |cn: &str| -> alloc::vec::Vec<u8> {
             let mut p = CertificateParams::new(alloc::vec::Vec::new()).unwrap();

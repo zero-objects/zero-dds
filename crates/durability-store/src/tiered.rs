@@ -164,18 +164,18 @@ impl<C: DurabilityStore> DurabilityStore for TieredStore<C> {
 
     fn unregister(&self, topic: &str, instance_key: &[u8; 16], now: SystemTime) -> Result<()> {
         self.cold.unregister(topic, instance_key, now)?;
-        if let Ok(mut g) = self.hot.lock() {
-            if let Some(t) = g.topics.get_mut(topic) {
-                let drop: Vec<HotKey> = t
-                    .samples
-                    .keys()
-                    .filter(|(_, k)| k == instance_key)
-                    .copied()
-                    .collect();
-                for k in drop {
-                    if let Some(removed) = t.samples.remove(&k) {
-                        t.bytes = t.bytes.saturating_sub(removed.payload.len() as u64);
-                    }
+        if let Ok(mut g) = self.hot.lock()
+            && let Some(t) = g.topics.get_mut(topic)
+        {
+            let drop: Vec<HotKey> = t
+                .samples
+                .keys()
+                .filter(|(_, k)| k == instance_key)
+                .copied()
+                .collect();
+            for k in drop {
+                if let Some(removed) = t.samples.remove(&k) {
+                    t.bytes = t.bytes.saturating_sub(removed.payload.len() as u64);
                 }
             }
         }

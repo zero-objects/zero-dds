@@ -117,7 +117,7 @@ fn without_comments(text: &str) -> String {
 // -- B.1.1 ---------------------------------------------------------------
 
 #[test]
-fn b_1_1_every_primitive_round_trips() {
+fn ddsts_2_1_b_1_1_every_primitive_round_trips() {
     holds(
         "B.1.1",
         "@final struct P { boolean b; octet o; short s; long l; long long ll; \
@@ -140,7 +140,7 @@ fn b_1_1_every_primitive_round_trips() {
 // -- B.1.2 ---------------------------------------------------------------
 
 #[test]
-fn b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard() {
+fn ddsts_2_1_b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard() {
     let text = holds(
         "B.1.2",
         "@final struct Point { long x; long y; string label; };",
@@ -170,7 +170,7 @@ fn b_1_2_a_struct_gets_an_interface_a_descriptor_and_a_guard() {
 /// emit any TypeScript class for IDL data types" — and what produces a
 /// value instead is a factory function.
 #[test]
-fn b_1_2_no_class_reaches_the_output_for_any_idl_data_type() {
+fn ddsts_7_4_b_1_2_no_class_reaches_the_output_for_any_idl_data_type() {
     let shapes: &[&str] = &[
         "@final struct P { long x; string s; };",
         "@mutable struct P { @key @id(1) long x; @optional @id(2) long y; };",
@@ -206,7 +206,7 @@ fn b_1_2_no_class_reaches_the_output_for_any_idl_data_type() {
 // -- B.1.3 ---------------------------------------------------------------
 
 #[test]
-fn b_1_3_a_union_carries_its_labels_and_its_default_flags() {
+fn ddsts_7_5_1_b_1_3_a_union_carries_its_labels_and_its_default_flags() {
     let text = holds(
         "B.1.3",
         "enum Tag { TAG_A, TAG_B }; \
@@ -235,7 +235,7 @@ fn b_1_3_a_union_carries_its_labels_and_its_default_flags() {
 }
 
 #[test]
-fn b_1_3_a_union_without_a_default_and_without_coverage_says_so() {
+fn ddsts_7_5_1_b_1_3_a_union_without_a_default_and_without_coverage_says_so() {
     holds(
         "B.1.3",
         "@final union Choice switch (long) { case 1: long a; case 2: long b; };",
@@ -244,7 +244,7 @@ fn b_1_3_a_union_without_a_default_and_without_coverage_says_so() {
 }
 
 #[test]
-fn b_1_3_an_enum_discriminator_the_cases_exhaust_has_no_implicit_default() {
+fn ddsts_7_5_1_b_1_3_an_enum_discriminator_the_cases_exhaust_has_no_implicit_default() {
     holds(
         "B.1.3",
         "enum Two { ONE, OTHER }; \
@@ -256,7 +256,7 @@ fn b_1_3_an_enum_discriminator_the_cases_exhaust_has_no_implicit_default() {
 // -- B.1.4 ---------------------------------------------------------------
 
 #[test]
-fn b_1_4_an_enum_gets_a_const_object_and_a_descriptor() {
+fn ddsts_7_6_b_1_4_an_enum_gets_a_const_object_and_a_descriptor() {
     let text = holds(
         "B.1.4",
         "enum Color { RED, GREEN, BLUE };",
@@ -283,7 +283,7 @@ fn b_1_4_an_enum_gets_a_const_object_and_a_descriptor() {
 }
 
 #[test]
-fn b_1_4_an_explicit_value_reaches_the_descriptor() {
+fn ddsts_7_6_1_b_1_4_an_explicit_value_reaches_the_descriptor() {
     holds(
         "B.1.4",
         "enum Op { @value(0) ADD, @value(1) SUB, @value(7) NEG };",
@@ -294,7 +294,7 @@ fn b_1_4_an_explicit_value_reaches_the_descriptor() {
 // -- B.1.5a --------------------------------------------------------------
 
 #[test]
-fn b_1_5a_a_bitset_widths_pick_their_holders_and_the_descriptor_totals_them() {
+fn ddsts_7_7_1_b_1_5a_a_bitset_widths_pick_their_holders_and_the_descriptor_totals_them() {
     holds(
         "B.1.5a",
         "bitset Flags { bitfield<3> low; bitfield<5> high; bitfield<40> wide; };",
@@ -354,7 +354,7 @@ fn b_1_5a_a_bitset_wider_than_its_anchor_is_refused_by_name() {
 // -- B.1.5b --------------------------------------------------------------
 
 #[test]
-fn b_1_5b_a_bitmask_carries_its_positions_and_its_bound() {
+fn ddsts_7_8_1_b_1_5b_a_bitmask_carries_its_positions_and_its_bound() {
     holds(
         "B.1.5b",
         "bitmask Permissions { READ, WRITE, EXEC };",
@@ -369,7 +369,7 @@ fn b_1_5b_a_bitmask_carries_its_positions_and_its_bound() {
 }
 
 #[test]
-fn b_1_5b_a_wide_bitmask_and_an_explicit_position() {
+fn ddsts_7_8_1_b_1_5b_a_wide_bitmask_and_an_explicit_position() {
     holds(
         "B.1.5b",
         "@bit_bound(40) bitmask BigFlags { flag00, @position(39) flag39 };",
@@ -414,7 +414,7 @@ fn b_1_7_free_standing_constants_keep_their_types() {
 // -- B.1.8 ---------------------------------------------------------------
 
 #[test]
-fn b_1_8_char_and_wchar_reach_the_descriptor_as_themselves() {
+fn ddsts_8_2_b_1_8_char_and_wchar_reach_the_descriptor_as_themselves() {
     holds(
         "B.1.8",
         "@final struct Letters { char one; wchar wide; };",
@@ -425,7 +425,7 @@ fn b_1_8_char_and_wchar_reach_the_descriptor_as_themselves() {
 // -- B.1.9 ---------------------------------------------------------------
 
 #[test]
-fn b_1_9_a_long_double_is_never_a_number() {
+fn ddsts_8_6_b_1_9_a_long_double_is_never_a_number() {
     let text = holds(
         "B.1.9",
         "@final struct L { long double q; };",
@@ -440,7 +440,7 @@ fn b_1_9_a_long_double_is_never_a_number() {
 // -- B.1.10 --------------------------------------------------------------
 
 #[test]
-fn b_1_10_an_any_member_is_a_box_and_never_any_or_unknown() {
+fn ddsts_7_3_4_b_1_10_an_any_member_is_a_box_and_never_any_or_unknown() {
     let text = holds(
         "B.1.10",
         "@final struct Envelope { long id; any payload; };",
@@ -455,7 +455,7 @@ fn b_1_10_an_any_member_is_a_box_and_never_any_or_unknown() {
 // -- B.1.11 --------------------------------------------------------------
 
 #[test]
-fn b_1_11_annotations_change_the_side_table_and_not_the_interface() {
+fn ddsts_7_4_b_1_11_annotations_change_the_side_table_and_not_the_interface() {
     let text = holds(
         "B.1.11",
         "@mutable @topic(\"Pose\") struct Pose { @key @id(1) long x; \
@@ -481,7 +481,7 @@ fn b_1_11_annotations_change_the_side_table_and_not_the_interface() {
 }
 
 #[test]
-fn b_1_11_an_unannotated_struct_is_appendable_and_carries_no_topic() {
+fn ddsts_8_1_b_1_11_an_unannotated_struct_is_appendable_and_carries_no_topic() {
     let text = holds(
         "B.1.11",
         "struct Bare { long v; };",
@@ -535,7 +535,7 @@ fn b_1_12_an_exception_and_a_struct_take_one_default_extensibility() {
 // -- B.1.13 --------------------------------------------------------------
 
 #[test]
-fn b_1_13_a_typedef_is_an_alias_with_one_member_named_value() {
+fn ddsts_7_10_1_b_1_13_a_typedef_is_an_alias_with_one_member_named_value() {
     holds(
         "B.1.13",
         "typedef long Counter; @final struct S { Counter c; };",
@@ -549,7 +549,7 @@ fn b_1_13_a_typedef_is_an_alias_with_one_member_named_value() {
 }
 
 #[test]
-fn b_1_13_a_wide_bit_bound_switches_the_alias_to_bigint() {
+fn ddsts_7_10_1_b_1_13_a_wide_bit_bound_switches_the_alias_to_bigint() {
     holds(
         "B.1.13",
         "@bit_bound(40) typedef long long Counter40;",
@@ -615,7 +615,7 @@ fn b_1_15_an_unrecognised_annotation_does_not_stop_the_generator() {
 // -- B.1.16 --------------------------------------------------------------
 
 #[test]
-fn b_1_16_a_map_member_is_described_as_a_map() {
+fn ddsts_8_2_b_1_16_a_map_member_is_described_as_a_map() {
     holds(
         "B.1.16",
         "@final struct S { map<long, string> by_id; };",
@@ -624,7 +624,7 @@ fn b_1_16_a_map_member_is_described_as_a_map() {
 }
 
 #[test]
-fn b_1_16_a_bounded_map_carries_its_bound_and_a_struct_key_its_hazard() {
+fn ddsts_7_9_1_b_1_16_a_bounded_map_carries_its_bound_and_a_struct_key_its_hazard() {
     holds(
         "B.1.16",
         "@final struct K { long a; }; @final struct S { map<K, long, 8> by_key; };",
@@ -641,7 +641,7 @@ fn b_1_16_a_bounded_map_carries_its_bound_and_a_struct_key_its_hazard() {
 /// No `experimentalDecorators` and no `emitDecoratorMetadata`: the flags
 /// are not passed, and this PSM emits no decorator for anything.
 #[test]
-fn the_generated_types_type_check() {
+fn ddsts_2_1_the_generated_types_type_check() {
     let shapes: &[(&str, &str)] = &[
         (
             "descriptors-primitives",
@@ -708,7 +708,7 @@ fn the_generated_types_type_check() {
 /// XTypes 1.3 §7.5.1.4.1.3: a derived structure has its base as the first member `parent`, and
 /// the descriptor lists it as a member of the base's type that a consumer descends into.
 #[test]
-fn a_derived_struct_holds_its_base_as_the_member_parent() {
+fn xtypes_7_5_1_4_1_3_a_derived_struct_holds_its_base_as_the_member_parent() {
     let text = holds(
         "parent",
         "@final struct Base { long a; };\n\

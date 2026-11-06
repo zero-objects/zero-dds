@@ -19,15 +19,14 @@ Implementation:
 `[session, stream, seq_lo, seq_hi, submsg_id, flags, len_lo, len_hi] + body`. `session=0x80`,
 `stream=0x01` (best-effort), `submsg_id=0x07`, `flags=0x03`."
 
-**Repo:** `endpoints/rust/src/lib.rs::xrce_write_frame`/`xrce_read_frame` (line 62–85,
-best-effort stream `0x01`, session `0x80`). The shared peer has its own, independently
-written framing implementation `crates/endpoint-e2e/src/lib.rs::xrce_frame`/`xrce_unframe`
-(line 49–72) — the same 8-byte layout, the same constants (`0x80`/`0x01`/`0x07`/`0x03`),
-byte-identical despite the separate implementation.
+**Repo:** `endpoints/rust/src/lib.rs::xrce_write_frame`/`xrce_read_frame` (best-effort
+stream `0x01`, session `0x80`). The shared peer reads the frame with the codec of
+`zerodds-xrce` (`crates/endpoint-e2e/src/lib.rs::xrce_unframe`).
 
-**Tests:** indirect, via `example_sync`/`example_async` (CI job `endpoints-rust`); no
-isolated byte-golden unit test for the best-effort frame (the reliable frame has its own,
-see §4).
+**Tests:** `crates/endpoint-e2e/tests/xrce_write_framing.rs::xrce_8_3_5_8_rust_endpoint_frames_a_conformant_write_data`
+(the SDK's frame, decoded by `zerodds-xrce`: header, `WRITE_DATA`, flags,
+`BaseObjectRequest`, sample); plus `example_sync`/`example_async` (job
+`integration-endpoints`, column `rust`).
 
 **Status:** done
 
@@ -66,7 +65,7 @@ sample body and delivers it via `MemTransport`; `poll` returns a decoded body or
 
 **Tests:** `endpoints/rust/examples/example_sync.rs` — 5 `Reading{id,value,label}`
 samples, decoded field by field (`id`, `value`, `label`), `assert!(got == total)` +
-`"ALL OK"`; CI job `endpoints-rust`.
+`"ALL OK"`; job `integration-endpoints` (column `rust`).
 
 **Status:** done
 
@@ -83,7 +82,7 @@ thread that polls the transport and forwards decoded bodies to `recv` via
 `mpsc::channel`; `stop` signals the thread via an `AtomicBool`.
 
 **Tests:** `endpoints/rust/examples/example_async.rs` — 5 samples, `reader.recv()`
-blocking, every field decoded, `"ALL OK"`; CI job `endpoints-rust`.
+blocking, every field decoded, `"ALL OK"`; job `integration-endpoints` (column `rust`).
 
 **Status:** done
 
@@ -148,12 +147,10 @@ the ring is empty AND the window is empty, with a 5s safety deadline against a p
 stops ACKing). `crates/endpoint-e2e/src/lib.rs::reliable_collect` drives the peer as the
 receiver (with `drop_every=Some(3)`, drops every 3rd distinct sample exactly once).
 
-**Tests:** (Linux) `cargo test -p zerodds-endpoint-e2e --test rust_reliable` —
-`rust_reliable_loss_recovery` (peer drops every 3rd sample) and
-`rust_reliable_no_loss_baseline` (lossless) — each delivers 12/12 samples gap-free in
-order (`N = 12` in `tests/rust_reliable.rs`). 2/2 passed. Runs via the workspace-wide
-`cargo test --workspace` job, not the separate `endpoints-rust` CI job (which covers only
-the sync/async examples). Reproduced locally (this run): 2/2 passed in 2.47s.
+**Tests:** `crates/endpoint-e2e/tests/rust_reliable.rs::reliable_5_3_rust_samples_arrive_in_order_despite_dropped_datagrams`
+(peer drops every 3rd sample) — 12/12 samples delivered gap-free in order
+(`N = 12` in `tests/rust_reliable.rs`). `#[ignore]`d in the crate tier (the
+test builds the example with `cargo`), run in the job `integration-bindings`.
 
 **Status:** done
 
@@ -172,7 +169,7 @@ the receiver; structurally this is the only "Rust loss-recovery test" there is, 
 Rust supplies both the sender-under-test and the reference receiver implementation at
 once.
 
-**Tests:** see previous item (`rust_reliable_loss_recovery`, `rust_reliable_no_loss_baseline`).
+**Tests:** see previous item (`reliable_5_3_rust_samples_arrive_in_order_despite_dropped_datagrams`).
 
 **Status:** n/a (informative) — structural, not open: the test obligation is already met
 by the previous item; this entry only documents why there is no *separate* Rust-vs-Rust
@@ -191,10 +188,12 @@ both measured against the same idle UDP sink.
 **Tests:** (Linux) `cargo run -p zerodds-endpoint-rust --example example_reliable --
 bench` → `enqueue(decoupled)=30ns inline(send)=3985ns` (~133×); the
 loss-recovery path the bench exercises is covered by
-`crates/endpoint-e2e/tests/rust_reliable.rs::rust_reliable_loss_recovery` and
-`::rust_reliable_no_loss_baseline`. Reproduced locally (this run, a different
-machine): `enqueue=124ns inline=4422ns` (~35×) — order of magnitude
-confirmed, absolute value machine-dependent.
+`crates/endpoint-e2e/tests/rust_reliable.rs::reliable_5_3_rust_samples_arrive_in_order_despite_dropped_datagrams`.
+`crates/endpoint-e2e/tests/rust_reliable.rs::reliable_5_4_rust_the_producer_enqueue_costs_less_than_the_inline_send`
+runs the bench and checks that the enqueue is below the inline send (job
+`integration-bindings`). Reproduced locally (this run, a different machine):
+`enqueue=124ns inline=4422ns` (~35×) — order of magnitude confirmed, absolute
+value machine-dependent.
 
 **Status:** done
 
@@ -202,14 +201,16 @@ confirmed, absolute value machine-dependent.
 
 ## Audit status
 
-7 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+7 done / 0 partial / 0 open / 0 blocked / 2 n/a (informative).
 
-Test run (Linux figures + reproduced locally): `cargo test -p zerodds-endpoint-rust
---lib` — 18/18 (state machine + wire round-trip + SPSC ring + byte-golden); `cargo test -p
-zerodds-endpoint-e2e --test rust_reliable` — 2/2 (`rust_reliable_loss_recovery`,
-`rust_reliable_no_loss_baseline`); `cargo run -p zerodds-endpoint-rust --example
-example_sync|example_async` — 5/5 field decode each, `"ALL OK"` (CI job `endpoints-rust`);
-latency bench `enqueue=30ns` vs. `inline=3985ns` (~133×, Linux) — reproduced locally at
-`124ns`/`4422ns` (~35×).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-rust-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-endpoint-e2e --all-targets` (job `merge-rust-endpoint-e2e`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-endpoint-rust --all-targets` (job `merge-rust-endpoint-rust`) — 18 tests green.
+* `python3 ci/run_integration.py integration-bindings` (job `integration-bindings`) — 7 tests green.
+* `python3 ci/run_integration.py integration-bindings-gnat-beam` (job `integration-bindings-gnat-beam`) — 2 tests green.
+* `python3 ci/run_integration.py integration-endpoints` (job `integration-endpoints`) — 4 tests green.
+
+32 cited tests green, 0 not green.
 
 Open items: none.

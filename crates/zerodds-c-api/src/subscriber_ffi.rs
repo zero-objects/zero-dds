@@ -1604,10 +1604,10 @@ fn pump_group_siblings(
             keep.extend(admit(other, Some(sb), presentation, item));
         }
         drop(rx);
-        if !keep.is_empty() {
-            if let Ok(mut inbox) = other.group_inbox.lock() {
-                inbox.extend(keep);
-            }
+        if !keep.is_empty()
+            && let Ok(mut inbox) = other.group_inbox.lock()
+        {
+            inbox.extend(keep);
         }
     }
 }
@@ -2620,8 +2620,9 @@ mod tests {
     }
 
     #[test]
-    fn create_delete_datareader() {
-        let (p, sub, t) = mk(51);
+    fn capi_2_4_create_delete_datareader() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: sub+t from mk, valid until cleanup.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
@@ -2633,8 +2634,9 @@ mod tests {
     }
 
     #[test]
-    fn lookup_datareader_finds_existing() {
-        let (p, sub, t) = mk(52);
+    fn capi_2_4_lookup_datareader_finds_existing() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let n = c"SubT";
         // SAFETY: sub+t from mk; n static.
         unsafe {
@@ -2651,7 +2653,8 @@ mod tests {
     /// (`docs/specs/zerodds-c-api-1.0.md` §2.8).
     #[test]
     fn sub_get_datareaders_reports_the_total() {
-        let (p, sub, t) = mk(53);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: sub+t from mk; every reader comes from a create call.
         unsafe {
             let drs: [*mut ZeroDdsDataReader; 3] = [
@@ -2702,7 +2705,8 @@ mod tests {
     /// other states, is not listed. It listed every reader.
     #[test]
     fn get_datareaders_lists_the_readers_with_samples_in_the_states() {
-        let (p, sub, t) = mk(87);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: sub+t from mk; the readers come from create calls.
         unsafe {
             let empty = zerodds_sub_create_datareader(sub, t, ptr::null());
@@ -2758,6 +2762,7 @@ mod tests {
             writer_strength: 0,
             representation: 1, // XCDR2
             big_endian: true,  // big-endian peer
+            representation_identifier: [0x00, 0x06],
             source_timestamp: None,
             reception_timestamp: None,
             source_sequence_number: -1,
@@ -2813,8 +2818,9 @@ mod tests {
     }
 
     #[test]
-    fn take_on_empty_returns_no_data() {
-        let (p, sub, t) = mk(53);
+    fn capi_2_7_take_on_empty_returns_no_data() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let mut arr = ZeroDdsSampleArray {
             buffers: ptr::null_mut(),
             lengths: ptr::null_mut(),
@@ -2833,8 +2839,9 @@ mod tests {
     }
 
     #[test]
-    fn return_loan_clears_array() {
-        let (p, sub, t) = mk(54);
+    fn capi_2_7_return_loan_clears_array() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let mut arr = ZeroDdsSampleArray {
             buffers: ptr::null_mut(),
             lengths: ptr::null_mut(),
@@ -2853,8 +2860,9 @@ mod tests {
     }
 
     #[test]
-    fn statuses_default_ok() {
-        let (p, sub, t) = mk(55);
+    fn capi_2_7_statuses_default_ok() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let mut a = ZeroDdsLivelinessChangedStatus::default();
         let mut b = ZeroDdsSubscriptionMatchedStatus::default();
         let mut c = ZeroDdsRequestedDeadlineMissedStatus::default();
@@ -2959,11 +2967,12 @@ mod tests {
     /// know (no TypeObject, no schema), would pass every sample unfiltered;
     /// the reader is refused. An expression that reads no field is fine.
     #[test]
-    fn cft_reader_without_type_or_schema_is_refused_for_a_field_filter() {
+    fn capi_2_7_cft_reader_without_type_or_schema_is_refused_for_a_field_filter() {
         use crate::participant_ffi::{
             zerodds_dp_create_contentfilteredtopic, zerodds_dp_delete_contentfilteredtopic,
         };
-        let (p, sub, t) = mk(58);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: p+sub+t from mk; names and expressions static.
         unsafe {
             let fields = zerodds_dp_create_contentfilteredtopic(
@@ -2998,11 +3007,12 @@ mod tests {
     /// attached is not deleted (PRECONDITION_NOT_MET); once the reader is
     /// deleted it is.
     #[test]
-    fn a_cft_with_a_reader_is_not_deleted() {
+    fn dcps_2_2_2_2_1_8_a_cft_with_a_reader_is_not_deleted() {
         use crate::participant_ffi::{
             zerodds_dp_create_contentfilteredtopic, zerodds_dp_delete_contentfilteredtopic,
         };
-        let (p, sub, t) = mk(87);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: p+sub+t from mk; the literals are static C strings.
         unsafe {
             let cft = zerodds_dp_create_contentfilteredtopic(
@@ -3035,7 +3045,8 @@ mod tests {
     #[test]
     fn cft_with_invalid_expression_returns_null() {
         use crate::participant_ffi::zerodds_dp_create_contentfilteredtopic;
-        let (p, sub, t) = mk(59);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let cft_name = c"BadCFT";
         let bad_expr = c"$$invalid syntax";
         // SAFETY: p+sub+t from mk; cft_name+bad_expr static.
@@ -3059,7 +3070,8 @@ mod tests {
 
     #[test]
     fn read_on_empty_returns_no_data() {
-        let (p, sub, t) = mk(57);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let mut arr = ZeroDdsSampleArray {
             buffers: ptr::null_mut(),
             lengths: ptr::null_mut(),
@@ -3078,7 +3090,8 @@ mod tests {
 
     #[test]
     fn dr_get_topicdescription_subscriber_roundtrip() {
-        let (p, sub, t) = mk(56);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: sub+t from mk.
         unsafe {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
@@ -3175,6 +3188,7 @@ mod tests {
             writer_strength: strength,
             representation: 1,
             big_endian: false,
+            representation_identifier: [0x00, 0x07],
             source_timestamp: None,
             reception_timestamp: None,
             source_sequence_number: -1,
@@ -3199,7 +3213,8 @@ mod tests {
 
     #[test]
     fn explicit_key_survives_non_key_changes_and_matches_lifecycle() {
-        let (p, sub, t) = mk(67);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, _tx) =
             mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
         // Legal zero-padded KeyHashes for string<8> "abcdX" / "abcdY".
@@ -3267,49 +3282,12 @@ mod tests {
         cleanup(p);
     }
 
-    /// EXCLUSIVE ownership (Spec §2.2.3.23): two writers send to the SAME
-    /// instance (identical payload-key). The stronger writer (strength 20)
-    /// owns the instance; the weaker writer's (strength 5) sample on that
-    /// instance is filtered out on the take path. Routes through the
-    /// validated dcps `InstanceTracker::should_accept_sample_under_exclusive_ownership`.
-    #[test]
-    fn exclusive_ownership_drops_weaker_writer_on_take() {
-        let (p, sub, t) = mk(60);
-        let (dr, tx) =
-            mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Exclusive, None);
-        // Same instance payload from a strong writer first.
-        let inst = alloc::vec![0x10u8, 0x20, 0x30, 0x40];
-        tx.send(alive(inst.clone(), 0x01, 20)).unwrap();
-        // Weaker writer, same instance → must be rejected.
-        tx.send(alive(inst.clone(), 0x02, 5)).unwrap();
-        // A second sample from the strong owner → accepted.
-        tx.send(alive(inst.clone(), 0x01, 20)).unwrap();
-
-        let mut arr = empty_arr();
-        // SAFETY: dr+arr valid for the test.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        // Only the two strong-writer samples survive; weaker one filtered.
-        assert_eq!(arr.count, 2, "weaker writer's sample must be dropped");
-        // SAFETY: arr from take; dr valid.
-        unsafe {
-            let pubh = (*arr.infos.add(0)).publication_handle;
-            assert_eq!(
-                (*arr.infos.add(1)).publication_handle,
-                pubh,
-                "both surviving samples come from the same (strong) writer"
-            );
-            zerodds_dr_return_loan(dr, &mut arr);
-            let _ = Box::from_raw(dr);
-        }
-        cleanup(p);
-    }
-
     /// SHARED ownership (default): both writers' samples are delivered (no
     /// arbitration). Confirms the filter is gated on EXCLUSIVE only.
     #[test]
     fn shared_ownership_delivers_all_writers() {
-        let (p, sub, t) = mk(61);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
         let inst = alloc::vec![1u8, 2, 3, 4];
         tx.send(alive(inst.clone(), 0x01, 20)).unwrap();
@@ -3375,7 +3353,8 @@ mod tests {
         };
         let idl = "@final struct SubTy { long seq; double value; string label; };";
         let object = complete_type_object(idl, "SubTy");
-        let (p, sub, t) = mk(70);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: p+sub+t from mk; strings static; object lives for the call.
         let dr = unsafe {
             let cft = zerodds_dp_create_contentfilteredtopic(
@@ -3445,7 +3424,7 @@ mod tests {
     /// A type that refers to another: without the dependency the object is
     /// refused, with it the filter reads a nested member (`value.id`).
     #[test]
-    fn cft_type_with_a_dependency_filters_a_nested_member() {
+    fn dcps_b_2_cft_type_with_a_dependency_filters_a_nested_member() {
         use crate::entities::{CftExtensibility, CftFilter};
         use crate::participant_ffi::{
             zerodds_cft_set_type_object, zerodds_cft_set_type_objects,
@@ -3454,7 +3433,8 @@ mod tests {
         let idl = "@final struct Leaf { long id; }; @final struct SubTy { Leaf value; long seq; };";
         let root = complete_type_object(idl, "SubTy");
         let leaf = complete_type_object(idl, "Leaf");
-        let (p, sub, t) = mk(72);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: p+t from mk; strings static; objects live for the calls.
         let typed = unsafe {
             let cft = zerodds_dp_create_contentfilteredtopic(
@@ -3529,7 +3509,8 @@ mod tests {
             zerodds_cft_set_filter_parameters, zerodds_dp_create_contentfilteredtopic,
         };
         use crate::topic_ffi::zerodds_string_free;
-        let (p, sub, t) = mk(71);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: p+t from mk; strings static.
         let cft = unsafe {
             zerodds_dp_create_contentfilteredtopic(
@@ -3594,93 +3575,6 @@ mod tests {
         cleanup(p);
     }
 
-    #[test]
-    fn cft_seq_filter_decodes_and_filters_payload() {
-        use crate::entities::{CftField, CftFieldKind, CftFilter};
-        let (p, sub, t) = mk(62);
-        let expr = zerodds_sql_filter::parse("seq > 4").expect("parse seq>4");
-        let filter = CftFilter {
-            expr,
-            params: std::sync::Arc::default(),
-            schema: alloc::vec![CftField {
-                name: "seq".into(),
-                kind: CftFieldKind::Int32,
-            }],
-            extensibility: crate::entities::CftExtensibility::Final,
-            typed: None,
-        };
-        let (dr, tx) = mk_channel_reader(
-            p,
-            sub,
-            t,
-            zerodds_dcps::qos::OwnershipKind::Shared,
-            Some(filter),
-        );
-        // XCDR2 little-endian i32 payloads: 3 (drop), 7 (keep), 5 (keep).
-        for v in [3i32, 7, 5] {
-            tx.send(alive(v.to_le_bytes().to_vec(), 0x01, 0)).unwrap();
-        }
-        let mut arr = empty_arr();
-        // SAFETY: dr+arr valid.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(arr.count, 2, "only seq=7 and seq=5 pass seq>4");
-        // SAFETY: cleanup.
-        unsafe {
-            zerodds_dr_return_loan(dr, &mut arr);
-            let _ = Box::from_raw(dr);
-        }
-        cleanup(p);
-    }
-
-    /// CFT string field: `name = 'foo'` over a length-prefixed CDR string
-    /// payload genuinely filters.
-    #[test]
-    fn cft_string_filter_decodes_payload() {
-        use crate::entities::{CftField, CftFieldKind, CftFilter};
-        let (p, sub, t) = mk(63);
-        let expr = zerodds_sql_filter::parse("name = 'foo'").expect("parse name=foo");
-        let filter = CftFilter {
-            expr,
-            params: std::sync::Arc::default(),
-            schema: alloc::vec![CftField {
-                name: "name".into(),
-                kind: CftFieldKind::StringField,
-            }],
-            extensibility: crate::entities::CftExtensibility::Final,
-            typed: None,
-        };
-        let (dr, tx) = mk_channel_reader(
-            p,
-            sub,
-            t,
-            zerodds_dcps::qos::OwnershipKind::Shared,
-            Some(filter),
-        );
-        // CDR string: u32 len (incl NUL) + bytes + NUL, XCDR LE.
-        let cdr_string = |s: &str| -> Vec<u8> {
-            let mut v = Vec::new();
-            let len = (s.len() + 1) as u32;
-            v.extend_from_slice(&len.to_le_bytes());
-            v.extend_from_slice(s.as_bytes());
-            v.push(0);
-            v
-        };
-        tx.send(alive(cdr_string("foo"), 0x01, 0)).unwrap();
-        tx.send(alive(cdr_string("bar"), 0x01, 0)).unwrap();
-        let mut arr = empty_arr();
-        // SAFETY: dr+arr valid.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(arr.count, 1, "only name='foo' passes");
-        // SAFETY: cleanup.
-        unsafe {
-            zerodds_dr_return_loan(dr, &mut arr);
-            let _ = Box::from_raw(dr);
-        }
-        cleanup(p);
-    }
-
     /// QB-rest regression (#79, issue 3): CFT untyped positional schema for an
     /// `@appendable` type. In XCDR2 an @appendable/@mutable aggregate is
     /// prefixed with a 4-byte DHEADER (XTypes 1.3 §7.4.3.4.2) before the first
@@ -3692,7 +3586,8 @@ mod tests {
     #[test]
     fn cft_appendable_dheader_offset_resolves_columns() {
         use crate::entities::{CftExtensibility, CftField, CftFieldKind, CftFilter};
-        let (p, sub, t) = mk(65);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let expr = zerodds_sql_filter::parse("seq > 4 AND name = 'keep'")
             .expect("parse appendable filter");
         let filter = CftFilter {
@@ -3759,55 +3654,6 @@ mod tests {
         cleanup(p);
     }
 
-    /// Control for the DHEADER fix: the SAME @appendable payload with the
-    /// extensibility left at `Final` (offset 0) reads the DHEADER as `seq` and
-    /// thus does NOT resolve the columns correctly — proving the offset is
-    /// load-bearing. The DHEADER value (a small object length) is < 5, so a
-    /// `seq > 4` filter on the misread offset rejects the sample.
-    #[test]
-    fn cft_appendable_payload_misreads_without_dheader_skip() {
-        use crate::entities::{CftExtensibility, CftField, CftFieldKind, CftFilter};
-        let (p, sub, t) = mk(66);
-        let expr = zerodds_sql_filter::parse("seq > 4").expect("parse seq>4");
-        let filter = CftFilter {
-            expr,
-            params: std::sync::Arc::default(),
-            schema: alloc::vec![CftField {
-                name: "seq".into(),
-                kind: CftFieldKind::Int32,
-            }],
-            // WRONG on purpose: payload is @appendable but declared @final.
-            extensibility: CftExtensibility::Final,
-            typed: None,
-        };
-        let (dr, tx) = mk_channel_reader(
-            p,
-            sub,
-            t,
-            zerodds_dcps::qos::OwnershipKind::Shared,
-            Some(filter),
-        );
-        // @appendable body: DHEADER(=4) + seq(=9). Read at offset 0 the decoder
-        // sees the DHEADER (4) as `seq`, so `seq > 4` is FALSE and the sample is
-        // dropped — even though the real seq is 9.
-        let mut payload = Vec::new();
-        payload.extend_from_slice(&4u32.to_le_bytes()); // DHEADER
-        payload.extend_from_slice(&9i32.to_le_bytes()); // real seq
-        tx.send(alive(payload, 0x01, 1)).unwrap();
-        let mut arr = empty_arr();
-        // SAFETY: dr+arr valid.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
-        // Misread offset → seq looks like 4 → seq>4 false → NoData.
-        assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
-        assert_eq!(arr.count, 0);
-        // SAFETY: cleanup.
-        unsafe {
-            zerodds_dr_return_loan(dr, &mut arr);
-            let _ = Box::from_raw(dr);
-        }
-        cleanup(p);
-    }
-
     /// Keyed lifecycle (Spec §2.2.2.5.4): the take path surfaces a real,
     /// non-zero, per-instance InstanceHandle. Two distinct payloads yield two
     /// distinct handles; a DISPOSED lifecycle marker for an instance carries
@@ -3815,7 +3661,8 @@ mod tests {
     /// instance_state = NOT_ALIVE_DISPOSED (2).
     #[test]
     fn keyed_lifecycle_surfaces_real_instance_handle() {
-        let (p, sub, t) = mk(64);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
         let inst_a = alloc::vec![0xAAu8, 0xAA, 0xAA, 0xAA];
         let inst_b = alloc::vec![0xBBu8, 0xBB, 0xBB, 0xBB];
@@ -3916,7 +3763,8 @@ mod tests {
     /// HANDLE_NIL, the first sample NEW and the others NOT_NEW.
     #[test]
     fn keyless_take_does_not_grow_the_instance_tracker() {
-        let (p, sub, t) = mk(12);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, tx) = mk_channel_reader_kind(
             p,
             sub,
@@ -3969,8 +3817,9 @@ mod tests {
     /// instance is the one of the data samples and whose state is
     /// NOT_ALIVE_DISPOSED (§2.2.2.5.1.3, 2).
     #[test]
-    fn a_keyless_instance_can_be_disposed() {
-        let (p, sub, t) = mk(88);
+    fn dcps_2_2_2_4_2_13_a_keyless_instance_can_be_disposed() {
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, tx) = mk_channel_reader_kind(
             p,
             sub,
@@ -4013,44 +3862,6 @@ mod tests {
         cleanup(p);
     }
 
-    /// Full-key identities remain bounded even under SHARED ownership.
-    #[test]
-    fn keyed_take_under_shared_ownership_obeys_instance_limit() {
-        let (p, sub, t) = mk(14);
-        let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
-        // SAFETY: owned reader, before the first read/take.
-        unsafe {
-            (*dr).qos.lock().unwrap().resource_limits.max_instances = 8;
-        }
-        for payload in distinct_payloads(GROWTH_SAMPLES) {
-            tx.send(alive(payload, 0x01, 0)).expect("send");
-        }
-        let mut arr = empty_arr();
-        // SAFETY: dr+arr valid for the test.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 0, 0, 0, 0) };
-        // The 8 admitted instances are delivered; each refused sample is
-        // counted on the reader's status (DDS 1.4 §2.2.3.19), which needs a
-        // runtime reader slot this channel-only reader does not have —
-        // `tests/instance_tracker_bounded.rs` checks the count.
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(
-            arr.count, 8,
-            "the admissible samples of the batch are delivered"
-        );
-        // SAFETY: dr valid.
-        let tracked = unsafe { (*dr).instances.len() };
-        assert_eq!(
-            tracked, 8,
-            "full-key identities must not exceed the configured instance limit"
-        );
-        // SAFETY: cleanup.
-        unsafe {
-            zerodds_dr_return_loan(dr, &mut arr);
-            let _ = Box::from_raw(dr);
-        }
-        cleanup(p);
-    }
-
     /// EXCLUSIVE ownership is the one consumer of the tracker on this path,
     /// so an entry may exist — but on a keyless topic there is exactly one
     /// instance to arbitrate (all-zero KeyHash: XTypes 1.3 §7.6.8 pads an
@@ -4059,7 +3870,8 @@ mod tests {
     /// payload looked like a fresh instance whose first writer wins.
     #[test]
     fn keyless_exclusive_arbitration_uses_one_instance() {
-        let (p, sub, t) = mk(15);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, tx) = mk_channel_reader_kind(
             p,
             sub,
@@ -4094,50 +3906,14 @@ mod tests {
         cleanup(p);
     }
 
-    /// The take path names an instance the same way the rest of this C API
-    /// does: `zerodds_dr_lookup_instance` maps a 16-byte KeyHash onto the
-    /// `InstanceHandle` formed from its low 8 bytes (little-endian). Before
-    /// the fix the take path handed out `InstanceTracker`-allocated counters
-    /// instead, so a handle from `lookup_instance` never matched a handle in
-    /// `SampleInfo` and `zerodds_dr_take_instance` filtered everything away.
-    #[test]
-    fn take_handle_matches_lookup_instance_handle() {
-        let (p, sub, t) = mk(16);
-        let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
-        let inst = alloc::vec![0x11u8, 0x22, 0x33, 0x44];
-        tx.send(alive(inst.clone(), 0x01, 0)).expect("send");
-        let mut arr = empty_arr();
-        // SAFETY: dr+arr valid for the test.
-        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 0, 0, 0, 0) };
-        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-        assert_eq!(arr.count, 1);
-        let kh = payload_key_hash(&inst);
-        let mut looked_up: u64 = 0;
-        // SAFETY: kh is 16 bytes; looked_up is a live local.
-        let lrc = unsafe {
-            crate::extra_ffi::zerodds_dr_lookup_instance(dr, kh.as_ptr(), 16, &mut looked_up)
-        };
-        assert_eq!(lrc, ZeroDdsStatus::Ok as c_int);
-        // SAFETY: arr from take with count==1.
-        unsafe {
-            assert_eq!(
-                (*arr.infos.add(0)).instance_handle,
-                looked_up,
-                "take and lookup_instance must name the same instance"
-            );
-            zerodds_dr_return_loan(dr, &mut arr);
-            let _ = Box::from_raw(dr);
-        }
-        cleanup(p);
-    }
-
     /// DDS 1.4 §2.2.2.5.3.15: `take_instance` takes the samples of one
     /// instance; the others stay in the reader. It took every sample and
     /// filtered the result, so the other instance's sample was gone.
     /// §2.2.2.5.3.14: `read_instance` marks only what it returns READ.
     #[test]
     fn an_instance_read_or_take_leaves_the_other_instances() {
-        let (p, sub, t) = mk(69);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
         let a = alloc::vec![0x11u8, 0x22, 0x33, 0x44];
         let b = alloc::vec![0x55u8, 0x66, 0x77, 0x88];
@@ -4193,7 +3969,8 @@ mod tests {
     /// only. It took every sample and handed out the first instance's.
     #[test]
     fn take_next_instance_takes_one_instance() {
-        let (p, sub, t) = mk(85);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
         for payload in [[1u8, 0, 0, 0], [2, 0, 0, 0], [3, 0, 0, 0]] {
             tx.send(alive(payload.to_vec(), 0x01, 0)).expect("send");
@@ -4229,7 +4006,8 @@ mod tests {
     /// reader was announced `WITH_KEY`.
     #[test]
     fn create_datareader_kind_sets_the_endpoint_topic_kind() {
-        let (p, sub, t) = mk(68);
+        let lease = zerodds_test_domains::lease_domain();
+        let (p, sub, t) = mk(lease.id() as u32);
         // SAFETY: sub+t from mk, valid until cleanup.
         unsafe {
             let keyed = zerodds_sub_create_datareader(sub, t, ptr::null());

@@ -185,7 +185,7 @@ OPCUA-01..-12.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — §6.1 Acknowledgements; keine Anforderung.
 
 ### §7 UA/DDS Overview (Informative)
 
@@ -206,11 +206,11 @@ non-normative Overview.
 
 **Spec:** §8.1 (PDF) — Bridge-Architektur-Überblick (informativ).
 
-**Repo:** Cross-Ref §8.2-§8.4.
+**Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — in der Spec als "Overview (non-normative)" gekennzeichnet; die Anforderungen stehen in §8.2–§8.4.
 
 ### §8.2 OPC UA Type System Mapping
 
@@ -341,11 +341,11 @@ all_25_builtins_have_matrix_alias}`.
 
 **Spec:** §9.1 (PDF) — Bridge-Architektur DDS→UA (informativ).
 
-**Repo:** Cross-Ref §9.2-§9.3.
+**Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — in der Spec als "Overview (non-normative)" gekennzeichnet; die Anforderungen stehen in §9.2–§9.3.
 
 ### §9.2 DDS Type System Mapping
 
@@ -441,50 +441,34 @@ unknown_instance_errors}`.
 
 ### §10.1 Gateway Configuration Overview
 
-**Spec:** §10.1 (PDF) — Configuration-Modell für UA-DDS-Gateway
-(Connections, Address-Mappings, QoS).
+**Spec:** §10.1, S. 109 — "The syntax to configure the OPC UA/DDS Gateway is specified in two normative XSD files": `dds-opcua_definitions_nonamespace.xsd` und `dds-opcua_configuration.xsd` (Wurzelelement, Namespace `http://www.omg.org/spec/DDS-OPCUA`); "This is the schema file that shall be used to validate OPC UA/DDS Gateway XML configuration files."
 
-**Repo:** Cross-Ref §10.2 + Code in `crates/opcua-gateway/`.
+**Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** open — im Baum liegen die beiden XSD-Dateien nicht; `crates/opcua-gateway/src/xml.rs` validiert gegen kein Schema und liest eine eigene Syntax (Item §10.2).
 
 ### §10.2 XML Configuration
 
-**Spec:** §10, S. 109-127 — XML-Configuration-Schema für
-Gateway-Bridge-Defs (UAtoDDS / DDStoUA Connections).
+**Spec:** §10.2, S. 109–113, Table 10.1 — Konfigurationselemente: Wurzel `<dds>` (`rootType`) mit `<types>`, `<qos_libraries>` und `<ddsopcua_gateway>`, darin `<opcua_connection>`, `<domain_participant>`, `<opcua_to_dds_bridge>` (`<service_set>`, `<subscription>`, `<opcua_input>`, `<dds_output>`, `<mapping>`) und `<dds_to_opcua_bridge>` (`<domain>`, `<topic>`, `<topic_group>`); Attribute und Details nach der normativen XSD.
 
-**Repo:** `crates/opcua-gateway/src/xml.rs::parse_gateway_config`
-(`roxmltree`-basiert, gleiche Backend-Wahl wie `crates/xml/src/qos.rs`
-+ `crates/security-permissions/`). Datenmodell: `GatewayConfig` mit
-`Vec<BridgeDef>`, jede Bridge mit Domain-Id + n
-`UaConnection`-Einträgen, beide Richtungen
-(`ConnectionDirection::UaToDds` / `DdsToUa`), optionalem
-`browse_path` + `XmlNodeId` (numeric oder string).
+**Repo:** —
 
-**Tests:** `xml::tests::parses_full_two_bridge_sample`,
-`ua_to_dds_connection_yields_expected_fields`,
-`dds_to_ua_connection_uses_string_node_id`,
-`auxiliary_bridge_omits_optional_node_id_and_browse_path`,
-`malformed_xml_yields_parse_error`,
-`wrong_root_element_yields_unexpected_root_error`,
-`missing_dds_topic_yields_missing_element_error`,
-`invalid_numeric_node_id_yields_specific_error`,
-`bridge_without_name_yields_missing_attribute_error`.
+**Tests:** —
 
-**Status:** done
+**Status:** open — `crates/opcua-gateway/src/xml.rs` (`parse_gateway_config`) liest eine eigene Syntax mit Wurzel `<zerodds_opcua_gateway>`, `<bridge>`, `<ua_to_dds_connection>` und `<dds_to_ua_connection>` und weist die Wurzel `<dds>` der Spec ab; die Tests in `xml.rs` prüfen diese eigene Syntax.
 
 ---
 
 ## Audit-Status
 
-15 done / 0 partial / 0 open / 8 n/a (informative) / 0 n/a (rejected).
+14 done / 0 partial / 2 open / 0 blocked / 7 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-opcua-gateway` — 133 lib-Tests grün,
-0 failed. Module mit Tests: `address_space`, `conformance`,
-`data_value`, `dds_to_ua::naming`, `dds_to_ua::node_spec`,
-`dds_to_ua::walker`, `historical::adapter`, `historical::config`,
-`historical::qos`, `node_id`, `service_sets`
-(+ `attribute`/`method`/`query`/`view`), `subscription_mapping`
-(+ `behavior`/`config`/`variant_dds`), `types`, `xml`.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document dds-opcua-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-opcua-gateway --all-targets` (Job `merge-rust-opcua-gateway`) — 102 Tests grün.
+
+102 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `dds-opcua-1.0.open.md`.

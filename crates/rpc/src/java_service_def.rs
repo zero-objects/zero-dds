@@ -1130,7 +1130,7 @@ mod tests {
     "#;
 
     #[test]
-    fn the_example_of_seven_three_two_one_parses() {
+    fn rpc_7_3_2_the_example_of_seven_three_two_one_parses() {
         let decls = parse(ROBOT_CONTROL).expect("the example");
         assert_eq!(decls.len(), 2);
         let JavaDecl::Class(too_fast) = &decls[0] else {
@@ -1155,7 +1155,7 @@ mod tests {
     }
 
     #[test]
-    fn a_return_type_and_a_void_are_told_apart() {
+    fn rpc_7_3_2_a_return_type_and_a_void_are_told_apart() {
         let decls = parse(ROBOT_CONTROL).expect("the example");
         let JavaDecl::Interface(control) = &decls[1] else {
             panic!("an interface");
@@ -1173,7 +1173,7 @@ mod tests {
     /// `@out` and `@inout` annotations. By default the parameters are
     /// read only, and the use of `@in` is optional."
     #[test]
-    fn the_direction_annotations_of_seven_three_two_are_read() {
+    fn rpc_7_3_2_the_direction_annotations_of_seven_three_two_are_read() {
         let decls = parse(
             "interface Ops {
                void f(long implicit, @in long explicit, @out long o, @inout long io);
@@ -1201,7 +1201,7 @@ mod tests {
     /// "One or more operations may be marked oneway using the `@oneway`
     /// annotation."
     #[test]
-    fn the_oneway_annotation_is_read_and_checked() {
+    fn rpc_7_3_2_the_oneway_annotation_is_read_and_checked() {
         let decls = parse("interface Ops { @oneway void reset(); }").expect("the interface");
         let JavaDecl::Interface(ops) = &decls[0] else {
             panic!("an interface");
@@ -1252,7 +1252,7 @@ mod tests {
     /// middle segment of the topic name; `<interface_name>` still comes
     /// from the interface. It does not replace the interface name.
     #[test]
-    fn the_service_annotation_overrides_the_interface_name() {
+    fn rpc_7_4_1_the_service_annotation_overrides_the_interface_name() {
         let decls =
             parse("@DDSService(name = \"Arithmetic\") interface Calculator { long add(long a); }")
                 .expect("the interface");
@@ -1272,7 +1272,7 @@ mod tests {
     /// `@RPCReplyType`, each carrying a `header` member in the Basic
     /// Service Mapping.
     #[test]
-    fn the_pair_of_types_of_seven_three_two_two_is_found() {
+    fn rpc_7_3_2_the_pair_of_types_of_seven_three_two_two_is_found() {
         let decls = parse(
             "@RPCRequestType class AddRequest { dds.rpc.RequestHeader header; long a; }
              @RPCReplyType   class AddReply   { dds.rpc.ReplyHeader header; long sum; }",
@@ -1293,7 +1293,7 @@ mod tests {
     /// "A service definition may simply include a pair of types, which
     /// may be the same."
     #[test]
-    fn one_class_may_be_both_halves_of_the_pair() {
+    fn rpc_7_3_2_2_one_class_may_be_both_halves_of_the_pair() {
         let decls = parse(
             "@RPCRequestType @RPCReplyType class Echo { dds.rpc.RequestHeader header; long v; }",
         )
@@ -1316,7 +1316,7 @@ mod tests {
     /// `header` in either class is an Enhanced pair, as `type_pair.rs`
     /// decides it for IDL.
     #[test]
-    fn a_pair_without_headers_is_an_enhanced_pair() {
+    fn rpc_7_3_2_2_a_pair_without_headers_is_an_enhanced_pair() {
         let decls =
             parse("@RPCRequestType class Req { long a; } @RPCReplyType class Rep { long r; }")
                 .expect("the classes");
@@ -1329,7 +1329,7 @@ mod tests {
 
     /// No marked class is no pair, and says so without an error.
     #[test]
-    fn no_marked_class_is_no_pair() {
+    fn rpc_7_3_2_2_no_marked_class_is_no_pair() {
         let decls = parse("class Plain { long v; } interface Ops { long f(); }").expect("source");
         assert!(
             request_reply_pair(&decls, &TypePairOptions::default())
@@ -1349,7 +1349,7 @@ mod tests {
     /// §7.3.2.2: "Only class types shall be marked as request/reply
     /// types." A marked interface is reported, whichever half it is.
     #[test]
-    fn a_marked_interface_is_reported() {
+    fn rpc_7_3_2_2_a_marked_interface_is_reported() {
         for source in [
             "@RPCRequestType interface Req { long f(); } @RPCReplyType class Rep { long r; }",
             "@RPCRequestType class Req { long a; } @RPCReplyType interface Rep { long f(); }",
@@ -1364,7 +1364,7 @@ mod tests {
     /// the reply's the reply header; the type is checked and not only the
     /// name.
     #[test]
-    fn the_type_of_the_header_member_is_checked() {
+    fn rpc_7_3_2_2_the_type_of_the_header_member_is_checked() {
         let wrong_request = pair_error(
             "@RPCRequestType class Req { dds.rpc.ReplyHeader header; long a; }
              @RPCReplyType class Rep { dds.rpc.ReplyHeader header; long r; }",
@@ -1400,7 +1400,7 @@ mod tests {
 
     /// A `header` in one class only is neither mapping.
     #[test]
-    fn a_header_in_only_one_class_is_reported() {
+    fn rpc_7_3_2_2_a_header_in_only_one_class_is_reported() {
         let reason = pair_error(
             "@RPCRequestType class Req { dds.rpc.RequestHeader header; long a; }
              @RPCReplyType class Rep { long r; }",
@@ -1412,7 +1412,7 @@ mod tests {
     /// One half without the other, and two of a half, are reported as
     /// `type_pair.rs` reports them for IDL.
     #[test]
-    fn an_incomplete_or_ambiguous_pair_is_reported() {
+    fn rpc_7_3_2_2_an_incomplete_or_ambiguous_pair_is_reported() {
         let missing_reply = pair_error(
             "@RPCRequestType class Req { long a; }",
             &TypePairOptions::default(),
@@ -1429,7 +1429,7 @@ mod tests {
     /// `InterfaceMethodOrFieldDecl` keeps the field: a constant, whose
     /// declarator needs its value (`ConstantDeclaratorRest`).
     #[test]
-    fn a_field_in_an_interface_body_is_a_constant() {
+    fn rpc_7_3_2_a_field_in_an_interface_body_is_a_constant() {
         let decls = parse(
             "interface Ops {
                int LIMIT = 3;
@@ -1460,7 +1460,7 @@ mod tests {
     /// `VariableDeclaratorRest: {[]} [= VariableInitializer]`: dimensions
     /// after the name add to the type, as Java reads `int[] a[]`.
     #[test]
-    fn dimensions_after_the_name_belong_to_the_type() {
+    fn rpc_7_3_2_dimensions_after_the_name_belong_to_the_type() {
         let decls = parse("class C { int a[]; int[] b[]; int c[][]; int d; }").expect("the class");
         let JavaDecl::Class(class) = &decls[0] else {
             panic!("a class");
@@ -1482,7 +1482,7 @@ mod tests {
 
     /// `int a = 1;` reads the member and skips the value.
     #[test]
-    fn an_initialised_member_is_read_without_its_value() {
+    fn rpc_7_3_2_an_initialised_member_is_read_without_its_value() {
         let decls =
             parse("class C { int a = 1; String s = \"x;y\"; int[] v = {1, 2, 3}; long n; }")
                 .expect("the class");
@@ -1502,7 +1502,7 @@ mod tests {
     /// `int a, b;` declares two members of the one type, and each may
     /// carry its own dimensions and value.
     #[test]
-    fn several_declarators_share_one_type() {
+    fn rpc_7_3_2_several_declarators_share_one_type() {
         let decls = parse("class C { int a, b; long x = 1, y[] = {2, 3}, z; }").expect("the class");
         let JavaDecl::Class(class) = &decls[0] else {
             panic!("a class");
@@ -1525,7 +1525,7 @@ mod tests {
 
     /// `NormalClassDeclaration` keeps `implements TypeList`.
     #[test]
-    fn the_implements_list_of_a_class_survives() {
+    fn rpc_7_3_2_the_implements_list_of_a_class_survives() {
         let decls = parse("class C extends B implements I, java.io.Serializable { long v; }")
             .expect("the class");
         let JavaDecl::Class(class) = &decls[0] else {
@@ -1541,7 +1541,7 @@ mod tests {
     /// A method in a class body and a method body in an interface stay
     /// refused next to the data members the grammar admits.
     #[test]
-    fn a_field_does_not_make_a_method_acceptable_in_a_class() {
+    fn rpc_7_3_2_a_field_does_not_make_a_method_acceptable_in_a_class() {
         assert!(matches!(
             parse("class C { int a = 1; int f() { } }").unwrap_err(),
             RpcError::JavaSyntax { .. }
@@ -1550,7 +1550,7 @@ mod tests {
 
     /// Every production §7.3.2 removed is refused by name.
     #[test]
-    fn the_removed_productions_are_refused() {
+    fn rpc_7_3_2_the_removed_productions_are_refused() {
         for (source, what) in [
             ("interface Box<T> { long f(); }", "generic type parameters"),
             ("class Box<T> { long v; }", "generic class parameters"),
@@ -1571,7 +1571,7 @@ mod tests {
     /// "At least one method must be present in an interface. Note, Java
     /// allows empty (marker) interfaces."
     #[test]
-    fn an_empty_interface_body_is_refused() {
+    fn rpc_7_3_2_an_empty_interface_body_is_refused() {
         assert_eq!(
             parse("interface Marker { }").unwrap_err(),
             RpcError::EmptyService("Marker".to_string())
@@ -1581,7 +1581,7 @@ mod tests {
     /// "At least one data member must be defined in the class body.
     /// Note, Java allows empty classes."
     #[test]
-    fn an_empty_class_body_is_refused() {
+    fn rpc_7_3_2_an_empty_class_body_is_refused() {
         assert!(matches!(
             parse("class Empty { }").unwrap_err(),
             RpcError::JavaSyntax { .. }
@@ -1642,7 +1642,7 @@ mod tests {
     /// §7.4.2 maps every interface of the hierarchy to its own pair of
     /// topics — so the bases have to survive the read.
     #[test]
-    fn the_extends_list_survives() {
+    fn rpc_7_3_2_the_extends_list_survives() {
         let decls =
             parse("interface Derived extends Base, Other { long f(); }").expect("the interface");
         let JavaDecl::Interface(derived) = &decls[0] else {
@@ -1654,7 +1654,7 @@ mod tests {
     /// `InterfaceMemberDecl` keeps a nested interface and a nested
     /// class declaration.
     #[test]
-    fn a_nested_declaration_is_kept() {
+    fn rpc_7_3_2_a_nested_declaration_is_kept() {
         let decls = parse(
             "interface Outer {
                long f();

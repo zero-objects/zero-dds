@@ -34,7 +34,7 @@ fn eventually(cond: impl Fn() -> bool) -> bool {
 }
 
 #[test]
-fn the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer() {
+fn rpc_7_6_2_1_1_the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer() {
     let cfg = isolated_cfg();
     let domain = unique_domain();
     let factory = DomainParticipantFactory::instance();
@@ -100,7 +100,7 @@ fn the_rpc_extension_of_a_writer_and_a_reader_reaches_the_matched_peer() {
 }
 
 #[test]
-fn a_discovery_string_longer_than_256_is_refused() {
+fn rpc_7_6_2_1_1_a_discovery_string_longer_than_256_is_refused() {
     let cfg = isolated_cfg();
     let domain = unique_domain();
     let p = ParticipantGuard::new(

@@ -477,7 +477,7 @@ mod tests {
     /// most specific RDN first, `,` escaped), and an ACL entry may name the
     /// DN or the fingerprint.
     #[test]
-    fn the_mtls_subject_is_the_dn_and_the_acl_also_takes_the_fingerprint() {
+    fn corbabridge_7_3_the_mtls_subject_is_the_dn_and_the_acl_also_takes_the_fingerprint() {
         let mut p = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
         p.distinguished_name
             .push(rcgen::DnType::OrganizationName, "Example, Inc");

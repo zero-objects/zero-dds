@@ -171,7 +171,7 @@ fn encode_cdr_string(s: &str, out: &mut Vec<u8>) {
     out.extend_from_slice(bytes);
     out.push(0);
     // 4-byte-Alignment
-    while out.len() % 4 != 0 {
+    while !out.len().is_multiple_of(4) {
         out.push(0);
     }
 }
@@ -189,7 +189,7 @@ fn decode_cdr_string(bytes: &[u8]) -> Result<(String, &[u8]), TraceContextError>
         .map_err(|_| TraceContextError::InvalidCdrString)?
         .to_string();
     let mut consumed = 4 + len;
-    while consumed % 4 != 0 {
+    while !consumed.is_multiple_of(4) {
         consumed += 1;
     }
     let rest = if consumed <= bytes.len() {

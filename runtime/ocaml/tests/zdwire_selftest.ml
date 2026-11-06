@@ -104,5 +104,76 @@ let () =
   check "a UTF-8 wstring reads back"
     (Zdwire.read_wstring_utf8_octets r "octets/terminated/2" = "\xc3\xa4\xc3\xb6\xc3\xbc \xe1\x88\xb4 Z");
 
+  (* -- the operations no corpus case reaches -----------------------------
+
+     The five the generated code reaches only in a dialect or with a member
+     no corpus case carries: write_pid_extended, write_union_overlay,
+     reader_clear_discard, reader_save and reader_restore
+     (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+     vectors, each against an oracle outside this code. *)
+  let specification : Zdwire.framing =
+    { Zdwire.pid_flags = "sentinel-must-understand"; highest_short_id = 16128;
+      pad_declared_length = false; pad_declared_optional_length = false;
+      member_must_understand = true; pad_after_value = true } in
+
+  (* The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+     recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv). *)
+  let pid = Zdwire.new_writer Zdwire.Little 8 specification false in
+  let header = Zdwire.write_pid_extended pid 0 Zdwire.Role_member false in
+  Zdwire.write_i32 pid (-1234567l);
+  Zdwire.finish_pid pid header;
+  check "write_pid_extended writes Cyclone's recorded parameter"
+    (hex (Zdwire.finish pid) = "017f0800" ^ "00000000" ^ "04000000" ^ "7929edff");
+
+  (* A `short` read through a four-octet and a one-octet `default:` branch:
+     Cyclone DDS 11.0.1 writes the union's storage, the member's octets with
+     zeros above (`combined-everything`, crates/wire-codec/src/encode.rs
+     `write_selected_branch`). *)
+  let overlay = Zdwire.new_writer Zdwire.Little 4 specification false in
+  let pattern = Zdwire.bit_pattern_int (-2L) 2 in
+  Zdwire.write_union_overlay overlay pattern 4;
+  Zdwire.write_union_overlay overlay pattern 1;
+  check "write_union_overlay writes the storage at the branch's width"
+    (hex (Zdwire.finish overlay) = "feff0000" ^ "fe");
+
+  (* XTypes 1.3 section 7.2.2.4.4.4.9: a member's explicit @default comes
+     before Table 9's value, so the call site asks for DISCARD and takes it
+     back. Any other refusal is not a narrowing and stays. *)
+  let discarded = Zdwire.new_reader "\x01\x02\x03\x04" Zdwire.Little 4 specification in
+  Zdwire.reader_refuse discarded Zdwire.St_discarded;
+  check "reader_clear_discard takes back a discarded"
+    (Zdwire.reader_clear_discard discarded && Zdwire.reader_status discarded = Zdwire.St_ok);
+  let refused = Zdwire.new_reader "\x01\x02\x03\x04" Zdwire.Little 4 specification in
+  Zdwire.reader_refuse refused Zdwire.St_out_of_range;
+  check "reader_clear_discard leaves an out-of-range"
+    ((not (Zdwire.reader_clear_discard refused))
+     && Zdwire.reader_status refused = Zdwire.St_out_of_range);
+
+  (* XTypes 1.3 section 7.4.3.5.3 rule (15): a delimited map<long, long> as
+     its DHEADER and the pairs, without a count. The reader counts the pairs,
+     goes back and reads them again; a refusal made while counting goes back
+     with the cursor. *)
+  let map = Zdwire.new_reader
+      "\x10\x00\x00\x00\x01\x00\x00\x00\x0a\x00\x00\x00\x02\x00\x00\x00\x14\x00\x00\x00"
+      Zdwire.Little 4 specification in
+  let extent = Zdwire.read_dheader map in
+  let end_at = Zdwire.reader_position map + extent in
+  let mark = Zdwire.reader_save map in
+  let pairs = ref 0 in
+  while Zdwire.reader_position map < end_at && Zdwire.reader_status map = Zdwire.St_ok do
+    ignore (Zdwire.read_i32 map);
+    ignore (Zdwire.read_i32 map);
+    incr pairs
+  done;
+  Zdwire.reader_refuse map Zdwire.St_out_of_range;
+  Zdwire.reader_restore map mark;
+  let k1 = Zdwire.read_i32 map in
+  let v1 = Zdwire.read_i32 map in
+  let k2 = Zdwire.read_i32 map in
+  let v2 = Zdwire.read_i32 map in
+  check "reader_save and reader_restore count a delimited map and read it again"
+    (!pairs = 2 && k1 = 1l && v1 = 10l && k2 = 2l && v2 = 20l
+     && Zdwire.reader_position map = 20 && Zdwire.reader_status map = Zdwire.St_ok);
+
   if !failed then exit 1;
   print_endline "zdwire_selftest: ok"

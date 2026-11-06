@@ -1,0 +1,85 @@
+.TH ZERODDS-MQ 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-mq \- DDS-Bridge zwischen Domänen
+.SH ÜBERSICHT
+.B zerodds-mq
+[\fBbridge\fR]
+\fB\-\-src\-domain\fR \fIN\fR
+\fB\-\-dst\-domain\fR \fIM\fR
+\fB\-t\fR \fITOPIC\fR
+[\fB\-\-src\-topic\fR \fIN\fR]
+[\fB\-\-dst\-topic\fR \fIN\fR]
+[\fB\-\-duration\fR \fIDAUER\fR]
+[\fB\-\-bidirectional\fR]
+.SH BESCHREIBUNG
+.B zerodds-mq
+betreibt zwei DCPS-Laufzeitumgebungen (eine je DDS-Domäne) und leitet
+untypisierte Samples von
+.B \-\-src\-topic
+in
+.B \-\-src\-domain
+an
+.B \-\-dst\-topic
+in
+.B \-\-dst\-domain
+weiter. Die kodierte Nutzlast bleibt Byte für Byte erhalten.
+.PP
+Mit
+.B \-\-bidirectional
+fließen Samples in beide Richtungen.
+.SH OPTIONEN
+.TP
+.BR \-\-src\-domain " " \fIID\fR
+ID der Quelldomäne. Standard: 0.
+.TP
+.BR \-\-dst\-domain " " \fIID\fR
+ID der Zieldomäne. Muss sich von \-\-src\-domain unterscheiden. Standard: 1.
+.TP
+.BR \-t ", " \-\-topic " " \fINAME\fR
+Derselbe Topic-Name auf beiden Seiten.
+.TP
+.BR \-\-src\-topic " " \fINAME\fR
+Name des Quell-Topics (überschreibt \-t).
+.TP
+.BR \-\-dst\-topic " " \fINAME\fR
+Name des Ziel-Topics (überschreibt \-t).
+.TP
+.BR \-\-duration " " \fIDAUER\fR
+Nach dieser Dauer beenden (5, 30s, 2m, 1h). Standard: bis SIGINT.
+.TP
+.BR \-\-bidirectional
+Verkehr in beide Richtungen spiegeln.
+.TP
+.BR \-\-config " " \fIPFAD\fR
+Die Basis-Konfigurationsdatei; das danebenliegende
+.IR PFAD .d/
+enthält Drop-ins. Standard: das System-Konfigurationsverzeichnis
+.RI ( /etc/zerodds
+unter Linux,
+.I /usr/local/etc/zerodds
+unter macOS).
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH EXIT-STATUS
+.TP
+.B 0
+Erfolg.
+.TP
+.B 2
+Fehler beim Parsen der Kommandozeile.
+.TP
+.B 3
+DDS- oder E/A-Fehler.
+.SH SIEHE AUCH
+.BR zerodds-spy (1),
+.BR zerodds-snitch (1)
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

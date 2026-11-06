@@ -123,7 +123,7 @@ fn build(compiler: &str, root: &Path) -> PathBuf {
 /// §7.11.1.5: the generated client and service, a server, and the codec
 /// between them.
 #[test]
-fn the_generated_client_calls_the_generated_service() {
+fn rpc_7_2_2_3_the_generated_client_calls_the_generated_service() {
     let Some(compiler) = compiler() else {
         println!(
             "no C++ compiler on this machine — the function-call binding is not measured here"

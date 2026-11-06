@@ -73,6 +73,26 @@ zerodds-router run --routes router.json --types shapes.json
 Routes without a `filter`/`transform` forward bytes verbatim and need no type
 information.
 
+A key the model does not read is refused; a key that begins with `_` is a
+comment (`"_comment": "…"`). Left out, an endpoint's QoS is RELIABLE,
+VOLATILE and SHARED.
+
+### Validation
+
+A configuration is refused, with the reason, when
+
+* two routes have the same name;
+* the input and the output of a route disagree on `keyed`;
+* a route reads and writes the same domain, topic and partition with
+  `"loop_guard": false`;
+* `type_file` stands on the input endpoint, or on a route that is not keyed;
+* a relay route (`"relay": true`, forwarding unchanged on the writer's behalf,
+  DDS-Security 1.2 §7.1.1.4) has another domain, topic or type on its output,
+  a filter or a transform;
+* an `access_control` list is present and an endpoint matches none of its
+  `allow` rules. A rule names a tenant (left out: any), a domain and topic
+  globs, where `*` matches any run of characters and `?` one.
+
 A keyed route forwards a dispose or unregister by its key hash. Without a type
 the output marker carries `PID_KEY_HASH` alone, and Cyclone DDS 11.0.1 and
 OpenDDS 3.35 do not act on it (measured: the instances stay `ALIVE`).
@@ -114,17 +134,18 @@ let m = router.route_metrics("telemetry").unwrap();
 println!("forwarded {} samples", m.forwarded);
 ```
 
+A route with `"preserve_source_timestamp": true` writes each sample with the
+source timestamp it came in with instead of the router's clock.
+`"max_samples_per_second": n` forwards at most a burst of `n` samples, then
+`n` per second, and counts the rest as dropped.
+
 ## Limitations
 
-* **`preserve_source_timestamp`** is parsed but rejected at route build: the
-  runtime user byte-path does not surface a sample's source timestamp, so the
-  router cannot reproduce it. Wiring `source_timestamp` through the user byte
-  path is the prerequisite follow-up — the option fails loudly rather than being
-  silently ignored.
 * **Filter / transform** operate on flat `@final` / `@appendable` structs of
-  scalar and string members (the common routing case), decoded little-endian.
-  Nested structs, sequences, unions and `@mutable` member headers are a
-  documented extension; byte pass-through routing has no such restriction.
+  scalar and string members (the common routing case), read in the format and
+  the byte order the sample's encapsulation header names. Nested structs,
+  sequences, unions and `@mutable` member headers are refused per sample;
+  byte pass-through routing has no such restriction.
 * **Loop guard** covers router-*internal* loops (within one process). Loops
   spanning two separate `zerodds-router` processes need a discovery
   discriminator (a router tag in `user_data`), which the DCPS builtin
@@ -132,17 +153,24 @@ println!("forwarded {} samples", m.forwarded);
 
 ## Tests
 
-`cargo test -p zerodds-routing-service --all-features` runs the unit suite
-(config, XML, byte-exact XCDR1/XCDR2/appendable-DHEADER codec, SQL bridge,
-transform planning) plus the end-to-end suite over real DDS participants:
+`cargo test -p zerodds-routing-service` runs the unit tests (configuration and
+its validation, the XML forms, the codec against the vendors' octets of the
+interop corpus, the SQL filter, the transform, the rate limit) and the targets
+over real participants on leased domains:
 
-* `forward_cross_domain` — app writer → router → reader across a domain bridge
-  with topic rename; bodies arrive verbatim.
+* `encapsulation_forwarding`, `byte_order_processing` — a forwarded sample keeps
+  the representation identifier it came in; filter and transform read the body
+  in the format and byte order of its header.
 * `loop_guard` — a bidirectional bridge does not feed back on itself.
-* `filter_transform` — a SQL content filter drops non-matching samples on the
-  wire.
-* `keyed_lifecycle` — a dispose event forwards across domains and flips the
-  downstream instance state to `NOT_ALIVE_DISPOSED`.
+* `relay_route` — a relay route forwards on behalf of the writer.
+* `preserve_timestamp` — the source timestamp survives the route.
+* `key_holder_reaches_the_output_datagram` — a forwarded dispose carries its key.
+
+The daemon between writer and reader processes, with topic renaming and a
+content filter, is the scenario `services::routing_forwards_and_filters` of the
+integration pillar (`tests/integration`). A routed dispose read by Cyclone DDS
+and Fast DDS (`dispose_reaches_a_foreign_reader`, ignored here) runs in the
+weekly job `vendor-live-dispose-services`.
 
 ## License
 

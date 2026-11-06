@@ -127,7 +127,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn register_then_observers_lists_one() {
+    fn coap_3_register_then_observers_lists_one() {
         let mut r = ObserveRegistry::new();
         r.register("path/a".into(), alloc::vec![1], alloc::vec![]);
         assert_eq!(r.observers_of("path/a").len(), 1);
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn next_seq_increments_per_observer() {
+    fn coap_3_next_seq_increments_per_observer() {
         let mut r = ObserveRegistry::new();
         r.register("p".into(), alloc::vec![1], alloc::vec![]);
         r.register("p".into(), alloc::vec![2], alloc::vec![]);
@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn next_seq_wraps_at_24_bits() {
+    fn coap_3_next_seq_wraps_at_24_bits() {
         let mut r = ObserveRegistry::new();
         r.register("p".into(), alloc::vec![1], alloc::vec![]);
         // Force sequence to 2^24-1 manually.
@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn notifications_are_ordered_by_sequence_number_per_spec_3_4() {
+    fn coap_3_notifications_are_ordered_by_sequence_number_per_spec_3_4() {
         // RFC 7641 §3.4: v2 is fresher when it is ahead of v1 by less
         // than 2^23 within the same 128-second window.
         assert!(notification_is_fresher(10, 0, 11, 1_000));
@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn wrapped_sequence_number_is_still_recognised_as_fresher() {
+    fn coap_3_wrapped_sequence_number_is_still_recognised_as_fresher() {
         // §3.4, second clause: v1 > v2 but the gap exceeds 2^23, so
         // the counter has wrapped past 2^24 and v2 is the newer one.
         let v1 = 0x00ff_ffff;
@@ -210,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn notification_older_than_the_freshness_window_is_always_accepted() {
+    fn coap_3_notification_older_than_the_freshness_window_is_always_accepted() {
         // §3.4, third clause: after 128 seconds the sequence-number
         // comparison is abandoned and the new notification wins.
         assert!(!notification_is_fresher(500, 0, 100, FRESHNESS_WINDOW_MS));
@@ -224,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn deregister_ends_the_observe_relationship_per_spec_3_6() {
+    fn coap_3_deregister_ends_the_observe_relationship_per_spec_3_6() {
         // §3.6: the server removes the client from the list of
         // observers; no further notification is emitted for it.
         let mut r = ObserveRegistry::new();

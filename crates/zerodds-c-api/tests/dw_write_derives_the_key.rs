@@ -58,7 +58,7 @@ fn body(id: i32, value: i32) -> Vec<u8> {
 }
 
 #[test]
-fn a_write_registers_the_instance_of_the_key_its_body_carries() {
+fn capi_14_7_a_write_registers_the_instance_of_the_key_its_body_carries() {
     let lease = zerodds_test_domains::lease_domain();
     let type_name = "KeyedPointD";
     let type_object = keyed_type_object(type_name);

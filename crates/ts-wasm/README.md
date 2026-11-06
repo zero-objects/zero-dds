@@ -17,14 +17,17 @@ combines the wasm codec glue with the DCPS layer).
 - `CdrEncoder` — writes primitives, strings, bytes
 - `CdrDecoder` — reads primitives, strings
 - LE/BE endianness via 0/1 constants
-- alignment for XCDR1-conform padding
+- the encoding version as the constructors' second argument: 1 (XCDR1,
+  `MAXALIGN` 8, the default) or 2 (XCDR2, `MAXALIGN` 4), DDS-XTypes 1.3
+  §7.4.3.2.2 Table 37; `encodingXcdr1()`, `encodingXcdr2()`, `maxAlign()`
 - DDS-TS 1.0 vendor-spec-conform TS PSM (see
   `documentation/specs/dds-ts-1.0/`)
 - **DDS-TS 1.0 Annex C WASM-Bindings Profile** — a browser DCPS runtime
   (`src/dcps/`): `DomainParticipantFactory.instance()`,
   `createParticipantWebSocket(url, domain)`, and the participant / topic /
-  publisher / subscriber / writer / reader entities, speaking the
-  `crates/websocket-bridge` JSON protocol over a WebSocket transport. Both the
+  publisher / subscriber / writer / reader entities, speaking the binary
+  frames of zerodds-ws-bridge-1.0 §4.3 to the daemon `zerodds-ws-bridged`, a
+  WebSocket connection per topic on the topic's path (§4.2). Both the
   fluent facade (`facade.ts`) and the normative flat C.2 operations
   (`operations.ts`, signature-for-signature with the spec) are exported.
 
@@ -72,7 +75,7 @@ pub/sub roundtrip plus the Annex C.2 flat operations and C.5.3 handle cleanup.
 ```ts
 import init, { CdrEncoder } from "@zerodds/wasm";
 await init();
-const enc = new CdrEncoder(0); // little-endian
+const enc = new CdrEncoder(0, 2); // little-endian, XCDR2
 enc.writeU32(temperature);
 enc.writeString(sensorId);
 const cdr = enc.finish();

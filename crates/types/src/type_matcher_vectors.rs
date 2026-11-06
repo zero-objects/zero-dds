@@ -100,7 +100,7 @@ fn float_int_cross_type_mismatch() {
 /// String8 bounds are IGNORED by default (TCE default).
 /// Writer-bound 256 > reader-bound 64 → match anyway.
 #[test]
-fn string_bounds_ignored_by_default_tce() {
+fn xtypes_7_6_3_4_1_string_bounds_ignored_by_default_tce() {
     let tce = default_tce();
     let m = TypeMatcher::new(&tce);
     let w = TypeIdentifier::String8Small { bound: 255 };
@@ -110,7 +110,7 @@ fn string_bounds_ignored_by_default_tce() {
 
 /// If `ignore_string_bounds=false`, writer bound must be ≤ reader bound.
 #[test]
-fn string_bound_overflow_rejected_when_strict() {
+fn xtypes_7_6_3_4_1_string_bound_overflow_rejected_when_strict() {
     let mut tce = default_tce();
     tce.ignore_string_bounds = false;
     let m = TypeMatcher::new(&tce);
@@ -136,7 +136,7 @@ fn string8_vs_string16_mismatch() {
 /// sequence<int32, 100> ↔ sequence<int32, 10>: bounds ignored by
 /// default, accepted.
 #[test]
-fn sequence_bounds_ignored_by_default_tce() {
+fn xtypes_7_6_3_4_1_sequence_bounds_ignored_by_default_tce() {
     use crate::type_identifier::PlainCollectionHeader;
     use alloc::boxed::Box;
     let tce = default_tce();
@@ -180,7 +180,7 @@ fn array_different_bounds_mismatch() {
 
 /// DisallowTypeCoercion + default flags: no match.
 #[test]
-fn disallow_coercion_rejects_int16_int32() {
+fn xtypes_7_6_3_4_1_disallow_coercion_rejects_int16_int32() {
     let mut tce = default_tce();
     tce.kind = TypeConsistencyKind::DisallowTypeCoercion;
     let m = TypeMatcher::new(&tce);
@@ -191,7 +191,7 @@ fn disallow_coercion_rejects_int16_int32() {
 
 /// AllowTypeCoercion + PreventTypeWidening: no match.
 #[test]
-fn prevent_widening_rejects_int16_int32() {
+fn xtypes_7_6_3_4_1_prevent_widening_rejects_int16_int32() {
     let mut tce = default_tce();
     tce.prevent_type_widening = true;
     let m = TypeMatcher::new(&tce);
@@ -292,7 +292,7 @@ fn map_small_large_cross_encoding_matches() {
 /// the same primitive type, not for a value-preserving one. The suite's
 /// `struct_uint8_uint32` expects `INCONSISTENT_TOPIC`.
 #[test]
-fn uint8_to_uint32_widening_does_not_match() {
+fn xtypes_7_2_4_4_4_uint8_to_uint32_widening_does_not_match() {
     let tce = default_tce();
     let m = TypeMatcher::new(&tce);
     let w = TypeIdentifier::Primitive(PrimitiveKind::UInt8);

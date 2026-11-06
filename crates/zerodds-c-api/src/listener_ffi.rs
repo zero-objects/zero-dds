@@ -737,29 +737,33 @@ fn fire_writer_vtable(
     dw_ptr: *mut ZeroDdsDataWriter,
 ) -> usize {
     let mut n = 0;
-    if d.matched && (mask & STATUS_PUBLICATION_MATCHED) != 0 {
-        if let Some(cb) = on_publication_matched {
-            cb(user_data, dw_ptr);
-            n += 1;
-        }
+    if d.matched
+        && (mask & STATUS_PUBLICATION_MATCHED) != 0
+        && let Some(cb) = on_publication_matched
+    {
+        cb(user_data, dw_ptr);
+        n += 1;
     }
-    if d.liveliness_lost && (mask & STATUS_LIVELINESS_LOST) != 0 {
-        if let Some(cb) = on_liveliness_lost {
-            cb(user_data, dw_ptr);
-            n += 1;
-        }
+    if d.liveliness_lost
+        && (mask & STATUS_LIVELINESS_LOST) != 0
+        && let Some(cb) = on_liveliness_lost
+    {
+        cb(user_data, dw_ptr);
+        n += 1;
     }
-    if d.deadline && (mask & STATUS_OFFERED_DEADLINE_MISSED) != 0 {
-        if let Some(cb) = on_offered_deadline_missed {
-            cb(user_data, dw_ptr);
-            n += 1;
-        }
+    if d.deadline
+        && (mask & STATUS_OFFERED_DEADLINE_MISSED) != 0
+        && let Some(cb) = on_offered_deadline_missed
+    {
+        cb(user_data, dw_ptr);
+        n += 1;
     }
-    if d.qos && (mask & STATUS_OFFERED_INCOMPATIBLE_QOS) != 0 {
-        if let Some(cb) = on_offered_incompatible_qos {
-            cb(user_data, dw_ptr);
-            n += 1;
-        }
+    if d.qos
+        && (mask & STATUS_OFFERED_INCOMPATIBLE_QOS) != 0
+        && let Some(cb) = on_offered_incompatible_qos
+    {
+        cb(user_data, dw_ptr);
+        n += 1;
     }
     n
 }
@@ -787,48 +791,55 @@ fn fire_reader_vtable(
     dr_ptr: *mut ZeroDdsDataReader,
 ) -> usize {
     let mut n = 0;
-    if d.matched && (mask & STATUS_SUBSCRIPTION_MATCHED) != 0 {
-        if let Some(cb) = on_subscription_matched {
-            cb(user_data, dr_ptr);
-            n += 1;
-        }
+    if d.matched
+        && (mask & STATUS_SUBSCRIPTION_MATCHED) != 0
+        && let Some(cb) = on_subscription_matched
+    {
+        cb(user_data, dr_ptr);
+        n += 1;
     }
-    if d.sample_lost && (mask & STATUS_SAMPLE_LOST) != 0 {
-        if let Some(cb) = on_sample_lost {
-            cb(user_data, dr_ptr);
-            n += 1;
-        }
+    if d.sample_lost
+        && (mask & STATUS_SAMPLE_LOST) != 0
+        && let Some(cb) = on_sample_lost
+    {
+        cb(user_data, dr_ptr);
+        n += 1;
     }
-    if d.deadline && (mask & STATUS_REQUESTED_DEADLINE_MISSED) != 0 {
-        if let Some(cb) = on_requested_deadline_missed {
-            cb(user_data, dr_ptr);
-            n += 1;
-        }
+    if d.deadline
+        && (mask & STATUS_REQUESTED_DEADLINE_MISSED) != 0
+        && let Some(cb) = on_requested_deadline_missed
+    {
+        cb(user_data, dr_ptr);
+        n += 1;
     }
-    if d.qos && (mask & STATUS_REQUESTED_INCOMPATIBLE_QOS) != 0 {
-        if let Some(cb) = on_requested_incompatible_qos {
-            cb(user_data, dr_ptr);
-            n += 1;
-        }
+    if d.qos
+        && (mask & STATUS_REQUESTED_INCOMPATIBLE_QOS) != 0
+        && let Some(cb) = on_requested_incompatible_qos
+    {
+        cb(user_data, dr_ptr);
+        n += 1;
     }
-    if d.liveliness && (mask & STATUS_LIVELINESS_CHANGED) != 0 {
-        if let Some(cb) = on_liveliness_changed {
-            cb(user_data, dr_ptr);
-            n += 1;
-        }
+    if d.liveliness
+        && (mask & STATUS_LIVELINESS_CHANGED) != 0
+        && let Some(cb) = on_liveliness_changed
+    {
+        cb(user_data, dr_ptr);
+        n += 1;
     }
-    if d.rejected && (mask & STATUS_SAMPLE_REJECTED) != 0 {
-        if let Some(cb) = on_sample_rejected {
-            cb(user_data, dr_ptr);
-            n += 1;
-        }
+    if d.rejected
+        && (mask & STATUS_SAMPLE_REJECTED) != 0
+        && let Some(cb) = on_sample_rejected
+    {
+        cb(user_data, dr_ptr);
+        n += 1;
     }
-    if d.data && (mask & STATUS_DATA_AVAILABLE) != 0 {
-        if let Some(cb) = on_data_available {
-            let _scope = DataListenerScope::enter();
-            cb(user_data, dr_ptr);
-            n += 1;
-        }
+    if d.data
+        && (mask & STATUS_DATA_AVAILABLE) != 0
+        && let Some(cb) = on_data_available
+    {
+        let _scope = DataListenerScope::enter();
+        cb(user_data, dr_ptr);
+        n += 1;
     }
     n
 }
@@ -1255,12 +1266,13 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
                 any_data = true;
             }
         }
-        if any_data && (*mask & STATUS_DATA_ON_READERS) != 0 {
-            if let Some(cb) = l.on_data_on_readers {
-                let _scope = DataListenerScope::enter();
-                cb(l.user_data, *sk as *mut ZeroDdsSubscriber);
-                fired += 1;
-            }
+        if any_data
+            && (*mask & STATUS_DATA_ON_READERS) != 0
+            && let Some(cb) = l.on_data_on_readers
+        {
+            let _scope = DataListenerScope::enter();
+            cb(l.user_data, *sk as *mut ZeroDdsSubscriber);
+            fired += 1;
         }
     }
 
@@ -1280,12 +1292,11 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
             if any
                 && (*mask & STATUS_DATA_ON_READERS) != 0
                 && sub_nil_mask & STATUS_DATA_ON_READERS == 0
+                && let Some(cb) = l.on_data_on_readers
             {
-                if let Some(cb) = l.on_data_on_readers {
-                    let _scope = DataListenerScope::enter();
-                    cb(l.user_data, *subk as *mut ZeroDdsSubscriber);
-                    fired += 1;
-                }
+                let _scope = DataListenerScope::enter();
+                cb(l.user_data, *subk as *mut ZeroDdsSubscriber);
+                fired += 1;
             }
         }
         // inconsistent_topic: participant runtime counter delta.
@@ -1298,25 +1309,26 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
             .ok()
             .and_then(|m| m.get(dk).copied())
             .unwrap_or(0);
-        if now_ic > prev_ic && (*mask & STATUS_INCONSISTENT_TOPIC) != 0 {
-            if let Some(cb) = l.on_inconsistent_topic {
-                // SAFETY: first topic of the participant (or NULL).
-                let tptr = unsafe {
-                    let dp = &*(*dk as *mut ZeroDdsDomainParticipant);
-                    dp.topics
-                        .lock()
-                        .ok()
-                        .and_then(|g| g.first().copied())
-                        .unwrap_or(core::ptr::null_mut())
-                };
-                // A 'nil' listener of the topic handles it.
-                let handled_by_nil = topic_nil
-                    .get(&(tptr as usize))
-                    .is_some_and(|m| m & STATUS_INCONSISTENT_TOPIC != 0);
-                if !handled_by_nil {
-                    cb(l.user_data, tptr);
-                    fired += 1;
-                }
+        if now_ic > prev_ic
+            && (*mask & STATUS_INCONSISTENT_TOPIC) != 0
+            && let Some(cb) = l.on_inconsistent_topic
+        {
+            // SAFETY: first topic of the participant (or NULL).
+            let tptr = unsafe {
+                let dp = &*(*dk as *mut ZeroDdsDomainParticipant);
+                dp.topics
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.first().copied())
+                    .unwrap_or(core::ptr::null_mut())
+            };
+            // A 'nil' listener of the topic handles it.
+            let handled_by_nil = topic_nil
+                .get(&(tptr as usize))
+                .is_some_and(|m| m & STATUS_INCONSISTENT_TOPIC != 0);
+            if !handled_by_nil {
+                cb(l.user_data, tptr);
+                fired += 1;
             }
         }
         if let Ok(mut m) = reg.ic_counters.lock() {
@@ -1342,11 +1354,12 @@ pub unsafe extern "C" fn zerodds_poll_listeners() -> usize {
             .ok()
             .and_then(|m| m.get(tk).copied())
             .unwrap_or(0);
-        if now_ic > prev_ic && (*mask & STATUS_INCONSISTENT_TOPIC) != 0 {
-            if let Some(cb) = l.on_inconsistent_topic {
-                cb(l.user_data, *tk as *mut ZeroDdsTopic);
-                fired += 1;
-            }
+        if now_ic > prev_ic
+            && (*mask & STATUS_INCONSISTENT_TOPIC) != 0
+            && let Some(cb) = l.on_inconsistent_topic
+        {
+            cb(l.user_data, *tk as *mut ZeroDdsTopic);
+            fired += 1;
         }
         if let Ok(mut m) = reg.ic_counters.lock() {
             m.insert(*tk, now_ic);
@@ -1415,10 +1428,11 @@ mod tests {
     }
 
     #[test]
-    fn dp_set_get_listener_roundtrip() {
+    fn capi_14_5_dp_set_get_listener_roundtrip() {
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 81, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         assert!(unsafe { zerodds_dp_get_listener(p) }.is_null());
         let l = ZeroDdsDomainParticipantListener {
@@ -1444,10 +1458,11 @@ mod tests {
     }
 
     #[test]
-    fn pub_sub_topic_set_get_listener_roundtrip() {
+    fn capi_14_5_pub_sub_topic_set_get_listener_roundtrip() {
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 82, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         let nm = c"GetListenerTopic";
         let tn = c"GetListenerType";
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -1495,11 +1510,12 @@ mod tests {
     }
 
     #[test]
-    fn poll_listeners_returns_count_and_clears_state() {
+    fn ffiloader_2_6_poll_listeners_returns_count_and_clears_state() {
         let _guard = poll_guard();
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 91, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         let n = c"PT";
         let tn = c"TT";
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -1531,11 +1547,12 @@ mod tests {
     }
 
     #[test]
-    fn poll_fires_data_available_and_data_on_readers() {
+    fn ffiloader_2_6_poll_fires_data_available_and_data_on_readers() {
         let _guard = poll_guard();
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 93, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         let tn = c"DAtopic";
         let ty = c"DAtype";
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -1624,8 +1641,9 @@ mod tests {
     fn poll_a_nil_listener_stops_the_level_above() {
         let _guard = poll_guard();
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 95, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         let tn = c"NilTopic";
         let ty = c"NilType";
         // SAFETY: as above.
@@ -1709,11 +1727,12 @@ mod tests {
     }
 
     #[test]
-    fn poll_fires_inconsistent_topic_for_topic_and_participant() {
+    fn ffiloader_2_6_poll_fires_inconsistent_topic_for_topic_and_participant() {
         let _guard = poll_guard();
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 94, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         let tn = c"ITtopic";
         let ty = c"ITtype";
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -1771,10 +1790,11 @@ mod tests {
     }
 
     #[test]
-    fn dw_set_listener_clear_via_null() {
+    fn ffiloader_2_6_dw_set_listener_clear_via_null() {
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 82, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         let n = c"T";
         let tn = c"TT";
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -1814,8 +1834,9 @@ mod tests {
     fn notify_datareaders_calls_on_data_available_once_per_change() {
         let _guard = poll_guard();
         let f = zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let p = unsafe { zerodds_dpf_create_participant(f, 95, ptr::null()) };
+        let p = unsafe { zerodds_dpf_create_participant(f, lease.id() as u32, ptr::null()) };
         let tn = c"NotifyTopic";
         let ty = c"NotifyType";
         // SAFETY: as above.

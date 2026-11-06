@@ -4,6 +4,7 @@
 //! `std::net::UdpSocket`.
 
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6, UdpSocket};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
@@ -221,11 +222,12 @@ impl ConnectedSocketCache {
     /// Returns `true` if an eviction took place.
     fn insert(&mut self, addr: SocketAddr, sock: UdpSocket) -> bool {
         let mut evicted = false;
-        if !self.entries.contains_key(&addr) && self.entries.len() >= self.max_entries {
-            if let Some(oldest) = self.insertion_order.pop_front() {
-                self.entries.remove(&oldest);
-                evicted = true;
-            }
+        if !self.entries.contains_key(&addr)
+            && self.entries.len() >= self.max_entries
+            && let Some(oldest) = self.insertion_order.pop_front()
+        {
+            self.entries.remove(&oldest);
+            evicted = true;
         }
         if self.entries.insert(addr, sock).is_none() {
             self.insertion_order.push_back(addr);
@@ -276,6 +278,8 @@ pub struct UdpTransport {
     priority_sockets: std::sync::Mutex<alloc::collections::BTreeMap<(bool, u8), UdpSocket>>,
     /// [`UdpTransportConfig::max_message_size`].
     max_message_size: usize,
+    /// [`Transport::close`] ran: every `recv` fails from now on.
+    read_closed: std::sync::atomic::AtomicBool,
 }
 
 impl UdpTransport {
@@ -491,6 +495,7 @@ impl UdpTransport {
             connected_cache,
             priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
             max_message_size: cfg.max_message_size,
+            read_closed: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -550,6 +555,7 @@ impl UdpTransport {
             connected_cache,
             priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
             max_message_size: cfg.max_message_size,
+            read_closed: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -594,6 +600,7 @@ impl UdpTransport {
             connected_cache,
             priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
             max_message_size: cfg.max_message_size,
+            read_closed: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -782,6 +789,7 @@ impl UdpTransport {
                 connected_cache,
                 priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
                 max_message_size: cfg.max_message_size,
+                read_closed: std::sync::atomic::AtomicBool::new(false),
             },
             joined,
         ))
@@ -827,6 +835,7 @@ impl UdpTransport {
             connected_cache: None,
             priority_sockets: std::sync::Mutex::new(alloc::collections::BTreeMap::new()),
             max_message_size: cfg.max_message_size,
+            read_closed: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -1032,25 +1041,25 @@ impl Transport for UdpTransport {
         // Fast path: connected-cache hit. `send()` on a connected UDP
         // socket saves the per-send kernel route lookup (~1.18 µs
         // measured on macOS loopback, ~0.5 µs on Linux).
-        if let Ok(cache) = cache_lock.read() {
-            if let Some(sock) = cache.get(&addr) {
-                return match sock.send(data) {
-                    Ok(_) => {
-                        counters.packets_sent.inc();
-                        counters.bytes_sent.add(data.len() as u64);
-                        counters.cache_hits.inc();
-                        #[cfg(feature = "inspect")]
-                        dispatch_transport_tap("udp:send", data);
-                        Ok(())
-                    }
-                    Err(_) => {
-                        counters.send_errors.inc();
-                        Err(SendError::Io {
-                            message: "udp send (connected) failed",
-                        })
-                    }
-                };
-            }
+        if let Ok(cache) = cache_lock.read()
+            && let Some(sock) = cache.get(&addr)
+        {
+            return match sock.send(data) {
+                Ok(_) => {
+                    counters.packets_sent.inc();
+                    counters.bytes_sent.add(data.len() as u64);
+                    counters.cache_hits.inc();
+                    #[cfg(feature = "inspect")]
+                    dispatch_transport_tap("udp:send", data);
+                    Ok(())
+                }
+                Err(_) => {
+                    counters.send_errors.inc();
+                    Err(SendError::Io {
+                        message: "udp send (connected) failed",
+                    })
+                }
+            };
         }
 
         // Slow path: first send to this target. Bind+connect+send,
@@ -1072,11 +1081,11 @@ impl Transport for UdpTransport {
         // set to n bytes — jitter mitigation against the small
         // ephemeral-socket default-buffer problem (the Linux test host
         // bench 2026-05-25). Errors here are non-fatal (best effort).
-        if let Ok(cache_ro) = cache_lock.read() {
-            if let Some(sndbuf) = cache_ro.sndbuf_bytes {
-                let sock_ref = socket2::SockRef::from(&new_sock);
-                let _ = sock_ref.set_send_buffer_size(sndbuf);
-            }
+        if let Ok(cache_ro) = cache_lock.read()
+            && let Some(sndbuf) = cache_ro.sndbuf_bytes
+        {
+            let sock_ref = socket2::SockRef::from(&new_sock);
+            let _ = sock_ref.set_send_buffer_size(sndbuf);
         }
         new_sock.connect(addr).map_err(|_| SendError::Io {
             message: "udp connect failed",
@@ -1087,10 +1096,10 @@ impl Transport for UdpTransport {
                 message: "udp send (connect-cache miss) failed",
             }
         })?;
-        if let Ok(mut cache) = cache_lock.write() {
-            if cache.insert(addr, new_sock) {
-                counters.cache_evictions.inc();
-            }
+        if let Ok(mut cache) = cache_lock.write()
+            && cache.insert(addr, new_sock)
+        {
+            counters.cache_evictions.inc();
         }
         counters.packets_sent.inc();
         counters.bytes_sent.add(data.len() as u64);
@@ -1100,8 +1109,18 @@ impl Transport for UdpTransport {
     }
 
     fn recv(&self) -> Result<ReceivedDatagram, RecvError> {
+        if self.read_closed.load(Ordering::Acquire) {
+            return Err(READ_CLOSED);
+        }
         let mut buf = [0u8; MAX_DATAGRAM_SIZE];
-        let (len, peer) = self.socket.recv_from(&mut buf).map_err(|e| {
+        let received = self.socket.recv_from(&mut buf);
+        // What a read shut down by `close` returns differs by platform
+        // (Linux: no datagram and no sender address, which `recv_from`
+        // reports as an invalid argument); the flag says what it was.
+        if self.read_closed.load(Ordering::Acquire) {
+            return Err(READ_CLOSED);
+        }
+        let (len, peer) = received.map_err(|e| {
             if e.kind() == std::io::ErrorKind::WouldBlock
                 || e.kind() == std::io::ErrorKind::TimedOut
             {
@@ -1124,7 +1143,10 @@ impl Transport for UdpTransport {
         let data: Arc<[u8]> = Arc::from(&buf[..len]);
         #[cfg(feature = "inspect")]
         dispatch_transport_tap("udp:recv", &data);
-        Ok(ReceivedDatagram { source, data })
+        Ok(ReceivedDatagram {
+            source,
+            data: data.into(),
+        })
     }
 
     /// Linux `recvmmsg` batch recv (Opt-2, spec `zerodds-zero-copy-1.0` §9):
@@ -1140,6 +1162,9 @@ impl Transport for UdpTransport {
     /// blocking [`Transport::recv`].
     #[cfg(all(feature = "recvmmsg-batch", target_os = "linux"))]
     fn recv_batch(&self, out: &mut Vec<ReceivedDatagram>, max: usize) -> Result<usize, RecvError> {
+        if self.read_closed.load(Ordering::Acquire) {
+            return Err(READ_CLOSED);
+        }
         if max == 0 {
             return Ok(0);
         }
@@ -1172,7 +1197,27 @@ impl Transport for UdpTransport {
     fn local_locator(&self) -> Locator {
         self.local_locator
     }
+
+    /// Ends the receiving: every `recv` after it fails, and one that waits
+    /// on this socket returns. The socket's read side is shut down
+    /// (`shutdown(SHUT_RD)`); on Linux that wakes a thread blocked in
+    /// `recvfrom` at once, also on a socket that is not connected, so the
+    /// owner's receive thread does not wait out its read timeout. Where
+    /// the shutdown of an unconnected UDP socket wakes nothing (macOS
+    /// refuses it with `ENOTCONN`, XNU `soshutdown`) a waiting `recv`
+    /// returns with the next datagram or at its read timeout. Sending
+    /// stays possible: a participant sends its SPDP departure from its
+    /// metatraffic socket after its receive threads have ended.
+    fn close(&self) {
+        self.read_closed.store(true, Ordering::Release);
+        let _ = socket2::SockRef::from(&self.socket).shutdown(std::net::Shutdown::Read);
+    }
 }
+
+/// What a `recv` of a [`UdpTransport`] returns after [`Transport::close`].
+const READ_CLOSED: RecvError = RecvError::Io {
+    message: "udp transport closed",
+};
 
 #[cfg(feature = "inspect")]
 fn dispatch_transport_tap(label: &str, data: &[u8]) {
@@ -1203,7 +1248,7 @@ mod tests {
     }
 
     #[test]
-    fn bind_v4_returns_local_locator_with_assigned_port() {
+    fn rtps_7_6_bind_v4_returns_local_locator_with_assigned_port() {
         let t = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
         let loc = t.local_locator();
         assert_eq!(loc.kind, LocatorKind::UdpV4);
@@ -1212,7 +1257,7 @@ mod tests {
     }
 
     #[test]
-    fn loopback_send_and_recv_delivers_datagram() {
+    fn rtps_7_6_loopback_send_and_recv_delivers_datagram() {
         let (sender, receiver) = make_loopback_pair();
         let dest = receiver.local_locator();
         let payload = b"hello rtps";
@@ -1287,7 +1332,7 @@ mod tests {
     /// larger with EMSGSIZE, so every larger datagram failed (a multi-process test chain:
     /// the TRANSIENT_LOCAL contracts never arrived).
     #[test]
-    fn without_the_cache_a_largest_datagram_arrives() {
+    fn rtps_9_5_without_the_cache_a_largest_datagram_arrives() {
         let cfg = UdpTransportConfig {
             connected_cache_enabled: false,
             ..UdpTransportConfig::default()
@@ -1401,7 +1446,7 @@ mod tests {
     }
 
     #[test]
-    fn send_recv_v6_loopback() {
+    fn rtps_7_5_send_recv_v6_loopback() {
         let receiver = UdpTransport::bind_v6(Ipv6Addr::LOCALHOST, 0).expect("recv bind");
         let sender = UdpTransport::bind_v6(Ipv6Addr::LOCALHOST, 0).expect("send bind");
         receiver
@@ -1491,7 +1536,7 @@ mod tests {
     fn alloc_one_placeholder(t: &UdpTransport) -> Vec<ReceivedDatagram> {
         alloc::vec![ReceivedDatagram {
             source: t.local_locator(),
-            data: Arc::from(&b"placeholder"[..]),
+            data: Arc::<[u8]>::from(&b"placeholder"[..]).into(),
         }]
     }
 
@@ -1517,6 +1562,46 @@ mod tests {
             .expect("timeout");
         let res = t.recv();
         assert!(matches!(res, Err(RecvError::Timeout)), "got {res:?}");
+    }
+
+    /// `close` ends the receiving and leaves the sending: every `recv`
+    /// after it fails at once, and on Linux one that waits returns at once
+    /// (a runtime's shutdown joins the thread waiting in it, and the join
+    /// took up to the socket's read timeout). The transport still sends.
+    #[test]
+    fn close_ends_the_receiving_and_leaves_the_sending() {
+        let (t, peer) = make_loopback_pair();
+        let t = Arc::new(
+            t.with_timeout(Some(Duration::from_secs(10)))
+                .expect("timeout"),
+        );
+        #[cfg(target_os = "linux")]
+        {
+            let waiting = Arc::clone(&t);
+            let receiver = std::thread::spawn(move || waiting.recv());
+            // Into its wait, far short of the ten seconds it has.
+            std::thread::sleep(Duration::from_millis(50));
+            let closed = std::time::Instant::now();
+            t.close();
+            let result = receiver.join().expect("the receiver returns");
+            assert!(matches!(result, Err(RecvError::Io { .. })), "{result:?}");
+            assert!(
+                closed.elapsed() < Duration::from_secs(1),
+                "the waiting recv returned {:?} after close",
+                closed.elapsed()
+            );
+        }
+        #[cfg(not(target_os = "linux"))]
+        t.close();
+        let started = std::time::Instant::now();
+        let later = t.recv();
+        assert!(matches!(later, Err(RecvError::Io { .. })), "{later:?}");
+        assert!(started.elapsed() < Duration::from_secs(1));
+        t.send(&peer.local_locator(), b"after close").expect("send");
+        assert_eq!(
+            &peer.recv().expect("the peer receives").data[..],
+            b"after close"
+        );
     }
 
     #[test]
@@ -1659,7 +1744,7 @@ mod tests {
     }
 
     #[test]
-    fn loopback_multiple_datagrams_in_order() {
+    fn rtps_7_6_loopback_multiple_datagrams_in_order() {
         let (sender, receiver) = make_loopback_pair();
         let dest = receiver.local_locator();
         for i in 0u8..5 {
@@ -1729,7 +1814,7 @@ mod tests {
     /// sends in one datagram: the configured one, 1472 by default, and never
     /// more than a UDP datagram holds.
     #[test]
-    fn max_message_size_is_the_configured_one_up_to_the_datagram_limit() {
+    fn rtps_8_4_14_1_max_message_size_is_the_configured_one_up_to_the_datagram_limit() {
         let t = UdpTransport::bind_v4(Ipv4Addr::LOCALHOST, 0).expect("bind");
         assert_eq!(t.max_message_size(), 1472);
         let cfg = UdpTransportConfig {

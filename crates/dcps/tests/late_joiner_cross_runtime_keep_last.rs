@@ -47,6 +47,7 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
             kind: LivelinessKind::Automatic,
             ..Default::default()
         },
+        reliable: true,
         ..Default::default()
     }
 }

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // XCDR2 canonical-layout regression (Bug XW cross-PSM convergence): the
 // exact bytes pin the spec framing so the runtime cannot regress.
-// Cross-vendor-validated golden: internal/idl-codegen/xcdr2-canonical-layout.md.
+// The bytes agree with the cross-vendor-validated Rust reference golden.
 module x {
   @final
   struct AlignProbe {

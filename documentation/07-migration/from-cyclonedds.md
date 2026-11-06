@@ -94,7 +94,7 @@ ZeroDDS does not read the Cyclone XML configuration. The common settings in
 
 ## Mixed deployment
 
-Cyclone and ZeroDDS discover each other with the defaults. Two settings matter:
+Cyclone and ZeroDDS discover each other with the defaults. Three settings matter:
 
 - A Cyclone reader that accepts only XCDR2 (`-x 2` in the OMG shape
   application) needs `wire.data_representation_offer: [XCDR2]` on the ZeroDDS
@@ -102,6 +102,13 @@ Cyclone and ZeroDDS discover each other with the defaults. Two settings matter:
 - A domain tag on the Cyclone side (`Discovery/Tag`) needs the same
   `discovery.domain_tag`; with different tags, or a tag on one side only, the
   two do not see each other.
+- A Cyclone reader built with its type library announces its type, and its
+  `idlc` leaves `IS_MUST_UNDERSTAND` off a `@key` member. The reader announces
+  no TypeConsistencyEnforcement, so by DDS-XTypes it requires the identical
+  type, and a ZeroDDS writer of a keyed type that announces its TypeObject does
+  not match it. `wire.rtps_dialect: cyclone` (or
+  `xtypes.key_must_understand: implied`) matches the two; so does
+  `@must_understand` on the key in the Cyclone IDL.
 
 To see Cyclone's `ddsperf` samples arrive:
 

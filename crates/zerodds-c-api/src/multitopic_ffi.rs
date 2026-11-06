@@ -576,7 +576,7 @@ pub unsafe extern "C" fn zerodds_multitopic_reader_read(
 unsafe fn free_body(sample: ZeroDdsMultiTopicSample) {
     if !sample.data.is_null() {
         // SAFETY: a boxed slice of `len` octets that `zerodds_multitopic_reader_read` leaked.
-        drop(unsafe { Box::from_raw(core::slice::from_raw_parts_mut(sample.data, sample.len)) });
+        drop(unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(sample.data, sample.len)) });
     }
 }
 
@@ -593,7 +593,7 @@ pub unsafe extern "C" fn zerodds_multitopic_samples_free(
         return;
     }
     // SAFETY: the pointer and length of the boxed slice that call leaked.
-    let array = unsafe { Box::from_raw(core::slice::from_raw_parts_mut(samples, count)) };
+    let array = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(samples, count)) };
     for sample in array.iter() {
         // SAFETY: allocated by that call.
         unsafe { free_body(*sample) };

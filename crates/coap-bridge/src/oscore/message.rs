@@ -387,67 +387,61 @@ mod tests {
         (client, server)
     }
 
-    #[test]
-    fn protect_unprotect_get_roundtrip() {
-        let (client, server) = ctx_pair();
-        let inner = CoapMessage {
-            version: 1,
-            message_type: MessageType::Confirmable,
-            code: CoapCode::new(0, 1), // GET
-            message_id: 0x1234,
-            token: alloc::vec![0xAB, 0xCD],
-            options: alloc::vec![
-                CoapOption::uri_path("temperature"),
-                CoapOption::new(numbers::URI_HOST, OptionValue::String("example.com".into())), // class U
-            ],
-            payload: Vec::new(),
-        };
-        let outer = protect_request_message(&client, &[], None, &[0x14], &inner).unwrap();
-        // Outer is a POST carrying the OSCORE option; payload is the ciphertext.
-        assert_eq!(outer.code, CoapCode::new(0, 2));
-        assert!(outer.options.iter().any(|o| o.number == OSCORE_OPTION));
-        assert!(outer.options.iter().any(|o| o.number == numbers::URI_HOST)); // class-U kept outer
-        assert!(!outer.payload.is_empty());
+    fn octets(hex: &str) -> Vec<u8> {
+        (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect()
+    }
 
-        let back = server.clone();
-        let recovered = unprotect_request_message(&back, &outer).unwrap();
-        assert_eq!(recovered.code, CoapCode::new(0, 1)); // inner GET recovered
-        assert_eq!(recovered.token, alloc::vec![0xAB, 0xCD]);
-        // class-E Uri-Path recovered (as opaque bytes == "temperature").
-        let up = recovered
-            .options
-            .iter()
-            .find(|o| o.number == numbers::URI_PATH)
-            .unwrap();
-        assert_eq!(up.value.to_wire_bytes(), b"temperature");
-        // class-U Uri-Host carried through.
-        assert!(
-            recovered
-                .options
-                .iter()
-                .any(|o| o.number == numbers::URI_HOST)
-        );
+    // RFC 8613 Appendix C.4 (Test Vector 4): the GET of Appendix C.1's
+    // client, Sender Sequence Number 20.
+    const C4_REQUEST: &str = "44015d1f00003974396c6f63616c686f737483747631";
+    const C4_PROTECTED: &str =
+        "44025d1f00003974396c6f63616c686f7374620914ff612f1092f1776f1c1668b3825e";
+    // Appendix C.7 and C.8: the 2.05 response "Hello World!" to it.
+    const C7_RESPONSE: &str = "64455d1f00003974ff48656c6c6f20576f726c6421";
+    const C7_PROTECTED: &str = "64445d1f0000397490ffdbaad1e9a7e7b2a813d3c31524378303cdafae119106";
+    const C8_PROTECTED: &str =
+        "64445d1f00003974920100ff4d4c13669384b67354b2b6175ff4b8658c666a6cf88e";
+
+    #[test]
+    fn rfc8613_c_4_a_request_is_protected_and_read_as_test_vector_4() {
+        let (client, server) = ctx_pair();
+        let inner = crate::codec::decode(&octets(C4_REQUEST)).unwrap();
+        let outer = protect_request_message(&client, &[], None, &[0x14], &inner).unwrap();
+        assert_eq!(crate::codec::encode(&outer).unwrap(), octets(C4_PROTECTED));
+        let read = unprotect_request_message(
+            &server,
+            &crate::codec::decode(&octets(C4_PROTECTED)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(crate::codec::encode(&read).unwrap(), octets(C4_REQUEST));
     }
 
     #[test]
-    fn protect_unprotect_with_payload() {
+    fn rfc8613_c_7_a_response_without_partial_iv_is_test_vector_7() {
         let (client, server) = ctx_pair();
-        let inner = CoapMessage {
-            version: 1,
-            message_type: MessageType::NonConfirmable,
-            code: CoapCode::new(0, 2), // POST
-            message_id: 1,
-            token: alloc::vec![0x01],
-            options: alloc::vec![CoapOption::new(
-                numbers::CONTENT_FORMAT,
-                OptionValue::Uint(0)
-            )],
-            payload: b"hello world".to_vec(),
-        };
-        let outer = protect_request_message(&client, &[], None, &[0x07], &inner).unwrap();
-        let recovered = unprotect_request_message(&server.clone(), &outer).unwrap();
-        assert_eq!(recovered.payload, b"hello world");
-        assert_eq!(recovered.code, CoapCode::new(0, 2));
+        let inner = crate::codec::decode(&octets(C7_RESPONSE)).unwrap();
+        let outer = protect_response_message(&server, &[0x01], &[], &[0x14], None, &inner).unwrap();
+        assert_eq!(crate::codec::encode(&outer).unwrap(), octets(C7_PROTECTED));
+        let protected = crate::codec::decode(&octets(C7_PROTECTED)).unwrap();
+        let read = unprotect_response_message(&client, &[0x01], &[], &[0x14], &protected).unwrap();
+        assert_eq!(crate::codec::encode(&read).unwrap(), octets(C7_RESPONSE));
+    }
+
+    #[test]
+    fn rfc8613_c_8_a_response_with_its_own_partial_iv_is_test_vector_8() {
+        let (client, server) = ctx_pair();
+        let inner = crate::codec::decode(&octets(C7_RESPONSE)).unwrap();
+        let outer = protect_response_message(&server, &[0x01], &[], &[0x14], Some(&[0x00]), &inner)
+            .unwrap();
+        assert_eq!(crate::codec::encode(&outer).unwrap(), octets(C8_PROTECTED));
+        let protected = crate::codec::decode(&octets(C8_PROTECTED)).unwrap();
+        let read = unprotect_response_message(&client, &[0x01], &[], &[0x14], &protected).unwrap();
+        assert_eq!(crate::codec::encode(&read).unwrap(), octets(C7_RESPONSE));
+        // §5.4: the AAD carries the request's Partial IV; another one fails.
+        assert!(unprotect_response_message(&client, &[0x01], &[], &[0x15], &protected).is_err());
     }
 
     #[test]
@@ -466,55 +460,6 @@ mod tests {
         let n = outer.payload.len();
         outer.payload[n - 1] ^= 0x01; // flip a tag byte
         assert!(unprotect_request_message(&server.clone(), &outer).is_err());
-    }
-
-    #[test]
-    fn protect_unprotect_response_roundtrip_without_piv() {
-        let (client, server) = ctx_pair();
-        let inner = CoapMessage {
-            version: 1,
-            message_type: MessageType::Acknowledgement,
-            code: CoapCode::new(2, 5), // 2.05 Content
-            message_id: 0x1234,
-            token: alloc::vec![0xAB],
-            options: alloc::vec![CoapOption::new(
-                numbers::CONTENT_FORMAT,
-                OptionValue::Uint(0)
-            )],
-            payload: b"Hello World!".to_vec(),
-        };
-        // Server answers the request kid=[] (client Sender ID) piv=0x14.
-        let outer = protect_response_message(&server, &[0x01], &[], &[0x14], None, &inner).unwrap();
-        assert_eq!(outer.code, CoapCode::new(2, 4)); // outer 2.04 Changed (§4.2)
-        let osc = outer
-            .options
-            .iter()
-            .find(|o| o.number == OSCORE_OPTION)
-            .unwrap();
-        assert!(osc.value.to_wire_bytes().is_empty()); // no kid, no PIV (§8.3)
-        let back = unprotect_response_message(&client, &[0x01], &[], &[0x14], &outer).unwrap();
-        assert_eq!(back.code, CoapCode::new(2, 5));
-        assert_eq!(back.payload, b"Hello World!");
-    }
-
-    #[test]
-    fn protect_unprotect_response_roundtrip_with_own_piv() {
-        let (client, server) = ctx_pair();
-        let inner = CoapMessage {
-            version: 1,
-            message_type: MessageType::NonConfirmable,
-            code: CoapCode::new(2, 5),
-            message_id: 7,
-            token: alloc::vec![0x01],
-            options: Vec::new(),
-            payload: b"notify".to_vec(),
-        };
-        let outer = protect_response_message(&server, &[0x01], &[], &[0x14], Some(&[0x03]), &inner)
-            .unwrap();
-        let back = unprotect_response_message(&client, &[0x01], &[], &[0x14], &outer).unwrap();
-        assert_eq!(back.payload, b"notify");
-        // Wrong request PIV in the AAD -> verification fails.
-        assert!(unprotect_response_message(&client, &[0x01], &[], &[0x15], &outer).is_err());
     }
 
     #[test]

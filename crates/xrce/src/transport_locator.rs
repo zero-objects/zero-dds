@@ -108,7 +108,7 @@ pub enum TransportLocator {
 }
 
 fn align_out(out: &mut Vec<u8>, n: usize) {
-    while out.len() % n != 0 {
+    while !out.len().is_multiple_of(n) {
         out.push(0);
     }
 }
@@ -414,7 +414,7 @@ mod tests {
     /// The union and the struct of its case carry no @extensibility (Annex
     /// A): APPENDABLE, a DHEADER each (DDS-XTypes 1.3 §7.3.1.2.1.8).
     #[test]
-    fn by_default_the_union_and_its_case_have_a_dheader() {
+    fn xrce_7_7_by_default_the_union_and_its_case_have_a_dheader() {
         let le = medium(7400).encode(Endianness::Little).unwrap();
         assert_eq!(
             le,
@@ -467,7 +467,7 @@ mod tests {
     /// discriminator. The `unsigned short` is aligned to 2: one padding octet
     /// after the address, then the port in the byte order of the E flag.
     #[test]
-    fn medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag() {
+    fn xrce_8_3_4_2_medium_has_a_padding_octet_and_a_port_in_the_byte_order_of_the_flag() {
         final_form(|| {
             let le = medium(7400).encode(Endianness::Little).unwrap();
             assert_eq!(le, alloc::vec![1, 192, 168, 0, 5, 0, 0xE8, 0x1C]);
@@ -485,7 +485,7 @@ mod tests {
     /// locator_port; }`: the `unsigned long` is aligned to 4, three padding
     /// octets after the 16 address octets.
     #[test]
-    fn large_has_three_padding_octets_and_a_32_bit_port() {
+    fn xrce_11_2_1_large_has_three_padding_octets_and_a_32_bit_port() {
         final_form(|| {
             let address = [
                 0xFE, 0x80, 0, 0, 0, 0, 0, 0, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
@@ -517,7 +517,7 @@ mod tests {
     /// locator_port; }` — three octets after the discriminator, nothing
     /// aligned.
     #[test]
-    fn small_is_two_address_octets_and_a_one_octet_port() {
+    fn xrce_annex_a_small_is_two_address_octets_and_a_one_octet_port() {
         final_form(|| {
             let l = TransportLocator::Small(TransportLocatorSmall {
                 address: [10, 1],
@@ -535,7 +535,7 @@ mod tests {
     /// A `string` is an `unsigned long` length (aligned to 4, so three
     /// padding octets after the discriminator), the characters and a NUL.
     #[test]
-    fn string_length_is_aligned_to_four() {
+    fn xrce_annex_a_string_length_is_aligned_to_four() {
         final_form(|| {
             let l = TransportLocator::String("udpv4://1.2.3.4:5".into());
             let enc = l.encode(Endianness::Little).unwrap();
@@ -557,7 +557,7 @@ mod tests {
     /// The spec puts no cap of 256 on the string; only the size of a
     /// submessage limits it.
     #[test]
-    fn a_long_string_locator_is_not_cut_at_256() {
+    fn xrce_annex_a_a_long_string_locator_is_not_cut_at_256() {
         let l = TransportLocator::String("a".repeat(1000));
         let enc = l.encode(Endianness::Little).unwrap();
         assert_eq!(
@@ -577,7 +577,7 @@ mod tests {
     /// one-octet prefix the same Medium locator needs no padding before its
     /// port (the port then starts at offset 6).
     #[test]
-    fn padding_is_counted_from_the_start_of_the_payload() {
+    fn xrce_7_7_padding_is_counted_from_the_start_of_the_payload() {
         final_form(|| {
             let mut out = alloc::vec![0xAAu8];
             medium(7400)
@@ -591,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    fn a_locator_sequence_is_a_count_and_aligned_locators() {
+    fn xrce_annex_a_a_locator_sequence_is_a_count_and_aligned_locators() {
         let locators = alloc::vec![
             medium(2018),
             TransportLocator::Large(TransportLocatorLarge {
@@ -623,7 +623,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_discriminator_rejected() {
+    fn xrce_annex_a_unknown_discriminator_rejected() {
         let res = TransportLocator::decode(&[0x99, 0, 0, 0, 0, 0, 0], Endianness::Little);
         assert!(matches!(res, Err(XrceError::ValueOutOfRange { .. })));
         // 0x04 and 0x05 are no TransportLocatorFormat.
@@ -651,7 +651,7 @@ mod tests {
     }
 
     #[test]
-    fn a_string_without_its_nul_is_refused() {
+    fn xrce_annex_a_a_string_without_its_nul_is_refused() {
         let bytes = alloc::vec![fmt_disc::STRING, 0, 0, 0, 2, 0, 0, 0, b'a', b'b'];
         assert!(matches!(
             TransportLocator::decode(&bytes, Endianness::Little),
@@ -662,7 +662,7 @@ mod tests {
     /// §11.2.1: the UDP locator of an agent carries the agent's port as a
     /// number, whatever the byte order of the message.
     #[test]
-    fn a_udp_locator_carries_the_default_agent_port() {
+    fn xrce_11_2_1_a_udp_locator_carries_the_default_agent_port() {
         for domain in [0u16, 1, 5] {
             let port = crate::transport_udp::agent_default_port(domain);
             for e in [Endianness::Little, Endianness::Big] {

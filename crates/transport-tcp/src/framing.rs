@@ -132,7 +132,7 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
-    fn roundtrip_small_frame() {
+    fn tcp_1_2_roundtrip_small_frame() {
         let mut buf = alloc::vec::Vec::new();
         write_frame(&mut buf, b"hello").unwrap();
         assert_eq!(buf.len(), 4 + 5);
@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_empty_frame() {
+    fn tcp_2_1_roundtrip_empty_frame() {
         let mut buf = alloc::vec::Vec::new();
         write_frame(&mut buf, &[]).unwrap();
         assert_eq!(buf, 0u32.to_be_bytes());
@@ -153,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_oversized_announcement() {
+    fn tcp_2_3_rejects_oversized_announcement() {
         let mut bad = alloc::vec::Vec::new();
         bad.extend_from_slice(&(MAX_FRAME_SIZE + 1).to_be_bytes());
         let mut cur = Cursor::new(&bad);
@@ -167,7 +167,7 @@ mod tests {
     }
 
     #[test]
-    fn unexpected_eof_mid_header() {
+    fn tcp_2_4_unexpected_eof_mid_header() {
         let short = alloc::vec![0u8, 0u8];
         let mut cur = Cursor::new(&short);
         let err = read_frame(&mut cur).unwrap_err();
@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn unexpected_eof_mid_payload() {
+    fn tcp_2_4_unexpected_eof_mid_payload() {
         let mut bad = alloc::vec::Vec::new();
         bad.extend_from_slice(&10u32.to_be_bytes());
         bad.extend_from_slice(&[1, 2, 3]); // only 3 of 10
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn two_frames_back_to_back() {
+    fn tcp_2_1_two_frames_back_to_back() {
         let mut buf = alloc::vec::Vec::new();
         write_frame(&mut buf, b"aaa").unwrap();
         write_frame(&mut buf, b"bbbb").unwrap();
@@ -215,7 +215,7 @@ mod tests {
     /// `read_frame` must still reassemble the announced length and the
     /// complete payload.
     #[test]
-    fn reassembles_frame_split_across_reads() {
+    fn tcp_2_2_reassembles_frame_split_across_reads() {
         let payload: alloc::vec::Vec<u8> = (0..=255u8).cycle().take(4096).collect();
         let mut wire = alloc::vec::Vec::new();
         write_frame(&mut wire, &payload).unwrap();
@@ -259,7 +259,7 @@ mod tests {
     /// are one frame on the wire, so the reader must return exactly one
     /// payload and leave the stream positioned behind it.
     #[test]
-    fn reassembles_message_split_across_two_writes() {
+    fn tcp_2_2_reassembles_message_split_across_two_writes() {
         let payload = b"the second half arrives in a separate write";
         let split = payload.len() / 2;
 

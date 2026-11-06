@@ -55,7 +55,7 @@ class OptionalMemberWireTest {
     }
 
     @Test
-    void aPresentOptionalOfAFinalStructureHasTheBooleanBeforeIt() {
+    void xtypes_7_4_3_5_2_a_present_optional_member_of_a_final_structure_has_the_boolean_before_it() {
         ReflectionTypeSupport<FinalSample> ts = ReflectionTypeSupport.of(FinalSample.class);
         byte[] bytes = ts.encode(finalSample(2147483647));
         assertArrayEquals(hex("7929edff01000000ffffff7ffeffffff"), bytes);
@@ -65,7 +65,7 @@ class OptionalMemberWireTest {
     }
 
     @Test
-    void anAbsentOptionalOfAFinalStructureIsTheBooleanZeroAlone() {
+    void xtypes_7_4_3_5_2_an_absent_optional_member_of_a_final_structure_is_the_boolean_zero_alone() {
         ReflectionTypeSupport<FinalSample> ts = ReflectionTypeSupport.of(FinalSample.class);
         byte[] bytes = ts.encode(finalSample(null));
         assertArrayEquals(hex("7929edff00000000feffffff"), bytes);
@@ -76,7 +76,7 @@ class OptionalMemberWireTest {
     }
 
     @Test
-    void anOptionalOfAnAppendableStructureHasTheBooleanBeforeItAfterTheDheader() {
+    void xtypes_7_4_3_5_2_an_optional_member_of_an_appendable_structure_has_the_boolean_after_the_dheader() {
         ReflectionTypeSupport<AppendableSample> ts =
                 ReflectionTypeSupport.of(AppendableSample.class);
         AppendableSample s = new AppendableSample();

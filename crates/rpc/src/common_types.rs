@@ -544,33 +544,103 @@ mod tests {
         )
     }
 
+    /// Octets from a hex string; blanks separate the fields.
+    fn octets(hex: &str) -> Vec<u8> {
+        let digits: String = hex.chars().filter(|c| !c.is_whitespace()).collect();
+        (0..digits.len() / 2)
+            .map(|i| u8::from_str_radix(&digits[2 * i..2 * i + 2], 16).unwrap())
+            .collect()
+    }
+
+    /// `sample_id()`: the GUID 01..10, the sequence number high
+    /// `0xDEADBEEF`, low `0xCAFEBABE`.
+    const SAMPLE_ID_LE: &str = "0102030405060708090a0b0c0d0e0f10 efbeadde bebafeca";
+    const SAMPLE_ID_BE: &str = "0102030405060708090a0b0c0d0e0f10 deadbeef cafebabe";
+
+    /// §7.5.1.1.1: `SampleIdentity` is the writer's GUID (16 octets), then
+    /// the `SequenceNumber_t` as `long high`, `unsigned long low`, in the
+    /// byte order of the stream.
     #[test]
-    fn sample_identity_roundtrip_le() {
+    fn rpc_7_5_1_1_1_a_sample_identity_is_the_guid_then_high_then_low() {
         let id = sample_id();
-        let bytes = id.to_cdr_le();
-        assert_eq!(bytes.len(), 24);
-        let back = SampleIdentity::from_cdr_le(&bytes).unwrap();
-        assert_eq!(id, back);
+        assert_eq!(id.to_cdr_le(), octets(SAMPLE_ID_LE));
+        assert_eq!(id.to_cdr_be(), octets(SAMPLE_ID_BE));
+        assert_eq!(
+            SampleIdentity::from_cdr_le(&octets(SAMPLE_ID_LE)).unwrap(),
+            id
+        );
+        assert_eq!(
+            SampleIdentity::from_cdr_be(&octets(SAMPLE_ID_BE)).unwrap(),
+            id
+        );
+    }
+
+    /// §7.5.1.1.1: `RequestHeader` is `requestId`, then `instanceName`
+    /// (`string<255>`: length with the NUL, the characters, the NUL).
+    #[test]
+    fn rpc_7_5_1_1_1_a_request_header_is_the_identity_then_the_instance_name() {
+        // "calc-instance-1": 15 characters, a length of 16.
+        let name = "63616c632d696e7374616e63652d3100";
+        for (h, le, be) in [
+            (
+                RequestHeader::new(sample_id(), "calc-instance-1"),
+                format!("{SAMPLE_ID_LE} 10000000 {name}"),
+                format!("{SAMPLE_ID_BE} 00000010 {name}"),
+            ),
+            (
+                RequestHeader::new(sample_id(), ""),
+                format!("{SAMPLE_ID_LE} 01000000 00"),
+                format!("{SAMPLE_ID_BE} 00000001 00"),
+            ),
+        ] {
+            assert_eq!(h.to_cdr_le().unwrap(), octets(&le));
+            assert_eq!(h.to_cdr_be().unwrap(), octets(&be));
+            assert_eq!(RequestHeader::from_cdr_le(&octets(&le)).unwrap(), h);
+            assert_eq!(RequestHeader::from_cdr_be(&octets(&be)).unwrap(), h);
+        }
+    }
+
+    /// §7.5.1.1.1: `ReplyHeader` is `relatedRequestId`, then `remoteEx`,
+    /// the enum as a 32-bit ordinal.
+    #[test]
+    fn rpc_7_5_1_1_1_a_reply_header_is_the_identity_then_the_exception_code() {
+        for (ordinal, code) in [
+            (0u8, RemoteExceptionCode::Ok),
+            (1, RemoteExceptionCode::Unsupported),
+            (2, RemoteExceptionCode::InvalidArgument),
+            (3, RemoteExceptionCode::OutOfResources),
+            (4, RemoteExceptionCode::UnknownOperation),
+            (5, RemoteExceptionCode::UnknownException),
+        ] {
+            let h = ReplyHeader::new(sample_id(), code);
+            let le = octets(&format!("{SAMPLE_ID_LE} {ordinal:02x}000000"));
+            let be = octets(&format!("{SAMPLE_ID_BE} 000000{ordinal:02x}"));
+            assert_eq!(h.to_cdr_le(), le, "{code:?}");
+            assert_eq!(h.to_cdr_be(), be, "{code:?}");
+            assert_eq!(ReplyHeader::from_cdr_le(&le).unwrap(), h);
+            assert_eq!(ReplyHeader::from_cdr_be(&be).unwrap(), h);
+        }
+    }
+
+    /// §7.5.1.1.1: the codes are the ordinals of `RemoteExceptionCode_t` in
+    /// the order the spec lists them.
+    #[test]
+    fn rpc_7_5_1_1_1_the_exception_codes_are_the_ordinals_of_the_spec_enum() {
+        for (v, code) in [
+            (0u32, RemoteExceptionCode::Ok),
+            (1, RemoteExceptionCode::Unsupported),
+            (2, RemoteExceptionCode::InvalidArgument),
+            (3, RemoteExceptionCode::OutOfResources),
+            (4, RemoteExceptionCode::UnknownOperation),
+            (5, RemoteExceptionCode::UnknownException),
+        ] {
+            assert_eq!(code.as_u32(), v);
+            assert_eq!(RemoteExceptionCode::from_u32(v).unwrap(), code);
+        }
     }
 
     #[test]
-    fn sample_identity_roundtrip_be() {
-        let id = sample_id();
-        let bytes = id.to_cdr_be();
-        let back = SampleIdentity::from_cdr_be(&bytes).unwrap();
-        assert_eq!(id, back);
-    }
-
-    #[test]
-    fn sample_identity_le_be_streams_differ() {
-        let id = sample_id();
-        let le = id.to_cdr_le();
-        let be = id.to_cdr_be();
-        assert_ne!(le, be);
-    }
-
-    #[test]
-    fn sample_identity_invalid_constant_is_rtps_unknown() {
+    fn rpc_7_2_1_sample_identity_invalid_constant_is_rtps_unknown() {
         // Spec §7.8.2: { GUID_UNKNOWN, SEQUENCENUMBER_UNKNOWN }.
         let id = SampleIdentity::RELATED_SAMPLE_IDENTITY_INVALID;
         assert_eq!(id.writer_guid, [0u8; 16]);
@@ -585,31 +655,6 @@ mod tests {
         let bytes = vec![0u8; 23];
         let err = SampleIdentity::from_cdr_le(&bytes).unwrap_err();
         assert!(matches!(err, RpcError::Codec(_)));
-    }
-
-    #[test]
-    fn request_header_roundtrip_le() {
-        let h = RequestHeader::new(sample_id(), "calc-instance-1");
-        let bytes = h.to_cdr_le().unwrap();
-        let back = RequestHeader::from_cdr_le(&bytes).unwrap();
-        assert_eq!(h, back);
-    }
-
-    #[test]
-    fn request_header_roundtrip_be() {
-        let h = RequestHeader::new(sample_id(), "calc-instance-1");
-        let bytes = h.to_cdr_be().unwrap();
-        let back = RequestHeader::from_cdr_be(&bytes).unwrap();
-        assert_eq!(h, back);
-    }
-
-    #[test]
-    fn request_header_empty_instance_name_roundtrip() {
-        let h = RequestHeader::new(sample_id(), "");
-        let bytes = h.to_cdr_le().unwrap();
-        let back = RequestHeader::from_cdr_le(&bytes).unwrap();
-        assert_eq!(h, back);
-        assert!(back.instance_name.is_empty());
     }
 
     #[test]
@@ -641,24 +686,6 @@ mod tests {
     }
 
     #[test]
-    fn reply_header_roundtrip_all_codes() {
-        for code in [
-            RemoteExceptionCode::Ok,
-            RemoteExceptionCode::Unsupported,
-            RemoteExceptionCode::InvalidArgument,
-            RemoteExceptionCode::OutOfResources,
-            RemoteExceptionCode::UnknownOperation,
-            RemoteExceptionCode::UnknownException,
-        ] {
-            let h = ReplyHeader::new(sample_id(), code);
-            let le = h.to_cdr_le();
-            let be = h.to_cdr_be();
-            assert_eq!(h, ReplyHeader::from_cdr_le(&le).unwrap());
-            assert_eq!(h, ReplyHeader::from_cdr_be(&be).unwrap());
-        }
-    }
-
-    #[test]
     fn reply_header_unknown_discriminator_is_error() {
         let mut bytes = sample_id().to_cdr_le();
         bytes.extend_from_slice(&999u32.to_le_bytes());
@@ -667,15 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn remote_exception_code_as_u32_round_trips() {
-        for v in 0u32..=5 {
-            let code = RemoteExceptionCode::from_u32(v).unwrap();
-            assert_eq!(code.as_u32(), v);
-        }
-    }
-
-    #[test]
-    fn remote_exception_code_six_is_outside_the_spec_enum() {
+    fn rpc_7_5_1_1_1_remote_exception_code_six_is_outside_the_spec_enum() {
         // Spec §7.5.1.1.1 lists six values; there is no
         // REMOTE_EX_UNKNOWN_INTERFACE.
         assert_eq!(
@@ -703,7 +722,7 @@ mod tests {
     }
 
     #[test]
-    fn xcdr2_layout_sample_identity_le_is_24_bytes_no_padding() {
+    fn rpc_7_5_1_1_1_xcdr2_layout_sample_identity_le_is_24_bytes_no_padding() {
         // GUID 16 bytes + uint64 8 bytes (XCDR2 cap=4, so no
         // additional 4 bytes of padding).
         let id = SampleIdentity::new([0xAB; 16], 0x0102_0304_0506_0708);
@@ -714,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn xcdr2_layout_string_includes_nul() {
+    fn rpc_7_5_1_1_1_xcdr2_layout_string_includes_nul() {
         // class_id="A" (1 char + NUL = len=2) via RequestHeader.
         let h = RequestHeader::new(SampleIdentity::UNKNOWN, "A");
         let bytes = h.to_cdr_le().unwrap();
@@ -727,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn request_header_instance_name_over_255_is_rejected_on_encode() {
+    fn rpc_7_5_1_1_1_request_header_instance_name_over_255_is_rejected_on_encode() {
         // Spec §7.5.1.1.1: InstanceName is string<255> — at most 255
         // characters. The CDR length field that follows adds the NUL.
         let ok = RequestHeader::new(SampleIdentity::UNKNOWN, "a".repeat(255));

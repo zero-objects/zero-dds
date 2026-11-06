@@ -1,0 +1,146 @@
+.TH ZERODDS-WS-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-ws-bridged \- Bridge-Daemon von DDS nach WebSocket
+.SH ÜBERSICHT
+.B zerodds-ws-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-listen\fR \fIADR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fINAME\fR]...
+[\fB\-\-log\-level\fR \fISTUFE\fR]
+[\fB\-\-metrics\fR \fIADR\fR]
+[\fB\-V\fR | \fB\-\-version\fR]
+[\fB\-h\fR | \fB\-\-help\fR]
+.SH BESCHREIBUNG
+.B zerodds-ws-bridged
+stellt ausgewählte DDS-Topics für WebSocket-Clients bereit und leitet
+eingehende WS-Nachrichten an passende DDS-Publisher weiter. Es ist die
+Referenz-Bridge DDS \(<> WS der ZeroDDS-Distribution und implementiert
+.IR docs/specs/zerodds-ws-bridge-1.0.md .
+.PP
+Der Daemon liest die YAML-Datei, die mit
+.B \-\-config
+angegeben ist, mit Drop-ins im danebenliegenden
+.IR DATEI .d/;
+ohne diese Option liest er die Systemdatei
+.I /etc/zerodds/ws-bridged.yaml
+mit
+.I /etc/zerodds/ws-bridged.d/
+(unter macOS unter
+.IR /usr/local/etc/zerodds ),
+wenn es sie gibt, und sonst die eingebauten Standardwerte.
+Unter Linux bindet er sich über Type=notify an
+.BR systemd (1)
+an, unter macOS an
+.BR launchd (8);
+unter Windows läuft er als Dienst
+.BR ZeroDDSWSBridge .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Pfad zur YAML-Konfiguration. Siehe
+.BR zerodds-ws-bridged.yaml (5).
+.TP
+.BR \-\-listen =\fIADR\fR
+Bind-Adresse. Standard:
+.IR 0.0.0.0:8080 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-topic =\fINAME\fR
+Überschreibung für ein einzelnes Topic (wiederholbar).
+.TP
+.BR \-\-tls\-cert =\fIDATEI\fR
+TLS-Zertifikat (PEM); schaltet
+.IR wss://
+ein.
+.TP
+.BR \-\-tls\-key =\fIDATEI\fR
+TLS-Schlüssel (PEM).
+.TP
+.BR \-\-auth\-token =\fIGEHEIMNIS\fR
+Authentifizierung mit Bearer-Token.
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Überschreibt die konfigurierte Log-Stufe. Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+Standard:
+.IR info .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Abruf-Endpunkt für Prometheus.
+.TP
+.BR \-V ", " \-\-version
+Versionsangabe.
+.TP
+.BR \-h ", " \-\-help
+Gibt die vollständige Übersicht der Optionen aus.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+.TP
+.B SIGTERM
+Geordnetes Beenden (WS-Frames in Übertragung abarbeiten, DDS-Reader
+abmelden).
+.TP
+.B SIGHUP
+Liest die Konfiguration neu: Die TLS-Zertifikats- und -Schlüsseldateien an
+ihren konfigurierten Pfaden, die Authentifizierungs-Einstellungen und die
+Topic-ACL gelten ab dann (das Zertifikat für neue Verbindungen). Geänderte
+TLS-Dateipfade, Topics, Listen-Adresse oder Domäne brauchen einen Neustart und
+werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden (SIGTERM/SIGINT).
+.TP
+.B 1
+Konfigurationsfehler.
+.TP
+.B 2
+Bind-Fehler \(em Adresse belegt.
+.TP
+.B 3
+Fehler bei der DDS-Discovery.
+.TP
+.B 4
+TLS-Fehler.
+.SH DATEIEN
+.TP
+.I /etc/zerodds/ws-bridged.yaml
+Vorgeschlagener Pfad für das Deployment, nur geladen, wenn mit
+.B \-\-config
+ausgewählt. Dokumentiert in
+.BR zerodds-ws-bridged.yaml (5).
+.TP
+.I /var/log/zerodds/ws-bridged.log
+Log-Ziel, wenn
+.I logging.destination
+gleich
+.I file:...
+ist.
+.TP
+.I /var/lib/zerodds/
+Dauerhafter Zustand (Routen-Schatten, dauerhafte WS-Sitzungs-IDs).
+.SH SIEHE AUCH
+.BR zerodds-ws-bridged.yaml (5),
+.BR zerodds-mqtt-bridged (1),
+.BR zerodds-admin (1),
+.BR systemd.service (5).
+.SH STANDARDS
+DDS 1.4, RTPS 2.5, XTypes 1.3, RFC 6455 (WebSocket), RFC 7692 (permessage-deflate).
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>.

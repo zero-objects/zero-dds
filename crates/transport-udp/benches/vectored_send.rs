@@ -45,6 +45,11 @@ fn setup_pair() -> (Socket, SockAddr) {
         .unwrap();
     // bench-relevant: rx is never read, we only measure TX.
     let tx = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)).unwrap();
+    // The send buffer the transport gives its sockets (`MIN_SEND_BUFFER`,
+    // src/udp_transport.rs): with the default one macOS refuses every
+    // datagram above `net.inet.udp.maxdgram` (9 216 bytes) with EMSGSIZE,
+    // and the 16 384- and 65 000-byte cases failed on runner 8 (job 229152).
+    tx.set_send_buffer_size(256 * 1024).unwrap();
     let rx_addr = rx.local_addr().unwrap();
     // keep rx alive via leak — bench lives for process lifetime.
     Box::leak(Box::new(rx));

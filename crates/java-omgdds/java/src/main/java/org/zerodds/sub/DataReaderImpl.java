@@ -164,6 +164,12 @@ public final class DataReaderImpl<T> extends EntityBase<DataReaderListener<T>, D
     // report the same writer twice (register + late-join replay path) and a
     // count kept as a plain integer would drift.
     private final Set<Long> matchedWriters = new LinkedHashSet<>();
+    /**
+     * The writers of other processes this reader is matched with over SEDP (their GUIDs as
+     * strings), as the RTPS participant reports them: they count toward SUBSCRIPTION_MATCHED as
+     * the writers of this process do (DDS 1.4 §2.2.4.1).
+     */
+    private final Set<String> wireMatchedWriters = new LinkedHashSet<>();
     private int subMatchedTotal = 0;
     private int subMatchedTotalReadBaseline = 0;
     private int subMatchedCurrentReadBaseline = 0;
@@ -537,6 +543,39 @@ public final class DataReaderImpl<T> extends EntityBase<DataReaderListener<T>, D
         if (l != null && refused != null) {
             l.onRequestedIncompatibleQos(new RequestedIncompatibleQosEventImpl<>(env, this, refused));
         } else if (l != null) {
+            l.onSubscriptionMatched(new SubscriptionMatchedEventImpl<>(env, this, status));
+        }
+    }
+
+    /**
+     * DDS 1.4 §2.2.4.1 SUBSCRIPTION_MATCHED for a writer of another process: SEDP matched it
+     * with this reader, or it stopped matching. The counts, the handle of the last change and
+     * the listener as for a writer of this process ({@link #onWriterPresenceChanged}); the RTPS
+     * participant calls this off its discovery thread, in the order of the changes.
+     */
+    private void onWireWriterMatch(byte[] remoteGuid, boolean matched) {
+        DataReaderListener<T> l;
+        SubscriptionMatchedStatus status;
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
+            String key = java.util.Arrays.toString(remoteGuid);
+            boolean changed = matched ? wireMatchedWriters.add(key) : wireMatchedWriters.remove(key);
+            if (!changed) {
+                return;
+            }
+            if (matched) {
+                subMatchedTotal++;
+            }
+            lastMatchedHandle = Values.of(env, remoteGuid);
+            triggerStatus(SUBSCRIPTION_MATCHED);
+            l = listenerFor(SUBSCRIPTION_MATCHED);
+            // DDS 1.4 §2.2.4.1: the change counters reset when the status is read *or* when it
+            // is communicated through the listener.
+            status = l == null ? null : readSubscriptionMatchedStatusLocked();
+        }
+        if (l != null) {
             l.onSubscriptionMatched(new SubscriptionMatchedEventImpl<>(env, this, status));
         }
     }
@@ -1752,7 +1791,7 @@ public final class DataReaderImpl<T> extends EntityBase<DataReaderListener<T>, D
     }
 
     private SubscriptionMatchedStatus readSubscriptionMatchedStatusLocked() {
-        int current = matchedWriters.size();
+        int current = matchedWriters.size() + wireMatchedWriters.size();
         int totalChange = subMatchedTotal - subMatchedTotalReadBaseline;
         int currentChange = current - subMatchedCurrentReadBaseline;
         subMatchedTotalReadBaseline = subMatchedTotal;
@@ -1951,6 +1990,7 @@ public final class DataReaderImpl<T> extends EntityBase<DataReaderListener<T>, D
                         typeSupport.getTypeName(), typeSupport, this::deliverWire, wireQos(),
                         coercesTypes() ? this::acceptsRemoteWriter : null);
                 wire.setLivelinessListener(() -> evaluateLiveliness(true));
+                wire.setMatchListener(this::onWireWriterMatch);
                 if (!rpc.isEmpty()) {
                     wire.setRpcDiscovery(rpc);
                 }

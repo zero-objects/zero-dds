@@ -420,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn two_automatic_writers_are_two_alive_writers() {
+    fn dcps_2_2_4_1_two_automatic_writers_are_two_alive_writers() {
         let mut t = LivelinessTracker::new();
         t.matched(guid(1, 1), LivelinessKind::Automatic, None, Duration::ZERO);
         t.matched(guid(2, 1), LivelinessKind::Automatic, None, Duration::ZERO);
@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn an_automatic_writer_is_alive_from_its_match_without_writing() {
+    fn dcps_2_2_3_11_an_automatic_writer_is_alive_from_its_match_without_writing() {
         let mut t = LivelinessTracker::new();
         assert!(t.matched(
             guid(1, 1),
@@ -444,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn a_manual_writer_counts_from_its_first_assertion() {
+    fn dcps_2_2_4_1_a_manual_writer_counts_from_its_first_assertion() {
         let mut t = LivelinessTracker::new();
         let w = guid(1, 1);
         assert!(!t.matched(
@@ -461,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn a_silent_writer_moves_from_alive_to_not_alive_and_back() {
+    fn dcps_2_2_4_1_a_silent_writer_moves_from_alive_to_not_alive_and_back() {
         let mut t = LivelinessTracker::new();
         let w = guid(1, 1);
         t.matched(
@@ -488,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn unmatching_takes_a_writer_out_of_the_number_it_was_in() {
+    fn dcps_2_2_4_1_unmatching_takes_a_writer_out_of_the_number_it_was_in() {
         let mut t = LivelinessTracker::new();
         let (a, b, c) = (guid(1, 1), guid(1, 2), guid(1, 3));
         t.matched(a, LivelinessKind::Automatic, Some(100 * MS), Duration::ZERO);
@@ -523,7 +523,7 @@ mod tests {
     /// matches again and reasserts. A writer unmatched by its deletion
     /// leaves both.
     #[test]
-    fn a_writer_lost_with_its_participant_is_not_alive_until_it_reasserts() {
+    fn dcps_2_2_4_1_a_writer_lost_with_its_participant_is_not_alive_until_it_reasserts() {
         let mut t = LivelinessTracker::new();
         let lost = guid(1, 1);
         let deleted = guid(2, 1);
@@ -574,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn a_participant_message_asserts_only_what_its_kind_covers() {
+    fn dcps_2_2_3_11_a_participant_message_asserts_only_what_its_kind_covers() {
         let mut t = LivelinessTracker::new();
         let (auto, by_pp, by_topic) = (guid(1, 1), guid(1, 2), guid(1, 3));
         let other = guid(2, 1);
@@ -647,7 +647,7 @@ mod tests {
     }
 
     #[test]
-    fn a_listener_acknowledges_what_it_was_handed_and_no_more() {
+    fn dcps_2_2_4_1_a_listener_acknowledges_what_it_was_handed_and_no_more() {
         let mut t = LivelinessTracker::new();
         t.matched(guid(1, 1), LivelinessKind::Automatic, None, Duration::ZERO);
         let handed = t.status();

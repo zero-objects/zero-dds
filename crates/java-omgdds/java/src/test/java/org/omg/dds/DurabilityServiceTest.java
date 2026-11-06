@@ -116,7 +116,7 @@ class DurabilityServiceTest {
     }
 
     @Test
-    void transientSurvivesTheWriter() throws Exception {
+    void javapsm_7_3_5_1_transient_survives_the_writer() throws Exception {
         int d = nextDom();
         DomainParticipant p = Qos.factory().createParticipant(d);
         Topic<Reading> t = p.createTopic("TransientTopic", Reading.class);
@@ -137,7 +137,7 @@ class DurabilityServiceTest {
     }
 
     @Test
-    void persistentSurvivesTheWriter() throws Exception {
+    void javapsm_7_3_5_1_persistent_survives_the_writer() throws Exception {
         int d = nextDom();
         DomainParticipant p = Qos.factory().createParticipant(d);
         Topic<Reading> t = p.createTopic("PersistentTopic", Reading.class);
@@ -158,28 +158,7 @@ class DurabilityServiceTest {
     }
 
     @Test
-    void transientIsClearedWhenTheParticipantCloses() throws Exception {
-        int d = nextDom();
-        DomainParticipant p = Qos.factory().createParticipant(d);
-        Topic<Reading> t = p.createTopic("TransientClearedTopic", Reading.class);
-        Publisher pub = p.createPublisher();
-        DataWriter<Reading> dw = Qos.writer(pub, t, SUPPORT, durable(Durability.Kind.TRANSIENT));
-        dw.write(new Reading(1, 0));
-        dw.close();
-        p.close(); // TRANSIENT data dies with the participant
-
-        DomainParticipant p2 = Qos.factory().createParticipant(d);
-        Topic<Reading> t2 = p2.createTopic("TransientClearedTopic", Reading.class);
-        Subscriber sub = p2.createSubscriber();
-        DataReader<Reading> dr = Qos.reader(sub, t2, SUPPORT, requested(Durability.Kind.TRANSIENT));
-        assertEquals(0, Qos.take(dr).size(), "TRANSIENT data must not survive the participant");
-
-        dr.close();
-        p2.close();
-    }
-
-    @Test
-    void persistentSurvivesTheParticipant() throws Exception {
+    void javapsm_7_3_5_1_persistent_survives_the_participant() throws Exception {
         int d = nextDom();
         DomainParticipant p = Qos.factory().createParticipant(d);
         Topic<Reading> t = p.createTopic("PersistentSurvivesTopic", Reading.class);

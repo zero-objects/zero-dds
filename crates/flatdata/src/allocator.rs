@@ -529,7 +529,7 @@ mod tests {
     /// segment. `slot_count` comes from the discovery sample, so a peer
     /// can name any index it likes.
     #[test]
-    fn slot_index_out_of_bounds_is_rejected() {
+    fn flatdata_7_2_slot_index_out_of_bounds_is_rejected() {
         let alloc = InMemorySlotAllocator::new(0, 2, 64);
         let beyond = SlotHandle {
             segment_id: 0,
@@ -560,7 +560,7 @@ mod tests {
     }
 
     #[test]
-    fn reserve_returns_first_free_slot() {
+    fn flatdata_4_1_reserve_returns_first_free_slot() {
         let alloc = InMemorySlotAllocator::new(0, 4, 64);
         let h0 = alloc.reserve_slot(0).expect("reserve 0");
         assert_eq!(h0.slot_index, 0);
@@ -569,7 +569,7 @@ mod tests {
     }
 
     #[test]
-    fn reserve_returns_no_free_slot_when_all_loaned() {
+    fn flatdata_4_1_reserve_returns_no_free_slot_when_all_loaned() {
         let alloc = InMemorySlotAllocator::new(0, 2, 64);
         let _h0 = alloc.reserve_slot(0).unwrap();
         let _h1 = alloc.reserve_slot(0).unwrap();
@@ -577,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_writes_bytes_and_increments_sn() {
+    fn flatdata_4_1_commit_writes_bytes_and_increments_sn() {
         let alloc = InMemorySlotAllocator::new(0, 2, 64);
         let h = alloc.reserve_slot(0).unwrap();
         let sn = alloc.commit_slot(h, &[1, 2, 3]).unwrap();
@@ -593,7 +593,7 @@ mod tests {
     }
 
     #[test]
-    fn in_place_loan_writes_without_staging_copy() {
+    fn flatdata_4_1_in_place_loan_writes_without_staging_copy() {
         // Reserve → write directly into the slot via the raw pointer →
         // commit_in_place: the result must be byte-identical to commit_slot.
         let alloc = InMemorySlotAllocator::new(0, 2, 64);
@@ -619,7 +619,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_data_ptr_rejects_unreserved_slot() {
+    fn flatdata_4_1_slot_data_ptr_rejects_unreserved_slot() {
         let alloc = InMemorySlotAllocator::new(0, 2, 64);
         // Slot 0 was never reserved → no live loan.
         let h = SlotHandle {
@@ -630,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_in_place_too_large_returns_error() {
+    fn flatdata_8_2_commit_in_place_too_large_returns_error() {
         let alloc = InMemorySlotAllocator::new(0, 2, 8);
         let h = alloc.reserve_slot(0).unwrap();
         assert!(matches!(
@@ -640,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn commit_too_large_returns_error() {
+    fn flatdata_4_1_commit_too_large_returns_error() {
         let alloc = InMemorySlotAllocator::new(0, 2, 8);
         let h = alloc.reserve_slot(0).unwrap();
         let err = alloc.commit_slot(h, &[0u8; 16]).unwrap_err();
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn discard_frees_slot_for_reuse() {
+    fn flatdata_8_2_discard_frees_slot_for_reuse() {
         let alloc = InMemorySlotAllocator::new(0, 1, 64);
         let h = alloc.reserve_slot(0).unwrap();
         alloc.discard_slot(h).unwrap();
@@ -663,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn slot_recyclable_after_all_readers_marked() {
+    fn flatdata_4_1_slot_recyclable_after_all_readers_marked() {
         let alloc = InMemorySlotAllocator::new(0, 1, 64);
         // 2 active readers: bit 0 + bit 1.
         let active = 0b011;
@@ -682,14 +682,14 @@ mod tests {
     }
 
     #[test]
-    fn slot_total_size_is_cache_line_padded() {
+    fn flatdata_2_slot_total_size_is_cache_line_padded() {
         let alloc = InMemorySlotAllocator::new(0, 4, 100);
         // Header(16) + Data(100) = 116 → padded to 128.
         assert_eq!(alloc.slot_total_size(), 128);
     }
 
     #[test]
-    fn evict_stale_frees_slot_held_by_hung_reader() {
+    fn flatdata_5_1_evict_stale_frees_slot_held_by_hung_reader() {
         // Spec §5.1: a committed slot a reader never read stays blocked; after
         // `max_age` the writer's timeout-eviction force-frees it.
         let alloc = InMemorySlotAllocator::new(0, 1, 64);
@@ -721,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn evict_stale_leaves_read_slots_untouched() {
+    fn flatdata_5_1_evict_stale_leaves_read_slots_untouched() {
         let alloc = InMemorySlotAllocator::new(0, 1, 64);
         let active = 0b1;
         let h = alloc.reserve_slot(active).unwrap();
@@ -737,7 +737,7 @@ mod tests {
     }
 
     #[test]
-    fn reader_disconnect_frees_blocked_slots() {
+    fn flatdata_5_2_reader_disconnect_frees_blocked_slots() {
         // Spec §5.2: reader lease-expiry triggers mark_reader_disconnected;
         // slots that were waiting on the dead reader become free.
         let alloc = InMemorySlotAllocator::new(0, 1, 64);

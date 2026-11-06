@@ -13,7 +13,7 @@ Implementation:
   `AsyncReliableWriter`/`ReliableWriterHandle`.
 - `crates/endpoint-e2e/tests/csharp.rs` — Ping-Pong-E2E;
   `crates/endpoint-e2e/tests/csharp_reliable.rs` — reliable-Stream-E2E +
-  Unit/Golden + Latenz-Bench.
+  Example + Latenz-Vergleich.
 
 ## §1 XRCE-Framing
 
@@ -24,9 +24,9 @@ WRITE_DATA, flags, len LE) + Body, byte-identisch zu `crates/xrce` +
 **Repo:** `endpoints/csharp/Zerodds.cs::Xrce` — `WriteFrame`/`ReadFrame`,
 Konstanten `SessionNoKey` (`0x80`) und `StreamBestEffort` (`0x01`).
 
-**Tests:** `crates/endpoint-e2e/tests/csharp.rs::csharp_raw_udp` (rohes
+**Tests:** `crates/endpoint-e2e/tests/csharp.rs::endpoint_csharp_5_1_the_generated_codec_pings_without_the_xrce_frame` (rohes
 XCDR2 über einen bloßen UDP-Socket, kein XRCE-Frame — eigener Mini-Harness);
-das Framing selbst wird über `csharp_endpoint_sync` und `csharp_endpoint_async`
+das Framing selbst wird über `xrce_8_3_5_8_csharp_sync_app_writes_the_ping_and_reads_the_pong` und `xrce_8_3_5_8_csharp_async_app_writes_the_ping_and_reads_the_pong`
 (§4) live geübt.
 
 **Status:** done.
@@ -44,7 +44,7 @@ Default-Session `Xrce.SessionNoKey`/`Xrce.StreamBestEffort`).
 
 **Tests:** `endpoints/csharp/ExampleSync.cs` (5 `Reading`-Samples über
 `MemTransport`, volles Feld-Decode, druckt `ALL OK`); Live-E2E
-`csharp_endpoint_sync` (§4).
+`xrce_8_3_5_8_csharp_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -61,7 +61,7 @@ Poll pro Tick, sonst `Task.Delay(1)`).
 
 **Tests:** `endpoints/csharp/ExampleAsync.cs` (5 `Reading`-Samples,
 `await foreach`, volles Feld-Decode, druckt `ALL OK`); Live-E2E
-`csharp_endpoint_async` (§4).
+`xrce_8_3_5_8_csharp_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -81,13 +81,10 @@ den `Pong` mit `PongTypeSupport.Decode` dekodiert; Modus per CLI-Argument
 (`sync`/`async`/`raw`).
 
 **Tests:** (Linux, `dotnet`-gated)
-- `csharp_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
+- `endpoint_csharp_5_1_the_generated_codec_pings_without_the_xrce_frame` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
   UDP-Socket, ohne XRCE-Framing.
-- `csharp_endpoint_sync` — voller Stack über `ZeroDDS.Client`.
-- `csharp_endpoint_async` — voller Stack über `ZeroDDS.AsyncReader`.
-
-3/3 grün (Linux, `dotnet` >= .NET 8 auf PATH oder `~/.dotnet/dotnet`; kein
-`dotnet` ⇒ lauter Skip, kein false-green).
+- `xrce_8_3_5_8_csharp_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über `ZeroDDS.Client`.
+- `xrce_8_3_5_8_csharp_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über `ZeroDDS.AsyncReader`.
 
 **Status:** done.
 
@@ -115,8 +112,8 @@ Drain-`Thread` `zerodds-reliable-drain`); `endpoints/csharp/ExampleReliable.cs`
 (alle drei Modi: E2E-Sender, Bench, In-Process-Demo).
 
 **Tests:** (Linux, `dotnet`-gated)
-- `csharp_reliable_unit_and_golden`
-  (`crates/endpoint-e2e/tests/csharp_reliable.rs`) baut + läuft
+- `endpoints/csharp/ReliableTests.csproj` in der Spalte `csharp` von `tools/endpoints-gate`
+  (Job `integration-bindings-dotnet`) baut + läuft
   `endpoints/csharp/ReliableTests.cs` (`ZeroDDS.Tests.ReliableTests.Main`) —
   ein einzelner Treiber mit 32 `Check(...)`-Assertions über: Sender
   monotone Seq (`"monotonic seq 0"`/`"monotonic seq 1"`,
@@ -142,16 +139,12 @@ Drain-`Thread` `zerodds-reliable-drain`); `endpoints/csharp/ExampleReliable.cs`
   `"acknack byte-identical to golden file"` gegen die echten
   `golden_heartbeat_le.bin`/`golden_acknack_le.bin`). Druckt `ALL OK` bei
   0 Failures.
-- `csharp_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die
-  `ExampleReliable`-App (Modus `<port>`) retransmittiert via
-  `AsyncReliableWriter` auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge
-  geliefert (Assert auf `Reading.Id == Index`).
-- `csharp_reliable_no_loss_baseline` — lossless Baseline; 12/12.
-- `csharp_reliable_standalone_example` — `ExampleReliable` ohne Argumente
+- `reliable_5_3_csharp_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig; die
+  App, die der Test aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und `AsyncReliableWriter` baut, retransmittiert
+  auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge geliefert, der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`).
+- `reliable_5_5_csharp_example_recovers_its_sequence_without_gaps` — `ExampleReliable` ohne Argumente
   (In-Process-Demo: lossy Receiver-Thread + `AsyncReliableWriter`-Sender)
   meldet `OK: 12 samples delivered gap-free in order despite injected loss`.
-
-5/5 grün (Linux), davon 4 in diesem Abschnitt (Latenz-Bench in §6).
 
 **Status:** done.
 
@@ -168,10 +161,10 @@ den Ring/Socket, damit `Enqueue` nie Backpressure trifft) vs. 50000
 Iterationen inline `Socket.Send` (kein Live-Peer nötig, Loopback-Sink), via
 `Stopwatch` gemessen (1 Tick = 100 ns).
 
-**Tests:** (Linux) `csharp_reliable_latency_bench`
-(`crates/endpoint-e2e/tests/csharp_reliable.rs`) — Modus `bench`; Assert nur
-auf Vorhandensein der `LATENCY`-Zeile (kein hartcodierter Schwellwert im
-Rust-Test), Messwert wird geloggt. Beobachtete Größenordnung (Linux):
+**Tests:** (Linux) `reliable_5_4_csharp_the_producer_enqueue_costs_less_than_the_inline_send`
+(`crates/endpoint-e2e/tests/csharp_reliable.rs`) — Modus `bench`; der Test
+prüft, dass der Enqueue-Wert der `LATENCY`-Zeile unter dem inline-Wert liegt
+(kein fester Faktor), Messwert wird geloggt. Beobachtete Größenordnung (Linux):
 Ring-Enqueue **~6–10 µs** vs. inline `Socket.Send` **~442–504 µs**
 (~50–70×) — der .NET-JIT/GC-Overhead macht die absoluten Werte gegenüber
 Go/Rust höher, das Verhältnis (Enqueue ohne Kernel-Übergang vs. inline
@@ -183,17 +176,12 @@ Syscall) bleibt dieselbe Evidenz.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test csharp`
-3/3 (Ping-Pong: `csharp_raw_udp`/`csharp_endpoint_sync`/`csharp_endpoint_async`);
-`--test csharp_reliable` 5/5 (`csharp_reliable_loss_recovery`,
-`csharp_reliable_no_loss_baseline`, `csharp_reliable_unit_and_golden` — 32
-inline Assertions inkl. Byte-Golden, `csharp_reliable_standalone_example`,
-`csharp_reliable_latency_bench`); Latenz-Bench Ring-Enqueue ~6–10 µs / inline
-`Socket.Send` ~442–504 µs (~50–70×).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-csharp-1.0.md`):
 
-Gated auf `dotnet` (>= .NET 8, PATH oder `~/.dotnet/dotnet`); ohne Toolchain
-lauter Skip, kein false-green.
+* `python3 ci/run_integration.py integration-bindings-dotnet` (Job `integration-bindings-dotnet`) — 39 Tests grün.
+
+39 zitierte Tests grün, 0 nicht grün.
 
 Offene Punkte: keine.

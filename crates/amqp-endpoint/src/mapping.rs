@@ -101,7 +101,7 @@ pub fn parse_amqp_body(body: &[u8], content_type: Option<&str>) -> Result<Vec<u8
 }
 
 fn decode_hex(s: &str) -> Result<Vec<u8>, &'static str> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err("hex length not even");
     }
     let mut out = Vec::with_capacity(s.len() / 2);
@@ -130,27 +130,39 @@ const fn hex_digit(b: u8) -> Result<u8, &'static str> {
 mod tests {
     use super::*;
 
+    /// Spec §8.1.1: the pass-through body is the sample's octets as they
+    /// are, under `application/vnd.dds.xcdr2`.
     #[test]
-    fn passthrough_round_trip_preserves_bytes() {
-        let sample = alloc::vec![0xDE, 0xAD, 0xBE, 0xEF];
+    fn ddsamqp_8_1_1_a_pass_through_body_is_the_sample_octets() {
+        let sample = alloc::vec![0x00, 0x07, 0x00, 0x00, 0xDE, 0xAD, 0xBE, 0xEF];
         let (ct, body) =
             encode_dds_to_amqp_body(&sample, BodyEncodingMode::PassThrough).expect("encode");
         assert_eq!(ct, "application/vnd.dds.xcdr2");
-        let parsed = parse_amqp_body(&body, Some(ct)).expect("parse");
-        assert_eq!(parsed, sample);
+        assert_eq!(body, sample);
+        assert_eq!(
+            parse_amqp_body(&sample, Some("application/vnd.dds.xcdr2")).expect("parse"),
+            sample
+        );
     }
 
+    /// The JSON mode without a type (§2.1 clause 5; the typed document of
+    /// §8.1.2 is `zerodds-amqp-bridge`'s `json_document`): one member
+    /// `_xcdr2` with the sample's octets as lower-case hexadecimal, read
+    /// back from that text.
     #[test]
-    fn json_round_trip_via_hex_field() {
+    fn ddsamqp_2_1_the_typeless_json_body_carries_the_sample_as_hex() {
         let sample = alloc::vec![0x01, 0x02, 0x03, 0xFE];
         let (ct, body) = encode_dds_to_amqp_body(&sample, BodyEncodingMode::Json).expect("encode");
         assert_eq!(ct, "application/json");
-        let parsed = parse_amqp_body(&body, Some(ct)).expect("parse");
-        assert_eq!(parsed, sample);
+        assert_eq!(body, br#"{"_xcdr2":"010203fe"}"#);
+        assert_eq!(
+            parse_amqp_body(br#"{"_xcdr2":"010203FE"}"#, Some("application/json")).expect("parse"),
+            sample
+        );
     }
 
     #[test]
-    fn amqp_native_uses_correct_content_type() {
+    fn ddsamqp_2_1_amqp_native_uses_correct_content_type() {
         let sample = alloc::vec![0xCA, 0xFE];
         let (ct, _) =
             encode_dds_to_amqp_body(&sample, BodyEncodingMode::AmqpNative).expect("encode");
@@ -174,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_content_type_falls_back_to_pass_through() {
+    fn ddsamqp_2_1_unknown_content_type_falls_back_to_pass_through() {
         let body = alloc::vec![1, 2, 3];
         let parsed = parse_amqp_body(&body, Some("application/octet-stream")).expect("parse");
         assert_eq!(parsed, body);
@@ -187,7 +199,7 @@ mod tests {
     }
 
     #[test]
-    fn default_mode_is_pass_through() {
+    fn ddsamqp_2_1_default_mode_is_pass_through() {
         assert_eq!(BodyEncodingMode::default(), BodyEncodingMode::PassThrough);
     }
 }

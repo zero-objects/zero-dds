@@ -5,7 +5,7 @@
 //! The corpus was runnable only by hand — `tests/interop-corpus/run.sh`
 //! appeared in no pipeline and no test consumed the directory, so the
 //! bytes each case's README records were a claim about a run somebody
-//! did once. `docs/codec-coverage-report.md` measured what that cost:
+//! did once. `0b2e8df9f6b:docs/codec-coverage-report.md` measured what that cost:
 //! `fill_cpp.rs` at 0 of 846 regions under every harness in the tree
 //! including `cargo test --workspace`, and the whole PL_CDR1 extended
 //! header and both big-endian arms of the writer unexecuted because the
@@ -517,13 +517,13 @@ fn cell_for(produced: Result<Vec<u8>, ProbeError>) -> String {
 /// Every case, in every encoding and byte order, against the bytes its
 /// README records.
 ///
-/// The B → C delta of `docs/codec-coverage-report.md`: the three modes
+/// The B → C delta of `0b2e8df9f6b:docs/codec-coverage-report.md`: the three modes
 /// beyond `xcdr2 le` are what reach `write_pid_extended`, the extended
 /// arm of `finish_pid` and the big-endian arms of `order2` and `order8`.
 /// Running one mode leaves the PL_CDR1 header path unexecuted, and an
 /// unexecuted header path is one nobody would notice breaking.
 #[test]
-fn every_case_produces_the_bytes_its_readme_records_in_all_four_modes() {
+fn xtypes_7_3_1_2_2_every_case_produces_the_bytes_its_readme_records_in_all_four_modes() {
     let mut trouble = String::new();
     for case in cases() {
         if case.refused_by_the_front_end() {
@@ -613,7 +613,7 @@ fn every_case_produces_the_bytes_its_readme_records_in_all_four_modes() {
 /// structure are the same whatever the sample is later serialised as —
 /// so they run once per case rather than once per mode.
 #[test]
-fn every_case_goes_through_all_three_emitters() {
+fn xcdr2conformance_7_4_every_case_goes_through_all_three_emitters() {
     let mut trouble = String::new();
     let mut refused: BTreeMap<&str, Vec<String>> = BTreeMap::new();
     for case in cases() {
@@ -727,7 +727,7 @@ const UNFILLED: [(&str, &str); 1] = [("fastdds", "map-key-wstring")];
 /// bytes that precede a real DDS payload were produced by nothing in
 /// the tree.
 #[test]
-fn every_case_emits_a_keyhash_and_an_encapsulated_payload() {
+fn xtypes_7_4_3_3_every_case_emits_a_keyhash_and_an_encapsulated_payload() {
     let mut trouble = String::new();
     for case in cases() {
         if case.refused_by_the_front_end() {
@@ -786,7 +786,7 @@ fn every_case_emits_a_keyhash_and_an_encapsulated_payload() {
                 )
                 .expect("a String never fails to write");
             }
-            if wrapped.len() % 4 != 0 {
+            if !wrapped.len().is_multiple_of(4) {
                 writeln!(
                     trouble,
                     "{where_}: the encapsulated form is {} bytes, which §7.4.1.1 does not \

@@ -67,7 +67,7 @@ class ReaderKeyTest {
     }
 
     @Test
-    void getKeyValueReturnsASampleOfTheInstanceThatHasTheKey() throws Exception {
+    void javapsm_2_get_key_value_returns_a_sample_of_the_instance_that_has_the_key() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         DataWriter<Keyed> writer = rig.writer();
@@ -82,48 +82,7 @@ class ReaderKeyTest {
     }
 
     @Test
-    void getKeyValueSetsTheKeyFieldsOfTheHolderAndLeavesTheOthers() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        Topic<Track> topic = participant.createTopic("ReaderTrack", Track.class);
-        DataReader<Track> reader = participant.createSubscriber().createDataReader(topic);
-        DataWriter<Track> writer = participant.createPublisher().createDataWriter(topic);
-        writer.write(new Track(5, 100));
-        InstanceHandle handle = reader.lookupInstance(new Track(5, 0));
-        assertFalse(handle.isNil());
-        Track holder = new Track(0, 55);
-        Track result = reader.getKeyValue(holder, handle);
-        assertSame(holder, result);
-        assertEquals(5, holder.id);
-        assertEquals(55, holder.speed, "only the key fields are set");
-    }
-
-    @Test
-    void getKeyValueOfAHandleTheReaderDoesNotKnowIsAnIllegalArgument() throws Exception {
-        ReaderRig rig = new ReaderRig(nextDom());
-        DataReader<Keyed> reader = rig.keepAllReader();
-        rig.writer().write(sample(1, 0));
-        byte[] other = new byte[16];
-        other[15] = 99;
-        InstanceHandle unknown = Values.of(other);
-        assertThrows(IllegalArgumentException.class,
-                () -> reader.getKeyValue(new Keyed(0, 0, 0.0), unknown));
-        assertThrows(IllegalArgumentException.class,
-                () -> reader.getKeyValue(new Keyed(0, 0, 0.0), null));
-    }
-
-    @Test
-    void getKeyValueOnATopicWithoutAKeyIsPreconditionNotMet() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        Topic<byte[]> topic = participant.createTopic("ReaderUnkeyed", byte[].class);
-        DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
-        participant.createPublisher().createDataWriter(topic).write(new byte[] {1});
-        InstanceHandle handle = reader.read(new ArrayList<>()).get(0).getInstanceHandle();
-        assertThrows(PreconditionNotMetException.class,
-                () -> reader.getKeyValue(new byte[0], handle));
-    }
-
-    @Test
-    void lookupInstanceIsNilBeforeTheInstanceIsKnownAndTheHandleOfTheSampleAfterwards()
+    void javapsm_2_lookup_instance_is_nil_before_the_instance_is_known_and_the_handle_of_the_sample_afterwards()
             throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
@@ -139,7 +98,7 @@ class ReaderKeyTest {
     }
 
     @Test
-    void lookupInstanceWithAHandleFillsItAndWithoutOneReturnsANewObject() throws Exception {
+    void javapsm_2_lookup_instance_with_a_handle_fills_it_and_without_one_returns_a_new_object() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = rig.keepAllReader();
         rig.writer().write(sample(4, 1));

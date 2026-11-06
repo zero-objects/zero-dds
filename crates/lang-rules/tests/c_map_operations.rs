@@ -136,7 +136,7 @@ const PRELUDE: &str = "\
 /// §7.5.1.3.2.1: the type of a member is the map of the clause, named
 /// `[key][element]Map`, and the maps of every type exist.
 #[test]
-fn the_name_of_a_map_is_the_key_and_the_element() {
+fn xtypes_7_5_1_3_2_1_the_name_of_a_map_is_the_key_and_the_element() {
     let generated = header(IDL);
     for name in [
         "UInt32m_FooMap",
@@ -188,7 +188,7 @@ int main(void) {{
 /// Table 47 on a map with a structure as the element and `uint32_t` keys:
 /// every operation and the code each returns.
 #[test]
-fn the_operations_of_table_47_answer_as_the_clause_says() {
+fn xtypes_7_5_1_3_2_2_the_operations_of_table_47_answer_as_the_clause_says() {
     let program = format!(
         "{PRELUDE}
 int main(void) {{

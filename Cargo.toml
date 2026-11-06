@@ -10,6 +10,8 @@ members = [
     "crates/test-domains",
     # Test scaffolding: drives a DDS reader of another vendor.
     "crates/test-vendor-reader",
+    # The integration pillar: ZeroDDS end to end (ci/integration_scenarios.py).
+    "tests/integration",
     "crates/float128",
     "crates/ast",
     "crates/ast-layout",
@@ -36,7 +38,7 @@ members = [
     "crates/corba-cos-transactions",
     # The four of the CORBA family that never named `cdr`, `idl` or
     # `idl-rust` at all: the Interface Repository, the Event and Trading
-    # services, and the POA. Their row in docs/OPEN-ITEMS.md said "deps
+    # services, and the POA. Their row in the open-items list said "deps
     # present" and it was right — this line is the whole port.
     "crates/corba-ir",
     "crates/corba-poa",
@@ -64,7 +66,7 @@ members = [
     "crates/corba-interop",
     "endpoints/rust",
     # The component model and its asynchronous invocation mapping, back on
-    # `idl-parse` + `idl-lower` — step 2 of docs/rebuild-plan.md.
+    # `idl-parse` + `idl-lower` — step 2 of 0b2e8df9f6b:docs/rebuild-plan.md.
     "crates/ccm",
     "crates/ami4ccm",
     "endpoints/codegen",
@@ -80,7 +82,7 @@ members = [
     "crates/amqp-endpoint",
     "tools/amqp-dds-endpoint",
     # Zero-copy same-host shared memory. Independent of the type system and
-    # of `wire` — step 4 of docs/rebuild-plan.md.
+    # of `wire` — step 4 of 0b2e8df9f6b:docs/rebuild-plan.md.
     "crates/flatdata",
     "crates/flatdata-derive",
     # External iceoryx2 oracle — standalone consumer (iceoryx2-only, zero
@@ -90,27 +92,27 @@ members = [
     "tools/iceoryx2-oracle-consumer",
     # The XTypes 1.3 type system: TypeIdentifier, TypeObject, the
     # assignability rules, the runtime DynamicType — step 3 of
-    # docs/rebuild-plan.md.
+    # 0b2e8df9f6b:docs/rebuild-plan.md.
     "crates/types",
     # The CORBA Annex A.1 tables and the stub and skeleton mappings, over
-    # the rebuilt AST — step 5 of docs/rebuild-plan.md.
+    # the rebuilt AST — step 5 of 0b2e8df9f6b:docs/rebuild-plan.md.
     "crates/corba-codegen",
     "tools/qos-matrix",
     "crates/wire-conformance",
     "crates/wire-probe",
-    # The DDSI-RTPS 2.5 wire stack — step 6 of docs/rebuild-plan.md.
+    # The DDSI-RTPS 2.5 wire stack — step 6 of 0b2e8df9f6b:docs/rebuild-plan.md.
     # Its `cdr` half was sixteen lines; what it brought is 2,114 RTPS
     # datagrams six foreign stacks put on a socket, decoded and written
     # back octet for octet.
     "crates/rtps",
     # SPDP, SEDP, the TypeLookup service and the DDS-Security builtin
-    # endpoints — step 7 of docs/rebuild-plan.md. Adding this one line
+    # endpoints — step 7 of 0b2e8df9f6b:docs/rebuild-plan.md. Adding this one line
     # also makes members of its path dependencies: `crates/security`,
     # `crates/transport`, `crates/transport-udp`, `crates/security-pki`,
     # `crates/security-keyexchange` and `crates/inspect-endpoint`.
     "crates/discovery",
     # The DCPS public API and its runtime — step 8 of
-    # docs/rebuild-plan.md. Adding this one line also makes members of
+    # 0b2e8df9f6b:docs/rebuild-plan.md. Adding this one line also makes members of
     # `crates/sql-filter`, `crates/transport-tcp` and `crates/recorder`.
     "crates/dcps",
     # The benchmark harness. It is a path dependency of no member, so the
@@ -155,6 +157,10 @@ members = [
     # The `build.rs` helper. It waited on `crates/idl-compose` and on
     # nothing else.
     "crates/zerodds-build",
+    # The other route of #33: a topic type defined in Rust, its IDL, and
+    # the codec its layout plan drives; and the two derives for it.
+    "crates/codec",
+    "crates/derive",
     # `crates/rmw-zerodds-shim`. Its `build.rs` regenerates
     # `include/rmw_zerodds.h` from `src/lib.rs` on every build, and the
     # committed header was nine lines behind the source: #31 translated
@@ -190,7 +196,7 @@ members = [
     # The three protocol bridges. Their port surface was nil — none of the
     # three names `cdr` or `idl` anywhere in its sources; the only thing
     # that kept them out was the `daemon` feature's path dep on
-    # `crates/dcps`, which is a member since 230e7ad9c.
+    # `crates/dcps`, which is a member since fd6f31225.
     "crates/coap-bridge",
     "crates/mqtt-bridge",
     "crates/websocket-bridge",
@@ -342,8 +348,7 @@ members = [
     # The OPC-UA family: the DDS-OPCUA gateway type system, the Part-14
     # PubSub (UADP) wire stack, the UACP/SecureChannel framing and the
     # Part-4 client/server. What the four lines cost was what open62541
-    # said about them — see `internal/OPEN-ITEMS.md` and
-    # `crates/opcua-*/proofs/`.
+    # said about them — see `crates/opcua-*/proofs/`.
     "crates/opcua-gateway",
     "crates/opcua-pubsub",
     "crates/opcua-uacp",
@@ -408,6 +413,8 @@ exclude = [
     "examples/demos/dds-warehouse/stations/08-wms-ccm/code",
     "examples/demos/dds-warehouse/stations/09-erp-corba/code",
     "examples/demos/dds-warehouse/stations/10-audit-console/code",
+    "examples/rust-derive",
+    "examples/rust-type",
     "examples/tutorials/dds-chat/00-base/03-rust-tui",
     "examples/tutorials/dds-chat/apps/embedded-mcu",
     "examples/tutorials/dds-chat/code",
@@ -421,6 +428,7 @@ exclude = [
     "interop/cyclone-xtypes-27/reader",
     "interop/typelookup-probe",
     "tests/issue32",
+    "tests/perf/dds-roundtrip-bench/hdds",
     "tools/wireprobe/hdds-shim",
     "tools/xtypes-1.3-gap-scan/probe",
 ]
@@ -428,7 +436,7 @@ exclude = [
 [workspace.package]
 version = "1.0.0-rc.7"
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.97"
 license = "Apache-2.0"
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
@@ -565,8 +573,6 @@ criterion = { version = "0.5", default-features = false, features = ["cargo_benc
 # proptest for property tests on state machines (TS-1 foundation
 # hardening). Dev-dependency only. Pure-Rust + minimal deps.
 proptest = { version = "1.4", default-features = false, features = ["std"] }
-# insta for snapshot tests of codegen output (TS-1).
-insta = { version = "1.40", default-features = false }
 # flate2 for the CORBA 3.3 §18 compression codec (Zlib/Gzip/Deflate).
 # Pure-Rust backend, no C build, std-only. Used in
 # `crates/corba-ccm/src/orb_extensions.rs::CompressionAlgorithm` as a
@@ -662,3 +668,13 @@ debug-assertions = false
 [profile.bench]
 inherits = "release"
 debug = 2
+
+# The whole-corpus tests of zerodds-interop-results (tools/interop-results/
+# tests, `#[ignore]`d in the crate tier, where each builds the result tree in
+# 22 to 75 s): the weekly job `interop-results` (ci/weekly-old-suite.yml)
+# runs them in this profile, a test build (debug assertions, overflow checks)
+# compiled with optimizations, 4.0 to 16.4 s each on the CI runner host (pipelines 8854 and
+# 8877).
+[profile.corpus]
+inherits = "test"
+opt-level = 2

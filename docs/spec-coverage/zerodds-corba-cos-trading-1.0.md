@@ -118,6 +118,11 @@ Implementation:
 
 ## Audit-Status
 
-10 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+10 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-corba-cos-trading` — 36 Tests grün, 0 failed.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-corba-cos-trading-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-corba-cos-trading --all-targets` (Job `merge-rust-corba-cos-trading`) — 36 Tests grün.
+
+36 zitierte Tests grün, 0 nicht grün.
+

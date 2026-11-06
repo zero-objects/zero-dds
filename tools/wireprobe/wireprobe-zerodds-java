@@ -149,14 +149,13 @@ code=0
 # that only got touched does not.
 # `org/zerodds/wire` and nothing else: that is the wire runtime, and it
 # is the same set `runtime/java/run-tests.sh` compiles. The tree also
-# carries `org/omg/dds/rpc` under this path (since d047dc5f497), which
+# carries `org/omg/dds/rpc` under this path (since ad892a10764), which
 # is the OMG RPC PSM and not runtime: six of its files import
 # `org.omg.dds.core`, a package that lives in `crates/java-omgdds/java`
 # behind its own `pom.xml`. A `find` over the whole directory pulled
 # those in and every probe failed with "runtime/java did not compile" —
 # measured, four wire-probe test targets red. Where the PSM should live
-# is a separate question, recorded in docs/OPEN-ITEMS.md; what this
-# probe needs is the runtime.
+# is a separate question; what this probe needs is the runtime.
 runtime_sources=$(find "$runtime/src/main/java/org/zerodds/wire" -name '*.java' | sort)
 # shellcheck disable=SC2086
 key=$(cat $runtime_sources | shasum | cut -c1-16)

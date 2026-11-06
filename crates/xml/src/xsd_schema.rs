@@ -534,13 +534,13 @@ fn wrapper_shape(complex: &XmlElement) -> Result<Shape, XmlError> {
             bound: sequence_max,
         });
     }
-    if let [only] = elements.as_slice() {
-        if only.attribute("name").is_some_and(is_item_name) {
-            // The layer is the occurrence of the child.
-            let (min, max) = occurs(only)?;
-            let inner = shape_of_without_own_layer(only)?;
-            return Ok(layer(inner, min, max));
-        }
+    if let [only] = elements.as_slice()
+        && only.attribute("name").is_some_and(is_item_name)
+    {
+        // The layer is the occurrence of the child.
+        let (min, max) = occurs(only)?;
+        let inner = shape_of_without_own_layer(only)?;
+        return Ok(layer(inner, min, max));
     }
     Err(XmlError::InvalidXml(format!(
         "{}: a complexType that is neither a collection (one `element`) nor a map \
@@ -765,12 +765,10 @@ pub fn parse_xsd_schema(xml: &str) -> Result<TypeLibrary, XmlError> {
                         )));
                     }
                 }
-                TypeDef::Union(u) => {
-                    if u.nested == Some(true) {
-                        return Err(XmlError::InvalidXml(format!(
-                            "`{fq}` is annotated nested and has a root element (§7.3.3.3)"
-                        )));
-                    }
+                TypeDef::Union(u) if u.nested == Some(true) => {
+                    return Err(XmlError::InvalidXml(format!(
+                        "`{fq}` is annotated nested and has a root element (§7.3.3.3)"
+                    )));
                 }
                 _ => {}
             }
@@ -1022,15 +1020,14 @@ fn complex_type(node: &XmlElement, name: &str) -> Result<TypeDef, XmlError> {
     if let Some(ext) = node
         .child("complexContent")
         .and_then(|cc| cc.child("extension"))
+        && applied.iter().any(|a| a.name == "typedef")
     {
-        if applied.iter().any(|a| a.name == "typedef") {
-            let base = ext.attribute("base").unwrap_or_default();
-            return Ok(TypeDef::Typedef(TypedefType {
-                name: name.to_string(),
-                type_ref: resolve_type_ref(base),
-                ..TypedefType::default()
-            }));
-        }
+        let base = ext.attribute("base").unwrap_or_default();
+        return Ok(TypeDef::Typedef(TypedefType {
+            name: name.to_string(),
+            type_ref: resolve_type_ref(base),
+            ..TypedefType::default()
+        }));
     }
     struct_type(node, name, &applied).map(TypeDef::Struct)
 }
@@ -1119,15 +1116,15 @@ fn struct_type(node: &XmlElement, name: &str, applied: &[Applied]) -> Result<Str
     // `<xsd:complexContent><xsd:extension base="..."><xsd:sequence>...`
     // -> Inheritance (§7.3.3.2.1).
     let mut base_type: Option<String> = None;
-    if let Some(cc) = node.child("complexContent") {
-        if let Some(ext) = cc.child("extension") {
-            if let Some(b) = ext.attribute("base") {
-                base_type = Some(model_name(b));
-            }
-            if let Some(seq) = ext.child("sequence").or_else(|| ext.child("all")) {
-                for el in seq.children_named("element") {
-                    members.push(member_of(el)?);
-                }
+    if let Some(cc) = node.child("complexContent")
+        && let Some(ext) = cc.child("extension")
+    {
+        if let Some(b) = ext.attribute("base") {
+            base_type = Some(model_name(b));
+        }
+        if let Some(seq) = ext.child("sequence").or_else(|| ext.child("all")) {
+            for el in seq.children_named("element") {
+                members.push(member_of(el)?);
             }
         }
     }

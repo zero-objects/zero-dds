@@ -1472,7 +1472,7 @@ typedef char dds_int8_is_one_octet[sizeof(DDS_Int8) == 1 ? 1 : -1];
 typedef char dds_int64_is_eight_octets[sizeof(DDS_Int64) == 8 ? 1 : -1];
 typedef char dds_float128_is_sixteen_octets[sizeof(DDS_Float128) == 16 ? 1 : -1];
 
-static void the_primitive_typedefs_of_table_42_exist(void) {
+static void xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist(void) {
     DDS_Int32 i32 = -1;
     DDS_UInt32 u32 = 0xffffffffu;
     DDS_Int8 i8 = -1;
@@ -1503,6 +1503,87 @@ static void the_primitive_typedefs_of_table_42_exist(void) {
         c8 != 'a' || c16 != 0x20acu || byte != 0xa5u) {
         printf("FAIL a Table 42 typedef does not hold its value\n");
         failures++;
+    }
+}
+
+/* The five operations the generated code reaches only in a dialect or
+ * with a member no corpus case carries: `write_pid_extended`,
+ * `write_union_overlay`, `reader_clear_discard`, `reader_save` and
+ * `reader_restore` (internal/release/OPEN-ITEMS.md). Every runtime checks
+ * the same four vectors, each against an oracle outside this code. */
+static void the_operations_no_corpus_case_reaches(void) {
+    {
+        /* PID_EXTENDED, its length of eight, the member id and the
+         * parameter's own length: the first parameter of
+         * `annotation-autoid-sequential` as Cyclone DDS recorded it, XCDR1
+         * little endian (tests/interop-corpus/expected-bytes.tsv). */
+        WRITER(w, ZDW_LITTLE, 8);
+        zdw_pid pid = zdw_write_pid_extended(&w, 0, ZDW_PARAM_MEMBER, false);
+        zdw_write_i32(&w, -1234567);
+        zdw_finish_pid(&w, pid);
+        expect("write_pid_extended: Cyclone's recorded parameter", &w,
+               "017f0800" "00000000" "04000000" "7929edff");
+    }
+    {
+        /* A `short` read through a four-octet and through a one-octet
+         * `default:` branch: Cyclone DDS 11.0.1 writes the union's storage,
+         * the member's octets with zeros above (`combined-everything`,
+         * crates/wire-codec/src/encode.rs `write_selected_branch`). */
+        WRITER(w, ZDW_LITTLE, 4);
+        zdw_write_union_overlay(&w, zdw_bit_pattern_int((uint64_t)(int64_t)-2, 2), 4);
+        zdw_write_union_overlay(&w, zdw_bit_pattern_int((uint64_t)(int64_t)-2, 2), 1);
+        expect("write_union_overlay: the storage at the branch's width", &w,
+               "feff0000" "fe");
+    }
+    {
+        /* XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes
+         * before Table 9's value, so the call site asks for DISCARD and
+         * takes it back. Any other refusal is not a narrowing and stays. */
+        static const uint8_t bytes[] = { 0x01, 0x02, 0x03, 0x04 };
+        READER(r, bytes, ZDW_LITTLE, 4);
+        zdw_reader_refuse(&r, ZDW_DISCARDED);
+        if (!zdw_reader_clear_discard(&r)) {
+            printf("FAIL reader_clear_discard did not take back a DISCARDED\n");
+            failures++;
+        }
+        expect_read_status("reader_clear_discard after DISCARDED", &r, ZDW_OK);
+        READER(t, bytes, ZDW_LITTLE, 4);
+        zdw_reader_refuse(&t, ZDW_OUT_OF_RANGE);
+        if (zdw_reader_clear_discard(&t)) {
+            printf("FAIL reader_clear_discard took back an OUT_OF_RANGE\n");
+            failures++;
+        }
+        expect_read_status("reader_clear_discard after OUT_OF_RANGE", &t, ZDW_OUT_OF_RANGE);
+    }
+    {
+        /* XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as
+         * its DHEADER and the pairs, without a count. The reader counts
+         * the pairs, goes back and reads them again; a refusal made while
+         * counting goes back with the cursor. */
+        static const uint8_t bytes[] = { 0x10, 0x00, 0x00, 0x00,
+                                         0x01, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x00, 0x00,
+                                         0x02, 0x00, 0x00, 0x00, 0x14, 0x00, 0x00, 0x00 };
+        READER(r, bytes, ZDW_LITTLE, 4);
+        uint32_t extent = zdw_read_dheader(&r);
+        size_t end = zdw_reader_position(&r) + extent;
+        zdw_reader_mark mark = zdw_reader_save(&r);
+        int pairs = 0;
+        while (zdw_reader_position(&r) < end && zdw_reader_status(&r) == ZDW_OK) {
+            (void)zdw_read_i32(&r);
+            (void)zdw_read_i32(&r);
+            pairs++;
+        }
+        zdw_reader_refuse(&r, ZDW_OUT_OF_RANGE);
+        zdw_reader_restore(&r, mark);
+        int32_t k1 = zdw_read_i32(&r), v1 = zdw_read_i32(&r);
+        int32_t k2 = zdw_read_i32(&r), v2 = zdw_read_i32(&r);
+        if (pairs != 2 || k1 != 1 || v1 != 10 || k2 != 2 || v2 != 20 ||
+            zdw_reader_position(&r) != 20u) {
+            printf("FAIL reader_save/reader_restore: %d pairs, (%d, %d) (%d, %d), at %u\n",
+                   pairs, k1, v1, k2, v2, (unsigned)zdw_reader_position(&r));
+            failures++;
+        }
+        expect_read_status("reader_restore took the refusal back", &r, ZDW_OK);
     }
 }
 
@@ -1547,7 +1628,8 @@ int main(void) {
     a_short_decimal_buffer_writes_nothing();
     a_trim_cuts_on_a_character_boundary();
     a_discard_is_not_one_of_the_wire_errors();
-    the_primitive_typedefs_of_table_42_exist();
+    xtypes_7_5_1_1_1_the_primitive_typedefs_of_table_42_exist();
+    the_operations_no_corpus_case_reaches();
     if (failures != 0) {
         printf("%d expectation(s) did not hold\n", failures);
         return 1;

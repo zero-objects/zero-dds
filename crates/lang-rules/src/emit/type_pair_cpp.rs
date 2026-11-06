@@ -570,15 +570,15 @@ fn support_text(ast: &Ast, pair: &Pair) -> Result<String, String> {
         let mut text = configure.to_string();
         // Both params carry both topic annotations: a requester and a
         // replier have to agree on the two topics.
-        if let Some(topic) = &request_topic {
-            if !text.contains("request_topic_name") {
-                let _ = write!(text, "\n        .request_topic_name({})", quoted(topic));
-            }
+        if let Some(topic) = &request_topic
+            && !text.contains("request_topic_name")
+        {
+            let _ = write!(text, "\n        .request_topic_name({})", quoted(topic));
         }
-        if let Some(topic) = &reply_topic {
-            if !text.contains("reply_topic_name") {
-                let _ = write!(text, "\n        .reply_topic_name({})", quoted(topic));
-            }
+        if let Some(topic) = &reply_topic
+            && !text.contains("reply_topic_name")
+        {
+            let _ = write!(text, "\n        .reply_topic_name({})", quoted(topic));
         }
         let _ = params;
         text

@@ -48,7 +48,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reset_roundtrip_empty_body() {
+    fn xrce_8_3_5_13_reset_roundtrip_empty_body() {
         let sm = ResetPayload.into_submessage().unwrap();
         assert_eq!(sm.body.len(), 0);
         assert_eq!(sm.header.submessage_length, 0);
@@ -57,7 +57,7 @@ mod tests {
     }
 
     #[test]
-    fn reset_rejects_nonempty_body() {
+    fn xrce_8_3_5_13_reset_rejects_nonempty_body() {
         let sm = Submessage::new(SubmessageId::Reset, 0, alloc::vec![1, 2]).unwrap();
         let res = ResetPayload::try_from_submessage(&sm);
         assert!(matches!(res, Err(XrceError::ValueOutOfRange { .. })));

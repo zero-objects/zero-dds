@@ -39,7 +39,7 @@ impl DataReaderListener for SlowListener {
 /// listener and a WaitSet waits on a ReadCondition of it. The WaitSet
 /// wakes after the listener returned. It woke while the listener ran.
 #[test]
-fn the_listener_runs_before_the_waitset_is_signalled() {
+fn dcps_2_2_4_6_the_listener_runs_before_the_waitset_is_signalled() {
     let p = DomainParticipantFactory::instance()
         .create_participant_with_config(
             common::unique_domain(),

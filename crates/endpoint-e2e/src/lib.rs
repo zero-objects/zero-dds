@@ -125,25 +125,6 @@ fn best_effort_header(seq: u16) -> MessageHeader {
     .expect("best-effort header")
 }
 
-/// Wraps a sample in an XRCE `WRITE_DATA` frame — the endpoint->hub direction
-/// (what an endpoint app sends). Kept for the send side of the wire contract.
-///
-/// # Panics
-/// Panics if `sample` exceeds the 16-bit `submessage_length`.
-#[must_use]
-pub fn xrce_frame(seq: u16, sample: &[u8]) -> Vec<u8> {
-    let sm = WriteDataPayload {
-        base: base_for(seq, endpoint_writer_id()),
-        serialized_data: sample.to_vec(),
-    }
-    .into_submessage()
-    .expect("WRITE_DATA submessage");
-    Message::new(best_effort_header(seq), vec![sm])
-        .expect("message")
-        .encode()
-        .expect("encode")
-}
-
 /// Wraps a sample in an XRCE `DATA` frame — the hub->endpoint direction. This is
 /// what the peer replies (it stands in for the hub/agent); a real XRCE agent
 /// pushes samples to a client with `DATA` (id 0x09), never `WRITE_DATA`.
@@ -564,7 +545,7 @@ pub fn reliable_collect(peer: &ReliablePeer, label: &str, expected: usize) -> Ve
             // Loss injection: drop each n-th distinct sample exactly once.
             if let Some(every) = peer.drop_every {
                 recv_count += 1;
-                if recv_count % every == 0 && dropped_once.insert(seq) {
+                if recv_count.is_multiple_of(every) && dropped_once.insert(seq) {
                     continue; // silently drop → the app must retransmit
                 }
             }
@@ -621,104 +602,88 @@ pub fn reliable_receive(
     got
 }
 
-// =====================================================================
-// Conformant DDS-XRCE data submessages (§8.3.5.8/.9/.10)
-// =====================================================================
-//
-// `xrce_frame` / `xrce_data_frame` above fix the identity of both ends to the
-// endpoint fixture (`endpoint_writer_id` / `endpoint_reader_id`). The helpers
-// below take an arbitrary `request_id` + `object_id`, which is what a real
-// client<->agent session needs once CREATE has assigned the ids; the
-// `conformant_*_roundtrip_client_agent` test drives a full exchange over two
-// UDP sockets with them.
+/// The `msg` of every `Ping` a reliable app sends; `seq` is the sample's
+/// index.
+pub const RELIABLE_MSG: &str = "reliable";
 
-/// Builds a conformant DDS-XRCE `WRITE_DATA` message (client -> agent): a
-/// best-effort `MessageHeader` plus one `WRITE_DATA` submessage whose body is
-/// `BaseObjectRequest { request_id, object_id } + SampleData(serialized_data)`.
+/// The number of samples every reliable app sends.
+pub const RELIABLE_SAMPLES: usize = 12;
+
+/// The reliable apps send `Ping { seq: i, msg: RELIABLE_MSG }` for `i` in
+/// `0..n`, encoded by the codec the language's generator wrote from [`IDL`].
+/// Holds `delivered` to exactly that: `n` bodies in order, each read with the
+/// XCDR2 reader (DDS-XTypes 1.3 §7.4: the `long` in four octets, the string
+/// as its length with the NUL and the characters with the NUL) to its end.
 ///
 /// # Panics
-/// Panics only on an internal encode error (impossible for in-bounds input).
-#[must_use]
-pub fn conformant_write_data_frame(
-    request_id: [u8; 2],
-    object_id: ObjectId,
-    sample: &[u8],
-) -> Vec<u8> {
-    let header = MessageHeader::without_client_key(
-        SessionId(0x80),
-        StreamId::BUILTIN_BEST_EFFORT,
-        SerialNumber16::new(1),
-    )
-    .expect("header");
-    let sm = WriteDataPayload {
-        base: BaseObjectRequest {
-            request_id,
-            object_id,
-        },
-        serialized_data: sample.to_vec(),
+/// When a body is missing, out of order, or not that `Ping`.
+pub fn assert_reliable_pings(label: &str, delivered: &[Vec<u8>], n: usize) {
+    assert_eq!(delivered.len(), n, "{label}: delivered count");
+    for (i, body) in delivered.iter().enumerate() {
+        let mut r = xcdr2_reader(body);
+        let seq = r
+            .read_u32()
+            .unwrap_or_else(|e| panic!("{label}: sample {i}: Ping.seq: {e:?} in {body:02x?}"));
+        let msg = r
+            .read_string()
+            .unwrap_or_else(|e| panic!("{label}: sample {i}: Ping.msg: {e:?} in {body:02x?}"));
+        assert_eq!(
+            (seq as usize, msg.as_str()),
+            (i, RELIABLE_MSG),
+            "{label}: sample {i} is not the generated Ping {{ seq: {i}, msg: {RELIABLE_MSG:?} }} \
+             (gap, misorder or a different encoding): {body:02x?}"
+        );
+        assert_eq!(
+            r.remaining(),
+            0,
+            "{label}: sample {i} carries octets after the Ping: {body:02x?}"
+        );
     }
-    .into_submessage()
-    .expect("write_data submessage");
-    Message::new(header, vec![sm])
-        .expect("message")
-        .encode()
-        .expect("encode")
 }
 
-/// Builds a conformant DDS-XRCE `DATA` message (agent -> client): the
-/// `request_id` echoes the originating `READ_DATA`/`WRITE_DATA` request and the
-/// `object_id` identifies the source DataReader (§8.3.5.10).
+/// The two values a producer-latency bench prints, the decoupled enqueue first
+/// and the inline send second: the first two numbers after an `=` on the
+/// first line that names the latency (`producer latency: … = 84 ns, … =
+/// 5917 ns`, `LATENCY enqueue(decoupled)=31ns inline(send)=3427ns`, `BENCH
+/// enqueue_ns=12 inline_send_ns=3400`).
+#[must_use]
+pub fn decoupled_and_inline_ns(output: &str) -> Option<(f64, f64)> {
+    let line = output
+        .lines()
+        .find(|l| l.contains("BENCH") || l.contains("LATENCY") || l.contains("latency"))?;
+    let values: Vec<f64> = line
+        .split('=')
+        .skip(1)
+        .filter_map(|part| {
+            let number: String = part
+                .trim_start()
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            number.parse().ok()
+        })
+        .collect();
+    match values[..] {
+        [decoupled, inline, ..] => Some((decoupled, inline)),
+        _ => None,
+    }
+}
+
+/// reliable-endpoint 1.0 §5 point 4 and §2: the producer's enqueue into the
+/// async-decoupled writer costs less than the inline send, which enters the
+/// kernel.
 ///
 /// # Panics
-/// Panics only on an internal encode error (impossible for in-bounds input).
-#[must_use]
-pub fn conformant_data_frame(request_id: [u8; 2], object_id: ObjectId, sample: &[u8]) -> Vec<u8> {
-    let header = MessageHeader::without_client_key(
-        SessionId(0x80),
-        StreamId::BUILTIN_BEST_EFFORT,
-        SerialNumber16::new(1),
-    )
-    .expect("header");
-    let sm = DataPayload {
-        base: BaseObjectRequest {
-            request_id,
-            object_id,
-        },
-        serialized_data: sample.to_vec(),
-    }
-    .into_submessage()
-    .expect("data submessage");
-    Message::new(header, vec![sm])
-        .expect("message")
-        .encode()
-        .expect("encode")
-}
-
-/// Parses a conformant `WRITE_DATA` message, returning the `BaseObjectRequest`
-/// (request/object identity) and the sample bytes. `None` on any decode error
-/// or if no `WRITE_DATA` submessage is present.
-#[must_use]
-pub fn parse_conformant_write_data(frame: &[u8]) -> Option<(BaseObjectRequest, Vec<u8>)> {
-    let msg = Message::decode(frame).ok()?;
-    let sm = msg
-        .submessages
-        .iter()
-        .find(|s| s.header.submessage_id == SubmessageId::WriteData)?;
-    let wd = WriteDataPayload::try_from_submessage(sm).ok()?;
-    Some((wd.base, wd.serialized_data))
-}
-
-/// Parses a conformant `DATA` message (agent -> client). `None` on any decode
-/// error or if no `DATA` submessage is present.
-#[must_use]
-pub fn parse_conformant_data(frame: &[u8]) -> Option<(BaseObjectRequest, Vec<u8>)> {
-    let msg = Message::decode(frame).ok()?;
-    let sm = msg
-        .submessages
-        .iter()
-        .find(|s| s.header.submessage_id == SubmessageId::Data)?;
-    let d = DataPayload::try_from_submessage(sm).ok()?;
-    Some((d.base, d.serialized_data))
+/// Panics with the bench's output when the two values are missing or the
+/// enqueue does not cost less.
+pub fn assert_enqueue_below_inline(label: &str, output: &str) {
+    let (decoupled, inline) = decoupled_and_inline_ns(output)
+        .unwrap_or_else(|| panic!("{label}: no latency line with two values:\n{output}"));
+    assert!(
+        decoupled < inline,
+        "{label}: the decoupled enqueue ({decoupled} ns) does not cost less than the inline send \
+         ({inline} ns)\n{output}"
+    );
 }
 
 /// Whether `zig` on this host can actually produce a runnable binary.
@@ -837,182 +802,4 @@ pub fn build_dotnet_assembly(
         String::from_utf8_lossy(&build.stderr),
     );
     out.join(format!("{asm}.dll"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use zerodds_xrce::object_kind::ObjectKind;
-
-    // ---- direction contract ----
-
-    #[test]
-    fn write_data_frame_uses_id_0x07() {
-        // Endpoint -> hub direction.
-        let f = xrce_frame(1, &[0xAA, 0xBB]);
-        assert_eq!(f[4], 0x07, "WRITE_DATA submessage id");
-    }
-
-    #[test]
-    fn data_frame_uses_id_0x09() {
-        // Hub -> endpoint direction (the pong the peer sends).
-        let f = xrce_data_frame(1, &[0xAA, 0xBB]);
-        assert_eq!(f[4], 0x09, "DATA submessage id");
-    }
-
-    #[test]
-    fn unframe_roundtrips_write_data() {
-        let sample = [0x01, 0x02, 0x03, 0x04];
-        let f = xrce_frame(7, &sample);
-        assert_eq!(xrce_unframe(&f), Some(sample.to_vec()));
-    }
-
-    // ---- negative frame vectors (hub-side reader rejects, never panics) ----
-
-    #[test]
-    fn unframe_rejects_wrong_direction_data_id() {
-        // A DATA/0x09 frame is the hub->endpoint direction; the hub-side parser
-        // must NOT accept it (it only consumes WRITE_DATA from endpoints).
-        let f = xrce_data_frame(1, &[0xAA, 0xBB]);
-        assert_eq!(xrce_unframe(&f), None);
-    }
-
-    #[test]
-    fn unframe_rejects_unknown_submessage_id() {
-        let mut f = xrce_frame(1, &[0xAA, 0xBB]);
-        f[4] = 0x0A; // ACKNACK id in a data slot -> reject
-        assert_eq!(xrce_unframe(&f), None);
-    }
-
-    #[test]
-    fn unframe_rejects_truncated_header() {
-        // Fewer than the 8 header bytes.
-        for len in 0..8 {
-            let f = vec![0u8; len];
-            assert_eq!(xrce_unframe(&f), None, "len {len} must be rejected");
-        }
-    }
-
-    #[test]
-    fn unframe_rejects_length_past_end() {
-        // Header claims a 100-byte body but only 2 bytes follow -> reject.
-        let mut f = xrce_frame(1, &[0xAA, 0xBB]);
-        f[6] = 100;
-        f[7] = 0;
-        assert_eq!(xrce_unframe(&f), None);
-    }
-
-    #[test]
-    fn unframe_ignores_alignment_padding_past_the_body() {
-        // §8.3.3 aligns submessage offsets to four, so up to three bytes after
-        // a body are padding. They are consumed as padding, never appended to
-        // the sample. Four or more would start a second submessage header and
-        // be parsed as one.
-        let mut f = xrce_frame(1, &[0xAA, 0xBB]);
-        f.push(0xCC); // one padding byte (body ends at offset 14 of 16)
-        assert_eq!(xrce_unframe(&f), Some(vec![0xAA, 0xBB]));
-    }
-
-    #[test]
-    fn write_data_frame_carries_the_writer_object_id() {
-        // The whole point of the conformant body: an agent can route the frame.
-        let payload = xrce_unframe_payload(&xrce_frame(9, &[0xAA])).expect("parse");
-        assert_eq!(payload.base.object_id, endpoint_writer_id());
-        assert_eq!(payload.base.request_id, 9u16.to_be_bytes());
-    }
-
-    /// The pre-conformance endpoint frame — `flags = 0x03` (FORMAT_SAMPLE) and
-    /// a body that is the bare sample — must be REJECTED here. This is the
-    /// counter-proof for the gate: if a port regresses to that dialect, the
-    /// peer stops accepting it instead of quietly decoding it.
-    #[test]
-    fn unframe_rejects_the_pre_conformance_endpoint_frame() {
-        let legacy = vec![
-            0x80, 0x01, 0x01, 0x00, // session, stream, seq LE
-            0x07, 0x03, 0x02, 0x00, // WRITE_DATA, FORMAT_SAMPLE + E, len 2
-            0xAA, 0xBB, // the bare sample, no BaseObjectRequest
-        ];
-        assert_eq!(xrce_unframe(&legacy), None);
-    }
-
-    // ---- conformant DDS-XRCE (BaseObjectRequest before the sample) ----
-
-    #[test]
-    fn conformant_write_data_carries_object_identity() {
-        let writer = ObjectId::new(0x001, ObjectKind::DataWriter).expect("writer id");
-        let frame = conformant_write_data_frame([0x00, 0x2A], writer, &[0xDE, 0xAD]);
-        let (base, sample) = parse_conformant_write_data(&frame).expect("parse");
-        assert_eq!(base.request_id, [0x00, 0x2A]);
-        assert_eq!(base.object_id, writer);
-        assert_eq!(sample, vec![0xDE, 0xAD]);
-        // The peer's own reader and this helper now describe the same wire
-        // form, so it reads the identical sample out of the identical frame.
-        assert_eq!(xrce_unframe(&frame), Some(vec![0xDE, 0xAD]));
-    }
-
-    /// Full client<->agent exchange with real DDS-XRCE frames over two UDP
-    /// sockets: the client WRITE_DATAs a `Ping` (with a DataWriter object id),
-    /// the agent maps the frame by `object_id`, decodes the sample, and replies
-    /// a `DATA` (echoing the `request_id`, carrying the DataReader object id);
-    /// the client decodes the `DATA`. Proves the conformant wire form both ways.
-    #[test]
-    fn conformant_write_data_then_data_roundtrip_client_agent() {
-        let agent = UdpSocket::bind("127.0.0.1:0").expect("bind agent");
-        let client = UdpSocket::bind("127.0.0.1:0").expect("bind client");
-        agent
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("agent timeout");
-        client
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .expect("client timeout");
-        let agent_addr = agent.local_addr().expect("agent addr");
-
-        let writer = ObjectId::new(0x001, ObjectKind::DataWriter).expect("writer id");
-        let reader = ObjectId::new(0x001, ObjectKind::DataReader).expect("reader id");
-        let request_id = [0x00, 0x2A];
-
-        // client -> agent: WRITE_DATA(Ping)
-        let mut w = xcdr2_writer();
-        w.write_u32(PING_SEQ);
-        w.write_string(PING_MSG);
-        let ping = w.finish();
-        client
-            .send_to(
-                &conformant_write_data_frame(request_id, writer, &ping),
-                agent_addr,
-            )
-            .expect("send write_data");
-
-        // agent receives, maps by object_id, decodes
-        let mut buf = [0u8; 4096];
-        let (n, from) = agent.recv_from(&mut buf).expect("agent recv");
-        let (base, sample) =
-            parse_conformant_write_data(&buf[..n]).expect("agent parse write_data");
-        assert_eq!(base.object_id, writer, "agent maps frame to the DataWriter");
-        assert_eq!(base.request_id, request_id);
-        let mut r = xcdr2_reader(&sample);
-        assert_eq!(r.read_u32().expect("seq"), PING_SEQ);
-        assert_eq!(r.read_string().expect("msg"), PING_MSG);
-
-        // agent -> client: DATA(Pong), echoing request_id, reader object id
-        let mut w2 = xcdr2_writer();
-        w2.write_u32(PING_SEQ);
-        w2.write_string(&format!("pong:{PING_MSG}"));
-        let pong = w2.finish();
-        agent
-            .send_to(&conformant_data_frame(base.request_id, reader, &pong), from)
-            .expect("send data");
-
-        // client receives the DATA
-        let (n2, _) = client.recv_from(&mut buf).expect("client recv");
-        let (rbase, rsample) = parse_conformant_data(&buf[..n2]).expect("client parse data");
-        assert_eq!(rbase.request_id, request_id, "DATA echoes the request_id");
-        assert_eq!(rbase.object_id, reader, "DATA carries the DataReader id");
-        let mut r2 = xcdr2_reader(&rsample);
-        assert_eq!(r2.read_u32().expect("pong seq"), PING_SEQ);
-        assert_eq!(
-            r2.read_string().expect("pong reply"),
-            format!("pong:{PING_MSG}")
-        );
-    }
 }

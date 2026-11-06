@@ -34,7 +34,7 @@ class WriterWaitAckTest {
     }
 
     @Test
-    void aWriterWhoseReadersAreInTheProcessIsAcknowledgedWhenWriteReturns() throws Exception {
+    void javapsm_2_a_writer_whose_readers_are_in_the_process_is_acknowledged_when_write_returns() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1370);
         Topic<byte[]> topic = participant.createTopic("AckInProcess", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic,
@@ -49,7 +49,7 @@ class WriterWaitAckTest {
     }
 
     @Test
-    void aWriterWithoutReadersHasNothingOutstanding() throws Exception {
+    void javapsm_2_a_writer_without_readers_has_nothing_outstanding() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1371);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(
                 participant.createTopic("AckNoReaders", byte[].class));
@@ -58,7 +58,7 @@ class WriterWaitAckTest {
     }
 
     @Test
-    void anArgumentThatIsNotADurationIsRefused() {
+    void javapsm_2_an_argument_that_is_not_a_duration_is_refused() {
         DomainParticipant participant = Qos.factory().createParticipant(1372);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(
                 participant.createTopic("AckArguments", byte[].class));
@@ -69,7 +69,7 @@ class WriterWaitAckTest {
     }
 
     @Test
-    void aClosedWriterAndAWriterThatIsNotEnabledRefuseTheWait() {
+    void javapsm_2_a_closed_writer_and_a_writer_that_is_not_enabled_refuse_the_wait() {
         DomainParticipant participant = Qos.factory().createParticipant(1373);
         Topic<byte[]> topic = participant.createTopic("AckState", byte[].class);
         Publisher lazy = participant.createPublisher(

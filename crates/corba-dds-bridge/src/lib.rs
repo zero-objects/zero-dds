@@ -7,23 +7,20 @@
 //!
 //! # Scope
 //!
-//! Bridges CORBA object method invocations bidirectionally onto DDS
-//! topic publish/subscribe:
+//! The daemon `zerodds-corba-bridged` (`zerodds-corba-bridge-1.0`):
 //!
-//! * **CORBA → DDS**: A GIOP request received by the bridge POA is
-//!   converted into a DDS sample and published on the associated
-//!   topic. The reply comes from a second reply topic.
-//! * **DDS → CORBA**: A DDS sample on a source topic is converted into
-//!   a GIOP request and sent to a CORBA client endpoint (forwarding
-//!   mode).
+//! * **CORBA → DDS** (§4.3): a GIOP request to a mapped object key and
+//!   operation becomes a sample on the mapping's request topic; the sample
+//!   on its reply topic with the same `request_id` becomes the GIOP reply.
+//! * **DDS → CORBA** (§4.4): a sample on a notify topic becomes a oneway
+//!   GIOP request to each target of the mapping.
 //!
-//! The `BridgeMapping` allows a many-to-many configuration: a CORBA
-//! object can serve multiple topics, and a DDS topic can accept
-//! requests from multiple CORBA objects.
-//!
-//! The concrete wire binding to the CORBA world lives in [`wire`]:
-//! [`decode_giop_request_bytes`] and [`object_key_from_ior`] encapsulate
-//! the cross-crate calls into `corba-giop` and `corba-ior` respectively.
+//! [`bridge_daemon`] holds the configuration (§3), the IIOP and SSLIOP
+//! listeners (§4, §7.1), LocateRequest (§4.7) and the DDS side;
+//! [`daemon_runtime`], [`bridge_security`], [`csiv2_wire`] and
+//! [`naming_client`] what it uses for metrics, TLS, CSIv2 and the
+//! NameService. [`mapping`] describes mappings as code, for the examples
+//! that do so.
 //!
 //! ## Example
 //!
@@ -43,31 +40,16 @@ extern crate alloc;
 // §7.2 auth modes, §7.3 topic ACL). std-only.
 #[cfg(feature = "std")]
 pub mod bridge_security;
-// Daemon runtime adapter + QoS translation. std-only.
+// The CSIv2 service context of a GIOP message (§7.2).
 pub mod csiv2_wire;
+// Daemon runtime adapter: metrics, shutdown. std-only.
 #[cfg(feature = "std")]
 pub mod daemon_runtime;
 // The bridge daemon: configuration, IIOP/SSLIOP server, the DDS side.
 #[cfg(feature = "std")]
 pub mod bridge_daemon;
-pub mod locate;
 pub mod mapping;
 #[cfg(feature = "std")]
 pub mod naming_client;
-pub mod notify;
-#[cfg(feature = "std")]
-pub mod qos_translation;
-// The servant and the lifecycle sync hold shared state behind a
-// `std::sync::Mutex`. std-only.
-#[cfg(feature = "std")]
-pub mod servant;
-#[cfg(feature = "std")]
-pub mod sync;
-pub mod wire;
 
 pub use mapping::{BridgeMapping, BridgeRoute, Direction, OperationMapping, TopicQosRef};
-#[cfg(feature = "std")]
-pub use servant::BridgeServant;
-#[cfg(feature = "std")]
-pub use sync::{LifecycleEvent, LifecycleSync};
-pub use wire::{RequestSummary, decode_giop_request_bytes, object_key_from_ior};

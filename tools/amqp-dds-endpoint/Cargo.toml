@@ -48,3 +48,10 @@ signal-hook = { workspace = true }
 [dev-dependencies]
 # Self-signed cert generation for TLS tests.
 rcgen = "0.13"
+
+# The contract with zerodds-bridge-security (internal/release/rc8-test-suite.md,
+# "Crate tier"): this crate reaches zerodds-bridge-security only with `tls`.
+[[test]]
+name = "contract_bridge_security"
+path = "tests/contract_bridge_security.rs"
+required-features = ["tls"]

@@ -668,10 +668,10 @@ fn dependencies(ast: &Ast, id: Id<TypeNode>) -> Vec<Id<TypeNode>> {
         TypeKind::Union { discriminator, .. } => {
             out.extend(discriminator.resolved());
             for case in ast.cases_of(id) {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        out.extend(member.type_.resolved());
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                {
+                    out.extend(member.type_.resolved());
                 }
             }
         }
@@ -1429,10 +1429,10 @@ fn union_decl(
     let cases = ast.cases_of(id);
     let mut pairs = vec![(DISCRIMINANT.to_string(), "<discriminator>".to_string())];
     for case in cases {
-        if let Ok(case_node) = ast.case(*case) {
-            if let Ok(member) = ast.member(case_node.member) {
-                pairs.push((component_name(&member.name), member.name.clone()));
-            }
+        if let Ok(case_node) = ast.case(*case)
+            && let Ok(member) = ast.member(case_node.member)
+        {
+            pairs.push((component_name(&member.name), member.name.clone()));
         }
     }
     no_folded_collision(&pairs, name)?;

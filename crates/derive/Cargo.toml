@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "derive(DdsType) and derive(WireRepr) for zerodds-codec: a DDS topic type, or a checked newtype over an IDL primitive, defined in Rust."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-derive"
+readme = "README.md"
+keywords = ["dds", "derive", "proc-macro", "idl", "xcdr"]
+categories = ["development-tools::procedural-macro-helpers", "encoding"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+quote = "1"
+proc-macro2 = "1"

@@ -11,7 +11,7 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §8.1.6.2 (Rest) DLRL-Entity-Klassen als eigenständige Typen
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — die 13 Klassen gibt es in `crates/dlrl` nicht als eigene Typen.
 
 ## §8.1.6.3 Details on DLRL Entities
 
@@ -19,7 +19,7 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §8.1.6.3 (Rest) Methodensignaturen der Entity-Tabellen
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — die Attribute und Operationen der Tabellen §8.1.6.3.1 bis §8.1.6.3.17 sind nicht als Signaturen umgesetzt.
 
 ## §8.2.1 Run-time Entities
 
@@ -27,4 +27,4 @@ Kein eigener Inhalt: jedes Item steht dort mit seinem Beleg.
 
 ## §8.2.1 (Rest) IDL-PSM-Emission + DLRL_initialize
 
-**Status:** `open` — ohne Beschreibung im Hauptfile.
+**Status:** `open` — die IDL-Interfaces der Entities und `DLRL_initialize` werden nicht erzeugt.

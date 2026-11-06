@@ -63,8 +63,9 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use zerodds_ast::Ast;
-use zerodds_ast_layout::{Encoding, Endianness, LayoutKey};
+use zerodds_ast_layout::{Dialect, Encoding, Endianness, LayoutKey, Purpose};
 use zerodds_lang_cst::common::Language;
+use zerodds_lang_rules::emit::encode::CodecOptions;
 
 /// The repository root, from this crate's manifest.
 fn root() -> PathBuf {
@@ -116,7 +117,7 @@ const COMPLETE: [&str; 21] = [
 /// is kept rather than deleted because it is the shape the ledger is
 /// written in and the next column added starts in it; and gate 3, which
 /// reads it, does not go vacuous when it is empty — see
-/// [`the_type_only_columns_are_each_missing_a_part_a_codec_backend_rests_on`].
+/// [`xtypes_7_5_1_the_type_only_columns_are_each_missing_a_part_a_codec_backend_rests_on`].
 const TYPE_ONLY: [&str; 0] = [];
 
 /// The operations `emit/encode.rs` and `emit/decode.rs` name.
@@ -207,7 +208,7 @@ fn cst_has_a_statement_layer(root: &Path, language: &str) -> bool {
 /// What the generated codec calls. `runtime/rust` is absent and Rust is
 /// not a counter-example: its runtime is the `zerodds-wire` crate, and
 /// its codec is `src/encode.rs` rather than a `CodecTarget` backend —
-/// which is why [`a_codec_backend_never_exists_without_the_three_parts_it_needs`]
+/// which is why [`xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`]
 /// asks only of the columns that have a backend.
 fn runtime_exists(root: &Path, language: &str) -> bool {
     // "ada83" is one exception: `runtime/ada-83`, hyphenated to match
@@ -241,7 +242,7 @@ fn backend_exists(root: &Path, language: &str) -> bool {
 }
 
 #[test]
-fn the_operations_the_walks_emit_all_exist_in_the_reference_runtime() {
+fn xtypes_7_4_the_operations_the_walks_emit_all_exist_in_the_reference_runtime() {
     // `runtime/c` is the reference because the C column is the one both
     // walks were shaped from, and because it is the only runtime that
     // has generated both directions over the whole corpus. Every
@@ -288,7 +289,7 @@ fn the_operations_the_walks_emit_all_exist_in_the_reference_runtime() {
 }
 
 #[test]
-fn a_codec_backend_never_exists_without_the_three_parts_it_needs() {
+fn xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs() {
     // The invariant behind the decision recorded in
     // `docs/language-columns-status.md`: a `CodecTarget` backend is the
     // last of four parts, not the first. It builds `lang_cst` statements,
@@ -338,7 +339,7 @@ fn a_codec_backend_never_exists_without_the_three_parts_it_needs() {
 }
 
 #[test]
-fn the_type_only_columns_are_each_missing_a_part_a_codec_backend_rests_on() {
+fn xtypes_7_5_1_the_type_only_columns_are_each_missing_a_part_a_codec_backend_rests_on() {
     // The ledger `docs/language-columns-status.md` quotes. Each column
     // in the tier is missing at least one of the three, so the decision
     // not to write `emit/<lang>.rs` for it in this pass has a named
@@ -466,18 +467,9 @@ const RUNTIMES: [(Language, &str); 20] = [
 /// `utf8_octets`, `struct-mutable` for the EMHEADER and PID arms,
 /// `fixed-basic` for the decimal arm.
 ///
-/// Five of the 66 are reached by no case here and by no column:
-/// `reader_save`, `reader_restore`, `reader_clear_discard`,
-/// `write_pid_extended` and `write_union_overlay`. The first three belong
-/// to the counting pass a `map` takes when its count is omitted, and the
-/// last two to a member id or a length no corpus case carries and to the
-/// Cyclone union overlay — none of which
-/// [`zerodds_lang_rules::generate::source`] can be made to emit, because
-/// it fixes the dialect to `Specification` on purpose (see its own doc).
-/// `runtime/c` is held to all 66 by
-/// [`the_operations_the_walks_emit_all_exist_in_the_reference_runtime`];
-/// for the other nineteen those five are unmeasured here and recorded in
-/// `docs/OPEN-ITEMS.md`.
+/// Five of the 66 are reached by no corpus case: `reader_save`,
+/// `reader_restore`, `reader_clear_discard`, `write_pid_extended` and
+/// `write_union_overlay`. [`OPERATION_EXTRAS`] reaches them.
 const OPERATION_CASES: [&str; 17] = [
     "combined-everything",
     "wstring-unbounded-utf8",
@@ -496,6 +488,52 @@ const OPERATION_CASES: [&str; 17] = [
     "array-2d-primitives",
     "primitive-mixed",
     "struct-appendable",
+];
+
+/// The five operations no corpus case reaches, each with the declaration
+/// and the framing that make the walks emit it.
+///
+/// - `reader_save` and `reader_restore`: the counting pass of a delimited
+///   `map` whose count rule (15) of XTypes 1.3 §7.4.3.5.3 omits
+///   ([`CodecOptions::map_length_with_delimiter`] `false`, the reading
+///   `tools/idlc generate --map-length` selects);
+/// - `reader_clear_discard`: a member with an explicit `@default` under
+///   `@try_construct(USE_DEFAULT)` (§7.2.2.4.4.4.9);
+/// - `write_pid_extended`: a member id above the short PL_CDR1 header's
+///   0x3F00 (§7.4.1.2.2) under XCDR1;
+/// - `write_union_overlay`: a negative label of a discriminator narrower
+///   than 32 bits under the Cyclone DDS dialect, whose union storage the
+///   overlay reproduces (`UnionLabelMatch::NegativeLabelUnmatchedBelow32`).
+///
+/// Each runtime's self-test holds the five to an oracle outside the code
+/// (`runtime/<lang>`, "the operations no corpus case reaches"); this gate
+/// holds every runtime to publishing them under the name its column writes.
+const OPERATION_EXTRAS: [(&str, &str); 4] = [
+    (
+        "a delimited map",
+        "@final struct M { map<long, string> entries; };",
+    ),
+    (
+        "an explicit default under USE_DEFAULT",
+        "@final struct D { @default(5) @try_construct(USE_DEFAULT) long x; };",
+    ),
+    (
+        "a member id past the short parameter header",
+        "@mutable struct P { @id(16385) long a; };",
+    ),
+    (
+        "a negative label of a short discriminator",
+        "union U switch (short) { case -1: long a; default: long b; };",
+    ),
+];
+
+/// The operations [`OPERATION_EXTRAS`] are there to reach.
+const EXTRA_OPERATIONS: [&str; 5] = [
+    "reader_save",
+    "reader_restore",
+    "reader_clear_discard",
+    "write_pid_extended",
+    "write_union_overlay",
 ];
 
 /// The extensions a runtime's own source carries, per column.
@@ -595,6 +633,31 @@ fn what_the_generator_writes(root: &Path, language: Language) -> BTreeSet<String
             let key = LayoutKey::data(encoding, Endianness::Little);
             if let Ok(text) = zerodds_lang_rules::generate::source(&ast, language, key) {
                 out.extend(identifiers(&text));
+            }
+        }
+    }
+    let omitted_count = CodecOptions {
+        map_length_with_delimiter: false,
+    };
+    for (what, idl) in OPERATION_EXTRAS {
+        let ast = model(idl, what);
+        for encoding in Encoding::ALL {
+            for key in [
+                LayoutKey::data(encoding, Endianness::Little),
+                LayoutKey::in_dialect(
+                    Dialect::Cyclone,
+                    encoding,
+                    Endianness::Little,
+                    Purpose::Data,
+                ),
+            ] {
+                for options in [CodecOptions::default(), omitted_count] {
+                    if let Ok(text) = zerodds_lang_rules::generate::source_with_options(
+                        &ast, language, key, options,
+                    ) {
+                        out.extend(identifiers(&text));
+                    }
+                }
             }
         }
     }
@@ -740,6 +803,16 @@ fn every_runtime_publishes_the_names_its_column_writes() {
         // all. Ada 83 is the thinnest at 47 of the 66 the walks emit.
         if reached.len() < 40 {
             thin.push(format!("{}: {}", language.as_str(), reached.len()));
+        }
+        let unreached: Vec<&str> = EXTRA_OPERATIONS
+            .into_iter()
+            .filter(|operation| !reached.contains(*operation))
+            .collect();
+        if !unreached.is_empty() {
+            faults.push(format!(
+                "the {} column does not write {unreached:?} for OPERATION_EXTRAS",
+                language.as_str()
+            ));
         }
     }
     assert!(faults.is_empty(), "{}", faults.join("\n"));

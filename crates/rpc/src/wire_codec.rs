@@ -118,22 +118,61 @@ mod tests {
         SampleIdentity::new([0x42; 16], 7)
     }
 
-    #[test]
-    fn request_frame_roundtrip_empty_payload() {
-        let h = RequestHeader::new(id(), "");
-        let frame = encode_request_frame(&h, &[]).unwrap();
-        let (back, payload) = decode_request_frame(&frame).unwrap();
-        assert_eq!(back, h);
-        assert!(payload.is_empty());
+    /// Octets from a hex string; blanks separate the fields.
+    fn octets(hex: &str) -> Vec<u8> {
+        let digits: alloc::string::String = hex.chars().filter(|c| !c.is_whitespace()).collect();
+        (0..digits.len() / 2)
+            .map(|i| u8::from_str_radix(&digits[2 * i..2 * i + 2], 16).unwrap())
+            .collect()
     }
 
+    /// `id()`: the GUID of sixteen `0x42`, sequence number high 0, low 7,
+    /// little-endian.
+    const ID_LE: &str = "42424242424242424242424242424242 00000000 07000000";
+
+    /// §7.5.1.1.6: a request sample is the `RequestHeader`, the padding
+    /// that puts the `Call` union's discriminator on a 4-octet boundary,
+    /// and the union.
     #[test]
-    fn request_frame_roundtrip_with_payload() {
-        let h = RequestHeader::new(id(), "calc-A");
-        let frame = encode_request_frame(&h, &[1, 2, 3, 4]).unwrap();
-        let (back, payload) = decode_request_frame(&frame).unwrap();
-        assert_eq!(back, h);
-        assert_eq!(payload, &[1, 2, 3, 4]);
+    fn rpc_7_5_1_1_6_a_request_sample_is_the_header_the_padding_and_the_call() {
+        for (name, payload, hex) in [
+            // 24 + 4 + 1 = 29 octets of header, 3 of padding.
+            ("", &[][..], alloc::format!("{ID_LE} 01000000 00 000000")),
+            // "calc-A": 24 + 4 + 7 = 35, 1 of padding.
+            (
+                "calc-A",
+                &[1, 2, 3, 4][..],
+                alloc::format!("{ID_LE} 07000000 63616c632d4100 00 01020304"),
+            ),
+        ] {
+            let h = RequestHeader::new(id(), name);
+            let expected = octets(&hex);
+            assert_eq!(
+                encode_request_frame(&h, payload).unwrap(),
+                expected,
+                "{name:?}"
+            );
+            let (back, rest) = decode_request_frame(&expected).unwrap();
+            assert_eq!(back, h);
+            assert_eq!(rest, payload);
+        }
+    }
+
+    /// §7.5.1.1.7: a reply sample is the `ReplyHeader` (28 octets, the
+    /// exception code a 32-bit ordinal) and the `Return` union.
+    #[test]
+    fn rpc_7_5_1_1_7_a_reply_sample_is_the_header_and_the_return() {
+        for (code, ordinal) in [
+            (RemoteExceptionCode::Ok, "00000000"),
+            (RemoteExceptionCode::InvalidArgument, "02000000"),
+        ] {
+            let h = ReplyHeader::new(id(), code);
+            let expected = octets(&alloc::format!("{ID_LE} {ordinal} 090807"));
+            assert_eq!(encode_reply_frame(&h, &[9, 8, 7]), expected, "{code:?}");
+            let (back, rest) = decode_reply_frame(&expected).unwrap();
+            assert_eq!(back, h);
+            assert_eq!(rest, &[9, 8, 7]);
+        }
     }
 
     /// §7.5.1.1.6 rule 2: `data` follows `header` in the structure, and the
@@ -141,7 +180,7 @@ mod tests {
     /// `calc-A` (6 characters) the header is 24 + 4 + 7 = 35 octets, so one
     /// octet of padding precedes the union.
     #[test]
-    fn the_call_union_starts_on_a_4_octet_boundary() {
+    fn rpc_7_5_the_call_union_starts_on_a_4_octet_boundary() {
         for (name, header_len, pad) in
             [("", 29, 3), ("a", 30, 2), ("calc-A", 35, 1), ("abc", 32, 0)]
         {
@@ -164,25 +203,8 @@ mod tests {
     /// §7.5.1.1.7 rule 3: an error reply still carries the `Return`
     /// union, in its `default` case.
     #[test]
-    fn the_error_reply_data_is_the_default_case_of_the_union() {
+    fn rpc_7_5_the_error_reply_data_is_the_default_case_of_the_union() {
         assert_eq!(ERROR_REPLY_DATA.len(), 4 + 1, "long discriminator + octet");
-    }
-
-    #[test]
-    fn reply_frame_roundtrip() {
-        let h = ReplyHeader::new(id(), RemoteExceptionCode::Ok);
-        let frame = encode_reply_frame(&h, &[9, 8, 7]);
-        let (back, payload) = decode_reply_frame(&frame).unwrap();
-        assert_eq!(back, h);
-        assert_eq!(payload, &[9, 8, 7]);
-    }
-
-    #[test]
-    fn reply_frame_carries_exception_code() {
-        let h = ReplyHeader::new(id(), RemoteExceptionCode::InvalidArgument);
-        let frame = encode_reply_frame(&h, &[]);
-        let (back, _) = decode_reply_frame(&frame).unwrap();
-        assert_eq!(back.remote_ex, RemoteExceptionCode::InvalidArgument);
     }
 
     #[test]
@@ -198,7 +220,7 @@ mod tests {
     }
 
     #[test]
-    fn reply_header_consumed_28_bytes() {
+    fn rpc_7_5_1_1_1_reply_header_consumed_28_bytes() {
         let h = ReplyHeader::new(SampleIdentity::UNKNOWN, RemoteExceptionCode::Ok);
         let bytes = h.to_cdr_le();
         assert_eq!(bytes.len(), 28);

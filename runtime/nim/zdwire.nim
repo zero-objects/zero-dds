@@ -2158,3 +2158,77 @@ when isMainModule:
     doAssert r.readI32() == -1234567
     doAssert r.readI16() == -2
     doAssert r.readerPosition() == endAt
+
+  # -- the operations no corpus case reaches --------------------------------
+  #
+  # The five the generated code reaches only in a dialect or with a member
+  # no corpus case carries: writePidExtended, writeUnionOverlay,
+  # readerClearDiscard, readerSave and readerRestore
+  # (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+  # vectors, each against an oracle outside this code.
+  let specification = PlCdr1Framing(
+    pidFlags: "sentinel-must-understand",
+    highestShortId: 0x3F00,
+    padDeclaredLength: false,
+    padDeclaredOptionalLength: false,
+    memberMustUnderstand: true,
+    padAfterValue: true)
+
+  block writePidExtendedWritesCyclonesRecordedParameter:
+    # The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+    # recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv).
+    var w = newWriter(EndianLittle, 8, specification, false)
+    let header = w.writePidExtended(0, ParameterMember, false)
+    w.writeI32(-1234567)
+    w.finishPid(header)
+    doAssert w.finish() == @[0x01'u8, 0x7f, 0x08, 0x00, 0, 0, 0, 0,
+                             0x04, 0, 0, 0, 0x79, 0x29, 0xed, 0xff]
+
+  block writeUnionOverlayWritesTheStorageAtTheBranchsWidth:
+    # A `short` read through a four-octet and a one-octet `default:` branch:
+    # Cyclone DDS 11.0.1 writes the union's storage, the member's octets
+    # with zeros above (`combined-everything`,
+    # crates/wire-codec/src/encode.rs `write_selected_branch`).
+    var w = newWriter(EndianLittle, 4, specification, false)
+    let pattern = bitPatternInt(-2, 2)
+    w.writeUnionOverlay(pattern, 4)
+    w.writeUnionOverlay(pattern, 1)
+    doAssert w.finish() == @[0xfe'u8, 0xff, 0, 0, 0xfe]
+
+  block readerClearDiscardTakesBackADiscardAndNothingElse:
+    # XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+    # Table 9's value, so the call site asks for DISCARD and takes it back.
+    # Any other refusal is not a narrowing and stays.
+    var discarded = newReader(@[1'u8, 2, 3, 4], EndianLittle, 4, specification)
+    discarded.readerRefuse(StatusDiscarded)
+    doAssert discarded.readerClearDiscard()
+    doAssert discarded.readerStatus() == StatusOk
+    var refused = newReader(@[1'u8, 2, 3, 4], EndianLittle, 4, specification)
+    refused.readerRefuse(StatusOutOfRange)
+    doAssert not refused.readerClearDiscard()
+    doAssert refused.readerStatus() == StatusOutOfRange
+
+  block readerSaveAndRestoreCountADelimitedMapAndReadItAgain:
+    # XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+    # DHEADER and the pairs, without a count. The reader counts the pairs,
+    # goes back and reads them again; a refusal made while counting goes
+    # back with the cursor.
+    var r = newReader(@[0x10'u8, 0, 0, 0, 1, 0, 0, 0, 0x0a, 0, 0, 0,
+                        2, 0, 0, 0, 0x14, 0, 0, 0], EndianLittle, 4, specification)
+    let extent = int(r.readDheader())
+    let endAt = r.readerPosition() + extent
+    let mark = r.readerSave()
+    var pairs = 0
+    while r.readerPosition() < endAt and r.readerStatus() == StatusOk:
+      discard r.readI32()
+      discard r.readI32()
+      inc pairs
+    r.readerRefuse(StatusOutOfRange)
+    r.readerRestore(mark)
+    doAssert pairs == 2
+    doAssert r.readI32() == 1
+    doAssert r.readI32() == 10
+    doAssert r.readI32() == 2
+    doAssert r.readI32() == 20
+    doAssert r.readerPosition() == 20
+    doAssert r.readerStatus() == StatusOk

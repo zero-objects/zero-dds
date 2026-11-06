@@ -30,7 +30,7 @@
 //!
 //! # The sixteen rows this file exists for
 //!
-//! `docs/open-rows-breakdown.md` attributed 24 rows to this cause and 16
+//! `0b2e8df9f6b:docs/open-rows-breakdown.md` attributed 24 rows to this cause and 16
 //! more to the holder's width. The 16 —
 //! `enum-bitbound-{8,16}-value` and their twins — are **both**: after
 //! `bit-bound-dropped` the holder is four octets on each side and the
@@ -262,7 +262,7 @@ fn the_forty_rows_are_reproduced() {
 /// **both** settings, and neither of them alone.
 ///
 /// This is the sixteen-row discrepancy between
-/// `docs/open-rows-breakdown.md`'s arithmetic and the measurement, as a
+/// `0b2e8df9f6b:docs/open-rows-breakdown.md`'s arithmetic and the measurement, as a
 /// test. `enum-bitbound-{8,16}-value` and their twins differ from
 /// OpenDDS in the holder *and* in the contents; the six rows beside them
 /// — `enum-negative-value`, `enum-sparse-values`,
@@ -754,8 +754,7 @@ fn the_configuration_is_named_the_same_everywhere() {
         EnumeratorValue::Ordinal,
         "`Dialect::OpenDds` no longer selects the setting this file measures"
     );
-    const LISTS: [&str; 4] = [
-        "crates/wire-probe/tests/three_column_gate.rs",
+    const LISTS: [&str; 3] = [
         "tools/interop-results/src/rust_column.rs",
         "crates/wire-probe/src/matrix.rs",
         "tools/wireprobe/wireprobe-zerodds-c-gen/src/bin/wireprobe-c-matrix.rs",

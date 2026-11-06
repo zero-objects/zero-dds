@@ -12,8 +12,8 @@ The mechanism this column shares with the other twenty — the two walks, the fr
 
 **Repo:** `crates/lang-cst/src/java/`, `crates/lang-render/src/java.rs`
 
-**Tests:** `crates/lang-render/tests/rendering.rs`: `a_java_class_renders_its_modifiers_annotations_and_members`, `a_java_enum_ends_its_constants_with_a_semicolon_only_when_members_follow`, `a_java_generic_type_renders_its_arguments_with_dots_in_the_path`, `a_java_file_writes_its_package_and_imports`;
-across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/tests/rendering.rs`: `xtypes_7_5_1_a_java_class_renders_its_modifiers_annotations_and_members`, `xtypes_7_5_1_a_java_enum_ends_its_constants_with_a_semicolon_only_when_members_follow`, `xtypes_7_5_1_a_java_generic_type_renders_its_arguments_with_dots_in_the_path`, `xtypes_7_5_1_a_java_file_writes_its_package_and_imports`;
+across all renderers `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/rule/java.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/java.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_java.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/java`, endpoint SDK `endpoints/java`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,7 +78,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::idl4java_7_2_4_1_1_every_idl_primitive_reaches_the_java_type_that_holds_it`
 
 **Status:** done
 
@@ -89,7 +89,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_fixed_is_a_bigdecimal`, `crates/lang-rules/tests/java_runtime_selftest.rs`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::idl4java_7_2_4_2_4_a_fixed_is_a_bigdecimal`, `crates/lang-rules/tests/java_runtime_selftest.rs`
 
 **Status:** done
 
@@ -99,7 +99,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_sequence_and_an_array_are_both_java_arrays`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::javapsm_9_1_2_a_sequence_and_an_array_are_both_java_arrays`
 
 **Status:** done
 
@@ -110,9 +110,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_map_is_a_java_util_map_over_a_generated_entry_class`,
-`crates/lang-rules/src/adapter/java.rs::tests::two_maps_of_one_shape_are_one_entry_class`,
-`crates/lang-rules/src/adapter/java.rs::tests::two_maps_of_one_java_shape_and_two_idl_shapes_are_two_entry_classes`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::idl4java_7_14_3_1_a_map_is_a_java_util_map_over_a_generated_entry_class`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_2_2_4_3_two_maps_of_one_shape_are_one_entry_class`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_2_2_4_3_two_maps_of_one_java_shape_and_two_idl_shapes_are_two_entry_classes`
 
 **Status:** done
 
@@ -122,7 +122,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_optional_member_is_boxed_and_a_primitive_one_too`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_4_3_an_optional_member_is_boxed_and_a_primitive_one_too`
 
 **Status:** done
 
@@ -133,8 +133,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one`,
-`crates/lang-rules/src/adapter/java.rs::tests::an_explicit_enumerator_value_is_written_out`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_1_3_an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one`,
+`crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_5_1_2_1_3_an_explicit_enumerator_value_is_written_out`
 
 **Status:** done
 
@@ -144,9 +144,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_module_is_a_nested_class_and_two_modules_do_not_collide`,
-`crates/lang-rules/src/adapter/java.rs::tests::a_module_reopened_beside_a_nested_one_is_one_class`,
-`crates/lang-rules/src/adapter/java.rs::tests::a_declaration_named_after_the_outer_class_is_refused`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::idl4java_7_2_2_a_module_is_a_nested_class_and_two_modules_do_not_collide`,
+`crates/lang-rules/src/adapter/java.rs::tests::idl4java_7_2_2_a_module_reopened_beside_a_nested_one_is_one_class`,
+`crates/lang-rules/src/adapter/java.rs::tests::idl_7_5_2_a_declaration_named_after_the_outer_class_is_refused`
 
 **Status:** done
 
@@ -156,8 +156,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_identifier_that_is_a_java_keyword_is_escaped`,
-`crates/lang-rules/src/adapter/java.rs::tests::a_name_that_would_capture_the_qualified_references_is_refused`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::idl4java_7_1_1_0_an_identifier_that_is_a_java_keyword_is_escaped`,
+`crates/lang-rules/src/adapter/java.rs::tests::idl_7_2_3_a_name_that_would_capture_the_qualified_references_is_refused`
 
 **Status:** done
 
@@ -167,8 +167,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/java.rs`
 
-**Tests:** `crates/lang-rules/tests/one_walk_two_targets.rs::the_java_backend_spells_the_shapes_the_materialiser_declares`,
-`crates/lang-rules/tests/one_walk_two_targets.rs::an_unsigned_local_is_wide_enough_in_java`
+**Tests:** `crates/lang-rules/tests/one_walk_two_targets.rs::xtypes_7_4_3_the_java_backend_spells_the_shapes_the_materialiser_declares`,
+`crates/lang-rules/tests/one_walk_two_targets.rs::idl4java_7_2_4_1_1_an_unsigned_local_is_wide_enough_in_java`
 
 **Status:** done
 
@@ -178,10 +178,10 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/interface.rs`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::java_declares_the_same_entities_as_cpp`,
-`crates/lang-rules/tests/interface_bindings.rs::java_returns_a_future_of_the_boxed_result`,
-`crates/lang-rules/tests/interface_bindings.rs::java_returns_the_out_type_where_cpp_takes_a_reference`,
-`crates/lang-rules/tests/interface_bindings.rs::java_carries_the_topic_names_as_constants`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_2_java_declares_the_same_entities_as_cpp`,
+`crates/lang-rules/tests/interface_bindings.rs::idl4java_7_4_java_returns_a_future_of_the_boxed_result`,
+`crates/lang-rules/tests/interface_bindings.rs::idl4java_7_4_java_returns_the_out_type_where_cpp_takes_a_reference`,
+`crates/lang-rules/tests/interface_bindings.rs::idl_7_4_3_java_carries_the_topic_names_as_constants`
 
 **Status:** done
 
@@ -193,7 +193,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/java.rs`, `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -203,7 +203,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/java.rs`, `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_construct_with_no_java_data_form_is_named_and_not_left_out`
+**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::xtypes_7_4_a_construct_with_no_java_data_form_is_named_and_not_left_out`
 
 **Status:** done
 
@@ -213,7 +213,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/java.rs`, `crates/lang-rules/src/adapter/java.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::java_wraps_the_file_and_fills_the_class_body`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::idl4java_7_17_5_java_wraps_the_file_and_fills_the_class_body`
 
 **Status:** done
 
@@ -225,8 +225,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -236,8 +236,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-java-gen/`, `tools/wireprobe/wireprobe-zerodds-java`, `tools/wireprobe/wireprobe-java-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -245,8 +244,15 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ## Audit Status
 
-21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-java-1.0.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (job `merge-rust-lang-render`) — 28 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 31 tests green.
+* `python3 ci/run_integration.py merge-codegen-java` (job `merge-codegen-java`) — 1 test green.
+
+62 cited tests green, 0 not green.
+
+Open items: none.

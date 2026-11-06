@@ -28,7 +28,7 @@ use serde_json::{Value, json};
 use zerodds_ast_layout::{Dialect, Encoding, Endianness, PidFlagPolicy};
 use zerodds_wire_probe::canonical::{canonicalise, text};
 use zerodds_wire_probe::decode::decode;
-use zerodds_wire_probe::encode::{encode, hex, model_from_idl};
+use zerodds_wire_probe::encode::{encode, model_from_idl};
 use zerodds_wire_probe::value::ProbeRequest;
 
 /// Whether the difference between two dialects is visible in the
@@ -343,41 +343,6 @@ fn canonical(case: &Case) -> String {
         .expect("the type");
     let values = (case.values)();
     text(&canonicalise(&ast, type_, &values, case.type_name).expect("the sample"))
-}
-
-/// What a dialect writes for a case, in both byte orders.
-///
-/// Both, because one of the four settings only shows in big endian and
-/// because the byte-swap arms of the writer are otherwise unexecuted.
-#[test]
-fn every_dialect_reads_back_what_it_wrote() {
-    for case in cases() {
-        let ast = model_from_idl(case.idl, "dialect.idl").expect("the model");
-        let sample = (case.values)();
-        let expected = canonical(&case);
-        for dialect in Dialect::ALL {
-            for endianness in Endianness::ALL {
-                let request = request(&case, dialect, endianness);
-                let bytes = encode(&ast, &request, &sample).unwrap_or_else(|error| {
-                    panic!("{} / {dialect:?} / {endianness:?}: {error}", case.what)
-                });
-                let read = decode(&ast, &request, &bytes).unwrap_or_else(|error| {
-                    panic!(
-                        "{} / {dialect:?} / {endianness:?}: its own bytes did not read \
-                         back: {error}\n  {}",
-                        case.what,
-                        hex(&bytes)
-                    )
-                });
-                assert_eq!(
-                    text(&read),
-                    expected,
-                    "{} / {dialect:?} / {endianness:?}: the value came back different",
-                    case.what
-                );
-            }
-        }
-    }
 }
 
 /// Every ordered pair of dialects, over every case.

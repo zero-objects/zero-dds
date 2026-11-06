@@ -77,7 +77,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn status_agent_roundtrip() {
+    fn xrce_8_3_5_5_status_agent_roundtrip() {
         let p = StatusAgentPayload {
             representation: alloc::vec![b'X', b'R', b'C', b'E'],
         };

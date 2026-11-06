@@ -39,7 +39,7 @@
 //! created with a complete and correct property list came up **without**
 //! a `SecurityBundle` — plaintext RTPS, with nothing on either side
 //! saying so. That is the silent-drop failure class this tree names in
-//! `docs/silent-drop-sweep.md`, applied to the whole security stack.
+//! `0b2e8df9f6b:docs/silent-drop-sweep.md`, applied to the whole security stack.
 //!
 //! Hence [`security_bundle_from_properties`]: one function, one
 //! [`SecurityProfile`], used by `DomainParticipant::new_with_runtime`.
@@ -1244,8 +1244,8 @@ pub fn psk_crypto_config_from_properties(
     protection: zerodds_security_crypto::psk_rtps::PskProtection,
 ) -> Result<zerodds_security_crypto::psk_rtps::PskConfig, SecurityPropertyError> {
     use zerodds_security_crypto::psk_rtps::{
-        PROP_CIPHER, PROP_PASSPHRASE, PROP_PASSPHRASE_ALT, PROP_PASSPHRASE_TABLE_76, Passphrase,
-        PskConfig, key_bits_from_cipher, parse_passphrase_list,
+        ALTERNATIVE_PASSPHRASE_PROPERTIES, PROP_CIPHER, PROP_PASSPHRASE, PROP_PASSPHRASE_TABLE_76,
+        Passphrase, PskConfig, key_bits_from_cipher, parse_passphrase_list,
     };
     let read = |name: &'static str, value: &str| -> Result<String, SecurityPropertyError> {
         let material = resolve_material(name, value)?;
@@ -1268,12 +1268,14 @@ pub fn psk_crypto_config_from_properties(
     let text = read(name, value)?;
     let passphrase = Passphrase::parse(text.trim_end_matches(['\r', '\n']))
         .map_err(|e| SecurityPropertyError::PskCrypto(alloc::format!("{name}: {}", e.detail)))?;
-    let alternatives = match props.get(PROP_PASSPHRASE_ALT) {
-        Some(value) => parse_passphrase_list(&read(PROP_PASSPHRASE_ALT, value)?).map_err(|e| {
-            SecurityPropertyError::PskCrypto(alloc::format!("{PROP_PASSPHRASE_ALT}: {}", e.detail))
-        })?,
-        None => Vec::new(),
-    };
+    let mut alternatives = Vec::new();
+    for name in ALTERNATIVE_PASSPHRASE_PROPERTIES {
+        if let Some(value) = props.get(name) {
+            alternatives.extend(parse_passphrase_list(&read(name, value)?).map_err(|e| {
+                SecurityPropertyError::PskCrypto(alloc::format!("{name}: {}", e.detail))
+            })?);
+        }
+    }
     let key_bits = key_bits_from_cipher(props.get(PROP_CIPHER))
         .map_err(|e| SecurityPropertyError::PskCrypto(e.detail.to_string()))?;
     Ok(PskConfig {
@@ -1296,7 +1298,7 @@ mod tests {
     /// access-control plugin looks for. DDS-Security 1.2 §10.3.1 Table 50
     /// and §10.4.1 Table 63.
     #[test]
-    fn the_property_names_are_the_spec_strings() {
+    fn security_10_3_1_the_property_names_are_the_spec_strings() {
         assert_eq!(PROP_IDENTITY_CA, "dds.sec.auth.identity_ca");
         assert_eq!(PROP_IDENTITY_CERT, "dds.sec.auth.identity_certificate");
         assert_eq!(PROP_IDENTITY_KEY, "dds.sec.auth.private_key");
@@ -1315,7 +1317,7 @@ mod tests {
     /// security configuration, and treating it as one would refuse every
     /// plaintext participant that wants security-event observability.
     #[test]
-    fn the_auth_and_access_namespaces_request_security_and_the_log_one_does_not() {
+    fn security_10_4_1_the_auth_and_access_namespaces_request_security_and_the_log_one_does_not() {
         assert!(!requests_security(&PropertyQosPolicy::new()));
         assert!(!requests_security(
             &PropertyQosPolicy::new().with("dds.sec.log.plugin", "stderr")
@@ -1330,7 +1332,7 @@ mod tests {
 
     /// All three `file:` spellings, plus the plain path.
     #[test]
-    fn every_file_uri_form_resolves_to_a_path() {
+    fn security_10_3_1_every_file_uri_form_resolves_to_a_path() {
         assert_eq!(
             resolve_file_uri(PROP_GOVERNANCE, "file:../TESTONLY_governance_signed.p7s").unwrap(),
             PathBuf::from("../TESTONLY_governance_signed.p7s")
@@ -1361,7 +1363,7 @@ mod tests {
     /// `pkcs11:` URI (RFC 7512); without the `pkcs11` feature it refuses
     /// naming the feature.
     #[test]
-    fn the_uri_schemes_that_are_not_paths_are_named_not_opened_as_paths() {
+    fn security_10_3_1_the_uri_schemes_that_are_not_paths_are_named_not_opened_as_paths() {
         for scheme in ["pkcs11", "data"] {
             let value = if scheme == "pkcs11" {
                 "pkcs11:token=hsm;object=key"
@@ -1412,7 +1414,7 @@ mod tests {
     /// Every one of the six is named when it is missing, in the order
     /// the profile needs them.
     #[test]
-    fn each_missing_property_is_reported_by_its_own_name() {
+    fn security_10_3_each_missing_property_is_reported_by_its_own_name() {
         let full = complete_property_list();
         for expected in [
             PROP_IDENTITY_CA,
@@ -1449,7 +1451,7 @@ mod tests {
     /// the query is the password and not part of the path; the `password`
     /// property wins when both are given; a `data:` value keeps its `?`.
     #[test]
-    fn a_password_in_the_key_uri_is_not_part_of_the_path() {
+    fn security_10_3_1_a_password_in_the_key_uri_is_not_part_of_the_path() {
         let (material, password) =
             resolve_private_key(PROP_IDENTITY_KEY, "file:key.pem?password=Open%20Sesame").unwrap();
         assert!(matches!(&material, Material::File(p) if p == std::path::Path::new("key.pem")));
@@ -1486,7 +1488,7 @@ mod tests {
     /// `org.zerodds.sec.auth.ocsp_unreachable` says accept; a value nobody can
     /// read is an error and does not switch the check off.
     #[test]
-    fn the_ocsp_policy_refuses_by_default_and_reads_its_settings() {
+    fn security_10_3_3_the_ocsp_policy_refuses_by_default_and_reads_its_settings() {
         use zerodds_security_pki::OcspUnreachable;
         let none = PropertyQosPolicy::new();
         let policy = ocsp_policy_from_properties(&none).unwrap();
@@ -1522,7 +1524,7 @@ mod tests {
     /// whether and how the RTPS messages are protected with the pre-shared
     /// key; the property of Table 84 only where the governance names NONE.
     #[test]
-    fn the_governance_decides_the_pre_shared_key_protection() {
+    fn security_9_4_2_4_the_governance_decides_the_pre_shared_key_protection() {
         use zerodds_security_crypto::psk_rtps::PskProtection;
         use zerodds_security_permissions::ProtectionKind as K;
         let props = PropertyQosPolicy::new().with(
@@ -1551,7 +1553,7 @@ mod tests {
     }
 
     #[test]
-    fn the_psk_crypto_properties_of_table_86_are_read() {
+    fn security_10_5_1_2_the_psk_crypto_properties_of_table_86_are_read() {
         use zerodds_security_crypto::psk_rtps::{
             PROP_CIPHER, PROP_PASSPHRASE, PROP_PASSPHRASE_ALT, PskProtection,
         };
@@ -1595,10 +1597,60 @@ mod tests {
         assert_eq!(config(&t76).unwrap().passphrase.id, 5632);
     }
 
+    /// Table 86 and Table 71 give every property the prefix
+    /// `dds.sec.crypto.`: the alternatives are read from
+    /// `dds.sec.crypto.rtps_psk_secret_passphrase_alt` (Table 86) and
+    /// `dds.sec.crypto.rtps_psk_secret_passphrase_extra` (Table 71), and from
+    /// the `org.zerodds.` names read before; each one set adds its own.
+    #[test]
+    fn security_10_9_1_the_alternative_passphrases_are_read_under_the_names_of_the_spec() {
+        use zerodds_security_crypto::psk_rtps::PskProtection;
+        let ids = |props: PropertyQosPolicy| {
+            psk_crypto_config_from_properties(&props, 201, "", PskProtection::Encrypt)
+                .unwrap()
+                .alternatives
+                .iter()
+                .map(|p| p.id)
+                .collect::<Vec<_>>()
+        };
+        let base = || {
+            PropertyQosPolicy::new().with(
+                "dds.sec.crypto.rtps_psk_secret_passphrase",
+                "data:,5612:Open Sesame",
+            )
+        };
+        assert_eq!(
+            ids(base().with(
+                "dds.sec.crypto.rtps_psk_secret_passphrase_alt",
+                "data:,5613:Extra"
+            )),
+            [5613]
+        );
+        assert_eq!(
+            ids(base().with(
+                "dds.sec.crypto.rtps_psk_secret_passphrase_extra",
+                "data:,5614:Another"
+            )),
+            [5614]
+        );
+        assert_eq!(
+            ids(base()
+                .with(
+                    "dds.sec.crypto.rtps_psk_secret_passphrase_alt",
+                    "data:,5613:Extra"
+                )
+                .with(
+                    "org.zerodds.sec.crypto.rtps_psk_secret_passphrase_alt",
+                    "data:,5615:Older"
+                )),
+            [5613, 5615]
+        );
+    }
+
     /// The password is the clause's AES-128 key unless
     /// `org.zerodds.sec.auth.password_reading` names the vendors' reading.
     #[test]
-    fn the_password_reading_is_the_clause_unless_named() {
+    fn security_10_3_1_the_password_reading_is_the_clause_unless_named() {
         use zerodds_security_pki::encrypted_key::PasswordReading;
         let reading = |value: Option<&str>| {
             let mut props = complete_property_list();
@@ -1623,7 +1675,7 @@ mod tests {
     /// config, which opens the key with it; an empty password is the
     /// absent one.
     #[test]
-    fn a_key_password_reaches_the_profile_config() {
+    fn security_10_3_1_a_key_password_reaches_the_profile_config() {
         let props = complete_property_list().with(PROP_IDENTITY_KEY_PASSWORD, "hunter2");
         assert_eq!(
             profile_config_from_properties(&props, 0)
@@ -1881,7 +1933,7 @@ mod tests {
     /// (with the NUL, §7.3.3.1) unless `org.zerodds.sec.algo_name_nul` names
     /// `omit` or `by_vendor`; another value is refused.
     #[test]
-    fn the_algo_name_form_is_the_spec_form_unless_named() {
+    fn security_7_3_3_1_the_algo_name_form_is_the_spec_form_unless_named() {
         use zerodds_security::AlgoNameNul;
         let form = |value: Option<&str>| {
             let props = match value {
@@ -1957,7 +2009,7 @@ mod tests {
     /// The config follows the list, not a second source: set a property
     /// and the path follows it, `file:` and all.
     #[test]
-    fn the_profile_config_follows_the_property_list() {
+    fn security_10_3_1_the_profile_config_follows_the_property_list() {
         let props = complete_property_list()
             .with(PROP_IDENTITY_CERT, "file:../certs/id_cert.pem")
             .with(PROP_GOVERNANCE, "file:../TESTONLY_governance_signed.p7s");
@@ -1978,7 +2030,7 @@ mod tests {
     /// with leading blanks skipped, as Cyclone DDS's
     /// `DDS_Security_get_conf_item_type` takes it.
     #[test]
-    fn a_data_uri_is_the_content_and_not_a_path() {
+    fn security_10_3_1_a_data_uri_is_the_content_and_not_a_path() {
         let pem = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n";
         let props = complete_property_list()
             .with(PROP_IDENTITY_CA, format!("data:,{pem}"))
@@ -1998,7 +2050,7 @@ mod tests {
     /// The other two RFC 2397 forms Table 50 admits by reference: a
     /// base64 payload and a percent-encoded one.
     #[test]
-    fn a_data_uri_with_a_media_type_decodes_by_rfc_2397() {
+    fn security_10_3_1_a_data_uri_with_a_media_type_decodes_by_rfc_2397() {
         assert_eq!(
             resolve_material(
                 PROP_IDENTITY_CA,
@@ -2033,7 +2085,7 @@ mod tests {
     /// §8.3 Table 26 spelling, our measured wire spelling, the legacy
     /// in-tree one, the absent default — and a refusal for anything else.
     #[test]
-    fn the_key_establishment_property_selects_a_suite_and_refuses_the_unknown() {
+    fn security_10_3_1_the_key_establishment_property_selects_a_suite_and_refuses_the_unknown() {
         let with = |v: &str| PropertyQosPolicy::new().with(PROP_KEY_ESTABLISHMENT, v);
         assert_eq!(
             kx_suite_from_properties(&PropertyQosPolicy::new()).unwrap(),
@@ -2075,7 +2127,7 @@ mod tests {
     /// §10.3.1.3 is the default; the deviation is a property on the
     /// announced QoS, not a value kept beside the list.
     #[test]
-    fn the_x509v1_deviation_comes_out_of_the_property_list() {
+    fn security_10_3_1_3_the_x509v1_deviation_comes_out_of_the_property_list() {
         let props = complete_property_list();
         assert!(!cert_policy_from_properties(&props).accept_x509v1_identity_certificate);
         let props = props.with(zerodds_security_pki::PROP_ACCEPT_X509V1_IDENTITY, "true");

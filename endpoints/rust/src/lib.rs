@@ -236,10 +236,10 @@ impl AsyncReader {
         thread::spawn(move || {
             while flag.load(Ordering::Relaxed) {
                 if let Some(frame) = transport.receive() {
-                    if let Some(body) = xrce_read_frame(&frame) {
-                        if tx.send(body.to_vec()).is_err() {
-                            break;
-                        }
+                    if let Some(body) = xrce_read_frame(&frame)
+                        && tx.send(body.to_vec()).is_err()
+                    {
+                        break;
                     }
                 } else {
                     thread::sleep(Duration::from_millis(1));

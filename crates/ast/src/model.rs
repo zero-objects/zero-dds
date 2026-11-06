@@ -1076,10 +1076,15 @@ impl Ast {
             ConstExpr::Literal(Literal::WChar(value)) => Ok(ConstValue::WChar(*value)),
             ConstExpr::Literal(Literal::String(text)) => Ok(ConstValue::String(text.clone())),
             ConstExpr::Literal(Literal::WString(units)) => Ok(ConstValue::WString(units.clone())),
-            ConstExpr::Literal(Literal::Float { mantissa, exponent }) => Ok(ConstValue::Float {
-                mantissa: mantissa.clone(),
-                exponent: exponent.clone(),
-            }),
+            ConstExpr::Literal(Literal::Float { mantissa, exponent }) => {
+                if expr == root {
+                    self.literal_fits_its_constant(expr, mantissa, exponent.as_deref(), at)?;
+                }
+                Ok(ConstValue::Float {
+                    mantissa: mantissa.clone(),
+                    exponent: exponent.clone(),
+                })
+            }
             ConstExpr::Literal(Literal::Fixed { digits, scale }) => Ok(ConstValue::Fixed {
                 digits: digits.clone(),
                 scale: *scale,
@@ -1361,8 +1366,12 @@ impl Ast {
             Some((_, constant)) => self.floating_kind_of(&constant.type_, at)?,
             None => None,
         };
-        if declared == Some(PrimitiveKind::Float128) {
-            return Err(EvalError::LongDouble { at });
+        // "If either argument is long double, it shall use long double."
+        // A literal too large for a `double` is a `long double` ("Constant
+        // floating point literals are considered double unless the value
+        // is too large, then they are considered long double").
+        if declared == Some(PrimitiveKind::Float128) || self.has_long_double_operand(expr, depth)? {
+            return self.eval_long_double_root(expr, declared, at, depth);
         }
         let value = self.eval_floating_at(expr, depth)?;
         if declared == Some(PrimitiveKind::Float32) && value.abs() > f64::from(f32::MAX) {
@@ -1379,6 +1388,44 @@ impl Ast {
                 exponent: None,
             },
         })
+    }
+
+    /// A floating literal that is a constant's whole value has to fit the
+    /// constant's type, IDL 4.2 §7.4.1.4.2: "It is an error if any
+    /// sub-expression value exceeds the precision of the assigned type
+    /// (float, double, or long double)". The literal's text is kept as
+    /// written; only its range is checked, in binary128, which holds every
+    /// `float` and `double`.
+    fn literal_fits_its_constant(
+        &self,
+        expr: Id<ConstExprNode>,
+        mantissa: &str,
+        exponent: Option<&str>,
+        at: NodeId,
+    ) -> Result<(), EvalError> {
+        use zerodds_float128::Float128;
+        let Some((_, constant)) = self
+            .constants
+            .iter()
+            .find(|(_, constant)| constant.expr == expr)
+        else {
+            return Ok(());
+        };
+        let limit = match self.floating_kind_of(&constant.type_, at)? {
+            Some(PrimitiveKind::Float32) => Float128::from_f32(f32::MAX),
+            Some(PrimitiveKind::Float64) => Float128::from_f64(f64::MAX),
+            Some(_) => Float128::INFINITY,
+            None => return Ok(()),
+        };
+        let text = match exponent {
+            Some(exponent) => alloc::format!("{mantissa}e{exponent}"),
+            None => mantissa.to_string(),
+        };
+        let value: Float128 = text.parse().map_err(|_| EvalError::NotIntegral { at })?;
+        if !value.is_finite() || value.abs().total_cmp(limit) == core::cmp::Ordering::Greater {
+            return Err(EvalError::Overflow { at });
+        }
+        Ok(())
     }
 
     /// The floating-point kind a constant's type is, through typedefs;
@@ -1412,6 +1459,169 @@ impl Ast {
             }
         }
         Err(EvalError::TooDeep)
+    }
+
+    /// Long double arithmetic, IDL 4.2 §7.4.1.4.2: "If the type of a
+    /// floating-point constant is long double, then each sub-expression of
+    /// the associated constant expression is treated as a long double. It
+    /// is an error if any sub-expression value exceeds the precision of
+    /// long double." It runs in IEEE binary128 — the "IEEE double-extended
+    /// floating-point number, which has an exponent of at least 15 bits in
+    /// length and a signed fraction of at least 64 bits" of
+    /// §7.4.1.4.4.2.2, with 15 and 112 — each operation correctly rounded
+    /// (`zerodds_float128`). A value assigned to a `double` or `float`
+    /// constant has to fit its range; "Truncation on the right for floating
+    /// point types is OK".
+    fn eval_long_double_root(
+        &self,
+        expr: Id<ConstExprNode>,
+        declared: Option<PrimitiveKind>,
+        at: NodeId,
+        depth: usize,
+    ) -> Result<ConstValue, EvalError> {
+        use zerodds_float128::Float128;
+        let value = self.eval_long_double_at(expr, depth)?;
+        let limit = match declared {
+            Some(PrimitiveKind::Float32) => Some(Float128::from_f32(f32::MAX)),
+            Some(PrimitiveKind::Float64) => Some(Float128::from_f64(f64::MAX)),
+            _ => None,
+        };
+        if let Some(limit) = limit
+            && value.abs().total_cmp(limit) == core::cmp::Ordering::Greater
+        {
+            return Err(EvalError::Overflow { at });
+        }
+        // A `double` or `float` constant holds a `double`: the long double
+        // result is rounded to it once, as the double path writes it.
+        let text = if limit.is_some() {
+            alloc::format!("{:?}", value.to_f64_rounded())
+        } else {
+            value.to_shortest_decimal()
+        };
+        Ok(match text.split_once('e') {
+            Some((mantissa, exponent)) => ConstValue::Float {
+                mantissa: mantissa.to_string(),
+                exponent: Some(exponent.to_string()),
+            },
+            None => ConstValue::Float {
+                mantissa: text,
+                exponent: None,
+            },
+        })
+    }
+
+    /// Whether a long double takes part in an expression: a constant of
+    /// that type, or a literal too large for a `double`.
+    fn has_long_double_operand(
+        &self,
+        expr: Id<ConstExprNode>,
+        depth: usize,
+    ) -> Result<bool, EvalError> {
+        if depth > MAX_EXPR_DEPTH {
+            return Err(EvalError::TooDeep);
+        }
+        let node = self.exprs.get(expr).map_err(|_| EvalError::DanglingExpr)?;
+        let at = node.node_id;
+        match &node.expr {
+            ConstExpr::Literal(Literal::Float { mantissa, exponent }) => {
+                let text = match exponent {
+                    Some(exponent) => alloc::format!("{mantissa}e{exponent}"),
+                    None => mantissa.clone(),
+                };
+                let value: f64 = text.parse().map_err(|_| EvalError::NotIntegral { at })?;
+                Ok(!value.is_finite())
+            }
+            ConstExpr::Literal(_) => Ok(false),
+            ConstExpr::NameRef(reference) => {
+                let target = reference.resolved().ok_or(EvalError::Unresolved { at })?;
+                let constant = self
+                    .constants
+                    .get(target)
+                    .map_err(|_| EvalError::DanglingExpr)?;
+                Ok(self.floating_kind_of(&constant.type_, at)? == Some(PrimitiveKind::Float128))
+            }
+            ConstExpr::Unary { operand, .. } => self.has_long_double_operand(*operand, depth + 1),
+            ConstExpr::Binary { lhs, rhs, .. } => Ok(self
+                .has_long_double_operand(*lhs, depth + 1)?
+                || self.has_long_double_operand(*rhs, depth + 1)?),
+        }
+    }
+
+    fn eval_long_double_at(
+        &self,
+        expr: Id<ConstExprNode>,
+        depth: usize,
+    ) -> Result<zerodds_float128::Float128, EvalError> {
+        use zerodds_float128::Float128;
+        if depth > MAX_EXPR_DEPTH {
+            return Err(EvalError::TooDeep);
+        }
+        let node = self.exprs.get(expr).map_err(|_| EvalError::DanglingExpr)?;
+        let at = node.node_id;
+        let finite = |value: Float128| {
+            if value.is_finite() {
+                Ok(value)
+            } else {
+                Err(EvalError::Overflow { at })
+            }
+        };
+        match &node.expr {
+            ConstExpr::Literal(Literal::Float { mantissa, exponent }) => {
+                let text = match exponent {
+                    Some(exponent) => alloc::format!("{mantissa}e{exponent}"),
+                    None => mantissa.clone(),
+                };
+                let value: Float128 = text.parse().map_err(|_| EvalError::NotIntegral { at })?;
+                finite(value)
+            }
+            ConstExpr::Literal(_) => Err(EvalError::MixedOperands { at }),
+            ConstExpr::NameRef(reference) => {
+                let target = reference.resolved().ok_or(EvalError::Unresolved { at })?;
+                let constant = self
+                    .constants
+                    .get(target)
+                    .map_err(|_| EvalError::DanglingExpr)?;
+                // A `double` or `float` constant takes part with the value
+                // its own type gave it; a `long double` one with its own.
+                if self.floating_kind_of(&constant.type_, at)? == Some(PrimitiveKind::Float128) {
+                    self.eval_long_double_at(constant.expr, depth + 1)
+                } else {
+                    match self.eval_const_at(constant.expr, constant.expr, depth + 1)? {
+                        ConstValue::Float { mantissa, exponent } => {
+                            let text = match exponent {
+                                Some(exponent) => alloc::format!("{mantissa}e{exponent}"),
+                                None => mantissa,
+                            };
+                            text.parse().map_err(|_| EvalError::NotIntegral { at })
+                        }
+                        _ => Err(EvalError::MixedOperands { at }),
+                    }
+                }
+            }
+            ConstExpr::Unary { op, operand } => {
+                let value = self.eval_long_double_at(*operand, depth + 1)?;
+                match op {
+                    UnaryOp::Plus => Ok(value),
+                    UnaryOp::Minus => Ok(value.neg()),
+                    UnaryOp::Not => Err(EvalError::NotFloatingOperator { at }),
+                }
+            }
+            ConstExpr::Binary { op, lhs, rhs } => {
+                use crate::node::constant::BinaryOp as B;
+                let left = self.eval_long_double_at(*lhs, depth + 1)?;
+                let right = self.eval_long_double_at(*rhs, depth + 1)?;
+                match op {
+                    B::Add => finite(left + right),
+                    B::Sub => finite(left - right),
+                    B::Mul => finite(left * right),
+                    B::Div if right.is_zero() => Err(EvalError::DivisionByZero { at }),
+                    B::Div => finite(left / right),
+                    B::Or | B::Xor | B::And | B::Shl | B::Shr | B::Mod => {
+                        Err(EvalError::NotFloatingOperator { at })
+                    }
+                }
+            }
+        }
     }
 
     fn eval_floating_at(&self, expr: Id<ConstExprNode>, depth: usize) -> Result<f64, EvalError> {
@@ -1903,6 +2113,66 @@ impl Ast {
         Ok(())
     }
 
+    /// Give an operation another result type: CCM 4.0 §6.7.2.1 makes a
+    /// home's `factory` return the component it manages.
+    ///
+    /// # Errors
+    /// [`AstError::Core`] with a stale or unknown handle.
+    pub fn set_return_type(
+        &mut self,
+        id: Id<OperationNode>,
+        return_type: Option<Ref<TypeNode>>,
+    ) -> Result<(), AstError> {
+        let node_id = self.operations.get(id)?.node_id;
+        self.operations.get_mut(id)?.return_type = return_type;
+        self.reindex_pending(AnyId::Operation(id, node_id));
+        Ok(())
+    }
+
+    /// Move an operation into another interface: CCM 4.0 §6.7.2 puts the
+    /// operations of a home body on the home's explicit interface.
+    ///
+    /// # Errors
+    /// [`AstError::Core`] with a stale or unknown handle.
+    pub fn move_operation(
+        &mut self,
+        id: Id<OperationNode>,
+        to: Id<InterfaceNode>,
+    ) -> Result<(), AstError> {
+        let parent = AnyId::Interface(to, self.interfaces.get(to)?.node_id);
+        let previous = core::mem::replace(&mut self.operations.get_mut(id)?.parent, parent);
+        if let AnyId::Interface(from, _) = previous {
+            self.interfaces
+                .get_mut(from)?
+                .operations
+                .retain(|op| *op != id);
+        }
+        self.interfaces.get_mut(to)?.operations.push(id);
+        Ok(())
+    }
+
+    /// Move an attribute into another interface, as [`Self::move_operation`]
+    /// moves an operation.
+    ///
+    /// # Errors
+    /// [`AstError::Core`] with a stale or unknown handle.
+    pub fn move_attribute(
+        &mut self,
+        id: Id<AttributeNode>,
+        to: Id<InterfaceNode>,
+    ) -> Result<(), AstError> {
+        let parent = AnyId::Interface(to, self.interfaces.get(to)?.node_id);
+        let previous = core::mem::replace(&mut self.attributes.get_mut(id)?.parent, parent);
+        if let AnyId::Interface(from, _) = previous {
+            self.interfaces
+                .get_mut(from)?
+                .attributes
+                .retain(|a| *a != id);
+        }
+        self.interfaces.get_mut(to)?.attributes.push(id);
+        Ok(())
+    }
+
     /// Add a `context` identifier to an operation.
     ///
     /// # Errors
@@ -1989,6 +2259,7 @@ impl Ast {
         type_: Ref<TypeNode>,
         readonly: bool,
     ) -> Result<Id<AttributeNode>, AstError> {
+        let parent_node_id = self.interfaces.get(interface)?.node_id;
         let node_id = self.next_model_id()?;
         let id = self.attributes.insert(AttributeNode {
             node_id,
@@ -1997,12 +2268,71 @@ impl Ast {
             readonly,
             get_raises: Vec::new(),
             set_raises: Vec::new(),
-            parent: interface,
+            parent: AnyId::Interface(interface, parent_node_id),
             facets: Facets::synthetic("attribute created through the model API"),
         })?;
         self.register(AnyId::Attribute(id, node_id));
         self.interfaces.get_mut(interface)?.attributes.push(id);
         self.committed(id)
+    }
+
+    /// Add an attribute to a value type, OMG IDL 4.2 rule (105).
+    ///
+    /// The value type keeps no list of its attributes, as it keeps none of
+    /// its exported operations: [`Ast::attributes_of_value`] finds them by
+    /// their parent.
+    ///
+    /// # Errors
+    /// [`AstError::Core`] on a stale handle, [`AstError::NotAnAggregate`]
+    /// when the type is no value type.
+    pub fn add_valuetype_attribute(
+        &mut self,
+        valuetype: Id<TypeNode>,
+        name: &str,
+        type_: Ref<TypeNode>,
+        readonly: bool,
+    ) -> Result<Id<AttributeNode>, AstError> {
+        let parent_node_id = self.types.get(valuetype)?.node_id;
+        if !matches!(self.types.get(valuetype)?.kind, TypeKind::Valuetype { .. }) {
+            return Err(AstError::NotAnAggregate {
+                node: parent_node_id,
+                found: "not a valuetype",
+            });
+        }
+        let node_id = self.next_model_id()?;
+        let id = self.attributes.insert(AttributeNode {
+            node_id,
+            name: name.to_string(),
+            type_,
+            readonly,
+            get_raises: Vec::new(),
+            set_raises: Vec::new(),
+            parent: AnyId::Type(valuetype, parent_node_id),
+            facets: Facets::synthetic("valuetype attribute created through the model API"),
+        })?;
+        self.register(AnyId::Attribute(id, node_id));
+        self.committed(id)
+    }
+
+    /// The attributes a value type declares, in declaration order.
+    #[must_use]
+    pub fn attributes_of_value(&self, valuetype: Id<TypeNode>) -> Vec<Id<AttributeNode>> {
+        self.attributes
+            .iter()
+            .filter(|(_, node)| matches!(node.parent, AnyId::Type(id, _) if id == valuetype))
+            .map(|(id, _)| id)
+            .collect()
+    }
+
+    /// The operations a value type declares, its initialisers among them,
+    /// in declaration order.
+    #[must_use]
+    pub fn operations_of_value(&self, valuetype: Id<TypeNode>) -> Vec<Id<OperationNode>> {
+        self.operations
+            .iter()
+            .filter(|(_, node)| matches!(node.parent, AnyId::Type(id, _) if id == valuetype))
+            .map(|(id, _)| id)
+            .collect()
     }
 
     /// Borrow an exception.

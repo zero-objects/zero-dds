@@ -127,7 +127,7 @@ fn pump(w: &zerodds_dcps::DataWriter<KeyedRecord>, r: &zerodds_dcps::DataReader<
 // =====================================================================
 
 #[test]
-fn writer_register_instance_returns_stable_handle() {
+fn dcps_2_2_2_4_2_5_writer_register_instance_returns_stable_handle() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 42, value: 0 };
     let h1 = w.register_instance(&r).expect("register");
@@ -137,7 +137,7 @@ fn writer_register_instance_returns_stable_handle() {
 }
 
 #[test]
-fn writer_lookup_instance_finds_registered_handle() {
+fn dcps_2_2_2_4_2_5_writer_lookup_instance_finds_registered_handle() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 7, value: 0 };
     let h = w.register_instance(&r).expect("register");
@@ -146,14 +146,14 @@ fn writer_lookup_instance_finds_registered_handle() {
 }
 
 #[test]
-fn writer_lookup_instance_returns_nil_for_unknown() {
+fn dcps_2_2_2_4_2_10_writer_lookup_instance_returns_nil_for_unknown() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 99, value: 0 };
     assert_eq!(w.lookup_instance(&r), HANDLE_NIL);
 }
 
 #[test]
-fn writer_get_key_value_extracts_only_key() {
+fn dcps_2_2_2_4_2_9_writer_get_key_value_extracts_only_key() {
     let (w, _) = mk_pair();
     let r = KeyedRecord {
         id: 0xCAFE_BABE,
@@ -167,7 +167,7 @@ fn writer_get_key_value_extracts_only_key() {
 }
 
 #[test]
-fn writer_get_key_value_unknown_handle_errors() {
+fn dcps_2_2_2_4_2_9_writer_get_key_value_unknown_handle_errors() {
     let (w, _) = mk_pair();
     let bad = zerodds_dcps::InstanceHandle::from_raw(0xDEAD_BEEF);
     assert!(matches!(
@@ -177,7 +177,7 @@ fn writer_get_key_value_unknown_handle_errors() {
 }
 
 #[test]
-fn writer_dispose_transitions_instance_to_disposed() {
+fn dcps_2_2_2_4_2_13_writer_dispose_transitions_instance_to_disposed() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 1, value: 0 };
     let h = w.register_instance(&r).expect("register");
@@ -193,7 +193,7 @@ fn writer_dispose_transitions_instance_to_disposed() {
 }
 
 #[test]
-fn writer_unregister_drops_to_no_writers_when_count_zero() {
+fn dcps_2_2_2_4_2_7_writer_unregister_drops_to_no_writers_when_count_zero() {
     // Spec §2.2.3.21: with autodispose_unregistered_instances=false,
     // unregister should fall ONLY to NotAliveNoWriters (without dispose).
     let factory = DomainParticipantFactory::instance();
@@ -222,7 +222,7 @@ fn writer_unregister_drops_to_no_writers_when_count_zero() {
 }
 
 #[test]
-fn writer_dispose_unknown_handle_errors() {
+fn dcps_2_2_2_4_2_7_writer_dispose_unknown_handle_errors() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 3, value: 0 };
     let bad = zerodds_dcps::InstanceHandle::from_raw(0xDEAD);
@@ -231,7 +231,7 @@ fn writer_dispose_unknown_handle_errors() {
 }
 
 #[test]
-fn writer_dispose_handle_nil_resolves_via_lookup() {
+fn dcps_2_2_2_4_2_5_writer_dispose_handle_nil_resolves_via_lookup() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 4, value: 0 };
     let _ = w.register_instance(&r).expect("register");
@@ -240,7 +240,7 @@ fn writer_dispose_handle_nil_resolves_via_lookup() {
 }
 
 #[test]
-fn writer_dispose_handle_nil_unregistered_errors() {
+fn dcps_2_2_2_4_2_13_writer_dispose_handle_nil_unregistered_errors() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 5, value: 0 };
     let err = w.dispose(&r, HANDLE_NIL).unwrap_err();
@@ -248,7 +248,7 @@ fn writer_dispose_handle_nil_unregistered_errors() {
 }
 
 #[test]
-fn writer_dispose_handle_mismatch_errors() {
+fn dcps_2_2_2_4_2_7_writer_dispose_handle_mismatch_errors() {
     let (w, _) = mk_pair();
     let r1 = KeyedRecord { id: 10, value: 0 };
     let r2 = KeyedRecord { id: 20, value: 0 };
@@ -273,7 +273,7 @@ fn writer_dispose_handle_mismatch_errors() {
 }
 
 #[test]
-fn writer_register_then_unregister_then_re_register_bumps_generation() {
+fn dcps_2_2_2_4_2_7_writer_register_then_unregister_then_re_register_bumps_generation() {
     // Spec §2.2.3.21: with autodispose_unregistered_instances=false,
     // unregister leads ONLY to NotAliveNoWriters; re-register bumps
     // no_writers_generation_count.
@@ -303,7 +303,7 @@ fn writer_register_then_unregister_then_re_register_bumps_generation() {
 }
 
 #[test]
-fn reader_lookup_instance_after_take_with_info() {
+fn dcps_2_2_2_5_3_30_reader_lookup_instance_after_take_with_info() {
     let (w, r) = mk_pair();
     let s = KeyedRecord { id: 7, value: 100 };
     w.write(&s).unwrap();
@@ -317,7 +317,7 @@ fn reader_lookup_instance_after_take_with_info() {
 }
 
 #[test]
-fn reader_take_with_info_first_sample_is_new_and_not_read() {
+fn dcps_2_2_2_5_1_reader_take_with_info_first_sample_is_new_and_not_read() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 1, value: 1 }).unwrap();
     pump(&w, &r);
@@ -333,7 +333,7 @@ fn reader_take_with_info_first_sample_is_new_and_not_read() {
 }
 
 #[test]
-fn reader_view_state_transitions_to_not_new_on_second_sample() {
+fn dcps_2_2_2_5_1_8_reader_view_state_transitions_to_not_new_on_second_sample() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 2, value: 1 }).unwrap();
     pump(&w, &r);
@@ -347,7 +347,7 @@ fn reader_view_state_transitions_to_not_new_on_second_sample() {
 }
 
 #[test]
-fn reader_read_marks_sample_state_read() {
+fn dcps_2_2_2_5_1_2_reader_read_marks_sample_state_read() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 3, value: 1 }).unwrap();
     pump(&w, &r);
@@ -360,7 +360,7 @@ fn reader_read_marks_sample_state_read() {
 }
 
 #[test]
-fn reader_read_instance_filters_to_one_handle() {
+fn dcps_2_2_2_5_3_14_reader_read_instance_filters_to_one_handle() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 1, value: 10 }).unwrap();
     w.write(&KeyedRecord { id: 2, value: 20 }).unwrap();
@@ -387,21 +387,21 @@ fn reader_read_instance_filters_to_one_handle() {
 }
 
 #[test]
-fn reader_take_instance_with_handle_nil_errors() {
+fn dcps_2_2_2_5_3_15_reader_take_instance_with_handle_nil_errors() {
     let (_, r) = mk_pair();
     let err = r.take_instance(HANDLE_NIL).unwrap_err();
     assert!(matches!(err, DdsError::BadParameter { .. }));
 }
 
 #[test]
-fn reader_read_instance_with_handle_nil_errors() {
+fn dcps_2_2_2_5_3_14_reader_read_instance_with_handle_nil_errors() {
     let (_, r) = mk_pair();
     let err = r.read_instance(HANDLE_NIL).unwrap_err();
     assert!(matches!(err, DdsError::BadParameter { .. }));
 }
 
 #[test]
-fn reader_read_next_instance_iterates_all() {
+fn dcps_2_2_2_5_3_16_reader_read_next_instance_iterates_all() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 1, value: 1 }).unwrap();
     w.write(&KeyedRecord { id: 2, value: 2 }).unwrap();
@@ -425,7 +425,7 @@ fn reader_read_next_instance_iterates_all() {
 }
 
 #[test]
-fn reader_take_next_instance_consumes() {
+fn dcps_2_2_2_5_3_15_reader_take_next_instance_consumes() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 1, value: 1 }).unwrap();
     w.write(&KeyedRecord { id: 2, value: 2 }).unwrap();
@@ -448,7 +448,7 @@ fn reader_take_next_instance_consumes() {
 /// samples". An instance whose samples were taken is passed over. The
 /// iteration stopped there with an empty result.
 #[test]
-fn next_instance_passes_over_an_instance_without_samples() {
+fn dcps_2_2_2_5_3_16_next_instance_passes_over_an_instance_without_samples() {
     let (w, r) = mk_pair();
     for id in 1..=3 {
         w.write(&KeyedRecord { id, value: id }).unwrap();
@@ -487,7 +487,7 @@ fn next_instance_passes_over_an_instance_without_samples() {
 }
 
 #[test]
-fn reader_get_key_value_returns_keyonly_sample() {
+fn dcps_2_2_2_5_3_29_reader_get_key_value_returns_keyonly_sample() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord {
         id: 0xABCD,
@@ -503,7 +503,7 @@ fn reader_get_key_value_returns_keyonly_sample() {
 }
 
 #[test]
-fn reader_lifecycle_dispose_marker_yields_invalid_data_sample() {
+fn dcps_2_2_2_5_1_3_reader_lifecycle_dispose_marker_yields_invalid_data_sample() {
     let (_w, r) = mk_pair();
     // Direct push of a dispose marker (simulates what the runtime does
     // in phase B as soon as a writer sends a dispose).
@@ -527,7 +527,7 @@ fn reader_lifecycle_dispose_marker_yields_invalid_data_sample() {
 }
 
 #[test]
-fn reader_take_filtered_with_state_mask_filters() {
+fn dcps_2_2_2_5_1_9_reader_take_filtered_with_state_mask_filters() {
     let (w, r) = mk_pair();
     w.write(&KeyedRecord { id: 1, value: 1 }).unwrap();
     pump(&w, &r);
@@ -568,7 +568,7 @@ fn writer_publication_handle_is_non_nil() {
 }
 
 #[test]
-fn writer_register_with_timestamp_records_timestamp() {
+fn dcps_2_2_2_4_2_6_writer_register_with_timestamp_records_timestamp() {
     let (w, _) = mk_pair();
     let ts = zerodds_dcps::Time::new(123, 456);
     let r = KeyedRecord { id: 88, value: 0 };
@@ -578,7 +578,7 @@ fn writer_register_with_timestamp_records_timestamp() {
 }
 
 #[test]
-fn write_w_timestamp_auto_registers_unknown_instance() {
+fn dcps_2_2_2_4_2_5_write_w_timestamp_auto_registers_unknown_instance() {
     let (w, _) = mk_pair();
     let s = KeyedRecord { id: 99, value: 1 };
     let ts = zerodds_dcps::Time::new(500, 0);
@@ -616,7 +616,7 @@ fn write_auto_registers_unknown_instance() {
 /// more is BAD_PARAMETER at `write_w_timestamp`, `register_instance_w_timestamp`,
 /// `dispose_w_timestamp` and `unregister_instance_w_timestamp`; it was taken.
 #[test]
-fn a_timestamp_out_of_range_is_bad_parameter() {
+fn dcps_2_3_2_a_timestamp_out_of_range_is_bad_parameter() {
     let (w, _) = mk_pair();
     let r = KeyedRecord { id: 7, value: 0 };
     // The fields are public; `Time::new` would carry the second.
@@ -645,7 +645,7 @@ fn a_timestamp_out_of_range_is_bad_parameter() {
 /// does not, the one error the clause names is BAD_PARAMETER, not
 /// UNSUPPORTED.
 #[test]
-fn get_key_value_of_an_instance_known_by_its_hash() {
+fn dcps_2_2_2_4_2_9_get_key_value_of_an_instance_known_by_its_hash() {
     let (w, _) = mk_pair();
     // The KeyHash of id 7: the four PLAIN_CDR2-BE octets, zero-padded.
     let mut spelled = [0u8; 16];
@@ -666,7 +666,7 @@ fn get_key_value_of_an_instance_known_by_its_hash() {
 /// between the sample and the last one returned, `absolute_generation_rank`
 /// the generations between the sample and the instance's current state.
 #[test]
-fn rust_read_and_take_fill_the_ranks() {
+fn dcps_2_2_2_5_1_6_rust_read_and_take_fill_the_ranks() {
     // KEEP_ALL: the default KEEP_LAST(1) (§2.2.3.18) keeps one sample per
     // instance, and the ranks need several.
     let factory = DomainParticipantFactory::instance();
@@ -758,7 +758,7 @@ fn rust_read_and_take_fill_the_ranks() {
 /// one that names no instance BAD_PARAMETER; §2.2.2.4.2.12 holds
 /// write_w_timestamp to the same.
 #[test]
-fn write_with_a_handle_follows_the_handle_rules() {
+fn dcps_2_2_2_4_2_11_write_with_a_handle_follows_the_handle_rules() {
     let (w, r) = mk_pair();
     let a = KeyedRecord { id: 1, value: 1 };
     let b = KeyedRecord { id: 2, value: 1 };

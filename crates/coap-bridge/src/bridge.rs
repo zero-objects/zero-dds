@@ -258,7 +258,7 @@ impl CoapDdsBridge {
 }
 
 fn hex_decode(s: &str) -> Result<Vec<u8>, &'static str> {
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return Err("odd hex length");
     }
     let mut out = Vec::with_capacity(s.len() / 2);
@@ -288,14 +288,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_topic_only() {
+    fn coap_4_1_parses_topic_only() {
         let (t, k) = parse_dds_path("/dds/Trade").unwrap();
         assert_eq!(t, "Trade");
         assert!(k.is_none());
     }
 
     #[test]
-    fn parses_topic_with_key() {
+    fn coap_4_1_parses_topic_with_key() {
         let (t, k) = parse_dds_path("/dds/Trade/AAPL").unwrap();
         assert_eq!(t, "Trade");
         assert_eq!(k.unwrap(), b"AAPL");
@@ -308,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_non_dds_path() {
+    fn coap_4_1_rejects_non_dds_path() {
         assert!(parse_dds_path("/other/x").is_err());
         assert!(parse_dds_path("/dds/").is_err());
     }
@@ -370,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn bridge_apply_write_then_read_round_trip() {
+    fn coap_4_1_bridge_apply_write_then_read_round_trip() {
         let mut b = CoapDdsBridge::new();
         let _ = b.apply(
             BridgeOp::Update {
@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn bridge_observe_register_increments_observer_count() {
+    fn coap_4_1_bridge_observe_register_increments_observer_count() {
         let mut b = CoapDdsBridge::new();
         let _ = b.apply(
             BridgeOp::ObserveRegister {
@@ -448,7 +448,7 @@ mod tests {
     }
 
     #[test]
-    fn bridge_discover_lists_keys() {
+    fn coapbridge_12_1_bridge_discover_lists_keys() {
         let mut b = CoapDdsBridge::new();
         let _ = b.apply(
             BridgeOp::Update {

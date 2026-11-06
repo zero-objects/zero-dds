@@ -66,7 +66,7 @@ fn pump<
 }
 
 #[test]
-fn e2e_single_request_response_roundtrip() {
+fn rpc_7_2_1_e2e_single_request_response_roundtrip() {
     let p = participant(1001);
     let q = RpcQos::default_basic();
     let handler: Arc<dyn ReplierHandler<RawBytes, RawBytes>> =
@@ -132,7 +132,7 @@ fn e2e_three_methods_distinct_payload_directions() {
 }
 
 #[test]
-fn e2e_multi_pending_requests_all_get_their_reply() {
+fn rpc_7_2_1_e2e_multi_pending_requests_all_get_their_reply() {
     // 5 requests in parallel — each should get its own reply back.
     let p = participant(1003);
     let q = RpcQos::default_basic();
@@ -168,7 +168,7 @@ fn e2e_multi_pending_requests_all_get_their_reply() {
 }
 
 #[test]
-fn e2e_handler_error_surfaces_as_remote_exception_at_caller() {
+fn rpc_7_5_2_e2e_handler_error_surfaces_as_remote_exception_at_caller() {
     let p = participant(1004);
     let q = RpcQos::default_basic();
     let handler = Arc::new(FnHandler::new(|_: RawBytes| {
@@ -188,7 +188,7 @@ fn e2e_handler_error_surfaces_as_remote_exception_at_caller() {
 /// §7.5.2 REMOTE_EX_OUT_OF_RESOURCES: the code a service reports reaches
 /// the caller as that code, and the replier counts the error.
 #[test]
-fn e2e_out_of_resources_surfaces_as_remote_exception_at_caller() {
+fn rpc_7_5_2_e2e_out_of_resources_surfaces_as_remote_exception_at_caller() {
     let p = participant(1013);
     let q = RpcQos::default_basic();
     let handler = Arc::new(FnHandler::new(|_: RawBytes| {
@@ -290,7 +290,7 @@ fn e2e_oneway_does_not_produce_reply_traffic() {
 }
 
 #[test]
-fn e2e_instance_routing_filters_per_replier() {
+fn rpc_7_11_1_4_3_e2e_instance_routing_filters_per_replier() {
     // Two repliers on the same service distinguished by
     // service_instance_name. Requester A talks only to replier A.
     let p = participant(1008);
@@ -322,7 +322,7 @@ fn e2e_instance_routing_filters_per_replier() {
 }
 
 #[test]
-fn e2e_qos_profile_from_xml_drives_history_depth() {
+fn rpc_7_10_1_e2e_qos_profile_from_xml_drives_history_depth() {
     use zerodds_xml::parse_dds_xml;
     let xml = r#"<dds>
         <qos_library name="L">
@@ -352,7 +352,7 @@ fn e2e_qos_profile_from_xml_drives_history_depth() {
 }
 
 #[test]
-fn e2e_set_qos_changes_the_mutable_policies_at_run_time() {
+fn rpc_7_10_2_e2e_set_qos_changes_the_mutable_policies_at_run_time() {
     // §7.10.2: "The users may modify the mutable QoS policies at
     // run-time." A mutable policy (DEADLINE) reaches the endpoint; an
     // immutable one (RELIABILITY) is refused and the endpoint keeps its
@@ -382,7 +382,7 @@ fn e2e_set_qos_changes_the_mutable_policies_at_run_time() {
 }
 
 #[test]
-fn e2e_client_side_request_identity_is_the_one_the_reply_relates_to() {
+fn rpc_7_2_1_e2e_client_side_request_identity_is_the_one_the_reply_relates_to() {
     // §7.8.2.2 (p. 54): the client side can ask for the identity of the
     // request it issued. `send_request_async` hands that identity back;
     // `RequestIdentity::from_header` is the spec-level wrapper for it.
@@ -481,7 +481,7 @@ fn e2e_annotated_service_name_picks_the_topic_pair_dds_rpc_1_0_section_7_4_names
 }
 
 #[test]
-fn e2e_annotated_whole_topic_name_replaces_the_default_dds_rpc_1_0_section_7_4_2_2() {
+fn rpc_7_4_1_e2e_annotated_whole_topic_name_replaces_the_default_dds_rpc_1_0_section_7_4_2_2() {
     // `@DDSRequestTopic("MyRequests")` / `@DDSReplyTopic("MyReplies")` —
     // §7.4.2.2's whole-name form, §7.4.1's second `<topic_name>`
     // alternative. No `<service_name>` and no interface segment appear

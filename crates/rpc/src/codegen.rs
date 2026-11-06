@@ -914,7 +914,7 @@ mod tests {
     /// and `<service_name>` defaults to `"Service"`. The *type* name is
     /// §7.5.1.1.6's `${interfaceName}_Request` and is a different string.
     #[test]
-    fn basic_pair_topic_names() {
+    fn rpc_7_4_2_basic_pair_topic_names() {
         let svc = calc_service();
         let (req, rep) = build_basic_pair(&svc).unwrap();
         assert_eq!(req.topic_name, "Calculator_Service_Request");
@@ -936,7 +936,7 @@ mod tests {
     /// §7.5.1.1.6 rule 2: the Request structure's two members are
     /// `header` and `data`, and `data` is the `${I}_Call` union.
     #[test]
-    fn basic_request_has_header_and_call_union() {
+    fn rpc_7_5_1_1_4_basic_request_has_header_and_call_union() {
         let svc = calc_service();
         let (req, _) = build_basic_pair(&svc).unwrap();
         assert_eq!(req.members.len(), 2);
@@ -959,7 +959,7 @@ mod tests {
     /// `${I}_${op}_Hash` beside the union, and the case label is the
     /// HASH of the *unqualified* operation name.
     #[test]
-    fn the_case_labels_are_the_operation_hashes() {
+    fn rpc_7_5_1_1_6_the_case_labels_are_the_operation_hashes() {
         let svc = calc_service();
         let (req, _) = build_basic_pair(&svc).unwrap();
         let call_union = match &req.members[1].type_ref {
@@ -997,7 +997,7 @@ mod tests {
     /// `md5[0] + 256*md5[1] + 256*256*md5[2] + 256*256*256*md5[3]`
     /// into a `long`.
     #[test]
-    fn the_case_label_is_the_published_hash_arithmetic() {
+    fn rpc_7_5_1_1_2_the_case_label_is_the_published_hash_arithmetic() {
         let digest = [0x34u32, 0xec, 0x78, 0xfc];
         let expected = digest[0]
             .wrapping_add(256 * digest[1])
@@ -1023,7 +1023,7 @@ mod tests {
     /// with `::` separators — `md5("robot::Overflow") =
     /// 826a1e948267ea1e29a034f820c8e6e9`.
     #[test]
-    fn the_exception_label_hashes_the_scoped_name() {
+    fn rpc_7_5_1_1_5_the_exception_label_hashes_the_scoped_name() {
         let digest = [0x82u32, 0x6a, 0x1e, 0x94];
         let expected = digest[0]
             .wrapping_add(256 * digest[1])
@@ -1050,7 +1050,7 @@ mod tests {
     }
 
     #[test]
-    fn both_unions_carry_the_default_unknown_operation_case() {
+    fn rpc_7_5_1_1_6_both_unions_carry_the_default_unknown_operation_case() {
         let svc = calc_service();
         let (req, rep) = build_basic_pair(&svc).unwrap();
         for member in [&req.members[1], &rep.members[1]] {
@@ -1066,7 +1066,7 @@ mod tests {
     /// makes its case type the per-operation `${I}_${op}_Result` union
     /// of §7.5.1.1.5 — not the `Out` structure directly.
     #[test]
-    fn basic_reply_excludes_oneway_methods() {
+    fn rpc_7_5_1_1_5_basic_reply_excludes_oneway_methods() {
         let svc = oneway_service();
         let (_, rep) = build_basic_pair(&svc).unwrap();
         let return_union = match &rep.members[1].type_ref {
@@ -1088,7 +1088,7 @@ mod tests {
     /// `result` on the `dds::RETCODE_OK` case, and one case per raised
     /// exception with the label and member name rules 4 and 5 give.
     #[test]
-    fn the_result_union_of_seven_five_one_one_five_is_built() {
+    fn rpc_7_5_1_1_4_the_result_union_of_seven_five_one_one_five_is_built() {
         let svc = service_of(
             "module robot {
                exception TooFast { long code; };
@@ -1135,7 +1135,7 @@ mod tests {
     /// octets and a reader cannot tell one that arrived from one that
     /// did not.
     #[test]
-    fn an_empty_in_or_out_carries_the_dummy_member() {
+    fn rpc_7_5_1_1_4_an_empty_in_or_out_carries_the_dummy_member() {
         let svc = service_of("interface Ping { void ping(); };");
         let (req, rep) = build_basic_pair(&svc).unwrap();
         let call_union = match &req.members[1].type_ref {
@@ -1166,7 +1166,7 @@ mod tests {
     /// §7.5.1.1.5 rule 3b's collision rule: an `out` parameter already
     /// named `return_` pushes the regular return value to `return_1`.
     #[test]
-    fn a_colliding_return_member_takes_the_first_free_number() {
+    fn rpc_7_5_1_1_5_a_colliding_return_member_takes_the_first_free_number() {
         let svc = service_of("interface Odd { long f(out long return_); };");
         let (_, rep) = build_basic_pair(&svc).unwrap();
         let return_union = match &rep.members[1].type_ref {
@@ -1187,7 +1187,7 @@ mod tests {
     /// `in` parameter `a` is not an Out member; `inout b` and `out c` are,
     /// in that order, and a non-void return value follows them.
     #[test]
-    fn basic_out_members_keep_the_order_of_the_parameters() {
+    fn rpc_7_5_1_1_5_basic_out_members_keep_the_order_of_the_parameters() {
         let svc = service_of(
             "interface Mixer { void mix(in long a, inout long b, out double c); \
              long mix2(out double c, in long a, inout long b); };",
@@ -1212,7 +1212,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_request_in_params_become_case_members() {
+    fn rpc_7_5_1_1_4_basic_request_in_params_become_case_members() {
         let svc = calc_service();
         let (req, _) = build_basic_pair(&svc).unwrap();
         let call_union = match &req.members[1].type_ref {
@@ -1229,7 +1229,7 @@ mod tests {
     /// value the Out structure shall have its **last** member named
     /// `return_`."
     #[test]
-    fn basic_reply_return_value_is_the_last_member() {
+    fn rpc_7_5_1_1_5_basic_reply_return_value_is_the_last_member() {
         let svc = service_of("interface Cursor { long advance(out long wrapped); };");
         let (_, rep) = build_basic_pair(&svc).unwrap();
         let return_union = match &rep.members[1].type_ref {
@@ -1278,7 +1278,7 @@ mod tests {
     /// §7.4.3: "The Enhanced Service Mapping shall map an interface to
     /// exactly one request topic and a reply topic."
     #[test]
-    fn enhanced_service_has_one_topic_pair() {
+    fn rpc_7_4_3_enhanced_service_has_one_topic_pair() {
         let service = build_enhanced_service(&calc_service()).unwrap();
         assert_eq!(service.request_topic, "Calculator_Service_Request");
         assert_eq!(service.reply_topic, "Calculator_Service_Reply");
@@ -1287,7 +1287,7 @@ mod tests {
     /// §7.5.1.2.4 rules 1 to 4: `${I}_Request`, `@Choice`, `@Autoid`, a
     /// member per operation typed `${I}_${op}_In`. No header.
     #[test]
-    fn enhanced_request_is_a_choice_over_the_operations() {
+    fn rpc_7_5_1_2_enhanced_request_is_a_choice_over_the_operations() {
         let service = build_enhanced_service(&calc_service()).unwrap();
         let request = &service.request;
         assert_eq!(request.name, "Calculator_Request");
@@ -1303,7 +1303,7 @@ mod tests {
     /// §7.5.1.2.5: `${I}_Reply` has a member per operation typed
     /// `${I}_${op}_Result` and `remoteEx`.
     #[test]
-    fn enhanced_reply_has_the_results_and_remote_ex() {
+    fn rpc_7_5_1_2_5_enhanced_reply_has_the_results_and_remote_ex() {
         let service = build_enhanced_service(&calc_service()).unwrap();
         let reply = &service.reply;
         assert_eq!(reply.name, "Calculator_Reply");
@@ -1321,7 +1321,7 @@ mod tests {
     /// §7.5.1.2.5 rule 5: an operation named `remoteEx` moves the code
     /// to `remoteEx_1`.
     #[test]
-    fn enhanced_remote_ex_avoids_an_operation_of_that_name() {
+    fn rpc_7_5_1_2_5_enhanced_remote_ex_avoids_an_operation_of_that_name() {
         let svc = service_of("@service interface S { void remoteEx(); void remoteEx_1x(); };");
         let reply = build_enhanced_service(&svc).unwrap().reply;
         assert_eq!(
@@ -1359,7 +1359,7 @@ mod tests {
     /// @Autoid`, its first member `result` has the `Out` type and every
     /// exception adds `<lowercase>_ex`.
     #[test]
-    fn enhanced_result_carries_out_and_the_exceptions() {
+    fn rpc_7_5_1_2_3_enhanced_result_carries_out_and_the_exceptions() {
         let service = build_enhanced_service(&calculator_hierarchy()).unwrap();
         let scale = service
             .operations
@@ -1384,7 +1384,7 @@ mod tests {
     /// §7.5.1.2.6: the inherited operations stand in the derived
     /// interface's `Request` and `Reply`, under the base's type names.
     #[test]
-    fn enhanced_inheritance_is_flattened() {
+    fn rpc_7_5_1_2_4_enhanced_inheritance_is_flattened() {
         let service = build_enhanced_service(&calculator_hierarchy()).unwrap();
         for op in ["on", "off", "scale", "add", "sub"] {
             assert!(service.request.members.iter().any(|m| m.name == op), "{op}");
@@ -1404,7 +1404,7 @@ mod tests {
     /// §7.5.1.2.1.4 and §7.5.1.2.2/3: `@Mutable` makes the three
     /// structures of that operation mutable and no other.
     #[test]
-    fn enhanced_mutable_operation_has_mutable_structures() {
+    fn rpc_7_5_1_2_1_4_enhanced_mutable_operation_has_mutable_structures() {
         let service = build_enhanced_service(&calculator_hierarchy()).unwrap();
         for op in &service.operations {
             let expected = op.name == "scale";
@@ -1416,7 +1416,7 @@ mod tests {
 
     /// §7.5.1.2.1.2: the member id is the HASH of the member name.
     #[test]
-    fn enhanced_autoid_member_ids_are_the_hash_of_the_name() {
+    fn rpc_7_5_1_2_1_2_enhanced_autoid_member_ids_are_the_hash_of_the_name() {
         let service = build_enhanced_service(&calc_service()).unwrap();
         let add = member(&service.request, "add");
         assert_eq!(
@@ -1433,7 +1433,7 @@ mod tests {
     /// §7.5.1.2.1.2: "the collision shall be reported as an error".
     /// `m9852` and `m12254` hash to the same 28-bit id.
     #[test]
-    fn enhanced_member_id_collision_is_an_error() {
+    fn rpc_7_5_1_2_1_2_enhanced_member_id_collision_is_an_error() {
         let svc =
             service_of("@service interface Clash { void op(in long m9852, in long m12254); };");
         let err = build_enhanced_service(&svc).unwrap_err();
@@ -1448,7 +1448,7 @@ mod tests {
     /// §7.5.1.2.6 example: an operation without parameters gets the
     /// `dummy` member of §7.5.1.1.4 rule 3c by default.
     #[test]
-    fn enhanced_empty_operation_has_a_dummy_member_by_default() {
+    fn rpc_7_5_1_2_2_enhanced_empty_operation_has_a_dummy_member_by_default() {
         let service = build_enhanced_service(&calculator_hierarchy()).unwrap();
         let on = service
             .operations
@@ -1463,7 +1463,7 @@ mod tests {
 
     /// §7.5.1.2.1.3, the other reading: `@Empty` structures.
     #[test]
-    fn enhanced_empty_operation_can_be_an_empty_structure() {
+    fn rpc_7_5_1_2_1_3_enhanced_empty_operation_can_be_an_empty_structure() {
         let service = build_enhanced_service_with(
             &calculator_hierarchy(),
             EnhancedOptions {
@@ -1483,7 +1483,7 @@ mod tests {
     /// An `inout` parameter is in both the `In` and the `Out`
     /// structure (§7.5.1.1.4, §7.5.1.1.5).
     #[test]
-    fn enhanced_inout_param_is_in_both_structures() {
+    fn rpc_7_5_1_1_4_enhanced_inout_param_is_in_both_structures() {
         let svc = service_of("interface Swap { void swap(inout long v); };");
         let service = build_enhanced_service(&svc).unwrap();
         let op = &service.operations[0];
@@ -1493,7 +1493,7 @@ mod tests {
 
     /// The return value is the last member of `Out`, named `return_`.
     #[test]
-    fn enhanced_out_carries_the_return_value() {
+    fn rpc_7_5_1_2_3_enhanced_out_carries_the_return_value() {
         let service = build_enhanced_service(&calc_service()).unwrap();
         let out = &service.operations[0].out_struct;
         assert_eq!(out.name, "Calculator_add_Out");

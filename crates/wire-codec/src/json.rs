@@ -13,11 +13,12 @@
 //!   `9007199254740993` read back through one is `9007199254740992`. A
 //!   value file that spells a 64-bit integer as a number therefore says
 //!   a different number than its author typed and every reader of the
-//!   file agrees on the wrong one. Refused on the way in
-//!   ([`EXACT_JSON_INTEGER`]) and never produced on the way out — for
-//!   every value of those two widths and not only the large ones,
-//!   because a form that changed shape at 2^53 would compare unequal
-//!   across the boundary.
+//!   file agrees on the wrong one. On the way in a number past
+//!   [`EXACT_JSON_INTEGER`] (2^53) is refused and one within it, which a
+//!   double carries exactly, is taken; on the way out a number is never
+//!   produced — for every value of those two widths and not only the
+//!   large ones, because a form that changed shape at 2^53 would compare
+//!   unequal across the boundary.
 //! - **A `long double` is a string.** Sixty of a binary128 significand's
 //!   113 bits do not fit a double. A number is still accepted on the way
 //!   in, because `1.5` in a value file means 1.5 and every double widens

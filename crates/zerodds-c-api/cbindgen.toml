@@ -41,7 +41,7 @@ typedef struct zerodds_ZeroDdsQueryCondition zerodds_ZeroDdsQueryCondition;
  * against the run-time zerodds_abi_revision() and fails fast on a
  * mismatch. Kept in sync with ZERODDS_ABI_REVISION in
  * crates/zerodds-c-api/src/lib.rs by
- * tests/abi_compat.rs::the_header_macro_and_the_exported_revision_agree.
+ * tests/abi_compat.rs::deployment_1_2_the_header_macro_and_the_exported_revision_agree.
  */
 #ifndef ZERODDS_ABI_REVISION
 #define ZERODDS_ABI_REVISION 1
@@ -69,6 +69,10 @@ parse_deps = false
 [export]
 prefix = "zerodds_"
 item_types = ["functions", "structs", "enums", "typedefs", "opaque"]
+# Reached only through the parameter of ZeroDdsEndpointCallback, a function
+# pointer behind `Option`, which cbindgen renders opaque (build.rs puts the
+# typedef back): named here, the struct is emitted.
+include = ["ZeroDdsEndpointInfo"]
 exclude = [
     "ConditionKind",
     # Condition handles are opaque on the C ABI (forward-declared in the

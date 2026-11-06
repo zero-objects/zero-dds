@@ -125,7 +125,7 @@ fn start_secured(
     guid: [u8; 16],
     prefix: GuidPrefix,
     gov: &str,
-) -> (Arc<DcpsRuntime>, Arc<SharedSecurityGate>) {
+) -> (common::ShutsDown, Arc<SharedSecurityGate>) {
     let pki = Arc::new(Mutex::new(PkiAuthenticationPlugin::new()));
     let local = pki
         .lock()
@@ -147,16 +147,18 @@ fn start_secured(
             Arc::new(PkiProvider(pki.clone())) as Arc<dyn SharedSecretProvider>,
         )),
     ));
-    let rt = DcpsRuntime::start(
-        domain,
-        prefix,
-        RuntimeConfig {
-            security: Some(gate.clone()),
-            security_guid_prefix: Some(prefix),
-            ..RuntimeConfig::default()
-        },
-    )
-    .expect("start");
+    let rt = common::ShutsDown(
+        DcpsRuntime::start(
+            domain,
+            prefix,
+            RuntimeConfig {
+                security: Some(gate.clone()),
+                security_guid_prefix: Some(prefix),
+                ..RuntimeConfig::default()
+            },
+        )
+        .expect("start"),
+    );
     let auth: Arc<Mutex<dyn AuthenticationPlugin>> = pki.clone();
     rt.enable_security_builtins_with_auth(VendorId::ZERODDS, auth, local);
     (rt, gate)
@@ -174,6 +176,7 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: "RawBytes".into(),
+        reliable: true,
         ..Default::default()
     }
 }

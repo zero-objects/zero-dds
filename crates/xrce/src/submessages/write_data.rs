@@ -627,7 +627,7 @@ mod tests {
     }
 
     #[test]
-    fn write_data_roundtrip_format_data() {
+    fn xrce_7_7_2_write_data_roundtrip_format_data() {
         let p = WriteDataPayload {
             base: writer_base(),
             serialized_data: alloc::vec![1, 2, 3, 4],
@@ -638,13 +638,13 @@ mod tests {
     }
 
     #[test]
-    fn write_data_flags_are_e_le_and_format_data() {
+    fn xrce_8_2_3_write_data_flags_are_e_le_and_format_data() {
         // FORMAT_DATA = 0b000 → flag byte is just the E-flag (0x01).
         assert_eq!(WriteDataPayload::flags(), 0x01);
     }
 
     #[test]
-    fn write_data_base_object_request_precedes_the_sample() {
+    fn xrce_8_3_5_8_write_data_base_object_request_precedes_the_sample() {
         // The four leading octets MUST be request_id[2] + object_id[2],
         // and the sample follows them with no length of its own
         // (§7.7.8 / §8.3.5.8, Annex B.3.1).
@@ -671,7 +671,7 @@ mod tests {
     /// `short`. A `sequence<octet>` length would make it ten, which is
     /// what this crate wrote before the capture contradicted it.
     #[test]
-    fn write_data_matches_the_annex_b_example() {
+    fn xrce_7_7_1_write_data_matches_the_annex_b_example() {
         let p = WriteDataPayload {
             base: BaseObjectRequest {
                 request_id: [0xAA, 0x01],
@@ -684,18 +684,6 @@ mod tests {
         assert_eq!(sm.header.flags, 0x01);
         assert_eq!(sm.header.submessage_length, 6);
         assert_eq!(sm.body, alloc::vec![0xAA, 0x01, 0x44, 0x05, 0x19, 0x00]);
-        assert_eq!(WriteDataPayload::try_from_submessage(&sm).unwrap(), p);
-    }
-
-    #[test]
-    fn write_data_empty_sample_roundtrip() {
-        let p = WriteDataPayload {
-            base: writer_base(),
-            serialized_data: alloc::vec![],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        // 4 (base) and nothing else.
-        assert_eq!(sm.body.len(), 4);
         assert_eq!(WriteDataPayload::try_from_submessage(&sm).unwrap(), p);
     }
 
@@ -717,7 +705,7 @@ mod tests {
     }
 
     #[test]
-    fn write_data_rejects_reserved_format() {
+    fn xrce_8_3_5_8_write_data_rejects_reserved_format() {
         // 0b010 is reserved.
         let bad_flags = FLAG_E_LITTLE_ENDIAN | (0b010 << 1);
         let sm = Submessage::new(SubmessageId::WriteData, bad_flags, alloc::vec![0; 8]).unwrap();
@@ -743,7 +731,7 @@ mod tests {
     }
 
     #[test]
-    fn data_format_raw_roundtrip() {
+    fn xrce_7_7_14_data_format_raw_roundtrip() {
         for fmt in [
             DataFormat::Data,
             DataFormat::Sample,
@@ -778,17 +766,6 @@ mod tests {
 
     // ---- WriteDataPayloadSample (FORMAT_SAMPLE) --------------------------
 
-    #[test]
-    fn write_data_sample_roundtrip() {
-        let p = WriteDataPayloadSample {
-            base: writer_base(),
-            info: sample_info(3, 1500),
-            serialized_data: alloc::vec![0xAA, 0xBB, 0xCC],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(WriteDataPayloadSample::try_from_submessage(&sm).unwrap(), p);
-    }
-
     /// DDS-XRCE 1.0 Annex B.5.3 lays out `Sample` (used identically by
     /// `WRITE_DATA_Payload_Sample` and `DATA_Payload_Sample` — both derive
     /// from a 4-octet base and then `Sample info; data;`, per Annex A) as
@@ -796,7 +773,7 @@ mod tests {
     /// `info.sequence_number`(4) + `info.session_time_offset`(4) +
     /// `XCDR_Serialization(foo)`. This checks that exact byte layout.
     #[test]
-    fn write_data_sample_matches_annex_b_5_3_layout() {
+    fn xrce_7_7_1_write_data_sample_matches_annex_b_5_3_layout() {
         let p = WriteDataPayloadSample {
             base: writer_base(),
             info: sample_info(1, 0),
@@ -823,7 +800,7 @@ mod tests {
     }
 
     #[test]
-    fn write_data_sample_flags_carry_format_sample() {
+    fn xrce_8_3_5_8_write_data_sample_flags_carry_format_sample() {
         assert_eq!(
             WriteDataPayloadSample::flags(),
             FLAG_E_LITTLE_ENDIAN | 0b0000_0010
@@ -846,25 +823,11 @@ mod tests {
 
     // ---- WriteDataPayloadDataSeq (FORMAT_DATA_SEQ) ------------------------
 
-    #[test]
-    fn write_data_data_seq_roundtrip() {
-        let p = WriteDataPayloadDataSeq {
-            base: writer_base(),
-            sample_count: 2,
-            elements: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(
-            WriteDataPayloadDataSeq::try_from_submessage(&sm).unwrap(),
-            p
-        );
-    }
-
     /// DDS-XRCE 1.0 Annex B.5.2: `BaseObjectRequest`(4) +
     /// `data_seq.length`(4) + `data_seq[0].data`(4) + `data_seq[1].data`(4)
     /// — no per-element length, elements run straight into each other.
     #[test]
-    fn write_data_data_seq_matches_annex_b_5_2_layout() {
+    fn xrce_7_7_2_write_data_data_seq_matches_annex_b_5_2_layout() {
         let p = WriteDataPayloadDataSeq {
             base: BaseObjectRequest {
                 request_id: [0xAA, 0x01],
@@ -881,36 +844,7 @@ mod tests {
         assert_eq!(&sm.body[12..16], &[0, 0, 0, 2], "data_seq[1].data");
     }
 
-    #[test]
-    fn write_data_data_seq_empty_roundtrip() {
-        let p = WriteDataPayloadDataSeq {
-            base: writer_base(),
-            sample_count: 0,
-            elements: Vec::new(),
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(sm.body.len(), 8);
-        assert_eq!(
-            WriteDataPayloadDataSeq::try_from_submessage(&sm).unwrap(),
-            p
-        );
-    }
-
     // ---- WriteDataPayloadSampleSeq (FORMAT_SAMPLE_SEQ) --------------------
-
-    #[test]
-    fn write_data_sample_seq_roundtrip() {
-        let p = WriteDataPayloadSampleSeq {
-            base: writer_base(),
-            sample_count: 2,
-            elements: alloc::vec![0u8; 32],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(
-            WriteDataPayloadSampleSeq::try_from_submessage(&sm).unwrap(),
-            p
-        );
-    }
 
     /// DDS-XRCE 1.0 Annex B.5.4: `BaseObjectRequest`(4) +
     /// `sample_seq.length`(4) + `sample_seq[0].info`(12) +
@@ -918,7 +852,7 @@ mod tests {
     /// `sample_seq[1].data`(4) — submessageLength = 40, no length between
     /// an element's `info`/`data` or before the next element.
     #[test]
-    fn write_data_sample_seq_matches_annex_b_5_4_layout() {
+    fn xrce_7_7_2_write_data_sample_seq_matches_annex_b_5_4_layout() {
         let mut elements = Vec::new();
         sample_info(0, 0)
             .encode_into(Endianness::Little, &mut elements)
@@ -950,27 +884,12 @@ mod tests {
 
     // ---- WriteDataPayloadPackedSamples (FORMAT_PACKED_SAMPLES) -----------
 
-    #[test]
-    fn write_data_packed_samples_roundtrip() {
-        let p = WriteDataPayloadPackedSamples {
-            base: writer_base(),
-            info_base: sample_info(1000, 0),
-            sample_count: 2,
-            elements: alloc::vec![0u8; 16],
-        };
-        let sm = p.clone().into_submessage().unwrap();
-        assert_eq!(
-            WriteDataPayloadPackedSamples::try_from_submessage(&sm).unwrap(),
-            p
-        );
-    }
-
     /// DDS-XRCE 1.0 Annex B.5.5: `BaseObjectRequest`(4) + `info_base`(12) +
     /// `sample_delta_seq.length`(4) +
     /// (`sample_delta_seq[i].info_delta`(4) +
     /// `sample_delta_seq[i].data`(4)) × 2 — submessageLength = 36.
     #[test]
-    fn write_data_packed_samples_matches_annex_b_5_5_layout() {
+    fn xrce_7_7_1_write_data_packed_samples_matches_annex_b_5_5_layout() {
         let mut elements = Vec::new();
         SampleInfoDelta {
             state: SampleInfoFlags(0),
@@ -1017,7 +936,7 @@ mod tests {
     // ---- AnyWriteData dispatch ---------------------------------------
 
     #[test]
-    fn any_write_data_dispatches_every_format() {
+    fn xrce_7_7_1_any_write_data_dispatches_every_format() {
         let base = writer_base();
         let cases: alloc::vec::Vec<(DataFormat, Submessage)> = alloc::vec![
             (

@@ -61,7 +61,7 @@ class CoreKeyValueTest {
     }
 
     @Test
-    void aWriterFillsTheKeyFieldsOfTheHolderOnly() throws Exception {
+    void javapsm_7_2_5_a_writer_fills_the_key_fields_of_the_holder_only() throws Exception {
         Topic<Item> topic = participant.createTopic("CoreKeyValueWriter", Item.class);
         DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
         InstanceHandle two = writer.registerInstance(new Item(2, 0));
@@ -81,7 +81,7 @@ class CoreKeyValueTest {
     }
 
     @Test
-    void aReaderFillsTheKeyFieldsOfTheHolderOnly() throws Exception {
+    void javapsm_7_2_5_a_reader_fills_the_key_fields_of_the_holder_only() throws Exception {
         Topic<Item> topic = participant.createTopic("CoreKeyValueReader", Item.class);
         DataReader<Item> reader = participant.createSubscriber().createDataReader(topic, Qos.readerKeepAll());
         DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
@@ -100,7 +100,7 @@ class CoreKeyValueTest {
     }
 
     @Test
-    void aHandleOfNoInstanceIsABadParameter() throws Exception {
+    void javapsm_7_2_5_a_handle_of_no_instance_is_a_bad_parameter() throws Exception {
         Topic<Item> topic = participant.createTopic("CoreKeyValueUnknown", Item.class);
         DataReader<Item> reader = participant.createSubscriber().createDataReader(topic);
         DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
@@ -109,10 +109,11 @@ class CoreKeyValueTest {
         assertThrows(IllegalArgumentException.class, () -> reader.getKeyValue(new Item(), registered));
         assertThrows(IllegalArgumentException.class,
                 () -> writer.getKeyValue(new Item(), reader.lookupInstance(new Item(8, 0))));
+        assertThrows(IllegalArgumentException.class, () -> reader.getKeyValue(new Item(), null));
     }
 
     @Test
-    void lookupInstanceFillsTheHandleItIsGiven() throws Exception {
+    void javapsm_7_2_5_lookup_instance_fills_the_handle_it_is_given() throws Exception {
         Topic<Item> topic = participant.createTopic("CoreKeyValueLookup", Item.class);
         DataReader<Item> reader = participant.createSubscriber().createDataReader(topic);
         DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
@@ -137,7 +138,7 @@ class CoreKeyValueTest {
     }
 
     @Test
-    void theKeyHolderOfABuiltInKeyedTypeKeepsItsValue() throws Exception {
+    void javapsm_7_2_5_the_key_holder_of_a_built_in_keyed_type_keeps_its_value() throws Exception {
         Topic<KeyedString> topic = participant.createTopic("CoreKeyValueKeyedString", KeyedString.class);
         DataWriter<KeyedString> writer = participant.createPublisher().createDataWriter(topic);
         InstanceHandle handle = writer.registerInstance(KeyedString.newKeyedString(Qos.env()).setKey("k1"));
@@ -149,7 +150,7 @@ class CoreKeyValueTest {
     }
 
     @Test
-    void aTypeWithoutAKeyHasNoKeyValue() throws Exception {
+    void javapsm_7_2_5_a_type_without_a_key_has_no_key_value() throws Exception {
         Topic<byte[]> topic = participant.createTopic("CoreKeyValueUnkeyed", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);

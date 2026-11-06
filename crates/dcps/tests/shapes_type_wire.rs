@@ -147,7 +147,7 @@ fn shape_type_padding_after_short_color_aligns_x_to_4_bytes() {
 }
 
 #[test]
-fn shape_type_type_name_matches_interop_convention() {
+fn xtypes_7_6_3_2_2_shape_type_type_name_matches_interop_convention() {
     // Any other spelling (zerodds::ShapeType, dds::ShapeType, ...) would
     // break SEDP topic-type matching with CycloneDDS/Fast-DDS.
     assert_eq!(ShapeType::TYPE_NAME, "ShapeType");

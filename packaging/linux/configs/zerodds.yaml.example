@@ -157,6 +157,7 @@ time:
 xtypes:
   key_member_bounds: enforced        # ZERODDS_KEY_MEMBER_BOUNDS; enforced | ignored
   strong_assignability: equivalence  # ZERODDS_STRONG_ASSIGNABILITY; equivalence | names_ignored
+  key_must_understand: flagged       # ZERODDS_KEY_MUST_UNDERSTAND; flagged | implied
   type_consistency_absent: disallow  # ZERODDS_TYPE_CONSISTENCY_ABSENT; disallow | allow
   annotation_parameter_order: member-index  # ZERODDS_ANNOTATION_PARAMETER_ORDER; member-index | name
 

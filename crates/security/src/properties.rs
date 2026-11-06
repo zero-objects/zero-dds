@@ -151,7 +151,7 @@ mod tests {
     /// the propagated ones are for discovery, and the flag is not on the wire
     /// of a token (§7.3.3.1 `@non-serialized`).
     #[test]
-    fn binary_properties_carry_propagate_and_it_is_not_serialized() {
+    fn security_7_3_3_binary_properties_carry_propagate_and_it_is_not_serialized() {
         use crate::token::{BinaryProperty, DataHolder};
         let mut list = PropertyList::new();
         list.set_binary(BinaryProperty::new("com.example.local", [1u8, 2]));
@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn set_replaces_duplicate() {
+    fn security_7_3_2_set_replaces_duplicate() {
         let mut list = PropertyList::new();
         list.set(Property::local("k", "v1"));
         list.set(Property::local("k", "v2"));
@@ -198,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn propagatable_filter() {
+    fn security_7_3_2_propagatable_filter() {
         let list = PropertyList::new()
             .with(Property::local("secret", "sensitive"))
             .with(Property::propagated("public", "hashed"));

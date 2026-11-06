@@ -23,7 +23,6 @@
 //! period, so a lost first beacon no longer means `participants=0`. The burst
 //! also keeps the NIC awake via frequent TX. Residual power-save tuning stays an
 //! OS/AP concern, but is no longer the *sole* mitigation.
-//! Detail: `internal/interop/ros2-c3-large-data-wifi-followup.md`.
 
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 

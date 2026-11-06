@@ -290,7 +290,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mandatory_metric_count_is_14() {
+    fn ddsamqp_7_9_2_mandatory_metric_count_is_14() {
         // Spec §7.9.2.1 enumerates 14 metrics (incl. the three
         // dropped.* and rpc.calls.timed-out metrics from the
         // sealed-profile iterations + reconnect-overflow).
@@ -298,7 +298,7 @@ mod tests {
     }
 
     #[test]
-    fn fresh_hub_all_zero() {
+    fn ddsamqp_7_9_2_fresh_hub_all_zero() {
         let h = MetricsHub::new();
         for name in MANDATORY_METRIC_NAMES {
             assert_eq!(h.snapshot(name), Some(0), "metric {name} initial != 0");
@@ -306,13 +306,13 @@ mod tests {
     }
 
     #[test]
-    fn unknown_metric_yields_none() {
+    fn ddsamqp_7_9_2_unknown_metric_yields_none() {
         let h = MetricsHub::new();
         assert!(h.snapshot("not.a.metric").is_none());
     }
 
     #[test]
-    fn connection_open_close_balances() {
+    fn ddsamqp_7_9_2_connection_open_close_balances() {
         let h = MetricsHub::new();
         h.on_connection_open();
         h.on_connection_open();
@@ -325,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn transfer_unsettled_tracking() {
+    fn ddsamqp_7_9_2_transfer_unsettled_tracking() {
         let h = MetricsHub::new();
         h.on_transfer_sent(true); // unsettled
         h.on_transfer_sent(true);
@@ -335,7 +335,7 @@ mod tests {
     }
 
     #[test]
-    fn pre_settled_transfer_does_not_count_unsettled() {
+    fn ddsamqp_7_9_2_pre_settled_transfer_does_not_count_unsettled() {
         let h = MetricsHub::new();
         h.on_transfer_sent(false); // settled / pre-settled
         assert_eq!(h.snapshot(names::TRANSFERS_SENT), Some(1));
@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn loop_and_hop_cap_drops_count_separately() {
+    fn ddsamqp_7_9_2_loop_and_hop_cap_drops_count_separately() {
         let h = MetricsHub::new();
         h.on_dropped_loop();
         h.on_dropped_loop();
@@ -353,7 +353,7 @@ mod tests {
     }
 
     #[test]
-    fn rpc_failure_counters_independent() {
+    fn ddsamqp_7_9_2_rpc_failure_counters_independent() {
         let h = MetricsHub::new();
         h.on_rpc_timeout();
         h.on_dropped_malformed_reply();
@@ -366,7 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn unit_of_known_metrics() {
+    fn ddsamqp_7_9_2_unit_of_known_metrics() {
         assert_eq!(
             MetricsHub::unit_of(names::CONNECTIONS_ACTIVE),
             Some(units::COUNT)
@@ -379,7 +379,7 @@ mod tests {
     }
 
     #[test]
-    fn topics_added_removed_balances() {
+    fn ddsamqp_7_9_2_topics_added_removed_balances() {
         let h = MetricsHub::new();
         h.on_topic_added();
         h.on_topic_added();
@@ -390,7 +390,7 @@ mod tests {
     }
 
     #[test]
-    fn reconnect_overflow_counter() {
+    fn ddsamqp_7_9_2_reconnect_overflow_counter() {
         let h = MetricsHub::new();
         h.on_reconnect_overflow();
         h.on_reconnect_overflow();

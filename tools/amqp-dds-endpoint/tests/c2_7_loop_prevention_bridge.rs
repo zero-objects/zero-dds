@@ -38,7 +38,7 @@ fn props(entries: Vec<(&str, AmqpExtValue)>) -> AmqpExtValue {
 }
 
 #[test]
-fn c2_7a_outbound_then_inbound_round_trip_drops_self() {
+fn ddsamqp_c_2_7_outbound_then_inbound_round_trip_drops_self() {
     // Spec §C.2.7 (a): the bridge sends a sample (stamp_outbound),
     // Sample comes back via the broker (inspect_inbound). Its own
     // bridge_id im Tag → DropLoop.
@@ -62,7 +62,7 @@ fn c2_7a_outbound_then_inbound_round_trip_drops_self() {
 }
 
 #[test]
-fn c2_7b_hop_cap_exceeded_drops_with_metric() {
+fn ddsamqp_c_2_7_hop_cap_exceeded_drops_with_metric() {
     // Spec §C.2.7 (b): sample with hop > cap drops + counter.
     let mut cfg = CoexistenceConfig::new("bridge-uuid-7b".to_string());
     cfg.hop_cap = 4; // niedriger Test-Cap
@@ -79,7 +79,7 @@ fn c2_7b_hop_cap_exceeded_drops_with_metric() {
 }
 
 #[test]
-fn c2_7_multi_bridge_chain_terminates_at_hop_cap() {
+fn ddsamqp_c_2_7_multi_bridge_chain_terminates_at_hop_cap() {
     // Bridge chain scenario: sample travels through 5 bridges,
     // each stamps and increments hop. At cap=4 it drops
     // die 5. Bridge.
@@ -103,7 +103,7 @@ fn c2_7_multi_bridge_chain_terminates_at_hop_cap() {
 }
 
 #[test]
-fn c2_7_foreign_bridges_in_history_dont_trigger_self_drop() {
+fn ddsamqp_c_2_7_foreign_bridges_in_history_dont_trigger_self_drop() {
     // The bridge sees a list of other bridges in the history,
     // but not its own → forward.
     let cfg = CoexistenceConfig::new("self-bridge".to_string());

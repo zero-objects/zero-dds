@@ -211,10 +211,8 @@ pub fn discriminator_default(
         ast.type_(resolved).map(|node| node.kind.clone()),
         Ok(TypeKind::Enumeration { .. })
     );
-    if is_enum {
-        if let Some(enumerator) = default_enumerator_name(ast, resolved) {
-            return Ok(enumerator_expr(ast, resolved, &enumerator));
-        }
+    if is_enum && let Some(enumerator) = default_enumerator_name(ast, resolved) {
+        return Ok(enumerator_expr(ast, resolved, &enumerator));
     }
     match discriminator_default_value(ast, resolved) {
         Some(value) if resolved_primitive(ast, resolved) == Some(PrimitiveKind::Boolean) => {

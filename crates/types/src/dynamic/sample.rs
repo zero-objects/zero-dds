@@ -872,11 +872,11 @@ impl DynamicSample {
             return Err(DynamicError::bad_parameter("the sample is no map"));
         };
         if index < entries.len() {
-            if let DynamicData::Collection(pair) = &mut entries[index] {
-                if pair.len() == 2 {
-                    pair[1] = new;
-                    return Ok(());
-                }
+            if let DynamicData::Collection(pair) = &mut entries[index]
+                && pair.len() == 2
+            {
+                pair[1] = new;
+                return Ok(());
             }
             return Err(DynamicError::bad_parameter("a malformed map entry"));
         }
@@ -1711,13 +1711,13 @@ impl DynamicSample {
                 kind.as_str()
             )));
         }
-        if let Some(bound) = Self::bound(&target.ty) {
-            if value.chars().count() > bound {
-                return Err(DynamicError::bad_parameter(alloc::format!(
-                    "{} characters exceed the bound of {bound}",
-                    value.chars().count()
-                )));
-            }
+        if let Some(bound) = Self::bound(&target.ty)
+            && value.chars().count() > bound
+        {
+            return Err(DynamicError::bad_parameter(alloc::format!(
+                "{} characters exceed the bound of {bound}",
+                value.chars().count()
+            )));
         }
         self.write(&target, DynamicData::Text(value.to_string()))
     }
@@ -1801,13 +1801,13 @@ impl DynamicSample {
         }
         let stored = match kind {
             TypeKind::Sequence => {
-                if let Some(bound) = Self::bound(&target.ty) {
-                    if values.len() > bound {
-                        return Err(DynamicError::bad_parameter(alloc::format!(
-                            "{} elements exceed the bound of {bound}",
-                            values.len()
-                        )));
-                    }
+                if let Some(bound) = Self::bound(&target.ty)
+                    && values.len() > bound
+                {
+                    return Err(DynamicError::bad_parameter(alloc::format!(
+                        "{} elements exceed the bound of {bound}",
+                        values.len()
+                    )));
                 }
                 DynamicData::Collection(values)
             }
@@ -2005,10 +2005,10 @@ impl DynamicSample {
                 "the elements are not those strings",
             ));
         }
-        if let Some(bound) = Self::bound(&element.ty) {
-            if values.iter().any(|v| v.chars().count() > bound) {
-                return Err(DynamicError::bad_parameter("a string exceeds its bound"));
-            }
+        if let Some(bound) = Self::bound(&element.ty)
+            && values.iter().any(|v| v.chars().count() > bound)
+        {
+            return Err(DynamicError::bad_parameter("a string exceeds its bound"));
         }
         let stored = values
             .iter()

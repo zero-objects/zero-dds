@@ -25,7 +25,7 @@ const EXAMPLE_YAML: &str =
     include_str!("../../../packaging/linux/configs/mqtt-bridged.yaml.example");
 
 #[test]
-fn example_yaml_parses_without_error() {
+fn mqttbridge_3_example_yaml_parses_without_error() {
     let res = DaemonConfig::load_from_str(EXAMPLE_YAML);
     assert!(
         res.is_ok(),
@@ -35,9 +35,9 @@ fn example_yaml_parses_without_error() {
 }
 
 #[test]
-fn example_yaml_key_fields_match_intent() {
+fn mqttbridge_3_example_yaml_key_fields_match_intent() {
     let cfg = DaemonConfig::load_from_str(EXAMPLE_YAML)
-        .expect("example yaml must parse — see example_yaml_parses_without_error");
+        .expect("example yaml must parse — see mqttbridge_3_example_yaml_parses_without_error");
 
     assert_eq!(cfg.domain, 0);
     assert_eq!(cfg.log_level, "info");
@@ -71,9 +71,9 @@ fn example_yaml_key_fields_match_intent() {
 }
 
 #[test]
-fn example_yaml_topics_reach_the_daemon() {
+fn mqttbridge_11_example_yaml_topics_reach_the_daemon() {
     let cfg = DaemonConfig::load_from_str(EXAMPLE_YAML)
-        .expect("example yaml must parse — see example_yaml_parses_without_error");
+        .expect("example yaml must parse — see mqttbridge_3_example_yaml_parses_without_error");
 
     // The regression the old `routes:` schema caused: an empty topic list.
     assert_eq!(
@@ -94,9 +94,9 @@ fn example_yaml_topics_reach_the_daemon() {
 }
 
 #[test]
-fn example_yaml_acl_reaches_the_daemon() {
+fn mqttbridge_7_3_example_yaml_acl_reaches_the_daemon() {
     let cfg = DaemonConfig::load_from_str(EXAMPLE_YAML)
-        .expect("example yaml must parse — see example_yaml_parses_without_error");
+        .expect("example yaml must parse — see mqttbridge_3_example_yaml_parses_without_error");
 
     // Spec §3/§7.3: subject-keyed rules, inverted into the topic-keyed map.
     // `default_deny: false` deviates from the fail-closed default.
@@ -110,7 +110,7 @@ fn example_yaml_acl_reaches_the_daemon() {
 }
 
 #[test]
-fn example_yaml_has_no_unknown_top_level_keys() {
+fn mqttbridge_11_example_yaml_has_no_unknown_top_level_keys() {
     const KNOWN: &[&str] = &[
         "domain",
         "log_level",

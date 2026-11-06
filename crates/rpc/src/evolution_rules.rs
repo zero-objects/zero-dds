@@ -146,7 +146,7 @@ mod tests {
     // ---- Spec §7.7.1 Basic mapping -------------------------------
 
     #[test]
-    fn basic_mapping_add_remove_operation_is_compatible() {
+    fn rpc_7_7_basic_mapping_add_remove_operation_is_compatible() {
         // §7.7.1.1: a client with fewer operations is oblivious; a client
         // with more gets REMOTE_EX_UNSUPPORTED. Defined behaviour, not a
         // break.
@@ -163,7 +163,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_mapping_reorder_operations_is_compatible() {
+    fn rpc_7_7_1_2_basic_mapping_reorder_operations_is_compatible() {
         // §7.7.1.2: "Reordering operations has no impact on the semantics
         // of the interface [...]. Reordering base interfaces has no
         // impact."
@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_mapping_change_signature_is_breaking() {
+    fn rpc_7_7_1_3_basic_mapping_change_signature_is_breaking() {
         // §7.7.1.3.
         assert!(!is_compatible(
             Mapping::Basic,
@@ -200,7 +200,7 @@ mod tests {
     }
 
     #[test]
-    fn basic_mapping_has_four_compatible_evolutions() {
+    fn rpc_7_7_basic_mapping_has_four_compatible_evolutions() {
         let compats = compatible_evolutions(Mapping::Basic, false);
         assert_eq!(compats.len(), 4, "{compats:?}");
         assert!(compats.contains(&Evolution::AddOperation));
@@ -232,7 +232,7 @@ mod tests {
     }
 
     #[test]
-    fn enhanced_mapping_reorder_operations_is_compatible() {
+    fn rpc_7_7_2_3_enhanced_mapping_reorder_operations_is_compatible() {
         // Spec §7.7.2.3.
         assert!(is_compatible(
             Mapping::Enhanced,
@@ -257,7 +257,7 @@ mod tests {
     }
 
     #[test]
-    fn enhanced_mapping_add_remove_param_is_breaking() {
+    fn rpc_7_7_2_5_1_enhanced_mapping_add_remove_param_is_breaking() {
         // §7.7.2.5.1: adding and removing parameters break compatibility;
         // "@final annotation on the In and Out structures enforce this
         // restriction". Without @Mutable; see the tests below for the marked operation.
@@ -269,7 +269,7 @@ mod tests {
     }
 
     #[test]
-    fn enhanced_mapping_reorder_params_is_breaking() {
+    fn rpc_7_7_2_5_2_enhanced_mapping_reorder_params_is_breaking() {
         // §7.7.2.5.2.
         assert!(!is_compatible(
             Mapping::Enhanced,
@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn enhanced_mapping_add_remove_return_type_is_breaking() {
+    fn rpc_7_7_2_5_4_enhanced_mapping_add_remove_return_type_is_breaking() {
         // §7.7.2.5.4.
         assert!(!is_compatible(
             Mapping::Enhanced,
@@ -310,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn enhanced_mapping_add_remove_exception_is_compatible() {
+    fn rpc_7_7_2_5_6_enhanced_mapping_add_remove_exception_is_compatible() {
         // §7.7.2.5.6.
         assert!(is_compatible(
             Mapping::Enhanced,
@@ -320,7 +320,7 @@ mod tests {
     }
 
     #[test]
-    fn enhanced_compatible_evolutions_includes_8_of_12() {
+    fn rpc_7_7_enhanced_compatible_evolutions_includes_8_of_12() {
         let compats = compatible_evolutions(Mapping::Enhanced, false);
         // Add/Remove-Op + Reorder-Ops + Reorder-Bases + DuckTyping +
         // Change-Param-Type + Change-Return-Type + Add/Remove-Exception
@@ -331,7 +331,7 @@ mod tests {
     // ---- `@Mutable` (§7.7.2.5.1, .2, .4) ----------------------------
 
     #[test]
-    fn a_mutable_operation_allows_parameter_changes() {
+    fn rpc_7_7_a_mutable_operation_allows_parameter_changes() {
         // §7.7.2.5.1: "It is, however, possible to mark an operation
         // @mutable to allow the In and Out structures to be mutable and
         // thereby supporting extensions."
@@ -357,7 +357,7 @@ mod tests {
     }
 
     #[test]
-    fn mutable_changes_nothing_that_was_compatible_or_never_was() {
+    fn rpc_7_7_mutable_changes_nothing_that_was_compatible_or_never_was() {
         // The evolutions that did not depend on `@Mutable` do not start to.
         for evolution in [
             Evolution::AddOperation,
@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn a_mutable_operation_has_eleven_compatible_enhanced_evolutions() {
+    fn rpc_7_7_a_mutable_operation_has_eleven_compatible_enhanced_evolutions() {
         // The eight above plus the three that `@Mutable` opens; the
         // Basic signature change stays out.
         let compats = compatible_evolutions(Mapping::Enhanced, true);

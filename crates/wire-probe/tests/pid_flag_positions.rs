@@ -44,7 +44,7 @@
 //!
 //! Both directions, from vendor bytes, which is what makes the sentinel
 //! a position rather than a property of the list — judgement 3 of
-//! `docs/wire-axes-followup.md`.
+//! `0b2e8df9f6b:docs/wire-axes-followup.md`.
 //!
 //! # Mutation-checked
 //!
@@ -114,7 +114,7 @@
 //!   red here and recorded as such: no corpus case promotes a short
 //!   header to the extended form, because promotion needs a value past
 //!   sixteen bits and the corpus has none.
-//!   `crates/wire/tests/wire.rs::a_promoted_header_moves_the_must_understand_bit_to_flag_two`
+//!   `crates/wire/tests/wire.rs::xtypes_7_4_1_2_1_a_promoted_header_moves_the_must_understand_bit_to_flag_two`
 //!   covers that site with a 64 KiB value and goes red instead, which
 //!   was run rather than assumed.
 

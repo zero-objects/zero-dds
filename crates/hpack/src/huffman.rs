@@ -370,7 +370,7 @@ mod tests {
 
     #[test]
     fn round_trip_single_char() {
-        for c in [b'a', b'A', b'0', b'!', b' '] {
+        for c in *b"aA0! " {
             let enc = encode(&[c]);
             let dec = decode(&enc).unwrap();
             assert_eq!(dec, alloc::vec![c]);

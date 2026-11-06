@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! e2e: the explicit `--topic NAME` path (`serve_discovered`) resolves a
-//! writer's real application type name and keyedness from discovery, instead
-//! of locking the topic to `zerodds::RawBytes`. Previously an explicitly
-//! named topic was always registered as a native `Topic<RawBytes>`, which
-//! never matches a writer of any other type name under `use_xtypes=no`
-//! (match keyed on topic_name + type_name) — every foreign-vendor writer, and
-//! every ZeroDDS writer of an actual application type.
+//! The explicit `--topic NAME` path (`serve_discovered`) takes a writer's
+//! type name and keyedness from its discovery data
+//! (`zerodds-durability-svc.yaml(5)`: "Without `type`, the type (and
+//! keyedness) come from whichever writer of the topic is discovered
+//! first"), so that its reader matches a writer of any type name and a late
+//! joiner of that type gets the replay.
 //!
 //! Own test binary = isolated process (process-global DDS state).
 
@@ -61,12 +60,13 @@ fn foreign_reader_cfg(topic: &str) -> UserReaderConfig {
             kind: LivelinessKind::Automatic,
             ..Default::default()
         },
+        reliable: true,
         ..Default::default()
     }
 }
 
 #[test]
-fn explicit_topic_resolves_foreign_type_via_discovery() {
+fn a_named_topic_takes_the_type_name_its_first_writer_announces() {
     let domain = zerodds_test_domains::unique_domain();
     let topic = "ExplicitForeignTopic";
     let store: Arc<dyn DurabilityStore> =
@@ -106,9 +106,7 @@ fn explicit_topic_resolves_foreign_type_via_discovery() {
         }
         let got = wait_for_stored(store.as_ref(), topic, 3, Duration::from_secs(15));
         assert_eq!(got, 3, "daemon should ingest 3 samples of the foreign type");
-    } // foreign participant dropped -> original writer gone
-
-    std::thread::sleep(Duration::from_millis(300));
+    } // foreign participant dropped -> its runtime is shut down, the writer gone
 
     let got = late_joiner_collect_foreign(domain, topic, 3, Duration::from_secs(15));
     assert_eq!(

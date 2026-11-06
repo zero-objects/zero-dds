@@ -28,10 +28,13 @@ use zerodds_coap_bridge::dtls_transport::DtlsCoapClient;
 use zerodds_coap_bridge::message::{CoapCode, CoapMessage, MessageType};
 use zerodds_coap_bridge::option::CoapOption;
 
-fn dtls_test_config() -> DaemonConfig {
+/// The configuration on a leased DDS domain (the host's share of the band,
+/// `zerodds-test-domains`); the lease is held while the test runs.
+fn dtls_test_config() -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.bind = "127.0.0.1:0".to_string(); // plaintext coap:// (required)
-    cfg.domain = 71;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.dtls_enabled = true;
     cfg.bind_dtls = Some("127.0.0.1:0".to_string()); // ephemeral coaps://
     cfg.topics.push(TopicConfig {
@@ -43,12 +46,13 @@ fn dtls_test_config() -> DaemonConfig {
         durability: "volatile".to_string(),
         history_depth: 10,
     });
-    cfg
+    (cfg, lease)
 }
 
 #[tokio::test]
-async fn daemon_serves_coaps_over_dtls_request_response_and_observe() {
-    let mut handle = server::start(dtls_test_config()).expect("daemon start");
+async fn coap_9_daemon_serves_coaps_over_dtls_request_response_and_observe() {
+    let (cfg, _lease) = dtls_test_config();
+    let mut handle = server::start(cfg).expect("daemon start");
 
     // Wait for the DTLS listener to publish its bound address.
     let mut dtls_addr = None;
@@ -142,8 +146,8 @@ async fn recv(
 /// is the subject (`psk:<identity>`) the ACL names. The identity did not
 /// reach the request path before, so `mtls` answered every request 4.01.
 #[tokio::test]
-async fn mtls_takes_the_psk_identity_as_the_acl_subject() {
-    let mut cfg = dtls_test_config();
+async fn coapbridge_7_3_mtls_takes_the_psk_identity_as_the_acl_subject() {
+    let (mut cfg, _lease) = dtls_test_config();
     cfg.dtls.psk.add("sensor-1", vec![7u8; 16]).unwrap();
     cfg.dtls.psk.add("sensor-2", vec![8u8; 16]).unwrap();
     cfg.auth_mode = "mtls".into();
@@ -187,8 +191,8 @@ async fn mtls_takes_the_psk_identity_as_the_acl_subject() {
 
 /// `auth.mode: mtls` without DTLS stops the start as a configuration error.
 #[test]
-fn mtls_without_dtls_is_a_config_error() {
-    let mut cfg = dtls_test_config();
+fn coapbridge_7_3_mtls_without_dtls_is_a_config_error() {
+    let (mut cfg, _lease) = dtls_test_config();
     cfg.dtls_enabled = false;
     cfg.auth_mode = "mtls".into();
     match server::start(cfg) {
@@ -202,7 +206,7 @@ fn mtls_without_dtls_is_a_config_error() {
 /// certificate's DN (`CN=sensor-9`, RFC 4514); a second certificate from the
 /// same CA is authenticated and refused by the ACL.
 #[tokio::test]
-async fn mtls_takes_the_certificate_dn_as_the_acl_subject() {
+async fn coapbridge_7_3_mtls_takes_the_certificate_dn_as_the_acl_subject() {
     let dir = std::env::temp_dir().join(format!("zd-coap-mtls-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut ca_params = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap();
@@ -229,7 +233,7 @@ async fn mtls_takes_the_certificate_dn_as_the_acl_subject() {
     let sensor = leaf("sensor-9");
     let other = leaf("other");
 
-    let mut cfg = dtls_test_config();
+    let (mut cfg, _lease) = dtls_test_config();
     cfg.dtls.ca_file = Some(dir.join("ca.pem").to_string_lossy().into_owned());
     cfg.auth_mode = "mtls".into();
     cfg.topic_acl.insert(

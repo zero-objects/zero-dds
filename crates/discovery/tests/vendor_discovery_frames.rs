@@ -60,7 +60,10 @@ fn fixture(vendor: &str) -> PathBuf {
 }
 
 fn hex_to_bytes(s: &str) -> Vec<u8> {
-    assert!(s.len() % 2 == 0, "a hex datagram has an even length");
+    assert!(
+        s.len().is_multiple_of(2),
+        "a hex datagram has an even length"
+    );
     (0..s.len() / 2)
         .map(|i| u8::from_str_radix(&s[2 * i..2 * i + 2], 16).unwrap())
         .collect()
@@ -105,7 +108,9 @@ fn parameters(payload: &[u8]) -> BTreeMap<u16, Vec<Vec<u8>>> {
         .expect("the vendor's parameter list parses");
     let mut out: BTreeMap<u16, Vec<Vec<u8>>> = BTreeMap::new();
     for p in &list.parameters {
-        out.entry(p.id & !0x4000).or_default().push(p.value.clone());
+        out.entry(p.id & !0x4000)
+            .or_default()
+            .push(p.value.to_vec());
     }
     out
 }
@@ -499,21 +504,21 @@ fn report(vendor: &str) {
 }
 
 #[test]
-fn cyclone_announcements_read_and_write_back() {
+fn rtps_8_5_4_4_cyclone_announcements_read_and_write_back() {
     report("cyclone");
 }
 
 #[test]
-fn rti_announcements_read_and_write_back() {
+fn rtps_9_4_2_11_rti_announcements_read_and_write_back() {
     report("rti");
 }
 
 #[test]
-fn fastdds_announcements_read_and_write_back() {
+fn rtps_9_3_1_3_fastdds_announcements_read_and_write_back() {
     report("fastdds");
 }
 
 #[test]
-fn opendds_announcements_read_and_write_back() {
+fn rtps_9_6_3_2_opendds_announcements_read_and_write_back() {
     report("opendds");
 }

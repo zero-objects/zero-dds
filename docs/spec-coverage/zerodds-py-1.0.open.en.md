@@ -5,6 +5,10 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
+## Non-goal — RTPS directly in pure Python
+
+**Status:** `open` — the `ctypes` path needs `libzerodds`; `runtime/python/zerodds_wire` encodes CDR but sends no RTPS.
+
 ## §3.1 Mapping
 
 **Status:** `partial` — the element count of a fixed array is not checked on encode: too many elements are cut, too few raise `IndexError` (`test_fixed_array_count_is_refused_on_encode`, `xfail(strict=True)`).
@@ -16,3 +20,15 @@ No new content: every entry appears there as an item with its evidence.
 ## §5.3b Octet identity Python ↔ C++/Java/C# in the tree
 
 **Status:** `open` — no test case in the repo holds the ShapeType octets the generated Python codec writes against those of the C++, Java or C# binding. `shape_reference_octets` supplies that reference for Rust only. Plan: produce a golden vector per binding the way `endpoints/python/test_byte_identity.py` does for `SensorReading`, for `ShapeType` too, and hold all four codecs against the same vector.
+
+## §6.4 ROS-2 pytest integration
+
+**Status:** `partial` — Not run in CI: `test_rclpy_init_succeeds_with_zerodds_rmw`, `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `test_rclpy_topic_graph_introspection`, `test_rclpy_node_names_graph`, `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## §6.4 ROS-2 pytest integration — run in CI
+
+**Status:** `open` — Not run in CI: `test_rclpy_init_succeeds_with_zerodds_rmw`, `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `test_rclpy_topic_graph_introspection`, `test_rclpy_node_names_graph`, `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+## §8 License
+
+**Status:** `open` — `crates/py/pyproject.toml` declares `license = { text = "Apache-2.0 OR MIT" }`, the Cargo workspace `Apache-2.0`; the spec names Apache-2.0. No test checks the declaration.

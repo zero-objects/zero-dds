@@ -156,6 +156,13 @@ fn enumerated_parameter(annotation: &str) -> bool {
             | "try_construct"
             | "data_representation"
             | "verbatim"
+            // The IDL4 language mappings' annotations name enumerators of
+            // their own enumerations: `apply_naming_convention =
+            // JAVA_NAMING_CONVENTION`, `struct_mapping =
+            // CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS`.
+            | "java_mapping"
+            | "csharp_mapping"
+            | "cpp_mapping"
     )
 }
 
@@ -165,6 +172,17 @@ impl Lowering<'_> {
         node.children()
             .into_iter()
             .filter(|child| child.kind() == CstKind::Annotation)
+            .filter_map(|annotation| self.annotation(&annotation))
+            .collect()
+    }
+
+    /// Read only the annotations written in the prefix form directly under
+    /// `node`: for a `typedef`, the ones prefixing its type
+    /// (`typedef @max(100) long Length;`).
+    pub(crate) fn prefix_annotations_of(&mut self, node: &Arc<SyntaxNode>) -> Vec<Applied> {
+        node.children()
+            .into_iter()
+            .filter(|child| child.kind() == CstKind::Annotation && !is_suffix_form(child))
             .filter_map(|annotation| self.annotation(&annotation))
             .collect()
     }
@@ -635,6 +653,9 @@ impl Lowering<'_> {
                 }
             }
             "verbatim" => self.verbatim_annotation(applied, target),
+            "java_mapping" | "csharp_mapping" | "cpp_mapping" => {
+                self.mapping_annotation(applied, target);
+            }
             "topic" => self.topic_annotation(applied, target),
             "data_representation" => self.data_representation_annotation(applied, target),
             // `@DDSService` is how DDS-RPC 1.0 writes the annotation in its
@@ -650,10 +671,18 @@ impl Lowering<'_> {
                 self.dds_rpc_autoid(applied, target);
                 self.apply_user_annotation(applied, target);
             }
-            "ami" => self.set_corba(target, |c| c.is_ami = true),
+            // IDL 4.2 §8.3.6.3 and §8.3.6.2: both take `boolean value
+            // default TRUE`, so `@ami(FALSE)` and `@oneway(FALSE)` say no.
+            "ami" => {
+                let value = self.flag_argument(applied);
+                self.set_corba(target, |c| c.is_ami = value);
+            }
             // `@oneway` is the operation's own flag, already set from the
             // keyword form; the annotation form sets the same field.
-            "oneway" => self.set_oneway(target),
+            "oneway" => {
+                let value = self.flag_argument(applied);
+                self.set_oneway(target, value);
+            }
             _ => self.apply_user_annotation(applied, target),
         }
     }
@@ -680,6 +709,143 @@ impl Lowering<'_> {
             c.is_service = true;
             c.service_arguments = arguments;
         });
+    }
+
+    /// `@java_mapping`, `@csharp_mapping` or `@cpp_mapping`: each written
+    /// parameter, checked against the annotation's declaration in its
+    /// language mapping, into [`zerodds_ast::Facets::mappings`].
+    ///
+    /// IDL4 to Java 1.0 §8.1:
+    /// `@annotation java_mapping { enum NamingConvention {
+    /// IDL_NAMING_CONVENTION, JAVA_NAMING_CONVENTION };
+    /// NamingConvention apply_naming_convention; string constants_container
+    /// default "Constants"; boolean promote_integer_width default FALSE;
+    /// string string_type default "java.lang.String"; }`. IDL4 to C# 1.0
+    /// §8.1: `apply_naming_convention` (`IDL_NAMING_CONVENTION`,
+    /// `DOTNET_NAMING_CONVENTION`), `constants_container`, `struct_type`.
+    /// IDL4 to C++ 1.0 §8.1: `struct_mapping`
+    /// (`STRUCT_WITH_PUBLIC_MEMBERS`,
+    /// `CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS`). A parameter the
+    /// declaration does not have, a value of the wrong kind and an
+    /// enumerator the enumeration does not have are errors: the
+    /// annotation is declared, and §7.4.15.4.2 holds an application to its
+    /// declaration.
+    fn mapping_annotation(&mut self, applied: &Applied, target: AnyId) {
+        use zerodds_ast::{MappingLanguage, MappingSetting, MappingValue};
+        enum Kind {
+            Enumerator(&'static [&'static str]),
+            Text,
+            Flag,
+        }
+        let Some(language) = MappingLanguage::of_annotation(&applied.name) else {
+            return;
+        };
+        let parameters: &[(&str, Kind)] = match language {
+            MappingLanguage::Java => &[
+                (
+                    "apply_naming_convention",
+                    Kind::Enumerator(&["IDL_NAMING_CONVENTION", "JAVA_NAMING_CONVENTION"]),
+                ),
+                ("constants_container", Kind::Text),
+                ("promote_integer_width", Kind::Flag),
+                ("string_type", Kind::Text),
+            ],
+            MappingLanguage::CSharp => &[
+                (
+                    "apply_naming_convention",
+                    Kind::Enumerator(&["IDL_NAMING_CONVENTION", "DOTNET_NAMING_CONVENTION"]),
+                ),
+                ("constants_container", Kind::Text),
+                ("struct_type", Kind::Text),
+            ],
+            MappingLanguage::Cpp => &[(
+                "struct_mapping",
+                Kind::Enumerator(&[
+                    "STRUCT_WITH_PUBLIC_MEMBERS",
+                    "CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS",
+                ]),
+            )],
+        };
+        let clause = match language {
+            MappingLanguage::Java => "IDL4 to Java 1.0 §8.1",
+            MappingLanguage::CSharp => "IDL4 to C# 1.0 §8.1",
+            MappingLanguage::Cpp => "IDL4 to C++ 1.0 §8.1",
+        };
+        let mut settings = Vec::new();
+        for argument in &applied.arguments {
+            let Some(parameter) = argument.name.as_deref() else {
+                let message = alloc::format!(
+                    "`@{}` has no `value` member; each argument names its parameter",
+                    applied.name
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidAnnotation,
+                    argument.span,
+                    &message,
+                    clause,
+                );
+                continue;
+            };
+            let Some((_, kind)) = parameters.iter().find(|(name, _)| *name == parameter) else {
+                let message = alloc::format!(
+                    "`@{}` has no parameter `{parameter}`; it has {}",
+                    applied.name,
+                    parameters
+                        .iter()
+                        .map(|(name, _)| alloc::format!("`{name}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
+                self.diagnose_at(
+                    DiagnosticCode::InvalidAnnotation,
+                    argument.span,
+                    &message,
+                    clause,
+                );
+                continue;
+            };
+            let value = match kind {
+                Kind::Enumerator(allowed) => argument
+                    .identifiers
+                    .last()
+                    .filter(|written| allowed.contains(&written.as_str()))
+                    .map(|written| MappingValue::Name(written.clone()))
+                    .ok_or_else(|| alloc::format!("one of {}", allowed.join(", "))),
+                Kind::Text => argument
+                    .text
+                    .clone()
+                    .map(MappingValue::Text)
+                    .ok_or_else(|| String::from("a string")),
+                Kind::Flag => argument
+                    .value
+                    .and_then(|expr| self.ast.eval_const(expr).ok())
+                    .and_then(|value| match value {
+                        zerodds_ast::ConstValue::Boolean(flag) => Some(MappingValue::Flag(flag)),
+                        _ => None,
+                    })
+                    .ok_or_else(|| String::from("TRUE or FALSE")),
+            };
+            match value {
+                Ok(value) => settings.push(MappingSetting {
+                    language,
+                    parameter: parameter.to_string(),
+                    value,
+                }),
+                Err(wanted) => {
+                    let message =
+                        alloc::format!("`{parameter}` of `@{}` takes {wanted}", applied.name);
+                    self.diagnose_at(
+                        DiagnosticCode::InvalidAnnotation,
+                        argument.span,
+                        &message,
+                        clause,
+                    );
+                }
+            }
+        }
+        if let Some(facets) = self.ast.facets_mut(target) {
+            facets.mappings.extend(settings);
+        }
     }
 
     /// A user-declared annotation, kept whole.
@@ -817,17 +983,55 @@ impl Lowering<'_> {
             }
         }
 
-        // A member the application omits is not an error. DDS-XTypes
-        // 1.3 §7.3.1.2.5: "Any member of the annotation interface may be
-        // omitted when the annotation is applied. If a value for a given
-        // member is omitted, and that member has a defined default value,
-        // it will take that value. If an omitted member does not have a
-        // specified default, it will take the default value specified for
-        // its type in Clause 7.2.2.4.4.4.7." IDL 4.2 §7.4.15.4.2 says
-        // "Members with no default value must be given a value"; this
-        // front end reads the specification it implements. The default of
-        // the member's type is what a consumer of the application
-        // supplies, as it supplies a declared default.
+        // A member with no default that the application gives no value.
+        // The two specifications answer differently, and both answers are
+        // kept:
+        //
+        // - OMG IDL 4.2 §7.4.15.4.2: "Members with no default value must
+        //   be given a value." Under `--strict` (`Dialect::STRICT`, OMG
+        //   IDL 4.2 and nothing else) that is an error.
+        // - DDS-XTypes 1.3 §7.3.1.2.5 (unchanged in 1.4 Beta 1
+        //   §7.3.1.3): "If an omitted member does not have a specified
+        //   default, it will take the default value specified for its
+        //   type in Clause 7.2.2.4.4.4.7." Every vendor dialect reads
+        //   IDL for DDS, so there the application stands and the member
+        //   takes its type's default, which a consumer of the
+        //   application supplies as it supplies a declared default. The
+        //   reader still hears that the file is not OMG IDL 4.2.
+        let omg_idl_only = {
+            let dialect = self.options.dialect;
+            !(dialect.rti || dialect.cyclone || dialect.fast_dds || dialect.open_dds)
+        };
+        let shortened = positional > 0;
+        for (member, has_default, _) in &members {
+            if *has_default || shortened {
+                continue;
+            }
+            let given = applied.arguments.iter().any(|argument| {
+                argument
+                    .name
+                    .as_deref()
+                    .is_some_and(|written| member.eq_ignore_ascii_case(written))
+            });
+            if given {
+                continue;
+            }
+            let message = alloc::format!(
+                "`@{name}` gives no value for `{member}`, which declares no default; OMG IDL \
+                 4.2 requires one, DDS-XTypes 1.3 §7.3.1.2.5 gives the member the default of \
+                 its type"
+            );
+            if omg_idl_only {
+                self.annotation_error(applied, &message, "OMG IDL 4.2 §7.4.15.4.2");
+            } else {
+                self.warn_at(
+                    DiagnosticCode::InvalidAnnotation,
+                    applied.span,
+                    &message,
+                    "OMG IDL 4.2 §7.4.15.4.2",
+                );
+            }
+        }
 
         // "A constant expression, whose type must be compatible with the
         // member's declaration."
@@ -1361,9 +1565,9 @@ impl Lowering<'_> {
         self.set_xtypes(target, |x| x.data_representation = Some(mask));
     }
 
-    fn set_oneway(&mut self, target: AnyId) {
+    fn set_oneway(&mut self, target: AnyId, value: bool) {
         if let AnyId::Operation(id, _) = target {
-            let _ = self.ast.set_oneway(id, true);
+            let _ = self.ast.set_oneway(id, value);
         }
     }
 

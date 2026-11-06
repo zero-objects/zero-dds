@@ -181,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn qos_1_maps_to_reliable_volatile() {
+    fn mqttbridge_12_1_qos_1_maps_to_reliable_volatile() {
         assert_eq!(
             mqtt_qos_to_dds(QoS::AtLeastOnce),
             (DdsReliability::Reliable, DdsDurability::Volatile)

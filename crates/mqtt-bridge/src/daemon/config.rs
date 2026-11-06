@@ -632,12 +632,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn slug_handles_double_colon() {
+    fn mqttbridge_5_1_slug_handles_double_colon() {
         assert_eq!(default_mqtt_slug("Chat::Message"), "chat/message");
     }
 
     #[test]
-    fn slug_replaces_unsafe_chars() {
+    fn mqttbridge_5_1_slug_replaces_unsafe_chars() {
         assert_eq!(default_mqtt_slug("My Topic!"), "my_topic_");
     }
 
@@ -661,7 +661,7 @@ mod tests {
 
     /// Spec §2 names four schemes; ws and wss carry a resource path.
     #[test]
-    fn parse_broker_url_reads_the_websocket_schemes() {
+    fn mqttbridge_2_parse_broker_url_reads_the_websocket_schemes() {
         let u = parse_broker_url("ws://b").unwrap();
         assert_eq!((u.port, u.tls), (80, false));
         assert_eq!(
@@ -686,7 +686,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_broker_url_refuses_what_it_would_not_use() {
+    fn mqttbridge_2_parse_broker_url_refuses_what_it_would_not_use() {
         for (url, needle) in [
             ("tcp://x", "scheme `tcp`"),
             ("mqtt://x/path", "only to ws://"),
@@ -701,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn config_loads_minimal() {
+    fn mqttbridge_12_1_config_loads_minimal() {
         let yaml = "\
 domain: 7
 mqtt:

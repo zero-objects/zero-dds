@@ -600,6 +600,107 @@ begin
       Check ("packed read: the last byte", Zd_Wire83.Read_Uint (R, 1) = 119);
    end;
 
+   --  --  the operations no corpus case reaches  -----------------------
+   --
+   --  The five the generated code reaches only in a dialect or with a
+   --  member no corpus case carries: Write_Pid_Extended,
+   --  Write_Union_Overlay, Reader_Clear_Discard, Reader_Save and
+   --  Reader_Restore (internal/release/OPEN-ITEMS.md). Every runtime checks
+   --  the same four vectors, each against an oracle outside this code.
+
+   --  The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+   --  recorded it, XCDR1 little endian
+   --  (tests/interop-corpus/expected-bytes.tsv).
+   Note ("write_pid_extended");
+   declare
+      Header : Zd_Wire83.Pid_Write;
+   begin
+      W := New_Le_Writer;
+      Header := Zd_Wire83.Write_Pid_Extended (W, 0, Zd_Wire83.Role_Member, False);
+      Zd_Wire83.Write_Int (W, -1234567, 4, -2147483648, 2147483647);
+      Zd_Wire83.Finish_Pid (W, Header);
+      Check_Octets
+        ("Write_Pid_Extended writes Cyclone's recorded parameter",
+         Zd_Wire83.Finish (W),
+         (16#01#, 16#7F#, 16#08#, 16#00#, 16#00#, 16#00#, 16#00#, 16#00#,
+          16#04#, 16#00#, 16#00#, 16#00#, 16#79#, 16#29#, 16#ED#, 16#FF#));
+   end;
+
+   --  A `short` read through a four-octet and a one-octet `default:`
+   --  branch: Cyclone DDS 11.0.1 writes the union's storage, the member's
+   --  octets with zeros above (`combined-everything`,
+   --  crates/wire-codec/src/encode.rs `write_selected_branch`).
+   Note ("write_union_overlay");
+   declare
+      Pattern : Long_Integer;
+   begin
+      W := Zd_Wire83.New_Writer (Zd_Wire83.Little, 4, Spec_Framing, False);
+      Pattern := Zd_Wire83.Bit_Pattern_Int (-2, 2);
+      Zd_Wire83.Write_Union_Overlay (W, Pattern, 4);
+      Zd_Wire83.Write_Union_Overlay (W, Pattern, 1);
+      Check_Octets
+        ("Write_Union_Overlay writes the storage at the branch's width",
+         Zd_Wire83.Finish (W), (16#FE#, 16#FF#, 16#00#, 16#00#, 16#FE#));
+   end;
+
+   --  XTypes 1.3 7.2.2.4.4.4.9: a member's explicit @default comes before
+   --  Table 9's value, so the call site asks for DISCARD and takes it back.
+   --  Any other refusal is not a narrowing and stays.
+   Note ("reader_clear_discard");
+   B := new Zd_Wire83.Byte_Array'(16#01#, 16#02#, 16#03#, 16#04#);
+   R := Zd_Wire83.New_Reader (B, Zd_Wire83.Little, 4, Spec_Framing);
+   Zd_Wire83.Reader_Refuse (R, Zd_Wire83.Status_Discarded);
+   Check
+     ("Reader_Clear_Discard takes back a discarded",
+      Zd_Wire83.Reader_Clear_Discard (R)
+      and then Zd_Wire83.Reader_Status (R) = Zd_Wire83.Status_Ok);
+   R := Zd_Wire83.New_Reader (B, Zd_Wire83.Little, 4, Spec_Framing);
+   Zd_Wire83.Reader_Refuse (R, Zd_Wire83.Status_Out_Of_Range);
+   Check
+     ("Reader_Clear_Discard leaves an out-of-range",
+      not Zd_Wire83.Reader_Clear_Discard (R)
+      and then Zd_Wire83.Reader_Status (R) = Zd_Wire83.Status_Out_Of_Range);
+
+   --  XTypes 1.3 7.4.3.5.3 rule (15): a delimited map<long, long> as its
+   --  DHEADER and the pairs, without a count. The reader counts the pairs,
+   --  goes back and reads them again; a refusal made while counting goes
+   --  back with the cursor.
+   Note ("reader_save and reader_restore");
+   declare
+      End_At : Natural;
+      Mark   : Zd_Wire83.Reader_Mark;
+      Pairs  : Natural := 0;
+      Ignore : Long_Integer;
+      K1, V1, K2, V2 : Long_Integer;
+   begin
+      B := new Zd_Wire83.Byte_Array'
+        (16#10#, 16#00#, 16#00#, 16#00#, 16#01#, 16#00#, 16#00#, 16#00#,
+         16#0A#, 16#00#, 16#00#, 16#00#, 16#02#, 16#00#, 16#00#, 16#00#,
+         16#14#, 16#00#, 16#00#, 16#00#);
+      R := Zd_Wire83.New_Reader (B, Zd_Wire83.Little, 4, Spec_Framing);
+      End_At := Natural (Zd_Wire83.Read_Dheader (R));
+      End_At := Zd_Wire83.Reader_Position (R) + End_At;
+      Mark := Zd_Wire83.Reader_Save (R);
+      while Zd_Wire83.Reader_Position (R) < End_At
+        and then Zd_Wire83.Reader_Status (R) = Zd_Wire83.Status_Ok
+      loop
+         Ignore := Zd_Wire83.Read_Int (R, 4);
+         Ignore := Zd_Wire83.Read_Int (R, 4);
+         Pairs := Pairs + 1;
+      end loop;
+      Zd_Wire83.Reader_Refuse (R, Zd_Wire83.Status_Out_Of_Range);
+      Zd_Wire83.Reader_Restore (R, Mark);
+      K1 := Zd_Wire83.Read_Int (R, 4);
+      V1 := Zd_Wire83.Read_Int (R, 4);
+      K2 := Zd_Wire83.Read_Int (R, 4);
+      V2 := Zd_Wire83.Read_Int (R, 4);
+      Check
+        ("Reader_Save and Reader_Restore count a delimited map and read it again",
+         Pairs = 2 and then K1 = 1 and then V1 = 10 and then K2 = 2 and then V2 = 20
+         and then Zd_Wire83.Reader_Position (R) = 20
+         and then Zd_Wire83.Reader_Status (R) = Zd_Wire83.Status_Ok);
+   end;
+
    if Failed then
       Text_IO.Put_Line (Text_IO.Standard_Error, "selftest: failed");
       Zd83_Exit (1);

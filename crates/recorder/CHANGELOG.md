@@ -2,6 +2,32 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- `RecordingSession::finish`: writes the header when no sample did and
+  flushes the sink, so that a capture without samples is a header without
+  frames; `RecordWriter::flush`.
+
+### Changed
+
+- The tests check the octets of `docs/specs/zddsrec-1.0.md`
+  (`tests/zddsrec_layout.rs`) instead of the writer against the reader.
+
+
+### Changed
+
+- Format version 3: a frame carries the representation identifier of its
+  sample's encapsulation header (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3 Table
+  60), `Frame::representation_identifier` / `FrameView::representation_identifier`
+  (`Option<[u8; 2]>`, presence octet and two octets after `SampleKind`). The
+  payload is the body without the header, and a body alone does not say
+  whether it is XCDR1 or XCDR2, plain, delimited or a parameter list, or its
+  byte order: a replay sent every sample under one header. Versions 1 and 2
+  read with no identifier (`RecordReader::version`).
+  `RecordingSession::record_sample` takes the identifier before the payload.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-recorder` crate.

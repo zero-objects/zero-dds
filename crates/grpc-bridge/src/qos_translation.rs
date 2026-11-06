@@ -165,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn default_for_topic_reliable_only() {
+    fn grpcbridge_12_1_default_for_topic_reliable_only() {
         let b = GrpcBehavior::default_for_topic();
         assert_eq!(b.reliability, GrpcReliabilityMode::ReliableOnly);
     }

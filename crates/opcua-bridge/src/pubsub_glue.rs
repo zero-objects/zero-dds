@@ -15,7 +15,7 @@ use zerodds_opcua_gateway::data_value::DataValue;
 use zerodds_opcua_gateway::types::BuiltinTypeKind;
 use zerodds_opcua_pubsub::config::{
     ConfigurationVersion, DataSetMetaData, DataSetReaderConfig, DataSetWriterConfig, FieldMetaData,
-    WriterGroupConfig,
+    NetworkMessageContentMask, WriterGroupConfig,
 };
 use zerodds_opcua_pubsub::daemon::{Publisher, Subscriber};
 use zerodds_opcua_pubsub::reader::{DataSetReader, ReaderGroup};
@@ -131,10 +131,18 @@ impl PublisherJob {
                 DataValue::new_value(field.value.clone(), 0, 0),
             );
         }
-        let group = WriterGroup::new(
-            WriterGroupConfig::new(std::format!("{dds_topic}-wg"), writer_group_id),
-            PublisherId::UInt16(publisher_id),
+        // OPC 10000-14 §7.2.4.4.2 Table 154: the PublisherId goes out only
+        // when the NetworkMessageContentMask names it. The connection's
+        // `publisher_id` is there to be sent, so the mask names it; without
+        // it a Subscriber that filters by PublisherId (§6.2.9.1) never
+        // matched this publisher.
+        let mut group_config =
+            WriterGroupConfig::new(std::format!("{dds_topic}-wg"), writer_group_id);
+        group_config.network_message_content_mask = NetworkMessageContentMask::from_bits(
+            group_config.network_message_content_mask.bits()
+                | NetworkMessageContentMask::PUBLISHER_ID,
         );
+        let group = WriterGroup::new(group_config, PublisherId::UInt16(publisher_id));
         let mut publisher = Publisher::new(transport, group);
         publisher.add_dataset(pds);
         publisher.add_writer(DataSetWriter::new(
@@ -429,7 +437,7 @@ mod tests {
     }
 
     #[test]
-    fn field_names_never_empty_and_round_trip() {
+    fn opcuabridge_4_3_a_scalar_topic_is_the_field_value() {
         // `field_name_of("")` must not produce an invalid (empty) Part-14
         // field name — the scalar-topic case.
         assert_eq!(field_name_of(""), "value");
@@ -439,7 +447,7 @@ mod tests {
     }
 
     #[test]
-    fn publisher_job_builds_a_pds_field_per_leaf() {
+    fn opcuabridge_4_3_publisher_job_builds_a_pds_field_per_leaf() {
         let ast = ast_of("@final struct P { long x; long y; };");
         let dyn_type = DynamicType::find(&ast, "P").expect("type");
         let type_support = crate::idl::type_support_for(&[ast], "P").expect("support");
@@ -473,9 +481,58 @@ mod tests {
         assert_eq!(job.dds_topic(), "P");
     }
 
+    #[test]
+    fn opcuabridge_4_3_the_networkmessage_carries_the_connections_publisher_id() {
+        let ast = ast_of("@final struct P { long x; };");
+        let dyn_type = DynamicType::find(&ast, "P").expect("type");
+        let type_support = crate::idl::type_support_for(&[ast], "P").expect("support");
+        let lease = zerodds_test_domains::lease_domain();
+        let mut bridge = DdsBridge::start(
+            lease.id(),
+            "opcua-bridge-publisher-id",
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let receiver = std::net::UdpSocket::bind("127.0.0.1:0").expect("bind");
+        receiver
+            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+            .expect("timeout");
+        let transport = UdpTransport::bind(
+            "127.0.0.1:0".parse().expect("addr"),
+            receiver.local_addr().expect("addr"),
+        )
+        .expect("bind");
+        let mut job = PublisherJob::new(
+            &mut bridge,
+            "P".to_string(),
+            "P",
+            dyn_type,
+            type_support,
+            false,
+            transport,
+            0x0102,
+            1,
+            1,
+            "ds".to_string(),
+            std::time::Duration::from_millis(50),
+        )
+        .expect("publisher job");
+        let (_, published) = job.tick(Instant::now(), &mut |_, _| {}).expect("tick");
+        assert!(published);
+        let mut buf = [0u8; 2048];
+        let n = receiver.recv(&mut buf).expect("one NetworkMessage");
+        let message = &buf[..n];
+        // Table 154: UADPFlags bit 4 (PublisherId), ExtendedFlags1 bits 0-2
+        // 001 (UInt16), the PublisherId after the flags.
+        assert_ne!(message[0] & 0x10, 0, "PublisherId enabled");
+        assert_eq!(message[1] & 0x07, 0b001, "PublisherId of DataType UInt16");
+        let at = if message[1] & 0x80 != 0 { 3 } else { 2 };
+        assert_eq!(u16::from_le_bytes([message[at], message[at + 1]]), 0x0102);
+    }
+
     #[cfg(feature = "pubsub-security")]
     #[test]
-    fn secured_publisher_and_subscriber_round_trip_a_dds_sample() {
+    fn opcuabridge_4_3_a_secured_publisher_job_delivers_a_dds_sample_to_a_subscriber_job() {
         use zerodds_opcua_pubsub::security::{SecurityKey, SecurityKeyService, SecurityPolicy};
 
         let policy = SecurityPolicy::Aes256Ctr;
@@ -583,7 +640,7 @@ mod tests {
 
     #[cfg(feature = "pubsub-security")]
     #[test]
-    fn subscriber_with_the_wrong_key_refuses_not_silently_drops() {
+    fn opcuabridge_4_3_subscriber_with_the_wrong_key_refuses_not_silently_drops() {
         use zerodds_opcua_pubsub::security::{SecurityKey, SecurityKeyService, SecurityPolicy};
 
         let policy = SecurityPolicy::Aes256Ctr;

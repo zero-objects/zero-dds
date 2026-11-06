@@ -2586,7 +2586,7 @@ mod tests {
     /// The handshake operations reach the plugin with their arguments and
     /// give back what the plugin answers: the steps, the handles, the tokens.
     #[test]
-    fn the_handshake_goes_through_the_c_functions() {
+    fn security_11_3_the_handshake_goes_through_the_c_functions() {
         let handle = AuthenticationHandle::new(authentication_table()).unwrap();
         let mut plugin = handle.instantiate().unwrap();
         assert_eq!(plugin.plugin_class_id(), "DDS:Auth:RustTable");
@@ -2807,7 +2807,7 @@ mod tests {
     /// Tokens, a submessage encoded for a list of readers and the preprocessing
     /// of a secure submessage reach the plugin with their arguments.
     #[test]
-    fn tokens_and_transforms_go_through_the_c_functions() {
+    fn security_11_3_tokens_and_transforms_go_through_the_c_functions() {
         // The adapter needs every operation: take the table with the missing
         // ones filled by one that fails, so that `new` accepts it.
         let mut table = cryptographic_table();

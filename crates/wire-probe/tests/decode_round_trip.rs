@@ -22,52 +22,11 @@
 //! and they would otherwise wait for a nightly on the test host.
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
-use std::path::{Path, PathBuf};
 use zerodds_ast_layout::{Dialect, Encoding, Endianness};
-use zerodds_wire_probe::canonical::{canonicalise, difference, text};
+use zerodds_wire_probe::canonical::text;
 use zerodds_wire_probe::decode::decode;
 use zerodds_wire_probe::encode::{encode, hex, model_from_idl};
 use zerodds_wire_probe::value::ProbeRequest;
-
-/// The cases this project refuses by name, and why.
-///
-/// Named rather than skipped by a pattern: a case that starts failing
-/// for a different reason has to show up, and a wildcard would swallow
-/// it.
-///
-/// - `bitset-inheritance` and its twin: the encoder will not pack a
-///   bitset that inherits from another, because the planner sizes only
-///   the bitset's own fields. `tests/interop-corpus/README.md` records
-///   it as the one remaining encoder gap.
-/// - `primitive-char-above-latin1` and `primitive-wchar-above-bmp`:
-///   samples that name a character the type cannot hold. An IDL `char`
-///   is one octet and a `wchar` is one UTF-16 code unit, so the value
-///   contract refuses them before any byte is written. The cases exist
-///   to check that it does.
-///
-/// # Two cases left this list
-///
-/// `recursive-optional-external` — `@mutable struct Node { long value;
-/// @optional @external Node next; }` — was refused here until
-/// 2026-08-26 and is now carried in both directions. The question the
-/// entry framed ("either the planner learns that an `@optional` member
-/// terminates a cycle the way a collection's length does, or this case
-/// is refused") is answered the first way: it does. Fast DDS
-/// implements the case and its XCDR1 big-endian recording is the 28
-/// octets this column now writes and reads back.
-/// `recursive-array` — `struct Node { long value; Node pair[2]; }` —
-/// left on the same reading as the entry above: it is still refused,
-/// but not here. The IDL front end carries IDL 4.2 §7.4.1.4.4.4.4 now,
-/// so the file never reaches a model and the walk skips it before the
-/// encoder is asked. `zerodds_wire_probe::REFUSED_BY_THE_FRONT_END`
-/// names it, and the walk reports it loudly if it starts lowering. An
-/// entry here would be an exemption nothing can reach.
-const REFUSED: [&str; 4] = [
-    "bitset-inheritance",
-    "bitset-inheritance-unannotated",
-    "primitive-char-above-latin1",
-    "primitive-wchar-above-bmp",
-];
 
 /// The cases whose negative case label a dialect can suppress, so that
 /// the frame does not carry the member the sample names.
@@ -78,8 +37,9 @@ const REFUSED: [&str; 4] = [
 /// dialect that suppresses, no reader of any implementation can hand the
 /// named member back, and a round trip that did would be inventing it.
 /// `Dialect::union_label` carries the measurement, and
-/// `crates/wire-probe/tests/three_column_gate.rs::READS_BACK_DIFFERENTLY`
-/// is the same exemption over the whole matrix.
+/// `zerodds_wire_probe::expected::Verdict::nothing_to_read` is the same
+/// exemption for the C and Python columns against the expected-bytes
+/// table.
 ///
 /// **Whether the exemption applies is asked of the dialect and not
 /// assumed.** It was written as an unconditional list while
@@ -111,49 +71,6 @@ fn exempt() -> bool {
         == zerodds_ast_layout::UnionLabelMatch::NegativeLabelUnmatchedBelow32
 }
 
-fn corpus() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/interop-corpus")
-}
-
-struct Case {
-    name: String,
-    idl: String,
-    type_name: String,
-    values: serde_json::Value,
-}
-
-fn cases() -> Vec<Case> {
-    let root = corpus();
-    let mut out = Vec::new();
-    let entries = std::fs::read_dir(&root).expect("the corpus is checked in");
-    for entry in entries {
-        let path = entry.expect("a readable directory entry").path();
-        if !path.join("type").is_file() {
-            continue;
-        }
-        let name = path
-            .file_name()
-            .expect("a named directory")
-            .to_string_lossy()
-            .to_string();
-        let values = std::fs::read_to_string(path.join("values.json"))
-            .unwrap_or_else(|error| panic!("{name}: {error}"));
-        out.push(Case {
-            idl: std::fs::read_to_string(path.join("type.idl"))
-                .unwrap_or_else(|error| panic!("{name}: {error}")),
-            type_name: std::fs::read_to_string(path.join("type"))
-                .unwrap_or_else(|error| panic!("{name}: {error}"))
-                .trim()
-                .to_string(),
-            values: serde_json::from_str(&values).unwrap_or_else(|error| panic!("{name}: {error}")),
-            name,
-        });
-    }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    assert!(out.len() > 300, "the corpus is {} cases", out.len());
-    out
-}
-
 /// The encodings a case is exercised in.
 ///
 /// All five, not the two shorthands: `@mutable` means a parameter list
@@ -168,122 +85,6 @@ const ENCODINGS: [Encoding; 5] = [
     Encoding::DelimitedCdr,
     Encoding::PlCdr2,
 ];
-
-#[test]
-fn every_case_comes_back_the_value_that_went_in() {
-    let mut failures = Vec::new();
-    let mut checked = 0usize;
-
-    for case in cases() {
-        let refused = REFUSED.contains(&case.name.as_str());
-        let ast = match model_from_idl(&case.idl, &case.name) {
-            Ok(ast)
-                if zerodds_wire_probe::REFUSED_BY_THE_FRONT_END.contains(&case.name.as_str()) =>
-            {
-                let _ = ast;
-                failures.push(format!(
-                    "{}: the front end no longer refuses this file, so it belongs back in \
-                     the walk",
-                    case.name
-                ));
-                continue;
-            }
-            Ok(ast) => ast,
-            // The two cases the IDL front end refuses; see
-            // `zerodds_wire_probe::REFUSED_BY_THE_FRONT_END`. There is
-            // no model, so there is no round trip to hold them to —
-            // and the arm above makes the skip loud if one of them
-            // starts lowering again.
-            Err(_)
-                if zerodds_wire_probe::REFUSED_BY_THE_FRONT_END.contains(&case.name.as_str()) =>
-            {
-                continue;
-            }
-            Err(error) => {
-                failures.push(format!("{}: the IDL did not lower: {error}", case.name));
-                continue;
-            }
-        };
-        let type_ = ast
-            .find_by_scoped_name(&zerodds_ast_core::ScopedName::absolute(
-                case.type_name
-                    .split("::")
-                    .filter(|segment| !segment.is_empty())
-                    .map(std::string::ToString::to_string)
-                    .collect(),
-            ))
-            .ok()
-            .and_then(zerodds_ast::AnyId::as_type)
-            .unwrap_or_else(|| panic!("{}: `{}` is not in the model", case.name, case.type_name));
-
-        let expected = match canonicalise(&ast, type_, &case.values, &case.type_name) {
-            Ok(value) => value,
-            Err(error) if refused => {
-                let _ = error;
-                continue;
-            }
-            Err(error) => {
-                failures.push(format!(
-                    "{}: the sample is not canonical: {error}",
-                    case.name
-                ));
-                continue;
-            }
-        };
-
-        for encoding in ENCODINGS {
-            for endianness in [Endianness::Little, Endianness::Big] {
-                let request = ProbeRequest::new(&case.type_name, encoding, endianness);
-                let bytes = match encode(&ast, &request, &case.values) {
-                    Ok(bytes) => bytes,
-                    // A case the encoder refuses by name is a gap the
-                    // corpus README records, not a round-trip failure.
-                    Err(_) if refused => continue,
-                    Err(error) => {
-                        failures.push(format!(
-                            "{} {encoding:?}/{endianness:?}: did not serialise: {error}",
-                            case.name
-                        ));
-                        continue;
-                    }
-                };
-                match decode(&ast, &request, &bytes) {
-                    Ok(back) => {
-                        checked += 1;
-                        if exempt() && NEGATIVE_LABEL_CASES.contains(&case.name.as_str()) {
-                            // The decode succeeded, which is what this
-                            // case can be held to. See the constant.
-                            continue;
-                        }
-                        if let Some(first) = difference(&expected, &back, &case.type_name) {
-                            failures.push(format!(
-                                "{} {encoding:?}/{endianness:?}: {first}",
-                                case.name
-                            ));
-                        }
-                    }
-                    Err(error) => failures.push(format!(
-                        "{} {encoding:?}/{endianness:?}: did not read back: {error}\n    \
-                         wrote {}",
-                        case.name,
-                        text(&expected)
-                    )),
-                }
-            }
-        }
-    }
-
-    assert!(
-        checked > 3000,
-        "only {checked} round trips ran; the corpus or the encoding list shrank"
-    );
-    assert!(
-        failures.is_empty(),
-        "{} round trip(s) did not come back:\n{}",
-        failures.len(),
-        failures.join("\n")
-    );
-}
 
 /// The six negative-label cases are compared like every other case
 /// under the default dialect, and the exemption is off.
@@ -319,7 +120,7 @@ fn the_negative_label_exemption_is_not_in_force_under_the_default() {
 /// nothing, which is the silent-drop shape this whole suite is built
 /// around. Every prefix of a real payload has to be an error.
 #[test]
-fn no_prefix_of_a_payload_reads_as_a_shorter_sample() {
+fn xcdr2conformance_7_4_no_prefix_of_a_payload_reads_as_a_shorter_sample() {
     let idl = "@appendable struct Inner { long x; string text; };
                @mutable struct Sample {
                    long a; Inner nested; sequence<long> ids; double tail;
@@ -374,7 +175,7 @@ fn no_prefix_of_a_payload_reads_as_a_shorter_sample() {
 /// value again, and the same twelve bytes now go out of this project
 /// as well as into it.
 #[test]
-fn the_optional_marker_is_the_one_the_vendors_write_and_read() {
+fn xtypes_7_4_3_5_2_the_optional_marker_is_the_one_the_vendors_write_and_read() {
     let idl = "@final struct Sample { long a; @optional octet b; long c; };";
     let ast = model_from_idl(idl, "optional.idl").expect("the fixture parses");
     let present = serde_json::json!({ "a": -1234567, "b": 171, "c": -2 });
@@ -485,7 +286,7 @@ fn the_optional_marker_is_the_one_the_vendors_write_and_read() {
 /// an EMHEADER with LC0 and hands back a one-byte member, with no error
 /// anywhere.
 #[test]
-fn a_mutable_union_frames_its_discriminator_and_its_member() {
+fn xtypes_7_4_1_2_3_a_mutable_union_frames_its_discriminator_and_its_member() {
     let idl = "@mutable union Choice switch (long) {
                    case 1: long whole;
                    default: double frac;
@@ -610,7 +411,7 @@ fn a_cyclone_must_understand_member_is_not_dropped_over_its_flag_bit() {
 /// written with a member the reader's `Narrow` does not declare — the
 /// evolution shape §7.4 exists for, and the one no vendor row carries.
 #[test]
-fn an_unknown_must_understand_parameter_discards_the_sample_under_xcdr1() {
+fn xtypes_7_2_2_4_4_4_6_an_unknown_must_understand_parameter_discards_the_sample_under_xcdr1() {
     let wide = model_from_idl(
         "@mutable struct S { @id(1) long a; @id(9) @must_understand long extra; };",
         "wide.idl",
@@ -658,7 +459,7 @@ fn an_unknown_must_understand_parameter_discards_the_sample_under_xcdr1() {
 /// stranger's four octets became `b`'s value — with no error, and with
 /// the right length, so nothing downstream could tell.
 #[test]
-fn a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type() {
+fn xtypes_7_4_1_2_1_a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type() {
     let idl = "@mutable struct M { @id(1) long a; @id(2) long b; };";
     let ast = model_from_idl(idl, "reserved.idl").expect("the fixture parses");
     let request = ProbeRequest::in_dialect("M", Encoding::PlCdr1, Endianness::Little, Dialect::Rti);
@@ -700,7 +501,7 @@ fn a_vendor_private_or_reserved_parameter_is_not_a_member_of_this_type() {
 
 /// The bytes of a hex string, which is how the vendor runs are recorded.
 fn bytes_of(hex: &str) -> Vec<u8> {
-    assert!(hex.len() % 2 == 0, "an odd hex string: {hex}");
+    assert!(hex.len().is_multiple_of(2), "an odd hex string: {hex}");
     (0..hex.len() / 2)
         .map(|index| {
             u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16)

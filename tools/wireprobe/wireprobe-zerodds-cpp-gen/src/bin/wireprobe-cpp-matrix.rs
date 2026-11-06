@@ -67,8 +67,8 @@
 //!
 //! That is the one place this report is not the C driver's cell for cell:
 //! `wireprobe-c-matrix` files `same` or `different: …` there, because
-//! `crates/wire-probe/tests/three_column_gate.rs` is what consumes *that*
-//! report and it wants the verdict. A slot the C++ column cannot answer
+//! the consumers of *that* report (`zerodds_wire_probe::expected`,
+//! `tools/interop-results`) want the verdict. A slot the C++ column cannot answer
 //! is refused in the C driver's vocabulary — `!` and a sentence, and
 //! `!unwritten:` for a read slot whose payload was never produced — so
 //! that a gate comparing refusal *classes* reads the same two columns the
@@ -303,7 +303,7 @@ fn run(options: &Options) -> Result<(), String> {
         let (case, unit) = units[unit_index];
         let outcome = measure(&cases[case], unit, &archive, &cache, &build);
         let seen = done.fetch_add(1, Ordering::Relaxed) + 1;
-        if seen % 500 == 0 {
+        if seen.is_multiple_of(500) {
             eprintln!(
                 "wireprobe-cpp-matrix: {seen}/{} unit(s) after {:.0}s",
                 distinct.len(),

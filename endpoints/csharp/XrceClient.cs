@@ -326,7 +326,7 @@ namespace ZeroDDS
         // every other kind -- byte-oracled in
         // crates/xrce/src/object_repr.rs against real eProsima
         // Micro-XRCE-DDS Client 3.0.1 CREATE traffic (Topic's own
-        // participant_id: commit 31c62df2a63). `reference` is a
+        // participant_id: commit bd30deaef0b). `reference` is a
         // NUL-terminated object_reference string (§7.7.3.1.1).
         public static byte[] Create(byte sessionId, byte[] clientKey, ushort seq,
                                      ushort requestId, ushort objectId, byte objectKind,

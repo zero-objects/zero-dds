@@ -133,15 +133,15 @@ pub fn files_with_mapping(
     let mut text =
         source_with_preamble_mapping(ast, language, path, key, options, dialect_info, mapping)?;
     let encoding = key.encoding;
-    if language == Language::Python {
-        if let Some(support) = crate::python_support::source(ast, encoding)? {
-            text.push_str(&support);
-        }
+    if language == Language::Python
+        && let Some(support) = crate::python_support::source(ast, encoding)?
+    {
+        text.push_str(&support);
     }
-    if language == Language::TypeScript {
-        if let Some(support) = crate::typescript_support::source(ast, encoding, key)? {
-            text.push_str(&support);
-        }
+    if language == Language::TypeScript
+        && let Some(support) = crate::typescript_support::source(ast, encoding, key)?
+    {
+        text.push_str(&support);
     }
     if language == Language::CSharp {
         let mut output = vec![Generated {
@@ -1614,7 +1614,7 @@ mod tests {
     /// classes under the IDL's own names, and gives them a `topic_type_support` that calls the
     /// native codec through `zerodds::psm::Conv`. `--cpp-mapping native` has none of it.
     #[test]
-    fn the_psm_mapping_is_a_layer_over_the_native_types() {
+    fn rpc_7_11_1_1_1_the_psm_mapping_is_a_layer_over_the_native_types() {
         let default = cpp(TEMPERATURE);
         assert!(default.contains("namespace zd_native"), "{default}");
         assert!(default.contains("zerodds::psm::Conv"), "{default}");
@@ -1660,7 +1660,7 @@ mod tests {
 
     /// The types Table 7.1 and §8.1.4 name.
     #[test]
-    fn the_psm_mapping_spells_the_types_of_table_7_1() {
+    fn psmcxx_7_12_the_psm_mapping_spells_the_types_of_table_7_1() {
         let _scope = zerodds_lang_rules::adapter::cpp::CppMappingScope::enter(
             zerodds_lang_rules::adapter::cpp::CppMapping::Psm,
         );
@@ -2077,7 +2077,7 @@ mod tests {
     /// Every language `Language::ALL` carries parses back from its own
     /// `as_str`, and nothing outside that list does.
     #[test]
-    fn every_language_round_trips_through_its_own_name() {
+    fn deployment_1_3_every_language_round_trips_through_its_own_name() {
         for language in Language::ALL {
             assert_eq!(parse_language(language.as_str()), Some(language));
         }
@@ -2137,7 +2137,7 @@ mod tests {
     /// from, so every language has to be findable in it — spelled
     /// exactly as `parse_language` reads it back.
     #[test]
-    fn language_names_lists_every_language_once() {
+    fn xtypes_7_3_1_language_names_lists_every_language_once() {
         let names = language_names();
         for language in Language::ALL {
             assert!(

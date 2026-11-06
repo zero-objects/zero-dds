@@ -252,7 +252,7 @@ fn the_json_sample_is_tried_before_the_xml_one() {
     assert!(
         paths
             .iter()
-            .any(|p| *p == std::path::PathBuf::from("data/xml/union_bitmask.xml")),
+            .any(|p| p == std::path::Path::new("data/xml/union_bitmask.xml")),
         "{paths:?}"
     );
 }

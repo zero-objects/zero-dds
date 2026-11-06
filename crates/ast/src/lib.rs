@@ -49,11 +49,11 @@ pub use error::AstError;
 pub use facet::{
     AppliedAnnotation, AppliedArgument, AutoId, ByteSpan, ComponentRole, CorbaFacet, CoreDxFacet,
     DataRepresentationMask, Extensibility, Facets, FastDdsFacet, FlatDataFacet, HomeManages,
-    MacroExpansion, MemberIdAssignment, MemberIdOrigin, OpenDdsFacet, RangeConstraint,
-    RepositoryIdOrigin, Ros2Facet, RosBoundedOrigin, RosInterfaceRole, RtiFacet, SourceFacet,
-    SourceOrigin, StateVisibility, TemplateArg, TemplateParam, TemplateParamKind, TopicAnnotation,
-    TryConstruct, VendorFacets, VendorKind, VerbatimDirective, VerbatimPlacement, XTypesFacet,
-    XmlFacet,
+    HomeOperation, MacroExpansion, MappingLanguage, MappingSetting, MappingValue,
+    MemberIdAssignment, MemberIdOrigin, OpenDdsFacet, RangeConstraint, RepositoryIdOrigin,
+    Ros2Facet, RosBoundedOrigin, RosInterfaceRole, RtiFacet, SourceFacet, SourceOrigin,
+    StateVisibility, TemplateArg, TemplateParam, TemplateParamKind, TopicAnnotation, TryConstruct,
+    VendorFacets, VendorKind, VerbatimDirective, VerbatimPlacement, XTypesFacet, XmlFacet,
 };
 /// The extensibility a type has when its source said nothing.
 ///

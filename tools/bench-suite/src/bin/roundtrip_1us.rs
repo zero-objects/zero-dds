@@ -319,6 +319,36 @@ fn dcps_topics(args: &Args) -> (String, String) {
     (format!("{suffix}/req"), format!("{suffix}/echo"))
 }
 
+/// Waits up to 5 s for the peer's endpoints: the writer matched with the
+/// peer's reader and the reader with the peer's writer. The error names the
+/// direction that did not match. The results of the two waits were dropped
+/// before, and a ping printed "matched (both directions)" either way.
+///
+/// # Safety
+/// `writer` and `reader` come from `zerodds_writer_create` and
+/// `zerodds_reader_create` and are not destroyed yet.
+unsafe fn wait_for_match(
+    writer: *mut zerodds::ZeroDdsWriter,
+    reader: *mut zerodds::ZeroDdsReader,
+) -> std::io::Result<()> {
+    // SAFETY: the caller's contract above.
+    let (w, r) = unsafe {
+        (
+            zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000),
+            zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000),
+        )
+    };
+    match (w, r) {
+        (0, 0) => Ok(()),
+        (0, rc) => Err(std::io::Error::other(format!(
+            "the reader matched no writer of the peer within 5 s (rc={rc})"
+        ))),
+        (rc, _) => Err(std::io::Error::other(format!(
+            "the writer matched no reader of the peer within 5 s (rc={rc})"
+        ))),
+    }
+}
+
 fn create_dcps_runtime(args: &Args) -> std::io::Result<*mut zerodds::ZeroDdsRuntime> {
     let mut config = zerodds::ffi_runtime_config(vec![2, 0]).map_err(std::io::Error::other)?;
     if let Some(transport) = args.dcps_transport {
@@ -356,11 +386,18 @@ fn run_pong_dcps(args: &Args) -> std::io::Result<()> {
         );
         let reader = zerodds::zerodds_reader_create(rt, req_topic_c.as_ptr(), type_c.as_ptr(), 0);
         if writer.is_null() || reader.is_null() {
+            // The one that was made goes before its runtime; destroy takes NULL.
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
             zerodds::zerodds_runtime_destroy(rt);
             return Err(std::io::Error::other("dcps endpoint create failed"));
         }
-        let _ = zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000);
-        let _ = zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000);
+        if let Err(e) = wait_for_match(writer, reader) {
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
+            zerodds::zerodds_runtime_destroy(rt);
+            return Err(e);
+        }
         println!(
             "pong: dcps domain={} req<-{} echo<-{}",
             args.dcps_domain,
@@ -369,10 +406,10 @@ fn run_pong_dcps(args: &Args) -> std::io::Result<()> {
         );
         let start = Instant::now();
         loop {
-            if let Some(max) = args.max_runtime {
-                if start.elapsed() >= max {
-                    break;
-                }
+            if let Some(max) = args.max_runtime
+                && start.elapsed() >= max
+            {
+                break;
             }
             let mut buf: *mut u8 = std::ptr::null_mut();
             let mut len: usize = 0;
@@ -432,11 +469,18 @@ fn run_ping_dcps(args: &Args) -> std::io::Result<Stats> {
         let writer = zerodds::zerodds_writer_create(rt, req_topic_c.as_ptr(), type_c.as_ptr(), 0);
         let reader = zerodds::zerodds_reader_create(rt, echo_topic_c.as_ptr(), type_c.as_ptr(), 0);
         if writer.is_null() || reader.is_null() {
+            // The one that was made goes before its runtime; destroy takes NULL.
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
             zerodds::zerodds_runtime_destroy(rt);
             return Err(std::io::Error::other("dcps endpoint create failed"));
         }
-        let _ = zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000);
-        let _ = zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000);
+        if let Err(e) = wait_for_match(writer, reader) {
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
+            zerodds::zerodds_runtime_destroy(rt);
+            return Err(e);
+        }
         // Stabilization pause: pong needs time to finish wiring its reader/
         // writer wires internally BEFORE the bench starts.
         // Without this sleep the first samples arrive with second-scale RTT
@@ -456,11 +500,11 @@ fn run_ping_dcps(args: &Args) -> std::io::Result<Stats> {
         println!("ping: matched (both directions), bench start");
 
         while received < total {
-            if let Some(max) = args.max_runtime {
-                if start.elapsed() >= max {
-                    eprintln!("ping: max-runtime reached after {received}/{total}");
-                    break;
-                }
+            if let Some(max) = args.max_runtime
+                && start.elapsed() >= max
+            {
+                eprintln!("ping: max-runtime reached after {received}/{total}");
+                break;
             }
             let should_send = match rate_period_ns {
                 None => seq == received,
@@ -535,11 +579,18 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
         let writer = zerodds::zerodds_writer_create(rt, echo_topic_c.as_ptr(), type_c.as_ptr(), 0);
         let reader = zerodds::zerodds_reader_create(rt, req_topic_c.as_ptr(), type_c.as_ptr(), 0);
         if writer.is_null() || reader.is_null() {
+            // The one that was made goes before its runtime; destroy takes NULL.
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
             zerodds::zerodds_runtime_destroy(rt);
             return Err(std::io::Error::other("dcps endpoint create failed"));
         }
-        let _ = zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000);
-        let _ = zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000);
+        if let Err(e) = wait_for_match(writer, reader) {
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
+            zerodds::zerodds_runtime_destroy(rt);
+            return Err(e);
+        }
         println!(
             "pong[listener]: dcps domain={} req<-{} echo<-{}",
             args.dcps_domain,
@@ -660,11 +711,18 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
         let writer = zerodds::zerodds_writer_create(rt, req_topic_c.as_ptr(), type_c.as_ptr(), 0);
         let reader = zerodds::zerodds_reader_create(rt, echo_topic_c.as_ptr(), type_c.as_ptr(), 0);
         if writer.is_null() || reader.is_null() {
+            // The one that was made goes before its runtime; destroy takes NULL.
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
             zerodds::zerodds_runtime_destroy(rt);
             return Err(std::io::Error::other("dcps endpoint create failed"));
         }
-        let _ = zerodds::zerodds_writer_wait_for_matched(writer, 1, 5_000);
-        let _ = zerodds::zerodds_reader_wait_for_matched(reader, 1, 5_000);
+        if let Err(e) = wait_for_match(writer, reader) {
+            zerodds::zerodds_writer_destroy(writer);
+            zerodds::zerodds_reader_destroy(reader);
+            zerodds::zerodds_runtime_destroy(rt);
+            return Err(e);
+        }
 
         // Stabilization pause + drain, same as the polling variant.
         std::thread::sleep(Duration::from_millis(500));
@@ -700,10 +758,10 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
             let now_ns = state.t_origin.elapsed().as_nanos() as u64;
             let rtt = now_ns.saturating_sub(t_send_ns).max(1);
             let mut received = state.received.lock().expect("ping rx lock");
-            if *received >= state.warmup {
-                if let Ok(mut h) = state.hist.lock() {
-                    let _ = h.record(rtt);
-                }
+            if *received >= state.warmup
+                && let Ok(mut h) = state.hist.lock()
+            {
+                let _ = h.record(rtt);
             }
             *received += 1;
             state.cvar.notify_all();
@@ -728,15 +786,15 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
                     break;
                 }
             }
-            if let Some(max) = args.max_runtime {
-                if start.elapsed() >= max {
-                    let received = state.received.lock().expect("rx lock");
-                    eprintln!(
-                        "ping[listener]: max-runtime reached after {}/{}",
-                        *received, total
-                    );
-                    break;
-                }
+            if let Some(max) = args.max_runtime
+                && start.elapsed() >= max
+            {
+                let received = state.received.lock().expect("rx lock");
+                eprintln!(
+                    "ping[listener]: max-runtime reached after {}/{}",
+                    *received, total
+                );
+                break;
             }
 
             // Send decision: only when the predecessor is acknowledged
@@ -794,11 +852,11 @@ fn run_pong(args: &Args) -> std::io::Result<()> {
     let mut buf = vec![0u8; args.payload.max(HEADER_LEN) + 64];
     let start = Instant::now();
     loop {
-        if let Some(max) = args.max_runtime {
-            if start.elapsed() >= max {
-                println!("pong: max-runtime reached");
-                return Ok(());
-            }
+        if let Some(max) = args.max_runtime
+            && start.elapsed() >= max
+        {
+            println!("pong: max-runtime reached");
+            return Ok(());
         }
         match sock.recv_from(&mut buf) {
             Ok((n, peer)) => {
@@ -865,11 +923,11 @@ fn run_ping(args: &Args) -> std::io::Result<Stats> {
     let start = Instant::now();
 
     while received < total {
-        if let Some(max) = args.max_runtime {
-            if start.elapsed() >= max {
-                eprintln!("ping: max-runtime reached after {received}/{total}");
-                break;
-            }
+        if let Some(max) = args.max_runtime
+            && start.elapsed() >= max
+        {
+            eprintln!("ping: max-runtime reached after {received}/{total}");
+            break;
         }
         // --- Send side: rate-limited or free-running ---
         let should_send = match rate_period_ns {
@@ -914,10 +972,10 @@ fn run_ping(args: &Args) -> std::io::Result<Stats> {
 
 impl Stats {
     fn maybe_dump_hgrm(self, h: &Histogram<u64>, path: Option<&PathBuf>) -> Self {
-        if let Some(p) = path {
-            if let Err(e) = dump_hgrm(h, p) {
-                eprintln!("warning: failed to write hgrm to {p:?}: {e}");
-            }
+        if let Some(p) = path
+            && let Err(e) = dump_hgrm(h, p)
+        {
+            eprintln!("warning: failed to write hgrm to {p:?}: {e}");
         }
         self
     }

@@ -97,10 +97,80 @@ let utf8Wstring () =
         )
     check "a UTF-8 wstring reads back" (r.ReadWstringUtf8Octets("octets/terminated/2") = "\u00e4\u00f6\u00fc \u1234 Z")
 
+
+// -- the operations no corpus case reaches ----------------------------------
+//
+// The five the generated code reaches only in a dialect or with a member no
+// corpus case carries: WritePidExtended, WriteUnionOverlay,
+// ReaderClearDiscard, ReaderSave and ReaderRestore
+// (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+// vectors, each against an oracle outside this code.
+let operations () =
+    // The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+    // recorded it, XCDR1 little endian (tests/interop-corpus/expected-bytes.tsv).
+    let pid = Writer(LE, XCDR1, specificationFraming, false)
+    let header = pid.WritePidExtended(0, Member, false)
+    pid.WriteI32(-1234567)
+    pid.FinishPid(header)
+    check "WritePidExtended writes Cyclone's recorded parameter"
+        (hex (pid.Finish()) = "017f0800" + "00000000" + "04000000" + "7929edff")
+
+    // A `short` read through a four-octet and a one-octet `default:` branch:
+    // Cyclone DDS 11.0.1 writes the union's storage, the member's octets with
+    // zeros above (`combined-everything`, crates/wire-codec/src/encode.rs
+    // `write_selected_branch`).
+    let overlay = writer ()
+    let pattern = bitPatternInt (-2L) 2
+    overlay.WriteUnionOverlay(pattern, 4)
+    overlay.WriteUnionOverlay(pattern, 1)
+    check "WriteUnionOverlay writes the storage at the branch's width"
+        (hex (overlay.Finish()) = "feff0000" + "fe")
+
+    // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+    // Table 9's value, so the call site asks for DISCARD and takes it back.
+    // Any other refusal is not a narrowing and stays.
+    let discarded = Reader([| 1uy; 2uy; 3uy; 4uy |], LE, XCDR2)
+    discarded.ReaderRefuse(Discarded)
+    check "ReaderClearDiscard takes back a discarded"
+        (discarded.ReaderClearDiscard() && discarded.ReaderStatus() = Ok)
+    let refused = Reader([| 1uy; 2uy; 3uy; 4uy |], LE, XCDR2)
+    refused.ReaderRefuse(OutOfRange)
+    check "ReaderClearDiscard leaves an out-of-range"
+        (not (refused.ReaderClearDiscard()) && refused.ReaderStatus() = OutOfRange)
+
+    // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+    // DHEADER and the pairs, without a count. The reader counts the pairs,
+    // goes back and reads them again; a refusal made while counting goes back
+    // with the cursor.
+    let map =
+        Reader(
+            [| 0x10uy; 0uy; 0uy; 0uy; 1uy; 0uy; 0uy; 0uy; 0x0auy; 0uy; 0uy; 0uy
+               2uy; 0uy; 0uy; 0uy; 0x14uy; 0uy; 0uy; 0uy |],
+            LE,
+            XCDR2
+        )
+    let extent = int (map.ReadDheader())
+    let endAt = map.ReaderPosition() + extent
+    let mark = map.ReaderSave()
+    let mutable pairs = 0
+    while map.ReaderPosition() < endAt && map.ReaderStatus() = Ok do
+        map.ReadI32() |> ignore
+        map.ReadI32() |> ignore
+        pairs <- pairs + 1
+    map.ReaderRefuse(OutOfRange)
+    map.ReaderRestore(mark)
+    let again = [ map.ReadI32(); map.ReadI32(); map.ReadI32(); map.ReadI32() ]
+    check "ReaderSave and ReaderRestore count a delimited map and read it again"
+        (pairs = 2
+         && again = [ 1; 10; 2; 20 ]
+         && map.ReaderPosition() = 20
+         && map.ReaderStatus() = Ok)
+
 packedWrite ()
 packedRead ()
 elementLength ()
 utf8Wstring ()
+operations ()
 
 if failed then
     exit 1

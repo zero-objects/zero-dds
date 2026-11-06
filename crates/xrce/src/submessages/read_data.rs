@@ -134,7 +134,7 @@ pub enum DeliveryControlForm {
 }
 
 fn pad_to(out: &mut Vec<u8>, n: usize) {
-    while out.len() % n != 0 {
+    while !out.len().is_multiple_of(n) {
         out.push(0);
     }
 }
@@ -403,7 +403,7 @@ mod tests {
     }
 
     #[test]
-    fn read_data_minimal_roundtrip() {
+    fn xrce_8_3_5_9_read_data_minimal_roundtrip() {
         let p = ReadDataPayload {
             base: reader_base(),
             read_specification: ReadSpecification {
@@ -418,7 +418,7 @@ mod tests {
     }
 
     #[test]
-    fn read_data_base_object_request_precedes_the_spec() {
+    fn xrce_8_3_5_9_read_data_base_object_request_precedes_the_spec() {
         let p = ReadDataPayload {
             base: reader_base(),
             read_specification: ReadSpecification::default(),
@@ -432,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn read_data_full_spec_roundtrip() {
+    fn xrce_7_7_14_read_data_full_spec_roundtrip() {
         let p = ReadDataPayload {
             base: reader_base(),
             read_specification: ReadSpecification {
@@ -458,7 +458,7 @@ mod tests {
     }
 
     #[test]
-    fn read_spec_rejects_reserved_data_format() {
+    fn xrce_7_7_14_read_spec_rejects_reserved_data_format() {
         // preferred_stream_id, data_format=0x04 (reserved, 0b010 once the
         // mask is applied), then no optionals.
         let mut body = reader_base().encode().to_vec();
@@ -479,7 +479,7 @@ mod tests {
     /// Confirms the presence-flag encoding matches the reference
     /// implementation byte for byte — see the module doc.
     #[test]
-    fn read_data_matches_the_captured_read_data_example() {
+    fn xrce_7_7_14_read_data_matches_the_captured_read_data_example() {
         let captured: [u8; 16] = [
             0x00, 0x0e, 0x00, 0x16, 0x80, 0x00, 0x00, 0x01, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
@@ -542,7 +542,7 @@ mod tests {
     /// 3 padding; 4..8 length 6; 8..14 "x>100\0"; 14 delivery_control? 1; 15
     /// padding; 16..20 DHEADER; 20..28 the four unsigned shorts.
     #[test]
-    fn annex_b_4_2_read_data_with_filter_and_delivery_control() {
+    fn xrce_7_7_annex_b_4_2_read_data_with_filter_and_delivery_control() {
         let mut body = reader_base().encode().to_vec();
         body.extend_from_slice(&[0x00, 0x08, 0x01, 0x00]);
         body.extend_from_slice(&[0x06, 0x00, 0x00, 0x00]);
@@ -577,7 +577,7 @@ mod tests {
     /// The filter is an XCDR2 string: its length counts the NUL and is
     /// aligned to 4; a string without its NUL is refused.
     #[test]
-    fn the_content_filter_is_a_string_with_a_nul_and_an_aligned_length() {
+    fn xrce_7_7_the_content_filter_is_a_string_with_a_nul_and_an_aligned_length() {
         let p = ReadDataPayload {
             base: reader_base(),
             read_specification: ReadSpecification {
@@ -607,7 +607,7 @@ mod tests {
     /// FORMAT_SAMPLE 0x02, FORMAT_DATA_SEQ 0x08, FORMAT_SAMPLE_SEQ 0x0A and
     /// FORMAT_PACKED_SAMPLES 0x0E.
     #[test]
-    fn the_data_format_octet_has_the_values_of_annex_a() {
+    fn xrce_7_7_1_the_data_format_octet_has_the_values_of_annex_a() {
         for (format, octet) in [
             (DataFormat::Data, 0x00u8),
             (DataFormat::Sample, 0x02),

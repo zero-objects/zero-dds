@@ -166,12 +166,19 @@ impl Write for TlsTestStream {
 
 // ---------- Daemon-Helpers ----------
 
-fn make_secure_cfg(cert: &str, key: &str, with_auth: bool) -> DaemonConfig {
+/// The configuration on a leased DDS domain (the host's share of the band,
+/// `zerodds-test-domains`); the lease is held while the test runs.
+fn make_secure_cfg(
+    cert: &str,
+    key: &str,
+    with_auth: bool,
+) -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let cert_path = write_temp("ws_cert.pem", cert.as_bytes());
     let key_path = write_temp("ws_key.pem", key.as_bytes());
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.listen = "127.0.0.1:0".to_string();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.tls_enabled = true;
     cfg.tls_cert_file = cert_path.to_string_lossy().into();
     cfg.tls_key_file = key_path.to_string_lossy().into();
@@ -195,6 +202,7 @@ fn make_secure_cfg(cert: &str, key: &str, with_auth: bool) -> DaemonConfig {
         reliability: "reliable".into(),
         durability: "volatile".into(),
         history_depth: 10,
+        idl_file: String::new(),
     });
     cfg.topics.push(TopicConfig {
         name: "Forbidden".into(),
@@ -204,8 +212,9 @@ fn make_secure_cfg(cert: &str, key: &str, with_auth: bool) -> DaemonConfig {
         reliability: "reliable".into(),
         durability: "volatile".into(),
         history_depth: 10,
+        idl_file: String::new(),
     });
-    cfg
+    (cfg, lease)
 }
 
 fn ws_handshake_request(host: &str, path: &str, auth: Option<&str>) -> String {
@@ -247,9 +256,9 @@ fn read_until_double_crlf<S: Read>(s: &mut S) -> String {
 // ---------- TESTS ----------
 
 #[test]
-fn tls_plain_handshake_succeeds_then_data_flows() {
+fn ws_10_6_tls_plain_handshake_succeeds_then_data_flows() {
     let (cert, key) = gen_self_signed_for("localhost");
-    let cfg = make_secure_cfg(&cert, &key, false);
+    let (cfg, _lease) = make_secure_cfg(&cert, &key, false);
     let h = server::start(cfg).expect("start daemon");
     let addr = h.local_addr.clone();
 
@@ -268,9 +277,9 @@ fn tls_plain_handshake_succeeds_then_data_flows() {
 }
 
 #[test]
-fn auth_missing_bearer_yields_401() {
+fn wsbridge_7_2_auth_missing_bearer_yields_401() {
     let (cert, key) = gen_self_signed_for("localhost");
-    let cfg = make_secure_cfg(&cert, &key, true);
+    let (cfg, _lease) = make_secure_cfg(&cert, &key, true);
     let h = server::start(cfg).expect("start daemon");
     let addr = h.local_addr.clone();
 
@@ -284,9 +293,9 @@ fn auth_missing_bearer_yields_401() {
 }
 
 #[test]
-fn auth_invalid_bearer_yields_401() {
+fn ws_10_7_auth_invalid_bearer_yields_401() {
     let (cert, key) = gen_self_signed_for("localhost");
-    let cfg = make_secure_cfg(&cert, &key, true);
+    let (cfg, _lease) = make_secure_cfg(&cert, &key, true);
     let h = server::start(cfg).expect("start daemon");
     let addr = h.local_addr.clone();
 
@@ -302,9 +311,9 @@ fn auth_invalid_bearer_yields_401() {
 }
 
 #[test]
-fn auth_valid_bearer_then_acl_allows_subscribed_topic() {
+fn wsbridge_7_2_auth_valid_bearer_then_acl_allows_subscribed_topic() {
     let (cert, key) = gen_self_signed_for("localhost");
-    let cfg = make_secure_cfg(&cert, &key, true);
+    let (cfg, _lease) = make_secure_cfg(&cert, &key, true);
     let h = server::start(cfg).expect("start daemon");
     let addr = h.local_addr.clone();
 
@@ -323,9 +332,9 @@ fn auth_valid_bearer_then_acl_allows_subscribed_topic() {
 }
 
 #[test]
-fn auth_valid_bearer_but_acl_denies_forbidden_topic() {
+fn wsbridge_7_3_auth_valid_bearer_but_acl_denies_forbidden_topic() {
     let (cert, key) = gen_self_signed_for("localhost");
-    let cfg = make_secure_cfg(&cert, &key, true);
+    let (cfg, _lease) = make_secure_cfg(&cert, &key, true);
     let h = server::start(cfg).expect("start daemon");
     let addr = h.local_addr.clone();
 
@@ -344,7 +353,7 @@ fn auth_valid_bearer_but_acl_denies_forbidden_topic() {
 }
 
 #[test]
-fn sighup_cert_reload_keeps_daemon_running_with_new_cert() {
+fn wsbridge_7_1_sighup_cert_reload_keeps_daemon_running_with_new_cert() {
     use std::sync::atomic::Ordering;
 
     let (cert1, key1) = gen_self_signed_for("localhost");
@@ -352,7 +361,8 @@ fn sighup_cert_reload_keeps_daemon_running_with_new_cert() {
     let key_path = write_temp("ws_reload_key.pem", key1.as_bytes());
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.listen = "127.0.0.1:0".into();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.tls_enabled = true;
     cfg.tls_cert_file = cert_path.to_string_lossy().into();
     cfg.tls_key_file = key_path.to_string_lossy().into();
@@ -364,6 +374,7 @@ fn sighup_cert_reload_keeps_daemon_running_with_new_cert() {
         reliability: "reliable".into(),
         durability: "volatile".into(),
         history_depth: 5,
+        idl_file: String::new(),
     });
     let h = server::start(cfg).expect("start");
     let addr = h.local_addr.clone();
@@ -406,10 +417,10 @@ fn sighup_cert_reload_keeps_daemon_running_with_new_cert() {
 /// next handshake — alice is refused `/topics/forbidden` (403) until the
 /// reloaded configuration grants it (101).
 #[test]
-fn sighup_applies_the_reloaded_acl() {
+fn wsbridge_9_2_sighup_applies_the_reloaded_acl() {
     use std::sync::atomic::Ordering;
     let (cert, key) = gen_self_signed_for("localhost");
-    let cfg = make_secure_cfg(&cert, &key, true);
+    let (cfg, _lease) = make_secure_cfg(&cert, &key, true);
     let mut granted = cfg.clone();
     granted.topic_acl.insert(
         "Forbidden".into(),
@@ -491,11 +502,11 @@ fn jwt(pkcs8: &[u8], payload: &str) -> String {
 /// subject; an expired token or a missing scope is 401. `auth.mode: jwt`
 /// could be chosen before but had no key setting, and the start failed.
 #[test]
-fn a_jwt_is_checked_and_its_subject_meets_the_acl() {
+fn wsbridge_7_2_a_jwt_is_checked_and_its_subject_meets_the_acl() {
     let (cert, key) = gen_self_signed_for("localhost");
     let (pkcs8, pem) = rsa_key();
     let pub_path = write_temp("jwt.pub", pem.as_bytes());
-    let mut cfg = make_secure_cfg(&cert, &key, true);
+    let (mut cfg, _lease) = make_secure_cfg(&cert, &key, true);
     cfg.auth_mode = "jwt".into();
     cfg.auth_jwt = zerodds_bridge_security::JwtSettings {
         public_key: pub_path.to_string_lossy().into(),
@@ -540,10 +551,10 @@ fn a_jwt_is_checked_and_its_subject_meets_the_acl() {
 /// A mode that cannot be served stops the start as a configuration error
 /// (Spec §2 exit 1), not as a bind error.
 #[test]
-fn jwt_without_a_key_and_mtls_without_a_client_ca_are_config_errors() {
+fn wsbridge_7_2_jwt_without_a_key_and_mtls_without_a_client_ca_are_config_errors() {
     let (cert, key) = gen_self_signed_for("localhost");
     for mode in ["jwt", "mtls"] {
-        let mut cfg = make_secure_cfg(&cert, &key, false);
+        let (mut cfg, _lease) = make_secure_cfg(&cert, &key, false);
         cfg.auth_mode = mode.into();
         let r =
             server::start_with_reload(cfg, zerodds_dcps::runtime::RuntimeConfig::default(), None);

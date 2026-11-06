@@ -452,25 +452,66 @@ impl UserStore {
 mod tests {
     use super::*;
 
+    fn ua_string(s: &str) -> Vec<u8> {
+        let mut out = i32::try_from(s.len()).unwrap().to_le_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    /// OPC 10000-4 §7.41: AnonymousIdentityToken (i=321: policyId),
+    /// UserNameIdentityToken (i=324: policyId, userName, password,
+    /// encryptionAlgorithm), X509IdentityToken (i=327: policyId,
+    /// certificateData), IssuedIdentityToken (i=940: policyId, tokenData,
+    /// encryptionAlgorithm), each the ByteString body of an ExtensionObject
+    /// (OPC 10000-6 §5.2.2.15) under its `_Encoding_DefaultBinary` id.
     #[test]
-    fn all_four_table_181_tokens_round_trip_through_the_extension_object() {
-        let tokens = alloc::vec![
-            UserIdentityToken::anonymous(),
-            UserIdentityToken::user_name("user", "alice", "s3cret"),
-            UserIdentityToken::x509("cert", alloc::vec![0x30, 0x82, 0x01]),
-            UserIdentityToken::issued("jwt", b"eyJhbGciOiJIUzI1NiJ9".to_vec()),
-        ];
-        for t in tokens {
-            let eo = t.to_extension_object().expect("encode");
+    fn uacs_7_41_the_four_identity_tokens_are_their_fields_under_their_encoding_ids() {
+        let mut user = ua_string("user");
+        user.extend_from_slice(&ua_string("alice"));
+        user.extend_from_slice(&ua_string("s3cret"));
+        user.extend_from_slice(&ua_string(""));
+        let mut x509 = ua_string("cert");
+        x509.extend_from_slice(&[0x03, 0x00, 0x00, 0x00, 0x30, 0x82, 0x01]);
+        let mut issued = ua_string("jwt");
+        issued.extend_from_slice(&20_i32.to_le_bytes());
+        issued.extend_from_slice(b"eyJhbGciOiJIUzI1NiJ9");
+        issued.extend_from_slice(&ua_string(""));
+        for (token, id, body) in [
+            (UserIdentityToken::anonymous(), 321, ua_string("")),
+            (
+                UserIdentityToken::user_name("user", "alice", "s3cret"),
+                324,
+                user,
+            ),
+            (
+                UserIdentityToken::x509("cert", alloc::vec![0x30, 0x82, 0x01]),
+                327,
+                x509,
+            ),
+            (
+                UserIdentityToken::issued("jwt", b"eyJhbGciOiJIUzI1NiJ9".to_vec()),
+                940,
+                issued,
+            ),
+        ] {
+            let expected = ExtensionObject {
+                type_id: NodeId::numeric(0, id),
+                body: ExtensionObjectBody::ByteString(body),
+            };
             assert_eq!(
-                UserIdentityToken::from_extension_object(&eo).expect("decode"),
-                t
+                token.to_extension_object().expect("encode"),
+                expected,
+                "{id}"
+            );
+            assert_eq!(
+                UserIdentityToken::from_extension_object(&expected).expect("decode"),
+                token
             );
         }
     }
 
     #[test]
-    fn null_token_is_anonymous() {
+    fn uacs_5_7_3_null_token_is_anonymous() {
         // Part 4 §5.7.3.2 — "Null or empty user token shall always be
         // interpreted as anonymous."
         let null = ExtensionObject {
@@ -483,8 +524,10 @@ mod tests {
         );
     }
 
+    /// OPC 10000-4 §7.41 UserTokenPolicy: policyId, tokenType (USERNAME 1,
+    /// §7.42), issuedTokenType, issuerEndpointUrl, securityPolicyUri.
     #[test]
-    fn user_token_policy_round_trips() {
+    fn uacs_7_41_a_user_token_policy_is_its_fields_in_order() {
         let p = UserTokenPolicy {
             policy_id: String::from("user"),
             token_type: UserTokenType::UserName,
@@ -492,15 +535,23 @@ mod tests {
             issuer_endpoint_url: String::from("https://auth.example/"),
             security_policy_uri: String::from("http://opcfoundation.org/UA/SecurityPolicy#None"),
         };
+        let mut expected = ua_string("user");
+        expected.extend_from_slice(&1_i32.to_le_bytes());
+        expected.extend_from_slice(&ua_string(""));
+        expected.extend_from_slice(&ua_string("https://auth.example/"));
+        expected.extend_from_slice(&ua_string(
+            "http://opcfoundation.org/UA/SecurityPolicy#None",
+        ));
         use zerodds_opcua_pubsub::{UaDecode, UaEncode};
         let mut w = UaWriter::new();
         p.encode(&mut w).expect("encode");
-        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(w.as_slice(), expected.as_slice());
+        let mut r = UaReader::new(&expected);
         assert_eq!(UserTokenPolicy::decode(&mut r).expect("decode"), p);
     }
 
     #[test]
-    fn store_accepts_each_token_type_and_rejects_bad_credentials() {
+    fn uacs_5_7_3_store_accepts_each_token_type_and_rejects_bad_credentials() {
         let mut store = UserStore::anonymous_only();
         store
             .add_user("user", "alice", "s3cret")
@@ -560,7 +611,7 @@ mod tests {
     }
 
     #[test]
-    fn anonymous_is_rejected_when_the_server_does_not_allow_it() {
+    fn uacs_5_7_3_anonymous_is_rejected_when_the_server_does_not_allow_it() {
         let mut store = UserStore::default();
         store.add_user("user", "alice", "s3cret");
         assert_eq!(

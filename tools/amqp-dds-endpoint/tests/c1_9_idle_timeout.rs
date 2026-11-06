@@ -25,7 +25,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 #[test]
-fn c1_9_server_disconnects_idle_client_after_short_read_timeout() {
+fn ddsamqp_c_1_9_server_disconnects_idle_client_after_short_read_timeout() {
     // We set the server-side read_timeout indirectly via
     // the handler path. Since the handler loop itself has no
     // explicit idle tracker, we simulate it client-side:
@@ -61,7 +61,7 @@ fn c1_9_server_disconnects_idle_client_after_short_read_timeout() {
 }
 
 #[test]
-fn c1_9_idle_timeout_is_configurable() {
+fn ddsamqp_c_1_9_idle_timeout_is_configurable() {
     // Spec §7.10: idle_timeout_ms is part of ResourceLimits.
     // Here we only verify the data model.
     use zerodds_amqp_endpoint::ResourceLimits;

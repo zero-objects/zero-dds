@@ -225,7 +225,7 @@ class CoreValuesTest {
     // ---- Time -----------------------------------------------------------
 
     @Test
-    void equalTimesHaveEqualHashCodeAndCompareAsEqual() {
+    void javapsm_7_3_3_equal_times_have_equal_hash_code_and_compare_as_equal() {
         Time a = ENV.getSPI().newTime(1500, TimeUnit.MILLISECONDS);
         ModifiableTime b = ENV.getSPI().newTime(1, TimeUnit.SECONDS);
         b.add(500, TimeUnit.MILLISECONDS);
@@ -242,7 +242,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void timesOrderByTheirInstant() {
+    void javapsm_7_3_4_times_order_by_their_instant() {
         Time early = ENV.getSPI().newTime(1, TimeUnit.SECONDS);
         Time late = ENV.getSPI().newTime(2, TimeUnit.SECONDS);
         assertTrue(early.compareTo(late) < 0);
@@ -251,7 +251,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void aNegativeInstantInAnyUnitIsInvalid() {
+    void javapsm_7_3_4_a_negative_instant_in_any_unit_is_invalid() {
         // §7.3.4: an instant before the epoch is the invalid time. A value in a
         // unit below seconds has zero whole seconds and must still be invalid.
         for (TimeUnit unit : TimeUnit.values()) {
@@ -266,10 +266,17 @@ class CoreValuesTest {
         assertTrue(ENV.getSPI().newTime(0, TimeUnit.NANOSECONDS).isValid());
         assertTrue(ENV.getSPI().newTime(1, TimeUnit.NANOSECONDS).isValid());
         assertFalse(org.zerodds.core.Values.ofMillis(ENV, -1).isValid());
+        // setTime with a negative value gives the invalid time, a positive one a valid time again.
+        ModifiableTime t = ENV.getSPI().newTime(5, TimeUnit.SECONDS);
+        t.setTime(-3, TimeUnit.MILLISECONDS);
+        assertFalse(t.isValid());
+        t.setTime(3, TimeUnit.MILLISECONDS);
+        assertTrue(t.isValid());
+        assertEquals(3, t.getTime(TimeUnit.MILLISECONDS));
     }
 
     @Test
-    void theInvalidTimeEqualsItselfAndOrdersBeforeEveryValidTime() {
+    void javapsm_7_3_4_the_invalid_time_equals_itself_and_orders_before_every_valid_time() {
         Time invalid = ENV.getSPI().invalidTime();
         Time zero = ENV.getSPI().newTime(0, TimeUnit.NANOSECONDS);
         assertEquals(invalid, ENV.getSPI().newTime(-7, TimeUnit.MILLISECONDS));
@@ -280,7 +287,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void addAndSubtractMoveTheInstantAndKeepItNormalised() {
+    void javapsm_7_3_4_add_and_subtract_move_the_instant_and_keep_it_normalised() {
         ModifiableTime t = ENV.getSPI().newTime(1500, TimeUnit.MILLISECONDS);
         t.subtract(700, TimeUnit.MILLISECONDS);
         // 1.5 s - 0.7 s = 0.8 s
@@ -296,7 +303,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void copyFromOverwritesTheStateAndCopiesAnInvalidSourceAsInvalid() {
+    void javapsm_7_3_3_copy_from_overwrites_the_state_and_copies_an_invalid_source_as_invalid() {
         ModifiableTime target = ENV.getSPI().newTime(9, TimeUnit.SECONDS);
         target.copyFrom(ENV.getSPI().newTime(1234, TimeUnit.MILLISECONDS));
         assertEquals(1234, target.getTime(TimeUnit.MILLISECONDS));
@@ -317,17 +324,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void setTimeWithANegativeValueGivesTheInvalidTime() {
-        ModifiableTime t = ENV.getSPI().newTime(5, TimeUnit.SECONDS);
-        t.setTime(-3, TimeUnit.MILLISECONDS);
-        assertFalse(t.isValid());
-        t.setTime(3, TimeUnit.MILLISECONDS);
-        assertTrue(t.isValid());
-        assertEquals(3, t.getTime(TimeUnit.MILLISECONDS));
-    }
-
-    @Test
-    void aTimeOfAnotherImplementationIsComparedByValue() {
+    void javapsm_7_2_2_a_time_of_another_implementation_is_compared_by_value() {
         Time ours = ENV.getSPI().newTime(1, TimeUnit.SECONDS);
         ForeignTime foreign = new ForeignTime(1_000_000_000L);
         assertEquals(ours, foreign);
@@ -341,7 +338,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void timesAreSerializableAndKeepTheirValue() throws Exception {
+    void javapsm_7_3_3_times_are_serializable_and_keep_their_value() throws Exception {
         ModifiableTime modifiable = ENV.getSPI().newTime(1234, TimeUnit.MILLISECONDS);
         ModifiableTime copy = roundTrip(modifiable);
         assertEquals(modifiable, copy);
@@ -353,7 +350,7 @@ class CoreValuesTest {
     // ---- Duration --------------------------------------------------------
 
     @Test
-    void equalDurationsHaveEqualHashCodeAndOrderByLength() {
+    void javapsm_7_3_3_equal_durations_have_equal_hash_code_and_order_by_length() {
         Duration a = ENV.getSPI().newDuration(1500, TimeUnit.MILLISECONDS);
         Duration b = ENV.getSPI().newDuration(1, TimeUnit.SECONDS).add(500, TimeUnit.MILLISECONDS);
         assertEquals(a, b);
@@ -364,7 +361,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void theInfiniteDurationIsTheLargestAndLongMaxInAnyUnitIsInfinite() {
+    void javapsm_7_3_4_the_infinite_duration_is_the_largest_and_long_max_in_any_unit_is_infinite() {
         Duration infinite = ENV.getSPI().infiniteDuration();
         assertTrue(infinite.isInfinite());
         assertEquals(infinite, ENV.getSPI().newDuration(Long.MAX_VALUE, TimeUnit.SECONDS));
@@ -376,7 +373,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void aDurationOfAnotherImplementationIsAccepted() {
+    void javapsm_7_2_2_a_duration_of_another_implementation_is_accepted() {
         Duration ours = ENV.getSPI().newDuration(1500, TimeUnit.MILLISECONDS);
         Duration sum = ours.add(new ForeignDuration(250_000_000L));
         // 1.5 s + 0.25 s = 1.75 s
@@ -388,7 +385,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void durationsAreSerializableAndKeepTheirValue() throws Exception {
+    void javapsm_7_3_3_durations_are_serializable_and_keep_their_value() throws Exception {
         Duration infinite = roundTrip(ENV.getSPI().infiniteDuration());
         assertTrue(infinite.isInfinite());
         assertSame(ENV, infinite.getEnvironment());
@@ -399,7 +396,7 @@ class CoreValuesTest {
     // ---- InstanceHandle ---------------------------------------------------
 
     @Test
-    void handlesWithTheSameOctetsAreEqualAndHaveTheSameHashCode() {
+    void javapsm_7_3_3_handles_with_the_same_octets_are_equal_and_have_the_same_hash_code() {
         InstanceHandle a = org.zerodds.core.Values.of(ENV, octets(1, 2));
         InstanceHandle b = org.zerodds.core.Values.of(ENV, octets(1, 2));
         assertEquals(a, b);
@@ -411,16 +408,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void handlesCompareOctetWiseAsUnsignedValues() {
-        InstanceHandle high = org.zerodds.core.Values.of(ENV, octets(0x80, 0));
-        InstanceHandle low = org.zerodds.core.Values.of(ENV, octets(0x01, 0));
-        // 0x80 is 128 unsigned and larger than 0x01, although the byte is negative
-        assertTrue(high.compareTo(low) > 0);
-        assertTrue(low.compareTo(high) < 0);
-    }
-
-    @Test
-    void anImmutableAndAModifiableHandleOfTheSameOctetsAreEqualInBothDirections() {
+    void javapsm_7_3_3_an_immutable_and_a_modifiable_handle_of_the_same_octets_are_equal_in_both_directions() {
         ModifiableInstanceHandle m = ENV.getSPI().newInstanceHandle();
         assertTrue(m.isNil());
         m.copyFrom(org.zerodds.core.Values.of(ENV, octets(7, 9)));
@@ -434,7 +422,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void copyFromOverwritesTheOctetsAndAnEarlierCopyKeepsItsValue() {
+    void javapsm_7_3_3_copy_from_overwrites_the_octets_and_an_earlier_copy_keeps_its_value() {
         ModifiableInstanceHandle m = ENV.getSPI().newInstanceHandle();
         m.copyFrom(org.zerodds.core.Values.of(ENV, octets(1, 1)));
         InstanceHandle before = m.immutableCopy();
@@ -446,7 +434,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void aHandleOfAnotherImplementationIsAcceptedEverywhere() {
+    void javapsm_7_2_2_a_handle_of_another_implementation_is_accepted_everywhere() {
         ForeignHandle foreign = new ForeignHandle(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
         ForeignHandle same = new ForeignHandle(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20);
         ForeignHandle other = new ForeignHandle(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21);
@@ -470,7 +458,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void aNilHandleOfAnotherImplementationIsTheNilHandle() {
+    void javapsm_7_2_2_a_nil_handle_of_another_implementation_is_the_nil_handle() {
         ForeignHandle nil = new ForeignHandle(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         InstanceHandle ours = ENV.getSPI().nilHandle();
         assertEquals(ours, nil);
@@ -482,13 +470,13 @@ class CoreValuesTest {
     }
 
     @Test
-    void aNullHandleIsABadParameter() {
+    void javapsm_7_3_3_a_null_handle_is_a_bad_parameter() {
         ModifiableInstanceHandle m = ENV.getSPI().newInstanceHandle();
         assertThrows(IllegalArgumentException.class, () -> m.copyFrom(null));
     }
 
     @Test
-    void handlesAreSerializableAndKeepTheirOctets() throws Exception {
+    void javapsm_7_3_3_handles_are_serializable_and_keep_their_octets() throws Exception {
         InstanceHandle h = org.zerodds.core.Values.of(ENV, octets(3, 4));
         InstanceHandle copy = roundTrip(h);
         assertEquals(h, copy);
@@ -500,7 +488,7 @@ class CoreValuesTest {
     }
 
     @Test
-    void aBuiltinTopicKeyCopiesItsWordsAndIsBuiltFromAHandleBigEndian() {
+    void javapsm_7_3_3_a_builtin_topic_key_copies_its_words_and_is_built_from_a_handle_big_endian() {
         org.zerodds.topic.BuiltinTopicKeyImpl source =
                 new org.zerodds.topic.BuiltinTopicKeyImpl(ENV, new int[] {1, 2, 3, 4});
         org.zerodds.topic.BuiltinTopicKeyImpl target =

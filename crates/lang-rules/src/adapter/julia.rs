@@ -558,10 +558,10 @@ fn dependencies(ast: &Ast, id: Id<TypeNode>) -> Vec<Id<TypeNode>> {
         TypeKind::Union { discriminator, .. } => {
             out.extend(discriminator.resolved());
             for case in ast.cases_of(id) {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        out.extend(member.type_.resolved());
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                {
+                    out.extend(member.type_.resolved());
                 }
             }
         }
@@ -646,12 +646,12 @@ fn resolve_forwards(
         let abstract_name = format!("{FORWARD_PREFIX}{name}");
         let mut found = false;
         for decl in out.iter_mut() {
-            if let julia::Decl::Struct(structure) = decl {
-                if structure.name.as_str() == name {
-                    structure.supertype = Some(Ident::new(&abstract_name));
-                    found = true;
-                    break;
-                }
+            if let julia::Decl::Struct(structure) = decl
+                && structure.name.as_str() == name
+            {
+                structure.supertype = Some(Ident::new(&abstract_name));
+                found = true;
+                break;
             }
         }
         if !found {
@@ -1074,10 +1074,10 @@ fn declare(
             // two unreachable.
             let mut pairs = vec![(DISCRIMINATOR.to_string(), "<discriminator>".to_string())];
             for case in cases {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        pairs.push((julia::escape_field(&member.name), member.name.clone()));
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                {
+                    pairs.push((julia::escape_field(&member.name), member.name.clone()));
                 }
             }
             no_spelling_collision(as_pairs(&pairs), LANGUAGE, &name)?;

@@ -61,6 +61,50 @@ fn wait_until(mut f: impl FnMut() -> bool, timeout: Duration) -> bool {
     }
 }
 
+/// One reading of a discovered list through `get` (the count, a buffer of
+/// exactly the count, a buffer one handle short), taken again while the list
+/// changes under it.
+///
+/// The list a participant discovers can grow between the count and the fill:
+/// a participant that joins the domain in between, which pipeline 8622 met
+/// (job 227850, a fill of the counted size got OUT_OF_RESOURCES). A reading in
+/// which the list held still decides; the bounds are asserted on it.
+fn bounds_reading(mut get: impl FnMut(*mut u64, &mut usize, usize) -> i32) -> usize {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        assert!(
+            Instant::now() < deadline,
+            "no reading in which the discovered list held still"
+        );
+        let mut n = 0usize;
+        let rc = get(ptr::null_mut(), &mut n, 0);
+        assert!(rc == OK || rc == OOR, "count: {rc}");
+        if n < 2 {
+            continue;
+        }
+        // Exactly full: `cap == n`.
+        let mut exact = vec![0u64; n];
+        let mut got = 0usize;
+        let rc = get(exact.as_mut_ptr(), &mut got, n);
+        if rc == OOR && got > n {
+            continue;
+        }
+        assert_eq!(rc, OK, "a buffer of exactly the count");
+        assert_eq!(got, n);
+        // One handle more than the buffer holds: `cap == n - 1`.
+        let mut small = vec![0u64; n - 1];
+        let mut small_got = 0usize;
+        let rc = get(small.as_mut_ptr(), &mut small_got, n - 1);
+        if small_got != n {
+            continue;
+        }
+        assert_eq!(rc, OOR, "a buffer one handle short");
+        assert!(exact.iter().all(|h| *h != 0), "every handle is filled");
+        assert_eq!(small.as_slice(), &exact[..n - 1]);
+        return n;
+    }
+}
+
 /// # Safety
 /// The factory is a process singleton.
 unsafe fn new_participant(domain: u32) -> *mut ZeroDdsDomainParticipant {
@@ -102,14 +146,12 @@ fn dp_get_discovered_participants_bounds() {
         let _peer_a = new_participant(domain);
         let _peer_b = new_participant(domain);
 
-        let mut n = 0usize;
         assert!(
             wait_until(
                 || {
                     let mut c = 0usize;
                     let rc =
                         zerodds_dp_get_discovered_participants(local, ptr::null_mut(), &mut c, 0);
-                    n = c;
                     (rc == OK || rc == OOR) && c >= 2
                 },
                 Duration::from_secs(8)
@@ -117,25 +159,10 @@ fn dp_get_discovered_participants_bounds() {
             "the two peers were not discovered within the deadline"
         );
 
-        // Exactly full: `cap == n`.
-        let mut exact = vec![0u64; n];
-        let mut got = 0usize;
-        assert_eq!(
-            zerodds_dp_get_discovered_participants(local, exact.as_mut_ptr(), &mut got, n),
-            OK
-        );
-        assert_eq!(got, n);
-        assert!(exact.iter().all(|h| *h != 0), "every handle is filled");
-
-        // One handle more than the buffer holds: `cap == n - 1`.
-        let mut small = vec![0u64; n - 1];
-        let mut got = 0usize;
-        assert_eq!(
-            zerodds_dp_get_discovered_participants(local, small.as_mut_ptr(), &mut got, n - 1),
-            OOR
-        );
-        assert_eq!(got, n, "the total is reported when the buffer is too small");
-        assert_eq!(small.as_slice(), &exact[..n - 1]);
+        let n = bounds_reading(|buf, got, cap| {
+            zerodds_dp_get_discovered_participants(local, buf, got, cap)
+        });
+        assert!(n >= 2);
 
         drop_participant(local);
         drop_participant(_peer_a);
@@ -172,13 +199,11 @@ fn dp_get_discovered_topics_bounds() {
             assert!(!zerodds_pub_create_datawriter(pubh, t, ptr::null()).is_null());
         }
 
-        let mut n = 0usize;
         assert!(
             wait_until(
                 || {
                     let mut c = 0usize;
                     let rc = zerodds_dp_get_discovered_topics(local, ptr::null_mut(), &mut c, 0);
-                    n = c;
                     (rc == OK || rc == OOR) && c >= 2
                 },
                 Duration::from_secs(8)
@@ -186,25 +211,9 @@ fn dp_get_discovered_topics_bounds() {
             "the two peer topics were not discovered within the deadline"
         );
 
-        // Exactly full.
-        let mut exact = vec![0u64; n];
-        let mut got = 0usize;
-        assert_eq!(
-            zerodds_dp_get_discovered_topics(local, exact.as_mut_ptr(), &mut got, n),
-            OK
-        );
-        assert_eq!(got, n);
-        assert!(exact.iter().all(|h| *h != 0));
-
-        // One handle more than the buffer holds.
-        let mut small = vec![0u64; n - 1];
-        let mut got = 0usize;
-        assert_eq!(
-            zerodds_dp_get_discovered_topics(local, small.as_mut_ptr(), &mut got, n - 1),
-            OOR
-        );
-        assert_eq!(got, n, "the total is reported when the buffer is too small");
-        assert_eq!(small.as_slice(), &exact[..n - 1]);
+        let n =
+            bounds_reading(|buf, got, cap| zerodds_dp_get_discovered_topics(local, buf, got, cap));
+        assert!(n >= 2);
 
         drop_participant(local);
         drop_participant(peer_a);

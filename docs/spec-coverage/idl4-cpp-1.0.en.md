@@ -59,8 +59,8 @@ input into C++ source code output as specified in Chapter 7."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`,
-`crates/lang-rules/tests/cpp_corpus_compiles.rs::the_compiler_check_catches_a_deliberate_error`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`,
+`crates/lang-rules/tests/cpp_corpus_compiles.rs::idl4cpp_2_1_the_compiler_check_catches_a_deliberate_error`
 
 **Status:** partial — the data-type transformation is live and renders
 every corpus case (or names its refusal); the compiler gate checks the
@@ -111,7 +111,7 @@ audited in §7.1.3, the IDL version in §3.9.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — abbreviations.
 
 ---
 
@@ -125,7 +125,7 @@ audited in §7.1.3, the IDL version in §3.9.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — changes to other specs, acknowledgements, rights notices.
 
 ---
 
@@ -138,7 +138,7 @@ map to equivalent C++ names and type identifiers with no change."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
 
 **Status:** done — the member name `items` stays unchanged. The only name
 change is the reserved-name escaping of §7.1.2.
@@ -166,7 +166,7 @@ standard version."
 
 **Repo:** `crates/lang-rules/tests/cpp_corpus_compiles.rs`
 
-**Tests:** `crates/lang-rules/tests/cpp_corpus_compiles.rs::every_corpus_case_that_renders_also_compiles` — `crates/lang-rules/tests/cpp_corpus_compiles.rs:159: .args(["-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror"])`
+**Tests:** `crates/lang-rules/tests/cpp_corpus_compiles.rs::idl4cpp_7_1_3_every_corpus_case_that_renders_also_compiles` — `crates/lang-rules/tests/cpp_corpus_compiles.rs:159: .args(["-std=c++20", "-fsyntax-only", "-Wall", "-Wextra", "-Werror"])`
 
 **Status:** done — the corpus is syntax-checked under `-std=c++20`; that
 meets the C++11 minimum and covers the C++17 constructs actually used
@@ -206,7 +206,7 @@ Specification itself."
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — "There is no direct mapping of the IDL Specification itself."
 
 ### 7.2.2 Modules
 
@@ -216,7 +216,7 @@ be mapped into the global scope."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::a_module_is_a_namespace_and_not_a_prefix` — `crates/lang-rules/src/adapter/cpp.rs:1987: assert!(text.contains("namespace a {"), "{text}");`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_7_2_2_a_module_is_a_namespace_and_not_a_prefix` — `crates/lang-rules/src/adapter/cpp.rs:1987: assert!(text.contains("namespace a {"), "{text}");`
 
 **Status:** done — modules become `namespace` blocks, references are
 written from the root scope (`::a::P`), no `a_b_P` prefix.
@@ -233,7 +233,7 @@ shall be preceded by L."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (constant loop,
 `cpp_constant`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
 
 **Status:** partial — numeric and boolean constants are emitted as
 `inline constexpr`. String, wstring and fixed constants are emitted as
@@ -253,17 +253,27 @@ point (Tab.7.3), char, wchar, boolean, octet.
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
-`crates/lang-rules/src/adapter/cpp.rs::an_array_nests_with_the_outer_dimension_outermost`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`,
+`crates/lang-rules/src/adapter/cpp.rs::idl4cpp_7_2_4_1_an_array_nests_with_the_outer_dimension_outermost`
 
 **Status:** partial — `long -> std::int32_t` is asserted (array,
 interface and verbatim tests), and `octet`/`uint8` as well as `wchar`/
 `unsigned short` collapse onto one type (tag test). The remaining table
 widths (`short -> int16_t`, `long long -> int64_t`, `char`, `wchar`,
 `boolean`, `octet`, `float`) have no assertion of their own. `long double`
-is deliberately mapped to `zerodds::wire::Float128` instead of the
-platform-dependent C++ `long double` (§7.2.4.1.2). `cpp_primitive` is
+is mapped to `zerodds::wire::Float128` instead of the C++ `long double`
+(§7.2.4.1.2, own item). `cpp_primitive` is
 exhaustive, so a missing primitive is a compile error.
+
+### 7.2.4.1.2 long double -> long double
+
+**Spec:** §7.2.4.1.2, Tab.7.3, p. 8 — "long double | long double".
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `cpp_primitive` (`crates/lang-rules/src/adapter/cpp.rs`) maps `long double` to `zerodds::wire::Float128`.
 
 ### 7.2.4.2.1 Sequences -> std::vector<T>
 
@@ -273,7 +283,7 @@ std::vector<T>, or to a type named omg::types::sequence<T> [...]."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`, sequence
 arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::tests::psmcxx_7_4_2_a_sequence_is_a_vector_and_a_map_is_a_class_over_a_vector_of_pairs` — `crates/lang-rules/src/adapter/cpp.rs:2752: assert!(text.contains("std::vector<std::int32_t> items;"), "{text}");`
 
 **Status:** done — `std::vector<T>` is one of the forms §7.2.4.2.1 allows
 (the `omg::types::sequence` alternative is audited in §7.1.4).
@@ -300,7 +310,7 @@ std::string, or to a type named omg::types::string."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`, string
 arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
 
 **Status:** partial — `string` is held as `std::string` (an allowed
 form). There is no direct assertion for the data member (only the tag
@@ -327,7 +337,7 @@ std::wstrings, or to a type named omg::types::wstring [...]."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`value_type`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
 
 **Status:** partial — `wstring` is held as `std::string` with UTF-8, not
 as `std::wstring` and not as `omg::types::wstring`; the spec form is not
@@ -373,7 +383,7 @@ destructor [...] swap function in the namespace."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs` (class with accessors, `==`, `!=`, `swap`), `crates/lang-rules/src/adapter/cpp.rs` (structure branch)
 
-**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader` (`crates/cpp/tests/generated_psm_roundtrip.cpp`: constructors, copy, move, `swap`, equality)
+**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader` (`crates/cpp/tests/generated_psm_roundtrip.cpp`: constructors, copy, move, `swap`, equality)
 
 **Status:** done — the default mapping (`--cpp-mapping psm`) writes a class with the accessors, the constructor over all members, `==`, `!=` and `swap` in the namespace (§7.12); copy and move are the implicit functions. The option `native` writes the structure of the codecs with public members, `swap` and, for pointer members, the generated copy and move functions, but no `==`. Log: `.agent/REPORT.md`.
 
@@ -385,7 +395,7 @@ first value, and the rest of members using their default constructor."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`member_default`)
 
-**Tests:** `tools/idlc/tests/cpp_headers_together.rs::two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults` — `tools/idlc/tests/cpp_headers_together.rs:126: status.success(),`
+**Tests:** `tools/idlc/tests/cpp_headers_together.rs::idl4cpp_7_2_4_3_1_two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults` — `tools/idlc/tests/cpp_headers_together.rs:126: status.success(),`
 
 **Status:** done — the test compiles and runs default-constructed
 structs; the exit code is non-zero if a built-in is not 0, `bool` is not
@@ -400,7 +410,7 @@ discriminator parameter, and `_default()`.
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (union arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::psmcxx_7_4_4_a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
 
 **Status:** partial — the union is emitted as a class with a `_d` field
 and one field per branch (asserted: `struct U {`, `std::int32_t _d;`).
@@ -414,7 +424,7 @@ scoped enum class with the same name as the IDL enum type."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (enumeration arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_enumeration_takes_an_underlying_type_from_its_bit_bound` — `crates/lang-rules/src/adapter/cpp.rs:2050: assert!(narrow.contains("enum class E : std::uint8_t {"), "{narrow}");`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound` — `crates/lang-rules/src/adapter/cpp.rs:2050: assert!(narrow.contains("enum class E : std::uint8_t {"), "{narrow}");`
 
 **Status:** done — a scoped `enum class` with the same name; the
 underlying type is chosen from `@bit_bound` and the enumerator values.
@@ -438,7 +448,7 @@ by mapping the involved types directly to C++."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (forward declarations,
 sequence/`shared_ptr` arms)
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value`
 
 **Status:** partial — forward declarations for aggregates and
 `std::vector<T>`/`std::shared_ptr<T>` allow self-reference; only the
@@ -455,7 +465,7 @@ nesting std::array."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (array arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_array_nests_with_the_outer_dimension_outermost` — `crates/lang-rules/src/adapter/cpp.rs:2023: assert!(text.contains("std::array<std::array<std::int32_t, 3>, 2> a = {};"), "{text}");`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_7_2_4_1_an_array_nests_with_the_outer_dimension_outermost` — `crates/lang-rules/src/adapter/cpp.rs:2023: assert!(text.contains("std::array<std::array<std::int32_t, 3>, 2> a = {};"), "{text}");`
 
 **Status:** done — `std::array`, multidimensional, nested
 outermost-first; one of the forms §7.2.4.4 allows.
@@ -491,7 +501,7 @@ declarations."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (alias arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
 
 **Status:** partial — `typedef` is emitted as a `cpp::Alias` (C++ `using`);
 no assertion checks the alias declaration directly, and the corpus
@@ -513,7 +523,7 @@ omg::types::Any type."
 **Status:** open — `any` is refused in
 `crates/lang-rules/src/adapter/cpp.rs` (`cpp_value_type`,
 `TypeKind::Any`) with `NoLanguageForm` (test
-`an_any_member_is_refused_by_name_at_any_depth`, also for
+`idl_7_2_3_an_any_member_is_refused_by_name_at_any_depth`, also for
 `sequence<any>`). No `omg::types::Any`.
 
 ---
@@ -532,8 +542,8 @@ weak_ref_type<T>."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_synchronous_operations_of_rule_six`,
-`crates/lang-rules/tests/interface_bindings.rs::cpp_names_an_attribute_accessor_after_the_attribute`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six`,
+`crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_names_an_attribute_accessor_after_the_attribute`
 
 **Status:** partial — interfaces are emitted through the DDS-RPC 1.0
 §7.11.1 binding as classes with pure-virtual operations and attribute
@@ -553,7 +563,7 @@ each exception member [...] and a parameter of type const char *."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (exception loop)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
 
 **Status:** partial — an IDL exception is emitted as a `struct` with its
 members. The required `class X : public std::exception` derivation,
@@ -574,7 +584,7 @@ data-type adapter writes `Forward` only for `Structure`, `Union` and
 `Valuetype`. `interface Foo;` without a definition is refused by
 `crates/lang-rules/src/adapter/interface.rs` as `ForwardWithoutDefinition`
 (test
-`crates/lang-rules/tests/interface_bindings.rs::a_forward_declaration_without_a_definition_is_e002`).
+`crates/lang-rules/tests/interface_bindings.rs::ddsts_11_7_a_forward_declaration_without_a_definition_is_e002`).
 
 ---
 
@@ -608,7 +618,7 @@ interface -> all operations as pure virtual.
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (valuetype arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
 
 **Status:** partial — `valuetype` is treated like a `struct`: its members
 become fields. The required public/protected pure-virtual accessor/modifier
@@ -639,8 +649,7 @@ Annex A.1 is audited separately.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — no direct C++ mapping; the path is
-intermediate-IDL tooling, not codegen.
+**Status:** open — the transformation into equivalent IDL exists (`crates/ccm/src/transform.rs`, tests in `crates/ccm/tests/equivalent_idl.rs`), the C++ path of `zerodds-idlc` does not apply it: `tools/idlc` and `crates/lang-rules` do not depend on `zerodds-ccm`.
 
 ### 7.11 CCM-Specific
 
@@ -650,19 +659,28 @@ intermediate-IDL tooling, not codegen.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — reference to Annex A.1.
 
 ### 7.12/7.13 Components – Ports/Connectors and Template Modules
 
 **Spec:** §7.12-7.13, p. 22 — "mapped to intermediate IDL, as specified
 in [OMG-IDL4]."
 
+**Repo:** `crates/idl-lower/src/lower.rs` (`template_module_inst`)
+
+**Tests:** `crates/idl-lower/tests/dialects.rs::an_instantiation_lowers_the_body_with_the_actual_substituted`, `crates/idl-lower/tests/dialects.rs::two_instantiations_of_one_template_are_two_independent_modules`
+
+**Status:** partial — an instantiation of a template module becomes an ordinary module in the model, which the C++ column maps. Ports and connectors are not translated into intermediate IDL; own item.
+
+### 7.12 Ports and connectors as intermediate IDL
+
+**Spec:** §7.12, p. 22 — ports and connectors are "mapped to intermediate IDL, as specified in [OMG-IDL4]".
+
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — intermediate-IDL path with no direct
-C++ mapping.
+**Status:** open — the C++ column does not translate `porttype`, `port`, `mirrorport` and `connector` into intermediate IDL.
 
 ---
 
@@ -676,12 +694,22 @@ all inherited members are swapped."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`all_members_of`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
 
 **Status:** partial — base members are copied flat into the derived
 struct (`all_members_of`), not as `struct Child : Base` with public
 inheritance; the `swap` function for inherited members is missing. The
-flat form is deliberate so the member order matches the wire plan.
+flat form keeps the member order of the wire plan; own item.
+
+### 7.14.1 Public inheritance and swap of the inherited members
+
+**Spec:** §7.14.1, p. 23 — "shall inherit from the mapped base struct using public inheritance. [...] swap method [...] which shall ensure that all inherited members are swapped."
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `all_members_of` (`crates/lang-rules/src/adapter/cpp.rs`) copies the base members flat into the derived structure; no base class, no `swap` for inherited members.
 
 ### 7.14.2 Union Discriminators
 
@@ -691,7 +719,7 @@ discriminators."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (union arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::psmcxx_7_4_4_a_union_is_a_class_with_a_discriminator_and_one_field_per_case`
 
 **Status:** partial — the discriminator runs through `cpp_value_type` and
 accepts any integral type; only `switch (long)` is asserted. `wchar`,
@@ -707,7 +735,7 @@ omg::types::bounded_map<Key, T, N>."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp_psm.rs` (map branch)
 
-**Tests:** `crates/cpp/tests/generated_type_via_cargo.rs::a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
+**Tests:** `crates/cpp/tests/generated/CMakeLists.txt::psmcxx_8_1_a_psm_mapped_type_round_trips_through_the_dds_psm_writer_and_reader`
 
 **Status:** done — in the default mapping (`psm`) `map<K,V>` is `std::map<K,V>`; `--cpp-mapping native` and `classic` are named options (`zerodds::Map`, the order of the entries as an axis of the codec). There is no `omg::types::map` or `bounded_map`; the spec admits `std::map` alone. Log: `.agent/REPORT.md`.
 
@@ -733,7 +761,7 @@ type."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (bitset arm)
 
-**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::every_kind_table_9_answers_for_gets_a_defaulter`
+**Tests:** `crates/lang-rules/tests/cpp_reader_generates.rs::xtypes_7_2_2_4_4_4_7_every_kind_table_9_answers_for_gets_a_defaulter`
 
 **Status:** partial — bitsets are emitted as a struct with separate
 integer members, packed in the codec, not as C++ bit-fields; base
@@ -749,7 +777,7 @@ constructor and a copy constructor [...] !=, &=, and ^= bitwise operators
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (bitmask arm)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::every_corpus_case_renders_or_names_its_refusal`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::idl4cpp_2_1_every_corpus_case_renders_or_names_its_refusal`
 
 **Status:** partial — a bitmask is emitted as an integer alias
 (uint8/16/32/64) plus `inline constexpr` bit constants, not as a `struct`
@@ -763,7 +791,7 @@ with an unscoped `_flags` enum, a private `_value`, constructors,
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
 
 **Status:** partial — `octet`/`uint8` fall onto the same `std::uint8_t`
 (tag test). `int8 -> std::int8_t` has no assertion of its own.
@@ -775,7 +803,7 @@ with an unscoped `_flags` enum, a private `_value`, constructors,
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`cpp_primitive`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::the_tag_keeps_apart_what_the_cpp_spelling_collapses`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_1_2_the_tag_keeps_apart_what_the_cpp_spelling_collapses`
 
 **Status:** partial — the explicit widths are mapped in `cpp_primitive`,
 but no assertion names `int16`/`uint16`/`int32`/`uint32`/`int64`/`uint64`
@@ -826,7 +854,7 @@ this specification supporting C++17 and above."
 
 **Tests:** —
 
-**Status:** `open` — no mapping writes `std::optional<T>`: the default mapping (`psm`) writes `dds::core::optional<T>` (DDS-PSM-Cxx), the option `native` a pointer `T *` (DDS-XTypes 1.3 §7.5.1.2.4.2), the option `classic` `zerodds::classic::Optional<T>`. The form of IDL4 to C++ 1.0 §7.17.1 is missing as a named option. Evidence of the forms that exist: `crates/lang-rules/src/adapter/cpp_psm.rs` (`dds::core::optional<T>`), `crates/lang-rules/src/adapter/cpp.rs` (`T *`), `crates/lang-rules/src/adapter/cpp_classic.rs` (`zerodds::classic::Optional<T>`); tests `crates/lang-rules/src/adapter/cpp.rs::tests::an_optional_member_is_a_plain_pointer_and_not_a_second_field`, `crates/cpp/tests/generated_psm_roundtrip.cpp`.
+**Status:** `open` — no mapping writes `std::optional<T>`: the default mapping (`psm`) writes `dds::core::optional<T>` (DDS-PSM-Cxx), the option `native` a pointer `T *` (DDS-XTypes 1.3 §7.5.1.2.4.2), the option `classic` `zerodds::classic::Optional<T>`. The form of IDL4 to C++ 1.0 §7.17.1 is missing as a named option. Evidence of the forms that exist: `crates/lang-rules/src/adapter/cpp_psm.rs` (`dds::core::optional<T>`), `crates/lang-rules/src/adapter/cpp.rs` (`T *`), `crates/lang-rules/src/adapter/cpp_classic.rs` (`zerodds::classic::Optional<T>`); tests `crates/lang-rules/src/adapter/cpp.rs::tests::xtypes_7_5_1_2_4_2_an_optional_member_is_a_plain_pointer_and_not_a_second_field`, `crates/cpp/tests/generated_psm_roundtrip.cpp`.
 
 ### 7.17.1 General Purpose: @value, @position, @id, @autoid, @extensibility
 
@@ -836,7 +864,7 @@ value; `@position` affects the bitmask; `@id`, `@autoid`,
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_enumeration_takes_an_underlying_type_from_its_bit_bound`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound`
 
 **Status:** partial — `@value` reaches the enumerator value (the adapter
 writes every value out) but is not asserted directly; `@position` hangs
@@ -852,7 +880,7 @@ be initialized to the element indicated by [@default_literal]."
 
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`member_default`)
 
-**Tests:** `tools/idlc/tests/cpp_headers_together.rs::two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults`
+**Tests:** `tools/idlc/tests/cpp_headers_together.rs::idl4cpp_7_2_4_3_1_two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults`
 
 **Status:** partial — `@key` and `@must_understand` have no impact, as
 the spec says. `@default_literal` is not evaluated: the member default
@@ -882,7 +910,7 @@ between 1 and 8; int16_t [...] int32_t [...] int64_t."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`enum_underlying`,
 `cpp_holder`)
 
-**Tests:** `crates/lang-rules/src/adapter/cpp.rs::an_enumeration_takes_an_underlying_type_from_its_bit_bound`
+**Tests:** `crates/lang-rules/src/adapter/cpp.rs::xtypes_7_5_1_2_1_2_an_enumeration_takes_an_underlying_type_from_its_bit_bound`
 
 **Status:** partial — for enums the underlying type is asserted; for
 bitmasks the adapter follows the same width rule, but the bitmask
@@ -898,7 +926,7 @@ member in their copy constructor."
 **Repo:** `crates/lang-rules/src/adapter/cpp.rs` (`held_externally`,
 `shared_ptr` arms)
 
-**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::a_recursive_external_member_is_a_shared_pointer_and_not_a_value` — `crates/lang-rules/tests/external_is_an_indirection.rs:118: generated.contains("std::shared_ptr<::m::Node> next;"),`
+**Tests:** `crates/lang-rules/tests/external_is_an_indirection.rs::xtypes_7_2_2_4_9_a_recursive_external_member_is_a_shared_pointer_and_not_a_value` — `crates/lang-rules/tests/external_is_an_indirection.rs:118: generated.contains("std::shared_ptr<::m::Node> next;"),`
 
 **Status:** partial — `@external T` is held as `std::shared_ptr<T>`
 (asserted). The required deep copy in the copy constructor is missing:
@@ -925,7 +953,7 @@ indicated output position when the indicated language is '*', 'c++',
 **Repo:** `crates/lang-rules/src/verbatim.rs`,
 `crates/lang-rules/src/adapter/cpp.rs` (`weave_verbatim`)
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::cpp_answers_to_its_alias_spellings_case_insensitively` — `crates/lang-rules/tests/verbatim_end_to_end.rs:150: generated.contains("// vb-alias"),`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::idl4cpp_7_17_5_cpp_answers_to_its_alias_spellings_case_insensitively` — `crates/lang-rules/tests/verbatim_end_to_end.rs:150: generated.contains("// vb-alias"),`
 
 **Status:** partial — all six placements (BEGIN_FILE,
 BEFORE/BEGIN/END/AFTER_DECLARATION, END_FILE) and the languages `c++`,
@@ -940,7 +968,7 @@ Impact is platform-specific."
 
 **Repo:** `crates/lang-rules/src/emit/interface_cpp.rs`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::cpp_declares_the_asynchronous_operations_of_rule_seven`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven`
 
 **Status:** partial — `@oneway` (no reply topic, `future<void>` async) and
 `@service` (service name) are handled through the DDS-RPC binding; `@ami`
@@ -961,9 +989,7 @@ default STRUCT_WITH_PUBLIC_MEMBERS."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — the annotation is not emitted as an IDL
-declaration; the default behaviour of the C++ column (structs with public
-members) matches `STRUCT_WITH_PUBLIC_MEMBERS`.
+**Status:** open — the annotation is not evaluated; the form of structures is chosen by the option `--cpp-mapping` per run (default `psm`: a class with accessors), not by `@cpp_mapping` per structure, and the default value of the annotation is `STRUCT_WITH_PUBLIC_MEMBERS`.
 
 ### 8.1.1 CLASS_WITH_PUBLIC_ACCESSORS_AND_MODIFIERS
 
@@ -1020,7 +1046,7 @@ DDS-specific C++ mapping.
 
 **Tests:** —
 
-**Status:** `n/a (informative)`
+**Status:** n/a (informative) — Annex B is "non-normative".
 
 ---
 
@@ -1033,8 +1059,7 @@ and C++03.
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — the C++ column targets C++17/20
-(§7.1.3); the C++98/03 path is optional and is not implemented.
+**Status:** open — an optional mapping; the PSM column (`--cpp-mapping psm`) targets C++17 (§7.1.3) and has no form for C++98 or C++03.
 
 ---
 
@@ -1043,22 +1068,37 @@ and C++03.
 **Spec:** Annex D, p. 79-89 — mappings for the classic C++ and C++11
 specs.
 
+**Repo:** `crates/lang-rules/src/adapter/cpp_classic.rs` (`CppMapping::Classic`), `runtime/cpp/include/zerodds/map.hpp` (`zerodds::Map`)
+
+**Tests:** `tools/idlc/tests/cpp_classic.rs::xtypes_7_5_1_the_classic_types_are_cpp03_and_the_codec_writes_the_native_bytes`
+
+**Status:** partial — ZeroDDS has a classic mapping per [OMG-C++] (`--cpp-mapping classic`, C++03), to which Annex D applies. The map class does not follow D.2.1.3.1 (own item); the other rules of D.2 are not checked one by one against the mapping. D.3 concerns the C++11 mapping [OMG-C++11], which ZeroDDS does not have.
+
+### Annex D.2.1.3.1 Maps in the classic mapping
+
+**Spec:** Annex D.2.1.3.1, p. 80 — a map becomes a C++ class with a default constructor, `operator[]`, `ULong maximum() const`, `ULong length() const`, `void clear()`, `Boolean insert(const K&, const T&, Boolean replace = TRUE)`, `Boolean insert_or_assign(const K&, const T&)` and `Boolean erase(const K&)`.
+
 **Repo:** —
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — the tree uses its own binding, not the
-classic mapping specs.
+**Status:** open — `zerodds::Map` (`runtime/cpp/include/zerodds/map.hpp`) has `get_size`, `get_max_size`, `set_max_size`, `insert` and `erase` with `DDS::ReturnCode_t`, but not `maximum()`, `length()`, `clear()`, `insert_or_assign` and the returns as `Boolean`.
 
 ---
 
 ## Audit Status
 
-8 done / 26 partial / 14 open / 19 n/a (informative) / 0 n/a (rejected).
+9 done / 26 partial / 22 open / 0 blocked / 14 n/a (informative).
+
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document idl4-cpp-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (job `merge-rust-idl-lower`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-cst --all-targets` (job `merge-rust-lang-cst`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 12 tests green.
+* `python3 ci/run_integration.py merge-codegen-cpp` (job `merge-codegen-cpp`) — 4 tests green.
+* `python3 ci/run_integration.py integration-codegen` (job `integration-codegen`) — 24 tests green.
+* `python3 ci/run_integration.py integration-sdk` (job `integration-sdk`) — 1 test green.
+
+44 cited tests green, 0 not green.
 
 Open items: `idl4-cpp-1.0.open.en.md`.
-
-Test run (not executed in this pass, since only documentation changed):
-the corpus gate is
-`cargo test -p zerodds-lang-rules --test cpp_corpus_compiles -- --include-ignored`;
-it is `#[ignore]` because it invokes a C++ compiler once per corpus case.

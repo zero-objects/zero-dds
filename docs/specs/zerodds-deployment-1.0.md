@@ -268,20 +268,21 @@ by hand without `--config` reads `/usr/local/etc/zerodds`.
 
 Tap: `brew tap zero-objects/zerodds`.
 
+The formulae are for Apple silicon only: each names the arm64 bundle with
+one URL and one sha256 and declares `depends_on arch: :arm64`; on an Intel
+Mac `brew install` refuses them.
+
 Formulae:
 ```ruby
 class Zerodds < Formula
   desc "ZeroDDS — Rust-native DDS implementation"
   homepage "https://zerodds.io"
+  url "https://github.com/zero-objects/zero-dds/releases/download/v1.0.0/zerodds-1.0.0-aarch64-apple-darwin.tar.gz"
   version "1.0.0"
+  sha256 "..."
 
-  if Hardware::CPU.arm?
-    url "https://github.com/zero-objects/zerodds/releases/download/v1.0.0/zerodds-1.0.0-aarch64-apple-darwin.tar.gz"
-    sha256 "..."
-  else
-    url ".../zerodds-1.0.0-x86_64-apple-darwin.tar.gz"
-    sha256 "..."
-  end
+  depends_on arch: :arm64
+  depends_on :macos
 
   def install
     bin.install Dir["bin/zerodds-*"]
@@ -335,14 +336,14 @@ share/launchd/*.plist
 `zerodds-<v>-<target>.tar.gz.sha256`.
 
 `.github/workflows/publish-distros.yml` writes the tap from the published
-release: it downloads both bundles, `packaging/github-actions/render-homebrew.sh`
-writes their sha256 into the formulae (it aborts with the name of a missing
+release: it downloads the arm64 bundle, `packaging/github-actions/render-homebrew.sh`
+writes its sha256 into the formulae (it aborts with the name of a missing
 file), a macOS runner installs the rendered formulae from a local tap
 (`packaging/github-actions/homebrew-verify.sh`: meta formula, `brew test`,
 one sub-formula), and only then are they pushed to
 `zero-objects/homebrew-zerodds`.
 
-The job `macos-bundle` (`ci/full.yml`) builds and renders the same bundle on a
+The job `macos-bundle` (`ci/jobs/macos-bundle.yml`) builds and renders the same bundle on a
 GitLab macOS runner (tag `macos`, shell executor, Xcode Command Line Tools,
 rustup) where one is registered.
 
@@ -567,11 +568,11 @@ All ZeroDDS crates share the version from the workspace root:
 [workspace.package]
 version       = "1.0.0-rc.1"
 edition       = "2021"
-rust-version  = "1.88"
+rust-version  = "1.97"
 license       = "Apache-2.0 OR MIT"
 authors       = ["ZeroDDS Contributors <admin@zerodds.org>"]
 homepage      = "https://zerodds.io"
-repository    = "https://github.com/zero-objects/zerodds"
+repository    = "https://github.com/zero-objects/zero-dds"
 description   = "ZeroDDS — Rust-native DDS implementation"
 ```
 

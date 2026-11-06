@@ -73,7 +73,7 @@ fn a_struct_of_primitives_becomes_a_public_swift_struct() {
 }
 
 #[test]
-fn a_struct_carries_a_written_public_memberwise_initialiser() {
+fn xtypes_7_5_1_a_struct_carries_a_written_public_memberwise_initialiser() {
     // Swift synthesises a memberwise initialiser and gives it `internal`
     // access even when every property is `public` (*The Swift Programming
     // Language*, "Access Control"), so a `public struct` with no written
@@ -88,13 +88,13 @@ fn a_struct_carries_a_written_public_memberwise_initialiser() {
 }
 
 #[test]
-fn a_struct_with_no_members_still_gets_an_initialiser() {
+fn xtypes_7_5_1_a_struct_with_no_members_still_gets_an_initialiser() {
     let generated = generate("struct Empty { };");
     assert!(generated.contains("public init() {}"), "{generated}");
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_swift_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_swift_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -129,7 +129,7 @@ fn every_idl_primitive_reaches_a_swift_type() {
 }
 
 #[test]
-fn no_generated_type_has_an_implementation_defined_width() {
+fn xtypes_7_2_2_2_no_generated_type_has_an_implementation_defined_width() {
     // `Int` and `UInt` are the platform's word size (*The Swift
     // Programming Language*, "The Basics"). A member declared with one
     // would be four octets on a 32-bit target and eight on a 64-bit one,
@@ -146,7 +146,7 @@ fn no_generated_type_has_an_implementation_defined_width() {
 }
 
 #[test]
-fn a_long_double_is_a_string_and_never_a_float80_or_a_double() {
+fn xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_float80_or_a_double() {
     // `Float80` exists only on x86. Measured, on arm64-apple-macosx:
     // `'Float80' is unavailable: Float80 is not available on target
     // platform.` `Double` is not the fallback either: 53 bits of
@@ -173,7 +173,7 @@ fn an_optional_member_becomes_an_optional_and_the_others_do_not() {
 }
 
 #[test]
-fn an_external_member_is_boxed_in_a_class_because_a_struct_cannot_recurse() {
+fn xtypes_7_2_2_4_9_an_external_member_is_boxed_in_a_class_because_a_struct_cannot_recurse() {
     // Measured, on Swift 6.3: `struct N { var next: N? }` is rejected
     // with `value type 'N' cannot have a stored property that recursively
     // contains it`. `@external` says the member is stored out of line
@@ -191,7 +191,7 @@ fn an_external_member_is_boxed_in_a_class_because_a_struct_cannot_recurse() {
 }
 
 #[test]
-fn the_external_box_is_absent_when_nothing_reaches_it() {
+fn xtypes_7_2_2_4_9_the_external_box_is_absent_when_nothing_reaches_it() {
     // An unused public class is a name in the output that nothing put
     // there.
     let generated = generate("struct S { long x; };");
@@ -202,7 +202,7 @@ fn the_external_box_is_absent_when_nothing_reaches_it() {
 }
 
 #[test]
-fn a_member_named_after_a_swift_keyword_takes_back_quotes_and_keeps_its_name() {
+fn idl_7_2_3_a_member_named_after_a_swift_keyword_takes_back_quotes_and_keeps_its_name() {
     // Back quotes do not rename. `` `default` `` *is* `default`, so the
     // IDL spelling is the Swift spelling — which is what @autoid(HASH)
     // hashes (DDS-XTypes 1.3 §7.3.1.2.1.1). The Go column has to carry an
@@ -228,7 +228,7 @@ fn a_member_named_after_a_swift_keyword_takes_back_quotes_and_keeps_its_name() {
 }
 
 #[test]
-fn a_member_named_self_gets_a_second_parameter_name_for_the_body() {
+fn idl_7_2_3_a_member_named_self_gets_a_second_parameter_name_for_the_body() {
     // A parameter labelled `` `self` `` shadows the implicit `self`
     // inside the initialiser. Measured, on Swift 6.3: `value of type
     // 'Int32' has no member 'default'`, from an initialiser whose first
@@ -242,7 +242,7 @@ fn a_member_named_self_gets_a_second_parameter_name_for_the_body() {
 }
 
 #[test]
-fn the_escape_cannot_make_two_idl_names_collide() {
+fn idl_7_2_3_the_escape_cannot_make_two_idl_names_collide() {
     // The Go column refuses this pair: `type` escapes to `Type_` and a
     // member already spelled `type_` exports to the same name, so one of
     // the two would be unreachable. Back quotes do not rename, so the two
@@ -301,7 +301,7 @@ fn an_array_nests_outermost_dimension_first_and_records_its_bound() {
 }
 
 #[test]
-fn a_large_array_is_still_an_array_and_never_a_tuple() {
+fn xtypes_7_2_2_4_3_a_large_array_is_still_an_array_and_never_a_tuple() {
     // The alternative encodes the length in the type — `(Int32, Int32,
     // Int32)` — and stops being usable: the standard library declares
     // `==` for tuples of arity two to six only, a tuple cannot be
@@ -321,7 +321,7 @@ fn a_large_array_is_still_an_array_and_never_a_tuple() {
 }
 
 #[test]
-fn a_map_becomes_an_array_of_entries_and_never_a_dictionary() {
+fn xtypes_7_2_2_4_3_a_map_becomes_an_array_of_entries_and_never_a_dictionary() {
     // A `map<K,V>` goes on the wire as a sequence of pairs
     // (DDS-XTypes 1.3 §7.4.1.1.4). Swift's `Dictionary` has no order and
     // seeds its hash per process, so one program over one value would
@@ -426,7 +426,7 @@ fn an_external_union_branch_keeps_its_box_inside_the_branchs_optional() {
 }
 
 #[test]
-fn a_bitmask_becomes_an_option_set() {
+fn xtypes_7_2_2_4_1_2_a_bitmask_becomes_an_option_set() {
     // `OptionSet` is the standard library's own answer to a set of bit
     // flags: it gives the type set algebra over the bound the IDL
     // declared and keeps the flags inside the type, where the Go column
@@ -456,7 +456,7 @@ fn a_bitmask_becomes_an_option_set() {
 }
 
 #[test]
-fn a_bitset_becomes_a_struct_of_holder_typed_properties() {
+fn xtypes_7_2_2_4_1_2_a_bitset_becomes_a_struct_of_holder_typed_properties() {
     let generated = generate("bitset B { bitfield<3> low; bitfield<12> high; };");
     assert!(generated.contains("public struct B {"), "{generated}");
     assert!(generated.contains("public var low: UInt8"), "{generated}");
@@ -534,7 +534,7 @@ fn a_native_declaration_becomes_an_opaque_type_alias() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_and_keeps_the_idl_spelling_of_each_segment() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_and_keeps_the_idl_spelling_of_each_segment() {
     // Swift's unit of namespacing is the module, which is a build-system
     // target and not something a source file declares. The in-file
     // equivalent is a nested type, and it is rejected: unqualified lookup
@@ -558,7 +558,7 @@ fn a_module_flattens_onto_the_name_and_keeps_the_idl_spelling_of_each_segment() 
 }
 
 #[test]
-fn two_modules_that_flatten_onto_one_name_are_refused_by_name() {
+fn idl_7_5_2_two_modules_that_flatten_onto_one_name_are_refused_by_name() {
     // `a_b::C` and `a::b_C` both give `a_b_C`. Swift would report
     // `invalid redeclaration of 'a_b_C'` and name neither IDL
     // declaration.
@@ -590,13 +590,13 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_table_claims_for_swift_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_table_claims_for_swift_produces_output() {
     // The table says a rule covers it; this says the rule reaches text.
     let sources = [
         ("struct S { long a; };", "public struct S"),
@@ -658,7 +658,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -783,7 +783,7 @@ fn the_compiler_check_catches_a_deliberate_error() {
 /// declares its own `S` — and a single invocation would report a
 /// redeclaration that no consumer would ever see.
 #[test]
-fn the_generated_swift_compiles() {
+fn xtypes_7_3_1_the_generated_swift_compiles() {
     if !swiftc_available() {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the compiler is exactly the failure this test
@@ -833,27 +833,28 @@ fn the_generated_swift_compiles() {
 
 /// The whole corpus through `swiftc -typecheck`, one invocation per case.
 ///
-/// `#[ignore]`, because it is one invocation of a compiler per corpus
-/// case and each costs about half a second. It is what proves the column
-/// rather than samples it, so it is run with `--include-ignored` on a
-/// host that has Swift and its result is what
-/// `docs/language-columns-status.md` records.
-#[test]
-#[ignore = "one `swiftc -typecheck` per corpus case; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// `share` of `shares`: every case renders in every share (`MUST_RENDER`
+/// holds over the whole corpus), and only the cases at
+/// `position % shares == share` reach the compiler.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         swiftc_available(),
         "the explicitly selected swift gate requires its compiler"
     );
     let mut failures = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
         }
         let text = try_generate(&source, &path.display().to_string())
             .unwrap_or_else(|why| panic!("accepted corpus case {name} failed generation: {why}"));
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         if let Err(why) = swift_typechecks(&text, &name) {
             failures.push(format!("{name}: {why}"));
@@ -866,8 +867,161 @@ fn every_corpus_case_that_renders_also_compiles() {
     );
     eprintln!("{checked} corpus case(s) checked by Swift");
     assert!(
-        checked >= MUST_RENDER,
-        "only {checked} corpus cases reached the compiler; the gate says nothing \
+        rendered >= MUST_RENDER,
+        "only {rendered} corpus cases rendered; the gate says nothing \
          below {MUST_RENDER}"
     );
+}
+
+/// The corpus through `swiftc -typecheck`, in shares.
+///
+/// The corpus in 24 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: the crate tier has no
+/// toolchain for it; the weekly `integration-codegen-swift` job runs them
+/// with the toolchain, eight shares at a time.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_17() {
+        super::every_corpus_case_that_renders_also_compiles(16, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_18() {
+        super::every_corpus_case_that_renders_also_compiles(17, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_19() {
+        super::every_corpus_case_that_renders_also_compiles(18, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_20() {
+        super::every_corpus_case_that_renders_also_compiles(19, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_21() {
+        super::every_corpus_case_that_renders_also_compiles(20, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_22() {
+        super::every_corpus_case_that_renders_also_compiles(21, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_23() {
+        super::every_corpus_case_that_renders_also_compiles(22, 24);
+    }
+
+    #[test]
+    #[ignore = "a twenty-fourth of the corpus through `swiftc -typecheck`; runs in integration-codegen-swift"]
+    fn share_24() {
+        super::every_corpus_case_that_renders_also_compiles(23, 24);
+    }
 }

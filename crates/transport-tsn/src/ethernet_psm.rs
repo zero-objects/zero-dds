@@ -132,12 +132,12 @@ mod tests {
     use crate::vlan_tag::TPID_8021Q;
 
     #[test]
-    fn rtps_ethertype_constant() {
+    fn tsn_1_rtps_ethertype_constant() {
         assert_eq!(ETHERTYPE_RTPS, 0x88B5);
     }
 
     #[test]
-    fn header_without_vlan_is_14_bytes() {
+    fn tsn_8_4_header_without_vlan_is_14_bytes() {
         let h = EthernetFrameHeader {
             destination: MacAddress::BROADCAST,
             source: MacAddress::new([1; 6]),
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[test]
-    fn header_with_vlan_is_18_bytes() {
+    fn tsn_8_4_header_with_vlan_is_18_bytes() {
         let h = EthernetFrameHeader {
             destination: MacAddress::BROADCAST,
             source: MacAddress::new([1; 6]),
@@ -161,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_without_vlan() {
+    fn tsn_8_4_round_trip_without_vlan() {
         let h = EthernetFrameHeader {
             destination: MacAddress::new([0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02]),
             source: MacAddress::new([0xCA, 0xFE, 0xBA, 0xBE, 0x03, 0x04]),
@@ -175,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_with_vlan() {
+    fn tsn_1_round_trip_with_vlan() {
         let h = EthernetFrameHeader {
             destination: MacAddress::new([0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E]),
             source: MacAddress::new([0x02, 0x00, 0x00, 0x00, 0x00, 0x01]),
@@ -189,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn truncated_input_is_error() {
+    fn tsn_8_2_truncated_input_is_error() {
         assert_eq!(
             EthernetFrameHeader::from_wire(&[0; 13]),
             Err(EthError::Truncated)
@@ -197,7 +197,7 @@ mod tests {
     }
 
     #[test]
-    fn ipv4_ethertype_parsed_without_vlan_branch() {
+    fn tsn_8_4_ipv4_ethertype_parsed_without_vlan_branch() {
         // If bytes 12..14 are not 0x8100/0x88a8, there is no VLAN tag.
         let mut bytes = [0u8; 14];
         // Type = 0x0800 (IPv4).

@@ -228,7 +228,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_spec_level_names_are_numbered_low_to_high() {
+    fn security_9_6_2_1_1_the_spec_level_names_are_numbered_low_to_high() {
         let names = [
             (FATAL_LEVEL, "FATAL_LEVEL"),
             (SEVERE_LEVEL, "SEVERE_LEVEL"),

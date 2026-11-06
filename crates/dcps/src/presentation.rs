@@ -463,7 +463,8 @@ mod tests {
     const SECOND: u128 = 1_000_000_000;
 
     #[test]
-    fn the_last_filtered_sample_of_an_instance_is_due_a_separation_after_it_arrived() {
+    fn dcps_2_2_3_12_the_last_filtered_sample_of_an_instance_is_due_a_separation_after_it_arrived()
+    {
         let mut hold: TbfHold<u8, &str> = TbfHold::default();
         hold.hold(1, "first", Time::new(10, 0), SECOND);
         // A later filtered sample of the instance replaces it.
@@ -479,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn a_sample_that_passes_the_filter_supersedes_the_held_one() {
+    fn dcps_2_2_3_12_a_sample_that_passes_the_filter_supersedes_the_held_one() {
         let mut hold: TbfHold<u8, &str> = TbfHold::default();
         hold.hold(1, "held", Time::new(10, 0), SECOND);
         hold.supersede(&1);

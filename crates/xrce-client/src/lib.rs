@@ -1035,14 +1035,14 @@ impl<T: ClientTransport> XrceClient<T> {
             // newer than the last one is taken.
             if header.stream_id.is_best_effort() {
                 let stream_id = header.stream_id.0;
-                if let Some(newest) = self.best_effort_in.get(&stream_id) {
-                    if !newest.wrapping_lt(header.sequence_nr) {
-                        events.push(ClientEvent::BestEffortMessageDiscarded {
-                            stream_id,
-                            sequence_nr: header.sequence_nr.raw(),
-                        });
-                        return;
-                    }
+                if let Some(newest) = self.best_effort_in.get(&stream_id)
+                    && !newest.wrapping_lt(header.sequence_nr)
+                {
+                    events.push(ClientEvent::BestEffortMessageDiscarded {
+                        stream_id,
+                        sequence_nr: header.sequence_nr.raw(),
+                    });
+                    return;
                 }
                 self.best_effort_in.insert(stream_id, header.sequence_nr);
             }

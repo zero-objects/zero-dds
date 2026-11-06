@@ -19,7 +19,7 @@ Related pages: [README.en.md](README.en.md) · [architecture.en.md](architecture
 | Services | recorder, recorder-decode, durability-store, durability-store-file, -sqlite, -postgres, -lakehouse, durability-service, durability-service-bin, routing-service |
 | Test, verification, build | wire-conformance, wire-probe, conformance, endpoint-e2e, test-domains, chaos-clock-skew, safe-crates-only, lint, zerodds-build |
 
-Workspace version of all crates: `1.0.0-rc.7`, edition 2024, `rust-version = "1.88"` (`Cargo.toml` in the root directory). Crates without their own entry in `[workspace] members` (transport*, sql-filter, inspect-endpoint, iceoryx-cyclone, recorder) are members through path dependencies of `dcps` or `discovery`.
+Workspace version of all crates: `1.0.0-rc.7`, edition 2024, `rust-version = "1.97"` (`Cargo.toml` in the root directory). Crates without their own entry in `[workspace] members` (transport*, sql-filter, inspect-endpoint, iceoryx-cyclone, recorder) are members through path dependencies of `dcps` or `discovery`.
 
 ## Type system and wire
 

@@ -729,14 +729,14 @@ impl Walk<'_> {
         // No label matched, so the `default:` arm is the one written —
         // and where there is none, the sample is the discriminator
         // alone. XTypes 1.3 §7.4.3.5.4.
-        if selected.is_none() {
-            if let Some(default) = default_case {
-                let case_node = self
-                    .ast
-                    .case(*default)
-                    .map_err(|error| Refusal::Generator(format!("{error}")))?;
-                selected = Some(case_node.member);
-            }
+        if selected.is_none()
+            && let Some(default) = default_case
+        {
+            let case_node = self
+                .ast
+                .case(*default)
+                .map_err(|error| Refusal::Generator(format!("{error}")))?;
+            selected = Some(case_node.member);
         }
         if let Some(member) = selected {
             let member_node = self

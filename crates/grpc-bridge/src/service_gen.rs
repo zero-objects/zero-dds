@@ -200,27 +200,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pascal_simple() {
+    fn grpcbridge_4_2_pascal_simple() {
         assert_eq!(topic_to_pascal("Trade"), "Trade");
     }
 
     #[test]
-    fn pascal_dotted() {
+    fn grpcbridge_4_2_pascal_dotted() {
         assert_eq!(topic_to_pascal("dds.demo.Trade"), "DdsDemoTrade");
     }
 
     #[test]
-    fn pascal_mixed_separators() {
+    fn grpcbridge_4_2_pascal_mixed_separators() {
         assert_eq!(topic_to_pascal("chat-room/foo_bar"), "ChatRoomFooBar");
     }
 
     #[test]
-    fn pascal_empty_falls_back() {
+    fn grpcbridge_4_2_pascal_empty_falls_back() {
         assert_eq!(topic_to_pascal(""), "Topic");
     }
 
     #[test]
-    fn topic_service_paths() {
+    fn grpcbridge_4_2_topic_service_paths() {
         let s = TopicService::from_topic("Trade", "Trade");
         assert_eq!(s.publish_path(), "/zerodds.bridge.v1.TradeStream/Publish");
         assert_eq!(
@@ -230,7 +230,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_path_publish() {
+    fn grpcbridge_4_2_matches_path_publish() {
         let s = TopicService::from_topic("Trade", "Trade");
         assert_eq!(
             s.matches_path("/zerodds.bridge.v1.TradeStream/Publish"),
@@ -244,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn render_proto_contains_methods() {
+    fn grpcbridge_4_2_render_proto_contains_methods() {
         let s = TopicService::from_topic("Trade", "Trade");
         let proto = render_proto(&s);
         assert!(proto.contains("service TradeStream"));
@@ -253,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_registration_dedup() {
+    fn grpcbridge_4_2_catalog_registration_dedup() {
         let mut cat = ServiceCatalog::new();
         cat.register(TopicService::from_topic("Trade", "Trade"));
         cat.register(TopicService::from_topic("Trade", "Trade"));
@@ -261,7 +261,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_find_by_path() {
+    fn grpcbridge_4_2_catalog_find_by_path() {
         let mut cat = ServiceCatalog::new();
         cat.register(TopicService::from_topic("Trade", "Trade"));
         let (svc, kind) = cat
@@ -272,7 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn catalog_fully_qualified_names() {
+    fn grpcbridge_4_2_catalog_fully_qualified_names() {
         let mut cat = ServiceCatalog::new();
         cat.register(TopicService::from_topic("Trade", "Trade"));
         cat.register(TopicService::from_topic("Quote", "Quote"));

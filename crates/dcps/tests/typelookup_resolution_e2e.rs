@@ -14,7 +14,7 @@
 //!
 //! One test per layer, each red under one mutation:
 //!
-//! * `get_types_answers_the_complete_form_of_a_hash` — the request asks
+//! * `xtypes_7_6_3_2_1_get_types_answers_the_complete_form_of_a_hash` — the request asks
 //!   for both hash forms. Mutation: ask only for
 //!   `EquivalenceHashMinimal` in `send_type_lookup_request`, and the
 //!   reply is `GetTypesReply { types: [] }`.
@@ -24,9 +24,9 @@
 //!   sample reaches the reader before the verdict; drop the
 //!   `revisit_wired_{writer,reader}_match` call at either gate, and a
 //!   pair wired on a stale verdict stays matched for ever.
-//! * `an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace`
-//!   and its twin `_and_refuses_differing_names` — a peer that announces
-//!   a hash and never serves it. Mutation: never expire
+//! * `xtypes_7_6_3_4_2_an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace`
+//!   — a peer that announces a hash and never serves it, with equal and
+//!   with differing type names. Mutation: never expire
 //!   `TYPE_RESOLUTION_GRACE`, and the pair is deferred for ever, which
 //!   is what the strict path used to do to every miss.
 //! * `a_pair_whose_dependency_must_be_fetched_still_matches` — the
@@ -89,6 +89,7 @@ fn reader_config(topic: &str, type_name: &str, type_id: TypeIdentifier) -> UserR
         topic_name: topic.into(),
         type_name: type_name.into(),
         type_identifier: type_id,
+        reliable: true,
         ..Default::default()
     }
 }
@@ -123,7 +124,7 @@ fn registry_len(rt: &Arc<DcpsRuntime>) -> (usize, usize) {
         .unwrap_or((0, 0))
 }
 
-fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
+fn two_runtimes(domain: i32) -> (common::ShutsDown, common::ShutsDown) {
     let prefix_a = GuidPrefix::from_bytes([0x5A; 12]);
     let prefix_b = {
         let mut p = [0x6B; 12];
@@ -133,8 +134,8 @@ fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
         GuidPrefix::from_bytes(p)
     };
     let cfg = RuntimeConfig::default();
-    let rt_a = DcpsRuntime::start(domain, prefix_a, cfg.clone()).expect("rt_a");
-    let rt_b = DcpsRuntime::start(domain, prefix_b, cfg).expect("rt_b");
+    let rt_a = common::ShutsDown(DcpsRuntime::start(domain, prefix_a, cfg.clone()).expect("rt_a"));
+    let rt_b = common::ShutsDown(DcpsRuntime::start(domain, prefix_b, cfg).expect("rt_b"));
     assert!(
         wait_for_peers(&rt_a, 1, RESOLVE_TIMEOUT),
         "rt_a did not discover rt_b"
@@ -161,7 +162,7 @@ fn two_runtimes(domain: i32) -> (Arc<DcpsRuntime>, Arc<DcpsRuntime>) {
 /// the requesting runtime's registry gains **exactly one** complete
 /// entry, filed under the hash that was asked for.
 #[test]
-fn get_types_answers_the_complete_form_of_a_hash() {
+fn xtypes_7_6_3_2_1_get_types_answers_the_complete_form_of_a_hash() {
     let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
     // A complete object with no dependencies: the whole answer is the
@@ -232,7 +233,7 @@ fn get_types_answers_the_complete_form_of_a_hash() {
 /// which the two encodings frame differently, and an `int64` bound, which
 /// they align differently — crosses in both directions.
 #[test]
-fn a_complete_object_crosses_between_an_xcdr1_and_an_xcdr2_participant() {
+fn rtps_10_4_a_complete_object_crosses_between_an_xcdr1_and_an_xcdr2_participant() {
     use zerodds_types::type_lookup::TypeLookupEncoding;
     use zerodds_types::type_object::common::AnnotationParameterValue;
     let domain = common::unique_domain();
@@ -574,11 +575,14 @@ fn a_pair_whose_dependency_must_be_fetched_still_matches() {
 /// A hash no registry holds: the peer announces it and serves nothing
 /// for it, so the round trip never resolves. Past
 /// `TYPE_RESOLUTION_GRACE` the clause's Step 2 decides on the type
-/// names — equal here, so the pair matches and communicates.
+/// names: equal names match and communicate; differing names are never
+/// wired, and both Topics see INCONSISTENT_TOPIC. The two pairs share one
+/// pair of runtimes, so the grace is waited once.
 #[test]
-fn an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace() {
+fn xtypes_7_6_3_4_2_an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace() {
     const TOPIC: &str = "TlUnanswered";
     const TYPE_NAME: &str = "tl::Unanswered";
+    const DIFF_TOPIC: &str = "TlUnansweredDiff";
     let (rt_a, rt_b) = two_runtimes(common::unique_domain());
 
     let reader_obj = TypeObject::Minimal(MinimalTypeObject::Struct(
@@ -592,6 +596,16 @@ fn an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace() {
     let unserved = EquivalenceHash([0xAB; 14]);
     assert_ne!(unserved, r_hash);
 
+    let diff_reader_obj = TypeObject::Minimal(MinimalTypeObject::Struct(
+        TypeObjectBuilder::struct_type("::tl::ReaderSide")
+            .extensibility(Extensibility::Final)
+            .member("a", i32_id(), |m| m)
+            .build_minimal(),
+    ));
+    let diff_r_hash = hash_of(&diff_reader_obj);
+    rt_b.register_type_object(diff_reader_obj)
+        .expect("register differing r");
+
     let writer_eid = rt_a
         .register_user_writer(writer_config(
             TOPIC,
@@ -599,6 +613,13 @@ fn an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace() {
             TypeIdentifier::EquivalenceHashMinimal(unserved),
         ))
         .expect("writer");
+    let diff_writer_eid = rt_a
+        .register_user_writer(writer_config(
+            DIFF_TOPIC,
+            "tl::WriterSide",
+            TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash([0xCD; 14])),
+        ))
+        .expect("differing writer");
     let started = Instant::now();
     let (reader_eid, rx) = rt_b
         .register_user_reader(reader_config(
@@ -607,19 +628,37 @@ fn an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace() {
             TypeIdentifier::EquivalenceHashMinimal(r_hash),
         ))
         .expect("reader");
+    let (diff_reader_eid, diff_rx) = rt_b
+        .register_user_reader(reader_config(
+            DIFF_TOPIC,
+            "tl::ReaderSide",
+            TypeIdentifier::EquivalenceHashMinimal(diff_r_hash),
+        ))
+        .expect("differing reader");
 
+    let mut matched_after = None;
     assert!(
         wait_until(RESOLVE_TIMEOUT + TYPE_RESOLUTION_GRACE, || {
-            rt_b.user_reader_matched_count(reader_eid) >= 1
-                && rt_a.user_writer_matched_count(writer_eid) >= 1
+            let _ = rt_a.write_user_sample(diff_writer_eid, b"never".to_vec());
+            let matched = rt_b.user_reader_matched_count(reader_eid) >= 1
+                && rt_a.user_writer_matched_count(writer_eid) >= 1;
+            if matched && matched_after.is_none() {
+                matched_after = Some(started.elapsed());
+            }
+            matched
+                && rt_b.inconsistent_topic_count_for(DIFF_TOPIC) >= 1
+                && rt_a.inconsistent_topic_count_for(DIFF_TOPIC) >= 1
         }),
-        "an unanswered lookup with equal type names never matched: reader={}, writer={}",
+        "after the grace: equal names reader={}, writer={}; differing names \
+         INCONSISTENT_TOPIC reader topic={}, writer topic={}",
         rt_b.user_reader_matched_count(reader_eid),
-        rt_a.user_writer_matched_count(writer_eid)
+        rt_a.user_writer_matched_count(writer_eid),
+        rt_b.inconsistent_topic_count_for(DIFF_TOPIC),
+        rt_a.inconsistent_topic_count_for(DIFF_TOPIC)
     );
     assert!(
-        started.elapsed() >= TYPE_RESOLUTION_GRACE,
-        "the pair matched inside the grace, before Step 2 could apply"
+        matched_after.is_some_and(|after| after >= TYPE_RESOLUTION_GRACE),
+        "the pair matched inside the grace, before Step 2 could apply: {matched_after:?}"
     );
     let mut received = false;
     for _ in 0..8u8 {
@@ -633,52 +672,13 @@ fn an_unanswered_lookup_falls_back_to_the_type_names_after_the_grace() {
     }
     assert!(received, "no sample arrived over the Step 2 match");
     assert_eq!(rt_b.inconsistent_topic_count_for(TOPIC), 0);
-}
 
-/// The same unanswered hash with a differing type name: Step 2 fails,
-/// the pair is never wired, and both Topics see INCONSISTENT_TOPIC.
-#[test]
-fn an_unanswered_lookup_refuses_differing_names_after_the_grace() {
-    const TOPIC: &str = "TlUnansweredDiff";
-    let (rt_a, rt_b) = two_runtimes(common::unique_domain());
-
-    let reader_obj = TypeObject::Minimal(MinimalTypeObject::Struct(
-        TypeObjectBuilder::struct_type("::tl::ReaderSide")
-            .extensibility(Extensibility::Final)
-            .member("a", i32_id(), |m| m)
-            .build_minimal(),
-    ));
-    let r_hash = hash_of(&reader_obj);
-    rt_b.register_type_object(reader_obj).expect("register r");
-
-    let writer_eid = rt_a
-        .register_user_writer(writer_config(
-            TOPIC,
-            "tl::WriterSide",
-            TypeIdentifier::EquivalenceHashMinimal(EquivalenceHash([0xCD; 14])),
-        ))
-        .expect("writer");
-    let (reader_eid, rx) = rt_b
-        .register_user_reader(reader_config(
-            TOPIC,
-            "tl::ReaderSide",
-            TypeIdentifier::EquivalenceHashMinimal(r_hash),
-        ))
-        .expect("reader");
-
+    assert_eq!(rt_b.user_reader_matched_count(diff_reader_eid), 0);
+    assert_eq!(rt_a.user_writer_matched_count(diff_writer_eid), 0);
     assert!(
-        wait_until(RESOLVE_TIMEOUT + TYPE_RESOLUTION_GRACE, || {
-            let _ = rt_a.write_user_sample(writer_eid, b"never".to_vec());
-            rt_b.inconsistent_topic_count_for(TOPIC) >= 1
-                && rt_a.inconsistent_topic_count_for(TOPIC) >= 1
-        }),
-        "no INCONSISTENT_TOPIC after the grace: reader topic={}, writer topic={}",
-        rt_b.inconsistent_topic_count_for(TOPIC),
-        rt_a.inconsistent_topic_count_for(TOPIC)
+        diff_rx.try_recv().is_err(),
+        "a sample reached a refused reader"
     );
-    assert_eq!(rt_b.user_reader_matched_count(reader_eid), 0);
-    assert_eq!(rt_a.user_writer_matched_count(writer_eid), 0);
-    assert!(rx.try_recv().is_err(), "a sample reached a refused reader");
 }
 
 // ---------------------------------------------------------------------

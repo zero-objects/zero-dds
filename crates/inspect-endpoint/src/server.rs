@@ -82,10 +82,9 @@ impl InspectServer {
                             // So switch to blocking BEFORE authentication.
                             if stream.set_nonblocking(false).is_ok()
                                 && authenticate_client(&stream, &cert_set).is_ok()
+                                && let Ok(mut clients) = clients.lock()
                             {
-                                if let Ok(mut clients) = clients.lock() {
-                                    clients.push(stream);
-                                }
+                                clients.push(stream);
                             }
                         }
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {

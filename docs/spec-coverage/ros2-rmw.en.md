@@ -37,8 +37,8 @@ across:
 | ROS-IDL → DDS-XTypes wire mapping | `crates/ros2-rmw/src/type_mapping.rs` |
 | REP-2007 type adaptation / REP-2008 accelerator loan memory | `crates/rmw-zerodds-shim/rmw_c/rmw_zerodds_ros2_ext.h` |
 
-Implementation: `crates/ros2-rmw/` (11 modules, 81 tests green via
-`cargo test -p zerodds-ros2-rmw`).
+Implementation: `crates/ros2-rmw/` (11 modules; crate tier
+`cargo nextest run -p zerodds-ros2-rmw --all-targets`).
 
 ---
 
@@ -54,7 +54,7 @@ designer, however a single map depth is a reasonable choice".
 **Repo:** `crates/ros2-rmw/src/qos_profiles.rs::profiles::MAP` — Reliable
 + TransientLocal + KeepLast(1).
 
-**Tests:** `qos_profiles::tests::map_profile_matches_rep_2003_specification`.
+**Tests:** `qos_profiles::tests::rep2003_map_qos_is_reliable_transient_local_keep_last_1`.
 
 **Status:** done
 
@@ -78,7 +78,7 @@ consumer-side; the driver-side is covered via `profiles::DEFAULT`.
 BestEffort + Volatile + KeepLast(5) (corresponds to
 `rmw_qos_profile_sensor_data` from `rmw/qos_profiles.h`).
 
-**Tests:** `qos_profiles::tests::sensor_data_profile_matches_rep_2003_specification`
+**Tests:** `qos_profiles::tests::rep2003_sensor_data_qos_is_best_effort_volatile_keep_last_5`
 checks the consumer-side constant (BestEffort+Volatile+KeepLast(5)).
 
 **Status:** done — consumer-side covered; the driver-side is equally
@@ -108,9 +108,7 @@ packages without an explicitly declared quality level.
 **Repo:** `crates/ros2-rmw/src/quality.rs::QualityLevel` with
 `numeric()`/`from_numeric()` converters.
 
-**Tests:** `quality::tests::quality_level_numeric_round_trip`,
-`quality::tests::quality_level_ordering_q1_is_highest`,
-`quality::tests::quality_level_from_numeric_rejects_out_of_range`.
+**Tests:** `quality::tests::rep2004_the_quality_levels_are_1_to_5_with_1_the_highest`.
 
 **Status:** done — the classification model is exposed; the actual quality
 audit is a caller task (e.g. a `package.xml` tag).
@@ -162,7 +160,7 @@ endpoint.
 
 **Tests:** `rmw_c/type_adaptation_test.cpp` (rclcpp e2e, bound to the rmw
 handles of live rclcpp entities; the check "endpoint topic type unchanged by
-adaptation" compares `get_publishers_info_by_topic` before and after binding)
+adaptation" compares get_publishers_info_by_topic before and after binding)
 via `rmw_c/run_type_adaptation_test.sh`;
 `crates/rmw-zerodds-shim/tests/ros2_ext_surface.rs::every_declared_extension_symbol_is_defined`.
 
@@ -190,7 +188,19 @@ rclcpp subscription of the ROS message type),
 `"   adapted take fills rmw_message_info_t"`; driven by
 `crates/rmw-zerodds-shim/rmw_c/run_type_adaptation_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Type adaptation in topics — run in CI
+
+**Spec:** REP-2007 §"Type Adaptation in Topics" — an adapted publisher or
+subscription exchanges the `custom_type` while the `ros_message_type` is what
+appears on the wire.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Type adaptation in services and actions
 
@@ -213,7 +223,19 @@ surface covers action adaptation.
 request and `int64_t` as the response custom type (neither is a ROS
 message); driven by `crates/rmw-zerodds-shim/rmw_c/run_type_adaptation_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Type adaptation in services and actions — run in CI
+
+**Spec:** REP-2007 §"Type Adaptation in Services": request and response half are
+adapted independently ("either the request or the response can be adapted").
+§"Type Adaptation in Actions": the same structure for goal, feedback and result.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/type_adaptation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### (De)serialize instead of convert — the avoided copy
 
@@ -231,7 +253,7 @@ the REP describes as avoidable is not made. The reverse direction likewise in
 `rmw_zerodds_take_adapted`: the body is read straight into the `custom_type`.
 
 **Tests:** `rmw_c/type_adaptation_test.cpp` measures three quantities: "adapted
-wire bytes == rmw_serialize bytes" (`memcmp` against the `rmw_serialize` output
+wire bytes == rmw_serialize bytes" (`memcmp` against the rmw_serialize output
 of the same message — wire identity is measured, not asserted by construction),
 "exactly one serialization per adapted publish" (counter in the adapter's
 `serialize`) and "ros_message_type never materialized (no extra copy)" (the
@@ -302,7 +324,22 @@ decision: `"2) set_loan_alignment(page) accepted"`,
 `"   non-power-of-two alignment rejected"`; driven by
 `crates/rmw-zerodds-shim/rmw_c/run_accel_loan_memory_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/accel_loan_memory_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Pillar I — extensions to the ament build system — run in CI
+
+**Spec:** REP-2008 §"Pillar I - Extensions to ament" + §Specification: "Package
+maintainers are encouraged to integrate hardware acceleration in their ROS 2
+packages by using the CMake hardware acceleration variables […] These CMake
+macros are meant to be used by maintainers to conditionally compile their ROS 2
+packages". Variables: `ROS_ACCELERATION` (`ament_hardware_acceleration`),
+`ROS_VITIS` (`ament_vitis`).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/accel_loan_memory_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Pillar II and Template for Vendors — declared support level
 
@@ -362,7 +399,26 @@ pinnability is measured rather than computed —,
 `raw-same-host`, `"5) forked child maps the segment and finds the payload"`
 and `"5) subscriber loan reports the same shared segment"`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/run_accel_loan_memory_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Methodology §3.2 — accelerator-registerable loan memory — run in CI
+
+**Spec:** REP-2008 §"Methodology for developing ROS 2 packages that integrate
+hardware acceleration", step 3.2: "accelerate inter-Node exchanges and reduce
+the overhead of the ROS 2 message-passing system across all its abstraction
+layers. To do so, consider leveraging REP-2007 and REP-2009."
+
+CUDA, ROCm and XRT can only DMA out of host memory they have registered
+(pinned), and they pin whole pages. Without a statement from the middleware
+about where a loaned message buffer lives and which page-aligned extent covers
+it, an accelerated node needs its own pinned staging buffer and copies on every
+publish — exactly the copy step 3.2 wants removed.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/run_accel_loan_memory_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ---
 
@@ -406,15 +462,29 @@ reader/writer gid sequences (the endpoint GUID prefix matches the participant).
 QoS is best-effort from discovery (history/depth aren't on the wire → `UNKNOWN`).
 
 **Tests:** `crates/py/python/tests/ros2/test_rmw_zerodds_interop.py::test_rclpy_endpoint_info_by_topic`
-(rclpy `get_publishers_info_by_topic`: type + QoS + the node name/namespace
-resolved from the endpoint GUID) on ROS 2 Humble; shim roundtrip units
-`crates/rmw-zerodds-shim/src/lib.rs::tests::participant_info_roundtrips_endpoint_gids`,
-`crates/rmw-zerodds-shim/src/lib.rs::tests::participant_info_roundtrips_without_endpoints`;
+(rclpy get_publishers_info_by_topic: type + QoS + the node name/namespace
+resolved from the endpoint GUID) on ROS 2 Humble; the encoding of ParticipantEntitiesInfo against octets written by hand
+`crates/rmw-zerodds-shim/src/lib.rs::tests::rmw_dds_common_participant_entities_info_is_plain_cdr_of_the_msg_definition`;
 `rmw_c/type_negotiation_test.cpp` ("negotiation subscription found through
 discovery", "endpoint info names the negotiation message type") via
 `rmw_c/run_type_negotiation_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Endpoint info by topic — `rmw_get_publishers/subscriptions_info_by_topic` — run in CI
+
+**Spec:** REP-2009 §"Negotiation Algorithm", negotiating publisher, step 1:
+"Use discovery to find all the connected subscriptions that are using the user
+specified negotiation topic." The rmw surface for that is
+`rmw/get_topic_endpoint_info.h`: per topic, the endpoint list with node
+name/namespace, type, endpoint type, 16-byte GUID and QoS (`ros2 topic info
+-v`), plus `rmw_count_publishers`/`rmw_count_subscribers`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Supported message type identity — RIHS type hash
 
@@ -425,16 +495,33 @@ The rmw half of that tuple is the type on the wire: type name and RIHS type hash
 per endpoint (the string identifier lives in the negotiation payload, see the
 next item).
 
-**Repo:** `crates/rmw-zerodds-shim/src/lib.rs::rmw_zerodds_compute_type_hash`
-(RIHS SHA-256) + the endpoint info path above.
+**Repo:** `crates/rmw-zerodds-shim/src/lib.rs::type_hash_user_data` (USER_DATA
+`typehash=RIHS01_…;` with the hash rosidl gives the C layer) + the endpoint
+info path above. `rmw_zerodds_compute_type_hash` is SHA-256 of the type name,
+not the RIHS01 hash.
 
-**Tests:** `type_hash_sha256_is_deterministic` + 2 more shim units;
+**Tests:** `crates/rmw-zerodds-shim/src/lib.rs::tests::rmw_dds_common_the_type_hash_goes_into_user_data_as_typehash`;
 `test_rclpy_endpoint_info_by_topic` (Humble);
 `rmw_c/type_negotiation_test.cpp` ("discovery reports the right ROS type per
 selected type" — two simultaneously selected types on two topics, each with its
 own ROS type in discovery).
 
-**Status:** done
+**Status:** partial — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Supported message type identity — RIHS type hash — run in CI
+
+**Spec:** REP-2009 §"Defining Supported Message Types": "The combination of the
+ROS message type and the string identifier must form a unique tuple, since
+multiple supported message types may be sent with the same ROS 2 message type."
+The rmw half of that tuple is the type on the wire: type name and RIHS type hash
+per endpoint (the string identifier lives in the negotiation payload, see the
+next item).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_endpoint_info_by_topic`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Carrying the supported message priority map
 
@@ -451,16 +538,31 @@ string identifier, topic, priority).
 `type_id_ == 18`) in both typesupport flavours — see "Introspection typesupport
 flavours (C and C++)".
 
-**Tests:** `rmw_c/type_negotiation_test.cpp` with
-`diagnostic_msgs/msg/DiagnosticArray` — the same shape as
-`negotiated_interfaces/msg/SupportedTypes` (`DiagnosticStatus[]` with three
-strings and a nested `KeyValue[]`): "priority map survives
-serialize/deserialize" (`rmw_serialize`/`rmw_deserialize` identity), "supported
-message priority map delivered" (over the wire) and "priority map round-trips
-field for field" (compared field by field). Via
+**Tests:** `crates/rmw-zerodds-shim/rmw_c/type_negotiation_test.cpp`:
+`"1) priority map survives serialize/deserialize"` (rmw_serialize and
+rmw_deserialize give the message back), `"1) supported message priority map
+delivered"` (over the wire) and `"1) priority map round-trips field for field"`
+(compared field by field), with `diagnostic_msgs/msg/DiagnosticArray` — the
+same shape as `negotiated_interfaces/msg/SupportedTypes` (`DiagnosticStatus[]`
+with three strings and a nested `KeyValue[]`). Via
 `rmw_c/run_type_negotiation_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Carrying the supported message priority map — run in CI
+
+**Spec:** REP-2009 §"Negotiation Algorithm", step 2: "Receive the supported
+message priority maps from all connected subscriptions." §"Defining Negotiating
+Publishers and Subscriptions": the map travels over "a negotiation topic that
+will be used to negotiate the selected message types" — ordinary ROS pub/sub.
+Its shape is a sequence of nested structs carrying strings (ROS type name,
+string identifier, topic, priority).
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### One regular publisher per selected message type
 
@@ -484,7 +586,22 @@ REP-2009 draws as `N_1(x, y)` to `N_2(x)` and `N_3(y)`),
 `"5) the selected type appears in the graph with its ROS type"`; driven by
 `crates/rmw-zerodds-shim/rmw_c/run_type_negotiation_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### One regular publisher per selected message type — run in CI
+
+**Spec:** REP-2009 §"Negotiation Algorithm", negotiating publisher: "The
+negotiating publisher then creates a regular publisher for each supported
+message type." §"Negotiating Subscription": "The negotiating subscription will
+then create exactly one subscription corresponding to the chosen type and topic
+name." The endpoints therefore come into being at runtime, after the decision,
+each carrying a different ROS type.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Renegotiation — endpoints leave and are created again
 
@@ -508,13 +625,28 @@ Previously a publisher destroyed through rmw stayed in the graph forever:
 and a remote peer waited for the liveliness timeout instead of unmatching at
 once.
 
-**Tests:** `rmw_c/type_negotiation_test.cpp`: "destroyed publishers leave the
-graph" (`rmw_destroy_publisher` on the rmw handle, then `count_publishers == 0`
-and empty endpoint info), "discovery reports the renegotiated ROS type" (the
-same topic afterwards carries a different ROS type) and "the renegotiated
-selected type delivers". Via `rmw_c/run_type_negotiation_test.sh`.
+**Tests:** `crates/rmw-zerodds-shim/rmw_c/type_negotiation_test.cpp`:
+`"5) destroyed publishers leave the graph"` (rmw_destroy_publisher on the rmw
+handle, then `count_publishers == 0` and empty endpoint info), `"5) discovery
+reports the renegotiated ROS type"` (the same topic afterwards carries a
+different ROS type) and `"5) the renegotiated selected type delivers"`. Via `rmw_c/run_type_negotiation_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Renegotiation — endpoints leave and are created again — run in CI
+
+**Spec:** REP-2009 §"Renegotiating Selected Message Types": "If the selected
+messages must change, the negotiating publisher destroys its publishers. The
+negotiating publisher will then notify its subscriptions of the new selected
+message types on the user specified negotiation topic and create new publishers
+for the selected message types." A destroyed endpoint therefore has to leave the
+graph at once, or the next round computes with a peer that no longer exists.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### The network change as a trigger — graph guard condition
 
@@ -551,7 +683,21 @@ before the renegotiation, the wait path blocks on the guard condition, and
 the event must be set afterwards. Driven by
 `crates/rmw-zerodds-shim/rmw_c/run_type_negotiation_test.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### The network change as a trigger — graph guard condition — run in CI
+
+**Spec:** REP-2009 §"Renegotiating Selected Message Types": "In the case that
+the ROS 2 network is changing, the negotiating publisher may need to renegotiate
+its selected message types." Together with step 1 ("Use discovery to find all
+the connected subscriptions") that means the graph has to *announce* the change,
+not merely be pollable. rcl surfaces it as the node's graph guard condition.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ---
 
@@ -571,17 +717,12 @@ implementation:
 **Repo:** `crates/ros2-rmw/src/topic_mangling.rs::{RosKind,
 mangle_topic_name, demangle_topic_name, is_ros_topic}`.
 
-**Tests:** `topic_mangling::tests::mangle_topic_strips_leading_slash_and_prepends_rt`,
-`topic_mangling::tests::mangle_preserves_internal_slashes`,
-`topic_mangling::tests::mangle_each_kind_uses_correct_prefix`,
-`topic_mangling::tests::mangle_handles_already_unprefixed_name`,
-`topic_mangling::tests::mangle_rejects_empty_name`,
-`topic_mangling::tests::mangle_rejects_invalid_leading_character`,
-`topic_mangling::tests::mangle_accepts_underscore_leading`,
-`topic_mangling::tests::demangle_round_trips_all_kinds`,
-`topic_mangling::tests::demangle_rejects_unknown_prefix`,
-`topic_mangling::tests::is_ros_topic_recognizes_all_four_prefixes`,
-`topic_mangling::tests::mangle_demangle_round_trip`.
+**Tests:** `topic_mangling::tests::ros_names_prefix_a_topic_loses_its_leading_slash_and_takes_rt`,
+`topic_mangling::tests::ros_names_prefix_each_kind_takes_its_prefix`,
+`topic_mangling::tests::ros_names_constraints_an_empty_name_is_refused`,
+`topic_mangling::tests::ros_names_constraints_a_name_starting_with_a_digit_or_a_hyphen_is_refused`,
+`topic_mangling::tests::ros_names_prefix_the_four_prefixes_read_back_as_their_kind`,
+`topic_mangling::tests::ros_names_prefix_a_name_without_a_ros_prefix_is_no_ros_name`.
 
 **Status:** done — the suffixes (`Request`/`Reply`) remain a caller task
 (typically added automatically by the service codegen).
@@ -606,17 +747,8 @@ as `*_UNKNOWN` sentinels).
 `SENSOR_DATA`, `PARAMETERS`, `SERVICES_DEFAULT`, `PARAMETER_EVENTS`,
 `SYSTEM_DEFAULT`, `UNKNOWN`, `MAP`) + an `is_unknown(profile)` predicate.
 
-**Tests:** `qos_profiles::tests::default_profile_is_reliable_volatile_keep_last_10`,
-`qos_profiles::tests::parameters_profile_uses_keep_last_1000`,
-`qos_profiles::tests::services_default_matches_rmw_defaults`,
-`qos_profiles::tests::parameter_events_uses_keep_last_1000`,
-`qos_profiles::tests::system_default_aliases_default`,
-`qos_profiles::tests::history_keep_last_distinct_from_keep_all`,
-`qos_profiles::tests::liveliness_and_deadline_default_to_infinite`,
-`qos_profiles::tests::unknown_profile_is_distinct_from_default`,
-`qos_profiles::tests::unknown_profile_uses_keep_last_zero_marker`,
-`qos_profiles::tests::is_unknown_recognizes_unknown_profile`,
-`qos_profiles::tests::is_unknown_rejects_real_profiles`.
+**Tests:** `qos_profiles::tests::rmw_qos_profiles_h_the_concrete_profiles_have_the_header_values`, `rmw_qos_profiles_h_system_default_and_unknown_are_all_sentinels`;
+`rmw_qos_mapping::tests::rmw_types_h_system_default_and_unknown_pass_through_as_sentinels`.
 
 **Status:** done — all seven rmw default profiles mapped as constants:
 * Six 1:1 (DEFAULT, SENSOR_DATA, PARAMETERS, SERVICES_DEFAULT,
@@ -639,9 +771,7 @@ INVALID_ARGUMENT=11, INCORRECT_RMW_IMPLEMENTATION=12.
 **Repo:** `crates/ros2-rmw/src/ffi_api.rs::RmwRet` (`#[repr(i32)]` enum
 with all seven values + a `map_to_rmw_ret` converter).
 
-**Tests:** `ffi_api::tests::error_codes_match_rmw_h`,
-`ffi_api::tests::ok_is_zero`, `ffi_api::tests::map_to_rmw_ret_ok`,
-`ffi_api::tests::map_to_rmw_ret_err`.
+**Tests:** `ffi_api::tests::rmw_ret_types_h_the_return_codes_have_the_header_values`, `ffi_api::tests::rmw_h_success_is_rmw_ret_ok_and_a_plain_failure_rmw_ret_error`.
 
 **Status:** done
 
@@ -658,9 +788,7 @@ this identifier (`RMW_RET_INCORRECT_RMW_IMPLEMENTATION` on a mismatch).
 constant `RMW_IMPLEMENTATION_IDENTIFIER: &str = "rmw_zerodds_cpp"` (follows
 the vendor-naming convention).
 
-**Tests:** `ffi_api::tests::implementation_identifier_matches_convention`,
-`ffi_api::tests::check_rmw_identifier_accepts_correct`,
-`ffi_api::tests::check_rmw_identifier_rejects_other_vendor`.
+**Tests:** `ffi_api::tests::rmw_h_the_identifier_is_rmw_zerodds_cpp_and_another_implementation_is_refused`.
 
 **Status:** done
 
@@ -669,9 +797,10 @@ the vendor-naming convention).
 **Spec:** `rmw/types.h` — `rmw_node_t` struct with an
 `implementation_identifier` field + `name`/`namespace`/`context`.
 
-**Repo:** `crates/ros2-rmw/src/ffi_api.rs::RmwNode`.
+**Repo:** `crates/ros2-rmw/src/ffi_api.rs::RmwNode`, filled by
+`crates/rmw-zerodds-shim/src/lib.rs::rmw_zerodds_create_node`.
 
-**Tests:** `ffi_api::tests::rmw_node_construction`.
+**Tests:** `crates/rmw-zerodds-shim/src/lib.rs::tests::rmw_types_h_a_node_carries_the_identifier_its_name_and_namespace`.
 
 **Status:** done
 
@@ -691,7 +820,7 @@ TRANSIENT_LOCAL / VOLATILE / UNKNOWN / BEST_AVAILABLE values.
 RmwReliability, RmwDurability}` (`#[repr(u32)]` enums with all
 spec-conformant discriminants).
 
-**Tests:** `rmw_qos_mapping::tests::enum_repr_is_c_compatible`.
+**Tests:** `rmw_qos_mapping::tests::rmw_types_h_the_policy_enums_have_the_header_values`.
 
 **Status:** done
 
@@ -705,16 +834,10 @@ the sender side.
 **Repo:** `crates/ros2-rmw/src/rmw_qos_mapping.rs::{rmw_to_dds, dds_to_rmw,
 RmwQosProfile}`.
 
-**Tests:** `rmw_qos_mapping::tests::rmw_to_dds_round_trip_default`,
-`rmw_qos_mapping::tests::rmw_to_dds_keep_all_passes_through`,
-`crates/ros2-rmw/src/rmw_qos_mapping.rs::tests::rmw_system_default_passes_through_as_sentinel`,
-`crates/ros2-rmw/src/rmw_qos_mapping.rs::tests::rmw_unknown_passes_through_as_sentinel`,
-`rmw_qos_mapping::tests::rmw_best_available_maps_to_best_effort_on_sender`,
-`rmw_qos_mapping::tests::transient_local_round_trips`,
-`rmw_qos_mapping::tests::sensor_data_is_best_effort`,
-`rmw_qos_mapping::tests::services_default_uses_keep_last_10`,
-`rmw_qos_mapping::tests::parameters_uses_keep_last_1000`,
-`rmw_qos_mapping::tests::default_profile_matches_rmw_spec`.
+**Tests:** `rmw_qos_mapping::tests::rmw_types_h_a_concrete_policy_maps_to_the_dds_policy_of_its_name`,
+`crates/ros2-rmw/src/rmw_qos_mapping.rs::tests::rmw_types_h_system_default_and_unknown_pass_through_as_sentinels`,
+`rmw_qos_mapping::tests::rmw_types_h_best_available_is_best_effort_and_volatile_on_the_sending_side`,
+`rmw_qos_mapping::tests::rmw_qos_profiles_h_the_rmw_side_profiles_have_the_header_values`.
 
 **Status:** done
 
@@ -733,10 +856,7 @@ DDS wire `<package>::<sub-namespace>::dds_::<TypeName>_`.
 `as_str()`/`from_str()` converters; `RosTypeRef::to_dds_type_name` for the
 DDS wire form.
 
-**Tests:** `type_mapping::tests::namespace_str_repr`,
-`type_mapping::tests::dds_wire_form_uses_dds_dunder`,
-`type_mapping::tests::action_namespace_mapped_correctly`,
-`type_mapping::tests::srv_namespace_mapped_correctly`.
+**Tests:** `type_mapping::tests::ros2_idl_a_type_is_package_namespace_name_and_dds_names_it_dds_underscore`.
 
 **Status:** done
 
@@ -749,9 +869,8 @@ mandatory.
 **Repo:** `crates/ros2-rmw/src/type_mapping.rs::{RosTypeRef::new,
 to_ros_form, from_ros_form}`.
 
-**Tests:** `type_mapping::tests::ros_form_round_trip`,
-`type_mapping::tests::from_ros_form_rejects_unknown_namespace`,
-`type_mapping::tests::from_ros_form_rejects_wrong_segment_count`.
+**Tests:** `type_mapping::tests::ros2_idl_a_type_is_package_namespace_name_and_dds_names_it_dds_underscore`,
+`type_mapping::tests::ros2_idl_a_name_without_three_parts_or_with_another_namespace_is_refused`.
 
 **Status:** done
 
@@ -764,10 +883,7 @@ map onto the DDS-IDL primitives.
 **Repo:** `crates/ros2-rmw/src/type_mapping.rs::RosBuiltinType` with a
 `from_ros_token()` parser and a `cdr_size` helper.
 
-**Tests:** `type_mapping::tests::from_ros_token_round_trip`,
-`type_mapping::tests::from_ros_token_rejects_unknown`,
-`type_mapping::tests::cdr_size_matches_omg_cdr2`,
-`type_mapping::tests::builtin_idl_names_match_omg_idl`.
+**Tests:** `type_mapping::tests::ros2_idl_the_builtin_types_map_to_their_idl_types`.
 
 **Status:** done — rosidl builtin → OMG IDL 4.2 / DDS-XTypes 1.3 primitive
 mapping verified.
@@ -794,11 +910,22 @@ inbox → context condvar; no spin, no fixed-tick poll. For the raw delivery mod
 (`rmw_zerodds_subscription_start_doorbell` → `zerodds_reader_raw_wait`)
 additionally wakes the same condvar event-driven (see "Loaned messages" below).
 
-**Tests:** `rmw-zerodds-shim::tests::event_driven_wait_roundtrip_inprocess`,
+**Tests:** `rmw-zerodds-shim::tests::rmw_h_rmw_wait_wakes_on_arrival_and_times_out_when_empty`,
 `wait_notify_blocks_then_wakes_on_notify`; rclpy
 `test_rclpy_publish_subscribe_string_roundtrip` (the executor drives `rmw_wait`).
 
-**Status:** done
+**Status:** partial — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### `rmw_wait` — event-driven — run in CI
+
+**Spec:** `rmw/rmw.h` `rmw_wait` (de facto) — blocks until an entity is ready or
+times out.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Services — request/reply
 
@@ -811,13 +938,25 @@ additionally wakes the same condvar event-driven (see "Loaned messages" below).
 `rr/…Reply`, types `…_Request_`/`_Response_`, Cyclone form and
 related-identity form, waiting up to 100 ms for the reply reader).
 
-**Tests:** `crates/rmw-zerodds-shim/src/lib.rs::tests::{a_service_call_between_two_runtimes_correlates_by_the_related_identity,
-two_clients_in_one_runtime_each_get_their_own_reply}`;
+**Tests:** `crates/rmw-zerodds-shim/src/lib.rs::tests::{ros2bridge_4_2_a_service_call_between_two_runtimes_correlates_by_the_related_identity,
+ros2bridge_4_2_two_clients_in_one_runtime_each_get_their_own_reply}`;
 rclpy `test_rclpy_service_call_roundtrip` (AddTwoInts 41+1=42);
 `crates/rmw-zerodds-shim/rmw_c/run_ros2_services_test.sh` (Linux test host, against
 rmw_cyclonedds_cpp and rmw_fastrtps_cpp in both directions).
 
-**Status:** done
+**Status:** partial — Not run in CI: `test_rclpy_service_call_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Services — request/reply — run in CI
+
+**Spec:** `rmw/rmw.h` `rmw_create_client/service`, `rmw_send_request`,
+`rmw_take_request`, `rmw_send_response`, `rmw_take_response`,
+`rmw_service_server_is_available`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_service_call_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### `rmw_serialize` / `rmw_deserialize` + serialized publish/take
 
@@ -830,7 +969,18 @@ rmw_cyclonedds_cpp and rmw_fastrtps_cpp in both directions).
 **Tests:** the same introspection CDR as the verified pub/sub path
 (`test_rclpy_publish_subscribe_string_roundtrip`).
 
-**Status:** done
+**Status:** partial — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### `rmw_serialize` / `rmw_deserialize` + serialized publish/take — run in CI
+
+**Spec:** `rmw/rmw.h` `rmw_serialize`, `rmw_deserialize`,
+`rmw_publish_serialized_message`, `rmw_take_serialized_message[_with_info]`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Topic graph — `rmw_get_topic_names_and_types` + `rmw_count_publishers/subscribers`
 
@@ -844,7 +994,17 @@ dedup topic→types).
 
 **Tests:** rclpy `test_rclpy_topic_graph_introspection`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `test_rclpy_topic_graph_introspection`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Topic graph — `rmw_get_topic_names_and_types` + `rmw_count_publishers/subscribers` — run in CI
+
+**Spec:** `rmw/rmw.h` graph introspection.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_topic_graph_introspection`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Service graph and names by node
 
@@ -861,10 +1021,22 @@ topics, clients = writers on them), `rmw_zerodds_qos.cpp`
 `src/services.rs` announces service endpoints in `ros_discovery_info`.
 Before, all of these returned nothing or "compatible".
 
-**Tests:** `crates/rmw-zerodds-shim/rmw_c/run_ros2_services_test.sh`
-(`ros2 service list -t` and `ros2 node info` across RMWs, Linux test host).
+**Tests:** `crates/rmw-zerodds-shim/rmw_c/run_ros2_services_test.sh`: `"graph: server rmw_zerodds_cpp, query rmw_zerodds_cpp"` and the same check with `rmw_cyclonedds_cpp` and `rmw_fastrtps_cpp` on one side each (`ros2 service list -t` and `ros2 node info` across RMW boundaries, Linux test host, by hand)
 
-**Status:** done
+**Status:** partial — the check graph covers `rmw_get_service_names_and_types` (`ros2 service list -t`) and the service servers per node (`ros2 node info`). Without a test: `rmw_count_services`, `rmw_count_clients`, publishers, subscribers and clients per node, `no_demangle` and `rmw_qos_profile_check_compatible`. Not run in CI: `rmw_c/run_ros2_services_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Service graph and names by node — run in CI
+
+**Spec:** `rmw/rmw.h` `rmw_get_service_names_and_types`,
+`rmw_count_services/clients`, `rmw_get_{publisher,subscriber,service,client}_names_and_types_by_node`,
+`no_demangle` of `rmw_get_topic_names_and_types`,
+`rmw_qos_profile_check_compatible`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/run_ros2_services_test.sh`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### Guard conditions + event-driven wake
 
@@ -892,10 +1064,24 @@ that as fatal and aborts the process with "rcl_wait unexpectedly timed out".
 when the guard condition really reports readiness; driven by
 `crates/rmw-zerodds-shim/rmw_c/run_type_negotiation_test.sh`. The `rmw_wait` path itself:
 `crates/rmw-zerodds-shim/src/lib.rs::tests::wait_notify_blocks_then_wakes_on_notify`,
-`::event_driven_wait_roundtrip_inprocess`, `::wait_returns_invalid_for_null`,
-`::has_data_and_context_block_null_safe`.
+`::rmw_h_rmw_wait_wakes_on_arrival_and_times_out_when_empty`, `::rmw_h_a_null_argument_is_rmw_ret_invalid_argument`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Guard conditions + event-driven wake — run in CI
+
+**Spec:** `rmw/rmw.h` `rmw_create_guard_condition` /
+`rmw_trigger_guard_condition` / `rmw_wait`. rcl stores a guard condition's
+`data` pointer in `rmw_guard_conditions_t.guard_conditions[i]`, not the
+`rmw_guard_condition_t` (`rcl_wait_set_add_guard_condition`:
+`RMWStorage[n] = rmw_handle->data`); after the wait rcl reads exactly that array
+to decide which guard condition fired.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/type_negotiation_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### `rmw_get_node_names` + `_with_enclaves`
 
@@ -909,9 +1095,19 @@ aggregates local + remote nodes.
 
 **Tests:** rclpy `test_rclpy_node_names_graph`.
 
-**Status:** done — `ros_discovery_info` as in rmw_dds_common: NoKey,
+**Status:** partial — `ros_discovery_info` as in rmw_dds_common: NoKey,
 RELIABLE, TRANSIENT_LOCAL, KEEP_LAST(1) (`src/lib.rs`, discovery QoS); a
-process started later receives each participant's latest state.
+process started later receives each participant's latest state. Not run in CI: `test_rclpy_node_names_graph`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### `rmw_get_node_names` + `_with_enclaves` — run in CI
+
+**Spec:** `rmw/rmw.h` `rmw_get_node_names[_with_enclaves]`.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_node_names_graph`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ### `on_new_message/request/response` callbacks (events executor)
 
@@ -920,7 +1116,7 @@ process started later receives each participant's latest state.
 **Repo:** `rmw_zerodds.c` (3 setters → bridge) + `src/lib.rs`
 (`SubInbox.event`, `inbox_set_event`, invoked in `subscription_on_data`).
 
-**Tests:** `rmw-zerodds-shim::tests::event_callback_fires_on_arrival`.
+**Tests:** `rmw-zerodds-shim::tests::rmw_h_the_on_new_message_callback_fires_on_arrival`.
 
 **Status:** done
 
@@ -971,8 +1167,7 @@ the existing rclcpp e2e tests in `crates/rmw-zerodds-shim/rmw_c/`.
 `rmw_zerodds_subscription_enable_shm`/`_take_shm`/`_has_shm_data`/`_release_shm`),
 feature `flatdata-loan` (default).
 
-**Tests:** `crates/rmw-zerodds-shim/src/lib.rs::tests::loaning_null_args_rejected`,
-`crates/rmw-zerodds-shim/src/lib.rs::tests::return_loan_null_args_rejected`
+**Tests:** `crates/rmw-zerodds-shim/src/lib.rs::tests::rmw_h_a_null_argument_is_rmw_ret_invalid_argument`
 (the argument contract of the loan ABI, no gate, they run in the default
 run). Behaviour in both delivery modes:
 `crates/rmw-zerodds-shim/rmw_c/loaned_message_test.cpp`, started by
@@ -1051,7 +1246,22 @@ driven by `crates/rmw-zerodds-shim/rmw_c/run_type_adaptation_test.sh`. Regressio
 `crates/py/python/tests/ros2/test_rmw_zerodds_interop.py::test_rclpy_publish_subscribe_string_roundtrip`
 and `::test_rclpy_service_call_roundtrip` via `crates/rmw-zerodds-shim/rmw_c/run_ros2_pytest.sh`.
 
-**Status:** done
+**Status:** partial — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `rmw_c/type_adaptation_test.cpp`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### Introspection typesupport flavours (C and C++) — run in CI
+
+**Spec:** `rosidl` ships two introspection typesupports with identical
+`MessageMembers`/`ServiceMembers` layout but different runtime types for the
+variable-length members: `rosidl_typesupport_introspection_c`
+(`rosidl_runtime_c__String`/`__U16String`, resolved by `rclpy`) and
+`rosidl_typesupport_introspection_cpp` (`std::string`/`std::u16string`, resolved
+by `rclcpp`). An rmw has to serve both.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `test_rclpy_publish_subscribe_string_roundtrip`, `test_rclpy_service_call_roundtrip`, `rmw_c/type_adaptation_test.cpp`. The rclpy tests under `crates/py/python/tests/ros2/` are declared skips of the job `integration-python`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
 ---
 
@@ -1069,7 +1279,7 @@ serialization). Implemented by `rosidl_dynamic_typesupport_fastrtps` for
 Fast DDS and by this repo for ZeroDDS — the header's own description:
 "Downstream middlewares should populate this interface as appropriate."
 
-**Repo:** `crates/rmw-zerodds-shim/src/dynamic.rs` — every interface
+**Repo:** `crates/rmw-zerodds-shim/src/dynamic.rs` (`dynamic_data_serialize`, `dynamic_data_init_from_dynamic_type`, …) — every interface
 function maps onto `zerodds_types::dynamic::{DynamicTypeBuilder,
 DynamicType, DynamicData}`, the same reflective type family
 `zerodds-dcps`'s `SerializedTypeSupport` uses for runtime-described
@@ -1082,6 +1292,8 @@ declared by hand (cbindgen does not expand `macro_rules!`, see the
 file's own comment), not taken from the generated `include/rmw_zerodds.h`
 — the same style `rmw_c/rmw_zerodds.c` already uses for its own `extern`
 declarations.
+`zerodds_dyn_builder_add_nested_member` composes nested members; `cdr_align`
+and `rdr_align` in `rmw_c/rmw_zerodds.c` compute the body's alignment.
 
 Since `dynamic_type_builder_init` cannot assume any shared model state
 across calls (each call gets a fresh `..._impl_t` with no parent
@@ -1117,18 +1329,17 @@ octets match DDSI-RTPS 2.5 §10.5
 `a_mixed_alignment_struct_matches_plain_cdr_byte_for_byte` compares
 `dynamic_data_serialize`'s output for a `bool`+`int32`+`float64` struct,
 byte for byte, against a by-hand plain-CDR encoding (alignment relative
-to the body start after the 4-byte encapsulation header, exactly as
-`rmw_zerodds.c`'s own `cdr_align`/`rdr_align` compute it — `(len - 4) %
-a`). For the graft fix specifically:
+to the body start after the 4-byte encapsulation header, as the C
+layer computes its alignment — `(len - 4) % a`). For the graft fix specifically:
 `a_grafted_members_facets_survive_and_match_idl_encoding` builds a
 nested struct type with a `@key`, a `@default(42)` and an `@optional`
 member directly through `DynamicTypeBuilder`/`NewMember` (the C
 interface itself has no parameter for any of the three), composes it
-into an outer type through `zerodds_dyn_builder_add_nested_member`,
+into an outer type through the entry point for nested members,
 reads the surviving `@default` back after
 `dynamic_data_init_from_dynamic_type`, and compares the serialized
 bytes octet for octet against the same declaration written in IDL and
-encoded directly with `zerodds_wire_codec::encode` — exactly where a
+encoded directly with the function `encode` of `zerodds_wire_codec` — exactly where a
 dropped `@key` or `@optional` would show: §7.4.1.1's presence flag
 ahead of an `@optional` member shifts every byte after it.
 
@@ -1175,76 +1386,43 @@ not parse, does not fit its element kind's range, runs past a bounded
 string's own bound, or makes the wrong number of elements is refused,
 never silently shortened, clamped or padded.
 
-**Tests:** Syntax check against the copied ROS 2 Jazzy headers (`rmw`,
-`rcutils`, `rosidl_dynamic_typesupport`, `rosidl_runtime_c`,
-`rosidl_typesupport_introspection_{c,cpp}`, plus a hand-written stand-in
-for `rclcpp`/`test_msgs` covering every symbol this file calls) via
-`c++ -std=c++17 -fsyntax-only -Wall -Wextra -Wpedantic -Wshadow
--Wconversion` — 0 errors, 0 warnings; every `rosidl_dynamic_typesupport`
-function name this file calls (63 in all) checked to exist, by name,
-in those headers.
-`crates/rmw-zerodds-shim/rmw_c/dynamic_typesupport_test.cpp` +
-`run_dynamic_typesupport_test.sh`: `std_msgs/msg/String` and
-`test_msgs/msg/BasicTypes` (every primitive kind) through a real
-publisher, compared between a statically typed `rclcpp::Subscription`
-and a `rosidl_dynamic_typesupport_dynamic_data_t` taken through
-`rmw_take_dynamic_message` on the same topic; `test_msgs/msg/Arrays` and
-`test_msgs/msg/BoundedSequences` the same way, every primitive/string
-kind again as a fixed array/bounded sequence, once plain and once with
-a `default_value`, plus the three nested-message members and the
-trailing alignment scalar the real messages also declare. Run against
-ROS 2 Jazzy (RoboStack) on the Linux test host: 17 of 17 checks pass —
-before the member-default, `long double` round-trip, and
-Arrays/BoundedSequences checks added since; not yet re-measured on that
-host.
+**Tests:** `crates/rmw-zerodds-shim/rmw_c/dynamic_typesupport_test.cpp` via `run_dynamic_typesupport_test.sh` against ROS 2 Jazzy: `"1) dynamic take agrees with the static take"`, `"2) every primitive add_*_member call succeeded"` — `std_msgs/msg/String` and `test_msgs/msg/BasicTypes`, `test_msgs/msg/Arrays` and `test_msgs/msg/BoundedSequences` over a real publisher, compared between a statically typed `rclcpp::Subscription` and `rmw_take_dynamic_message`; `crates/rmw-zerodds-shim/src/dynamic/collection_default.rs::tests::the_wrong_element_count_is_refused_for_a_fixed_array`, `crates/rmw-zerodds-shim/src/dynamic/collection_default.rs::tests::a_bounded_sequence_accepts_at_or_under_its_bound_and_no_more` (18 tests of the parser), `crates/rmw-zerodds-shim/src/dynamic.rs::tests::a_collection_members_default_is_applied_on_init_and_clear`, `crates/rmw-zerodds-shim/src/dynamic.rs::tests::a_collection_default_of_the_wrong_length_is_refused`, `crates/rmw-zerodds-shim/src/dynamic.rs::tests::a_collection_default_past_its_bound_is_refused`.
 
-`crates/rmw-zerodds-shim/src/dynamic/collection_default.rs`: 18 unit
-tests for the parser (empty/singleton/multi-element tuples, every
-integer kind's own range, `inf`/`-inf`/`nan`, quoting and escaping on
-either side, a comma inside a quoted string, the wrong element count
-for a fixed array and past a bounded sequence's bound — each refused).
-`crates/rmw-zerodds-shim/src/dynamic.rs`: a struct with one member of
-each collection shape (a fixed array, a bounded sequence, an unbounded
-sequence), each with its own `default_value`, proves
-`dynamic_data_init_from_dynamic_type`/`clear_value`/`clear_all_values`
-all apply a collection member's own recorded default rather than Table
-9's empty collection, plus two refusal tests (wrong length for a fixed
-array, past a bounded sequence's bound).
+**Status:** partial — the interface table and the RMW wiring are implemented. `dynamic_data_serialize` always writes `@final`, little-endian, XCDR1 (PLAIN_CDR1), like the static introspection codec in `rmw_zerodds.c`; the interface passes no writer or QoS context. `long double` on 32-bit ARM and PowerPC (double-double) is missing; own item. Not run in CI: `rmw_c/dynamic_typesupport_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
 
-**Status:** partial — the interface table and the RMW wiring run
-(`run_dynamic_typesupport_test.sh` against ROS 2 Jazzy; last measured
-17/17 pass, before the checks named above). Two named, deliberate
-gaps, none of them
-hidden: (1) `dynamic_data_serialize` has no negotiated
-`DataRepresentation` QoS to consult — the interface gives the call no
-writer/QoS context at all — and so always writes `@final`,
-little-endian, XCDR1 (PLAIN_CDR1), matching the framing choice the
-static introspection codec in `rmw_zerodds.c` already makes. (2) `long
-double`/`float128` is bridged only for the x86-64 80-bit-extended and
-the aarch64 true-binary128 memory layouts
-(`Float128::{to,from}_x87_padded_bytes`/`{to,from}_le_bytes`); 32-bit
-ARM and PowerPC's double-double `long double` are refused with
-RCUTILS_RET_UNSUPPORTED rather than guessed.
+### RMW integration (`rmw_serialization_support_init`, `rmw_take_dynamic_message[_with_info]`) — run in CI
+
+**Spec:** `rmw/dynamic_message_type_support.h` (ROS 2 Jazzy) — the three
+rmw entry points, previously answered with `RMW_RET_UNSUPPORTED` (as
+`rmw_cyclonedds_cpp` does), now really implemented.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** `open` — Not run in CI: `rmw_c/dynamic_typesupport_test.cpp`. No job runs the check programs under `crates/rmw-zerodds-shim/rmw_c/`. ROS 2 is not in the CI image (OPEN-ITEMS 42; ROS 2 comes with RC9).
+
+### RMW integration — `long double` on 32-bit ARM and PowerPC
+
+**Spec:** `rosidl_dynamic_typesupport/api/serialization_support_interface.h` (ROS 2 Jazzy) — get/set and serialization of a `long double` member (`float128`) on every platform ROS 2 runs on.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `crates/rmw-zerodds-shim/src/dynamic.rs` bridges `long double` only for the x86-64 80-bit extended and the aarch64 binary128 storage form (`Float128::{to,from}_x87_padded_bytes`, `{to,from}_le_bytes`); on 32-bit ARM and for PowerPC's double-double `long double` it answers `RCUTILS_RET_UNSUPPORTED`.
 
 ---
 
 ## Audit status
 
-38 done / 2 partial / 1 open / 1 n/a (informative) / 0 n/a (rejected).
+20 done / 20 partial / 21 open / 0 blocked / 1 n/a (informative).
 
-Test run: `cargo test -p zerodds-ros2-rmw` (81 green) +
-`cargo test -p rmw-zerodds-shim` (45 green: 24 unit, 12 `shim_cli_e2e`,
-5 CLI binary, 4 `ros2_ext_surface`) +
-rclpy interop `crates/py/python/tests/ros2/` on ROS 2 Humble (6 green: init,
-pub/sub, service call, topic graph, node names, endpoint info) via
-`run_ros2_pytest.sh` +
-rclcpp loan e2e via `run_loaned_message_test.sh` (Portable + RawSameHost, each
-`can_loan=1 got=42 PASS`) +
-REP-2007 e2e via `run_type_adaptation_test.sh` (13 checks PASS, 0 failures) +
-REP-2008 e2e via `run_accel_loan_memory_test.sh` (Portable 15 checks PASS,
-RawSameHost 16 checks PASS, 0 failures each) +
-REP-2009 e2e via `run_type_negotiation_test.sh` (16 checks PASS, 0 failures).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document ros2-rmw.md`):
 
-All ROS 2 runs on the Linux test host (ROS 2 Humble via RoboStack/micromamba).
+* `cargo nextest run --profile merge -p rmw-zerodds-shim --all-targets` (job `merge-rust-rmw-zerodds-shim`) — 26 tests green.
+* `cargo nextest run --profile merge -p zerodds-ros2-rmw --all-targets` (job `merge-rust-ros2-rmw`) — 22 tests green.
 
-Open items: see `ros2-rmw.open.en.md`. Decision records: none.
+48 cited tests green, 31 not green.
+
+Open items: `ros2-rmw.open.en.md`.

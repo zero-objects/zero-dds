@@ -59,6 +59,7 @@ mod fixed_literal;
 pub mod generate;
 pub mod rule;
 mod rust_union;
+pub use rust_union::{UnionVariant, UnionVariants, union_variants};
 pub mod verbatim;
 
 pub use adapter::ast::{ModelGraph, NodeRef};

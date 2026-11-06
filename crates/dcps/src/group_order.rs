@@ -286,11 +286,11 @@ impl<R: Clone + Ord, I> GroupOrder<R, I> {
         if info.gsn <= g.committed {
             // Every writer's end of a group coherent set carries the same
             // number (§8.7.6): one after the first belongs to the set.
-            if let (Some(end), Some(first)) = (end, info.coherent_set_gsn) {
-                if let Some(set) = g.sets.get_mut(&first) {
-                    set.ends.insert((writer, reader), end);
-                    return;
-                }
+            if let (Some(end), Some(first)) = (end, info.coherent_set_gsn)
+                && let Some(set) = g.sets.get_mut(&first)
+            {
+                set.ends.insert((writer, reader), end);
+                return;
             }
             // A number already passed, after a timeout: the order cannot
             // place it any more.
@@ -621,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn samples_of_two_writers_go_out_in_group_sequence_order() {
+    fn rtps_8_7_5_samples_of_two_writers_go_out_in_group_sequence_order() {
         let mut o = GroupOrder::new(LONG);
         let v = view(&[W1, W2]);
         sample(&mut o, W2, 1, 2, 2);
@@ -634,7 +634,7 @@ mod tests {
     /// read. W1's HEARTBEAT announces the group at 3 and its own range
     /// [1, 1] ∪ [3, 3] not holding 2 once its DATA at 3 arrived.
     #[test]
-    fn a_number_no_counted_writer_has_is_passed_once_a_heartbeat_announced_it() {
+    fn rtps_8_7_5_a_number_no_counted_writer_has_is_passed_once_a_heartbeat_announced_it() {
         let mut o = GroupOrder::new(LONG);
         let v = view(&[W1]);
         sample(&mut o, W1, 1, 1, 1);
@@ -646,7 +646,7 @@ mod tests {
     }
 
     #[test]
-    fn a_counted_writer_whose_heartbeat_range_holds_the_number_is_waited_for() {
+    fn rtps_8_7_5_a_counted_writer_whose_heartbeat_range_holds_the_number_is_waited_for() {
         let mut o = GroupOrder::new(LONG);
         let v = view(&[W1, W2]);
         sample(&mut o, W1, 1, 1, 1);
@@ -660,7 +660,7 @@ mod tests {
     }
 
     #[test]
-    fn a_gap_rules_the_number_out_for_its_writer() {
+    fn rtps_8_3_8_4_a_gap_rules_the_number_out_for_its_writer() {
         let mut o = GroupOrder::new(LONG);
         let v = view(&[W1, W2]);
         sample(&mut o, W1, 1, 1, 1);
@@ -678,7 +678,8 @@ mod tests {
     /// did not discover, or whose secureWriterSet is not the empty group it
     /// keeps, does not let the number pass.
     #[test]
-    fn a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open() {
+    fn rtps_8_3_8_6_a_heartbeat_whose_writer_sets_are_not_the_discovered_ones_keeps_the_number_open()
+     {
         struct Picky;
         impl GroupView<u8> for Picky {
             fn counted(&self, _: &WriterGuid) -> BTreeSet<(WriterGuid, u8)> {
@@ -794,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn the_group_coherent_set_of_table_9_23_goes_out_whole_after_its_end() {
+    fn dcps_2_2_3_6_the_group_coherent_set_of_table_9_23_goes_out_whole_after_its_end() {
         let mut o = GroupOrder::new(LONG);
         let v = view(&[W1, W2]);
         // The group was at 10 before the set.
@@ -808,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    fn a_set_short_of_one_member_is_discarded_and_counted() {
+    fn dcps_2_2_2_4_1_10_a_set_short_of_one_member_is_discarded_and_counted() {
         let mut o = GroupOrder::new(Duration::from_millis(1));
         let v = view(&[W1, W2]);
         for gsn in 1..=10 {
@@ -828,7 +829,7 @@ mod tests {
     /// own copy of W1's samples. GSN 2 reached reader 1 only: it waits for
     /// reader 3's copy rather than leave it to arrive late.
     #[test]
-    fn a_number_waits_for_the_copy_of_every_reader_of_its_writer() {
+    fn rtps_8_7_5_a_number_waits_for_the_copy_of_every_reader_of_its_writer() {
         let mut o = GroupOrder::new(LONG);
         let mut v = view(&[W1]);
         v.counted.insert((W1, 3));
@@ -861,7 +862,7 @@ mod tests {
     /// A group coherent set with two readers of W1: each pair's part is
     /// complete, so the set goes out with both copies.
     #[test]
-    fn a_set_is_complete_per_reader_of_each_writer() {
+    fn rtps_8_7_6_a_set_is_complete_per_reader_of_each_writer() {
         let mut o = GroupOrder::new(LONG);
         let mut v = view(&[W1]);
         v.counted.insert((W1, 3));
@@ -888,7 +889,7 @@ mod tests {
     }
 
     #[test]
-    fn a_set_waits_for_the_end_of_every_counted_writer() {
+    fn rtps_8_7_6_a_set_waits_for_the_end_of_every_counted_writer() {
         let mut o = GroupOrder::new(LONG);
         let v = view(&[W1, W2]);
         let set = Some(1);

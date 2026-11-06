@@ -21,7 +21,7 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+safety = []  # empty marker for safe-profile lints (docs/architecture/04_safety_by_architecture.md §3)
 default = ["std", "metrics"]
 std = ["alloc"]
 alloc = []
@@ -52,6 +52,8 @@ rcgen = "0.13"
 rustls-pki-types = { workspace = true }
 # cyclone_live_sedp shares the SPDP port with a local Cyclone (SO_REUSEADDR).
 socket2 = { workspace = true }
+# fastdds_live_spdp leases its DDS domain.
+zerodds-test-domains = { path = "../test-domains" }
 
 [[example]]
 name = "spdp_demo"

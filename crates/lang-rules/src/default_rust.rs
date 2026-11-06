@@ -73,6 +73,12 @@ pub(crate) fn member_value_default(
     node: &MemberNode,
     type_: Id<TypeNode>,
 ) -> Result<rust::Expr, EncodeError> {
+    if let Some(mapping) = crate::adapter::cst::member_rust_type_mapping(ast, node) {
+        return Ok(mapped_default(
+            &mapping,
+            idl_default_value(ast, Some(node), resolve_alias(ast, type_))?,
+        ));
+    }
     match node.facets.xtypes.as_ref().and_then(|x| x.default_value) {
         Some(expr) => explicit(ast, expr, type_, &node.name),
         None => default_of(ast, from, type_, &node.name),
@@ -138,7 +144,15 @@ fn at_depth(
             let target = aliased
                 .resolved()
                 .ok_or_else(|| refuse("unresolved typedef"))?;
-            at_depth(ast, from, target, at, depth + 1)?
+            // A typedef named in `zerodds_build::Config::rust_type`: Table
+            // 9's value of the IDL type behind it, converted.
+            match crate::adapter::cst::rust_type_mapping(node.node_id) {
+                Some(mapping) => mapped_default(
+                    &mapping,
+                    idl_default_value(ast, None, resolve_alias(ast, target))?,
+                ),
+                None => at_depth(ast, from, target, at, depth + 1)?,
+            }
         }
         // "The first literal in the enumeration", or the one
         // `@default_literal` names — §7.3.1.2.1.10.
@@ -270,6 +284,22 @@ fn at_depth(
                 // for an `Option<u8>` field, which does not compile.
                 let value = if member_node.facets.is_optional() {
                     rust::Expr::Path(Path::single("None"))
+                } else if let Some(mapping) =
+                    crate::adapter::cst::member_rust_type_mapping(ast, member_node)
+                {
+                    // Its own `@default` or Table 9's, of the IDL type, converted.
+                    crate::adapter::cst::external_value(
+                        ast,
+                        member_node,
+                        mapped_default(
+                            &mapping,
+                            idl_default_value(
+                                ast,
+                                Some(member_node),
+                                resolve_alias(ast, member_type),
+                            )?,
+                        ),
+                    )
                 } else {
                     let value = match member_node
                         .facets
@@ -332,11 +362,16 @@ fn at_depth(
                     if case.carries_discriminator() {
                         args.push(discriminator_value);
                     }
-                    args.push(crate::adapter::cst::external_value(
-                        ast,
-                        member,
-                        at_depth(ast, from, member_type, &member.name, depth + 1)?,
-                    ));
+                    // A branch named in `zerodds_build::Config::rust_type`
+                    // takes Table 9's value of its IDL type, converted.
+                    let value = match crate::adapter::cst::rust_type_mapping(member.node_id) {
+                        Some(mapping) => mapped_default(
+                            &mapping,
+                            idl_default_value(ast, None, resolve_alias(ast, member_type))?,
+                        ),
+                        None => at_depth(ast, from, member_type, &member.name, depth + 1)?,
+                    };
+                    args.push(crate::adapter::cst::external_value(ast, member, value));
                     args
                 }
                 None => {
@@ -481,6 +516,86 @@ fn explicit(
             rust::Expr::Literal(Literal::int(value))
         }
     })
+}
+
+/// The default of a value the generated Rust holds as another type
+/// (`zerodds_build::Config::rust_type`): `idl`, the IDL default, through
+/// `zerodds_wire::repr::from_default`, with the `?` that rejects the
+/// sample when the Rust type does not accept it.
+///
+/// Fallible, so it only stands where a `?` can: a decoder, a key-holder
+/// reader. A type whose default contains one has no `impl Default`
+/// (`encode::default_impl`).
+fn mapped_default(mapping: &crate::adapter::cst::RustTypeMapping, idl: rust::Expr) -> rust::Expr {
+    let mut args = Vec::new();
+    let function = match &mapping.adapter {
+        Some(adapter) => {
+            args.push(rust::Expr::Ref {
+                target: Box::new(rust::Expr::Path(adapter.clone())),
+                mutable: false,
+            });
+            "from_default_with"
+        }
+        None => "from_default",
+    };
+    args.push(idl);
+    rust::Expr::Try(Box::new(rust::Expr::Call {
+        callee: Box::new(rust::Expr::Path(Path::new(&[
+            "zerodds_wire",
+            "repr",
+            function,
+        ]))),
+        args,
+    }))
+}
+
+/// The IDL default of a primitive or `string` as the `&Idl` a `WireRepr`
+/// reads: a `&str` literal for a `string`, a reference to the literal for
+/// a primitive. A member's `@default` (§7.2.2.4.4.4.9) ahead of Table 9's.
+///
+/// # Errors
+/// [`EncodeError::NoWriter`] for a type no `rust_type` mapping stands
+/// for, and for a `@default` this column cannot spell.
+pub(crate) fn idl_default_value(
+    ast: &Ast,
+    member: Option<&MemberNode>,
+    idl_type: Id<TypeNode>,
+) -> Result<rust::Expr, EncodeError> {
+    let name = member.map_or("", |member| member.name.as_str());
+    let refuse = |kind: &'static str| EncodeError::NoWriter {
+        member: name.to_string(),
+        kind,
+    };
+    let explicit_value =
+        member.and_then(|member| member.facets.xtypes.as_ref().and_then(|x| x.default_value));
+    let node = ast
+        .type_(idl_type)
+        .map_err(|_| refuse("a rust_type mapping over a stale type handle"))?;
+    match &node.kind {
+        TypeKind::String { .. } => {
+            let text = match explicit_value {
+                Some(expr) => match ast.expr(expr).map(|node| &node.expr) {
+                    Ok(ConstExpr::Literal(AstLiteral::String(text))) => text.clone(),
+                    _ => return Err(refuse("a `@default` of a mapped string that is no string")),
+                },
+                None => String::new(),
+            };
+            Ok(rust::Expr::Literal(Literal::string(&text)))
+        }
+        TypeKind::Primitive(kind) => {
+            let value = match explicit_value {
+                Some(expr) => explicit(ast, expr, idl_type, name)?,
+                None => primitive_default(*kind),
+            };
+            Ok(rust::Expr::Ref {
+                target: Box::new(value),
+                mutable: false,
+            })
+        }
+        _ => Err(refuse(
+            "a rust_type mapping over an IDL type that is not a primitive or a string",
+        )),
+    }
 }
 
 fn call_path(segments: &[&str]) -> rust::Expr {

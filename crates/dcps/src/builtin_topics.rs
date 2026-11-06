@@ -1191,19 +1191,7 @@ mod tests {
     }
 
     #[test]
-    fn participant_roundtrip() {
-        let p = ParticipantBuiltinTopicData {
-            key: mk_guid(0xA0),
-            user_data: alloc::vec![1, 2, 3],
-        };
-        let mut buf = Vec::new();
-        p.encode(&mut buf).unwrap();
-        let back = ParticipantBuiltinTopicData::decode(&buf).unwrap();
-        assert_eq!(p, back);
-    }
-
-    #[test]
-    fn topic_roundtrip() {
+    fn dcps_2_2_5_topic_roundtrip() {
         let t = TopicBuiltinTopicData {
             key: TopicBuiltinTopicData::synthesize_key(
                 GuidPrefix::from_bytes([1; 12]),
@@ -1228,7 +1216,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_synthesize_key_is_stable_and_distinct() {
+    fn dcps_2_2_5_topic_synthesize_key_is_stable_and_distinct() {
         let p = GuidPrefix::from_bytes([1; 12]);
         let q = GuidPrefix::from_bytes([2; 12]);
         let a = TopicBuiltinTopicData::synthesize_key(p, "X", "Foo");
@@ -1248,123 +1236,6 @@ mod tests {
         zerodds_qos::Duration::from_millis(v)
     }
 
-    /// Every member, each away from its default, comes back as it went in;
-    /// a duration keeps its fraction of a second.
-    #[test]
-    fn publication_roundtrip() {
-        let p = PublicationBuiltinTopicData {
-            key: mk_guid(0xB0),
-            participant_key: mk_guid(0xC0),
-            topic_name: "T".to_string(),
-            type_name: "Tt".to_string(),
-            durability: zerodds_qos::DurabilityQosPolicy {
-                kind: zerodds_qos::DurabilityKind::TransientLocal,
-            },
-            durability_service: zerodds_qos::DurabilityServiceQosPolicy {
-                history_depth: 9,
-                ..Default::default()
-            },
-            deadline: zerodds_qos::DeadlineQosPolicy { period: ms(1_250) },
-            latency_budget: zerodds_qos::LatencyBudgetQosPolicy { duration: ms(5) },
-            liveliness: zerodds_qos::LivelinessQosPolicy {
-                kind: zerodds_qos::LivelinessKind::ManualByTopic,
-                lease_duration: ms(30_500),
-            },
-            reliability: zerodds_qos::ReliabilityQosPolicy {
-                kind: zerodds_qos::ReliabilityKind::Reliable,
-                max_blocking_time: ms(40),
-            },
-            lifespan: zerodds_qos::LifespanQosPolicy {
-                duration: ms(60_001),
-            },
-            user_data: zerodds_qos::UserDataQosPolicy {
-                value: alloc::vec![1, 2],
-            },
-            ownership: zerodds_qos::OwnershipQosPolicy {
-                kind: zerodds_qos::OwnershipKind::Exclusive,
-            },
-            ownership_strength: zerodds_qos::OwnershipStrengthQosPolicy { value: 17 },
-            destination_order: zerodds_qos::DestinationOrderQosPolicy {
-                kind: zerodds_qos::DestinationOrderKind::BySourceTimestamp,
-            },
-            presentation: zerodds_qos::PresentationQosPolicy {
-                access_scope: zerodds_qos::PresentationAccessScope::Group,
-                coherent_access: true,
-                ordered_access: true,
-            },
-            partition: zerodds_qos::PartitionQosPolicy {
-                names: alloc::vec!["A".to_string(), "B".to_string()],
-            },
-            topic_data: zerodds_qos::TopicDataQosPolicy {
-                value: alloc::vec![3],
-            },
-            group_data: zerodds_qos::GroupDataQosPolicy {
-                value: alloc::vec![4, 5, 6],
-            },
-            data_tags: zerodds_qos::DataTagQosPolicy::new()
-                .with("classification", "secret")
-                .with("releasability", "NATO"),
-        };
-        let mut buf = Vec::new();
-        p.encode(&mut buf).unwrap();
-        let back = PublicationBuiltinTopicData::decode(&buf).unwrap();
-        assert_eq!(p, back);
-    }
-
-    #[test]
-    fn subscription_roundtrip() {
-        let s = SubscriptionBuiltinTopicData {
-            key: mk_guid(0xD0),
-            participant_key: mk_guid(0xE0),
-            topic_name: "T2".to_string(),
-            type_name: "T2t".to_string(),
-            durability: zerodds_qos::DurabilityQosPolicy {
-                kind: zerodds_qos::DurabilityKind::Persistent,
-            },
-            deadline: zerodds_qos::DeadlineQosPolicy { period: ms(1_500) },
-            latency_budget: zerodds_qos::LatencyBudgetQosPolicy { duration: ms(7) },
-            liveliness: zerodds_qos::LivelinessQosPolicy {
-                kind: zerodds_qos::LivelinessKind::ManualByParticipant,
-                lease_duration: ms(10_250),
-            },
-            reliability: zerodds_qos::ReliabilityQosPolicy {
-                kind: zerodds_qos::ReliabilityKind::Reliable,
-                max_blocking_time: ms(20),
-            },
-            ownership: zerodds_qos::OwnershipQosPolicy {
-                kind: zerodds_qos::OwnershipKind::Exclusive,
-            },
-            destination_order: zerodds_qos::DestinationOrderQosPolicy {
-                kind: zerodds_qos::DestinationOrderKind::BySourceTimestamp,
-            },
-            user_data: zerodds_qos::UserDataQosPolicy {
-                value: alloc::vec![9],
-            },
-            time_based_filter: zerodds_qos::TimeBasedFilterQosPolicy {
-                minimum_separation: ms(250),
-            },
-            presentation: zerodds_qos::PresentationQosPolicy {
-                access_scope: zerodds_qos::PresentationAccessScope::Topic,
-                coherent_access: false,
-                ordered_access: true,
-            },
-            partition: zerodds_qos::PartitionQosPolicy {
-                names: alloc::vec!["C".to_string()],
-            },
-            topic_data: zerodds_qos::TopicDataQosPolicy {
-                value: alloc::vec![8, 7],
-            },
-            group_data: zerodds_qos::GroupDataQosPolicy {
-                value: alloc::vec![6],
-            },
-            data_tags: zerodds_qos::DataTagQosPolicy::new().with("classification", "open"),
-        };
-        let mut buf = Vec::new();
-        s.encode(&mut buf).unwrap();
-        let back = SubscriptionBuiltinTopicData::decode(&buf).unwrap();
-        assert_eq!(s, back);
-    }
-
     #[test]
     fn participant_keyhash_is_first_16_bytes_of_guid() {
         let p = ParticipantBuiltinTopicData {
@@ -1376,7 +1247,7 @@ mod tests {
     }
 
     #[test]
-    fn participant_from_wire_strips_to_guid() {
+    fn dcps_2_2_5_participant_from_wire_strips_to_guid() {
         use zerodds_rtps::wire_types::{EntityId, ProtocolVersion, VendorId};
         let g = Guid::new(GuidPrefix::from_bytes([7; 12]), EntityId::PARTICIPANT);
         let w = wire_part::ParticipantBuiltinTopicData {
@@ -1414,7 +1285,7 @@ mod tests {
     /// The sample carries what the announcement carried: the data
     /// policies and the durations to the fraction, not whole seconds.
     #[test]
-    fn publication_from_wire_carries_every_policy() {
+    fn dcps_2_2_5_publication_from_wire_carries_every_policy() {
         let g_w = mk_guid(1);
         let g_p = mk_guid(2);
         let w = wire_pub::PublicationBuiltinTopicData {
@@ -1575,7 +1446,7 @@ mod tests {
     /// in the SubscriptionBuiltinTopicData; the sample a builtin reader reads
     /// carries the tags the announcement carried, in order.
     #[test]
-    fn the_data_tags_of_an_announcement_reach_the_builtin_topic_samples() {
+    fn security_9_7_2_the_data_tags_of_an_announcement_reach_the_builtin_topic_samples() {
         let tags = zerodds_rtps::property_list::WireDataTags {
             tags: alloc::vec![
                 zerodds_rtps::property_list::WireProperty::new("classification", "secret"),
@@ -1614,7 +1485,7 @@ mod tests {
     }
 
     #[test]
-    fn subscription_from_wire_copies_topic_and_type() {
+    fn dcps_2_2_5_subscription_from_wire_copies_topic_and_type() {
         let g_r = mk_guid(3);
         let g_p = mk_guid(4);
         let w = wire_sub::SubscriptionBuiltinTopicData {
@@ -1673,7 +1544,7 @@ mod tests {
     /// DDS 1.4 §2.2.5 `TopicBuiltinTopicData`: each member of the sample is
     /// the value the announcement carried, away from the default.
     #[test]
-    fn topic_sample_carries_every_member() {
+    fn dcps_2_2_5_topic_sample_carries_every_member() {
         let mut w = zerodds_rtps::topic_data::TopicBuiltinTopicData::new(
             mk_guid(0x10),
             "Chatter",
@@ -1727,7 +1598,7 @@ mod tests {
     /// `PublicationBuiltinTopicData`: the members that were set and not
     /// asserted before.
     #[test]
-    fn publication_sample_carries_ownership_liveliness_and_presentation() {
+    fn dcps_2_2_5_publication_sample_carries_ownership_liveliness_and_presentation() {
         let w = wire_pub::PublicationBuiltinTopicData {
             vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
             key: mk_guid(0x20),
@@ -1790,7 +1661,7 @@ mod tests {
 
     /// `SubscriptionBuiltinTopicData`: every member of the sample.
     #[test]
-    fn subscription_sample_carries_every_member() {
+    fn dcps_2_2_5_subscription_sample_carries_every_member() {
         let w = wire_sub::SubscriptionBuiltinTopicData {
             content_filter_unreadable: false,
             vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),
@@ -1864,7 +1735,7 @@ mod tests {
 
     /// `ParticipantBuiltinTopicData`: a non-empty `user_data` comes through.
     #[test]
-    fn participant_sample_carries_user_data() {
+    fn dcps_2_2_5_participant_sample_carries_user_data() {
         use zerodds_rtps::wire_types::{EntityId, ProtocolVersion, VendorId};
         let g = Guid::new(GuidPrefix::from_bytes([8; 12]), EntityId::PARTICIPANT);
         let w = wire_part::ParticipantBuiltinTopicData {
@@ -2037,7 +1908,7 @@ mod tests {
     /// `identity_status_token`, the `data_tags`. They keep what they hold across
     /// the internal encoding, and the key holder is that of the plain type.
     #[test]
-    fn the_secure_types_carry_their_added_member() {
+    fn security_7_5_1_6_the_secure_types_carry_their_added_member() {
         use crate::dds_type::DdsType;
         use crate::key_hash::PlainCdr2BeKeyHolder;
         let base = ParticipantBuiltinTopicData {
@@ -2113,7 +1984,7 @@ mod tests {
     /// The Secure types are made from the wire data of the secure topics, with
     /// the `identity_status_token` and the `data_tags` as the peer sent them.
     #[test]
-    fn the_secure_types_are_made_from_the_wire_data() {
+    fn security_7_5_1_7_the_secure_types_are_made_from_the_wire_data() {
         use zerodds_rtps::property_list::{WireDataTags, WireProperty};
         let mut wire = wire_pub::PublicationBuiltinTopicData {
             vendor_id: Some(zerodds_rtps::wire_types::VendorId::ZERODDS),

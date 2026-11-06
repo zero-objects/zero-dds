@@ -34,8 +34,8 @@ pub const MAX_TOTAL_ELEMENTS: usize = 64 * 1024;
 /// DoS cap for the recursive tree depth.
 ///
 /// Protects the recursive `build_element` call from stack overflow
-/// on adversarial deeply-nested XML inputs (TS-1 finding 3,
-/// `internal/test-harness/plan.md`). Realistic DDS-XML profiles go
+/// on adversarial deeply-nested XML inputs (fuzzing finding 3, see
+/// `crates/xml/fuzz/README.md`). Realistic DDS-XML profiles go
 /// 4-8 deep; even complex `<application>`/`<participant>`
 /// nestings stay below 32.
 pub const MAX_TREE_DEPTH: usize = 64;
@@ -417,10 +417,10 @@ fn build_element(
     // a comment between two runs must not truncate the value.
     let mut text = String::new();
     for child in node.children() {
-        if child.is_text() {
-            if let Some(run) = child.text() {
-                text.push_str(run);
-            }
+        if child.is_text()
+            && let Some(run) = child.text()
+        {
+            text.push_str(run);
         }
     }
     element.text = text;

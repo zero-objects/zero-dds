@@ -110,7 +110,7 @@ pub type PeerKey = [u8; 12];
 /// problem. Neither is ever silently a permit — a governance with
 /// `<enable_write_access_control>TRUE</enable_write_access_control>` that
 /// creates the writer anyway is the failure class
-/// `docs/silent-drop-sweep.md` names.
+/// `0b2e8df9f6b:docs/silent-drop-sweep.md` names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndpointAccess {
     /// The topic is not access-controlled by the governance, or a grant
@@ -1100,7 +1100,7 @@ impl SharedSecurityGate {
             };
             access.remote.remove(&peer);
             let Some(class) = permissions_token_class.filter(|class| {
-                zerodds_security::token::class_id::same_class_and_major_version(
+                zerodds_security::token::class_id::same_permissions_class_and_major_version(
                     class,
                     access.plugin.plugin_class_id(),
                 )
@@ -2671,10 +2671,10 @@ impl SharedSecurityGate {
     /// Mutex poison.
     pub fn is_access_protected(&self) -> Result<bool, SecurityGateError> {
         self.with_inner(|g| {
-            if g.access.is_some() {
-                if let Ok(config) = g.cached_participant_config() {
-                    return Ok(config.is_access_protected);
-                }
+            if g.access.is_some()
+                && let Ok(config) = g.cached_participant_config()
+            {
+                return Ok(config.is_access_protected);
             }
             Ok(g.governance
                 .find_domain_rule(g.domain())
@@ -2720,10 +2720,10 @@ impl SharedSecurityGate {
     /// `false` if no rule exists for the domain — conservative-safe stance.
     pub fn allow_unauthenticated(&self) -> Result<bool, SecurityGateError> {
         self.with_inner(|g| {
-            if g.access.is_some() {
-                if let Ok(config) = g.cached_participant_config() {
-                    return Ok(config.allow_unauthenticated_participants);
-                }
+            if g.access.is_some()
+                && let Ok(config) = g.cached_participant_config()
+            {
+                return Ok(config.allow_unauthenticated_participants);
             }
             Ok(g.governance
                 .find_domain_rule(g.domain())
@@ -2900,7 +2900,7 @@ mod tests {
     /// unaffected. A document the gate cannot authenticate stores no grant.
     /// The remote checks permitted every peer whose grant was not known.
     #[test]
-    fn a_peer_without_a_grant_is_denied_on_an_access_controlled_topic() {
+    fn security_9_4_2_9_a_peer_without_a_grant_is_denied_on_an_access_controlled_topic() {
         let gate = ac_gate();
         let peer = [7u8; 12];
         assert_eq!(
@@ -2984,7 +2984,7 @@ mod tests {
     /// The §10.6 BuiltinLoggingTopic rule is builtin: its `SIGN`/`ENCRYPT`
     /// protection applies even though the governance does not name the topic.
     #[test]
-    fn the_builtin_log_topic_rule_carries_its_protection() {
+    fn security_10_6_the_builtin_log_topic_rule_carries_its_protection() {
         let gate = ac_gate();
         assert_eq!(
             gate.data_protection(TOPIC_LOG_TOPIC_V2).expect("lock"),
@@ -3013,7 +3013,7 @@ mod tests {
     /// document." The rule is built in and holds for both names of the topic,
     /// whatever the governance says.
     #[test]
-    fn a_log_topic_is_written_without_a_grant_and_read_only_with_one() {
+    fn security_10_6_a_log_topic_is_written_without_a_grant_and_read_only_with_one() {
         let grant = |subscribe: &str| {
             zerodds_security_permissions::parse_permissions_xml(&format!(
                 r#"<dds><permissions><grant name="g">
@@ -3089,7 +3089,7 @@ mod tests {
     /// without a grant forwards nothing there, and on the open topic every
     /// participant may relay.
     #[test]
-    fn relaying_needs_the_relay_grant_on_an_access_controlled_topic() {
+    fn security_9_4_2_9_relaying_needs_the_relay_grant_on_an_access_controlled_topic() {
         let gate = ac_gate();
         assert_eq!(
             gate.check_create_relay_datareader(&req("PD_RWA_EM_ED"))
@@ -3172,7 +3172,7 @@ mod tests {
     /// protected submessages and RTPS messages a MAC for it that the
     /// receiver checks.
     #[test]
-    fn origin_authentication_follows_the_governance_kinds() {
+    fn security_10_4_1_2_2_origin_authentication_follows_the_governance_kinds() {
         const GOV_ORIGIN: &str = r#"
 <dds><domain_access_rules>
   <domain_rule>
@@ -3299,7 +3299,7 @@ mod tests {
     }
 
     #[test]
-    fn per_endpoint_datawriter_token_roundtrips_by_key_id() {
+    fn security_9_5_1_3_per_endpoint_datawriter_token_roundtrips_by_key_id() {
         // §9.5.3.3: each DataWriter has its OWN key material; the matched
         // reader installs it via datawriter_crypto_tokens + decodes the
         // submessage via the transformation_key_id — NOT via the
@@ -3345,7 +3345,7 @@ mod tests {
     /// under the key id of Alice's leaves Alice's in place: Alice's data
     /// still decodes. The second token replaced the first one's key.
     #[test]
-    fn two_peers_with_the_same_key_id_keep_their_keys() {
+    fn security_9_5_1_10_two_peers_with_the_same_key_id_keep_their_keys() {
         let gate = || {
             SharedSecurityGate::new(
                 0,
@@ -3393,7 +3393,7 @@ mod tests {
     /// is refused, and Carol's own key decodes Carol's. A key id was looked
     /// up among the keys of every peer.
     #[test]
-    fn a_key_of_another_peer_does_not_decode() {
+    fn security_10_5_3_3_1_a_key_of_another_peer_does_not_decode() {
         let gate = || {
             SharedSecurityGate::new(
                 0,
@@ -3448,7 +3448,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_discovery_protected_reads_topic_rule_flag() {
+    fn security_10_4_1_2_6_2_topic_discovery_protected_reads_topic_rule_flag() {
         // §9.4.2.4: the endpoint bit IS_DISCOVERY_PROTECTED comes from the
         // TOPIC rule `enable_discovery_protection` (boolean) — NOT from the
         // domain-wide discovery_protection_kind. cyclone sets it for
@@ -3485,7 +3485,7 @@ mod tests {
     }
 
     #[test]
-    fn e2e_alice_bob_with_shared_gate() {
+    fn security_9_5_1_2_e2e_alice_bob_with_shared_gate() {
         let alice = SharedSecurityGate::new(
             0,
             parse_governance_xml(GOV_RTPS).unwrap(),
@@ -3505,22 +3505,6 @@ mod tests {
         let wire = alice.transform_outbound(&plain).unwrap();
         let back = bob.transform_inbound(bob_view_of_alice, &wire).unwrap();
         assert_eq!(back, plain);
-    }
-
-    #[test]
-    fn clone_shares_same_plugin_instance() {
-        // Clone creates a second gate handle on THE SAME plugin.
-        // `ensure_local` by clone1 creates the local slot; clone2
-        // sees the same session ID.
-        let gate1 = SharedSecurityGate::new(
-            0,
-            parse_governance_xml(GOV_RTPS).unwrap(),
-            Box::new(AesGcmCryptoPlugin::new()),
-        );
-        let gate2 = gate1.clone();
-        let t1 = gate1.local_token().unwrap();
-        let t2 = gate2.local_token().unwrap();
-        assert_eq!(t1, t2, "both clones see the same local slot");
     }
 
     #[test]
@@ -3612,7 +3596,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_inbound_from_looks_up_slot_by_guid() {
+    fn security_9_4_2_4_transform_inbound_from_looks_up_slot_by_guid() {
         let (alice, bob) = build_pair();
         let alice_prefix: PeerKey = [0xAA; 12];
         let atoken = alice.local_token().unwrap();
@@ -3731,7 +3715,7 @@ mod tests {
     }
 
     #[test]
-    fn forget_remote_removes_mapping() {
+    fn security_9_5_1_8_forget_remote_removes_mapping() {
         let (alice, bob) = build_pair();
         let alice_prefix: PeerKey = [0xAA; 12];
         bob.register_remote_by_guid(
@@ -3769,7 +3753,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_outbound_for_encrypt_produces_srtps_wire() {
+    fn security_9_4_2_4_transform_outbound_for_encrypt_produces_srtps_wire() {
         let gate = SharedSecurityGate::new(
             0,
             parse_governance_xml(GOV_RTPS).unwrap(),
@@ -3787,7 +3771,7 @@ mod tests {
     }
 
     #[test]
-    fn transform_outbound_for_sign_also_uses_srtps_encoder() {
+    fn security_10_5_3_3_4_6_2_transform_outbound_for_sign_also_uses_srtps_encoder() {
         // The sign level today uses the same encoder as Encrypt (v1.4
         // plugin status). All that matters: the output is NOT plaintext.
         let gate = SharedSecurityGate::new(
@@ -3859,7 +3843,7 @@ mod tests {
 "#;
 
     #[test]
-    fn allow_unauthenticated_default_false_without_element() {
+    fn security_10_4_1_2_5_2_allow_unauthenticated_default_false_without_element() {
         let gate = SharedSecurityGate::new(
             0,
             parse_governance_xml(GOV_RTPS).unwrap(),
@@ -3869,7 +3853,7 @@ mod tests {
     }
 
     #[test]
-    fn allow_unauthenticated_reads_true_when_set() {
+    fn security_9_4_2_4_allow_unauthenticated_reads_true_when_set() {
         let gate = SharedSecurityGate::new(
             0,
             parse_governance_xml(GOV_OPEN_ALLOW_UNAUTH).unwrap(),
@@ -3906,7 +3890,7 @@ mod tests {
     /// domain and no payload protection (§10.4.1.2.5). Every endpoint had
     /// the kinds of the rule for the empty topic name.
     #[test]
-    fn the_protection_kinds_of_an_endpoint_come_from_its_topic_rule() {
+    fn security_10_4_1_2_1_the_protection_kinds_of_an_endpoint_come_from_its_topic_rule() {
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><discovery_protection_kind>ENCRYPT</discovery_protection_kind><liveliness_protection_kind>SIGN</liveliness_protection_kind><rtps_protection_kind>NONE</rtps_protection_kind><topic_access_rules><topic_rule><topic_expression>Secure*</topic_expression><metadata_protection_kind>ENCRYPT</metadata_protection_kind><data_protection_kind>ENCRYPT</data_protection_kind></topic_rule><topic_rule><topic_expression>*</topic_expression><metadata_protection_kind>SIGN</metadata_protection_kind><data_protection_kind>SIGN</data_protection_kind></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let gate = SharedSecurityGate::new(
             0,
@@ -3949,7 +3933,7 @@ mod tests {
     /// `required_mask` of the plugin's `adjusted_algorithm_info` is the bit of
     /// that width (Table 22).
     #[test]
-    fn the_basic_protection_kind_of_an_endpoint_decides_gmac_or_gcm() {
+    fn security_9_4_2_7_the_basic_protection_kind_of_an_endpoint_decides_gmac_or_gcm() {
         use zerodds_rtps::security_algo_info::symmetric_bit;
         const GOV: &str = r#"<dds><domain_access_rules><domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule></domain_access_rules></dds>"#;
         let gate = SharedSecurityGate::new(
@@ -4110,7 +4094,7 @@ mod tests {
     /// RTPS-protected domain plaintext over loopback is blocked unless
     /// `org.zerodds.sec.plaintext_loopback` allows it. It was taken always.
     #[test]
-    fn classify_inbound_plain_on_loopback_needs_the_setting() {
+    fn security_9_4_2_4_classify_inbound_plain_on_loopback_needs_the_setting() {
         let gate = SharedSecurityGate::new(
             0,
             parse_governance_xml(GOV_RTPS).unwrap(),
@@ -4152,7 +4136,7 @@ mod tests {
     }
 
     #[test]
-    fn classify_inbound_srtps_from_known_peer_accepts() {
+    fn security_9_5_1_10_classify_inbound_srtps_from_known_peer_accepts() {
         let (alice, bob) = build_pair();
         let alice_prefix: PeerKey = [0xAA; 12];
         bob.register_remote_by_guid(
@@ -4177,7 +4161,7 @@ mod tests {
     }
 
     #[test]
-    fn classify_inbound_srtps_with_wrong_key_is_crypto_error() {
+    fn security_9_5_1_10_classify_inbound_srtps_with_wrong_key_is_crypto_error() {
         // Alice + Charlie encode with different keys; Bob has
         // Alice registered but gets Charlie's bytes under Alice's
         // peer_key → crypto tag mismatch.
@@ -4261,7 +4245,7 @@ mod tests {
     }
 
     #[test]
-    fn kx_channel_round_trips_through_gate() {
+    fn security_9_5_1_8_kx_channel_round_trips_through_gate() {
         let (alice, bob) = build_kx_pair();
         let alice_prefix: PeerKey = [0xAA; 12];
         let bob_prefix: PeerKey = [0xBB; 12];
@@ -4288,7 +4272,7 @@ mod tests {
     }
 
     #[test]
-    fn data_round_trips_via_token_after_kx_register() {
+    fn security_9_5_1_9_data_round_trips_via_token_after_kx_register() {
         let (alice, bob) = build_kx_pair();
         let alice_prefix: PeerKey = [0xAA; 12];
         let bob_prefix: PeerKey = [0xBB; 12];
@@ -4430,7 +4414,7 @@ mod tests {
     /// decision of the gate is the answer of the AccessControl plugin
     /// installed in it — with the governance of the gate saying the opposite.
     #[test]
-    fn a_plugin_of_the_application_decides_every_check() {
+    fn security_9_4_2_a_plugin_of_the_application_decides_every_check() {
         // PD_RWA_EM_ED is read and write controlled by the governance; the
         // plugin permits it all, though no permissions document is armed.
         let (gate, calls, _) = spied_gate(|_| true, false);
@@ -4549,7 +4533,7 @@ mod tests {
     /// The same plugin refusing refuses everything, on the topic the
     /// governance leaves open as well.
     #[test]
-    fn a_refusing_plugin_of_the_application_refuses_every_check() {
+    fn security_9_4_2_a_refusing_plugin_of_the_application_refuses_every_check() {
         let (gate, _, _) = spied_gate(|_| false, true);
         let peer = [3u8; 12];
         for topic in ["PD_RWA_EM_ED", "OD_OA_OM_OD"] {
@@ -4589,7 +4573,7 @@ mod tests {
     /// tags and QoS entries (§9.4.2.9.4 `partition`, `data_tag`, `qos`), and
     /// the domain of the gate.
     #[test]
-    fn the_plugin_gets_partitions_data_tags_and_qos() {
+    fn security_9_4_2_9_the_plugin_gets_partitions_data_tags_and_qos() {
         let (gate, calls, _) = spied_gate(
             |call| call.data_tags.iter().all(|(_, value)| value != "forbidden"),
             false,
@@ -4632,7 +4616,7 @@ mod tests {
     /// plugin gets for that peer's checks. §9.4.2.10: the plugin revokes it,
     /// the gate hands the peer to the runtime once.
     #[test]
-    fn a_revoked_remote_handle_is_handed_to_the_runtime_once() {
+    fn security_9_4_2_10_a_revoked_remote_handle_is_handed_to_the_runtime_once() {
         let (gate, _, listener) = spied_gate(|_| true, false);
         let peer = [4u8; 12];
         let credential = DataHolder::new("DDS:Auth:PKI-DH:1.0");
@@ -4689,7 +4673,7 @@ mod tests {
     /// governance and the permissions answers; the instance and match
     /// operations are not asked of it (Table 70: they are TRUE).
     #[test]
-    fn the_builtin_plugin_is_not_asked_for_what_it_always_permits() {
+    fn security_9_4_2_9_the_builtin_plugin_is_not_asked_for_what_it_always_permits() {
         let gate = ac_gate();
         gate.set_permissions(
             zerodds_security_permissions::parse_permissions_xml(

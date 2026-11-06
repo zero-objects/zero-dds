@@ -144,7 +144,7 @@ fn a_structure_of_primitives_becomes_a_lua_encoder() {
 }
 
 #[test]
-fn a_sequence_counts_zero_based_and_subscripts_one_based() {
+fn xtypes_7_2_2_4_3_a_sequence_counts_zero_based_and_subscripts_one_based() {
     let text = encoder("@final struct S { sequence<long> many; };", "S");
     assert!(text.contains("#v"), "the count is missing:\n{text}");
     assert!(
@@ -171,7 +171,7 @@ fn an_array_indexes_once_per_dimension() {
 }
 
 #[test]
-fn the_short_circuiting_operators_are_words_and_inequality_is_tilde() {
+fn xtypes_7_4_3_the_short_circuiting_operators_are_words_and_inequality_is_tilde() {
     let text = decoder("@mutable struct S { @id(1) long a; @id(2) long b; };", "S");
     assert!(
         !text.contains("&&") && !text.contains("||") && !text.contains("!="),
@@ -194,7 +194,7 @@ fn the_walks_raw_boolean_tokens_survive_as_booleans() {
 }
 
 #[test]
-fn a_decoder_returns_the_sample_it_built() {
+fn xtypes_7_4_3_a_decoder_returns_the_sample_it_built() {
     let text = decoder("@final struct S { long a; };", "S");
     assert!(
         text.contains("function ZD.zd_dec_S(r, zd_tc)"),
@@ -216,7 +216,7 @@ fn a_map_entry_is_a_key_value_table() {
 }
 
 #[test]
-fn an_optional_member_is_the_key_being_there() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_is_the_key_being_there() {
     let text = encoder("@final struct S { @optional long a; };", "S");
     assert!(
         text.contains("v.a ~= nil"),
@@ -258,7 +258,7 @@ fn a_boolean_discriminators_label_is_a_boolean_and_a_chars_stays_the_code_point(
 }
 
 #[test]
-fn an_enumerations_wire_value_is_read_out_of_the_descriptor() {
+fn xtypes_7_2_2_4_1_1_an_enumerations_wire_value_is_read_out_of_the_descriptor() {
     let text = encoder(
         "enum Colour { RED, GREEN, BLUE }; @final struct S { Colour tint; };",
         "S",
@@ -270,7 +270,7 @@ fn an_enumerations_wire_value_is_read_out_of_the_descriptor() {
 }
 
 #[test]
-fn a_keyword_member_keeps_its_name_in_the_bracket_form() {
+fn idl_7_2_3_a_keyword_member_keeps_its_name_in_the_bracket_form() {
     let text = encoder("@final struct S { long until; };", "S");
     assert!(
         text.contains("v[\"until\"]"),
@@ -283,7 +283,7 @@ fn a_keyword_member_keeps_its_name_in_the_bracket_form() {
 }
 
 #[test]
-fn a_sorted_maps_char_key_wraps_and_its_u64_key_is_unsigned() {
+fn xtypes_7_2_2_4_3_a_sorted_maps_char_key_wraps_and_its_u64_key_is_unsigned() {
     let text = codec_with_ascending_keys("@final struct S { map<char, long> m; };", "S");
     assert!(
         text.contains("% 256"),
@@ -339,7 +339,7 @@ fn codec_with_ascending_keys(idl: &str, type_name: &str) -> String {
 /// Every aggregate the corpus has, through both directions, to the end
 /// of the walk and past the interpreter's compiler.
 #[test]
-fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
+fn xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
     for (idl, root) in [
         ("@final struct S { long a; };", "S"),
         ("@appendable struct S { long a; string b; };", "S"),

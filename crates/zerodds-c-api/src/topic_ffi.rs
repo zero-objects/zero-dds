@@ -194,8 +194,9 @@ mod tests {
     }
 
     #[test]
-    fn topic_get_name_and_type_roundtrip() {
-        let p = mk_participant(31);
+    fn capi_2_5_topic_get_name_and_type_roundtrip() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let n = c"Hello";
         let tn = c"WorldType";
         let f = zerodds_dpf_get_instance();
@@ -222,8 +223,9 @@ mod tests {
     }
 
     #[test]
-    fn inconsistent_topic_status_default() {
-        let p = mk_participant(32);
+    fn capi_2_5_inconsistent_topic_status_default() {
+        let lease = zerodds_test_domains::lease_domain();
+        let p = mk_participant(lease.id() as u32);
         let n = c"T";
         let tn = c"TT";
         let f = zerodds_dpf_get_instance();

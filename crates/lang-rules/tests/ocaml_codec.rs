@@ -182,7 +182,7 @@ fn the_read_direction_opens_with_table_9_and_answers_the_cell() {
 }
 
 #[test]
-fn a_member_store_is_a_functional_record_update() {
+fn xtypes_7_4_3_a_member_store_is_a_functional_record_update() {
     let text = decoder("@final struct S { long a; };", "S");
     assert!(
         text.contains("v := { !v with a ="),
@@ -206,7 +206,7 @@ fn an_optional_member_reads_into_some_and_absents_into_none() {
 }
 
 #[test]
-fn an_enumeration_crosses_through_its_conversions() {
+fn xtypes_7_2_2_4_1_1_an_enumeration_crosses_through_its_conversions() {
     let text = encoder(
         "enum Colour { RED, GREEN, BLUE }; @final struct S { Colour tint; };",
         "S",
@@ -252,7 +252,7 @@ fn a_bitmask_widens_by_its_pattern_and_an_enumeration_by_its_sign() {
 }
 
 #[test]
-fn a_mutable_aggregate_compiles_with_its_seen_flags() {
+fn xtypes_7_4_3_a_mutable_aggregate_compiles_with_its_seen_flags() {
     let text = decoder(
         "@mutable struct S { @id(1) long a; @id(2) string b; };",
         "S",
@@ -267,7 +267,7 @@ fn a_mutable_aggregate_compiles_with_its_seen_flags() {
 /// Every aggregate the corpus has, through both directions, to the end
 /// of the walk; each half is compiled against the real runtime.
 #[test]
-fn the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
+fn xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks() {
     for (idl, root) in [
         ("@final struct S { long a; };", "S"),
         ("@appendable struct S { long a; string b; };", "S"),

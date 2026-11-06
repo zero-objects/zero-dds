@@ -303,7 +303,7 @@ fn rsa_oaep_decrypt(
     ciphertext: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
     let key_bytes = privkey.size();
-    if ciphertext.is_empty() || ciphertext.len() % key_bytes != 0 {
+    if ciphertext.is_empty() || !ciphertext.len().is_multiple_of(key_bytes) {
         return Err(CryptoError::Malformed(
             "RSA ciphertext not a key-size multiple",
         ));
@@ -884,78 +884,187 @@ mod tests {
     }
     impl CryptoRng for TestRng {}
 
-    #[test]
-    fn p_sha256_is_deterministic_and_sized() {
-        let a = p_sha256(b"secret", b"seed", 64).unwrap();
-        let b = p_sha256(b"secret", b"seed", 64).unwrap();
-        assert_eq!(a, b);
-        assert_eq!(a.len(), 64);
-        // Different seed → different output; prefix-stability of P_hash.
-        assert_ne!(a, p_sha256(b"secret", b"seed2", 64).unwrap());
-        assert_eq!(p_sha256(b"secret", b"seed", 32).unwrap(), a[..32].to_vec());
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
     }
 
+    /// OPC 10000-6 §6.7.5: P_SHA256 is the P_hash of RFC 5246 §5; the TLS
+    /// 1.2 PRF test vector for SHA-256 (secret 9bbe…db35, label "test
+    /// label", seed a0ba…198c, 100 octets) is P_SHA256(secret, label ‖
+    /// seed).
     #[test]
-    fn derive_keys_lengths_and_mirror() {
-        let client_nonce = [1u8; 32];
-        let server_nonce = [2u8; 32];
-        // Client send keys = derive(secret=serverNonce, seed=clientNonce).
-        let client_send =
-            derive_keys(SecurityPolicy::Basic256Sha256, &server_nonce, &client_nonce).unwrap();
-        // Server receive keys = derive(secret=serverNonce, seed=clientNonce) — same.
-        let server_recv =
-            derive_keys(SecurityPolicy::Basic256Sha256, &server_nonce, &client_nonce).unwrap();
-        assert_eq!(client_send, server_recv);
-        assert_eq!(client_send.signing.len(), 32);
-        assert_eq!(client_send.encrypting.len(), 32);
-        assert_eq!(client_send.iv.len(), 16);
+    fn uacs_6_7_5_p_sha256_is_the_p_hash_of_rfc_5246_5() {
+        let mut seed = b"test label".to_vec();
+        seed.extend_from_slice(&hex("a0ba9f936cda311827a6f796ffd5198c"));
+        assert_eq!(
+            p_sha256(&hex("9bbe436ba940f017b17652849a71db35"), &seed, 100).unwrap(),
+            hex(
+                "e3f229ba727be17b8d122620557cd453c2aab21d07c3d495329b52d4e61edb5a\
+                 6b301791e90d35c9c9a46b4e14baf9af0fa022f7077def17abfd3797c0564bab\
+                 4fbc91666e9def9b97fce34f796789baa48082d122ee42c5a72e5a5110fff701\
+                 87347b66"
+            )
+        );
+    }
 
-        let aes128 = derive_keys(
-            SecurityPolicy::Aes128Sha256RsaOaep,
-            &server_nonce,
-            &client_nonce,
+    /// The symmetric signature is HMAC-SHA256 (OPC 10000-6 Table 66):
+    /// RFC 4231 test case 2.
+    #[test]
+    fn rfc4231_4_3_hmac_sha256_of_test_case_2() {
+        assert_eq!(
+            hmac_sign(b"Jefe", b"what do ya want for nothing?")
+                .unwrap()
+                .to_vec(),
+            hex("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+        );
+    }
+
+    /// The symmetric encryption is AES-CBC (OPC 10000-6 Table 66):
+    /// NIST SP 800-38A F.2.1 (AES-128) and F.2.5 (AES-256), first block.
+    #[test]
+    fn sp800_38a_f_2_aes_cbc_of_the_nist_vectors() {
+        let iv = hex("000102030405060708090a0b0c0d0e0f");
+        let plain = hex("6bc1bee22e409f96e93d7e117393172a");
+        for (key, cipher) in [
+            (
+                "2b7e151628aed2a6abf7158809cf4f3c",
+                "7649abac8119b246cee98e9b12e9197d",
+            ),
+            (
+                "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
+                "f58c4c04d6e5f1ba779eabfb5f7bfbd6",
+            ),
+        ] {
+            assert_eq!(
+                aes_cbc_encrypt(&hex(key), &iv, &plain).unwrap(),
+                hex(cipher)
+            );
+            assert_eq!(
+                aes_cbc_decrypt(&hex(key), &iv, &hex(cipher)).unwrap(),
+                plain
+            );
+        }
+    }
+
+    /// OPC 10000-6 §6.7.5, Tables 66 and 67: the keys are P_SHA256(secret,
+    /// seed) cut into SigningKey (32 octets), EncryptingKey (32 for
+    /// Basic256Sha256 and Aes256Sha256RsaPss, 16 for Aes128Sha256RsaOaep)
+    /// and the IV (the 16-octet block), in that order.
+    #[test]
+    fn uacs_6_7_5_the_keys_are_p_sha256_cut_into_signing_key_encrypting_key_and_iv() {
+        let (secret, seed) = ([2u8; 32], [1u8; 32]);
+        for (policy, enc) in [
+            (SecurityPolicy::Basic256Sha256, 32),
+            (SecurityPolicy::Aes128Sha256RsaOaep, 16),
+            (SecurityPolicy::Aes256Sha256RsaPss, 32),
+        ] {
+            let block = p_sha256(&secret, &seed, 32 + enc + 16).unwrap();
+            let keys = derive_keys(policy, &secret, &seed).unwrap();
+            assert_eq!(keys.signing, block[..32]);
+            assert_eq!(keys.encrypting, block[32..32 + enc]);
+            assert_eq!(keys.iv, block[32 + enc..]);
+        }
+    }
+
+    /// The message header (Table 57), SecureChannelId and TokenId
+    /// (Table 59) of a final MSG chunk of `size` octets.
+    fn symmetric_header(size: usize, channel_id: u32, token_id: u32) -> Vec<u8> {
+        let mut out = b"MSGF".to_vec();
+        out.extend_from_slice(&u32::try_from(size).unwrap().to_le_bytes());
+        out.extend_from_slice(&channel_id.to_le_bytes());
+        out.extend_from_slice(&token_id.to_le_bytes());
+        out
+    }
+
+    /// OPC 10000-6 §6.7.2, Figure 11 and Table 62 in Sign mode: the
+    /// headers and the plaintext SequenceHeader ‖ Body, followed by the
+    /// HMAC-SHA256 under the SigningKey of everything before it.
+    #[test]
+    fn uacs_6_7_2_a_signed_chunk_is_its_plaintext_and_the_hmac_over_it() {
+        let keys = derive_keys(SecurityPolicy::Basic256Sha256, &[7u8; 32], &[9u8; 32]).unwrap();
+        let body = b"\x01\x02service-payload\xAA";
+        let mut expected = symmetric_header(16 + 8 + body.len() + 32, 42, 7);
+        expected.extend_from_slice(&1_u32.to_le_bytes());
+        expected.extend_from_slice(&99_u32.to_le_bytes());
+        expected.extend_from_slice(body);
+        let signature = hmac_sign(&keys.signing, &expected).unwrap();
+        expected.extend_from_slice(&signature);
+        let chunk = build_symmetric_chunk(
+            SecuredMode::Sign,
+            &keys,
+            MessageType::Message,
+            42,
+            7,
+            1,
+            99,
+            body,
         )
-        .unwrap();
-        assert_eq!(aes128.encrypting.len(), 16);
-    }
-
-    fn sym_round_trip(policy: SecurityPolicy, mode: SecuredMode) {
-        let keys = derive_keys(policy, &[7u8; 32], &[9u8; 32]).unwrap();
-        let body = b"\x01\x02service-payload-of-some-length\xAA\xBB";
-        let chunk = build_symmetric_chunk(mode, &keys, MessageType::Message, 42, 7, 1, 99, body)
-            .expect("build");
-        // MessageSize header matches the actual length.
-        let declared = u32::from_le_bytes(slice4(&chunk, 4).unwrap()) as usize;
-        assert_eq!(declared, chunk.len());
-
-        let opened = open_symmetric_chunk(mode, &keys, &chunk).expect("open");
-        assert_eq!(opened.channel_id, 42);
-        assert_eq!(opened.token_id, Some(7));
-        assert_eq!(opened.sequence_number, 1);
-        assert_eq!(opened.request_id, 99);
+        .expect("build");
+        assert_eq!(chunk, expected);
+        let opened = open_symmetric_chunk(SecuredMode::Sign, &keys, &expected).expect("open");
+        assert_eq!(
+            (
+                opened.channel_id,
+                opened.token_id,
+                opened.sequence_number,
+                opened.request_id
+            ),
+            (42, Some(7), 1, 99)
+        );
         assert_eq!(opened.body, body);
     }
 
+    /// OPC 10000-6 §6.7.2, Figure 11, Tables 61 and 62 in SignAndEncrypt
+    /// mode: PaddingSize and Padding (every octet the PaddingSize) make
+    /// SequenceHeader ‖ Body ‖ Padding ‖ Signature a multiple of the AES
+    /// block; the HMAC covers the headers and the plaintext up to the
+    /// padding; AES-CBC under the EncryptingKey and IV encrypts everything
+    /// after the TokenId.
     #[test]
-    fn symmetric_sign_and_encrypt_round_trip() {
-        sym_round_trip(SecurityPolicy::Basic256Sha256, SecuredMode::SignAndEncrypt);
-        sym_round_trip(
+    fn uacs_6_7_2_5_an_encrypted_chunk_is_aes_cbc_of_sequence_body_padding_and_signature() {
+        for policy in [
+            SecurityPolicy::Basic256Sha256,
             SecurityPolicy::Aes128Sha256RsaOaep,
-            SecuredMode::SignAndEncrypt,
-        );
-        sym_round_trip(
             SecurityPolicy::Aes256Sha256RsaPss,
-            SecuredMode::SignAndEncrypt,
-        );
+        ] {
+            let keys = derive_keys(policy, &[7u8; 32], &[9u8; 32]).unwrap();
+            let body = b"\x01\x02service-payload\xAA";
+            let mut plain = 1_u32.to_le_bytes().to_vec();
+            plain.extend_from_slice(&99_u32.to_le_bytes());
+            plain.extend_from_slice(body);
+            let pad = (16 - (plain.len() + 1 + 32) % 16) % 16;
+            plain.extend_from_slice(&alloc::vec![u8::try_from(pad).unwrap(); 1 + pad]);
+            let size = 16 + plain.len() + 32;
+            let mut signed = symmetric_header(size, 42, 7);
+            signed.extend_from_slice(&plain);
+            let mut region = plain.clone();
+            region.extend_from_slice(&hmac_sign(&keys.signing, &signed).unwrap());
+            let mut expected = symmetric_header(size, 42, 7);
+            expected
+                .extend_from_slice(&aes_cbc_encrypt(&keys.encrypting, &keys.iv, &region).unwrap());
+            let chunk = build_symmetric_chunk(
+                SecuredMode::SignAndEncrypt,
+                &keys,
+                MessageType::Message,
+                42,
+                7,
+                1,
+                99,
+                body,
+            )
+            .expect("build");
+            assert_eq!(chunk, expected, "{policy:?}");
+            let opened =
+                open_symmetric_chunk(SecuredMode::SignAndEncrypt, &keys, &expected).expect("open");
+            assert_eq!(opened.body, body, "{policy:?}");
+        }
     }
 
     #[test]
-    fn symmetric_sign_only_round_trip() {
-        sym_round_trip(SecurityPolicy::Basic256Sha256, SecuredMode::Sign);
-    }
-
-    #[test]
-    fn symmetric_tamper_is_rejected() {
+    fn uacs_6_7_symmetric_tamper_is_rejected() {
         let policy = SecurityPolicy::Basic256Sha256;
         let keys = derive_keys(policy, &[7u8; 32], &[9u8; 32]).unwrap();
         let mut chunk = build_symmetric_chunk(
@@ -974,55 +1083,110 @@ mod tests {
         assert!(open_symmetric_chunk(SecuredMode::SignAndEncrypt, &keys, &chunk).is_err());
     }
 
-    fn asym_round_trip(policy: SecurityPolicy) {
-        let mut rng = TestRng::new(1);
-        let client_key = RsaPrivateKey::new(&mut rng, 2048).expect("client key");
-        let server_key = RsaPrivateKey::new(&mut rng, 2048).expect("server key");
+    // Three RSA-2048 keys generated once with OpenSSL (`openssl genrsa 2048 |
+    // openssl pkcs8 -topk8 -nocrypt -outform DER`). Generating them in each
+    // test took up to 25 s in a debug build; the handshake under test does
+    // not care which keys it runs on.
+    const KEY_A: &[u8] = include_bytes!("../tests/fixtures/rsa2048_a.der");
+    const KEY_B: &[u8] = include_bytes!("../tests/fixtures/rsa2048_b.der");
+    const KEY_C: &[u8] = include_bytes!("../tests/fixtures/rsa2048_c.der");
+
+    fn fixture_key(der: &[u8]) -> RsaPrivateKey {
+        use rsa::pkcs8::DecodePrivateKey;
+        RsaPrivateKey::from_pkcs8_der(der).expect("fixture key")
+    }
+
+    /// OPC 10000-6 §6.7.2, Figure 13, Tables 57, 58, 60 and 61: an OPN
+    /// chunk is the message header and SecureChannelId, the asymmetric
+    /// security header (the policy URI, the SenderCertificate, the SHA-1
+    /// thumbprint of the receiver's certificate), then RSA-OAEP (SHA-1, or
+    /// SHA-256 for Aes256Sha256RsaPss) of SequenceHeader ‖ Body ‖ Padding ‖
+    /// Signature in key-sized blocks; the signature (PKCS #1 v1.5, or PSS
+    /// for Aes256Sha256RsaPss, over SHA-256) covers everything before it in
+    /// plaintext. Read here with the RSA operations directly, not through
+    /// `open_asymmetric_chunk`.
+    #[test]
+    fn uacs_6_7_2_an_open_secure_channel_chunk_is_the_layout_of_figure_13() {
+        use rsa::signature::Verifier;
+        let client_key = fixture_key(KEY_A);
+        let server_key = fixture_key(KEY_B);
         let client_cert = b"client-der-cert".to_vec();
         let server_cert = b"server-der-cert".to_vec();
-        let server_pub = server_key.to_public_key();
-        let client_pub = client_key.to_public_key();
-
-        let ctx = AsymmetricContext {
-            policy,
-            sender_certificate: &client_cert,
-            sender_private_key: &client_key,
-            receiver_certificate: &server_cert,
-            receiver_public_key: &server_pub,
-        };
         let body = b"\x01OpenSecureChannelRequest-body-payload\xFF";
-        let mut rng2 = TestRng::new(2);
-        let chunk = build_asymmetric_chunk(&mut rng2, &ctx, 0, 1, 55, body).expect("build");
-        let declared = u32::from_le_bytes(slice4(&chunk, 4).unwrap()) as usize;
-        assert_eq!(declared, chunk.len());
+        for policy in [
+            SecurityPolicy::Basic256Sha256,
+            SecurityPolicy::Aes128Sha256RsaOaep,
+            SecurityPolicy::Aes256Sha256RsaPss,
+        ] {
+            let ctx = AsymmetricContext {
+                policy,
+                sender_certificate: &client_cert,
+                sender_private_key: &client_key,
+                receiver_certificate: &server_cert,
+                receiver_public_key: &server_key.to_public_key(),
+            };
+            let chunk =
+                build_asymmetric_chunk(&mut TestRng::new(2), &ctx, 0, 1, 55, body).expect("build");
 
-        // Server opens it: decrypt with server key, verify with client pubkey.
-        let opened = open_asymmetric_chunk(policy, &server_key, &client_pub, &chunk).expect("open");
-        assert_eq!(opened.message_type, MessageType::OpenSecureChannel);
-        assert_eq!(opened.token_id, None);
-        assert_eq!(opened.sequence_number, 1);
-        assert_eq!(opened.request_id, 55);
-        assert_eq!(opened.body, body);
+            let mut head = b"OPNF".to_vec();
+            head.extend_from_slice(&u32::try_from(chunk.len()).unwrap().to_le_bytes());
+            head.extend_from_slice(&0_u32.to_le_bytes());
+            for field in [
+                policy.uri().as_bytes(),
+                client_cert.as_slice(),
+                Sha1::digest(&server_cert).as_slice(),
+            ] {
+                head.extend_from_slice(&i32::try_from(field.len()).unwrap().to_le_bytes());
+                head.extend_from_slice(field);
+            }
+            assert_eq!(chunk[..head.len()], head, "{policy:?}");
+
+            let mut plain = Vec::new();
+            for block in chunk[head.len()..].chunks(256) {
+                let pt = if policy.oaep_sha256() {
+                    server_key.decrypt(Oaep::new::<Sha256>(), block)
+                } else {
+                    server_key.decrypt(Oaep::new::<Sha1>(), block)
+                };
+                plain.extend_from_slice(&pt.expect("OAEP"));
+            }
+            let (signed_part, signature) = plain.split_at(plain.len() - 256);
+            assert_eq!(signed_part[..4], 1_u32.to_le_bytes());
+            assert_eq!(signed_part[4..8], 55_u32.to_le_bytes());
+            assert_eq!(&signed_part[8..8 + body.len()], body);
+            let padding = &signed_part[8 + body.len()..];
+            assert!(
+                padding.iter().all(|b| usize::from(*b) == padding.len() - 1),
+                "{policy:?}"
+            );
+            let mut signed = head.clone();
+            signed.extend_from_slice(signed_part);
+            let client_pub = client_key.to_public_key();
+            if policy.asym_pss() {
+                let vk = rsa::pss::VerifyingKey::<Sha256>::new(client_pub.clone());
+                let sig = rsa::pss::Signature::try_from(signature).expect("signature");
+                vk.verify(&signed, &sig).expect("PSS");
+            } else {
+                client_pub
+                    .verify(
+                        Pkcs1v15Sign::new::<Sha256>(),
+                        &Sha256::digest(&signed),
+                        signature,
+                    )
+                    .expect("PKCS #1 v1.5");
+            }
+            let opened =
+                open_asymmetric_chunk(policy, &server_key, &client_pub, &chunk).expect("open");
+            assert_eq!(opened.body, body, "{policy:?}");
+        }
     }
 
     #[test]
-    fn asymmetric_round_trip_oaep_pkcs15() {
-        asym_round_trip(SecurityPolicy::Basic256Sha256);
-        asym_round_trip(SecurityPolicy::Aes128Sha256RsaOaep);
-    }
-
-    #[test]
-    fn asymmetric_round_trip_oaep_sha256_pss() {
-        asym_round_trip(SecurityPolicy::Aes256Sha256RsaPss);
-    }
-
-    #[test]
-    fn asymmetric_wrong_signer_is_rejected() {
+    fn uacs_6_7_asymmetric_wrong_signer_is_rejected() {
         let policy = SecurityPolicy::Basic256Sha256;
-        let mut rng = TestRng::new(3);
-        let client_key = RsaPrivateKey::new(&mut rng, 2048).expect("client");
-        let server_key = RsaPrivateKey::new(&mut rng, 2048).expect("server");
-        let attacker = RsaPrivateKey::new(&mut rng, 2048).expect("attacker");
+        let client_key = fixture_key(KEY_A);
+        let server_key = fixture_key(KEY_B);
+        let attacker = fixture_key(KEY_C);
         let ctx = AsymmetricContext {
             policy,
             sender_certificate: b"c",
@@ -1037,20 +1201,24 @@ mod tests {
         assert_eq!(err, Err(CryptoError::BadSignature));
     }
 
+    /// OPC 10000-6 Table 58: the ReceiverCertificateThumbprint is the SHA-1
+    /// of the DER certificate; FIPS 180-4's example "abc".
     #[test]
-    fn thumbprint_is_sha1() {
-        assert_eq!(sha1_thumbprint(b"abc").len(), 20);
+    fn uacs_6_7_2_3_the_thumbprint_is_sha_1() {
+        assert_eq!(
+            sha1_thumbprint(b"abc"),
+            hex("a9993e364706816aba3e25717850c26c9cd0d89d")
+        );
     }
 
     /// Ties the whole secured handshake together: an asymmetric OPN carries the
     /// nonces, both sides derive the §6.7.6 keys, then symmetric MSGs flow both
     /// ways — exactly the sequence a secured Client/Server performs.
     #[test]
-    fn full_secured_handshake_flow() {
+    fn uacs_6_7_full_secured_handshake_flow() {
         let policy = SecurityPolicy::Basic256Sha256;
-        let mut kg = TestRng::new(10);
-        let client_key = RsaPrivateKey::new(&mut kg, 2048).expect("client key");
-        let server_key = RsaPrivateKey::new(&mut kg, 2048).expect("server key");
+        let client_key = fixture_key(KEY_A);
+        let server_key = fixture_key(KEY_B);
         let client_cert = b"client-cert".to_vec();
         let server_cert = b"server-cert".to_vec();
         let client_nonce = [0x11u8; 32];

@@ -1101,13 +1101,12 @@ impl LockFreeReadHistoryCache {
                 Ok(c) => c,
                 Err(_) => return,
             };
-            if inner.changes.len() >= cap {
-                if let HistoryKind::KeepLast { .. } = inner.kind {
-                    if let Some((&oldest, _)) = inner.changes.iter().next() {
-                        inner.changes.remove(&oldest);
-                        inner.evicted_count = inner.evicted_count.saturating_add(1);
-                    }
-                }
+            if inner.changes.len() >= cap
+                && let HistoryKind::KeepLast { .. } = inner.kind
+                && let Some((&oldest, _)) = inner.changes.iter().next()
+            {
+                inner.changes.remove(&oldest);
+                inner.evicted_count = inner.evicted_count.saturating_add(1);
             }
             inner.changes.insert(change.sequence_number, change.clone());
         });
@@ -1353,12 +1352,6 @@ mod tests {
         c.insert(alive(1)).unwrap();
         c.insert(alive(2)).unwrap();
         assert_eq!(c.iter_range(sn(10), sn(20)).count(), 0);
-    }
-
-    #[test]
-    fn capacity_accessor() {
-        let c = HistoryCache::new(42);
-        assert_eq!(c.capacity(), 42);
     }
 
     #[test]

@@ -14,12 +14,12 @@ use crate::contract::Contract;
 /// service can resume serving the topic from the store alone (`ADR 0009`,
 /// `zerodds-durability-service` module docs, "Startup-sync").
 ///
-/// Deliberately does NOT carry a wire representation / byte order: those
-/// travel on [`crate::DurabilitySample`] itself (`representation`,
-/// `big_endian`), and every sample [`crate::DurabilityStore::replay_for_topic`]
-/// returns already carries its own — so a replay writer primed from the store
-/// re-declares the right encapsulation per sample regardless of what is (or
-/// is not) in this struct.
+/// Deliberately does NOT carry a wire representation: it travels on
+/// [`crate::DurabilitySample`] itself (`representation_identifier`), and every
+/// sample [`crate::DurabilityStore::replay_for_topic`] returns carries its
+/// own — so a replay writer primed from the store re-declares the right
+/// encapsulation per sample regardless of what is (or is not) in this
+/// struct.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicMeta {
     /// The application/IDL type name the topic is served under (SEDP

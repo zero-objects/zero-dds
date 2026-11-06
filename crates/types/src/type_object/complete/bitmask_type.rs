@@ -8,7 +8,7 @@ use zerodds_wire::{Reader, WireError, Writer};
 
 use crate::error::TypeCodecError;
 use crate::type_object::common::{
-    CompleteMemberDetail, CompleteTypeDetail, decode_seq, encode_seq,
+    CompleteMemberDetail, CompleteTypeDetail, decode_seq_appendable, encode_seq_appendable,
 };
 use crate::type_object::flags::{BitflagFlag, BitmaskTypeFlag};
 use crate::type_object::minimal::CommonBitflag;
@@ -36,35 +36,55 @@ pub struct CompleteBitmaskType {
 }
 
 impl CompleteBitmaskType {
+    /// DDS-XTypes 1.3 Annex B (unchanged in 1.4 Beta 1): the type, its
+    /// `CompleteBitmaskHeader` (the `CompleteEnumeratedHeader`: `bit_bound`
+    /// and the type detail) and every `CompleteBitflag` are
+    /// `@appendable`, and so is the flag sequence's element type — a
+    /// `DHEADER` in front of each under XCDR2, the octets CycloneDDS
+    /// 11.0.1 and Fast DDS 3.6.1 write and hash.
     pub(super) fn encode_into(&self, w: &mut Writer) -> Result<(), WireError> {
-        w.write_u16(self.bitmask_flags.0);
-        w.write_u16(self.bit_bound);
-        self.detail.encode_into(w)?;
-        encode_seq(w, &self.flag_seq, |w, f| {
-            w.write_u16(f.common.position);
-            w.write_u16(f.common.flags.0);
-            f.detail.encode_into(w)
+        crate::framing::encode_appendable(w, |w| {
+            w.write_u16(self.bitmask_flags.0);
+            crate::framing::encode_appendable(w, |w| {
+                w.write_u16(self.bit_bound);
+                self.detail.encode_into(w)
+            })?;
+            encode_seq_appendable(w, &self.flag_seq, |w, f| {
+                crate::framing::encode_appendable(w, |w| {
+                    w.write_u16(f.common.position);
+                    w.write_u16(f.common.flags.0);
+                    f.detail.encode_into(w)
+                })
+            })
         })
     }
 
     pub(super) fn decode_from(r: &mut Reader<'_>) -> Result<Self, TypeCodecError> {
-        let bitmask_flags = BitmaskTypeFlag(r.read_u16()?);
-        let bit_bound = r.read_u16()?;
-        let detail = CompleteTypeDetail::decode_from(r)?;
-        let flag_seq = decode_seq(r, |r| {
-            let position = r.read_u16()?;
-            let flags = BitflagFlag(r.read_u16()?);
-            let detail = CompleteMemberDetail::decode_from(r)?;
-            Ok(CompleteBitflag {
-                common: CommonBitflag { position, flags },
+        let value = crate::framing::decode_appendable(r, |r| {
+            let bitmask_flags = BitmaskTypeFlag(r.read_u16()?);
+            let (bit_bound, detail) = crate::framing::decode_appendable(r, |r| {
+                let bit_bound = r.read_u16()?;
+                let detail = CompleteTypeDetail::decode_from(r)?;
+                Ok::<_, WireError>((bit_bound, detail))
+            })?;
+            let flag_seq = decode_seq_appendable(r, |r| {
+                crate::framing::decode_appendable(r, |r| {
+                    let position = r.read_u16()?;
+                    let flags = BitflagFlag(r.read_u16()?);
+                    let detail = CompleteMemberDetail::decode_from(r)?;
+                    Ok(CompleteBitflag {
+                        common: CommonBitflag { position, flags },
+                        detail,
+                    })
+                })
+            })?;
+            Ok::<_, WireError>(Self {
+                bitmask_flags,
+                bit_bound,
                 detail,
+                flag_seq,
             })
         })?;
-        Ok(Self {
-            bitmask_flags,
-            bit_bound,
-            detail,
-            flag_seq,
-        })
+        Ok(value)
     }
 }

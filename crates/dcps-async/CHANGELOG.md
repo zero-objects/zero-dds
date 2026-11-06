@@ -4,6 +4,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), version
 
 ## [Unreleased]
 
+### Fixed
+
+- `AsyncDataWriter::write`, `dispose` and `unregister_instance` no longer
+  block the executor's thread when the RELIABLE writer has no room in its
+  RESOURCE_LIMITS: the sync call ran on that thread and waited on its
+  condition variable up to `max_blocking_time` (without end for an INFINITE
+  one), and the retry loop of zerodds-async-1.0 §5 was entered only on
+  `OutOfResources`, which a RELIABLE writer with `max_blocking_time` above 0
+  does not return. The sync call now runs under
+  `zerodds_dcps::runtime::without_waiting_for_room`; where it would wait, the
+  future suspends and tries again until `max_blocking_time` has passed, then
+  `Timeout`. `OutOfResources`, where waiting cannot help (BEST_EFFORT, a
+  `max_blocking_time` of 0), is passed on at once, as the sync write does.
+
 ### Changed
 
 - `AsyncDataReader::publication_matched_stream` → `subscription_matched_stream`, and the type `PublicationMatchedStream` → `SubscriptionMatchedStream`. The reader-side stream always yielded `SubscriptionMatchedStatus` (DDS 1.4 §2.2.4.1 SUBSCRIPTION_MATCHED); the name now says so.

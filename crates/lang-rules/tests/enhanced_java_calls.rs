@@ -58,10 +58,15 @@ fn root() -> PathBuf {
 }
 
 fn javac_available() -> bool {
-    Command::new("javac")
-        .arg("-version")
-        .output()
-        .is_ok_and(|out| out.status.success())
+    // A look at PATH and not a start of the tool: a JVM, .NET or BEAM
+    // start cost seconds of a test's 25 s with eight compilers side by side
+    // (pipeline 8678); a tool that cannot start fails the compile that follows.
+    on_path("javac")
+}
+
+fn on_path(tool: &str) -> bool {
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(tool).is_file()))
 }
 
 fn model(idl: &str) -> Ast {
@@ -145,17 +150,28 @@ fn compiles(text: &str, tag: &str) -> Result<(), String> {
     result
 }
 
-#[test]
-fn the_enhanced_java_compiles() {
-    if !javac_available() {
-        eprintln!("SKIPPED: `javac` is not usable.");
-        return;
-    }
-    for (tag, mapping) in [
-        ("enhanced", ServiceMapping::Enhanced),
-        ("enhanced-empty", ServiceMapping::EnhancedEmptyStructures),
-    ] {
+/// The generated Java of both enhanced mappings compiles, one `javac` per
+/// mapping and a test each: the two in one test took past its 25 s with
+/// eight tests side by side (pipeline 8688, job 228188).
+mod the_enhanced_java_compiles {
+    use super::*;
+
+    fn mapping_compiles(tag: &str, mapping: ServiceMapping) {
+        if !javac_available() {
+            eprintln!("SKIPPED: `javac` is not usable.");
+            return;
+        }
         compiles(&generate(ENHANCED, mapping), tag).unwrap_or_else(|why| panic!("{tag}: {why}"));
+    }
+
+    #[test]
+    fn enhanced() {
+        mapping_compiles("enhanced", ServiceMapping::Enhanced);
+    }
+
+    #[test]
+    fn enhanced_empty_structures() {
+        mapping_compiles("enhanced-empty", ServiceMapping::EnhancedEmptyStructures);
     }
 }
 
@@ -163,7 +179,7 @@ fn the_enhanced_java_compiles() {
 /// writes, so the member ids and the length codes are the ones the model
 /// names: 4 for a member written with a `NEXTINT`, 2 for a 32-bit member.
 #[test]
-fn the_codec_writes_the_member_ids_and_length_codes_of_the_clause() {
+fn rpc_7_5_1_2_1_1_the_codec_writes_the_member_ids_and_length_codes_of_the_clause() {
     let text = generate(ENHANCED, ServiceMapping::Enhanced);
     for (member, code) in [("add", 4), ("remoteEx", 2), ("x", 2), ("result", 4)] {
         assert!(
@@ -227,7 +243,7 @@ fn a_derived_interface_answers_the_inherited_operation_itself() {
 /// read from a malformed one. The run-time counterpart is
 /// `crates/rpc/tests/java/EnhancedRuntimeChecks.java`.
 #[test]
-fn a_choice_holds_exactly_one_member_on_both_sides_of_the_codec() {
+fn rpc_7_5_1_2_1_1_a_choice_holds_exactly_one_member_on_both_sides_of_the_codec() {
     let text = generate(ENHANCED, ServiceMapping::Enhanced);
     assert!(
         text.contains("Calc_Request holds exactly one member (DDS-RPC 1.0 §7.5.1.2.1.1)"),

@@ -230,10 +230,10 @@ impl ModelGraph {
                 continue;
             };
             // A type belongs to its module.
-            if let Ok(module) = ast.module(node.module) {
-                if let Some(module_ghost) = self.by_node.get(&module.node_id).copied() {
-                    let _ = self.graph.connect(module_ghost, type_ghost, Status::Solid);
-                }
+            if let Ok(module) = ast.module(node.module)
+                && let Some(module_ghost) = self.by_node.get(&module.node_id).copied()
+            {
+                let _ = self.graph.connect(module_ghost, type_ghost, Status::Solid);
             }
             // An aggregate owns its members, in declaration order.
             for member in ast.members_of(id) {

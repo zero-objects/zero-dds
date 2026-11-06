@@ -15,7 +15,7 @@ use zerodds_dcps::{DdsType, RawBytes};
 use zerodds_dcps_async::{AsyncDomainParticipantFactory, DataWriterQos, PublisherQos, TopicQos};
 
 #[tokio::test(flavor = "multi_thread")]
-async fn spawn_in_tokio_drives_tick_on_tokio_runtime() {
+async fn async_4_spawn_in_tokio_drives_tick_on_tokio_runtime() {
     let factory = AsyncDomainParticipantFactory::instance();
     let handle = tokio::runtime::Handle::current();
 
@@ -50,7 +50,7 @@ async fn spawn_in_tokio_drives_tick_on_tokio_runtime() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn spawn_in_tokio_task_terminates_on_shutdown() {
+async fn async_4_spawn_in_tokio_task_terminates_on_shutdown() {
     let factory = AsyncDomainParticipantFactory::instance();
     let handle = tokio::runtime::Handle::current();
     let p = factory

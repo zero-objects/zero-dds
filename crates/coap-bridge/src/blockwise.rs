@@ -200,7 +200,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn block_size_matches_spec_szx_table() {
+    fn coapbridge_4_4_block_size_matches_spec_szx_table() {
         // Spec §2.2: szx 0=16, 1=32, 2=64, 3=128, 4=256, 5=512, 6=1024.
         let expected = [16, 32, 64, 128, 256, 512, 1024];
         for (szx, sz) in expected.iter().enumerate() {
@@ -214,7 +214,7 @@ mod tests {
     }
 
     #[test]
-    fn szx_7_rejected() {
+    fn coapbridge_4_4_szx_7_rejected() {
         let v = BlockValue {
             num: 0,
             more: false,
@@ -224,31 +224,31 @@ mod tests {
     }
 
     #[test]
-    fn round_trip_small_block_value() {
+    fn coapbridge_4_4_a_small_block_value_is_one_octet() {
+        // RFC 7959 §2.2: NUM, then M, then SZX in the low three bits.
         let v = BlockValue {
             num: 0,
             more: true,
             szx: 6,
         };
-        let bytes = v.encode().unwrap();
-        let back = BlockValue::decode(&bytes).unwrap();
-        assert_eq!(v, back);
+        assert_eq!(v.encode().unwrap(), [0x0e]);
+        assert_eq!(BlockValue::decode(&[0x0e]).unwrap(), v);
     }
 
     #[test]
-    fn round_trip_large_block_value() {
+    fn coapbridge_4_4_the_largest_block_number_is_three_octets() {
+        // RFC 7959 §2.2: NUM has 20 bits in a three-octet value.
         let v = BlockValue {
             num: 0xfffff,
             more: false,
             szx: 0,
         };
-        let bytes = v.encode().unwrap();
-        let back = BlockValue::decode(&bytes).unwrap();
-        assert_eq!(v, back);
+        assert_eq!(v.encode().unwrap(), [0xff, 0xff, 0xf0]);
+        assert_eq!(BlockValue::decode(&[0xff, 0xff, 0xf0]).unwrap(), v);
     }
 
     #[test]
-    fn num_too_large_rejected() {
+    fn coapbridge_4_4_num_too_large_rejected() {
         let v = BlockValue {
             num: 1 << 20,
             more: false,
@@ -258,7 +258,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_bad_length() {
+    fn coapbridge_4_4_decode_rejects_bad_length() {
         assert_eq!(
             BlockValue::decode(&[0; 4]),
             Err(BlockError::BadEncodingLength)
@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn reassembler_combines_blocks_in_order() {
+    fn coapbridge_4_4_reassembler_combines_blocks_in_order() {
         let mut r = BlockReassembler::new(16);
         r.accept(
             BlockValue {
@@ -302,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn out_of_order_block_rejected() {
+    fn coapbridge_4_4_out_of_order_block_rejected() {
         let mut r = BlockReassembler::new(16);
         let err = r
             .accept(
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    fn intermediate_block_size_must_match() {
+    fn coapbridge_4_4_intermediate_block_size_must_match() {
         let mut r = BlockReassembler::new(16);
         r.accept(
             BlockValue {
@@ -343,7 +343,7 @@ mod tests {
     }
 
     #[test]
-    fn final_block_can_be_smaller() {
+    fn coapbridge_4_4_final_block_can_be_smaller() {
         let mut r = BlockReassembler::new(16);
         r.accept(
             BlockValue {

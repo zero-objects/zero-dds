@@ -851,16 +851,17 @@ impl Preprocessor<'_> {
         while index < body.len() {
             let piece = &body[index];
             let parameter = |text: &str| params.iter().position(|param| param == text);
-            if function_like && piece.text == "#" {
-                if let Some(slot) = body.get(index + 1).and_then(|next| parameter(&next.text)) {
-                    items.push(Item::Token(PpToken::made(
-                        stringize(&args[slot]),
-                        piece.space_before,
-                        origin.clone(),
-                    )));
-                    index += 2;
-                    continue;
-                }
+            if function_like
+                && piece.text == "#"
+                && let Some(slot) = body.get(index + 1).and_then(|next| parameter(&next.text))
+            {
+                items.push(Item::Token(PpToken::made(
+                    stringize(&args[slot]),
+                    piece.space_before,
+                    origin.clone(),
+                )));
+                index += 2;
+                continue;
             }
             if piece.text == "##" {
                 items.push(Item::Paste);
@@ -1316,6 +1317,11 @@ impl Preprocessor<'_> {
                 let from = self.map.path(file).map(ToOwned::to_owned);
                 match self.loader.load(&target, from.as_deref()) {
                     Some((resolved, text)) => self.include(&resolved, &text, cursor.depth + 1),
+                    None if builtin_include(&target).is_some() => {
+                        if let Some((resolved, text)) = builtin_include(&target) {
+                            self.include(resolved, text, cursor.depth + 1);
+                        }
+                    }
                     None => self.report(Diagnostic::error(
                         DiagnosticCode::UnexpectedToken,
                         span,
@@ -1391,17 +1397,15 @@ impl Preprocessor<'_> {
                     self.once.push(current);
                 }
             }
-            "pragma" => {
-                if keeping {
-                    self.pending_pragmas.push((
-                        line.trim().to_string(),
-                        Trivia {
-                            kind: TriviaKind::Directive,
-                            span,
-                        },
-                        file,
-                    ));
-                }
+            "pragma" if keeping => {
+                self.pending_pragmas.push((
+                    line.trim().to_string(),
+                    Trivia {
+                        kind: TriviaKind::Directive,
+                        span,
+                    },
+                    file,
+                ));
             }
             _ => {}
         }
@@ -1694,6 +1698,56 @@ fn split_word(text: &str) -> (&str, &str) {
 }
 
 /// The path out of `"name"` or `<name>`.
+/// The files of the CORBA module this front end carries: `orb.idl`, the
+/// files it includes, and `TypeCode.idl` (`corba/README.md`).
+///
+/// OMG IDL 4.2 §7.4.6.4.7: "The file orb.idl contains the IDL definitions
+/// for the CORBA module. Except for CORBA::TypeCode, the file orb.idl must
+/// be included in IDL files that use names defined in the CORBA module.
+/// IDL files that use CORBA::TypeCode may obtain its definition by
+/// including either the file orb.idl or the file TypeCode.idl." Consulted
+/// only when the caller's loader finds no file of the name, so the
+/// caller's own `orb.idl` wins.
+const BUILTIN_INCLUDES: &[(&str, &str)] = &[
+    ("orb.idl", include_str!("corba/orb.idl")),
+    ("TypeCode.idl", include_str!("corba/TypeCode.idl")),
+    (
+        "CORBA_StandardExceptions.idl",
+        include_str!("corba/CORBA_StandardExceptions.idl"),
+    ),
+    ("CORBA_Current.idl", include_str!("corba/CORBA_Current.idl")),
+    ("CORBA_Policy.idl", include_str!("corba/CORBA_Policy.idl")),
+    (
+        "CORBA_DomainManager.idl",
+        include_str!("corba/CORBA_DomainManager.idl"),
+    ),
+    (
+        "CORBA_Pollable.idl",
+        include_str!("corba/CORBA_Pollable.idl"),
+    ),
+    (
+        "CORBA_InterfaceRepository.idl",
+        include_str!("corba/CORBA_InterfaceRepository.idl"),
+    ),
+    (
+        "CORBA_TypeCode.idl",
+        include_str!("corba/CORBA_TypeCode.idl"),
+    ),
+    (
+        "CORBA_CustomMarshal.idl",
+        include_str!("corba/CORBA_CustomMarshal.idl"),
+    ),
+    ("CORBA_Stream.idl", include_str!("corba/CORBA_Stream.idl")),
+];
+
+/// The built-in file an `#include` target names, as `(path, text)`.
+fn builtin_include(target: &str) -> Option<(&'static str, &'static str)> {
+    BUILTIN_INCLUDES
+        .iter()
+        .find(|(name, _)| *name == target)
+        .map(|(name, text)| (*name, *text))
+}
+
 fn include_target(rest: &str) -> Option<String> {
     let text = rest.trim();
     let inner = text

@@ -143,7 +143,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-      - name: Download the macOS bundles
+      - name: Download the macOS bundle
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.tag }}
@@ -151,9 +151,7 @@ jobs:
           v="${TAG#v}"
           gh release download "$TAG" --repo "${{ github.repository }}" --dir bundles \
             --pattern "zerodds-$v-aarch64-apple-darwin.tar.gz" \
-            --pattern "zerodds-$v-aarch64-apple-darwin.tar.gz.sha256" \
-            --pattern "zerodds-$v-x86_64-apple-darwin.tar.gz" \
-            --pattern "zerodds-$v-x86_64-apple-darwin.tar.gz.sha256"
+            --pattern "zerodds-$v-aarch64-apple-darwin.tar.gz.sha256"
           (cd bundles && sha256sum -c ./*.sha256)
       - name: Render formulae
         env:
@@ -169,7 +167,7 @@ jobs:
 
   homebrew-verify:
     # Installs the rendered formulae before they reach the tap. The runner is
-    # arm64; the x86_64 bundle is checked by its sha256 only.
+    # arm64, the platform the formulae are for.
     name: Install with Homebrew (arm64)
     needs: homebrew-render
     runs-on: macos-15

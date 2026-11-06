@@ -196,7 +196,7 @@ mod tests {
     /// E2E: server binds on 127.0.0.1:0 (random port),
     /// client connects, sends AMQP header + Close.
     #[test]
-    fn server_accepts_connection_and_handles_open_close() {
+    fn ddsamqp_2_1_server_accepts_connection_and_handles_open_close() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         listener.set_nonblocking(true).unwrap();
@@ -293,9 +293,8 @@ mod tests {
         // Client closes.
         drop(client);
 
-        // Wait a little until the server side is ready.
-        thread::sleep(Duration::from_millis(200));
-
+        // The handler counted the connection before it answered the
+        // header the client read.
         assert_eq!(metrics.snapshot("connections.total"), Some(1));
 
         // Shutdown.

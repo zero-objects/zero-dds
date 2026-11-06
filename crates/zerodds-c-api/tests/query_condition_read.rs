@@ -40,7 +40,7 @@ const PRECONDITION_NOT_MET: i32 = -5;
 const NO_DATA: i32 = -7;
 
 #[test]
-fn a_query_condition_without_a_type_has_no_data_to_judge_when_empty_and_refuses_a_sample_it_cannot_read()
+fn capi_14_4_a_query_condition_without_a_type_has_no_data_to_judge_when_empty_and_refuses_a_sample_it_cannot_read()
  {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CQueryNoType").unwrap();
@@ -154,7 +154,8 @@ unsafe fn read_xs(
 }
 
 #[test]
-fn read_and_take_with_a_query_condition_return_only_the_samples_the_expression_selects() {
+fn psmcxx_2_1_read_and_take_with_a_query_condition_return_only_the_samples_the_expression_selects()
+{
     let lease = zerodds_test_domains::lease_domain();
     let expr = CString::new("x > %0").unwrap();
     let below = CString::new("x < %0").unwrap();
@@ -355,7 +356,7 @@ fn take_next_instance_w_condition_applies_the_expression_to_the_one_instance_of_
 /// ascending, whatever the order the samples arrived in; a condition before it
 /// still selects.
 #[test]
-fn order_by_orders_what_read_and_take_return() {
+fn dcps_b_2_order_by_orders_what_read_and_take_return() {
     let lease = zerodds_test_domains::lease_domain();
     let ordered = CString::new("x > %0 ORDER BY x").unwrap();
     let zero = CString::new("0").unwrap();

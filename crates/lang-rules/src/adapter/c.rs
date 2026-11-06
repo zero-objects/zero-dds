@@ -288,16 +288,15 @@ pub fn c_items(ast: &Ast, applied: &Applied) -> Result<Vec<c::Decl>, Materialise
     // keep the first of each and drop the rest.
     let mut seen_typedefs: Vec<String> = Vec::new();
     out.retain(|decl| {
-        if let c::Decl::Typedef(typedef) = decl {
-            if let c::Type::StructTag(tag) = &typedef.type_ {
-                if tag.as_str() == typedef.name.as_str() {
-                    let name = typedef.name.as_str().to_string();
-                    if seen_typedefs.contains(&name) {
-                        return false;
-                    }
-                    seen_typedefs.push(name);
-                }
+        if let c::Decl::Typedef(typedef) = decl
+            && let c::Type::StructTag(tag) = &typedef.type_
+            && tag.as_str() == typedef.name.as_str()
+        {
+            let name = typedef.name.as_str().to_string();
+            if seen_typedefs.contains(&name) {
+                return false;
             }
+            seen_typedefs.push(name);
         }
         true
     });
@@ -557,10 +556,10 @@ pub(crate) fn dependencies(ast: &Ast, id: Id<TypeNode>) -> Vec<Id<TypeNode>> {
         TypeKind::Union { discriminator, .. } => {
             out.extend(discriminator.resolved());
             for case in ast.cases_of(id) {
-                if let Ok(case_node) = ast.case(*case) {
-                    if let Ok(member) = ast.member(case_node.member) {
-                        out.extend(member.type_.resolved());
-                    }
+                if let Ok(case_node) = ast.case(*case)
+                    && let Ok(member) = ast.member(case_node.member)
+                {
+                    out.extend(member.type_.resolved());
                 }
             }
         }
@@ -755,6 +754,12 @@ pub fn member_held_behind_pointer(
 /// The member that holds the base of a derived structure.
 /// XTypes 1.3 §7.5.1.4.1.3.
 pub const PARENT: &str = "parent";
+
+/// The one member of a structure that has no IDL members: C23
+/// §6.7.2.1p8 leaves a structure with no named member undefined. Only a
+/// structure without members has it, so it cannot meet a member of the
+/// same name; the codec does not reach it, so it is not on the wire.
+pub const EMPTY_PLACEHOLDER: &str = "zd_no_members";
 
 /// The structure `id` derives from, if it does.
 #[must_use]
@@ -1601,25 +1606,34 @@ fn declare(
                 });
             }
             // C has no empty structure. C23 §6.7.2.1p8: "If the
-            // struct-declaration-list does not contain any named
+            // member declaration list does not contain any named
             // members … the behavior is undefined" — gcc and clang
             // accept `struct S { };` only as an extension, and the
             // probe builds with `-std=c11 -pedantic-errors`, where it
-            // is an error.
+            // is an error. IDL 4.2 allows the structure, so the C
+            // column declares one member that stands in for none
+            // (`EMPTY_PLACEHOLDER`). The codec plans from the IDL
+            // members and never reaches it, so it is not on the wire;
+            // the table of IDL names does not list it.
             //
-            // Refused by name rather than emitted: the generated header
-            // did compile nowhere and the failure arrived as
-            // "does not compile" against a build directory, 840 slots
-            // at a time, with nothing naming the construct. C++ has no
-            // such rule and its column carries the case.
+            // What the vendors' C generators do, measured: Cyclone DDS's
+            // idlc 11.0.1 puts the empty structure under `#if 0`, and a
+            // type deriving from it or holding it does not compile
+            // (`field 'parent' has incomplete type`); RTI's rtiddsgen
+            // 4.7.0 writes `struct M_Empty { }`, which gcc takes as an
+            // extension with a zero size and refuses under
+            // `-pedantic-errors`.
             if members.is_empty() {
-                return Err(MaterialiseError::NoLanguageForm {
-                    construct: format!(
-                        "`{name}`, an aggregate with no members — C23 §6.7.2.1p8 \
-                         leaves a structure with no named member undefined"
+                members.push(c::Member {
+                    doc: Doc::line(
+                        "IDL 4.2 allows a structure without members and C does not \
+                         (C23 6.7.2.1p8): this octet stands in for none. It is not \
+                         serialized.",
                     ),
-                    language: "C",
-                    at: name,
+                    type_: c::Type::Primitive(c::Primitive::UInt8),
+                    name: Ident::new(EMPTY_PLACEHOLDER),
+                    dims: Vec::new(),
+                    bits: None,
                 });
             }
             out.extend(struct_typedef(&name, members, Doc::none()));

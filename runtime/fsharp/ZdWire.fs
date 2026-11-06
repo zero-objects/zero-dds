@@ -792,7 +792,11 @@ type Pid =
 
 /// A saved reader position, for a two-pass read. What `ReaderSave` returns
 /// and `ReaderRestore` takes.
-type ReaderMark = { Pos: int; Origin: int }
+/// What `ReaderSave` takes and `ReaderRestore` puts back: the cursor, the
+/// origin and the status, so a refusal made between the two goes back with
+/// the cursor (the counting pass of a delimited `map` under rule (15) of
+/// XTypes 1.3 §7.4.3.5.3 reads its entries twice).
+type ReaderMark = { Pos: int; Origin: int; Status: Status }
 
 /// A member header as `ReadEmheader` returns it.
 type EmHeaderRead =
@@ -1529,20 +1533,32 @@ type Reader(data: byte[], endian: Endian, encoding: Encoding) =
     /// refusal here is not this reader's failure to go on — the walk
     /// may still return a value from the position, and the harness
     /// reads the status once the whole decode finishes.
-    member _.ReaderRefuse(reason: Status) : unit = status <- reason
+    member _.ReaderRefuse(reason: Status) : unit =
+        // The first refusal sticks, as in every sibling runtime: what the
+        // sample was refused for first is what the harness reads.
+        if reason <> Ok && status = Ok then
+            status <- reason
 
     /// Clears a discard a caller has already accounted for, so a later
     /// member's own try-construct behaviour is judged on its own
     /// position and not on one a sibling member left standing.
-    member _.ReaderClearDiscard() : unit =
+    ///
+    /// Answers whether it took one back: the generated decoder reads the
+    /// answer as the condition of a member's explicit `@default`
+    /// (XTypes 1.3 §7.2.2.4.4.4.9), and any other refusal stays.
+    member _.ReaderClearDiscard() : bool =
         if status = Discarded then
             status <- Ok
+            true
+        else
+            false
 
-    member this.ReaderSave() : ReaderMark = { Pos = pos; Origin = origin }
+    member this.ReaderSave() : ReaderMark = { Pos = pos; Origin = origin; Status = status }
 
     member this.ReaderRestore(mark: ReaderMark) : unit =
         pos <- mark.Pos
         origin <- mark.Origin
+        status <- mark.Status
 
     /// The read-side pair of `Writer.BeginPackedElement`. See that method
     /// for the axis and the recorded rows.

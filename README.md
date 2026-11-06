@@ -1,7 +1,7 @@
 # ZeroDDS
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/rust-1.88%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/rust-1.97%2B-orange.svg)](https://www.rust-lang.org/)
 [![Edition](https://img.shields.io/badge/edition-2024-success.svg)](https://doc.rust-lang.org/edition-guide/)
 
 ZeroDDS is a Rust implementation of OMG DDS, with language bindings,
@@ -32,7 +32,7 @@ that a Vendor-ID is the only possible cross-vendor difference.
 
 ## Quickstart from this checkout
 
-Use Rust 1.88 or newer and a native linker. From the checkout root:
+Use Rust 1.97 or newer and a native linker. From the checkout root:
 
 ```bash
 cargo build --locked -j 1 -p zerodds-dcps \
@@ -100,7 +100,7 @@ optional bridges, native bindings and system-library integrations and require
 their platform dependencies. For example, the durability lakehouse adapter
 requires libduckdb. Do not assume every other crate is dependency-free.
 
-The [toolchain file](rust-toolchain.toml) pins Rust 1.88.0.
+The [toolchain file](rust-toolchain.toml) pins Rust 1.97.1.
 The [deployment specification](docs/specs/zerodds-deployment-1.0.md) describes
 configuration and layout contracts, not a release-channel availability check.
 

@@ -203,7 +203,7 @@ fn the_enhanced_topic_type_names_agree() {
 /// produce the same strings or a generated client subscribes to a topic
 /// the runtime never publishes.
 #[test]
-fn both_readings_of_seven_four_produce_the_same_topic_names() {
+fn rpc_7_2_2_3_both_readings_of_seven_four_produce_the_same_topic_names() {
     for source in [CALCULATOR, ANNOTATED] {
         let ast = model(source);
         let (id, _) = ast.interfaces().last().expect("an interface");
@@ -254,7 +254,7 @@ fn both_readings_of_seven_four_produce_the_same_topic_names() {
 /// from IDL. §7.4.3, "Everything Default" and "User-defined service
 /// name".
 #[test]
-fn the_published_table_comes_out_of_the_idl() {
+fn rpc_7_4_3_the_published_table_comes_out_of_the_idl() {
     let ast = model(ANNOTATED);
     let (id, _) = ast.interfaces().last().expect("Calculator");
     let wire = lower_service(&ast, id).expect("the wire model");
@@ -272,7 +272,7 @@ fn the_published_table_comes_out_of_the_idl() {
 /// and the same number, or the generated reader decodes a case the
 /// writer never selected.
 #[test]
-fn both_readings_of_seven_five_produce_the_same_sample_structure() {
+fn rpc_7_5_both_readings_of_seven_five_produce_the_same_sample_structure() {
     let ast = model(RAISING);
     let (id, _) = ast.interfaces().last().expect("an interface");
     let wire = lower_service(&ast, id).expect("the wire model");
@@ -352,7 +352,7 @@ fn both_readings_of_seven_five_produce_the_same_sample_structure() {
 /// The two placeholder types §7.5.1.1.1 declares are one octet each, and
 /// the member names the clause fixes are spelled once per column.
 #[test]
-fn the_common_types_and_member_names_are_spelled_once() {
+fn rpc_7_5_1_1_1_the_common_types_and_member_names_are_spelled_once() {
     assert_eq!(zerodds_rpc::PLACEHOLDER_OCTETS, 1);
     assert_eq!(core::mem::size_of::<zerodds_rpc::UnusedMember>(), 1);
     assert_eq!(core::mem::size_of::<zerodds_rpc::UnknownOperation>(), 1);

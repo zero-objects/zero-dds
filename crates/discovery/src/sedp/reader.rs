@@ -836,11 +836,14 @@ mod tests {
             reader_id: EntityId::SEDP_BUILTIN_PUBLICATIONS_READER,
             writer_id: EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER,
             writer_sn: SequenceNumber(1),
-            inline_qos: Some(zerodds_rtps::inline_qos::lifecycle_inline_qos(
-                disposed.to_bytes(),
-                zerodds_rtps::inline_qos::status_info::DISPOSED
-                    | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
-            )),
+            inline_qos: Some(
+                zerodds_rtps::inline_qos::lifecycle_inline_qos(
+                    disposed.to_bytes(),
+                    zerodds_rtps::inline_qos::status_info::DISPOSED
+                        | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
+                )
+                .into(),
+            ),
             // Key-only dispose in Fast DDS 3.6.1's measured form: K clear,
             // no payload, the instance named by PID_KEY_HASH alone.
             data_flag: false,
@@ -866,7 +869,7 @@ mod tests {
     /// Reading only the key hash dropped this sample and left the deleted
     /// endpoint matched until a liveliness timeout — with no error anywhere.
     #[test]
-    fn handle_data_reports_a_cyclone_dispose_without_key_hash_as_removed() {
+    fn rtps_9_4_5_4_handle_data_reports_a_cyclone_dispose_without_key_hash_as_removed() {
         let mut r = make_reader();
         let guid_octets = [
             0x01, 0x10, 0xd8, 0x6c, 0x05, 0x73, 0x19, 0x80, 0x13, 0x63, 0xf2, 0x44, 0x00, 0x00,
@@ -883,7 +886,7 @@ mod tests {
             reader_id: EntityId::UNKNOWN,
             writer_id: EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER,
             writer_sn: SequenceNumber(1),
-            inline_qos: Some(inline_qos),
+            inline_qos: Some(inline_qos.into()),
             data_flag: false,
             key_flag: true,
             non_standard_flag: false,
@@ -949,7 +952,7 @@ mod tests {
     /// heartbeatResponseDelay of 500 ms (§8.4.10.1) runs from the first
     /// HEARTBEAT that asked for a response, so one goes out per delay.
     #[test]
-    fn sedp_reader_does_not_storm_against_a_writer_that_never_delivers() {
+    fn rtps_8_4_10_1_sedp_reader_does_not_storm_against_a_writer_that_never_delivers() {
         let mut r = make_reader();
         let remote_prefix = GuidPrefix::from_bytes([2; 12]);
         let w = EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER;

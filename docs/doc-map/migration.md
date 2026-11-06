@@ -283,7 +283,7 @@ Nicht gelesen. Zuordnung (Vendor-Schlüssel nach Vendor-Doku, nicht im Repo gepr
 
 ### 6.5 Mischbetrieb
 
-- Standard-Discovery; Belege `crates/discovery/tests/fastdds_live_spdp.rs`, `crates/dcps/tests/fastdds_live_pub.rs`, `fastdds_live_sub.rs`, `fastdds_qos_matrix.rs`, CI-Gate `tests/interop/ci/`. Ein SPDP-Handshake mit einem laufenden Fast-DDS-Discovery-Server ist als `#[ignore]`-Test vorhanden (`fastdds_live_spdp.rs:131`).
+- Standard-Discovery; Belege `crates/discovery/tests/fastdds_live_spdp.rs` und die OMG-dds-rtps-Fälle gegen Fast DDS in beiden Richtungen (`tests/interop/omg/chunks.tsv`, `rtps-vendor-1`). Ein Fast-DDS-Discovery-Server beantwortet ZeroDDS' `DATA(p)` nicht: ZeroDDS ist kein Client eines Discovery-Servers (`docs/spec-coverage/cross-vendor-validation.md`, CV-1).
 - ROS-2-Services mit `rmw_fastrtps`: ZeroDDS schreibt `PID_RELATED_SAMPLE_IDENTITY` zweimal, als 0x0083 und als eProsima-PID 0x800f (`crates/dcps/src/runtime.rs:17939–17947`, `crates/rtps/src/inline_qos.rs:119–127`). Keine Einstellung nötig.
 - DDS-Security mit Fast DDS braucht RSA-Identitätszertifikate (laut Doku, `docs/spec-coverage/cross-vendor-validation.md`, Abschnitt „DDS-Security, cross-vendor“).
 
@@ -300,7 +300,7 @@ OpenDDS nutzt die IDL-zu-C++-Abbildung von TAO (`DDS::DomainParticipantFactory_v
 
 ### 7.2 IDL
 
-`#pragma DCPS_DATA_TYPE` und `#pragma DCPS_DATA_KEY` werden gelesen; `DCPS_DATA_KEY` macht den Member zum Key (2.2). Ein Key-Pfad in einen Member (`p.x`, `a[0]`) wird abgewiesen und muss als `@key` am inneren Typ geschrieben werden. OpenDDS ignoriert `@value` an Enumeratoren und `@bit_bound` (`docs/wire-axes-followup.md`, Tabelle „What moved into a dialect“, Zeilen `EnumeratorValue::Ordinal`, `EnumHolderWidth`).
+`#pragma DCPS_DATA_TYPE` und `#pragma DCPS_DATA_KEY` werden gelesen; `DCPS_DATA_KEY` macht den Member zum Key (2.2). Ein Key-Pfad in einen Member (`p.x`, `a[0]`) wird abgewiesen und muss als `@key` am inneren Typ geschrieben werden. OpenDDS ignoriert `@value` an Enumeratoren und `@bit_bound` (`0b2e8df9f6b:docs/wire-axes-followup.md`, Tabelle „What moved into a dialect“, Zeilen `EnumeratorValue::Ordinal`, `EnumHolderWidth`).
 
 ### 7.3 QoS
 

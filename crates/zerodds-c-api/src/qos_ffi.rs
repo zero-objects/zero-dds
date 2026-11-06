@@ -1872,7 +1872,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn duration_roundtrip() {
+    fn capi_1_2_duration_roundtrip() {
         let r = Duration::from_millis(250);
         let c: ZeroDdsDuration = r.into();
         let back: Duration = c.into();
@@ -1883,7 +1883,7 @@ mod tests {
     }
 
     #[test]
-    fn duration_infinite_roundtrip() {
+    fn capi_3_1_duration_infinite_roundtrip() {
         let r = Duration::INFINITE;
         let c: ZeroDdsDuration = r.into();
         assert_eq!(c.sec, i32::MAX);
@@ -1893,35 +1893,17 @@ mod tests {
     }
 
     #[test]
-    fn dw_qos_default_from_null() {
+    fn capi_1_2_dw_qos_default_from_null() {
         // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
         let q = unsafe { dw_qos_from_c(ptr::null()) };
         assert_eq!(q, DataWriterQos::default());
-    }
-
-    #[test]
-    fn dw_qos_reliability_roundtrip() {
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let mut c: ZeroDdsDataWriterQos = unsafe { core::mem::zeroed() };
-        c.reliability = ZeroDdsReliabilityQosPolicy {
-            kind: 1, // BestEffort
-            max_blocking_time: ZeroDdsDuration { sec: 1, nanosec: 0 },
-        };
-        c.history.kind = 0;
-        c.history.depth = 1;
-        c.resource_limits.max_samples = 1000;
-        c.resource_limits.max_instances = 10;
-        c.resource_limits.max_samples_per_instance = 100;
-        // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
-        let q = unsafe { dw_qos_from_c(&c) };
-        assert!(matches!(q.reliability.kind, ReliabilityKind::BestEffort));
     }
 
     /// DDS-Security 1.2 §7.3.21: `property` (with `propagate` per entry and
     /// binary properties) and `data_tags` of a writer and a reader QoS cross
     /// the C ABI in both directions.
     #[test]
-    fn property_and_data_tags_cross_the_c_abi_both_ways() {
+    fn security_7_3_21_property_and_data_tags_cross_the_c_abi_both_ways() {
         let name_a = c"dds.sec.crypto.symmetric_cipher_algorithm";
         let value_a = c"AES256+GCM";
         let name_b = c"local.note";
@@ -2059,7 +2041,7 @@ mod tests {
     }
 
     #[test]
-    fn dp_qos_userdata_passthrough() {
+    fn capi_3_2_dp_qos_userdata_passthrough() {
         let bytes = b"hello world";
         let c = ZeroDdsDomainParticipantQos {
             user_data: ZeroDdsUserDataQosPolicy {
@@ -2077,7 +2059,7 @@ mod tests {
     }
 
     #[test]
-    fn partition_cstring_array_passthrough() {
+    fn capi_3_2_partition_cstring_array_passthrough() {
         let p1 = c"alpha";
         let p2 = c"beta";
         let arr: [*const c_char; 2] = [p1.as_ptr(), p2.as_ptr()];

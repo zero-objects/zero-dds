@@ -329,7 +329,7 @@ mod tests {
     }
 
     #[test]
-    fn the_defaults_are_the_spec_readings() {
+    fn rpc_7_5_1_1_the_defaults_are_the_spec_readings() {
         let options = RpcEndpointOptions::default();
         assert_eq!(options.mapping, RpcMapping::Basic);
         assert_eq!(options.wire_encoding, WireEncoding::Xcdr1);

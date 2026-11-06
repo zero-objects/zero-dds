@@ -19,7 +19,7 @@ use zerodds_dcps::{
 };
 
 #[test]
-fn a_writers_transport_priority_reaches_the_runtime_and_follows_a_change() {
+fn dcps_2_2_3_15_a_writers_transport_priority_reaches_the_runtime_and_follows_a_change() {
     let p = ParticipantGuard::new(
         DomainParticipantFactory::instance()
             .create_participant_with_config(

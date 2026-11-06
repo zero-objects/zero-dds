@@ -85,18 +85,29 @@ mod tests {
         assert_eq!(u32::from_le_bytes(bytes[8..12].try_into().unwrap()), 1);
     }
 
+    /// §7.5.1.2.5: each code goes out as its ordinal behind the
+    /// `EMHEADER` of `remoteEx` (length code 2), and those octets read
+    /// back as the code.
     #[test]
-    fn a_remote_ex_reply_round_trips_every_code() {
-        for code in [
-            RemoteExceptionCode::Ok,
-            RemoteExceptionCode::Unsupported,
-            RemoteExceptionCode::InvalidArgument,
-            RemoteExceptionCode::OutOfResources,
-            RemoteExceptionCode::UnknownOperation,
-            RemoteExceptionCode::UnknownException,
+    fn rpc_7_7_2_2_a_remote_ex_reply_carries_each_code_as_its_ordinal() {
+        for (ordinal, code) in [
+            (0u32, RemoteExceptionCode::Ok),
+            (1, RemoteExceptionCode::Unsupported),
+            (2, RemoteExceptionCode::InvalidArgument),
+            (3, RemoteExceptionCode::OutOfResources),
+            (4, RemoteExceptionCode::UnknownOperation),
+            (5, RemoteExceptionCode::UnknownException),
         ] {
-            let bytes = encode_remote_ex_reply(code, "remoteEx");
-            assert_eq!(decode_remote_ex_reply(&bytes, "remoteEx"), Some(code));
+            let mut expected = Vec::new();
+            expected.extend_from_slice(&8u32.to_le_bytes());
+            expected.extend_from_slice(&((2u32 << 28) | member_id("remoteEx")).to_le_bytes());
+            expected.extend_from_slice(&ordinal.to_le_bytes());
+            assert_eq!(
+                encode_remote_ex_reply(code, "remoteEx"),
+                expected,
+                "{code:?}"
+            );
+            assert_eq!(decode_remote_ex_reply(&expected, "remoteEx"), Some(code));
         }
     }
 
@@ -112,7 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn a_remote_ex_member_renamed_for_a_colliding_operation_is_found_by_its_name() {
+    fn rpc_7_5_1_2_5_a_remote_ex_member_renamed_for_a_colliding_operation_is_found_by_its_name() {
         let bytes = encode_remote_ex_reply(RemoteExceptionCode::UnknownOperation, "remoteEx_1");
         assert_eq!(decode_remote_ex_reply(&bytes, "remoteEx"), None);
         assert_eq!(

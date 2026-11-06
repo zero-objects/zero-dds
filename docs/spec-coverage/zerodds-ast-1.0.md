@@ -139,7 +139,7 @@ Jede Zeile nennt den Träger — Kern-Knoten, Facette oder Layout — mit Code-P
 
 **Tests:** `offsets_are_shared_between_little_and_big_endian`, `a_change_evicts_the_type_and_its_dependents_and_nothing_else`, `an_unresolved_member_type_fails_loudly_rather_than_guessing_a_size`, dazu V-1…V-12 in `tests/wire_vectors.rs`.
 
-**Status:** done — XCDR2 gegen die OMG-Vektoren V-1…V-12 in `tests/wire_vectors.rs`; XCDR1-`PL_CDR1` gegen die Regeln in `crates/cdr/src/xcdr1.rs` in `tests/xcdr1_gate.rs`, was die fehlende `length > 0xFFFF`-Bedingung für den extended Header und den fehlenden `PID_LIST_END`-Sentinel aufdeckte. Length-Codes gegen das abgeglichen, was Fast DDS und Cyclone emittieren.
+**Status:** done — XCDR2 gegen die OMG-Vektoren V-1…V-12 in `tests/wire_vectors.rs`; XCDR1-`PL_CDR1` gegen die Regeln des früheren XCDR1-Codecs (Commit `e1f3af895`), die `tests/xcdr1_gate.rs` übernimmt, was die fehlende `length > 0xFFFF`-Bedingung für den extended Header und den fehlenden `PID_LIST_END`-Sentinel aufdeckte. Length-Codes gegen das abgeglichen, was Fast DDS und Cyclone emittieren.
 
 ## §7.1 Length-Code-Policy
 
@@ -207,10 +207,15 @@ Jede Zeile nennt den Träger — Kern-Knoten, Facette oder Layout — mit Code-P
 
 ## Audit-Status
 
-19 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+19 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-ast-core -p zerodds-ast -p zerodds-ast-layout` — 321 bestanden, 0 fehlgeschlagen.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-ast-1.0.md`):
 
-§11-Pflicht mechanisch geprüft: `cargo test -p zerodds-traceability --test ast_coverage_obligation` — 5 bestanden, 0 fehlgeschlagen.
+* `cargo nextest run --profile merge -p zerodds-ast --all-targets` (Job `merge-rust-ast`) — 51 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-ast-core --all-targets` (Job `merge-rust-ast-core`) — 10 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-ast-layout --all-targets` (Job `merge-rust-ast-layout`) — 6 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-traceability --all-targets` (Job `merge-rust-traceability`) — 5 Tests grün.
 
-Offene Punkte: keine. Decision-Records: keine.
+72 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

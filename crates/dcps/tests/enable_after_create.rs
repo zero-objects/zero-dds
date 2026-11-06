@@ -42,7 +42,8 @@ fn eventually(cond: impl Fn() -> bool) -> bool {
 }
 
 #[test]
-fn a_writer_created_disabled_is_announced_by_its_enable_with_the_qos_it_has_then() {
+fn dcps_2_2_2_4_1_5_a_writer_created_disabled_is_announced_by_its_enable_with_the_qos_it_has_then()
+{
     let _serial = FACTORY_QOS.lock();
     let cfg = isolated_cfg();
     let domain = unique_domain();
@@ -108,7 +109,7 @@ fn a_writer_created_disabled_is_announced_by_its_enable_with_the_qos_it_has_then
 /// `enable`; after it, a peer discovers it, and a `set_qos` of its
 /// USER_DATA reaches the peer's DCPSParticipant reader.
 #[test]
-fn a_participant_created_disabled_is_discovered_after_its_enable() {
+fn dcps_2_2_2_1_1_7_a_participant_created_disabled_is_discovered_after_its_enable() {
     let _serial = FACTORY_QOS.lock();
     let factory = DomainParticipantFactory::instance();
     let cfg = isolated_cfg();

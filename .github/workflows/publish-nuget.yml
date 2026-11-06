@@ -1,5 +1,4 @@
 # NuGet publish job for ZeroDDS (crates/cs/csharp/ZeroDDS).
-# Spec: internal/packaging/language-binding-publish-followup.md
 #
 # Setup once (user action, quick):
 #  1. Create a nuget.org account (free):

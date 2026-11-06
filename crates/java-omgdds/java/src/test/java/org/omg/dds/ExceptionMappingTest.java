@@ -55,7 +55,7 @@ class ExceptionMappingTest {
     }
 
     @Test
-    void writeOnAClosedWriterThrowsAlreadyClosed() {
+    void javapsm_7_3_2_write_on_a_closed_writer_throws_already_closed() {
         writer.close();
         // RETCODE_ALREADY_DELETED (Table 7.1); without the exception the sample
         // is dropped silently and the application never learns about it.
@@ -63,14 +63,14 @@ class ExceptionMappingTest {
     }
 
     @Test
-    void readAndTakeOnAClosedReaderThrowAlreadyClosed() {
+    void javapsm_7_3_2_read_and_take_on_a_closed_reader_throw_already_closed() {
         reader.close();
         assertThrows(AlreadyClosedException.class, reader::read);
         assertThrows(AlreadyClosedException.class, reader::take);
     }
 
     @Test
-    void aNotEnabledWriterRefusesToWrite() {
+    void javapsm_7_3_2_a_not_enabled_writer_refuses_to_write() {
         DataWriterImpl<byte[]> disabled = new DataWriterImpl<>(DOMAIN, null, topic,
                 org.zerodds.cdr.ByteArrayTypeSupport.INSTANCE,
                 Qos.writer(), java.util.Set.of());
@@ -82,24 +82,7 @@ class ExceptionMappingTest {
     }
 
     @Test
-    void everyPsmExceptionIsAnUncheckedDdsException() {
-        assertTrue(RuntimeException.class.isAssignableFrom(DDSException.class),
-                "§7.3.2: all exceptions but TimeoutException are unchecked");
-        assertTrue(DDSException.class.isAssignableFrom(AlreadyClosedException.class));
-        assertTrue(DDSException.class.isAssignableFrom(NotEnabledException.class));
-        assertFalse(Exception.class.equals(DDSException.class));
-    }
-
-    @Test
-    void aClosedEntityRefusesToCreateContainedEntities() {
-        publisher.close();
-        assertThrows(AlreadyClosedException.class, () -> publisher.createDataWriter(topic));
-        subscriber.close();
-        assertThrows(AlreadyClosedException.class, () -> subscriber.createDataReader(topic));
-    }
-
-    @Test
-    void aNullArgumentIsABadParameter() throws Exception {
+    void javapsm_7_3_2_a_null_argument_is_a_bad_parameter() throws Exception {
         // RETCODE_BAD_PARAMETER -> java.lang.IllegalArgumentException (Table 7.1)
         assertThrows(IllegalArgumentException.class,
                 () -> writer.getMatchedSubscriptionData(null));

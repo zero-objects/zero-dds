@@ -363,20 +363,20 @@ fn reject_outside_service_grammar(ast: &Ast, iface: &InterfaceNode) -> RpcResult
     // Productions (1) and (2): the file-scoped directives, kept on the
     // root module because they leave no node of their own.
     let root = ast.root_module();
-    if let Ok(module) = ast.module(root) {
-        if let Some(corba) = module.facets.corba.as_ref() {
-            if let Some(first) = corba.imports.first() {
-                return Err(RpcError::OutsideServiceGrammar {
-                    construct: "an `import` directive",
-                    at: first.clone(),
-                });
-            }
-            if let Some(first) = corba.repository_directives.first() {
-                return Err(RpcError::OutsideServiceGrammar {
-                    construct: "a `typeid`/`typeprefix` directive",
-                    at: first.clone(),
-                });
-            }
+    if let Ok(module) = ast.module(root)
+        && let Some(corba) = module.facets.corba.as_ref()
+    {
+        if let Some(first) = corba.imports.first() {
+            return Err(RpcError::OutsideServiceGrammar {
+                construct: "an `import` directive",
+                at: first.clone(),
+            });
+        }
+        if let Some(first) = corba.repository_directives.first() {
+            return Err(RpcError::OutsideServiceGrammar {
+                construct: "a `typeid`/`typeprefix` directive",
+                at: first.clone(),
+            });
         }
     }
 
@@ -819,7 +819,7 @@ mod tests {
     }
 
     #[test]
-    fn calculator_service_with_in_params_lowers() {
+    fn rpc_7_4_1_calculator_service_with_in_params_lowers() {
         let svc = service_of("@service interface Calculator { long add(in long a, in long b); };")
             .unwrap();
         assert_eq!(svc.name, "Calculator");
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn the_oneway_keyword_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_the_oneway_keyword_is_outside_the_service_grammar() {
         // §7.3.1.1 production (87) removed the modifier; §7.5.1.1.7
         // rule 5 still requires a Return-union case for every operation,
         // so accepting a oneway operation changed the mapping.
@@ -853,7 +853,7 @@ mod tests {
     }
 
     #[test]
-    fn the_oneway_annotation_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_the_oneway_annotation_is_outside_the_service_grammar() {
         // §7.3.2 keeps `@oneway` for Java source only; the Basic IDL
         // grammar has neither spelling.
         let err = service_of("interface Svc { @oneway void ping(); };").unwrap_err();
@@ -867,7 +867,7 @@ mod tests {
     }
 
     #[test]
-    fn a_context_clause_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_a_context_clause_is_outside_the_service_grammar() {
         // §7.3.1.1 production (87) removed `context` expressions.
         let err = service_of("interface Svc { void ping() context (\"x\"); };").unwrap_err();
         assert!(matches!(
@@ -880,7 +880,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nested_declaration_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_a_nested_declaration_is_outside_the_service_grammar() {
         // §7.3.1.1 production (9) removed embedded declarations of types,
         // constants and exceptions from an interface body. A constant
         // used to be skipped silently.
@@ -895,7 +895,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nested_type_declaration_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_a_nested_type_declaration_is_outside_the_service_grammar() {
         let err = service_of("interface Svc { struct S { long x; }; void foo(); };").unwrap_err();
         assert!(matches!(
             err,
@@ -907,7 +907,7 @@ mod tests {
     }
 
     #[test]
-    fn an_import_directive_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_an_import_directive_is_outside_the_service_grammar() {
         // §7.3.1.1 production (1) removed the CORBA import statement.
         let err = service_of("import X; interface Svc { void foo(); };").unwrap_err();
         assert!(matches!(
@@ -920,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn a_typeid_directive_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_a_typeid_directive_is_outside_the_service_grammar() {
         // §7.3.1.1 production (2) removed `<type_id_dcl>` and
         // `<type_prefix_dcl>`.
         let err =
@@ -935,7 +935,7 @@ mod tests {
     }
 
     #[test]
-    fn a_typeprefix_directive_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_a_typeprefix_directive_is_outside_the_service_grammar() {
         let err = service_of("typeprefix Svc \"IDL:example/\"; interface Svc { void foo(); };")
             .unwrap_err();
         assert!(matches!(
@@ -948,7 +948,7 @@ mod tests {
     }
 
     #[test]
-    fn a_component_declaration_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_a_component_declaration_is_outside_the_service_grammar() {
         // §7.3.1.1 production (2) removed `<component>`; production (7)
         // admits only the plain `interface` header.
         let err = service_of("component C { };").unwrap_err();
@@ -962,7 +962,7 @@ mod tests {
     }
 
     #[test]
-    fn a_local_interface_is_outside_the_service_grammar() {
+    fn rpc_7_3_1_1_a_local_interface_is_outside_the_service_grammar() {
         let err = service_of("local interface Svc { void foo(); };").unwrap_err();
         assert!(matches!(
             err,
@@ -1038,7 +1038,7 @@ mod tests {
     /// interface — `${interfaceName}` still builds every type name
     /// (§7.5.1.1.4-7).
     #[test]
-    fn the_service_annotation_supplies_the_service_segment_only() {
+    fn rpc_7_4_1_the_service_annotation_supplies_the_service_segment_only() {
         let svc =
             service_of(r#"@service(name = "OuterName") interface InternalIface { void ping(); };"#)
                 .unwrap();
@@ -1051,7 +1051,7 @@ mod tests {
 
     /// Without the annotation, `<service_name>` is `"Service"`.
     #[test]
-    fn without_the_annotation_the_service_segment_is_the_default() {
+    fn rpc_7_4_1_without_the_annotation_the_service_segment_is_the_default() {
         let svc = service_of("interface InternalIface { void ping(); };").unwrap();
         assert_eq!(svc.service_name, "Service");
         assert_eq!(
@@ -1063,7 +1063,7 @@ mod tests {
     /// §7.4.1: `<interface_name>` is "concatenation of module names
     /// separates by underscores followed by the name of the interface".
     #[test]
-    fn the_module_chain_reaches_the_topic_name() {
+    fn rpc_7_4_1_the_module_chain_reaches_the_topic_name() {
         let svc = service_of("module robot { module arm { interface Joint { void park(); }; }; };")
             .unwrap();
         assert_eq!(svc.name, "Joint");
@@ -1088,7 +1088,7 @@ mod tests {
 
     /// §7.4.3: each parent interface contributes a topic alias.
     #[test]
-    fn every_base_interface_becomes_a_topic_alias() {
+    fn rpc_7_3_1_1_every_base_interface_becomes_a_topic_alias() {
         let svc = last_service_of(
             "interface Adder { void a(); };
              interface Subtractor { void s(); };
@@ -1107,7 +1107,7 @@ mod tests {
     /// §7.4.2.2: `@DDSRequestTopic` / `@DDSReplyTopic` give a whole
     /// topic name; §7.4.2.3 lets the run time beat them.
     #[test]
-    fn the_topic_annotations_and_the_run_time_layer_have_their_order() {
+    fn rpc_7_4_2_2_the_topic_annotations_and_the_run_time_layer_have_their_order() {
         let svc = service_of(
             r#"@DDSRequestTopic(name = "MyReq") @DDSReplyTopic(name = "MyRep")
                interface Calculator { void ping(); };"#,
@@ -1144,7 +1144,7 @@ mod tests {
     }
 
     #[test]
-    fn param_annotation_in_overrides_declared_direction() {
+    fn rpc_7_3_1_1_param_annotation_in_overrides_declared_direction() {
         // The parameter is declared `out` and annotated `@in`; the
         // annotation wins.
         //
@@ -1161,7 +1161,7 @@ mod tests {
     }
 
     #[test]
-    fn attributes_lower_into_the_implied_operations_of_seven_five_one_one_three() {
+    fn rpc_7_5_1_1_3_attributes_lower_into_the_implied_operations_of_seven_five_one_one_three() {
         // §7.5.1.1.3 rule 1: every attribute implies
         // get_attribute_<name>/set_attribute_<name> in the same
         // interface; `readonly` implies the getter alone. (A constant
@@ -1199,7 +1199,7 @@ mod tests {
     /// argument of the same type as that of the attribute and the name of
     /// the argument is the same as the attribute name."
     #[test]
-    fn the_implied_setter_takes_one_argument_named_like_the_attribute() {
+    fn rpc_7_5_1_1_3_the_implied_setter_takes_one_argument_named_like_the_attribute() {
         let svc = service_of("interface Svc { attribute long level; };").unwrap();
         let methods = svc.all_methods();
         let setter = methods
@@ -1222,7 +1222,7 @@ mod tests {
     /// of `get_attribute_<name>`, the `setraises` list that of
     /// `set_attribute_<name>`.
     #[test]
-    fn getraises_and_setraises_become_the_raises_of_the_implied_operations() {
+    fn rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations() {
         let svc = service_of(
             "exception NotReadable { long why; }; exception NotWritable { long why; };
              interface Svc {
@@ -1246,7 +1246,7 @@ mod tests {
     }
 
     #[test]
-    fn a_declared_operation_colliding_with_an_implied_one_is_refused() {
+    fn rpc_7_5_1_1_3_a_declared_operation_colliding_with_an_implied_one_is_refused() {
         // §7.5.1.1.3 rule 1: an interface may not carry both an attribute
         // `level` and a user-defined `get_attribute_level`.
         let err =

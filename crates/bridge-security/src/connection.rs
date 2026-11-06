@@ -270,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn rotating_config_reload_swaps_inner_arc() {
+    fn mqttbridge_7_1_rotating_config_reload_swaps_inner_arc() {
         let (cert1, key1) = gen_self_signed();
         let c = write_temp("rcert2.pem", cert1.as_bytes());
         let k = write_temp("rkey2.pem", key1.as_bytes());
@@ -287,7 +287,7 @@ mod tests {
     }
 
     #[test]
-    fn rotating_config_reload_with_bad_path_keeps_old() {
+    fn mqttbridge_7_1_rotating_config_reload_with_bad_path_keeps_old() {
         let (cert, key) = gen_self_signed();
         let c = write_temp("rcert3.pem", cert.as_bytes());
         let k = write_temp("rkey3.pem", key.as_bytes());

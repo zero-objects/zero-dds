@@ -229,7 +229,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn critical_unsafe_nocachekey_bits_per_spec_5_4_6() {
+    fn coap_5_4_critical_unsafe_nocachekey_bits_per_spec_5_4_6() {
         // RFC 7252 §5.4.6: "Critical = (onum & 1); UnSafe = (onum &
         // 2); NoCacheKey = ((onum & 0x1e) == 0x1c);". The expected
         // column values are Table 4 of §5.10 (C / U / N per option).
@@ -267,7 +267,7 @@ mod tests {
     }
 
     #[test]
-    fn repeatable_options_match_spec_table_4() {
+    fn coap_5_4_repeatable_options_match_spec_table_4() {
         // RFC 7252 §5.10, Table 4, column "R".
         for number in [
             numbers::IF_MATCH,
@@ -295,21 +295,21 @@ mod tests {
     }
 
     #[test]
-    fn uint_zero_is_empty_byte_sequence() {
+    fn coap_3_2_uint_zero_is_empty_byte_sequence() {
         // RFC 7252 §3.2 — "the number 0 is represented with an empty
         // option value (a zero-length sequence of bytes)".
         assert!(uint_to_minimal_bytes(0).is_empty());
     }
 
     #[test]
-    fn uint_one_is_single_byte() {
+    fn coap_3_2_uint_one_is_single_byte() {
         // RFC 7252 §3.2 — "the number 1 by a single byte with the
         // numerical value of 1".
         assert_eq!(uint_to_minimal_bytes(1), alloc::vec![1]);
     }
 
     #[test]
-    fn uint_strips_leading_zero_bytes() {
+    fn coap_3_2_uint_strips_leading_zero_bytes() {
         assert_eq!(uint_to_minimal_bytes(0xFF), alloc::vec![0xFF]);
         assert_eq!(uint_to_minimal_bytes(0x100), alloc::vec![0x01, 0x00]);
         assert_eq!(
@@ -319,26 +319,26 @@ mod tests {
     }
 
     #[test]
-    fn uint_from_bytes_decodes_minimal_form() {
+    fn coap_3_2_uint_from_bytes_decodes_minimal_form() {
         assert_eq!(uint_from_bytes(&[]), Some(0));
         assert_eq!(uint_from_bytes(&[1]), Some(1));
         assert_eq!(uint_from_bytes(&[0xFF, 0xFF]), Some(0xFFFF));
     }
 
     #[test]
-    fn uint_from_bytes_handles_leading_zeros() {
+    fn coap_3_2_uint_from_bytes_handles_leading_zeros() {
         // RFC 7252 §3.2 — "MUST be prepared to process values with
         // leading zero bytes".
         assert_eq!(uint_from_bytes(&[0, 0, 0, 1]), Some(1));
     }
 
     #[test]
-    fn uint_from_bytes_rejects_more_than_8_bytes() {
+    fn coap_3_2_uint_from_bytes_rejects_more_than_8_bytes() {
         assert_eq!(uint_from_bytes(&[0; 9]), None);
     }
 
     #[test]
-    fn option_uri_path_constructs_string_value() {
+    fn coap_5_10_option_uri_path_constructs_string_value() {
         // RFC 7252 §5.10.1.
         let o = CoapOption::uri_path("sensors");
         assert_eq!(o.number, numbers::URI_PATH);
@@ -346,7 +346,7 @@ mod tests {
     }
 
     #[test]
-    fn observe_option_uses_number_6() {
+    fn coap_5_4_observe_option_uses_number_6() {
         // RFC 7641 §2.
         let o = CoapOption::observe(0);
         assert_eq!(o.number, numbers::OBSERVE);
@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn content_format_uses_number_12() {
+    fn coap_5_10_content_format_uses_number_12() {
         // RFC 7252 §5.10.3.
         let o = CoapOption::content_format(50); // "application/json".
         assert_eq!(o.number, numbers::CONTENT_FORMAT);
@@ -362,7 +362,7 @@ mod tests {
     }
 
     #[test]
-    fn option_value_to_wire_bytes_matches_format() {
+    fn coap_3_2_option_value_to_wire_bytes_matches_format() {
         assert!(OptionValue::Empty.to_wire_bytes().is_empty());
         assert_eq!(
             OptionValue::Opaque(alloc::vec![1, 2, 3]).to_wire_bytes(),

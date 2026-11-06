@@ -2,6 +2,26 @@
 
 Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), versioning follows [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Fixed
+
+- An array (OASIS AMQP 1.0 Part 1 §1.6.24) has one constructor for all its
+  elements. Elements of one type whose compact encodings differ (`uint0`,
+  `smalluint` and `uint`; `str8` and `str32`; `true` and `false`) were
+  refused as mixed types; they are now written with the type's wide
+  constructor (`uint` 0x70, `str32-utf8`, `boolean` 0x56, `list32`, …), and
+  a constructor without octets (`true`, `uint0`, `list0`) is not used for
+  an array either.
+- `AmqpExtValue::decode` reads `boolean` 0x56 with its octet (§1.6.2), the
+  encoding a boolean array element has; it was an unsupported format code.
+
+### Removed
+
+- `tests/proptest_roundtrip.rs` and the `proptest` dev-dependency: the
+  property tests compared the encoder with its own decoder; the codec
+  tests check the octets of the specification instead.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 Initial release materialization of the `zerodds-amqp-bridge` crate.

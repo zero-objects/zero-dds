@@ -146,10 +146,10 @@ fn main() -> ExitCode {
             "  ref id={:?} browse_name={:?} class={:?}",
             r.node_id.node_id.identifier_type, r.browse_name.name, r.node_class
         );
-        if let NodeIdentifier::String(s) = &r.node_id.node_id.identifier_type {
-            if s == "the.answer" {
-                found = true;
-            }
+        if let NodeIdentifier::String(s) = &r.node_id.node_id.identifier_type
+            && s == "the.answer"
+        {
+            found = true;
         }
     }
     if !found {

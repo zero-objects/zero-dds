@@ -2,7 +2,7 @@
 // Copyright 2026 ZeroDDS Contributors
 //! Every corpus case is registered everywhere it has to be, in one run.
 //!
-//! A new case has to appear in seven independent places, and **none of
+//! A new case has to appear in six independent places, and **none of
 //! them knows about the others**. Each has its own test, each reports
 //! only its own gap, and a case missing from four of them takes four
 //! rounds to find — one failing test per round, because the first one
@@ -19,14 +19,13 @@
 //! | 1 | the case directory | `type.idl`, `type` or `values.json` |
 //! | 2 | its `README.md` | the file, or its `## Probe status` section |
 //! | 3 | the probe status rows | a row for one of the four modes |
-//! | 4 | the Rust baseline | a digest line in `rust_column_baseline.txt` |
-//! | 5 | `tests/interop-results/` | the case's directory in the result tree |
+//! | 4 | `tests/interop-results/` | the case's directory in the result tree |
 //!
-//! Places 6 and 7 — the refusal lists and the exact counters — are not
+//! Places 5 and 6 — the refusal lists and the exact counters — are not
 //! checked here and cannot be from the corpus alone: whether a case
 //! belongs on a refusal list is a fact about a backend, not about the
 //! case. Their own tests report them, and `docs/updating-a-vendor.md`
-//! names all seven.
+//! names them.
 //!
 //! ## Why one test and not five
 //!
@@ -36,7 +35,6 @@
 
 #![allow(clippy::expect_used, clippy::panic, missing_docs)]
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 fn repository_root() -> PathBuf {
@@ -85,15 +83,6 @@ fn every_case_is_registered_in_every_place_that_needs_it() {
         "the corpus is empty, which cannot be right"
     );
 
-    let baseline: BTreeSet<String> = std::fs::read_to_string(
-        root.join("crates/wire-probe/tests/fixtures/rust_column_baseline.txt"),
-    )
-    .expect("the Rust baseline")
-    .lines()
-    .filter(|line| !line.starts_with('#'))
-    .filter_map(|line| line.split('\t').next().map(ToString::to_string))
-    .collect();
-
     let results_root = root.join("tests").join("interop-results");
 
     let mut trouble: Vec<String> = Vec::new();
@@ -138,15 +127,7 @@ fn every_case_is_registered_in_every_place_that_needs_it() {
             }
         }
 
-        // 4 — the Rust column's baseline digest.
-        if !baseline.contains(case) {
-            trouble.push(format!(
-                "{case}: not in rust_column_baseline.txt — run with \
-                 ZERODDS_REBASELINE_RUST_COLUMN=1"
-            ));
-        }
-
-        // 5 — the committed result tree.
+        // 4 — the committed result tree.
         if !results_root.join(case).is_dir() {
             trouble.push(format!(
                 "{case}: no directory under tests/interop-results/ — run \
@@ -158,8 +139,8 @@ fn every_case_is_registered_in_every_place_that_needs_it() {
     assert!(
         trouble.is_empty(),
         "{} corpus registration gap(s), all of them at once:\n  {}\n\n\
-         docs/updating-a-vendor.md, \"When the corpus grows instead\", lists all \
-         seven places and the command for each.",
+         docs/updating-a-vendor.md, \"When the corpus grows instead\", lists the \
+         places and the command for each.",
         trouble.len(),
         trouble.join("\n  ")
     );

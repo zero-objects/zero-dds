@@ -51,15 +51,15 @@ mod linux_e2e {
         }
     }
 
-    // Mirror of `dropping_a_reader_unmatches_the_remote_writer`. This direction
+    // Mirror of `rtps_8_5_4_4_dropping_a_reader_unmatches_the_remote_writer`. This direction
     // exercises the SEDP **publication** dispose; it used to be flaky because
     // `ReliableWriter::write_lifecycle` only direct-sent the dispose when the
     // SEDP writer's reader-proxy cursor sat exactly at `dispose_sn - 1` (a race
     // against the background SEDP send loop). `write_lifecycle` now drains the
     // proxy in-order up to the marker, so the dispose is delivered
-    // cursor-independently. See `internal/dcps/endpoint-delete-and-unmatch-followup.md`.
+    // cursor-independently.
     #[test]
-    fn dropping_a_writer_unmatches_the_remote_reader() {
+    fn dcps_2_2_3_23_2_dropping_a_writer_unmatches_the_remote_reader() {
         let cfg = isolated_cfg();
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain();
@@ -115,7 +115,7 @@ mod linux_e2e {
     }
 
     #[test]
-    fn dropping_a_reader_unmatches_the_remote_writer() {
+    fn rtps_8_5_4_4_dropping_a_reader_unmatches_the_remote_writer() {
         let cfg = isolated_cfg();
         let factory = DomainParticipantFactory::instance();
         let domain = unique_domain();

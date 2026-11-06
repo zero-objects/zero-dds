@@ -127,7 +127,8 @@ void apply_transport_env() {
     setenv("CYCLONEDDS_URI", xml.c_str(), 1);
 }
 
-// Writer and reader QoS of both sides: reliable, KEEP_LAST 64, one data
+// Writer and reader QoS of both sides: from bench::qos_from_env() (unset:
+// reliable, KEEP_LAST 64, Cyclone's RESOURCE_LIMITS), one data
 // representation offered and accepted.
 //
 // One representation on the writer side: RTI is strict-matching and rejects
@@ -156,16 +157,24 @@ struct Endpoints {
           pub(dp),
           sub(dp),
           dw_qos(pub.default_datawriter_qos()),
-          dr_qos(sub.default_datareader_qos()) {
+          dr_qos(sub.default_datareader_qos()),
+          q(bench::qos_from_env()) {
         using namespace dds::core::policy;
-        dw_qos << Reliability::Reliable();
-        dw_qos << History::KeepLast(64);
+        Reliability rel = q.reliable ? Reliability::Reliable() : Reliability::BestEffort();
+        History hist = q.keep_all ? History::KeepAll() : History::KeepLast(q.depth);
+        dw_qos << rel << hist;
+        dr_qos << rel << hist;
+        if (q.has_limits()) {
+            ResourceLimits rl(q.max_samples, 1, q.max_samples);
+            dw_qos << rl;
+            dr_qos << rl;
+        }
         dw_qos << DataRepresentation(DataRepresentationIdSeq{bench_repr()});
-        dr_qos << Reliability::Reliable();
-        dr_qos << History::KeepLast(64);
         dr_qos << DataRepresentation(DataRepresentationIdSeq{bench_repr()});
         dr_qos << TypeConsistencyEnforcement(TypeConsistencyKind::ALLOW_TYPE_COERCION);
     }
+
+    bench::QosSpec q;
 };
 
 // --- Pong: receive request, echo immediately ---
@@ -185,7 +194,12 @@ public:
         for (const auto& s : samples) {
             if (s.info().valid()) {
                 // Echo back unchanged — sequence_id + t_send_ns + payload.
-                w_.write(s.data());
+                // A write refused within max_blocking_time (KEEP_ALL with
+                // unacknowledged samples) is a lost echo, not the end.
+                try {
+                    w_.write(s.data());
+                } catch (const dds::core::Exception&) {
+                }
             }
         }
     }
@@ -273,10 +287,15 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     populate(msg, payload_size);
 
     uint64_t total = warmup + samples;
-    for (uint64_t seq = 0; seq < total; ++seq) {
+    uint64_t sent = 0;
+    const uint64_t ping_deadline = bench::ping_deadline();
+    for (uint64_t seq = 0; seq < total && !bench::ping_past(ping_deadline); ++seq, ++sent) {
         msg.sequence_id(static_cast<uint32_t>(seq));
         msg.t_send_ns(now_ns());
-        dw.write(msg);
+        try {
+            dw.write(msg);
+        } catch (const dds::core::Exception&) {
+        }
 
         std::unique_lock<std::mutex> lk(st.mu);
         st.cv.wait_for(lk, std::chrono::milliseconds(50),
@@ -284,7 +303,79 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     }
 
     dr.listener(nullptr, dds::core::status::StatusMask::none());
+    bench::print_ping_sent(sent);
     print_quantiles(st.rtts, payload_size);
+    return 0;
+}
+
+// --- Throughput (tests/perf/speed): one writer, one reader, own processes ---
+
+class TputListener : public dds::sub::NoOpDataReaderListener<Sample>
+{
+public:
+    explicit TputListener(bench::TputSub& st) : st_(st) {}
+
+    void on_data_available(dds::sub::DataReader<Sample>& reader) override
+    {
+        for (;;) {
+            auto samples = reader.take();
+            if (samples.length() == 0) break;
+            for (const auto& s : samples) {
+                if (s.info().valid()) {
+                    st_.on_sample(s.data().sequence_id(), s.data().payload().size());
+                }
+            }
+        }
+    }
+
+private:
+    bench::TputSub& st_;
+};
+
+int run_tput_sub(uint64_t max_s) {
+    Endpoints e;
+    bench::print_qos("tput-sub", e.q);
+    dds::sub::DataReader<Sample> dr(e.sub, e.t_req, e.dr_qos);
+    bench::TputSub st;
+    TputListener listener(st);
+    dr.listener(&listener, dds::core::status::StatusMask::data_available());
+    bench::tput_sub_wait_and_report(st, max_s);
+    dr.listener(nullptr, dds::core::status::StatusMask::none());
+    return 0;
+}
+
+int run_tput_pub(size_t payload_size, uint64_t seconds) {
+    Endpoints e;
+    bench::print_qos("tput-pub", e.q);
+    dds::pub::DataWriter<Sample> dw(e.pub, e.t_req, e.dw_qos);
+    bench::tput_wait_matched([&] { return dw.publication_matched_status().current_count() >= 1; });
+
+    Sample msg;
+    populate(msg, payload_size);
+    auto r = bench::tput_pub_run(seconds, [&](uint32_t seq) {
+        msg.sequence_id(seq);
+        try {
+            dw.write(msg);
+            return true;
+        } catch (const dds::core::Exception&) {
+            return false;
+        }
+    });
+    int acked = -1;
+    uint64_t ack_ns = 0;
+    if (e.q.reliable) {
+        uint64_t t = now_ns();
+        try {
+            dw.wait_for_acknowledgments(dds::core::Duration::from_secs(30));
+            acked = 1;
+        } catch (const dds::core::Exception& ex) {
+            std::cerr << "tput-pub: wait_for_acknowledgments: " << ex.what() << "\n";
+            acked = 0;
+        }
+        ack_ns = now_ns() - t;
+    }
+    bench::print_tput_pub(r, payload_size, acked, ack_ns);
+    bench::tput_linger();
     return 0;
 }
 
@@ -295,7 +386,9 @@ int main(int argc, char** argv) {
         std::cerr <<
             "Usage:\n"
             "  " << kProgram << " pong [max_runtime_s]\n"
-            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n";
+            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n"
+            "  " << kProgram << " tput-sub --seconds MAX\n"
+            "  " << kProgram << " tput-pub --payload N --seconds S\n";
         return 2;
     }
     apply_transport_env();
@@ -306,6 +399,11 @@ int main(int argc, char** argv) {
     } else if (mode == "ping") {
         bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
         return run_ping(a.payload, a.warmup, a.samples);
+    } else if (mode == "tput-sub") {
+        return run_tput_sub(bench::parse_tput_args(argc, argv, 2).seconds);
+    } else if (mode == "tput-pub") {
+        bench::TputArgs a = bench::parse_tput_args(argc, argv, 2);
+        return run_tput_pub(a.payload, a.seconds);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

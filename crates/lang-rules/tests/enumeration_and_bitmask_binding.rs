@@ -48,7 +48,7 @@ fn c_defines_carry_the_explicit_and_the_implicit_value() {
 // -- §7.5.1.2.1.2 C++ --------------------------------------------------
 
 #[test]
-fn cpp_follows_an_enumerator_with_a_value_by_an_equals_sign_and_the_value() {
+fn xtypes_7_5_1_2_1_2_cpp_follows_an_enumerator_with_a_value_by_an_equals_sign_and_the_value() {
     let cpp = text(
         "enum Mode { IDLE, @value(4) ACTIVE, FAULT, @value(70000) HIGH };",
         Language::Cpp,
@@ -64,7 +64,7 @@ fn cpp_follows_an_enumerator_with_a_value_by_an_equals_sign_and_the_value() {
 // -- §7.5.1.2.1.3 Java -------------------------------------------------
 
 #[test]
-fn java_has_an_int_constant_with_an_underscore_and_an_object_per_literal() {
+fn xtypes_7_5_1_2_1_3_java_has_an_int_constant_with_an_underscore_and_an_object_per_literal() {
     // the member is a public field: the IDL-to-Java mapping, by name
     let java = zerodds_lang_rules::adapter::java::with_mapping(
         zerodds_lang_rules::adapter::java::JavaMapping::Omg,
@@ -140,7 +140,7 @@ fn under_the_default_the_enumeration_is_the_same_and_its_member_is_private_with_
 // -- §7.5.1.2.2 Bitmask, Table 44, the example --------------------------
 
 #[test]
-fn table_44_one_to_eight_bits_is_an_8_bit_unsigned_integer() {
+fn xtypes_7_5_1_2_2_table_44_one_to_eight_bits_is_an_8_bit_unsigned_integer() {
     let src = "@bit_bound(8) bitmask F { A, @position(7) B };";
     let c = text(src, Language::C);
     assert!(c.contains("typedef uint8_t F;"), "{c}");
@@ -160,7 +160,7 @@ fn table_44_nine_to_sixteen_bits_is_an_unsigned_short() {
 }
 
 #[test]
-fn table_44_seventeen_to_thirty_two_bits_is_an_unsigned_long() {
+fn xtypes_7_5_1_2_2_table_44_seventeen_to_thirty_two_bits_is_an_unsigned_long() {
     let src = "@bit_bound(32) bitmask F { A, @position(31) B };";
     let c = text(src, Language::C);
     assert!(c.contains("typedef uint32_t F;"), "{c}");
@@ -180,7 +180,7 @@ fn table_44_seventeen_to_thirty_two_bits_is_an_unsigned_long() {
 }
 
 #[test]
-fn table_44_thirty_three_to_sixty_four_bits_is_an_unsigned_long_long() {
+fn xtypes_7_5_1_2_2_table_44_thirty_three_to_sixty_four_bits_is_an_unsigned_long_long() {
     let src = "@bit_bound(64) bitmask F { A, @position(63) B };";
     let c = text(src, Language::C);
     assert!(c.contains("typedef uint64_t F;"), "{c}");
@@ -192,7 +192,7 @@ fn table_44_thirty_three_to_sixty_four_bits_is_an_unsigned_long_long() {
 }
 
 #[test]
-fn the_example_of_the_clause_myflags_binds_as_the_text_shows() {
+fn xtypes_7_5_1_2_2_the_example_of_the_clause_myflags_binds_as_the_text_shows() {
     // "@bit_bound(19) bitmask MyFlags { FIRST_FLAG, @position(14)
     // SECOND_FLAG, THIRD_FLAG };" is bound "as if" the enumeration
     // MyFlagsBits with the values 1 << 0, 1 << 14 and 1 << 15 and
@@ -240,7 +240,7 @@ fn the_example_of_the_clause_myflags_binds_as_the_text_shows() {
 }
 
 #[test]
-fn a_type_named_like_the_flag_enumeration_is_a_collision_in_every_column() {
+fn xtypes_7_5_1_2_2_a_type_named_like_the_flag_enumeration_is_a_collision_in_every_column() {
     let src = "bitmask F { A, B };\nstruct FBits { long a; };";
     for language in [Language::C, Language::Cpp, Language::Java] {
         let result = declarations(&model(src), language);

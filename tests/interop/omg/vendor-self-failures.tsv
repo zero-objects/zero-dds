@@ -1,0 +1,157 @@
+# Cases a vendor fails against itself: suite, product (as the harness names it
+# from the executable), case, role, and the self-run that shows it. A suite job
+# does not run such a case when that vendor takes the role in the pair: `sub`
+# for a DataReader-only feature (content filtered topic, TIME_BASED_FILTER)
+# its subscriber refused, `both` otherwise
+# (rc8-test-suite.md, Interop: "except cells a vendor fails against itself").
+# suite	product	case	role	evidence
+dds-rtps	eclipse_cyclone-11.0.1	Test_Cft_1	sub	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_Cft_2	sub	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_FinalInstanceState_2	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_0	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_1	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_2	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_3	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_4	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_5	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_6	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_7	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_8	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_9	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_10	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_11	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_12	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_13	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_14	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_15	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_16	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_OrderedAccess_17	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_0	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_1	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_2	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_3	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_4	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_5	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_6	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_7	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_8	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_9	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_10	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_11	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_12	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_13	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_14	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_15	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_16	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_17	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_18	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_19	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_20	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-11.0.1	Test_CoherentSets_21	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_TimeBasedFilter_0	sub	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_TimeBasedFilter_1	sub	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_0	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_1	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_2	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_3	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_4	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_5	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_6	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_Lifespan_7	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: DATA_NOT_CORRECT, OK
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_0	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_1	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_2	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_3	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_4	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_5	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_6	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_7	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_8	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_9	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_10	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_11	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_12	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_13	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_14	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_15	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_16	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_OrderedAccess_17	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_0	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_1	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_2	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_3	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_4	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_5	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_6	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_7	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_8	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_9	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_10	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_11	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_12	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_13	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_14	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_15	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_16	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_17	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_18	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_19	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_20	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eprosima_fastdds-3.6.1	Test_CoherentSets_21	both	fails against itself, Linux test host 2026-10-31, harness 863b86f97ce: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-xtypes	eclipse_cyclone-11.0.1	tc_force_type_validation_2	both	fails against itself, Linux test host 2026-10-31, harness 5a6454ad631 (335 cases, two runs): INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-11.0.1	tc_force_type_validation_3	both	fails against itself, Linux test host 2026-10-31, harness 5a6454ad631 (335 cases, two runs): INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-11.0.1	SFinal[10]_S[20]_SFinalAlt[10]_S[20]	both	fails against itself, Linux test host 2026-10-31, harness 5a6454ad631 (335 cases, two runs): INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-11.0.1	seq(SFinal,10)_seq(SFinalAlt,10)	both	fails against itself, Linux test host 2026-10-31, harness 5a6454ad631 (335 cases, two runs): INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-11.0.1	struct_key_string_3	both	fails against itself, Linux test host 2026-10-31, harness 5a6454ad631 (335 cases, two runs): INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-11.0.1	struct_key_seq_2	both	fails against itself, Linux test host 2026-10-31, harness 5a6454ad631 (335 cases, two runs): INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-11.0.1	struct_key_struct_2	both	fails against itself, Linux test host 2026-10-31, harness 5a6454ad631 (335 cases, two runs): INCONSISTENT_TOPIC
+dds-rtps	eclipse_cyclone-master	Test_Cft_2	sub	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_10	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_Cft_1	sub	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_17	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_0	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_1	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_2	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_4	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_5	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_6	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_7	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_8	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_9	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_11	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_12	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_13	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_14	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_15	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_16	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_0	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_1	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_2	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_3	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_4	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_5	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_6	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_7	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_8	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_9	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: READER_NOT_MATCHED, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_13	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_14	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_15	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_16	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_17	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_18	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_OrderedAccess_3	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_FinalInstanceState_2	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: DATA_NOT_CORRECT, OK
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_10	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_12	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_19	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_20	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_21	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-rtps	eclipse_cyclone-master	Test_CoherentSets_11	both	fails against itself, Linux test host 2026-11-03, harness 863b86f97ce, Cyclone master 3a5526315e6: PUB_UNSUPPORTED_FEATURE, SUB_UNSUPPORTED_FEATURE
+dds-xtypes	eclipse_cyclone-master	tc_force_type_validation_2	both	fails against itself, Linux test host 2026-11-03, harness 5a6454ad631, Cyclone master 3a5526315e6: INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-master	struct_key_string_3	both	fails against itself, Linux test host 2026-11-03, harness 5a6454ad631, Cyclone master 3a5526315e6: INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-master	struct_key_seq_2	both	fails against itself, Linux test host 2026-11-03, harness 5a6454ad631, Cyclone master 3a5526315e6: INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-master	struct_key_struct_2	both	fails against itself, Linux test host 2026-11-03, harness 5a6454ad631, Cyclone master 3a5526315e6: INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-master	SFinal[10]_S[20]_SFinalAlt[10]_S[20]	both	fails against itself, Linux test host 2026-11-03, harness 5a6454ad631, Cyclone master 3a5526315e6: INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-master	seq(SFinal,10)_seq(SFinalAlt,10)	both	fails against itself, Linux test host 2026-11-03, harness 5a6454ad631, Cyclone master 3a5526315e6: INCONSISTENT_TOPIC
+dds-xtypes	eclipse_cyclone-master	tc_force_type_validation_3	both	fails against itself, Linux test host 2026-11-03, harness 5a6454ad631, Cyclone master 3a5526315e6: INCONSISTENT_TOPIC

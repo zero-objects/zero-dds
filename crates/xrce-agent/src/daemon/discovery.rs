@@ -95,10 +95,9 @@ pub fn run_discovery_responder(
             };
             if let Some(reply) =
                 build_info_reply(base, status, mask, vendor_id, &listening_locators)
+                && let Ok(bytes) = reply.encode()
             {
-                if let Ok(bytes) = reply.encode() {
-                    let _ = socket.send_to(&bytes, peer);
-                }
+                let _ = socket.send_to(&bytes, peer);
             }
         }
     }
@@ -237,7 +236,7 @@ mod tests {
     /// (`AGENT_ActivityInfo` with the transport addresses) and the
     /// configuration (`AGENT_Representation` with version and vendor).
     #[test]
-    fn discovery_responder_answers_get_info_on_agent() {
+    fn xrce_7_8_2_2_discovery_responder_answers_get_info_on_agent() {
         let reply = ask(get_info(OBJECTID_AGENT, Some(InfoMask::ALL))).expect("INFO");
         let (base, info) = parse_info(&reply);
         assert_eq!(base.related_request.request_id, [0x00, 0x01]);
@@ -264,7 +263,7 @@ mod tests {
 
     /// §7.8.3.3: the info_mask selects what comes back.
     #[test]
-    fn the_info_mask_selects_activity_and_configuration() {
+    fn xrce_7_8_2_2_the_info_mask_selects_activity_and_configuration() {
         let only_activity = ask(get_info(
             OBJECTID_AGENT,
             Some(InfoMask(InfoMask::INFO_ACTIVITY)),
@@ -288,7 +287,7 @@ mod tests {
     /// §8.3.5.3: the ObjectKind in the last four bits selects the Root; any
     /// object_id of kind OBJK_AGENT does, not only 0xFFFD.
     #[test]
-    fn any_object_id_of_kind_agent_is_the_root() {
+    fn xrce_8_3_5_7_any_object_id_of_kind_agent_is_the_root() {
         let other_agent = zerodds_xrce::object_id::ObjectId::new(
             0x012,
             zerodds_xrce::object_kind::ObjectKind::Agent,
@@ -303,7 +302,7 @@ mod tests {
     /// §8.3.5.7.2: a GET_INFO the agent cannot read (no InfoMask) is
     /// answered with an INFO whose ResultStatus is the error.
     #[test]
-    fn a_get_info_without_a_mask_is_answered_with_an_error_info() {
+    fn xrce_8_3_5_7_a_get_info_without_a_mask_is_answered_with_an_error_info() {
         let reply = ask(get_info(OBJECTID_AGENT, None)).expect("INFO");
         let (base, info) = parse_info(&reply);
         assert_eq!(base.result.status_code, ResultStatusCode::InvalidData);
@@ -358,7 +357,7 @@ mod tests {
     /// another major version, "INFO(AGENT_Representation): STATUS_OK" for one
     /// of the same.
     #[test]
-    fn a_client_of_another_major_version_is_answered_incompatible() {
+    fn xrce_7_8_2_2_a_client_of_another_major_version_is_answered_incompatible() {
         let incompatible = ask(get_info_from_client_of_version([2, 0])).expect("INFO");
         let (base, info) = parse_info(&incompatible);
         assert_eq!(base.result.status_code, ResultStatusCode::Incompatible);
@@ -372,7 +371,7 @@ mod tests {
     /// §11.2.4: the agent joins the group it is configured with, 239.255.0.2
     /// by default; an address that is no multicast address is refused.
     #[test]
-    fn the_discovery_group_is_the_one_given() {
+    fn xrce_8_4_4_the_discovery_group_is_the_one_given() {
         assert!(bind_discovery_socket(Ipv4Addr::new(10, 1, 2, 3), 0).is_err());
         let socket = bind_discovery_socket(Ipv4Addr::new(239, 255, 0, 2), 0);
         // The join needs a multicast route; where there is none the bind

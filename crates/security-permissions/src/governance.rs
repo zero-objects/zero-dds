@@ -496,8 +496,8 @@ impl Governance {
     }
 
     /// Finds the matching [`TopicRule`] within a domain rule.
-    /// The first match in `topic_rules` wins; if no rule matches,
-    /// `TopicRule::default()` (no protection) is returned.
+    /// The first match in `topic_rules` wins; `None` when no domain rule or
+    /// no topic rule matches.
     #[must_use]
     pub fn find_topic_rule<'a, 'd>(
         &'a self,
@@ -936,14 +936,25 @@ fn parse_delegation_profile(
             continue;
         }
         match child.tag_name().name() {
+            // A value this parser does not know is refused, not replaced by
+            // the default: a misspelt policy would otherwise run the profile
+            // under a trust policy nobody wrote.
             "trust_policy" => {
-                trust_policy = parse_trust_policy(child.text().unwrap_or("").trim())
-                    .unwrap_or(TrustPolicy::DirectOrDelegated);
+                let text = child.text().unwrap_or("").trim();
+                trust_policy = parse_trust_policy(text).ok_or_else(|| {
+                    PermissionsError::Malformed(alloc::format!(
+                        "governance: <zerodds:trust_policy> {text:?} is none of gateway-only, \
+                         direct-or-delegated, federation, strict-delegated"
+                    ))
+                })?;
             }
             "max_chain_depth" => {
-                if let Ok(v) = child.text().unwrap_or("").trim().parse::<usize>() {
-                    max_chain_depth = v;
-                }
+                let text = child.text().unwrap_or("").trim();
+                max_chain_depth = text.parse::<usize>().map_err(|_| {
+                    PermissionsError::Malformed(alloc::format!(
+                        "governance: <zerodds:max_chain_depth> {text:?} is not a number"
+                    ))
+                })?;
             }
             "require_ocsp" => {
                 require_ocsp = parse_bool(child)?;
@@ -953,9 +964,16 @@ fn parse_delegation_profile(
                     if algo_el.tag_name().name() == "algorithm"
                         && algo_el.tag_name().namespace() == Some(ZERODDS_NS)
                     {
-                        if let Some(a) = parse_algorithm(algo_el.text().unwrap_or("").trim()) {
-                            allowed_algorithms.insert(a.wire_id());
-                        }
+                        let text = algo_el.text().unwrap_or("").trim();
+                        let a = parse_algorithm(text).ok_or_else(|| {
+                            PermissionsError::Malformed(alloc::format!(
+                                "governance: <zerodds:algorithm> {text:?} is none of \
+                                 ECDSA+P256+SHA256, ECDSA+P384+SHA384, \
+                                 RSASSA-PSS-MGF1SHA256+2048+SHA256 (DDS-Security 1.2 Table 25), \
+                                 ed25519"
+                            ))
+                        })?;
+                        allowed_algorithms.insert(a.wire_id());
                     }
                 }
             }
@@ -963,10 +981,9 @@ fn parse_delegation_profile(
                 for anchor_el in child.children().filter(roxmltree::Node::is_element) {
                     if anchor_el.tag_name().name() == "anchor"
                         && anchor_el.tag_name().namespace() == Some(ZERODDS_NS)
+                        && let Some(a) = parse_trust_anchor(anchor_el)?
                     {
-                        if let Some(a) = parse_trust_anchor(anchor_el)? {
-                            trust_anchors.push(a);
-                        }
+                        trust_anchors.push(a);
                     }
                 }
             }
@@ -994,11 +1011,23 @@ fn parse_trust_policy(s: &str) -> Option<TrustPolicy> {
     }
 }
 
+/// A delegation signature algorithm by name: the CryptoAlgorithmName of
+/// DDS-Security 1.2 Table 25 (`ECDSA+P256+SHA256`, `ECDSA+P384+SHA384`,
+/// `RSASSA-PSS-MGF1SHA256+2048+SHA256` and the names that table keeps as
+/// deprecated), this implementation's short names (`ecdsa-p256`,
+/// `ecdsa-p384`, `rsa-pss-2048`), and `ed25519`, which the table does not
+/// have. Case does not matter.
 fn parse_algorithm(s: &str) -> Option<SignatureAlgorithm> {
     match s.trim().to_lowercase().as_str() {
-        "ecdsa-p256" | "ecdsa_p256" => Some(SignatureAlgorithm::EcdsaP256),
-        "ecdsa-p384" | "ecdsa_p384" => Some(SignatureAlgorithm::EcdsaP384),
-        "rsa-pss-2048" | "rsa_pss_2048" => Some(SignatureAlgorithm::RsaPss2048),
+        "ecdsa+p256+sha256" | "ecdsa-sha256" | "ec-prime256v1" | "ecdsa-p256" | "ecdsa_p256" => {
+            Some(SignatureAlgorithm::EcdsaP256)
+        }
+        "ecdsa+p384+sha384" | "ecdsa-p384" | "ecdsa_p384" => Some(SignatureAlgorithm::EcdsaP384),
+        "rsassa-pss-mgf1sha256+2048+sha256"
+        | "rsassa-pss-sha256"
+        | "rsa-2048"
+        | "rsa-pss-2048"
+        | "rsa_pss_2048" => Some(SignatureAlgorithm::RsaPss2048),
         "ed25519" => Some(SignatureAlgorithm::Ed25519),
         _ => None,
     }
@@ -1062,7 +1091,7 @@ fn base64_decode_anchor(input: &str) -> Option<Vec<u8>> {
     // Remove whitespace (PEM-style multiline).
     let cleaned: String = input.chars().filter(|c| !c.is_whitespace()).collect();
     let bytes = cleaned.as_bytes();
-    if bytes.len() % 4 != 0 {
+    if !bytes.len().is_multiple_of(4) {
         return None;
     }
     let mut out = Vec::with_capacity(bytes.len() / 4 * 3);
@@ -1368,6 +1397,13 @@ fn parse_peer_class(node: roxmltree::Node<'_, '_>) -> Result<PeerClass, Permissi
         if let Some(v) = child.attribute("require_ocsp") {
             out.match_criteria.require_ocsp =
                 matches!(v.trim().to_uppercase().as_str(), "TRUE" | "1" | "YES");
+        }
+        // `docs/architecture/09_delegation.md` §7.1: the class names the
+        // delegation profile its peers' chains are validated against. The
+        // attribute was not read, so a class that required delegation
+        // matched as one without.
+        if let Some(v) = child.attribute("delegation_profile") {
+            out.match_criteria.delegation_profile = Some(v.to_string());
         }
     }
     Ok(out)
@@ -1680,7 +1716,7 @@ mod tests {
     /// A topic without access control lets everyone relay, and a topic
     /// without a rule no one.
     #[test]
-    fn relaying_needs_the_relay_action_where_access_is_controlled() {
+    fn security_10_4_1_5_3_4_1_2_relaying_needs_the_relay_action_where_access_is_controlled() {
         use crate::xml::parse_permissions_xml;
         let gov = |read: bool, write: bool| {
             parse_governance_xml(&alloc::format!(
@@ -1736,7 +1772,7 @@ mod tests {
     }
 
     #[test]
-    fn check_create_participant_consults_permissions() {
+    fn security_10_4_1_2_5_3_check_create_participant_consults_permissions() {
         use crate::xml::parse_permissions_xml;
         // Full-AC governance for domain 200 (join-AC + single * topic RW-AC).
         // This is NOT un-joinable per se — it is joinable by a participant
@@ -1833,7 +1869,7 @@ mod tests {
 "#;
 
     #[test]
-    fn parses_domain_rule_with_ranges() {
+    fn security_10_4_1_2_5_1_parses_domain_rule_with_ranges() {
         let g = parse_governance_xml(SAMPLE).expect("parse");
         assert_eq!(g.domain_rules.len(), 1);
         let d = &g.domain_rules[0];
@@ -1845,7 +1881,7 @@ mod tests {
     }
 
     #[test]
-    fn topic_rule_matches_exact_topic_first() {
+    fn security_10_4_1_2_5_10_topic_rule_matches_exact_topic_first() {
         let g = parse_governance_xml(SAMPLE).unwrap();
         let tr = g.find_topic_rule(0, "Chatter").expect("rule");
         assert_eq!(tr.metadata_protection_kind, ProtectionKind::Sign);
@@ -1853,14 +1889,14 @@ mod tests {
     }
 
     #[test]
-    fn topic_rule_falls_through_to_wildcard() {
+    fn security_10_4_1_2_6_topic_rule_falls_through_to_wildcard() {
         let g = parse_governance_xml(SAMPLE).unwrap();
         let tr = g.find_topic_rule(0, "UnknownTopic").expect("wildcard");
         assert_eq!(tr.metadata_protection_kind, ProtectionKind::None);
     }
 
     #[test]
-    fn domain_filter_id_range_matches_inclusive() {
+    fn security_10_4_1_2_5_domain_filter_id_range_matches_inclusive() {
         let g = parse_governance_xml(SAMPLE).unwrap();
         assert!(g.find_domain_rule(10).is_some());
         assert!(g.find_domain_rule(15).is_some());
@@ -1873,7 +1909,7 @@ mod tests {
     /// outside the XSD (DomainSet: at least one `<id>` or `<id_range>`). It
     /// was read as a rule for every domain.
     #[test]
-    fn a_rule_without_a_domain_is_refused() {
+    fn security_10_4_1_2_3_a_rule_without_a_domain_is_refused() {
         let empty = r#"
 <dds><domain_access_rules>
   <domain_rule>
@@ -1904,7 +1940,7 @@ mod tests {
     }
 
     #[test]
-    fn protection_kind_parses_case_insensitive() {
+    fn security_10_4_1_2_3_protection_kind_parses_case_insensitive() {
         assert_eq!(
             ProtectionKind::parse("encrypt").unwrap(),
             ProtectionKind::Encrypt
@@ -1922,7 +1958,7 @@ mod tests {
     /// governance invalid; with it, the element is ignored. A typo read as
     /// NONE or FALSE, an unreadable domain id as every domain.
     #[test]
-    fn a_governance_outside_the_xsd_is_refused() {
+    fn security_10_4_1_2_3_a_governance_outside_the_xsd_is_refused() {
         let rule = |inner: &str| {
             alloc::format!(
                 r#"<dds><domain_access_rules><domain_rule>
@@ -1983,7 +2019,7 @@ mod tests {
     /// `allowed_crypto_algorithms` are read into the rule; absent, they are
     /// FALSE, NONE and every algorithm.
     #[test]
-    fn the_key_revision_psk_and_allowed_algorithm_elements_are_read() {
+    fn security_10_4_1_2_3_the_key_revision_psk_and_allowed_algorithm_elements_are_read() {
         use zerodds_security::algorithm as alg;
         let plain = parse_governance_xml(&document("")).unwrap();
         let rule = &plain.domain_rules[0];
@@ -2041,7 +2077,7 @@ mod tests {
     /// text, an element twice, and an element without an algorithm make the
     /// document invalid.
     #[test]
-    fn the_allowed_algorithm_names_are_those_of_the_xsd() {
+    fn security_10_4_1_2_3_the_allowed_algorithm_names_are_those_of_the_xsd() {
         let allowed = |inner: &str| {
             parse_governance_xml(&document(&alloc::format!(
                 "<allowed_crypto_algorithms>{inner}</allowed_crypto_algorithms>"
@@ -2083,7 +2119,7 @@ mod tests {
     /// that holds the `<domain_rule>` elements; a `<domain_rule>` elsewhere
     /// in the tree is no domain rule (the tree was searched for it).
     #[test]
-    fn the_structure_of_the_document_is_the_xsds() {
+    fn security_10_4_1_2_3_the_structure_of_the_document_is_the_xsds() {
         let rule = r#"<domain_rule><domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control><topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules></domain_rule>"#;
         assert!(
             parse_governance_xml(&alloc::format!(
@@ -2129,7 +2165,7 @@ mod tests {
     /// The enumerations of the XSD are exact strings: ProtectionKind in
     /// capitals, `data_protection_kind` a BasicProtectionKind.
     #[test]
-    fn the_protection_kind_enumerations_of_the_xsd_are_exact() {
+    fn security_10_4_1_2_3_the_protection_kind_enumerations_of_the_xsd_are_exact() {
         let topic = |inner: &str| {
             parse_governance_xml(&alloc::format!(
                 r#"<dds><domain_access_rules><domain_rule>
@@ -2171,7 +2207,7 @@ mod tests {
     /// element has `must_interpret` "false"; `must_interpret` itself takes
     /// the four spellings.
     #[test]
-    fn an_extension_attribute_follows_must_interpret() {
+    fn security_10_4_1_3_an_extension_attribute_follows_must_interpret() {
         let with = |attributes: &str| {
             parse_governance_xml(&alloc::format!(
                 r#"<dds><domain_access_rules><domain_rule>
@@ -2393,7 +2429,7 @@ mod tests {
 
     /// The OMG sample files declare the namespace of their XSD on `<dds>`.
     #[test]
-    fn a_governance_in_the_omg_namespace_parses() {
+    fn security_10_4_1_2_3_a_governance_in_the_omg_namespace_parses() {
         let xml = r#"<dds xmlns="http://www.omg.org/spec/DDS-SECURITY/20170801/omg_shared_ca_governance"><domain_access_rules><domain_rule><domains><id>0</id></domains></domain_rule></domain_access_rules></dds>"#;
         assert!(parse_governance_xml(xml).is_ok());
         let other = xml.replace("http://www.omg.org/spec/DDS-SECURITY", "http://example.org");
@@ -2424,7 +2460,7 @@ mod tests {
     /// "Unknown XML element"). The document was accepted and the element
     /// ignored.
     #[test]
-    fn zerodds_elements_without_the_namespace_follow_must_interpret() {
+    fn security_10_4_1_3_zerodds_elements_without_the_namespace_follow_must_interpret() {
         let doc = |attr: &str| {
             alloc::format!(
                 r#"<?xml version="1.0"?>
@@ -2667,6 +2703,53 @@ mod tests {
         assert!(matches!(a.algorithm, SignatureAlgorithm::EcdsaP256));
     }
 
+    /// A delegation profile with a value the parser does not know is
+    /// refused with the value named: a misspelt trust policy ran the
+    /// profile as `direct-or-delegated`, an unknown algorithm (the
+    /// `ecdsa-p256-sha256`, which neither Table 25 nor this parser names) was
+    /// dropped from the allowed set, an unreadable depth left 3.
+    #[test]
+    fn a_delegation_profile_refuses_a_value_it_does_not_know() {
+        let profile = |inner: &str| {
+            alloc::format!(
+                r#"<?xml version="1.0"?>
+<dds xmlns:zerodds="https://zerodds.org/schema/security/heterogeneous">
+  <domain_access_rules><domain_rule><domains><id>0</id></domains></domain_rule></domain_access_rules>
+  <zerodds:delegation_profiles>
+    <zerodds:profile name="p">{inner}</zerodds:profile>
+  </zerodds:delegation_profiles>
+</dds>"#
+            )
+        };
+        for (inner, named) in [
+            (
+                "<zerodds:trust_policy>direct-or-delegate</zerodds:trust_policy>",
+                "direct-or-delegate",
+            ),
+            (
+                "<zerodds:max_chain_depth>three</zerodds:max_chain_depth>",
+                "three",
+            ),
+            (
+                "<zerodds:allowed_algorithms><zerodds:algorithm>ecdsa-p256-sha256</zerodds:algorithm></zerodds:allowed_algorithms>",
+                "ecdsa-p256-sha256",
+            ),
+        ] {
+            match parse_governance_xml(&profile(inner)) {
+                Err(PermissionsError::Malformed(m)) => assert!(m.contains(named), "{m}"),
+                other => panic!("{inner}: {other:?}"),
+            }
+        }
+        let known = parse_governance_xml(&profile(
+            "<zerodds:trust_policy>federation</zerodds:trust_policy>\
+             <zerodds:max_chain_depth>2</zerodds:max_chain_depth>",
+        ))
+        .unwrap();
+        let p = known.delegation_profiles.get("p").unwrap();
+        assert!(matches!(p.trust_policy, TrustPolicy::Federation));
+        assert_eq!(p.max_chain_depth, 2);
+    }
+
     #[test]
     fn parses_all_four_trust_policies() {
         for (xml_val, expected) in [
@@ -2678,6 +2761,56 @@ mod tests {
             assert_eq!(parse_trust_policy(xml_val), Some(expected));
         }
         assert!(parse_trust_policy("unknown").is_none());
+    }
+
+    /// DDS-Security 1.2 Table 25 names the digital signature algorithms
+    /// `ECDSA+P256+SHA256`, `ECDSA+P384+SHA384` and
+    /// `RSASSA-PSS-MGF1SHA256+2048+SHA256` (with deprecated names); a
+    /// delegation profile takes them.
+    #[test]
+    fn security_8_2_the_signature_algorithm_names_of_table_25_are_read() {
+        for (name, algorithm) in [
+            ("ECDSA+P256+SHA256", SignatureAlgorithm::EcdsaP256),
+            ("ECDSA-SHA256", SignatureAlgorithm::EcdsaP256),
+            ("EC-prime256v1", SignatureAlgorithm::EcdsaP256),
+            ("ECDSA+P384+SHA384", SignatureAlgorithm::EcdsaP384),
+            (
+                "RSASSA-PSS-MGF1SHA256+2048+SHA256",
+                SignatureAlgorithm::RsaPss2048,
+            ),
+            ("RSASSA-PSS-SHA256", SignatureAlgorithm::RsaPss2048),
+            ("RSA-2048", SignatureAlgorithm::RsaPss2048),
+        ] {
+            assert_eq!(parse_algorithm(name), Some(algorithm), "{name}");
+        }
+        // Table 25 has it, the delegation signature has no form for it.
+        assert_eq!(parse_algorithm("RSASSA-PKCS1-V1_5+2048+SHA256"), None);
+    }
+
+    /// `<match delegation_profile="...">` names the profile the class's
+    /// peers are validated against (`09_delegation.md` §7.1).
+    #[test]
+    fn a_peer_class_names_its_delegation_profile() {
+        let xml = r#"<?xml version="1.0"?>
+<dds xmlns:zerodds="https://zerodds.org/schema/security/heterogeneous">
+  <domain_access_rules><domain_rule><domains><id>0</id></domains>
+    <zerodds:peer_classes>
+      <zerodds:peer_class name="legacy-edge" protection="NONE">
+        <zerodds:match auth_plugin_class="" delegation_profile="vehicle-internal"/>
+      </zerodds:peer_class>
+      <zerodds:peer_class name="direct" protection="SIGN">
+        <zerodds:match auth_plugin_class="DDS:Auth:PKI-DH:1.2"/>
+      </zerodds:peer_class>
+    </zerodds:peer_classes>
+  </domain_rule></domain_access_rules>
+</dds>"#;
+        let g = parse_governance_xml(xml).unwrap();
+        let classes = &g.domain_rules[0].peer_classes;
+        assert_eq!(
+            classes[0].match_criteria.delegation_profile.as_deref(),
+            Some("vehicle-internal")
+        );
+        assert_eq!(classes[1].match_criteria.delegation_profile, None);
     }
 
     #[test]
@@ -2699,31 +2832,6 @@ mod tests {
             Some(SignatureAlgorithm::Ed25519)
         );
         assert!(parse_algorithm("xyz").is_none());
-    }
-
-    #[test]
-    fn unknown_trust_policy_falls_back_to_default() {
-        let pk = ecdsa_p256_test_pubkey_base64();
-        let xml = alloc::format!(
-            r#"<?xml version="1.0"?>
-<dds xmlns:zerodds="https://zerodds.org/schema/security/heterogeneous">
-  <domain_access_rules><domain_rule><domains><id>0</id></domains></domain_rule></domain_access_rules>
-  <zerodds:delegation_profiles>
-    <zerodds:profile name="bad">
-      <zerodds:trust_policy>nonsense-mode</zerodds:trust_policy>
-      <zerodds:trust_anchors>
-        <zerodds:anchor subject_guid="01020304050607080910111213141516"
-                        algorithm="ecdsa-p256"
-                        public_key="{pk}" />
-      </zerodds:trust_anchors>
-    </zerodds:profile>
-  </zerodds:delegation_profiles>
-</dds>"#
-        );
-        let g = parse_governance_xml(&xml).unwrap();
-        let p = g.delegation_profiles.get("bad").unwrap();
-        // Default = DirectOrDelegated if the value is not parseable.
-        assert!(matches!(p.trust_policy, TrustPolicy::DirectOrDelegated));
     }
 
     #[test]
@@ -2965,7 +3073,7 @@ mod tests {
     /// The six refusals the OMG suite asks for, one assertion each. Every
     /// one of them is a topic whose rule is NOT the first in the document.
     #[test]
-    fn the_six_omg_suite_refusals_are_denied() {
+    fn security_10_4_1_2_6_4_the_six_omg_suite_refusals_are_denied() {
         let (gov, write) = ac_fixture(PERMS_WRITE);
         // sub PD_RA_OM_OD with write-only permissions.
         assert!(!gov.check_create_datareader(&write, 0, "PD_RA_OM_OD", &[], 0));
@@ -2989,7 +3097,7 @@ mod tests {
     /// suite's five rules is refused, also with write permissions. It was
     /// taken as unprotected and permitted.
     #[test]
-    fn a_topic_without_a_rule_is_refused() {
+    fn security_10_4_1_2_7_a_topic_without_a_rule_is_refused() {
         let (gov, write) = ac_fixture(PERMS_WRITE);
         assert!(!gov.has_topic_rule(0, "NotInTheGovernance"));
         assert!(!gov.check_create_datawriter(&write, 0, "NotInTheGovernance", &[], 0));
@@ -3000,7 +3108,7 @@ mod tests {
     /// The permitted direction of the same profiles still passes — a check
     /// that denies everything is not access control.
     #[test]
-    fn the_granted_direction_still_creates() {
+    fn security_9_4_2_6_the_granted_direction_still_creates() {
         let (gov, write) = ac_fixture(PERMS_WRITE);
         assert!(gov.check_create_datawriter(&write, 0, "PD_WA_OM_OD", &[], 0));
         assert!(gov.check_create_datawriter(&write, 0, "PD_RWA_OM_OD", &[], 0));
@@ -3016,7 +3124,7 @@ mod tests {
     /// join-only permissions create both endpoints on `OD_OA_OM_OD`, and the
     /// half-controlled profiles gate only their own half.
     #[test]
-    fn an_uncontrolled_topic_needs_no_grant() {
+    fn security_9_4_2_6_an_uncontrolled_topic_needs_no_grant() {
         let (gov, join) = ac_fixture(PERMS_JOIN);
         assert!(gov.check_create_datawriter(&join, 0, "OD_OA_OM_OD", &[], 0));
         assert!(gov.check_create_datareader(&join, 0, "OD_OA_OM_OD", &[], 0));
@@ -3033,7 +3141,7 @@ mod tests {
     /// `AC_GOVERNANCE` would be uncontrolled, and every assertion above
     /// would pass for the wrong reason.
     #[test]
-    fn access_control_flags_come_from_the_matching_rule() {
+    fn security_9_4_2_6_access_control_flags_come_from_the_matching_rule() {
         let gov = parse_governance_xml(AC_GOVERNANCE).expect("governance");
         let first = gov
             .find_domain_rule(0)
@@ -3051,7 +3159,7 @@ mod tests {
     /// An expired grant is no grant (§9.4.1.3.2.2), and a grant for another
     /// domain does not carry into this one.
     #[test]
-    fn validity_and_domain_bound_the_grant() {
+    fn security_10_4_1_5_3_3_validity_and_domain_bound_the_grant() {
         let gov = parse_governance_xml(AC_GOVERNANCE).expect("governance");
         let expired = crate::xml::parse_permissions_xml(
             r#"<dds><permissions><grant name="e">
@@ -3087,7 +3195,7 @@ mod tests {
     /// A domain the governance does not cover has no endpoints, mirroring
     /// `check_create_participant`.
     #[test]
-    fn an_uncovered_domain_creates_nothing() {
+    fn security_10_4_1_2_5_an_uncovered_domain_creates_nothing() {
         let (gov, _) = ac_fixture(PERMS_WRITE);
         let allow_all = crate::xml::parse_permissions_xml(
             r#"<dds><permissions><grant name="a">
@@ -3106,7 +3214,7 @@ mod tests {
     /// §9.4.1.3.2.3.1: a grant without `<partitions>` covers only the
     /// default partition, so a writer in a named partition is refused.
     #[test]
-    fn partitions_scope_the_grant() {
+    fn security_9_8_4_partitions_scope_the_grant() {
         let (gov, write) = ac_fixture(PERMS_WRITE);
         assert!(gov.check_create_datawriter(&write, 0, "PD_WA_OM_OD", &[], 0));
         assert!(gov.check_create_datawriter(&write, 0, "PD_WA_OM_OD", &[""], 0));
@@ -3118,7 +3226,7 @@ mod tests {
     /// grant — that wins over the governance, including a catch-all that would
     /// otherwise make the topic write-controlled.
     #[test]
-    fn the_builtin_log_topic_rule_allows_any_write_and_gates_reads() {
+    fn security_10_6_the_builtin_log_topic_rule_allows_any_write_and_gates_reads() {
         let catch_all = parse_governance_xml(
             r#"<dds><domain_access_rules><domain_rule>
                  <domains><id>0</id></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants>
@@ -3179,7 +3287,7 @@ mod tests {
     /// FALSE makes `allow_unauthenticated_participants` and
     /// `is_access_protected` FALSE; a missing one is TRUE. It was FALSE.
     #[test]
-    fn missing_domain_rule_flags_are_true() {
+    fn security_10_4_1_2_3_missing_domain_rule_flags_are_true() {
         let g = parse_governance_xml(
             r#"<dds><domain_access_rules><domain_rule>
                  <domains><id>0</id></domains>
@@ -3195,7 +3303,7 @@ mod tests {
     /// `allow_unauthenticated_participants` must be FALSE. The combination
     /// was taken.
     #[test]
-    fn rtps_protection_with_unauthenticated_participants_is_refused() {
+    fn security_9_4_2_4_rtps_protection_with_unauthenticated_participants_is_refused() {
         let doc = |flag: &str| {
             alloc::format!(
                 r#"<dds><domain_access_rules><domain_rule>
@@ -3223,7 +3331,7 @@ mod tests {
     /// DomainTag, one with tags for the tags it names. The tags were read
     /// and not applied.
     #[test]
-    fn domain_rules_match_the_domain_tag() {
+    fn security_10_4_1_2_5_1_domain_rules_match_the_domain_tag() {
         let g = parse_governance_xml(
             r#"<dds><domain_access_rules>
                  <domain_rule><domains><id>0</id><tag>Robot15</tag></domains><allow_unauthenticated_participants>false</allow_unauthenticated_participants><enable_join_access_control>false</enable_join_access_control>

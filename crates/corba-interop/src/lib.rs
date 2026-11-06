@@ -51,9 +51,12 @@ pub fn encode_string_body(s: &str) -> Vec<u8> {
 }
 
 /// CDR-decode a single `string` value from a GIOP body.
-#[must_use]
-pub fn decode_string_body(body: &[u8]) -> String {
-    Reader::new(body, WIRE).read_string().unwrap_or_default()
+///
+/// # Errors
+/// A body that does not hold a CDR `string`: the error, not an empty
+/// string that reads like one.
+pub fn decode_string_body(body: &[u8]) -> Result<String, zerodds_wire::WireError> {
+    Reader::new(body, WIRE).read_string()
 }
 
 /// `Echo` servant — `string ping(in string msg)` echoes its argument.
@@ -67,7 +70,12 @@ impl Servant for EchoServant {
 
     fn invoke(&self, operation: &str, request_body: &[u8]) -> Vec<u8> {
         match operation {
-            "ping" => encode_string_body(&decode_string_body(request_body)),
+            // `Servant::invoke` has no exception path: a body that is not a
+            // string gets no reply body, as an unknown operation does.
+            "ping" => match decode_string_body(request_body) {
+                Ok(text) => encode_string_body(&text),
+                Err(_) => Vec::new(),
+            },
             _ => Vec::new(),
         }
     }
@@ -220,7 +228,7 @@ mod tests {
 
         for i in 0..100u32 {
             let reply = invoke_on(conn, i, key, "ping", encode_string_body("hello")).unwrap();
-            assert_eq!(decode_string_body(&reply), "hello");
+            assert_eq!(decode_string_body(&reply).unwrap(), "hello");
         }
         acceptor.shutdown();
     }
@@ -302,7 +310,10 @@ mod tests {
 
         let reply = call(conn, 6, key, "_repository_id", Vec::new());
         assert_eq!(reply.reply_status, ReplyStatusType::NoException);
-        assert_eq!(decode_string_body(&reply.body), "IDL:demo/Echo:1.0");
+        assert_eq!(
+            decode_string_body(&reply.body).unwrap(),
+            "IDL:demo/Echo:1.0"
+        );
 
         let reply = call(conn, 7, b"no-such-key", "ping", Vec::new());
         assert_eq!(reply.reply_status, ReplyStatusType::SystemException);

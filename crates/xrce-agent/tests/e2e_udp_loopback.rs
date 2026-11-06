@@ -173,7 +173,7 @@ fn create_and_wait(
 }
 
 #[test]
-fn e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments() {
+fn xrce_7_1_e2e_udp_loopback_keyed_dispose_reliable_besteffort_and_fragments() {
     let start = Instant::now();
     let lease = zerodds_test_domains::lease_domain();
     let domain = lease.id();

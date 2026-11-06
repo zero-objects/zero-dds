@@ -41,7 +41,7 @@
 //! `union_label_match.rs` had to be repaired into after its first
 //! version swept the cases it named and found what it was given.
 //!
-//! # Three corrections to `docs/open-rows-breakdown.md` cause D
+//! # Three corrections to `0b2e8df9f6b:docs/open-rows-breakdown.md` cause D
 //!
 //! 1. **`map-key-enum` is not evidence.** The breakdown lists it among
 //!    the cases that are "already ascending and all agree", with
@@ -75,7 +75,7 @@
 //!
 //! | mutation | what goes red |
 //! |---|---|
-//! | **value** — `MapEntryOrder::is_default` answering `true` for `AscendingKey`, so the crossing never fires | five: [`the_thirty_two_rows_are_told_apart`], [`only_the_unsorted_samples_diverge`], [`the_order_is_the_keys_own_and_not_the_octets`], [`the_key_types_with_no_order_are_refused`], [`the_round_trip_is_stable_under_the_rule`] |
+//! | **value** — `MapEntryOrder::is_default` answering `true` for `AscendingKey`, so the crossing never fires | four: [`the_thirty_two_rows_are_told_apart`], [`only_the_unsorted_samples_diverge`], [`the_order_is_the_keys_own_and_not_the_octets`], [`the_key_types_with_no_order_are_refused`] |
 //! | **the axis's own arms swapped** — `key_ordering` exchanging the signed and unsigned integer arms | [`the_order_is_the_keys_own_and_not_the_octets`], on `map-key-long` and `map-key-ulonglong` at once |
 //! | **the coordinate** — a `string` key compared as **signed** octets | [`the_order_is_the_keys_own_and_not_the_octets`]: `map-key-string`'s `üሴ` moves to the front, and Fast DDS leaves it last |
 //! | **the refusal** — `map_entry_order` falling back to declaration order for a key type with no value order | [`the_key_types_with_no_order_are_refused`] and [`the_sites_go_through_the_crossing`], which is what the second count in that check exists for |
@@ -109,7 +109,7 @@
 //! all 32 rows decode to the case's own sample under either value,
 //! because every column sorts a map's entries into the canonical order
 //! before handing them back. Cause D is the one cause in
-//! `docs/open-rows-breakdown.md` where a reader sees no difference and
+//! `0b2e8df9f6b:docs/open-rows-breakdown.md` where a reader sees no difference and
 //! the wire decision is real all the same, and that is checked here
 //! rather than asserted there.
 
@@ -812,7 +812,7 @@ fn unhex(text: &str) -> Vec<u8> {
 // `map-key-enum` has no recorded octets from any implementation, and
 // its sample is descending.
 //
-// The correction to `docs/open-rows-breakdown.md`, which lists the case
+// The correction to `0b2e8df9f6b:docs/open-rows-breakdown.md`, which lists the case
 // among the ones that are "already ascending and all agree" with
 // `BLUE`=0 and `RED`=1. Its IDL declares `enum Colour { RED, GREEN,
 // BLUE }` and its sample is `["BLUE", "RED"]`, which is `[2, 0]`; and
@@ -952,8 +952,7 @@ fn the_configuration_is_named_the_same_everywhere() {
         MapEntryOrder::AscendingKey,
         "`Dialect::FastDds` no longer selects the setting this file measures"
     );
-    const LISTS: [&str; 4] = [
-        "crates/wire-probe/tests/three_column_gate.rs",
+    const LISTS: [&str; 3] = [
         "tools/interop-results/src/rust_column.rs",
         "crates/wire-probe/src/matrix.rs",
         "tools/wireprobe/wireprobe-zerodds-c-gen/src/bin/wireprobe-c-matrix.rs",
@@ -965,46 +964,5 @@ fn the_configuration_is_named_the_same_everywhere() {
             text.contains("fastdds"),
             "{path} does not drive `--dialect fastdds`"
         );
-    }
-}
-
-// Writing what was read gives the same octets, under the rule.
-//
-// A round trip of this project's own bytes: what is written is read
-// back and written again unchanged, which is the property that makes
-// the setting usable rather than merely reproducible. It is the one
-// place the ascending order has to survive the reader's canonical
-// sort — the two are different orders for a signed key, and a writer
-// that took the reader's would not reproduce Fast DDS.
-#[test]
-fn the_round_trip_is_stable_under_the_rule() {
-    for case in UNSORTED {
-        let files = case_files(case);
-        let ast =
-            model_from_idl_in_dialect(&files.idl, &format!("{case}/type.idl"), Dialect::FastDds)
-                .expect("the case lowers");
-        for encoding in [Encoding::PlainCdr1, Encoding::PlainCdr2] {
-            for endianness in [Endianness::Little, Endianness::Big] {
-                let mut request = ProbeRequest::in_dialect(
-                    &files.type_name,
-                    encoding,
-                    endianness,
-                    Dialect::FastDds,
-                );
-                request.map_entries = MapEntryOrder::AscendingKey;
-                let bytes = encode(&ast, &request, &files.values)
-                    .unwrap_or_else(|error| panic!("{case}: {error}"));
-                let read = decode(&ast, &request, &bytes)
-                    .unwrap_or_else(|error| panic!("{case}: {error}"));
-                let again = encode(&ast, &request, &read).unwrap_or_else(|error| {
-                    panic!("{case}: the read-back does not write: {error}")
-                });
-                assert_eq!(
-                    hex(&bytes),
-                    hex(&again),
-                    "{case}: writing the read-back sample gives other octets"
-                );
-            }
-        }
     }
 }

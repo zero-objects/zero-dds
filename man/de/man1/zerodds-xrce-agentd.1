@@ -1,0 +1,95 @@
+.TH ZERODDS-XRCE-AGENTD 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-xrce-agentd \- Agent-Daemon für DDS-XRCE
+.SH ÜBERSICHT
+.B zerodds-xrce-agentd
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-listen\fR \fIudp|tcp\fR:\fIADR\fR]...
+[\fB\-\-log\-level\fR \fISTUFE\fR]
+[\fB\-\-set\fR \fIPFAD\fR=\fIWERT\fR]...
+[\fB\-\-check\-config\fR]
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-xrce-agentd
+ist die Agent-Seite von OMG DDS-XRCE 1.0: Er vertritt einen oder mehrere
+eProsima-kompatible Micro Clients (UDP, TCP oder seriell) im DDS-Datenraum,
+führt den Handshake CREATE_CLIENT/STATUS_AGENT, zuverlässige Streams mit
+HEARTBEAT/ACKNACK und das Zusammensetzen von FRAGMENTs aus und bildet
+CREATE/DELETE/WRITE_DATA/READ_DATA auf echte DDS-Participants, Topics,
+Publisher, Subscriber, Data Writer und Data Reader ab. Ein Participant tritt
+der DDS-Domäne bei, die sein CREATE trägt.
+Implementiert
+.IR docs/specs/dds-xrce-1.0.md .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Pfad zur Konfigurationsdatei (YAML). Siehe
+.BR zerodds-xrce-agentd.yaml (5).
+.TP
+.BR \-\-listen =\fIudp|tcp\fR:\fIADR\fR
+Einen Listener hinzufügen (wiederholbar). Standard, wenn nirgends einer
+angegeben ist: ein UDP-Listener auf
+.IR 0.0.0.0:2018 ,
+dem Standard-Agent-Port von eProsima selbst.
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.TP
+.BR \-V ", " \-\-version
+Versionsangabe.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.SH SIGNALE
+SIGTERM beendet den Daemon.
+SIGHUP lädt neu, was sich ohne Neustart neu laden lässt:
+.BR log_level ,
+.BR limits.* ,
+.BR session_timeout_secs " und "
+.B discovery.enabled
+(der Thread des Discovery-Responders wird passend gestoppt oder gestartet).
+Ein geänderter Eintrag in
+.BR listeners: ,
+.BR type_files: " oder "
+.B xml_profile_files:
+wird protokolliert und bis zum Neustart ignoriert \(em einen lauschenden
+Socket im Betrieb neu zu binden oder die TypeObject-Menge unter laufenden
+Sitzungen auszutauschen, würde riskieren, diese still zu verwaisen. Eine
+Konfiguration, die nicht lädt, ändert nichts; der Daemon läuft mit der letzten
+guten Konfiguration weiter und protokolliert, warum das Neuladen abgelehnt
+wurde.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden.
+.TP
+.B 1
+Konfigurationsfehler.
+.TP
+.B 2
+Bind-Fehler \(em der Port eines Listeners ist schon belegt.
+.TP
+.B 3
+Fehler bei DDS-Discovery oder Laufzeit.
+.SH DATEIEN
+.I /etc/zerodds/xrce-agentd.yaml .
+.SH SIEHE AUCH
+.BR zerodds-xrce-agentd.yaml (5),
+DDS-XRCE 1.0 (OMG formal/2023-03-01).
+.SH AUTOREN
+ZeroDDS Contributors.

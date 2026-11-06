@@ -111,7 +111,7 @@ fn holder(ast: &Ast, type_name: &str, value: &serde_json::Value) -> Vec<u8> {
 }
 
 #[test]
-fn example_1_a_four_octet_key_is_padded_with_zeros() {
+fn xtypes_7_6_8_example_1_a_four_octet_key_is_padded_with_zeros() {
     let mut m = Model::new();
     let long = m.primitive("Long", PrimitiveKind::Int32);
     let foo = m.structure("Foo", Extensibility::Final);
@@ -131,7 +131,7 @@ fn example_1_a_four_octet_key_is_padded_with_zeros() {
 }
 
 #[test]
-fn example_2_a_key_of_at_most_28_octets_is_hashed_with_md5() {
+fn xtypes_7_6_8_example_2_a_key_of_at_most_28_octets_is_hashed_with_md5() {
     let mut m = Model::new();
     let long = m.primitive("Long", PrimitiveKind::Int32);
     let long_long = m.primitive("LongLong", PrimitiveKind::Int64);
@@ -161,7 +161,7 @@ fn example_2_a_key_of_at_most_28_octets_is_hashed_with_md5() {
 }
 
 #[test]
-fn example_3_the_key_members_are_reordered_by_member_id_and_nested_keys_reduced() {
+fn xtypes_7_6_8_example_3_the_key_members_are_reordered_by_member_id_and_nested_keys_reduced() {
     let mut m = Model::new();
     let long = m.primitive("Long", PrimitiveKind::Int32);
     let label = m.string("Label16", 16);

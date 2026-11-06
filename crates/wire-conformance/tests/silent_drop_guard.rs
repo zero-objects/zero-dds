@@ -5,7 +5,7 @@
 //! `tools/silent-drop-guard.sh` was red for thirty commits and nothing
 //! acted on it. The reason was not that it ran nowhere. It was wired
 //! into three places and one of them really ran it: the GitLab
-//! `silent-drop` job failed on every pipeline from `f863ceb46` onwards.
+//! `silent-drop` job failed on every pipeline from `c28ae25d9` onwards.
 //! It failed inside a pipeline where forty of sixty jobs were failing,
 //! so one more red job carried no signal. The other two wirings were
 //! nominal — `scripts/pre-commit.sh` is not installed as a git hook and

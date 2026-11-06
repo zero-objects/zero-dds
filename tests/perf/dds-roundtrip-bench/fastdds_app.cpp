@@ -205,6 +205,41 @@ void apply_security(DomainParticipantQos& pqos) {
     }
 }
 
+// Writer and reader QoS of both sides from bench::qos_from_env() (unset:
+// RELIABLE, KEEP_LAST 64, Fast DDS's RESOURCE_LIMITS) and one data
+// representation. XCDR2-only by default: RTI is strict and accepts no writer
+// that advertises "XCDR1, XCDR2".
+//
+// Data sharing off unless ZERODDS_BENCH_TRANSPORT=SHM: Fast DDS turns it on
+// by itself (DataSharingQosPolicy AUTO) for a bounded type and a peer on the
+// same host, and then delivers through shared memory, not the UDPv4
+// transport the other stacks are measured on. Seen in the speed setup: with
+// KEEP_ALL and max_samples 100 000 the writer asked for a 6.58 GB segment.
+//
+// With RESOURCE_LIMITS set (the speed setup), the history allocates per
+// sample as it goes (DYNAMIC_REUSABLE_MEMORY_MODE): the default
+// (PREALLOCATED_WITH_REALLOC) sizes every sample of the history for the
+// type's bound, 65 536 octets, and a writer with max_samples 100 000 took
+// 4 GB within 9 s and was killed by the OOM killer, whatever size it wrote.
+// The other stacks allocate by the size written.
+template <class Qos>
+void apply_bench_qos(Qos& qos, const bench::QosSpec& q) {
+    if (resolve_transport() != BenchTransport::SHM) qos.data_sharing().off();
+    if (q.has_limits()) {
+        qos.endpoint().history_memory_policy = eprosima::fastdds::rtps::DYNAMIC_REUSABLE_MEMORY_MODE;
+    }
+    qos.reliability().kind = q.reliable ? RELIABLE_RELIABILITY_QOS : BEST_EFFORT_RELIABILITY_QOS;
+    qos.history().kind = q.keep_all ? KEEP_ALL_HISTORY_QOS : KEEP_LAST_HISTORY_QOS;
+    qos.history().depth = q.keep_all ? 1 : q.depth;
+    if (q.has_limits()) {
+        qos.resource_limits().max_samples = q.max_samples;
+        qos.resource_limits().max_instances = 1;
+        qos.resource_limits().max_samples_per_instance = q.max_samples;
+    }
+    qos.representation().m_value.clear();
+    qos.representation().m_value.push_back(bench_repr());
+}
+
 // --- Pong: receive request, echo via listener-direct write ---
 
 class PongListener : public DataReaderListener {
@@ -242,22 +277,11 @@ int run_pong(uint64_t max_runtime_s) {
     auto* subscriber = dp->create_subscriber(SUBSCRIBER_QOS_DEFAULT);
 
     DataWriterQos dw_qos;
-    dw_qos.reliability().kind = RELIABLE_RELIABILITY_QOS;
-    dw_qos.history().kind = KEEP_LAST_HISTORY_QOS;
-    dw_qos.history().depth = 64;
-    // XCDR2-only: RTI is strict, accepts no writer that
-    // advertises "XCDR1, XCDR2". Force all apps to XCDR2-only
-    // so that RTI <-> all other vendors match.
-    dw_qos.representation().m_value.clear();
-    dw_qos.representation().m_value.push_back(bench_repr());
+    apply_bench_qos(dw_qos, bench::qos_from_env());
     auto* writer = publisher->create_datawriter(topic_echo, dw_qos);
 
     DataReaderQos dr_qos;
-    dr_qos.reliability().kind = RELIABLE_RELIABILITY_QOS;
-    dr_qos.history().kind = KEEP_LAST_HISTORY_QOS;
-    dr_qos.history().depth = 64;
-    dr_qos.representation().m_value.clear();
-    dr_qos.representation().m_value.push_back(bench_repr());
+    apply_bench_qos(dr_qos, bench::qos_from_env());
     PongListener listener(writer);
     auto* reader = subscriber->create_datareader(topic_req, dr_qos, &listener);
 
@@ -310,19 +334,11 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     auto* subscriber = dp->create_subscriber(SUBSCRIBER_QOS_DEFAULT);
 
     DataWriterQos dw_qos;
-    dw_qos.reliability().kind = RELIABLE_RELIABILITY_QOS;
-    dw_qos.history().kind = KEEP_LAST_HISTORY_QOS;
-    dw_qos.history().depth = 64;
-    dw_qos.representation().m_value.clear();
-    dw_qos.representation().m_value.push_back(bench_repr());
+    apply_bench_qos(dw_qos, bench::qos_from_env());
     auto* writer = publisher->create_datawriter(topic_req, dw_qos);
 
     DataReaderQos dr_qos;
-    dr_qos.reliability().kind = RELIABLE_RELIABILITY_QOS;
-    dr_qos.history().kind = KEEP_LAST_HISTORY_QOS;
-    dr_qos.history().depth = 64;
-    dr_qos.representation().m_value.clear();
-    dr_qos.representation().m_value.push_back(bench_repr());
+    apply_bench_qos(dr_qos, bench::qos_from_env());
     PingState st;
     st.warmup = warmup;
     st.rtts.reserve(samples);
@@ -351,7 +367,9 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     populate(msg, payload_size);
 
     uint64_t total = warmup + samples;
-    for (uint64_t seq = 0; seq < total; ++seq) {
+    uint64_t sent = 0;
+    const uint64_t ping_deadline = bench::ping_deadline();
+    for (uint64_t seq = 0; seq < total && !bench::ping_past(ping_deadline); ++seq, ++sent) {
         msg.sequence_id(static_cast<uint32_t>(seq));
         msg.t_send_ns(now_ns());
         writer->write(&msg);
@@ -361,6 +379,7 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
                        [&] { return st.received > seq; });
     }
 
+    bench::print_ping_sent(sent);
     print_quantiles(st.rtts, payload_size);
 
     subscriber->delete_datareader(reader);
@@ -373,6 +392,100 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     return 0;
 }
 
+// --- Throughput (tests/perf/speed): one writer, one reader, own processes ---
+
+class TputListener : public DataReaderListener {
+public:
+    explicit TputListener(bench::TputSub& st) : st_(st) {}
+
+    void on_data_available(DataReader* reader) override {
+        SampleInfo info;
+        while (reader->take_next_sample(&msg_, &info) == RETCODE_OK) {
+            if (info.valid_data) st_.on_sample(msg_.sequence_id(), msg_.payload().size());
+        }
+    }
+
+private:
+    bench::TputSub& st_;
+    Sample msg_;
+};
+
+struct TputEndpoints {
+    DomainParticipant* dp = nullptr;
+    Topic* topic = nullptr;
+    Publisher* publisher = nullptr;
+    Subscriber* subscriber = nullptr;
+
+    bool create() {
+        DomainParticipantQos pqos;
+        apply_transport(pqos);
+        apply_security(pqos);
+        dp = DomainParticipantFactory::get_instance()->create_participant(resolve_domain(), pqos);
+        if (!dp) { std::cerr << "dp create failed\n"; return false; }
+        TypeSupport type_support(new SamplePubSubType());
+        type_support.register_type(dp);
+        topic = dp->create_topic(kReqTopic, type_support.get_type_name(), TOPIC_QOS_DEFAULT);
+        publisher = dp->create_publisher(PUBLISHER_QOS_DEFAULT);
+        subscriber = dp->create_subscriber(SUBSCRIBER_QOS_DEFAULT);
+        return topic && publisher && subscriber;
+    }
+
+    ~TputEndpoints() {
+        if (!dp) return;
+        dp->delete_contained_entities();
+        DomainParticipantFactory::get_instance()->delete_participant(dp);
+    }
+};
+
+int run_tput_sub(uint64_t max_s) {
+    TputEndpoints e;
+    if (!e.create()) return 1;
+    bench::QosSpec q = bench::qos_from_env();
+    bench::print_qos("tput-sub", q);
+    DataReaderQos dr_qos;
+    apply_bench_qos(dr_qos, q);
+    bench::TputSub st;
+    TputListener listener(st);
+    auto* reader = e.subscriber->create_datareader(e.topic, dr_qos, &listener);
+    if (!reader) { std::cerr << "datareader create failed\n"; return 1; }
+    bench::tput_sub_wait_and_report(st, max_s);
+    reader->set_listener(nullptr);
+    return 0;
+}
+
+int run_tput_pub(size_t payload_size, uint64_t seconds) {
+    TputEndpoints e;
+    if (!e.create()) return 1;
+    bench::QosSpec q = bench::qos_from_env();
+    bench::print_qos("tput-pub", q);
+    DataWriterQos dw_qos;
+    apply_bench_qos(dw_qos, q);
+    auto* writer = e.publisher->create_datawriter(e.topic, dw_qos);
+    if (!writer) { std::cerr << "datawriter create failed\n"; return 1; }
+    bench::tput_wait_matched([&] {
+        PublicationMatchedStatus pm;
+        writer->get_publication_matched_status(pm);
+        return pm.current_count >= 1;
+    });
+
+    Sample msg;
+    populate(msg, payload_size);
+    auto r = bench::tput_pub_run(seconds, [&](uint32_t seq) {
+        msg.sequence_id(seq);
+        return writer->write(&msg) == RETCODE_OK;
+    });
+    int acked = -1;
+    uint64_t ack_ns = 0;
+    if (q.reliable) {
+        uint64_t t = now_ns();
+        acked = writer->wait_for_acknowledgments(eprosima::fastdds::dds::Duration_t(30, 0)) == RETCODE_OK ? 1 : 0;
+        ack_ns = now_ns() - t;
+    }
+    bench::print_tput_pub(r, payload_size, acked, ack_ns);
+    bench::tput_linger();
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -380,7 +493,9 @@ int main(int argc, char** argv) {
         std::cerr <<
             "Usage:\n"
             "  " << kProgram << " pong [max_runtime_s]\n"
-            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n";
+            "  " << kProgram << " ping --payload N [--samples N] [--warmup N]\n"
+            "  " << kProgram << " tput-sub --seconds MAX\n"
+            "  " << kProgram << " tput-pub --payload N --seconds S\n";
         return 2;
     }
     std::string mode = argv[1];
@@ -390,6 +505,11 @@ int main(int argc, char** argv) {
     } else if (mode == "ping") {
         bench::PingArgs a = bench::parse_ping_args(argc, argv, 2);
         return run_ping(a.payload, a.warmup, a.samples);
+    } else if (mode == "tput-sub") {
+        return run_tput_sub(bench::parse_tput_args(argc, argv, 2).seconds);
+    } else if (mode == "tput-pub") {
+        bench::TputArgs a = bench::parse_tput_args(argc, argv, 2);
+        return run_tput_pub(a.payload, a.seconds);
     }
     std::cerr << "unknown mode: " << mode << "\n";
     return 2;

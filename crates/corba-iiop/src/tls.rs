@@ -309,10 +309,10 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
         let srv = thread::spawn(move || {
-            if let Ok((tcp, _)) = listener.accept() {
-                if let Ok(mut c) = accept_tls(tcp, server_cfg) {
-                    let _ = c.read_message();
-                }
+            if let Ok((tcp, _)) = listener.accept()
+                && let Ok(mut c) = accept_tls(tcp, server_cfg)
+            {
+                let _ = c.read_message();
             }
         });
         let mut client = connect_tls("localhost", addr.port(), "localhost", client_cfg).unwrap();

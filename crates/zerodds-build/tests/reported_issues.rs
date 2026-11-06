@@ -116,8 +116,14 @@ fn issue_39_a_bundle_declares_the_shared_module_once() {
         .expect("bundle");
 
     let generated = fs::read_to_string(out.join("world.rs")).expect("read");
+    // At the file root, where the two `include!`s would collide. The
+    // `type_objects_world` module repeats the IDL modules in a scope of
+    // its own, one level down.
     assert_eq!(
-        generated.matches("pub mod common").count(),
+        generated
+            .lines()
+            .filter(|line| line.starts_with("pub mod common"))
+            .count(),
         1,
         "the shared module is declared once: {generated}"
     );
@@ -357,4 +363,75 @@ fn issue_14_a_name_that_is_a_foreign_keyword_is_untouched_in_rust() {
         generated.contains("struct Class"),
         "the name the IDL wrote: {generated}"
     );
+}
+
+/// IDL 4.2 §7.5.2: "An identifier can only be defined once in a scope.
+/// However, identifiers can be redefined in nested scopes." Two modules
+/// each declaring `Part` is two types, and the constants of the
+/// `type_objects` and `type_identifiers` modules sit in one `pub mod` per
+/// IDL module, as the types themselves do.
+///
+/// The constants used to sit in one flat module named after the unit, so
+/// this unit gave `pub const Part` twice and `error[E0428]`. That the
+/// generated file compiles is held by
+/// `dds_type::xtypes_7_2_3_a_nested_appendable_type_reads_a_newer_and_an_older_writer`,
+/// which builds a crate around one with this shape.
+#[test]
+fn idl_4_2_7_5_2_one_simple_name_in_two_modules_is_two_constants() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let idl = dir.path().join("Parts.idl");
+    fs::write(
+        &idl,
+        "@final struct Part { long a; };\n\
+         module v1 { @final struct Part { long a; }; };\n\
+         module v2 { @final struct Part { long a; double b; }; module inner { @final struct Part { short c; }; }; };",
+    )
+    .expect("write");
+    let out = dir.path().join("out");
+    fs::create_dir_all(&out).expect("out");
+
+    Config::new()
+        .out_dir(&out)
+        .emit_cargo_directives(false)
+        .type_identifier_constants(true)
+        .compile(&[&idl])
+        .expect("compile");
+
+    let generated = fs::read_to_string(out.join("Parts.rs")).expect("read");
+    for module in [
+        "pub mod type_objects_parts {",
+        "pub mod type_identifiers_parts {",
+    ] {
+        let start = generated.find(module).expect("the module");
+        let body = &generated[start..];
+        let body = &body[..body.find("\n}\n").expect("the module's end")];
+        assert_eq!(
+            body.matches("pub const Part:").count(),
+            4,
+            "one constant per declared `Part`: {body}"
+        );
+        // Every scope opened once, and nothing declared twice in one.
+        assert_eq!(body.matches("pub mod v1 {").count(), 1, "{body}");
+        assert_eq!(body.matches("pub mod v2 {").count(), 1, "{body}");
+        assert_eq!(body.matches("pub mod inner {").count(), 1, "{body}");
+        let mut depth = 0usize;
+        let mut declared: Vec<Vec<&str>> = vec![Vec::new()];
+        for line in body.lines().skip(1) {
+            let line = line.trim();
+            if line.starts_with("pub mod ") {
+                depth += 1;
+                declared.truncate(depth);
+                declared.push(Vec::new());
+            } else if line == "}" {
+                depth -= 1;
+            } else if let Some(rest) = line.strip_prefix("pub const ") {
+                let name = rest.split(':').next().unwrap_or("");
+                assert!(
+                    !declared[depth].contains(&name),
+                    "`{name}` declared twice in one scope: {body}"
+                );
+                declared[depth].push(name);
+            }
+        }
+    }
 }

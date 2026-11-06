@@ -11,4 +11,18 @@ type system, and a broker model in the wire.
 - `client` — synchronous broker client: handshake, queue.declare,
   basic.publish, basic.get/ack (`std`)
 
-Interop-tested against RabbitMQ 4.0 (see `../amqp-endpoint/competitors/rabbitmq`).
+## Tests
+
+`cargo test -p zerodds-amqp-0-9-1` checks the frames, the field tables and
+the methods against the octets of the protocol's XML definitions
+(`amqp0-9-1.xml`, and RabbitMQ's `amqp0-9-1.extended.xml` for `basic.nack` and
+the `confirm` class) and RabbitMQ's errata for the field types.
+
+`tests/rabbitmq_amqp091_e2e.rs` runs the client against RabbitMQ, a node of
+each test alone (`tests/support/rabbitmq.rs`), with pika and qpid-proton as the
+reference clients. Those tests are `#[ignore]` in the crate tier and run in
+the integration pillar's job `integration-bridges-vendor-amqp`:
+
+```bash
+cargo nextest run -p zerodds-amqp-0-9-1 --test rabbitmq_amqp091_e2e --run-ignored all
+```

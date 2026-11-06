@@ -7,7 +7,7 @@
 //! Neither `WstringLengthPolicy` nor any dialect reached the CORBA forms
 //! before this file, so a topic with a `wchar` or a `wstring` in it could
 //! not be exchanged with omniORB, TAO or JacORB in either direction —
-//! `docs/corba-dialect-followup.md` items 1 and 2.
+//! `0b2e8df9f6b:docs/corba-dialect-followup.md` items 1 and 2.
 //!
 //! Every byte string below was measured on the Linux test host on
 //! 2026-08-10 through `corba-oracle/tools/wireprobe-{omniorb,tao,
@@ -389,7 +389,7 @@ fn an_orb_wstring_read_as_the_specification_returns_different_characters() {
 /// and every caller that could see both settings had to refuse the
 /// combination, because two settings deciding one byte order with a
 /// precedence rule between them is the shape that produces a wrong
-/// character and no error. Judgement 2 of `docs/wire-axes-followup.md`
+/// character and no error. Judgement 2 of `0b2e8df9f6b:docs/wire-axes-followup.md`
 /// moved it to C4, and one axis cannot conflict with itself: all four
 /// orders combine with all eight cells of C1 x C2 x C3.
 ///

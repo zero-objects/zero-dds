@@ -74,7 +74,7 @@ fn pkcs8_parses(der: &[u8]) -> bool {
 }
 
 #[test]
-fn a_pkcs1_rsa_key_reaches_the_backend_as_pkcs8() {
+fn security_10_3_1_2_a_pkcs1_rsa_key_reaches_the_backend_as_pkcs8() {
     let der = private_key_pkcs8_der(RSA_PKCS1.as_bytes()).expect("PKCS#1 wraps");
     assert!(
         ring::signature::RsaKeyPair::from_pkcs8(&der).is_ok(),
@@ -83,7 +83,7 @@ fn a_pkcs1_rsa_key_reaches_the_backend_as_pkcs8() {
 }
 
 #[test]
-fn a_sec1_ec_key_reaches_the_backend_as_the_same_pkcs8_openssl_writes() {
+fn security_10_3_1_2_a_sec1_ec_key_reaches_the_backend_as_the_same_pkcs8_openssl_writes() {
     let from_sec1 = private_key_pkcs8_der(EC_SEC1.as_bytes()).expect("SEC1 wraps");
     let from_pkcs8 = private_key_pkcs8_der(EC_PKCS8.as_bytes()).expect("PKCS#8 passes through");
     assert!(

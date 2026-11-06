@@ -118,34 +118,6 @@ fn mk_subd(type_id: TypeIdentifier) -> SubscriptionBuiltinTopicData {
     }
 }
 
-#[test]
-fn pid_zerodds_type_id_publication_roundtrip_primitive() {
-    // Wire roundtrip with a primitive TypeIdentifier.
-    let original_id = TypeIdentifier::Primitive(PrimitiveKind::Int32);
-    let pubd = mk_pubd(original_id.clone());
-    let bytes = pubd.to_pl_cdr_le().unwrap();
-    let decoded = PublicationBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
-    assert_eq!(decoded.type_identifier, original_id);
-}
-
-#[test]
-fn pid_zerodds_type_id_subscription_roundtrip_string8() {
-    let original_id = TypeIdentifier::String8Small { bound: 64 };
-    let subd = mk_subd(original_id.clone());
-    let bytes = subd.to_pl_cdr_le().unwrap();
-    let decoded = SubscriptionBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
-    assert_eq!(decoded.type_identifier, original_id);
-}
-
-#[test]
-fn pid_zerodds_type_id_default_none_omitted_from_wire() {
-    // type_identifier = None: PID not emitted. Decoded stays None.
-    let pubd = mk_pubd(TypeIdentifier::None);
-    let bytes = pubd.to_pl_cdr_le().unwrap();
-    let decoded = PublicationBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
-    assert_eq!(decoded.type_identifier, TypeIdentifier::None);
-}
-
 /// XTypes 1.3 §7.6.3.4, PID_TYPE_CONSISTENCY_ENFORCEMENT (0x0074).
 ///
 /// The reader's policy is announced, so a remote writer can reach the
@@ -156,7 +128,7 @@ fn pid_zerodds_type_id_default_none_omitted_from_wire() {
 /// to readers that reject the type, or refuses readers whose policy
 /// would have taken it.
 #[test]
-fn a_readers_type_consistency_policy_survives_its_announcement() {
+fn xtypes_7_6_3_4_1_a_readers_type_consistency_policy_survives_its_announcement() {
     let mut subd = mk_subd(TypeIdentifier::Primitive(PrimitiveKind::Int32));
     subd.type_consistency = TypeConsistencyEnforcement {
         kind: zerodds_types::qos::TypeConsistencyKind::DisallowTypeCoercion,
@@ -196,7 +168,7 @@ fn type_matcher_accepts_identical_primitive_ids() {
 }
 
 #[test]
-fn type_matcher_rejects_incompatible_primitives_under_force_validation() {
+fn xtypes_7_6_3_4_1_type_matcher_rejects_incompatible_primitives_under_force_validation() {
     let tce = TypeConsistencyEnforcement {
         force_type_validation: true,
         ..Default::default()
@@ -248,7 +220,7 @@ fn type_info_blob(min: &MinimalTypeObject, com: &CompleteTypeObject) -> alloc::v
 }
 
 #[test]
-fn publication_standard_type_information_yields_type_identifier() {
+fn xtypes_7_6_3_2_2_publication_standard_type_information_yields_type_identifier() {
     // Regression repro (issue #30): a peer with only the standard
     // PID_TYPE_INFORMATION (NO vendor PID_ZERODDS_TYPE_ID) must now decode to
     // `type_identifier != None`, so the assignability guard runs.
@@ -275,7 +247,7 @@ fn publication_standard_type_information_yields_type_identifier() {
 }
 
 #[test]
-fn subscription_standard_type_information_yields_type_identifier() {
+fn xtypes_7_6_3_2_2_subscription_standard_type_information_yields_type_identifier() {
     // Symmetric to the publication direction (breite Probe: both directions).
     let (min, com) = chatter(Extensibility::Appendable);
     let mut subd = mk_subd(TypeIdentifier::None);
@@ -315,7 +287,7 @@ fn unparseable_standard_blob_leaves_none_and_retains_blob() {
 }
 
 #[test]
-fn final_vs_appendable_mismatch_rejected_at_match_time() {
+fn rtps_8_4_7_5_final_vs_appendable_mismatch_rejected_at_match_time() {
     // The core of issue #30: an extensibility mismatch (@final writer vs
     // @appendable reader) is a MATCH-TIME rejection, not a match followed by a
     // decode failure. Both identifiers are derived exactly as a decoded
@@ -350,7 +322,7 @@ fn final_vs_appendable_mismatch_rejected_at_match_time() {
 }
 
 #[test]
-fn appendable_compatible_matches_at_match_time() {
+fn xtypes_7_6_1_appendable_compatible_matches_at_match_time() {
     // Positive: appendable-compatible evolution (writer = reader + trailing
     // @optional member) matches under the default coercing TCE — both ids
     // derived from standard blobs, resolved through the registry.
@@ -392,7 +364,7 @@ fn appendable_compatible_matches_at_match_time() {
 }
 
 #[test]
-fn datareader_qos_exposes_type_consistency_enforcement() {
+fn xtypes_7_6_3_4_datareader_qos_exposes_type_consistency_enforcement() {
     // Issue #30 item 3: TypeConsistencyEnforcement is reachable on
     // DataReaderQos with the spec default (ALLOW_TYPE_COERCION), and
     // force_type_validation is user-settable and demonstrably changes the

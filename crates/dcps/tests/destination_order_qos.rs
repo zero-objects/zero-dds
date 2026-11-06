@@ -24,7 +24,7 @@ fn kh(b: u8) -> KeyHash {
 }
 
 #[test]
-fn by_reception_timestamp_always_delivers() {
+fn dcps_2_2_3_17_by_reception_timestamp_always_delivers() {
     let t = InstanceTracker::new();
     let key = kh(1);
     t.observe_sample(key, vec![1, 2, 3, 4], Some(Time::new(10, 0)));
@@ -36,7 +36,7 @@ fn by_reception_timestamp_always_delivers() {
 }
 
 #[test]
-fn by_source_timestamp_drops_older_samples() {
+fn dcps_2_2_2_5_3_8_by_source_timestamp_drops_older_samples() {
     let t = InstanceTracker::new();
     let key = kh(2);
     t.observe_sample(key, vec![1, 2, 3, 4], Some(Time::new(10, 500_000_000)));
@@ -81,7 +81,7 @@ fn known_instance_no_prior_delivery_passes() {
 }
 
 #[test]
-fn destination_order_is_per_instance() {
+fn dcps_2_2_3_17_destination_order_is_per_instance() {
     let t = InstanceTracker::new();
     let a = kh(10);
     let b = kh(11);

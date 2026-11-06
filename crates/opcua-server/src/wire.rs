@@ -274,8 +274,10 @@ mod tests {
         );
     }
 
+    /// OPC 10000-6 §5.2.5: an array is its Int32 element count, then the
+    /// elements (two Guids, §5.2.2.6).
     #[test]
-    fn read_array_roundtrip_within_bound() {
+    fn uacs_5_2_5_an_array_is_its_int32_length_then_its_elements() {
         let items = alloc::vec![
             Guid {
                 data1: 1,
@@ -290,9 +292,13 @@ mod tests {
                 data4: [1u8; 8],
             },
         ];
+        let mut expected = alloc::vec![2, 0, 0, 0];
+        expected.extend_from_slice(&[1, 0, 0, 0, 2, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+        expected.extend_from_slice(&[4, 0, 0, 0, 5, 0, 6, 0, 1, 1, 1, 1, 1, 1, 1, 1]);
         let mut w = UaWriter::new();
         write_array(&mut w, &items, "Guid array").expect("encode");
-        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(w.as_slice(), expected.as_slice());
+        let mut r = UaReader::new(&expected);
         let back: Vec<Guid> = read_array(&mut r).expect("decode");
         assert_eq!(back, items);
     }
@@ -306,12 +312,17 @@ mod tests {
         assert!(matches!(res, Err(DecodeError::MalformedMessage { .. })));
     }
 
+    /// §5.2.5 with UInt32 elements.
     #[test]
-    fn read_u32_array_roundtrip_within_bound() {
+    fn uacs_5_2_5_a_uint32_array_is_its_length_then_little_endian_elements() {
         let items = alloc::vec![1u32, 2, 3, u32::MAX];
+        let expected = [
+            4, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF,
+        ];
         let mut w = UaWriter::new();
         write_u32_array(&mut w, &items).expect("encode");
-        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(w.as_slice(), &expected);
+        let mut r = UaReader::new(&expected);
         assert_eq!(read_u32_array(&mut r).expect("decode"), items);
     }
 
@@ -324,12 +335,18 @@ mod tests {
         assert!(matches!(res, Err(DecodeError::MalformedMessage { .. })));
     }
 
+    /// §5.2.5 with String elements (§5.2.2.4).
     #[test]
-    fn read_string_array_roundtrip_within_bound() {
+    fn uacs_5_2_5_a_string_array_is_its_length_then_length_prefixed_strings() {
         let items = alloc::vec![String::from("alpha"), String::from("beta")];
+        let mut expected = alloc::vec![2, 0, 0, 0, 5, 0, 0, 0];
+        expected.extend_from_slice(b"alpha");
+        expected.extend_from_slice(&[4, 0, 0, 0]);
+        expected.extend_from_slice(b"beta");
         let mut w = UaWriter::new();
         write_string_array(&mut w, &items).expect("encode");
-        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(w.as_slice(), expected.as_slice());
+        let mut r = UaReader::new(&expected);
         assert_eq!(read_string_array(&mut r).expect("decode"), items);
     }
 }

@@ -18,7 +18,7 @@ use zerodds_dcps::{
 };
 
 #[test]
-fn the_own_entities_are_in_no_built_in_reader() {
+fn dcps_2_2_5_the_own_entities_are_in_no_built_in_reader() {
     let lease = common::lease_domain();
     let p = common::ParticipantGuard::new(
         DomainParticipantFactory::instance()

@@ -317,8 +317,7 @@ impl Ast {
             w.str(&node.name)?;
             write_type_ref(&mut w, &node.type_)?;
             w.bool(node.readonly);
-            w.u32(node.parent.slot());
-            w.u32(node.parent.generation());
+            write_any_parent(&mut w, node.parent);
             w.u32(count(node.get_raises.len())?);
             for raise in &node.get_raises {
                 write_ref(&mut w, raise)?;
@@ -493,6 +492,29 @@ impl Ast {
                 },
             )?;
             let _ = ast.by_node_id.insert(node_id, AnyId::Module(id, node_id));
+        }
+
+        // A module is a child of its parent, as `ensure_module` makes it: a
+        // walk down from the root that takes the children reaches it.
+        let nested: Vec<(Id<crate::ModuleNode>, AnyId)> = ast
+            .modules
+            .iter()
+            .filter_map(|(id, node)| {
+                node.parent
+                    .map(|parent| (parent, AnyId::Module(id, node.node_id)))
+            })
+            .collect();
+        for (parent, child) in nested {
+            ast.modules
+                .get_mut(parent)
+                .map_err(|_| {
+                    AstError::Core(AstCoreError::MalformedSnapshot {
+                        offset: r.offset(),
+                        expected: "the parent of a module to be a module of the snapshot",
+                    })
+                })?
+                .children
+                .push(child);
         }
 
         let expr_slots = bounded_count(&mut r, 1)?;
@@ -903,7 +925,7 @@ impl Ast {
             let name = r.string()?;
             let type_ = read_type_ref(&mut r)?;
             let readonly = r.bool()?;
-            let parent = Id::from_parts(r.u32()?, r.u32()?)?;
+            let parent = read_any_parent(&mut r, &ast)?;
             let get_count = bounded_count(&mut r, 1)? as usize;
             let mut get_raises = Vec::new();
             for _ in 0..get_count {
@@ -2073,7 +2095,7 @@ fn read_any_parent(r: &mut SnapshotReader<'_>, ast: &Ast) -> Result<AnyId, AstEr
         }
         _ => Err(AstError::Core(AstCoreError::MalformedSnapshot {
             offset: r.offset(),
-            expected: "an operation's owning interface or valuetype",
+            expected: "an operation's or attribute's owning interface or valuetype",
         })),
     }
 }
@@ -2480,6 +2502,11 @@ fn write_facets(w: &mut SnapshotWriter, facets: &Facets) -> Result<(), AstError>
                 Some(crate::StateVisibility::Private) => 2,
             });
             w.bool(c.is_event_type);
+            w.u8(match c.home_operation {
+                None => 0,
+                Some(crate::HomeOperation::Factory) => 1,
+                Some(crate::HomeOperation::Finder) => 2,
+            });
         }
         None => w.bool(false),
     }
@@ -2620,6 +2647,28 @@ fn write_facets(w: &mut SnapshotWriter, facets: &Facets) -> Result<(), AstError>
         for argument in &applied.arguments {
             write_str_opt(w, argument.name.as_deref())?;
             write_handle_opt(w, Some(argument.value));
+        }
+    }
+
+    // The language mappings' own annotations: a generator that read a
+    // model back without them would map with the defaults.
+    w.u32(count(facets.mappings.len())?);
+    for setting in &facets.mappings {
+        w.u8(setting.language.tag());
+        w.str(&setting.parameter)?;
+        match &setting.value {
+            crate::MappingValue::Name(name) => {
+                w.u8(0);
+                w.str(name)?;
+            }
+            crate::MappingValue::Text(text) => {
+                w.u8(1);
+                w.str(text)?;
+            }
+            crate::MappingValue::Flag(flag) => {
+                w.u8(2);
+                w.bool(*flag);
+            }
         }
     }
 
@@ -3029,6 +3078,17 @@ fn read_facets(r: &mut SnapshotReader<'_>) -> Result<Facets, AstError> {
             }
         };
         c.is_event_type = r.bool()?;
+        c.home_operation = match r.u8()? {
+            0 => None,
+            1 => Some(crate::HomeOperation::Factory),
+            2 => Some(crate::HomeOperation::Finder),
+            _ => {
+                return Err(AstError::Core(AstCoreError::MalformedSnapshot {
+                    offset: r.offset(),
+                    expected: "a known home-operation tag",
+                }));
+            }
+        };
     }
 
     if r.bool()? {
@@ -3170,6 +3230,34 @@ fn read_facets(r: &mut SnapshotReader<'_>) -> Result<Facets, AstError> {
             name,
             definition,
             arguments,
+        });
+    }
+
+    // A tag, the parameter's length, a value kind and its least value.
+    let mapping_count = bounded_count(r, 7)? as usize;
+    for _ in 0..mapping_count {
+        let language = crate::MappingLanguage::from_tag(r.u8()?).ok_or(AstError::Core(
+            AstCoreError::MalformedSnapshot {
+                offset: r.offset(),
+                expected: "the language of a mapping annotation",
+            },
+        ))?;
+        let parameter = r.string()?;
+        let value = match r.u8()? {
+            0 => crate::MappingValue::Name(r.string()?),
+            1 => crate::MappingValue::Text(r.string()?),
+            2 => crate::MappingValue::Flag(r.bool()?),
+            _ => {
+                return Err(AstError::Core(AstCoreError::MalformedSnapshot {
+                    offset: r.offset(),
+                    expected: "the value of a mapping annotation",
+                }));
+            }
+        };
+        facets.mappings.push(crate::MappingSetting {
+            language,
+            parameter,
+            value,
         });
     }
 

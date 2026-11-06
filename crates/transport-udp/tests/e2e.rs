@@ -45,30 +45,7 @@ fn make_endpoints() -> (UdpTransport, UdpTransport) {
 }
 
 #[test]
-fn e2e_write_udp_read_single_datagram() {
-    let writer_id = EntityId::user_writer_with_key([0x10, 0x20, 0x30]);
-    let reader_id = EntityId::user_reader_with_key([0xA0, 0xB0, 0xC0]);
-
-    let (writer_xport, reader_xport) = make_endpoints();
-    let dest = reader_xport.local_locator();
-
-    let mut writer = BestEffortWriter::new(PARTICIPANT_PREFIX, writer_id, reader_id);
-    let reader = BestEffortReader::new(PARTICIPANT_PREFIX, reader_id);
-
-    let payload = b"hello rtps over udp";
-    let datagram = writer.write(payload).expect("encode");
-    writer_xport.send(&dest, &datagram).expect("send");
-
-    let received = reader_xport.recv().expect("recv");
-    let samples = reader.recv_datagram(&received.data).expect("decode");
-    assert_eq!(samples.len(), 1);
-    assert_eq!(samples[0].payload.as_ref(), payload.as_slice());
-    assert_eq!(samples[0].writer_sn, SequenceNumber(1));
-    assert_eq!(samples[0].writer_id, writer_id);
-}
-
-#[test]
-fn e2e_write_udp_read_multiple_in_order() {
+fn rtps_7_5_e2e_write_udp_read_multiple_in_order() {
     let writer_id = EntityId::user_writer_with_key([0x10, 0x20, 0x30]);
     let reader_id = EntityId::user_reader_with_key([0xA0, 0xB0, 0xC0]);
 
@@ -90,6 +67,7 @@ fn e2e_write_udp_read_multiple_in_order() {
         assert_eq!(samples.len(), 1);
         assert_eq!(samples[0].payload.as_ref(), expected.as_slice());
         assert_eq!(samples[0].writer_sn, SequenceNumber((i + 1) as i64));
+        assert_eq!(samples[0].writer_id, writer_id);
     }
 }
 

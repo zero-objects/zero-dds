@@ -1,0 +1,82 @@
+.TH ZERODDS-XMLC 1 "" "ZeroDDS" "Benutzerbefehle"
+.SH BEZEICHNUNG
+zerodds-xmlc \- DDS-XML prüfen, Deployments darstellen, Typen auflisten
+.SH ÜBERSICHT
+.B zerodds-xmlc
+.I Befehl
+.I datei.xml
+.SH BESCHREIBUNG
+.B zerodds-xmlc
+ist eine Kommandozeilen-Oberfläche über den DDS-XML-Parsern von ZeroDDS (OMG
+DDS-XML 1.0). Es parst eine Deployment-Datei und berichtet; es berührt nie
+das Netz.
+.SH BEFEHLE
+.TP
+.B validate \fIDATEI.xml\fR
+Prüft die Wohlgeformtheit und parst jede DDS-XML-Bibliothek (types, qos,
+domain, participant, application). Gibt eine einzeilige Zählung aus. Exit 1
+bei einem Parse- oder Prüffehler.
+.TP
+.B render \fIDATEI.xml\fR
+Gibt eine strukturierte Zusammenfassung des Deployments aus: Domänen und ihre
+Topics, Teilnehmer und ihre Publisher/Subscriber mit den Data Writern/Readern
+darunter.
+.TP
+.B types \fIDATEI.xml\fR
+Listet die Definitionen unter
+.B <types>
+(XTypes), mit Abstieg in Module.
+.SH OPTIONEN
+.TP
+.B \-\-skip\-unknown
+Lässt aus, was die DDS-XML-1.0-Schemas nicht definieren (die Elemente und
+Attribute der Datei eines anderen Produkts), und listet jede Auslassung mit
+ihrem Pfad auf der Standardfehlerausgabe. Ohne diese Option ist das erste
+solche Element ein Fehler.
+.TP
+.B \-\-vendor\-forms
+Liest die Formen, die andere DDS-Produkte schreiben (etwa
+.B <topic_filter>
+als Element,
+.BR qos_profile_ref ,
+.BR <participant_qos> ,
+IDL-Typnamen), und listet jede mit ihrem Pfad auf der Standardfehlerausgabe.
+Ohne diese Option ist die erste solche Form ein Fehler, der die Form nennt,
+die DDS-XML 1.0 verwendet.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Aufrufhilfe.
+.SH EXIT-STATUS
+.TP
+.B 0
+Nichts zu melden.
+.TP
+.B 1
+Eine Bibliothek ließ sich nicht parsen.
+.TP
+.B 2
+Die Kommandozeile war falsch.
+.TP
+.B 3
+Eine Datei konnte nicht gelesen werden.
+.SH BEISPIELE
+Eine Deployment-Datei prüfen:
+.PP
+.RS
+.nf
+zerodds-xmlc validate deployment.xml
+.fi
+.RE
+.PP
+Den Deployment-Baum darstellen:
+.PP
+.RS
+.nf
+zerodds-xmlc render deployment.xml
+.fi
+.RE
+.SH SIEHE AUCH
+.BR zerodds-admin (1),
+.BR zerodds-idlc (1)
+.SH AUTOREN
+ZeroDDS Contributors <release@zerodds.org>

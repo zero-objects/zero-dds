@@ -596,12 +596,10 @@ fn union_class(
         }
     }
     // An implicit default member: no default case and labels that leave a value out.
-    if !has_default_case {
-        if let Some(value) = unused {
-            text.push_str(&format!(
-                "\n    void _default() {{ d_ = static_cast<{disc_type}>({value}); }}\n"
-            ));
-        }
+    if !has_default_case && let Some(value) = unused {
+        text.push_str(&format!(
+            "\n    void _default() {{ d_ = static_cast<{disc_type}>({value}); }}\n"
+        ));
     }
     text.push_str(&format!(
         "\n    void swap({name}& other) {{\n        using std::swap;\n        swap(d_, other.d_);\n"

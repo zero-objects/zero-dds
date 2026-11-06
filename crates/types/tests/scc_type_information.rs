@@ -99,7 +99,7 @@ module m {
 /// on both sides, the identifier of the whole component as the first
 /// dependency, and a count that is the length of the list.
 #[test]
-fn a_component_member_announces_both_forms() {
+fn xtypes_7_6_3_2_1_a_component_member_announces_both_forms() {
     let ast = model(MUTUAL);
     let registry = registry_of(&[&ast]);
     let complete = component(&ast, "m::A", Form::Complete);
@@ -191,7 +191,7 @@ fn the_other_member_differs_in_its_position_only() {
 /// both forms; a second component it reaches is a dependency by its
 /// SCCIdentifier.
 #[test]
-fn what_the_component_reaches_is_listed_once_each() {
+fn xtypes_7_6_3_2_1_what_the_component_reaches_is_listed_once_each() {
     let ast = model(
         "
 module m {

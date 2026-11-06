@@ -142,8 +142,7 @@ go through the code generator, which is what a user gets.
 | the same probe the other way — bytes in, values out | built | built | built | built | | built | built |
 
 The ten columns not in the table — Ada, D, Go, Julia, Lua, Nim, OCaml,
-Swift, TypeScript and Zig — have the same five pieces; their numbers
-live in `docs/HANDOFF.md` level 3 rather than here, and
+Swift, TypeScript and Zig — have the same five pieces;
 `docs/language-columns-status.md` carries what each column reaches.
 
 The C column's pieces are `runtime/c`,
@@ -161,8 +160,10 @@ which takes the same two flags and answers the same way. Its `to_json`
 writes the value dialect and not canonical form; the caller
 canonicalises, because one canonicaliser is what makes two columns
 comparable and a second one in a second language is a second chance to
-part over a spelling. Both directions are measured over the whole
-corpus by `crates/wire-probe/tests/three_column_gate.rs`.
+part over a spelling. Each column's octets are held against
+`tests/interop-corpus/expected-bytes.tsv` in its own crate
+(`tools/wireprobe/wireprobe-zerodds-{c,python}-gen/tests/expected_bytes.rs`),
+and its read of them against the case's sample.
 
 The C++ column's pieces are `runtime/cpp`,
 `crates/lang-rules/src/adapter/cpp.rs`, the same two shared codec walks
@@ -386,11 +387,11 @@ the Rust reader and one an ambiguity in the wire format itself, are
 written up in `docs/python-column.md`. The gate is
 `cargo test -p zerodds-lang-python`.
 
-The read direction is measured with the other two columns rather than
-here: `tools/wireprobe/three-column-gate --full` runs every case in
-every configuration through all three, and every column's `/read` slot
-is the canonical form of what its decoder built, held against the
-canonical form of the case's own sample.
+The read direction is measured in the column's matrix driver: every
+column's `/read` slot is the canonical form of what its decoder built,
+held against the canonical form of the case's own sample;
+`tools/wireprobe/wireprobe-zerodds-{c,python}-gen/tests/expected_bytes.rs`
+hold it where the octets are the vendors'.
 
 ### Order
 
@@ -576,7 +577,7 @@ answers to interoperate out of the box, and "the specification" is not an
 implementation. What the argument left out is which answers the default
 hands to a caller who names nothing.
 
-The dialect pass recorded in `docs/wire-axes-followup.md` settled that.
+The dialect pass (2026-08) settled that.
 Once each product's departures moved into the dialect named for that
 product — because `--dialect opendds` has to reach OpenDDS on its own —
 the default started writing **Cyclone's defects**:

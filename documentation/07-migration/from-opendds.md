@@ -88,6 +88,14 @@ type support. Java applications move to `org.omg.dds.*` in
 - Secure SPDP with OpenDDS needs the default `wire.rtps_dialect`
   (`maximally-interoperable`): it answers the beacon's source address as well,
   which OpenDDS 3.34 is reached on.
+- An OpenDDS reader announces its type with `IS_MUST_UNDERSTAND` off a `@key`
+  member, as opendds_idl writes it without `@must_understand`, and no
+  TypeConsistencyEnforcement, so by DDS-XTypes it requires the identical type,
+  and a ZeroDDS writer of a keyed type that announces its TypeObject does not
+  match it. `wire.rtps_dialect: opendds` (or
+  `xtypes.key_must_understand: implied`) matches the two; so does
+  `@must_understand` on the key in the OpenDDS IDL. The dialect keeps the
+  default's SPDP response.
 
 ## Tooling
 

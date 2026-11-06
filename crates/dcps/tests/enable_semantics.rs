@@ -29,7 +29,7 @@ impl DataReaderListener for Heard {
 }
 
 #[test]
-fn a_disabled_entity_is_inert_and_can_be_deleted() {
+fn dcps_2_2_2_1_1_6_a_disabled_entity_is_inert_and_can_be_deleted() {
     let factory = DomainParticipantFactory::instance();
     let before = factory.get_qos();
     factory

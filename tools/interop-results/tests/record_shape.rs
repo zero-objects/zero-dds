@@ -900,7 +900,7 @@ fn a_sweep_that_measured_nothing_keeps_what_was_measured_before() {
 
 /// The vendor sweep merges whether the subset is of cases or of vendors.
 ///
-/// `--vendors rti` is the command `docs/OPEN-ITEMS.md` names for
+/// `--vendors rti` is the documented command for
 /// re-recording RTI after a probe change, and the merge was gated on
 /// `--cases`, so that command overwrote `vendor-corpus.tsv` with RTI's
 /// 1388 rows and deleted the other three vendors' 4148.

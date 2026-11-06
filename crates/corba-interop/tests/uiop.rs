@@ -57,7 +57,7 @@ fn uiop_echo_roundtrip() {
         let (reply, _e) = conn
             .invoke(&obj, "ping", Endianness::Big, &encode_string_body("hi-uds"))
             .unwrap();
-        assert_eq!(decode_string_body(&reply), "hi-uds");
+        assert_eq!(decode_string_body(&reply).unwrap(), "hi-uds");
     }
 
     acceptor.shutdown();

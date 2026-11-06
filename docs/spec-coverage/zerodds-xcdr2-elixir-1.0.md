@@ -12,8 +12,8 @@ Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden W
 
 **Repo:** `crates/lang-cst/src/elixir/`, `crates/lang-render/src/elixir.rs`
 
-**Tests:** `crates/lang-render/src/elixir.rs::tests` (20 Tests), darunter `a_module_is_a_do_end_block_indented_by_two_spaces`, `a_module_name_joins_its_segments_with_dots`, `a_moduledoc_is_a_heredoc_at_the_top_of_the_body`, `a_struct_with_no_fields_is_defstruct_with_an_empty_list`, `a_struct_of_several_short_fields_stays_on_one_line`;
-querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/elixir.rs::tests` (20 Tests), darunter `xtypes_7_5_1_a_module_is_a_do_end_block_indented_by_two_spaces`, `xtypes_7_5_1_a_module_name_joins_its_segments_with_dots`, `xtypes_7_5_1_a_moduledoc_is_a_heredoc_at_the_top_of_the_body`, `xtypes_7_5_1_a_struct_with_no_fields_is_defstruct_with_an_empty_list`, `xtypes_7_5_1_a_struct_of_several_short_fields_stays_on_one_line`;
+querschnittlich `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/rule/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/elixir`, Endpoint-SDK `endpoints/elixir`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,8 +78,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::every_width_and_signedness_is_written_into_the_attribute`,
-`crates/lang-rules/tests/elixir_end_to_end.rs::every_attribute_the_output_writes_has_a_function_that_reads_it`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_2_every_width_and_signedness_is_written_into_the_attribute`,
+`crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_2_every_attribute_the_output_writes_has_a_function_that_reads_it`
 
 **Status:** done
 
@@ -89,7 +89,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::a_long_double_is_a_binary_and_never_a_float`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_2_a_long_double_is_a_binary_and_never_a_float`
 
 **Status:** done
 
@@ -99,7 +99,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::a_string_a_wstring_and_a_fixed_are_all_binaries_with_their_facts_beside_them`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_3_a_string_a_wstring_and_a_fixed_are_all_binaries_with_their_facts_beside_them`
 
 **Status:** done
 
@@ -109,8 +109,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::a_sequence_is_a_list_and_an_array_is_a_tuple`,
-`crates/lang-rules/tests/elixir_end_to_end.rs::an_array_of_a_thousand_is_written_out_and_nothing_truncates_it`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_3_a_sequence_is_a_list_and_an_array_is_a_tuple`,
+`crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_3_an_array_of_a_thousand_is_written_out_and_nothing_truncates_it`
 
 **Status:** done
 
@@ -120,7 +120,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::a_map_is_a_list_of_pairs_and_never_an_elixir_map`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_3_a_map_is_a_list_of_pairs_and_never_an_elixir_map`
 
 **Status:** done
 
@@ -130,8 +130,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::an_enum_becomes_a_module_of_atoms_with_its_numbering_written_out`,
-`crates/lang-rules/tests/elixir_end_to_end.rs::a_member_of_an_enumeration_is_an_integer_and_not_the_enumeration`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_becomes_a_module_of_atoms_with_its_numbering_written_out`,
+`crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_1_1_a_member_of_an_enumeration_is_an_integer_and_not_the_enumeration`
 
 **Status:** done
 
@@ -141,8 +141,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::a_union_is_a_struct_with_a_discriminator_and_not_a_tagged_tuple`,
-`crates/lang-rules/tests/elixir_end_to_end.rs::a_default_case_is_recorded_as_the_default_and_not_as_a_number`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_4_3_a_union_is_a_struct_with_a_discriminator_and_not_a_tagged_tuple`,
+`crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_4_3_a_default_case_is_recorded_as_the_default_and_not_as_a_number`
 
 **Status:** done
 
@@ -152,9 +152,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::a_member_named_after_an_elixir_reserved_word_is_escaped_and_keeps_its_idl_name`,
-`crates/lang-rules/tests/elixir_end_to_end.rs::an_idl_member_with_a_capital_becomes_a_lower_case_atom_that_records_its_spelling`,
-`crates/lang-rules/tests/elixir_end_to_end.rs::two_members_that_would_reach_one_atom_are_refused_by_name`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::idl_7_2_3_a_member_named_after_an_elixir_reserved_word_is_escaped_and_keeps_its_idl_name`,
+`crates/lang-rules/tests/elixir_end_to_end.rs::idl_7_2_3_an_idl_member_with_a_capital_becomes_a_lower_case_atom_that_records_its_spelling`,
+`crates/lang-rules/tests/elixir_end_to_end.rs::idl_7_2_3_two_members_that_would_reach_one_atom_are_refused_by_name`
 
 **Status:** done
 
@@ -164,8 +164,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::a_module_nests_because_elixir_module_names_nest`,
-`crates/lang-rules/tests/elixir_end_to_end.rs::a_module_named_elixir_is_escaped_because_it_is_the_root_namespace`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::idl_7_5_2_a_module_nests_because_elixir_module_names_nest`,
+`crates/lang-rules/tests/elixir_end_to_end.rs::idl_7_5_2_a_module_named_elixir_is_escaped_because_it_is_the_root_namespace`
 
 **Status:** done
 
@@ -175,9 +175,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_codec.rs::every_shape_encodes_and_the_generated_elixir_compiles_without_warnings`,
-`crates/lang-rules/tests/elixir_codec.rs::every_shape_decodes_and_the_generated_elixir_compiles_without_warnings`,
-`crates/lang-rules/tests/elixir_codec.rs::the_compiler_check_catches_a_deliberate_error`
+**Tests:** `crates/lang-rules/tests/elixir_codec.rs::xtypes_7_4_3_every_shape_encodes_and_the_generated_elixir_compiles_without_warnings`,
+`crates/lang-rules/tests/elixir_codec.rs::xtypes_7_4_3_every_shape_decodes_and_the_generated_elixir_compiles_without_warnings`,
+`crates/lang-rules/tests/elixir_codec.rs::xtypes_7_4_3_the_compiler_check_catches_a_deliberate_error`
 
 **Status:** done
 
@@ -189,7 +189,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/elixir.rs`, `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -199,7 +199,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/elixir.rs`, `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::the_generated_elixir_compiles`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_3_1_the_generated_elixir_compiles`
 
 **Status:** done
 
@@ -209,7 +209,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/elixir.rs`, `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -219,7 +219,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/elixir.rs`, `crates/lang-rules/src/adapter/elixir.rs`
 
-**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::every_construct_the_column_claims_produces_output`
+**Tests:** `crates/lang-rules/tests/elixir_end_to_end.rs::xtypes_7_2_2_4_every_construct_the_column_claims_produces_output`
 
 **Status:** done
 
@@ -229,9 +229,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/elixir.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -243,8 +243,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -254,8 +254,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-elixir-gen/`, `tools/wireprobe/wireprobe-zerodds-elixir`, `tools/wireprobe/wireprobe-elixir-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -263,8 +262,15 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 ## Audit-Status
 
-23 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-elixir-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (Job `merge-rust-lang-render`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 11 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-elixir` (Job `merge-codegen-elixir`) — 32 Tests grün.
+
+52 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

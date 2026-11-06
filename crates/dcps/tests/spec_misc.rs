@@ -156,7 +156,7 @@ fn rig(
 /// statuses"; §2.2.2.1.9.2 reads back "the statuses that were explicitly
 /// set on the last call to set_enabled_statuses".
 #[test]
-fn a_status_condition_starts_with_every_status_enabled() {
+fn dcps_2_2_2_1_9_1_a_status_condition_starts_with_every_status_enabled() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let condition = p.get_status_condition();
@@ -177,7 +177,7 @@ fn a_status_condition_starts_with_every_status_enabled() {
 /// topic of the name with another type is inconsistent; the status counts it
 /// and the read takes the change off.
 #[test]
-fn get_inconsistent_topic_status_reports_the_change_once() {
+fn dcps_2_2_2_3_2_get_inconsistent_topic_status_reports_the_change_once() {
     let p = DomainParticipantFactory::instance()
         .create_participant_offline(0, DomainParticipantQos::default());
     let topic = p
@@ -213,7 +213,7 @@ fn get_inconsistent_topic_status_reports_the_change_once() {
 /// §2.2.2.4.2.23 and §2.2.2.5.3.33: a handle of no matched endpoint is
 /// BAD_PARAMETER.
 #[test]
-fn a_handle_that_matches_nothing_is_bad_parameter() {
+fn dcps_2_2_2_4_2_23_a_handle_that_matches_nothing_is_bad_parameter() {
     let (_rig, writer, reader) = rig(true);
     let foreign = InstanceHandle::from_raw(0xBAD0_BAD0);
     assert!(matches!(
@@ -230,7 +230,7 @@ fn a_handle_that_matches_nothing_is_bad_parameter() {
 /// and of `unregister_instance_w_timestamp` is the source timestamp of the
 /// marker at the reader.
 #[test]
-fn the_timestamps_of_dispose_and_unregister_reach_the_reader() {
+fn dcps_2_2_2_4_2_8_the_timestamps_of_dispose_and_unregister_reach_the_reader() {
     let (_rig, writer, reader) = rig(false);
     let disposed = Reading { id: 1, seq: 1 };
     let unregistered = Reading { id: 2, seq: 1 };
@@ -273,7 +273,7 @@ fn the_timestamps_of_dispose_and_unregister_reach_the_reader() {
 /// §2.2.2.5.1.5: the instance that goes NOT_ALIVE_NO_WRITERS and comes back
 /// counts `no_writers_generation_count`; §2.2.2.5.1.8: it is NEW again.
 #[test]
-fn a_reborn_instance_counts_a_generation_and_is_new_again() {
+fn dcps_2_2_2_5_1_5_a_reborn_instance_counts_a_generation_and_is_new_again() {
     let (_rig, writer, reader) = rig(false);
     let sample = Reading { id: 7, seq: 1 };
     writer.write(&sample).unwrap();
@@ -351,7 +351,7 @@ fn wait_for_historical_data_returns_when_no_writer_is_matched() {
 /// "Changeable: No"; WRITER_DATA_LIFECYCLE and READER_DATA_LIFECYCLE are
 /// "Changeable: Yes".
 #[test]
-fn the_changeable_column_holds_after_enable() {
+fn dcps_2_2_3_5_the_changeable_column_holds_after_enable() {
     use zerodds_dcps::qos::{
         DurabilityServiceQosPolicy, LivelinessKind, OwnershipKind, ReaderDataLifecycleQosPolicy,
         ResourceLimitsQosPolicy, WriterDataLifecycleQosPolicy,

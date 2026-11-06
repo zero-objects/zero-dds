@@ -1633,10 +1633,10 @@ fn build_waitset_entry(app: &AppEntry, readers: &[String]) -> Result<WaitsetEntr
             .ok_or_else(|| BackendError::BadRequest(format!("not a reader path: {reader_path}")))?;
         let mut found = None;
         for part in app.participants.values() {
-            if let Some(sub_entry) = part.subscribers.get(&subscriber) {
-                if let Some(r) = sub_entry.readers.get(&reader_name) {
-                    found = Some(Arc::clone(&r.reader));
-                }
+            if let Some(sub_entry) = part.subscribers.get(&subscriber)
+                && let Some(r) = sub_entry.readers.get(&reader_name)
+            {
+                found = Some(Arc::clone(&r.reader));
             }
         }
         let reader_handle = found.ok_or_else(|| BackendError::NotFound(reader_path.clone()))?;

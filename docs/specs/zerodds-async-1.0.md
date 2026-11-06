@@ -177,17 +177,22 @@ mechanism equivalent to `Notify`:
 ```rust
 pub async fn write(&self, sample: &T) -> Result<()> {
     loop {
-        match self.try_write_nonblocking(sample) {
-            Ok(()) => return Ok(()),
-            Err(DdsError::OutOfResources { .. }) => {
+        // Where the sync write would wait for room it returns TIMEOUT at once.
+        match without_waiting_for_room(|| self.sync.write(sample)) {
+            Err(DdsError::Timeout) if !past_max_blocking_time() => {
                 self.drain_notify.notified().await;
                 continue;
             }
-            Err(e) => return Err(e),
+            done => return done,
         }
     }
 }
 ```
+
+`OUT_OF_RESOURCES`, which the sync write returns at once where waiting
+cannot help (BEST_EFFORT, a `max_blocking_time` of 0), is passed on
+unchanged. `dispose` and `unregister_instance` wait for room as `write`
+does and are run the same way.
 
 `drain_notify` is an internal `tokio::sync::Notify` OR a
 custom waker pool, depending on the feature.

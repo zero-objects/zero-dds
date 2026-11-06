@@ -170,19 +170,20 @@ read_le!(read_f64, f64, 8);
 mod tests {
     use super::*;
 
+    /// OPC 10000-6 §5.2.2.2, Figure 2: 1 000 000 000 as an Int32 is
+    /// 00 CA 9A 3B, least significant octet first.
     #[test]
-    fn primitive_roundtrip_is_little_endian() {
+    fn uacs_5_2_2_2_the_integer_of_figure_2_is_little_endian() {
         let mut w = UaWriter::new();
-        w.write_u32(0x0102_0304);
-        // OPC-UA Part 6 §5.2.2.1 — integers are little-endian.
-        assert_eq!(w.as_slice(), &[0x04, 0x03, 0x02, 0x01]);
+        w.write_i32(1_000_000_000);
+        assert_eq!(w.as_slice(), &[0x00, 0xCA, 0x9A, 0x3B]);
         let mut r = UaReader::new(w.as_slice());
-        assert_eq!(r.read_u32().expect("u32"), 0x0102_0304);
+        assert_eq!(r.read_i32().expect("i32"), 1_000_000_000);
         assert!(r.is_empty());
     }
 
     #[test]
-    fn read_past_end_reports_eof() {
+    fn uacs_5_2_read_past_end_reports_eof() {
         let mut r = UaReader::new(&[0x01, 0x02]);
         let err = r.read_u32().expect_err("should be eof");
         assert_eq!(
@@ -194,13 +195,19 @@ mod tests {
         );
     }
 
+    /// OPC 10000-6 §5.2.2.3, Figure 3: the Float −6.5 is 00 00 D0 C0; a
+    /// Double is its IEEE 754 binary64 form, least significant octet first.
     #[test]
-    fn floats_roundtrip() {
+    fn uacs_5_2_2_3_the_float_of_figure_3_and_a_double_are_ieee_754_little_endian() {
         let mut w = UaWriter::new();
-        w.write_f64(core::f64::consts::PI);
-        w.write_f32(1.5);
+        w.write_f32(-6.5);
+        w.write_f64(-6.5);
+        assert_eq!(
+            w.as_slice(),
+            &[0x00, 0x00, 0xD0, 0xC0, 0, 0, 0, 0, 0, 0, 0x1A, 0xC0]
+        );
         let mut r = UaReader::new(w.as_slice());
-        assert!((r.read_f64().expect("f64") - core::f64::consts::PI).abs() < f64::EPSILON);
-        assert!((r.read_f32().expect("f32") - 1.5).abs() < f32::EPSILON);
+        assert_eq!(r.read_f32().expect("f32").to_bits(), (-6.5_f32).to_bits());
+        assert_eq!(r.read_f64().expect("f64").to_bits(), (-6.5_f64).to_bits());
     }
 }

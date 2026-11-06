@@ -5,6 +5,18 @@ versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The DCPS-over-WebSocket client (`src/dcps/transport.ts`) speaks the binary
+  frames of zerodds-ws-bridge-1.0 §4.3 on a connection per topic (§4.2, the
+  path of §5.1) in place of a JSON form the daemon `zerodds-ws-bridged` does
+  not have; the byte order comes from the encapsulation header, the instance
+  state of a dispose or an unregister from the flags (`SampleInfo`), the
+  daemon's `error` messages are kept per topic. `waitForMatchedPublication` and
+  `waitForMatchedSubscription` wait for the topic's connection. New exports:
+  `topicPath`, `encodeFrame`, `decodeFrame`, `XCDR2_LE`, `SUBPROTOCOL`;
+  `bytesToBase64` and `base64ToBytes` are removed.
+
 ### Removed
 
 - **`src/cdr/`** — a hand-written TypeScript XCDR2 codec

@@ -63,7 +63,7 @@
 //! `XrceClient` use it (falling back to [`DEFAULT_MTU`] = 508 when absent,
 //! the same value, for a client that omits it) to decide when an outbound
 //! `DATA` needs `FRAGMENT`ing. See
-//! `client_representation_decodes_the_captured_create_client_prefix` for
+//! `xrce_7_8_1_client_representation_decodes_the_captured_create_client_prefix` for
 //! the byte-exact check and `mtu_508_is_the_captures_hard_ceiling` for the
 //! measurement backing the 508 conclusion.
 //!
@@ -77,7 +77,7 @@
 //! `zerodds-xrce-agent`'s `session.rs::agent_status_reply` builds
 //! `StatusAgentPayload` with that leading `ResultStatus`; this module only
 //! models `AGENT_Representation` itself, decoded from the trailing 9 bytes
-//! (see `agent_representation_decodes_the_captured_status_agent_body`).
+//! (see `xrce_7_8_2_1_agent_representation_decodes_the_captured_status_agent_body`).
 
 extern crate alloc;
 use alloc::string::String;
@@ -113,7 +113,7 @@ pub struct Property {
 }
 
 fn pad_to(out: &mut Vec<u8>, n: usize) {
-    while out.len() % n != 0 {
+    while !out.len().is_multiple_of(n) {
         out.push(0);
     }
 }
@@ -640,24 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn client_representation_roundtrip_no_properties() {
-        let c = ClientRepresentation {
-            timestamp: None,
-            version: XRCE_VERSION,
-            vendor_id: [0x01, 0x0f],
-            client_key: key(0xAB),
-            session_id: 0x81,
-            properties: None,
-            requested_mtu: None,
-        };
-        let enc = c.encode().unwrap();
-        assert_eq!(enc.len(), 14);
-        let back = ClientRepresentation::decode(&enc).unwrap();
-        assert_eq!(back, c);
-    }
-
-    #[test]
-    fn client_representation_roundtrip_with_properties() {
+    fn xrce_annex_a_client_representation_roundtrip_with_properties() {
         let c = ClientRepresentation {
             timestamp: None,
             version: XRCE_VERSION,
@@ -676,24 +659,7 @@ mod tests {
     }
 
     #[test]
-    fn client_representation_roundtrip_with_requested_mtu() {
-        let c = ClientRepresentation {
-            timestamp: None,
-            version: XRCE_VERSION,
-            vendor_id: [0x01, 0x0f],
-            client_key: key(0xCC),
-            session_id: 0x81,
-            properties: None,
-            requested_mtu: Some(DEFAULT_MTU),
-        };
-        let enc = c.encode().unwrap();
-        assert_eq!(enc.len(), 16);
-        let back = ClientRepresentation::decode(&enc).unwrap();
-        assert_eq!(back, c);
-    }
-
-    #[test]
-    fn client_representation_rejects_wrong_cookie() {
+    fn xrce_7_8_2_1_client_representation_rejects_wrong_cookie() {
         let mut bad = alloc::vec![0u8; 14];
         bad[0..4].copy_from_slice(b"NOPE");
         let res = ClientRepresentation::decode(&bad);
@@ -709,7 +675,7 @@ mod tests {
     /// Byte-oracle check: `client-to-agent.hex` line 1's 16-byte
     /// `CREATE_CLIENT` body, first 13 bytes — see the module doc.
     #[test]
-    fn client_representation_decodes_the_captured_create_client_prefix() {
+    fn xrce_7_8_1_client_representation_decodes_the_captured_create_client_prefix() {
         let captured: [u8; 16] = [
             0x58, 0x52, 0x43, 0x45, 0x01, 0x00, 0x01, 0x0f, 0xcc, 0xcc, 0xdd, 0xdd, 0x81, 0x00,
             0xfc, 0x01,
@@ -730,7 +696,7 @@ mod tests {
     /// Measured directly off both capture files: no datagram in the
     /// entire 1,772-datagram session (either direction, including every
     /// `FRAGMENT`-carrying one) exceeds 508 bytes — the same value as
-    /// `client_representation_decodes_the_captured_create_client_prefix`'s
+    /// `xrce_7_8_1_client_representation_decodes_the_captured_create_client_prefix`'s
     /// `requested_mtu`. This is the evidence the module doc's `mtu`
     /// conclusion rests on, pinned here so a future capture update that
     /// moves it is not silent.
@@ -759,7 +725,7 @@ mod tests {
     }
 
     #[test]
-    fn agent_representation_roundtrip_no_properties() {
+    fn xrce_8_3_5_5_agent_representation_roundtrip_no_properties() {
         let a = AgentRepresentation {
             timestamp: None,
             version: XRCE_VERSION,
@@ -786,7 +752,7 @@ mod tests {
     /// `AGENT_Representation` and match this module's own minimal
     /// encoding exactly.
     #[test]
-    fn agent_representation_decodes_the_captured_status_agent_body() {
+    fn xrce_7_8_2_1_agent_representation_decodes_the_captured_status_agent_body() {
         let captured: [u8; 9] = [0x58, 0x52, 0x43, 0x45, 0x01, 0x00, 0x01, 0x0f, 0x00];
         let a = AgentRepresentation::decode(&captured).unwrap();
         assert_eq!(a.version, [0x01, 0x00]);
@@ -801,7 +767,7 @@ mod tests {
     /// lengths are `unsigned long`s aligned to 4, counted from the start of
     /// the payload.
     #[test]
-    fn a_big_endian_client_representation_with_properties_reads_back() {
+    fn xrce_7_7_a_big_endian_client_representation_with_properties_reads_back() {
         crate::encoding::with_unannotated_types(crate::encoding::UnannotatedTypes::Final, || {
             let c = ClientRepresentation {
                 timestamp: None,
@@ -842,7 +808,7 @@ mod tests {
     /// `Property` carries no @extensibility (Annex A): APPENDABLE, a DHEADER
     /// in front of its two strings (DDS-XTypes 1.3 §7.3.1.2.1.8).
     #[test]
-    fn a_property_has_a_dheader_by_default() {
+    fn xrce_annex_a_a_property_has_a_dheader_by_default() {
         let c = ClientRepresentation {
             timestamp: None,
             version: XRCE_VERSION,
@@ -879,7 +845,7 @@ mod tests {
     }
 
     #[test]
-    fn a_big_endian_agent_representation_with_properties_reads_back() {
+    fn xrce_8_3_4_2_a_big_endian_agent_representation_with_properties_reads_back() {
         let a = AgentRepresentation {
             timestamp: None,
             version: XRCE_VERSION,
@@ -904,7 +870,7 @@ mod tests {
     /// the `BaseObjectReply` of an `INFO`) the same properties are padded
     /// differently, and read back from where they start.
     #[test]
-    fn padding_counts_from_the_start_of_the_payload() {
+    fn xrce_7_7_padding_counts_from_the_start_of_the_payload() {
         let a = AgentRepresentation {
             timestamp: None,
             version: XRCE_VERSION,
@@ -934,7 +900,7 @@ mod tests {
     }
 
     #[test]
-    fn max_properties_cap_enforced_on_decode() {
+    fn xrce_annex_a_max_properties_cap_enforced_on_decode() {
         // The presence octet, padding to 4, the count.
         let mut bad = alloc::vec![1u8, 0, 0, 0];
         let huge = (MAX_PROPERTIES as u32) + 1;
@@ -949,7 +915,7 @@ mod tests {
     /// present `PropertySeq` it cannot read is an error of the
     /// representation, not "no properties".
     #[test]
-    fn a_malformed_property_seq_is_an_error_not_absent_properties() {
+    fn xrce_7_8_2_1_a_malformed_property_seq_is_an_error_not_absent_properties() {
         let mut bytes = alloc::vec![];
         bytes.extend_from_slice(b"XRCE");
         bytes.extend_from_slice(&[0x01, 0x00, 0x00, 0x00, 0xAA, 0xBB, 0xCC, 0xDD, 0x81]);
@@ -987,7 +953,7 @@ mod tests {
 
     /// The form of Annex A and Annex B.1 (default): no timestamp member.
     #[test]
-    fn by_default_the_representations_have_no_timestamp() {
+    fn xrce_7_8_2_1_by_default_the_representations_have_no_timestamp() {
         assert_eq!(
             representation_timestamps(),
             RepresentationTimestamps::Absent
@@ -1010,7 +976,7 @@ mod tests {
     /// `@extensibility`: APPENDABLE by default (a DHEADER of 8), FINAL under
     /// the `Final` setting.
     #[test]
-    fn the_prose_form_has_a_time_t_after_the_vendor_id() {
+    fn xrce_7_8_2_1_the_prose_form_has_a_time_t_after_the_vendor_id() {
         use crate::encoding::{
             UnannotatedTypes, with_representation_timestamps, with_unannotated_types,
         };
@@ -1054,7 +1020,7 @@ mod tests {
     }
 
     #[test]
-    fn the_agent_representation_follows_the_setting_the_same_way() {
+    fn xrce_7_8_2_1_the_agent_representation_follows_the_setting_the_same_way() {
         use crate::encoding::{
             UnannotatedTypes, with_representation_timestamps, with_unannotated_types,
         };

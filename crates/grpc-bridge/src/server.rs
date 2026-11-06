@@ -265,8 +265,29 @@ impl GrpcServer {
     /// # Errors
     /// Static string on encode errors.
     pub fn encode_response(&mut self, resp: &GrpcResponse) -> Result<Vec<u8>, &'static str> {
+        let mut out = self.encode_stream_open(resp.stream_id)?;
+        if !resp.body.is_empty() {
+            out.extend_from_slice(&self.encode_stream_message(resp.stream_id, &resp.body)?);
+        }
+        out.extend_from_slice(&self.encode_stream_close(
+            resp.stream_id,
+            resp.status,
+            resp.message.as_deref(),
+        )?);
+        Ok(out)
+    }
+
+    /// The response HEADERS that open a server stream (`:status 200`,
+    /// `content-type application/grpc`), without END_STREAM: the start of
+    /// a server-streaming call (gRPC over HTTP/2, "Responses"), followed by
+    /// [`GrpcServer::encode_stream_message`] per message and
+    /// [`GrpcServer::encode_stream_close`].
+    ///
+    /// # Errors
+    /// Static string on encode errors.
+    pub fn encode_stream_open(&mut self, stream_id: StreamId) -> Result<Vec<u8>, &'static str> {
         let mut out = Vec::new();
-        // 1) HEADERS frame: :status 200, content-type application/grpc.
+        // HEADERS frame: :status 200, content-type application/grpc.
         let headers = alloc::vec![
             HeaderField {
                 name: ":status".into(),
@@ -282,37 +303,58 @@ impl GrpcServer {
             length: h_payload.len() as u32,
             frame_type: FrameType::Headers,
             flags: Flags(Flags::END_HEADERS),
-            stream_id: resp.stream_id,
+            stream_id,
         };
         let mut buf = alloc::vec![0u8; 9 + h_payload.len()];
         encode_frame(&h, &h_payload, &mut buf, self.settings.max_frame_size)
             .map_err(|_| "headers encode")?;
         out.extend_from_slice(&buf);
+        Ok(out)
+    }
 
-        // 2) DATA frame with LPM-encoded body.
-        if !resp.body.is_empty() {
-            let lpm = encode_message(&resp.body, false).map_err(|_| "lpm encode")?;
-            let d = FrameHeader {
-                length: lpm.len() as u32,
-                frame_type: FrameType::Data,
-                flags: Flags(0),
-                stream_id: resp.stream_id,
-            };
-            let mut dbuf = alloc::vec![0u8; 9 + lpm.len()];
-            encode_frame(&d, &lpm, &mut dbuf, self.settings.max_frame_size)
-                .map_err(|_| "data encode")?;
-            out.extend_from_slice(&dbuf);
-        }
+    /// One response message of an open stream: a DATA frame with the
+    /// Length-Prefixed-Message of `body`.
+    ///
+    /// # Errors
+    /// Static string on encode errors.
+    pub fn encode_stream_message(
+        &mut self,
+        stream_id: StreamId,
+        body: &[u8],
+    ) -> Result<Vec<u8>, &'static str> {
+        let lpm = encode_message(body, false).map_err(|_| "lpm encode")?;
+        let d = FrameHeader {
+            length: lpm.len() as u32,
+            frame_type: FrameType::Data,
+            flags: Flags(0),
+            stream_id,
+        };
+        let mut dbuf = alloc::vec![0u8; 9 + lpm.len()];
+        encode_frame(&d, &lpm, &mut dbuf, self.settings.max_frame_size)
+            .map_err(|_| "data encode")?;
+        Ok(dbuf)
+    }
 
-        // 3) Trailer-HEADERS with grpc-status (+ grpc-message).
+    /// The trailers that close a stream: `grpc-status` (and `grpc-message`)
+    /// with END_STREAM.
+    ///
+    /// # Errors
+    /// Static string on encode errors.
+    pub fn encode_stream_close(
+        &mut self,
+        stream_id: StreamId,
+        status: Status,
+        message: Option<&str>,
+    ) -> Result<Vec<u8>, &'static str> {
+        let mut out = Vec::new();
         let mut trailers = alloc::vec![HeaderField {
             name: "grpc-status".into(),
-            value: alloc::format!("{}", resp.status.code()),
+            value: alloc::format!("{}", status.code()),
         }];
-        if let Some(msg) = &resp.message {
+        if let Some(msg) = message {
             trailers.push(HeaderField {
                 name: "grpc-message".into(),
-                value: msg.clone(),
+                value: msg.into(),
             });
         }
         let t_payload = self.encoder.encode(&trailers);
@@ -320,7 +362,7 @@ impl GrpcServer {
             length: t_payload.len() as u32,
             frame_type: FrameType::Headers,
             flags: Flags(Flags::END_HEADERS | Flags::END_STREAM),
-            stream_id: resp.stream_id,
+            stream_id,
         };
         let mut tbuf = alloc::vec![0u8; 9 + t_payload.len()];
         encode_frame(&t, &t_payload, &mut tbuf, self.settings.max_frame_size)
@@ -353,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn encode_response_includes_status_and_trailers() {
+    fn grpcbridge_12_1_encode_response_includes_status_and_trailers() {
         let mut s = GrpcServer::new();
         let resp = GrpcResponse {
             stream_id: 1,

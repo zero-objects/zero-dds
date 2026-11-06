@@ -735,10 +735,10 @@ impl InstanceTracker {
     pub fn update_owner_strength(&self, writer: [u8; 16], strength: i32) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         for s in g.by_keyhash.values_mut() {
-            if let Some((owner, held)) = s.current_owner.as_mut() {
-                if *owner == writer {
-                    *held = strength;
-                }
+            if let Some((owner, held)) = s.current_owner.as_mut()
+                && *owner == writer
+            {
+                *held = strength;
             }
         }
     }
@@ -750,11 +750,11 @@ impl InstanceTracker {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut cleared = 0;
         for s in g.by_keyhash.values_mut() {
-            if let Some((g_, _)) = s.current_owner {
-                if g_ == writer_guid {
-                    s.current_owner = None;
-                    cleared += 1;
-                }
+            if let Some((g_, _)) = s.current_owner
+                && g_ == writer_guid
+            {
+                s.current_owner = None;
+                cleared += 1;
             }
         }
         cleared
@@ -791,11 +791,11 @@ impl InstanceTracker {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut cleared = 0;
         for s in g.by_keyhash.values_mut() {
-            if let Some((g_, _)) = s.current_owner {
-                if g_[..12] == prefix {
-                    s.current_owner = None;
-                    cleared += 1;
-                }
+            if let Some((g_, _)) = s.current_owner
+                && g_[..12] == prefix
+            {
+                s.current_owner = None;
+                cleared += 1;
             }
         }
         cleared
@@ -1001,21 +1001,21 @@ impl InstanceTracker {
     /// samples of `handle`, under one lock.
     pub(crate) fn note_taken(&self, handle: InstanceHandle, n: u32) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(kh) = g.handle_to_keyhash.get(&handle).copied() {
-            if let Some(s) = g.by_keyhash.get_mut(&kh) {
-                s.reader_view_new = false;
-                s.samples_in_cache = s.samples_in_cache.saturating_sub(n);
-            }
+        if let Some(kh) = g.handle_to_keyhash.get(&handle).copied()
+            && let Some(s) = g.by_keyhash.get_mut(&kh)
+        {
+            s.reader_view_new = false;
+            s.samples_in_cache = s.samples_in_cache.saturating_sub(n);
         }
     }
     /// Reader side: after the first `read`/`take` of an instance, its
     /// view state is set to `NOT_NEW`.
     pub fn mark_view_seen(&self, handle: InstanceHandle) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(kh) = g.handle_to_keyhash.get(&handle).copied() {
-            if let Some(s) = g.by_keyhash.get_mut(&kh) {
-                s.reader_view_new = false;
-            }
+        if let Some(kh) = g.handle_to_keyhash.get(&handle).copied()
+            && let Some(s) = g.by_keyhash.get_mut(&kh)
+        {
+            s.reader_view_new = false;
         }
     }
 
@@ -1037,10 +1037,10 @@ impl InstanceTracker {
     /// Reader side: after `take`, `samples_in_cache` is reduced by `n`.
     pub fn drain_samples(&self, handle: InstanceHandle, n: u32) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(kh) = g.handle_to_keyhash.get(&handle).copied() {
-            if let Some(s) = g.by_keyhash.get_mut(&kh) {
-                s.samples_in_cache = s.samples_in_cache.saturating_sub(n);
-            }
+        if let Some(kh) = g.handle_to_keyhash.get(&handle).copied()
+            && let Some(s) = g.by_keyhash.get_mut(&kh)
+        {
+            s.samples_in_cache = s.samples_in_cache.saturating_sub(n);
         }
     }
 
@@ -1245,7 +1245,7 @@ mod tests {
     }
 
     #[test]
-    fn dispose_transitions_to_disposed() {
+    fn dcps_2_2_2_5_1_3_dispose_transitions_to_disposed() {
         let t = InstanceTracker::new();
         let h = t.register(kh(3), alloc::vec![3], None);
         assert_eq!(t.get_by_handle(h).unwrap().kind, InstanceStateKind::Alive);
@@ -1274,7 +1274,7 @@ mod tests {
     }
 
     #[test]
-    fn re_register_after_dispose_bumps_disposed_generation() {
+    fn dcps_2_2_2_5_1_5_re_register_after_dispose_bumps_disposed_generation() {
         let t = InstanceTracker::new();
         let h = t.register(kh(5), alloc::vec![5], None);
         t.dispose(h, None);
@@ -1285,7 +1285,7 @@ mod tests {
     }
 
     #[test]
-    fn observe_sample_creates_new_instance_on_first_call() {
+    fn dcps_2_2_2_5_1_5_observe_sample_creates_new_instance_on_first_call() {
         let t = InstanceTracker::new();
         let (h, was_new) = t.observe_sample(kh(6), alloc::vec![6], None);
         assert!(was_new);
@@ -1324,7 +1324,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_view_seen_clears_new_flag() {
+    fn dcps_2_2_2_5_1_8_mark_view_seen_clears_new_flag() {
         let t = InstanceTracker::new();
         let (h, _) = t.observe_sample(kh(8), alloc::vec![8], None);
         assert!(t.get_by_handle(h).unwrap().reader_view_new);
@@ -1333,7 +1333,7 @@ mod tests {
     }
 
     #[test]
-    fn observe_after_dispose_bumps_disposed_generation() {
+    fn dcps_2_2_2_5_1_3_observe_after_dispose_bumps_disposed_generation() {
         let t = InstanceTracker::new();
         let (h, _) = t.observe_sample(kh(9), alloc::vec![9], None);
         t.dispose(h, None);
@@ -1342,7 +1342,7 @@ mod tests {
     }
 
     #[test]
-    fn drain_samples_decrements_count() {
+    fn dcps_2_2_3_22_drain_samples_decrements_count() {
         let t = InstanceTracker::new();
         let (h, _) = t.observe_sample(kh(10), alloc::vec![10], None);
         let (_, _) = t.observe_sample(kh(10), alloc::vec![10], None);
@@ -1367,7 +1367,7 @@ mod tests {
     }
 
     #[test]
-    fn time_based_filter_too_close_drops() {
+    fn dcps_2_2_3_12_time_based_filter_too_close_drops() {
         let t = InstanceTracker::new();
         let _ = t.observe_sample(kh(20), alloc::vec![20], None);
         t.record_delivery(&kh(20), Time::new(1, 0));
@@ -1404,7 +1404,7 @@ mod tests {
     }
 
     #[test]
-    fn time_based_filter_per_instance_isolation() {
+    fn dcps_2_2_3_12_time_based_filter_per_instance_isolation() {
         // The filter is per-instance; instance A's last_delivered does
         // not affect instance B.
         let t = InstanceTracker::new();
@@ -1427,7 +1427,7 @@ mod tests {
     // ---- §2.2.3.22 READER_DATA_LIFECYCLE autopurge ----
 
     #[test]
-    fn autopurge_disposed_after_delay() {
+    fn dcps_2_2_3_22_autopurge_disposed_after_delay() {
         let t = InstanceTracker::new();
         let h = t.register(kh(30), alloc::vec![30], None);
         // Dispose with ts=t1.
@@ -1440,7 +1440,7 @@ mod tests {
     }
 
     #[test]
-    fn autopurge_disposed_before_delay_keeps_instance() {
+    fn dcps_2_2_3_22_autopurge_disposed_before_delay_keeps_instance() {
         let t = InstanceTracker::new();
         let h = t.register(kh(31), alloc::vec![31], None);
         t.dispose(h, Some(Time::new(10, 0)));
@@ -1451,7 +1451,7 @@ mod tests {
     }
 
     #[test]
-    fn autopurge_no_writers_after_delay() {
+    fn dcps_2_2_2_5_1_8_autopurge_no_writers_after_delay() {
         let t = InstanceTracker::new();
         let h = t.register(kh(32), alloc::vec![32], None);
         // unregister sets writer_count=0 → NotAliveNoWriters with timestamp.
@@ -1488,7 +1488,7 @@ mod tests {
     }
 
     #[test]
-    fn exclusive_first_writer_wins() {
+    fn dcps_2_2_3_9_2_exclusive_first_writer_wins() {
         let t = InstanceTracker::new();
         let _ = t.register(kh(40), alloc::vec![40], None);
         // No owner → first writer accepted, becomes owner.
@@ -1498,7 +1498,7 @@ mod tests {
     }
 
     #[test]
-    fn exclusive_higher_strength_wins() {
+    fn dcps_2_2_3_9_2_exclusive_higher_strength_wins() {
         let t = InstanceTracker::new();
         let _ = t.register(kh(41), alloc::vec![41], None);
         assert!(t.should_accept_sample_under_exclusive_ownership(&kh(41), guid(1), 10));
@@ -1557,7 +1557,7 @@ mod tests {
     /// §2.2.3.9.2 (b) without a sample of the owner: the strength it
     /// announced holds the instances it owns.
     #[test]
-    fn an_announced_strength_holds_the_owned_instances() {
+    fn dcps_2_2_3_9_2_an_announced_strength_holds_the_owned_instances() {
         let t = InstanceTracker::new();
         let _ = t.register(kh(47), alloc::vec![47], None);
         assert!(t.should_accept_sample_under_exclusive_ownership(&kh(47), guid(1), 10));
@@ -1569,7 +1569,7 @@ mod tests {
     /// §2.2.3.9.2 (d): an owner whose last sample is a deadline period or
     /// more ago gives the instance up to the next writer, weaker or not.
     #[test]
-    fn an_owner_that_missed_its_deadline_gives_the_instance_up() {
+    fn dcps_2_2_3_9_2_an_owner_that_missed_its_deadline_gives_the_instance_up() {
         let t = InstanceTracker::new();
         let _ = t.register(kh(48), alloc::vec![48], None);
         let at = |ms: u32| Time::new(100, ms * 1_000_000);

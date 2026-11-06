@@ -174,12 +174,12 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> DataReader<T> {
             return Ok(None);
         };
         // Spec §6.1: type-hash cross-validation.
-        if let Some(backend_hash) = backend.type_hash() {
-            if backend_hash != T::TYPE_HASH {
-                return Err(DdsError::PreconditionNotMet {
-                    reason: "flatdata: TYPE_HASH mismatch (schema drift)",
-                });
-            }
+        if let Some(backend_hash) = backend.type_hash()
+            && backend_hash != T::TYPE_HASH
+        {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "flatdata: TYPE_HASH mismatch (schema drift)",
+            });
         }
         scan_slots::<T>(backend.as_ref(), *reader_index, last_sn)
     }
@@ -367,12 +367,12 @@ impl<T: DdsType + FlatStruct + Send + Sync + 'static> FlatReaderExt<T> {
     /// poisoning.
     pub fn read_flat(&self) -> Result<Option<T>> {
         // Spec §6.1: type-hash cross-validation.
-        if let Some(backend_hash) = self.backend.type_hash() {
-            if backend_hash != T::TYPE_HASH {
-                return Err(DdsError::PreconditionNotMet {
-                    reason: "flatdata: TYPE_HASH mismatch (schema drift)",
-                });
-            }
+        if let Some(backend_hash) = self.backend.type_hash()
+            && backend_hash != T::TYPE_HASH
+        {
+            return Err(DdsError::PreconditionNotMet {
+                reason: "flatdata: TYPE_HASH mismatch (schema drift)",
+            });
         }
         scan_slots::<T>(self.backend.as_ref(), self.reader_index, &self.last_sn)
     }

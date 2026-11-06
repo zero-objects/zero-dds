@@ -89,7 +89,15 @@ int ACE_TMAIN(int argc, ACE_TCHAR* argv[])
         }
         ids[info.instance_handle] = s.id;
       }
-      states[info.instance_handle] = state_name(info.instance_state);
+      const std::string state = state_name(info.instance_state);
+      auto known = states.find(info.instance_handle);
+      if (known == states.end() || known->second != state) {
+        // STATE: each change of an instance's state, as it is taken.
+        auto id = ids.find(info.instance_handle);
+        std::cout << "STATE id=" << (id == ids.end() ? std::string("?") : std::to_string(id->second))
+                  << " state=" << state << std::endl;
+      }
+      states[info.instance_handle] = state;
     }
     if (!snapped && exists(snapshot)) {
       for (const auto& e : states) {

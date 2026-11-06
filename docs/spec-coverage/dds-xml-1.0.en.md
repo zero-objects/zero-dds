@@ -110,7 +110,7 @@ entirely."
 
 **Tests:** `crates/xml/src/conformance.rs::tests::supported_blocks_match_spec_count`, `crates/xml/tests/schema_validation.rs::xsd_valid_documents_are_read`, `crates/xml/tests/omg_example_documents.rs::dds_system_example`
 
-**Status:** done — all six building blocks are read, with the exceptions the items under §7.3 name one by one: the documents of the `XSD_VALID` table and the five OMG examples are read; what the XSDs reject, the reader rejects (`schema_invalid_documents`). One form the XSD allows and the reader does not read exists: `register_type` without `type_ref` (the text of §7.3.4.4.1 requires it, the XSD has `use="optional"`). Commits `8bf46985f11`, `efd043b8ec4`.
+**Status:** done — all six building blocks are read, with the exceptions the items under §7.3 name one by one: the documents of the `XSD_VALID` table and the five OMG examples are read; what the XSDs reject, the reader rejects (`schema_invalid_documents`). One form the XSD allows and the reader does not read exists: `register_type` without `type_ref` (the text of §7.3.4.4.1 requires it, the XSD has `use="optional"`). Commits `b04504693c4`, `97a817ee16c`.
 
 ---
 
@@ -294,7 +294,7 @@ according to the criteria defined in clause 2.1 of [XML]."
 
 **Tests:** `crates/xml/src/parser.rs::tests::invalid_xml_rejected`, `crates/xml/src/parser.rs::tests::parse_with_xml_declaration`, `crates/xml/src/parser.rs::tests::dtd_and_internal_entity_accepted`, `crates/xml/src/parser.rs::tests::entity_expansion_is_bounded`, `crates/xml/src/parser.rs::tests::external_entity_reference_rejected`, `crates/xml/src/parser.rs::tests::deep_nesting_in_cdata_does_not_fool_the_depth_check`, `crates/xml/tests/fuzz_smoke.rs::deep_nesting_is_refused_by_every_entry_point`, `crates/xml/tests/schema_validation.rs::serialize_sample_output_validates`
 
-**Status:** done — a document that is not well-formed ends with `XmlError::InvalidXml`. A DTD is allowed ([XML] 2.1); internal entities are bounded (value at most `MAX_ENTITY_VALUE_BYTES`, at most `MAX_ENTITY_DECLARATIONS` declarations, no entity referring to another), external ones are not loaded. The reader also rejects well-formed documents that exceed its limits: more than 64 levels (`MAX_TREE_DEPTH`; `precheck_depth` counts the open elements iteratively before `roxmltree` runs, `check_tree_depth` checks the tree afterwards), more than 1024 children of an element (`MAX_LIST_ELEMENTS`) or more than 65,536 elements (`MAX_TOTAL_ELEMENTS`). Commits `3aec071e6f8`, `80ea5f7343e`, `24780539a95`. The test `serialize_sample_output_validates` needs `xmllint`.
+**Status:** done — a document that is not well-formed ends with `XmlError::InvalidXml`. A DTD is allowed ([XML] 2.1); internal entities are bounded (value at most `MAX_ENTITY_VALUE_BYTES`, at most `MAX_ENTITY_DECLARATIONS` declarations, no entity referring to another), external ones are not loaded. The reader also rejects well-formed documents that exceed its limits: more than 64 levels (`MAX_TREE_DEPTH`; `precheck_depth` counts the open elements iteratively before `roxmltree` runs, `check_tree_depth` checks the tree afterwards), more than 1024 children of an element (`MAX_LIST_ELEMENTS`) or more than 65,536 elements (`MAX_TOTAL_ELEMENTS`). Commits `3c9fe0f4d1a`, `167d1009ef8`, `b732c05bc1a`. The test `serialize_sample_output_validates` needs `xmllint`.
 
 ### §7.1.1 UTF-8
 
@@ -305,7 +305,7 @@ elements and values."
 
 **Tests:** `crates/xml/tests/types_and_samples.rs::t24_sample_string_escaping_roundtrip`, `crates/xml/src/xsd_loader.rs::tests::data_uri_non_utf8_body_rejected`
 
-**Status:** done — the input is a Rust string and thus UTF-8; `from_file` and `load_type_libraries_from_uri` reject bytes that are not UTF-8; the writer emits every character above U+007F as a character reference. The `encoding` declaration is in the item below. Commit `80ea5f7343e`.
+**Status:** done — the input is a Rust string and thus UTF-8; `from_file` and `load_type_libraries_from_uri` reject bytes that are not UTF-8; the writer emits every character above U+007F as a character reference. The `encoding` declaration is in the item below. Commit `167d1009ef8`.
 
 ### §7.1.1 Declaration of another encoding
 
@@ -315,7 +315,7 @@ elements and values."
 
 **Tests:** `crates/xml/src/parser.rs::tests::non_utf8_declared_encoding_rejected`, `crates/xml/src/xsd_loader.rs::tests::data_uri_non_utf8_body_rejected`
 
-**Status:** done — an XML declaration with an `encoding` other than UTF-8 (`utf-8` and `utf8`, in any case) ends with `XmlError::InvalidXml`, because `roxmltree` reads the value and discards it. A `data:` URI with bytes outside UTF-8 is rejected, not replaced by U+FFFD. Commit `80ea5f7343e`.
+**Status:** done — an XML declaration with an `encoding` other than UTF-8 (`utf-8` and `utf8`, in any case) ends with `XmlError::InvalidXml`, because `roxmltree` reads the value and discards it. A `data:` URI with bytes outside UTF-8 is rejected, not replaced by U+FFFD. Commit `167d1009ef8`.
 
 ---
 
@@ -333,7 +333,7 @@ their syntax (see sub clause 7.3.1)."
 
 **Tests:** `crates/xml/src/schemas.rs::tests::all_schemas_includes_six_building_blocks_plus_system`, `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`, `crates/xml/tests/schema_validation.rs::omg_examples_validate_against_in_tree_schemas`
 
-**Status:** done — each of the six building blocks and the block set of §8.1 has two files under `crates/xml/schemas/`; the twelve files for QoS, Types, Domains, DomainParticipants, Applications and DDS System are the OMG's files, byte for byte (`dds-xml_<block>_definitions.xsd` and `…_nonamespace.xsd`). Data Samples have no normative pair (§7.3.7.3.1: no generic XSD); ZeroDDS ships its own pair and `dds-xml_common.xsd`, which only that pair includes. The OMG files include each other by the absolute URL `http://www.omg.org/spec/DDS-XML/20180501/`; `schemas::building_block_includes` maps it to file names. Commits `8bf46985f11`, `efd043b8ec4`. `every_in_tree_schema_compiles` and `omg_examples_validate_against_in_tree_schemas` need `xmllint`.
+**Status:** done — each of the six building blocks and the block set of §8.1 has two files under `crates/xml/schemas/`; the twelve files for QoS, Types, Domains, DomainParticipants, Applications and DDS System are the OMG's files, byte for byte (`dds-xml_<block>_definitions.xsd` and `…_nonamespace.xsd`). Data Samples have no normative pair (§7.3.7.3.1: no generic XSD); ZeroDDS ships its own pair and `dds-xml_common.xsd`, which only that pair includes. The OMG files include each other by the absolute URL `http://www.omg.org/spec/DDS-XML/20180501/`; `schemas::building_block_includes` maps it to file names. Commits `b04504693c4`, `97a817ee16c`. `every_in_tree_schema_compiles` and `omg_examples_validate_against_in_tree_schemas` need `xmllint`.
 
 ### §7.1.2 Names of the normative XSD files
 
@@ -347,7 +347,7 @@ p. 28 — `dds-xml_type_definitions[_nonamespace].xsd`,
 
 **Tests:** `crates/xml/src/schemas.rs::tests::building_block_xsd_dependencies_match_spec`, `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`
 
-**Status:** done — the files carry the OMG's names: `dds-xml_type_definitions*.xsd`, `dds-xml_domain_definitions*.xsd`, `dds-xml_domainparticipant_definitions*.xsd`, `dds-xml_application_definitions*.xsd`, `dds-xml_qos_definitions*.xsd`, `dds-xml_dds_system_definitions*.xsd`. The spec is itself inconsistent (p. 1 lists `dds-xml_dds_qos_definitions_nonamespace.xsd` beside `dds-xml_qos_definitions.xsd`; §7.3.5.3 writes `…domainparticipant_defintions…`, §7.3.6.3 `…definititons…`); the names under which the OMG files include each other are the reference. Commit `efd043b8ec4`.
+**Status:** done — the files carry the OMG's names: `dds-xml_type_definitions*.xsd`, `dds-xml_domain_definitions*.xsd`, `dds-xml_domainparticipant_definitions*.xsd`, `dds-xml_application_definitions*.xsd`, `dds-xml_qos_definitions*.xsd`, `dds-xml_dds_system_definitions*.xsd`. The spec is itself inconsistent (p. 1 lists `dds-xml_dds_qos_definitions_nonamespace.xsd` beside `dds-xml_qos_definitions.xsd`; §7.3.5.3 writes `…domainparticipant_defintions…`, §7.3.6.3 `…definititons…`); the names under which the OMG files include each other are the reference. Commit `97a817ee16c`.
 
 ---
 
@@ -401,7 +401,7 @@ case sensitive."
 
 **Tests:** `crates/xml/src/qos_parser.rs::tests::parse_bool_strict_accepts_only_lowercase`, `crates/xml/src/types.rs::tests::bool_invalid`, `crates/xml/tests/qos_profile.rs::t14_boolean_case_sensitive_strict`
 
-**Status:** done — `True` and `TRUE` are rejected. `crates/xml/src/types.rs::parse_bool`, exported by `lib.rs`, takes only `1`, `true`, `0` and `false`. Commit `80ea5f7343e`.
+**Status:** done — `True` and `TRUE` are rejected. `crates/xml/src/types.rs::parse_bool`, exported by `lib.rs`, takes only `1`, `true`, `0` and `false`. Commit `167d1009ef8`.
 
 ### §7.1.4 Table 7.1 boolean: no as `0` or `false`
 
@@ -425,7 +425,7 @@ Must be specified as a string. (Do not use numeric values.)"
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`, `crates/xml/src/registry.rs::tests::resolves_base_writer_qos`
 
-**Status:** done — every reader takes the DCPS IDL literal as a string; `every_literal_of_the_dcps_enumerations_is_read` reads all literals of the seven enumerations (items under §7.2.1). Commit `d2c3d3a9bef`.
+**Status:** done — every reader takes the DCPS IDL literal as a string; `every_literal_of_the_dcps_enumerations_is_read` reads all literals of the seven enumerations (items under §7.2.1). Commit `6ea1489d5f3`.
 
 ### §7.1.4 Table 7.1 enum: only DCPS IDL literals
 
@@ -436,7 +436,7 @@ QoS Policies in the DCPS IDL".
 
 **Tests:** `crates/xml/src/qos_parser.rs::tests::short_enum_spellings_rejected`, `crates/xml/tests/qos_profile.rs::t09_all_22_policies_parse`
 
-**Status:** done — the short forms (`VOLATILE`, `KEEP_LAST`, `RELIABLE`, …) are no values; they end with `XmlError::BadEnum`. A `<history>` without `<kind>` and an empty `<kind/>` count as the DDS default (`KEEP_LAST_HISTORY_QOS`), not as a short form. They are not a vendor form either: the short forms are not read even with `VendorForms::Accept`. Commit `d2c3d3a9bef`.
+**Status:** done — the short forms (`VOLATILE`, `KEEP_LAST`, `RELIABLE`, …) are no values; they end with `XmlError::BadEnum`. A `<history>` without `<kind>` and an empty `<kind/>` count as the DDS default (`KEEP_LAST_HISTORY_QOS`), not as a short form. They are not a vendor form either: the short forms are not read even with `VendorForms::Accept`. Commit `6ea1489d5f3`.
 
 ### §7.1.4 Table 7.1 enum: no numeric values
 
@@ -446,7 +446,7 @@ QoS Policies in the DCPS IDL".
 
 **Tests:** `crates/xml/tests/spec_items.rs::a_number_is_no_enumeration_value`
 
-**Status:** done — a number as the value of a `kind` element ends with `XmlError::BadEnum`. Commit `d2c3d3a9bef`.
+**Status:** done — a number as the value of a `kind` element ends with `XmlError::BadEnum`. Commit `6ea1489d5f3`.
 
 ### §7.1.4 Table 7.1 long: decimal -2147483648 to 2147483647
 
@@ -533,7 +533,7 @@ characters escaped".
 
 **Tests:** `crates/xml/src/parser.rs::tests::element_text_preserves_whitespace`, `crates/xml/src/parser.rs::tests::element_text_joins_runs_across_comments`
 
-**Status:** done — `build_element` stores the text of an element unchanged, with its whitespace at the edges; runs of text around a comment are joined (`<a>x<!-- c -->y</a>` is `xy`). A string in Data Samples keeps its whitespace (`PrimitiveValue::Str`). Numbers and names in QoS are trimmed when read. Commit `8771c676858`.
+**Status:** done — `build_element` stores the text of an element unchanged, with its whitespace at the edges; runs of text around a comment are joined (`<a>x<!-- c -->y</a>` is `xy`). A string in Data Samples keeps its whitespace (`PrimitiveValue::Str`). Numbers and names in QoS are trimmed when read. Commit `78f3cbe292d`.
 
 ---
 
@@ -571,7 +571,7 @@ Must be specified as a string. (Do not use numeric values.)"
 
 **Tests:** `crates/xml/tests/types_and_samples.rs::t03_extensibility_final_appendable_mutable`, `crates/xml/tests/normative_forms.rs::vendor_forms_are_refused_unless_accepted`
 
-**Status:** done — the PDF names no attribute whose value is a literal of the QoS IDL. The attributes with enumeration values in `<types>` (`extensibility`, `tryConstruct`, `autoid`, `kind` of `forward_dcl`) are read as strings and checked against the XSD's values; spellings outside the XSD are vendor forms (`extensibility="appendable"`, `kind="STRUCT"`). Commits `32aa062decf`, `af517d979de`, `e34118cc9a6`.
+**Status:** done — the PDF names no attribute whose value is a literal of the QoS IDL. The attributes with enumeration values in `<types>` (`extensibility`, `tryConstruct`, `autoid`, `kind` of `forward_dcl`) are read as strings and checked against the XSD's values; spellings outside the XSD are vendor forms (`extensibility="appendable"`, `kind="STRUCT"`). Commits `58e5bb48580`, `147ffda178f`, `a9cb28ca85c`.
 
 ### §7.1.5 Table 7.2 enum: spelling and numbers
 
@@ -581,7 +581,7 @@ Must be specified as a string. (Do not use numeric values.)"
 
 **Tests:** `crates/xml/tests/types_and_samples.rs::t03_extensibility_uppercase_rejected`, `crates/xml/tests/spec_items.rs::a_number_is_no_extensibility`, `crates/xml/tests/normative_forms.rs::vendor_forms_are_refused_unless_accepted`
 
-**Status:** done — `FINAL`, `APPENDABLE`, `MUTABLE` and a number end with `XmlError::BadEnum`; `appendable` is a vendor form of `append`; `kind` of `forward_dcl` is checked against `enum`, `struct`, `union`, `bitmask`. Commits `d2c3d3a9bef`, `af517d979de`, `e34118cc9a6`.
+**Status:** done — `FINAL`, `APPENDABLE`, `MUTABLE` and a number end with `XmlError::BadEnum`; `appendable` is a vendor form of `append`; `kind` of `forward_dcl` is checked against `enum`, `struct`, `union`, `bitmask`. Commits `6ea1489d5f3`, `147ffda178f`, `a9cb28ca85c`.
 
 ### §7.1.5 Table 7.2 long
 
@@ -604,7 +604,7 @@ attribute of `<enumerator>` (`crates/xml/src/xtypes_parser.rs`)
 
 **Tests:** `crates/xml/src/domain.rs::tests::domain_id_accepts_the_unsigned_long_range`, `crates/xml/src/types.rs::tests::ulong_decimal_and_hex`
 
-**Status:** done — `domain_id` and `id` and `bitBound` in `<types>` are read with `parse_ulong` (decimal or hexadecimal, up to 4294967295). The limit 232 for `domain_id` is gone: it comes from RTPS, not DDS-XML. Commit `80ea5f7343e`.
+**Status:** done — `domain_id` and `id` and `bitBound` in `<types>` are read with `parse_ulong` (decimal or hexadecimal, up to 4294967295). The limit 232 for `domain_id` is gone: it comes from RTPS, not DDS-XML. Commit `167d1009ef8`.
 
 ### §7.1.5 Table 7.2 string
 
@@ -616,7 +616,7 @@ XML characters escaped according to the standard rules for element content
 
 **Tests:** `crates/xml/tests/spec_items.rs::attribute_values_keep_their_characters_and_spaces`, `crates/xml/src/parser.rs::tests::attributes_preserved`
 
-**Status:** done — `build_element` takes attribute values as `roxmltree` returns them after resolving entities and character references, without trimming. The attributes of the `xsi` and `xml` namespaces are no content and are left out. Commit `8bf46985f11`.
+**Status:** done — `build_element` takes attribute values as `roxmltree` returns them after resolving entities and character references, without trimming. The attributes of the `xsi` and `xml` namespaces are no content and are left out. Commit `b04504693c4`.
 
 ---
 
@@ -632,7 +632,7 @@ to data-types defined in the DDS IDL PSM [DDS] is obtained by performing a
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t09_all_22_policies_parse`, `crates/xml/tests/qos_profile.rs::t09b_policy_outside_the_container_is_refused`, `crates/xml/src/conformance.rs::tests::idl_mapping_names_the_sections_of_7_2`
 
-**Status:** done — the 22 policies of DDS 1.4 are read under the IDL's names, per container only the policies that are a field of the IDL structure; the enumerations, constants, sequences and `Duration_t` are in the items below. `IDL_TO_XML_MAPPING` names the function per category. Commits `d2c3d3a9bef`, `8771c676858`.
+**Status:** done — the 22 policies of DDS 1.4 are read under the IDL's names, per container only the policies that are a field of the IDL structure; the enumerations, constants, sequences and `Duration_t` are in the items below. `IDL_TO_XML_MAPPING` names the function per category. Commits `6ea1489d5f3`, `78f3cbe292d`.
 
 ---
 
@@ -648,7 +648,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::xsd_valid_documents_are_read`
 
-**Status:** done — the OMG's XSD defines the simpleTypes of the enumerations (`durabilityKind`, `historyKind`, …) and is in the tree unchanged; the reader checks the literals itself. Commit `8bf46985f11`.
+**Status:** done — the OMG's XSD defines the simpleTypes of the enumerations (`durabilityKind`, `historyKind`, …) and is in the tree unchanged; the reader checks the literals itself. Commit `b04504693c4`.
 
 ### §7.2.1 DurabilityQosPolicyKind
 
@@ -660,7 +660,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`
 
-**Status:** done — `parse_durability` reads `VOLATILE_DURABILITY_QOS`, `TRANSIENT_LOCAL_DURABILITY_QOS`, `TRANSIENT_DURABILITY_QOS`, `PERSISTENT_DURABILITY_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `d2c3d3a9bef`.
+**Status:** done — `parse_durability` reads `VOLATILE_DURABILITY_QOS`, `TRANSIENT_LOCAL_DURABILITY_QOS`, `TRANSIENT_DURABILITY_QOS`, `PERSISTENT_DURABILITY_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `6ea1489d5f3`.
 
 ### §7.2.1 PresentationQosPolicyAccessScopeKind
 
@@ -671,7 +671,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`
 
-**Status:** done — `parse_presentation` reads `INSTANCE_PRESENTATION_QOS`, `TOPIC_PRESENTATION_QOS`, `GROUP_PRESENTATION_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `d2c3d3a9bef`.
+**Status:** done — `parse_presentation` reads `INSTANCE_PRESENTATION_QOS`, `TOPIC_PRESENTATION_QOS`, `GROUP_PRESENTATION_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `6ea1489d5f3`.
 
 ### §7.2.1 OwnershipQosPolicyKind
 
@@ -682,7 +682,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`
 
-**Status:** done — `parse_ownership` reads `SHARED_OWNERSHIP_QOS`, `EXCLUSIVE_OWNERSHIP_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `d2c3d3a9bef`.
+**Status:** done — `parse_ownership` reads `SHARED_OWNERSHIP_QOS`, `EXCLUSIVE_OWNERSHIP_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `6ea1489d5f3`.
 
 ### §7.2.1 LivelinessQosPolicyKind
 
@@ -693,7 +693,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`
 
-**Status:** done — `parse_liveliness` reads `AUTOMATIC_LIVELINESS_QOS`, `MANUAL_BY_PARTICIPANT_LIVELINESS_QOS`, `MANUAL_BY_TOPIC_LIVELINESS_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `d2c3d3a9bef`.
+**Status:** done — `parse_liveliness` reads `AUTOMATIC_LIVELINESS_QOS`, `MANUAL_BY_PARTICIPANT_LIVELINESS_QOS`, `MANUAL_BY_TOPIC_LIVELINESS_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `6ea1489d5f3`.
 
 ### §7.2.1 ReliabilityQosPolicyKind
 
@@ -704,7 +704,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`, `crates/xml/tests/qos_profile.rs::t19_empty_policies_use_spec_defaults`, `crates/xml/src/registry.rs::tests::resolves_base_writer_qos`
 
-**Status:** done — `parse_reliability` reads both literals; a test reads each. Without `<kind>` the DDS default applies: `RELIABLE` at a DataWriter, otherwise `BEST_EFFORT` (DDS 1.4 §2.2.3.14). Commits `d2c3d3a9bef`, `b956dbaceed`.
+**Status:** done — `parse_reliability` reads both literals; a test reads each. Without `<kind>` the DDS default applies: `RELIABLE` at a DataWriter, otherwise `BEST_EFFORT` (DDS 1.4 §2.2.3.14). Commits `6ea1489d5f3`, `f43f92d9e00`.
 
 ### §7.2.1 ReliabilityQosPolicyKind: BEST_EFFORT_RELIABILITY_QOS
 
@@ -726,7 +726,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`
 
-**Status:** done — `parse_destination_order` reads `BY_RECEPTION_TIMESTAMP_DESTINATIONORDER_QOS`, `BY_SOURCE_TIMESTAMP_DESTINATIONORDER_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `d2c3d3a9bef`.
+**Status:** done — `parse_destination_order` reads `BY_RECEPTION_TIMESTAMP_DESTINATIONORDER_QOS`, `BY_SOURCE_TIMESTAMP_DESTINATIONORDER_QOS`; `every_literal_of_the_dcps_enumerations_is_read` reads each. Commit `6ea1489d5f3`.
 
 ### §7.2.1 HistoryQosPolicyKind
 
@@ -737,7 +737,7 @@ that can take values of the enumeration literals."
 
 **Tests:** `crates/xml/tests/spec_items.rs::every_literal_of_the_dcps_enumerations_is_read`, `crates/xml/src/registry.rs::tests::resolves_base_writer_qos`
 
-**Status:** done — `parse_history` and `history_kind` of `parse_durability_service` read both literals; `every_literal_of_the_dcps_enumerations_is_read` reads each at both places. Commit `d2c3d3a9bef`.
+**Status:** done — `parse_history` and `history_kind` of `parse_durability_service` read both literals; `every_literal_of_the_dcps_enumerations_is_read` reads each at both places. Commit `6ea1489d5f3`.
 
 ### §7.2.1 HistoryQosPolicyKind: KEEP_ALL_HISTORY_QOS
 
@@ -776,7 +776,7 @@ or as the name of the constant."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`, `crates/xml/src/types.rs::tests::duration_accepts_the_named_constants`
 
-**Status:** done — the four simpleTypes are in the OMG's XSD (`nonNegativeInteger_UNLIMITED`, `positiveInteger_UNLIMITED`, `nonNegativeInteger_Duration_SEC`, `nonNegativeInteger_Duration_NSEC`) and used by the policies' elements. The reader takes a number or a name; `max_samples`, `max_instances` and `max_samples_per_instance` are read as `positiveInteger_UNLIMITED` (1 or more, or the name; commit `2120724498f`); the names the pattern does not list (`DURATION_ZERO_*`, `TIME_INVALID_*`) it accepts because the sentence of §7.2.2 allows "the name of the constant". Commits `8bf46985f11`, `4e479ef9e18`.
+**Status:** done — the four simpleTypes are in the OMG's XSD (`nonNegativeInteger_UNLIMITED`, `positiveInteger_UNLIMITED`, `nonNegativeInteger_Duration_SEC`, `nonNegativeInteger_Duration_NSEC`) and used by the policies' elements. The reader takes a number or a name; `max_samples`, `max_instances` and `max_samples_per_instance` are read as `positiveInteger_UNLIMITED` (1 or more, or the name; commit `7fbca3f5f05`); the names the pattern does not list (`DURATION_ZERO_*`, `TIME_INVALID_*`) it accepts because the sentence of §7.2.2 allows "the name of the constant". Commits `b04504693c4`, `5563ccdbefe`.
 
 ### §7.2.2 LENGTH_UNLIMITED = -1
 
@@ -825,7 +825,7 @@ represent lengths."
 
 **Tests:** `crates/xml/src/types.rs::tests::duration_accepts_the_named_constants`, `crates/xml/src/types.rs::tests::duration_constants`
 
-**Status:** done — `parse_duration_sec` accepts the name. Commit `4e479ef9e18`.
+**Status:** done — `parse_duration_sec` accepts the name. Commit `5563ccdbefe`.
 
 ### §7.2.2 DURATION_ZERO_NSEC = 0
 
@@ -835,7 +835,7 @@ represent lengths."
 
 **Tests:** `crates/xml/src/types.rs::tests::duration_accepts_the_named_constants`, `crates/xml/src/types.rs::tests::duration_constants`
 
-**Status:** done — `parse_duration_nsec` accepts the name. Commit `4e479ef9e18`.
+**Status:** done — `parse_duration_nsec` accepts the name. Commit `5563ccdbefe`.
 
 ### §7.2.2 TIME_INVALID_SEC = -1
 
@@ -847,7 +847,7 @@ constants with the prefix TIME_ are intended to initialize the members
 
 **Tests:** `crates/xml/src/types.rs::tests::time_invalid_constants`, `crates/xml/tests/spec_items.rs::sample_values_follow_table_7_1`
 
-**Status:** done — `parse_duration_sec` and, for a field of type `long` in Data Samples, `parse_long_sample` accept the name. The PDF names no element of type `Time_t` in the building blocks QoS to Applications. Commits `4e479ef9e18`, `8771c676858`.
+**Status:** done — `parse_duration_sec` and, for a field of type `long` in Data Samples, `parse_long_sample` accept the name. The PDF names no element of type `Time_t` in the building blocks QoS to Applications. Commits `5563ccdbefe`, `78f3cbe292d`.
 
 ### §7.2.2 TIME_INVALID_NSEC = 0xffffffff
 
@@ -858,7 +858,7 @@ constants with the prefix TIME_ are intended to initialize the members
 
 **Tests:** `crates/xml/src/types.rs::tests::time_invalid_constants`, `crates/xml/src/sample.rs::tests::parse_sample_ulong_constant_names`, `crates/xml/tests/spec_items.rs::sample_values_follow_table_7_1`
 
-**Status:** done — `parse_ulong_sample` accepts the name (`unsigned long` in Data Samples). Commit `8771c676858`.
+**Status:** done — `parse_ulong_sample` accepts the name (`unsigned long` in Data Samples). Commit `78f3cbe292d`.
 
 ### §7.2.2.1 Example (Non-Normative)
 
@@ -885,7 +885,7 @@ according to a schema defined as an XSD complexType."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::xsd_valid_documents_are_read`
 
-**Status:** done — the OMG's XSD has a complexType per policy (e.g. `partitionQosPolicy`, `durabilityServiceQosPolicy`) and one per container (`datawriterQos`, …); it is in the tree unchanged. Commit `8bf46985f11`.
+**Status:** done — the OMG's XSD has a complexType per policy (e.g. `partitionQosPolicy`, `durabilityServiceQosPolicy`) and one per container (`datawriterQos`, …); it is in the tree unchanged. Commit `b04504693c4`.
 
 ### §7.2.3 Element name equals field name
 
@@ -897,7 +897,7 @@ corresponding element name."
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t09_all_22_policies_parse`, `crates/xml/src/qos_parser.rs::tests::unread_elements_are_refused_at_every_level`, `crates/xml/tests/normative_forms.rs::report_and_skip_lists_everything_it_leaves_out`
 
-**Status:** done — an unknown child element of a policy or a container ends with `XmlError::UnknownElement` and the element's path; with `ReadOptions::report_and_skip()` it is left out and reported as a `Diagnostic`. Commits `8771c676858`, `8bf46985f11`.
+**Status:** done — an unknown child element of a policy or a container ends with `XmlError::UnknownElement` and the element's path; with `ReadOptions::report_and_skip()` it is left out and reported as a `Diagnostic`. Commits `78f3cbe292d`, `b04504693c4`.
 
 ### §7.2.3 Fields unordered
 
@@ -907,7 +907,7 @@ corresponding element name."
 
 **Tests:** `crates/xml/tests/spec_items.rs::fields_of_a_structure_come_in_any_order`, `crates/xml/tests/spec_items.rs::a_field_given_twice_is_refused`, `crates/xml/tests/qos_profile.rs::t20_duplicate_structure_field_rejected`
 
-**Status:** done — the readers look up the children by name, the order does not matter (`fields_of_a_structure_come_in_any_order`); a field that occurs twice ends with `XmlError::InvalidXml`. Commit `8771c676858`.
+**Status:** done — the readers look up the children by name, the order does not matter (`fields_of_a_structure_come_in_any_order`); a field that occurs twice ends with `XmlError::InvalidXml`. Commit `78f3cbe292d`.
 
 ### §7.2.3 Nested structures
 
@@ -931,7 +931,7 @@ provide the same default value."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`
 
-**Status:** done — the OMG's XSD carries the DDS defaults as `default=` of the elements (e.g. `INSTANCE_PRESENTATION_QOS` for `access_scope`) and is in the tree unchanged. Commit `8bf46985f11`.
+**Status:** done — the OMG's XSD carries the DDS defaults as `default=` of the elements (e.g. `INSTANCE_PRESENTATION_QOS` for `access_scope`) and is in the tree unchanged. Commit `b04504693c4`.
 
 ### §7.2.3 Missing policy: DDS default
 
@@ -943,7 +943,7 @@ provide the same default value."
 
 **Tests:** `crates/xml/src/qos.rs::tests::entity_qos_into_writer_uses_defaults_for_unset`, `crates/xml/src/qos.rs::tests::entity_qos_into_reader_uses_defaults_for_unset`, `crates/xml/tests/qos_profile.rs::t18_into_writer_and_reader_qos_use_spec_defaults`
 
-**Status:** done — a policy missing from the document stays `None` in `EntityQos` and counts as the DDS default. `into_writer_qos` and `into_reader_qos` apply it (reliability `RELIABLE` at a writer, `BEST_EFFORT` at a reader, history `KEEP_LAST` with depth 1); for Topic, Publisher, Subscriber and DomainParticipant the caller merges `EntityQos` over the entity's default (`webdds-bridge`: `topic_qos_from`, `publisher_qos_from`, `subscriber_qos_from`, `participant_qos_from`). Commit `b956dbaceed`.
+**Status:** done — a policy missing from the document stays `None` in `EntityQos` and counts as the DDS default. `into_writer_qos` and `into_reader_qos` apply it (reliability `RELIABLE` at a writer, `BEST_EFFORT` at a reader, history `KEEP_LAST` with depth 1); for Topic, Publisher, Subscriber and DomainParticipant the caller merges `EntityQos` over the entity's default (`webdds-bridge`: `topic_qos_from`, `publisher_qos_from`, `subscriber_qos_from`, `participant_qos_from`). Commit `f43f92d9e00`.
 
 ### §7.2.3 Missing field of a policy
 
@@ -954,7 +954,7 @@ with `minOccurs="0"` and `default`).
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t19_empty_policies_use_spec_defaults`, `crates/xml/tests/qos_profile.rs::t19b_duration_without_sec_is_zero`, `crates/xml/tests/normative_forms.rs::empty_numeric_elements_are_the_default`
 
-**Status:** done — a field that is missing has the DDS default; `minOccurs="0"` is at every field of the XSD. A policy without children (`<deadline/>`, `<history/>`) reads as a policy with all defaults, an element with empty text (`<depth/>`) as the default of its field, a `Duration_t` without `sec` as 0. An enumeration without a literal has the DDS default. Commits `4e479ef9e18`, `b956dbaceed`.
+**Status:** done — a field that is missing has the DDS default; `minOccurs="0"` is at every field of the XSD. A policy without children (`<deadline/>`, `<history/>`) reads as a policy with all defaults, an element with empty text (`<depth/>`) as the default of its field, a `Duration_t` without `sec` as 0. An enumeration without a literal has the DDS default. Commits `5563ccdbefe`, `f43f92d9e00`.
 
 ### §7.2.3.1 Example (Non-normative)
 
@@ -976,7 +976,7 @@ sequence<octet> value; };`
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t13_user_data_base64_to_bytes`, `crates/xml/tests/qos_profile.rs::t13b_user_data_comma_list_to_bytes`, `crates/xml/tests/normative_forms.rs::user_data_value_is_base64_and_may_be_empty`
 
-**Status:** done — element `user_data` with `value` (Base64 or list) or `valueB64` per §7.2.4.2 (items there). Commit `5dcde9b5717`.
+**Status:** done — element `user_data` with `value` (Base64 or list) or `valueB64` per §7.2.4.2 (items there). Commit `86f47818638`.
 
 ### §7.2.3 TopicDataQosPolicy: `topic_data`
 
@@ -987,7 +987,7 @@ sequence<octet> value; };`
 
 **Tests:** `crates/xml/tests/spec_items.rs::topic_data_and_group_data_hold_octets_in_both_forms`, `crates/xml/tests/qos_profile.rs::t09_all_22_policies_parse`
 
-**Status:** done — element `topic_data` with `value` (Base64 or list) or `valueB64` per §7.2.4.2 (items there). Commit `5dcde9b5717`.
+**Status:** done — element `topic_data` with `value` (Base64 or list) or `valueB64` per §7.2.4.2 (items there). Commit `86f47818638`.
 
 ### §7.2.3 GroupDataQosPolicy: `group_data`
 
@@ -998,7 +998,7 @@ sequence<octet> value; };`
 
 **Tests:** `crates/xml/tests/spec_items.rs::topic_data_and_group_data_hold_octets_in_both_forms`, `crates/xml/tests/qos_profile.rs::t09_all_22_policies_parse`
 
-**Status:** done — element `group_data` with `value` (Base64 or list) or `valueB64` per §7.2.4.2 (items there). Commit `5dcde9b5717`.
+**Status:** done — element `group_data` with `value` (Base64 or list) or `valueB64` per §7.2.4.2 (items there). Commit `86f47818638`.
 
 ### §7.2.3 TransportPriorityQosPolicy: `transport_priority`
 
@@ -1120,7 +1120,7 @@ PartitionQosPolicy { StringSeq name; };`
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t12_partition_multiple_names_become_vec`, `crates/xml/tests/normative_forms.rs::empty_partition_name_is_an_empty_sequence`
 
-**Status:** done — `parse_partition` reads the sequence per §7.2.4.1: one `<name>` with zero or more `<element>`. A second `<name>` ends with `XmlError::InvalidXml`; the form with a repeated `<name>` and the one with `<name_list>` are no forms of the spec. Commits `5dcde9b5717`, `7efd1017dd5`.
+**Status:** done — `parse_partition` reads the sequence per §7.2.4.1: one `<name>` with zero or more `<element>`. A second `<name>` ends with `XmlError::InvalidXml`; the form with a repeated `<name>` and the one with `<name_list>` are no forms of the spec. Commits `86f47818638`, `e74ae3530ac`.
 
 ### §7.2.3 ReliabilityQosPolicy: `reliability`
 
@@ -1164,7 +1164,7 @@ DestinationOrderQosPolicy { DestinationOrderQosPolicyKind kind; };`
 
 **Tests:** `crates/xml/tests/normative_forms.rs::resource_limits_initial_fields_are_carried`, `crates/xml/tests/qos_profile.rs::t11_length_unlimited_in_resource_limits`
 
-**Status:** done — `initial_samples` and `initial_instances` of the example in §7.3.2.4.3.1 are in the OMG's XSD (`resourceLimitsQosPolicy`) and are read and carried in `EntityQos::initial_resource_limits`; the DDS 1.4 IDL does not have them, so they reach neither `WriterQos` nor `ReaderQos`. Commit `8bf46985f11`.
+**Status:** done — `initial_samples` and `initial_instances` of the example in §7.3.2.4.3.1 are in the OMG's XSD (`resourceLimitsQosPolicy`) and are read and carried in `EntityQos::initial_resource_limits`; the DDS 1.4 IDL does not have them, so they reach neither `WriterQos` nor `ReaderQos`. Commit `b04504693c4`.
 
 ### §7.2.3 EntityFactoryQosPolicy: `entity_factory`
 
@@ -1233,7 +1233,7 @@ max_samples_per_instance;`
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::participant_inheritance_one_level`, `crates/xml/tests/qos_profile.rs::t02_all_six_containers_in_a_profile`, `crates/xml/tests/normative_forms.rs::vendor_forms_are_refused_unless_accepted`
 
-**Status:** done — `domain_participant_qos` is read, as the OMG's XSD writes it; `domainparticipant_qos` and `participant_qos` are vendor forms (`VendorForms`). Commits `e34118cc9a6`, `2de529e05a6`.
+**Status:** done — `domain_participant_qos` is read, as the OMG's XSD writes it; `domainparticipant_qos` and `participant_qos` are vendor forms (`VendorForms`). Commits `a9cb28ca85c`, `da5ac86cf10`.
 
 ### §7.2.3 TopicQos: `topic_qos`
 
@@ -1302,7 +1302,7 @@ max_samples_per_instance;`
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t09b_policy_outside_the_container_is_refused`, `crates/xml/tests/normative_forms.rs::report_and_skip_lists_everything_it_leaves_out`
 
-**Status:** done — `parse_entity_qos` reads per container only the policies that are a field of the structure in DDS 1.4 §2.2.3 (`allowed_policies`); any other (e.g. `ownership_strength` in `datareader_qos`) ends with `XmlError::UnknownElement`, under `report_and_skip` as `DiagnosticKind::MisplacedElement`. Nothing is read and then dropped when the QoS is taken over. Commits `8771c676858`, `8bf46985f11`.
+**Status:** done — `parse_entity_qos` reads per container only the policies that are a field of the structure in DDS 1.4 §2.2.3 (`allowed_policies`); any other (e.g. `ownership_strength` in `datareader_qos`) ends with `XmlError::UnknownElement`, under `report_and_skip` as `DiagnosticKind::MisplacedElement`. Nothing is read and then dropped when the QoS is taken over. Commits `78f3cbe292d`, `b04504693c4`.
 
 ---
 
@@ -1319,7 +1319,7 @@ the XSD schema obtained from mapping the IDL type of the element itself."
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t12_partition_multiple_names_become_vec`, `crates/xml/tests/normative_forms.rs::empty_partition_name_is_an_empty_sequence`, `crates/xml/src/parser.rs::tests::sequence_elements_iterates_element_tag_children`
 
-**Status:** done — the only sequence in the QoS policies is `PartitionQosPolicy.name` (`StringSeq`); `parse_partition` reads it as `<name>` with `<element>` children. `XmlElement::sequence_elements` returns the `element` children for `webdds-bridge`. Commit `5dcde9b5717`.
+**Status:** done — the only sequence in the QoS policies is `PartitionQosPolicy.name` (`StringSeq`); `parse_partition` reads it as `<name>` with `<element>` children. `XmlElement::sequence_elements` returns the `element` children for `webdds-bridge`. Commit `86f47818638`.
 
 ### §7.2.4.1.1 Example (Non-normative)
 
@@ -1345,7 +1345,7 @@ the suffix B64."
 
 **Tests:** `crates/xml/src/qos_parser.rs::tests::octet_value_is_base64_or_a_list`, `crates/xml/tests/qos_profile.rs::t13b_user_data_comma_list_to_bytes`
 
-**Status:** done — `parse_octet_value_text` reads `<value>` as a list when the text is a list of octets (decimal or `0x…`, each 0 to 255); otherwise as Base64, as the OMG's XSD types `value` (`xs:base64Binary`). A digit string that is no list stays Base64. Commits `5dcde9b5717`, `7efd1017dd5`.
+**Status:** done — `parse_octet_value_text` reads `<value>` as a list when the text is a list of octets (decimal or `0x…`, each 0 to 255); otherwise as Base64, as the OMG's XSD types `value` (`xs:base64Binary`). A digit string that is no list stays Base64. Commits `86f47818638`, `e74ae3530ac`.
 
 ### §7.2.4.2 Octet sequence as Base64 in `valueB64`
 
@@ -1356,7 +1356,7 @@ latter having the suffix B64."
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t13_user_data_base64_to_bytes`, `crates/xml/tests/qos_profile.rs::t13c_user_data_both_forms_rejected`, `crates/xml/tests/spec_items.rs::topic_data_and_group_data_hold_octets_in_both_forms`
 
-**Status:** done — `valueB64` is read; `value` and `valueB64` together end with `XmlError::InvalidXml`. Commit `5dcde9b5717`.
+**Status:** done — `valueB64` is read; `value` and `valueB64` together end with `XmlError::InvalidXml`. Commit `86f47818638`.
 
 ### §7.2.4.2 Choice by element name
 
@@ -1423,7 +1423,7 @@ IDL to set the values of the intended elements." complexType `duration` with
 **Tests:** `crates/xml/tests/qos_profile.rs::t01_happy_path_reliability_and_history_roundtrip`,
 `crates/xml/tests/qos_profile.rs::t09_all_22_policies_parse`
 
-**Status:** done — the OMG's XSD reproduces the complexType of p. 21 (`xs:all`, both `minOccurs="0"`) and is in the tree unchanged. The names of the constants are in the items under §7.2.2. `<period>DURATION_INFINITY</period>` without children is a vendor form. Commits `8bf46985f11`, `e34118cc9a6`.
+**Status:** done — the OMG's XSD reproduces the complexType of p. 21 (`xs:all`, both `minOccurs="0"`) and is in the tree unchanged. The names of the constants are in the items under §7.2.2. `<period>DURATION_INFINITY</period>` without children is a vendor form. Commits `b04504693c4`, `a9cb28ca85c`.
 
 ### §7.2.6 `nanosec` optional
 
@@ -1445,7 +1445,7 @@ IDL to set the values of the intended elements." complexType `duration` with
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t19b_duration_without_sec_is_zero`
 
-**Status:** done — without `sec` the value is 0 (the DDS default of `Duration_t.sec`). Commit `4e479ef9e18`.
+**Status:** done — without `sec` the value is 0 (the DDS default of `Duration_t.sec`). Commit `5563ccdbefe`.
 
 ### §7.2.6 Infinite duration
 
@@ -1467,7 +1467,7 @@ for `nanosec`.
 
 **Tests:** `crates/xml/src/types.rs::tests::duration_nsec_accepts_the_full_unsigned_long_range`, `crates/xml/tests/qos_profile.rs::t10b_duration_infinity_numeric_parses_to_infinite`
 
-**Status:** done — `parse_duration_nsec` takes every number of the `unsigned long` range, also 2147483647; `<sec>2147483647</sec><nanosec>2147483647</nanosec>` is the infinite duration. Commit `4e479ef9e18`.
+**Status:** done — `parse_duration_nsec` takes every number of the `unsigned long` range, also 2147483647; `<sec>2147483647</sec><nanosec>2147483647</nanosec>` is the infinite duration. Commit `5563ccdbefe`.
 
 ### §7.2.6.1 Example (Non-normative)
 
@@ -1537,7 +1537,7 @@ element."
 
 **Tests:** `crates/xml/src/schemas.rs::tests::nonamespace_xsds_omit_target_namespace`, `crates/xml/src/schemas.rs::tests::namespaced_xsds_define_top_level_element`
 
-**Status:** done — none of the seven chameleon files has a `targetNamespace` or a global element; the Data Samples pair now carries its root elements in the namespaced file. Commits `8bf46985f11`, `a45564ecb6b`.
+**Status:** done — none of the seven chameleon files has a `targetNamespace` or a global element; the Data Samples pair now carries its root elements in the namespaced file. Commits `b04504693c4`, `5e03ee5e374`.
 
 ### §7.3.1 Root elements in the chameleon file for Data Samples
 
@@ -1548,7 +1548,7 @@ nor a root element."
 
 **Tests:** `crates/xml/src/schemas.rs::tests::namespaced_xsds_define_top_level_element`, `crates/xml/tests/schema_validation.rs::serialize_sample_output_validates`
 
-**Status:** done — `dds-xml_data_samples_definitions_nonamespace.xsd` declares no root element; `<data>` and `<sample>` are in `dds-xml_data_samples_definitions.xsd`, and `serialize_sample_output_validates` checks the output of `serialize_sample` in the namespace against that file. Commit `a45564ecb6b`.
+**Status:** done — `dds-xml_data_samples_definitions_nonamespace.xsd` declares no root element; `<data>` and `<sample>` are in `dds-xml_data_samples_definitions.xsd`, and `serialize_sample_output_validates` checks the output of `serialize_sample` in the namespace against that file. Commit `5e03ee5e374`.
 
 ### §7.3.1 `_definitions.xsd`: includes, root element, targetNamespace
 
@@ -1573,7 +1573,7 @@ http://www.omg.org/spec/DDS-XML."
 
 **Tests:** `crates/xml/src/parser.rs::tests::parse_namespace_aware`, `crates/xml/src/xsd_loader.rs::tests::strict_mode_ignores_the_namespace_string_outside_a_declaration`, `crates/xml/tests/dds_xml_full.rs::all_four_libraries_roundtrip`
 
-**Status:** done — the readers compare local names: a document in the spec's namespace, one without a namespace (chameleon pattern, §7.1.3) and one in the user's own namespace are read alike. `ValidationMode::Strict` in `load_type_libraries_from_string` requires the namespace declaration at the root element; it is not found anywhere in the text. Commit `80ea5f7343e`.
+**Status:** done — the readers compare local names: a document in the spec's namespace, one without a namespace (chameleon pattern, §7.1.3) and one in the user's own namespace are read alike. `ValidationMode::Strict` in `load_type_libraries_from_string` requires the namespace declaration at the root element; it is not found anywhere in the text. Commit `167d1009ef8`.
 
 ---
 
@@ -1614,7 +1614,7 @@ Definition pattern."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`, `crates/xml/tests/schema_validation.rs::xsd_valid_documents_are_read`
 
-**Status:** done — the OMG's file is in the tree unchanged and defines all policies, fields, enumerations and containers. Commit `8bf46985f11`.
+**Status:** done — the OMG's file is in the tree unchanged and defines all policies, fields, enumerations and containers. Commit `b04504693c4`.
 
 ### §7.3.2.3 `<qos_library>` as top-level element in the namespace
 
@@ -1672,7 +1672,7 @@ Profiles using the base_name XML attribute."
 `crates/xml/src/registry.rs::tests::inheritance_derived_overrides_base`,
 `crates/xml/src/qos_inheritance.rs::tests::cross_library_base_name_two_segment`
 
-**Status:** done — the policy of the derived profile replaces that of the base profile entirely, not field by field: a child with `<history><kind>KEEP_ALL_HISTORY_QOS</kind></history>` has depth 1, not the base's; the spec says nothing about it. Cycles and chains over 32 links (`MAX_INHERITANCE_DEPTH`) are rejected. `RpcQos::from_xml_profile` follows the `base_name` chain. Commits `f1a7a3ea573`, `563ab2e3a64`.
+**Status:** done — the policy of the derived profile replaces that of the base profile entirely, not field by field: a child with `<history><kind>KEEP_ALL_HISTORY_QOS</kind></history>` has depth 1, not the base's; the spec says nothing about it. Cycles and chains over 32 links (`MAX_INHERITANCE_DEPTH`) are rejected. `RpcQos::from_xml_profile` follows the `base_name` chain. Commits `9b74a81b0a9`, `54091c791d9`.
 
 ### §7.3.2.4.2 Only from profiles defined before
 
@@ -1683,7 +1683,7 @@ profiles that have been defined its definition".
 
 **Tests:** `crates/xml/src/qos_inheritance.rs::tests::forward_base_name_rejected`, `crates/xml/src/registry.rs::tests::forward_base_name_rejected`
 
-**Status:** done — a profile whose `base_name` points to a later-defined profile ends with `XmlError::InvalidXml`; the order is the document's, across libraries. The sentence of the spec is incomplete ("defined its definition"); read as "defined before its definition". Commit `5f5d7aaa3e9`.
+**Status:** done — a profile whose `base_name` points to a later-defined profile ends with `XmlError::InvalidXml`; the order is the document's, across libraries. The sentence of the spec is incomplete ("defined its definition"); read as "defined before its definition". Commit `388c784b2d9`.
 
 ### §7.3.2.4.2.1 Example (Non-normative)
 
@@ -1706,7 +1706,7 @@ of a filter expression on the topic name."
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t21_repeated_containers_select_by_topic_filter`, `crates/xml/src/qos_inheritance.rs::tests::topic_filter_selects_between_repeated_containers`, `crates/xml/src/registry.rs::tests::writer_qos_for_topic_selects_by_filter`, `crates/xml/tests/normative_forms.rs::repeated_containers_of_every_kind`
 
-**Status:** done — a profile holds several containers per kind (`Vec<FilteredEntityQos>`), each with its `topic_filter`; `select_qos_for_topic`, `ResolvedQos::datawriter_qos_for_topic` and `QosProfileRegistry::writer_qos_for_topic` select by the topic's name. Several containers with the same filter (or several without) are merged policy by policy (`merge_filtered_slots`). Commit `f5f781d033b`.
+**Status:** done — a profile holds several containers per kind (`Vec<FilteredEntityQos>`), each with its `topic_filter`; `select_qos_for_topic`, `ResolvedQos::datawriter_qos_for_topic` and `QosProfileRegistry::writer_qos_for_topic` select by the topic's name. Several containers with the same filter (or several without) are merged policy by policy (`merge_filtered_slots`). Commit `02e08d8aea2`.
 
 ### §7.3.2.4.3 Filter in the `topic_filter` attribute of the QoS
 
@@ -1717,7 +1717,7 @@ topic_filter XML attribute in the QoS definition of the entity QoS."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::topic_filter_attribute_is_read`, `crates/xml/tests/qos_profile.rs::t08_topic_filter_glob_semantics`, `crates/xml/src/qos_inheritance.rs::tests::topic_filter_inherited_and_overridden`
 
-**Status:** done — the attribute is read at the container and stored there (`FilteredEntityQos::topic_filter`); `topic_filter_matches` evaluates `*` and `?` (the PDF does not fix the syntax). The filter as a child element of `<qos_profile>` and the attribute on `<topic>` are vendor forms (`VendorForms`). Commits `f5f781d033b`, `e34118cc9a6`.
+**Status:** done — the attribute is read at the container and stored there (`FilteredEntityQos::topic_filter`); `topic_filter_matches` evaluates `*` and `?` (the PDF does not fix the syntax). The filter as a child element of `<qos_profile>` and the attribute on `<topic>` are vendor forms (`VendorForms`). Commits `02e08d8aea2`, `a9cb28ca85c`.
 
 ### §7.3.2.4.3 Without a filter `*` applies
 
@@ -1740,7 +1740,7 @@ QoS without a topic filter expression."
 
 **Tests:** `crates/xml/tests/qos_profile.rs::t21_repeated_containers_select_by_topic_filter`, `crates/xml/src/qos_inheritance.rs::tests::no_matching_filter_has_no_qos`, `crates/xml/src/registry.rs::tests::writer_qos_for_topic_without_match_errors`
 
-**Status:** done — a container with a matching filter takes precedence over the one without a filter; among several matching filters the document order selects; with no match the entity has no QoS from the profile. Commit `f5f781d033b`.
+**Status:** done — a container with a matching filter takes precedence over the one without a filter; among several matching filters the document order selects; with no match the entity has no QoS from the profile. Commit `02e08d8aea2`.
 
 ### §7.3.2.4.3.1 Example (Non-normative)
 
@@ -1762,7 +1762,7 @@ shortcut for defining a QoS profile with a single QoS."
 
 **Tests:** `crates/xml/src/qos_parser.rs::tests::single_qos_shortcut_datawriter_creates_implicit_profile`, `crates/xml/src/qos_parser.rs::tests::single_qos_shortcut_topic_creates_implicit_profile`, `crates/xml/src/qos_parser.rs::tests::single_qos_shortcut_multiple_kinds_in_same_library`, `crates/xml/src/qos_parser.rs::tests::single_qos_shortcut_without_name_is_kept`
 
-**Status:** done — a container directly under `<qos_library>` is a profile with one QoS; without a `name` it is a profile nothing can refer to and is kept under the empty name. Commit `bf34c97b1eb`.
+**Status:** done — a container directly under `<qos_library>` is a profile with one QoS; without a `name` it is a profile nothing can refer to and is kept under the empty name. Commit `386b6850ca1`.
 
 ### §7.3.2.4.4.1 Example (Non-normative)
 
@@ -1788,7 +1788,7 @@ represent DDS Types in XML."
 
 **Tests:** `crates/xml/tests/types_and_samples.rs::t01_struct_with_long_member`, `crates/xml/tests/types_and_samples.rs::t16_module_three_levels_deep`, `crates/xml/tests/normative_forms.rs::bounds_and_dimensions_are_evaluated`, `crates/xml-compose/tests/idl_parity.rs::every_primitive_reaches_the_same_type_from_both_front_ends`
 
-**Status:** done — two readers: `zerodds-xml`, which `parse_dds_xml` uses, and `zerodds-xml-compose` for the code generators. The reader of `zerodds-xml` follows the grammar of XTypes 1.3 Annex A (`type`/`nonBasicTypeName`, maps, annotations, `<const>`, constant expressions as bounds); the grammar is covered item by item in `dds-xtypes-1.3.md` under §7.3.2. Commits `32aa062decf`, `3d330808107`, `af517d979de`.
+**Status:** done — two readers: `zerodds-xml`, which `parse_dds_xml` uses, and `zerodds-xml-compose` for the code generators. The reader of `zerodds-xml` follows the grammar of XTypes 1.3 Annex A (`type`/`nonBasicTypeName`, maps, annotations, `<const>`, constant expressions as bounds); the grammar is covered item by item in `dds-xtypes-1.3.md` under §7.3.2. Commits `58e5bb48580`, `9a3f3974224`, `147ffda178f`.
 
 ### §7.3.3.1 `nonBasicTypeName` and maps in the reader of `zerodds-xml`
 
@@ -1798,7 +1798,7 @@ represent DDS Types in XML."
 
 **Tests:** `crates/xml/src/xtypes_parser.rs::tests::spec_nonbasic_type_is_named_by_nonbasic_type_name`, `crates/xml/src/xtypes_parser.rs::tests::spec_map_members_are_read`, `crates/xml/src/xtypes_parser.rs::tests::spec_map_typedef_is_read`
 
-**Status:** done — `type="nonBasic"` names the type through `nonBasicTypeName`; maps read `mapMaxLength`, `mapKeyType`, `mapKeyNonBasicTypeName` and `mapKeyStringMaxLength`. A type name in `type` without `nonBasic` is a vendor form. Commits `4e479ef9e18`, `af517d979de`, `e34118cc9a6`.
+**Status:** done — `type="nonBasic"` names the type through `nonBasicTypeName`; maps read `mapMaxLength`, `mapKeyType`, `mapKeyNonBasicTypeName` and `mapKeyStringMaxLength`. A type name in `type` without `nonBasic` is a vendor form. Commits `5563ccdbefe`, `147ffda178f`, `a9cb28ca85c`.
 
 ### §7.3.3.1 Organization and management of types
 
@@ -1837,7 +1837,7 @@ Chameleon Schema Definition pattern."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`, `crates/xml/tests/schema_validation.rs::xsd_valid_documents_are_read`
 
-**Status:** done — the OMG's file is in the tree unchanged and defines the types of all constructs (`structDecl`, `unionDecl`, `enumDecl`, …). Commits `32aa062decf`, `8bf46985f11`.
+**Status:** done — the OMG's file is in the tree unchanged and defines the types of all constructs (`structDecl`, `unionDecl`, `enumDecl`, …). Commits `58e5bb48580`, `b04504693c4`.
 
 ### §7.3.3.3 `<types>` as top-level element in the namespace
 
@@ -1891,7 +1891,7 @@ contains the XSD type definition for domains and their contained entities."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`, `crates/xml/tests/schema_validation.rs::schema_invalid_documents`, `crates/xml/tests/normative_forms.rs::registered_name_and_format_are_carried`
 
-**Status:** done — the OMG's file is in the tree unchanged. The reader reads the element `registered_name` and the attribute `format` at `<register_type>` and the element `registered_name` at `<topic>`. `qos_profile_ref` and `topic_filter` at `<topic>` are not in the file; they are vendor forms. Commits `8bf46985f11`, `e34118cc9a6`. Both tests need `xmllint`.
+**Status:** done — the OMG's file is in the tree unchanged. The reader reads the element `registered_name` and the attribute `format` at `<register_type>` and the element `registered_name` at `<topic>`. `qos_profile_ref` and `topic_filter` at `<topic>` are not in the file; they are vendor forms. Commits `b04504693c4`, `a9cb28ca85c`. Both tests need `xmllint`.
 
 ### §7.3.4.3 `<domain_library>` as root element in the namespace
 
@@ -1914,7 +1914,7 @@ Registered Types that can be read and written in the Domain."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::domain_with_two_topics_and_register_types`, `crates/xml/src/domain.rs::tests::parse_domain_with_topic`, `crates/xml/tests/dds_xml_full.rs::misplaced_or_unknown_children_are_rejected`
 
-**Status:** done — another child of `<domain>` or `<topic>` ends with `XmlError::UnknownElement`; with `report_and_skip` it is left out and reported. Commit `8771c676858`.
+**Status:** done — another child of `<domain>` or `<topic>` ends with `XmlError::UnknownElement`; with `report_and_skip` it is left out and reported. Commit `78f3cbe292d`.
 
 ### §7.3.4.4.1 `register_type` with `type_ref`
 
@@ -1926,7 +1926,7 @@ attribute."
 
 **Tests:** `crates/xml/src/domain.rs::tests::parse_domain_with_topic`, `crates/xml/tests/dds_xml_full.rs::deployment_file_with_inheritance_and_cross_references`
 
-**Status:** done — `type_ref` is read, resolved against the `<types>` of the document and passed on as the topic's type name. Commits `dd4ebb955e6`, `43146783064`.
+**Status:** done — `type_ref` is read, resolved against the `<types>` of the document and passed on as the topic's type name. Commits `abbf9915368`, `a83476cb034`.
 
 ### §7.3.4.4.1 `type_ref` is mandatory
 
@@ -1937,7 +1937,7 @@ using the type_ref XML attribute."
 
 **Tests:** `crates/xml/src/domain.rs::tests::register_type_missing_type_ref_rejected`, `crates/xml/src/participant.rs::tests::participant_register_type_without_type_ref_rejected`
 
-**Status:** done — `parse_register_type` rejects a `register_type` without `type_ref` with `XmlError::MissingRequiredElement`: the text requires the reference ("shall provide"), the OMG's XSD has `use="optional"`. Decision for the text; the XSD-valid document without `type_ref` is not read. Commit `dd4ebb955e6`.
+**Status:** done — `parse_register_type` rejects a `register_type` without `type_ref` with `XmlError::MissingRequiredElement`: the text requires the reference ("shall provide"), the OMG's XSD has `use="optional"`. Decision for the text; the XSD-valid document without `type_ref` is not read. Commit `abbf9915368`.
 
 ### §7.3.4.4.1 The type is defined before
 
@@ -1947,7 +1947,7 @@ using the type_ref XML attribute."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::register_type_with_dangling_type_ref_errors`, `crates/xml/tests/spec_items.rs::register_type_refers_to_a_type_defined_before_the_domain`
 
-**Status:** done — `resolve_participant` resolves `type_ref` through `resolve_type`; a type that no `<types>` defines ends with `XmlError::UnresolvedReference`, so does a type defined only by a `<types>` after the domain library (`DomainLibrary::type_libraries_before`). Commits `dd4ebb955e6`, `43146783064`.
+**Status:** done — `resolve_participant` resolves `type_ref` through `resolve_type`; a type that no `<types>` defines ends with `XmlError::UnresolvedReference`, so does a type defined only by a `<types>` after the domain library (`DomainLibrary::type_libraries_before`). Commits `abbf9915368`, `a83476cb034`.
 
 ### §7.3.4.4.1 The registration name may differ from the type name
 
@@ -1996,7 +1996,7 @@ attribute may be used as defined in clause 7.3.2.4.2."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::inline_topic_qos_base_name_inherits_from_profile`, `crates/xml/src/registry.rs::tests::inline_container_inherits_base_name_profile`, `crates/xml/tests/spec_items.rs::domain_example`
 
-**Status:** done — `parse_entity_qos` reads `base_name` at the QoS (`EntityQos::base_name`); when resolving, the profile is the base and the policies given inline override it. Commits `5dcde9b5717`, `b956dbaceed`.
+**Status:** done — `parse_entity_qos` reads `base_name` at the QoS (`EntityQos::base_name`); when resolving, the profile is the base and the policies given inline override it. Commits `86f47818638`, `f43f92d9e00`.
 
 ### §7.3.4.4.1.1 Example (Non-normative)
 
@@ -2018,7 +2018,7 @@ the base_name XML attribute."
 
 **Tests:** `crates/xml/src/domain.rs::tests::domain_id_inherited_through_base_name`, `crates/xml/src/domain.rs::tests::domain_inheritance_chain_resolves_via_resolve_chain`, `crates/xml/tests/dds_xml_full.rs::domain_inheritance_carries_topics_and_types`
 
-**Status:** done — `domain_id`, the registered types and the topics are inherited through the chain; an entry of the same name in the derived domain replaces the base's. Commits `8771c676858`, `5f5d7aaa3e9`.
+**Status:** done — `domain_id`, the registered types and the topics are inherited through the chain; an entry of the same name in the derived domain replaces the base's. Commits `78f3cbe292d`, `388c784b2d9`.
 
 ### §7.3.4.4.2 Topics and types of the base
 
@@ -2028,7 +2028,7 @@ the base_name XML attribute."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::domain_inheritance_carries_topics_and_types`
 
-**Status:** done — `effective_domain` merges `register_types` and `topics` of the chain; `resolve_participant` uses the effective domain, a writer at a topic of the base resolves. Commit `8771c676858`.
+**Status:** done — `effective_domain` merges `register_types` and `topics` of the chain; `resolve_participant` uses the effective domain, a writer at a topic of the base resolves. Commit `78f3cbe292d`.
 
 ### §7.3.4.4.2 Only from domains defined before
 
@@ -2039,7 +2039,7 @@ have been defined before."
 
 **Tests:** `crates/xml/src/domain.rs::tests::domain_forward_base_name_rejected`
 
-**Status:** done — `effective_domain_id` and `effective_domain` reject a base that stands later in the library, with `XmlError::InvalidXml`. Commit `5f5d7aaa3e9`.
+**Status:** done — `effective_domain_id` and `effective_domain` reject a base that stands later in the library, with `XmlError::InvalidXml`. Commit `388c784b2d9`.
 
 ### §7.3.4.4.2.1 Example (Non-normative)
 
@@ -2089,7 +2089,7 @@ contains the XSD type definition for all the DDS entities."
 
 **Tests:** `crates/xml/tests/schema_validation.rs::every_in_tree_schema_compiles`, `crates/xml/tests/schema_validation.rs::schema_invalid_documents`, `crates/xml/tests/normative_forms.rs::data_reader_filters_and_conditions_are_read`
 
-**Status:** done — the OMG's file is in the tree unchanged. The elements `content_filter`, `status_condition`, `read_condition` and `query_condition` at `<data_reader>` are read (`DataReaderEntry`). Commits `8bf46985f11`, `efd043b8ec4`. Both tests need `xmllint`.
+**Status:** done — the OMG's file is in the tree unchanged. The elements `content_filter`, `status_condition`, `read_condition` and `query_condition` at `<data_reader>` are read (`DataReaderEntry`). Commits `b04504693c4`, `97a817ee16c`. Both tests need `xmllint`.
 
 ### §7.3.5.3 `<domain_participant_library>` as root element in the namespace
 
@@ -2126,7 +2126,7 @@ declaration of its parent entity."
 
 **Tests:** `crates/xml/src/participant.rs::tests::parse_pub_with_writer`, `crates/xml/tests/dds_xml_full.rs::resolve_participant_returns_flat_snapshot`
 
-**Status:** done — DataWriter under Publisher, DataReader under Subscriber, both under the DomainParticipant are read; an entity under another element ends with `XmlError::UnknownElement` (item below). Commit `8771c676858`.
+**Status:** done — DataWriter under Publisher, DataReader under Subscriber, both under the DomainParticipant are read; an entity under another element ends with `XmlError::UnknownElement` (item below). Commit `78f3cbe292d`.
 
 ### §7.3.5.4.1 Entity under a wrong element
 
@@ -2137,7 +2137,7 @@ under the declaration of its parent entity."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::misplaced_or_unknown_children_are_rejected`, `crates/xml/tests/schema_validation.rs::schema_invalid_documents`
 
-**Status:** done — a `<data_reader>` under `<publisher>`, a `<data_writer>` under `<subscriber>` and any other child of `<domain_participant>`, `<data_writer>` or `<data_reader>` ends with `XmlError::UnknownElement` and the path; with `report_and_skip` it is left out and reported. The OMG's XSD rejects the same documents (`schema_invalid_documents`, row `data_reader_under_publisher`). Commit `8771c676858`.
+**Status:** done — a `<data_reader>` under `<publisher>`, a `<data_writer>` under `<subscriber>` and any other child of `<domain_participant>`, `<data_writer>` or `<data_reader>` ends with `XmlError::UnknownElement` and the path; with `report_and_skip` it is left out and reported. The OMG's XSD rejects the same documents (`schema_invalid_documents`, row `data_reader_under_publisher`). Commit `78f3cbe292d`.
 
 ### §7.3.5.4.1.1 Example (Non-normative)
 
@@ -2162,7 +2162,7 @@ context of the DomainParticipant."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::cross_library_domain_ref_resolves`, `crates/xml/tests/dds_xml_full.rs::deployment_file_with_inheritance_and_cross_references`, `crates/xml/tests/dds_xml_full.rs::participant_local_definitions_resolve_writers`, `crates/xml/tests/dds_xml_full.rs::participant_definition_overrides_the_domains`
 
-**Status:** done — writers and readers find the domain's topics; `<topic>` and `<register_type>` in a participant are definitions of their own that join the domain's and replace those of the same name, as the OMG's XSD types them. Commits `5f5d7aaa3e9`, `8d65ac4cd8f`.
+**Status:** done — writers and readers find the domain's topics; `<topic>` and `<register_type>` in a participant are definitions of their own that join the domain's and replace those of the same name, as the OMG's XSD types them. Commits `388c784b2d9`, `97e6562c58c`.
 
 ### §7.3.5.4.2 `domain_ref` without a library name
 
@@ -2172,7 +2172,7 @@ context of the DomainParticipant."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::unqualified_domain_ref_resolves`
 
-**Status:** done — `find_domain_in_library` resolves `domain_ref="MyDomain"` (without `library::`) through the first library that has a domain of that name, in document order; `library::name` stays possible. The PDF does not fix the form of the reference. Commit `5f5d7aaa3e9`.
+**Status:** done — `find_domain_in_library` resolves `domain_ref="MyDomain"` (without `library::`) through the first library that has a domain of that name, in document order; `library::name` stays possible. The PDF does not fix the form of the reference. Commit `388c784b2d9`.
 
 ### §7.3.5.4.2 DomainParticipant without `domain_ref`
 
@@ -2182,7 +2182,7 @@ context of the DomainParticipant."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::participant_without_domain_ref_but_with_domain_id_resolves`, `crates/xml/tests/dds_xml_full.rs::participant_without_domain_resolves_its_own_topics`, `crates/xml/tests/dds_xml_full.rs::participant_domain_id_overrides_the_referenced_domain`, `crates/xml/src/participant.rs::tests::missing_domain_ref_parses_and_is_left_to_the_resolver`
 
-**Status:** done — a participant without `domain_ref` but with `domain_id` resolves, without a domain and with its own definitions; without both attributes resolving ends with `XmlError::UnresolvedReference`. Commit `5f5d7aaa3e9`.
+**Status:** done — a participant without `domain_ref` but with `domain_id` resolves, without a domain and with its own definitions; without both attributes resolving ends with `XmlError::UnresolvedReference`. Commit `388c784b2d9`.
 
 ### §7.3.5.4.2 `domain_id` overrides the domain's
 
@@ -2230,7 +2230,7 @@ before its own definition."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::participant_forward_base_name_rejected`
 
-**Status:** done — `participant_chain` rejects a base that does not stand before the derived participant in document order (library, then entry), with `XmlError::InvalidXml`. Commit `5f5d7aaa3e9`.
+**Status:** done — `participant_chain` rejects a base that does not stand before the derived participant in document order (library, then entry), with `XmlError::InvalidXml`. Commit `388c784b2d9`.
 
 ### §7.3.5.4.3.1 Example (Non-normative)
 
@@ -2265,7 +2265,7 @@ in whose context they are being defined."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::datawriter_does_not_inherit_publisher_qos`, `crates/xml/tests/dds_xml_full.rs::publisher_without_qos_yields_none`
 
-**Status:** done — a `<data_writer>` without QoS of its own and without `base_name` has no QoS from its `<publisher>`; a `<data_reader>` likewise. Commit `8771c676858`.
+**Status:** done — a `<data_writer>` without QoS of its own and without `base_name` has no QoS from its `<publisher>`; a `<data_reader>` likewise. Commit `78f3cbe292d`.
 
 ### §7.3.5.4.4 `base_name` on inline QoS
 
@@ -2276,7 +2276,7 @@ QoS Profile using the base_name XML attribute."
 
 **Tests:** `crates/xml/tests/dds_xml_full.rs::inline_topic_qos_base_name_inherits_from_profile`, `crates/xml/tests/dds_xml_full.rs::repeated_inline_qos_container_is_rejected`, `crates/xml/src/registry.rs::tests::inline_container_inherits_base_name_profile`, `crates/xml/tests/normative_forms.rs::the_participant_example_of_the_specification`
 
-**Status:** done — `parse_entity_qos` reads `base_name` at every inline QoS; the named profile is the base. A second QoS container of the same kind at an entity ends with `XmlError::InvalidXml`. `qos_profile_ref` at `<data_writer>`, `<data_reader>` and `<topic>` is a vendor form. Commits `5dcde9b5717`, `b956dbaceed`, `92451a0a65f`, `e34118cc9a6`.
+**Status:** done — `parse_entity_qos` reads `base_name` at every inline QoS; the named profile is the base. A second QoS container of the same kind at an entity ends with `XmlError::InvalidXml`. `qos_profile_ref` at `<data_writer>`, `<data_reader>` and `<topic>` is a vendor form. Commits `86f47818638`, `f43f92d9e00`, `4ffbcec7593`, `a9cb28ca85c`.
 
 ### §7.3.5.4.4.1 Example (Non-normative)
 
@@ -2394,7 +2394,7 @@ before its own definition."
 
 **Tests:** `crates/xml/tests/spec_items.rs::application_inherits_only_from_libraries_defined_before_it`, `crates/xml/tests/dds_xml_full.rs::participant_forward_base_name_rejected`
 
-**Status:** done — the chain of the base is checked for document order as for DomainParticipants (`participant_chain`), and the base's library must stand before the application library (`ApplicationLibrary::participant_libraries_before`); otherwise `XmlError::InvalidXml`. Commits `5f5d7aaa3e9`, `a45564ecb6b`.
+**Status:** done — the chain of the base is checked for document order as for DomainParticipants (`participant_chain`), and the base's library must stand before the application library (`ApplicationLibrary::participant_libraries_before`); otherwise `XmlError::InvalidXml`. Commits `388c784b2d9`, `5e03ee5e374`.
 
 ### §7.3.6.4.2.1 Example (Non-normative)
 
@@ -2457,7 +2457,7 @@ below. ZeroDDS ships an XSD of its own for the envelope of a sample (item on
 
 **Tests:** `crates/xml/tests/types_and_samples.rs::t19_sample_parse_struct`, `crates/xml/tests/types_and_samples.rs::t23_sample_with_nested_struct`, `crates/xml/tests/types_and_samples.rs::t25_sample_optional_member_missing_ok`, `crates/xml/src/sample.rs::tests::missing_member_rejected`, `crates/xml/src/sample.rs::tests::parse_sample_unknown_member_rejected`, `crates/xml/src/sample.rs::tests::parse_sample_duplicate_member_rejected`, `crates/xml/src/sample.rs::tests::parse_sample_reads_inherited_members`
 
-**Status:** done — a field without an element is an error unless it is `optional`; a child without a field (looked up along the `baseType` chain too) and a second element of the same field end with `XmlError`. Commits `8771c676858`, `cbc4ce59003`.
+**Status:** done — a field without an element is an error unless it is `optional`; a child without a field (looked up along the `baseType` chain too) and a second element of the same field end with `XmlError`. Commits `78f3cbe292d`, `0fc2106581d`.
 
 ### §7.3.7.3.1 Fields unordered
 
@@ -2467,7 +2467,7 @@ below. ZeroDDS ships an XSD of its own for the envelope of a sample (item on
 
 **Tests:** `crates/xml/tests/spec_items.rs::sample_fields_come_in_any_order`, `crates/xml/src/sample.rs::tests::parse_sample_members_in_any_order`, `crates/xml/src/sample.rs::tests::parse_sample_duplicate_member_rejected`
 
-**Status:** done — the fields are looked up by name, the order does not matter; a duplicate element ends with `XmlError`. Commit `cbc4ce59003`.
+**Status:** done — the fields are looked up by name, the order does not matter; a duplicate element ends with `XmlError`. Commit `0fc2106581d`.
 
 ### §7.3.7.3.1 Values according to Table 7.1: boolean
 
@@ -2487,7 +2487,7 @@ below. ZeroDDS ships an XSD of its own for the envelope of a sample (item on
 
 **Tests:** `crates/xml/src/sample.rs::tests::parse_sample_enum_rejects_unknown_literal`, `crates/xml/tests/spec_items.rs::sample_values_follow_table_7_1`, `crates/xml/tests/spec_items.rs::primitive_types_example`
 
-**Status:** done — the text of a field of an enumeration type is compared with the type's literals; a literal the type does not declare ends with `XmlError`. Commit `8771c676858`.
+**Status:** done — the text of a field of an enumeration type is compared with the type's literals; a literal the type does not declare ends with `XmlError`. Commit `78f3cbe292d`.
 
 ### §7.3.7.3.1 Values according to Table 7.1: long decimal
 
@@ -2509,7 +2509,7 @@ or LENGTH_UNLIMITED."
 
 **Tests:** `crates/xml/src/sample.rs::tests::parse_sample_long_hex_and_constant_names`, `crates/xml/tests/spec_items.rs::sample_values_follow_table_7_1`
 
-**Status:** done — `parse_long_sample` reads `0x10` and `LENGTH_UNLIMITED` (and the names of the constants of §7.2.2); `short` and `long long` read the hexadecimal form alike. Commit `8771c676858`.
+**Status:** done — `parse_long_sample` reads `0x10` and `LENGTH_UNLIMITED` (and the names of the constants of §7.2.2); `short` and `long long` read the hexadecimal form alike. Commit `78f3cbe292d`.
 
 ### §7.3.7.3.1 Values according to Table 7.1: unsigned long
 
@@ -2542,7 +2542,7 @@ hexadecimal.
 
 **Tests:** `crates/xml/tests/spec_items.rs::sample_values_follow_table_7_1`, `crates/xml/src/sample.rs::tests::parse_sample_long_hex_and_constant_names`
 
-**Status:** done — `parse_long_sample` and `parse_ulong_sample` accept the names of the constants; a field of type `Duration_t` is a structure with `sec` and `nanosec`, `<sec>DURATION_INFINITE_SEC</sec>` gives 2147483647. Commit `8771c676858`.
+**Status:** done — `parse_long_sample` and `parse_ulong_sample` accept the names of the constants; a field of type `Duration_t` is a structure with `sec` and `nanosec`, `<sec>DURATION_INFINITE_SEC</sec>` gives 2147483647. Commit `78f3cbe292d`.
 
 ### §7.3.7.3.1 Own XSD following the chameleon pattern
 
@@ -2568,7 +2568,7 @@ type of the element itself."
 
 **Tests:** `crates/xml/src/sample.rs::tests::parse_sample_with_sequence_using_item_tag`, `crates/xml/src/sample.rs::tests::parse_sample_with_array_using_item_tag`, `crates/xml/src/sample.rs::tests::parse_sample_array_length_is_checked`, `crates/xml/src/sample.rs::tests::parse_sample_sequence_over_bound_rejected`, `crates/xml/src/sample.rs::tests::parse_sample_multidimensional_array_is_nested`, `crates/xml/src/sample.rs::tests::parse_sample_with_empty_sequence`, `crates/xml/tests/types_and_samples.rs::t21_sample_with_sequence_items`, `crates/xml/src/sample.rs::tests::serialize_sample_uses_item_tag_for_sequence`
 
-**Status:** done — the length of a fixed-length field and the bound of a sequence are checked (`XmlError::ValueOutOfRange`); a multi-dimensional field is read as nested levels of `item`. Commit `8142acb0c21`.
+**Status:** done — the length of a fixed-length field and the bound of a sequence are checked (`XmlError::ValueOutOfRange`); a multi-dimensional field is read as nested levels of `item`. Commit `38e5855e99f`.
 
 ### §7.3.7.3.2.1 Example (Non-normative)
 
@@ -2600,7 +2600,7 @@ type of the element itself."
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — Example; §7.3.7.3 has no normative rule for unions. The example names the active field without a discriminator; `parse_union_value` reads it (`parse_sample_union_without_discriminator`), and the form with `<discriminator>` is read as well (`parse_sample_with_union`). Commit `cbc4ce59003`.
+**Status:** `n/a (informative)` — Example; §7.3.7.3 has no normative rule for unions. The example names the active field without a discriminator; `parse_union_value` reads it (`parse_sample_union_without_discriminator`), and the form with `<discriminator>` is read as well (`parse_sample_with_union`). Commit `0fc2106581d`.
 
 ### §7.3.7.4.3 Sequences (non-normative)
 
@@ -2635,7 +2635,7 @@ type of the element itself."
 
 **Tests:** `crates/xml/tests/spec_items.rs::primitive_types_example`
 
-**Status:** done — `primitive_types_example` reads all fields of the example and checks the values. Table 7.1 has no rows for `short`, `unsigned short`, `long long`, `unsigned long long`, `float`, `double`, `octet` and `char`; their form is described only by this example. Commit `a45564ecb6b`.
+**Status:** done — `primitive_types_example` reads all fields of the example and checks the values. Table 7.1 has no rows for `short`, `unsigned short`, `long long`, `unsigned long long`, `float`, `double`, `octet` and `char`; their form is described only by this example. Commit `5e03ee5e374`.
 
 ---
 
@@ -2703,8 +2703,13 @@ http://www.omg.org/spec/DDS-XML."
 
 ## Audit-Status
 
-165 done / 0 partial / 0 open / 51 n/a (informative) / 0 n/a (rejected). Before: 79 / 23 / 63 / 51 / 0.
+165 done / 0 partial / 0 open / 0 blocked / 51 n/a (informative).
 
-Test run: Linux test host, state `2de529e05a6`: `zerodds-xml` lib tests 313 passed; the run of the integration tests aborted in `fuzz_smoke` with a stack overflow (fixed in `24780539a95`). The tests created or changed since (`spec_items`, `fuzz_smoke`, `schema_validation`, `typeobject_bridge` and the tests of commits `a45564ecb6b`, `43146783064`, `2120724498f`) have only been compiled on the Mac (`cargo clippy --all-targets`), not run; a run on the Linux test host is pending.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document dds-xml-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-xml --all-targets` (job `merge-rust-xml`) — 201 tests green.
+* `cargo nextest run --profile merge -p zerodds-xml-compose --all-targets` (job `merge-rust-xml-compose`) — 1 test green.
+
+202 cited tests green, 0 not green.
 
 Open items: none.

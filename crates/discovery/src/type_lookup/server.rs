@@ -239,28 +239,28 @@ impl TypeLookupServer {
             };
             for dep in dependencies {
                 let complete = TypeIdentifier::EquivalenceHashComplete(dep);
-                if !types.iter().any(|t| t.type_identifier == complete) {
-                    if let Some(c) = self.registry.get_complete(&dep) {
-                        types.push(TypeIdentifierTypeObjectPair {
-                            type_identifier: complete.clone(),
-                            type_object: TypeObject::Complete(c.clone()),
+                if !types.iter().any(|t| t.type_identifier == complete)
+                    && let Some(c) = self.registry.get_complete(&dep)
+                {
+                    types.push(TypeIdentifierTypeObjectPair {
+                        type_identifier: complete.clone(),
+                        type_object: TypeObject::Complete(c.clone()),
+                    });
+                    if let Some(minimal) = self.registry.minimal_hash_of_complete(&dep) {
+                        complete_to_minimal.push(TypeIdentifierPair {
+                            type_identifier1: complete,
+                            type_identifier2: TypeIdentifier::EquivalenceHashMinimal(minimal),
                         });
-                        if let Some(minimal) = self.registry.minimal_hash_of_complete(&dep) {
-                            complete_to_minimal.push(TypeIdentifierPair {
-                                type_identifier1: complete,
-                                type_identifier2: TypeIdentifier::EquivalenceHashMinimal(minimal),
-                            });
-                        }
                     }
                 }
                 let minimal = TypeIdentifier::EquivalenceHashMinimal(dep);
-                if !types.iter().any(|t| t.type_identifier == minimal) {
-                    if let Some(m) = self.registry.get_minimal(&dep) {
-                        types.push(TypeIdentifierTypeObjectPair {
-                            type_identifier: minimal,
-                            type_object: TypeObject::Minimal(m.clone()),
-                        });
-                    }
+                if !types.iter().any(|t| t.type_identifier == minimal)
+                    && let Some(m) = self.registry.get_minimal(&dep)
+                {
+                    types.push(TypeIdentifierTypeObjectPair {
+                        type_identifier: minimal,
+                        type_object: TypeObject::Minimal(m.clone()),
+                    });
                 }
             }
         }
@@ -600,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_get_types_pairs_a_complete_identifier_with_its_minimal_hash() {
+    fn xtypes_7_6_3_3_4_2_handle_get_types_pairs_a_complete_identifier_with_its_minimal_hash() {
         use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
         let mut server = TypeLookupServer::new();
         let complete = TypeObjectBuilder::struct_type("::tl::Pair")
@@ -726,14 +726,6 @@ mod tests {
         };
         let reply = server.handle_get_types(&req);
         assert!(reply.types.is_empty());
-    }
-
-    #[test]
-    fn pagination_offset_encoding_roundtrip() {
-        let cp = encode_continuation_offset(123_456);
-        assert_eq!(decode_continuation_offset(&cp), 123_456);
-        let cp = encode_continuation_offset(0);
-        assert_eq!(decode_continuation_offset(&cp), 0);
     }
 
     #[test]

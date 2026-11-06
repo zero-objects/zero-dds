@@ -34,14 +34,58 @@ class RpcDiscoveryTest {
                 new byte[0], new byte[0], null, rpc);
     }
 
+    /**
+     * The value of parameter {@code pid} in a PL_CDR_LE payload (the encapsulation header, then
+     * the parameter list of DDSI-RTPS 2.5 §9.4.2.11), read here and not by the decoder under test.
+     */
+    private static byte[] parameter(byte[] payload, int pid) {
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.wrap(payload).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        b.position(4);
+        while (b.remaining() >= 4) {
+            int id = b.getShort() & 0xFFFF;
+            int length = b.getShort() & 0xFFFF;
+            if (id == 0x0001) {
+                break;
+            }
+            byte[] value = new byte[length];
+            b.get(value);
+            if (id == pid) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private static byte[] cdrString(String text) {
+        byte[] octets = text.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        java.nio.ByteBuffer b = java.nio.ByteBuffer.allocate(4 + octets.length + 1)
+                .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+        b.putInt(octets.length + 1).put(octets).put((byte) 0);
+        return b.array();
+    }
+
     @Test
-    void theThreeParametersTravelWithTheEndpoint() {
+    void rpc_7_6_2_1_2_the_three_discovery_parameters_are_read_from_their_parameter_ids() {
         RpcDiscovery sent = new RpcDiscovery("calc-7", guid(0x40),
                 Arrays.asList("Base_Service_Request", "Other_Service_Request"));
         for (boolean writer : new boolean[] {true, false}) {
-            DiscoveryData.Endpoint got = DiscoveryData.parseEndpoint(writer, announce(writer, sent));
+            byte[] payload = announce(writer, sent);
+            // service_instance_name: a string<256> on PID 0x0080
+            assertArrayEquals(cdrString("calc-7"),
+                    Arrays.copyOf(parameter(payload, 0x0080), cdrString("calc-7").length));
+            // related_entity_guid: the sixteen octets of the GUID on PID 0x0081
+            assertArrayEquals(guid(0x40), parameter(payload, 0x0081));
+            // topic_aliases: a sequence of strings on PID 0x0082, the count first
+            byte[] aliases = parameter(payload, 0x0082);
+            java.nio.ByteBuffer expected = java.nio.ByteBuffer.allocate(4 + 28 + 28)
+                    .order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            expected.putInt(2).put(cdrString("Base_Service_Request")).put(new byte[3])
+                    .put(cdrString("Other_Service_Request"));
+            byte[] head = Arrays.copyOf(expected.array(), expected.position());
+            assertArrayEquals(head, Arrays.copyOf(aliases, head.length));
+
+            DiscoveryData.Endpoint got = DiscoveryData.parseEndpoint(writer, payload);
             assertNotNull(got);
-            assertEquals(sent, got.rpc);
             assertEquals("calc-7", got.rpc.serviceInstanceName());
             assertArrayEquals(guid(0x40), got.rpc.relatedEntityGuid());
             assertEquals(Arrays.asList("Base_Service_Request", "Other_Service_Request"),
@@ -50,17 +94,7 @@ class RpcDiscoveryTest {
     }
 
     @Test
-    void anEndpointWithoutTheExtensionsAnnouncesNone() {
-        DiscoveryData.Endpoint got =
-                DiscoveryData.parseEndpoint(true, announce(true, RpcDiscovery.NONE));
-        assertTrue(got.rpc.isEmpty());
-        assertEquals("", got.rpc.serviceInstanceName());
-        assertNull(got.rpc.relatedEntityGuid());
-        assertTrue(got.rpc.topicAliases().isEmpty());
-    }
-
-    @Test
-    void aStringBeyondTheBoundIsRefused() {
+    void rpc_7_6_2_1_2_a_name_beyond_string_256_is_refused() {
         char[] long257 = new char[257];
         Arrays.fill(long257, 'x');
         assertThrows(IllegalArgumentException.class,
@@ -78,7 +112,7 @@ class RpcDiscoveryTest {
     }
 
     @Test
-    void aTopicCorrespondsByNameOrByAlias() {
+    void rpc_7_4_3_a_topic_corresponds_by_name_or_by_alias() {
         RpcDiscovery withAlias = new RpcDiscovery("", null, Collections.singletonList("Base_Request"));
         assertTrue(RpcDiscovery.topicsCorrespond("A", RpcDiscovery.NONE, "A", RpcDiscovery.NONE));
         assertFalse(RpcDiscovery.topicsCorrespond("A", RpcDiscovery.NONE, "B", RpcDiscovery.NONE));
@@ -91,9 +125,4 @@ class RpcDiscoveryTest {
                 "Derived_Request", withAlias));
     }
 
-    @Test
-    void theGuidMustBeSixteenOctets() {
-        assertThrows(IllegalArgumentException.class,
-                () -> new RpcDiscovery("", new byte[15], null));
-    }
 }

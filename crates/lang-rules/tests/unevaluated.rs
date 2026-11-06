@@ -59,11 +59,11 @@ fn an_array_length_that_does_not_evaluate_is_refused() {
 /// and until now nothing reached it: the test above goes through
 /// `rust_items` → `adapter/cst.rs`, whose message is the differently
 /// worded "array length does not evaluate" from a different function in
-/// a different file. `docs/codec-coverage-report.md` measured the site
+/// a different file. `0b2e8df9f6b:docs/codec-coverage-report.md` measured the site
 /// at zero regions under every configuration including the whole
 /// workspace. The fix is right; it had no test.
 #[test]
-fn an_array_length_that_does_not_evaluate_is_refused_by_the_codec_too() {
+fn xtypes_7_4_an_array_length_that_does_not_evaluate_is_refused_by_the_codec_too() {
     let idl = "struct S { long a[1/0]; };";
     let parsed = zerodds_idl_parse::parse(idl);
     let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "unevaluated.idl");

@@ -2,19 +2,24 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! Go reliable-stream endpoint: the pure-Go reliable state machine + frame
-//! codec (`endpoints/go/reliable.go`) driven by an async-decoupled writer
-//! (`endpoints/go/reliable_app`) against the shared Rust reliable peer, which
-//! injects loss. Proves loss recovery (peer drops → app retransmits on
-//! ACKNACK → all samples delivered gap-free), the unit + byte-golden suite,
-//! the in-process runnable example, and the producer-latency decoupling.
-//! Gated on `go`.
+//! codec (`endpoints/go/reliable.go`) driven by its async-decoupled writer
+//! against the shared Rust reliable peer, which injects loss: the peer
+//! drops, the app retransmits on ACKNACK, all samples arrive gap-free. The
+//! samples are the `Ping` of the codec the Go generator writes from the IDL
+//! (`codegen::source`), so the run checks IDL, generated codec and runtime
+//! together; the in-process runnable example, which the endpoints-gate column of
+//! Go does not run; and the producer-latency comparison. The unit and
+//! byte-golden suite runs in that column (`go test`). Gated on `go`.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 
-use zerodds_endpoint_e2e::{bind_reliable_peer, reliable_receive};
+use zerodds_endpoint_e2e::codegen::{Language, endpoints_dir, runtime_dir, scratch_dir, source};
+use zerodds_endpoint_e2e::{
+    RELIABLE_SAMPLES, assert_reliable_pings, bind_reliable_peer, reliable_receive,
+};
 
 /// A `go` command with cgo off.
 ///
@@ -60,6 +65,103 @@ fn go_build(pkg: &str, tag: &str) -> PathBuf {
     bin
 }
 
+/// The reliable app: the `Ping` codec `codegen::source(Language::Go)` writes
+/// from the IDL, and a sender over the SDK's async-decoupled
+/// `ReliableAsyncWriter` (`endpoints/go/reliable.go`) that enqueues the
+/// encoded `Ping { Seq: i, Msg: "reliable" }` for each sample.
+const GO_RELIABLE_MAIN: &str = r#"
+type udpTransport struct {
+	conn *net.UDPConn
+}
+
+func (u *udpTransport) Deliver(frame []byte) error {
+	_, err := u.conn.Write(frame)
+	return err
+}
+
+func (u *udpTransport) Receive(buf []byte) (int, bool, error) {
+	_ = u.conn.SetReadDeadline(time.Now().Add(20 * time.Millisecond))
+	n, err := u.conn.Read(buf)
+	if err != nil {
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			return 0, true, nil
+		}
+		return 0, false, err
+	}
+	return n, false, nil
+}
+
+func main() {
+	port, _ := strconv.Atoi(os.Args[1])
+	n, _ := strconv.Atoi(os.Args[2])
+	addr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		panic(err)
+	}
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		panic(err)
+	}
+	defer conn.Close()
+	w := zerodds.NewReliableAsyncWriter(&udpTransport{conn: conn}, 0,
+		zerodds.XrceObjectID(0x001, uint16(zerodds.ObjkDataWriter)))
+	// XCDR2 little-endian; the PL_CDR1 fields never fire under plain XCDR2.
+	zd_framing := zdwire.PlCdr1Framing{
+		PidFlags:                  "sentinel-must-understand",
+		HighestShortID:            16128,
+		PadDeclaredLength:         true,
+		PadDeclaredOptionalLength: true,
+		MemberMustUnderstand:      true,
+		PadAfterValue:             true,
+	}
+	for i := 0; i < n; i++ {
+		zd_w := zdwire.NewWriter(zdwire.LittleEndian, 4, zd_framing, false)
+		Zd_enc_Ping(zd_w, Ping{Seq: int32(i), Msg: "reliable"})
+		w.Enqueue(zd_w.Finish())
+	}
+	// Returns once every sample was submitted and acknowledged.
+	w.Close()
+	fmt.Printf("SENT count=%d\n", n)
+}
+"#;
+
+/// Writes the generated module and the reliable app into a scratch module
+/// with `go.mod` naming `runtime/go` and `endpoints/go`, and builds it.
+fn build_reliable_app(tag: &str) -> PathBuf {
+    let dir = scratch_dir(&format!("go_reliable_{tag}"));
+    let src = format!(
+        "package main\n\nimport (\n\t\"fmt\"\n\t\"net\"\n\t\"os\"\n\t\"strconv\"\n\t\"time\"\n\n\
+         \t\"zdwire\"\n\tzerodds \"zeroddsendpoint\"\n)\n\n{}\n{GO_RELIABLE_MAIN}",
+        source(Language::Go)
+    );
+    std::fs::write(dir.join("main.go"), src).expect("write main.go");
+    std::fs::write(
+        dir.join("go.mod"),
+        format!(
+            "module reliableapp\n\ngo 1.21\n\nrequire zdwire v0.0.0\n\nreplace zdwire => {}\n\n\
+             require zeroddsendpoint v0.0.0\n\nreplace zeroddsendpoint => {}\n",
+            runtime_dir("go").display(),
+            endpoints_dir("go").display()
+        ),
+    )
+    .expect("write go.mod");
+    let bin = dir.join("reliable_app");
+    let out = go_command()
+        .arg("build")
+        .arg("-o")
+        .arg(&bin)
+        .arg(".")
+        .current_dir(&dir)
+        .output()
+        .expect("spawn go build");
+    assert!(
+        out.status.success(),
+        "go build of the reliable app failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    bin
+}
+
 fn spawn_reliable_app(bin: &std::path::Path, port: u16, n: usize) -> Child {
     Command::new(bin)
         .arg(port.to_string())
@@ -67,12 +169,7 @@ fn spawn_reliable_app(bin: &std::path::Path, port: u16, n: usize) -> Child {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("spawn go reliable_app")
-}
-
-fn decode_u32(b: &[u8]) -> u32 {
-    assert_eq!(b.len(), 4, "sample must be 4 bytes (u32 LE)");
-    u32::from_le_bytes([b[0], b[1], b[2], b[3]])
+        .expect("spawn go reliable app")
 }
 
 fn run_loss(drop_every: Option<usize>, tag: &str, label: &str) {
@@ -80,94 +177,33 @@ fn run_loss(drop_every: Option<usize>, tag: &str, label: &str) {
         eprintln!("SKIP {label}: `go` not on PATH");
         return;
     }
-    let n = 12usize;
-    let bin = go_build("reliable_app", tag);
+    let n = RELIABLE_SAMPLES;
+    let bin = build_reliable_app(tag);
     let peer = bind_reliable_peer(drop_every).expect("bind reliable peer");
     let child = spawn_reliable_app(&bin, peer.port, n);
     let delivered = reliable_receive(&peer, child, label, n);
-    assert_eq!(delivered.len(), n, "{label}: delivered count");
-    for (i, payload) in delivered.iter().enumerate() {
-        assert_eq!(
-            decode_u32(payload),
-            i as u32,
-            "{label}: gap/misorder at sample {i}"
-        );
-    }
+    assert_reliable_pings(label, &delivered, n);
 }
 
+/// reliable-endpoint 1.0 §5 point 3: the Go app sends its samples on the
+/// reliable stream (DDS-XRCE 1.0 §8.4.10, stream id 0x80); the Rust peer
+/// drops datagrams and answers with ACKNACK (§8.3.5.11), and every sample
+/// arrives once and in order.
 #[test]
-fn go_reliable_loss_recovery() {
+#[ignore = "needs the Go toolchain; runs in integration-bindings"]
+fn reliable_5_3_go_samples_arrive_in_order_despite_dropped_datagrams() {
     // Peer drops every 3rd distinct sample once → the app must retransmit.
     run_loss(Some(3), "loss", "go/loss");
 }
 
+/// reliable-endpoint 1.0 §5 point 5: the Go reliable example runs and
+/// reports its sequence without gaps; the endpoints-gate column of Go
+/// builds it without running it.
 #[test]
-fn go_reliable_no_loss() {
-    run_loss(None, "noloss", "go/baseline");
-}
-
-#[test]
-fn go_reliable_unit_and_golden() {
+#[ignore = "needs the Go toolchain; runs in integration-bindings"]
+fn reliable_5_5_go_example_recovers_its_sequence_without_gaps() {
     if !go_available() {
-        eprintln!("SKIP go_reliable_unit_and_golden: `go` not on PATH");
-        return;
-    }
-    // Best-effort: generate the Rust goldens so the byte-golden test can also
-    // diff against the cargo-produced files (`endpoints/go/reliable_test.go`
-    // reads `$GOLDEN_DIR`, the same convention `wire_test.go`'s
-    // TestByteIdentity uses); it also asserts hardcoded golden bytes
-    // unconditionally, so this generation step is not required for the test
-    // itself to be meaningful.
-    let gold = std::env::temp_dir().join(format!("zd_go_reliable_gold_{}", std::process::id()));
-    std::fs::create_dir_all(&gold).expect("mkdir gold");
-    let gen_ok = Command::new("cargo")
-        .args(["run", "-q", "-p", "zerodds-endpoint-golden", "--"])
-        .arg(&gold)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-
-    // Scoped to the reliable-stream tests this task owns (`-run`): the root
-    // `zerodds` package also holds pre-existing tests (`wire_test.go`'s
-    // TestByteIdentity, `async_test.go`, `sync_test.go`) with their own,
-    // separately-maintained fixture setup that is out of scope here.
-    let mut cmd = go_command();
-    cmd.arg("test")
-        .arg("-run")
-        .arg("^Test(Submit|PendingHeartbeat|PendingAcknack|RecvAcknack|RecvData|Reset|EndToEnd|Config|SeqLtGt|ByteGolden|FrameRoundTrip|ReliableAsyncWriter)")
-        .arg("-v")
-        .arg(".")
-        .current_dir(endpoints_go());
-    if gen_ok
-        && gold.join("golden_heartbeat_le.bin").exists()
-        && gold.join("golden_acknack_le.bin").exists()
-    {
-        cmd.env("GOLDEN_DIR", &gold);
-    }
-    let out = cmd.output().expect("go test");
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(
-        out.status.success(),
-        "go test failed:\nstdout: {stdout}\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    for name in [
-        "TestByteGoldenHeartbeat",
-        "TestByteGoldenAckNack",
-        "TestEndToEndSenderReceiverWithLossRecovery",
-        "TestReliableAsyncWriterLossRecovery",
-    ] {
-        assert!(
-            stdout.contains(&format!("--- PASS: {name}")),
-            "{name} did not run/pass:\nstdout: {stdout}"
-        );
-    }
-}
-
-#[test]
-fn go_reliable_example() {
-    if !go_available() {
-        eprintln!("SKIP go_reliable_example: `go` not on PATH");
+        eprintln!("SKIP go reliable example: `go` not on PATH");
         return;
     }
     let out = go_command()
@@ -188,10 +224,14 @@ fn go_reliable_example() {
     );
 }
 
+/// reliable-endpoint 1.0 §5 point 4 and §2: the Go producer's enqueue into
+/// the async-decoupled writer costs less than the inline send it replaces,
+/// which enters the kernel with `sendto`; both values are printed.
 #[test]
-fn go_reliable_latency_bench() {
+#[ignore = "needs the Go toolchain; runs in integration-bindings"]
+fn reliable_5_4_go_the_producer_enqueue_costs_less_than_the_inline_send() {
     if !go_available() {
-        eprintln!("SKIP go_reliable_latency_bench: `go` not on PATH");
+        eprintln!("SKIP go reliable latency bench: `go` not on PATH");
         return;
     }
     let bin = go_build("reliable_bench", "bench");
@@ -212,6 +252,10 @@ fn go_reliable_latency_bench() {
     let inline_send = parse_kv(line, "inline_ns=");
     eprintln!(
         "go async-writer producer latency: decoupled={decoupled} ns, inline(send)={inline_send} ns"
+    );
+    assert!(
+        decoupled < inline_send,
+        "the decoupled enqueue ({decoupled} ns) must cost less than the inline send ({inline_send} ns)"
     );
 }
 

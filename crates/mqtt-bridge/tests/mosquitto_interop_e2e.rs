@@ -9,8 +9,11 @@
 //! 2. **Standalone broker** — real `mosquitto_pub`/`mosquitto_sub` clients
 //!    (5.0 and 3.1.1) connect to the ZeroDDS [`MqttBrokerServer`].
 //!
-//! Gated on `MQTT_MOSQUITTO=1` + the `mosquitto_pub`/`mosquitto_sub` binaries;
-//! `#[ignore]` by default. Test 1 needs a Mosquitto broker on `localhost:1883`.
+//! The tests that need Mosquitto are `#[ignore]`d; running them
+//! (`--run-ignored`, the weekly job `integration-bridges-vendor`) measures,
+//! and a missing `mosquitto`, `mosquitto_pub` or `mosquitto_sub` fails the
+//! test. The broker of section 1 is started by the test on a port of its own
+//! and stopped with it.
 
 #![cfg(feature = "std")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::print_stderr)]
@@ -23,25 +26,84 @@ use zerodds_mqtt_bridge::net::MqttClient;
 use zerodds_mqtt_bridge::server::MqttBrokerServer;
 use zerodds_mqtt_bridge::version::ProtocolVersion::{V5, V311};
 
-fn enabled() -> bool {
-    std::env::var("MQTT_MOSQUITTO").is_ok()
+/// The Mosquitto broker of one test, on a free port of its own, stopped
+/// when the value goes.
+struct Broker {
+    child: std::process::Child,
+    port: u16,
+    _dir: std::path::PathBuf,
+}
+
+impl Drop for Broker {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Broker {
+    fn start(label: &str) -> Self {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        // Under the system temp directory: Mosquitto started as root drops
+        // to its own user, which cannot enter a checkout under /root.
+        let dir = std::env::temp_dir().join(format!(
+            "zerodds-mqtt-interop-{}-{label}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        let conf = dir.join("mosquitto.conf");
+        std::fs::write(
+            &conf,
+            format!("listener {port} 127.0.0.1\nallow_anonymous true\n"),
+        )
+        .unwrap();
+        let child = Command::new("mosquitto")
+            .arg("-c")
+            .arg(&conf)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("mosquitto is not installed; this test measures against it");
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::net::TcpStream::connect(("127.0.0.1", port)).is_err() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "mosquitto did not open {port}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+        Self {
+            child,
+            port,
+            _dir: dir,
+        }
+    }
+
+    fn address(&self) -> String {
+        format!("127.0.0.1:{}", self.port)
+    }
 }
 
 // ---- Gap 1: ZeroDDS 3.1.1 client ↔ Mosquitto broker --------------------
 
 #[test]
-#[ignore = "needs Mosquitto broker on localhost:1883 + mosquitto tools; set MQTT_MOSQUITTO=1"]
-fn zerodds_311_client_receives_from_mosquitto() {
-    if !enabled() {
-        eprintln!("MQTT_MOSQUITTO not set — skipping");
-        return;
-    }
+#[ignore = "needs mosquitto, mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
+fn mqtt5_4_zerodds_311_client_receives_from_mosquitto() {
+    let broker = Broker::start("rx");
     let topic = "zd/311/rx";
-    let mut sub = MqttClient::connect("127.0.0.1:1883", "zd-311-sub", V311).expect("3.1.1 connect");
+    let mut sub = MqttClient::connect(broker.address(), "zd-311-sub", V311).expect("3.1.1 connect");
     sub.subscribe(topic, 1).expect("subscribe");
 
     // A 3.1.1 reference publisher puts a message on the topic.
     let status = Command::new("mosquitto_pub")
+        .args(["-h", "127.0.0.1", "-p", &broker.port.to_string()])
         .args([
             "-V",
             "mqttv311",
@@ -64,21 +126,20 @@ fn zerodds_311_client_receives_from_mosquitto() {
 }
 
 #[test]
-#[ignore = "needs Mosquitto broker on localhost:1883 + mosquitto tools; set MQTT_MOSQUITTO=1"]
-fn mosquitto_311_client_receives_from_zerodds() {
-    if !enabled() {
-        return;
-    }
+#[ignore = "needs mosquitto, mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
+fn mqtt5_4_mosquitto_311_client_receives_from_zerodds() {
+    let broker = Broker::start("tx");
     let topic = "zd/311/tx";
     // Reference 3.1.1 subscriber, exits after one message or 5s.
     let sub = Command::new("mosquitto_sub")
+        .args(["-h", "127.0.0.1", "-p", &broker.port.to_string()])
         .args(["-V", "mqttv311", "-t", topic, "-C", "1", "-W", "5"])
         .stdout(Stdio::piped())
         .spawn()
         .expect("mosquitto_sub");
     thread::sleep(Duration::from_millis(500)); // let it connect + subscribe
 
-    let mut pubc = MqttClient::connect("127.0.0.1:1883", "zd-311-pub", V311).expect("connect");
+    let mut pubc = MqttClient::connect(broker.address(), "zd-311-pub", V311).expect("connect");
     pubc.publish(topic, b"from-zerodds-311", 1, false)
         .expect("publish");
     pubc.disconnect();
@@ -152,31 +213,21 @@ fn mosquitto_against_zerodds_broker(version_flag: &str, label: &str) {
 }
 
 #[test]
-#[ignore = "needs mosquitto tools; set MQTT_MOSQUITTO=1 (no external broker — ZeroDDS is the broker)"]
-fn mosquitto_v5_clients_through_zerodds_broker() {
-    if !enabled() {
-        return;
-    }
+#[ignore = "needs mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
+fn mqtt5_4_mosquitto_v5_clients_through_zerodds_broker() {
     mosquitto_against_zerodds_broker("mqttv5", "MQTT 5.0");
 }
 
 #[test]
-#[ignore = "needs mosquitto tools; set MQTT_MOSQUITTO=1 (no external broker — ZeroDDS is the broker)"]
-fn mosquitto_v311_clients_through_zerodds_broker() {
-    if !enabled() {
-        return;
-    }
+#[ignore = "needs mosquitto_pub and mosquitto_sub; runs in integration-bridges-vendor"]
+fn mqtt5_4_mosquitto_v311_clients_through_zerodds_broker() {
     mosquitto_against_zerodds_broker("mqttv311", "MQTT 3.1.1");
 }
 
 // ---- Cross-stack: ZeroDDS client ↔ ZeroDDS broker over real TCP --------
 
 #[test]
-#[ignore = "set MQTT_MOSQUITTO=1 to run the live suite (no external broker needed)"]
-fn zerodds_client_through_zerodds_broker_cross_version() {
-    if !enabled() {
-        return;
-    }
+fn mqtt5_4_zerodds_client_through_zerodds_broker_cross_version() {
     let server = MqttBrokerServer::bind("127.0.0.1:0")
         .unwrap()
         .spawn()

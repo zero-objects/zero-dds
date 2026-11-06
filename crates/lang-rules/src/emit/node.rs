@@ -368,26 +368,26 @@ impl CodecTarget for Node {
     /// sign puts a `map`'s entries on the wire in descending key
     /// order.
     fn call(callee: &str, args: Vec<Self::Expr>) -> Self::Expr {
-        if callee == "strcmp" {
-            if let [left, right] = args.as_slice() {
-                return Expr::Paren(Box::new(Expr::Ternary {
+        if callee == "strcmp"
+            && let [left, right] = args.as_slice()
+        {
+            return Expr::Paren(Box::new(Expr::Ternary {
+                condition: Box::new(Expr::Binary {
+                    op: "<",
+                    lhs: Box::new(left.clone()),
+                    rhs: Box::new(right.clone()),
+                }),
+                then: Box::new(Self::int(-1)),
+                otherwise: Box::new(Expr::Ternary {
                     condition: Box::new(Expr::Binary {
-                        op: "<",
+                        op: ">",
                         lhs: Box::new(left.clone()),
                         rhs: Box::new(right.clone()),
                     }),
-                    then: Box::new(Self::int(-1)),
-                    otherwise: Box::new(Expr::Ternary {
-                        condition: Box::new(Expr::Binary {
-                            op: ">",
-                            lhs: Box::new(left.clone()),
-                            rhs: Box::new(right.clone()),
-                        }),
-                        then: Box::new(Self::int(1)),
-                        otherwise: Box::new(Self::int(0)),
-                    }),
-                }));
-            }
+                    then: Box::new(Self::int(1)),
+                    otherwise: Box::new(Self::int(0)),
+                }),
+            }));
         }
         Expr::call(callee, args)
     }
@@ -577,12 +577,12 @@ impl CodecTarget for Node {
     /// `crates/lang-rules/src/emit/python.rs`'s `signed_char` writes and
     /// for the same reason.
     fn cast(type_: Self::Type, value: Self::Expr) -> Self::Expr {
-        if let Expr::Literal(Literal::Int(text)) = &value {
-            if type_.0 == "boolean" {
-                let digits = text.strip_suffix('n').unwrap_or(text);
-                if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit() || b == b'-') {
-                    return Expr::bool(digits != "0");
-                }
+        if let Expr::Literal(Literal::Int(text)) = &value
+            && type_.0 == "boolean"
+        {
+            let digits = text.strip_suffix('n').unwrap_or(text);
+            if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit() || b == b'-') {
+                return Expr::bool(digits != "0");
             }
         }
         if type_.0 == SIGNED_CHAR {

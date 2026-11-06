@@ -73,7 +73,7 @@ fn a_struct_of_primitives_becomes_a_record_with_a_lower_case_name() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_an_ocaml_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_an_ocaml_type() {
     let generated = generate(
         "struct P {
            boolean a; octet b; char c; wchar d;
@@ -112,7 +112,7 @@ fn every_idl_primitive_reaches_an_ocaml_type() {
 }
 
 #[test]
-fn no_generated_type_is_platform_dependent_in_a_width_a_member_can_reach() {
+fn xtypes_7_2_2_2_no_generated_type_is_platform_dependent_in_a_width_a_member_can_reach() {
     // `nativeint` is the platform's word width. `int` is 31 bits on a
     // 32-bit target and 63 on a 64-bit one, and is used only where the
     // IDL type needs at most 16, so no value a member can hold reaches
@@ -134,7 +134,7 @@ fn no_generated_type_is_platform_dependent_in_a_width_a_member_can_reach() {
 }
 
 #[test]
-fn a_long_double_is_a_string_and_never_a_float() {
+fn xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_float() {
     // An OCaml `float` is an IEEE 754 binary64 with 53 bits of
     // significand; an IDL `long double` is a binary128 with 113. Writing
     // one into a `float` loses sixty bits at the assignment, before any
@@ -154,7 +154,7 @@ fn an_optional_member_becomes_an_option_and_the_others_do_not() {
 }
 
 #[test]
-fn a_member_named_after_an_ocaml_keyword_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_an_ocaml_keyword_is_escaped_and_keeps_its_idl_name() {
     let generated = generate("struct S { long type; long method; long match; };");
     assert!(generated.contains("type_ : int32;"), "{generated}");
     assert!(generated.contains("method_ : int32;"), "{generated}");
@@ -163,7 +163,7 @@ fn a_member_named_after_an_ocaml_keyword_is_escaped_and_keeps_its_idl_name() {
 }
 
 #[test]
-fn a_member_named_after_a_predefined_type_is_escaped_too() {
+fn idl_7_2_3_a_member_named_after_a_predefined_type_is_escaped_too() {
     // OCaml permits the shadowing. A generated file cannot afford it:
     // every field type in it is one of these, and an earlier
     // `type option = …` changes what `int32 option` means later.
@@ -185,7 +185,7 @@ fn a_bitmask_bit_folds_its_whole_name_and_not_only_the_first_letter() {
 }
 
 #[test]
-fn the_case_fold_adds_no_collision_the_frontend_does_not_already_report() {
+fn idl_7_2_3_the_case_fold_adds_no_collision_the_frontend_does_not_already_report() {
     // The transform does not invert — `Pose` and `pose` both give
     // `pose` — but the pair cannot occur in one scope: it is the
     // frontend that refuses it, at the layer that can name both IDL
@@ -228,7 +228,7 @@ fn a_type_name_and_a_value_name_do_not_collide_because_ocaml_keeps_them_apart() 
 }
 
 #[test]
-fn a_sequence_becomes_an_array_and_never_a_list() {
+fn xtypes_7_2_2_4_3_a_sequence_becomes_an_array_and_never_a_list() {
     // A `sequence<T>` goes on the wire as a count followed by the
     // elements (DDS-XTypes 1.3 §7.4.3.5.3). `List.length` is O(n), so an
     // encoder over a list would walk the whole structure to write its
@@ -243,7 +243,8 @@ fn a_sequence_becomes_an_array_and_never_a_list() {
 }
 
 #[test]
-fn an_array_loses_its_bound_to_the_comment_because_ocaml_has_no_fixed_size_array() {
+fn xtypes_7_2_2_4_3_an_array_loses_its_bound_to_the_comment_because_ocaml_has_no_fixed_size_array()
+{
     let generated = generate("struct S { long grid[2][3]; };");
     assert!(
         generated.contains("grid : int32 array array;"),
@@ -256,7 +257,7 @@ fn an_array_loses_its_bound_to_the_comment_because_ocaml_has_no_fixed_size_array
 }
 
 #[test]
-fn a_map_becomes_an_array_of_entry_records_and_never_a_hashtbl() {
+fn xtypes_7_2_2_4_3_a_map_becomes_an_array_of_entry_records_and_never_a_hashtbl() {
     // A `map<K,V>` is an ordered sequence of pairs on the wire
     // (DDS-XTypes 1.3 §7.4.1.1.4). `Hashtbl` has no order at all, so one
     // value would give a different octet stream from one run to the
@@ -301,7 +302,7 @@ fn a_typedef_becomes_an_abbreviation_and_is_declared_before_its_user() {
 }
 
 #[test]
-fn an_enum_becomes_a_variant_and_a_pair_of_conversions() {
+fn xtypes_7_2_2_4_1_1_an_enum_becomes_a_variant_and_a_pair_of_conversions() {
     // An OCaml variant constructor carries no number, so the numbering
     // DDS-XTypes 1.3 §7.4.3.5.3 puts on the wire is in the conversions
     // or it is lost. `@value` admits gaps, which is why neither
@@ -330,7 +331,7 @@ fn an_enum_becomes_a_variant_and_a_pair_of_conversions() {
 }
 
 #[test]
-fn a_union_becomes_a_record_and_never_a_variant() {
+fn xtypes_7_2_2_4_4_3_a_union_becomes_a_record_and_never_a_variant() {
     // The load-bearing decision of this column. An IDL discriminator may
     // hold a value that selects no branch (IDL 4.2 §7.4.1.4.4.1), and an
     // OCaml variant has no constructor for that state.
@@ -399,7 +400,8 @@ fn an_aggregate_with_no_members_becomes_unit_because_an_empty_record_does_not_pa
     // `type t = { }` is a syntax error — an OCaml record has at least
     // one field. `unit` is the type with exactly one value and no data,
     // which is what an IDL aggregate with no members is. The C column
-    // refuses the case; OCaml has an answer C does not.
+    // needs a member that stands in for none; OCaml has an answer C does
+    // not.
     let generated = generate("module m { @appendable struct S { }; };");
     assert!(generated.contains("type m_s = unit"), "{generated}");
     assert!(
@@ -478,7 +480,7 @@ fn a_native_declaration_becomes_an_opaque_abbreviation_and_not_an_abstract_type(
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_a_recursive_group_cannot_cross_one() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_a_recursive_group_cannot_cross_one() {
     // OCaml does have nested modules and they would be the better
     // spelling. What rules them out is that a `type a = … and b = …`
     // group is one declaration inside one structure, and IDL puts no
@@ -505,7 +507,7 @@ fn a_construct_with_no_rule_produces_nothing_rather_than_something_wrong() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     // The order of a group's members and the order of the groups
     // themselves both come out of a graph walk, so this says the walk is
     // deterministic and not merely that the emitter is.
@@ -516,7 +518,7 @@ fn two_runs_over_one_source_produce_the_same_text() {
 }
 
 #[test]
-fn every_construct_the_table_claims_for_ocaml_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_table_claims_for_ocaml_produces_output() {
     let sources = [
         ("struct S { long a; };", "type s = {"),
         ("enum E { A };", "type e =\n  | A"),
@@ -545,7 +547,7 @@ fn every_construct_the_table_claims_for_ocaml_produces_output() {
 // -- the recursive group -------------------------------------------------
 
 #[test]
-fn a_self_recursive_type_is_one_declaration_that_names_itself() {
+fn xtypes_7_2_2_4_9_a_self_recursive_type_is_one_declaration_that_names_itself() {
     let generated = generate("module m { struct Node { long value; sequence<Node> children; }; };");
     assert!(generated.contains("type m_node = {"), "{generated}");
     assert!(
@@ -559,7 +561,7 @@ fn a_self_recursive_type_is_one_declaration_that_names_itself() {
 }
 
 #[test]
-fn two_mutually_recursive_types_come_out_as_one_and_joined_group() {
+fn xtypes_7_2_2_4_9_two_mutually_recursive_types_come_out_as_one_and_joined_group() {
     // The case the C column refuses. OCaml resolves a type name against
     // what precedes it and against its own group, so there is no
     // declaration order that works and the two have to be one `type …
@@ -591,7 +593,7 @@ fn two_mutually_recursive_types_come_out_as_one_and_joined_group() {
 }
 
 #[test]
-fn a_recursive_group_compiles() {
+fn xtypes_7_2_2_4_9_a_recursive_group_compiles() {
     let Some(compiler) = ocaml_compiler() else {
         eprintln!(
             "SKIPPED: no OCaml compiler on the path, so the recursive group was not checked."
@@ -649,7 +651,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -769,7 +771,7 @@ fn ocaml_compiles(compiler: &str, source: &str) -> Result<(), String> {
 /// declaring `type s` would collide in one structure, and the point of
 /// this test is the shapes rather than their coexistence.
 #[test]
-fn the_generated_ocaml_compiles() {
+fn xtypes_7_3_1_the_generated_ocaml_compiles() {
     let Some(compiler) = ocaml_compiler() else {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the compiler is exactly the failure this test
@@ -839,7 +841,7 @@ fn the_generated_ocaml_compiles() {
 /// and takes minutes. It is what proves the column rather than samples
 /// it, so it is run with `--include-ignored` on a host that has OCaml.
 #[test]
-#[ignore = "one `ocamlc` invocation per corpus case; run with --include-ignored"]
+#[ignore = "one `ocamlc` invocation per corpus case; runs in integration-codegen-ada-lua-ocaml"]
 fn every_corpus_case_that_renders_also_compiles() {
     let compiler = ocaml_compiler().expect("the explicitly selected compiler must be installed");
     let mut failures = Vec::new();

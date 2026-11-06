@@ -65,7 +65,7 @@ class QosEntityBasicsTest {
     // --- §7.3.6 ----------------------------------------------------------------------------
 
     @Test
-    void entityExtendsCloseable() throws Exception {
+    void javapsm_7_3_6_entity_extends_closeable() throws Exception {
         assertTrue(Closeable.class.isAssignableFrom(Entity.class));
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             // every entity can be held and closed as a java.io.Closeable
@@ -83,7 +83,7 @@ class QosEntityBasicsTest {
     }
 
     @Test
-    void everyEntityExtendsEntityAndEveryOneButTheParticipantExtendsDomainEntity() {
+    void javapsm_7_3_6_every_entity_extends_entity_and_every_one_but_the_participant_extends_domain_entity() {
         assertTrue(Entity.class.isAssignableFrom(DomainParticipant.class));
         assertFalse(DomainEntity.class.isAssignableFrom(DomainParticipant.class));
         for (Class<?> type : Arrays.<Class<?>>asList(Publisher.class, Subscriber.class,
@@ -94,7 +94,7 @@ class QosEntityBasicsTest {
     }
 
     @Test
-    void theParentOfAnEntityIsTheEntityThatCreatedIt() throws Exception {
+    void javapsm_7_3_6_the_parent_of_an_entity_is_the_entity_that_created_it() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
             DataReader<QosFixtures.Item> reader = rig.reader(Qos.reader());
@@ -103,11 +103,12 @@ class QosEntityBasicsTest {
             assertSame(rig.participant, rig.topic.getParent());
             assertSame(rig.publisher, writer.getParent());
             assertSame(rig.subscriber, reader.getParent());
+            assertSame(rig.topic, writer.getTopic());
         }
     }
 
     @Test
-    void getQosAndGetListenerKeepTheirTypeOnTheSubinterfaces() throws Exception {
+    void javapsm_7_3_6_get_qos_and_get_listener_keep_their_type_on_the_subinterfaces() throws Exception {
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {
             DataWriter<QosFixtures.Item> writer = rig.writer(Qos.writer());
             // The type parameters of Entity<LISTENER, QOS> make these compile without a cast.
@@ -122,7 +123,7 @@ class QosEntityBasicsTest {
     // --- §7.3.7.1 ----------------------------------------------------------------------------
 
     @Test
-    void theThirteenStatusKindsAreClassesOfTheStatusBase() {
+    void javapsm_7_3_7_1_the_thirteen_status_kinds_are_classes_of_the_status_base() {
         Set<Class<? extends Status>> kinds = Status.allStatuses(Qos.env());
         assertEquals(13, kinds.size());
         for (Class<? extends Status> kind : kinds) {
@@ -139,7 +140,7 @@ class QosEntityBasicsTest {
     }
 
     @Test
-    void theEventThatCarriesAStatusIsAnEventObjectWithTheEntityAsSource() throws Exception {
+    void javapsm_7_3_7_1_the_event_that_carries_a_status_is_an_event_object_with_the_entity_as_source() throws Exception {
         assertTrue(EventObject.class.isAssignableFrom(StatusChangedEvent.class));
         List<StatusChangedEvent<?>> events = new CopyOnWriteArrayList<>();
         try (QosFixtures.Rig rig = new QosFixtures.Rig()) {

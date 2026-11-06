@@ -5,18 +5,66 @@ No new content: every entry appears there as an item with its evidence.
 
 ---
 
+## §2 zerodds-opcua-bridged CLI
+
+**Status:** `partial` — checked are `--bind` (also in `=` form), `--domain`, repeated `--idl` and its rendering as `+opcua.idl=…`, `-h` and the refusal of an unknown flag. Without a test: the exit codes of `--check-config`, `--config`, `--gateway-config`, `--log-level`, `--metrics`, `--version` and the precedence of `--set` over the files.
+
+## §4.3 Part 14 UADP
+
+**Status:** `partial` — publisher/subscriber in both directions and the static key are built and checked; key rotation via `GetSecurityKeys`/SKS is missing (§4.3.1).
+
+## §4.3.1 SKS key rotation
+
+**Status:** `open` — the daemon fetches no keys via `GetSecurityKeys` and does not rotate them; a new key needs a restart (§9.3).
+
+## §5.1 TypeObject/TypeLookup → SerializedTypeSupport
+
+**Status:** `partial` — the IDL path is checked; `resolve_discovered` has no test; the daemon's own `getTypes` request is missing (§5.1.1).
+
+## §5.1.1 getTypes request for an unknown type
+
+**Status:** `open` — a topic whose type comes neither from `opcua.idl` nor from the runtime's registry is not bridged; the daemon does not request the type via TypeLookup.
+
 ## §5.3 Type-shape coverage
 
-**Status:** `partial` — primitives/strings (narrow and wide: `wchar`→ `UInt16`, `wstring`→`String`)/enums/bitmasks/nested structs/`map<K,V>` (one leaf per entry, path `<field>.<key>`)/arrays-sequences of any of the above: done. An array/sequence of a struct/union, `bitset`, `fixed<P,S>`, `float128`: open, named rather than approximated — no OPC-UA builtin `VariantValue` case fits any of the three (Part 6 §5.1.2's type table has no row for any of them; inferred from that absence, not a specific Gateway 1.0 §9.2 clause this crate has the text of). Named, not silent: a `map` key a write introduces that no prior sample ever had is reported as an unmatched path, not materialized live as a new node (`AddressSpace`/`PublishedDataSet` build their node/field set once, from the Table-9 default).
+**Status:** `partial` — the listed shapes are mapped and checked; an array/sequence of struct/union, `bitset`, `fixed<P,S>` and `float128` have no live value (§5.3.1); a new `map` key gets no node (§5.3.2).
+
+## §5.3.1 Live value for array/sequence of struct/union, bitset, fixed, float128
+
+**Status:** `open` — `dynamic_value.rs::flatten` reports these shapes by path and leaves the node without a value; the mapping to an array Variable or a fitting value is missing.
+
+## §5.3.2 New map key at run time
+
+**Status:** `open` — `AddressSpace` and `PublishedDataSet` build their node and field set once from the Table 9 default; a key that appears later gets no node.
+
+## §5.4 Historical access (§9.3.4)
+
+**Status:** `partial` — marking, retention, raw range, AtTime, continuation point and the refusal of `is_read_modified` are checked. Without a test: the load-time error for a `dds_topic` without a `dds_to_ua_connection` (`crates/opcua-bridge/src/daemon/server.rs`, "names no dds_to_ua_connection topic").
+
+## §6.2 OPC UA → DDS
+
+**Status:** `partial` — both mechanisms are built and checked; reporting a failed DDS write back to the client is missing (§6.2.1).
+
+## §6.2.1 Reporting a failed DDS write
+
+**Status:** `open` — the path to DDS stays a poll; a failed DDS write is only logged.
+
+## §8.1 Logging
+
+**Status:** `open` — the messages are `eprintln!` calls in `crates/opcua-bridge/src/daemon/server.rs`; no test checks `log_level` or a message.
 
 ## §8.2 Prometheus metrics
 
-**Status:** `partial` — the endpoint works (measured), no automated test.
+**Status:** `open` — `crates/opcua-bridge/src/daemon/server.rs::{BridgeMetrics, serve_metrics}` is built; no test reads the endpoint.
+
+## §9.1/§9.2 Startup + shutdown
+
+**Status:** `partial` — in-process start and `shutdown()` are checked. Without a test: signal handling (SIGTERM/SIGINT) and exit code 0 of the binary.
 
 ## §9.3 SIGHUP
 
-**Status:** `partial` — the code path exists, not automated-tested; reload scope deliberately not widened: `opcua.server.historical.topics`, `acl.users`/`acl.allow_anonymous`, `opcua.pubsub.connections[].security` and `metrics.otlp_endpoint` all need a restart, same as `<node_id>`/ `<browse_path>` and the IDL/gateway-config topic set already did.
+**Status:** `open` — the reload thread in `crates/opcua-bridge/src/daemon/server.rs::start_with_reload` is built; no test sends SIGHUP.
 
-## §10 Cross-vendor interop
+## §11 Package, systemd unit, example configuration, manual pages
 
-**Status:** `partial` — the daemon-level test exists and is structurally verified (skip/hard-failure paths), but has not been run against a real open62541; the library level remains measured (`crates/opcua-server/proofs/open62541.sh`).
+**Status:** `partial` — the example configuration loads through the real parser. Without a test: unit, manual pages and package entries; `tools/traceability/tests/deployment_layout.rs` and `tools/traceability/tests/bridge_config_manpages.rs` do not have the OPC UA daemon in their bridge list.

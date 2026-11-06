@@ -25,6 +25,17 @@ pub const READER_ENV: &str = "ZERODDS_DISPOSE_READER";
 /// The Cyclone DDS reader, through Cyclone's Python binding. It speaks the
 /// protocol of this crate's README: RELIABLE, KEEP_ALL, the last instance
 /// state per instance.
+///
+/// It announces its TypeConsistencyEnforcement: ALLOW_TYPE_COERCION as
+/// Cyclone's Python binding has it (`ignore_member_names` TRUE). Cyclone
+/// leaves PID 0x0074 out of the announcement of a reader whose policy is
+/// its C default; a writer then reads DISALLOW_TYPE_COERCION (DDS-XTypes 1.3
+/// §7.6.3.4.1), and the binding's TypeObject of `KeyedPointA` is not the one
+/// of the IDL: it leaves IS_MUST_UNDERSTAND off the key member, which
+/// §7.2.2.4.4.4.8 requires ("Key members ... shall always have their must
+/// understand attribute set to true"). A ZeroDDS writer refused such a
+/// reader as INCONSISTENT_TOPIC (the same Cyclone deviation is declared
+/// for the dds-xtypes group in `tests/interop/omg/vendor-deviations.tsv`).
 pub const CYCLONE_READER_PY: &str = r#"
 import os, sys, time
 from dataclasses import dataclass
@@ -51,7 +62,11 @@ NAMES = {
 }
 dp = DomainParticipant(int(sys.argv[1]))
 tp = Topic(dp, sys.argv[2], KeyedPointA)
-qos = Qos(Policy.Reliability.Reliable(duration(seconds=1)), Policy.History.KeepAll)
+qos = Qos(
+    Policy.Reliability.Reliable(duration(seconds=1)),
+    Policy.History.KeepAll,
+    Policy.TypeConsistency.AllowTypeCoercion(),
+)
 rd = DataReader(dp, tp, qos=qos)
 print("READY", flush=True)
 ids, states = {}, {}
@@ -67,7 +82,10 @@ while time.time() < end and not os.path.exists(sys.argv[5]):
             if info.instance_handle not in ids:
                 print(f"SEEN id={s.id}", flush=True)
             ids[info.instance_handle] = s.id
-        states[info.instance_handle] = NAMES.get(info.instance_state, str(info.instance_state))
+        state = NAMES.get(info.instance_state, str(info.instance_state))
+        if states.get(info.instance_handle) != state:
+            print(f"STATE id={ids.get(info.instance_handle, '?')} state={state}", flush=True)
+        states[info.instance_handle] = state
     if not snapped and os.path.exists(sys.argv[4]):
         for handle, state in states.items():
             print(f"SNAP id={ids.get(handle, '?')} state={state}", flush=True)
@@ -176,6 +194,8 @@ pub struct VendorReader {
     label: String,
     dir: PathBuf,
     seen: BTreeSet<i32>,
+    /// The last state each `STATE` line named, by instance id.
+    states: BTreeMap<String, String>,
 }
 
 impl VendorReader {
@@ -229,6 +249,7 @@ impl VendorReader {
             label: label.to_string(),
             dir,
             seen: BTreeSet::new(),
+            states: BTreeMap::new(),
         }
     }
 
@@ -276,14 +297,53 @@ impl VendorReader {
                 return false;
             }
             match self.next_line(left) {
-                Ok(Some(line)) => {
-                    if let Some(id) = line.strip_prefix("SEEN id=").and_then(|v| v.parse().ok()) {
-                        self.seen.insert(id);
-                    }
-                }
+                Ok(Some(line)) => self.note(&line),
                 Ok(None) => {}
                 Err(()) => panic!("the {} reader ended while waiting for samples", self.label),
             }
+        }
+    }
+
+    /// Waits until the reader reports, by its `STATE` lines, each state of
+    /// `expected` (`(id, state)`) for its instance, at most `timeout`, and
+    /// returns the last state it reported per instance id. Lines read before
+    /// this call count; a reader that prints no `STATE` lines gives an empty
+    /// map at the deadline.
+    ///
+    /// # Panics
+    /// The reader ends.
+    pub fn wait_states(
+        &mut self,
+        expected: &[(i32, &str)],
+        timeout: Duration,
+    ) -> BTreeMap<String, String> {
+        let deadline = Instant::now() + timeout;
+        loop {
+            if expected.iter().all(|(id, state)| {
+                self.states.get(&id.to_string()).map(String::as_str) == Some(*state)
+            }) {
+                return self.states.clone();
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return self.states.clone();
+            }
+            match self.next_line(left) {
+                Ok(Some(line)) => self.note(&line),
+                Ok(None) => {}
+                Err(()) => panic!("the {} reader ended while waiting for states", self.label),
+            }
+        }
+    }
+
+    /// Keeps what a `SEEN` or `STATE` line says.
+    fn note(&mut self, line: &str) {
+        if let Some(id) = line.strip_prefix("SEEN id=").and_then(|v| v.parse().ok()) {
+            self.seen.insert(id);
+        } else if let Some(rest) = line.strip_prefix("STATE id=")
+            && let Some((id, state)) = rest.split_once(" state=")
+        {
+            self.states.insert(id.to_string(), state.to_string());
         }
     }
 

@@ -1503,6 +1503,76 @@ void cursor() {
     EXPECT_THROWS(Truncated, { r.skip(100); });
 }
 
+// The five operations the generated code reaches only in a dialect or with a
+// member no corpus case carries: `write_pid_extended`, `write_union_overlay`,
+// `reader_clear_discard`, `reader_save` and `reader_restore`
+// (internal/release/OPEN-ITEMS.md). Every runtime checks the same four
+// vectors, each against an oracle outside this code.
+void the_operations_no_corpus_case_reaches() {
+    {
+        // The first parameter of `annotation-autoid-sequential` as Cyclone DDS
+        // recorded it, XCDR1 little endian
+        // (tests/interop-corpus/expected-bytes.tsv).
+        Writer w(Endianness::Little, 8);
+        const Pid header = w.write_pid_extended(0, ParameterRole::Member, false);
+        w.write_i32(-1234567);
+        w.finish_pid(header);
+        EXPECT_BYTES(w, "017f0800 00000000 04000000 7929edff");
+    }
+    {
+        // A `short` read through a four-octet and through a one-octet
+        // `default:` branch: Cyclone DDS 11.0.1 writes the union's storage,
+        // the member's octets with zeros above (`combined-everything`,
+        // crates/wire-codec/src/encode.rs `write_selected_branch`).
+        Writer w(Endianness::Little, 4);
+        const std::uint64_t pattern = static_cast<std::uint16_t>(-2);
+        w.write_union_overlay(pattern, 4);
+        w.write_union_overlay(pattern, 1);
+        EXPECT_BYTES(w, "feff0000 fe");
+    }
+    {
+        // XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes before
+        // Table 9's value, so the call site asks for DISCARD and takes it
+        // back. Any other refusal is not a narrowing and stays.
+        const std::vector<std::uint8_t> data = unhex("01020304");
+        Reader r(data, Endianness::Little, 4);
+        r.reader_refuse(Status::Discarded);
+        CHECK(r.reader_clear_discard());
+        CHECK(r.reader_status() == Status::Ok);
+        Reader t(data, Endianness::Little, 4);
+        t.reader_refuse(Status::OutOfRange);
+        CHECK(!t.reader_clear_discard());
+        CHECK(t.reader_status() == Status::OutOfRange);
+    }
+    {
+        // XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as its
+        // DHEADER and the pairs, without a count. The reader counts the
+        // pairs, goes back and reads them again; a refusal made while
+        // counting goes back with the cursor.
+        const std::vector<std::uint8_t> data =
+            unhex("10000000 01000000 0a000000 02000000 14000000");
+        Reader r(data, Endianness::Little, 4);
+        const std::uint32_t extent = r.read_dheader();
+        const std::size_t end = r.reader_position() + extent;
+        const ReaderMark mark = r.reader_save();
+        int pairs = 0;
+        while (r.reader_position() < end && r.reader_status() == Status::Ok) {
+            r.read_i32();
+            r.read_i32();
+            pairs++;
+        }
+        r.reader_refuse(Status::OutOfRange);
+        r.reader_restore(mark);
+        CHECK(pairs == 2);
+        CHECK(r.read_i32() == 1);
+        CHECK(r.read_i32() == 10);
+        CHECK(r.read_i32() == 2);
+        CHECK(r.read_i32() == 20);
+        CHECK(r.reader_position() == 20);
+        CHECK(r.reader_status() == Status::Ok);
+    }
+}
+
 }  // namespace
 
 // DDS-XTypes 1.3 §7.5.1.1.2, Table 43: the typedefs the Service provides,
@@ -1538,7 +1608,7 @@ int overloaded(DDS::Byte) { return 12; }
 int overloaded(DDS::Char8) { return 13; }
 int overloaded(DDS::Boolean) { return 14; }
 
-void the_types_of_table_43_are_distinguishable_for_overloading() {
+void xtypes_7_5_1_1_2_the_types_of_table_43_are_distinguishable_for_overloading() {
     CHECK(overloaded(DDS::Int32(0)) == 1 && overloaded(DDS::UInt32(0)) == 2);
     CHECK(overloaded(DDS::Int8(0)) == 3 && overloaded(DDS::UInt8(0)) == 4);
     CHECK(overloaded(DDS::Int16(0)) == 5 && overloaded(DDS::UInt16(0)) == 6);
@@ -1556,7 +1626,7 @@ void the_types_of_table_43_are_distinguishable_for_overloading() {
     CHECK(octet == 0xa5u && DDS::Byte(octet) == byte);
 }
 
-void the_primitive_typedefs_of_table_43_exist() {
+void xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist() {
     DDS::Int32 i32 = -1;
     DDS::UInt32 u32 = 0xffffffffu;
     DDS::Int8 i8 = -1;
@@ -1581,8 +1651,8 @@ void the_primitive_typedefs_of_table_43_exist() {
 }
 
 int main() {
-    the_primitive_typedefs_of_table_43_exist();
-    the_types_of_table_43_are_distinguishable_for_overloading();
+    xtypes_7_5_1_1_2_the_primitive_typedefs_of_table_43_exist();
+    xtypes_7_5_1_1_2_the_types_of_table_43_are_distinguishable_for_overloading();
     alignment();
     primitives();
     strings();
@@ -1598,5 +1668,6 @@ int main() {
     wstring_axes();
     hdds_axes();
     cursor();
+    the_operations_no_corpus_case_reaches();
     return failures == 0 ? 0 : 1;
 }

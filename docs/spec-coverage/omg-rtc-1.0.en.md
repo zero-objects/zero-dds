@@ -460,9 +460,7 @@ implementations, so concrete components only need to serve
 
 **Tests:** —
 
-**Status:** `n/a (informative)` — the spec provides the UML-to-IDL rule as a
-codegen hint; ZeroDDS satisfies the equivalence directly in the Rust trait
-layer (see the §6.2/Annex A done items with "alternative-form-of").
+**Status:** open — the rules produce the IDL of the PSMs Lightweight CCM (§6.4) and CORBA (§6.5), both of which are missing; the local PSM in Rust (`crates/rtc/`) needs no IDL.
 
 ### §6.2 IDL definitions
 
@@ -557,9 +555,12 @@ is the §5.2.2.2 `open` item.
 
 ## Audit status
 
-20 done / 3 partial / 3 open / 7 n/a (informative) / 0 n/a (rejected).
+20 done / 3 partial / 4 open / 0 blocked / 6 n/a (informative).
 
-Open items and remainder items: see `omg-rtc-1.0.open.md`.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document omg-rtc-1.0.md`):
 
-Test run: `cargo test -p zerodds-rtc` — 47 lib tests + 6 integration tests +
-1 doc test green, 0 failed.
+* `cargo nextest run --profile merge -p zerodds-rtc --all-targets` (job `merge-rust-rtc`) — 52 tests green.
+
+52 cited tests green, 0 not green.
+
+Open items: `omg-rtc-1.0.open.en.md`.

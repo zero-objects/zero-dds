@@ -57,7 +57,7 @@ assert_eq!(v, AmqpValue::Long(42));
 assert_eq!(consumed, buf.len());
 ```
 
-Frame-Header Round-Trip:
+Frame header (OASIS AMQP 1.0 Part 2 §2.3.1):
 
 ```rust
 use zerodds_amqp_bridge::{FrameHeader, FrameType, encode_frame_header, decode_frame_header};
@@ -68,10 +68,9 @@ let header = FrameHeader {
     frame_type: FrameType::Amqp,
     channel: 0,
 };
-let mut buf = [0u8; 8];
-let written = encode_frame_header(&header, &mut buf).expect("encode");
-let (decoded, consumed) = decode_frame_header(&buf).expect("decode");
-assert_eq!(written, consumed);
+let octets = encode_frame_header(header);
+assert_eq!(octets, [0, 0, 0, 16, 2, 0, 0, 0]);
+let decoded = decode_frame_header(&octets).expect("decode");
 assert_eq!(decoded.frame_type, FrameType::Amqp);
 ```
 
@@ -94,11 +93,16 @@ assert_eq!(decoded.frame_type, FrameType::Amqp);
 cargo test -p zerodds-amqp-bridge
 ```
 
-188 tests green:
-- 82 unit tests in src/ (type system + frame + performatives + sections + extended types + codec profile).
-- 90 boundary-decoder tests in `tests/boundary_decoders.rs` (mutation-survival reduction).
-- 8 property tests in `tests/proptest_roundtrip.rs` (round-trip invariants).
-- 8 fuzz smoke tests in `tests/fuzz_smoke.rs` (pseudo-random byte-stream decoder, no panic).
+The codec tests check the octets of OASIS AMQP 1.0 Parts 1 to 3 and 5: each
+encoding is written to the octets the specification gives and read back from
+them (`src/types.rs`, `src/extended_types.rs`, `src/frame.rs`,
+`src/sections.rs`, `src/performatives.rs`). `tests/boundary_decoders.rs` reads
+encodings cut at each length, `tests/fuzz_smoke.rs` feeds pseudo-random octets
+to the decoders (no panic), `tests/type_mapping.rs` checks the DDS-AMQP 1.0 type
+mapping. `tests/cross_language_agreement.rs` compiles the emitted C++, Java and
+TypeScript codecs and compares their octets and JSON with the Rust reference; a
+missing compiler fails the test, and the Java column runs in the integration
+pillar's job `integration-bridges-vendor-amqp`.
 
 Coverage-guided fuzzing via `cargo-fuzz`, see `fuzz/README.md` (nightly opt-in).
 

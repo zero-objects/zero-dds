@@ -24,13 +24,19 @@ use zerodds_rtps::wire_types::GuidPrefix;
 use zerodds_security_crypto::AesGcmCryptoPlugin;
 use zerodds_security_runtime::SharedSecurityGate;
 
-const DOMAIN: i32 = 73;
+/// The domain of every participant in this file, leased for the process
+/// (`crates/test-domains`): a fixed one is shared with every other run of
+/// this test on the LAN.
+fn domain() -> i32 {
+    static DOMAIN: std::sync::OnceLock<i32> = std::sync::OnceLock::new();
+    *DOMAIN.get_or_init(zerodds_test_domains::unique_domain)
+}
 
 fn governance(data_protection: &str) -> String {
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <dds><domain_access_rules><domain_rule>
-  <domains><id>{DOMAIN}</id></domains>
+  <domains><id>{domain}</id></domains>
   <allow_unauthenticated_participants>FALSE</allow_unauthenticated_participants>
   <enable_join_access_control>FALSE</enable_join_access_control>
   <discovery_protection_kind>NONE</discovery_protection_kind>
@@ -43,13 +49,14 @@ fn governance(data_protection: &str) -> String {
     <metadata_protection_kind>NONE</metadata_protection_kind>
     <data_protection_kind>{data_protection}</data_protection_kind>
   </topic_rule></topic_access_rules>
-</domain_rule></domain_access_rules></dds>"#
+</domain_rule></domain_access_rules></dds>"#,
+        domain = domain()
     )
 }
 
 fn participant(prefix: u8, data_protection: &str) -> DomainParticipant {
     let gate = Arc::new(SharedSecurityGate::new(
-        DOMAIN as u32,
+        domain() as u32,
         zerodds_security_permissions::parse_governance_xml(&governance(data_protection))
             .expect("governance"),
         Box::new(AesGcmCryptoPlugin::new()),
@@ -61,7 +68,7 @@ fn participant(prefix: u8, data_protection: &str) -> DomainParticipant {
         ..RuntimeConfig::default()
     };
     DomainParticipantFactory::instance()
-        .create_participant_with_config(DOMAIN, DomainParticipantQos::default(), cfg)
+        .create_participant_with_config(domain(), DomainParticipantQos::default(), cfg)
         .expect("participant")
 }
 

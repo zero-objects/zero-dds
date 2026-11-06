@@ -12,8 +12,8 @@ Der Mechanismus, den diese Spalte mit den zwanzig anderen teilt — die beiden W
 
 **Repo:** `crates/lang-cst/src/csharp/`, `crates/lang-render/src/csharp.rs`
 
-**Tests:** `crates/lang-render/src/csharp.rs::tests` (13 Tests), darunter `a_class_opens_its_brace_on_a_line_of_its_own`, `a_rooted_path_renders_with_global`, `an_array_renders_one_pair_of_brackets_per_level`, `a_nullable_value_type_renders_with_a_question_mark`, `a_namespace_nests_and_its_members_are_indented`;
-querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/csharp.rs::tests` (13 Tests), darunter `xtypes_7_5_1_a_class_opens_its_brace_on_a_line_of_its_own`, `xtypes_7_5_1_a_rooted_path_renders_with_global`, `xtypes_7_5_1_an_array_renders_one_pair_of_brackets_per_level`, `xtypes_7_5_1_a_nullable_value_type_renders_with_a_question_mark`, `xtypes_7_5_1_a_namespace_nests_and_its_members_are_indented`;
+querschnittlich `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/rule/csharp.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/csharp.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/default_csharp.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `runtime/csharp`, Endpoint-SDK `endpoints/csharp`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,7 +78,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_idl_primitive_reaches_the_csharp_type_that_holds_it`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_4_1_1_every_idl_primitive_reaches_the_csharp_type_that_holds_it`
 
 **Status:** done
 
@@ -88,7 +88,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_fixed_is_a_string_and_not_a_decimal`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_4_2_4_a_fixed_is_a_string_and_not_a_decimal`
 
 **Status:** done
 
@@ -98,7 +98,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_sequence_and_an_array_are_both_csharp_arrays`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_4_2_1_a_sequence_and_an_array_are_both_csharp_arrays`
 
 **Status:** done
 
@@ -108,9 +108,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_map_is_an_array_of_a_generated_entry_class`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::two_maps_of_one_shape_are_one_entry_class`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::two_maps_whose_csharp_spelling_coincides_are_still_two_entry_classes`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_4_2_2_a_map_is_an_array_of_a_generated_entry_class`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::xtypes_7_2_2_4_3_two_maps_of_one_shape_are_one_entry_class`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::xtypes_7_2_2_4_3_two_maps_whose_csharp_spelling_coincides_are_still_two_entry_classes`
 
 **Status:** done
 
@@ -120,8 +120,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_optional_value_type_is_nullable_and_a_reference_one_is_not`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::an_optional_enum_is_nullable_because_an_enum_is_a_value_type`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_17_1_an_optional_value_type_is_nullable_and_a_reference_one_is_not`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_17_1_an_optional_enum_is_nullable_because_an_enum_is_a_value_type`
 
 **Status:** done
 
@@ -131,8 +131,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_enumeration_is_a_real_enum_and_a_member_of_it_is_that_type`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::an_explicit_enumerator_value_is_written_out`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_4_3_3_an_enumeration_is_a_real_enum_and_a_member_of_it_is_that_type`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_4_3_3_an_explicit_enumerator_value_is_written_out`
 
 **Status:** done
 
@@ -142,8 +142,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::a_bitset_is_a_class_of_one_field_per_bitfield`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_14_3_3_a_bitmask_is_a_flags_enum_over_the_holder_its_bound_calls_for`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_14_3_2_a_bitset_is_a_class_of_one_field_per_bitfield`
 
 **Status:** done
 
@@ -153,8 +153,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_module_is_a_namespace_and_two_modules_do_not_collide`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::a_module_reopened_beside_a_nested_one_is_one_namespace_block`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_2_a_module_is_a_namespace_and_two_modules_do_not_collide`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_2_a_module_reopened_beside_a_nested_one_is_one_namespace_block`
 
 **Status:** done
 
@@ -164,9 +164,9 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_identifier_that_is_a_csharp_keyword_is_escaped_with_an_at_sign`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::every_field_carries_the_idl_name_it_was_folded_from`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::two_members_that_differ_only_after_the_fold_stay_two_members`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_1_1_an_identifier_that_is_a_csharp_keyword_is_escaped_with_an_at_sign`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_1_1_2_every_field_carries_the_idl_name_it_was_folded_from`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::idl_7_2_3_two_members_that_differ_only_after_the_fold_stay_two_members`
 
 **Status:** done
 
@@ -176,8 +176,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes`,
-`crates/lang-rules/src/adapter/csharp.rs::tests::an_exception_is_a_data_class_and_not_a_system_exception`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_1_1_2_2_an_interface_is_an_interface_of_signatures_with_the_idl_passing_modes`,
+`crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_4_1_an_exception_is_a_data_class_and_not_a_system_exception`
 
 **Status:** done
 
@@ -189,7 +189,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/csharp.rs`, `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_2_4_2_3_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -199,7 +199,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/csharp.rs`, `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::a_construct_with_no_csharp_data_form_is_named_and_not_left_out`
+**Tests:** `crates/lang-rules/src/adapter/csharp.rs::tests::idl4csharp_7_3_a_construct_with_no_csharp_data_form_is_named_and_not_left_out`
 
 **Status:** done
 
@@ -209,7 +209,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `crates/lang-rules/src/emit/csharp.rs`, `crates/lang-rules/src/adapter/csharp.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::csharp_puts_begin_and_end_inside_the_type_body`
+**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::idl4csharp_7_17_5_csharp_puts_begin_and_end_inside_the_type_body`
 
 **Status:** done
 
@@ -221,8 +221,8 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -232,8 +232,7 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-csharp-gen/`, `tools/wireprobe/wireprobe-zerodds-csharp`, `tools/wireprobe/wireprobe-csharp-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -241,8 +240,14 @@ querschnittlich `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_
 
 ## Audit-Status
 
-21 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+21 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-lang-rules` — 1024 Tests grün, 0 failed (20 ignoriert: die Vollkorpus-Compile-Läufe, die `--include-ignored` verlangen).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-csharp-1.0.md`):
 
-Offene Punkte: keine. Decision-Records: keine.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 2 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (Job `merge-rust-lang-render`) — 7 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 30 Tests grün.
+
+39 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

@@ -508,11 +508,9 @@ impl ReliableStatelessWriter {
                 }
             }
             // T10: "DATA.inlineQos += a_change.inlineQos".
-            if repair {
-                if let Some(own) = &change.inline_qos {
-                    for p in &own.parameters {
-                        inline.push(p.clone());
-                    }
+            if repair && let Some(own) = &change.inline_qos {
+                for p in &own.parameters {
+                    inline.push(p.clone());
                 }
             }
         }
@@ -539,7 +537,7 @@ impl ReliableStatelessWriter {
             if let Some(hash) = change.key_hash {
                 inline.push(crate::parameter_list::Parameter::new(
                     crate::parameter_list::pid::KEY_HASH,
-                    hash.to_vec(),
+                    hash,
                 ));
             }
         }
@@ -551,7 +549,7 @@ impl ReliableStatelessWriter {
             inline_qos: if inline.parameters.is_empty() {
                 None
             } else {
-                Some(inline)
+                Some(inline.into())
             },
             data_flag: !lifecycle,
             key_flag: lifecycle,
@@ -1046,7 +1044,11 @@ mod tests {
         w.reader_locator_add(loc(2), false);
         w.new_change(ChangeKind::Alive, alloc::vec![1]).unwrap();
         let dgs = w.tick(Duration::ZERO).unwrap();
-        let qos_of = |dg: &OutboundDatagram| data_of(dg).inline_qos.map(|p| p.parameters.len());
+        let qos_of = |dg: &OutboundDatagram| {
+            data_of(dg)
+                .inline_qos
+                .map(|p| p.into_list().parameters.len())
+        };
         let to = |l: Locator| dgs.iter().find(|d| d.targets.as_slice() == [l]).unwrap();
         assert_eq!(qos_of(to(loc(1))), Some(1));
         assert_eq!(qos_of(to(loc(2))), None);
@@ -1063,7 +1065,7 @@ mod tests {
         let d = data_of(&dgs[0]);
         assert!(d.key_flag && !d.data_flag);
         assert_eq!(
-            crate::inline_qos::find_status_info(d.inline_qos.as_ref().unwrap()),
+            d.inline_qos.as_ref().unwrap().status_info(),
             Some(crate::inline_qos::status_info::DISPOSED)
         );
     }

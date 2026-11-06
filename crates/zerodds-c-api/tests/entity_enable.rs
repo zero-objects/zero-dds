@@ -97,7 +97,7 @@ fn wait_for(what: &str, mut condition: impl FnMut() -> bool) {
 }
 
 #[test]
-fn entities_of_a_participant_that_does_not_autoenable_are_created_disabled() {
+fn capi_14_6_entities_of_a_participant_that_does_not_autoenable_are_created_disabled() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CEntityEnableManual").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
@@ -146,7 +146,7 @@ fn entities_of_a_participant_that_does_not_autoenable_are_created_disabled() {
 }
 
 #[test]
-fn a_writer_of_a_publisher_that_does_not_autoenable_is_not_announced_until_enabled() {
+fn capi_14_6_a_writer_of_a_publisher_that_does_not_autoenable_is_not_announced_until_enabled() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CEntityEnableWriter").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
@@ -245,7 +245,7 @@ fn a_writer_of_a_publisher_that_does_not_autoenable_is_not_announced_until_enabl
 }
 
 #[test]
-fn instance_handles_are_the_ones_contains_entity_and_the_matched_lists_use() {
+fn capi_14_6_instance_handles_are_the_ones_contains_entity_and_the_matched_lists_use() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CEntityEnableHandles").unwrap();
     let type_name = CString::new("RawBytes").unwrap();
@@ -304,7 +304,7 @@ fn instance_handles_are_the_ones_contains_entity_and_the_matched_lists_use() {
 }
 
 #[test]
-fn status_changes_show_what_happened_and_clear_when_the_status_is_read() {
+fn capi_14_6_status_changes_show_what_happened_and_clear_when_the_status_is_read() {
     let lease = zerodds_test_domains::lease_domain();
     let topic_name = CString::new("CEntityEnableStatus").unwrap();
     let type_name = CString::new("RawBytes").unwrap();

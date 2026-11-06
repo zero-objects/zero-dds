@@ -554,99 +554,24 @@ pub fn sasl_plain_response(username: &str, password: &str) -> alloc::vec::Vec<u8
 mod tests {
     use super::*;
 
-    fn round(d: u64, body: AmqpExtValue) {
-        let bytes = encode_performative(d, &body).expect("encode");
-        let (desc, parsed, _) = decode_performative(&bytes).expect("decode");
-        assert_eq!(desc, d);
-        assert_eq!(parsed, body);
+    // Expected octets from OASIS AMQP 1.0: a performative is a described
+    // list (Part 1 §1.4), 0x00, its descriptor code as a smallulong 0x53
+    // (Part 2 §2.7: open 0x10 to close 0x18; Part 5 §5.3.3: the SASL
+    // frames 0x40 to 0x44), then `list8` 0xc0 with size and count, the
+    // fields in their order each with its constructor.
+
+    /// A performative with descriptor `code` and list `fields` of `count`.
+    fn performative(code: u8, count: u8, fields: &[u8]) -> Vec<u8> {
+        let mut out = alloc::vec![0x00, 0x53, code, 0xc0, (fields.len() + 1) as u8, count];
+        out.extend_from_slice(fields);
+        out
     }
 
+    /// §2.7 and §5.3.3: the descriptor codes of the nine performatives and
+    /// the five SASL frames.
     #[test]
-    fn open_descriptor_is_0x10() {
-        let bytes = open("client-1").expect("encode");
-        let (desc, _, _) = decode_performative(&bytes).expect("decode");
-        assert_eq!(desc, descriptor::OPEN);
-    }
-
-    #[test]
-    fn begin_descriptor_is_0x11() {
-        let bytes = begin(None, 0, 100, 100).expect("encode");
-        let (desc, _, _) = decode_performative(&bytes).expect("decode");
-        assert_eq!(desc, descriptor::BEGIN);
-    }
-
-    #[test]
-    fn attach_carries_role_bit() {
-        let bytes = attach("link-1", 0, true).expect("encode"); // sender
-        let (_desc, body, _) = decode_performative(&bytes).expect("decode");
-        if let AmqpExtValue::List(items) = body {
-            assert_eq!(items[2], AmqpExtValue::Boolean(false)); // role=sender=false
-        } else {
-            panic!("expected list body");
-        }
-    }
-
-    #[test]
-    fn flow_carries_window_values() {
-        let bytes = flow(50, 7, 100).expect("encode");
-        let (_, body, _) = decode_performative(&bytes).expect("decode");
-        if let AmqpExtValue::List(items) = body {
-            assert_eq!(items[1], AmqpExtValue::Uint(50));
-        } else {
-            panic!();
-        }
-    }
-
-    #[test]
-    fn transfer_default_settled_false() {
-        let bytes = transfer(0, None, false).expect("encode");
-        let (desc, _, _) = decode_performative(&bytes).expect("decode");
-        assert_eq!(desc, descriptor::TRANSFER);
-    }
-
-    #[test]
-    fn disposition_settled_round_trip() {
-        let bytes = disposition(true, 0, Some(10), true).expect("encode");
-        let (desc, _, _) = decode_performative(&bytes).expect("decode");
-        assert_eq!(desc, descriptor::DISPOSITION);
-    }
-
-    #[test]
-    fn detach_round_trips() {
-        let bytes = detach(7, true).expect("encode");
-        let (desc, _, _) = decode_performative(&bytes).expect("decode");
-        assert_eq!(desc, descriptor::DETACH);
-    }
-
-    #[test]
-    fn end_and_close_are_minimal() {
-        let e = end().expect("encode");
-        assert_eq!(decode_performative(&e).expect("decode").0, descriptor::END);
-        let c = close().expect("encode");
-        assert_eq!(
-            decode_performative(&c).expect("decode").0,
-            descriptor::CLOSE
-        );
-    }
-
-    #[test]
-    fn arbitrary_descriptor_round_trip() {
-        round(
-            0xDEAD_BEEF,
-            AmqpExtValue::List(alloc::vec![AmqpExtValue::Int(42)]),
-        );
-    }
-
-    #[test]
-    fn truncated_input_yields_error() {
-        assert!(decode_performative(&[]).is_err());
-        // Missing described prefix:
-        assert!(decode_performative(&[0xFF, 0x00]).is_err());
-    }
-
-    #[test]
-    fn all_nine_descriptors_have_unique_values() {
-        let descs = alloc::vec![
+    fn amqp10_2_7_the_descriptor_codes_are_0x10_to_0x18_and_0x40_to_0x44() {
+        let codes = [
             descriptor::OPEN,
             descriptor::BEGIN,
             descriptor::ATTACH,
@@ -657,128 +582,162 @@ mod tests {
             descriptor::END,
             descriptor::CLOSE,
         ];
-        let mut sorted = descs.clone();
-        sorted.sort_unstable();
-        sorted.dedup();
-        assert_eq!(sorted.len(), descs.len(), "descriptors must be unique");
-    }
-
-    #[test]
-    fn attach_to_carries_target_address() {
-        let frame = attach_to("link-1", 0, true, "/queues/zd10").unwrap();
-        let (desc, body, _n) = decode_performative(&frame).unwrap();
-        assert_eq!(desc, descriptor::ATTACH);
-        if let AmqpExtValue::List(items) = body {
-            assert_eq!(items[0], AmqpExtValue::Str("link-1".into()));
-            assert_eq!(items[2], AmqpExtValue::Boolean(false)); // sender role
-            // target (index 6) is a described 0x29 with the address.
-            if let AmqpExtValue::Described {
-                descriptor: d,
-                value,
-            } = &items[6]
-            {
-                assert_eq!(*d, 0x29);
-                if let AmqpExtValue::List(tf) = value.as_ref() {
-                    assert_eq!(tf[0], AmqpExtValue::Str("/queues/zd10".into()));
-                } else {
-                    panic!("target body must be a list");
-                }
-            } else {
-                panic!("target must be described");
-            }
-        } else {
-            panic!("attach body must be a list");
-        }
-    }
-
-    #[test]
-    fn transfer_message_has_tag_and_data() {
-        let f = transfer_message(0, 1, b"\x00\x00\x00\x01", b"hello-rmq", true).unwrap();
-        // first performative = transfer; then a Data section follows.
-        let (desc, _body, consumed) = decode_performative(&f).unwrap();
-        assert_eq!(desc, descriptor::TRANSFER);
-        assert!(
-            consumed < f.len(),
-            "a Data section must follow the transfer performative"
-        );
-    }
-
-    #[test]
-    fn sasl_init_descriptor_and_roundtrip() {
-        let resp = sasl_plain_response("zerodds", "zerodds");
-        // RFC 4616: \0 zerodds \0 zerodds.
-        assert_eq!(resp[0], 0);
-        assert_eq!(&resp[1..8], b"zerodds");
-        assert_eq!(resp[8], 0);
-        let frame = sasl_init("PLAIN", &resp).unwrap();
-        let (desc, body, _n) = decode_performative(&frame).unwrap();
-        assert_eq!(desc, descriptor::SASL_INIT);
-        // body = [Symbol("PLAIN"), Binary(resp), Null].
-        if let AmqpExtValue::List(items) = body {
-            assert_eq!(items[0], AmqpExtValue::Symbol("PLAIN".into()));
-            assert_eq!(items[1], AmqpExtValue::Binary(resp));
-        } else {
-            panic!("sasl-init body must be a list");
-        }
-    }
-
-    #[test]
-    fn sasl_mechanisms_extracts_symbols() {
-        // Array form (server offers several).
-        let arr = AmqpExtValue::List(alloc::vec![AmqpExtValue::Array(alloc::vec![
-            AmqpExtValue::Symbol("PLAIN".into()),
-            AmqpExtValue::Symbol("AMQPLAIN".into()),
-        ])]);
-        let m = sasl_mechanisms_from_body(&arr);
-        assert_eq!(m, alloc::vec!["PLAIN".to_string(), "AMQPLAIN".to_string()]);
-        // Single-symbol form.
-        let one = AmqpExtValue::List(alloc::vec![AmqpExtValue::Symbol("EXTERNAL".into())]);
         assert_eq!(
-            sasl_mechanisms_from_body(&one),
-            alloc::vec!["EXTERNAL".to_string()]
+            codes,
+            [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18]
+        );
+        let sasl = [
+            descriptor::SASL_MECHANISMS,
+            descriptor::SASL_INIT,
+            descriptor::SASL_CHALLENGE,
+            descriptor::SASL_RESPONSE,
+            descriptor::SASL_OUTCOME,
+        ];
+        assert_eq!(sasl, [0x40, 0x41, 0x42, 0x43, 0x44]);
+    }
+
+    /// §2.7.1 open: container-id first.
+    #[test]
+    fn amqp10_2_7_1_open_is_its_container_id_and_the_fields_after_it() {
+        let mut fields = alloc::vec![0xa1, 0x08];
+        fields.extend_from_slice(b"client-1");
+        fields.extend_from_slice(&[0x40, 0x40, 0x40, 0x40]);
+        assert_eq!(open("client-1").unwrap(), performative(0x10, 5, &fields));
+    }
+
+    /// §2.7.2 begin: remote-channel, next-outgoing-id, incoming-window,
+    /// outgoing-window.
+    #[test]
+    fn amqp10_2_7_2_begin_is_channel_and_the_three_numbers() {
+        assert_eq!(
+            begin(None, 0, 100, 100).unwrap(),
+            performative(0x11, 4, &[0x40, 0x43, 0x52, 0x64, 0x52, 0x64])
         );
     }
 
+    /// §2.7.3 attach: name, handle, role (§2.8.1: false is the sender).
     #[test]
-    fn sasl_outcome_code_extracted() {
-        let ok = AmqpExtValue::List(alloc::vec![AmqpExtValue::Ubyte(0)]);
-        assert_eq!(sasl_outcome_code(&ok), Some(0));
-        let auth = AmqpExtValue::List(alloc::vec![AmqpExtValue::Ubyte(1)]);
-        assert_eq!(sasl_outcome_code(&auth), Some(1));
-    }
-
-    /// Spec §2.7.3, §2.8.2, §2.8.3: a sender attach whose receiver settles —
-    /// `snd-settle-mode` unsettled (0), `rcv-settle-mode` first (0).
-    #[test]
-    fn an_unsettled_sender_attach_says_so() {
-        let bytes = attach_sender_unsettled("L", 3, "/queues/q").expect("encode");
-        let (desc, body, _) = decode_performative(&bytes).expect("decode");
-        assert_eq!(desc, descriptor::ATTACH);
-        let AmqpExtValue::List(fields) = body else {
-            panic!("no list body");
-        };
-        assert_eq!(fields[1], AmqpExtValue::Uint(3));
-        assert_eq!(fields[2], AmqpExtValue::Boolean(false), "role sender");
-        assert_eq!(fields[3], AmqpExtValue::Ubyte(0), "snd-settle-mode");
-        assert_eq!(fields[4], AmqpExtValue::Ubyte(0), "rcv-settle-mode");
-        assert!(
-            matches!(
-                &fields[6],
-                AmqpExtValue::Described {
-                    descriptor: 0x29,
-                    ..
-                }
-            ),
-            "target"
+    fn amqp10_2_7_3_attach_is_name_handle_and_role() {
+        let mut fields = alloc::vec![0xa1, 0x06];
+        fields.extend_from_slice(b"link-1");
+        fields.extend_from_slice(&[0x43, 0x42]);
+        assert_eq!(
+            attach("link-1", 0, true).unwrap(),
+            performative(0x12, 3, &fields)
         );
     }
 
-    /// Spec §2.7.6: the fields a sender waits on, read back from what
-    /// `disposition_accept` writes, and a range that covers its ends only.
+    /// §2.7.3 with Part 3 §3.5.4: a sender attach names its target, the
+    /// described list 0x29 whose first field is the address; it carries
+    /// initial-delivery-count.
     #[test]
-    fn a_disposition_reads_back() {
-        let bytes = disposition_accept(4, Some(6)).expect("encode");
-        let (_, body, _) = decode_performative(&bytes).expect("decode");
+    fn amqp10_2_7_3_a_sender_attach_names_its_target_address() {
+        let mut fields = alloc::vec![0xa1, 0x06];
+        fields.extend_from_slice(b"link-1");
+        fields.extend_from_slice(&[0x43, 0x42, 0x40, 0x40, 0x40]);
+        fields.extend_from_slice(&[0x00, 0x53, 0x29, 0xc0, 0x0f, 0x01, 0xa1, 0x0c]);
+        fields.extend_from_slice(b"/queues/zd10");
+        fields.extend_from_slice(&[0x40, 0x42, 0x43]);
+        assert_eq!(
+            attach_to("link-1", 0, true, "/queues/zd10").unwrap(),
+            performative(0x12, 10, &fields)
+        );
+    }
+
+    /// §2.7.3, §2.8.2, §2.8.3: a sender attach that leaves settlement to
+    /// the receiver says `snd-settle-mode` unsettled (0) and
+    /// `rcv-settle-mode` first (0).
+    #[test]
+    fn amqp10_2_7_3_an_unsettled_sender_attach_says_so() {
+        let mut fields = alloc::vec![
+            0xa1, 0x01, b'L', 0x52, 0x03, 0x42, 0x50, 0x00, 0x50, 0x00, 0x40
+        ];
+        fields.extend_from_slice(&[0x00, 0x53, 0x29, 0xc0, 0x0c, 0x01, 0xa1, 0x09]);
+        fields.extend_from_slice(b"/queues/q");
+        fields.extend_from_slice(&[0x40, 0x42, 0x43]);
+        assert_eq!(
+            attach_sender_unsettled("L", 3, "/queues/q").unwrap(),
+            performative(0x12, 10, &fields)
+        );
+    }
+
+    /// §2.7.4 flow: next-incoming-id, incoming-window, next-outgoing-id,
+    /// outgoing-window, then handle, delivery-count and link-credit.
+    #[test]
+    fn amqp10_2_7_4_flow_is_the_windows_then_handle_count_and_credit() {
+        assert_eq!(
+            flow(50, 7, 100).unwrap(),
+            performative(0x13, 4, &[0x40, 0x52, 0x32, 0x52, 0x07, 0x52, 0x64])
+        );
+        assert_eq!(
+            flow_link_credit(1, 0, 10).unwrap(),
+            performative(
+                0x13,
+                7,
+                &[
+                    0x40, 0x70, 0x00, 0x00, 0x08, 0x00, 0x43, 0x70, 0x00, 0x00, 0x08, 0x00, 0x52,
+                    0x01, 0x43, 0x52, 0x0a,
+                ]
+            )
+        );
+    }
+
+    /// §2.7.5 transfer: handle, delivery-id, delivery-tag, message-format,
+    /// settled; the message follows the performative (Part 3 §3.2.6, data
+    /// 0x75).
+    #[test]
+    fn amqp10_2_7_5_transfer_is_handle_id_tag_format_settled_then_the_message() {
+        assert_eq!(
+            transfer(0, None, false).unwrap(),
+            performative(0x14, 5, &[0x43, 0x40, 0x40, 0x40, 0x42])
+        );
+        let mut expected = performative(
+            0x14,
+            5,
+            &[
+                0x43, 0x52, 0x01, 0xa0, 0x04, 0x00, 0x00, 0x00, 0x01, 0x43, 0x41,
+            ],
+        );
+        expected.extend_from_slice(&[0x00, 0x53, 0x75, 0xa0, 0x09]);
+        expected.extend_from_slice(b"hello-rmq");
+        assert_eq!(
+            transfer_message(0, 1, &[0, 0, 0, 1], b"hello-rmq", true).unwrap(),
+            expected
+        );
+        assert_eq!(
+            data_payload_from_transfer(&expected).as_deref(),
+            Some(&b"hello-rmq"[..])
+        );
+    }
+
+    /// §2.7.6 disposition: role, first, last, settled, state (Part 3
+    /// §3.4.2: accepted is the described list 0x24).
+    #[test]
+    fn amqp10_2_7_6_disposition_is_role_first_last_settled_and_state() {
+        assert_eq!(
+            disposition(true, 0, Some(10), true).unwrap(),
+            performative(0x15, 4, &[0x41, 0x43, 0x52, 0x0a, 0x41])
+        );
+        assert_eq!(
+            disposition_accept(4, Some(6)).unwrap(),
+            performative(
+                0x15,
+                5,
+                &[0x41, 0x52, 0x04, 0x52, 0x06, 0x41, 0x00, 0x53, 0x24, 0x45]
+            )
+        );
+    }
+
+    /// §2.7.6: a sender reads a receiver's disposition: the range from
+    /// first to last (last absent: first alone), and the state.
+    #[test]
+    fn amqp10_2_7_6_a_received_disposition_reads_its_range_and_state() {
+        let accepted = performative(
+            0x15,
+            5,
+            &[0x41, 0x52, 0x04, 0x52, 0x06, 0x41, 0x00, 0x53, 0x24, 0x45],
+        );
+        let (_, body, _) = decode_performative(&accepted).expect("decode");
         let view = disposition_from_body(&body).expect("view");
         assert_eq!(
             view,
@@ -792,7 +751,7 @@ mod tests {
         );
         assert!(view.covers(4) && view.covers(6));
         assert!(!view.covers(3) && !view.covers(7));
-        let bare = disposition(false, 9, None, false).expect("encode");
+        let bare = performative(0x15, 4, &[0x42, 0x52, 0x09, 0x40, 0x42]);
         let (_, body, _) = decode_performative(&bare).expect("decode");
         let view = disposition_from_body(&body).expect("view");
         assert_eq!(view.state, None);
@@ -802,5 +761,90 @@ mod tests {
             None,
             "a disposition without role"
         );
+    }
+
+    /// §2.7.7 detach: handle, closed. §2.7.8 end and §2.7.9 close: the
+    /// optional error.
+    #[test]
+    fn amqp10_2_7_7_detach_end_and_close_are_their_fields() {
+        assert_eq!(
+            detach(7, true).unwrap(),
+            performative(0x16, 2, &[0x52, 0x07, 0x41])
+        );
+        assert_eq!(end().unwrap(), performative(0x17, 1, &[0x40]));
+        assert_eq!(close().unwrap(), performative(0x18, 1, &[0x40]));
+    }
+
+    /// Part 1 §1.5: a descriptor code above 255 is a full `ulong`.
+    #[test]
+    fn amqp10_1_5_a_descriptor_code_above_255_is_a_full_ulong() {
+        let octets = [
+            0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0xde, 0xad, 0xbe, 0xef, 0xc0, 0x03, 0x01, 0x54,
+            0x2a,
+        ];
+        let body = AmqpExtValue::List(alloc::vec![AmqpExtValue::Int(42)]);
+        assert_eq!(encode_performative(0xdead_beef, &body).unwrap(), octets);
+        assert_eq!(
+            decode_performative(&octets).unwrap(),
+            (0xdead_beef, body, octets.len())
+        );
+    }
+
+    /// Part 1 §1.2: an input without the described prefix 0x00 is no
+    /// performative.
+    #[test]
+    fn amqp10_1_2_a_performative_without_the_described_prefix_is_refused() {
+        assert!(decode_performative(&[]).is_err());
+        assert!(decode_performative(&[0xff, 0x00]).is_err());
+    }
+
+    /// §5.3.3.2 sasl-init: mechanism (symbol), initial-response (binary),
+    /// hostname; the PLAIN response is `\0user\0password` (RFC 4616 §2).
+    #[test]
+    fn amqp10_5_3_3_2_sasl_init_is_mechanism_response_and_hostname() {
+        let response = sasl_plain_response("zerodds", "zerodds");
+        assert_eq!(response, b"\x00zerodds\x00zerodds");
+        let mut fields = alloc::vec![0xa3, 0x05];
+        fields.extend_from_slice(b"PLAIN");
+        fields.extend_from_slice(&[0xa0, 0x10]);
+        fields.extend_from_slice(b"\x00zerodds\x00zerodds");
+        fields.push(0x40);
+        assert_eq!(
+            sasl_init("PLAIN", &response).unwrap(),
+            performative(0x41, 3, &fields)
+        );
+    }
+
+    /// §5.3.3.1 sasl-mechanisms: the offered mechanisms, an array of
+    /// symbols or one symbol.
+    #[test]
+    fn amqp10_5_3_3_1_the_offered_mechanisms_are_read_from_an_array_or_one_symbol() {
+        let mut array = alloc::vec![0xe0, 0x11, 0x02, 0xa3, 0x05];
+        array.extend_from_slice(b"PLAIN");
+        array.push(0x08);
+        array.extend_from_slice(b"AMQPLAIN");
+        let (desc, body, _) = decode_performative(&performative(0x40, 1, &array)).unwrap();
+        assert_eq!(desc, descriptor::SASL_MECHANISMS);
+        assert_eq!(
+            sasl_mechanisms_from_body(&body),
+            alloc::vec!["PLAIN".to_string(), "AMQPLAIN".to_string()]
+        );
+        let mut one = alloc::vec![0xa3, 0x08];
+        one.extend_from_slice(b"EXTERNAL");
+        let (_, body, _) = decode_performative(&performative(0x40, 1, &one)).unwrap();
+        assert_eq!(
+            sasl_mechanisms_from_body(&body),
+            alloc::vec!["EXTERNAL".to_string()]
+        );
+    }
+
+    /// §5.3.3.5 sasl-outcome: the code (§5.3.3.6: 0 ok, 1 auth) as a
+    /// ubyte.
+    #[test]
+    fn amqp10_5_3_3_5_the_outcome_code_is_read() {
+        let (_, ok, _) = decode_performative(&performative(0x44, 1, &[0x50, 0x00])).unwrap();
+        assert_eq!(sasl_outcome_code(&ok), Some(0));
+        let (_, auth, _) = decode_performative(&performative(0x44, 1, &[0x50, 0x01])).unwrap();
+        assert_eq!(sasl_outcome_code(&auth), Some(1));
     }
 }

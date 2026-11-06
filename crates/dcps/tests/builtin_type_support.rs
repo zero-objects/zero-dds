@@ -18,7 +18,7 @@ fn participant(domain: i32) -> zerodds_dcps::DomainParticipant {
 /// DDS 1.4 §2.2.2.3.6 `get_type_name`: the names of Annex E, which are the
 /// type names of the data types.
 #[test]
-fn each_type_support_names_its_type() {
+fn xtypes_annex_e_each_type_support_names_its_type() {
     assert_eq!(StringTypeSupport.get_type_name(), "DDS::String");
     assert_eq!(KeyedStringTypeSupport.get_type_name(), "DDS::KeyedString");
     assert_eq!(BytesTypeSupport.get_type_name(), "DDS::Bytes");
@@ -40,7 +40,7 @@ fn each_type_support_names_its_type() {
 /// created from the registered name; registering again is not an error;
 /// another type under a taken name is.
 #[test]
-fn register_type_registers_each_type_under_a_name() {
+fn xtypes_annex_e_register_type_registers_each_type_under_a_name() {
     let p = participant(181);
     let supports: [&dyn TypeSupport; 4] = [
         &StringTypeSupport,

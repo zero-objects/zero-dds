@@ -59,7 +59,7 @@ fn member(name: &str, type_: DynamicType) -> MemberDescriptor {
 /// §7.5.2.2.12: a primitive kind answers its type; any other kind fails
 /// with RETCODE_BAD_PARAMETER.
 #[test]
-fn a_primitive_type_is_answered_and_a_composite_kind_is_not() {
+fn xtypes_7_5_2_2_11_a_primitive_type_is_answered_and_a_composite_kind_is_not() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     assert_eq!(
         factory.get_primitive_type(TypeKind::Int32).unwrap().kind(),
@@ -80,7 +80,7 @@ fn a_primitive_type_is_answered_and_a_composite_kind_is_not() {
 /// (§7.5.2.7.5); a member added at an index shifts the rest
 /// (§7.5.2.7.6).
 #[test]
-fn a_structure_is_created_from_a_descriptor_and_members_are_added() {
+fn xtypes_7_5_2_2_a_structure_is_created_from_a_descriptor_and_members_are_added() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let long = factory.get_primitive_type(TypeKind::Int32).unwrap();
     let double = factory.get_primitive_type(TypeKind::Float64).unwrap();
@@ -126,7 +126,7 @@ fn a_structure_is_created_from_a_descriptor_and_members_are_added() {
 
 /// §7.5.2.2.6: an inconsistent descriptor fails.
 #[test]
-fn an_inconsistent_descriptor_creates_no_type() {
+fn xtypes_7_5_2_2_6_an_inconsistent_descriptor_creates_no_type() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     // A sequence with no element type.
     let error = factory
@@ -149,7 +149,7 @@ fn an_inconsistent_descriptor_creates_no_type() {
 /// and an alias passes the member on to its base type or fails with
 /// RETCODE_PRECONDITION_NOT_MET.
 #[test]
-fn add_member_follows_table_55() {
+fn xtypes_7_5_2_7_2_add_member_follows_table_55() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let long = factory.get_primitive_type(TypeKind::Int32).unwrap();
 
@@ -209,7 +209,7 @@ fn add_member_follows_table_55() {
 /// Table 55: an enumeration takes a literal with its own type, a bitmask
 /// a Boolean flag inside the bound.
 #[test]
-fn an_enumeration_and_a_bitmask_take_literals_and_flags() {
+fn xtypes_7_5_2_2_2_an_enumeration_and_a_bitmask_take_literals_and_flags() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let long = factory.get_primitive_type(TypeKind::Int32).unwrap();
     let boolean = factory.get_primitive_type(TypeKind::Boolean).unwrap();
@@ -270,7 +270,7 @@ fn an_enumeration_and_a_bitmask_take_literals_and_flags() {
 
 /// §7.5.2.2.1, .3, .4, .5: the collection and string creators.
 #[test]
-fn the_collection_and_string_creators_build_their_kinds() {
+fn xtypes_7_5_2_2_5_the_collection_and_string_creators_build_their_kinds() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let ast = model("struct Item { long id; };");
     let item = DynamicType::find(&ast, "Item").unwrap();
@@ -322,7 +322,7 @@ fn the_collection_and_string_creators_build_their_kinds() {
 /// §7.5.2.2.7: the copy has the state of the original, changes to it do
 /// not reach the original, and a recursive type is copied once.
 #[test]
-fn a_copy_carries_the_state_and_leaves_the_original_alone() {
+fn xtypes_7_5_2_2_a_copy_carries_the_state_and_leaves_the_original_alone() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let ast = model(
         "module m { @mutable struct Node {
@@ -371,7 +371,7 @@ fn a_copy_carries_the_state_and_leaves_the_original_alone() {
 /// §7.5.2.9.5 and §7.5.2.9.6: annotations applied to the type and to a
 /// member; a declared annotation is copied with its declaration.
 #[test]
-fn annotations_are_applied_to_the_type_and_to_a_member() {
+fn xtypes_7_5_2_9_1_annotations_are_applied_to_the_type_and_to_a_member() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let ast = model(
         "@annotation Widgets { long widgets; string label; };
@@ -457,7 +457,7 @@ fn annotations_are_applied_to_the_type_and_to_a_member() {
 /// §7.5.2.2.8: a builder for a type identical to the one a TypeObject
 /// describes; a MINIMAL object has no names and is refused.
 #[test]
-fn a_type_is_created_from_a_type_object() {
+fn xtypes_7_5_2_2_8_a_type_is_created_from_a_type_object() {
     use zerodds_types::resolve::TypeRegistry;
     use zerodds_types::type_object::TypeObject;
 
@@ -501,7 +501,7 @@ fn a_type_is_created_from_a_type_object() {
 /// §7.5.2.2.6 with the kind `ANNOTATION_TYPE`: an annotation type is
 /// built, not declared in IDL, and applied from its descriptor.
 #[test]
-fn an_annotation_type_is_built_and_applied() {
+fn xtypes_7_5_2_8_3_an_annotation_type_is_built_and_applied() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let long = factory.get_primitive_type(TypeKind::Int32).unwrap();
     // `create_type` refuses the annotation kind and names the operation.
@@ -584,7 +584,7 @@ fn an_annotation_type_is_built_and_applied() {
 /// annotations are; the lists are compared in any order, and the
 /// annotations that restate a compared property are not compared twice.
 #[test]
-fn equals_includes_the_applied_annotations() {
+fn xtypes_7_5_2_6_3_equals_includes_the_applied_annotations() {
     let factory = DynamicTypeBuilderFactory::get_instance();
     let long = factory.get_primitive_type(TypeKind::Int32).unwrap();
     let mut annotation = factory.create_annotation_type("Tag").unwrap();

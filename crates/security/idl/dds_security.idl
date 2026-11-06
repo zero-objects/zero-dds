@@ -29,9 +29,12 @@ module DDS {
     struct DataReaderQos { sequence<octet> opaque; };
     struct TopicQos { sequence<octet> opaque; };
     struct PartitionQosPolicy { sequence<string> name; };
-    struct ParticipantBuiltinTopicData { octet key[16]; };
-    struct PublicationBuiltinTopicData { octet key[16]; };
-    struct SubscriptionBuiltinTopicData { octet key[16]; };
+    // Mutable, as the DDS builtin topic data are: the extension types of
+    // 7.5 derive from them with @extensibility(MUTABLE), and DDS-XTypes 1.3
+    // §7.2.2.4.5 has a derived structure keep its base's extensibility.
+    @mutable struct ParticipantBuiltinTopicData { octet key[16]; };
+    @mutable struct PublicationBuiltinTopicData { octet key[16]; };
+    @mutable struct SubscriptionBuiltinTopicData { octet key[16]; };
     struct TopicBuiltinTopicData { octet key[16]; };
     local interface DataWriter {};
     local interface DataReader {};

@@ -516,14 +516,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_member_name_never_moves() {
+    fn xtypes_7_5_1_a_member_name_never_moves() {
         for name in ["class", "new", "constructor", "x"] {
             assert_eq!(field_name(name), name);
         }
     }
 
     #[test]
-    fn a_map_entry_has_no_declared_name() {
+    fn xtypes_7_5_1_a_map_entry_has_no_declared_name() {
         assert_eq!(MAP_ENTRY, "_zd_map_entry");
     }
 }

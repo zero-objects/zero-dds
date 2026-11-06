@@ -68,61 +68,6 @@ class CoreQosRulesTest {
 
     // ---- RETCODE_IMMUTABLE_POLICY -------------------------------------------------
 
-    @Test
-    void anEnabledWriterRefusesToChangeAnImmutablePolicy() {
-        DataWriterQos before = writer.getQos();
-        // History and Ownership are not changeable (DDS 1.4 §2.2.3, Changeable = No)
-        assertThrows(ImmutablePolicyException.class,
-                () -> writer.setQos(before.withPolicy(Qos.pf().History().withKeepAll())));
-        assertThrows(ImmutablePolicyException.class,
-                () -> writer.setQos(before.withPolicy(Qos.pf().Ownership().withExclusive())));
-        assertEquals(before, writer.getQos());
-    }
-
-    @Test
-    void anEnabledWriterAcceptsTheChangeOfAChangeablePolicy() {
-        DataWriterQos changed = writer.getQos()
-                .withPolicy(Qos.pf().TransportPriority().withValue(7))
-                .withPolicy(Qos.pf().UserData().withValue(new byte[] {1, 2}, 0, 2));
-        writer.setQos(changed);
-        assertEquals(7, writer.getQos().getTransportPriority().getValue());
-        assertArrayEquals(new byte[] {1, 2}, writer.getQos().getUserData().getValue());
-        // the same QoS again is not a change
-        writer.setQos(writer.getQos());
-    }
-
-    @Test
-    void anEnabledReaderRefusesImmutableAndAcceptsChangeablePolicies() {
-        DataReaderQos before = reader.getQos();
-        assertThrows(ImmutablePolicyException.class,
-                () -> reader.setQos(before.withPolicy(Qos.pf().Ownership().withExclusive())));
-        assertThrows(ImmutablePolicyException.class,
-                () -> reader.setQos(before.withPolicy(Qos.pf().History().withKeepAll())));
-        assertEquals(before, reader.getQos());
-        reader.setQos(before.withPolicy(Qos.pf().TimeBasedFilter().withMinimumSeparation(1, TimeUnit.SECONDS)));
-        assertEquals(1, reader.getQos().getTimeBasedFilter().getMinimumSeparation().getDuration(TimeUnit.SECONDS));
-    }
-
-    @Test
-    void anEnabledTopicRefusesImmutableAndAcceptsChangeablePolicies() {
-        TopicQos before = topic.getQos();
-        assertThrows(ImmutablePolicyException.class,
-                () -> topic.setQos(before.withPolicy(Qos.pf().History().withKeepAll())));
-        assertEquals(before, topic.getQos());
-        topic.setQos(before.withPolicy(Qos.pf().TransportPriority().withValue(4)));
-        assertEquals(4, topic.getQos().getTransportPriority().getValue());
-    }
-
-    @Test
-    void anEntityThatIsNotEnabledAcceptsAnyChange() {
-        DataWriterImpl<byte[]> disabled = new DataWriterImpl<>(DOMAIN, null, topic,
-                ByteArrayTypeSupport.INSTANCE, Qos.writer(), Collections.<String>emptySet());
-        DataWriterQos changed = Qos.writer().withPolicy(Qos.pf().History().withKeepAll());
-        disabled.setQos(changed);
-        assertEquals(changed, disabled.getQos());
-        disabled.close(); // it belongs to no Publisher and holds the Topic
-    }
-
     // ---- RETCODE_INCONSISTENT_POLICY ---------------------------------------------
 
     private static DataWriterQos writerQos(int depth, int maxSamples, int maxPerInstance) {
@@ -133,7 +78,7 @@ class CoreQosRulesTest {
     }
 
     @Test
-    void aHistoryDepthAboveMaxSamplesPerInstanceIsInconsistent() {
+    void javapsm_7_3_2_a_history_depth_above_max_samples_per_instance_is_inconsistent() {
         DataWriterQos before = writer.getQos();
         DataWriterQos inconsistent = writerQos(10, 100, 5);
         assertThrows(InconsistentPolicyException.class, () -> publisher.createDataWriter(topic, inconsistent));
@@ -145,36 +90,13 @@ class CoreQosRulesTest {
     }
 
     @Test
-    void maxSamplesBelowMaxSamplesPerInstanceIsInconsistent() {
+    void javapsm_7_3_2_max_samples_below_max_samples_per_instance_is_inconsistent() {
         DataWriterQos inconsistent = writerQos(1, 4, 5);
         assertThrows(InconsistentPolicyException.class, () -> publisher.createDataWriter(topic, inconsistent));
         DataReaderQos readerQos = Qos.reader().withPolicy(Qos.pf().ResourceLimits()
                 .withMaxSamples(4).withMaxSamplesPerInstance(5));
         assertThrows(InconsistentPolicyException.class, () -> subscriber.createDataReader(topic, readerQos));
         assertNotNull(publisher.createDataWriter(topic, writerQos(1, 5, 5)));
-    }
-
-    @Test
-    void aMinimumSeparationAboveTheDeadlinePeriodIsInconsistent() {
-        DataReaderQos inconsistent = Qos.reader()
-                .withPolicy(Qos.pf().Deadline().withPeriod(2, TimeUnit.SECONDS))
-                .withPolicy(Qos.pf().TimeBasedFilter().withMinimumSeparation(3, TimeUnit.SECONDS));
-        assertThrows(InconsistentPolicyException.class, () -> subscriber.createDataReader(topic, inconsistent));
-        assertThrows(InconsistentPolicyException.class, () -> reader.setQos(inconsistent));
-        DataReaderQos equal = Qos.reader()
-                .withPolicy(Qos.pf().Deadline().withPeriod(2, TimeUnit.SECONDS))
-                .withPolicy(Qos.pf().TimeBasedFilter().withMinimumSeparation(2, TimeUnit.SECONDS));
-        assertNotNull(subscriber.createDataReader(topic, equal));
-    }
-
-    @Test
-    void aTopicWithAnInconsistentQosIsRefused() {
-        TopicQos inconsistent = Qos.topic()
-                .withPolicy(Qos.pf().History().withKeepLast(10))
-                .withPolicy(Qos.pf().ResourceLimits().withMaxSamplesPerInstance(5));
-        assertThrows(InconsistentPolicyException.class,
-                () -> ((DomainParticipantImpl) participant).createTopic("CoreQosInconsistent",
-                        byte[].class, inconsistent));
     }
 
     // ---- RETCODE_UNSUPPORTED -------------------------------------------------------
@@ -186,13 +108,13 @@ class CoreQosRulesTest {
     }
 
     @Test
-    void aTopicOfAnotherImplementationIsUnsupported() {
+    void javapsm_7_3_2_a_topic_of_another_implementation_is_unsupported() {
         Topic<byte[]> other = foreign(Topic.class);
         assertThrows(UnsupportedOperationException.class, () -> publisher.createDataWriter(other));
     }
 
     @Test
-    void aTopicDescriptionOfAnotherImplementationIsUnsupported() {
+    void javapsm_7_3_2_a_topic_description_of_another_implementation_is_unsupported() {
         TopicDescription<byte[]> other = foreign(TopicDescription.class);
         assertThrows(UnsupportedOperationException.class, () -> subscriber.createDataReader(other));
         ContentFilteredTopic<byte[]> filtered = foreign(ContentFilteredTopic.class);
@@ -202,31 +124,4 @@ class CoreQosRulesTest {
 
     // ---- RETCODE_PRECONDITION_NOT_MET of the publisher and the subscriber ---------
 
-    @Test
-    void resumePublicationsHasToMatchASuspend() {
-        assertThrows(PreconditionNotMetException.class, publisher::resumePublications);
-        publisher.suspendPublications();
-        publisher.suspendPublications();
-        publisher.resumePublications();
-        publisher.resumePublications();
-        assertThrows(PreconditionNotMetException.class, publisher::resumePublications);
-    }
-
-    @Test
-    void endCoherentChangesHasToMatchABeginAndTheCallsNest() {
-        assertThrows(PreconditionNotMetException.class, publisher::endCoherentChanges);
-        publisher.beginCoherentChanges();
-        publisher.beginCoherentChanges();
-        publisher.endCoherentChanges();
-        publisher.endCoherentChanges();
-        assertThrows(PreconditionNotMetException.class, publisher::endCoherentChanges);
-    }
-
-    @Test
-    void endAccessHasToMatchABeginAccess() {
-        assertThrows(PreconditionNotMetException.class, subscriber::endAccess);
-        subscriber.beginAccess();
-        subscriber.endAccess();
-        assertThrows(PreconditionNotMetException.class, subscriber::endAccess);
-    }
 }

@@ -30,7 +30,7 @@ declared bound as far as a serializer, so neither has a code path that
 could write anything else. It settled that the ~150 rows involved are a
 missing front-end feature rather than an axis — and, separately, that a
 compatibility setting is still required, because the octets on the wire
-differ whatever the cause. See `docs/wire-axes-followup.md`.
+differ whatever the cause. See `0b2e8df9f6b:docs/wire-axes-followup.md`.
 
 `m1c.sh` reads OpenDDS from `/opt/opendds`; `tools/interop-env.sh` uses
 `/root/vendors/opendds`, which is the installation the probes build

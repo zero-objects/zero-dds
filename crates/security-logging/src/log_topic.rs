@@ -670,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn plugin_class_id_is_the_spec_name() {
+    fn security_10_1_plugin_class_id_is_the_spec_name() {
         let sink = LogTopicLoggingPlugin::new(
             Arc::new(Recorder::default()),
             LogLevel::Informational,
@@ -680,7 +680,7 @@ mod tests {
     }
 
     #[test]
-    fn an_event_fills_every_field_from_the_clause() {
+    fn security_9_6_2_2_an_event_fills_every_field_from_the_clause() {
         let v2 = BuiltinLoggingTypeV2::from_log_event(
             LogLevel::Critical,
             [0xAA; 16],
@@ -708,7 +708,7 @@ mod tests {
     }
 
     #[test]
-    fn events_above_the_level_are_dropped_and_at_or_below_pass() {
+    fn security_10_6_1_events_above_the_level_are_dropped_and_at_or_below_pass() {
         let recorder = Arc::new(Recorder::default());
         let sink = LogTopicLoggingPlugin::new(recorder.clone(), LogLevel::Warning, false);
         sink.log(LogLevel::Informational, [0; 16], "debug", "no");
@@ -718,7 +718,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_topic_is_published_when_asked() {
+    fn security_10_6_legacy_topic_is_published_when_asked() {
         let recorder = Arc::new(Recorder::default());
         let sink = LogTopicLoggingPlugin::new(recorder.clone(), LogLevel::Debug, true);
         sink.log(LogLevel::Error, [1; 16], "auth", "bad");
@@ -779,7 +779,7 @@ mod tests {
     /// §10.6.1 — one line per logged message, at and below the level and
     /// nothing above it.
     #[test]
-    fn log_options_write_one_line_per_event_at_or_below_the_level() {
+    fn security_9_6_2_1_log_options_write_one_line_per_event_at_or_below_the_level() {
         let path = tmp_path("threshold");
         let recorder = Arc::new(Recorder::default());
         let sink = LogTopicLoggingPlugin::with_options(
@@ -828,7 +828,7 @@ mod tests {
 
     /// A newline inside a field must not split one event into two lines.
     #[test]
-    fn a_field_with_a_newline_stays_on_one_line() {
+    fn security_10_6_1_a_field_with_a_newline_stays_on_one_line() {
         let path = tmp_path("newline");
         let sink = LogTopicLoggingPlugin::with_options(
             None,
@@ -852,7 +852,7 @@ mod tests {
     /// §9.6.2.1.3 — `distribute` off means nothing reaches the publisher,
     /// even with the legacy topic asked for.
     #[test]
-    fn distribute_off_publishes_nothing() {
+    fn security_9_6_2_1_distribute_off_publishes_nothing() {
         let recorder = Arc::new(Recorder::default());
         let sink = LogTopicLoggingPlugin::with_options(
             Some(recorder.clone()),
@@ -873,7 +873,7 @@ mod tests {
     /// §9.6.2.1 / §9.6.2.2.1 — `set_log_options` after `enable_logging` is
     /// refused, so an attacker cannot retune or suspend the log at runtime.
     #[test]
-    fn options_cannot_change_after_logging_is_enabled() {
+    fn security_9_6_2_1_options_cannot_change_after_logging_is_enabled() {
         let recorder = Arc::new(Recorder::default());
         let sink = LogTopicLoggingPlugin::with_options(
             Some(recorder),
@@ -897,7 +897,7 @@ mod tests {
     /// §9.6.2.1.2 — a file that cannot be opened is refused at option-setting
     /// time instead of silently disabling the file log.
     #[test]
-    fn an_unopenable_log_file_is_refused() {
+    fn security_9_6_2_1_2_an_unopenable_log_file_is_refused() {
         let bad = String::from("/nonexistent-zerodds-dir/security.log");
         match LogTopicLoggingPlugin::with_options(
             None,
@@ -919,7 +919,7 @@ mod tests {
     /// action: nothing is appended to the file, nothing is published, no
     /// listener is told. After `enable_logging` the same call logs.
     #[test]
-    fn log_before_enable_logging_does_nothing() {
+    fn security_10_6_1_log_before_enable_logging_does_nothing() {
         let path = tmp_path("before_enable");
         let recorder = Arc::new(Recorder::default());
         let sink = LogTopicLoggingPlugin::with_options(
@@ -961,7 +961,7 @@ mod tests {
     /// a message above the saved level produces none; the NIL listener removes
     /// it. Through the `LoggingPlugin` interface.
     #[test]
-    fn the_listener_is_told_of_each_message_the_sink_logs() {
+    fn security_9_6_2_2_the_listener_is_told_of_each_message_the_sink_logs() {
         let sink = LogTopicLoggingPlugin::with_options(
             None,
             LogOptions {
@@ -1002,7 +1002,7 @@ mod tests {
 
     /// §9.6.2.2.3 — enabling without options is refused.
     #[test]
-    fn enable_without_options_is_refused() {
+    fn security_9_6_2_2_enable_without_options_is_refused() {
         let sink = LogTopicLoggingPlugin {
             publisher: None,
             publish_legacy: false,

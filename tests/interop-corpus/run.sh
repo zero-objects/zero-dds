@@ -13,7 +13,7 @@
 # The default is all four combinations because one is not the corpus.
 # Under `xcdr2 le` alone the PL_CDR1 extended parameter header and both
 # big-endian byte-swap arms of the writer never execute
-# (docs/codec-coverage-report.md, the B -> C delta).
+# (0b2e8df9f6b:docs/codec-coverage-report.md, the B -> C delta).
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)

@@ -3,7 +3,7 @@
 #
 # A silent drop is a path that takes data or intent in, produces less —
 # or something wrong — out, and reports success. Three of them were found
-# by accident in one week; docs/silent-drop-sweep.md is the sweep that
+# by accident in one week; 0b2e8df9f6b:docs/silent-drop-sweep.md is the sweep that
 # followed, and this is what keeps the next one from needing an accident.
 #
 # It greps for the eleven shapes that produce one and fails on any site
@@ -77,6 +77,9 @@ CRATES=(
     # model the IDL front end fills, so every shape below is a way for a
     # declaration to reach the wire without a member, a bound or a key.
     crates/xml-compose
+    # The Rust-defined types of #33: the description that becomes the
+    # model, and the derive that writes the description.
+    crates/codec crates/derive
 )
 
 # shape name -> extended regex. Each is a way for data to go missing.
@@ -112,7 +115,7 @@ SHAPES=(
     # and bits_of are whole answers: Union, Enumeration and Bitmask carry
     # no base field. That is a reason a spec revision can retract, which
     # is why they are watched. bitfields_of is not in the pattern, so its
-    # call sites are not watched; docs/silent-drop-sweep.md records that.
+    # call sites are not watched; 0b2e8df9f6b:docs/silent-drop-sweep.md records that.
     'partial_walk|members_of|cases_of|enumerators_of|bits_of|attributes_of|operations_of'
     'empty_ok|return Ok\(\(\)\);|return Ok\(Vec::new\(\)\);|=> \{\}'
 )
@@ -369,7 +372,7 @@ and replace the UNREVIEWED reason with why, in one line. A GONE line is a
 row the scan no longer finds; --update reports it and, if it carries a
 reason, refuses to drop it until you say --drop-stale.
 
-docs/silent-drop-sweep.md has the eleven defects this found and the
-shapes it cannot reach.
+The sweep that found the eleven defects and names the shapes this
+cannot reach is in git: 0b2e8df9f6b:docs/silent-drop-sweep.md.
 MSG
 exit 1

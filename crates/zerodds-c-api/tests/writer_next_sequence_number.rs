@@ -28,7 +28,7 @@ fn reliable() -> ZeroDdsEndpointQos {
 }
 
 #[test]
-fn the_next_sequence_number_is_the_one_the_next_write_carries() {
+fn rpc_7_2_1_the_next_sequence_number_is_the_one_the_next_write_carries() {
     let lease = zerodds_test_domains::lease_domain();
     let topic = CString::new("CFfiNextSequenceNumber").unwrap();
     let typ = CString::new("RawBytes").unwrap();

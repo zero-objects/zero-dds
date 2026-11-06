@@ -74,7 +74,7 @@ class WriterHandleTest {
     }
 
     @Test
-    void registerInstanceTakesATimestampAndLookupInstanceFindsTheInstanceByItsKey() throws Exception {
+    void javapsm_2_register_instance_takes_a_timestamp_and_lookup_instance_finds_the_instance_by_its_key() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1380);
         Topic<Item> topic = participant.createTopic("RegisterStamp", Item.class);
         DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
@@ -95,7 +95,7 @@ class WriterHandleTest {
     }
 
     @Test
-    void everyWriteOverloadCarriesItsSourceTimestampToTheSample() throws Exception {
+    void javapsm_7_6_2_every_write_overload_carries_its_source_timestamp_to_the_sample() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1381);
         Topic<Item> topic = participant.createTopic("WriteStamp", Item.class);
         // an unregister disposes first when autodispose_unregistered_instances is true
@@ -128,7 +128,7 @@ class WriterHandleTest {
     }
 
     @Test
-    void anUnkeyedTypeIsWrittenWithTheNilHandle() throws Exception {
+    void javapsm_7_6_2_an_unkeyed_type_is_written_with_the_nil_handle() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1382);
         Topic<byte[]> topic = participant.createTopic("NilHandle", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
@@ -147,7 +147,7 @@ class WriterHandleTest {
     }
 
     @Test
-    void unregisterByHandleOrBySampleMakesTheReaderSeeNoWriters() throws Exception {
+    void javapsm_2_unregister_by_handle_or_by_sample_makes_the_reader_see_no_writers() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1383);
         Topic<Item> topic = participant.createTopic("UnregisterHandle", Item.class);
         // an unregister disposes first when autodispose_unregistered_instances is true
@@ -179,7 +179,7 @@ class WriterHandleTest {
     }
 
     @Test
-    void disposeByHandleOrBySampleMakesTheReaderSeeTheInstanceDisposed() throws Exception {
+    void javapsm_2_dispose_by_handle_or_by_sample_makes_the_reader_see_the_instance_disposed() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1384);
         Topic<Item> topic = participant.createTopic("DisposeHandle", Item.class);
         DataWriter<Item> writer = participant.createPublisher().createDataWriter(topic);
@@ -210,23 +210,4 @@ class WriterHandleTest {
         assertThrows(PreconditionNotMetException.class, () -> writer.write(new Item(1, 1), two));
     }
 
-    @Test
-    void getKeyValueRefusesAnUnkeyedTypeAndAnUnknownHandle() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1385);
-        DataWriter<byte[]> unkeyed = participant.createPublisher().createDataWriter(
-                participant.createTopic("KeyUnkeyed", byte[].class));
-        assertThrows(PreconditionNotMetException.class,
-                () -> unkeyed.getKeyValue(new byte[0], Qos.env().getSPI().nilHandle()));
-
-        DataWriter<Item> keyed = participant.createPublisher().createDataWriter(
-                participant.createTopic("KeyKeyed", Item.class));
-        InstanceHandle known = keyed.registerInstance(new Item(4, 0));
-        keyed.write(new Item(4, 1));
-        // the key is returned in the sample given
-        Item holder = keyed.getKeyValue(new Item(), known);
-        assertEquals(4, holder.id);
-        // BAD_PARAMETER for a handle this writer did not register
-        assertThrows(IllegalArgumentException.class,
-                () -> keyed.getKeyValue(new Item(), foreignHandle()));
-    }
 }

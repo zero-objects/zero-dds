@@ -31,8 +31,8 @@ Server akzeptiert/verweigert anhand des Levels.
 Level aus dem CONNECT-Body und antwortet im passenden Dialekt
 (`crates/mqtt-bridge/src/server.rs::handle_connection`).
 
-**Tests:** `version::tests::{level_round_trip, unsupported_levels_rejected,
-only_v5_has_properties}`.
+**Tests:** `version::tests::{mqtt311_3_1_2_2_level_round_trip, mqtt311_3_1_2_2_unsupported_levels_rejected,
+mqtt311_3_1_2_2_only_v5_has_properties}`.
 
 **Status:** done
 
@@ -44,8 +44,8 @@ VBI). Identisch zu MQTT 5.0.
 **Repo:** `crates/mqtt-bridge/src/packet.rs::{FixedHeader, ControlPacketType}`
 + `vbi.rs` (Remaining-Length-VBI) + `net.rs::{read_packet, frame_packet}`.
 
-**Tests:** `packet::tests::*`, `vbi::tests::*`, `net::tests::{
-frame_and_read_round_trip, read_packet_handles_multibyte_remaining_length}`.
+**Tests:** `packet::tests::*`, `net::tests::{
+mqtt311_2_2_a_frame_is_type_and_flags_remaining_length_and_body, mqtt311_2_1_read_packet_handles_multibyte_remaining_length}`.
 
 **Status:** done
 
@@ -56,7 +56,7 @@ frame_and_read_round_trip, read_packet_handles_multibyte_remaining_length}`.
 **Repo:** `control_packets::{encode_connect_body_v, decode_connect_body_v}` mit
 `ProtocolVersion::V311` (lässt beide Property-Blocks weg).
 
-**Tests:** `control_packets::tests::v311_connect_omits_property_blocks`; Live
+**Tests:** `control_packets::tests::mqtt311_3_1_v311_connect_omits_property_blocks`; Live
 `mosquitto_interop_e2e.rs` (3.1.1-Handshake gegen Mosquitto + ZeroDDS-Broker).
 
 **Status:** done
@@ -68,7 +68,7 @@ Property-Block.
 
 **Repo:** `control_packets::{encode_connack_body_v, decode_connack_body_v}`.
 
-**Tests:** `control_packets::tests::v311_connack_is_exactly_two_bytes`.
+**Tests:** `control_packets::tests::mqtt311_3_2_v311_connack_is_exactly_two_bytes`.
 
 **Status:** done
 
@@ -79,8 +79,8 @@ Property-Block.
 
 **Repo:** `codec::{encode_publish_v, decode_publish_v}` mit `V311`.
 
-**Tests:** `codec::tests::{v311_publish_has_no_property_block,
-v311_publish_qos0_round_trip}`; Live `mosquitto_interop_e2e.rs`.
+**Tests:** `codec::tests::{mqtt311_3_3_2_the_publish_of_figure_3_11_has_no_property_block,
+mqtt311_3_3_2_the_publish_of_figure_3_11_has_no_property_block}`; Live `mosquitto_interop_e2e.rs`.
 
 **Status:** done
 
@@ -93,8 +93,8 @@ Code, keine Properties).
 emittiert nur den Packet-Identifier; der gemeinsame Decoder liest die
 Short-Form). QoS-2-Flow im Broker: `crates/mqtt-bridge/src/server.rs` (PUBREC→PUBREL→PUBCOMP).
 
-**Tests:** `control_packets::tests::v311_ack_is_packet_id_only`; In-Process
-`broker_server_e2e::qos2_exactly_once_delivery`.
+**Tests:** `control_packets::tests::mqtt311_3_4_v311_ack_is_packet_id_only`; In-Process
+`broker_server_e2e::mqtt5_4_qos2_exactly_once_delivery`.
 
 **Status:** done
 
@@ -105,12 +105,12 @@ ohne Property-Block.
 
 **Repo:** `control_packets::{encode_subscribe_body_v, decode_subscribe_body_v}`.
 
-**Tests:** `crates/mqtt-bridge/src/control_packets.rs::tests::subscribe_body_round_trip_with_two_filters`,
-`::unsubscribe_body_round_trip`;
-`crates/mqtt-bridge/src/topic_filter.rs::tests::validate_simple_filter`,
-`::validate_plus_in_middle`, `::validate_hash_at_end`,
-`::validate_hash_in_middle_rejected`, `::validate_mixed_wildcard_rejected`;
-live `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mosquitto_311_client_receives_from_zerodds`.
+**Tests:** `crates/mqtt-bridge/src/control_packets.rs::tests::mqtt5_3_8_the_subscribe_of_figures_3_19_and_3_21`,
+`::mqtt5_3_10_the_unsubscribe_payload_of_figure_3_30`;
+`crates/mqtt-bridge/src/topic_filter.rs::tests::mqtt311_3_8_validate_simple_filter`,
+`::mqtt311_3_8_validate_plus_in_middle`, `::mqtt311_3_8_validate_hash_at_end`,
+`::mqtt311_3_8_validate_hash_in_middle_rejected`, `::mqtt311_3_8_validate_mixed_wildcard_rejected`;
+live `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mqtt5_4_mosquitto_311_client_receives_from_zerodds`.
 
 **Status:** done
 
@@ -121,7 +121,7 @@ live `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mosquitto_311_client_re
 
 **Repo:** `control_packets::{encode_suback_body_v, decode_suback_body_v}`.
 
-**Tests:** `control_packets::tests::v311_suback_has_no_property_block`.
+**Tests:** `control_packets::tests::mqtt311_3_9_v311_suback_has_no_property_block`.
 
 **Status:** done
 
@@ -134,7 +134,7 @@ live `crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs::mosquitto_311_client_re
 **Repo:** `control_packets::{encode_unsubscribe_body_v,
 decode_unsubscribe_body_v, encode_unsuback_body_v, decode_unsuback_body_v}`.
 
-**Tests:** `control_packets::tests::v311_unsuback_is_packet_id_only_no_reason_codes`.
+**Tests:** `control_packets::tests::mqtt311_3_10_v311_unsuback_is_packet_id_only_no_reason_codes`.
 
 **Status:** done
 
@@ -144,7 +144,7 @@ decode_unsubscribe_body_v, encode_unsuback_body_v, decode_unsuback_body_v}`.
 
 **Repo:** `crates/mqtt-bridge/src/server.rs` (PINGREQ → PINGRESP, Body-los), `crates/mqtt-bridge/src/net.rs::MqttClient::ping` (sendet PINGREQ und prüft die Antwort gegen §3.13), Wire-Konstanten in `crates/mqtt-bridge/src/packet.rs::ControlPacketType`, Keep-Alive-Regel in `crates/mqtt-bridge/src/keep_alive.rs::KeepAliveTracker`.
 
-**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs::pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive` — vier PINGREQ je Protokoll-Version (3.1.1 und 5.0) bei angekündigtem Keep Alive von 1 s; jede Antwort muss ein PINGRESP mit leerem Body und Null-Flags sein und innerhalb der Periode zurückkommen. Die 1,5-fache Ablauf-Regel selbst: `crates/mqtt-bridge/src/keep_alive.rs::tests::small_keep_alive_expires_after_1_5x`, `crates/mqtt-bridge/src/keep_alive.rs::tests::record_packet_resets_timer`, `crates/mqtt-bridge/src/keep_alive.rs::tests::keep_alive_zero_is_disabled`.
+**Tests:** `crates/mqtt-bridge/tests/broker_server_e2e.rs::mqtt5_4_pingreq_is_answered_with_a_bodyless_pingresp_within_the_keep_alive` — vier PINGREQ je Protokoll-Version (3.1.1 und 5.0) bei angekündigtem Keep Alive von 1 s; jede Antwort muss ein PINGRESP mit leerem Body und Null-Flags sein und innerhalb der Periode zurückkommen. Die 1,5-fache Ablauf-Regel selbst: `crates/mqtt-bridge/src/keep_alive.rs::tests::mqtt5_4_1_small_keep_alive_expires_after_1_5x`, `crates/mqtt-bridge/src/keep_alive.rs::tests::mqtt5_4_1_record_packet_resets_timer`, `crates/mqtt-bridge/src/keep_alive.rs::tests::mqtt5_4_1_keep_alive_zero_is_disabled`.
 
 **Status:** done
 
@@ -156,7 +156,7 @@ das Fixed-Header-Paar `0xE0 0x00` ist das ganze Packet.
 **Repo:** `control_packets::encode_disconnect_body_v` (`V311` → leerer Body) +
 `net.rs::MqttClient::disconnect`.
 
-**Tests:** `control_packets::tests::v311_disconnect_body_is_empty`.
+**Tests:** `control_packets::tests::mqtt311_3_14_v311_disconnect_body_is_empty`.
 
 **Status:** done
 
@@ -168,10 +168,10 @@ Semantik zu 5.0; nur das Wire-Encoding der Replies ist 3.1.1.
 **Repo:** `crates/mqtt-bridge/src/server.rs::MqttBrokerServer` + `net.rs::MqttClient` (beide
 version-aware) über der gemeinsamen `crates/mqtt-bridge/src/broker.rs`-Engine.
 
-**Tests:** In-Process `broker_server_e2e::{cross_version_v5_publishes_v311_subscribes,
-cross_version_v311_publishes_v5_subscribes}`; Live `mosquitto_interop_e2e::{
-zerodds_311_client_receives_from_mosquitto, mosquitto_311_client_receives_from_zerodds,
-mosquitto_v311_clients_through_zerodds_broker}`.
+**Tests:** In-Process `broker_server_e2e::{mqtt5_4_cross_version_v5_publishes_v311_subscribes,
+mqtt5_4_cross_version_v311_publishes_v5_subscribes}`; Live `mosquitto_interop_e2e::{
+mqtt5_4_zerodds_311_client_receives_from_mosquitto, mqtt5_4_mosquitto_311_client_receives_from_zerodds,
+mqtt5_4_mosquitto_v311_clients_through_zerodds_broker}`.
 
 **Status:** done
 
@@ -190,10 +190,12 @@ v5.0 eingeführt).
 
 ## Audit-Status
 
-12 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+12 done / 0 partial / 0 open / 0 blocked / 1 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-mqtt-bridge --lib` — 166 Tests grün (inkl.
-der `v311_*`-Codec-Tests + `version`-Modul); In-Process
-`cargo test -p zerodds-mqtt-bridge --test broker_server_e2e` — 7 grün.
-Live-Interop (Linux bench host, Eclipse Mosquitto 2.0): `MQTT_MOSQUITTO=1 cargo test
--p zerodds-mqtt-bridge --test mosquitto_interop_e2e -- --ignored` — 5 grün.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document mqtt-3.1.1.md`):
+
+* `cargo nextest run --profile merge -p zerodds-mqtt-bridge --all-targets` (Job `merge-rust-mqtt-bridge`) — 26 Tests grün.
+* `python3 ci/run_integration.py integration-bridges-vendor` (Job `integration-bridges-vendor`) — 3 Tests grün.
+
+29 zitierte Tests grün, 0 nicht grün.
+

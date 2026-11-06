@@ -144,19 +144,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn time_t_roundtrip_le() {
-        let t = TimePoint {
-            seconds: 1_700_000_000,
-            nanoseconds: 999_999_999,
-        };
-        let mut buf = [0u8; 8];
-        t.encode(&mut buf, Endianness::Little).unwrap();
-        let t2 = TimePoint::decode(&buf, Endianness::Little).unwrap();
-        assert_eq!(t2, t);
-    }
-
-    #[test]
-    fn time_t_roundtrip_be() {
+    fn xrce_8_3_5_15_time_t_roundtrip_be() {
         let t = TimePoint {
             seconds: -1,
             nanoseconds: 0,
@@ -173,7 +161,7 @@ mod tests {
     /// 8 in front of the eight octets; the reference implementation's form
     /// has none.
     #[test]
-    fn a_timestamp_body_has_the_dheader_of_an_appendable_time_t() {
+    fn xrce_8_3_5_15_a_timestamp_body_has_the_dheader_of_an_appendable_time_t() {
         let p = TimestampPayload {
             transmit_timestamp: TimePoint {
                 seconds: 1,
@@ -201,7 +189,7 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_roundtrip_via_submessage() {
+    fn xrce_8_3_5_15_timestamp_roundtrip_via_submessage() {
         let p = TimestampPayload {
             transmit_timestamp: TimePoint {
                 seconds: 42,

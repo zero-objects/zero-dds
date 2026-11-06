@@ -76,7 +76,7 @@ class TypesDynamicTypeTest {
     // --- §7.8.1.1 The factory ------------------------------------------------
 
     @Test
-    void theFactoryIsASingletonPerServiceEnvironment() {
+    void javapsm_7_8_1_1_the_factory_is_a_singleton_per_service_environment() {
         DynamicTypeFactory first = DynamicTypeFactory.getInstance(ENV);
         assertSame(first, DynamicTypeFactory.getInstance(ENV));
         assertSame(ENV.getSPI().getTypeFactory(), first);
@@ -96,7 +96,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void thereIsNoDeleteInstanceAndTheServiceManagesTheLifeCycle() {
+    void javapsm_7_8_1_1_there_is_no_delete_instance_and_the_service_manages_the_life_cycle() {
         // §7.8.1.1: the static delete_instance operations of DDS-XTypes are omitted.
         for (Class<?> cls : new Class<?>[] {DynamicTypeFactory.class, DynamicTypeFactoryImpl.class}) {
             for (Method m : cls.getMethods()) {
@@ -120,7 +120,7 @@ class TypesDynamicTypeTest {
     // --- §7.8.1.3 DynamicType and DynamicTypeMember --------------------------
 
     @Test
-    void membersAreFoundByIdAndByName() {
+    void javapsm_7_8_1_3_members_are_found_by_id_and_by_name() {
         DynamicType type = point3();
         assertEquals("TypesPoint3", type.getName());
         assertEquals(TypeKind.STRUCTURE_TYPE, type.getKind());
@@ -148,7 +148,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void addMembersAddsEachDescriptorAndReturnsTheMembersOfTheType() {
+    void javapsm_7_8_1_3_add_members_adds_each_descriptor_and_returns_the_members_of_the_type() {
         DynamicType type = struct("TypesPair");
         List<DynamicTypeMember> added = type.addMembers(
                 descriptor("a", 1, prim(TypeKind.INT_16_TYPE)),
@@ -164,7 +164,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void annotationsOfATypeAreReadByIndexAndByName() {
+    void javapsm_7_8_1_3_annotations_of_a_type_are_read_by_index_and_by_name() {
         DynamicType type = point3();
         assertEquals(0, type.getAllAnnotations().size());
         assertNull(type.getAnnotation(0));
@@ -193,7 +193,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void annotationsOfAMemberAreAListInTheOrderTheyWereSet() {
+    void javapsm_7_8_1_3_annotations_of_a_member_are_a_list_in_the_order_they_were_set() {
         DynamicType type = point3();
         DynamicTypeMember x = type.getMember("x");
         assertTrue(x.getAnnotations().isEmpty());
@@ -210,7 +210,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void theListsAndMapsOfAnnotationsCannotBeModified() {
+    void javapsm_7_8_1_3_the_lists_and_maps_of_annotations_cannot_be_modified() {
         DynamicType type = point3();
         type.setAnnotations(annotation("Extensibility", "FINAL"), annotation("Nested", null));
         DynamicTypeMember x = type.getMember("x");
@@ -234,7 +234,7 @@ class TypesDynamicTypeTest {
     // --- equals and clone as Object.equals and Object.clone ------------------
 
     @Test
-    void twoTypesWithTheSamePropertiesAreEqual() {
+    void javapsm_7_8_1_3_two_types_with_the_same_properties_are_equal() {
         DynamicType a = point3();
         DynamicType b = point3();
         assertNotSame(a, b);
@@ -273,7 +273,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void membersAreEqualWhenTheirTypeDescriptorAndAnnotationsAre() {
+    void javapsm_7_8_1_3_members_are_equal_when_their_type_descriptor_and_annotations_are() {
         DynamicType a = point3();
         DynamicType b = point3();
         assertEquals(a.getMember("x"), b.getMember("x"));
@@ -294,7 +294,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void cloneIsAnEqualTypeThatSharesNoMemberWithTheOriginal() {
+    void javapsm_7_8_1_3_clone_is_an_equal_type_that_shares_no_member_with_the_original() {
         DynamicType original = point3();
         original.setAnnotation(annotation("Nested", null));
         original.getMember("y").setAnnotation(annotation("Key", null));
@@ -321,7 +321,7 @@ class TypesDynamicTypeTest {
     // --- §7.8.1.5 The descriptors are immutable -----------------------------
 
     @Test
-    void aTypeDescriptorWithLeavesTheOriginalAsItWas() {
+    void javapsm_7_8_1_5_a_type_descriptor_with_leaves_the_original_as_it_was() {
         TypeDescriptor empty = TYPES.newTypeDescriptor();
         assertEquals(TypeKind.STRUCTURE_TYPE, empty.getKind());
         assertNull(empty.getName());
@@ -357,7 +357,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void typeDescriptorsAreEqualWhenAllTheirPropertiesAre() {
+    void javapsm_7_8_1_5_type_descriptors_are_equal_when_all_their_properties_are() {
         TypeDescriptor a = TYPES.newTypeDescriptor().withName("A").withBound(1, 2);
         TypeDescriptor b = TYPES.newTypeDescriptor().withName("A").withBound(1, 2);
         assertNotSame(a, b);
@@ -371,7 +371,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void aMemberDescriptorWithLeavesTheOriginalAsItWas() {
+    void javapsm_7_8_1_5_a_member_descriptor_with_leaves_the_original_as_it_was() {
         MemberDescriptor empty = TYPES.newMemberDescriptor();
         assertNull(empty.getName());
         assertTrue(empty.getLabel().isEmpty());
@@ -409,7 +409,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void anAnnotationDescriptorWithLeavesTheOriginalAsItWas() {
+    void javapsm_7_8_1_5_an_annotation_descriptor_with_leaves_the_original_as_it_was() {
         AnnotationDescriptor empty = TYPES.newAnnotationDescriptor();
         assertNull(empty.getType());
         assertTrue(empty.getAllValue().isEmpty());
@@ -438,7 +438,11 @@ class TypesDynamicTypeTest {
         public int a;
     }
 
-    /** Extends Base: the base type of its structure, with the members b (id 2) and c (id 3). */
+    /**
+     * Extends Base: the base type of its structure, with the members b (id 1) and c (id 2); a of
+     * Base has the id 0 (XTypes 1.3 §7.3.1.2.1.1: the first member of a type without a base type
+     * has the ID 0, a derived type continues after the last member of its base).
+     */
     public static final class Derived extends Base {
         public String b;
         public double c;
@@ -447,7 +451,7 @@ class TypesDynamicTypeTest {
     private static final DynamicTypeFactoryImpl FACTORY = DynamicTypeFactoryImpl.getInstance(ENV);
 
     @Test
-    void createTypeIsReachedThroughTheImplementationOfTheFactory() throws Exception {
+    void javapsm_7_8_1_3_create_type_is_reached_through_the_implementation_of_the_factory() throws Exception {
         // The OMG class is unchanged and does not declare createType(Class<?>), which
         // DDS-Java-PSM 1.0 §7.8.1.3 adds; this implementation has it on its factory class.
         assertThrows(NoSuchMethodException.class,
@@ -462,7 +466,7 @@ class TypesDynamicTypeTest {
     }
 
     @Test
-    void aDerivedClassIsAStructureWithTheSuperclassAsBaseType() {
+    void javapsm_8_6_1_1_a_derived_class_is_a_structure_with_the_superclass_as_base_type() {
         DynamicType derived = FACTORY.createType(Derived.class);
         assertEquals("org::omg::dds::TypesDynamicTypeTest::Derived", derived.getName());
         assertEquals(TypeKind.STRUCTURE_TYPE, derived.getKind());
@@ -473,35 +477,38 @@ class TypesDynamicTypeTest {
         assertNull(base.getDescriptor().getBaseType(), "Base extends Object: no base type");
 
         // The type lists only the members its class declares; the base type has the others.
-        assertEquals(Arrays.asList(2, 3), Arrays.asList(derived.getAllMembers().keySet().toArray()));
-        assertEquals("b", derived.getMember(2).getName());
-        assertEquals(TypeKind.STRING_TYPE, derived.getMember(2).getDescriptor().getType().getKind());
-        assertEquals("c", derived.getMember(3).getName());
-        assertEquals(TypeKind.FLOAT_64_TYPE, derived.getMember(3).getDescriptor().getType().getKind());
+        assertEquals(Arrays.asList(1, 2), Arrays.asList(derived.getAllMembers().keySet().toArray()));
+        assertEquals("b", derived.getMember(1).getName());
+        assertEquals(TypeKind.STRING_TYPE, derived.getMember(1).getDescriptor().getType().getKind());
+        assertEquals("c", derived.getMember(2).getName());
+        assertEquals(TypeKind.FLOAT_64_TYPE, derived.getMember(2).getDescriptor().getType().getKind());
         assertNull(derived.getMember("a"));
-        assertEquals(Arrays.asList(1), Arrays.asList(base.getAllMembers().keySet().toArray()));
-        assertEquals("a", base.getMember(1).getName());
-        assertEquals(TypeKind.INT_32_TYPE, base.getMember(1).getDescriptor().getType().getKind());
+        assertEquals(Arrays.asList(0), Arrays.asList(base.getAllMembers().keySet().toArray()));
+        assertEquals("a", base.getMember(0).getName());
+        assertEquals(TypeKind.INT_32_TYPE, base.getMember(0).getDescriptor().getType().getKind());
     }
 
     @Test
-    void theBytesOfADerivedDynamicTypeAreThoseOfTheClass() {
+    void javapsm_8_6_1_1_the_members_of_the_base_type_come_first_in_the_octets_of_a_derived_type() {
         DynamicType derived = FACTORY.createType(Derived.class);
         DynamicData data = DynamicDataFactory.getInstance(ENV).newDynamicData(derived)
-                .setInt32Value(1, 7)
-                .setStringValue(2, "x")
-                .setFloat64Value(3, 1.5);
+                .setInt32Value(0, 7)
+                .setStringValue(1, "x")
+                .setFloat64Value(2, 1.5);
         Derived bean = new Derived();
         bean.a = 7;
         bean.b = "x";
         bean.c = 1.5;
-        // The members of the base type come first, as the class's fields do (§8.6.1.1).
-        assertArrayEquals(ReflectionTypeSupport.of(Derived.class).encode(bean),
-                new DynamicDataTypeSupport(ENV, derived).encode(data));
-        DynamicData back = new DynamicDataTypeSupport(ENV, derived)
-                .decode(ReflectionTypeSupport.of(Derived.class).encode(bean));
-        assertEquals(7, back.getInt32Value(1));
-        assertEquals("x", back.getStringValue(2));
-        assertEquals(1.5, back.getFloat64Value(3));
+        // The members of the base type come first, as the class's fields do (§8.6.1.1), in one
+        // APPENDABLE body (XTypes 1.3 §7.4.3.5): the DHEADER 20, a, the string "x" with its length
+        // and NUL, two octets of padding, c aligned to 4.
+        byte[] expected = {0x14, 0, 0, 0, 7, 0, 0, 0, 2, 0, 0, 0, 'x', 0, 0, 0,
+            0, 0, 0, 0, 0, 0, (byte) 0xF8, 0x3F};
+        assertArrayEquals(expected, ReflectionTypeSupport.of(Derived.class).encode(bean));
+        assertArrayEquals(expected, new DynamicDataTypeSupport(ENV, derived).encode(data));
+        DynamicData back = new DynamicDataTypeSupport(ENV, derived).decode(expected);
+        assertEquals(7, back.getInt32Value(0));
+        assertEquals("x", back.getStringValue(1));
+        assertEquals(1.5, back.getFloat64Value(2));
     }
 }

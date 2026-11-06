@@ -210,6 +210,13 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
 
     /// Writes a sample. `now_unix_ns` must be the current
     /// wall-clock time in nanoseconds since the epoch.
+    /// `representation_identifier` is the identifier of the sample's
+    /// encapsulation header (DDSI-RTPS 2.5 §10.5, e.g.
+    /// `UserSample::Alive::representation_identifier`), `None` where there
+    /// is none (a dispose or unregister without payload); `payload` is the
+    /// body behind that header. A sample of a topic the session does not
+    /// know is dropped and counted in `samples_dropped`; a participant GUID
+    /// it does not know is recorded under participant index 0.
     ///
     /// # Errors
     /// See [`SessionError`].
@@ -219,6 +226,7 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
         participant_guid: [u8; 16],
         topic: &TopicKey,
         sample_kind: SampleKind,
+        representation_identifier: Option<[u8; 2]>,
         payload: Vec<u8>,
     ) -> Result<(), SessionError> {
         let mut g = self.inner.lock().map_err(|_| SessionError::Poisoned)?;
@@ -247,6 +255,7 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
             participant_idx,
             topic_idx,
             sample_kind,
+            representation_identifier,
             payload,
         };
         g.writer.write_frame(&frame)?;
@@ -265,6 +274,25 @@ impl<W: std::io::Write + Send> RecordingSession<W> {
         // the frames.
         self.bytes_total
             .store(g.writer.bytes_written(), Ordering::Relaxed);
+        Ok(())
+    }
+
+    /// Ends the capture: writes the header if no sample did (a capture
+    /// without samples is a header without frames, `docs/specs/zddsrec-1.0.md`,
+    /// "File structure"), then flushes the sink.
+    ///
+    /// # Errors
+    /// See [`SessionError`].
+    pub fn finish(&self) -> Result<(), SessionError> {
+        let mut g = self.inner.lock().map_err(|_| SessionError::Poisoned)?;
+        if !g.header_written {
+            let header = g.pending_header.clone();
+            g.writer.write_header(&header)?;
+            g.header_written = true;
+            self.bytes_total
+                .store(g.writer.bytes_written(), Ordering::Relaxed);
+        }
+        g.writer.flush()?;
         Ok(())
     }
 
@@ -293,7 +321,10 @@ pub struct SessionStats {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic)] // tests may use unwrap and panic.
 mod tests {
+    //! The section numbers are those of `docs/spec-coverage/zddsrec-1.0.md`.
     use super::*;
+    use crate::reader::RecordReader;
+    use std::sync::Arc;
 
     fn p(name: &str, guid_byte: u8) -> ParticipantEntry {
         ParticipantEntry {
@@ -308,100 +339,135 @@ mod tests {
         }
     }
 
-    #[test]
-    fn session_writes_header_lazy_on_first_sample() {
-        let opts = SessionOptions::new(1_700_000_000_000_000_000)
-            .with_participant(p("talker", 1))
-            .with_topic(t("/x", "T"));
-        let s: RecordingSession<Vec<u8>> = RecordingSession::new(Vec::new(), opts);
-        assert_eq!(s.stats().samples_total, 0);
-        s.record_sample(
-            1_700_000_000_000_001_000,
-            [1u8; 16],
-            &t("/x", "T"),
-            SampleKind::Alive,
-            vec![1, 2, 3],
-        )
-        .unwrap();
-        assert_eq!(s.stats().samples_total, 1);
+    /// A sink the test reads while the session still owns its writer.
+    #[derive(Clone, Default)]
+    struct SharedSink(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for SharedSink {
+        fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(b);
+            Ok(b.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl SharedSink {
+        fn bytes(&self) -> Vec<u8> {
+            self.0.lock().unwrap().clone()
+        }
     }
 
-    /// `bytes_total` is the size of the capture, not a sum of sizes.
+    /// The header goes out with the first sample, with the session's
+    /// time base, participants and topics (the writer's type name); a frame
+    /// holds its time as the delta to the time base, its kind and payload.
+    #[test]
+    fn zddsrec_5_the_header_goes_out_with_the_first_sample_and_frames_hold_time_deltas() {
+        let sink = SharedSink::default();
+        let opts = SessionOptions::new(1_000)
+            .with_participant(p("rec", 7))
+            .with_topic(t("Track", "cuas::Track"));
+        let s = RecordingSession::new(sink.clone(), opts);
+        assert!(sink.bytes().is_empty(), "no header before the first sample");
+        let key = t("Track", "cuas::Track");
+        for (now, kind, payload) in [
+            (1_500, SampleKind::Alive, vec![0xde, 0xad]),
+            (1_600, SampleKind::NotAliveDisposed, vec![]),
+            (1_700, SampleKind::NotAliveUnregistered, vec![]),
+        ] {
+            let id = (!payload.is_empty()).then_some([0x00, 0x09]);
+            s.record_sample(now, [7; 16], &key, kind, id, payload)
+                .unwrap();
+        }
+        let bytes = sink.bytes();
+        let mut r = RecordReader::new(&bytes);
+        let header = r.parse_header().unwrap();
+        assert_eq!(header.time_base_unix_ns, 1_000);
+        assert_eq!(header.participants, vec![p("rec", 7)]);
+        assert_eq!(
+            header.topics,
+            vec![TopicEntry {
+                name: "Track".into(),
+                type_name: "cuas::Track".into()
+            }]
+        );
+        let mut got = Vec::new();
+        while let Some(f) = r.next_frame().unwrap() {
+            got.push((
+                f.timestamp_delta_ns,
+                f.sample_kind,
+                f.representation_identifier,
+                f.payload,
+            ));
+        }
+        assert_eq!(
+            got,
+            vec![
+                (500, SampleKind::Alive, Some([0x00, 0x09]), vec![0xde, 0xad]),
+                (600, SampleKind::NotAliveDisposed, None, vec![]),
+                (700, SampleKind::NotAliveUnregistered, None, vec![]),
+            ]
+        );
+    }
+
+    /// A capture without samples is its header (`finish`), which a reader
+    /// reads as a file without frames.
+    #[test]
+    fn zddsrec_1_a_capture_without_samples_is_its_header() {
+        let sink = SharedSink::default();
+        let s = RecordingSession::new(
+            sink.clone(),
+            SessionOptions::new(5).with_topic(t("/x", "T")),
+        );
+        s.finish().unwrap();
+        let bytes = sink.bytes();
+        assert_eq!(s.stats().bytes_total, bytes.len() as u64);
+        let mut r = RecordReader::new(&bytes);
+        assert_eq!(r.parse_header().unwrap().time_base_unix_ns, 5);
+        assert_eq!(r.next_frame().unwrap(), None);
+    }
+
+    /// `bytes_total` is the size of the capture: after each sample, the
+    /// number of octets the sink holds.
     ///
     /// It used to add the writer's running total once per sample, which
-    /// makes the counter grow with the square of the sample count: after
-    /// n samples it held the sum of every intermediate total. A capture
-    /// of 1.2 MB was reported as 28 GB. The number is printed at the end
-    /// of every run and reads as a throughput figure, so it invites a
-    /// wrong conclusion rather than merely being wrong.
+    /// makes the counter grow with the square of the sample count: a
+    /// capture of 1.2 MB was reported as 28 GB.
     #[test]
-    fn bytes_total_is_the_size_written_and_not_a_running_sum() {
+    fn the_byte_count_is_the_size_of_the_capture() {
+        let sink = SharedSink::default();
         let opts = SessionOptions::new(0)
             .with_participant(p("talker", 1))
             .with_topic(t("/x", "T"));
-        let sink: Vec<u8> = Vec::new();
-        let s: RecordingSession<Vec<u8>> = RecordingSession::new(sink, opts);
-
-        let mut previous = 0u64;
+        let s = RecordingSession::new(sink.clone(), opts);
         for index in 0..20u8 {
             s.record_sample(
                 i64::from(index) + 1,
                 [1u8; 16],
                 &t("/x", "T"),
                 SampleKind::Alive,
+                Some([0x00, 0x09]),
                 vec![index; 64],
             )
             .unwrap();
-            let now = s.stats().bytes_total;
-            assert!(
-                now > previous,
-                "sample {index}: the count did not grow ({previous} -> {now})"
+            assert_eq!(
+                s.stats().bytes_total,
+                sink.bytes().len() as u64,
+                "sample {index}"
             );
-            // Each sample carries 64 octets plus a frame header. A growth
-            // of more than a kilobyte per sample means the counter is
-            // summing totals again.
-            assert!(
-                now - previous < 1024,
-                "sample {index} added {} octets for a 64-octet payload — the \
-                 counter is summing running totals",
-                now - previous
-            );
-            previous = now;
         }
     }
 
-    /// A topic that appears mid-run is recorded, and reads back.
-    ///
-    /// This is the case a recorder meets whenever a writer starts after
-    /// it does: the topic is known by name from the command line, its
-    /// type only from the writer. The whole round trip is asserted —
-    /// added after the header went out, written to, and read back with
-    /// the right index and the right name — because each half alone
-    /// would pass while the file stayed unreadable.
+    /// A topic that appears mid-run (its writer started after the
+    /// recorder) goes out as a `TopicAdd` with the next index; adding it
+    /// twice answers the same index and writes nothing; its samples read
+    /// back under that index.
     #[test]
-    fn a_topic_added_after_the_header_records_and_reads_back() {
-        use crate::reader::RecordReader;
-
-        // A shared sink, so the bytes are readable while the session
-        // still owns its writer.
-        #[derive(Clone)]
-        struct SharedSink(std::sync::Arc<Mutex<Vec<u8>>>);
-        impl std::io::Write for SharedSink {
-            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().unwrap().extend_from_slice(b);
-                Ok(b.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-
-        let sink = std::sync::Arc::new(Mutex::new(Vec::new()));
+    fn zddsrec_2_a_topic_added_after_the_header_takes_the_next_index() {
+        let sink = SharedSink::default();
         let opts = SessionOptions::new(0)
             .with_participant(p("talker", 1))
             .with_topic(t("/early", "Early"));
-        let s = RecordingSession::new(SharedSink(std::sync::Arc::clone(&sink)), opts);
-
+        let s = RecordingSession::new(sink.clone(), opts);
         // One sample first, so the header is out and the addition has to
         // travel as a frame rather than joining the pending list.
         s.record_sample(
@@ -409,184 +475,116 @@ mod tests {
             [1u8; 16],
             &t("/early", "Early"),
             SampleKind::Alive,
+            None,
             vec![7],
         )
         .unwrap();
-
         let late = t("/late", "Late");
-        let index = s.add_topic(&late).unwrap();
-        assert_eq!(index, 1, "the addition continues the header's list");
-        assert_eq!(
-            s.add_topic(&late).unwrap(),
-            1,
-            "adding it twice answers the same index and writes nothing"
-        );
-
-        s.record_sample(2, [1u8; 16], &late, SampleKind::Alive, vec![8, 9])
+        assert_eq!(s.add_topic(&late).unwrap(), 1);
+        let before = sink.bytes().len();
+        assert_eq!(s.add_topic(&late).unwrap(), 1);
+        assert_eq!(sink.bytes().len(), before);
+        s.record_sample(2, [1u8; 16], &late, SampleKind::Alive, None, vec![8, 9])
             .unwrap();
-        assert_eq!(s.stats().samples_dropped, 0, "the late topic is known now");
-        assert_eq!(s.stats().samples_total, 2);
+        assert_eq!(s.stats().samples_dropped, 0);
 
-        let bytes = sink.lock().unwrap().clone();
+        let bytes = sink.bytes();
         let mut r = RecordReader::new(&bytes);
-        let header = r.parse_header().unwrap();
-        assert_eq!(header.topics.len(), 1, "the header holds only what it knew");
-
-        let Ok(Some(first)) = r.next_frame() else {
-            panic!("the first frame is missing")
-        };
-        assert_eq!(first.topic_idx, 0);
-        assert_eq!(first.payload, vec![7]);
-
-        let Ok(Some(second)) = r.next_frame() else {
-            panic!("the second frame is missing")
-        };
-        assert_eq!(second.topic_idx, 1);
-        assert_eq!(second.payload, vec![8, 9]);
+        assert_eq!(r.parse_header().unwrap().topics.len(), 1);
+        let first = r.next_frame().unwrap().unwrap();
+        let second = r.next_frame().unwrap().unwrap();
+        assert_eq!((first.topic_idx, first.payload), (0, vec![7]));
+        assert_eq!((second.topic_idx, second.payload), (1, vec![8, 9]));
         assert_eq!(
-            r.added_topics().len(),
-            1,
-            "the reader picked the addition out of the frame stream"
+            r.added_topics(),
+            [TopicEntry {
+                name: "/late".into(),
+                type_name: "Late".into()
+            }]
         );
-        assert_eq!(r.added_topics()[0].name, "/late");
-        assert_eq!(r.added_topics()[0].type_name, "Late");
     }
 
+    /// What the session does not know (the documentation of
+    /// `record_sample`): a topic is dropped and counted, a participant GUID
+    /// is recorded under index 0.
     #[test]
-    fn session_drops_unknown_topic() {
+    fn an_unknown_topic_is_dropped_and_an_unknown_participant_is_index_zero() {
+        let sink = SharedSink::default();
         let opts = SessionOptions::new(0)
             .with_participant(p("p", 1))
             .with_topic(t("/known", "T"));
-        let s: RecordingSession<Vec<u8>> = RecordingSession::new(Vec::new(), opts);
-        s.record_sample(1, [1u8; 16], &t("/unknown", "U"), SampleKind::Alive, vec![])
-            .unwrap();
-        assert_eq!(s.stats().samples_total, 0);
-        assert_eq!(s.stats().samples_dropped, 1);
+        let s = RecordingSession::new(sink.clone(), opts);
+        s.record_sample(
+            1,
+            [1u8; 16],
+            &t("/unknown", "U"),
+            SampleKind::Alive,
+            None,
+            vec![],
+        )
+        .unwrap();
+        s.record_sample(
+            2,
+            [99u8; 16],
+            &t("/known", "T"),
+            SampleKind::Alive,
+            None,
+            vec![5],
+        )
+        .unwrap();
+        assert_eq!((s.stats().samples_total, s.stats().samples_dropped), (1, 1));
+        let bytes = sink.bytes();
+        let mut r = RecordReader::new(&bytes);
+        r.parse_header().unwrap();
+        let only = r.next_frame().unwrap().unwrap();
+        assert_eq!((only.participant_idx, only.payload), (0, vec![5]));
+        assert_eq!(r.next_frame().unwrap(), None);
     }
 
+    /// Four threads recording at once: every sample is a frame of the file.
     #[test]
-    fn session_thread_safe_record() {
-        use std::sync::Arc;
-        use std::thread;
+    fn samples_of_four_threads_are_all_frames_of_the_file() {
+        let sink = SharedSink::default();
         let opts = SessionOptions::new(0)
             .with_participant(p("p0", 1))
             .with_participant(p("p1", 2))
             .with_topic(t("/a", "T"))
             .with_topic(t("/b", "T"));
-        let s: Arc<RecordingSession<Vec<u8>>> = Arc::new(RecordingSession::new(Vec::new(), opts));
-        let mut handles = Vec::new();
-        for thread_id in 0..4 {
-            let s = Arc::clone(&s);
-            handles.push(thread::spawn(move || {
-                for i in 0..100 {
-                    let topic = if i % 2 == 0 {
-                        t("/a", "T")
-                    } else {
-                        t("/b", "T")
-                    };
-                    let guid_byte = if thread_id < 2 { 1 } else { 2 };
-                    s.record_sample(
-                        i as i64,
-                        [guid_byte; 16],
-                        &topic,
-                        SampleKind::Alive,
-                        vec![i as u8],
-                    )
-                    .unwrap();
-                }
-            }));
-        }
+        let s = Arc::new(RecordingSession::new(sink.clone(), opts));
+        let handles: Vec<_> = (0..4u8)
+            .map(|thread_id| {
+                let s = Arc::clone(&s);
+                std::thread::spawn(move || {
+                    for i in 0..100u8 {
+                        let topic = if i % 2 == 0 {
+                            t("/a", "T")
+                        } else {
+                            t("/b", "T")
+                        };
+                        let guid = [1 + thread_id / 2; 16];
+                        s.record_sample(
+                            i64::from(i),
+                            guid,
+                            &topic,
+                            SampleKind::Alive,
+                            None,
+                            vec![i],
+                        )
+                        .unwrap();
+                    }
+                })
+            })
+            .collect();
         for h in handles {
             h.join().unwrap();
         }
-        assert_eq!(s.stats().samples_total, 400);
-        assert_eq!(s.stats().samples_dropped, 0);
-    }
-
-    #[test]
-    fn session_unknown_participant_falls_back_to_idx_zero() {
-        let opts = SessionOptions::new(0)
-            .with_participant(p("p", 1))
-            .with_topic(t("/a", "T"));
-        let s: RecordingSession<Vec<u8>> = RecordingSession::new(Vec::new(), opts);
-        // GUID not in the list → fallback idx=0.
-        s.record_sample(
-            1,
-            [99u8; 16], // unknown
-            &t("/a", "T"),
-            SampleKind::Alive,
-            vec![],
-        )
-        .unwrap();
-        assert_eq!(s.stats().samples_total, 1);
-    }
-
-    /// Full record → read-back round-trip with the REAL (typed) topic and all
-    /// three sample kinds — the recorder side of the type-following capture path
-    /// (`zerodds-record`): the header carries the writer's true type (not
-    /// RawBytes) and every frame's kind / topic / payload / timestamp-delta
-    /// survives a parse.
-    #[test]
-    fn session_roundtrip_typed_topic_all_kinds() {
-        use crate::reader::RecordReader;
-        use std::io::Write;
-        use std::sync::{Arc, Mutex};
-
-        #[derive(Clone)]
-        struct SharedSink(Arc<Mutex<Vec<u8>>>);
-        impl Write for SharedSink {
-            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().unwrap().extend_from_slice(b);
-                Ok(b.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
+        let bytes = sink.bytes();
+        let mut r = RecordReader::new(&bytes);
+        r.parse_header().unwrap();
+        let mut frames = 0;
+        while r.next_frame().unwrap().is_some() {
+            frames += 1;
         }
-
-        let buf = Arc::new(Mutex::new(Vec::new()));
-        let opts = SessionOptions::new(1_000)
-            .with_participant(p("rec", 7))
-            .with_topic(t("Track", "cuas::Track"));
-        let s = RecordingSession::new(SharedSink(Arc::clone(&buf)), opts);
-        let guid = [7u8; 16];
-        let key = t("Track", "cuas::Track");
-        s.record_sample(
-            1_500,
-            guid,
-            &key,
-            SampleKind::Alive,
-            vec![0xde, 0xad, 0xbe, 0xef],
-        )
-        .unwrap();
-        s.record_sample(1_600, guid, &key, SampleKind::NotAliveDisposed, vec![])
-            .unwrap();
-        s.record_sample(1_700, guid, &key, SampleKind::NotAliveUnregistered, vec![])
-            .unwrap();
-        assert_eq!(s.stats().samples_total, 3);
-
-        let bytes = buf.lock().unwrap().clone();
-        let mut rdr = RecordReader::new(&bytes);
-        let header = rdr.parse_header().unwrap();
-        assert_eq!(header.time_base_unix_ns, 1_000);
-        assert_eq!(header.topics.len(), 1);
-        assert_eq!(header.topics[0].name, "Track");
-        // The REAL writer type is recorded, not the generic RawBytes.
-        assert_eq!(header.topics[0].type_name, "cuas::Track");
-
-        let f1 = rdr.next_frame().unwrap().unwrap();
-        assert_eq!(f1.sample_kind, SampleKind::Alive);
-        assert_eq!(f1.topic_idx, 0);
-        assert_eq!(f1.payload, vec![0xde, 0xad, 0xbe, 0xef]);
-        assert_eq!(f1.timestamp_delta_ns, 500); // 1500 - 1000
-
-        let f2 = rdr.next_frame().unwrap().unwrap();
-        assert_eq!(f2.sample_kind, SampleKind::NotAliveDisposed);
-        assert!(f2.payload.is_empty());
-
-        let f3 = rdr.next_frame().unwrap().unwrap();
-        assert_eq!(f3.sample_kind, SampleKind::NotAliveUnregistered);
-
-        assert!(rdr.next_frame().unwrap().is_none());
+        assert_eq!((frames, s.stats().samples_total), (400, 400));
     }
 }

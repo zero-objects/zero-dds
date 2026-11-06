@@ -20,13 +20,13 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def test_guard_condition_default_trigger_is_false():
+def py_1_2_12_guard_condition_default_trigger_is_false():
     """§1.2.12 — the constructor returns untriggered."""
     gc = zerodds.GuardCondition()
     assert gc.get_trigger_value() is False
 
 
-def test_guard_condition_set_trigger_roundtrip():
+def py_1_2_12_guard_condition_set_trigger_roundtrip():
     """§1.2.12 — set_trigger_value(True/False) is reflected in get_trigger_value()."""
     gc = zerodds.GuardCondition()
     gc.set_trigger_value(True)
@@ -35,7 +35,7 @@ def test_guard_condition_set_trigger_roundtrip():
     assert gc.get_trigger_value() is False
 
 
-def test_guard_condition_via_outer_namespace():
+def py_1_2_12_guard_condition_via_outer_namespace():
     """§1.3.1 — `zerodds.GuardCondition` is re-exported (not just `_core.GuardCondition`)."""
     assert hasattr(zerodds, "GuardCondition")
     assert zerodds.GuardCondition is not None
@@ -43,7 +43,7 @@ def test_guard_condition_via_outer_namespace():
     assert gc.get_trigger_value() is False
 
 
-def test_waitset_attach_and_wait_raises_timeout():
+def py_1_2_13_waitset_attach_and_wait_raises_timeout():
     """§1.2.13 + §2.6 — WaitSet.wait raises `TimeoutError` if no trigger
     flips within the timeout (Rust `DdsError::Timeout` → Python
     `TimeoutError`, see `crates/py/src/ffi.rs::dds_err_to_py`)."""
@@ -54,7 +54,7 @@ def test_waitset_attach_and_wait_raises_timeout():
         ws.wait(0.05)
 
 
-def test_waitset_wakes_when_guard_condition_fires():
+def py_1_2_13_waitset_wakes_when_guard_condition_fires():
     """§1.2.13 + §2.6 — WaitSet.wait returns as soon as the attached
     GuardCondition is triggered. The trigger flips asynchronously from a
     separate thread; WaitSet.wait should return >= 1."""
@@ -72,7 +72,7 @@ def test_waitset_wakes_when_guard_condition_fires():
     assert gc.get_trigger_value() is True
 
 
-def test_waitset_via_outer_namespace():
+def py_1_2_13_waitset_via_outer_namespace():
     """§1.3.1 — `zerodds.WaitSet` is re-exported."""
     assert hasattr(zerodds, "WaitSet")
     assert zerodds.WaitSet is not None

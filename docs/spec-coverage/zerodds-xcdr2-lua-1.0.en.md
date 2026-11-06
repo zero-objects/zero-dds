@@ -12,8 +12,8 @@ The mechanism this column shares with the other twenty — the two walks, the fr
 
 **Repo:** `crates/lang-cst/src/lua/`, `crates/lang-render/src/lua.rs`
 
-**Tests:** `crates/lang-render/src/lua.rs::tests` (30 tests), among them `a_file_ends_with_the_return_its_module_needs`, `a_note_takes_two_dashes_and_an_annotation_three`, `a_luacats_tag_is_written_against_the_dashes_and_prose_is_not`, `a_commented_statement_starts_a_block_and_an_uncommented_one_does_not`, `an_empty_comment_line_carries_no_trailing_space`;
-across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+**Tests:** `crates/lang-render/src/lua.rs::tests` (30 tests), among them `xtypes_7_5_1_a_file_ends_with_the_return_its_module_needs`, `xtypes_7_5_1_a_note_takes_two_dashes_and_an_annotation_three`, `xtypes_7_5_1_a_luacats_tag_is_written_against_the_dashes_and_prose_is_not`, `xtypes_7_5_1_a_commented_statement_starts_a_block_and_an_uncommented_one_does_not`, `xtypes_7_5_1_an_empty_comment_line_carries_no_trailing_space`;
+across all renderers `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -23,8 +23,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/rule/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -34,7 +34,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -44,8 +44,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -55,7 +55,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_lua.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -65,8 +65,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/lua`, endpoint SDK `endpoints/lua`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -78,9 +78,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::every_idl_primitive_reaches_a_lua_holder_and_says_which`,
-`crates/lang-rules/tests/lua_end_to_end.rs::the_one_integer_that_does_not_fit_says_so`,
-`crates/lang-rules/tests/lua_end_to_end.rs::every_member_carries_the_facts_lua_cannot_state`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_2_every_idl_primitive_reaches_a_lua_holder_and_says_which`,
+`crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_2_the_one_integer_that_does_not_fit_says_so`,
+`crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_2_every_member_carries_the_facts_lua_cannot_state`
 
 **Status:** done
 
@@ -90,8 +90,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::a_long_double_is_a_string_and_never_a_lua_float`,
-`crates/lang-rules/tests/lua_end_to_end.rs::a_double_default_is_written_so_that_math_type_answers_float`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_lua_float`,
+`crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_2_a_double_default_is_written_so_that_math_type_answers_float`
 
 **Status:** done
 
@@ -101,9 +101,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::a_sequence_says_that_it_is_one_based`,
-`crates/lang-rules/tests/lua_end_to_end.rs::an_array_nests_outermost_dimension_first_and_is_filled`,
-`crates/lang-rules/tests/lua_codec.rs::a_sequence_counts_zero_based_and_subscripts_one_based`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_4_3_a_sequence_says_that_it_is_one_based`,
+`crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_4_3_an_array_nests_outermost_dimension_first_and_is_filled`,
+`crates/lang-rules/tests/lua_codec.rs::xtypes_7_2_2_4_3_a_sequence_counts_zero_based_and_subscripts_one_based`
 
 **Status:** done
 
@@ -113,8 +113,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::a_map_becomes_an_array_of_pairs_and_never_a_lua_table_keyed_by_k`,
-`crates/lang-rules/tests/lua_codec.rs::a_sorted_maps_char_key_wraps_and_its_u64_key_is_unsigned`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_4_3_a_map_becomes_an_array_of_pairs_and_never_a_lua_table_keyed_by_k`,
+`crates/lang-rules/tests/lua_codec.rs::xtypes_7_2_2_4_3_a_sorted_maps_char_key_wraps_and_its_u64_key_is_unsigned`
 
 **Status:** done
 
@@ -124,8 +124,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::an_optional_member_gets_no_key_at_all`,
-`crates/lang-rules/tests/lua_codec.rs::an_optional_member_is_the_key_being_there`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_gets_no_key_at_all`,
+`crates/lang-rules/tests/lua_codec.rs::xtypes_7_2_2_4_4_4_7_an_optional_member_is_the_key_being_there`
 
 **Status:** done
 
@@ -135,9 +135,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::an_enum_writes_both_directions_and_its_values`,
-`crates/lang-rules/tests/lua_end_to_end.rs::an_enum_defaults_to_its_first_literal_and_not_to_zero`,
-`crates/lang-rules/tests/lua_codec.rs::an_enumerations_wire_value_is_read_out_of_the_descriptor`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_writes_both_directions_and_its_values`,
+`crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_4_1_1_an_enum_defaults_to_its_first_literal_and_not_to_zero`,
+`crates/lang-rules/tests/lua_codec.rs::xtypes_7_2_2_4_1_1_an_enumerations_wire_value_is_read_out_of_the_descriptor`
 
 **Status:** done
 
@@ -147,9 +147,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::a_member_named_after_a_lua_keyword_keeps_its_name`,
-`crates/lang-rules/tests/lua_codec.rs::a_keyword_member_keeps_its_name_in_the_bracket_form`,
-`crates/lang-rules/tests/lua_end_to_end.rs::the_executed_module_reaches_a_member_named_after_a_lua_keyword`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::idl_7_2_3_a_member_named_after_a_lua_keyword_keeps_its_name`,
+`crates/lang-rules/tests/lua_codec.rs::idl_7_2_3_a_keyword_member_keeps_its_name_in_the_bracket_form`,
+`crates/lang-rules/tests/lua_end_to_end.rs::idl_7_2_3_the_executed_module_reaches_a_member_named_after_a_lua_keyword`
 
 **Status:** done
 
@@ -159,9 +159,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::a_module_nests_rather_than_flattening_onto_the_name`,
-`crates/lang-rules/tests/lua_end_to_end.rs::the_chunk_returns_the_module_table`,
-`crates/lang-rules/tests/lua_end_to_end.rs::a_named_reference_is_resolved_at_load_and_not_left_to_a_reader`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::idl_7_5_2_a_module_nests_rather_than_flattening_onto_the_name`,
+`crates/lang-rules/tests/lua_end_to_end.rs::idl_7_5_2_the_chunk_returns_the_module_table`,
+`crates/lang-rules/tests/lua_end_to_end.rs::idl_7_5_2_a_named_reference_is_resolved_at_load_and_not_left_to_a_reader`
 
 **Status:** done
 
@@ -171,9 +171,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_codec.rs::the_short_circuiting_operators_are_words_and_inequality_is_tilde`,
-`crates/lang-rules/tests/lua_codec.rs::a_decoder_returns_the_sample_it_built`,
-`crates/lang-rules/tests/lua_codec.rs::the_shapes_the_corpus_has_reach_the_end_of_both_walks`
+**Tests:** `crates/lang-rules/tests/lua_codec.rs::xtypes_7_4_3_the_short_circuiting_operators_are_words_and_inequality_is_tilde`,
+`crates/lang-rules/tests/lua_codec.rs::xtypes_7_4_3_a_decoder_returns_the_sample_it_built`,
+`crates/lang-rules/tests/lua_codec.rs::xtypes_7_4_3_the_shapes_the_corpus_has_reach_the_end_of_both_walks`
 
 **Status:** done
 
@@ -185,7 +185,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/lua.rs`, `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -195,7 +195,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/lua.rs`, `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::the_generated_lua_loads`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_3_1_the_generated_lua_loads`
 
 **Status:** done
 
@@ -205,7 +205,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/lua.rs`, `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::the_executed_module_reports_its_members_in_idl_declaration_order`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_3_1_the_executed_module_reports_its_members_in_idl_declaration_order`
 
 **Status:** done
 
@@ -215,7 +215,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/lua.rs`, `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::two_runs_over_one_source_produce_the_same_text`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text`
 
 **Status:** done
 
@@ -225,7 +225,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/lua.rs`, `crates/lang-rules/src/adapter/lua.rs`
 
-**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::every_construct_the_column_claims_produces_output`
+**Tests:** `crates/lang-rules/tests/lua_end_to_end.rs::xtypes_7_2_2_4_every_construct_the_column_claims_produces_output`
 
 **Status:** done
 
@@ -235,9 +235,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/lua.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -249,8 +249,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -260,8 +260,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-lua-gen/`, `tools/wireprobe/wireprobe-zerodds-lua`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -269,8 +268,15 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ## Audit Status
 
-23 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+23 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-lua-1.0.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (job `merge-rust-lang-render`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 11 tests green.
+* `python3 ci/run_integration.py merge-codegen-lua` (job `merge-codegen-lua`) — 29 tests green.
+
+49 cited tests green, 0 not green.
+
+Open items: none.

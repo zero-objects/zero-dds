@@ -5,31 +5,20 @@
 //!
 //! ## Why this is in the library
 //!
-//! The twelve configurations used to be written out four times — in
-//! `crates/wire-probe/tests/three_column_gate.rs`, in
-//! `tools/wireprobe/corpus-python.py`, in
-//! `tools/wireprobe/wireprobe-zerodds-c-gen/src/bin/wireprobe-c-matrix.rs`
-//! and in `tools/interop-results/src/rust_column.rs` — because each
-//! column was driven by its own program in its own language, and two of
-//! those could not read a Rust constant. `corpus-python.py` is gone with
-//! `crates/lang-python`, the column it drove:
-//! `tools/wireprobe/wireprobe-zerodds-python-gen`'s own matrix driver,
-//! `wireprobe-python-matrix`, imports [`CONFIGURATIONS`] from this
-//! module directly, the same way `three_column_gate.rs` does, rather
-//! than holding a fifth copy that could drift from it — so the
-//! duplication that justified this module's existence is down to two
-//! foreign copies now, and no fifth *Rust* copy is needed either: a new
-//! column's harness reads this module, and a configuration added here
-//! reaches it without anybody remembering to add it.
+//! The twelve configurations used to be written out once per column
+//! driver, because each column was driven by its own program in its own
+//! language. The Python column's driver, `wireprobe-python-matrix`, and
+//! the expected-bytes checks of the C and Python columns
+//! ([`crate::expected`]) read [`CONFIGURATIONS`] from here.
 //!
-//! The two foreign copies stay, and stay checked:
-//! `the_c_column_covers_the_same_configurations` in the three-column
-//! gate reads `wireprobe-c-matrix.rs`'s out of its source text and fails
-//! if it stops naming the same twelve in the same order; `rust_column.rs`
-//! is checked by the four `the_configuration_is_named_the_same_everywhere`-
-//! shaped tests spread over `crates/wire-probe/tests/*.rs`. A driver
-//! written for a new column belongs in one of those checks the day it
-//! exists — a list nothing compares is a list that drifts.
+//! Two other copies stay, and stay checked:
+//! `tools/wireprobe/wireprobe-zerodds-c-gen/tests/configurations.rs`
+//! reads `wireprobe-c-matrix.rs`'s out of its source text and fails if it
+//! stops naming the same twelve in the same order;
+//! `tools/interop-results/src/rust_column.rs` holds its own to this one
+//! (`the_configurations_are_the_matrix_s`). A driver written for a new
+//! column belongs in one of those checks the day it exists — a list
+//! nothing compares is a list that drifts.
 //!
 //! ## What one row holds
 //!
@@ -375,10 +364,8 @@ pub fn row(case: &Case) -> BTreeMap<String, String> {
 
 /// Fill one configuration's whole share of a row with one refusal.
 ///
-/// Public because `crates/wire-probe/tests/three_column_gate.rs` builds
-/// the same row in process and its baseline is compared against this
-/// one, digest for digest: two spellings of the same refusal would make
-/// the two rows differ over nothing.
+/// Public so that a column driver that fills a refused configuration
+/// spells the refusal the way this row does.
 ///
 /// The read slots say `unwritten` rather than repeating the reason,
 /// because that is what happened to them: nothing was written, so there

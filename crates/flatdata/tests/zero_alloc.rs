@@ -96,7 +96,7 @@ unsafe impl FlatStruct for Pose1k {
 /// The counter sees an allocation of the measuring thread, so a zero below
 /// is a measurement and not a counter that never counts.
 #[test]
-fn the_counter_counts_the_measuring_thread() {
+fn flatdata_11_3_the_counter_counts_the_measuring_thread() {
     let (blocks, bytes) = allocations_of(|| {
         let v: Vec<u8> = Vec::with_capacity(4096);
         std::hint::black_box(&v);
@@ -106,7 +106,7 @@ fn the_counter_counts_the_measuring_thread() {
 }
 
 #[test]
-fn write_flat_is_heap_allocation_free() {
+fn flatdata_11_3_write_flat_is_heap_allocation_free() {
     // Setup allocates (slots, Arc, writer) — done BEFORE the measured window.
     // Enough slots that the writes below never hit NoFreeSlot (so no recycling
     // and no read() — read() copies out a Vec and is intentionally excluded).

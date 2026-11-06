@@ -131,11 +131,11 @@ impl SnRanges {
 
     /// Adds `sn`; `false` when it was there.
     fn insert(&mut self, sn: i64) -> bool {
-        if let Some(last) = self.ranges.last_mut() {
-            if sn == last.1 + 1 {
-                last.1 = sn;
-                return true;
-            }
+        if let Some(last) = self.ranges.last_mut()
+            && sn == last.1 + 1
+        {
+            last.1 = sn;
+            return true;
         }
         let i = self.ranges.partition_point(|&(_, high)| high < sn);
         if self.ranges.get(i).is_some_and(|&(low, _)| low <= sn) {
@@ -1289,12 +1289,17 @@ impl ReliableReader {
         // recipients with a matching GUID accept the sample; all other
         // recipients acknowledge but absorb the sample, as if it were a GAP
         // message."
-        if addressed_elsewhere(data.inline_qos.as_ref(), own) {
+        // The short form holds none of the parameters read through `parsed`.
+        let parsed = data
+            .inline_qos
+            .as_ref()
+            .and_then(crate::inline_qos::InlineQos::parsed);
+        if addressed_elsewhere(parsed, own) {
             state.proxy.irrelevant_change_set(sn);
             Self::collect_in_order_into(state, self.best_effort, &mut self.release_budget, out);
             return;
         }
-        let original_writer = original_writer_of(data.inline_qos.as_ref());
+        let original_writer = original_writer_of(parsed);
         let payload = match opener.map(|opener| {
             opener.open(
                 state.proxy.remote_writer_guid,
@@ -1328,14 +1333,12 @@ impl ReliableReader {
         let key_hash = data
             .inline_qos
             .as_ref()
-            .and_then(crate::inline_qos::find_key_hash);
+            .and_then(crate::inline_qos::InlineQos::key_hash);
         // DDSI-RTPS 2.5 §8.7.6: `PID_COHERENT_SET` names the set the sample
         // belongs to. The value is a `SequenceNumber_t` in the byte order of
         // the submessage, which the parameter list keeps.
-        let coherent_set_sn = data
-            .inline_qos
-            .as_ref()
-            .and_then(|pl| crate::inline_qos::find_coherent_set(pl, pl.little_endian));
+        let coherent_set_sn =
+            parsed.and_then(|pl| crate::inline_qos::find_coherent_set(pl, pl.little_endian));
         // The ECS marker is a DATA with D and K both clear (§8.7.6). It has no
         // payload and must not be delivered as a sample, but it must reach the
         // consumer so the buffered set can be released. Table 9.22 gives it
@@ -1353,10 +1356,7 @@ impl ReliableReader {
         // when it carries no lifecycle status (`kind == Alive`); otherwise it
         // falls through and is delivered as the NotAlive* marker it is.
         let coherent_set_end = !data.data_flag && !data.key_flag && kind == ChangeKind::Alive;
-        let group = data
-            .inline_qos
-            .as_ref()
-            .and_then(crate::inline_qos::find_change_group_info);
+        let group = parsed.and_then(crate::inline_qos::find_change_group_info);
         // The next sample in order, nothing waiting before it and room at
         // the consumer: it is delivered as it is, without going into the
         // receive cache and straight out again. That round trip was a cache
@@ -1385,12 +1385,12 @@ impl ReliableReader {
                     source_timestamp,
                     coherent_set_sn,
                     coherent_set_end,
-                    related_sample_identity: data.inline_qos.as_ref().and_then(|pl| {
+                    related_sample_identity: parsed.and_then(|pl| {
                         crate::inline_qos::find_related_sample_identity(pl, pl.little_endian)
                             .ok()
                             .flatten()
                     }),
-                    eprosima_related_sample_identity: data.inline_qos.as_ref().and_then(|pl| {
+                    eprosima_related_sample_identity: parsed.and_then(|pl| {
                         crate::inline_qos::find_eprosima_related_sample_identity(
                             pl,
                             pl.little_endian,
@@ -1401,9 +1401,7 @@ impl ReliableReader {
                     original_writer,
                     forwarded_by: None,
                     non_standard_payload: data.non_standard_flag && !opened,
-                    inline_qos_override: crate::inline_qos::InlineQosOverride::of(
-                        data.inline_qos.as_ref(),
-                    ),
+                    inline_qos_override: crate::inline_qos::InlineQosOverride::of(parsed),
                 },
                 out,
             );
@@ -1434,7 +1432,10 @@ impl ReliableReader {
         if !Self::store_received(
             state,
             CacheChange {
-                inline_qos: data.inline_qos.clone(),
+                inline_qos: data
+                    .inline_qos
+                    .as_ref()
+                    .map(crate::inline_qos::InlineQos::to_list),
                 sequence_number: sn,
                 // The receive cache holds payloads of their own: a change
                 // that waits there must not keep the whole datagram alive.
@@ -1477,7 +1478,7 @@ impl ReliableReader {
             let filtered = data
                 .inline_qos
                 .as_ref()
-                .and_then(crate::inline_qos::find_status_info)
+                .and_then(crate::inline_qos::InlineQos::status_info)
                 .is_some_and(|bits| status_change_kind(bits) == ChangeKind::AliveFiltered);
             return if filtered {
                 ChangeKind::AliveFiltered
@@ -1487,7 +1488,7 @@ impl ReliableReader {
         }
         data.inline_qos
             .as_ref()
-            .and_then(crate::inline_qos::find_status_info)
+            .and_then(crate::inline_qos::InlineQos::status_info)
             .map_or(ChangeKind::Alive, status_change_kind)
     }
 
@@ -1710,12 +1711,11 @@ impl ReliableReader {
         // §8.4.10.1 `heartbeatSuppressionDuration`: ignore a HEARTBEAT
         // that arrives "too soon" after the previous one from this
         // writer. Zero (the spec default) suppresses nothing.
-        if !suppression.is_zero() {
-            if let Some(prev) = state.last_heartbeat_at {
-                if now.saturating_sub(prev) < suppression {
-                    return Vec::new();
-                }
-            }
+        if !suppression.is_zero()
+            && let Some(prev) = state.last_heartbeat_at
+            && now.saturating_sub(prev) < suppression
+        {
+            return Vec::new();
         }
         state.last_heartbeat_at = Some(now);
         let lost = state.proxy.update_from_heartbeat(hb.first_sn, hb.last_sn);
@@ -1818,8 +1818,7 @@ impl ReliableReader {
             // cache", and "the response may be delayed". A receive cache
             // that is full of samples the consumer has not taken yet keeps
             // the response pending until it takes; the ACKNACK it would send
-            // now would name changes it could not hold, and an empty one
-            // reads to a writer as a pure ACK that asks for the whole tail.
+            // now would name changes it could not hold.
             // A cache that is full behind a missing change is not held back:
             // that change is what lets the cache drain.
             if Self::full_for_the_consumer(&self.writer_proxies[idx]) {
@@ -2014,10 +2013,9 @@ impl ReliableReader {
         if cache.kind() == HistoryKind::KeepAll
             && cache.len() >= cache.capacity()
             && cache.max_sn().is_some_and(|highest| highest > sn)
+            && let Some(displaced) = cache.remove_highest()
         {
-            if let Some(displaced) = cache.remove_highest() {
-                state.proxy.unreceive_change_set(displaced.sequence_number);
-            }
+            state.proxy.unreceive_change_set(displaced.sequence_number);
         }
         if state.received_cache.insert(change).is_err() {
             state.proxy.unreceive_change_set(sn);
@@ -2614,7 +2612,7 @@ mod tests {
         let w_eid = single_writer_guid().entity_id;
         let r_eid = r.guid().entity_id;
         let mut d = data(w_eid, r_eid, 1, 0xAA);
-        d.inline_qos = Some(crate::inline_qos::coherent_set_inline_qos(1, true));
+        d.inline_qos = Some(crate::inline_qos::coherent_set_inline_qos(1, true).into());
         let out = r.handle_data(p1(), &d, None);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].coherent_set_sn, Some(1));
@@ -2654,7 +2652,8 @@ mod tests {
             let r_eid = r.guid().entity_id;
             for n in 1..=2 {
                 let mut member = data(w_eid, r_eid, n, 0xAA);
-                member.inline_qos = Some(crate::inline_qos::coherent_set_inline_qos(1, true));
+                member.inline_qos =
+                    Some(crate::inline_qos::coherent_set_inline_qos(1, true).into());
                 let _ = r.handle_data(p1(), &member, None);
             }
 
@@ -2663,7 +2662,8 @@ mod tests {
                 reader_id: r_eid,
                 writer_id: w_eid,
                 writer_sn: sn(3),
-                inline_qos: value.map(|v| crate::inline_qos::coherent_set_inline_qos(v, true)),
+                inline_qos: value
+                    .map(|v| crate::inline_qos::coherent_set_inline_qos(v, true).into()),
                 data_flag: false,
                 key_flag: false,
                 non_standard_flag: false,
@@ -2706,7 +2706,7 @@ mod tests {
                 seventh.serialized_payload = crate::payload::Payload::from(alloc::vec::Vec::new());
             }
             seventh.inline_qos =
-                ecs_pid.map(|v| crate::inline_qos::coherent_set_inline_qos(v, true));
+                ecs_pid.map(|v| crate::inline_qos::coherent_set_inline_qos(v, true).into());
             let out = r.handle_data(p1(), &seventh, None);
             assert_eq!(out.len(), 1, "{form}");
             assert_eq!(out[0].sequence_number, sn(7), "{form}");
@@ -2753,7 +2753,7 @@ mod tests {
             pl.push(crate::inline_qos::group_seq_num_param(gsn, true));
             pl.push(crate::inline_qos::group_coherent_set_param(11, true));
             pl.push(crate::inline_qos::writer_group_info_param(set));
-            d.inline_qos = Some(pl);
+            d.inline_qos = Some(pl.into());
             let out = r.handle_data(w.prefix, &d, None);
             assert_eq!(out.len(), 1, "writerSN {writer_sn}");
             assert_eq!(out[0].coherent_set_sn, Some(cs), "writerSN {writer_sn}");
@@ -2773,7 +2773,7 @@ mod tests {
     /// A member of the set starting at `first`, or a DATA outside any set.
     fn member(r: &ReliableReader, n: i64, first: Option<i64>) -> DataSubmessage {
         let mut d = data(single_writer_guid().entity_id, r.guid().entity_id, n, 0xAA);
-        d.inline_qos = first.map(|f| crate::inline_qos::coherent_set_inline_qos(f, true));
+        d.inline_qos = first.map(|f| crate::inline_qos::coherent_set_inline_qos(f, true).into());
         d
     }
 
@@ -2877,14 +2877,22 @@ mod tests {
         let mut r = make_reader(10);
         r.set_best_effort(true);
         let mut d = member(&r, 3, Some(2));
-        let mut pl = d.inline_qos.take().unwrap_or_default();
+        let mut pl = d
+            .inline_qos
+            .take()
+            .map(crate::parameter_list::ParameterList::from)
+            .unwrap_or_default();
         pl.push(crate::inline_qos::group_seq_num_param(9, true));
-        d.inline_qos = Some(pl);
+        d.inline_qos = Some(pl.into());
         let _ = r.handle_data(p1(), &d, None);
         let mut e = set_end(&r, 4);
-        let mut pl = e.inline_qos.take().unwrap_or_default();
+        let mut pl = e
+            .inline_qos
+            .take()
+            .map(crate::parameter_list::ParameterList::from)
+            .unwrap_or_default();
         pl.push(crate::inline_qos::group_seq_num_param(10, true));
-        e.inline_qos = Some(pl);
+        e.inline_qos = Some(pl.into());
         let out = r.handle_data(p1(), &e, None);
         assert_eq!(ends(&out), [(4, true, None)]);
     }
@@ -3257,7 +3265,7 @@ mod tests {
         lifespan.extend_from_slice(&(1u32 << 31).to_le_bytes());
         qos.push(Parameter::new(pid::LIFESPAN, lifespan));
         let mut with = data(w, rd, 1, 0x11);
-        with.inline_qos = Some(qos);
+        with.inline_qos = Some(qos.into());
         let out = r.handle_data(p1(), &with, None);
         assert_eq!(out.len(), 1);
         let o = out[0].inline_qos_override;
@@ -3748,10 +3756,7 @@ mod tests {
             reader_id: rid,
             writer_id: wid,
             writer_sn: sn(n),
-            inline_qos: Some(crate::inline_qos::lifecycle_inline_qos(
-                key_hash,
-                status_bits,
-            )),
+            inline_qos: Some(crate::inline_qos::lifecycle_inline_qos(key_hash, status_bits).into()),
             data_flag: false,
             key_flag: true,
             non_standard_flag: false,
@@ -4432,7 +4437,7 @@ mod tests {
             original_sn,
             true,
         ));
-        d.inline_qos = Some(pl);
+        d.inline_qos = Some(pl.into());
         d
     }
 
@@ -4676,7 +4681,7 @@ mod tests {
             for t in targets {
                 pl.push(crate::inline_qos::directed_write_param(*t));
             }
-            d.inline_qos = Some(pl);
+            d.inline_qos = Some(pl.into());
             d
         };
         let other = [0x77; 16];

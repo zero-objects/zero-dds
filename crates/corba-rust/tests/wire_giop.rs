@@ -1,160 +1,127 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
-//! Wire conformance tests for the ValueBase stream (§8.3 + §4.4).
+//! The `ValueBase` stream (zerodds-corba-rust 1.1 §9) against the value
+//! encoding of CORBA §15.3.4: the expected octets are written out by hand
+//! from the spec, not taken from the writer.
 //!
-//! Validates the roundtrip behavior of ValueStreamWriter/ValueStreamReader
-//! against byte-exact expected values:
-//! * single-repo-id value-tag (CDR §15.3.4.2 — `0x7FFFFF02`),
-//! * multi-repo-id list (CDR §15.3.4.2 — `0x7FFFFF06`),
-//! * chunked encoding with list (CDR §15.3.4.3 — `0x7FFFFF0A`).
+//! * one repository id: `value_tag` `0x7fffff02` (§15.3.4.1),
+//! * a list of repository ids: `0x7fffff06`,
+//! * chunked with a list: `0x7fffff0e`, chunk sizes and the end tag
+//!   (§15.3.4.3).
 
-#![allow(
-    clippy::expect_used,
-    clippy::unwrap_used,
-    clippy::panic,
-    clippy::print_stderr,
-    clippy::print_stdout,
-    clippy::field_reassign_with_default,
-    clippy::manual_flatten,
-    clippy::collapsible_if,
-    clippy::empty_line_after_doc_comments,
-    clippy::uninlined_format_args,
-    clippy::drop_non_drop,
-    missing_docs
-)]
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
 
 use zerodds_corba_rust::{ValueStreamReader, ValueStreamWriter, ValueTagHeader};
 use zerodds_wire::{Endianness, Reader, Writer};
 
+/// Octets from a hex string; blanks separate the fields.
+fn octets(hex: &str) -> Vec<u8> {
+    let digits: String = hex.chars().filter(|c| !c.is_whitespace()).collect();
+    (0..digits.len() / 2)
+        .map(|i| u8::from_str_radix(&digits[2 * i..2 * i + 2], 16).unwrap())
+        .collect()
+}
+
+/// `IDL:Derived:1.0` and `IDL:Base:1.0`, each a CDR string: length,
+/// characters, NUL.
+const DERIVED_BASE_LE: &str = "10000000 49444c3a446572697665643a312e3000 \
+                               0d000000 49444c3a426173653a312e3000";
+
 #[test]
-fn wire_value_tag_roundtrip() {
-    let repo_id = "IDL:Demo/Point:1.0";
+fn corbarust_9_a_value_tag_is_the_tag_and_the_repository_id() {
+    // 18 characters, a CDR string of 19 octets.
+    let expected = octets("02ffff7f 13000000 49444c3a44656d6f2f506f696e743a312e3000");
     let mut writer = Writer::new(Endianness::Little);
+    ValueStreamWriter::new(&mut writer).write_value_tag("IDL:Demo/Point:1.0");
+    assert_eq!(writer.finish(), expected);
 
-    {
-        let mut vw = ValueStreamWriter::new(&mut writer);
-        vw.write_value_tag(repo_id);
-    }
-
-    let bytes = writer.finish();
-    assert!(bytes.len() >= 4, "must contain at least the tag");
-
-    // Tag prefix must be 0x7FFFFF02 in little-endian.
-    assert_eq!(&bytes[0..4], &0x7FFF_FF02_u32.to_le_bytes());
-
-    let mut reader = Reader::new(&bytes, Endianness::Little);
-    let mut vr = ValueStreamReader::new(&mut reader);
-    let read_id = vr.read_value_tag().expect("read tag");
-    assert_eq!(read_id.as_deref(), Some(repo_id));
+    let mut reader = Reader::new(&expected, Endianness::Little);
+    let read_id = ValueStreamReader::new(&mut reader)
+        .read_value_tag()
+        .expect("read tag");
+    assert_eq!(read_id.as_deref(), Some("IDL:Demo/Point:1.0"));
 }
 
 #[test]
-fn wire_value_tag_null_reference() {
-    // Null value-tag = 0x00000000 (CDR §15.3.4.2).
-    let bytes = 0x0000_0000_u32.to_le_bytes();
+fn corbarust_9_the_null_tag_reads_as_no_value() {
+    let bytes = octets("00000000");
     let mut reader = Reader::new(&bytes, Endianness::Little);
-    let mut vr = ValueStreamReader::new(&mut reader);
-    let result = vr.read_value_tag().expect("read null");
+    let result = ValueStreamReader::new(&mut reader)
+        .read_value_tag()
+        .expect("read null");
     assert!(result.is_none(), "null tag must decode to None");
 }
 
 #[test]
-fn wire_value_tag_truly_unsupported_returns_error() {
-    // 0x7FFFFF22 is not implemented in the current wire codec
-    // (e.g. codeset variant).
-    let bytes = 0x7FFF_FF22_u32.to_le_bytes();
+fn corbarust_9_a_tag_with_a_bit_outside_15_3_4_1_is_refused() {
+    // Bit 5 is none of codebase (0), type information (1-2), chunked (3).
+    let bytes = octets("22ffff7f");
     let mut reader = Reader::new(&bytes, Endianness::Little);
-    let mut vr = ValueStreamReader::new(&mut reader);
-    let result = vr.read_value_tag();
-    assert!(result.is_err(), "unsupported tag must error");
+    assert!(
+        ValueStreamReader::new(&mut reader)
+            .read_value_tag()
+            .is_err()
+    );
 }
 
 #[test]
-fn wire_value_tag_multi_repo_id_list_round_trip() {
-    let ids = ["IDL:Derived:1.0", "IDL:Base:1.0"];
+fn corbarust_9_a_list_of_repository_ids_is_the_count_and_the_strings() {
+    let expected = octets(&format!("06ffff7f 02000000 {DERIVED_BASE_LE}"));
     let mut writer = Writer::new(Endianness::Little);
-    {
-        let mut vw = ValueStreamWriter::new(&mut writer);
-        vw.write_value_tag_multi(&ids);
-    }
-    let bytes = writer.finish();
-    assert_eq!(&bytes[0..4], &0x7FFF_FF06_u32.to_le_bytes());
+    ValueStreamWriter::new(&mut writer).write_value_tag_multi(&["IDL:Derived:1.0", "IDL:Base:1.0"]);
+    assert_eq!(writer.finish(), expected);
 
-    let mut reader = Reader::new(&bytes, Endianness::Little);
-    let mut vr = ValueStreamReader::new(&mut reader);
-    let header = vr.read_value_tag_full().expect("read tag");
-    match header {
-        ValueTagHeader::List(read_ids) => {
-            assert_eq!(read_ids.len(), 2);
-            assert_eq!(read_ids[0], ids[0]);
-            assert_eq!(read_ids[1], ids[1]);
-        }
-        other => panic!("expected List, got {other:?}"),
-    }
+    let mut reader = Reader::new(&expected, Endianness::Little);
+    let header = ValueStreamReader::new(&mut reader)
+        .read_value_tag_full()
+        .expect("read tag");
+    assert_eq!(
+        header,
+        ValueTagHeader::List(vec!["IDL:Derived:1.0".into(), "IDL:Base:1.0".into()])
+    );
 }
 
 #[test]
-fn wire_value_tag_chunked_with_list_round_trip() {
-    // Writes: chunked-tag → 2 repo-ids → chunk(0xAA, 0xBB, 0xCC) →
-    // chunk(0xDD, 0xEE) → end-tag (-1, outermost value).
-    let ids = ["IDL:Derived:1.0", "IDL:Base:1.0"];
-    let chunk1 = [0xAA_u8, 0xBB, 0xCC];
-    let chunk2 = [0xDD_u8, 0xEE];
-
+fn corbarust_9_chunks_carry_their_size_on_a_long_boundary_and_end_with_minus_1() {
+    // Two chunks of 3 and 2 octets; each size and the end tag a long on a
+    // 4-octet boundary, the padding outside the chunk it follows.
+    let expected = octets(&format!(
+        "0effff7f 02000000 {DERIVED_BASE_LE} 000000 \
+         03000000 aabbcc 00 02000000 ddee 0000 ffffffff"
+    ));
     let mut writer = Writer::new(Endianness::Little);
     {
         let mut vw = ValueStreamWriter::new(&mut writer);
-        vw.write_chunked_value_tag(&ids);
-        vw.write_chunk(&chunk1);
-        vw.write_chunk(&chunk2);
+        vw.write_chunked_value_tag(&["IDL:Derived:1.0", "IDL:Base:1.0"]);
+        vw.write_chunk(&[0xAA, 0xBB, 0xCC]);
+        vw.write_chunk(&[0xDD, 0xEE]);
         vw.write_chunked_end(1);
     }
+    assert_eq!(writer.finish(), expected);
 
-    let bytes = writer.finish();
-    assert_eq!(&bytes[0..4], &0x7FFF_FF0A_u32.to_le_bytes());
-
-    let mut reader = Reader::new(&bytes, Endianness::Little);
-    let mut vr = ValueStreamReader::new(&mut reader);
-    let header = vr.read_value_tag_full().expect("read tag");
-    let read_ids = match header {
-        ValueTagHeader::ChunkedList(ids) => ids,
-        other => panic!("expected ChunkedList, got {other:?}"),
-    };
-    assert_eq!(read_ids.len(), 2);
-    assert_eq!(read_ids[0], ids[0]);
-
-    // First chunk: size = 3, then 3 bytes.
-    let s1 = vr.read_chunk_size().expect("chunk1 size");
-    assert_eq!(s1, 3);
-    // Second chunk: size = 2, then 2 bytes.
-    // We have to read the bytes from the buffer ourselves — to do that
-    // we open up the reader and access it directly.
-    drop(vr);
-    let mut reader2 = Reader::new(&bytes, Endianness::Little);
-    let mut vr2 = ValueStreamReader::new(&mut reader2);
-    let _ = vr2.read_value_tag_full().expect("re-read tag");
-    let s1b = vr2.read_chunk_size().expect("chunk1 size");
-    assert_eq!(s1b, 3);
-    let mut buf1 = [0_u8; 3];
-    for slot in &mut buf1 {
-        *slot = reader2.read_u8().expect("chunk1 byte");
-    }
-    assert_eq!(buf1, chunk1);
-
-    // chunk2.
-    let s2 = {
-        let mut vr3 = ValueStreamReader::new(&mut reader2);
-        vr3.read_chunk_size().expect("chunk2 size")
-    };
-    assert_eq!(s2, 2);
-    let mut buf2 = [0_u8; 2];
-    for slot in &mut buf2 {
-        *slot = reader2.read_u8().expect("chunk2 byte");
-    }
-    assert_eq!(buf2, chunk2);
-
-    // End tag.
-    let end_raw = reader2.read_u32().expect("end tag");
-    let end = end_raw as i32;
-    assert_eq!(end, -1, "outermost end-tag must be -1");
+    let mut reader = Reader::new(&expected, Endianness::Little);
+    let header = ValueStreamReader::new(&mut reader)
+        .read_value_tag_full()
+        .expect("read tag");
+    assert_eq!(
+        header,
+        ValueTagHeader::ChunkedList(vec!["IDL:Derived:1.0".into(), "IDL:Base:1.0".into()])
+    );
+    let first = ValueStreamReader::new(&mut reader)
+        .read_chunk_size()
+        .expect("first chunk size");
+    assert_eq!(first, 3);
+    assert_eq!(
+        reader.read_bytes(3).expect("first chunk"),
+        [0xAA, 0xBB, 0xCC]
+    );
+    let second = ValueStreamReader::new(&mut reader)
+        .read_chunk_size()
+        .expect("second chunk size");
+    assert_eq!(second, 2);
+    assert_eq!(reader.read_bytes(2).expect("second chunk"), [0xDD, 0xEE]);
+    let end = ValueStreamReader::new(&mut reader)
+        .read_chunk_size()
+        .expect("end tag");
+    assert_eq!(end, -1, "the end tag of the outermost value");
 }

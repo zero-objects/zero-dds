@@ -50,7 +50,7 @@ fn load(url: &str) -> (i32, ZeroDdsEndpointQos) {
 
 #[cfg(feature = "rpc")]
 #[test]
-fn a_profile_url_resolves_the_named_library_over_the_rpc_defaults() {
+fn rpc_7_10_1_a_profile_url_resolves_the_named_library_over_the_rpc_defaults() {
     let dir = std::env::temp_dir().join(format!("zerodds-rpc-qos-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("qos.xml");
@@ -123,7 +123,7 @@ fn a_profile_url_resolves_the_named_library_over_the_rpc_defaults() {
 }
 
 #[test]
-fn the_mutable_policies_of_a_live_endpoint_change_and_the_immutable_ones_are_refused() {
+fn rpc_7_10_2_the_mutable_policies_of_a_live_endpoint_change_and_the_immutable_ones_are_refused() {
     let lease = zerodds_test_domains::lease_domain();
     let topic = CString::new("CFfiRpcQosSetQos").unwrap();
     let typ = CString::new("RawBytes").unwrap();

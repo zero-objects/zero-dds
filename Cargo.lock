@@ -2589,17 +2589,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "insta"
-version = "1.48.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86f0f8fee8c926415c58d6ae43a08523a26faccb2323f5e6b644fe7dd4ef6b82"
-dependencies = [
- "once_cell",
- "similar",
- "tempfile",
-]
-
-[[package]]
 name = "io-kit-sys"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4995,12 +4984,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
-name = "similar"
-version = "2.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
-
-[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7156,7 +7139,6 @@ version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
- "zerodds-discovery",
  "zerodds-qos",
  "zerodds-xml",
 ]
@@ -7180,7 +7162,6 @@ name = "zerodds-amqp-bridge"
 version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
- "proptest",
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-idl-lower",
@@ -7228,6 +7209,7 @@ version = "1.0.0-rc.7"
 dependencies = [
  "proptest",
  "zerodds-ast-core",
+ "zerodds-float128",
 ]
 
 [[package]]
@@ -7392,7 +7374,22 @@ dependencies = [
  "zerodds-observability-otlp",
  "zerodds-qos",
  "zerodds-rtps",
+ "zerodds-test-domains",
+]
+
+[[package]]
+name = "zerodds-codec"
+version = "1.0.0-rc.7"
+dependencies = [
+ "zerodds-ast",
+ "zerodds-ast-core",
+ "zerodds-ast-layout",
+ "zerodds-dcps",
+ "zerodds-derive",
+ "zerodds-idl-compose",
+ "zerodds-test-domains",
  "zerodds-types",
+ "zerodds-wire",
 ]
 
 [[package]]
@@ -7517,7 +7514,6 @@ dependencies = [
  "zerodds-corba-giop",
  "zerodds-corba-iiop",
  "zerodds-corba-ior",
- "zerodds-corba-poa",
  "zerodds-dcps",
  "zerodds-monitor",
  "zerodds-observability-otlp",
@@ -7618,7 +7614,6 @@ dependencies = [
 name = "zerodds-corba-rust"
 version = "1.0.0-rc.7"
 dependencies = [
- "insta",
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-ast-layout",
@@ -7636,9 +7631,6 @@ dependencies = [
 [[package]]
 name = "zerodds-cpp"
 version = "1.0.0-rc.7"
-dependencies = [
- "zerodds-test-domains",
-]
 
 [[package]]
 name = "zerodds-dashboard"
@@ -7717,6 +7709,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zerodds-derive"
+version = "1.0.0-rc.7"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "zerodds-discovery"
 version = "1.0.0-rc.7"
 dependencies = [
@@ -7728,6 +7729,7 @@ dependencies = [
  "zerodds-rtps",
  "zerodds-security",
  "zerodds-security-pki",
+ "zerodds-test-domains",
  "zerodds-transport",
  "zerodds-transport-udp",
  "zerodds-types",
@@ -7932,6 +7934,8 @@ dependencies = [
  "zerodds-observability-otlp",
  "zerodds-qos",
  "zerodds-rtps",
+ "zerodds-test-domains",
+ "zerodds-types",
 ]
 
 [[package]]
@@ -7990,6 +7994,7 @@ name = "zerodds-idlc"
 version = "1.0.0-rc.7"
 dependencies = [
  "serde_json",
+ "tempfile",
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-ast-layout",
@@ -8016,6 +8021,15 @@ dependencies = [
  "sha2 0.10.9",
  "tempfile",
  "thiserror 1.0.69",
+]
+
+[[package]]
+name = "zerodds-integration"
+version = "1.0.0-rc.7"
+dependencies = [
+ "zerodds-dcps",
+ "zerodds-test-domains",
+ "zerodds-transport-uds",
 ]
 
 [[package]]
@@ -8059,13 +8073,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-lang-rules"
-version = "1.0.0-rc.7.1"
+version = "1.0.0-rc.7"
 dependencies = [
  "seesaw-tgg",
  "serde_json",
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-ast-layout",
+ "zerodds-ccm",
  "zerodds-idl-compose",
  "zerodds-idl-lower",
  "zerodds-idl-parse",
@@ -8127,6 +8142,7 @@ dependencies = [
  "zerodds-observability-otlp",
  "zerodds-qos",
  "zerodds-rtps",
+ "zerodds-test-domains",
  "zerodds-types",
  "zerodds-websocket-bridge",
 ]
@@ -8257,6 +8273,7 @@ name = "zerodds-opcua-server"
 version = "1.0.0-rc.7"
 dependencies = [
  "rand 0.8.7",
+ "rsa",
  "zerodds-opcua-gateway",
  "zerodds-opcua-pubsub",
  "zerodds-opcua-uacp",
@@ -8358,8 +8375,10 @@ version = "1.0.0-rc.7"
 name = "zerodds-recorder-bridge"
 version = "1.0.0-rc.7"
 dependencies = [
- "zerodds-c-api",
+ "zerodds-cli-common",
+ "zerodds-dcps",
  "zerodds-recorder",
+ "zerodds-rtps",
 ]
 
 [[package]]
@@ -8380,9 +8399,12 @@ dependencies = [
 name = "zerodds-replay"
 version = "1.0.0-rc.7"
 dependencies = [
- "zerodds-c-api",
+ "zerodds-cli-common",
+ "zerodds-dcps",
  "zerodds-recorder",
  "zerodds-recorder-decode",
+ "zerodds-rtps",
+ "zerodds-test-domains",
 ]
 
 [[package]]
@@ -8425,6 +8447,7 @@ dependencies = [
  "zerodds-lang-rules",
  "zerodds-qos",
  "zerodds-rtps",
+ "zerodds-test-domains",
  "zerodds-types",
  "zerodds-xml",
 ]
@@ -8610,6 +8633,7 @@ dependencies = [
  "cryptoki",
  "ring",
  "sha2 0.10.9",
+ "socket2 0.5.10",
  "zerodds-discovery",
  "zerodds-qos",
  "zerodds-rtps",
@@ -8619,6 +8643,7 @@ dependencies = [
  "zerodds-security-permissions",
  "zerodds-security-pki",
  "zerodds-security-rtps",
+ "zerodds-test-domains",
 ]
 
 [[package]]
@@ -8749,7 +8774,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-udp"
-version = "1.0.0-rc.7.1"
+version = "1.0.0-rc.7"
 dependencies = [
  "criterion",
  "if-addrs",
@@ -8803,7 +8828,7 @@ version = "1.0.0-rc.7"
 
 [[package]]
 name = "zerodds-webdds-bridge"
-version = "1.0.0-rc.7.1"
+version = "1.0.0-rc.7"
 dependencies = [
  "signal-hook",
  "zerodds-ast",
@@ -8838,15 +8863,20 @@ dependencies = [
  "ring",
  "rustls",
  "rustls-pemfile",
+ "serde_json",
  "signal-hook",
+ "zerodds-ast-layout",
  "zerodds-bridge-security",
  "zerodds-config",
  "zerodds-dcps",
+ "zerodds-idl-compose",
  "zerodds-monitor",
  "zerodds-observability-otlp",
  "zerodds-qos",
  "zerodds-rtps",
+ "zerodds-test-domains",
  "zerodds-types",
+ "zerodds-wire-codec",
 ]
 
 [[package]]
@@ -8942,6 +8972,8 @@ dependencies = [
  "zerodds-ast-core",
  "zerodds-ast-layout",
  "zerodds-float128",
+ "zerodds-idl-lower",
+ "zerodds-idl-parse",
  "zerodds-lang-cst",
  "zerodds-lang-render",
  "zerodds-lang-rules",
@@ -8957,6 +8989,8 @@ dependencies = [
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-ast-layout",
+ "zerodds-idl-lower",
+ "zerodds-idl-parse",
  "zerodds-lang-cst",
  "zerodds-lang-render",
  "zerodds-lang-rules",
@@ -8972,6 +9006,8 @@ dependencies = [
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-ast-layout",
+ "zerodds-idl-lower",
+ "zerodds-idl-parse",
  "zerodds-lang-cst",
  "zerodds-lang-render",
  "zerodds-lang-rules",
@@ -9081,6 +9117,8 @@ dependencies = [
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-ast-layout",
+ "zerodds-idl-lower",
+ "zerodds-idl-parse",
  "zerodds-lang-cst",
  "zerodds-lang-render",
  "zerodds-lang-rules",
@@ -9225,6 +9263,8 @@ dependencies = [
  "zerodds-ast",
  "zerodds-ast-core",
  "zerodds-ast-layout",
+ "zerodds-idl-lower",
+ "zerodds-idl-parse",
  "zerodds-lang-cst",
  "zerodds-lang-render",
  "zerodds-lang-rules",

@@ -81,7 +81,7 @@ fn reliable(max_blocking_time: Duration) -> ReliabilityQosPolicy {
 }
 
 #[test]
-fn a_full_keep_all_reader_blocks_its_writer_and_loses_nothing() {
+fn dcps_2_2_3_14_a_full_keep_all_reader_blocks_its_writer_and_loses_nothing() {
     let lease = common::lease_domain();
     let factory = DomainParticipantFactory::instance();
     let cfg = isolated_cfg();

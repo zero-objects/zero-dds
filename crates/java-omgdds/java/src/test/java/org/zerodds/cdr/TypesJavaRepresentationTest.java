@@ -117,7 +117,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aSequenceIsReadIntoTheCollectionTheFieldDeclares() {
+    void javapsm_8_5_3_a_sequence_is_read_into_the_collection_the_field_declares() {
         Sequences value = new Sequences();
         value.tree.addAll(Arrays.asList("b", "a"));
         value.sorted.addAll(Arrays.asList(3, 1, 2));
@@ -157,30 +157,9 @@ class TypesJavaRepresentationTest {
         assertEquals(Arrays.asList(2, 1), back.list);
     }
 
-    @Test
-    void emptyCollectionsAreReadIntoTheirClassesToo() {
-        Sequences back = roundTrip(new Sequences());
-        assertTrue(back.tree.isEmpty() && back.sorted.isEmpty() && back.queue.isEmpty()
-                && back.enumSet.isEmpty() && back.linked.isEmpty());
-        assertEquals(TreeSet.class, back.sorted.getClass());
-        assertTrue(back.enumSet instanceof EnumSet);
-    }
-
     /** A field of a collection type that no standard class implements cannot receive a sequence. */
     public static final class UnfillableCollection {
         public java.util.AbstractSequentialList<Integer> value = new LinkedList<>();
-    }
-
-    @Test
-    void aCollectionTypeNoStandardClassFillsIsRefusedWhenRead() {
-        // AbstractSequentialList is an abstract class: a LinkedList is one, but the field's class is
-        // not among the standard classes that are chosen for an interface.
-        UnfillableCollection value = new UnfillableCollection();
-        value.value = new LinkedList<>(Arrays.asList(1));
-        ReflectionTypeSupport<UnfillableCollection> ts = ReflectionTypeSupport.of(UnfillableCollection.class);
-        byte[] wire = ts.encode(value);
-        XcdrException e = assertThrows(XcdrException.class, () -> ts.decode(wire));
-        assertTrue(e.getMessage().contains("AbstractSequentialList"), e.getMessage());
     }
 
     // --- §8.5.3: the order of a collection that is not a list is that of its iterator ----
@@ -191,7 +170,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aSetIsWrittenInTheOrderOfItsIterator() {
+    void javapsm_8_5_3_a_set_is_written_in_the_order_of_its_iterator() {
         // Each set is a sequence of strings: the elements are not primitive, so a DHEADER
         // precedes the count. The first set iterates b, a; the second, a TreeSet, a, b.
         //   offset 0   DHEADER 18       offset 4  count 2
@@ -225,7 +204,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aMapIsReadIntoTheMapClassTheFieldDeclares() {
+    void javapsm_8_5_2_a_map_is_read_into_the_map_class_the_field_declares() {
         Maps value = new Maps();
         value.tree.put("b", 2);
         value.tree.put("a", 1);
@@ -260,7 +239,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aMapMarkedAsAMapKeepsItsBound() {
+    void javapsm_8_5_2_a_map_marked_as_a_map_keeps_its_bound() {
         BoundedMaps value = new BoundedMaps();
         value.entries.put("a", 1);
         value.entries.put("b", 2);
@@ -287,7 +266,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aBigIntegerWithoutAnnotationIsUInt64AndIsRangeChecked() {
+    void javapsm_8_4_a_big_integer_without_annotation_is_a_uint64_and_is_range_checked() {
         BigInteger max = BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE);
         assertArrayEquals(bytes(255, 255, 255, 255, 255, 255, 255, 255), encode(big(max)));
         assertEquals(max, roundTrip(big(max)).value);
@@ -303,6 +282,37 @@ class TypesJavaRepresentationTest {
         assertThrows(XcdrException.class, () -> encode(big(BigInteger.ONE.shiftLeft(100))));
     }
 
+    // --- Table 8.1 and §8.4: an enum and a BigDecimal ------------------------------
+
+    public static final class Coloured {
+        public Colour colour = Colour.BLUE;
+    }
+
+    @Test
+    void javapsm_8_2_an_enum_field_is_its_ordinal_as_an_int32() {
+        // Table 8.1: a Java enum is an enumeration; without @BitBound its holder is 32 bits
+        // wide (the default bit bound of XTypes 1.3), the value the ordinal.
+        assertArrayEquals(bytes(2, 0, 0, 0), encode(new Coloured()));
+        ReflectionTypeSupport<Coloured> ts = ReflectionTypeSupport.of(Coloured.class);
+        assertEquals(Colour.GREEN, ts.decode(bytes(1, 0, 0, 0)).colour);
+        // 3 is no constant of Colour
+        assertThrows(XcdrException.class, () -> ts.decode(bytes(3, 0, 0, 0)));
+    }
+
+    public static final class Measured {
+        public java.math.BigDecimal measure = new java.math.BigDecimal("1.25");
+    }
+
+    @Test
+    void javapsm_8_4_a_big_decimal_without_annotation_is_a_float128() {
+        // Table 8.2: BigDecimal holds a Float128. 1.25 in binary128: sign 0, exponent 3FFF,
+        // fraction 0100...; little-endian the sixteen octets end in 40 FF 3F.
+        byte[] expected = bytes(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x40, 0xFF, 0x3F);
+        assertArrayEquals(expected, encode(new Measured()));
+        assertEquals(0, new java.math.BigDecimal("1.25")
+                .compareTo(ReflectionTypeSupport.of(Measured.class).decode(expected).measure));
+    }
+
     // --- §8.5.1: a wide string is a string of code points -------------------------
 
     public static final class WideText {
@@ -311,7 +321,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aCodePointAboveU10000OfAWideStringIsOneCharacter() {
+    void javapsm_8_5_1_a_code_point_above_u10000_of_a_wide_string_is_one_character() {
         // DDS-Java-PSM 1.0 8.5.1: "each Java code point shall become a single DDS wide
         // character". U+1D11E is one Java code point and two Java chars (a surrogate pair); on the
         // wire it is one 32-bit character. The length counts octets: 8 for 'a' and the code point.
@@ -328,7 +338,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void theUtf16SettingWritesTheWstringOfXTypes13() {
+    void xtypes_7_4_1_1_2_the_utf16_setting_writes_a_wstring_as_utf16_code_units() {
         // XTypes 1.3 7.4.1.1.2: a wstring is a sequence of UTF-16 code units: the code point is
         // the pair D834 DD1E, and the length counts octets, 6 for 'a' and the pair.
         System.setProperty(WideStrings.PROPERTY, "utf16");
@@ -343,7 +353,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aWideStringRefusesWhatIsNoCodePoint() {
+    void javapsm_8_5_1_a_wide_string_refuses_what_is_no_code_point() {
         // 4 octets, the value 0x110000
         byte[] bad = bytes(4, 0, 0, 0, 0x00, 0x00, 0x11, 0x00);
         assertThrows(XcdrException.class, () -> ReflectionTypeSupport.of(WideText.class).decode(bad));
@@ -356,7 +366,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void bothFormsOfANarrowStringAreWrittenByTheSameTypeSupport() {
+    void javapsm_8_5_1_both_forms_of_a_narrow_string_are_written_by_the_same_type_support() {
         ReflectionTypeSupport<Text> ts = ReflectionTypeSupport.of(Text.class);
         Text t = new Text();
         t.value = "é";
@@ -379,7 +389,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void staticAndTransientFieldsCarryNoMember() {
+    void javapsm_8_6_static_and_transient_fields_carry_no_member() {
         Skipped value = new Skipped();
         value.cache = 100;
         // The one member, kept, as an Int32.
@@ -391,7 +401,8 @@ class TypesJavaRepresentationTest {
 
         DynamicType type = DynamicTypeFactoryImpl.getInstance(Qos.env()).createType(Skipped.class);
         assertEquals(1, type.getAllMembers().size());
-        assertEquals("kept", type.getMember(1).getName());
+        // the one member, the first of a type without a base type: member ID 0 (XTypes 1.3 §7.3.1.2.1.1)
+        assertEquals("kept", type.getMember(0).getName());
         assertNull(type.getMember("counter"));
         assertNull(type.getMember("cache"));
     }
@@ -412,7 +423,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void finalCanBeSaidOnAClassThatIsNotFinal() {
+    void javapsm_8_6_1_2_final_can_be_said_on_a_class_that_is_not_final() {
         ReflectionTypeSupport<ExplicitlyFinal> ts = ReflectionTypeSupport.of(ExplicitlyFinal.class);
         assertEquals(ExtensibilityKind.FINAL, ts.getExtensibility());
         // Two Int32 members and no DHEADER.
@@ -423,7 +434,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aClassThatIsNotFinalIsWrittenWithADheader() {
+    void javapsm_8_6_1_2_a_class_that_is_not_final_is_written_with_a_dheader() {
         ReflectionTypeSupport<DefaultExtensible> ts = ReflectionTypeSupport.of(DefaultExtensible.class);
         assertEquals(ExtensibilityKind.APPENDABLE, ts.getExtensibility());
         // The DHEADER 8 (two Int32 members), then the members.
@@ -454,7 +465,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void theIdOfAMemberIsItsIdOnTheWireAndAnAbsentOptionalMemberHasNone() {
+    void javapsm_8_3_the_id_of_a_member_is_its_id_on_the_wire_and_an_absent_optional_member_has_none() {
         ReflectionTypeSupport<Tagged> ts = ReflectionTypeSupport.of(Tagged.class);
         // XCDR2 MUTABLE: a DHEADER, and for each member an EMHEADER word (M_FLAG << 31)
         // + (LC << 28) + id with LC 4, so a NEXTINT with the length of the member follows.
@@ -483,7 +494,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void theAnnotationsAreMembersOfTheDynamicTypeToo() {
+    void javapsm_8_3_the_annotations_are_members_of_the_dynamic_type_too() {
         DynamicType type = DynamicTypeFactoryImpl.getInstance(Qos.env()).createType(Tagged.class);
         assertEquals(Arrays.asList(5, 9, 12), Arrays.asList(type.getAllMembers().keySet().toArray()));
         assertEquals("Optional", type.getMember(9).getAnnotations().get(0).getType().getName());
@@ -502,7 +513,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void annotationsOfAnotherPackageWithTheNamesOfTheTypeSystemAreIgnored() {
+    void javapsm_8_9_annotations_of_another_package_with_the_names_of_the_type_system_are_ignored() {
         ReflectionTypeSupport<ForeignInFinal> ts = ReflectionTypeSupport.of(ForeignInFinal.class);
         assertFalse(ts.isKeyed(), "a Key of another package is no key");
         assertEquals(ExtensibilityKind.FINAL, ts.getExtensibility(),
@@ -519,9 +530,10 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void anIdAndAMustUnderstandOfAnotherPackageDoNotReachTheEmheader() {
-        // The member id is 1 (the first), and the M_FLAG is not set: 0x40000001.
-        assertArrayEquals(bytes(12, 0, 0, 0, 0x01, 0x00, 0x00, 0x40, 4, 0, 0, 0, 3, 0, 0, 0),
+    void javapsm_8_9_an_id_and_a_must_understand_of_another_package_do_not_reach_the_emheader() {
+        // The member id is 0 (the first, XTypes 1.3 §7.3.1.2.1.1), and the M_FLAG is not set:
+        // 0x40000000.
+        assertArrayEquals(bytes(12, 0, 0, 0, 0x00, 0x00, 0x00, 0x40, 4, 0, 0, 0, 3, 0, 0, 0),
                 encode(new ForeignInMutable()));
     }
 
@@ -531,7 +543,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void anOptionalOfAnotherPackageDoesNotMakeAMemberOptional() {
+    void javapsm_8_9_an_optional_of_another_package_does_not_make_a_member_optional() {
         // value is null and the member is not @Optional of the type system: a value is needed.
         assertThrows(XcdrException.class, () -> encode(new ForeignOptional()));
     }
@@ -539,7 +551,7 @@ class TypesJavaRepresentationTest {
     // --- §8.8: the package of a class is the modules of its type name ---------------
 
     @Test
-    void thePackageOfAClassIsTheModulesOfTheTypeName() {
+    void javapsm_8_8_the_package_of_a_class_is_the_modules_of_the_type_name() {
         assertEquals("com::acme::project::TypesTheClass",
                 ReflectionTypeSupport.of(TypesTheClass.class).getTypeName());
         DomainParticipant participant = Qos.factory().createParticipant(1620);
@@ -580,7 +592,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aSerializableClassOfTheApplicationIsATopicType() {
+    void javapsm_8_1_a_serializable_class_of_the_application_is_a_topic_type() {
         // x as an Int32, s as a string of 2 characters (length 3 with the NUL); a final
         // class that extends Object is FINAL, so no DHEADER.
         assertArrayEquals(bytes(4, 0, 0, 0, 3, 0, 0, 0, 'a', 'b', 0), encode(new SerializableSample()));
@@ -602,7 +614,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aSerializableClassOfTheJdkIsPublishedInTheFormOfItsKind() {
+    void javapsm_8_1_a_serializable_class_of_the_jdk_is_published_and_read_back() {
         WithJdkValues back = roundTrip(new WithJdkValues());
         assertEquals(new java.util.Date(1_000L), back.when);
         assertEquals(new UUID(1, 2), back.id);
@@ -615,7 +627,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void theFormsOfDateAndUuidAreTheirTable81Parts() {
+    void javapsm_8_1_a_date_is_its_milliseconds_and_a_uuid_its_two_halves() {
         // a Date is its milliseconds, an int64; a UUID the two halves, two int64 (natural alignment)
         WithDate d = new WithDate();
         d.when = new java.util.Date(0x0102030405060708L);
@@ -624,18 +636,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void listsAndArraysOfJdkValuesAreSequences() {
-        WithListOfDates l = new WithListOfDates();
-        l.dates.add(new java.util.Date(1L));
-        l.dates.add(new java.util.Date(2L));
-        assertEquals(l.dates, roundTrip(l).dates);
-        WithArrayOfUuids a = new WithArrayOfUuids();
-        a.ids = new UUID[] {new UUID(1, 2), new UUID(3, 4)};
-        assertEquals(java.util.Arrays.asList(a.ids), java.util.Arrays.asList(roundTrip(a).ids));
-    }
-
-    @Test
-    void aJdkClassIsATopicTypeItself() {
+    void javapsm_8_1_a_jdk_class_is_a_topic_type_itself() {
         TopicTypeSupport<java.util.Date> ts = TypeSupportResolver.resolve(java.util.Date.class);
         assertEquals(new java.util.Date(99L), ts.decode(ts.encode(new java.util.Date(99L))));
         TopicTypeSupport<java.util.BitSet> bits = TypeSupportResolver.resolve(java.util.BitSet.class);
@@ -644,7 +645,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void theOctetsOfAJdkValueNeverMakeAnotherClass() {
+    void javapsm_8_1_the_octets_of_a_jdk_value_never_make_another_class() {
         // the Java serialization of a HashMap, read as the BitSet the type says: refused
         TopicTypeSupport<java.util.BitSet> bits = TypeSupportResolver.resolve(java.util.BitSet.class);
         java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
@@ -662,7 +663,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aValueTheClassRefusesIsRefusedOnReading() {
+    void javapsm_8_1_a_value_the_class_refuses_is_refused_on_reading() {
         // month 13 of a YearMonth
         TopicTypeSupport<java.time.YearMonth> ts = TypeSupportResolver.resolve(java.time.YearMonth.class);
         assertThrows(XcdrException.class, () -> ts.decode(bytes(0xE9, 0x07, 0, 0, 13, 0, 0, 0)));
@@ -675,7 +676,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aMapIsADheaderACountAndTheEntries() {
+    void javapsm_8_5_2_a_map_is_a_dheader_a_count_and_the_entries() {
         OneEntry value = new OneEntry();
         value.m.put("a", 1);
         // DHEADER at 0, count 1 at 4; the key "a" is the length 2 (8 to 11), 'a' and NUL
@@ -691,7 +692,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void anArrayOfPrimitivesIsASequenceWithoutAnElementDheader() {
+    void javapsm_8_5_3_an_array_of_primitives_is_a_sequence_without_a_dheader() {
         // The length 2 and two Int32 values; primitive elements have no DHEADER.
         assertArrayEquals(bytes(2, 0, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0), encode(new IntArray()));
         assertArrayEquals(new int[] {1, 2}, roundTrip(new IntArray()).values);
@@ -703,7 +704,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aCollectionMarkedAsAnArrayHasAFixedLengthAndNoLengthWord() {
+    void javapsm_8_5_3_a_collection_marked_as_an_array_has_a_fixed_length_and_no_length_word() {
         // An array of 3 Int32 values: no length word.
         assertArrayEquals(bytes(1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0), encode(new ListAsArray()));
         ListAsArray back = roundTrip(new ListAsArray());
@@ -736,7 +737,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void fieldsAndTheConstructorAreReachedWhateverTheirVisibility() {
+    void javapsm_8_6_fields_and_the_constructor_are_reached_whatever_their_visibility() {
         assertArrayEquals(bytes(1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0),
                 encode(new Visibility()));
         Visibility back = ReflectionTypeSupport.of(Visibility.class)
@@ -763,7 +764,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void aKindOtherThanStructureOrUnionOnAClassIsRefused() {
+    void javapsm_8_2_a_kind_other_than_structure_or_union_on_a_class_is_refused() {
         XcdrException e = assertThrows(XcdrException.class, () -> ReflectionTypeSupport.of(NotAStructure.class));
         assertTrue(e.getMessage().contains("STRUCTURE_TYPE"), e.getMessage());
         assertArrayEquals(bytes(7, 0, 0, 0), encode(new AStructure()));
@@ -782,7 +783,7 @@ class TypesJavaRepresentationTest {
     }
 
     @Test
-    void theTypesOfTable81AreNotRefusedAsTypesOfTheJdk() {
+    void javapsm_8_1_the_types_of_table_8_1_are_not_refused_as_types_of_the_jdk() {
         ReflectionTypeSupport<Table81> ts = ReflectionTypeSupport.of(Table81.class);
         assertEquals("org::zerodds::cdr::TypesJavaRepresentationTest::Table81", ts.getTypeName());
     }

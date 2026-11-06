@@ -166,6 +166,24 @@ with the interface missing from the output.
 .B \-\-strict
 OMG IDL 4.2 only; reject every vendor extension.
 .TP
+.BI \-\-idl\-profile " P"
+Report every construct outside the OMG IDL 4.2 profile
+.I P
+(clause 9) as
+.BR IDL0023 :
+a building block of \(sc7.4 or a group of annotations of \(sc8.3 the profile
+does not include.
+.I P
+is one of
+.BR plain\-corba ,
+.BR minimum\-corba ,
+.BR ccm ,
+.BR ccm\-gis ,
+.BR plain\-dds ,
+.B extensible\-dds
+and
+.BR rpc\-over\-dds .
+.TP
 .B \-\-ros2
 Admit the ROS 2 dialect: an unqualified member type that differs only in
 case from the member name, such as
@@ -213,7 +231,7 @@ takes one of \fIrust\fR, \fIc++\fR, \fIc\fR, \fIjava\fR, \fIc#\fR, \fIpython\fR,
 takes one of \fIc++\fR, \fIc#\fR, \fIjava\fR, \fItypescript\fR, or \fIall\fR for those four.
 \fIcpp\fR/\fIcxx\fR, \fIcsharp\fR/\fIcs\fR, \fIfsharp\fR/\fIfs\fR and \fIts\fR are accepted besides, under either subcommand.
 .TP
-.BR \-\-java\-mapping " " \fIpsm\fR | \fIomg\fR
+.BR \-\-java\-mapping " " \fIpsm\fR | \fIomg\fR | \fIidl4\fR
 .B generate
 only, with
 .BR "\-\-lang java" " (or " "\-\-lang all" "):"
@@ -230,6 +248,118 @@ is the OMG IDL-to-Java mapping: public fields and a
 for every sequence. The wire bytes are the same under both. Code that reads the
 fields of the generated types directly passes
 .BR "\-\-java\-mapping omg" .
+.I idl4
+is the IDL4 to Java Language Mapping 1.0: a package per module, a file per
+class, structures with private fields, accessors, modifiers and two
+constructors, Java enums,
+.B Holder<E>
+for
+.B out
+and
+.B inout
+parameters, and the sequence classes of
+.BR org.omg.type ;
+it writes no DDS codec.
+.B @java_mapping
+in the IDL overrides the settings per module or declaration.
+.TP
+.BR \-\-java\-naming " " \fIidl\fR | \fIjava\fR
+With
+.BR "\-\-java\-mapping idl4" :
+the naming scheme of \(sc7.1.1.
+.I idl
+(the default) keeps the IDL names;
+.I java
+applies the JavaBeans conventions (Pascal case for types, camel case for
+members and methods, upper case for constants, lower case for packages).
+.TP
+.BR \-\-java\-platform " " \fIdds\fR | \fIcorba\fR
+With
+.BR "\-\-java\-mapping idl4" :
+the platform of Annex A.
+.I dds
+(the default) adds nothing to clauses 7 and 8;
+.I corba
+maps an exception to a subclass of
+.BR org.omg.CORBA.UserException ,
+.B any
+to
+.B org.omg.CORBA.Any
+and
+.B Object
+to
+.BR org.omg.CORBA.Object .
+.TP
+.B \-\-java\-corba\-module
+With
+.BR "\-\-java\-platform corba" :
+also writes the Java of the
+.B CORBA
+module an included
+.I orb.idl
+declares, in the package
+.B org.omg.CORBA
+and under the IDL naming scheme (Annex A.1.2). Without it, those classes are
+taken to come from the ORB's runtime and only the IDL file's own declarations
+are written.
+.TP
+.BR \-\-csharp\-mapping " " \fIidl4\fR
+.B generate
+only, with
+.BR "\-\-lang csharp" " (or " "\-\-lang all" "):"
+the IDL4 to C# Language Mapping 1.0 instead of the XCDR2 binding: a namespace
+per module, a file per declaration, classes with properties, the default, copy
+and all-values constructors and
+.BR IEquatable<T> ,
+.B I<Name>
+interfaces with
+.B ref
+and
+.B out
+parameters, and
+.BR Omg.Types.ISequence<T> ;
+it writes no codec.
+.B @csharp_mapping
+in the IDL overrides the settings per module or declaration.
+.TP
+.BR \-\-csharp\-naming " " \fIidl\fR | \fIdotnet\fR
+With
+.BR "\-\-csharp\-mapping idl4" :
+the naming scheme of \(sc7.1.1.
+.I idl
+(the default) keeps the IDL names;
+.I dotnet
+applies the .NET Framework Design Guidelines (Pascal case, camel case for
+parameters).
+.TP
+.BR \-\-csharp\-platform " " \fIdds\fR | \fIcorba\fR
+With
+.BR "\-\-csharp\-mapping idl4" :
+the platform of Annex A.
+.I corba
+maps an exception to a subclass of
+.BR Corba.UserException ,
+.B any
+to
+.BR Corba.Any ,
+.B Object
+to
+.BR Corba.IObject ,
+and every interface onto
+.B Corba.IObject
+and its class onto
+.BR Corba.Object .
+.TP
+.B \-\-csharp\-corba\-module
+With
+.BR "\-\-csharp\-platform corba" :
+also writes the C# of the
+.B CORBA
+module an included
+.I orb.idl
+declares, in the namespace
+.B Corba
+and under the IDL naming scheme (Annex A.1.2).
 .TP
 .BR \-\-rpc\-mapping " " \fIbasic\fR | \fIenhanced\fR | \fIenhanced-empty\fR
 .B generate

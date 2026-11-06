@@ -293,19 +293,19 @@ fn check_identifier_names(library: &XmlElement, document: &str, diagnostics: &mu
     let mut stack: Vec<&XmlElement> = library.children.iter().collect();
     while let Some(element) = stack.pop() {
         for attribute in IDENTIFIER_ATTRIBUTES {
-            if let Some(value) = element.attribute(attribute) {
-                if !zerodds_xml::is_identifier_name(value) {
-                    diagnostics.push(Diagnostic {
-                        severity: Severity::Error,
-                        message: format!(
-                            "{}@{attribute}=\"{value}\" is no identifierName (a letter or `::` \
+            if let Some(value) = element.attribute(attribute)
+                && !zerodds_xml::is_identifier_name(value)
+            {
+                diagnostics.push(Diagnostic {
+                    severity: Severity::Error,
+                    message: format!(
+                        "{}@{attribute}=\"{value}\" is no identifierName (a letter or `::` \
                              first, then letters, digits, `_` and `::`)",
-                            element.path
-                        ),
-                        at: document.to_owned(),
-                        spec_reference: "OMG DDS-XTypes 1.3 Annex A, identifierName",
-                    });
-                }
+                        element.path
+                    ),
+                    at: document.to_owned(),
+                    spec_reference: "OMG DDS-XTypes 1.3 Annex A, identifierName",
+                });
             }
         }
         stack.extend(element.children.iter());
@@ -500,18 +500,18 @@ impl<'a> Lowering<'a> {
             path,
             module,
         };
-        if pass == Pass::Declare {
-            if let Ok(node_id) = self.ast.module(module).map(|node| node.node_id) {
-                self.set_xml_facet(AnyId::Module(module, node_id), el);
-                // Annex A `moduleDecl/@autoid`: "Module declarations" are
-                // among the targets of `@autoid` (§7.3.1.2.1.1, Table 21),
-                // and the value governs the aggregated types declared in the
-                // module that carry none of their own.
-                if let Some(autoid) = self.autoid_of(el, &inner.trail) {
-                    if let Some(facets) = self.ast.facets_mut(AnyId::Module(module, node_id)) {
-                        facets.xtypes_mut().autoid = Some(autoid);
-                    }
-                }
+        if pass == Pass::Declare
+            && let Ok(node_id) = self.ast.module(module).map(|node| node.node_id)
+        {
+            self.set_xml_facet(AnyId::Module(module, node_id), el);
+            // Annex A `moduleDecl/@autoid`: "Module declarations" are
+            // among the targets of `@autoid` (§7.3.1.2.1.1, Table 21),
+            // and the value governs the aggregated types declared in the
+            // module that carry none of their own.
+            if let Some(autoid) = self.autoid_of(el, &inner.trail)
+                && let Some(facets) = self.ast.facets_mut(AnyId::Module(module, node_id))
+            {
+                facets.xtypes_mut().autoid = Some(autoid);
             }
         }
         if pass == Pass::Declare {
@@ -812,16 +812,12 @@ impl<'a> Lowering<'a> {
                 );
                 continue;
             };
-            if truthy(literal.attribute("defaultLiteral"))
-                || truthy(literal.attribute("default_literal"))
+            if (truthy(literal.attribute("defaultLiteral"))
+                || truthy(literal.attribute("default_literal")))
+                && let Ok(node_id) = self.ast.enumerator(enumerator).map(|node| node.node_id)
+                && let Some(facets) = self.ast.facets_mut(AnyId::Enumerator(enumerator, node_id))
             {
-                if let Ok(node_id) = self.ast.enumerator(enumerator).map(|node| node.node_id) {
-                    if let Some(facets) =
-                        self.ast.facets_mut(AnyId::Enumerator(enumerator, node_id))
-                    {
-                        facets.xtypes_mut().is_default_literal = true;
-                    }
-                }
+                facets.xtypes_mut().is_default_literal = true;
             }
         }
     }
@@ -1733,10 +1729,10 @@ impl<'a> Lowering<'a> {
                 .facets(any)
                 .and_then(|facets| facets.xtypes.as_ref())
                 .and_then(|x| x.extensibility);
-            if declared.is_none() {
-                if let Some(facets) = self.ast.facets_mut(any) {
-                    facets.xtypes_mut().extensibility = Some(extensibility);
-                }
+            if declared.is_none()
+                && let Some(facets) = self.ast.facets_mut(any)
+            {
+                facets.xtypes_mut().extensibility = Some(extensibility);
             }
         }
         self.member_ids(id);
@@ -1940,10 +1936,9 @@ impl<'a> Lowering<'a> {
             if let Ok(any) = self
                 .ast
                 .find_by_scoped_name(&ScopedName::absolute(candidate))
+                && wanted(&any)
             {
-                if wanted(&any) {
-                    return Some(any);
-                }
+                return Some(any);
             }
         }
         None
@@ -1996,14 +1991,14 @@ impl<'a> Lowering<'a> {
             return;
         };
         let any = AnyId::Const(id, node_id);
-        if let Some(owner) = within {
-            if self.ast.set_declaration_scope(any, owner).is_err() {
-                self.error(
-                    &trail,
-                    format!("the model refused the scope `{owner}` for `{name}`"),
-                    "zerodds-ast-1.0 §3.5",
-                );
-            }
+        if let Some(owner) = within
+            && self.ast.set_declaration_scope(any, owner).is_err()
+        {
+            self.error(
+                &trail,
+                format!("the model refused the scope `{owner}` for `{name}`"),
+                "zerodds-ast-1.0 §3.5",
+            );
         }
         self.set_xml_facet(any, el);
     }
@@ -2417,10 +2412,10 @@ impl<'a> Lowering<'a> {
             if applied.is_empty() {
                 continue;
             }
-            if let Some((_, any)) = literals.iter().find(|(n, _)| n == literal_name) {
-                if let Some(facets) = self.ast.facets_mut(*any) {
-                    facets.annotations.extend(applied);
-                }
+            if let Some((_, any)) = literals.iter().find(|(n, _)| n == literal_name)
+                && let Some(facets) = self.ast.facets_mut(*any)
+            {
+                facets.annotations.extend(applied);
             }
         }
     }

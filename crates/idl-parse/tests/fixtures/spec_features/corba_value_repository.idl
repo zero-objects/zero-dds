@@ -21,7 +21,13 @@ valuetype Base {
     public long base_field;
 };
 
-custom valuetype V : truncatable Base supports IFace {
+// IDL 4.2 §7.4.7.4.5: truncatable is not for a custom value type, so the
+// two forms are on two declarations.
+valuetype T : truncatable Base {
+    public long extra;
+};
+
+custom valuetype V : Base supports IFace {
     public long counter;
     private string secret;
     exception Bad {};

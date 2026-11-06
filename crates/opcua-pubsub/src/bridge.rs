@@ -117,10 +117,10 @@ impl DataSetTopicMapping {
     pub fn dataset_to_sample(&self, received: &ReceivedDataSet) -> DdsSample {
         let mut fields = Vec::with_capacity(received.fields.len());
         for f in &received.fields {
-            if let Some(member) = self.dds_member(&f.name) {
-                if let Some(value) = &f.value.value {
-                    fields.push((String::from(member), value.clone()));
-                }
+            if let Some(member) = self.dds_member(&f.name)
+                && let Some(value) = &f.value.value
+            {
+                fields.push((String::from(member), value.clone()));
             }
         }
         DdsSample {
@@ -134,10 +134,10 @@ impl DataSetTopicMapping {
     pub fn apply_sample(&self, sample: &DdsSample, dataset: &mut PublishedDataSet) -> usize {
         let mut updated = 0;
         for (member, value) in &sample.fields {
-            if let Some(field) = self.dataset_field(member) {
-                if dataset.set_variant(field, value.clone()) {
-                    updated += 1;
-                }
+            if let Some(field) = self.dataset_field(member)
+                && dataset.set_variant(field, value.clone())
+            {
+                updated += 1;
             }
         }
         updated

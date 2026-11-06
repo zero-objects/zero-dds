@@ -157,10 +157,10 @@ impl Loader {
             let entry =
                 entry.map_err(|e| ConfigError::Io(dir.display().to_string(), e.to_string()))?;
             let path = entry.path();
-            if let Some(want) = &self.extension {
-                if path.extension().and_then(|e| e.to_str()) != Some(want.as_str()) {
-                    continue;
-                }
+            if let Some(want) = &self.extension
+                && path.extension().and_then(|e| e.to_str()) != Some(want.as_str())
+            {
+                continue;
             }
             let metadata = std::fs::metadata(&path)
                 .map_err(|e| ConfigError::Io(path.display().to_string(), e.to_string()))?;
@@ -254,10 +254,10 @@ fn include_path(node: Node, path: &str) -> Result<String, ConfigError> {
         Some(crate::Origin::File { line, .. }) => *line,
         _ => 1,
     };
-    if let Node::Scalar(value, _) = node {
-        if !value.trim().is_empty() {
-            return Ok(value);
-        }
+    if let Node::Scalar(value, _) = node
+        && !value.trim().is_empty()
+    {
+        return Ok(value);
     }
     Err(ConfigError::Syntax {
         path: path.to_string(),

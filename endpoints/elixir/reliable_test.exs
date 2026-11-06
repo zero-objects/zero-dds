@@ -26,14 +26,14 @@ end
 s = Sender.new()
 {:ok, seq0, s} = Sender.submit(s, <<1, 2>>)
 {:ok, seq1, s} = Sender.submit(s, <<3, 4>>)
-check.(seq0 == 0 and seq1 == 1, "submit_assigns_monotonic_seqnrs")
-check.(Sender.in_flight_count(s) == 2, "submit_two_in_flight")
+check.(seq0 == 0 and seq1 == 1, "endpointelixir_5_submit_assigns_monotonic_seqnrs")
+check.(Sender.in_flight_count(s) == 2, "endpointelixir_5_submit_two_in_flight")
 
 huge = :binary.copy(<<0>>, Reliable.max_payload() + 1)
 
 check.(
   match?({:error, :too_large, _}, Sender.submit(Sender.new(), huge)),
-  "submit_rejects_payload_too_large"
+  "endpointelixir_5_submit_rejects_payload_too_large"
 )
 
 s =
@@ -44,12 +44,12 @@ s =
 
 check.(
   match?({:error, :window_full, _}, Sender.submit(s, <<0>>)),
-  "submit_rejects_when_window_full"
+  "endpointelixir_5_submit_rejects_when_window_full"
 )
 
 {:ok, _seq, s} = Sender.submit(Sender.new(), <<1>>)
 {hb, _s} = Sender.pending_heartbeat(s, 0)
-check.(hb != nil, "pending_heartbeat_fires_first_time")
+check.(hb != nil, "endpointelixir_5_pending_heartbeat_fires_first_time")
 
 check.(
   hb.first == 0 and hb.last == 0 and hb.stream_id == Reliable.reliable_stream_id(),
@@ -81,7 +81,7 @@ s =
 
 check.(
   Sender.in_flight_count(s) == 1 and Sender.get_in_flight(s, 2) != nil,
-  "recv_acknack_clears_acked_keeps_missing"
+  "endpointelixir_5_recv_acknack_clears_acked_keeps_missing"
 )
 
 s =
@@ -103,7 +103,7 @@ r = Receiver.new()
 check.(
   length(d) == 2 and elem(Enum.at(d, 0), 0) == 0 and elem(Enum.at(d, 1), 0) == 1 and
     Receiver.expected(r) == 2,
-  "recv_data_buffers_in_order"
+  "endpointelixir_5_recv_data_buffers_in_order"
 )
 
 r = Receiver.new()
@@ -145,7 +145,7 @@ check.(
   (ack.nack_bitmap &&& 0x1) != 0 and (ack.nack_bitmap &&& 0x4) != 0 and
     (ack.nack_bitmap &&& 0x2) == 0 and
     (ack.nack_bitmap &&& 0x8) == 0,
-  "pending_acknack_marks_missing_slots"
+  "endpointelixir_5_pending_acknack_marks_missing_slots"
 )
 
 s = Sender.new()
@@ -158,7 +158,7 @@ r = Receiver.reset(r)
 check.(
   Sender.in_flight_count(s) == 0 and Receiver.out_of_order_count(r) == 0 and
     Receiver.expected(r) == 0,
-  "reset_clears_state_completely"
+  "endpointelixir_5_reset_clears_state_completely"
 )
 
 # --- end-to-end loss recovery (mirror reliable.rs) ---
@@ -174,19 +174,19 @@ receiver = Receiver.new()
 
 check.(
   length(d) == 1 and elem(Enum.at(d, 0), 1) == <<10>>,
-  "e2e_drain_blocks_on_lost_middle_sample"
+  "endpointelixir_5_e2e_drain_blocks_on_lost_middle_sample"
 )
 
 ack = Receiver.pending_acknack(receiver, s2)
 sender = Sender.recv_acknack(sender, ack)
-check.(Sender.get_in_flight(sender, s1) != nil, "e2e_missing_sample_retransmittable")
+check.(Sender.get_in_flight(sender, s1) != nil, "endpointelixir_5_e2e_missing_sample_retransmittable")
 
 {:ok, receiver} = Receiver.recv_data(receiver, s1, Sender.get_in_flight(sender, s1))
 {d2, _receiver} = Receiver.drain_in_order(receiver)
 
 check.(
   length(d2) == 2 and elem(Enum.at(d2, 0), 1) == <<11>> and elem(Enum.at(d2, 1), 1) == <<12>>,
-  "e2e_delivers_all_after_retransmit"
+  "endpointelixir_5_e2e_delivers_all_after_retransmit"
 )
 
 # --- RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit
@@ -247,17 +247,17 @@ case System.argv() do
 
       an = Reliable.acknack_frame(Reliable.session_nokey(), Reliable.stream_none(), 1, 1, 0, 0x80)
 
-      check.(hb == gold_hb, "byte_golden_heartbeat")
-      check.(an == gold_an, "byte_golden_acknack")
+      check.(hb == gold_hb, "endpointelixir_5_byte_golden_heartbeat")
+      check.(an == gold_an, "endpointelixir_5_byte_golden_acknack")
 
       case Reliable.parse_heartbeat(gold_hb) do
-        {:ok, p} -> check.(p.first == 1 and p.last == 3, "golden_heartbeat_parse")
-        :error -> check.(false, "golden_heartbeat_parse")
+        {:ok, p} -> check.(p.first == 1 and p.last == 3, "endpointelixir_5_golden_heartbeat_parse")
+        :error -> check.(false, "endpointelixir_5_golden_heartbeat_parse")
       end
 
       case Reliable.parse_acknack(gold_an) do
-        {:ok, p} -> check.(p.first_unacked == 1, "golden_acknack_parse")
-        :error -> check.(false, "golden_acknack_parse")
+        {:ok, p} -> check.(p.first_unacked == 1, "endpointelixir_5_golden_acknack_parse")
+        :error -> check.(false, "endpointelixir_5_golden_acknack_parse")
       end
 
       check.(byte_size(gold_an) == 17, "golden_acknack_size_17")

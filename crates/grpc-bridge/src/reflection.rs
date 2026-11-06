@@ -145,7 +145,7 @@ mod tests {
     use crate::service_gen::TopicService;
 
     #[test]
-    fn empty_catalog_yields_empty_list_services_response() {
+    fn grpcbridge_4_6_empty_catalog_yields_empty_list_services_response() {
         let cat = ServiceCatalog::new();
         let bytes = encode_list_services(&cat);
         // Should produce: tag(6, length-delim) + varint(0) → 2 bytes.
@@ -154,7 +154,7 @@ mod tests {
     }
 
     #[test]
-    fn one_service_in_list() {
+    fn grpcbridge_4_6_one_service_in_list() {
         let mut cat = ServiceCatalog::new();
         cat.register(TopicService::from_topic("Trade", "Trade"));
         let bytes = encode_list_services(&cat);
@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn error_response_encodes_code_and_message() {
+    fn grpcbridge_4_6_error_response_encodes_code_and_message() {
         let bytes = encode_error(STATUS_NOT_FOUND, "not found");
         // Outer: tag 7 (0x3a) + len + inner.
         assert_eq!(bytes[0], 0x3a);
@@ -180,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn varint_basics() {
+    fn grpcbridge_4_6_varint_basics() {
         let mut v = Vec::new();
         write_varint(&mut v, 0);
         assert_eq!(v, vec![0]);
@@ -196,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn reflection_path_constant_matches_grpcurl_default() {
+    fn grpcbridge_4_6_reflection_path_constant_matches_grpcurl_default() {
         // `grpcurl localhost:N list` invokes exactly this path.
         assert_eq!(
             REFLECTION_PATH,

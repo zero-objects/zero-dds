@@ -1075,6 +1075,17 @@ fn model_from_idl(source: &str, path: &str, dialect: Dialect) -> Result<Ast, Ref
         } else {
             zerodds_idl_lower::HashedNameSpelling::Stripped
         },
+        // Whether a declaration may carry the name of the scope it sits
+        // in (IDL 4.2 §7.5.2): Fast DDS, RTI and both ROS middlewares take
+        // `resolve-module-named-as-type` and write octets
+        // (tests/interop-corpus/expected-bytes.tsv); without the
+        // dialect's answer this lowering refused the case in every
+        // dialect.
+        name_of_the_enclosing_scope: if dialect.admits_the_name_of_the_enclosing_scope() {
+            zerodds_idl_lower::NameOfTheEnclosingScope::Admitted
+        } else {
+            zerodds_idl_lower::NameOfTheEnclosingScope::Refused
+        },
         ..zerodds_idl_lower::Options::default()
     };
     let lowered = zerodds_idl_lower::lower_with(&parsed.syntax(), path, options);

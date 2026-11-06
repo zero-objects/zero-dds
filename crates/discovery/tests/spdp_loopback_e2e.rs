@@ -82,13 +82,15 @@ fn multicast_available(port: u16) -> bool {
 }
 
 #[test]
-fn loopback_multicast_self_discovery() {
+fn rtps_8_5_3_3_loopback_multicast_self_discovery() {
     // A participant sends its own beacon and discovers itself via
     // loopback multicast. If the platform does not support
     // multicast, we skip.
     let port = spdp_multicast_port(0) as u16;
     if !multicast_available(port) {
-        eprintln!("Multicast not available; skipping loopback_multicast_self_discovery");
+        eprintln!(
+            "Multicast not available; skipping rtps_8_5_3_3_loopback_multicast_self_discovery"
+        );
         return;
     }
     let group = Ipv4Addr::from(SPDP_DEFAULT_MULTICAST_ADDRESS);
@@ -140,7 +142,7 @@ fn loopback_multicast_self_discovery() {
 }
 
 #[test]
-fn two_zerodds_participants_discover_each_other() {
+fn rtps_8_5_1_two_zerodds_participants_discover_each_other() {
     // Simulates two ZeroDDS participants on the same machine that
     // discover each other over multicast.
     let port = spdp_multicast_port(0) as u16;

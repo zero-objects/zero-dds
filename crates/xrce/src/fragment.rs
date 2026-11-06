@@ -231,13 +231,13 @@ impl FragmentAssembler {
             }
         }
         let next = entry.fragments.range(offset..).next();
-        if let Some((&no, _)) = next {
-            if new_end > no {
-                self.drop_count = self.drop_count.saturating_add(1);
-                return Err(XrceError::ValueOutOfRange {
-                    message: "overlapping fragment",
-                });
-            }
+        if let Some((&no, _)) = next
+            && new_end > no
+        {
+            self.drop_count = self.drop_count.saturating_add(1);
+            return Err(XrceError::ValueOutOfRange {
+                message: "overlapping fragment",
+            });
         }
 
         // Total cap after insert?
@@ -255,10 +255,8 @@ impl FragmentAssembler {
         }
 
         let complete = entry.is_complete();
-        if complete {
-            if let Some(done) = self.pending.remove(&key) {
-                return Ok(Some(done.assemble()));
-            }
+        if complete && let Some(done) = self.pending.remove(&key) {
+            return Ok(Some(done.assemble()));
         }
         Ok(None)
     }
@@ -339,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn out_of_order_reassembly() {
+    fn xrce_8_3_5_14_out_of_order_reassembly() {
         let mut a = FragmentAssembler::new();
         a.add_fragment(k(), 4, true, vec![5, 6, 7, 8], Duration::ZERO)
             .unwrap();

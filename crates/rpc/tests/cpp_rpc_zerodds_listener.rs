@@ -214,7 +214,7 @@ int main() {
 "####;
 
 #[test]
-fn the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal() {
+fn rpc_7_9_2_2_the_zerodds_reader_calls_its_callback_on_arrival_and_not_after_removal() {
     let root = repository_root();
     let dir = std::env::temp_dir().join(format!(
         "zerodds-rpc-listener-{}-{:?}",

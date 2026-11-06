@@ -1,0 +1,106 @@
+.TH ZERODDS-COAP-BRIDGED 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-coap-bridged \- Bridge-Daemon von DDS nach CoAP
+.SH ÜBERSICHT
+.B zerodds-coap-bridged
+[\fB\-\-config\fR \fIDATEI\fR]
+[\fB\-\-bind\fR \fIADR\fR]
+[\fB\-\-domain\fR \fIID\fR]
+[\fB\-\-topic\fR \fIDDS:URI\fR]...
+[\fB\-V\fR | \fB\-h\fR]
+.SH BESCHREIBUNG
+.B zerodds-coap-bridged
+stellt DDS-Topics als CoAP-Ressourcen (RFC 7252) über UDP und DTLS bereit,
+mit Unterstützung für CoAP-Block (RFC 7959) und Observe (RFC 7641). Bildet GET
+auf take_next_sample ab, PUT/POST auf write, OBSERVE auf einen langlebigen
+Reader. Implementiert
+.IR docs/specs/zerodds-coap-bridge-1.0.md .
+.SH OPTIONEN
+.TP
+.BR \-\-config =\fIDATEI\fR
+Pfad zur Konfigurationsdatei (YAML). Siehe
+.BR zerodds-coap-bridged.yaml (5).
+.TP
+.BR \-\-bind =\fIADR\fR
+UDP-Bind-Adresse. Standard:
+.IR 0.0.0.0:5683 .
+.TP
+.BR \-\-domain =\fIID\fR
+DDS-Domain-ID. Standard: 0.
+.TP
+.BR \-\-dtls\-psk\-id =\fIID\fR
+DTLS-PSK-Identität; schaltet
+.IR coaps://
+ein.
+.TP
+.BR \-\-dtls\-psk =\fIGEHEIMNIS\fR
+DTLS-PSK-Geheimnis, hexadezimal; schaltet
+.IR coaps://
+ein.
+.TP
+.BR \-\-dtls\-cert =\fIDATEI\fR
+DTLS-Server-Zertifikat, PEM; schaltet
+.IR coaps://
+ein.
+.TP
+.BR \-\-dtls\-key =\fIDATEI\fR
+DTLS-Server-Schlüssel, PKCS#8 PEM.
+.TP
+.BR \-\-topic =\fIDDS:URI\fR
+Topic-Überschreibung (wiederholbar).
+.TP
+.BR \-\-log\-level =\fISTUFE\fR
+Eine von
+.IR trace ", " debug ", " info ", " warn ", " error .
+.TP
+.BR \-\-metrics =\fIADR\fR
+Listener für Prometheus.
+.TP
+.BR \-V ", " \-\-version
+Versionsangabe.
+.TP
+.BR \-h ", " \-\-help
+Zeigt die Übersicht der Optionen.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Einstellung über allen Dateien, wiederholbar;
+.BI + PFAD = WERT
+hängt an eine Liste an.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Konfiguration und gibt sie mit der Herkunft jedes Werts
+aus, dann Ende: 0 gültig, 1 ungültiger Wert oder unbekannter Schlüssel,
+2 nicht lesbare Datei, Syntaxfehler oder Include-Zyklus.
+.SH SIGNALE
+SIGTERM beendet den Daemon.
+SIGHUP liest die Konfiguration neu: Die Topic-ACL und die
+Authentifizierungs-Einstellungen gelten ab dann, das DTLS-Material für neue
+Handshakes. Geänderte Topics, Binds oder Domäne brauchen einen Neustart und
+werden protokolliert. Eine Konfiguration, die nicht lädt, ändert nichts.
+.SH UMGEBUNGSVARIABLEN
+.TP
+.B OTEL_EXPORTER_OTLP_ENDPOINT
+Optionaler OTLP-Endpunkt, etwa http://localhost:4318.
+.SH EXIT-STATUS
+.TP
+.B 0
+Normales Beenden.
+.TP
+.B 1
+Konfigurationsfehler.
+.TP
+.B 2
+Bind-Fehler \(em Adresse belegt.
+.TP
+.B 3
+Fehler bei der DDS-Discovery.
+.TP
+.B 4
+Fehler beim Einrichten von DTLS oder OSCORE.
+.SH DATEIEN
+.I /etc/zerodds/coap-bridged.yaml .
+.SH SIEHE AUCH
+.BR zerodds-coap-bridged.yaml (5),
+RFC 7252, RFC 7641.
+.SH AUTOREN
+ZeroDDS Contributors.

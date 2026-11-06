@@ -71,7 +71,10 @@ macro_rules! guard {
 
 fn bytes_of(hex: &str) -> Vec<u8> {
     let digits: Vec<char> = hex.chars().filter(|c| !c.is_whitespace()).collect();
-    assert!(digits.len() % 2 == 0, "an odd number of hex digits");
+    assert!(
+        digits.len().is_multiple_of(2),
+        "an odd number of hex digits"
+    );
     digits
         .chunks(2)
         .map(|pair| u8::from_str_radix(&pair.iter().collect::<String>(), 16).expect("a hex byte"))

@@ -260,10 +260,10 @@ pub fn service_type_objects(
                 .map_err(|e| format!("references: {e:?}"))?;
             let mut indexes: Vec<usize> = Vec::new();
             for hash in found {
-                if let Some(at) = hashes.iter().position(|h| *h == hash.0) {
-                    if !indexes.contains(&at) {
-                        indexes.push(at);
-                    }
+                if let Some(at) = hashes.iter().position(|h| *h == hash.0)
+                    && !indexes.contains(&at)
+                {
+                    indexes.push(at);
                 }
             }
             references.push(indexes);

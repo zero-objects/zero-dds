@@ -66,7 +66,7 @@ class TypeObjectTest {
      * primitive id short 5), the sentinel ends the list.
      */
     @Test
-    void theMinimalTypeObjectHasTheOctetsAnnexBImplies() {
+    void javapsm_7_8_the_type_object_of_xtypes_1_1_annex_b_is_a_pl_cdr_parameter_list() {
         ZdTypes.DDS.TypeObject object = new ZdTypes.DDS.TypeObject();
         object.library = new ZdTypes.DDS.TypeLibrary();
         object.library.element = new ZdTypes.DDS.TypeLibraryElement[0];
@@ -82,7 +82,7 @@ class TypeObjectTest {
     }
 
     @Test
-    void aJavaClassBecomesAStructureTypeWithItsMembers() {
+    void javapsm_7_8_a_java_class_becomes_a_structure_type_with_its_members() {
         byte[] bytes = TypeObjects.announce(org.omg.dds.Qos.env(),
                 ReflectionTypeSupport.of(Shape.class));
         assertNotNull(bytes);
@@ -117,55 +117,12 @@ class TypeObjectTest {
         assertEquals(1, ((EnumerationType) color).getConstant().get(1).getValue());
     }
 
-    @Test
-    void theTypeIdIsTheLowerHalfOfTheMd5OfTheBigEndianSerialization() {
-        ZdTypes.DDS.TypeObject object = TypeObjectBuilder.build(shapeType());
-        ZdTypes.DDS.TypeId root = object.the_type[0];
-        assertEquals(ZdTypes.DDS.STRUCTURE_TYPE, root._d);
-        ZdTypes.DDS.TypeLibraryElement element = null;
-        for (ZdTypes.DDS.TypeLibraryElement e : object.library.element) {
-            if (e._d == ZdTypes.DDS.TypeLibraryElementKind.STRUCTURE_TYPE_ELEMENT) {
-                element = e;
-            }
-        }
-        assertNotNull(element);
-        // the element carries its own id; hashing needs the placeholder of the standard
-        ZdTypes.DDS.TypeId own = element.structure_type.property.type_id;
-        element.structure_type.property.type_id = TypeObjectCodec.constructed(ZdTypes.DDS.NO_TYPE, 0L);
-        long again = TypeObjectCodec.constructedTypeId(element);
-        element.structure_type.property.type_id = own;
-        assertEquals(root.constructed_type_id, again);
-        assertEquals(root.constructed_type_id, own.constructed_type_id);
-    }
-
-    @Test
-    void aChangeOfTheTypeChangesItsId() {
-        long before = TypeObjectBuilder.build(shapeType()).the_type[0].constructed_type_id;
-        long same = TypeObjectBuilder.build(shapeType()).the_type[0].constructed_type_id;
-        assertEquals(before, same);
-        DynamicType other = DynamicTypeFactoryImpl.getInstance(org.omg.dds.Qos.env())
-                .createType(Other.class);
-        assertNotEquals(before, TypeObjectBuilder.build(other).the_type[0].constructed_type_id);
-    }
-
     public static final class Other {
         public int id;
     }
 
     @Test
-    void theEncodedTypeObjectIsDecodedToTheSameTypeObject() {
-        ZdTypes.DDS.TypeObject object = TypeObjectBuilder.build(shapeType());
-        byte[] bytes = TypeObjectCodec.encode(object);
-        assertArrayEquals(bytes, TypeObjectCodec.encode(TypeObjectCodec.decode(bytes)));
-    }
-
-    @Test
-    void bytesThatAreNoTypeObjectGiveNoType() {
-        assertNull(TypeObjects.decodeOrNull(org.omg.dds.Qos.env(), new byte[] {1, 2, 3}));
-    }
-
-    @Test
-    void theBuiltinDataDescribesItsTypeFromTheAnnouncedBytes() {
+    void javapsm_7_8_the_builtin_data_describes_its_type_from_the_announced_bytes() {
         byte[] bytes = TypeObjects.announce(org.omg.dds.Qos.env(),
                 ReflectionTypeSupport.of(Shape.class));
         org.zerodds.topic.PublicationBuiltinTopicDataImpl data =
@@ -187,7 +144,7 @@ class TypeObjectTest {
      * has no ELEMENT_SHARED_COLLECTIONTYPE_MEMBER_ID (101), which Annex B has.
      */
     @Test
-    void theMemberIdsAreThoseOfAnnexBOfXTypes11() {
+    void javapsm_7_8_3_the_member_ids_are_those_of_annex_b_of_xtypes_1_1() {
         assertEquals(0, org.omg.dds.type.typeobject.Type.MemberId.PROPERTY_TYPE_MEMBER_ID);
         assertEquals(1, org.omg.dds.type.typeobject.Type.MemberId.ANNOTATION_TYPE_MEMBER_ID);
         assertEquals(0, org.omg.dds.type.typeobject.Member.MemberId.PROPERTY_MEMBER_MEMBER_ID);

@@ -189,12 +189,12 @@ pub fn check(ast: &Ast, touched: &[NodeId]) -> Vec<InvariantViolation> {
             _ => None,
         };
 
-        if let Some(type_id) = subject {
-            if let Ok(node) = ast.type_(type_id) {
-                let type_node_id = node.node_id;
-                if seen.insert(type_node_id) || any.kind() == crate::NodeKind::Type {
-                    check_type(ast, type_id, type_node_id, &mut out);
-                }
+        if let Some(type_id) = subject
+            && let Ok(node) = ast.type_(type_id)
+        {
+            let type_node_id = node.node_id;
+            if seen.insert(type_node_id) || any.kind() == crate::NodeKind::Type {
+                check_type(ast, type_id, type_node_id, &mut out);
             }
         }
     }
@@ -217,26 +217,26 @@ fn check_type(
 
     // Resolved references must point at live nodes.
     for reference in node.kind.type_refs() {
-        if let Some(target) = reference.resolved() {
-            if ast.type_(target).is_err() {
-                out.push(InvariantViolation::DanglingReference {
-                    from: node_id,
-                    detail: "referenced type is not live",
-                });
-            }
+        if let Some(target) = reference.resolved()
+            && ast.type_(target).is_err()
+        {
+            out.push(InvariantViolation::DanglingReference {
+                from: node_id,
+                detail: "referenced type is not live",
+            });
         }
     }
 
     match &node.kind {
         TypeKind::Array { dims, .. } => {
             for dim in dims {
-                if let Ok(value) = ast.eval_integral(*dim) {
-                    if value <= 0 {
-                        out.push(InvariantViolation::NonPositiveArrayDimension {
-                            node: node_id,
-                            value,
-                        });
-                    }
+                if let Ok(value) = ast.eval_integral(*dim)
+                    && value <= 0
+                {
+                    out.push(InvariantViolation::NonPositiveArrayDimension {
+                        node: node_id,
+                        value,
+                    });
                 }
                 // An unevaluable dimension is not a violation here: it
                 // may reach a pending reference, which is legal.
@@ -482,14 +482,14 @@ fn check_case_labels(
             let Some(expr) = label.expr() else {
                 continue;
             };
-            if let Err(error) = ast.eval_integral(expr) {
-                if !matches!(error, crate::EvalError::Unresolved { .. }) {
-                    out.push(InvariantViolation::IncompatibleCaseLabel {
-                        case: c.node_id,
-                        discriminator: disc.node_id,
-                        detail: "label does not evaluate to an integral value",
-                    });
-                }
+            if let Err(error) = ast.eval_integral(expr)
+                && !matches!(error, crate::EvalError::Unresolved { .. })
+            {
+                out.push(InvariantViolation::IncompatibleCaseLabel {
+                    case: c.node_id,
+                    discriminator: disc.node_id,
+                    detail: "label does not evaluate to an integral value",
+                });
             }
         }
     }

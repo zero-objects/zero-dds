@@ -4,14 +4,14 @@
 //! In-process end-to-end tests for `zerodds-opcua-bridged`, covering the
 //! three directions the task set out to prove:
 //!
-//! 1. `dcps_writer_reaches_the_opcua_client_read` — a DCPS writer → the
+//! 1. `opcuabridge_1_dcps_writer_reaches_the_opcua_client_read` — a DCPS writer → the
 //!    running daemon → an in-tree [`opcua_server::client::Client`] reads
 //!    the value (Gateway 1.0 §9).
-//! 2. `opcua_client_write_reaches_the_dds_reader` — an in-tree
+//! 2. `opcuabridge_1_opcua_client_write_reaches_the_dds_reader` — an in-tree
 //!    [`opcua_server::client::Client`] `Write` → the running daemon → a DDS
 //!    reader sees it (Gateway 1.0 §8's "third-party client writes to our
 //!    server" case).
-//! 3. `dds_publish_reaches_an_in_tree_pubsub_subscriber` — a DCPS writer →
+//! 3. `opcuabridge_1_dds_publish_reaches_an_in_tree_pubsub_subscriber` — a DCPS writer →
 //!    the running daemon's Part-14 `PublisherJob` → an in-tree
 //!    [`zerodds_opcua_pubsub::daemon::Subscriber`] over real UDP multicast
 //!    receives the DataSet.
@@ -136,7 +136,7 @@ fn connect_as(
 }
 
 #[test]
-fn dcps_writer_reaches_the_opcua_client_read() {
+fn opcuabridge_1_dcps_writer_reaches_the_opcua_client_read() {
     let idl = write_fixture("telemetry.idl", IDL);
     let gateway = write_fixture("gateway1.xml", GATEWAY_XML);
     let lease = zerodds_test_domains::lease_domain();
@@ -193,11 +193,11 @@ fn dcps_writer_reaches_the_opcua_client_read() {
         let dv = client
             .read_attribute(&mut transport, node_id.clone(), ATTRIBUTE_VALUE)
             .expect("read");
-        if let Some(v) = dv.value {
-            if v == Variant::scalar(VariantValue::Double(21.5)) {
-                last = Some(v);
-                break;
-            }
+        if let Some(v) = dv.value
+            && v == Variant::scalar(VariantValue::Double(21.5))
+        {
+            last = Some(v);
+            break;
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -211,7 +211,7 @@ fn dcps_writer_reaches_the_opcua_client_read() {
 }
 
 #[test]
-fn opcua_client_write_reaches_the_dds_reader() {
+fn opcuabridge_1_opcua_client_write_reaches_the_dds_reader() {
     let idl = write_fixture("command.idl", IDL);
     let gateway = write_fixture("gateway2.xml", GATEWAY_XML);
     let lease = zerodds_test_domains::lease_domain();
@@ -281,7 +281,7 @@ fn opcua_client_write_reaches_the_dds_reader() {
 }
 
 #[test]
-fn external_pubsub_publisher_reaches_the_daemons_own_subscriber() {
+fn opcuabridge_1_external_pubsub_publisher_reaches_the_daemons_own_subscriber() {
     use zerodds_opcua_pubsub::config::{
         ConfigurationVersion, DataSetWriterConfig, WriterGroupConfig,
     };
@@ -290,7 +290,7 @@ fn external_pubsub_publisher_reaches_the_daemons_own_subscriber() {
     use zerodds_opcua_pubsub::uadp::network_message::PublisherId;
     use zerodds_opcua_pubsub::writer::{DataSetWriter, PublishedDataSet, WriterGroup};
 
-    // The inverse of `dds_publish_reaches_an_in_tree_pubsub_subscriber`:
+    // The inverse of `opcuabridge_1_dds_publish_reaches_an_in_tree_pubsub_subscriber`:
     // an independent UADP publisher feeds the *daemon's own*
     // `subscribers[]`-configured `SubscriberJob`
     // (`daemon::server::start_with_reload`'s subscriber loop), proving
@@ -386,7 +386,7 @@ fn external_pubsub_publisher_reaches_the_daemons_own_subscriber() {
     }
     if got.is_empty() && cfg!(target_os = "macos") {
         eprintln!(
-            "external_pubsub_publisher_reaches_the_daemons_own_subscriber: no datagram arrived within 15s on macOS loopback multicast — known host limitation, not asserted here; run on Linux for a real measurement"
+            "opcuabridge_1_external_pubsub_publisher_reaches_the_daemons_own_subscriber: no datagram arrived within 15s on macOS loopback multicast — known host limitation, not asserted here; run on Linux for a real measurement"
         );
     } else {
         assert_eq!(
@@ -428,7 +428,7 @@ fn fake_otlp_collector() -> (SocketAddr, std::sync::mpsc::Receiver<String>) {
 }
 
 #[test]
-fn otlp_endpoint_receives_a_span_on_opc_tcp_accept() {
+fn opcuabridge_8_3_otlp_endpoint_receives_a_span_on_opc_tcp_accept() {
     let idl = write_fixture("otlp.idl", IDL);
     let gateway = write_fixture("gateway_otlp.xml", GATEWAY_XML);
     let lease = zerodds_test_domains::lease_domain();
@@ -469,7 +469,7 @@ fn otlp_endpoint_receives_a_span_on_opc_tcp_accept() {
 // -------------------------------------------------------------------
 
 #[test]
-fn per_session_write_acl_allows_the_named_subject_and_refuses_the_other() {
+fn opcuabridge_4_2_per_session_write_acl_allows_the_named_subject_and_refuses_the_other() {
     let idl = write_fixture("acl.idl", IDL);
     let gateway = write_fixture("gateway_acl.xml", GATEWAY_XML);
     let lease = zerodds_test_domains::lease_domain();
@@ -602,7 +602,7 @@ const GATEWAY_XML_WITH_OVERRIDE: &str = "\
 ";
 
 #[test]
-fn node_id_and_browse_path_override_is_applied_not_just_parsed() {
+fn opcuabridge_5_2_node_id_and_browse_path_override_is_applied_not_just_parsed() {
     let idl = write_fixture("telemetry_override.idl", IDL);
     let gateway = write_fixture("gateway_override.xml", GATEWAY_XML_WITH_OVERRIDE);
     let lease = zerodds_test_domains::lease_domain();
@@ -781,7 +781,7 @@ const GATEWAY_XML_COLLIDING_OVERRIDE: &str = "\
 ";
 
 #[test]
-fn colliding_node_id_override_is_a_load_time_error_not_a_log_line() {
+fn opcuabridge_5_2_colliding_node_id_override_is_a_load_time_error_not_a_log_line() {
     let idl = write_fixture("collision.idl", IDL);
     let gateway = write_fixture("gateway_collision.xml", GATEWAY_XML_COLLIDING_OVERRIDE);
     let lease = zerodds_test_domains::lease_domain();
@@ -816,7 +816,7 @@ const GATEWAY_XML_HISTORICAL: &str = "\
 ";
 
 #[test]
-fn historical_topic_config_makes_history_read_work_end_to_end() {
+fn opcuabridge_1_historical_topic_config_makes_history_read_work_end_to_end() {
     use zerodds_opcua_server::services::{HistoryReadDetails, ReadRawModifiedDetails};
 
     let idl = write_fixture("telemetry_historical.idl", IDL);
@@ -917,7 +917,7 @@ fn historical_topic_config_makes_history_read_work_end_to_end() {
 }
 
 #[test]
-fn dds_publish_reaches_an_in_tree_pubsub_subscriber() {
+fn opcuabridge_1_dds_publish_reaches_an_in_tree_pubsub_subscriber() {
     use zerodds_opcua_gateway::types::BuiltinTypeKind;
     use zerodds_opcua_pubsub::config::{DataSetMetaData, DataSetReaderConfig, FieldMetaData};
     use zerodds_opcua_pubsub::daemon::Subscriber;
@@ -1022,10 +1022,10 @@ fn dds_publish_reaches_an_in_tree_pubsub_subscriber() {
         match subscriber.poll() {
             Ok(matched) => {
                 for m in &matched {
-                    if let Some(field) = m.data.fields.first() {
-                        if field.value.value == Some(Variant::scalar(VariantValue::Double(99.25))) {
-                            found = true;
-                        }
+                    if let Some(field) = m.data.fields.first()
+                        && field.value.value == Some(Variant::scalar(VariantValue::Double(99.25)))
+                    {
+                        found = true;
                     }
                 }
                 if found {
@@ -1040,7 +1040,7 @@ fn dds_publish_reaches_an_in_tree_pubsub_subscriber() {
     // measure `found == true`.
     if !found && cfg!(target_os = "macos") {
         eprintln!(
-            "dds_publish_reaches_an_in_tree_pubsub_subscriber: no datagram arrived within 15s on macOS loopback multicast — known host limitation, not asserted here; run on Linux for a real measurement"
+            "opcuabridge_1_dds_publish_reaches_an_in_tree_pubsub_subscriber: no datagram arrived within 15s on macOS loopback multicast — known host limitation, not asserted here; run on Linux for a real measurement"
         );
     } else {
         assert!(
@@ -1062,15 +1062,16 @@ fn dds_publish_reaches_an_in_tree_pubsub_subscriber() {
 /// PKCS8 PEM private key and SubjectPublicKeyInfo PEM public key. This
 /// daemon's SecureChannel crypto (`zerodds_opcua_uacp::crypto`) is
 /// RSA-only, so the certificate must be RSA-signed too — `rcgen`'s own
-/// default key generation is ECDSA, hence building the RSA key with the
-/// `rsa` crate directly and handing it to `rcgen` via
+/// default key generation is ECDSA, hence the RSA key of `key_der` (an
+/// RSA-2048 key of tests/fixtures, generated once with `openssl genrsa 2048
+/// | openssl pkcs8 -topk8 -nocrypt -outform DER`; generating two in a debug
+/// build took this test to 17 s of its 25) handed to `rcgen` via
 /// `KeyPair::from_pkcs8_pem_and_sign_algo`.
 #[cfg(feature = "crypto")]
-fn generate_rsa_cert(common_name: &str) -> (Vec<u8>, String, String) {
-    use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
+fn generate_rsa_cert(common_name: &str, key_der: &[u8]) -> (Vec<u8>, String, String) {
+    use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey, EncodePublicKey, LineEnding};
 
-    let mut rng = rand::rngs::OsRng;
-    let rsa_key = rsa::RsaPrivateKey::new(&mut rng, 2048).expect("rsa key");
+    let rsa_key = rsa::RsaPrivateKey::from_pkcs8_der(key_der).expect("rsa key");
     let private_key_pem = rsa_key
         .to_pkcs8_pem(LineEnding::LF)
         .expect("pkcs8 pem")
@@ -1092,16 +1093,20 @@ fn generate_rsa_cert(common_name: &str) -> (Vec<u8>, String, String) {
 
 #[cfg(feature = "crypto")]
 #[test]
-fn secured_basic256sha256_sign_and_encrypt_session_through_the_daemon() {
+fn opcuabridge_4_1_secured_basic256sha256_sign_and_encrypt_session_through_the_daemon() {
     let idl = write_fixture("secured.idl", IDL);
     let gateway = write_fixture("gateway_secured.xml", GATEWAY_XML);
     let lease = zerodds_test_domains::lease_domain();
     let mut cfg = base_config(lease.id(), &idl, &gateway);
 
-    let (server_cert_der, server_key_pem, server_pub_pem) =
-        generate_rsa_cert("zerodds-opcua-bridged-test-server");
-    let (client_cert_der, client_key_pem, client_pub_pem) =
-        generate_rsa_cert("zerodds-opcua-bridged-test-client");
+    let (server_cert_der, server_key_pem, server_pub_pem) = generate_rsa_cert(
+        "zerodds-opcua-bridged-test-server",
+        include_bytes!("fixtures/rsa2048_server.der"),
+    );
+    let (client_cert_der, client_key_pem, client_pub_pem) = generate_rsa_cert(
+        "zerodds-opcua-bridged-test-client",
+        include_bytes!("fixtures/rsa2048_client.der"),
+    );
 
     cfg.server.security_policies = vec!["basic256sha256".to_string()];
     cfg.server.certificate_der = Some(write_fixture_bytes("server_cert.der", &server_cert_der));

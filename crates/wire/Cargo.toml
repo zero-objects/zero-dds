@@ -13,6 +13,11 @@ readme = "README.md"
 keywords = ["dds", "xcdr", "cdr", "serialization", "rtps"]
 categories = ["encoding", "network-programming"]
 
+[features]
+# `std::time::SystemTime` as the DDS `Time_t` in the codec API
+# (`codec::DdsMember`). The rest of the crate is `no_std` with `alloc`.
+std = []
+
 [dependencies]
 zerodds-float128 = { path = "../float128", version = "1.0.0-rc.7" }
 

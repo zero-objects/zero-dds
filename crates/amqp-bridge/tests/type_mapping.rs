@@ -121,7 +121,7 @@ fn plan(ast: &Ast, name: &str) -> zerodds_amqp_bridge::codegen::TypePlan {
 }
 
 #[test]
-fn every_row_of_the_primitive_table_takes_the_code_it_names() {
+fn ddsamqp_2_2_every_row_of_the_primitive_table_takes_the_code_it_names() {
     let ast = model();
     let plan = plan(&ast, "probe::Primitives");
     let seen: Vec<(&str, FieldEncoding)> = plan
@@ -154,7 +154,7 @@ fn every_row_of_the_primitive_table_takes_the_code_it_names() {
 }
 
 #[test]
-fn an_octet_sequence_is_binary_and_a_long_sequence_is_a_list() {
+fn ddsamqp_2_2_an_octet_sequence_is_binary_and_a_long_sequence_is_a_list() {
     let ast = model();
     let plan = plan(&ast, "probe::Compounds");
     let by_name: BTreeMap<&str, &FieldEncoding> = plan
@@ -181,7 +181,7 @@ fn an_octet_sequence_is_binary_and_a_long_sequence_is_a_list() {
 }
 
 #[test]
-fn the_body_form_follows_the_types_extensibility() {
+fn ddsamqp_2_2_the_body_form_follows_the_types_extensibility() {
     let ast = model();
     // §7.2.2 — a positional list for the forms whose member set does
     // not move, and §7.2.2.5's map for the one that does.
@@ -192,7 +192,7 @@ fn the_body_form_follows_the_types_extensibility() {
 }
 
 #[test]
-fn a_mutable_body_is_keyed_by_the_declared_member_ids() {
+fn ddsamqp_2_2_a_mutable_body_is_keyed_by_the_declared_member_ids() {
     let ast = model();
     let plan = plan(&ast, "probe::Evolving");
     let ids: Vec<u32> = plan.fields.iter().map(|field| field.id).collect();
@@ -221,7 +221,7 @@ fn a_mutable_body_is_keyed_by_the_declared_member_ids() {
 }
 
 #[test]
-fn a_union_plans_its_discriminator_and_then_its_branches() {
+fn ddsamqp_2_2_a_union_plans_its_discriminator_and_then_its_branches() {
     let ast = model();
     let plan = plan(&ast, "probe::Choice");
     let names: Vec<&str> = plan.fields.iter().map(|f| f.name.as_str()).collect();
@@ -256,7 +256,7 @@ fn a_union_plans_its_discriminator_and_then_its_branches() {
 }
 
 #[test]
-fn a_type_outside_the_mapping_is_named_rather_than_encoded_as_something_else() {
+fn ddsamqp_2_2_a_type_outside_the_mapping_is_named_rather_than_encoded_as_something_else() {
     let ast = model();
     // §7.1: "unmapped IDL types SHALL cause the encoder to raise an
     // UnsupportedType error." A bitmask has no AMQP code.
@@ -272,7 +272,7 @@ fn a_type_outside_the_mapping_is_named_rather_than_encoded_as_something_else() {
 }
 
 #[test]
-fn a_plan_of_something_that_is_not_a_composite_is_refused() {
+fn ddsamqp_8_1_3_a_plan_of_something_that_is_not_a_composite_is_refused() {
     let ast = model();
     let id = *types_by_name(&ast)
         .get("probe::Colour")
@@ -284,7 +284,7 @@ fn a_plan_of_something_that_is_not_a_composite_is_refused() {
 }
 
 #[test]
-fn the_two_descriptor_forms_come_from_the_same_identifier() {
+fn amqp10_1_1_the_two_descriptor_forms_come_from_the_same_identifier() {
     let ast = model();
     let id = *types_by_name(&ast)
         .get("probe::Growing")
@@ -307,7 +307,7 @@ fn the_two_descriptor_forms_come_from_the_same_identifier() {
 }
 
 #[test]
-fn a_sample_nested_past_the_bound_is_refused_by_name() {
+fn ddsamqp_8_1_3_a_sample_nested_past_the_bound_is_refused_by_name() {
     // A recursive IDL type gives the plan graph a cycle: `Recursive`
     // has a member of its own type, so `value_of` and `json_value`
     // follow the composite chain for as long as the sample nests. Only
@@ -345,7 +345,7 @@ fn a_sample_nested_past_the_bound_is_refused_by_name() {
 }
 
 #[test]
-fn a_nested_composite_carries_its_own_descriptor() {
+fn amqp10_1_1_a_nested_composite_carries_its_own_descriptor() {
     // §7.2.2.4 — "Nested composite types SHALL themselves be encoded as
     // described composites recursively." The nested value is a
     // `Described` of its own and not a bare list.

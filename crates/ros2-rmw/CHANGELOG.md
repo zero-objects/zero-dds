@@ -3,6 +3,22 @@
 Format folgt [Keep a Changelog](https://keepachangelog.com/de/1.1.0/),
 Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/).
 
+## [Unreleased]
+
+### Removed
+
+- The feature `cross-vendor-tests` and `tests/cross_vendor.rs`: its three
+  tests repeated the unit tests of `topic_mangling`, `service` and `action`,
+  its fourth (`#[ignore]`) only checked that `ros2 topic list` exits.
+
+### Changed
+
+- The unit tests check against the ROS sources they name (rmw/types.h,
+  rmw/ret_types.h, rmw/qos_profiles.h, REP-2003, REP-2004, the design
+  articles on topic names and interface definitions, rcutils, RFC 8259 §7)
+  and are named after them; round trips through the crate's own functions
+  became checks against the literal values.
+
 ## [1.0.0-rc.1] — 2026-05-07
 
 Initial release materialization of the **`zerodds-ros2-rmw`** crate as a Layer-7 profile.

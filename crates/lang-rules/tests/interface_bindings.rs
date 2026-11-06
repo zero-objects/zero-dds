@@ -119,7 +119,7 @@ const CALCULATOR: &str = "
 /// parameter's direction, the return, the `raises` list, the attributes
 /// and the inheritance chain.
 #[test]
-fn the_seam_reads_every_part_of_an_interface() {
+fn rpc_7_3_1_1_the_seam_reads_every_part_of_an_interface() {
     let ast = model(CALCULATOR);
     let services = interface::services(&ast).expect("services");
     assert_eq!(services.len(), 2, "two interfaces are declared");
@@ -179,7 +179,7 @@ fn the_seam_reads_every_part_of_an_interface() {
 /// `set_attribute_<name>(<type>)`. A `readonly` attribute implies the
 /// getter alone.
 #[test]
-fn an_attribute_implies_the_operations_of_seven_five_one_one_three() {
+fn rpc_7_5_1_1_3_an_attribute_implies_the_operations_of_seven_five_one_one_three() {
     let ast = model(CALCULATOR);
     let services = interface::services(&ast).expect("services");
     let calculator = services
@@ -225,7 +225,7 @@ fn an_attribute_implies_the_operations_of_seven_five_one_one_three() {
 /// base's operation reached through two paths collapses to one, and a
 /// writable attribute's getter and setter both survive.
 #[test]
-fn all_operations_flattened_keeps_a_non_readonly_attributes_setter() {
+fn idl_7_4_4_4_all_operations_flattened_keeps_a_non_readonly_attributes_setter() {
     const DIAMOND_WITH_ATTRIBUTE: &str = "
         interface Top { void t(); attribute long shared; };
         interface Left : Top { void l(); };
@@ -271,7 +271,7 @@ fn all_operations_flattened_keeps_a_non_readonly_attributes_setter() {
 /// in the compilation unit is a fatal `DDS-TS-E002`. The refusal is the
 /// seam's, so the C++ and Java bindings refuse it too.
 #[test]
-fn a_forward_declaration_without_a_definition_is_e002() {
+fn ddsts_11_7_a_forward_declaration_without_a_definition_is_e002() {
     let mut ast = Ast::new();
     let root = ast.root_module();
     let _ = ast
@@ -300,7 +300,7 @@ fn a_forward_declaration_without_a_definition_is_e002() {
 /// namespace, each with a public virtual destructor and the four
 /// typedefs.
 #[test]
-fn cpp_declares_the_two_abstract_classes_of_rule_one() {
+fn rpc_7_5_1_1_4_cpp_declares_the_two_abstract_classes_of_rule_one() {
     let text = cpp(CALCULATOR);
     assert!(text.contains("namespace robot {"), "{text}");
     assert!(text.contains("class Calculator : public Base {"), "{text}");
@@ -339,7 +339,7 @@ fn cpp_declares_the_two_abstract_classes_of_rule_one() {
 /// argument order, no exception specification, a primitive return by
 /// value (6.g) and a constructed return as a leading `cxx_return` (6.h).
 #[test]
-fn cpp_declares_the_synchronous_operations_of_rule_six() {
+fn rpc_7_11_1_1_2_cpp_declares_the_synchronous_operations_of_rule_six() {
     let text = cpp(CALCULATOR);
     assert!(
         text.contains("virtual std::int32_t add(std::int32_t a, std::int32_t b) = 0;"),
@@ -370,7 +370,7 @@ fn cpp_declares_the_synchronous_operations_of_rule_six() {
 /// `future<${interface}_${operation}_Out>` where there are `out` or
 /// `inout` parameters (7.i).
 #[test]
-fn cpp_declares_the_asynchronous_operations_of_rule_seven() {
+fn rpc_7_11_1_1_2_cpp_declares_the_asynchronous_operations_of_rule_seven() {
     let text = cpp(CALCULATOR);
     assert!(
         text.contains(
@@ -396,7 +396,7 @@ fn cpp_declares_the_asynchronous_operations_of_rule_seven() {
 /// after the attribute (DDS-Cxx-PSM §7.4.6) and not `get_`/`set_`, which
 /// is the *implied IDL* of §7.5.1.1.3 and belongs to the topic types.
 #[test]
-fn cpp_names_an_attribute_accessor_after_the_attribute() {
+fn rpc_7_11_1_1_2_cpp_names_an_attribute_accessor_after_the_attribute() {
     let text = cpp(CALCULATOR);
     assert!(text.contains("virtual std::int32_t total() = 0;"), "{text}");
     assert!(text.contains("virtual std::string& label() = 0;"), "{text}");
@@ -428,7 +428,7 @@ fn cpp_names_an_attribute_accessor_after_the_attribute() {
 /// §7.5.1.1.4-7: the topic types, with the names
 /// `crates/rpc/src/codegen.rs` derives.
 #[test]
-fn cpp_declares_the_topic_types_of_seven_five() {
+fn rpc_7_3_1_1_cpp_declares_the_topic_types_of_seven_five() {
     let text = cpp(CALCULATOR);
     for expected in [
         "struct Calculator_add_In {",
@@ -513,7 +513,7 @@ fn cpp_declares_no_per_operation_request_types() {
 /// §7.11.1.1.1: the typed per-service `Requester` and `Replier` over the
 /// generic templates.
 #[test]
-fn cpp_binds_the_requester_and_replier_of_seven_eleven_one_one_one() {
+fn rpc_7_11_1_1_1_cpp_binds_the_requester_and_replier_of_seven_eleven_one_one_one() {
     let text = cpp(CALCULATOR);
     assert!(
         text.contains(
@@ -534,7 +534,7 @@ fn cpp_binds_the_requester_and_replier_of_seven_eleven_one_one_one() {
 /// implementation, and the `Client` inheriting from `${interface}`,
 /// `${interface}Async` and `ClientEndpoint` (public virtual).
 #[test]
-fn cpp_binds_the_function_call_entities_of_seven_eleven_one_five() {
+fn rpc_7_11_1_5_1_cpp_binds_the_function_call_entities_of_seven_eleven_one_five() {
     let text = cpp(CALCULATOR);
     assert!(
         text.contains(
@@ -613,7 +613,7 @@ fn cpp_client_throws_and_service_catches_a_raised_exception() {
 /// remote exception code, and turns what the implementation throws into
 /// one (§7.5.2).
 #[test]
-fn cpp_service_translates_what_the_implementation_throws() {
+fn rpc_7_9_2_1_cpp_service_translates_what_the_implementation_throws() {
     let text = cpp(CALCULATOR);
     assert!(
         // The caught exception is kept in `zd_error`, which the service
@@ -664,7 +664,7 @@ fn cpp_derived_client_and_service_use_the_clients_and_services_of_the_bases() {
 /// §7.11.1.1.2 rule 8: an identifier that is a C++ reserved word is
 /// prefixed with `cxx_`.
 #[test]
-fn cpp_prefixes_a_reserved_word_with_cxx() {
+fn rpc_7_11_1_1_2_cpp_prefixes_a_reserved_word_with_cxx() {
     let text = cpp("interface Ops { void delete(in long template); };");
     assert!(
         text.contains("virtual void cxx_delete(std::int32_t cxx_template) = 0;"),
@@ -687,7 +687,7 @@ fn cpp_complete(idl: &str) -> String {
 /// spell the reserved word with the `cxx_` prefix, and nothing is declared
 /// under the underscore spelling.
 #[test]
-fn cpp_names_a_reserved_exception_with_the_cxx_prefix() {
+fn rpc_7_11_1_1_2_cpp_names_a_reserved_exception_with_the_cxx_prefix() {
     let text = cpp_complete(
         "exception template { long code; };
          interface Ops { void go() raises (template); };",
@@ -705,7 +705,7 @@ fn cpp_names_a_reserved_exception_with_the_cxx_prefix() {
 /// C++ keywords): the namespace, the type declared in it and every
 /// reference into it are `cxx_` prefixed, the topic-type traits included.
 #[test]
-fn cpp_names_a_reserved_module_and_type_with_the_cxx_prefix() {
+fn rpc_7_11_1_1_2_cpp_names_a_reserved_module_and_type_with_the_cxx_prefix() {
     let text = cpp_complete(
         "module class { struct delete { long x; };
                        interface Ops { delete get(); }; };",
@@ -726,7 +726,7 @@ fn cpp_names_a_reserved_module_and_type_with_the_cxx_prefix() {
 /// plain `interface` form only, so a `local interface` is refused where
 /// the seam reads it, and no binding writes a class for it.
 #[test]
-fn a_local_interface_is_refused_by_the_seam() {
+fn rpc_7_3_1_1_a_local_interface_is_refused_by_the_seam() {
     let error = refused("local interface Cache { long size(); };");
     assert!(
         matches!(
@@ -748,7 +748,7 @@ fn a_local_interface_is_refused_by_the_seam() {
 /// §7.11.2.3: the same entities as C++, in Java's spelling — two
 /// interfaces, the endpoints, and the function-call client and service.
 #[test]
-fn java_declares_the_same_entities_as_cpp() {
+fn rpc_7_11_2_java_declares_the_same_entities_as_cpp() {
     let text = java(CALCULATOR);
     assert!(text.contains("public final class ZdServices {"), "{text}");
     assert!(text.contains("class robot {"), "{text}");
@@ -787,7 +787,7 @@ fn java_declares_the_same_entities_as_cpp() {
 /// argument cannot be a primitive, and the `_Out` type where the call
 /// has more than one result.
 #[test]
-fn java_returns_a_future_of_the_boxed_result() {
+fn idl4java_7_4_java_returns_a_future_of_the_boxed_result() {
     let text = java(CALCULATOR);
     assert!(
         text.contains("org.omg.dds.rpc.Future<Integer> add_async(int a, int b);"),
@@ -807,7 +807,7 @@ fn java_returns_a_future_of_the_boxed_result() {
 /// travels in the `${interface}_${operation}_Out` type §7.11.1.1.2 rule
 /// 7.i names for the same call shape.
 #[test]
-fn java_returns_the_out_type_where_cpp_takes_a_reference() {
+fn idl4java_7_4_java_returns_the_out_type_where_cpp_takes_a_reference() {
     let text = java(CALCULATOR);
     assert!(text.contains("int add(int a, int b);"), "{text}");
     assert!(
@@ -820,7 +820,7 @@ fn java_returns_the_out_type_where_cpp_takes_a_reference() {
 /// specification. The clause still reaches the generated file, as
 /// documentation.
 #[test]
-fn java_declares_no_throws_and_still_names_the_raises() {
+fn idl4java_7_4_java_declares_no_throws_and_still_names_the_raises() {
     let text = java(CALCULATOR);
     assert!(!text.contains("throws"), "{text}");
     assert!(
@@ -883,7 +883,7 @@ fn java_support_names_the_interface_for_a_run_time_service_name() {
 /// §7.4.1.1's two topic names, as the constants a Java service reads
 /// them from.
 #[test]
-fn java_carries_the_topic_names_as_constants() {
+fn idl_7_4_3_java_carries_the_topic_names_as_constants() {
     let text = java(CALCULATOR);
     // §7.4.1: `<interface_name>_<service_name>_Request`, with the
     // interface name fully qualified and `<service_name>` at its
@@ -921,7 +921,7 @@ fn java_carries_the_topic_names_as_constants() {
 /// the `<service_name>` segment, the aliases, and the annotation that
 /// replaces the whole name.
 #[test]
-fn cpp_carries_the_topic_names_of_seven_four() {
+fn rpc_7_4_1_cpp_carries_the_topic_names_of_seven_four() {
     let text = cpp(CALCULATOR);
     assert!(
         text.contains(
@@ -975,7 +975,7 @@ fn cpp_carries_the_topic_names_of_seven_four() {
 /// DDS-TS 1.0 §11.1: a client interface, a handler interface and a
 /// service descriptor. No class.
 #[test]
-fn typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor() {
+fn ddsts_2_3_typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor() {
     let text = typescript(CALCULATOR);
     assert!(text.contains("export namespace robot {"), "{text}");
     assert!(
@@ -1001,7 +1001,7 @@ fn typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor() {
 /// aggregated resolved value where the operation declares `out` or
 /// `inout`.
 #[test]
-fn typescript_aggregates_out_parameters_into_the_resolved_value() {
+fn ddsts_11_2_typescript_aggregates_out_parameters_into_the_resolved_value() {
     let text = typescript(CALCULATOR);
     assert!(
         text.contains("add(a: number, b: number): Promise<number>;"),
@@ -1019,7 +1019,7 @@ fn typescript_aggregates_out_parameters_into_the_resolved_value() {
 /// §11.3: `get_<name>` always, `set_<name>` unless the attribute is
 /// `readonly`.
 #[test]
-fn typescript_maps_an_attribute_to_a_getter_and_a_setter() {
+fn ddsts_11_3_typescript_maps_an_attribute_to_a_getter_and_a_setter() {
     let text = typescript(CALCULATOR);
     assert!(text.contains("get_total(): Promise<number>;"), "{text}");
     assert!(text.contains("get_label(): Promise<string>;"), "{text}");
@@ -1033,7 +1033,7 @@ fn typescript_maps_an_attribute_to_a_getter_and_a_setter() {
 /// §11.5: the descriptor's four fields, with `inherits` in declaration
 /// order and nothing flattened into it (§11.6).
 #[test]
-fn typescript_writes_the_service_descriptor_of_eleven_five() {
+fn ddsts_11_4_typescript_writes_the_service_descriptor_of_eleven_five() {
     let text = typescript(CALCULATOR);
     assert!(text.contains("name: \"robot::Calculator\""), "{text}");
     assert!(text.contains("inherits: [BaseService]"), "{text}");
@@ -1186,7 +1186,7 @@ fn assert_outside_grammar(idl: &str, construct: &str) {
 /// §7.3.1.1 production (87) removed `oneway`; §7.5.1.1.7 rule 5 gives
 /// every operation a Return-union case.
 #[test]
-fn the_seam_refuses_a_oneway_operation() {
+fn rpc_7_3_1_1_the_seam_refuses_a_oneway_operation() {
     assert_outside_grammar(
         "interface I { oneway void log(in string msg); };",
         "a `oneway` operation",
@@ -1195,7 +1195,7 @@ fn the_seam_refuses_a_oneway_operation() {
 
 /// §7.3.2 keeps `@oneway` for Java source only.
 #[test]
-fn the_seam_refuses_the_oneway_annotation() {
+fn rpc_7_3_1_1_the_seam_refuses_the_oneway_annotation() {
     assert_outside_grammar(
         "interface I { @oneway void ping(); };",
         "a `oneway` operation",
@@ -1204,7 +1204,7 @@ fn the_seam_refuses_the_oneway_annotation() {
 
 /// Production (87) removed `context` expressions.
 #[test]
-fn the_seam_refuses_a_context_clause() {
+fn rpc_7_3_1_1_the_seam_refuses_a_context_clause() {
     assert_outside_grammar(
         "interface I { void ping() context (\"x\"); };",
         "a `context` clause",
@@ -1213,7 +1213,7 @@ fn the_seam_refuses_a_context_clause() {
 
 /// Production (9): a type declaration in the interface body.
 #[test]
-fn the_seam_refuses_a_type_in_an_interface_body() {
+fn rpc_7_3_1_1_the_seam_refuses_a_type_in_an_interface_body() {
     assert_outside_grammar(
         "interface I { struct S { long a; }; void ping(); };",
         "a type declaration in an interface body",
@@ -1222,7 +1222,7 @@ fn the_seam_refuses_a_type_in_an_interface_body() {
 
 /// Production (9): a constant declaration in the interface body.
 #[test]
-fn the_seam_refuses_a_constant_in_an_interface_body() {
+fn rpc_7_3_1_1_the_seam_refuses_a_constant_in_an_interface_body() {
     assert_outside_grammar(
         "interface I { const long N = 1; void ping(); };",
         "a constant declaration in an interface body",
@@ -1231,7 +1231,7 @@ fn the_seam_refuses_a_constant_in_an_interface_body() {
 
 /// Production (9): an exception declaration in the interface body.
 #[test]
-fn the_seam_refuses_an_exception_in_an_interface_body() {
+fn rpc_7_3_1_1_the_seam_refuses_an_exception_in_an_interface_body() {
     assert_outside_grammar(
         "interface I { exception E { long c; }; void ping(); };",
         "an exception declaration in an interface body",
@@ -1240,7 +1240,7 @@ fn the_seam_refuses_an_exception_in_an_interface_body() {
 
 /// Production (1): the `import` directive.
 #[test]
-fn the_seam_refuses_an_import_directive() {
+fn rpc_7_3_1_1_the_seam_refuses_an_import_directive() {
     assert_outside_grammar(
         "import X; interface I { void ping(); };",
         "an `import` directive",
@@ -1249,7 +1249,7 @@ fn the_seam_refuses_an_import_directive() {
 
 /// Production (2): `typeid` and `typeprefix`.
 #[test]
-fn the_seam_refuses_typeid_and_typeprefix_directives() {
+fn rpc_7_3_1_1_the_seam_refuses_typeid_and_typeprefix_directives() {
     assert_outside_grammar(
         "typeid I \"IDL:I:1.0\"; interface I { void ping(); };",
         "a `typeid`/`typeprefix` directive",
@@ -1262,7 +1262,7 @@ fn the_seam_refuses_typeid_and_typeprefix_directives() {
 
 /// Production (7): `abstract interface`.
 #[test]
-fn the_seam_refuses_an_abstract_interface() {
+fn rpc_7_3_1_1_the_seam_refuses_an_abstract_interface() {
     assert_outside_grammar(
         "abstract interface I { void ping(); };",
         "an interface declaration of a form other than `interface`",
@@ -1271,7 +1271,7 @@ fn the_seam_refuses_an_abstract_interface() {
 
 /// Production (2) and (7): `component`.
 #[test]
-fn the_seam_refuses_a_component() {
+fn rpc_7_3_1_1_the_seam_refuses_a_component() {
     assert_outside_grammar(
         "component C { };",
         "an interface declaration of a form other than `interface`",
@@ -1281,7 +1281,7 @@ fn the_seam_refuses_a_component() {
 /// §7.5.1.1.3 rule 1: an attribute `x` implies `get_attribute_x`, and a
 /// user-defined operation of that name is illegal beside it.
 #[test]
-fn the_seam_refuses_an_operation_named_like_an_implied_getter() {
+fn rpc_7_5_1_1_3_the_seam_refuses_an_operation_named_like_an_implied_getter() {
     let error = refused("interface I { attribute long x; long get_attribute_x(); };");
     assert_eq!(
         error,
@@ -1295,7 +1295,7 @@ fn the_seam_refuses_an_operation_named_like_an_implied_getter() {
 /// Rule 1, setter half. A `readonly` attribute implies no setter, so the
 /// same name is legal there.
 #[test]
-fn the_seam_refuses_an_operation_named_like_an_implied_setter() {
+fn rpc_7_5_1_1_3_the_seam_refuses_an_operation_named_like_an_implied_setter() {
     let error = refused("interface I { attribute long x; void set_attribute_x(in long v); };");
     assert_eq!(
         error,
@@ -1311,7 +1311,7 @@ fn the_seam_refuses_an_operation_named_like_an_implied_setter() {
 /// Two declared operations of one name. The frontend refuses to build
 /// such a model from IDL, so it is built through the model API.
 #[test]
-fn the_seam_refuses_two_operations_of_one_name() {
+fn rpc_7_5_1_1_3_the_seam_refuses_two_operations_of_one_name() {
     let mut ast = Ast::new();
     let root = ast.root_module();
     let iface = ast
@@ -1381,7 +1381,7 @@ fn struct_body<'a>(text: &'a str, name: &str) -> &'a str {
 /// §7.5.1.1.3 rule 3: the implied setter takes one argument of the
 /// attribute's type, named like the attribute.
 #[test]
-fn the_implied_setter_takes_one_argument_named_like_the_attribute() {
+fn rpc_7_5_1_1_3_the_implied_setter_takes_one_argument_named_like_the_attribute() {
     let ast = model(CALCULATOR);
     let services = interface::services(&ast).expect("services");
     let calculator = services
@@ -1425,7 +1425,7 @@ const GUARDED: &str = "
 /// getter and `setraises` that of the implied setter, and each
 /// operation's Result union has a case for its exception.
 #[test]
-fn getraises_and_setraises_become_the_raises_of_the_implied_operations() {
+fn rpc_7_5_1_1_3_getraises_and_setraises_become_the_raises_of_the_implied_operations() {
     let ast = model(GUARDED);
     let services = interface::services(&ast).expect("services");
     let all = services[0].all_operations();
@@ -1454,7 +1454,7 @@ fn getraises_and_setraises_become_the_raises_of_the_implied_operations() {
 /// order of the formal parameters, and rule 3b puts the return value
 /// last. The `in` parameter is no member of the Out structure.
 #[test]
-fn the_out_structure_keeps_the_order_of_the_parameters() {
+fn rpc_7_5_1_1_5_the_out_structure_keeps_the_order_of_the_parameters() {
     let idl = "interface Mixer {
         void mix(in long a, inout long b, out double c);
         long mix2(out double c, in long a, inout long b);
@@ -1497,7 +1497,7 @@ fn the_out_structure_keeps_the_order_of_the_parameters() {
 /// §7.5.1.1.5 rule 3b: an `out` parameter named `return_` moves the
 /// regular return value to `return_1`.
 #[test]
-fn a_colliding_return_member_is_numbered_in_cpp_and_java() {
+fn rpc_7_5_1_1_5_a_colliding_return_member_is_numbered_in_cpp_and_java() {
     let idl = "interface Odd { long f(out long return_); };";
     let text = cpp(idl);
     let out = struct_body(&text, "Odd_f_Out");
@@ -1521,7 +1521,7 @@ fn a_colliding_return_member_is_numbered_in_cpp_and_java() {
 /// The same collision in the Rust generator, which has its own copy of
 /// the rule.
 #[test]
-fn a_colliding_return_member_is_numbered_in_rust() {
+fn rpc_7_5_1_1_5_a_colliding_return_member_is_numbered_in_rust() {
     let ast = model("interface Odd { long f(out long return_); };");
     let items = zerodds_lang_rules::emit::interface_rust::rust_interface_pairs(&ast)
         .unwrap_or_else(|error| panic!("{error}"));
@@ -1577,7 +1577,7 @@ fn cpp_placement(decls: &[cpp::Decl], path: &str, out: &mut Vec<(String, String)
 /// interface, and not in the global namespace or in another module's.
 /// The exception is declared in a third module on purpose.
 #[test]
-fn the_topic_types_and_constants_stand_in_the_module_of_the_interface() {
+fn rpc_7_5_1_1_4_the_topic_types_and_constants_stand_in_the_module_of_the_interface() {
     let _native = zerodds_lang_rules::adapter::cpp::CppMappingScope::enter(
         zerodds_lang_rules::adapter::cpp::CppMapping::Native,
     );

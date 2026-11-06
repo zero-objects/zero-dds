@@ -22,7 +22,7 @@ use zerodds_amqp_endpoint::management::metrics_snapshot;
 use zerodds_amqp_endpoint::metrics::{MANDATORY_METRIC_NAMES, MetricsHub, names};
 
 #[test]
-fn c1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
+fn ddsamqp_c_1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
     let hub = MetricsHub::new();
     // Generate some traffic so that counters are > 0.
     hub.on_connection_open();
@@ -85,7 +85,7 @@ fn c1_13_metrics_snapshot_emits_one_sample_per_mandatory_metric() {
 }
 
 #[test]
-fn c1_13_metrics_carry_traffic_counter_values() {
+fn ddsamqp_c_1_13_metrics_carry_traffic_counter_values() {
     let hub = MetricsHub::new();
     hub.on_connection_open();
     hub.on_connection_open(); // 2 active
@@ -102,7 +102,7 @@ fn c1_13_metrics_carry_traffic_counter_values() {
 }
 
 #[test]
-fn c1_13_metrics_units_are_spec_symbols() {
+fn ddsamqp_2_2_metrics_units_are_spec_symbols() {
     let hub = MetricsHub::new();
     let samples = metrics_snapshot(&hub, 0);
     // transfers.rate has unit `per-second`, all others `count`.

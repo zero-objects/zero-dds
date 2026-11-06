@@ -276,12 +276,12 @@ fn try_call_reader_stage<F>(
 where
     F: FnOnce(Arc<dyn DataReaderListener>),
 {
-    if let Some((l, mask)) = listener {
-        if (mask & bit) != 0 {
-            let l = Arc::clone(l);
-            safe_call(move || call(l));
-            return true;
-        }
+    if let Some((l, mask)) = listener
+        && (mask & bit) != 0
+    {
+        let l = Arc::clone(l);
+        safe_call(move || call(l));
+        return true;
     }
     false
 }
@@ -295,12 +295,12 @@ fn try_call_subscriber_stage<F>(
 where
     F: FnOnce(Arc<dyn SubscriberListener>),
 {
-    if let Some((l, mask)) = listener {
-        if (mask & bit) != 0 {
-            let l = Arc::clone(l);
-            safe_call(move || call(l));
-            return true;
-        }
+    if let Some((l, mask)) = listener
+        && (mask & bit) != 0
+    {
+        let l = Arc::clone(l);
+        safe_call(move || call(l));
+        return true;
     }
     false
 }
@@ -314,12 +314,12 @@ fn try_call_participant_stage<F>(
 where
     F: FnOnce(Arc<dyn DomainParticipantListener>),
 {
-    if let Some((l, mask)) = listener {
-        if (mask & bit) != 0 {
-            let l = Arc::clone(l);
-            safe_call(move || call(l));
-            return true;
-        }
+    if let Some((l, mask)) = listener
+        && (mask & bit) != 0
+    {
+        let l = Arc::clone(l);
+        safe_call(move || call(l));
+        return true;
     }
     false
 }
@@ -333,12 +333,12 @@ fn try_call_writer_stage<F>(
 where
     F: FnOnce(Arc<dyn DataWriterListener>),
 {
-    if let Some((l, mask)) = listener {
-        if (mask & bit) != 0 {
-            let l = Arc::clone(l);
-            safe_call(move || call(l));
-            return true;
-        }
+    if let Some((l, mask)) = listener
+        && (mask & bit) != 0
+    {
+        let l = Arc::clone(l);
+        safe_call(move || call(l));
+        return true;
     }
     false
 }
@@ -352,12 +352,12 @@ fn try_call_publisher_stage<F>(
 where
     F: FnOnce(Arc<dyn PublisherListener>),
 {
-    if let Some((l, mask)) = listener {
-        if (mask & bit) != 0 {
-            let l = Arc::clone(l);
-            safe_call(move || call(l));
-            return true;
-        }
+    if let Some((l, mask)) = listener
+        && (mask & bit) != 0
+    {
+        let l = Arc::clone(l);
+        safe_call(move || call(l));
+        return true;
     }
     false
 }
@@ -371,12 +371,12 @@ fn try_call_topic_stage<F>(
 where
     F: FnOnce(Arc<dyn TopicListener>),
 {
-    if let Some((l, mask)) = listener {
-        if (mask & bit) != 0 {
-            let l = Arc::clone(l);
-            safe_call(move || call(l));
-            return true;
-        }
+    if let Some((l, mask)) = listener
+        && (mask & bit) != 0
+    {
+        let l = Arc::clone(l);
+        safe_call(move || call(l));
+        return true;
     }
     false
 }
@@ -439,7 +439,7 @@ pub(crate) fn poll_ledger<S: Clone>(
             // §2.2.4.1 resets the flag on the read). Looking again after
             // the set closes that: a status read in between is no longer
             // unread here, and the flag goes. Measured on
-            // `status_reads::a_status_change_raises_the_flag_and_the_read_lowers_it`,
+            // `status_reads::dcps_2_2_2_1_1_5_a_status_change_raises_the_flag_and_the_read_lowers_it`,
             // 6 of 80 runs on the Linux test host before.
             if !observe().is_some_and(|(unread, _, _)| unread) {
                 entity.clear_status_changes(bit);
@@ -1338,7 +1338,7 @@ mod tests {
     }
 
     #[test]
-    fn data_available_bubbles_all_the_way_to_participant() {
+    fn dcps_2_2_2_2_3_data_available_bubbles_all_the_way_to_participant() {
         let p = Arc::new(CountingParticipant::new());
         let chain = ReaderListenerChain {
             reader: None,
@@ -1377,7 +1377,7 @@ mod tests {
     }
 
     #[test]
-    fn data_on_readers_does_not_call_reader_stage() {
+    fn dcps_2_2_4_3_2_data_on_readers_does_not_call_reader_stage() {
         let r = Arc::new(CountingReader::new());
         let s = Arc::new(CountingSubscriber::new());
         let chain = ReaderListenerChain {
@@ -1453,7 +1453,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_lost_bubbles_to_subscriber() {
+    fn dcps_2_2_4_3_1_sample_lost_bubbles_to_subscriber() {
         let s = Arc::new(CountingSubscriber::new());
         let chain = ReaderListenerChain {
             reader: None,
@@ -1507,7 +1507,7 @@ mod tests {
     // ---------- Writer path ----------
 
     #[test]
-    fn publication_matched_consumed_at_writer() {
+    fn dcps_2_2_2_4_2_1_publication_matched_consumed_at_writer() {
         let w = Arc::new(CountingWriter::new());
         let chain = WriterListenerChain {
             writer: Some((w.clone(), bits::ANY)),
@@ -1519,7 +1519,7 @@ mod tests {
     }
 
     #[test]
-    fn publication_matched_bubbles_to_publisher() {
+    fn dcps_2_2_2_4_1_1_publication_matched_bubbles_to_publisher() {
         let w = Arc::new(CountingWriter::new());
         let pubr = Arc::new(CountingPublisher::new());
         let chain = WriterListenerChain {
@@ -1533,7 +1533,7 @@ mod tests {
     }
 
     #[test]
-    fn publication_matched_bubbles_to_participant() {
+    fn dcps_2_2_2_2_3_publication_matched_bubbles_to_participant() {
         let p = Arc::new(CountingParticipant::new());
         let chain = WriterListenerChain {
             writer: None,
@@ -1579,7 +1579,7 @@ mod tests {
     // ---------- Topic path ----------
 
     #[test]
-    fn inconsistent_topic_consumed_at_topic() {
+    fn dcps_2_2_2_3_5_inconsistent_topic_consumed_at_topic() {
         let t = Arc::new(CountingTopic::new());
         let chain = TopicListenerChain {
             topic: Some((t.clone(), bits::ANY)),
@@ -1590,7 +1590,7 @@ mod tests {
     }
 
     #[test]
-    fn inconsistent_topic_bubbles_to_participant() {
+    fn dcps_2_2_2_2_3_inconsistent_topic_bubbles_to_participant() {
         let p = Arc::new(CountingParticipant::new());
         let chain = TopicListenerChain {
             topic: None,
@@ -1638,7 +1638,7 @@ mod tests {
     // ---------- Bit-specific mask behavior ----------
 
     #[test]
-    fn reader_with_only_data_available_bit_passes_other_events_up() {
+    fn dcps_2_2_2_1_1_3_reader_with_only_data_available_bit_passes_other_events_up() {
         let r = Arc::new(CountingReader::new());
         let s = Arc::new(CountingSubscriber::new());
         let chain = ReaderListenerChain {
@@ -1656,7 +1656,7 @@ mod tests {
     }
 
     #[test]
-    fn writer_with_only_publication_matched_bit_passes_other_events_up() {
+    fn dcps_2_2_4_3_1_writer_with_only_publication_matched_bit_passes_other_events_up() {
         let w = Arc::new(CountingWriter::new());
         let pubr = Arc::new(CountingPublisher::new());
         let chain = WriterListenerChain {
@@ -1684,7 +1684,7 @@ mod tests {
     /// the dispatcher thread and a `get_*_status` caller both handing
     /// one change to the listener.
     #[test]
-    fn a_look_asked_for_during_a_look_runs_after_it_not_inside_it() {
+    fn dcps_2_2_4_3_2_a_look_asked_for_during_a_look_runs_after_it_not_inside_it() {
         use core::cell::Cell;
         struct Probe {
             entity: Arc<crate::entity::EntityState>,
@@ -1738,7 +1738,7 @@ mod tests {
     /// stands after all four; a change after it is the next call's, with its
     /// own change counts.
     #[test]
-    fn a_run_of_changes_is_handed_over_once_with_the_most_current_status() {
+    fn dcps_2_2_4_3_2_a_run_of_changes_is_handed_over_once_with_the_most_current_status() {
         use crate::status::{LivelinessChangedStatus, StatusLedger};
         use core::cell::RefCell;
         let ledger = RefCell::new(StatusLedger::<LivelinessChangedStatus>::default());
@@ -1806,7 +1806,7 @@ mod tests {
     /// status already reset." The look acknowledges the change and lowers
     /// the flag before it calls the listener.
     #[test]
-    fn the_status_is_read_before_the_listener_runs() {
+    fn dcps_2_2_4_2_1_the_status_is_read_before_the_listener_runs() {
         let entity = crate::entity::EntityState::new_enabled();
         let bit = crate::psm_constants::status::PUBLICATION_MATCHED;
         let acknowledged = core::cell::Cell::new(0);

@@ -85,7 +85,7 @@ pub fn is_client_initiated(stream_id: StreamId) -> bool {
 /// Spec §5.1.1: server-initiated streams are even.
 #[must_use]
 pub fn is_server_initiated(stream_id: StreamId) -> bool {
-    stream_id != 0 && stream_id % 2 == 0
+    stream_id != 0 && stream_id.is_multiple_of(2)
 }
 
 #[cfg(test)]

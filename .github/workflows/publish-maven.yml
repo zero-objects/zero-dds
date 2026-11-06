@@ -1,5 +1,4 @@
 # Maven Central publish job for org.zerodds:omgdds (crates/java-omgdds/java).
-# Spec: internal/packaging/language-binding-publish-followup.md
 #
 # Setup once (user action, takes several days due to Sonatype bureaucracy):
 #
@@ -115,10 +114,8 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
-          # The central-publishing-maven-plugin (modern Sonatype path) must
-          # be registered as a <plugin> in pom.xml. If not yet
-          # set up: internal/packaging/language-binding-publish-followup.md
-          # lists the plugin configuration.
+          # The central-publishing-maven-plugin (modern Sonatype path) is
+          # registered as a <plugin> in crates/java-omgdds/java/pom.xml.
           mvn -B -Prelease deploy
 
       - name: Upload Maven artifacts (debug)

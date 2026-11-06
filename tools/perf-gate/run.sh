@@ -8,7 +8,7 @@
 # delivers every one) or when the median rate is below
 # ZERODDS_PERF_GATE_MIN_KS (kS/s, written samples per second / 1000).
 #
-# Why it exists: 809d976aecb made every write of such a writer walk its
+# Why it exists: fc3b5ae4ba3 made every write of such a writer walk its
 # whole history and took this cell from 72 to 42 kS/s on the Linux test
 # host; every test stayed green for a week, because none measures a rate.
 #

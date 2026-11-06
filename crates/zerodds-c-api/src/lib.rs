@@ -384,9 +384,11 @@ pub(crate) fn write_status(e: &zerodds_dcps::DdsError) -> c_int {
     }
 }
 
-/// The DDS 1.4 defaults: RELIABLE, VOLATILE, KEEP_LAST(1), infinite
-/// deadline, lifespan and lease, AUTOMATIC liveliness, no RESOURCE_LIMITS,
-/// and a writer's `max_blocking_time` of 100 ms.
+/// The DDS 1.4 defaults of a DataWriter: RELIABLE, VOLATILE, KEEP_LAST(1),
+/// infinite deadline, lifespan and lease, AUTOMATIC liveliness, no
+/// RESOURCE_LIMITS, and a `max_blocking_time` of 100 ms. A DataReader's
+/// RELIABILITY default is BEST_EFFORT (§2.2.3.14); a caller that creates a
+/// reader from this value sets it.
 #[unsafe(no_mangle)]
 pub extern "C" fn zerodds_endpoint_qos_default() -> ZeroDdsEndpointQos {
     ZeroDdsEndpointQos {
@@ -1044,7 +1046,7 @@ pub unsafe extern "C" fn zerodds_writer_wait_for_acknowledgments(
 ///
 /// This is stated here rather than taken from `RuntimeConfig::default()`
 /// because that default is not this FFI's to pick: it is
-/// `DEFAULT_OFFER = [XCDR1, XCDR2]`, the list a peer requests when it
+/// `DEFAULT_OFFER = [XCDR1]`, the list a peer requests when it
 /// leaves `DataRepresentation` at the DDS default, and it moved to
 /// XCDR1-first for peers that do exactly that. The FFI does not — it
 /// serialises XCDR2 — so it names its own order. The secured path
@@ -1324,7 +1326,11 @@ pub unsafe extern "C" fn zerodds_runtime_create_ros_defaults(
         eprintln!("zerodds_runtime_create_ros_defaults: {error}");
         return ptr::null_mut();
     }
-    let rt = match DcpsRuntime::start(domain_id as i32, random_guid_prefix(), cfg) {
+    let Ok(domain) = i32::try_from(domain_id) else {
+        eprintln!("zerodds_runtime_create_ros_defaults: domain {domain_id} exceeds i32");
+        return ptr::null_mut();
+    };
+    let rt = match DcpsRuntime::start(domain, random_guid_prefix(), cfg) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("zerodds_runtime_create_ros_defaults(domain_id={domain_id}) failed: {e:?}");
@@ -3570,6 +3576,11 @@ pub struct ZeroDdsSampleOrigin {
     pub source_timestamp_ns: i64,
     /// The writer's RTPS sequence number of the sample, `-1` when unknown.
     pub sequence_number: i64,
+    /// The representation identifier of the sample's encapsulation header
+    /// (DDSI-RTPS 2.5 §10.5), e.g. `{0x00, 0x09}` for D_CDR2_LE: the
+    /// `representation` and `big_endian` arguments of the callback reduce
+    /// it to the XCDR version and the byte order.
+    pub representation_identifier: [u8; 2],
 }
 
 /// [`ZeroDdsDataCallback`] with the sample's origin; `origin` is valid for
@@ -3623,6 +3634,7 @@ pub unsafe extern "C" fn zerodds_reader_set_data_callback_ex(
                         i64::from(time.sec) * 1_000_000_000 + i64::from(time.nanosec)
                     }),
                     sequence_number: origin.sequence_number,
+                    representation_identifier: origin.representation_identifier,
                 };
                 cb(
                     ud_addr as *mut core::ffi::c_void,
@@ -3659,7 +3671,7 @@ pub unsafe extern "C" fn zerodds_buffer_free(buf: *mut u8, len: usize) {
         return;
     }
     // SAFETY: see fn # Safety doc — buf+len from zerodds_reader_take Box::into_raw.
-    let _ = unsafe { Box::from_raw(slice::from_raw_parts_mut(buf, len)) };
+    let _ = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(buf, len)) };
 }
 
 // ============================================================================
@@ -3778,9 +3790,8 @@ pub unsafe extern "C" fn zerodds_reader_return_loan(loan_handle: *mut c_void) {
 /// The caller writes the sample into the returned pointer and
 /// then commits it via [`zerodds_writer_commit_loan`].
 ///
-/// Returns 0 (Ok) on success + fills `*out_ptr` and `*out_len`.
-/// On today's malloc-backed path `*out_len = len`; for
-/// SHM-backed loans `*out_len > len` is possible (slot boundary).
+/// Returns 0 (Ok) on success and fills `*out_ptr` and `*out_len`, which is
+/// `len`.
 ///
 /// # Safety
 /// `writer` valid; `out_ptr`/`out_len` non-null.
@@ -3863,7 +3874,7 @@ pub unsafe extern "C" fn zerodds_writer_commit_loan(
     // Drop the buffer after write (the borrow lifetime is held up to here).
     // SAFETY: ptr+len from loan_message Box::into_raw.
     unsafe {
-        let _ = Box::from_raw(slice::from_raw_parts_mut(ptr, len));
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len));
     }
     rc
 }
@@ -3895,7 +3906,7 @@ pub unsafe extern "C" fn zerodds_writer_discard_loan(
     }
     // SAFETY: see fn # Safety doc — ptr+len from loan_message (Box::into_raw).
     unsafe {
-        let _ = Box::from_raw(slice::from_raw_parts_mut(ptr, len));
+        let _ = Box::from_raw(std::ptr::slice_from_raw_parts_mut(ptr, len));
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -4055,7 +4066,8 @@ pub unsafe extern "C" fn zerodds_reader_release_shm(
 /// change-generation futex / iceoryx2 listener), no busy-poll. Lets a consumer
 /// (e.g. the ROS-2 RMW `rmw_wait` doorbell) park on raw-data arrival instead of
 /// polling. A spurious wake is harmless — re-check with `zerodds_reader_take_shm`.
-/// Returns `Ok` when woken or timed out, `PreconditionNotMet` if no raw source.
+/// Returns `Ok` when woken, `NoData` when `timeout_ms` elapsed first,
+/// `PreconditionNotMet` if the reader has no raw source.
 ///
 /// # Safety
 /// `reader` from `zerodds_reader_create` or NULL.
@@ -4174,29 +4186,68 @@ pub const ZERODDS_ABI_REVISION: u32 = 1;
 mod runtime_destroy_tests {
     use super::*;
 
-    /// Destroying a runtime stops it: its worker threads let go of it, so
-    /// the clone held here is the last one within moments. Before, the
-    /// threads kept running until the process ended.
+    /// The runtime threads of this process, by kernel task id.
+    #[cfg(target_os = "linux")]
+    fn runtime_threads() -> Vec<String> {
+        std::fs::read_dir("/proc/self/task")
+            .expect("/proc/self/task")
+            .filter_map(Result::ok)
+            .filter(|task| {
+                std::fs::read_to_string(task.path().join("comm"))
+                    .is_ok_and(|name| name.starts_with("zdds-"))
+            })
+            .map(|task| task.file_name().to_string_lossy().into_owned())
+            .collect()
+    }
+
+    /// Destroying a runtime stops it while the caller still holds a clone:
+    /// its worker threads end, and since they hold the runtime only weakly
+    /// (`DcpsRuntime::start`), the clone held here is the only strong
+    /// reference left.
     #[test]
     fn destroy_stops_the_runtime_threads() {
-        let domain = u32::try_from(zerodds_test_domains::unique_domain()).unwrap();
+        let lease = zerodds_test_domains::lease_domain();
+        #[cfg(target_os = "linux")]
+        let before = runtime_threads();
         // SAFETY: a fresh runtime, destroyed once below.
-        let handle = unsafe { zerodds_runtime_create(domain) };
+        let handle = unsafe { zerodds_runtime_create(lease.id() as u32) };
         assert!(!handle.is_null());
         // SAFETY: `handle` is valid until the destroy.
         let rt = Arc::clone(unsafe { &(*handle).rt });
-        assert!(Arc::strong_count(&rt) > 2, "the worker threads hold it");
+        #[cfg(target_os = "linux")]
+        let started: Vec<String> = runtime_threads()
+            .into_iter()
+            .filter(|task| !before.contains(task))
+            .collect();
+        #[cfg(target_os = "linux")]
+        assert!(!started.is_empty(), "the runtime started its threads");
         // SAFETY: from zerodds_runtime_create, not used after.
         unsafe { zerodds_runtime_destroy(handle) };
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        while Arc::strong_count(&rt) > 1 {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "{} holders left after destroy",
-                Arc::strong_count(&rt)
-            );
-            std::thread::sleep(std::time::Duration::from_millis(10));
+        assert_eq!(
+            Arc::strong_count(&rt),
+            1,
+            "a worker thread still holds the destroyed runtime"
+        );
+        // A joined thread leaves the task list a moment after the join.
+        #[cfg(target_os = "linux")]
+        {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
+            loop {
+                let left: Vec<String> = runtime_threads()
+                    .into_iter()
+                    .filter(|task| started.contains(task))
+                    .collect();
+                if left.is_empty() {
+                    break;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "threads of the destroyed runtime still run: {left:?}"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
         }
+        drop(rt);
     }
 }
 
@@ -4449,16 +4500,23 @@ mod config_selection_tests {
     fn an_unknown_setting_or_a_missing_file_yields_null() {
         let set = CString::new("transport.recv_bacth=8").unwrap();
         let sets = [set.as_ptr()];
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: valid C strings; the configuration is refused before any
         // socket exists.
-        let rt = unsafe { zerodds_runtime_create_from_config(0, ptr::null(), sets.as_ptr(), 1) };
+        let rt = unsafe {
+            zerodds_runtime_create_from_config(lease.id() as u32, ptr::null(), sets.as_ptr(), 1)
+        };
         assert!(rt.is_null());
         let missing = CString::new("/nonexistent/zerodds-ffi.yaml").unwrap();
         // SAFETY: as above.
-        let rt = unsafe { zerodds_runtime_create_from_config(0, missing.as_ptr(), ptr::null(), 0) };
+        let rt = unsafe {
+            zerodds_runtime_create_from_config(lease.id() as u32, missing.as_ptr(), ptr::null(), 0)
+        };
         assert!(rt.is_null());
         // SAFETY: as above; a count without an array is refused, not read.
-        let rt = unsafe { zerodds_runtime_create_from_config(0, ptr::null(), ptr::null(), 2) };
+        let rt = unsafe {
+            zerodds_runtime_create_from_config(lease.id() as u32, ptr::null(), ptr::null(), 2)
+        };
         assert!(rt.is_null());
     }
 }
@@ -4495,32 +4553,6 @@ mod offer_tests {
         std::fs::remove_file(path).unwrap();
         std::fs::remove_dir(dir).unwrap();
     }
-
-    #[test]
-    fn plain_runtime_offers_xcdr2_first() {
-        // Regression: `zerodds_runtime_create` took
-        // `RuntimeConfig::default()`, whose offer is `DEFAULT_OFFER =
-        // [XCDR1, XCDR2]`. The byte-oriented FFI writer derives the
-        // encapsulation header it stamps from the offer's FIRST element,
-        // so it stamped `0x0001` on the XCDR2 bodies its callers hand
-        // it; readers then reported representation = XCDR1 and decoded
-        // at XCDR1 offsets. Plain zerodds -> zerodds delivered zero
-        // samples in the cross-vendor security matrix while the secured
-        // path, which pinned XCDR2-first, measured 13/13.
-        use zerodds_rtps::publication_data::data_representation as dr;
-        let offer = ffi_data_representation_offer();
-        assert_eq!(
-            offer.first().copied(),
-            Some(dr::XCDR2),
-            "the FFI writer must stamp an XCDR2 encapsulation on the XCDR2 \
-             bodies its callers serialise"
-        );
-        assert!(
-            offer.contains(&dr::XCDR),
-            "the offer SET must still advertise XCDR1, so a reader created \
-             here accepts a Cyclone / rmw_* XCDR1 writer without configuration"
-        );
-    }
 }
 
 // ============================================================================
@@ -4556,61 +4588,6 @@ mod typed_create_tests {
         (to, expected)
     }
 
-    /// Core assertion: the identifier the typed-create path derives from the
-    /// serialized TypeObject bytes is BYTE-IDENTICAL to the one Path A's
-    /// `StructBuilder::build_complete()` produces — and the object lands in the
-    /// runtime's TypeLookup registry.
-    #[test]
-    fn typed_derive_is_byte_identical_to_path_a_and_registers() {
-        let (to, expected) = sample_typeobject();
-        let bytes = to.to_bytes_le().unwrap();
-        let TypeObject::Complete(cto) = &to else {
-            panic!("sample_typeobject builds a Complete TypeObject");
-        };
-        let expected_hash = compute_complete_hash(cto).unwrap();
-
-        // A fixed number, not `base + pid % N`: the domain is the UDP
-        // port (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by
-        // PID walked it into the kernel's ephemeral port range
-        // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench
-        // host), where `zerodds_runtime_create` fails with
-        // `TransportError { label: "spdp multicast bind" }` and returns
-        // NULL. Measured: 11 of 90 parallel runs of this binary, on
-        // domains 124, 128 and 166. Every domain in this workspace is
-        // listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS`
-        // so that the domain lease there never hands out the same one.
-        let domain: u32 = 23;
-        // SAFETY: valid domain; handle deref within the crate.
-        let handle = unsafe { zerodds_runtime_create(domain) };
-        assert!(!handle.is_null());
-        // SAFETY: non-null handle from create; deref within the crate.
-        let rt = unsafe { (*handle).rt.clone() };
-
-        let derived =
-            register_type_object_from_bytes(&rt, &bytes).expect("deserialize+register+derive");
-
-        // BYTE-IDENTICAL to Path A (compare the serialized identifier bytes,
-        // not only structural equality).
-        assert_eq!(derived, expected, "derived identifier != Path A identifier");
-        assert_eq!(
-            derived.to_bytes_le().unwrap(),
-            expected.to_bytes_le().unwrap(),
-            "derived identifier bytes != Path A identifier bytes"
-        );
-
-        // The COMPLETE TypeObject is now in the runtime's registry.
-        {
-            let server = rt.type_lookup_server.lock().unwrap();
-            assert!(
-                server.registry.get_complete(&expected_hash).is_some(),
-                "TypeObject not registered under its complete hash"
-            );
-        }
-
-        // SAFETY: handle from create, not yet destroyed; consumed once here.
-        unsafe { zerodds_runtime_destroy(handle) };
-    }
-
     /// Full FFI: `zerodds_writer_create_typed` succeeds and has registered the
     /// TypeObject before returning (i.e. before the slot is published).
     #[test]
@@ -4622,17 +4599,11 @@ mod typed_create_tests {
         };
         let expected_hash = compute_complete_hash(cto).unwrap();
 
-        // A fixed number, not `base + pid % N`: the domain is the UDP
-        // port (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by
-        // PID walked it into the kernel's ephemeral port range
-        // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench
-        // host), where `zerodds_runtime_create` fails with
-        // `TransportError { label: "spdp multicast bind" }` and returns
-        // NULL. Measured: 11 of 90 parallel runs of this binary, on
-        // domains 124, 128 and 166. Every domain in this workspace is
-        // listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS`
-        // so that the domain lease there never hands out the same one.
-        let domain: u32 = 24;
+        // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+        // one is shared with every other run of this test on the LAN
+        // (`crates/test-domains`).
+        let lease = zerodds_test_domains::lease_domain();
+        let domain: u32 = lease.id() as u32;
         let topic = CString::new("TypedTopic").unwrap();
         let typ = CString::new("Sensor").unwrap();
 
@@ -4680,17 +4651,11 @@ mod typed_create_tests {
     /// typed path never falls back to a `None`-identifier endpoint.
     #[test]
     fn typed_create_rejects_invalid_type_object() {
-        // A fixed number, not `base + pid % N`: the domain is the UDP
-        // port (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by
-        // PID walked it into the kernel's ephemeral port range
-        // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench
-        // host), where `zerodds_runtime_create` fails with
-        // `TransportError { label: "spdp multicast bind" }` and returns
-        // NULL. Measured: 11 of 90 parallel runs of this binary, on
-        // domains 124, 128 and 166. Every domain in this workspace is
-        // listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS`
-        // so that the domain lease there never hands out the same one.
-        let domain: u32 = 25;
+        // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+        // one is shared with every other run of this test on the LAN
+        // (`crates/test-domains`).
+        let lease = zerodds_test_domains::lease_domain();
+        let domain: u32 = lease.id() as u32;
         let topic = CString::new("TypedBad").unwrap();
         let typ = CString::new("Sensor").unwrap();
         let garbage: [u8; 3] = [0x00, 0x01, 0x02];

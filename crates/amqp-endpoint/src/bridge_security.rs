@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn amqp_sasl_plain_rejects_unknown_user() {
+    fn ddsamqp_10_5_amqp_sasl_plain_rejects_unknown_user() {
         let users = HashMap::new();
         let auth = AuthMode::SaslPlain { users };
         let err = authenticate_amqp_sasl(&auth, Some(b"\0bob\0xx"), None).unwrap_err();
@@ -187,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn amqp_acl_address_check() {
+    fn amqpbridge_12_1_amqp_acl_address_check() {
         let mut cfg = SecurityConfig::default();
         cfg.topic_acl.insert(
             "queue/orders".into(),

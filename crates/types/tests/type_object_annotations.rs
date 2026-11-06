@@ -5,8 +5,7 @@
 //! DDS-XTypes 1.3, Annex B, gives `AppliedBuiltinMemberAnnotations` four
 //! members: `@unit`, `@min`, `@max` and the `@hashid` source name. None of
 //! them moves a data octet — they are constraints and documentation, not
-//! framing — so `type_object_bridge.rs`'s byte comparison cannot see
-//! them. This measures them directly: a declaration lowers to a model,
+//! framing — so a byte comparison of samples cannot see them. This measures them directly: a declaration lowers to a model,
 //! the model writes its `CompleteTypeObject`, the object goes through
 //! its serialized form, and the model rebuilt from what came back has
 //! to say what the declaration said.
@@ -92,7 +91,7 @@ fn through_the_wire(object: &CompleteTypeObject) -> CompleteTypeObject {
 }
 
 #[test]
-fn the_builtin_member_annotations_reach_the_object() {
+fn xtypes_annex_b_the_builtin_member_annotations_reach_the_object() {
     let ast = model(IDL);
     let object = complete_type_object(&ast, type_id(&ast, "Sample")).expect("the object builds");
     let CompleteTypeObject::Struct(st) = &object else {
@@ -133,7 +132,7 @@ fn the_builtin_member_annotations_reach_the_object() {
 }
 
 #[test]
-fn the_annotations_come_back_into_the_rebuilt_model() {
+fn xtypes_7_3_4_3_the_annotations_come_back_into_the_rebuilt_model() {
     let ast = model(IDL);
     let object = complete_type_object(&ast, type_id(&ast, "Sample")).expect("the object builds");
     let mut registry = TypeRegistry::new();
@@ -263,7 +262,7 @@ fn a_union_member_carries_them_too() {
 /// type named `A` and `minimal_type_object` had nothing to be asked
 /// about. `docs/spec-coverage/dds-xtypes-1.3.gaps.md` §A.1.
 #[test]
-fn an_annotation_declaration_has_a_type_object() {
+fn xtypes_7_2_2_4_4_1_an_annotation_declaration_has_a_type_object() {
     use zerodds_types::from_ast::{Form, annotation_type_object};
     use zerodds_types::type_object::MinimalTypeObject;
 

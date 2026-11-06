@@ -9,7 +9,7 @@
 //! as a wire finding that is not one.
 //!
 //! They held one contract by inspection and lost it twice by edit.
-//! Defect 11 of `docs/silent-drop-sweep.md` is the loud half: the C
+//! Defect 11 of `0b2e8df9f6b:docs/silent-drop-sweep.md` is the loud half: the C
 //! emitter walked a type's own members where the other two walked its
 //! base's as well, so a derived sample went to the vendor with the
 //! base's fields at zero, the vendor serialised a structure of exactly
@@ -257,7 +257,8 @@ fn assert_agreement(what: &str, outcomes: &[(&'static str, Outcome); 3]) -> Vec<
     // annotation pair, Cyclone's idlc does not terminate on the case,
     // and no column produces bytes for it.
     //
-    // Excluded here by name and carried in `docs/HANDOFF.md`, because a
+    // Excluded here by name, and documented as a refusal in the case's
+    // `tests/interop-corpus/<case>/README.md`, because a
     // gate that fails on it every run teaches a reader to ignore the
     // gate. XTypes 1.3 Table 21 gives `@external` for this shape and
     // `crates/ast-layout` reads the facet nowhere; `is_external` does
@@ -612,7 +613,7 @@ fn a_corrupted_value_file_is_refused_by_all_three_at_the_same_path() {
         // The same case `assert_agreement` names: this planner refuses
         // the type before it can look at the value, so it cannot report
         // the mutation's reason. Cyclone, RTI and Fast DDS all can.
-        // `docs/HANDOFF.md` carries the gap.
+        // The case READMEs under `tests/interop-corpus/` name the refusal.
         if matches!(
             case.name.as_str(),
             "recursive-optional-external" | "recursive-array"

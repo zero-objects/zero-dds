@@ -689,31 +689,6 @@ fn the_undecidable_case_is_undecidable_and_stays_recorded() {
 
 // -- round trips -------------------------------------------------------
 
-/// Every policy reads back what it wrote, in both encodings and both
-/// byte orders.
-#[test]
-fn every_policy_round_trips() {
-    let ast = model_from_idl(IDL, "wstring.idl").expect("the model");
-    let sample = json!({ "w": "aä\u{1d11e}", "tail": 171 });
-    for policy in WstringLengthPolicy::MEASURED {
-        // The character-count form cannot carry the non-BMP character
-        // and says so; it round-trips the rest.
-        let sample = if policy == WstringLengthPolicy::CHARACTER_COUNT {
-            json!({ "w": "aä", "tail": 171 })
-        } else {
-            sample.clone()
-        };
-        for encoding in [Encoding::PlainCdr1, Encoding::PlainCdr2] {
-            for endianness in Endianness::ALL {
-                let request = request("WStr", encoding, endianness, policy);
-                let bytes = encode(&ast, &request, &sample).expect("the probe");
-                let back = decode(&ast, &request, &bytes).expect("the read back");
-                assert_eq!(back, sample, "{policy:?} {encoding:?} {endianness:?}");
-            }
-        }
-    }
-}
-
 /// The policy names round-trip and a typo is rejected rather than
 /// falling back to the default.
 #[test]

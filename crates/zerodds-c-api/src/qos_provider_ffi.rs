@@ -348,10 +348,10 @@ pub unsafe extern "C" fn zerodds_qosprovider_create(
         reader_partition: Mutex::default(),
     };
     // A default profile the document does not have is refused now.
-    if let Some(p) = provider.default_profile.clone() {
-        if provider.resolve(Some(&p)).is_err() {
-            return fail(ZeroDdsStatus::BadParameter);
-        }
+    if let Some(p) = provider.default_profile.clone()
+        && provider.resolve(Some(&p)).is_err()
+    {
+        return fail(ZeroDdsStatus::BadParameter);
     }
     Box::into_raw(Box::new(provider))
 }

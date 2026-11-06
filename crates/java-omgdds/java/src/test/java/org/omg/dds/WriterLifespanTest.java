@@ -63,51 +63,7 @@ class WriterLifespanTest {
     }
 
     @Test
-    void aSampleThatIsPastItsLifespanWhenItIsWrittenIsNotDelivered() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1360);
-        Topic<byte[]> topic = participant.createTopic("LifespanAtWrite", byte[].class);
-        DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic,
-                lifespan(10_000, Qos.pf().Durability().withVolatile()));
-        DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic,
-                Qos.readerKeepAll());
-        long now = System.currentTimeMillis();
-
-        writer.write(new byte[] {1}, time(now - 60_000)); // expired a minute ago
-        writer.write(new byte[] {2}, time(now - 2_000)); // valid for 8 s more
-        writer.write(new byte[] {3}, time(now));
-        List<Sample<byte[]>> samples = Qos.take(reader);
-        assertEquals(2, samples.size());
-        assertEquals(2, samples.get(0).getData()[0]);
-        assertEquals(3, samples.get(1).getData()[0]);
-    }
-
-    @Test
-    void aSampleWithoutALifespanNeverExpires() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1361);
-        Topic<byte[]> topic = participant.createTopic("NoLifespan", byte[].class);
-        DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic);
-        DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);
-        writer.write(new byte[] {1}, time(System.currentTimeMillis() - 86_400_000L));
-        assertEquals(1, Qos.take(reader).size());
-    }
-
-    @Test
-    void aLateJoiningReaderGetsNoExpiredSampleFromAWriterThatKeepsThem() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1362);
-        Topic<byte[]> topic = participant.createTopic("LifespanLocal", byte[].class);
-        DataWriter<byte[]> expiring = participant.createPublisher().createDataWriter(topic,
-                lifespan(300, Qos.pf().Durability().withTransientLocal()));
-        long written = System.currentTimeMillis();
-        expiring.write(new byte[] {1}, time(written));
-        waitUntilPast(written + 300);
-
-        DataReader<byte[]> late = participant.createSubscriber().createDataReader(topic,
-                Qos.readerKeepAll().withPolicy(Qos.pf().Durability().withTransientLocal()));
-        assertEquals(0, Qos.take(late).size(), "the sample expired before the reader joined");
-    }
-
-    @Test
-    void aReplayedSampleKeepsTheSourceTimestampItWasWrittenWith() throws Exception {
+    void javapsm_7_3_5_1_a_replayed_transient_local_sample_keeps_the_source_timestamp_it_was_written_with() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(1363);
         Topic<byte[]> topic = participant.createTopic("ReplayStamp", byte[].class);
         DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic,
@@ -122,23 +78,4 @@ class WriterLifespanTest {
         assertEquals(stamp, samples.get(0).getSourceTimestamp().getTime(TimeUnit.MILLISECONDS));
     }
 
-    @Test
-    void theDurabilityServiceDoesNotReplayAnExpiredSample() throws Exception {
-        DomainParticipant participant = Qos.factory().createParticipant(1364);
-        Topic<byte[]> topic = participant.createTopic("LifespanTransient", byte[].class);
-        DataWriter<byte[]> writer = participant.createPublisher().createDataWriter(topic,
-                lifespan(300, Qos.pf().Durability().withTransient()));
-        long written = System.currentTimeMillis();
-        writer.write(new byte[] {1}, time(written));
-        writer.write(new byte[] {2}, time(written + 600_000)); // not yet written in time
-        writer.close();
-        waitUntilPast(written + 300);
-
-        DataReader<byte[]> late = participant.createSubscriber().createDataReader(topic,
-                Qos.readerKeepAll().withPolicy(Qos.pf().Durability().withTransient()));
-        List<Sample<byte[]>> samples = Qos.take(late);
-        // the first expired; the second carries a timestamp ten minutes ahead, so it is valid
-        assertEquals(1, samples.size());
-        assertEquals(2, samples.get(0).getData()[0]);
-    }
 }

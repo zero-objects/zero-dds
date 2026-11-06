@@ -38,7 +38,7 @@ use postgres::types::ToSql;
 use postgres::{Client, NoTls};
 use zerodds_durability_store::{
     Contract, Cursor, DurabilitySample, DurabilityStore, Page, Result, Selector, StoreError,
-    StoreStats, TopicMeta,
+    StoreStats, TopicMeta, identifier_columns, identifier_from_columns,
 };
 use zerodds_qos::policies::history::HistoryKind;
 
@@ -373,7 +373,8 @@ impl DurabilityStore for PostgresStore {
         // explicit upsert that holds whether or not `created_nanos` is part of
         // the primary key (it is under the `timescaledb` feature).
         let created = nanos_of(sample.created_at);
-        let rep = i16::from(sample.representation);
+        let (representation, big_endian) = identifier_columns(sample.representation_identifier);
+        let rep = i16::from(representation);
         let src_guid = sample.source_guid.to_vec();
         client
             .execute(
@@ -392,7 +393,7 @@ impl DurabilityStore for PostgresStore {
                     &created,
                     &sample.payload,
                     &rep,
-                    &sample.big_endian,
+                    &big_endian,
                     &src_guid,
                     &sample.source_sequence,
                 ],
@@ -484,8 +485,10 @@ impl DurabilityStore for PostgresStore {
                 sequence: r.get::<_, i64>(1) as u64,
                 created_at: time_of(r.get::<_, i64>(2)),
                 payload: r.get(3),
-                representation: r.get::<_, i16>(4) as u8,
-                big_endian: r.get::<_, bool>(5),
+                representation_identifier: identifier_from_columns(
+                    r.get::<_, i16>(4) as u8,
+                    r.get::<_, bool>(5),
+                ),
                 source_guid,
                 source_sequence: r.get::<_, i64>(7),
             });

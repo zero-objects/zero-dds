@@ -323,7 +323,7 @@ impl TopicBuiltinTopicData {
                     .push(r.read_u16().map_err(bad)? as i16);
             }
         }
-        topic.type_information = pl.find(pid::TYPE_INFORMATION).map(|p| p.value.clone());
+        topic.type_information = pl.find(pid::TYPE_INFORMATION).map(|p| p.value.to_vec());
         (topic.type_id_v1, topic.type_object_v1) =
             crate::type_v1::read(&pl, endianness == Endianness::Little);
         topic.vendor_id = pl
@@ -358,7 +358,7 @@ fn policy(id: u16, write: impl FnOnce(&mut Writer)) -> Parameter {
 /// value ends on (DDSI-RTPS 2.5 §9.4.2.11).
 fn padded(w: Writer) -> Vec<u8> {
     let mut out = w.finish();
-    while out.len() % 4 != 0 {
+    while !out.len().is_multiple_of(4) {
         out.push(0);
     }
     out

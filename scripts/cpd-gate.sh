@@ -66,7 +66,7 @@
 set -euo pipefail
 # Disable filename globbing: the LANGS globs (e.g. `*.py`) are passed to
 # `git ls-files`, which does its own recursive matching. Without this a
-# top-level match (e.g. ./lp_reliable.py) would make the shell expand `*.py`
+# top-level match (e.g. a ./tool.py in the root) would make the shell expand `*.py`
 # to just that one file before git ever sees it.
 set -f
 
@@ -89,9 +89,9 @@ EXCLUDE_RE='(^|/)target/|(^|/)node_modules/|(^|/)dist/|(^|/)build/|endpoints/[^/
 # failing for weekly pipelines before this change, and this script,
 # which discarded PMD's exit code and messages, counted 0 blocks and passed:
 # Rust was not measured. Measured again with PMD 7.27.0, the tree of
-# 2e20842e3fe, on which 847 was taken, gives 847 with 64 files skipped by the
+# bc40e81e4e4, on which 847 was taken, gives 847 with 64 files skipped by the
 # lexer, and 1018 with every file read (scripts/cpd_rust_lexable.py). The
-# tree of this change gives 1130. Of the 112 since 2e20842e3fe: +46 in the
+# tree of this change gives 1130. Of the 112 since bc40e81e4e4: +46 in the
 # emitter family (tools/wireprobe +35, crates/lang-rules +11), about +40
 # between the bridge daemons (daemon/cli.rs, daemon/config.rs, the bin
 # mains: copied scaffolding), +11 inside crates/xrce, the rest a few per
@@ -190,7 +190,7 @@ EXCLUDE_RE='(^|/)target/|(^|/)node_modules/|(^|/)dist/|(^|/)build/|endpoints/[^/
 # for (the C# ExtensibilityKind failure). cs/kotlin/swift/lua did not move.
 #
 # WHY THE BASELINES MOVED, 2026-09-11 (rust 847, cs 31). Two steps on the
-# same day, both measured by replaying PMD against 060abb0f4b4 and the
+# same day, both measured by replaying PMD against ae67d8f1d88 and the
 # current tree:
 #
 #   Step 1 — rust 857->860, cs 30->31: nine new file-sets. Six are the

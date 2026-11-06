@@ -20,7 +20,7 @@ mod common;
 use zerodds_amqp_endpoint::link::{DeliverError, LinkRole, LinkSession, SettlementMode};
 
 #[test]
-fn c1_5_reliable_unsettled_increments_pending_until_disposition() {
+fn ddsamqp_7_4_1_reliable_unsettled_increments_pending_until_disposition() {
     let mut link = LinkSession::new("L".into(), 0, LinkRole::Sender, SettlementMode::Unsettled);
     link.grant_credit(3);
 
@@ -40,7 +40,7 @@ fn c1_5_reliable_unsettled_increments_pending_until_disposition() {
 }
 
 #[test]
-fn c1_5_credit_exhaustion_blocks_further_deliveries() {
+fn ddsamqp_c_1_5_credit_exhaustion_blocks_further_deliveries() {
     let mut link = LinkSession::new("L".into(), 0, LinkRole::Sender, SettlementMode::Unsettled);
     link.grant_credit(2);
     link.deliver().unwrap();

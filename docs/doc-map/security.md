@@ -159,10 +159,10 @@ Tests im Repository:
 | `crates/dcps/tests/security_live_e2e.rs` | Handshake und Crypto-Token-Austausch über echtes UDP-Multicast | Linux |
 | `crates/dcps/tests/security_{bundle,endpoint_access,guid_wiring,log_properties,qos_properties,topic_rule_wire}*.rs` | Verdrahtung, Endpoint-Zugriffsprüfung, GUID-Ableitung, Properties | – |
 | `crates/zerodds-c-api/tests/security_ffi_e2e.rs` | C-API, EE- und CA-signierte Assets, volle Absperrung, Ablehnung ohne Domain-Regel | braucht `openssl` |
-| `crates/security-runtime/tests/cyclone_live_security_caps.rs` | Cyclone DDS verwirft SPDP-Beacons mit ZeroDDS-Capabilities nicht | `--ignored`, braucht Cyclone-Host |
+| `crates/security-runtime/tests/cyclone_live_security_caps.rs` | Cyclone DDS verwirft SPDP-Beacons mit ZeroDDS-Capabilities nicht | `--ignored`, Cyclone auf demselben Host; wöchentlich im Job `vendor-live-dcps` |
 | `tests/perf/dds-roundtrip-bench/security-matrix/run_deep_matrix.sh` | 13 Governance-Profile × 4×4 Hersteller (Cyclone DDS, Fast DDS, OpenDDS, ZeroDDS), beide Rollen | Linux mit Hersteller-Stack, `libzerodds.so` mit `--features security` |
 
-Ergebnisse stehen nicht im Code. Laut `internal/security/cross-vendor-interop-configs.md` und `internal/security/opendds-secure-matrix-closeout.md`: ZeroDDS↔Cyclone DDS 13/13, ZeroDDS↔Fast DDS 13/13, ZeroDDS↔OpenDDS 9/13 Profile. Nachgemessen mit allen 13 Profilen und EC-Identitäten: Fast DDS 3.6.1 nimmt EC-Identitäten an; RSA ist nicht nötig.
+Ergebnisse stehen nicht im Code. Laut `internal/security/cross-vendor-secure-interop-matrix.md`: ZeroDDS↔Cyclone DDS 13/13, ZeroDDS↔Fast DDS 13/13, ZeroDDS↔OpenDDS 9/13 Profile. Nachgemessen mit allen 13 Profilen und EC-Identitäten: Fast DDS 3.6.1 nimmt EC-Identitäten an; RSA ist nicht nötig.
 
 ## (b) Bridge-Sicherheit
 
@@ -246,4 +246,4 @@ Tests: `crates/{websocket-bridge,mqtt-bridge,coap-bridge,grpc-bridge,amqp-endpoi
 - `security.secure_spdp` an, gemessen mit der Security-Tiefenmatrix (`tests/perf/dds-roundtrip-bench/security-matrix/`, 13 Governance-Profile, EC-Identitäten, beide Richtungen): ZeroDDS mit Fast DDS 13/13, mit Cyclone DDS 13/13, mit OpenDDS 9/13 (die Grenzen von OpenDDS), mit ZeroDDS 13/13.
 - `discovery.server` hat laut Doku-Kommentar kein Relay für DDS-Security-gesicherte Discovery.
 
-Behoben: `zerodds-examples/rust-audit-securitybundle-realpart` führt die Kette `DomainParticipantFactory::create(0).with_security(bundle).build()` aus (`crates/dcps/src/factory.rs:445`), statt ihr Fehlen zu behaupten; SROS2 gegen einen gesicherten `rmw_cyclonedds_cpp`-Listener (zwei Ausrichtungsfehler: `SEC_BODY` und die verschlüsselte Payload auf 4 Byte aufgefüllt, `d6fe961eaca`, `bdbd9107f93`; 13 Nachrichten gemessen), Versionsangaben auf DDS-Security 1.2 mit deren Nummerierung, die Auth-Modi im ws-Beispiel, die Aussagen der Beispielkonfigurationen zu unbekannten Schlüsseln (gemessen an allen sechs Daemons), der gemeinsame Logging-Default `DEFAULT_LOG_LEVEL`.
+Behoben: `zerodds-examples/rust-audit-securitybundle-realpart` führt die Kette `DomainParticipantFactory::create(0).with_security(bundle).build()` aus (`crates/dcps/src/factory.rs:445`), statt ihr Fehlen zu behaupten; SROS2 gegen einen gesicherten `rmw_cyclonedds_cpp`-Listener (zwei Ausrichtungsfehler: `SEC_BODY` und die verschlüsselte Payload auf 4 Byte aufgefüllt, `ea0a88ae52d`, `2c32030d7b6`; 13 Nachrichten gemessen), Versionsangaben auf DDS-Security 1.2 mit deren Nummerierung, die Auth-Modi im ws-Beispiel, die Aussagen der Beispielkonfigurationen zu unbekannten Schlüsseln (gemessen an allen sechs Daemons), der gemeinsame Logging-Default `DEFAULT_LOG_LEVEL`.

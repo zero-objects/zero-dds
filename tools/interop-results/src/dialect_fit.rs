@@ -25,8 +25,9 @@
 //!
 //! ## What a row is allowed not to reproduce
 //!
-//! One thing: padding content. `docs/wire-axes-followup.md` group G is
-//! the classification and it is three criteria, all of which
+//! One thing: padding content. Group G of the axis model
+//! (`0b2e8df9f6b:docs/wire-axes-followup.md`) is the classification and
+//! it is three criteria, all of which
 //! [`Verdict::PaddingOnly`] requires — same length, every differing
 //! octet one this project's plan puts fill at *and* one this project
 //! wrote as `00`, and the peer's own octets reading back as the case's
@@ -882,7 +883,7 @@ fn answer(cases: &[Case], models: &Models, rows: &[Row], point: &Assignment) -> 
 /// derivations of the same position and both are required — the mask
 /// asks the plan, the `00` asks what was written.
 fn padding_only(mine: &str, theirs: &str, mask: &[bool]) -> bool {
-    if mine.len() != theirs.len() || mine.len() % 2 != 0 || mask.len() * 2 != mine.len() {
+    if mine.len() != theirs.len() || !mine.len().is_multiple_of(2) || mask.len() * 2 != mine.len() {
         return false;
     }
     let (ours, them) = (mine.as_bytes(), theirs.as_bytes());
@@ -906,7 +907,7 @@ fn reads_back(ast: &Ast, request: &ProbeRequest, expected: Option<&str>, theirs:
 }
 
 fn unhex(hex: &str) -> Result<Vec<u8>, ()> {
-    if hex.len() % 2 != 0 {
+    if !hex.len().is_multiple_of(2) {
         return Err(());
     }
     (0..hex.len() / 2)

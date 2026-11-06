@@ -32,7 +32,7 @@ Serial-Deframe-Roundtrip, Abweisung eines falschen `frameCheck` und eines
 `0x7E` im Rahmen, HEARTBEAT-Parse, ACKNACK-Framing, je gegen
 `golden_xrce_le.bin`/`golden_serial_le.bin`/`golden_data_le.bin`/
 `golden_heartbeat_le.bin`/`golden_acknack_le.bin`, meldet `ALL OK`. Framing
-selbst wird zusätzlich über `python_endpoint_sync`/`python_endpoint_async`
+selbst wird zusätzlich über `xrce_8_3_5_8_python_sync_app_writes_the_ping_and_reads_the_pong`/`xrce_8_3_5_8_python_async_app_writes_the_ping_and_reads_the_pong`
 (§4) live geübt.
 
 **Status:** done.
@@ -52,7 +52,7 @@ Interface wie Gos `Transport`.
 
 **Tests:** `endpoints/python/example_sync.py` — 5 typisierte
 `Reading(id, value, label)`-Samples über `Client.write`/`.poll()`, voller
-Feld-Decode, meldet `ALL OK`; Live-E2E `python_endpoint_sync` (§4).
+Feld-Decode, meldet `ALL OK`; Live-E2E `xrce_8_3_5_8_python_sync_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -71,7 +71,7 @@ Semantik) in der E2E-App `crates/endpoint-e2e/tests/python.rs::PY_APP::run_async
 
 **Tests:** `endpoints/python/example_async.py` — 5 `Reading`-Samples über
 `async for`, voller Feld-Decode, meldet `ALL OK`; Live-E2E
-`python_endpoint_async` (§4).
+`xrce_8_3_5_8_python_async_app_writes_the_ping_and_reads_the_pong` (§4).
 
 **Status:** done.
 
@@ -88,12 +88,10 @@ Stack (generierte Dataclasses + Endpoint-SDK) sync und async.
 Modus per `sys.argv[1]`.
 
 **Tests:** (Linux)
-- `python_raw_udp` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
+- `endpoint_python_5_1_the_generated_codec_pings_without_the_xrce_frame` — generierter `Ping`/`Pong`-Codec direkt über einen rohen
   UDP-Socket, ohne XRCE-Framing.
-- `python_endpoint_sync` — voller Stack über `ze.Client`.
-- `python_endpoint_async` — voller Stack über das asyncio-Empfangsmuster.
-
-3/3 grün (Linux).
+- `xrce_8_3_5_8_python_sync_app_writes_the_ping_and_reads_the_pong` — voller Stack über `ze.Client`.
+- `xrce_8_3_5_8_python_async_app_writes_the_ping_and_reads_the_pong` — voller Stack über das asyncio-Empfangsmuster.
 
 **Status:** done.
 
@@ -126,34 +124,31 @@ Syscalls, keine lock-freie Datenebene (Spec §4, Honest-Note).
 Receiver-Thread, UDP-Sender-Modus `run`, Latenz-Bench-Modus `bench`).
 
 **Tests:** (Linux)
-- `python_reliable_unit_and_golden`
-  (`crates/endpoint-e2e/tests/python_reliable.rs`) läuft
+- `endpoints/python/reliable_test.py` in der Spalte `python` von `tools/endpoints-gate`
+  (Job `integration-endpoints`) läuft
   `endpoints/python/reliable_test.py` gegen von `zerodds-xrce` erzeugte
   Goldens — 21 Prüfungen (`check()`-Aufrufe) über 13 Testfunktionen: monotone
-  seq + in-flight-Count (`test_submit_assigns_monotonic_seqnrs`: 3 Checks),
-  Payload-zu-groß (`test_submit_rejects_payload_too_large`), Window-full
-  (`test_submit_rejects_when_window_full`), Heartbeat
+  seq + in-flight-Count (`endpointpython_5_submit_assigns_monotonic_seqnrs`: 3 Checks),
+  Payload-zu-groß (`endpointpython_5_submit_rejects_payload_too_large`), Window-full
+  (`endpointpython_5_submit_rejects_when_window_full`), Heartbeat
   Body/silenced/fires-after/none-when-empty
-  (`test_pending_heartbeat`: 4 Checks), ACKNACK Teil-/Voll-Clear
-  (`test_recv_acknack_clears_acked_keeps_missing`/
-  `test_recv_acknack_full_clear_when_no_bits_set`), Receiver
-  in-order/Reorder/Dedup/Buffer-full (`test_recv_data_buffers_in_order`/
-  `test_recv_data_reorders_out_of_order`: 2 Checks/
-  `test_recv_data_drops_duplicates`/`test_recv_data_rejects_when_buffer_full`),
-  Pending-ACKNACK-Bitmap (`test_pending_acknack_marks_missing_slots`), Reset
-  (`test_reset_clears_state`), In-Process-End-to-End-Loss-Recovery
-  (`test_end_to_end_sender_receiver_with_loss_recovery`: 3 Checks), plus
-  bedingt (Golden-Dir übergeben) Byte-Golden `test_byte_golden`:
+  (`endpointpython_5_pending_heartbeat`: 4 Checks), ACKNACK Teil-/Voll-Clear
+  (`endpointpython_5_recv_acknack_clears_acked_keeps_missing`/
+  `endpointpython_5_recv_acknack_full_clear_when_no_bits_set`), Receiver
+  in-order/Reorder/Dedup/Buffer-full (`endpointpython_5_recv_data_buffers_in_order`/
+  `endpointpython_5_recv_data_reorders_out_of_order`: 2 Checks/
+  `endpointpython_5_recv_data_drops_duplicates`/`endpointpython_5_recv_data_rejects_when_buffer_full`),
+  Pending-ACKNACK-Bitmap (`endpointpython_5_pending_acknack_marks_missing_slots`), Reset
+  (`endpointpython_5_reset_clears_state`), In-Process-End-to-End-Loss-Recovery
+  (`endpointpython_5_end_to_end_sender_receiver_with_loss_recovery`: 3 Checks), plus
+  bedingt (Golden-Dir übergeben) Byte-Golden `endpointpython_5_byte_golden`:
   `heartbeat_frame(1,1,3,0x80)` == von `zerodds-xrce` erzeugtem
   `golden_heartbeat_le.bin`, `acknack_frame(1,1,0,0x80)` == erzeugtem
   `golden_acknack_le.bin`, plus Roundtrip-Parse — meldet `ALL OK`.
-- `python_reliable_loss_recovery` — Peer dropt jedes 3. Sample einmalig; die
-  App (`example_reliable.py run`) retransmittet auf ACKNACK über den
-  `ReliableWriter`; alle 12 Samples lückenlos in Reihenfolge geliefert.
-- `python_reliable_no_loss` — lossless Baseline; 12/12.
-- `python_reliable_producer_latency` — Latenz-Bench (§6).
-
-4/4 grün (Linux), davon 3 in diesem Abschnitt (Latenz-Bench in §6).
+- `reliable_5_3_python_samples_arrive_in_order_despite_dropped_datagrams` — Peer dropt jedes 3. Sample einmalig; die
+  App, die der Test aus dem `Ping`, den der Generator der Sprache aus der IDL von `crates/endpoint-e2e/src/codegen.rs` schreibt, und dem `ReliableWriter` baut, retransmittet
+  auf ACKNACK; alle 12 Samples lückenlos in Reihenfolge geliefert, der Test liest jedes Sample nach dem XCDR2-Layout der IDL (`assert_reliable_pings`).
+- `reliable_5_4_python_the_producer_enqueue_costs_less_than_the_inline_send` — Latenz-Bench (§6).
 
 **Status:** done.
 
@@ -169,7 +164,7 @@ Iterationen inline `sock.send(reliable_write_frame(...))` vs. 20000
 Iterationen `ReliableWriter.enqueue(sample)` gegen einen idle-drainenden
 Sink-Socket (kein Live-Peer nötig, nur lokale Dispatch-Kosten unter Messung).
 
-**Tests:** (Linux) `python_reliable_producer_latency`
+**Tests:** (Linux) `reliable_5_4_python_the_producer_enqueue_costs_less_than_the_inline_send`
 (`crates/endpoint-e2e/tests/python_reliable.rs`) — Enqueue **704 ns** vs.
 inline `send` **4108 ns** (~5,8×).
 
@@ -186,15 +181,13 @@ Wait-Freedom.
 
 ## Audit-Status
 
-6 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+6 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-Lauf (Linux, verifiziert): `cargo test -p zerodds-endpoint-e2e --test
-python` 3/3 (Ping-Pong: `python_raw_udp`/`python_endpoint_sync`/
-`python_endpoint_async`); `--test python_reliable` 4/4
-(`python_reliable_loss_recovery`/`python_reliable_no_loss`/
-`python_reliable_unit_and_golden` — 21 Python-Unit-Checks inkl. Byte-Golden/
-`python_reliable_producer_latency`); Latenz-Bench Enqueue 704 ns / inline
-`send` 4108 ns (~5,8×) — Thread+GIL-Release-Entkopplung, keine wait-free
-Ring (siehe Honest-Note §5/§6).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-python-1.0.md`):
+
+* `python3 ci/run_integration.py integration-bindings` (Job `integration-bindings`) — 5 Tests grün.
+* `python3 ci/run_integration.py integration-endpoints` (Job `integration-endpoints`) — 14 Tests grün.
+
+19 zitierte Tests grün, 0 nicht grün.
 
 Offene Punkte: keine.

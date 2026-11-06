@@ -123,17 +123,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn validate_simple_filter() {
+    fn mqtt311_3_8_validate_simple_filter() {
         validate_filter("a/b/c").unwrap();
     }
 
     #[test]
-    fn validate_plus_in_middle() {
+    fn mqtt311_3_8_validate_plus_in_middle() {
         validate_filter("a/+/c").unwrap();
     }
 
     #[test]
-    fn validate_hash_at_end() {
+    fn mqtt311_3_8_validate_hash_at_end() {
         validate_filter("a/b/#").unwrap();
     }
 
@@ -143,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_hash_in_middle_rejected() {
+    fn mqtt311_3_8_validate_hash_in_middle_rejected() {
         assert_eq!(
             validate_filter("a/#/c"),
             Err(TopicFilterError::HashNotAtEnd)
@@ -151,7 +151,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_mixed_wildcard_rejected() {
+    fn mqtt311_3_8_validate_mixed_wildcard_rejected() {
         assert_eq!(
             validate_filter("a/foo+/c"),
             Err(TopicFilterError::WildcardMixedWithChars)
@@ -164,19 +164,19 @@ mod tests {
     }
 
     #[test]
-    fn topic_name_with_wildcard_rejected() {
+    fn mqttbridge_5_1_topic_name_with_wildcard_rejected() {
         assert!(validate_topic_name("a/+/b").is_err());
         assert!(validate_topic_name("a/#").is_err());
     }
 
     #[test]
-    fn match_exact_topic() {
+    fn mqttbridge_5_1_match_exact_topic() {
         assert!(matches("a/b", "a/b"));
         assert!(!matches("a/b", "a/c"));
     }
 
     #[test]
-    fn match_plus_wildcard() {
+    fn mqttbridge_5_1_match_plus_wildcard() {
         assert!(matches("a/+/c", "a/b/c"));
         assert!(matches("a/+/c", "a/X/c"));
         assert!(!matches("a/+/c", "a/b/c/d"));
@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[test]
-    fn match_hash_wildcard() {
+    fn mqttbridge_5_1_match_hash_wildcard() {
         assert!(matches("a/#", "a/b"));
         assert!(matches("a/#", "a/b/c/d"));
         assert!(matches("a/#", "a"));
@@ -198,14 +198,14 @@ mod tests {
     }
 
     #[test]
-    fn dollar_topic_not_matched_by_root_wildcard() {
+    fn mqttbridge_5_2_dollar_topic_not_matched_by_root_wildcard() {
         // Spec §4.7.2: "#" must NOT match $SYS/...
         assert!(!matches("#", "$SYS/uptime"));
         assert!(!matches("+/uptime", "$SYS/uptime"));
     }
 
     #[test]
-    fn dollar_topic_matched_by_explicit_filter() {
+    fn mqttbridge_5_2_dollar_topic_matched_by_explicit_filter() {
         assert!(matches("$SYS/uptime", "$SYS/uptime"));
         assert!(matches("$SYS/+", "$SYS/uptime"));
     }

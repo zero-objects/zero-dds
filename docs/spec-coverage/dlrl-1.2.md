@@ -57,7 +57,7 @@ the underlying DCPS features."
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Zweck und Entwurfsbegründung.
 
 ### §8.1.2 DLRL Description
 
@@ -177,7 +177,7 @@ flexibel pro Attribute, Default-Mapping verfügbar.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Entwurfsprinzipien; das Default-Mapping und die Abbildung je Attribut stehen in den folgenden Items zu §8.1.4.
 
 ### §8.1.4.2 Mapping Rules
 
@@ -468,7 +468,7 @@ Klassen mit ihren Attributen.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — die 13 Klassen gibt es in `crates/dlrl` nicht als eigene Typen.
 
 ### §8.1.6.3 Details on DLRL Entities
 
@@ -503,7 +503,7 @@ Signaturen vor.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — die Attribute und Operationen der Tabellen §8.1.6.3.1 bis §8.1.6.3.17 sind nicht als Signaturen umgesetzt.
 
 ## §8.2 OMG IDL Platform Specific Model (PSM)
 
@@ -542,7 +542,7 @@ Entity-Interfaces sowie der Service-Bootstrap `DLRL_initialize`.
 
 **Tests:** —
 
-**Status:** open
+**Status:** open — die IDL-Interfaces der Entities und `DLRL_initialize` werden nicht erzeugt.
 
 ### §8.2.2 Generation Process
 
@@ -626,7 +626,7 @@ ZeroDDS keine, der Generator erzeugt die Klassenform.
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — Beispiel.
 
 ## Annex B
 
@@ -652,12 +652,16 @@ Query-Subsets ausgewiesen.
 
 ## Audit-Status
 
-17 done / 3 partial / 3 open / 4 n/a (informative) / 0 n/a (rejected).
+17 done / 3 partial / 3 open / 0 blocked / 4 n/a (informative).
 
-Test-Lauf: `cargo test -p zerodds-dlrl -p zerodds-dlrl-codegen` —
-`zerodds-dlrl` 66 Tests grün, `zerodds-dlrl-codegen` 6 Tests grün,
-0 failed. CLI-Front-End: `cargo test -p zerodds-idlc --test dlrl` — 15
-Tests grün; Pragma-Kollisions-Diagnose: `cargo test -p zerodds-idl-lower
---test dialects` — 59 Tests grün (davon 4 zur Kollision).
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9053 von `main` (`python3 ci/coverage_results.py --document dlrl-1.2.md`):
 
-Offene Punkte und Teil-Umsetzungen: `dlrl-1.2.open.md`.
+* `cargo nextest run --profile merge -p zerodds-dlrl --all-targets` (Job `merge-rust-dlrl`) — 64 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-dlrl-codegen --all-targets` (Job `merge-rust-dlrl-codegen`) — 9 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (Job `merge-rust-idl-lower`) — 66 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 20 Tests grün.
+* `python3 ci/run_integration.py integration-codegen-csharp` (Job `integration-codegen-csharp`) — 8 Tests grün.
+
+167 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: `dlrl-1.2.open.md`.

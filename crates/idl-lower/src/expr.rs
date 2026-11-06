@@ -7,7 +7,7 @@
 //! were written in, and evaluation stays a query the model answers.
 //! Spec §3.5 of the AST.
 
-use crate::lower::Lowering;
+use crate::lower::{Lowering, Used, broken_cause, is_root_anchored};
 use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -100,6 +100,30 @@ impl Lowering<'_> {
     /// had, so a genuine forward reference is unaffected.
     fn name_expr(&mut self, node: &Arc<SyntaxNode>) -> Option<ConstExpr> {
         let name = self.scoped_name_of(node)?;
+        // §7.5.2: the first identifier is looked up through the scopes
+        // and the bases of every interface on the way, and is introduced
+        // into the scope that writes it.
+        match self.use_scoped(name.segments(), is_root_anchored(node), node.span()) {
+            Used::Resolved(AnyId::Enumerator(id, _)) => {
+                return Some(ConstExpr::Literal(Literal::Enumerator(Ref::Resolved(id))));
+            }
+            Used::Resolved(AnyId::Const(id, _)) => {
+                return Some(ConstExpr::NameRef(Ref::Resolved(id)));
+            }
+            Used::Path(path) => {
+                return Some(match self.ast.find_by_scoped_name(&path).ok() {
+                    Some(AnyId::Enumerator(id, _)) => {
+                        ConstExpr::Literal(Literal::Enumerator(Ref::Resolved(id)))
+                    }
+                    Some(AnyId::Const(id, _)) => ConstExpr::NameRef(Ref::Resolved(id)),
+                    _ => ConstExpr::NameRef(Ref::Pending(PendingRef::ScopedName(path))),
+                });
+            }
+            Used::Ambiguous => {
+                return Some(ConstExpr::NameRef(Ref::Broken(broken_cause())));
+            }
+            Used::Resolved(_) | Used::Unknown => {}
+        }
         if let Some(enumerator) = self.lookup_enumerator(name.segments()) {
             return Some(ConstExpr::Literal(Literal::Enumerator(Ref::Resolved(
                 enumerator,
@@ -179,6 +203,33 @@ impl Lowering<'_> {
             .into_iter()
             .find(|(_, token)| token.kind().is_literal())?;
         let text = token.text();
+        // §7.2.6.2.2: "The \u escape is valid only with wchar and wstring
+        // types … Attempts to set a char type to a \u defined literal or a
+        // string type to a sequence of \u literals result in an error."
+        if matches!(
+            token.kind(),
+            TokenKind::CharLiteral | TokenKind::StringLiteral
+        ) && node
+            .syntax_tokens()
+            .iter()
+            .filter(|(_, piece)| piece.kind() == token.kind())
+            .any(|(_, piece)| has_unicode_escape(piece.text()))
+        {
+            let what = if token.kind() == TokenKind::CharLiteral {
+                "a character literal without the `L` prefix"
+            } else {
+                "a string literal without the `L` prefix"
+            };
+            self.diagnose_at(
+                DiagnosticCode::TypeMismatch,
+                span,
+                &alloc::format!(
+                    "`\\u` writes a wide character, and this is {what}; the escape is valid \
+                     only in a `wchar` or `wstring` literal"
+                ),
+                "OMG IDL 4.2 §7.2.6.2.2",
+            );
+        }
         let literal = match token.kind() {
             TokenKind::True => Literal::Boolean(true),
             TokenKind::False => Literal::Boolean(false),
@@ -230,6 +281,24 @@ impl Lowering<'_> {
         };
         Some(literal)
     }
+}
+
+/// Whether a literal's text holds a `\u` escape — a backslash that is not
+/// itself escaped, followed by `u` or `U`.
+fn has_unicode_escape(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\\' {
+            if matches!(bytes.get(at + 1), Some(b'u' | b'U')) {
+                return true;
+            }
+            at += 2;
+        } else {
+            at += 1;
+        }
+    }
+    false
 }
 
 /// Whether a node kind is an expression form.

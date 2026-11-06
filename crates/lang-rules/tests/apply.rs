@@ -68,22 +68,6 @@ fn each_member_becomes_a_field() {
     assert_eq!(count_of(&applied, "RustField"), 2);
 }
 
-#[test]
-fn applying_the_catalogue_twice_changes_nothing_the_second_time() {
-    // Application is monotone and add-only, so a second run over its own
-    // result creates nothing: two rules never claim the same construct.
-    // Spec §4.2.
-    let ast = model_with_two_members();
-    let model = ModelGraph::of(&ast);
-    let first = apply(&model, &rust::catalogue()).expect("first");
-    let structs = count_of(&first, "RustStruct");
-    let fields = count_of(&first, "RustField");
-
-    let second = apply(&model, &rust::catalogue()).expect("second");
-    assert_eq!(count_of(&second, "RustStruct"), structs);
-    assert_eq!(count_of(&second, "RustField"), fields);
-}
-
 /// Every language whose catalogue this file's loops can meaningfully
 /// exercise.
 ///
@@ -107,7 +91,7 @@ fn languages_with_a_catalogue() -> impl Iterator<Item = Language> {
 }
 
 #[test]
-fn every_catalogue_validates_against_the_rule_format() {
+fn xtypes_7_5_1_every_catalogue_validates_against_the_rule_format() {
     // The engine's own answer, asserted on rather than re-derived: it
     // resolves every node name a rule refers to and reports one that
     // was never declared. A hand-built rule value can otherwise carry
@@ -120,7 +104,7 @@ fn every_catalogue_validates_against_the_rule_format() {
 }
 
 #[test]
-fn every_catalogue_serialises_and_reads_back_the_same() {
+fn xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same() {
     // The rules are data: a catalogue that could not round-trip through
     // its own format would be a value that only exists in code, which
     // is what having a format is meant to prevent.
@@ -163,7 +147,7 @@ fn every_rule_of_the_rust_catalogue_is_reachable() {
 }
 
 #[test]
-fn every_language_catalogue_fires_on_the_same_model() {
+fn xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model() {
     // The four catalogues cover the same constructs; a model with a
     // struct and two members has to reach every one of them. A language
     // whose rules never fire is one whose column of the table is a

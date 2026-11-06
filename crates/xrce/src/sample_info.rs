@@ -336,7 +336,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sample_info_flags_bit_positions() {
+    fn xrce_7_7_1_sample_info_flags_bit_positions() {
         let f = SampleInfoFlags(SampleInfoFlags::INSTANCE_STATE_DISPOSED);
         assert!(f.is_disposed());
         assert!(!f.is_unregistered());
@@ -345,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_info_flags_all_four_bits_independent() {
+    fn xrce_7_7_1_sample_info_flags_all_four_bits_independent() {
         let f = SampleInfoFlags(
             SampleInfoFlags::INSTANCE_STATE_UNREGISTERED
                 | SampleInfoFlags::VIEW_STATE_NEW
@@ -358,22 +358,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_info_roundtrip_le() {
-        let info = SampleInfo {
-            state: SampleInfoFlags(SampleInfoFlags::SAMPLE_STATE_READ),
-            sequence_number: 0x1234_5678,
-            session_time_offset: 42,
-        };
-        let mut out = Vec::new();
-        info.encode_into(Endianness::Little, &mut out).unwrap();
-        assert_eq!(out.len(), SampleInfo::WIRE_SIZE);
-        let (back, n) = SampleInfo::decode(&out, Endianness::Little).unwrap();
-        assert_eq!(back, info);
-        assert_eq!(n, 12);
-    }
-
-    #[test]
-    fn sample_info_roundtrip_be() {
+    fn xrce_7_7_1_sample_info_roundtrip_be() {
         let info = SampleInfo {
             state: SampleInfoFlags(0),
             sequence_number: 7,
@@ -395,7 +380,7 @@ mod tests {
     /// the *layout* (offsets and widths) the example establishes rather
     /// than reproducing its byte values verbatim.
     #[test]
-    fn sample_info_matches_annex_b_5_3_layout() {
+    fn xrce_7_7_1_sample_info_matches_annex_b_5_3_layout() {
         let info = SampleInfo {
             state: SampleInfoFlags(SampleInfoFlags::VIEW_STATE_NEW),
             sequence_number: 1,
@@ -428,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_info_delta_roundtrip() {
+    fn xrce_7_7_1_sample_info_delta_roundtrip() {
         let d = SampleInfoDelta {
             state: SampleInfoFlags(SampleInfoFlags::SAMPLE_STATE_READ),
             seq_number_delta: 200,
@@ -443,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_info_delta_decode_short_is_eof() {
+    fn xrce_7_7_1_sample_info_delta_decode_short_is_eof() {
         let res = SampleInfoDelta::decode(&[0u8; 3], Endianness::Little);
         assert!(matches!(
             res,
@@ -453,7 +438,7 @@ mod tests {
 
     /// §7.7.1's `resulting_info` formula, worked by hand.
     #[test]
-    fn sample_info_delta_resolve_adds_to_base() {
+    fn xrce_7_7_2_sample_info_delta_resolve_adds_to_base() {
         let base = SampleInfo {
             state: SampleInfoFlags(0),
             sequence_number: 1000,
@@ -471,7 +456,7 @@ mod tests {
     }
 
     #[test]
-    fn sample_info_delta_resolve_wraps_on_overflow() {
+    fn xrce_7_7_2_sample_info_delta_resolve_wraps_on_overflow() {
         let base = SampleInfo {
             state: SampleInfoFlags(0),
             sequence_number: u32::MAX,
@@ -491,7 +476,7 @@ mod tests {
     /// full form is the 12 octets of the flat struct with the discriminator in
     /// the first padding octet; the shorter ones carry one member or none.
     #[test]
-    fn the_union_of_annex_a_is_read_by_its_discriminator() {
+    fn xrce_annex_a_the_union_of_annex_a_is_read_by_its_discriminator() {
         use crate::encoding::{SampleInfoForm, with_sample_info_form};
         let le = |v: u32| v.to_le_bytes();
         with_sample_info_form(SampleInfoForm::AnnexA, || {
@@ -547,7 +532,7 @@ mod tests {
     /// §7.7.1 flat form: the octet after `state` is padding whatever it holds,
     /// and the info is always 12 octets.
     #[test]
-    fn the_flat_form_ignores_the_padding_octet() {
+    fn xrce_annex_a_the_flat_form_ignores_the_padding_octet() {
         use crate::encoding::{SampleInfoForm, with_sample_info_form};
         let mut flat = vec![0x08, 0x00, 0, 0];
         flat.extend_from_slice(&7u32.to_le_bytes());

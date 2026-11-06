@@ -11,7 +11,7 @@ use zerodds_types::dynamic::{
 /// §7.5.2.4.1: an alias descriptor names the aliased type in `base_type`,
 /// and has no element type.
 #[test]
-fn an_alias_names_its_target_as_the_base_type() {
+fn xtypes_7_5_2_4_1_an_alias_names_its_target_as_the_base_type() {
     let mut b = DynamicTypeBuilder::new();
     let long = b.primitive(TypeKind::Int32).unwrap();
     let alias = b.alias("Meters", long).unwrap();
@@ -26,7 +26,7 @@ fn an_alias_names_its_target_as_the_base_type() {
 /// §7.5.2.4.5 and §7.5.2.2.5: the element type of a string is Char8, of a
 /// wstring Char16.
 #[test]
-fn a_string_has_a_character_element_type() {
+fn xtypes_7_5_2_4_5_a_string_has_a_character_element_type() {
     let mut b = DynamicTypeBuilder::new();
     let narrow = b.string(false, Some(8)).unwrap();
     let wide = b.string(true, None).unwrap();
@@ -44,7 +44,7 @@ fn a_string_has_a_character_element_type() {
 /// §7.5.2.7.5: a member of a type that is not aggregated has
 /// MEMBER_ID_INVALID.
 #[test]
-fn a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags() {
+fn xtypes_7_5_2_4_2_a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags() {
     let mut b = DynamicTypeBuilder::new();
     let mask = b.bitmask("Flags", Some(8)).unwrap();
     b.add_bit(mask, "READ", None).unwrap();
@@ -67,7 +67,7 @@ fn a_bitmask_has_a_bound_a_boolean_element_and_boolean_flags() {
 }
 
 #[test]
-fn an_enumerator_has_no_member_id_and_the_enumeration_as_its_type() {
+fn xtypes_7_5_2_5_an_enumerator_has_no_member_id_and_the_enumeration_as_its_type() {
     let mut b = DynamicTypeBuilder::new();
     let e = b.enumeration("Color", None).unwrap();
     b.add_enumerator(e, "RED", None, false).unwrap();
@@ -83,7 +83,7 @@ fn an_enumerator_has_no_member_id_and_the_enumeration_as_its_type() {
 /// Table 51: an alias has the members of its base type; a bitset, like
 /// every kind the table does not list, has none.
 #[test]
-fn an_alias_has_the_members_of_its_base_and_a_bitset_has_none() {
+fn xtypes_7_5_2_6_an_alias_has_the_members_of_its_base_and_a_bitset_has_none() {
     let mut b = DynamicTypeBuilder::new();
     let e = b.enumeration("Color", None).unwrap();
     b.add_enumerator(e, "RED", None, false).unwrap();
@@ -101,7 +101,7 @@ fn an_alias_has_the_members_of_its_base_and_a_bitset_has_none() {
 
 /// Table 53: `label` is `Int64 [*]`; a label past 32 bits is kept.
 #[test]
-fn a_union_label_past_32_bits_is_kept() {
+fn xtypes_7_5_2_7_8_a_union_label_past_32_bits_is_kept() {
     let mut b = DynamicTypeBuilder::new();
     let wide = b.primitive(TypeKind::Int64).unwrap();
     let text = b.string(false, None).unwrap();
@@ -118,7 +118,7 @@ fn a_union_label_past_32_bits_is_kept() {
 
 /// §7.5.2.7.5: a member added with no id gets one more than the maximum.
 #[test]
-fn a_member_with_no_id_gets_the_maximum_plus_one() {
+fn xtypes_7_5_2_7_5_a_member_with_no_id_gets_the_maximum_plus_one() {
     let mut b = DynamicTypeBuilder::new();
     let long = b.primitive(TypeKind::Int32).unwrap();
     let s = b.structure("S", ExtensibilityKind::Mutable).unwrap();
@@ -134,7 +134,7 @@ fn a_member_with_no_id_gets_the_maximum_plus_one() {
 /// §7.5.2.7.6: a member added at an index existing members occupy shifts
 /// them up; an index past the end appends.
 #[test]
-fn a_member_added_at_an_index_shifts_the_others() {
+fn xtypes_7_5_2_7_6_a_member_added_at_an_index_shifts_the_others() {
     let mut b = DynamicTypeBuilder::new();
     let long = b.primitive(TypeKind::Int32).unwrap();
     let s = b.structure("S", ExtensibilityKind::Final).unwrap();
@@ -151,7 +151,7 @@ fn a_member_added_at_an_index_shifts_the_others() {
 
 /// Table 55: adding a member to an alias adds it to the alias's base type.
 #[test]
-fn a_member_added_to_an_alias_goes_to_the_base_type() {
+fn xtypes_7_5_2_8_3_a_member_added_to_an_alias_goes_to_the_base_type() {
     let mut b = DynamicTypeBuilder::new();
     let long = b.primitive(TypeKind::Int32).unwrap();
     let s = b.structure("S", ExtensibilityKind::Final).unwrap();
@@ -165,7 +165,7 @@ fn a_member_added_to_an_alias_goes_to_the_base_type() {
 /// §7.5.2.2.2: a bitmask bound out of range fails. §7.5.2.2.5:
 /// LENGTH_UNLIMITED is no bound.
 #[test]
-fn bounds_are_checked_and_unlimited_is_unbounded() {
+fn xtypes_7_5_2_4_2_bounds_are_checked_and_unlimited_is_unbounded() {
     let mut b = DynamicTypeBuilder::new();
     assert!(b.bitmask("Zero", Some(0)).is_err());
     assert!(b.bitmask("TooWide", Some(65)).is_err());

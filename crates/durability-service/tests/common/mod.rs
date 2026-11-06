@@ -125,8 +125,19 @@ pub fn late_joiner_collect(
     out
 }
 
+/// A fresh database path. On Linux in `/dev/shm`, the tmpfs every test host
+/// has: what the tests check is what the service reads back from the file,
+/// not how long the disk takes to sync it. In the merge lane on the CI runner host the
+/// restart test ran 8.8 to 24.1 s and once past its 25 s, while it takes
+/// 1.2 to 1.8 s on the Linux test host, also under a synchronous
+/// random-write load on its disk (`fio --fsync=1`).
 pub fn tmp_db(tag: &str) -> std::path::PathBuf {
-    let mut p = std::env::temp_dir();
+    let shm = std::path::Path::new("/dev/shm");
+    let mut p = if cfg!(target_os = "linux") && shm.is_dir() {
+        shm.to_path_buf()
+    } else {
+        std::env::temp_dir()
+    };
     let nanos = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()

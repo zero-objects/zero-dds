@@ -357,10 +357,10 @@ fn run_publisher(opts: &Options, stop: &Arc<AtomicBool>) -> Result<(), BoxError>
     // period.
     let burst_sets = opts.coherent;
     while !stop.load(Ordering::SeqCst) {
-        if let Some(max) = opts.num_iterations {
-            if iteration >= max {
-                break;
-            }
+        if let Some(max) = opts.num_iterations
+            && iteration >= max
+        {
+            break;
         }
         if gated {
             for wctx in &writers {
@@ -376,7 +376,7 @@ fn run_publisher(opts: &Options, stop: &Arc<AtomicBool>) -> Result<(), BoxError>
                 continue;
             }
         }
-        if opts.coherent && iteration % coherent_set_size == 0 {
+        if opts.coherent && iteration.is_multiple_of(coherent_set_size) {
             publisher.begin_coherent_changes()?;
             coherent_open = true;
             debugln!(opts, "begin_coherent_changes at iteration {iteration}");
@@ -433,7 +433,7 @@ fn run_publisher(opts: &Options, stop: &Arc<AtomicBool>) -> Result<(), BoxError>
         }
         t += 0.15;
         iteration += 1;
-        if coherent_open && iteration % coherent_set_size == 0 {
+        if coherent_open && iteration.is_multiple_of(coherent_set_size) {
             publisher.end_coherent_changes()?;
             coherent_open = false;
             debugln!(
@@ -581,10 +581,10 @@ fn run_subscriber(opts: &Options, stop: &Arc<AtomicBool>) -> Result<(), BoxError
 
     let mut next_read = std::time::Instant::now() + read_period;
     while !stop.load(Ordering::SeqCst) {
-        if let Some(max) = opts.num_iterations {
-            if iteration >= max {
-                break;
-            }
+        if let Some(max) = opts.num_iterations
+            && iteration >= max
+        {
+            break;
         }
         // One marker per read iteration, ahead of the topic loop — the OMG
         // check functions (`coherent_sets_w_instances`,

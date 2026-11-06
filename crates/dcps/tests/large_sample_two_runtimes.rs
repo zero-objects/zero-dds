@@ -33,18 +33,22 @@ fn writer(topic: &str) -> UserWriterConfig {
 
 fn round_trip(prefix_b: [u8; 12], sizes: &[usize]) -> Vec<(usize, Option<usize>)> {
     let domain = common::unique_domain();
-    let a = DcpsRuntime::start(
-        domain,
-        GuidPrefix::from_bytes([0xA1; 12]),
-        RuntimeConfig::default(),
-    )
-    .unwrap();
-    let b = DcpsRuntime::start(
-        domain,
-        GuidPrefix::from_bytes(prefix_b),
-        RuntimeConfig::default(),
-    )
-    .unwrap();
+    let a = common::ShutsDown(
+        DcpsRuntime::start(
+            domain,
+            GuidPrefix::from_bytes([0xA1; 12]),
+            RuntimeConfig::default(),
+        )
+        .unwrap(),
+    );
+    let b = common::ShutsDown(
+        DcpsRuntime::start(
+            domain,
+            GuidPrefix::from_bytes(prefix_b),
+            RuntimeConfig::default(),
+        )
+        .unwrap(),
+    );
     let w = a
         .register_user_writer_kind(writer("BigSample"), false)
         .unwrap();

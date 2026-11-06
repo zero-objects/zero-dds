@@ -38,8 +38,8 @@ mod linux {
 
     use super::common::unique_domain;
 
-    /// KEEP_ALL: `min_separation_zero_passes_all_samples` and
-    /// `min_separation_filters_close_samples_per_instance` write several
+    /// KEEP_ALL: `dcps_2_2_3_12_min_separation_zero_passes_all_samples` and
+    /// `dcps_2_2_3_12_min_separation_filters_close_samples_per_instance` write several
     /// samples to the same instance ("RED") and assert on how many
     /// TIME_BASED_FILTER admits — the default KEEP_LAST(1) would
     /// (correctly) evict everything TIME_BASED_FILTER did not already
@@ -109,7 +109,7 @@ mod linux {
     }
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn min_separation_zero_passes_all_samples() {
+    fn dcps_2_2_3_12_min_separation_zero_passes_all_samples() {
         let (writer, reader) = pair_with_qos(
             unique_domain(),
             "TbfZeroSquare",
@@ -137,7 +137,7 @@ mod linux {
     }
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn min_separation_filters_close_samples_per_instance() {
+    fn dcps_2_2_3_12_min_separation_filters_close_samples_per_instance() {
         let rqos = DataReaderQos {
             time_based_filter: TimeBasedFilterQosPolicy {
                 minimum_separation: QosDuration::from_millis(200),
@@ -166,7 +166,7 @@ mod linux {
     }
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn min_separation_is_per_instance() {
+    fn dcps_2_2_3_12_min_separation_is_per_instance() {
         let rqos = DataReaderQos {
             time_based_filter: TimeBasedFilterQosPolicy {
                 minimum_separation: QosDuration::from_millis(500),
@@ -216,7 +216,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn the_sender_clock_filters_on_the_source_timestamps() {
+    fn dcps_2_2_3_12_the_sender_clock_filters_on_the_source_timestamps() {
         // The default: the changes are a second apart where they were
         // made, so each is more than minimum_separation after the one
         // before, however close they arrive.
@@ -228,7 +228,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn the_receiver_clock_filters_on_the_arrival() {
+    fn dcps_2_2_3_12_the_receiver_clock_filters_on_the_arrival() {
         // They arrive within milliseconds: one per minimum_separation.
         assert_eq!(
             five_seconds_written_at_once(TimeBasedFilterClock::Receiver, "TbfReceiverClock"),
@@ -274,7 +274,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn a_reliable_reader_gets_the_last_filtered_sample_once_the_writer_is_quiet() {
+    fn dcps_2_2_3_12_a_reliable_reader_gets_the_last_filtered_sample_once_the_writer_is_quiet() {
         // DDS 1.4 §2.2.3.12: "In the case where the reliability QoS kind is
         // RELIABLE then in steady-state ... the system should guarantee
         // delivery the last sample to the DataReader."
@@ -296,7 +296,7 @@ mod linux {
 
     #[serial_test::file_serial(dcps)]
     #[test]
-    fn a_best_effort_reader_gets_no_filtered_sample() {
+    fn dcps_2_2_3_12_a_best_effort_reader_gets_no_filtered_sample() {
         let (writer, reader) =
             pair_with_qos(unique_domain(), "TbfLastSampleBe", filtered_reader(false));
         for i in 0..3 {

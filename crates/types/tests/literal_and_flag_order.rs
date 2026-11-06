@@ -38,7 +38,7 @@ fn id(ast: &Ast, name: &str) -> zerodds_ast_core::Id<zerodds_ast::TypeNode> {
 }
 
 #[test]
-fn enumerated_literals_are_written_in_increasing_value_order() {
+fn xtypes_7_3_4_5_enumerated_literals_are_written_in_increasing_value_order() {
     let ast = model("enum E { @value(7) A, @value(0) B, @value(3) C };");
     let CompleteTypeObject::Enumerated(complete) =
         complete_type_object(&ast, id(&ast, "E")).unwrap()
@@ -71,7 +71,7 @@ fn enumerated_literals_are_written_in_increasing_value_order() {
 }
 
 #[test]
-fn bitmask_flags_are_written_in_increasing_position_order() {
+fn xtypes_7_3_4_5_bitmask_flags_are_written_in_increasing_position_order() {
     let ast = model("bitmask M { @position(5) A, @position(1) B, C };");
     let CompleteTypeObject::Bitmask(complete) = complete_type_object(&ast, id(&ast, "M")).unwrap()
     else {

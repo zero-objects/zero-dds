@@ -151,7 +151,7 @@ Tests in `crates/java-omgdds/java/src/test/java/org/omg/dds/`:
 - `Xcdr2CodecTest`: encoder/decoder wire format roundtrip. (4 tests)
 - `PubSubLoopbackTest`: full pub-sub path in-process. (4 tests)
 
-`mvn test` delivers 18/18 green — see `docs/spec-coverage/LAYER-6-RC1-GAPS.md`.
+`mvn test` delivers 18/18 green.
 
 ## §4 Multi-process / cross-vendor
 

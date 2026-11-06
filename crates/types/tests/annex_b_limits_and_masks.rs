@@ -61,7 +61,7 @@ fn type_detail(name: &str) -> CompleteTypeDetail {
 }
 
 #[test]
-fn the_limits_are_the_constants_of_annex_b() {
+fn xtypes_annex_b_the_limits_are_the_constants_of_annex_b() {
     assert_eq!(MEMBER_NAME_MAX_LENGTH, 256);
     assert_eq!(TYPE_NAME_MAX_LENGTH, 256);
     assert_eq!(ANNOTATION_STR_VALUE_MAX_LEN, 128);
@@ -71,7 +71,7 @@ fn the_limits_are_the_constants_of_annex_b() {
 /// `string<MEMBER_NAME_MAX_LENGTH> MemberName`: 256 octets are written,
 /// 257 are refused.
 #[test]
-fn a_member_name_holds_at_most_256_octets() {
+fn xtypes_annex_b_a_member_name_holds_at_most_256_octets() {
     let mut w = zerodds_types::framing::xcdr2_writer();
     member_detail(&"m".repeat(256))
         .encode_into(&mut w)
@@ -83,7 +83,7 @@ fn a_member_name_holds_at_most_256_octets() {
 }
 
 #[test]
-fn a_member_name_over_256_octets_is_refused_on_reading() {
+fn xtypes_annex_b_a_member_name_over_256_octets_is_refused_on_reading() {
     let mut w = zerodds_types::framing::xcdr2_writer();
     w.write_string(&"m".repeat(257));
     w.write_u8(0);
@@ -102,7 +102,7 @@ fn a_member_name_over_256_octets_is_refused_on_reading() {
 }
 
 #[test]
-fn a_type_name_holds_at_most_256_octets() {
+fn xtypes_annex_b_a_type_name_holds_at_most_256_octets() {
     let mut w = zerodds_types::framing::xcdr2_writer();
     type_detail(&"T".repeat(256))
         .encode_into(&mut w)
@@ -128,7 +128,7 @@ fn a_type_name_holds_at_most_256_octets() {
 
 /// A whole object is refused, not written with a cut name.
 #[test]
-fn an_object_with_a_long_type_name_does_not_encode() {
+fn xtypes_annex_b_an_object_with_a_long_type_name_does_not_encode() {
     let object = CompleteTypeObject::Struct(CompleteStructType {
         struct_flags: StructTypeFlag(StructTypeFlag::IS_FINAL),
         header: CompleteStructHeader {
@@ -144,7 +144,7 @@ fn an_object_with_a_long_type_name_does_not_encode() {
 
 /// `string<ANNOTATION_STR_VALUE_MAX_LEN>`: 128 octets pass, 129 do not.
 #[test]
-fn an_annotation_string_value_holds_at_most_128_octets() {
+fn xtypes_annex_b_an_annotation_string_value_holds_at_most_128_octets() {
     AnnotationParameterValue::String8("s".repeat(128))
         .to_bytes()
         .expect("128 is the bound");
@@ -161,7 +161,7 @@ fn an_annotation_string_value_holds_at_most_128_octets() {
 
 /// `wstring<ANNOTATION_STR_VALUE_MAX_LEN>` counts UTF-16 code units.
 #[test]
-fn an_annotation_wstring_value_holds_at_most_128_code_units() {
+fn xtypes_annex_b_an_annotation_wstring_value_holds_at_most_128_code_units() {
     AnnotationParameterValue::String16("s".repeat(128))
         .to_bytes()
         .expect("128 is the bound");
@@ -185,7 +185,7 @@ fn an_annotation_wstring_value_holds_at_most_128_code_units() {
 }
 
 #[test]
-fn the_masks_are_the_constants_of_annex_b() {
+fn xtypes_annex_b_the_masks_are_the_constants_of_annex_b() {
     assert_eq!(MEMBER_FLAG_MINIMAL_MASK, 0x003f);
     assert_eq!(TYPE_FLAG_MINIMAL_MASK, 0x0007);
 }
@@ -193,7 +193,7 @@ fn the_masks_are_the_constants_of_annex_b() {
 /// `TypeFlagMinimalMask` selects `M, A, F`: `@nested` and
 /// `@autoid(HASH)` are in the complete object and not in the minimal one.
 #[test]
-fn a_minimal_struct_carries_only_the_extensibility_flags() {
+fn xtypes_annex_b_a_minimal_struct_carries_only_the_extensibility_flags() {
     let ast = model(
         r#"
 @final @nested @autoid(HASH) struct Inner { long a; };
@@ -221,7 +221,7 @@ fn a_minimal_struct_carries_only_the_extensibility_flags() {
 /// word with bits above `IS_KEY` loses them in the minimal form, the
 /// flags below stay.
 #[test]
-fn the_projection_masks_member_and_type_flags() {
+fn xtypes_annex_b_the_projection_masks_member_and_type_flags() {
     let member = CompleteStructMember {
         common: CommonStructMember {
             member_id: 0,

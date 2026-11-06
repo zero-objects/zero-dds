@@ -26,7 +26,7 @@ use zerodds_websocket_bridge::daemon::config::DaemonConfig;
 const EXAMPLE_YAML: &str = include_str!("../../../packaging/linux/configs/ws-bridged.yaml.example");
 
 #[test]
-fn example_yaml_parses_without_error() {
+fn wsbridge_3_example_yaml_parses_without_error() {
     let res = DaemonConfig::load_from_str(EXAMPLE_YAML);
     assert!(
         res.is_ok(),
@@ -36,9 +36,9 @@ fn example_yaml_parses_without_error() {
 }
 
 #[test]
-fn example_yaml_key_fields_match_intent() {
+fn wsbridge_3_example_yaml_key_fields_match_intent() {
     let cfg = DaemonConfig::load_from_str(EXAMPLE_YAML)
-        .expect("example yaml must parse — see example_yaml_parses_without_error");
+        .expect("example yaml must parse — see wsbridge_3_example_yaml_parses_without_error");
 
     // listen/domain/log_level — the top-level scalars from the file.
     // `listen` deviates from `default_for_dev()` (127.0.0.1:8080), so the
@@ -79,9 +79,9 @@ fn example_yaml_key_fields_match_intent() {
 }
 
 #[test]
-fn example_yaml_topic_acl_reaches_the_daemon() {
+fn wsbridge_7_3_example_yaml_topic_acl_reaches_the_daemon() {
     let cfg = DaemonConfig::load_from_str(EXAMPLE_YAML)
-        .expect("example yaml must parse — see example_yaml_parses_without_error");
+        .expect("example yaml must parse — see wsbridge_3_example_yaml_parses_without_error");
 
     // Spec §3/§7.3: the ACL is declared inside the topic entry. The old
     // top-level `acl:` block was never read for the shipped example.
@@ -97,7 +97,7 @@ fn example_yaml_topic_acl_reaches_the_daemon() {
 }
 
 #[test]
-fn example_yaml_has_no_unknown_top_level_keys() {
+fn wsbridge_11_example_yaml_has_no_unknown_top_level_keys() {
     // Every top-level key of the shipped file must be one the parser
     // handles — otherwise the daemon would boot on defaults and only a
     // stderr WARN would say so.

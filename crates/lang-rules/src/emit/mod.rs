@@ -45,7 +45,7 @@
 //! - `crates/wire-probe/tests/{enum_holder_width,enumerator_value,
 //!   fixed_digit_count,map_entry_order,union_label_match}.rs` — one
 //!   `SITES` table each.
-//! - `docs/{c-column,wire-feature-inventory,wire-axes-followup}.md` and
+//! - `docs/{c-column,wire-feature-inventory}.md` and
 //!   the interop-suite spec.
 //!
 //! `cargo test --workspace` stops after the first failing binary, which
@@ -72,10 +72,13 @@ pub mod elixir;
 pub mod encode;
 pub mod fsharp;
 pub mod go;
+pub mod idl4_csharp;
+pub mod idl4_java;
 pub mod interface_cpp;
 pub mod interface_java;
 pub mod interface_rust;
 pub mod interface_typescript;
+pub mod intermediate_idl;
 pub mod java;
 pub mod julia;
 pub mod kotlin;
@@ -898,6 +901,17 @@ pub trait CodecTarget {
     /// statement at all.
     fn mark_used(name: &str) -> Vec<Self::Stmt> {
         vec![Self::perform(Self::cast(Self::nothing(), Self::name(name)))]
+    }
+
+    /// What the codec of an aggregate with no members says first, so
+    /// that a body which touches neither its stream nor its sample is not
+    /// a `-Wunused-parameter -Werror` failure. Nothing by default; the C
+    /// column, which gives such a structure a member that is not
+    /// serialized (`crate::adapter::c::EMPTY_PLACEHOLDER`), marks both
+    /// parameters as read. `writing` names the stream: `w` or `r`.
+    fn no_members(writing: bool) -> Vec<Self::Stmt> {
+        let _ = writing;
+        Vec::new()
     }
 
     /// `zd_dec_<T>(r, <destination>, <behaviour>);` — one nested

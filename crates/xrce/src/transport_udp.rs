@@ -171,7 +171,7 @@ mod tests {
     }
 
     #[test]
-    fn loopback_roundtrip_create_client() {
+    fn xrce_11_2_2_loopback_roundtrip_create_client() {
         let sm = CreateClientPayload {
             representation: ClientRepresentation {
                 timestamp: None,
@@ -265,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn loopback_roundtrip_timestamp_reply() {
+    fn xrce_8_3_5_16_loopback_roundtrip_timestamp_reply() {
         let sm = TimestampReplyPayload::default().into_submessage().unwrap();
         loopback_roundtrip_one(sm);
     }
@@ -277,7 +277,7 @@ mod tests {
     /// three different lengths are therefore recovered as three distinct
     /// XRCE messages, never coalesced into one read.
     #[test]
-    fn rfc768_udp_delivers_one_datagram_per_message_with_boundaries_intact() {
+    fn xrce_8_2_1_rfc768_udp_delivers_one_datagram_per_message_with_boundaries_intact() {
         let (sender_sock, receiver_sock) = loopback_pair();
         let agent_addr = receiver_sock.local_addr().unwrap();
         let sender = XrceUdpSender {
@@ -320,7 +320,7 @@ mod tests {
     /// Spec §3.1.7 / §11.2.3: a datagram larger than the RFC 768 payload
     /// limit cannot be sent, and the sender says so instead of truncating.
     #[test]
-    fn rfc768_datagram_larger_than_udp_payload_limit_is_rejected() {
+    fn xrce_11_2_3_rfc768_datagram_larger_than_udp_payload_limit_is_rejected() {
         let (sender_sock, receiver_sock) = loopback_pair();
         let agent_addr = receiver_sock.local_addr().unwrap();
         let sender = XrceUdpSender {

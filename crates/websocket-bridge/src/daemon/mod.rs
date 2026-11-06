@@ -11,9 +11,10 @@
 //!   `crate::handshake` module; frame codec via `crate::codec`.
 //! * **L2 — DDS**: each daemon process starts a `DcpsRuntime` with the
 //!   runtime configuration of its layers on the configured domain id.
-//! * **L3 — Bridging**: one reader+writer per `topics[]` entry; WS
-//!   frames `op:publish` write into the writer, DDS samples are
-//!   pushed as `op:notify` to all subscribed WS clients.
+//! * **L3 — Bridging**: one reader+writer per `topics[]` entry; a
+//!   client's samples go into the writer, the DDS samples out to the
+//!   subscribed clients, as the binary frames of §4.3 or, to a client that
+//!   asks for them, as its JSON text frames ([`json_frames`]).
 //! * **L4 — Config**: the shared layered loader `zerodds-config` (see
 //!   [`config`]).
 //!
@@ -46,6 +47,7 @@
 
 pub mod cli;
 pub mod config;
+pub mod json_frames;
 pub mod qos_translation;
 pub mod router;
 pub mod runtime_common;

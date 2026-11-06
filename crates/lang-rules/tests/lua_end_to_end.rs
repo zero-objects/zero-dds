@@ -106,7 +106,7 @@ fn the_member_list_is_the_array_part_and_keeps_declaration_order() {
 }
 
 #[test]
-fn every_member_carries_the_facts_lua_cannot_state() {
+fn xtypes_7_2_2_2_every_member_carries_the_facts_lua_cannot_state() {
     let generated = generate("struct S { @key @id(7) long x; @optional octet b; };");
     assert!(
         generated.contains(
@@ -122,7 +122,7 @@ fn every_member_carries_the_facts_lua_cannot_state() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_lua_holder_and_says_which() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_lua_holder_and_says_which() {
     // The mapping is total over `PrimitiveKind`; this shows each one
     // produces the holder and the width it should, rather than merely
     // producing something.
@@ -155,7 +155,7 @@ fn every_idl_primitive_reaches_a_lua_holder_and_says_which() {
 }
 
 #[test]
-fn the_one_integer_that_does_not_fit_says_so() {
+fn xtypes_7_2_2_2_the_one_integer_that_does_not_fit_says_so() {
     // A Lua integer is 64-bit two's complement and wraps:
     // `math.maxinteger + 1 == math.mininteger` is true. So an
     // `unsigned long long` at or above 2^63 reads back negative. The
@@ -190,7 +190,7 @@ fn an_unsigned_long_long_constant_is_written_in_hexadecimal() {
 }
 
 #[test]
-fn a_long_double_is_a_string_and_never_a_lua_float() {
+fn xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_lua_float() {
     // A Lua float is a C double: 53 bits of significand against
     // binary128's 113. Writing one into a float loses sixty bits at the
     // assignment, before any codec runs.
@@ -203,7 +203,7 @@ fn a_long_double_is_a_string_and_never_a_lua_float() {
 }
 
 #[test]
-fn a_double_default_is_written_so_that_math_type_answers_float() {
+fn xtypes_7_2_2_2_a_double_default_is_written_so_that_math_type_answers_float() {
     // `0` is an integer in Lua 5.4 and `0.0` is a float (reference §3.1).
     // A `double` member defaulting to `0` would answer `"integer"`.
     let generated = generate("struct S { double d; long n; };");
@@ -232,7 +232,7 @@ fn a_string_a_wstring_and_a_fixed_all_land_in_a_lua_string() {
 }
 
 #[test]
-fn a_sequence_says_that_it_is_one_based() {
+fn xtypes_7_2_2_4_3_a_sequence_says_that_it_is_one_based() {
     // A Lua array starts at 1 and an IDL index at 0. Element i of a
     // sequence is t[i + 1], which is the single most likely defect in a
     // program written against this column, so the descriptor says so.
@@ -244,7 +244,7 @@ fn a_sequence_says_that_it_is_one_based() {
 }
 
 #[test]
-fn an_array_nests_outermost_dimension_first_and_is_filled() {
+fn xtypes_7_2_2_4_3_an_array_nests_outermost_dimension_first_and_is_filled() {
     // `long grid[2][3]` is two rows of three. Reversing it silently
     // transposes the data; returning an empty table would return a value
     // of a different shape from the one declared.
@@ -258,7 +258,7 @@ fn an_array_nests_outermost_dimension_first_and_is_filled() {
 }
 
 #[test]
-fn a_map_becomes_an_array_of_pairs_and_never_a_lua_table_keyed_by_k() {
+fn xtypes_7_2_2_4_3_a_map_becomes_an_array_of_pairs_and_never_a_lua_table_keyed_by_k() {
     // `pairs` has no defined order (Lua 5.4 reference §6.1) and a map
     // goes on the wire as an ordered sequence of pairs
     // (DDS-XTypes 1.3 §7.4.1.1.4). A Lua table also cannot hold a nil
@@ -271,7 +271,7 @@ fn a_map_becomes_an_array_of_pairs_and_never_a_lua_table_keyed_by_k() {
 }
 
 #[test]
-fn an_optional_member_gets_no_key_at_all() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_gets_no_key_at_all() {
     // DDS-XTypes 1.3 §7.2.2.4.4.4.7 makes absence the value, and in Lua
     // the absence of a value is the absence of the key. Writing a default
     // would make an absent member indistinguishable from one that arrived
@@ -285,7 +285,7 @@ fn an_optional_member_gets_no_key_at_all() {
 }
 
 #[test]
-fn a_member_named_after_a_lua_keyword_keeps_its_name() {
+fn idl_7_2_3_a_member_named_after_a_lua_keyword_keeps_its_name() {
     // The one thing this column has that the other nine do not. Lua's
     // restriction is on the syntax `t.end`, not on the key: `t["end"]`
     // names the key `"end"` (Lua 5.4 reference §3.4.9). So nothing is
@@ -317,7 +317,7 @@ fn a_typedef_becomes_an_entry_pointing_at_its_target() {
 }
 
 #[test]
-fn an_enum_writes_both_directions_and_its_values() {
+fn xtypes_7_2_2_4_1_1_an_enum_writes_both_directions_and_its_values() {
     // `@value` admits gaps, so a position is not a value.
     let generated = generate("enum Mode { IDLE, @value(4) ACTIVE, FAULT };");
     assert!(generated.contains("kind = \"enum\""), "{generated}");
@@ -336,7 +336,7 @@ fn an_enum_writes_both_directions_and_its_values() {
 }
 
 #[test]
-fn an_enum_defaults_to_its_first_literal_and_not_to_zero() {
+fn xtypes_7_2_2_4_1_1_an_enum_defaults_to_its_first_literal_and_not_to_zero() {
     // `@value` admits gaps, so an enumeration need not have a literal
     // with the value 0 at all; a zero default would be a value the type
     // does not have.
@@ -453,7 +453,7 @@ fn a_native_declaration_is_opaque_and_says_so_with_a_value() {
 }
 
 #[test]
-fn a_module_nests_rather_than_flattening_onto_the_name() {
+fn idl_7_5_2_a_module_nests_rather_than_flattening_onto_the_name() {
     // A Lua table key is a string and any string will do, so the IDL
     // scope survives whole. The Go column has to flatten because a Go
     // package is a directory, and `Common_Util_Location` cannot be read
@@ -495,7 +495,7 @@ fn a_luacats_block_is_written_above_each_type_and_is_only_a_comment() {
 }
 
 #[test]
-fn a_named_reference_is_resolved_at_load_and_not_left_to_a_reader() {
+fn idl_7_5_2_a_named_reference_is_resolved_at_load_and_not_left_to_a_reader() {
     // Reading a missing key in Lua answers nil and carries on, so a
     // descriptor naming a type this module does not declare would be
     // found by whatever read it next.
@@ -509,7 +509,7 @@ fn a_named_reference_is_resolved_at_load_and_not_left_to_a_reader() {
 }
 
 #[test]
-fn the_chunk_returns_the_module_table() {
+fn idl_7_5_2_the_chunk_returns_the_module_table() {
     // A Lua module is what its chunk returns (Lua 5.4 reference §6.3).
     // A chunk that returned nothing would load, run, and hand back
     // `true`.
@@ -548,13 +548,13 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_column_claims_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_column_claims_produces_output() {
     let sources = [
         ("struct S { long a; };", "kind = \"struct\""),
         ("enum E { A };", "kind = \"enum\""),
@@ -616,7 +616,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -808,7 +808,7 @@ const RUNTIME_SOURCES: &[&str] = &[
 ];
 
 #[test]
-fn the_generated_lua_loads() {
+fn xtypes_7_3_1_the_generated_lua_loads() {
     if !lua_available() {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the interpreter is exactly the failure this test
@@ -855,7 +855,7 @@ fn running_the_chunk_catches_what_parsing_it_does_not() {
 }
 
 #[test]
-fn the_executed_module_reports_its_members_in_idl_declaration_order() {
+fn xtypes_7_3_1_the_executed_module_reports_its_members_in_idl_declaration_order() {
     // The fact this whole column rests on, measured by running the module
     // rather than by reading the text: a Lua table has no order, so the
     // order is only there if it was written into the array part.
@@ -901,7 +901,7 @@ fn the_executed_module_reports_the_widths_lua_itself_cannot() {
 }
 
 #[test]
-fn the_executed_module_reaches_a_member_named_after_a_lua_keyword() {
+fn idl_7_2_3_the_executed_module_reaches_a_member_named_after_a_lua_keyword() {
     // `t.end` does not parse and `t["end"]` does, and both name the key
     // `"end"`. Measured, because it is the claim that this column renames
     // nothing.
@@ -925,7 +925,7 @@ fn the_executed_module_reaches_a_member_named_after_a_lua_keyword() {
 /// `--include-ignored` and its result is what
 /// `docs/language-columns-status.md` records.
 #[test]
-#[ignore = "one `lua` process per corpus case; run with --include-ignored"]
+#[ignore = "one `lua` process per corpus case; runs in integration-codegen-ada-lua-ocaml"]
 fn every_corpus_case_that_renders_also_loads() {
     assert!(
         lua_available(),

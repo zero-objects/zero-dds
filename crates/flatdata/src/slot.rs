@@ -106,13 +106,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn header_size_is_16() {
+    fn flatdata_2_header_size_is_16() {
         assert_eq!(SLOT_HEADER_SIZE, 16);
         assert_eq!(core::mem::size_of::<SlotHeader>(), SLOT_HEADER_SIZE);
     }
 
     #[test]
-    fn new_header_has_zero_mask() {
+    fn flatdata_2_new_header_has_zero_mask() {
         let h = SlotHeader::new(7, 24);
         assert_eq!(h.sequence_number, 7);
         assert_eq!(h.sample_size, 24);
@@ -120,7 +120,7 @@ mod tests {
     }
 
     #[test]
-    fn mark_read_sets_bit() {
+    fn flatdata_5_1_mark_read_sets_bit() {
         let mut h = SlotHeader::new(1, 24);
         h.mark_read(0);
         h.mark_read(2);
@@ -128,7 +128,7 @@ mod tests {
     }
 
     #[test]
-    fn all_read_with_two_active_readers() {
+    fn flatdata_5_1_all_read_with_two_active_readers() {
         let mut h = SlotHeader::new(1, 24);
         // Active readers: bit 0 + bit 1.
         let active = 0b011;
@@ -140,7 +140,7 @@ mod tests {
     }
 
     #[test]
-    fn inactive_reader_bits_dont_block() {
+    fn flatdata_5_1_inactive_reader_bits_dont_block() {
         let mut h = SlotHeader::new(1, 24);
         // Only reader 0 is active. Reader 5 has not set its bit
         // either — it must not block.
@@ -150,20 +150,25 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_le() {
+    fn flatdata_2_roundtrip_le() {
+        // zerodds-flatdata-1.0 §2: sequence_number at 0x00, sample_size at
+        // 0x04, reader_mask at 0x08, _reserved at 0x0c, each a
+        // little-endian u32.
         let h = SlotHeader {
             sequence_number: 0xAABB_CCDD,
             sample_size: 24,
             reader_mask: 0b1111_0000,
             _reserved: 0,
         };
-        let bytes = h.to_bytes_le();
-        let h2 = SlotHeader::from_bytes_le(&bytes).expect("decode");
-        assert_eq!(h, h2);
+        let octets = [
+            0xDD, 0xCC, 0xBB, 0xAA, 24, 0, 0, 0, 0xF0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert_eq!(h.to_bytes_le(), octets);
+        assert_eq!(SlotHeader::from_bytes_le(&octets).expect("decode"), h);
     }
 
     #[test]
-    fn from_bytes_too_short_returns_none() {
+    fn flatdata_2_from_bytes_too_short_returns_none() {
         assert!(SlotHeader::from_bytes_le(&[0u8; 15]).is_none());
     }
 }

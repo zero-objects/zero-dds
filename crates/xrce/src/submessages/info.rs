@@ -99,7 +99,7 @@ mod tests {
     /// reply in front the `ObjectInfo` is aligned from the start of the
     /// payload.
     #[test]
-    fn info_payload_is_the_reply_and_the_object_info() {
+    fn xrce_8_3_5_7_info_payload_is_the_reply_and_the_object_info() {
         use crate::object_id::OBJECTID_AGENT;
         use crate::object_info::{
             ActivityInfoVariant, BaseObjectRequest, ResultStatus, ResultStatusCode,
@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn info_roundtrip() {
+    fn xrce_8_3_5_7_info_roundtrip() {
         let p = InfoPayload {
             representation: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
         };

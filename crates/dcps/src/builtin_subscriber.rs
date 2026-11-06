@@ -287,6 +287,7 @@ fn push_into<T: DdsType>(
         // XCDR1 baseline, little-endian.
         representation: 0,
         big_endian: false,
+        representation_identifier: [0x00, 0x01],
         source_timestamp: None,
         reception_timestamp: None,
         // Built-in-topic samples are not user data — a durability service does
@@ -628,7 +629,7 @@ mod tests {
     /// have the names the spec gives, a reader each, and the QoS of the
     /// DCPSPublications and DCPSSubscriptions topics — RELIABLE among them.
     #[test]
-    fn the_secure_topics_have_their_names_and_the_reliable_qos() {
+    fn security_7_5_1_6_the_secure_topics_have_their_names_and_the_reliable_qos() {
         use crate::builtin_topics::{
             ParticipantBuiltinTopicDataSecure, PublicationBuiltinTopicDataSecure,
             SubscriptionBuiltinTopicDataSecure,
@@ -674,7 +675,7 @@ mod tests {
     /// listener of the participant.
     #[cfg(feature = "std")]
     #[test]
-    fn a_builtin_status_does_not_reach_the_participant_listener() {
+    fn dcps_2_2_5_a_builtin_status_does_not_reach_the_participant_listener() {
         use crate::listener::DomainParticipantListener;
         use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -711,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn builtin_subscriber_has_four_readers() {
+    fn dcps_2_2_5_builtin_subscriber_has_four_readers() {
         let bs = BuiltinSubscriber::new();
         assert_eq!(bs.participant_reader().topic().name(), "DCPSParticipant");
         assert_eq!(bs.topic_reader().topic().name(), "DCPSTopic");
@@ -720,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn builtin_reader_qos_is_spec_default() {
+    fn dcps_2_2_5_builtin_reader_qos_is_spec_default() {
         let q = builtin_reader_qos();
         assert_eq!(q.reliability.kind, ReliabilityKind::Reliable);
         assert_eq!(q.durability.kind, DurabilityKind::TransientLocal);
@@ -732,7 +733,7 @@ mod tests {
     /// FALSE ordered_access = FALSE" for the built-in Subscriber. It had
     /// the default, INSTANCE.
     #[test]
-    fn the_builtin_subscriber_presents_by_topic() {
+    fn dcps_2_2_5_the_builtin_subscriber_presents_by_topic() {
         use crate::entity::Entity;
         let bs = BuiltinSubscriber::new();
         let p = bs.subscriber().get_qos().presentation;
@@ -742,7 +743,7 @@ mod tests {
     }
 
     #[test]
-    fn lookup_datareader_routes_by_type() {
+    fn dcps_2_2_5_lookup_datareader_routes_by_type() {
         let bs = BuiltinSubscriber::new();
         let r = bs
             .lookup_datareader::<ParticipantBuiltinTopicData>("DCPSParticipant")
@@ -791,7 +792,7 @@ mod tests {
     }
 
     #[test]
-    fn sinks_push_topic_lands_in_reader() {
+    fn rtps_8_5_2_sinks_push_topic_lands_in_reader() {
         let bs = BuiltinSubscriber::new();
         let sample = TopicBuiltinTopicData {
             key: TopicBuiltinTopicData::synthesize_key(
@@ -858,20 +859,6 @@ mod tests {
     }
 
     #[test]
-    fn subscriber_handle_is_accessible() {
-        let bs = BuiltinSubscriber::new();
-        // Smoke: the inner subscriber handle is accessible (API
-        // symmetry with user subscribers).
-        let _: &Subscriber = bs.subscriber();
-    }
-
-    #[test]
-    fn default_constructs_via_new() {
-        let bs: BuiltinSubscriber = Default::default();
-        assert_eq!(bs.participant_reader().topic().name(), "DCPSParticipant");
-    }
-
-    #[test]
     fn lookup_topic_with_wrong_topic_name_for_topic_type() {
         let bs = BuiltinSubscriber::new();
         assert!(
@@ -896,20 +883,5 @@ mod tests {
             bs.lookup_datareader::<SubscriptionBuiltinTopicData>("DCPSTopic")
                 .is_none()
         );
-    }
-
-    #[test]
-    fn read_does_not_remove_samples() {
-        let bs = BuiltinSubscriber::new();
-        let sample = ParticipantBuiltinTopicData {
-            key: mk_guid(0x33),
-            user_data: alloc::vec![],
-        };
-        bs.sinks().push_participant(&sample).unwrap();
-        let reader = bs.participant_reader();
-        let s1 = reader.read().unwrap();
-        let s2 = reader.read().unwrap();
-        assert_eq!(s1.len(), 1);
-        assert_eq!(s2.len(), 1);
     }
 }

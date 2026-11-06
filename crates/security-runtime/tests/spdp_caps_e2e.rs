@@ -79,7 +79,7 @@ fn secure_caps() -> PeerCapabilities {
 }
 
 #[test]
-fn secure_caps_roundtrip_through_spdp_beacon() {
+fn security_7_3_2_secure_caps_roundtrip_through_spdp_beacon() {
     // --- Sender-Seite ---
     let mut data_a = baseline_participant(0xAA);
     advertise_security_caps(&mut data_a.properties, &secure_caps());

@@ -89,7 +89,7 @@ fn rig() -> (
     // `Ping` is keyless, so DDS 1.4 §2.2.2.5.1.10 treats the whole topic as
     // one implicit instance: the default HISTORY (`KEEP_LAST(1)`) would
     // keep only the most recent of the two writers' writes below, starving
-    // `publication_handle_distinguishes_two_writers`'s "both are visible"
+    // `dcps_2_2_2_5_5_publication_handle_distinguishes_two_writers`'s "both are visible"
     // claim. KEEP_ALL takes HISTORY out of the way; this file is not
     // testing it.
     let reader = subscriber
@@ -113,7 +113,7 @@ fn rig() -> (
 /// (`DcpsRuntime::user_reader_matched_publication_handles`) reports for the
 /// writer that sent it — not `HANDLE_NIL`.
 #[test]
-fn publication_handle_matches_get_matched_publications() {
+fn dcps_2_2_2_5_3_34_publication_handle_matches_get_matched_publications() {
     let (_p, writer, reader) = rig();
 
     writer.write(&Ping { seq: 1 }).expect("write");
@@ -144,7 +144,7 @@ fn publication_handle_matches_get_matched_publications() {
 /// `publication_handle`s on the reader side, each matching its own entry
 /// in `get_matched_publications()`.
 #[test]
-fn publication_handle_distinguishes_two_writers() {
+fn dcps_2_2_2_5_5_publication_handle_distinguishes_two_writers() {
     let (p, writer_a, reader) = rig();
     let topic = p
         .create_topic::<Ping>("PublicationHandlePings", TopicQos::default())
@@ -184,7 +184,7 @@ fn publication_handle_distinguishes_two_writers() {
 /// DCPSPublication reader holds discovered writers only; the C API
 /// listed this writer's handle and did not find its data.
 #[test]
-fn matched_data_of_a_same_participant_pair_names_the_other_endpoint() {
+fn dcps_2_2_2_4_2_23_matched_data_of_a_same_participant_pair_names_the_other_endpoint() {
     let domain = unique_domain();
     let p = DomainParticipantFactory::instance()
         .create_participant_with_config(domain, DomainParticipantQos::default(), isolated_cfg())

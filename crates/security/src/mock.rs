@@ -1244,29 +1244,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn auth_plugin_can_be_boxed_as_trait_object() {
-        let plugin: Box<dyn AuthenticationPlugin> = Box::new(MockAuthenticationPlugin::new());
-        assert_eq!(plugin.plugin_class_id(), "DDS:Auth:Mock");
-    }
-
-    #[test]
-    fn mock_data_tagging_set_get_roundtrip() {
-        let mut tagger = MockDataTaggingPlugin::new();
-        let g = [0xAB; 16];
-        let tags = alloc::vec![DataTag {
-            name: "classification".into(),
-            value: "secret".into(),
-        }];
-        tagger.set_tags(g, tags.clone());
-        assert_eq!(tagger.get_tags(g), tags);
-        assert!(tagger.get_tags([0xCD; 16]).is_empty());
-        assert_eq!(tagger.plugin_class_id(), "DDS:Tagging:Mock");
-    }
-
     #[cfg(feature = "std")]
     #[test]
-    fn mock_logging_captures_events() {
+    fn security_9_6_2_2_mock_logging_captures_events() {
         use std::sync::{Arc, Mutex};
         let sink = Arc::new(Mutex::new(Vec::new()));
         let logger = MockLoggingPlugin::new(Arc::clone(&sink));

@@ -220,6 +220,11 @@ pub fn emit_valuetype(out: &mut String, ctx: &Ctx<'_>, id: Id<TypeNode>) -> Resu
     for op_id in &exported {
         crate::interface_emit::emit_op_trait_method(out, ctx, &name, *op_id)?;
     }
+    // Attributes — rule (105) admits them beside the operations, and they
+    // map as an interface's do.
+    for attribute in ctx.ast.attributes_of_value(id) {
+        crate::interface_emit::emit_attr_trait_method(out, ctx, attribute)?;
+    }
 
     out.push_str("}\n\n");
 
@@ -227,7 +232,11 @@ pub fn emit_valuetype(out: &mut String, ctx: &Ctx<'_>, id: Id<TypeNode>) -> Resu
     // across the base chain.
     let mut fields = Vec::new();
     flatten_fields(ctx, id, &mut BTreeSet::new(), &mut fields)?;
-    emit_value_struct(out, ctx, &name, &repo_const, &fields)?;
+    let custom = kind == ValuetypeKind::Custom;
+    if custom {
+        emit_custom_marshal(out, &name);
+    }
+    emit_value_struct(out, ctx, &name, &repo_const, &fields, custom)?;
 
     // §15.3.4.3: a `truncatable` or `custom` valuetype needs its base
     // identifiers on the wire so a foreign ORB can truncate to a base.
@@ -252,6 +261,50 @@ pub fn emit_valuetype(out: &mut String, ctx: &Ctx<'_>, id: Id<TypeNode>) -> Resu
     Ok(())
 }
 
+/// The `CustomMarshal` of a `custom` valuetype, CORBA 3.3 part 1 §9.5.1:
+/// "Once a value type has been marked as custom, an implementation of the
+/// custom marshaling code must be provided. This is specified by providing
+/// a concrete implementation of an abstract value type, CustomMarshal, as
+/// part of the implementation of the value type." OMG IDL 4.2
+/// §7.4.7.4.4: "It is the responsibility of the implementation to marshal
+/// the state of all of its base types."
+///
+/// The application implements this trait on the state carrier; the
+/// generated `ValueMarshal` and the registered factory call it instead of
+/// writing and reading the declared state. The two operations of the IDL
+/// (`marshal(in DataOutputStream os)`, `unmarshal(in DataInputStream is)`)
+/// take the CDR stream the value is written to and read from.
+fn emit_custom_marshal(out: &mut String, name: &str) {
+    let lines = [
+        format!("/// The custom marshaling of valuetype `{name}` (CORBA 3.3 part 1 §9.5.1):"),
+        format!("/// implemented by the application on `{name}Value`, which the ORB calls"),
+        String::from("/// instead of writing the declared state."),
+        format!("pub trait {name}CustomMarshal: ::core::marker::Sized {{"),
+        String::from(
+            "    /// Writes the state of the value and of all its bases (OMG IDL 4.2 §7.4.7.4.4).",
+        ),
+        String::from("    ///"),
+        String::from("    /// # Errors"),
+        String::from("    /// A CDR encode error."),
+        String::from(
+            "    fn marshal(&self, os: &mut zerodds_wire::Writer) -> ::core::result::Result<(), zerodds_wire::WireError>;",
+        ),
+        String::from("    /// Reads what [`Self::marshal`] wrote."),
+        String::from("    ///"),
+        String::from("    /// # Errors"),
+        String::from("    /// A CDR decode error."),
+        String::from(
+            "    fn unmarshal(is: &mut zerodds_wire::Reader<'_>) -> ::core::result::Result<Self, zerodds_wire::WireError>;",
+        ),
+        String::from("}"),
+    ];
+    for line in lines {
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out.push('\n');
+}
+
 /// The concrete `<Name>Value` struct, its `ValueBase`, its
 /// `ValueMarshal` and its factory registration. §15.3.4.
 fn emit_value_struct(
@@ -260,6 +313,7 @@ fn emit_value_struct(
     name: &str,
     repo_const: &str,
     fields: &[ValueField],
+    custom: bool,
 ) -> Result<()> {
     let struct_name = format!("{name}Value");
 
@@ -285,13 +339,20 @@ fn emit_value_struct(
         "impl zerodds_corba_rust::value_wire::ValueMarshal for {struct_name} {{\n"
     ));
     out.push_str("    fn marshal_state(&self, w: &mut zerodds_wire::Writer) -> ::core::result::Result<(), zerodds_wire::WireError> {\n");
-    for field in fields {
-        let reference = zerodds_ast_core::Ref::Resolved(field.type_id);
-        let write = write_of(ctx.ast, &reference, "w", &format!("self.{}", field.name))?;
-        out.push_str(&format!("        {}\n", write.statement_propagating()));
+    if custom {
+        out.push_str(&format!(
+            "        <{struct_name} as {name}CustomMarshal>::marshal(self, w)\n"
+        ));
+        out.push_str("    }\n}\n\n");
+    } else {
+        for field in fields {
+            let reference = zerodds_ast_core::Ref::Resolved(field.type_id);
+            let write = write_of(ctx.ast, &reference, "w", &format!("self.{}", field.name))?;
+            out.push_str(&format!("        {}\n", write.statement_propagating()));
+        }
+        out.push_str("        ::core::result::Result::Ok(())\n");
+        out.push_str("    }\n}\n\n");
     }
-    out.push_str("        ::core::result::Result::Ok(())\n");
-    out.push_str("    }\n}\n\n");
 
     out.push_str(&format!(
         "/// Registers the ValueFactory for `{name}` in a `ValueRegistry` (§15.3.4 decode).\n"
@@ -303,6 +364,17 @@ fn emit_value_struct(
     out.push_str(&format!(
         "    reg.register({repo_const}_REPOSITORY_ID, ::std::boxed::Box::new(|r: &mut zerodds_wire::Reader<'_>| {{\n"
     ));
+    if custom {
+        out.push_str(&format!(
+            "        let value = <{struct_name} as {name}CustomMarshal>::unmarshal(r)?;\n"
+        ));
+        out.push_str(
+            "        ::core::result::Result::Ok(::std::rc::Rc::new(value) as ::std::rc::Rc<dyn ::core::any::Any>)\n",
+        );
+        out.push_str("    }));\n");
+        out.push_str("}\n\n");
+        return Ok(());
+    }
     for field in fields {
         let reference = zerodds_ast_core::Ref::Resolved(field.type_id);
         let read = read_of(ctx.ast, &reference, "r")?;

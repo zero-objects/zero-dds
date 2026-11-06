@@ -688,7 +688,7 @@ mod tests {
     }
 
     #[test]
-    fn a_data_class_indents_by_four_and_ends_every_property_but_the_last_in_a_comma() {
+    fn xtypes_7_5_1_a_data_class_indents_by_four_and_ends_every_property_but_the_last_in_a_comma() {
         let text = decl(&data_class(alloc::vec![
             property("x", Type::Primitive(Primitive::Int), Expr::int(0)),
             property("y", Type::Primitive(Primitive::Double), Expr::int(0)),
@@ -700,7 +700,7 @@ mod tests {
     }
 
     #[test]
-    fn an_int_array_is_the_specialised_form_and_a_named_type_is_boxed() {
+    fn xtypes_7_5_1_an_int_array_is_the_specialised_form_and_a_named_type_is_boxed() {
         assert_eq!(
             type_(&Type::array(Type::Primitive(Primitive::Int))),
             "IntArray"
@@ -717,7 +717,7 @@ mod tests {
     }
 
     #[test]
-    fn the_array_literal_factory_matches_the_array_type() {
+    fn xtypes_7_5_1_the_array_literal_factory_matches_the_array_type() {
         assert_eq!(
             expr_text(&Expr::ArrayOf {
                 element: alloc::boxed::Box::new(Type::Primitive(Primitive::Int)),
@@ -735,7 +735,7 @@ mod tests {
     }
 
     #[test]
-    fn a_constructor_call_writes_no_new() {
+    fn xtypes_7_5_1_a_constructor_call_writes_no_new() {
         assert_eq!(
             expr_text(&Expr::New {
                 type_: alloc::boxed::Box::new(Type::named("Pose")),
@@ -746,7 +746,7 @@ mod tests {
     }
 
     #[test]
-    fn a_nul_is_written_as_a_unicode_escape_because_kotlin_has_no_backslash_zero() {
+    fn xtypes_7_5_1_a_nul_is_written_as_a_unicode_escape_because_kotlin_has_no_backslash_zero() {
         assert_eq!(string_text("a\0b"), "a\\u0000b");
         assert_eq!(string_text("a\"b\\c"), "a\\\"b\\\\c");
         assert_eq!(string_text("price: $5"), "price: \\$5");

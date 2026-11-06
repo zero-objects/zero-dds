@@ -138,11 +138,3 @@ pub use topic_naming::{
     TopicNameOverrides, compose_topic_name, qualified_interface_name, reply_topic_name,
     request_topic_name, validate_service_name, validate_user_def_alpha_num,
 };
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn crate_compiles() {
-        // Smoke test: the crate compiles and the test harness runs.
-    }
-}

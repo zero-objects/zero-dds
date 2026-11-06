@@ -66,22 +66,29 @@ proc drain(args: DrainArgs) {.thread.} =
     if hb.isSome:
       sock.send(toStr(heartbeatFrame(SessionNoKey, StreamNone, msgSeq, hb.get)))
       inc msgSeq
-    # 5. drain incoming ACKNACKs (bounded, short timeout)
+    # 5. drain incoming ACKNACKs (bounded, short timeout). One datagram per
+    #    read: `net.recv(size, timeout)` waits for `size` bytes and raised
+    #    TimeoutError over a 17-byte ACKNACK, dropping it, so the window
+    #    never drained and the app ran into its 20 s valve (measured: 22 s
+    #    per run in the integration pillar, against 1.3 s for the other
+    #    languages).
     for _ in 0 ..< 64:
+      var fds = @[sock.getFd()]
+      if selectRead(fds, 20) <= 0:
+        break
       var buf = newString(2048)
-      var got = false
+      var fromAddress = ""
+      var fromPort: Port
+      var n = -1
       try:
-        let n = sock.recv(buf, 2048, timeout = 20)
-        if n > 0:
-          let ack = parseAcknack(toBytes(buf, n))
-          if ack.isSome:
-            sender.recvAcknack(ack.get)
-          got = true
-      except TimeoutError:
-        discard
+        n = sock.recvFrom(buf, 2048, fromAddress, fromPort)
       except OSError:
         discard
-      if not got: break
+      if n <= 0:
+        break
+      let ack = parseAcknack(toBytes(buf, n))
+      if ack.isSome:
+        sender.recvAcknack(ack.get)
     # 6. retransmit whatever is still in-flight (peer marked it missing)
     if sender.inFlightCount > 0:
       var pending: seq[tuple[seq: uint16, payload: seq[byte]]] = @[]

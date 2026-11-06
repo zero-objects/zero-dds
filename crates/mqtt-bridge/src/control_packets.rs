@@ -902,15 +902,18 @@ fn consume_properties(bytes: &[u8]) -> Result<(Vec<u8>, usize), CodecError> {
 mod tests {
     use super::*;
 
-    fn round<T, E, D>(value: T, encode: E, decode: D)
+    /// `value` encodes to the octets the clause gives (`expected`, written
+    /// out by hand from the packet's field layout or taken from the
+    /// specification's non-normative example), and those octets decode to
+    /// `value`.
+    fn octets<T, E, D>(value: T, expected: &[u8], encode: E, decode: D)
     where
         T: PartialEq + core::fmt::Debug + Clone,
         E: Fn(&T) -> Result<Vec<u8>, CodecError>,
         D: Fn(&[u8]) -> Result<T, CodecError>,
     {
-        let bytes = encode(&value).expect("encode");
-        let parsed = decode(&bytes).expect("decode");
-        assert_eq!(parsed, value);
+        assert_eq!(encode(&value).expect("encode"), expected);
+        assert_eq!(decode(expected).expect("decode"), value);
     }
 
     #[test]
@@ -928,14 +931,23 @@ mod tests {
         assert!(property_value(&props[..14], 0x21).is_err());
     }
 
+    /// §3.4.2: Packet Identifier, PUBACK Reason Code, Property Length and
+    /// the properties (a Reason String, §3.4.2.2.2).
     #[test]
-    fn ack_body_round_trip_with_properties() {
+    fn mqtt5_3_4_2_a_puback_is_packet_id_reason_code_and_properties() {
         let ack = AckBody {
             packet_id: 0x1234,
             reason_code: 0x10, // No matching subscribers
             properties: alloc::vec![0x1F, 0x00, 0x05, b'h', b'e', b'l', b'l', b'o'],
         };
-        round(ack, encode_ack_body, decode_ack_body);
+        octets(
+            ack,
+            &[
+                0x12, 0x34, 0x10, 0x08, 0x1F, 0x00, 0x05, b'h', b'e', b'l', b'l', b'o',
+            ],
+            encode_ack_body,
+            decode_ack_body,
+        );
     }
 
     #[test]
@@ -948,35 +960,20 @@ mod tests {
         assert!(parsed.properties.is_empty());
     }
 
+    /// §3.1.2.12, Figure 3-6: the variable header of the non-normative
+    /// example (protocol name "MQTT", version 5, flags 0xCE: user name,
+    /// password, will QoS 1, will, clean start; keep alive 10; a Session
+    /// Expiry Interval of 10), then the payload in the order of §3.1.3:
+    /// Client Identifier, Will Properties, Will Topic, Will Payload, User
+    /// Name, Password.
     #[test]
-    fn connect_body_round_trip_minimal() {
+    fn mqtt5_3_1_2_12_the_connect_of_figure_3_6_and_its_payload_in_the_order_of_3_1_3() {
         let c = ConnectBody {
             protocol_name: "MQTT".to_string(),
             protocol_version: 5,
-            connect_flags: 0x02, // Clean Start
-            keep_alive: 60,
-            properties: Vec::new(),
-            client_id: "test-client".to_string(),
-            will_properties: Vec::new(),
-            will_topic: None,
-            will_payload: Vec::new(),
-            user_name: None,
-            password: Vec::new(),
-        };
-        round(c, encode_connect_body, decode_connect_body);
-    }
-
-    #[test]
-    fn connect_body_round_trip_with_will_and_credentials() {
-        let c = ConnectBody {
-            protocol_name: "MQTT".to_string(),
-            protocol_version: 5,
-            connect_flags: connect_flags::CLEAN_START
-                | connect_flags::WILL
-                | connect_flags::USER_NAME
-                | connect_flags::PASSWORD,
-            keep_alive: 30,
-            properties: Vec::new(),
+            connect_flags: 0xCE,
+            keep_alive: 10,
+            properties: alloc::vec![0x11, 0x00, 0x00, 0x00, 0x0A],
             client_id: "edge-1".to_string(),
             will_properties: Vec::new(),
             will_topic: Some("status".to_string()),
@@ -984,75 +981,164 @@ mod tests {
             user_name: Some("alice".to_string()),
             password: alloc::vec![1, 2, 3, 4],
         };
-        round(c, encode_connect_body, decode_connect_body);
+        let mut expected = alloc::vec![
+            0x00, 0x04, b'M', b'Q', b'T', b'T', 0x05, 0xCE, 0x00, 0x0A, 0x05, 0x11, 0x00, 0x00,
+            0x00, 0x0A,
+        ];
+        expected.extend_from_slice(&[0x00, 0x06, b'e', b'd', b'g', b'e', b'-', b'1']);
+        expected.push(0x00); // Will Properties: length 0
+        expected.extend_from_slice(&[0x00, 0x06, b's', b't', b'a', b't', b'u', b's']);
+        expected.extend_from_slice(&[0x00, 0x02, 0xDE, 0xAD]);
+        expected.extend_from_slice(&[0x00, 0x05, b'a', b'l', b'i', b'c', b'e']);
+        expected.extend_from_slice(&[0x00, 0x04, 1, 2, 3, 4]);
+        octets(c, &expected, encode_connect_body, decode_connect_body);
     }
 
+    /// §3.1.2.4 to §3.1.2.11 and §3.1.3.1: with only Clean Start set, the
+    /// payload is the Client Identifier alone.
     #[test]
-    fn connack_body_round_trip() {
+    fn mqtt5_3_1_3_without_will_and_credentials_the_payload_is_the_client_identifier() {
+        let c = ConnectBody {
+            protocol_name: "MQTT".to_string(),
+            protocol_version: 5,
+            connect_flags: connect_flags::CLEAN_START,
+            keep_alive: 60,
+            properties: Vec::new(),
+            client_id: "c1".to_string(),
+            will_properties: Vec::new(),
+            will_topic: None,
+            will_payload: Vec::new(),
+            user_name: None,
+            password: Vec::new(),
+        };
+        octets(
+            c,
+            &[
+                0x00, 0x04, b'M', b'Q', b'T', b'T', 0x05, 0x02, 0x00, 0x3C, 0x00, 0x00, 0x02, b'c',
+                b'1',
+            ],
+            encode_connect_body,
+            decode_connect_body,
+        );
+    }
+
+    /// §3.2.2: Connect Acknowledge Flags (bit 0 Session Present), Connect
+    /// Reason Code, Property Length and the properties (Receive Maximum,
+    /// §3.2.2.3.3).
+    #[test]
+    fn mqtt5_3_2_2_a_connack_is_flags_reason_code_and_properties() {
         let c = ConnackBody {
             session_present: true,
             reason_code: 0x00,
             properties: alloc::vec![0x21, 0x00, 0x10], // Receive Maximum = 16
         };
-        round(c, encode_connack_body, decode_connack_body);
+        octets(
+            c,
+            &[0x01, 0x00, 0x03, 0x21, 0x00, 0x10],
+            encode_connack_body,
+            decode_connack_body,
+        );
     }
 
+    /// §3.8.2 and §3.8.3: the variable header of Figure 3-19 (Packet
+    /// Identifier 10, no properties) and the payload of Figure 3-21 ("a/b"
+    /// with options 1, "c/d" with options 2).
     #[test]
-    fn subscribe_body_round_trip_with_two_filters() {
+    fn mqtt5_3_8_the_subscribe_of_figures_3_19_and_3_21() {
         let s = SubscribeBody {
-            packet_id: 1,
+            packet_id: 10,
             properties: Vec::new(),
             subscriptions: alloc::vec![
                 Subscription {
-                    topic_filter: "sensors/+".to_string(),
-                    options: 0x01, // QoS 1
+                    topic_filter: "a/b".to_string(),
+                    options: 0x01,
                 },
                 Subscription {
-                    topic_filter: "alerts/#".to_string(),
-                    options: 0x02, // QoS 2
+                    topic_filter: "c/d".to_string(),
+                    options: 0x02,
                 }
             ],
         };
-        round(s, encode_subscribe_body, decode_subscribe_body);
+        octets(
+            s,
+            &[
+                0x00, 0x0A, 0x00, 0x00, 0x03, b'a', b'/', b'b', 0x01, 0x00, 0x03, b'c', b'/', b'd',
+                0x02,
+            ],
+            encode_subscribe_body,
+            decode_subscribe_body,
+        );
     }
 
+    /// §3.9.2 and §3.9.3: Packet Identifier, Property Length, then one
+    /// Reason Code per Topic Filter (Table 3-8: Granted QoS 0, Granted QoS
+    /// 1, Unspecified error).
     #[test]
-    fn suback_body_round_trip_with_reason_codes() {
+    fn mqtt5_3_9_a_suback_is_packet_id_properties_and_a_reason_code_per_filter() {
         let s = SubackBody {
-            packet_id: 1,
+            packet_id: 10,
             properties: Vec::new(),
-            reason_codes: alloc::vec![0x00, 0x01, 0x80], // Granted-0, Granted-1, Failure
+            reason_codes: alloc::vec![0x00, 0x01, 0x80],
         };
-        round(s, encode_suback_body, decode_suback_body);
+        octets(
+            s,
+            &[0x00, 0x0A, 0x00, 0x00, 0x01, 0x80],
+            encode_suback_body,
+            decode_suback_body,
+        );
     }
 
+    /// §3.10.2 and §3.10.3: Packet Identifier, Property Length, then the
+    /// payload of Figure 3.30 ("a/b", "c/d").
     #[test]
-    fn unsubscribe_body_round_trip() {
+    fn mqtt5_3_10_the_unsubscribe_payload_of_figure_3_30() {
         let u = UnsubscribeBody {
             packet_id: 5,
             properties: Vec::new(),
             topic_filters: alloc::vec!["a/b".to_string(), "c/d".to_string()],
         };
-        round(u, encode_unsubscribe_body, decode_unsubscribe_body);
+        octets(
+            u,
+            &[
+                0x00, 0x05, 0x00, 0x00, 0x03, b'a', b'/', b'b', 0x00, 0x03, b'c', b'/', b'd',
+            ],
+            encode_unsubscribe_body,
+            decode_unsubscribe_body,
+        );
     }
 
+    /// §3.11.2 and §3.11.3: Packet Identifier, Property Length, one Reason
+    /// Code per Topic Filter (Table 3-9: Success, No subscription
+    /// existed).
     #[test]
-    fn unsuback_body_round_trip_via_alias() {
+    fn mqtt5_3_11_an_unsuback_is_packet_id_properties_and_a_reason_code_per_filter() {
         let u = UnsubackBody {
             packet_id: 5,
             properties: Vec::new(),
-            reason_codes: alloc::vec![0x00, 0x11], // Success, No subscription existed
+            reason_codes: alloc::vec![0x00, 0x11],
         };
-        round(u, encode_unsuback_body, decode_unsuback_body);
+        octets(
+            u,
+            &[0x00, 0x05, 0x00, 0x00, 0x11],
+            encode_unsuback_body,
+            decode_unsuback_body,
+        );
     }
 
+    /// §3.14.2, Figure 3-24: Reason Code 0, Property Length 5, Session
+    /// Expiry Interval 0.
     #[test]
-    fn disconnect_body_round_trip_with_reason_string_property() {
+    fn mqtt5_3_14_2_the_disconnect_of_figure_3_24() {
         let d = DisconnectBody {
-            reason_code: 0x82, // Protocol Error
-            properties: alloc::vec![0x1F, 0x00, 0x03, b'b', b'a', b'd'],
+            reason_code: 0x00,
+            properties: alloc::vec![0x11, 0x00, 0x00, 0x00, 0x00],
         };
-        round(d, encode_disconnect_body, decode_disconnect_body);
+        octets(
+            d,
+            &[0x00, 0x05, 0x11, 0x00, 0x00, 0x00, 0x00],
+            encode_disconnect_body,
+            decode_disconnect_body,
+        );
     }
 
     #[test]
@@ -1063,13 +1149,23 @@ mod tests {
         assert!(parsed.properties.is_empty());
     }
 
+    /// §3.15.2: Authenticate Reason Code (0x18 Continue authentication,
+    /// Table 3-13), Property Length and the properties (Authentication
+    /// Method, §3.15.2.2.2).
     #[test]
-    fn auth_body_round_trip_via_alias() {
+    fn mqtt5_3_15_2_an_auth_is_reason_code_and_properties() {
         let a = AuthBody {
-            reason_code: 0x18, // Continue authentication
+            reason_code: 0x18,
             properties: alloc::vec![0x15, 0x00, 0x06, b'S', b'C', b'R', b'A', b'M', b'!'],
         };
-        round(a, encode_auth_body, decode_auth_body);
+        octets(
+            a,
+            &[
+                0x18, 0x09, 0x15, 0x00, 0x06, b'S', b'C', b'R', b'A', b'M', b'!',
+            ],
+            encode_auth_body,
+            decode_auth_body,
+        );
     }
 
     #[test]
@@ -1104,7 +1200,7 @@ mod tests {
     // ---- MQTT 3.1.1 version-aware codec --------------------------------
 
     #[test]
-    fn v311_connect_omits_property_blocks() {
+    fn mqtt311_3_1_v311_connect_omits_property_blocks() {
         // A 3.1.1 CONNECT must not carry the CONNECT or Will property VBI.
         let c = ConnectBody {
             protocol_name: "MQTT".to_string(),
@@ -1135,7 +1231,7 @@ mod tests {
     }
 
     #[test]
-    fn v311_connack_is_exactly_two_bytes() {
+    fn mqtt311_3_2_v311_connack_is_exactly_two_bytes() {
         let c = ConnackBody {
             session_present: true,
             reason_code: 0x00,
@@ -1148,7 +1244,7 @@ mod tests {
     }
 
     #[test]
-    fn v311_ack_is_packet_id_only() {
+    fn mqtt311_3_4_v311_ack_is_packet_id_only() {
         let a = AckBody {
             packet_id: 0x1234,
             reason_code: 0x10, // ignored in 3.1.1
@@ -1167,7 +1263,7 @@ mod tests {
     }
 
     #[test]
-    fn v311_suback_has_no_property_block() {
+    fn mqtt311_3_9_v311_suback_has_no_property_block() {
         let s = SubackBody {
             packet_id: 1,
             properties: Vec::new(),
@@ -1181,7 +1277,7 @@ mod tests {
     }
 
     #[test]
-    fn v311_unsuback_is_packet_id_only_no_reason_codes() {
+    fn mqtt311_3_10_v311_unsuback_is_packet_id_only_no_reason_codes() {
         let u = UnsubackBody {
             packet_id: 7,
             properties: Vec::new(),
@@ -1199,7 +1295,7 @@ mod tests {
     }
 
     #[test]
-    fn v311_disconnect_body_is_empty() {
+    fn mqtt311_3_14_v311_disconnect_body_is_empty() {
         let d = DisconnectBody {
             reason_code: 0x82,
             properties: alloc::vec![0x1F, 0x00, 0x03, b'b', b'a', b'd'],

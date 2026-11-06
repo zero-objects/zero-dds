@@ -85,7 +85,8 @@ int main() {\n\
 }\n";
 
 #[test]
-fn two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults() {
+fn idl4cpp_7_2_4_3_1_two_generated_headers_share_a_translation_unit_and_their_structs_start_at_their_defaults()
+ {
     let cxx = ["c++", "g++", "clang++"].iter().find(|candidate| {
         Command::new(candidate)
             .arg("--version")

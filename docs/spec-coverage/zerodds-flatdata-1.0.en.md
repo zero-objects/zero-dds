@@ -12,7 +12,7 @@ Implementation:
   embedding.
 - `crates/dcps/` — same-host binding, wire-path routing, DCPS integration.
 
-Open items and decision records: `zerodds-flatdata-1.0.open.en.md`.
+Open items: `zerodds-flatdata-1.0.open.en.md`.
 
 ## Goals and non-goals
 
@@ -54,9 +54,7 @@ iceoryx2-bridge` (not part of v1.0)."
 
 **Tests:** —
 
-**Status:** n/a (informative) — the spec itself puts the point outside its
-scope; no requirement on the tree follows. The corresponding design
-decision is D-7 below.
+**Status:** open — the spec points to a separate spec that does not exist in `docs/specs/`; cross-host zero-copy over RDMA or DPDK has neither a spec nor code.
 
 ## §1 FlatStruct type model
 
@@ -71,9 +69,8 @@ from_bytes_unchecked(bytes: &[u8]) -> Self`.
 associated items; the default body of `as_bytes` is a byte cast over
 `WIRE_SIZE`).
 
-**Tests:** `crates/flatdata/src/lib.rs::tests::wire_size_matches_size_of`,
-`crates/flatdata/src/lib.rs::tests::as_bytes_roundtrip`,
-`crates/flatdata/src/lib.rs::tests::type_hash_is_consistent`
+**Tests:** `crates/flatdata/src/lib.rs::tests::flatdata_1_1_wire_size_matches_size_of`,
+`crates/flatdata/src/lib.rs::tests::flatdata_1_1_as_bytes_roundtrip`
 
 **Status:** done
 
@@ -87,12 +84,11 @@ FlatStruct for T`"; "The `TYPE_HASH` is
 `expand`, `layout_signature`, `type_signature`; SHA-256 over the layout
 signature, first 16 bytes as `TYPE_HASH`).
 
-**Tests:** `crates/flatdata/tests/derive.rs::derive_generates_wire_size`,
-`crates/flatdata/tests/derive.rs::derive_generates_type_hash_nonzero`,
-`crates/flatdata/tests/derive.rs::derive_as_bytes_roundtrip`,
-`crates/flatdata/tests/derive.rs::derive_works_for_tuple_struct`,
-`crates/flatdata/tests/derive.rs::derive_works_for_unit_struct`,
-`crates/flatdata/tests/derive.rs::derive_hash_is_deterministic_for_identical_layout`,
+**Tests:** `crates/flatdata/tests/derive.rs::flatdata_1_2_derive_generates_wire_size`,
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_generates_type_hash_nonzero`,
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_works_for_tuple_struct`,
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_works_for_unit_struct`,
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_hash_is_deterministic_for_identical_layout`,
 `crates/flatdata-derive/src/lib.rs::tests::layout_signature_covers_name_order_and_types`
 
 **Status:** done
@@ -110,7 +106,7 @@ signature, first 16 bytes as `TYPE_HASH`).
 `crates/flatdata-derive/src/lib.rs::tests::derive_rejects_union`,
 `crates/flatdata-derive/src/lib.rs::tests::derive_rejects_struct_without_repr_c`,
 `crates/flatdata-derive/src/lib.rs::tests::repr_attribute_gate_accepts_c_and_transparent_only`,
-`crates/flatdata/tests/derive.rs::derive_accepts_repr_transparent`
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_accepts_repr_transparent`
 
 **Status:** done
 
@@ -122,10 +118,10 @@ so a rename, a field reorder and a field type change all reach the hash.
 **Repo:** `crates/flatdata-derive/src/lib.rs` (`layout_signature` writes
 type name, field names and field types into the hash input).
 
-**Tests:** `crates/flatdata/tests/derive.rs::derive_detects_field_reorder`,
-`crates/flatdata/tests/derive.rs::derive_detects_field_type_change`,
-`crates/flatdata/tests/derive.rs::derive_detects_type_rename`,
-`crates/flatdata/tests/derive.rs::derive_generates_distinct_hash_per_layout`
+**Tests:** `crates/flatdata/tests/derive.rs::flatdata_1_2_derive_detects_field_reorder`,
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_detects_field_type_change`,
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_detects_type_rename`,
+`crates/flatdata/tests/derive.rs::flatdata_1_2_derive_generates_distinct_hash_per_layout`
 
 **Status:** done
 
@@ -141,10 +137,10 @@ sample_size`, `0x08 u32 reader_mask`, `0x0c u32 _reserved`;
 `SLOT_HEADER_SIZE`, `to_le_bytes`/`from_bytes` in exactly that field
 order).
 
-**Tests:** `crates/flatdata/src/slot.rs::tests::header_size_is_16`,
-`crates/flatdata/src/slot.rs::tests::roundtrip_le`,
-`crates/flatdata/src/slot.rs::tests::from_bytes_too_short_returns_none`,
-`crates/flatdata/src/slot.rs::tests::new_header_has_zero_mask`
+**Tests:** `crates/flatdata/src/slot.rs::tests::flatdata_2_header_size_is_16`,
+`crates/flatdata/src/slot.rs::tests::flatdata_2_roundtrip_le`,
+`crates/flatdata/src/slot.rs::tests::flatdata_2_from_bytes_too_short_returns_none`,
+`crates/flatdata/src/slot.rs::tests::flatdata_2_new_header_has_zero_mask`
 
 **Status:** done
 
@@ -159,8 +155,8 @@ slot_capacity` up to the next multiple of 64),
 `crates/flatdata/src/posix.rs` (`PosixSlotAllocator` lays the segment out
 with the same `slot_total_size`).
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::slot_total_size_is_cache_line_padded`,
-`crates/flatdata/src/posix.rs::tests::create_attach_roundtrip`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_2_slot_total_size_is_cache_line_padded`,
+`crates/flatdata/src/posix.rs::tests::flatdata_2_create_attach_roundtrip`
 
 **Status:** done
 
@@ -176,10 +172,10 @@ hostname-hash (FNV-1a of the hostname bytes)`, `u32 uid`, `u32 slot_count`,
 0x8001`), `crates/flatdata/src/locator.rs` (`ShmLocator` with
 `to_bytes`/`from_bytes` in exactly that field order, `fnv1a_32`).
 
-**Tests:** `crates/flatdata/src/locator.rs::tests::roundtrip_le`,
-`crates/flatdata/src/locator.rs::tests::truncated_header_errors`,
-`crates/flatdata/src/locator.rs::tests::path_too_long_errors`,
-`crates/flatdata/src/locator.rs::tests::fnv1a_known_value`
+**Tests:** `crates/flatdata/src/locator.rs::tests::flatdata_3_1_roundtrip_le`,
+`crates/flatdata/src/locator.rs::tests::flatdata_3_1_truncated_header_errors`,
+`crates/flatdata/src/locator.rs::tests::flatdata_3_1_path_too_long_errors`,
+`crates/flatdata/src/locator.rs::tests::flatdata_3_1_fnv1a_known_value`
 
 **Status:** done
 
@@ -218,10 +214,10 @@ fields against the local host; `fnv1a_32` as the hash),
 participant SPDP reports with the same `host_id` gets an SHM channel),
 `crates/dcps/src/same_host_channel.rs` (`SameHostChannels::add_peer`).
 
-**Tests:** `crates/flatdata/src/locator.rs::tests::same_host_match_positive`,
-`crates/flatdata/src/locator.rs::tests::same_host_mismatch_uid`,
-`crates/flatdata/src/locator.rs::tests::same_host_mismatch_hostname`,
-`crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not`
+**Tests:** `crates/flatdata/src/locator.rs::tests::flatdata_3_2_same_host_match_positive`,
+`crates/flatdata/src/locator.rs::tests::flatdata_3_2_same_host_mismatch_uid`,
+`crates/flatdata/src/locator.rs::tests::flatdata_3_2_same_host_mismatch_hostname`,
+`crates/dcps/src/same_host_channel.rs::tests::flatdata_3_2_a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not`
 
 **Status:** done
 
@@ -236,9 +232,9 @@ maps the segment named by the locator; failures surface as
 (`SameHostChannels::open`: when mapping fails the participant gets no
 channel and stays on UDP; event `shm.channel_open_failed`).
 
-**Tests:** `crates/flatdata/src/posix.rs::tests::create_attach_roundtrip`,
-`crates/flatdata/src/posix.rs::tests::write_read_through_shm`,
-`crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not`
+**Tests:** `crates/flatdata/src/posix.rs::tests::flatdata_2_create_attach_roundtrip`,
+`crates/flatdata/src/posix.rs::tests::flatdata_3_2_write_read_through_shm`,
+`crates/dcps/src/same_host_channel.rs::tests::flatdata_3_2_a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not`
 (before the peer opened its ring nothing goes through the channel)
 
 **Status:** done
@@ -257,9 +253,9 @@ channel and stays on UDP; event `shm.channel_open_failed`).
 `segment_id` and `slot_index`), `crates/flatdata/src/posix.rs`
 (`PosixSlotAllocator` implements the same trait over mmap).
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::reserve_returns_first_free_slot`,
-`crates/flatdata/src/allocator.rs::tests::reserve_returns_no_free_slot_when_all_loaned`,
-`crates/flatdata/src/posix.rs::tests::create_attach_roundtrip`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_4_1_reserve_returns_first_free_slot`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_4_1_reserve_returns_no_free_slot_when_all_loaned`,
+`crates/flatdata/src/posix.rs::tests::flatdata_2_create_attach_roundtrip`
 
 **Status:** done
 
@@ -274,9 +270,9 @@ reserved slot, `commit_in_place` finishes without a staging copy),
 `crates/flatdata/src/pubsub.rs` (`FlatSlot::as_mut`,
 `FlatSlot::commit_in_place`).
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::in_place_loan_writes_without_staging_copy`,
-`crates/flatdata/src/allocator.rs::tests::slot_data_ptr_rejects_unreserved_slot`,
-`crates/flatdata/src/pubsub.rs::tests::writer_loan_in_place_zero_copy`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_4_1_in_place_loan_writes_without_staging_copy`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_4_1_slot_data_ptr_rejects_unreserved_slot`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_4_1_writer_loan_in_place_zero_copy`
 
 **Status:** done
 
@@ -291,10 +287,10 @@ reserved slot, `commit_in_place` finishes without a staging copy),
 `crates/flatdata/src/posix.rs` (`PosixSlotAllocator::commit_slot`,
 `next_sn` as an atomic counter in the segment header).
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::commit_writes_bytes_and_increments_sn`,
-`crates/flatdata/src/allocator.rs::tests::commit_too_large_returns_error`,
-`crates/flatdata/src/slot.rs::tests::new_header_has_zero_mask`,
-`crates/flatdata/src/posix.rs::tests::next_sn_increments_atomically`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_4_1_commit_writes_bytes_and_increments_sn`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_4_1_commit_too_large_returns_error`,
+`crates/flatdata/src/slot.rs::tests::flatdata_2_new_header_has_zero_mask`,
+`crates/flatdata/src/posix.rs::tests::flatdata_4_1_next_sn_increments_atomically`
 
 **Status:** done
 
@@ -315,13 +311,13 @@ no-op. A waiter count at 0x14 in the segment header counts the parked
 threads of all processes; a bump wakes only when it is not 0),
 `crates/flatdata/src/pubsub.rs` (`FlatReader::read_blocking`).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::read_blocking_wakes_on_commit`,
-`crates/flatdata/src/pubsub.rs::tests::read_blocking_times_out_without_writer`,
-`crates/flatdata/src/posix.rs::tests::futex_notify_wakes_consumer_across_mappings`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_4_1_read_blocking_wakes_on_commit`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_4_1_read_blocking_times_out_without_writer`,
+`crates/flatdata/src/posix.rs::tests::flatdata_4_1_futex_notify_wakes_consumer_across_mappings`
 (Linux on the Linux test host, macOS 26),
-`crates/flatdata/src/posix.rs::tests::every_bump_reaches_a_parked_peer_and_the_count_returns_to_zero`
+`crates/flatdata/src/posix.rs::tests::flatdata_4_1_every_bump_reaches_a_parked_peer_and_the_count_returns_to_zero`
 (2 000 hand-overs through 4 slots, no park runs to its timeout; the Linux test host),
-`crates/flatdata/src/posix.rs::tests::a_segment_without_the_waiter_count_is_refused`
+`crates/flatdata/src/posix.rs::tests::flatdata_4_1_a_segment_without_the_waiter_count_is_refused`
 
 **Status:** partial — event-driven for the in-memory backend (condvar)
 and the POSIX backend on Linux and macOS. On the BSDs and Windows the
@@ -340,10 +336,10 @@ only once `SlotHeader::all_read` holds for the active reader mask),
 `crates/zerodds-c-api/src/shm_loan_ffi.rs` (`zerodds_dr_take_shm` /
 `zerodds_dr_release_shm` as a zero-copy consumer of the same primitives).
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::slot_recyclable_after_all_readers_marked`,
-`crates/flatdata/src/pubsub.rs::tests::reader_recycles_slot_after_read`,
-`crates/flatdata/src/posix.rs::tests::mark_read_visible_to_owner`,
-`crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_writer_to_reader_zero_copy`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_4_1_slot_recyclable_after_all_readers_marked`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_4_1_reader_recycles_slot_after_read`,
+`crates/flatdata/src/posix.rs::tests::flatdata_4_1_mark_read_visible_to_owner`,
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::capi_2_6_shm_loan_writer_to_reader_zero_copy`
 
 **Status:** done
 
@@ -360,8 +356,8 @@ of `user_unicast`), `crates/dcps/src/runtime.rs` (`send_metatraffic`). The
 split per reader follows from its locators: a reader on another host has
 no channel, and its datagram goes over UDP unchanged.
 
-**Tests:** `crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (on any host),
-`crates/dcps/tests/same_host_e2e.rs::e2e_cross_vendor_different_host_id_no_shm_bind`
+**Tests:** `crates/dcps/src/same_host_channel.rs::tests::flatdata_3_2_a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (on any host),
+`crates/dcps/tests/same_host_e2e.rs::flatdata_4_2_e2e_cross_vendor_different_host_id_no_shm_bind`
 (Linux, Linux test host)
 
 **Status:** done
@@ -396,10 +392,10 @@ all bits are set = all readers have read".
 `SlotHeader::mark_read`, `SlotHeader::all_read` against the active reader
 mask).
 
-**Tests:** `crates/flatdata/src/slot.rs::tests::mark_read_sets_bit`,
-`crates/flatdata/src/slot.rs::tests::all_read_with_two_active_readers`,
-`crates/flatdata/src/slot.rs::tests::inactive_reader_bits_dont_block`,
-`crates/flatdata/src/allocator.rs::tests::slot_recyclable_after_all_readers_marked`
+**Tests:** `crates/flatdata/src/slot.rs::tests::flatdata_5_1_mark_read_sets_bit`,
+`crates/flatdata/src/slot.rs::tests::flatdata_5_1_all_read_with_two_active_readers`,
+`crates/flatdata/src/slot.rs::tests::flatdata_5_1_inactive_reader_bits_dont_block`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_4_1_slot_recyclable_after_all_readers_marked`
 
 **Status:** done
 
@@ -415,11 +411,11 @@ exhausted), `crates/flatdata/src/allocator.rs`
 (`InMemorySlotAllocator::evict_stale` frees committed, not fully read,
 not loaned slots whose `committed_at` is older than `max_age`).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::straggler_timeout_defaults_to_sixty_seconds`,
-`crates/flatdata/src/pubsub.rs::tests::write_reclaims_a_slot_held_past_the_straggler_timeout`,
-`crates/flatdata/src/pubsub.rs::tests::loan_slot_reclaims_a_slot_held_past_the_straggler_timeout`,
-`crates/flatdata/src/allocator.rs::tests::evict_stale_frees_slot_held_by_hung_reader`,
-`crates/flatdata/src/allocator.rs::tests::evict_stale_leaves_read_slots_untouched`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_straggler_timeout_defaults_to_sixty_seconds`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_write_reclaims_a_slot_held_past_the_straggler_timeout`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_loan_slot_reclaims_a_slot_held_past_the_straggler_timeout`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_5_1_evict_stale_frees_slot_held_by_hung_reader`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_5_1_evict_stale_leaves_read_slots_untouched`
 
 **Status:** done
 
@@ -434,9 +430,9 @@ RESOURCE_LIMITS."
 `ChangeNotify` until the deadline, `BestEffort` returns
 `WriteOutcome::Dropped` immediately).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::write_bp_best_effort_drops_when_full`,
-`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_blocks_until_reader_frees`,
-`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_times_out`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_write_bp_best_effort_drops_when_full`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_write_bp_reliable_blocks_until_reader_frees`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_write_bp_reliable_times_out`
 
 **Status:** done
 
@@ -450,7 +446,7 @@ is free."
 (`InMemorySlotAllocator::mark_reader_disconnected` sets that reader's bit
 on every committed slot and wakes blocked writers).
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::reader_disconnect_frees_blocked_slots`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_5_2_reader_disconnect_frees_blocked_slots`
 
 **Status:** done
 
@@ -466,9 +462,9 @@ slot drop."
 every slot whose payload is shorter than `T::WIRE_SIZE` and never
 dereferences it).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_write_then_reader_read`,
-`crates/flatdata/src/pubsub.rs::tests::reader_does_not_re_read_same_slot`,
-`crates/flatdata/src/allocator.rs::tests::commit_too_large_returns_error`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_6_1_writer_write_then_reader_read`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_6_1_reader_does_not_re_read_same_slot`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_4_1_commit_too_large_returns_error`
 
 **Status:** done
 
@@ -486,10 +482,10 @@ touching any slot when the backend hash is not `T::TYPE_HASH`),
 rather than a sample on drift; `write_flat` without a backend takes the
 UDP path).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::reader_rejects_type_hash_mismatch`,
-`crates/flatdata/src/pubsub.rs::tests::reader_accepts_matching_type_hash`,
-`crates/dcps/tests/flatdata_integration.rs::datareader_read_flat_rejects_type_hash_mismatch`,
-`crates/dcps/tests/flatdata_integration.rs::datawriter_write_flat_falls_back_to_udp_without_backend`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_6_1_reader_rejects_type_hash_mismatch`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_6_1_reader_accepts_matching_type_hash`,
+`crates/dcps/tests/flatdata_integration.rs::flatdata_6_1_datareader_read_flat_rejects_type_hash_mismatch`,
+`crates/dcps/tests/flatdata_integration.rs::flatdata_6_1_datawriter_write_flat_falls_back_to_udp_without_backend`
 
 **Status:** done
 
@@ -505,10 +501,10 @@ Cross-user access is refused by the OS."
 `S_IRUSR | S_IWUSR`); `create` sets the flink file to 0600 under
 `#[cfg(unix)]`, and on Linux the `/dev/shm` object as well).
 
-**Tests:** `crates/flatdata/src/posix.rs::tests::flink_file_is_owner_only_0600`,
-`crates/flatdata/src/posix.rs::tests::segment_is_owner_only_0600`
-(Linux, Linux test host), `crates/flatdata/src/posix.rs::tests::shm_object_is_owner_only_0600_by_descriptor` (reads the mode off a descriptor of the
-object; macOS 26)
+**Tests:** `crates/flatdata/src/posix.rs::tests::flatdata_7_1_flink_file_is_owner_only_0600`,
+`crates/flatdata/src/posix.rs::tests::flatdata_7_1_segment_is_owner_only_0600`
+(Linux, Linux test host), `crates/flatdata/src/posix.rs::tests::flatdata_7_1_shm_object_is_owner_only_0600_by_descriptor` (reads the mode off a descriptor of the
+object; Linux, macOS 26)
 
 **Status:** done
 
@@ -522,7 +518,7 @@ outside of `[0, slot_count)` drops it."
 `slot_read_ptr` return `SlotError::OutOfBounds` for an index outside the
 pool before dereferencing any slot.
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::slot_index_out_of_bounds_is_rejected`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_7_2_slot_index_out_of_bounds_is_rejected`
 
 **Status:** done
 
@@ -537,10 +533,10 @@ Spec §4.1: reserve + write + commit in one call."
 `crates/dcps/src/flatdata_integration.rs` (`write_flat` on the DCPS
 `DataWriter` under the bound `T: DdsType + FlatStruct`).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_write_then_reader_read`,
-`crates/dcps/tests/flatdata_integration.rs::datawriter_write_flat_uses_configured_backend`,
-`crates/dcps/tests/flatdata_integration.rs::flat_writer_ext_writes_to_backend`,
-`crates/dcps/tests/flatdata_integration.rs::datawriter_set_flat_backend_none_disables_shm_path`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_6_1_writer_write_then_reader_read`,
+`crates/dcps/tests/flatdata_integration.rs::flatdata_8_1_datawriter_write_flat_uses_configured_backend`,
+`crates/dcps/tests/flatdata_integration.rs::flatdata_8_1_flat_writer_ext_writes_to_backend`,
+`crates/dcps/tests/flatdata_integration.rs::flatdata_8_1_datawriter_set_flat_backend_none_disables_shm_path`
 
 **Status:** done
 
@@ -554,11 +550,11 @@ self, sample: T)` plus `commit(self) -> Result<()>`.
 `FlatSlot` with `commit`, `as_mut`, `commit_in_place`; `Drop` discards an
 uncommitted loan).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_loan_commit_pattern`,
-`crates/flatdata/src/pubsub.rs::tests::writer_loan_in_place_zero_copy`,
-`crates/flatdata/src/pubsub.rs::tests::loan_drop_without_commit_releases_slot`,
-`crates/flatdata/src/allocator.rs::tests::commit_in_place_too_large_returns_error`,
-`crates/flatdata/src/allocator.rs::tests::discard_frees_slot_for_reuse`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_8_2_writer_loan_commit_pattern`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_4_1_writer_loan_in_place_zero_copy`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_8_2_loan_drop_without_commit_releases_slot`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_8_2_commit_in_place_too_large_returns_error`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_8_2_discard_frees_slot_for_reuse`
 
 **Status:** done
 
@@ -578,11 +574,11 @@ variant), `crates/flatdata/src/backend.rs` (`SlotBackend::slot_read_ptr`,
 (`zerodds_dr_enable_shm`, `zerodds_dr_take_shm`,
 `zerodds_dr_release_shm`).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::read_ref_holds_slot_until_drop`,
-`crates/dcps/tests/flatdata_integration.rs::datareader_read_flat_uses_configured_backend`,
-`crates/dcps/tests/flatdata_integration.rs::datareader_read_flat_returns_none_without_backend`,
-`crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_writer_to_reader_zero_copy`,
-`crates/zerodds-c-api/tests/shm_loan_e2e.rs::shm_loan_runtime_path_writer_to_reader_zero_copy`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_9_1_read_ref_holds_slot_until_drop`,
+`crates/dcps/tests/flatdata_integration.rs::flatdata_9_1_datareader_read_flat_uses_configured_backend`,
+`crates/dcps/tests/flatdata_integration.rs::flatdata_9_1_datareader_read_flat_returns_none_without_backend`,
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::capi_2_6_shm_loan_writer_to_reader_zero_copy`,
+`crates/zerodds-c-api/tests/shm_loan_e2e.rs::capi_2_6_shm_loan_runtime_path_writer_to_reader_zero_copy`
 
 **Status:** done
 
@@ -594,7 +590,7 @@ Target = T; fn deref(&self) -> &T { self.slot } }`".
 **Repo:** `crates/flatdata/src/pubsub.rs` (`impl Deref for FlatSampleRef`
 with `Target = T`).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::flat_sample_ref_deref`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_9_2_flat_sample_ref_deref`
 
 **Status:** done
 
@@ -608,8 +604,8 @@ with `Target = T`).
 backend, the `SlotHandle` and the reader index; `impl Drop for
 FlatSampleRef` calls `mark_read`; `into_inner` frees the slot as well).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::read_ref_holds_slot_until_drop`,
-`crates/flatdata/src/pubsub.rs::tests::read_ref_into_inner_releases_slot`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_9_1_read_ref_holds_slot_until_drop`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_9_3_read_ref_into_inner_releases_slot`
 
 **Status:** done
 
@@ -623,11 +619,11 @@ reserve_slot/commit/release."
 **Repo:** `crates/flatdata/src/allocator.rs` (`InMemorySlotAllocator`),
 `crates/flatdata/src/posix.rs` (`PosixSlotAllocator`).
 
-**Tests:** `crates/flatdata/src/allocator.rs::tests::reserve_returns_first_free_slot`,
-`crates/flatdata/src/allocator.rs::tests::commit_writes_bytes_and_increments_sn`,
-`crates/flatdata/src/allocator.rs::tests::discard_frees_slot_for_reuse`,
-`crates/flatdata/src/posix.rs::tests::write_read_through_shm`,
-`crates/flatdata/src/posix.rs::tests::mark_read_visible_to_owner`
+**Tests:** `crates/flatdata/src/allocator.rs::tests::flatdata_4_1_reserve_returns_first_free_slot`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_4_1_commit_writes_bytes_and_increments_sn`,
+`crates/flatdata/src/allocator.rs::tests::flatdata_8_2_discard_frees_slot_for_reuse`,
+`crates/flatdata/src/posix.rs::tests::flatdata_3_2_write_read_through_shm`,
+`crates/flatdata/src/posix.rs::tests::flatdata_4_1_mark_read_visible_to_owner`
 
 **Status:** done
 
@@ -640,10 +636,10 @@ latency bench."
 one backend), `crates/flatdata/benches/loopback.rs` (criterion bench
 `flat_write_read_1kb`).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::writer_write_then_reader_read`,
-`crates/flatdata/src/pubsub.rs::tests::reader_recycles_slot_after_read`,
-`crates/flatdata/src/posix.rs::tests::write_read_through_shm`,
-`crates/flatdata/tests/perf_targets.rs::same_host_p99_latency_meets_target`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_6_1_writer_write_then_reader_read`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_4_1_reader_recycles_slot_after_read`,
+`crates/flatdata/src/posix.rs::tests::flatdata_3_2_write_read_through_shm`,
+`crates/flatdata/tests/perf_targets.rs::flatdata_10_2_same_host_p99_latency_meets_target`
 
 **Status:** done
 
@@ -656,9 +652,9 @@ readers); both get the sample."
 process, once with the same and once with a foreign host part in the GUID
 prefix), `crates/dcps/src/same_host_channel.rs` (`SameHostChannels::send`).
 
-**Tests:** `crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (on any host),
-`crates/dcps/tests/same_host_e2e.rs::e2e_two_runtimes_shm_roundtrip`,
-`crates/dcps/tests/same_host_e2e.rs::e2e_cross_vendor_different_host_id_no_shm_bind`
+**Tests:** `crates/dcps/src/same_host_channel.rs::tests::flatdata_3_2_a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (on any host),
+`crates/dcps/tests/same_host_e2e.rs::flatdata_10_3_e2e_two_runtimes_shm_roundtrip`,
+`crates/dcps/tests/same_host_e2e.rs::flatdata_4_2_e2e_cross_vendor_different_host_id_no_shm_bind`
 (both Linux, Linux test host)
 
 **Status:** done
@@ -678,10 +674,10 @@ Cyclone instance).
 
 **Tests:** `crates/discovery/src/sedp/writer.rs::tests::announce_with_shm_locator_puts_vendor_pid_on_the_wire`,
 `crates/rtps/src/publication_data.rs::tests::unknown_pids_are_skipped`,
-`crates/dcps/src/runtime.rs::tests::a_shm_locator_set_after_registration_is_announced`,
+`crates/dcps/src/runtime.rs::tests::flatdata_10_4_a_shm_locator_set_after_registration_is_announced`,
 `crates/discovery/tests/cyclone_live_sedp.rs::cyclone_live_sedp_discovery`
 (against a local Cyclone `ddsperf`, in the `live-interop` job; the Linux test host 3/3),
-`crates/dcps/tests/cyclone_live_shm_locator.rs::a_cyclone_reader_takes_the_samples_of_a_writer_announcing_the_shm_locator`
+`crates/dcps/tests/cyclone_live_shm_locator.rs::flatdata_10_4_a_cyclone_reader_takes_the_samples_of_a_writer_announcing_the_shm_locator`
 (a Cyclone 11.0.1 reader through the Python binding, in the `live-interop`
 job; the Linux test host 8/8 with 50 of 50 samples; in the capture the second DATA(w)
 of the publication carries PID 0x8001)
@@ -696,9 +692,9 @@ blocks correctly (Reliable) or drops (BestEffort)."
 **Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter::write_bp` with
 `Reliability` and `WriteOutcome`).
 
-**Tests:** `crates/flatdata/src/pubsub.rs::tests::write_bp_best_effort_drops_when_full`,
-`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_blocks_until_reader_frees`,
-`crates/flatdata/src/pubsub.rs::tests::write_bp_reliable_times_out`
+**Tests:** `crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_write_bp_best_effort_drops_when_full`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_write_bp_reliable_blocks_until_reader_frees`,
+`crates/flatdata/src/pubsub.rs::tests::flatdata_5_1_write_bp_reliable_times_out`
 
 **Status:** done
 
@@ -714,8 +710,8 @@ UDP loopback ~30 µs)."
 `flat_write_read_1kb`), `crates/flatdata/tests/perf_targets.rs`
 (measurement with an assertion rather than a bench report only).
 
-**Tests:** `crates/flatdata/tests/perf_targets.rs::same_host_p99_latency_meets_target`
-(`InMemorySlotAllocator`) and `::posix_same_host_p99_latency_meets_target`
+**Tests:** `crates/flatdata/tests/perf_targets.rs::flatdata_10_2_same_host_p99_latency_meets_target`
+(`InMemorySlotAllocator`) and `::flatdata_11_1_posix_same_host_p99_latency_meets_target`
 (`PosixSlotAllocator`: the writer on the owner's mapping, the reader on a
 second mapping of the same segment, as in the C API's SHM loan path).
 Release profile on the Linux test host (16 cores, load average 60–73), budget 5 µs:
@@ -731,11 +727,11 @@ in-memory P99 = 0.32–0.45 µs, POSIX P99 = 0.23–0.25 µs.
 (`Throughput::Bytes`/`Throughput::Elements` for 1 kB samples),
 `crates/flatdata/tests/perf_targets.rs`.
 
-**Tests:** `crates/flatdata/tests/perf_targets.rs::write_throughput_meets_target`
+**Tests:** `crates/flatdata/tests/perf_targets.rs::flatdata_11_2_write_throughput_meets_target`
 — measured in 200 batches of 100 rounds, gated on the fastest batch (load
 only lengthens a batch). Release profile on the Linux test host (16 cores, load
 average 60–73), floor 1000 MB/s: in-memory 3 181–4 783 MB/s, POSIX
-(`::posix_write_throughput_meets_target`) 10 001–10 282 MB/s, median batch
+(`::flatdata_11_2_posix_write_throughput_meets_target`) 10 001–10 282 MB/s, median batch
 9 455–9 762 MB/s.
 
 **Status:** done
@@ -747,9 +743,9 @@ average 60–73), floor 1000 MB/s: in-memory 3 181–4 783 MB/s, POSIX
 **Repo:** `crates/flatdata/src/pubsub.rs` (`FlatWriter::write` works
 purely on the pre-allocated slot pool).
 
-**Tests:** `crates/flatdata/tests/zero_alloc.rs::write_flat_is_heap_allocation_free`
+**Tests:** `crates/flatdata/tests/zero_alloc.rs::flatdata_11_3_write_flat_is_heap_allocation_free`
 (counting global allocator, the measuring thread only, 1000 writes),
-`crates/flatdata/tests/zero_alloc.rs::the_counter_counts_the_measuring_thread`
+`crates/flatdata/tests/zero_alloc.rs::flatdata_11_3_the_counter_counts_the_measuring_thread`
 
 **Status:** done
 
@@ -775,7 +771,7 @@ macOS, release, 2 000 rounds) produced UDP medians of 3.375 / 3.541 /
 container measured 1.704 µs for the same `send_to`, and the ratio gate
 went red without any change to the publish path.
 
-**Tests:** `crates/flatdata/tests/perf_targets.rs::same_host_publish_beats_a_fifth_of_udp_publish`
+**Tests:** `crates/flatdata/tests/perf_targets.rs::flatdata_11_4_same_host_publish_beats_a_fifth_of_udp_publish`
 — 2 000 untimed warm-up rounds, then 20 000 measured; the median is
 gated. Measured on a dev machine (aarch64 macOS), five runs each:
 release p50 = 83 ns (5/5 identical), p99 = 84–208 ns; debug p50 = 292 ns
@@ -820,7 +816,7 @@ or a POSIX semaphore." The requirement names no operating system.
 `os_sync_wait_on_address` with `OS_SYNC_WAIT_ON_ADDRESS_SHARED`, resolved
 at run time through `dlsym`).
 
-**Tests:** `crates/flatdata/src/posix.rs::tests::futex_notify_wakes_consumer_across_mappings` (macOS 26)
+**Tests:** `crates/flatdata/src/posix.rs::tests::flatdata_4_1_futex_notify_wakes_consumer_across_mappings` (macOS 26)
 
 **Status:** partial — macOS is built and tested; the BSDs have no build
 target in CI, and their reader still polls.
@@ -832,10 +828,10 @@ lists"; the cross-host reader receives the unchanged UDP DATA.
 
 **Repo:** `crates/dcps/src/same_host_channel.rs` (`SameHostChannels::send`).
 
-**Tests:** `crates/dcps/src/same_host_channel.rs::tests::a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (two `SameHostChannels` over real rings, no
+**Tests:** `crates/dcps/src/same_host_channel.rs::tests::flatdata_3_2_a_send_to_a_peer_locator_goes_through_the_channel_and_any_other_does_not` (two `SameHostChannels` over real rings, no
 network: a frame to a peer locator arrives in the ring, one to another
 locator does not go into the channel),
-`crates/dcps/src/same_host_channel.rs::tests::a_frame_the_ring_refuses_is_counted_and_left_to_udp`
+`crates/dcps/src/same_host_channel.rs::tests::flatdata_4_2_a_frame_the_ring_refuses_is_counted_and_left_to_udp`
 
 **Status:** done
 
@@ -845,8 +841,9 @@ locator does not go into the channel),
 
 **Repo:** `shared_memory` (`shm_open` with `S_IRUSR | S_IWUSR`).
 
-**Tests:** `crates/flatdata/src/posix.rs::tests::shm_object_is_owner_only_0600_by_descriptor` (macOS 26: `fstat` on a descriptor of the
-object reads 0600)
+**Tests:** `crates/flatdata/src/posix.rs::tests::flatdata_7_1_shm_object_is_owner_only_0600_by_descriptor` (macOS 26: `fstat` on a descriptor of the
+object reads 0600; the crate tier runs the same test on Linux; on macOS no
+CI job runs it)
 
 **Status:** done
 
@@ -857,7 +854,7 @@ gets UDP DATA as always."
 
 **Repo:** `crates/discovery/tests/cyclone_live_sedp.rs` (starts a local
 `ddsperf` instead of SSH, address through a UDP connect probe, shares the
-SPDP port with `SO_REUSEADDR`), `ci/full.yml` (job `live-interop`).
+SPDP port with `SO_REUSEADDR`), `ci/interop-omg-weekly.yml` (job `vendor-live-dcps`).
 
 **Tests:** `crates/discovery/tests/cyclone_live_sedp.rs::cyclone_live_sedp_discovery` (the Linux test host 3/3: Cyclone discovered, 28–34 unicast
 replies, 3 SEDP publications)
@@ -916,25 +913,20 @@ FlatStruct`.
 
 ## Audit status
 
-43 done / 2 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+43 done / 2 partial / 1 open / 0 blocked / 1 n/a (informative).
 
-Test run: `cargo test -p zerodds-flatdata -p zerodds-flatdata-derive --release` — 87 tests green, 0 failed.
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-flatdata-1.0.md`):
 
-Test run: `cargo test -p zerodds-dcps --features flatdata-integration --test flatdata_integration` — 11 tests green, 0 failed.
+* `cargo nextest run --profile merge -p zerodds-c-api --all-targets` (job `merge-rust-c-api`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-discovery --all-targets` (job `merge-rust-discovery`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-flatdata --all-targets` (job `merge-rust-flatdata`) — 79 tests green.
+* `cargo nextest run --profile merge -p zerodds-flatdata-derive --all-targets` (job `merge-rust-flatdata-derive`) — 5 tests green.
+* `cargo nextest run --profile merge -p zerodds-rtps --all-targets` (job `merge-rust-rtps`) — 6 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets --features flatdata-integration` (job `merge-rust-dcps-features-flatdata-integration`) — 7 tests green.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets --features same-host-shm` (job `merge-rust-dcps-features-same-host-shm`) — 4 tests green.
+* job `vendor-live-dcps` — 2 tests green.
 
-Test run: `cargo test -p zerodds-dcps --features same-host-shm --lib same_host` — 8 tests green, 0 failed.
+107 cited tests green, 0 not green.
 
-Test run: `cargo test -p zerodds-rtps --lib publication_data::` — 25 tests green, 0 failed.
-
-Test run: `cargo test -p zerodds-rtps --lib parameter_list::tests::validate_must_understand` — 4 tests green, 0 failed.
-
-Test run: `cargo test -p zerodds-discovery --lib sedp::writer` — 5 tests green, 0 failed.
-
-Test run: `cargo test -p zerodds-c-api --features flatdata-loan --test shm_loan_e2e` — 5 tests green, 0 failed.
-
-Not executed: the `#[cfg(target_os = "linux")]` tests
-(`futex_notify_wakes_consumer_across_mappings`,
-`segment_is_owner_only_0600`, `crates/dcps/tests/same_host_e2e.rs`) and
-the `#[ignore]` test `cyclone_live_sedp_discovery`. Audit host: macOS.
-
-Open points and decision records: `zerodds-flatdata-1.0.open.en.md`.
+Open items: `zerodds-flatdata-1.0.open.en.md`.

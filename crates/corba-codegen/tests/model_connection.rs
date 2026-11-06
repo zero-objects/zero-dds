@@ -66,7 +66,7 @@ module demo {
         long code;
     };
 
-    interface Echo {
+    interface EchoService {
         readonly attribute long counter;
         attribute string label;
 
@@ -90,7 +90,17 @@ fn model() -> Ast {
         "the corpus IDL must parse: {:?}",
         parsed.diagnostics()
     );
-    let lowered = zerodds_idl_lower::lower(&parsed.syntax(), "special-types.idl");
+    // `EchoService::pass` takes a native parameter in a remote interface, which
+    // OMG IDL 4.2 §7.4.6.4.4 does not permit and tao_idl and JacORB take
+    // (`orb-corpus/recorded/`); the stubs are measured against theirs.
+    let lowered = zerodds_idl_lower::lower_with(
+        &parsed.syntax(),
+        "special-types.idl",
+        zerodds_idl_lower::Options {
+            native_in_remote_interfaces: zerodds_idl_lower::NativeInRemoteInterface::Admitted,
+            ..zerodds_idl_lower::Options::default()
+        },
+    );
     assert!(
         lowered.diagnostics.iter().all(|d| !d.is_error()),
         "the corpus IDL must lower: {:?}",
@@ -130,8 +140,8 @@ fn interface(ast: &Ast, name: &str) -> Id<InterfaceNode> {
 
 /// The `pass` operation's parameters, in order, as stub types.
 fn pass_params(ast: &Ast) -> Vec<zerodds_corba_codegen::StubParam> {
-    let echo = interface(ast, "Echo");
-    let node = ast.interface(echo).expect("Echo");
+    let echo = interface(ast, "EchoService");
+    let node = ast.interface(echo).expect("EchoService");
     for id in &node.operations {
         let op = ast.operation(*id).expect("operation");
         if op.name == "pass" {
@@ -282,8 +292,8 @@ fn fixed_and_variable_length_are_computed_from_the_members_and_not_the_name() {
 #[test]
 fn the_return_position_differs_between_a_fixed_and_a_variable_result() {
     let ast = model();
-    let echo = interface(&ast, "Echo");
-    let node = ast.interface(echo).expect("Echo");
+    let echo = interface(&ast, "EchoService");
+    let node = ast.interface(echo).expect("EchoService");
     let mut rendered = BTreeMap::new();
     for id in &node.operations {
         let op = stub_op_of(&ast, *id).expect("stub op");
@@ -309,8 +319,8 @@ fn the_return_position_differs_between_a_fixed_and_a_variable_result() {
 #[test]
 fn a_raises_clause_reaches_the_stub() {
     let ast = model();
-    let echo = interface(&ast, "Echo");
-    let node = ast.interface(echo).expect("Echo");
+    let echo = interface(&ast, "EchoService");
+    let node = ast.interface(echo).expect("EchoService");
     let raises: Vec<Vec<String>> = node
         .operations
         .iter()
@@ -324,8 +334,8 @@ fn a_raises_clause_reaches_the_stub() {
 #[test]
 fn oneway_survives_lowering() {
     let ast = model();
-    let echo = interface(&ast, "Echo");
-    let node = ast.interface(echo).expect("Echo");
+    let echo = interface(&ast, "EchoService");
+    let node = ast.interface(echo).expect("EchoService");
     let oneway: Vec<String> = node
         .operations
         .iter()
@@ -339,7 +349,7 @@ fn oneway_survives_lowering() {
 #[test]
 fn the_skeleton_dispatches_attributes_as_the_underscore_operations() {
     let ast = model();
-    let echo = interface(&ast, "Echo");
+    let echo = interface(&ast, "EchoService");
     let ops = skeleton_ops_of(&ast, echo);
     let names: Vec<&str> = ops.iter().map(|op| op.name.as_str()).collect();
 
@@ -361,7 +371,7 @@ fn the_skeleton_dispatches_attributes_as_the_underscore_operations() {
 #[test]
 fn a_dispatch_built_from_the_model_names_every_wire_operation() {
     let ast = model();
-    let echo = interface(&ast, "Echo");
+    let echo = interface(&ast, "EchoService");
     let ops = skeleton_ops_of(&ast, echo);
     for language in TargetLanguage::RENDERABLE {
         let text = zerodds_corba_codegen::render_skeleton_dispatch("EchoImpl", &ops, language)
@@ -407,11 +417,11 @@ fn an_interfaces_repository_id_comes_from_the_model() {
     // interface's and an exception's identifier now, so the answer
     // comes from the model and `origin` says so.
     let ast = model();
-    let echo = interface(&ast, "Echo");
-    let node = ast.interface(echo).expect("Echo");
+    let echo = interface(&ast, "EchoService");
+    let node = ast.interface(echo).expect("EchoService");
     let resolved = repository_id_of(&ast, zerodds_ast::AnyId::Interface(echo, node.node_id))
         .expect("a repository id");
-    assert_eq!(resolved.id, "IDL:demo/Echo:1.0");
+    assert_eq!(resolved.id, "IDL:demo/EchoService:1.0");
     assert_eq!(
         resolved.origin,
         Some(zerodds_ast::RepositoryIdOrigin::Derived),

@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: Apache-2.0
+// The Features and Shapes interfaces of the feature-matrix IDL in build.rs,
+// for the foreign ORBs' IDL compilers (competitors/build_peers.sh): the same
+// declarations, with the anonymous sequences of the signatures named by
+// typedefs, which omniidl and tao_idl require; the CDR on the wire is the
+// same, and so are the repository ids of the declarations ZeroDDS knows.
+
+typedef sequence<long> LongSeq;
+typedef sequence<string> StringSeq;
+
+interface Features {
+    long          add(in long a, in long b);
+    double        scale(in double x, in double factor);
+    boolean       toggle(in boolean b);
+    octet         xor_byte(in octet a, in octet b);
+    short         neg_short(in short s);
+    unsigned long uadd(in unsigned long a, in unsigned long b);
+    long long     add64(in long long a, in long long b);
+
+    string    concat(in string a, in string b);
+    wstring   wecho(in wstring w);
+    any       aecho(in any a);
+    LongSeq   reverse(in LongSeq xs);
+    StringSeq echo_seq(in StringSeq xs);
+
+    void divmod(in long a, in long b, out long quotient, out long remainder);
+    void increment(inout long x);
+    void swap(inout long a, inout long b);
+
+    oneway void fire(in long signal);
+
+    readonly attribute long  answer;
+    attribute        string  label;
+};
+
+enum Color { RED, GREEN, BLUE };
+
+struct Point { long x; long y; };
+
+union Variant switch (long) {
+    case 0: long    as_long;
+    case 1: string  as_string;
+    default: boolean as_flag;
+};
+
+exception OutOfRange { long requested; long limit; };
+
+interface Shapes {
+    Point   translate(in Point p, in long dx, in long dy);
+    long    sum_point(in Point p);
+    void    split(in Point p, out long x, out long y);
+    void    bump(inout Point p);
+    Color   next_color(in Color c);
+    Variant wrap_long(in long v);
+    long    unwrap_long(in Variant v);
+    long    checked(in long idx, in long limit) raises(OutOfRange);
+};

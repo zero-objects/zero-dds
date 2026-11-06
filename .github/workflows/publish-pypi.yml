@@ -1,5 +1,4 @@
 # PyPI publish job for the `zerodds` Python package (crates/py).
-# Spec: internal/packaging/language-binding-publish-followup.md (RC3-Pickup).
 #
 # Auth: Trusted Publisher (OIDC) — NO API token needed.
 #

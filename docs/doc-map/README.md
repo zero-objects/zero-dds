@@ -97,7 +97,7 @@ Details: [architecture.md](architecture.md).
 | `build-integration/`, `cmake/` | `zerodds-idlc` als Build-Schritt in fremden Build-Systemen |
 | `buildroot/`, `meta-zerodds/` | Buildroot-Paket, Yocto-Layer |
 | `benches/` | Criterion-Benchmarks |
-| `tests/`, `xtests/`, `testing/`, `interop/` | Interop-Korpus und -Ergebnisse, Crate-übergreifende Tests, Isolation, Interop-Fixtures |
+| `tests/`, `testing/`, `interop/` | Interop-Korpus und -Ergebnisse, Crate-übergreifende Tests, Isolation, Interop-Fixtures |
 | `ci/` | GitLab-CI-Jobs, Images, Hilfsskripte |
 | `scripts/` | Pre-Commit, Crate-Publish, Mirror-Build |
 | `website/` | Quellen von zerodds.org |

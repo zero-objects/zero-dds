@@ -686,13 +686,13 @@ mod tests {
     }
 
     #[test]
-    fn a_file_declares_its_module_first() {
+    fn xtypes_7_5_1_a_file_declares_its_module_first() {
         let rendered = file(&File::default());
         assert_eq!(rendered, "module zdtypes;\n");
     }
 
     #[test]
-    fn an_import_is_selective_when_it_names_symbols() {
+    fn xtypes_7_5_1_an_import_is_selective_when_it_names_symbols() {
         let mut source = File::default();
         source
             .imports
@@ -705,7 +705,7 @@ mod tests {
     }
 
     #[test]
-    fn a_struct_writes_its_brace_on_a_line_of_its_own() {
+    fn xtypes_7_5_1_a_struct_writes_its_brace_on_a_line_of_its_own() {
         let rendered = decl(&Decl::Struct(StructDecl {
             doc: Doc::none(),
             name: Ident::new("Pose"),
@@ -715,7 +715,7 @@ mod tests {
     }
 
     #[test]
-    fn a_field_carries_its_uda_before_the_type() {
+    fn xtypes_7_5_1_a_field_carries_its_uda_before_the_type() {
         let mut node = field("version_", Type::Primitive(Primitive::Int));
         node.udas.push(Uda::keyed("idl", "version"));
         let mut w = Writer::spaces4();
@@ -724,7 +724,7 @@ mod tests {
     }
 
     #[test]
-    fn an_array_writes_its_dimensions_right_to_left() {
+    fn xtypes_7_5_1_an_array_writes_its_dimensions_right_to_left() {
         // `long grid[2][3]` is two rows of three; the D declaration is
         // `int[3][2]`. The tree holds 2 outermost and the renderer
         // appends it last, which is what produces the reversal.

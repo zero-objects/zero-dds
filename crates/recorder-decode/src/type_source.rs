@@ -178,40 +178,26 @@ mod tests {
         };
     ";
 
+    /// IDL 4.2 §7.5.2: a scoped name names the type through its module,
+    /// with or without the leading `::`; a name nobody declared and a
+    /// module are no type.
     #[test]
-    fn a_named_struct_resolves_through_its_module() {
+    fn idl_7_5_2_a_scoped_name_names_a_type_and_a_module_is_none() {
         let t = dynamic_type_from_idl(SHAPE, "demo::ShapeType").expect("resolve");
-        assert_eq!(t.name(), "ShapeType");
-        assert_eq!(t.member_count(), 4);
+        assert_eq!((t.name(), t.member_count()), ("ShapeType", 4));
+        let absolute = dynamic_type_from_idl(SHAPE, "::demo::ShapeType").expect("absolute");
+        assert_eq!(absolute.member_count(), 4);
+        for name in ["demo::Nope", "demo"] {
+            let e = dynamic_type_from_idl(SHAPE, name).expect_err(name);
+            assert!(matches!(e, TypeSourceError::NotFound(_)), "{name}: {e:?}");
+        }
     }
 
+    /// A map, a fixed-point member and a union resolve to their types (the
+    /// first two the hand-written lowering of before refused); the union
+    /// is of kind UNION.
     #[test]
-    fn the_leading_colons_are_optional() {
-        let with = dynamic_type_from_idl(SHAPE, "::demo::ShapeType").expect("absolute");
-        let without = dynamic_type_from_idl(SHAPE, "demo::ShapeType").expect("relative");
-        assert_eq!(with.member_count(), without.member_count());
-    }
-
-    #[test]
-    fn a_name_that_is_not_there_is_not_found() {
-        let e = dynamic_type_from_idl(SHAPE, "demo::Nope").expect_err("absent");
-        assert!(matches!(e, TypeSourceError::NotFound(_)), "got {e:?}");
-    }
-
-    /// A module is not a type, and asking for one gets the same refusal as
-    /// asking for a name that was never declared — what was requested is a
-    /// type and there is none.
-    #[test]
-    fn a_module_is_not_a_type() {
-        let e = dynamic_type_from_idl(SHAPE, "demo").expect_err("module");
-        assert!(matches!(e, TypeSourceError::NotFound(_)), "got {e:?}");
-    }
-
-    /// The two constructs the hand-written lowering refused. Neither needs a
-    /// line here now, which is the whole point of resolving against the
-    /// model instead of translating into it.
-    #[test]
-    fn map_and_fixed_point_resolve() {
+    fn a_map_a_fixed_and_a_union_resolve_to_their_types() {
         let idl = r"
             module demo {
                 struct WithMap {
@@ -220,61 +206,18 @@ mod tests {
                 struct WithFixed {
                     fixed<9,2> amount;
                 };
-            };
-        ";
-        let map = dynamic_type_from_idl(idl, "demo::WithMap").expect("map type");
-        assert_eq!(map.member_count(), 1);
-        let fixed = dynamic_type_from_idl(idl, "demo::WithFixed").expect("fixed type");
-        assert_eq!(fixed.member_count(), 1);
-    }
-
-    /// Extensibility is read off the model rather than re-derived from the
-    /// annotation list, so the XTypes 1.3 default applies where the source
-    /// is silent.
-    #[test]
-    fn extensibility_comes_from_the_model() {
-        let idl = r"
-            module demo {
-                // `demo` and not `m` above: IDL compares identifiers
-                // without regard to case (§7.2.3), so `struct M` inside
-                // `module m` would redeclare the scope's own name in its
-                // immediate scope, which IDL 4.2 §7.5.2 does not admit.
-                @final struct F { long a; };
-                @mutable struct M { long a; };
-                struct D { long a; };
-            };
-        ";
-        use zerodds_types::dynamic::descriptor::ExtensibilityKind;
-        for (name, want) in [
-            ("demo::F", ExtensibilityKind::Final),
-            ("demo::M", ExtensibilityKind::Mutable),
-            ("demo::D", ExtensibilityKind::Appendable),
-        ] {
-            let t = dynamic_type_from_idl(idl, name).expect(name);
-            assert_eq!(t.extensibility().expect("extensibility"), want, "{name}");
-        }
-    }
-
-    #[test]
-    fn a_union_carries_its_discriminator_kind() {
-        let idl = r"
-            module demo {
                 union U switch (long) {
                     case 1: long a;
                     default: string b;
                 };
             };
         ";
-        let t = dynamic_type_from_idl(idl, "demo::U").expect("union");
-        assert_eq!(t.kind(), TypeKind::Union);
-    }
-
-    #[test]
-    fn a_syntax_error_is_reported_and_not_swallowed() {
-        let Err(e) = TypeBook::from_idl("struct Broken { long ;") else {
-            panic!("a syntax error must not produce a type book")
-        };
-        assert!(matches!(e, TypeSourceError::Parse(_)), "got {e:?}");
+        let map = dynamic_type_from_idl(idl, "demo::WithMap").expect("map type");
+        assert_eq!(map.member_count(), 1);
+        let fixed = dynamic_type_from_idl(idl, "demo::WithFixed").expect("fixed type");
+        assert_eq!(fixed.member_count(), 1);
+        let union = dynamic_type_from_idl(idl, "demo::U").expect("union");
+        assert_eq!(union.kind(), TypeKind::Union);
     }
 
     /// A member typed with a scoped name resolves at load, and a sample of
@@ -283,7 +226,7 @@ mod tests {
     /// before, the file loaded and every such sample failed with
     /// `NoLayout { "type NodeId(7) has an unresolved reference" }`.
     #[test]
-    fn a_member_typed_with_a_scoped_name_decodes() {
+    fn xtypes_7_4_1_1_a_member_typed_with_a_scoped_name_decodes_from_the_xcdr1_octets() {
         use zerodds_ast_layout::{Dialect, Encoding, Endianness};
         use zerodds_types::dynamic::DynamicData;
         use zerodds_wire_codec::ProbeRequest;
@@ -330,10 +273,15 @@ mod tests {
         assert!(value.member("unit").is_some(), "{value:?}");
     }
 
-    /// A reference that resolves nowhere refuses the file, by name, instead
-    /// of loading a model every sample of the type then fails against.
+    /// A file that does not compile is refused with the reason: a syntax
+    /// error, and a reference that resolves nowhere, by name, instead of a
+    /// model every sample of the type then fails against.
     #[test]
-    fn an_unresolvable_reference_refuses_the_file() {
+    fn a_file_that_does_not_compile_is_refused_with_the_reason() {
+        let Err(e) = TypeBook::from_idl("struct Broken { long ;") else {
+            panic!("a syntax error must not produce a type book")
+        };
+        assert!(matches!(e, TypeSourceError::Parse(_)), "got {e:?}");
         let Err(e) = TypeBook::from_idl("module m { struct S { m::Missing x; }; };") else {
             panic!("an unresolved reference must not produce a type book")
         };
@@ -343,8 +291,10 @@ mod tests {
         assert!(text.contains("Missing"), "{text}");
     }
 
+    /// `zerodds-record(1)`: `--map TOPIC=Type`, split at the first `=`, the
+    /// two sides trimmed; without `=` it is refused.
     #[test]
-    fn topic_type_mappings_split_on_the_first_equals() {
+    fn a_map_option_splits_at_the_first_equals_sign() {
         let got = parse_topic_type_map(&[String::from(" Square = demo::ShapeType ")]).expect("map");
         assert_eq!(
             got,

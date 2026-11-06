@@ -21,7 +21,7 @@ use std::time::Duration;
 use zerodds_amqp_endpoint::MetricsHub;
 
 #[test]
-fn c1_10_server_accepts_multiple_concurrent_connections() {
+fn ddsamqp_c_1_10_server_accepts_multiple_concurrent_connections() {
     let server = TestServer::spawn(test_handler_cfg());
     let port = server.port;
     let metrics = server.metrics.clone();
@@ -61,8 +61,8 @@ fn c1_10_server_accepts_multiple_concurrent_connections() {
     }
     assert_eq!(succeeded, N, "expected {N} connections, got {succeeded}");
 
-    // Server side has counted all N.
-    thread::sleep(Duration::from_millis(100));
+    // Each handler counts its connection before it reads the header, so
+    // all N are counted once the N clients are open.
     let total = metrics.snapshot("connections.total").unwrap_or(0);
     assert!(
         total >= N as i64,

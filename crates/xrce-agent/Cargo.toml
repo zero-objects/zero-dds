@@ -24,6 +24,14 @@ workspace = true
 [package.metadata.dist]
 features = ["daemon"]
 
+# The crate tier runs the tests of this package once more with these
+# features (internal/release/rc8-test-suite.md, "Crate tier"): the daemon,
+# its DDS side and its DTLS and TLS listeners are behind features no default
+# build has. One run, because `dtls` and `tls` each imply `daemon`: two runs
+# would run the daemon's tests twice.
+[package.metadata.crate-tier]
+feature-runs = ["daemon,dtls,tls"]
+
 [lib]
 path = "src/lib.rs"
 
@@ -110,4 +118,32 @@ rcgen = "0.13"
 [[bin]]
 name = "zerodds-xrce-agentd"
 path = "src/bin/zerodds-xrce-agentd.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-rtps (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-rtps only with `daemon`.
+[[test]]
+name = "contract_rtps"
+path = "tests/contract_rtps.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-wire (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-wire only with `daemon`.
+[[test]]
+name = "contract_wire"
+path = "tests/contract_wire.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-types (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-types only with `daemon`.
+[[test]]
+name = "contract_types"
+path = "tests/contract_types.rs"
+required-features = ["daemon"]
+
+# The contract with zerodds-dcps (internal/release/rc8-test-suite.md, "Crate
+# tier"): this crate reaches zerodds-dcps only with `daemon`.
+[[test]]
+name = "contract_dcps"
+path = "tests/contract_dcps.rs"
 required-features = ["daemon"]

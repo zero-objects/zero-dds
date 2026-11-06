@@ -96,7 +96,7 @@ class PubSubLoopbackTest {
     }
 
     @Test
-    void singleWriterSingleReaderRoundTrip() throws Exception {
+    void javapsm_2_a_reader_takes_the_samples_of_a_writer_in_their_order() throws Exception {
         DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(0);
         Topic<Reading> topic = participant.createTopic("Readings", Reading.class);
@@ -118,7 +118,7 @@ class PubSubLoopbackTest {
     }
 
     @Test
-    void readReturnsSamplesWithoutRemoving() throws Exception {
+    void javapsm_2_read_returns_samples_without_removing() throws Exception {
         DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(1);
         Topic<Reading> topic = participant.createTopic("ReadOnly", Reading.class);
@@ -136,7 +136,7 @@ class PubSubLoopbackTest {
     }
 
     @Test
-    void multipleReadersAllReceiveSample() throws Exception {
+    void javaomgdds_1_2_every_reader_of_the_topic_receives_the_sample() throws Exception {
         DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(2);
         Topic<Reading> topic = participant.createTopic("FanOut", Reading.class);
@@ -154,7 +154,7 @@ class PubSubLoopbackTest {
     }
 
     @Test
-    void cleanupRemovesSubscription() throws Exception {
+    void javapsm_2_a_closed_reader_is_no_subscription_of_the_writer_any_more() throws Exception {
         DomainParticipantFactory dpf = Qos.factory();
         DomainParticipant participant = dpf.createParticipant(3);
         Topic<Reading> topic = participant.createTopic("CleanupTest", Reading.class);

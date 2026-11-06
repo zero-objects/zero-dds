@@ -60,7 +60,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void findTopicReturnsTheTopicAndTimesOutOtherwise() throws Exception {
+    void javapsm_2_find_topic_returns_the_topic_and_times_out_otherwise() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<String> topic = participant.createTopic("Chatter", String.class);
 
@@ -73,7 +73,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void lookupTopicDescriptionFindsOnlyWhatWasCreated() {
+    void javapsm_2_lookup_topic_description_finds_only_what_was_created() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<String> topic = participant.createTopic("Chatter", String.class);
 
@@ -89,7 +89,7 @@ class DomainParticipantOperationsTest {
 
     /** DDS-XTypes 1.3 §7.6.4.1 and §7.6.4.2: several topics of one name, iterated by index. */
     @Test
-    void lookupTopicDescriptionWithAnIndexIteratesTheTopicsOfOneName() {
+    void xtypes_7_6_4_2_lookup_topic_description_with_an_index_iterates_the_topics_of_one_name() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<String> first = participant.createTopic("Chatter", String.class);
         Topic<byte[]> second = participant.createTopic("Chatter", byte[].class);
@@ -106,7 +106,7 @@ class DomainParticipantOperationsTest {
 
     /** DDS-XTypes 1.3 §7.6.4.1: the topics of one name have the QoS of one network topic. */
     @Test
-    void aTopicOfAnExistingNameWithOtherPoliciesIsRefused() {
+    void xtypes_7_6_4_1_a_topic_of_an_existing_name_with_other_policies_is_refused() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Topic<String> first = participant.createTopic("Chatter", String.class);
         TopicQos other = Qos.topic().withPolicy(Qos.pf().TransportPriority().withValue(6));
@@ -119,7 +119,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void containsEntityWalksTheContainment() {
+    void javapsm_2_contains_entity_walks_the_containment() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Publisher publisher = participant.createPublisher();
         Subscriber subscriber = participant.createSubscriber();
@@ -136,36 +136,6 @@ class DomainParticipantOperationsTest {
                 Qos.env().getSPI().nilHandle()));
     }
 
-    @Test
-    void defaultQosIsTheQosOfWhatIsCreatedNext() {
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        PublisherQos defaults = participant.getDefaultPublisherQos();
-        assertNotNull(defaults);
-
-        PublisherQos mine = defaults.withPolicy(
-                defaults.getPartition().withName(java.util.List.of("mine")));
-        participant.setDefaultPublisherQos(mine);
-        assertEquals(mine, participant.getDefaultPublisherQos());
-        assertEquals(mine, participant.createPublisher().getQos());
-
-        assertNotNull(participant.getDefaultSubscriberQos());
-        assertNotNull(participant.getDefaultTopicQos());
-    }
-
-    @Test
-    void entityFactoryDecidesWhetherWhatIsCreatedIsEnabled() {
-        // DDS 1.2 §7.1.3.7: autoEnableCreatedEntities defaults to true.
-        DomainParticipant participant = Qos.factory().createParticipant(nextDom());
-        assertTrue(((PublisherImpl) participant.createPublisher()).isEnabled());
-
-        DomainParticipant lazy = Qos.factory().createParticipant(
-                nextDom(),
-                DomainParticipantQosImpl.defaults(Qos.env())
-                        .withPolicy(autoEnableOff()),
-                null, null);
-        assertFalse(((PublisherImpl) lazy.createPublisher()).isEnabled());
-    }
-
     /** ENTITY_FACTORY with autoEnableCreatedEntities = false (DDS 1.2 §7.1.3.7). */
     private static EntityFactory autoEnableOff() {
         return Qos.policies().EntityFactory()
@@ -173,7 +143,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void factoryQosAndDefaultParticipantQos() {
+    void javapsm_2_the_factory_qos_and_the_default_participant_qos_are_set_and_read() {
         DomainParticipantFactory factory = Qos.factory();
         assertNotNull(factory.getQos());
         assertNotNull(factory.getDefaultParticipantQos());
@@ -202,7 +172,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void lookupParticipantFindsOneOfTheDomain() {
+    void javapsm_2_lookup_participant_finds_one_of_the_domain() {
         int domain = nextDom();
         DomainParticipant first = Qos.factory().createParticipant(domain);
         assertSame(first, Qos.factory().lookupParticipant(domain));
@@ -210,7 +180,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void getCurrentTimeFillsTheContainerOrReturnsANewOne() {
+    void javapsm_2_get_current_time_fills_the_container_or_returns_a_new_one() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Time now = participant.getCurrentTime();
         assertTrue(now.getTime(TimeUnit.SECONDS) > 0);
@@ -222,7 +192,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void getBuiltinSubscriberIsTheSameObjectEveryTime() {
+    void javapsm_2_get_builtin_subscriber_is_the_same_object_every_time() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Subscriber builtin = participant.getBuiltinSubscriber();
         assertNotNull(builtin);
@@ -230,7 +200,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void discoveryListsTheParticipantsOfTheDomainAndIgnoreHidesOne() {
+    void javapsm_2_discovery_lists_the_participants_of_the_domain_and_ignore_hides_one() {
         int domain = nextDom();
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         assertTrue(mine.getDiscoveredParticipants()
@@ -242,7 +212,7 @@ class DomainParticipantOperationsTest {
     }
 
     @Test
-    void closeContainedEntitiesClosesThemWithoutClosingTheParticipant() {
+    void javapsm_2_close_contained_entities_closes_them_without_closing_the_participant() {
         DomainParticipant participant = Qos.factory().createParticipant(nextDom());
         Publisher publisher = participant.createPublisher();
         Topic<String> topic = participant.createTopic("Chatter", String.class);

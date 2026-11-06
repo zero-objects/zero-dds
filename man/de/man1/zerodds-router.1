@@ -1,0 +1,144 @@
+.TH ZERODDS-ROUTER 1 "" "ZeroDDS" "ZeroDDS-Handbuch"
+.SH BEZEICHNUNG
+zerodds-router \- Daemon für den DDS-Routing-Service
+.SH ÜBERSICHT
+.B zerodds-router run
+\fB\-\-routes\fR \fIDATEI\fR
+[\fB\-\-types\fR \fISHAPES.json\fR]
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPFAD\fR=\fIWERT\fR]...
+.br
+.B zerodds-router validate
+\fB\-\-routes\fR \fIDATEI\fR
+.br
+.B zerodds-router
+[\fB\-\-config\fR \fIYAML\fR]
+[\fB\-\-set\fR \fIPFAD\fR=\fIWERT\fR]...
+\fB\-\-check\-config\fR
+.SH BESCHREIBUNG
+.B zerodds-router
+ist ein Weiterleitungs-Daemon von DDS nach DDS: Er kopiert Samples zwischen
+DDS-Endpunkten, die sich in Domäne, Topic oder Partition unterscheiden, und
+filtert und transformiert jedes Sample auf dem Weg, wenn gewünscht. Er ist ein
+nativer Routing-Service innerhalb von DDS, keine Protokoll-Bridge \(em beide
+Enden sprechen RTPS.
+.PP
+Jede Route deklariert einen
+.IR input -
+und einen
+.IR output -Endpunkt
+(Domäne, Topic, Typname, Partitionen, QoS). Eine Route kann einen
+Inhalts-
+.I filter
+tragen (einen SQL-ähnlichen Ausdruck, der nicht passende Samples verwirft) und
+eine Feld-
+.I transform
+(Umbenennen / konstanten Wert setzen). Ein eingebauter Schleifenschutz
+verhindert, dass ein Sample erneut in eine Domäne weitergeleitet wird, die
+zugleich Eingang und Ausgang ist.
+.SH BEFEHLE
+.TP
+.B run
+Startet den Router und leitet weiter bis SIGINT/SIGTERM.
+.TP
+.B validate
+Parst und prüft die Konfiguration, gibt die aufgelösten Routen aus und
+beendet sich, ohne einer Domäne beizutreten.
+.SH OPTIONEN
+.TP
+.BR \-\-routes " \fIDATEI\fR"
+Routen-Konfiguration. Das Format wird an der Endung erkannt: Ein Pfad auf
+.I .xml
+wird als XML geparst, alles andere als JSON. Pflicht.
+Ein Element, Attribut oder Schlüssel, den der Router nicht liest, wird mit
+seinem Namen abgelehnt (bei XML auch mit seiner Zeile); in JSON sind
+Schlüssel, die mit
+.B _
+beginnen, Kommentare.
+.TP
+.BR \-\-types " \fISHAPES.json\fR"
+Ein JSON-Array von Typ-Formen, die den
+.I type_name
+jeder Route beschreiben, z. B. \fB[{ "name": "ns::T", "members": [{ "name": "v", "kind": "u32" }] }]\fR.
+Nur Pflicht für Routen, die einen
+.I filter
+oder eine
+.I transform
+verwenden, die die Felder des Samples verstehen müssen. Reine
+Weiterleitungen roher Bytes (\fItype_name\fR \fBzerodds::RawBytes\fR) brauchen
+keine Formen.
+.TP
+.BR \-\-config " \fIYAML\fR"
+Die Konfiguration der DDS-Laufzeitumgebung: Basisdatei, mit Drop-ins im
+danebenliegenden Verzeichnis \fIYAML\fR.d. Ohne diese Option wird das
+System-Konfigurationsverzeichnis (\fI/etc/zerodds\fR unter Linux) gelesen. Ein
+Pfad auf \fI.json\fR oder \fI.xml\fR wird mit einem Verweis auf
+\fB\-\-routes\fR abgelehnt.
+.TP
+.BR \-\-set " \fIPFAD\fR=\fIWERT\fR"
+Eine Laufzeit-Einstellung über allen Dateien, wiederholbar.
+.TP
+.B \-\-check\-config
+Prüft die wirksame Laufzeitkonfiguration und gibt sie mit der Herkunft jedes
+Werts aus, dann Ende (0 gültig, 1 ungültig).
+.TP
+.BR \-V ", " \-\-version
+Gibt die Version aus und beendet sich.
+.SH KONFIGURATION
+Die Konfiguration hat auf oberster Ebene einen
+.I name
+und eine Liste von
+.IR routes .
+Jede Route hat
+.IR input "- und " output -Endpunkte;
+optional
+.IR filter ", " transform ", "
+.I loop_guard
+(Standard true) und
+.I preserve_source_timestamp
+(Standard false). Ein Endpunkt hat
+.IR domain ", " topic ", " type_name ,
+optional
+.IR partition " und " qos
+(reliability, durability, ownership, ...). Siehe
+.I /usr/share/zerodds/configs/router.json.example
+für eine funktionierende Konfiguration mit zwei Routen.
+.SH SIGNALE
+.B SIGINT
+und
+.B SIGTERM
+lösen ein geordnetes Beenden aus; die Metriken je Route (weitergeleitet, vom
+Schleifenschutz verworfen, vom Filter verworfen, Lebenszyklus, Fehler) werden
+vor dem Ende ausgegeben. Es gibt kein Neuladen über SIGHUP \(em die
+Konfiguration ändern und den Dienst neu starten.
+.SH DATEIEN
+.TP
+.I /etc/zerodds/router.json
+Standardkonfiguration, die die systemd-Unit
+.I /usr/lib/systemd/system/zerodds-router.service
+liest.
+.TP
+.I /usr/share/zerodds/configs/router.json.example
+Mitgelieferte Beispielkonfiguration.
+.SH EXIT-STATUS
+.TP
+.B 0
+Ein sauberes validate, ein sauberes Beenden, oder
+.B \-\-check\-config
+hat die Konfiguration als gültig befunden.
+.TP
+.B 1
+Eine ungültige Routen-Datei oder ein ungültiger Konfigurationswert, oder ein
+Fehler beim Start.
+.TP
+.B 2
+Die Kommandozeile war falsch (kein oder ein unbekannter Befehl, eine
+Routen-Datei mit
+.BR \-\-config
+angegeben), oder eine Konfigurationsdatei war nicht lesbar oder nicht
+parsebar.
+.SH SIEHE AUCH
+.BR zerodds-admin (1),
+.BR zerodds-spy (1)
+.SH AUTOR
+ZeroDDS Contributors.

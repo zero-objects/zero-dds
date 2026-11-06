@@ -50,7 +50,7 @@ use zerodds_wire::{ParameterRole, Reader, WcharPosition, WireError};
 
 /// What a walk carries down, the counterpart of the encoder's.
 #[derive(Debug, Clone, Copy)]
-struct Frame {
+struct Frame<'p> {
     key: LayoutKey,
     map_length: MapLengthPolicy,
     /// What to do if the value about to be read will not fit this
@@ -111,9 +111,17 @@ struct Frame {
     /// what selects the member, and a set with the bit left out selects
     /// another one or none.
     is_discriminator: bool,
+    /// Plans this read reuses ([`DecodePlans`]); `None` plans each type
+    /// where it is read.
+    plans: Option<&'p DecodePlans>,
+    /// Read only what the key holder needs (XTypes 1.3 §7.6.8 step 1): of
+    /// a structure, its `@key` members, or all of them where it declares
+    /// none. Every other member is stepped over, where the stream says
+    /// how long it is, and takes its default ([`key_of_sample`]).
+    keys_only: bool,
 }
 
-impl Frame {
+impl<'p> Frame<'p> {
     /// The same frame, reading a position that wrote `behaviour` and
     /// uses `used`.
     fn constructing(
@@ -292,7 +300,7 @@ pub fn padding_present(payload_len: usize, options_low: u8) -> usize {
         0
     } else if declared > body {
         declared
-    } else if payload_len % 4 != 0 {
+    } else if !payload_len.is_multiple_of(4) {
         0
     } else {
         declared
@@ -330,6 +338,55 @@ pub fn decode_continuing<V: Source + Sink>(
     request: &ProbeRequest,
     bytes: &[u8],
     start: usize,
+) -> Result<V, ProbeError> {
+    decode_in(ast, request, bytes, start, None, false)
+}
+
+/// As [`decode`], with the layout plans of `plans`: each type is planned
+/// once for all the samples `plans` serves, where [`decode`] plans every
+/// aggregate it reads.
+///
+/// # Errors
+/// As [`decode`].
+pub fn decode_with<V: Source + Sink>(
+    ast: &Ast,
+    plans: &DecodePlans,
+    request: &ProbeRequest,
+    bytes: &[u8],
+) -> Result<V, ProbeError> {
+    decode_in(ast, request, bytes, 0, Some(plans), false)
+}
+
+/// The key members of a whole sample: [`decode_with`] that reads, of the
+/// top-level structure and of each structure a key member holds, only the
+/// `@key` members (all of them where a structure declares none, XTypes
+/// 1.3 §7.6.8 step 1). Every other member is stepped over where the stream
+/// says how long it is — a primitive, a `string`, a sequence or array of
+/// primitives, anything behind a DHEADER or an EMHEADER — and read and
+/// dropped otherwise; it comes back at its default. The key holder and the
+/// KeyHash of the value are those of the whole sample.
+///
+/// Nothing about the members stepped over is checked; reading the sample
+/// with [`decode_with`] still refuses what it refuses.
+///
+/// # Errors
+/// As [`decode`].
+pub fn key_of_sample<V: Source + Sink>(
+    ast: &Ast,
+    plans: &DecodePlans,
+    request: &ProbeRequest,
+    bytes: &[u8],
+) -> Result<V, ProbeError> {
+    decode_in(ast, request, bytes, 0, Some(plans), true)
+}
+
+fn decode_in<V: Source + Sink>(
+    ast: &Ast,
+    request: &ProbeRequest,
+    bytes: &[u8],
+    start: usize,
+    plans: Option<&DecodePlans>,
+    keys_only: bool,
 ) -> Result<V, ProbeError> {
     if start != 0 && request.emit != Emit::Payload {
         return Err(ProbeError::Unsupported {
@@ -422,6 +479,8 @@ pub fn decode_continuing<V: Source + Sink>(
         wchar: WcharPosition::Member,
         depth: 0,
         is_discriminator: false,
+        plans,
+        keys_only,
     };
     // The same framing the writer would have used, from the same
     // policy: the read direction takes every dialect setting the write
@@ -509,6 +568,8 @@ pub fn decode_prefix<V: Source + Sink>(
         wchar: WcharPosition::Member,
         depth: 0,
         is_discriminator: false,
+        plans: None,
+        keys_only: false,
     };
     let mut r = Reader::with_max_align(
         bytes,
@@ -755,6 +816,8 @@ pub fn serialized_key<V: Source + Sink>(
         wchar: WcharPosition::Member,
         depth: 0,
         is_discriminator: false,
+        plans: None,
+        keys_only: false,
     };
     let mut r = Reader::with_max_align(
         payload,
@@ -820,6 +883,8 @@ pub fn key_holder_prefix<V: Source + Sink>(
         wchar: WcharPosition::Member,
         depth: 0,
         is_discriminator: false,
+        plans: None,
+        keys_only: false,
     };
     // The writer's cap (`encode::key_holder`): PLAIN_CDR2's four, unless
     // the dialect aligns the holder to its data encoding or packs it.
@@ -960,7 +1025,7 @@ fn read_type<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     type_: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     let node = ast.type_(type_).map_err(|error| ProbeError::NoLayout {
@@ -1131,7 +1196,7 @@ fn fit_string<V: Source + Sink>(
     text: String,
     bound: Bound,
     width: CharWidth,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     let Some(limit) = bound_value(ast, &bound).and_then(|limit| usize::try_from(limit).ok()) else {
@@ -1197,7 +1262,7 @@ fn fit_collection<V: Source + Sink>(
     items: Vec<V>,
     limit: Option<i128>,
     type_: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
     what: &str,
 ) -> Result<V, ProbeError> {
@@ -1244,7 +1309,7 @@ fn read_array_dimension<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     element: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
     counts: &[usize],
 ) -> Result<V, ProbeError> {
@@ -1275,11 +1340,91 @@ fn read_array_dimension<V: Source + Sink>(
 /// Three shapes, and which one applies is the extensibility, read the
 /// same way the planner reads it rather than inferred back out of the
 /// plan it produced.
+/// The plans a decoder reuses, one per type and layout key.
+///
+/// Reading an aggregate needs its layout plan and member table, and
+/// [`decode`] computes both for every aggregate of every sample it reads.
+/// A reader of one type sample after sample hands the same `DecodePlans`
+/// to [`decode_with`] and [`key_of_sample`], and each type is planned once.
+#[derive(Default)]
+pub struct DecodePlans {
+    planned: std::sync::RwLock<PlanTable>,
+}
+
+/// The plans of [`DecodePlans`], by type and layout key.
+type PlanTable = std::collections::HashMap<(Id<TypeNode>, LayoutKey), std::sync::Arc<Planned>>;
+
+impl core::fmt::Debug for DecodePlans {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let planned = self.planned.read().map_or(0, |planned| planned.len());
+        f.debug_struct("DecodePlans")
+            .field("planned", &planned)
+            .finish()
+    }
+}
+
+impl DecodePlans {
+    /// No plans yet.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// The plan of `type_` under `key`, made on first use.
+    fn planned(
+        &self,
+        ast: &Ast,
+        type_: Id<TypeNode>,
+        key: LayoutKey,
+    ) -> Result<std::sync::Arc<Planned>, ProbeError> {
+        if let Ok(planned) = self.planned.read()
+            && let Some(found) = planned.get(&(type_, key))
+        {
+            return Ok(std::sync::Arc::clone(found));
+        }
+        let made = std::sync::Arc::new(Planned::new(ast, type_, key)?);
+        if let Ok(mut planned) = self.planned.write() {
+            planned.insert((type_, key), std::sync::Arc::clone(&made));
+        }
+        Ok(made)
+    }
+}
+
+/// What reading an aggregate of one type under one layout key needs before
+/// a byte is read.
+struct Planned {
+    layout: zerodds_ast_layout::TypeLayout,
+    members: Vec<MemberSlot>,
+    extensibility: Extensibility,
+    /// The key its members are read under (`zerodds_ast_layout::member_key`).
+    member_key: LayoutKey,
+}
+
+impl Planned {
+    fn new(ast: &Ast, type_: Id<TypeNode>, key: LayoutKey) -> Result<Self, ProbeError> {
+        let mut deps = DepCollector::new();
+        let layout = plan(ast, type_, key, &mut deps).map_err(|error| ProbeError::NoLayout {
+            detail: format!("{error}"),
+        })?;
+        let members = member_table(ast, type_, &layout);
+        let node = ast.type_(type_).map_err(|e| ProbeError::NoLayout {
+            detail: e.to_string(),
+        })?;
+        let extensibility = zerodds_ast_layout::xcdr::extensibility_of(ast, node, key);
+        Ok(Self {
+            layout,
+            members,
+            extensibility,
+            member_key: zerodds_ast_layout::member_key(ast, type_, key),
+        })
+    }
+}
+
 fn read_aggregate<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     type_: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     // Before a byte is read: a stream can nest a recursive type as
@@ -1292,41 +1437,38 @@ fn read_aggregate<V: Source + Sink>(
     let packed = frame.key.element_padding == ElementPadding::Packed;
     let saved_origin = packed.then(|| r.begin_packed_element());
 
-    let mut deps = DepCollector::new();
-    let layout = plan(ast, type_, frame.key, &mut deps).map_err(|error| ProbeError::NoLayout {
-        detail: format!("{error}"),
-    })?;
+    let planned = match frame.plans {
+        Some(plans) => plans.planned(ast, type_, frame.key)?,
+        None => std::sync::Arc::new(Planned::new(ast, type_, frame.key)?),
+    };
 
-    let end = if layout.needs_dheader {
+    let end = if planned.layout.needs_dheader {
         let length = wire(r.read_dheader(), path)?;
         Some(r.position().saturating_add(length))
     } else {
         None
     };
 
-    let members = member_table(ast, type_, &layout);
-    let node = ast.type_(type_).map_err(|e| ProbeError::NoLayout {
-        detail: e.to_string(),
-    })?;
-    let extensibility = zerodds_ast_layout::xcdr::extensibility_of(ast, node, frame.key);
+    let members = &planned.members[..];
+    let extensibility = planned.extensibility;
     let holder = frame.key.purpose == Purpose::Key;
     let original_key = frame.key;
     let frame = Frame {
-        key: zerodds_ast_layout::member_key(ast, type_, frame.key),
+        key: planned.member_key,
         ..frame
     };
     let mutable = extensibility == Extensibility::Mutable
         && frame.key.aggregate_delimiter.frames_mutable_members();
     let mut out = if mutable && frame.key.encoding.is_v1() {
-        read_parameter_list(r, ast, &members, frame, path)?
+        read_parameter_list(r, ast, members, frame, path)?
     } else if mutable {
-        read_member_headers(r, ast, &members, frame, path, end)?
+        read_member_headers(r, ast, members, frame, path, end)?
     } else {
         let tail = Tail {
             end,
             appendable: extensibility == Extensibility::Appendable,
         };
-        read_in_plan_order(r, ast, &members, frame, path, tail)?
+        read_in_plan_order(r, ast, members, frame, path, tail)?
     };
 
     if let Some(end) = end {
@@ -1374,15 +1516,44 @@ struct MemberSlot {
     /// `@try_construct` as the member wrote it, before the alias chain
     /// of its type is consulted. DDS-XTypes 1.3 §7.2.2.7.
     try_construct: Option<TryConstruct>,
+    /// Declared `@key`.
+    key: bool,
 }
 
 impl MemberSlot {
     /// The frame this member's value is read under.
-    fn frame(&self, ast: &Ast, frame: Frame) -> Frame {
-        frame
+    fn frame<'p>(&self, ast: &Ast, frame: Frame<'p>) -> Frame<'p> {
+        let member = frame
             .for_member(ast, self.try_construct, Some(self.type_), self.member)
-            .in_aggregate()
+            .in_aggregate();
+        // Under `keys_only`, a structure this member holds is read for its
+        // own key members; anything else it holds is read whole.
+        Frame {
+            keys_only: frame.keys_only && is_structure(ast, self.type_),
+            ..member
+        }
     }
+
+    /// Whether `keys_only` steps over this member of an aggregate whose
+    /// members `declares_keys` says whether any is `@key`.
+    fn stepped_over(&self, frame: Frame<'_>, declares_keys: bool) -> bool {
+        frame.keys_only && declares_keys && !self.key
+    }
+}
+
+/// Whether `type_`, behind its aliases, is a structure.
+fn is_structure(ast: &Ast, mut type_: Id<TypeNode>) -> bool {
+    for _ in 0..crate::MAX_VALUE_DEPTH {
+        match ast.type_(type_).map(|node| &node.kind) {
+            Ok(TypeKind::Alias { aliased }) => match aliased.resolved() {
+                Some(target) => type_ = target,
+                None => return false,
+            },
+            Ok(TypeKind::Structure { .. }) => return true,
+            _ => return false,
+        }
+    }
+    false
 }
 
 fn member_table(
@@ -1413,6 +1584,7 @@ fn member_table(
             header: member.header,
             member: id,
             try_construct: node.facets.xtypes.as_ref().and_then(|x| x.try_construct),
+            key: node.facets.is_key(),
         });
     }
     out
@@ -1491,17 +1663,22 @@ fn read_in_plan_order<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     members: &[MemberSlot],
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
     tail: Tail,
 ) -> Result<Aggregate<V>, ProbeError> {
     let mut out = Aggregate::new();
+    let declares_keys = frame.keys_only && members.iter().any(|m| m.key);
     for (index, slot) in members.iter().enumerate() {
-        let member_path = format!("{path}.{}", slot.name);
         if tail.reached(r) {
             defaults_from(ast, &members[index..], &mut out, path)?;
             break;
         }
+        if slot.stepped_over(frame, declares_keys) && slot.header == MemberHeader::NoHeader {
+            skip_value::<V>(r, ast, slot.type_, slot.frame(ast, frame), path, &slot.name)?;
+            continue;
+        }
+        let member_path = format!("{path}.{}", slot.name);
         match slot.header {
             // Rule (18).
             MemberHeader::NoHeader => {
@@ -1564,6 +1741,9 @@ fn read_in_plan_order<V: Source + Sink>(
             }
         }
     }
+    if declares_keys {
+        defaults_from(ast, members, &mut out, path)?;
+    }
     Ok(out)
 }
 
@@ -1578,7 +1758,7 @@ fn read_member_headers<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     members: &[MemberSlot],
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
     end: Option<usize>,
 ) -> Result<Aggregate<V>, ProbeError> {
@@ -1588,6 +1768,7 @@ fn read_member_headers<V: Source + Sink>(
         });
     };
     let mut out = Aggregate::new();
+    let declares_keys = frame.keys_only && members.iter().any(|m| m.key);
     while r.position() < end {
         let at = r.position();
         let header = wire(r.read_emheader(), path)?;
@@ -1620,6 +1801,10 @@ fn read_member_headers<V: Source + Sink>(
             skip_to(r, ends_at);
             continue;
         };
+        if slot.stepped_over(frame, declares_keys) {
+            skip_to(r, ends_at);
+            continue;
+        }
         let member_path = format!("{path}.{}", slot.name);
         let value = read_type(r, ast, slot.type_, slot.frame(ast, frame), &member_path)?;
         if r.position() != ends_at {
@@ -1640,6 +1825,9 @@ fn read_member_headers<V: Source + Sink>(
             });
         }
     }
+    if declares_keys {
+        defaults_from(ast, members, &mut out, path)?;
+    }
     require_present(ast, members, &mut out, path)?;
     Ok(out)
 }
@@ -1649,10 +1837,11 @@ fn read_parameter_list<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     members: &[MemberSlot],
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<Aggregate<V>, ProbeError> {
     let mut out = Aggregate::new();
+    let declares_keys = frame.keys_only && members.iter().any(|m| m.key);
     loop {
         if r.remaining() < 4 {
             return Err(ProbeError::Mismatch {
@@ -1712,6 +1901,11 @@ fn read_parameter_list<V: Source + Sink>(
             wire(r.finish_pid(header), path)?;
             continue;
         };
+        if slot.stepped_over(frame, declares_keys) {
+            skip_to(r, at.saturating_add(header.length));
+            wire(r.finish_pid(header), path)?;
+            continue;
+        }
         let member_path = format!("{path}.{}", slot.name);
         let value = read_type(r, ast, slot.type_, slot.frame(ast, frame), &member_path)?;
         overran(r, at, header.length, &member_path)?;
@@ -1723,6 +1917,9 @@ fn read_parameter_list<V: Source + Sink>(
             });
         }
         wire(r.finish_pid(header), path)?;
+    }
+    if declares_keys {
+        defaults_from(ast, members, &mut out, path)?;
     }
     require_present(ast, members, &mut out, path)?;
     Ok(out)
@@ -1736,6 +1933,194 @@ fn read_parameter_list<V: Source + Sink>(
 /// DDS writes the exact one, and `vendor_bytes.md` §2 records both for
 /// the same `short`. Reading *past* the declared length is neither, and
 /// it means the reader and the writer disagree about the type.
+/// Steps over a value of `type_` that a `keys_only` read does not need
+/// ([`key_of_sample`]): by its extent where the stream says what it is
+/// ([`step_over`]), otherwise read and dropped. `name` is the member's,
+/// for an error's path.
+fn skip_value<V: Source + Sink>(
+    r: &mut Reader<'_>,
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    frame: Frame<'_>,
+    path: &str,
+    name: &str,
+) -> Result<(), ProbeError> {
+    let at = r.position();
+    match step_over(r, ast, type_, frame) {
+        Ok(true) => return Ok(()),
+        Ok(false) => {}
+        Err(error) => {
+            return Err(ProbeError::Mismatch {
+                path: format!("{path}.{name}"),
+                expected: "a value the stream holds whole".to_string(),
+                found: format!("{error} (from offset {at})"),
+            });
+        }
+    }
+    let member_path = format!("{path}.{name}");
+    let whole = Frame {
+        keys_only: false,
+        ..frame
+    };
+    let _: V = read_type(r, ast, type_, whole, &member_path)?;
+    Ok(())
+}
+
+/// Moves `r` past a value of `type_` without reading it, where its extent
+/// is known from the stream alone: a primitive of fixed width, a `string`,
+/// a sequence or an array of such primitives, and anything a DHEADER
+/// delimits. `false`, with `r` where it was, for anything else.
+///
+/// zerodds-lint: recursion-depth 64 — one frame per typedef hop,
+/// `contract::MAX_ALIAS_HOPS`. The typedef arm is the only recursive one,
+/// and it is finite because `read_aggregate` plans the type before it
+/// hands a member to `skip_value`, and `zerodds_ast_layout::plan` refuses
+/// a graph deeper than its own `MAX_DEPTH`.
+fn step_over(
+    r: &mut Reader<'_>,
+    ast: &Ast,
+    type_: Id<TypeNode>,
+    frame: Frame<'_>,
+) -> Result<bool, WireError> {
+    let Ok(node) = ast.type_(type_) else {
+        return Ok(false);
+    };
+    match &node.kind {
+        TypeKind::Alias { aliased } => match aliased.resolved() {
+            Some(target) => step_over(r, ast, target, frame),
+            None => Ok(false),
+        },
+        TypeKind::Primitive(kind) => match primitive_width(*kind) {
+            Some(width) => {
+                r.align_to(width)?;
+                advance(r, width)?;
+                Ok(true)
+            }
+            None => Ok(false),
+        },
+        TypeKind::String {
+            width: CharWidth::Char,
+            ..
+        } => {
+            r.read_string()?;
+            Ok(true)
+        }
+        TypeKind::Sequence { element, .. } => {
+            let Some(element) = element.resolved() else {
+                return Ok(false);
+            };
+            if collection_is_delimited(ast, element, frame.key) {
+                let length = r.read_dheader()?;
+                advance(r, length)?;
+                return Ok(true);
+            }
+            let Some(width) = element_width(ast, element) else {
+                return Ok(false);
+            };
+            let count = r.read_u32()? as usize;
+            step_elements(r, frame, width, count)?;
+            Ok(true)
+        }
+        TypeKind::Array { element, dims } => {
+            let Some(element) = element.resolved() else {
+                return Ok(false);
+            };
+            if array_is_delimited(ast, element, frame.key) {
+                let length = r.read_dheader()?;
+                advance(r, length)?;
+                return Ok(true);
+            }
+            let Some(width) = element_width(ast, element) else {
+                return Ok(false);
+            };
+            let count: usize = dimensions(ast, dims).iter().product();
+            step_elements(r, frame, width, count)?;
+            Ok(true)
+        }
+        TypeKind::Structure { .. } => {
+            let needs_dheader = match frame.plans {
+                Some(plans) => plans
+                    .planned(ast, type_, frame.key)
+                    .is_ok_and(|planned| planned.layout.needs_dheader),
+                None => false,
+            };
+            if !needs_dheader {
+                return Ok(false);
+            }
+            if frame.key.element_padding == ElementPadding::Packed {
+                // `read_aggregate` counts the DHEADER from the aggregate's
+                // own first octet; reading it here would align differently.
+                return Ok(false);
+            }
+            let length = r.read_dheader()?;
+            advance(r, length)?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+/// `count` elements of `width` octets, aligned as the reader aligns the
+/// first: from the stream's origin, or not at all where each element is
+/// its own alignment block (`ElementPadding::Packed`).
+fn step_elements(
+    r: &mut Reader<'_>,
+    frame: Frame<'_>,
+    width: usize,
+    count: usize,
+) -> Result<(), WireError> {
+    if count == 0 {
+        return Ok(());
+    }
+    if frame.key.element_padding != ElementPadding::Packed {
+        r.align_to(width)?;
+    }
+    let length = count.checked_mul(width).ok_or(WireError::OutOfRange {
+        at: r.position(),
+        expected: "an element count whose octets fit the address space".to_string(),
+    })?;
+    advance(r, length)
+}
+
+/// `length` octets on from where `r` is.
+fn advance(r: &mut Reader<'_>, length: usize) -> Result<(), WireError> {
+    let target = r
+        .position()
+        .checked_add(length)
+        .ok_or(WireError::OutOfRange {
+            at: r.position(),
+            expected: "an extent that fits the address space".to_string(),
+        })?;
+    r.skip_to(target)
+}
+
+/// The octets of a primitive whose width the stream does not choose: not
+/// `char` or `wchar`, whose width a dialect sets, and not `long double`.
+fn primitive_width(kind: PrimitiveKind) -> Option<usize> {
+    match kind {
+        PrimitiveKind::Boolean
+        | PrimitiveKind::Octet
+        | PrimitiveKind::UInt8
+        | PrimitiveKind::Int8 => Some(1),
+        PrimitiveKind::Int16 | PrimitiveKind::UInt16 => Some(2),
+        PrimitiveKind::Int32 | PrimitiveKind::UInt32 | PrimitiveKind::Float32 => Some(4),
+        PrimitiveKind::Int64 | PrimitiveKind::UInt64 | PrimitiveKind::Float64 => Some(8),
+        _ => None,
+    }
+}
+
+/// [`primitive_width`] of a collection's element, behind its aliases.
+fn element_width(ast: &Ast, mut type_: Id<TypeNode>) -> Option<usize> {
+    for _ in 0..crate::MAX_VALUE_DEPTH {
+        match &ast.type_(type_).ok()?.kind {
+            TypeKind::Alias { aliased } => type_ = aliased.resolved()?,
+            TypeKind::Primitive(kind) => return primitive_width(*kind),
+            _ => return None,
+        }
+    }
+    None
+}
+
 fn overran(r: &Reader<'_>, at: usize, length: usize, path: &str) -> Result<(), ProbeError> {
     if r.position() > at.saturating_add(length) {
         return Err(ProbeError::Mismatch {
@@ -1879,7 +2264,7 @@ fn read_mmember<V: Source + Sink>(
     member_id: u32,
     id_check: MemberIdCheck,
     type_: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     match header {
@@ -1971,7 +2356,7 @@ fn read_mmember<V: Source + Sink>(
 ///
 /// A plan that will not compute is not a bound either, so it answers
 /// false and the member is stepped over.
-fn case_extent_is_fixed(ast: &Ast, type_: Id<TypeNode>, frame: Frame) -> bool {
+fn case_extent_is_fixed(ast: &Ast, type_: Id<TypeNode>, frame: Frame<'_>) -> bool {
     let mut deps = DepCollector::new();
     plan(ast, type_, frame.key, &mut deps).is_ok_and(|layout| layout.extent.is_sized())
 }
@@ -1991,7 +2376,7 @@ fn read_union<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     type_: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     // As in `read_aggregate`: a union on a cycle nests a value just as
@@ -2396,10 +2781,10 @@ pub(crate) fn selector_of<V: Source>(
                 let Ok(enumerator) = ast.enumerator(*id) else {
                     continue;
                 };
-                if enumerator.name == name {
-                    if let Some(number) = ast.effective_enumerator_value(*id) {
-                        return Ok(number);
-                    }
+                if enumerator.name == name
+                    && let Some(number) = ast.effective_enumerator_value(*id)
+                {
+                    return Ok(number);
                 }
             }
             Err(ProbeError::Unknown {
@@ -2534,7 +2919,7 @@ fn read_enumeration<V: Source + Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     type_: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     // The reader takes the same axis the writer took: this project's
@@ -2703,7 +3088,7 @@ fn read_bitset<V: Sink>(
     r: &mut Reader<'_>,
     ast: &Ast,
     type_: Id<TypeNode>,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     let fields = ast.all_bitfields_of(type_);
@@ -2772,7 +3157,7 @@ fn read_map<V: Source + Sink>(
     key_type: &Ref<TypeNode>,
     value_type: &Ref<TypeNode>,
     bound: &Bound,
-    frame: Frame,
+    frame: Frame<'_>,
     path: &str,
 ) -> Result<V, ProbeError> {
     let key_type = key_type.resolved().ok_or_else(|| ProbeError::NoLayout {
@@ -2918,7 +3303,7 @@ fn read_wstring(
         // A count the width does not divide is a form mismatch and not
         // a short read: rounding it down would leave the remainder in
         // the stream and put every later member at the wrong offset.
-        if declared % width != 0 {
+        if !declared.is_multiple_of(width) {
             return Err(wstring_form_mismatch(policy, declared, path));
         }
         read_wstring_units(r, declared / width, width, order, path)?
@@ -2944,14 +3329,14 @@ fn read_wstring(
     // and the value the peer returns differ for bytes both accepted.
     // Only where a terminator is expected — a cell without one is
     // entitled to carry U+0000 as a character.
-    if matches!(policy.terminator_at(position), WstringTerminator::Present) {
-        if let Some(offset) = units.iter().position(|unit| *unit == 0) {
-            return Err(ProbeError::Mismatch {
-                path: path.to_string(),
-                expected: "no NUL inside a wstring a C peer would stop at".to_string(),
-                found: format!("a NUL at character {offset} of {}", units.len()),
-            });
-        }
+    if matches!(policy.terminator_at(position), WstringTerminator::Present)
+        && let Some(offset) = units.iter().position(|unit| *unit == 0)
+    {
+        return Err(ProbeError::Mismatch {
+            path: path.to_string(),
+            expected: "no NUL inside a wstring a C peer would stop at".to_string(),
+            found: format!("a NUL at character {offset} of {}", units.len()),
+        });
     }
 
     // The byte-order mark is not a character of the string, and under
@@ -3040,7 +3425,7 @@ fn read_wstring_units(
     order: WstringUnitOrder,
     path: &str,
 ) -> Result<Vec<u16>, ProbeError> {
-    let bytes = count.checked_mul(width).unwrap_or(usize::MAX);
+    let bytes = count.saturating_mul(width);
     if bytes > r.remaining() {
         return Err(ProbeError::Mismatch {
             path: path.to_string(),
@@ -3174,7 +3559,7 @@ const fn wstring_length_is_possible(policy: WstringLengthPolicy, declared: usize
     // no length can show — so a diagnostic that names one names both.
     // That is a property of C4 now and not a special case here.
     if matches!(policy.counts, WstringLengthCounts::Octets)
-        && declared % policy.unit.octets() as usize != 0
+        && !declared.is_multiple_of(policy.unit.octets() as usize)
     {
         return false;
     }

@@ -83,7 +83,7 @@ fn string_pair(annotation: &str) -> String {
 /// implementations agree, and four of them have no other behaviour at
 /// all.
 #[test]
-fn an_unannotated_member_discards_the_sample() {
+fn xtypes_7_2_2_7_an_unannotated_member_discards_the_sample() {
     let answer = string_pair("");
     assert!(answer.starts_with("discarded:"), "{answer}");
     assert!(answer.contains("at most 5 octets"), "{answer}");
@@ -92,7 +92,7 @@ fn an_unannotated_member_discards_the_sample() {
 /// §7.3.1.2.1.12.1: "The constructed object would have O1.member set to
 /// the empty string." Table 9's `STRING_TYPE` row.
 #[test]
-fn use_default_substitutes_table_nines_value_and_keeps_the_sample() {
+fn xtypes_7_2_2_7_use_default_substitutes_table_nines_value_and_keeps_the_sample() {
     assert_eq!(
         string_pair("@try_construct(USE_DEFAULT)"),
         r#"{"a":7,"b":9,"m":""}"#
@@ -104,7 +104,7 @@ fn use_default_substitutes_table_nines_value_and_keeps_the_sample() {
 /// is, the string 'Hello'." Measured against OpenDDS, which produces the
 /// same five characters.
 #[test]
-fn trim_cuts_the_string_to_the_bound_and_keeps_the_sample() {
+fn xtypes_7_2_2_7_trim_cuts_the_string_to_the_bound_and_keeps_the_sample() {
     assert_eq!(
         string_pair("@try_construct(TRIM)"),
         r#"{"a":7,"b":9,"m":"Hello"}"#
@@ -116,7 +116,7 @@ fn trim_cuts_the_string_to_the_bound_and_keeps_the_sample() {
 /// *absent* annotation means — the two defaults belong to different
 /// things.
 #[test]
-fn a_bare_annotation_is_use_default_and_not_discard() {
+fn xtypes_7_3_1_2_1_12_a_bare_annotation_is_use_default_and_not_discard() {
     assert_eq!(string_pair("@try_construct"), r#"{"a":7,"b":9,"m":""}"#);
     assert!(string_pair("").starts_with("discarded:"));
 }
@@ -135,7 +135,7 @@ fn sequence_pair(annotation: &str) -> String {
 /// O2.member" — the first four and not any four, so the trim is a
 /// prefix.
 #[test]
-fn trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements() {
+fn xtypes_7_2_2_7_trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements() {
     assert_eq!(
         sequence_pair("@try_construct(TRIM)"),
         r#"{"a":7,"b":9,"m":[1,2,3,4]}"#
@@ -155,7 +155,7 @@ fn trim_cuts_a_sequence_to_its_bound_keeping_the_first_elements() {
 /// Here the sequence itself fits — one element against a bound of ten —
 /// and it is the element that cannot be constructed.
 #[test]
-fn an_element_annotation_trims_the_element_and_not_the_collection() {
+fn xtypes_7_2_2_7_an_element_annotation_trims_the_element_and_not_the_collection() {
     assert_eq!(
         narrowed(
             "typedef string<16> String16;
@@ -174,7 +174,7 @@ fn an_element_annotation_trims_the_element_and_not_the_collection() {
 /// member's behaviour then decides, and Table 9's `ENUM_TYPE` row is
 /// what USE_DEFAULT substitutes.
 #[test]
-fn an_enumerator_the_reader_does_not_declare_is_a_construction_failure() {
+fn xtypes_7_2_4_1_an_enumerator_the_reader_does_not_declare_is_a_construction_failure() {
     let pair = |annotation: &str| {
         narrowed(
             "@appendable enum K { K1, @default_literal K2, K3 };
@@ -205,7 +205,7 @@ fn an_enumerator_the_reader_does_not_declare_is_a_construction_failure() {
 /// what type the writer's member had. OpenDDS hands back `d=0 v=0` for
 /// exactly this input.
 #[test]
-fn a_defaulted_discriminator_defaults_the_member_it_now_selects() {
+fn xtypes_7_2_2_7_a_defaulted_discriminator_defaults_the_member_it_now_selects() {
     let pair = |annotation: &str| {
         narrowed(
             "@appendable enum K { K1, @default_literal K2, K3 };
@@ -225,7 +225,7 @@ fn a_defaulted_discriminator_defaults_the_member_it_now_selects() {
 /// A map's value slot narrows; its key slot cannot, and the frontend is
 /// what refuses a key that tries. Table 17.
 #[test]
-fn a_map_value_trims_and_the_entry_survives() {
+fn xtypes_7_2_2_7_a_map_value_trims_and_the_entry_survives() {
     assert_eq!(
         narrowed(
             "@mutable struct S { long a; map<long, string<32>, 10> m; long b; };",
@@ -265,7 +265,7 @@ fn an_alias_borne_behaviour_reaches_a_member_that_wrote_none() {
 /// of the third character, and half a UTF-8 sequence is not text — a
 /// peer holding `char[6]` cannot store it either.
 #[test]
-fn a_trim_stops_on_a_character_boundary() {
+fn xtypes_7_2_2_7_a_trim_stops_on_a_character_boundary() {
     let answer = narrowed(
         "@mutable struct S { long a; string<32> m; long b; };",
         "@mutable struct S { long a; @try_construct(TRIM) string<5> m; long b; };",
@@ -284,7 +284,7 @@ fn a_trim_stops_on_a_character_boundary() {
 /// that read a truncated stream as a narrowing would never notice a
 /// broken peer.
 #[test]
-fn a_discard_and_a_malformed_stream_are_not_the_same_error() {
+fn xtypes_7_2_2_7_a_discard_and_a_malformed_stream_are_not_the_same_error() {
     let reader = model_from_idl(
         "@mutable struct S { long a; string<5> m; long b; };",
         "r.idl",

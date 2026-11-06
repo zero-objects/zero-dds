@@ -292,7 +292,7 @@ mod tests {
     // --- Symbols ---
 
     #[test]
-    fn condition_symbols_match_spec() {
+    fn ddsamqp_11_1_condition_symbols_match_spec() {
         assert_eq!(
             AmqpErrorCondition::DecodeError.as_symbol(),
             "amqp:decode-error"
@@ -323,13 +323,13 @@ mod tests {
     // --- §11.4 diagnostic format ---
 
     #[test]
-    fn description_renders_spec_section_then_text() {
+    fn ddsamqp_11_4_description_renders_spec_section_then_text() {
         let d = ErrorDescription::new("§7.2.1.3", "type-id collision detected");
         assert_eq!(d.render(), "§7.2.1.3: type-id collision detected");
     }
 
     #[test]
-    fn description_display_matches_render() {
+    fn ddsamqp_11_4_description_display_matches_render() {
         let d = ErrorDescription::new("§D.4.1", "correlation-id absent");
         assert_eq!(alloc::format!("{d}"), d.render());
     }
@@ -337,7 +337,7 @@ mod tests {
     // --- §11.1 mapping-error mapper ---
 
     #[test]
-    fn invalid_utf8_maps_to_decode_error_transfer() {
+    fn ddsamqp_11_1_invalid_utf8_maps_to_decode_error_transfer() {
         let e = map_mapping_error(&MappingError::InvalidUtf8);
         assert_eq!(e.condition, AmqpErrorCondition::DecodeError);
         assert_eq!(e.scope, ErrorScope::Transfer);
@@ -345,14 +345,14 @@ mod tests {
     }
 
     #[test]
-    fn invalid_json_maps_to_decode_error() {
+    fn ddsamqp_11_1_invalid_json_maps_to_decode_error() {
         let e = map_mapping_error(&MappingError::InvalidJson("bad token".into()));
         assert_eq!(e.condition, AmqpErrorCondition::DecodeError);
         assert!(e.description.message.contains("bad token"));
     }
 
     #[test]
-    fn empty_body_maps_to_decode_error() {
+    fn ddsamqp_11_1_empty_body_maps_to_decode_error() {
         let e = map_mapping_error(&MappingError::EmptyBody);
         assert_eq!(e.condition, AmqpErrorCondition::DecodeError);
     }
@@ -360,7 +360,7 @@ mod tests {
     // --- §7.5.1 NoRoute mapping ---
 
     #[test]
-    fn no_route_with_dynamic_disabled_yields_not_found_link() {
+    fn ddsamqp_7_5_1_no_route_with_dynamic_disabled_yields_not_found_link() {
         let e = map_resolution_error(&ResolutionError::NoRoute("X".into()), false);
         assert_eq!(e.condition, AmqpErrorCondition::NotFound);
         assert_eq!(e.scope, ErrorScope::Link);
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn no_route_with_dynamic_enabled_still_not_found() {
+    fn ddsamqp_7_5_1_no_route_with_dynamic_enabled_still_not_found() {
         // Spec §7.5.1 — the `true` path is turned into
         // dynamic-topic creation on the caller side; here we return
         // the same condition but a different description.
@@ -387,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_address_maps_to_decode_error() {
+    fn ddsamqp_7_5_1_malformed_address_maps_to_decode_error() {
         let e = map_resolution_error(&ResolutionError::Malformed("bad://".into()), false);
         assert_eq!(e.condition, AmqpErrorCondition::DecodeError);
         assert_eq!(e.scope, ErrorScope::Link);
@@ -396,14 +396,14 @@ mod tests {
     // --- §11.2 resource limits + durability ---
 
     #[test]
-    fn resource_limit_exceeded_is_connection_scope() {
+    fn ddsamqp_11_2_resource_limit_exceeded_is_connection_scope() {
         let e = resource_limit_exceeded("§7.10", "max-connections cap reached");
         assert_eq!(e.condition, AmqpErrorCondition::ResourceLimitExceeded);
         assert_eq!(e.scope, ErrorScope::Connection);
     }
 
     #[test]
-    fn unsettled_state_yields_not_implemented() {
+    fn ddsamqp_11_2_unsettled_state_yields_not_implemented() {
         let e = unsettled_state_not_implemented();
         assert_eq!(e.condition, AmqpErrorCondition::NotImplemented);
         assert_eq!(e.scope, ErrorScope::Link);
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_dds_operation_yields_not_implemented() {
+    fn ddsamqp_11_2_unknown_dds_operation_yields_not_implemented() {
         let e = unknown_dds_operation("teleport");
         assert_eq!(e.condition, AmqpErrorCondition::NotImplemented);
         assert!(e.description.message.contains("teleport"));
@@ -420,7 +420,7 @@ mod tests {
     // --- §11.3 instance lifecycle ---
 
     #[test]
-    fn instance_unknown_yields_precondition_failed() {
+    fn ddsamqp_11_3_instance_unknown_yields_precondition_failed() {
         let e = instance_unknown("unregister", "key-7");
         assert_eq!(e.condition, AmqpErrorCondition::PreconditionFailed);
         assert_eq!(e.scope, ErrorScope::Transfer);
@@ -429,7 +429,7 @@ mod tests {
     }
 
     #[test]
-    fn register_missing_key_yields_decode_error() {
+    fn ddsamqp_11_3_register_missing_key_yields_decode_error() {
         let e = register_missing_key();
         assert_eq!(e.condition, AmqpErrorCondition::DecodeError);
         assert!(e.description.message.contains("register"));
@@ -438,7 +438,7 @@ mod tests {
     // --- §10.3.3 AccessControl reject ---
 
     #[test]
-    fn access_denied_yields_unauthorized_access_link() {
+    fn ddsamqp_10_3_3_access_denied_yields_unauthorized_access_link() {
         let e = access_denied("CN=eve", "Sensor");
         assert_eq!(e.condition, AmqpErrorCondition::UnauthorizedAccess);
         assert_eq!(e.scope, ErrorScope::Link);

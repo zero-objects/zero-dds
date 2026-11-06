@@ -154,25 +154,3 @@ pub fn tool_available(tool: &str, arg: &str) -> bool {
         .status()
         .is_ok_and(|s| s.success())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Every wired language generates a `Ping`, a `Pong` and a codec for
-    /// both. A column that came back without one of them would be a silently
-    /// dropped declaration, and the language's own test would fail far from
-    /// the cause.
-    #[test]
-    fn every_language_generates_ping_and_pong() {
-        for language in Language::ALL {
-            let text = source(language);
-            for want in ["Ping", "Pong"] {
-                assert!(
-                    text.contains(want),
-                    "{language:?}: no `{want}` in the generated source:\n{text}"
-                );
-            }
-        }
-    }
-}

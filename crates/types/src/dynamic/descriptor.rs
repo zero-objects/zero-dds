@@ -894,7 +894,7 @@ mod tests {
     /// included: §7.3.4.2 gives them `TK_BYTE` and `TK_UINT8`, two
     /// type kinds, so neither loses its identity here.
     #[test]
-    fn every_model_primitive_has_a_kind_and_comes_back() {
+    fn xtypes_7_2_2_every_model_primitive_has_a_kind_and_comes_back() {
         for primitive in AstPrimitive::ALL {
             let kind = TypeKind::of_primitive(primitive);
             assert!(kind.is_primitive(), "{primitive:?} is not a primitive kind");
@@ -911,7 +911,7 @@ mod tests {
     /// derived from it — and made the two mutually assignable under
     /// §7.2.4.4.4.4 Table 15.
     #[test]
-    fn octet_and_uint8_are_two_kinds() {
+    fn xtypes_7_2_2_2_octet_and_uint8_are_two_dynamic_type_kinds() {
         assert_eq!(TypeKind::of_primitive(AstPrimitive::Octet), TypeKind::Byte);
         assert_eq!(TypeKind::of_primitive(AstPrimitive::UInt8), TypeKind::UInt8);
         assert_ne!(
@@ -923,7 +923,7 @@ mod tests {
     /// The three classifications do not overlap, and `NoType` is in none
     /// of them.
     #[test]
-    fn the_classifications_are_disjoint() {
+    fn xtypes_7_2_2_the_classifications_are_disjoint() {
         for kind in TypeKind::ALL {
             let classes = usize::from(kind.is_primitive())
                 + usize::from(kind.is_aggregable())
@@ -986,7 +986,7 @@ mod tests {
     }
 
     #[test]
-    fn the_two_renames_round_trip() {
+    fn xtypes_annex_c_the_two_renames_round_trip() {
         for extensibility in ExtensibilityKind::ALL {
             let there: Extensibility = extensibility.into();
             assert_eq!(ExtensibilityKind::from(there), extensibility);

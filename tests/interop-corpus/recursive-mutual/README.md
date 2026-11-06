@@ -12,7 +12,7 @@ the descent at 64 and reports `type graph below … nests too deeply`. The
 cycle goes through a **sequence**, whose length is a run-time value, so
 the element's plan is the outer type's plan — what the planner needs is
 to notice it has been at this type before and emit a back-reference, not
-to keep descending. See docs/OPEN-ITEMS.md.
+to keep descending.
 
 The case is here **because** this implementation fails it. A corpus that
 only holds what its own column passes measures nothing about anyone. The

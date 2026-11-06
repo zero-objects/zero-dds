@@ -456,10 +456,10 @@ impl<'a> Parser<'a> {
             }
         }
         // Boundary check: next char must not be alphanumeric.
-        if let Some(after) = self.src.get(self.pos + bytes.len()) {
-            if after.is_ascii_alphanumeric() || *after == b'_' {
-                return false;
-            }
+        if let Some(after) = self.src.get(self.pos + bytes.len())
+            && (after.is_ascii_alphanumeric() || *after == b'_')
+        {
+            return false;
         }
         self.pos += bytes.len();
         true

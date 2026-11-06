@@ -1,32 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! End-to-end of the decoded-output feature, network-free.
+//! The decoded output, network-free: a captured body goes through the JSON
+//! and the SQLite sink and comes back from both (`zerodds-replay`'s
+//! sources) byte for byte, with the representation identifier of its
+//! header, and decodes to the values it holds.
 //!
-//! Simulates the recorder pipeline on a known typed sample:
-//!
-//! 1. IDL → `Ast` → `DynamicType` (the `--type-file` path);
-//! 2. `encode` → CDR octets (the wire payload a real writer would emit, and
-//!    what the opaque `.zddsrec` stores);
-//! 3. fan out through `JsonSink` + `SqliteSink` (what `record --decode` does);
-//! 4. read both back via `replay_source` (what `zerodds-replay` does);
-//! 5. assert the retained `raw_cdr` is byte-exact (replay fidelity) AND that
-//!    re-decoding it reproduces the original field values (decode fidelity).
-//!
-//! Run across XCDR1/XCDR2 × little/big-endian so the stored octets and the
-//! representation flags round-trip for every wire framing.
+//! The bodies are the octets DDS-XTypes 1.3 §7.4 gives for
+//! `@appendable struct Track { unsigned long id; string name; sequence<long>
+//! xs; }` with id = 42, name = "bandit", xs = [7, -3, 1000], written out by
+//! hand: under XCDR2 a DHEADER (§7.4.2), under XCDR1 none (§7.4.1.1: PLAIN_CDR
+//! for an appendable type); a string is its length with the NUL, then the
+//! characters and the NUL (§7.4.1.1.2), and the sequence's length is aligned
+//! to four.
 
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic, missing_docs)]
 
 use std::io::Cursor;
 
 use zerodds_ast_layout::key::{Encoding, Endianness};
+use zerodds_recorder_decode::RawSample;
 use zerodds_recorder_decode::json_sink::{JsonSink, data_to_json};
 use zerodds_recorder_decode::replay_source::{from_ndjson, from_sqlite};
 use zerodds_recorder_decode::sqlite_sink::SqliteSink;
 use zerodds_recorder_decode::type_source::TypeBook;
 use zerodds_types::dynamic::DynamicData;
-use zerodds_wire_codec::{ProbeRequest, decode, encode};
+use zerodds_wire_codec::{ProbeRequest, decode};
 
 const IDL: &str = r"
     module cuas {
@@ -45,30 +44,50 @@ fn int(value: i128) -> DynamicData {
     DynamicData::Integer { kind: None, value }
 }
 
-/// The canonical sample: id=42, name="bandit", xs=[7,-3,1000].
-fn make_sample() -> DynamicData {
-    DynamicData::Aggregate(vec![
-        (String::from("id"), int(42)),
-        (
-            String::from("name"),
-            DynamicData::Text(String::from("bandit")),
-        ),
-        (
-            String::from("xs"),
-            DynamicData::Collection(vec![int(7), int(-3), int(1000)]),
-        ),
-    ])
+fn hex(text: &str) -> Vec<u8> {
+    let text: String = text.split_whitespace().collect();
+    (0..text.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+        .collect()
 }
 
-fn run_one(encoding: Encoding, endianness: Endianness) {
+/// (encoding, byte order, representation identifier, the body's octets)
+fn cells() -> Vec<(Encoding, Endianness, [u8; 2], Vec<u8>)> {
+    vec![
+        (
+            Encoding::DelimitedCdr,
+            Endianness::Little,
+            [0x00, 0x09],
+            hex("20000000 2a000000 07000000 62616e64697400 00 03000000 07000000 fdffffff e8030000"),
+        ),
+        (
+            Encoding::DelimitedCdr,
+            Endianness::Big,
+            [0x00, 0x08],
+            hex("00000020 0000002a 00000007 62616e64697400 00 00000003 00000007 fffffffd 000003e8"),
+        ),
+        (
+            Encoding::PlainCdr1,
+            Endianness::Little,
+            [0x00, 0x01],
+            hex("2a000000 07000000 62616e64697400 00 03000000 07000000 fdffffff e8030000"),
+        ),
+        (
+            Encoding::PlainCdr1,
+            Endianness::Big,
+            [0x00, 0x00],
+            hex("0000002a 00000007 62616e64697400 00 00000003 00000007 fffffffd 000003e8"),
+        ),
+    ]
+}
+
+fn run_one(encoding: Encoding, endianness: Endianness, identifier: [u8; 2], wire: Vec<u8>) {
     let book = TypeBook::from_idl(IDL).expect("idl");
     // The tools take a simple name off the command line.
     let ty = book.resolve("Track").expect("idl→type");
     let request = ProbeRequest::new(TYPE_NAME, encoding, endianness);
     let label = format!("{encoding:?}/{endianness:?}");
-
-    // (2) Encode the wire payload (what a writer emits / the capture stores).
-    let wire = encode(book.ast(), &request, &make_sample()).expect("encode");
 
     // (3) Fan out to both sinks, exactly as record --decode does. recv_ts marks
     // capture order; writer GUID is hex-encoded.
@@ -79,8 +98,18 @@ fn run_one(encoding: Encoding, endianness: Endianness) {
     {
         let mut js = JsonSink::new(&mut json_buf);
         let back: DynamicData = decode(book.ast(), &request, &wire).expect("decode for json");
-        js.write_sample(TOPIC, TYPE_NAME, recv_ts, writer_hex, &back, &wire)
-            .expect("json write");
+        js.write_sample(
+            TOPIC,
+            TYPE_NAME,
+            recv_ts,
+            writer_hex,
+            &back,
+            RawSample {
+                body: &wire,
+                representation_identifier: Some(identifier),
+            },
+        )
+        .expect("json write");
         assert_eq!(js.count(), 1);
     }
 
@@ -95,7 +124,17 @@ fn run_one(encoding: Encoding, endianness: Endianness) {
         sq.ensure_topic(TOPIC, TYPE_NAME, IDL, &ty).expect("ensure");
         let back: DynamicData = decode(book.ast(), &request, &wire).expect("decode for sqlite");
         let sid = sq
-            .insert_sample(TOPIC, &ty, recv_ts, writer_hex, &wire, &back)
+            .insert_sample(
+                TOPIC,
+                &ty,
+                recv_ts,
+                writer_hex,
+                RawSample {
+                    body: &wire,
+                    representation_identifier: Some(identifier),
+                },
+                &back,
+            )
             .expect("insert");
         assert_eq!(sid, 1, "first record marker is 1");
         // The child table holds the scalar sequence joined by sample_id.
@@ -124,6 +163,11 @@ fn run_one(encoding: Encoding, endianness: Endianness) {
             s.raw_cdr, wire,
             "{src}: raw_cdr must be byte-exact ({label})"
         );
+        assert_eq!(
+            s.representation_identifier,
+            Some(identifier),
+            "{src}: the identifier of the header ({label})"
+        );
         assert_eq!(s.topic, TOPIC, "{src}: topic");
         assert_eq!(s.type_name, TYPE_NAME, "{src}: type");
         assert_eq!(s.recv_ts_ns, recv_ts, "{src}: recv_ts");
@@ -138,33 +182,20 @@ fn run_one(encoding: Encoding, endianness: Endianness) {
     }
 }
 
-/// `Track` is `@appendable`, so its XCDR2 form carries a delimiter and its
-/// XCDR1 form does not — the two encodings the recorder meets on a wire.
+/// The four cells: `Track` is `@appendable`, so its XCDR2 form carries a
+/// delimiter and its XCDR1 form does not, each in both byte orders.
 #[test]
-fn roundtrip_xcdr2_le() {
-    run_one(Encoding::DelimitedCdr, Endianness::Little);
+fn xtypes_7_4_a_captured_body_comes_back_from_both_sinks_byte_exact_and_decoded() {
+    for (encoding, endianness, identifier, wire) in cells() {
+        run_one(encoding, endianness, identifier, wire);
+    }
 }
 
+/// `zerodds-record(1)`, `--out-sqlite`: per-topic SQLite. A sequence of
+/// structs (`sequence<Inner>`) gets a child table with one column per field
+/// of the element, joined by `sample_id` and `idx`.
 #[test]
-fn roundtrip_xcdr2_be() {
-    run_one(Encoding::DelimitedCdr, Endianness::Big);
-}
-
-#[test]
-fn roundtrip_xcdr1_le() {
-    run_one(Encoding::PlainCdr1, Endianness::Little);
-}
-
-#[test]
-fn roundtrip_xcdr1_be() {
-    run_one(Encoding::PlainCdr1, Endianness::Big);
-}
-
-/// Composite-element collection (`sequence<Inner>`) decodes end-to-end into a
-/// SQLite child table with one column per flattened element field, joined by
-/// `sample_id` + `idx`.
-#[test]
-fn composite_sequence_sqlite_child_table() {
+fn a_sequence_of_structs_gets_a_child_table_with_a_column_per_field() {
     const SRC: &str = r"
         module m {
             @final struct Inner { long a; string s; };
@@ -173,7 +204,6 @@ fn composite_sequence_sqlite_child_table() {
     ";
     let book = TypeBook::from_idl(SRC).expect("idl");
     let ty = book.resolve("m::Track").unwrap();
-    let request = ProbeRequest::new("m::Track", Encoding::PlainCdr2, Endianness::Little);
 
     let element = |a: i128, s: &str| {
         DynamicData::Aggregate(vec![
@@ -188,8 +218,9 @@ fn composite_sequence_sqlite_child_table() {
             DynamicData::Collection(vec![element(11, "aa"), element(22, "bb")]),
         ),
     ]);
-    let wire = encode(book.ast(), &request, &value).unwrap();
-    let back: DynamicData = decode(book.ast(), &request, &wire).unwrap();
+    // The child table is made from the decoded value; the retained body
+    // is not read here.
+    let wire: Vec<u8> = Vec::new();
 
     let path = format!(
         "file:decode_e2e_compseq_{}?mode=memory&cache=shared",
@@ -200,7 +231,17 @@ fn composite_sequence_sqlite_child_table() {
         let mut sq = SqliteSink::open(&path).unwrap();
         sq.ensure_topic("Track", "m::Track", SRC, &ty).unwrap();
         let sid = sq
-            .insert_sample("Track", &ty, 1, "aa", &wire, &back)
+            .insert_sample(
+                "Track",
+                &ty,
+                1,
+                "aa",
+                RawSample {
+                    body: &wire,
+                    representation_identifier: Some([0x00, 0x09]),
+                },
+                &value,
+            )
             .unwrap();
         assert_eq!(sid, 1);
         assert!(sq.skipped_members().is_empty(), "no member was dropped");
@@ -222,13 +263,14 @@ fn composite_sequence_sqlite_child_table() {
     );
 }
 
-/// Two samples across two topics in SQLite come back globally ts-ordered (the
-/// `from_sqlite` cross-topic merge), and the second record marker is 2.
+/// `zerodds-replay(1)`: the frames come back in recorded order; from a
+/// SQLite capture across its per-topic tables, by reception time.
 #[test]
-fn sqlite_multi_topic_ordering() {
+fn a_sqlite_capture_of_two_topics_replays_in_recorded_order() {
     let book = TypeBook::from_idl(IDL).expect("idl");
     let ty = book.resolve(TYPE_NAME).unwrap();
-    let request = ProbeRequest::new(TYPE_NAME, Encoding::DelimitedCdr, Endianness::Little);
+    let (encoding, endianness, identifier, wire) = cells().remove(0);
+    let request = ProbeRequest::new(TYPE_NAME, encoding, endianness);
     let db_path = format!(
         "file:decode_e2e_multi_{}?mode=memory&cache=shared",
         std::process::id()
@@ -238,11 +280,32 @@ fn sqlite_multi_topic_ordering() {
         let mut sq = SqliteSink::open(&db_path).unwrap();
         sq.ensure_topic("A", TYPE_NAME, IDL, &ty).unwrap();
         sq.ensure_topic("B", TYPE_NAME, IDL, &ty).unwrap();
-        let wire = encode(book.ast(), &request, &make_sample()).unwrap();
         let back: DynamicData = decode(book.ast(), &request, &wire).unwrap();
         // Insert B first (later ts), then A (earlier ts) → from_sqlite re-sorts.
-        sq.insert_sample("B", &ty, 200, "bb", &wire, &back).unwrap();
-        sq.insert_sample("A", &ty, 100, "aa", &wire, &back).unwrap();
+        sq.insert_sample(
+            "B",
+            &ty,
+            200,
+            "bb",
+            RawSample {
+                body: &wire,
+                representation_identifier: Some(identifier),
+            },
+            &back,
+        )
+        .unwrap();
+        sq.insert_sample(
+            "A",
+            &ty,
+            100,
+            "aa",
+            RawSample {
+                body: &wire,
+                representation_identifier: Some(identifier),
+            },
+            &back,
+        )
+        .unwrap();
     }
     let got = from_sqlite(&db_path).unwrap();
     drop(keep);

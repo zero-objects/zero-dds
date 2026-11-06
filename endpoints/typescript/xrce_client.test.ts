@@ -59,7 +59,7 @@ const GOLDEN_READ_DATA = Buffer.from([
 // kind=Topic), the real two-level ObjectVariant::ByReference
 // ("HelloWorldTopic") under parent=pack(raw=0x001,kind=Participant),
 // request_id={0x00,0x05}, sequence_nr=4. OBJK_TOPIC's own representation
-// carries its participant's ObjectId (commit 31c62df2a63, "xrce:
+// carries its participant's ObjectId (commit bd30deaef0b, "xrce:
 // OBJK_TOPIC_Representation carries its participant's ObjectId"), the
 // same trailing field OBJK_PUBLISHER's representation carries above --
 // matches endpoints/testdata/xrce-client/xrce_client_create_topic.bin,

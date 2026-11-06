@@ -393,7 +393,7 @@ mod tests {
 </dds_tsn>"#;
 
     #[test]
-    fn parses_full_sample_into_six_libraries() {
+    fn tsn_7_3_1_parses_full_sample_into_six_libraries() {
         let cfg = parse_dds_tsn_xml(SAMPLE).expect("parse ok");
         assert_eq!(cfg.qos_libraries.len(), 1);
         assert_eq!(cfg.domain_libraries.len(), 1);
@@ -404,7 +404,7 @@ mod tests {
     }
 
     #[test]
-    fn qos_profile_carries_named_qos_categories() {
+    fn tsn_7_3_1_qos_profile_carries_named_qos_categories() {
         let cfg = parse_dds_tsn_xml(SAMPLE).unwrap();
         let p = &cfg.qos_libraries[0].qos_profiles[0];
         assert_eq!(p.name, "default");
@@ -413,7 +413,7 @@ mod tests {
     }
 
     #[test]
-    fn domain_carries_registered_types_and_topics() {
+    fn tsn_7_3_1_domain_carries_registered_types_and_topics() {
         let cfg = parse_dds_tsn_xml(SAMPLE).unwrap();
         let d = &cfg.domain_libraries[0].domains[0];
         assert_eq!(d.registered_types[0].type_ref, "ShapeType");
@@ -421,7 +421,7 @@ mod tests {
     }
 
     #[test]
-    fn node_with_mac_and_ipv4_parses() {
+    fn tsn_7_3_1_node_with_mac_and_ipv4_parses() {
         let cfg = parse_dds_tsn_xml(SAMPLE).unwrap();
         let n = &cfg.node_libraries[0].nodes[0];
         assert_eq!(n.mac_address.0, [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
@@ -430,7 +430,7 @@ mod tests {
     }
 
     #[test]
-    fn deployment_with_tsn_configuration_ref() {
+    fn tsn_7_3_1_deployment_with_tsn_configuration_ref() {
         let cfg = parse_dds_tsn_xml(SAMPLE).unwrap();
         let d = &cfg.deployment_libraries[0].deployments[0];
         assert_eq!(d.application_refs, alloc::vec!["alib::App1"]);
@@ -441,14 +441,14 @@ mod tests {
     }
 
     #[test]
-    fn missing_root_yields_unexpected_root_error() {
+    fn tsn_7_3_1_missing_root_yields_unexpected_root_error() {
         let bad = r#"<?xml version="1.0"?><foo/>"#;
         let err = parse_dds_tsn_xml(bad).unwrap_err();
         assert!(matches!(err, ParseXmlError::UnexpectedRoot(s) if s == "foo"));
     }
 
     #[test]
-    fn missing_required_attribute_is_diagnostic() {
+    fn tsn_7_3_1_missing_required_attribute_is_diagnostic() {
         let bad = r#"<?xml version="1.0"?>
 <dds_tsn>
   <qos_library>
@@ -463,7 +463,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_mac_is_diagnostic() {
+    fn tsn_7_3_1_invalid_mac_is_diagnostic() {
         let bad = r#"<?xml version="1.0"?>
 <dds_tsn>
   <node_library name="nlib">
@@ -475,7 +475,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_mac_accepts_dash_separator() {
+    fn tsn_7_3_1_parse_mac_accepts_dash_separator() {
         assert_eq!(
             parse_mac("aa-bb-cc-dd-ee-ff").unwrap().0,
             [0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]
@@ -483,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_mac_rejects_short_input() {
+    fn tsn_7_3_1_parse_mac_rejects_short_input() {
         assert!(parse_mac("aa:bb:cc").is_none());
     }
 }

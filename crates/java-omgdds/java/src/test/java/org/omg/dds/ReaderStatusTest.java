@@ -42,7 +42,7 @@ class ReaderStatusTest {
     }
 
     @Test
-    void aSampleBeyondMaxSamplesIsRejectedAndReportedToTheListener() throws Exception {
+    void javapsm_2_a_sample_beyond_max_samples_is_rejected_and_reported_to_the_listener() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(950);
         Topic<byte[]> topic = participant.createTopic("Limits", byte[].class);
         AtomicReference<SampleRejectedStatus> seen = new AtomicReference<>();
@@ -70,7 +70,7 @@ class ReaderStatusTest {
     }
 
     @Test
-    void aWriterThatOffersLessThanRequestedIsReportedToTheListener() throws Exception {
+    void javapsm_2_a_writer_that_offers_less_than_requested_is_reported_to_the_listener() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(951);
         Topic<byte[]> topic = participant.createTopic("Incompatible", byte[].class);
         AtomicInteger count = new AtomicInteger();
@@ -92,7 +92,7 @@ class ReaderStatusTest {
     }
 
     @Test
-    void aStatusIsResetWhenItIsReadAndDataAvailableWhenTheSamplesAreTaken() throws Exception {
+    void javapsm_2_a_status_is_reset_when_it_is_read_and_data_available_when_the_samples_are_taken() throws Exception {
         DomainParticipant participant = Qos.factory().createParticipant(952);
         Topic<byte[]> topic = participant.createTopic("Reset", byte[].class);
         DataReader<byte[]> reader = participant.createSubscriber().createDataReader(topic);

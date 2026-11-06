@@ -3,7 +3,8 @@
 //! The IDL spelling of a member, read back out of the generated C and
 //! C++.
 //!
-//! `docs/structural-reviews/2026-08-16-first-pass.md` finding 3: the C#
+//! Structural review of 2026-08-16 (`0b2e8df9f6b:docs/structural-reviews/2026-08-16-first-pass.md`),
+//! finding 3: the C#
 //! column carries `[IdlName("a")]`, Python carries the name in
 //! `dataclasses.field(metadata=…)`, TypeScript keeps the IDL spelling
 //! outright — and the C and C++ columns escaped a colliding identifier

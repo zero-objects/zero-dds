@@ -9,6 +9,7 @@
 #include "psm_probe.hpp"
 #include "dds/dds.hpp"
 #include "reliable_pair.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cstdio>
@@ -16,7 +17,6 @@
 #include <functional>
 #include <map>
 #include <string>
-#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -34,7 +34,7 @@ static int g_failures = 0;
 // class give it.
 template <typename T, typename Expected>
 struct is_member_type : std::is_same<typename std::decay<T>::type, Expected> {};
-static void check_table_7_1(psmprobe::Primitives& p) {
+static void psmcxx_7_4_2_every_row_of_table_7_1_round_trips(psmprobe::Primitives& p) {
     static_assert(is_member_type<decltype(p.b()), bool>::value, "Boolean is bool");
     static_assert(is_member_type<decltype(p.c()), char>::value, "Char8 is char");
     static_assert(is_member_type<decltype(p.w()), wchar_t>::value, "Char32 is wchar_t");
@@ -87,7 +87,7 @@ static psmprobe::Reading make_reading(int32_t id) {
 
 // IDL4 to C++ 1.0 §7.2.4.3.2 (DDS-PSM-Cxx 1.0 §7.4.4 maps unions as IDL2C++11 §6.13.2 does):
 // the shape of the union class, from the example of the specification.
-static void check_union_mapping() {
+static void psmcxx_7_4_4_a_union_has_the_idl2cpp11_accessors() {
     using U = psmprobe::SpecUnion;
     using V = psmprobe::ImplicitUnion;
     // Built-in members: the constant accessor by value, the other by reference; a structure:
@@ -182,7 +182,7 @@ static void check_union_mapping() {
 int main(int argc, char** argv) {
     using Support = dds::topic::topic_type_support<psmprobe::Reading>;
 
-    check_union_mapping();
+    psmcxx_7_4_4_a_union_has_the_idl2cpp11_accessors();
 
     // The class, without a network.
     psmprobe::Reading r = make_reading(5);
@@ -219,7 +219,7 @@ int main(int argc, char** argv) {
     EXPECT(moved_to.id() == 6 && copy.id() == 5, "the member swap exchanges the state");
 
     psmprobe::Primitives primitives;
-    check_table_7_1(primitives);
+    psmcxx_7_4_2_every_row_of_table_7_1_round_trips(primitives);
     primitives.b(true);
     primitives.w(L'w');
     primitives.o(200);
@@ -262,7 +262,7 @@ int main(int argc, char** argv) {
            "a union member survives the codec");
 
     // Over the C API.
-    const int domain = argc > 1 ? std::atoi(argv[1]) : 0;
+    const uint32_t domain = test_domain(argc, argv);
     dds::domain::DomainParticipant dp(domain);
     dds::topic::Topic<psmprobe::Reading> topic(dp, "GeneratedPsmRoundtrip");
     ReliablePair<psmprobe::Reading> pair(dp, topic);
@@ -272,11 +272,10 @@ int main(int argc, char** argv) {
     writer.write(r);
     std::vector<dds::sub::Sample<psmprobe::Reading>> got;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (got.empty() && std::chrono::steady_clock::now() < deadline) {
+    while (got.empty() && wait_for_samples(reader, deadline)) {
         for (auto& s : reader.take()) {
             if (s.info().valid()) got.push_back(s);
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     EXPECT(got.size() == 1, "the sample arrived");
     if (!got.empty()) {
@@ -290,7 +289,7 @@ int main(int argc, char** argv) {
         using namespace dds;
         using psmprobe::RadarTrack;
         namespace policy = dds::core::policy;
-        domain::DomainParticipant dp7(static_cast<uint32_t>(domain));
+        domain::DomainParticipant dp7(domain);
 
         pub::qos::PublisherQos pqos;
         pqos << policy::Partition("Tracks");
@@ -319,9 +318,8 @@ int main(int argc, char** argv) {
         std::vector<dds::sub::Sample<RadarTrack> > samples7(MY_MAX_LEN);
         unsigned got7 = 0;
         const auto until7 = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (got7 < 2 && std::chrono::steady_clock::now() < until7) {
+        while (got7 < 2 && wait_for_samples(dr7, dds::sub::status::SampleState::not_read(), until7)) {
             got7 = dr7.read(samples7.begin(), MY_MAX_LEN);
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
         EXPECT(got7 >= 2, "the C++03 example reads the samples into a vector");
         if (got7 >= 1) {

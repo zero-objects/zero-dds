@@ -31,6 +31,7 @@ from zerodds_wire import (
     Status,
     Truncated,
     Writer,
+    bit_pattern_int,
     encapsulation_header,
     encapsulation_padding,
     no_dheader,
@@ -1483,6 +1484,76 @@ class HddsAxes(unittest.TestCase):
         self.assertEqual((reader.read_i32(), reader.read_i16()), (3, 4))
         reader.reader_finish_packed_element(saved)
         self.assertEqual(reader.read_u8(), 119)
+
+
+class OperationsNoCorpusCaseReaches(unittest.TestCase):
+    """The five operations the generated code reaches only in a dialect or
+    with a member no corpus case carries: `write_pid_extended`,
+    `write_union_overlay`, `reader_clear_discard`, `reader_save` and
+    `reader_restore` (internal/release/OPEN-ITEMS.md). Every runtime checks
+    the same four vectors, each against an oracle outside this code."""
+
+    def test_write_pid_extended_writes_cyclones_recorded_parameter(self) -> None:
+        # The first parameter of `annotation-autoid-sequential` as Cyclone
+        # DDS recorded it, XCDR1 little endian
+        # (tests/interop-corpus/expected-bytes.tsv).
+        writer = Writer(Endianness.LITTLE, 8)
+        header = writer.write_pid_extended(0, ParameterRole.MEMBER, False)
+        writer.write_i32(-1234567)
+        writer.finish_pid(header)
+        self.assertEqual(writer.finish().hex(), "017f0800" "00000000" "04000000" "7929edff")
+
+    def test_write_union_overlay_writes_the_storage_at_the_branchs_width(self) -> None:
+        # A `short` read through a four-octet and a one-octet `default:`
+        # branch: Cyclone DDS 11.0.1 writes the union's storage, the
+        # member's octets with zeros above (`combined-everything`,
+        # crates/wire-codec/src/encode.rs `write_selected_branch`).
+        writer = Writer(Endianness.LITTLE, 4)
+        pattern = bit_pattern_int(-2, 2)
+        writer.write_union_overlay(pattern, 4)
+        writer.write_union_overlay(pattern, 1)
+        self.assertEqual(writer.finish().hex(), "feff0000" "fe")
+
+    def test_reader_clear_discard_takes_back_a_discard_and_nothing_else(self) -> None:
+        # XTypes 1.3 §7.2.2.4.4.4.9: a member's explicit @default comes
+        # before Table 9's value, so the call site asks for DISCARD and
+        # takes it back. Any other refusal is not a narrowing and stays.
+        discarded = Reader(b"\x01\x02\x03\x04", Endianness.LITTLE, 4)
+        discarded.reader_refuse(Status.DISCARDED)
+        self.assertTrue(discarded.reader_clear_discard())
+        self.assertIs(discarded.reader_status(), Status.OK)
+        refused = Reader(b"\x01\x02\x03\x04", Endianness.LITTLE, 4)
+        refused.reader_refuse(Status.OUT_OF_RANGE)
+        self.assertFalse(refused.reader_clear_discard())
+        self.assertIs(refused.reader_status(), Status.OUT_OF_RANGE)
+
+    def test_reader_save_and_restore_count_a_delimited_map_and_read_it_again(self) -> None:
+        # XTypes 1.3 §7.4.3.5.3 rule (15): a delimited map<long, long> as
+        # its DHEADER and the pairs, without a count. The reader counts the
+        # pairs, goes back and reads them again; a refusal made while
+        # counting goes back with the cursor.
+        reader = Reader(
+            bytes.fromhex("10000000" "01000000" "0a000000" "02000000" "14000000"),
+            Endianness.LITTLE,
+            4,
+        )
+        end = reader.read_dheader()
+        end += reader.reader_position()
+        mark = reader.reader_save()
+        pairs = 0
+        while reader.reader_position() < end and reader.reader_status() is Status.OK:
+            reader.read_i32()
+            reader.read_i32()
+            pairs += 1
+        reader.reader_refuse(Status.OUT_OF_RANGE)
+        reader.reader_restore(mark)
+        self.assertEqual(pairs, 2)
+        self.assertEqual(
+            [reader.read_i32() for _ in range(4)],
+            [1, 10, 2, 20],
+        )
+        self.assertEqual(reader.reader_position(), 20)
+        self.assertIs(reader.reader_status(), Status.OK)
 
 
 if __name__ == "__main__":

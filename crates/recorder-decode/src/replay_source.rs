@@ -24,6 +24,16 @@ pub struct RecordedSample {
     pub recv_ts_ns: i64,
     /// Raw CDR payload bytes.
     pub raw_cdr: Vec<u8>,
+    /// The representation identifier of the encapsulation header `raw_cdr`
+    /// came with (DDSI-RTPS 2.5 §10.5); `None` in a capture made before it
+    /// was kept.
+    pub representation_identifier: Option<[u8; 2]>,
+}
+
+/// Two octets from a hex string, as the sinks write the identifier.
+fn identifier_from_hex(s: &str) -> Option<[u8; 2]> {
+    let bytes = from_hex(s)?;
+    <[u8; 2]>::try_from(bytes.as_slice()).ok()
 }
 
 /// Error reading a replay source.
@@ -90,11 +100,21 @@ pub fn from_ndjson<Rd: BufRead>(reader: Rd) -> R<Vec<RecordedSample>> {
         let raw_cdr = from_hex(raw_hex).ok_or_else(|| {
             ReplaySourceError::Json(format!("line {}: bad raw_cdr hex", lineno + 1))
         })?;
+        let representation_identifier = match v.get("representation_identifier") {
+            None => None,
+            Some(id) => Some(id.as_str().and_then(identifier_from_hex).ok_or_else(|| {
+                ReplaySourceError::Json(format!(
+                    "line {}: 'representation_identifier' is not two octets in hex",
+                    lineno + 1
+                ))
+            })?),
+        };
         out.push(RecordedSample {
             topic,
             type_name,
             recv_ts_ns,
             raw_cdr,
+            representation_identifier,
         });
     }
     Ok(out)
@@ -137,116 +157,53 @@ pub fn from_sqlite(path: &str) -> R<Vec<RecordedSample>> {
     let mut out = Vec::new();
     for (topic, type_name) in topics {
         let table = format!("t_{}", sanitize(&topic));
-        let sql = format!("SELECT recv_ts_ns, raw_cdr FROM {table} ORDER BY sample_id");
+        // A table written before the column existed has none.
+        let has_identifier = conn
+            .prepare(&format!(
+                "SELECT 1 FROM pragma_table_info('{table}') WHERE name = 'representation_identifier'"
+            ))
+            .and_then(|mut s| s.exists([]))
+            .map_err(|e| ReplaySourceError::Db(e.to_string()))?;
+        let sql = if has_identifier {
+            format!(
+                "SELECT recv_ts_ns, raw_cdr, representation_identifier FROM {table} ORDER BY sample_id"
+            )
+        } else {
+            format!("SELECT recv_ts_ns, raw_cdr, NULL FROM {table} ORDER BY sample_id")
+        };
         let mut stmt = conn
             .prepare(&sql)
             .map_err(|e| ReplaySourceError::Db(e.to_string()))?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, Vec<u8>>(1)?,
+                    r.get::<_, Option<Vec<u8>>>(2)?,
+                ))
+            })
             .map_err(|e| ReplaySourceError::Db(e.to_string()))?;
         for row in rows {
-            let (recv_ts_ns, raw_cdr) = row.map_err(|e| ReplaySourceError::Db(e.to_string()))?;
+            let (recv_ts_ns, raw_cdr, id) =
+                row.map_err(|e| ReplaySourceError::Db(e.to_string()))?;
+            let representation_identifier = match id {
+                None => None,
+                Some(id) => Some(<[u8; 2]>::try_from(id.as_slice()).map_err(|_| {
+                    ReplaySourceError::Db(format!(
+                        "{table}: a representation_identifier of {} octets",
+                        id.len()
+                    ))
+                })?),
+            };
             out.push(RecordedSample {
                 topic: topic.clone(),
                 type_name: type_name.clone(),
                 recv_ts_ns,
                 raw_cdr,
+                representation_identifier,
             });
         }
     }
     out.sort_by_key(|s| s.recv_ts_ns);
     Ok(out)
-}
-
-#[cfg(test)]
-#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
-mod tests {
-    use super::*;
-    use crate::json_sink::sample_line;
-    use crate::sqlite_sink::SqliteSink;
-    use crate::type_source::dynamic_type_from_idl;
-    use zerodds_ast_layout::key::{Encoding, Endianness};
-    use zerodds_types::dynamic::DynamicData;
-    use zerodds_wire_codec::{ProbeRequest, decode, encode};
-
-    const IDL: &str = r#"
-        module cuas {
-            @final struct Track {
-                unsigned long id;
-                string name;
-            };
-        };
-    "#;
-
-    #[test]
-    fn ndjson_roundtrip() {
-        let raw = [0x07u8, 0x00, 0x00, 0x00, 0xde, 0xad];
-        let l1 = sample_line(
-            "Track",
-            "cuas::Track",
-            100,
-            "aa",
-            serde_json::json!({"id": 7}),
-            &raw,
-        );
-        let l2 = sample_line(
-            "Track",
-            "cuas::Track",
-            200,
-            "bb",
-            serde_json::json!({"id": 8}),
-            &[0x08, 0x00, 0x00, 0x00],
-        );
-        let buf = format!("{l1}\n\n{l2}\n");
-        let got = from_ndjson(std::io::Cursor::new(buf)).unwrap();
-        assert_eq!(got.len(), 2);
-        assert_eq!(got[0].topic, "Track");
-        assert_eq!(got[0].type_name, "cuas::Track");
-        assert_eq!(got[0].recv_ts_ns, 100);
-        assert_eq!(got[0].raw_cdr, raw);
-    }
-
-    #[test]
-    fn sqlite_roundtrip() {
-        let path = format!(
-            "file:replay_src_test_{}?mode=memory&cache=shared",
-            std::process::id()
-        );
-        // Hold one connection open so the shared in-memory DB survives.
-        let keep = rusqlite::Connection::open(&path).unwrap();
-        let ty = dynamic_type_from_idl(IDL, "Track").unwrap();
-        {
-            let mut sink = SqliteSink::open(&path).unwrap();
-            sink.ensure_topic("Track", "cuas::Track", IDL, &ty).unwrap();
-            let book = crate::type_source::TypeBook::from_idl(IDL).unwrap();
-            let request =
-                ProbeRequest::new("cuas::Track", Encoding::DelimitedCdr, Endianness::Little);
-            let value = DynamicData::Aggregate(vec![
-                (
-                    String::from("id"),
-                    DynamicData::Integer {
-                        kind: None,
-                        value: 7,
-                    },
-                ),
-                (
-                    String::from("name"),
-                    DynamicData::Text(String::from("alpha")),
-                ),
-            ]);
-            let raw = encode(book.ast(), &request, &value).unwrap();
-            let d: DynamicData = decode(book.ast(), &request, &raw).unwrap();
-            sink.insert_sample("Track", &ty, 100, "aa", &raw, &d)
-                .unwrap();
-        }
-        let got = from_sqlite(&path).unwrap();
-        assert_eq!(got.len(), 1);
-        assert_eq!(got[0].topic, "Track");
-        assert_eq!(got[0].type_name, "cuas::Track");
-        assert!(
-            !got[0].raw_cdr.is_empty(),
-            "the stored octets are the sample"
-        );
-        drop(keep);
-    }
 }

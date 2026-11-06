@@ -234,11 +234,14 @@ fn handle_client(mut stream: TcpStream, state: Arc<MockState>, stop: Arc<AtomicB
     }
 }
 
-fn make_test_config(broker_addr: &str) -> DaemonConfig {
+/// The daemon's configuration on a leased DDS domain (the host's share of
+/// the band, `zerodds-test-domains`); the lease is held while the test runs.
+fn make_test_config(broker_addr: &str) -> (DaemonConfig, zerodds_test_domains::DomainLease) {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.broker_url = format!("mqtt://{broker_addr}");
     cfg.client_id = "zerodds-test-bridge".to_string();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.topics.push(TopicConfig {
         dds_name: "Trade".to_string(),
         dds_type: "Trade".to_string(),
@@ -250,13 +253,13 @@ fn make_test_config(broker_addr: &str) -> DaemonConfig {
         durability: "volatile".to_string(),
         history_depth: 10,
     });
-    cfg
+    (cfg, lease)
 }
 
 #[test]
-fn daemon_connects_and_subscribes() {
+fn mqttbridge_2_daemon_connects_and_subscribes() {
     let broker = MockBroker::start();
-    let cfg = make_test_config(&broker.bind_addr);
+    let (cfg, _lease) = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
 
     // Wait until the CONNECT arrives + SUBSCRIBE is registered.
@@ -284,14 +287,14 @@ fn daemon_connects_and_subscribes() {
 }
 
 #[test]
-fn mqtt_publish_to_daemon_does_not_crash_and_subscribe_arrived() {
+fn mqttbridge_2_mqtt_publish_to_daemon_does_not_crash_and_subscribe_arrived() {
     // Proof that the inbound path (MQTT PUBLISH → DDS writer) is wired
     // and does not trigger a panic. The DDS subscriber-side sniffing
     // needs multicast loopback (Linux-only) and is therefore only
     // indirectly verified here.
 
     let broker = MockBroker::start();
-    let cfg = make_test_config(&broker.bind_addr);
+    let (cfg, _lease) = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
 
     // Await the CONNECT + SUBSCRIBE handshake.
@@ -312,7 +315,7 @@ fn mqtt_publish_to_daemon_does_not_crash_and_subscribe_arrived() {
 }
 
 #[test]
-fn dds_publish_pumps_to_mqtt_broker() {
+fn mqttbridge_2_dds_publish_pumps_to_mqtt_broker() {
     // L3 outbound: we inject a synthetic alive sample
     // directly into the mpsc::Receiver channel that feeds the bridge
     // pump thread (via `DcpsRuntime::test_inject_user_alive`). This
@@ -322,7 +325,7 @@ fn dds_publish_pumps_to_mqtt_broker() {
     // check → MqttClient::publish → MQTT PUBLISH at the broker.
 
     let broker = MockBroker::start();
-    let cfg = make_test_config(&broker.bind_addr);
+    let (cfg, _lease) = make_test_config(&broker.bind_addr);
     let mut handle = server::start(cfg).expect("daemon start");
 
     // Daemon bringup (MQTT CONNECT + reader-pump threads).
@@ -371,9 +374,9 @@ fn dds_publish_pumps_to_mqtt_broker() {
 /// stops the samples to the broker at once; a configuration that does not
 /// load changes nothing.
 #[test]
-fn a_reload_that_withdraws_the_read_right_stops_the_samples() {
+fn mqttbridge_9_2_a_reload_that_withdraws_the_read_right_stops_the_samples() {
     let broker = MockBroker::start();
-    let cfg = make_test_config(&broker.bind_addr);
+    let (cfg, _lease) = make_test_config(&broker.bind_addr);
     let next = std::sync::Arc::new(std::sync::Mutex::new(Ok::<DaemonConfig, String>(
         cfg.clone(),
     )));
@@ -387,15 +390,18 @@ fn a_reload_that_withdraws_the_read_right_stops_the_samples() {
     thread::sleep(Duration::from_millis(500));
     let reader = *handle.user_readers.get("Trade").unwrap();
     // Counted by payload: `trade` is bidirectional, so the broker may hand
-    // the bridge's own publishes back to it.
+    // the bridge's own publishes back to it. A PUBLISH carries the
+    // encapsulation header and then the CDR bytes (zerodds-mqtt-bridge-1.0
+    // §4.2); the injected sample is XCDR1, little endian: `00 01 00 00`.
     let arrived = |broker: &MockBroker, payload: &[u8]| {
+        let message = [&[0x00, 0x01, 0x00, 0x00][..], payload].concat();
         broker
             .state
             .publishes
             .lock()
             .unwrap()
             .iter()
-            .filter(|(t, p)| t == "trade" && p.as_slice() == payload)
+            .filter(|(t, p)| t == "trade" && *p == message)
             .count()
     };
     let send_and_wait = |payload: &[u8]| {
@@ -437,6 +443,89 @@ fn a_reload_that_withdraws_the_read_right_stops_the_samples() {
         0,
         "after the reload the topic is closed"
     );
+    handle.shutdown();
+    broker.shutdown();
+}
+
+/// zerodds-mqtt-bridge-1.0 §4.2 with DDS-XTypes 1.3 §7.6.3.1.2, Table 60: a
+/// PUBLISH carries the encapsulation header the sample came under. A
+/// `@mutable` sample written big-endian (`PL_CDR2_BE`, `00 0a`) went out as
+/// `CDR2_BE` (`00 06`): the header was built from the version and the byte
+/// order alone (OPEN-ITEMS 60). The octets are the vendors' of
+/// `struct Sample { long a; double b; short c; }` (`@mutable`, XCDR2 big
+/// endian, `tests/interop-corpus/expected-bytes.tsv`).
+#[test]
+fn xtypes_7_6_3_1_2_a_publish_carries_the_header_the_sample_came_under() {
+    use zerodds_dcps::runtime::UserWriterConfig;
+    use zerodds_types::qos::ExtensibilityForRepr;
+    let broker = MockBroker::start();
+    let (cfg, _lease) = make_test_config(&broker.bind_addr);
+    let mut handle = server::start(cfg).expect("daemon start");
+    assert!(
+        handle.user_readers.contains_key("Trade"),
+        "the Trade reader"
+    );
+    let writer = handle
+        .runtime
+        .register_user_writer(UserWriterConfig {
+            topic_name: "Trade".into(),
+            type_name: "Trade".into(),
+            data_representation_offer: Some(vec![2]),
+            ..Default::default()
+        })
+        .expect("a writer beside the bridge");
+    handle
+        .runtime
+        .set_user_writer_wire_extensibility(writer, ExtensibilityForRepr::Mutable)
+        .unwrap();
+    handle
+        .runtime
+        .set_user_writer_byte_order_override(writer, true)
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while handle
+        .runtime
+        .user_writer_matched_reader_guids(writer)
+        .is_empty()
+        || broker.state.subscribes.lock().unwrap().is_empty()
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the bridge did not subscribe or match"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let octets: Vec<u8> = (0..30)
+        .map(|i| {
+            u8::from_str_radix(
+                &"0000001a20000000ffed297930000001400921fb54442d1810000002fffe"[2 * i..2 * i + 2],
+                16,
+            )
+            .unwrap()
+        })
+        .collect();
+    handle
+        .runtime
+        .write_user_sample(writer, octets.clone())
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let published = loop {
+        let found = broker
+            .state
+            .publishes
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|(topic, _)| topic == "trade")
+            .map(|(_, payload)| payload.clone());
+        if let Some(payload) = found {
+            break payload;
+        }
+        assert!(Instant::now() < deadline, "no PUBLISH on `trade`");
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(published[..4], [0x00, 0x0a, 0x00, 0x00], "PL_CDR2_BE");
+    assert_eq!(published[4..], octets[..]);
     handle.shutdown();
     broker.shutdown();
 }

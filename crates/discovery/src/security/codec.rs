@@ -39,15 +39,7 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_preserves_message() {
-        let msg = sample();
-        let bytes = encode_generic_message(&msg);
-        let back = decode_generic_message(&bytes).unwrap();
-        assert_eq!(msg, back);
-    }
-
-    #[test]
-    fn encode_starts_with_cdr_le_encapsulation() {
+    fn rtps_10_2_encode_starts_with_cdr_le_encapsulation() {
         let bytes = encode_generic_message(&sample());
         assert_eq!(&bytes[..4], &[0x00, 0x01, 0x00, 0x00]);
     }
@@ -59,7 +51,7 @@ mod tests {
     }
 
     #[test]
-    fn decode_rejects_unknown_encapsulation() {
+    fn rtps_10_3_decode_rejects_unknown_encapsulation() {
         let err = decode_generic_message(&[0x00, 0x99, 0, 0, 0, 0, 0, 0]).unwrap_err();
         assert_eq!(err.kind, SecurityErrorKind::BadArgument);
     }

@@ -29,6 +29,15 @@ public interface ITopicTraits<T>
     /// </summary>
     byte[] TypeObject => System.Array.Empty<byte>();
 
+    /// <summary>
+    /// Whether the type has a key. The endpoint kind follows it
+    /// (DDSI-RTPS 2.5 §9.3.1.2 Table 9.1), so a reader created keyed matches
+    /// no writer of a keyless type, and a keyless one reads the topic's single
+    /// instance (DDS 1.4 §2.2.1.2.2). True unless the traits say otherwise,
+    /// which is what the byte and string traits have always created.
+    /// </summary>
+    bool IsKeyed => true;
+
     byte[] Encode(T value);
     T Decode(ReadOnlySpan<byte> bytes);
 

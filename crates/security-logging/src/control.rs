@@ -412,7 +412,7 @@ mod tests {
     /// §10.6.1 Table 82 — `log` without a prior `enable_logging` returns
     /// without performing any action: no file line, no listener call.
     #[test]
-    fn log_before_enable_logging_does_nothing() {
+    fn security_10_6_1_log_before_enable_logging_does_nothing() {
         let path = tmp_path("before_enable");
         let control = LogControl::with_options(LogOptions {
             log_level: LogLevel::Debug,
@@ -438,7 +438,7 @@ mod tests {
     /// log message is produced; a message above the level produces none; the
     /// NIL listener ends the notifications.
     #[test]
-    fn the_listener_hears_each_logged_message() {
+    fn security_9_6_2_2_the_listener_hears_each_logged_message() {
         let control = LogControl::enabled_at(LogLevel::Warning, false);
         let heard = Arc::new(Heard::default());
         control.set_listener(Some(heard.clone())).expect("listener");
@@ -460,7 +460,7 @@ mod tests {
     /// `TRACE_LEVEL`: a message is logged at or below the saved level, and
     /// `TRACE_LEVEL` is the finest.
     #[test]
-    fn the_spec_levels_filter_from_fatal_to_trace() {
+    fn security_9_6_2_1_1_the_spec_levels_filter_from_fatal_to_trace() {
         let heard = Arc::new(Heard::default());
         for spec in FATAL_LEVEL..=TRACE_LEVEL {
             let saved = LogLevel::from_spec_level(spec).expect("level");
@@ -479,7 +479,7 @@ mod tests {
     /// §9.6.2.2.1 — a sink with no DataWriter cannot distribute and says so;
     /// the options stay unset.
     #[test]
-    fn a_sink_without_a_writer_refuses_distribute() {
+    fn security_9_6_2_2_a_sink_without_a_writer_refuses_distribute() {
         let control = LogControl::new();
         let err = control
             .set_log_options(LogOptions::new(LogLevel::Debug), false)
@@ -516,7 +516,7 @@ mod tests {
     /// §9.6.2.1 — the sinks built with a level are enabled at construction, so
     /// they refuse a change of options; `enable_logging` succeeds.
     #[test]
-    fn a_sink_enabled_at_construction_refuses_new_options() {
+    fn security_9_6_2_2_a_sink_enabled_at_construction_refuses_new_options() {
         let path = tmp_path("jsonl");
         let sink = JsonLinesLoggingPlugin::open(&path, LogLevel::Warning).expect("open");
         let mut options = LogOptions::new(LogLevel::Debug);
@@ -529,7 +529,7 @@ mod tests {
 
     /// §9.6.2.2.3 — `enable_logging` before any options is an error.
     #[test]
-    fn enable_logging_without_options_is_an_error() {
+    fn security_9_6_2_2_enable_logging_without_options_is_an_error() {
         let control = LogControl::new();
         assert!(matches!(
             control.enable_logging(),

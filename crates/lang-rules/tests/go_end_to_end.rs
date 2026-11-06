@@ -59,7 +59,7 @@ fn try_generate(idl: &str, origin: &str) -> Result<String, String> {
 /// does, so `X int32 `idl:"x"`` is written with padding whose width
 /// depends on the widest field beside it. An assertion on the alignment
 /// would be an assertion about the other members of the same struct;
-/// `the_generated_go_is_gofmt_stable` is where the alignment itself is
+/// `xtypes_7_3_1_the_generated_go_is_gofmt_stable` is where the alignment itself is
 /// checked, against `gofmt` rather than against a literal.
 fn squeezed(text: &str) -> String {
     let mut out = String::new();
@@ -102,7 +102,7 @@ fn a_struct_of_primitives_becomes_a_go_struct() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_go_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_go_type() {
     // The mapping is total over `PrimitiveKind`; this shows it produces
     // the type each one should, rather than merely producing something.
     let generated = generate(
@@ -137,7 +137,7 @@ fn every_idl_primitive_reaches_a_go_type() {
 }
 
 #[test]
-fn no_generated_type_has_an_implementation_defined_width() {
+fn xtypes_7_2_2_2_no_generated_type_has_an_implementation_defined_width() {
     // `int`, `uint` and `uintptr` are 32 or 64 bits depending on the
     // target (Go spec, "Numeric types"). A member declared with one
     // would change size between a build for amd64 and one for a 32-bit
@@ -154,7 +154,7 @@ fn no_generated_type_has_an_implementation_defined_width() {
 }
 
 #[test]
-fn a_long_double_is_a_string_and_never_a_float64() {
+fn xtypes_7_2_2_2_a_long_double_is_a_string_and_never_a_float64() {
     // A Go `float64` has 53 bits of significand; an IDL `long double` is
     // a binary128 with 113. Writing one into a `float64` loses sixty
     // bits at the assignment, before any codec runs, with nothing to say
@@ -164,7 +164,7 @@ fn a_long_double_is_a_string_and_never_a_float64() {
 }
 
 #[test]
-fn an_optional_member_becomes_a_pointer_and_the_others_do_not() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_pointer_and_the_others_do_not() {
     // DDS-XTypes 1.3 §7.2.2.4.4.4.7. Go's zero value is
     // indistinguishable from a written zero, so a `long` that arrived as
     // 0 and one that did not arrive at all would be the same value;
@@ -176,7 +176,7 @@ fn an_optional_member_becomes_a_pointer_and_the_others_do_not() {
 }
 
 #[test]
-fn a_member_named_after_a_go_keyword_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_a_go_keyword_is_escaped_and_keeps_its_idl_name() {
     // The escape runs before the export, so `type` becomes `Type_` and
     // not `Type`: exporting first would leave the escape nothing to do,
     // and `type` and `Type` would reach one Go name by two routes.
@@ -192,7 +192,7 @@ fn a_member_named_after_a_go_keyword_is_escaped_and_keeps_its_idl_name() {
 }
 
 #[test]
-fn a_member_named_after_a_predeclared_identifier_is_escaped_too() {
+fn idl_7_2_3_a_member_named_after_a_predeclared_identifier_is_escaped_too() {
     // Go permits the shadowing and the file compiles until a sibling
     // declaration wants the original. Every field type in a generated
     // file is one of these, and `len` and `cap` are functions a codec
@@ -209,7 +209,7 @@ fn a_member_named_after_a_predeclared_identifier_is_escaped_too() {
 }
 
 #[test]
-fn two_members_that_would_reach_one_go_name_are_refused_by_name() {
+fn idl_7_2_3_two_members_that_would_reach_one_go_name_are_refused_by_name() {
     // Not the case-only pair — IDL 4.2 §7.2.3.1 already forbids `value`
     // beside `Value` in one scope, and the frontend reports it. What is
     // left is the pair the keyword escape makes: `type` escapes to
@@ -243,7 +243,7 @@ fn an_array_nests_outermost_dimension_first() {
 }
 
 #[test]
-fn a_map_becomes_a_slice_of_entries_and_never_a_go_map() {
+fn xtypes_7_5_1_3_6_a_map_becomes_a_slice_of_entries_and_never_a_go_map() {
     // Go randomises map iteration order on purpose (Go spec, "For
     // statements with range clause"), and a `map<K,V>` goes on the wire
     // as a sequence of pairs (DDS-XTypes 1.3 §7.4.1.1.4). A Go `map`
@@ -265,7 +265,7 @@ fn a_map_becomes_a_slice_of_entries_and_never_a_go_map() {
 }
 
 #[test]
-fn a_typedef_becomes_an_alias_and_not_a_defined_type() {
+fn xtypes_7_2_2_4_2_a_typedef_becomes_an_alias_and_not_a_defined_type() {
     // IDL 4.2 §7.4.1.4.3: an alias "does not define a new type".
     // `type Distance int32` would, and a value of it would then need an
     // explicit conversion to reach an `int32`.
@@ -278,7 +278,7 @@ fn a_typedef_becomes_an_alias_and_not_a_defined_type() {
 }
 
 #[test]
-fn an_enum_becomes_a_defined_type_with_its_numbering_written_out() {
+fn xtypes_7_2_2_4_1_1_an_enum_becomes_a_defined_type_with_its_numbering_written_out() {
     // Not an `iota` block: `iota` numbers consecutively from zero and
     // `@value` admits gaps, so an `iota` block would renumber the wire.
     let generated = generate("enum Mode { IDLE, @value(4) ACTIVE, FAULT };");
@@ -329,7 +329,7 @@ fn a_union_becomes_a_struct_with_a_discriminator_and_one_field_per_branch() {
 }
 
 #[test]
-fn a_bitmask_becomes_an_unsigned_type_and_one_constant_per_bit() {
+fn xtypes_7_2_2_4_1_2_a_bitmask_becomes_an_unsigned_type_and_one_constant_per_bit() {
     let generated = generate("@bit_bound(16) bitmask Flags { READY, @position(4) MOVING };");
     assert!(
         squeezed(&generated).contains("type Flags uint16"),
@@ -435,7 +435,7 @@ fn a_native_declaration_becomes_an_opaque_alias() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_a_go_package_is_a_directory() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_a_go_package_is_a_directory() {
     let generated = generate("module common { module util { struct Location { long x; }; }; };");
     assert!(
         squeezed(&generated).contains("type Common_Util_Location struct {"),
@@ -469,13 +469,13 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_table_claims_for_go_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_table_claims_for_go_produces_output() {
     // The table says a rule covers it; this says the rule reaches text.
     let sources = [
         ("struct S { long a; };", "type S struct"),
@@ -538,7 +538,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -632,8 +632,8 @@ fn gofmt(source: &str) -> Result<String, String> {
 /// `#[ignore]`d with the other whole-corpus gates: it is one `gofmt`
 /// invocation per case.
 #[test]
-#[ignore = "one `gofmt` per corpus case; run with --include-ignored"]
-fn the_generated_go_is_gofmt_stable() {
+#[ignore = "one `gofmt` per corpus case; runs in integration-codegen"]
+fn xtypes_7_3_1_the_generated_go_is_gofmt_stable() {
     Command::new("gofmt")
         .arg("--help")
         .output()
@@ -715,7 +715,7 @@ fn go_available() -> bool {
 /// and the sources concatenate into one package cleanly — every
 /// declaration in them has a name of its own.
 #[test]
-fn the_generated_go_compiles() {
+fn xtypes_7_3_1_the_generated_go_compiles() {
     if !go_available() {
         // Loud, on the channel a passing test does not use. A green test
         // that never ran the compiler is exactly the failure this test
@@ -768,7 +768,7 @@ fn the_generated_go_compiles() {
 /// is run with `--include-ignored` on a host that has Go and its result
 /// is what `docs/language-columns-status.md` records.
 #[test]
-#[ignore = "378 `go build` invocations; run with --include-ignored"]
+#[ignore = "378 `go build` invocations, 7.5 s on the Linux test host; runs in integration-codegen"]
 fn every_corpus_case_that_renders_also_compiles() {
     assert!(
         go_available(),

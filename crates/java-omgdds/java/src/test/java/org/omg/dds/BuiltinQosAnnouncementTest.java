@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 class BuiltinQosAnnouncementTest {
 
     @Test
-    void aChangedTopicQosIsANewSampleOfTheTopicInstance() {
+    void javapsm_2_a_changed_topic_qos_is_a_new_sample_of_the_topic_instance() {
         int domain = 1411;
         DomainParticipant observer = Qos.factory().createParticipant(domain);
         DomainParticipant owner = Qos.factory().createParticipant(domain);

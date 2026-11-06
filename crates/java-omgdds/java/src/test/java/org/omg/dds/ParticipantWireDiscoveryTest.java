@@ -71,7 +71,7 @@ class ParticipantWireDiscoveryTest {
     }
 
     @Test
-    void aParticipantOfAnotherProcessIsDiscoveredAndCanBeIgnored() throws Exception {
+    void javapsm_2_a_participant_of_another_process_is_discovered_and_can_be_ignored() throws Exception {
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         RtpsParticipant remote = RtpsParticipant.newParticipant(domain);
         try {
@@ -94,7 +94,7 @@ class ParticipantWireDiscoveryTest {
     }
 
     @Test
-    void aTopicOfAnotherProcessIsDiscoveredAndATypeThatDiffersIsInconsistent() throws Exception {
+    void javapsm_2_a_topic_of_another_process_is_discovered_and_a_type_that_differs_is_inconsistent() throws Exception {
         DomainParticipant mine = Qos.factory().createParticipant(domain);
         Topic<String> local = mine.createTopic("WireTopic", String.class);
         RtpsParticipant remote = RtpsParticipant.newParticipant(domain);

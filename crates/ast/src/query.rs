@@ -861,18 +861,35 @@ impl Ast {
                     return out;
                 };
                 for reference in t.kind.type_refs() {
-                    if let Some(target) = reference.resolved() {
-                        if let Ok(node) = self.types.get(target) {
-                            out.push(node.node_id);
-                        }
+                    if let Some(target) = reference.resolved()
+                        && let Ok(node) = self.types.get(target)
+                    {
+                        out.push(node.node_id);
                     }
                 }
                 match &t.kind {
-                    TypeKind::Structure { members, .. }
-                    | TypeKind::Valuetype { state: members, .. } => {
+                    TypeKind::Structure { members, .. } => {
                         for member in members {
                             if let Ok(m) = self.members.get(*member) {
                                 out.push(m.node_id);
+                            }
+                        }
+                    }
+                    // State, operations and attributes (rule (105)).
+                    TypeKind::Valuetype { state, .. } => {
+                        for member in state {
+                            if let Ok(m) = self.members.get(*member) {
+                                out.push(m.node_id);
+                            }
+                        }
+                        for operation in self.operations_of_value(id) {
+                            if let Ok(o) = self.operations.get(operation) {
+                                out.push(o.node_id);
+                            }
+                        }
+                        for attribute in self.attributes_of_value(id) {
+                            if let Ok(a) = self.attributes.get(attribute) {
+                                out.push(a.node_id);
                             }
                         }
                     }
@@ -908,19 +925,18 @@ impl Ast {
                 }
             }
             AnyId::Member(id, _) => {
-                if let Ok(m) = self.members.get(id) {
-                    if let Some(target) = m.type_.resolved() {
-                        if let Ok(t) = self.types.get(target) {
-                            out.push(t.node_id);
-                        }
-                    }
+                if let Ok(m) = self.members.get(id)
+                    && let Some(target) = m.type_.resolved()
+                    && let Ok(t) = self.types.get(target)
+                {
+                    out.push(t.node_id);
                 }
             }
             AnyId::Case(id, _) => {
-                if let Ok(c) = self.cases.get(id) {
-                    if let Ok(m) = self.members.get(c.member) {
-                        out.push(m.node_id);
-                    }
+                if let Ok(c) = self.cases.get(id)
+                    && let Ok(m) = self.members.get(c.member)
+                {
+                    out.push(m.node_id);
                 }
             }
             AnyId::Interface(id, _) => {

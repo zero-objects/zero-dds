@@ -619,7 +619,7 @@ fn a_primary_key_holding_a_nested_struct_is_accepted() {
 #[test]
 fn an_abstract_valuetype_is_not_a_primary_key() {
     let ast = model(
-        "module Components { valuetype PrimaryKeyBase { public long b; }; };
+        "module Components { abstract valuetype PrimaryKeyBase { }; };
          abstract valuetype CKey : Components::PrimaryKeyBase { };",
     );
     let key = type_by_name(&ast, "CKey");
@@ -765,4 +765,132 @@ fn a_component_equivalent_is_comparable() {
             event_consumer_interfaces: Vec::new(),
         }
     );
+}
+
+// ---------------------------------------------------------------------
+// IDL 4.2 §7.4.11 — extended ports and connectors.
+// ---------------------------------------------------------------------
+
+/// OMG IDL 4.2 §7.4.11.4.1: "An Extended Port is a grouping of basic ports
+/// (facets and/or receptacles)"; §7.4.11.4.2: a `mirrorport` turns "all its
+/// facets ... into receptacles, all its receptacles ... into facets, all its
+/// extended ports ... into reverse extended ports". The component's
+/// equivalent interface has the operations of those basic ports, named
+/// `<port>_<basic port>`.
+#[test]
+fn idl_7_4_11_4_2_an_extended_port_is_the_basic_ports_of_its_port_type() {
+    let mut ast = model(
+        "interface Data {}; interface Control {};
+         porttype Inner { provides Control ctl; };
+         porttype Feed { provides Data data; uses Control sink; port Inner nested;
+                         attribute long rate; };
+         component C { port Feed in_feed; mirrorport Feed out_feed; };",
+    );
+    let component = interface_by_name(&ast, "C");
+    let _ = transform_component(&mut ast, component).expect("transform");
+    let names = op_names(&ast, component);
+    for expected in [
+        // `port`: the facets provide, the receptacles connect.
+        "provide_in_feed_data",
+        "connect_in_feed_sink",
+        "provide_in_feed_nested_ctl",
+        // `mirrorport`: the facets connect, the receptacles provide.
+        "connect_out_feed_data",
+        "provide_out_feed_sink",
+        "connect_out_feed_nested_ctl",
+    ] {
+        assert!(
+            names.contains(&expected.to_string()),
+            "{expected} in {names:?}"
+        );
+    }
+    let attributes: Vec<String> = ast
+        .interface(component)
+        .expect("C")
+        .attributes
+        .iter()
+        .map(|a| ast.attribute(*a).expect("attribute").name.clone())
+        .collect();
+    assert_eq!(attributes, ["in_feed_rate", "out_feed_rate"]);
+}
+
+/// A connector maps as a component does once its ports are basic ones
+/// (§7.4.11.4.3: "Connectors can have ports in the same way as
+/// components").
+#[test]
+fn idl_7_4_11_4_3_a_connector_maps_through_its_ports_as_a_component() {
+    let mut ast = model(
+        "interface Data {};
+         porttype Feed { provides Data data; };
+         connector K { mirrorport Feed fragment; attribute string topic; };",
+    );
+    let connector = interface_by_name(&ast, "K");
+    let _ = zerodds_ccm::transform_connector(&mut ast, connector).expect("transform");
+    let node = ast.interface(connector).expect("K");
+    assert_eq!(node.kind, InterfaceKind::Interface);
+    assert!(op_names(&ast, connector).contains(&"connect_fragment_data".to_string()));
+}
+
+/// CCM 4.0 §6.7.2: the home's explicit interface holds what the home body
+/// declares. "factory" becomes an operation returning the managed
+/// component and raising `Components::CreateFailure` besides its own
+/// exceptions (§6.7.2.1), "finder" one raising
+/// `Components::FinderFailure` (§6.7.2.2); other operations and
+/// attributes move as they are, and the equivalent interface keeps none.
+#[test]
+fn idl_7_4_10_a_homes_factories_finders_and_exports_are_its_explicit_interface() {
+    let mut ast = model(
+        "exception Closed {}; component Till {};
+         home TillHome manages Till {
+             factory open(in long lane) raises (Closed);
+             finder by_lane(in long lane);
+             void audit();
+             attribute string site;
+         };",
+    );
+    let home = interface_by_name(&ast, "TillHome");
+    let out = transform_home(&mut ast, home).expect("transform");
+    assert_eq!(op_names(&ast, out.explicit), ["open", "by_lane", "audit"]);
+    assert!(op_names(&ast, out.equivalent).is_empty());
+    assert_eq!(return_name(&ast, out.explicit, "open"), "Till");
+    assert_eq!(return_name(&ast, out.explicit, "by_lane"), "Till");
+    let raises = |name: &str| -> Vec<String> {
+        let id = ast
+            .interface(out.explicit)
+            .expect("explicit")
+            .operations
+            .iter()
+            .copied()
+            .find(|id| ast.operation(*id).is_ok_and(|node| node.name == name))
+            .expect("the operation");
+        ast.operation(id)
+            .expect("operation")
+            .raises
+            .iter()
+            .map(|reference| match reference {
+                zerodds_ast_core::Ref::Resolved(id) => ast
+                    .exception(*id)
+                    .map(|e| e.name.clone())
+                    .unwrap_or_default(),
+                zerodds_ast_core::Ref::Pending(zerodds_ast_core::PendingRef::ScopedName(n)) => {
+                    n.segments().join("::")
+                }
+                _ => String::new(),
+            })
+            .collect()
+    };
+    assert_eq!(raises("open"), ["Closed", "Components::CreateFailure"]);
+    assert_eq!(raises("by_lane"), ["Components::FinderFailure"]);
+    assert!(raises("audit").is_empty());
+    let attributes: Vec<String> = ast
+        .attributes_of(out.explicit)
+        .iter()
+        .map(|a| {
+            ast.attribute(*a)
+                .map(|n| n.name.clone())
+                .unwrap_or_default()
+        })
+        .collect();
+    assert_eq!(attributes, ["site"]);
+    assert!(ast.attributes_of(out.equivalent).is_empty());
 }

@@ -72,7 +72,7 @@ fn an_already_aligned_member_records_nothing() {
 /// here against the stronger one: a recorded span that held a value
 /// would make the two disagree on every row.
 #[test]
-fn every_recorded_octet_is_a_zero_the_writer_wrote() {
+fn xtypes_7_4_1_1_every_recorded_octet_is_a_zero_the_writer_wrote() {
     let mut w = Writer::little_endian().recording_padding();
     w.write_u8(1);
     w.write_u16(0x0203);

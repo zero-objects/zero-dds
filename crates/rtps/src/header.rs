@@ -27,7 +27,7 @@ use crate::error::WireError;
 use crate::wire_types::{GuidPrefix, ProtocolVersion, VendorId};
 
 /// RTPS-Magic-Bytes "RTPS".
-pub const RTPS_MAGIC: [u8; 4] = [b'R', b'T', b'P', b'S'];
+pub const RTPS_MAGIC: [u8; 4] = *b"RTPS";
 
 /// RTPS-Header (20 Byte fix).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

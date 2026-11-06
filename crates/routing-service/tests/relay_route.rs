@@ -26,7 +26,7 @@ const TOPIC: &str = "Relayed";
 const TYPE: &str = "zerodds::RawBytes";
 
 #[test]
-fn a_relay_route_forwards_on_behalf_of_the_writer() {
+fn rtps_8_7_9_a_relay_route_forwards_on_behalf_of_the_writer() {
     let domain = zerodds_test_domains::unique_domain();
     let cfg = RouterConfig::from_json(&format!(
         r#"{{

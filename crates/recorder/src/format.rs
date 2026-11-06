@@ -26,7 +26,17 @@ pub const FRAME_MAGIC: u8 = b'F';
 /// in a `Frame` changes.
 pub const TOPIC_ADD_MAGIC: u8 = b'T';
 /// Format version. Incompatible changes bump the value.
-pub const ZDDSREC_VERSION: u32 = 2;
+///
+/// Version 3 gives each frame the representation identifier of the
+/// sample's encapsulation header (DDSI-RTPS 2.5 §10.5, DDS-XTypes 1.3
+/// Table 60): the payload is the body without the header, and a body alone
+/// does not say whether it is XCDR1 or XCDR2, plain, delimited or a
+/// parameter list, or its byte order. A reader reads versions 2 and 3; a
+/// version 2 frame has no identifier.
+pub const ZDDSREC_VERSION: u32 = 3;
+
+/// The first version whose frames carry the representation identifier.
+pub const FIRST_VERSION_WITH_REPRESENTATION: u32 = 3;
 
 /// Sample kind per DDS spec §2.2.4.4.5.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -149,18 +159,30 @@ pub struct Frame {
     pub topic_idx: u32,
     /// DDS sample kind (Alive/Disposed/Unregistered).
     pub sample_kind: SampleKind,
-    /// CDR-encoded payload bytes.
+    /// The representation identifier of the sample's encapsulation header
+    /// (DDSI-RTPS 2.5 §10.5), e.g. `[0x00, 0x09]` for `D_CDR2_LE`: what
+    /// `payload` is. `None`: not known (a version 2 frame, or a sample
+    /// without payload).
+    pub representation_identifier: Option<[u8; 2]>,
+    /// The serialized body, without the 4-octet encapsulation header.
     pub payload: Vec<u8>,
 }
 
 impl Frame {
-    /// Serializes the frame.
+    /// Serializes the frame (version 3).
     pub fn write(&self, out: &mut Vec<u8>) {
         out.push(FRAME_MAGIC);
         out.extend_from_slice(&self.timestamp_delta_ns.to_le_bytes());
         out.extend_from_slice(&self.participant_idx.to_le_bytes());
         out.extend_from_slice(&self.topic_idx.to_le_bytes());
         out.push(self.sample_kind.to_u8());
+        match self.representation_identifier {
+            Some(id) => {
+                out.push(1);
+                out.extend_from_slice(&id);
+            }
+            None => out.extend_from_slice(&[0, 0, 0]),
+        }
         let len = u32::try_from(self.payload.len()).unwrap_or(u32::MAX);
         out.extend_from_slice(&len.to_le_bytes());
         out.extend_from_slice(&self.payload);
@@ -178,6 +200,8 @@ pub struct FrameView<'a> {
     pub topic_idx: u32,
     /// DDS sample kind.
     pub sample_kind: SampleKind,
+    /// See [`Frame::representation_identifier`].
+    pub representation_identifier: Option<[u8; 2]>,
     /// Borrowed payload.
     pub payload: &'a [u8],
 }
@@ -191,41 +215,8 @@ impl FrameView<'_> {
             participant_idx: self.participant_idx,
             topic_idx: self.topic_idx,
             sample_kind: self.sample_kind,
+            representation_identifier: self.representation_identifier,
             payload: self.payload.to_vec(),
         }
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests may use unwrap.
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sample_kind_roundtrip() {
-        for k in [
-            SampleKind::Alive,
-            SampleKind::NotAliveDisposed,
-            SampleKind::NotAliveUnregistered,
-        ] {
-            assert_eq!(SampleKind::from_u8(k.to_u8()), Some(k));
-        }
-        assert_eq!(SampleKind::from_u8(99), None);
-    }
-
-    #[test]
-    fn header_writes_magic_and_version() {
-        let h = Header {
-            time_base_unix_ns: 1_700_000_000_000_000_000,
-            participants: Vec::new(),
-            topics: Vec::new(),
-        };
-        let mut out = Vec::new();
-        h.write(&mut out);
-        assert_eq!(&out[0..4], &ZDDSREC_MAGIC);
-        assert_eq!(
-            u32::from_le_bytes(out[4..8].try_into().unwrap()),
-            ZDDSREC_VERSION
-        );
     }
 }

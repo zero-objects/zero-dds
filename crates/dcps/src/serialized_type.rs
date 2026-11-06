@@ -161,6 +161,179 @@ impl DdsType for SerializedSample {
             path,
         )
     }
+    fn field_unselected(&self, path: &str) -> bool {
+        dynamic_unselected(
+            &self.data,
+            self.model
+                .as_ref()
+                .map(|model| (model.ast.as_ref(), model.root)),
+            path,
+        )
+    }
+}
+
+/// Where a content-filter path leads in a dynamic value.
+enum Walk<'a> {
+    /// A value.
+    At(&'a DynamicData),
+    /// A bitmask flag, set or not (DDS-XTypes 1.3 §7.6.7.1).
+    Flag(bool),
+    /// An `@optional` member that takes no value (§7.6.7.2).
+    Null,
+    /// A member of a union whose discriminator selects another member
+    /// (DDS-XTypes 1.4 Beta 1 §7.6.7.1).
+    Unselected,
+}
+
+/// Whether `type_` is a union.
+fn is_union(ast: &Ast, type_: Id<TypeNode>) -> bool {
+    ast.type_(type_)
+        .is_ok_and(|node| matches!(node.kind, TypeKind::Union { .. }))
+}
+
+/// Where the content-filter `path` leads in `data`, for a sample that
+/// knows its type (`model`: the model and the root type) or one that does
+/// not; `None` when the value has no such field.
+///
+/// zerodds-lint: recursion-depth 1 (iterative over the path's steps)
+fn dynamic_walk<'a>(
+    data: &'a DynamicData,
+    model: Option<(&Ast, Id<TypeNode>)>,
+    path: &str,
+) -> Option<Walk<'a>> {
+    use zerodds_sql_filter::{PathStep, split_path};
+    let mut value = data;
+    // The type of `value`, as far as the sample knows its type. DDS-
+    // XTypes 1.3 §7.6.7.1: `[n]` is the element of an array or a
+    // sequence, `['NAME']` the value of a map or the flag of a bitmask
+    // (Boolean). The dynamic form keeps a map as a collection of
+    // two-element collections and does not say which collections are
+    // maps, so the type decides what a step means.
+    let mut at = model.map(|(ast, root)| (ast, unaliased(ast, root)));
+    let steps = split_path(path)?;
+    let mut flag = None;
+    for step in &steps {
+        if flag.is_some() {
+            return None;
+        }
+        match step {
+            // DDS-XTypes 1.4 Beta 1 §7.6.7.1: "The union discriminator
+            // may also be referenced using the name “#discriminator”."
+            // The dynamic form holds it as `_d`.
+            PathStep::Member(name) if name == "#discriminator" => {
+                value = value.field("_d")?;
+                at = at.and_then(|(ast, type_)| match &ast.type_(type_).ok()?.kind {
+                    TypeKind::Union { discriminator, .. } => {
+                        discriminator.resolved().map(|d| (ast, unaliased(ast, d)))
+                    }
+                    _ => None,
+                });
+            }
+            PathStep::Member(name) => match value.field(name) {
+                Some(member) => {
+                    at = at.and_then(|(ast, type_)| {
+                        member_of(ast, type_, name).map(|(next, _)| (ast, next))
+                    });
+                    value = member;
+                }
+                None => {
+                    return match at {
+                        // A union holds the member its discriminator
+                        // selects and no other: a case member it does not
+                        // hold is one the discriminator does not select.
+                        Some((ast, type_))
+                            if is_union(ast, type_) && member_of(ast, type_, name).is_some() =>
+                        {
+                            Some(Walk::Unselected)
+                        }
+                        // §7.6.7.2: an optional member that is not there
+                        // is `null`. A name the type does not have is no
+                        // field.
+                        Some((ast, type_))
+                            if member_of(ast, type_, name)
+                                .is_some_and(|(_, optional)| optional) =>
+                        {
+                            Some(Walk::Null)
+                        }
+                        // Without the type, a union is the aggregate that
+                        // holds `_d`, and a name it does not hold is a
+                        // branch its discriminator does not select.
+                        None if matches!(value, DynamicData::Aggregate(entries)
+                            if entries.iter().any(|(entry, _)| entry == "_d")) =>
+                        {
+                            Some(Walk::Unselected)
+                        }
+                        _ => None,
+                    };
+                }
+            },
+            PathStep::Index(n) => {
+                let DynamicData::Collection(items) = value else {
+                    return None;
+                };
+                let map = at.and_then(|(ast, type_)| match &ast.type_(type_).ok()?.kind {
+                    TypeKind::Map { value, .. } => value.resolved().map(|v| (ast, v)),
+                    _ => None,
+                });
+                if let Some((ast, value_type)) = map {
+                    // A map whose key type is an integer: `[5]` is the
+                    // key 5, as `['5']` is.
+                    let entry = items.iter().find(|entry| {
+                        matches!(entry, DynamicData::Collection(pair)
+                            if pair.first().is_some_and(|key| key_is(key, &n.to_string())))
+                    })?;
+                    let DynamicData::Collection(pair) = entry else {
+                        return None;
+                    };
+                    value = pair.get(1)?;
+                    at = Some((ast, unaliased(ast, value_type)));
+                } else {
+                    value = items.get(usize::try_from(*n).ok()?)?;
+                    at = at.and_then(|(ast, type_)| match &ast.type_(type_).ok()?.kind {
+                        TypeKind::Sequence { element, .. } | TypeKind::Array { element, .. } => {
+                            element.resolved().map(|e| (ast, unaliased(ast, e)))
+                        }
+                        _ => None,
+                    });
+                }
+            }
+            PathStep::Key(name) => match value {
+                DynamicData::Bits(bits) => {
+                    flag = Some(
+                        bits.iter()
+                            .any(|bit| matches!(bit, DynamicData::Text(set) if set == name)),
+                    );
+                }
+                // The value of a map entry, found by its key. Only a
+                // sample that knows its type can say a collection is a
+                // map.
+                DynamicData::Collection(items) => {
+                    let (ast, type_) = at?;
+                    let TypeKind::Map {
+                        value: value_type, ..
+                    } = &ast.type_(type_).ok()?.kind
+                    else {
+                        return None;
+                    };
+                    let value_type = value_type.resolved()?;
+                    let entry = items.iter().find(|entry| {
+                        matches!(entry, DynamicData::Collection(pair)
+                            if pair.first().is_some_and(|key| key_is(key, name)))
+                    })?;
+                    let DynamicData::Collection(pair) = entry else {
+                        return None;
+                    };
+                    value = pair.get(1)?;
+                    at = Some((ast, unaliased(ast, value_type)));
+                }
+                _ => return None,
+            },
+        }
+    }
+    Some(match flag {
+        Some(set) => Walk::Flag(set),
+        None => Walk::At(value),
+    })
 }
 
 /// The value a content-filter path names in a dynamic value
@@ -171,113 +344,12 @@ pub(crate) fn dynamic_field_value(
     model: Option<(&Ast, Id<TypeNode>)>,
     path: &str,
 ) -> Option<zerodds_sql_filter::Value> {
-    {
-        use zerodds_sql_filter::Value;
-        use zerodds_sql_filter::{PathStep, split_path};
-        let mut value = data;
-        // The type of `value`, as far as the sample knows its type. DDS-
-        // XTypes 1.3 §7.6.7.1: `[n]` is the element of an array or a
-        // sequence, `['NAME']` the value of a map or the flag of a bitmask
-        // (Boolean). The dynamic form keeps a map as a collection of
-        // two-element collections and does not say which collections are
-        // maps, so the type decides what a step means.
-        let mut at = model.map(|(ast, root)| (ast, unaliased(ast, root)));
-        let steps = split_path(path)?;
-        let mut flag = None;
-        for step in &steps {
-            if flag.is_some() {
-                return None;
-            }
-            match step {
-                PathStep::Member(name) => match value.field(name) {
-                    Some(member) => {
-                        at = at.and_then(|(ast, type_)| {
-                            member_of(ast, type_, name).map(|(next, _)| (ast, next))
-                        });
-                        value = member;
-                    }
-                    // §7.6.7.2: an optional member that is not there is
-                    // `null`. A name the type does not have is no field.
-                    None => {
-                        return match at {
-                            Some((ast, type_))
-                                if member_of(ast, type_, name)
-                                    .is_some_and(|(_, optional)| optional) =>
-                            {
-                                Some(Value::Null)
-                            }
-                            _ => None,
-                        };
-                    }
-                },
-                PathStep::Index(n) => {
-                    let DynamicData::Collection(items) = value else {
-                        return None;
-                    };
-                    let map = at.and_then(|(ast, type_)| match &ast.type_(type_).ok()?.kind {
-                        TypeKind::Map { value, .. } => value.resolved().map(|v| (ast, v)),
-                        _ => None,
-                    });
-                    if let Some((ast, value_type)) = map {
-                        // A map whose key type is an integer: `[5]` is the
-                        // key 5, as `['5']` is.
-                        let entry = items.iter().find(|entry| {
-                            matches!(entry, DynamicData::Collection(pair)
-                                if pair.first().is_some_and(|key| key_is(key, &n.to_string())))
-                        })?;
-                        let DynamicData::Collection(pair) = entry else {
-                            return None;
-                        };
-                        value = pair.get(1)?;
-                        at = Some((ast, unaliased(ast, value_type)));
-                    } else {
-                        value = items.get(usize::try_from(*n).ok()?)?;
-                        at = at.and_then(|(ast, type_)| match &ast.type_(type_).ok()?.kind {
-                            TypeKind::Sequence { element, .. }
-                            | TypeKind::Array { element, .. } => {
-                                element.resolved().map(|e| (ast, unaliased(ast, e)))
-                            }
-                            _ => None,
-                        });
-                    }
-                }
-                PathStep::Key(name) => match value {
-                    DynamicData::Bits(bits) => {
-                        flag = Some(
-                            bits.iter()
-                                .any(|bit| matches!(bit, DynamicData::Text(set) if set == name)),
-                        );
-                    }
-                    // The value of a map entry, found by its key. Only a
-                    // sample that knows its type can say a collection is a
-                    // map.
-                    DynamicData::Collection(items) => {
-                        let (ast, type_) = at?;
-                        let TypeKind::Map {
-                            value: value_type, ..
-                        } = &ast.type_(type_).ok()?.kind
-                        else {
-                            return None;
-                        };
-                        let value_type = value_type.resolved()?;
-                        let entry = items.iter().find(|entry| {
-                            matches!(entry, DynamicData::Collection(pair)
-                                if pair.first().is_some_and(|key| key_is(key, name)))
-                        })?;
-                        let DynamicData::Collection(pair) = entry else {
-                            return None;
-                        };
-                        value = pair.get(1)?;
-                        at = Some((ast, unaliased(ast, value_type)));
-                    }
-                    _ => return None,
-                },
-            }
-        }
-        if let Some(set) = flag {
-            return Some(Value::Bool(set));
-        }
-        match value {
+    use zerodds_sql_filter::Value;
+    match dynamic_walk(data, model, path)? {
+        Walk::Flag(set) => Some(Value::Bool(set)),
+        Walk::Null => Some(Value::Null),
+        Walk::Unselected => None,
+        Walk::At(value) => match value {
             DynamicData::Boolean(v) => Some(Value::Bool(*v)),
             DynamicData::Integer { value, .. } => i64::try_from(*value).ok().map(Value::Int),
             DynamicData::Float { value, .. } => Some(Value::Float(*value)),
@@ -288,8 +360,21 @@ pub(crate) fn dynamic_field_value(
             | DynamicData::Character { value: v, .. }
             | DynamicData::Enumerator(v) => Some(Value::String(v.clone())),
             _ => None,
-        }
+        },
     }
+}
+
+/// Whether the content-filter `path` names a member of a union whose
+/// discriminator selects another member (DDS-XTypes 1.4 Beta 1
+/// §7.6.7.1). Only a sample that knows its type can tell such a member
+/// from a name the type does not have; without the type every name a
+/// union does not hold counts as such a member.
+pub(crate) fn dynamic_unselected(
+    data: &DynamicData,
+    model: Option<(&Ast, Id<TypeNode>)>,
+    path: &str,
+) -> bool {
+    matches!(dynamic_walk(data, model, path), Some(Walk::Unselected))
 }
 
 /// `DynamicData` as a topic type: the `FooDataWriter` and `FooDataReader`
@@ -317,6 +402,15 @@ impl DdsType for DynamicSample {
             Some((self.type_().ast().as_ref(), self.type_().id())),
             path,
         )
+    }
+    fn field_unselected(&self, path: &str) -> bool {
+        self.snapshot().is_ok_and(|data| {
+            dynamic_unselected(
+                &data,
+                Some((self.type_().ast().as_ref(), self.type_().id())),
+                path,
+            )
+        })
     }
 }
 
@@ -397,6 +491,8 @@ pub struct SerializedTypeSupport {
     /// The CDR dialect the bodies and keys are read and written in; the
     /// specification's unless [`Self::in_dialect`] names another.
     dialect: zerodds_ast_layout::Dialect,
+    /// The layout plans the bodies are read with, made once per type.
+    plans: Arc<zerodds_wire_codec::DecodePlans>,
 }
 
 impl core::fmt::Debug for SerializedTypeSupport {
@@ -563,10 +659,10 @@ impl SerializedTypeSupport {
             Some(zerodds_types::dynamic::ExtensibilityKind::Mutable) => 2,
             _ => return Err("topic root must have aggregate extensibility".into()),
         };
-        if let Some(extensibility) = extensibility {
-            if !matches!(extensibility, 0..=2) {
-                return Err("invalid extensibility".into());
-            }
+        if let Some(extensibility) = extensibility
+            && !matches!(extensibility, 0..=2)
+        {
+            return Err("invalid extensibility".into());
         }
         if keyed.is_some_and(|keyed| keyed != actual_keyed)
             || extensibility.is_some_and(|extensibility| extensibility != actual_ext)
@@ -593,6 +689,7 @@ impl SerializedTypeSupport {
             metadata,
             dependencies: decoded_dependencies,
             dialect: zerodds_ast_layout::Dialect::default(),
+            plans: Arc::new(zerodds_wire_codec::DecodePlans::new()),
         };
         if actual_keyed {
             zerodds_wire_codec::decode::validate_key_holder(
@@ -816,9 +913,53 @@ impl SerializedTypeSupport {
         big_endian: bool,
     ) -> Result<SerializedSample, String> {
         let request = self.request(representation, big_endian)?;
-        let data = zerodds_wire_codec::decode::<DynamicData>(&self.ast, &request, bytes)
-            .map_err(|e| e.to_string())?;
+        let data =
+            zerodds_wire_codec::decode_with::<DynamicData>(&self.ast, &self.plans, &request, bytes)
+                .map_err(|e| e.to_string())?;
         self.sample(data, bytes.to_vec(), representation, big_endian)
+    }
+
+    /// The KeyHash and key holder of a whole sample body: what
+    /// [`Self::key_material`] gives for [`Self::read_body`]'s sample, read
+    /// from the key members alone ([`zerodds_wire_codec::key_of_sample`]).
+    /// The other members are stepped over and not checked.
+    ///
+    /// # Errors
+    /// The type has no key, or the body does not hold its key members where
+    /// the type puts them.
+    pub fn key_material_from_body(
+        &self,
+        bytes: &[u8],
+        representation: u8,
+        big_endian: bool,
+    ) -> Result<([u8; 16], Vec<u8>), String> {
+        if !self.metadata.keyed {
+            return Err("the type has no key".into());
+        }
+        let request = self.request(representation, big_endian)?;
+        let data = zerodds_wire_codec::key_of_sample::<DynamicData>(
+            &self.ast,
+            &self.plans,
+            &request,
+            bytes,
+        )
+        .map_err(|e| e.to_string())?;
+        self.key_of(&data)
+    }
+
+    /// The KeyHash and key holder of `data` (XTypes 1.3 §7.6.8).
+    fn key_of(&self, data: &DynamicData) -> Result<([u8; 16], Vec<u8>), String> {
+        let mut request = self.request(2, true)?;
+        let holder = zerodds_wire_codec::encode::key_holder(&self.ast, &request, data)
+            .map_err(|e| e.to_string())?;
+        request.emit = Emit::KeyHash;
+        // The shared encoder uses the declared maximum-size decision, not
+        // this sample's holder length. No saturated maximum is advertised.
+        let hash: [u8; 16] = zerodds_wire_codec::encode(&self.ast, &request, data)
+            .map_err(|e| e.to_string())?
+            .try_into()
+            .map_err(|_| "invalid KeyHash length")?;
+        Ok((hash, holder))
     }
 
     /// Like [`Self::read_body`] for the first sample of `bytes`, which may hold
@@ -984,17 +1125,7 @@ impl SerializedTypeSupport {
         big_endian: bool,
     ) -> Result<SerializedSample, String> {
         let key = if self.metadata.keyed {
-            let mut request = self.request(2, true)?;
-            let holder = zerodds_wire_codec::encode::key_holder(&self.ast, &request, &data)
-                .map_err(|e| e.to_string())?;
-            request.emit = Emit::KeyHash;
-            // The shared encoder uses the declared maximum-size decision, not
-            // this sample's holder length. No saturated maximum is advertised.
-            let hash: [u8; 16] = zerodds_wire_codec::encode(&self.ast, &request, &data)
-                .map_err(|e| e.to_string())?
-                .try_into()
-                .map_err(|_| "invalid KeyHash length")?;
-            Some((hash, holder))
+            Some(self.key_of(&data)?)
         } else {
             None
         };
@@ -1299,7 +1430,7 @@ mod tests {
     /// enclosed between single quotes"): a filter compares an enumerated
     /// member with its label and a character member with its character.
     #[test]
-    fn a_filter_compares_an_enumerated_and_a_character_member() {
+    fn dcps_b_2_a_filter_compares_an_enumerated_and_a_character_member() {
         use zerodds_sql_filter::{RowAccess, Value};
         struct Row<'a>(&'a zerodds_types::dynamic::DynamicData);
         impl RowAccess for Row<'_> {
@@ -1325,6 +1456,72 @@ mod tests {
         assert_eq!(yes.evaluate(&row, &[]), Ok(true));
         let no = zerodds_sql_filter::parse("color = 'BLUE' OR grade = 'B'").unwrap();
         assert_eq!(no.evaluate(&row, &[]), Ok(false));
+    }
+
+    /// DDS-XTypes 1.4 Beta 1 §7.6.7.1 over a dynamic sample: a union's
+    /// branch by its name, the discriminator as `#discriminator` (`_d` in
+    /// the dynamic form), and a branch the discriminator does not select
+    /// makes the filter false — told from a name the type does not have
+    /// by the model.
+    #[test]
+    fn xtypes_1_4_7_6_7_1_a_dynamic_union_branch_the_discriminator_does_not_select() {
+        use zerodds_sql_filter::{RowAccess, Value};
+        use zerodds_types::dynamic::DynamicData;
+        let ast = zerodds_wire_probe::encode::model_from_idl(
+            "union Sel switch (long) { case 1: long a; case 2: string b; }; \
+             struct S { long id; Sel u; };",
+            "dynamic-union-filter.idl",
+        )
+        .expect("idl");
+        let root = ast
+            .types()
+            .find(|(_, node)| node.name == "S")
+            .map(|(id, _)| id)
+            .expect("S");
+        struct Row<'a>(
+            &'a DynamicData,
+            &'a zerodds_ast::Ast,
+            super::Id<super::TypeNode>,
+        );
+        impl RowAccess for Row<'_> {
+            fn get(&self, path: &str) -> Option<Value> {
+                super::dynamic_field_value(self.0, Some((self.1, self.2)), path)
+            }
+            fn unselected(&self, path: &str) -> bool {
+                super::dynamic_unselected(self.0, Some((self.1, self.2)), path)
+            }
+        }
+        let int = |value| DynamicData::integer(zerodds_ast::PrimitiveKind::Int32, value);
+        let data = DynamicData::Aggregate(vec![
+            ("id".into(), int(4)),
+            (
+                "u".into(),
+                DynamicData::Aggregate(vec![
+                    ("_d".into(), int(2)),
+                    ("b".into(), DynamicData::Text("on".into())),
+                ]),
+            ),
+        ]);
+        let row = Row(&data, &ast, root);
+        for (expression, expected) in [
+            ("u.#discriminator = 2", true),
+            ("u.b = 'on'", true),
+            ("u.a = 1", false),
+            ("NOT u.a = 1", false),
+            ("id = 4 OR u.a = 1", false),
+            ("id = 4", true),
+        ] {
+            let parsed = zerodds_sql_filter::parse(expression).unwrap();
+            assert_eq!(parsed.evaluate(&row, &[]), Ok(expected), "{expression}");
+        }
+        // A name the type does not have is no field, not an unselected one.
+        assert!(!row.unselected("u.c"));
+        assert!(
+            zerodds_sql_filter::parse("u.c = 1")
+                .unwrap()
+                .evaluate(&row, &[])
+                .is_err()
+        );
     }
 
     /// Serialized samples packed back to back with no length
@@ -1462,6 +1659,131 @@ mod tests {
         );
     }
 
+    /// `key_material_from_body` gives the KeyHash and key holder that the
+    /// whole sample read by `read_body` gives, in XCDR1 and XCDR2 and both
+    /// byte orders: with members before the key that it steps over (a
+    /// sequence of octets, a string, an array, a sequence of structures, an
+    /// `@optional` one), under `@final`, `@appendable` and `@mutable`, and
+    /// with a key member that is a structure with a key of its own and one
+    /// with none (XTypes 1.3 §7.6.8 step 1).
+    #[test]
+    fn xtypes_7_6_8_the_key_from_the_body_is_the_key_of_the_whole_sample() {
+        let cases: [(&str, &str, serde_json::Value); 7] = [
+            (
+                "@final struct A { sequence<octet> blob; string name; @key long id; double d; };",
+                "A",
+                serde_json::json!({"blob": [1, 2, 3], "name": "ab", "id": 7, "d": 1.5}),
+            ),
+            (
+                "@appendable struct B { sequence<long> xs; @key string k; long long t; };",
+                "B",
+                serde_json::json!({"xs": [1, 2, 3], "k": "key", "t": 9}),
+            ),
+            (
+                "@mutable struct C { @key unsigned long id; double value; sequence<octet> blob; };",
+                "C",
+                serde_json::json!({"id": 5, "value": 2.0, "blob": [9, 8]}),
+            ),
+            (
+                "@final struct Inner { string s; @key long a; };
+                 @final struct Outer { string pre; @key Inner nested; sequence<octet> post; double tail; };",
+                "Outer",
+                serde_json::json!({"pre": "x", "nested": {"s": "y", "a": 3}, "post": [1], "tail": 0.5}),
+            ),
+            (
+                "@final struct P { long x; string y; };
+                 @appendable struct Q { sequence<P> ps; @key P point; };",
+                "Q",
+                serde_json::json!({"ps": [{"x": 1, "y": "a"}], "point": {"x": 2, "y": "b"}}),
+            ),
+            (
+                "@final struct R { long arr[3]; @key short k; };",
+                "R",
+                serde_json::json!({"arr": [1, 2, 3], "k": 4}),
+            ),
+            (
+                "@appendable struct S { @optional long o; @key long k; };",
+                "S",
+                serde_json::json!({"o": 1, "k": 2}),
+            ),
+        ];
+        for (idl, name, value) in &cases {
+            let (support, _) = dynamic_support(idl, name);
+            for (representation, big_endian) in [(0u8, false), (0, true), (2, false), (2, true)] {
+                let request = support.request(representation, big_endian).unwrap();
+                let body = zerodds_wire_codec::encode(&support.ast, &request, value).unwrap();
+                let whole = support
+                    .read_body(&body, representation, big_endian)
+                    .unwrap();
+                let expected = support.key_material(&whole).unwrap();
+                assert_eq!(
+                    support
+                        .key_material_from_body(&body, representation, big_endian)
+                        .unwrap(),
+                    expected,
+                    "{name}, representation {representation}, big endian {big_endian}"
+                );
+            }
+        }
+    }
+
+    /// How long reading the key takes against reading the whole sample, for
+    /// a key behind a kilobyte of octets. Run on its own, in a release
+    /// build: `cargo test --release -p zerodds-dcps --lib key_of_a_kilobyte -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "a timing, not a check"]
+    #[allow(clippy::print_stdout)]
+    fn key_of_a_kilobyte_sample_timing() {
+        let (support, _) = dynamic_support(
+            "@final struct K { sequence<octet> blob; @key long id; string label; };",
+            "K",
+        );
+        let value = serde_json::json!({"blob": vec![7u8; 1024], "id": 42, "label": "kilobyte"});
+        let request = support.request(2, false).unwrap();
+        let body = zerodds_wire_codec::encode(&support.ast, &request, &value).unwrap();
+        let rounds = 20_000u32;
+        let started = std::time::Instant::now();
+        for _ in 0..rounds {
+            let data =
+                zerodds_wire_codec::decode::<DynamicData>(&support.ast, &request, &body).unwrap();
+            assert!(support.key_of(&data).is_ok());
+        }
+        let planned_each_time = started.elapsed() / rounds;
+        let started = std::time::Instant::now();
+        for _ in 0..rounds {
+            let sample = support.read_body(&body, 2, false).unwrap();
+            assert!(support.key_material(&sample).is_some());
+        }
+        let whole = started.elapsed() / rounds;
+        let started = std::time::Instant::now();
+        for _ in 0..rounds {
+            assert!(support.key_material_from_body(&body, 2, false).is_ok());
+        }
+        let key = started.elapsed() / rounds;
+        std::println!(
+            "whole sample and key, planned each time: {planned_each_time:?}; \
+             with the plans kept: {whole:?}; key only: {key:?} (per sample)"
+        );
+    }
+
+    /// The key-only read of [`Self::key_of_a_kilobyte_sample_timing`] on
+    /// its own, long enough to profile:
+    /// `perf record` on `cargo test --release -p zerodds-dcps --lib key_only_loop -- --ignored`.
+    #[test]
+    #[ignore = "a loop to profile, not a check"]
+    fn key_only_loop() {
+        let (support, _) = dynamic_support(
+            "@final struct K { sequence<octet> blob; @key long id; string label; };",
+            "K",
+        );
+        let value = serde_json::json!({"blob": vec![7u8; 1024], "id": 42, "label": "kilobyte"});
+        let request = support.request(2, false).unwrap();
+        let body = zerodds_wire_codec::encode(&support.ast, &request, &value).unwrap();
+        for _ in 0..300_000u32 {
+            assert!(support.key_material_from_body(&body, 2, false).is_ok());
+        }
+    }
+
     fn dynamic_support(
         idl: &str,
         name: &str,
@@ -1479,7 +1801,7 @@ mod tests {
     /// structure or a union that is not nested, with a copy of the type; a
     /// nested type, an enumeration and a primitive are refused.
     #[test]
-    fn create_type_support_refuses_a_nested_type_and_a_non_aggregate() {
+    fn xtypes_7_6_6_create_type_support_refuses_a_nested_type_and_a_non_aggregate() {
         let (support, type_) = dynamic_support(
             "@final struct Topical { @key long id; double v; };
              @nested @final struct Part { long x; };
@@ -1510,7 +1832,7 @@ mod tests {
     /// `create_sample` convert between a sample and a `DynamicData`, and a
     /// `DynamicData` of another type is refused.
     #[test]
-    fn a_sample_converts_to_dynamic_data_and_back() {
+    fn xtypes_7_6_6_a_sample_converts_to_dynamic_data_and_back() {
         let (support, _) = dynamic_support(
             "@final struct Pair { @key long id; double v; };
              @final struct Other { long id; };",
@@ -1546,7 +1868,7 @@ mod tests {
     /// DDS-XTypes 1.3 §7.6.7.1: a filter reaches an element of a sequence
     /// by its zero-based subscript and a bitmask flag by its quoted name.
     #[test]
-    fn a_filter_subscripts_a_sequence_and_a_bitmask() {
+    fn xtypes_7_6_7_1_a_filter_subscripts_a_sequence_and_a_bitmask() {
         let ast = Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@bit_bound(8) bitmask Flags { READ, WRITE };
@@ -1600,7 +1922,8 @@ mod tests {
     /// entry, which a name the type does not have is not either; the type
     /// the sample was read as decides both.
     #[test]
-    fn a_filter_reaches_a_map_value_and_tells_an_absent_optional_member_from_no_field() {
+    fn xtypes_7_6_7_1_a_filter_reaches_a_map_value_and_tells_an_absent_optional_member_from_no_field()
+     {
         let ast = Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@final struct S {
@@ -1679,7 +2002,7 @@ mod tests {
     }
 
     #[test]
-    fn runtime_support_preserves_identity_before_instance_mutation() {
+    fn xtypes_7_6_6_1_3_runtime_support_preserves_identity_before_instance_mutation() {
         let ast = Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@final struct A { @key long id; }; @final struct B { @key long id; };",
@@ -1747,7 +2070,7 @@ mod tests {
     /// name is not an error, another type under a taken name is, and a
     /// topic is created from the registered name.
     #[test]
-    fn register_type_registers_a_type_under_a_name() {
+    fn xtypes_7_6_6_register_type_registers_a_type_under_a_name() {
         let ast = Arc::new(
             zerodds_wire_probe::encode::model_from_idl(
                 "@final struct First { @key long id; }; @final struct Second { long value; };",

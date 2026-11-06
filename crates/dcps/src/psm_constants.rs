@@ -253,13 +253,13 @@ mod tests {
     /// were the other way round, and the incompatible-QoS status named a
     /// representation that did not match by the id of the other policy.
     #[test]
-    fn the_xtypes_policy_ids_are_those_of_its_idl() {
+    fn xtypes_annex_d_the_xtypes_policy_ids_are_those_of_its_idl() {
         assert_eq!(qos_policy_id::DATA_REPRESENTATION, 23);
         assert_eq!(qos_policy_id::TYPE_CONSISTENCY_ENFORCEMENT, 24);
     }
 
     #[test]
-    fn status_mask_any_covers_13_bits() {
+    fn dcps_2_2_4_1_status_mask_any_covers_13_bits() {
         let bits = status::ANY.count_ones();
         assert_eq!(bits, 13);
     }
@@ -275,7 +275,7 @@ mod tests {
     /// these: `sample_info::sample_state_mask` had READ and NOT_READ the
     /// other way round, and the ANY masks were the OR of the kinds.
     #[test]
-    fn the_state_masks_are_those_of_the_idl() {
+    fn dcps_2_2_2_5_1_9_the_state_masks_are_those_of_the_idl() {
         use crate::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
         assert_eq!(state::READ_SAMPLE_STATE, 0x0001);
         assert_eq!(state::NOT_READ_SAMPLE_STATE, 0x0002);
@@ -306,7 +306,7 @@ mod tests {
     }
 
     #[test]
-    fn instance_state_not_alive_is_or_of_disposed_and_no_writers() {
+    fn dcps_2_3_2_instance_state_not_alive_is_or_of_disposed_and_no_writers() {
         assert_eq!(
             state::NOT_ALIVE_INSTANCE_STATE,
             state::NOT_ALIVE_DISPOSED_INSTANCE_STATE | state::NOT_ALIVE_NO_WRITERS_INSTANCE_STATE
@@ -314,14 +314,14 @@ mod tests {
     }
 
     #[test]
-    fn length_unlimited_is_minus_one() {
+    fn dcps_2_3_3_length_unlimited_is_minus_one() {
         assert_eq!(LENGTH_UNLIMITED, -1);
     }
 
     /// Annex D: the names and the representation identifiers the XTypes
     /// policies carry.
     #[test]
-    fn the_xtypes_policy_names_and_representation_ids_are_those_of_annex_d() {
+    fn xtypes_annex_d_the_xtypes_policy_names_and_representation_ids_are_those_of_annex_d() {
         assert_eq!(qos_policy_name::DATA_REPRESENTATION, "DataRepresentation");
         assert_eq!(
             qos_policy_name::TYPE_CONSISTENCY_ENFORCEMENT,
@@ -333,7 +333,7 @@ mod tests {
     }
 
     #[test]
-    fn qos_policy_ids_are_distinct() {
+    fn dcps_2_3_3_qos_policy_ids_are_distinct() {
         let ids = [
             qos_policy_id::USER_DATA,
             qos_policy_id::DURABILITY,

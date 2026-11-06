@@ -52,7 +52,7 @@ fn happy_path_opaque_signed_passes() {
 }
 
 #[test]
-fn happy_path_multipart_signed_passes() {
+fn security_10_4_1_happy_path_multipart_signed_passes() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let xml = verifier
         .verify_and_extract(VALID_MULTIPART)
@@ -62,7 +62,7 @@ fn happy_path_multipart_signed_passes() {
 }
 
 #[test]
-fn happy_path_then_open_signed_permissions_parses() {
+fn security_10_4_1_happy_path_then_open_signed_permissions_parses() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let perms = open_signed_permissions(VALID_OPAQUE, &verifier).expect("open");
     assert_eq!(perms.grants.len(), 1);
@@ -103,7 +103,7 @@ fn pem_pkcs7_without_detached_content_is_rejected() {
 }
 
 #[test]
-fn wrong_ca_signature_is_rejected() {
+fn security_10_4_1_1_wrong_ca_signature_is_rejected() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let err = verifier.verify_and_extract(WRONG_CA).unwrap_err();
     assert!(
@@ -126,7 +126,7 @@ fn wrong_ca_accepts_when_using_its_own_ca() {
 }
 
 #[test]
-fn tampered_xml_is_rejected() {
+fn security_10_4_1_2_tampered_xml_is_rejected() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let err = verifier.verify_and_extract(TAMPERED).unwrap_err();
     // Tampering can collide in two ways:
@@ -178,7 +178,7 @@ fn multipart_without_two_parts_is_rejected() {
 }
 
 #[test]
-fn intermediate_ca_chain_is_accepted() {
+fn security_10_4_1_1_intermediate_ca_chain_is_accepted() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let xml = verifier
         .verify_and_extract(INTERMEDIATE)
@@ -188,7 +188,7 @@ fn intermediate_ca_chain_is_accepted() {
 }
 
 #[test]
-fn expired_signer_is_rejected() {
+fn security_10_4_1_2_expired_signer_is_rejected() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let err = verifier.verify_and_extract(EXPIRED).unwrap_err();
     assert!(
@@ -212,7 +212,7 @@ fn future_signer_is_rejected() {
 /// from the signature." A permissions document signed with RSASSA-PSS and a
 /// salt of 0, 20, 32 or 64 octets verifies; a changed one does not.
 #[test]
-fn rsa_pss_signers_of_any_salt_length_are_accepted() {
+fn security_8_2_rsa_pss_signers_of_any_salt_length_are_accepted() {
     let verifier = CmsPkcs7Verifier::new(RSA_PSS_CA).expect("ca pem");
     for (salt, bytes) in [
         (0, &include_bytes!("fixtures/rsa_pss_salt0.smime.p7s")[..]),
@@ -238,7 +238,7 @@ fn rsa_pss_signers_of_any_salt_length_are_accepted() {
 }
 
 #[test]
-fn rsa_pkcs1_signer_is_accepted() {
+fn security_8_2_rsa_pkcs1_signer_is_accepted() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let xml = verifier
         .verify_and_extract(RSA_PKCS1)
@@ -315,7 +315,7 @@ fn empty_input_is_rejected_cleanly() {
 /// DDS-Security 1.2 §7.3.11: the signature algorithm of a signed permissions
 /// document is read from its SignerInfo.
 #[test]
-fn the_signature_algorithm_of_a_signed_document_is_read() {
+fn security_7_3_11_the_signature_algorithm_of_a_signed_document_is_read() {
     let verifier = CmsPkcs7Verifier::new(CA_PEM).expect("ca pem");
     let ecdsa = verifier
         .signature_algorithm_oid(VALID_OPAQUE)
@@ -332,4 +332,21 @@ fn the_signature_algorithm_of_a_signed_document_is_read() {
         "1.2.840.113549.1.1.1"
     );
     assert!(verifier.signature_algorithm_oid(b"no document").is_err());
+}
+
+/// RFC 5751 §3.4: only a MIME header block in front of the signed content is
+/// removed. `comment_permissions.smime.p7s` is signed by OpenSSL without
+/// `-text`, so its content is the XML itself; the XML's comment names
+/// `Content-Type: text/plain` before its first empty line. The verifier
+/// returns what `openssl cms -verify` returns (`generate_fixtures.sh` checks
+/// that with `cmp`): the whole document. Before, it returned what followed
+/// the empty line.
+#[test]
+fn security_10_4_1_5_signed_xml_whose_comment_names_text_plain_comes_back_whole() {
+    let verifier =
+        CmsPkcs7Verifier::new(include_bytes!("fixtures/comment_signer_cert.pem")).expect("ca pem");
+    let xml = verifier
+        .verify_and_extract(include_bytes!("fixtures/comment_permissions.smime.p7s"))
+        .expect("verify");
+    assert_eq!(xml, include_bytes!("fixtures/comment_permissions.xml"));
 }

@@ -63,6 +63,7 @@ fn reader_config(topic: &str, type_name: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.into(),
         type_name: type_name.into(),
+        reliable: true,
         ..Default::default()
     }
 }
@@ -114,8 +115,12 @@ fn record_captures_typed_topic_via_type_following() {
         p[..6].copy_from_slice(&prefix_a.to_bytes()[..6]);
         GuidPrefix::from_bytes(p)
     };
-    let rt_a = DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a");
-    let rt_b = DcpsRuntime::start(domain, prefix_b, RuntimeConfig::default()).expect("rt_b");
+    let rt_a = common::ShutsDown(
+        DcpsRuntime::start(domain, prefix_a, RuntimeConfig::default()).expect("rt_a"),
+    );
+    let rt_b = common::ShutsDown(
+        DcpsRuntime::start(domain, prefix_b, RuntimeConfig::default()).expect("rt_b"),
+    );
     assert!(
         wait_for_peers(&rt_a, 1, Duration::from_secs(10)),
         "rt_a !see rt_b"
@@ -179,6 +184,7 @@ fn record_captures_typed_topic_via_type_following() {
                     writer_guid,
                     &key,
                     SampleKind::Alive,
+                    Some([0x00, 0x07]),
                     got.to_vec(),
                 )
                 .unwrap();

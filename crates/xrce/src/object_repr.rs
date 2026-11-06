@@ -171,7 +171,7 @@ impl ObjectVariant {
             message: "object variant length exceeds u32",
         })?;
         out.push(self.discriminator());
-        while out.len() % 4 != 0 {
+        while !out.len().is_multiple_of(4) {
             out.push(0);
         }
         let mut len_buf = [0u8; 4];
@@ -329,7 +329,7 @@ impl ObjectVariant {
         out.push(kind.to_u8());
         self.encode_into(out, e)?;
         if let Some(domain_id) = extra.domain_id {
-            if out.len() % 2 != 0 {
+            if !out.len().is_multiple_of(2) {
                 out.push(0); // `short` aligns to 2 bytes; `ObjectId` (below) does not
             }
             let mut buf = [0u8; 2];
@@ -535,7 +535,7 @@ mod tests {
     /// `sequence<octet>` in front, and `publisher_id` {0xBB, 0xB3} after the
     /// blob.
     #[test]
-    fn annex_b_2_3_writer_variant_reads_as_the_blob_and_its_publisher() {
+    fn xrce_7_7_3_10_annex_b_2_3_writer_variant_reads_as_the_blob_and_its_publisher() {
         let mut v = alloc::vec![0x05, 0x03, 0x00, 0x00];
         v.extend_from_slice(&[0x0C, 0x00, 0x00, 0x80]);
         v.extend_from_slice(&[0x07, 0x00, 0x00, 0x00]);
@@ -592,7 +592,7 @@ mod tests {
     /// the padding octet 43 before the `publisher_id`, and 24 (the padding
     /// octet counted in the DHEADER).
     #[test]
-    fn annex_b_2_4_writer_with_qos_in_both_readings_of_the_padding() {
+    fn xrce_annex_b_2_4_annex_b_2_4_writer_with_qos_in_both_readings_of_the_padding() {
         let members = annex_b_2_4_members();
         assert_eq!(members.len(), 23);
         let mut padded_in = members.clone();
@@ -629,7 +629,7 @@ mod tests {
     /// other examples set, which the 26 octets of the message cannot hold; the
     /// figure and the text of B.2.3 give 12 (`0x8000000C`).
     #[test]
-    fn annex_b_2_6_reader_with_default_qos() {
+    fn xrce_7_7_3_11_annex_b_2_6_reader_with_default_qos() {
         let mut members = alloc::vec![0x07, 0x00, 0x00, 0x00];
         members.extend_from_slice(b"Square\0");
         members.push(0x00); // qos? = FALSE
@@ -649,7 +649,7 @@ mod tests {
     /// again the presence octet of `deadline_msec`; no padding comes before
     /// the id (it starts at byte 54, not on a multiple of four).
     #[test]
-    fn annex_b_2_7_reader_with_qos_and_filter() {
+    fn xrce_annex_b_2_7_annex_b_2_7_reader_with_qos_and_filter() {
         let mut members = alloc::vec![0x07, 0x00, 0x00, 0x00];
         members.extend_from_slice(b"Square\0");
         members.extend_from_slice(&[
@@ -678,7 +678,7 @@ mod tests {
     /// Annex B.2.2: the DomainParticipant, DHEADER `0x80000002`, two absent
     /// optionals, and the `domain_id` of `PARTICIPANT_Representation` after.
     #[test]
-    fn annex_b_2_2_participant_variant() {
+    fn xrce_annex_b_2_2_annex_b_2_2_participant_variant() {
         let v = [
             0x01, 0x03, 0x00, 0x00, 0x02, 0x00, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00,
         ];
@@ -694,7 +694,7 @@ mod tests {
     }
 
     #[test]
-    fn by_reference_roundtrip_le() {
+    fn xrce_7_7_3_by_reference_roundtrip_le() {
         let v = ObjectVariant::ByReference("MyTopicProfile".into());
         let enc = v.encode(Endianness::Little).unwrap();
         let (v2, n) = ObjectVariant::decode(&enc, Endianness::Little).unwrap();
@@ -703,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn by_xml_string_roundtrip_be() {
+    fn xrce_7_7_3_by_xml_string_roundtrip_be() {
         let v = ObjectVariant::ByXmlString(
             "<dds><topic name=\"Chat\" type=\"std::string\"/></dds>".into(),
         );
@@ -713,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn in_binary_roundtrip() {
+    fn xrce_7_7_3_in_binary_roundtrip() {
         let v = ObjectVariant::InBinary(alloc::vec![0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x01, 0x02]);
         let enc = v.encode(Endianness::Little).unwrap();
         let (v2, _) = ObjectVariant::decode(&enc, Endianness::Little).unwrap();
@@ -721,7 +721,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_discriminator_rejected() {
+    fn xrce_7_7_3_1_unknown_discriminator_rejected() {
         // Discriminator 0x42 is not in the spec
         let mut bad = alloc::vec![0x42, 0, 0, 0];
         bad.extend_from_slice(&0u32.to_le_bytes());
@@ -761,7 +761,7 @@ mod tests {
     /// A reference of 128 characters is read; one of 129 is refused, on the
     /// wire and when written. An XML string is not bound by it.
     #[test]
-    fn a_reference_longer_than_reference_max_len_is_refused() {
+    fn xrce_7_7_3_1_a_reference_longer_than_reference_max_len_is_refused() {
         let at_limit = ObjectVariant::ByReference("r".repeat(REFERENCE_MAX_LEN));
         let wire = at_limit.encode(Endianness::Little).unwrap();
         assert_eq!(
@@ -803,7 +803,7 @@ mod tests {
     }
 
     #[test]
-    fn discriminator_returns_correct_byte() {
+    fn xrce_7_7_3_1_discriminator_returns_correct_byte() {
         assert_eq!(
             ObjectVariant::ByReference(String::new()).discriminator(),
             repr_disc::BY_REFERENCE
@@ -823,14 +823,14 @@ mod tests {
     /// (modeling only the *inner* `RepresentationFormat` discriminator
     /// as if it were the whole wire form), caught only once checked
     /// against real eProsima bytes (see the module doc and
-    /// `participant_representation_matches_the_captured_create_bytes`/
-    /// `subscriber_representation_matches_the_captured_create_bytes`
+    /// `xrce_7_7_3_participant_representation_matches_the_captured_create_bytes`/
+    /// `xrce_7_7_3_subscriber_representation_matches_the_captured_create_bytes`
     /// below). This test round-trips every kind through
     /// [`ObjectVariant::encode_for_kind`]/[`ObjectVariant::decode_for_kind`]
     /// with the trailing field that kind requires (or none, for the
     /// kinds that carry none).
     #[test]
-    fn encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field() {
+    fn xrce_7_7_3_encode_for_kind_round_trips_every_objk_kind_with_its_own_trailing_field() {
         let participant_like = |kind: ObjectKind, extra: ObjectVariantExtra| {
             let v = ObjectVariant::ByXmlString("<dds/>".into());
             let bytes = v
@@ -892,7 +892,7 @@ mod tests {
     /// (line 2, `PublishHelloWorld`): the 86-byte XML string, then the
     /// participant's `ObjectId` `00 11` with no pad byte before it.
     #[test]
-    fn topic_representation_matches_the_captured_create_bytes() {
+    fn xrce_7_7_3_1_topic_representation_matches_the_captured_create_bytes() {
         let xml = "<dds><topic><name>HelloWorldTopic</name><dataType>HelloWorld</dataType>\
                    </topic></dds>";
         let mut bytes = vec![0x02, 0x02, 0x00, 0x00, 0x56, 0x00, 0x00, 0x00];
@@ -922,7 +922,7 @@ mod tests {
     /// `domain_id` needs exactly one pad byte before it — see the module
     /// doc.
     #[test]
-    fn participant_representation_matches_the_captured_create_bytes() {
+    fn xrce_7_7_3_participant_representation_matches_the_captured_create_bytes() {
         #[rustfmt::skip]
         let bytes: [u8; 100] = [
             0x01, 0x02, 0x00, 0x00, 0x59, 0x00, 0x00, 0x00, 0x3c, 0x64, 0x64, 0x73,
@@ -960,7 +960,7 @@ mod tests {
     /// answer `STATUS_ERR_INVALID_DATA` where the real agent answered
     /// `STATUS_OK`, before this module's two-level discriminator fix.
     #[test]
-    fn subscriber_representation_matches_the_captured_create_bytes() {
+    fn xrce_7_7_3_subscriber_representation_matches_the_captured_create_bytes() {
         let bytes: [u8; 11] = [
             0x04, 0x02, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x11,
         ];
@@ -978,7 +978,7 @@ mod tests {
     }
 
     #[test]
-    fn object_variant_xml_form_supports_topic_qosprofile_application() {
+    fn xrce_7_7_3_1_object_variant_xml_form_supports_topic_qosprofile_application() {
         // Spec example: topic XML repr.
         for s in [
             "<topic name=\"T\"/>",
@@ -995,7 +995,7 @@ mod tests {
     /// DDS-XML 1.0 `elementNameReference`: `((::)?[a-zA-Z0-9_.])+` after
     /// `whiteSpace collapse`.
     #[test]
-    fn element_name_references_follow_the_xsd_pattern() {
+    fn xrce_7_7_3_1_1_element_name_references_follow_the_xsd_pattern() {
         for ok in [
             "a",
             "MyQosLibrary::MyQosProfile",

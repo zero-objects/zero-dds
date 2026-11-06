@@ -8,19 +8,14 @@
 class Zerodds < Formula
   desc "Rust-native DDS implementation with bridges (DDS 1.4 / RTPS 2.5 / XTypes 1.3)"
   homepage "https://zerodds.org"
+  url "https://github.com/zero-objects/zero-dds/releases/download/v1.0.0-rc.7/zerodds-1.0.0-rc.7-aarch64-apple-darwin.tar.gz"
   version "1.0.0-rc.7"
+  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "Apache-2.0"
 
+  depends_on arch: :arm64
+  depends_on :macos
   depends_on "openssl@3"
-
-  on_arm do
-    url "https://github.com/zero-objects/zero-dds/releases/download/v#{version}/zerodds-#{version}-aarch64-apple-darwin.tar.gz"
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  end
-  on_intel do
-    url "https://github.com/zero-objects/zero-dds/releases/download/v#{version}/zerodds-#{version}-x86_64-apple-darwin.tar.gz"
-    sha256 "0000000000000000000000000000000000000000000000000000000000000000"
-  end
 
   def install
     # Binaries (7 daemons + 17 CLIs, see §1.1/§1.3).
@@ -30,7 +25,7 @@ class Zerodds < Formula
     lib.install Dir["lib/libzerodds.*"]
     include.install "include/zerodds.h"
     (include/"zerodds").install Dir["include/zerodds/*"]
-    (include).install "include/dds" if Dir.exist?("include/dds")
+    include.install "include/dds" if Dir.exist?("include/dds")
     (lib/"pkgconfig").install "lib/pkgconfig/zerodds.pc"
 
     # Default configs go to #{etc}/zerodds; existing files are kept.

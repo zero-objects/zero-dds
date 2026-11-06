@@ -52,7 +52,7 @@ class ReaderIteratorTest {
     }
 
     @Test
-    void theIteratorWalksTheSamplesInBothDirections() throws Exception {
+    void javapsm_7_7_3_the_iterator_walks_the_samples_in_both_directions() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = readerWithThreeSamples(rig);
         try (Sample.Iterator<Keyed> it = reader.read()) {
@@ -75,7 +75,7 @@ class ReaderIteratorTest {
     }
 
     @Test
-    void theIteratorIsReadOnly() throws Exception {
+    void javapsm_7_7_2_the_iterator_is_read_only() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = readerWithThreeSamples(rig);
         try (Sample.Iterator<Keyed> it = reader.read()) {
@@ -101,7 +101,7 @@ class ReaderIteratorTest {
     }
 
     @Test
-    void closeEndsTheLoanAndClosingAgainIsHarmless() throws Exception {
+    void javapsm_7_7_3_close_ends_the_loan_and_closing_again_is_harmless() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = readerWithThreeSamples(rig);
         Sample.Iterator<Keyed> it = reader.read();
@@ -115,7 +115,7 @@ class ReaderIteratorTest {
     }
 
     @Test
-    void takeReturnsTheSamplesInTheIteratorAndRemovesThemFromTheReader() throws Exception {
+    void javapsm_7_7_3_take_returns_the_samples_in_the_iterator_and_removes_them_from_the_reader() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = readerWithThreeSamples(rig);
         try (Sample.Iterator<Keyed> it = reader.take()) {
@@ -138,7 +138,7 @@ class ReaderIteratorTest {
     }
 
     @Test
-    void readSelectorAndIntFormsReturnTheSameSamplesAsTheListForm() throws Exception {
+    void javapsm_7_7_3_read_selector_and_int_forms_return_the_same_samples_as_the_list_form() throws Exception {
         ReaderRig rig = new ReaderRig(nextDom());
         DataReader<Keyed> reader = readerWithThreeSamples(rig);
         assertEquals(2, count(reader.read(2)));

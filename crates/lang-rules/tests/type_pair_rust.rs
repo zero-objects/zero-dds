@@ -29,7 +29,7 @@ const HEADERS: &str = "module dds { module rpc {
 }; };";
 
 #[test]
-fn a_pair_with_headers_gets_the_header_traits_and_the_endpoints() {
+fn rpc_7_3_1_4_a_pair_with_headers_gets_the_header_traits_and_the_endpoints() {
     let out = rust(&format!(
         "{HEADERS}
          module robot {{
@@ -61,7 +61,7 @@ fn a_pair_with_headers_gets_the_header_traits_and_the_endpoints() {
 /// necessary and the special data members must not be defined": without
 /// `header` the pair is the Enhanced mapping and needs no header traits.
 #[test]
-fn a_pair_without_headers_is_the_enhanced_mapping() {
+fn rpc_7_3_1_4_a_pair_without_headers_is_the_enhanced_mapping() {
     let out = rust(
         "module robot {
            @RPCRequestType struct Req { long x; };
@@ -86,7 +86,7 @@ fn a_header_in_only_one_type_is_refused() {
 }
 
 #[test]
-fn a_marked_type_that_is_not_a_struct_is_refused() {
+fn rpc_7_3_1_4_a_marked_type_that_is_not_a_struct_is_refused() {
     let err = rust("@RPCRequestType enum E { A, B };").unwrap_err();
     assert!(err.contains("not a struct"), "{err}");
 }
@@ -107,7 +107,7 @@ fn a_topic_annotation_that_is_not_a_string_is_refused() {
 /// `@DDSService(name=…)` of the specification's examples, on either type; at
 /// run time the endpoint takes it from the params (§7.4.2.3).
 #[test]
-fn the_service_name_is_read_from_either_annotation_and_can_be_given_at_run_time() {
+fn rpc_7_3_1_4_the_service_name_is_read_from_either_annotation_and_can_be_given_at_run_time() {
     for annotation in ["@service(name=\"Move\")", "@DDSService(name=\"Move\")"] {
         let out = rust(&format!(
             "{annotation} @RPCRequestType struct Req {{ long x; }};

@@ -52,10 +52,27 @@ pub const PROP_CIPHER: &str = "dds.sec.crypto.rtps_psk_symmetric_cipher_algorith
 pub const PROP_PASSPHRASE: &str = "dds.sec.crypto.rtps_psk_secret_passphrase";
 /// The name §10.5.2.1.3 Table 76 uses for the same property.
 pub const PROP_PASSPHRASE_TABLE_76: &str = "dds.sec.crypto.psk.secret_passphrase";
-/// `org.zerodds.sec.crypto.rtps_psk_secret_passphrase_alt` (Table 86).
-pub const PROP_PASSPHRASE_ALT: &str = "org.zerodds.sec.crypto.rtps_psk_secret_passphrase_alt";
-/// The name Table 71 of §10.5.1 uses for the same property.
-pub const PROP_PASSPHRASE_EXTRA: &str = "org.zerodds.sec.crypto.rtps_psk_secret_passphrase_extra";
+/// `dds.sec.crypto.rtps_psk_secret_passphrase_alt` (Table 86: "all
+/// properties have `dds.sec.crypto.` prefix").
+pub const PROP_PASSPHRASE_ALT: &str = "dds.sec.crypto.rtps_psk_secret_passphrase_alt";
+/// The name Table 71 of §10.5.1 uses for the same property, with the same
+/// prefix.
+pub const PROP_PASSPHRASE_EXTRA: &str = "dds.sec.crypto.rtps_psk_secret_passphrase_extra";
+/// The name this implementation read for [`PROP_PASSPHRASE_ALT`] before; a
+/// configuration that sets it keeps its alternatives.
+pub const PROP_PASSPHRASE_ALT_ZERODDS: &str =
+    "org.zerodds.sec.crypto.rtps_psk_secret_passphrase_alt";
+/// The name this implementation read for [`PROP_PASSPHRASE_EXTRA`] before.
+pub const PROP_PASSPHRASE_EXTRA_ZERODDS: &str =
+    "org.zerodds.sec.crypto.rtps_psk_secret_passphrase_extra";
+/// Every name a list of alternative passphrases is read from, the names of
+/// the specification first. Each one set adds its passphrases.
+pub const ALTERNATIVE_PASSPHRASE_PROPERTIES: [&str; 4] = [
+    PROP_PASSPHRASE_ALT,
+    PROP_PASSPHRASE_EXTRA,
+    PROP_PASSPHRASE_ALT_ZERODDS,
+    PROP_PASSPHRASE_EXTRA_ZERODDS,
+];
 
 fn config_error(message: impl Into<String>) -> SecurityError {
     SecurityError::new(SecurityErrorKind::InvalidConfiguration, message.into())
@@ -269,13 +286,12 @@ impl PskConfig {
             })?;
         let text = read_uri(name, value)?;
         let passphrase = Passphrase::parse(text.trim_end_matches(['\r', '\n']))?;
-        let alternatives = match [PROP_PASSPHRASE_ALT, PROP_PASSPHRASE_EXTRA]
-            .into_iter()
-            .find_map(|name| get(name).map(|value| (name, value)))
-        {
-            Some((name, value)) => parse_passphrase_list(&read_uri(name, value)?)?,
-            None => Vec::new(),
-        };
+        let mut alternatives = Vec::new();
+        for name in ALTERNATIVE_PASSPHRASE_PROPERTIES {
+            if let Some(value) = get(name) {
+                alternatives.extend(parse_passphrase_list(&read_uri(name, value)?)?);
+            }
+        }
         Ok(Self {
             domain_id,
             domain_tag: domain_tag.to_string(),
@@ -1206,7 +1222,7 @@ mod tests {
     }
 
     #[test]
-    fn the_key_material_is_the_one_the_spec_prints() {
+    fn security_10_5_2_1_3_the_key_material_is_the_one_the_spec_prints() {
         let passphrase = Passphrase::parse(&alloc::format!("5632:{SECRET}")).unwrap();
         assert_eq!(passphrase.id, 0x1600);
         assert_eq!(passphrase.key_id(), 0x00);
@@ -1237,7 +1253,7 @@ mod tests {
     /// the passphrase of printable ASCII up to 512 characters without a
     /// space at either end; a list separated by LF, CR or both.
     #[test]
-    fn the_passphrase_rules_of_table_86() {
+    fn security_10_5_1_2_the_passphrase_rules_of_table_86() {
         let p = Passphrase::parse("5612:Open Sesame").unwrap();
         assert_eq!((p.id, p.secret.as_str()), (5612, "Open Sesame"));
         assert_eq!(
@@ -1313,7 +1329,7 @@ mod tests {
     /// the algorithm id) and the SenderKeyId; GCM encrypts the body, GMAC
     /// leaves it; the receiver derives the sender's key from the header.
     #[test]
-    fn a_message_goes_through_encode_and_decode() {
+    fn security_10_9_3_1_a_message_goes_through_encode_and_decode() {
         for (protection, bits, id, encrypted) in [
             (PskProtection::Encrypt, 256, 0x04u8, true),
             (PskProtection::Encrypt, 128, 0x02, true),
@@ -1346,7 +1362,7 @@ mod tests {
     }
 
     #[test]
-    fn what_does_not_hold_is_refused() {
+    fn security_10_9_3_3_1_what_does_not_hold_is_refused() {
         let (tx, h) = sender(PskProtection::Encrypt, 256);
         let plain = message(PREFIX);
         let wire = tx.encode_rtps_message(h, &plain).unwrap();
@@ -1412,7 +1428,7 @@ mod tests {
     /// Table 86, `rtps_psk_secret_passphrase_alt`: a message protected with
     /// an alternative passphrase of the receiver is accepted.
     #[test]
-    fn an_alternative_passphrase_decodes() {
+    fn security_10_9_1_an_alternative_passphrase_decodes() {
         let (tx, h) = sender(PskProtection::Encrypt, 256);
         let plain = message(PREFIX);
         let wire = tx.encode_rtps_message(h, &plain).unwrap();
@@ -1429,7 +1445,7 @@ mod tests {
     /// Tables 87 to 89: what does nothing returns the dummy handle or fails,
     /// as `FALSE`.
     #[test]
-    fn the_other_operations_do_nothing() {
+    fn security_10_9_3_2_the_other_operations_do_nothing() {
         use zerodds_security::authentication::{IdentityHandle, SharedSecretHandle};
         let mut p = PskCryptoPlugin::new(config(PskProtection::Encrypt, 256)).unwrap();
         let local = p
@@ -1488,7 +1504,7 @@ mod tests {
     /// `messageLength` set to the length of the encoded message, and is under
     /// the tag with `messageLength` zero.
     #[test]
-    fn a_header_extension_is_kept_and_its_length_set() {
+    fn security_10_9_3_3_1_a_header_extension_is_kept_and_its_length_set() {
         let (tx, h) = sender(PskProtection::Encrypt, 256);
         let mut plain = message(PREFIX)[..20].to_vec();
         // HeaderExtension (id 0, flags: little endian + L), messageLength = 1234.
@@ -1514,7 +1530,7 @@ mod tests {
     /// tag and set to the checksum of the encoded message afterwards; the
     /// decoded message has the checksum of the decoded message.
     #[test]
-    fn a_header_extension_with_a_checksum_is_adjusted_both_ways() {
+    fn security_10_9_3_3_1_a_header_extension_with_a_checksum_is_adjusted_both_ways() {
         let (tx, h) = sender(PskProtection::Encrypt, 256);
         let mut plain = message(PREFIX)[..20].to_vec();
         // HeaderExtension: E | L | C=01; messageLength, checksum.
@@ -1560,7 +1576,7 @@ mod tests {
     /// revisions; `activate_key_revision` returns FALSE; the unregister
     /// operations release.
     #[test]
-    fn the_key_factory_of_table_87() {
+    fn security_10_9_3_1_the_key_factory_of_table_87() {
         use zerodds_security::algorithm::{CBIT_AES128_GCM, CBIT_AES256_GCM};
         use zerodds_security::cryptographic::CryptoKeyFactory as F;
         for (bits, bit) in [(256u16, CBIT_AES256_GCM), (128u16, CBIT_AES128_GCM)] {
@@ -1659,7 +1675,7 @@ mod tests {
     /// FALSE"; `return_crypto_tokens` releases tokens, and this plugin has
     /// issued none.
     #[test]
-    fn the_key_exchange_of_table_88() {
+    fn security_10_9_2_the_key_exchange_of_table_88() {
         use zerodds_security::cryptographic::CryptoKeyExchange as E;
         let mut p = PskCryptoPlugin::new(config(PskProtection::Encrypt, 256)).unwrap();
         let (pc, wc, rc) = (
@@ -1695,7 +1711,7 @@ mod tests {
     /// FALSE". `encode_rtps_message` fails without `transform_with_psk` and
     /// with receiver-specific parts, and sets the flags A and P.
     #[test]
-    fn the_transform_of_table_89() {
+    fn security_10_9_the_transform_of_table_89() {
         use zerodds_security::cryptographic::CryptoKeyFactory as F;
         use zerodds_security::cryptographic::CryptoTransform as T;
         let make = || {
@@ -1796,14 +1812,14 @@ mod tests {
     /// Table 71, Table 86: the properties name URIs: `data:,` and `file:`;
     /// both spellings of the list of alternatives; the algorithm.
     #[test]
-    fn the_uri_properties_of_the_pre_shared_key_are_read() {
+    fn security_10_5_1_the_uri_properties_of_the_pre_shared_key_are_read() {
         let props = [
             (
                 "dds.sec.crypto.rtps_psk_secret_passphrase",
                 "data:,5612:Open Sesame",
             ),
             (
-                "org.zerodds.sec.crypto.rtps_psk_secret_passphrase_extra",
+                "dds.sec.crypto.rtps_psk_secret_passphrase_extra",
                 "data:,5613:Second\n5614:Third",
             ),
             (

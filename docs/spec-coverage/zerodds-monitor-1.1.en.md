@@ -123,7 +123,17 @@ roundtrip, reject of invalid/short/zero-trace-id payload.
 `from_to_span_context_roundtrip`, `pid_decode_rejects_invalid_traceparent_format`,
 `pid_decode_rejects_short_payload`, `pid_decode_rejects_zero_trace_id`.
 
-**Status:** done
+**Status:** partial — wire format, round trip and refusal of invalid payloads are built and checked; the PID lies in the protocol range instead of the vendor range (§4.1a).
+
+## §4.1a PID in the vendor range
+
+**Spec:** §4.1 — `0x0D00` lies in the standard range; "a move into the vendor range (`0x8000+`) is earmarked as a 2.0 major". DDSI-RTPS 2.5 §9.6.2.2.1, Table 9.6 — "The range 0x8000 to 0xffff is reserved for vendor-specific options"; parameters up to `0x7fff` are assigned by the protocol.
+
+**Repo:** —
+
+**Tests:** —
+
+**Status:** open — `crates/monitor/src/trace_context.rs` sets `PID_VENDOR_TRACE_CONTEXT = 0x0D00`; a vendor PID from `0x8000` up is missing.
 
 ## §5 Span schema
 
@@ -161,7 +171,7 @@ fields), optional Prometheus server.
 
 **Tests:** `crates/monitor/src/metric_names.rs::tests::all_count_matches_spec`
 plus the §10 cross-layer test
-`crates/dcps/src/metrics.rs::tests::write_increments_samples_written_and_renders`.
+`crates/dcps/src/metrics.rs::tests::monitor_7_write_increments_samples_written_and_renders`.
 
 **Status:** done
 
@@ -173,7 +183,7 @@ plus the §10 cross-layer test
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — stability and versioning commitment; metric, span and PID names are items §2, §4 and §5.
 
 ## §9 Security (declarative policies)
 
@@ -202,7 +212,7 @@ label escaping, PID roundtrip, **cross-layer** (dcps-write → render), **policy
 `crates/dcps/src/metrics.rs` (cross-layer test).
 
 **Tests:** the §1–§4 obligations +
-`crates/dcps/src/metrics.rs::tests::write_increments_samples_written_and_renders`
+`crates/dcps/src/metrics.rs::tests::monitor_7_write_increments_samples_written_and_renders`
 (cross-layer) + the §9 policy tests.
 
 **Status:** done
@@ -215,15 +225,19 @@ label escaping, PID roundtrip, **cross-layer** (dcps-write → render), **policy
 
 **Tests:** —
 
-**Status:** n/a (informative)
+**Status:** n/a (informative) — a statement about this document, not a property of the crate.
 
 ---
 
 ## Audit status
 
-14 done / 0 partial / 0 open / 2 n/a (informative) / 0 n/a (rejected).
+13 done / 1 partial / 1 open / 0 blocked / 2 n/a (informative).
 
-Test run: `cargo test -p zerodds-monitor` — 46 tests green, 0 failed; plus
-`cargo test -p zerodds-dcps` (§10 cross-layer test green, metrics feature default).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-monitor-1.1.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-dcps --all-targets` (job `merge-rust-dcps`) — 1 test green.
+* `cargo nextest run --profile merge -p zerodds-monitor --all-targets` (job `merge-rust-monitor`) — 44 tests green.
+
+45 cited tests green, 0 not green.
+
+Open items: `zerodds-monitor-1.1.open.en.md`.

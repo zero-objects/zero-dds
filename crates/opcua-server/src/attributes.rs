@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn numeric_range_parses_the_annex_a3_grammar() {
+    fn uacs_5_11_2_numeric_range_parses_the_annex_a3_grammar() {
         assert_eq!(NumericRange::parse("").expect("empty"), None);
         assert_eq!(
             NumericRange::parse("6").expect("single").expect("some"),
@@ -612,7 +612,7 @@ mod tests {
     }
 
     #[test]
-    fn numeric_range_rejects_the_forms_the_spec_calls_invalid() {
+    fn uacs_5_11_2_numeric_range_rejects_the_forms_the_spec_calls_invalid() {
         // §7.27: "'6 ,0' and '3,2' are not [valid]" for the single-integer
         // construct — whitespace is never permitted, and "7:5" / "5:5" break
         // the lo < hi rule.
@@ -626,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn numeric_range_apply_selects_and_clamps() {
+    fn uacs_5_11_2_numeric_range_apply_selects_and_clamps() {
         let v = array(&[10, 11, 12, 13]);
         let one = NumericRange::parse("1").expect("p").expect("s");
         assert_eq!(one.apply(&v).expect("apply").value.len(), 1);
@@ -643,7 +643,7 @@ mod tests {
     }
 
     #[test]
-    fn numeric_range_replace_writes_in_place() {
+    fn uacs_5_11_4_numeric_range_replace_writes_in_place() {
         let mut v = array(&[10, 11, 12, 13]);
         let r = NumericRange::parse("1:2").expect("p").expect("s");
         r.replace(&mut v, &array(&[21, 22])).expect("replace");
@@ -664,7 +664,7 @@ mod tests {
     }
 
     #[test]
-    fn write_mask_bit_matches_table_44() {
+    fn uacs_5_11_4_write_mask_bit_matches_table_44() {
         use attribute_ids as a;
         assert_eq!(write_mask_bit(a::ACCESS_LEVEL), Some(1 << 0));
         assert_eq!(write_mask_bit(a::BROWSE_NAME), Some(1 << 2));
@@ -675,7 +675,7 @@ mod tests {
     }
 
     #[test]
-    fn timestamps_to_return_strips_what_was_not_asked_for() {
+    fn uacs_5_11_2_timestamps_to_return_strips_what_was_not_asked_for() {
         use zerodds_opcua_gateway::data_value::DataValue;
         let base = DataValue {
             value: None,

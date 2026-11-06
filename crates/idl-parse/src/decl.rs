@@ -876,7 +876,11 @@ impl Parser<'_> {
             TokenKind::Enum => self.parse_enum_def(false),
             TokenKind::Bitset => self.parse_bitset_def(false),
             TokenKind::Bitmask => self.parse_bitmask_def(false),
-            _ => self.parse_type_spec(),
+            // OMG IDL 4.2 §7.4.15.4.2: "An annotation may be applied to any
+            // IDL constructs or sub-constructs" by prefixing it — the type
+            // of a typedef among them: `typedef @max(100) long Length;`
+            // (IDL4 to Java 1.0 §7.2.4.6's example).
+            _ => self.parse_annotated_type_spec(),
         }
         self.parse_declarator_list();
         self.expect(TokenKind::Semicolon, "`;` after the typedef");

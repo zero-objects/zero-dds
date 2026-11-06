@@ -62,7 +62,7 @@ fn roomy_writer_qos() -> DataWriterQos {
     debug_assertions,
     ignore = "§9 measures the optimized build; `perf-gate` runs this with --release"
 )]
-fn async_write_is_within_five_percent_of_sync_write() {
+fn async_9_write_is_within_five_percent_of_sync_write() {
     let payload = RawBytes::new(vec![0xAA; 64]);
 
     let lease = zerodds_test_domains::lease_domain();

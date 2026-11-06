@@ -33,7 +33,7 @@ fn scratch(name: &str) -> std::path::PathBuf {
 /// `S` and `s` in one scope differ only in case (OMG IDL 4.2 §7.2.3), and
 /// the diagnostic points into line 6 whatever stands above it.
 #[test]
-fn comments_above_an_error_do_not_move_it() {
+fn idlfrontend_7_comments_above_an_error_do_not_move_it() {
     let dir = scratch("diagnostic-positions-comments");
     let body = "module t {\n  struct S { long s; };\n};\n";
     std::fs::write(dir.join("plain.idl"), body).unwrap();
@@ -68,7 +68,7 @@ fn comments_above_an_error_do_not_move_it() {
 }
 
 #[test]
-fn an_error_in_an_include_names_the_include() {
+fn idlfrontend_7_an_error_in_an_include_names_the_include() {
     let dir = scratch("diagnostic-positions-include");
     std::fs::write(
         dir.join("inc.idl"),

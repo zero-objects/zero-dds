@@ -218,7 +218,7 @@ fn plain_seqs(samples: &[Reading]) -> Vec<u32> {
 // ============================================================================
 
 #[test]
-fn keep_last_1_keeps_only_the_newest_per_instance() {
+fn dcps_2_2_3_18_keep_last_1_keeps_only_the_newest_per_instance() {
     let (_rig, writer, reader) = rig(
         HistoryQosPolicy {
             kind: HistoryKind::KeepLast,
@@ -239,7 +239,7 @@ fn keep_last_1_keeps_only_the_newest_per_instance() {
 }
 
 #[test]
-fn keep_last_n_keeps_the_newest_n_per_instance() {
+fn dcps_2_2_2_5_1_keep_last_n_keeps_the_newest_n_per_instance() {
     let (_rig, writer, reader) = rig(
         HistoryQosPolicy {
             kind: HistoryKind::KeepLast,
@@ -260,7 +260,7 @@ fn keep_last_n_keeps_the_newest_n_per_instance() {
 }
 
 #[test]
-fn keep_last_is_independent_per_instance() {
+fn dcps_2_2_3_18_keep_last_is_independent_per_instance() {
     let (_rig, writer, reader) = rig(
         HistoryQosPolicy {
             kind: HistoryKind::KeepLast,
@@ -323,7 +323,7 @@ fn keep_all_qos() -> HistoryQosPolicy {
 }
 
 #[test]
-fn keep_all_max_samples_per_instance_rejects_when_reliable() {
+fn dcps_2_2_3_18_keep_all_max_samples_per_instance_rejects_when_reliable() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -353,7 +353,7 @@ fn keep_all_max_samples_per_instance_rejects_when_reliable() {
 }
 
 #[test]
-fn keep_all_max_samples_per_instance_discards_the_oldest_when_best_effort() {
+fn dcps_2_2_3_18_keep_all_max_samples_per_instance_discards_the_oldest_when_best_effort() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -385,7 +385,7 @@ fn keep_all_max_samples_per_instance_discards_the_oldest_when_best_effort() {
 // ============================================================================
 
 #[test]
-fn keep_all_max_samples_total_rejects_when_reliable() {
+fn dcps_2_2_3_19_keep_all_max_samples_total_rejects_when_reliable() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -424,7 +424,7 @@ fn keep_all_max_samples_total_rejects_when_reliable() {
 /// room itself (§2.2.2.4.2.11): the reader takes its limit and one sample
 /// more, which it refuses and holds, and the write after that times out.
 #[test]
-fn a_reliable_sample_refused_for_room_arrives_once_there_is_room() {
+fn dcps_2_2_3_19_a_reliable_sample_refused_for_room_arrives_once_there_is_room() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -467,7 +467,7 @@ fn a_reliable_sample_refused_for_room_arrives_once_there_is_room() {
 /// gets the marker. dispose returned OK and disposed the instance at the
 /// writer with no marker sent.
 #[test]
-fn a_dispose_a_full_reader_holds_back_times_out() {
+fn dcps_2_2_2_4_2_13_a_dispose_a_full_reader_holds_back_times_out() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -523,10 +523,10 @@ fn a_dispose_a_full_reader_holds_back_times_out() {
 
 /// DDS 1.4 §2.2.2.4.2.7: unregister_instance "may block and return TIMEOUT
 /// under the same circumstances described for the write operation". As
-/// `a_dispose_a_full_reader_holds_back_times_out`: the instance stays
+/// `dcps_2_2_2_4_2_13_a_dispose_a_full_reader_holds_back_times_out`: the instance stays
 /// registered at the writer until the reader has room for the marker.
 #[test]
-fn an_unregister_a_full_reader_holds_back_times_out() {
+fn dcps_2_2_2_4_2_7_an_unregister_a_full_reader_holds_back_times_out() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -581,7 +581,7 @@ fn an_unregister_a_full_reader_holds_back_times_out() {
 }
 
 #[test]
-fn keep_all_max_samples_total_discards_the_oldest_when_best_effort() {
+fn dcps_2_2_3_19_keep_all_max_samples_total_discards_the_oldest_when_best_effort() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -615,7 +615,7 @@ fn keep_all_max_samples_total_discards_the_oldest_when_best_effort() {
 // ============================================================================
 
 #[test]
-fn max_instances_rejects_when_reliable() {
+fn dcps_2_2_3_19_max_instances_rejects_when_reliable() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -646,7 +646,7 @@ fn max_instances_rejects_when_reliable() {
 }
 
 #[test]
-fn max_instances_rejects_when_best_effort() {
+fn dcps_2_2_4_1_max_instances_rejects_when_best_effort() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -764,9 +764,9 @@ fn on_sample_rejected_listener_fires() {
 /// A BEST_EFFORT reader refuses the sample of an instance past
 /// `max_instances`: `on_sample_rejected`, once, and no `on_sample_lost`.
 /// The SAMPLE_LOST of a BEST_EFFORT stream with a gap is
-/// `runtime::tests::samples_a_best_effort_reader_steps_over_are_sample_lost`.
+/// `runtime::tests::dcps_2_2_4_1_samples_a_best_effort_reader_steps_over_are_sample_lost`.
 #[test]
-fn on_sample_rejected_listener_fires_for_a_best_effort_reader() {
+fn dcps_2_2_4_1_on_sample_rejected_listener_fires_for_a_best_effort_reader() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -1010,7 +1010,7 @@ fn plain_take_max_instances_rejects_when_best_effort() {
 }
 
 #[test]
-fn plain_read_keep_last_1_keeps_only_the_newest_per_instance_and_is_idempotent() {
+fn rtps_8_2_10_2_plain_read_keep_last_1_keeps_only_the_newest_per_instance_and_is_idempotent() {
     let (_rig, writer, reader) = rig(
         HistoryQosPolicy {
             kind: HistoryKind::KeepLast,
@@ -1150,7 +1150,7 @@ fn an_unregister_after_the_last_sample_survives_keep_last_1() {
 
 /// The same for a dispose: one NOT_ALIVE_DISPOSED per instance.
 #[test]
-fn a_dispose_after_the_last_sample_survives_keep_last_1() {
+fn dcps_2_2_2_5_3_8_a_dispose_after_the_last_sample_survives_keep_last_1() {
     for stage in [false, true] {
         let samples = last_sample_then_lifecycle(false, stage);
         assert_eq!(
@@ -1187,7 +1187,7 @@ fn default_resource_limits_keep_everything_under_keep_all() {
 /// OUT_OF_RESOURCES at once, as no wait can free an instance, and keeps
 /// writing the first.
 #[test]
-fn a_writer_refuses_an_instance_beyond_its_own_max_instances() {
+fn dcps_2_2_3_19_a_writer_refuses_an_instance_beyond_its_own_max_instances() {
     let lease = common::lease_domain();
     let p = DomainParticipantFactory::instance()
         .create_participant_with_config(lease.id(), DomainParticipantQos::default(), isolated_cfg())
@@ -1225,7 +1225,7 @@ fn a_writer_refuses_an_instance_beyond_its_own_max_instances() {
 /// §2.2.2.5.3.25 `get_sample_rejected_status` and §2.2.4.1: the read gives
 /// `total_count_change` and takes it off, `total_count` stays.
 #[test]
-fn get_sample_rejected_status_reports_the_change_once() {
+fn dcps_2_2_2_5_3_25_get_sample_rejected_status_reports_the_change_once() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {
@@ -1252,7 +1252,7 @@ fn get_sample_rejected_status_reports_the_change_once() {
 /// of a dispose) holds no room in `max_samples_per_instance`: it is
 /// delivered at the limit and nothing is rejected.
 #[test]
-fn a_dispose_marker_does_not_count_against_the_resource_limits() {
+fn dcps_2_2_2_5_3_8_a_dispose_marker_does_not_count_against_the_resource_limits() {
     let (_rig, writer, reader) = rig(
         keep_all_qos(),
         ResourceLimitsQosPolicy {

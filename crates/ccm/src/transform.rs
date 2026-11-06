@@ -126,6 +126,86 @@ fn named_ref<T>(name: &str) -> Ref<T> {
     ])))
 }
 
+/// A reference to `name` declared in `module`: the module's scoped name
+/// with `name` appended. The equivalent declarations are made in the
+/// module of the component, home or event type they derive from, and a
+/// reference anchored at the root reached them only when that module was
+/// the root.
+fn sibling_ref<T>(ast: &Ast, module: Id<zerodds_ast::ModuleNode>, name: &str) -> Ref<T> {
+    let mut segments: Vec<String> = module_path(ast, module);
+    segments.push(name.to_string());
+    Ref::Pending(PendingRef::ScopedName(ScopedName::absolute(segments)))
+}
+
+/// The scoped name of a module, outermost segment first.
+fn module_path(ast: &Ast, module: Id<zerodds_ast::ModuleNode>) -> Vec<String> {
+    ast.module(module)
+        .ok()
+        .and_then(|node| ast.scoped_name_of(zerodds_ast::AnyId::Module(module, node.node_id)))
+        .map(|name| {
+            name.segments()
+                .iter()
+                .filter(|segment| !segment.is_empty())
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A reference to the declaration named like the one `reference` names,
+/// with `suffix` appended to its last segment and in the same scope:
+/// `<base home>Explicit`, `<event type>Consumer`.
+fn suffixed_ref<T, U>(
+    ast: &Ast,
+    reference: &Ref<U>,
+    module_of: impl Fn(&Ast, Id<U>) -> Option<Id<zerodds_ast::ModuleNode>>,
+    name_of: impl Fn(&Ast, Id<U>) -> Option<String>,
+    suffix: &str,
+) -> Ref<T> {
+    match reference {
+        Ref::Resolved(id) => match (module_of(ast, *id), name_of(ast, *id)) {
+            (Some(module), Some(name)) => sibling_ref(ast, module, &format!("{name}{suffix}")),
+            _ => named_ref(suffix),
+        },
+        Ref::Pending(PendingRef::ScopedName(name)) => {
+            let mut segments = name.segments().to_vec();
+            if let Some(last) = segments.last_mut() {
+                last.push_str(suffix);
+            }
+            let renamed = if name.is_absolute() {
+                ScopedName::absolute(segments)
+            } else {
+                ScopedName::relative(segments)
+            };
+            Ref::Pending(PendingRef::ScopedName(renamed))
+        }
+        Ref::Pending(key) => Ref::Pending(key.clone()),
+        Ref::Broken(cause) => Ref::Broken(cause.clone()),
+    }
+}
+
+/// `<base home>Explicit`.
+fn explicit_of(ast: &Ast, base: &Ref<InterfaceNode>) -> Ref<InterfaceNode> {
+    suffixed_ref(
+        ast,
+        base,
+        |ast, id| ast.interface(id).ok().map(|node| node.module),
+        |ast, id| ast.interface(id).ok().map(|node| node.name.clone()),
+        "Explicit",
+    )
+}
+
+/// `<event type>Consumer`.
+fn consumer_of<T>(ast: &Ast, event: &Ref<TypeNode>) -> Ref<T> {
+    suffixed_ref(
+        ast,
+        event,
+        |ast, id| ast.type_(id).ok().map(|node| node.module),
+        |ast, id| ast.type_(id).ok().map(|node| node.name.clone()),
+        "Consumer",
+    )
+}
+
 /// Spec §6.3.2 (p. 12) + §6.4.1 / §6.5.1 / §6.6.x — rewrites a component
 /// into its equivalent interface, ports and all.
 ///
@@ -151,6 +231,9 @@ pub fn transform_component(
             found: node.kind.as_str(),
         });
     }
+    // An extended port is the basic ports of its port type (IDL 4.2
+    // §7.4.11.4.1); those are what §6.4.1 and §6.5.1 map.
+    expand_extended_ports(ast, component)?;
     let ports: Vec<ComponentRole> = ast
         .interface(component)?
         .attributes
@@ -241,7 +324,7 @@ pub fn transform_component(
                 }
                 // §6.6.7.1 (p. 29) — `consumes T name` →
                 // `TConsumer get_consumer_name();`
-                let returns = consumer_type_ref(ast, &event);
+                let returns = consumer_type_ref(ast, &event)?;
                 let _ = ast.add_operation(
                     component,
                     &format!("get_consumer_{name}"),
@@ -249,9 +332,8 @@ pub fn transform_component(
                     false,
                 )?;
             }
-            // A `port` or `mirrorport` is a user-defined port type; IDL
-            // 4.2 §7.4.11 maps it through the porttype, which is not §6
-            // of this specification and is left to the caller.
+            // A `port` or `mirrorport` was replaced by its basic ports
+            // above (`expand_extended_ports`).
             ComponentRole::PortTypeRole
             | ComponentRole::ConnectorRole
             | ComponentRole::HomeFactory
@@ -310,10 +392,16 @@ fn uses_ops(
         )?;
         ast.add_raises(disconnect, spec_ref(&["Components", "InvalidConnection"]))?;
 
+        // §6.5.1 (p. 19) declares the two types the operation returns,
+        // `struct <name>Connection { <interface_type> objref;
+        // Components::Cookie ck; }` and the sequence of them
+        // `<name>Connections`, beside the operations: in the scope of the
+        // equivalent interface.
+        let connections = connection_types(ast, interface, name, target)?;
         let _ = ast.add_operation(
             interface,
             &format!("get_connections_{name}"),
-            Some(named_ref(&format!("{name}Connections"))),
+            Some(connections),
             false,
         )?;
         return Ok(());
@@ -358,7 +446,7 @@ fn emits_ops(
     name: &str,
     event: &Ref<TypeNode>,
 ) -> Result<(), TransformError> {
-    let consumer = consumer_type_ref(ast, event);
+    let consumer = consumer_type_ref(ast, event)?;
     let connect = ast.add_operation(interface, &format!("connect_{name}"), None, false)?;
     let _ = ast.add_param(
         connect,
@@ -387,7 +475,7 @@ fn publishes_ops(
     name: &str,
     event: &Ref<TypeNode>,
 ) -> Result<(), TransformError> {
-    let consumer = consumer_type_ref(ast, event);
+    let consumer = consumer_type_ref(ast, event)?;
     let subscribe = ast.add_operation(
         interface,
         &format!("subscribe_{name}"),
@@ -438,6 +526,21 @@ fn ensure_consumer_interface(
         return Ok(None);
     }
     emitted.push(consumer_name.clone());
+    // The event type's own transform declares the interface beside the
+    // event type (§6.6.1.1); a second one of the same name would be a
+    // second declaration of it.
+    let event_module = match event {
+        Ref::Resolved(id) => Some(ast.type_(*id)?.module),
+        _ => None,
+    };
+    let declared = ast.interfaces().any(|(_, node)| {
+        node.name == consumer_name
+            && (node.module == module || Some(node.module) == event_module)
+            && node.completeness != zerodds_ast::Completeness::Forward
+    });
+    if declared {
+        return Ok(None);
+    }
     let interface = ast.add_interface(
         module,
         &consumer_name,
@@ -492,7 +595,7 @@ pub fn transform_home(
     } else {
         declared_bases
             .iter()
-            .map(|base| named_ref(&format!("{}Explicit", interface_name(ast, base))))
+            .map(|base| explicit_of(ast, base))
             .collect()
     };
     explicit_bases.extend(supported);
@@ -505,6 +608,35 @@ pub fn transform_home(
 
     // §6.7.1.1 (no primary key) versus §6.7.1.2 (with one).
     let component = object_reference(ast, &manages.component)?;
+
+    // §6.7.2: the explicit interface holds the operations and attributes
+    // the home body declares; a `factory` returns the component and raises
+    // `Components::CreateFailure` (§6.7.2.1), a `finder` returns it and
+    // raises `Components::FinderFailure` (§6.7.2.2), each besides what it
+    // raises itself.
+    for operation in ast.operations_of(home).to_vec() {
+        let kind = ast
+            .operation(operation)?
+            .facets
+            .corba
+            .as_ref()
+            .and_then(|corba| corba.home_operation);
+        match kind {
+            Some(zerodds_ast::HomeOperation::Factory) => {
+                ast.set_return_type(operation, Some(component.clone()))?;
+                ast.add_raises(operation, spec_ref(&["Components", "CreateFailure"]))?;
+            }
+            Some(zerodds_ast::HomeOperation::Finder) => {
+                ast.set_return_type(operation, Some(component.clone()))?;
+                ast.add_raises(operation, spec_ref(&["Components", "FinderFailure"]))?;
+            }
+            None => {}
+        }
+        ast.move_operation(operation, explicit)?;
+    }
+    for attribute in ast.attributes_of(home).to_vec() {
+        ast.move_attribute(attribute, explicit)?;
+    }
     let implicit = match manages.primary_key.clone() {
         Some(key) => build_keyed_implicit(ast, module, &name, &component, &key)?,
         None => build_keyless_implicit(ast, module, &name, &component)?,
@@ -515,8 +647,8 @@ pub fn transform_home(
         home,
         InterfaceKind::Interface,
         alloc::vec![
-            named_ref(&format!("{name}Explicit")),
-            named_ref(&format!("{name}Implicit")),
+            sibling_ref(ast, module, &format!("{name}Explicit")),
+            sibling_ref(ast, module, &format!("{name}Implicit")),
         ],
     )?;
 
@@ -641,7 +773,7 @@ pub fn transform_event_type(
     } else {
         inherited
             .iter()
-            .map(|base| named_ref(&format!("{}Consumer", type_name(ast, base))))
+            .map(|base| consumer_of(ast, base))
             .collect()
     };
     if inherited.is_empty() {
@@ -673,6 +805,56 @@ pub fn transform_event_type(
 /// A resolved interface gets the object-reference type the model derives
 /// from it; an unresolved one keeps its name, so the reference resolves
 /// once the interface arrives.
+/// `struct <name>Connection` and `<name>Connections`, the sequence of
+/// it, declared in the scope of `interface` (CCM 4.0 §6.5.1, a `uses
+/// multiple` receptacle).
+fn connection_types(
+    ast: &mut Ast,
+    interface: Id<InterfaceNode>,
+    name: &str,
+    target: &Ref<InterfaceNode>,
+) -> Result<Ref<TypeNode>, TransformError> {
+    let (module, owner) = {
+        let node = ast.interface(interface)?;
+        (node.module, node.name.clone())
+    };
+    let objref = object_reference(ast, target)?;
+    let connection = ast.add_type(
+        module,
+        &format!("{name}Connection"),
+        TypeKind::Structure {
+            base: None,
+            members: Vec::new(),
+        },
+    )?;
+    let _ = ast.add_member(connection, zerodds_ast::MemberSpec::new("objref", objref))?;
+    let _ = ast.add_member(
+        connection,
+        zerodds_ast::MemberSpec::new("ck", spec_ref(&["Components", "Cookie"])),
+    )?;
+    let root = ast.root_module();
+    let sequence = ast.add_type(
+        root,
+        "",
+        TypeKind::Sequence {
+            element: Ref::Resolved(connection),
+            bound: zerodds_ast::Bound::Unbounded,
+        },
+    )?;
+    let connections = ast.add_type(
+        module,
+        &format!("{name}Connections"),
+        TypeKind::Alias {
+            aliased: Ref::Resolved(sequence),
+        },
+    )?;
+    for declared in [connection, connections] {
+        let node_id = ast.type_(declared)?.node_id;
+        ast.set_declaration_scope(zerodds_ast::AnyId::Type(declared, node_id), &owner)?;
+    }
+    Ok(Ref::Resolved(connections))
+}
+
 fn object_reference(
     ast: &mut Ast,
     interface: &Ref<InterfaceNode>,
@@ -685,9 +867,31 @@ fn object_reference(
 }
 
 /// A reference to the `<T>Consumer` interface of an event type, as a
-/// type.
-fn consumer_type_ref(ast: &Ast, event: &Ref<TypeNode>) -> Ref<TypeNode> {
-    named_ref(&format!("{}Consumer", type_name(ast, event)))
+/// type: the object reference to the interface when the model declares
+/// it (the event type's own transform, or `ensure_consumer_interface`, put
+/// it beside the event type), the name otherwise.
+fn consumer_type_ref(
+    ast: &mut Ast,
+    event: &Ref<TypeNode>,
+) -> Result<Ref<TypeNode>, TransformError> {
+    if let Ref::Resolved(id) = event {
+        let (module, name) = {
+            let node = ast.type_(*id)?;
+            (node.module, format!("{}Consumer", node.name))
+        };
+        let declared = ast
+            .interfaces()
+            .find(|(_, node)| {
+                node.module == module
+                    && node.name == name
+                    && node.completeness != zerodds_ast::Completeness::Forward
+            })
+            .map(|(interface, _)| interface);
+        if let Some(interface) = declared {
+            return Ok(Ref::Resolved(ast.object_reference_to(interface)?));
+        }
+    }
+    Ok(consumer_of(ast, event))
 }
 
 /// The simple name behind a type reference, resolved or not.
@@ -702,18 +906,6 @@ fn type_name(ast: &Ast, reference: &Ref<TypeNode>) -> String {
     }
 }
 
-/// The simple name behind an interface reference, resolved or not.
-fn interface_name(ast: &Ast, reference: &Ref<InterfaceNode>) -> String {
-    match reference {
-        Ref::Resolved(id) => ast
-            .interface(*id)
-            .map(|node| node.name.clone())
-            .unwrap_or_default(),
-        Ref::Pending(PendingRef::ScopedName(name)) => name.last().cloned().unwrap_or_default(),
-        Ref::Pending(_) | Ref::Broken(_) => String::new(),
-    }
-}
-
 fn lowercase_first(value: &str) -> String {
     let mut chars = value.chars();
     chars.next().map_or_else(String::new, |first| {
@@ -721,4 +913,189 @@ fn lowercase_first(value: &str) -> String {
         out.push_str(chars.as_str());
         out
     })
+}
+
+// -- extended ports and connectors, OMG IDL 4.2 §7.4.11 -----------------------
+
+/// The port type a `port` or `mirrorport` attribute names.
+fn porttype_of(ast: &Ast, port: Id<zerodds_ast::AttributeNode>) -> Option<Id<InterfaceNode>> {
+    let node = ast.attribute(port).ok()?;
+    match &node.type_ {
+        Ref::Resolved(id) => match &ast.type_(*id).ok()?.kind {
+            TypeKind::ObjectRef { interface } => interface.as_ref()?.resolved(),
+            _ => None,
+        },
+        Ref::Pending(PendingRef::ScopedName(name)) => match ast.find_by_scoped_name(name).ok()? {
+            zerodds_ast::AnyId::Interface(id, _) => Some(id),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Replace every extended port of a component or connector by the basic
+/// ports of its port type: OMG IDL 4.2 §7.4.11.4.1 — "An Extended Port is
+/// a grouping of basic ports (facets and/or receptacles)" — and
+/// §7.4.11.4.2 — a `mirrorport` is the port "where all its facets are
+/// turned into receptacles, all its receptacles turned into facets, all
+/// its extended ports turned into reverse extended ports".
+///
+/// IDL 4.2 names no spelling for the basic ports one extended port puts on
+/// a component, and the language mappings that refer to an intermediate
+/// IDL for ports (IDL4 to Java 1.0 §7.12, IDL4 to C# 1.0 §7.12, IDL4 to
+/// C++ 1.0 §7.12) do not either. The basic port `f` of port `p` is named
+/// `p_f`, a nested extended port's ports `p_q_f`, and an attribute `a` of
+/// the port type the attribute `p_a` of the component — the names are
+/// unique in the component because a component's port names are, and §6
+/// of CCM 4.0 then maps the basic ports to operations.
+///
+/// # Errors
+/// [`TransformError::Model`] for a stale handle, [`TransformError::NotA`]
+/// for a port whose type is no port type.
+pub fn expand_extended_ports(
+    ast: &mut Ast,
+    owner: Id<InterfaceNode>,
+) -> Result<(), TransformError> {
+    let ports: Vec<(Id<zerodds_ast::AttributeNode>, bool)> = ast
+        .interface(owner)?
+        .attributes
+        .iter()
+        .filter_map(|attribute| {
+            let role = ast
+                .attribute(*attribute)
+                .ok()?
+                .facets
+                .corba
+                .as_ref()?
+                .component_role
+                .clone()?;
+            match role {
+                ComponentRole::PortTypeRole => Some((*attribute, false)),
+                ComponentRole::ConnectorRole => Some((*attribute, true)),
+                _ => None,
+            }
+        })
+        .collect();
+    for (port, mirrored) in ports {
+        let name = ast.attribute(port)?.name.clone();
+        let porttype = porttype_of(ast, port).ok_or(TransformError::NotA {
+            expected: "a port type",
+            found: "another type",
+        })?;
+        add_basic_ports(ast, owner, &name, porttype, mirrored, 0)?;
+        let node_id = ast.attribute(port)?.node_id;
+        ast.remove(zerodds_ast::AnyId::Attribute(port, node_id))?;
+    }
+    Ok(())
+}
+
+/// The basic ports and attributes of `porttype`, prefixed `<prefix>_`, on
+/// `owner`.
+///
+/// zerodds-lint: recursion-depth 32 — the `depth` argument; past 32 the
+/// model has a cycle of port types and it refuses.
+fn add_basic_ports(
+    ast: &mut Ast,
+    owner: Id<InterfaceNode>,
+    prefix: &str,
+    porttype: Id<InterfaceNode>,
+    mirrored: bool,
+    depth: usize,
+) -> Result<(), TransformError> {
+    // Port types form no cycle (IDL 4.2 §7.4.11.4.1.1, refused by the
+    // front end); the bound keeps a malformed model from looping.
+    if depth > 32 {
+        return Err(TransformError::NotA {
+            expected: "port types without a cycle",
+            found: "a cycle of port types",
+        });
+    }
+    let members: Vec<Id<zerodds_ast::AttributeNode>> = ast.interface(porttype)?.attributes.clone();
+    for member in members {
+        let node = ast.attribute(member)?.clone();
+        let name = format!("{prefix}_{}", node.name);
+        let role = node
+            .facets
+            .corba
+            .as_ref()
+            .and_then(|c| c.component_role.clone());
+        let role = match role {
+            Some(ComponentRole::Facet { interface, .. }) => Some(if mirrored {
+                ComponentRole::Receptacle {
+                    name: name.clone(),
+                    interface,
+                    multiple: false,
+                }
+            } else {
+                ComponentRole::Facet {
+                    name: name.clone(),
+                    interface,
+                }
+            }),
+            Some(ComponentRole::Receptacle {
+                interface,
+                multiple,
+                ..
+            }) => Some(if mirrored {
+                ComponentRole::Facet {
+                    name: name.clone(),
+                    interface,
+                }
+            } else {
+                ComponentRole::Receptacle {
+                    name: name.clone(),
+                    interface,
+                    multiple,
+                }
+            }),
+            Some(ComponentRole::PortTypeRole) | Some(ComponentRole::ConnectorRole) => {
+                let nested = porttype_of(ast, member).ok_or(TransformError::NotA {
+                    expected: "a port type",
+                    found: "another type",
+                })?;
+                let reverse = matches!(
+                    node.facets
+                        .corba
+                        .as_ref()
+                        .and_then(|c| c.component_role.clone()),
+                    Some(ComponentRole::ConnectorRole)
+                );
+                add_basic_ports(ast, owner, &name, nested, mirrored != reverse, depth + 1)?;
+                continue;
+            }
+            _ => None,
+        };
+        let added = ast.add_attribute(owner, &name, node.type_.clone(), node.readonly)?;
+        let added_node = ast.attribute(added)?.node_id;
+        if let Some(facets) = ast.facets_mut(zerodds_ast::AnyId::Attribute(added, added_node)) {
+            facets.source = node.facets.source.clone();
+            if let Some(role) = role {
+                facets.corba_mut().component_role = Some(role);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// A connector as the component its ports make it: its extended ports
+/// replaced by their basic ports ([`expand_extended_ports`]), then the
+/// equivalent interface of CCM 4.0 §6.3.2 to §6.5.1, as a component's.
+///
+/// # Errors
+/// As [`expand_extended_ports`] and [`transform_component`].
+pub fn transform_connector(
+    ast: &mut Ast,
+    connector: Id<InterfaceNode>,
+) -> Result<ComponentEquivalent, TransformError> {
+    let node = ast.interface(connector)?;
+    if node.kind != InterfaceKind::Connector {
+        return Err(TransformError::NotA {
+            expected: "a connector",
+            found: node.kind.as_str(),
+        });
+    }
+    let bases = node.bases.clone();
+    expand_extended_ports(ast, connector)?;
+    ast.set_interface_form(connector, InterfaceKind::Component, bases)?;
+    transform_component(ast, connector)
 }

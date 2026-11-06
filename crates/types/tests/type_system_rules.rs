@@ -76,7 +76,7 @@ fn minimal_struct(ast: &Ast, name: &str) -> zerodds_types::type_object::minimal:
 /// builder when the front end's diagnostic is not heeded, and the builder
 /// reports `OutOfRange` rather than narrowing it.
 #[test]
-fn an_enumerator_value_outside_int32_is_no_type_object() {
+fn xtypes_7_2_2_4_1_1_an_enumerator_value_outside_int32_is_no_type_object() {
     let parsed = zerodds_idl_parse::parse(
         "enum Wide { @value(2147483648) A, B };\nenum Fits { @value(2147483647) A };",
     );
@@ -105,7 +105,7 @@ fn an_enumerator_value_outside_int32_is_no_type_object() {
 // -- §7.2.2.4.4.4.6: the discriminator is always must understand ------------
 
 #[test]
-fn the_discriminator_of_a_union_is_must_understand_in_both_forms() {
+fn xtypes_7_2_2_4_4_4_6_the_discriminator_of_a_union_is_must_understand_in_both_forms() {
     let ast = model(
         "union Plain switch (long) { case 1: long a; default: long b; };\n\
          union Keyed switch (@key long) { case 1: long a; default: long b; };",
@@ -149,7 +149,7 @@ fn the_discriminator_of_a_union_is_must_understand_in_both_forms() {
 // -- §7.2.2.4.4.4.8: a key member is always must understand ------------------
 
 #[test]
-fn a_key_member_is_must_understand_in_both_forms() {
+fn xtypes_7_2_2_4_4_4_8_a_key_member_is_must_understand_in_both_forms() {
     let ast = model("@mutable struct Keyed { @id(1) @key long k; @id(2) long v; };");
     let minimal = minimal_struct(&ast, "Keyed");
     let flags = |index: usize| minimal.member_seq[index].common.member_flags;
@@ -199,7 +199,7 @@ case GO_RIGHT: float angle;
 /// `Aircraft` without `@key`, `Coordinates` is unchanged, and the union
 /// `Command` keeps its members and loses the key on its discriminator.
 #[test]
-fn key_erased_removes_the_key_designation_and_nothing_else() {
+fn xtypes_7_2_2_4_6_key_erased_removes_the_key_designation_and_nothing_else() {
     let ast = model(AIRCRAFT);
 
     let aircraft = minimal_type_object(&ast, id(&ast, "Aircraft")).expect("aircraft");
@@ -270,7 +270,7 @@ fn key_erased_removes_the_key_designation_and_nothing_else() {
 /// assignable; they would not be if the members' types were compared with
 /// their keys.
 #[test]
-fn the_types_of_members_are_compared_with_their_keys_erased() {
+fn xtypes_7_2_2_4_6_the_types_of_members_are_compared_with_their_keys_erased() {
     let idl = "\
 @mutable struct InnerKeyed { @id(1) @key long k; @id(2) long v; };
 @mutable struct InnerPlain { @id(1) long k; @id(2) long v; };
@@ -286,7 +286,7 @@ fn the_types_of_members_are_compared_with_their_keys_erased() {
 /// between 1 and 8, `UINT16` for 9 to 16, `UINT32` for 17 to 32 and
 /// `UINT64` for 33 to 64.
 #[test]
-fn an_unsigned_integer_is_assignable_from_a_bitmask_of_its_width_only() {
+fn xtypes_7_2_4_4_4_an_unsigned_integer_is_assignable_from_a_bitmask_of_its_width_only() {
     let bounds = [
         (1u32, 8u32),
         (8, 8),
@@ -328,7 +328,7 @@ fn an_unsigned_integer_is_assignable_from_a_bitmask_of_its_width_only() {
 /// However, string types of narrow characters are not assignable from
 /// string types of wide characters".
 #[test]
-fn narrow_and_wide_strings_are_not_assignable_to_each_other() {
+fn xtypes_7_2_4_4_5_1_narrow_and_wide_strings_are_not_assignable_to_each_other() {
     let idl = "\
 @mutable struct Narrow { @id(1) string s; };
 @mutable struct Narrow5 { @id(1) string<5> s; };
@@ -351,7 +351,7 @@ fn narrow_and_wide_strings_are_not_assignable_to_each_other() {
 
 /// Table 19, UNION row: "T1.extensibility == T2.extensibility."
 #[test]
-fn two_unions_of_different_extensibility_are_not_assignable() {
+fn xtypes_7_2_4_4_8_two_unions_of_different_extensibility_are_not_assignable() {
     let idl = "\
 @final union Fa switch (long) { case 1: long a; case 2: short b; };
 @final union Fb switch (long) { case 1: long a; case 2: short b; };
@@ -380,7 +380,7 @@ fn two_unions_of_different_extensibility_are_not_assignable() {
 /// appear (i.e., have a corresponding member of the same member ID) in both
 /// T1 and T2."
 #[test]
-fn a_key_member_that_one_side_lacks_makes_the_structures_not_assignable() {
+fn xtypes_7_2_4_4_8_a_key_member_that_one_side_lacks_makes_the_structures_not_assignable() {
     let idl = "\
 @mutable struct KeyReader { @id(1) @key long k; @id(2) long v; };
 @mutable struct KeyWriter { @id(1) @key long k; @id(2) long v; @id(3) long x; };
@@ -404,7 +404,7 @@ fn a_key_member_that_one_side_lacks_makes_the_structures_not_assignable() {
 
 /// §7.2.4.4.8.1: "Coordinate2D is assignable from Coordinate3D".
 #[test]
-fn coordinate2d_is_assignable_from_coordinate3d() {
+fn xtypes_7_2_4_4_8_1_coordinate2d_is_assignable_from_coordinate3d() {
     let idl = "\
 struct Coordinate2D { long x; long y; };
 struct Coordinate3D { long x; long y; long z; };";
@@ -417,7 +417,7 @@ struct Coordinate3D { long x; long y; long z; };";
 /// two sentences give the direction both ways round, and a structure
 /// compares by the members its base type adds to it.
 #[test]
-fn a_structure_and_its_derived_structure_are_assignable() {
+fn xtypes_7_2_4_4_8_2_a_structure_and_its_derived_structure_are_assignable() {
     let idl = "\
 struct Vehicle { long km_per_hour; };
 struct LandVehicle : Vehicle { long num_wheels; };";
@@ -430,7 +430,7 @@ struct LandVehicle : Vehicle { long num_wheels; };";
 /// evaluation, both versions of the Giraffe type are assignable to one
 /// another."
 #[test]
-fn both_versions_of_giraffe_are_assignable_to_one_another() {
+fn xtypes_7_2_4_4_8_3_both_versions_of_giraffe_are_assignable_to_one_another() {
     let idl = "\
 struct Animal1 { long body_length; long num_legs; };
 struct Giraffe1 : Animal1 { long neck_length; };

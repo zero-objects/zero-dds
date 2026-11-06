@@ -20,6 +20,10 @@
 //!
 //! A missing toolchain skips its case with a printed reason. A toolchain that
 //! is present but fails to build our own source **fails** — it never skips.
+//! The cases that need a toolchain are `#[ignore]`d in the crate tier and run
+//! in the binding jobs of the integration pillar (`ci/integration_scenarios.py`),
+//! where a printed skip fails the job unless `ci/declared-skips.tsv` declares
+//! it; the Rust cases and the counter-proof run in the crate tier.
 
 #![allow(clippy::expect_used, clippy::panic, clippy::print_stderr)]
 
@@ -98,7 +102,7 @@ fn assert_conformant(label: &str, hex: &str) {
 fn decode_hex(label: &str, text: &str) -> Vec<u8> {
     let digits: Vec<char> = text.chars().filter(|c| c.is_ascii_hexdigit()).collect();
     assert!(
-        !digits.is_empty() && digits.len() % 2 == 0,
+        !digits.is_empty() && digits.len().is_multiple_of(2),
         "{label}: driver printed {digits:?} hex digits, not a byte string:\n{text}"
     );
     digits
@@ -136,13 +140,14 @@ fn write(dir: &Path, name: &str, text: &str) -> PathBuf {
 // The counter-proof: the dialect the ports spoke before this gate existed
 // =====================================================================
 
-/// The exact frame the ports built until this change: `flags = 0x03`
-/// (`FORMAT_SAMPLE`) and a body that is the bare sample, with no
-/// `BaseObjectRequest`. `crates/xrce` refuses it — which is what makes the
-/// gate above capable of going red. Without this, a gate that never rejects
-/// anything would look identical to one that works.
+/// DDS-XRCE 1.0 §8.3.5.8 and §7.7.8: a `WRITE_DATA` body starts with the
+/// `BaseObjectRequest`, and `FORMAT_DATA` is the data format of a sample. The
+/// exact frame the ports built before this gate — `flags = 0x03`
+/// (`FORMAT_SAMPLE`) and a body that is the bare sample — is refused by
+/// `crates/xrce`, and `assert_conformant` fails on it: without this, a gate
+/// that never rejects anything would look identical to one that works.
 #[test]
-fn the_pre_conformance_dialect_is_refused() {
+fn xrce_8_3_5_8_a_write_data_without_its_base_object_request_is_refused() {
     let legacy = "8001010007030400deadbeef";
     let frame = decode_hex("legacy", legacy);
     let message = Message::decode(&frame).expect("the envelope alone still parses");
@@ -153,16 +158,7 @@ fn the_pre_conformance_dialect_is_refused() {
         refused.is_err(),
         "the pre-conformance frame must be refused, not decoded"
     );
-}
-
-/// And the same octets fail `assert_conformant`, i.e. the gate itself is red
-/// on them. Asserted by catching the panic, so the proof lives in the file
-/// rather than in a reviewer's memory of a one-off experiment.
-#[test]
-fn the_gate_fails_on_the_pre_conformance_dialect() {
-    let outcome = std::panic::catch_unwind(|| {
-        assert_conformant("counter-proof", "8001010007030400deadbeef");
-    });
+    let outcome = std::panic::catch_unwind(|| assert_conformant("counter-proof", legacy));
     assert!(
         outcome.is_err(),
         "assert_conformant accepted the pre-conformance frame — the gate is inert"
@@ -174,7 +170,7 @@ fn the_gate_fails_on_the_pre_conformance_dialect() {
 // =====================================================================
 
 #[test]
-fn rust_endpoint_frames_conformant_write_data() {
+fn xrce_8_3_5_8_rust_endpoint_frames_a_conformant_write_data() {
     let frame = zerodds_endpoint_rust::xrce_write_frame(SEQ, writer_id().raw(), &SAMPLE)
         .expect("the sample fits the 16-bit submessage_length");
     let hex: String = frame.iter().map(|b| format!("{b:02x}")).collect();
@@ -182,7 +178,7 @@ fn rust_endpoint_frames_conformant_write_data() {
 }
 
 #[test]
-fn rust_reliable_frames_conformant_write_data() {
+fn xrce_8_3_5_8_rust_reliable_frames_a_conformant_write_data() {
     let frame = zerodds_endpoint_rust::reliable::write_frame(SEQ, writer_id().raw(), &SAMPLE)
         .expect("the sample fits the 16-bit submessage_length");
     let hex: String = frame.iter().map(|b| format!("{b:02x}")).collect();
@@ -214,7 +210,8 @@ int main(void) {
 "#;
 
 #[test]
-fn c_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the C toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_c_endpoint_frames_a_conformant_write_data() {
     if !tool_available("cc", "--version") {
         eprintln!("SKIP c: `cc` not on PATH");
         return;
@@ -238,7 +235,8 @@ fn c_endpoint_frames_conformant_write_data() {
 }
 
 #[test]
-fn cpp_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the C++ toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_cpp_endpoint_frames_a_conformant_write_data() {
     if !tool_available("c++", "--version") {
         eprintln!("SKIP cpp: `c++` not on PATH");
         return;
@@ -270,7 +268,8 @@ fn cpp_endpoint_frames_conformant_write_data() {
 // =====================================================================
 
 #[test]
-fn python_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Python toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_python_endpoint_frames_a_conformant_write_data() {
     if !tool_available("python3", "-V") {
         eprintln!("SKIP python: `python3` not on PATH");
         return;
@@ -300,7 +299,8 @@ print("".join("%02x" % b for b in bytearray(frame)))
 }
 
 #[test]
-fn node_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Node toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_node_endpoint_frames_a_conformant_write_data() {
     if !tool_available("node", "-v") {
         eprintln!("SKIP node: `node` not on PATH");
         return;
@@ -324,7 +324,8 @@ console.log(Buffer.from(frame).toString('hex'));
 }
 
 #[test]
-fn lua_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Lua toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_lua_endpoint_frames_a_conformant_write_data() {
     let Some(lua) = ["lua", "lua5.4", "lua5.3"]
         .into_iter()
         .find(|l| tool_available(l, "-v"))
@@ -349,7 +350,8 @@ print((frame:gsub(".", function(c) return string.format("%02x", c:byte()) end)))
 }
 
 #[test]
-fn julia_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Julia toolchain; runs in integration-bindings-jvm-julia"]
+fn xrce_8_3_5_8_julia_endpoint_frames_a_conformant_write_data() {
     if !tool_available("julia", "--version") {
         eprintln!("SKIP julia: `julia` not on PATH");
         return;
@@ -374,7 +376,8 @@ println(join([string(b, base = 16, pad = 2) for b in frame]))
 }
 
 #[test]
-fn elixir_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Elixir toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_elixir_endpoint_frames_a_conformant_write_data() {
     if !tool_available("elixir", "-v") {
         eprintln!("SKIP elixir: `elixir` not on PATH");
         return;
@@ -409,7 +412,8 @@ IO.puts(Base.encode16(frame, case: :lower))
 // =====================================================================
 
 #[test]
-fn go_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Go toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_go_endpoint_frames_a_conformant_write_data() {
     if !tool_available("go", "version") {
         eprintln!("SKIP go: `go` not on PATH");
         return;
@@ -454,7 +458,8 @@ func main() {
 }
 
 #[test]
-fn java_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Java toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_java_endpoint_frames_a_conformant_write_data() {
     if !tool_available("javac", "-version") {
         eprintln!("SKIP java: `javac` not on PATH");
         return;
@@ -493,7 +498,8 @@ public final class GateFrame {
 }
 
 #[test]
-fn kotlin_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Kotlin toolchain; runs in integration-bindings-jvm-julia"]
+fn xrce_8_3_5_8_kotlin_endpoint_frames_a_conformant_write_data() {
     if !tool_available("kotlinc", "-version") {
         eprintln!("SKIP kotlin: `kotlinc` not on PATH");
         return;
@@ -533,7 +539,8 @@ fun main() {
 }
 
 #[test]
-fn csharp_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the C# toolchain; runs in integration-bindings-dotnet"]
+fn xrce_8_3_5_8_csharp_endpoint_frames_a_conformant_write_data() {
     if !tool_available("dotnet", "--version") {
         eprintln!("SKIP csharp: `dotnet` not found");
         return;
@@ -594,7 +601,8 @@ public static class Gate {
 }
 
 #[test]
-fn fsharp_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the F# toolchain; runs in integration-bindings-dotnet"]
+fn xrce_8_3_5_8_fsharp_endpoint_frames_a_conformant_write_data() {
     if !tool_available("dotnet", "--version") {
         eprintln!("SKIP fsharp: `dotnet` not found");
         return;
@@ -630,7 +638,8 @@ printfn "%s" (frame |> Array.map (sprintf "%02x") |> String.concat "")
 }
 
 #[test]
-fn swift_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Swift toolchain; runs in integration-bindings-swift"]
+fn xrce_8_3_5_8_swift_endpoint_frames_a_conformant_write_data() {
     if !tool_available("swiftc", "--version") {
         eprintln!("SKIP swift: `swiftc` not on PATH");
         return;
@@ -662,7 +671,8 @@ print(frame.map { String(format: "%02x", $0) }.joined())
 }
 
 #[test]
-fn ocaml_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the OCaml toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_ocaml_endpoint_frames_a_conformant_write_data() {
     if !tool_available("ocamlfind", "printconf") {
         eprintln!("SKIP ocaml: `ocamlfind` not on PATH");
         return;
@@ -718,7 +728,8 @@ let () =
 }
 
 #[test]
-fn nim_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Nim toolchain; runs in integration-bindings-zig-nim"]
+fn xrce_8_3_5_8_nim_endpoint_frames_a_conformant_write_data() {
     if !tool_available("nim", "--version") {
         eprintln!("SKIP nim: `nim` not on PATH");
         return;
@@ -795,7 +806,8 @@ end Gate;
 "#;
 
 #[test]
-fn ada_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Ada toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_ada_endpoint_frames_a_conformant_write_data() {
     if !gprbuild_available() {
         eprintln!("SKIP ada: `gprbuild` not on PATH");
         return;
@@ -867,7 +879,8 @@ end Gate83;
 "#;
 
 #[test]
-fn ada83_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Ada 83 toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_ada83_endpoint_frames_a_conformant_write_data() {
     if !gnatmake_available() {
         eprintln!("SKIP ada-83: `gnatmake` not on PATH");
         return;
@@ -920,7 +933,8 @@ end Gate_Native;
 "#;
 
 #[test]
-fn ada_native_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the native Ada toolchain; runs in integration-bindings-gnat-beam"]
+fn xrce_8_3_5_8_ada_native_endpoint_frames_a_conformant_write_data() {
     if !gnatmake_available() {
         eprintln!("SKIP ada-native: `gnatmake` not on PATH");
         return;
@@ -949,7 +963,8 @@ fn ada_native_endpoint_frames_conformant_write_data() {
 // =====================================================================
 
 #[test]
-fn d_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the D toolchain; runs in integration-bindings"]
+fn xrce_8_3_5_8_d_endpoint_frames_a_conformant_write_data() {
     // `endpoints/d/Makefile` defaults to `gdc`; `ldc2` builds the same
     // sources and only spells its output flag differently.
     let Some(dc) = ["gdc", "ldc2"]
@@ -1054,7 +1069,8 @@ pub fn main(init: std.process.Init) !void {
 "#;
 
 #[test]
-fn zig_endpoint_frames_conformant_write_data() {
+#[ignore = "needs the Zig toolchain; runs in integration-bindings-zig-nim"]
+fn xrce_8_3_5_8_zig_endpoint_frames_a_conformant_write_data() {
     if !tool_available("zig", "version") {
         eprintln!("SKIP zig: `zig` not on PATH");
         return;
@@ -1064,7 +1080,8 @@ fn zig_endpoint_frames_conformant_write_data() {
 }
 
 #[test]
-fn zig_reliable_frames_conformant_write_data() {
+#[ignore = "needs the Zig toolchain; runs in integration-bindings-zig-nim"]
+fn xrce_8_3_5_8_zig_reliable_frames_a_conformant_write_data() {
     if !tool_available("zig", "version") {
         eprintln!("SKIP zig/reliable: `zig` not on PATH");
         return;

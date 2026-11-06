@@ -112,7 +112,7 @@ case and each is a separate claim:
 3. `string<40>` puts the holder's maximum serialized size at 4 + 4 + 44,
    over sixteen, so the hash is the MD5 of the big-endian holder. The
    two agree on it, which is the first time this project's `Md5` arm has
-   been checked against a foreign implementation (`codec-coverage-report.md`
+   been checked against a foreign implementation (`0b2e8df9f6b:docs/codec-coverage-report.md`
    ranked item 10, N7).
 
 Reproducing:

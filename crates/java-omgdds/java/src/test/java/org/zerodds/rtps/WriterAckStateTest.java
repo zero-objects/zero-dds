@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 package org.zerodds.rtps;
 
+import org.zerodds.testing.Waits;
 import java.net.InetSocketAddress;
 
 import org.junit.jupiter.api.Test;
@@ -39,14 +40,14 @@ class WriterAckStateTest {
     }
 
     @Test
-    void aWriterThatSentNothingHasNothingOutstanding() throws Exception {
+    void javapsm_2_a_writer_that_sent_nothing_has_nothing_to_wait_for() throws Exception {
         ReliableWriterState state = new ReliableWriterState(WRITER);
         assertTrue(state.allAcknowledged());
         assertTrue(state.awaitAcknowledged(0L));
     }
 
     @Test
-    void aSampleNobodyAcknowledgedTimesOutAfterTheWait() throws Exception {
+    void javapsm_2_wait_for_acknowledgments_times_out_when_nobody_acknowledged() throws Exception {
         ReliableWriterState state = new ReliableWriterState(WRITER);
         state.add(1, PAYLOAD, target(READER_A));
         assertFalse(state.allAcknowledged());
@@ -56,7 +57,7 @@ class WriterAckStateTest {
     }
 
     @Test
-    void anAckNackThatReachesThePastTheSampleAcknowledgesIt() throws Exception {
+    void javapsm_2_an_acknack_beyond_the_sample_acknowledges_it() throws Exception {
         ReliableWriterState state = new ReliableWriterState(WRITER);
         state.add(1, PAYLOAD, target(READER_A));
         // base 1: the reader still misses sequence number 1
@@ -70,15 +71,12 @@ class WriterAckStateTest {
     }
 
     @Test
-    void aWaiterIsReleasedByTheAckNackOfAnotherThread() throws Exception {
+    void javapsm_2_a_waiter_is_released_by_the_acknack_of_another_thread() throws Exception {
         ReliableWriterState state = new ReliableWriterState(WRITER);
         state.add(1, PAYLOAD, target(READER_A));
+        Thread waiter = Thread.currentThread();
         Thread acknowledger = new Thread(() -> {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                return;
-            }
+            Waits.untilWaitingIn(waiter, "awaitAcknowledged");
             state.acknowledge(PREFIX, ack(READER_A, 2, 1));
         });
         acknowledger.start();
@@ -88,7 +86,7 @@ class WriterAckStateTest {
     }
 
     @Test
-    void everyReaderThatReceivedTheSampleHasToAcknowledgeIt() throws Exception {
+    void javapsm_2_every_reader_that_received_the_sample_has_to_acknowledge_it() throws Exception {
         ReliableWriterState state = new ReliableWriterState(WRITER);
         state.add(1, PAYLOAD, target(READER_A));
         state.add(1, PAYLOAD, target(READER_B));
@@ -99,7 +97,7 @@ class WriterAckStateTest {
     }
 
     @Test
-    void aReaderThatLeavesIsNotWaitedFor() throws Exception {
+    void javapsm_2_a_reader_that_leaves_is_not_waited_for() throws Exception {
         ReliableWriterState state = new ReliableWriterState(WRITER);
         state.add(1, PAYLOAD, target(READER_A));
         assertFalse(state.allAcknowledged());

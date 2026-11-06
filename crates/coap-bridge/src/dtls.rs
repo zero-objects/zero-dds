@@ -277,7 +277,7 @@ impl PskStore {
 /// secret that cannot be decoded is refused rather than silently truncated.
 pub fn parse_secret_hex(text: &str) -> Result<Vec<u8>, DtlsConfigError> {
     let clean: String = text.chars().filter(|c| !c.is_whitespace()).collect();
-    if clean.is_empty() || clean.len() % 2 != 0 {
+    if clean.is_empty() || !clean.len().is_multiple_of(2) {
         return Err(DtlsConfigError::PskTooShort);
     }
     let bytes = clean.as_bytes();
@@ -347,7 +347,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cipher_suite_names_and_code_points_match_iana() {
+    fn coapbridge_7_1_cipher_suite_names_and_code_points_match_iana() {
         // Bridge-Spec §7.1 names all three; the code points are the IANA
         // TLS Cipher Suite registry values.
         assert_eq!(DtlsCipherSuite::PskWithAes128Ccm8.code_point(), 0xc0a8);
@@ -372,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn psk_store_looks_up_by_identity_and_refuses_short_secrets() {
+    fn coapbridge_7_1_psk_store_looks_up_by_identity_and_refuses_short_secrets() {
         let mut store = PskStore::new();
         store
             .add("device-001", alloc::vec![7u8; 16])
@@ -391,7 +391,7 @@ mod tests {
     }
 
     #[test]
-    fn secret_hex_round_trips_and_rejects_garbage() {
+    fn coapbridge_7_1_secret_hex_round_trips_and_rejects_garbage() {
         assert_eq!(
             parse_secret_hex("deadbeefcafebabe").expect("hex"),
             alloc::vec![0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe]
@@ -406,7 +406,7 @@ mod tests {
     }
 
     #[test]
-    fn credentials_pick_the_mode_they_were_configured_for() {
+    fn coapbridge_7_1_credentials_pick_the_mode_they_were_configured_for() {
         let mut certs = DtlsCredentials {
             cert_file: Some(String::from("/etc/zerodds/coap-cert.pem")),
             key_file: Some(String::from("/etc/zerodds/coap-key.pem")),
@@ -434,14 +434,14 @@ mod tests {
     }
 
     #[test]
-    fn nosec_is_not_secure() {
+    fn coap_9_nosec_is_not_secure() {
         assert!(!DtlsMode::NoSec.is_secure());
         assert_eq!(DtlsMode::NoSec.default_port(), 5683);
         assert_eq!(DtlsMode::NoSec.name(), "NoSec");
     }
 
     #[test]
-    fn psk_is_secure() {
+    fn coap_1_1_psk_is_secure() {
         let m = DtlsMode::PreSharedKey {
             identity: "client-1".into(),
             key: alloc::vec![0; 32],
@@ -452,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_public_key_is_secure() {
+    fn coap_9_raw_public_key_is_secure() {
         let m = DtlsMode::RawPublicKey {
             public_key: alloc::vec![0; 64],
             spki_der: alloc::vec![0; 91],
@@ -462,7 +462,7 @@ mod tests {
     }
 
     #[test]
-    fn certificate_is_secure() {
+    fn coap_9_certificate_is_secure() {
         let m = DtlsMode::Certificate {
             cert_chain: alloc::vec![alloc::vec![0; 100]],
             trust_anchors: alloc::vec![alloc::vec![0; 100]],
@@ -473,7 +473,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_psk_short_key_rejected() {
+    fn coap_9_validate_psk_short_key_rejected() {
         let m = DtlsMode::PreSharedKey {
             identity: "a".into(),
             key: alloc::vec![0; 8],
@@ -482,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_psk_empty_identity_rejected() {
+    fn coap_9_validate_psk_empty_identity_rejected() {
         let m = DtlsMode::PreSharedKey {
             identity: "".into(),
             key: alloc::vec![0; 16],
@@ -491,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_psk_valid() {
+    fn coap_9_validate_psk_valid() {
         let m = DtlsMode::PreSharedKey {
             identity: "client-1".into(),
             key: alloc::vec![0; 16],
@@ -500,7 +500,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_certificate_empty_chain_rejected() {
+    fn coap_9_validate_certificate_empty_chain_rejected() {
         let m = DtlsMode::Certificate {
             cert_chain: alloc::vec![],
             trust_anchors: alloc::vec![alloc::vec![0; 100]],
@@ -509,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_certificate_no_trust_anchors_rejected() {
+    fn coap_9_validate_certificate_no_trust_anchors_rejected() {
         let m = DtlsMode::Certificate {
             cert_chain: alloc::vec![alloc::vec![0; 100]],
             trust_anchors: alloc::vec![],
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_raw_public_key_empty_rejected() {
+    fn coap_9_validate_raw_public_key_empty_rejected() {
         let m = DtlsMode::RawPublicKey {
             public_key: alloc::vec![],
             spki_der: alloc::vec![0; 91],
@@ -530,7 +530,7 @@ mod tests {
     }
 
     #[test]
-    fn validate_nosec_passes() {
+    fn coap_9_validate_nosec_passes() {
         assert!(validate_dtls_mode(&DtlsMode::NoSec).is_ok());
     }
 }

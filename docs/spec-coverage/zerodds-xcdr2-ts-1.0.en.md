@@ -21,8 +21,8 @@ The page is named `ts` for historical reasons; the column itself is `typescript`
 `a_predefined_type_name_is_reserved_although_javascript_does_not_reserve_it`,
 `a_property_name_keeps_its_text_whichever_form_it_takes`,
 `a_bigint_literal_type_carries_its_suffix_in_the_written_form`;
-`crates/lang-render/tests/dispatch_chains.rs::a_node_dispatch_chain_of_ten_thousand_arms_renders_flat`;
-across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::no_rendered_line_carries_trailing_whitespace`.
+`crates/lang-render/tests/dispatch_chains.rs::xtypes_7_5_1_a_node_dispatch_chain_of_ten_thousand_arms_renders_flat`;
+across all renderers `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_every_renderer_ends_its_output_with_exactly_one_newline`, `crates/lang-render/tests/rendering.rs::xtypes_7_5_1_no_rendered_line_carries_trailing_whitespace`.
 
 **Status:** done
 
@@ -32,8 +32,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/rule/typescript.rs`
 
-**Tests:** `crates/lang-rules/tests/apply.rs::every_language_catalogue_fires_on_the_same_model`,
-`crates/lang-rules/tests/apply.rs::every_catalogue_serialises_and_reads_back_the_same`
+**Tests:** `crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_language_catalogue_fires_on_the_same_model`,
+`crates/lang-rules/tests/apply.rs::xtypes_7_5_1_every_catalogue_serialises_and_reads_back_the_same`
 
 **Status:** done
 
@@ -43,7 +43,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_every_wired_language`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_every_wired_language`
 
 **Status:** done
 
@@ -53,8 +53,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs`
 
-**Tests:** `crates/lang-rules/tests/generate_contract.rs::one_idl_becomes_a_full_codec_in_every_wired_language`,
-`crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/generate_contract.rs::xtypes_7_5_1_one_idl_becomes_a_full_codec_in_every_wired_language`,
+`crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -64,7 +64,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/default_typescript.rs`
 
-**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::a_codec_backend_never_exists_without_the_three_parts_it_needs`
+**Tests:** `crates/lang-rules/tests/codec_backend_prerequisites.rs::xtypes_7_5_1_a_codec_backend_never_exists_without_the_three_parts_it_needs`
 
 **Status:** done
 
@@ -74,8 +74,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/typescript`, endpoint SDK `endpoints/typescript`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_runtime`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_an_endpoint_sdk`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_a_runtime`,
+`crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_5_1_every_language_has_an_endpoint_sdk`
 
 **Status:** done
 
@@ -87,8 +87,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_sixty_four_bit_integer_is_a_bigint_and_everything_narrower_is_a_number`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::a_bigint_field_starts_from_a_bigint_literal`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::xtypes_7_2_2_2_a_sixty_four_bit_integer_is_a_bigint_and_everything_narrower_is_a_number`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::xtypes_7_2_2_2_a_bigint_field_starts_from_a_bigint_literal`
 
 **Status:** done
 
@@ -98,7 +98,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_struct_is_an_interface_and_a_factory_and_never_a_class`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_4_a_struct_is_an_interface_and_a_factory_and_never_a_class`
 
 **Status:** done
 
@@ -108,8 +108,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_map_member_is_a_readonly_map_over_a_staged_entry_type`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::two_maps_of_one_typescript_shape_and_two_idl_shapes_are_two_entry_types`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_9_1_a_map_member_is_a_readonly_map_over_a_staged_entry_type`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::xtypes_7_2_2_4_3_two_maps_of_one_typescript_shape_and_two_idl_shapes_are_two_entry_types`
 
 **Status:** done
 
@@ -119,8 +119,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::an_optional_member_is_a_question_mark_and_not_a_null`,
-`crates/lang-rules/tests/typescript_reader_generates.rs::an_optional_member_gets_a_reader`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_11_an_optional_member_is_a_question_mark_and_not_a_null`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::ddsts_2_1_an_optional_member_gets_a_reader`
 
 **Status:** done
 
@@ -130,8 +130,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_union_is_a_discriminated_union_narrowed_on_a_literal`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::a_union_discriminant_takes_the_discriminators_own_literal_form`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_5_a_union_is_a_discriminated_union_narrowed_on_a_literal`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_5_a_union_discriminant_takes_the_discriminators_own_literal_form`
 
 **Status:** done
 
@@ -141,8 +141,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::an_enumeration_is_an_as_const_object_beside_a_string_literal_union`,
-`crates/lang-rules/tests/typescript_reader_generates.rs::a_signed_enumerator_pattern_gets_a_reader`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::ddsts_7_6_an_enumeration_is_an_as_const_object_beside_a_string_literal_union`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::xtypes_7_2_2_4_1_1_a_signed_enumerator_pattern_gets_a_reader`
 
 **Status:** done
 
@@ -152,8 +152,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_constant_past_the_safe_integer_range_is_refused_rather_than_rounded`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::an_unevaluated_array_length_is_named_and_not_substituted`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::idl_7_4_1_4_a_constant_past_the_safe_integer_range_is_refused_rather_than_rounded`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::idl_7_4_1_4_an_unevaluated_array_length_is_named_and_not_substituted`
 
 **Status:** done
 
@@ -163,9 +163,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_module_is_a_namespace_and_two_modules_do_not_collide`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::a_module_reopened_beside_a_nested_one_is_one_namespace`,
-`crates/lang-rules/src/adapter/typescript.rs::tests::a_nested_name_that_would_capture_a_root_reference_is_refused`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::idl_7_5_2_a_module_is_a_namespace_and_two_modules_do_not_collide`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::idl_7_5_2_a_module_reopened_beside_a_nested_one_is_one_namespace`,
+`crates/lang-rules/src/adapter/typescript.rs::tests::idl_7_5_2_a_nested_name_that_would_capture_a_root_reference_is_refused`
 
 **Status:** done
 
@@ -175,8 +175,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `runtime/typescript`
 
-**Tests:** `crates/lang-rules/tests/typescript_names_its_runtime.rs::the_backend_names_nothing_the_runtime_does_not_export`,
-`crates/lang-rules/tests/typescript_names_its_runtime.rs::what_the_runtime_carries_and_the_backend_has_not_reached`
+**Tests:** `crates/lang-rules/tests/typescript_names_its_runtime.rs::ddsts_2_1_the_backend_names_nothing_the_runtime_does_not_export`,
+`crates/lang-rules/tests/typescript_names_its_runtime.rs::xtypes_7_4_what_the_runtime_carries_and_the_backend_has_not_reached`
 
 **Status:** done
 
@@ -186,10 +186,10 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs`
 
-**Tests:** `crates/lang-rules/tests/typescript_reader_generates.rs::a_mutable_struct_gets_a_reader`,
-`crates/lang-rules/tests/typescript_reader_generates.rs::an_appendable_struct_gets_a_reader`,
-`crates/lang-rules/tests/typescript_reader_generates.rs::the_generated_reader_type_checks`,
-`crates/lang-rules/tests/typescript_codec.rs::a_structure_of_primitives_becomes_a_typescript_encoder`
+**Tests:** `crates/lang-rules/tests/typescript_reader_generates.rs::ddsts_2_1_a_mutable_struct_gets_a_reader`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::ddsts_2_1_an_appendable_struct_gets_a_reader`,
+`crates/lang-rules/tests/typescript_reader_generates.rs::ddsts_7_4_the_generated_reader_type_checks`,
+`crates/lang-rules/tests/typescript_codec.rs::ddsts_2_1_a_structure_of_primitives_becomes_a_typescript_encoder`
 
 **Status:** done
 
@@ -199,9 +199,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/interface.rs`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`,
-`crates/lang-rules/tests/interface_bindings.rs::typescript_aggregates_out_parameters_into_the_resolved_value`,
-`crates/lang-rules/tests/interface_bindings.rs::typescript_writes_the_service_descriptor_of_eleven_five`
+**Tests:** `crates/lang-rules/tests/interface_bindings.rs::ddsts_2_3_typescript_maps_an_interface_to_a_client_a_handler_and_a_descriptor`,
+`crates/lang-rules/tests/interface_bindings.rs::ddsts_11_2_typescript_aggregates_out_parameters_into_the_resolved_value`,
+`crates/lang-rules/tests/interface_bindings.rs::ddsts_11_4_typescript_writes_the_service_descriptor_of_eleven_five`
 
 **Status:** done
 
@@ -213,7 +213,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::every_corpus_case_renders_or_names_its_failure`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure`
 
 **Status:** done
 
@@ -223,7 +223,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::the_generated_types_type_check`
+**Tests:** `crates/lang-rules/tests/typescript_descriptors.rs::ddsts_2_1_the_generated_types_type_check`
 
 **Status:** done
 
@@ -233,13 +233,13 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
 
-**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::a_construct_with_no_typescript_data_form_is_named_and_not_left_out`
+**Tests:** `crates/lang-rules/src/adapter/typescript.rs::tests::xtypes_7_4_a_construct_with_no_typescript_data_form_is_named_and_not_left_out`
 
 **Status:** done
 
 ### §7.4 The column's octets are held against a fixed recording
 
-**Spec:** §7.4 — The column's octets are held against a fixed recording. Measured against `crates/wire-probe/tests/fixtures/rust_column_baseline.txt`, not beside the other columns: three columns that moved together still resemble each other.
+**Spec:** §7.4 — The column's octets are held against a fixed recording. Measured against the Rust column, which `crates/wire-probe/tests/expected_bytes.rs` holds against the vendors' octets, not beside the other columns: three columns that moved together still resemble each other.
 
 **Repo:** `crates/lang-rules/src/emit/typescript.rs`, `crates/lang-rules/src/adapter/typescript.rs`
 
@@ -253,9 +253,9 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `crates/lang-rules/src/adapter/typescript.rs`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_ends_its_source_file_with_the_end_file_text`,
-`crates/lang-rules/tests/verbatim_every_column.rs::a_directive_reaches_its_own_column_and_no_other`
+**Tests:** `crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_places_the_six_slots_in_its_declarations`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_2_every_column_ends_its_source_file_with_the_end_file_text`,
+`crates/lang-rules/tests/verbatim_every_column.rs::ddsts_9_1_a_directive_reaches_its_own_column_and_no_other`
 
 **Status:** done
 
@@ -267,8 +267,8 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/idlc/src/generate.rs`, `tools/idlc/src/main.rs`
 
-**Tests:** `tools/idlc/src/generate.rs::tests::every_language_round_trips_through_its_own_name`,
-`tools/idlc/src/generate.rs::tests::language_names_lists_every_language_once`
+**Tests:** `tools/idlc/src/generate.rs::tests::deployment_1_3_every_language_round_trips_through_its_own_name`,
+`tools/idlc/src/generate.rs::tests::xtypes_7_3_1_language_names_lists_every_language_once`
 
 **Status:** done
 
@@ -278,8 +278,7 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 **Repo:** `tools/wireprobe/wireprobe-zerodds-typescript-gen/`, `tools/wireprobe/wireprobe-zerodds-typescript`, `tools/wireprobe/wireprobe-typescript-corpus`
 
-**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::every_language_has_a_cell_generator`,
-`crates/lang-rules/tests/every_language_has_its_parts.rs::every_cell_generator_guards_against_a_missing_toolchain`
+**Tests:** `crates/lang-rules/tests/every_language_has_its_parts.rs::xtypes_7_4_every_language_has_a_cell_generator`
 
 **Status:** done
 
@@ -287,8 +286,17 @@ across all renderers `crates/lang-render/tests/rendering.rs::every_renderer_ends
 
 ## Audit Status
 
-24 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+24 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test run: `cargo test -p zerodds-lang-rules` — 1024 tests green, 0 failed (20 ignored: the whole-corpus compile runs, which need `--include-ignored`).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-xcdr2-ts-1.0.md`):
 
-Open items: none. Decision records: none.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (job `merge-rust-idlc`) — 2 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-cst --all-targets` (job `merge-rust-lang-cst`) — 6 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-render --all-targets` (job `merge-rust-lang-render`) — 3 tests green.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (job `merge-rust-lang-rules`) — 30 tests green.
+* `cargo nextest run --profile merge -p zerodds-wire-probe --all-targets` (job `merge-rust-wire-probe`) — 1 test green.
+* `python3 ci/run_integration.py merge-codegen-typescript` (job `merge-codegen-typescript`) — 10 tests green.
+
+52 cited tests green, 0 not green.
+
+Open items: none.

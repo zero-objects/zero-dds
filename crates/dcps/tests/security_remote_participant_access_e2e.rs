@@ -164,7 +164,8 @@ fn wait_for(timeout: Duration, mut ready: impl FnMut() -> bool) -> bool {
 /// TRUE); where it is not, the same check has no consequence.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected() {
+fn security_9_8_7_an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain_is_protected()
+ {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the remote participant access test cannot run");
         return;
@@ -297,6 +298,7 @@ fn an_authenticated_peer_without_a_domain_grant_is_ignored_only_where_the_domain
         .register_user_reader(zerodds_dcps::runtime::UserReaderConfig {
             topic_name: topic.into(),
             type_name: "RawBytes".into(),
+            reliable: true,
             ..Default::default()
         })
         .expect("reader");

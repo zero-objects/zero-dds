@@ -391,7 +391,8 @@ Fast DDS subscribers receive samples that an MQTT client publishes,
 and vice versa. On the MQTT side the daemon is a normal
 MQTT 5 client — tested against Mosquitto, EMQX, HiveMQ.
 
-Verified in `crates/mqtt-bridge/tests/cross_vendor.rs`.
+Verified in `crates/mqtt-bridge/tests/mosquitto_qos.rs` and
+`crates/mqtt-bridge/tests/mosquitto_interop_e2e.rs`.
 
 ## §11 Packaging
 

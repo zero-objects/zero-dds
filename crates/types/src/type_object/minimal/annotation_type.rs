@@ -191,6 +191,6 @@ pub fn ordered_by_name_hash(
     parameters: Vec<MinimalAnnotationParameter>,
 ) -> Vec<MinimalAnnotationParameter> {
     let mut parameters = parameters;
-    parameters.sort_by(|a, b| a.name_hash.cmp(&b.name_hash));
+    parameters.sort_by_key(|a| a.name_hash);
     parameters
 }

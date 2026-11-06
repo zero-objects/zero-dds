@@ -58,7 +58,7 @@ fn fixtures() -> PathBuf {
 }
 
 #[test]
-fn every_idl_4_2_section_d_fixture_passes_check_and_both_backends() {
+fn idl_7_2_6_2_1_every_idl_4_2_section_d_fixture_passes_check_and_both_backends() {
     let dir = fixtures();
     let out = Path::new(env!("CARGO_TARGET_TMPDIR")).join("idl-4.2-gaps");
     let _ = std::fs::remove_dir_all(&out);
@@ -94,7 +94,7 @@ fn every_idl_4_2_section_d_fixture_passes_check_and_both_backends() {
 }
 
 #[test]
-fn the_fixture_directory_holds_exactly_the_named_fixtures() {
+fn idl_7_4_8_3_the_fixture_directory_holds_exactly_the_named_fixtures() {
     let mut present: Vec<String> = std::fs::read_dir(fixtures())
         .expect("the fixture directory")
         .map(|entry| entry.expect("a fixture entry").path())
@@ -112,5 +112,86 @@ fn the_fixture_directory_holds_exactly_the_named_fixtures() {
     assert_eq!(
         present, named,
         "the fixture directory and the list disagree"
+    );
+}
+
+/// OMG IDL 4.2 Annex A: every probe of the gap scan
+/// (`tools/idl-4.2-gap-scan/cases.tsv`), which covers each of the 227
+/// numbered productions and the semantic rules beside them, gets the answer
+/// its `expect` column takes from the specification — `accept` without an
+/// error, `reject` with one.
+///
+/// Read as `check --strict` reads it, OMG IDL 4.2 and nothing else, except
+/// for the `dialect` probes: those stand for the vendor constructs a default
+/// run admits, and are read as `check` reads them.
+#[test]
+fn idl_annex_a_every_probe_of_the_gap_scan_gets_the_specifications_answer() {
+    let cases =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tools/idl-4.2-gap-scan/cases.tsv");
+    let text = std::fs::read_to_string(&cases).expect("cases.tsv");
+    let mut productions = std::collections::BTreeSet::new();
+    let mut wrong = Vec::new();
+    let mut probes = 0;
+    for line in text.lines() {
+        if line.starts_with('#') || line.trim().is_empty() {
+            continue;
+        }
+        let fields: Vec<&str> = line.split('\t').collect();
+        let [id, axis, refs, expect, _witness, idl] = fields[..] else {
+            panic!("a line of cases.tsv has {} fields: {line}", fields.len());
+        };
+        probes += 1;
+        if axis == "grammar" {
+            for reference in refs.split(',') {
+                if let Ok(number) = reference.trim().parse::<u16>() {
+                    productions.insert(number);
+                }
+            }
+        }
+        let source = idl.replace("<NL>", "\n");
+        let dialect = if axis == "dialect" {
+            zerodds_idl_parse::Dialect::ALL_VENDORS
+        } else {
+            zerodds_idl_parse::Dialect::STRICT
+        };
+        // `scan.sh` writes `other.idl` beside the probe for the two
+        // `#include` probes; this is the same file.
+        let loader = zerodds_idl_parse::MemoryLoader::new()
+            .with("other.idl", "struct Included { long m; };\n");
+        let composed = zerodds_idl_compose::compose_source_with(
+            &format!("{id}.idl"),
+            &source,
+            &loader,
+            zerodds_idl_compose::ComposeOptions {
+                dialect,
+                ..zerodds_idl_compose::ComposeOptions::default()
+            },
+        );
+        let errors: Vec<_> = composed
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.is_error())
+            .collect();
+        let accepted = errors.is_empty();
+        let agrees = match expect {
+            "accept" => accepted,
+            "reject" => !accepted,
+            other => panic!("{id}: expect `{other}` is neither accept nor reject"),
+        };
+        if !agrees {
+            wrong.push(format!("{id} ({expect}): {errors:?}"));
+        }
+    }
+    let missing: Vec<u16> = (1..=227).filter(|n| !productions.contains(n)).collect();
+    assert!(
+        missing.is_empty(),
+        "productions with no grammar probe: {missing:?}"
+    );
+    assert!(probes > 300, "{probes} probes");
+    assert!(
+        wrong.is_empty(),
+        "{} probe(s):\n{}",
+        wrong.len(),
+        wrong.join("\n")
     );
 }

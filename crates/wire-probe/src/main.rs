@@ -56,23 +56,7 @@ use zerodds_wire_probe::encode::{encode, hex, model_from_idl_in_dialect};
 use zerodds_wire_probe::value::{Emit, MapLengthPolicy, ProbeRequest};
 
 /// The usage text, built from the shared axis table.
-const USAGE: &str = concat!(
-    "wireprobe-zerodds — one IDL type and one JSON value, as wire bytes\n\
-    \n\
-    \x20\x20\x20\x20--idl <file>            the IDL source (required, repeatable)\n\
-    \x20\x20\x20\x20--type <ScopedName>     the top-level type (required)\n\
-    \x20\x20\x20\x20--values <file>         the sample, as JSON (required, unless --in)\n\
-    \x20\x20\x20\x20--in <file>             bytes to read back instead of writing\n\
-    \x20\x20\x20\x20--values-out <file>     where the values read go (default: stdout)\n\
-    \x20\x20\x20\x20--encoding <name>       xcdr1 | xcdr2 | plain-cdr1 | pl-cdr1 |\n\
-    \x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20  plain-cdr2 | delimited-cdr | pl-cdr2\n\
-    \x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20  (default: xcdr2, which is plain-cdr2)\n\
-    \x20\x20\x20\x20--endian le|be          (default: le)\n\
-    \x20\x20\x20\x20--emit <form>           payload | payload+encapsulation | keyhash\n\
-    \x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20  (default: payload)\n\
-    \x20\x20\x20\x20--dialect <name>        ",
-    // dialect_help() is a runtime string, included below in the dynamic portion
-);
+const USAGE: &str = "wireprobe-zerodds — one IDL type and one JSON value, as wire bytes\n\n    --idl <file>            the IDL source (required, repeatable)\n    --type <ScopedName>     the top-level type (required)\n    --values <file>         the sample, as JSON (required, unless --in)\n    --in <file>             bytes to read back instead of writing\n    --values-out <file>     where the values read go (default: stdout)\n    --encoding <name>       xcdr1 | xcdr2 | plain-cdr1 | pl-cdr1 |\n                              plain-cdr2 | delimited-cdr | pl-cdr2\n                              (default: xcdr2, which is plain-cdr2)\n    --endian le|be          (default: le)\n    --emit <form>           payload | payload+encapsulation | keyhash\n                              (default: payload)\n    --dialect <name>        ";
 
 /// The command line: every axis flag folded into `overrides`, in the
 /// order the caller gave them, rather than one field per axis.

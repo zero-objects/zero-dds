@@ -29,7 +29,7 @@ use zerodds_dcps::{
 };
 
 #[test]
-fn get_builtin_subscriber_returns_subscriber() {
+fn dcps_2_2_2_2_1_13_get_builtin_subscriber_returns_subscriber() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(31, DomainParticipantQos::default());
     let bs = p.get_builtin_subscriber();
@@ -39,7 +39,7 @@ fn get_builtin_subscriber_returns_subscriber() {
 }
 
 #[test]
-fn builtin_subscriber_has_all_four_readers_pre_created() {
+fn dcps_2_2_2_2_1_13_builtin_subscriber_has_all_four_readers_pre_created() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(32, DomainParticipantQos::default());
     let bs = p.get_builtin_subscriber();
@@ -62,7 +62,7 @@ fn builtin_subscriber_has_all_four_readers_pre_created() {
 }
 
 #[test]
-fn builtin_readers_have_spec_default_qos() {
+fn dcps_2_2_5_builtin_readers_have_spec_default_qos() {
     use zerodds_qos::{DurabilityKind, HistoryKind, ReliabilityKind};
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(33, DomainParticipantQos::default());
@@ -78,7 +78,7 @@ fn builtin_readers_have_spec_default_qos() {
 }
 
 #[test]
-fn lookup_with_wrong_type_for_topic_is_nil() {
+fn dcps_2_2_2_5_2_7_lookup_with_wrong_type_for_topic_is_nil() {
     let factory = DomainParticipantFactory::instance();
     let p = factory.create_participant_offline(34, DomainParticipantQos::default());
     let bs = p.get_builtin_subscriber();
@@ -98,7 +98,7 @@ fn lookup_with_wrong_type_for_topic_is_nil() {
 /// `lookup_datareader` and `get_datareaders` find them; they are not deleted
 /// by the application.
 #[test]
-fn the_builtin_subscriber_is_a_subscriber() {
+fn dcps_2_2_2_2_1_13_the_builtin_subscriber_is_a_subscriber() {
     use zerodds_dcps::sample_info::{instance_state_mask, sample_state_mask, view_state_mask};
     use zerodds_dcps::{DdsError, Entity};
     let factory = DomainParticipantFactory::instance();
@@ -203,7 +203,7 @@ mod linux_e2e {
     }
 
     #[test]
-    fn spdp_receive_populates_dcps_participant_reader() {
+    fn rtps_8_5_spdp_receive_populates_dcps_participant_reader() {
         let factory = DomainParticipantFactory::instance();
         let domain = super::common::unique_domain();
         let cfg = super::common::isolated_cfg();
@@ -231,7 +231,7 @@ mod linux_e2e {
     }
 
     #[test]
-    fn sedp_pub_sub_populates_dcps_publication_and_subscription_readers() {
+    fn dcps_2_2_5_sedp_pub_sub_populates_dcps_publication_and_subscription_readers() {
         let factory = DomainParticipantFactory::instance();
         let domain = super::common::unique_domain();
         let cfg = super::common::isolated_cfg();
@@ -302,7 +302,8 @@ mod linux_e2e {
     /// TRANSPORT_PRIORITY are in no endpoint announcement, and B creates
     /// no endpoint. B's `delete_contained_entities` disposes the instance.
     #[test]
-    fn a_created_topic_reaches_dcps_topic_with_every_member_and_its_deletion_disposes_it() {
+    fn dcps_2_2_3_2_a_created_topic_reaches_dcps_topic_with_every_member_and_its_deletion_disposes_it()
+     {
         use zerodds_dcps::{DdsType, InstanceStateKind};
         use zerodds_qos::{
             HistoryKind, HistoryQosPolicy, ResourceLimitsQosPolicy, TransportPriorityQosPolicy,
@@ -374,7 +375,7 @@ mod linux_e2e {
     /// exactly as `delete_contained_entities` does — while a live writer
     /// holds the topic, the delete is refused and the announcement stands.
     #[test]
-    fn delete_topic_disposes_the_announced_topic_and_a_writer_holds_it() {
+    fn rtps_8_5_4_4_delete_topic_disposes_the_announced_topic_and_a_writer_holds_it() {
         use zerodds_dcps::{DdsType, InstanceStateKind};
         let factory = DomainParticipantFactory::instance();
         let domain = super::common::unique_domain();
@@ -437,7 +438,7 @@ mod linux_e2e {
     /// topic of the same name and type: A reads two entries, and C's
     /// deletion disposes C's entry, not B's.
     #[test]
-    fn two_participants_creating_one_topic_are_two_dcps_topic_entries() {
+    fn dcps_2_2_5_two_participants_creating_one_topic_are_two_dcps_topic_entries() {
         use zerodds_dcps::{DdsType, InstanceStateKind};
         let factory = DomainParticipantFactory::instance();
         let domain = super::common::unique_domain();
@@ -518,7 +519,7 @@ mod common;
 /// DDS 1.4 §2.2.5: the QoS of the built-in Subscriber and of every built-in
 /// DataReader, policy by policy, as the table lists them.
 #[test]
-fn builtin_entities_have_the_qos_of_the_table() {
+fn dcps_2_2_5_builtin_entities_have_the_qos_of_the_table() {
     use zerodds_qos::{
         DestinationOrderKind, DurabilityKind, HistoryKind, LivelinessKind, OwnershipKind,
         PresentationAccessScope, ReliabilityKind,

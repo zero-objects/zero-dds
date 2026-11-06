@@ -4,7 +4,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/de/1.1.0/), version
 
 ## [Unreleased]
 
+### Removed
+
+- The feature `cross-vendor-tests` and `tests/cross_vendor.rs`: its two
+  tests checked RabbitMQ's protocol header and the reachability of a port,
+  not this crate. `tests/rabbitmq_cross_stack_e2e.rs` and the harness
+  `competitors/rabbitmq/` (it set up a system RabbitMQ with a user of its
+  own): the tests against RabbitMQ start a node of their own
+  (`crates/amqp-0-9-1/tests/support/rabbitmq.rs`) and run in the
+  integration pillar's job `integration-bridges-vendor-amqp`.
+
 ### Fixed
+
+- A dispose with unregister of one instance (DDSI-RTPS 2.5 §9.6.4.9, the D
+  and U bits of a status info) goes to AMQP as two messages, `dispose` and
+  then `unregister` (DDS-AMQP 1.0 has one `dds:operation` per message); the
+  unregister was dropped (OPEN-ITEMS 46).
+- A Pass-Through body keeps the representation identifier it came under
+  (DDSI-RTPS 2.5 §10.5): the DDS → AMQP direction framed every XCDR2 body
+  as `CDR2` and every XCDR1 body as `CDR`, also a delimited (`D_CDR2`) or
+  parameter-list (`PL_CDR`, `PL_CDR2`) one, and the AMQP → DDS writer left
+  its extensibility at `@final`, so its header did the same. `OutSample`
+  carries `representation_identifier` in place of `representation` and
+  `big_endian`.
 
 - `parse_config` and `parse_governance` refuse a text that nests deeper
   than `zerodds_foundation::XML_NESTING_LIMIT` before the parser sees it;

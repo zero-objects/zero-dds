@@ -744,13 +744,12 @@ fn expr_text(node: &Expr) -> String {
                     // redundant_field_names` denies the long form, and
                     // every generated struct literal goes through this
                     // one spot.
-                    if let Expr::Path(value_path) = value {
-                        if !value_path.is_rooted()
-                            && value_path.segments().len() == 1
-                            && value_path.last().map(Ident::as_str) == Some(name.as_str())
-                        {
-                            return name.as_str().to_string();
-                        }
+                    if let Expr::Path(value_path) = value
+                        && !value_path.is_rooted()
+                        && value_path.segments().len() == 1
+                        && value_path.last().map(Ident::as_str) == Some(name.as_str())
+                    {
+                        return name.as_str().to_string();
                     }
                     let mut text = name.as_str().to_string();
                     text.push_str(": ");

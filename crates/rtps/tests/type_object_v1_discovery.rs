@@ -213,7 +213,7 @@ fn a_parameter_that_does_not_decode_is_left_out_not_a_refusal() {
     let mut pl = ParameterList::from_bytes(&bytes[4..], true).expect("a parameter list");
     for p in &mut pl.parameters {
         if p.id == pid::TYPE_OBJECT_V1 {
-            p.value = vec![0xFF; 8];
+            p.value = vec![0xFF; 8].into();
         }
     }
     let mut rebuilt = bytes[..4].to_vec();

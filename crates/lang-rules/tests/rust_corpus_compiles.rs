@@ -5,7 +5,7 @@
 //! The counterpart of the `every_corpus_case_that_renders_also_compiles`
 //! that `swift_end_to_end.rs`, `go_end_to_end.rs` and eight more carry.
 //! The Rust column had none: `end_to_end.rs` walks the chain and asserts
-//! the text, and `docs/OPEN-ITEMS.md` records that the six oldest columns
+//! the text, and the six oldest columns
 //! lost their compile gate when `zerodds-idl-<lang>` was removed.
 //!
 //! `--emit=metadata` and not `cargo check`: what is in question is the
@@ -318,7 +318,7 @@ fn main() {
 "#;
 
 #[test]
-fn a_union_keeps_its_discriminator_through_rustc_and_back() {
+fn xtypes_7_2_2_4_4_3_a_union_keeps_its_discriminator_through_rustc_and_back() {
     if !rustc_available() {
         eprintln!("SKIPPED: `rustc` is not usable.");
         return;
@@ -441,7 +441,7 @@ fn main() {
 "#;
 
 #[test]
-fn a_derived_structure_holds_its_base_as_its_first_member_parent() {
+fn xtypes_7_5_1_4_1_3_a_derived_structure_holds_its_base_as_its_first_member_parent() {
     if !rustc_available() {
         eprintln!("SKIPPED: `rustc` is not usable.");
         return;
@@ -546,7 +546,7 @@ fn main() {
 "#;
 
 #[test]
-fn a_map_is_a_sequence_of_entries_that_keeps_its_order() {
+fn xtypes_7_5_1_3_6_a_map_is_a_sequence_of_entries_that_keeps_its_order() {
     if !rustc_available() {
         eprintln!("SKIPPED: `rustc` is not usable.");
         return;
@@ -619,14 +619,10 @@ fn a_map_is_a_sequence_of_entries_that_keeps_its_order() {
 
 /// The whole corpus through `rustc`, one invocation per case.
 ///
-/// `#[ignore]`, because it is one compiler start per corpus case. It is
-/// the cheapest of the six — about half a minute for the corpus as it
-/// stands — and it is still a compiler per case rather than a unit test,
-/// so it is run with `--include-ignored` and its result is what the
-/// `idl-rust-corpus` job records.
-#[test]
-#[ignore = "one `rustc` start per corpus case; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// `share` of `shares`: every case renders in every share (the refusal
+/// lists and `MUST_RENDER` hold over the whole corpus), and only the
+/// cases at `position % shares == share` reach the tool.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     if !rustc_available() {
         eprintln!("SKIPPED: `rustc` is not usable.");
         return;
@@ -636,7 +632,8 @@ fn every_corpus_case_that_renders_also_compiles() {
     let mut unexpectedly_fine = Vec::new();
     let mut frontend = Vec::new();
     let mut checked = 0_usize;
-    for (name, path) in corpus_harness::corpus() {
+    let mut rendered = 0_usize;
+    for (position, (name, path)) in corpus_harness::corpus().into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             continue;
@@ -668,6 +665,10 @@ fn every_corpus_case_that_renders_also_compiles() {
             }
             (Err(_), Some(_)) => continue,
         };
+        rendered += 1;
+        if position % shares != share {
+            continue;
+        }
         checked += 1;
         let known = DOES_NOT_COMPILE.iter().find(|(case, _)| *case == name);
         match (rust_compiles(&dependency, &text, &name), known) {
@@ -704,8 +705,28 @@ fn every_corpus_case_that_renders_also_compiles() {
     );
     assert!(unexpectedly_fine.is_empty(), "{unexpectedly_fine:#?}");
     assert!(
-        checked >= MUST_RENDER,
-        "only {checked} corpus cases reached `rustc`; the gate says nothing \
+        rendered >= MUST_RENDER,
+        "only {rendered} corpus cases rendered; the gate says nothing \
          below {MUST_RENDER}"
     );
+}
+
+/// The corpus through `rustc`, in shares.
+///
+/// The corpus in 2 shares, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier"); the shares
+/// together are every case. `#[ignore]`: one `rustc` start per case is no unit
+/// test; the weekly `integration-codegen` job runs them, eight shares at a time.
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a half of the corpus through `rustc`; runs in integration-codegen"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 2);
+    }
+
+    #[test]
+    #[ignore = "a half of the corpus through `rustc`; runs in integration-codegen"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 2);
+    }
 }

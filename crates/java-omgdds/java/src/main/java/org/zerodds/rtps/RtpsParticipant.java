@@ -74,6 +74,25 @@ public final class RtpsParticipant {
 
     // ---- endpoint registrations ----
 
+    /**
+     * A sample a TRANSIENT_LOCAL writer keeps for readers that match later (DDS 1.4 §2.2.3.4):
+     * the sequence number it was sent under, its body without the encapsulation, the time it was
+     * written and when its LIFESPAN ends ({@link Long#MAX_VALUE}: never).
+     */
+    public static final class Kept {
+        public final long sequence;
+        public final byte[] body;
+        public final long timestampMillis;
+        public final long expiresAtMillis;
+
+        public Kept(long sequence, byte[] body, long timestampMillis, long expiresAtMillis) {
+            this.sequence = sequence;
+            this.body = body.clone();
+            this.timestampMillis = timestampMillis;
+            this.expiresAtMillis = expiresAtMillis;
+        }
+    }
+
     public final class WireWriter {
         final byte[] entityId; // 4
         final byte[] guid; // 16
@@ -107,8 +126,35 @@ public final class RtpsParticipant {
 
         /** The DDS-RPC 1.0 §7.6.2.1 extensions this writer announces. */
         volatile RpcDiscovery rpc = RpcDiscovery.NONE;
+        /** The samples kept for readers that match later; {@code null}: the writer keeps none. */
+        volatile java.util.function.Supplier<List<Kept>> kept;
+
+        /**
+         * A writer with DURABILITY TRANSIENT_LOCAL hands the samples it keeps to every reliable
+         * reader that matches later (DDS 1.4 §2.2.3.4), under the sequence numbers they were sent
+         * with; {@code kept} is asked when a reader matches and must not block.
+         */
+        public void keepForLateJoiners(java.util.function.Supplier<List<Kept>> kept) {
+            this.kept = kept;
+        }
         // matched remote readers: guidHex -> target
         final Map<String, MatchedReader> matched = new ConcurrentHashMap<>();
+        /** Told when a remote reader matches or stops matching; {@code null}: nobody listens. */
+        private volatile MatchListener matchListener;
+
+        /**
+         * Tells {@code listener} of every change of the remote readers this writer is matched
+         * with (DDS 1.4 §2.2.4.1 PUBLICATION_MATCHED), the ones matched already first. The
+         * calls run in order on a thread of their own, never on the discovery thread.
+         */
+        public void setMatchListener(MatchListener listener) {
+            synchronized (RtpsParticipant.this) {
+                this.matchListener = listener;
+                for (String key : matched.keySet()) {
+                    noteMatch(listener, key, true);
+                }
+            }
+        }
 
         WireWriter(byte[] entityId, String topic, String typeName, byte[] encap,
                    byte[] typeId, byte[] typeInformation, boolean keyed, boolean reliable,
@@ -241,6 +287,24 @@ public final class RtpsParticipant {
             return write(body, related, 0L, null, instance);
         }
 
+        /**
+         * As the form below; {@code sent} is told the sequence number before the sample goes out,
+         * under the lock that orders the samples of this writer.
+         */
+        public synchronized long write(byte[] body, org.zerodds.internal.SourceIdentity related,
+                long coherentSetName, GroupStamp group, String instance,
+                java.util.function.LongConsumer sent) {
+            this.sent = sent;
+            try {
+                return write(body, related, coherentSetName, group, instance);
+            } finally {
+                this.sent = null;
+            }
+        }
+
+        /** Told the sequence number of the sample in progress, or null. */
+        private java.util.function.LongConsumer sent;
+
         /** The sample of a coherent set and a group, to the readers of the service instance (or all: null). */
         public synchronized long write(byte[] body, org.zerodds.internal.SourceIdentity related,
                 long coherentSetName, GroupStamp group, String instance) {
@@ -299,6 +363,10 @@ public final class RtpsParticipant {
 
         private long send(byte[] payload, ParameterList inline, String instance) {
             sn++;
+            java.util.function.LongConsumer told = sent;
+            if (told != null) {
+                told.accept(sn);
+            }
             long now = System.currentTimeMillis();
             int secs = (int) (now / 1000L);
             long frac = ((now % 1000L) << 32) / 1000L;
@@ -519,6 +587,22 @@ public final class RtpsParticipant {
         final boolean byTypeInformation;
         // matched remote writer GUIDs (hex) that we accept DATA from
         final Map<String, Boolean> matchedWriters = new ConcurrentHashMap<>();
+        /** Told when a remote writer matches or stops matching; {@code null}: nobody listens. */
+        private volatile MatchListener matchListener;
+
+        /**
+         * Tells {@code listener} of every change of the remote writers this reader is matched
+         * with (DDS 1.4 §2.2.4.1 SUBSCRIPTION_MATCHED), the ones matched already first. The
+         * calls run in order on a thread of their own, never on the discovery thread.
+         */
+        public void setMatchListener(MatchListener listener) {
+            synchronized (RtpsParticipant.this) {
+                this.matchListener = listener;
+                for (String key : matchedWriters.keySet()) {
+                    noteMatch(listener, key, true);
+                }
+            }
+        }
         /** The DDS-RPC 1.0 §7.6.2.1 extensions this reader announces. */
         volatile RpcDiscovery rpc = RpcDiscovery.NONE;
 
@@ -682,6 +766,63 @@ public final class RtpsParticipant {
             this.participantPrefix = participantPrefix;
             this.readerEntityId = readerEntityId;
             this.locator = locator;
+        }
+    }
+
+    // ---- matches with remote endpoints (DDS 1.4 §2.2.4.1) ----
+
+    /**
+     * Told when a local endpoint matches a remote one over SEDP or stops matching it (the
+     * remote participant's lease ran out, the application ignores it, the representations no
+     * longer overlap). {@code remoteGuid} is the remote endpoint's GUID (16 octets).
+     */
+    public interface MatchListener {
+        void matchChanged(byte[] remoteGuid, boolean matched);
+    }
+
+    /**
+     * Runs the match callbacks in the order of the changes, off the discovery thread: that
+     * thread holds this participant's lock, and an entity that takes its own lock in the
+     * callback must not wait for this one.
+     */
+    private final java.util.concurrent.ExecutorService matchEvents =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+                Thread t = new Thread(r, "rtps-match-events");
+                t.setDaemon(true);
+                return t;
+            });
+
+    private void noteMatch(MatchListener listener, String key, boolean matched) {
+        if (listener == null) {
+            return;
+        }
+        byte[] guid = unhex(key);
+        try {
+            matchEvents.execute(() -> {
+                try {
+                    listener.matchChanged(guid, matched);
+                } catch (RuntimeException e) {
+                    log("match listener threw: " + e);
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException closed) {
+            // the participant is closed
+        }
+    }
+
+    private void matchedReader(WireReader r, String key) {
+        noteMatch(r.matchListener, key, true);
+    }
+
+    private void unmatchReader(WireReader r, String key) {
+        if (r.matchedWriters.remove(key) != null) {
+            noteMatch(r.matchListener, key, false);
+        }
+    }
+
+    private void unmatchWriter(WireWriter w, String key) {
+        if (w.matched.remove(key) != null) {
+            noteMatch(w.matchListener, key, false);
         }
     }
 
@@ -1139,8 +1280,16 @@ public final class RtpsParticipant {
                         fire(listener -> listener.endpointLost(endpoint));
                     }
                     fire(listener -> listener.participantLost(peer));
-                    for (WireWriter writer : writers) writer.matched.keySet().removeIf(key -> key.startsWith(prefix));
-                    for (WireReader reader : readers) reader.matchedWriters.keySet().removeIf(key -> key.startsWith(prefix));
+                    for (WireWriter writer : writers) {
+                        for (String key : new ArrayList<>(writer.matched.keySet())) {
+                            if (key.startsWith(prefix)) unmatchWriter(writer, key);
+                        }
+                    }
+                    for (WireReader reader : readers) {
+                        for (String key : new ArrayList<>(reader.matchedWriters.keySet())) {
+                            if (key.startsWith(prefix)) unmatchReader(reader, key);
+                        }
+                    }
                 }
                 if (tick >= nextHeartbeat) {
                     nextHeartbeat = tick + TIMING.heartbeatPeriodMillis;
@@ -1602,26 +1751,26 @@ public final class RtpsParticipant {
     /** Drops the matches an ignore now forbids. */
     private synchronized void rematchIgnored() {
         for (WireWriter w : writers) {
-            w.matched.keySet().removeIf(key -> {
+            for (String key : new ArrayList<>(w.matched.keySet())) {
                 DiscoveryData.Endpoint e = remoteReaders.get(key);
-                return e != null && ignores(e);
-            });
+                if (e != null && ignores(e)) unmatchWriter(w, key);
+            }
         }
         for (WireReader r : readers) {
-            r.matchedWriters.keySet().removeIf(key -> {
+            for (String key : new ArrayList<>(r.matchedWriters.keySet())) {
                 DiscoveryData.Endpoint e = remoteWriters.get(key);
-                return e != null && ignores(e);
-            });
+                if (e != null && ignores(e)) unmatchReader(r, key);
+            }
         }
     }
 
     private void tryMatchWriter(WireWriter w, DiscoveryData.Endpoint remoteReader) {
         if (ignores(remoteReader)) {
-            w.matched.remove(hex(remoteReader.endpointGuid));
+            unmatchWriter(w, hex(remoteReader.endpointGuid));
             return;
         }
         if (!representationsOverlap(new int[] {encapDataRep(w.encap)}, remoteReader.dataRepresentations)) {
-            w.matched.remove(hex(remoteReader.endpointGuid));
+            unmatchWriter(w, hex(remoteReader.endpointGuid));
             return;
         }
         if (!RpcDiscovery.topicsCorrespond(w.topic, w.rpc, remoteReader.topicName, remoteReader.rpc)) {
@@ -1649,18 +1798,56 @@ public final class RtpsParticipant {
         w.matched.put(key, new MatchedReader(
                 Wire.slice(remoteReader.endpointGuid, 0, 12), readerEntity,
                 remoteReader.unicastLocator));
+        noteMatch(w.matchListener, key, true);
         log("SEDP endpoint-match: local WRITER topic='" + w.topic + "' type='" + w.typeName
                 + "' -> remote reader " + key + " @ " + remoteReader.unicastLocator
                 + typeIdNote(w.typeId, remoteReader.typeId));
+        if (w.reliable && w.kept != null) {
+            ReliableWriterState.Target target = new ReliableWriterState.Target(
+                    Wire.slice(remoteReader.endpointGuid, 0, 12), readerEntity,
+                    address(remoteReader.unicastLocator));
+            // off the discovery thread, which holds this participant's lock
+            after(1, () -> replayKept(w, target));
+        }
+    }
+
+    /**
+     * Hands the samples a TRANSIENT_LOCAL writer keeps to a reader that matched now (DDS 1.4
+     * §2.2.3.4): each under its sequence number, with the time it was written, then the
+     * HEARTBEAT; a sequence number between them that the writer no longer has is a GAP when the
+     * reader asks for it. Without the writer's lock: the writer enters a sample among the kept
+     * ones before it sends it (WireWriter.write with {@code sent}), and the reader was matched
+     * before this runs; a sample is so either among the kept ones here or sent to the reader as
+     * it is written (twice at most, which the reader drops by its sequence number).
+     */
+    private void replayKept(WireWriter w, ReliableWriterState.Target target) {
+        java.util.function.Supplier<List<Kept>> source = w.kept;
+        if (source == null || !w.matched.containsKey(hex(new Guid(target.prefix, target.reader).bytes()))) {
+            return;
+        }
+        List<Kept> samples = new ArrayList<>(source.get());
+        samples.sort((a, b) -> Long.compare(a.sequence, b.sequence));
+        long now = System.currentTimeMillis();
+        ReliableWriterState state = reliableWriters.computeIfAbsent(hex(w.entityId),
+                key -> new ReliableWriterState(w.entityId));
+        for (Kept kept : samples) {
+            if (kept.expiresAtMillis <= now) {
+                continue;
+            }
+            byte[] payload = new byte[w.encap.length + kept.body.length];
+            System.arraycopy(w.encap, 0, payload, 0, w.encap.length);
+            System.arraycopy(kept.body, 0, payload, w.encap.length, kept.body.length);
+            sendHistory(state, state.replay(kept.sequence, payload, kept.timestampMillis, target), target);
+        }
     }
 
     private void tryMatchReader(WireReader r, DiscoveryData.Endpoint remoteWriter) {
         if (ignores(remoteWriter)) {
-            r.matchedWriters.remove(hex(remoteWriter.endpointGuid));
+            unmatchReader(r, hex(remoteWriter.endpointGuid));
             return;
         }
         if (!representationsOverlap(r.dataRepresentations, remoteWriter.dataRepresentations)) {
-            r.matchedWriters.remove(hex(remoteWriter.endpointGuid));
+            unmatchReader(r, hex(remoteWriter.endpointGuid));
             return;
         }
         if (!RpcDiscovery.topicsCorrespond(r.topic, r.rpc, remoteWriter.topicName, remoteWriter.rpc)) {
@@ -1679,6 +1866,7 @@ public final class RtpsParticipant {
         String key = hex(remoteWriter.endpointGuid);
         if (r.matchedWriters.putIfAbsent(key, Boolean.TRUE) == null) {
             r.matchedAt.put(key, System.currentTimeMillis());
+            matchedReader(r, key);
             log("SEDP endpoint-match: local READER topic='" + r.topic + "' type='" + r.typeName
                     + "' <- remote writer " + key
                     + typeIdNote(new byte[0], remoteWriter.typeId));
@@ -1697,7 +1885,13 @@ public final class RtpsParticipant {
             java.util.function.Predicate<DiscoveryData.Endpoint> typeMatcher, DiscoveryData.Endpoint remote,
             boolean localWrites) {
         if (!byTypeInformation) {
-            return localTypeName.equals(remote.typeName) || (typeMatcher != null && typeMatcher.test(remote));
+            if (localTypeName.equals(remote.typeName) || (typeMatcher != null && typeMatcher.test(remote))) {
+                return true;
+            }
+            log("SEDP no match: local " + (localWrites ? "WRITER" : "READER") + " type='" + localTypeName
+                    + "' and remote " + hex(remote.endpointGuid) + " type='" + remote.typeName
+                    + "': the type names differ and the type is not taken");
+            return false;
         }
         byte[] remoteInformation = remote.typeInformation == null ? new byte[0] : remote.typeInformation;
         TypeConsistency.Verdict verdict = localWrites
@@ -2253,6 +2447,7 @@ public final class RtpsParticipant {
     public void close() {
         running = false;
         timers.shutdownNow();
+        matchEvents.shutdown();
         for (TypeQuery query : typeQueries.values()) query.future.completeExceptionally(new IllegalStateException("Participant closed"));
         try {
             if (spdpChannel != null) {
@@ -2279,6 +2474,14 @@ public final class RtpsParticipant {
             }
         }
         return true;
+    }
+
+    private static byte[] unhex(String hex) {
+        byte[] out = new byte[hex.length() / 2];
+        for (int i = 0; i < out.length; i++) {
+            out[i] = (byte) Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16);
+        }
+        return out;
     }
 
     static String hex(byte[] b) {

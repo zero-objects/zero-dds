@@ -69,7 +69,7 @@ without the MUST_UNDERSTAND bit.**
 - F2b: PosixSlotAllocator publishes PID_SHM_LOCATOR in the SEDP sample.
 - F-Dual: a DataWriter with feature `flatdata-integration` sets the PID
   automatically.
-- Documentation: `internal/integration/flatdata-cross-vendor.md` explains the
+- Documentation: `docs/specs/zerodds-flatdata-1.0.md` explains the
   behaviour towards Cyclone/Fast-DDS.
 
 ## References

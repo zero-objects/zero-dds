@@ -24,7 +24,7 @@ fn offline() -> DomainParticipant {
 /// associated with each Entity": every call returns that one, so the
 /// `enabled_statuses` of §2.2.2.1.9.1 set through one is the entity's.
 #[test]
-fn an_entity_has_one_status_condition() {
+fn dcps_2_2_2_1_1_5_an_entity_has_one_status_condition() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("OneCondition", TopicQos::default())
@@ -44,7 +44,7 @@ fn an_entity_has_one_status_condition() {
 /// §2.2.2.1.9.3: `get_entity` returns the Entity the condition belongs to,
 /// of every kind.
 #[test]
-fn get_entity_returns_the_entity_of_each_kind() {
+fn dcps_2_2_2_1_1_5_get_entity_returns_the_entity_of_each_kind() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("GetEntity", TopicQos::default())
@@ -95,7 +95,7 @@ fn get_entity_returns_the_entity_of_each_kind() {
 /// The condition does not keep its entity alive: once the last handle of the
 /// entity is gone, `get_entity` is `None`, and the handle stays readable.
 #[test]
-fn get_entity_is_none_once_the_entity_is_gone() {
+fn dcps_2_2_2_1_9_3_get_entity_is_none_once_the_entity_is_gone() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("EntityGone", TopicQos::default())
@@ -116,7 +116,7 @@ fn get_entity_is_none_once_the_entity_is_gone() {
 /// §2.2.2.5.8.1: `get_datareader` returns the DataReader the condition was
 /// created on; a QueryCondition is a ReadCondition.
 #[test]
-fn a_read_condition_names_its_reader() {
+fn dcps_2_2_2_5_8_1_a_read_condition_names_its_reader() {
     let p = offline();
     let topic = p
         .create_topic::<RawBytes>("ConditionReader", TopicQos::default())
@@ -158,7 +158,7 @@ fn a_read_condition_names_its_reader() {
 /// PRECONDITION_NOT_MET; the StatusCondition of an entity detaches by the
 /// object it was attached as.
 #[test]
-fn detach_condition_wants_an_attached_condition() {
+fn dcps_2_2_2_1_6_2_detach_condition_wants_an_attached_condition() {
     let p = offline();
     let waitset = WaitSet::new();
     let attached: Arc<dyn Condition> = p.get_status_condition();

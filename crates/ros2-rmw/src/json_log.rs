@@ -83,8 +83,10 @@ fn push_escaped(out: &mut String, s: &str) {
 mod tests {
     use super::*;
 
+    /// rcutils' severity names (`g_rcutils_log_severity_names` in
+    /// rcutils/src/logging.c): DEBUG, INFO, WARN, ERROR, FATAL.
     #[test]
-    fn level_strings_match_rcutils() {
+    fn rcutils_logging_the_five_severities_carry_rcutils_names() {
         assert_eq!(LogLevel::Debug.as_str(), "DEBUG");
         assert_eq!(LogLevel::Info.as_str(), "INFO");
         assert_eq!(LogLevel::Warn.as_str(), "WARN");
@@ -92,8 +94,10 @@ mod tests {
         assert_eq!(LogLevel::Fatal.as_str(), "FATAL");
     }
 
+    /// zerodds-ros2-bridge-1.0 §8.1 with `logging.format: "json"`: one
+    /// JSON object per line with the members the module documents.
     #[test]
-    fn render_json_simple() {
+    fn ros2bridge_8_1_a_json_line_is_one_object_with_ts_level_logger_and_msg() {
         let s = render_json(
             "2026-05-06T12:34:56.789Z",
             LogLevel::Info,
@@ -106,22 +110,18 @@ mod tests {
         );
     }
 
+    /// RFC 8259 §7: a quotation mark, a reverse solidus and the control
+    /// characters U+0000 to U+001F are escaped in a string.
     #[test]
-    fn render_json_escapes_quotes_and_backslash() {
+    fn rfc8259_7_quotes_backslashes_and_control_characters_are_escaped() {
         let s = render_json("t", LogLevel::Warn, "x", "she said \"hi\\there\"");
-        // `"` → `\"`, `\` → `\\`.
-        assert!(s.contains("\\\"hi\\\\there\\\""));
-    }
-
-    #[test]
-    fn render_json_escapes_newline_and_tab() {
-        let s = render_json("t", LogLevel::Error, "x", "a\nb\tc");
-        assert!(s.contains("a\\nb\\tc"));
-    }
-
-    #[test]
-    fn render_json_escapes_control_char() {
-        let s = render_json("t", LogLevel::Debug, "x", "\x01");
-        assert!(s.contains("\\u0001"));
+        assert!(
+            s.ends_with("\"msg\":\"she said \\\"hi\\\\there\\\"\"}"),
+            "{s}"
+        );
+        let s = render_json("t", LogLevel::Error, "x", "a\nb\tc\rd");
+        assert!(s.ends_with("\"msg\":\"a\\nb\\tc\\rd\"}"), "{s}");
+        let s = render_json("t", LogLevel::Debug, "x", "\u{1}\u{1f}");
+        assert!(s.ends_with("\"msg\":\"\\u0001\\u001f\"}"), "{s}");
     }
 }

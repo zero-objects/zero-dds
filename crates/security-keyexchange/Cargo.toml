@@ -21,7 +21,7 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+safety = []  # empty marker for safe-profile lints (docs/architecture/04_safety_by_architecture.md §3)
 default = ["std", "ring-backend"]
 std = []
 # Crypto primitive backend (pick one) — see lib.rs. `ring-backend` (default,

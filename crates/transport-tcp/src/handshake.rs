@@ -101,10 +101,10 @@ pub const ACCEPTED_VERSION_DIFF: (u8, u8) = (0, 0);
 /// Fixed wire size of both handshake frames.
 pub const HANDSHAKE_WIRE_SIZE: usize = 16;
 
-/// ZeroDDS vendor id (matches `zerodds_rtps::wire_types::VendorId::ZERODDS`
-/// [0x01, 0x0F]). Hardcoded so this crate need not reference zerodds-rtps
-/// just for the constant.
-pub const VENDOR_ID_ZERODDS: [u8; 2] = [0x01, 0x0F];
+/// ZeroDDS vendor id: `zerodds_rtps::wire_types::VendorId::ZERODDS`,
+/// `[0x01, 0xF0]`. A hand-written copy here once read `[0x01, 0x0F]`, Fast
+/// DDS's OMG vendor id; `tests/contract_rtps.rs` holds the two together.
+pub const VENDOR_ID_ZERODDS: [u8; 2] = zerodds_rtps::wire_types::VendorId::ZERODDS.0;
 
 /// Bind-connection request (§5.2.1.3, fixed layout here).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -411,7 +411,7 @@ mod tests {
     }
 
     #[test]
-    fn request_roundtrip() {
+    fn tcp_3_1_request_roundtrip() {
         let req = sample_request();
         let bytes = encode_request(&req);
         assert_eq!(&bytes[..4], b"ZDDS");
@@ -422,7 +422,7 @@ mod tests {
     /// §3.1 layout, byte for byte: magic `ZDDS`, major, minor, vendor id,
     /// flags (u32 BE), logical port (u32 BE) — 16 bytes, nothing else.
     #[test]
-    fn request_wire_layout_is_sixteen_bytes_big_endian() {
+    fn tcp_3_1_request_wire_layout_is_sixteen_bytes_big_endian() {
         let req = BindConnectionRequest {
             version_major: 1,
             version_minor: 0,
@@ -437,7 +437,7 @@ mod tests {
             [
                 b'Z', b'D', b'D', b'S', // magic
                 0x01, 0x00, // version 1.0
-                0x01, 0x0F, // vendor id
+                0x01, 0xF0, // vendor id
                 0x00, 0x00, 0x00, 0x00, // flags, reserved
                 0x00, 0x00, 0x1C, 0xE8, // logical port 7400, big-endian
             ]
@@ -447,7 +447,7 @@ mod tests {
     /// §3.2 layout, byte for byte, for both statuses. The reject variant
     /// carries the reason code in the last four bytes, big-endian.
     #[test]
-    fn response_wire_layout_is_sixteen_bytes_big_endian() {
+    fn tcp_3_2_response_wire_layout_is_sixteen_bytes_big_endian() {
         let accept = BindConnectionResponse {
             status: ResponseStatus::Accept,
             version_major: 1,
@@ -459,7 +459,7 @@ mod tests {
             encode_response(&accept),
             [
                 b'Z', b'D', b'A', b'+', // magic + accept
-                0x01, 0x00, 0x01, 0x0F, // version + vendor id
+                0x01, 0x00, 0x01, 0xF0, // version + vendor id
                 0x00, 0x00, 0x00, 0x00, // flags
                 0x00, 0x00, 0x00, 0x00, // reason code 0 on accept
             ]
@@ -473,7 +473,7 @@ mod tests {
             encode_response(&reject),
             [
                 b'Z', b'D', b'A', b'-', // magic + reject
-                0x01, 0x00, 0x01, 0x0F, // version + vendor id
+                0x01, 0x00, 0x01, 0xF0, // version + vendor id
                 0x00, 0x00, 0x00, 0x00, // flags
                 0x00, 0x00, 0x00, 0x03, // reason code 3
             ]
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn request_rejects_wrong_magic() {
+    fn tcp_3_1_request_rejects_wrong_magic() {
         let mut bytes = encode_request(&sample_request());
         bytes[0] = b'H';
         bytes[1] = b'T';
@@ -509,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn response_roundtrip_accept() {
+    fn tcp_3_2_response_roundtrip_accept() {
         let resp = BindConnectionResponse {
             status: ResponseStatus::Accept,
             version_major: 1,
@@ -524,7 +524,7 @@ mod tests {
     }
 
     #[test]
-    fn response_roundtrip_reject() {
+    fn tcp_3_2_response_roundtrip_reject() {
         let resp = BindConnectionResponse {
             status: ResponseStatus::Reject(RejectReason::ResourceLimit),
             version_major: 1,
@@ -539,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn reject_reason_roundtrip_known_codes() {
+    fn tcp_3_3_reject_reason_roundtrip_known_codes() {
         for r in [
             RejectReason::VersionMismatch,
             RejectReason::ResourceLimit,
@@ -551,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn reject_reason_unknown_code_maps_to_unknown() {
+    fn tcp_3_3_reject_reason_unknown_code_maps_to_unknown() {
         assert_eq!(RejectReason::from_code(9999), RejectReason::Unknown);
     }
 
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn client_handshake_rejects_on_resource_limit() {
+    fn tcp_3_3_client_handshake_rejects_on_resource_limit() {
         let reject = encode_response(&BindConnectionResponse {
             status: ResponseStatus::Reject(RejectReason::ResourceLimit),
             version_major: 1,
@@ -631,7 +631,7 @@ mod tests {
     }
 
     #[test]
-    fn client_handshake_rejects_on_logical_port_conflict() {
+    fn tcp_3_3_client_handshake_rejects_on_logical_port_conflict() {
         let reject = encode_response(&BindConnectionResponse {
             status: ResponseStatus::Reject(RejectReason::LogicalPortConflict),
             version_major: 1,
@@ -649,7 +649,7 @@ mod tests {
     }
 
     #[test]
-    fn client_handshake_rejects_on_vendor_not_accepted() {
+    fn tcp_3_3_client_handshake_rejects_on_vendor_not_accepted() {
         let reject = encode_response(&BindConnectionResponse {
             status: ResponseStatus::Reject(RejectReason::VendorNotAccepted),
             version_major: 1,
@@ -667,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn client_handshake_errors_on_bad_response_magic() {
+    fn tcp_3_2_client_handshake_errors_on_bad_response_magic() {
         // Server answers with random bytes (HTTP probe, TLS probe).
         let mut bad = [0u8; HANDSHAKE_WIRE_SIZE];
         bad[..4].copy_from_slice(b"HTTP");
@@ -676,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn full_roundtrip_accept_via_paired_cursors() {
+    fn tcp_3_4_full_roundtrip_accept_via_paired_cursors() {
         // Simulate a client/server exchange via two back-to-back buffers.
         let mut client_to_server: Vec<u8> = Vec::new();
         let mut server_to_client: Vec<u8> = Vec::new();
@@ -730,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn server_rejects_version_mismatch() {
+    fn tcp_3_3_server_rejects_version_mismatch() {
         let mut bytes_in = encode_request(&sample_request());
         bytes_in[4] = TCP_PSM_VERSION_MAJOR.wrapping_add(1); // bump major
 

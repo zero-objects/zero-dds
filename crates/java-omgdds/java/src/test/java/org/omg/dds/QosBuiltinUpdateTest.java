@@ -58,7 +58,7 @@ class QosBuiltinUpdateTest {
     }
 
     @Test
-    void aChangedQosOfAWriterAndOfItsPublisherIsANewSampleOnThePublicationTopic() throws Exception {
+    void javapsm_2_a_changed_qos_of_a_writer_and_of_its_publisher_is_a_new_sample_on_the_publication_topic() throws Exception {
         int domain = QosFixtures.nextDomain();
         DomainParticipant observer = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);
@@ -94,7 +94,7 @@ class QosBuiltinUpdateTest {
     }
 
     @Test
-    void aChangedQosOfAReaderAndOfItsSubscriberIsANewSampleOnTheSubscriptionTopic() throws Exception {
+    void javapsm_2_a_changed_qos_of_a_reader_and_of_its_subscriber_is_a_new_sample_on_the_subscription_topic() throws Exception {
         int domain = QosFixtures.nextDomain();
         DomainParticipant observer = Qos.factory().createParticipant(domain);
         DomainParticipant other = Qos.factory().createParticipant(domain);

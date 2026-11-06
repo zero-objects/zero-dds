@@ -111,7 +111,7 @@ const SIX: &str = r##"
 "##;
 
 #[test]
-fn cpp_places_all_six_slots_in_spec_order() {
+fn xtypes_7_2_2_4_8_2_cpp_places_all_six_slots_in_spec_order() {
     let generated = cpp(SIX);
     let begin_file = at(&generated, "#include <chrono> // vb-begin-file");
     let before = at(&generated, "// vb-before");
@@ -149,7 +149,7 @@ fn cpp_places_all_six_slots_in_spec_order() {
 }
 
 #[test]
-fn cpp_answers_to_its_alias_spellings_case_insensitively() {
+fn idl4cpp_7_17_5_cpp_answers_to_its_alias_spellings_case_insensitively() {
     for language in ["c++", "cpp", "CXX", "C++"] {
         let generated = cpp(&format!(
             "@verbatim(language = \"{language}\", text = \"// vb-alias\")\nstruct Pose {{ long x; }};"
@@ -162,7 +162,7 @@ fn cpp_answers_to_its_alias_spellings_case_insensitively() {
 }
 
 #[test]
-fn a_directive_for_an_unknown_language_is_not_emitted() {
+fn xtypes_7_2_2_4_8_a_directive_for_an_unknown_language_is_not_emitted() {
     // Not an error: §8.3.5.1 lets a file carry text for another tool's
     // language. It is that backend's, and no one else's output changes.
     let generated =
@@ -174,7 +174,7 @@ fn a_directive_for_an_unknown_language_is_not_emitted() {
 }
 
 #[test]
-fn the_wildcard_reaches_all_four_columns() {
+fn xtypes_7_2_2_4_8_the_wildcard_reaches_all_four_columns() {
     let idl = "@verbatim(text = \"// vb-everyone\")\nstruct Pose { long x; };";
     for generated in [c(idl), cpp(idl), csharp(idl), java(idl)] {
         assert!(generated.contains("// vb-everyone"), "{generated}");
@@ -182,7 +182,7 @@ fn the_wildcard_reaches_all_four_columns() {
 }
 
 #[test]
-fn repeated_directives_keep_their_declaration_order() {
+fn ddsts_9_4_repeated_directives_keep_their_declaration_order() {
     let generated = cpp("@verbatim(language = \"c++\", text = \"// vb-first\")
          @verbatim(language = \"c++\", text = \"// vb-second\")
          struct Pose { long x; };");
@@ -193,7 +193,7 @@ fn repeated_directives_keep_their_declaration_order() {
 }
 
 #[test]
-fn multi_line_text_arrives_line_by_line() {
+fn ddsts_9_3_multi_line_text_arrives_line_by_line() {
     let generated = cpp(
         "@verbatim(language = \"c++\", placement = BEGIN_FILE, text = \"#ifdef VB\\n#endif\")
          struct Pose { long x; };",
@@ -203,7 +203,7 @@ fn multi_line_text_arrives_line_by_line() {
 }
 
 #[test]
-fn c_places_the_file_slots_and_the_declaration_text_inside_the_struct() {
+fn xtypes_7_2_2_4_8_c_places_the_file_slots_and_the_declaration_text_inside_the_struct() {
     let generated = c(
         "@verbatim(language = \"c\", placement = BEGIN_FILE, text = \"/* vb-begin-file */\")
          @verbatim(language = \"c\", placement = BEGIN_DECLARATION, text = \"/* vb-begin */\")
@@ -225,7 +225,7 @@ fn c_places_the_file_slots_and_the_declaration_text_inside_the_struct() {
 }
 
 #[test]
-fn csharp_puts_begin_and_end_inside_the_type_body() {
+fn idl4csharp_7_17_5_csharp_puts_begin_and_end_inside_the_type_body() {
     let generated = csharp(
         "@verbatim(language = \"c#\", placement = BEGIN_DECLARATION, text = \"// vb-begin\")
          @verbatim(language = \"cs\", placement = END_DECLARATION, text = \"// vb-end\")
@@ -245,7 +245,7 @@ fn csharp_puts_begin_and_end_inside_the_type_body() {
 }
 
 #[test]
-fn java_wraps_the_file_and_fills_the_class_body() {
+fn idl4java_7_17_5_java_wraps_the_file_and_fills_the_class_body() {
     let generated = java(
         "@verbatim(language = \"java\", placement = BEGIN_FILE, text = \"import java.time.Instant; // vb-file\")
          @verbatim(language = \"java\", placement = BEGIN_DECLARATION, text = \"// vb-begin\")

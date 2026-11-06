@@ -6,9 +6,9 @@
 //!
 //! ## Spec
 //!
-//! - **DDSI-RTPS 2.5 §9.4** — locator kind `LOCATOR_KIND_UDS`
-//!   (vendor-reserved value `0x01F00002`, in
-//!   `crates/rtps/src/wire_types.rs`).
+//! - **DDSI-RTPS 2.5 §9.3.2.4** — the locator kind `LocatorKind::Uds`,
+//!   `0x01F00002`, in the range that section reserves for vendor-specific
+//!   kinds (`crates/rtps/src/wire_types.rs`); the spec names no UDS kind.
 //! - **ZeroDDS-UDS-Transport 1.0** — vendor-specific transport spec
 //!   (filesystem path resolution, abstract namespace, SOCK_DGRAM
 //!   wire format), `docs/spec-coverage/zerodds-uds-transport-1.0.md`.
@@ -263,7 +263,10 @@ impl Transport for UdsTransport {
                 buf.truncate(len);
                 let source = source_locator(&addr, &self.config.base_dir);
                 let data: std::sync::Arc<[u8]> = std::sync::Arc::from(buf.into_boxed_slice());
-                Ok(ReceivedDatagram { source, data })
+                Ok(ReceivedDatagram {
+                    source,
+                    data: data.into(),
+                })
             }
             Err(e)
                 if matches!(
@@ -382,7 +385,7 @@ mod tests {
     }
 
     #[test]
-    fn socket_path_is_hex_under_base_dir() {
+    fn uds_2_1_socket_path_is_hex_under_base_dir() {
         let mut id = [0u8; 16];
         id[0] = 0xDE;
         id[1] = 0xAD;
@@ -394,7 +397,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_hex_id_roundtrip() {
+    fn uds_2_1_parse_hex_id_roundtrip() {
         let id = [0x11u8; 16];
         let mut hex = String::new();
         for b in id {
@@ -405,17 +408,17 @@ mod tests {
     }
 
     #[test]
-    fn parse_hex_id_rejects_wrong_length() {
+    fn uds_2_1_parse_hex_id_rejects_wrong_length() {
         assert_eq!(parse_hex_id("abc"), Err(()));
     }
 
     #[test]
-    fn parse_hex_id_rejects_non_hex() {
+    fn uds_2_1_parse_hex_id_rejects_non_hex() {
         assert_eq!(parse_hex_id(&"zz".repeat(16)), Err(()));
     }
 
     #[test]
-    fn bind_creates_socket_file() {
+    fn uds_4_1_bind_creates_socket_file() {
         let tmp = tempfile::tempdir().unwrap();
         let t = UdsTransport::bind(id_for(1), cfg_with_tmp(tmp.path())).unwrap();
         let expected = socket_path(tmp.path(), id_for(1));
@@ -428,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn bind_reuses_path_after_stale_leftover() {
+    fn uds_4_1_bind_reuses_path_after_stale_leftover() {
         let tmp = tempfile::tempdir().unwrap();
         let path = socket_path(tmp.path(), id_for(2));
         fs::create_dir_all(tmp.path()).unwrap();
@@ -440,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn send_and_recv_roundtrip_same_process() {
+    fn uds_3_1_send_and_recv_roundtrip_same_process() {
         let tmp = tempfile::tempdir().unwrap();
         let rx = UdsTransport::bind(id_for(10), cfg_with_tmp(tmp.path())).unwrap();
         let tx = UdsTransport::bind(id_for(11), cfg_with_tmp(tmp.path())).unwrap();
@@ -454,7 +457,7 @@ mod tests {
     }
 
     #[test]
-    fn send_rejects_non_uds_locator() {
+    fn uds_1_1_send_rejects_non_uds_locator() {
         let tmp = tempfile::tempdir().unwrap();
         let tx = UdsTransport::bind(id_for(20), cfg_with_tmp(tmp.path())).unwrap();
         let res = tx.send(&Locator::udp_v4([127, 0, 0, 1], 7400), b"x");
@@ -462,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn send_rejects_oversize_payload() {
+    fn uds_3_3_send_rejects_oversize_payload() {
         let tmp = tempfile::tempdir().unwrap();
         let tx = UdsTransport::bind(id_for(30), cfg_with_tmp(tmp.path())).unwrap();
         let big = vec![0u8; 10_000]; // > 8192 cfg limit
@@ -471,7 +474,7 @@ mod tests {
     }
 
     #[test]
-    fn send_to_missing_peer_is_io_error() {
+    fn uds_4_3_send_to_missing_peer_is_io_error() {
         let tmp = tempfile::tempdir().unwrap();
         let tx = UdsTransport::bind(id_for(40), cfg_with_tmp(tmp.path())).unwrap();
         let res = tx.send(&Locator::uds(id_for(99)), b"nobody home");
@@ -479,7 +482,7 @@ mod tests {
     }
 
     #[test]
-    fn recv_times_out_when_idle() {
+    fn uds_4_4_recv_times_out_when_idle() {
         let tmp = tempfile::tempdir().unwrap();
         let rx = UdsTransport::bind(id_for(50), cfg_with_tmp(tmp.path())).unwrap();
         let res = rx.recv();
@@ -487,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn local_locator_reflects_bind_id() {
+    fn uds_1_1_local_locator_reflects_bind_id() {
         let tmp = tempfile::tempdir().unwrap();
         let t = UdsTransport::bind(id_for(60), cfg_with_tmp(tmp.path())).unwrap();
         assert_eq!(t.local_locator(), Locator::uds(id_for(60)));
@@ -496,7 +499,7 @@ mod tests {
     // ---- Coverage-Boost ----
 
     #[test]
-    fn classify_send_error_maps_kinds() {
+    fn uds_4_3_classify_send_error_maps_kinds() {
         use std::io;
         let cases = [
             (io::ErrorKind::NotFound, "destination socket missing"),
@@ -524,7 +527,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn ensure_base_dir_rejects_symlink() {
+    fn uds_2_2_ensure_base_dir_rejects_symlink() {
         let tmp = tempfile::tempdir().unwrap();
         let real = tmp.path().join("real");
         fs::create_dir(&real).unwrap();
@@ -536,7 +539,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_base_dir_rejects_file_path() {
+    fn uds_2_2_ensure_base_dir_rejects_file_path() {
         let tmp = tempfile::tempdir().unwrap();
         let file = tmp.path().join("not-a-dir");
         fs::write(&file, b"").unwrap();
@@ -545,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn ensure_base_dir_creates_missing_dir() {
+    fn uds_2_2_ensure_base_dir_creates_missing_dir() {
         let tmp = tempfile::tempdir().unwrap();
         let missing = tmp.path().join("created");
         ensure_base_dir(&missing).unwrap();
@@ -557,7 +560,7 @@ mod tests {
     /// ZeroDDS takes `0x01F0_0002` for UDS; the transport binds that
     /// value, so a renumbering has to break here.
     #[test]
-    fn locator_kind_is_the_vendor_reserved_uds_value() {
+    fn rtps_9_3_2_4_locator_kind_is_the_vendor_reserved_uds_value() {
         let loc = Locator::uds(id_for(90));
         assert_eq!(loc.kind.as_i32(), 0x01F0_0002);
         assert!(
@@ -572,7 +575,7 @@ mod tests {
     /// mode `0700`, no group or other bits.
     #[cfg(unix)]
     #[test]
-    fn ensure_base_dir_creates_dir_with_mode_0700() {
+    fn uds_2_2_ensure_base_dir_creates_dir_with_mode_0700() {
         use std::os::unix::fs::PermissionsExt;
         let tmp = tempfile::tempdir().unwrap();
         let created = tmp.path().join("private");
@@ -585,7 +588,7 @@ mod tests {
     /// as two receives with the original lengths — no coalescing, no
     /// framing layer needed on top.
     #[test]
-    fn preserves_message_boundaries_two_datagrams() {
+    fn uds_3_1_preserves_message_boundaries_two_datagrams() {
         let tmp = tempfile::tempdir().unwrap();
         let rx = UdsTransport::bind(id_for(70), cfg_with_tmp(tmp.path())).unwrap();
         let tx = UdsTransport::bind(id_for(71), cfg_with_tmp(tmp.path())).unwrap();
@@ -604,7 +607,7 @@ mod tests {
     /// platform. On macOS the send buffer started at 2048 bytes, and
     /// anything larger failed with `EMSGSIZE`.
     #[test]
-    fn a_datagram_near_the_configured_limit_arrives_whole() {
+    fn uds_3_4_a_datagram_near_the_configured_limit_arrives_whole() {
         let tmp = tempfile::tempdir().unwrap();
         let cfg = cfg_with_tmp(tmp.path());
         let rx = UdsTransport::bind(id_for(82), cfg.clone()).unwrap();
@@ -631,7 +634,7 @@ mod tests {
     /// not a guarantee the OS honours — see the `partial` remainder of
     /// the §3 spec item.
     #[test]
-    fn oversized_for_the_kernel_fails_loudly_and_never_truncates() {
+    fn uds_3_3_oversized_for_the_kernel_fails_loudly_and_never_truncates() {
         let tmp = tempfile::tempdir().unwrap();
         let cfg = cfg_with_tmp(tmp.path());
         let limit = cfg.max_datagram;

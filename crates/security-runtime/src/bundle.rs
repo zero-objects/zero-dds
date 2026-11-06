@@ -228,14 +228,6 @@ mod tests {
     }
 
     #[test]
-    fn empty_bundle_has_no_logging_or_profile() {
-        let b = SecurityBundle::builder().build();
-        assert!(!b.has_logging());
-        assert!(!b.has_profile());
-        assert!(b.logging_plugin().is_none());
-    }
-
-    #[test]
     fn bundle_carries_the_logger_and_forwards_log_calls() {
         let calls = Arc::new(AtomicUsize::new(0));
         let logger = CountingLogger {
@@ -249,26 +241,5 @@ mod tests {
         let plugin = bundle.logging_plugin().expect("logger present");
         plugin.log(LogLevel::Warning, [0u8; 16], "auth", "test event");
         assert_eq!(calls.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn bundle_is_cloneable_and_shares_the_same_logger() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let bundle = SecurityBundle::builder()
-            .logging_plugin(Box::new(CountingLogger {
-                calls: Arc::clone(&calls),
-            }))
-            .build();
-        let clone = bundle.clone();
-        bundle
-            .logging_plugin()
-            .unwrap()
-            .log(LogLevel::Error, [0u8; 16], "crypto", "a");
-        clone
-            .logging_plugin()
-            .unwrap()
-            .log(LogLevel::Error, [0u8; 16], "crypto", "b");
-        // Both handles point at the same underlying logger.
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }

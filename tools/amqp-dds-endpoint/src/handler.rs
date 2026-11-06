@@ -685,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_connection_open_close_round_trip() {
+    fn ddsamqp_2_1_handle_connection_open_close_round_trip() {
         // Client sequence: AMQP header + Open + Close.
         let mut input = Vec::new();
         input.extend(AmqpProtocol::Amqp.as_bytes()); // protocol header
@@ -733,7 +733,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_connection_sasl_then_amqp() {
+    fn ddsamqp_2_1_handle_connection_sasl_then_amqp() {
         // Client: SASL header → expects sasl-mechanisms +
         // sends sasl-init → expects sasl-outcome → sends
         // AMQP header → sends Open → sends Close.
@@ -782,7 +782,7 @@ mod tests {
     }
 
     #[test]
-    fn access_control_deny_attach_yields_unauthorized_metric() {
+    fn ddsamqp_2_1_access_control_deny_attach_yields_unauthorized_metric() {
         use zerodds_amqp_endpoint::security::{
             AccessControlPlugin, AccessDecision, AccessOp, IdentityToken,
         };
@@ -838,7 +838,7 @@ mod tests {
     }
 
     #[test]
-    fn access_control_allow_does_not_increment_unauthorized() {
+    fn ddsamqp_2_1_access_control_allow_does_not_increment_unauthorized() {
         use zerodds_amqp_endpoint::security::AllowAll;
         let metrics = Arc::new(MetricsHub::new());
         let cfg = HandlerConfig::for_tests(metrics.clone()).with_access_control(Arc::new(AllowAll));

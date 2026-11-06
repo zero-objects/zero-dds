@@ -27,7 +27,7 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 - **SIGHUP-Reload:** Der Reload liest dieselben geschichteten Quellen neu (`reload_command_line` im Binary). Eine Konfiguration, die nicht lädt, ändert nichts („reload refused“). Was nur beim Start gebaut wird, bleibt und wird als „reload needs a restart for: …“ geloggt. Der Sicherheitskontext wird als Ganzes über `LiveSecurity::replace` getauscht.
 - **Admin-Endpunkt:** `metrics.enabled` schaltet einen kleinen HTTP-Server mit `/metrics` (Prometheus), `/catalog` (JSON) und `/healthz`. Ist `metrics.listen` leer, hat jeder Daemon eine eigene Default-Adresse: ws `127.0.0.1:9091`, mqtt 9092, coap 9093, amqp 9094, grpc 9095, corba 9096.
 - **OTLP:** `otlp_config_from_env` liest `OTEL_EXPORTER_OTLP_ENDPOINT`; ein Flush-Thread exportiert alle 5 s (`spawn_otlp_flush_loop`).
-- **Interop-Tests:** Tests gegen fremde Gegenstellen sind `#[ignore]` und über Feature `cross-vendor-tests` bzw. Umgebungsvariablen (`MQTT_MOSQUITTO`, `COAP_LIBCOAP`, `AMQP_RABBITMQ`, `GRPC_GRPCURL`, `WS_PYTHON`) freigeschaltet. Mehrere Tests schlagen fehl, wenn das Fremdwerkzeug fehlt, statt still zu überspringen (z. B. `mosquitto_qos.rs`, `grpc-bridge/tests/cross_vendor.rs::require_grpcurl`, `websocat_can_connect_to_zerodds_daemon`). Diese Tests laufen in keiner CI; sie werden auf dem Linux-Testhost von Hand gefahren, zusammen mit `open62541_interop` (OPC UA) und den `durability-svc`-Tests mit PostgreSQL und DuckDB.
+- **Interop-Tests:** Tests gegen fremde Gegenstellen sind `#[ignore]`. Sie laufen in wöchentlichen Jobs der Integrations-Säule (`ci/integration_scenarios.py`): die der CoAP-, MQTT-, WebSocket- und gRPC-Bridge in `integration-bridges-vendor` mit libcoap, Mosquitto, Python `websockets` und grpcurl, die der AMQP-Pakete in `integration-bridges-vendor-amqp` mit RabbitMQ (pika, qpid-proton), die der CORBA-Pakete in `integration-bridges-vendor-corba` mit omniORB und JacORB, die gegen TAO in `vendor-live-corba-tao` (`ci/interop-omg-weekly.yml`); ein fehlendes Fremdwerkzeug lässt sie fehlschlagen. Die `durability-svc`-Tests mit PostgreSQL und DuckDB laufen auf dem Linux-Testhost von Hand; den Daemon der OPC-UA-Bridge prüft das Szenario `bridge-opcua` der Integrations-Säule gegen open62541.
 
 ### `direction`-Semantik pro Daemon (verifiziert im Code)
 
@@ -46,7 +46,7 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 
 **Zweck.** WebSocket-Stack nach RFC 6455 mit permessage-deflate (RFC 7692), URI-Parser und UTF-8-Validator als `no_std + alloc`-Bibliothek; mit Feature `daemon` der Daemon, der DDS-Topics als WebSocket-Pfade anbietet.
 
-**Abbildung.** Ein Topic ist ein HTTP-Pfad (`ws_path`, Default `/topics/<slug>` aus `config::default_ws_path`, `::` → Trenner, Kleinschreibung). Nachrichten sind JSON-Operationen (`src/dds_bridge.rs`): `{"op":"subscribe"|"unsubscribe"|"publish", "topic", …}`, der Daemon sendet `{"op":"notify","topic",…,"data"}`; ACL-Verstöße liefern `{"op":"error","code":403,"reason":"acl-deny-read|acl-deny-write"}` (`src/daemon/server.rs:1037-1095`).
+**Abbildung.** Ein Topic ist ein HTTP-Pfad (`ws_path`, Default `/topics/<slug>` aus `config::default_ws_path`, `::` → Trenner, Kleinschreibung). Samples gehen als Binärrahmen nach Spec §4.3 hinaus (`ZDB1`, Flags, der Encapsulation-Header, der Body), an einen Client, der das Subprotokoll `+json` verlangt, als deren JSON-Textrahmen (`src/daemon/json_frames.rs`: `{"topic","op":"publish"|"dispose"|"register"|"unregister","key_hash","data","timestamp_ns"}`, der Typ aus dem `idl_file` des Topics); Steuernachrichten sind `{"op":"subscribe"|"unsubscribe","topics":[…]}` und `{"op":"ping"}`, beantwortet mit `subscribed`, `pong` und `{"op":"error","code","message"}` (403 bei einem ACL-Verstoß, `src/daemon/server.rs`, `handle_inbound_frame`).
 
 **Einstiegspunkte.**
 - `src/bin/zerodds-ws-bridged.rs` — `main`, `run()` (Warteschleife auf `stop_requested()`, dann `shutdown()`).
@@ -67,8 +67,8 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 **Shutdown.** Stop-Flag, `/healthz` meldet ungesund, Selbstverbindung weckt `accept()`, `router.broadcast_shutdown()` sendet Close-Frame `1001 "going away"` (`server.rs:745`), danach Join aller Threads.
 
 **Interop-Tests** (`tests/`):
-- `websockets_py_interop_e2e.rs` — Python-Modul `websockets` gegen die Bibliothek (Text, Binär, Ping); Gate `WS_PYTHON=1`.
-- `cross_vendor.rs` — `python_websockets_client_handshakes_and_pings_the_daemon` (Python `websockets` gegen den Daemon), `websocat_can_connect_to_zerodds_daemon` (websocat). `rfc6455_handshake_against_zerodds_daemon_returns_101` nutzt einen eigenen Client; der Modulkommentar sagt ausdrücklich, dass dies keine Fremdmessung ist.
+- `websockets_py_interop_e2e.rs` — Python-Modul `websockets` gegen die Bibliothek (Text, Binär, Ping); läuft in `integration-bridges-vendor`.
+- `cross_vendor.rs` — `wsbridge_12_3_rfc6455_handshake_against_zerodds_daemon_returns_101` nutzt einen eigenen Client; der Modulkommentar sagt ausdrücklich, dass dies keine Fremdmessung ist. Python `websockets` gegen den Daemon prüft die Integrations-Säule (`bridges::websocket_bridge_against_python_websockets`).
 - Weitere: `daemon_e2e.rs`, `security_e2e.rs`, `fuzz_smoke.rs`, `example_yaml_loadback.rs`.
 
 ---
@@ -97,10 +97,9 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 **Shutdown** (§9.2, `server.rs:136-210`): DDS-Pumpen stoppen, auf Broker-Acks für QoS-1/2 warten (höchstens `mqtt.drain_timeout_secs`, Default 30), offene Acks werden geloggt, dann DISCONNECT mit Reason `0x00`, dann Join.
 
 **Interop-Tests** (Fremdpeer Eclipse Mosquitto):
-- `mosquitto_interop_e2e.rs` — MQTT 3.1.1 gegen Mosquitto-Broker, `mosquitto_pub/sub -V mqttv311`; Gate `MQTT_MOSQUITTO`.
+- `mosquitto_interop_e2e.rs` — MQTT 3.1.1 gegen einen eigenen Mosquitto-Broker des Tests, `mosquitto_pub/sub -V mqttv311`; läuft in `integration-bridges-vendor`.
 - `mosquitto_qos.rs` — QoS-1/2-Flüsse und §9.2-Shutdown gegen Mosquitto; fehlende Binaries lassen den Test fehlschlagen.
 - `websocket_broker.rs` — `ws://`/`wss://`-Broker-Schemata gegen Mosquittos WebSocket-Listener.
-- `cross_vendor.rs` — Daemon gegen Mosquitto.
 - Ohne Fremdpeer: `broker_server_e2e.rs` (eigener Broker, 3.1.1 ⇄ 5.0), `daemon_e2e.rs`, `security_e2e.rs`, `fuzz_smoke.rs`, `example_yaml_loadback.rs`.
 
 ---
@@ -129,7 +128,7 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 **Shutdown** (§9.2): keine neuen Requests und Samples, alle Observations werden beendet (`end_observations`), DTLS-Thread wird benachrichtigt, UDP-Empfang per Selbst-Datagramm geweckt, dann Join.
 
 **Interop-Tests** (Fremdpeer libcoap):
-- `libcoap_interop_e2e.rs` — libcoap-Client `coap-client` gegen einen Responder aus dem eigenen Codec; Gate `COAP_LIBCOAP`.
+- `libcoap_interop_e2e.rs` — libcoap-Client `coap-client` gegen einen Responder aus dem eigenen Codec; läuft in `integration-bridges-vendor`.
 - `cross_vendor.rs` — libcoap-Client gegen den Daemon.
 - `oscore_rfc8613_vectors.rs` — Testvektoren aus RFC 8613 Anhang C, bytegenau.
 - Ohne Fremdpeer: `daemon_e2e.rs`, `daemon_dtls_e2e.rs`, `dtls_coap_e2e.rs`, `daemon_oscore_e2e.rs`, `security_e2e.rs`, `fuzz_smoke.rs`, `example_yaml_loadback.rs`.
@@ -157,7 +156,7 @@ Die Abdeckung pro Spec-Abschnitt steht in `docs/spec-coverage/zerodds-<name>-1.0
 - `src/daemon_runtime.rs` — Metriken, Admin-Endpunkte; `src/bridge_security.rs`.
 - Protokollmodule: `sasl.rs`, `scram.rs`, `session.rs`, `link.rs`, `routing.rs`, `mapping.rs`, `properties.rs`, `dds_bridge.rs`, `management.rs`, `metrics.rs`, `security.rs`, `coexistence.rs`, `rpc_correlation.rs`, `errors.rs`, `limits.rs`, `keyhash.rs`, `annex_a.rs`, `codegen_helpers.rs`, `config_xml.rs`, `client.rs`, `backoff.rs`.
 
-**Features:** `default = ["std"]`, `std` (zieht Daemon-Abhängigkeiten, `roxmltree`), `alloc`, `cross-vendor-tests`.
+**Features:** `default = ["std", "ring-backend"]`, `std` (zieht Daemon-Abhängigkeiten, `roxmltree`), `alloc`, `ring-backend`/`aws-lc` (Krypto-Backend von `zerodds-bridge-security`).
 
 **Konfiguration** (`KEYS`): `domain`, `log_level`; `amqp.{broker_url,container_id,channel_max,max_frame_size,idle_time_out_ms,hostname}`, `amqp.sasl.{mechanism,username,password}` (Mechanismen `PLAIN|SCRAM-SHA-256|EXTERNAL|ANONYMOUS|XOAUTH2`, Default `ANONYMOUS`), `amqp.tls.{enabled,ca_file,cert_file,key_file,verify_hostname,alpn}`, `amqp.reconnect.{initial_delay_ms,max_delay_ms,factor}`; `acl.{default_deny,rules}` (Regel: `topic`, `read`, `write`); `metrics.{enabled,listen,path}`; `catalog.{enabled,address}` (Default-Adresse `zerodds.bridge.<container-id>.catalog`); `topics[]` mit `dds_name`, `dds_type`, `keyed`, `amqp_address`, `direction`, `sender.{settled,durable,snd_settle_mode,rcv_settle_mode}`, `receiver.credit`, `qos`.
 Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`, ALPN fest `amqp`.
@@ -168,11 +167,9 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 
 **Shutdown.** DDS-Samples werden nicht mehr angenommen, laufende Transfers bis `DRAIN_BUDGET = 30 s` abgewartet, dann detach, end, close (`bridge_daemon.rs:1369`, `:1870`, `:2004`).
 
-**Interop-Tests** (Fremdpeer RabbitMQ 4.0; Gate `AMQP_RABBITMQ`):
-- `bridge_rabbitmq_e2e.rs` — Daemon gegen RabbitMQ, `pika` (AMQP 0.9.1) als Referenzclient.
-- `rabbitmq_amqp10_e2e.rs` — `AmqpClient` → RabbitMQ → Referenzconsumer.
-- `rabbitmq_cross_stack_e2e.rs` — eigener AMQP-1.0- und eigener 0.9.1-Stack über dieselbe RabbitMQ-Queue.
-- `cross_vendor.rs` — gegen RabbitMQ (der Feature-Kommentar in `Cargo.toml` nennt zusätzlich qpid; im Test nicht geprüft).
+**Interop-Tests** (Fremdpeer RabbitMQ, je Test ein eigener Knoten; Job `integration-bridges-vendor-amqp`):
+- `bridge_rabbitmq_e2e.rs` — Daemon gegen RabbitMQ, `pika` (AMQP 0.9.1) als Referenzclient; der Dispose an einen Leser von Cyclone DDS bzw. Fast DDS in `vendor-live-dispose-bridges`.
+- `rabbitmq_amqp10_e2e.rs` — `AmqpClient` → RabbitMQ → qpid-proton als Referenzconsumer.
 - Ohne Fremdpeer: `broker_tls_sasl.rs` (SCRAM-SHA-256 und EXTERNAL gegen einen rustls-Testserver), `security_e2e.rs`, `bridge_e2e.rs`, `e2e_multi_bridge_hop.rs`, `annex_a_idl_roundtrip.rs`, `proptest_state_machine.rs`, `fuzz_smoke.rs`.
 
 ### zerodds-amqp-0-9-1
@@ -181,7 +178,7 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 **Einstiegspunkte:** `src/client.rs` (`Amqp091Client`), `src/frame.rs`, `src/method.rs`, `src/types.rs`.
 **Features:** `default = ["std"]`, `std`, `alloc`.
 **Einbindung:** nur Dev-Abhängigkeit von `zerodds-amqp-endpoint` für `rabbitmq_cross_stack_e2e.rs`; der Daemon nutzt es nicht (`crates/amqp-endpoint/Cargo.toml:97-99`).
-**Interop-Test:** `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs` gegen RabbitMQ 4.0; Gate `AMQP_RABBITMQ`.
+**Interop-Test:** `crates/amqp-0-9-1/tests/rabbitmq_amqp091_e2e.rs` gegen RabbitMQ (Job `integration-bridges-vendor-amqp`).
 
 ### tools/amqp-dds-endpoint
 
@@ -206,7 +203,7 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 - `src/daemon_runtime.rs` — Admin-Endpunkte, Signal-Watcher, `build_grpc_tls_config` (ALPN `h2`).
 - Bibliothek: `frame.rs`, `path.rs`, `timeout.rs`, `status.rs`, `metadata.rs`, `server.rs`, `reflection.rs`, `service_gen.rs`, `qos_translation.rs`, `bridge_security.rs`.
 
-**Features:** `default = ["std"]`, `std`, `alloc`, `cross-vendor-tests`, `dds-runtime` (leerer Alias für `std`; die DDS-Seite gehört zu `std`).
+**Features:** `default = ["std", "ring-backend"]`, `std`, `alloc`, `ring-backend`/`aws-lc`, `dds-runtime` (leerer Alias für `std`; die DDS-Seite gehört zu `std`).
 
 **Konfiguration** (`KEYS`): `domain`, `log_level`; `grpc.bind` (Default `0.0.0.0:50051`), `grpc.tls.{enabled,cert_file,key_file,client_ca_file,require_client_cert}`, `grpc.reflection.enabled`; `auth.{mode,bearer_token,bearer_subject}`, `auth.jwt.*`; `metrics.{enabled,listen}`; `topics[]` mit `dds_name`, `grpc_service`, `direction`, `acl.{publish,subscribe}`.
 
@@ -217,7 +214,7 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 **Shutdown.** Jede Verbindung prüft das Stop-Flag im Takt `CONN_POLL`; ein laufender Aufruf endet zuerst, dann GOAWAY mit der letzten Stream-ID (RFC 7540 §6.8). Leerlaufende Verbindungen erhalten ebenfalls GOAWAY.
 
 **Interop-Tests:**
-- `cross_vendor.rs` — `grpcurl`; Gate `GRPC_GRPCURL=1`, fehlendes `grpcurl` lässt den Test fehlschlagen.
+- `cross_vendor.rs` — `grpcurl` (Job `integration-bridges-vendor`); fehlendes `grpcurl` lässt den Test fehlschlagen.
 - Ohne Fremdpeer: `daemon_security_e2e.rs` (Binary mit Konfigdatei, HTTP/2 über TCP/TLS), `security_e2e.rs`, `dds_bridge_e2e.rs`, `bridge_e2e.rs`, `fuzz_smoke.rs`.
 
 ### zerodds-http2
@@ -248,9 +245,8 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 - `src/bin/zerodds-corba-bridged.rs` — `CONFIG_STEM = "corba-bridged"`, Signal-Watcher, `run_with_reload`.
 - `src/bridge_daemon.rs` — `KEYS` (`:275`), `is_key`, `from_config` (`:373`), Reload (`:1654`), `drain` (`:2975`).
 - `src/daemon_runtime.rs`, `src/bridge_security.rs` (`build_corba_tls_config`, SSLIOP ohne ALPN), `src/csiv2_wire.rs`.
-- Bibliothek: `mapping.rs`, `servant.rs`, `sync.rs`, `notify.rs`, `locate.rs`, `wire.rs`, `qos_translation.rs`.
 
-**Features:** `default = ["std"]`, `std`, `alloc`, `cross-vendor-tests`.
+**Features:** `default = ["std", "ring-backend"]`, `std`, `alloc`, `ring-backend`/`aws-lc`.
 
 **Konfiguration** (`KEYS`): `domain`, `log_level`; `corba.orb_id`, `corba.iiop.{bind,giop_version,fragment_size,max_message_size}` (Default-Bind `0.0.0.0:6833`, `giop_version` `1.0|1.1|1.2`), `corba.ssliop.{enabled,bind,cert_file,key_file,ca_file,require_client_cert}` (Default-Bind `0.0.0.0:6834`), `corba.ior.{naming_service,publish_to_naming,ior_file}`, `corba.csiv2.enabled`; `acl.{default_deny,rules}` (Regel: `subject`, `allow_invoke`); `metrics.{enabled,listen,path}`; `mappings[]` mit `repo_id`, `operation`, `direction`, `request_topic`, `reply_topic`, `notify_topic`, `correlation_id`, `timeout_ms`, `qos`, `targets`, `target_object_keys`.
 `corba.ior.publish_to_naming` (Default `false`) bindet beim Start den Servant jedes empfangenden Mappings in `corba.ior.naming_service` und braucht diesen Wert (`bridge_daemon.rs:476`, `:523`, `:2793`). `corba.csiv2.enabled` (Default `false`) trägt `TAG_CSI_SEC_MECH_LIST` in die IOR ein und braucht `corba.csiv2.gssup.password_file` (`:541`, `:569`, `:951`).
@@ -261,10 +257,11 @@ Festwerte: `amqp.tls.verify_hostname` nur `true`, `metrics.path` nur `/metrics`,
 
 **Shutdown** (§9.2, `bridge_daemon.rs:2975`): neue Requests erhalten `TRANSIENT`; offene erhalten ihre Reply oder `TIMEOUT`, höchstens `DRAIN_LIMIT = 30 s`; Rest `TRANSIENT` (completion MAYBE); danach `CloseConnection` an jede Verbindung.
 
-**Interop-Tests** (Fremdpeer omniORB 4.3):
-- `omniorb_e2e.rs` — omniORB-Programme aus `crates/corba-dds-bridge/tests/omniorb` (omniidl + g++) gegen den Daemon.
-- `cross_vendor.rs` — gegen omniORB.
-- Ohne Fremdpeer: `bridge_e2e.rs`, `security_e2e.rs`.
+**Interop-Tests** (Fremdpeers omniORB 4.3, JacORB 3.9, TAO):
+- `omniorb_e2e.rs` — omniORB-Programme aus `crates/corba-dds-bridge/tests/omniorb` (omniidl + g++) gegen den Daemon; `cross_vendor.rs` — `catior` liest die IOR des Daemons (beide im Job `integration-bridges-vendor-corba`).
+- `jacorb_e2e.rs` — JacORB-Programme aus `tests/jacorb` (JacORBs IDL-Compiler + javac, Java 8), im selben Job.
+- `tao_e2e.rs` — TAO-Programme aus `tests/tao` (tao_idl + g++, das TAO des OpenDDS-Builds), Job `vendor-live-corba-tao`.
+- Ohne Fremdpeer: `bridge_e2e.rs`, `plain_cdr_e2e.rs`, `naming_service_e2e.rs`, `csiv2_e2e.rs`, `security_e2e.rs`.
 
 ---
 
@@ -324,7 +321,7 @@ IDL → Rust-Generator für CORBA-Konstrukte (Interfaces, Valuetypes, Components
 Einstiegspunkte: `src/emitter.rs`, `src/interface_emit.rs`, `src/valuetype_emit.rs`, `src/component_emit.rs`, `src/ami_emit.rs`, `src/type_map.rs`, `src/value_wire.rs`, `src/runtime.rs`.
 Features: keine `[features]`-Sektion.
 Spec: `docs/specs/zerodds-corba-rust-1.1.md`.
-Tests: `crates/corba-rust/tests/snapshot_codegen.rs` (+ `crates/corba-rust/tests/snapshots`), `crates/corba-rust/tests/compile_check.rs` (erzeugter Code wird kompiliert), `crates/corba-rust/tests/wire_giop.rs` (ValueBase-Stream §8.3/§4.4).
+Tests: `crates/corba-rust/tests/codegen_mapping.rs` (Formen der Abbildungstabellen der Spec), `crates/corba-rust/tests/compile_check.rs` (erzeugter Code wird mit `cargo check` übersetzt), `crates/corba-rust/tests/wire_giop.rs` (ValueBase-Strom gegen die Oktette von CORBA §15.3.4).
 
 ### zerodds-corba-codegen
 Die 13 Sondertypen aus CORBA 3.3 Annex A.1, die Typ-Traits aus A.1.1 und die Stub-/Skeleton-Abbildungen über den gemeinsamen AST, pro Sprach-PSM.
@@ -369,7 +366,8 @@ Einstiegspunkte: `src/plan.rs`, `src/xml.rs`, `src/repository.rs`, `src/executio
 Harness für Geschwindigkeit und ORB-übergreifende Interop: Acceptor↔POA-Request-Schleife (`serve`) und Client-Helfer (`invoke_on`) mit handmarshalltem `Echo`-Servant über den echten GIOP/IIOP/POA/CDR-Stack.
 Einstiegspunkte: `src/lib.rs`, `src/runtime.rs`; Binaries in `src/bin/`: `echo_bench`, `echo_bench_codegen`, `bench_features`, `interop_client`, `interop_server`, `ssliop_bench`, `ssliop_client`, `ssliop_server`.
 Features: keine `[features]`-Sektion.
-Tests mit Fremd-ORB: `ami_cross_orb.rs` (JacORB/omniORB/TAO), `bidir_cross_orb.rs`, `csiv2_cross_orb.rs`, `valuetype_cross_orb.rs`, `jacorb_live_ots_handshake.rs`, `context_observer.rs` (JacORB); `codegen_roundtrip.rs` nennt omniORB/TAO. Ohne Fremd-ORB: `amh.rs`, `ami.rs`, `ami_generated.rs`, `bidir_giop.rs`, `csiv2.rs`, `dii_dsi.rs`, `giop_version.rs`, `uiop.rs` (Unix-Domain-Socket-Transport, Tag `TAG_ZERODDS_UDS_TRANS`), `valuetype_wire.rs`.
+Tests mit Fremd-ORB: `omniorb_cross_orb.rs`, `tao_cross_orb.rs`, `jacorb_cross_orb.rs` (Echo und Bench in beide Richtungen, CosNaming, SSLIOP und AMI mit omniORB, der OTS-Kontext des transaktionalen JacORB-Clients, Features und Shapes gegen omniORB), `bidir_cross_orb.rs`, `csiv2_cross_orb.rs`, `valuetype_cross_orb.rs`, `context_observer.rs` (JacORB). Ohne Fremd-ORB: `amh.rs`, `ami.rs`, `ami_generated.rs`, `bidir_giop.rs`, `csiv2.rs`, `dii_dsi.rs`, `giop_version.rs`, `uiop.rs` (Unix-Domain-Socket-Transport, Tag `TAG_ZERODDS_UDS_TRANS`).
+`bidir_cross_orb.rs`, `csiv2_cross_orb.rs` und `valuetype_cross_orb.rs` bauen und starten ihren JacORB-Server selbst (`tests/support/jacorb.rs`); die drei `*_cross_orb.rs` der ORBs starten die Programme, die `competitors/build_peers.sh` baut (`ZERODDS_CORBA_PEERS`). omniORB und JacORB laufen im Job `integration-bridges-vendor-corba`, TAO in `vendor-live-corba-tao`.
 
 ### zerodds-corba-ccm
 CCM 4.0 (`formal/2006-04-01`) §6 und §13: Component Container, CIF, CIDL-Modell, Home, Ports, Lifecycle, Lightweight CCM, PSS, TimerEventService, Dynamic API.

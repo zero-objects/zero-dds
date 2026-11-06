@@ -572,7 +572,8 @@ impl SedpStack {
 
     /// A participant has been lost (SPDP lease timeout). Cascade
     /// cleanup: remove all proxies with this prefix, delete cache
-    /// entries. Returns (removed_pub_proxies, removed_sub_proxies).
+    /// entries. Returns the numbers of publications and subscriptions of
+    /// that participant removed from the cache.
     pub fn on_participant_lost(&mut self, prefix: GuidPrefix) -> (usize, usize) {
         let mut removed = 0usize;
         // Writer side: remove remote reader
@@ -1379,7 +1380,7 @@ mod tests {
     /// (dds-rtps Test_Ownership_3 against OpenSplice, READER_NOT_MATCHED in
     /// about half the runs, captured on the Linux host).
     #[test]
-    fn a_heartbeat_past_a_hole_releases_the_buffered_subscription() {
+    fn rtps_8_5_4_1_a_heartbeat_past_a_hole_releases_the_buffered_subscription() {
         use zerodds_rtps::message_builder::MessageBuilder;
         use zerodds_rtps::submessages::HeartbeatSubmessage;
         use zerodds_rtps::wire_types::SequenceNumber;
@@ -1564,7 +1565,7 @@ mod tests {
     }
 
     #[test]
-    fn routing_unknown_with_wrong_writer_does_not_match() {
+    fn rtps_8_6_1_routing_unknown_with_wrong_writer_does_not_match() {
         // UNKNOWN reader_id + wrong writer_id → no match (no misrouting).
         assert!(!routes_to_pub(
             EntityId::UNKNOWN,
@@ -1583,16 +1584,7 @@ mod tests {
     }
 
     #[test]
-    fn new_stack_has_no_proxies() {
-        let s = SedpStack::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
-        assert_eq!(s.pub_writer().inner().reader_proxy_count(), 0);
-        assert_eq!(s.pub_reader().inner().writer_proxy_count(), 0);
-        assert_eq!(s.sub_writer().inner().reader_proxy_count(), 0);
-        assert_eq!(s.sub_reader().inner().writer_proxy_count(), 0);
-    }
-
-    #[test]
-    fn discovered_participant_wires_all_four_endpoints_when_present() {
+    fn rtps_8_5_3_1_discovered_participant_wires_all_four_endpoints_when_present() {
         let mut s = SedpStack::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
         let remote_prefix = GuidPrefix::from_bytes([2; 12]);
         let flags = endpoint_flag::PUBLICATIONS_ANNOUNCER
@@ -1607,7 +1599,7 @@ mod tests {
     }
 
     #[test]
-    fn partial_endpoint_set_wires_only_matching_sides() {
+    fn rtps_8_5_3_1_partial_endpoint_set_wires_only_matching_sides() {
         let mut s = SedpStack::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
         // Remote has only the publications side (announcer + detector)
         let flags = endpoint_flag::PUBLICATIONS_ANNOUNCER | endpoint_flag::PUBLICATIONS_DETECTOR;
@@ -1619,7 +1611,7 @@ mod tests {
     }
 
     #[test]
-    fn self_discovery_is_ignored() {
+    fn rtps_8_5_4_1_self_discovery_is_ignored() {
         let mut s = SedpStack::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
         let flags = endpoint_flag::PUBLICATIONS_ANNOUNCER;
         s.on_participant_discovered(&remote_participant(GuidPrefix::from_bytes([1; 12]), flags));
@@ -1643,7 +1635,7 @@ mod tests {
     }
 
     #[test]
-    fn on_participant_lost_clears_proxies_and_cache() {
+    fn rtps_8_5_5_2_on_participant_lost_clears_proxies_and_cache() {
         let mut s = SedpStack::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
         let remote_prefix = GuidPrefix::from_bytes([2; 12]);
         let flags = endpoint_flag::PUBLICATIONS_ANNOUNCER
@@ -1663,7 +1655,7 @@ mod tests {
     }
 
     #[test]
-    fn end_to_end_discovery_between_two_stacks() {
+    fn rtps_8_4_2_1_end_to_end_discovery_between_two_stacks() {
         // Two stacks on two different prefixes, both announce
         // publications. After on_participant_discovered + handle_datagram
         // both see each other's publications in the cache.
@@ -1905,10 +1897,10 @@ mod tests {
         for od in &out {
             let parsed = zerodds_rtps::datagram::decode_datagram(&od.bytes).unwrap();
             for sm in parsed.submessages {
-                if let ParsedSubmessage::AckNack(a) = sm.submessage {
-                    if a.writer_id == writer_id {
-                        nacked = nacked.max(a.reader_sn_state.iter_set().count());
-                    }
+                if let ParsedSubmessage::AckNack(a) = sm.submessage
+                    && a.writer_id == writer_id
+                {
+                    nacked = nacked.max(a.reader_sn_state.iter_set().count());
                 }
             }
         }
@@ -1949,7 +1941,7 @@ mod tests {
     }
 
     #[test]
-    fn handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst() {
+    fn security_7_5_1_7_handle_datagram_secure_sedp_heartbeat_is_gated_by_info_dst() {
         let local = GuidPrefix::from_bytes([1; 12]);
         let src = GuidPrefix::from_bytes([2; 12]);
         let foreign = [0x55u8; 12];
@@ -1987,7 +1979,7 @@ mod tests {
     const TOPICS: u32 = endpoint_flag::TOPICS_ANNOUNCER | endpoint_flag::TOPICS_DETECTOR;
 
     #[test]
-    fn the_topics_bits_wire_the_topics_writer_and_reader() {
+    fn rtps_8_5_4_3_the_topics_bits_wire_the_topics_writer_and_reader() {
         let mut s = SedpStack::new(GuidPrefix::from_bytes([1; 12]), VendorId::ZERODDS);
         let remote = GuidPrefix::from_bytes([2; 12]);
         s.on_participant_discovered(&remote_participant(remote, TOPICS));
@@ -1999,7 +1991,7 @@ mod tests {
     }
 
     #[test]
-    fn two_stacks_exchange_a_topic_its_new_qos_and_its_dispose() {
+    fn rtps_8_5_4_4_two_stacks_exchange_a_topic_its_new_qos_and_its_dispose() {
         let prefix_a = GuidPrefix::from_bytes([1; 12]);
         let prefix_b = GuidPrefix::from_bytes([2; 12]);
         let mut a = SedpStack::new(prefix_a, VendorId::ZERODDS);
@@ -2064,7 +2056,7 @@ mod tests {
             reader_id: EntityId::SEDP_BUILTIN_TOPICS_READER,
             writer_id: EntityId::SEDP_BUILTIN_TOPICS_WRITER,
             writer_sn: SequenceNumber(sn),
-            inline_qos,
+            inline_qos: inline_qos.map(Into::into),
             data_flag: !key_flag,
             key_flag,
             non_standard_flag: false,
@@ -2113,7 +2105,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cyclone_topic_and_its_dispose_are_read_by_cyclones_own_key() {
+    fn rtps_8_5_4_4_a_cyclone_topic_and_its_dispose_are_read_by_cyclones_own_key() {
         let local = GuidPrefix::from_bytes([1; 12]);
         let cyclone = GuidPrefix::from_bytes([
             0x01, 0x10, 0xd5, 0xff, 0x26, 0x58, 0x3a, 0xe1, 0xaf, 0x16, 0x5a, 0xb9,

@@ -161,7 +161,7 @@ fn count_publishes(c: &mut MqttClient, topic: &str, quiet: Duration) -> usize {
 /// not fill and all messages arrive.
 #[test]
 #[ignore = "needs mosquitto; run with --ignored"]
-fn inbound_qos_1_and_2_are_acknowledged_and_all_messages_arrive() {
+fn mqttbridge_6_inbound_qos_1_and_2_are_acknowledged_and_all_messages_arrive() {
     require_mosquitto();
     for qos in [1u8, 2] {
         let dir = workdir(&format!("inbound-{qos}"));
@@ -209,7 +209,7 @@ fn received_lines(child: Child) -> usize {
 /// acknowledged and not passed on.
 #[test]
 #[ignore = "needs mosquitto; run with --ignored"]
-fn outbound_qos_1_and_2_complete_and_leave_nothing_pending() {
+fn mqttbridge_6_outbound_qos_1_and_2_complete_and_leave_nothing_pending() {
     require_mosquitto();
     let dir = workdir("outbound");
     let port = free_port();
@@ -240,20 +240,17 @@ fn outbound_qos_1_and_2_complete_and_leave_nothing_pending() {
 /// process was still running 3 s after SIGTERM.
 #[test]
 #[ignore = "needs mosquitto; run with --ignored"]
-fn sigterm_disconnects_and_exits_0() {
+fn mqttbridge_9_2_sigterm_disconnects_and_exits_0() {
     require_mosquitto();
+    let lease = zerodds_test_domains::lease_domain();
     let dir = workdir("sigterm");
     let port = free_port();
     let (_broker, log) = start_broker(&dir, port);
     let mut daemon = Reaped(
         Command::new(env!("CARGO_BIN_EXE_zerodds-mqtt-bridged"))
             .args(["--set", &format!("mqtt.broker_url=mqtt://127.0.0.1:{port}")])
-            .args([
-                "--set",
-                "mqtt.client_id=zerodds-qos-term",
-                "--set",
-                "domain=99",
-            ])
+            .args(["--set", "mqtt.client_id=zerodds-qos-term", "--set"])
+            .arg(format!("domain={}", lease.id()))
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -297,7 +294,7 @@ fn sigterm_disconnects_and_exits_0() {
 /// subscriber.
 #[test]
 #[ignore = "needs mosquitto; run with --ignored"]
-fn the_shutdown_waits_for_the_acks_then_disconnects() {
+fn mqttbridge_9_2_the_shutdown_waits_for_the_acks_then_disconnects() {
     use zerodds_mqtt_bridge::daemon::config::TopicConfig;
     use zerodds_mqtt_bridge::daemon::server;
     require_mosquitto();
@@ -308,7 +305,8 @@ fn the_shutdown_waits_for_the_acks_then_disconnects() {
     let mut cfg = DaemonConfig::default_for_dev();
     cfg.broker_url = format!("mqtt://127.0.0.1:{port}");
     cfg.client_id = "zerodds-qos-drain".into();
-    cfg.domain = 99;
+    let lease = zerodds_test_domains::lease_domain();
+    cfg.domain = lease.id();
     cfg.topics.push(TopicConfig {
         dds_name: "Drain".into(),
         dds_type: "Drain".into(),

@@ -92,7 +92,7 @@ fn the_closure_is_every_hashed_type_the_object_reaches() {
 
 /// A type that names nothing by hash has an empty closure.
 #[test]
-fn a_type_of_fully_descriptive_members_has_no_dependencies() {
+fn xtypes_7_3_4_1_a_type_of_fully_descriptive_members_has_no_dependencies() {
     let ast = model(IDL);
     let plain = type_of(&ast, "dep::Plain");
     assert!(

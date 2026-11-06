@@ -24,47 +24,41 @@ pub struct TestServer {
 }
 
 impl TestServer {
-    /// Spawn a server that serves up to `max_connections` connections
-    /// served sequentially (single-threaded per connection per
-    /// thread::spawn).
+    /// A server on a port of its own: every accepted connection is handled
+    /// in a thread of its own.
     pub fn spawn(cfg: HandlerConfig) -> Self {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
-        let port = listener.local_addr().expect("addr").port();
-        listener.set_nonblocking(true).expect("set_nonblocking");
+        Self::on(TcpListener::bind("127.0.0.1:0").expect("bind"), cfg)
+    }
 
+    /// A server on `port` (a port the test reserved and released).
+    pub fn spawn_on(port: u16, cfg: HandlerConfig) -> Self {
+        Self::on(TcpListener::bind(("127.0.0.1", port)).expect("bind"), cfg)
+    }
+
+    fn on(listener: TcpListener, cfg: HandlerConfig) -> Self {
+        // The listener is bound and listening before this returns: a
+        // client's connect queues until the accept below takes it.
+        let port = listener.local_addr().expect("addr").port();
         let metrics = cfg.metrics.clone();
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_loop = shutdown.clone();
         let handle = thread::spawn(move || {
-            let cfg = cfg;
-            while !shutdown_loop.load(Ordering::Relaxed) {
-                match listener.accept() {
-                    Ok((mut sock, _)) => {
-                        // On macOS/Linux the accepted socket inherits the
-                        // nonblocking flag from the listener. We must
-                        // set it explicitly back to blocking,
-                        // so that `read_exact` works.
-                        let _ = sock.set_nonblocking(false);
-                        let _ = sock.set_read_timeout(Some(Duration::from_secs(5)));
-                        let _ = sock.set_write_timeout(Some(Duration::from_secs(5)));
-                        let cfg = cfg.clone();
-                        thread::spawn(move || {
-                            if let Err(e) = handle_connection(&mut sock, &cfg) {
-                                eprintln!("[test-server] handle_connection: {e}");
-                            }
-                        });
-                    }
-                    Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(20));
-                    }
-                    Err(_) => break,
+            for incoming in listener.incoming() {
+                // `shutdown` wakes this accept with a connect of its own.
+                if shutdown_loop.load(Ordering::SeqCst) {
+                    break;
                 }
+                let Ok(mut sock) = incoming else { break };
+                let _ = sock.set_read_timeout(Some(Duration::from_secs(5)));
+                let _ = sock.set_write_timeout(Some(Duration::from_secs(5)));
+                let cfg = cfg.clone();
+                thread::spawn(move || {
+                    if let Err(e) = handle_connection(&mut sock, &cfg) {
+                        eprintln!("[test-server] handle_connection: {e}");
+                    }
+                });
             }
         });
-
-        // Give the server a moment to bind.
-        thread::sleep(Duration::from_millis(50));
-
         Self {
             port,
             metrics,
@@ -75,10 +69,13 @@ impl TestServer {
 
     /// Shutdown + join.
     pub fn shutdown(mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
+        self.stop();
+    }
+
+    fn stop(&mut self) {
+        self.shutdown.store(true, Ordering::SeqCst);
         if let Some(h) = self.handle.take() {
-            // The server loop polls every 20ms; give it time.
-            thread::sleep(Duration::from_millis(50));
+            let _ = TcpStream::connect(("127.0.0.1", self.port));
             let _ = h.join();
         }
     }
@@ -86,11 +83,7 @@ impl TestServer {
 
 impl Drop for TestServer {
     fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::Relaxed);
-        if let Some(h) = self.handle.take() {
-            thread::sleep(Duration::from_millis(50));
-            let _ = h.join();
-        }
+        self.stop();
     }
 }
 

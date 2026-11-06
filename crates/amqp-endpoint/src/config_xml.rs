@@ -534,7 +534,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_minimal_endpoint() {
+    fn ddsamqp_9_2_parse_minimal_endpoint() {
         let xml = r#"<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
           <endpoint name="ep1">
             <listen-uri>amqp://0.0.0.0:5672</listen-uri>
@@ -549,7 +549,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_endpoint_with_topics_tls_sasl_limits() {
+    fn ddsamqp_9_2_parse_endpoint_with_topics_tls_sasl_limits() {
         let xml = r#"<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
           <endpoint name="full">
             <listen-uri>amqp://0.0.0.0:5672</listen-uri>
@@ -605,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_bridge_with_upstream() {
+    fn ddsamqp_9_2_parse_bridge_with_upstream() {
         let xml = r#"<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
           <bridge name="cloud-bridge">
             <upstream-uri>amqp://broker.example:5671</upstream-uri>
@@ -629,14 +629,14 @@ mod tests {
     }
 
     #[test]
-    fn unknown_root_yields_error() {
+    fn ddsamqp_9_2_unknown_root_yields_error() {
         let xml = r#"<not-dds-amqp/>"#;
         let err = parse_config(xml).unwrap_err();
         assert!(matches!(err, XmlConfigError::UnexpectedRoot { .. }));
     }
 
     #[test]
-    fn missing_amqp_address_yields_error() {
+    fn ddsamqp_9_2_missing_amqp_address_yields_error() {
         let xml = r#"<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
           <endpoint name="ep">
             <topics>
@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_body_mode_yields_error() {
+    fn ddsamqp_9_2_invalid_body_mode_yields_error() {
         let xml = r#"<dds-amqp xmlns="http://www.zerodds.org/dds-amqp/v1.0">
           <endpoint name="ep">
             <topics>
@@ -671,14 +671,14 @@ mod tests {
     }
 
     #[test]
-    fn malformed_xml_yields_parse_error() {
+    fn ddsamqp_9_2_malformed_xml_yields_parse_error() {
         let xml = "<dds-amqp><not-closed>";
         let err = parse_config(xml).unwrap_err();
         assert!(matches!(err, XmlConfigError::Parse(_)));
     }
 
     #[test]
-    fn governance_document_loads_rules() {
+    fn ddsamqp_10_4_governance_document_loads_rules() {
         let xml = r#"<governance xmlns="http://www.zerodds.org/dds-amqp/v1.0">
           <rule>
             <topic-pattern>Sensor*</topic-pattern>
@@ -699,7 +699,7 @@ mod tests {
     }
 
     #[test]
-    fn governance_missing_topic_pattern_errors() {
+    fn ddsamqp_10_4_governance_missing_topic_pattern_errors() {
         let xml = r#"<governance>
           <rule>
             <data-protection>None</data-protection>
@@ -710,7 +710,7 @@ mod tests {
     }
 
     #[test]
-    fn governance_invalid_data_protection_errors() {
+    fn ddsamqp_10_4_governance_invalid_data_protection_errors() {
         let xml = r#"<governance>
           <rule>
             <topic-pattern>X</topic-pattern>
@@ -727,7 +727,7 @@ mod tests {
     /// revision's elements come under another one; within v1.0 an unknown
     /// name is an error, with its line.
     #[test]
-    fn unknown_elements_and_attributes_are_refused_with_their_line() {
+    fn ddsamqp_9_2_unknown_elements_and_attributes_are_refused_with_their_line() {
         let cases = [
             (
                 "<dds-amqp>\n<endpoint name=\"ep\">\n<listen_uri>amqp://x:1</listen_uri>\n</endpoint>\n</dds-amqp>",

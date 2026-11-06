@@ -86,7 +86,7 @@ if got != want, do: raise("xrce_client_write_data.bin: not byte-identical")
 # object_id=pack(raw=0x010,kind=topic), the real two-level
 # ObjectVariant::ByReference("HelloWorldTopic") under
 # parent=pack(raw=0x001,kind=participant), sequence_nr=4. OBJK_TOPIC's own
-# representation carries its participant's ObjectId (commit 31c62df2a63,
+# representation carries its participant's ObjectId (commit bd30deaef0b,
 # "xrce: OBJK_TOPIC_Representation carries its participant's ObjectId"),
 # the same trailing field OBJK_PUBLISHER's representation carries above —
 # this fixture is generated the same way (endpoints/golden-gen), not a

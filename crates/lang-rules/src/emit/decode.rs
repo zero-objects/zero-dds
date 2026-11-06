@@ -1263,19 +1263,18 @@ fn array_body<T: CodecTarget>(
 ) -> Vec<T::Stmt> {
     let _ = id;
     let delimited = zerodds_ast_layout::array_is_delimited(ast, element, key);
-    if let [length] = lengths {
-        if let Some(bulk) =
+    if let [length] = lengths
+        && let Some(bulk) =
             crate::emit::encode::bulk_read::<T>(ast, element, T::unsigned_int(*length))
-        {
-            let mut statements = Vec::new();
-            if delimited {
-                statements.push(discard_dheader::<T>());
-            }
-            statements.extend(T::open_array("v", lengths));
-            statements.push(bulk);
-            statements.extend(T::close_array("v", lengths));
-            return statements;
+    {
+        let mut statements = Vec::new();
+        if delimited {
+            statements.push(discard_dheader::<T>());
         }
+        statements.extend(T::open_array("v", lengths));
+        statements.push(bulk);
+        statements.extend(T::close_array("v", lengths));
+        return statements;
     }
     let mut access = name::<T>("v");
     for level in 0..lengths.len() {
@@ -1713,6 +1712,9 @@ fn aggregate_body<T: CodecTarget>(
     let mutable = extensibility == Extensibility::Mutable;
 
     let mut statements = Vec::new();
+    if members.is_empty() {
+        statements.extend(T::no_members(false));
+    }
     // `ElementPadding::Packed`: an aggregate is its own alignment block
     // on the read side too. See the writer's `write_aggregate`.
     let packed = key.element_padding == ElementPadding::Packed;
@@ -1878,10 +1880,10 @@ fn plan_order<T: CodecTarget>(
     // `!members.is_empty()`, because the latch is read only inside the
     // loop below and a declaration nothing reads is a
     // `-Wunused-variable` error in a probe compiled with `-Werror`. An
-    // aggregate with no members reaches this only in a column whose
-    // materialiser can declare one: C refuses `struct S {}` outright —
-    // C23 §6.7.2.1p8 leaves a structure with no named member undefined —
-    // and C++ declares it, so the C column never saw the shape.
+    // aggregate with no members declares no latch either: C++ declares
+    // `struct S {}`, and C, where C23 §6.7.2.1p8 leaves a structure with
+    // no named member undefined, declares one member that stands in for
+    // none and that this plan never reaches.
     if tail.possible() && !members.is_empty() {
         statements.push(T::declare(
             T::scalar(Scalar::Bool),

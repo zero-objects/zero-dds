@@ -41,11 +41,12 @@ non-blocking and returns `Option[seq[byte]]`.
 **Repo:** `endpoints/nim/zerodds.nim::Client`/`newClient`/`write`/`poll`
 (monotonic `seqNo`, wraps at `0xffff`).
 
-**Tests:** `nim_endpoint_sync` (`crates/endpoint-e2e/tests/nim.rs`) — a live
+**Tests:** `xrce_8_3_5_8_nim_sync_app_writes_the_ping_and_reads_the_pong` (`crates/endpoint-e2e/tests/nim.rs`) — a live
 poll loop against the Rust peer: an app built from generated `idlc` types
 (gen.nim) plus the endpoint SDK exchanges a typed sample with the shared
 Rust XRCE peer over a real UDP socket
-(`crates/endpoint-e2e/tests/nim.rs::build_nim_endpoint` compiles gen.nim + a
+(the helper build_nim_endpoint in `crates/endpoint-e2e/tests/nim.rs`
+compiles gen.nim + a
 copy of `zerodds.nim` + `main.nim`, spawns the app).
 
 **Status:** done.
@@ -58,12 +59,12 @@ copy of `zerodds.nim` + `main.nim`, spawns the app).
 **Repo:** `endpoints/nim/zerodds.nim::AsyncReader`/`newAsyncReader`/`recv`
 (an `{.async.}` proc, polls via `sleepAsync(1)` until a frame is pending).
 
-**Tests:** `nim_endpoint_async` (`crates/endpoint-e2e/tests/nim.rs`) —
+**Tests:** `xrce_8_3_5_8_nim_async_app_writes_the_ping_and_reads_the_pong` (`crates/endpoint-e2e/tests/nim.rs`) —
 `waitFor fut.withTimeout(10000)` against the same generated app; `Client.write`
 sends in both modes (the SDK only has a sync writer), the async path exercises
 purely the `AsyncReader` `Future`.
 
-**Tests:** (Linux) `nim_endpoint_sync`, `nim_endpoint_async` — both green.
+**Tests:** (Linux) `xrce_8_3_5_8_nim_sync_app_writes_the_ping_and_reads_the_pong`, `xrce_8_3_5_8_nim_async_app_writes_the_ping_and_reads_the_pong` — both green.
 
 **Status:** done.
 
@@ -86,19 +87,19 @@ HEARTBEAT, receives ACKNACK, retransmits from `inFlight`).
 
 **Tests:** (Linux)
 
-- `nim_reliable_loss_recovery` (`crates/endpoint-e2e/tests/nim_reliable.rs`) —
+- `reliable_5_3_nim_samples_arrive_in_order_despite_dropped_datagrams` (`crates/endpoint-e2e/tests/nim_reliable.rs`) —
   12 samples, the peer drops every 3rd datagram; the app retransmits on
   ACKNACK; all 12 delivered gap-free in order.
-- `nim_reliable_no_loss` — the same run without injected loss (baseline).
-- `nim_reliable_unit_and_golden` — compiles and runs `reliable_test.nim`;
+- `endpoints/nim/reliable_test.nim` in the `nim` column of `tools/endpoints-gate`
+  (job `integration-bindings-zig-nim`) — compiles and runs `reliable_test.nim`;
   22 mirrored state-machine checks (sender: monotonic seq, payload-too-large,
   window-full, heartbeat first/silence/after-period/empty, ACKNACK clear
   partial/full; receiver: in-order, reorder block+delivery, duplicate-drop,
   buffer-full, ACKNACK bitmap, reset; plus 3 end-to-end loss-recovery checks)
-  + 4 byte-golden checks (`byte_golden_heartbeat`, `byte_golden_acknack`
+  + 4 byte-golden checks (`endpointnim_4_byte_golden_heartbeat`, `endpointnim_4_byte_golden_acknack`
   against `golden_heartbeat_le.bin`/`golden_acknack_le.bin`, plus a parse
   round-trip of both goldens) — `ALL OK`.
-- `nim_reliable_producer_latency` — the bench mode of `reliable_app.nim`:
+- `reliable_5_4_nim_the_producer_enqueue_costs_less_than_the_inline_send` — the bench mode of `reliable_app.nim`:
   producer `enqueue`->return via Channel vs. inline `sendto` on the same
   thread (measurement in §5).
 
@@ -118,30 +119,26 @@ socket syscall (`reliable-endpoint` §5 item 4, latency bench).
 path; `inline`: `sock.send` directly on the producer thread; `decoupled`:
 `gChan.send` into a Channel drained by a separate thread.
 
-**Tests:** (Linux) `nim_reliable_producer_latency` — enqueue **192 ns** vs.
+**Tests:** (Linux) `reliable_5_4_nim_the_producer_enqueue_costs_less_than_the_inline_send` — enqueue **192 ns** vs.
 inline `sendto` **3926 ns** (~20x).
 
 **Status:** done — enqueue 192 ns against inline `sendto` at 3926 ns, which is
 the decoupling §4 asks for. The spec does not prescribe the queue
-implementation; a wait-free ring would be an optimisation and is recorded as
-one in `docs/OPEN-ITEMS.md`.
+implementation; a wait-free ring would be an optimisation and is not built.
 
 ---
 
 ## Audit-Status
 
-5 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
+5 done / 0 partial / 0 open / 0 blocked / 0 n/a (informative).
 
-Test-run (Linux, verified): `cargo test -p zerodds-endpoint-e2e --test
-nim` -> `nim_endpoint_sync` + `nim_endpoint_async` 2/2 green; `--test
-nim_reliable` -> `nim_reliable_loss_recovery`, `nim_reliable_no_loss`,
-`nim_reliable_unit_and_golden`, `nim_reliable_producer_latency` 4/4 green;
-latency measurement 192 ns (enqueue) vs. 3926 ns (inline sendto), ~20x. No
-GitLab CI job runs `zerodds-endpoint-e2e` — these are manual Linux runs,
-not wired into CI (the `endpoints-nim` job covers only the wire core/examples,
-not reliable/E2E).
+Test run: in CI, crate tier and pillar jobs; the cited tests with the latest result of each job in the pipelines 8501 to 9053 of `main` (`python3 ci/coverage_results.py --document zerodds-endpoint-nim-1.0.md`):
 
-Open items: the `zerodds-endpoint-e2e` tests (ping-pong + reliable) are not
-wired into GitLab CI — they run manually on the Linux test host only. A true wait-free
-SPSC ring instead of the lock-based `Channel` remains a possible further
-latency reduction (not an open spec item, see §4).
+* `python3 ci/run_integration.py integration-bindings-zig-nim` (job `integration-bindings-zig-nim`) — 9 tests green.
+
+9 cited tests green, 0 not green.
+
+Open items: none. The tests of `zerodds-endpoint-e2e` (ping-pong + reliable)
+run in the job `integration-bindings-zig-nim`. A true wait-free SPSC ring
+instead of the lock-based `Channel` remains a possible further latency
+reduction (not an open spec item, see §4).

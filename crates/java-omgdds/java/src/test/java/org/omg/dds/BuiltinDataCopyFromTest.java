@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 class BuiltinDataCopyFromTest {
 
     @Test
-    void copyFromOverwritesTheWholeStateOfThePublicationData() {
+    void javapsm_7_3_3_copy_from_overwrites_the_whole_state_of_the_publication_data() {
         DomainParticipant participant = Qos.factory().createParticipant(1412);
         Publisher publisher = participant.createPublisher();
         Topic<byte[]> one = participant.createTopic("CopyOne", byte[].class);
@@ -51,7 +51,7 @@ class BuiltinDataCopyFromTest {
     }
 
     @Test
-    void copyFromOverwritesTheWholeStateOfTheSubscriptionData() {
+    void javapsm_7_3_3_copy_from_overwrites_the_whole_state_of_the_subscription_data() {
         DomainParticipant participant = Qos.factory().createParticipant(1413);
         Subscriber subscriber = participant.createSubscriber();
         Topic<byte[]> one = participant.createTopic("CopySubOne", byte[].class);
@@ -71,7 +71,7 @@ class BuiltinDataCopyFromTest {
     }
 
     @Test
-    void copyFromOverwritesTheWholeStateOfTheTopicData() {
+    void javapsm_7_3_3_copy_from_overwrites_the_whole_state_of_the_topic_data() {
         DomainParticipant participant = Qos.factory().createParticipant(1414);
         Topic<byte[]> one = participant.createTopic("CopyTopicOne", byte[].class,
                 Qos.topic().withPolicy(Qos.pf().TransportPriority().withValue(5)), null,
@@ -86,7 +86,7 @@ class BuiltinDataCopyFromTest {
     }
 
     @Test
-    void copyFromOverwritesTheStateOfTheParticipantData() {
+    void javapsm_7_3_3_copy_from_overwrites_the_state_of_the_participant_data() {
         DomainParticipant first = Qos.factory().createParticipant(1415);
         DomainParticipant second = Qos.factory().createParticipant(1415);
         ParticipantBuiltinTopicDataImpl source = new ParticipantBuiltinTopicDataImpl(Qos.env(),

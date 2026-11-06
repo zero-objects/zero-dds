@@ -5,23 +5,24 @@
 Item-für-Item-Audit gegen die Spec; jede Anforderung mit Spec-Zitat,
 Repo-Pfad, Test-Pfad und Status (`done` / `partial` / `open` / `n/a`).
 
-**Kontext:** Der IDL4-Java-Generator `crates/idl-java` wurde in
-`d045e43ea86` entfernt. Die lebende Java-Spalte sitzt heute in
-`crates/lang-rules/src/adapter/java.rs`,
-`crates/lang-rules/src/emit/java.rs`,
-`crates/lang-rules/src/emit/interface_java.rs`,
-`crates/lang-rules/src/default_java.rs`, dazu
-`crates/lang-cst/src/java/mod.rs` und `crates/lang-render/src/java.rs`.
-Sie ist ein Plain Language Binding für XCDR2 und ist in
-`docs/spec-coverage/zerodds-xcdr2-java-1.0.md` beschrieben. An mehreren
-Stellen weicht sie ausdrücklich und begründet von dieser Mapping-Spec ab
-(`fixed` als `String` statt `BigDecimal`, `octet` als `int` statt `byte`,
-`map` als Entry-Array statt `java.util.Map`, Enumeration als
-`int`-Konstanten statt Java-`enum`, Modul als geschachtelte Klasse statt
-Paket). Jede dieser Abweichungen ist hier ein Befund, kein `done`. Aus der
-alten Crate überlebt nur die Laufzeit `crates/idl-java/runtime/`
-(`org.zerodds.types.*`-Annotationen und `org.zerodds.rpc.*`); der heutige
-Generator benutzt sie nicht.
+**Kontext:** Die Abbildung ist `crates/lang-rules/src/emit/idl4_java/`,
+ausgewählt mit `zerodds-idlc generate --lang java --java-mapping idl4`
+(`--java-naming idl|java`, `--java-platform dds|corba`,
+`--java-corba-module`). Komponenten, Homes, Ports, Konnektoren und
+Template-Modul-Instanzen gehen über ihr intermediate IDL
+(`crates/lang-rules/src/emit/intermediate_idl.rs`, `crates/ccm`). Die
+Laufzeitklassen, die die Spec nennt, liegen in
+`runtime/java/src/main/java/org/omg/type/` und, für die CORBA-Plattform,
+`runtime/java/corba/org/omg/CORBA/`; das Pseudo-IDL des
+CORBA-Moduls ist `runtime/corba/CORBA_PIDL.idl`. Jeder Test übersetzt das
+erzeugte Java zusammen mit der Laufzeit mit `javac --release 8
+-Xlint:all -Werror` und führt ein Prüfprogramm aus, dessen Erwartungen
+der Spec-Text sind.
+
+Der Standard von `--lang java` bleibt die DDS-Java-PSM-Bindung mit dem
+XCDR2-Codec (`crates/lang-rules/src/adapter/java.rs`,
+`docs/spec-coverage/zerodds-xcdr2-java-1.0.md`); sie folgt an mehreren
+Stellen ausdrücklich nicht dieser Spec und ist hier nicht Gegenstand.
 
 ---
 
@@ -36,13 +37,11 @@ the current Interface Definition Language specification with the
 exception of middleware specific constructs that are better
 addressed in separate specifications."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/mod.rs::generate`, `tools/idlc/src/main.rs`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_6_a_value_type_is_an_abstract_and_a_concrete_class`, `crates/lang-rules/tests/java_idl4_components.rs::idl4java_7_9_and_7_12_a_component_is_its_equivalent_interface_in_java`, `crates/lang-rules/tests/java_idl4_corba.rs::idl4java_a_1_typecode_object_any_and_user_exception_are_the_annexs_classes`, `tools/idlc/src/main.rs::idl4java_7_1_1_the_idl4_mapping_its_naming_scheme_and_platform_are_selectable`
 
-**Status:** `open` — kein Generator bildet IDL auf die Java-Formen aus
-Klausel 7 ab. Die Java-Spalte erzeugt ein Wire-Binding, dessen eigene
-Dokumentation die Abweichungen von dieser Spec benennt.
+**Status:** `done` — `zerodds-idlc generate --lang java --java-mapping idl4` bildet IDL nach Klausel 7 und 8 auf Java ab: ein Paket je Modul, eine Datei je Klasse, Komponenten, Homes, Ports, Konnektoren und Template-Modul-Instanzen über ihr intermediate IDL; jeder Test übersetzt die erzeugten Klassen mit `javac --release 8 -Xlint:all -Werror` und prüft sie per Reflexion und Ausführung. Der Standard von `--lang java` bleibt die DDS-Java-PSM-Bindung (Entscheidung, siehe Kontext).
 
 ### 1.2 Nutzung moderner Java-Sprach-Features
 
@@ -64,12 +63,11 @@ language features as appropriate and natural."
 **Spec:** §2, S. 1 — "A conformant implementation shall transform
 IDL input into Java source code output as specified in clause 7."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/mod.rs::generate`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_2_a_union_is_a_final_class_with_discriminator_accessors_and_modifiers`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`, `tools/idlc/src/main.rs::idl4java_7_1_1_the_idl4_mapping_its_naming_scheme_and_platform_are_selectable`
 
-**Status:** `open` — die Java-Spalte transformiert IDL in Java-Quelle,
-aber nach der PSM der XCDR2-Bindung, nicht nach Klausel 7.
+**Status:** `done` — die Abbildung `--java-mapping idl4` schreibt Java-Quelltext nach Klausel 7; die Tests übersetzen und führen ihn aus.
 
 ### 2.2 User: Anwendungscode läuft cross-Implementation portabel
 
@@ -244,13 +242,11 @@ that it provides a mapping for the constructs of IDL4."
 schemes [...] The @java_mapping annotation defined in Clause 8.1
 provides a mechanism to select the appropriate naming scheme."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::Naming`, `crates/lang-rules/src/emit/idl4_java/mod.rs::Settings::apply`, `crates/idl-lower/src/annotation.rs::mapping_annotation`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_8_1_java_mapping_sets_the_scheme_the_integer_width_and_the_string_type`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`, `crates/idl-lower/tests/mapping_annotations.rs::idl4java_8_1_java_mapping_reaches_the_model_parameter_by_parameter`, `tools/idlc/src/main.rs::idl4java_7_1_1_the_idl4_mapping_its_naming_scheme_and_platform_are_selectable`
 
-**Status:** `open` — `@java_mapping` existiert im Baum nicht
-(`git grep java_mapping` findet nichts), und es gibt keine
-umschaltbare Naming-Scheme-Auswahl.
+**Status:** `done` — die beiden Schemata sind `Naming::Idl` und `Naming::Java`; `--java-naming` wählt das Schema des Laufs, `@java_mapping(apply_naming_convention = ...)` überschreibt es je Modul und Deklaration.
 
 ### 7.1.1.0 Name-Kollision mit Reserved-Names: Underscore-Präfix
 
@@ -258,16 +254,11 @@ umschaltbare Naming-Scheme-Auswahl.
 with one of the names reserved in Clause 7.1.2, the collision shall
 be resolved by prepending an underscore ('_') to the mapped name."
 
-**Repo:** `crates/lang-cst/src/java/mod.rs::escape_keyword`,
-`crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::escape`, `crates/lang-rules/src/emit/idl4_java/names.rs::escape_type`, `crates/lang-rules/src/emit/idl4_java/names.rs::escape_method`
 
-**Tests:** `crates/lang-cst/src/java/mod.rs::tests::a_keyword_escapes_with_a_trailing_underscore`,
-`crates/lang-rules/src/adapter/java.rs::tests::an_identifier_that_is_a_java_keyword_is_escaped`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_1_2_reserved_names_take_a_leading_underscore`, `crates/lang-rules/src/emit/idl4_java/names.rs::reserved_names_take_a_leading_underscore`
 
-**Status:** `partial` — Java-Keywords werden entschärft, aber durch ein
-**nachgestelltes** `_` (`class_`) statt des vorgeschriebenen
-vorangestellten (`_class`). Die Reserved-Name-Liste aus §7.1.2 ist
-zudem unvollständig (siehe dort).
+**Status:** `done` — ein abgebildeter Name, der ein Java-Keyword oder -Literal, `Constants` oder eine Methode von `java.lang.Object` ist, bekommt ein vorangestelltes `_` (`_class`, `_Constants`, `_hashCode`), unter beiden Schemata.
 
 ### 7.1.1.1 IDL Naming Scheme: Names ohne Case-Transformation
 
@@ -275,14 +266,11 @@ zudem unvollständig (siehe dort).
 shall map to Java names and identifiers without case transformation,
 maintaining the original IDL names."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::Naming::type_name`, `crates/lang-rules/src/emit/idl4_java/names.rs::Naming::variable`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_2_and_7_2_3_a_module_is_a_package_and_a_constant_a_class_with_its_value`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_3_an_enumeration_is_a_java_enum_with_value_of_int`
 
-**Status:** `open` — die Java-Spalte behält IDL-Namen zwar unverändert
-(`a_module_is_a_nested_class_and_two_modules_do_not_collide`), aber sie
-ist kein Naming-Scheme und Identity mit dem IDL-Naming-Scheme ist nicht
-beabsichtigt oder getestet.
+**Status:** `done` — unter `Naming::Idl` bleiben Typ-, Member-, Konstanten- und Modulnamen unverändert; die Tests prüfen die IDL-Schreibweise in Klassen, Accessoren und Paketen.
 
 ### 7.1.1.2 Java Naming Scheme: JavaBeans-1.01-Konventionen
 
@@ -290,12 +278,11 @@ beabsichtigt oder getestet.
 shall map to Java names and identifiers that follow the coding
 guidelines defined in the JavaBeans 1.01 [JavaBeans] specification."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::Naming`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_8_1_java_mapping_sets_the_scheme_the_integer_width_and_the_string_type`
 
-**Status:** `open` — getX/setX-Accessoren und die
-JavaBeans-Konventionen werden nicht erzeugt.
+**Status:** `done` — unter `Naming::Java` folgen Typen Pascal Case, Member und Methoden Camel Case, Accessoren `get<Name>`/`set<Name>`, Konstanten und Enumeratoren Großbuchstaben, Pakete Kleinbuchstaben (Tabelle 8.1).
 
 ### 7.1.1.2.1 Pascal Case Transformation Rules
 
@@ -303,12 +290,11 @@ JavaBeans-Konventionen werden nicht erzeugt.
 underscore shall be capitalized and all underscores shall be removed.
 The first letter of the IDL name shall be capitalized."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::pascal_case`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/src/emit/idl4_java/names.rs::pascal_case_is_the_clause_examples`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`
 
-**Status:** `open` — keine Pascal-Case-Transformation für Typ- und
-Member-Namen.
+**Status:** `done` — alle 14 Beispiele der Klausel ergeben die Schreibweise, die sie nennt.
 
 ### 7.1.1.2.2 Camel Case Transformation Rules
 
@@ -316,38 +302,33 @@ Member-Namen.
 shall be capitalized and all underscores shall be removed. The first
 letter of the IDL name shall be lower case."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::camel_case`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/src/emit/idl4_java/names.rs::camel_case_is_the_clause_examples`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`
 
-**Status:** `open` — die einzige Camel-Case-Umformung im Baum ist
-`Java::camel` in `crates/lang-rules/src/emit/java.rs` für
-Wire-Methodennamen; Member-Namen werden nicht transformiert.
+**Status:** `done` — alle 15 Beispiele der Klausel ergeben die Schreibweise, die sie nennt. Wo ein späteres Beispiel der Spezifikation seiner Regel widerspricht (`longLongVariable` in §7.2.4.3.1), gilt die Regel (`crates/lang-rules/src/emit/idl4_java/names.rs`, Moduldoku).
 
 ### 7.1.1.2.3 All Uppercase Transformation Rules
 
 **Spec:** §7.1.1.2.3, S. 6 — "Every letter shall be capitalized and
 all underscores shall be removed."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::all_uppercase`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/src/emit/idl4_java/names.rs::upper_and_lower_case_are_the_clause_examples`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_3_1_and_8_1_2_the_constants_container_holds_the_constants_of_a_scope`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_3_an_enumeration_is_a_java_enum_with_value_of_int`
 
-**Status:** `open` — Konstanten behalten ihre IDL-Schreibweise; keine
-Uppercase-Transformation.
+**Status:** `done` — die Beispiele der Klausel; Konstanten im Container und Enumeratoren unter dem Java-Schema stehen in Großbuchstaben.
 
 ### 7.1.1.2.4 All Lowercase Transformation Rules
 
 **Spec:** §7.1.1.2.4, S. 6-7 — "Every letter shall be in lower case
 and all underscores shall be removed."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::all_lowercase`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/src/emit/idl4_java/names.rs::upper_and_lower_case_are_the_clause_examples`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_2_and_7_2_3_a_module_is_a_package_and_a_constant_a_class_with_its_value`
 
-**Status:** `open` — Modulnamen werden nicht kleingeschrieben; ein Modul
-`a` wird die geschachtelte Klasse `a`, ein Modul `common` die Klasse
-`common`, aber ohne die Spec-Transformation.
+**Status:** `done` — die Beispiele der Klausel; das Modul `MY_MATH` ist unter dem Java-Schema das Paket `my_math`.
 
 ### 7.1.1.3 Suffixes (z.B. Abstract); Underscore-Präfix bei Kollision
 
@@ -355,12 +336,11 @@ and all underscores shall be removed."
 (for example, Abstract), then an underscore is prepended to the
 mapped name."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::escape_type`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_1_2_reserved_names_take_a_leading_underscore`, `crates/lang-rules/src/emit/idl4_java/names.rs::reserved_names_take_a_leading_underscore`
 
-**Status:** `open` — keine Reserved-Suffix-Behandlung; es gibt kein
-`Abstract`-Suffix-Mapping (die Valuetype-Abbildung fehlt ohnehin).
+**Status:** `done` — eine Struktur `FooAbstract` wird `_FooAbstract`; `Abstract` allein bleibt, weil es nicht auf das Suffix endet, sondern es ist.
 
 ### 7.1.2 Reserved Names
 
@@ -370,13 +350,11 @@ all Java keywords; literals (true/false/null); java.lang.Object
 methods (clone/equals/getClass/hashCode/notify/notifyAll/finalize/
 toString/wait)."
 
-**Repo:** `crates/lang-cst/src/java/mod.rs` — die Keyword-Liste.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::JAVA_KEYWORDS`, `crates/lang-rules/src/emit/idl4_java/names.rs::JAVA_LITERALS`, `crates/lang-rules/src/emit/idl4_java/names.rs::OBJECT_METHODS`, `crates/lang-rules/src/emit/idl4_java/names.rs::CONSTANTS_CLASS`, `crates/lang-rules/src/emit/idl4_java/names.rs::ABSTRACT_SUFFIX`
 
-**Tests:** `crates/lang-cst/src/java/mod.rs::tests::a_keyword_escapes_with_a_trailing_underscore`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_1_2_reserved_names_take_a_leading_underscore`, `crates/lang-rules/src/emit/idl4_java/names.rs::reserved_names_take_a_leading_underscore`
 
-**Status:** `partial` — Java-Keywords plus `true`/`false`/`null` sind
-gelistet. `<type>Abstract`, `Constants` und die `java.lang.Object`-Methoden
-fehlen.
+**Status:** `done` — reserviert sind die 50 Keywords der Klausel, `true`/`false`/`null`, `<type>Abstract`, `Constants` und die neun Methoden von `java.lang.Object`.
 
 ### 7.1.3 Holder<E>-Klasse für inout/out-Parameter
 
@@ -385,14 +363,11 @@ an IDL defined data type is passed to an operation as an inout or
 out parameter. [...] `package org.omg.type; public class Holder<E>
 { public E value; }`."
 
-**Repo:** `crates/lang-rules/src/emit/interface_java.rs`.
+**Repo:** `runtime/java/src/main/java/org/omg/type/Holder.java`, `crates/lang-rules/src/emit/idl4_java/behaviour.rs::operation_method`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`
 
-**Status:** `open` — eine Klasse `org.omg.type.Holder<E>` gibt es nicht; die
-frühere Laufzeitklasse `crates/idl-java/runtime/rpc/Holder.java` ist mit
-`b7589e6b904` entfernt. Die RPC-Bindung transportiert out/inout in einem vom
-DDS-RPC benannten `_Out`-Typ (`crates/lang-rules/src/emit/interface_java.rs`).
+**Status:** `done` — `org.omg.type.Holder<E>` mit dem öffentlichen Feld `value`; `out`- und `inout`-Parameter sind `Holder<Boxed>`, und der Test ruft eine Implementierung, die über die Holder antwortet.
 
 ### 7.1.4 Tab.7.1: Java-Sprachversionen pro Feature
 
@@ -441,17 +416,11 @@ with the same name. [...] IDL declarations not enclosed in any
 modules are mapped to classes or interfaces in the (unnamed) Java
 global scope."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`,
-`crates/lang-cst/src/java/mod.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/mod.rs::package_of`, `crates/lang-rules/src/emit/idl4_java/mod.rs::Gen::file`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_module_is_a_nested_class_and_two_modules_do_not_collide`,
-`crates/lang-rules/src/adapter/java.rs::tests::a_module_reopened_beside_a_nested_one_is_one_class`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_2_and_7_2_3_a_module_is_a_package_and_a_constant_a_class_with_its_value`
 
-**Status:** `partial` — Module werden auf **geschachtelte Klassen** in
-einer Datei abgebildet, nicht auf Packages (die Crate begründet das mit
-dem Ein-Public-Typ-pro-Datei-Gesetz). Zwei gleichnamige Typen in
-verschiedenen Modulen kollidieren dadurch nicht, die Spec-Form
-(Paketname) ist aber nicht erreicht.
+**Status:** `done` — ein Modul ist ein Paket gleichen Namens, eine Datei je öffentlicher Klasse im Verzeichnis des Pakets; Deklarationen außerhalb jedes Moduls stehen im unbenannten Paket.
 
 ### 7.2.3 Default Mapping: IDL Constant -> public final class mit value-Field
 
@@ -460,13 +429,11 @@ final classes of the same name within the equivalent scope and
 package. The mapped class shall contain a public final static field
 named value."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::constant_classes`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_2_and_7_2_3_a_module_is_a_package_and_a_constant_a_class_with_its_value`
 
-**Status:** `open` — eine IDL-Konstante wird ein
-`public static final`-**Feld** im umschließenden Scope, nicht eine
-gleichnamige Wrapper-Klasse mit `value`.
+**Status:** `done` — eine Konstante ist eine `public final class` ihres Namens mit `public static final <T> value`, das Beispiel der Klausel unter beiden Schemata.
 
 ### 7.2.3.1 Alternative Mapping: Constants-Container-Klasse
 
@@ -475,12 +442,11 @@ declaration shall contain a public final class. By default, the
 mapped class shall be named 'Constants'. The class name may be
 modified using the @java_mapping annotation."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::constant_classes`, `crates/lang-rules/src/emit/idl4_java/mod.rs::Settings::apply`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_3_1_and_8_1_2_the_constants_container_holds_the_constants_of_a_scope`
 
-**Status:** `open` — kein `Constants`-Container und kein
-`constants_container`-Parameter.
+**Status:** `done` — `@java_mapping(constants_container = ...)` sammelt die Konstanten eines Scopes in einer Klasse, `Constants` als Vorgabe, oder im angegebenen Namen.
 
 ---
 
@@ -492,50 +458,54 @@ modified using the @java_mapping annotation."
 int16/unsigned short/uint16 -> short; long/int32/unsigned long/
 uint32 -> int; long long/int64/unsigned long long/uint64 -> long."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::integer`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`,
-`crates/lang-rules/tests/one_walk_two_targets.rs::an_unsigned_local_is_wide_enough_in_java`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`
 
-**Status:** `partial` — `int8 -> byte`, `short -> short`,
-`long -> int` und `long long -> long` stimmen. Die unsigned Typen weichen
-bewusst ab: `uint8`/`octet -> int` (Spec: `byte`), `unsigned short ->
-int` (Spec: `short`), `unsigned long -> long` (Spec: `int`), weil die
-Spalte den vollen Wertebereich halten will.
+**Status:** `done` — Tabelle 7.2 vollständig: `int8`/`uint8`/`octet` `byte`, `short`/`unsigned short` `short`, `long`/`unsigned long` `int`, `long long`/`unsigned long long` `long`.
+
+### 7.2.4.1.1 Unsigned-Typen nach Tab.7.2
+
+**Spec:** §7.2.4.1.1 Tab.7.2, S. 11 — "uint8 -> byte; unsigned short/uint16 -> short; unsigned long/uint32 -> int; unsigned long long/uint64 -> long."
+
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::integer`
+
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`
+
+**Status:** `done` — die unsigned Typen haben den Java-Typ gleicher Breite (Tabelle 7.2, `promote_integer_width` FALSE als Vorgabe); ihr Bitmuster bleibt erhalten.
 
 ### 7.2.4.1.2 Floating-Point Mapping (Tab.7.3)
 
 **Spec:** §7.2.4.1.2 Tab.7.3, S. 11 — "float -> float; double ->
 double; long double -> java.math.BigDecimal."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::primitive`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`
 
-**Status:** `partial` — `float -> float` und `double -> double` stimmen.
-`long double` wird `org.zerodds.wire.Float128`, nicht `BigDecimal`.
+**Status:** `done` — `float` `float`, `double` `double`, `long double` `java.math.BigDecimal`.
 
 ### 7.2.4.1.3 IDL char -> Java char
 
 **Spec:** §7.2.4.1.3, S. 11 — "The IDL char shall be mapped to the
 Java primitive type char."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::primitive`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`
 
-**Status:** done
+**Status:** `done` — `char` ist `char`.
 
 ### 7.2.4.1.4 IDL wchar -> Java char
 
 **Spec:** §7.2.4.1.4, S. 11 — "The IDL wchar shall be mapped to the
 Java primitive type char."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::primitive`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`
 
-**Status:** done
+**Status:** `done` — `wchar` ist `char`.
 
 ### 7.2.4.1.5 IDL boolean + TRUE/FALSE -> Java boolean + true/false
 
@@ -543,61 +513,55 @@ Java primitive type char."
 to the Java boolean, and the IDL constants TRUE and FALSE shall be
 mapped to the corresponding Java boolean literals true and false."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::primitive`, `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::java_value`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`
 
-**Status:** `partial` — `boolean` wird `boolean` (Test oben); dass die Konstanten `TRUE`/`FALSE` zu `true`/`false` werden, prüft kein Test.
+**Status:** `done` — `boolean` ist `boolean`; die Konstanten `TRUE` und `FALSE` werden `true` und `false`.
 
 ### 7.2.4.1.6 IDL octet -> Java byte
 
 **Spec:** §7.2.4.1.6, S. 11 — "The IDL type octet, an 8-bit
 quantity, shall be mapped to the Java type byte."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::integer`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`
 
-**Status:** `partial` — `octet` wird `int`, nicht `byte`; die Spalte
-begründet das mit dem Wertebereich 0..255, den ein signiertes `byte`
-nicht hält.
+**Status:** `done` — `octet` ist `byte`.
 
 ### 7.2.4.2.1.1 Sequences of Basic Types -> type-specific Interfaces
 
 **Spec:** §7.2.4.2.1.1 Tab.7.4, S. 12 — type-specific Sequence-Interfaces
 in `org.omg.type` mit `extends java.util.List<Boxed>`.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::specific_sequence`, `runtime/java/src/main/java/org/omg/type/`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_2_1_sequences_are_table_7_4_classes_or_lists_and_bounded_ones_are_checked`
 
-**Status:** `open` — keine `BooleanSeq`/`CharSeq`/…-Interfaces; eine
-Sequenz wird ein Java-Array.
+**Status:** `done` — eine Sequenz eines Basistyps ist die Klasse aus Tabelle 7.4 in `org.omg.type` (`BooleanSeq` bis `BigDecimalSeq`), eine `java.util.List` des geboxten Typs mit den Methoden der Klausel. Die Klausel nennt sie Interfaces mit Konstruktoren; ein Interface hat keinen Konstruktor, also sind es Klassen, und `prim get(int)` neben `Boxed get(int)` ist in Java nicht deklarierbar (JLS 8.4.8.3) — beides steht in den Klassen dokumentiert.
 
 ### 7.2.4.2.1.1 Bounds-Checking auf bounded Sequences
 
 **Spec:** §7.2.4.2.1.1, S. 13 — "Bounds checking on bounded
 sequences shall raise a java.lang.IndexOutOfBoundsException."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::checks`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_2_1_sequences_are_table_7_4_classes_or_lists_and_bounded_ones_are_checked`
 
-**Status:** `open` — es gibt keinen bounded-Sequence-Typ. Ein Java-Array
-wirft `IndexOutOfBoundsException` nativ, aber die Spec-Form
-(begrenzte Sequenz-Interfaces) fehlt.
+**Status:** `done` — der Modifier einer beschränkten Sequenz wirft `java.lang.IndexOutOfBoundsException` für zu viele Elemente.
 
 ### 7.2.4.2.1.2 Sequences of non-Basic Types -> java.util.List<E>
 
 **Spec:** §7.2.4.2.1.2, S. 13 — "IDL sequences of non basic types
 shall be mapped to the Java generic java.util.List<E> interface."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::java_type_of`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_2_1_sequences_are_table_7_4_classes_or_lists_and_bounded_ones_are_checked`
 
-**Status:** `open` — eine Sequenz wird ein Java-Array `T[]`, nicht
-`java.util.List<E>`.
+**Status:** `done` — eine Sequenz jedes anderen Typs ist `java.util.List<E>` des geboxten Elementtyps.
 
 ### 7.2.4.2.2 IDL string -> java.lang.String + IndexOutOfBoundsException
 
@@ -606,24 +570,21 @@ unbounded variants, shall be mapped to java.lang.String. Range
 checking [...] shall raise a java.lang.IndexOutOfBoundsException
 exception if necessary."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::checks`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_sequence_and_an_array_are_both_java_arrays`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_2_strings_and_fixed_are_checked_by_their_modifiers`
 
-**Status:** `partial` — `string` wird `java.lang.String` (im Test als
-Elementtyp belegt). Die Range-Prüfung fehlt; der Bound wird nicht
-durchgesetzt.
+**Status:** `done` — `string` ist `java.lang.String`; der Modifier wirft `IndexOutOfBoundsException` für eine überschrittene Schranke und für ein Zeichen außerhalb von `char`.
 
 ### 7.2.4.2.3 IDL wstring -> java.lang.String
 
 **Spec:** §7.2.4.2.3, S. 14 — analog §7.2.4.2.2.
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::checks`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_sequence_and_an_array_are_both_java_arrays`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_2_strings_and_fixed_are_checked_by_their_modifiers`
 
-**Status:** `partial` — `wstring` und `string` teilen `java.lang.String`
-(UTF-16). Die Range-Prüfung fehlt.
+**Status:** `done` — `wstring` ist `java.lang.String`; die Schranke wird im Modifier geprüft.
 
 ### 7.2.4.2.4 IDL fixed -> java.math.BigDecimal + ArithmeticException
 
@@ -632,11 +593,11 @@ durchgesetzt.
 to the Java java.math.BigDecimal class. Range checking shall raise
 a java.lang.ArithmeticException if necessary."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::checks`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_fixed_is_a_bigdecimal`, `crates/lang-rules/tests/java_runtime_selftest.rs`
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_2_strings_and_fixed_are_checked_by_their_modifiers`
 
-**Status:** `partial` — `fixed<P,S>` wird `java.math.BigDecimal` (CORBA 3.3 Teil 3 §1.5.6); der Codec schreibt und liest die Dezimalziffern über `Writer.writeFixed` und `Reader.readFixed`. Die Bereichsprüfung wirft `WireException.OutOfRange`, nicht `java.lang.ArithmeticException`; das ist der Rest. Log: `.agent/REPORT.md`.
+**Status:** `done` — `fixed<P,S>` ist `java.math.BigDecimal`; ein Wert mit mehr Stellen als `P` oder `S` erlauben wirft `java.lang.ArithmeticException`.
 
 ### 7.2.4.3.1 IDL struct -> Java public class + Serializable + Bean-Accessoren + Konstruktoren
 
@@ -646,13 +607,11 @@ implements java.io.Serializable, public accessor per member, public
 modifier per member, public all-values constructor, public default
 constructor."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::structure`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_the_default_constructor_initialises_every_member`
 
-**Status:** `partial` — eine geschachtelte Klasse mit `public`-Feldern
-wird erzeugt. Es fehlen `implements java.io.Serializable`, Accessoren/
-Modifier, der All-Values-Konstruktor und der öffentliche Default-Konstruktor.
+**Status:** `done` — eine öffentliche Klasse, `java.io.Serializable`, private Felder, Accessor und Modifier je Member, Default- und All-Values-Konstruktor, das Beispiel der Klausel unter beiden Schemata.
 
 ### 7.2.4.3.1 Default-Constructor: Members initialisieren
 
@@ -661,13 +620,11 @@ initialize member fields as follows: Primitives - Java default;
 Strings - empty string; Arrays - declared size with element defaults;
 Sequences - zero-length; Others - default constructor."
 
-**Repo:** `crates/lang-rules/src/default_java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::initial`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_the_default_constructor_initialises_every_member`
 
-**Status:** `open` — es gibt keinen öffentlichen Default-Konstruktor mit
-dieser Initialisierung. `default_java.rs` liefert einen `zd_def_<T>()`-
-Defaulter für den Decoder (DDS-XTypes Tab.9), nicht den Spec-Konstruktor.
+**Status:** `done` — Primitive behalten Javas Vorgabe, Strings sind leer, Arrays haben ihre Größe mit vorkonstruierten Elementen, Sequenzen sind leer, alles andere kommt aus seinem Default-Konstruktor.
 
 ### 7.2.4.3.1 Accessor/Modifier-Naming pro Naming-Scheme
 
@@ -676,11 +633,11 @@ follow the pattern get_<MemberName>()/set_<MemberName>() in IDL
 Naming Scheme, and get<MemberName>()/set<MemberName>() in Java
 Naming Scheme."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::Naming::getter`, `crates/lang-rules/src/emit/idl4_java/names.rs::Naming::setter`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`
 
-**Status:** `open` — es werden keine Accessoren erzeugt.
+**Status:** `done` — `get_<name>`/`set_<name>` unter dem IDL-Schema, `get<Name>`/`set<Name>` unter dem Java-Schema.
 
 ### 7.2.4.3.2 IDL union -> Java public final class + Discriminator-Accessor
 
@@ -688,13 +645,11 @@ Naming Scheme."
 Java public final class with the same name. [...] public accessor for
 discriminator [...] public accessor/modifier per member [...]"
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::union`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_2_a_union_is_a_final_class_with_discriminator_accessors_and_modifiers`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_2_int8_uint8_wchar_and_octet_discriminate_a_union`
 
-**Status:** `partial` — die Union wird eine Klasse mit `_d`-Feld und
-einem `public`-Feld pro Case. Accessoren/Modifier, der
-`getDiscriminator()`-Zugang und die `__default()`-Formen fehlen.
+**Status:** `done` — die Beispiele `U1` und `U2`: `public final class`, Diskriminator-Accessor, Accessor und Modifier je Member, Modifier mit Diskriminator für mehrere Labels und den Default, `__default()`, `IllegalStateException` und `IllegalArgumentException` wie die Klausel sie nennt.
 
 ### 7.2.4.3.3 IDL enum -> Java public enum + valueOf(int)
 
@@ -703,24 +658,22 @@ einem `public`-Feld pro Case. Accessoren/Modifier, der
 Java public enum with the same name [...] private member to hold the
 value [...] static helper method valueOf(int)."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::enumeration`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_enumeration_is_a_class_of_instances_and_a_member_of_it_is_one`, `crates/lang-rules/src/adapter/java.rs::tests::an_explicit_enumerator_value_is_written_out`, `crates/lang-rules/tests/java_map_class.rs::an_enumeration_is_a_class_of_instances_with_value_and_from_int`
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_3_an_enumeration_is_a_java_enum_with_value_of_int`
 
-**Status:** `partial` — die Enumeration wird eine Klasse mit einer Instanz je Enumerator, den Konstanten `public static final int _NAME`, `value()` und `from_int(int)` (CORBA 3.3 Teil 3 §1.5.9); ein Member ist eine Instanz der Klasse. Ein Java-`enum` und `valueOf(int)` der Spec fehlen: die Klasse trägt den Wert, den ein `enum` nicht für Werte hätte, die das IDL des Lesers nicht kennt. Log: `.agent/REPORT.md`.
+**Status:** `done` — ein Java-`enum` mit `@value`, `getValue()` und `valueOf(int)`, das für einen unbekannten Wert eine RuntimeException wirft.
 
 ### 7.2.4.3.4 Constructed Recursive Types
 
 **Spec:** §7.2.4.3.4, S. 19 — "Constructed recursive types are
 supported by mapping the involved types directly to Java."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::java_type_of`
 
-**Tests:** `crates/lang-rules/tests/java_corpus_compiles.rs::every_corpus_case_that_renders_also_compiles`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_4_a_recursive_type_names_its_own_class`
 
-**Status:** `partial` — Java-Referenzsemantik trägt rekursive Typen, und
-der Korpus umfasst sie; ein Test, der die Rekursion namentlich hält,
-fehlt (der Genannte läuft nur mit `--include-ignored`).
+**Status:** `done` — eine Struktur und eine Union, die eine Sequenz ihrer selbst halten, sind Klassen, deren Member ihre eigene Klasse nennen; der Test baut verschachtelte Werte.
 
 ### 7.2.4.4 IDL Array -> Java Array + IndexOutOfBoundsException
 
@@ -728,11 +681,11 @@ fehlt (der Genannte läuft nur mit `--include-ignored`).
 array of the mapped element type. Bound violations shall raise a
 java.lang.IndexOutOfBoundsException."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::checks`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_sequence_and_an_array_are_both_java_arrays`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_4_an_array_is_a_java_array_and_its_bounds_are_checked`
 
-**Status:** done
+**Status:** `done` — ein Java-Array des Elementtyps, das Beispiel `S2`; der Modifier wirft `IndexOutOfBoundsException` für eine falsche Länge.
 
 ### 7.2.4.5 IDL native -> kein definiertes Mapping
 
@@ -753,13 +706,11 @@ type referenced by the typedef type. This rule shall apply
 recursively. Annotations on an IDL typedef shall be applied to
 uses of the typedef in other type declarations."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::java_type_of`, `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::type_declaration`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_typedef_declares_nothing_and_says_so`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_6_a_typedef_is_replaced_and_its_annotations_reach_its_uses`, `crates/idl-lower/tests/idl_4_2_rules.rs::idl_7_4_15_4_2_an_annotation_prefixing_a_typedefs_type_annotates_the_typedef`
 
-**Status:** `partial` — der `typedef` deklariert nichts und seine
-Verwendung nimmt den Zieltyp an (Test). Die Propagation von Annotationen
-auf die Verwendungen fehlt.
+**Status:** `done` — ein `typedef` erzeugt keine Klasse, jede Verwendung trägt den Zieltyp, und `@max(100)` am `typedef` prüft der Modifier jeder Verwendung, auch als Sequenzelement.
 
 ---
 
@@ -771,12 +722,11 @@ auf die Verwendungen fehlt.
 org.omg.type.Any type. The implementation of the org.omg.type.Any
 is middleware specific."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `runtime/java/src/main/java/org/omg/type/Any.java`, `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::java_type_of`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_construct_with_no_java_data_form_is_named_and_not_left_out`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_3_any_is_org_omg_type_any`
 
-**Status:** `open` — `any` hat keine Java-Form in dieser Spalte und wird
-namentlich abgelehnt, nicht auf einen `Any`-Typ abgebildet.
+**Status:** `done` — `any` ist `org.omg.type.Any` mit Einfügen, Auslesen und dem Typ des Werts; auf der CORBA-Plattform `org.omg.CORBA.Any` (A.1.4).
 
 ---
 
@@ -789,18 +739,11 @@ Java public interface with the same name. [...] Each operation
 defined in the IDL interface shall map to a method in the Java
 interface."
 
-**Repo:** `crates/lang-rules/src/emit/interface_java.rs`,
-`crates/lang-rules/src/adapter/interface.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::interface`, `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::attribute_methods`, `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::operation_method`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::java_declares_the_same_entities_as_cpp`,
-`crates/lang-rules/tests/interface_bindings.rs::java_returns_a_future_of_the_boxed_result`,
-`crates/lang-rules/tests/interface_bindings.rs::java_returns_the_out_type_where_cpp_takes_a_reference`,
-`crates/lang-rules/tests/interface_bindings.rs::java_declares_no_throws_and_still_names_the_raises`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_6_the_interface_annotations_leave_the_java_unchanged`
 
-**Status:** `partial` — `@service`-Interfaces werden `public interface`
-mit Methoden und Attribut-Accessoren; die Bindung folgt aber DDS-RPC 1.0
-§7.11.2 (kein `throws`, out/inout in `_Out`-Typen). Der Basis-Pfad für
-Nicht-Service-Interfaces fehlt.
+**Status:** `done` — jedes Interface ist ein `public interface`, Basisinterfaces werden `extends`, Attribute Accessor und Modifier (ohne Modifier für `readonly`), Operationen Methoden mit Parametern in IDL-Reihenfolge, `raises` ein `throws`.
 
 ### 7.4.1 IDL exception -> Java class extends RuntimeException
 
@@ -809,26 +752,22 @@ Java class extending the java.lang.RuntimeException class with the
 same name as the IDL exception. Any members [...] following the
 rules of the IDL struct mapping."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::exception`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`, `crates/lang-rules/tests/java_idl4_corba.rs::idl4java_a_1_1_an_exception_extends_user_exception_and_members_name_the_annexs_classes`
 
-**Status:** `partial` — die Exception wird eine geschachtelte
-Datenklasse (als Struct-Form). Sie erbt ausdrücklich **nicht** von
-`RuntimeException`; die Crate begründet das mit `serialVersionUID`.
+**Status:** `done` — eine Exception ist eine Klasse, die `java.lang.RuntimeException` erweitert, mit Membern, Accessoren und Konstruktoren einer Struktur; auf der CORBA-Plattform erweitert sie `org.omg.CORBA.UserException` (A.1.1).
 
 ### 7.4.2 Interface Forward-Declaration: kein Java-Mapping
 
 **Spec:** §7.4.2, S. 23 — "An interface forward declaration has no
 mapping to the Java language."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::top_level_interface`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`
 
-**Status:** `open` — es gibt keine Java-Forward-Declaration-Behandlung;
-die Bindung lehnt eine Interface-Forward-Declaration ohne Definition im
-RPC-Pfad als E002 ab, was nicht dasselbe ist.
+**Status:** `done` — eine Vorwärtsdeklaration erzeugt keine Datei; die Definition hat ihre eine.
 
 ---
 
@@ -839,12 +778,11 @@ RPC-Pfad als E002 ab, was nicht dasselbe ist.
 **Spec:** §7.5, S. 23 — "The embedded elements shall be mapped to a
 public declaration within the scope of the Java interface."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::embedded_declarations`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_5_declarations_embedded_in_an_interface_are_nested_in_it`
 
-**Status:** `open` — eingebettete Deklarationen im Interface-Body werden
-nicht in den Scope des Java-Interface überführt.
+**Status:** `done` — Typen, Konstanten und Exceptions im Rumpf eines Interface sind öffentliche Deklarationen im Java-Interface, das Beispiel `FullInterface`.
 
 ---
 
@@ -858,14 +796,11 @@ Abstract; A class with the same name [...] private members are
 protected [...] Each valuetype initializer is mapped to a method
 returning void."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::valuetype`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_6_a_value_type_is_an_abstract_and_a_concrete_class`
 
-**Status:** `open` — ein `valuetype` wird wie ein Struct als eine
-geschachtelte Klasse mit `public`-Feldern abgebildet; die
-Abstract+Concrete-Zweiteilung, `protected`-Member und
-`void`-Factory-Methoden fehlen.
+**Status:** `done` — die Beispiele `VT1` und `VT2`: die abstrakte Klasse `<Name>Abstract` mit öffentlichem Zustand, `protected` privatem Zustand, abstrakten Operationen und Initialisierern (`void`), die Klasse `<Name>`, Basis und unterstütztes Interface.
 
 ---
 
@@ -905,12 +840,11 @@ clause A.1 of Annex A."
 **Spec:** §7.9, S. 25 — "Basic components have no direct language
 mapping; they shall be mapped to intermediate IDL."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/mod.rs::intermediate_idl`, `crates/ccm/src/transform.rs::transform_component`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_components.rs::idl4java_7_9_and_7_12_a_component_is_its_equivalent_interface_in_java`
 
-**Status:** `open` — keine CCM-Komponenten-Abbildung nach
-intermediate IDL.
+**Status:** `done` — eine Komponente wird ihr äquivalentes Interface nach CCM 4.0 §6 und dieses nach §7.4: `extends Components.CCMObject`, `provide_`, `connect_`/`disconnect_`/`get_connection(s)_`, `subscribe_`/`unsubscribe_`, `get_consumer_`, Attribute; der Ereignistyp wird Wertetyp und `<E>Consumer`. Die `Components`-Deklarationen kommen aus dem IDL, das die Anwendung einbindet (Test: Transkription von CCM 4.0 §6).
 
 ---
 
@@ -920,11 +854,11 @@ intermediate IDL.
 
 **Spec:** §7.10, S. 25 — analog §7.9.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/mod.rs::intermediate_idl`, `crates/ccm/src/transform.rs::transform_home`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_components.rs::idl4java_7_10_a_home_is_its_explicit_implicit_and_equivalent_interfaces`
 
-**Status:** `open` — wie §7.9; keine Home-Abbildung.
+**Status:** `done` — ein Home wird `<Home>Explicit` (erweitert `Components.CCMHome`, Factory-Operationen mit `CreateFailure`), `<Home>Implicit` (erweitert `Components.KeylessCCMHome`, `create()`) und `<Home>`, das beide erweitert.
 
 ---
 
@@ -948,11 +882,11 @@ intermediate IDL.
 
 **Spec:** §7.12, S. 25 — analog §7.9.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/mod.rs::intermediate_idl`, `crates/ccm/src/transform.rs::expand_extended_ports`, `crates/ccm/src/transform.rs::transform_connector`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_components.rs::idl4java_7_9_and_7_12_a_component_is_its_equivalent_interface_in_java`, `crates/lang-rules/tests/java_idl4_components.rs::idl4java_7_12_a_connector_maps_through_its_ports`, `crates/ccm/tests/equivalent_idl.rs::idl_7_4_11_4_2_an_extended_port_is_the_basic_ports_of_its_port_type`
 
-**Status:** `open` — wie §7.9; keine Port/Connector-Abbildung.
+**Status:** `done` — ein erweiterter Port wird die Basis-Ports seines Port Types (`<port>_<basic port>`), ein `mirrorport` mit vertauschten Facets und Receptacles; ein Konnektor wird über seine Ports wie eine Komponente abgebildet, seine Attribute wie die eines Interface.
 
 ---
 
@@ -963,11 +897,11 @@ intermediate IDL.
 **Spec:** §7.13, S. 25 — "Template module instances have no direct
 language mapping; they shall be mapped to intermediate IDL."
 
-**Repo:** —
+**Repo:** `crates/idl-lower/src/lower.rs::template_module_inst`, `crates/lang-rules/src/emit/idl4_java/mod.rs::generate`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_components.rs::idl4java_7_13_a_template_module_instance_is_a_package_of_its_own`
 
-**Status:** `open` — keine Template-Module-Abbildung.
+**Status:** `done` — eine Instanz `module Buffer<long, 4> LongBuffer;` ist das Paket `LongBuffer` mit den Deklarationen der Vorlage, `T` durch `long` und `Capacity` durch `4` ersetzt; die Vorlage selbst erzeugt nichts.
 
 ---
 
@@ -980,26 +914,22 @@ IDL struct, then the Java class shall be declared to extend the
 base class [...] all values constructor [...] first parameter a
 non-null instance of the base struct's Java class."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::structure`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_1_a_derived_structure_extends_its_base_class`
 
-**Status:** `open` — die Spalte flacht Basis-Member in die abgeleitete
-Klasse ab (`all_members_of`); ein Java-`extends` und der
-Base-Instanz-Konstruktor entstehen nicht.
+**Status:** `done` — die abgeleitete Klasse erweitert die der Basis, und ihr All-Values-Konstruktor nimmt als ersten Parameter eine Instanz der Basisklasse, das Beispiel `S5 : S1`.
 
 ### 7.14.2 Union-Discriminator: int8/uint8/wchar/octet zusätzlich erlaubt
 
 **Spec:** §7.14.2, S. 26 — "This IDL4 block adds int8, uint8, wchar
 and octet to the set of valid types for a discriminator."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::union`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_union_is_a_class_with_a_discriminator_and_one_field_per_case`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_2_int8_uint8_wchar_and_octet_discriminate_a_union`
 
-**Status:** `partial` — der Discriminator wird generisch auf den
-Java-Typ des Diskriminator-IDL-Typs abgebildet, also auch für `octet`;
-ein Test, der einen 8-Bit- oder `octet`-Discriminator nennt, fehlt.
+**Status:** `done` — `int8`, `uint8`, `wchar` und `octet` diskriminieren eine Union wie §7.2.4.3.2 sie abbildet.
 
 ### 7.14.3.1 IDL map -> java.util.Map<K,V>
 
@@ -1008,11 +938,11 @@ ein Test, der einen 8-Bit- oder `octet`-Discriminator nennt, fehlt.
 Java generic java.util.Map instantiated with the Java equivalent
 key type and value type."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::map_boxed`, `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::checks`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_map_is_a_java_util_map_over_a_generated_entry_class`, `crates/lang-rules/src/adapter/java.rs::tests::a_map_keyed_by_a_structure_is_a_java_util_map_over_a_class_with_equals`, `crates/lang-rules/tests/java_map_class.rs::a_map_is_a_java_util_map_with_the_operations_of_table_47`
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_3_1_a_map_is_a_java_util_map_of_table_7_5_types`
 
-**Status:** done — eine `map<K,V>` wird eine Klasse `ZdMap_…`, die `java.util.LinkedHashMap` über die geboxten Typen erweitert und die Operationen von Table 47 trägt; Struktur, Union und Bitset sind Schlüssel (erzeugte `equals` und `hashCode`). Log: `.agent/REPORT.md`.
+**Status:** `done` — eine Map ist `java.util.Map` der geboxten Typen aus Tabelle 7.5, eine beschränkte wird geprüft, das Beispiel `S4`.
 
 ### 7.14.3.2 IDL bitset -> Java public class mit Bitfield-Accessoren
 
@@ -1021,13 +951,11 @@ public class with the same name. [...] Default member type: boolean
 if size is 1, octet 2-8, unsigned short 9-16, unsigned long 17-32,
 unsigned long long 33-64."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::bitset`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_bitset_is_a_class_of_one_field_per_bitfield`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_3_2_a_bit_set_is_a_class_with_bit_field_accessors`
 
-**Status:** `partial` — das Bitset wird eine Klasse mit einem
-`public`-Feld pro Bitfield. Bitfield-Accessoren und die
-Default-Typ-Regel pro Bitgröße fehlen (Felder sind `int`).
+**Status:** `done` — eine öffentliche Klasse mit Accessor und Modifier je benanntem Bitfeld, ohne Typangabe der kleinste Typ der Klausel (`boolean`, `byte`, `short`, `int`, `long`), das Beispiel `MyBitset`.
 
 ### 7.14.3.3 IDL bitmask -> Java enum + java.util.BitSet
 
@@ -1036,13 +964,11 @@ a Java enum and a java.util.BitSet. The Java enum name shall be the
 IDL bitmask name with the Flags suffix appended. [...] If the size
 exceeds @bit_bound, IndexOutOfBoundsException shall be raised."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::bitmask`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_bitmask_takes_the_holder_its_bound_calls_for`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_3_3_a_bit_mask_is_an_enum_of_flags_and_a_bit_set`
 
-**Status:** `partial` — die Bitmask wird Konstanten im unsigned Holder
-ihres `@bit_bound` (`int` bzw. `long`). Ein `<Name>Flags`-Java-`enum`
-und `java.util.BitSet` fehlen.
+**Status:** `done` — ein Java-`enum` `<Name>Flags` mit einer Konstante je Flag nach `@position`, ein Member ist `java.util.BitSet`, und eine Überschreitung von `@bit_bound` wirft `IndexOutOfBoundsException`.
 
 ---
 
@@ -1068,12 +994,11 @@ und `java.util.BitSet` fehlen.
 represented by Java annotation types <AnnotationName> and
 <AnnotationName>Group."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::annotation_type`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_16_a_user_annotation_is_a_java_annotation_type_and_its_group`
 
-**Status:** `open` — User-Annotationen werden nicht als Java
-`@interface` propagiert.
+**Status:** `done` — eine Annotation ist ein Java-Annotationstyp mit ihren Membern und Defaults und `<Name>Group`, Retention RUNTIME.
 
 ### 7.16.2 Single-Instance/Multi-Instance-Anwendung
 
@@ -1081,11 +1006,11 @@ represented by Java annotation types <AnnotationName> and
 annotated with the mapped Java annotation [...] For multiple
 instances, the Group-suffix annotation."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::user_annotations`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_16_a_user_annotation_is_a_java_annotation_type_and_its_group`
 
-**Status:** `open` — wie §7.16.1; Annotationen erreichen das Java nicht.
+**Status:** `done` — ein Element mit einer Anwendung trägt die Annotation, eines mit mehreren die Group; per Reflexion zur Laufzeit gelesen.
 
 ---
 
@@ -1097,26 +1022,22 @@ instances, the Group-suffix annotation."
 Annotation (`@id`, `@autoid`, `@optional`, `@position`, `@value`,
 `@extensibility`/`@final`/`@mutable`/`@appendable`).
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::member`, `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::enumeration`, `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::bitmask`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::an_optional_member_is_boxed_and_a_primitive_one_too`,
-`crates/lang-rules/src/adapter/java.rs::tests::an_explicit_enumerator_value_is_written_out`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_standardized_annotations_shape_the_class`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_3_an_enumeration_is_a_java_enum_with_value_of_int`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_3_3_a_bit_mask_is_an_enum_of_flags_and_a_bit_set`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_annotations_without_impact_leave_the_class_unchanged`
 
-**Status:** `partial` — `@optional` boxt den Member, `@value` schreibt
-den Enum-Wert. `@id`, `@position` und die
-Extensibility-Annotationen werden nicht emittiert.
+**Status:** `done` — `@optional` boxt einen Basistyp, `@value` und `@position` setzen Enum- und Flag-Werte; `@id`, `@autoid` und die Extensibility-Annotationen lassen die Klasse unverändert.
 
 ### 7.17.2 Data Modeling Tab.7.7
 
 **Spec:** §7.17.2 Tab.7.7, S. 32 — Impact von `@key`,
 `@must_understand`, `@default_literal`.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::member`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_standardized_annotations_shape_the_class`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_annotations_without_impact_leave_the_class_unchanged`
 
-**Status:** `open` — keine `@key`-/`@must_understand`-Marker und keine
-`@default_literal`-Behandlung im generierten Java.
+**Status:** `done` — `@default_literal` ist der Wert des Default-Konstruktors; `@key` und `@must_understand` lassen die Klasse unverändert.
 
 ### 7.17.3 Units and Ranges Tab.7.8
 
@@ -1124,25 +1045,22 @@ Extensibility-Annotationen werden nicht emittiert.
 Constructor; `@range`/`@min`/`@max` lösen im Setter
 `IllegalArgumentException` aus; `@unit` ohne Wirkung.
 
-**Repo:** `crates/lang-rules/src/default_java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::range_checks`, `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::member`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_standardized_annotations_shape_the_class`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_6_a_typedef_is_replaced_and_its_annotations_reach_its_uses`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_annotations_without_impact_leave_the_class_unchanged`
 
-**Status:** `partial` — `@default` erreicht den `zd_def_`-Defaulter
-(`default_java.rs::member_default`), aber nicht den Spec-Constructor;
-`@range`/`@min`/`@max`-Setter-Prüfungen fehlen.
+**Status:** `done` — `@default` ist der Wert des Default-Konstruktors, `@range`/`@min`/`@max` prüft der Modifier mit `IllegalArgumentException`, `@unit` lässt die Klasse unverändert.
 
 ### 7.17.4 Data Implementation Tab.7.9
 
 **Spec:** §7.17.4 Tab.7.9, S. 33 — `@bit_bound` (Bitmask),
 `@external` (boxed), `@nested` (kein Impact).
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::member`, `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::bitmask`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_bitmask_takes_the_holder_its_bound_calls_for`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_standardized_annotations_shape_the_class`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_14_3_3_a_bit_mask_is_an_enum_of_flags_and_a_bit_set`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_the_annotations_without_impact_leave_the_class_unchanged`
 
-**Status:** `partial` — `@bit_bound` wählt den Holder der Bitmask.
-`@external` und `@nested` erreichen das Java nicht.
+**Status:** `done` — `@bit_bound` begrenzt die Bitmask, `@external` boxt einen Basistyp, `@nested` lässt die Klasse unverändert.
 
 ### 7.17.5 Code Generation Tab.7.10: @verbatim
 
@@ -1150,26 +1068,22 @@ Constructor; `@range`/`@min`/`@max` lösen im Setter
 to the indicated output position when the indicated language is
 '*' or 'java'."
 
-**Repo:** `crates/lang-rules/src/verbatim.rs`,
-`crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::Gen::structure`, `crates/lang-rules/src/verbatim.rs`
 
-**Tests:** `crates/lang-rules/tests/verbatim_end_to_end.rs::java_wraps_the_file_and_fills_the_class_body`,
-`crates/lang-rules/tests/verbatim_every_column.rs::every_column_places_the_six_slots_in_its_declarations`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_5_verbatim_text_is_copied_for_java_and_star_only`
 
-**Status:** done — die `java`- und `*`-Aliase werden an den sechs
-Spec-Platzierungen in die Java-Ausgabe eingesetzt.
+**Status:** `done` — Text mit `language` `java` oder `*` steht an der angegebenen Stelle, Text für eine andere Sprache nicht; der Compiler bestätigt die eingefügten Deklarationen.
 
 ### 7.17.6 Interfaces Tab.7.11
 
 **Spec:** §7.17.6 Tab.7.11, S. 33 — `@service`, `@oneway`, `@ami`;
 der Impact ist middleware-spezifisch.
 
-**Repo:** `crates/lang-rules/src/emit/interface_java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/behaviour.rs::Gen::interface`
 
-**Tests:** `crates/lang-rules/tests/interface_bindings.rs::java_declares_the_same_entities_as_cpp`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_17_6_the_interface_annotations_leave_the_java_unchanged`
 
-**Status:** `partial` — `@service` steuert die RPC-Interface-Erzeugung.
-`@oneway` und `@ami` werden nicht ausgewertet.
+**Status:** `done` — `@service`, `@oneway` und `@ami` haben laut Tabelle 7.11 eine middleware-spezifische Wirkung; die Abbildung erzeugt mit ihnen dasselbe Java wie ohne sie.
 
 ---
 
@@ -1183,34 +1097,33 @@ NamingConvention apply_naming_convention; string constants_container
 default 'Constants'; boolean promote_integer_width default FALSE;
 string string_type default 'java.lang.String'; }"
 
-**Repo:** —
+**Repo:** `crates/ast/src/facet/mapping.rs`, `crates/idl-lower/src/annotation.rs::mapping_annotation`
 
-**Tests:** —
+**Tests:** `crates/idl-lower/tests/mapping_annotations.rs::idl4java_8_1_java_mapping_reaches_the_model_parameter_by_parameter`, `crates/idl-lower/tests/mapping_annotations.rs::idl4java_8_1_an_application_that_does_not_fit_the_declaration_is_an_error`, `crates/idl-lower/tests/mapping_annotations.rs::idl4java_8_1_the_settings_survive_a_snapshot`
 
-**Status:** `open` — `@java_mapping` existiert im Baum nicht.
+**Status:** `done` — `@java_mapping` ist eingebaut, wird gegen die Deklaration der Klausel geprüft (`IDL0007`) und erreicht das Modell als `Facets::mappings`, auch durch einen Snapshot.
 
 ### 8.1.1 apply_naming_convention Tab.8.1
 
 **Spec:** §8.1.1 Tab.8.1, S. 35-36 — die Tabelle listet 17
 IDL-Konstrukt-Typen mit IDL_NAMING vs. JAVA_NAMING.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/names.rs::Naming`, `crates/lang-rules/src/emit/idl4_java/mod.rs::Settings::apply`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_8_1_java_mapping_sets_the_scheme_the_integer_width_and_the_string_type`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_3_1_a_structure_is_a_serializable_class_with_accessors_and_two_constructors`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_4_an_interface_is_a_java_interface_with_holders_and_throws`
 
-**Status:** `open` — es gibt keinen Naming-Scheme-Schalter; die
-Transformationen aus §7.1.1.2.x fehlen.
+**Status:** `done` — beide Spalten der Tabelle 8.1, je Konstrukt; eine Einstellung an einer Deklaration gewinnt über die ihres Moduls.
 
 ### 8.1.2 constants_container-Parameter
 
 **Spec:** §8.1.2, S. 37 — "constants_container activates the
 alternative mapping for constants defined in §7.2.3.1."
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/data.rs::constant_classes`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_3_1_and_8_1_2_the_constants_container_holds_the_constants_of_a_scope`
 
-**Status:** `open` — kein Parameter, kein `Constants`-Container.
+**Status:** `done` — der Parameter schaltet die alternative Abbildung ein, mit dem Klassennamen, den er nennt.
 
 ### 8.1.3 promote_integer_width-Parameter (Tab.8.2)
 
@@ -1218,13 +1131,11 @@ alternative mapping for constants defined in §7.2.3.1."
 shall be mapped to a Java primitive type of the same size (FALSE,
 default) or to a bigger type (TRUE)."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::integer`, `crates/lang-rules/src/emit/idl4_java/mod.rs::Settings::apply`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::every_idl_primitive_reaches_the_java_type_that_holds_it`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_7_2_4_1_the_basic_types_map_by_tables_7_2_and_7_3`, `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_8_1_java_mapping_sets_the_scheme_the_integer_width_and_the_string_type`
 
-**Status:** `partial` — die Spalte verbreitert unsigned Typen
-(unbedingt, also der TRUE-Fall), aber es gibt keinen Schalter und
-damit nicht den Spec-Default FALSE.
+**Status:** `done` — FALSE (Vorgabe) gibt Tabelle 7.2, TRUE die breiteren Typen aus Tabelle 8.2 (`uint8` `short`, `uint16` `int`, `uint32` `long`, `uint64` `java.math.BigInteger`).
 
 ### 8.1.4 string_type-Parameter
 
@@ -1232,12 +1143,11 @@ damit nicht den Spec-Default FALSE.
 string and wstring types shall be mapped to. By default,
 java.lang.String."
 
-**Repo:** `crates/lang-rules/src/adapter/java.rs`.
+**Repo:** `crates/lang-rules/src/emit/idl4_java/types.rs::Gen::java_type_of`, `crates/lang-rules/src/emit/idl4_java/mod.rs::Settings::apply`
 
-**Tests:** `crates/lang-rules/src/adapter/java.rs::tests::a_sequence_and_an_array_are_both_java_arrays`.
+**Tests:** `crates/lang-rules/tests/java_idl4_mapping.rs::idl4java_8_1_java_mapping_sets_the_scheme_the_integer_width_and_the_string_type`
 
-**Status:** `partial` — es wird immer `java.lang.String` benutzt; der
-Parameter fehlt, der Default ist damit erreicht.
+**Status:** `done` — `java.lang.String` als Vorgabe; `@java_mapping(string_type = "java.lang.StringBuilder")` ändert den Typ von `string` und `wstring`.
 
 ---
 
@@ -1247,22 +1157,26 @@ Parameter fehlt, der Default ist damit erreicht.
 
 **Spec:** Annex A, S. 39+ — CORBA-spezifische Anpassungen.
 
-**Repo:** —
+**Repo:** `crates/lang-rules/src/emit/idl4_java/mod.rs::Platform`, `crates/lang-rules/src/emit/idl4_java/mod.rs::package_of`, `runtime/java/corba/org/omg/CORBA/`, `runtime/corba/CORBA_PIDL.idl`
 
-**Tests:** —
+**Tests:** `crates/lang-rules/tests/java_idl4_corba.rs::idl4java_a_1_2_the_corba_module_is_org_omg_corba_under_the_idl_naming_scheme`, `crates/lang-rules/tests/java_idl4_corba.rs::idl4java_a_1_typecode_object_any_and_user_exception_are_the_annexs_classes`, `crates/lang-rules/tests/java_idl4_corba.rs::idl4java_a_1_1_an_exception_extends_user_exception_and_members_name_the_annexs_classes`
 
-**Status:** `open` — keine IDL4-Java-Annex-A.1-Abbildung. Die
-CORBA-RMI-Spalte `crates/corba-codegen/` implementiert die ältere
-IDL-to-Java-1.3-Abbildung (formal/2008-01-04) für CORBA, nicht diesen
-Annex.
+**Status:** `done` — `--java-platform corba`: Exceptions erweitern `org.omg.CORBA.UserException`, `TypeCode`, `Object` und `Any` sind die Klassen der Annex mit dem Verhalten aus CORBA 3.3 Teil 1 §8.11.1, der CORBA-Modul ist `org.omg.CORBA` unter dem IDL-Schema; `--java-corba-module` schreibt dessen Java aus `orb.idl` und dem Pseudo-IDL. Native Typen des CORBA-Moduls sind `java.lang.Object` (Entscheidung, die Spezifikation nennt keine Form).
 
 ---
 
 ## Audit-Status
 
-5 done / 26 partial / 34 open / 22 n/a (informative) / 0 n/a (rejected).
+66 done / 0 partial / 0 open / 0 blocked / 22 n/a (informative).
 
-Keine Test-Ausführung im Rahmen dieses Re-Syncs (Cargo ist für diesen
-Task nicht erlaubt). Die Belege sind Pfade und Testnamen im heutigen Baum;
-`python3 website/_tools/verify_coverage_items.py --check` prüft Zitat und
-Testnamen.
+Test-Lauf: in CI, Krate-Ebene und Säulen-Jobs; die zitierten Tests mit dem letzten Ergebnis jedes Jobs in den Pipelines 8501 bis 9310 von `main` (`python3 ci/coverage_results.py --document idl4-java-1.0.md`):
+
+* `cargo nextest run --profile merge -p zerodds-ccm --all-targets` (Job `merge-rust-ccm`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-idl-lower --all-targets` (Job `merge-rust-idl-lower`) — 4 Tests grün.
+* `cargo nextest run --profile merge -p zerodds-idlc --all-targets` (Job `merge-rust-idlc`) — 1 Test grün.
+* `cargo nextest run --profile merge -p zerodds-lang-rules --all-targets` (Job `merge-rust-lang-rules`) — 4 Tests grün.
+* `python3 ci/run_integration.py merge-codegen-java` (Job `merge-codegen-java`) — 35 Tests grün.
+
+45 zitierte Tests grün, 0 nicht grün.
+
+Offene Punkte: keine.

@@ -179,7 +179,7 @@ fn assert_not_created(
 /// failures below could be the fixtures.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn the_fixtures_create_a_participant_when_nothing_is_wrong() {
+fn security_9_8_1_the_fixtures_create_a_participant_when_nothing_is_wrong() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the participant creation sequence cannot run");
         return;
@@ -197,7 +197,7 @@ fn the_fixtures_create_a_participant_when_nothing_is_wrong() {
 /// NOT_ALLOWED_BY_SECURITY and no participant exists.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn step_1_an_identity_that_is_not_validated_refuses_the_participant() {
+fn security_9_8_1_step_1_an_identity_that_is_not_validated_refuses_the_participant() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the participant creation sequence cannot run");
         return;
@@ -222,7 +222,7 @@ fn step_1_an_identity_that_is_not_validated_refuses_the_participant() {
 /// does not verify is not validated by `validate_local_permissions`.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn step_2_permissions_that_are_not_validated_refuse_the_participant() {
+fn security_9_8_1_step_2_permissions_that_are_not_validated_refuse_the_participant() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the participant creation sequence cannot run");
         return;
@@ -250,7 +250,7 @@ fn step_2_permissions_that_are_not_validated_refuse_the_participant() {
 /// `check_create_participant`.
 #[serial_test::file_serial(security_live)]
 #[test]
-fn step_3_a_domain_the_permissions_do_not_grant_refuses_the_participant() {
+fn security_9_8_1_step_3_a_domain_the_permissions_do_not_grant_refuses_the_participant() {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — the participant creation sequence cannot run");
         return;

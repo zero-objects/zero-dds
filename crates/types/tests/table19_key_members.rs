@@ -152,7 +152,7 @@ fn the_key_member_bullets_are_an_axis_whose_default_is_the_clause() {
 /// agree become one, and under `KEEP_LAST(1)` the samples of one
 /// overwrite the samples of the other.
 #[test]
-fn a_shorter_string_key_in_the_reader_is_not_assignable() {
+fn xtypes_7_2_4_4_8_a_shorter_string_key_in_the_reader_is_not_assignable() {
     assert!(!assignable(
         "R",
         "W",
@@ -185,7 +185,7 @@ fn a_shorter_string_key_in_the_reader_is_not_assignable() {
 /// Only being a key makes the loss inadmissible, which is why the rule
 /// could not live in the general member check.
 #[test]
-fn a_shorter_string_member_that_is_not_a_key_is_still_assignable() {
+fn xtypes_7_2_4_4_8_a_shorter_string_member_that_is_not_a_key_is_still_assignable() {
     assert!(assignable(
         "R",
         "W",
@@ -199,7 +199,7 @@ fn a_shorter_string_member_that_is_not_a_key_is_still_assignable() {
 /// > the same member ID verifies that all literals in m2.type appear as
 /// > literals in m1.type.
 #[test]
-fn a_writer_enum_key_literal_the_reader_lacks_is_not_assignable() {
+fn xtypes_7_2_2_4_4_4_8_a_writer_enum_key_literal_the_reader_lacks_is_not_assignable() {
     assert!(!assignable(
         "R",
         "W",
@@ -207,11 +207,13 @@ fn a_writer_enum_key_literal_the_reader_lacks_is_not_assignable() {
         // enumerator in the *enclosing* scope, not inside the enum, so
         // two enums in one scope cannot share a literal name — and the
         // rule under test is about literals that appear on both sides.
+        // `rm` and not `r`: a module `r` beside the structure `R` is two
+        // identifiers differing only in case (IDL 4.2 §7.2.3).
         "\
-module r { @appendable enum E { A }; };
-module w { @appendable enum E { A, B }; };
-@mutable struct R { @id(1) @key r::E k; };
-@mutable struct W { @id(1) @key w::E k; };"
+module rm { @appendable enum E { A }; };
+module wm { @appendable enum E { A, B }; };
+@mutable struct R { @id(1) @key rm::E k; };
+@mutable struct W { @id(1) @key wm::E k; };"
     ));
     // A reader that knows more literals than the writer can send is
     // fine: every value that arrives has a name.
@@ -219,10 +221,10 @@ module w { @appendable enum E { A, B }; };
         "R",
         "W",
         "\
-module r { @appendable enum E { A, B }; };
-module w { @appendable enum E { A }; };
-@mutable struct R { @id(1) @key r::E k; };
-@mutable struct W { @id(1) @key w::E k; };"
+module rm { @appendable enum E { A, B }; };
+module wm { @appendable enum E { A }; };
+@mutable struct R { @id(1) @key rm::E k; };
+@mutable struct W { @id(1) @key wm::E k; };"
     ));
 }
 
@@ -230,7 +232,7 @@ module w { @appendable enum E { A }; };
 /// > with the same member ID verifies
 /// > `m1.type.length >= m2.type.length`.
 #[test]
-fn a_shorter_sequence_key_in_the_reader_is_not_assignable() {
+fn xtypes_7_2_4_4_8_a_shorter_sequence_key_in_the_reader_is_not_assignable() {
     assert!(!assignable(
         "R",
         "W",
@@ -259,7 +261,7 @@ fn a_shorter_sequence_key_in_the_reader_is_not_assignable() {
 /// splitting the samples into instances and the other holding them all
 /// as one.
 #[test]
-fn one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable() {
+fn xtypes_7_2_2_4_4_4_8_one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable() {
     assert!(!assignable(
         "R",
         "W",
@@ -303,7 +305,7 @@ fn one_keyed_union_discriminator_and_one_unkeyed_are_not_assignable() {
 /// different positions, and a writer with one flag more than the reader,
 /// were both refused.
 #[test]
-fn two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags() {
+fn xtypes_7_2_4_4_7_two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags() {
     assert!(assignable(
         "R",
         "W",
@@ -339,7 +341,7 @@ fn two_bitmasks_of_the_same_bound_are_assignable_whatever_their_flags() {
 /// halves at once: it is not on the wire, and the assignability rules
 /// read the `TypeObject` and nothing else.
 #[test]
-fn a_non_serialized_member_does_not_enter_the_comparison() {
+fn xtypes_7_2_4_4_2_a_non_serialized_member_does_not_enter_the_comparison() {
     assert!(assignable(
         "R",
         "W",
@@ -380,7 +382,7 @@ fn a_non_serialized_member_does_not_enter_the_comparison() {
 /// both carry the invalid identifier matched each other on the absence
 /// of a type.
 #[test]
-fn tk_none_is_not_assignable_from_itself() {
+fn xtypes_7_3_4_2_tk_none_is_not_assignable_from_itself() {
     use zerodds_types::TypeIdentifier;
     let registry = TypeRegistry::new();
     let cfg = AssignabilityConfig::default();
@@ -417,7 +419,7 @@ fn tk_none_is_not_assignable_from_itself() {
 /// had said to ignore. Both halves are here — the flag has to travel
 /// with the type, and one side alone must not decide it.
 #[test]
-fn ignore_literal_names_needs_the_annotation_on_both_types() {
+fn xtypes_7_2_4_4_7_ignore_literal_names_needs_the_annotation_on_both_types() {
     // Same values, different names, annotated on both sides.
     assert!(assignable(
         "R",

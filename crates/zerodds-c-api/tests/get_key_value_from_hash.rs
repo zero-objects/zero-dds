@@ -16,7 +16,7 @@ const OK: i32 = 0;
 const BAD_PARAMETER: i32 = -6;
 
 #[test]
-fn the_key_comes_out_of_a_hash_that_spells_it_and_nothing_else_does() {
+fn dcps_2_2_2_4_2_9_the_key_comes_out_of_a_hash_that_spells_it_and_nothing_else_does() {
     let lease = zerodds_test_domains::lease_domain();
     // SAFETY: handles come from the create calls above their use and are
     // released at the end.

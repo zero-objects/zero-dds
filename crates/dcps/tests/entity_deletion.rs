@@ -56,7 +56,7 @@ fn precondition<T: core::fmt::Debug>(r: Result<T, DdsError>) -> bool {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn delete_datawriter_deletes_the_writer_behind_every_handle() {
+fn dcps_2_2_1_1_delete_datawriter_deletes_the_writer_behind_every_handle() {
     let p = offline(201);
     let topic = p
         .create_topic::<RawBytes>("DeleteWriter", TopicQos::default())
@@ -87,7 +87,7 @@ fn delete_datawriter_deletes_the_writer_behind_every_handle() {
 }
 
 #[test]
-fn a_writer_of_another_publisher_is_left_as_it_was() {
+fn dcps_2_2_2_4_1_6_a_writer_of_another_publisher_is_left_as_it_was() {
     let p = offline(202);
     let topic = p
         .create_topic::<RawBytes>("ForeignWriter", TopicQos::default())
@@ -103,7 +103,7 @@ fn a_writer_of_another_publisher_is_left_as_it_was() {
 }
 
 #[test]
-fn lookup_datawriter_hands_out_a_handle_to_the_same_writer() {
+fn dcps_2_2_2_4_1_7_lookup_datawriter_hands_out_a_handle_to_the_same_writer() {
     let p = offline(203);
     let topic = p
         .create_topic::<RawBytes>("LookupWriter", TopicQos::default())
@@ -132,7 +132,7 @@ fn lookup_datawriter_hands_out_a_handle_to_the_same_writer() {
 }
 
 #[test]
-fn the_last_handle_deletes_the_writer() {
+fn dcps_2_2_1_1_the_last_handle_deletes_the_writer() {
     let p = offline(204);
     let topic = p
         .create_topic::<RawBytes>("LastWriterHandle", TopicQos::default())
@@ -153,7 +153,7 @@ fn the_last_handle_deletes_the_writer() {
 }
 
 #[test]
-fn publisher_delete_contained_entities_deletes_every_writer() {
+fn dcps_2_2_2_4_1_14_publisher_delete_contained_entities_deletes_every_writer() {
     let p = offline(205);
     let a = p
         .create_topic::<RawBytes>("PubContainedA", TopicQos::default())
@@ -176,7 +176,7 @@ fn publisher_delete_contained_entities_deletes_every_writer() {
 }
 
 #[test]
-fn delete_publisher_refuses_a_publisher_with_writers() {
+fn dcps_2_2_2_2_1_2_delete_publisher_refuses_a_publisher_with_writers() {
     let p = offline(206);
     let topic = p
         .create_topic::<RawBytes>("PublisherWithWriter", TopicQos::default())
@@ -201,7 +201,7 @@ fn delete_publisher_refuses_a_publisher_with_writers() {
 }
 
 #[test]
-fn delete_publisher_refuses_a_publisher_of_another_participant() {
+fn dcps_2_2_2_2_1_1_delete_publisher_refuses_a_publisher_of_another_participant() {
     let p = offline(207);
     let q = offline(208);
     let theirs = q.create_publisher(PublisherQos::default());
@@ -214,7 +214,7 @@ fn delete_publisher_refuses_a_publisher_of_another_participant() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn delete_datareader_refuses_a_reader_that_holds_conditions() {
+fn dcps_2_2_2_5_2_6_delete_datareader_refuses_a_reader_that_holds_conditions() {
     let p = offline(209);
     let topic = p
         .create_topic::<RawBytes>("ReaderWithCondition", TopicQos::default())
@@ -246,7 +246,7 @@ fn delete_datareader_refuses_a_reader_that_holds_conditions() {
 }
 
 #[test]
-fn a_reader_of_another_subscriber_is_left_as_it_was() {
+fn dcps_2_2_2_5_2_6_a_reader_of_another_subscriber_is_left_as_it_was() {
     let p = offline(210);
     let topic = p
         .create_topic::<RawBytes>("ForeignReader", TopicQos::default())
@@ -262,7 +262,7 @@ fn a_reader_of_another_subscriber_is_left_as_it_was() {
 }
 
 #[test]
-fn lookup_datareader_hands_out_a_handle_to_the_same_reader() {
+fn dcps_2_2_2_5_2_7_lookup_datareader_hands_out_a_handle_to_the_same_reader() {
     let p = offline(211);
     let topic = p
         .create_topic::<RawBytes>("LookupReader", TopicQos::default())
@@ -286,7 +286,7 @@ fn lookup_datareader_hands_out_a_handle_to_the_same_reader() {
 }
 
 #[test]
-fn get_datareaders_names_the_readers_that_hold_samples_in_the_states() {
+fn dcps_2_2_2_5_1_9_get_datareaders_names_the_readers_that_hold_samples_in_the_states() {
     let p = offline(212);
     let a = p
         .create_topic::<RawBytes>("GetReadersA", TopicQos::default())
@@ -343,7 +343,7 @@ fn group_subscriber(p: &DomainParticipant, ordered: bool) -> zerodds_dcps::Subsc
 }
 
 #[test]
-fn under_group_scope_get_datareaders_needs_begin_access() {
+fn dcps_2_2_2_5_1_9_under_group_scope_get_datareaders_needs_begin_access() {
     let p = offline(213);
     let topic = p
         .create_topic::<RawBytes>("GroupAccess", TopicQos::default())
@@ -367,7 +367,7 @@ fn under_group_scope_get_datareaders_needs_begin_access() {
 }
 
 #[test]
-fn group_ordered_access_lists_a_reader_once_per_sample_in_write_order() {
+fn dcps_2_2_2_5_1_9_group_ordered_access_lists_a_reader_once_per_sample_in_write_order() {
     let p = offline(214);
     let a = p
         .create_topic::<RawBytes>("OrderedA", TopicQos::default())
@@ -417,7 +417,7 @@ fn group_ordered_access_lists_a_reader_once_per_sample_in_write_order() {
 /// §8.7.5), not the source timestamp: here the sample with GSN 1 carries the
 /// later timestamp and its reader comes first.
 #[test]
-fn group_ordered_access_orders_the_readers_by_group_sequence_number() {
+fn dcps_2_2_2_5_1_9_group_ordered_access_orders_the_readers_by_group_sequence_number() {
     use zerodds_dcps::runtime::{SampleGroup, UserSample};
     use zerodds_dcps::time::{Time, time_to_he_timestamp};
     use zerodds_rtps::group_digest::GroupDigest;
@@ -450,6 +450,7 @@ fn group_ordered_access_orders_the_readers_by_group_sequence_number() {
                 writer_strength: 0,
                 representation: 0,
                 big_endian: false,
+                representation_identifier: [0x00, 0x01],
                 source_timestamp: Some(time_to_he_timestamp(Time::new(seconds, 0))),
                 reception_timestamp: None,
                 source_sequence_number: -1,
@@ -502,7 +503,7 @@ impl DataReaderListener for OnDataAvailable {
 }
 
 #[test]
-fn notify_datareaders_calls_the_readers_listeners_once_per_change() {
+fn dcps_2_2_2_5_1_9_notify_datareaders_calls_the_readers_listeners_once_per_change() {
     let p = offline(215);
     let topic = p
         .create_topic::<RawBytes>("NotifyReaders", TopicQos::default())
@@ -532,7 +533,7 @@ fn notify_datareaders_calls_the_readers_listeners_once_per_change() {
 }
 
 #[test]
-fn subscriber_delete_contained_entities_deletes_readers_and_their_conditions() {
+fn dcps_2_2_2_5_2_6_subscriber_delete_contained_entities_deletes_readers_and_their_conditions() {
     let p = offline(216);
     let topic = p
         .create_topic::<RawBytes>("SubContained", TopicQos::default())
@@ -562,7 +563,8 @@ fn subscriber_delete_contained_entities_deletes_readers_and_their_conditions() {
 }
 
 #[test]
-fn delete_subscriber_refuses_a_subscriber_with_readers_or_of_another_participant() {
+fn dcps_2_2_2_2_1_4_delete_subscriber_refuses_a_subscriber_with_readers_or_of_another_participant()
+{
     let p = offline(217);
     let q = offline(218);
     let topic = p
@@ -580,7 +582,7 @@ fn delete_subscriber_refuses_a_subscriber_with_readers_or_of_another_participant
 }
 
 #[test]
-fn participant_delete_contained_entities_deletes_everything_it_created() {
+fn dcps_2_2_1_1_participant_delete_contained_entities_deletes_everything_it_created() {
     let p = offline(219);
     let topic = p
         .create_topic::<RawBytes>("ParticipantContained", TopicQos::default())
@@ -624,7 +626,7 @@ fn participant_delete_contained_entities_deletes_everything_it_created() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn delete_datawriter_disposes_and_unregisters_its_instances() {
+fn dcps_2_2_2_4_1_6_delete_datawriter_disposes_and_unregisters_its_instances() {
     let lease = common::lease_domain();
     let factory = DomainParticipantFactory::instance();
     let participant = common::ParticipantGuard::new(

@@ -23,7 +23,7 @@ const BAD_PARAMETER: i32 = -6;
 const PRECONDITION_NOT_MET: i32 = -5;
 
 #[test]
-fn a_write_handle_must_be_the_one_of_the_key() {
+fn dcps_2_2_2_4_2_11_a_write_handle_must_be_the_one_of_the_key() {
     let lease = zerodds_test_domains::lease_domain();
     // SAFETY: handles come from the create calls above their use and are
     // released at the end; the encoded buffers are freed after the write.

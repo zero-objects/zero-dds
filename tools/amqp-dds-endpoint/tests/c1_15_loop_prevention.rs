@@ -150,7 +150,7 @@ fn c1_15_outbound_stamp_increments_hop_counter() {
 }
 
 #[test]
-fn c1_15_clean_sample_passes_through() {
+fn ddsamqp_c_1_15_clean_sample_passes_through() {
     // A sample without bridge metadata is forwarded.
     let cfg = CoexistenceConfig::new("self".to_string());
     let p = props(vec![]);

@@ -156,6 +156,14 @@ impl<W: std::io::Write> RecordWriter<W> {
         Ok(())
     }
 
+    /// Flushes the sink.
+    ///
+    /// # Errors
+    /// [`WriteError::Io`] from the sink.
+    pub fn flush(&mut self) -> Result<(), WriteError> {
+        self.sink.flush().map_err(WriteError::Io)
+    }
+
     /// Number of frames written so far.
     #[must_use]
     pub fn frames_written(&self) -> u64 {
@@ -209,84 +217,5 @@ pub fn header_with(
             .into_iter()
             .map(|(name, type_name)| TopicEntry { name, type_name })
             .collect(),
-    }
-}
-
-#[cfg(test)]
-#[allow(clippy::unwrap_used)] // tests may use unwrap.
-mod tests {
-    use super::*;
-    use crate::format::SampleKind;
-
-    #[test]
-    fn header_must_come_before_frames() {
-        let mut w = RecordWriter::new(Vec::<u8>::new());
-        let f = Frame {
-            timestamp_delta_ns: 0,
-            participant_idx: 0,
-            topic_idx: 0,
-            sample_kind: SampleKind::Alive,
-            payload: Vec::new(),
-        };
-        let r = w.write_frame(&f);
-        assert!(matches!(r, Err(WriteError::HeaderMissing)));
-    }
-
-    #[test]
-    fn header_only_once() {
-        let mut w = RecordWriter::new(Vec::<u8>::new());
-        let h = Header {
-            time_base_unix_ns: 0,
-            participants: Vec::new(),
-            topics: Vec::new(),
-        };
-        w.write_header(&h).unwrap();
-        let r = w.write_header(&h);
-        assert!(matches!(r, Err(WriteError::HeaderAlreadyWritten)));
-    }
-
-    #[test]
-    fn frame_idx_must_be_in_range() {
-        let mut w = RecordWriter::new(Vec::<u8>::new());
-        let h = header_with(
-            0,
-            vec![(String::from("p0"), [0u8; 16])],
-            vec![(String::from("/topic"), String::from("Type"))],
-        );
-        w.write_header(&h).unwrap();
-        let bad = Frame {
-            timestamp_delta_ns: 1,
-            participant_idx: 1,
-            topic_idx: 0,
-            sample_kind: SampleKind::Alive,
-            payload: Vec::new(),
-        };
-        let r = w.write_frame(&bad);
-        assert!(matches!(
-            r,
-            Err(WriteError::OutOfRangeIdx {
-                field: "participant",
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn write_all_helper() {
-        let h = header_with(
-            1_700_000_000_000_000_000,
-            vec![(String::from("p"), [1u8; 16])],
-            vec![(String::from("/t"), String::from("T"))],
-        );
-        let frames = (0..5).map(|i| Frame {
-            timestamp_delta_ns: i as i64 * 1000,
-            participant_idx: 0,
-            topic_idx: 0,
-            sample_kind: SampleKind::Alive,
-            payload: vec![i as u8; 4],
-        });
-        let w = write_all(Vec::<u8>::new(), &h, frames).unwrap();
-        assert_eq!(w.frames_written(), 5);
-        assert!(w.bytes_written() > 0);
     }
 }

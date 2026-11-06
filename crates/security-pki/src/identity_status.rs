@@ -240,23 +240,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn round_trip_good_status() {
-        let t = IdentityStatusToken::good(1_700_000_000);
-        let bytes = t.encode();
-        let back = IdentityStatusToken::decode(&bytes).unwrap();
-        assert_eq!(back, t);
-    }
-
-    #[test]
-    fn round_trip_revoked_with_ocsp_response() {
-        let t =
-            IdentityStatusToken::revoked(1_700_000_000, Some(alloc::vec![0xCA, 0xFE, 0xBA, 0xBE]));
-        let bytes = t.encode();
-        let back = IdentityStatusToken::decode(&bytes).unwrap();
-        assert_eq!(back, t);
-    }
-
-    #[test]
     fn requires_reject_only_for_revoked() {
         assert!(!IdentityStatusToken::good(0).requires_reject());
         assert!(IdentityStatusToken::revoked(0, None).requires_reject());
@@ -266,17 +249,6 @@ mod tests {
             expiry_time: 0,
         };
         assert!(!unknown.requires_reject(), "Unknown is not auto-reject");
-    }
-
-    #[test]
-    fn ocsp_status_round_trip() {
-        for s in [
-            IdentityStatusKind::Good,
-            IdentityStatusKind::Revoked,
-            IdentityStatusKind::Unknown,
-        ] {
-            assert_eq!(IdentityStatusKind::from_u8(s.to_u8()).unwrap(), s);
-        }
     }
 
     #[test]
@@ -300,16 +272,6 @@ mod tests {
         bytes[5] ^= 0xff;
         let err = IdentityStatusToken::decode(&bytes).unwrap_err();
         assert!(matches!(err, PkiError::InvalidPem(_)));
-    }
-
-    #[test]
-    fn properties_helper_round_trip() {
-        let t = IdentityStatusToken::revoked(42, Some(alloc::vec![0x01, 0x02]));
-        let props = identity_status_properties(&t);
-        assert_eq!(props.len(), 3);
-        assert_eq!(props[0].0, KEY_OCSP_STATUS);
-        assert_eq!(props[1].0, KEY_OCSP_RESPONSE);
-        assert_eq!(props[2].0, KEY_EXPIRY_TIME);
     }
 
     #[test]

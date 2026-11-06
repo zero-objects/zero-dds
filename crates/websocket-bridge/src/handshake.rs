@@ -467,7 +467,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rfc6455_section_1_3_accept_test_vector() {
+    fn ws_4_1_rfc6455_section_1_3_accept_test_vector() {
         // Spec §1.3 — "the sample nonce" → expected accept value.
         let key = "dGhlIHNhbXBsZSBub25jZQ==";
         let expected = "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=";
@@ -478,7 +478,7 @@ mod tests {
     /// the key and the offered subprotocol, the sample response validates,
     /// and each deviation step 1 to 6 names is refused.
     #[test]
-    fn the_client_side_validates_the_server_response() {
+    fn mqttbridge_2_the_client_side_validates_the_server_response() {
         let key = "dGhlIHNhbXBsZSBub25jZQ==";
         let req = render_client_request("server.example.com", "/mqtt", key, &["mqtt"]);
         let parsed = parse_client_request(&req).unwrap();
@@ -529,7 +529,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_minimal_client_handshake() {
+    fn ws_4_1_parses_minimal_client_handshake() {
         let req = "GET /chat HTTP/1.1\r\n\
                    Host: server.example.com\r\n\
                    Upgrade: websocket\r\n\
@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_protocols_and_extensions() {
+    fn ws_4_1_parses_protocols_and_extensions() {
         let req = "GET / HTTP/1.1\r\n\
                    Host: x\r\n\
                    Upgrade: websocket\r\n\
@@ -563,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_upgrade() {
+    fn ws_4_1_rejects_missing_upgrade() {
         let req = "GET / HTTP/1.1\r\n\
                    Connection: Upgrade\r\n\
                    Sec-WebSocket-Key: a\r\n\
@@ -576,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_wrong_version() {
+    fn ws_4_1_rejects_wrong_version() {
         let req = "GET / HTTP/1.1\r\n\
                    Upgrade: websocket\r\n\
                    Connection: Upgrade\r\n\
@@ -590,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_missing_key() {
+    fn ws_4_1_rejects_missing_key() {
         let req = "GET / HTTP/1.1\r\n\
                    Upgrade: websocket\r\n\
                    Connection: Upgrade\r\n\
@@ -600,7 +600,7 @@ mod tests {
     }
 
     #[test]
-    fn server_response_includes_accept() {
+    fn ws_4_1_server_response_includes_accept() {
         let req = ClientHandshake {
             key: "dGhlIHNhbXBsZSBub25jZQ==".into(),
             ..Default::default()
@@ -616,7 +616,7 @@ mod tests {
     /// reply (§7.1.2.2), so echoing it produced a response Python's
     /// `websockets` rejects outright.
     #[test]
-    fn server_agrees_to_no_extension_it_cannot_perform() {
+    fn ws_4_1_server_agrees_to_no_extension_it_cannot_perform() {
         let req = ClientHandshake {
             key: "dGhlIHNhbXBsZSBub25jZQ==".into(),
             extensions: alloc::vec!["permessage-deflate; client_max_window_bits".to_string()],
@@ -638,7 +638,7 @@ mod tests {
     /// §4.2.2 item 8 — the bridge defines no subprotocol, so it must select
     /// none rather than accept whatever the client listed first.
     #[test]
-    fn server_selects_no_subprotocol_it_does_not_support() {
+    fn ws_4_1_server_selects_no_subprotocol_it_does_not_support() {
         let req = ClientHandshake {
             key: "dGhlIHNhbXBsZSBub25jZQ==".into(),
             protocols: alloc::vec!["chat".to_string(), "superchat".to_string()],
@@ -657,7 +657,7 @@ mod tests {
     }
 
     #[test]
-    fn render_server_response_format() {
+    fn ws_4_1_render_server_response_format() {
         let resp = ServerHandshake {
             status: 101,
             accept: "abc".into(),
@@ -672,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn base64_round_trip_known_vectors() {
+    fn ws_4_1_base64_round_trip_known_vectors() {
         // RFC 4648 §10 test vectors.
         assert_eq!(base64_encode(b""), "");
         assert_eq!(base64_encode(b"f"), "Zg==");
@@ -682,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn sha1_known_vector_abc() {
+    fn ws_4_1_sha1_known_vector_abc() {
         // FIPS-180-4 Appendix A.1.
         let h = sha1(b"abc");
         let expected: [u8; 20] = [
@@ -693,7 +693,7 @@ mod tests {
     }
 
     #[test]
-    fn connection_header_with_keep_alive_still_detects_upgrade() {
+    fn ws_4_1_connection_header_with_keep_alive_still_detects_upgrade() {
         // Spec §4.1: Connection MUST contain the `Upgrade` token (case-
         // insensitive). Browsers often send `Connection: keep-alive,
         // Upgrade`.

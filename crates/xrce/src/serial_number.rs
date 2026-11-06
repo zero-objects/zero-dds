@@ -132,7 +132,7 @@ mod tests {
     }
 
     #[test]
-    fn lt_across_wrap_boundary() {
+    fn xrce_8_3_2_3_lt_across_wrap_boundary() {
         // u16::MAX - 5  <  3  because distance <= HALF_WINDOW
         let a = SerialNumber16::new(u16::MAX - 5);
         let b = SerialNumber16::new(3);
@@ -158,7 +158,7 @@ mod tests {
     }
 
     #[test]
-    fn undefined_pair_at_exactly_half_window() {
+    fn xrce_8_3_2_3_undefined_pair_at_exactly_half_window() {
         let a = SerialNumber16::new(0);
         let b = SerialNumber16::new(SerialNumber16::HALF_WINDOW);
         assert!(a.is_undefined_pair(b));
@@ -185,7 +185,7 @@ mod tests {
     }
 
     #[test]
-    fn wrap_around_does_not_break_lt_for_consecutive_numbers() {
+    fn xrce_8_3_2_3_wrap_around_does_not_break_lt_for_consecutive_numbers() {
         // Konstruktion: a = u16::MAX, b = a.next() = 0
         let a = SerialNumber16::new(u16::MAX);
         let b = a.next();

@@ -47,7 +47,7 @@ impl LoggingPlugin for CapturingLogger {
 }
 
 #[test]
-fn bundle_logger_is_wired_into_runtime_config_and_fires() {
+fn security_2_3_bundle_logger_is_wired_into_runtime_config_and_fires() {
     let count = Arc::new(AtomicUsize::new(0));
     let logger = Arc::new(CapturingLogger {
         count: Arc::clone(&count),

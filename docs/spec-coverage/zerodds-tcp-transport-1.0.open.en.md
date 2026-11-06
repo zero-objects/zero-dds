@@ -15,28 +15,28 @@ No new content: every entry appears there as an item with its evidence.
 
 ## §3.5 Reserved `flags` — receiver check
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — `crates/transport-tcp/src/handshake.rs` decodes `flags` and passes it on; neither server nor client refuses set bits.
 
 ## §3.6 Logical-port claim
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — `server_handshake` does not check `logical_port` and assigns the connection to no port; `LogicalPortConflict` is only encoded and decoded.
 
 ## §3.7 ResourceLimit reject at the peer cap
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — `TcpTransport::serve` closes the connection beyond `MAX_PEERS` after accept and counts it (`refused_connections`); no handshake with `ResourceLimit` goes on the wire.
 
 ## §4.1 Handshake-skip mode
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — a peer without a handshake is refused with `HandshakeError::BadMagic` (`crates/transport-tcp/src/handshake.rs`); a client and server mode without §3 is missing.
 
 ## §4.2 Auto-detect on the first frame byte
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — the server always expects the ZeroDDS handshake; telling `'Z'` from `'R'` on the first byte is missing.
 
 ## §6.1 FastDDS BindConnection (submessages 0x71/0x72)
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — no handshake dialect with the submessages `0x71`/`0x72`; `set_tcp_kinds_fast_dds` concerns only the locator kinds (§1.1).
 
 ## §6.2 RTI TLS-oriented handshake
 
-**Status:** `open` — no description in the main file.
+**Status:** `open` — no mode with RTI's TLS-oriented bring-up.

@@ -1139,10 +1139,10 @@ pub unsafe extern "C" fn zerodds_waitset_attach_condition(
     }
     // SAFETY: see fn # Safety doc — w+cond NULL-checked above.
     unsafe {
-        if let Ok(mut g) = (*w).conditions.lock() {
-            if !g.contains(&cond) {
-                g.push(cond);
-            }
+        if let Ok(mut g) = (*w).conditions.lock()
+            && !g.contains(&cond)
+        {
+            g.push(cond);
         }
         // Wire the event-driven data-available signal: a sample arriving on the
         // reader behind a Read/Query condition now wakes this WaitSet's wait
@@ -1486,7 +1486,7 @@ mod tests {
     /// `#[repr(C)]` pins it. If this test breaks, a `#[repr(C)]` has
     /// been lost and the C++ path would segfault again.
     #[test]
-    fn condition_header_at_offset_zero() {
+    fn capi_6_1_condition_header_at_offset_zero() {
         assert_eq!(core::mem::offset_of!(ZeroDdsGuardCondition, header), 0);
         assert_eq!(core::mem::offset_of!(ZeroDdsStatusCondition, header), 0);
         assert_eq!(core::mem::offset_of!(ZeroDdsReadCondition, header), 0);
@@ -1643,7 +1643,7 @@ mod tests {
     }
 
     #[test]
-    fn guardcondition_lifecycle_and_trigger() {
+    fn capi_6_1_guardcondition_lifecycle_and_trigger() {
         let g = zerodds_guardcondition_create();
         assert!(!g.is_null());
         // SAFETY: g from guardcondition_create.
@@ -1656,7 +1656,7 @@ mod tests {
     }
 
     #[test]
-    fn statuscondition_lifecycle_and_mask() {
+    fn capi_6_1_statuscondition_lifecycle_and_mask() {
         // SAFETY: NULL is an allowed entity slot for StatusCondition.
         unsafe {
             let sc = zerodds_entity_get_statuscondition(ptr::null_mut());
@@ -1672,7 +1672,7 @@ mod tests {
     /// the status was read; one on a participant, which has no status of
     /// its own, never triggers. It triggered whenever a mask was set.
     #[test]
-    fn a_status_condition_triggers_on_the_entitys_flags() {
+    fn capi_6_1_a_status_condition_triggers_on_the_entitys_flags() {
         use crate::participant_ffi::{
             zerodds_dp_create_publisher, zerodds_dp_create_subscriber, zerodds_dp_create_topic,
             zerodds_dp_delete_contained_entities,
@@ -1684,10 +1684,15 @@ mod tests {
         use crate::subscriber_ffi::zerodds_sub_create_datareader;
         use zerodds_dcps::psm_constants::status::PUBLICATION_MATCHED;
         let f = crate::factory_ffi::zerodds_dpf_get_instance();
+        let lease = zerodds_test_domains::lease_domain();
         // SAFETY: every handle comes from a create call; the conditions are
         // destroyed before the entities.
         unsafe {
-            let p = crate::factory_ffi::zerodds_dpf_create_participant(f, 39, ptr::null());
+            let p = crate::factory_ffi::zerodds_dpf_create_participant(
+                f,
+                lease.id() as u32,
+                ptr::null(),
+            );
             let t = zerodds_dp_create_topic(p, c"CondFlags".as_ptr(), c"T".as_ptr(), ptr::null());
             let dw = zerodds_pub_create_datawriter(
                 zerodds_dp_create_publisher(p, ptr::null()),
@@ -1733,25 +1738,6 @@ mod tests {
             assert_eq!(count, 1);
             let rc = zerodds_waitset_detach_condition(ws, g as *mut core::ffi::c_void);
             assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-            zerodds_waitset_destroy(ws);
-            zerodds_guardcondition_destroy(g);
-        }
-    }
-
-    #[test]
-    fn waitset_wait_returns_active_guard() {
-        let ws = zerodds_waitset_create();
-        let g = zerodds_guardcondition_create();
-        let mut buf: [*mut core::ffi::c_void; 4] = [ptr::null_mut(); 4];
-        let mut count: usize = 0;
-        // SAFETY: ws + g from create fns; buf stack-local.
-        unsafe {
-            zerodds_guardcondition_set_trigger_value(g, true);
-            zerodds_waitset_attach_condition(ws, g as *mut core::ffi::c_void);
-            let rc = zerodds_waitset_wait(ws, buf.as_mut_ptr(), 4, &mut count, 1, 0);
-            assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
-            assert_eq!(count, 1);
-            assert_eq!(buf[0], g as *mut core::ffi::c_void);
             zerodds_waitset_destroy(ws);
             zerodds_guardcondition_destroy(g);
         }

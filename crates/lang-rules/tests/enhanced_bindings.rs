@@ -206,7 +206,7 @@ fn structures(ast: &Ast) -> Vec<interface::EnhancedStruct> {
 /// The model the generators read: §7.5.1.2's structures, as the clause
 /// lists them.
 #[test]
-fn the_model_is_the_clause() {
+fn rpc_7_5_1_2_the_model_is_the_clause() {
     let ast = model(CALCULATOR);
     let structures = structures(&ast);
     for expected in CLAUSE {
@@ -231,7 +231,7 @@ fn the_model_is_the_clause() {
 
 /// §7.5.1.2.1.2: the member id is the HASH of the member name.
 #[test]
-fn the_member_ids_are_the_hash_of_the_names() {
+fn rpc_7_5_1_2_1_2_the_member_ids_are_the_hash_of_the_names() {
     let ast = model(CALCULATOR);
     for structure in structures(&ast) {
         for member in &structure.members {
@@ -327,11 +327,11 @@ fn cpp_declares_the_structures_of_the_clause() {
 
 fn java_classes(members: &[java::Member], out: &mut Vec<java::Class>) {
     for member in members {
-        if let java::Member::Nested(decl) = member {
-            if let java::TypeDecl::Class(class) = decl.as_ref() {
-                out.push(class.clone());
-                java_classes(&class.members, out);
-            }
+        if let java::Member::Nested(decl) = member
+            && let java::TypeDecl::Class(class) = decl.as_ref()
+        {
+            out.push(class.clone());
+            java_classes(&class.members, out);
         }
     }
 }
@@ -399,29 +399,28 @@ fn rust_declares_the_structures_of_the_clause() {
         .unwrap_or_else(|error| panic!("{error}"));
     let find_enum = |name: &str| -> Vec<String> {
         for (_, item) in &items {
-            if let rust::Item::Enum(declared) = item {
-                if declared.name.as_str() == name {
-                    return declared
-                        .variants
-                        .iter()
-                        .map(|variant| variant.name.as_str().to_string())
-                        .collect();
-                }
+            if let rust::Item::Enum(declared) = item
+                && declared.name.as_str() == name
+            {
+                return declared
+                    .variants
+                    .iter()
+                    .map(|variant| variant.name.as_str().to_string())
+                    .collect();
             }
         }
         panic!("no enum {name}");
     };
     let find_struct = |name: &str| -> Vec<String> {
         for (_, item) in &items {
-            if let rust::Item::Struct(declared) = item {
-                if declared.name.as_str() == name {
-                    if let rust::StructBody::Named(fields) = &declared.body {
-                        return fields
-                            .iter()
-                            .map(|field| field.name.as_str().to_string())
-                            .collect();
-                    }
-                }
+            if let rust::Item::Struct(declared) = item
+                && declared.name.as_str() == name
+                && let rust::StructBody::Named(fields) = &declared.body
+            {
+                return fields
+                    .iter()
+                    .map(|field| field.name.as_str().to_string())
+                    .collect();
             }
         }
         panic!("no struct {name}");
@@ -565,7 +564,8 @@ fn complete_struct(
 /// the TypeObject of a mutable structure whose members are all optional,
 /// like the structures the generators synthesize.
 #[test]
-fn a_choice_structure_written_in_idl_has_a_mutable_type_object_with_optional_members() {
+fn rpc_7_5_1_2_1_1_a_choice_structure_written_in_idl_has_a_mutable_type_object_with_optional_members()
+ {
     use zerodds_types::type_object::flags::{StructMemberFlag, StructTypeFlag};
     let found = complete_struct("@Choice struct Request { long add; long sub; };", "Request");
     assert!(found.struct_flags.has(StructTypeFlag::IS_MUTABLE));
@@ -597,7 +597,7 @@ fn a_choice_structure_written_in_idl_has_a_mutable_type_object_with_optional_mem
 /// members of its TypeObject the HASH of their names as member ids, the
 /// ids the synthesized structures carry.
 #[test]
-fn an_autoid_structure_written_in_idl_has_hashed_member_ids_in_its_type_object() {
+fn rpc_7_5_1_2_1_2_an_autoid_structure_written_in_idl_has_hashed_member_ids_in_its_type_object() {
     let found = complete_struct("@Autoid struct Hashed { long add; long sub; };", "Hashed");
     for member in &found.member_seq {
         assert_eq!(

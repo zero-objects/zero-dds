@@ -106,11 +106,42 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
     // capped by HISTORY keep-last depth (DDS-DCPS 1.4 §2.2.3.18 / §2.2.3.4).
     private final Map<InstanceKey, Deque<Retained>> retained = new LinkedHashMap<>();
 
+    /**
+     * The retained samples that went out over RTPS, by the sequence number they were sent under:
+     * what the wire writer hands to a reader that matches later (DDS 1.4 §2.2.3.4). Entered by
+     * the wire writer before it sends the sample, left when the sample leaves {@link #retained}.
+     */
+    private final java.util.concurrent.ConcurrentSkipListMap<Long, org.zerodds.rtps.RtpsParticipant.Kept>
+            keptOnWire = new java.util.concurrent.ConcurrentSkipListMap<>();
+
     /** A retained sample with its source timestamp and the LIFESPAN it was written under. */
-    private static final class Retained {
+    private final class Retained {
         final byte[] payload;
         final long timestampMillis;
         final long lifespanMillis;
+        /** The sequence number the sample went out under on RTPS, 0 while it has none. */
+        volatile long wireSequence;
+        /** The sample has left the retained samples of its instance. */
+        volatile boolean dropped;
+
+        /** The sample went out over RTPS under {@code sequence}. */
+        void sentAs(long sequence) {
+            wireSequence = sequence;
+            keptOnWire.put(sequence, new org.zerodds.rtps.RtpsParticipant.Kept(sequence, payload,
+                    timestampMillis, lifespanMillis < 0 ? Long.MAX_VALUE : timestampMillis + lifespanMillis));
+            if (dropped) {
+                keptOnWire.remove(sequence);
+            }
+        }
+
+        /** The sample leaves the retained samples: a reader that matches later does not get it. */
+        void drop() {
+            dropped = true;
+            long sequence = wireSequence;
+            if (sequence != 0) {
+                keptOnWire.remove(sequence);
+            }
+        }
 
         Retained(byte[] payload, long timestampMillis, long lifespanMillis) {
             this.payload = payload;
@@ -129,6 +160,12 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
     // SUBSCRIPTION_MATCHED bookkeeping.
     private final Set<InProcessBus.Endpoint> matchedReaders =
             java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+    /**
+     * The readers of other processes this writer is matched with over SEDP (their GUIDs as
+     * strings), as the RTPS participant reports them: they count toward PUBLICATION_MATCHED as the
+     * readers of this process do (DDS 1.4 §2.2.4.1).
+     */
+    private final Set<String> wireMatchedReaders = new LinkedHashSet<>();
     private int pubMatchedTotal = 0;
     private int pubMatchedTotalReadBaseline = 0;
     private int pubMatchedCurrentReadBaseline = 0;
@@ -250,7 +287,7 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
     }
 
     private PublicationMatchedStatus readPublicationMatchedStatusLocked() {
-        int current = matchedReaders.size();
+        int current = matchedReaders.size() + wireMatchedReaders.size();
         int totalChange = pubMatchedTotal - pubMatchedTotalReadBaseline;
         int currentChange = current - pubMatchedCurrentReadBaseline;
         pubMatchedTotalReadBaseline = pubMatchedTotal;
@@ -368,6 +405,38 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
         }
         if (l != null) {
             l.onLivelinessLost(new LivelinessLostEventImpl<>(env, this, status));
+        }
+    }
+
+    /**
+     * DDS 1.4 §2.2.4.1 PUBLICATION_MATCHED for a reader of another process: SEDP matched it
+     * with this writer, or it stopped matching. The counts, the handle of the last change and
+     * the listener as for a reader of this process ({@link #onReaderPresenceChanged}); the RTPS
+     * participant calls this off its discovery thread, in the order of the changes.
+     */
+    private void onWireReaderMatch(byte[] remoteGuid, boolean matched) {
+        DataWriterListener<T> l;
+        PublicationMatchedStatus status;
+        synchronized (this) {
+            if (closed) {
+                return;
+            }
+            String key = java.util.Arrays.toString(remoteGuid);
+            boolean changed = matched ? wireMatchedReaders.add(key) : wireMatchedReaders.remove(key);
+            if (!changed) {
+                return;
+            }
+            if (matched) {
+                pubMatchedTotal++;
+            }
+            lastSubscriptionHandle = Values.of(env, remoteGuid);
+            triggerStatus(PUBLICATION_MATCHED);
+            l = listenerFor(PUBLICATION_MATCHED);
+            // The change counters move only when the status is actually handed to a listener.
+            status = l == null ? null : readPublicationMatchedStatusLocked();
+        }
+        if (l != null) {
+            l.onPublicationMatched(new PublicationMatchedEventImpl<>(env, this, status));
         }
     }
 
@@ -560,7 +629,13 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
             replay = new ArrayList<>();
             for (Map.Entry<InstanceKey, Deque<Retained>> e : retained.entrySet()) {
                 // DDS 1.4 §2.2.3.16: a sample whose LIFESPAN has passed is no longer replayed.
-                e.getValue().removeIf(sample -> sample.expiredAt(now));
+                e.getValue().removeIf(sample -> {
+                    if (sample.expiredAt(now)) {
+                        sample.drop();
+                        return true;
+                    }
+                    return false;
+                });
                 for (Retained sample : e.getValue()) {
                     // The replay carries the source timestamp the sample was written with.
                     replay.add(message(sample.payload, e.getKey().bytes(),
@@ -720,6 +795,7 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
             throws TimeoutException {
         byte[] payload;
         InstanceKey key;
+        Retained kept;
         awaitWireHistorySpace();
         synchronized (this) {
             if (closed) {
@@ -738,7 +814,7 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
             instances.putIfAbsent(key, InstanceKey.toHandle(key));
             lastWriteMillis.put(key, ts);
             lastPayload.put(key, payload);
-            retainForDurability(key, payload, ts);
+            kept = retainForDurability(key, payload, ts);
             // Writing asserts liveliness (DDS 1.2 §7.1.2.4.2): renew the lease and
             // clear any previously-lost state.
             lastLivelinessMillis = ts;
@@ -755,9 +831,11 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
                 final long coherentSet = set;
                 // the group number is assigned and the sample entered in the history under one lock
                 sequence = ((PublisherImpl) parent).stampAndWrite(
-                        group -> remote.write(payload, related, coherentSet, group, instance));
+                        group -> remote.write(payload, related, coherentSet, group, instance,
+                                kept == null ? null : kept::sentAs));
             } else {
-                sequence = remote.write(payload, related, set, null, instance);
+                sequence = remote.write(payload, related, set, null, instance,
+                        kept == null ? null : kept::sentAs);
             }
         } else {
             synchronized (this) {
@@ -924,7 +1002,7 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
      */
     private void disposeKey(InstanceKey key, long ts) {
         synchronized (this) {
-            retained.remove(key); // disposed instance no longer replayed
+            dropRetained(key); // disposed instance no longer replayed
             DurabilityService.instance().disposed(domainId, topic.getName(),
                     typeSupport.getTypeName(), key, qos.getDurabilityService());
             notifyAll(); // history samples are free again
@@ -942,7 +1020,7 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
         synchronized (this) {
             dispose = qos.getWriterDataLifecycle().isAutDisposeUnregisteredInstances();
             instances.remove(key);
-            retained.remove(key);
+            dropRetained(key);
             if (dispose) {
                 DurabilityService.instance().disposed(domainId, topic.getName(),
                         typeSupport.getTypeName(), key, qos.getDurabilityService());
@@ -1036,10 +1114,11 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
      * {@link #replayTo}; TRANSIENT and PERSISTENT go to the
      * {@link DurabilityService}, which survives this writer.
      */
-    private void retainForDurability(InstanceKey key, byte[] payload, long ts) {
+    /** Keeps the sample as DURABILITY says; returns it if this writer keeps it itself, else null. */
+    private Retained retainForDurability(InstanceKey key, byte[] payload, long ts) {
         Durability.Kind d = qos.getDurability().getKind();
         if (d == Durability.Kind.TRANSIENT_LOCAL) {
-            retainCapped(key, payload, ts);
+            return retainCapped(key, payload, ts);
         } else if (d == Durability.Kind.TRANSIENT || d == Durability.Kind.PERSISTENT) {
             // DDS 1.4 §2.2.3.5: the DURABILITY_SERVICE policy gives the history and the
             // limits of the store, not the HISTORY of this writer.
@@ -1047,18 +1126,31 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
                     typeSupport.getTypeName(), key, payload, d, writerId,
                     qos.getDurabilityService(), ts, lifespanMillis());
         }
+        return null;
     }
 
-    private void retainCapped(InstanceKey key, byte[] payload, long ts) {
+    private Retained retainCapped(InstanceKey key, byte[] payload, long ts) {
         Deque<Retained> dq = retained.computeIfAbsent(key, k -> new ArrayDeque<>());
         History h = qos.getHistory();
         if (h.getKind() == History.Kind.KEEP_LAST) {
             int depth = Math.max(1, h.getDepth());
             while (dq.size() >= depth) {
-                dq.pollFirst();
+                dq.pollFirst().drop();
             }
         }
-        dq.addLast(new Retained(payload, ts, lifespanMillis()));
+        Retained sample = new Retained(payload, ts, lifespanMillis());
+        dq.addLast(sample);
+        return sample;
+    }
+
+    /** The retained samples of {@code key} leave: none of them goes to a reader that matches later. */
+    private void dropRetained(InstanceKey key) {
+        Deque<Retained> samples = retained.remove(key);
+        if (samples != null) {
+            for (Retained sample : samples) {
+                sample.drop();
+            }
+        }
     }
 
     /** The LIFESPAN of this writer in milliseconds, or {@link InProcessBus.Message#NO_LIFESPAN}. */
@@ -1214,6 +1306,9 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
                     && !org.zerodds.topic.BuiltinTopics.isInternalToProcess(topic.getName())) {
                 wire = org.zerodds.rtps.DdsWireBridge.typedWriter(domainId, topic.getName(),
                         typeSupport, wireQos(), this::acceptsRemoteReader);
+                if (wire != null) {
+                    wire.setMatchListener(this::onWireReaderMatch);
+                }
                 if (wire != null && parent instanceof PublisherImpl) {
                     final PublisherImpl publisher = (PublisherImpl) parent;
                     // the HEARTBEATs of a writer of a GROUP Publisher carry the group sequence numbers
@@ -1221,6 +1316,10 @@ public final class DataWriterImpl<T> extends EntityBase<DataWriterListener<T>, D
                 }
                 if (!rpc.isEmpty()) {
                     wire.setRpcDiscovery(rpc);
+                }
+                if (wire != null && qos.getDurability().getKind() == Durability.Kind.TRANSIENT_LOCAL) {
+                    // a reliable reader that matches later gets what this writer keeps (§2.2.3.4)
+                    wire.keepForLateJoiners(() -> new ArrayList<>(keptOnWire.values()));
                 }
             }
             enabled = true;

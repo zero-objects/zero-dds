@@ -836,7 +836,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parses_minimal_config() {
+    fn opcuabridge_3_parses_minimal_config() {
         let yaml = "\
 domain: 7
 opcua:
@@ -850,14 +850,14 @@ opcua:
     }
 
     #[test]
-    fn rejects_unknown_top_level_section_key() {
+    fn opcuabridge_3_rejects_unknown_top_level_section_key() {
         let yaml = "opcua:\n  serverr:\n    bind: x\n";
         let err = DaemonConfig::load_from_str(yaml).unwrap_err();
         assert!(matches!(err, ConfigError::Invalid { .. }));
     }
 
     #[test]
-    fn client_server_entry_needs_endpoint_url() {
+    fn opcuabridge_3_client_server_entry_needs_endpoint_url() {
         let yaml = "\
 opcua:
   client:
@@ -870,7 +870,7 @@ opcua:
     }
 
     #[test]
-    fn parses_a_full_client_server_entry() {
+    fn opcuabridge_3_parses_a_full_client_server_entry() {
         let yaml = "\
 opcua:
   client:
@@ -894,7 +894,7 @@ opcua:
     }
 
     #[test]
-    fn parses_a_full_pubsub_connection() {
+    fn opcuabridge_3_parses_a_full_pubsub_connection() {
         let yaml = "\
 opcua:
   pubsub:
@@ -922,7 +922,7 @@ opcua:
     }
 
     #[test]
-    fn pubsub_security_parses_and_hex_decodes_the_keys() {
+    fn opcuabridge_3_pubsub_security_parses_and_hex_decodes_the_keys() {
         let yaml = "\
 opcua:
   pubsub:
@@ -949,7 +949,7 @@ opcua:
     }
 
     #[test]
-    fn pubsub_security_with_wrong_key_length_is_refused() {
+    fn opcuabridge_4_3_pubsub_security_with_wrong_key_length_is_refused() {
         let yaml = "\
 opcua:
   pubsub:
@@ -966,7 +966,7 @@ opcua:
     }
 
     #[test]
-    fn pubsub_security_odd_length_hex_is_refused() {
+    fn opcuabridge_4_3_pubsub_security_odd_length_hex_is_refused() {
         let yaml = "\
 opcua:
   pubsub:
@@ -983,7 +983,7 @@ opcua:
     }
 
     #[test]
-    fn pubsub_security_unknown_policy_is_refused() {
+    fn opcuabridge_4_3_pubsub_security_unknown_policy_is_refused() {
         let yaml = "\
 opcua:
   pubsub:
@@ -998,7 +998,7 @@ opcua:
     }
 
     #[test]
-    fn no_security_key_leaves_it_none() {
+    fn opcuabridge_4_3_no_security_key_leaves_it_none() {
         let yaml = "\
 opcua:
   pubsub:
@@ -1010,7 +1010,7 @@ opcua:
     }
 
     #[test]
-    fn otlp_endpoint_parses() {
+    fn opcuabridge_3_otlp_endpoint_parses() {
         let yaml = "metrics:\n  otlp_endpoint: \"http://127.0.0.1:4318\"\n";
         let cfg = DaemonConfig::load_from_str(yaml).unwrap();
         assert_eq!(
@@ -1020,13 +1020,13 @@ opcua:
     }
 
     #[test]
-    fn no_otlp_endpoint_leaves_it_none() {
+    fn opcuabridge_8_3_no_otlp_endpoint_leaves_it_none() {
         let cfg = DaemonConfig::load_from_str("domain: 0\n").unwrap();
         assert!(cfg.metrics_otlp_endpoint.is_none());
     }
 
     #[test]
-    fn secured_policy_without_certificate_is_refused() {
+    fn opcuabridge_7_1_secured_policy_without_certificate_is_refused() {
         let yaml = "\
 opcua:
   server:
@@ -1037,14 +1037,14 @@ opcua:
     }
 
     #[test]
-    fn unknown_security_policy_is_refused() {
+    fn opcuabridge_4_1_unknown_security_policy_is_refused() {
         let yaml = "opcua:\n  server:\n    security_policies: [\"not-a-policy\"]\n";
         let err = DaemonConfig::load_from_str(yaml).unwrap_err();
         assert!(matches!(err, ConfigError::Invalid { .. }));
     }
 
     #[test]
-    fn historical_topics_parse() {
+    fn opcuabridge_3_historical_topics_parse() {
         let yaml = "\
 opcua:
   server:
@@ -1060,7 +1060,7 @@ opcua:
     }
 
     #[test]
-    fn historical_topic_without_depth_is_refused() {
+    fn opcuabridge_5_4_historical_topic_without_depth_is_refused() {
         let yaml = "\
 opcua:
   server:
@@ -1073,7 +1073,7 @@ opcua:
     }
 
     #[test]
-    fn historical_topic_zero_depth_is_refused() {
+    fn opcuabridge_5_4_historical_topic_zero_depth_is_refused() {
         let yaml = "\
 opcua:
   server:
@@ -1087,7 +1087,7 @@ opcua:
     }
 
     #[test]
-    fn acl_users_parse_with_default_policy_id() {
+    fn opcuabridge_3_acl_users_parse_with_default_policy_id() {
         let yaml = "\
 acl:
   allow_anonymous: false
@@ -1104,14 +1104,14 @@ acl:
     }
 
     #[test]
-    fn acl_user_without_password_is_refused() {
+    fn opcuabridge_7_2_acl_user_without_password_is_refused() {
         let yaml = "acl:\n  users:\n    - username: alice\n";
         let err = DaemonConfig::load_from_str(yaml).unwrap_err();
         assert!(matches!(err, ConfigError::Invalid { .. }));
     }
 
     #[test]
-    fn acl_rules_parse() {
+    fn opcuabridge_3_acl_rules_parse() {
         let yaml = "\
 acl:
   default_deny: true

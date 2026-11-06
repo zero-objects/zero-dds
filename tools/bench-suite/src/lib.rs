@@ -24,8 +24,7 @@
 //!   allocator noise, no RNG overhead in the hot path).
 //!
 //! The bench targets (`benches/*.rs`) use these building blocks +
-//! `criterion`. Reports land as JSON in `target/criterion/` and
-//! are referenced via `internal/perf/baseline-*.md`.
+//! `criterion`. Reports land as JSON in `target/criterion/`.
 
 #![warn(missing_docs)]
 

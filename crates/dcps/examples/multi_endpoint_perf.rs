@@ -64,7 +64,7 @@ fn run_pub_n(count: usize, runtime: Duration) -> Result<(), Box<dyn std::error::
         }
         tick += 1;
         // 1 Hz per writer — sleeps until the next second
-        if tick % 60 == 0 {
+        if tick.is_multiple_of(60) {
             println!(
                 "{:.3}  multi_pub tick={} writers={} total_writes={} loop_us={}",
                 start.elapsed().as_secs_f64(),

@@ -134,7 +134,7 @@ let encode_variant variant = encode_variant_inner 3 variant
    Topic/Publisher/Subscriber/Datawriter/Datareader, `None` for every
    other kind — byte-oracled in `crates/xrce/src/object_repr.rs` against
    real eProsima Micro-XRCE-DDS Client 3.0.1 CREATE traffic (Topic's own
-   participant_id: commit 31c62df2a63). This — not `encode_variant`
+   participant_id: commit bd30deaef0b). This — not `encode_variant`
    alone — is the only form a real agent accepts. *)
 let encode_object_variant_for_kind object_id variant ?parent_object_id () =
   let kind_byte = byte (object_id land 0x0f) in

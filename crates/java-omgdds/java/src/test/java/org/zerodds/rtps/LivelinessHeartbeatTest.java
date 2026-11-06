@@ -19,7 +19,7 @@ class LivelinessHeartbeatTest {
     }
 
     @Test
-    void theLivelinessFlagIsTheThirdLowestBitAndIndependentOfFinal() {
+    void rtps_9_4_5_7_the_liveliness_flag_is_the_third_lowest_bit_and_independent_of_final() {
         int[] flags = new int[1];
         assertTrue(roundTrip(false, true, flags).livelinessFlag);
         assertEquals(0x01 | 0x04, flags[0]);

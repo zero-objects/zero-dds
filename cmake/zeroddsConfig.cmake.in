@@ -19,7 +19,11 @@ set(ZERODDS_HAD_IDLC @ZERODDS_BUILD_IDLC@)
 
 set_and_check(ZERODDS_INSTALL_INCLUDEDIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
 set_and_check(ZERODDS_INSTALL_LIBDIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
-set_and_check(ZERODDS_INSTALL_BINDIR "@PACKAGE_CMAKE_INSTALL_BINDIR@")
+# Not set_and_check: bin/ holds only zerodds-idlc and the Windows DLL, and an
+# SDK built without idlc for Linux or macOS installs nothing there. Checked,
+# the package refused every consumer of such an SDK (measured with
+# tests/integration/sdk_cmake.sh: "ZERODDS_INSTALL_BINDIR does not exist").
+set(ZERODDS_INSTALL_BINDIR "@PACKAGE_CMAKE_INSTALL_BINDIR@")
 
 if(NOT TARGET zerodds::zerodds-c)
   # The import library (Windows) and the static library share the same

@@ -85,6 +85,18 @@ Inheritance state is **flattened**: base state first, then the derived one
 (§15.3.4). If it is `valuetype D : truncatable B` or `custom valuetype`,
 `D_BASE_IDS: &[&str]` (transitive base RepositoryIds) is emitted in addition.
 
+A `custom valuetype V` also gets the trait of its custom marshaling (CORBA
+3.3 part 1 §9.5.1, OMG IDL 4.2 §7.4.7.4.4), which the application implements
+on `VValue`; the generated `marshal_state` and the registered factory call it
+instead of writing and reading the declared state:
+
+```rust
+pub trait VCustomMarshal: Sized {
+    fn marshal(&self, os: &mut zerodds_wire::Writer) -> Result<(), zerodds_wire::WireError>;
+    fn unmarshal(is: &mut zerodds_wire::Reader<'_>) -> Result<Self, zerodds_wire::WireError>;
+}
+```
+
 ### §4.2 Value wire engine
 
 `ValueWriter`/`ValueReader`/`ValueRegistry` implement §15.3.4:
@@ -99,7 +111,7 @@ Inheritance state is **flattened**: base state first, then the derived one
   the decoder picks the first known RepositoryId of the list (most-derived
   first) and on truncation skips the rest of the derived state via the
   chunk sizes up to the end tag. **Custom marshalling** runs over the same
-  chunked path (`marshal_state` = arbitrary logic).
+  chunked path (`marshal_state` calls `VCustomMarshal::marshal`).
 
 **Byte conformance (normative).** `Point(42,-7)` with `IDL:Point:1.0` MUST encode
 big-endian to `7fffff02 0000000e "IDL:Point:1.0\0" <pad> 0000002a fffffff9`

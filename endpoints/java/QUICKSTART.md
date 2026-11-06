@@ -19,7 +19,7 @@ Both print five decoded readings and `ALL OK`.
 - **`ExampleSync`** — polls the transport in a loop (`null` when empty). The idiom
   when you own the run-loop.
 - **`ExampleAsync`** — a reader `Thread` drains the transport into a
-  `BlockingQueue`; the consumer blocks on `take()`. The idiomatic
+  `BlockingQueue`; the consumer blocks on `poll()` with a timeout. The idiomatic
   `java.util.concurrent` model.
 
 ## Transport

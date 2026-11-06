@@ -43,16 +43,12 @@ use zerodds::{
 /// On macOS: ignored (multicast loopback unreliable).
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
-fn ffi_pub_sub_roundtrip() {
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 36;
+fn capi_11_1_ffi_pub_sub_roundtrip() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic = CString::new("CFfiSmoke").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -119,21 +115,15 @@ fn ffi_pub_sub_roundtrip() {
 /// what `rmw_zerodds` uses) is a healthy runtime — full pub→sub roundtrip.
 /// Proves the FFI entry point wires `RuntimeConfig::ros_defaults()` without
 /// breaking the data path. On macOS: ignored (multicast loopback unreliable,
-/// same as `ffi_pub_sub_roundtrip`).
+/// same as `capi_11_1_ffi_pub_sub_roundtrip`).
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_ros_defaults_runtime_roundtrip() {
-    // Stay <= 232: domain 233+ overflows the SPDP port mapping (7400 + 250*D
-    // exceeds u16). The PID jitter only isolates concurrent test processes.
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 37;
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic = CString::new("CFfiRosDefaults").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -194,15 +184,11 @@ fn ffi_ros_defaults_runtime_roundtrip() {
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
 fn ffi_time_based_filter_drops_rapid_samples() {
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 38;
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic = CString::new("CFfiTbf").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -268,20 +254,16 @@ fn ffi_time_based_filter_drops_rapid_samples() {
 
 /// Fixed-buffer `zerodds_reader_take_into` roundtrip — the ergonomic
 /// shape used by the C/Go/Zig quickstarts. Mirrors
-/// `ffi_pub_sub_roundtrip` but consumes samples via the copy-into-buffer
+/// `capi_11_1_ffi_pub_sub_roundtrip` but consumes samples via the copy-into-buffer
 /// convenience entry point (no heap buffer / no `zerodds_buffer_free`).
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
-fn ffi_pub_sub_roundtrip_via_take_into() {
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 39;
+fn ffiloader_4_1_ffi_pub_sub_roundtrip_via_take_into() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic = CString::new("CFfiSmokeTakeInto").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
@@ -333,7 +315,7 @@ fn ffi_pub_sub_roundtrip_via_take_into() {
 /// `zerodds_reader_take_into` is NULL-safe on the handle and returns a
 /// negative status rather than UB.
 #[test]
-fn ffi_take_into_null_safe() {
+fn ffiloader_2_4_ffi_take_into_null_safe() {
     // SAFETY: NULL handle is explicitly handled; buf may be NULL iff cap==0.
     unsafe {
         let n = zerodds_reader_take_into(ptr::null_mut(), ptr::null_mut(), 0);
@@ -342,7 +324,7 @@ fn ffi_take_into_null_safe() {
 }
 
 #[test]
-fn ffi_handles_null_safely() {
+fn deployment_1_2_ffi_handles_null_safely() {
     // SAFETY: all destroy functions are explicitly documented as
     // NULL-tolerant; a NULL pointer as an argument is allowed by design.
     unsafe {
@@ -358,27 +340,23 @@ fn ffi_handles_null_safely() {
 
 /// Opt-1 R6 — read-loan API roundtrip without to_vec().
 ///
-/// Compared to `ffi_pub_sub_roundtrip`: instead of
+/// Compared to `capi_11_1_ffi_pub_sub_roundtrip`: instead of
 /// `zerodds_reader_take` (with its internal `to_vec().into_boxed_slice()`)
 /// the subscriber uses `zerodds_reader_loan` + `_return_loan`.
 /// With loan `*out_buf` is a direct pointer into the internal
 /// `Arc<[u8]>` — zero-copy at the C-FFI boundary.
 #[cfg_attr(target_os = "macos", ignore)]
 #[test]
-fn ffi_pub_sub_roundtrip_via_loan() {
-    // A fixed number, not `base + pid % N`: the domain is the UDP port
-    // (RTPS 9.6.1.4.1, `7400 + 250*domain`), and spreading it by PID walked
-    // it into the kernel's ephemeral port range
-    // (`net.ipv4.ip_local_port_range`, `32768 60999` on the bench host),
-    // where the SPDP multicast bind fails with `EADDRINUSE` and
-    // `zerodds_runtime_create` returns NULL. Every domain in this workspace
-    // is listed in `crates/dcps/tests/common/mod.rs::RESERVED_DOMAINS` so
-    // that the domain lease there never hands out the same one.
-    let domain: u32 = 50;
+fn deployment_1_2_ffi_pub_sub_roundtrip_via_loan() {
+    // The domain is leased: it is a UDP port (RTPS 9.6.1.4.1), and a fixed
+    // one is shared with every other run of this test on the LAN
+    // (`crates/test-domains`).
+    let lease = zerodds_test_domains::lease_domain();
+    let domain: u32 = lease.id() as u32;
     let topic = CString::new("CFfiSmokeLoan").unwrap();
     let typ = CString::new("RawBytes").unwrap();
 
-    // SAFETY: same scheme as ffi_pub_sub_roundtrip — valid C strings,
+    // SAFETY: same scheme as capi_11_1_ffi_pub_sub_roundtrip — valid C strings,
     // NULL checks per each pub unsafe fn # Safety, the CStrings live
     // until the end of the block.
     unsafe {
@@ -444,7 +422,7 @@ fn ffi_pub_sub_roundtrip_via_loan() {
 /// * follow-up calls with the NULL handle return BadHandle (-2),
 ///   not segfault
 #[test]
-fn ffi_runtime_create_domain_too_large_returns_null() {
+fn ffiloader_2_4_ffi_runtime_create_domain_too_large_returns_null() {
     // Domain 250 → spdp_port = 7400 + 250*250 = 69900 > u16::MAX
     // SAFETY: zerodds_runtime_create takes only a domain integer,
     // no pointers — no precondition risk.
@@ -461,6 +439,18 @@ fn ffi_runtime_create_domain_too_large_returns_null() {
     // destroy(NULL) must be a no-op
     // SAFETY: `rt` comes from zerodds_runtime_create or is NULL —
     // destroy accepts both.
+    unsafe { zerodds_runtime_destroy(rt) };
+}
+
+/// The ROS-2 constructor refuses a domain id beyond `i32` like
+/// `zerodds_runtime_create`; it passed `domain_id as i32` to the runtime,
+/// a negative domain for this value.
+#[test]
+fn ffiloader_2_4_ros_defaults_refuses_a_domain_beyond_i32() {
+    // SAFETY: only a domain integer, no pointer precondition.
+    let rt = unsafe { zerodds_runtime_create_ros_defaults(1u32 << 31) };
+    assert!(rt.is_null());
+    // SAFETY: NULL is accepted by destroy.
     unsafe { zerodds_runtime_destroy(rt) };
 }
 
@@ -500,9 +490,15 @@ fn ffi_runtime_create_domain_233_returns_null() {
 fn a_plain_runtime_with_an_enclave_configured_is_refused() {
     let set = std::ffi::CString::new("security.enclave_dir=/nonexistent/enclave").unwrap();
     let sets = [set.as_ptr()];
+    let lease = zerodds_test_domains::lease_domain();
     // SAFETY: NULL path = standard layout; one valid NUL-terminated set.
     let rt = unsafe {
-        zerodds::zerodds_runtime_create_from_config(0, std::ptr::null(), sets.as_ptr(), 1)
+        zerodds::zerodds_runtime_create_from_config(
+            lease.id() as u32,
+            std::ptr::null(),
+            sets.as_ptr(),
+            1,
+        )
     };
     assert!(rt.is_null(), "an enclave must not become a plain runtime");
 }

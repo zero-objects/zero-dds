@@ -7,6 +7,8 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `live_frame` (the frame, VLAN and MAC helpers of the live transport) is built with `alloc` and no longer
+  needs the `live` feature; it opens no socket.
 - `Transport::max_message_size` is 1500, the payload of an Ethernet frame (DDSI-RTPS 2.5 §8.4.14.1).
 - **§7.3.3 YANG PSM** (`pim::yang`): transformation of the configuration
   model into `group-talker`/`group-listener` (UNI CUC↔CNC) — incl.

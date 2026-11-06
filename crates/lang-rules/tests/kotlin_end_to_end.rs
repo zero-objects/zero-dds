@@ -60,7 +60,7 @@ fn code_only(generated: &str) -> String {
 }
 
 #[test]
-fn a_struct_of_primitives_becomes_a_kotlin_data_class() {
+fn xtypes_7_2_2_2_a_struct_of_primitives_becomes_a_kotlin_data_class() {
     let generated = generate("struct Pose { long x; double y; boolean active; };");
     assert!(generated.contains("data class Pose("), "{generated}");
     assert!(generated.contains("var x: Int"), "{generated}");
@@ -69,7 +69,7 @@ fn a_struct_of_primitives_becomes_a_kotlin_data_class() {
 }
 
 #[test]
-fn every_idl_primitive_reaches_a_kotlin_type() {
+fn xtypes_7_2_2_2_every_idl_primitive_reaches_a_kotlin_type() {
     let generated = generate(
         "struct P { boolean a; octet b; char c; wchar d; int8 e; uint8 f; short g; \
          unsigned short h; long i; unsigned long j; long long k; unsigned long long l; \
@@ -98,20 +98,20 @@ fn every_idl_primitive_reaches_a_kotlin_type() {
 }
 
 #[test]
-fn a_long_double_is_a_float128_because_kotlin_has_no_binary128() {
+fn xtypes_7_2_2_2_a_long_double_is_a_float128_because_kotlin_has_no_binary128() {
     let generated = generate("struct S { long double v; };");
     assert!(generated.contains("var v: Float128"), "{generated}");
 }
 
 #[test]
-fn an_optional_member_becomes_a_nullable_type_and_defaults_to_null() {
+fn xtypes_7_2_2_4_4_4_7_an_optional_member_becomes_a_nullable_type_and_defaults_to_null() {
     let generated = generate("struct S { @optional long a; long b; };");
     assert!(generated.contains("var a: Int? = null"), "{generated}");
     assert!(!generated.contains("var b: Int? "), "{generated}");
 }
 
 #[test]
-fn an_external_member_needs_no_indirection() {
+fn xtypes_7_2_2_4_4_4_7_an_external_member_needs_no_indirection() {
     // Every JVM object field is already a reference, so `@external`
     // changes nothing this materialiser writes.
     let generated = generate("struct Node { @optional @external Node next; long v; };");
@@ -119,7 +119,7 @@ fn an_external_member_needs_no_indirection() {
 }
 
 #[test]
-fn a_member_named_after_a_hard_keyword_is_escaped_and_keeps_its_idl_name() {
+fn idl_7_2_3_a_member_named_after_a_hard_keyword_is_escaped_and_keeps_its_idl_name() {
     let generated = generate("struct S { long class; long fun; long when; };");
     assert!(generated.contains("var class_: Int"), "{generated}");
     assert!(generated.contains("var fun_: Int"), "{generated}");
@@ -128,14 +128,14 @@ fn a_member_named_after_a_hard_keyword_is_escaped_and_keeps_its_idl_name() {
 }
 
 #[test]
-fn a_member_named_after_a_soft_keyword_keeps_the_idl_spelling() {
+fn idl_7_2_3_a_member_named_after_a_soft_keyword_keeps_the_idl_spelling() {
     let generated = generate("struct S { long data; long value; };");
     assert!(generated.contains("var data: Int"), "{generated}");
     assert!(generated.contains("var value: Int"), "{generated}");
 }
 
 #[test]
-fn two_members_that_would_reach_one_kotlin_name_are_refused_by_name() {
+fn idl_7_2_3_two_members_that_would_reach_one_kotlin_name_are_refused_by_name() {
     let error = try_generate("struct S { long class; long class_; };", "t.idl").unwrap_err();
     assert!(error.contains("materialise"), "{error}");
 }
@@ -148,7 +148,7 @@ fn a_sequence_becomes_an_array_and_a_string_stays_a_string() {
 }
 
 #[test]
-fn a_sequence_of_an_aggregate_is_a_boxed_array() {
+fn xtypes_7_2_2_4_3_a_sequence_of_an_aggregate_is_a_boxed_array() {
     let generated = generate("struct Item { long v; }; struct S { sequence<Item> items; };");
     assert!(generated.contains("var items: Array<Item>"), "{generated}");
 }
@@ -183,7 +183,7 @@ fn empty_sequences_do_not_construct_an_element() {
 }
 
 #[test]
-fn a_fixed_holds_its_decimal_as_a_string() {
+fn xtypes_7_2_2_2_a_fixed_holds_its_decimal_as_a_string() {
     let generated = generate("struct S { fixed<9,2> price; };");
     assert!(generated.contains("var price: String"), "{generated}");
 }
@@ -198,7 +198,7 @@ fn an_array_nests_outermost_dimension_first() {
 }
 
 #[test]
-fn a_map_becomes_an_array_of_a_generated_entry_class() {
+fn xtypes_7_2_2_4_3_a_map_becomes_an_array_of_a_generated_entry_class() {
     let generated = generate("struct S { map<long, string> t; };");
     assert!(
         generated.contains("class ZdEntry_long_string("),
@@ -221,7 +221,7 @@ fn a_typedef_becomes_a_type_alias() {
 }
 
 #[test]
-fn an_enum_becomes_an_object_of_constants_with_every_value_written_out() {
+fn xtypes_7_2_2_4_1_1_an_enum_becomes_an_object_of_constants_with_every_value_written_out() {
     let generated = generate("enum Mode { IDLE, @value(4) ACTIVE, FAULT };");
     assert!(generated.contains("object Mode {"), "{generated}");
     assert!(generated.contains("const val IDLE: Int = 0"), "{generated}");
@@ -239,7 +239,7 @@ fn an_enum_becomes_an_object_of_constants_with_every_value_written_out() {
 }
 
 #[test]
-fn an_enum_typed_member_is_a_plain_int() {
+fn xtypes_7_2_2_4_1_1_an_enum_typed_member_is_a_plain_int() {
     let generated = generate("enum Mode { IDLE, ACTIVE }; struct S { Mode m; };");
     assert!(generated.contains("var m: Int"), "{generated}");
 }
@@ -256,7 +256,7 @@ fn a_union_becomes_a_data_class_with_a_discriminator_and_one_property_per_branch
 }
 
 #[test]
-fn a_bitmask_becomes_no_declaration_of_its_own_and_one_const_val_per_bit() {
+fn xtypes_7_2_2_4_1_2_a_bitmask_becomes_no_declaration_of_its_own_and_one_const_val_per_bit() {
     // No `typealias`: the module documentation explains why one would
     // add nothing but a name `crate::emit::kotlin::Kotlin::cast` could
     // not tell apart from a real aggregate.
@@ -273,7 +273,7 @@ fn a_bitmask_becomes_no_declaration_of_its_own_and_one_const_val_per_bit() {
 }
 
 #[test]
-fn a_wide_bitmask_packs_its_bits_in_a_long() {
+fn xtypes_7_2_2_4_1_2_a_wide_bitmask_packs_its_bits_in_a_long() {
     let generated = generate("@bit_bound(64) bitmask Wide { @position(63) TOP };");
     assert!(
         generated.contains("const val TOP: Long = 1L shl 63"),
@@ -335,7 +335,7 @@ fn a_native_declaration_becomes_an_alias_to_any() {
 }
 
 #[test]
-fn a_module_flattens_onto_the_name_because_a_kotlin_file_has_one_package() {
+fn idl_7_5_2_a_module_flattens_onto_the_name_because_a_kotlin_file_has_one_package() {
     let generated = generate("module common { module util { struct Location { long x; }; }; };");
     assert!(
         generated.contains("data class common_util_Location("),
@@ -359,13 +359,13 @@ fn the_declaration_order_of_the_source_is_the_order_of_the_output() {
 }
 
 #[test]
-fn two_runs_over_one_source_produce_the_same_text() {
+fn xtypes_7_3_1_two_runs_over_one_source_produce_the_same_text() {
     let idl = "struct A { long x; }; struct B { long y; long z; };";
     assert_eq!(generate(idl), generate(idl));
 }
 
 #[test]
-fn every_construct_the_catalogue_covers_produces_output() {
+fn xtypes_7_2_2_4_every_construct_the_catalogue_covers_produces_output() {
     let sources = [
         ("struct S { long a; };", "data class S("),
         ("enum E { A };", "object E {"),
@@ -422,7 +422,7 @@ const MUST_RENDER: usize = 350;
 const REFUSED: &[(&str, &str)] = &[];
 
 #[test]
-fn every_corpus_case_renders_or_names_its_failure() {
+fn xtypes_7_3_1_every_corpus_case_renders_or_names_its_failure() {
     let cases = corpus();
     assert!(
         cases.len() > 300,
@@ -487,8 +487,20 @@ fn runtime_source() -> String {
     std::fs::read_to_string(&path).expect("runtime/kotlin/ZdWire.kt")
 }
 
-/// One generated file through `kotlinc -Werror`, compiled beside the
-/// runtime it may reference.
+/// The runtime as `tests/integration/kotlin_runtime.sh` compiled it once
+/// for a job, under the same `kotlinc -Werror`: its classes, when the
+/// directory holds `complete` and the `ZdWire.kt` it compiled is the one
+/// this tree has.
+fn precompiled_runtime() -> Option<std::path::PathBuf> {
+    let dir = std::env::temp_dir().join("zd-kotlin-runtime");
+    let compiled = std::fs::read_to_string(dir.join("ZdWire.kt")).ok()?;
+    (dir.join("complete").is_file() && compiled == runtime_source()).then(|| dir.join("classes"))
+}
+
+/// One generated file through `kotlinc -Werror`, against the runtime it may
+/// reference: the classes the job compiled once, or, without them, the
+/// runtime source compiled beside the file (9.6 s against 5.3 s for one
+/// small file on the Linux test host).
 fn kotlin_checks(source: &str) -> Result<(), String> {
     let dir = scratch();
     std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
@@ -496,13 +508,17 @@ fn kotlin_checks(source: &str) -> Result<(), String> {
     let mut text = String::from("import zerodds.wire.*\n\n");
     text.push_str(source);
     std::fs::write(&types, text).map_err(|error| error.to_string())?;
-    let runtime = dir.join("ZdWire.kt");
-    std::fs::write(&runtime, runtime_source()).map_err(|error| error.to_string())?;
+    let mut command = kotlinc();
+    command.arg("-Werror").arg(&types);
+    if let Some(classes) = precompiled_runtime() {
+        command.arg("-cp").arg(classes);
+    } else {
+        let runtime = dir.join("ZdWire.kt");
+        std::fs::write(&runtime, runtime_source()).map_err(|error| error.to_string())?;
+        command.arg(&runtime);
+    }
     let out = dir.join("out");
-    let output = Command::new("kotlinc")
-        .arg("-Werror")
-        .arg(&types)
-        .arg(&runtime)
+    let output = command
         .arg("-d")
         .arg(&out)
         .output()
@@ -515,19 +531,86 @@ fn kotlin_checks(source: &str) -> Result<(), String> {
     }
 }
 
-/// Whether `kotlinc` is on the path at all.
+/// Whether `kotlinc` is on the path at all. A look at `PATH` and not a
+/// `kotlinc -version`: that starts a JVM, which under eight compilers side by
+/// side took seconds of a test's 25 s and twice failed outright (pipeline
+/// 8678, job 228157); a `kotlinc` that cannot start fails the compile that
+/// follows, with its message.
 fn kotlinc_available() -> bool {
-    Command::new("kotlinc")
-        .arg("-version")
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join("kotlinc").is_file()))
+}
+
+/// The JVM options of every `kotlinc` here (`JAVA_OPTS`, which the
+/// `kotlinc` script hands to the JVM; its own default is `-Xmx256M -Xss2m`).
+/// The codegen jobs run eight compilers side by side on a host that shows
+/// the JVM 32 CPUs, and a JVM sizes its compiler and GC threads by them;
+/// two CPUs, the serial collector and the first compiler tier are what a
+/// compile of a few files needs.
+const KOTLINC_JAVA_OPTS: &str =
+    "-Xmx512M -Xss2m -XX:ActiveProcessorCount=2 -XX:+UseSerialGC -XX:TieredStopAtLevel=1";
+
+fn kotlinc() -> Command {
+    let mut command = Command::new("kotlinc");
+    command.env("JAVA_OPTS", KOTLINC_JAVA_OPTS);
+    command
+}
+
+/// The cases of one share through one `kotlinc -Werror`, each in a file
+/// and a package of its own (`zd_case_<n>`; the generated text declares no
+/// package, `adapter::kotlin::kotlin_file`), against the runtime: one JVM
+/// for the share instead of one per case. When the batch fails, every case
+/// is compiled alone, so that a failure names its case.
+fn kotlin_checks_together(cases: &[(String, String)]) -> Vec<(String, String)> {
+    if cases.is_empty() {
+        return Vec::new();
+    }
+    let dir = scratch();
+    let together = compile_together(&dir, cases);
+    let _ = std::fs::remove_dir_all(&dir);
+    if together.is_ok() {
+        return Vec::new();
+    }
+    cases
+        .iter()
+        .filter_map(|(name, source)| kotlin_checks(source).err().map(|why| (name.clone(), why)))
+        .collect()
+}
+
+/// One `kotlinc -Werror` over `cases`, written into `dir`.
+fn compile_together(dir: &std::path::Path, cases: &[(String, String)]) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+    let mut command = kotlinc();
+    command.arg("-Werror");
+    for (index, (_, source)) in cases.iter().enumerate() {
+        let file = dir.join(format!("ZdTypes{index}.kt"));
+        let text = format!("package zd_case_{index}\n\nimport zerodds.wire.*\n\n{source}");
+        std::fs::write(&file, text).map_err(|error| error.to_string())?;
+        command.arg(file);
+    }
+    if let Some(classes) = precompiled_runtime() {
+        command.arg("-cp").arg(classes);
+    } else {
+        let runtime = dir.join("ZdWire.kt");
+        std::fs::write(&runtime, runtime_source()).map_err(|error| error.to_string())?;
+        command.arg(&runtime);
+    }
+    let output = command
+        .arg("-d")
+        .arg(dir.join("out"))
         .output()
-        .is_ok_and(|output| output.status.success() || output.status.code() == Some(0))
+        .map_err(|error| error.to_string())?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).into_owned())
+    }
 }
 
 /// Every shape above, through the compiler. One file per source: two
 /// sources here declare a `Pose` and a `T`, and Kotlin allows one
 /// top-level declaration per name in a file.
-#[test]
-fn the_generated_kotlin_compiles() {
+fn the_generated_kotlin_compiles(share: usize, shares: usize) {
     if !kotlinc_available() {
         eprintln!(
             "SKIPPED: `kotlinc` is not on the path, so the generated Kotlin was not compiled. \
@@ -579,22 +662,23 @@ fn the_generated_kotlin_compiles() {
         include_str!("../../../tests/interop-corpus/sequence-of-typedef/type.idl"),
         include_str!("../../../tests/interop-corpus/sequence-of-typedef-unannotated/type.idl"),
     ];
-    for idl in sources {
-        let generated = generate(idl);
-        if let Err(why) = kotlin_checks(&generated) {
-            panic!("{idl}\n\n{generated}\n\n{why}");
-        }
-    }
+    // One `kotlinc` for the share's sources (`kotlin_checks_together`): one
+    // JVM per source ran each of the four shares past its 25 s with eight
+    // tests side by side (pipeline 8688, job 228189).
+    let selected: Vec<(String, String)> = sources
+        .iter()
+        .enumerate()
+        .filter(|(position, _)| position % shares == share)
+        .map(|(_, idl)| ((*idl).to_owned(), generate(idl)))
+        .collect();
+    let failures = kotlin_checks_together(&selected);
+    assert!(failures.is_empty(), "{failures:#?}");
 }
 
-/// The whole corpus through the compiler, one file per case.
-///
-/// `#[ignore]`, because it is hundreds of `kotlinc` invocations and takes
-/// minutes — the same reasoning `zig_end_to_end.rs`'s equivalent test
-/// gives. Run with `--include-ignored` on a host that has `kotlinc`.
-#[test]
-#[ignore = "hundreds of `kotlinc` invocations; run with --include-ignored"]
-fn every_corpus_case_that_renders_also_compiles() {
+/// The whole corpus through `kotlinc`, one invocation per case: every
+/// case renders, and the cases of `share` (of `shares`) compile. `kotlinc`
+/// starts a JVM per case, seconds each.
+fn every_corpus_case_that_renders_also_compiles(share: usize, shares: usize) {
     assert!(
         kotlinc_available(),
         "the requested Kotlin compiler gate needs `kotlinc`"
@@ -605,7 +689,9 @@ fn every_corpus_case_that_renders_also_compiles() {
     let mut backend_refused = Vec::new();
     let mut frontend_refused = 0_usize;
     let mut checked = 0_usize;
-    for (name, path) in cases {
+    let mut compiled = 0_usize;
+    let mut selected = Vec::new();
+    for (position, (name, path)) in cases.into_iter().enumerate() {
         let source = std::fs::read_to_string(&path).expect("a corpus source");
         if !corpus_frontend::accepts(&source, &path.display().to_string()) {
             frontend_refused += 1;
@@ -620,21 +706,20 @@ fn every_corpus_case_that_renders_also_compiles() {
             }
         };
         checked += 1;
-        if let Err(why) = kotlin_checks(&text) {
-            eprintln!("COMPILER_FAILED {name}: {why}");
-            failures.push(format!("{name}: {why}"));
+        if position % shares != share {
+            continue;
         }
-        if checked % 25 == 0 {
-            eprintln!(
-                "CORPUS_PROGRESS reached={checked} failed={} last={name}",
-                failures.len()
-            );
-        }
+        compiled += 1;
+        selected.push((name, text));
+    }
+    for (name, why) in kotlin_checks_together(&selected) {
+        eprintln!("COMPILER_FAILED {name}: {why}");
+        failures.push(format!("{name}: {why}"));
     }
     eprintln!(
-        "CORPUS_SUMMARY total={total} frontend_refused={frontend_refused} backend_refused={} reached={checked} passed={} failed={}",
+        "CORPUS_SUMMARY total={total} frontend_refused={frontend_refused} backend_refused={} reached={checked} compiled={compiled} passed={} failed={}",
         backend_refused.len(),
-        checked - failures.len(),
+        compiled - failures.len(),
         failures.len(),
     );
     assert_eq!(total, frontend_refused + backend_refused.len() + checked);
@@ -648,4 +733,422 @@ fn every_corpus_case_that_renders_also_compiles() {
         "{} of the corpus did not compile:\n{failures:#?}",
         failures.len()
     );
+}
+
+/// zerodds-xcdr2-kotlin-1.0 §7.4.3: the generated Kotlin of every source above
+/// compiles under `kotlinc`; 25 s for all of them on the Linux test host.
+///
+/// In shares, each within the 25 s a test has (internal/release/rc8-test-suite.md,
+/// "Crate tier"); the language's weekly job and its merge job run them.
+mod xtypes_7_4_3_the_generated_kotlin_compiles {
+    #[test]
+    fn share_01() {
+        super::the_generated_kotlin_compiles(0, 4);
+    }
+
+    #[test]
+    fn share_02() {
+        super::the_generated_kotlin_compiles(1, 4);
+    }
+
+    #[test]
+    fn share_03() {
+        super::the_generated_kotlin_compiles(2, 4);
+    }
+
+    #[test]
+    fn share_04() {
+        super::the_generated_kotlin_compiles(3, 4);
+    }
+}
+
+/// Every corpus case that renders compiles under `kotlinc`, in 64 shares,
+/// each one `kotlinc` over its cases. `#[ignore]`: the crate tier has no
+/// `kotlinc`; the weekly `integration-codegen-kotlin` job runs these with
+/// it, eight shares at a time, each within the 25 s a test has
+/// (internal/release/rc8-test-suite.md, "Crate tier").
+mod every_corpus_case_that_renders_also_compiles_shares {
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_01() {
+        super::every_corpus_case_that_renders_also_compiles(0, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_02() {
+        super::every_corpus_case_that_renders_also_compiles(1, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_03() {
+        super::every_corpus_case_that_renders_also_compiles(2, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_04() {
+        super::every_corpus_case_that_renders_also_compiles(3, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_05() {
+        super::every_corpus_case_that_renders_also_compiles(4, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_06() {
+        super::every_corpus_case_that_renders_also_compiles(5, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_07() {
+        super::every_corpus_case_that_renders_also_compiles(6, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_08() {
+        super::every_corpus_case_that_renders_also_compiles(7, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_09() {
+        super::every_corpus_case_that_renders_also_compiles(8, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_10() {
+        super::every_corpus_case_that_renders_also_compiles(9, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_11() {
+        super::every_corpus_case_that_renders_also_compiles(10, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_12() {
+        super::every_corpus_case_that_renders_also_compiles(11, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_13() {
+        super::every_corpus_case_that_renders_also_compiles(12, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_14() {
+        super::every_corpus_case_that_renders_also_compiles(13, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_15() {
+        super::every_corpus_case_that_renders_also_compiles(14, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_16() {
+        super::every_corpus_case_that_renders_also_compiles(15, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_17() {
+        super::every_corpus_case_that_renders_also_compiles(16, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_18() {
+        super::every_corpus_case_that_renders_also_compiles(17, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_19() {
+        super::every_corpus_case_that_renders_also_compiles(18, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_20() {
+        super::every_corpus_case_that_renders_also_compiles(19, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_21() {
+        super::every_corpus_case_that_renders_also_compiles(20, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_22() {
+        super::every_corpus_case_that_renders_also_compiles(21, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_23() {
+        super::every_corpus_case_that_renders_also_compiles(22, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_24() {
+        super::every_corpus_case_that_renders_also_compiles(23, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_25() {
+        super::every_corpus_case_that_renders_also_compiles(24, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_26() {
+        super::every_corpus_case_that_renders_also_compiles(25, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_27() {
+        super::every_corpus_case_that_renders_also_compiles(26, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_28() {
+        super::every_corpus_case_that_renders_also_compiles(27, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_29() {
+        super::every_corpus_case_that_renders_also_compiles(28, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_30() {
+        super::every_corpus_case_that_renders_also_compiles(29, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_31() {
+        super::every_corpus_case_that_renders_also_compiles(30, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_32() {
+        super::every_corpus_case_that_renders_also_compiles(31, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_33() {
+        super::every_corpus_case_that_renders_also_compiles(32, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_34() {
+        super::every_corpus_case_that_renders_also_compiles(33, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_35() {
+        super::every_corpus_case_that_renders_also_compiles(34, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_36() {
+        super::every_corpus_case_that_renders_also_compiles(35, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_37() {
+        super::every_corpus_case_that_renders_also_compiles(36, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_38() {
+        super::every_corpus_case_that_renders_also_compiles(37, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_39() {
+        super::every_corpus_case_that_renders_also_compiles(38, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_40() {
+        super::every_corpus_case_that_renders_also_compiles(39, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_41() {
+        super::every_corpus_case_that_renders_also_compiles(40, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_42() {
+        super::every_corpus_case_that_renders_also_compiles(41, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_43() {
+        super::every_corpus_case_that_renders_also_compiles(42, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_44() {
+        super::every_corpus_case_that_renders_also_compiles(43, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_45() {
+        super::every_corpus_case_that_renders_also_compiles(44, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_46() {
+        super::every_corpus_case_that_renders_also_compiles(45, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_47() {
+        super::every_corpus_case_that_renders_also_compiles(46, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_48() {
+        super::every_corpus_case_that_renders_also_compiles(47, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_49() {
+        super::every_corpus_case_that_renders_also_compiles(48, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_50() {
+        super::every_corpus_case_that_renders_also_compiles(49, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_51() {
+        super::every_corpus_case_that_renders_also_compiles(50, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_52() {
+        super::every_corpus_case_that_renders_also_compiles(51, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_53() {
+        super::every_corpus_case_that_renders_also_compiles(52, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_54() {
+        super::every_corpus_case_that_renders_also_compiles(53, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_55() {
+        super::every_corpus_case_that_renders_also_compiles(54, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_56() {
+        super::every_corpus_case_that_renders_also_compiles(55, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_57() {
+        super::every_corpus_case_that_renders_also_compiles(56, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_58() {
+        super::every_corpus_case_that_renders_also_compiles(57, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_59() {
+        super::every_corpus_case_that_renders_also_compiles(58, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_60() {
+        super::every_corpus_case_that_renders_also_compiles(59, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_61() {
+        super::every_corpus_case_that_renders_also_compiles(60, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_62() {
+        super::every_corpus_case_that_renders_also_compiles(61, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_63() {
+        super::every_corpus_case_that_renders_also_compiles(62, 64);
+    }
+
+    #[test]
+    #[ignore = "a share of the corpus through `kotlinc`; runs in integration-codegen-kotlin"]
+    fn share_64() {
+        super::every_corpus_case_that_renders_also_compiles(63, 64);
+    }
 }

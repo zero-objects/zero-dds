@@ -179,7 +179,9 @@ public sealed class DataReader<T> : IDisposable
                 }
             }
         }
-        return Native.SubCreateDatareader(subscriber, topic.Handle, qos);
+        return topic.Traits.IsKeyed
+            ? Native.SubCreateDatareader(subscriber, topic.Handle, qos)
+            : Native.SubCreateDatareaderKind(subscriber, topic.Handle, qos, 0);
     }
 
     /// <summary>
